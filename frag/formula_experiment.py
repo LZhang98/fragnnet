@@ -1,0 +1,358 @@
+import pyximport
+pyximport.install(language_level=3)
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
+import signal
+from contextlib import contextmanager
+import argparse
+from functools import reduce
+import os
+
+import frag_utils
+import run_compute_frags
+import compute_frags
+import data_utils
+from misc_utils import booltype
+
+ELEMENT_TO_MASS = {
+	"H": 1.007825031898,
+	"C": 12.0,
+	"N": 14.003074004251,
+	"O": 15.994914619257,
+	"F": 18.998403162067,
+	"Cl": 34.96885269, # 36.96590258
+	"P": 30.9737619986,
+	"S": 31.9720711744 # 33.96786701
+}
+
+PREC_TYPE_TO_MASS_DIFF = {
+	"[M+H]+": ELEMENT_TO_MASS["H"]
+}
+
+# some utils for function timeout
+# adapted from https://stackoverflow.com/questions/366682/how-to-limit-execution-time-of-a-function-call
+
+class TimeoutException(Exception): pass
+
+@contextmanager
+def time_limit(seconds):
+	def signal_handler(signum, frame):
+		raise TimeoutException(f"Timed out! ({seconds} seconds)")
+	signal.signal(signal.SIGALRM, signal_handler)
+	signal.alarm(seconds)
+	try:
+		yield
+	finally:
+		signal.alarm(0)
+
+# some utils for filtering
+
+def element_filter(formula):
+	element_counts = data_utils.parse_formula(formula)
+	for k,v in element_counts.items():
+		if v > 0 and k not in ["H","C","N","O","F"]:
+			return False
+	return True
+
+def atom_count_filter(mol):
+	num_atoms = mol.GetNumHeavyAtoms()
+	return num_atoms <= compute_frags.MAX_NUM_NODES
+
+def bond_count_filter(mol):
+	num_bonds = len(mol.GetBonds())
+	return num_bonds <= compute_frags.MAX_NUM_EDGES
+
+def filter_spec_mol(spec_df,mol_df,num_entries=-1):
+	"""
+	The purpose of this filtering is to prevent errors
+	"""
+
+	masks = []
+	# dataset mask
+	dset_mask = spec_df["dset"].isin(["nist"])
+	masks.append(dset_mask)
+	# instrument type
+	inst_type_mask = spec_df["inst_type"].isin(["FT"])
+	masks.append(inst_type_mask)
+	# frag mode
+	frag_mode_mask = spec_df["frag_mode"].isin(["HCD"])
+	masks.append(frag_mode_mask)
+	# ce
+	ce_mask = (spec_df["inst_type"]=="FT") & (~spec_df["nce"].isna())
+	masks.append(ce_mask)
+	# ion mode
+	ion_mode_mask = spec_df["ion_mode"] == "P"
+	masks.append(ion_mode_mask)
+	# precursor type
+	prec_type_mask = spec_df["prec_type"].isin(["[M+H]+"])
+	masks.append(prec_type_mask)
+	# resolution
+	res_mask = spec_df["res"].isin([1,2,3,4,5,6,7])
+	masks.append(res_mask)
+	# spectrum type 
+	spec_type_mask = spec_df["spec_type"] == "MS2"
+	masks.append(spec_type_mask)
+	# precursor mz
+	prec_mz_mask = ~spec_df["prec_mz"].isna()
+	masks.append(prec_mz_mask)
+	# single molecule
+	multi_mol_ids = mol_df[mol_df["smiles"].str.contains("\.")]["mol_id"]
+	single_mol_mask = ~spec_df["mol_id"].isin(multi_mol_ids)
+	masks.append(single_mol_mask)
+	# neutral molecule
+	charges = mol_df["mol"].apply(data_utils.mol_to_charge)
+	charged_ids = mol_df[charges!=0]["mol_id"]
+	neutral_mask = ~spec_df["mol_id"].isin(charged_ids)
+	masks.append(neutral_mask)
+	# element composition
+	element_ids = mol_df[mol_df["formula"].apply(element_filter)]["mol_id"]
+	element_mask = spec_df["mol_id"].isin(element_ids)
+	print(f">> element: {element_mask.mean()}")
+	masks.append(element_mask)
+	# atom count
+	atom_count_ids = mol_df[mol_df["mol"].apply(atom_count_filter)]["mol_id"]
+	atom_count_mask = spec_df["mol_id"].isin(atom_count_ids)
+	print(f">> atom count: {atom_count_mask.mean()}")
+	masks.append(atom_count_mask)
+	# bond count
+	bond_count_ids = mol_df[mol_df["mol"].apply(bond_count_filter)]["mol_id"]
+	bond_count_mask = spec_df["mol_id"].isin(bond_count_ids)
+	print(f">> bond count: {bond_count_mask.mean()}")
+	masks.append(bond_count_mask)
+	# put them together
+	all_mask = masks[0]
+	for mask in masks:
+		all_mask = all_mask & mask
+	if np.sum(all_mask) == 0:
+		raise ValueError("select removed all items")
+	print(f">> everything: {all_mask.mean()}")
+	spec_df = spec_df[all_mask].reset_index(drop=True)
+	# sample
+	if num_entries > 0:
+		spec_df = spec_df.sample(n=num_entries,replace=False,random_state=420).reset_index(drop=True)
+	# only keep molecules that are in the spectra
+	mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])].reset_index(drop=True)
+	return spec_df, mol_df
+
+def get_mol_formulae_ccs(smiles,max_depth):
+
+	mol_d = frag_utils.extract_mol_info(smiles,"[M+H]+")
+	num_nodes = mol_d["atom_mask_arr"].shape[0]
+	ccs_int = run_compute_frags.cython_function(mol_d,max_depth)
+	formulae = [run_compute_frags.convert_from_int(num_nodes,cc_int,bitmask=False) for cc_int in ccs_int]
+	formulae = frag_utils.compute_approximate_formulae(formulae,mol_d)
+	return formulae, ccs_int
+
+def formula_to_peak_mz(formula,prec_type):
+
+	element_counts = data_utils.parse_formula(formula)
+	peak_mz = 0.
+	for k,v in element_counts.items():
+		peak_mz += v*ELEMENT_TO_MASS.get(k,0.)
+	peak_mz += PREC_TYPE_TO_MASS_DIFF[prec_type]
+	return peak_mz
+
+def compute_frag_peak_stats(row,tolerance=0.01):
+
+	true_mzs, true_ints = list(zip(*row["peaks"]))
+	pred_mzs = np.array(row["peak_mz"])
+	# compute overlap
+	overlap_true_idxs = []
+	overlap_true_ints = []
+	overlap_pred_idxs = []
+	overlap_pred_counts = []
+	for true_idx, true_mz in enumerate(true_mzs):
+		mz_diffs = np.abs(pred_mzs-true_mz)
+		mz_close = mz_diffs < tolerance
+		if np.any(mz_close):
+			pred_idx = np.nonzero(mz_close)[0]
+			overlap_true_idxs.append(true_idx)
+			overlap_true_ints.append(true_ints[true_idx])
+			overlap_pred_idxs.append(pred_idx)
+			overlap_pred_counts.append(len(pred_idx))
+	# remove duplicates
+	if len(overlap_pred_idxs) > 0:
+		overlap_pred_idxs = np.unique(np.concatenate(overlap_pred_idxs,axis=0))
+	else:
+		overlap_pred_idxs = np.array([])
+	recall = len(overlap_true_idxs) / len(true_mzs)
+	w_recall = np.sum(overlap_true_ints) / np.sum(true_ints)
+	prec = len(overlap_pred_idxs) / len(pred_mzs)
+	if len(overlap_pred_counts) > 0:
+		avg_count = np.mean(overlap_pred_counts)
+	else:
+		avg_count = 0.
+	return pd.Series([recall,w_recall,prec,avg_count])
+
+def prec_in_frag(row):
+
+	prec_formula = row["prec_formula_str"]
+	frag_formulae = row["frag_formulae_str"]
+	return prec_formula in frag_formulae
+
+def add_prec_to_frag(row):
+
+	prec_formula = row["prec_formula_str"]
+	frag_formulae = row["frag_formulae_str"]
+	if prec_formula not in frag_formulae:
+		formulae = frag_formulae + [prec_formula]
+	else:
+		formulae = frag_formulae + []
+	return formulae
+
+if __name__ == "__main__":
+
+	# TODO: verify that using different version of software doesn't break compatibility!
+
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--num_entries",type=int,default=-1)
+	parser.add_argument("--max_depth",type=int,default=4)
+	parser.add_argument("--max_time",type=int,default=2*60)
+	parser.add_argument("--frag_df_fp",type=str,default="data/frag_formula_df.pkl")
+	parser.add_argument("--load_frag_df",type=booltype,default=False)
+	args = parser.parse_args()
+
+	tqdm.pandas()
+
+	# read in the molecule data
+	print("read in mol")
+	mol_df = pd.read_pickle("data/mol_df.pkl")
+	print("read in spec")
+	spec_df = pd.read_pickle("data/spec_df.pkl")
+
+	# perform selection ([M+H]+ ONLY, no S/P)
+	spec_df, mol_df = filter_spec_mol(spec_df,mol_df,num_entries=args.num_entries)
+	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules")
+
+	if not args.load_frag_df:
+
+		def timed_get_mol_formulae_ccs(smiles):
+			cur_max_depth = args.max_depth
+			formulae, ccs = None, None
+			while formulae is None:
+				try:
+					with time_limit(args.max_time):
+						formulae, ccs = get_mol_formulae_ccs(smiles,cur_max_depth)
+				except TimeoutException as e:
+					if cur_max_depth > 1:
+						cur_max_depth -= 1
+						print(f">> Decrementing depth to {cur_max_depth}")
+					else:
+						formulae, ccs = [], []
+				except KeyboardInterrupt as e:
+					# let these through
+					raise e
+				except Exception as e:
+					# don't retry, theres a bug
+					print(f">> Non-timeout error, aborting: {e}")
+					formulae, ccs = [], []
+			return (cur_max_depth,formulae,ccs)
+
+		for elem in ["S","Cl","P"]:
+			assert not mol_df["formula"].str.contains(elem).any()
+
+		# maybe chunk it, to allow for more reductions with each worker?
+		frag_results = data_utils.par_apply_series(mol_df["mol"],timed_get_mol_formulae_ccs)
+		frag_depth = frag_results.apply(lambda x: x[0])
+		frag_formulae = frag_results.apply(lambda x: x[1])
+		frag_ccs = frag_results.apply(lambda x: x[2])
+		del frag_results
+
+		frag_formula_df = pd.DataFrame(
+			{
+				"mol_id": mol_df["mol_id"],
+				"frag_formulae": frag_formulae,
+				"frag_depth": frag_depth,
+				"frag_ccs": frag_ccs
+			}
+		)
+		frag_formula_df.to_pickle(args.frag_df_fp)
+
+	else:
+
+		print("read in formulae")
+		assert os.path.exists(args.frag_df_fp), args.frag_df_fp
+		frag_formula_df = pd.read_pickle(args.frag_df_fp)
+		print(frag_formula_df.shape)
+
+	# pool formulae across molecules, compute frequencies
+	frag_formulae = frag_formula_df["frag_formulae"].progress_apply(lambda x: np.array(list(x)).reshape(len(x),5))
+	unique_formulae = np.unique(np.concatenate(frag_formulae.values,axis=0),axis=0)
+	unique_formulae = unique_formulae.tolist()
+	print(len(unique_formulae), unique_formulae[:5])
+
+	# convert to strings
+	unique_formulae = list(map(frag_utils.get_formula_string,unique_formulae))
+	print(len(unique_formulae), unique_formulae[:5])
+
+	# count number of formula per molecule (filtering out ones that have 0 formulae)
+	frag_formula_df.loc[:,"frag_num_formulae"] = frag_formula_df["frag_formulae"].progress_apply(lambda x: len(x))
+	print("> num formulae:")
+	print(frag_formula_df["frag_num_formulae"].describe())
+	print("> num failures:",(frag_formula_df["frag_num_formulae"]==0).sum())
+	frag_formula_df = frag_formula_df[frag_formula_df["frag_num_formulae"]>0]
+	
+	# compute ratio of ccs to formulae
+	frag_formula_df.loc[:,"frag_num_ccs"] = frag_formula_df["frag_ccs"].apply(len)
+	print("> num ccs:")
+	print(frag_formula_df["frag_num_ccs"].describe())
+	print("> ccs per formula:")
+	print((frag_formula_df["frag_num_ccs"]/frag_formula_df["frag_num_formulae"]).describe())
+
+	# check depth
+	print("> depth:")
+	print(frag_formula_df["frag_depth"].value_counts())
+
+	# convert formulae to strings
+	frag_formula_df.loc[:,"frag_formulae_str"] = frag_formula_df["frag_formulae"].progress_apply(lambda x: list(map(frag_utils.get_formula_string,x)))
+	frag_formula_df = frag_formula_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner").rename(columns={"formula":"prec_formula_str"})
+	prec_in_frag_count = frag_formula_df.progress_apply(prec_in_frag,axis=1)
+	print(f"> prec in frag: {prec_in_frag_count.mean()}")
+	frag_formula_df.loc[:,"formulae_str"] = frag_formula_df.progress_apply(add_prec_to_frag,axis=1)
+
+	# convert formulae to peak locations
+	mh_formula_to_peak_mz = lambda x: formula_to_peak_mz(x,"[M+H]+")
+	frag_formula_df.loc[:,"peak_mz"] = frag_formula_df["formulae_str"].progress_apply(lambda x: list(map(mh_formula_to_peak_mz,x)))
+	frag_formula_df.loc[:,"prec_peak_mz"] = frag_formula_df["prec_formula_str"].progress_apply(lambda x: mh_formula_to_peak_mz(x))
+
+	# for each spectrum, calculate fraction of peaks explained, fraction of intensity explained by referencing
+	peak_spec_df = spec_df[["spec_id","mol_id","peaks","prec_mz"]].merge(frag_formula_df,on="mol_id",how="inner")
+	prec_mz_diff = (peak_spec_df["prec_peak_mz"]-peak_spec_df["prec_mz"]).apply(np.abs)
+	print(f"> prec mz diff")
+	print(prec_mz_diff.describe())
+	result = peak_spec_df.progress_apply(compute_frag_peak_stats,axis=1)
+	peak_spec_df.loc[:,"frag_recall"] = result[0].values
+	peak_spec_df.loc[:,"frag_wrecall"] = result[1].values
+	peak_spec_df.loc[:,"frag_prec"] = result[2].values
+	peak_spec_df.loc[:,"frag_avg_count"] = result[3].values
+	del result
+
+	# collect across spectra and report summary statistics
+	print("> spec frag recall")
+	print(peak_spec_df["frag_recall"].describe())
+	print("> spec frag weighted recall")
+	print(peak_spec_df["frag_wrecall"].describe())
+	print("> spec frag precision")
+	print(peak_spec_df["frag_prec"].describe())
+	print("> spec frag avg count")
+	print(peak_spec_df["frag_avg_count"].describe())
+
+	# collect across molecules and report summary statistics
+	agg_dict = {
+		"frag_recall":np.mean,
+		"frag_wrecall":np.mean,
+		"frag_prec":np.mean,
+		"frag_avg_count":np.mean
+	}
+	peak_mol_df = peak_spec_df[["mol_id"]+list(agg_dict.keys())].groupby("mol_id").agg(agg_dict).reset_index()
+	print("> mol frag recall")
+	print(peak_mol_df["frag_recall"].describe())
+	print("> mol frag weighted recall")
+	print(peak_mol_df["frag_wrecall"].describe())
+	print("> mol frag precision")
+	print(peak_mol_df["frag_prec"].describe())
+	print("> mol frag avg count")
+	print(peak_mol_df["frag_avg_count"].describe())
+
+	import pdb; pdb.set_trace()
