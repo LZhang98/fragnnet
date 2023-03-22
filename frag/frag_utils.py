@@ -443,13 +443,13 @@ def compute_approximate_formulae(ccs,mol_d,h_prior=False):
 			cap = min(cap,num_hs_prior+MAX_H_TRANSFER,num_hs)
 		else:
 			cap = min(cap,num_hs)
-		cc_formulae = []
+		# cc_formulae = []
 		for h in range(floor,cap+1):
 			formula = np.copy(base_formula)
 			formula[ELEMENT_TO_IDX["H"]] = h
-			cc_formulae.append(tuple(formula))
+			# cc_formulae.append(tuple(formula))
 			all_formulae.add(tuple(formula))
-		formulae.append(cc_formulae)
+		# formulae.append(cc_formulae)
 	return all_formulae
 
 def update_bonds(frag,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds):
@@ -488,6 +488,7 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False):
 				num_hs_prior += hs_arr[atom]
 			floor = max(floor,num_hs_prior-MAX_H_TRANSFER)
 			cap = min(cap,num_hs_prior+MAX_H_TRANSFER,num_hs)
+			# cap = max(cap,floor)
 		else:
 			cap = min(cap,num_hs)
 		# cc_cchs = []
@@ -495,6 +496,8 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False):
 			# cc_cchs.append((cc,h))
 			all_cchs.add((cc,h))
 		# cchs.append(cc_cchs)
+		# assert floor <= cap, (floor,cap,cc)
+		# assert floor >= 0, floor
 	return all_cchs
 
 def cc_to_formula(cc,elems):
