@@ -57,7 +57,7 @@ def cython_dag(mol_d,max_depth,dag_type,h_prior,max_h_transfer):
 	assert h_prior in [True,False], h_prior
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = frag_utils.get_arrays_from_mol_d(mol_d)
 	# time this part
-	ccs_rec, ccs_parents_rec = compute_frags.py_compute_ccs_recursive(
+	ccs_rec, ccs_parents_rec, _ = compute_frags.py_compute_ccs_recursive(
 		num_nodes,
 		num_edges,
 		node_mask,
@@ -67,7 +67,8 @@ def cython_dag(mol_d,max_depth,dag_type,h_prior,max_h_transfer):
 		0,
 		max_depth,
 		True,
-		True
+		True,
+		False
 	)
 	assert len(ccs_rec) == len(ccs_parents_rec)
 	# construct graph

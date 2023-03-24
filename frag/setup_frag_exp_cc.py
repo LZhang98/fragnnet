@@ -54,7 +54,7 @@ def main(args):
     script_lines.append("")
     script_lines.append(python_line)
     script_lines.append("")
-    script_lines.append(f"ln -s /home/youngad2/projects/def-hroest/youngad2/jobs/%j.out /home/youngad2/projects/def-hroest/youngad2/frag-gnn/jobs/{job_name}.out")
+    script_lines.append("ln -s /home/youngad2/projects/def-hroest/youngad2/jobs/${SLURM_JOB_ID}.out " + f"/home/youngad2/projects/def-hroest/youngad2/frag-gnn/jobs/{job_name}.out")
     script_lines.append("")
 
     script_str = "\n".join(script_lines)

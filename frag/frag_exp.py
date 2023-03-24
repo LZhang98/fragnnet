@@ -416,5 +416,3 @@ if __name__ == "__main__":
 	print("> mol frag avg count")
 	print(peak_mol_df["frag_avg_count"].describe())
 	print()
-
-	import pdb; pdb.set_trace()
