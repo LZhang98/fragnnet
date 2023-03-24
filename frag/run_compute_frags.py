@@ -21,11 +21,12 @@ def python_function(mol_d,max_depth):
 	ccs_rec = set(ccs_rec)
 	return ccs_rec
 
-def cython_function(mol_d,max_depth):
+def cython_function(mol_d,max_depth,parents=False,depths=False):
 
+	assert not parents
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = frag_utils.get_arrays_from_mol_d(mol_d)
 	# time this part
-	ccs_rec, ccs_parents_rec = compute_frags.py_compute_ccs_recursive(
+	ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
 		num_nodes,
 		num_edges,
 		node_mask,
@@ -35,12 +36,22 @@ def cython_function(mol_d,max_depth):
 		0,
 		max_depth,
 		True,
-		False
+		parents,
+		depths
 	)
-	ccs_rec = set(ccs_rec)
-	return ccs_rec
+	if depths:
+		ccs_to_depths = {}
+		for cc_idx, cc in enumerate(ccs):
+			if cc in ccs_to_depths:
+				ccs_to_depths[cc].append(ccs_depths[cc_idx])
+			else:
+				ccs_to_depths[cc] = [ccs_depths[cc_idx]]
+		return ccs_to_depths
+	else:
+		ccs = set(ccs)
+		return ccs
 
-def cython_dag(mol_d,max_depth,dag_type,h_prior):
+def cython_dag(mol_d,max_depth,dag_type,h_prior,max_h_transfer):
 
 	assert dag_type in ["formula","cch"], dag_type
 	assert h_prior in [True,False], h_prior
@@ -72,7 +83,7 @@ def cython_dag(mol_d,max_depth,dag_type,h_prior):
 		all_formulae = set()
 		for cc_int in ccs_rec_un:
 			cc_mask = frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False)
-			formulae = frag_utils.compute_approximate_formulae([cc_mask],mol_d,h_prior=h_prior)
+			formulae = frag_utils.compute_approximate_formulae([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
 			formulae = [frag_utils.get_formula_string(f) for f in formulae]
 			ccs_to_formulae[cc_int] = formulae
 			all_formulae.update(formulae)
@@ -96,7 +107,7 @@ def cython_dag(mol_d,max_depth,dag_type,h_prior):
 		dropped_ccs = []
 		for cc_int in ccs_rec_un:
 			cc_mask = frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False)
-			cchs = frag_utils.compute_approximate_cchs([cc_mask],mol_d,h_prior=h_prior)
+			cchs = frag_utils.compute_approximate_cchs([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
 			if len(cchs) == 0:
 				dropped_ccs.append(cc_int)
 				continue
@@ -130,10 +141,11 @@ def cython_dag(mol_d,max_depth,dag_type,h_prior):
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--compound_idx",type=int,default=0)
+	parser.add_argument("--compound_idx",type=int,default=2)
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--dag_type",type=str,default="formula")
 	parser.add_argument("--h_prior",type=booltype,default=True)
+	parser.add_argument("--max_h_transfer",type=int,default=4)
 	args = parser.parse_args()
 
 	np.random.seed(420)
@@ -153,30 +165,21 @@ if __name__ == "__main__":
 	max_depth = args.max_depth
 	dag_type = args.dag_type
 	h_prior = args.h_prior
+	max_h_transfer = args.max_h_transfer
 	smiles = COMPOUND_TO_SMILES[args.compound_idx]
 	mol_d = frag_utils.extract_mol_info(smiles,"[M+H]+")
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
 	print(num_nodes)
 
-	# cython_ccs = timeit(cython_function)(mol_d,max_depth)
-	# print(f"> num frags: {len(cython_ccs)}")
-	# ccs = [frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False) for cc_int in cython_ccs]
-	# formulae = frag_utils.compute_approximate_formulae(ccs,mol_d,h_prior=False)
-	# print(f"> num formulae: {len(formulae)}")
-	# formulae = frag_utils.compute_approximate_formulae(ccs,mol_d,h_prior=True)
-	# print(f"> num formulae: {len(formulae)}")
-	# cchs = frag_utils.compute_approximate_cchs(ccs,mol_d,h_prior=False)
-	# print(f"> num cchs: {len(cchs)}")
-	# cchs = frag_utils.compute_approximate_cchs(ccs,mol_d,h_prior=True)
-	# print(f"> num cchs: {len(cchs)}")
-
-	ccs = timeit(cython_function)(mol_d,max_depth)
+	ccs = timeit(cython_function)(mol_d,max_depth,depths=False)
 	ccs = [frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False) for cc_int in ccs]
-	formulae = frag_utils.compute_approximate_formulae(ccs,mol_d,h_prior=h_prior)
+	formulae = frag_utils.compute_approximate_formulae(ccs,mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer,return_counts=True)
+	counts = np.array(list(formulae.values()))
 	print("> formulae")
 	print(len(formulae))
+	print(np.mean(counts),np.std(counts))
 
-	cc_g, other_g = timeit(cython_dag)(mol_d,max_depth,dag_type,h_prior)
+	cc_g, other_g = timeit(cython_dag)(mol_d,max_depth,dag_type,h_prior,max_h_transfer)
 	print("> cc dag")
 	cc_nn = cc_g.number_of_nodes()
 	cc_ne = cc_g.number_of_edges()

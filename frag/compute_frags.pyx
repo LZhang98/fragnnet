@@ -158,7 +158,8 @@ cdef compute_ccs_recursive(
 		int [:,::1] node_to_edge_idx,
 		int depth,
 		int max_depth,
-		bint parents
+		bint parents,
+		bint depths
 	):
 	cdef int [::1] new_node_mask = np_copy(node_mask)
 	cdef int [::1] new_edge_mask = np_copy(edge_mask)
@@ -166,6 +167,7 @@ cdef compute_ccs_recursive(
 	cdef int num_ccs = 0
 	cdef list ccs = []
 	cdef list ccs_parents = []
+	cdef list ccs_depths = []
 	cdef long parent_cc_int = -1
 	if parents:
 		parent_cc_int = node_mask_to_int(num_nodes,node_mask)
@@ -177,7 +179,9 @@ cdef compute_ccs_recursive(
 	elif num_edges_nomask == 0:
 		ccs = [new_node_mask]
 		if parents:
-			ccs_parents = [parent_cc_int]
+			ccs_parents.append(parent_cc_int)
+		if depths:
+			ccs_depths.append(depth)
 	else:
 		for i in range(num_edges):
 			# check if edge is already masked
@@ -198,10 +202,12 @@ cdef compute_ccs_recursive(
 				ccs.append(new_cc_nodes[c,:])
 				if parents:
 					ccs_parents.append(parent_cc_int)
+				if depths:
+					ccs_depths.append(depth)
 			num_ccs += new_num_ccs
 			# recursive call
 			for c in range(new_num_ccs):
-				rec_ccs, rec_ccs_parents = compute_ccs_recursive(
+				rec_ccs, rec_ccs_parents, rec_ccs_depths = compute_ccs_recursive(
 					num_nodes,
 					num_edges,
 					new_cc_nodes[c,:],
@@ -210,15 +216,18 @@ cdef compute_ccs_recursive(
 					node_to_edge_idx,
 					depth+1,
 					max_depth,
-					parents
+					parents,
+					depths
 				)
 				ccs.extend(rec_ccs)
 				if parents:
 					ccs_parents.extend(rec_ccs_parents)
+				if depths:
+					ccs_depths.extend(rec_ccs_depths)
 				num_ccs += len(rec_ccs)
 			# restore edge
 			new_edge_mask[i] = 1
-	return ccs, ccs_parents
+	return ccs, ccs_parents, ccs_depths
 
 def py_compute_ccs_recursive(
 		int num_nodes,
@@ -230,13 +239,15 @@ def py_compute_ccs_recursive(
 		int depth,
 		int max_depth,
 		bint convert_to_ints,
-		bint parents
+		bint parents,
+		bint depths
 	):
 
 	assert num_nodes <= MAX_NUM_NODES, num_nodes
 	assert num_edges <= MAX_NUM_EDGES, num_edges
 	# at this point, there are duplicates
-	ccs_list, ccs_parents_list = compute_ccs_recursive(
+	# the latter two lists may be empty
+	ccs_list, ccs_parents_list, ccs_depth_list = compute_ccs_recursive(
 		num_nodes,
 		num_edges,
 		node_mask,
@@ -245,9 +256,10 @@ def py_compute_ccs_recursive(
 		node_to_edge_idx,
 		depth,
 		max_depth,
-		parents
+		parents,
+		depths
 	)
 	# ccs_list.append(compute_full_cc(num_nodes))
 	if convert_to_ints:
 		ccs_list = [node_mask_to_int(num_nodes,cc) for cc in ccs_list]
-	return ccs_list, ccs_parents_list
+	return ccs_list, ccs_parents_list, ccs_depth_list

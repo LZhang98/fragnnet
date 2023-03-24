@@ -13,6 +13,7 @@ import scipy.special
 from scipy.special import comb
 from pprint import pprint
 import os
+from collections import Counter
 import pyximport
 pyximport.install(language_level=3)
 
@@ -26,14 +27,14 @@ ELEMENT_TO_VE = {
 	"P": 3, # up to 5
 	"S": 2, # up to 6
 	"F": 1,
-	# "Cl": 1
+	"Cl": 1
 }
 
 ELEMENT_TO_IDX = { elem: idx for idx, elem in enumerate(ELEMENT_TO_VE.keys())}
 ELEMENT_TO_IDX["H"] = len(ELEMENT_TO_VE.keys())
 IDX_TO_ELEMENT = { idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 
-MAX_H_TRANSFER = 2
+MAX_H_TRANSFER = 4
 
 def convert_to_int(cc):
 
@@ -401,18 +402,7 @@ def compute_state_arr(mol_d):
 	state_arr = np.concatenate([atom_mask_arr,bond_mask_arr,num_hs],axis=0)
 	return state_arr
 
-def compute_ccs(mol_d,depth=4,cython=False):
-
-	g = nx.Graph()
-	g.add_edges_from(mol_d["bonds"])
-	# estimate number of fragments
-	ccs_rec = compute_ccs_recursive(g,0,depth)
-	print(len(ccs_rec))
-	print(len(set(ccs_rec)))
-	formulae_rec = compute_approximate_formulae(ccs_rec,mol_d)
-	print(len(formulae_rec))
-
-def compute_approximate_formulae(ccs,mol_d,h_prior=False):
+def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER,return_counts=False,max_depths=None):
 	"""
 	Note: this assumes fragments are fully defined by their node cover,
 	not their edges. This might result in some undercounting.
@@ -427,7 +417,7 @@ def compute_approximate_formulae(ccs,mol_d,h_prior=False):
 	elems = mol_d["elems"]
 	bond_mask_arr = mol_d["bond_mask_arr"]
 	formulae = []
-	all_formulae = set()
+	formulae_to_counts = {}
 	for cc in list(set(ccs)):
 		base_formula = cc_to_formula(cc,elems)
 		sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
@@ -439,18 +429,22 @@ def compute_approximate_formulae(ccs,mol_d,h_prior=False):
 			num_hs_prior = 0
 			for atom in cc:
 				num_hs_prior += hs_arr[atom]
-			floor = max(floor,num_hs_prior-MAX_H_TRANSFER)
-			cap = min(cap,num_hs_prior+MAX_H_TRANSFER,num_hs)
+			floor = max(floor,num_hs_prior-max_h_transfer)
+			cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
 		else:
 			cap = min(cap,num_hs)
-		# cc_formulae = []
 		for h in range(floor,cap+1):
 			formula = np.copy(base_formula)
 			formula[ELEMENT_TO_IDX["H"]] = h
-			# cc_formulae.append(tuple(formula))
-			all_formulae.add(tuple(formula))
-		# formulae.append(cc_formulae)
-	return all_formulae
+			formula = tuple(formula)
+			if formula in formulae_to_counts:
+				formulae_to_counts[formula] += 1
+			else:
+				formulae_to_counts[formula] = 1
+	if return_counts:
+		return formulae_to_counts
+	else:
+		return set(formulae_to_counts.keys())
 
 def update_bonds(frag,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds):
 
@@ -464,7 +458,7 @@ def update_bonds(frag,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds):
 				bond_mask_arr[bond_idx] = True
 	return sbond_arr, bond_mask_arr
 
-def compute_approximate_cchs(ccs,mol_d,h_prior=False):
+def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER):
 
 	bonds = mol_d["bonds"] # never mutated
 	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
@@ -486,8 +480,8 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False):
 			num_hs_prior = 0
 			for atom in cc:
 				num_hs_prior += hs_arr[atom]
-			floor = max(floor,num_hs_prior-MAX_H_TRANSFER)
-			cap = min(cap,num_hs_prior+MAX_H_TRANSFER,num_hs)
+			floor = max(floor,num_hs_prior-max_h_transfer)
+			cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
 			# cap = max(cap,floor)
 		else:
 			cap = min(cap,num_hs)
@@ -553,18 +547,3 @@ def compute_ccs_recursive(g,depth,max_depth):
 			g.add_edge(bond[0],bond[1])
 		return all_ccs
 
-
-if __name__ == "__main__":
-
-	# smiles = "CC(=O)OC1=CC=CC=C1C(=O)O" # aspirin
-	# smiles = "CCO" # ethanol
-	# smiles = "c1ccccc1" # benzene
-	# smiles = "CC12CCC3C(C1CCC2O)CCC4=CC(=O)CCC34C" # testosterone
-	smiles = "CCCCCCCCCCCCCCCC(=O)OCC(COP(=O)(O)OCC(CO)O)OC(=O)CCCCCCCC1CC1CCCCCC" # Phospholipid PG
-	mol_d = extract_mol_info(smiles,"[M+H]+")
-	num_formulae = np.prod(np.array([v+1 for v in mol_d["element_counts"].values()]))
-	print(f"> Upper bound on number of formulae: {num_formulae}")
-	ccs = compute_ccs(mol_d,depth=3)
-	# mask_d = compute_forward_mask(mol_d)
-	import pdb; pdb.set_trace()
-	# new_mol_d = take_action(mol_d,)

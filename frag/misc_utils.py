@@ -48,3 +48,6 @@ def th_temp_seed(seed):
 		yield
 	finally:
 		th.set_rng_state(state)
+
+def flatten_lol(lol):
+	return [item for sublist in lol for item in sublist]
