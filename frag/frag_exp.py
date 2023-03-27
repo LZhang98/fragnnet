@@ -242,7 +242,7 @@ if __name__ == "__main__":
 	parser.add_argument("--num_entries",type=int,default=-1)
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--max_time",type=int,default=2*60)
-	parser.add_argument("--project_dp",type=str,default="/home/youngad2/projects/def-hroest/youngad2/frag-gnn")
+	parser.add_argument("--project_dp",type=str,required=True)
 	parser.add_argument("--frag_dp",type=str,default="data/frag")
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
 	parser.add_argument("--frag_df_name",type=str,default="debug_frag_df.pkl")

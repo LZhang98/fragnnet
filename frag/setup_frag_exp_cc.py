@@ -20,8 +20,9 @@ def main(args):
     python_line += f" --isotopes {args.isotopes}"
     python_line += f" --load_frag_df False"
     python_line += f" --wandb_mode {args.wandb_mode}"
-    python_line += f" --run_name {args.run_name}"
+    python_line += f" --run_name {job_name}"
     python_line += " --job_id ${SLURM_JOB_ID}"
+    python_line += f" --project_dp {args.project_dp}"
 
     script_lines = []
     script_lines.append("#!/bin/bash")
@@ -70,10 +71,12 @@ if __name__ == "__main__":
     parser.add_argument("--hours",type=int,default=12)
     parser.add_argument("--script_dp",type=str,default="slurm_scripts")
     parser.add_argument("--allocation", type=str, default="rrg", choices=["def","rrg"])
-    parser.add_argument("--allowed_elements",type=str,default="C,H,O,N,F")
+    parser.add_argument("--allowed_elements",type=str,default="C,H,O,N,F,S,P,Cl")
     parser.add_argument("--tolerance",type=float,default=0.01)
     parser.add_argument("--isotopes",type=booltype,default=True)
     parser.add_argument("--job_name",type=str,default="debug")
+    parser.add_argument("--wandb_mode",type=str,default="offline",choices=["off","online","offline"])
+    parser.add_argument("--project_dp",type=str,default="/home/youngad2/projects/def-hroest/youngad2/frag-gnn")
     args = parser.parse_args()
 
     main(args)
