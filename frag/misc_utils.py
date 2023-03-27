@@ -4,6 +4,8 @@ from distutils.util import strtobool
 from contextlib import contextmanager
 import numpy as np
 import torch as th
+import wandb
+import os
 
 
 def timeit(func):
@@ -51,3 +53,10 @@ def th_temp_seed(seed):
 
 def flatten_lol(lol):
 	return [item for sublist in lol for item in sublist]
+
+def wandb_symlink(run_dir,wandb_symlink_dp,job_id):
+	symlink_dst = os.path.join(wandb_symlink_dp,str(job_id))
+	symlink_src = os.path.split(os.path.abspath(run_dir))[0]
+	if os.path.islink(symlink_dst):
+		os.unlink(symlink_dst)
+	os.symlink(symlink_src,symlink_dst)

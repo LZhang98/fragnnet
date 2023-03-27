@@ -1,5 +1,4 @@
 import numpy as np
-import networkx as nx
 import time
 from pprint import pprint
 import pyximport
@@ -9,6 +8,7 @@ import argparse
 import frag_utils
 from misc_utils import timeit, booltype
 import compute_frags
+import dag_utils
 
 
 def python_function(mol_d,max_depth):
@@ -40,104 +40,11 @@ def cython_function(mol_d,max_depth,parents=False,depths=False):
 		depths
 	)
 	if depths:
-		ccs_to_depths = {}
-		for cc_idx, cc in enumerate(ccs):
-			if cc in ccs_to_depths:
-				ccs_to_depths[cc].append(ccs_depths[cc_idx])
-			else:
-				ccs_to_depths[cc] = [ccs_depths[cc_idx]]
-		return ccs_to_depths
+		ccs_to_parents = frag_utils.collect_ccs_parents(ccs,ccs_parents)
+		return ccs_to_parents
 	else:
 		ccs = set(ccs)
 		return ccs
-
-def cython_dag(mol_d,max_depth,dag_type,h_prior,max_h_transfer):
-
-	assert dag_type in ["formula","cch"], dag_type
-	assert h_prior in [True,False], h_prior
-	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = frag_utils.get_arrays_from_mol_d(mol_d)
-	# time this part
-	ccs_rec, ccs_parents_rec, _ = compute_frags.py_compute_ccs_recursive(
-		num_nodes,
-		num_edges,
-		node_mask,
-		edges,
-		edge_mask,
-		edge_to_node_idx,
-		0,
-		max_depth,
-		True,
-		True,
-		False
-	)
-	assert len(ccs_rec) == len(ccs_parents_rec)
-	# construct graph
-	cc_g = nx.DiGraph()
-	ccs_rec_un = sorted(list(set(ccs_rec)))
-	cc_g.add_nodes_from(ccs_rec_un)
-	for cc_idx, cc_parent in enumerate(ccs_parents_rec):
-		src = cc_parent
-		dst = ccs_rec[cc_idx]
-		cc_g.add_edge(src,dst)
-	if dag_type == "formula":
-		ccs_to_formulae = {}
-		all_formulae = set()
-		for cc_int in ccs_rec_un:
-			cc_mask = frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False)
-			formulae = frag_utils.compute_approximate_formulae([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
-			formulae = [frag_utils.get_formula_string(f) for f in formulae]
-			ccs_to_formulae[cc_int] = formulae
-			all_formulae.update(formulae)
-		# print(np.mean([len(v) for v in ccs_to_formulae.values()]))
-		formulae_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(set(all_formulae))))}
-		for k,v in ccs_to_formulae.items():
-			ccs_to_formulae[k] = [formulae_to_idx[f] for f in v]
-		formula_g = nx.DiGraph()
-		formula_g.add_nodes_from(list(range(len(formulae_to_idx))))
-		for cc,formulae in ccs_to_formulae.items():
-			cc_out_edges = cc_g.out_edges(cc)
-			for out_formula in formulae:
-				for cc_out_edge in cc_out_edges:
-					assert cc_out_edge[0] == cc
-					for in_formula in ccs_to_formulae[cc_out_edge[1]]:
-						formula_g.add_edge(out_formula,in_formula)
-		return cc_g, formula_g
-	else:
-		# identify nodes
-		all_cchs = set()
-		dropped_ccs = []
-		for cc_int in ccs_rec_un:
-			cc_mask = frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False)
-			cchs = frag_utils.compute_approximate_cchs([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
-			if len(cchs) == 0:
-				dropped_ccs.append(cc_int)
-				continue
-			cchs = [(cc_int,cch[1]) for cch in cchs]
-			all_cchs.update(cchs)
-		# all_ccs = sorted(list(set([cch[0] for cch in all_cchs])))
-		print(f"> dropped {len(dropped_ccs)} ccs: {dropped_ccs}")
-		cch_to_idx = {}
-		cc_to_cch_idx = {}
-		for idx, cch in enumerate(all_cchs):
-			cc, h = cch[0], cch[1]
-			if cc not in cc_to_cch_idx:
-				cc_to_cch_idx[cc] = [idx]
-			else:
-				cc_to_cch_idx[cc].append(idx)
-			cch_to_idx[cch] = idx
-		cch_g = nx.DiGraph()
-		cch_g.add_nodes_from(list(cch_to_idx.values()))
-		# set up edges
-		for cch, src_idx in cch_to_idx.items():
-			cc, h = cch[0], cch[1]
-			cc_out_edges = cc_g.out_edges(cc)
-			for cc_out_edge in cc_out_edges:
-				src_cc = cc_out_edge[0]
-				assert src_cc == cc, (src_cc,cc)
-				dst_cc = cc_out_edge[1]
-				for dst_idx in cc_to_cch_idx.get(dst_cc,tuple()):
-					cch_g.add_edge(src_idx,dst_idx)
-		return cc_g, cch_g
 
 if __name__ == "__main__":
 
@@ -180,7 +87,7 @@ if __name__ == "__main__":
 	print(len(formulae))
 	print(np.mean(counts),np.std(counts))
 
-	cc_g, other_g = timeit(cython_dag)(mol_d,max_depth,dag_type,h_prior,max_h_transfer)
+	cc_g, other_g = timeit(dag_utils.cython_dag)(mol_d,max_depth,dag_type,h_prior,max_h_transfer)
 	print("> cc dag")
 	cc_nn = cc_g.number_of_nodes()
 	cc_ne = cc_g.number_of_edges()

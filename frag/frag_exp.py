@@ -9,14 +9,16 @@ import argparse
 from functools import reduce
 import os
 from collections import Counter
+import wandb
 
 import frag_utils
 from frag_utils import ELEMENT_TO_IDX
 import run_compute_frags
 import compute_frags
 import data_utils
-from misc_utils import booltype, flatten_lol
+from misc_utils import booltype, flatten_lol, wandb_symlink
 import formula_utils
+from plot_utils import plot_histogram
 
 ELEMENT_TO_MASS = {
 	"H": 1.007825031898,
@@ -213,6 +215,25 @@ def add_prec_to_frag(row):
 		formulae = frag_formulae + []
 	return formulae
 
+def print_and_log(name,series,wandb_flag):
+
+	stats = series.describe()
+	print(f"> {name}")
+	print(stats)
+	print()
+	if wandb_flag:
+		log_d = {"step":0}
+		for stat in ["mean","std","50%","min","max"]:
+			log_d[f"{name}/{stat}"] = stats[stat]
+		# log_d[f"{name}/hist"] = wandb.Histogram(series.values,num_bins=10)
+		# df = pd.DataFrame({name:series})
+		# table = wandb.Table(data=df,columns=[name])
+		# log_d[f"{name}/hist"] = wandb.plot.histogram(table,name)
+		hist_data = plot_histogram(series.values,name)
+		log_d[f"{name}-hist"] = wandb.Image(hist_data)
+		print(f"> logging {name}: {log_d.keys()}")
+		wandb.log(log_d)
+
 if __name__ == "__main__":
 
 	# TODO: verify that using different version of software doesn't break compatibility!
@@ -221,44 +242,59 @@ if __name__ == "__main__":
 	parser.add_argument("--num_entries",type=int,default=-1)
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--max_time",type=int,default=2*60)
-	parser.add_argument("--frag_dp",type=str,default="../data/frag")
-	parser.add_argument("--proc_dp",type=str,default="../data/proc")
-	parser.add_argument("--frag_df_name",type=str,default="frag_df.pkl")
+	parser.add_argument("--project_dp",type=str,default="/home/youngad2/projects/def-hroest/youngad2/frag-gnn")
+	parser.add_argument("--frag_dp",type=str,default="data/frag")
+	parser.add_argument("--proc_dp",type=str,default="data/proc")
+	parser.add_argument("--frag_df_name",type=str,default="debug_frag_df.pkl")
 	parser.add_argument("--load_frag_df",type=booltype,default=False)
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--allowed_elements",type=str,default="C,H,O,N,F")
+	parser.add_argument("--allowed_elements",type=str,default="C,H,O,N,F,S,P,Cl")
 	parser.add_argument("--tolerance",type=float,default=0.01)
 	parser.add_argument("--isotopes",type=booltype,default=True)
+	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
+	parser.add_argument("--run_name",type=str,default="debug")
+	parser.add_argument("--wandb_dp",type=str,default="wandb")
+	parser.add_argument("--wandb_symlink_dp",type=str,default="jobs_wandb")
+	parser.add_argument("--job_id",type=str,default="00000")
 	args = parser.parse_args()
 
 	tqdm.pandas()
 
 	allowed_elements = args.allowed_elements.split(",")
 
+	# init wandb
+	wandb_flag = args.wandb_mode != "off"
+	if wandb_flag:
+		wandb_config = vars(args)
+		wandb_run = wandb.init(
+			project="frag-gnn",
+			name=args.run_name,
+			mode=args.wandb_mode,
+			config=wandb_config,
+			dir=args.project_dp,
+		)
+
 	# read in the molecule data
 	print("read in mol")
-	mol_df = pd.read_pickle(os.path.join(args.proc_dp,"mol_df.pkl"))
+	mol_df = pd.read_pickle(os.path.join(args.project_dp,args.proc_dp,"mol_df.pkl"))
 	print("read in spec")
-	spec_df = pd.read_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
+	spec_df = pd.read_pickle(os.path.join(args.project_dp,args.proc_dp,"spec_df.pkl"))
+	print()
 
 	# perform selection ([M+H]+ ONLY, no S/P)
 	spec_df, mol_df = filter_spec_mol(spec_df,mol_df,allowed_elements,num_entries=args.num_entries)
-	print()
+	
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules")
 	print()
 
 	num_atoms = mol_df["mol"].apply(lambda x: x.GetNumHeavyAtoms())
-	print("> num atoms")
-	print(num_atoms.describe())
-	print()
+	print_and_log("num_atoms",num_atoms,wandb_flag)
 
 	num_bonds = mol_df["mol"].apply(lambda x: len(x.GetBonds()))
-	print("> num bonds")
-	print(num_bonds.describe())
-	print()
+	print_and_log("num_bonds",num_bonds,wandb_flag)
 
-	frag_fp = os.path.join(args.frag_dp,args.frag_df_name)
+	frag_fp = os.path.join(args.project_dp,args.frag_dp,args.frag_df_name)
 
 	if not args.load_frag_df:
 
@@ -317,42 +353,39 @@ if __name__ == "__main__":
 	frag_formulae = frag_df["frag_formulae"].progress_apply(formulae_to_array)
 	unique_formulae = np.unique(np.concatenate(frag_formulae.values,axis=0),axis=0).tolist()
 	print(len(unique_formulae), unique_formulae[:5])
+	print()
 
 	# convert to strings
 	unique_formulae = list(map(frag_utils.get_formula_string,unique_formulae))
 	print(len(unique_formulae), unique_formulae[:5])
+	print()
 
 	# count number of formula per molecule (filtering out ones that have 0 formulae)
 	frag_df.loc[:,"frag_num_formulae"] = frag_df["frag_formulae"].apply(lambda x: len(x))
-	print()
-	print("> num formulae:")
-	print(frag_df["frag_num_formulae"].describe())
-	print()
+	print_and_log("num_formulae",frag_df["frag_num_formulae"],wandb_flag)
 	print("> num failures:",(frag_df["frag_num_formulae"]==0).sum())
 	print()
+	if wandb_flag:
+		wandb.log({"num_failures": (frag_df["frag_num_formulae"]==0).sum(),"step":0})
 	frag_df = frag_df[frag_df["frag_num_formulae"]>0]
 	
 	# compute ratio of ccs to formulae
 	frag_df.loc[:,"frag_num_ccs"] = frag_df["frag_ccs"].apply(len)
-	print("> num ccs:")
-	print(frag_df["frag_num_ccs"].describe())
-	print()
-	print("> ccs per formula:")
-	print((frag_df["frag_num_ccs"]/frag_df["frag_num_formulae"]).describe())
-	print()
+	print_and_log("num_ccs",frag_df["frag_num_ccs"],wandb_flag)
+	print_and_log("num_ccs_per_formula",frag_df["frag_num_ccs"]/frag_df["frag_num_formulae"],wandb_flag)
 
 	# compute formula redundancy
 	def get_formula_redundancy(formulae):
 		return np.mean(np.array(list(formulae.values())))
 	frag_df.loc[:,"frag_formula_redundancy"] = frag_df["frag_formulae"].apply(get_formula_redundancy)
-	print("> formula redundancy:")
-	print(frag_df["frag_formula_redundancy"].describe())
-	print()
+	print_and_log("formula_redundancy",frag_df["frag_formula_redundancy"],wandb_flag)
 
 	# check depth
 	print("> depth:")
 	print(frag_df["frag_depth"].value_counts())
 	print()
+	# if wandb_flag:
+	# 	wandb.log({"depth": wandb.Histogram(frag_df["frag_depth"].values)},commit=True)
 
 	# convert formulae to strings
 	frag_df.loc[:,"frag_formulae_str"] = frag_df["frag_formulae"].apply(lambda x: list(map(frag_utils.get_formula_string,x)))
@@ -360,6 +393,8 @@ if __name__ == "__main__":
 	prec_in_frag_count = frag_df.apply(prec_in_frag,axis=1)
 	print(f"> prec in frag: {prec_in_frag_count.mean()}")
 	print()
+	if wandb_flag:
+		wandb.log({"prec_in_frag": prec_in_frag_count.mean(),"step":0})
 	frag_df.loc[:,"formulae_str"] = frag_df.apply(add_prec_to_frag,axis=1)
 
 	# convert formulae to peak locations
@@ -368,7 +403,6 @@ if __name__ == "__main__":
 	mh_formula_to_peak_mzs = lambda x: formula_to_peak_mzs(x,"[M+H]+",isotopes=False)
 	frag_df.loc[:,"prec_peak_mz"] = frag_df["prec_formula_str"].progress_apply(lambda x: mh_formula_to_peak_mzs(x)[0])
 	
-
 	# for each spectrum, calculate fraction of peaks explained, fraction of intensity explained by referencing
 	peak_spec_df = spec_df[["spec_id","mol_id","peaks","prec_mz"]].merge(frag_df,on="mol_id",how="inner")
 	# prec_mz_diff = (peak_spec_df["prec_peak_mz"]-peak_spec_df["prec_mz"]).apply(np.abs)
@@ -383,18 +417,10 @@ if __name__ == "__main__":
 	del result
 
 	# collect across spectra and report summary statistics
-	print("> spec frag recall")
-	print(peak_spec_df["frag_recall"].describe())
-	print()
-	print("> spec frag weighted recall")
-	print(peak_spec_df["frag_wrecall"].describe())
-	print()
-	print("> spec frag precision")
-	print(peak_spec_df["frag_prec"].describe())
-	print()
-	print("> spec frag avg count")
-	print(peak_spec_df["frag_avg_count"].describe())
-	print()
+	print_and_log("spec_frag_recall",peak_spec_df["frag_recall"],wandb_flag)
+	print_and_log("spec_frag_wrecall",peak_spec_df["frag_wrecall"],wandb_flag)
+	print_and_log("spec_frag_prec",peak_spec_df["frag_prec"],wandb_flag)
+	print_and_log("spec_frag_avg_count",peak_spec_df["frag_avg_count"],wandb_flag)
 
 	# collect across molecules and report summary statistics
 	agg_dict = {
@@ -404,15 +430,14 @@ if __name__ == "__main__":
 		"frag_avg_count":np.mean
 	}
 	peak_mol_df = peak_spec_df[["mol_id"]+list(agg_dict.keys())].groupby("mol_id").agg(agg_dict).reset_index()
-	print("> mol frag recall")
-	print(peak_mol_df["frag_recall"].describe())
-	print()
-	print("> mol frag weighted recall")
-	print(peak_mol_df["frag_wrecall"].describe())
-	print()
-	print("> mol frag precision")
-	print(peak_mol_df["frag_prec"].describe())
-	print()
-	print("> mol frag avg count")
-	print(peak_mol_df["frag_avg_count"].describe())
-	print()
+	print_and_log("mol_frag_recall",peak_mol_df["frag_recall"],wandb_flag)
+	print_and_log("mol_frag_wrecall",peak_mol_df["frag_wrecall"],wandb_flag)
+	print_and_log("mol_frag_prec",peak_mol_df["frag_prec"],wandb_flag)
+	print_and_log("mol_frag_avg_count",peak_mol_df["frag_avg_count"],wandb_flag)
+
+	if wandb_flag and args.wandb_symlink_dp != "":
+		wandb_symlink_dp = os.path.join(args.project_dp,args.wandb_symlink_dp)
+		wandb_symlink(wandb_run.dir,wandb_symlink_dp,args.job_id)
+
+	if wandb_flag:
+		wandb.finish()

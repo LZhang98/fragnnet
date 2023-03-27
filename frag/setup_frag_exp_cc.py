@@ -6,17 +6,8 @@ from misc_utils import booltype
 def main(args):
 
     job_name = f"frag_exp_{args.job_name}"
-    # job_name += f"_d-{args.max_depth}"
-    # job_name += f"_h-{args.h_prior}"
-    # if args.h_prior:
-    #     job_name += f"_mh-{args.max_h_transfer}"
 
-    frag_df_name = f"frag_df_{args.job_name}"
-    # frag_df_name += f"_d-{args.max_depth}"
-    # frag_df_name += f"_h-{args.h_prior}"
-    # if args.h_prior:
-    #     frag_df_name += f"_mh-{args.max_h_transfer}"
-    frag_df_name += ".pkl"
+    frag_df_name = f"frag_df_{args.job_name}.pkl"
 
     python_line = f"python frag_exp.py"
     python_line += f" --max_depth {args.max_depth}"
@@ -28,6 +19,9 @@ def main(args):
     python_line += f" --tolerance {args.tolerance}"
     python_line += f" --isotopes {args.isotopes}"
     python_line += f" --load_frag_df False"
+    python_line += f" --wandb_mode {args.wandb_mode}"
+    python_line += f" --run_name {args.run_name}"
+    python_line += " --job_id ${SLURM_JOB_ID}"
 
     script_lines = []
     script_lines.append("#!/bin/bash")

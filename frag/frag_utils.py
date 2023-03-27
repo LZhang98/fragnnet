@@ -547,3 +547,23 @@ def compute_ccs_recursive(g,depth,max_depth):
 			g.add_edge(bond[0],bond[1])
 		return all_ccs
 
+def collect_ccs_depths(ccs,ccs_depths):
+
+	ccs_to_depths = {}
+	for cc_idx, cc in enumerate(ccs):
+		if cc in ccs_to_depths:
+			ccs_to_depths[cc].add(ccs_depths[cc_idx])
+		else:
+			ccs_to_depths[cc] = set([ccs_depths[cc_idx]])
+	return ccs_to_depths
+
+def collect_ccs_parents(ccs,ccs_parents):
+
+	ccs_to_parents = {}
+	for cc_idx, cc in enumerate(ccs):
+		if cc in ccs_to_parents:
+			ccs_to_parents[cc].add(ccs_parents[cc_idx])
+		else:
+			ccs_to_parents[cc] = set([ccs_parents[cc_idx]])
+	return ccs_to_parents
+
