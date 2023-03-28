@@ -225,10 +225,6 @@ def print_and_log(name,series,wandb_flag):
 		log_d = {"step":0}
 		for stat in ["mean","std","50%","min","max"]:
 			log_d[f"{name}/{stat}"] = stats[stat]
-		# log_d[f"{name}/hist"] = wandb.Histogram(series.values,num_bins=10)
-		# df = pd.DataFrame({name:series})
-		# table = wandb.Table(data=df,columns=[name])
-		# log_d[f"{name}/hist"] = wandb.plot.histogram(table,name)
 		hist_data = plot_histogram(series.values,name)
 		log_d[f"{name}-hist"] = wandb.Image(hist_data)
 		print(f"> logging {name}: {log_d.keys()}")
