@@ -5,10 +5,11 @@ import frag_utils
 import compute_frags
 
 
-def cython_dag(mol_d,max_depth,dag_type,h_prior,max_h_transfer):
+def cython_dag(mol_d,max_depth,h_prior,max_h_transfer,secondary_dag_types=None):
 
-	assert dag_type in ["formula","cch"], dag_type
 	assert h_prior in [True,False], h_prior
+	if secondary_dag_types is None:
+		secondary_dag_types = []
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = frag_utils.get_arrays_from_mol_d(mol_d)
 	# time this part
 	ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
@@ -38,19 +39,38 @@ def cython_dag(mol_d,max_depth,dag_type,h_prior,max_h_transfer):
 	# add node mask information
 	ccs_to_masks = {cc : np.array(frag_utils.convert_from_int(num_nodes,cc,bitmask=True)) for cc in ccs_un}
 	nx.set_node_attributes(cc_g,ccs_to_masks,"mask")
+	# add node h count information
+	ccs_to_hs = {}
+	hs_arr = mol_d["hs_arr"]
+	for cc, cc_mask in ccs_to_masks.items():
+		h_count = np.sum(cc_mask*hs_arr)
+		ccs_to_hs[cc] = h_count
+	nx.set_node_attributes(cc_g,ccs_to_hs,"hs")
 	# add edges
 	edges_to_diff_masks = {}
+	edges_to_diff_hs = {}
 	for cc, parents in ccs_to_parents.items():
 		cc_mask = ccs_to_masks[cc]
+		cc_hs = ccs_to_hs[cc]
 		for parent in parents:
+			if parent == cc:
+				continue
 			cc_g.add_edge(parent,cc)
 			parent_mask = ccs_to_masks[parent]
 			diff_mask = parent_mask - cc_mask
 			edges_to_diff_masks[(parent,cc)] = diff_mask
+			parent_hs = ccs_to_hs[parent]
+			diff_hs = parent_hs - cc_hs
+			edges_to_diff_hs[(parent,cc)] = diff_hs
 	# add edge mask information
 	nx.set_edge_attributes(cc_g,edges_to_diff_masks,"diff_mask")
+	# add edge h count information
+	nx.set_edge_attributes(cc_g,edges_to_diff_hs,"diff_hs")
 
-	if dag_type == "formula":
+	dag_d = {}
+	dag_d["cc_g"] = cc_g
+
+	if "formula" in secondary_dag_types:
 		ccs_to_formulae = {}
 		all_formulae = set()
 		for cc_int in ccs_un:
@@ -72,9 +92,9 @@ def cython_dag(mol_d,max_depth,dag_type,h_prior,max_h_transfer):
 					assert cc_out_edge[0] == cc
 					for in_formula in ccs_to_formulae[cc_out_edge[1]]:
 						formula_g.add_edge(out_formula,in_formula)
-		return cc_g, formula_g
+		dag_d["formula_g"] = formula_g
 	
-	else:
+	if "cch" in secondary_dag_types:
 		# identify nodes
 		all_cchs = set()
 		dropped_ccs = []
@@ -109,4 +129,6 @@ def cython_dag(mol_d,max_depth,dag_type,h_prior,max_h_transfer):
 				dst_cc = cc_out_edge[1]
 				for dst_idx in cc_to_cch_idx.get(dst_cc,tuple()):
 					cch_g.add_edge(src_idx,dst_idx)
-		return cc_g, cch_g
+		dag_d["cch_g"] = cch_g
+
+	return dag_d

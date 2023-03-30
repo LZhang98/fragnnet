@@ -4,6 +4,7 @@ from pprint import pprint
 import pyximport
 pyximport.install(language_level=3)
 import argparse
+import networkx as nx
 
 import frag_utils
 from misc_utils import timeit, booltype
@@ -51,7 +52,6 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--compound_idx",type=int,default=2)
 	parser.add_argument("--max_depth",type=int,default=4)
-	parser.add_argument("--dag_type",type=str,default="formula")
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	args = parser.parse_args()
@@ -71,7 +71,6 @@ if __name__ == "__main__":
 	}
 
 	max_depth = args.max_depth
-	dag_type = args.dag_type
 	h_prior = args.h_prior
 	max_h_transfer = args.max_h_transfer
 	smiles = COMPOUND_TO_SMILES[args.compound_idx]
@@ -87,17 +86,13 @@ if __name__ == "__main__":
 	print(len(formulae))
 	print(np.mean(counts),np.std(counts))
 
-	cc_g, other_g = timeit(dag_utils.cython_dag)(mol_d,max_depth,dag_type,h_prior,max_h_transfer)
+	dag_d = timeit(dag_utils.cython_dag)(mol_d,max_depth,h_prior,max_h_transfer)
+	cc_g = dag_d["cc_g"]
 	print("> cc dag")
 	cc_nn = cc_g.number_of_nodes()
 	cc_ne = cc_g.number_of_edges()
 	cc_deg = np.array(list(map(lambda x:x[1],list(cc_g.degree()))))
-	print(cc_nn,cc_ne,cc_ne/(cc_nn*(cc_nn-1)))
-	print(np.mean(cc_deg),np.std(cc_deg))
-	print(f"> {dag_type} dag")
-	other_nn = other_g.number_of_nodes()
-	other_ne = other_g.number_of_edges()
-	other_deg = np.array(list(map(lambda x:x[1],list(other_g.degree()))))
-	print(other_nn,other_ne,other_ne/(other_nn*(other_nn-1)))
-	print(np.mean(other_deg),np.std(other_deg))
-	# print(list(map(frag_utils.get_formula_string,formulae)))
+	is_dag = nx.is_directed_acyclic_graph(cc_g)
+	print(f"is_dag: {is_dag}")
+	print(f"num_nodes = {cc_nn}, num_edges = {cc_ne}, edge_frac = {cc_ne/(cc_nn*(cc_nn-1))}")
+	print(f"avg_deg = {np.mean(cc_deg)}, std_deg = {np.std(cc_deg)}")
