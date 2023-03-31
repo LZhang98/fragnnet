@@ -494,13 +494,19 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSF
 		# assert floor >= 0, floor
 	return all_cchs
 
-def cc_to_formula(cc,elems):
+def cc_to_formula(cc,elems,bitmask=False):
 	# does not include h count
 
 	formula_arr = np.zeros([len(ELEMENT_TO_IDX)],dtype=int)
-	for atom in cc:
-		elem = elems[atom]
-		formula_arr[ELEMENT_TO_IDX[elem]] += 1
+	if bitmask:
+		for i in range(len(cc)):
+			if cc[i]:
+				elem = elems[i]
+				formula_arr[ELEMENT_TO_IDX[elem]] += 1
+	else:
+		for atom in cc:
+			elem = elems[atom]
+			formula_arr[ELEMENT_TO_IDX[elem]] += 1
 	return formula_arr
 
 def get_formula_string(formula):

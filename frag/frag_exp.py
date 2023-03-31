@@ -10,6 +10,8 @@ from functools import reduce
 import os
 from collections import Counter
 import wandb
+import rdkit
+import rdkit.Chem as Chem
 
 import frag_utils
 from frag_utils import ELEMENT_TO_IDX
@@ -20,19 +22,23 @@ from misc_utils import booltype, flatten_lol, wandb_symlink
 import formula_utils
 from plot_utils import plot_histogram
 
+PERIODIC_TABLE = Chem.GetPeriodicTable()
+
 ELEMENT_TO_MASS = {
-	"H": 1.007825031898,
-	"C": 12.0,
-	"N": 14.003074004251,
-	"O": 15.994914619257,
-	"F": 18.998403162067,
-	"Cl": 34.96885269, # 36.96590258
-	"P": 30.9737619986,
-	"S": 31.9720711744 # 33.96786701
+	"H": PERIODIC_TABLE.GetMostCommonIsotopeMass("H"), #1.007825031898,
+	"C": PERIODIC_TABLE.GetMostCommonIsotopeMass("C"), #12.0,
+	"N": PERIODIC_TABLE.GetMostCommonIsotopeMass("N"), #14.003074004251,
+	"O": PERIODIC_TABLE.GetMostCommonIsotopeMass("O"), #15.994914619257,
+	"F": PERIODIC_TABLE.GetMostCommonIsotopeMass("F"), #18.998403162067,
+	"Cl": PERIODIC_TABLE.GetMostCommonIsotopeMass("Cl"), #34.96885269,
+	"P": PERIODIC_TABLE.GetMostCommonIsotopeMass("P"), #30.9737619986,
+	"S": PERIODIC_TABLE.GetMostCommonIsotopeMass("S"), #31.9720711744 
 }
 
+ELECTRON_MASS = 0.00054858
+
 PREC_TYPE_TO_MASS_DIFF = {
-	"[M+H]+": ELEMENT_TO_MASS["H"]
+	"[M+H]+": ELEMENT_TO_MASS["H"] - ELECTRON_MASS,
 }
 
 # some utils for function timeout
@@ -265,6 +271,7 @@ if __name__ == "__main__":
 		wandb_config = vars(args)
 		wandb_run = wandb.init(
 			project="frag-gnn",
+			entity="frag-gnn",
 			name=args.run_name,
 			mode=args.wandb_mode,
 			config=wandb_config,

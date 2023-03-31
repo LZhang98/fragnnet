@@ -37,35 +37,39 @@ def cython_dag(mol_d,max_depth,h_prior,max_h_transfer,secondary_dag_types=None):
 	# add node depth information
 	nx.set_node_attributes(cc_g,ccs_to_depths,"depth")
 	# add node mask information
-	ccs_to_masks = {cc : np.array(frag_utils.convert_from_int(num_nodes,cc,bitmask=True)) for cc in ccs_un}
-	nx.set_node_attributes(cc_g,ccs_to_masks,"mask")
-	# add node h count information
-	ccs_to_hs = {}
+	ccs_to_mask = {cc : np.array(frag_utils.convert_from_int(num_nodes,cc,bitmask=True)) for cc in ccs_un}
+	nx.set_node_attributes(cc_g,ccs_to_mask,"mask")
+	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
-	for cc, cc_mask in ccs_to_masks.items():
-		h_count = np.sum(cc_mask*hs_arr)
-		ccs_to_hs[cc] = h_count
+	elems = mol_d["elems"]
+	ccs_to_hs, ccs_to_formula = {}, {}
+	for cc, cc_mask in ccs_to_mask.items():
+		cc_h_count = np.sum(cc_mask*hs_arr)
+		ccs_to_hs[cc] = cc_h_count
+		cc_formula = frag_utils.cc_to_formula(cc_mask,elems,bitmask=True)
+		ccs_to_formula[cc] = cc_formula
 	nx.set_node_attributes(cc_g,ccs_to_hs,"hs")
+	nx.set_node_attributes(cc_g,ccs_to_formula,"formula")
 	# add edges
-	edges_to_diff_masks = {}
-	edges_to_diff_hs = {}
+	edges_to_mask, edges_to_hs, edges_to_formula = {}, {}, {}
 	for cc, parents in ccs_to_parents.items():
-		cc_mask = ccs_to_masks[cc]
+		cc_mask = ccs_to_mask[cc]
 		cc_hs = ccs_to_hs[cc]
 		for parent in parents:
 			if parent == cc:
 				continue
 			cc_g.add_edge(parent,cc)
-			parent_mask = ccs_to_masks[parent]
+			parent_mask = ccs_to_mask[parent]
 			diff_mask = parent_mask - cc_mask
-			edges_to_diff_masks[(parent,cc)] = diff_mask
+			edges_to_mask[(parent,cc)] = diff_mask
 			parent_hs = ccs_to_hs[parent]
 			diff_hs = parent_hs - cc_hs
-			edges_to_diff_hs[(parent,cc)] = diff_hs
-	# add edge mask information
-	nx.set_edge_attributes(cc_g,edges_to_diff_masks,"diff_mask")
-	# add edge h count information
-	nx.set_edge_attributes(cc_g,edges_to_diff_hs,"diff_hs")
+			edges_to_hs[(parent,cc)] = diff_hs
+			diff_formula = frag_utils.cc_to_formula(diff_mask,elems)
+			edges_to_formula[(parent,cc)] = diff_formula
+	nx.set_edge_attributes(cc_g,edges_to_mask,"mask")
+	nx.set_edge_attributes(cc_g,edges_to_hs,"hs")
+	nx.set_edge_attributes(cc_g,edges_to_formula,"formula")
 
 	dag_d = {}
 	dag_d["cc_g"] = cc_g
