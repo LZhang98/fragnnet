@@ -1,8 +1,8 @@
 import numpy as np
 import networkx as nx
 
-import frag_utils
-import compute_frags
+import frag_gnn.frag.frag_utils as frag_utils
+import frag_gnn.frag.compute_frags as compute_frags
 
 
 def cython_dag(mol_d,max_depth,h_prior,max_h_transfer,secondary_dag_types=None):

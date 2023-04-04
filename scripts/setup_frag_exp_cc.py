@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from misc_utils import booltype
+from frag_gnn.misc_utils import booltype
 
 def main(args):
 

@@ -8,17 +8,12 @@ import rdkit.Chem.Draw as Draw
 import numpy as np
 import torch as th
 import networkx as nx
-import scipy
-import scipy.special
-from scipy.special import comb
 from pprint import pprint
 import os
 from collections import Counter
-import pyximport
-pyximport.install(language_level=3)
 
-import compute_frags
-from compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES, MAX_EDGE_PER_NODE, DTYPE
+import frag_gnn.frag.compute_frags as compute_frags
+from frag_gnn.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES, MAX_EDGE_PER_NODE, DTYPE
 
 ELEMENT_TO_VE = {
 	"C": 4,

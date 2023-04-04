@@ -1,15 +1,13 @@
 import numpy as np
 import time
 from pprint import pprint
-import pyximport
-pyximport.install(language_level=3)
 import argparse
 import networkx as nx
 
-import frag_utils
-from misc_utils import timeit, booltype
-import compute_frags
-import dag_utils
+import frag_gnn.frag.frag_utils as frag_utils
+from frag_gnn.misc_utils import timeit, booltype
+import frag_gnn.frag.compute_frags as compute_frags
+import frag_gnn.frag.dag_utils as dag_utils
 
 
 def python_function(mol_d,max_depth):

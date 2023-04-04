@@ -1,5 +1,3 @@
-import pyximport
-pyximport.install(language_level=3)
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
@@ -13,14 +11,14 @@ import wandb
 import rdkit
 import rdkit.Chem as Chem
 
-import frag_utils
-from frag_utils import ELEMENT_TO_IDX
-import run_compute_frags
-import compute_frags
-import data_utils
-from misc_utils import booltype, flatten_lol, wandb_symlink
-import formula_utils
-from plot_utils import plot_histogram
+import frag_gnn.frag.frag_utils as frag_utils
+from frag_gnn.frag.frag_utils import ELEMENT_TO_IDX
+import frag_gnn.frag.run_compute_frags as run_compute_frags
+import frag_gnn.frag.compute_frags as compute_frags
+import frag_gnn.data_utils as data_utils
+from frag_gnn.misc_utils import booltype, flatten_lol, wandb_symlink
+import frag_gnn.formula_utils as formula_utils 
+from frag_gnn.plot_utils import plot_histogram
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
 
