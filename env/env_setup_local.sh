@@ -14,5 +14,7 @@ pip install networkx
 pip install wandb
 pip install tqdm
 pip install scipy
+pip install joblib
+pip install matplotlib
 
 pip install .

@@ -11,6 +11,7 @@ import networkx as nx
 from pprint import pprint
 import os
 from collections import Counter
+import pandas as pd
 
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES, MAX_EDGE_PER_NODE, DTYPE
@@ -30,6 +31,7 @@ ELEMENT_TO_IDX["H"] = len(ELEMENT_TO_VE.keys())
 IDX_TO_ELEMENT = { idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 
 MAX_H_TRANSFER = 4
+
 
 def convert_to_int(cc):
 
@@ -67,20 +69,7 @@ def get_arrays_from_mol_d(mol_d):
 	edge_mask[:num_edges] = 1
 	return num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx
 
-def viz_atoms(mol,atom_idxs=None,color=(0,1,0),im_dir="tmp/viz_atoms/"):
-
-	os.makedirs(im_dir,exist_ok=True)
-	if atom_idxs == None:
-		for atom in mol.GetAtoms():
-			atom_idx = atom.GetIdx()
-			# print(atom,atom_idx)
-			im = Draw.MolToImage(mol,highlightAtoms=[atom_idx],highlightColor=color)
-			im.save(os.path.join(im_dir,f"atom_{atom_idx:02d}.png"))
-	else:
-		im = Draw.MolToImage(mol,highlightAtoms=atom_idxs,highlightColor=color)
-		im.save(os.path.join(im_dir,f"atom_{atom_idxs}.png"))
-
-def extract_mol_info(smiles_or_mol,prec_type):
+def extract_mol_info(smiles_or_mol):
 
 	if isinstance(smiles_or_mol,str):
 		# rdkit mol stuff
@@ -145,15 +134,8 @@ def extract_mol_info(smiles_or_mol,prec_type):
 		else:
 			atoms_to_bonds[to_idx].append(cur_idx)
 		num_bonds += 1
-	if prec_type == "[M+H]+":
-		prec_charge = 1
-		prec_num_radicals = 0
-	else:
-		raise NotImplementedError(prec_type)
 	mol_d = {}
 	mol_d["mol"] = mol
-	mol_d["prec_charge"] = prec_charge
-	mol_d["prec_num_radicals"] = prec_num_radicals
 	mol_d["num_hs"] = num_hs
 	mol_d["sbond_arr"] = sbond_arr
 	mol_d["ve_arr"] = ve_arr
@@ -204,198 +186,6 @@ def compute_cc_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bond_
 	cc_floor -= num_radicals
 	cc_floor = max(cc_floor,0) # why can cc_floor be negative?
 	return cc_floor
-
-def compute_all_no_mask(bonds):
-
-	all_bond_breaks, all_actions = [], []
-	for bond_idx, bond in enumerate(bonds):
-		for charge_idx in [0,1]:
-			for transfer in range(-MAX_H_TRANSFER,MAX_H_TRANSFER+1):
-				all_actions.append((bond_idx,charge_idx,transfer))
-		all_bond_breaks.append(bond_idx)
-	return all_bond_breaks, all_actions
-
-def compute_forward_mask(mol_d):
-
-	ve_arr = mol_d["ve_arr"]
-	sbond_arr = mol_d["sbond_arr"]
-	hs_arr = mol_d["hs_arr"]
-	prec_charge = mol_d["prec_charge"]
-	prec_num_radicals = mol_d["prec_num_radicals"]
-	num_hs = mol_d["num_hs"]
-	bonds = mol_d["bonds"]
-	bond_mask_arr = mol_d["bond_mask_arr"]
-	atoms_to_bonds = mol_d["atoms_to_bonds"]
-	assert prec_charge == 1 and prec_num_radicals == 0
-	assert num_hs <= np.sum(hs_arr)
-	# construct graph
-	g_bonds = []
-	for bond_idx, bond in enumerate(bonds):
-		if bond_mask_arr[bond_idx]:
-			g_bonds.append(bond)
-	g = nx.Graph()
-	g.add_edges_from(g_bonds)
-	# verify that there is only one connected component
-	all_ccs = list(nx.connected_components(g))
-	assert len(all_ccs) == 1
-	# break each bond and compute the resulting fragments
-	all_bond_breaks, all_actions = compute_all_no_mask(bonds)
-	# find the valid ones
-	valid_bond_breaks = []
-	valid_actions = []
-	valid_children = []
-	print(bonds)
-	for bond_idx, bond in enumerate(bonds):
-		# check if the bond is present in the parent
-		if not bond_mask_arr[bond_idx]:
-			continue
-		# remove bond and modify graph
-		print(f"> bond {bond_idx} - {bond}")
-		g.remove_edge(bond[0],bond[1])
-		bond_mask_arr[bond_idx] = False
-		sbond_arr[bond[0]] -= 1
-		sbond_arr[bond[1]] -= 1
-		# iterate over connected components
-		ccs = list(nx.connected_components(g))
-		assert len(ccs) > 0 and len(ccs) <= 2
-		# convention: order ccs by membership of the first bond atom
-		if len(ccs) > 0 and bond[0] not in ccs[0]:
-			ccs = [ccs[1],ccs[0]]
-		else:
-			assert bond[0] in ccs[0]
-		all_ccs.extend(ccs)
-		caps, floors, baselines = [], [], []
-		for cc in ccs:
-			cap = compute_cc_cap(cc,ve_arr,sbond_arr,0)
-			floor = compute_cc_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
-			assert floor <= cap, (floor,cap)
-			baseline = sum(hs_arr[atom] for atom in cc)
-			assert baseline <= cap, (baseline,cap)
-			# assert floor <= baseline, (floor,baseline)
-			caps.append(cap)
-			floors.append(floor)
-			baselines.append(baseline)
-		print(list((f,c) for f,c in zip(floors,caps)))
-		print()
-		if len(ccs) == 1:
-			# single fragment,no hydrogen transfer
-			# original fragment is still charged
-			actions = [(bond_idx,0,0)]
-			children = [(ccs[0],set())]
-		else:
-			# compute charged and neutral pairs
-			actions, children = [], []
-			for charge_idx in [0,1]:
-				neutral_idx = 1-charge_idx
-				charge_cc = ccs[charge_idx]
-				charge_cap = caps[charge_idx]-prec_num_radicals
-				charge_floor = floors[charge_idx]-prec_num_radicals
-				charge_baseline = baselines[charge_idx]
-				neutral_cc = ccs[neutral_idx]
-				neutral_cap = caps[neutral_idx]
-				neutral_floor = floors[neutral_idx]
-				neutral_baseline = baselines[neutral_idx]
-				# print(charge_idx,charge_cap,charge_floor,charge_cc)
-				# print(neutral_idx,neutral_cap,neutral_floor,neutral_cc)
-				# compute baselines relative to current hydrogen count
-				total_baseline = charge_baseline+neutral_baseline
-				charge_baseline_hs = int(np.around((charge_baseline/total_baseline)*num_hs))
-				neutral_baseline_hs = int(np.around((neutral_baseline/total_baseline)*num_hs))
-				assert charge_baseline_hs+neutral_baseline_hs == num_hs
-				for transfer in range(-MAX_H_TRANSFER,MAX_H_TRANSFER+1):
-					charge_hs = charge_baseline_hs+transfer
-					neutral_hs = neutral_baseline_hs-transfer
-					# print(transfer,charge_hs,neutral_hs)
-					charge_valid = charge_hs >= charge_floor and charge_hs <= charge_cap
-					neutral_valid = neutral_hs >= neutral_floor and neutral_hs <= neutral_cap
-					if charge_valid and neutral_valid:
-						actions.append((bond_idx,charge_idx,transfer))
-						children.append(((charge_cc,charge_hs),(neutral_cc,neutral_hs)))
-		valid_actions.extend(actions)
-		valid_children.extend(children)
-		if len(actions) > 0:
-			valid_bond_breaks.append(bond_idx)
-		# restore graph
-		g.add_edge(bond[0],bond[1])
-		bond_mask_arr[bond_idx] = True
-		sbond_arr[bond[0]] += 1
-		sbond_arr[bond[1]] += 1
-	print(f">> Possible: # bonds = {len(all_bond_breaks)}, # actions = {len(all_actions)}")
-	print(f">> Valid: # bonds = {len(valid_bond_breaks)}, # actions = {len(valid_actions)}")
-	pprint(valid_actions)
-	valid_action_mask = np.zeros((len(bonds),2,2*MAX_H_TRANSFER+1),dtype=bool)
-	assert valid_action_mask.size == len(all_actions)
-	for valid_action in valid_actions:
-		dim_0 = valid_action[0]
-		dim_1 = valid_action[1]
-		dim_2 = valid_action[2]+MAX_H_TRANSFER
-		valid_action_mask[dim_0,dim_1,dim_2] = True
-	print(np.sum(valid_action_mask),valid_action_mask.size)
-	mask_d = {
-		"all_bond_breaks": all_bond_breaks,
-		"all_actions": all_actions,
-		"valid_bond_breaks": valid_bond_breaks,
-		"valid_actions": valid_actions,
-		"valid_children": valid_children,
-		"valid_action_mask": valid_action_mask
-	}
-	return mask_d
-
-def take_action(mol_d,action,children):
-
-	bond_idx, charge_idx, transfer = action
-	(charge_child,charge_hs), (neutral_child,neutral_hs) = children
-	bonds = mol_d["bonds"] # never mutated
-	bond_mask_arr = np.copy(mol_d["bond_mask_arr"])
-	atom_mask_arr = np.copy(mol_d["atom_mask_arr"])
-	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
-	sbond_arr = np.copy(mol_d["sbond_arr"])
-	ve_arr = np.copy(mol_d["ve_arr"])
-	hs_arr = np.copy(mol_d["hs_arr"])
-	num_hs = mol_d["num_hs"]
-	# the broken bond
-	removed_bond_idxs = [bond_idx]
-	# all bonds from the neutral child
-	for atom in neutral_child:
-		for bond_idx in atoms_to_bonds[atom]:
-			removed_bond_idxs.append(bond_idx)
-		# discard atom statistics
-		sbond_arr[atom] = 0.
-		ve_arr[atom] = 0.
-		hs_arr[atom] = 0.
-		atom_mask_arr[atom] = False
-	# removed all identified bonds
-	for removed_bond_idx in removed_bond_idxs:
-		removed_bond = bonds[removed_bond_idx]
-		# update bond mask
-		bond_mask_arr[removed_bond_idx] = False
-		# update atom statistics
-		if removed_bond[0] in charge_child:
-			sbond_arr[removed_bond[0]] -= 1
-		if removed_bond[1] in charge_child:
-			sbond_arr[removed_bond[1]] -= 1
-	# update h count
-	num_hs = charge_hs
-	# update dictionary
-	new_mol_d = {**mol_d}
-	new_mol_d["bond_mask_arr"] = bond_mask_arr
-	new_mol_d["atom_mask_arr"] = atom_mask_arr
-	new_mol_d["sbond_arr"] = sbond_arr
-	new_mol_d["ve_arr"] = ve_arr
-	new_mol_d["hs_arr"] = hs_arr
-	new_mol_d["num_hs"] = num_hs
-	return new_mol_d
-
-def compute_state_arr(mol_d):
-
-	# must be a flat vector
-	# variable part: num_hs, bond_mask_arr (optionally: atom_mask_arr)
-	# static part: bond_arr, sbond_arr, ve_arr, hs_arr
-	atom_mask_arr = mol_d["atom_mask_arr"].astype(int)
-	bond_mask_arr = mol_d["bond_mask_arr"].astype(int)
-	num_hs_arr = np.array([mol_d["num_hs"]],dtype=int)
-	state_arr = np.concatenate([atom_mask_arr,bond_mask_arr,num_hs],axis=0)
-	return state_arr
 
 def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER,return_counts=False,max_depths=None):
 	"""
@@ -568,3 +358,233 @@ def collect_ccs_parents(ccs,ccs_parents):
 			ccs_to_parents[cc] = set([ccs_parents[cc_idx]])
 	return ccs_to_parents
 
+def compute_frags_python(mol_d,max_depth,parents=False,depths=False):
+
+	raise NotImplementedError
+	# g = nx.Graph()
+	# g.add_edges_from(mol_d["bonds"])
+	# # time this part
+	# ccs_rec = compute_ccs_recursive(g,0,max_depth)
+	# ccs_rec = [convert_to_int(cc) for cc in ccs_rec]
+	# ccs_rec = set(ccs_rec)
+	# return ccs_rec
+
+def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
+
+	assert not parents
+	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_arrays_from_mol_d(mol_d)
+	# time this part
+	ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
+		num_nodes,
+		num_edges,
+		node_mask,
+		edges,
+		edge_mask,
+		edge_to_node_idx,
+		0,
+		max_depth,
+		True,
+		parents,
+		depths
+	)
+	if depths:
+		ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
+		return ccs_to_parents
+	else:
+		ccs = set(ccs)
+		return ccs
+
+# def get_mol_formulae_ccs(smiles,max_depth,h_prior,max_h_transfer):
+
+# 	mol_d = extract_mol_info(smiles,"[M+H]+")
+# 	num_nodes = mol_d["atom_mask_arr"].shape[0]
+# 	ccs = compute_frags_cython(mol_d,max_depth,parents=False,depths=False)
+# 	formulae = [convert_from_int(num_nodes,cc_int,bitmask=False) for cc_int in ccs]
+# 	formulae = compute_approximate_formulae(formulae,mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer,return_counts=True)
+# 	return formulae, ccs
+
+def compute_frag_peak_stats(row,tolerance=0.01):
+
+	true_mzs, true_ints = list(zip(*row["peaks"]))
+	pred_mzs_counts = row["peak_mzs_counts"]
+	assert isinstance(pred_mzs_counts,Counter)
+	pred_mzs = np.array(list(pred_mzs_counts.keys()))
+	pred_counts = np.array(list(pred_mzs_counts.values()))
+	# compute overlap
+	overlap_true_idxs = []
+	overlap_true_ints = []
+	overlap_pred_idxs = []
+	overlap_pred_peak_counts = []
+	overlap_pred_formula_counts = []
+	for true_idx, true_mz in enumerate(true_mzs):
+		mz_diffs = np.abs(pred_mzs-true_mz)
+		mz_close = mz_diffs < tolerance
+		if np.any(mz_close):
+			pred_idx = np.nonzero(mz_close)[0]
+			overlap_true_idxs.append(true_idx)
+			overlap_true_ints.append(true_ints[true_idx])
+			overlap_pred_idxs.append(pred_idx)
+			overlap_pred_peak_counts.append(len(pred_idx))
+			overlap_pred_formula_counts.append(np.sum(pred_counts[pred_idx]))
+	# remove duplicates
+	if len(overlap_pred_idxs) > 0:
+		overlap_pred_idxs = np.unique(np.concatenate(overlap_pred_idxs,axis=0))
+	else:
+		overlap_pred_idxs = np.array([])
+	recall = len(overlap_true_idxs) / len(true_mzs)
+	w_recall = np.sum(overlap_true_ints) / np.sum(true_ints)
+	prec = len(overlap_pred_idxs) / len(pred_mzs)
+	if len(overlap_pred_peak_counts) > 0:
+		ppt_peak = np.mean(overlap_pred_peak_counts)
+		ppt_formula = np.mean(overlap_pred_formula_counts)
+	else:
+		ppt_peak = 0.
+		ppt_formula = 0.
+	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
+
+def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,secondary_dag_types=None):
+
+	assert h_prior in [True,False], h_prior
+	if secondary_dag_types is None:
+		secondary_dag_types = []
+	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_arrays_from_mol_d(mol_d)
+	# time this part
+	ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
+		num_nodes,
+		num_edges,
+		node_mask,
+		edges,
+		edge_mask,
+		edge_to_node_idx,
+		0,
+		max_depth,
+		True,
+		True,
+		True
+	)
+	assert len(ccs) == len(ccs_parents) == len(ccs_depths)
+	ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
+	ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
+
+	# construct graph
+	cc_g = nx.DiGraph()
+	ccs_un = sorted(list(set(ccs)))
+	assert len(ccs_un) == len(ccs_to_parents) == len(ccs_to_depths)
+	cc_g.add_nodes_from(ccs_un)
+	# add node depth information
+	nx.set_node_attributes(cc_g,ccs_to_depths,"depth")
+	# add node mask information
+	ccs_to_mask = {cc : np.array(convert_from_int(num_nodes,cc,bitmask=True)) for cc in ccs_un}
+	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
+	nx.set_node_attributes(cc_g,ccs_to_mask,"mask")
+	# add node h count and element information
+	hs_arr = mol_d["hs_arr"]
+	elems = mol_d["elems"]
+	ccs_to_hs, ccs_to_formula = {}, {}
+	for cc, cc_mask in ccs_to_mask.items():
+		cc_h_count = np.sum(cc_mask*hs_arr)
+		ccs_to_hs[cc] = cc_h_count
+		cc_formula = cc_to_formula(cc_mask,elems,bitmask=True)
+		ccs_to_formula[cc] = cc_formula
+	nx.set_node_attributes(cc_g,ccs_to_hs,"hs")
+	nx.set_node_attributes(cc_g,ccs_to_formula,"formula")
+	# add edges
+	edges_to_mask, edges_to_hs, edges_to_formula = {}, {}, {}
+	for cc, parents in ccs_to_parents.items():
+		cc_mask = ccs_to_mask[cc]
+		cc_hs = ccs_to_hs[cc]
+		for parent in parents:
+			# skip self edges
+			if parent == cc or parent == -1:
+				continue
+			cc_g.add_edge(parent,cc)
+			try:
+				parent_mask = ccs_to_mask[parent]
+			except KeyError as e:
+				import pdb; pdb.set_trace()
+			diff_mask = parent_mask - cc_mask
+			edges_to_mask[(parent,cc)] = diff_mask
+			parent_hs = ccs_to_hs[parent]
+			diff_hs = parent_hs - cc_hs
+			edges_to_hs[(parent,cc)] = diff_hs
+			diff_formula = cc_to_formula(diff_mask,elems)
+			edges_to_formula[(parent,cc)] = diff_formula
+	nx.set_edge_attributes(cc_g,edges_to_mask,"mask")
+	nx.set_edge_attributes(cc_g,edges_to_hs,"hs")
+	nx.set_edge_attributes(cc_g,edges_to_formula,"formula")
+
+	# compute formulae
+	ccs_to_formulae = {}
+	formulae_un = set()
+	for cc_int in ccs_un:
+		cc_mask = convert_from_int(num_nodes,cc_int,bitmask=False)
+		formulae = compute_approximate_formulae([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
+		formulae = [get_formula_string(f) for f in formulae]
+		if "formula" in secondary_dag_types:
+			ccs_to_formulae[cc_int] = formulae
+		formulae_un.update(formulae)
+	formulae_un = sorted(list(formulae_un))
+
+	dag_d = {}
+	dag_d["max_depth"] = max_depth
+	dag_d["h_prior"] = h_prior
+	dag_d["max_h_transfer"] = max_h_transfer
+	dag_d["ccs"] = ccs_un
+	dag_d["formulae"] = formulae_un
+	dag_d["cc_g"] = cc_g
+
+	if "formula" in secondary_dag_types:
+		
+		# print(np.mean([len(v) for v in ccs_to_formulae.values()]))
+		formulae_to_idx = {formula:idx for idx,formula in enumerate(formulae_un)}
+		for k,v in ccs_to_formulae.items():
+			ccs_to_formulae[k] = [formulae_to_idx[f] for f in v]
+		formula_g = nx.DiGraph()
+		formula_g.add_nodes_from(list(range(len(formulae_to_idx))))
+		for cc,formulae in ccs_to_formulae.items():
+			cc_out_edges = cc_g.out_edges(cc)
+			for out_formula in formulae:
+				for cc_out_edge in cc_out_edges:
+					assert cc_out_edge[0] == cc
+					for in_formula in ccs_to_formulae[cc_out_edge[1]]:
+						formula_g.add_edge(out_formula,in_formula)
+		dag_d["formula_g"] = formula_g
+
+	if "cch" in secondary_dag_types:
+		# identify nodes
+		all_cchs = set()
+		dropped_ccs = []
+		for cc_int in ccs_un:
+			cc_mask = convert_from_int(num_nodes,cc_int,bitmask=False)
+			cchs = compute_approximate_cchs([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
+			if len(cchs) == 0:
+				dropped_ccs.append(cc_int)
+				continue
+			cchs = [(cc_int,cch[1]) for cch in cchs]
+			all_cchs.update(cchs)
+		# all_ccs = sorted(list(set([cch[0] for cch in all_cchs])))
+		print(f"> dropped {len(dropped_ccs)} ccs: {dropped_ccs}")
+		cch_to_idx = {}
+		cc_to_cch_idx = {}
+		for idx, cch in enumerate(all_cchs):
+			cc, h = cch[0], cch[1]
+			if cc not in cc_to_cch_idx:
+				cc_to_cch_idx[cc] = [idx]
+			else:
+				cc_to_cch_idx[cc].append(idx)
+			cch_to_idx[cch] = idx
+		cch_g = nx.DiGraph()
+		cch_g.add_nodes_from(list(cch_to_idx.values()))
+		# set up edges
+		for cch, src_idx in cch_to_idx.items():
+			cc, h = cch[0], cch[1]
+			cc_out_edges = cc_g.out_edges(cc)
+			for cc_out_edge in cc_out_edges:
+				src_cc = cc_out_edge[0]
+				assert src_cc == cc, (src_cc,cc)
+				dst_cc = cc_out_edge[1]
+				for dst_idx in cc_to_cch_idx.get(dst_cc,tuple()):
+					cch_g.add_edge(src_idx,dst_idx)
+		dag_d["cch_g"] = cch_g
+
+	return dag_d

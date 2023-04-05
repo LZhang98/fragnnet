@@ -58,11 +58,11 @@ cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,:
 				break
 	return node_to_edge_idx
 
-# cdef int [::1] compute_full_cc(int num_nodes):
-# 	cdef int [::1] cc_nodes = np.zeros(MAX_NUM_NODES,dtype=DTYPE)
-# 	for i in range(num_nodes):
-# 		cc_nodes[i] = 1
-# 	return cc_nodes
+cdef int [::1] compute_full_cc(int num_nodes):
+	cdef int [::1] cc_nodes = np.zeros(MAX_NUM_NODES,dtype=DTYPE)
+	for i in range(num_nodes):
+		cc_nodes[i] = 1
+	return cc_nodes
 
 def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
 	return np.asarray(compute_node_to_edge_idx(num_nodes,num_edges,edges),dtype=DTYPE)
@@ -259,7 +259,12 @@ def py_compute_ccs_recursive(
 		parents,
 		depths
 	)
-	# ccs_list.append(compute_full_cc(num_nodes))
+	add the precursor
+	ccs_list.append(compute_full_cc(num_nodes))
+	if parents:
+		ccs_parents_list.append(-1)
+	if depths:
+		ccs_depth_list.append(0)
 	if convert_to_ints:
 		ccs_list = [node_mask_to_int(num_nodes,cc) for cc in ccs_list]
 	return ccs_list, ccs_parents_list, ccs_depth_list

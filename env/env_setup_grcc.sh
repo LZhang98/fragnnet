@@ -2,10 +2,10 @@
 
 set -e
 
-module load StdEnv/2020 gcc/9.3.0 python/3.10 rdkit/2022.09.4 cuda/11.1.1 rust/1.65.0
+module load StdEnv/2020 gcc/9.3.0 python/3.10 rdkit/2022.09.4 cuda/11.1.1
 
-virtualenv --no-download GFN
-source FRAG-GNN/bin/activate
+virtualenv --no-download $HOME/envs/FRAG-GNN
+source $HOME/envs/FRAG-GNN/bin/activate
 
 pip install --upgrade pip
 
@@ -15,12 +15,14 @@ pip install --upgrade pip
 pip install torch==1.13.1+computecanada
 
 # non-GPU dependencies
-pip install wandb
-pip install tqdm
 pip install cython
 pip install pandas
-pip install joblib
 pip install networkx
+pip install wandb
+pip install tqdm
+pip install scipy
+pip install joblib
+pip install matplotlib
 
 # frag-gnn itself
 pip install .

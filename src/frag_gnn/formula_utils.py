@@ -3,6 +3,30 @@ import rdkit.Chem as Chem
 import itertools
 import numpy as np
 import scipy
+from collections import Counter
+
+from frag_gnn.data_utils import parse_formula
+
+
+PERIODIC_TABLE = Chem.GetPeriodicTable()
+
+ELEMENT_TO_MASS = {
+	"H": PERIODIC_TABLE.GetMostCommonIsotopeMass("H"), #1.007825031898,
+	"C": PERIODIC_TABLE.GetMostCommonIsotopeMass("C"), #12.0,
+	"N": PERIODIC_TABLE.GetMostCommonIsotopeMass("N"), #14.003074004251,
+	"O": PERIODIC_TABLE.GetMostCommonIsotopeMass("O"), #15.994914619257,
+	"F": PERIODIC_TABLE.GetMostCommonIsotopeMass("F"), #18.998403162067,
+	"Cl": PERIODIC_TABLE.GetMostCommonIsotopeMass("Cl"), #34.96885269,
+	"P": PERIODIC_TABLE.GetMostCommonIsotopeMass("P"), #30.9737619986,
+	"S": PERIODIC_TABLE.GetMostCommonIsotopeMass("S"), #31.9720711744 
+}
+
+ELECTRON_MASS = 0.00054858
+
+PREC_TYPE_TO_MASS_DIFF = {
+	"[M+H]+": ELEMENT_TO_MASS["H"] - ELECTRON_MASS,
+	"[M-H]-": -ELEMENT_TO_MASS["H"] + ELECTRON_MASS,
+}
 
 
 def enumerate_multinomial(N, p, cutoff_thold=0.0001):
@@ -100,6 +124,26 @@ def get_peaks_for_formula(element_counts,threshold=0.001):
             keep_masses.append(mass)
             keep_probs.append(prob)
     return keep_masses, keep_probs
+
+
+def formula_to_peak_mzs(formula,prec_type,isotopes=True,counter=False):
+
+	element_counts = parse_formula(formula)
+	mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
+	if not isotopes:
+		peak_mz = 0.
+		for k,v in element_counts.items():
+			peak_mz += v*ELEMENT_TO_MASS.get(k,0.)
+		peak_mz += mass_diff
+		peak_mzs = [peak_mz]
+	else:
+		peak_mzs = get_peaks_for_formula(element_counts)[0]
+		peak_mzs = [peak_mz+mass_diff for peak_mz in peak_mzs]
+	if counter:
+		return Counter({peak_mz:1 for peak_mz in peak_mzs})
+	else:
+		return peak_mzs
+
 
 if __name__ == "__main__":
 

@@ -6,44 +6,7 @@ import networkx as nx
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.misc_utils import timeit, booltype
-import frag_gnn.frag.compute_frags as compute_frags
-import frag_gnn.frag.dag_utils as dag_utils
 
-
-def python_function(mol_d,max_depth):
-
-	g = nx.Graph()
-	g.add_edges_from(mol_d["bonds"])
-	# time this part
-	ccs_rec = frag_utils.compute_ccs_recursive(g,0,max_depth)
-	ccs_rec = [frag_utils.convert_to_int(cc) for cc in ccs_rec]
-	ccs_rec = set(ccs_rec)
-	return ccs_rec
-
-def cython_function(mol_d,max_depth,parents=False,depths=False):
-
-	assert not parents
-	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = frag_utils.get_arrays_from_mol_d(mol_d)
-	# time this part
-	ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
-		num_nodes,
-		num_edges,
-		node_mask,
-		edges,
-		edge_mask,
-		edge_to_node_idx,
-		0,
-		max_depth,
-		True,
-		parents,
-		depths
-	)
-	if depths:
-		ccs_to_parents = frag_utils.collect_ccs_parents(ccs,ccs_parents)
-		return ccs_to_parents
-	else:
-		ccs = set(ccs)
-		return ccs
 
 if __name__ == "__main__":
 
@@ -72,11 +35,11 @@ if __name__ == "__main__":
 	h_prior = args.h_prior
 	max_h_transfer = args.max_h_transfer
 	smiles = COMPOUND_TO_SMILES[args.compound_idx]
-	mol_d = frag_utils.extract_mol_info(smiles,"[M+H]+")
+	mol_d = frag_utils.extract_mol_info(smiles)
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
 	print(num_nodes)
 
-	ccs = timeit(cython_function)(mol_d,max_depth,depths=False)
+	ccs = timeit(frag_utils.compute_frags_cython)(mol_d,max_depth,depths=False)
 	ccs = [frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False) for cc_int in ccs]
 	formulae = frag_utils.compute_approximate_formulae(ccs,mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer,return_counts=True)
 	counts = np.array(list(formulae.values()))
@@ -84,7 +47,7 @@ if __name__ == "__main__":
 	print(len(formulae))
 	print(np.mean(counts),np.std(counts))
 
-	dag_d = timeit(dag_utils.cython_dag)(mol_d,max_depth,h_prior,max_h_transfer)
+	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer)
 	cc_g = dag_d["cc_g"]
 	print("> cc dag")
 	cc_nn = cc_g.number_of_nodes()

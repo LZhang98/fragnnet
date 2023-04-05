@@ -7,29 +7,8 @@ import joblib
 from tqdm import tqdm
 from pprint import pformat, pprint
 
-from misc_utils import np_temp_seed, none_or_nan
+from frag_gnn.misc_utils import np_temp_seed, none_or_nan
 
-
-ELEMENT_LIST = ['H', 'C', 'O', 'N', 'P', 'S', 'Cl', 'F']
-
-TWO_LETTER_TOKEN_NAMES = [
-		'Al', 'Ce', 'Co', 'Ge', 'Gd', 'Cs', 'Th', 'Cd', 'As', 'Na', 'Nb', 'Li',
-		'Ni', 'Se', 'Sc', 'Sb', 'Sn', 'Hf', 'Hg', 'Si', 'Be', 'Cl', 'Rb', 'Fe',
-		'Bi', 'Br', 'Ag', 'Ru', 'Zn', 'Te', 'Mo', 'Pt', 'Mn', 'Os', 'Tl', 'In',
-		'Cu', 'Mg', 'Ti', 'Pb', 'Re', 'Pd', 'Ir', 'Rh', 'Zr', 'Cr', '@@', 'se',
-		'si', 'te'
-]
-
-LC_TWO_LETTER_MAP = {
-		"se": "Se", "si": "Si", "te": "Te"
-}
-
-# these are all (exact) atomic masses
-H_MASS = 1.007825 #1.008
-O_MASS = 15.994915 #15.999
-NA_MASS = 22.989771 #22.990
-N_MASS = 14.003074 #14.007
-C_MASS = 12. #12.011
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
@@ -107,15 +86,15 @@ def rdkit_standardize(mol):
 	rdMolStandardize = modules[-1]
 	# removeHs, disconnect metal atoms, normalize the molecule, reionize the molecule
 	mol = rdMolStandardize.Cleanup(mol) 
-	# # if many fragments, get the "parent" (the actual mol we are interested in) 
-	# mol = rdMolStandardize.FragmentParent(mol)
-	# # try to neutralize molecule
-	# uncharger = rdMolStandardize.Uncharger() # annoying, but necessary as no convenience method exists
-	# mol = uncharger.uncharge(mol)
-	# # note that no attempt is made at reionization at this step
-	# # nor at ionization at some pH (rdkit has no pKa caculator)
-	# # the main aim to to represent all molecules from different sources
-	# # in a (single) standard way, for use in ML, catalogue, etc.
+	# if many fragments, get the "parent" (the actual mol we are interested in) 
+	mol = rdMolStandardize.FragmentParent(mol)
+	# try to neutralize molecule
+	uncharger = rdMolStandardize.Uncharger() # annoying, but necessary as no convenience method exists
+	mol = uncharger.uncharge(mol)
+	# note that no attempt is made at reionization at this step
+	# nor at ionization at some pH (rdkit has no pKa caculator)
+	# the main aim to to represent all molecules from different sources
+	# in a (single) standard way, for use in ML, catalogue, etc.
 	te = rdMolStandardize.TautomerEnumerator() # idem
 	mol = te.Canonicalize(mol)
 	return mol
@@ -200,6 +179,20 @@ def mol_to_charge(mol):
 	except:
 		charge = np.nan
 	return charge
+
+def mol_to_num_atoms(mol,heavy=True):
+	try:
+		num_atoms = mol.GetNumAtoms(onlyHeavy=heavy)
+	except:
+		num_atoms = np.nan
+	return num_atoms
+
+def mol_to_num_bonds(mol,heavy=True):
+	try:
+		num_bonds = mol.GetNumBonds(onlyHeavy=heavy)
+	except:
+		num_bonds = np.nan
+	return num_bonds
 
 def check_neutral_charge(mol):
 	valid = mol_to_charge(mol) == 0
@@ -517,14 +510,6 @@ def get_murcko_scaffold(mol,output_type="smiles",include_chirality=False):
 	return scaffold
 
 
-def atom_type_one_hot(atom):
-	
-	chemutils = importlib.import_module("dgllife.utils")
-	return chemutils.atom_type_one_hot(
-			atom, allowable_set = ELEMENT_LIST, encode_unknown = True
-	)
-
-
 def atom_bond_type_one_hot(atom):
 		
 	chemutils = importlib.import_module("dgllife.utils")
@@ -581,11 +566,6 @@ def analyze_mol(mol):
 	for k,v in cnops_bond_counts.items():
 		mol_dict[f"{k}_max_bond_counts"] = max(v)
 	return mol_dict
-
-def check_atoms(mol,element_list=ELEMENT_LIST):
-	rdkit = importlib.import_module("rdkit")
-	valid = all(a.GetSymbol() in element_list for a in mol.GetAtoms())
-	return valid
 
 def check_num_bonds(mol):
 	rdkit = importlib.import_module("rdkit")
@@ -678,20 +658,27 @@ def bin_func(mzs,ints,mz_max,mz_bin_res,ints_thresh,return_index):
 
 def parse_formula(formula):
 
-	element_counts = {element: 0 for element in ELEMENT_LIST}
+	assert not none_or_nan(formula)
 	cur_element = None
 	cur_count = 1
+	element_counts = {}
+	if "-" in formula:
+		formula = formula[:formula.index("-")]
+	if "+" in formula:
+		formula = formula[:formula.index("+")]
 	for token in re.findall('[A-Z][a-z]?|\d+|.', formula):
 		if token.isalpha():
 			if cur_element is not None:
-				assert element_counts[cur_element] == 0
-				element_counts[cur_element] += cur_count
+				assert cur_element not in element_counts
+				element_counts[cur_element] = cur_count
 			cur_element = token
 			cur_count = 1
 		elif token.isdigit():
 			cur_count = int(token)
 		else:
+			print(formula)
 			raise ValueError(f"Invalid token {token}")
-	assert element_counts[cur_element] == 0
-	element_counts[cur_element] += cur_count
+	if cur_element is not None:
+		assert cur_element not in element_counts
+		element_counts[cur_element] = cur_count
 	return element_counts
