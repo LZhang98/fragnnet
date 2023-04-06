@@ -259,12 +259,13 @@ def py_compute_ccs_recursive(
 		parents,
 		depths
 	)
-	add the precursor
+	# add the precursor
 	ccs_list.append(compute_full_cc(num_nodes))
 	if parents:
 		ccs_parents_list.append(-1)
 	if depths:
-		ccs_depth_list.append(0)
+		ccs_depth_list.append(-1)
+	# convert masks to ints
 	if convert_to_ints:
 		ccs_list = [node_mask_to_int(num_nodes,cc) for cc in ccs_list]
 	return ccs_list, ccs_parents_list, ccs_depth_list

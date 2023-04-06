@@ -126,7 +126,7 @@ def get_peaks_for_formula(element_counts,threshold=0.001):
     return keep_masses, keep_probs
 
 
-def formula_to_peak_mzs(formula,prec_type,isotopes=True,counter=False):
+def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=True):
 
 	element_counts = parse_formula(formula)
 	mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
@@ -139,8 +139,8 @@ def formula_to_peak_mzs(formula,prec_type,isotopes=True,counter=False):
 	else:
 		peak_mzs = get_peaks_for_formula(element_counts)[0]
 		peak_mzs = [peak_mz+mass_diff for peak_mz in peak_mzs]
-	if counter:
-		return Counter({peak_mz:1 for peak_mz in peak_mzs})
+	if return_map:
+		return {peak_mz:formula for peak_mz in peak_mzs}
 	else:
 		return peak_mzs
 

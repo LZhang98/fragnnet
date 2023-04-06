@@ -10,6 +10,8 @@ from collections import Counter
 import wandb
 import rdkit
 import rdkit.Chem as Chem
+from pprint import pprint, pformat
+import json
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.frag_utils import ELEMENT_TO_IDX
@@ -100,12 +102,6 @@ def filter_spec_mol(spec_df,mol_df,allowed_elements,num_entries=-1):
 	mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])].reset_index(drop=True)
 	return spec_df, mol_df
 
-def prec_in_frag(row):
-
-	prec_formula = row["prec_formula_str"]
-	frag_formulae = row["frag_formulae_str"]
-	return prec_formula in frag_formulae
-
 def print_and_log(name,series,wandb_flag,stats_d):
 
 	stats = series.describe()
@@ -157,10 +153,11 @@ def main(args):
 	num_bonds = mol_df["num_bonds"]
 	print_and_log("num_bonds",num_bonds,wandb_flag,{})
 
-	dag_fp = "data/frag/debug1.pkl"
-	mol_stats_fp = "data/frag/debug2.pkl"
-	spec_stats_fp = "data/frag/debug3.pkl"
-	# frag_fp = os.path.join(args.project_dp,args.frag_dp,args.frag_stats_df_name)
+	os.makedirs(os.path.join(args.frag_dp,args.run_name),exist_ok=True)
+	dag_fp = os.path.join(args.frag_dp,args.run_name,f"dag_df.pkl")
+	mol_stats_fp = os.path.join(args.frag_dp,args.run_name,f"mol_stats_df.pkl")
+	spec_stats_fp = os.path.join(args.frag_dp,args.run_name,f"spec_stats_df.pkl")
+	global_stats_fp = os.path.join(args.frag_dp,args.run_name,f"global_stats.json")
 
 	def timed_get_dags(mol):
 		cur_max_depth = args.max_depth
@@ -181,8 +178,7 @@ def main(args):
 				raise e
 			except Exception as e:
 				# don't retry, theres a bug
-				dag_d = frag_utils.compute_dags(mol_d,cur_max_depth,args.h_prior,args.max_h_transfer)
-				print(f">> Non-timeout error, aborting: {e}")
+				print(f">> Non-timeout error, aborting: {type(e)} {e}")
 				dag_d = {}
 		return dag_d
 
@@ -191,14 +187,15 @@ def main(args):
 	# dag_d = frag_utils.compute_dags(mol_d,args.max_depth,args.h_prior,args.max_h_transfer)
 	# import pdb; pdb.set_trace()
 
-	frag_results = data_utils.seq_apply(mol_df["mol"].tolist(),timed_get_dags)
-	frag_depth = list(map(frag_results,lambda x: x.get("max_depth",np.nan)))
-	frag_formulae = list(map(frag_results,lambda x: x.get("formulae",np.nan)))
-	frag_ccs = list(map(frag_results,lambda x: x.get("ccs",np.nan)))
-	frag_cc_gs = list(map(frag_results,lambda x: x.get("cc_gs",np.nan)))
+	tqdm_iter = tqdm(mol_df["mol"].tolist(),desc=pformat(timed_get_dags),total=len(mol_df["mol"]))
+	frag_results = data_utils.seq_apply(tqdm_iter,timed_get_dags)
+	frag_depth = list(map(lambda x: x.get("max_depth",np.nan),frag_results))
+	frag_formulae = list(map(lambda x: x.get("formulae_to_ccs",np.nan),frag_results))
+	frag_ccs = list(map(lambda x: x.get("ccs_to_formulae",np.nan),frag_results))
+	frag_cc_gs = list(map(lambda x: x.get("cc_g",np.nan),frag_results))
 	del frag_results
 
-	import pdb; pdb.set_trace()
+	# import pdb; pdb.set_trace()
 
 	dag_df = pd.DataFrame(
 		{
@@ -213,14 +210,16 @@ def main(args):
 		{
 			"mol_id": mol_df["mol_id"],
 			"depth": frag_depth,
-			"formulae": frag_formulae,
-			"ccs": frag_ccs,
+			"formulae_d": frag_formulae,
+			"ccs_d": frag_ccs,
 			"dag": frag_cc_gs,
 		}
 	)
 
+	frag_stats_d = {}
+
 	# count failures, then remove them
-	num_failures = frag_stats_df.isna().any(axis=0).sum()
+	num_failures = frag_stats_df.isna().any(axis=1).sum()
 	frag_stats_d["total_num_failures"] = num_failures
 	print(f"> num failures: {num_failures}")
 	print()
@@ -228,18 +227,14 @@ def main(args):
 		wandb.log({"num_failures": num_failures,"step":0})
 	frag_stats_df = frag_stats_df.dropna(axis=0)
 
-	frag_stats_d = {}
-
 	### global properties
 
 	# compute total number of formulae
-	def formulae_to_array(formulae):
-		if len(formulae) == 0:
-			return np.ones((0,len(ELEMENT_TO_IDX)),dtype=int)
-		else:
-			return np.array(list(formulae.keys()),dtype=int).reshape(len(formulae),len(ELEMENT_TO_IDX))
-	frag_formulae = frag_stats_df["formulae"].progress_apply(formulae_to_array)
-	unique_formulae = np.unique(np.concatenate(frag_formulae.values,axis=0),axis=0).tolist()
+	unique_formulae = set()
+	for formula_d in frag_stats_df["formulae_d"].values:
+		unique_formulae.update(list(formula_d.keys()))
+	# frag_formulae = frag_stats_df["formulae"].progress_apply(formulae_to_array)
+	# unique_formulae = np.unique(np.concatenate(frag_formulae.values,axis=0),axis=0).tolist()
 	frag_stats_d["total_num_formulae"] = len(unique_formulae)
 	print(f"> num unique formulae: {len(unique_formulae)}")
 	print()
@@ -248,36 +243,40 @@ def main(args):
 	print("> depth:")
 	print(frag_stats_df["depth"].value_counts())
 	print()
+	depth_d = {f"depth/{k}":v for k,v in frag_stats_df["depth"].value_counts().to_dict().items()}
+	frag_stats_d.update(depth_d)
 	if wandb_flag:
-		depth_d = {f"depth/{k}":v for k,v in frag_stats_df["depth"].value_counts().to_dict().items()}
-		frag_stats_d.update(depth_d)
 		depth_d["step"] = 0
 		wandb.log(depth_d)
 
 	### molecule properties
 
 	# count number of formula per molecule
-	frag_stats_df.loc[:,"num_formulae"] = frag_stats_df["formulae"].apply(lambda x: len(x))
+	frag_stats_df.loc[:,"num_formulae"] = frag_stats_df["formulae_d"].apply(lambda x: len(x))
 	print_and_log("num_formulae",frag_stats_df["num_formulae"],wandb_flag,frag_stats_d)
 	assert (frag_stats_df["num_formulae"]>0).all()
 
 	# count number of ccs per molecule
-	frag_stats_df.loc[:,"num_ccs"] = frag_stats_df["ccs"].apply(lambda x: len(x))
+	frag_stats_df.loc[:,"num_ccs"] = frag_stats_df["ccs_d"].apply(lambda x: len(x))
 	print_and_log("num_ccs",frag_stats_df["num_ccs"],wandb_flag,frag_stats_d)
 	
 	# drop ccs
-	frag_stats_df = frag_stats_df.drop(columns=["ccs"])
+	frag_stats_df = frag_stats_df.drop(columns=["ccs_d"])
 
 	# compute formula redundancy
-	def get_formula_redundancy(formulae):
-		return np.mean(np.array(list(formulae.values())))
-	frag_stats_df.loc[:,"formula_redundancy"] = frag_stats_df["formulae"].apply(get_formula_redundancy)
+	def get_formula_redundancy(formulae_to_ccs):
+		return np.mean(np.array([len(ccs) for formula,ccs in formulae_to_ccs.items()]))
+	frag_stats_df.loc[:,"formula_redundancy"] = frag_stats_df["formulae_d"].progress_apply(get_formula_redundancy)
 	print_and_log("formula_redundancy",frag_stats_df["formula_redundancy"],wandb_flag,frag_stats_d)
+
+	# convert formulae to list
+	frag_stats_df.loc[:,"formulae_d"] = frag_stats_df["formulae_d"].apply(lambda x: list(x.keys()))
+	frag_stats_df = frag_stats_df.rename({"formulae_d":"formulae"},axis=1)
 
 	# compute dag num edges and nodes
 	frag_stats_df.loc[:,"dag_num_edges"] = frag_stats_df["dag"].apply(lambda x: x.number_of_edges())
 	frag_stats_df.loc[:,"dag_num_nodes"] = frag_stats_df["dag"].apply(lambda x: x.number_of_nodes())
-	frag_stats_df.loc[:,"dag_sparsity"] = frag_stats_df["num_edges"]/(frag_stats_df["num_nodes"]*(frag_stats_df["num_nodes"]-1))
+	frag_stats_df.loc[:,"dag_sparsity"] = frag_stats_df["dag_num_edges"]/(frag_stats_df["dag_num_nodes"]*(frag_stats_df["dag_num_nodes"]-1))
 	print_and_log("dag_num_edges",frag_stats_df["dag_num_edges"],wandb_flag,frag_stats_d)
 	print_and_log("dag_num_nodes",frag_stats_df["dag_num_nodes"],wandb_flag,frag_stats_d)
 	print_and_log("dag_sparsity",frag_stats_df["dag_sparsity"],wandb_flag,frag_stats_d)
@@ -285,76 +284,94 @@ def main(args):
 	# drop dags
 	frag_stats_df = frag_stats_df.drop(columns=["dag"])
 
-	# save molecule-level stats
-	mol_stats = ["num_formulae","num_ccs","depth","formula_redundancy","dag_num_edges","dag_num_nodes","dag_sparsity"]
+	# check if precursor formulae is in formulae
+	# def prec_in_formulae(row):
+	# 	prec_formula = row["prec_formula"]
+	# 	formulae = row["formulae"]
+	# 	return prec_formula in formulae
+	frag_stats_df = frag_stats_df.merge(mol_df[["mol_id","formula"]].rename(columns={"formula":"prec_formula"}),on="mol_id",how="inner")
+	# frag_stats_df.loc[:,"prec_in_formulae"] = frag_stats_df.apply(prec_in_formulae,axis=1)
+	# print("> prec_in_formulae:")
+	# print(frag_stats_df["prec_in_formulae"].value_counts())
+	# print()
+	# pif_d = {f"prec_in_formulae/{k}":v for k,v in frag_stats_df["prec_in_formulae"].value_counts().to_dict().items()}
+	# frag_stats_d.update(pif_d)
+	# if wandb_flag:
+	# 	depth_d["step"] = 0
+	# 	wandb.log(pif_d)
+
+	# save molecule-level stats, then drop them
+	mol_stats = ["num_formulae","num_ccs","depth","formula_redundancy","dag_num_edges","dag_num_nodes","dag_sparsity"] #,"prec_in_formulae"]
 	frag_stats_df[["mol_id"]+mol_stats].to_pickle(mol_stats_fp)
 	frag_stats_df = frag_stats_df.drop(columns=mol_stats)
+	# print(frag_stats_df.columns)
 
 	### spectrum properties
 
-	# setup formula information
-	def add_prec_to_frag(row):
-		prec_formula = row["prec_formula_str"]
-		frag_formulae = row["formulae_str"]
-		if prec_formula not in frag_formulae:
-			formulae = frag_formulae + [prec_formula]
-		else:
-			formulae = frag_formulae + []
-		return formulae
-	frag_stats_df = frag_stats_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner").rename(columns={"formula":"prec_formula_str"})
-	frag_stats_df.loc[:,"formulae_str"] = frag_stats_df["formulae"].apply(lambda x: list(map(frag_utils.get_formula_string,x)))
-	frag_stats_df.loc[:,"formulae_str"] = frag_stats_df.apply(add_prec_to_frag,axis=1)
-	
-	# drop formulae
-	frag_stats_df = frag_stats_df.drop(columns=["formulae"])
-
 	# convert formulae to peak locations
-	peak_mzs_counter = lambda x: formula_to_peak_mzs(x,"[M+H]+",isotopes=args.isotopes,counter=True)
-	frag_stats_df.loc[:,"peak_mzs_counts"] = data_utils.par_apply_series(frag_stats_df["formulae_str"], lambda x: sum(map(peak_mzs_counter,x),start=Counter()))
-	prec_peak_mz = lambda x: formula_to_peak_mzs(x,"[M+H]+",isotopes=False,counter=False)
-	frag_stats_df.loc[:,"prec_peak_mz"] = frag_stats_df["prec_formula_str"].progress_apply(lambda x: prec_peak_mz(x)[0])
+	def get_pred_mz_d(formulae):
+		ds = map(lambda x: formula_utils.formula_to_peak_mzs(x,"[M+H]+",isotopes=args.isotopes,return_map=True), formulae)
+		merged_d = dict()
+		for d in ds:
+			for k,v in d.items():
+				# exact peak collisions should not be possible
+				if k in merged_d:
+					print(k,v,merged_d[k])
+				merged_d[k] = v
+		return merged_d
+	frag_stats_df.loc[:,"pred_mz_d"] = data_utils.par_apply_series(frag_stats_df["formulae"],get_pred_mz_d)
+	prec_peak_mz = lambda x: formula_utils.formula_to_peak_mzs(x,"[M+H]+",isotopes=False,return_map=False)
+	frag_stats_df.loc[:,"pred_prec_mz"] = frag_stats_df["prec_formula"].apply(lambda x: prec_peak_mz(x)[0])
+
+	# drop formulae
+	frag_stats_df = frag_stats_df.drop(columns=["formulae","prec_formula"])
+	# print(frag_stats_df.columns)
 
 	# for each spectrum, calculate fraction of peaks explained, fraction of intensity explained by referencing
 	peak_spec_df = spec_df[["spec_id","mol_id","peaks","prec_mz"]].merge(frag_stats_df,on="mol_id",how="inner")
-	result = peak_spec_df.apply(lambda x: compute_frag_peak_stats(x,tolerance=args.tolerance),axis=1)
-	peak_spec_df.loc[:,"frag_recall"] = result[0].values
-	peak_spec_df.loc[:,"frag_wrecall"] = result[1].values
-	peak_spec_df.loc[:,"frag_prec"] = result[2].values
-	peak_spec_df.loc[:,"frag_ppt_peak"] = result[3].values
-	peak_spec_df.loc[:,"frag_ppt_formula"] = result[4].values
-	del result
+	frag_stats_df = peak_spec_df[["spec_id","mol_id"]].drop_duplicates()
 
-	# collect across spectra and report summary statistics
-	print_and_log("spec_frag_recall",peak_spec_df["frag_recall"],wandb_flag,frag_stats_d)
-	print_and_log("spec_frag_wrecall",peak_spec_df["frag_wrecall"],wandb_flag,frag_stats_d)
-	print_and_log("spec_frag_prec",peak_spec_df["frag_prec"],wandb_flag,frag_stats_d)
-	print_and_log("spec_frag_ppt_peak",peak_spec_df["frag_ppt_peak"],wandb_flag,frag_stats_d)
-	print_and_log("spec_frag_ppt_formula",peak_spec_df["frag_ppt_formula"],wandb_flag,frag_stats_d)
-
-	# collect across molecules and report summary statistics
-	agg_dict = {
-		"frag_recall":np.mean,
-		"frag_wrecall":np.mean,
-		"frag_prec":np.mean,
-		"frag_ppt_peak":np.mean,
-		"frag_ppt_formula":np.mean
-	}
-	peak_mol_df = peak_spec_df[["mol_id"]+list(agg_dict.keys())].groupby("mol_id").agg(agg_dict).reset_index()
-	print_and_log("mol_frag_recall",peak_mol_df["frag_recall"],wandb_flag,frag_stats_d)
-	print_and_log("mol_frag_wrecall",peak_mol_df["frag_wrecall"],wandb_flag,frag_stats_d)
-	print_and_log("mol_frag_prec",peak_mol_df["frag_prec"],wandb_flag,frag_stats_d)
-	print_and_log("mol_frag_ppt_peak",peak_mol_df["frag_ppt_peak"],wandb_flag,frag_stats_d)
-	print_and_log("mol_frag_ppt_formula",peak_mol_df["frag_ppt_formula"],wandb_flag,frag_stats_d)
-
-	# if wandb_flag and args.wandb_symlink_dp != "":
-	# 	wandb_symlink_dp = os.path.join(args.project_dp,args.wandb_symlink_dp)
-	# 	wandb_symlink(wandb_run.dir,wandb_symlink_dp,args.job_id)
-
-	# remove stuff we don't need
-	frag_stats_df = frag_stats_df.drop(columns=["peaks","prec_mz","prec_peak_mz","peak_mzs_counts","prec_formula_str","formulae_str"])
+	tolerances = [float(tolerance) for tolerance in args.tolerances.split(",")]
 	
+	for tolerance in tolerances:
+
+		keys = [
+			f"recall_{tolerance}",
+			f"wrecall_{tolerance}",
+			f"prec_{tolerance}",
+			f"ppt_peak_{tolerance}",
+			f"ppt_formula_{tolerance}"
+		]
+
+		result = peak_spec_df.apply(lambda x: frag_utils.compute_frag_peak_stats(x,tolerance=tolerance),axis=1)
+		for idx, key in enumerate(keys):
+			peak_spec_df.loc[:,key] = result[idx].values
+		del result
+		
+		# update the frag stats df
+		frag_stats_df = frag_stats_df.merge(peak_spec_df[["spec_id","mol_id"]+keys].groupby(["spec_id","mol_id"]).mean().reset_index(),on=["spec_id","mol_id"],how="inner")
+
+		# collect across spectra and report summary statistics
+		for key in keys:
+			print_and_log("spec_"+key,frag_stats_df[key],wandb_flag,frag_stats_d)
+
+		# collect across molecules and report summary statistics
+		agg_dict = { key: np.mean for key in keys }
+		peak_mol_df = peak_spec_df[["mol_id"]+keys].groupby("mol_id").agg(agg_dict).reset_index()
+		for key in keys:
+			print_and_log("mol_"+key,peak_mol_df[key],wandb_flag,frag_stats_d)
+
+		# if wandb_flag and args.wandb_symlink_dp != "":
+		# 	wandb_symlink_dp = os.path.join(args.project_dp,args.wandb_symlink_dp)
+		# 	wandb_symlink(wandb_run.dir,wandb_symlink_dp,args.job_id)
+
 	# save spectrum-level stats
 	frag_stats_df.to_pickle(spec_stats_fp)
+
+	# save the frag stats dict
+	with open(global_stats_fp,"w",encoding="utf-8") as f:
+		frag_stats_d = {k:str(v) for k,v in frag_stats_d.items()}
+		json.dump(frag_stats_d,f,ensure_ascii=False,indent=4)
 
 	if wandb_flag:
 		wandb.finish()
@@ -366,20 +383,17 @@ if __name__ == "__main__":
 	parser.add_argument("--num_entries",type=int,default=-1)
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--max_time",type=int,default=2*60)
-	parser.add_argument("--project_dp",type=str,required=True)
+	parser.add_argument("--project_dp",type=str,default=os.getcwd())
 	parser.add_argument("--frag_dp",type=str,default="data/frag")
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
-	parser.add_argument("--frag_stats_df_basename",type=str,default="")
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,default="C,H,O,N,F,S,P,Cl")
-	parser.add_argument("--tolerance",type=float,default=0.01)
+	parser.add_argument("--tolerances",type=str,default="0.01,0.005,0.001,0.0001")
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
-	# parser.add_argument("--wandb_symlink_dp",type=str,default="jobs_wandb")
-	# parser.add_argument("--job_id",type=str,default="00000")
 	args = parser.parse_args()
 
 	tqdm.pandas()

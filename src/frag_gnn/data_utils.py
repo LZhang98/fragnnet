@@ -24,10 +24,7 @@ def rdkit_import(*module_strs):
 	return tuple(modules)
 
 def normalize_ints(ints):
-	try:
-		total_ints = sum(ints)
-	except:
-		import pdb; pdb.set_trace()
+	total_ints = sum(ints)
 	ints = [ints[i] / total_ints for i in range(len(ints))]
 	return ints
 

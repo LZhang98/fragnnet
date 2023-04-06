@@ -57,3 +57,4 @@ if __name__ == "__main__":
 	print(f"is_dag: {is_dag}")
 	print(f"num_nodes = {cc_nn}, num_edges = {cc_ne}, edge_frac = {cc_ne/(cc_nn*(cc_nn-1))}")
 	print(f"avg_deg = {np.mean(cc_deg)}, std_deg = {np.std(cc_deg)}")
+	# print(dag_d["formulae_to_ccs"])

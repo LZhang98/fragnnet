@@ -84,8 +84,7 @@ def preproc_msp(msp_fp,keys,num_entries):
 				raw_l_split = raw_l.split(':')
 			else:
 				raw_l_split = raw_l.split(': ')
-			if len(raw_l_split) < 2:
-				import pdb; pdb.set_trace()
+			assert len(raw_l_split) >= 2, len(raw_l_split)
 			key = raw_l_split[0]
 			if key == "Num peaks" or key == "Num Peaks":
 				assert len(raw_l_split) == 2, raw_l_split
