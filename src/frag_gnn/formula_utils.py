@@ -10,24 +10,12 @@ from typing import List, Tuple, Dict
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
 
-ELEMENT_TO_MASS = {
-    "H": PERIODIC_TABLE.GetMostCommonIsotopeMass("H"), #1.007825031898,
-    "C": PERIODIC_TABLE.GetMostCommonIsotopeMass("C"), #12.0,
-    "N": PERIODIC_TABLE.GetMostCommonIsotopeMass("N"), #14.003074004251,
-    "O": PERIODIC_TABLE.GetMostCommonIsotopeMass("O"), #15.994914619257,
-    "F": PERIODIC_TABLE.GetMostCommonIsotopeMass("F"), #18.998403162067,
-    "Cl": PERIODIC_TABLE.GetMostCommonIsotopeMass("Cl"), #34.96885269,
-    "P": PERIODIC_TABLE.GetMostCommonIsotopeMass("P"), #30.9737619986,
-    "S": PERIODIC_TABLE.GetMostCommonIsotopeMass("S"), #31.9720711744 
-}
-
 ELECTRON_MASS = 0.00054858
-
+H_MASS =  PERIODIC_TABLE.GetMostCommonIsotopeMass("H")
 PREC_TYPE_TO_MASS_DIFF = {
-    "[M+H]+": ELEMENT_TO_MASS["H"] - ELECTRON_MASS,
-    "[M-H]-": -ELEMENT_TO_MASS["H"] + ELECTRON_MASS,
+    "[M+H]+": H_MASS - ELECTRON_MASS,
+    "[M-H]-": -H_MASS + ELECTRON_MASS,
 }
-
 
 def enumerate_multinomial(N:int, p:List[float], cutoff_thold:float=0.0001):
     """
@@ -158,7 +146,7 @@ def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=True):
     if not isotopes:
         peak_mz = 0.
         for k,v in element_counts.items():
-            peak_mz += v*ELEMENT_TO_MASS.get(k,0.)
+            peak_mz += v*PERIODIC_TABLE.GetMostCommonIsotopeMass(k)
         peak_mz += mass_diff
         peak_mzs = [peak_mz]
     else:
@@ -172,6 +160,26 @@ def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=True):
 
 if __name__ == "__main__":
 
+    isotopes = False
+    # Test Carbon
+    for i in [1,2,10,100,1000]:
+        element_counts = {"C":i}
+        print(element_counts, get_peaks_for_formula(element_counts, isotopes))
+
+    # Test Br
+    for i in range(1,4):
+        element_counts = {"Br":i}
+        print(element_counts, get_peaks_for_formula(element_counts, isotopes))
+    
+    # Test Clorine
+    for i in range(1,4):
+        element_counts = {"Cl":i}
+        print(element_counts, get_peaks_for_formula(element_counts, isotopes)) 
+        
+    element_counts = {"C":6,"H":7,"O":6,"N":0}
+    print(get_peaks_for_formula(element_counts))
+
+    isotopes = False
     # Test Carbon
     for i in [1,2,10,100,1000]:
         element_counts = {"C":i}
