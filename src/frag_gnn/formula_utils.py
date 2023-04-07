@@ -29,7 +29,7 @@ PREC_TYPE_TO_MASS_DIFF = {
 }
 
 
-def enumerate_multinomial(N:int, p:float, cutoff_thold:float=0.0001):
+def enumerate_multinomial(N:int, p:List[float], cutoff_thold:float=0.0001):
     """
     Enumerate the state space of rolling a die with |p| faces
     N times
@@ -43,7 +43,6 @@ def enumerate_multinomial(N:int, p:float, cutoff_thold:float=0.0001):
     """
     
     K = len(p)
-    s = list()
     counts = []
     for s in itertools.combinations_with_replacement(range(K), N):
         count = np.zeros(K, dtype=np.int32)
