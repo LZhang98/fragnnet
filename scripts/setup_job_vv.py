@@ -5,6 +5,7 @@ from frag_gnn.misc_utils import booltype
 
 def main(args):
 
+	home_dir = "/ssd005/home/adamo"
 	script_lines = []
 	script_lines.extend(
 		[
@@ -28,8 +29,8 @@ def main(args):
 	script_lines.append(f"#SBATCH --qos={args.qos}")
 	script_lines.extend(
 		[
-			"#SBATCH --output=/ssd005/home/adamo/jobs/%j.out",
-			"#SBATCH --error=/ssd005/home/adamo/jobs/%j.err",
+			f"#SBATCH --output={home_dir}/jobs/%j.out",
+			f"#SBATCH --error={home_dir}/jobs/%j.err",
 			"#SBATCH --open-mode=append"
 		]
 	)
@@ -46,14 +47,14 @@ def main(args):
 			"# make wandb directory (if necessary)",
 			"mkdir -p /checkpoint/adamo/wandb",
 			"touch /checkpoint/adamo/wandb/DELAYPURGE",
-			"ln -sfn /checkpoint/adamo/wandb /ssd005/home/adamo/frag-gnn/wandb"
+			f"ln -sfn /checkpoint/adamo/wandb {home_dir}/frag-gnn/wandb"
 		]
 	)
 	script_lines.extend(
 		[
 			"",
 			"# source .bashrc",
-			". /ssd005/home/adamo/miniconda3/etc/profile.d/conda.sh"
+			f". {home_dir}/miniconda3/etc/profile.d/conda.sh"
 		]
 	)
 	script_lines.extend(
@@ -67,10 +68,10 @@ def main(args):
 		[
 			"",
 			"# run script",
-			"cd /ssd005/home/adamo/frag-gnn"
+			f"cd {home_dir}/frag-gnn"
 		]
 	)
-	python_line = f"python preproc_scripts/03_prepare_dag_feats.py --job_name={args.job_name}"
+	python_line = f"python preproc_scripts/03_prepare_dag_feats.py --run_name={args.job_name}"
 	script_kwargs = args.script_kwargs.split(",")
 	for kwarg in script_kwargs:
 		assert "=" in kwarg, kwarg
