@@ -8,7 +8,7 @@ from tqdm import tqdm
 from pprint import pformat, pprint
 
 from frag_gnn.misc_utils import np_temp_seed, none_or_nan
-
+from typing import Dict
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
@@ -653,7 +653,19 @@ def bin_func(mzs,ints,mz_max,mz_bin_res,ints_thresh,return_index):
 			bin_spec[-1] = 1.
 		return bin_spec
 
-def parse_formula(formula):
+def parse_formula(formula:str) -> Dict[str,int]:
+	"""
+		Return a Dict of count of each elemnt in the forumla
+		NOTE: THIS DOES NOT HANDLE Condensed formulas eg. CH3CH2OH
+	Args:
+		formula (str): chemical forumla eg.CH4 or chemical forumla with adducts eg. CH4+H
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		Dict[str,int]: count per element eg {"C":1, "H":4}
+	"""
 
 	assert not none_or_nan(formula)
 	cur_element = None

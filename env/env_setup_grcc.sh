@@ -23,6 +23,7 @@ pip install tqdm
 pip install scipy
 pip install joblib
 pip install matplotlib
+pip install pytest
 
 # frag-gnn itself
 pip install .

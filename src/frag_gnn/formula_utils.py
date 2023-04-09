@@ -77,7 +77,7 @@ def get_isotopes(atomicno:int, pct_thold:float = 0.01) -> List[Tuple[int,float,f
     return sorted(mass_probs, key=lambda r: -r[1])
 
 
-def get_peaks_for_element(element:str, num_atoms:int, prob_threshold:float = 0.001) -> List:
+def get_peaks_for_element(element:str, num_atoms:int) -> List:
     """  
     Get the peaks for a formula with num_atoms of atomic no
     Args:

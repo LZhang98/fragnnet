@@ -16,5 +16,6 @@ pip install tqdm
 pip install scipy
 pip install joblib
 pip install matplotlib
+pip install pytest
 
 pip install .
