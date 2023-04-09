@@ -25,11 +25,25 @@ def test_get_isotopes():
     #test C
     results = get_isotopes(6, 0.0001)
     # C12
-    assert results[0] == pytest.approx((12, 0.9893000000000001, 12.0))
+    assert results[0] == pytest.approx((12, 0.9893, 12.0))
     # C13
     assert results[1] == pytest.approx((13, 0.0107, 13.00335484))
     # C14
     # assert results[2] == (14, 0.0, 14.00324199)
+
+    #test Br
+    results = get_isotopes(35, 0.0001)
+    # Br79
+    assert results[0] == pytest.approx((79, 0.5069, 78.9183371))
+    # Br81
+    assert results[1] == pytest.approx((81, 0.4931, 80.9162906))
+
+    #test Cl
+    results = get_isotopes(17, 0.0001)
+    # Cl 35
+    assert results[0] == pytest.approx((35, 0.7578, 34.96885268))
+    # Cl 37
+    assert results[1] == pytest.approx((37, 0.2422, 36.96590259))
 
 
 def test_get_peaks_for_element():

@@ -11,34 +11,122 @@ from typing import List, Tuple, Dict
 PERIODIC_TABLE = Chem.GetPeriodicTable()
 
 ELECTRON_MASS = 0.00054858
-H_MASS =  PERIODIC_TABLE.GetMostCommonIsotopeMass("H")
+H_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("H")
 PREC_TYPE_TO_MASS_DIFF = {
     "[M+H]+": H_MASS - ELECTRON_MASS,
     "[M-H]-": -H_MASS + ELECTRON_MASS,
 }
 
-def enumerate_multinomial(N:int, p:List[float], cutoff_thold:float=0.0001):
+# Just huge table grabbed for atomic number and its stable isotopes
+# if atomic number is not in this table, that means we should even see it in the sample
+# After all this is MS not Cyclotron and we are not try to finding super hevay elemet
+# with this we don't need scan atomicno - atomicno * 4
+# src http://moltensalt.org/references/static/downloads/pdf/stable-isotopes.pdf
+# src https://periodictable.com/Elements/043/data.html
+ISOTOPES_DICT = {1: [1, 2],
+                 2: [3, 4],
+                 3: [6, 7],
+                 4: [9],
+                 5: [10, 11],
+                 6: [12, 13],
+                 7: [14, 15],
+                 8: [16, 17, 18],
+                 9: [19],
+                 10: [20, 21, 22],
+                 11: [23],
+                 12: [24, 25, 26],
+                 13: [27],
+                 14: [28, 29, 30],
+                 15: [31],
+                 16: [32, 33, 34, 36],
+                 17: [35, 37],
+                 18: [36, 38, 40],
+                 19: [39, 41],
+                 20: [40, 42, 43, 44, 46],
+                 21: [45],
+                 22: [46, 47, 48, 49, 50],
+                 23: [51],
+                 24: [50, 52, 53, 54],
+                 25: [55],
+                 26: [54, 56, 57, 58],
+                 27: [59],
+                 28: [58, 60, 61, 62, 64],
+                 29: [63, 65],
+                 30: [64, 66, 67, 68, 70],
+                 31: [69, 71],
+                 32: [70, 72, 73, 74],
+                 33: [75],
+                 34: [74, 76, 77, 78, 80],
+                 35: [79, 81],
+                 36: [78, 80, 82, 83, 84, 86],
+                 37: [85],
+                 38: [84, 86, 87, 88],
+                 39: [89],
+                 40: [90, 91, 92, 94],
+                 41: [93],
+                 42: [92, 94, 95, 96, 97, 98],
+                 44: [100, 101, 102, 104, 96, 98, 99],
+                 45: [103],
+                 46: [102, 104, 105, 106, 108, 110],
+                 47: [107, 109],
+                 48: [106, 108, 110, 111, 112, 114],
+                 49: [113],
+                 50: [112, 114, 115, 116, 117, 118, 119, 120, 122, 124],
+                 51: [121, 123],
+                 52: [120, 122, 124, 125, 126],
+                 53: [127],
+                 54: [124, 126, 128, 129, 130, 131, 132, 134, 136],
+                 55: [133],
+                 56: [130, 132, 134, 135, 136, 137, 138],
+                 57: [139],
+                 58: [136, 138, 140, 142],
+                 59: [141],
+                 60: [142, 143, 145, 146, 148],
+                 62: [144, 149, 150, 152, 154],
+                 63: [151, 153],
+                 64: [154, 155, 156, 157, 158, 160],
+                 65: [159],
+                 66: [156, 158, 160, 161, 162, 163, 164],
+                 67: [165],
+                 68: [162, 164, 166, 167, 168, 170],
+                 69: [169],
+                 70: [168, 170, 171, 172, 173, 174, 176],
+                 71: [175],
+                 72: [176, 177, 178, 179, 180],
+                 73: [181],
+                 74: [180, 182, 183, 184, 186],
+                 75: [185],
+                 76: [184, 187, 188, 189, 190, 192],
+                 77: [191, 193],
+                 78: [192, 194, 195, 196, 198],
+                 79: [197],
+                 80: [196, 198, 199, 200, 201, 202, 204],
+                 81: [203, 205],
+                 82: [204, 206, 207, 208],
+                 90: [232]
+                 }
+
+def enumerate_multinomial(N: int, p: List[float], cutoff_thold: float = 0.0001):
     """
     Enumerate the state space of rolling a die with |p| faces
     N times
-    
+
     returns: [(prob_1, (tuple_of_counts)), 
                (prob_2, (tuple_of_counts)), 
                ...]
-    
+
     cutoff_thold: Do not return points in the state space 
     with prob less than cutoff_thold
     """
-    
+
     K = len(p)
     counts = []
     for s in itertools.combinations_with_replacement(range(K), N):
         count = np.zeros(K, dtype=np.int32)
         for i in s:
-            count[i] +=1
+            count[i] += 1
         counts.append(count)
     counts = np.array(counts)
-
 
     p = p / np.sum(p)
     rv = scipy.stats.multinomial(N, p)
@@ -47,15 +135,15 @@ def enumerate_multinomial(N:int, p:List[float], cutoff_thold:float=0.0001):
     sort_idx = np.argsort(probs)[::-1]
 
     probs_sorted = probs[sort_idx]
-    thold_idx = np.argwhere(np.cumsum(probs_sorted) >= 1-cutoff_thold).flatten()[0] 
+    thold_idx = np.argwhere(np.cumsum(probs_sorted) >=
+                            1-cutoff_thold).flatten()[0]
     thold_idx += 1
-    
-    
-    return list(zip(probs_sorted[:thold_idx], 
+
+    return list(zip(probs_sorted[:thold_idx],
                     [tuple(a) for a in counts[sort_idx][:thold_idx]]))
 
 
-def get_isotopes(atomicno:int, pct_thold:float = 0.01) -> List[Tuple[int,float,float]]: 
+def get_isotopes(atomicno: int, pct_thold: float = 0.01) -> List[Tuple[int, float, float]]:
     """  
     Get all isotopes and their masses for atomic number atomicno
 
@@ -69,15 +157,20 @@ def get_isotopes(atomicno:int, pct_thold:float = 0.01) -> List[Tuple[int,float,f
 
     mass_probs = []
     pt = Chem.GetPeriodicTable()
-    for m in range(atomicno, 4*atomicno):
-        pct = pt.GetAbundanceForIsotope(atomicno, m)
-        if pct >= pct_thold:
-            exact_mass = pt.GetMassForIsotope(atomicno, m)
-            mass_probs.append((m, pct/100, exact_mass))
+
+    if atomicno not in ISOTOPES_DICT:
+        return mass_probs
+    else:
+        for m in ISOTOPES_DICT[atomicno]: 
+            #range(atomicno, 4*atomicno):
+            pct = pt.GetAbundanceForIsotope(atomicno, m)
+            if pct >= pct_thold:
+                exact_mass = pt.GetMassForIsotope(atomicno, m)
+                mass_probs.append((m, pct/100, exact_mass))
     return sorted(mass_probs, key=lambda r: -r[1])
 
 
-def get_peaks_for_element(element:str, num_atoms:int) -> List:
+def get_peaks_for_element(element: str, num_atoms: int) -> List:
     """  
     Get the peaks for a formula with num_atoms of atomic no
     Args:
@@ -94,13 +187,15 @@ def get_peaks_for_element(element:str, num_atoms:int) -> List:
 
     comb_probs = enumerate_multinomial(num_atoms, probs, 0.001)
 
-    exact_masses = [np.sum([isotopes[a_i][2]*a for a_i, a in enumerate(m)]) for p, m in comb_probs]
+    exact_masses = [
+        np.sum([isotopes[a_i][2]*a for a_i, a in enumerate(m)]) for p, m in comb_probs]
 
-    peaks_masses_probs = [(comb_probs[i][0], m) for i, m in enumerate(exact_masses)] 
+    peaks_masses_probs = [(comb_probs[i][0], m)
+                          for i, m in enumerate(exact_masses)]
     return peaks_masses_probs
 
 
-def get_peaks_for_formula(element_counts:Dict[str,int],threshold:float=0.001) -> Tuple[List[float],List[float]]:
+def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.001) -> Tuple[List[float], List[float]]:
     """for a given element configs, return masses with all possible isotopic configus
 
     Args:
@@ -112,9 +207,9 @@ def get_peaks_for_formula(element_counts:Dict[str,int],threshold:float=0.001) ->
     """
 
     peaks_masses_probs = {}
-    for k,v in element_counts.items():
+    for k, v in element_counts.items():
         if v > 0:
-            peaks_masses_probs[k] = get_peaks_for_element(k,v)
+            peaks_masses_probs[k] = get_peaks_for_element(k, v)
     assert len(peaks_masses_probs) > 0, peaks_masses_probs
     probs = [[item[0] for item in v] for v in peaks_masses_probs.values()]
     masses = [[item[1] for item in v] for v in peaks_masses_probs.values()]
@@ -128,7 +223,7 @@ def get_peaks_for_formula(element_counts:Dict[str,int],threshold:float=0.001) ->
     return keep_masses, keep_probs
 
 
-def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=True):
+def formula_to_peak_mzs(formula, prec_type, isotopes=True, return_map=True):
     """_summary_
 
     Args:
@@ -145,7 +240,7 @@ def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=True):
     mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
     if not isotopes:
         peak_mz = 0.
-        for k,v in element_counts.items():
+        for k, v in element_counts.items():
             peak_mz += v*PERIODIC_TABLE.GetMostCommonIsotopeMass(k)
         peak_mz += mass_diff
         peak_mzs = [peak_mz]
@@ -153,7 +248,7 @@ def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=True):
         peak_mzs = get_peaks_for_formula(element_counts)[0]
         peak_mzs = [peak_mz+mass_diff for peak_mz in peak_mzs]
     if return_map:
-        return {peak_mz:formula for peak_mz in peak_mzs}
+        return {peak_mz: formula for peak_mz in peak_mzs}
     else:
         return peak_mzs
 
@@ -162,38 +257,38 @@ if __name__ == "__main__":
 
     isotopes = False
     # Test Carbon
-    for i in [1,2,10,100,1000]:
-        element_counts = {"C":i}
+    for i in [1, 2, 10, 100, 1000]:
+        element_counts = {"C": i}
         print(element_counts, get_peaks_for_formula(element_counts, isotopes))
 
     # Test Br
-    for i in range(1,4):
-        element_counts = {"Br":i}
+    for i in range(1, 4):
+        element_counts = {"Br": i}
         print(element_counts, get_peaks_for_formula(element_counts, isotopes))
-    
+
     # Test Clorine
-    for i in range(1,4):
-        element_counts = {"Cl":i}
-        print(element_counts, get_peaks_for_formula(element_counts, isotopes)) 
-        
-    element_counts = {"C":6,"H":7,"O":6,"N":0}
+    for i in range(1, 4):
+        element_counts = {"Cl": i}
+        print(element_counts, get_peaks_for_formula(element_counts, isotopes))
+
+    element_counts = {"C": 6, "H": 7, "O": 6, "N": 0}
     print(get_peaks_for_formula(element_counts))
 
     isotopes = False
     # Test Carbon
-    for i in [1,2,10,100,1000]:
-        element_counts = {"C":i}
+    for i in [1, 2, 10, 100, 1000]:
+        element_counts = {"C": i}
         print(element_counts, get_peaks_for_formula(element_counts))
 
     # Test Br
-    for i in range(1,4):
-        element_counts = {"Br":i}
+    for i in range(1, 4):
+        element_counts = {"Br": i}
         print(element_counts, get_peaks_for_formula(element_counts))
-    
+
     # Test Clorine
-    for i in range(1,4):
-        element_counts = {"Cl":i}
-        print(element_counts, get_peaks_for_formula(element_counts)) 
-        
-    element_counts = {"C":6,"H":7,"O":6,"N":0}
+    for i in range(1, 4):
+        element_counts = {"Cl": i}
+        print(element_counts, get_peaks_for_formula(element_counts))
+
+    element_counts = {"C": 6, "H": 7, "O": 6, "N": 0}
     print(get_peaks_for_formula(element_counts))
