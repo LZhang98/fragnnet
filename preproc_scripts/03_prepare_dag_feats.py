@@ -15,7 +15,7 @@ import json
 import traceback
 import sys
 import pickle
-import bz2
+import gzip
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.frag_utils import ELEMENT_TO_IDX
@@ -134,8 +134,8 @@ def save_dags(mol_ids,dags,dag_dp,compress=True,tar=False,parallel=True):
 	def save_dag(md_tuple):
 		mol_id, dag = md_tuple
 		if compress:
-			path = os.path.join(dag_dp,f"{mol_id}.pkl.bz2")
-			file_fn = lambda p: bz2.BZ2File(p,"wb")
+			path = os.path.join(dag_dp,f"{mol_id}.pkl.gz")
+			file_fn = lambda p: gzip.GzipFile(p,"wb")
 		else:
 			path = os.path.join(dag_dp,f"{mol_id}.pkl")
 			file_fn = lambda p: open(p,"wb")
@@ -176,6 +176,8 @@ def main(args):
 	
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules")
 	print()
+
+	import pdb; pdb.set_trace()
 
 	num_atoms = mol_df["num_atoms"]
 	print_and_log("num_atoms",num_atoms,wandb_flag,{})
