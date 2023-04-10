@@ -14,6 +14,8 @@ from pprint import pprint, pformat
 import json
 import traceback
 import sys
+import pickle
+import bz2
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.frag_utils import ELEMENT_TO_IDX
@@ -123,6 +125,28 @@ def print_and_log(name,series,wandb_flag,stats_d):
 			log_d[f"{name}/{stat}"] = stats[stat]
 		wandb.log(log_d)
 
+def save_dags(mol_ids,dags,dag_dp,compress=True,tar=False,parallel=True):
+
+	if tar:
+		raise NotImplementedError
+	assert len(mol_ids) == len(dags)
+	md_iter = tqdm(zip(mol_ids,dags),total=len(mol_ids),desc="> saving DAGs")
+	def save_dag(md_tuple):
+		mol_id, dag = md_tuple
+		if compress:
+			path = os.path.join(dag_dp,f"{mol_id}.pkl.bz2")
+			file_fn = lambda p: bz2.BZ2File(p,"wb")
+		else:
+			path = os.path.join(dag_dp,f"{mol_id}.pkl")
+			file_fn = lambda p: open(p,"wb")
+		with file_fn(path) as f:
+			pickle.dump(dag,f)
+	if parallel:
+		_ = data_utils.par_apply(md_iter,save_dag)
+	else:
+		for md in md_iter:
+			save_dag(md)
+
 def main(args):
 
 	allowed_elements = args.allowed_elements.split(",")
@@ -160,7 +184,9 @@ def main(args):
 	print_and_log("num_bonds",num_bonds,wandb_flag,{})
 
 	os.makedirs(os.path.join(args.frag_dp,args.run_name),exist_ok=True)
-	dag_fp = os.path.join(args.frag_dp,args.run_name,f"dag_df.pkl")
+	# dag_fp = os.path.join(args.frag_dp,args.run_name,f"dag_df.pkl")
+	dag_dp = os.path.join(args.frag_dp,args.run_name,f"dags")
+	os.makedirs(dag_dp,exist_ok=True)
 	mol_stats_fp = os.path.join(args.frag_dp,args.run_name,f"mol_stats_df.pkl")
 	spec_stats_fp = os.path.join(args.frag_dp,args.run_name,f"spec_stats_df.pkl")
 	global_stats_fp = os.path.join(args.frag_dp,args.run_name,f"global_stats.json")
@@ -214,7 +240,8 @@ def main(args):
 	frag_stats_df = frag_stats_df.dropna(axis=0)
 
 	# save dags
-	frag_stats_df[["mol_id","dag"]].to_pickle(dag_fp)
+	# frag_stats_df[["mol_id","dag"]].to_pickle(dag_fp)
+	save_dags(frag_stats_df["mol_id"],frag_stats_df["dag"],dag_dp,compress=args.compress_dags)
 
 	### global properties
 
@@ -368,6 +395,7 @@ if __name__ == "__main__":
 	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
+	parser.add_argument("--compress_dags",type=booltype,default=True)
 	args = parser.parse_args()
 
 	tqdm.pandas()
