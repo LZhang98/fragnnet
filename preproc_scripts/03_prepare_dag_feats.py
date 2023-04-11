@@ -177,8 +177,6 @@ def main(args):
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules")
 	print()
 
-	import pdb; pdb.set_trace()
-
 	num_atoms = mol_df["num_atoms"]
 	print_and_log("num_atoms",num_atoms,wandb_flag,{})
 

@@ -7,6 +7,14 @@ import networkx as nx
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.misc_utils import timeit, booltype
 
+# smileses = [
+# 	'CC(=O)NC1C(OC2CCC3(C)C(CCC4(C)C3CC=C3C5CC(C)(C)CCC5(C(=O)O)CCC34C)C2(C)C)OC(CO)C(O)C1O', 
+# 	'CC(=O)NC1C(OC2CCC3(C)C(CCC4(C)C3CC=C3C5CC(C)(C)CCC5(C(=O)O)CCC34C)C2(C)C)OC(COC2OC(CO)C(O)C(O)C2O)C(O)C1O', 
+# 	'CC(=O)NC1C(OC2OC(CC(O)C3OC(n4ccc(=O)[nH]c4=O)C(O)C3O)C(O)C(O)C2NC(=O)C=CCCCCCCCCCCC(C)C)OC(CO)C(O)C1O', 
+# 	'CC(=O)NC1C(OC2OC(CC(O)C3OC(n4ccc(=O)[nH]c4=O)C(O)C3O)C(O)C(O)C2NC(=O)C=CCCCCCCCCCCCC(C)C)OC(CO)C(O)C1O', 
+# 	'CC(=O)NC1CC(=O)C23C(=O)NC(Cc4c[nH]c5ccccc45)C2C(C)=C(C)C(O)C3C=CCC(C)C=C(C)C(O)C1O'
+# ]
+
 
 if __name__ == "__main__":
 
@@ -29,6 +37,8 @@ if __name__ == "__main__":
 		6: "C1=CC(=CC=C1N)S(=O)(=O)N", # sulfanilamide, S=6
 		7: "COP(C1=CC=CC=C1)C2=CC=CC=C2", # methoxydiphenylphosphine, P=3
 		8: "CC1C(O1)P(=O)(O)O", # phosphomycin, P=5
+		9: 'CC(=O)NC1C(OC2CCC3(C)C(CCC4(C)C3CC=C3C5CC(C)(C)CCC5(C(=O)O)CCC34C)C2(C)C)OC(CO)C(O)C1O', # big one (47 atoms)
+		10: 'CC(=O)NC1C(OC2OC(CC(O)C3OC(n4ccc(=O)[nH]c4=O)C(O)C3O)C(O)C(O)C2NC(=O)C=CCCCCCCCCCCCC(C)C)OC(CO)C(O)C1O' # big one (60 atoms)
 	}
 
 	max_depth = args.max_depth
