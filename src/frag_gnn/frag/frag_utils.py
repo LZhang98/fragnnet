@@ -403,15 +403,6 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 		ccs = set(ccs)
 		return ccs
 
-# def get_mol_formulae_ccs(smiles,max_depth,h_prior,max_h_transfer):
-
-# 	mol_d = extract_mol_info(smiles,"[M+H]+")
-# 	num_nodes = mol_d["atom_mask_arr"].shape[0]
-# 	ccs = compute_frags_cython(mol_d,max_depth,parents=False,depths=False)
-# 	formulae = [convert_from_int(num_nodes,cc_int,bitmask=False) for cc_int in ccs]
-# 	formulae = compute_approximate_formulae(formulae,mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer,return_counts=True)
-# 	return formulae, ccs
-
 def compute_frag_peak_stats(row,tolerance=0.01):
 
 	true_mzs, true_ints = list(zip(*row["peaks"]))
@@ -543,7 +534,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,formula_dag=False,cch_da
 
 	if formula_dag:
 		
-		# print(np.mean([len(v) for v in ccs_to_formulae.values()]))
 		formulae_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_to_ccs.keys())))}
 		for k,v in ccs_to_formulae.items():
 			ccs_to_formulae[k] = [formulae_to_idx[f] for f in v]
@@ -559,6 +549,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,formula_dag=False,cch_da
 		dag_d["formula_g"] = formula_g
 
 	if cch_dag:
+		
 		# identify nodes
 		all_cchs = set()
 		dropped_ccs = []

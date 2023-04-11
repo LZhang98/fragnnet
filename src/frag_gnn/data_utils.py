@@ -12,7 +12,7 @@ from typing import Dict
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
-JOBLIB_TIMEOUT = None #5*60 # default is 300 seconds for "loky"
+JOBLIB_TIMEOUT = 300 # default is 300 seconds for "loky"
 
 def rdkit_import(*module_strs):
 
@@ -190,6 +190,15 @@ def mol_to_num_bonds(mol,heavy=True):
 	except:
 		num_bonds = np.nan
 	return num_bonds
+
+def mol_to_num_radicals(mol):
+	try:
+		num_radicals = 0
+		for atom in mol.GetAtoms():
+			num_radicals += atom.GetNumRadicalElectrons()
+	except:
+		num_radicals = np.nan
+	return num_radicals
 
 def check_neutral_charge(mol):
 	valid = mol_to_charge(mol) == 0

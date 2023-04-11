@@ -12,6 +12,10 @@ import rdkit
 import rdkit.Chem as Chem
 from pprint import pprint, pformat
 import json
+import traceback
+import sys
+import pickle
+import gzip
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.frag_utils import ELEMENT_TO_IDX
@@ -20,7 +24,6 @@ import frag_gnn.data_utils as data_utils
 from frag_gnn.data_utils import parse_formula
 from frag_gnn.misc_utils import booltype, flatten_lol, wandb_symlink, TimeoutException, time_limit
 import frag_gnn.formula_utils as formula_utils
-
 
 def element_filter(formula,allowed_elements):
 	element_counts = parse_formula(formula)
@@ -87,6 +90,11 @@ def filter_spec_mol(spec_df,mol_df,allowed_elements,num_entries=-1):
 	bond_count_mask = spec_df["mol_id"].isin(bond_count_ids)
 	print(f">> bond count: {bond_count_mask.mean()}")
 	masks.append(bond_count_mask)
+	# radical stats
+	non_radical_ids = mol_df[mol_df["num_radicals"]==0]["mol_id"]
+	non_radical_mask = spec_df["mol_id"].isin(non_radical_ids)
+	print(f">> non radical: {non_radical_mask.mean()}")
+	masks.append(non_radical_mask)
 	# put them together
 	all_mask = masks[0]
 	for mask in masks:
@@ -114,10 +122,33 @@ def print_and_log(name,series,wandb_flag,stats_d):
 		log_d = {"step":0}
 		for stat in ["mean","std","min","25%","50%","75%","max"]:
 			log_d[f"{name}/{stat}"] = stats[stat]
-		print(f"> logging {name}: {log_d.keys()}")
 		wandb.log(log_d)
 
+def save_dags(mol_ids,dags,dag_dp,compress=True,tar=False,parallel=True):
+
+	if tar:
+		raise NotImplementedError
+	assert len(mol_ids) == len(dags)
+	md_iter = tqdm(zip(mol_ids,dags),total=len(mol_ids),desc="> saving DAGs")
+	def save_dag(md_tuple):
+		mol_id, dag = md_tuple
+		if compress:
+			path = os.path.join(dag_dp,f"{mol_id}.pkl.gz")
+			file_fn = lambda p: gzip.GzipFile(p,"wb")
+		else:
+			path = os.path.join(dag_dp,f"{mol_id}.pkl")
+			file_fn = lambda p: open(p,"wb")
+		with file_fn(path) as f:
+			pickle.dump(dag,f)
+	if parallel:
+		_ = data_utils.par_apply(md_iter,save_dag)
+	else:
+		for md in md_iter:
+			save_dag(md)
+
 def main(args):
+
+	assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
 
 	allowed_elements = args.allowed_elements.split(",")
 
@@ -154,7 +185,9 @@ def main(args):
 	print_and_log("num_bonds",num_bonds,wandb_flag,{})
 
 	os.makedirs(os.path.join(args.frag_dp,args.run_name),exist_ok=True)
-	dag_fp = os.path.join(args.frag_dp,args.run_name,f"dag_df.pkl")
+	# dag_fp = os.path.join(args.frag_dp,args.run_name,f"dag_df.pkl")
+	dag_dp = os.path.join(args.frag_dp,args.run_name,f"dags")
+	os.makedirs(dag_dp,exist_ok=True)
 	mol_stats_fp = os.path.join(args.frag_dp,args.run_name,f"mol_stats_df.pkl")
 	spec_stats_fp = os.path.join(args.frag_dp,args.run_name,f"spec_stats_df.pkl")
 	global_stats_fp = os.path.join(args.frag_dp,args.run_name,f"global_stats.json")
@@ -170,51 +203,31 @@ def main(args):
 			except TimeoutException as e:
 				if cur_max_depth > 1:
 					cur_max_depth -= 1
-					print(f">> Decrementing depth to {cur_max_depth}")
+					print(f">> Decrementing depth to {cur_max_depth}",file=sys.stderr)
 				else:
 					dag_d = {}
+					break
 			except KeyboardInterrupt as e:
 				# let these through
 				raise e
 			except Exception as e:
 				# don't retry, theres a bug
-				print(f">> Non-timeout error, aborting: {type(e)} {e}")
+				print(f">> Non-timeout error, aborting: {type(e)} {repr(e)}",file=sys.stderr)
+				print("> Traceback",file=sys.stderr)
+				traceback.print_exc(file=sys.stderr)
 				dag_d = {}
+				break
 		return dag_d
 
-	# example_mol = mol_df["mol"].iloc[0]
-	# mol_d = frag_utils.extract_mol_info(example_mol)
-	# dag_d = frag_utils.compute_dags(mol_d,args.max_depth,args.h_prior,args.max_h_transfer)
-	# import pdb; pdb.set_trace()
 
 	tqdm_iter = tqdm(mol_df["mol"].tolist(),desc=pformat(timed_get_dags),total=len(mol_df["mol"]))
-	frag_results = data_utils.seq_apply(tqdm_iter,timed_get_dags)
-	frag_depth = list(map(lambda x: x.get("max_depth",np.nan),frag_results))
-	frag_formulae = list(map(lambda x: x.get("formulae_to_ccs",np.nan),frag_results))
-	frag_ccs = list(map(lambda x: x.get("ccs_to_formulae",np.nan),frag_results))
-	frag_cc_gs = list(map(lambda x: x.get("cc_g",np.nan),frag_results))
+	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags)
+	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
+	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
+	frag_stats_df["formulae_d"] = list(map(lambda x: x.pop("formulae_to_ccs",np.nan),frag_results))
+	frag_stats_df["ccs_d"] = list(map(lambda x: x.pop("ccs_to_formulae",np.nan),frag_results))
+	frag_stats_df["dag"] = list(map(lambda x: x.pop("cc_g",np.nan),frag_results))
 	del frag_results
-
-	# import pdb; pdb.set_trace()
-
-	dag_df = pd.DataFrame(
-		{
-			"mol_id": mol_df["mol_id"],
-			"cc_gs": frag_cc_gs,
-		}
-	)
-	dag_df.to_pickle(dag_fp)
-	del dag_df
-
-	frag_stats_df = pd.DataFrame(
-		{
-			"mol_id": mol_df["mol_id"],
-			"depth": frag_depth,
-			"formulae_d": frag_formulae,
-			"ccs_d": frag_ccs,
-			"dag": frag_cc_gs,
-		}
-	)
 
 	frag_stats_d = {}
 
@@ -227,14 +240,16 @@ def main(args):
 		wandb.log({"num_failures": num_failures,"step":0})
 	frag_stats_df = frag_stats_df.dropna(axis=0)
 
+	# save dags
+	# frag_stats_df[["mol_id","dag"]].to_pickle(dag_fp)
+	save_dags(frag_stats_df["mol_id"],frag_stats_df["dag"],dag_dp,compress=args.compress_dags)
+
 	### global properties
 
 	# compute total number of formulae
 	unique_formulae = set()
 	for formula_d in frag_stats_df["formulae_d"].values:
 		unique_formulae.update(list(formula_d.keys()))
-	# frag_formulae = frag_stats_df["formulae"].progress_apply(formulae_to_array)
-	# unique_formulae = np.unique(np.concatenate(frag_formulae.values,axis=0),axis=0).tolist()
 	frag_stats_d["total_num_formulae"] = len(unique_formulae)
 	print(f"> num unique formulae: {len(unique_formulae)}")
 	print()
@@ -250,6 +265,17 @@ def main(args):
 		wandb.log(depth_d)
 
 	### molecule properties
+
+	# compute dag num edges and nodes
+	frag_stats_df.loc[:,"dag_num_edges"] = frag_stats_df["dag"].apply(lambda x: x.number_of_edges())
+	frag_stats_df.loc[:,"dag_num_nodes"] = frag_stats_df["dag"].apply(lambda x: x.number_of_nodes())
+	frag_stats_df.loc[:,"dag_sparsity"] = frag_stats_df["dag_num_edges"]/(frag_stats_df["dag_num_nodes"]*(frag_stats_df["dag_num_nodes"]-1))
+	print_and_log("dag_num_edges",frag_stats_df["dag_num_edges"],wandb_flag,frag_stats_d)
+	print_and_log("dag_num_nodes",frag_stats_df["dag_num_nodes"],wandb_flag,frag_stats_d)
+	print_and_log("dag_sparsity",frag_stats_df["dag_sparsity"],wandb_flag,frag_stats_d)
+
+	# drop dags
+	frag_stats_df = frag_stats_df.drop(columns=["dag"])
 
 	# count number of formula per molecule
 	frag_stats_df.loc[:,"num_formulae"] = frag_stats_df["formulae_d"].apply(lambda x: len(x))
@@ -273,32 +299,8 @@ def main(args):
 	frag_stats_df.loc[:,"formulae_d"] = frag_stats_df["formulae_d"].apply(lambda x: list(x.keys()))
 	frag_stats_df = frag_stats_df.rename({"formulae_d":"formulae"},axis=1)
 
-	# compute dag num edges and nodes
-	frag_stats_df.loc[:,"dag_num_edges"] = frag_stats_df["dag"].apply(lambda x: x.number_of_edges())
-	frag_stats_df.loc[:,"dag_num_nodes"] = frag_stats_df["dag"].apply(lambda x: x.number_of_nodes())
-	frag_stats_df.loc[:,"dag_sparsity"] = frag_stats_df["dag_num_edges"]/(frag_stats_df["dag_num_nodes"]*(frag_stats_df["dag_num_nodes"]-1))
-	print_and_log("dag_num_edges",frag_stats_df["dag_num_edges"],wandb_flag,frag_stats_d)
-	print_and_log("dag_num_nodes",frag_stats_df["dag_num_nodes"],wandb_flag,frag_stats_d)
-	print_and_log("dag_sparsity",frag_stats_df["dag_sparsity"],wandb_flag,frag_stats_d)
-
-	# drop dags
-	frag_stats_df = frag_stats_df.drop(columns=["dag"])
-
-	# check if precursor formulae is in formulae
-	# def prec_in_formulae(row):
-	# 	prec_formula = row["prec_formula"]
-	# 	formulae = row["formulae"]
-	# 	return prec_formula in formulae
+	# add precursor formula
 	frag_stats_df = frag_stats_df.merge(mol_df[["mol_id","formula"]].rename(columns={"formula":"prec_formula"}),on="mol_id",how="inner")
-	# frag_stats_df.loc[:,"prec_in_formulae"] = frag_stats_df.apply(prec_in_formulae,axis=1)
-	# print("> prec_in_formulae:")
-	# print(frag_stats_df["prec_in_formulae"].value_counts())
-	# print()
-	# pif_d = {f"prec_in_formulae/{k}":v for k,v in frag_stats_df["prec_in_formulae"].value_counts().to_dict().items()}
-	# frag_stats_d.update(pif_d)
-	# if wandb_flag:
-	# 	depth_d["step"] = 0
-	# 	wandb.log(pif_d)
 
 	# save molecule-level stats, then drop them
 	mol_stats = ["num_formulae","num_ccs","depth","formula_redundancy","dag_num_edges","dag_num_nodes","dag_sparsity"] #,"prec_in_formulae"]
@@ -382,7 +384,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries",type=int,default=-1)
 	parser.add_argument("--max_depth",type=int,default=4)
-	parser.add_argument("--max_time",type=int,default=2*60)
+	parser.add_argument("--max_time",type=int,default=4*60)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
 	parser.add_argument("--frag_dp",type=str,default="data/frag")
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
@@ -394,6 +396,7 @@ if __name__ == "__main__":
 	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
+	parser.add_argument("--compress_dags",type=booltype,default=True)
 	args = parser.parse_args()
 
 	tqdm.pandas()
