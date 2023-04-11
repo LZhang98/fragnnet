@@ -252,43 +252,27 @@ def formula_to_peak_mzs(formula, prec_type, isotopes=True, return_map=True):
     else:
         return peak_mzs
 
+def get_formulae_hill_notation(element_counts: Dict[str,int]) -> str:
+    """return formulae in string following hill notation
+
+    Args:
+        element_counts (Dict[str,int]): element configs eg:  {"C":6,"H":7,"O":6,"N":0}
+
+    Returns:
+        str: formulae string eg: BrClH2Si
+    """
+    formulae_string = ''
+    sorted_keys = list(element_counts.keys())
+    sorted_keys.sort()
+    for element in sorted_keys:
+        formulae_string += element
+        if element_counts[element] > 1:
+            formulae_string += str(element_counts[element])
+    return formulae_string
 
 if __name__ == "__main__":
 
-    isotopes = False
-    # Test Carbon
-    for i in [1, 2, 10, 100, 1000]:
-        element_counts = {"C": i}
-        print(element_counts, get_peaks_for_formula(element_counts, isotopes))
-
-    # Test Br
-    for i in range(1, 4):
-        element_counts = {"Br": i}
-        print(element_counts, get_peaks_for_formula(element_counts, isotopes))
-
-    # Test Clorine
-    for i in range(1, 4):
-        element_counts = {"Cl": i}
-        print(element_counts, get_peaks_for_formula(element_counts, isotopes))
-
+    #isotopes = False
     element_counts = {"C": 6, "H": 7, "O": 6, "N": 0}
     print(get_peaks_for_formula(element_counts))
-
-    isotopes = False
-    # Test Carbon
-    for i in [1, 2, 10, 100, 1000]:
-        element_counts = {"C": i}
-        print(element_counts, get_peaks_for_formula(element_counts))
-
-    # Test Br
-    for i in range(1, 4):
-        element_counts = {"Br": i}
-        print(element_counts, get_peaks_for_formula(element_counts))
-
-    # Test Clorine
-    for i in range(1, 4):
-        element_counts = {"Cl": i}
-        print(element_counts, get_peaks_for_formula(element_counts))
-
-    element_counts = {"C": 6, "H": 7, "O": 6, "N": 0}
-    print(get_peaks_for_formula(element_counts))
+    # isotopes = True

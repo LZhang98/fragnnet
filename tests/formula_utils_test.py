@@ -79,4 +79,13 @@ def test_get_peaks_for_formula():
     pff = get_peaks_for_formula({"C":1, "H":1})
     assert pff[0] == pytest.approx((12 + 1.007825032, 13.00335484 + 1.007825032)) 
     assert pff[1] == pytest.approx((0.98918623050, 0.010698769))
-    
+
+
+def test_get_formulae_hill_notation():
+    # https://en.wikipedia.org/wiki/Chemical_formula
+    assert get_formulae_hill_notation({"I": 1, "Br": 1}) == 'BrI'
+    assert get_formulae_hill_notation({"H":2, "Si":1, "Br": 1, "Cl": 1}) == 'BrClH2Si'
+    assert get_formulae_hill_notation({"C": 1, "H": 3, "I":1}) == 'CH3I'
+    assert get_formulae_hill_notation({"Cl": 4, "H": 1}) == 'CCl4'
+    assert get_formulae_hill_notation({"C": 2, "H": 5, "Br":1}) == 'BrC2H5'
+    assert get_formulae_hill_notation({"S": 1, "H": 2, "O":4}) == 'H2O4S'
