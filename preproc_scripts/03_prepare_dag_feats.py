@@ -25,7 +25,6 @@ from frag_gnn.data_utils import parse_formula
 from frag_gnn.misc_utils import booltype, flatten_lol, wandb_symlink, TimeoutException, time_limit
 import frag_gnn.formula_utils as formula_utils
 
-
 def element_filter(formula,allowed_elements):
 	element_counts = parse_formula(formula)
 	for k,v in element_counts.items():
@@ -149,6 +148,8 @@ def save_dags(mol_ids,dags,dag_dp,compress=True,tar=False,parallel=True):
 
 def main(args):
 
+	assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
+
 	allowed_elements = args.allowed_elements.split(",")
 
 	# init wandb
@@ -220,7 +221,7 @@ def main(args):
 
 
 	tqdm_iter = tqdm(mol_df["mol"].tolist(),desc=pformat(timed_get_dags),total=len(mol_df["mol"]))
-	frag_results = data_utils.seq_apply(tqdm_iter,timed_get_dags)
+	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags)
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
 	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
 	frag_stats_df["formulae_d"] = list(map(lambda x: x.pop("formulae_to_ccs",np.nan),frag_results))
@@ -383,7 +384,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries",type=int,default=-1)
 	parser.add_argument("--max_depth",type=int,default=4)
-	parser.add_argument("--max_time",type=int,default=2*60)
+	parser.add_argument("--max_time",type=int,default=4*60)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
 	parser.add_argument("--frag_dp",type=str,default="data/frag")
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
