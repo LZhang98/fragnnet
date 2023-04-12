@@ -15,6 +15,9 @@ import pandas as pd
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES, MAX_EDGE_PER_NODE, DTYPE
 
+# full list of common elements
+# NOTE: this maybe a bad idea to not cover all the element
+# we should handle all the elemnet
 ELEMENT_TO_VE = {
 	"C": 4,
 	"O": 2,
@@ -22,7 +25,11 @@ ELEMENT_TO_VE = {
 	"P": 3, # up to 5
 	"S": 2, # up to 6
 	"F": 1,
-	"Cl": 1
+	"Cl": 1,
+	"Br": 1,
+	"I":1,
+	"Se":2, #up to 6 same as S
+	"Si":4
 }
 
 CANONICAL_ELEMENT_ORDER = ["C","H"] + sorted([elem for elem in ELEMENT_TO_VE.keys() if elem != "C" and elem != "H"])
@@ -70,7 +77,7 @@ def get_arrays_from_mol_d(mol_d):
 	edge_mask[:num_edges] = 1
 	return num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx
 
-def extract_mol_info(smiles_or_mol):
+def extract_mol_info(smiles_or_mol, use_default_valence=False):
 
 	if isinstance(smiles_or_mol,str):
 		# rdkit mol stuff
@@ -82,6 +89,9 @@ def extract_mol_info(smiles_or_mol):
 	else:
 		assert isinstance(smiles_or_mol,Chem.rdchem.Mol), type(smiles_or_mol)
 		mol = smiles_or_mol
+
+	pt = Chem.GetPeriodicTable()
+	#GetValenceList
 	# some checks
 	charge = rdmolops.GetFormalCharge(mol)
 	assert charge == 0, charge
@@ -94,22 +104,43 @@ def extract_mol_info(smiles_or_mol):
 	num_atoms = 0
 	num_radicals = 0
 	element_counts = {elem:0 for elem in ELEMENT_TO_VE.keys()}
+
 	for atom in mol.GetAtoms():
 		cur_idx = atom.GetIdx()
 		cur_num_hs = atom.GetTotalNumHs()
 		cur_deg = atom.GetTotalDegree()
 		# cur_num_bonds = atom.GetNumBonds()
 		cur_element = atom.GetSymbol()
+
 		if cur_element not in element_counts:
 			raise ValueError(f"Molecules with {cur_element} atom(s) currently not supported")
+		
 		element_counts[cur_element] += 1
 		elems.append(cur_element)
 		sbond_arr.append(cur_deg - cur_num_hs)
-		ve_arr.append(ELEMENT_TO_VE[cur_element])
+		#ve_arr.append(ELEMENT_TO_VE[cur_element])
+
+		# set valence value for each atom
+		# assumption we will use current valance unless
+		# use default valence flag is set to true
+		# not defualt valence can be -1 for transition metals
+		# on paper we should not encounter them at all
+		if use_default_valence:
+			default_valence = pt.GetDefaultValence(cur_element)
+			current_valence = atom.GetTotalValence()
+			if default_valence == -1:
+				ve_value = current_valence
+			else:
+				ve_value = min(current_valence,default_valence)
+		else:
+			ve_value = current_valence
+		ve_arr.append(ve_value)
+
 		hs_arr.append(cur_num_hs)
 		num_hs += cur_num_hs
 		num_atoms += 1
 		num_radicals += atom.GetNumRadicalElectrons()
+
 	element_counts["H"] = num_hs
 	assert num_radicals == 0, num_radicals
 	sbond_arr = np.array(sbond_arr)
@@ -119,22 +150,28 @@ def extract_mol_info(smiles_or_mol):
 	bonds = []
 	num_bonds = 0
 	adj = np.zeros((num_atoms, num_atoms), dtype=np.int32)
+	#adj = Chem.rdmolops.GetAdjacencyMatrix(mol)
 	for bond in mol.GetBonds():
 		cur_idx = bond.GetIdx()
 		from_idx = bond.GetBeginAtomIdx()
 		to_idx = bond.GetEndAtomIdx()
 		assert from_idx != to_idx
 		adj[from_idx, to_idx] = 1
+
 		bonds.append((from_idx, to_idx))
+
 		if from_idx not in atoms_to_bonds:
 			atoms_to_bonds[from_idx] = [cur_idx]
 		else:
 			atoms_to_bonds[from_idx].append(cur_idx)
+
 		if to_idx not in atoms_to_bonds:
 			atoms_to_bonds[to_idx] = [cur_idx]
 		else:
 			atoms_to_bonds[to_idx].append(cur_idx)
 		num_bonds += 1
+
+
 	mol_d = {}
 	mol_d["mol"] = mol
 	mol_d["num_hs"] = num_hs
