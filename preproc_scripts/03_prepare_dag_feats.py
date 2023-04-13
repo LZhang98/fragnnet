@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import torch as th
 from tqdm import tqdm
 import signal
 from contextlib import contextmanager
@@ -16,13 +17,14 @@ import traceback
 import sys
 import pickle
 import gzip
+import dgl
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.frag_utils import ELEMENT_TO_IDX
-from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
+from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES, TimeoutError
 import frag_gnn.data_utils as data_utils
-from frag_gnn.data_utils import parse_formula
-from frag_gnn.misc_utils import booltype, flatten_lol, wandb_symlink, TimeoutException, time_limit
+from frag_gnn.data_utils import parse_formula, seq_apply_df_rows, par_apply_df_rows
+from frag_gnn.misc_utils import booltype, flatten_lol, wandb_symlink, TimeoutException
 import frag_gnn.formula_utils as formula_utils
 
 def element_filter(formula,allowed_elements):
@@ -124,27 +126,26 @@ def print_and_log(name,series,wandb_flag,stats_d):
 			log_d[f"{name}/{stat}"] = stats[stat]
 		wandb.log(log_d)
 
-def save_dags(mol_ids,dags,dag_dp,compress=True,tar=False,parallel=True):
+def save_dags(df,dag_dp,parallel=True):
 
-	if tar:
-		raise NotImplementedError
-	assert len(mol_ids) == len(dags)
-	md_iter = tqdm(zip(mol_ids,dags),total=len(mol_ids),desc="> saving DAGs")
-	def save_dag(md_tuple):
-		mol_id, dag = md_tuple
-		if compress:
-			path = os.path.join(dag_dp,f"{mol_id}.pkl.gz")
-			file_fn = lambda p: gzip.GzipFile(p,"wb")
-		else:
-			path = os.path.join(dag_dp,f"{mol_id}.pkl")
-			file_fn = lambda p: open(p,"wb")
-		with file_fn(path) as f:
-			pickle.dump(dag,f)
+	def save_dag(row):
+		# dag and associated data
+		mol_id = row["mol_id"]
+		dag = row["dag"]
+		th_d = dict(
+			mol_id=mol_id,
+			formula_peak_probs=row["formula_peak_probs"],
+			formula_peak_mzs=row["formula_peak_mzs"],
+			idx_to_formula=row["idx_to_formula"]
+		)
+		dag_path = os.path.join(dag_dp,f"{mol_id}_dag.bin")
+		dgl.save_graphs(dag_path,[dag])
+		th_path = os.path.join(dag_dp,f"{mol_id}_dag_meta.pt")
+		th.save(th_d,th_path)
 	if parallel:
-		_ = data_utils.par_apply(md_iter,save_dag)
+		par_apply_df_rows(df,save_dag)
 	else:
-		for md in md_iter:
-			save_dag(md)
+		seq_apply_df_rows(df,save_dag)
 
 def main(args):
 
@@ -198,9 +199,8 @@ def main(args):
 		while not bool(dag_d): # empty dictionary
 			try:
 				mol_d = frag_utils.extract_mol_info(mol)
-				with time_limit(args.max_time):
-					dag_d = frag_utils.compute_dags(mol_d,cur_max_depth,args.h_prior,args.max_h_transfer)
-			except TimeoutException as e:
+				dag_d = frag_utils.compute_dags(mol_d,cur_max_depth,args.h_prior,args.max_h_transfer,args.max_time)
+			except TimeoutError as e:
 				if cur_max_depth > 1:
 					cur_max_depth -= 1
 					print(f">> Decrementing depth to {cur_max_depth}",file=sys.stderr)
@@ -219,14 +219,14 @@ def main(args):
 				break
 		return dag_d
 
-
 	tqdm_iter = tqdm(mol_df["mol"].tolist(),desc=pformat(timed_get_dags),total=len(mol_df["mol"]))
 	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags)
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
 	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
-	frag_stats_df["formulae_d"] = list(map(lambda x: x.pop("formulae_to_ccs",np.nan),frag_results))
-	frag_stats_df["ccs_d"] = list(map(lambda x: x.pop("ccs_to_formulae",np.nan),frag_results))
-	frag_stats_df["dag"] = list(map(lambda x: x.pop("cc_g",np.nan),frag_results))
+	frag_stats_df["dag"] = list(map(lambda x: x.pop("dag",np.nan),frag_results))
+	frag_stats_df["formula_peak_mzs"] = list(map(lambda x: x.pop("formula_peak_mzs",np.nan),frag_results))
+	frag_stats_df["formula_peak_probs"] = list(map(lambda x: x.pop("formula_peak_probs",np.nan),frag_results))
+	frag_stats_df["idx_to_formula"] = list(map(lambda x: x.pop("idx_to_formula",np.nan),frag_results))
 	del frag_results
 
 	frag_stats_d = {}
@@ -234,24 +234,23 @@ def main(args):
 	# count failures, then remove them
 	num_failures = frag_stats_df.isna().any(axis=1).sum()
 	frag_stats_d["total_num_failures"] = num_failures
-	print(f"> num failures: {num_failures}")
+	print(f"> total num failures: {num_failures}")
 	print()
 	if wandb_flag:
-		wandb.log({"num_failures": num_failures,"step":0})
+		wandb.log({"total_num_failures": num_failures,"step":0})
 	frag_stats_df = frag_stats_df.dropna(axis=0)
 
-	# save dags
-	# frag_stats_df[["mol_id","dag"]].to_pickle(dag_fp)
-	save_dags(frag_stats_df["mol_id"],frag_stats_df["dag"],dag_dp,compress=args.compress_dags)
+	# save dags and associated peak stuff
+	save_dags(frag_stats_df,dag_dp,parallel=False)
 
 	### global properties
 
 	# compute total number of formulae
 	unique_formulae = set()
-	for formula_d in frag_stats_df["formulae_d"].values:
-		unique_formulae.update(list(formula_d.keys()))
+	for idx_to_formula in frag_stats_df["idx_to_formula"].values:
+		unique_formulae.update(list(idx_to_formula.values()))
 	frag_stats_d["total_num_formulae"] = len(unique_formulae)
-	print(f"> num unique formulae: {len(unique_formulae)}")
+	print(f"> total num formulae: {len(unique_formulae)}")
 	print()
 
 	# compute total number of depths
@@ -274,60 +273,31 @@ def main(args):
 	print_and_log("dag_num_nodes",frag_stats_df["dag_num_nodes"],wandb_flag,frag_stats_d)
 	print_and_log("dag_sparsity",frag_stats_df["dag_sparsity"],wandb_flag,frag_stats_d)
 
+	# compute formula redundancy
+	def get_formula_redundancy(dag):
+		num_formulae = th.sum((dag.ndata["h_formulae_idx"]>0).type(th.int32),dim=1)
+		return th.mean(num_formulae.type(th.float32)).item()
+	frag_stats_df.loc[:,"formula_redundancy"] = frag_stats_df["dag"].apply(get_formula_redundancy)
+	print_and_log("formula_redundancy",frag_stats_df["formula_redundancy"],wandb_flag,frag_stats_d)
+
 	# drop dags
 	frag_stats_df = frag_stats_df.drop(columns=["dag"])
 
 	# count number of formula per molecule
-	frag_stats_df.loc[:,"num_formulae"] = frag_stats_df["formulae_d"].apply(lambda x: len(x))
+	frag_stats_df.loc[:,"num_formulae"] = frag_stats_df["idx_to_formula"].apply(lambda x: len(x)-1)
 	print_and_log("num_formulae",frag_stats_df["num_formulae"],wandb_flag,frag_stats_d)
 	assert (frag_stats_df["num_formulae"]>0).all()
 
-	# count number of ccs per molecule
-	frag_stats_df.loc[:,"num_ccs"] = frag_stats_df["ccs_d"].apply(lambda x: len(x))
-	print_and_log("num_ccs",frag_stats_df["num_ccs"],wandb_flag,frag_stats_d)
-	
-	# drop ccs
-	frag_stats_df = frag_stats_df.drop(columns=["ccs_d"])
-
-	# compute formula redundancy
-	def get_formula_redundancy(formulae_to_ccs):
-		return np.mean(np.array([len(ccs) for formula,ccs in formulae_to_ccs.items()]))
-	frag_stats_df.loc[:,"formula_redundancy"] = frag_stats_df["formulae_d"].progress_apply(get_formula_redundancy)
-	print_and_log("formula_redundancy",frag_stats_df["formula_redundancy"],wandb_flag,frag_stats_d)
-
-	# convert formulae to list
-	frag_stats_df.loc[:,"formulae_d"] = frag_stats_df["formulae_d"].apply(lambda x: list(x.keys()))
-	frag_stats_df = frag_stats_df.rename({"formulae_d":"formulae"},axis=1)
-
-	# add precursor formula
-	frag_stats_df = frag_stats_df.merge(mol_df[["mol_id","formula"]].rename(columns={"formula":"prec_formula"}),on="mol_id",how="inner")
+	# drop idx_to_formula
+	frag_stats_df = frag_stats_df.drop(columns=["idx_to_formula"])
 
 	# save molecule-level stats, then drop them
-	mol_stats = ["num_formulae","num_ccs","depth","formula_redundancy","dag_num_edges","dag_num_nodes","dag_sparsity"] #,"prec_in_formulae"]
+	mol_stats = ["num_formulae","depth","formula_redundancy","dag_num_edges","dag_num_nodes","dag_sparsity"]
 	frag_stats_df[["mol_id"]+mol_stats].to_pickle(mol_stats_fp)
 	frag_stats_df = frag_stats_df.drop(columns=mol_stats)
 	# print(frag_stats_df.columns)
 
 	### spectrum properties
-
-	# convert formulae to peak locations
-	def get_pred_mz_d(formulae):
-		ds = map(lambda x: formula_utils.formula_to_peak_mzs(x,"[M+H]+",isotopes=args.isotopes,return_map=True), formulae)
-		merged_d = dict()
-		for d in ds:
-			for k,v in d.items():
-				# exact peak collisions should not be possible
-				if k in merged_d:
-					print(k,v,merged_d[k])
-				merged_d[k] = v
-		return merged_d
-	frag_stats_df.loc[:,"pred_mz_d"] = data_utils.par_apply_series(frag_stats_df["formulae"],get_pred_mz_d)
-	prec_peak_mz = lambda x: formula_utils.formula_to_peak_mzs(x,"[M+H]+",isotopes=False,return_map=False)
-	frag_stats_df.loc[:,"pred_prec_mz"] = frag_stats_df["prec_formula"].apply(lambda x: prec_peak_mz(x)[0])
-
-	# drop formulae
-	frag_stats_df = frag_stats_df.drop(columns=["formulae","prec_formula"])
-	# print(frag_stats_df.columns)
 
 	# for each spectrum, calculate fraction of peaks explained, fraction of intensity explained by referencing
 	peak_spec_df = spec_df[["spec_id","mol_id","peaks","prec_mz"]].merge(frag_stats_df,on="mol_id",how="inner")
@@ -358,14 +328,10 @@ def main(args):
 			print_and_log("spec_"+key,frag_stats_df[key],wandb_flag,frag_stats_d)
 
 		# collect across molecules and report summary statistics
-		agg_dict = { key: np.mean for key in keys }
+		agg_dict = { key: np.nanmean for key in keys }
 		peak_mol_df = peak_spec_df[["mol_id"]+keys].groupby("mol_id").agg(agg_dict).reset_index()
 		for key in keys:
 			print_and_log("mol_"+key,peak_mol_df[key],wandb_flag,frag_stats_d)
-
-		# if wandb_flag and args.wandb_symlink_dp != "":
-		# 	wandb_symlink_dp = os.path.join(args.project_dp,args.wandb_symlink_dp)
-		# 	wandb_symlink(wandb_run.dir,wandb_symlink_dp,args.job_id)
 
 	# save spectrum-level stats
 	frag_stats_df.to_pickle(spec_stats_fp)
@@ -384,7 +350,7 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries",type=int,default=-1)
 	parser.add_argument("--max_depth",type=int,default=4)
-	parser.add_argument("--max_time",type=int,default=4*60)
+	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
 	parser.add_argument("--frag_dp",type=str,default="data/frag")
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
@@ -396,7 +362,7 @@ if __name__ == "__main__":
 	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
-	parser.add_argument("--compress_dags",type=booltype,default=True)
+	# parser.add_argument("--compress_dags",type=booltype,default=True)
 	args = parser.parse_args()
 
 	tqdm.pandas()

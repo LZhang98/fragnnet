@@ -1,9 +1,16 @@
 import numpy as np
+from cysignals.signals cimport sig_check
+# from clib.time cimport time, time_t
+from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
+from cpython.ref cimport PyObject
 
 MAX_NUM_NODES = 60 # hard cap on 64!!
 MAX_NUM_EDGES = 150 # ~4*MAX_NUM_NODES 
 DTYPE = np.intc
 MAX_EDGE_PER_NODE = 6 # Sulfur
+
+class TimeoutError(RuntimeError):
+	pass
 
 cdef int [::1] np_copy(int [::1] array):
 	cdef int num_elems = array.shape[0]
@@ -28,6 +35,13 @@ cdef int np_sum(int [::1] array):
 	for i in range(num_elems):
 		total += array[i]
 	return total
+
+cdef long get_time():
+	cdef timespec ts
+	cdef long current
+	clock_gettime(CLOCK_REALTIME, &ts)
+	current = ts.tv_sec
+	return current
 
 cdef long node_mask_to_int(int num_nodes, int [::1] node_mask):
 
@@ -159,8 +173,17 @@ cdef compute_ccs_recursive(
 		int depth,
 		int max_depth,
 		bint parents,
-		bint depths
+		bint depths,
+		long time_limit,
+		long start_time
 	):
+	# start with a signal check
+	sig_check()
+	# and a time check
+	cdef long cur_time = get_time()
+	if cur_time - start_time > time_limit:
+		raise TimeoutError
+	# now the rest
 	cdef int [::1] new_node_mask = np_copy(node_mask)
 	cdef int [::1] new_edge_mask = np_copy(edge_mask)
 	cdef int num_edges_nomask = np_sum(new_edge_mask)
@@ -217,7 +240,9 @@ cdef compute_ccs_recursive(
 					depth+1,
 					max_depth,
 					parents,
-					depths
+					depths,
+					time_limit,
+					start_time
 				)
 				ccs.extend(rec_ccs)
 				if parents:
@@ -240,13 +265,15 @@ def py_compute_ccs_recursive(
 		int max_depth,
 		bint convert_to_ints,
 		bint parents,
-		bint depths
+		bint depths,
+		long time_limit
 	):
 
 	assert num_nodes <= MAX_NUM_NODES, num_nodes
 	assert num_edges <= MAX_NUM_EDGES, num_edges
 	# at this point, there are duplicates
 	# the latter two lists may be empty
+	cdef long start_time = get_time()
 	ccs_list, ccs_parents_list, ccs_depth_list = compute_ccs_recursive(
 		num_nodes,
 		num_edges,
@@ -257,7 +284,9 @@ def py_compute_ccs_recursive(
 		depth,
 		max_depth,
 		parents,
-		depths
+		depths,
+		time_limit,
+		start_time
 	)
 	# add the precursor
 	ccs_list.append(compute_full_cc(num_nodes))

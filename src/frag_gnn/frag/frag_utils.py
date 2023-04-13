@@ -11,9 +11,12 @@ import networkx as nx
 from pprint import pprint
 import os
 import pandas as pd
+import dgl
 
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES, MAX_EDGE_PER_NODE, DTYPE
+from frag_gnn.formula_utils import formula_to_peak_mzs
+from frag_gnn.misc_utils import timeout_func
 
 ELEMENT_TO_VE = {
 	"C": 4,
@@ -32,6 +35,8 @@ ELEMENT_TO_IDX["H"] = len(ELEMENT_TO_VE.keys())
 IDX_TO_ELEMENT = { idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 
 MAX_H_TRANSFER = 4
+
+MAX_NUM_MZS_PER_FORMULA = 5
 
 
 def convert_to_int(cc):
@@ -188,7 +193,43 @@ def compute_cc_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bond_
 	cc_floor = max(cc_floor,0) # why can cc_floor be negative?
 	return cc_floor
 
-def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER,return_counts=False,max_depths=None):
+def compute_approximate_formula(cc,mol_d,max_h_transfer,formula_strs=False):
+
+	bonds = mol_d["bonds"] # never mutated
+	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
+	ve_arr = np.copy(mol_d["ve_arr"])
+	sbond_arr = np.copy(mol_d["sbond_arr"])
+	num_hs = mol_d["num_hs"]
+	hs_arr = mol_d["hs_arr"]
+	elems = mol_d["elems"]
+	bond_mask_arr = mol_d["bond_mask_arr"]
+	base_formula = cc_to_formula_arr(cc,elems)
+	sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
+	cap = compute_cc_cap(cc,ve_arr,sbond_arr,0)
+	floor = compute_cc_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+	assert floor <= cap, (floor,cap,cc)
+	assert floor >= 0, floor
+	num_hs_prior = 0
+	for atom in cc:
+		num_hs_prior += hs_arr[atom]
+	floor = max(floor,num_hs_prior-max_h_transfer)
+	cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
+	delta_h_to_formula = {}
+	for delta_h in range(-max_h_transfer,max_h_transfer+1):
+		h = num_hs_prior + delta_h
+		if h < floor or h > cap:
+			# special invalid formula
+			formula = np.zeros_like(base_formula)
+		else:
+			formula = np.copy(base_formula)
+			formula[ELEMENT_TO_IDX["H"]] = h
+			formula = tuple(formula)
+		if formula_strs:
+			formula = formula_arr_to_str(formula)
+		delta_h_to_formula[h] = formula
+	return delta_h_to_formula
+
+def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER,return_counts=False):
 	"""
 	Note: this assumes fragments are fully defined by their node cover,
 	not their edges. This might result in some undercounting.
@@ -394,7 +435,8 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 		max_depth,
 		True,
 		parents,
-		depths
+		depths,
+		int(1e6)
 	)
 	if depths:
 		ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
@@ -406,9 +448,8 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 def compute_frag_peak_stats(row,tolerance=0.01):
 
 	true_mzs, true_ints = list(zip(*row["peaks"]))
-	pred_mz_d = row["pred_mz_d"]
-	pred_mzs = np.array(list(pred_mz_d.keys()))
-	pred_formulae = np.array(list(pred_mz_d.values()))
+	pred_mzs = row["formula_peak_mzs"]
+	pred_probs = row["formula_peak_probs"]
 	# compute overlap
 	overlap_true_idxs = []
 	overlap_true_ints = []
@@ -416,54 +457,65 @@ def compute_frag_peak_stats(row,tolerance=0.01):
 	overlap_pred_peak_counts = []
 	overlap_pred_formula_counts = []
 	for true_idx, true_mz in enumerate(true_mzs):
-		mz_diffs = np.abs(pred_mzs-true_mz)
+		mz_diffs = th.abs(pred_mzs-true_mz)
 		mz_close = mz_diffs < tolerance
-		if np.any(mz_close):
-			pred_idx = np.nonzero(mz_close)[0]
+		if th.any(mz_close):
+			pred_idx = th.nonzero(mz_close,as_tuple=False)
+			num_formula_match = th.sum(th.any(mz_close,dim=1).type(th.int32)).item()
+			num_peak_match = pred_idx.shape[0]
 			overlap_true_idxs.append(true_idx)
 			overlap_true_ints.append(true_ints[true_idx])
 			overlap_pred_idxs.append(pred_idx)
-			overlap_pred_peak_counts.append(len(pred_idx))
-			overlap_pred_formula_counts.append(len(np.unique(pred_formulae[pred_idx])))
+			overlap_pred_peak_counts.append(num_peak_match)
+			overlap_pred_formula_counts.append(num_formula_match)
 	# remove duplicates
 	if len(overlap_pred_idxs) > 0:
-		overlap_pred_idxs = np.unique(np.concatenate(overlap_pred_idxs,axis=0))
+		overlap_pred_idxs = th.unique(th.cat(overlap_pred_idxs,dim=0),dim=0)
 	else:
-		overlap_pred_idxs = np.array([])
+		overlap_pred_idxs = th.zeros((0,2))
 	recall = len(overlap_true_idxs) / len(true_mzs)
 	w_recall = np.sum(overlap_true_ints) / np.sum(true_ints)
-	prec = len(overlap_pred_idxs) / len(pred_mzs)
+	prec = len(overlap_pred_idxs) / th.sum((pred_probs>0.).type(th.int32)).item()
 	if len(overlap_pred_peak_counts) > 0:
 		ppt_peak = np.mean(overlap_pred_peak_counts)
 		ppt_formula = np.mean(overlap_pred_formula_counts)
 	else:
-		ppt_peak = 0.
-		ppt_formula = 0.
+		ppt_peak = np.nan
+		ppt_formula = np.nan
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
-def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,formula_dag=False,cch_dag=False):
+def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_dag=False,cch_dag=False):
 
 	assert h_prior in [True,False], h_prior
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_arrays_from_mol_d(mol_d)
-	# time this part
-	ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
-		num_nodes,
-		num_edges,
-		node_mask,
-		edges,
-		edge_mask,
-		edge_to_node_idx,
-		0,
-		max_depth,
-		True,
-		True,
-		True
-	)
-	assert len(ccs) == len(ccs_parents) == len(ccs_depths)
-	ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
-	ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
-	# pprint(ccs_to_parents)
-	# pprint(ccs_to_depths)
+	# time the recursive part
+	if frag_max_time is None:
+		frag_max_time = int(1e6)
+	def _compute_frags():
+		ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
+			num_nodes,
+			num_edges,
+			node_mask,
+			edges,
+			edge_mask,
+			edge_to_node_idx,
+			0,
+			max_depth,
+			True,
+			True,
+			True,
+			frag_max_time
+		)
+		assert len(ccs) == len(ccs_parents) == len(ccs_depths)
+		ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
+		ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
+		return ccs, ccs_to_parents, ccs_to_depths
+	# ccs, ccs_to_parents, ccs_to_depths = timeout_func(
+	# 	_compute_frags,
+	# 	timeout=frag_max_time,
+	# 	default=(None,None,None)
+	# )
+	ccs, ccs_to_parents, ccs_to_depths = _compute_frags()
 
 	# construct graph
 	cc_g = nx.DiGraph()
@@ -472,9 +524,16 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,formula_dag=False,cch_da
 	assert -1 not in ccs_un
 	cc_g.add_nodes_from(ccs_un)
 	# add node depth information
+	ccs_to_depth_arrs = {}
+	for cc, depths in ccs_to_depths.items():
+		depth_arr = [0 for i in range(max_depth+1)] #np.zeros(max_depth+1,dtype=np.bool_)
+		for depth in depths:
+			depth_arr[depth+1] = 1
+		ccs_to_depths[cc] = depth_arr
 	nx.set_node_attributes(cc_g,ccs_to_depths,"depth")
 	# add node mask information
-	ccs_to_mask = {cc : np.array(convert_from_int(num_nodes,cc,bitmask=True)) for cc in ccs_un}
+	# ccs_to_mask = {cc : np.array(convert_from_int(num_nodes,cc,bitmask=True),dtype=np.bool_) for cc in ccs_un}
+	ccs_to_mask = {cc : convert_from_int(num_nodes,cc,bitmask=True) for cc in ccs_un}
 	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
 	nx.set_node_attributes(cc_g,ccs_to_mask,"mask")
 	# add node h count and element information
@@ -482,12 +541,52 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,formula_dag=False,cch_da
 	elems = mol_d["elems"]
 	ccs_to_hs, ccs_to_formula = {}, {}
 	for cc, cc_mask in ccs_to_mask.items():
-		cc_h_count = np.sum(cc_mask*hs_arr)
+		cc_h_count = sum(cc_mask[i]*hs_arr[i] for i in range(len(cc_mask)))
 		ccs_to_hs[cc] = cc_h_count
-		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True)
+		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True).tolist() #.astype(np.uint8)
 		ccs_to_formula[cc] = cc_formula
 	nx.set_node_attributes(cc_g,ccs_to_hs,"hs")
-	nx.set_node_attributes(cc_g,ccs_to_formula,"formula")
+	nx.set_node_attributes(cc_g,ccs_to_formula,"base_formula")
+	# map nodes to formulae
+	ccs_to_formulae = {}
+	formulae_un = set()
+	for cc in ccs_un:
+		cc_mask = convert_from_int(num_nodes,cc,bitmask=False)
+		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True)
+		formulae = list(delta_h_to_formula.values())
+		ccs_to_formulae[cc] = formulae
+		formulae_un.update(formulae)
+	# map nodes to formulae indices
+	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
+	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
+	ccs_to_formulae_idx = {}
+	for cc in ccs_un:
+		formulae = ccs_to_formulae[cc]
+		formulae_idx = []
+		for formula in formulae:
+			formula_idx = formula_to_idx[formula]
+			formulae_idx.append(formula_idx)
+		ccs_to_formulae_idx[cc] = formulae_idx #np.array(formulae_idx,dtype=np.int16)
+	nx.set_node_attributes(cc_g,ccs_to_formulae_idx,"h_formulae_idx")
+	# peak mzs array
+	formula_peak_mzs = []
+	formula_peak_probs = []
+	for formula, idx in formula_to_idx.items():
+		if formula == "":
+			peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
+			peak_probs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
+		else:
+			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"",return_probs=True)
+			peak_mzs, peak_probs = zip(*sorted(zip(peak_mzs, peak_probs), key=lambda x: x[1], reverse=True))
+			peak_mzs = np.array(peak_mzs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
+			peak_mzs = np.pad(peak_mzs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_mzs)),"constant",constant_values=0)
+			peak_probs = np.array(peak_probs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
+			peak_probs = np.pad(peak_probs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_probs)),"constant",constant_values=0)
+		formula_peak_mzs.append(peak_mzs)
+		formula_peak_probs.append(peak_probs)
+	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0))
+	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0))
+
 	# add edges
 	edges_to_mask, edges_to_hs, edges_to_formula = {}, {}, {}
 	for cc, parents in ccs_to_parents.items():
@@ -499,91 +598,97 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,formula_dag=False,cch_da
 				continue
 			cc_g.add_edge(parent,cc)
 			parent_mask = ccs_to_mask[parent]
-			diff_mask = parent_mask - cc_mask
+			diff_mask = [parent_mask[i]-cc_mask[i] for i in range(len(cc_mask))]
 			edges_to_mask[(parent,cc)] = diff_mask
 			parent_hs = ccs_to_hs[parent]
 			diff_hs = parent_hs - cc_hs
 			edges_to_hs[(parent,cc)] = diff_hs
-			diff_formula = cc_to_formula_arr(diff_mask,elems)
+			diff_formula = cc_to_formula_arr(diff_mask,elems).tolist() #.astype(np.uint8)
 			edges_to_formula[(parent,cc)] = diff_formula
 	nx.set_edge_attributes(cc_g,edges_to_mask,"mask")
 	nx.set_edge_attributes(cc_g,edges_to_hs,"hs")
-	nx.set_edge_attributes(cc_g,edges_to_formula,"formula")
+	nx.set_edge_attributes(cc_g,edges_to_formula,"base_formula")
 
-	# compute formulae
-	ccs_to_formulae = {}
-	formulae_to_ccs = {}
-	for cc_int in ccs_un:
-		cc_mask = convert_from_int(num_nodes,cc_int,bitmask=False)
-		formulae = compute_approximate_formulae([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
-		formulae = [formula_arr_to_str(f) for f in formulae]
-		ccs_to_formulae[cc_int] = formulae
-		for formula in formulae:
-			if formula in formulae_to_ccs:
-				formulae_to_ccs[formula].append(cc_int)
-			else:
-				formulae_to_ccs[formula] = [cc_int]
+	# convert to dgl
+	cc_g = dgl.from_networkx(
+		cc_g, 
+		node_attrs=["mask","hs","base_formula","h_formulae_idx"], 
+		edge_attrs=["mask","hs","base_formula"],
+		idtype=th.int32,
+		device="cpu"
+	)
+	# casting to make graph smaller
+	cc_g.ndata["mask"] = cc_g.ndata["mask"].type(th.bool)
+	cc_g.ndata["hs"] = cc_g.ndata["hs"].type(th.int16)
+	cc_g.ndata["base_formula"] = cc_g.ndata["base_formula"].type(th.int16)
+	cc_g.ndata["h_formulae_idx"] = cc_g.ndata["h_formulae_idx"].type(th.int16)
+	cc_g.edata["mask"] = cc_g.edata["mask"].type(th.bool)
+	cc_g.edata["hs"] = cc_g.edata["hs"].type(th.int16)
+	cc_g.edata["base_formula"] = cc_g.edata["base_formula"].type(th.int16)
 
 	dag_d = {}
 	dag_d["max_depth"] = max_depth
 	dag_d["h_prior"] = h_prior
 	dag_d["max_h_transfer"] = max_h_transfer
-	dag_d["ccs_to_formulae"] = ccs_to_formulae
-	dag_d["formulae_to_ccs"] = formulae_to_ccs
-	dag_d["cc_g"] = cc_g
+	dag_d["dag"] = cc_g
+	dag_d["formula_peak_mzs"] = formula_peak_mzs
+	dag_d["formula_peak_probs"] = formula_peak_probs
+	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
 
 	if formula_dag:
 		
-		formulae_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_to_ccs.keys())))}
-		for k,v in ccs_to_formulae.items():
-			ccs_to_formulae[k] = [formulae_to_idx[f] for f in v]
-		formula_g = nx.DiGraph()
-		formula_g.add_nodes_from(list(range(len(formulae_to_idx))))
-		for cc,formulae in ccs_to_formulae.items():
-			cc_out_edges = cc_g.out_edges(cc)
-			for out_formula in formulae:
-				for cc_out_edge in cc_out_edges:
-					assert cc_out_edge[0] == cc
-					for in_formula in ccs_to_formulae[cc_out_edge[1]]:
-						formula_g.add_edge(out_formula,in_formula)
-		dag_d["formula_g"] = formula_g
+		raise NotImplementedError
+		# formulae_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_to_ccs.keys())))}
+		# for k,v in ccs_to_formulae.items():
+		# 	ccs_to_formulae[k] = [formulae_to_idx[f] for f in v]
+		# formula_g = nx.DiGraph()
+		# formula_g.add_nodes_from(list(range(len(formulae_to_idx))))
+		# for cc,formulae in ccs_to_formulae.items():
+		# 	cc_out_edges = cc_g.out_edges(cc)
+		# 	for out_formula in formulae:
+		# 		for cc_out_edge in cc_out_edges:
+		# 			assert cc_out_edge[0] == cc
+		# 			for in_formula in ccs_to_formulae[cc_out_edge[1]]:
+		# 				formula_g.add_edge(out_formula,in_formula)
+		# dag_d["formula_g"] = formula_g
 
 	if cch_dag:
 		
-		# identify nodes
-		all_cchs = set()
-		dropped_ccs = []
-		for cc_int in ccs_un:
-			cc_mask = convert_from_int(num_nodes,cc_int,bitmask=False)
-			cchs = compute_approximate_cchs([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
-			if len(cchs) == 0:
-				dropped_ccs.append(cc_int)
-				continue
-			cchs = [(cc_int,cch[1]) for cch in cchs]
-			all_cchs.update(cchs)
-		# all_ccs = sorted(list(set([cch[0] for cch in all_cchs])))
-		print(f"> dropped {len(dropped_ccs)} ccs: {dropped_ccs}")
-		cch_to_idx = {}
-		cc_to_cch_idx = {}
-		for idx, cch in enumerate(all_cchs):
-			cc, h = cch[0], cch[1]
-			if cc not in cc_to_cch_idx:
-				cc_to_cch_idx[cc] = [idx]
-			else:
-				cc_to_cch_idx[cc].append(idx)
-			cch_to_idx[cch] = idx
-		cch_g = nx.DiGraph()
-		cch_g.add_nodes_from(list(cch_to_idx.values()))
-		# set up edges
-		for cch, src_idx in cch_to_idx.items():
-			cc, h = cch[0], cch[1]
-			cc_out_edges = cc_g.out_edges(cc)
-			for cc_out_edge in cc_out_edges:
-				src_cc = cc_out_edge[0]
-				assert src_cc == cc, (src_cc,cc)
-				dst_cc = cc_out_edge[1]
-				for dst_idx in cc_to_cch_idx.get(dst_cc,tuple()):
-					cch_g.add_edge(src_idx,dst_idx)
-		dag_d["cch_g"] = cch_g
+		raise NotImplementedError
+		# # identify nodes
+		# all_cchs = set()
+		# dropped_ccs = []
+		# for cc_int in ccs_un:
+		# 	cc_mask = convert_from_int(num_nodes,cc_int,bitmask=False)
+		# 	cchs = compute_approximate_cchs([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
+		# 	if len(cchs) == 0:
+		# 		dropped_ccs.append(cc_int)
+		# 		continue
+		# 	cchs = [(cc_int,cch[1]) for cch in cchs]
+		# 	all_cchs.update(cchs)
+		# # all_ccs = sorted(list(set([cch[0] for cch in all_cchs])))
+		# print(f"> dropped {len(dropped_ccs)} ccs: {dropped_ccs}")
+		# cch_to_idx = {}
+		# cc_to_cch_idx = {}
+		# for idx, cch in enumerate(all_cchs):
+		# 	cc, h = cch[0], cch[1]
+		# 	if cc not in cc_to_cch_idx:
+		# 		cc_to_cch_idx[cc] = [idx]
+		# 	else:
+		# 		cc_to_cch_idx[cc].append(idx)
+		# 	cch_to_idx[cch] = idx
+		# cch_g = nx.DiGraph()
+		# cch_g.add_nodes_from(list(cch_to_idx.values()))
+		# # set up edges
+		# for cch, src_idx in cch_to_idx.items():
+		# 	cc, h = cch[0], cch[1]
+		# 	cc_out_edges = cc_g.out_edges(cc)
+		# 	for cc_out_edge in cc_out_edges:
+		# 		src_cc = cc_out_edge[0]
+		# 		assert src_cc == cc, (src_cc,cc)
+		# 		dst_cc = cc_out_edge[1]
+		# 		for dst_idx in cc_to_cch_idx.get(dst_cc,tuple()):
+		# 			cch_g.add_edge(src_idx,dst_idx)
+		# dag_d["cch_g"] = cch_g
 
 	return dag_d

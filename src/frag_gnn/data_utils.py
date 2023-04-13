@@ -12,7 +12,7 @@ from frag_gnn.misc_utils import np_temp_seed, none_or_nan
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
-JOBLIB_TIMEOUT = 300 # default is 300 seconds for "loky"
+JOBLIB_TIMEOUT = 1000 # default is 300 seconds for "loky"
 
 def rdkit_import(*module_strs):
 

@@ -2,6 +2,8 @@
 
 set -e
 
+source ~/.bashrc
+
 conda create -n FRAG-GNN
 conda activate FRAG-GNN
 conda install python=3.10
@@ -16,5 +18,7 @@ pip install tqdm
 pip install scipy
 pip install joblib
 pip install matplotlib
+pip install dgl
+pip install cysignals
 
-pip install .
+pip install -I -e .

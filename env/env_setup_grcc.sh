@@ -23,6 +23,7 @@ pip install tqdm
 pip install scipy
 pip install joblib
 pip install matplotlib
+# TODO: install dgl
 
 # frag-gnn itself
-pip install .
+pip install -I -e .

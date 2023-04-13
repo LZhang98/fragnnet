@@ -15,6 +15,7 @@ H_MASS =  PERIODIC_TABLE.GetMostCommonIsotopeMass("H")
 PREC_TYPE_TO_MASS_DIFF = {
     "[M+H]+": H_MASS - ELECTRON_MASS,
     "[M-H]-": -H_MASS + ELECTRON_MASS,
+    "": 0.
 }
 
 def enumerate_multinomial(N:int, p:List[float], cutoff_thold:float=0.0001):
@@ -128,7 +129,7 @@ def get_peaks_for_formula(element_counts:Dict[str,int],threshold:float=0.001) ->
     return keep_masses, keep_probs
 
 
-def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=True):
+def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=False,return_probs=False):
     """_summary_
 
     Args:
@@ -140,7 +141,7 @@ def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=True):
     Returns:
         _type_: _description_
     """
-
+    assert not (return_map and return_probs)
     element_counts = parse_formula(formula)
     mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
     if not isotopes:
@@ -150,12 +151,15 @@ def formula_to_peak_mzs(formula,prec_type,isotopes=True,return_map=True):
         peak_mz += mass_diff
         peak_mzs = [peak_mz]
     else:
-        peak_mzs = get_peaks_for_formula(element_counts)[0]
+        peak_mzs, peak_probs = get_peaks_for_formula(element_counts)
         peak_mzs = [peak_mz+mass_diff for peak_mz in peak_mzs]
     if return_map:
         return {peak_mz:formula for peak_mz in peak_mzs}
+    elif return_probs:
+        return peak_mzs, peak_probs
     else:
         return peak_mzs
+
 
 
 if __name__ == "__main__":
