@@ -24,6 +24,7 @@ pip install scipy
 pip install joblib
 pip install matplotlib
 # TODO: install dgl
+# TODO: install cysignals
 
 # frag-gnn itself
 pip install -I -e .

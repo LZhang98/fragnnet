@@ -60,6 +60,13 @@ def main(args):
 	script_lines.extend(
 		[
 			"",
+			"# load modules",
+			"module load cuda-11.7",
+		]
+	)
+	script_lines.extend(
+		[
+			"",
 			"# activate environment",
 			f"conda activate {args.env}"
 		]

@@ -15,7 +15,7 @@ import dgl
 
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES, MAX_EDGE_PER_NODE, DTYPE
-from frag_gnn.formula_utils import formula_to_peak_mzs
+from frag_gnn.formula_utils import formula_to_peak_mzs, PREC_TYPE_TO_MASS_DIFF
 from frag_gnn.misc_utils import timeout_func
 
 ELEMENT_TO_VE = {
@@ -445,11 +445,14 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 		ccs = set(ccs)
 		return ccs
 
-def compute_frag_peak_stats(row,tolerance=0.01):
+def compute_frag_peak_stats(row,tolerance=0.01,prec_type="[M+H]+"):
 
 	true_mzs, true_ints = list(zip(*row["peaks"]))
 	pred_mzs = row["formula_peak_mzs"]
 	pred_probs = row["formula_peak_probs"]
+	prec_mask = (pred_probs > 0.).type(th.float32)
+	# account for adduct mass
+	pred_mzs = pred_mzs + prec_mask*PREC_TYPE_TO_MASS_DIFF[prec_type]
 	# compute overlap
 	overlap_true_idxs = []
 	overlap_true_ints = []

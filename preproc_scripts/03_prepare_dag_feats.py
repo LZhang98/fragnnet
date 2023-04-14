@@ -315,7 +315,7 @@ def main(args):
 			f"ppt_formula_{tolerance}"
 		]
 
-		result = peak_spec_df.apply(lambda x: frag_utils.compute_frag_peak_stats(x,tolerance=tolerance),axis=1)
+		result = peak_spec_df.apply(lambda x: frag_utils.compute_frag_peak_stats(x,tolerance=tolerance,prec_type="[M+H]+"),axis=1)
 		for idx, key in enumerate(keys):
 			peak_spec_df.loc[:,key] = result[idx].values
 		del result
