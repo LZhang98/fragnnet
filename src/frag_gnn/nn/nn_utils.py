@@ -98,10 +98,11 @@ class JointPredictor(nn.Module):
 
         mol_dgl, dag_dgl = batched_dag.get_batched_dgls()
         mol_nodes, dag_nodes = batched_dag.get_batched_nodes()
-        dag_formula_peak_mzs = batched_dag.get_batched_tensor("formula_peak_mzs")
-        dag_formula_peak_probs = batched_dag.get_batched_tensor("formula_peak_probs")
-        dag_formula_mask = batched_dag.get_batched_mask("formula_peak_mzs")
-        dag_formula_cumsize = batched_dag.get_batched_cumsize("formula_peak_mzs")
+        dag_formula_peak_mzs = batched_dag.batched_formula_peak_mzs
+        dag_formula_peak_probs = batched_dag.batched_formula_peak_probs
+        dag_formula_peak_sizes = batched_dag.batched_formula_peak_sizes
+        dag_formula_cumsizes = batched_dag.batched_formula_cumsizes
+        dag_formula_peak_idxs = batched_dag.batched_formula_peak_idxs
 
         # get per-atom embeddings [N,A,H]
         mol_embed = self.mol_embedder(mol_dgl)
@@ -164,31 +165,42 @@ class JointPredictor(nn.Module):
             dag_formula_probs = self.output_module(dag_embed)
             # aggregate by formula [N,F]
             dag_formula_batch_idxs = torch.bucketize(dag_dgl.nodes(),dag_nodes,right=True)-1
-            dag_formula_offsets = dag_formula_cumsize[dag_formula_batch_idxs]
-            dag_formula_idxs = dag_dgl.ndata.pop('h_formulae_idx') + dag_formula_offsets.unsqueeze(-1)
+            dag_formula_offsets = dag_formula_cumsizes[dag_formula_batch_idxs]
+            dag_formula_idxs = (dag_dgl.ndata.pop('h_formulae_idx')+dag_formula_offsets.unsqueeze(-1)).flatten()
+            dag_formula_probs = dag_formula_probs.flatten()
             dag_formula_probs = th_s.scatter_add(
-                dag_formula_probs.flatten(), 
-                dag_formula_idxs.flatten(),
+                dag_formula_probs, 
+                dag_formula_idxs,
                 dim=0,
-                dim_size=dag_formula_cumsize[-1]
+                dim_size=dag_formula_cumsizes[-1]
             )
-            # mask out the null formula at index 0
-            import pdb; pdb.set_trace()
-            dag_formula_mask[:,0] = 0
-            dag_formula_mask = dag_formula_mask.flatten()
+            # zero out NULL formula
+            dag_formula_mask = torch.ones_like(dag_formula_probs)
+            dag_formula_mask[dag_formula_cumsizes[:-1]] = 0.
+            dag_formula_batch_idxs = torch.bucketize(torch.arange(dag_formula_cumsizes[-1]),dag_formula_cumsizes,right=True)-1
             # softmax with masked logits
             dag_formula_probs = masked_subset_softmax(
                 dag_formula_probs,
                 dag_formula_mask,
-                None
+                dag_formula_batch_idxs,
                 dim=0,
                 log=True
             )
             # convert to spectrum
-            dag_formula_peak_probs = dag_formula_probs.unsqueeze(-1)*dag_formula_peak_probs
-            spec_nz_peaks = torch.nonzero(dag_formula_peak_probs)
-            spec_mzs = dag_formula_peak_mzs[spec_nz_peaks[:,0],spec_nz_peaks[:,1]]
-            spec_ints = dag_formula_peak_probs[spec_nz_peaks[:,0],spec_nz_peaks[:,1]]
+            spec_mzs = dag_formula_peak_mzs
+            spec_ints = dag_formula_probs[dag_formula_peak_idxs] + torch.log(dag_formula_peak_probs)
+        # check that the total intensity sums up to 1 (approximately)
+        spec_batch_idxs = torch.repeat_interleave(
+            torch.arange(dag_formula_peak_sizes.shape[0]),
+            dag_formula_peak_sizes
+        )
+        spec_ints_total = th_s.scatter_logsumexp(
+            spec_ints,
+            spec_batch_idxs,
+            dim=0,
+            dim_size=None
+        )
+        print(torch.exp(spec_ints_total))
         return spec_mzs, spec_ints
 
 class GNN(nn.Module):
@@ -539,7 +551,7 @@ def masked_subset_softmax(logits,mask,subset,mask_value=-1e9,dim=-1,log=True):
         dim=dim
     )
     # apply normalizing constant
-    masked_logits = masked_logits - c
+    masked_logits = masked_logits - c[subset]
     if not log:
         # exponentiate
         return th.exp(masked_logits)

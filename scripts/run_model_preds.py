@@ -14,7 +14,7 @@ from frag_gnn.nn.nn_utils import GNN, JointPredictor
 
 class BatchedMolDAG:
 
-	def __init__(self,mol_dgl_list,dag_dgl_list,dag_tensor_dict,device=None):
+	def __init__(self,mol_dgl_list,dag_dgl_list,formula_peak_mzs,formula_peak_probs,device=None):
 
 		assert len(mol_dgl_list) == len(dag_dgl_list), (len(mol_dgl_list),len(dag_dgl_list))
 		self.batch_size = len(mol_dgl_list)
@@ -25,26 +25,27 @@ class BatchedMolDAG:
 		self.batched_mol_dgl = dgl.batch(mol_dgl_list)
 		self.batched_dag_dgl = dgl.batch(dag_dgl_list)
 		self.batched_mol_nodes, self.batched_dag_nodes = self._compute_batched_node_offsets(mol_dgl_list,dag_dgl_list)
-		self.batched_tensor_dict = {}
-		self.batched_size_dict = {}
-		self.batched_cumsize_dict = {}
-		self.batched_max_dict = {}
-		for k,v in dag_tensor_dict.items():
-			assert len(v) == self.batch_size, (len(v),self.batch_size)
-			max_dim = max([dag_tensor.shape[0] for dag_tensor in v])
-			self.batched_max_dict[k] = max_dim
-			batched_tensor, batched_size = [], []
-			for dag_tensor in v:
-				dag_tensor_pad = F.pad(dag_tensor,(0,0,0,max_dim-dag_tensor.shape[0]),"constant",0)
-				batched_tensor.append(dag_tensor_pad)
-				dag_size = dag_tensor.shape[0]
-				batched_size.append(dag_size)
-			batched_tensor = th.stack(batched_tensor,dim=0).to(self.device)
-			batched_size = th.tensor(batched_size,device=self.device)
-			batched_cumsize = th.cumsum(th.tensor([0]+list(batched_size),device=self.device),dim=0)
-			self.batched_tensor_dict[k] = batched_tensor
-			self.batched_size_dict[k] = batched_size
-			self.batched_cumsize_dict[k] = batched_cumsize
+		batched_formula_peak_idxs = []
+		batched_formula_peak_mzs = []
+		batched_formula_peak_probs = []
+		batched_formula_sizes = []
+		batched_formula_peak_sizes = []
+		for mzs, probs in zip(formula_peak_mzs,formula_peak_probs):
+			# sparsify
+			idx = th.nonzero(probs)
+			mzs = mzs[idx[:,0],idx[:,1]]
+			probs = probs[idx[:,0],idx[:,1]]
+			batched_formula_peak_idxs.append(idx[:,0])
+			batched_formula_peak_mzs.append(mzs)
+			batched_formula_peak_probs.append(probs)
+			batched_formula_sizes.append(th.unique(idx,sorted=True).shape[0])
+			batched_formula_peak_sizes.append(idx.shape[0])
+		self.batched_formula_peak_idxs = th.cat(batched_formula_peak_idxs,dim=0).to(self.device)
+		self.batched_formula_peak_mzs = th.cat(batched_formula_peak_mzs,dim=0).to(self.device)
+		self.batched_formula_peak_probs = th.cat(batched_formula_peak_probs,dim=0).to(self.device)
+		self.batched_formula_sizes = th.tensor(batched_formula_sizes,device=self.device)
+		self.batched_formula_cumsizes = th.cumsum(th.tensor([0]+batched_formula_sizes,device=self.device),dim=0)
+		self.batched_formula_peak_sizes = th.tensor(batched_formula_peak_sizes,device=self.device)
 
 	def _compute_batched_node_offsets(self,mol_dgl_list,dag_dgl_list):
 
@@ -63,40 +64,13 @@ class BatchedMolDAG:
 
 		return self.batched_mol_nodes, self.batched_dag_nodes
 
-	def get_batched_tensor(self,key):
-		
-		return self.batched_tensor_dict[key]
-
-	def get_batched_mask(self,key):
-
-		max_dim = self.batched_max_dict[key]
-		batched_size = self.batched_size_dict[key]
-		batched_mask = th.arange(0,max_dim,device=self.device).expand(self.batch_size,max_dim)
-		batched_mask = (batched_mask < batched_size.unsqueeze(1)).float()
-		return batched_mask
-
-	def get_batched_size(self,key):
-
-		return self.batched_size_dict[key]
-
-	def get_batched_cumsize(self,key):
-
-		return self.batched_cumsize_dict[key]
-
 	def to(self,device):
 
-		self.device = device
-		for k in list(self.batched_dgl_dict.keys()):
-			self.batched_dgl_dict[k] = self.batched_dgl_dict[k].to(device)
-		for k in list(self.batched_tensor_dict.keys()):
-			self.batched_tensor_dict[k] = self.batched_tensor_dict[k].to(device)
-			self.batched_size_dict[k] = self.batched_size_dict[k].to(device)
-		return self
+		raise NotImplementedError
 
 	def __str__(self):
 
-		tensor_keys = list(self.batched_tensor_dict.keys())
-		str_format = f"BatchedDAG( batch_size={self.batch_size}, device={self.device}, tensor_keys={tensor_keys})"
+		str_format = f"BatchedDAG( batch_size={self.batch_size}, device={self.device} )"
 		return str_format
 
 def featurize_dag(dag):
@@ -165,10 +139,8 @@ if __name__ == "__main__":
 	batched_dag = BatchedMolDAG(
 		[mol_dgl,mol_dgl],
 		[dag_dgl,dag_dgl],
-		{
-			"formula_peak_mzs": [dag_d["formula_peak_mzs"],dag_d["formula_peak_mzs"]],
-			"formula_peak_probs": [dag_d["formula_peak_probs"],dag_d["formula_peak_probs"]]
-		},
+		[dag_d["formula_peak_mzs"],dag_d["formula_peak_mzs"]],
+		[dag_d["formula_peak_probs"],dag_d["formula_peak_probs"]],
 		device=th.device("cpu")
 	)
 	print(batched_dag)
