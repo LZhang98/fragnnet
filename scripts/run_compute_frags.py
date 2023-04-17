@@ -36,6 +36,7 @@ if __name__ == "__main__":
 	max_depth = args.max_depth
 	h_prior = args.h_prior
 	max_h_transfer = args.max_h_transfer
+	frag_max_time = None
 	smiles = COMPOUND_TO_SMILES[args.compound_idx]
 	mol_d = frag_utils.extract_mol_info(smiles)
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
@@ -49,7 +50,6 @@ if __name__ == "__main__":
 	# print(len(formulae))
 	# print(np.mean(counts),np.std(counts))
 
-	frag_max_time = None
 	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
 	dag = dag_d["dag"]
 	print("> dag")

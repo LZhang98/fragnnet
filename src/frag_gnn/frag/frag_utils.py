@@ -27,9 +27,10 @@ ELEMENT_TO_VE = {
 	"F": 1,
 	"Cl": 1
 }
-
+NUM_HEAVY_ELEMENTS = len(ELEMENT_TO_VE.keys())
+NUM_ELEMENTS = NUM_HEAVY_ELEMENTS+1
 CANONICAL_ELEMENT_ORDER = ["C","H"] + sorted([elem for elem in ELEMENT_TO_VE.keys() if elem != "C" and elem != "H"])
-
+CANONICAL_H_IDX = CANONICAL_ELEMENT_ORDER.index("H")
 ELEMENT_TO_IDX = { elem: idx for idx, elem in enumerate(ELEMENT_TO_VE.keys())}
 ELEMENT_TO_IDX["H"] = len(ELEMENT_TO_VE.keys())
 IDX_TO_ELEMENT = { idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
@@ -542,13 +543,12 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
 	elems = mol_d["elems"]
-	ccs_to_hs, ccs_to_formula = {}, {}
+	ccs_to_formula = {}
 	for cc, cc_mask in ccs_to_mask.items():
 		cc_h_count = sum(cc_mask[i]*hs_arr[i] for i in range(len(cc_mask)))
-		ccs_to_hs[cc] = cc_h_count
 		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True).tolist() #.astype(np.uint8)
+		cc_formula[CANONICAL_H_IDX] = cc_h_count
 		ccs_to_formula[cc] = cc_formula
-	nx.set_node_attributes(cc_g,ccs_to_hs,"hs")
 	nx.set_node_attributes(cc_g,ccs_to_formula,"base_formula")
 	# map nodes to formulae
 	ccs_to_formulae = {}
@@ -591,10 +591,9 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0))
 
 	# add edges
-	edges_to_mask, edges_to_hs, edges_to_formula = {}, {}, {}
+	edges_to_mask, edges_to_formula = {}, {}
 	for cc, parents in ccs_to_parents.items():
 		cc_mask = ccs_to_mask[cc]
-		cc_hs = ccs_to_hs[cc]
 		for parent in parents:
 			# skip self edges
 			if parent == cc or parent == -1:
@@ -603,30 +602,25 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 			parent_mask = ccs_to_mask[parent]
 			diff_mask = [parent_mask[i]-cc_mask[i] for i in range(len(cc_mask))]
 			edges_to_mask[(parent,cc)] = diff_mask
-			parent_hs = ccs_to_hs[parent]
-			diff_hs = parent_hs - cc_hs
-			edges_to_hs[(parent,cc)] = diff_hs
-			diff_formula = cc_to_formula_arr(diff_mask,elems).tolist() #.astype(np.uint8)
+			diff_formula = cc_to_formula_arr(diff_mask,elems).tolist()
 			edges_to_formula[(parent,cc)] = diff_formula
 	nx.set_edge_attributes(cc_g,edges_to_mask,"mask")
-	nx.set_edge_attributes(cc_g,edges_to_hs,"hs")
 	nx.set_edge_attributes(cc_g,edges_to_formula,"base_formula")
 
 	# convert to dgl
 	cc_g = dgl.from_networkx(
 		cc_g, 
-		node_attrs=["mask","hs","base_formula","h_formulae_idx"], 
-		edge_attrs=["mask","hs","base_formula"],
+		node_attrs=["mask","base_formula","h_formulae_idx","depth"], 
+		edge_attrs=["mask","base_formula"],
 		idtype=th.int32,
 		device="cpu"
 	)
 	# casting to make graph smaller
 	cc_g.ndata["mask"] = cc_g.ndata["mask"].type(th.bool)
-	cc_g.ndata["hs"] = cc_g.ndata["hs"].type(th.int16)
 	cc_g.ndata["base_formula"] = cc_g.ndata["base_formula"].type(th.int16)
 	cc_g.ndata["h_formulae_idx"] = cc_g.ndata["h_formulae_idx"].type(th.int16)
+	cc_g.ndata["depth"] = cc_g.ndata["depth"].type(th.int16)
 	cc_g.edata["mask"] = cc_g.edata["mask"].type(th.bool)
-	cc_g.edata["hs"] = cc_g.edata["hs"].type(th.int16)
 	cc_g.edata["base_formula"] = cc_g.edata["base_formula"].type(th.int16)
 
 	dag_d = {}
