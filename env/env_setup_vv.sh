@@ -20,5 +20,6 @@ pip install joblib
 pip install matplotlib
 pip install dgl -f https://data.dgl.ai/wheels/cu117/repo.html
 pip install cysignals
+pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-1.13.1+cu117.html
 
 pip install -I -e .

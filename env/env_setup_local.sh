@@ -20,5 +20,6 @@ pip install joblib
 pip install matplotlib
 pip install dgl
 pip install cysignals
+pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-1.13.1+cpu.html
 
 pip install -I -e .

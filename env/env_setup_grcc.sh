@@ -25,6 +25,7 @@ pip install joblib
 pip install matplotlib
 # TODO: install dgl
 # TODO: install cysignals
+# TODO: install torch-scatter
 
 # frag-gnn itself
 pip install -I -e .
