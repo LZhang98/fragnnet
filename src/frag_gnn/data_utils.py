@@ -12,7 +12,7 @@ from typing import Dict
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
-JOBLIB_TIMEOUT = 300 # default is 300 seconds for "loky"
+JOBLIB_TIMEOUT = 1000 # default is 300 seconds for "loky"
 
 def rdkit_import(*module_strs):
 

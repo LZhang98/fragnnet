@@ -10,7 +10,10 @@ import joblib
 import tqdm
 import pandas as pd
 import signal
+import sys
+import threading
 
+TQDM_DISABLE = False
 
 def timeit(func):
 	# adapted from https://dev.to/kcdchennai/python-decorator-to-measure-execution-time-54hk
@@ -93,14 +96,64 @@ def tqdm_joblib(tqdm_object):
 
 class TimeoutException(Exception): pass
 
-@contextmanager
-def time_limit(seconds):
-	def signal_handler(signum, frame):
-		raise TimeoutException(f"Timed out! ({seconds} seconds)")
-	signal.signal(signal.SIGALRM, signal_handler)
-	signal.alarm(seconds)
-	try:
-		yield
-	finally:
-		signal.alarm(0)
+# @contextmanager
+# def time_limit(seconds):
+# 	if seconds is None:
+# 		yield
+# 	def signal_handler(signum, frame):
+# 		raise TimeoutException(f"Timed out! ({seconds} seconds)")
+# 	signal.signal(signal.SIGALRM, signal_handler)
+# 	signal.alarm(seconds)
+# 	try:
+# 		yield
+# 	finally:
+# 		signal.alarm(0)
 
+def timeout_func(func, args=None, kwargs=None, timeout=30, default=None):
+    """This function will spawn a thread and run the given function
+    using the args, kwargs and return the given default value if the
+    timeout is exceeded.
+    http://stackoverflow.com/questions/492519/timeout-on-a-python-function-call
+    """
+    class InterruptableThread(threading.Thread):
+        def __init__(self):
+            threading.Thread.__init__(self)
+            self.result = default
+            self.exc_info = (None, None, None)
+        def run(self):
+            try:
+                self.result = func(*(args or ()), **(kwargs or {}))
+            except Exception as err:
+                self.exc_info = sys.exc_info()
+        def suicide(self):
+            raise TimeoutException(
+                "{0} timeout (taking more than {1} sec)".format(func.__name__, timeout)
+            )
+    it = InterruptableThread()
+    it.start()
+    it.join(timeout)
+    if it.exc_info[0] is not None:
+        a, b, c = it.exc_info
+        raise Exception(a, b, c)  # communicate that to caller
+    if it.is_alive():
+        it.suicide()
+        raise RuntimeError
+    else:
+        return it.result
+
+def my_tqdm(*args,**kwargs):
+	return tqdm.tqdm(*args,**kwargs,disable=TQDM_DISABLE)
+
+def get_tensor_memory_usage(tensor):
+	return tensor.nelement()*tensor.element_size()
+
+def get_dgl_memory_usage(dgl_graph):
+	total_memory = sys.getsizeof(dgl_graph)
+	total_memory += get_tensor_memory_usage(dgl_graph.edges()[0])
+	total_memory += get_tensor_memory_usage(dgl_graph.edges()[1])
+	total_memory += get_tensor_memory_usage(dgl_graph.nodes())
+	for nattr in dgl_graph.ndata:
+		total_memory += get_tensor_memory_usage(dgl_graph.ndata[nattr])
+	for eattr in dgl_graph.edata:
+		total_memory += get_tensor_memory_usage(dgl_graph.edata[eattr])
+	return total_memory

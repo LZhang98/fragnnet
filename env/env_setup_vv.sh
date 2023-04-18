@@ -19,5 +19,7 @@ pip install scipy
 pip install joblib
 pip install matplotlib
 pip install pytest
+pip install dgl -f https://data.dgl.ai/wheels/cu117/repo.html
+pip install cysignals
 
-pip install .
+pip install -I -e .

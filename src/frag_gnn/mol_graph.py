@@ -7,61 +7,9 @@ and bonds. Inspired by the dgllife library.
 from rdkit import Chem
 import numpy as np
 import torch
-# import dgl
+import dgl
+import networkx as nx
 
-
-# def random_walk_pe(g, k, eweight_name=None):
-#     """Random Walk Positional Encoding, as introduced in
-#     `Graph Neural Networks with Learnable Structural and Positional Representations
-#     <https://arxiv.org/abs/2110.07875>`__
-
-#     This function computes the random walk positional encodings as landing probabilities
-#     from 1-step to k-step, starting from each node to itself.
-
-#     Parameters
-#     ----------
-#     g : DGLGraph
-#         The input graph. Must be homogeneous.
-#     k : int
-#         The number of random walk steps. The paper found the best value to be 16 and 20
-#         for two experiments.
-#     eweight_name : str, optional
-#         The name to retrieve the edge weights. Default: None, not using the edge weights.
-
-#     Returns
-#     -------
-#     Tensor
-#         The random walk positional encodings of shape :math:`(N, k)`, where :math:`N` is the
-#         number of nodes in the input graph.
-
-#     Example
-#     -------
-#     >>> import dgl
-#     >>> g = dgl.graph(([0,1,1], [1,1,0]))
-#     >>> dgl.random_walk_pe(g, 2)
-#     tensor([[0.0000, 0.5000],
-#             [0.5000, 0.7500]])
-#     """
-#     N = g.num_nodes()  # number of nodes
-#     M = g.num_edges()  # number of edges
-#     A = g.adj(scipy_fmt="csr")  # adjacency matrix
-#     if eweight_name is not None:
-#         # add edge weights if required
-#         W = sparse.csr_matrix(
-#             (g.edata[eweight_name].squeeze(), g.find_edges(list(range(M)))),
-#             shape=(N, N),
-#         )
-#         A = A.multiply(W)
-#     RW = np.array(A / (A.sum(1) + 1e-30))  # 1-step transition probability
-
-#     # Iterate for k steps
-#     PE = [dgl_F.astype(dgl_F.tensor(np.copy(RW.diagonal())), torch.float32)]
-#     RW_power = RW
-#     for _ in range(k - 1):
-#         RW_power = RW_power @ RW
-#         PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), torch.float32))
-#     PE = dgl_F.stack(PE, dim=-1)
-#     return PE
 
 atom_feat_registry = {}
 bond_feat_registry = {}
@@ -79,7 +27,7 @@ def register_atom_feat(cls):
     return cls
 
 
-class MolDGLGraph:
+class MolGraph:
     def __init__(
         self,
         atom_feats: list = [
@@ -103,6 +51,8 @@ class MolDGLGraph:
             pe_embed_k (int)
 
         """
+        if pe_embed_k > 0:
+            raise NotImplementedError
         self.pe_embed_k = pe_embed_k
         self.atom_feats = atom_feats
         self.bond_feats = bond_feats
@@ -193,28 +143,51 @@ class MolDGLGraph:
         Return:
             dgl graph object
         """
-        raise NotImplementedError
-        # mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
+        mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
 
-        # bond_inds = torch.from_numpy(mol_graph["bond_tuples"]).long()
-        # bond_feats = torch.from_numpy(mol_graph["bond_feats"]).float()
-        # atom_feats = torch.from_numpy(mol_graph["atom_feats"]).float()
+        bond_inds = torch.from_numpy(mol_graph["bond_tuples"]).long()
+        bond_feats = torch.from_numpy(mol_graph["bond_feats"]).float()
+        atom_feats = torch.from_numpy(mol_graph["atom_feats"]).float()
 
-        # g = dgl.graph(
-        #     data=(bond_inds[:, 0], bond_inds[:, 1]), num_nodes=atom_feats.shape[0]
-        # )
-        # g.ndata["h"] = atom_feats
-        # g.edata["e"] = bond_feats
+        g = dgl.graph(
+            data=(bond_inds[:, 0], bond_inds[:, 1]), num_nodes=atom_feats.shape[0]
+        )
+        g.ndata["h"] = atom_feats
+        g.edata["e"] = bond_feats
 
-        # if self.pe_embed_k > 0:
-        #     pe_embeds = nn_utils.random_walk_pe(
-        #         g,
-        #         k=self.pe_embed_k,
-        #     )
-        #     g.ndata["h"] = torch.cat((g.ndata["h"], pe_embeds), -1)
+        if self.pe_embed_k > 0:
+            pe_embeds = nn_utils.random_walk_pe(
+                g,
+                k=self.pe_embed_k,
+            )
+            g.ndata["h"] = torch.cat((g.ndata["h"], pe_embeds), -1)
 
-        # return g
+        return g
 
+    def get_networkx_graph(self, mol: Chem.Mol, bigraph: str = True):
+        """get_networkx_graph.
+
+        Args:
+            mol (Chem.Mol):
+            bigraph (bool): If true, double all edges.
+
+        Return:
+            networkx graph object
+        """
+        mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
+
+        bond_inds = mol_graph["bond_tuples"]
+        bond_feats = mol_graph["bond_feats"]
+        atom_feats = mol_graph["atom_feats"]
+
+        g = nx.Graph()
+        g.add_nodes_from(range(atom_feats.shape[0]))
+        g.add_edges_from(bond_inds)
+
+        nx.set_node_attributes(g, values=atom_feats, name="h")
+        nx.set_edge_attributes(g, values=bond_feats, name="e")
+
+        return g
 
 class FeatBase:
     """FeatBase.
@@ -446,25 +419,39 @@ class BondConj(FeatBase):
         return one_hot_encoding(x.GetIsConjugated(), [False, True], False)
 
 
-# def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
-#     """One_hot encoding.
+def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
+    """One_hot encoding.
 
-#     Code taken from dgllife library
-#     https://lifesci.dgl.ai/_modules/dgllife/utils/featurizers.html
+    Code taken from dgllife library
+    https://lifesci.dgl.ai/_modules/dgllife/utils/featurizers.html
 
-#     Args:
-#         x: Val to encode
-#         allowable_set: Options
-#         encode_unknown: If true, encode unk
+    Args:
+        x: Val to encode
+        allowable_set: Options
+        encode_unknown: If true, encode unk
 
-#     Return:
-#         list of bools
-#     """
+    Return:
+        list of bools
+    """
 
-#     if encode_unknown and (allowable_set[-1] is not None):
-#         allowable_set.append(None)
+    if encode_unknown and (allowable_set[-1] is not None):
+        allowable_set.append(None)
 
-#     if encode_unknown and (x not in allowable_set):
-#         x = None
+    if encode_unknown and (x not in allowable_set):
+        x = None
 
-#     return list(map(lambda s: int(x == s), allowable_set))
+    return list(map(lambda s: int(x == s), allowable_set))
+
+
+if __name__ == "__main__":
+
+    import rdkit
+    import rdkit.Chem as Chem
+    from pprint import pprint
+
+    smiles = "CC(=O)OC1=CC=CC=C1C(=O)O" # aspirin
+    mol = Chem.MolFromSmiles(smiles)
+    mg = MolGraph()
+    g = mg.get_networkx_graph(mol)
+    pprint(dict(g.nodes(data=True)))
+    pprint(list(g.edges(data=True)))
