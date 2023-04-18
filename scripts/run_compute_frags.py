@@ -7,7 +7,6 @@ import networkx as nx
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.misc_utils import timeit, booltype, get_dgl_memory_usage
 
-
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()

@@ -1,22 +1,19 @@
-import rdkit
+import dgl
+import networkx as nx
+import numpy as np
+import pandas as pd
 import rdkit.Chem as Chem
-import rdkit.Chem.AllChem as AllChem
-import rdkit.Chem.MolStandardize as MolStandardize
 import rdkit.Chem.MolStandardize.rdMolStandardize as rdMolStandardize
 import rdkit.Chem.rdmolops as rdmolops
-import rdkit.Chem.Draw as Draw
-import numpy as np
 import torch as th
-import networkx as nx
-from pprint import pprint
-import os
-import pandas as pd
-import dgl
 
 import frag_gnn.frag.compute_frags as compute_frags
-from frag_gnn.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES, MAX_EDGE_PER_NODE, DTYPE
-from frag_gnn.formula_utils import formula_to_peak_mzs, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.misc_utils import timeout_func
+from frag_gnn.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
+from frag_gnn.frag.compute_frags import (
+	DTYPE,
+	MAX_NUM_EDGES,
+	MAX_NUM_NODES,
+)
 
 # full list of common elements
 # NOTE: this maybe a bad idea to not cover all the element
@@ -131,15 +128,12 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False):
 		# use default valence flag is set to true
 		# not defualt valence can be -1 for transition metals
 		# on paper we should not encounter them at all
+		ve_value = atom.GetTotalValence()
 		if use_default_valence:
 			default_valence = pt.GetDefaultValence(cur_element)
-			current_valence = atom.GetTotalValence()
-			if default_valence == -1:
-				ve_value = current_valence
-			else:
-				ve_value = min(current_valence,default_valence)
-		else:
-			ve_value = current_valence
+			if default_valence != -1:
+				ve_value = min(ve_value, default_valence)
+
 		ve_arr.append(ve_value)
 
 		hs_arr.append(cur_num_hs)
@@ -281,7 +275,6 @@ def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TR
 	hs_arr = mol_d["hs_arr"]
 	elems = mol_d["elems"]
 	bond_mask_arr = mol_d["bond_mask_arr"]
-	formulae = []
 	formulae_to_counts = {}
 	for cc in list(set(ccs)):
 		base_formula = cc_to_formula_arr(cc,elems)
@@ -331,9 +324,8 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSF
 	sbond_arr = np.copy(mol_d["sbond_arr"])
 	num_hs = mol_d["num_hs"]
 	hs_arr = mol_d["hs_arr"]
-	elems = mol_d["elems"]
+	mol_d["elems"]
 	bond_mask_arr = mol_d["bond_mask_arr"]
-	cchs = []
 	all_cchs = set()
 	for cc in list(set(ccs)):
 		sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
@@ -565,7 +557,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	assert -1 not in ccs_un
 	cc_g.add_nodes_from(ccs_un)
 	# add node depth information
-	ccs_to_depth_arrs = {}
 	for cc, depths in ccs_to_depths.items():
 		depth_arr = [0 for i in range(max_depth+1)] #np.zeros(max_depth+1,dtype=np.bool_)
 		for depth in depths:
