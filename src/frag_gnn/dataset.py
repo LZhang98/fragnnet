@@ -8,13 +8,12 @@ import os
 from pprint import pprint
 import dgl
 import dgllife.utils as chemutils
-import torch_geometric.data
 from tqdm import tqdm
 import itertools
 import multiprocessing
 
-from massformer.misc_utils import np_temp_seed, np_scatter_add, np_one_hot, flatten_lol, timeout, none_or_nan
-import massformer.data_utils as data_utils
+from misc_utils import np_temp_seed, np_scatter_add, np_one_hot, flatten_lol, timeout, none_or_nan
+import data_utils as data_utils
 import massformer.gf_data_utils as gf_data_utils
 import massformer.gf_v2_data_utils as gf_v2_data_utils
 

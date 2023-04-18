@@ -22,5 +22,6 @@ pip install pytest
 pip install torch-scatter -f https://data.pyg.org/whl/torch-1.13.0+cpu.html 
 pip install dgl
 pip install cysignals
+pip install dgllife
 
 pip install -I -e .
