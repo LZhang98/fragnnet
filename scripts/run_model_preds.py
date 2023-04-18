@@ -10,7 +10,8 @@ import dgl
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.misc_utils import timeit, booltype
 from frag_gnn.mol_graph import MolGraph
-from frag_gnn.nn.nn_utils import GNN, JointPredictor
+from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
+from frag_gnn.nn.distributions import MixtureOfGaussians
 
 class BatchedMolDAG:
 
@@ -19,12 +20,12 @@ class BatchedMolDAG:
 		assert len(mol_dgl_list) == len(dag_dgl_list), (len(mol_dgl_list),len(dag_dgl_list))
 		self.batch_size = len(mol_dgl_list)
 		if device is not None:
-			self.device = device
+			self._set_device(device)
 		else:
-			self.device = th.device("cpu")
-		self.batched_mol_dgl = dgl.batch(mol_dgl_list)
-		self.batched_dag_dgl = dgl.batch(dag_dgl_list)
-		self.batched_mol_nodes, self.batched_dag_nodes = self._compute_batched_node_offsets(mol_dgl_list,dag_dgl_list)
+			self._set_device("cpu")
+		self.batched_mol_dgl = dgl.batch(mol_dgl_list).to(self.device)
+		self.batched_dag_dgl = dgl.batch(dag_dgl_list).to(self.device)
+		self._compute_batched_node_offsets(mol_dgl_list,dag_dgl_list)
 		batched_formula_peak_idxs = []
 		batched_formula_peak_mzs = []
 		batched_formula_peak_probs = []
@@ -52,9 +53,8 @@ class BatchedMolDAG:
 		# import pdb; pdb.set_trace()
 		num_mol_nodes = [g.number_of_nodes() for g in mol_dgl_list]
 		num_dag_nodes = [g.number_of_nodes() for g in dag_dgl_list]
-		batched_mol_nodes = th.cumsum(th.tensor([0]+num_mol_nodes,device=self.device),dim=0)
-		batched_dag_nodes = th.cumsum(th.tensor([0]+num_dag_nodes,device=self.device),dim=0)
-		return batched_mol_nodes, batched_dag_nodes
+		self.batched_mol_nodes = th.cumsum(th.tensor([0]+num_mol_nodes,device=self.device),dim=0)
+		self.batched_dag_nodes = th.cumsum(th.tensor([0]+num_dag_nodes,device=self.device),dim=0)
 
 	def get_batched_dgls(self):
 
@@ -66,11 +66,27 @@ class BatchedMolDAG:
 
 	def to(self,device):
 
-		raise NotImplementedError
+		self._set_device(device)
+		self.batched_mol_dgl = self.batched_mol_dgl.to(self.device)
+		self.batched_dag_dgl = self.batched_dag_dgl.to(self.device)
+		self.batched_mol_nodes = self.batched_mol_nodes.to(self.device)
+		self.batched_dag_nodes = self.batched_dag_nodes.to(self.device)
+		self.batched_formula_peak_idxs = self.batched_formula_peak_idxs.to(self.device)
+		self.batched_formula_peak_mzs = self.batched_formula_peak_mzs.to(self.device)
+		self.batched_formula_peak_probs = self.batched_formula_peak_probs.to(self.device)
+		self.batched_formula_sizes = self.batched_formula_sizes.to(self.device)
+		self.batched_formula_cumsizes = self.batched_formula_cumsizes.to(self.device)
+		self.batched_formula_peak_sizes = self.batched_formula_peak_sizes.to(self.device)
+
+	def _set_device(self,device):
+
+		if isinstance(device,str):
+			device = th.device(device)
+		self.device = device
 
 	def __str__(self):
 
-		str_format = f"BatchedDAG( batch_size={self.batch_size}, device={self.device} )"
+		str_format = f"BatchedMolDAG( batch_size={self.batch_size}, device={self.device} )"
 		return str_format
 
 def featurize_dag(dag):
@@ -89,6 +105,7 @@ def featurize_dag(dag):
 		else:
 			dag.edata[eattr] = dag.edata[eattr].long()
 	dag = dag.astype(th.int64)
+	import pdb; pdb.set_trace()
 	print(dag)
 	return dag
 
@@ -97,6 +114,31 @@ def featurize_mol(mol):
 	mg = MolGraph(pe_embed_k=0)
 	mol_dgl = mg.get_dgl_graph(mol,bigraph=True)
 	return mol_dgl
+
+def sparse_cross_entropy(true_mzs,true_logprobs,pred_mzs,pred_logprobs,batch_idxs,batch_size,variance=1e-3,vectorized=False):
+	""" this is slow, but fully vectorizing takes a lot of memory """
+
+	assert len(true_mzs) == len(true_logprobs) == len(pred_mzs) == len(pred_logprobs) == len(batch_idxs)
+	if vectorized:
+		raise NotImplementedError
+	else:
+		ce = 0.
+		for b in range(batch_size):
+			b_mask = (batch_idxs==b)
+			b_pred_logprobs = pred_logprobs[b_mask].reshape(-1)
+			b_pred_mzs = pred_mzs[b_mask].reshape(-1,1)
+			b_true_logprobs = true_logprobs[b_mask].reshape(-1)
+			b_true_mzs = true_mzs[b_mask].reshape(-1,1)
+			b_variances = variance*th.ones_like(b_pred_mzs).reshape(-1,1)
+			b_pred_mog = MixtureOfGaussians(
+				b_pred_mzs,
+				b_variances,
+				b_pred_logprobs
+			)
+			b_ce = -th.exp(b_true_logprobs)*b_pred_mog.log_prob(b_true_mzs)
+			ce = ce + th.sum(b_ce)
+	return ce
+
 
 if __name__ == "__main__":
 
@@ -108,6 +150,7 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 
 	np.random.seed(420)
+	th.manual_seed(420)
 
 	COMPOUND_TO_SMILES = {
 		0: "CCO", # ethanol
@@ -143,6 +186,7 @@ if __name__ == "__main__":
 		[dag_d["formula_peak_probs"],dag_d["formula_peak_probs"]],
 		device=th.device("cpu")
 	)
+	batch_size = 2
 	print(batched_dag)
 	# print(batched_dag.get_batched_mask("formula_peak_mzs"))
 
@@ -157,6 +201,9 @@ if __name__ == "__main__":
 	# make predictions
 	mol_pred = mol_model(mol_dgl)
 	print(f"mol_pred shape: {mol_pred.shape}")
+	# test of differentiability
+	loss = th.sum(mol_pred)
+	loss.backward()
 
 	mol_kwargs = {
 		"hidden_size": hidden_size,
@@ -176,7 +223,7 @@ if __name__ == "__main__":
 		"use_residuals": True
 		# input/output sizes inferred
 	}
-	num_depth = dag_d["max_depth"]
+	num_depth = dag_d["max_depth"]+1 # +1 for the root/precursor node
 	num_hs = dag_d["max_h_transfer"]
 	num_elements = frag_utils.NUM_ELEMENTS
 	int_embedder = "abs-sines"
@@ -190,5 +237,27 @@ if __name__ == "__main__":
 		int_embedder
 	)
 
-	joint_pred = joint_model(batched_dag)
-	print(joint_pred)
+	pred_mzs, pred_logprobs, pred_batch_idx = joint_model(batched_dag)
+	# # test of differentiability
+	# loss = th.sum(pred_logprobs)
+	# loss.backward()
+	# add slight mass jitter
+	true_mzs = pred_mzs + 0.0002*th.rand_like(pred_mzs) - 0.0001
+	# random intensities
+	true_logprobs = scatter_normalize(th.log(th.rand_like(pred_logprobs)),pred_batch_idx,dim=0)
+	# calculate loss
+	loss = sparse_cross_entropy(
+		true_mzs,
+		true_logprobs,
+		pred_mzs,
+		pred_logprobs,
+		pred_batch_idx,
+		batch_size,
+		variance=1e-3,
+		vectorized=False
+	)
+	print(loss)
+	loss.backward()
+
+	# targ_ints = th.rand(10)
+	# targ_mzs = 1000*th.rand(10)
