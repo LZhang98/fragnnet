@@ -1,9 +1,7 @@
-import rdkit
 import rdkit.Chem as Chem
 import itertools
 import numpy as np
 import scipy
-from collections import Counter
 
 from frag_gnn.data_utils import parse_formula
 from typing import List, Tuple, Dict
@@ -224,7 +222,7 @@ def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.0
     return keep_masses, keep_probs
 
 
-def formula_to_peak_mzs(formula, prec_type, isotopes=True, return_map=True, return_probs = False):
+def formula_to_peak_mzs(formula, prec_type, isotopes=True, return_map=False, return_probs=False):
     """_summary_
 
     Args:
