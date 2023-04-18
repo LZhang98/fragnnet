@@ -4,12 +4,12 @@
 {
     "distutils": {
         "depends": [
-            "/home/adamo/miniconda3/envs/FRAG-GNN/lib/python3.10/site-packages/cysignals/macros.h",
-            "/home/adamo/miniconda3/envs/FRAG-GNN/lib/python3.10/site-packages/cysignals/struct_signals.h"
+            "/home/adamo/miniconda3/envs/FRAG-GNN-2/lib/python3.10/site-packages/cysignals/macros.h",
+            "/home/adamo/miniconda3/envs/FRAG-GNN-2/lib/python3.10/site-packages/cysignals/struct_signals.h"
         ],
         "extra_link_args": [],
         "include_dirs": [
-            "/home/adamo/miniconda3/envs/FRAG-GNN/lib/python3.10/site-packages/cysignals"
+            "/home/adamo/miniconda3/envs/FRAG-GNN-2/lib/python3.10/site-packages/cysignals"
         ],
         "name": "frag_gnn.frag.compute_frags",
         "sources": [

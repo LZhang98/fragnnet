@@ -1,6 +1,7 @@
 import numpy as np
 import torch as th
 import torch.nn.functional as F
+import torch_scatter as th_s
 import time
 from pprint import pprint, pformat
 import argparse
@@ -11,7 +12,7 @@ import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.misc_utils import timeit, booltype
 from frag_gnn.mol_graph import MolGraph
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
-from frag_gnn.nn.distributions import MixtureOfGaussians
+from frag_gnn.nn.distributions import mog_log_prob
 
 class BatchedMolDAG:
 
@@ -105,7 +106,6 @@ def featurize_dag(dag):
 		else:
 			dag.edata[eattr] = dag.edata[eattr].long()
 	dag = dag.astype(th.int64)
-	import pdb; pdb.set_trace()
 	print(dag)
 	return dag
 
@@ -115,28 +115,47 @@ def featurize_mol(mol):
 	mol_dgl = mg.get_dgl_graph(mol,bigraph=True)
 	return mol_dgl
 
-def sparse_cross_entropy(true_mzs,true_logprobs,pred_mzs,pred_logprobs,batch_idxs,batch_size,variance=1e-3,vectorized=False):
+def sparse_cross_entropy(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,variance=1e-3,vectorized=False):
 	""" this is slow, but fully vectorizing takes a lot of memory """
 
-	assert len(true_mzs) == len(true_logprobs) == len(pred_mzs) == len(pred_logprobs) == len(batch_idxs)
+	assert len(true_mzs) == len(true_logprobs) == len(true_batch_idxs)
+	assert len(pred_mzs) == len(pred_logprobs) == len(pred_batch_idxs)
+
+	def seq_ce(batch_idx,mask_value=-1e9):
+		b_pred_mask = (pred_batch_idxs==batch_idx).float()
+		b_true_mask = (true_batch_idxs==batch_idx)
+		b_pred_logprobs = pred_logprobs*b_pred_mask + (1-b_pred_mask)*mask_value
+		b_pred_mzs = pred_mzs
+		b_variances = variance*th.ones_like(b_pred_mzs)
+		b_true_logprobs = true_logprobs[b_true_mask]
+		b_true_mzs = true_mzs[b_true_mask]
+		b_ce = th.sum(-th.exp(b_true_logprobs)*mog_log_prob(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
+		return b_ce
+
+	def par_ce(true_batch_idx,true_logprob,true_mz,mask_value=-1e9):
+		b_pred_mask = (pred_batch_idxs==true_batch_idx).float()
+		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1.-b_pred_mask)
+		b_pred_mzs = pred_mzs
+		b_variances = variance*th.ones_like(b_pred_mzs)
+		b_true_logprob = true_logprob
+		b_true_mz = true_mz
+		# note: this is a sum over one dimension (just to convert to scalar)
+		b_ce = th.sum(-th.exp(true_logprob)*mog_log_prob(true_mz,b_pred_mzs,b_variances,b_pred_logprobs))
+		return b_ce
+
 	if vectorized:
-		raise NotImplementedError
+		ce = th.vmap(par_ce)(true_batch_idxs,true_logprobs,true_mzs)
+		ce = th_s.scatter_sum(
+			ce,
+			true_batch_idxs,
+			dim=0,
+		)
+		ce = th.mean(ce)
 	else:
 		ce = 0.
 		for b in range(batch_size):
-			b_mask = (batch_idxs==b)
-			b_pred_logprobs = pred_logprobs[b_mask].reshape(-1)
-			b_pred_mzs = pred_mzs[b_mask].reshape(-1,1)
-			b_true_logprobs = true_logprobs[b_mask].reshape(-1)
-			b_true_mzs = true_mzs[b_mask].reshape(-1,1)
-			b_variances = variance*th.ones_like(b_pred_mzs).reshape(-1,1)
-			b_pred_mog = MixtureOfGaussians(
-				b_pred_mzs,
-				b_variances,
-				b_pred_logprobs
-			)
-			b_ce = -th.exp(b_true_logprobs)*b_pred_mog.log_prob(b_true_mzs)
-			ce = ce + th.sum(b_ce)
+			ce = ce + seq_ce(b)
+		ce = ce / batch_size
 	return ce
 
 
@@ -147,6 +166,7 @@ if __name__ == "__main__":
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
+	parser.add_argument("--vectorized",type=booltype,default=False)
 	args = parser.parse_args()
 
 	np.random.seed(420)
@@ -169,6 +189,7 @@ if __name__ == "__main__":
 	max_depth = args.max_depth
 	h_prior = args.h_prior
 	max_h_transfer = args.max_h_transfer
+	vectorized = args.vectorized
 	frag_max_time = None
 	smiles = COMPOUND_TO_SMILES[args.compound_idx]
 	mol_d = frag_utils.extract_mol_info(smiles)
@@ -201,7 +222,7 @@ if __name__ == "__main__":
 	# make predictions
 	mol_pred = mol_model(mol_dgl)
 	print(f"mol_pred shape: {mol_pred.shape}")
-	# test of differentiability
+	# simple test of differentiability
 	loss = th.sum(mol_pred)
 	loss.backward()
 
@@ -237,27 +258,28 @@ if __name__ == "__main__":
 		int_embedder
 	)
 
-	pred_mzs, pred_logprobs, pred_batch_idx = joint_model(batched_dag)
-	# # test of differentiability
-	# loss = th.sum(pred_logprobs)
-	# loss.backward()
+	pred_mzs, pred_logprobs, pred_batch_idxs = joint_model(batched_dag)
+	# # simple test of differentiability
+	# th.sum(pred_logprobs).backward()
+	# select random subset of pred peaks
+	true_mask = th.rand_like(pred_mzs)<0.1
+	true_batch_idxs = pred_batch_idxs[true_mask]
 	# add slight mass jitter
-	true_mzs = pred_mzs + 0.0002*th.rand_like(pred_mzs) - 0.0001
+	true_mzs = pred_mzs[true_mask] + 0.0002*th.rand_like(pred_mzs[true_mask]) - 0.0001
 	# random intensities
-	true_logprobs = scatter_normalize(th.log(th.rand_like(pred_logprobs)),pred_batch_idx,dim=0)
+	true_logprobs = scatter_normalize(th.log(th.rand_like(pred_logprobs[true_mask])),true_batch_idxs,dim=0)
 	# calculate loss
 	loss = sparse_cross_entropy(
 		true_mzs,
 		true_logprobs,
+		true_batch_idxs,
 		pred_mzs,
 		pred_logprobs,
-		pred_batch_idx,
+		pred_batch_idxs,
 		batch_size,
 		variance=1e-3,
-		vectorized=False
+		vectorized=vectorized
 	)
+	# test of differentiability
 	print(loss)
 	loss.backward()
-
-	# targ_ints = th.rand(10)
-	# targ_mzs = 1000*th.rand(10)

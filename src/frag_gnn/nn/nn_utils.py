@@ -146,18 +146,10 @@ class JointPredictor(nn.Module):
             # embed node depth
             dag_depth = self.depth_embedder(dag_dgl.ndata.pop('depth')).reshape(dag_num_nodes,-1)
             dag_ndata.append(dag_depth)
-            nshapes = [x.shape for x in dag_ndata]
-            eshapes = [x.shape for x in dag_edata]
-            print(nshapes)
-            print(eshapes)
             # concatenate everything [N,H+(E+1)*M]
             dag_dgl.ndata['h'] = torch.cat(dag_ndata,dim=-1)
             # concatenate everything [N,H+E*M]
             dag_dgl.edata['e'] = torch.cat(dag_edata,dim=-1)
-            print(dag_dgl.ndata['h'].shape)
-            print(self.dag_node_feats)
-            print(dag_dgl.edata['e'].shape)
-            print(self.dag_edge_feats)
             # apply GNN
             dag_embed = self.dag_embedder(dag_dgl)
 
@@ -194,13 +186,13 @@ class JointPredictor(nn.Module):
             torch.arange(dag_formula_peak_sizes.shape[0]),
             dag_formula_peak_sizes
         )
-        spec_logprobs_total = th_s.scatter_logsumexp(
-            spec_logprobs,
-            spec_batch_idxs,
-            dim=0,
-            dim_size=None
-        )
-        print(torch.exp(spec_logprobs_total))
+        # spec_logprobs_total = th_s.scatter_logsumexp(
+        #     spec_logprobs,
+        #     spec_batch_idxs,
+        #     dim=0,
+        #     dim_size=None
+        # )
+        # print(torch.exp(spec_logprobs_total))
         return spec_mzs, spec_logprobs, spec_batch_idxs
 
 class GNN(nn.Module):

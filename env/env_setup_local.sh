@@ -8,7 +8,7 @@ conda create -n FRAG-GNN
 conda activate FRAG-GNN
 conda install python=3.10
 
-pip install torch==1.13.1+cpu --extra-index-url https://download.pytorch.org/whl/cpu
+pip install torch==2.0.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 pip install rdkit-pypi==2022.9.4
 pip install cython
 pip install pandas
@@ -20,6 +20,6 @@ pip install joblib
 pip install matplotlib
 pip install dgl
 pip install cysignals
-pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-1.13.1+cpu.html
+pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-2.0.0+cpu.html
 
 pip install -I -e .
