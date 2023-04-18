@@ -6,3 +6,5 @@ __pycache__/
 *.so
 *.egg
 .pytest_cache
+# don't track cython gernated c file
+src/frag_gnn/frag/*.c
