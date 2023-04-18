@@ -17,5 +17,9 @@ pip install scipy
 pip install joblib
 pip install matplotlib
 pip install pytest
+pip install cysignals
+pip install torch-scatter -f https://data.pyg.org/whl/torch-1.13.0+cpu.html 
+pip install  dgl -f https://data.dgl.ai/wheels/repo.html
+pip install  dglgo -f https://data.dgl.ai/wheels-test/repo.html
 
 pip install .
