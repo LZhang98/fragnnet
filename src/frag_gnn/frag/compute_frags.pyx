@@ -215,7 +215,7 @@ cdef compute_ccs_recursive(
 	need_skip = False
 	if node_full_mask_str not in has_seen:
 		has_seen[node_full_mask_str] = depth
-	elif has_seen[node_full_mask_str] < depth:
+	elif has_seen[node_full_mask_str] > depth:
 		has_seen[node_full_mask_str] = depth
 	else:
 		need_skip = True
