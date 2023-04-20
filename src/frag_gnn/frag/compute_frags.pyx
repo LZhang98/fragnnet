@@ -54,6 +54,15 @@ cdef long node_mask_to_int(int num_nodes, int [::1] node_mask):
 	assert node_mask_int >= 0, node_mask_int
 	return node_mask_int
 
+def mask_to_str(int num, int [::1] mask):
+	#Not fastest but it will do for now
+	mask_str = ''
+	node_mask_int = 0
+	for i in range(num):
+		node_mask_int += mask[i]*(2**i)
+	mask_str = str(node_mask_int)
+	return mask_str
+
 cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
 
 	cdef int [:,::1] node_to_edge_idx = -np.ones((MAX_NUM_NODES,MAX_EDGE_PER_NODE),dtype=DTYPE)
@@ -175,7 +184,8 @@ cdef compute_ccs_recursive(
 		bint parents,
 		bint depths,
 		long time_limit,
-		long start_time
+		long start_time,
+		dict has_seen
 	):
 	# start with a signal check
 	sig_check()
@@ -183,6 +193,7 @@ cdef compute_ccs_recursive(
 	cdef long cur_time = get_time()
 	if cur_time - start_time > time_limit:
 		raise TimeoutError
+	
 	# now the rest
 	cdef int [::1] new_node_mask = np_copy(node_mask)
 	cdef int [::1] new_edge_mask = np_copy(edge_mask)
@@ -197,7 +208,19 @@ cdef compute_ccs_recursive(
 	cdef int new_num_ccs
 	cdef int [:,::1] new_cc_nodes
 	cdef int [:,::1] new_cc_edges
-	if depth == max_depth:
+
+	# lets check we have see this before
+	# why not using c_str ? because I don't want to free it 
+	node_full_mask_str = mask_to_str(num_nodes,node_mask) + '|' +  mask_to_str(num_edges,edge_mask) 
+	need_skip = False
+	if node_full_mask_str not in has_seen:
+		has_seen[node_full_mask_str] = depth
+	elif has_seen[node_full_mask_str] < depth:
+		has_seen[node_full_mask_str] = depth
+	else:
+		need_skip = True
+		
+	if depth == max_depth or need_skip:
 		pass
 	elif num_edges_nomask == 0:
 		ccs = [new_node_mask]
@@ -208,9 +231,10 @@ cdef compute_ccs_recursive(
 	else:
 		for i in range(num_edges):
 			# check if edge is already masked
+			# sorry Mr Bond, you already dead
 			if new_edge_mask[i] == 0:
 				continue
-			# mask edge
+			# mask edge, kill bond
 			new_edge_mask[i] = 0
 			# compute ccs
 			new_cc_nodes, new_cc_edges, new_num_ccs = connected_components(
@@ -242,7 +266,8 @@ cdef compute_ccs_recursive(
 					parents,
 					depths,
 					time_limit,
-					start_time
+					start_time,
+					has_seen
 				)
 				ccs.extend(rec_ccs)
 				if parents:
@@ -274,6 +299,7 @@ def py_compute_ccs_recursive(
 	# at this point, there are duplicates
 	# the latter two lists may be empty
 	cdef long start_time = get_time()
+	has_seen = {}
 	ccs_list, ccs_parents_list, ccs_depth_list = compute_ccs_recursive(
 		num_nodes,
 		num_edges,
@@ -286,7 +312,8 @@ def py_compute_ccs_recursive(
 		parents,
 		depths,
 		time_limit,
-		start_time
+		start_time,
+		has_seen
 	)
 	# add the precursor
 	ccs_list.append(compute_full_cc(num_nodes))

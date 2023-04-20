@@ -539,6 +539,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 			True,
 			frag_max_time
 		)
+
 		assert len(ccs) == len(ccs_parents) == len(ccs_depths)
 		ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
 		ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
