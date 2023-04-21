@@ -524,6 +524,9 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	# time the recursive part
 	if frag_max_time is None:
 		frag_max_time = int(1e6)
+	
+	node_mask = node_mask.astype(np.byte)
+	node_mask = node_mask.astype(np.byte)
 	def _compute_frags():
 		ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
 			num_nodes,
@@ -599,10 +602,12 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 			formula_idx = formula_to_idx[formula]
 			formulae_idx.append(formula_idx)
 		ccs_to_formulae_idx[cc] = formulae_idx #np.array(formulae_idx,dtype=np.int16)
+		
 	nx.set_node_attributes(cc_g,ccs_to_formulae_idx,"h_formulae_idx")
 	# peak mzs array
 	formula_peak_mzs = []
 	formula_peak_probs = []
+
 	for formula, idx in formula_to_idx.items():
 		if formula == "":
 			peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
