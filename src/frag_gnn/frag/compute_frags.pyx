@@ -1,3 +1,8 @@
+# cython: profile=False
+# cython: linetrace=False
+# cython: language_level=3
+# cython: boundscheck=False
+
 import numpy as np
 from cysignals.signals cimport sig_check
 # from clib.time cimport time, time_t
