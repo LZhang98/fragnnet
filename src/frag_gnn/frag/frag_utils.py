@@ -526,7 +526,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 		frag_max_time = int(1e6)
 	
 	node_mask = node_mask.astype(np.byte)
-	node_mask = node_mask.astype(np.byte)
+	edge_mask = edge_mask.astype(np.byte)
 	def _compute_frags():
 		ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
 			num_nodes,
