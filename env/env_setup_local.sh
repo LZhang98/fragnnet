@@ -18,8 +18,10 @@ pip install tqdm
 pip install scipy
 pip install joblib
 pip install matplotlib
-pip install dgl
-pip install cysignals
+pip install pytest
 pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-2.0.0+cpu.html
+pip install dgl
+pip install dgllife
+pip install cysignals
 
 pip install -I -e .

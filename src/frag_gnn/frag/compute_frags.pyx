@@ -1,3 +1,8 @@
+# cython: profile=False
+# cython: linetrace=False
+# cython: language_level=3
+# cython: boundscheck=False
+
 import numpy as np
 from cysignals.signals cimport sig_check
 # from clib.time cimport time, time_t
@@ -7,14 +12,15 @@ from cpython.ref cimport PyObject
 MAX_NUM_NODES = 60 # hard cap on 64!!
 MAX_NUM_EDGES = 150 # ~4*MAX_NUM_NODES 
 DTYPE = np.intc
+MASK_DTYPE = np.byte
 MAX_EDGE_PER_NODE = 6 # Sulfur
 
 class TimeoutError(RuntimeError):
 	pass
 
-cdef int [::1] np_copy(int [::1] array):
+cdef char [::1] np_mask_copy(char [::1] array):
 	cdef int num_elems = array.shape[0]
-	cdef int [::1] new_array = np.zeros(num_elems,dtype=DTYPE)
+	cdef char [::1] new_array = np.zeros(num_elems,MASK_DTYPE)
 	for i in range(num_elems):
 		new_array[i] = array[i]
 	return new_array
@@ -29,7 +35,7 @@ cdef void np_fill(int [::1] array, int val):
 	for i in range(num_elems):
 		array[i] = val
 
-cdef int np_sum(int [::1] array):
+cdef int np_sum(char [::1] array):
 	cdef int num_elems = array.shape[0]
 	cdef int total = 0
 	for i in range(num_elems):
@@ -43,7 +49,7 @@ cdef long get_time():
 	current = ts.tv_sec
 	return current
 
-cdef long node_mask_to_int(int num_nodes, int [::1] node_mask):
+cdef long node_mask_to_int(int num_nodes, char [::1] node_mask):
 
 	assert MAX_NUM_NODES < 64, MAX_NUM_NODES
 	cdef long node_mask_int = 0
@@ -53,6 +59,16 @@ cdef long node_mask_to_int(int num_nodes, int [::1] node_mask):
 		node_mask_int += node_mask[i]*(2**i)
 	assert node_mask_int >= 0, node_mask_int
 	return node_mask_int
+
+cdef mask_to_str(int num, char [::1] mask):
+	#Not fastest but it will do for now
+	mask_str = ''
+	node_mask_int = 0
+	cdef int i
+	for i in range(num):
+		node_mask_int += mask[i]*(2**i)
+	mask_str = str(node_mask_int)
+	return mask_str
 
 cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
 
@@ -72,8 +88,8 @@ cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,:
 				break
 	return node_to_edge_idx
 
-cdef int [::1] compute_full_cc(int num_nodes):
-	cdef int [::1] cc_nodes = np.zeros(MAX_NUM_NODES,dtype=DTYPE)
+cdef char [::1] compute_full_cc(int num_nodes):
+	cdef char [::1] cc_nodes = np.zeros(MAX_NUM_NODES,dtype=MASK_DTYPE)
 	for i in range(num_nodes):
 		cc_nodes[i] = 1
 	return cc_nodes
@@ -84,9 +100,9 @@ def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges)
 cdef connected_components(
 		int num_nodes,
 		int num_edges,
-		int [::1] node_mask,
+		char [::1] node_mask,
 		int [:,::1] edges,
-		int [::1] edge_mask,
+		char [::1] edge_mask,
 		int [:,::1] node_to_edge_idx
 	):
 	# return the number of connected components
@@ -101,13 +117,13 @@ cdef connected_components(
 	cdef int j
 	cdef int neighbour
 
-	cdef int [::1] node_visited = np.zeros(MAX_NUM_NODES,dtype=DTYPE)
-	cdef int [::1] node_enqueued = np.zeros(MAX_NUM_NODES,dtype=DTYPE)
-	cdef int [::1] node_queue = np.zeros(MAX_NUM_NODES,dtype=DTYPE)
+	cdef int [::1] node_visited = np.zeros(MAX_NUM_NODES,dtype=np.intc)
+	cdef int [::1] node_enqueued = np.zeros(MAX_NUM_NODES,dtype=np.intc)
+	cdef int [::1] node_queue = np.zeros(MAX_NUM_NODES,dtype=np.intc)
 	np_fill(node_queue,-1)
 
-	cdef int[:,::1] cc_nodes = np.zeros((2,MAX_NUM_NODES),dtype=DTYPE)
-	cdef int [:,::1] cc_edges = np.zeros((2,MAX_NUM_EDGES),dtype=DTYPE)
+	cdef char [:,::1] cc_nodes = np.zeros((2,MAX_NUM_NODES),dtype=MASK_DTYPE)
+	cdef char [:,::1] cc_edges = np.zeros((2,MAX_NUM_EDGES),dtype=MASK_DTYPE)
 
 	# run BFS
 	while num_visited < num_nonmask:
@@ -166,16 +182,17 @@ cdef connected_components(
 cdef compute_ccs_recursive(
 		int num_nodes,
 		int num_edges,
-		int [::1] node_mask,
+		char [::1] node_mask,
 		int [:,::1] edges,
-		int [::1] edge_mask,
+		char [::1] edge_mask,
 		int [:,::1] node_to_edge_idx,
 		int depth,
 		int max_depth,
 		bint parents,
 		bint depths,
 		long time_limit,
-		long start_time
+		long start_time,
+		dict has_seen
 	):
 	# start with a signal check
 	sig_check()
@@ -183,10 +200,11 @@ cdef compute_ccs_recursive(
 	cdef long cur_time = get_time()
 	if cur_time - start_time > time_limit:
 		raise TimeoutError
+	
 	# now the rest
-	cdef int [::1] new_node_mask = np_copy(node_mask)
-	cdef int [::1] new_edge_mask = np_copy(edge_mask)
-	cdef int num_edges_nomask = np_sum(new_edge_mask)
+	cdef char [::1] new_node_mask = np_mask_copy(node_mask)
+	#cdef int [::1] new_edge_mask = np_mask_copy(edge_mask)
+	cdef int num_edges_nomask = np_sum(edge_mask)
 	cdef int num_ccs = 0
 	cdef list ccs = []
 	cdef list ccs_parents = []
@@ -195,11 +213,26 @@ cdef compute_ccs_recursive(
 	if parents:
 		parent_cc_int = node_mask_to_int(num_nodes,node_mask)
 	cdef int new_num_ccs
-	cdef int [:,::1] new_cc_nodes
-	cdef int [:,::1] new_cc_edges
-	if depth == max_depth:
+	cdef char [:,::1] new_cc_nodes
+	cdef char [:,::1] new_cc_edges
+
+	# lets check we have see this before
+	# why not using c_str ? because I don't want to free it 
+	node_full_mask_str = mask_to_str(num_nodes,node_mask) + '|' +  mask_to_str(num_edges,edge_mask) 
+	#node_full_mask_str =  get_node_full_mask_str(num_nodes,node_mask, num_edges,edge_mask)
+
+	need_skip = False
+	if node_full_mask_str not in has_seen:
+		has_seen[node_full_mask_str] = depth
+	elif has_seen[node_full_mask_str] > depth:
+		has_seen[node_full_mask_str] = depth
+	else:
+		need_skip = True
+		
+	if depth == max_depth or need_skip:
 		pass
 	elif num_edges_nomask == 0:
+		# add leaf
 		ccs = [new_node_mask]
 		if parents:
 			ccs_parents.append(parent_cc_int)
@@ -208,19 +241,21 @@ cdef compute_ccs_recursive(
 	else:
 		for i in range(num_edges):
 			# check if edge is already masked
-			if new_edge_mask[i] == 0:
+			# sorry Mr Bond, you already dead
+			if edge_mask[i] == 0:
 				continue
-			# mask edge
-			new_edge_mask[i] = 0
+			# mask edge, kill bond
+			edge_mask[i] = 0
 			# compute ccs
 			new_cc_nodes, new_cc_edges, new_num_ccs = connected_components(
 				num_nodes,
 				num_edges,
 				node_mask,
 				edges,
-				new_edge_mask,
+				edge_mask,
 				node_to_edge_idx
 			)
+
 			for c in range(new_num_ccs):
 				ccs.append(new_cc_nodes[c,:])
 				if parents:
@@ -242,8 +277,10 @@ cdef compute_ccs_recursive(
 					parents,
 					depths,
 					time_limit,
-					start_time
+					start_time,
+					has_seen,
 				)
+
 				ccs.extend(rec_ccs)
 				if parents:
 					ccs_parents.extend(rec_ccs_parents)
@@ -251,15 +288,16 @@ cdef compute_ccs_recursive(
 					ccs_depths.extend(rec_ccs_depths)
 				num_ccs += len(rec_ccs)
 			# restore edge
-			new_edge_mask[i] = 1
+			edge_mask[i] = 1
+
 	return ccs, ccs_parents, ccs_depths
 
 def py_compute_ccs_recursive(
 		int num_nodes,
 		int num_edges,
-		int [::1] node_mask,
+		char [::1] node_mask,
 		int [:,::1] edges,
-		int [::1] edge_mask,
+		char [::1] edge_mask,
 		int [:,::1] node_to_edge_idx,
 		int depth,
 		int max_depth,
@@ -274,6 +312,7 @@ def py_compute_ccs_recursive(
 	# at this point, there are duplicates
 	# the latter two lists may be empty
 	cdef long start_time = get_time()
+	has_seen = {}
 	ccs_list, ccs_parents_list, ccs_depth_list = compute_ccs_recursive(
 		num_nodes,
 		num_edges,
@@ -286,7 +325,8 @@ def py_compute_ccs_recursive(
 		parents,
 		depths,
 		time_limit,
-		start_time
+		start_time,
+		has_seen,
 	)
 	# add the precursor
 	ccs_list.append(compute_full_cc(num_nodes))
@@ -297,4 +337,5 @@ def py_compute_ccs_recursive(
 	# convert masks to ints
 	if convert_to_ints:
 		ccs_list = [node_mask_to_int(num_nodes,cc) for cc in ccs_list]
+
 	return ccs_list, ccs_parents_list, ccs_depth_list

@@ -1,23 +1,23 @@
-import rdkit
+import dgl
+import networkx as nx
+import numpy as np
+import pandas as pd
 import rdkit.Chem as Chem
-import rdkit.Chem.AllChem as AllChem
-import rdkit.Chem.MolStandardize as MolStandardize
 import rdkit.Chem.MolStandardize.rdMolStandardize as rdMolStandardize
 import rdkit.Chem.rdmolops as rdmolops
-import rdkit.Chem.Draw as Draw
-import numpy as np
 import torch as th
-import networkx as nx
-from pprint import pprint
-import os
-import pandas as pd
-import dgl
 
 import frag_gnn.frag.compute_frags as compute_frags
-from frag_gnn.frag.compute_frags import MAX_NUM_EDGES, MAX_NUM_NODES, MAX_EDGE_PER_NODE, DTYPE
-from frag_gnn.formula_utils import formula_to_peak_mzs, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.misc_utils import timeout_func
+from frag_gnn.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
+from frag_gnn.frag.compute_frags import (
+	DTYPE,
+	MAX_NUM_EDGES,
+	MAX_NUM_NODES,
+)
 
+# full list of common elements
+# NOTE: this maybe a bad idea to not cover all the element
+# we should handle all the elemnet
 ELEMENT_TO_VE = {
 	"C": 4,
 	"O": 2,
@@ -25,7 +25,11 @@ ELEMENT_TO_VE = {
 	"P": 3, # up to 5
 	"S": 2, # up to 6
 	"F": 1,
-	"Cl": 1
+	"Cl": 1,
+	"Br": 1,
+	"I":1,
+	"Se":2, #up to 6 same as S
+	"Si":4
 }
 NUM_HEAVY_ELEMENTS = len(ELEMENT_TO_VE.keys())
 NUM_ELEMENTS = NUM_HEAVY_ELEMENTS+1
@@ -76,7 +80,7 @@ def get_arrays_from_mol_d(mol_d):
 	edge_mask[:num_edges] = 1
 	return num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx
 
-def extract_mol_info(smiles_or_mol):
+def extract_mol_info(smiles_or_mol, use_default_valence=False):
 
 	if isinstance(smiles_or_mol,str):
 		# rdkit mol stuff
@@ -88,6 +92,9 @@ def extract_mol_info(smiles_or_mol):
 	else:
 		assert isinstance(smiles_or_mol,Chem.rdchem.Mol), type(smiles_or_mol)
 		mol = smiles_or_mol
+
+	pt = Chem.GetPeriodicTable()
+	#GetValenceList
 	# some checks
 	charge = rdmolops.GetFormalCharge(mol)
 	assert charge == 0, charge
@@ -100,22 +107,40 @@ def extract_mol_info(smiles_or_mol):
 	num_atoms = 0
 	num_radicals = 0
 	element_counts = {elem:0 for elem in ELEMENT_TO_VE.keys()}
+
 	for atom in mol.GetAtoms():
 		cur_idx = atom.GetIdx()
 		cur_num_hs = atom.GetTotalNumHs()
 		cur_deg = atom.GetTotalDegree()
 		# cur_num_bonds = atom.GetNumBonds()
 		cur_element = atom.GetSymbol()
+
 		if cur_element not in element_counts:
 			raise ValueError(f"Molecules with {cur_element} atom(s) currently not supported")
+		
 		element_counts[cur_element] += 1
 		elems.append(cur_element)
 		sbond_arr.append(cur_deg - cur_num_hs)
-		ve_arr.append(ELEMENT_TO_VE[cur_element])
+		#ve_arr.append(ELEMENT_TO_VE[cur_element])
+
+		# set valence value for each atom
+		# assumption we will use current valance unless
+		# use default valence flag is set to true
+		# not defualt valence can be -1 for transition metals
+		# on paper we should not encounter them at all
+		ve_value = atom.GetTotalValence()
+		if use_default_valence:
+			default_valence = pt.GetDefaultValence(cur_element)
+			if default_valence != -1:
+				ve_value = min(ve_value, default_valence)
+
+		ve_arr.append(ve_value)
+
 		hs_arr.append(cur_num_hs)
 		num_hs += cur_num_hs
 		num_atoms += 1
 		num_radicals += atom.GetNumRadicalElectrons()
+
 	element_counts["H"] = num_hs
 	assert num_radicals == 0, num_radicals
 	sbond_arr = np.array(sbond_arr)
@@ -125,22 +150,28 @@ def extract_mol_info(smiles_or_mol):
 	bonds = []
 	num_bonds = 0
 	adj = np.zeros((num_atoms, num_atoms), dtype=np.int32)
+	#adj = Chem.rdmolops.GetAdjacencyMatrix(mol)
 	for bond in mol.GetBonds():
 		cur_idx = bond.GetIdx()
 		from_idx = bond.GetBeginAtomIdx()
 		to_idx = bond.GetEndAtomIdx()
 		assert from_idx != to_idx
 		adj[from_idx, to_idx] = 1
+
 		bonds.append((from_idx, to_idx))
+
 		if from_idx not in atoms_to_bonds:
 			atoms_to_bonds[from_idx] = [cur_idx]
 		else:
 			atoms_to_bonds[from_idx].append(cur_idx)
+
 		if to_idx not in atoms_to_bonds:
 			atoms_to_bonds[to_idx] = [cur_idx]
 		else:
 			atoms_to_bonds[to_idx].append(cur_idx)
 		num_bonds += 1
+
+
 	mol_d = {}
 	mol_d["mol"] = mol
 	mol_d["num_hs"] = num_hs
@@ -244,7 +275,6 @@ def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TR
 	hs_arr = mol_d["hs_arr"]
 	elems = mol_d["elems"]
 	bond_mask_arr = mol_d["bond_mask_arr"]
-	formulae = []
 	formulae_to_counts = {}
 	for cc in list(set(ccs)):
 		base_formula = cc_to_formula_arr(cc,elems)
@@ -294,9 +324,8 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSF
 	sbond_arr = np.copy(mol_d["sbond_arr"])
 	num_hs = mol_d["num_hs"]
 	hs_arr = mol_d["hs_arr"]
-	elems = mol_d["elems"]
+	mol_d["elems"]
 	bond_mask_arr = mol_d["bond_mask_arr"]
-	cchs = []
 	all_cchs = set()
 	for cc in list(set(ccs)):
 		sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
@@ -495,6 +524,9 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	# time the recursive part
 	if frag_max_time is None:
 		frag_max_time = int(1e6)
+	
+	node_mask = node_mask.astype(np.byte)
+	edge_mask = edge_mask.astype(np.byte)
 	def _compute_frags():
 		ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
 			num_nodes,
@@ -510,6 +542,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 			True,
 			frag_max_time
 		)
+
 		assert len(ccs) == len(ccs_parents) == len(ccs_depths)
 		ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
 		ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
@@ -523,7 +556,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	assert -1 not in ccs_un
 	cc_g.add_nodes_from(ccs_un)
 	# add node depth information
-	ccs_to_depth_arrs = {}
 	for cc, depths in ccs_to_depths.items():
 		depth_arr = [0 for i in range(max_depth+1)]
 		for depth in depths:
@@ -568,6 +600,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	# peak mzs array
 	formula_peak_mzs = []
 	formula_peak_probs = []
+
 	for formula, idx in formula_to_idx.items():
 		if formula == "":
 			peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)

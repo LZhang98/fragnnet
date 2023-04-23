@@ -1,3 +1,5 @@
+# cython: profile=True
+
 import numpy as np
 import time
 from pprint import pprint
@@ -7,6 +9,31 @@ import networkx as nx
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.misc_utils import timeit, booltype, get_dgl_memory_usage
 
+import pstats, cProfile
+
+def run_fag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
+	mol_d = frag_utils.extract_mol_info(smiles)
+	num_nodes = mol_d["atom_mask_arr"].shape[0]
+	print(num_nodes)
+
+	# ccs = timeit(frag_utils.compute_frags_cython)(mol_d,max_depth,depths=False)
+	# ccs = [frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False) for cc_int in ccs]
+	# formulae = frag_utils.compute_approximate_formulae(ccs,mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer,return_counts=True)
+	# counts = np.array(list(formulae.values()))
+	# print("> formulae")
+	# print(len(formulae))
+	# print(np.mean(counts),np.std(counts))
+
+	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
+	dag = dag_d["dag"]
+	print("> dag")
+	dag_nn = dag.number_of_nodes()
+	dag_ne = dag.number_of_edges()
+	dag_indeg = dag.in_degrees().numpy()
+	print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {dag_ne/(dag_nn*(dag_nn-1))}")
+	print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
+	dag_memory = get_dgl_memory_usage(dag)
+	print(f"memory = {dag_memory/1e6} MB")
 
 if __name__ == "__main__":
 
@@ -38,25 +65,9 @@ if __name__ == "__main__":
 	max_h_transfer = args.max_h_transfer
 	frag_max_time = None
 	smiles = COMPOUND_TO_SMILES[args.compound_idx]
-	mol_d = frag_utils.extract_mol_info(smiles)
-	num_nodes = mol_d["atom_mask_arr"].shape[0]
-	print(num_nodes)
+	
+	#run_fag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)
 
-	# ccs = timeit(frag_utils.compute_frags_cython)(mol_d,max_depth,depths=False)
-	# ccs = [frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False) for cc_int in ccs]
-	# formulae = frag_utils.compute_approximate_formulae(ccs,mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer,return_counts=True)
-	# counts = np.array(list(formulae.values()))
-	# print("> formulae")
-	# print(len(formulae))
-	# print(np.mean(counts),np.std(counts))
-
-	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
-	dag = dag_d["dag"]
-	print("> dag")
-	dag_nn = dag.number_of_nodes()
-	dag_ne = dag.number_of_edges()
-	dag_indeg = dag.in_degrees().numpy()
-	print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {dag_ne/(dag_nn*(dag_nn-1))}")
-	print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
-	dag_memory = get_dgl_memory_usage(dag)
-	print(f"memory = {dag_memory/1e6} MB")
+	cProfile.runctx("run_fag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)", globals(), locals(), "run_fag_exp.prof")
+	#s = pstats.Stats("run_fag_exp.prof")
+	#s.strip_dirs().sort_stats("time").print_stats()
