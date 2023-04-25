@@ -27,6 +27,7 @@ pip install matplotlib
 pip install pytest
 # TODO: install dgl
 # TODO: install cysignals
+# TODO: install torch-scatter
 
 # frag-gnn itself
 pip install -I -e .

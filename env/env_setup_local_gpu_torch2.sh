@@ -6,7 +6,7 @@ conda create -n FRAG-GNN
 conda activate FRAG-GNN
 conda install python=3.10
 
-pip install torch --index-url https://download.pytorch.org/whl/cu117
+pip install torch==2.0.0+cu117 --index-url https://download.pytorch.org/whl/cu117
 pip install rdkit-pypi==2022.9.4
 pip install cython
 pip install cysignals

@@ -11,18 +11,10 @@ from frag_gnn.misc_utils import timeit, booltype, get_dgl_memory_usage
 
 import pstats, cProfile
 
-def run_fag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
+def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
 	mol_d = frag_utils.extract_mol_info(smiles)
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
 	print(num_nodes)
-
-	# ccs = timeit(frag_utils.compute_frags_cython)(mol_d,max_depth,depths=False)
-	# ccs = [frag_utils.convert_from_int(num_nodes,cc_int,bitmask=False) for cc_int in ccs]
-	# formulae = frag_utils.compute_approximate_formulae(ccs,mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer,return_counts=True)
-	# counts = np.array(list(formulae.values()))
-	# print("> formulae")
-	# print(len(formulae))
-	# print(np.mean(counts),np.std(counts))
 
 	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
 	dag = dag_d["dag"]
@@ -66,8 +58,8 @@ if __name__ == "__main__":
 	frag_max_time = None
 	smiles = COMPOUND_TO_SMILES[args.compound_idx]
 	
-	#run_fag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)
+	run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)
 
-	cProfile.runctx("run_fag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)", globals(), locals(), "run_fag_exp.prof")
-	#s = pstats.Stats("run_fag_exp.prof")
+	# cProfile.runctx("run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)", globals(), locals(), "run_frag_exp.prof")
+	#s = pstats.Stats("run_frag_exp.prof")
 	#s.strip_dirs().sort_stats("time").print_stats()

@@ -547,11 +547,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 		ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
 		ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
 		return ccs, ccs_to_parents, ccs_to_depths
-	# ccs, ccs_to_parents, ccs_to_depths = timeout_func(
-	# 	_compute_frags,
-	# 	timeout=frag_max_time,
-	# 	default=(None,None,None)
-	# )
 	ccs, ccs_to_parents, ccs_to_depths = _compute_frags()
 
 	# construct graph
@@ -562,13 +557,12 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	cc_g.add_nodes_from(ccs_un)
 	# add node depth information
 	for cc, depths in ccs_to_depths.items():
-		depth_arr = [0 for i in range(max_depth+1)] #np.zeros(max_depth+1,dtype=np.bool_)
+		depth_arr = [0 for i in range(max_depth+1)]
 		for depth in depths:
 			depth_arr[depth+1] = 1
 		ccs_to_depths[cc] = depth_arr
 	nx.set_node_attributes(cc_g,ccs_to_depths,"depth")
 	# add node mask information
-	# ccs_to_mask = {cc : np.array(convert_from_int(num_nodes,cc,bitmask=True),dtype=np.bool_) for cc in ccs_un}
 	ccs_to_mask = {cc : convert_from_int(num_nodes,cc,bitmask=True) for cc in ccs_un}
 	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
 	nx.set_node_attributes(cc_g,ccs_to_mask,"mask")
@@ -578,7 +572,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	ccs_to_formula = {}
 	for cc, cc_mask in ccs_to_mask.items():
 		cc_h_count = sum(cc_mask[i]*hs_arr[i] for i in range(len(cc_mask)))
-		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True).tolist() #.astype(np.uint8)
+		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True).tolist()
 		cc_formula[CANONICAL_H_IDX] = cc_h_count
 		ccs_to_formula[cc] = cc_formula
 	nx.set_node_attributes(cc_g,ccs_to_formula,"base_formula")
@@ -601,8 +595,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 		for formula in formulae:
 			formula_idx = formula_to_idx[formula]
 			formulae_idx.append(formula_idx)
-		ccs_to_formulae_idx[cc] = formulae_idx #np.array(formulae_idx,dtype=np.int16)
-		
+		ccs_to_formulae_idx[cc] = formulae_idx
 	nx.set_node_attributes(cc_g,ccs_to_formulae_idx,"h_formulae_idx")
 	# peak mzs array
 	formula_peak_mzs = []

@@ -68,7 +68,7 @@ class JointPredictor(nn.Module):
         # molecule, formula, depth
         self.dag_node_feats = self.mol_embedder.hidden_size \
             + self.num_elements*self.formula_embedder.num_dim \
-            + (self.num_depth+1)*self.depth_embedder.num_dim
+            + self.num_depth*self.depth_embedder.num_dim
         # molecule, formula
         self.dag_edge_feats = self.mol_embedder.hidden_size \
             + self.num_elements*self.formula_embedder.num_dim
@@ -146,18 +146,10 @@ class JointPredictor(nn.Module):
             # embed node depth
             dag_depth = self.depth_embedder(dag_dgl.ndata.pop('depth')).reshape(dag_num_nodes,-1)
             dag_ndata.append(dag_depth)
-            nshapes = [x.shape for x in dag_ndata]
-            eshapes = [x.shape for x in dag_edata]
-            print(nshapes)
-            print(eshapes)
             # concatenate everything [N,H+(E+1)*M]
             dag_dgl.ndata['h'] = torch.cat(dag_ndata,dim=-1)
             # concatenate everything [N,H+E*M]
             dag_dgl.edata['e'] = torch.cat(dag_edata,dim=-1)
-            print(dag_dgl.ndata['h'].shape)
-            print(self.dag_node_feats)
-            print(dag_dgl.edata['e'].shape)
-            print(self.dag_edge_feats)
             # apply GNN
             dag_embed = self.dag_embedder(dag_dgl)
 
@@ -188,20 +180,20 @@ class JointPredictor(nn.Module):
             )
             # convert to spectrum
             spec_mzs = dag_formula_peak_mzs
-            spec_ints = dag_formula_probs[dag_formula_peak_idxs] + torch.log(dag_formula_peak_probs)
+            spec_logprobs = dag_formula_probs[dag_formula_peak_idxs] + torch.log(dag_formula_peak_probs)
         # check that the total intensity sums up to 1 (approximately)
         spec_batch_idxs = torch.repeat_interleave(
             torch.arange(dag_formula_peak_sizes.shape[0]),
             dag_formula_peak_sizes
         )
-        spec_ints_total = th_s.scatter_logsumexp(
-            spec_ints,
-            spec_batch_idxs,
-            dim=0,
-            dim_size=None
-        )
-        print(torch.exp(spec_ints_total))
-        return spec_mzs, spec_ints
+        # spec_logprobs_total = th_s.scatter_logsumexp(
+        #     spec_logprobs,
+        #     spec_batch_idxs,
+        #     dim=0,
+        #     dim_size=None
+        # )
+        # print(torch.exp(spec_logprobs_total))
+        return spec_mzs, spec_logprobs, spec_batch_idxs
 
 class GNN(nn.Module):
     """MoleculeGNN Module"""
@@ -476,7 +468,7 @@ class MLPBlocks(nn.Module):
             output = self.dropout_layer(output)
             output = self.activation(output)
             if self.use_residuals:
-                output += old_op
+                output = output + old_op
                 old_op = output
 
         if self.output_layer is not None:
@@ -541,19 +533,24 @@ def random_walk_pe(g, k, eweight_name=None):
     PE = dgl_F.stack(PE, dim=-1)
     return PE
 
-def masked_subset_softmax(logits,mask,subset,mask_value=-1e9,dim=-1,log=True):
+def masked_subset_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=True):
     # apply mask
     masked_logits = mask*logits + (1-mask)*mask_value
-    # calculate normalizing constant
-    c = th_s.scatter_logsumexp(
-        masked_logits,
-        subset,
-        dim=dim
-    )
-    # apply normalizing constant
-    masked_logits = masked_logits - c[subset]
+    # normalize
+    masked_logits = scatter_normalize(masked_logits,subset_idxs,dim)
     if not log:
         # exponentiate
         return th.exp(masked_logits)
     else:
         return masked_logits
+
+def scatter_normalize(logits,subset_idxs,dim=-1):
+    # calculate normalizing constant
+    c = th_s.scatter_logsumexp(
+        logits,
+        subset_idxs,
+        dim=dim
+    )
+    # apply normalizing constant
+    logits = logits - c[subset_idxs]
+    return logits
