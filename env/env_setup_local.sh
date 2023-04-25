@@ -23,5 +23,8 @@ pip install torch-scatter -f https://data.pyg.org/whl/torch-1.13.0+cpu.html
 pip install dgl
 pip install cysignals
 pip install dgllife
+# for flow chart
+pip install dash
+pip install jupyter-dash
 
 pip install -I -e .

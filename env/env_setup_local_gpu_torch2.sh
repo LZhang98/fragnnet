@@ -20,7 +20,9 @@ pip install matplotlib
 pip install pytest
 pip install torch-scatter -f https://data.pyg.org/whl/torch-2.0.0+cu117.html
 pip install dgl -f https://data.dgl.ai/wheels/cu117/repo.html
-pip install dglgo -f https://data.dgl.ai/wheels-test/repo.html
 pip install dgllife
+# for flow chart
+pip install dash
+pip install jupyter-dash
 
 pip install -I -e .
