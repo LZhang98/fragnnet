@@ -3,8 +3,9 @@ import itertools
 import numpy as np
 import scipy
 
-from frag_gnn.data_utils import parse_formula
+#from frag_gnn.utils.data_utils import parse_formula
 from typing import List, Tuple, Dict, Literal
+from .misc_utils import none_or_nan
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
 
@@ -270,6 +271,45 @@ def get_formulae_hill_notation(element_counts: Dict[str,int]) -> str:
         if element_counts[element] > 1:
             formulae_string += str(element_counts[element])
     return formulae_string
+
+def parse_formula(formula:str) -> Dict[str,int]:
+	"""
+		Return a Dict of count of each elemnt in the forumla
+		NOTE: THIS DOES NOT HANDLE Condensed formulas eg. CH3CH2OH
+	Args:
+		formula (str): chemical forumla eg.CH4 or chemical forumla with adducts eg. CH4+H
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		Dict[str,int]: count per element eg {"C":1, "H":4}
+	"""
+
+	assert not none_or_nan(formula)
+	cur_element = None
+	cur_count = 1
+	element_counts = {}
+	if "-" in formula:
+		formula = formula[:formula.index("-")]
+	if "+" in formula:
+		formula = formula[:formula.index("+")]
+	for token in re.findall('[A-Z][a-z]?|\d+|.', formula):
+		if token.isalpha():
+			if cur_element is not None:
+				assert cur_element not in element_counts
+				element_counts[cur_element] = cur_count
+			cur_element = token
+			cur_count = 1
+		elif token.isdigit():
+			cur_count = int(token)
+		else:
+			print(formula)
+			raise ValueError(f"Invalid token {token}")
+	if cur_element is not None:
+		assert cur_element not in element_counts
+		element_counts[cur_element] = cur_count
+	return element_counts
 
 if __name__ == "__main__":
 

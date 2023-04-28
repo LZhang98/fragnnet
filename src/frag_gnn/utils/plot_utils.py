@@ -4,7 +4,7 @@ import matplotlib.patches as patches
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image
 import io
 
 EPS = np.finfo(np.float32).eps
