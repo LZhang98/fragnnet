@@ -6,7 +6,7 @@ from frag_gnn.misc_utils import timeit, booltype, get_dgl_memory_usage
 
 import plotly.graph_objects as go
 
-from dash import Dash, dcc, html, Input, Output, no_update
+from dash import Dash, Patch, dcc, html, Input, Output, no_update
 import pandas as pd
 
 from rdkit import Chem
@@ -24,9 +24,9 @@ def get_base64_image(mol, highlight = []):
 	return img_str
 
 
-def get_dag_fig(dag_d):
+def get_dag_fig(dag_d, smiles):
 
-	smiles = 'CC(=O)OC1=CC=CC=C1C(=O)O'
+	#smiles = 'CC(=O)OC1=CC=CC=C1C(=O)O'
 	mol = Chem.MolFromSmiles(smiles)
 	idx_to_formula = dag_d["idx_to_formula"]
 	G = dag_d["nx_dag"]
@@ -195,7 +195,7 @@ if __name__ == "__main__":
 	smiles = COMPOUND_TO_SMILES[args.compound_idx]
 	
 	dag_d = run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)
-	fig = get_dag_fig(dag_d)
+	fig = get_dag_fig(dag_d, smiles)
 	
 	app = Dash(__name__)
 
