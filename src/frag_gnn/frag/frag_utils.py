@@ -8,7 +8,7 @@ import rdkit.Chem.rdmolops as rdmolops
 import torch as th
 
 import frag_gnn.frag.compute_frags as compute_frags
-from frag_gnn.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from frag_gnn.frag.compute_frags import (
 	DTYPE,
 	MAX_NUM_EDGES,

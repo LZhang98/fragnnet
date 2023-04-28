@@ -2,7 +2,7 @@ from enum import Enum
 '''
 Just a lot of enum
 '''
-class Chorm(Enum, str):
+class Chorm(str, Enum):
     # chorm
     CE = 'CE'
     DI = 'DI'
@@ -11,7 +11,7 @@ class Chorm(Enum, str):
     FI = 'FI'
     IC = 'IC'
 
-class Ionlization(Enum, str):
+class Ionlization(str, Enum):
     # ionlization
     APCI = 'APCI'
     APPI = 'APPI'
@@ -23,11 +23,11 @@ class Ionlization(Enum, str):
     In_source_CID = 'In-source CID'
     PI = 'PI'
 
-class MsLevel(Enum, str):
+class MsLevel(str, Enum):
     MS1 = 'MS1'
     MS2 = 'MS2'
 
-class MsLevel(Enum, str):
+class MsLevel(str, Enum):
     QqQ = 'QqQ'
     QTOF = 'QTOF'
     BEqQ = 'BEqQ'
@@ -44,11 +44,11 @@ class MsLevel(Enum, str):
     Pos = 'P'
     Neg = 'N'
 
-class CIDType(Enum, str):
+class CIDType(str, Enum):
     HCD = 'hcd'
     CID = 'cid'
 
-class AdductType(Enum, str):
+class AdductType(str, Enum):
     M_H_pos = '[M+H]+'
     M_H_neg = '[M-H]-'
     M_pos = '[M]+'

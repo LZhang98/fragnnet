@@ -2,6 +2,7 @@ import rdkit.Chem as Chem
 import itertools
 import numpy as np
 import scipy
+import re
 
 #from frag_gnn.utils.data_utils import parse_formula
 from typing import List, Tuple, Dict, Literal
