@@ -448,6 +448,7 @@ def compute_frags_python(mol_d,max_depth,parents=False,depths=False):
 	# ccs_rec = set(ccs_rec)
 	# return ccs_rec
 
+
 def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 
 	assert not parents
@@ -475,6 +476,16 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 		return ccs
 
 def compute_frag_peak_stats(row,tolerance=0.01,prec_type="[M+H]+"):
+	"""_summary_
+
+	Args:
+		row (_type_): _description_
+		tolerance (float, optional): _description_. Defaults to 0.01.
+		prec_type (str, optional): _description_. Defaults to "[M+H]+".
+
+	Returns:
+		_type_: _description_
+	"""
 
 	true_mzs, true_ints = list(zip(*row["peaks"]))
 	pred_mzs = row["formula_peak_mzs"]
@@ -517,6 +528,25 @@ def compute_frag_peak_stats(row,tolerance=0.01,prec_type="[M+H]+"):
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
 def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_dag=False,cch_dag=False, include_nx_dag = False):
+	"""_summary_
+
+	Args:
+		mol_d (_type_): _description_
+		max_depth (_type_): _description_
+		h_prior (_type_): _description_
+		max_h_transfer (_type_): _description_
+		frag_max_time (_type_): _description_
+		formula_dag (bool, optional): _description_. Defaults to False.
+		cch_dag (bool, optional): _description_. Defaults to False.
+		include_nx_dag (bool, optional): _description_. Defaults to False.
+
+	Raises:
+		NotImplementedError: _description_
+		NotImplementedError: _description_
+
+	Returns:
+		_type_: _description_
+	"""
 
 	assert h_prior in [True,False], h_prior
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_arrays_from_mol_d(mol_d)
