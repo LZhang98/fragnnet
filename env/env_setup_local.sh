@@ -24,6 +24,7 @@ pip install dgl
 pip install dgllife
 # for flow chart
 pip install dash
-pip install jupyter-dash
+# for spectrum https://spectralentropy.readthedocs.io/en/master/#module-math_distance
+pip install pip https://github.com/YuanyueLi/SpectralEntropy.git
 
 pip install -I -e .
