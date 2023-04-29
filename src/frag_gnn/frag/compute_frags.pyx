@@ -2,6 +2,9 @@
 # cython: linetrace=False
 # cython: language_level=3
 # cython: boundscheck=False
+# cython: wraparound=False, 
+# cython: nonecheck=False
+# cython: cdivision=True
 
 import numpy as np
 from cysignals.signals cimport sig_check
@@ -215,7 +218,10 @@ cdef compute_ccs_recursive(
 	cdef int new_num_ccs
 	cdef char [:,::1] new_cc_nodes
 	cdef char [:,::1] new_cc_edges
-
+	
+	cdef int i
+	cdef int c
+	
 	# lets check we have see this before
 	# why not using c_str ? because I don't want to free it 
 	node_full_mask_str = mask_to_str(num_nodes,node_mask) + '|' +  mask_to_str(num_edges,edge_mask) 
