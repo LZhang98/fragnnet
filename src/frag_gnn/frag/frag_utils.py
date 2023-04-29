@@ -454,16 +454,14 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 	assert not parents
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_arrays_from_mol_d(mol_d)
 	# time this part
-	ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
+	ccs, ccs_parents, _ = compute_frags.compute_ccs(
 		num_nodes,
 		num_edges,
 		node_mask,
 		edges,
 		edge_mask,
 		edge_to_node_idx,
-		0,
 		max_depth,
-		True,
 		parents,
 		depths,
 		int(1e6)
@@ -556,27 +554,26 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	
 	node_mask = node_mask.astype(np.byte)
 	edge_mask = edge_mask.astype(np.byte)
-	def _compute_frags():
-		ccs, ccs_parents, ccs_depths = compute_frags.py_compute_ccs_recursive(
-			num_nodes,
-			num_edges,
-			node_mask,
-			edges,
-			edge_mask,
-			edge_to_node_idx,
-			0,
-			max_depth,
-			True,
-			True,
-			True,
-			frag_max_time
-		)
+	#def _compute_frags():
+	ccs, ccs_parents, ccs_depths = compute_frags.compute_ccs(
+		num_nodes,
+		num_edges,
+		node_mask,
+		edges,
+		edge_mask,
+		edge_to_node_idx,
+		max_depth,
+		True,
+		True,
+		frag_max_time
+	)
 
-		assert len(ccs) == len(ccs_parents) == len(ccs_depths)
-		ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
-		ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
-		return ccs, ccs_to_parents, ccs_to_depths
-	ccs, ccs_to_parents, ccs_to_depths = _compute_frags()
+	assert len(ccs) == len(ccs_parents) == len(ccs_depths)
+	ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
+	ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
+	
+	#return ccs, ccs_to_parents, ccs_to_depths
+	#ccs, ccs_to_parents, ccs_to_depths = _compute_frags()
 
 	# construct graph
 	nx_cc_g = nx.DiGraph()
