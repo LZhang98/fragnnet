@@ -7,7 +7,7 @@ import joblib
 from tqdm import tqdm
 from pprint import pformat, pprint
 
-from frag_gnn.misc_utils import np_temp_seed, none_or_nan
+from .misc_utils import np_temp_seed, none_or_nan
 from typing import Dict
 
 JOBLIB_BACKEND = "loky"
@@ -662,41 +662,4 @@ def bin_func(mzs,ints,mz_max,mz_bin_res,ints_thresh,return_index):
 			bin_spec[-1] = 1.
 		return bin_spec
 
-def parse_formula(formula:str) -> Dict[str,int]:
-	"""
-		Return a Dict of count of each elemnt in the forumla
-		NOTE: THIS DOES NOT HANDLE Condensed formulas eg. CH3CH2OH
-	Args:
-		formula (str): chemical forumla eg.CH4 or chemical forumla with adducts eg. CH4+H
 
-	Raises:
-		ValueError: _description_
-
-	Returns:
-		Dict[str,int]: count per element eg {"C":1, "H":4}
-	"""
-
-	assert not none_or_nan(formula)
-	cur_element = None
-	cur_count = 1
-	element_counts = {}
-	if "-" in formula:
-		formula = formula[:formula.index("-")]
-	if "+" in formula:
-		formula = formula[:formula.index("+")]
-	for token in re.findall('[A-Z][a-z]?|\d+|.', formula):
-		if token.isalpha():
-			if cur_element is not None:
-				assert cur_element not in element_counts
-				element_counts[cur_element] = cur_count
-			cur_element = token
-			cur_count = 1
-		elif token.isdigit():
-			cur_count = int(token)
-		else:
-			print(formula)
-			raise ValueError(f"Invalid token {token}")
-	if cur_element is not None:
-		assert cur_element not in element_counts
-		element_counts[cur_element] = cur_count
-	return element_counts

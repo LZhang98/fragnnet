@@ -7,7 +7,7 @@ import argparse
 import networkx as nx
 
 import frag_gnn.frag.frag_utils as frag_utils
-from frag_gnn.misc_utils import timeit, booltype, get_dgl_memory_usage
+from frag_gnn.utils.misc_utils import timeit, booltype, get_dgl_memory_usage
 
 import pstats, cProfile
 

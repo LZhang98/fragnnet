@@ -8,7 +8,7 @@ import rdkit.Chem.rdmolops as rdmolops
 import torch as th
 
 import frag_gnn.frag.compute_frags as compute_frags
-from frag_gnn.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from frag_gnn.frag.compute_frags import (
 	DTYPE,
 	MAX_NUM_EDGES,
@@ -368,7 +368,6 @@ def cc_to_formula_arr(cc,elems,bitmask=False):
 
 def formula_arr_to_str(formula):
 	""" use canonical order """
-
 	formula_str = ""
 	elem_d = {}
 	for idx, count in enumerate(formula):
@@ -449,6 +448,7 @@ def compute_frags_python(mol_d,max_depth,parents=False,depths=False):
 	# ccs_rec = set(ccs_rec)
 	# return ccs_rec
 
+
 def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 
 	assert not parents
@@ -476,6 +476,16 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 		return ccs
 
 def compute_frag_peak_stats(row,tolerance=0.01,prec_type="[M+H]+"):
+	"""_summary_
+
+	Args:
+		row (_type_): _description_
+		tolerance (float, optional): _description_. Defaults to 0.01.
+		prec_type (str, optional): _description_. Defaults to "[M+H]+".
+
+	Returns:
+		_type_: _description_
+	"""
 
 	true_mzs, true_ints = list(zip(*row["peaks"]))
 	pred_mzs = row["formula_peak_mzs"]
@@ -517,7 +527,26 @@ def compute_frag_peak_stats(row,tolerance=0.01,prec_type="[M+H]+"):
 		ppt_formula = np.nan
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
-def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_dag=False,cch_dag=False):
+def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_dag=False,cch_dag=False, include_nx_dag = False):
+	"""_summary_
+
+	Args:
+		mol_d (_type_): _description_
+		max_depth (_type_): _description_
+		h_prior (_type_): _description_
+		max_h_transfer (_type_): _description_
+		frag_max_time (_type_): _description_
+		formula_dag (bool, optional): _description_. Defaults to False.
+		cch_dag (bool, optional): _description_. Defaults to False.
+		include_nx_dag (bool, optional): _description_. Defaults to False.
+
+	Raises:
+		NotImplementedError: _description_
+		NotImplementedError: _description_
+
+	Returns:
+		_type_: _description_
+	"""
 
 	assert h_prior in [True,False], h_prior
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_arrays_from_mol_d(mol_d)
@@ -550,22 +579,22 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	ccs, ccs_to_parents, ccs_to_depths = _compute_frags()
 
 	# construct graph
-	cc_g = nx.DiGraph()
+	nx_cc_g = nx.DiGraph()
 	ccs_un = sorted(list(set(ccs)))
 	assert len(ccs_un) == len(ccs_to_parents) == len(ccs_to_depths)
 	assert -1 not in ccs_un
-	cc_g.add_nodes_from(ccs_un)
+	nx_cc_g.add_nodes_from(ccs_un)
 	# add node depth information
 	for cc, depths in ccs_to_depths.items():
 		depth_arr = [0 for i in range(max_depth+1)]
 		for depth in depths:
 			depth_arr[depth+1] = 1
 		ccs_to_depths[cc] = depth_arr
-	nx.set_node_attributes(cc_g,ccs_to_depths,"depth")
+	nx.set_node_attributes(nx_cc_g,ccs_to_depths,"depth")
 	# add node mask information
 	ccs_to_mask = {cc : convert_from_int(num_nodes,cc,bitmask=True) for cc in ccs_un}
 	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
-	nx.set_node_attributes(cc_g,ccs_to_mask,"mask")
+	nx.set_node_attributes(nx_cc_g,ccs_to_mask,"mask")
 	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
 	elems = mol_d["elems"]
@@ -575,7 +604,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True).tolist()
 		cc_formula[CANONICAL_H_IDX] = cc_h_count
 		ccs_to_formula[cc] = cc_formula
-	nx.set_node_attributes(cc_g,ccs_to_formula,"base_formula")
+	nx.set_node_attributes(nx_cc_g,ccs_to_formula,"base_formula")
 	# map nodes to formulae
 	ccs_to_formulae = {}
 	formulae_un = set()
@@ -596,7 +625,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 			formula_idx = formula_to_idx[formula]
 			formulae_idx.append(formula_idx)
 		ccs_to_formulae_idx[cc] = formulae_idx
-	nx.set_node_attributes(cc_g,ccs_to_formulae_idx,"h_formulae_idx")
+	nx.set_node_attributes(nx_cc_g,ccs_to_formulae_idx,"h_formulae_idx")
 	# peak mzs array
 	formula_peak_mzs = []
 	formula_peak_probs = []
@@ -625,39 +654,41 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 			# skip self edges
 			if parent == cc or parent == -1:
 				continue
-			cc_g.add_edge(parent,cc)
+			nx_cc_g.add_edge(parent,cc)
 			parent_mask = ccs_to_mask[parent]
 			diff_mask = [parent_mask[i]-cc_mask[i] for i in range(len(cc_mask))]
 			edges_to_mask[(parent,cc)] = diff_mask
 			diff_formula = cc_to_formula_arr(diff_mask,elems).tolist()
 			edges_to_formula[(parent,cc)] = diff_formula
-	nx.set_edge_attributes(cc_g,edges_to_mask,"mask")
-	nx.set_edge_attributes(cc_g,edges_to_formula,"base_formula")
+	nx.set_edge_attributes(nx_cc_g,edges_to_mask,"mask")
+	nx.set_edge_attributes(nx_cc_g,edges_to_formula,"base_formula")
 
 	# convert to dgl
-	cc_g = dgl.from_networkx(
-		cc_g, 
+	dgl_cc_g = dgl.from_networkx(
+		nx_cc_g, 
 		node_attrs=["mask","base_formula","h_formulae_idx","depth"], 
 		edge_attrs=["mask","base_formula"],
 		idtype=th.int32,
 		device="cpu"
 	)
 	# casting to make graph smaller
-	cc_g.ndata["mask"] = cc_g.ndata["mask"].type(th.bool)
-	cc_g.ndata["base_formula"] = cc_g.ndata["base_formula"].type(th.int16)
-	cc_g.ndata["h_formulae_idx"] = cc_g.ndata["h_formulae_idx"].type(th.int16)
-	cc_g.ndata["depth"] = cc_g.ndata["depth"].type(th.int16)
-	cc_g.edata["mask"] = cc_g.edata["mask"].type(th.bool)
-	cc_g.edata["base_formula"] = cc_g.edata["base_formula"].type(th.int16)
+	dgl_cc_g.ndata["mask"] = dgl_cc_g.ndata["mask"].type(th.bool)
+	dgl_cc_g.ndata["base_formula"] = dgl_cc_g.ndata["base_formula"].type(th.int16)
+	dgl_cc_g.ndata["h_formulae_idx"] = dgl_cc_g.ndata["h_formulae_idx"].type(th.int16)
+	dgl_cc_g.ndata["depth"] = dgl_cc_g.ndata["depth"].type(th.int16)
+	dgl_cc_g.edata["mask"] = dgl_cc_g.edata["mask"].type(th.bool)
+	dgl_cc_g.edata["base_formula"] = dgl_cc_g.edata["base_formula"].type(th.int16)
+
 
 	dag_d = {}
 	dag_d["max_depth"] = max_depth
 	dag_d["h_prior"] = h_prior
 	dag_d["max_h_transfer"] = max_h_transfer
-	dag_d["dag"] = cc_g
+	dag_d["dag"] = dgl_cc_g
 	dag_d["formula_peak_mzs"] = formula_peak_mzs
 	dag_d["formula_peak_probs"] = formula_peak_probs
 	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
+	dag_d['nx_dag'] = nx_cc_g if include_nx_dag else None
 
 	if formula_dag:
 		

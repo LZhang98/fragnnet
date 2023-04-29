@@ -9,7 +9,7 @@ import networkx as nx
 import dgl
 
 import frag_gnn.frag.frag_utils as frag_utils
-from frag_gnn.misc_utils import timeit, booltype
+from frag_gnn.utils.misc_utils import timeit, booltype
 from frag_gnn.mol_graph import MolGraph
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
 from frag_gnn.nn.distributions import mog_log_prob
