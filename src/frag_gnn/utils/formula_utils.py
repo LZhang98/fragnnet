@@ -107,6 +107,10 @@ ISOTOPES_DICT = {1: [1, 2],
                  90: [232]
                  }
 
+# global cache for peak per element
+# so we don't compute this a million time
+peaks_for_element_cache = {}
+
 def enumerate_multinomial(N: int, p: List[float], cutoff_thold: float = 0.0001):
     """
     Enumerate the state space of rolling a die with |p| faces
@@ -181,6 +185,11 @@ def get_peaks_for_element(element: str, num_atoms: int) -> List:
     Returns:
         _type_: _description_
     """
+
+    key_str = element + str(num_atoms)
+    if key_str in peaks_for_element_cache:
+        return peaks_for_element_cache[key_str]
+    
     atomicno = Chem.GetPeriodicTable().GetAtomicNumber(element)
 
     isotopes = get_isotopes(atomicno)
@@ -193,6 +202,7 @@ def get_peaks_for_element(element: str, num_atoms: int) -> List:
 
     peaks_masses_probs = [(comb_probs[i][0], m)
                           for i, m in enumerate(exact_masses)]
+    peaks_for_element_cache[key_str] = peaks_masses_probs
     return peaks_masses_probs
 
 
