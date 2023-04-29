@@ -24,26 +24,23 @@ class FragDAG(object):
 
         if verbose:
             print(">load dgl", dgl_file)
-        
-        glist, label_dict = load_graphs(dgl_file)
+        glist, _ = load_graphs(dgl_file)
 		
         if verbose:
-             print(">load meta", th_file)
+            print(">load meta", th_file)
         self._meta = th.load(th_file)
+
+        if verbose:
+            print(">covert to nx graph", th_file)
         self._nx_graph = dgl.to_networkx(glist[0],
 						node_attrs=['depth','h_formulae_idx','base_formula','mask'])
         
-
-    def populate_data(self):
-        """_summary_
-        """
-        dag_d = self._dag_d
-        idx_to_formula = dag_d["idx_to_formula"]
-        G = dag_d["nx_dag"]
+        # parse saved data
+        idx_to_formula = self._meta["idx_to_formula"]
         pos_dict = {}
 
         node_mass_l = []
-        for node in G.nodes(data = True):
+        for node in self._nx_graph.nodes(data = True):
             #print(node)
             node_depth_mask = node[1]['depth']
 
@@ -70,7 +67,25 @@ class FragDAG(object):
 
     
     def _get_matched_fragment():
+        pass
         #abc
-    
-    #def get_dag_fig(self):
-    
+
+    def save_to_file(self, dgl_file:str, th_file:str, verbose = False):
+        """_summary_
+
+        Args:
+            dgl_file (str): _description_
+            th_file (str): _description_
+        """
+
+        if verbose:
+            print(">load dgl", dgl_file)
+        
+        #glist, label_dict = load_graphs(dgl_file)
+		
+        #if verbose:
+        #     print(">load meta", th_file)
+        #self._meta = th.load(th_file)
+        #self._nx_graph = dgl.to_networkx(glist[0],
+	    #				node_attrs=['depth','h_formulae_idx','base_formula','mask'])
+        
