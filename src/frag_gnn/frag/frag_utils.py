@@ -40,11 +40,9 @@ ELEMENT_TO_IDX["H"] = len(ELEMENT_TO_VE.keys())
 IDX_TO_ELEMENT = { idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 
 MAX_H_TRANSFER = 4
-
 MAX_NUM_MZS_PER_FORMULA = 5
 
-
-def convert_to_int(cc):
+def convert_mask_to_int(cc):
 
 	return sum([2**i for i in cc])
 
@@ -436,17 +434,6 @@ def collect_ccs_parents(ccs,ccs_parents):
 		else:
 			ccs_to_parents[cc] = set([parent])
 	return ccs_to_parents
-
-def compute_frags_python(mol_d,max_depth,parents=False,depths=False):
-
-	raise NotImplementedError
-	# g = nx.Graph()
-	# g.add_edges_from(mol_d["bonds"])
-	# # time this part
-	# ccs_rec = compute_ccs_recursive(g,0,max_depth)
-	# ccs_rec = [convert_to_int(cc) for cc in ccs_rec]
-	# ccs_rec = set(ccs_rec)
-	# return ccs_rec
 
 
 def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):

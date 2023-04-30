@@ -15,13 +15,14 @@ import numpy as np
 # global dict for easy access
 # This is not safe for more than one process
 # it will do for now
-dag_d = {}
+node_mass_l = []
 
 def get_base64_image(mol, highlight = []):
 	drawer = rdMolDraw2D.MolDraw2DCairo(200,200)
 	drawer.DrawMolecule(mol, highlightAtoms = highlight)
 	drawer.FinishDrawing()
 	img_str = base64.b64encode(drawer.GetDrawingText()).decode('utf8')
+	#img_str = ''
 	return img_str
 
 def get_dag_fig(dag_d, mol):
@@ -30,6 +31,7 @@ def get_dag_fig(dag_d, mol):
 	G = dag_d["nx_dag"]
 	pos_dict = {}
 	customdata = []
+	node_mass_l = []
 	for node in G.nodes(data = True):
 		#print(node)
 		node_depth_mask = node[1]['depth']
@@ -57,13 +59,16 @@ def get_dag_fig(dag_d, mol):
 
 		# add MWs
 		formulas = []
+		node_mass = []
 		for id in node[1]['h_formulae_idx'].tolist():
 			if id != 0:
 				mass = formula_to_peak_mzs(idx_to_formula[id], "[M+H]+", isotopes = False)
 				#print(idx_to_formula[id], mass[0])
 				formulas.append(idx_to_formula[id] + ':{0:.4f}Da'.format(mass[0]))
+				node_mass.append(mass[0])
 		#print(formulas)
 		customdata.append([get_base64_image(mol, highlight_atom),formulas])
+		node_mass_l.append(node_mass)
 
 	# add lines
 	# note line is not clickable or hoverable
@@ -124,13 +129,13 @@ def get_specturm_fig(peaks):
 
 	x_values = []
 	y_values = []
-	print(peaks)
+	#print(peaks)
 	for peak in peaks:
 		x_values.append(peak[0])
 		y_values.append(peak[1])
 
-	print(x_values)
-	print(y_values)
+	#print(x_values)
+	#print(y_values)
 	fig = go.Figure([go.Bar(x=x_values, y=y_values, width = 1.0)],
 		              layout=go.Layout(
                 title='<br>Spectrum',
@@ -154,26 +159,20 @@ def find_nearest(np_array, value):
     idx = (np.abs(np_array - value)).argmin()
     return np_array[idx]
 
-def get_updated_color(dag_d, peak_mws):
-
-	idx_to_formula = dag_d["idx_to_formula"]
-	G = dag_d["nx_dag"]
+def get_updated_color(node_mass_l, peak_mws):
 	colors = []
 
 	peak_mws = np.asarray(peak_mws)
 	colour_set = ["rgb(31, 119, 180)", "rgb(255, 127, 14)", "rgb(44, 160, 44)"]
 
 	node_color = colour_set[1]
-	for node in G.nodes(data = True):
+	for node_masses in node_mass_l:
 		# add MWs
-		#formulas = []
-		for id in node[1]['h_formulae_idx'].tolist():
-			if id != 0:
-				mass = formula_to_peak_mzs(idx_to_formula[id], "[M+H]+", isotopes = False)
-				closet = find_nearest(peak_mws, mass)
-				if abs(mass - closet) < 0.01:
-					node_color = colour_set[1]
-					break
+		for mass in node_masses:
+			closet = find_nearest(peak_mws, mass)
+			if abs(mass - closet) < 0.01:
+				node_color = colour_set[1]
+				break
 				#print(idx_to_formula[id], mass[0])
 				#formulas.append(idx_to_formula[id] + ':{0:.4f}Da'.format(mass[0]))
 		colors.append(node_color)
@@ -220,7 +219,7 @@ def display_hover(hoverData):
 
 @app.callback(
 Output('spectrum_fig', 'figure'),
-#Output('dag-graph', 'figure'),
+#Output('dag-graph', 'figure', allow_duplicate=True),
 Input('spectrum_dropdown', 'value')
 )
 def update_spectrum_fig(value):
@@ -231,9 +230,11 @@ def update_spectrum_fig(value):
 	peaks = spec_df[spec_df['spec_id'] == spec_id]['peaks'].values[0]
 	specturm_fig = get_specturm_fig(peaks)
 
-	#colors = get_updated_color(dag_d, [p[0] for p in peaks])
+	#colors = get_updated_color(node_mass_l, [p[0] for p in peaks])
+	#print(colors)
 	# Creating a Patch object
 	#patched_dag_fig = Patch()
+	#patched_dag_fig['data'][1]['marker']['color'] = colors
 	#patched_figure["layout"]["title"]["font"]["color"] = new_color
 	return specturm_fig #, patched_dag_fig
 
@@ -264,7 +265,7 @@ def update_dag_graph_and_specturm_list(value):
 						#edge_attrs=['base_formula','mask']
 						)
 		dag_fig = get_dag_fig(dag_d, mol_df[mol_df['mol_id'] == mol_id]['mol'].values[0])
-		print(dag_fig)
+		print(dag_fig['data'][1]['marker']['color'])
 		#print(type(dag_fig))
 	else:
 		print("file not exists", dgl_file, th_file)
@@ -322,6 +323,7 @@ html.Div([
 			style={'height': '90vh'},
 			clear_on_unhover=True),
 	dcc.Tooltip(id="dag-graph-tooltip"),
+	dcc.Store(id="dag-graph-data"),
 ],
 style={'width': '49%', 'float': 'right', 'display': 'inline-block'}),
 ])
