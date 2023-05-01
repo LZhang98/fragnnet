@@ -1,3 +1,4 @@
+from copy import deepcopy
 import dgl
 import networkx as nx
 import numpy as np
@@ -413,7 +414,16 @@ def compute_ccs_recursive(g,depth,max_depth):
 			g.add_edge(bond[0],bond[1])
 		return all_ccs
 
-def collect_ccs_depths(ccs,ccs_depths):
+def collect_ccs_depths(ccs: list[int], ccs_depths: list[int]) -> dict[set[int]]:
+	"""Method to collect depth for ccs
+
+	Args:
+		ccs (list[int]): list of connected components
+		ccs_depths (list[int]): depths for each components
+
+	Returns:
+		dict[set[int]]: _description_
+	"""
 
 	ccs_to_depths = {}
 	for cc_idx, cc in enumerate(ccs):
@@ -424,7 +434,16 @@ def collect_ccs_depths(ccs,ccs_depths):
 			ccs_to_depths[cc] = set([depth])
 	return ccs_to_depths
 
-def collect_ccs_parents(ccs,ccs_parents):
+def collect_ccs_parents(ccs: list[int],ccs_parents:list[int]) -> dict[set[int]]:
+	"""Method to collect depth for ccs
+
+	Args:
+		ccs (list[int]): list of connected components
+		ccs_depths (list[int]): parent ccs for each components
+
+	Returns:
+		dict[set[int]]: _description_
+	"""
 
 	ccs_to_parents = {}
 	for cc_idx, cc in enumerate(ccs):
@@ -568,17 +587,22 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	assert len(ccs_un) == len(ccs_to_parents) == len(ccs_to_depths)
 	assert -1 not in ccs_un
 	nx_cc_g.add_nodes_from(ccs_un)
+
 	# add node depth information
+	# convert to a one hot encoding
 	for cc, depths in ccs_to_depths.items():
-		depth_arr = [0 for i in range(max_depth+1)]
+		depth_arr = [0 for _ in range(max_depth+1)]
 		for depth in depths:
-			depth_arr[depth+1] = 1
+			depth_arr[depth] = 1
 		ccs_to_depths[cc] = depth_arr
 	nx.set_node_attributes(nx_cc_g,ccs_to_depths,"depth")
+
 	# add node mask information
+	# convert to a one hot encoding
 	ccs_to_mask = {cc : convert_from_int(num_nodes,cc,bitmask=True) for cc in ccs_un}
 	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
 	nx.set_node_attributes(nx_cc_g,ccs_to_mask,"mask")
+
 	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
 	elems = mol_d["elems"]
@@ -589,6 +613,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 		cc_formula[CANONICAL_H_IDX] = cc_h_count
 		ccs_to_formula[cc] = cc_formula
 	nx.set_node_attributes(nx_cc_g,ccs_to_formula,"base_formula")
+
 	# map nodes to formulae
 	ccs_to_formulae = {}
 	formulae_un = set()
@@ -598,6 +623,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 		formulae = list(delta_h_to_formula.values())
 		ccs_to_formulae[cc] = formulae
 		formulae_un.update(formulae)
+		
 	# map nodes to formulae indices
 	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
 	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
@@ -675,7 +701,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	dag_d['nx_dag'] = nx_cc_g if include_nx_dag else None
 
 	if formula_dag:
-		
 		raise NotImplementedError
 		# formulae_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_to_ccs.keys())))}
 		# for k,v in ccs_to_formulae.items():

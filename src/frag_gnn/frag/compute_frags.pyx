@@ -210,7 +210,7 @@ def compute_ccs(
     cdef list ccs = [node_mask_key]
     cdef list current_edge_masks_list = [edge_mask_key]
     cdef list ccs_parents = [-1]
-    cdef list ccs_depths = [-1]
+    cdef list ccs_depths = [0]
     cdef dict cc_node_mask_dict = {node_mask_key:node_mask}
     cdef dict cc_edge_mask_dict = {edge_mask_key:edge_mask}
     cdef dict has_seen = {}
@@ -252,9 +252,7 @@ def compute_ccs(
             if need_skip or num_edges_nomask == 0:
                 continue
 
-            # compute parent_cc_int for current_node, assign to child node
-            if return_parents:
-                parent_cc_int = mask_to_big_int(num_nodes,current_node_mask)
+
 
             # now we need to break more bond
             i = 0
@@ -282,9 +280,9 @@ def compute_ccs(
                 for c in range(new_num_ccs):
              
                     if return_parents:
-                        ccs_parents.append(parent_cc_int)
+                        ccs_parents.append(ccs[node_idx])
                     if return_depths:
-                        ccs_depths.append(current_depth)
+                        ccs_depths.append(current_depth + 1)
 
                     # save cc_nodes
                     # child_node_mask_list.append(np_mask_copy(new_cc_nodes[c,:]))
@@ -306,4 +304,5 @@ def compute_ccs(
         current_edge_masks_list = child_edge_mask_list
         child_edge_mask_list = []
     
+    # we not passing node mask dict back to avoid deal with memory view
     return ccs, ccs_parents, ccs_depths
