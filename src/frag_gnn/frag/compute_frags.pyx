@@ -245,12 +245,11 @@ def compute_ccs(
             elif has_seen[node_full_mask_str] > current_depth:
                 has_seen[node_full_mask_str] = current_depth
             else:
-                #print('>see this before', node_full_mask_str)
                 need_skip = True
 
+            # check if there any bond left to kill
             num_edges_nomask = np_sum(current_edge_mask)
             if need_skip or num_edges_nomask == 0:
-                #print('>skiped',need_skip, node_full_mask_str, num_edges_nomask)
                 continue
 
             # compute parent_cc_int for current_node, assign to child node
@@ -278,7 +277,6 @@ def compute_ccs(
 
                 # restore edge
                 current_edge_mask[i] = 1
-
                 # save data and save edge and node configure
                 c = 0
                 for c in range(new_num_ccs):
@@ -302,9 +300,7 @@ def compute_ccs(
                     ccs.append(child_node_mask_key)
                     child_edge_mask_list.append(child_edge_mask_key)
                 
-                #print('>new ccs', new_num_ccs)
                 num_ccs += new_num_ccs
-
         # finishing current depth, move to next
         ccs_idx = ccs_end
         current_edge_masks_list = child_edge_mask_list
