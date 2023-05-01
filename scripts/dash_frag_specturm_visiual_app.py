@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 
-from frag_gnn.formula_utils import formula_to_peak_mzs
+from frag_gnn.utils.formula_utils import formula_to_peak_mzs
 from dash import Dash, Patch, dcc, html, Input, Output, no_update
 from rdkit.Chem.Draw import rdMolDraw2D
 from dgl.data.utils import load_graphs
