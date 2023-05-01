@@ -20,18 +20,6 @@ MAX_EDGE_PER_NODE = 6 # Sulfur
 class TimeoutError(RuntimeError):
     pass
 
-#cdef char [::1] np_mask_copy(char [::1] array):
-#    cdef int num_elems = array.shape[0]
-#    cdef char [::1] new_array = np.zeros(num_elems,MASK_DTYPE)
-#    for i in range(num_elems):
-#        new_array[i] = array[i]
-#    return new_array
-
-# cdef void np_zero(int [::1] array):
-#     cdef int num_elems = array.shape[0]
-#     for i in range(num_elems):
-#         array[i] = 0
-
 cdef void np_fill(int [::1] array, int val):
     cdef int num_elems = array.shape[0]
     for i in range(num_elems):
@@ -189,8 +177,8 @@ def compute_ccs(
         char [::1] edge_mask,
         int [:,::1] node_to_edge_idx,
         int max_depth,
-        bint parents,
-        bint depths,
+        bint return_parents,
+        bint return_depths,
         long time_limit
     ):
 
@@ -215,7 +203,7 @@ def compute_ccs(
     cdef int current_depth = 0
 
 
-    # start with parents
+    # start with return_parents
     node_mask_key = mask_to_big_int(num_nodes,node_mask)
     edge_mask_key = mask_to_big_int(num_edges,edge_mask)
 
@@ -265,6 +253,8 @@ def compute_ccs(
                 #print('>skiped',need_skip, node_full_mask_str, num_edges_nomask)
                 continue
 
+
+
             # now we need to break more bond
             i = 0
             for i in range(num_edges):
@@ -291,10 +281,9 @@ def compute_ccs(
                 c = 0
                 for c in range(new_num_ccs):
              
-                    if parents:
+                    if return_parents:
                         ccs_parents.append(ccs[node_idx])
-                    if depths:
-                        # this is for child depth
+                    if return_depths:
                         ccs_depths.append(current_depth + 1)
 
                     # save cc_nodes
@@ -321,5 +310,3 @@ def compute_ccs(
     
     # we not passing node mask dict back to avoid deal with memory view
     return ccs, ccs_parents, ccs_depths
-
-
