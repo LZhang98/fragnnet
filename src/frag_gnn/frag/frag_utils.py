@@ -259,9 +259,22 @@ def compute_cc_h_cap(cc:list|np.ndarray,ve_arr:list[int],sbond_arr:list[int],num
 	cap_ve_arr[cap_ve_mask] = cap_sbond_arr[cap_ve_mask]
 	return np.sum(cap_ve_arr) - np.sum(cap_sbond_arr) - num_radicals
 
-def compute_cc_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bond_mask_arr):
+def compute_cc_h_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bond_mask_arr):
+
+	"""compute lowest amount of Hs a cc can have
+	NOTE: this does not consider if OG mol has a triple bond
+	Args:
+		cc (_type_): _description_
+		ve_arr (_type_): _description_
+		sbond_arr (_type_): _description_
+		num_radicals (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
 
 	assert num_radicals == 0
+	# if we could use update from single bond to double bond to get an electron pair
 	diff_arr = np.maximum(ve_arr-sbond_arr,0)
 	cc_atoms = list(cc)
 	# print(diff_arr)

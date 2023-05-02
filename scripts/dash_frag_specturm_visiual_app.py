@@ -2,12 +2,14 @@ import os
 import pandas as pd
 
 from frag_gnn.utils.formula_utils import formula_to_peak_mzs
+from frag_gnn.utils.plot_utils import get_base64_mol_image
 from dash import Dash, Patch, dcc, html, Input, Output, no_update
 from rdkit.Chem.Draw import rdMolDraw2D
 from dgl.data.utils import load_graphs
 
 import dgl
 import torch as th
+from rdkit.Chem.Draw import rdMolDraw2D
 import base64
 import plotly.graph_objects as go
 import numpy as np
@@ -17,16 +19,8 @@ import numpy as np
 # it will do for now
 node_mass_l = []
 
-def get_base64_image(mol, highlight = []):
-	drawer = rdMolDraw2D.MolDraw2DCairo(200,200)
-	drawer.DrawMolecule(mol, highlightAtoms = highlight)
-	drawer.FinishDrawing()
-	img_str = base64.b64encode(drawer.GetDrawingText()).decode('utf8')
-	#img_str = ''
-	return img_str
 
 def get_dag_fig(dag_d, mol):
-
 	idx_to_formula = dag_d["idx_to_formula"]
 	G = dag_d["nx_dag"]
 	pos_dict = {}
@@ -67,7 +61,7 @@ def get_dag_fig(dag_d, mol):
 				formulas.append(idx_to_formula[id] + ':{0:.4f}Da'.format(mass[0]))
 				node_mass.append(mass[0])
 		#print(formulas)
-		customdata.append([get_base64_image(mol, highlight_atom),formulas])
+		customdata.append([get_base64_mol_image(mol, highlight_atom),formulas])
 		node_mass_l.append(node_mass)
 
 	# add lines
