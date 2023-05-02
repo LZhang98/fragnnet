@@ -28,9 +28,9 @@ ELEMENT_TO_VE = {
 	"F": 1,
 	"Cl": 1,
 	"Br": 1,
-	"I":1,
-	"Se":2, #up to 6 same as S
-	"Si":4
+	"I": 1,
+	"Se": 2, # up to 6, same as S
+	"Si": 4
 }
 NUM_HEAVY_ELEMENTS = len(ELEMENT_TO_VE.keys())
 NUM_ELEMENTS = NUM_HEAVY_ELEMENTS+1
@@ -649,6 +649,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	Returns:
 		_type_: _description_
 	"""
+def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 
 	assert h_prior in [True,False], h_prior
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
@@ -797,60 +798,5 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	dag_d["formula_peak_mzs"] = formula_peak_mzs
 	dag_d["formula_peak_probs"] = formula_peak_probs
 	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-
-	if formula_dag:
-		raise NotImplementedError
-		# formulae_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_to_ccs.keys())))}
-		# for k,v in ccs_to_formulae.items():
-		# 	ccs_to_formulae[k] = [formulae_to_idx[f] for f in v]
-		# formula_g = nx.DiGraph()
-		# formula_g.add_nodes_from(list(range(len(formulae_to_idx))))
-		# for cc,formulae in ccs_to_formulae.items():
-		# 	cc_out_edges = cc_g.out_edges(cc)
-		# 	for out_formula in formulae:
-		# 		for cc_out_edge in cc_out_edges:
-		# 			assert cc_out_edge[0] == cc
-		# 			for in_formula in ccs_to_formulae[cc_out_edge[1]]:
-		# 				formula_g.add_edge(out_formula,in_formula)
-		# dag_d["formula_g"] = formula_g
-
-	if cch_dag:
-		
-		raise NotImplementedError
-		# # identify nodes
-		# all_cchs = set()
-		# dropped_ccs = []
-		# for cc_int in ccs_un:
-		# 	cc_mask = convert_from_int(num_nodes,cc_int,bitmask=False)
-		# 	cchs = compute_approximate_cchs([cc_mask],mol_d,h_prior=h_prior,max_h_transfer=max_h_transfer)
-		# 	if len(cchs) == 0:
-		# 		dropped_ccs.append(cc_int)
-		# 		continue
-		# 	cchs = [(cc_int,cch[1]) for cch in cchs]
-		# 	all_cchs.update(cchs)
-		# # all_ccs = sorted(list(set([cch[0] for cch in all_cchs])))
-		# print(f"> dropped {len(dropped_ccs)} ccs: {dropped_ccs}")
-		# cch_to_idx = {}
-		# cc_to_cch_idx = {}
-		# for idx, cch in enumerate(all_cchs):
-		# 	cc, h = cch[0], cch[1]
-		# 	if cc not in cc_to_cch_idx:
-		# 		cc_to_cch_idx[cc] = [idx]
-		# 	else:
-		# 		cc_to_cch_idx[cc].append(idx)
-		# 	cch_to_idx[cch] = idx
-		# cch_g = nx.DiGraph()
-		# cch_g.add_nodes_from(list(cch_to_idx.values()))
-		# # set up edges
-		# for cch, src_idx in cch_to_idx.items():
-		# 	cc, h = cch[0], cch[1]
-		# 	cc_out_edges = cc_g.out_edges(cc)
-		# 	for cc_out_edge in cc_out_edges:
-		# 		src_cc = cc_out_edge[0]
-		# 		assert src_cc == cc, (src_cc,cc)
-		# 		dst_cc = cc_out_edge[1]
-		# 		for dst_idx in cc_to_cch_idx.get(dst_cc,tuple()):
-		# 			cch_g.add_edge(src_idx,dst_idx)
-		# dag_d["cch_g"] = cch_g
 
 	return dag_d
