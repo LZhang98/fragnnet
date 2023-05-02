@@ -34,20 +34,40 @@ ELEMENT_TO_VE = {
 }
 NUM_HEAVY_ELEMENTS = len(ELEMENT_TO_VE.keys())
 NUM_ELEMENTS = NUM_HEAVY_ELEMENTS+1
+
 CANONICAL_ELEMENT_ORDER = ["C","H"] + sorted([elem for elem in ELEMENT_TO_VE.keys() if elem != "C" and elem != "H"])
 CANONICAL_H_IDX = CANONICAL_ELEMENT_ORDER.index("H")
+
 ELEMENT_TO_IDX = { elem: idx for idx, elem in enumerate(ELEMENT_TO_VE.keys())}
 ELEMENT_TO_IDX["H"] = len(ELEMENT_TO_VE.keys())
+
 IDX_TO_ELEMENT = { idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 
 MAX_H_TRANSFER = 4
 MAX_NUM_MZS_PER_FORMULA = 5
 
-def convert_mask_to_int(cc):
+def convert_cc_mask_to_int(cc:list|np.ndarray)->int:
+	"""covert a cc mask to an int
+
+	Args: a list of 0 and 1s
+
+	Returns:
+		int: int presentation of input mask
+	"""
 
 	return sum([2**i for i in cc])
 
-def convert_from_int(num_nodes,cc_int,bitmask=True):
+def convert_cc_int_to_mask(num_nodes:int,cc_int:int,bitmask=True) -> list[int]:
+	"""_summary_
+
+	Args:
+		num_nodes (int): number of nodes
+		cc_int (int): int version of cc mask
+		bitmask (bool, optional): _description_. Defaults to True.
+
+	Returns:
+		list|np.ndarray: a list of 0 and 1s
+	"""
 
 	cc = []
 	quot = cc_int
@@ -61,8 +81,15 @@ def convert_from_int(num_nodes,cc_int,bitmask=True):
 	cc = tuple(cc)
 	return cc
 
-def get_arrays_from_mol_d(mol_d):
+def get_fraggen_input_arrays(mol_d:dict):
+	"""_summary_
 
+	Args:
+		mol_d (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
 	num_edges = mol_d["bond_mask_arr"].shape[0]
 	assert num_nodes <= MAX_NUM_NODES, num_nodes
@@ -79,8 +106,30 @@ def get_arrays_from_mol_d(mol_d):
 	edge_mask[:num_edges] = 1
 	return num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx
 
-def extract_mol_info(smiles_or_mol, use_default_valence=False):
+def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
+	"""Method to exatract mol infomation in to dict
 
+	Args:
+		smiles_or_mol (_type_): _description_
+		use_default_valence (bool, optional): _description_. Defaults to False.
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		dict : 
+		mol_d["mol"]: mol object
+		mol_d["num_hs"]: number of totoal Hs
+		mol_d["sbond_arr"]: single bond array
+		mol_d["ve_arr"]: max velance array
+		mol_d["hs_arr"]: max Hs per atom arary
+		mol_d["elems"]: elemns per atom
+		mol_d["bonds"]: a list of from atom - to atom pairs
+		mol_d["bond_mask_arr"]: defualt bond mask, this should be just 1s
+		mol_d["atom_mask_arr"] : defualt atom  mask, this should be just 1s
+		mol_d["atoms_to_bonds"]: 
+		mol_d["element_counts"] : atom count per element
+	"""
 	if isinstance(smiles_or_mol,str):
 		# rdkit mol stuff
 		mol = Chem.MolFromSmiles(smiles_or_mol)
@@ -185,7 +234,18 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False):
 	mol_d["element_counts"] = element_counts
 	return mol_d
 
-def compute_cc_cap(cc,ve_arr,sbond_arr,num_radicals):
+def compute_cc_cap(cc:list|np.ndarray,ve_arr:list[int],sbond_arr:list[int],num_radicals:int):
+	"""compute max amount of Hs a cc can have
+
+	Args:
+		cc (_type_): _description_
+		ve_arr (_type_): _description_
+		sbond_arr (_type_): _description_
+		num_radicals (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
 	
 	assert num_radicals == 0
 	if not isinstance(cc,np.ndarray):
@@ -224,7 +284,20 @@ def compute_cc_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bond_
 	cc_floor = max(cc_floor,0) # why can cc_floor be negative?
 	return cc_floor
 
-def compute_approximate_formula(cc,mol_d,max_h_transfer,formula_strs=False):
+def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
+				,max_h_transfer:int
+				,formula_strs:bool=False) ->dict[int,str]|dict[int,np.ndarray]:
+	"""given a connected component, comupute all forumla within give h shift
+
+	Args:
+		cc (list|np.ndarray): connected component
+		mol_d (dict): mol dictionary
+		max_h_transfer (_type_): max number of h movement allowed
+		formula_strs (bool, optional): _description_. Defaults to False.
+
+	Returns:
+		_type_: _description_
+	"""
 
 	bonds = mol_d["bonds"] # never mutated
 	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
@@ -238,13 +311,20 @@ def compute_approximate_formula(cc,mol_d,max_h_transfer,formula_strs=False):
 	sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
 	cap = compute_cc_cap(cc,ve_arr,sbond_arr,0)
 	floor = compute_cc_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+
+	# check floor and cap
 	assert floor <= cap, (floor,cap,cc)
 	assert floor >= 0, floor
+
+	# check how many Hs each atom have on the mol
 	num_hs_prior = 0
 	for atom in cc:
 		num_hs_prior += hs_arr[atom]
+
+	# update min and max
 	floor = max(floor,num_hs_prior-max_h_transfer)
 	cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
+
 	delta_h_to_formula = {}
 	for delta_h in range(-max_h_transfer,max_h_transfer+1):
 		h = num_hs_prior + delta_h
@@ -352,7 +432,6 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSF
 
 def cc_to_formula_arr(cc,elems,bitmask=False):
 	# does not include h count
-
 	formula_arr = np.zeros([len(ELEMENT_TO_IDX)],dtype=int)
 	if bitmask:
 		for i in range(len(cc)):
@@ -369,9 +448,11 @@ def formula_arr_to_str(formula):
 	""" use canonical order """
 	formula_str = ""
 	elem_d = {}
+
 	for idx, count in enumerate(formula):
 		elem = IDX_TO_ELEMENT[idx]
 		elem_d[elem] = count
+
 	for elem in CANONICAL_ELEMENT_ORDER:
 		if elem in elem_d:
 			count = elem_d[elem]
@@ -458,7 +539,7 @@ def collect_ccs_parents(ccs: list[int],ccs_parents:list[int]) -> dict[set[int]]:
 def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 
 	assert not parents
-	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_arrays_from_mol_d(mol_d)
+	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
 	# time this part
 	ccs, ccs_parents, _ = compute_frags.compute_ccs(
 		num_nodes,
@@ -479,7 +560,8 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 		ccs = set(ccs)
 		return ccs
 
-def compute_frag_peak_stats(row,tolerance=0.01,prec_type="[M+H]+"):
+def compute_frag_peak_stats(row, tolerance=0.01, prec_type="[M+H]+", 
+			    is_abs_tolerance = True):
 	"""_summary_
 
 	Args:
@@ -531,7 +613,7 @@ def compute_frag_peak_stats(row,tolerance=0.01,prec_type="[M+H]+"):
 		ppt_formula = np.nan
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
-def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_dag=False,cch_dag=False, include_nx_dag = False):
+def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_dag=False,cch_dag=False):
 	"""_summary_
 
 	Args:
@@ -553,7 +635,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	"""
 
 	assert h_prior in [True,False], h_prior
-	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_arrays_from_mol_d(mol_d)
+	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
 	# time the recursive part
 	if frag_max_time is None:
 		frag_max_time = int(1e6)
@@ -599,7 +681,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 
 	# add node mask information
 	# convert to a one hot encoding
-	ccs_to_mask = {cc : convert_from_int(num_nodes,cc,bitmask=True) for cc in ccs_un}
+	ccs_to_mask = {cc : convert_cc_int_to_mask(num_nodes,cc,bitmask=True) for cc in ccs_un}
 	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
 	nx.set_node_attributes(nx_cc_g,ccs_to_mask,"mask")
 
@@ -618,8 +700,9 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	ccs_to_formulae = {}
 	formulae_un = set()
 	for cc in ccs_un:
-		cc_mask = convert_from_int(num_nodes,cc,bitmask=False)
+		cc_mask = convert_cc_int_to_mask(num_nodes,cc,bitmask=False)
 		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True)
+		print(delta_h_to_formula)
 		formulae = list(delta_h_to_formula.values())
 		ccs_to_formulae[cc] = formulae
 		formulae_un.update(formulae)
@@ -698,7 +781,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time,formula_da
 	dag_d["formula_peak_mzs"] = formula_peak_mzs
 	dag_d["formula_peak_probs"] = formula_peak_probs
 	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-	dag_d['nx_dag'] = nx_cc_g if include_nx_dag else None
 
 	if formula_dag:
 		raise NotImplementedError
