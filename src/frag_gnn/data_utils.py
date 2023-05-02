@@ -643,25 +643,6 @@ def ace_to_nce(row):
 	nce = ace_to_nce_helper(ace,charge,prec_mz)
 	return nce
 
-def bin_func(mzs,ints,mz_max,mz_bin_res,ints_thresh,return_index):
-
-	# import pdb; pdb.set_trace()
-	mzs = np.array(mzs,dtype=np.float32)
-	bins = np.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res).astype(np.float32)
-	bin_idx = np.searchsorted(bins,mzs,side="right")
-	if return_index:
-		return bin_idx.tolist()
-	else:
-		ints = np.array(ints,dtype=np.float32)
-		bin_spec = np.zeros([len(bins)],dtype=np.float32)
-		for i in range(len(mzs)):
-			if bin_idx[i] < len(bin_spec) and ints[i] >= ints_thresh:
-				bin_spec[bin_idx[i]] = max(bin_spec[bin_idx[i]],ints[i])
-		if np.all(bin_spec == 0.):
-			print("> warning: bin_spec is all zeros!")
-			bin_spec[-1] = 1.
-		return bin_spec
-
 def parse_formula(formula:str) -> Dict[str,int]:
 	"""
 		Return a Dict of count of each elemnt in the forumla

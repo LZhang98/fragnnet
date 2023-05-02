@@ -2,7 +2,7 @@ import copy
 import math
 import numpy as np
 import scipy.sparse as sparse
-import torch
+import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_scatter as th_s
@@ -37,14 +37,13 @@ def build_lr_scheduler(
             rate = 1 - math.exp(-step / warmup)
         return rate
 
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+    scheduler = th.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     return scheduler
 
 class JointPredictor(nn.Module):
 
     # data: mol dgl, dag dgl, peaks arrays
     # TODO: add reverse edges?
-    # TODO: convert probabilities to peak predictions
     # TODO: allow for more sophisticated formula embeddings
 
     def __init__(
@@ -95,7 +94,7 @@ class JointPredictor(nn.Module):
         # T is the number of Hs transferred
         # F is the maximum number of formulae per DAG
         # E is the number of elements (heavy and H)
-
+  
         mol_dgl, dag_dgl = batched_dag.get_batched_dgls()
         mol_nodes, dag_nodes = batched_dag.get_batched_nodes()
         dag_formula_peak_mzs = batched_dag.batched_formula_peak_mzs
@@ -109,12 +108,13 @@ class JointPredictor(nn.Module):
         
         # process dag
         with dag_dgl.local_scope():
+            
             dag_ndata, dag_edata = [], []
             dag_num_nodes = dag_dgl.number_of_nodes()
             dag_num_edges = dag_dgl.number_of_edges()
             # get atom embeddings for each node
-            dag_node_mask_idxs = torch.nonzero(dag_dgl.ndata.pop('mask')).long()
-            dag_node_offsets = mol_nodes[torch.bucketize(dag_node_mask_idxs[:,0],dag_nodes,right=True)-1]
+            dag_node_mask_idxs = th.nonzero(dag_dgl.ndata.pop('mask')).long()
+            dag_node_offsets = mol_nodes[th.bucketize(dag_node_mask_idxs[:,0],dag_nodes,right=True)-1]
             dag_node_mask_idxs[:,1] = dag_node_mask_idxs[:,1] + dag_node_offsets
             dag_node_mask_embed = th_s.scatter_add(
                 mol_embed[dag_node_mask_idxs[:,1]],
@@ -125,9 +125,9 @@ class JointPredictor(nn.Module):
             # print(dag_node_mask_embed.shape)
             dag_ndata.append(dag_node_mask_embed)
             # do the same for edges
-            dag_edge_mask_idxs = torch.nonzero(dag_dgl.edata.pop('mask')).long()
+            dag_edge_mask_idxs = th.nonzero(dag_dgl.edata.pop('mask')).long()
             dag_edge_node_idxs = dag_dgl.edges()[0][dag_edge_mask_idxs[:,0]]
-            dag_edge_offsets = mol_nodes[torch.bucketize(dag_edge_node_idxs,dag_nodes,right=True)-1]
+            dag_edge_offsets = mol_nodes[th.bucketize(dag_edge_node_idxs,dag_nodes,right=True)-1]
             dag_edge_mask_idxs[:,1] = dag_edge_mask_idxs[:,1] + dag_edge_offsets
             dag_edge_mask_embed = th_s.scatter_add(
                 mol_embed[dag_edge_mask_idxs[:,1]],
@@ -147,16 +147,16 @@ class JointPredictor(nn.Module):
             dag_depth = self.depth_embedder(dag_dgl.ndata.pop('depth')).reshape(dag_num_nodes,-1)
             dag_ndata.append(dag_depth)
             # concatenate everything [N,H+(E+1)*M]
-            dag_dgl.ndata['h'] = torch.cat(dag_ndata,dim=-1)
+            dag_dgl.ndata['h'] = th.cat(dag_ndata,dim=-1)
             # concatenate everything [N,H+E*M]
-            dag_dgl.edata['e'] = torch.cat(dag_edata,dim=-1)
+            dag_dgl.edata['e'] = th.cat(dag_edata,dim=-1)
             # apply GNN
             dag_embed = self.dag_embedder(dag_dgl)
 
             # predict probabilities [N,2*T+1]
             dag_formula_probs = self.output_module(dag_embed)
             # aggregate by formula [N,F]
-            dag_formula_batch_idxs = torch.bucketize(dag_dgl.nodes(),dag_nodes,right=True)-1
+            dag_formula_batch_idxs = th.bucketize(dag_dgl.nodes(),dag_nodes,right=True)-1
             dag_formula_offsets = dag_formula_cumsizes[dag_formula_batch_idxs]
             dag_formula_idxs = (dag_dgl.ndata.pop('h_formulae_idx')+dag_formula_offsets.unsqueeze(-1)).flatten()
             dag_formula_probs = dag_formula_probs.flatten()
@@ -167,9 +167,13 @@ class JointPredictor(nn.Module):
                 dim_size=dag_formula_cumsizes[-1]
             )
             # zero out NULL formula
-            dag_formula_mask = torch.ones_like(dag_formula_probs)
+            dag_formula_mask = th.ones_like(dag_formula_probs)
             dag_formula_mask[dag_formula_cumsizes[:-1]] = 0.
-            dag_formula_batch_idxs = torch.bucketize(torch.arange(dag_formula_cumsizes[-1]),dag_formula_cumsizes,right=True)-1
+            dag_formula_batch_idxs = th.bucketize(
+                th.arange(dag_formula_cumsizes[-1],device=dag_formula_cumsizes.device),
+                dag_formula_cumsizes,
+                right=True
+            )-1
             # softmax with masked logits
             dag_formula_probs = masked_subset_softmax(
                 dag_formula_probs,
@@ -180,19 +184,13 @@ class JointPredictor(nn.Module):
             )
             # convert to spectrum
             spec_mzs = dag_formula_peak_mzs
-            spec_logprobs = dag_formula_probs[dag_formula_peak_idxs] + torch.log(dag_formula_peak_probs)
+            spec_logprobs = dag_formula_probs[dag_formula_peak_idxs] + th.log(dag_formula_peak_probs)
         # check that the total intensity sums up to 1 (approximately)
-        spec_batch_idxs = torch.repeat_interleave(
-            torch.arange(dag_formula_peak_sizes.shape[0]),
+        spec_batch_idxs = th.repeat_interleave(
+            th.arange(dag_formula_peak_sizes.shape[0],device=dag_formula_peak_sizes.device),
             dag_formula_peak_sizes
         )
-        # spec_logprobs_total = th_s.scatter_logsumexp(
-        #     spec_logprobs,
-        #     spec_batch_idxs,
-        #     dim=0,
-        #     dim_size=None
-        # )
-        # print(torch.exp(spec_logprobs_total))
+        
         return spec_mzs, spec_logprobs, spec_batch_idxs
 
 class GNN(nn.Module):
@@ -525,11 +523,11 @@ def random_walk_pe(g, k, eweight_name=None):
     RW = np.array(A / (A.sum(1) + 1e-30))  # 1-step transition probability
 
     # Iterate for k steps
-    PE = [dgl_F.astype(dgl_F.tensor(np.copy(RW.diagonal())), torch.float32)]
+    PE = [dgl_F.astype(dgl_F.tensor(np.copy(RW.diagonal())), th.float32)]
     RW_power = RW
     for _ in range(k - 1):
         RW_power = RW_power @ RW
-        PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), torch.float32))
+        PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), th.float32))
     PE = dgl_F.stack(PE, dim=-1)
     return PE
 

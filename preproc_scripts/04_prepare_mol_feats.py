@@ -1,7 +1,7 @@
 import pandas as pd
 import argparse
 
-from frag_gnn.mol_graph import MolGraph
+from frag_gnn.feat_utils import MolGraph
 from frag_gnn.data_utils import make_morgan_fingerprint, make_maccs_fingerprint, make_rdkit_fingerprint
 
 def main(args):

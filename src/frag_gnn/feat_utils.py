@@ -6,7 +6,7 @@ and bonds. Inspired by the dgllife library.
 """
 from rdkit import Chem
 import numpy as np
-import torch
+import torch as th
 import dgl
 import networkx as nx
 
@@ -145,9 +145,9 @@ class MolGraph:
         """
         mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
 
-        bond_inds = torch.from_numpy(mol_graph["bond_tuples"]).long()
-        bond_feats = torch.from_numpy(mol_graph["bond_feats"]).float()
-        atom_feats = torch.from_numpy(mol_graph["atom_feats"]).float()
+        bond_inds = th.from_numpy(mol_graph["bond_tuples"]).long()
+        bond_feats = th.from_numpy(mol_graph["bond_feats"]).float()
+        atom_feats = th.from_numpy(mol_graph["atom_feats"]).float()
 
         g = dgl.graph(
             data=(bond_inds[:, 0], bond_inds[:, 1]), num_nodes=atom_feats.shape[0]
@@ -160,7 +160,7 @@ class MolGraph:
                 g,
                 k=self.pe_embed_k,
             )
-            g.ndata["h"] = torch.cat((g.ndata["h"], pe_embeds), -1)
+            g.ndata["h"] = th.cat((g.ndata["h"], pe_embeds), -1)
 
         return g
 
@@ -441,6 +441,83 @@ def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
         x = None
 
     return list(map(lambda s: int(x == s), allowable_set))
+
+class BatchedMolDAG:
+
+	def __init__(self,mol_dgl_list,dag_dgl_list,formula_peak_mzs,formula_peak_probs,device=None):
+
+		assert len(mol_dgl_list) == len(dag_dgl_list), (len(mol_dgl_list),len(dag_dgl_list))
+		self.batch_size = len(mol_dgl_list)
+		if device is not None:
+			self._set_device(device)
+		else:
+			self._set_device("cpu")
+		self.batched_mol_dgl = dgl.batch(mol_dgl_list).to(self.device)
+		self.batched_dag_dgl = dgl.batch(dag_dgl_list).to(self.device)
+		self._compute_batched_node_offsets(mol_dgl_list,dag_dgl_list)
+		batched_formula_peak_idxs = []
+		batched_formula_peak_mzs = []
+		batched_formula_peak_probs = []
+		batched_formula_sizes = []
+		batched_formula_peak_sizes = []
+		for mzs, probs in zip(formula_peak_mzs,formula_peak_probs):
+			# sparsify
+			idx = th.nonzero(probs)
+			mzs = mzs[idx[:,0],idx[:,1]]
+			probs = probs[idx[:,0],idx[:,1]]
+			batched_formula_peak_idxs.append(idx[:,0])
+			batched_formula_peak_mzs.append(mzs)
+			batched_formula_peak_probs.append(probs)
+			batched_formula_sizes.append(th.unique(idx,sorted=True).shape[0])
+			batched_formula_peak_sizes.append(idx.shape[0])
+		self.batched_formula_peak_idxs = th.cat(batched_formula_peak_idxs,dim=0).to(self.device)
+		self.batched_formula_peak_mzs = th.cat(batched_formula_peak_mzs,dim=0).to(self.device)
+		self.batched_formula_peak_probs = th.cat(batched_formula_peak_probs,dim=0).to(self.device)
+		self.batched_formula_sizes = th.tensor(batched_formula_sizes,device=self.device)
+		self.batched_formula_cumsizes = th.cumsum(th.tensor([0]+batched_formula_sizes,device=self.device),dim=0)
+		self.batched_formula_peak_sizes = th.tensor(batched_formula_peak_sizes,device=self.device)
+
+	def _compute_batched_node_offsets(self,mol_dgl_list,dag_dgl_list):
+
+		# import pdb; pdb.set_trace()
+		num_mol_nodes = [g.number_of_nodes() for g in mol_dgl_list]
+		num_dag_nodes = [g.number_of_nodes() for g in dag_dgl_list]
+		self.batched_mol_nodes = th.cumsum(th.tensor([0]+num_mol_nodes,device=self.device),dim=0)
+		self.batched_dag_nodes = th.cumsum(th.tensor([0]+num_dag_nodes,device=self.device),dim=0)
+
+	def get_batched_dgls(self):
+
+		return self.batched_mol_dgl, self.batched_dag_dgl
+
+	def get_batched_nodes(self):
+
+		return self.batched_mol_nodes, self.batched_dag_nodes
+
+	def to(self,device):
+
+		self._set_device(device)
+		self.batched_mol_dgl = self.batched_mol_dgl.to(self.device)
+		self.batched_dag_dgl = self.batched_dag_dgl.to(self.device)
+		self.batched_mol_nodes = self.batched_mol_nodes.to(self.device)
+		self.batched_dag_nodes = self.batched_dag_nodes.to(self.device)
+		self.batched_formula_peak_idxs = self.batched_formula_peak_idxs.to(self.device)
+		self.batched_formula_peak_mzs = self.batched_formula_peak_mzs.to(self.device)
+		self.batched_formula_peak_probs = self.batched_formula_peak_probs.to(self.device)
+		self.batched_formula_sizes = self.batched_formula_sizes.to(self.device)
+		self.batched_formula_cumsizes = self.batched_formula_cumsizes.to(self.device)
+		self.batched_formula_peak_sizes = self.batched_formula_peak_sizes.to(self.device)
+		return self
+
+	def _set_device(self,device):
+
+		if isinstance(device,str):
+			device = th.device(device)
+		self.device = device
+
+	def __str__(self):
+
+		str_format = f"BatchedMolDAG( batch_size={self.batch_size}, device={self.device} )"
+		return str_format
 
 
 if __name__ == "__main__":

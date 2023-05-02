@@ -74,6 +74,10 @@ def preprocess_spec(spec_df):
 	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","col_gas","res","ace","nce","prec_mz","peaks","ri"]]
 	# relabel spec_id (this is to make it unique across datasets)
 	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
+	# set group_id (same compound and precursor)
+	group_df = spec_df.drop(columns=["spec_id","peaks","nce","ace","res","prec_mz","ri","col_gas"]).drop_duplicates()
+	group_df.loc[:,"group_id"] = np.arange(group_df.shape[0])
+	spec_df = spec_df.merge(group_df,how="inner")
 
 	# get mol df
 	mol_df = pd.DataFrame(zip(sorted(smiles_set),list(range(len(smiles_set)))),columns=["smiles","mol_id"])

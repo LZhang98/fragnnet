@@ -12,6 +12,7 @@ pip install --upgrade pip
 # note: rdkit is already loaded
 
 # GPU dependencies
+# TODO: update to torch 2.0
 pip install torch==1.13.1+computecanada
 
 # non-GPU dependencies

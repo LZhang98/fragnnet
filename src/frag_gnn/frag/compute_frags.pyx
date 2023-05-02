@@ -5,7 +5,6 @@
 
 import numpy as np
 from cysignals.signals cimport sig_check
-# from clib.time cimport time, time_t
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 from cpython.ref cimport PyObject
 
@@ -24,11 +23,6 @@ cdef char [::1] np_mask_copy(char [::1] array):
 	for i in range(num_elems):
 		new_array[i] = array[i]
 	return new_array
-
-# cdef void np_zero(int [::1] array):
-# 	cdef int num_elems = array.shape[0]
-# 	for i in range(num_elems):
-# 		array[i] = 0
 
 cdef void np_fill(int [::1] array, int val):
 	cdef int num_elems = array.shape[0]

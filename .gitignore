@@ -8,3 +8,4 @@ __pycache__/
 .pytest_cache
 # don't track cython gernated c file
 src/frag_gnn/frag/compute_frags.c
+data/

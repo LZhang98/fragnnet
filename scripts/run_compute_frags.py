@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
 	np.random.seed(420)
 
-	COMPOUND_TO_SMILES = {
+	IDX_TO_SMILES = {
 		0: "CCO", # ethanol
 		1: "c1ccccc1", # benzene
 		2: "CC(=O)OC1=CC=CC=C1C(=O)O", # aspirin
@@ -56,7 +56,7 @@ if __name__ == "__main__":
 	h_prior = args.h_prior
 	max_h_transfer = args.max_h_transfer
 	frag_max_time = None
-	smiles = COMPOUND_TO_SMILES[args.compound_idx]
+	smiles = IDX_TO_SMILES[args.compound_idx]
 	
 	run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)
 

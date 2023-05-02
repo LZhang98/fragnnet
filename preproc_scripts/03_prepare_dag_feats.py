@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import torch as th
 from tqdm import tqdm
 import signal
 from contextlib import contextmanager
@@ -20,7 +19,6 @@ import gzip
 import dgl
 
 import frag_gnn.frag.frag_utils as frag_utils
-from frag_gnn.frag.frag_utils import ELEMENT_TO_IDX
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES, TimeoutError
 import frag_gnn.data_utils as data_utils
 from frag_gnn.data_utils import parse_formula, seq_apply_df_rows, par_apply_df_rows
@@ -151,7 +149,7 @@ def main(args):
 
 	assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
 
-	allowed_elements = args.allowed_elements.split(",")
+	allowed_elements = args.allowed_elements.split("-")
 
 	# init wandb
 	wandb_flag = args.wandb_mode != "off"
@@ -303,7 +301,7 @@ def main(args):
 	peak_spec_df = spec_df[["spec_id","mol_id","peaks","prec_mz"]].merge(frag_stats_df,on="mol_id",how="inner")
 	frag_stats_df = peak_spec_df[["spec_id","mol_id"]].drop_duplicates()
 
-	tolerances = [float(tolerance) for tolerance in args.tolerances.split(",")]
+	tolerances = [float(tolerance) for tolerance in args.tolerances.split("-")]
 	
 	for tolerance in tolerances:
 
@@ -347,6 +345,8 @@ def main(args):
 
 if __name__ == "__main__":
 
+	default_elements = "-".join(frag_utils.CANONICAL_ELEMENT_ORDER)
+
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries",type=int,default=-1)
 	parser.add_argument("--max_depth",type=int,default=4)
@@ -356,8 +356,8 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--allowed_elements",type=str,default="C,H,O,N,F,S,P,Cl")
-	parser.add_argument("--tolerances",type=str,default="0.01,0.005,0.001,0.0001")
+	parser.add_argument("--allowed_elements",type=str,default=default_elements)
+	parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001")
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
