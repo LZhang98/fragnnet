@@ -168,6 +168,8 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 		
 		element_counts[cur_element] += 1
 		elems.append(cur_element)
+		# number of single bond need to attach to this atom to keep atom connected
+		# this equals to replace all all bond to single, and count how many single bond
 		sbond_arr.append(cur_deg - cur_num_hs)
 		#ve_arr.append(ELEMENT_TO_VE[cur_element])
 
@@ -234,12 +236,13 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 	mol_d["element_counts"] = element_counts
 	return mol_d
 
-def compute_cc_cap(cc:list|np.ndarray,ve_arr:list[int],sbond_arr:list[int],num_radicals:int):
-	"""compute max amount of Hs a cc can have
-
+def compute_cc_h_cap(cc:list|np.ndarray,ve_arr:list[int],sbond_arr:list[int],num_radicals:int):
+	"""compute max amount of Hs a cc can have.  
+		For any ccs the max amount of Hs it can have is the congifcation where all the bond are single
+		And all the atom has max amount of Hs
 	Args:
-		cc (_type_): _description_
-		ve_arr (_type_): _description_
+		cc (list|np.ndarray): cc mask in list form
+		ve_arr (list|np.ndarray): max velance each atom can have
 		sbond_arr (_type_): _description_
 		num_radicals (_type_): _description_
 
@@ -309,8 +312,8 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 	bond_mask_arr = mol_d["bond_mask_arr"]
 	base_formula = cc_to_formula_arr(cc,elems)
 	sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-	cap = compute_cc_cap(cc,ve_arr,sbond_arr,0)
-	floor = compute_cc_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+	cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
+	floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
 
 	# check floor and cap
 	assert floor <= cap, (floor,cap,cc)
@@ -358,8 +361,8 @@ def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TR
 	for cc in list(set(ccs)):
 		base_formula = cc_to_formula_arr(cc,elems)
 		sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-		cap = compute_cc_cap(cc,ve_arr,sbond_arr,0)
-		floor = compute_cc_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+		cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
+		floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
 		assert floor <= cap, (floor,cap,cc)
 		assert floor >= 0, floor
 		if h_prior:
@@ -408,8 +411,8 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSF
 	all_cchs = set()
 	for cc in list(set(ccs)):
 		sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-		cap = compute_cc_cap(cc,ve_arr,sbond_arr,0)
-		floor = compute_cc_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+		cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
+		floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
 		assert floor <= cap, (floor,cap,cc)
 		assert floor >= 0, floor
 		if h_prior:
