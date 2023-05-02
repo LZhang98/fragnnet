@@ -124,6 +124,7 @@ if __name__ == "__main__":
 	batched_dag = batched_dag.to(device)
 	print(batched_dag)
 	# print(batched_dag.get_batched_mask("formula_peak_mzs"))
+	batched_dag_d = batched_dag.__dict__()
 
 	# prepare models
 	hidden_size = 256
@@ -173,7 +174,13 @@ if __name__ == "__main__":
 	)
 	joint_model.to(device)
 	if args.jit:
-		joint_model = th.jit.trace(joint_model,[batched_dag])
+		# import pdb; pdb.set_trace()
+		joint_model_forward = th.jit.trace(
+			joint_model.forward,
+			example_kwarg_inputs=batched_dag_d
+		)
+	else:
+		joint_model_forward = joint_model.forward
 
 	optim = th.optim.SGD(joint_model.parameters(), lr=0.)
 	optim.zero_grad()
@@ -181,7 +188,7 @@ if __name__ == "__main__":
 	for i in range(args.num_iters):
 		print(f">> inter {i}")
 		# pred_mzs, pred_logprobs, pred_batch_idxs = joint_model(batched_dag)
-		pred_mzs, pred_logprobs, pred_batch_idxs = torch_time(joint_model.forward,batched_dag)
+		pred_mzs, pred_logprobs, pred_batch_idxs = torch_time(joint_model_forward,**batched_dag_d)
 		# print(f"> avg of predicted logprobs = {pred_logprobs.mean():.4f}")
 		# select random subset of pred peaks
 		true_mask = th.rand_like(pred_mzs)<0.1

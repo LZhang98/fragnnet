@@ -84,24 +84,20 @@ class JointPredictor(nn.Module):
         }
         self.output_module = MLPBlocks(**mlp_kwargs)
 
-    def forward(self, batched_dag):
-
-        # N is batch dimension (assume 1 for now)
-        # D is number of nodes in the DAG
-        # A is number of atoms
-        # M is integer embedding dimension
-        # H is hidden dimension of atom embeddings
-        # T is the number of Hs transferred
-        # F is the maximum number of formulae per DAG
-        # E is the number of elements (heavy and H)
-  
-        mol_dgl, dag_dgl = batched_dag.get_batched_dgls()
-        mol_nodes, dag_nodes = batched_dag.get_batched_nodes()
-        dag_formula_peak_mzs = batched_dag.batched_formula_peak_mzs
-        dag_formula_peak_probs = batched_dag.batched_formula_peak_probs
-        dag_formula_peak_sizes = batched_dag.batched_formula_peak_sizes
-        dag_formula_cumsizes = batched_dag.batched_formula_cumsizes
-        dag_formula_peak_idxs = batched_dag.batched_formula_peak_idxs
+    def forward(self, 
+            batch_size=None,
+            # device=None,
+            mol_dgl=None,
+            dag_dgl=None,
+            mol_num_nodes=None,
+            dag_num_nodes=None,
+            dag_formula_peak_idxs=None,
+            dag_formula_peak_mzs=None,
+            dag_formula_peak_probs=None,
+            dag_formula_sizes=None,
+            dag_formula_cumsizes=None,
+            dag_formula_peak_sizes=None,
+            **kwargs):
 
         # get per-atom embeddings [N,A,H]
         mol_embed = self.mol_embedder(mol_dgl)
@@ -110,41 +106,41 @@ class JointPredictor(nn.Module):
         with dag_dgl.local_scope():
             
             dag_ndata, dag_edata = [], []
-            dag_num_nodes = dag_dgl.number_of_nodes()
-            dag_num_edges = dag_dgl.number_of_edges()
+            batch_dag_num_nodes = dag_dgl.number_of_nodes()
+            batch_dag_num_edges = dag_dgl.number_of_edges()
             # get atom embeddings for each node
             dag_node_mask_idxs = th.nonzero(dag_dgl.ndata.pop('mask')).long()
-            dag_node_offsets = mol_nodes[th.bucketize(dag_node_mask_idxs[:,0],dag_nodes,right=True)-1]
+            dag_node_offsets = mol_num_nodes[th.bucketize(dag_node_mask_idxs[:,0],dag_num_nodes,right=True)-1]
             dag_node_mask_idxs[:,1] = dag_node_mask_idxs[:,1] + dag_node_offsets
             dag_node_mask_embed = th_s.scatter_add(
                 mol_embed[dag_node_mask_idxs[:,1]],
                 dag_node_mask_idxs[:,0],
                 dim=0,
-                dim_size=dag_num_nodes
+                dim_size=batch_dag_num_nodes
             )
             # print(dag_node_mask_embed.shape)
             dag_ndata.append(dag_node_mask_embed)
             # do the same for edges
             dag_edge_mask_idxs = th.nonzero(dag_dgl.edata.pop('mask')).long()
             dag_edge_node_idxs = dag_dgl.edges()[0][dag_edge_mask_idxs[:,0]]
-            dag_edge_offsets = mol_nodes[th.bucketize(dag_edge_node_idxs,dag_nodes,right=True)-1]
+            dag_edge_offsets = mol_num_nodes[th.bucketize(dag_edge_node_idxs,dag_num_nodes,right=True)-1]
             dag_edge_mask_idxs[:,1] = dag_edge_mask_idxs[:,1] + dag_edge_offsets
             dag_edge_mask_embed = th_s.scatter_add(
                 mol_embed[dag_edge_mask_idxs[:,1]],
                 dag_edge_mask_idxs[:,0],
                 dim=0,
-                dim_size=dag_num_edges
+                dim_size=batch_dag_num_edges
             )
             # print(dag_edge_mask_embed.shape)
             dag_edata.append(dag_edge_mask_embed)
             # embed node formulae
-            dag_node_formula = self.formula_embedder(dag_dgl.ndata.pop('base_formula')).reshape(dag_num_nodes,-1)
+            dag_node_formula = self.formula_embedder(dag_dgl.ndata.pop('base_formula')).reshape(batch_dag_num_nodes,-1)
             dag_ndata.append(dag_node_formula)
             # do the same for edges
-            dag_edge_formula = self.formula_embedder(dag_dgl.edata.pop('base_formula')).reshape(dag_num_edges,-1)
+            dag_edge_formula = self.formula_embedder(dag_dgl.edata.pop('base_formula')).reshape(batch_dag_num_edges,-1)
             dag_edata.append(dag_edge_formula)
             # embed node depth
-            dag_depth = self.depth_embedder(dag_dgl.ndata.pop('depth')).reshape(dag_num_nodes,-1)
+            dag_depth = self.depth_embedder(dag_dgl.ndata.pop('depth')).reshape(batch_dag_num_nodes,-1)
             dag_ndata.append(dag_depth)
             # concatenate everything [N,H+(E+1)*M]
             dag_dgl.ndata['h'] = th.cat(dag_ndata,dim=-1)
@@ -156,7 +152,7 @@ class JointPredictor(nn.Module):
             # predict probabilities [N,2*T+1]
             dag_formula_probs = self.output_module(dag_embed)
             # aggregate by formula [N,F]
-            dag_formula_batch_idxs = th.bucketize(dag_dgl.nodes(),dag_nodes,right=True)-1
+            dag_formula_batch_idxs = th.bucketize(dag_dgl.nodes(),dag_num_nodes,right=True)-1
             dag_formula_offsets = dag_formula_cumsizes[dag_formula_batch_idxs]
             dag_formula_idxs = (dag_dgl.ndata.pop('h_formulae_idx')+dag_formula_offsets.unsqueeze(-1)).flatten()
             dag_formula_probs = dag_formula_probs.flatten()
