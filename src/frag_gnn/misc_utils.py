@@ -12,6 +12,7 @@ import pandas as pd
 import signal
 import sys
 import threading
+import torch_geometric as pyg
 
 TQDM_DISABLE = False
 
@@ -157,3 +158,7 @@ def get_dgl_memory_usage(dgl_graph):
 	for eattr in dgl_graph.edata:
 		total_memory += get_tensor_memory_usage(dgl_graph.edata[eattr])
 	return total_memory
+
+def get_pyg_memory_usage(pyg_graph):
+
+	return pyg.profile.get_data_size(pyg_graph)

@@ -6,6 +6,7 @@ import rdkit.Chem as Chem
 import rdkit.Chem.MolStandardize.rdMolStandardize as rdMolStandardize
 import rdkit.Chem.rdmolops as rdmolops
 import torch as th
+import torch_geometric as pyg
 
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
@@ -506,6 +507,28 @@ def compute_frag_peak_stats(row,tolerance=0.01,prec_type="[M+H]+"):
 		ppt_formula = np.nan
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
+def get_node_feat_names_shapes(nx_g):
+
+	node_feat_shapes = []
+	node_feat_names = []
+	dummy_node_idx = next(iter(nx_g.nodes()))
+	dummy_node_feats = nx_g.nodes[dummy_node_idx]
+	for k,v in dummy_node_feats.items():
+		node_feat_names.append(k)
+		node_feat_shapes.append(len(v))
+	return node_feat_names, node_feat_shapes
+
+def get_edge_feat_names_shapes(nx_g):
+
+	edge_feat_shapes = []
+	edge_feat_names = []
+	dummy_edge_idx = next(iter(nx_g.edges()))
+	dummy_edge_feats = nx_g.edges[dummy_edge_idx]
+	for k,v in dummy_edge_feats.items():
+		edge_feat_names.append(k)
+		edge_feat_shapes.append(len(v))
+	return edge_feat_names, edge_feat_shapes
+
 def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 
 	assert h_prior in [True,False], h_prior
@@ -623,21 +646,19 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	nx.set_edge_attributes(cc_g,edges_to_mask,"mask")
 	nx.set_edge_attributes(cc_g,edges_to_formula,"base_formula")
 
-	# convert to dgl
-	cc_g = dgl.from_networkx(
+	# convert to pyg
+	node_feat_names, node_feat_shapes = get_node_feat_names_shapes(cc_g)
+	edge_feat_names, edge_feat_shapes = get_edge_feat_names_shapes(cc_g)
+	print("> node",node_feat_names)
+	print("> edge",edge_feat_names)
+	cc_g = pyg.utils.convert.from_networkx(
 		cc_g, 
-		node_attrs=["mask","base_formula","h_formulae_idx","depth"], 
-		edge_attrs=["mask","base_formula"],
-		idtype=th.int32,
-		device="cpu"
+		group_node_attrs=node_feat_names, 
+		group_edge_attrs=edge_feat_names,
 	)
-	# casting to make graph smaller
-	cc_g.ndata["mask"] = cc_g.ndata["mask"].type(th.bool)
-	cc_g.ndata["base_formula"] = cc_g.ndata["base_formula"].type(th.int16)
-	cc_g.ndata["h_formulae_idx"] = cc_g.ndata["h_formulae_idx"].type(th.int16)
-	cc_g.ndata["depth"] = cc_g.ndata["depth"].type(th.int16)
-	cc_g.edata["mask"] = cc_g.edata["mask"].type(th.bool)
-	cc_g.edata["base_formula"] = cc_g.edata["base_formula"].type(th.int16)
+	# TODO: can we reduce storage?
+	node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0)
+	edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0)
 
 	dag_d = {}
 	dag_d["max_depth"] = max_depth
@@ -647,5 +668,31 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	dag_d["formula_peak_mzs"] = formula_peak_mzs
 	dag_d["formula_peak_probs"] = formula_peak_probs
 	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
+	dag_d["node_feat_idxs"] = node_feat_idxs
+	dag_d["edge_feat_idxs"] = edge_feat_idxs
 
 	return dag_d
+
+def get_node_feats(node_feats,node_feat_idxs,key):
+
+	if key == "depth":
+		node_feats = node_feats[:,node_feat_idxs[0]:node_feat_idxs[1]]
+	elif key == "mask":
+		node_feats = node_feats[:,node_feat_idxs[1]:node_feat_idxs[2]]
+	elif key == "base_formula":
+		node_feats = node_feats[:,node_feat_idxs[2]:node_feat_idxs[3]]
+	elif key == "h_formulae_idx":
+		node_feats = node_feats[:,node_feat_idxs[3]:node_feat_idxs[4]]
+	else:
+		raise ValueError("key not found")
+	return node_feats
+
+def get_edge_feats(edge_feats,edge_feat_idxs,key):
+
+	if key == "mask":
+		key_edge_feats = edge_feats[:,edge_feat_idxs[0]:edge_feat_idxs[1]]
+	elif key == "base_formula":
+		key_edge_feats = edge_feats[:,edge_feat_idxs[1]:edge_feat_idxs[2]]
+	else:
+		raise ValueError("key not found")
+	return key_edge_feats

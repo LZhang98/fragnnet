@@ -10,6 +10,7 @@ import networkx as nx
 import dgl
 from copy import deepcopy
 import warnings
+import time
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.misc_utils import timeit, booltype
@@ -20,28 +21,14 @@ from frag_gnn.nn.loss import sparse_cross_entropy
 
 def featurize_dag(dag):
 
-	# cast the dag attributes to the right dtype
-	nattrs = list(dag.ndata.keys())
-	for nattr in nattrs:
-		if nattr in ["mask"]:
-			dag.ndata[nattr] = dag.ndata[nattr].float()
-		else:
-			dag.ndata[nattr] = dag.ndata[nattr].long()
-	eattrs = list(dag.edata.keys())
-	for eattr in eattrs:
-		if eattr in ["mask"]:
-			dag.edata[eattr] = dag.edata[eattr].float()
-		else:
-			dag.edata[eattr] = dag.edata[eattr].long()
-	dag = dag.astype(th.int64)
 	print(dag)
 	return dag
 
 def featurize_mol(mol):
 
 	mg = MolGraph(pe_embed_k=0)
-	mol_dgl = mg.get_dgl_graph(mol,bigraph=True)
-	return mol_dgl
+	mol_pyg = mg.get_pyg_graph(mol,bigraph=True)
+	return mol_pyg
 
 def torch_time(func,*args,**kwargs):
 	if th.cuda.is_available():
@@ -51,10 +38,15 @@ def torch_time(func,*args,**kwargs):
 		result = func(*args,**kwargs)
 		end.record()
 		th.cuda.synchronize()
-		print(f"> func {func.__name__}: time elapsed = {start.elapsed_time(end):.2f} ms")
-		return result
+		elapsed_time = start.elapsed_time(end)
 	else:
-		return func(*args,**kwargs)
+		start = time.time_ns()
+		result = func(*args,**kwargs)
+		end = time.time_ns()
+		elapsed_time = (end-start) / 1e6
+	# print(f"> func {func.__name__}: time elapsed = {elapsed_time:.2f} ms")
+	print(f"> func: time elapsed = {elapsed_time:.2f} ms")
+	return result
 
 if __name__ == "__main__":
 
@@ -70,8 +62,6 @@ if __name__ == "__main__":
 	parser.add_argument("--num_iters",type=int,default=10)
 	args = parser.parse_args()
 
-	# this is a temporary workaround for dgl bug
-	warnings.filterwarnings("ignore",category=UserWarning)
 
 	np.random.seed(420)
 	th.manual_seed(420)
@@ -107,18 +97,22 @@ if __name__ == "__main__":
 	# prepare data
 	batch_size = args.batch_size
 	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
-	dag_dgl = featurize_dag(dag_d["dag"])
-	mol_dgl = featurize_mol(mol_d["mol"])
-	mol_dgl = mol_dgl.to(device)
-	mol_dgls = [deepcopy(mol_dgl) for i in range(batch_size)]
-	dag_dgls = [deepcopy(dag_dgl) for i in range(batch_size)]
+	dag_pyg = featurize_dag(dag_d["dag"])
+	mol_pyg = featurize_mol(mol_d["mol"])
+	mol_pyg = mol_pyg.to(device)
+	mol_pygs = [deepcopy(mol_pyg) for i in range(batch_size)]
+	dag_pygs = [deepcopy(dag_pyg) for i in range(batch_size)]
 	formula_peak_mzses = [dag_d["formula_peak_mzs"].detach().clone() for i in range(batch_size)]
 	formula_peak_probses = [dag_d["formula_peak_probs"].detach().clone() for i in range(batch_size)]
+	dag_node_feat_idxs = dag_d["node_feat_idxs"]
+	dag_edge_feat_idxs = dag_d["edge_feat_idxs"]
 	batched_dag = BatchedMolDAG(
-		mol_dgls,
-		dag_dgls,
+		mol_pygs,
+		dag_pygs,
 		formula_peak_mzses,
 		formula_peak_probses,
+		dag_node_feat_idxs,
+		dag_edge_feat_idxs,
 		device=th.device("cpu")
 	)
 	batched_dag = batched_dag.to(device)
@@ -126,25 +120,25 @@ if __name__ == "__main__":
 	# print(batched_dag.get_batched_mask("formula_peak_mzs"))
 	batched_dag_d = batched_dag.__dict__()
 
-	# prepare models
+	# # prepare models
 	hidden_size = 256
-	mol_model = GNN(
-		hidden_size,
-		gnn_node_feats=mol_dgl.ndata["h"].shape[1],
-		gnn_edge_feats=mol_dgl.edata["e"].shape[1],
-	)
-	mol_model.to(device)
+	# mol_model = GNN(
+	# 	hidden_size,
+	# 	gnn_node_feats=mol_pyg.x.shape[1],
+	# 	gnn_edge_feats=mol_pyg.edge_attr.shape[1],
+	# )
+	# mol_model.to(device)
 
-	# make predictions
-	mol_pred = mol_model(mol_dgl)
-	# simple test of differentiability
-	loss = th.sum(mol_pred)
-	loss.backward()
+	# # make predictions
+	# mol_pred = mol_model(mol_pyg)
+	# # simple test of differentiability
+	# loss = th.sum(mol_pred)
+	# loss.backward()
 
 	mol_kwargs = {
 		"hidden_size": hidden_size,
-		"gnn_node_feats": mol_dgl.ndata["h"].shape[1],
-		"gnn_edge_feats": mol_dgl.edata["e"].shape[1],
+		"gnn_node_feats": mol_pyg.x.shape[1],
+		"gnn_edge_feats": mol_pyg.edge_attr.shape[1],
 		"mpnn_type": "GINE"
 	}
 	dag_kwargs = {
@@ -175,10 +169,16 @@ if __name__ == "__main__":
 	joint_model.to(device)
 	if args.jit:
 		# import pdb; pdb.set_trace()
-		joint_model_forward = th.jit.trace(
-			joint_model.forward,
-			example_kwarg_inputs=batched_dag_d
+		_joint_model = th.jit.trace_module(
+			joint_model,
+			{"forward": deepcopy(batched_dag_d)},
+			example_inputs_is_kwarg=True
 		)
+		joint_model_forward = _joint_model.forward
+		# joint_model_forward = th.jit.trace(
+		# 	joint_model.forward,
+		# 	example_kwarg_inputs=deepcopy(batched_dag_d)
+		# )
 	else:
 		joint_model_forward = joint_model.forward
 
@@ -186,9 +186,12 @@ if __name__ == "__main__":
 	optim.zero_grad()
 
 	for i in range(args.num_iters):
-		print(f">> inter {i}")
+		print(f">> iter {i}")
 		# pred_mzs, pred_logprobs, pred_batch_idxs = joint_model(batched_dag)
-		pred_mzs, pred_logprobs, pred_batch_idxs = torch_time(joint_model_forward,**batched_dag_d)
+		pred_mzs, pred_logprobs, pred_batch_idxs = torch_time(
+			joint_model_forward,
+			**deepcopy(batched_dag_d)
+		)
 		# print(f"> avg of predicted logprobs = {pred_logprobs.mean():.4f}")
 		# select random subset of pred peaks
 		true_mask = th.rand_like(pred_mzs)<0.1

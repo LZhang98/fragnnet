@@ -8,8 +8,10 @@ import torch.nn.functional as F
 import torch_scatter as th_s
 
 from dgl.backend import pytorch as dgl_F
-import frag_gnn.nn.dgl_modules as dgl_mods
+# import frag_gnn.nn.dgl_modules as dgl_mods
 from frag_gnn.nn.form_embedder import get_embedder
+from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats
+import torch_geometric as pyg
 
 
 def get_clones(module, N):
@@ -84,113 +86,134 @@ class JointPredictor(nn.Module):
         }
         self.output_module = MLPBlocks(**mlp_kwargs)
 
-    def forward(self, 
-            batch_size=None,
-            # device=None,
-            mol_dgl=None,
-            dag_dgl=None,
-            mol_num_nodes=None,
-            dag_num_nodes=None,
-            dag_formula_peak_idxs=None,
-            dag_formula_peak_mzs=None,
-            dag_formula_peak_probs=None,
-            dag_formula_sizes=None,
-            dag_formula_cumsizes=None,
-            dag_formula_peak_sizes=None,
-            **kwargs):
+    def forward(
+        self, 
+        batch_size=None,
+        mol_x=None,
+        mol_edge_index=None,
+        mol_edge_attr=None,
+        dag_x=None,
+        dag_edge_index=None,
+        dag_edge_attr=None,
+        dag_node_feat_idxs=None,
+        dag_edge_feat_idxs=None,
+        mol_num_nodes=None,
+        dag_num_nodes=None,
+        dag_formula_peak_idxs=None,
+        dag_formula_peak_mzs=None,
+        dag_formula_peak_probs=None,
+        dag_formula_sizes=None,
+        dag_formula_cumsizes=None,
+        dag_formula_peak_sizes=None,
+    ):
 
-        # get per-atom embeddings [N,A,H]
-        mol_embed = self.mol_embedder(mol_dgl)
+        device = batch_size.device
+
+        # get per-atom embeddings
+        mol_embed = self.mol_embedder(
+            mol_x,
+            mol_edge_index,
+            mol_edge_attr
+        )
         
         # process dag
-        with dag_dgl.local_scope():
-            
-            dag_ndata, dag_edata = [], []
-            batch_dag_num_nodes = dag_dgl.number_of_nodes()
-            batch_dag_num_edges = dag_dgl.number_of_edges()
-            # get atom embeddings for each node
-            dag_node_mask_idxs = th.nonzero(dag_dgl.ndata.pop('mask')).long()
-            dag_node_offsets = mol_num_nodes[th.bucketize(dag_node_mask_idxs[:,0],dag_num_nodes,right=True)-1]
-            dag_node_mask_idxs[:,1] = dag_node_mask_idxs[:,1] + dag_node_offsets
-            dag_node_mask_embed = th_s.scatter_add(
-                mol_embed[dag_node_mask_idxs[:,1]],
-                dag_node_mask_idxs[:,0],
-                dim=0,
-                dim_size=batch_dag_num_nodes
-            )
-            # print(dag_node_mask_embed.shape)
-            dag_ndata.append(dag_node_mask_embed)
-            # do the same for edges
-            dag_edge_mask_idxs = th.nonzero(dag_dgl.edata.pop('mask')).long()
-            dag_edge_node_idxs = dag_dgl.edges()[0][dag_edge_mask_idxs[:,0]]
-            dag_edge_offsets = mol_num_nodes[th.bucketize(dag_edge_node_idxs,dag_num_nodes,right=True)-1]
-            dag_edge_mask_idxs[:,1] = dag_edge_mask_idxs[:,1] + dag_edge_offsets
-            dag_edge_mask_embed = th_s.scatter_add(
-                mol_embed[dag_edge_mask_idxs[:,1]],
-                dag_edge_mask_idxs[:,0],
-                dim=0,
-                dim_size=batch_dag_num_edges
-            )
-            # print(dag_edge_mask_embed.shape)
-            dag_edata.append(dag_edge_mask_embed)
-            # embed node formulae
-            dag_node_formula = self.formula_embedder(dag_dgl.ndata.pop('base_formula')).reshape(batch_dag_num_nodes,-1)
-            dag_ndata.append(dag_node_formula)
-            # do the same for edges
-            dag_edge_formula = self.formula_embedder(dag_dgl.edata.pop('base_formula')).reshape(batch_dag_num_edges,-1)
-            dag_edata.append(dag_edge_formula)
-            # embed node depth
-            dag_depth = self.depth_embedder(dag_dgl.ndata.pop('depth')).reshape(batch_dag_num_nodes,-1)
-            dag_ndata.append(dag_depth)
-            # concatenate everything [N,H+(E+1)*M]
-            dag_dgl.ndata['h'] = th.cat(dag_ndata,dim=-1)
-            # concatenate everything [N,H+E*M]
-            dag_dgl.edata['e'] = th.cat(dag_edata,dim=-1)
-            # apply GNN
-            dag_embed = self.dag_embedder(dag_dgl)
+        dag_ndata, dag_edata = [], []
+        batch_dag_num_nodes = dag_x.shape[0]
+        batch_dag_num_edges = dag_edge_index.shape[1]
+        # get atom embeddings for each node
+        dag_node_mask_idxs = th.nonzero(get_node_feats(dag_x,dag_node_feat_idxs,"mask")).long()
+        dag_node_offsets = mol_num_nodes[th.bucketize(dag_node_mask_idxs[:,0],dag_num_nodes,right=True)-1]
+        dag_node_mask_idxs[:,1] = dag_node_mask_idxs[:,1] + dag_node_offsets
+        dag_node_mask_embed = th_s.scatter_add(
+            mol_embed[dag_node_mask_idxs[:,1]],
+            dag_node_mask_idxs[:,0],
+            dim=0,
+            dim_size=batch_dag_num_nodes
+        )
+        # print(dag_node_mask_embed.shape)
+        dag_ndata.append(dag_node_mask_embed)
+        # do the same for edges
+        dag_edge_mask_idxs = th.nonzero(get_edge_feats(dag_edge_attr,dag_edge_feat_idxs,"mask")).long()
+        dag_edge_node_idxs = dag_edge_index[0][dag_edge_mask_idxs[:,0]]
+        dag_edge_offsets = mol_num_nodes[th.bucketize(dag_edge_node_idxs,dag_num_nodes,right=True)-1]
+        dag_edge_mask_idxs[:,1] = dag_edge_mask_idxs[:,1] + dag_edge_offsets
+        dag_edge_mask_embed = th_s.scatter_add(
+            mol_embed[dag_edge_mask_idxs[:,1]],
+            dag_edge_mask_idxs[:,0],
+            dim=0,
+            dim_size=batch_dag_num_edges
+        )
+        # print(dag_edge_mask_embed.shape)
+        dag_edata.append(dag_edge_mask_embed)
+        # embed node formulae
+        dag_node_formula = self.formula_embedder(get_node_feats(dag_x,dag_node_feat_idxs,"base_formula")).reshape(batch_dag_num_nodes,-1)
+        dag_ndata.append(dag_node_formula)
+        # do the same for edges
+        dag_edge_formula = self.formula_embedder(get_edge_feats(dag_edge_attr,dag_edge_feat_idxs,"base_formula")).reshape(batch_dag_num_edges,-1)
+        dag_edata.append(dag_edge_formula)
+        # embed node depth
+        dag_depth = self.depth_embedder(get_node_feats(dag_x,dag_node_feat_idxs,"depth")).reshape(batch_dag_num_nodes,-1)
+        dag_ndata.append(dag_depth)
+        
+        # get formula aggregation 
+        dag_formula_batch_idxs = th.bucketize(th.arange(dag_x.shape[0],device=device),dag_num_nodes,right=True)-1
+        dag_formula_offsets = dag_formula_cumsizes[dag_formula_batch_idxs]
+        dag_formula_idxs = (get_node_feats(dag_x,dag_node_feat_idxs,"h_formulae_idx")+dag_formula_offsets.unsqueeze(-1)).flatten()        
+        
+        # concatenate everything 
+        dag_x = th.cat(dag_ndata,dim=-1)
+        # concatenate everything 
+        dag_edge_attr = th.cat(dag_edata,dim=-1)
+        # apply GNN
+        dag_embed = self.dag_embedder(
+            dag_x,
+            dag_edge_index,
+            dag_edge_attr
+        )
 
-            # predict probabilities [N,2*T+1]
-            dag_formula_probs = self.output_module(dag_embed)
-            # aggregate by formula [N,F]
-            dag_formula_batch_idxs = th.bucketize(dag_dgl.nodes(),dag_num_nodes,right=True)-1
-            dag_formula_offsets = dag_formula_cumsizes[dag_formula_batch_idxs]
-            dag_formula_idxs = (dag_dgl.ndata.pop('h_formulae_idx')+dag_formula_offsets.unsqueeze(-1)).flatten()
-            dag_formula_probs = dag_formula_probs.flatten()
-            dag_formula_probs = th_s.scatter_add(
-                dag_formula_probs, 
-                dag_formula_idxs,
-                dim=0,
-                dim_size=dag_formula_cumsizes[-1]
-            )
-            # zero out NULL formula
-            dag_formula_mask = th.ones_like(dag_formula_probs)
-            dag_formula_mask[dag_formula_cumsizes[:-1]] = 0.
-            dag_formula_batch_idxs = th.bucketize(
-                th.arange(dag_formula_cumsizes[-1],device=dag_formula_cumsizes.device),
-                dag_formula_cumsizes,
-                right=True
-            )-1
-            # softmax with masked logits
-            dag_formula_probs = masked_subset_softmax(
-                dag_formula_probs,
-                dag_formula_mask,
-                dag_formula_batch_idxs,
-                dim=0,
-                log=True
-            )
-            # convert to spectrum
-            spec_mzs = dag_formula_peak_mzs
-            spec_logprobs = dag_formula_probs[dag_formula_peak_idxs] + th.log(dag_formula_peak_probs)
+        # predict probabilities [N,2*T+1]
+        dag_formula_probs = self.output_module(dag_embed)
+    
+        # aggregate by formula
+        dag_formula_probs = dag_formula_probs.flatten()
+        dag_formula_probs = th_s.scatter_add(
+            dag_formula_probs, 
+            dag_formula_idxs,
+            dim=0,
+            dim_size=dag_formula_cumsizes[-1]
+        )
+        
+        # zero out NULL formula
+        dag_formula_mask = th.ones_like(dag_formula_probs)
+        dag_formula_mask[dag_formula_cumsizes[:-1]] = 0.
+        dag_formula_batch_idxs = th.bucketize(
+            th.arange(dag_formula_cumsizes[-1],device=device),
+            dag_formula_cumsizes,
+            right=True
+        )-1
+        
+        # softmax with masked logits
+        dag_formula_probs = masked_subset_softmax(
+            dag_formula_probs,
+            dag_formula_mask,
+            dag_formula_batch_idxs,
+            dim=0,
+            log=True
+        )
+        
+        # convert to spectrum
+        spec_mzs = dag_formula_peak_mzs
+        spec_logprobs = dag_formula_probs[dag_formula_peak_idxs] + th.log(dag_formula_peak_probs)
+        
         # check that the total intensity sums up to 1 (approximately)
         spec_batch_idxs = th.repeat_interleave(
-            th.arange(dag_formula_peak_sizes.shape[0],device=dag_formula_peak_sizes.device),
+            th.arange(dag_formula_peak_sizes.shape[0],device=device),
             dag_formula_peak_sizes
         )
         
         return spec_mzs, spec_logprobs, spec_batch_idxs
 
 class GNN(nn.Module):
-    """MoleculeGNN Module"""
 
     def __init__(
         self,
@@ -199,8 +222,7 @@ class GNN(nn.Module):
         gnn_node_feats: int = 74,
         gnn_edge_feats: int = 4,  # 12,
         mpnn_type: str = "GINE",
-        node_feat_symbol = "h",
-        dropout: float = 0,
+        dropout: float = 0.,
         **kwargs
     ):
         """__init__.
@@ -212,7 +234,6 @@ class GNN(nn.Module):
         self.hidden_size = hidden_size
         self.gnn_edge_feats = gnn_edge_feats
         self.gnn_node_feats = gnn_node_feats
-        self.node_feat_symbol = node_feat_symbol
         self.dropout = dropout
 
         self.mpnn_type = mpnn_type
@@ -220,22 +241,7 @@ class GNN(nn.Module):
         self.num_step_message_passing = num_step_message_passing
         self.input_project = nn.Linear(self.gnn_node_feats, self.hidden_size)
 
-        if self.mpnn_type == "GGNN":
-            self.gnn = GGNN(
-                hidden_size=self.hidden_size,
-                edge_feats=self.gnn_edge_feats,
-                node_feats=self.gnn_node_feats,
-                num_step_message_passing=num_step_message_passing,
-            )
-        elif self.mpnn_type == "PNA":
-            self.gnn = PNA(
-                hidden_size=self.hidden_size,
-                edge_feats=self.gnn_edge_feats,
-                node_feats=self.gnn_node_feats,
-                num_step_message_passing=num_step_message_passing,
-                dropout=self.dropout,
-            )
-        elif self.mpnn_type == "GINE":
+        if self.mpnn_type == "GINE":
             self.gnn = GINE(
                 hidden_size=self.hidden_size,
                 edge_feats=self.gnn_edge_feats,
@@ -244,31 +250,13 @@ class GNN(nn.Module):
                 dropout=self.dropout,
             )
         else:
-            raise ValueError()
+            raise NotImplementedError()
 
-    def forward(self, g):
+    def forward(self, x, edge_index, edge_attr):
         """encode batch of molecule graph"""
-        with g.local_scope():
-            # Set initial hidden
-            ndata = g.ndata[self.node_feat_symbol]
-            edata = g.edata["e"]
-            h_init = self.input_project(ndata)
-            g.ndata.update({"_h": h_init})
-            g.edata.update({"_e": edata})
-
-            if self.mpnn_type == "GGNN":
-                # Get graph output
-                output = self.gnn(g, "_h", "_e")
-            elif self.mpnn_type == "PNA":
-                # Get graph output
-                output = self.gnn(g, "_h", "_e")
-            elif self.mpnn_type == "GINE":
-                # Get graph output
-                output = self.gnn(g, "_h", "_e")
-            else:
-                raise NotImplementedError()
-
-        return output
+        x = self.input_project(x)
+        x = self.gnn(x, edge_index, edge_attr)
+        return x
 
 
 class GINE(nn.Module):
@@ -277,7 +265,7 @@ class GINE(nn.Module):
         hidden_size=64,
         edge_feats=4,
         num_step_message_passing=4,
-        dropout=0,
+        dropout=0.,
         **kwargs
     ):
         """GINE.
@@ -301,130 +289,26 @@ class GINE(nn.Module):
                 nn.ReLU(),
                 nn.Linear(hidden_size, hidden_size),
             )
-            temp_layer = dgl_mods.GINEConv(apply_func=apply_fn, init_eps=0)
+            temp_layer = pyg.nn.conv.GINEConv(
+                nn=apply_fn,
+                eps=0.
+            ).jittable()
             self.layers.append(temp_layer)
 
         self.layers = nn.ModuleList(self.layers)
         self.bnorms = get_clones(nn.BatchNorm1d(hidden_size), num_step_message_passing)
         self.dropouts = get_clones(nn.Dropout(dropout), num_step_message_passing)
 
-    def forward(self, graph, nfeat_name="_h", efeat_name="_e"):
+    def forward(self, x, edge_index, edge_attr):
         """forward.
-
-        Args:
-            graph (dgl graph): Graph object
-            nfeat_name (str): Name of node feat data
-            efeat_name (str): Name of e feat
-
-        Return:
-            h: Hidden state at each node
-
-
         """
-        node_feat, edge_feat = graph.ndata[nfeat_name], graph.edata[efeat_name]
-        edge_feat = self.edge_transform(edge_feat)
+        edge_attr = self.edge_transform(edge_attr)
 
         for dropout, layer, norm in zip(self.dropouts, self.layers, self.bnorms):
-            layer_out = layer(graph, node_feat, edge_feat)
-            node_feat = F.relu(dropout(norm(layer_out))) + node_feat
+            layer_out = layer(x, edge_index, edge_attr)
+            x = F.relu(dropout(norm(layer_out))) + x
 
-        return node_feat
-
-
-class GGNN(nn.Module):
-    def __init__(
-        self, hidden_size=64, edge_feats=4, num_step_message_passing=4, **kwargs
-    ):
-        """GGNN.
-
-        Define a gated graph neural network
-
-        This is very similar to the NNConv models.
-
-        Args:
-            input_size (int): Size of edge features into the graph
-            hidden_size (int): Hidden size
-            edge_feats (int): Number of edge feats. Must be onehot!
-            node_feats (int): Num of node feats (default 74)
-            num_step_message_passing (int): Number of message passing steps
-        """
-        super().__init__()
-        self.model = dgl_mods.GatedGraphConv(
-            in_feats=hidden_size,
-            out_feats=hidden_size,
-            n_steps=num_step_message_passing,
-            n_etypes=edge_feats,
-        )
-
-    def forward(self, graph, nfeat_name="_h", efeat_name="_e"):
-        """forward.
-
-        Args:
-            graph (dgl graph): Graph object
-            nfeat_name (str): Name of node feat data
-            efeat_name (str): Name of e feat
-
-        Return:
-            h: Hidden state at each node
-
-        """
-        if "e_ind" in graph.edata:
-            etypes = graph.edata["e_ind"]
-        else:
-            etypes = graph.edata[efeat_name].argmax(1)
-        return self.model(graph, graph.ndata[nfeat_name], etypes=etypes)
-
-
-class PNA(nn.Module):
-    def __init__(
-        self,
-        hidden_size=64,
-        edge_feats=4,
-        num_step_message_passing=4,
-        dropout=0,
-        **kwargs
-    ):
-        """PNA.
-
-        Define a PNA network
-
-        Args:
-            input_size (int): Size of edge features into the graph
-            hidden_size (int): Hidden size
-            edge_feats (int): Number of edge feats. Must be onehot!
-            node_feats (int): Num of node feats (default 74)
-            num_step_message_passing (int): Number of message passing steps
-        """
-        super().__init__()
-        self.layer = dgl_mods.PNAConv(
-            in_size=hidden_size,
-            out_size=hidden_size,
-            aggregators=["mean", "max", "min", "std", "var", "sum"],
-            scalers=["identity", "amplification", "attenuation"],
-            delta=2.5,
-            dropout=dropout,
-        )
-
-        self.layers = get_clones(self.layer, num_step_message_passing)
-        self.bnorms = get_clones(nn.BatchNorm1d(hidden_size), num_step_message_passing)
-
-    def forward(self, graph, nfeat_name="_h", efeat_name="_e"):
-        """forward.
-
-        Args:
-            graph (dgl graph): Graph object
-            nfeat_name (str): Name of node feat data
-            efeat_name (str): Name of e feat
-
-        Return:
-            h: Hidden state at each node
-
-        """
-        node_feat, edge_feat = graph.ndata[nfeat_name], graph.edata[efeat_name]
-        for layer, norm in zip(self.layers, self.bnorms):
-            node_feat = F.relu(norm(layer(graph, node_feat, edge_feat))) + node_feat
-
-        return node_feat
+        return x
 
 
 class MLPBlocks(nn.Module):
@@ -468,10 +352,6 @@ class MLPBlocks(nn.Module):
         if self.output_layer is not None:
             output = self.output_layer(output)
         return output
-
-
-# DGL Models
-# https://docs.dgl.ai/en/0.6.x/_modules/dgl/nn/pytorch/glob.html#SetTransformerDecoder
 
 
 def random_walk_pe(g, k, eweight_name=None):

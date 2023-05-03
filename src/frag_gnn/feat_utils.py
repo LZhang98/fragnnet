@@ -9,6 +9,7 @@ import numpy as np
 import torch as th
 import dgl
 import networkx as nx
+import torch_geometric as pyg
 
 
 atom_feat_registry = {}
@@ -188,6 +189,30 @@ class MolGraph:
 		nx.set_edge_attributes(g, values=bond_feats, name="e")
 
 		return g
+
+	def get_pyg_graph(self, mol: Chem.Mol, bigraph: str = True):
+
+		mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
+
+		bond_inds = mol_graph["bond_tuples"]
+		bond_feats = mol_graph["bond_feats"]
+		atom_feats = mol_graph["atom_feats"]
+
+		g = pyg.data.Data(
+			x=th.from_numpy(atom_feats).float(),
+			edge_index=th.from_numpy(bond_inds).long().transpose(1, 0),
+			edge_attr=th.from_numpy(bond_feats).float(),
+		)
+
+		if self.pe_embed_k > 0:
+			raise NotImplmementedError()
+			# pe_embeds = nn_utils.random_walk_pe(
+			# 	g,
+			# 	k=self.pe_embed_k,
+			# )
+			# g.x = th.cat((g.x, pe_embeds), -1)
+
+		return g		
 
 class FeatBase:
 	"""FeatBase.
@@ -445,18 +470,28 @@ def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
 
 class BatchedMolDAG:
 
-	def __init__(self,mol_dgl_list,dag_dgl_list,formula_peak_mzs,formula_peak_probs,device=None):
+	def __init__(
+		self,
+		mol_pyg_list,
+		dag_pyg_list,
+		formula_peak_mzs,
+		formula_peak_probs,
+		dag_node_feat_idxs,
+		dag_edge_feat_idxs,
+		device=None
+	):
 
-		assert len(mol_dgl_list) == len(dag_dgl_list), (len(mol_dgl_list),len(dag_dgl_list))
-		self.batch_size = len(mol_dgl_list)
+		assert len(mol_pyg_list) == len(dag_pyg_list), (len(mol_pyg_list),len(dag_pyg_list))
+		self.batch_size = len(mol_pyg_list)
 		if device is not None:
 			self._set_device(device)
 		else:
 			self._set_device("cpu")
 		self.batch_size = th.tensor(self.batch_size,device=self.device)
-		self.mol_dgl = dgl.batch(mol_dgl_list).to(self.device)
-		self.dag_dgl = dgl.batch(dag_dgl_list).to(self.device)
-		self._compute_batched_node_offsets(mol_dgl_list,dag_dgl_list)
+		self.mol_pyg = pyg.data.Batch.from_data_list(mol_pyg_list).to(self.device)
+		self.dag_pyg = pyg.data.Batch.from_data_list(dag_pyg_list).to(self.device)
+		assert self.mol_pyg.num_graphs == self.dag_pyg.num_graphs == self.batch_size
+		self._compute_batched_node_offsets(mol_pyg_list,dag_pyg_list)
 		dag_formula_peak_idxs = []
 		dag_formula_peak_mzs = []
 		dag_formula_peak_probs = []
@@ -478,12 +513,14 @@ class BatchedMolDAG:
 		self.dag_formula_sizes = th.tensor(dag_formula_sizes,device=self.device)
 		self.dag_formula_cumsizes = th.cumsum(th.tensor([0]+dag_formula_sizes,device=self.device),dim=0)
 		self.dag_formula_peak_sizes = th.tensor(dag_formula_peak_sizes,device=self.device)
+		self.dag_node_feat_idxs = dag_node_feat_idxs.to(self.device)
+		self.dag_edge_feat_idxs = dag_edge_feat_idxs.to(self.device)
 
-	def _compute_batched_node_offsets(self,mol_dgl_list,dag_dgl_list):
+	def _compute_batched_node_offsets(self,mol_pyg_list,dag_pyg_list):
 
 		# import pdb; pdb.set_trace()
-		mol_num_nodes = [g.number_of_nodes() for g in mol_dgl_list]
-		dag_num_nodes = [g.number_of_nodes() for g in dag_dgl_list]
+		mol_num_nodes = [g.num_nodes for g in mol_pyg_list]
+		dag_num_nodes = [g.num_nodes for g in dag_pyg_list]
 		self.mol_num_nodes = th.cumsum(th.tensor([0]+mol_num_nodes,device=self.device),dim=0)
 		self.dag_num_nodes = th.cumsum(th.tensor([0]+dag_num_nodes,device=self.device),dim=0)
 
@@ -491,8 +528,8 @@ class BatchedMolDAG:
 
 		self._set_device(device)
 		self.batch_size = self.batch_size.to(self.device)
-		self.mol_dgl = self.mol_dgl.to(self.device)
-		self.dag_dgl = self.dag_dgl.to(self.device)
+		self.mol_pyg = self.mol_pyg.to(self.device)
+		self.dag_pyg = self.dag_pyg.to(self.device)
 		self.mol_num_nodes = self.mol_num_nodes.to(self.device)
 		self.dag_num_nodes = self.dag_num_nodes.to(self.device)
 		self.dag_formula_peak_idxs = self.dag_formula_peak_idxs.to(self.device)
@@ -501,6 +538,8 @@ class BatchedMolDAG:
 		self.dag_formula_sizes = self.dag_formula_sizes.to(self.device)
 		self.dag_formula_cumsizes = self.dag_formula_cumsizes.to(self.device)
 		self.dag_formula_peak_sizes = self.dag_formula_peak_sizes.to(self.device)
+		self.dag_node_feat_idxs = self.dag_node_feat_idxs.to(self.device)
+		self.dag_edge_feat_idxs = self.dag_edge_feat_idxs.to(self.device)
 		return self
 
 	def _set_device(self,device):
@@ -516,11 +555,18 @@ class BatchedMolDAG:
 
 	def __dict__(self):
 
+		# break down pyg graphs into dict
 		return {
 			"batch_size": self.batch_size,
 			# "device": self.device,
-			"mol_dgl": self.mol_dgl,
-			"dag_dgl": self.dag_dgl,
+			"mol_x": self.mol_pyg.x,
+			"mol_edge_index": self.mol_pyg.edge_index,
+			"mol_edge_attr": self.mol_pyg.edge_attr,
+			"dag_x": self.dag_pyg.x,
+			"dag_edge_index": self.dag_pyg.edge_index,
+			"dag_edge_attr": self.dag_pyg.edge_attr,
+			"dag_node_feat_idxs": self.dag_node_feat_idxs,
+			"dag_edge_feat_idxs": self.dag_edge_feat_idxs,
 			"mol_num_nodes": self.mol_num_nodes,
 			"dag_num_nodes": self.dag_num_nodes,
 			"dag_formula_peak_idxs": self.dag_formula_peak_idxs,
