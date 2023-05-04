@@ -21,7 +21,8 @@ import gzip
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES, TimeoutError
 import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.data_utils import parse_formula, seq_apply_df_rows, par_apply_df_rows
+from frag_gnn.utils.data_utils import seq_apply_df_rows, par_apply_df_rows
+from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.utils.misc_utils import booltype, flatten_lol, wandb_symlink, TimeoutException
 import frag_gnn.utils.formula_utils as formula_utils
 

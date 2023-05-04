@@ -1,5 +1,3 @@
-# cython: profile=True
-
 import numpy as np
 import time
 from pprint import pprint
@@ -9,7 +7,7 @@ import torch as th
 import torch_geometric as pyg
 
 import frag_gnn.frag.frag_utils as frag_utils
-from frag_gnn.misc_utils import timeit, booltype, get_pyg_memory_usage
+from frag_gnn.utils.misc_utils import timeit, booltype, get_pyg_memory_usage
 
 import pstats, cProfile
 
