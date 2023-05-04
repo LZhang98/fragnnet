@@ -7,8 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_scatter as th_s
 
-from dgl.backend import pytorch as dgl_F
-# import frag_gnn.nn.dgl_modules as dgl_mods
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats
 import torch_geometric as pyg
@@ -131,26 +129,28 @@ class JointPredictor(nn.Module):
         dag_node_mask_idxs = th.nonzero(get_node_feats(dag_x,dag_node_feat_idxs,"mask")).long()
         dag_node_offsets = mol_num_nodes[th.bucketize(dag_node_mask_idxs[:,0],dag_num_nodes,right=True)-1]
         dag_node_mask_idxs[:,1] = dag_node_mask_idxs[:,1] + dag_node_offsets
-        dag_node_mask_embed = th_s.scatter_add(
-            mol_embed[dag_node_mask_idxs[:,1]],
-            dag_node_mask_idxs[:,0],
+        dag_node_mask_embed = th.scatter_reduce(
+            input=th.zeros([batch_dag_num_nodes,mol_embed.shape[1]],device=device),
             dim=0,
-            dim_size=batch_dag_num_nodes
+            index=dag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+            src=mol_embed[dag_node_mask_idxs[:,1]],
+            reduce="sum",
         )
-        # print(dag_node_mask_embed.shape)
+        # print(dag_node_mask_embed.sum())
         dag_ndata.append(dag_node_mask_embed)
         # do the same for edges
         dag_edge_mask_idxs = th.nonzero(get_edge_feats(dag_edge_attr,dag_edge_feat_idxs,"mask")).long()
         dag_edge_node_idxs = dag_edge_index[0][dag_edge_mask_idxs[:,0]]
         dag_edge_offsets = mol_num_nodes[th.bucketize(dag_edge_node_idxs,dag_num_nodes,right=True)-1]
         dag_edge_mask_idxs[:,1] = dag_edge_mask_idxs[:,1] + dag_edge_offsets
-        dag_edge_mask_embed = th_s.scatter_add(
-            mol_embed[dag_edge_mask_idxs[:,1]],
-            dag_edge_mask_idxs[:,0],
+        dag_edge_mask_embed = th.scatter_reduce(
+            input=th.zeros([batch_dag_num_edges,mol_embed.shape[1]],device=device),
             dim=0,
-            dim_size=batch_dag_num_edges
+            index=dag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+            src=mol_embed[dag_edge_mask_idxs[:,1]],
+            reduce="sum"
         )
-        # print(dag_edge_mask_embed.shape)
+        # print(dag_edge_mask_embed.sum())
         dag_edata.append(dag_edge_mask_embed)
         # embed node formulae
         dag_node_formula = self.formula_embedder(
@@ -187,13 +187,15 @@ class JointPredictor(nn.Module):
     
         # aggregate by formula
         dag_formula_probs = dag_formula_probs.flatten()
-        dag_formula_probs = th_s.scatter_add(
-            dag_formula_probs, 
-            dag_formula_idxs,
+        dag_formula_probs = th.scatter_reduce(
+            input=th.zeros([dag_formula_cumsizes[-1]],device=device),
             dim=0,
-            dim_size=dag_formula_cumsizes[-1]
+            index=dag_formula_idxs,
+            src=dag_formula_probs,
+            reduce="sum"
         )
-        
+        # print(dag_formula_probs.sum())
+
         # zero out NULL formula
         dag_formula_mask = th.ones_like(dag_formula_probs)
         dag_formula_mask[dag_formula_cumsizes[:-1]] = 0.
@@ -211,7 +213,8 @@ class JointPredictor(nn.Module):
             dim=0,
             log=True
         )
-        
+        # print(dag_formula_probs.sum())
+
         # convert to spectrum
         spec_mzs = dag_formula_peak_mzs
         spec_logprobs = dag_formula_probs[dag_formula_peak_idxs] + th.log(dag_formula_peak_probs)
@@ -397,26 +400,27 @@ def random_walk_pe(g, k, eweight_name=None):
     tensor([[0.0000, 0.5000],
             [0.5000, 0.7500]])
     """
-    N = g.num_nodes()  # number of nodes
-    M = g.num_edges()  # number of edges
-    A = g.adj(scipy_fmt="csr")  # adjacency matrix
-    if eweight_name is not None:
-        # add edge weights if required
-        W = sparse.csr_matrix(
-            (g.edata[eweight_name].squeeze(), g.find_edges(list(range(M)))),
-            shape=(N, N),
-        )
-        A = A.multiply(W)
-    RW = np.array(A / (A.sum(1) + 1e-30))  # 1-step transition probability
+    raise NotImplementedError()
+    # N = g.num_nodes  # number of nodes
+    # M = g.num_edges  # number of edges
+    # A = g.adj(scipy_fmt="csr")  # adjacency matrix
+    # if eweight_name is not None:
+    #     # add edge weights if required
+    #     W = sparse.csr_matrix(
+    #         (g.edata[eweight_name].squeeze(), g.find_edges(list(range(M)))),
+    #         shape=(N, N),
+    #     )
+    #     A = A.multiply(W)
+    # RW = np.array(A / (A.sum(1) + 1e-30))  # 1-step transition probability
 
-    # Iterate for k steps
-    PE = [dgl_F.astype(dgl_F.tensor(np.copy(RW.diagonal())), th.float32)]
-    RW_power = RW
-    for _ in range(k - 1):
-        RW_power = RW_power @ RW
-        PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), th.float32))
-    PE = dgl_F.stack(PE, dim=-1)
-    return PE
+    # # Iterate for k steps
+    # PE = [dgl_F.astype(dgl_F.tensor(np.copy(RW.diagonal())), th.float32)]
+    # RW_power = RW
+    # for _ in range(k - 1):
+    #     RW_power = RW_power @ RW
+    #     PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), th.float32))
+    # PE = dgl_F.stack(PE, dim=-1)
+    # return PE
 
 def masked_subset_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=True):
     # apply mask
@@ -429,13 +433,34 @@ def masked_subset_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=Tru
     else:
         return masked_logits
 
-def scatter_normalize(logits,subset_idxs,dim=-1):
-    # calculate normalizing constant
-    c = th_s.scatter_logsumexp(
-        logits,
-        subset_idxs,
+def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=1e-9):
+
+    k = th.max(subset_idxs)+1
+    sm = th.zeros([k],device=logits.device)
+    sm.scatter_reduce_(
+        dim=dim,
+        index=subset_idxs,
+        src=logits,
+        reduce="amax"
+    )
+    lm = th.gather(
+        input=sm,
+        index=subset_idxs,
         dim=dim
     )
+    logits = logits - lm
+    se = th.zeros([k],device=logits.device)
+    se.scatter_reduce_(
+        dim=dim,
+        index=subset_idxs,
+        src=th.exp(logits),
+        reduce="sum"
+    )
+    return sm + th.log(se + eps)
+
+def scatter_normalize(logits,subset_idxs,dim=-1):
+    # calculate normalizing constant
+    c = scatter_logsumexp(logits,subset_idxs,dim=dim)
     # apply normalizing constant
     logits = logits - c[subset_idxs]
     return logits

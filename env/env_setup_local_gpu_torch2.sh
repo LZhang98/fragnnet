@@ -9,8 +9,6 @@ conda install python=3.10
 pip install torch==2.0.0+cu117 --index-url https://download.pytorch.org/whl/cu117
 pip install rdkit-pypi==2022.9.4
 pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu117.html
-pip install dgl -f https://data.dgl.ai/wheels/cu117/repo.html
-pip install dgllife
 pip install cython
 pip install cysignals
 pip install pandas

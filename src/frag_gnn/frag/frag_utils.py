@@ -1,4 +1,3 @@
-import dgl
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -649,16 +648,14 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	# convert to pyg
 	node_feat_names, node_feat_shapes = get_node_feat_names_shapes(cc_g)
 	edge_feat_names, edge_feat_shapes = get_edge_feat_names_shapes(cc_g)
-	print("> node",node_feat_names)
-	print("> edge",edge_feat_names)
 	cc_g = pyg.utils.convert.from_networkx(
 		cc_g, 
 		group_node_attrs=node_feat_names, 
 		group_edge_attrs=edge_feat_names,
 	)
 	# TODO: can we reduce storage?
-	node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0)
-	edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0)
+	cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
+	cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
 
 	dag_d = {}
 	dag_d["max_depth"] = max_depth
@@ -668,8 +665,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	dag_d["formula_peak_mzs"] = formula_peak_mzs
 	dag_d["formula_peak_probs"] = formula_peak_probs
 	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-	dag_d["node_feat_idxs"] = node_feat_idxs
-	dag_d["edge_feat_idxs"] = edge_feat_idxs
 
 	return dag_d
 

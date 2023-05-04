@@ -7,7 +7,6 @@ and bonds. Inspired by the dgllife library.
 from rdkit import Chem
 import numpy as np
 import torch as th
-import dgl
 import networkx as nx
 import torch_geometric as pyg
 
@@ -134,37 +133,6 @@ class MolGraph:
 			"bond_tuples": bond_tuples,
 		}
 
-	def get_dgl_graph(self, mol: Chem.Mol, bigraph: str = True):
-		"""get_dgl_graph.
-
-		Args:
-			mol (Chem.Mol):
-			bigraph (bool): If true, double all edges.
-
-		Return:
-			dgl graph object
-		"""
-		mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
-
-		bond_inds = th.from_numpy(mol_graph["bond_tuples"]).long()
-		bond_feats = th.from_numpy(mol_graph["bond_feats"]).float()
-		atom_feats = th.from_numpy(mol_graph["atom_feats"]).float()
-
-		g = dgl.graph(
-			data=(bond_inds[:, 0], bond_inds[:, 1]), num_nodes=atom_feats.shape[0]
-		)
-		g.ndata["h"] = atom_feats
-		g.edata["e"] = bond_feats
-
-		if self.pe_embed_k > 0:
-			pe_embeds = nn_utils.random_walk_pe(
-				g,
-				k=self.pe_embed_k,
-			)
-			g.ndata["h"] = th.cat((g.ndata["h"], pe_embeds), -1)
-
-		return g
-
 	def get_networkx_graph(self, mol: Chem.Mol, bigraph: str = True):
 		"""get_networkx_graph.
 
@@ -205,13 +173,13 @@ class MolGraph:
 		)
 
 		if self.pe_embed_k > 0:
-			raise NotImplmementedError()
+			raise NotImplementedError()
 			# pe_embeds = nn_utils.random_walk_pe(
 			# 	g,
 			# 	k=self.pe_embed_k,
 			# )
-			# g.x = th.cat((g.x, pe_embeds), -1)
-
+			# x = th.cat((x, pe_embeds), dim=-1)
+		
 		return g		
 
 class FeatBase:
@@ -476,8 +444,6 @@ class BatchedMolDAG:
 		dag_pyg_list,
 		formula_peak_mzs,
 		formula_peak_probs,
-		dag_node_feat_idxs,
-		dag_edge_feat_idxs,
 		device=None
 	):
 
@@ -491,6 +457,8 @@ class BatchedMolDAG:
 		self.mol_pyg = pyg.data.Batch.from_data_list(mol_pyg_list).to(self.device)
 		self.dag_pyg = pyg.data.Batch.from_data_list(dag_pyg_list).to(self.device)
 		assert self.mol_pyg.num_graphs == self.dag_pyg.num_graphs == self.batch_size
+		assert all(th.all(self.dag_pyg.node_feat_idxs[0] == self.dag_pyg.node_feat_idxs[i]) for i in range(self.batch_size))
+		assert all(th.all(self.dag_pyg.edge_feat_idxs[0] == self.dag_pyg.edge_feat_idxs[i]) for i in range(self.batch_size))
 		self._compute_batched_node_offsets(mol_pyg_list,dag_pyg_list)
 		dag_formula_peak_idxs = []
 		dag_formula_peak_mzs = []
@@ -513,8 +481,6 @@ class BatchedMolDAG:
 		self.dag_formula_sizes = th.tensor(dag_formula_sizes,device=self.device)
 		self.dag_formula_cumsizes = th.cumsum(th.tensor([0]+dag_formula_sizes,device=self.device),dim=0)
 		self.dag_formula_peak_sizes = th.tensor(dag_formula_peak_sizes,device=self.device)
-		self.dag_node_feat_idxs = dag_node_feat_idxs.to(self.device)
-		self.dag_edge_feat_idxs = dag_edge_feat_idxs.to(self.device)
 
 	def _compute_batched_node_offsets(self,mol_pyg_list,dag_pyg_list):
 
@@ -538,8 +504,6 @@ class BatchedMolDAG:
 		self.dag_formula_sizes = self.dag_formula_sizes.to(self.device)
 		self.dag_formula_cumsizes = self.dag_formula_cumsizes.to(self.device)
 		self.dag_formula_peak_sizes = self.dag_formula_peak_sizes.to(self.device)
-		self.dag_node_feat_idxs = self.dag_node_feat_idxs.to(self.device)
-		self.dag_edge_feat_idxs = self.dag_edge_feat_idxs.to(self.device)
 		return self
 
 	def _set_device(self,device):
@@ -565,8 +529,8 @@ class BatchedMolDAG:
 			"dag_x": self.dag_pyg.x,
 			"dag_edge_index": self.dag_pyg.edge_index,
 			"dag_edge_attr": self.dag_pyg.edge_attr,
-			"dag_node_feat_idxs": self.dag_node_feat_idxs,
-			"dag_edge_feat_idxs": self.dag_edge_feat_idxs,
+			"dag_node_feat_idxs": self.dag_pyg.node_feat_idxs[0],
+			"dag_edge_feat_idxs": self.dag_pyg.edge_feat_idxs[0],
 			"mol_num_nodes": self.mol_num_nodes,
 			"dag_num_nodes": self.dag_num_nodes,
 			"dag_formula_peak_idxs": self.dag_formula_peak_idxs,

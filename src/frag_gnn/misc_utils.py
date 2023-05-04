@@ -148,17 +148,6 @@ def my_tqdm(*args,**kwargs):
 def get_tensor_memory_usage(tensor):
 	return tensor.nelement()*tensor.element_size()
 
-def get_dgl_memory_usage(dgl_graph):
-	total_memory = sys.getsizeof(dgl_graph)
-	total_memory += get_tensor_memory_usage(dgl_graph.edges()[0])
-	total_memory += get_tensor_memory_usage(dgl_graph.edges()[1])
-	total_memory += get_tensor_memory_usage(dgl_graph.nodes())
-	for nattr in dgl_graph.ndata:
-		total_memory += get_tensor_memory_usage(dgl_graph.ndata[nattr])
-	for eattr in dgl_graph.edata:
-		total_memory += get_tensor_memory_usage(dgl_graph.edata[eattr])
-	return total_memory
-
 def get_pyg_memory_usage(pyg_graph):
 
 	return pyg.profile.get_data_size(pyg_graph)

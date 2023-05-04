@@ -515,16 +515,6 @@ def get_murcko_scaffold(mol,output_type="smiles",include_chirality=False):
 		raise NotImplementedError
 	return scaffold
 
-
-def atom_bond_type_one_hot(atom):
-		
-	chemutils = importlib.import_module("dgllife.utils")
-	bs = atom.GetBonds()
-	if not bs:
-		return [False, False, False, False]
-	bt = np.array([chemutils.bond_type_one_hot(b) for b in bs])
-	return [any(bt[:, i]) for i in range(bt.shape[1])]
-
 def analyze_mol(mol):
 
 	import rdkit

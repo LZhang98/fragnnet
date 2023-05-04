@@ -9,7 +9,6 @@ import time
 from pprint import pprint, pformat
 import argparse
 import networkx as nx
-import dgl
 from copy import deepcopy
 import warnings
 import time
@@ -53,7 +52,7 @@ def torch_time(func,*args,**kwargs):
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--compound_idxs",type=str,default="2")
+	parser.add_argument("--compound_idx",type=int,default=0)
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
@@ -64,7 +63,6 @@ if __name__ == "__main__":
 	parser.add_argument("--num_iters",type=int,default=10)
 	parser.add_argument("--variance",type=float,default=1e-3)
 	args = parser.parse_args()
-
 
 	np.random.seed(420)
 	th.manual_seed(420)
@@ -83,18 +81,18 @@ if __name__ == "__main__":
 		10: 'CC(=O)NC1C(OC2OC(CC(O)C3OC(n4ccc(=O)[nH]c4=O)C(O)C3O)C(O)C(O)C2NC(=O)C=CCCCCCCCCCCCC(C)C)OC(CO)C(O)C1O' # big one (60 atoms)
 	}
 
-	compound_idxs = [int(idx) for idx in args.compound_idxs.split(",")]
-	compound_idx = compound_idxs[0]
+	compound_idx = args.compound_idx
 	max_depth = args.max_depth
 	h_prior = args.h_prior
 	max_h_transfer = args.max_h_transfer
 	vectorized = th.tensor(args.vectorized,dtype=th.bool)
-	batch_size = args.batch_size
+	batch_size = th.tensor(args.batch_size,dtype=th.int32)
 	variance = th.tensor(args.variance,dtype=th.float32)
 	frag_max_time = None
 	smiles = IDX_TO_SMILES[compound_idx]
 	mol_d = frag_utils.extract_mol_info(smiles)
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
+	hidden_size = 256
 
 	if args.device_id == 0 and th.cuda.is_available():
 		device = th.device("cuda:0")
@@ -110,15 +108,11 @@ if __name__ == "__main__":
 	dag_pygs = [deepcopy(dag_pyg) for i in range(batch_size)]
 	formula_peak_mzses = [dag_d["formula_peak_mzs"].detach().clone() for i in range(batch_size)]
 	formula_peak_probses = [dag_d["formula_peak_probs"].detach().clone() for i in range(batch_size)]
-	dag_node_feat_idxs = dag_d["node_feat_idxs"]
-	dag_edge_feat_idxs = dag_d["edge_feat_idxs"]
 	batched_dag = BatchedMolDAG(
 		mol_pygs,
 		dag_pygs,
 		formula_peak_mzses,
 		formula_peak_probses,
-		dag_node_feat_idxs,
-		dag_edge_feat_idxs,
 		device=th.device("cpu")
 	)
 	batched_dag = batched_dag.to(device)
@@ -126,21 +120,7 @@ if __name__ == "__main__":
 	# print(batched_dag.get_batched_mask("formula_peak_mzs"))
 	batched_dag_d = batched_dag.__dict__()
 
-	# # prepare models
-	hidden_size = 256
-	# mol_model = GNN(
-	# 	hidden_size,
-	# 	gnn_node_feats=mol_pyg.x.shape[1],
-	# 	gnn_edge_feats=mol_pyg.edge_attr.shape[1],
-	# )
-	# mol_model.to(device)
-
-	# # make predictions
-	# mol_pred = mol_model(mol_pyg)
-	# # simple test of differentiability
-	# loss = th.sum(mol_pred)
-	# loss.backward()
-
+	# prepare model
 	mol_kwargs = {
 		"hidden_size": hidden_size,
 		"gnn_node_feats": mol_pyg.x.shape[1],
@@ -229,10 +209,6 @@ if __name__ == "__main__":
 	optim = th.optim.SGD(joint_model.parameters(), lr=0.)
 	optim.zero_grad()
 
-	batch_size = th.tensor(batch_size,device=device)
-	variance = th.tensor(variance,device=device)
-	vectorized = th.tensor(vectorized,device=device)
-
 	for i in range(args.num_iters):
 		print(f">> iter {i}")
 		# pred_mzs, pred_logprobs, pred_batch_idxs = joint_model(batched_dag)
@@ -269,7 +245,7 @@ if __name__ == "__main__":
 	
 	# get memory usage
 	if args.device_id != -1 and th.cuda.is_available():
-		cuda_max_memory = th.cuda.max_memory_allocated(device=th.device("cuda:0"))/1e9
+		cuda_max_memory = th.cuda.max_memory_allocated(device=device)/1e9
 		print(f"> GPU memory: {cuda_max_memory:.2f} GB")
 
 	if args.jit:

@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import torch as th
 from tqdm import tqdm
 import signal
 from contextlib import contextmanager
@@ -16,7 +17,6 @@ import traceback
 import sys
 import pickle
 import gzip
-import dgl
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES, TimeoutError
@@ -130,16 +130,20 @@ def save_dags(df,dag_dp,parallel=True):
 		# dag and associated data
 		mol_id = row["mol_id"]
 		dag = row["dag"]
-		th_d = dict(
+		dag_d = dict(
+			mol_id=mol_id,
+			dag=dag
+		)
+		dag_path = os.path.join(dag_dp,f"{mol_id}_dag.pt")
+		th.save(dag_d,dag_path)
+		meta_d = dict(
 			mol_id=mol_id,
 			formula_peak_probs=row["formula_peak_probs"],
 			formula_peak_mzs=row["formula_peak_mzs"],
 			idx_to_formula=row["idx_to_formula"]
 		)
-		dag_path = os.path.join(dag_dp,f"{mol_id}_dag.bin")
-		dgl.save_graphs(dag_path,[dag])
-		th_path = os.path.join(dag_dp,f"{mol_id}_dag_meta.pt")
-		th.save(th_d,th_path)
+		meta_path = os.path.join(dag_dp,f"{mol_id}_dag_meta.pt")
+		th.save(meta_d,meta_path)
 	if parallel:
 		par_apply_df_rows(df,save_dag)
 	else:
@@ -239,7 +243,7 @@ def main(args):
 	frag_stats_df = frag_stats_df.dropna(axis=0)
 
 	# save dags and associated peak stuff
-	save_dags(frag_stats_df,dag_dp,parallel=False)
+	save_dags(frag_stats_df,dag_dp,parallel=True) #,parallel=False)
 
 	### global properties
 
@@ -264,21 +268,21 @@ def main(args):
 	### molecule properties
 
 	# compute dag num edges and nodes
-	frag_stats_df.loc[:,"dag_num_edges"] = frag_stats_df["dag"].apply(lambda x: x.number_of_edges())
-	frag_stats_df.loc[:,"dag_num_nodes"] = frag_stats_df["dag"].apply(lambda x: x.number_of_nodes())
-	frag_stats_df.loc[:,"dag_sparsity"] = frag_stats_df["dag_num_edges"]/(frag_stats_df["dag_num_nodes"]*(frag_stats_df["dag_num_nodes"]-1))
+	frag_stats_df.loc[:,"dag_num_edges"] = frag_stats_df["dag"].apply(lambda x: x.num_edges)
+	frag_stats_df.loc[:,"dag_num_nodes"] = frag_stats_df["dag"].apply(lambda x: x.num_nodes)
+	frag_stats_df.loc[:,"dag_sparsity"] = 2*frag_stats_df["dag_num_edges"]/(frag_stats_df["dag_num_nodes"]*(frag_stats_df["dag_num_nodes"]-1))
 	print_and_log("dag_num_edges",frag_stats_df["dag_num_edges"],wandb_flag,frag_stats_d)
 	print_and_log("dag_num_nodes",frag_stats_df["dag_num_nodes"],wandb_flag,frag_stats_d)
 	print_and_log("dag_sparsity",frag_stats_df["dag_sparsity"],wandb_flag,frag_stats_d)
 
 	# compute formula redundancy
 	def get_formula_redundancy(dag):
-		num_formulae = th.sum((dag.ndata["h_formulae_idx"]>0).type(th.int32),dim=1)
+		num_formulae = th.sum((frag_utils.get_node_feats(dag.x,dag.node_feat_idxs[0],"h_formulae_idx")>0).type(th.int32),dim=1)
 		return th.mean(num_formulae.type(th.float32)).item()
 	frag_stats_df.loc[:,"formula_redundancy"] = frag_stats_df["dag"].apply(get_formula_redundancy)
 	print_and_log("formula_redundancy",frag_stats_df["formula_redundancy"],wandb_flag,frag_stats_d)
 
-	# drop dags
+	# drop dags()
 	frag_stats_df = frag_stats_df.drop(columns=["dag"])
 
 	# count number of formula per molecule
