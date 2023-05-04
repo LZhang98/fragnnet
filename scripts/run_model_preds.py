@@ -2,7 +2,9 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 import torch.utils.benchmark as benchmark
+import torch._dynamo as th_dynamo
 import torch_scatter as th_s
+import torch_geometric as pyg
 import time
 from pprint import pprint, pformat
 import argparse
@@ -13,10 +15,10 @@ import warnings
 import time
 
 import frag_gnn.frag.frag_utils as frag_utils
-from frag_gnn.misc_utils import timeit, booltype
+from frag_gnn.misc_utils import timeit, booltype, th_temp_seed
 from frag_gnn.feat_utils import MolGraph, BatchedMolDAG
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
-from frag_gnn.nn.loss import sparse_cross_entropy
+from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
 
 
 def featurize_dag(dag):
@@ -51,7 +53,7 @@ def torch_time(func,*args,**kwargs):
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--compound_idx",type=int,default=2)
+	parser.add_argument("--compound_idxs",type=str,default="2")
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
@@ -60,6 +62,7 @@ if __name__ == "__main__":
 	parser.add_argument("--batch_size",type=int,default=2)
 	parser.add_argument("--jit",type=booltype,default=False)
 	parser.add_argument("--num_iters",type=int,default=10)
+	parser.add_argument("--variance",type=float,default=1e-3)
 	args = parser.parse_args()
 
 
@@ -80,12 +83,16 @@ if __name__ == "__main__":
 		10: 'CC(=O)NC1C(OC2OC(CC(O)C3OC(n4ccc(=O)[nH]c4=O)C(O)C3O)C(O)C(O)C2NC(=O)C=CCCCCCCCCCCCC(C)C)OC(CO)C(O)C1O' # big one (60 atoms)
 	}
 
+	compound_idxs = [int(idx) for idx in args.compound_idxs.split(",")]
+	compound_idx = compound_idxs[0]
 	max_depth = args.max_depth
 	h_prior = args.h_prior
 	max_h_transfer = args.max_h_transfer
-	vectorized = args.vectorized
+	vectorized = th.tensor(args.vectorized,dtype=th.bool)
+	batch_size = args.batch_size
+	variance = th.tensor(args.variance,dtype=th.float32)
 	frag_max_time = None
-	smiles = IDX_TO_SMILES[args.compound_idx]
+	smiles = IDX_TO_SMILES[compound_idx]
 	mol_d = frag_utils.extract_mol_info(smiles)
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
 
@@ -95,7 +102,6 @@ if __name__ == "__main__":
 		device = th.device("cpu")
 
 	# prepare data
-	batch_size = args.batch_size
 	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
 	dag_pyg = featurize_dag(dag_d["dag"])
 	mol_pyg = featurize_mol(mol_d["mol"])
@@ -167,23 +173,65 @@ if __name__ == "__main__":
 		int_embedder
 	)
 	joint_model.to(device)
+	
+	sparse_cross_entropy_fn = get_sparse_cross_entropy_fn(vectorized)
+	
 	if args.jit:
+		th_dynamo.config.verbose = True
+		dynamo_prof = th_dynamo.utils.CompileProfiler()
 		# import pdb; pdb.set_trace()
-		_joint_model = th.jit.trace_module(
-			joint_model,
-			{"forward": deepcopy(batched_dag_d)},
-			example_inputs_is_kwarg=True
-		)
-		joint_model_forward = _joint_model.forward
-		# joint_model_forward = th.jit.trace(
-		# 	joint_model.forward,
-		# 	example_kwarg_inputs=deepcopy(batched_dag_d)
+		# _joint_model = th.jit.trace_module(
+		# 	joint_model,
+		# 	{"forward": deepcopy(batched_dag_d)},
+		# 	example_inputs_is_kwarg=True
 		# )
+		# joint_model_forward = _joint_model.forward
+		# joint_model_forward = th.compile(
+		# 	joint_model.forward
+		# )
+		# joint_model.compile_submodules(dynamic=True,backend=dynamo_prof)
+		joint_model_forward = joint_model.forward
+		# _joint_model = pyg.compile(joint_model,backend=dynamo_prof)
+		# joint_model_forward = _joint_model.forward
+		# loss_fn = th.jit.trace(
+		# 	sparse_cross_entropy,
+		# 	example_kwarg_inputs=dict(
+		# 		true_mzs=th.zeros((10,),device=device),
+		# 		true_logprobs=th.zeros((10,),device=device),
+		# 		true_batch_idxs=th.zeros((10,),device=device),
+		# 		pred_mzs=th.zeros((10,),device=device),
+		# 		pred_logprobs=th.zeros((10,),device=device),
+		# 		pred_batch_idxs=th.zeros((10,),device=device),
+		# 		batch_size=th.tensor(1,device=device),
+		# 		variance=th.tensor(1e-3,device=device),
+		# 		vectorized=th.tensor(vectorized,device=device)
+		# 	)
+		# )
+		loss_fn = th.compile(sparse_cross_entropy_fn,dynamic=True,backend=dynamo_prof)
+		# loss_fn = th.jit.trace(
+		# 	sparse_cross_entropy_fn,
+		# 	example_inputs=(
+		# 		th.zeros((10,),dtype=th.float32,device=device),
+		# 		th.zeros((10,),dtype=th.float32,device=device),
+		# 		th.zeros((10,),dtype=th.int64,device=device),
+		# 		th.zeros((10,),dtype=th.float32,device=device),
+		# 		th.zeros((10,),dtype=th.float32,device=device),
+		# 		th.zeros((10,),dtype=th.int64,device=device),
+		# 		th.tensor(1,dtype=th.int64,device=device),
+		# 		variance
+		# 	)
+		# )
+		loss_fn = sparse_cross_entropy_fn
 	else:
 		joint_model_forward = joint_model.forward
+		loss_fn = sparse_cross_entropy_fn
 
 	optim = th.optim.SGD(joint_model.parameters(), lr=0.)
 	optim.zero_grad()
+
+	batch_size = th.tensor(batch_size,device=device)
+	variance = th.tensor(variance,device=device)
+	vectorized = th.tensor(vectorized,device=device)
 
 	for i in range(args.num_iters):
 		print(f">> iter {i}")
@@ -200,9 +248,10 @@ if __name__ == "__main__":
 		true_mzs = pred_mzs[true_mask] + 0.0002*th.rand_like(pred_mzs[true_mask]) - 0.0001
 		# random intensities
 		true_logprobs = scatter_normalize(th.log(th.rand_like(pred_logprobs[true_mask])),true_batch_idxs,dim=0)
+		print(f"> pred logprobs = {pred_logprobs.mean().item()}, true logprobs = {true_logprobs.mean().item()}")
 		# calculate loss
 		loss = torch_time(
-			sparse_cross_entropy,
+			loss_fn,
 			true_mzs,
 			true_logprobs,
 			true_batch_idxs,
@@ -210,11 +259,10 @@ if __name__ == "__main__":
 			pred_logprobs,
 			pred_batch_idxs,
 			batch_size,
-			variance=1e-3,
-			vectorized=vectorized
+			variance
 		)
 		# test of differentiability
-		# print(f"> loss = {loss:.4f}")
+		print(f"> loss = {loss:.4f}")
 		loss.backward()
 		# zero out gradients
 		optim.zero_grad()
@@ -223,3 +271,6 @@ if __name__ == "__main__":
 	if args.device_id != -1 and th.cuda.is_available():
 		cuda_max_memory = th.cuda.max_memory_allocated(device=th.device("cuda:0"))/1e9
 		print(f"> GPU memory: {cuda_max_memory:.2f} GB")
+
+	if args.jit:
+		print(dynamo_prof.report())

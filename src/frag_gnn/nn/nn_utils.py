@@ -86,6 +86,13 @@ class JointPredictor(nn.Module):
         }
         self.output_module = MLPBlocks(**mlp_kwargs)
 
+    def compile_submodules(self,**kwargs):
+        """ this doesn't work right now """
+        self.mol_embedder = pyg.compile(self.mol_embedder,**kwargs)
+        self.formula_embedder = th.compile(self.formula_embedder,**kwargs)
+        self.depth_embedder = th.compile(self.depth_embedder,**kwargs)
+        self.dag_embedder = pyg.compile(self.dag_embedder,**kwargs)
+
     def forward(
         self, 
         batch_size=None,
@@ -146,10 +153,14 @@ class JointPredictor(nn.Module):
         # print(dag_edge_mask_embed.shape)
         dag_edata.append(dag_edge_mask_embed)
         # embed node formulae
-        dag_node_formula = self.formula_embedder(get_node_feats(dag_x,dag_node_feat_idxs,"base_formula")).reshape(batch_dag_num_nodes,-1)
+        dag_node_formula = self.formula_embedder(
+            get_node_feats(dag_x,dag_node_feat_idxs,"base_formula")
+        ).reshape(batch_dag_num_nodes,-1)
         dag_ndata.append(dag_node_formula)
         # do the same for edges
-        dag_edge_formula = self.formula_embedder(get_edge_feats(dag_edge_attr,dag_edge_feat_idxs,"base_formula")).reshape(batch_dag_num_edges,-1)
+        dag_edge_formula = self.formula_embedder(
+            get_edge_feats(dag_edge_attr,dag_edge_feat_idxs,"base_formula")
+        ).reshape(batch_dag_num_edges,-1)
         dag_edata.append(dag_edge_formula)
         # embed node depth
         dag_depth = self.depth_embedder(get_node_feats(dag_x,dag_node_feat_idxs,"depth")).reshape(batch_dag_num_nodes,-1)
@@ -292,7 +303,7 @@ class GINE(nn.Module):
             temp_layer = pyg.nn.conv.GINEConv(
                 nn=apply_fn,
                 eps=0.
-            ).jittable()
+            )
             self.layers.append(temp_layer)
 
         self.layers = nn.ModuleList(self.layers)

@@ -2,8 +2,8 @@
 
 set -e
 
-conda create -n FRAG-GNN
-conda activate FRAG-GNN
+conda create -n FRAG-GNN-2
+conda activate FRAG-GNN-2
 conda install python=3.10
 
 pip install torch==2.0.0+cu117 --index-url https://download.pytorch.org/whl/cu117

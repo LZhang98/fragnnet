@@ -58,6 +58,58 @@ def sparse_cross_entropy(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_lo
 		ce = ce / batch_size
 	return ce
 
+def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,variance):
+
+	def vec_ce(true_batch_idx,true_logprob,true_mz,mask_value=-1e9):
+		b_pred_mask = (pred_batch_idxs==true_batch_idx).float()
+		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1.-b_pred_mask)
+		b_pred_mzs = pred_mzs
+		b_variances = variance*th.ones_like(b_pred_mzs)
+		b_true_logprob = true_logprob
+		b_true_mz = true_mz
+		# note: this is a sum over one dimension (just to convert to scalar)
+		b_ce = th.sum(-th.exp(b_true_logprob)*mog_log_prob(b_true_mz,b_pred_mzs,b_variances,b_pred_logprobs))
+		return b_ce
+	
+	ce = th.vmap(vec_ce)(true_batch_idxs,true_logprobs,true_mzs)
+	ce = th_s.scatter_sum(
+		ce,
+		true_batch_idxs,
+		dim=0,
+	)
+	ce = th.mean(ce)
+	return ce
+
+def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,variance):
+	""" 
+	this is just for torch.compile
+	"""
+
+	ce = 0.
+	mask_value = -1e9
+	for batch_idx in range(batch_size):
+		b_pred_mask = (pred_batch_idxs==batch_idx).float()
+		b_true_mask = (true_batch_idxs==batch_idx)
+		b_pred_logprobs = pred_logprobs*b_pred_mask + (1-b_pred_mask)*mask_value
+		b_pred_mzs = pred_mzs
+		b_variances = variance*th.ones_like(b_pred_mzs)
+		b_true_logprobs = true_logprobs[b_true_mask]
+		b_true_mzs = true_mzs[b_true_mask]
+		b_ce = th.sum(-th.exp(b_true_logprobs)*mog_log_prob(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
+		# b_mog_log_prob = -0.5*(b_true_mzs.reshape(-1,1)-b_pred_mzs.reshape(1,-1))**2/b_variances.reshape(1,-1) \
+		# 	- 0.5*th.log(2*th.pi*b_variances.reshape(1,-1))
+		# b_mog_log_prob = th.logsumexp(b_mog_log_prob + b_pred_logprobs.reshape(1,-1),dim=1)
+		# b_ce = th.sum(-th.exp(b_true_logprobs)*b_mog_log_prob)
+		ce = ce + b_ce
+	ce = ce / batch_size
+	return ce
+
+def get_sparse_cross_entropy_fn(vectorized):
+
+	if vectorized:
+		return sparse_cross_entropy_vec
+	else:
+		return sparse_cross_entropy_seq
 
 if __name__ == "__main__":
 
