@@ -11,8 +11,8 @@ import glob
 import importlib
 import re
 
-from frag_gnn.data_utils import rdkit_import, seq_apply, par_apply, seq_apply_series, par_apply_series, par_apply_df_rows
-from frag_gnn.misc_utils import booltype
+from frag_gnn.utils.data_utils import rdkit_import, seq_apply, par_apply, seq_apply_series, par_apply_series, par_apply_df_rows
+from frag_gnn.utils.misc_utils import booltype
 
 KEY_DICT = {
 	"Precursor_type": "prec_type",

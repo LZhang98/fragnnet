@@ -3,7 +3,6 @@ import torch as th
 import torch.nn.functional as F
 import torch.utils.benchmark as benchmark
 import torch._dynamo as th_dynamo
-import torch_scatter as th_s
 import torch_geometric as pyg
 import time
 from pprint import pprint, pformat
@@ -16,6 +15,7 @@ import time
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.misc_utils import timeit, booltype, th_temp_seed
 from frag_gnn.feat_utils import MolGraph, BatchedMolDAG
+from frag_gnn.utils.misc_utils import timeit, booltype
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
 

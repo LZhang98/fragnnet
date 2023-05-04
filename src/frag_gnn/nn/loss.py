@@ -1,6 +1,5 @@
 import torch as th
 import torch.nn.functional as F
-import torch_scatter as th_s
 
 
 def mog_log_prob(samples,means,variances,log_weights):
@@ -45,10 +44,12 @@ def sparse_cross_entropy(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_lo
 
 	if vectorized:
 		ce = th.vmap(par_ce)(true_batch_idxs,true_logprobs,true_mzs)
-		ce = th_s.scatter_sum(
-			ce,
-			true_batch_idxs,
+		ce = th.scatter_reduce(
+			input=th.zeros([batch_size],device=true_mzs.device),
 			dim=0,
+			index=true_batch_idxs,
+			src=ce,
+			reduce="sum"
 		)
 		ce = th.mean(ce)
 	else:
@@ -72,10 +73,12 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		return b_ce
 	
 	ce = th.vmap(vec_ce)(true_batch_idxs,true_logprobs,true_mzs)
-	ce = th_s.scatter_sum(
-		ce,
-		true_batch_idxs,
+	ce = th.scatter_reduce(
+		input=th.zeros([batch_size],device=true_mzs.device),
 		dim=0,
+		index=true_batch_idxs,
+		src=ce,
+		reduce="sum"
 	)
 	ce = th.mean(ce)
 	return ce

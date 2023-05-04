@@ -5,7 +5,6 @@ import scipy.sparse as sparse
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_scatter as th_s
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats

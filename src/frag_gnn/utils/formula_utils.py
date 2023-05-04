@@ -2,9 +2,11 @@ import rdkit.Chem as Chem
 import itertools
 import numpy as np
 import scipy
+import re
 
-from frag_gnn.data_utils import parse_formula
-from typing import List, Tuple, Dict
+#from frag_gnn.utils.data_utils import parse_formula
+from typing import List, Tuple, Dict, Literal
+from .misc_utils import none_or_nan
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
 
@@ -105,6 +107,10 @@ ISOTOPES_DICT = {1: [1, 2],
                  90: [232]
                  }
 
+# global cache for peak per element
+# so we don't compute this a million time
+peaks_for_element_cache = {}
+
 def enumerate_multinomial(N: int, p: List[float], cutoff_thold: float = 0.0001):
     """
     Enumerate the state space of rolling a die with |p| faces
@@ -179,6 +185,11 @@ def get_peaks_for_element(element: str, num_atoms: int) -> List:
     Returns:
         _type_: _description_
     """
+
+    key_str = element + str(num_atoms)
+    if key_str in peaks_for_element_cache:
+        return peaks_for_element_cache[key_str]
+    
     atomicno = Chem.GetPeriodicTable().GetAtomicNumber(element)
 
     isotopes = get_isotopes(atomicno)
@@ -191,6 +202,7 @@ def get_peaks_for_element(element: str, num_atoms: int) -> List:
 
     peaks_masses_probs = [(comb_probs[i][0], m)
                           for i, m in enumerate(exact_masses)]
+    peaks_for_element_cache[key_str] = peaks_masses_probs
     return peaks_masses_probs
 
 
@@ -222,7 +234,7 @@ def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.0
     return keep_masses, keep_probs
 
 
-def formula_to_peak_mzs(formula, prec_type, isotopes=True, return_map=False, return_probs=False):
+def formula_to_peak_mzs(formula, prec_type:Literal["[M+H]+","[M-H]-",""], isotopes=True, return_map=False, return_probs=False):
     """_summary_
 
     Args:
@@ -270,6 +282,45 @@ def get_formulae_hill_notation(element_counts: Dict[str,int]) -> str:
         if element_counts[element] > 1:
             formulae_string += str(element_counts[element])
     return formulae_string
+
+def parse_formula(formula:str) -> Dict[str,int]:
+	"""
+		Return a Dict of count of each elemnt in the forumla
+		NOTE: THIS DOES NOT HANDLE Condensed formulas eg. CH3CH2OH
+	Args:
+		formula (str): chemical forumla eg.CH4 or chemical forumla with adducts eg. CH4+H
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		Dict[str,int]: count per element eg {"C":1, "H":4}
+	"""
+
+	assert not none_or_nan(formula)
+	cur_element = None
+	cur_count = 1
+	element_counts = {}
+	if "-" in formula:
+		formula = formula[:formula.index("-")]
+	if "+" in formula:
+		formula = formula[:formula.index("+")]
+	for token in re.findall('[A-Z][a-z]?|\d+|.', formula):
+		if token.isalpha():
+			if cur_element is not None:
+				assert cur_element not in element_counts
+				element_counts[cur_element] = cur_count
+			cur_element = token
+			cur_count = 1
+		elif token.isdigit():
+			cur_count = int(token)
+		else:
+			print(formula)
+			raise ValueError(f"Invalid token {token}")
+	if cur_element is not None:
+		assert cur_element not in element_counts
+		element_counts[cur_element] = cur_count
+	return element_counts
 
 if __name__ == "__main__":
 
