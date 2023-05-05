@@ -50,14 +50,11 @@ cdef long get_time():
 #    assert node_mask_int >= 0, node_mask_int
 #    return node_mask_int
 
-cdef mask_to_big_int(int num, char [::1] mask):
+def mask_to_big_int(int num, char [::1] mask):
     #Not fastest but it will do for now
-    mask_str = ''
     node_mask_int = 0
-    cdef int i
     for i in range(num):
         node_mask_int += mask[i]*(2**i)
-    #mask_str = str(node_mask_int)
     return node_mask_int
 
 cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
@@ -78,12 +75,6 @@ cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,:
                 break
     return node_to_edge_idx
 
-#cdef char [::1] compute_full_cc(int num_nodes):
-#    cdef char [::1] cc_nodes = np.zeros(MAX_NUM_NODES,dtype=MASK_DTYPE)
-#    for i in range(num_nodes):
-#        cc_nodes[i] = 1
-#    return cc_nodes
-
 def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
     return np.asarray(compute_node_to_edge_idx(num_nodes,num_edges,edges),dtype=DTYPE)
 
@@ -95,6 +86,7 @@ cdef connected_components(
         char [::1] edge_mask,
         int [:,::1] node_to_edge_idx
     ):
+    # print('>connected_components')
     # return the number of connected components
     cdef int num_visited = 0
     cdef int num_nonmask = np_sum(node_mask)
@@ -122,12 +114,14 @@ cdef connected_components(
             cur_node = node_queue[start_queue]
             start_queue = (start_queue + 1) % MAX_NUM_NODES
             # mark as visited
-            assert node_enqueued[cur_node] == 1, cur_node
-            assert node_visited[cur_node] == 0, cur_node
+            #assert node_enqueued[cur_node] == 1, cur_node
+            #assert node_visited[cur_node] == 0, cur_node
+            #assert node_mask[cur_node] == 1, cur_node
             node_visited[cur_node] = 1
             num_visited += 1
             # add node to cc
-            assert num_ccs > 0 and num_ccs <= 2, num_ccs
+            #assert num_ccs > 0 and num_ccs <= 2, num_ccs
+            #assert cur_node < MAX_NUM_NODES, cur_node
             cc_nodes[num_ccs-1,cur_node] = 1
             # add neighbours
             for j in range(MAX_EDGE_PER_NODE):
@@ -144,13 +138,17 @@ cdef connected_components(
                 else:
                     assert edges[cur_edge,1] == cur_node
                     neighbour = edges[cur_edge,0]
+
+                # if we have not see node before
                 if node_enqueued[neighbour] == 0:
                     assert node_visited[neighbour] == 0
                     node_queue[end_queue] = neighbour
                     end_queue = (end_queue + 1) % MAX_NUM_NODES
                     node_enqueued[neighbour] = 1
+
                 # add edge to cc
                 cc_edges[num_ccs-1,cur_edge] = 1
+
         else:
             # check for new nodes to seed BFS
             for i in range(num_nodes):
@@ -158,13 +156,33 @@ cdef connected_components(
                     # enqueue
                     node_queue[end_queue] = i
                     end_queue = (end_queue + 1) % MAX_NUM_NODES
+                    #print(f"new end node {end_queue}")
                     assert node_enqueued[i] == 0
                     node_enqueued[i] = 1
                     num_ccs += 1
                     break
-    assert num_visited == num_nonmask, (num_visited,num_nonmask)
-    assert start_queue == end_queue, (start_queue,end_queue)
-    assert num_ccs > 0 and num_ccs <= 2
+    
+    if num_visited != num_nonmask:
+        raise ValueError(f'num_visited ({num_visited}) != num_nonmask ({num_nonmask})')
+    
+    if start_queue != end_queue:
+        raise ValueError(f'start_queue ({start_queue}) != end_queue ({end_queue}), num_ccs {num_ccs}')
+
+    if num_ccs < 0 or num_ccs > 2:
+        raise ValueError(f'{num_ccs} num_ccs <0 or num_ccs > 2')
+    
+    #used_edge_count = np_sum(cc_edges[0,:]) + np_sum(cc_edges[1,:]) 
+    #total_edge_count =  np_sum(edge_mask)
+    #if used_edge_count != total_edge_count:
+    #    raise ValueError(f'used_edge_count {used_edge_count} != total_edge_count {total_edge_count}')
+    
+    #used_node_count = np_sum(cc_nodes[0,:]) + np_sum(cc_nodes[1,:]) 
+    #total_node_count =  np_sum(node_mask)
+    #if used_node_count != total_node_count:
+    #    raise ValueError(f'used_node_count {used_node_count} != total_node_count {total_node_count}')
+    #assert num_visited == num_nonmask, (num_visited,num_nonmask)
+    #assert start_queue == end_queue, (start_queue,end_queue)
+    #assert num_ccs > 0 and num_ccs <= 2
     # assert num_visited == np_sum(node_visited[:num_nodes]), (num_visited,np_sum(node_visited[:num_nodes]))
     # assert np_sum(cc_nodes[0,:num_nodes])+np_sum(cc_nodes[1,:num_nodes]) == num_nonmask
     return cc_nodes, cc_edges, num_ccs
@@ -202,13 +220,13 @@ def compute_ccs(
     cdef int i = 0
     cdef int current_depth = 0
 
-
     # start with return_parents
     node_mask_key = mask_to_big_int(num_nodes,node_mask)
     edge_mask_key = mask_to_big_int(num_edges,edge_mask)
 
     cdef list ccs = [node_mask_key]
-    cdef list current_edge_masks_list = [edge_mask_key]
+    cdef list cc_edges = [edge_mask_key]
+    #cdef list current_edge_masks_list = [edge_mask_key]
     cdef list ccs_parents = [-1]
     cdef list ccs_depths = [0]
     cdef dict cc_node_mask_dict = {node_mask_key:node_mask}
@@ -222,8 +240,9 @@ def compute_ccs(
         #child_node_mask_list = []
         child_edge_mask_list = []
         
-        #print(">ccs:", len(ccs))
+        #print(f">depth:{current_depth}")
         ccs_end = len(ccs)
+
         for node_idx in range(ccs_idx,ccs_end):
 
             # let us check time
@@ -233,11 +252,12 @@ def compute_ccs(
                 raise TimeoutError
     
             current_node_mask = cc_node_mask_dict[ccs[node_idx]]
-            current_edge_mask = cc_edge_mask_dict[current_edge_masks_list[node_idx - ccs_idx]]
+            #print(node_idx, node_idx - ccs_idx)
+            current_edge_mask = cc_edge_mask_dict[cc_edges[node_idx]]
 
             # let us check mask
-            node_full_mask_str = str(ccs[node_idx]) + '|' +  str(current_edge_masks_list[node_idx - ccs_idx])
-
+            node_full_mask_str = str(ccs[node_idx]) + '|' +  str(cc_edges[node_idx])
+            #print(node_full_mask_str)
             # check if we have seen has configure before
             need_skip = False
             if node_full_mask_str not in has_seen:
@@ -252,10 +272,8 @@ def compute_ccs(
             if need_skip or num_edges_nomask == 0:
                 continue
 
-
-
             # now we need to break more bond
-            i = 0
+            #i = 0
             for i in range(num_edges):
                 # check if edge is already masked
                 # sorry Mr Bond, you already dead
@@ -276,7 +294,7 @@ def compute_ccs(
                 # restore edge
                 current_edge_mask[i] = 1
                 # save data and save edge and node configure
-                c = 0
+                #c = 0
                 for c in range(new_num_ccs):
              
                     if return_parents:
@@ -285,10 +303,8 @@ def compute_ccs(
                         ccs_depths.append(current_depth + 1)
 
                     # save cc_nodes
-                    # child_node_mask_list.append(np_mask_copy(new_cc_nodes[c,:]))
                     child_node_mask_key = mask_to_big_int(num_nodes,new_cc_nodes[c,:])
                     child_edge_mask_key = mask_to_big_int(num_edges,new_cc_edges[c,:])
-
                     if child_node_mask_key not in cc_node_mask_dict:
                         cc_node_mask_dict[child_node_mask_key] = new_cc_nodes[c,:]
                     
@@ -296,13 +312,13 @@ def compute_ccs(
                         cc_edge_mask_dict[child_edge_mask_key] = new_cc_edges[c,:]
 
                     ccs.append(child_node_mask_key)
-                    child_edge_mask_list.append(child_edge_mask_key)
+                    cc_edges.append(child_edge_mask_key)
                 
                 num_ccs += new_num_ccs
         # finishing current depth, move to next
         ccs_idx = ccs_end
-        current_edge_masks_list = child_edge_mask_list
-        child_edge_mask_list = []
+        #current_edge_masks_list = child_edge_mask_list
+        #child_edge_mask_list = []
     
     # we not passing node mask dict back to avoid deal with memory view
     return ccs, ccs_parents, ccs_depths
