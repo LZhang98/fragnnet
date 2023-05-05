@@ -1,5 +1,3 @@
-# cython: profile=True
-
 import numpy as np
 import time
 from pprint import pprint
