@@ -1,4 +1,5 @@
 from copy import deepcopy
+import sys
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -8,6 +9,7 @@ import rdkit.Chem.rdmolops as rdmolops
 import torch as th
 import torch_geometric as pyg
 
+from frag_gnn.utils.misc_utils import get_pyg_memory_usage, get_nx_memory_usage
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from frag_gnn.frag.compute_frags import (
@@ -46,6 +48,8 @@ IDX_TO_ELEMENT = { idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 MAX_H_TRANSFER = 4
 MAX_NUM_MZS_PER_FORMULA = 5
 
+MASK_DTYPE = np.ubyte
+
 def convert_cc_mask_to_int(cc:list|np.ndarray)->int:
 	"""covert a cc mask to an int
 
@@ -78,8 +82,27 @@ def convert_cc_int_to_mask(num_nodes:int,cc_int:int,bitmask=True) -> list[int]:
 		else:
 			if rem == 1:
 				cc.append(i)
-	cc = tuple(cc)
+	#cc = tuple(cc)
 	return cc
+
+
+def convert_cc_int_to_np_mask(num_nodes:int,cc_int:int,bitmask=True) -> np.ndarray:
+	"""_summary_
+
+	Args:
+		num_nodes (int): number of nodes
+		cc_int (int): int version of cc mask
+		bitmask (bool, optional): _description_. Defaults to True.
+
+	Returns:
+		list|np.ndarray: a list of 0 and 1s
+	"""
+
+	cc = convert_cc_int_to_mask(num_nodes, cc, bitmask)
+	np_mask = np.array(cc, dtype=MASK_DTYPE)
+	#cc = tuple(cc)
+	return cc
+
 
 def get_fraggen_input_arrays(mol_d:dict):
 	"""_summary_
@@ -651,8 +674,8 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	if frag_max_time is None:
 		frag_max_time = int(1e6)
 	
-	node_mask = node_mask.astype(np.byte)
-	edge_mask = edge_mask.astype(np.byte)
+	node_mask = node_mask.astype(MASK_DTYPE)
+	edge_mask = edge_mask.astype(MASK_DTYPE)
 	#def _compute_frags():
 	ccs, ccs_parents, ccs_depths = compute_frags.compute_ccs(
 		num_nodes,
@@ -693,6 +716,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	# add node mask information
 	# convert to a one hot encoding
 	ccs_to_mask = {cc : convert_cc_int_to_mask(num_nodes,cc,bitmask=True) for cc in ccs_un}
+	#print(ccs)
 	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
 	nx.set_node_attributes(nx_cc_g,ccs_to_mask,"mask")
 
@@ -767,6 +791,8 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	nx.set_edge_attributes(nx_cc_g,edges_to_mask,"mask")
 	nx.set_edge_attributes(nx_cc_g,edges_to_formula,"base_formula")
 
+	print(f'nx_cc_g memory usa {get_nx_memory_usage(nx_cc_g)/1e6} MB')
+
 	# convert to pyg
 	node_feat_names, node_feat_shapes = get_node_feat_names_shapes(nx_cc_g)
 	edge_feat_names, edge_feat_shapes = get_edge_feat_names_shapes(nx_cc_g)
@@ -775,10 +801,19 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		group_node_attrs=node_feat_names, 
 		group_edge_attrs=edge_feat_names,
 	)
+
+	#print(f'{get_pyg_memory_usage(pyg_cc_g)/1e6} MB')
 	# TODO: can we reduce storage?
 	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
+	#print(f'{get_pyg_memory_usage(pyg_cc_g)/1e6} MB')
 	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
-
+	#print(f'{get_pyg_memory_usage(pyg_cc_g)/1e6} MB')
+	
+	#print(pyg_cc_g.num_node_features)
+	#print(pyg_cc_g.num_features)
+	#print(pyg_cc_g.num_edge_features)
+	#print(pyg_cc_g.num_node_types)
+	#print(pyg_cc_g.x)
 	dag_d = {}
 	dag_d["max_depth"] = max_depth
 	dag_d["h_prior"] = h_prior

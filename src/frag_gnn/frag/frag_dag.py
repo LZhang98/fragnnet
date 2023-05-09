@@ -1,7 +1,5 @@
-import dgl
 import torch as th
 import numpy as np
-from dgl.data.utils import load_graphs
 
 class FragDAG(object):
     """_summary_
@@ -11,64 +9,49 @@ class FragDAG(object):
     def __init__(self) -> None:
         """_summary_
         """
-        self._nx_graph = None
+        self._adj_list = {}
         self._meta = None
-        
-    def read_from_save(self, dgl_file:str, th_file:str, verbose = False):
+        self._ndoes = {}
+        self._edges = {}
+
+    def add_node(self, node_id:int=None, node_features:dict = None):
         """_summary_
 
         Args:
-            dgl_file (str): _description_
-            th_file (str): _description_
+            node_id (int): _description_
+            node_features (dict, optional): _description_. Defaults to None.
         """
+        if node_id == None:
+            node_id = len(self._ndoes)
+        assert node_id not in self._ndoes, node_id
 
-        if verbose:
-            print(">load dgl", dgl_file)
-        glist, _ = load_graphs(dgl_file)
-		
-        if verbose:
-            print(">load meta", th_file)
-        self._meta = th.load(th_file)
-
-        if verbose:
-            print(">covert to nx graph", th_file)
-        self._nx_graph = dgl.to_networkx(glist[0],
-						node_attrs=['depth','h_formulae_idx','base_formula','mask'])
-        
-        # parse saved data
-        idx_to_formula = self._meta["idx_to_formula"]
-        pos_dict = {}
-
-        node_mass_l = []
-        for node in self._nx_graph.nodes(data = True):
-            #print(node)
-            node_depth_mask = node[1]['depth']
-
-            # compute depth and add pos
-            depth = 0
-            for depth_value in node_depth_mask:
-                if depth_value == 1:
-                    break
-                depth += 1
-            if depth not in pos_dict:
-                pos_dict[depth] = 0
-            else:
-                pos_dict[depth] += 1
-            node[1]['pos'] = (depth,pos_dict[depth])
-            
-            # add image
-            node_atom_mask = node[1]['mask']
-            highlight_atom = []
-            atom_idx = 0
-            for value in node_atom_mask.tolist():
-                if value == 1:
-                    highlight_atom.append(atom_idx)
-                atom_idx += 1
-
+        self._ndoes[node_id] = node_features
     
-    def _get_matched_fragment():
+    def add_edge(self, from_node_id:int, to_node_id:int, edge_id:int = None, edge_features = None|dict):
+        """_summary_
+
+        Args:
+            from_node_id (int): _description_
+            to_node_id (int): _description_
+            edge_id (int): _description_
+            edge_features (_type_, optional): _description_. Defaults to None | dict.
+        """
+        if edge_id == None:
+            edge_id = len(self._edges)
+        assert edge_id not in self._edges, edge_id
+
+        self._edges[edge_id] = edge_features
+        self._adj_list[from_node_id] = to_node_id
+        
+    def to_pyg_graph(self):
         pass
-        #abc
+
+    def to_nx_graph(self):
+        pass
+
+    def to_dgl_graph(self):
+        pass
+
 
     def save_to_file(self, dgl_file:str, th_file:str, verbose = False):
         """_summary_

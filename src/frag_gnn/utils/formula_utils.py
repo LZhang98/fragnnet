@@ -109,6 +109,8 @@ ISOTOPES_DICT = {1: [1, 2],
 
 # global cache for peak per element
 # so we don't compute this a million time
+# https://docs.python.org/3/glossary.html#term-global-interpreter-lock
+# GIL will ensure this implicitly safe against concurrent access
 peaks_for_element_cache = {}
 
 def enumerate_multinomial(N: int, p: List[float], cutoff_thold: float = 0.0001):
