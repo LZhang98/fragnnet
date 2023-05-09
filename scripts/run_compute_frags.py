@@ -2,8 +2,6 @@ import numpy as np
 import time
 from pprint import pprint
 import argparse
-import networkx as nx
-import torch as th
 import torch_geometric as pyg
 
 import frag_gnn.frag.frag_utils as frag_utils

@@ -14,7 +14,6 @@ from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 MAX_NUM_NODES = 60 # hard cap on 64!!
 MAX_NUM_EDGES = 150 # ~4*MAX_NUM_NODES 
 DTYPE = np.intc
-MASK_DTYPE = np.byte
 MAX_EDGE_PER_NODE = 6 # Sulfur
 
 class TimeoutError(RuntimeError):
@@ -104,8 +103,8 @@ cdef connected_components(
     cdef int [::1] node_queue = np.zeros(MAX_NUM_NODES,dtype=np.intc)
     np_fill(node_queue,-1)
 
-    cdef char [:,::1] cc_nodes = np.zeros((2,MAX_NUM_NODES),dtype=MASK_DTYPE)
-    cdef char [:,::1] cc_edges = np.zeros((2,MAX_NUM_EDGES),dtype=MASK_DTYPE)
+    cdef char [:,::1] cc_nodes = np.zeros((2,MAX_NUM_NODES),dtype= np.ubyte)
+    cdef char [:,::1] cc_edges = np.zeros((2,MAX_NUM_EDGES),dtype= np.ubyte)
 
     # run BFS
     while num_visited < num_nonmask:

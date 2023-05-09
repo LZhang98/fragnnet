@@ -7,3 +7,4 @@ valgrind --tool=memcheck --leak-check=full --suppressions=./data/valgrind-python
 ripts/run_compute_frags.py 
 ### check memory usage
 memray run --native  python ./scripts/run_compute_frags.py
+memray flamegraph run_compute_frags.abc.bin
