@@ -109,7 +109,7 @@ ISOTOPES_DICT = {1: [1, 2],
 
 # global cache for peak per element
 # so we don't compute this a million time
-peaks_for_element_cache = {}
+# peaks_for_element_cache = {}
 
 def enumerate_multinomial(N: int, p: List[float], cutoff_thold: float = 0.0001):
     """
@@ -186,10 +186,6 @@ def get_peaks_for_element(element: str, num_atoms: int) -> List:
         _type_: _description_
     """
 
-    key_str = element + str(num_atoms)
-    if key_str in peaks_for_element_cache:
-        return peaks_for_element_cache[key_str]
-    
     atomicno = Chem.GetPeriodicTable().GetAtomicNumber(element)
 
     isotopes = get_isotopes(atomicno)
@@ -202,11 +198,10 @@ def get_peaks_for_element(element: str, num_atoms: int) -> List:
 
     peaks_masses_probs = [(comb_probs[i][0], m)
                           for i, m in enumerate(exact_masses)]
-    peaks_for_element_cache[key_str] = peaks_masses_probs
     return peaks_masses_probs
 
 
-def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.001) -> Tuple[List[float], List[float]]:
+def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.001, peaks_for_element_cache:dict = None) -> Tuple[List[float], List[float]]:
     """for a given element configs, return masses with all possible isotopic configus
 
     Args:
@@ -216,11 +211,17 @@ def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.0
     Returns:
         Tuple[List[float],List[float]]: ([mass,mass,mass,mass],[prob,prob,prob,prb])
     """
+    if peaks_for_element_cache is None:
+        peaks_for_element_cache = {}
 
     peaks_masses_probs = {}
     for k, v in element_counts.items():
         if v > 0:
-            peaks_masses_probs[k] = get_peaks_for_element(k, v)
+            key_str = k + str(v)
+            if key_str not in peaks_for_element_cache:
+                peaks_for_element_cache[key_str] = get_peaks_for_element(k, v)
+            peaks_masses_probs[k] = peaks_for_element_cache[key_str]
+
     assert len(peaks_masses_probs) > 0, peaks_masses_probs
     probs = [[item[0] for item in v] for v in peaks_masses_probs.values()]
     masses = [[item[1] for item in v] for v in peaks_masses_probs.values()]
@@ -234,7 +235,7 @@ def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.0
     return keep_masses, keep_probs
 
 
-def formula_to_peak_mzs(formula, prec_type:Literal["[M+H]+","[M-H]-",""], isotopes=True, return_map=False, return_probs=False):
+def formula_to_peak_mzs(formula, prec_type:Literal["[M+H]+","[M-H]-",""], isotopes=True, return_map=False, return_probs=False, peaks_for_element_cache: dict = None):
     """_summary_
 
     Args:
@@ -255,8 +256,8 @@ def formula_to_peak_mzs(formula, prec_type:Literal["[M+H]+","[M-H]-",""], isotop
             peak_mz += v*PERIODIC_TABLE.GetMostCommonIsotopeMass(k)
         peak_mz += mass_diff
         peak_mzs = [peak_mz]
-    else:
-        peak_mzs, peak_probs = get_peaks_for_formula(element_counts)
+    else:    
+        peak_mzs, peak_probs = get_peaks_for_formula(element_counts, peaks_for_element_cache = peaks_for_element_cache)
         peak_mzs = [peak_mz+mass_diff for peak_mz in peak_mzs]
     if return_map:
         return {peak_mz:formula for peak_mz in peak_mzs}

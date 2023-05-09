@@ -8,6 +8,7 @@ import rdkit.Chem.rdmolops as rdmolops
 import torch as th
 import torch_geometric as pyg
 
+from frag_gnn.utils.misc_utils import get_pyg_memory_usage
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from frag_gnn.frag.compute_frags import (
@@ -57,7 +58,7 @@ def convert_cc_mask_to_int(cc:list|np.ndarray)->int:
 
 	return sum([2**i for i in cc])
 
-def convert_cc_int_to_mask(num_nodes:int,cc_int:int,bitmask=True) -> list[int]:
+def convert_cc_int_to_mask(num_nodes:int,cc_int:int,bitmask=True) -> tuple[int]:
 	"""_summary_
 
 	Args:
@@ -733,13 +734,13 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	# peak mzs array
 	formula_peak_mzs = []
 	formula_peak_probs = []
-
+	peaks_for_element_cache = {}
 	for formula, idx in formula_to_idx.items():
 		if formula == "":
 			peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
 			peak_probs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
 		else:
-			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"",return_probs=True)
+			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"",return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
 			peak_mzs, peak_probs = zip(*sorted(zip(peak_mzs, peak_probs), key=lambda x: x[1], reverse=True))
 			peak_mzs = np.array(peak_mzs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
 			peak_mzs = np.pad(peak_mzs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_mzs)),"constant",constant_values=0)
@@ -747,8 +748,9 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 			peak_probs = np.pad(peak_probs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_probs)),"constant",constant_values=0)
 		formula_peak_mzs.append(peak_mzs)
 		formula_peak_probs.append(peak_probs)
-	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0))
-	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0))
+	# save as bf16 for speed and lower ram usage
+	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = th.bfloat16)
+	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = th.bfloat16)
 
 	# add edges
 	edges_to_mask, edges_to_formula = {}, {}
@@ -775,10 +777,14 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		group_node_attrs=node_feat_names, 
 		group_edge_attrs=edge_feat_names,
 	)
+	
+	#print(f'{get_pyg_memory_usage(pyg_cc_g)/1e6} MB')
 	# TODO: can we reduce storage?
 	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
+	#print(f'{get_pyg_memory_usage(pyg_cc_g)/1e6} MB')
 	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
-
+	#print(f'{get_pyg_memory_usage(pyg_cc_g)/1e6} MB')
+	
 	dag_d = {}
 	dag_d["max_depth"] = max_depth
 	dag_d["h_prior"] = h_prior
