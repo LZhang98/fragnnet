@@ -6,5 +6,5 @@ Mass spectrometry prediction using combinatorial fragmentation and graph neural 
 valgrind --tool=memcheck --leak-check=full --suppressions=./data/valgrind-python.supp  --log-file=minimal.valgrind.log python ./sc
 ripts/run_compute_frags.py 
 ### check memory usage
-memray run --native  python ./scripts/run_compute_frags.py
+memray run --native ./scripts/run_compute_frags.py
 memray flamegraph run_compute_frags.abc.bin
