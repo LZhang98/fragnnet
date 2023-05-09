@@ -151,3 +151,11 @@ def get_tensor_memory_usage(tensor):
 def get_pyg_memory_usage(pyg_graph):
 
 	return pyg.profile.get_data_size(pyg_graph)
+
+
+def get_nx_memory_usage(nx_g):
+
+	edge_mem = sum([sys.getsizeof(e) for e in nx_g.edges])
+	node_mem = sum([sys.getsizeof(n) for n in nx_g.nodes])
+
+	return edge_mem + node_mem
