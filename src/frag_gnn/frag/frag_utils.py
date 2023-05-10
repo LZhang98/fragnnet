@@ -863,7 +863,7 @@ def save_dag_d(dag_d:dict, filepath:str, is_compressed:bool = False):
 		with open(filepath, 'wb') as fileout:
 			pickle.dump(dag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
 	else:
-		with bz2.BZ2File(filepath + '.pbz2', 'wb') as fileout: 
+		with bz2.BZ2File(filepath, 'wb') as fileout: 
 			cPickle.dump(dag_d, fileout)
 
 def load_dag_d(filepath:str, is_compressed:bool = False):
