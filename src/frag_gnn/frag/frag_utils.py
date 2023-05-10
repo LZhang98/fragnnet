@@ -1,4 +1,6 @@
-from copy import deepcopy
+#from copy import deepcopy
+import pickle
+import _pickle as cPickle
 import networkx as nx
 import numpy as np
 import pandas as pd
@@ -6,9 +8,10 @@ import rdkit.Chem as Chem
 import rdkit.Chem.MolStandardize.rdMolStandardize as rdMolStandardize
 import rdkit.Chem.rdmolops as rdmolops
 import torch as th
-import torch_geometric as pyg
+import bz2
 
-from frag_gnn.utils.misc_utils import get_pyg_memory_usage, get_nx_memory_usage
+#import torch_geometric as pyg
+from torch_geometric.utils.convert import from_networkx 
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from frag_gnn.frag.compute_frags import (
@@ -97,10 +100,10 @@ def convert_cc_int_to_np_mask(num_nodes:int,cc_int:int,bitmask=True) -> np.ndarr
 		list|np.ndarray: a list of 0 and 1s
 	"""
 
-	cc = convert_cc_int_to_mask(num_nodes, cc, bitmask)
+	cc = convert_cc_int_to_mask(num_nodes, cc_int, bitmask)
 	np_mask = np.array(cc, dtype=MASK_DTYPE)
 	#cc = tuple(cc)
-	return cc
+	return np_mask
 
 
 def get_fraggen_input_arrays(mol_d:dict):
@@ -714,7 +717,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 
 	# add node mask information
 	# convert to a one hot encoding
-	ccs_to_mask = {cc : convert_cc_int_to_mask(num_nodes,cc,bitmask=True) for cc in ccs_un}
+	ccs_to_mask = {cc : convert_cc_int_to_np_mask(num_nodes,cc,bitmask=True) for cc in ccs_un}
 	#print(ccs)
 	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
 	nx.set_node_attributes(nx_cc_g,ccs_to_mask,"mask")
@@ -734,7 +737,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	ccs_to_formulae = {}
 	formulae_un = set()
 	for cc in ccs_un:
-		cc_mask = convert_cc_int_to_mask(num_nodes,cc,bitmask=False)
+		cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
 		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True)
 		# print(delta_h_to_formula)
 		formulae = list(delta_h_to_formula.values())
@@ -784,48 +787,46 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 				continue
 			nx_cc_g.add_edge(parent,cc)
 			parent_mask = ccs_to_mask[parent]
-			diff_mask = [parent_mask[i]-cc_mask[i] for i in range(len(cc_mask))]
+			diff_mask = np.array([parent_mask[i]-cc_mask[i] for i in range(len(cc_mask))], dtype=MASK_DTYPE)
+			#print(type(diff_mask))
 			edges_to_mask[(parent,cc)] = diff_mask
-			diff_formula = cc_to_formula_arr(diff_mask,elems).tolist()
+			diff_formula = np.array(cc_to_formula_arr(diff_mask,elems).tolist(), dtype=MASK_DTYPE)
 			edges_to_formula[(parent,cc)] = diff_formula
+	#print(edges_to_formula)
 	nx.set_edge_attributes(nx_cc_g,edges_to_mask,"mask")
 	nx.set_edge_attributes(nx_cc_g,edges_to_formula,"base_formula")
 
-	print(f'nx_cc_g memory usa {get_nx_memory_usage(nx_cc_g)/1e6} MB')
-
+	#print(f'nx_cc_g memory usage {get_nx_memory_usage(nx_cc_g)/1e6} MB')
 	# convert to pyg
-	node_feat_names, node_feat_shapes = get_node_feat_names_shapes(nx_cc_g)
-	edge_feat_names, edge_feat_shapes = get_edge_feat_names_shapes(nx_cc_g)
-	pyg_cc_g = pyg.utils.convert.from_networkx(
-		nx_cc_g, 
-		group_node_attrs=node_feat_names, 
-		group_edge_attrs=edge_feat_names,
-	)
-
-	#print(f'{get_pyg_memory_usage(pyg_cc_g)/1e6} MB')
-	# TODO: can we reduce storage?
-	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
-	#print(f'{get_pyg_memory_usage(pyg_cc_g)/1e6} MB')
-	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
-	#print(f'{get_pyg_memory_usage(pyg_cc_g)/1e6} MB')
-	
-
-	#print(pyg_cc_g.num_node_features)
-	#print(pyg_cc_g.num_features)
-	#print(pyg_cc_g.num_edge_features)
-	#print(pyg_cc_g.num_node_types)
-	#print(pyg_cc_g.x)
 
 	dag_d = {}
 	dag_d["max_depth"] = max_depth
 	dag_d["h_prior"] = h_prior
 	dag_d["max_h_transfer"] = max_h_transfer
-	dag_d["dag"] = pyg_cc_g
+	dag_d["dag"] = nx_cc_g #nx_to_pyg(nx_cc_g)
 	dag_d["formula_peak_mzs"] = formula_peak_mzs
 	dag_d["formula_peak_probs"] = formula_peak_probs
 	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
 
 	return dag_d
+
+def nx_to_pyg(nx_cc_g):
+
+	node_feat_names, node_feat_shapes = get_node_feat_names_shapes(nx_cc_g)
+	edge_feat_names, edge_feat_shapes = get_edge_feat_names_shapes(nx_cc_g)
+
+	pyg_cc_g = from_networkx(
+		nx_cc_g, 
+		group_node_attrs=node_feat_names, 
+		group_edge_attrs=edge_feat_names,
+	)
+
+	# TODO: can we reduce storage?
+	# TODO: we are going to save as nx picke and convert to pyg graph
+	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
+	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
+
+	return pyg_cc_g
 
 def get_node_feats(node_feats,node_feat_idxs,key):
 
@@ -850,3 +851,36 @@ def get_edge_feats(edge_feats,edge_feat_idxs,key):
 	else:
 		raise ValueError("key not found")
 	return key_edge_feats
+
+def save_dag_d(dag_d:dict, filepath:str, is_compressed:bool = False):
+	"""save dag_d use pickle if is_compressed save as .pbz
+
+	Args:
+		dag_d (dict): _description_
+		filepath (str): _description_
+	"""
+	if not is_compressed:
+		with open(filepath, 'wb') as fileout:
+			pickle.dump(dag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
+	else:
+		with bz2.BZ2File(filepath + '.pbz2', 'wb') as fileout: 
+			cPickle.dump(dag_d, fileout)
+
+def load_dag_d(filepath:str, is_compressed:bool = False):
+	"""_summary_
+
+	Args:
+		filepath (str): _description_
+
+	Returns:
+		_type_: _description_
+	"""
+	dag_d = None
+	if not is_compressed:
+		with open(filepath, 'rb') as filein:
+			dag_d = pickle.load(filein)
+	else:
+		with bz2.BZ2File(filepath, 'rb') as filein: 
+			dag_d = cPickle.load(filein)
+
+	return  dag_d                                                   
