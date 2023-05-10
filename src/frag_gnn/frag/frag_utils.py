@@ -558,7 +558,7 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 	assert not parents
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
 	# time this part
-	ccs, ccs_parents, _ = compute_frags.compute_ccs(
+	ccs, ccs_parents, _, _ = compute_frags.compute_ccs(
 		num_nodes,
 		num_edges,
 		node_mask,
@@ -679,7 +679,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	node_mask = node_mask.astype(MASK_DTYPE)
 	edge_mask = edge_mask.astype(MASK_DTYPE)
 	#def _compute_frags():
-	ccs, ccs_parents, ccs_depths = compute_frags.compute_ccs(
+	ccs, ccs_parents, ccs_depths, reached_depth = compute_frags.compute_ccs(
 		num_nodes,
 		num_edges,
 		node_mask,
@@ -801,6 +801,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 
 	dag_d = {}
 	dag_d["max_depth"] = max_depth
+	dag_d["reached_depth"] = reached_depth
 	dag_d["h_prior"] = h_prior
 	dag_d["max_h_transfer"] = max_h_transfer
 	dag_d["dag"] = nx_cc_g #nx_to_pyg(nx_cc_g)

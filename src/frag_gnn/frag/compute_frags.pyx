@@ -233,6 +233,8 @@ def compute_ccs(
     cdef dict has_seen = {}
     cdef int num_ccs = 0
 
+    force_stop = False
+    reached_depth = 0
     # for each depth
     for current_depth in range(max_depth):
         # keep all the ccs mask for next round
@@ -241,15 +243,19 @@ def compute_ccs(
         
         #print(f">depth:{current_depth}")
         ccs_end = len(ccs)
-
+        
         for node_idx in range(ccs_idx,ccs_end):
 
             # let us check time
             cur_time = get_time()
             sig_check()
+            #if cur_time - start_time > time_limit:
+            #    raise TimeoutError
             if cur_time - start_time > time_limit:
-                raise TimeoutError
-    
+                force_stop = True
+                reached_depth = current_depth
+                break
+
             current_node_mask = cc_node_mask_dict[ccs[node_idx]]
             #print(node_idx, node_idx - ccs_idx)
             current_edge_mask = cc_edge_mask_dict[cc_edges[node_idx]]
@@ -314,10 +320,17 @@ def compute_ccs(
                     cc_edges.append(child_edge_mask_key)
                 
                 num_ccs += new_num_ccs
+        
+        # break outer loop
+        if force_stop:
+            ccs = ccs[:ccs_end]
+            ccs_parents = ccs_parents[:ccs_end]
+            ccs_depths = ccs_depths[:ccs_end]
+            break
         # finishing current depth, move to next
         ccs_idx = ccs_end
         #current_edge_masks_list = child_edge_mask_list
         #child_edge_mask_list = []
     
     # we not passing node mask dict back to avoid deal with memory view
-    return ccs, ccs_parents, ccs_depths
+    return ccs, ccs_parents, ccs_depths, reached_depth
