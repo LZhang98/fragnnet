@@ -271,16 +271,18 @@ def seq_apply(iterator,func):
 		result.append(func(i))
 	return result
 
-def par_apply(iterator,func):
+def par_apply(iterator,func,need_unpack=False):
 
-	n_jobs = joblib.cpu_count()
 	par_func = joblib.delayed(func)
 	parallel = joblib.Parallel(
 		backend=JOBLIB_BACKEND,
 		n_jobs=JOBLIB_N_JOBS,
 		timeout=JOBLIB_TIMEOUT
 	)
-	result = parallel(par_func(i) for i in iterator)
+	if not need_unpack:
+		result = parallel(par_func(i) for i in iterator)
+	else:
+		result = parallel(par_func(*i) for i in iterator)
 	return result
 
 def par_apply_series(series,func):
