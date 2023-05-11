@@ -2,6 +2,12 @@ import torch as th
 import numpy as np
 
 class FragDAG(object):
+
+    class DAGNode(object):
+        pass    
+    class DAGEdge(object):
+        pass
+
     """_summary_
     Args:
         object (_type_): _description_
@@ -10,7 +16,7 @@ class FragDAG(object):
         """_summary_
         """
         self._adj_list = {}
-        self._meta = None
+        self._meta = {}
         self._ndoes = {}
         self._edges = {}
 
@@ -51,31 +57,6 @@ class FragDAG(object):
 
     def to_dgl_graph(self):
         pass
-
-
-    def save_to_file(self, dgl_file:str, th_file:str, verbose = False):
-        """_summary_
-
-        Args:
-            dgl_file (str): _description_
-            th_file (str): _description_
-        """
-
-        if verbose:
-            print(f">save dgl to f{dgl_file}")
-        assert self._dag_dgl_graph is not None
-        dgl.save_graphs(dgl_file,self._dag_dgl_graph)
-
-        if verbose:
-            print(f">save meta to {th_file}")
-        
-        th_d = dict(
-        mol_id=self._mol_id,
-        formula_peak_probs=self._formula_peak_probs,
-        formula_peak_mzs=self._formula_peak_mzs,
-        idx_to_formula=self._idx_to_formula)
-        
-        th.save(th_d,th_file)
 
     # land of static methods or class methods
     @staticmethod
