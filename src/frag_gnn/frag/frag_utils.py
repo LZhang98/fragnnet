@@ -380,7 +380,7 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 			formula = tuple(formula)
 		if formula_strs:
 			formula = formula_arr_to_str(formula)
-		delta_h_to_formula[h] = formula
+		delta_h_to_formula[delta_h] = formula
 	return delta_h_to_formula
 
 def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER,return_counts=False):
@@ -580,7 +580,7 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 		return ccs
 
 def compute_frag_peak_stats(row, tolerance=0.01, prec_type="[M+H]+", 
-			    is_abs_tolerance = True):
+			    is_ppm = False):
 	"""_summary_
 
 	Args:
@@ -591,22 +591,26 @@ def compute_frag_peak_stats(row, tolerance=0.01, prec_type="[M+H]+",
 	Returns:
 		_type_: _description_
 	"""
-
+	ppm = 1/1000000
 	true_mzs, true_ints = list(zip(*row["peaks"]))
-	pred_mzs = row["formula_peak_mzs"]
+	theoretical_mzs = row["formula_peak_mzs"]
 	pred_probs = row["formula_peak_probs"]
-	prec_mask = (pred_probs > 0.).type(th.bfloat16)
+	prec_mask = (pred_probs > 0.).type(th.float32)
 	# account for adduct mass
-	pred_mzs = pred_mzs + prec_mask * PREC_TYPE_TO_MASS_DIFF[prec_type]
+	theoretical_mzs = theoretical_mzs + prec_mask * PREC_TYPE_TO_MASS_DIFF[prec_type]
 	# compute overlap
 	overlap_true_idxs = []
 	overlap_true_ints = []
 	overlap_pred_idxs = []
 	overlap_pred_peak_counts = []
 	overlap_pred_formula_counts = []
+
 	for true_idx, true_mz in enumerate(true_mzs):
-		mz_diffs = th.abs(pred_mzs-true_mz)
-		mz_close = mz_diffs < tolerance
+		mz_diffs = th.abs(theoretical_mzs-true_mz)
+		if not is_ppm:
+			mz_close = mz_diffs < tolerance 
+		else:
+			mz_close = mz_diffs < (tolerance * ppm)
 		if th.any(mz_close):
 			pred_idx = th.nonzero(mz_close,as_tuple=False)
 			num_formula_match = th.sum(th.any(mz_close,dim=1).type(th.int32)).item()
@@ -888,7 +892,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	mask_node_feat_size = num_nodes # mask
 	base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
 	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
-	#total_node_feat_size =  depth_node_feat_size +  mask_node_feat_size + base_formula_node_feat_size + formula_node_feat_size
 	node_feat_shapes = [depth_node_feat_size,mask_node_feat_size,base_formula_node_feat_size,formula_node_feat_size]
 	edge_feat_shapes = [num_nodes, len(ELEMENT_TO_IDX)]
 	total_node_feat_size = sum(node_feat_shapes)
@@ -909,7 +912,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end] = th.tensor(ccs_to_mask[cc], dtype=node_feat_data_type)
 
 	#print(ccs)
-	#assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
+	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
 
 	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
@@ -930,7 +933,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
 		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True)
 		formulae = list(delta_h_to_formula.values())
-		ccs_to_formulae[cc] = formulae
+		ccs_to_formulae[cc] = delta_h_to_formula
 		formulae_un.update(formulae)
 		
 	# map nodes to formulae indices
@@ -942,13 +945,22 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	feats_start = feats_end
 	feats_end = feats_start + formula_node_feat_size
 	for cc in ccs_un:
-		formulae = ccs_to_formulae[cc]
-		formulae_idx = []
-		for formula in formulae:
+		formulae_dict = ccs_to_formulae[cc]
+		formulae_idx = [0] * formula_node_feat_size
+		for h_delta in formulae_dict:
+			formula = formulae_dict[h_delta]
 			formula_idx = formula_to_idx[formula]
-			formulae_idx.append(formula_idx)
+
+			#h_delta [0,-1,1,-2,2,-3,3,-4,4]
+			if h_delta >= 0:
+				formulae_idx[h_delta * 2] = formula_idx
+			else:
+				formulae_idx[(-h_delta * 2) - 1] = formula_idx
+			
+		#print(formulae_idx)
+			#formulae_idx.append(formula_idx)
 		node_num_formules_sum += len(formulae)
-		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_start+len(formulae_idx)] = th.tensor(formulae_idx, dtype=node_feat_data_type)
+		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end] = th.tensor(formulae_idx, dtype=node_feat_data_type)
 
 	# peak mzs array
 	formula_peak_mzs = []

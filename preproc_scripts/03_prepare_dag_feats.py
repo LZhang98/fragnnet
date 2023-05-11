@@ -291,7 +291,7 @@ def main(args):
 	peak_spec_df = spec_df[["spec_id","mol_id","peaks","prec_mz"]].merge(frag_stats_df,on="mol_id",how="inner")
 	frag_stats_df = peak_spec_df[["spec_id","mol_id"]].drop_duplicates()
 
-	tolerances = [float(tolerance) for tolerance in args.tolerances.split("-")]
+	tolerances = [tolerance for tolerance in args.tolerances.split("-")]
 	
 	for tolerance in tolerances:
 
@@ -303,7 +303,12 @@ def main(args):
 			f"ppt_formula_{tolerance}"
 		]
 
-		result = peak_spec_df.apply(lambda x: frag_utils.compute_frag_peak_stats(x,tolerance=tolerance,prec_type="[M+H]+"),axis=1)
+		if 'ppm' in tolerance:
+			tolerance = float(tolerance[:-3])
+			result = peak_spec_df.apply(lambda x: frag_utils.compute_frag_peak_stats(x,tolerance=tolerance,prec_type="[M+H]+", is_ppm = True),axis=1)
+		else:
+			tolerance = float(tolerance)
+			result = peak_spec_df.apply(lambda x: frag_utils.compute_frag_peak_stats(x,tolerance=tolerance,prec_type="[M+H]+"),axis=1)
 		for idx, key in enumerate(keys):
 			peak_spec_df.loc[:,key] = result[idx].values
 		del result
@@ -338,7 +343,7 @@ if __name__ == "__main__":
 	default_elements = "-".join(frag_utils.CANONICAL_ELEMENT_ORDER)
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--num_entries",type=int,default=-1)
+	parser.add_argument("--num_entries",type=int,default=1)
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
@@ -347,7 +352,7 @@ if __name__ == "__main__":
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,default=default_elements)
-	parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001")
+	parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001-5ppm-10ppm")
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
