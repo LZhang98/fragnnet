@@ -338,7 +338,7 @@ if __name__ == "__main__":
 	default_elements = "-".join(frag_utils.CANONICAL_ELEMENT_ORDER)
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--num_entries",type=int,default=10)
+	parser.add_argument("--num_entries",type=int,default=-1)
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
