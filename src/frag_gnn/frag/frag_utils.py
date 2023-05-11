@@ -880,7 +880,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	# let us set datatype here
 	node_feat_data_type = th.int16
 	edge_feat_data_type = th.int8
-	float_data_type = th.bfloat16
+	float_data_type = th.float32 #th.bfloat16
 
 	# add node depth information
 	# convert to a one hot encoding
@@ -890,6 +890,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
 	#total_node_feat_size =  depth_node_feat_size +  mask_node_feat_size + base_formula_node_feat_size + formula_node_feat_size
 	node_feat_shapes = [depth_node_feat_size,mask_node_feat_size,base_formula_node_feat_size,formula_node_feat_size]
+	edge_feat_shapes = [num_nodes, len(ELEMENT_TO_IDX)]
 	total_node_feat_size = sum(node_feat_shapes)
 
 	# add depth info
@@ -909,8 +910,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 
 	#print(ccs)
 	#assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
-
-
 
 	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
@@ -968,7 +967,8 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 			peak_probs = np.pad(peak_probs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_probs)),"constant",constant_values=0)
 		formula_peak_mzs.append(peak_mzs)
 		formula_peak_probs.append(peak_probs)
-	# save as bf16 for speed and lower ram usage
+
+	# save as bf16 or float32 for speed and lower ram usage
 	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = float_data_type)
 	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = float_data_type)
 
@@ -981,22 +981,23 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 			# skip self edges
 			if parent == cc or parent == -1:
 				continue
-
+			# add to edge
 			pyg_edge_index[0].append(cc_to_node_id_dict[parent])
 			pyg_edge_index[1].append(cc_to_node_id_dict[cc])
-
+			# compute edge features
 			parent_mask = ccs_to_mask[parent]
 			diff_mask = [parent_mask[i]-cc_mask[i] for i in range(len(cc_mask))] 
-
-			diff_formula = cc_to_formula_arr(diff_mask,elems).tolist() 
+			diff_formula = cc_to_formula_arr(diff_mask,elems).tolist()
+			# add to list
 			pyg_edge_feats.append(diff_mask + diff_formula)
-	edge_feat_shapes = [num_nodes, len(ELEMENT_TO_IDX)]
+
 
 	# edge index need to be int64 or it will throw error where compute degree
+
 	pyg_edge_index = th.tensor(pyg_edge_index, dtype =th.int64)
 	pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=edge_feat_data_type)
 
-	pyg_cc_g = timeit(pyg.data.Data)(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
+	pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
 	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
 	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
 
