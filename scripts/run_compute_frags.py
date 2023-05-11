@@ -8,7 +8,6 @@ import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.utils.misc_utils import timeit, booltype, get_pyg_memory_usage
 
 import pstats, cProfile
-import sys
 
 def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
 	mol_d = frag_utils.extract_mol_info(smiles)
@@ -17,22 +16,19 @@ def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
 
 	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
 	dag = dag_d["dag"]
-	print(type(dag))
+	
 	print("> dag")
-	frag_utils.save_dag_d(dag, smiles + '.pickle', is_compressed = True)
-	#dag_nn = dag.number_of_nodes
-	#dag_ne = dag.number_of_egdes
-	#dag_indeg = pyg.utils.degree(dag.edge_index[1]).numpy()
-	#print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {2*dag_ne/(dag_nn*(dag_nn-1))}")
-	#print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
-#	dag_memory = get_pyg_memory_usage(dag)
-	#print(f"memory = {dag_memory/1e6} MB")
-	#print(f"dag_d memory = {sys.getsizeof(dag_d)/1e6} MB")
-	#print(f"dag_d memory = {sys.getsizeof(dag_d['dag'])/1e6} MB")
-	#print(f"memory = {sys.sizeof(dag_d["dag"])/1e6} MB")
-	#print(f"memory = {sys.sizeof(dag_d["dag"])/1e6} MB")
-	#print(f"memory = {sys.sizeof(dag_d["dag"])/1e6} MB")
-	#print(f"memory = {sys.sizeof(dag_d["dag"])/1e6} MB")
+	#frag_utils.save_dag_d(dag_d, smiles + '.pickle.pbz2', is_compressed = True)
+	dag_nn = dag_d["dag_num_nodes"]
+	dag_ne = dag_d["dag_num_edges"]
+	
+	dag_indeg = pyg.utils.degree(dag.edge_index[1]).numpy()
+	print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {2*dag_ne/(dag_nn*(dag_nn-1))}")
+	print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
+	print(f"node feature size = {dag_d['node_feature_size']}, edge featuer size = {dag_d['edge_featuer_size']}")
+	print(f"is diectred = {dag_d['is_directed']}")
+	dag_memory = get_pyg_memory_usage(dag)
+	print(f"memory = {dag_memory/1e6} MB")
 
 	return dag_d
 
