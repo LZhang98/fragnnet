@@ -1,30 +1,22 @@
 import pandas as pd
 import numpy as np
-import torch as th
 from tqdm import tqdm
-import signal
-from contextlib import contextmanager
 import argparse
-from functools import reduce
 import os
 from collections import Counter
 import wandb
-import rdkit
 import rdkit.Chem as Chem
-from pprint import pprint, pformat
+from pprint import pformat
 import json
 import traceback
 import sys
-import pickle
-import gzip
+import swifter
 
 import frag_gnn.frag.frag_utils as frag_utils
-from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES, TimeoutError
+from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
 import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.data_utils import seq_apply_df_rows, par_apply_df_rows
 from frag_gnn.utils.formula_utils import parse_formula
-from frag_gnn.utils.misc_utils import booltype, flatten_lol, wandb_symlink, TimeoutException
-import frag_gnn.utils.formula_utils as formula_utils
+from frag_gnn.utils.misc_utils import booltype
 
 def element_filter(formula,allowed_elements):
 	element_counts = parse_formula(formula)
@@ -171,12 +163,15 @@ def main(args):
 	spec_stats_fp = os.path.join(args.frag_dp,args.run_name,f"spec_stats_df.pkl")
 	global_stats_fp = os.path.join(args.frag_dp,args.run_name,f"global_stats.json")
 
-	def timed_get_dags(mol, mol_id:int, output_dir:str, compressed = False):
+	def timed_get_dags(mol, mol_id, 
+		    max_depth,h_prior,max_h_transfer, max_time,
+			output_dir:str, use_cached = True, compressed = False):
 		""" time and save networkx graph and meta to a pickle file
 
 		Args:
 			mol (_type_): _description_
 			mol_id (int): _description_
+
 			output_dir (str): _description_
 			compressed (bool, optional): _description_. Defaults to False.
 
@@ -186,35 +181,40 @@ def main(args):
 		Returns:
 			_type_: _description_
 		"""
-		cur_max_depth = args.max_depth
-		dag_d = {}
-		try:
-			mol_d = frag_utils.extract_mol_info(mol)
-			dag_d = frag_utils.compute_dags(mol_d,cur_max_depth,args.h_prior,args.max_h_transfer,args.max_time)
-		except KeyboardInterrupt as e:
-			# let these through
-			raise e
-		except Exception as e:
-			# don't retry, theres a bug
-			if type(mol) is not str:
-				mol = Chem.MolToSmiles(mol)
-			print(f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}",file=sys.stderr)
-			print("> Traceback",file=sys.stderr)
-			traceback.print_exc(file=sys.stderr)
-			dag_d = {}
+
+		output_file =  f"{output_dir}/{mol_id}.pickle.pbz2" if compressed else f"{output_dir}/{mol_id}.pickle"
+
+		if os.path.exists(output_file) and use_cached:
+			dag_d = frag_utils.load_dag_d(output_file, compressed)
 		else:
-			frag_utils.save_dag_d(dag_d, f"{output_dir}/{mol_id}.pickle.pbz2" if compressed else f"{output_dir}/{mol_id}.pickle", compressed)
-		
+			dag_d = {}
+			try:
+				mol_d = frag_utils.extract_mol_info(mol)
+				# this maybe dangers in multi processing because of scopes
+				dag_d = frag_utils.compute_dags(mol_d,max_depth,h_prior,max_h_transfer, max_time)
+			except KeyboardInterrupt as e:
+				# let these through
+				raise e
+			except Exception as e:
+				# don't retry, theres a bug
+				if type(mol) is not str:
+					mol = Chem.MolToSmiles(mol)
+				print(f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}",file=sys.stderr)
+				print("> Traceback",file=sys.stderr)
+				traceback.print_exc(file=sys.stderr)
+				dag_d = {}
+			else:
+				frag_utils.save_dag_d(dag_d, output_file, compressed)
+			
 		del dag_d["dag"]
 		return dag_d
 
 
 	input_rows = []
 	for _, row in tqdm(mol_df.iterrows(), total=mol_df.shape[0], desc= "prepare inputs"):
-		input_rows.append([row['mol'],row['mol_id'],dag_dp, True])
+		input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, True])
 	
 	# Debug
-
 	timed_get_dags(*input_rows[0])
 	#exit()
 	tqdm_iter = tqdm(input_rows,desc=pformat(timed_get_dags),total=len(input_rows))
@@ -298,7 +298,6 @@ def main(args):
 	tolerances = [tolerance for tolerance in args.tolerances.split("-")]
 	
 	for tolerance in tolerances:
-
 		for h_transfer in range(1, args.max_h_transfer + 1):
 			keys = [
 				f"recall_{tolerance}_h{h_transfer}",
@@ -309,9 +308,9 @@ def main(args):
 			]
 
 			if 'ppm' in tolerance:
-				result_df = peak_spec_df.apply(lambda x: frag_utils.compute_frag_peak_stats(x,h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True),axis=1)
+				result_df = peak_spec_df.swifter.apply(lambda x: frag_utils.compute_frag_peak_stats(x,h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True),axis=1)
 			else:
-				result_df = peak_spec_df.apply(lambda x: frag_utils.compute_frag_peak_stats(x,h_transfer,tolerance=float(tolerance),prec_type="[M+H]+"),axis=1)
+				result_df = peak_spec_df.swifter.apply(lambda x: frag_utils.compute_frag_peak_stats(x,h_transfer,tolerance=float(tolerance),prec_type="[M+H]+"),axis=1)
 
 			#for idx, key in enumerate(keys):
 			#	peak_spec_df.loc[:,key] = result[idx].values
@@ -349,7 +348,7 @@ if __name__ == "__main__":
 	default_elements = "-".join(frag_utils.CANONICAL_ELEMENT_ORDER)
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--num_entries",type=int,default=-1)
+	parser.add_argument("--num_entries",type=int,default=10)
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())

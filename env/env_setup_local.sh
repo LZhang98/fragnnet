@@ -23,5 +23,6 @@ pip install pytest
 pip install cysignals
 pip install dash
 pip install jupyter-dash
+pip install swifter
 
 pip install -I -e .
