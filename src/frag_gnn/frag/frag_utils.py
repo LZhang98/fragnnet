@@ -579,7 +579,7 @@ def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
 		ccs = set(ccs)
 		return ccs
 
-def compute_frag_peak_stats(row, tolerance=0.01, prec_type="[M+H]+", 
+def compute_frag_peak_stats(row, allowed_h_transfer, tolerance=0.01, prec_type="[M+H]+", 
 			    is_ppm = False):
 	"""_summary_
 
@@ -594,8 +594,19 @@ def compute_frag_peak_stats(row, tolerance=0.01, prec_type="[M+H]+",
 	ppm = 1/1000000
 	true_mzs, true_ints = list(zip(*row["peaks"]))
 	theoretical_mzs = row["formula_peak_mzs"]
-	pred_probs = row["formula_peak_probs"]
-	prec_mask = (pred_probs > 0.).type(th.float32)
+	theoretica_probs = row["formula_peak_probs"]
+
+	allowed_idx = list(row['idx_by_h_delta'][0])
+	for h in range(1, allowed_h_transfer):
+		allowed_idx += list(row['idx_by_h_delta'][2 * h - 1])
+		allowed_idx += list(row['idx_by_h_delta'][2 * h])
+	allowed_idx = list(set(allowed_idx))
+	#print(allowed_idx)
+	indices = th.tensor(allowed_idx)
+	theoretical_mzs = th.index_select(theoretical_mzs,0, indices)
+	theoretica_probs = th.index_select(theoretica_probs,0, indices)
+
+	prec_mask = (theoretica_probs > 0.).type(th.float32)
 	# account for adduct mass
 	theoretical_mzs = theoretical_mzs + prec_mask * PREC_TYPE_TO_MASS_DIFF[prec_type]
 	# compute overlap
@@ -627,7 +638,7 @@ def compute_frag_peak_stats(row, tolerance=0.01, prec_type="[M+H]+",
 		overlap_pred_idxs = th.zeros((0,2))
 	recall = len(overlap_true_idxs) / len(true_mzs)
 	w_recall = np.sum(overlap_true_ints) / np.sum(true_ints)
-	prec = len(overlap_pred_idxs) / th.sum((pred_probs>0.).type(th.int32)).item()
+	prec = len(overlap_pred_idxs) / th.sum((theoretica_probs>0.).type(th.int32)).item()
 	if len(overlap_pred_peak_counts) > 0:
 		ppt_peak = np.mean(overlap_pred_peak_counts)
 		ppt_formula = np.mean(overlap_pred_formula_counts)
@@ -872,7 +883,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
 	ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
 	
-
 	# construct graph
 	#nx_cc_g = nx.DiGraph()
 	ccs_un = sorted(list(set(ccs)))
@@ -939,7 +949,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	# map nodes to formulae indices
 	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
 	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
-
+	idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
 	node_num_formules_sum = 0
 
 	feats_start = feats_end
@@ -950,17 +960,17 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		for h_delta in formulae_dict:
 			formula = formulae_dict[h_delta]
 			formula_idx = formula_to_idx[formula]
-
+			
 			#h_delta [0,-1,1,-2,2,-3,3,-4,4]
-			if h_delta >= 0:
-				formulae_idx[h_delta * 2] = formula_idx
-			else:
-				formulae_idx[(-h_delta * 2) - 1] = formula_idx
+			h_delta_idx = h_delta * 2 if h_delta >= 0 else (-h_delta * 2) - 1
+			formulae_idx[h_delta_idx] = formula_idx
+			idx_by_h_delta[h_delta_idx].add(formula_idx)
 			
 		#print(formulae_idx)
 			#formulae_idx.append(formula_idx)
 		node_num_formules_sum += len(formulae)
 		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end] = th.tensor(formulae_idx, dtype=node_feat_data_type)
+
 
 	# peak mzs array
 	formula_peak_mzs = []
@@ -1022,6 +1032,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	dag_d["formula_peak_mzs"] = formula_peak_mzs
 	dag_d["formula_peak_probs"] = formula_peak_probs
 	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
+	dag_d["idx_by_h_delta"] = idx_by_h_delta # forumla idx for each h_delta
 	dag_d["dag"] = pyg_cc_g #nx_to_pyg(nx_cc_g)
 	# add stats here
 	# we need change data type again
