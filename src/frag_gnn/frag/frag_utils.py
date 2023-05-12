@@ -621,7 +621,7 @@ def compute_frag_peak_stats(row, allowed_h_transfer, tolerance=0.01, prec_type="
 		if not is_ppm:
 			mz_close = mz_diffs < tolerance 
 		else:
-			mz_close = mz_diffs < (tolerance * ppm)
+			mz_close = mz_diffs < (true_mz * tolerance * ppm)
 		if th.any(mz_close):
 			pred_idx = th.nonzero(mz_close,as_tuple=False)
 			num_formula_match = th.sum(th.any(mz_close,dim=1).type(th.int32)).item()
