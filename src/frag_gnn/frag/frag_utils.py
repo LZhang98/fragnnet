@@ -1,7 +1,6 @@
 #from copy import deepcopy
 import pickle
 import _pickle as cPickle
-import networkx as nx
 import numpy as np
 import pandas as pd
 import rdkit.Chem as Chem
@@ -509,15 +508,6 @@ def formula_arr_to_str(formula):
 				formula_str += str(count)
 	return formula_str
 
-def ne_subgraph(nodes,edges):
-	g = nx.Graph()
-	g.add_nodes_from(nodes)
-	for edge in edges:
-		if edge[0] in nodes and edge[1] in nodes:
-			g.add_edge(edge[0],edge[1])
-	# print(nodes,g.nodes(),g.edges())
-	return g
-
 def collect_ccs_depths(ccs: list[int], ccs_depths: list[int]) -> dict[set[int]]:
 	"""Method to collect depth for ccs
 
@@ -651,198 +641,6 @@ def compute_frag_peak_stats(row, allowed_h_transfer, tolerance=0.01, prec_type="
 		ppt_formula = np.nan
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
-def get_node_feat_names_shapes(nx_g):
-
-	node_feat_shapes = []
-	node_feat_names = []
-	dummy_node_idx = next(iter(nx_g.nodes()))
-	dummy_node_feats = nx_g.nodes[dummy_node_idx]
-	for k,v in dummy_node_feats.items():
-		node_feat_names.append(k)
-		node_feat_shapes.append(len(v))
-	return node_feat_names, node_feat_shapes
-
-def get_edge_feat_names_shapes(nx_g):
-
-	edge_feat_shapes = []
-	edge_feat_names = []
-	dummy_edge_idx = next(iter(nx_g.edges()))
-	dummy_edge_feats = nx_g.edges[dummy_edge_idx]
-	for k,v in dummy_edge_feats.items():
-		edge_feat_names.append(k)
-		edge_feat_shapes.append(len(v))
-	return edge_feat_names, edge_feat_shapes
-
-def compute_dags_nx(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
-	"""_summary_
-
-	Args:
-		mol_d (_type_): _description_
-		max_depth (_type_): _description_
-		h_prior (_type_): _description_
-		max_h_transfer (_type_): _description_
-		frag_max_time (_type_): _description_
-
-	Raises:
-		NotImplementedError: _description_
-		NotImplementedError: _description_
-
-	Returns:
-		_type_: _description_
-	"""
-	#print("compute_dags")
-	assert h_prior in [True,False], h_prior
-	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
-	# time the recursive part
-	if frag_max_time is None:
-		frag_max_time = int(1e6)
-	
-	node_mask = node_mask.astype(MASK_DTYPE)
-	edge_mask = edge_mask.astype(MASK_DTYPE)
-	#def _compute_frags():
-	ccs, ccs_parents, ccs_depths, reached_depth = compute_frags.compute_ccs(
-		num_nodes,
-		num_edges,
-		node_mask,
-		edges,
-		edge_mask,
-		edge_to_node_idx,
-		max_depth,
-		True,
-		True,
-		frag_max_time
-	)
-
-	assert len(ccs) == len(ccs_parents) == len(ccs_depths)
-	ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
-	ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
-	
-	#return ccs, ccs_to_parents, ccs_to_depths
-	#ccs, ccs_to_parents, ccs_to_depths = _compute_frags()
-
-	# construct graph
-	nx_cc_g = nx.DiGraph()
-	ccs_un = sorted(list(set(ccs)))
-	assert len(ccs_un) == len(ccs_to_parents) == len(ccs_to_depths)
-	assert -1 not in ccs_un
-	nx_cc_g.add_nodes_from(ccs_un)
-
-	# add node depth information
-	# convert to a one hot encoding
-	for cc, depths in ccs_to_depths.items():
-		depth_arr = [0 for _ in range(max_depth+1)]
-		for depth in depths:
-			depth_arr[depth] = 1
-		ccs_to_depths[cc] = depth_arr
-	nx.set_node_attributes(nx_cc_g,ccs_to_depths,"depth")
-
-	# add node mask information
-	# convert to a one hot encoding
-	ccs_to_mask = {cc : convert_cc_int_to_np_mask(num_nodes,cc,bitmask=True) for cc in ccs_un}
-	#print(ccs)
-	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
-	nx.set_node_attributes(nx_cc_g,ccs_to_mask,"mask")
-
-	# add node h count and element information
-	hs_arr = mol_d["hs_arr"]
-	elems = mol_d["elems"]
-	ccs_to_formula = {}
-	for cc, cc_mask in ccs_to_mask.items():
-		cc_h_count = sum(cc_mask[i]*hs_arr[i] for i in range(len(cc_mask)))
-		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True).tolist()
-		cc_formula[CANONICAL_H_IDX] = cc_h_count
-		ccs_to_formula[cc] = cc_formula
-	nx.set_node_attributes(nx_cc_g,ccs_to_formula,"base_formula")
-
-	# map nodes to formulae
-	ccs_to_formulae = {}
-	formulae_un = set()
-	for cc in ccs_un:
-		cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
-		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True)
-		# print(delta_h_to_formula)
-		formulae = list(delta_h_to_formula.values())
-		ccs_to_formulae[cc] = formulae
-		formulae_un.update(formulae)
-		
-	# map nodes to formulae indices
-	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
-	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
-	ccs_to_formulae_idx = {}
-	node_num_formules_sum = 0
-	for cc in ccs_un:
-		formulae = ccs_to_formulae[cc]
-		formulae_idx = []
-		for formula in formulae:
-			formula_idx = formula_to_idx[formula]
-			formulae_idx.append(formula_idx)
-		ccs_to_formulae_idx[cc] = formulae_idx
-		node_num_formules_sum += len(formulae)
-	nx.set_node_attributes(nx_cc_g,ccs_to_formulae_idx,"h_formulae_idx")
-
-	# peak mzs array
-	formula_peak_mzs = []
-	formula_peak_probs = []
-	peaks_for_element_cache = {}
-	for formula, idx in formula_to_idx.items():
-		if formula == "":
-			peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
-			peak_probs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
-		else:
-			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"",return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
-			peak_mzs, peak_probs = zip(*sorted(zip(peak_mzs, peak_probs), key=lambda x: x[1], reverse=True))
-			peak_mzs = np.array(peak_mzs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
-			peak_mzs = np.pad(peak_mzs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_mzs)),"constant",constant_values=0)
-			peak_probs = np.array(peak_probs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
-			peak_probs = np.pad(peak_probs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_probs)),"constant",constant_values=0)
-		formula_peak_mzs.append(peak_mzs)
-		formula_peak_probs.append(peak_probs)
-	# save as bf16 for speed and lower ram usage
-	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = th.bfloat16)
-	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = th.bfloat16)
-
-	# add edges
-	edges_to_mask, edges_to_formula = {}, {}
-	for cc, parents in ccs_to_parents.items():
-		cc_mask = ccs_to_mask[cc]
-		for parent in parents:
-			# skip self edges
-			if parent == cc or parent == -1:
-				continue
-			nx_cc_g.add_edge(parent,cc)
-			parent_mask = ccs_to_mask[parent]
-			diff_mask = np.array([parent_mask[i]-cc_mask[i] for i in range(len(cc_mask))], dtype=MASK_DTYPE)
-			#print(type(diff_mask))
-			edges_to_mask[(parent,cc)] = diff_mask
-			diff_formula = cc_to_formula_arr(diff_mask,elems)
-			edges_to_formula[(parent,cc)] = diff_formula
-	#print(edges_to_formula)
-	nx.set_edge_attributes(nx_cc_g,edges_to_mask,"mask")
-	nx.set_edge_attributes(nx_cc_g,edges_to_formula,"base_formula")
-
-	# convert to pyg
-	dag_d = {}
-	dag_d["max_depth"] = max_depth
-	dag_d["reached_depth"] = reached_depth
-	dag_d["h_prior"] = h_prior
-	dag_d["max_h_transfer"] = max_h_transfer
-	dag_d["dag"] = nx_cc_g #nx_to_pyg(nx_cc_g)
-	dag_d["formula_peak_mzs"] = formula_peak_mzs
-	dag_d["formula_peak_probs"] = formula_peak_probs
-	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-
-	# add stats here
-	# we need change data type again
-	# we just need to change this one place
-	dag_d["dag_num_edges"] = nx_cc_g.number_of_edges()
-	dag_d["dag_num_nodes"] = nx_cc_g.number_of_nodes()
-	dag_d["dag_sparsity"] = 2*nx_cc_g.number_of_edges()/(nx_cc_g.number_of_nodes() *(nx_cc_g.number_of_nodes() - 1))
-	dag_d["formula_redundancy"] = node_num_formules_sum/nx_cc_g.number_of_nodes()
-	dag_d["node_feature_size"] = None #pyg_cc_g.num_features
-	dag_d["edge_featuer_size"] = None #pyg_cc_g.num_edge_features
-	dag_d["is_directed"] = True
-	return dag_d
-
 def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	"""_summary_
 
@@ -888,7 +686,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
 	
 	# construct graph
-	#nx_cc_g = nx.DiGraph()
 	ccs_un = sorted(list(set(ccs)))
 	assert len(ccs_un) == len(ccs_to_parents) == len(ccs_to_depths)
 	assert -1 not in ccs_un
@@ -1046,24 +843,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 
 	return dag_d
 	
-def nx_to_pyg(nx_cc_g):
-
-	node_feat_names, node_feat_shapes = get_node_feat_names_shapes(nx_cc_g)
-	edge_feat_names, edge_feat_shapes = get_edge_feat_names_shapes(nx_cc_g)
-
-	pyg_cc_g = from_networkx(
-		nx_cc_g, 
-		group_node_attrs=node_feat_names, 
-		group_edge_attrs=edge_feat_names,
-	)
-
-	# TODO: can we reduce storage?
-	# TODO: we are going to save as nx picke and convert to pyg graph
-	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
-	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
-
-	return pyg_cc_g
-
 def get_node_feats(node_feats,node_feat_idxs,key):
 
 	if key == "depth":
