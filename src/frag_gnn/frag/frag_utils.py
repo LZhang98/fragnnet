@@ -52,7 +52,11 @@ IDX_TO_ELEMENT = { idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 MAX_H_TRANSFER = 4
 MAX_NUM_MZS_PER_FORMULA = 5
 
-MASK_DTYPE = np.ubyte
+# 8-bit unsigned integer (0 to 255), we may run into trouble for very large inputs (what can have 255 Cabons?)
+MASK_DTYPE = np.ubyte 
+NODE_FEAT_DTYPE = th.int16
+EDGE_FEAT_DTYPE = th.int8
+META_DATA_DTYPE = th.float32 
 
 def convert_cc_mask_to_int(cc:list|np.ndarray)->int:
 	"""covert a cc mask to an int
@@ -475,7 +479,7 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSF
 
 def cc_to_formula_arr(cc,elems,bitmask=False):
 	# does not include h count
-	formula_arr = np.zeros([len(ELEMENT_TO_IDX)],dtype=int)
+	formula_arr = np.zeros([len(ELEMENT_TO_IDX)],dtype=MASK_DTYPE)
 	if bitmask:
 		for i in range(len(cc)):
 			if cc[i]:
@@ -810,7 +814,7 @@ def compute_dags_nx(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 			diff_mask = np.array([parent_mask[i]-cc_mask[i] for i in range(len(cc_mask))], dtype=MASK_DTYPE)
 			#print(type(diff_mask))
 			edges_to_mask[(parent,cc)] = diff_mask
-			diff_formula = np.array(cc_to_formula_arr(diff_mask,elems).tolist(), dtype=MASK_DTYPE)
+			diff_formula = cc_to_formula_arr(diff_mask,elems)
 			edges_to_formula[(parent,cc)] = diff_formula
 	#print(edges_to_formula)
 	nx.set_edge_attributes(nx_cc_g,edges_to_mask,"mask")
@@ -891,11 +895,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	
 	cc_to_node_id_dict = {k: v for v, k in enumerate(ccs_un)}
 	
-	# let us set datatype here
-	node_feat_data_type = th.int16
-	edge_feat_data_type = th.int8
-	float_data_type = th.float32 #th.bfloat16
-
 	# add node depth information
 	# convert to a one hot encoding
 	depth_node_feat_size = max_depth+1 #depth
@@ -908,7 +907,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 
 	# add depth info
 	# one hot encoding
-	pyg_node_feats = th.zeros([len(ccs_un),total_node_feat_size],  dtype=node_feat_data_type)
+	pyg_node_feats = th.zeros([len(ccs_un),total_node_feat_size],  dtype=NODE_FEAT_DTYPE)
 	for cc, depths in ccs_to_depths.items():
 		for depth in depths:
 			pyg_node_feats[cc_to_node_id_dict[cc]][depth] = 1
@@ -919,7 +918,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	feats_end = feats_start + mask_node_feat_size
 	ccs_to_mask = {cc : convert_cc_int_to_mask(num_nodes,cc,bitmask=True) for cc in ccs_un}
 	for cc in ccs_to_mask:
-		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end] = th.tensor(ccs_to_mask[cc], dtype=node_feat_data_type)
+		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end] = th.tensor(ccs_to_mask[cc], dtype=NODE_FEAT_DTYPE)
 
 	#print(ccs)
 	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
@@ -934,7 +933,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		cc_h_count = sum(cc_mask[i]*hs_arr[i] for i in range(len(cc_mask)))
 		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True).tolist()
 		cc_formula[CANONICAL_H_IDX] = cc_h_count
-		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end]= th.tensor(cc_formula,  dtype=node_feat_data_type)
+		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end]= th.tensor(cc_formula, dtype=NODE_FEAT_DTYPE)
 
 	# map nodes to formulae
 	ccs_to_formulae = {}
@@ -969,7 +968,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		#print(formulae_idx)
 			#formulae_idx.append(formula_idx)
 		node_num_formules_sum += len(formulae)
-		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end] = th.tensor(formulae_idx, dtype=node_feat_data_type)
+		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end] = th.tensor(formulae_idx, dtype=NODE_FEAT_DTYPE)
 
 
 	# peak mzs array
@@ -991,8 +990,8 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		formula_peak_probs.append(peak_probs)
 
 	# save as bf16 or float32 for speed and lower ram usage
-	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = float_data_type)
-	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = float_data_type)
+	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = META_DATA_DTYPE)
+	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = META_DATA_DTYPE)
 
 	# add edges info
 	pyg_edge_index = [[],[]]
@@ -1017,7 +1016,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	# edge index need to be int64 or it will throw error where compute degree
 
 	pyg_edge_index = th.tensor(pyg_edge_index, dtype =th.int64)
-	pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=edge_feat_data_type)
+	pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=EDGE_FEAT_DTYPE)
 
 	pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
 	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
