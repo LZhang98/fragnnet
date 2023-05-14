@@ -8,3 +8,8 @@ ripts/run_compute_frags.py
 ### check memory usage
 memray run --native ./scripts/run_compute_frags.py
 memray flamegraph ./scripts/run_compute_frags.abc.bin
+
+### Profile
+[https://medium.com/@narenandu/profiling-and-visualization-tools-in-python-89a46f578989]
+~ pip install snakeviz
+snakeviz run_frag_exp.prof

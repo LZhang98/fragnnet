@@ -130,9 +130,9 @@ def get_fraggen_input_arrays(mol_d:dict):
 		edges[bond_idx,1] = bond[1]
 	edge_to_node_idx = compute_frags.py_compute_node_to_edge_idx(num_nodes,num_edges,edges)
 	# print(edge_to_node_idx)
-	node_mask = np.zeros((MAX_NUM_NODES,),dtype=DTYPE)
+	node_mask = np.zeros((num_nodes,),dtype=DTYPE)
 	node_mask[:num_nodes] = 1
-	edge_mask = np.zeros((MAX_NUM_EDGES,),dtype=DTYPE)
+	edge_mask = np.zeros((num_edges,),dtype=DTYPE)
 	edge_mask[:num_edges] = 1
 	return num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx
 
@@ -332,7 +332,9 @@ def compute_cc_h_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bon
 
 def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 				,max_h_transfer:int
-				,formula_strs:bool=False) ->dict[int,str]|dict[int,np.ndarray]:
+				,formula_strs:bool=False
+				,bitmask:bool = True
+				,base_formula = None) ->dict[int,str]|dict[int,np.ndarray]:
 	"""given a connected component, comupute all forumla within give h shift
 
 	Args:
@@ -353,7 +355,8 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 	hs_arr = mol_d["hs_arr"]
 	elems = mol_d["elems"]
 	bond_mask_arr = mol_d["bond_mask_arr"]
-	base_formula = cc_to_formula_arr(cc,elems)
+	if base_formula is None:
+		base_formula = cc_to_formula_arr(cc,elems, bitmask)
 	sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
 	cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
 	floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
@@ -548,31 +551,6 @@ def collect_ccs_parents(ccs: list[int],ccs_parents:list[int]) -> dict[set[int]]:
 			ccs_to_parents[cc] = set([parent])
 	return ccs_to_parents
 
-
-def compute_frags_cython(mol_d,max_depth,parents=False,depths=False):
-
-	assert not parents
-	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
-	# time this part
-	ccs, ccs_parents, _, _ = compute_frags.compute_ccs(
-		num_nodes,
-		num_edges,
-		node_mask,
-		edges,
-		edge_mask,
-		edge_to_node_idx,
-		max_depth,
-		parents,
-		depths,
-		int(1e6)
-	)
-	if depths:
-		ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
-		return ccs_to_parents
-	else:
-		ccs = set(ccs)
-		return ccs
-
 def compute_frag_peak_stats(row, allowed_h_transfer, tolerance=0.01, prec_type="[M+H]+", 
 			    is_ppm = False):
 	"""_summary_
@@ -668,7 +646,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	node_mask = node_mask.astype(MASK_DTYPE)
 	edge_mask = edge_mask.astype(MASK_DTYPE)
 	#def _compute_frags():
-	ccs, ccs_parents, ccs_depths, reached_depth = compute_frags.compute_ccs(
+	node_mask_matrix, node_depth_matrix, dag_edge_matrix, reached_depth = compute_frags.compute_ccs(
 		num_nodes,
 		num_edges,
 		node_mask,
@@ -676,22 +654,9 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		edge_mask,
 		edge_to_node_idx,
 		max_depth,
-		True,
-		True,
 		frag_max_time
 	)
 
-	assert len(ccs) == len(ccs_parents) == len(ccs_depths)
-	ccs_to_parents = collect_ccs_parents(ccs,ccs_parents)
-	ccs_to_depths = collect_ccs_depths(ccs,ccs_depths)
-	
-	# construct graph
-	ccs_un = sorted(list(set(ccs)))
-	assert len(ccs_un) == len(ccs_to_parents) == len(ccs_to_depths)
-	assert -1 not in ccs_un
-	
-	cc_to_node_id_dict = {k: v for v, k in enumerate(ccs_un)}
-	
 	# add node depth information
 	# convert to a one hot encoding
 	depth_node_feat_size = max_depth+1 #depth
@@ -702,57 +667,44 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	edge_feat_shapes = [num_nodes, len(ELEMENT_TO_IDX)]
 	total_node_feat_size = sum(node_feat_shapes)
 
-	# add depth info
-	# one hot encoding
-	pyg_node_feats = th.zeros([len(ccs_un),total_node_feat_size],  dtype=NODE_FEAT_DTYPE)
-	for cc, depths in ccs_to_depths.items():
-		for depth in depths:
-			pyg_node_feats[cc_to_node_id_dict[cc]][depth] = 1
-
-	# add node mask information
-	# convert to a one hot encoding
-	feats_start = depth_node_feat_size
-	feats_end = feats_start + mask_node_feat_size
-	ccs_to_mask = {cc : convert_cc_int_to_mask(num_nodes,cc,bitmask=True) for cc in ccs_un}
-	for cc in ccs_to_mask:
-		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end] = th.tensor(ccs_to_mask[cc], dtype=NODE_FEAT_DTYPE)
-
-	#print(ccs)
-	assert len(ccs_to_mask) == len(ccs_to_parents) == len(ccs_to_depths)
-
 	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
 	elems = mol_d["elems"]
-	#ccs_to_formula = {}
-	feats_start = feats_end
-	feats_end = feats_start + base_formula_node_feat_size
-	for cc, cc_mask in ccs_to_mask.items():
+	cc_formula_list = []
+	for cc_mask in node_mask_matrix:
 		cc_h_count = sum(cc_mask[i]*hs_arr[i] for i in range(len(cc_mask)))
-		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True).tolist()
+		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True)
 		cc_formula[CANONICAL_H_IDX] = cc_h_count
-		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end]= th.tensor(cc_formula, dtype=NODE_FEAT_DTYPE)
+		cc_formula_list.append(cc_formula)
+	node_formula_matrix = np.stack(cc_formula_list, dtype=np.ubyte)
+	
+	#pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end]= th.tensor(cc_formula, dtype=NODE_FEAT_DTYPE)
 
 	# map nodes to formulae
-	ccs_to_formulae = {}
+	formulae_list = []
 	formulae_un = set()
-	for cc in ccs_un:
-		cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
-		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True)
+	node_num_formules_sum = 0
+	for idx, cc_mask in enumerate(node_mask_matrix):
+		#cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
+		base_formula = node_formula_matrix[idx]
+		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True, base_formula = base_formula)
 		formulae = list(delta_h_to_formula.values())
-		ccs_to_formulae[cc] = delta_h_to_formula
+		formulae_list.append(delta_h_to_formula)
 		formulae_un.update(formulae)
+		node_num_formules_sum += len(formulae)
 		
 	# map nodes to formulae indices
 	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
 	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
 	idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
-	node_num_formules_sum = 0
 
-	feats_start = feats_end
-	feats_end = feats_start + formula_node_feat_size
-	for cc in ccs_un:
-		formulae_dict = ccs_to_formulae[cc]
-		formulae_idx = [0] * formula_node_feat_size
+
+	#feats_start = feats_end
+	#feats_end = feats_start + formula_node_feat_size
+	formula_idx_list = []
+	for formulae_dict in formulae_list:
+		#formulae_dict = formulae_list[idx]
+		formulae_idx = np.zeros(formula_node_feat_size, dtype=np.int16)
 		for h_delta in formulae_dict:
 			formula = formulae_dict[h_delta]
 			formula_idx = formula_to_idx[formula]
@@ -761,12 +713,12 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 			h_delta_idx = h_delta * 2 if h_delta >= 0 else (-h_delta * 2) - 1
 			formulae_idx[h_delta_idx] = formula_idx
 			idx_by_h_delta[h_delta_idx].add(formula_idx)
-			
-		#print(formulae_idx)
-			#formulae_idx.append(formula_idx)
-		node_num_formules_sum += len(formulae)
-		pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end] = th.tensor(formulae_idx, dtype=NODE_FEAT_DTYPE)
+		formula_idx_list.append(formulae_idx)
 
+	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.int16)
+	
+	pyg_node_feats = np.hstack((node_mask_matrix, node_depth_matrix,node_formula_matrix,node_formulae_matrix))
+	pyg_node_feats = th.tensor(pyg_node_feats,dtype=NODE_FEAT_DTYPE)
 
 	# peak mzs array
 	formula_peak_mzs = []
@@ -791,33 +743,27 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = META_DATA_DTYPE)
 
 	# add edges info
-	pyg_edge_index = [[],[]]
-	pyg_edge_feats = []
-	for cc, parents in ccs_to_parents.items():
-		cc_mask = ccs_to_mask[cc]
-		for parent in parents:
-			# skip self edges
-			if parent == cc or parent == -1:
-				continue
-			# add to edge
-			pyg_edge_index[0].append(cc_to_node_id_dict[parent])
-			pyg_edge_index[1].append(cc_to_node_id_dict[cc])
-			# compute edge features
-			parent_mask = ccs_to_mask[parent]
-			diff_mask = [parent_mask[i]-cc_mask[i] for i in range(len(cc_mask))] 
-			diff_formula = cc_to_formula_arr(diff_mask,elems).tolist()
-			# add to list
-			pyg_edge_feats.append(diff_mask + diff_formula)
+	#pyg_edge_index = [[],[]]
+	pyg_edge_feat_list = []
+	for edge in dag_edge_matrix.T:
+		from_idx, to_idx = edge
+		from_cc_mask = node_mask_matrix[from_idx]
+		to_cc_mask = node_mask_matrix[to_idx]
 
+		diff_mask =  from_cc_mask - to_cc_mask
+		diff_formula = cc_to_formula_arr(diff_mask,elems, bitmask = True)
+		pyg_edge_feat_list.append(np.concatenate((diff_mask, diff_formula)))
+
+	pyg_edge_feats = np.stack(pyg_edge_feat_list, dtype=np.int8)
 
 	# edge index need to be int64 or it will throw error where compute degree
-
-	pyg_edge_index = th.tensor(pyg_edge_index, dtype =th.int64)
+	pyg_edge_index = th.tensor(dag_edge_matrix, dtype =th.int64)
 	pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=EDGE_FEAT_DTYPE)
 
 	pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
 	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
 	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
+
 
 	# convert to pyg
 	dag_d = {}
@@ -843,7 +789,20 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 
 	return dag_d
 	
-def get_node_feats(node_feats,node_feat_idxs,key):
+def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
+	"""get node features by key used for pyg
+
+	Args:
+		node_feats (_type_): _description_
+		node_feat_idxs (_type_): _description_
+		key (_type_): _description_
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		_type_: _description_
+	"""
 
 	if key == "depth":
 		node_feats = node_feats[:,node_feat_idxs[0]:node_feat_idxs[1]]
@@ -857,7 +816,20 @@ def get_node_feats(node_feats,node_feat_idxs,key):
 		raise ValueError("key not found")
 	return node_feats
 
-def get_edge_feats(edge_feats,edge_feat_idxs,key):
+def get_edge_feats(edge_feats:th.Tensor,edge_feat_idxs:int,key:str):
+	"""get edege feats used for pyg
+
+	Args:
+		edge_feats (_type_): _description_
+		edge_feat_idxs (_type_): _description_
+		key (_type_): _description_
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		_type_: _description_
+	"""
 
 	if key == "mask":
 		key_edge_feats = edge_feats[:,edge_feat_idxs[0]:edge_feat_idxs[1]]

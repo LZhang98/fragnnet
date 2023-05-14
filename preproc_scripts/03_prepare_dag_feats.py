@@ -10,7 +10,7 @@ from pprint import pformat
 import json
 import traceback
 import sys
-import swifter
+#import swifter
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
@@ -166,8 +166,7 @@ def main(args):
 	def timed_get_dags(mol, mol_id, 
 		    max_depth,h_prior,max_h_transfer, max_time,
 			output_dir:str, use_cached = True, compressed = False):
-		""" time and save networkx graph and meta to a pickle file
-
+		""" 
 		Args:
 			mol (_type_): _description_
 			mol_id (int): _description_
@@ -210,6 +209,36 @@ def main(args):
 		return dag_d
 
 
+	def get_stats(row, tolerances:list, h_transfer:int):
+		"""_summary_
+
+		Args:
+			tolerances (list): _description_
+			h_transfer (int): _description_
+
+		Returns:
+			_type_: _description_
+		"""
+		tolerances = [tolerance for tolerance in args.tolerances.split("-")]
+	
+		for tolerance in tolerances:
+			for h_transfer in range(1, args.max_h_transfer + 1):
+				keys = [
+					f"recall_{tolerance}_h{h_transfer}",
+					f"wrecall_{tolerance}_h{h_transfer}",
+					f"prec_{tolerance}_h{h_transfer}",
+					f"ppt_peak_{tolerance}_h{h_transfer}",
+					f"ppt_formula_{tolerance}_h{h_transfer}"
+				]
+
+				if 'ppm' in tolerance:
+					result = frag_utils.compute_frag_peak_stats(row,h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
+				else:
+					result = frag_utils.compute_frag_peak_stats(row,h_transfer,tolerance=float(tolerance),prec_type="[M+H]+")
+
+		return result
+	
+	print(">Compute Fragments")
 	input_rows = []
 	for _, row in tqdm(mol_df.iterrows(), total=mol_df.shape[0], desc= "prepare inputs"):
 		input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, True])
@@ -219,7 +248,7 @@ def main(args):
 	#exit()
 	tqdm_iter = tqdm(input_rows,desc=pformat(timed_get_dags),total=len(input_rows))
 	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
-	print(">Frag Done")
+	print(">Fragments Computed")
 	#print(frag_results)
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
 	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
