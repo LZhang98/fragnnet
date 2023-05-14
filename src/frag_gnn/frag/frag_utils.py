@@ -16,7 +16,7 @@ import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.utils.misc_utils import timeit
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from frag_gnn.frag.compute_frags import (
-	DTYPE,
+	MASK_DTYPE,
 	MAX_NUM_EDGES,
 	MAX_NUM_NODES,
 )
@@ -52,7 +52,7 @@ MAX_H_TRANSFER = 4
 MAX_NUM_MZS_PER_FORMULA = 5
 
 # 8-bit unsigned integer (0 to 255), we may run into trouble for very large inputs (what can have 255 Cabons?)
-MASK_DTYPE = np.ubyte 
+#MASK_DTYPE = np.ubyte 
 NODE_FEAT_DTYPE = th.int16
 EDGE_FEAT_DTYPE = th.int8
 META_DATA_DTYPE = th.float32 
@@ -124,15 +124,15 @@ def get_fraggen_input_arrays(mol_d:dict):
 	num_edges = mol_d["bond_mask_arr"].shape[0]
 	assert num_nodes <= MAX_NUM_NODES, num_nodes
 	assert num_edges <= MAX_NUM_EDGES, num_edges
-	edges = np.zeros((MAX_NUM_EDGES,2),dtype=DTYPE)
+	edges = np.zeros((MAX_NUM_EDGES,2),dtype=np.intc)
 	for bond_idx, bond in enumerate(mol_d["bonds"]):
 		edges[bond_idx,0] = bond[0]
 		edges[bond_idx,1] = bond[1]
 	edge_to_node_idx = compute_frags.py_compute_node_to_edge_idx(num_nodes,num_edges,edges)
 	# print(edge_to_node_idx)
-	node_mask = np.zeros((num_nodes,),dtype=DTYPE)
+	node_mask = np.zeros((num_nodes,),dtype=MASK_DTYPE)
 	node_mask[:num_nodes] = 1
-	edge_mask = np.zeros((num_edges,),dtype=DTYPE)
+	edge_mask = np.zeros((num_edges,),dtype=MASK_DTYPE)
 	edge_mask[:num_edges] = 1
 	return num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx
 
@@ -676,10 +676,8 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True)
 		cc_formula[CANONICAL_H_IDX] = cc_h_count
 		cc_formula_list.append(cc_formula)
-	node_formula_matrix = np.stack(cc_formula_list, dtype=np.ubyte)
+	node_formula_matrix = np.stack(cc_formula_list, dtype=MASK_DTYPE)
 	
-	#pyg_node_feats[cc_to_node_id_dict[cc]][feats_start:feats_end]= th.tensor(cc_formula, dtype=NODE_FEAT_DTYPE)
-
 	# map nodes to formulae
 	formulae_list = []
 	formulae_un = set()

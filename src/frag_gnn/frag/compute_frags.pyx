@@ -13,7 +13,8 @@ from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
 MAX_NUM_NODES = 60 # hard cap on 64!!
 MAX_NUM_EDGES = 4 * MAX_NUM_NODES# ~4*MAX_NUM_NODES 
-DTYPE = np.intc
+#DTYPE = np.intc
+MASK_DTYPE = np.uint8
 MAX_EDGE_PER_NODE = 6 # Sulfur
 
 class TimeoutError(RuntimeError):
@@ -58,7 +59,7 @@ def mask_to_big_int(int num, char [::1] mask):
 
 cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
 
-    cdef int [:,::1] node_to_edge_idx = -np.ones((num_nodes,MAX_EDGE_PER_NODE),dtype=DTYPE)
+    cdef int [:,::1] node_to_edge_idx = -np.ones((num_nodes,MAX_EDGE_PER_NODE),dtype=np.intc)
     cdef int src_node, dst_node, j, k
     for j in range(num_edges):
         src_node = edges[j,0]
@@ -75,7 +76,7 @@ cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,:
     return node_to_edge_idx
 
 def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
-    return np.asarray(compute_node_to_edge_idx(num_nodes,num_edges,edges),dtype=DTYPE)
+    return np.asarray(compute_node_to_edge_idx(num_nodes,num_edges,edges),dtype=np.intc)
 
 cdef connected_components(
         int num_nodes,
@@ -103,8 +104,8 @@ cdef connected_components(
     cdef int [::1] node_queue = np.zeros(num_nodes,dtype=np.intc)
     np_fill(node_queue,-1)
 
-    cdef char [:,::1] cc_nodes = np.zeros((2,num_nodes),dtype= np.ubyte)
-    cdef char [:,::1] cc_edges = np.zeros((2,num_edges),dtype= np.ubyte)
+    cdef char [:,::1] cc_nodes = np.zeros((2,num_nodes),dtype= MASK_DTYPE)
+    cdef char [:,::1] cc_edges = np.zeros((2,num_edges),dtype= MASK_DTYPE)
 
     # run BFS
     while num_visited < num_nonmask:
@@ -209,8 +210,6 @@ def compute_ccs(
 
     cdef list ccs = [node_mask_key]
     cdef list cc_edges = [edge_mask_key]
-    #cdef list current_edge_masks_list = [edge_mask_key]
-    #cdef list ccs_parents = [-1]
     cdef list ccs_depths = [0]
     cdef dict cc_node_mask_dict = {node_mask_key:node_mask}
     cdef dict cc_edge_mask_dict = {edge_mask_key:edge_mask}
@@ -222,7 +221,7 @@ def compute_ccs(
     cdef dict css_to_id_dict = {node_mask_key:0}
     # needed by pyg
     dag_edge_node_idx = set({})
-    #cdef list dag_edge_css_hash = [[],[]]
+
 
     #print("test_list", test_list[0])
     force_stop = False
@@ -230,24 +229,19 @@ def compute_ccs(
     # for each depth
     for current_depth in range(max_depth):
         # keep all the ccs mask for next round
-        #child_node_mask_list = []
-        child_edge_mask_list = []
-        
-        #print(f">depth:{current_depth}")
+        child_edge_mask_list = []        
         ccs_end = len(ccs)
         
         for node_idx in range(ccs_idx,ccs_end):
-
             # let us check time
             cur_time = get_time()
             sig_check()
-            #if cur_time - start_time > time_limit:
-            #    raise TimeoutError
             if cur_time - start_time > time_limit:
                 force_stop = True
                 reached_depth = current_depth
                 break
-
+            
+            # get mask hash and mask
             curent_node_mask_key = ccs[node_idx]
             current_edge_mask_key = cc_edges[node_idx]
             current_node_mask = cc_node_mask_dict[curent_node_mask_key]
@@ -339,16 +333,15 @@ def compute_ccs(
     for cc in css_to_id_dict:
         ordered_ccs[css_to_id_dict[cc]] = cc
     # create node masks
-    node_mask_matrix = np.stack([np.asarray(cc_node_mask_dict[cc]) for cc in ordered_ccs], dtype = np.ubyte)
+    node_mask_matrix = np.stack([np.asarray(cc_node_mask_dict[cc]) for cc in ordered_ccs], dtype = MASK_DTYPE)
 
     # create node depth matrix
-    node_depth_matrix = np.zeros((num_un_ccs, max_depth + 1),dtype = np.ubyte)
+    node_depth_matrix = np.zeros((num_un_ccs, max_depth + 1),dtype = MASK_DTYPE)
     for idx,cc in enumerate(ordered_ccs):
         for d_id in ccs_depth_dict[cc]:
             node_depth_matrix[idx,d_id] = 1
 
     # create edge set:
-    dag_edge_matrix = np.asarray(list(dag_edge_node_idx), dtype = np.ubyte).T
+    dag_edge_matrix = np.asarray(list(dag_edge_node_idx), dtype = MASK_DTYPE).T
     
-
     return node_mask_matrix, node_depth_matrix, dag_edge_matrix, reached_depth
