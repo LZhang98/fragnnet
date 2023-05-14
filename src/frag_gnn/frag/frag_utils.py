@@ -511,46 +511,6 @@ def formula_arr_to_str(formula):
 				formula_str += str(count)
 	return formula_str
 
-def collect_ccs_depths(ccs: list[int], ccs_depths: list[int]) -> dict[set[int]]:
-	"""Method to collect depth for ccs
-
-	Args:
-		ccs (list[int]): list of connected components
-		ccs_depths (list[int]): depths for each components
-
-	Returns:
-		dict[set[int]]: _description_
-	"""
-
-	ccs_to_depths = {}
-	for cc_idx, cc in enumerate(ccs):
-		depth = ccs_depths[cc_idx]
-		if cc in ccs_to_depths:
-			ccs_to_depths[cc].add(depth)
-		else:
-			ccs_to_depths[cc] = set([depth])
-	return ccs_to_depths
-
-def collect_ccs_parents(ccs: list[int],ccs_parents:list[int]) -> dict[set[int]]:
-	"""Method to collect depth for ccs
-
-	Args:
-		ccs (list[int]): list of connected components
-		ccs_depths (list[int]): parent ccs for each components
-
-	Returns:
-		dict[set[int]]: _description_
-	"""
-
-	ccs_to_parents = {}
-	for cc_idx, cc in enumerate(ccs):
-		parent = ccs_parents[cc_idx]
-		if cc in ccs_to_parents:
-			ccs_to_parents[cc].add(parent)
-		else:
-			ccs_to_parents[cc] = set([parent])
-	return ccs_to_parents
-
 def compute_frag_peak_stats(row, allowed_h_transfer, tolerance=0.01, prec_type="[M+H]+", 
 			    is_ppm = False):
 	"""_summary_
