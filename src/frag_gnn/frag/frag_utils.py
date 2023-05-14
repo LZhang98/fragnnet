@@ -16,26 +16,26 @@ import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.utils.misc_utils import timeit
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from frag_gnn.frag.compute_frags import (
-	MASK_DTYPE,
-	MAX_NUM_EDGES,
-	MAX_NUM_NODES,
+    MASK_DTYPE,
+    MAX_NUM_EDGES,
+    MAX_NUM_NODES,
 )
 
 # full list of common elements
 # NOTE: this maybe a bad idea to not cover all the element
 # we should handle all the elemnet
 ELEMENT_TO_VE = {
-	"C": 4,
-	"O": 2,
-	"N": 3,
-	"P": 3, # up to 5
-	"S": 2, # up to 6
-	"F": 1,
-	"Cl": 1,
-	"Br": 1,
-	"I": 1,
-	"Se": 2, # up to 6, same as S
-	"Si": 4
+    "C": 4,
+    "O": 2,
+    "N": 3,
+    "P": 3, # up to 5
+    "S": 2, # up to 6
+    "F": 1,
+    "Cl": 1,
+    "Br": 1,
+    "I": 1,
+    "Se": 2, # up to 6, same as S
+    "Si": 4
 }
 NUM_HEAVY_ELEMENTS = len(ELEMENT_TO_VE.keys())
 NUM_ELEMENTS = NUM_HEAVY_ELEMENTS+1
@@ -58,805 +58,863 @@ EDGE_FEAT_DTYPE = th.int8
 META_DATA_DTYPE = th.float32 
 
 def convert_cc_mask_to_int(cc:list|np.ndarray)->int:
-	"""covert a cc mask to an int
+    """covert a cc mask to an int
 
-	Args: a list of 0 and 1s
+    Args: a list of 0 and 1s
 
-	Returns:
-		int: int presentation of input mask
-	"""
+    Returns:
+        int: int presentation of input mask
+    """
 
-	return sum([2**i for i in cc])
+    return sum([2**i for i in cc])
 
 def convert_cc_int_to_mask(num_nodes:int,cc_int:int,bitmask=True) -> tuple[int]:
-	"""_summary_
+    """_summary_
 
-	Args:
-		num_nodes (int): number of nodes
-		cc_int (int): int version of cc mask
-		bitmask (bool, optional): _description_. Defaults to True.
+    Args:
+        num_nodes (int): number of nodes
+        cc_int (int): int version of cc mask
+        bitmask (bool, optional): _description_. Defaults to True.
 
-	Returns:
-		list|np.ndarray: a list of 0 and 1s
-	"""
+    Returns:
+        list|np.ndarray: a list of 0 and 1s
+    """
 
-	cc = []
-	quot = cc_int
-	for i in range(num_nodes):
-		quot, rem = divmod(quot,2)
-		if bitmask:
-			cc.append(int(rem))
-		else:
-			if rem == 1:
-				cc.append(i)
-	#cc = tuple(cc)
-	return cc
+    cc = []
+    quot = cc_int
+    for i in range(num_nodes):
+        quot, rem = divmod(quot,2)
+        if bitmask:
+            cc.append(int(rem))
+        else:
+            if rem == 1:
+                cc.append(i)
+    return cc
 
 
 def convert_cc_int_to_np_mask(num_nodes:int,cc_int:int,bitmask=True) -> np.ndarray:
-	"""_summary_
+    """_summary_
 
-	Args:
-		num_nodes (int): number of nodes
-		cc_int (int): int version of cc mask
-		bitmask (bool, optional): _description_. Defaults to True.
+    Args:
+        num_nodes (int): number of nodes
+        cc_int (int): int version of cc mask
+        bitmask (bool, optional): _description_. Defaults to True.
 
-	Returns:
-		list|np.ndarray: a list of 0 and 1s
-	"""
+    Returns:
+        list|np.ndarray: a list of 0 and 1s
+    """
 
-	cc = convert_cc_int_to_mask(num_nodes, cc_int, bitmask)
-	np_mask = np.array(cc, dtype=MASK_DTYPE)
-	#cc = tuple(cc)
-	return np_mask
+    cc = convert_cc_int_to_mask(num_nodes, cc_int, bitmask)
+    np_mask = np.array(cc, dtype=MASK_DTYPE)
+    return np_mask
 
 
 def cc_bit_mask_to_atom_idx(cc:list|np.ndarray) -> list[int]:
-	"""_summary_
+    """_summary_
 
-	Args:
-		cc (list | np.ndarray): _description_
+    Args:
+        cc (list | np.ndarray): _description_
 
-	Returns:
-		_type_: _description_
-	"""
-	atom_ids = []
-	for idx,bit in enumerate(cc):
-		if bit == 1:
-			atom_ids.append(idx)
-	return atom_ids
+    Returns:
+        _type_: _description_
+    """
+    cc_np = np.array(cc) if isinstance(cc,list) else cc
+    atom_ids = np.where(cc_np == 1)[0].tolist()
+    return atom_ids
 
 def get_fraggen_input_arrays(mol_d:dict):
-	"""_summary_
+    """_summary_
 
-	Args:
-		mol_d (_type_): _description_
+    Args:
+        mol_d (_type_): _description_
 
-	Returns:
-		_type_: _description_
-	"""
-	num_nodes = mol_d["atom_mask_arr"].shape[0]
-	num_edges = mol_d["bond_mask_arr"].shape[0]
-	assert num_nodes <= MAX_NUM_NODES, num_nodes
-	assert num_edges <= MAX_NUM_EDGES, num_edges
-	edges = np.zeros((MAX_NUM_EDGES,2),dtype=np.intc)
-	for bond_idx, bond in enumerate(mol_d["bonds"]):
-		edges[bond_idx,0] = bond[0]
-		edges[bond_idx,1] = bond[1]
-	edge_to_node_idx = compute_frags.py_compute_node_to_edge_idx(num_nodes,num_edges,edges)
-	# print(edge_to_node_idx)
-	node_mask = np.zeros((num_nodes,),dtype=MASK_DTYPE)
-	node_mask[:num_nodes] = 1
-	edge_mask = np.zeros((num_edges,),dtype=MASK_DTYPE)
-	edge_mask[:num_edges] = 1
-	return num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx
+    Returns:
+        _type_: _description_
+    """
+    num_nodes = mol_d["atom_mask_arr"].shape[0]
+    num_edges = mol_d["bond_mask_arr"].shape[0]
+    assert num_nodes <= MAX_NUM_NODES, num_nodes
+    assert num_edges <= MAX_NUM_EDGES, num_edges
+    edges = np.zeros((MAX_NUM_EDGES,2),dtype=np.intc)
+    for bond_idx, bond in enumerate(mol_d["bonds"]):
+        edges[bond_idx,0] = bond[0]
+        edges[bond_idx,1] = bond[1]
+    edge_to_node_idx = compute_frags.py_compute_node_to_edge_idx(num_nodes,num_edges,edges)
+    # print(edge_to_node_idx)
+    node_mask = np.zeros((num_nodes,),dtype=MASK_DTYPE)
+    node_mask[:num_nodes] = 1
+    edge_mask = np.zeros((num_edges,),dtype=MASK_DTYPE)
+    edge_mask[:num_edges] = 1
+    return num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx
 
 def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
-	"""Method to exatract mol infomation in to dict
+    """Method to exatract mol infomation in to dict
 
-	Args:
-		smiles_or_mol (_type_): _description_
-		use_default_valence (bool, optional): _description_. Defaults to False.
+    Args:
+        smiles_or_mol (_type_): _description_
+        use_default_valence (bool, optional): _description_. Defaults to False.
 
-	Raises:
-		ValueError: _description_
+    Raises:
+        ValueError: _description_
 
-	Returns:
-		dict : 
-		mol_d["mol"]: mol object
-		mol_d["num_hs"]: number of totoal Hs
-		mol_d["sbond_arr"]: single bond array
-		mol_d["ve_arr"]: max velance array
-		mol_d["hs_arr"]: max Hs per atom arary
-		mol_d["elems"]: elemns per atom
-		mol_d["bonds"]: a list of from atom - to atom pairs
-		mol_d["bond_mask_arr"]: defualt bond mask, this should be just 1s
-		mol_d["atom_mask_arr"] : defualt atom  mask, this should be just 1s
-		mol_d["atoms_to_bonds"]: 
-		mol_d["element_counts"] : atom count per element
-	"""
-	if isinstance(smiles_or_mol,str):
-		# rdkit mol stuff
-		mol = Chem.MolFromSmiles(smiles_or_mol)
-		# TODO: think about adding Hs
-		rdMolStandardize.Cleanup(mol)
-		te = rdMolStandardize.TautomerEnumerator()
-		mol = te.Canonicalize(mol)
-	else:
-		assert isinstance(smiles_or_mol,Chem.rdchem.Mol), type(smiles_or_mol)
-		mol = smiles_or_mol
+    Returns:
+        dict : 
+        mol_d["mol"]: mol object
+        mol_d["num_hs"]: number of totoal Hs
+        mol_d["sbond_arr"]: single bond array
+        mol_d["ve_arr"]: max velance array
+        mol_d["hs_arr"]: max Hs per atom arary
+        mol_d["elems"]: elemns per atom
+        mol_d["bonds"]: a list of from atom - to atom pairs
+        mol_d["bond_mask_arr"]: defualt bond mask, this should be just 1s
+        mol_d["atom_mask_arr"] : defualt atom  mask, this should be just 1s
+        mol_d["atoms_to_bonds"]: 
+        mol_d["element_counts"] : atom count per element
+    """
+    if isinstance(smiles_or_mol,str):
+        # rdkit mol stuff
+        mol = Chem.MolFromSmiles(smiles_or_mol)
+        # TODO: think about adding Hs
+        rdMolStandardize.Cleanup(mol)
+        te = rdMolStandardize.TautomerEnumerator()
+        mol = te.Canonicalize(mol)
+    else:
+        assert isinstance(smiles_or_mol,Chem.rdchem.Mol), type(smiles_or_mol)
+        mol = smiles_or_mol
 
-	pt = Chem.GetPeriodicTable()
-	#GetValenceList
-	# some checks
-	charge = rdmolops.GetFormalCharge(mol)
-	assert charge == 0, charge
-	# enumerate atoms
-	sbond_arr = []
-	ve_arr = []
-	hs_arr = []
-	elems = []
-	num_hs = 0
-	num_atoms = 0
-	num_radicals = 0
-	element_counts = {elem:0 for elem in ELEMENT_TO_VE.keys()}
+    pt = Chem.GetPeriodicTable()
+    #GetValenceList
+    # some checks
+    charge = rdmolops.GetFormalCharge(mol)
+    assert charge == 0, charge
+    # enumerate atoms
+    sbond_arr = []
+    ve_arr = []
+    hs_arr = []
+    elems = []
+    elem_idxs = []
+    num_hs = 0
+    num_atoms = 0
+    num_radicals = 0
+    element_counts = {elem:0 for elem in ELEMENT_TO_VE.keys()}
 
-	for atom in mol.GetAtoms():
-		cur_idx = atom.GetIdx()
-		cur_num_hs = atom.GetTotalNumHs()
-		cur_deg = atom.GetTotalDegree()
-		# cur_num_bonds = atom.GetNumBonds()
-		cur_element = atom.GetSymbol()
+    for atom in mol.GetAtoms():
+        cur_idx = atom.GetIdx()
+        cur_num_hs = atom.GetTotalNumHs()
+        cur_deg = atom.GetTotalDegree()
+        # cur_num_bonds = atom.GetNumBonds()
+        cur_element = atom.GetSymbol()
 
-		if cur_element not in element_counts:
-			raise ValueError(f"Molecules with {cur_element} atom(s) currently not supported")
-		
-		element_counts[cur_element] += 1
-		elems.append(cur_element)
-		# number of single bond need to attach to this atom to keep atom connected
-		# this equals to replace all all bond to single, and count how many single bond
-		sbond_arr.append(cur_deg - cur_num_hs)
-		#ve_arr.append(ELEMENT_TO_VE[cur_element])
+        if cur_element not in element_counts:
+            raise ValueError(f"Molecules with {cur_element} atom(s) currently not supported")
+        
+        element_counts[cur_element] += 1
+        elems.append(cur_element)
+        elem_idxs.append(ELEMENT_TO_IDX[cur_element])
+        # number of single bond need to attach to this atom to keep atom connected
+        # this equals to replace all all bond to single, and count how many single bond
+        sbond_arr.append(cur_deg - cur_num_hs)
+        #ve_arr.append(ELEMENT_TO_VE[cur_element])
 
-		# set valence value for each atom
-		# assumption we will use current valance unless
-		# use default valence flag is set to true
-		# not defualt valence can be -1 for transition metals
-		# on paper we should not encounter them at all
-		ve_value = atom.GetTotalValence()
-		if use_default_valence:
-			default_valence = pt.GetDefaultValence(cur_element)
-			if default_valence != -1:
-				ve_value = min(ve_value, default_valence)
+        # set valence value for each atom
+        # assumption we will use current valance unless
+        # use default valence flag is set to true
+        # not defualt valence can be -1 for transition metals
+        # on paper we should not encounter them at all
+        ve_value = atom.GetTotalValence()
+        if use_default_valence:
+            default_valence = pt.GetDefaultValence(cur_element)
+            if default_valence != -1:
+                ve_value = min(ve_value, default_valence)
 
-		ve_arr.append(ve_value)
+        ve_arr.append(ve_value)
+        hs_arr.append(cur_num_hs)
+        num_hs += cur_num_hs
+        num_atoms += 1
+        num_radicals += atom.GetNumRadicalElectrons()
 
-		hs_arr.append(cur_num_hs)
-		num_hs += cur_num_hs
-		num_atoms += 1
-		num_radicals += atom.GetNumRadicalElectrons()
+    element_counts["H"] = num_hs
+    assert num_radicals == 0, num_radicals
+    sbond_arr = np.array(sbond_arr)
+    ve_arr = np.array(ve_arr)
+    # enumerate bonds
+    atoms_to_bonds = {}
+    bonds = []
+    num_bonds = 0
+    adj = np.zeros((num_atoms, num_atoms), dtype=np.int32)
+    #adj = Chem.rdmolops.GetAdjacencyMatrix(mol)
+    for bond in mol.GetBonds():
+        cur_idx = bond.GetIdx()
+        from_idx = bond.GetBeginAtomIdx()
+        to_idx = bond.GetEndAtomIdx()
+        assert from_idx != to_idx
+        adj[from_idx, to_idx] = 1
 
-	element_counts["H"] = num_hs
-	assert num_radicals == 0, num_radicals
-	sbond_arr = np.array(sbond_arr)
-	ve_arr = np.array(ve_arr)
-	# enumerate bonds
-	atoms_to_bonds = {}
-	bonds = []
-	num_bonds = 0
-	adj = np.zeros((num_atoms, num_atoms), dtype=np.int32)
-	#adj = Chem.rdmolops.GetAdjacencyMatrix(mol)
-	for bond in mol.GetBonds():
-		cur_idx = bond.GetIdx()
-		from_idx = bond.GetBeginAtomIdx()
-		to_idx = bond.GetEndAtomIdx()
-		assert from_idx != to_idx
-		adj[from_idx, to_idx] = 1
+        bonds.append((from_idx, to_idx))
 
-		bonds.append((from_idx, to_idx))
+        if from_idx not in atoms_to_bonds:
+            atoms_to_bonds[from_idx] = [cur_idx]
+        else:
+            atoms_to_bonds[from_idx].append(cur_idx)
 
-		if from_idx not in atoms_to_bonds:
-			atoms_to_bonds[from_idx] = [cur_idx]
-		else:
-			atoms_to_bonds[from_idx].append(cur_idx)
-
-		if to_idx not in atoms_to_bonds:
-			atoms_to_bonds[to_idx] = [cur_idx]
-		else:
-			atoms_to_bonds[to_idx].append(cur_idx)
-		num_bonds += 1
+        if to_idx not in atoms_to_bonds:
+            atoms_to_bonds[to_idx] = [cur_idx]
+        else:
+            atoms_to_bonds[to_idx].append(cur_idx)
+        num_bonds += 1
 
 
-	mol_d = {}
-	mol_d["mol"] = mol
-	mol_d["num_hs"] = num_hs
-	mol_d["sbond_arr"] = sbond_arr
-	mol_d["ve_arr"] = ve_arr
-	mol_d["hs_arr"] = hs_arr
-	mol_d["elems"] = elems
-	mol_d["bonds"] = bonds
-	mol_d["bond_mask_arr"] = np.ones((num_bonds,), dtype=bool)
-	mol_d["atom_mask_arr"] = np.ones((num_atoms,), dtype=bool) # can be computed
-	mol_d["atoms_to_bonds"] = atoms_to_bonds # can be computed
-	mol_d["element_counts"] = element_counts
-	return mol_d
+    mol_d = {}
+    mol_d["mol"] = mol
+    mol_d["num_hs"] = num_hs
+    mol_d["sbond_arr"] = sbond_arr
+    mol_d["ve_arr"] = ve_arr
+    mol_d["hs_arr"] = hs_arr
+    mol_d["elems"] = elems
+    mol_d["elem_idxs"] = elem_idxs
+    mol_d["bonds"] = bonds
+    mol_d["bond_mask_arr"] = np.ones((num_bonds,), dtype=bool)
+    mol_d["atom_mask_arr"] = np.ones((num_atoms,), dtype=bool) # can be computed
+    mol_d["atoms_to_bonds"] = atoms_to_bonds # can be computed
+    mol_d["element_counts"] = element_counts
+    return mol_d
 
 def compute_cc_h_cap(cc:list|np.ndarray,ve_arr:list[int],sbond_arr:list[int],num_radicals:int):
-	"""compute max amount of Hs a cc can have.  
-		For any ccs the max amount of Hs it can have is the congifcation where all the bond are single
-		And all the atom has max amount of Hs
-	Args:
-		cc (list|np.ndarray): cc mask in list form
-		ve_arr (list|np.ndarray): max velance each atom can have
-		sbond_arr (_type_): _description_
-		num_radicals (_type_): _description_
+    """compute max amount of Hs a cc can have.  
+        For any ccs the max amount of Hs it can have is the congifcation where all the bond are single
+        And all the atom has max amount of Hs
+    Args:
+        cc (list|np.ndarray): cc mask in list form
+        ve_arr (list|np.ndarray): max velance each atom can have
+        sbond_arr (_type_): _description_
+        num_radicals (_type_): _description_
 
-	Returns:
-		_type_: _description_
-	"""
-	
-	assert num_radicals == 0
-	if not isinstance(cc,np.ndarray):
-		cc = np.array(list(cc))
-	cap_sbond_arr = sbond_arr[cc]
-	cap_ve_arr = ve_arr[cc]
-	cap_ve_mask = cap_ve_arr < cap_sbond_arr
-	cap_ve_arr[cap_ve_mask] = cap_sbond_arr[cap_ve_mask]
-	return np.sum(cap_ve_arr) - np.sum(cap_sbond_arr) - num_radicals
+    Returns:
+        _type_: _description_
+    """
+    
+    assert num_radicals == 0
+    if not isinstance(cc,np.ndarray):
+        cc = np.array(list(cc))
+    cap_sbond_arr = sbond_arr[cc]
+    cap_ve_arr = ve_arr[cc]
+    cap_ve_mask = cap_ve_arr < cap_sbond_arr
+    cap_ve_arr[cap_ve_mask] = cap_sbond_arr[cap_ve_mask]
+    return np.sum(cap_ve_arr) - np.sum(cap_sbond_arr) - num_radicals
 
 def compute_cc_h_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bond_mask_arr):
 
-	"""compute lowest amount of Hs a cc can have
-	NOTE: this does not consider if OG mol has a triple bond
-	Args:
-		cc (_type_): _description_
-		ve_arr (_type_): _description_
-		sbond_arr (_type_): _description_
-		num_radicals (_type_): _description_
+    """compute lowest amount of Hs a cc can have
+    NOTE: this does not consider if OG mol has a triple bond
+    Args:
+        cc (_type_): _description_
+        ve_arr (_type_): _description_
+        sbond_arr (_type_): _description_
+        num_radicals (_type_): _description_
 
-	Returns:
-		_type_: _description_
-	"""
+    Returns:
+        _type_: _description_
+    """
 
-	assert num_radicals == 0
-	# if we could use update from single bond to double bond to get an electron pair
-	diff_arr = np.maximum(ve_arr-sbond_arr,0)
-	cc_atoms = list(cc)
-	# print(diff_arr)
-	# this computes a lower bound
-	h_arr = np.copy(diff_arr)
-	for atom_idx, atom in enumerate(cc_atoms):
-		bond_idxs = atoms_to_bonds[atom]
-		for bond_idx in bond_idxs:
-			if h_arr[atom] == 0:
-				break
-			if not bond_mask_arr[bond_idx]:
-				continue
-			bond = bonds[bond_idx]
-			if bond[0] == atom:
-				other = bond[1]
-			else:
-				other = bond[0]
-			# dont't form more than 3 bonds with anything!
-			h_arr[atom] = max(0,h_arr[atom]-min(diff_arr[other],2))
-	# print(h_arr)
-	cc_floor = sum(h_arr[atom] for atom in cc_atoms)
-	cc_floor -= num_radicals
-	cc_floor = max(cc_floor,0) # why can cc_floor be negative?
-	return cc_floor
+    assert num_radicals == 0
+    # if we could use update from single bond to double bond to get an electron pair
+    diff_arr = np.maximum(ve_arr-sbond_arr,0)
+    cc_atoms = list(cc)
+    # print(diff_arr)
+    # this computes a lower bound
+    h_arr = np.copy(diff_arr)
+    for atom_idx, atom in enumerate(cc_atoms):
+        bond_idxs = atoms_to_bonds[atom]
+        for bond_idx in bond_idxs:
+            if h_arr[atom] == 0:
+                break
+            if not bond_mask_arr[bond_idx]:
+                continue
+            bond = bonds[bond_idx]
+            if bond[0] == atom:
+                other = bond[1]
+            else:
+                other = bond[0]
+            # dont't form more than 3 bonds with anything!
+            h_arr[atom] = max(0,h_arr[atom]-min(diff_arr[other],2))
+    # print(h_arr)
+    cc_floor = sum(h_arr[atom] for atom in cc_atoms)
+    cc_floor -= num_radicals
+    cc_floor = max(cc_floor,0) # why can cc_floor be negative?
+    return cc_floor
 
 def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
-				,max_h_transfer:int
-				,formula_strs:bool=False
-				,bitmask:bool = True
-				,base_formula = None) ->dict[int,str]|dict[int,np.ndarray]:
-	"""given a connected component, comupute all forumla within give h shift
+                ,max_h_transfer:int
+                ,formula_strs:bool=False
+                ,bitmask:bool=True
+                ,base_formula = None) ->dict[int,str]|dict[int,np.ndarray]:
+    """given a connected component, comupute all forumla within give h shift
 
-	Args:
-		cc (list|np.ndarray): connected component
-		mol_d (dict): mol dictionary
-		max_h_transfer (_type_): max number of h movement allowed
-		formula_strs (bool, optional): _description_. Defaults to False.
+    Args:
+        cc (list|np.ndarray): connected component
+        mol_d (dict): mol dictionary
+        max_h_transfer (_type_): max number of h movement allowed
+        formula_strs (bool, optional): _description_. Defaults to False.
 
-	Returns:
-		_type_: _description_
-	"""
+    Returns:
+        _type_: _description_
+    """
 
-	bonds = mol_d["bonds"] # never mutated
-	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
-	ve_arr = np.copy(mol_d["ve_arr"])
-	sbond_arr = np.copy(mol_d["sbond_arr"])
-	num_hs = mol_d["num_hs"]
-	hs_arr = mol_d["hs_arr"]
-	elems = mol_d["elems"]
-	bond_mask_arr = mol_d["bond_mask_arr"]
-	
-	if base_formula is None:
-		base_formula = cc_to_formula_arr(cc,elems, bitmask)
-	
-	
-	atom_ids = cc_bit_mask_to_atom_idx(cc) if bitmask else cc
+    bonds = mol_d["bonds"] # never mutated
+    atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
+    ve_arr = np.copy(mol_d["ve_arr"])
+    sbond_arr = np.copy(mol_d["sbond_arr"])
+    num_hs = mol_d["num_hs"]
+    hs_arr = mol_d["hs_arr"]
+    elem_idxs = mol_d["elem_idxs"]
+    bond_mask_arr = mol_d["bond_mask_arr"]
+    
+    if base_formula is None and bitmask:
+        base_formula = cc_bitmask_to_formula_arr(cc,elem_idxs)
+    elif base_formula is None and not bitmask:
+        base_formula = cc_to_formula_arr(cc,elem_idxs, bitmask = False)
 
-	sbond_arr, bond_mask_arr = update_bonds(atom_ids,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-	cap = compute_cc_h_cap(atom_ids,ve_arr,sbond_arr,0)
-	floor = compute_cc_h_floor(atom_ids,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+    atom_ids = cc_bit_mask_to_atom_idx(cc) if bitmask else cc
 
-	# check floor and cap
-	assert floor <= cap, (floor,cap,atom_ids)
-	assert floor >= 0, floor
+    sbond_arr, bond_mask_arr = update_bonds(atom_ids,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
+    cap = compute_cc_h_cap(atom_ids,ve_arr,sbond_arr,0)
+    floor = compute_cc_h_floor(atom_ids,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
 
-	# check how many Hs each atom have on the mol
-	num_hs_prior = 0
-	for atom in atom_ids:
-		num_hs_prior += hs_arr[atom]
+    # check floor and cap
+    assert floor <= cap, (floor,cap,atom_ids)
+    assert floor >= 0, floor
 
-	# update min and max
-	floor = max(floor,num_hs_prior-max_h_transfer)
-	cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
+    # check how many Hs each atom have on the mol
+    num_hs_prior = 0
+    for atom in atom_ids:
+        num_hs_prior += hs_arr[atom]
 
-	delta_h_to_formula = {}
-	for delta_h in range(-max_h_transfer,max_h_transfer+1):
-		h = num_hs_prior + delta_h
-		if h < floor or h > cap:
-			# special invalid formula
-			formula = np.zeros_like(base_formula)
-		else:
-			formula = np.copy(base_formula)
-			formula[ELEMENT_TO_IDX["H"]] = h
-			formula = tuple(formula)
-		if formula_strs:
-			formula = formula_arr_to_str(formula)
-		delta_h_to_formula[delta_h] = formula
-	return delta_h_to_formula
+    # update min and max
+    floor = max(floor,num_hs_prior-max_h_transfer)
+    cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
+
+    delta_h_to_formula = {}
+
+    if formula_strs:
+        formula_template, formual_no_h = formula_arr_to_str(base_formula, get_h_template=True)
+
+    for delta_h in range(-max_h_transfer,max_h_transfer+1):
+        h = num_hs_prior + delta_h
+        if h < floor or h > cap:
+            # special invalid formula
+            formula = np.zeros_like(base_formula)
+            formula_str = ""
+        else:
+            formula = np.copy(base_formula)
+            formula[ELEMENT_TO_IDX["H"]] = h
+            formula = tuple(formula)
+            if h == 0:
+                formula_str = formual_no_h
+            else:
+                formula_str = formula_template.format(h)
+        if formula_strs:
+            formula = formula_str
+        delta_h_to_formula[delta_h] = formula
+    return delta_h_to_formula
 
 def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER,return_counts=False):
-	"""
-	Note: this assumes fragments are fully defined by their node cover,
-	not their edges. This might result in some undercounting.
-	"""
+    """
+    Note: this assumes fragments are fully defined by their node cover,
+    not their edges. This might result in some undercounting.
+    Note: make sure which cc format is passed in there, this should not use bitmask
+    """
 
-	bonds = mol_d["bonds"] # never mutated
-	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
-	ve_arr = np.copy(mol_d["ve_arr"])
-	sbond_arr = np.copy(mol_d["sbond_arr"])
-	num_hs = mol_d["num_hs"]
-	hs_arr = mol_d["hs_arr"]
-	elems = mol_d["elems"]
-	bond_mask_arr = mol_d["bond_mask_arr"]
-	formulae_to_counts = {}
-	for cc in list(set(ccs)):
-		base_formula = cc_to_formula_arr(cc,elems)
-		sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-		cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
-		floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
-		assert floor <= cap, (floor,cap,cc)
-		assert floor >= 0, floor
-		if h_prior:
-			num_hs_prior = 0
-			for atom in cc:
-				num_hs_prior += hs_arr[atom]
-			floor = max(floor,num_hs_prior-max_h_transfer)
-			cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
-		else:
-			cap = min(cap,num_hs)
-		for h in range(floor,cap+1):
-			formula = np.copy(base_formula)
-			formula[ELEMENT_TO_IDX["H"]] = h
-			formula = tuple(formula)
-			if formula in formulae_to_counts:
-				formulae_to_counts[formula] += 1
-			else:
-				formulae_to_counts[formula] = 1
-	if return_counts:
-		return formulae_to_counts
-	else:
-		return set(formulae_to_counts.keys())
+    bonds = mol_d["bonds"] # never mutated
+    atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
+    ve_arr = np.copy(mol_d["ve_arr"])
+    sbond_arr = np.copy(mol_d["sbond_arr"])
+    num_hs = mol_d["num_hs"]
+    hs_arr = mol_d["hs_arr"]
+    elem_idxs = mol_d["elem_idxs"]
+    bond_mask_arr = mol_d["bond_mask_arr"]
+    formulae_to_counts = {}
+    for cc in list(set(ccs)):
+        base_formula = cc_bitmask_to_formula_arr(cc,elem_idxs)
+        sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
+        cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
+        floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+        assert floor <= cap, (floor,cap,cc)
+        assert floor >= 0, floor
+        if h_prior:
+            num_hs_prior = 0
+            for atom in cc:
+                num_hs_prior += hs_arr[atom]
+            floor = max(floor,num_hs_prior-max_h_transfer)
+            cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
+        else:
+            cap = min(cap,num_hs)
+        for h in range(floor,cap+1):
+            formula = np.copy(base_formula)
+            formula[ELEMENT_TO_IDX["H"]] = h
+            formula = tuple(formula)
+            if formula in formulae_to_counts:
+                formulae_to_counts[formula] += 1
+            else:
+                formulae_to_counts[formula] = 1
+    if return_counts:
+        return formulae_to_counts
+    else:
+        return set(formulae_to_counts.keys())
 
 def update_bonds(frag:list[int],sbond_arr,bond_mask_arr,bonds,atoms_to_bonds):
-	"""_summary_
+    """_summary_
 
-	Args:
-		frag (_type_): list of atom idx
-		sbond_arr (_type_): _description_
-		bond_mask_arr (_type_): _description_
-		bonds (_type_): _description_
-		atoms_to_bonds (_type_): _description_
+    Args:
+        frag (_type_): list of atom idx
+        sbond_arr (_type_): _description_
+        bond_mask_arr (_type_): _description_
+        bonds (_type_): _description_
+        atoms_to_bonds (_type_): _description_
 
-	Returns:
-		_type_: _description_
-	"""
-	sbond_arr = np.zeros_like(sbond_arr,dtype=int)
-	bond_mask_arr = np.zeros_like(bond_mask_arr,dtype=bool)
-	for atom in frag:
-		for bond_idx in atoms_to_bonds[atom]:
-			bond = bonds[bond_idx]
-			if bond[0] in frag and bond[1] in frag:
-				sbond_arr[atom] += 1
-				bond_mask_arr[bond_idx] = True
-	return sbond_arr, bond_mask_arr
+    Returns:
+        _type_: _description_
+    """
+    sbond_arr = np.zeros_like(sbond_arr,dtype=int)
+    bond_mask_arr = np.zeros_like(bond_mask_arr,dtype=bool)
+    for atom in frag:
+        for bond_idx in atoms_to_bonds[atom]:
+            bond = bonds[bond_idx]
+            if bond[0] in frag and bond[1] in frag:
+                sbond_arr[atom] += 1
+                bond_mask_arr[bond_idx] = True
+    return sbond_arr, bond_mask_arr
 
 def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER):
 
-	bonds = mol_d["bonds"] # never mutated
-	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
-	ve_arr = np.copy(mol_d["ve_arr"])
-	sbond_arr = np.copy(mol_d["sbond_arr"])
-	num_hs = mol_d["num_hs"]
-	hs_arr = mol_d["hs_arr"]
-	mol_d["elems"]
-	bond_mask_arr = mol_d["bond_mask_arr"]
-	all_cchs = set()
-	for cc in list(set(ccs)):
-		sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-		cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
-		floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
-		assert floor <= cap, (floor,cap,cc)
-		assert floor >= 0, floor
-		if h_prior:
-			num_hs_prior = 0
-			for atom in cc:
-				num_hs_prior += hs_arr[atom]
-			floor = max(floor,num_hs_prior-max_h_transfer)
-			cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
-			# cap = max(cap,floor)
-		else:
-			cap = min(cap,num_hs)
-		# cc_cchs = []
-		for h in range(floor,cap+1):
-			# cc_cchs.append((cc,h))
-			all_cchs.add((cc,h))
-		# cchs.append(cc_cchs)
-		# assert floor <= cap, (floor,cap,cc)
-		# assert floor >= 0, floor
-	return all_cchs
+    bonds = mol_d["bonds"] # never mutated
+    atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
+    ve_arr = np.copy(mol_d["ve_arr"])
+    sbond_arr = np.copy(mol_d["sbond_arr"])
+    num_hs = mol_d["num_hs"]
+    hs_arr = mol_d["hs_arr"]
+    mol_d["elems"]
+    bond_mask_arr = mol_d["bond_mask_arr"]
+    all_cchs = set()
+    for cc in list(set(ccs)):
+        sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
+        cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
+        floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+        assert floor <= cap, (floor,cap,cc)
+        assert floor >= 0, floor
+        if h_prior:
+            num_hs_prior = 0
+            for atom in cc:
+                num_hs_prior += hs_arr[atom]
+            floor = max(floor,num_hs_prior-max_h_transfer)
+            cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
+            # cap = max(cap,floor)
+        else:
+            cap = min(cap,num_hs)
+        # cc_cchs = []
+        for h in range(floor,cap+1):
+            # cc_cchs.append((cc,h))
+            all_cchs.add((cc,h))
+        # cchs.append(cc_cchs)
+        # assert floor <= cap, (floor,cap,cc)
+        # assert floor >= 0, floor
+    return all_cchs
 
 def cc_to_formula_arr(cc,elems,bitmask=False):
-	# does not include h count
-	formula_arr = np.zeros([len(ELEMENT_TO_IDX)],dtype=MASK_DTYPE)
-	if bitmask:
-		for i in range(len(cc)):
-			if cc[i]:
-				elem = elems[i]
-				formula_arr[ELEMENT_TO_IDX[elem]] += 1
-	else:
-		for atom in cc:
-			elem = elems[atom]
-			formula_arr[ELEMENT_TO_IDX[elem]] += 1
-	return formula_arr
+    # does not include h count
+    formula_arr = np.zeros([len(ELEMENT_TO_IDX)],dtype=int)
+    if bitmask:
+        for i in range(len(cc)):
+            if cc[i]:
+                elem = elems[i]
+                formula_arr[ELEMENT_TO_IDX[elem]] += 1
+    else:
+        for atom in cc:
+            elem = elems[atom]
+            formula_arr[ELEMENT_TO_IDX[elem]] += 1
+    return formula_arr
 
-def formula_arr_to_str(formula):
-	""" use canonical order """
-	formula_str = ""
-	elem_d = {}
 
-	for idx, count in enumerate(formula):
-		elem = IDX_TO_ELEMENT[idx]
-		elem_d[elem] = count
+def cc_bitmask_to_formula_arr(cc,elem_idxs) -> np.ndarray:
+    """ fast cc bit mask to forumla arr
 
-	for elem in CANONICAL_ELEMENT_ORDER:
-		if elem in elem_d:
-			count = elem_d[elem]
-			if count > 0:
-				formula_str += elem
-			if count > 1:
-				formula_str += str(count)
-	return formula_str
+    Args:
+        cc (_type_): _description_
+        elem_idxs (_type_): _description_
+
+    Returns:
+        np.ndarray: _description_
+    """
+    # does not include h count
+    formula_arr = np.zeros([len(ELEMENT_TO_IDX)],dtype=MASK_DTYPE)
+    elem_idxs_np = np.array(elem_idxs) + 1
+    #print(cc, elem_idxs_np)
+    elem_idx_np = np.multiply(cc, elem_idxs_np)
+    unique, counts = np.unique(elem_idx_np, return_counts=True)
+    for elem_idx, count in zip(unique, counts):
+        if elem_idx == 0:
+            continue
+        else:
+            formula_arr[elem_idx-1] = count
+    return formula_arr
+
+def formula_arr_to_str(formula_arr, get_h_template = False):
+    """ use canonical order """
+  
+    elem_d = {}
+
+    for idx, count in enumerate(formula_arr):
+        elem = IDX_TO_ELEMENT[idx]
+        elem_d[elem] = count
+
+    if not get_h_template:
+        formula_str = ""
+        for elem in CANONICAL_ELEMENT_ORDER:
+            if elem in elem_d:
+                count = elem_d[elem]
+                if count > 0:
+                    formula_str += elem
+                if count > 1:
+                    formula_str += str(count)
+        return formula_str
+    else:
+        formula_str = ""
+        formula_str_no_h = ""
+        for elem in CANONICAL_ELEMENT_ORDER:
+            if elem in elem_d:
+                if elem == 'H':
+                    formula_str += "H{:d}"
+                else:
+                    count = elem_d[elem]
+                    if count > 0:
+                        formula_str += elem
+                        formula_str_no_h += elem
+                    if count > 1:
+                        formula_str += str(count)
+                        formula_str_no_h += str(count)
+        return formula_str, formula_str_no_h
+
 
 def compute_frag_peak_stats(row, allowed_h_transfer, tolerance=0.01, prec_type="[M+H]+", 
-			    is_ppm = False):
-	"""_summary_
+                is_ppm = False):
+    """_summary_
 
-	Args:
-		row (_type_): _description_
-		tolerance (float, optional): _description_. Defaults to 0.01.
-		prec_type (str, optional): _description_. Defaults to "[M+H]+".
+    Args:
+        row (_type_): _description_
+        tolerance (float, optional): _description_. Defaults to 0.01.
+        prec_type (str, optional): _description_. Defaults to "[M+H]+".
 
-	Returns:
-		_type_: _description_
-	"""
-	ppm = 1/1000000
-	true_mzs, true_ints = list(zip(*row["peaks"]))
-	theoretical_mzs = row["formula_peak_mzs"]
-	theoretica_probs = row["formula_peak_probs"]
+    Returns:
+        _type_: _description_
+    """
+    ppm = 1/1000000
+    true_mzs, true_ints = list(zip(*row["peaks"]))
+    theoretical_mzs = row["formula_peak_mzs"]
+    theoretica_probs = row["formula_peak_probs"]
 
-	allowed_idx = list(row['idx_by_h_delta'][0])
-	for h in range(1, allowed_h_transfer):
-		allowed_idx += list(row['idx_by_h_delta'][2 * h - 1])
-		allowed_idx += list(row['idx_by_h_delta'][2 * h])
-	allowed_idx = list(set(allowed_idx))
-	#print(allowed_idx)
-	indices = th.tensor(allowed_idx)
-	theoretical_mzs = th.index_select(theoretical_mzs,0, indices)
-	theoretica_probs = th.index_select(theoretica_probs,0, indices)
+    allowed_idx = list(row['idx_by_h_delta'][0])
+    for h in range(1, allowed_h_transfer):
+        allowed_idx += list(row['idx_by_h_delta'][2 * h - 1])
+        allowed_idx += list(row['idx_by_h_delta'][2 * h])
+    allowed_idx = list(set(allowed_idx))
+    #print(allowed_idx)
+    indices = th.tensor(allowed_idx)
+    theoretical_mzs = th.index_select(theoretical_mzs,0, indices)
+    theoretica_probs = th.index_select(theoretica_probs,0, indices)
 
-	prec_mask = (theoretica_probs > 0.).type(th.float32)
-	# account for adduct mass
-	theoretical_mzs = theoretical_mzs + prec_mask * PREC_TYPE_TO_MASS_DIFF[prec_type]
-	# compute overlap
-	overlap_true_idxs = []
-	overlap_true_ints = []
-	overlap_pred_idxs = []
-	overlap_pred_peak_counts = []
-	overlap_pred_formula_counts = []
+    prec_mask = (theoretica_probs > 0.).type(th.float32)
+    # account for adduct mass
+    theoretical_mzs = theoretical_mzs + prec_mask * PREC_TYPE_TO_MASS_DIFF[prec_type]
+    # compute overlap
+    overlap_true_idxs = []
+    overlap_true_ints = []
+    overlap_pred_idxs = []
+    overlap_pred_peak_counts = []
+    overlap_pred_formula_counts = []
 
-	for true_idx, true_mz in enumerate(true_mzs):
-		mz_diffs = th.abs(theoretical_mzs-true_mz)
-		if not is_ppm:
-			mz_close = mz_diffs < tolerance 
-		else:
-			mz_close = mz_diffs < (true_mz * tolerance * ppm)
-		if th.any(mz_close):
-			pred_idx = th.nonzero(mz_close,as_tuple=False)
-			num_formula_match = th.sum(th.any(mz_close,dim=1).type(th.int32)).item()
-			num_peak_match = pred_idx.shape[0]
-			overlap_true_idxs.append(true_idx)
-			overlap_true_ints.append(true_ints[true_idx])
-			overlap_pred_idxs.append(pred_idx)
-			overlap_pred_peak_counts.append(num_peak_match)
-			overlap_pred_formula_counts.append(num_formula_match)
-	# remove duplicates
-	if len(overlap_pred_idxs) > 0:
-		overlap_pred_idxs = th.unique(th.cat(overlap_pred_idxs,dim=0),dim=0)
-	else:
-		overlap_pred_idxs = th.zeros((0,2))
-	recall = len(overlap_true_idxs) / len(true_mzs)
-	w_recall = np.sum(overlap_true_ints) / np.sum(true_ints)
-	prec = len(overlap_pred_idxs) / th.sum((theoretica_probs>0.).type(th.int32)).item()
-	if len(overlap_pred_peak_counts) > 0:
-		ppt_peak = np.mean(overlap_pred_peak_counts)
-		ppt_formula = np.mean(overlap_pred_formula_counts)
-	else:
-		ppt_peak = np.nan
-		ppt_formula = np.nan
-	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
+    for true_idx, true_mz in enumerate(true_mzs):
+        mz_diffs = th.abs(theoretical_mzs-true_mz)
+        if not is_ppm:
+            mz_close = mz_diffs < tolerance 
+        else:
+            mz_close = mz_diffs < (true_mz * tolerance * ppm)
+        if th.any(mz_close):
+            pred_idx = th.nonzero(mz_close,as_tuple=False)
+            num_formula_match = th.sum(th.any(mz_close,dim=1).type(th.int32)).item()
+            num_peak_match = pred_idx.shape[0]
+            overlap_true_idxs.append(true_idx)
+            overlap_true_ints.append(true_ints[true_idx])
+            overlap_pred_idxs.append(pred_idx)
+            overlap_pred_peak_counts.append(num_peak_match)
+            overlap_pred_formula_counts.append(num_formula_match)
+    # remove duplicates
+    if len(overlap_pred_idxs) > 0:
+        overlap_pred_idxs = th.unique(th.cat(overlap_pred_idxs,dim=0),dim=0)
+    else:
+        overlap_pred_idxs = th.zeros((0,2))
+    recall = len(overlap_true_idxs) / len(true_mzs)
+    w_recall = np.sum(overlap_true_ints) / np.sum(true_ints)
+    prec = len(overlap_pred_idxs) / th.sum((theoretica_probs>0.).type(th.int32)).item()
+    if len(overlap_pred_peak_counts) > 0:
+        ppt_peak = np.mean(overlap_pred_peak_counts)
+        ppt_formula = np.mean(overlap_pred_formula_counts)
+    else:
+        ppt_peak = np.nan
+        ppt_formula = np.nan
+    return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
 def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
-	"""_summary_
+    """_summary_
 
-	Args:
-		mol_d (_type_): _description_
-		max_depth (_type_): _description_
-		h_prior (_type_): _description_
-		max_h_transfer (_type_): _description_
-		frag_max_time (_type_): _description_
+    Args:
+        mol_d (_type_): _description_
+        max_depth (_type_): _description_
+        h_prior (_type_): _description_
+        max_h_transfer (_type_): _description_
+        frag_max_time (_type_): _description_
 
-	Raises:
-		NotImplementedError: _description_
-		NotImplementedError: _description_
+    Raises:
+        NotImplementedError: _description_
+        NotImplementedError: _description_
 
-	Returns:
-		_type_: _description_
-	"""
-	#print("compute_dags")
-	assert h_prior in [True,False], h_prior
-	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
-	# time the recursive part
-	if frag_max_time is None:
-		frag_max_time = int(1e6)
-	
-	node_mask = node_mask.astype(MASK_DTYPE)
-	edge_mask = edge_mask.astype(MASK_DTYPE)
-	#def _compute_frags():
-	node_mask_matrix, node_depth_matrix, dag_edge_matrix, reached_depth = compute_frags.compute_ccs(
-		num_nodes,
-		num_edges,
-		node_mask,
-		edges,
-		edge_mask,
-		edge_to_node_idx,
-		max_depth,
-		frag_max_time
-	)
+    Returns:
+        _type_: _description_
+    """
+    #print("compute_dags")
+    assert h_prior in [True,False], h_prior
+    num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
+    # time the recursive part
+    if frag_max_time is None:
+        frag_max_time = int(1e6)
+    
+    node_mask = node_mask.astype(MASK_DTYPE)
+    edge_mask = edge_mask.astype(MASK_DTYPE)
+    #def _compute_frags():
+    node_mask_matrix, node_depth_matrix, dag_edge_matrix, reached_depth = compute_frags.compute_ccs(
+        num_nodes,
+        num_edges,
+        node_mask,
+        edges,
+        edge_mask,
+        edge_to_node_idx,
+        max_depth,
+        frag_max_time
+    )
 
-	# add node depth information
-	# convert to a one hot encoding
-	depth_node_feat_size = max_depth+1 #depth
-	mask_node_feat_size = num_nodes # mask
-	base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
-	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
-	node_feat_shapes = [depth_node_feat_size,mask_node_feat_size,base_formula_node_feat_size,formula_node_feat_size]
-	edge_feat_shapes = [num_nodes, len(ELEMENT_TO_IDX)]
-	total_node_feat_size = sum(node_feat_shapes)
+    # add node depth information
+    # convert to a one hot encoding
+    depth_node_feat_size = max_depth+1 #depth
+    mask_node_feat_size = num_nodes # mask
+    base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
+    formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
+    node_feat_shapes = [depth_node_feat_size,mask_node_feat_size,base_formula_node_feat_size,formula_node_feat_size]
+    edge_feat_shapes = [num_nodes, len(ELEMENT_TO_IDX)]
+    total_node_feat_size = sum(node_feat_shapes)
 
-	# add node h count and element information
-	hs_arr = mol_d["hs_arr"]
-	elems = mol_d["elems"]
-	cc_formula_list = []
-	for cc_mask in node_mask_matrix:
-		cc_h_count = sum(cc_mask[i]*hs_arr[i] for i in range(len(cc_mask)))
-		cc_formula = cc_to_formula_arr(cc_mask,elems,bitmask=True)
-		cc_formula[CANONICAL_H_IDX] = cc_h_count
-		cc_formula_list.append(cc_formula)
-	node_formula_matrix = np.stack(cc_formula_list, dtype=MASK_DTYPE)
-	
-	# map nodes to formulae
-	formulae_list = []
-	formulae_un = set()
-	node_num_formules_sum = 0
-	for idx, cc_mask in enumerate(node_mask_matrix):
-		#cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
-		base_formula = node_formula_matrix[idx]
-		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True, base_formula = base_formula)
-		formulae = list(delta_h_to_formula.values())
-		formulae_list.append(delta_h_to_formula)
-		formulae_un.update(formulae)
-		node_num_formules_sum += len(formulae)
-		
-	# map nodes to formulae indices
-	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
-	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
-	idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
-
-
-	#feats_start = feats_end
-	#feats_end = feats_start + formula_node_feat_size
-	formula_idx_list = []
-	for formulae_dict in formulae_list:
-		#formulae_dict = formulae_list[idx]
-		formulae_idx = np.zeros(formula_node_feat_size, dtype=np.int16)
-		for h_delta in formulae_dict:
-			formula = formulae_dict[h_delta]
-			formula_idx = formula_to_idx[formula]
-			
-			#h_delta [0,-1,1,-2,2,-3,3,-4,4]
-			h_delta_idx = h_delta * 2 if h_delta >= 0 else (-h_delta * 2) - 1
-			formulae_idx[h_delta_idx] = formula_idx
-			idx_by_h_delta[h_delta_idx].add(formula_idx)
-		formula_idx_list.append(formulae_idx)
-
-	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.int16)
-	
-	pyg_node_feats = np.hstack((node_mask_matrix, node_depth_matrix,node_formula_matrix,node_formulae_matrix))
-	pyg_node_feats = th.tensor(pyg_node_feats,dtype=NODE_FEAT_DTYPE)
-
-	# peak mzs array
-	formula_peak_mzs = []
-	formula_peak_probs = []
-	peaks_for_element_cache = {}
-	for formula, idx in formula_to_idx.items():
-		if formula == "":
-			peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
-			peak_probs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
-		else:
-			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"",return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
-			peak_mzs, peak_probs = zip(*sorted(zip(peak_mzs, peak_probs), key=lambda x: x[1], reverse=True))
-			peak_mzs = np.array(peak_mzs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
-			peak_mzs = np.pad(peak_mzs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_mzs)),"constant",constant_values=0)
-			peak_probs = np.array(peak_probs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
-			peak_probs = np.pad(peak_probs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_probs)),"constant",constant_values=0)
-		formula_peak_mzs.append(peak_mzs)
-		formula_peak_probs.append(peak_probs)
-
-	# save as bf16 or float32 for speed and lower ram usage
-	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = META_DATA_DTYPE)
-	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = META_DATA_DTYPE)
-
-	# add edges info
-	#pyg_edge_index = [[],[]]
-	pyg_edge_feat_list = []
-	for edge in dag_edge_matrix:
-		from_idx, to_idx = edge
-		from_cc_mask = node_mask_matrix[from_idx]
-		to_cc_mask = node_mask_matrix[to_idx]
-
-		diff_mask =  from_cc_mask - to_cc_mask
-		diff_formula = cc_to_formula_arr(diff_mask,elems, bitmask = True)
-		pyg_edge_feat_list.append(np.concatenate((diff_mask, diff_formula)))
-
-	pyg_edge_feats = np.stack(pyg_edge_feat_list, dtype=np.int8)
-
-	# edge index need to be int64 or it will throw error where compute degree
-	pyg_edge_index = th.tensor(dag_edge_matrix.T, dtype =th.int64)
-	pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=EDGE_FEAT_DTYPE)
-
-	pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
-	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
-	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
+    # add node h count and element information
+    hs_arr = mol_d["hs_arr"]
+    elem_idxs = mol_d["elem_idxs"]
+    cc_formula_list = []
+    for cc_mask in node_mask_matrix:
+        cc_h_count = sum(cc_mask[i]*hs_arr[i] for i in range(len(cc_mask)))
+        cc_formula = cc_bitmask_to_formula_arr(cc_mask,elem_idxs)
+        cc_formula[CANONICAL_H_IDX] = cc_h_count
+        cc_formula_list.append(cc_formula)
+    node_formula_matrix = np.stack(cc_formula_list, dtype=MASK_DTYPE)
+    
+    # map nodes to formulae
+    formulae_list = []
+    formulae_un = set()
+    node_num_formules_sum = 0
+    for idx, cc_mask in enumerate(node_mask_matrix):
+        #cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
+        base_formula = node_formula_matrix[idx]
+        base_formula[CANONICAL_H_IDX] = 0 # remove Hs
+        delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True, base_formula = base_formula)
+        formulae = list(delta_h_to_formula.values())
+        formulae_list.append(delta_h_to_formula)
+        formulae_un.update(formulae)
+        node_num_formules_sum += len(formulae)
+        
+    # map nodes to formulae indices
+    formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
+    idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
+    idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
 
 
-	# convert to pyg
-	dag_d = {}
-	dag_d["max_depth"] = max_depth
-	dag_d["reached_depth"] = reached_depth
-	dag_d["h_prior"] = h_prior
-	dag_d["max_h_transfer"] = max_h_transfer
-	dag_d["formula_peak_mzs"] = formula_peak_mzs
-	dag_d["formula_peak_probs"] = formula_peak_probs
-	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-	dag_d["idx_by_h_delta"] = idx_by_h_delta # forumla idx for each h_delta
-	dag_d["dag"] = pyg_cc_g #nx_to_pyg(nx_cc_g)
-	# add stats here
-	# we need change data type again
-	# we just need to change this one place
-	dag_d["dag_num_edges"] = pyg_cc_g.num_edges
-	dag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
-	dag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
-	dag_d["formula_redundancy"] = node_num_formules_sum/pyg_cc_g.num_nodes
-	dag_d["node_feature_size"] = pyg_cc_g.num_features
-	dag_d["edge_featuer_size"] = pyg_cc_g.num_edge_features
-	dag_d["is_directed"] = pyg_cc_g.is_directed()
+    #feats_start = feats_end
+    #feats_end = feats_start + formula_node_feat_size
+    formula_idx_list = []
+    for formulae_dict in formulae_list:
+        #formulae_dict = formulae_list[idx]
+        formulae_idx = np.zeros(formula_node_feat_size, dtype=np.int16)
+        for h_delta in formulae_dict:
+            formula = formulae_dict[h_delta]
+            formula_idx = formula_to_idx[formula]
+            
+            #h_delta [0,-1,1,-2,2,-3,3,-4,4]
+            h_delta_idx = h_delta * 2 if h_delta >= 0 else (-h_delta * 2) - 1
+            formulae_idx[h_delta_idx] = formula_idx
+            idx_by_h_delta[h_delta_idx].add(formula_idx)
+        formula_idx_list.append(formulae_idx)
 
-	return dag_d
-	
+    node_formulae_matrix = np.stack(formula_idx_list, dtype=np.int16)
+    
+    pyg_node_feats = np.hstack((node_mask_matrix, node_depth_matrix,node_formula_matrix,node_formulae_matrix))
+    pyg_node_feats = th.tensor(pyg_node_feats,dtype=NODE_FEAT_DTYPE)
+
+    # peak mzs array
+    formula_peak_mzs = []
+    formula_peak_probs = []
+    peaks_for_element_cache = {}
+    for formula, idx in formula_to_idx.items():
+        if formula == "":
+            peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
+            peak_probs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
+        else:
+            peak_mzs, peak_probs = formula_to_peak_mzs(formula,"",return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
+            peak_mzs, peak_probs = zip(*sorted(zip(peak_mzs, peak_probs), key=lambda x: x[1], reverse=True))
+            peak_mzs = np.array(peak_mzs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
+            peak_mzs = np.pad(peak_mzs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_mzs)),"constant",constant_values=0)
+            peak_probs = np.array(peak_probs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
+            peak_probs = np.pad(peak_probs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_probs)),"constant",constant_values=0)
+        formula_peak_mzs.append(peak_mzs)
+        formula_peak_probs.append(peak_probs)
+
+    # save as bf16 or float32 for speed and lower ram usage
+    formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = META_DATA_DTYPE)
+    formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = META_DATA_DTYPE)
+
+    # add edges info
+    #pyg_edge_index = [[],[]]
+    pyg_edge_feat_list = []
+    for edge in dag_edge_matrix:
+        from_idx, to_idx = edge
+        from_cc_mask = node_mask_matrix[from_idx]
+        to_cc_mask = node_mask_matrix[to_idx]
+        diff_cc_mask =  from_cc_mask - to_cc_mask
+
+        #diff_formula = cc_bitmask_to_formula_arr(diff_mask,elem_idxs)
+        from_formula_mask = node_formula_matrix[from_idx]
+        to_formula_mask = node_formula_matrix[to_idx]
+        diff_formula_mask = from_formula_mask - to_formula_mask
+        diff_formula_mask[CANONICAL_H_IDX] = 0 # we don't care Hs for this
+
+        pyg_edge_feat_list.append(np.concatenate((diff_cc_mask, diff_formula_mask)))
+
+    pyg_edge_feats = np.stack(pyg_edge_feat_list, dtype=np.int8)
+
+    # edge index need to be int64 or it will throw error where compute degree
+    pyg_edge_index = th.tensor(dag_edge_matrix.T, dtype =th.int64)
+    pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=EDGE_FEAT_DTYPE)
+
+    pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
+    pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
+    pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
+
+
+    # convert to pyg
+    dag_d = {}
+    dag_d["max_depth"] = max_depth
+    dag_d["reached_depth"] = reached_depth
+    dag_d["h_prior"] = h_prior
+    dag_d["max_h_transfer"] = max_h_transfer
+    dag_d["formula_peak_mzs"] = formula_peak_mzs
+    dag_d["formula_peak_probs"] = formula_peak_probs
+    dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
+    dag_d["idx_by_h_delta"] = idx_by_h_delta # forumla idx for each h_delta
+    dag_d["dag"] = pyg_cc_g #nx_to_pyg(nx_cc_g)
+    # add stats here
+    # we need change data type again
+    # we just need to change this one place
+    dag_d["dag_num_edges"] = pyg_cc_g.num_edges
+    dag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
+    dag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
+    dag_d["formula_redundancy"] = node_num_formules_sum/pyg_cc_g.num_nodes
+    dag_d["node_feature_size"] = pyg_cc_g.num_features
+    dag_d["edge_featuer_size"] = pyg_cc_g.num_edge_features
+    dag_d["is_directed"] = pyg_cc_g.is_directed()
+
+    return dag_d
+    
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
-	"""get node features by key used for pyg
+    """get node features by key used for pyg
 
-	Args:
-		node_feats (_type_): _description_
-		node_feat_idxs (_type_): _description_
-		key (_type_): _description_
+    Args:
+        node_feats (_type_): _description_
+        node_feat_idxs (_type_): _description_
+        key (_type_): _description_
 
-	Raises:
-		ValueError: _description_
+    Raises:
+        ValueError: _description_
 
-	Returns:
-		_type_: _description_
-	"""
+    Returns:
+        _type_: _description_
+    """
 
-	if key == "depth":
-		node_feats = node_feats[:,node_feat_idxs[0]:node_feat_idxs[1]]
-	elif key == "mask":
-		node_feats = node_feats[:,node_feat_idxs[1]:node_feat_idxs[2]]
-	elif key == "base_formula":
-		node_feats = node_feats[:,node_feat_idxs[2]:node_feat_idxs[3]]
-	elif key == "h_formulae_idx":
-		node_feats = node_feats[:,node_feat_idxs[3]:node_feat_idxs[4]]
-	else:
-		raise ValueError("key not found")
-	return node_feats
+    if key == "depth":
+        node_feats = node_feats[:,node_feat_idxs[0]:node_feat_idxs[1]]
+    elif key == "mask":
+        node_feats = node_feats[:,node_feat_idxs[1]:node_feat_idxs[2]]
+    elif key == "base_formula":
+        node_feats = node_feats[:,node_feat_idxs[2]:node_feat_idxs[3]]
+    elif key == "h_formulae_idx":
+        node_feats = node_feats[:,node_feat_idxs[3]:node_feat_idxs[4]]
+    else:
+        raise ValueError("key not found")
+    return node_feats
 
 def get_edge_feats(edge_feats:th.Tensor,edge_feat_idxs:int,key:str):
-	"""get edege feats used for pyg
+    """get edege feats used for pyg
 
-	Args:
-		edge_feats (_type_): _description_
-		edge_feat_idxs (_type_): _description_
-		key (_type_): _description_
+    Args:
+        edge_feats (_type_): _description_
+        edge_feat_idxs (_type_): _description_
+        key (_type_): _description_
 
-	Raises:
-		ValueError: _description_
+    Raises:
+        ValueError: _description_
 
-	Returns:
-		_type_: _description_
-	"""
+    Returns:
+        _type_: _description_
+    """
 
-	if key == "mask":
-		key_edge_feats = edge_feats[:,edge_feat_idxs[0]:edge_feat_idxs[1]]
-	elif key == "base_formula":
-		key_edge_feats = edge_feats[:,edge_feat_idxs[1]:edge_feat_idxs[2]]
-	else:
-		raise ValueError("key not found")
-	return key_edge_feats
+    if key == "mask":
+        key_edge_feats = edge_feats[:,edge_feat_idxs[0]:edge_feat_idxs[1]]
+    elif key == "base_formula":
+        key_edge_feats = edge_feats[:,edge_feat_idxs[1]:edge_feat_idxs[2]]
+    else:
+        raise ValueError("key not found")
+    return key_edge_feats
 
 def save_dag_d(dag_d:dict, filepath:str, is_compressed:bool = False):
-	"""save dag_d use pickle if is_compressed save as .pbz
+    """save dag_d use pickle if is_compressed save as .pbz
 
-	Args:
-		dag_d (dict): _description_
-		filepath (str): _description_
-	"""
-	if not is_compressed:
-		with open(filepath, 'wb') as fileout:
-			pickle.dump(dag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
-	else:
-		with bz2.BZ2File(filepath, 'wb') as fileout: 
-			cPickle.dump(dag_d, fileout)
+    Args:
+        dag_d (dict): _description_
+        filepath (str): _description_
+    """
+    if not is_compressed:
+        with open(filepath, 'wb') as fileout:
+            pickle.dump(dag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        with bz2.BZ2File(filepath, 'wb') as fileout: 
+            cPickle.dump(dag_d, fileout)
 
 def load_dag_d(filepath:str, is_compressed:bool = False):
-	"""_summary_
+    """_summary_
 
-	Args:
-		filepath (str): _description_
+    Args:
+        filepath (str): _description_
 
-	Returns:
-		_type_: _description_
-	"""
-	dag_d = None
-	if not is_compressed:
-		with open(filepath, 'rb') as filein:
-			dag_d = pickle.load(filein)
-	else:
-		with bz2.BZ2File(filepath, 'rb') as filein: 
-			dag_d = cPickle.load(filein)
+    Returns:
+        _type_: _description_
+    """
+    dag_d = None
+    if not is_compressed:
+        with open(filepath, 'rb') as filein:
+            dag_d = pickle.load(filein)
+    else:
+        with bz2.BZ2File(filepath, 'rb') as filein: 
+            dag_d = cPickle.load(filein)
 
-	return  dag_d                                                   
+    return  dag_d                                                   
