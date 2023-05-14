@@ -50,12 +50,9 @@ cdef long get_time():
 #    assert node_mask_int >= 0, node_mask_int
 #    return node_mask_int
 
-def mask_to_big_int(int num, char [::1] mask):
-    #Not fastest but it will do for now
-    node_mask_int = 0
-    for i in range(num):
-        node_mask_int += mask[i]*(2**i)
-    return node_mask_int
+def mask_to_binary_hash(char [::1] mask):
+    return np.asarray(mask).tobytes()
+
 
 cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
 
@@ -205,8 +202,8 @@ def compute_ccs(
     cdef int current_depth = 0
 
     # start with return_parents
-    node_mask_key = mask_to_big_int(num_nodes,node_mask)
-    edge_mask_key = mask_to_big_int(num_edges,edge_mask)
+    node_mask_key = mask_to_binary_hash(node_mask)
+    edge_mask_key = mask_to_binary_hash(edge_mask)
 
     cdef list ccs = [node_mask_key]
     cdef list cc_edges = [edge_mask_key]
@@ -287,8 +284,8 @@ def compute_ccs(
                 # save data and save edge and node configure
                 for c in range(new_num_ccs):
                     # save cc_nodes
-                    child_node_mask_key = mask_to_big_int(num_nodes,new_cc_nodes[c,:])
-                    child_edge_mask_key = mask_to_big_int(num_edges,new_cc_edges[c,:])
+                    child_node_mask_key = mask_to_binary_hash(new_cc_nodes[c,:])
+                    child_edge_mask_key = mask_to_binary_hash(new_cc_edges[c,:])
 
                     # add to dict to track node and edges
                     if child_node_mask_key not in cc_node_mask_dict:
@@ -337,10 +334,10 @@ def compute_ccs(
 
     # create node depth matrix
     node_depth_matrix = np.zeros((num_un_ccs, max_depth + 1),dtype = MASK_DTYPE)
+
     for idx,cc in enumerate(ordered_ccs):
         for d_id in ccs_depth_dict[cc]:
             node_depth_matrix[idx,d_id] = 1
-
     # create edge set:
     dag_edge_matrix = np.asarray(list(dag_edge_node_idx), dtype = np.int64)
     
