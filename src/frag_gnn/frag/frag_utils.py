@@ -111,6 +111,21 @@ def convert_cc_int_to_np_mask(num_nodes:int,cc_int:int,bitmask=True) -> np.ndarr
 	return np_mask
 
 
+def cc_bit_mask_to_atom_idx(cc:list|np.ndarray) -> list[int]:
+	"""_summary_
+
+	Args:
+		cc (list | np.ndarray): _description_
+
+	Returns:
+		_type_: _description_
+	"""
+	atom_ids = []
+	for idx,bit in enumerate(cc):
+		if bit == 1:
+			atom_ids.append(idx)
+	return atom_ids
+
 def get_fraggen_input_arrays(mol_d:dict):
 	"""_summary_
 
@@ -355,19 +370,24 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 	hs_arr = mol_d["hs_arr"]
 	elems = mol_d["elems"]
 	bond_mask_arr = mol_d["bond_mask_arr"]
+	
 	if base_formula is None:
 		base_formula = cc_to_formula_arr(cc,elems, bitmask)
-	sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-	cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
-	floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+	
+	
+	atom_ids = cc_bit_mask_to_atom_idx(cc) if bitmask else cc
+
+	sbond_arr, bond_mask_arr = update_bonds(atom_ids,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
+	cap = compute_cc_h_cap(atom_ids,ve_arr,sbond_arr,0)
+	floor = compute_cc_h_floor(atom_ids,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
 
 	# check floor and cap
-	assert floor <= cap, (floor,cap,cc)
+	assert floor <= cap, (floor,cap,atom_ids)
 	assert floor >= 0, floor
 
 	# check how many Hs each atom have on the mol
 	num_hs_prior = 0
-	for atom in cc:
+	for atom in atom_ids:
 		num_hs_prior += hs_arr[atom]
 
 	# update min and max
@@ -432,8 +452,19 @@ def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TR
 	else:
 		return set(formulae_to_counts.keys())
 
-def update_bonds(frag,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds):
+def update_bonds(frag:list[int],sbond_arr,bond_mask_arr,bonds,atoms_to_bonds):
+	"""_summary_
 
+	Args:
+		frag (_type_): list of atom idx
+		sbond_arr (_type_): _description_
+		bond_mask_arr (_type_): _description_
+		bonds (_type_): _description_
+		atoms_to_bonds (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
 	sbond_arr = np.zeros_like(sbond_arr,dtype=int)
 	bond_mask_arr = np.zeros_like(bond_mask_arr,dtype=bool)
 	for atom in frag:
@@ -703,7 +734,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	# add edges info
 	#pyg_edge_index = [[],[]]
 	pyg_edge_feat_list = []
-	for edge in dag_edge_matrix.T:
+	for edge in dag_edge_matrix:
 		from_idx, to_idx = edge
 		from_cc_mask = node_mask_matrix[from_idx]
 		to_cc_mask = node_mask_matrix[to_idx]
@@ -715,7 +746,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	pyg_edge_feats = np.stack(pyg_edge_feat_list, dtype=np.int8)
 
 	# edge index need to be int64 or it will throw error where compute degree
-	pyg_edge_index = th.tensor(dag_edge_matrix, dtype =th.int64)
+	pyg_edge_index = th.tensor(dag_edge_matrix.T, dtype =th.int64)
 	pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=EDGE_FEAT_DTYPE)
 
 	pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)

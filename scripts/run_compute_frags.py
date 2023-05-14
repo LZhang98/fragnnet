@@ -1,6 +1,4 @@
 import numpy as np
-import time
-from pprint import pprint
 import argparse
 import torch_geometric as pyg
 
@@ -69,8 +67,8 @@ if __name__ == "__main__":
 	frag_max_time = None
 	smiles = IDX_TO_SMILES[args.compound_idx]
 	
-	dag_d = run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)
+	#dag_d = run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)
 
-	#cProfile.runctx("run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)", globals(), locals(), "run_frag_exp.prof")
+	cProfile.runctx("run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)", globals(), locals(), "run_frag_exp.prof")
 	#s = pstats.Stats("run_frag_exp.prof")
 	#s.strip_dirs().sort_stats("time").print_stats()

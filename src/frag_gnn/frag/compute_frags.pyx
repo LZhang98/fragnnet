@@ -342,6 +342,6 @@ def compute_ccs(
             node_depth_matrix[idx,d_id] = 1
 
     # create edge set:
-    dag_edge_matrix = np.asarray(list(dag_edge_node_idx), dtype = MASK_DTYPE).T
+    dag_edge_matrix = np.asarray(list(dag_edge_node_idx), dtype = np.int64)
     
     return node_mask_matrix, node_depth_matrix, dag_edge_matrix, reached_depth
