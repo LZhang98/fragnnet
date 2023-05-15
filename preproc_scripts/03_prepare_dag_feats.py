@@ -279,7 +279,7 @@ def main(args):
 
     frag_stats_d = {}
     # count failures, then remove them
-    print(frag_stats_df)
+    # print(frag_stats_df)
     num_failures = frag_stats_df.isna().any(axis=1).sum()
     frag_stats_d["total_num_failures"] = num_failures
     print(f"> total num failures: {num_failures}")
