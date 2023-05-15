@@ -117,14 +117,14 @@ def print_and_log(name,series,wandb_flag,stats_d):
         wandb.log(log_d)
 
 def print_and_log_table(name, df,keys, wandb_flag):
-
-    stats_df = df[keys].describe(include="all")
-    stats_df.reset_index(inplace=True)
-    print(f"{name}")
-    print(stats_df)
-    if wandb_flag:
-        stats_table = wandb.Table(dataframe=stats_df)
-        wandb.log({f"{name}":stats_table})
+    raise NotImplementedError
+    #stats_df = df[keys].describe(include="all")
+    #stats_df.reset_index(inplace=True)
+    #print(f"{name}")
+    #print(stats_df)
+    #if wandb_flag:
+    #    stats_table = wandb.Table(dataframe=stats_df)
+    #    wandb.log({f"{name}":stats_table})
         
 def main(args):
 
