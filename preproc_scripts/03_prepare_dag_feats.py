@@ -309,19 +309,20 @@ def main(args):
         wandb.log(depth_d)
 
     ### molecule properties
-    #print_and_log("dag_num_edges",frag_stats_df["dag_num_edges"],wandb_flag,frag_stats_d)
-    #print_and_log("dag_num_nodes",frag_stats_df["dag_num_nodes"],wandb_flag,frag_stats_d)
-    #print_and_log("dag_sparsity",frag_stats_df["dag_sparsity"],wandb_flag,frag_stats_d)
-    #print_and_log("formula_redundancy",frag_stats_df["formula_redundancy"],wandb_flag,frag_stats_d)
+    frag_stats_d = {}
+    print_and_log("dag_num_edges",frag_stats_df["dag_num_edges"],wandb_flag,frag_stats_d)
+    print_and_log("dag_num_nodes",frag_stats_df["dag_num_nodes"],wandb_flag,frag_stats_d)
+    print_and_log("dag_sparsity",frag_stats_df["dag_sparsity"],wandb_flag,frag_stats_d)
+    print_and_log("formula_redundancy",frag_stats_df["formula_redundancy"],wandb_flag,frag_stats_d)
 
     # drop dags()
     # frag_stats_df = frag_stats_df.drop(columns=["dag"])
 
     # count number of formula per molecule
     frag_stats_df.loc[:,"num_formulae"] = frag_stats_df["idx_to_formula"].apply(lambda x: len(x)-1)
-    #print_and_log("num_formulae",frag_stats_df["num_formulae"],wandb_flag,frag_stats_d)
+    print_and_log("num_formulae",frag_stats_df["num_formulae"],wandb_flag,frag_stats_d)
 
-    print_and_log_table("frag_stats", frag_stats_df, ["dag_num_edges","dag_num_nodes","dag_sparsity","formula_redundancy","num_formulae"] , wandb_flag)
+    #print_and_log_table("frag_stats", frag_stats_df, ["dag_num_edges","dag_num_nodes","dag_sparsity","formula_redundancy","num_formulae"] , wandb_flag)
     assert (frag_stats_df["num_formulae"]>0).all()
 
     # drop idx_to_formula
@@ -356,12 +357,15 @@ def main(args):
     print(">Spectra Stats Computed")
 
     # update the frag stats df
-    print_and_log_table("frag_spectra_stats", frag_stats_df, mectric_keys, wandb_flag)
-    
+    frag_stats_d = {}
+    for key in mectric_keys:
+        print_and_log("spec_"+key,frag_stats_df[key],wandb_flag,frag_stats_d)
+
     # collect across molecules and report summary statistics
     agg_dict = { key: np.nanmean for key in mectric_keys }
     peak_mol_df = peak_spec_df[["mol_id"]+mectric_keys].groupby("mol_id").agg(agg_dict).reset_index()
-    print_and_log_table("spectra_fag_stats", peak_mol_df, mectric_keys, wandb_flag)
+    for key in mectric_keys:
+        print_and_log("mol_"+key,peak_mol_df[key],wandb_flag,frag_stats_d)
 
     # save spectrum-level stats
     frag_stats_df.to_pickle(spec_stats_fp)
