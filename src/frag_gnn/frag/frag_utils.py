@@ -594,7 +594,8 @@ def formula_arr_to_str(formula_arr, get_h_template = False):
         return formula_str, formula_str_no_h
 
 
-def compute_frag_peak_stats(row, allowed_h_transfer, tolerance=0.01, prec_type="[M+H]+", 
+def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
+                             allowed_h_transfer, tolerance=0.01, prec_type="[M+H]+", 
                 is_ppm = False):
     """_summary_
 
@@ -607,14 +608,14 @@ def compute_frag_peak_stats(row, allowed_h_transfer, tolerance=0.01, prec_type="
         _type_: _description_
     """
     ppm = 1/1000000
-    true_mzs, true_ints = list(zip(*row["peaks"]))
-    theoretical_mzs = row["formula_peak_mzs"]
-    theoretica_probs = row["formula_peak_probs"]
+    true_mzs, true_ints = list(zip(*peaks))
+    theoretical_mzs = formula_peak_mzs
+    theoretica_probs = formula_peak_probs
 
-    allowed_idx = list(row['idx_by_h_delta'][0])
+    allowed_idx = list(idx_by_h_delta[0])
     for h in range(1, allowed_h_transfer):
-        allowed_idx += list(row['idx_by_h_delta'][2 * h - 1])
-        allowed_idx += list(row['idx_by_h_delta'][2 * h])
+        allowed_idx += list(idx_by_h_delta[2 * h - 1])
+        allowed_idx += list(idx_by_h_delta[2 * h])
     allowed_idx = list(set(allowed_idx))
     #print(allowed_idx)
     indices = th.tensor(allowed_idx)

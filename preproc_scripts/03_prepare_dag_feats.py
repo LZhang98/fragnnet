@@ -10,7 +10,6 @@ from pprint import pformat
 import json
 import traceback
 import sys
-#import swifter
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
@@ -209,7 +208,8 @@ def main(args):
 		return dag_d
 
 
-	def get_stats(row, tolerances:list, h_transfer:int):
+	def compute_spectra_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,
+			   tolerances:list, max_h_transfer:int):
 		"""_summary_
 
 		Args:
@@ -219,10 +219,10 @@ def main(args):
 		Returns:
 			_type_: _description_
 		"""
-		tolerances = [tolerance for tolerance in args.tolerances.split("-")]
-	
+		reuslts = []
+		cols = []
 		for tolerance in tolerances:
-			for h_transfer in range(1, args.max_h_transfer + 1):
+			for h_transfer in range(1, max_h_transfer + 1):
 				keys = [
 					f"recall_{tolerance}_h{h_transfer}",
 					f"wrecall_{tolerance}_h{h_transfer}",
@@ -232,23 +232,27 @@ def main(args):
 				]
 
 				if 'ppm' in tolerance:
-					result = frag_utils.compute_frag_peak_stats(row,h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
+					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
+						 h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
 				else:
-					result = frag_utils.compute_frag_peak_stats(row,h_transfer,tolerance=float(tolerance),prec_type="[M+H]+")
+					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,h_transfer,\
+						 tolerance=float(tolerance),prec_type="[M+H]+")
+				cols += keys
+				reuslts.append(result)
 
-		return result
+		result_series  = pd.concat(reuslts, axis = 0)
+		result_df = result_series.to_frame().T
+		result_df.columns = cols
+		return result_df
 	
 	print(">Compute Fragments")
-	input_rows = []
+	mol_input_rows = []
 	for _, row in tqdm(mol_df.iterrows(), total=mol_df.shape[0], desc= "prepare inputs"):
-		input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, True])
-	
-	# Debug
-	timed_get_dags(*input_rows[0])
-	#exit()
-	tqdm_iter = tqdm(input_rows,desc=pformat(timed_get_dags),total=len(input_rows))
+		mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, True])
+	tqdm_iter = tqdm(mol_input_rows,desc=pformat(timed_get_dags),total=len(mol_input_rows))
 	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
 	print(">Fragments Computed")
+
 	#print(frag_results)
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
 	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
@@ -265,7 +269,6 @@ def main(args):
 	del frag_results
 
 	frag_stats_d = {}
-	#print(frag_stats_df)
 	# count failures, then remove them
 	num_failures = frag_stats_df.isna().any(axis=1).sum()
 	frag_stats_d["total_num_failures"] = num_failures
@@ -317,48 +320,41 @@ def main(args):
 	frag_stats_df[["mol_id"]+mol_stats].to_pickle(mol_stats_fp)
 	frag_stats_df = frag_stats_df.drop(columns=mol_stats)
 
-	# print(frag_stats_df.columns)
-	### spectrum properties
-	# for each spectrum, calculate fraction of peaks explained, fraction of intensity explained by referencing
-	
+	# compute spectra stats
 	peak_spec_df = spec_df[["spec_id","mol_id","peaks","prec_mz"]].merge(frag_stats_df,on="mol_id",how="inner")
 	frag_stats_df = peak_spec_df[["spec_id","mol_id"]].drop_duplicates()
 
+	print(">Compute Spectra Stats")
+	spectra_input_rows = []
 	tolerances = [tolerance for tolerance in args.tolerances.split("-")]
+	for _, row in tqdm(peak_spec_df.iterrows(), total=peak_spec_df.shape[0], desc= "prepare  spectra stats inputs"):
+		spectra_input_rows.append([row['peaks'], row["formula_peak_mzs"], row['formula_peak_probs'], row['idx_by_h_delta'], tolerances, args.max_h_transfer])
+	tqdm_iter = tqdm(spectra_input_rows,desc=pformat(compute_spectra_stats),total=len(spectra_input_rows))
+	# run stats
+	stats_results = data_utils.par_apply(tqdm_iter,compute_spectra_stats,True)
+	# Loky and job lib should kep ordering
+	stats_results_df =  pd.concat(stats_results, axis = 0, ignore_index=True)
+	#print(peak_spec_df.shape,stats_results_df.shape )
+	peak_spec_df = pd.concat((peak_spec_df,stats_results_df), axis = 1)
+	#del stats_results_df
 	
-	for tolerance in tolerances:
-		for h_transfer in range(1, args.max_h_transfer + 1):
-			keys = [
-				f"recall_{tolerance}_h{h_transfer}",
-				f"wrecall_{tolerance}_h{h_transfer}",
-				f"prec_{tolerance}_h{h_transfer}",
-				f"ppt_peak_{tolerance}_h{h_transfer}",
-				f"ppt_formula_{tolerance}_h{h_transfer}"
-			]
+	mectric_keys = list(stats_results_df.columns)
+	frag_stats_df = frag_stats_df.merge(peak_spec_df[["spec_id","mol_id"]+ mectric_keys].groupby(["spec_id","mol_id"]).mean().reset_index(),on=["spec_id","mol_id"],how="inner")
 
-			if 'ppm' in tolerance:
-				result_df = peak_spec_df.swifter.apply(lambda x: frag_utils.compute_frag_peak_stats(x,h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True),axis=1)
-			else:
-				result_df = peak_spec_df.swifter.apply(lambda x: frag_utils.compute_frag_peak_stats(x,h_transfer,tolerance=float(tolerance),prec_type="[M+H]+"),axis=1)
+	print(">Spectra Stats Computed")
 
-			#for idx, key in enumerate(keys):
-			#	peak_spec_df.loc[:,key] = result[idx].values
-			result_df.columns = keys
-			peak_spec_df = pd.concat([peak_spec_df, result_df], axis=1)
-			del result_df
-		
-			# update the frag stats df
-			frag_stats_df = frag_stats_df.merge(peak_spec_df[["spec_id","mol_id"]+keys].groupby(["spec_id","mol_id"]).mean().reset_index(),on=["spec_id","mol_id"],how="inner")
+	# update the frag stats df
 
-			# collect across spectra and report summary statistics
-			for key in keys:
-				print_and_log("spec_"+key,frag_stats_df[key],wandb_flag,frag_stats_d)
+	frag_stats_d = {}
+	# collect across spectra and report summary statistics
+	for key in mectric_keys:
+		print_and_log("spec_"+key,frag_stats_df[key],wandb_flag,frag_stats_d)
 
-			# collect across molecules and report summary statistics
-			agg_dict = { key: np.nanmean for key in keys }
-			peak_mol_df = peak_spec_df[["mol_id"]+keys].groupby("mol_id").agg(agg_dict).reset_index()
-			for key in keys:
-				print_and_log("mol_"+key,peak_mol_df[key],wandb_flag,frag_stats_d)
+	# collect across molecules and report summary statistics
+	agg_dict = { key: np.nanmean for key in mectric_keys }
+	peak_mol_df = peak_spec_df[["mol_id"]+mectric_keys].groupby("mol_id").agg(agg_dict).reset_index()
+	for key in mectric_keys:
+		print_and_log("mol_"+key,peak_mol_df[key],wandb_flag,frag_stats_d)
 
 	# save spectrum-level stats
 	frag_stats_df.to_pickle(spec_stats_fp)
