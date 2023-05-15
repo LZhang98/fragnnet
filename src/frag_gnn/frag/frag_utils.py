@@ -318,7 +318,7 @@ def compute_cc_h_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bon
 
     assert num_radicals == 0
     # if we could use update from single bond to double bond to get an electron pair
-    diff_arr = np.maximum(ve_arr-sbond_arr,0)
+    diff_arr = np.maximum(ve_arr - sbond_arr,0)
     cc_atoms = list(cc)
     # print(diff_arr)
     # this computes a lower bound
@@ -714,8 +714,9 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     hs_arr = mol_d["hs_arr"]
     elem_idxs = mol_d["elem_idxs"]
     cc_formula_list = []
+    hs_arr_np = np.array(hs_arr)
     for cc_mask in node_mask_matrix:
-        cc_h_count = sum(cc_mask[i]*hs_arr[i] for i in range(len(cc_mask)))
+        cc_h_count = np.sum(np.multiply(cc_mask, hs_arr_np))#sum(cc_mask[i] * hs_arr[i] for i in range(len(cc_mask)))
         cc_formula = cc_bitmask_to_formula_arr(cc_mask,elem_idxs)
         cc_formula[CANONICAL_H_IDX] = cc_h_count
         cc_formula_list.append(cc_formula)

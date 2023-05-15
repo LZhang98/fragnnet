@@ -10,7 +10,7 @@ import pstats, cProfile
 def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
 	mol_d = frag_utils.extract_mol_info(smiles)
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
-	print(num_nodes)
+	print(f">num of heavy atoms {num_nodes}")
 
 	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
 	dag = dag_d["dag"]
