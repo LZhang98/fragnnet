@@ -217,8 +217,8 @@ def compute_ccs(
     # data for gaphs
     cdef dict css_to_id_dict = {node_mask_key:0}
     # needed by pyg
-    dag_edge_node_idx = set({})
-
+    # dag_edge_dict, used to keep track dag edges and min depth
+    dag_edge_dict = {} #set({})
 
     #print("test_list", test_list[0])
     force_stop = False
@@ -235,7 +235,6 @@ def compute_ccs(
             sig_check()
             if cur_time - start_time > time_limit:
                 force_stop = True
-                reached_depth = current_depth
                 break
             
             # get mask hash and mask
@@ -245,7 +244,8 @@ def compute_ccs(
             current_edge_mask = cc_edge_mask_dict[current_edge_mask_key]
 
             # let us check mask
-            node_full_mask_str = str(curent_node_mask_key) + '|' +  str(current_edge_mask_key)
+            node_full_mask_str = curent_node_mask_key + b'|' +  current_edge_mask_key
+
             # check if we have seen has configure before
             need_skip = False
             if node_full_mask_str not in has_seen_dict:
@@ -309,17 +309,28 @@ def compute_ccs(
                     # NOTE: it is possiable we have parent and child with the same mask
                     # eg. first bond break on a ring
                     if curent_node_mask_key != child_node_mask_key:
-                        dag_edge_node_idx.add((css_to_id_dict[curent_node_mask_key],css_to_id_dict[child_node_mask_key]))
-                        #dag_edge_node_idx[1].append()
+                        
+                        edge_pair = (css_to_id_dict[curent_node_mask_key],css_to_id_dict[child_node_mask_key])
+                        #if edge_pair_ids not in 
+                        if edge_pair not in  dag_edge_dict:
+                            dag_edge_dict[edge_pair] = current_depth + 1
                     
                 num_ccs += new_num_ccs
-        
+                reached_depth = current_depth + 1
         # break outer loop
-        #if force_stop:
-            #ccs = ccs[:ccs_end]
-            #ccs_parents = ccs_parents[:ccs_end]
-            #ccs_depths = ccs_depths[:ccs_end]
-            #break
+        if force_stop:
+            # comupute what can be used
+            # NOTE this has not been tested yet
+            filtered_dag_edge_dict = {k: v for k, v in dag_edge_dict.items() if v <= reached_depth}
+            dag_edge_dict = filtered_dag_edge_dict
+
+            filtered_ccs_depth_dict = {k: set([i for i in v if i <= reached_depth]) for k,v in ccs_depth_dict.items() if min(v) <= reached_depth}
+            ccs_depth_dict = filtered_ccs_depth_dict
+
+            filtered_css_to_id_dict = {cc: css_to_id_dict[cc] for cc in filtered_ccs_depth_dict}
+            css_to_id_dict =  filtered_css_to_id_dict
+            #original.update(filtered)
+            break
         # finishing current depth, move to next
         ccs_idx = ccs_end
 
@@ -329,16 +340,24 @@ def compute_ccs(
     cdef list ordered_ccs = [0] * num_un_ccs
     for cc in css_to_id_dict:
         ordered_ccs[css_to_id_dict[cc]] = cc
+
     # create node masks
-    node_mask_matrix = np.stack([np.asarray(cc_node_mask_dict[cc]) for cc in ordered_ccs], dtype = MASK_DTYPE)
+    nodes_mask_matrix = np.stack([np.asarray(cc_node_mask_dict[cc]) for cc in ordered_ccs], dtype = MASK_DTYPE)
 
     # create node depth matrix
-    node_depth_matrix = np.zeros((num_un_ccs, max_depth + 1),dtype = MASK_DTYPE)
+    nodes_depth_matrix = np.zeros((num_un_ccs, max_depth + 1),dtype = MASK_DTYPE)
+    nodes_min_depth = np.zeros((num_un_ccs),dtype = MASK_DTYPE)
 
     for idx,cc in enumerate(ordered_ccs):
         for d_id in ccs_depth_dict[cc]:
-            node_depth_matrix[idx,d_id] = 1
+            nodes_depth_matrix[idx,d_id] = 1
+        # set lowest depth on the dag for each node
+        nodes_min_depth[idx] = min(ccs_depth_dict[cc])
+
     # create edge set:
-    dag_edge_matrix = np.asarray(list(dag_edge_node_idx), dtype = np.int64)
-    
-    return node_mask_matrix, node_depth_matrix, dag_edge_matrix, reached_depth
+    dag_edges_matrix = np.asarray(list(dag_edge_dict.keys()), dtype = np.int64)
+    edges_min_depth = np.asarray(list(dag_edge_dict.values()), dtype = MASK_DTYPE)
+    dag_frag_meta = {"reached_depth": reached_depth, "edges_min_depth": edges_min_depth, "nodes_min_depth": nodes_min_depth }
+    # both edges_min_depth and node_min_depth should be ordered
+
+    return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta

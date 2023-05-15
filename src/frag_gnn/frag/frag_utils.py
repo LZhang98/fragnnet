@@ -690,7 +690,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     node_mask = node_mask.astype(MASK_DTYPE)
     edge_mask = edge_mask.astype(MASK_DTYPE)
     #def _compute_frags():
-    node_mask_matrix, node_depth_matrix, dag_edge_matrix, reached_depth = compute_frags.compute_ccs(
+    nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = compute_frags.compute_ccs(
         num_nodes,
         num_edges,
         node_mask,
@@ -700,6 +700,11 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
         max_depth,
         frag_max_time
     )
+
+    # get meta
+    reached_depth = dag_frag_meta["reached_depth"]
+    edges_min_depth = dag_frag_meta["edges_min_depth"]
+    nodes_min_depth = dag_frag_meta["nodes_min_depth"]
 
     # add node depth information
     # convert to a one hot encoding
@@ -716,7 +721,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     elem_idxs = mol_d["elem_idxs"]
     cc_formula_list = []
     hs_arr_np = np.array(hs_arr)
-    for cc_mask in node_mask_matrix:
+    for cc_mask in nodes_mask_matrix:
         cc_h_count = np.sum(np.multiply(cc_mask, hs_arr_np))#sum(cc_mask[i] * hs_arr[i] for i in range(len(cc_mask)))
         cc_formula = cc_bitmask_to_formula_arr(cc_mask,elem_idxs)
         cc_formula[CANONICAL_H_IDX] = cc_h_count
@@ -725,9 +730,10 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     
     # map nodes to formulae
     formulae_list = []
+    #forumla_idx_by_depth = [set() for _ in range(max_depth + 1)]
     formulae_un = set()
     node_num_formules_sum = 0
-    for idx, cc_mask in enumerate(node_mask_matrix):
+    for idx, cc_mask in enumerate(nodes_mask_matrix):
         #cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
         base_formula = node_formula_matrix[idx]
         base_formula[CANONICAL_H_IDX] = 0 # remove Hs
@@ -736,15 +742,13 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
         formulae_list.append(delta_h_to_formula)
         formulae_un.update(formulae)
         node_num_formules_sum += len(formulae)
-        
+        # track forumla per depth
+   
     # map nodes to formulae indices
     formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
     idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
-    idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
-
-
-    #feats_start = feats_end
-    #feats_end = feats_start + formula_node_feat_size
+    forumla_idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
+ 
     formula_idx_list = []
     for formulae_dict in formulae_list:
         #formulae_dict = formulae_list[idx]
@@ -756,12 +760,13 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
             #h_delta [0,-1,1,-2,2,-3,3,-4,4]
             h_delta_idx = h_delta * 2 if h_delta >= 0 else (-h_delta * 2) - 1
             formulae_idx[h_delta_idx] = formula_idx
-            idx_by_h_delta[h_delta_idx].add(formula_idx)
+            forumla_idx_by_h_delta[h_delta_idx].add(formula_idx)
+
         formula_idx_list.append(formulae_idx)
 
     node_formulae_matrix = np.stack(formula_idx_list, dtype=np.int16)
     
-    pyg_node_feats = np.hstack((node_mask_matrix, node_depth_matrix,node_formula_matrix,node_formulae_matrix))
+    pyg_node_feats = np.hstack((nodes_mask_matrix, nodes_depth_matrix,node_formula_matrix,node_formulae_matrix))
     pyg_node_feats = th.tensor(pyg_node_feats,dtype=NODE_FEAT_DTYPE)
 
     # peak mzs array
@@ -789,10 +794,10 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     # add edges info
     #pyg_edge_index = [[],[]]
     pyg_edge_feat_list = []
-    for edge in dag_edge_matrix:
+    for edge in dag_edges_matrix:
         from_idx, to_idx = edge
-        from_cc_mask = node_mask_matrix[from_idx]
-        to_cc_mask = node_mask_matrix[to_idx]
+        from_cc_mask = nodes_mask_matrix[from_idx]
+        to_cc_mask = nodes_mask_matrix[to_idx]
         diff_cc_mask =  from_cc_mask - to_cc_mask
 
         #diff_formula = cc_bitmask_to_formula_arr(diff_mask,elem_idxs)
@@ -806,7 +811,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     pyg_edge_feats = np.stack(pyg_edge_feat_list, dtype=np.int8)
 
     # edge index need to be int64 or it will throw error where compute degree
-    pyg_edge_index = th.tensor(dag_edge_matrix.T, dtype =th.int64)
+    pyg_edge_index = th.tensor(dag_edges_matrix.T, dtype =th.int64)
     pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=EDGE_FEAT_DTYPE)
 
     pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
@@ -823,8 +828,12 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     dag_d["formula_peak_mzs"] = formula_peak_mzs
     dag_d["formula_peak_probs"] = formula_peak_probs
     dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-    dag_d["idx_by_h_delta"] = idx_by_h_delta # forumla idx for each h_delta
-    dag_d["dag"] = pyg_cc_g #nx_to_pyg(nx_cc_g)
+    dag_d["idx_by_h_delta"] = forumla_idx_by_h_delta # forumla idx for each h_delta
+    dag_d["dag"] = pyg_cc_g
+    
+    dag_d["edges_min_depth"] = edges_min_depth
+    dag_d["nodes_min_depth"] = nodes_min_depth
+
     # add stats here
     # we need change data type again
     # we just need to change this one place
@@ -835,6 +844,8 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     dag_d["node_feature_size"] = pyg_cc_g.num_features
     dag_d["edge_featuer_size"] = pyg_cc_g.num_edge_features
     dag_d["is_directed"] = pyg_cc_g.is_directed()
+    dag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
+    dag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
 
     return dag_d
     

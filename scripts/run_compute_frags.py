@@ -23,10 +23,16 @@ def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
 	
 	dag_indeg = pyg.utils.degree(dag.edge_index[1]).numpy()
 	dag_outdeg = pyg.utils.degree(dag.edge_index[0]).numpy()
+	print(f"reached_depth = {dag_d['reached_depth']}")
 	print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {2*dag_ne/(dag_nn*(dag_nn-1))}")
 	print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
 	print(f"dag_outdeg = {np.mean(dag_outdeg)}, std_outdeg = {np.std(dag_outdeg)}")
 	print(f"node feature size = {dag_d['node_feature_size']}, edge featuer size = {dag_d['edge_featuer_size']}")
+
+	print(f"node edges by depth: {dag_d['dag_num_edges_by_depth']}")
+	print(f"node node by depth: {dag_d['dag_num_nodes_by_depth']}")
+   # dag_d["dag_num_nodes_by_depth"] = { k:edges_min_depth.count(k) for k in range(reached_depth+1)} 
+
 	print(f"is diectred = {dag_d['is_directed']}")
 	dag_memory = get_pyg_memory_usage(dag)
 	print(f"memory = {dag_memory/1e6} MB")
