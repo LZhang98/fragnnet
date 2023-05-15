@@ -531,6 +531,7 @@ def cc_to_formula_arr(cc,elems,bitmask=False):
         for atom in cc:
             elem = elems[atom]
             formula_arr[ELEMENT_TO_IDX[elem]] += 1
+    #print(">cc_to_formula_arr", formula_arr)
     return formula_arr
 
 
@@ -551,10 +552,12 @@ def cc_bitmask_to_formula_arr(cc,elem_idxs) -> np.ndarray:
     elem_idx_np = np.multiply(cc, elem_idxs_np)
     unique, counts = np.unique(elem_idx_np, return_counts=True)
     for elem_idx, count in zip(unique, counts):
+        #print(unique, counts)
         if elem_idx == 0:
             continue
         else:
             formula_arr[elem_idx-1] = count
+    #print(">cc_bitmask_to_formula_arr", formula_arr)
     return formula_arr
 
 def formula_arr_to_str(formula_arr, get_h_template = False):
@@ -724,7 +727,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     for cc_mask in nodes_mask_matrix:
         cc_h_count = np.sum(np.multiply(cc_mask, hs_arr_np))#sum(cc_mask[i] * hs_arr[i] for i in range(len(cc_mask)))
         cc_formula = cc_bitmask_to_formula_arr(cc_mask,elem_idxs)
-        cc_formula[CANONICAL_H_IDX] = cc_h_count
+        cc_formula[ELEMENT_TO_IDX["H"]] = cc_h_count
         cc_formula_list.append(cc_formula)
     node_formula_matrix = np.stack(cc_formula_list, dtype=MASK_DTYPE)
     
@@ -736,7 +739,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     for idx, cc_mask in enumerate(nodes_mask_matrix):
         #cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
         base_formula = node_formula_matrix[idx]
-        base_formula[CANONICAL_H_IDX] = 0 # remove Hs
+        base_formula[ELEMENT_TO_IDX["H"]] = 0 # remove Hs
         delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True, base_formula = base_formula)
         formulae = list(delta_h_to_formula.values())
         formulae_list.append(delta_h_to_formula)
@@ -846,7 +849,6 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
     dag_d["is_directed"] = pyg_cc_g.is_directed()
     dag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
     dag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
-
     return dag_d
     
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
