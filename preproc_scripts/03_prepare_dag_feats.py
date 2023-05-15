@@ -138,7 +138,7 @@ def main(args):
         wandb_run = wandb.init(
             project="frag-gnn",
             entity="frag-gnn",
-            name=args.run_name,
+            name=args.run_name if args.wandb_run_name is None else args.wandb_run_name,
             mode=args.wandb_mode,
             config=wandb_config,
             dir=args.project_dp,
@@ -279,6 +279,7 @@ def main(args):
 
     frag_stats_d = {}
     # count failures, then remove them
+    print(frag_stats_df)
     num_failures = frag_stats_df.isna().any(axis=1).sum()
     frag_stats_d["total_num_failures"] = num_failures
     print(f"> total num failures: {num_failures}")
@@ -394,6 +395,7 @@ if __name__ == "__main__":
     parser.add_argument("--run_name",type=str,default="debug")
     parser.add_argument("--wandb_dp",type=str,default="wandb")
     parser.add_argument("--compress_dags",type=booltype,default=False)
+    parser.add_argument("--wandb_run_name",type=str,default=None)
     args = parser.parse_args()
 
     tqdm.pandas()
