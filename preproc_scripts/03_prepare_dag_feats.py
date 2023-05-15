@@ -257,7 +257,7 @@ def main(args):
     print(">Compute Fragments")
     mol_input_rows = []
     for _, row in tqdm(mol_df.iterrows(), total=mol_df.shape[0], desc= "prepare inputs"):
-        mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, True])
+        mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, args.compress_dags])
     tqdm_iter = tqdm(mol_input_rows,desc=pformat(timed_get_dags),total=len(mol_input_rows))
     frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
     print(">Fragments Computed")
@@ -398,7 +398,7 @@ if __name__ == "__main__":
     parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
     parser.add_argument("--run_name",type=str,default="debug")
     parser.add_argument("--wandb_dp",type=str,default="wandb")
-    parser.add_argument("--compress_dags",type=booltype,default=False)
+    parser.add_argument("--compress_dags",type=booltype,default=True)
     parser.add_argument("--wandb_run_name",type=str,default=None)
     args = parser.parse_args()
 
