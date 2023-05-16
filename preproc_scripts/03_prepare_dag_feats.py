@@ -213,7 +213,7 @@ def main(args):
 
 
 	def compute_spectra_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,
-			   tolerances:list, max_h_transfer:int):
+			   tolerance:int, h_transfer:int):
 		"""_summary_
 
 		Args:
@@ -225,24 +225,24 @@ def main(args):
 		"""
 		reuslts = []
 		cols = []
-		for tolerance in tolerances:
-			for h_transfer in range(1, max_h_transfer + 1):
-				keys = [
-					f"recall_{tolerance}_h{h_transfer}",
-					f"wrecall_{tolerance}_h{h_transfer}",
-					f"prec_{tolerance}_h{h_transfer}",
-					f"ppt_peak_{tolerance}_h{h_transfer}",
-					f"ppt_formula_{tolerance}_h{h_transfer}"
-				]
+		#for tolerance in tolerances:
+			#for h_transfer in range(1, max_h_transfer + 1):
+		keys = [
+			f"recall",
+			f"wrecall",
+			f"prec",
+			f"ppt_peak",
+			f"ppt_formula"
+		]
 
-				if 'ppm' in tolerance:
-					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
-						 h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
-				else:
-					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,h_transfer,\
-						 tolerance=float(tolerance),prec_type="[M+H]+")
-				cols += keys
-				reuslts.append(result)
+		if 'ppm' in tolerance:
+			result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
+					h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
+		else:
+			result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,h_transfer,\
+					tolerance=float(tolerance),prec_type="[M+H]+")
+		cols += keys
+		reuslts.append(result)
 
 		result_series  = pd.concat(reuslts, axis = 0)
 		result_df = result_series.to_frame().T
@@ -252,7 +252,7 @@ def main(args):
 	print(">Compute Fragments")
 	mol_input_rows = []
 	for _, row in tqdm(mol_df.iterrows(), total=mol_df.shape[0], desc= "prepare inputs"):
-		mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, args.compress_dags])
+		mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, args.compress_dag, args.save_dag])
 	tqdm_iter = tqdm(mol_input_rows,desc=pformat(timed_get_dags),total=len(mol_input_rows))
 	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
 	print(">Fragments Computed")
@@ -334,9 +334,9 @@ def main(args):
 
 	print(">Compute Spectra Stats")
 	spectra_input_rows = []
-	tolerances = [tolerance for tolerance in args.tolerances.split("-")]
+	#tolerances = [tolerance for tolerance in args.tolerances.split("-")]
 	for _, row in tqdm(peak_spec_df.iterrows(), total=peak_spec_df.shape[0], desc= "prepare  spectra stats inputs"):
-		spectra_input_rows.append([row['peaks'], row["formula_peak_mzs"], row['formula_peak_probs'], row['idx_by_h_delta'], tolerances, args.max_h_transfer])
+		spectra_input_rows.append([row['peaks'], row["formula_peak_mzs"], row['formula_peak_probs'], row['idx_by_h_delta'], args.tolerance, args.max_h_transfer])
 	tqdm_iter = tqdm(spectra_input_rows,desc=pformat(compute_spectra_stats),total=len(spectra_input_rows))
 	# run stats
 	stats_results = data_utils.par_apply(tqdm_iter,compute_spectra_stats,True)
@@ -385,17 +385,18 @@ if __name__ == "__main__":
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
 	parser.add_argument("--frag_dp",type=str,default="data/frag")
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
-	parser.add_argument("--h_prior",type=booltype,default=True)
+	parser.add_argument("--h_prior",type=bool,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,default=default_elements)
+	#parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001-5ppm-10ppm")
 	parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001-5ppm-10ppm")
-	parser.add_argument("--isotopes",type=booltype,default=True)
+	parser.add_argument("--isotopes",type=bool,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
-	parser.add_argument("--compress_dags",type=booltype,default=True)
+	parser.add_argument("--compress_dag",type=bool,default=True)
 	parser.add_argument("--wandb_run_name",type=str,default=None)
-	parser.add_argument("--save_dag",type=False,default=True)
+	parser.add_argument("--save_dag",type=bool,default=True)
 	args = parser.parse_args()
 
 	tqdm.pandas()
