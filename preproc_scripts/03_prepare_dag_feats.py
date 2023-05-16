@@ -207,8 +207,7 @@ def main(args):
 			else:
 				if save_dag:
 					frag_utils.save_dag_d(dag_d, output_file, compressed)
-			
-		del dag_d["dag"]
+				del dag_d["dag"]
 		return dag_d
 
 
