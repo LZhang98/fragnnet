@@ -22,12 +22,12 @@ def bin_func(mzs,ints,mz_max,mz_bin_res,ints_thresh,return_index):
 
 def merge_sparse_specs(*peakses):
 
-    merged_peaks = {}
-    for peaks in peakses:
-        for mz, int in peaks:
-            if mz in merged_peaks:
-                merged_peaks[mz] += int
-            else:
-                merged_peaks = int
-    merged_peaks = sorted(list(merged_peaks.items()), key=lambda x: x[0])
-    return merged_peaks
+	merged_peaks = {}
+	for peaks in peakses:
+		for mz, int in peaks:
+			if mz in merged_peaks:
+				merged_peaks[mz] += int
+			else:
+				merged_peaks = int
+	merged_peaks = sorted(list(merged_peaks.items()), key=lambda x: x[0])
+	return merged_peaks

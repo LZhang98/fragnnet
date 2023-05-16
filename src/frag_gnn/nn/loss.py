@@ -3,16 +3,16 @@ import torch.nn.functional as F
 
 
 def mog_log_prob(samples,means,variances,log_weights):
-    
-    samples = samples.reshape(-1,1)
-    means = means.reshape(1,-1)
-    variances = variances.reshape(1,-1)
-    log_weights = log_weights.reshape(1,-1)
-    # [B,K]
-    normal_log_probs = -0.5*(samples-means)**2/variances - 0.5*th.log(2*th.pi*variances)
-    # [B]
-    log_probs = th.logsumexp(normal_log_probs + log_weights, dim=1)
-    return log_probs
+	
+	samples = samples.reshape(-1,1)
+	means = means.reshape(1,-1)
+	variances = variances.reshape(1,-1)
+	log_weights = log_weights.reshape(1,-1)
+	# [B,K]
+	normal_log_probs = -0.5*(samples-means)**2/variances - 0.5*th.log(2*th.pi*variances)
+	# [B]
+	log_probs = th.logsumexp(normal_log_probs + log_weights, dim=1)
+	return log_probs
 
 def sparse_cross_entropy(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,variance=1e-3,vectorized=False):
 	""" this is slow, but fully vectorizing takes a lot of memory """
@@ -116,15 +116,15 @@ def get_sparse_cross_entropy_fn(vectorized):
 
 if __name__ == "__main__":
 
-    th.manual_seed(420)
+	th.manual_seed(420)
 
-    # Create a mixture of 1D Gaussians with 2 components
-    means = th.tensor([0.0,1.0])
-    variances = th.tensor([[1.0,0.5]])
-    log_weights = th.log(th.tensor([0.6,0.4]))
+	# Create a mixture of 1D Gaussians with 2 components
+	means = th.tensor([0.0,1.0])
+	variances = th.tensor([[1.0,0.5]])
+	log_weights = th.log(th.tensor([0.6,0.4]))
 
-    samples = 3*th.rand(10)
-    print(samples)
+	samples = 3*th.rand(10)
+	print(samples)
 
-    log_probs = mog_log_prob(samples,means,variances,log_weights)
-    print(th.exp(log_probs))
+	log_probs = mog_log_prob(samples,means,variances,log_weights)
+	print(th.exp(log_probs))

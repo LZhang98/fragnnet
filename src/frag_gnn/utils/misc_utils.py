@@ -18,15 +18,15 @@ TQDM_DISABLE = False
 
 def timeit(func):
 	# adapted from https://dev.to/kcdchennai/python-decorator-to-measure-execution-time-54hk
-    @wraps(func)
-    def timeit_wrapper(*args, **kwargs):
-        start_time = time.perf_counter()
-        result = func(*args, **kwargs)
-        end_time = time.perf_counter()
-        total_time = end_time - start_time
-        print(f'Function {func.__name__} Took {total_time:.4f} seconds')
-        return result
-    return timeit_wrapper
+	@wraps(func)
+	def timeit_wrapper(*args, **kwargs):
+		start_time = time.perf_counter()
+		result = func(*args, **kwargs)
+		end_time = time.perf_counter()
+		total_time = end_time - start_time
+		print(f'Function {func.__name__} Took {total_time:.4f} seconds')
+		return result
+	return timeit_wrapper
 
 def booltype(x):
 	return bool(strtobool(x))
@@ -111,36 +111,36 @@ class TimeoutException(Exception): pass
 # 		signal.alarm(0)
 
 def timeout_func(func, args=None, kwargs=None, timeout=30, default=None):
-    """This function will spawn a thread and run the given function
-    using the args, kwargs and return the given default value if the
-    timeout is exceeded.
-    http://stackoverflow.com/questions/492519/timeout-on-a-python-function-call
-    """
-    class InterruptableThread(threading.Thread):
-        def __init__(self):
-            threading.Thread.__init__(self)
-            self.result = default
-            self.exc_info = (None, None, None)
-        def run(self):
-            try:
-                self.result = func(*(args or ()), **(kwargs or {}))
-            except Exception as err:
-                self.exc_info = sys.exc_info()
-        def suicide(self):
-            raise TimeoutException(
-                "{0} timeout (taking more than {1} sec)".format(func.__name__, timeout)
-            )
-    it = InterruptableThread()
-    it.start()
-    it.join(timeout)
-    if it.exc_info[0] is not None:
-        a, b, c = it.exc_info
-        raise Exception(a, b, c)  # communicate that to caller
-    if it.is_alive():
-        it.suicide()
-        raise RuntimeError
-    else:
-        return it.result
+	"""This function will spawn a thread and run the given function
+	using the args, kwargs and return the given default value if the
+	timeout is exceeded.
+	http://stackoverflow.com/questions/492519/timeout-on-a-python-function-call
+	"""
+	class InterruptableThread(threading.Thread):
+		def __init__(self):
+			threading.Thread.__init__(self)
+			self.result = default
+			self.exc_info = (None, None, None)
+		def run(self):
+			try:
+				self.result = func(*(args or ()), **(kwargs or {}))
+			except Exception as err:
+				self.exc_info = sys.exc_info()
+		def suicide(self):
+			raise TimeoutException(
+				"{0} timeout (taking more than {1} sec)".format(func.__name__, timeout)
+			)
+	it = InterruptableThread()
+	it.start()
+	it.join(timeout)
+	if it.exc_info[0] is not None:
+		a, b, c = it.exc_info
+		raise Exception(a, b, c)  # communicate that to caller
+	if it.is_alive():
+		it.suicide()
+		raise RuntimeError
+	else:
+		return it.result
 
 def my_tqdm(*args,**kwargs):
 	return tqdm.tqdm(*args,**kwargs,disable=TQDM_DISABLE)

@@ -106,16 +106,16 @@ def get_dag_fig(dag_d, mol):
 	
 
 	fig = go.Figure(data=[edge_trace, node_trace],
-             layout=go.Layout(
-                title='<br>Frag Graph',
-                titlefont_size=32,
-                showlegend=False,
-                hovermode='closest',
-                margin=dict(b=20,l=5,r=5,t=40),
-                annotations=[ ],
-                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
-                )
+			 layout=go.Layout(
+				title='<br>Frag Graph',
+				titlefont_size=32,
+				showlegend=False,
+				hovermode='closest',
+				margin=dict(b=20,l=5,r=5,t=40),
+				annotations=[ ],
+				xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+				yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+				)
   
 	return fig
 
@@ -131,15 +131,15 @@ def get_specturm_fig(peaks):
 	#print(x_values)
 	#print(y_values)
 	fig = go.Figure([go.Bar(x=x_values, y=y_values, width = 1.0)],
-		              layout=go.Layout(
-                title='<br>Spectrum',
-                titlefont_size=32,
-                showlegend=False,
-                hovermode='closest',
-                margin=dict(b=20,l=5,r=5,t=40),
-                annotations=[ ],
-                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)))
+					  layout=go.Layout(
+				title='<br>Spectrum',
+				titlefont_size=32,
+				showlegend=False,
+				hovermode='closest',
+				margin=dict(b=20,l=5,r=5,t=40),
+				annotations=[ ],
+				xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+				yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)))
 
 	#fig.show()
 	return fig
@@ -149,9 +149,9 @@ def load_dgl_graph(dgl_saved_graph):
 	return glist
 
 def find_nearest(np_array, value):
-    #array = np.asarray(array)
-    idx = (np.abs(np_array - value)).argmin()
-    return np_array[idx]
+	#array = np.asarray(array)
+	idx = (np.abs(np_array - value)).argmin()
+	return np_array[idx]
 
 def get_updated_color(node_mass_l, peak_mws):
 	colors = []

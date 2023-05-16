@@ -21,13 +21,13 @@ def fig_to_data(fig,**kwargs):
 
 def plot_histogram(values,title,log=False,bins=10):
 
-    fig,ax = plt.subplots()
-    ax.hist(values,bins=bins)
-    ax.set_title(title)
-    ax.set_yscale("log" if log else "linear")
-    data = fig_to_data(fig)
-    plt.close("all")
-    return data
+	fig,ax = plt.subplots()
+	ax.hist(values,bins=bins)
+	ax.set_title(title)
+	ax.set_yscale("log" if log else "linear")
+	data = fig_to_data(fig)
+	plt.close("all")
+	return data
 
 
 def get_base64_mol_image(mol, highlight:list[int] = None, size:tuple(int,int) = None):
