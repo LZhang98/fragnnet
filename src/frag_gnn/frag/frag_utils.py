@@ -811,13 +811,17 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 
 		pyg_edge_feat_list.append(np.concatenate((diff_cc_mask, diff_formula_mask)))
 
-	pyg_edge_feats = np.stack(pyg_edge_feat_list, dtype=np.int8)
+	if len(pyg_edge_feat_list) > 0:
+		pyg_edge_feats = np.stack(pyg_edge_feat_list, dtype=np.int8)
 
-	# edge index need to be int64 or it will throw error where compute degree
-	pyg_edge_index = th.tensor(dag_edges_matrix.T, dtype =th.int64)
-	pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=EDGE_FEAT_DTYPE)
+		# edge index need to be int64 or it will throw error where compute degree
+		pyg_edge_index = th.tensor(dag_edges_matrix.T, dtype =th.int64)
+		pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=EDGE_FEAT_DTYPE)
 
-	pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
+		pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
+	else:
+		raise ValueError("DAG has no edegs")
+
 	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
 	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
 
