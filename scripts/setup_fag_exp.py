@@ -10,9 +10,9 @@ if __name__ == "__main__":
 	script_lines = []
 	script_lines.append("#!/bin/bash")
 
-	max_depths = [1,2,3,4]
+	max_depths = [2,3,4]
 	max_h_transfers = [1,2,3,4]
-	tolerances = ["0.01","0.005","0.001","10ppm","5ppm"]
+	tolerances = ["0.01","0.005","10ppm","5ppm"]
 	isotopes = [True, False]
 
 	for max_depth in max_depths:
