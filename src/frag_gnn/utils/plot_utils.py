@@ -49,3 +49,20 @@ def get_base64_mol_image(mol, highlight:list[int] = None, size:tuple(int,int) = 
 	drawer.FinishDrawing()
 	img_str = base64.b64encode(drawer.GetDrawingText()).decode('utf8')
 	return img_str
+
+# https://stackoverflow.com/questions/22667224/matplotlib-get-text-bounding-box-independent-of-backend/22689498
+def find_renderer(fig):
+    if hasattr(fig.canvas, "get_renderer"):
+        # Some backends, such as TkAgg, have the get_renderer method, which
+        # makes this easy.
+        renderer = fig.canvas.get_renderer()
+    else:
+        # Other backends do not have the get_renderer method, so we have a work
+        # around to find the renderer.  Print the figure to a temporary file
+        # object, and then grab the renderer that was used.
+        # (I stole this trick from the matplotlib backend_bases.py
+        # print_figure() method.)
+        import io
+        fig.canvas.print_pdf(io.BytesIO())
+        renderer = fig._cachedRenderer
+    return (renderer)

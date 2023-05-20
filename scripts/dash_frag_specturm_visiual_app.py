@@ -19,7 +19,6 @@ import numpy as np
 # it will do for now
 node_mass_l = []
 
-
 def get_dag_fig(dag_d, mol):
 	idx_to_formula = dag_d["idx_to_formula"]
 	G = dag_d["nx_dag"]
