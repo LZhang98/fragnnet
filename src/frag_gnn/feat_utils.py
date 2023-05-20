@@ -444,6 +444,8 @@ class BatchedMolDAG:
 		dag_pyg_list,
 		formula_peak_mzs,
 		formula_peak_probs,
+		spec_mzs=None,
+		spec_ints=None,
 		device=None
 	):
 
@@ -481,6 +483,22 @@ class BatchedMolDAG:
 		self.dag_formula_sizes = th.tensor(dag_formula_sizes,device=self.device)
 		self.dag_formula_cumsizes = th.cumsum(th.tensor([0]+dag_formula_sizes,device=self.device),dim=0)
 		self.dag_formula_peak_sizes = th.tensor(dag_formula_peak_sizes,device=self.device)
+		self.has_spec = spec_mzs is not None and spec_ints is not None
+		if self.has_spec:
+			self.spec_mzs = []
+			self.spec_ints = []
+			self.spec_idxs = []
+			for idx,(mzs, ints) in enumerate(zip(spec_mzs,spec_ints)):
+				self.spec_mzs.append(mzs)
+				self.spec_ints.append(ints)
+				self.spec_idxs.append(th.full_like(mzs,idx,dtype=th.int64))
+			self.spec_mzs = th.cat(self.spec_mzs,dim=0).to(self.device)
+			self.spec_ints = th.cat(self.spec_ints,dim=0).to(self.device)
+			self.spec_idxs = th.cat(self.spec_idxs,dim=0).to(self.device)
+		else:
+			self.spec_mzs = None
+			self.spec_ints = None
+			self.spec_idxs = None
 
 	def _compute_batched_node_offsets(self,mol_pyg_list,dag_pyg_list):
 
@@ -504,6 +522,10 @@ class BatchedMolDAG:
 		self.dag_formula_sizes = self.dag_formula_sizes.to(self.device)
 		self.dag_formula_cumsizes = self.dag_formula_cumsizes.to(self.device)
 		self.dag_formula_peak_sizes = self.dag_formula_peak_sizes.to(self.device)
+		if self.has_spec:
+			self.spec_mzs = self.spec_mzs.to(self.device)
+			self.spec_ints = self.spec_ints.to(self.device)
+			self.spec_idxs = self.spec_idxs.to(self.device)
 		return self
 
 	def _set_device(self,device):
@@ -538,7 +560,10 @@ class BatchedMolDAG:
 			"dag_formula_peak_probs": self.dag_formula_peak_probs,
 			"dag_formula_sizes": self.dag_formula_sizes,
 			"dag_formula_cumsizes": self.dag_formula_cumsizes,
-			"dag_formula_peak_sizes": self.dag_formula_peak_sizes
+			"dag_formula_peak_sizes": self.dag_formula_peak_sizes,
+			"spec_mzs": self.spec_mzs,
+			"spec_ints": self.spec_ints,
+			"spec_idxs": self.spec_idxs,
 		}
 
 if __name__ == "__main__":

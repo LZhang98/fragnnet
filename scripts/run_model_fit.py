@@ -1,0 +1,497 @@
+import numpy as np
+import torch as th
+import torch.nn.functional as F
+import torch.utils.benchmark as benchmark
+import torch._dynamo as th_dynamo
+import torch_geometric as pyg
+import time
+from pprint import pprint, pformat
+import argparse
+from copy import deepcopy
+
+import frag_gnn.frag.frag_utils as frag_utils
+from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed
+from frag_gnn.feat_utils import MolGraph, BatchedMolDAG
+from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
+from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
+from frag_gnn.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PERIODIC_TABLE, parse_formula
+from frag_gnn.utils.data_utils import mol_from_smiles, mol_to_formula
+from frag_gnn.utils.plot_utils import plot_dual_axis, plot_spectra_sparse
+
+def featurize_dag(dag):
+
+	print(dag)
+	return dag
+
+def featurize_mol(mol):
+
+	mg = MolGraph(pe_embed_k=0)
+	mol_pyg = mg.get_pyg_graph(mol,bigraph=True)
+	return mol_pyg
+
+def torch_time(func):
+	def _time_func(*args,**kwargs):
+		if th.cuda.is_available():
+			start = th.cuda.Event(enable_timing=True)
+			end = th.cuda.Event(enable_timing=True)
+			start.record()
+			result = func(*args,**kwargs)
+			end.record()
+			th.cuda.synchronize()
+			elapsed_time = start.elapsed_time(end)
+		else:
+			start = time.time_ns()
+			result = func(*args,**kwargs)
+			end = time.time_ns()
+			elapsed_time = (end-start) / 1e6
+		print(f"> func {func.__name__}: time elapsed = {elapsed_time:.2f} ms")
+		# print(f"> func: time elapsed = {elapsed_time:.2f} ms")
+		return result
+	return _time_func
+
+def calc_prec_mz(smiles,prec_type):
+
+	mol = mol_from_smiles(smiles)
+	formula = mol_to_formula(mol)
+	element_counts = parse_formula(formula)
+	mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
+	peak_mz = 0.
+	for k, v in element_counts.items():
+		peak_mz += v*PERIODIC_TABLE.GetMostCommonIsotopeMass(k)
+	peak_mz += mass_diff
+	return peak_mz
+
+
+if __name__ == "__main__":
+
+	# to get compound 11 to work use the following configuration: 
+	# max_h_transfer=4
+	# num_isotopes=1
+	# variance=1e-6
+	# out_dist=gaussian
+	# lr=1e-4
+	# num_iters=1000 (should see convergence around 500)
+	# batch_size=2 (just used something small to speed up training)
+	# other parameters don't matter
+	
+	parser = argparse.ArgumentParser()
+	parser.add_argument(
+		"--compound_idx",
+		type=int,
+		default=11,
+		help="Index of compound to run (only 11-13 have real spectra)"
+	)
+	parser.add_argument(
+		"--max_depth",
+		type=int,
+		default=4,
+		help="Maximum depth of fragments to consider"
+	)
+	parser.add_argument(
+		"--max_h_transfer",
+		type=int,
+		default=4,
+		help="Maximum number of hydrogens to transfer"	
+	)
+	parser.add_argument(
+		"--vectorized",
+		type=booltype,
+		default=False,
+		help="Whether to use vectorized (vmap) implementation of cross entropy loss (this will be slower unless your batch is very big)"
+	)
+	parser.add_argument(
+		"--device_id",
+		type=int,
+		choices=[-1,0],
+		default=-1,
+		help="Which device to use (-1 for CPU, 0 for GPU)"
+	)
+	parser.add_argument(
+		"--batch_size",
+		type=int,
+		default=2,
+		help="Minibatch size for training and prediction (when batch_size>1, the input compound is duplicated)"
+	)
+	parser.add_argument(
+		"--jit",
+		type=booltype,
+		default=True,
+		help="Whether to use JIT compilation for the cross entropy loss"
+	)
+	parser.add_argument(
+		"--num_iters",
+		type=int,
+		default=10,
+		help="Number of training iterations"
+	)
+	parser.add_argument(
+		"--variance",
+		type=float,
+		default=1e-3,
+	)
+	parser.add_argument(
+		"--random_targ",
+		type=booltype,
+		default=False,
+		help="Whether to use random spectrum targets"
+	)
+	parser.add_argument(
+		"--time",
+		type=booltype,
+		default=True,
+		help="Whether to time each iteration"
+	)
+	parser.add_argument(
+		"--lr",
+		type=float,
+		default=1e-3,
+		help="Learning rate"
+	)
+	parser.add_argument(
+		"--out_dist",
+		type=str,
+		default="gaussian",
+		choices=["gaussian","mol_uniform"],
+		help="The form of the output distribution (gaussian or mollified uniform)"
+	)
+	parser.add_argument(
+		"--num_isotopes",
+		type=int,
+		default=frag_utils.MAX_NUM_MZS_PER_FORMULA,
+		help="Maximum number of isotopic trace peaks to consider"
+	)
+	parser.add_argument(
+		"--fit_model",
+		type=booltype,
+		default=True,
+		help="Whether to fit the model parameters, or just run the forward pass"
+	)
+	args = parser.parse_args()
+
+	np.random.seed(420)
+	th.manual_seed(420)
+
+	# 0: mol_id=22041, smiles=O=C(Nc1nc(-c2ccccc2)cs1)c1ccncc1, wrecall=0.9814, depth=3
+	# 1: mol_id=7602, smiles=CCCCCCCCC=CCCCCCCCC(=O)NCC, wrecall=0.9947, depth=3
+	# 2: mol_id=11009, smiles=CNc1nc(C)c(C)c(OC(=O)N(C)C)n1, wrecall=0.9614, depth=3
+
+	IDX_TO_SMILES = {
+		# compounds without spectra
+		0: "CCO", # ethanol
+		1: "c1ccccc1", # benzene
+		2: "CC(=O)OC1=CC=CC=C1C(=O)O", # aspirin
+		3: "CC12CCC3C(C1CCC2O)CCC4=CC(=O)CCC34C", # testosterone
+		4: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC(=O)O", # geddic acid
+		5: "CSCCC(C(=O)O)N", # methionine, S=2
+		6: "C1=CC(=CC=C1N)S(=O)(=O)N", # sulfanilamide, S=6
+		7: "COP(C1=CC=CC=C1)C2=CC=CC=C2", # methoxydiphenylphosphine, P=3
+		8: "CC1C(O1)P(=O)(O)O", # phosphomycin, P=5
+		9: 'CC(=O)NC1C(OC2CCC3(C)C(CCC4(C)C3CC=C3C5CC(C)(C)CCC5(C(=O)O)CCC34C)C2(C)C)OC(CO)C(O)C1O', # big one (47 atoms)
+		10: 'CC(=O)NC1C(OC2OC(CC(O)C3OC(n4ccc(=O)[nH]c4=O)C(O)C3O)C(O)C(O)C2NC(=O)C=CCCCCCCCCCCCC(C)C)OC(CO)C(O)C1O', # big one (60 atoms)
+		# compounds with spectra
+		11: "C1=CC=C(C=C1)C2=CSC(=N2)NC(=O)C3=CC=NC=C3",
+		12: "CCCCCCCCC=CCCCCCCCC(=O)NCC",
+		13: "CC1=C(N=C(N=C1OC(=O)N(C)C)NC)C",
+	}
+
+	# just hard-coding some examples
+	IDX_TO_SPEC = {
+		0: None,
+		1: None,
+		2: None,
+		3: None,
+		4: None,
+		5: None,
+		6: None,
+		7: None,
+		8: None,
+		9: None,
+		10: None,
+		11: [
+			(50.0149, 41.36), (50.015, 11.19), (51.0227, 300.4), (51.0228, 9.19), (51.0229, 2.7), 
+			(52.018, 24.37), (52.0295, 3.1), (52.0305, 270.12), (52.0306, 15.38), (52.0307, 5.09),
+			(53.0384, 393.31000000000006), (53.0385, 5.8), (62.0149, 2.3), (63.0227, 33.769999999999996),
+			(65.0361, 3.7), (65.0383, 408.99), (65.0384, 5.59), (67.0416, 2.2), (68.9792, 16.48), 
+			(69.0057, 5.99), (69.0081, 781.3100000000001), (76.0305, 2.7), (77.0133, 3.7), (77.0383, 37.06), 
+			(78.0335, 144.66000000000003), (78.0336, 361.25), (79.0393, 9.59), (79.0414, 4138.26), 
+			(80.0476, 23.28), (80.0492, 6937.459999999999), (81.0525, 25.79), (85.9692, 66.72),
+			(89.0383, 297.3), (90.046, 3.0), (90.0461, 59.44), (91.0514, 10.89), (91.0539, 2997.0), 
+			(91.054, 581.11), (92.0572, 10.39), (92.0573, 6.79), (92.0574, 7.29), (92.9791, 3.0), 
+			(93.0444, 2.2), (93.057, 37.37), (93.0571, 12.889999999999999), (95.0488, 21.08), (95.0489, 4.0), 
+			(96.0441, 152.84), (96.0442, 1.6), (102.0461, 14.19), (102.0462, 26.37), (104.0492, 61.45), 
+			(104.0493, 19.08), (105.0444, 3.7), (105.0445, 256.14000000000004), (106.0285, 334.97), 
+			(107.0363, 38.77), (107.0364, 15.09), (108.0026, 15.28), (111.0312, 7.99), (111.0313, 91.41), 
+			(116.0493, 70.52000000000001), (116.0494, 16.18), (117.0571, 5.1), (117.0572, 5.49), 
+			(118.0523, 2.7), (118.0524, 2.4), (120.0554, 39.56), (120.0555, 108.28999999999999), 
+			(121.0104, 69.63), (121.0105, 144.95), (124.0213, 1.8), (131.0601, 4.3), (131.0603, 6.59), 
+			(132.0442, 19.68), (132.0443, 6.79), (133.0105,56.65), (133.0106, 28.28), (134.0182, 1.5), 
+			(134.0183, 564.53), (134.0184, 94.3), (135.0261, 62.339999999999996), (135.0262, 820.88), 
+			(136.0296, 2.7), (139.0542, 2.0), (148.0214, 124.47999999999999), (148.0215,75.73), 
+			(148.0216, 7.69), (148.0503, 3.0), (148.0504, 35.46), (148.0505, 18.18), (159.0139, 3.1), 
+			(160.0213, 2.0), (160.0214, 53.54), (160.0215, 17.09), (161.0167, 2.6), (161.0169, 4.9), 
+			(175.0324, 11.889999999999999), (175.0325, 3.0), (176.0163, 34.97), (176.0164, 93.41), 
+			(176.0166, 3.6), (176.0401, 25.18), (176.0402, 27.369999999999997), (176.0403, 16.78), 
+			(178.0319, 4.2), (178.032, 5.0), (183.0916, 2.0), (187.0325, 1.6), (193.0763, 4.9), 
+			(194.0839, 4.7), (194.084, 6.89), (195.0917, 7.29), (195.0918, 3.5), (200.0526, 2.7), 
+			(200.0527, 2.9), (203.0272, 136.87), (203.0273, 1296.6000000000001), (203.0278, 4.4), 
+			(204.0301, 2.4), (204.0305, 2.2), (204.0308, 3.5), (212.0527, 4.3), (212.0529, 1.4), 
+			(212.053, 2.3), (220.0868, 2.2), (221.0943, 2.1), (221.0947, 5.19), (221.0948, 5.29), 
+			(227.0634, 1.6), (227.0635, 10.59), (227.0637, 183.03), (227.064, 2.7), (239.0635, 31.07), 
+			(239.0636, 94.31), (239.0637, 229.26999999999998), (249.0894, 4.6), (249.0896, 8.690000000000001), 
+			(249.0899, 2.3), (254.0679, 2.6), (254.0745, 762.74), (254.0746, 210.69), (254.0747, 9.39), 
+			(255.0778, 10.899999999999999), (264.0588, 52.040000000000006), (264.0589, 25.27), (282.0515, 2.2), 
+			(282.0591, 2.0), (282.0693, 1969.53), (282.0694, 1383.42), (282.0702, 3.4), (283.0728, 36.36), (283.0729, 19.38)
+		],
+		12: None, # TODO: add spectrum
+		13: None # TODO: add spectrum
+	}
+
+	compound_idx = args.compound_idx
+	max_depth = args.max_depth
+	h_prior = True 
+	max_h_transfer = args.max_h_transfer
+	vectorized = th.tensor(args.vectorized,dtype=th.bool)
+	batch_size = th.tensor(args.batch_size,dtype=th.int32)
+	variance = th.tensor(args.variance,dtype=th.float32)
+	frag_max_time = None
+	smiles = IDX_TO_SMILES[compound_idx]
+	mol_d = frag_utils.extract_mol_info(smiles)
+	hidden_size = 256
+	spec = IDX_TO_SPEC[compound_idx]
+	mzs, ints = zip(*spec)
+	mzs = th.tensor(mzs,dtype=th.float32)
+	ints = F.normalize(th.tensor(ints,dtype=th.float32),p=1,dim=0)
+	prec_mz = calc_prec_mz(smiles,"[M+H]+")
+
+	if args.device_id == 0:
+		device = th.device("cuda:0")
+	else:
+		device = th.device("cpu")
+
+	# prepare data
+	batch_size = args.batch_size
+	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
+	dag_pyg = featurize_dag(dag_d["dag"])
+	mol_pyg = featurize_mol(mol_d["mol"])
+	mol_pyg = mol_pyg.to(device)
+	mol_pygs = [deepcopy(mol_pyg) for i in range(batch_size)]
+	dag_pygs = [deepcopy(dag_pyg) for i in range(batch_size)]
+	formula_peak_mzses = [dag_d["formula_peak_mzs"][:,:args.num_isotopes].detach().clone() for i in range(batch_size)]
+	formula_peak_probses = [dag_d["formula_peak_probs"][:,:args.num_isotopes].detach().clone() for i in range(batch_size)]
+	spec_mzs = [mzs.detach().clone() for i in range(batch_size)]
+	spec_ints = [ints.detach().clone() for i in range(batch_size)]
+	batched_dag = BatchedMolDAG(
+		mol_pygs,
+		dag_pygs,
+		formula_peak_mzses,
+		formula_peak_probses,
+		spec_mzs=spec_mzs,
+		spec_ints=spec_ints,
+		device=th.device("cpu")
+	)
+	batched_dag = batched_dag.to(device)
+	print(batched_dag)
+	# print(batched_dag.get_batched_mask("formula_peak_mzs"))
+	batched_dag_d = batched_dag.__dict__()
+
+	# prepare_model
+	mol_kwargs = {
+		"hidden_size": hidden_size,
+		"gnn_node_feats": mol_pyg.x.shape[1],
+		"gnn_edge_feats": mol_pyg.edge_attr.shape[1],
+		"mpnn_type": "GINE"
+	}
+	dag_kwargs = {
+		"hidden_size": hidden_size,
+		"mpnn_type": "GINE"
+		# node/edge feats are inferred
+	}
+	mlp_kwargs = {
+		"hidden_size": hidden_size,
+		"dropout": 0.0,
+		"num_layers": 2,
+		"use_residuals": True
+		# input/output sizes inferred
+	}
+	num_depth = dag_d["max_depth"]+1 # +1 for the root/precursor node
+	num_hs = dag_d["max_h_transfer"]
+	num_elements = frag_utils.NUM_ELEMENTS
+	int_embedder = "abs-sines"
+	joint_model = JointPredictor(
+		num_depth,
+		num_hs,
+		num_elements,
+		mol_kwargs,
+		dag_kwargs,
+		mlp_kwargs,
+		int_embedder
+	)
+	joint_model.to(device)
+
+	sparse_cross_entropy_fn = get_sparse_cross_entropy_fn(args.out_dist,vectorized)
+	
+	if args.jit:
+		th_dynamo.config.verbose = True
+		dynamo_prof = th_dynamo.utils.CompileProfiler()
+		# don't compile the model for now
+		joint_model_forward = joint_model.forward
+		loss_fn = th.compile(sparse_cross_entropy_fn,dynamic=True,backend=dynamo_prof)
+	else:
+		joint_model_forward = joint_model.forward
+		loss_fn = sparse_cross_entropy_fn
+
+	if args.time:
+		joint_model_forward = torch_time(joint_model_forward)
+		loss_fn = torch_time(loss_fn)
+
+	optim = th.optim.AdamW(joint_model.parameters(), lr=args.lr)
+	optim.zero_grad()
+
+	metrics = {
+		"step": [],
+		"cross_entropy_loss": [],
+		"topk_weighted_recall": [],
+		"topk_frac": []
+	}
+
+	def get_pred_true():
+		pred_mzs, pred_logits, pred_batch_idxs = joint_model_forward(
+			**deepcopy(batched_dag_d)
+		)
+		if args.random_targ or spec is None:
+			with th_temp_seed(420):
+				# select random subset of pred peaks
+				true_mask = th.rand_like(pred_mzs)<0.1
+				true_batch_idxs = pred_batch_idxs[true_mask]
+				# add slight mass jitter
+				true_mzs = pred_mzs[true_mask] + 0.0002*th.rand_like(pred_mzs[true_mask]) - 0.0001
+				# random intensities
+				true_logits = scatter_normalize(
+					th.log(th.rand_like(pred_logits[true_mask])),
+					true_batch_idxs,
+					dim=0
+				)
+		else:
+			true_mzs = batched_dag_d["spec_mzs"]
+			true_logits = th.log(batched_dag_d["spec_ints"])
+			true_batch_idxs = batched_dag_d["spec_idxs"]
+		return pred_mzs, pred_logits, pred_batch_idxs, true_mzs, true_logits, true_batch_idxs
+
+	best_d = {}
+
+	for i in range(args.num_iters):
+		print(f">> iter {i}")
+		pred_mzs, pred_logits, pred_batch_idxs, true_mzs, true_logits, true_batch_idxs = get_pred_true()
+		pred_entropy = th.mean(calculate_spectrum_entropy(pred_logits,pred_batch_idxs))
+		true_entropy = th.mean(calculate_spectrum_entropy(true_logits,true_batch_idxs))
+		topk_weighted_recall, topk_frac = calculate_topk_weighted_recall(
+			true_mzs,
+			true_logits,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logits,
+			pred_batch_idxs
+		)
+		topk_weighted_recall = th.mean(topk_weighted_recall)
+		topk_frac = th.mean(topk_frac)
+		recall, weighted_recall = calculate_recalls(
+			true_mzs,
+			true_logits,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logits,
+			pred_batch_idxs
+		)
+		recall = th.mean(recall)
+		weighted_recall = th.mean(weighted_recall)
+		print(f"> pred logits = {pred_logits.mean().item()}, true logits = {true_logits.mean().item()}")
+		print(f"> pred entropy = {pred_entropy.item()}, true entropy = {true_entropy.item()}")
+		print(f"> recall = {recall.item()}, weighted recall = {weighted_recall.item()}")
+		print(f"> topk weighted recall = {topk_weighted_recall.item()}, topk frac = {topk_frac.item()}")
+		# calculate loss
+		loss = loss_fn(
+			true_mzs,
+			true_logits,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logits,
+			pred_batch_idxs,
+			batch_size,
+			variance
+		)
+		print(f"> loss = {loss:.4f}")
+		# update metrics
+		metrics["step"].append(i+1)
+		metrics["cross_entropy_loss"].append(loss.item())
+		# metrics["recall"].append(recall.item())
+		# metrics["weighted_recall"].append(weighted_recall.item())
+		metrics["topk_weighted_recall"].append(topk_weighted_recall.item())
+		metrics["topk_frac"].append(topk_frac.item())
+		# save best model
+		if args.fit_model and loss.item() < best_d.get("cross_entropy_loss",np.inf):
+			best_d["topk_weighted_recall"] = topk_weighted_recall.item()
+			best_d["iter"] = i
+			best_d["params"] = deepcopy(joint_model.state_dict())
+			best_d["cross_entropy_loss"] = loss.item()
+			best_d["pred_mzs"] = pred_mzs.detach().clone()
+			best_d["pred_logits"] = pred_logits.detach().clone()
+			best_d["pred_batch_idxs"] = pred_batch_idxs.detach().clone()
+			best_d["true_mzs"] = true_mzs.detach().clone()
+			best_d["true_logits"] = true_logits.detach().clone()
+			best_d["true_batch_idxs"] = true_batch_idxs.detach().clone()
+		# backprop
+		loss.backward()
+		if args.fit_model:
+			# update parameters
+			optim.step()
+		# zero out gradients
+		optim.zero_grad()
+	
+	if args.fit_model:
+		## plot spectrum ##
+		pred_mzs = best_d["pred_mzs"]
+		pred_logits = best_d["pred_logits"]
+		pred_batch_idxs = best_d["pred_batch_idxs"]
+		true_mzs = best_d["true_mzs"]
+		true_logits = best_d["true_logits"]
+		true_batch_idxs = best_d["true_batch_idxs"]
+		loss = best_d["cross_entropy_loss"]
+		b_true_mask = true_batch_idxs==0
+		b_true_mzs = true_mzs[b_true_mask]
+		b_true_ints = th.exp(true_logits[b_true_mask]) / th.exp(th.logsumexp(true_logits[b_true_mask],0))
+		b_pred_mask = pred_batch_idxs==0
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_pred_ints = th.exp(pred_logits[b_pred_mask]) / th.exp(th.logsumexp(pred_logits[b_pred_mask],0))
+		plot_spectra_sparse(
+			b_true_mzs.numpy(),
+			b_true_ints.numpy(),
+			b_pred_mzs.numpy(),
+			b_pred_ints.numpy(),
+			prec_mz,
+			smiles,
+			loss,
+			f"figs/fit_model_{compound_idx}_spectra.png"
+		)
+		## plot spectrum ##
+
+	# get memory usage
+	if args.device_id != -1 and th.cuda.is_available():
+		cuda_max_memory = th.cuda.max_memory_allocated(device=device)/1e9
+		print(f"> GPU memory: {cuda_max_memory:.2f} GB")
+
+	if args.jit:
+		print(dynamo_prof.report())
+
+	# plot training metrics
+	plot_dual_axis(
+		metrics["step"],
+		{
+			"cross_entropy_loss": metrics["cross_entropy_loss"]
+		},
+		{
+			"topk_weighted_recall": metrics["topk_weighted_recall"],
+			"topk_frac": metrics["topk_frac"],
+		},
+		f"figs/fit_model_{compound_idx}_curves.png"
+	)

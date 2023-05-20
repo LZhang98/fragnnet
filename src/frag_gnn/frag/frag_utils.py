@@ -131,9 +131,9 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 		mol_d["element_counts"] : atom count per element
 	"""
 	if isinstance(smiles_or_mol,str):
+		# TODO: change this to be consistent with the approach in data_utils.py
 		# rdkit mol stuff
 		mol = Chem.MolFromSmiles(smiles_or_mol)
-		# TODO: think about adding Hs
 		rdMolStandardize.Cleanup(mol)
 		te = rdMolStandardize.TautomerEnumerator()
 		mol = te.Canonicalize(mol)

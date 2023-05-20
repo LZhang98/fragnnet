@@ -5,10 +5,11 @@ import scipy.sparse as sparse
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
+import torch_geometric as pyg
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats
-import torch_geometric as pyg
+from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_normalize, scatter_reduce, scatter_masked_softmax
 
 
 def get_clones(module, N):
@@ -109,6 +110,7 @@ class JointPredictor(nn.Module):
         dag_formula_sizes=None,
         dag_formula_cumsizes=None,
         dag_formula_peak_sizes=None,
+        **kwargs
     ):
 
         device = batch_size.device
@@ -128,12 +130,12 @@ class JointPredictor(nn.Module):
         dag_node_mask_idxs = th.nonzero(get_node_feats(dag_x,dag_node_feat_idxs,"mask")).long()
         dag_node_offsets = mol_num_nodes[th.bucketize(dag_node_mask_idxs[:,0],dag_num_nodes,right=True)-1]
         dag_node_mask_idxs[:,1] = dag_node_mask_idxs[:,1] + dag_node_offsets
-        dag_node_mask_embed = th.scatter_reduce(
-            input=th.zeros([batch_dag_num_nodes,mol_embed.shape[1]],device=device),
-            dim=0,
-            index=dag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+        dag_node_mask_embed = scatter_reduce(
             src=mol_embed[dag_node_mask_idxs[:,1]],
+            index=dag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
             reduce="sum",
+            dim=0,
+            dim_size=batch_dag_num_nodes
         )
         # print(dag_node_mask_embed.sum())
         dag_ndata.append(dag_node_mask_embed)
@@ -142,12 +144,12 @@ class JointPredictor(nn.Module):
         dag_edge_node_idxs = dag_edge_index[0][dag_edge_mask_idxs[:,0]]
         dag_edge_offsets = mol_num_nodes[th.bucketize(dag_edge_node_idxs,dag_num_nodes,right=True)-1]
         dag_edge_mask_idxs[:,1] = dag_edge_mask_idxs[:,1] + dag_edge_offsets
-        dag_edge_mask_embed = th.scatter_reduce(
-            input=th.zeros([batch_dag_num_edges,mol_embed.shape[1]],device=device),
-            dim=0,
-            index=dag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+        dag_edge_mask_embed = scatter_reduce(
             src=mol_embed[dag_edge_mask_idxs[:,1]],
-            reduce="sum"
+            index=dag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+            reduce="sum",
+            dim=0,
+            dim_size=batch_dag_num_edges
         )
         # print(dag_edge_mask_embed.sum())
         dag_edata.append(dag_edge_mask_embed)
@@ -186,12 +188,12 @@ class JointPredictor(nn.Module):
     
         # aggregate by formula
         dag_formula_probs = dag_formula_probs.flatten()
-        dag_formula_probs = th.scatter_reduce(
-            input=th.zeros([dag_formula_cumsizes[-1]],device=device),
-            dim=0,
-            index=dag_formula_idxs,
+        dag_formula_probs = scatter_reduce(
             src=dag_formula_probs,
-            reduce="sum"
+            index=dag_formula_idxs,
+            reduce="sum",
+            dim=0,
+            dim_size=dag_formula_cumsizes[-1]
         )
         # print(dag_formula_probs.sum())
 
@@ -205,7 +207,7 @@ class JointPredictor(nn.Module):
         )-1
         
         # softmax with masked logits
-        dag_formula_probs = masked_subset_softmax(
+        dag_formula_probs = scatter_masked_softmax(
             dag_formula_probs,
             dag_formula_mask,
             dag_formula_batch_idxs,
@@ -420,46 +422,3 @@ def random_walk_pe(g, k, eweight_name=None):
     #     PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), th.float32))
     # PE = dgl_F.stack(PE, dim=-1)
     # return PE
-
-def masked_subset_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=True):
-    # apply mask
-    masked_logits = mask*logits + (1-mask)*mask_value
-    # normalize
-    masked_logits = scatter_normalize(masked_logits,subset_idxs,dim)
-    if not log:
-        # exponentiate
-        return th.exp(masked_logits)
-    else:
-        return masked_logits
-
-def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=1e-9):
-
-    k = th.max(subset_idxs)+1
-    sm = th.zeros([k],device=logits.device)
-    sm.scatter_reduce_(
-        dim=dim,
-        index=subset_idxs,
-        src=logits,
-        reduce="amax"
-    )
-    lm = th.gather(
-        input=sm,
-        index=subset_idxs,
-        dim=dim
-    )
-    logits = logits - lm
-    se = th.zeros([k],device=logits.device)
-    se.scatter_reduce_(
-        dim=dim,
-        index=subset_idxs,
-        src=th.exp(logits),
-        reduce="sum"
-    )
-    return sm + th.log(se + eps)
-
-def scatter_normalize(logits,subset_idxs,dim=-1):
-    # calculate normalizing constant
-    c = scatter_logsumexp(logits,subset_idxs,dim=dim)
-    # apply normalizing constant
-    logits = logits - c[subset_idxs]
-    return logits

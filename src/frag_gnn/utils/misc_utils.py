@@ -18,15 +18,15 @@ TQDM_DISABLE = False
 
 def timeit(func):
 	# adapted from https://dev.to/kcdchennai/python-decorator-to-measure-execution-time-54hk
-    @wraps(func)
-    def timeit_wrapper(*args, **kwargs):
-        start_time = time.perf_counter()
-        result = func(*args, **kwargs)
-        end_time = time.perf_counter()
-        total_time = end_time - start_time
-        print(f'Function {func.__name__} Took {total_time:.4f} seconds')
-        return result
-    return timeit_wrapper
+	@wraps(func)
+	def timeit_wrapper(*args, **kwargs):
+		start_time = time.perf_counter()
+		result = func(*args, **kwargs)
+		end_time = time.perf_counter()
+		total_time = end_time - start_time
+		print(f'Function {func.__name__} Took {total_time:.4f} seconds')
+		return result
+	return timeit_wrapper
 
 def booltype(x):
 	return bool(strtobool(x))
@@ -111,36 +111,36 @@ class TimeoutException(Exception): pass
 # 		signal.alarm(0)
 
 def timeout_func(func, args=None, kwargs=None, timeout=30, default=None):
-    """This function will spawn a thread and run the given function
-    using the args, kwargs and return the given default value if the
-    timeout is exceeded.
-    http://stackoverflow.com/questions/492519/timeout-on-a-python-function-call
-    """
-    class InterruptableThread(threading.Thread):
-        def __init__(self):
-            threading.Thread.__init__(self)
-            self.result = default
-            self.exc_info = (None, None, None)
-        def run(self):
-            try:
-                self.result = func(*(args or ()), **(kwargs or {}))
-            except Exception as err:
-                self.exc_info = sys.exc_info()
-        def suicide(self):
-            raise TimeoutException(
-                "{0} timeout (taking more than {1} sec)".format(func.__name__, timeout)
-            )
-    it = InterruptableThread()
-    it.start()
-    it.join(timeout)
-    if it.exc_info[0] is not None:
-        a, b, c = it.exc_info
-        raise Exception(a, b, c)  # communicate that to caller
-    if it.is_alive():
-        it.suicide()
-        raise RuntimeError
-    else:
-        return it.result
+	"""This function will spawn a thread and run the given function
+	using the args, kwargs and return the given default value if the
+	timeout is exceeded.
+	http://stackoverflow.com/questions/492519/timeout-on-a-python-function-call
+	"""
+	class InterruptableThread(threading.Thread):
+		def __init__(self):
+			threading.Thread.__init__(self)
+			self.result = default
+			self.exc_info = (None, None, None)
+		def run(self):
+			try:
+				self.result = func(*(args or ()), **(kwargs or {}))
+			except Exception as err:
+				self.exc_info = sys.exc_info()
+		def suicide(self):
+			raise TimeoutException(
+				"{0} timeout (taking more than {1} sec)".format(func.__name__, timeout)
+			)
+	it = InterruptableThread()
+	it.start()
+	it.join(timeout)
+	if it.exc_info[0] is not None:
+		a, b, c = it.exc_info
+		raise Exception(a, b, c)  # communicate that to caller
+	if it.is_alive():
+		it.suicide()
+		raise RuntimeError
+	else:
+		return it.result
 
 def my_tqdm(*args,**kwargs):
 	return tqdm.tqdm(*args,**kwargs,disable=TQDM_DISABLE)
@@ -151,3 +151,59 @@ def get_tensor_memory_usage(tensor):
 def get_pyg_memory_usage(pyg_graph):
 
 	return pyg.profile.get_data_size(pyg_graph)
+
+def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=True):
+	# apply mask
+	masked_logits = mask*logits + (1-mask)*mask_value
+	# normalize
+	masked_logits = scatter_normalize(masked_logits,subset_idxs,dim)
+	if not log:
+		# exponentiate
+		return th.exp(masked_logits)
+	else:
+		return masked_logits
+
+def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=1e-9):
+
+	k = th.max(subset_idxs)+1
+	sm = scatter_reduce(
+		src=logits,
+		index=subset_idxs,
+		reduce="amax",
+		dim=dim,
+		dim_size=k
+	)
+	lm = th.gather(
+		input=sm,
+		index=subset_idxs,
+		dim=dim
+	)
+	logits = logits - lm
+	se = scatter_reduce(
+		src=th.exp(logits),
+		index=subset_idxs,
+		reduce="sum",
+		dim=dim,
+		dim_size=k
+	)
+	return sm + th.log(se + eps)
+
+def scatter_normalize(logits,subset_idxs,dim=-1):
+	# calculate normalizing constant
+	c = scatter_logsumexp(logits,subset_idxs,dim=dim)
+	# apply normalizing constant
+	logits = logits - c[subset_idxs]
+	return logits
+
+def scatter_reduce(src,index,reduce,dim,dim_size):
+
+	result_shape = list(src.shape)
+	result_shape[dim] = dim_size
+	results = th.zeros(result_shape,dtype=src.dtype,device=src.device)
+	results.scatter_reduce_(
+		dim=dim,
+		index=index,
+		src=src,
+		reduce=reduce
+	)
+	return results
