@@ -45,20 +45,6 @@ def merge_sparse_specs(*peakses):
 	merged_peaks = sorted(list(merged_peaks.items()), key=lambda x: x[0])
 	return merged_peaks
 
-# def merge_sparse_specs(*peakses,ppm=5):
-
-# 	mzs, ints = [], []
-# 	for peaks in peakses:
-# 		for peak in peaks:
-# 			mzs.append(peak[0])
-# 			ints.append(peak[1])
-# 	mzs = np.array(mzs,dtype=np.float32)
-# 	ints = np.array(ints,dtype=np.float32)
-# 	mz_divs = np.copy(mzs)
-# 	mz_divs[mz_divs<200] = 200
-# 	mz_diffs = np.argmin(np.abs(mzs.reshape(-1,1)-mzs.reshape(1,-1))+np.eye(mzs.shape[0]))
-# 	min_mz_diffs = np.argmin(mz_diffs,axis=1)
-
 def calculate_spectrum_entropy(log_ints,batch_idxs):
 
 	k = th.max(batch_idxs)+1
