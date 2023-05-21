@@ -6,7 +6,7 @@ from matplotlib import image
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from matplotlib.gridspec import GridSpec
-from rdkit.Chem import Draw, AllChem
+from rdkit.Chem import AllChem
 
 
 #from cfmtoolkit.datastructures import Spectrum
@@ -64,39 +64,6 @@ class SpectraVis(object):
 
     _indicators = {'up': '▲', 'down': '▼'}
     _default_dpi = 128
-
-    @classmethod
-    def get_mol_img_from_chemid(cls, chem_id_str: str, size=None, options = None, mol_template_coords:"Compute2DCoords" = None):
-        '''
-        Method draw molecule by Smiles or Inchi 
-        retuin an PIL image
-        '''
-        #print(chem_id_str)
-        #print(size)
-        #print(options)
-        #print(mol_template_coords)
-        # draw mol
-        mol = Utilities.create_mol_by_chemid(chem_id_str)
-        if size is None:
-            size = cls._default_mol_image_size
-
-        # align mol with template coords   
-        if mol_template_coords is not None:
-            try:
-                AllChem.GenerateDepictionMatching2DStructure(mol , mol_template_coords)
-            except ValueError:
-                pass
-
-        # print(size)
-        if options == None:
-            options = Draw.MolDrawOptions()
-            options.bondLineWidth = 6
-            options.minFontSize = 36
-            options.maxFontSize = 128
-            options.noCarbonSymbols = True
-            options.backgroundColour = None
-        mol_drawing = Draw.MolToImage(mol, size=size, fitImage=False, options = options)
-        return mol_drawing
 
     @classmethod
     def plot_mol_from_smiles_or_inchi(cls, chem_id_str: str):
