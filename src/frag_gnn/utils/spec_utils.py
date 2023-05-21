@@ -5,6 +5,7 @@ from rdkit.Chem import  AllChem
 
 from .formula_utils import ELECTRON_MASS
 
+PPM = 1/1000000
 mass_to_positive_ion_mass = {
 	"M+"             : lambda mass:  mass - ELECTRON_MASS,
 	"M+3H"           : lambda mass:  mass/3 + 1.007276 ,

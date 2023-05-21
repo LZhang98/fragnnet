@@ -7,43 +7,16 @@ from frag_gnn.utils.standardization import Standardization
 from frag_gnn.utils.misc_utils import get_mass_tol
 import spectral_entropy
 
-class Peak(object):
-    """
-    Class for a mass spectrum peak
-    """
-    def __init__(self, mz=-1.0, intensity=-1.0, annotation:list=None):
-        self.mz: float = mz
-
-        self.intensity: float = intensity
-        if annotation is None:
-            self.annotation: list = []
-        else:
-            self.annotation: list = annotation
-
-    def to_string(self, simplified = False):
-        if not simplified:
-            return "mz:{:.5f} intensity:{:.2f} annotation:{} ".format(self.mz, self.intensity, "".join(self.annotation))
-        else:
-            return "{:.5f} {:.2f} ".format(self.mz, self.intensity)
-    
-    def annotate_with_mz(self, intensity_threshold=0.0):
-        if self.intensity > intensity_threshold:
-            self.annotation.append('{:.3f}'.format(self.mz))
-
-    def __str__(self):
-        return self.to_string()
-
 class Spectrum(object):
     """
     class for a mass spectrum
     """
-    _supported_intensity_aggregate_method = ['sum', 'min', 'max']
-    _supported_specrtrum_merge_method = ['union', 'intersect']
+    #_supported_intensity_aggregate_method = ['sum', 'min', 'max']
+    #_supported_specrtrum_merge_method = ['union', 'intersect']
 
     def __init__(self):
         # default value to empty and values
-        # jsonb does not like null
-        self.peaks: List[Peak] = []
+
         self.is_normalized: bool = False
         self.is_sorted: bool = False
         self.chromatography_type: str = Standardization.NA
