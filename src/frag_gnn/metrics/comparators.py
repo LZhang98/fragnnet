@@ -112,10 +112,10 @@ def get_metrics(ref_spectrum:np.array, predicted_spectrum:np.array, ppm_tol:floa
         Dict[str, float]: return dict for 'Dice': 'Dot Product', 'Precision', 'Recall'
     """
  
-    precision = get_cfm_precision(ref_spectrum:np.array, predicted_spectrum:np.array, ppm_tol , abs_tol )
-    recall = get_cfm_recall(ref_spectrum:np.array, predicted_spectrum:np.array, ppm_tol , abs_tol )
-    dice = get_cfm_dice(ref_spectrum:np.array, predicted_spectrum:np.array, ppm_tol , abs_tol )
-    dot_product = get_dot_product(ref_spectrum:np.array, predicted_spectrum:np.array, ppm_tol , abs_tol )
+    precision = get_cfm_precision(ref_spectrum, predicted_spectrum, ppm_tol , abs_tol)
+    recall = get_cfm_recall(ref_spectrum, predicted_spectrum, ppm_tol , abs_tol)
+    dice = get_cfm_dice(ref_spectrum, predicted_spectrum, ppm_tol , abs_tol)
+    dot_product = get_dot_product(ref_spectrum, predicted_spectrum, ppm_tol, abs_tol)
 
 
     metrics = {'Dice': dice, 'Dot Product': dot_product, 'Precision': precision, 'Recall': recall}
