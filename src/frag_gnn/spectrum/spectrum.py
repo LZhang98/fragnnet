@@ -4,6 +4,32 @@ from typing import List, Tuple, Optional
 import numpy as np
 
 from frag_gnn.utils.standardization import Standardization
+from frag_gnn.utils.misc_utils import get_mass_tol
+class Peak(object):
+    """
+    Class for a mass spectrum peak
+    """
+    def __init__(self, mz=-1.0, intensity=-1.0, annotation:list=None):
+        self.mz: float = mz
+
+        self.intensity: float = intensity
+        if annotation is None:
+            self.annotation: list = []
+        else:
+            self.annotation: list = annotation
+
+    def to_string(self, simplified = False):
+        if not simplified:
+            return "mz:{:.5f} intensity:{:.2f} annotation:{} ".format(self.mz, self.intensity, "".join(self.annotation))
+        else:
+            return "{:.5f} {:.2f} ".format(self.mz, self.intensity)
+    
+    def annotate_with_mz(self, intensity_threshold=0.0):
+        if self.intensity > intensity_threshold:
+            self.annotation.append('{:.3f}'.format(self.mz))
+
+    def __str__(self):
+        return self.to_string()
 
 class Spectrum(object):
     """
@@ -83,7 +109,7 @@ class Spectrum(object):
         self.max_intensity = max(self.max_intensity, new_peak.intensity)
         # print(self.peaks)
 
-    def normalize(self, scale=100.0, cfm_style=False):
+    def normalize(self, scale=100.0):
         """    
         Method to normalize spectra
         normalized to 100 based intensity
@@ -101,9 +127,8 @@ class Spectrum(object):
                 self.min_intensity = min(
                     self.peaks, key=lambda i: i.intensity).intensity
 
-            divisor = self.max_intensity if not cfm_style else sum([i.intensity for i in self.peaks])
-            self.cfm2_normalized = cfm_style
-
+            divisor = self.max_intensity
+   
             if divisor == 0:
                 for peak in self.peaks:
                     print(peak.to_string())
@@ -142,7 +167,7 @@ class Spectrum(object):
             self.sort_by_mz()
 
         if not self.is_normalized:
-            self.normalize(cfm_style=self.cfm2_normalized)
+            self.normalize()
 
         self._remove_low_intensity(intensity_threshold=intensity_threshold)
 
@@ -153,58 +178,9 @@ class Spectrum(object):
             self._centroid(mz_distance=centroid_mz_distance)
             self.sort_by_mz()
 
-        # we need to normalize again
-        if self.cfm2_normalized:
-            self.normalize(cfm_style=self.cfm2_normalized)
-
         self.peaks_count = len(self.peaks)
 
-    def remove_noise_cfm(self, remaining_total_intensity_ratio=0.8, centroid=False, 
-                    centroid_mz_distance=0.1, remove_noise_more_than_pmass = True):
-        """ 
-            Method to remove noise using cfm style
-            remvoe noise based on total intensity instead of intensity_threshold
-        Args:
-            intensity_threshold (float, optional): [description]. Defaults to 1.0.
-            cfm_style (bool, optional): [description]. Defaults to False.
-            centroid (bool, optional): [description]. Defaults to False.
-            centroid_mz_distance (float, optional): [description]. Defaults to 0.1.
-        """
-        if not self.is_sorted:
-            self.sort_by_mz()
-
-        if not self.is_normalized:
-            self.normalize(False)
-
-        self._remove_low_intensity_cfm(remaining_total_intensity_ratio = remaining_total_intensity_ratio)
-
-        if remove_noise_more_than_pmass and self.precursor_mz is not None and self.precursor_mz != Standardization.NA:
-            self.peaks = [i for i in self.peaks if i.mz <= self.precursor_mz + 0.1]
-
-        if centroid:
-            self._centroid(mz_distance=centroid_mz_distance)
-            self.sort_by_mz()
-
-        # we may need to normalize again
-        self.normalize(cfm_style=False)
-        self.peaks_count = len(self.peaks)
-
-    def _remove_low_intensity_cfm(self, remaining_total_intensity_ratio = 0.8):
-        """Method to remove low intensity peak, intensity_threshold is measued in percent
-        Args:
-            intensity_threshold (float, optional): [description]. Defaults to 1.0.
-        """
-        wanted_total_intensity = sum([i.intensity  for i in self.peaks]) * remaining_total_intensity_ratio
-        self.peaks.sort(key=lambda i: i.intensity, reverse = True)
-        wanted_peaks = []
-        current_inetnsity_sum = 0
-        for p in self.peaks:
-            if wanted_total_intensity > current_inetnsity_sum:
-                wanted_peaks.append(p)
-                current_inetnsity_sum += p.intensity
-        self.peaks = wanted_peaks
-        self.sort_by_mz()
-
+    
     def _remove_low_intensity(self, intensity_threshold=1.0):
         """Method to remove low intensity peak, intensity_threshold is measued in percent
         Args:
@@ -399,7 +375,7 @@ class Spectrum(object):
         for idx, _ in enumerate(self.peaks):
             self.peaks[idx].annotate_with_mz(intensity_threshold)
 
-    def post_process(self, cfm_style=False):
+    def post_process(self):
         """
             Run all post process
             NOTE when cfm_style normalization enabled, noise remove will also use the same style spectrum
@@ -409,7 +385,7 @@ class Spectrum(object):
             cfm_style (bool, optional): [description]. Defaults to False.
         """
         self.sort_by_mz()
-        self.normalize(cfm_style=cfm_style)
+        self.normalize()
         #self.set_mz_decimal_place()
         self.peaks_count = len(self.peaks)
 
@@ -425,7 +401,6 @@ class Spectrum(object):
     '''
     Method compute obitrap nce from qtof ev 
     '''
-
     @staticmethod
     def ev_to_nce(isolation_center: float, ev: float, charge_state: float = 1.0) -> float:
         nce = ev * (500 * charge_state) / isolation_center
@@ -465,7 +440,7 @@ class Spectrum(object):
             sp2_mz = sp2_peak.mz
 
             # get tolarnc
-            allowed_tol = Utilities.get_mass_tol(
+            allowed_tol = get_mass_tol(
                 max(sp1_mz, sp2_mz), abs_tol, ppm_tol)
 
             diff = abs(sp1_mz - sp2_mz)
@@ -686,26 +661,26 @@ class Spectrum(object):
                 string += '{:.6f} {:.2f} {}\n'.format(peak.mz, peak.intensity, peak.annotation)
         return string
 
-    def fill_formula(self):
-        if self.smiles_or_inchi != Standardization.NA and self.formula == Standardization.NA:
-            try:
-                self.formula = Utilities.get_formula_by_chemid(self.smiles_or_inchi)
-            except ValueError:
-                print('Warning,can not compute formula from', self.smiles_or_inchi)
+    #def fill_formula(self):
+    #    if self.smiles_or_inchi != Standardization.NA and self.formula == Standardization.NA:
+    #        try:
+    #            self.formula = Utilities.get_formula_by_chemid(self.smiles_or_inchi)
+    #        except ValueError:
+    #            print('Warning,can not compute formula from', self.smiles_or_inchi)
 
-    def compute_compound_exact_mass(self):
-        #print(self.smiles_or_inchi, self.compound_exact_mass)
-        if self.smiles_or_inchi != Standardization.NA and (self.compound_exact_mass == Standardization.NA or self.compound_exact_mass == -1.0):
-            try:
-                self.compound_exact_mass = Utilities.get_mol_mw_by_chemid(self.smiles_or_inchi)
-            except ValueError:
-                print('Warning,can not compute compound_exact_mass from', self.smiles_or_inchi)
+    #def compute_compound_exact_mass(self):
+    #    #print(self.smiles_or_inchi, self.compound_exact_mass)
+    #    if self.smiles_or_inchi != Standardization.NA and (self.compound_exact_mass == Standardization.NA or self.compound_exact_mass == -1.0):
+    #        try:
+    #            self.compound_exact_mass = Utilities.get_mol_mw_by_chemid(self.smiles_or_inchi)
+    #        except ValueError:
+    #           print('Warning,can not compute compound_exact_mass from', self.smiles_or_inchi)
 
-    def compute_precursor_mz(self):
-        if self.compound_exact_mass == Standardization.NA and self.adduct_type == Standardization.NA:
-            #print("Warning, compound_exact_mass is unknown")
-            return
-        self.precursor_mz = Utilities.neutral_mass_to_ion_mass(self.compound_exact_mass, self.adduct_type)
+    #def compute_precursor_mz(self):
+    #    if self.compound_exact_mass == Standardization.NA and self.adduct_type == Standardization.NA:
+    #        #print("Warning, compound_exact_mass is unknown")
+    #        return
+    #    self.precursor_mz = Utilities.neutral_mass_to_ion_mass(self.compound_exact_mass, self.adduct_type)
          
     def get_data_for_spec2vec(self):
 
@@ -775,50 +750,3 @@ class Spectrum(object):
         Returns: number of peaks
         """
         return len(self.peaks)
-
-    def has_peak_at(self, mz,abs_tol = 0.01, ppm_tol = 10):
-        """Method to check if a peak exists at a given mz
-
-        Args:
-            mz (float): mz to check
-            ppm_tol (int, optional): ppm tolerance. Defaults to 10.
-            abs_tol (float, optional): absolute tolerance. Defaults to 0.1.
-
-        Returns:
-            bool: True if peak exists
-        """
-        for peak in self.peaks:
-            if peak.mz_in_tol(mz, abs_tol, ppm_tol):
-                return True
-        return False
-
-    def rescale_peaks(self, scale_factor):
-        """Method to rescale peaks by a given factor
-
-        Args:
-            factor (float): factor to rescale peaks by
-        """
-        for peak in self.peaks:
-            peak.intensity *= scale_factor
-    
-    def get_dot_ms_str(self) -> str:
-        dot_ms_str = ""
-        dot_ms_str +=">parentmass {}\n".format(self.precursor_mz)
-        dot_ms_str +=">ionization {}\n".format(self.adduct_type)
-        dot_ms_str +="#instrument ESI-QTOF\n\n"
-        dot_ms_str +=">collision {}{}\n".format(self.collision_energy,self.collision_energy_unit)
-        for peak in self.peaks:
-            dot_ms_str +="{} {}\n".format(peak.mz, peak.intensity)
-        dot_ms_str += "\n"
-        return dot_ms_str
-    
-    def get_mgf_str(self, title) -> str:
-        mgf_str = "BEGIN IONS\n"
-        mgf_str +="PEPMASS={}\n".format(self.precursor_mz)
-        mgf_str +="CHARGE=1+\n" if self.charge_type == Standardization.Pos else "CHARGE=1-\n"
-        mgf_str +="INSTRUMENT=ESI-QTOF\n"
-        mgf_str +="TITLE={}@{}{}\n".format(title, self.collision_energy,self.collision_energy_unit)
-        for peak in self.peaks:
-            mgf_str +="{} {}\n".format(peak.mz, peak.intensity)
-        mgf_str += "END IONS\n\n"
-        return mgf_str

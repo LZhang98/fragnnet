@@ -325,9 +325,9 @@ def parse_formula(formula:str) -> Dict[str,int]:
 		element_counts[cur_element] = cur_count
 	return element_counts
 
-if __name__ == "__main__":
+#if __name__ == "__main__":
 
 	#isotopes = False
-	element_counts = {"C": 6, "H": 7, "O": 6, "N": 0}
-	print(get_peaks_for_formula(element_counts))
+	#element_counts = {"C": 6, "H": 7, "O": 6, "N": 0}
+	#print(get_peaks_for_formula(element_counts))
 	# isotopes = True

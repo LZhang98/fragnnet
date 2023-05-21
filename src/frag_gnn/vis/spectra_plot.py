@@ -1,7 +1,5 @@
 from math import ceil
-from pickle import TRUE
 from typing import List, Dict, Optional
-from matplotlib import image
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -9,15 +7,16 @@ from matplotlib.gridspec import GridSpec
 from rdkit.Chem import AllChem
 
 
-#from cfmtoolkit.datastructures import Spectrum
-#from cfmtoolkit.metrics import Comparators
-#from cfmtoolkit.utils import Utilities
-from .standardization import Standardization
+from frag_gnn.utils.standardization import Standardization
+from frag_gnn.spectrum import Spectrum
+from frag_gnn.utils.spec_utils import create_mol_by_inchi_or_smiles
+from frag_gnn.metrics import Comparators
 
-from .plot_utils import *
+from frag_gnn.vis.common import *
 from math import ceil
 
 from copy import deepcopy
+
 
 # FuncFormatter can be used as a decorator
 @mticker.FuncFormatter
@@ -127,18 +126,6 @@ class SpectraVis(object):
             
             if peak.annotation != Standardization.NA and show_annotation:
                 annotation_str = str(peak.annotation)
-                #if len(annotation_str) > 2:
-                #    if inverted:
-                #        ax.text(mz, annotation_pos, annotation_str,
-                #                color=peak_color, **cls._annotation_top_kws)
-                #    else:
-                #        ax.text(mz, annotation_pos, annotation_str,
-                #            color=peak_color, **cls._annotation_bottom_kws)
-                #else:
-                #if y_diff < 20 and x_diff < 5:
-                #    annotation_pos += 10
-                    #prev_annotation_pos = annotation_pos
-                    #print(x_diff, y_diff, annotation_pos, annotation_str)
                 ax.text(mz, annotation_pos, annotation_str, 
                     fontsize = cls._default_legends_font_size, color=peak_color, 
                     horizontalalignment='center', verticalalignment='center',  weight='bold')  
@@ -490,11 +477,11 @@ class SpectraVis(object):
         display_mol_template = None
         if smiles_or_inchi is not None and plot_predicted_mol_block:
             # create a 2d coords template
-            display_mol_template  = Utilities.create_mol_by_chemid(smiles_or_inchi)            
+            display_mol_template  = create_mol_by_inchi_or_smiles(smiles_or_inchi)            
             AllChem.Compute2DCoords(display_mol_template)
         if smiles_or_inchi is None and plot_predicted_mol_block:
             # create a 2d coords template
-            display_mol_template  = Utilities.create_mol_by_chemid(predicted_spectra_smiles_or_inchi_list[0])            
+            display_mol_template  = create_mol_by_inchi_or_smiles(predicted_spectra_smiles_or_inchi_list[0])            
             AllChem.Compute2DCoords(display_mol_template)
 
         for col_idx, spectra in enumerate(predicted_spectra_list):
@@ -595,9 +582,9 @@ class SpectraVis(object):
 
         display_mol_template = None
         if top_spectrum.smiles_or_inchi != Standardization.NA:
-            display_mol_template  = Utilities.create_mol_by_chemid(top_spectrum.smiles_or_inchi)
+            display_mol_template  = create_mol_by_inchi_or_smiles(top_spectrum.smiles_or_inchi)
         elif bottom_spectrum.smiles_or_inchi != Standardization.NA:
-            display_mol_template  = Utilities.create_mol_by_chemid(bottom_spectrum.smiles_or_inchi)
+            display_mol_template  = create_mol_by_inchi_or_smiles(bottom_spectrum.smiles_or_inchi)
         AllChem.Compute2DCoords(display_mol_template)
 
         if structure_names is None:
@@ -678,9 +665,9 @@ class SpectraVis(object):
         for idx,bottom_spectrum in enumerate(bottom_spectrum_list):
             display_mol_template = None
             if top_spectrum.smiles_or_inchi != Standardization.NA:
-                display_mol_template  = Utilities.create_mol_by_chemid(top_spectrum.smiles_or_inchi)
+                display_mol_template  = create_mol_by_inchi_or_smiles(top_spectrum.smiles_or_inchi)
             elif bottom_spectrum.smiles_or_inchi != Standardization.NA:
-                display_mol_template  = Utilities.create_mol_by_chemid(bottom_spectrum.smiles_or_inchi)
+                display_mol_template  = create_mol_by_inchi_or_smiles(bottom_spectrum.smiles_or_inchi)
             AllChem.Compute2DCoords(display_mol_template)
 
             if structure_names is None:
