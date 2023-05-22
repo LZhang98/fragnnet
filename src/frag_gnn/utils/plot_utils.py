@@ -12,6 +12,7 @@ import base64
 import cairosvg
 
 from frag_gnn.utils.data_utils import mol_from_smiles
+from frag_gnn.utils.spec_utils import match_mzs
 
 EPS = np.finfo(np.float32).eps
 
@@ -178,7 +179,6 @@ def plot_spectra_sparse(
 		pred_ints,
 		prec_mz,
 		smiles,
-		loss,
 		fp,
 		mz_res=1e-3,
 		mz_max=1000.,
@@ -186,10 +186,12 @@ def plot_spectra_sparse(
 		size=24,
 		log=True,
 		true_ints_thresh=0.0,
-		pred_ints_thresh=0.005,
-		plot_title=True
+		pred_ints_thresh=0.0,
+		plot_title=True,
+		custom_title="",
+		match_peaks=True,
+		match_ppm=True
 	):
-	# TODO: add option to plot pred distributions, instead of means
 
 	true_mask = true_ints > true_ints_thresh
 	true_mzs = true_mzs[true_mask]
@@ -218,7 +220,7 @@ def plot_spectra_sparse(
 	if plot_title:
 		title_y = 0.975
 		title_font_size = 20
-		fig.suptitle(f"loss = {loss:.4g}",fontsize=title_font_size,y=title_y)
+		fig.suptitle(custom_title,fontsize=title_font_size,y=title_y)
 		height_ratios = [1,3,3]
 	else:
 		height_ratios = [1,2,2]
@@ -254,14 +256,30 @@ def plot_spectra_sparse(
 	ax_top.set_ylim(0,y_max)
 	ax_top.set_xlim(0,x_max)
 	# get peaks
-	lines_top = []
-	for peak in zip(true_mzs.tolist(),true_ints.tolist()):
-		mz, ints = peak
+	lines_top, styles_top = [], []
+	if match_peaks:
+		mz_match_matrix = match_mzs(true_mzs,pred_mzs,use_ppm=match_ppm)
+		mz_mask = np.any(mz_match_matrix,axis=1)
+		print(mz_mask.sum())
+	else:
+		mz_mask = np.ones_like(true_mzs,dtype=np.bool)
+	for i in range(len(true_mzs)):
+		mz = true_mzs[i]
+		ints = true_ints[i]
 		line_start = (mz,0)
 		line_end = (mz,ints)
 		lines_top.append((line_start,line_end))
+		if mz_mask[i]:
+			styles_top.append("solid")
+		else:
+			styles_top.append((0,(1,1)))
 	# print(lines_top[:10])
-	lc_top = mc.LineCollection(lines_top, colors="tab:blue", linewidths=bar_width)
+	lc_top = mc.LineCollection(
+		lines_top, 
+		colors="tab:blue", 
+		linewidths=bar_width, 
+		linestyles=styles_top
+	)
 	ax_top.add_collection(lc_top)
 
 	plt.setp(ax_top.get_xticklabels(), visible=False)
@@ -273,8 +291,9 @@ def plot_spectra_sparse(
 	ax_bottom.set_xlim(0, x_max)
 	# get peaks
 	lines_bottom = []
-	for peak in zip(pred_mzs.tolist(),pred_ints.tolist()):
-		mz, ints = peak
+	for i in range(len(pred_mzs)):
+		mz = pred_mzs[i]
+		ints = pred_ints[i]
 		line_start = (mz,0)
 		line_end = (mz,ints)
 		lines_bottom.append((line_start,line_end))

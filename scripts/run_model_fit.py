@@ -14,7 +14,7 @@ from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed
 from frag_gnn.feat_utils import MolGraph, BatchedMolDAG
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
-from frag_gnn.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall
+from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PERIODIC_TABLE, parse_formula
 from frag_gnn.utils.data_utils import mol_from_smiles, mol_to_formula
 from frag_gnn.utils.plot_utils import plot_dual_axis, plot_spectra_sparse
@@ -351,6 +351,8 @@ if __name__ == "__main__":
 	metrics = {
 		"step": [],
 		"cross_entropy_loss": [],
+		"recall": [],
+		"weighted_recall": [],
 		"topk_weighted_recall": [],
 		"topk_frac": []
 	}
@@ -424,16 +426,18 @@ if __name__ == "__main__":
 		# update metrics
 		metrics["step"].append(i+1)
 		metrics["cross_entropy_loss"].append(loss.item())
-		# metrics["recall"].append(recall.item())
-		# metrics["weighted_recall"].append(weighted_recall.item())
+		metrics["recall"].append(recall.item())
+		metrics["weighted_recall"].append(weighted_recall.item())
 		metrics["topk_weighted_recall"].append(topk_weighted_recall.item())
 		metrics["topk_frac"].append(topk_frac.item())
 		# save best model
 		if args.fit_model and loss.item() < best_d.get("cross_entropy_loss",np.inf):
-			best_d["topk_weighted_recall"] = topk_weighted_recall.item()
 			best_d["iter"] = i
 			best_d["params"] = deepcopy(joint_model.state_dict())
 			best_d["cross_entropy_loss"] = loss.item()
+			best_d["recall"] = recall.item()
+			best_d["weighted_recall"] = weighted_recall.item()
+			best_d["topk_weighted_recall"] = topk_weighted_recall.item()
 			best_d["pred_mzs"] = pred_mzs.detach().clone()
 			best_d["pred_logits"] = pred_logits.detach().clone()
 			best_d["pred_batch_idxs"] = pred_batch_idxs.detach().clone()
@@ -456,7 +460,10 @@ if __name__ == "__main__":
 		true_mzs = best_d["true_mzs"]
 		true_logits = best_d["true_logits"]
 		true_batch_idxs = best_d["true_batch_idxs"]
+		best_iter = best_d["iter"]
 		loss = best_d["cross_entropy_loss"]
+		recall = best_d["recall"]
+		weighted_recall = best_d["weighted_recall"]
 		b_true_mask = true_batch_idxs==0
 		b_true_mzs = true_mzs[b_true_mask]
 		b_true_ints = th.exp(true_logits[b_true_mask]) / th.exp(th.logsumexp(true_logits[b_true_mask],0))
@@ -470,8 +477,8 @@ if __name__ == "__main__":
 			b_pred_ints.numpy(),
 			prec_mz,
 			smiles,
-			loss,
-			f"figs/fit_model_{compound_idx}_spectra.png"
+			f"figs/fit_model_{compound_idx}_spectra.png",
+			custom_title=f"iter = {best_iter}, loss = {loss:.5f}, recall = {recall:.3f}, w_recall = {weighted_recall:.3f}"
 		)
 		## plot spectrum ##
 

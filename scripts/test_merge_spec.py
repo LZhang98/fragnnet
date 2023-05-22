@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import argparse
 
-from frag_gnn.spec_utils import merge_sparse_specs
+from frag_gnn.utils.spec_utils import merge_sparse_specs
 
 if __name__ == "__main__":
 
