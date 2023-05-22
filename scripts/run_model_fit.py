@@ -14,7 +14,7 @@ from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed
 from frag_gnn.feat_utils import MolGraph, BatchedMolDAG
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
-from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall
+from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, calculate_match_mzs
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PERIODIC_TABLE, parse_formula
 from frag_gnn.utils.data_utils import mol_from_smiles, mol_to_formula
 from frag_gnn.utils.plot_utils import plot_dual_axis, plot_spectra_sparse
@@ -172,10 +172,6 @@ if __name__ == "__main__":
 	np.random.seed(420)
 	th.manual_seed(420)
 
-	# 0: mol_id=22041, smiles=O=C(Nc1nc(-c2ccccc2)cs1)c1ccncc1, wrecall=0.9814, depth=3
-	# 1: mol_id=7602, smiles=CCCCCCCCC=CCCCCCCCC(=O)NCC, wrecall=0.9947, depth=3
-	# 2: mol_id=11009, smiles=CNc1nc(C)c(C)c(OC(=O)N(C)C)n1, wrecall=0.9614, depth=3
-
 	IDX_TO_SMILES = {
 		# compounds without spectra
 		0: "CCO", # ethanol
@@ -196,6 +192,9 @@ if __name__ == "__main__":
 	}
 
 	# just hard-coding some examples
+	# 11: mol_id=22041, smiles=O=C(Nc1nc(-c2ccccc2)cs1)c1ccncc1, wrecall=0.9814, depth=3
+	# 12: mol_id=7602, smiles=CCCCCCCCC=CCCCCCCCC(=O)NCC, wrecall=0.9947, depth=3
+	# 13: mol_id=11009, smiles=CNc1nc(C)c(C)c(OC(=O)N(C)C)n1, wrecall=0.9614, depth=3
 	IDX_TO_SPEC = {
 		0: None,
 		1: None,
@@ -243,8 +242,52 @@ if __name__ == "__main__":
 			(255.0778, 10.899999999999999), (264.0588, 52.040000000000006), (264.0589, 25.27), (282.0515, 2.2), 
 			(282.0591, 2.0), (282.0693, 1969.53), (282.0694, 1383.42), (282.0702, 3.4), (283.0728, 36.36), (283.0729, 19.38)
 		],
-		12: None, # TODO: add spectrum
-		13: None # TODO: add spectrum
+		12: [
+			(53.0387, 89.22), (55.0179, 9.29), (55.018, 209.7), (55.0181, 242.86), (55.0544, 2353.15), 
+			(55.0545, 999.0), (57.0686, 71.93), (57.0687, 17.88), (57.0698, 753.34), (57.07, 2065.34), 
+			(67.0542, 361.94), (67.0543, 225.78), (69.0697, 2188.21), (69.0699, 199.7), (71.0854, 900.4), 
+			(71.0855, 86.01), (72.0425, 25.87), (72.0426, 39.35), (72.0442, 5324.06), (72.0443, 286.51), 
+			(79.0542, 126.07), (79.0543, 65.24), (81.0697, 82.62), (81.0698, 232.57000000000002), 
+			(81.0699, 98.8), (83.049, 3.2), (83.0854, 794.51), (83.0855, 38.66), (83.0856, 122.18), 
+			(85.1011, 450.33), (93.0698, 19.28), (93.0699, 131.07), (95.0855, 319.29), (95.0856, 29.17), 
+			(97.0648, 143.95999999999998), (97.0649, 25.57), (97.1011, 407.30000000000007), (97.1012, 183.51), 
+			(100.0757, 172.73000000000002), (100.0758, 519.67), (107.0855, 24.78), (107.0856, 47.36), 
+			(107.0857, 31.57), (109.1012, 79.12), (109.1013, 65.53), (111.0805, 46.849999999999994), 
+			(111.0806, 34.57), (111.0807, 8.69), (111.1168, 61.14), (111.1169, 65.44), (111.117, 64.74), 
+			(114.0913, 35.36), (114.0914, 840.55), (121.1012, 38.26), (121.1013, 88.91), (123.1168, 9.49), 
+			(123.1169, 7.29), (125.0961, 2.2), (125.0962, 7.59), (125.0963, 4.6), (128.1071, 696.2099999999999), 
+			(135.117, 116.88), (139.1119, 4.9), (142.1227, 506.98999999999995), (142.1228, 109.49), 
+			(149.1326, 42.75), (149.1327, 6.89), (156.1384, 372.02), (156.1385, 4.8), (163.1484, 3.1), 
+			(163.1485, 5.0), (170.154, 115.39), (170.1541, 121.27), (184.1695, 19.08), (184.1698, 129.37), 
+			(198.1854, 19.28), (198.1855, 75.22999999999999), (198.1856, 7.49), (206.271, 4.8), (212.201, 18.08), 
+			(212.2012, 12.59), (212.2013, 8.29), (226.2168, 8.29), (226.217, 17.38), (240.2323, 11.59), 
+			(240.2324, 11.39), (240.2325, 17.98), (247.242, 4.7), (247.2423, 25.37), (247.2424, 22.18), 
+			(254.2481, 30.37), (254.2483, 19.08), (254.2484, 22.68), (265.253, 10.69), (265.2531, 7.19), 
+			(268.2635, 18.68), (268.2637, 8.09), (268.2641, 6.49), (310.3106, 579.52), (310.3107, 1998.0)
+		],
+		13: [
+			(52.0181, 2.2), (53.0259, 2.0), (53.0385, 16.689999999999998), (53.0386, 26.07), 
+			(54.0337, 11.59), (54.0338, 31.97), (55.0289, 1.2), (55.029, 16.29), (55.0541, 2.2), 
+			(55.0542, 9.3), (56.0117, 4.0), (56.0118, 9.59), (56.0129, 421.28), (56.013, 6.1), 
+			(57.0445, 23.17), (57.0446, 35.86), (57.0447, 3.1), (65.0385, 5.4), (68.0492, 39.77), 
+			(68.0493, 16.88), (69.0081, 80.02000000000001), (69.057, 22.88), (69.0571, 41.46), (69.0572, 3.6), 
+			(70.0649, 47.65), (71.0601, 129.17000000000002), (71.0602, 200.30999999999997), (72.0423, 34.46), 
+			(72.0424, 25.27), (72.0425, 14.49), (72.0441, 11511.470000000001), (79.0288, 5.0), (80.0366, 12.59), 
+			(80.0367, 5.09), (80.0492, 1.6), (82.0649, 2.5), (83.0236, 1.1), (83.0237, 236.07), 
+			(85.0757, 65.35000000000001), (85.0758, 72.11999999999999), (92.0492, 2.2), (92.0493, 1.4), 
+			(95.0601, 211.79000000000002), (96.044, 1.3), (96.0441, 5.0), (96.0679, 2.4), (98.0596, 1.4), 
+			(98.0597, 15.28), (98.0598, 333.46999999999997), (109.0757, 2.7), (109.0758, 84.02), (109.0759, 5.79), 
+			(110.8948, 2.2), (110.8949, 1.2), (112.0754, 1.0), (112.0755, 3.9), (123.055, 5.0), (123.0551, 6.29), 
+			(123.0552, 13.379999999999999), (124.0391, 39.57000000000001), (124.0392, 56.64), (124.0628, 2.9), 
+			(124.0629, 26.57), (124.063, 31.47), (124.0868, 1.7), (125.0706, 3.9), (125.0708, 16.79), 
+			(136.0868, 17.89), (136.0869, 19.78), (137.0707, 6.3999999999999995), (137.0708, 113.58), 
+			(137.0709, 122.48), (138.0661, 1.3), (141.0657, 18.28), (141.0658, 21.58), (152.0816, 2.4), 
+			(152.0817, 2.5), (152.0819, 1.4), (153.0894, 6.5), (153.0895, 13.29), (153.0896, 19.88), (153.0897, 6.79), 
+			(168.113, 3275.82), (168.1131, 717.58), (180.0766, 669.73), (180.0767, 117.99), 
+			(181.1446, 141.85999999999999), (181.1447, 56.739999999999995), (181.145, 1.8), (225.1247, 3.0), 
+			(225.1276, 1.7), (225.1291, 3.3), (225.1344, 770.03), (225.1345, 2359.1400000000003), (225.1347, 6.89)
+		]
+
 	}
 
 	compound_idx = args.compound_idx
@@ -277,7 +320,8 @@ if __name__ == "__main__":
 	mol_pyg = mol_pyg.to(device)
 	mol_pygs = [deepcopy(mol_pyg) for i in range(batch_size)]
 	dag_pygs = [deepcopy(dag_pyg) for i in range(batch_size)]
-	formula_peak_mzses = [dag_d["formula_peak_mzs"][:,:args.num_isotopes].detach().clone() for i in range(batch_size)]
+	mass_diff = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+	formula_peak_mzses = [dag_d["formula_peak_mzs"][:,:args.num_isotopes].detach().clone()+mass_diff for i in range(batch_size)]
 	formula_peak_probses = [dag_d["formula_peak_probs"][:,:args.num_isotopes].detach().clone() for i in range(batch_size)]
 	spec_mzs = [mzs.detach().clone() for i in range(batch_size)]
 	spec_ints = [ints.detach().clone() for i in range(batch_size)]
@@ -288,7 +332,7 @@ if __name__ == "__main__":
 		formula_peak_probses,
 		spec_mzs=spec_mzs,
 		spec_ints=spec_ints,
-		device=th.device("cpu")
+		device=th.device("cpu"),
 	)
 	batched_dag = batched_dag.to(device)
 	print(batched_dag)
@@ -470,11 +514,14 @@ if __name__ == "__main__":
 		b_pred_mask = pred_batch_idxs==0
 		b_pred_mzs = pred_mzs[b_pred_mask]
 		b_pred_ints = th.exp(pred_logits[b_pred_mask]) / th.exp(th.logsumexp(pred_logits[b_pred_mask],0))
+		print("> prec_mz",prec_mz)
+		print("> prec_mz in true_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_true_mzs.device),b_true_mzs,use_ppm=True)))
+		print("> prec_mz in pred_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_pred_mzs.device),b_pred_mzs,use_ppm=True)))
 		plot_spectra_sparse(
-			b_true_mzs.numpy(),
-			b_true_ints.numpy(),
-			b_pred_mzs.numpy(),
-			b_pred_ints.numpy(),
+			b_true_mzs.cpu().numpy(),
+			b_true_ints.cpu().numpy(),
+			b_pred_mzs.cpu().numpy(),
+			b_pred_ints.cpu().numpy(),
 			prec_mz,
 			smiles,
 			f"figs/fit_model_{compound_idx}_spectra.png",

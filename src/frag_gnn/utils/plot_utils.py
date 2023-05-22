@@ -12,7 +12,7 @@ import base64
 import cairosvg
 
 from frag_gnn.utils.data_utils import mol_from_smiles
-from frag_gnn.utils.spec_utils import match_mzs
+from frag_gnn.utils.spec_utils import calculate_match_mzs
 
 EPS = np.finfo(np.float32).eps
 
@@ -258,9 +258,9 @@ def plot_spectra_sparse(
 	# get peaks
 	lines_top, styles_top = [], []
 	if match_peaks:
-		mz_match_matrix = match_mzs(true_mzs,pred_mzs,use_ppm=match_ppm)
+		mz_match_matrix = calculate_match_mzs(true_mzs,pred_mzs,use_ppm=match_ppm)
 		mz_mask = np.any(mz_match_matrix,axis=1)
-		print(mz_mask.sum())
+		# print(mz_mask.sum())
 	else:
 		mz_mask = np.ones_like(true_mzs,dtype=np.bool)
 	for i in range(len(true_mzs)):

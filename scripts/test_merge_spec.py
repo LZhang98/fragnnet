@@ -8,8 +8,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--proc_dp", type=str, default="data/proc")
-    parser.add_argument("--frag_dp", type=str, default="data/frag")
-    parser.add_argument("--frag_run", type=str, choices=["d3_h4_re","d3_h4_fe","d4_h4_re","d4_h4_fe"])
     parser.add_argument("--mol_id", type=int, required=True)
     args = parser.parse_args()
 

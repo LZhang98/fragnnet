@@ -84,7 +84,7 @@ def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs
 			b_pred_argtopk = th.topk(pred_ints[b_pred_mask],k,dim=0,largest=True)[1]
 		b_true_topk_mzs = true_mzs[b_true_mask][b_true_argtopk]
 		b_pred_topk_mzs = pred_mzs[b_pred_mask][b_pred_argtopk]
-		b_true_topk_match = match_mzs(
+		b_true_topk_match = calculate_match_mzs(
 			b_true_topk_mzs,
 			b_pred_topk_mzs,
 			ppm_tolerance=ppm_tolerance,
@@ -118,7 +118,7 @@ def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,
 		b_pred_mzs = pred_mzs[b_pred_mask]
 		b_true_ints = true_ints[b_true_mask]
 		b_pred_ints = pred_ints[b_pred_mask]
-		b_true_match = match_mzs(
+		b_true_match = calculate_match_mzs(
 			b_true_mzs,
 			b_pred_mzs,
 			ppm_tolerance=ppm_tolerance,
@@ -131,7 +131,7 @@ def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,
 		weighted_recall[b] = weighted_recall[b] + b_weighted_recall
 	return recall, weighted_recall
 
-def match_mzs(
+def calculate_match_mzs(
 		true_mzs,
 		pred_mzs,
 		ppm_tolerance=10,
