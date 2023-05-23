@@ -21,6 +21,14 @@ from frag_gnn.utils.plot_utils import plot_dual_axis, plot_spectra_sparse
 
 def featurize_dag(dag):
 
+	# convert data to the right data types
+	# TODO: put this conversion in the model, to reduce memory?
+	dag = deepcopy(dag)
+	dag.x = dag.x.long()
+	dag.edge_attr = dag.edge_attr.long()
+	dag.edge_index = dag.edge_index.long()
+	dag.node_feat_idxs = dag.node_feat_idxs.long()
+	dag.edge_feat_idxs = dag.edge_feat_idxs.long()
 	print(dag)
 	return dag
 

@@ -127,7 +127,7 @@ def plot_dual_axis(
 	ax1.legend(
 		ax1_lines+ax2_lines, 
 		[line.get_label() for line in ax1_lines+ax2_lines], 
-		loc=None, 
+		loc="center right", # this is usually the least interesting part
 		fontsize=font_size
 	)
 

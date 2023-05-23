@@ -2,8 +2,10 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 from rdkit.Chem import  AllChem
+import torch as th
 
-from .formula_utils import ELECTRON_MASS
+from frag_gnn.utils.formula_utils import ELECTRON_MASS
+from frag_gnn.nn.nn_utils import scatter_normalize, scatter_reduce
 
 PPM = 1/1000000
 mass_to_positive_ion_mass = {
@@ -214,7 +216,7 @@ def get_mass_tol(mass:float, ppm_tol:float = None, abs_tol:float = None) -> floa
 		return mass * ppm_tol * PPM
 
 
-def get_mass_range(mass:float, ppm_tol:float = None, abs_tol:float = None) -> tuple(float,float):
+def get_mass_range(mass:float, ppm_tol:float = None, abs_tol:float = None) -> tuple[float,float]:
 	"""_summary_
 
 	Args:
