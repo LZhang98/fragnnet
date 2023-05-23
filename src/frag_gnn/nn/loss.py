@@ -17,11 +17,14 @@ def mog_log_prob(samples,means,variances,log_weights):
 	log_probs = th.logsumexp(normal_log_probs + log_weights, dim=1)
 	return log_probs
 
-def momu_log_prob(samples,means,variances,log_weights,tolerances=5e-3):
+
+def momu_log_prob(samples,means,variances,log_weights,tolerances=1e-3):
 	"""
 	Mixture of mollified unfiform distributions (normal approximation to uniform)
 	https://stats.stackexchange.com/questions/572557/how-to-sample-and-compute-the-likelihood-from-a-mollified-uniform-distribution
 	https://pytorch.org/docs/stable/_modules/torch/distributions/normal.html#Normal.cdf
+	
+	This is pretty slow (due to erf) and does not seem to work very well.
 	"""
 
 	samples = samples.reshape(-1,1)
@@ -40,64 +43,26 @@ def momu_log_prob(samples,means,variances,log_weights,tolerances=5e-3):
 	log_probs = th.logsumexp(mol_normal_log_probs + log_weights, dim=1)
 	return log_probs
 
-def sparse_cross_entropy(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,variance=1e-3,vectorized=False):
-	""" this is slow, but fully vectorizing takes a lot of memory """
 
-	assert len(true_mzs) == len(true_logprobs) == len(true_batch_idxs)
-	assert len(pred_mzs) == len(pred_logprobs) == len(pred_batch_idxs)
+def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
+	"""
+	this is just for torch.compile
+	"""
 
-	def seq_ce(batch_idx,mask_value=-1e9):
-		b_pred_mask = (pred_batch_idxs==batch_idx).float()
-		b_true_mask = (true_batch_idxs==batch_idx)
-		b_pred_logprobs = pred_logprobs*b_pred_mask + (1-b_pred_mask)*mask_value
-		b_pred_mzs = pred_mzs
-		b_variances = variance*th.ones_like(b_pred_mzs)
-		b_true_logprobs = true_logprobs[b_true_mask]
-		b_true_mzs = true_mzs[b_true_mask]
-		b_ce = th.sum(-th.exp(b_true_logprobs)*mog_log_prob(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
-		return b_ce
-
-	def par_ce(true_batch_idx,true_logprob,true_mz,mask_value=-1e9):
+	mask_value = -1e9
+	def vec_ce(true_batch_idx,true_logprob,true_mz):
 		b_pred_mask = (pred_batch_idxs==true_batch_idx).float()
 		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1.-b_pred_mask)
 		b_pred_mzs = pred_mzs
-		b_variances = variance*th.ones_like(b_pred_mzs)
-		b_true_logprob = true_logprob
-		b_true_mz = true_mz
-		# note: this is a sum over one dimension (just to convert to scalar)
-		b_ce = th.sum(-th.exp(b_true_logprob)*mog_log_prob(b_true_mz,b_pred_mzs,b_variances,b_pred_logprobs))
-		return b_ce
-
-	if vectorized:
-		ce = th.vmap(par_ce)(true_batch_idxs,true_logprobs,true_mzs)
-		ce = scatter_reduce(
-			src=ce,
-			index=true_batch_idxs,
-			reduce="sum",
-			dim=0,
-			dim_size=batch_size
-		)
-		ce = th.mean(ce)
-	else:
-		ce = 0.
-		for b in range(batch_size):
-			ce = ce + seq_ce(b)
-		ce = ce / batch_size
-	return ce
-
-def sparse_cross_entropy_vec(log_prob_fn,true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,variance):
-
-	def vec_ce(true_batch_idx,true_logprob,true_mz,mask_value=-1e9):
-		b_pred_mask = (pred_batch_idxs==true_batch_idx).float()
-		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1.-b_pred_mask)
-		b_pred_mzs = pred_mzs
-		b_variances = variance*th.ones_like(b_pred_mzs)
+		if relative:
+			b_variances = (th.clamp(b_pred_mzs,min=200.)*tolerance)**2
+		else:
+			b_variances = (tolerance**2)*th.ones_like(b_pred_mzs)
 		b_true_logprob = true_logprob
 		b_true_mz = true_mz
 		# note: this is a sum over one dimension (just to convert to scalar)
 		b_ce = th.sum(-th.exp(b_true_logprob)*log_prob_fn(b_true_mz,b_pred_mzs,b_variances,b_pred_logprobs))
 		return b_ce
-	
 	ce = th.vmap(vec_ce)(true_batch_idxs,true_logprobs,true_mzs)
 	ce = scatter_reduce(
 		src=ce,
@@ -109,7 +74,8 @@ def sparse_cross_entropy_vec(log_prob_fn,true_mzs,true_logprobs,true_batch_idxs,
 	ce = th.mean(ce)
 	return ce
 
-def sparse_cross_entropy_seq(log_prob_fn,true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,variance):
+
+def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
 	""" 
 	this is just for torch.compile
 	"""
@@ -119,21 +85,21 @@ def sparse_cross_entropy_seq(log_prob_fn,true_mzs,true_logprobs,true_batch_idxs,
 	for batch_idx in range(batch_size):
 		b_pred_mask = (pred_batch_idxs==batch_idx).float()
 		b_true_mask = (true_batch_idxs==batch_idx)
-		b_pred_logprobs = pred_logprobs*b_pred_mask + (1-b_pred_mask)*mask_value
+		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1-b_pred_mask)
 		b_pred_mzs = pred_mzs
-		b_variances = variance*th.ones_like(b_pred_mzs)
+		if relative:
+			b_variances = (th.clamp(b_pred_mzs,min=200.)*tolerance)**2
+		else:
+			b_variances = (tolerance**2)*th.ones_like(b_pred_mzs)
 		b_true_logprobs = true_logprobs[b_true_mask]
 		b_true_mzs = true_mzs[b_true_mask]
 		b_ce = th.sum(-th.exp(b_true_logprobs)*log_prob_fn(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
-		# b_mog_log_prob = -0.5*(b_true_mzs.reshape(-1,1)-b_pred_mzs.reshape(1,-1))**2/b_variances.reshape(1,-1) \
-		# 	- 0.5*th.log(2*th.pi*b_variances.reshape(1,-1))
-		# b_mog_log_prob = th.logsumexp(b_mog_log_prob + b_pred_logprobs.reshape(1,-1),dim=1)
-		# b_ce = th.sum(-th.exp(b_true_logprobs)*b_mog_log_prob)
 		ce = ce + b_ce
 	ce = ce / batch_size
 	return ce
 
-def get_sparse_cross_entropy_fn(dist,vectorized):
+
+def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
 
 	if dist == "gaussian":
 		log_prob_fn = mog_log_prob	
@@ -143,11 +109,22 @@ def get_sparse_cross_entropy_fn(dist,vectorized):
 		raise NotImplementedError()
 	
 	if vectorized:
-		sce_fn = lambda *args: sparse_cross_entropy_vec(log_prob_fn,*args)
+		sce_fn = lambda *args: sparse_cross_entropy_vec(
+			*args,
+			log_prob_fn=log_prob_fn,
+			tolerance=tolerance,
+			relative=relative
+		)
 	else:
-		sce_fn = lambda *args: sparse_cross_entropy_seq(log_prob_fn,*args)
+		sce_fn = lambda *args: sparse_cross_entropy_seq(
+			*args,
+			log_prob_fn=log_prob_fn,
+			tolerance=tolerance,
+			relative=relative
+		)
 
 	return sce_fn
+
 
 if __name__ == "__main__":
 

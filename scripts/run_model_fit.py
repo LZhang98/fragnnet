@@ -14,7 +14,7 @@ from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed
 from frag_gnn.feat_utils import MolGraph, BatchedMolDAG
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
-from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, calculate_match_mzs
+from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, calculate_match_mzs, calculate_cosine_similarity
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PERIODIC_TABLE, parse_formula
 from frag_gnn.utils.data_utils import mol_from_smiles, mol_to_formula
 from frag_gnn.utils.plot_utils import plot_dual_axis, plot_spectra_sparse
@@ -76,7 +76,7 @@ if __name__ == "__main__":
 	# to get compound 11 to work use the following configuration: 
 	# max_h_transfer=4
 	# num_isotopes=1
-	# variance=1e-6
+	# tolerance=1e-3
 	# out_dist=gaussian
 	# lr=1e-4
 	# num_iters=1000 (should see convergence around 500)
@@ -134,9 +134,16 @@ if __name__ == "__main__":
 		help="Number of training iterations"
 	)
 	parser.add_argument(
-		"--variance",
+		"--tolerance",
 		type=float,
 		default=1e-3,
+		help="Tolerance for matching peaks (see --relative), representing the standard deviation of the output gaussian"
+	)
+	parser.add_argument(
+		"--relative",
+		type=booltype,
+		default=False,
+		help="Whether to interpret tolerance as relative (percentage of peak mass) instead of absolute"
 	)
 	parser.add_argument(
 		"--random_targ",
@@ -176,6 +183,8 @@ if __name__ == "__main__":
 		help="Whether to fit the model parameters, or just run the forward pass"
 	)
 	args = parser.parse_args()
+
+	assert not (args.jit and args.vectorized)
 
 	np.random.seed(420)
 	th.manual_seed(420)
@@ -304,7 +313,7 @@ if __name__ == "__main__":
 	max_h_transfer = args.max_h_transfer
 	vectorized = th.tensor(args.vectorized,dtype=th.bool)
 	batch_size = th.tensor(args.batch_size,dtype=th.int32)
-	variance = th.tensor(args.variance,dtype=th.float32)
+	tolerance = th.tensor(args.tolerance,dtype=th.float32)
 	frag_max_time = None
 	smiles = IDX_TO_SMILES[compound_idx]
 	mol_d = frag_utils.extract_mol_info(smiles)
@@ -381,7 +390,12 @@ if __name__ == "__main__":
 	)
 	joint_model.to(device)
 
-	sparse_cross_entropy_fn = get_sparse_cross_entropy_fn(args.out_dist,vectorized)
+	sparse_cross_entropy_fn = get_sparse_cross_entropy_fn(
+		args.out_dist,
+		vectorized,
+		args.tolerance,
+		args.relative
+	)
 	
 	if args.jit:
 		th_dynamo.config.verbose = True
@@ -406,7 +420,8 @@ if __name__ == "__main__":
 		"recall": [],
 		"weighted_recall": [],
 		"topk_weighted_recall": [],
-		"topk_frac": []
+		"topk_frac": [],
+		"cosine_similarity": []
 	}
 
 	def get_pred_true():
@@ -459,10 +474,20 @@ if __name__ == "__main__":
 		)
 		recall = th.mean(recall)
 		weighted_recall = th.mean(weighted_recall)
+		cosine_similarity = calculate_cosine_similarity(
+			true_mzs,
+			th.exp(scatter_normalize(true_logits,true_batch_idxs,dim=0)),
+			true_batch_idxs,
+			pred_mzs,
+			th.exp(scatter_normalize(pred_logits,pred_batch_idxs,dim=0)),
+			pred_batch_idxs
+		)
+		cosine_similarity = th.mean(cosine_similarity)
 		print(f"> pred logits = {pred_logits.mean().item()}, true logits = {true_logits.mean().item()}")
 		print(f"> pred entropy = {pred_entropy.item()}, true entropy = {true_entropy.item()}")
 		print(f"> recall = {recall.item()}, weighted recall = {weighted_recall.item()}")
 		print(f"> topk weighted recall = {topk_weighted_recall.item()}, topk frac = {topk_frac.item()}")
+		print(f"> cosine similarity = {cosine_similarity.item()}")
 		# calculate loss
 		loss = loss_fn(
 			true_mzs,
@@ -471,8 +496,7 @@ if __name__ == "__main__":
 			pred_mzs,
 			pred_logits,
 			pred_batch_idxs,
-			batch_size,
-			variance
+			batch_size
 		)
 		print(f"> loss = {loss:.4f}")
 		# update metrics
@@ -482,6 +506,7 @@ if __name__ == "__main__":
 		metrics["weighted_recall"].append(weighted_recall.item())
 		metrics["topk_weighted_recall"].append(topk_weighted_recall.item())
 		metrics["topk_frac"].append(topk_frac.item())
+		metrics["cosine_similarity"].append(cosine_similarity.item())
 		# save best model
 		if args.fit_model and loss.item() < best_d.get("cross_entropy_loss",np.inf):
 			best_d["iter"] = i
@@ -490,6 +515,7 @@ if __name__ == "__main__":
 			best_d["recall"] = recall.item()
 			best_d["weighted_recall"] = weighted_recall.item()
 			best_d["topk_weighted_recall"] = topk_weighted_recall.item()
+			best_d["cosine_similarity"] = cosine_similarity.item()
 			best_d["pred_mzs"] = pred_mzs.detach().clone()
 			best_d["pred_logits"] = pred_logits.detach().clone()
 			best_d["pred_batch_idxs"] = pred_batch_idxs.detach().clone()
@@ -537,6 +563,19 @@ if __name__ == "__main__":
 		)
 		## plot spectrum ##
 
+		# plot training metrics
+		plot_dual_axis(
+			metrics["step"],
+			{
+				"ce_loss": metrics["cross_entropy_loss"]
+			},
+			{
+				"topk_wrecall": metrics["topk_weighted_recall"],
+				"cos_sim": metrics["cosine_similarity"]
+			},
+			f"figs/fit_model_{compound_idx}_curves.png"
+		)
+
 	# get memory usage
 	if args.device_id != -1 and th.cuda.is_available():
 		cuda_max_memory = th.cuda.max_memory_allocated(device=device)/1e9
@@ -544,16 +583,3 @@ if __name__ == "__main__":
 
 	if args.jit:
 		print(dynamo_prof.report())
-
-	# plot training metrics
-	plot_dual_axis(
-		metrics["step"],
-		{
-			"cross_entropy_loss": metrics["cross_entropy_loss"]
-		},
-		{
-			"topk_weighted_recall": metrics["topk_weighted_recall"],
-			"topk_frac": metrics["topk_frac"],
-		},
-		f"figs/fit_model_{compound_idx}_curves.png"
-	)
