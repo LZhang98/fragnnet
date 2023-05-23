@@ -15,7 +15,6 @@ import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
 import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.formula_utils import parse_formula
-from frag_gnn.utils.misc_utils import booltype
 
 def element_filter(formula,allowed_elements):
 	element_counts = parse_formula(formula)
@@ -384,17 +383,17 @@ if __name__ == "__main__":
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
 	parser.add_argument("--frag_dp",type=str,default="data/frag")
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
-	parser.add_argument("--h_prior",type=booltype,default=True)
+	parser.add_argument("--h_prior",type=bool,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,default=default_elements)
 	parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001-5ppm-10ppm")
-	parser.add_argument("--isotopes",type=booltype,default=True)
+	parser.add_argument("--isotopes",type=bool,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
-	parser.add_argument("--compress_dags",type=booltype,default=True)
+	parser.add_argument("--compress_dags",type=bool,default=True)
 	parser.add_argument("--wandb_run_name",type=str,default=None)
-	parser.add_argument("--save_dag",type=False,default=True)
+	parser.add_argument("--save_dag",type=bool,default=True)
 	args = parser.parse_args()
 
 	tqdm.pandas()
