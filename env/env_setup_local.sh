@@ -22,7 +22,7 @@ pip install matplotlib
 pip install pytest
 pip install cysignals
 pip install dash
-pip install jupyter-dash
-pip install swifter
+pip install jupyter-dash 
+pip install git+https://github.com/7FeiW/SpectralEntropy.git #this is a fork from https://github.com/YuanyueLi/SpectralEntropy.git
 
 pip install -I -e .
