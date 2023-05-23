@@ -21,6 +21,8 @@ pip install joblib
 pip install matplotlib
 pip install pytest
 pip install cysignals
-
+pip install dash
+pip install jupyter-dash
+pip install CairoSVG
 
 pip install -I -e .

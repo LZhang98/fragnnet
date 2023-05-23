@@ -28,6 +28,7 @@ pip install matplotlib
 pip install pytest
 # TODO: install cysignals
 # TODO: install pyg
+# TODO: install cairosvg
 
 # frag-gnn itself
 pip install -I -e .

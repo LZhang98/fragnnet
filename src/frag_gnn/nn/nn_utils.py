@@ -5,10 +5,11 @@ import scipy.sparse as sparse
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
+import torch_geometric as pyg
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats
-import torch_geometric as pyg
+from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_normalize, scatter_reduce, scatter_masked_softmax
 
 
 def get_clones(module, N):
@@ -109,6 +110,7 @@ class JointPredictor(nn.Module):
 		dag_formula_sizes=None,
 		dag_formula_cumsizes=None,
 		dag_formula_peak_sizes=None,
+		**kwargs
 	):
 
 		device = batch_size.device
@@ -128,12 +130,12 @@ class JointPredictor(nn.Module):
 		dag_node_mask_idxs = th.nonzero(get_node_feats(dag_x,dag_node_feat_idxs,"mask")).long()
 		dag_node_offsets = mol_num_nodes[th.bucketize(dag_node_mask_idxs[:,0],dag_num_nodes,right=True)-1]
 		dag_node_mask_idxs[:,1] = dag_node_mask_idxs[:,1] + dag_node_offsets
-		dag_node_mask_embed = th.scatter_reduce(
-			input=th.zeros([batch_dag_num_nodes,mol_embed.shape[1]],device=device),
-			dim=0,
-			index=dag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+		dag_node_mask_embed = scatter_reduce(
 			src=mol_embed[dag_node_mask_idxs[:,1]],
+			index=dag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
 			reduce="sum",
+			dim=0,
+			dim_size=batch_dag_num_nodes
 		)
 		# print(dag_node_mask_embed.sum())
 		dag_ndata.append(dag_node_mask_embed)
@@ -142,12 +144,12 @@ class JointPredictor(nn.Module):
 		dag_edge_node_idxs = dag_edge_index[0][dag_edge_mask_idxs[:,0]]
 		dag_edge_offsets = mol_num_nodes[th.bucketize(dag_edge_node_idxs,dag_num_nodes,right=True)-1]
 		dag_edge_mask_idxs[:,1] = dag_edge_mask_idxs[:,1] + dag_edge_offsets
-		dag_edge_mask_embed = th.scatter_reduce(
-			input=th.zeros([batch_dag_num_edges,mol_embed.shape[1]],device=device),
-			dim=0,
-			index=dag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+		dag_edge_mask_embed = scatter_reduce(
 			src=mol_embed[dag_edge_mask_idxs[:,1]],
-			reduce="sum"
+			index=dag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+			reduce="sum",
+			dim=0,
+			dim_size=batch_dag_num_edges
 		)
 		# print(dag_edge_mask_embed.sum())
 		dag_edata.append(dag_edge_mask_embed)
@@ -168,7 +170,7 @@ class JointPredictor(nn.Module):
 		# get formula aggregation 
 		dag_formula_batch_idxs = th.bucketize(th.arange(dag_x.shape[0],device=device),dag_num_nodes,right=True)-1
 		dag_formula_offsets = dag_formula_cumsizes[dag_formula_batch_idxs]
-		dag_formula_idxs = (get_node_feats(dag_x,dag_node_feat_idxs,"h_formulae_idx")+dag_formula_offsets.unsqueeze(-1)).flatten()		
+		dag_formula_idxs = (get_node_feats(dag_x,dag_node_feat_idxs,"h_formulae_idx")+dag_formula_offsets.unsqueeze(-1)).flatten()        
 		
 		# concatenate everything 
 		dag_x = th.cat(dag_ndata,dim=-1)
@@ -416,8 +418,8 @@ def random_walk_pe(g, k, eweight_name=None):
 	# PE = [dgl_F.astype(dgl_F.tensor(np.copy(RW.diagonal())), th.float32)]
 	# RW_power = RW
 	# for _ in range(k - 1):
-	#	 RW_power = RW_power @ RW
-	#	 PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), th.float32))
+	#     RW_power = RW_power @ RW
+	#     PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), th.float32))
 	# PE = dgl_F.stack(PE, dim=-1)
 	# return PE
 

@@ -10,7 +10,6 @@ import torch as th
 import bz2
 
 import torch_geometric as pyg
-from torch_geometric.utils.convert import from_networkx 
 
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.utils.misc_utils import timeit
@@ -172,9 +171,9 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 		mol_d["element_counts"] : atom count per element
 	"""
 	if isinstance(smiles_or_mol,str):
+		# TODO: change this to be consistent with the approach in data_utils.py
 		# rdkit mol stuff
 		mol = Chem.MolFromSmiles(smiles_or_mol)
-		# TODO: think about adding Hs
 		rdMolStandardize.Cleanup(mol)
 		te = rdMolStandardize.TautomerEnumerator()
 		mol = te.Canonicalize(mol)
@@ -849,7 +848,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 	dag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
 	dag_d["formula_redundancy"] = node_num_formules_sum/pyg_cc_g.num_nodes
 	dag_d["node_feature_size"] = pyg_cc_g.num_features
-	dag_d["edge_featuer_size"] = pyg_cc_g.num_edge_features
+	dag_d["edge_feature_size"] = pyg_cc_g.num_edge_features
 	dag_d["is_directed"] = pyg_cc_g.is_directed()
 	dag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
 	dag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 

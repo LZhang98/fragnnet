@@ -153,10 +153,58 @@ def get_pyg_memory_usage(pyg_graph):
 
 	return pyg.profile.get_data_size(pyg_graph)
 
+def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=True):
+	# apply mask
+	masked_logits = mask*logits + (1-mask)*mask_value
+	# normalize
+	masked_logits = scatter_normalize(masked_logits,subset_idxs,dim)
+	if not log:
+		# exponentiate
+		return th.exp(masked_logits)
+	else:
+		return masked_logits
 
-def get_nx_memory_usage(nx_g):
+def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=1e-9):
 
-	edge_mem = sum([sys.getsizeof(e) for e in nx_g.edges])
-	node_mem = sum([sys.getsizeof(n) for n in nx_g.nodes])
+	k = th.max(subset_idxs)+1
+	sm = scatter_reduce(
+		src=logits,
+		index=subset_idxs,
+		reduce="amax",
+		dim=dim,
+		dim_size=k
+	)
+	lm = th.gather(
+		input=sm,
+		index=subset_idxs,
+		dim=dim
+	)
+	logits = logits - lm
+	se = scatter_reduce(
+		src=th.exp(logits),
+		index=subset_idxs,
+		reduce="sum",
+		dim=dim,
+		dim_size=k
+	)
+	return sm + th.log(se + eps)
 
-	return edge_mem + node_mem
+def scatter_normalize(logits,subset_idxs,dim=-1):
+	# calculate normalizing constant
+	c = scatter_logsumexp(logits,subset_idxs,dim=dim)
+	# apply normalizing constant
+	logits = logits - c[subset_idxs]
+	return logits
+
+def scatter_reduce(src,index,reduce,dim,dim_size):
+
+	result_shape = list(src.shape)
+	result_shape[dim] = dim_size
+	results = th.zeros(result_shape,dtype=src.dtype,device=src.device)
+	results.scatter_reduce_(
+		dim=dim,
+		index=index,
+		src=src,
+		reduce=reduce
+	)
+	return results
