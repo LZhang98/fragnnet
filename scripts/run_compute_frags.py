@@ -30,7 +30,7 @@ def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
 		print(f"reached_depth = {dag_d['reached_depth']}")
 		print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {2*dag_ne/(dag_nn*(dag_nn-1))}")
 		print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
-		print(f"dag_outdeg = {np.mean(dag_outdeg)}, std_outdeg = {np.std(dag_outdeg)}")
+		print(f"avg_outdeg = {np.mean(dag_outdeg)}, std_outdeg = {np.std(dag_outdeg)}")
 		print(f"node feature size = {dag_d['node_feature_size']}, edge feature size = {dag_d['edge_feature_size']}")
 
 		print(f"node edges by depth: {dag_d['dag_num_edges_by_depth']}")
