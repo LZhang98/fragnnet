@@ -6,15 +6,15 @@ from frag_gnn.utils.data_utils import make_morgan_fingerprint, make_maccs_finger
 
 def main(args):
 
-    # read in molecule df
-    mol_df = pd.read_pickle(os.path.join(args.project_dp,args.proc_dp,"mol_df.pkl"))
+	# read in molecule df
+	mol_df = pd.read_pickle(os.path.join(args.project_dp,args.proc_dp,"mol_df.pkl"))
 
-    # prepare fingerprint features
-    
+	# prepare fingerprint features
+	
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser()
-    args = parser.parse_args()
+	parser = argparse.ArgumentParser()
+	args = parser.parse_args()
 
-    main(args)
+	main(args)

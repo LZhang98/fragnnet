@@ -15,6 +15,7 @@ import threading
 import torch_geometric as pyg
 
 TQDM_DISABLE = False
+PPM = 1/1000000
 
 def timeit(func):
 	# adapted from https://dev.to/kcdchennai/python-decorator-to-measure-execution-time-54hk
