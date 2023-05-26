@@ -163,6 +163,7 @@ def main(args):
 
 	def timed_get_dags(mol, mol_id, 
 			max_depth,h_prior,max_h_transfer, max_time,
+			use_isotopes:bool,
 			output_dir:str, 
 			use_cached = True, 
 			compressed = False,
@@ -191,7 +192,7 @@ def main(args):
 			try:
 				mol_d = frag_utils.extract_mol_info(mol)
 				# this maybe dangers in multi processing because of scopes
-				dag_d = frag_utils.compute_dags(mol_d,max_depth,h_prior,max_h_transfer, max_time)
+				dag_d = frag_utils.compute_dags(mol_d,max_depth,h_prior,max_h_transfer, max_time, use_isotopes)
 			except KeyboardInterrupt as e:
 				# let these through
 				raise e
@@ -250,7 +251,8 @@ def main(args):
 	print(">Compute Fragments")
 	mol_input_rows = []
 	for _, row in tqdm(mol_df.iterrows(), total=mol_df.shape[0], desc= "prepare inputs"):
-		mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, args.compress_dags])
+		mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time,args.isotopes, dag_dp, \
+			 True, args.compress_dags])
 	tqdm_iter = tqdm(mol_input_rows,desc=pformat(timed_get_dags),total=len(mol_input_rows))
 	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
 	print(">Fragments Computed")
