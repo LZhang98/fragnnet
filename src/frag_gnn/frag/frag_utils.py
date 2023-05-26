@@ -780,7 +780,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 			peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
 			peak_probs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
 		else:
-			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"", isotope = use_isotopes, return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
+			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"", isotopes = use_isotopes, return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
 			peak_mzs, peak_probs = zip(*sorted(zip(peak_mzs, peak_probs), key=lambda x: x[1], reverse=True))
 			peak_mzs = np.array(peak_mzs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
 			peak_mzs = np.pad(peak_mzs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_mzs)),"constant",constant_values=0)
