@@ -210,7 +210,7 @@ def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.0
 		threshold (float, optional): _description_. Defaults to 0.001.
 
 	Returns:
-		Tuple[List[float],List[float]]: ([mass,mass,mass,mass],[prob,prob,prob,prb])
+		Tuple[List[float],List[float]: ([mass,mass,mass,mass],[prob,prob,prob,prb])
 	"""
 	if peaks_for_element_cache is None:
 		peaks_for_element_cache = {}
@@ -236,7 +236,9 @@ def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.0
 	return keep_masses, keep_probs
 
 
-def formula_to_peak_mzs(formula, prec_type:Literal["[M+H]+","[M-H]-",""], isotopes=True, return_map=False, return_probs=False, peaks_for_element_cache: dict = None):
+def formula_to_peak_mzs(formula, prec_type:Literal["[M+H]+","[M-H]-",""], 
+			isotopes=True, return_map=False, 
+			return_probs=False, peaks_for_element_cache: dict = None):
 	"""_summary_
 
 	Args:
@@ -257,6 +259,7 @@ def formula_to_peak_mzs(formula, prec_type:Literal["[M+H]+","[M-H]-",""], isotop
 			peak_mz += v*PERIODIC_TABLE.GetMostCommonIsotopeMass(k)
 		peak_mz += mass_diff
 		peak_mzs = [peak_mz]
+		peak_probs = [1.0]
 	else:	
 		peak_mzs, peak_probs = get_peaks_for_formula(element_counts, peaks_for_element_cache = peaks_for_element_cache)
 		peak_mzs = [peak_mz+mass_diff for peak_mz in peak_mzs]
