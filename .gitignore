@@ -6,7 +6,9 @@ __pycache__/
 *.so
 *.egg
 .pytest_cache
-# don't track cython gernated c file
+# don't track cython generated c file
 src/frag_gnn/frag/compute_frags.c
 data/
 wandb/
+figs/
+extra/
