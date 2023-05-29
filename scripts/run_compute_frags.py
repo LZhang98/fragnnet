@@ -41,7 +41,7 @@ def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes
 		print(f"node node by depth: {dag_d['dag_num_nodes_by_depth']}")
 	# dag_d["dag_num_nodes_by_depth"] = { k:edges_min_depth.count(k) for k in range(reached_depth+1)} 
 
-		print(f"is diectred = {dag_d['is_directed']}")
+		print(f"is directed = {dag_d['is_directed']}")
 		dag_memory = get_pyg_memory_usage(dag)
 		print(f"memory = {dag_memory/1e6} MB")
 	#print(f"idx to forumla = {dag_d['idx_to_formula']}")
@@ -54,7 +54,7 @@ if __name__ == "__main__":
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--isotopes",type=bool,default=True)
+	parser.add_argument("--isotopes",type=booltype,default=True)
 	args = parser.parse_args()
 
 	np.random.seed(420)
@@ -83,8 +83,8 @@ if __name__ == "__main__":
 	frag_max_time = None
 	smiles = IDX_TO_SMILES[args.compound_idx]
 	isotopes = args.isotopes
-	#dag_d = run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)
+	dag_d = run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes)
 
-	cProfile.runctx("run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes)", globals(), locals(), "run_frag_exp.prof")
-	#s = pstats.Stats("run_frag_exp.prof")
-	#s.strip_dirs().sort_stats("time").print_stats()
+	# cProfile.runctx("run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes)", globals(), locals(), "run_frag_exp.prof")
+	# s = pstats.Stats("run_frag_exp.prof")
+	# s.strip_dirs().sort_stats("time").print_stats()
