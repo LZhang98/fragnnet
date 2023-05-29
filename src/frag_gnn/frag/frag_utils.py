@@ -665,22 +665,22 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 		ppt_formula = np.nan
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
-def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
+def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_max_time:int, use_isotopes:bool = False) -> dict:
 	"""_summary_
 
 	Args:
-		mol_d (_type_): _description_
-		max_depth (_type_): _description_
-		h_prior (_type_): _description_
-		max_h_transfer (_type_): _description_
-		frag_max_time (_type_): _description_
+		mol_d (dict): _description_
+		max_depth (int): _description_
+		h_prior (bool): _description_
+		max_h_transfer (int): _description_
+		frag_max_time (int): _description_
+		use_isotopes (bool, optional): _description_. Defaults to False.
 
 	Raises:
-		NotImplementedError: _description_
-		NotImplementedError: _description_
+		ValueError: _description_
 
 	Returns:
-		_type_: _description_
+		dict: _description_
 	"""
 	#print("compute_dags")
 	assert h_prior in [True,False], h_prior
@@ -780,7 +780,7 @@ def compute_dags(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time):
 			peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
 			peak_probs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
 		else:
-			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"",return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
+			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"", isotopes = use_isotopes, return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
 			peak_mzs, peak_probs = zip(*sorted(zip(peak_mzs, peak_probs), key=lambda x: x[1], reverse=True))
 			peak_mzs = np.array(peak_mzs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
 			peak_mzs = np.pad(peak_mzs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_mzs)),"constant",constant_values=0)

@@ -7,13 +7,13 @@ from frag_gnn.utils.misc_utils import timeit, booltype, get_pyg_memory_usage
 
 import pstats, cProfile
 
-def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
+def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes):
 	mol_d = frag_utils.extract_mol_info(smiles)
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
 	print(f">num of heavy atoms {num_nodes}")
 	dag_d = {}
 	try:
-		dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
+		dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time, isotopes)
 	except Exception as e:
 		print(f'{e}')
 	else:
@@ -27,10 +27,14 @@ def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles):
 		
 		dag_indeg = pyg.utils.degree(dag.edge_index[1]).numpy()
 		dag_outdeg = pyg.utils.degree(dag.edge_index[0]).numpy()
+
+	
 		print(f"reached_depth = {dag_d['reached_depth']}")
 		print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {2*dag_ne/(dag_nn*(dag_nn-1))}")
 		print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
 		print(f"avg_outdeg = {np.mean(dag_outdeg)}, std_outdeg = {np.std(dag_outdeg)}")
+		print(f"isotopes = {isotopes}")
+		print(f"num unique forumla = {len(dag_d['idx_to_formula'])}")
 		print(f"node feature size = {dag_d['node_feature_size']}, edge feature size = {dag_d['edge_feature_size']}")
 
 		print(f"node edges by depth: {dag_d['dag_num_edges_by_depth']}")
@@ -50,6 +54,7 @@ if __name__ == "__main__":
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
+	parser.add_argument("--isotopes",type=bool,default=True)
 	args = parser.parse_args()
 
 	np.random.seed(420)
@@ -77,9 +82,9 @@ if __name__ == "__main__":
 	max_h_transfer = args.max_h_transfer
 	frag_max_time = None
 	smiles = IDX_TO_SMILES[args.compound_idx]
-	
+	isotopes = args.isotopes
 	#dag_d = run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)
 
-	cProfile.runctx("run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles)", globals(), locals(), "run_frag_exp.prof")
+	cProfile.runctx("run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes)", globals(), locals(), "run_frag_exp.prof")
 	#s = pstats.Stats("run_frag_exp.prof")
 	#s.strip_dirs().sort_stats("time").print_stats()

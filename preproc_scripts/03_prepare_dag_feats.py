@@ -15,7 +15,6 @@ import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
 import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.formula_utils import parse_formula
-from frag_gnn.utils.misc_utils import booltype
 
 def element_filter(formula,allowed_elements):
 	element_counts = parse_formula(formula)
@@ -164,6 +163,7 @@ def main(args):
 
 	def timed_get_dags(mol, mol_id, 
 			max_depth,h_prior,max_h_transfer, max_time,
+			use_isotopes:bool,
 			output_dir:str, 
 			use_cached = True, 
 			compressed = False,
@@ -192,7 +192,7 @@ def main(args):
 			try:
 				mol_d = frag_utils.extract_mol_info(mol)
 				# this maybe dangers in multi processing because of scopes
-				dag_d = frag_utils.compute_dags(mol_d,max_depth,h_prior,max_h_transfer, max_time)
+				dag_d = frag_utils.compute_dags(mol_d,max_depth,h_prior,max_h_transfer, max_time, use_isotopes)
 			except KeyboardInterrupt as e:
 				# let these through
 				raise e
@@ -212,7 +212,7 @@ def main(args):
 
 
 	def compute_spectra_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,
-			   tolerance:int, h_transfer:int):
+			   tolerances:list, max_h_transfer:int):
 		"""_summary_
 
 		Args:
@@ -224,24 +224,24 @@ def main(args):
 		"""
 		reuslts = []
 		cols = []
-		#for tolerance in tolerances:
-			#for h_transfer in range(1, max_h_transfer + 1):
-		keys = [
-			f"recall",
-			f"wrecall",
-			f"prec",
-			f"ppt_peak",
-			f"ppt_formula"
-		]
+		for tolerance in tolerances:
+			for h_transfer in range(1, max_h_transfer + 1):
+				keys = [
+					f"recall_{tolerance}_h{h_transfer}",
+					f"wrecall_{tolerance}_h{h_transfer}",
+					f"prec_{tolerance}_h{h_transfer}",
+					f"ppt_peak_{tolerance}_h{h_transfer}",
+					f"ppt_formula_{tolerance}_h{h_transfer}"
+				]
 
-		if 'ppm' in tolerance:
-			result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
-					h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
-		else:
-			result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,h_transfer,\
-					tolerance=float(tolerance),prec_type="[M+H]+")
-		cols += keys
-		reuslts.append(result)
+				if 'ppm' in tolerance:
+					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
+						 h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
+				else:
+					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,h_transfer,\
+						 tolerance=float(tolerance),prec_type="[M+H]+")
+				cols += keys
+				reuslts.append(result)
 
 		result_series  = pd.concat(reuslts, axis = 0)
 		result_df = result_series.to_frame().T
@@ -251,7 +251,8 @@ def main(args):
 	print(">Compute Fragments")
 	mol_input_rows = []
 	for _, row in tqdm(mol_df.iterrows(), total=mol_df.shape[0], desc= "prepare inputs"):
-		mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time, dag_dp, True, args.compress_dag, args.save_dag])
+		mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time,args.isotopes, dag_dp, \
+			 True, args.compress_dags])
 	tqdm_iter = tqdm(mol_input_rows,desc=pformat(timed_get_dags),total=len(mol_input_rows))
 	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
 	print(">Fragments Computed")
@@ -333,9 +334,9 @@ def main(args):
 
 	print(">Compute Spectra Stats")
 	spectra_input_rows = []
-	#tolerances = [tolerance for tolerance in args.tolerances.split("-")]
+	tolerances = [tolerance for tolerance in args.tolerances.split("-")]
 	for _, row in tqdm(peak_spec_df.iterrows(), total=peak_spec_df.shape[0], desc= "prepare  spectra stats inputs"):
-		spectra_input_rows.append([row['peaks'], row["formula_peak_mzs"], row['formula_peak_probs'], row['idx_by_h_delta'], args.tolerance, args.max_h_transfer])
+		spectra_input_rows.append([row['peaks'], row["formula_peak_mzs"], row['formula_peak_probs'], row['idx_by_h_delta'], tolerances, args.max_h_transfer])
 	tqdm_iter = tqdm(spectra_input_rows,desc=pformat(compute_spectra_stats),total=len(spectra_input_rows))
 	# run stats
 	stats_results = data_utils.par_apply(tqdm_iter,compute_spectra_stats,True)
@@ -387,13 +388,12 @@ if __name__ == "__main__":
 	parser.add_argument("--h_prior",type=bool,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,default=default_elements)
-	#parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001-5ppm-10ppm")
-	parser.add_argument("--tolerance",type=str,default="0.01")
+	parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001-5ppm-10ppm")
 	parser.add_argument("--isotopes",type=bool,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="off",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
-	parser.add_argument("--compress_dag",type=bool,default=True)
+	parser.add_argument("--compress_dags",type=bool,default=True)
 	parser.add_argument("--wandb_run_name",type=str,default=None)
 	parser.add_argument("--save_dag",type=bool,default=True)
 	args = parser.parse_args()
