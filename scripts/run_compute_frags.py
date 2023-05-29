@@ -54,7 +54,7 @@ if __name__ == "__main__":
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--isotopes",type=bool,default=True)
+	parser.add_argument("--isotopes",type=booltype,default=False)
 	args = parser.parse_args()
 
 	np.random.seed(420)
