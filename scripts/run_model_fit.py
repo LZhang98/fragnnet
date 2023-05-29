@@ -10,7 +10,7 @@ import argparse
 from copy import deepcopy
 
 import frag_gnn.frag.frag_utils as frag_utils
-from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed
+from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed, get_pyg_memory_usage
 from frag_gnn.feat_utils import MolGraph, BatchedMolDAG
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
@@ -19,23 +19,34 @@ from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PERIODIC_TABLE,
 from frag_gnn.utils.data_utils import mol_from_smiles, mol_to_formula
 from frag_gnn.utils.plot_utils import plot_dual_axis, plot_spectra_sparse
 
-def featurize_dag(dag):
+def featurize_dag(dag_pyg,undirected):
 
 	# convert data to the right data types
 	# TODO: put this conversion in the model, to reduce memory?
-	dag = deepcopy(dag)
-	dag.x = dag.x.long()
-	dag.edge_attr = dag.edge_attr.long()
-	dag.edge_index = dag.edge_index.long()
-	dag.node_feat_idxs = dag.node_feat_idxs.long()
-	dag.edge_feat_idxs = dag.edge_feat_idxs.long()
-	print(dag)
-	return dag
+	dag_pyg = deepcopy(dag_pyg)
+	dag_pyg.x = dag_pyg.x.long()
+	dag_pyg.edge_attr = dag_pyg.edge_attr.long()
+	dag_pyg.edge_index = dag_pyg.edge_index.long()
+	dag_pyg.node_feat_idxs = dag_pyg.node_feat_idxs.long()
+	dag_pyg.edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
+	if undirected:
+		# convert to undirected
+		dag_pyg.edge_index, dag_pyg.edge_attr = pyg.utils.to_undirected(
+			dag_pyg.edge_index, 
+			dag_pyg.edge_attr, 
+			dag_pyg.num_nodes,
+			reduce="mean"
+		)
+	print(dag_pyg)
+	print(f"> dag memory usage = {get_pyg_memory_usage(dag_pyg)/1e6:.3f} MB")
+	return dag_pyg
 
 def featurize_mol(mol):
 
 	mg = MolGraph(pe_embed_k=0)
 	mol_pyg = mg.get_pyg_graph(mol,bigraph=True)
+	print(mol_pyg)
+	print(f"> mol memory usage = {get_pyg_memory_usage(mol_pyg)/1e6:.3f} MB")
 	return mol_pyg
 
 def torch_time(func):
@@ -160,7 +171,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--lr",
 		type=float,
-		default=1e-3,
+		default=1e-4, #1e-3,
 		help="Learning rate"
 	)
 	parser.add_argument(
@@ -173,7 +184,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--num_isotopes",
 		type=int,
-		default=frag_utils.MAX_NUM_MZS_PER_FORMULA,
+		default=1, #frag_utils.MAX_NUM_MZS_PER_FORMULA,
 		help="Maximum number of isotopic trace peaks to consider"
 	)
 	parser.add_argument(
@@ -181,6 +192,12 @@ if __name__ == "__main__":
 		type=booltype,
 		default=True,
 		help="Whether to fit the model parameters, or just run the forward pass"
+	)
+	parser.add_argument(
+		"--undirected_dag",
+		type=booltype,
+		default=False,
+		help="Whether to use undirected edges in the fragment DAG"
 	)
 	args = parser.parse_args()
 
@@ -323,6 +340,7 @@ if __name__ == "__main__":
 	mzs = th.tensor(mzs,dtype=th.float32)
 	ints = F.normalize(th.tensor(ints,dtype=th.float32),p=1,dim=0)
 	prec_mz = calc_prec_mz(smiles,"[M+H]+")
+	undirected_dag = args.undirected_dag
 
 	if args.device_id == 0:
 		device = th.device("cuda:0")
@@ -332,7 +350,7 @@ if __name__ == "__main__":
 	# prepare data
 	batch_size = args.batch_size
 	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
-	dag_pyg = featurize_dag(dag_d["dag"])
+	dag_pyg = featurize_dag(dag_d["dag"],undirected_dag)
 	mol_pyg = featurize_mol(mol_d["mol"])
 	mol_pyg = mol_pyg.to(device)
 	mol_pygs = [deepcopy(mol_pyg) for i in range(batch_size)]

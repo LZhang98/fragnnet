@@ -1,4 +1,4 @@
-""" mol_graph.py (from SCARF)
+""" mol_graph.py (adapted from SCARF)
 
 Classes to featurize molecules into a graph with onehot concat feats on atoms
 and bonds. Inspired by the dgllife library.
@@ -10,6 +10,7 @@ import torch as th
 import networkx as nx
 import torch_geometric as pyg
 
+from frag_gnn.frag.frag_utils import CANONICAL_ELEMENT_ORDER
 
 atom_feat_registry = {}
 bond_feat_registry = {}
@@ -173,12 +174,11 @@ class MolGraph:
 		)
 
 		if self.pe_embed_k > 0:
-			raise NotImplementedError()
-			# pe_embeds = nn_utils.random_walk_pe(
-			# 	g,
-			# 	k=self.pe_embed_k,
-			# )
-			# x = th.cat((x, pe_embeds), dim=-1)
+			pe_embeds = nn_utils.random_walk_pe(
+				g,
+				k=self.pe_embed_k,
+			)
+			x = th.cat((x, pe_embeds), dim=-1)
 		
 		return g		
 
@@ -200,51 +200,7 @@ class FeatBase:
 @register_atom_feat
 class AtomOneHot(FeatBase):
 	name = "a_onehot"
-	allowable_set = [
-		"C",
-		"N",
-		"O",
-		"S",
-		"F",
-		"Si",
-		"P",
-		"Cl",
-		"Br",
-		"Mg",
-		"Na",
-		"Ca",
-		"Fe",
-		"As",
-		"Al",
-		"I",
-		"B",
-		"V",
-		"K",
-		"Tl",
-		"Yb",
-		"Sb",
-		"Sn",
-		"Ag",
-		"Pd",
-		"Co",
-		"Se",
-		"Ti",
-		"Zn",
-		"H",
-		"Li",
-		"Ge",
-		"Cu",
-		"Au",
-		"Ni",
-		"Cd",
-		"In",
-		"Mn",
-		"Zr",
-		"Cr",
-		"Pt",
-		"Hg",
-		"Pb",
-	]
+	allowable_set = CANONICAL_ELEMENT_ORDER
 	feat_size = len(allowable_set) + 1
 
 	@classmethod

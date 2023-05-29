@@ -97,7 +97,6 @@ def rdkit_standardize(mol):
 	return mol
 
 def mol_from_smiles(smiles,standardize=True):
-	# this is incompatible with rdkit version 2021.09 and greater
 	modules = rdkit_import("rdkit.Chem")
 	Chem = modules[0]
 	try:

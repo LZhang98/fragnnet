@@ -6,6 +6,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg
+import scipy
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats
@@ -43,7 +44,6 @@ def build_lr_scheduler(
 class JointPredictor(nn.Module):
 
 	# data: mol dgl, dag dgl, peaks arrays
-	# TODO: add reverse edges?
 	# TODO: allow for more sophisticated formula embeddings
 
 	def __init__(
@@ -401,27 +401,29 @@ def random_walk_pe(g, k, eweight_name=None):
 	tensor([[0.0000, 0.5000],
 			[0.5000, 0.7500]])
 	"""
-	raise NotImplementedError()
-	# N = g.num_nodes  # number of nodes
-	# M = g.num_edges  # number of edges
-	# A = g.adj(scipy_fmt="csr")  # adjacency matrix
-	# if eweight_name is not None:
-	#	 # add edge weights if required
-	#	 W = sparse.csr_matrix(
-	#		 (g.edata[eweight_name].squeeze(), g.find_edges(list(range(M)))),
-	#		 shape=(N, N),
-	#	 )
-	#	 A = A.multiply(W)
-	# RW = np.array(A / (A.sum(1) + 1e-30))  # 1-step transition probability
 
-	# # Iterate for k steps
-	# PE = [dgl_F.astype(dgl_F.tensor(np.copy(RW.diagonal())), th.float32)]
-	# RW_power = RW
-	# for _ in range(k - 1):
-	#     RW_power = RW_power @ RW
-	#     PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), th.float32))
-	# PE = dgl_F.stack(PE, dim=-1)
-	# return PE
+	N = g.num_nodes  # number of nodes
+	M = g.num_edges  # number of edges
+	# sparse adjacency matrix
+	A = scipy.sparse.csr_matrix(
+		(
+			th.ones_like(g.edge_index[0]).numpy(),
+			(
+				g.edge_index[0].numpy(),
+				g.edge_index[1].numpy()
+			)
+		)
+	)
+	RW = A / (A.sum(1).reshape(-1,1) + 1e-30)  # 1-step transition probability
+
+	# Iterate for k steps
+	PE = [th.as_tensor(RW).diagonal()]
+	RW_power = th.as_tensor(RW)
+	for _ in range(k - 1):
+	    RW_power = RW_power @ RW
+	    PE.append(RW_power.diagonal().clone())
+	PE = th.stack(PE, dim=-1)
+	return PE
 
 def masked_subset_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=True):
 	# apply mask
@@ -465,3 +467,12 @@ def scatter_normalize(logits,subset_idxs,dim=-1):
 	# apply normalizing constant
 	logits = logits - c[subset_idxs]
 	return logits
+
+if __name__ == "__main__":
+
+	edge_index = th.tensor([[0,1,1],[1,1,0]],dtype=th.long)
+	x = th.tensor([0,1],dtype=th.float)
+	g = pyg.data.Data(x=x,edge_index=edge_index)
+	print(g)
+	rw_g = random_walk_pe(g,2)
+	print(rw_g)
