@@ -84,7 +84,7 @@ def calc_prec_mz(smiles,prec_type):
 
 if __name__ == "__main__":
 
-	# to get compound 11 to work use the following configuration: 
+	# to get compound 0 to work use the following configuration: 
 	# max_h_transfer=4
 	# num_isotopes=1
 	# tolerance=1e-3
@@ -188,12 +188,6 @@ if __name__ == "__main__":
 		help="Maximum number of isotopic trace peaks to consider"
 	)
 	parser.add_argument(
-		"--fit_model",
-		type=booltype,
-		default=True,
-		help="Whether to fit the model parameters, or just run the forward pass"
-	)
-	parser.add_argument(
 		"--undirected_dag",
 		type=booltype,
 		default=False,
@@ -207,41 +201,18 @@ if __name__ == "__main__":
 	th.manual_seed(420)
 
 	IDX_TO_SMILES = {
-		# compounds without spectra
-		0: "CCO", # ethanol
-		1: "c1ccccc1", # benzene
-		2: "CC(=O)OC1=CC=CC=C1C(=O)O", # aspirin
-		3: "CC12CCC3C(C1CCC2O)CCC4=CC(=O)CCC34C", # testosterone
-		4: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC(=O)O", # geddic acid
-		5: "CSCCC(C(=O)O)N", # methionine, S=2
-		6: "C1=CC(=CC=C1N)S(=O)(=O)N", # sulfanilamide, S=6
-		7: "COP(C1=CC=CC=C1)C2=CC=CC=C2", # methoxydiphenylphosphine, P=3
-		8: "CC1C(O1)P(=O)(O)O", # phosphomycin, P=5
-		9: 'CC(=O)NC1C(OC2CCC3(C)C(CCC4(C)C3CC=C3C5CC(C)(C)CCC5(C(=O)O)CCC34C)C2(C)C)OC(CO)C(O)C1O', # big one (47 atoms)
-		10: 'CC(=O)NC1C(OC2OC(CC(O)C3OC(n4ccc(=O)[nH]c4=O)C(O)C3O)C(O)C(O)C2NC(=O)C=CCCCCCCCCCCCC(C)C)OC(CO)C(O)C1O', # big one (60 atoms)
 		# compounds with spectra
-		11: "C1=CC=C(C=C1)C2=CSC(=N2)NC(=O)C3=CC=NC=C3",
-		12: "CCCCCCCCC=CCCCCCCCC(=O)NCC",
-		13: "CC1=C(N=C(N=C1OC(=O)N(C)C)NC)C",
+		0: "C1=CC=C(C=C1)C2=CSC(=N2)NC(=O)C3=CC=NC=C3",
+		1: "CCCCCCCCC=CCCCCCCCC(=O)NCC",
+		2: "CC1=C(N=C(N=C1OC(=O)N(C)C)NC)C",
 	}
 
 	# just hard-coding some examples
-	# 11: mol_id=22041, smiles=O=C(Nc1nc(-c2ccccc2)cs1)c1ccncc1, wrecall=0.9814, depth=3
-	# 12: mol_id=7602, smiles=CCCCCCCCC=CCCCCCCCC(=O)NCC, wrecall=0.9947, depth=3
-	# 13: mol_id=11009, smiles=CNc1nc(C)c(C)c(OC(=O)N(C)C)n1, wrecall=0.9614, depth=3
+	# 0: mol_id=22041, smiles=O=C(Nc1nc(-c2ccccc2)cs1)c1ccncc1, wrecall=0.9814, depth=3
+	# 1: mol_id=7602, smiles=CCCCCCCCC=CCCCCCCCC(=O)NCC, wrecall=0.9947, depth=3
+	# 2: mol_id=11009, smiles=CNc1nc(C)c(C)c(OC(=O)N(C)C)n1, wrecall=0.9614, depth=3
 	IDX_TO_SPEC = {
-		0: None,
-		1: None,
-		2: None,
-		3: None,
-		4: None,
-		5: None,
-		6: None,
-		7: None,
-		8: None,
-		9: None,
-		10: None,
-		11: [
+		0: [
 			(50.0149, 41.36), (50.015, 11.19), (51.0227, 300.4), (51.0228, 9.19), (51.0229, 2.7), 
 			(52.018, 24.37), (52.0295, 3.1), (52.0305, 270.12), (52.0306, 15.38), (52.0307, 5.09),
 			(53.0384, 393.31000000000006), (53.0385, 5.8), (62.0149, 2.3), (63.0227, 33.769999999999996),
@@ -276,7 +247,7 @@ if __name__ == "__main__":
 			(255.0778, 10.899999999999999), (264.0588, 52.040000000000006), (264.0589, 25.27), (282.0515, 2.2), 
 			(282.0591, 2.0), (282.0693, 1969.53), (282.0694, 1383.42), (282.0702, 3.4), (283.0728, 36.36), (283.0729, 19.38)
 		],
-		12: [
+		1: [
 			(53.0387, 89.22), (55.0179, 9.29), (55.018, 209.7), (55.0181, 242.86), (55.0544, 2353.15), 
 			(55.0545, 999.0), (57.0686, 71.93), (57.0687, 17.88), (57.0698, 753.34), (57.07, 2065.34), 
 			(67.0542, 361.94), (67.0543, 225.78), (69.0697, 2188.21), (69.0699, 199.7), (71.0854, 900.4), 
@@ -299,7 +270,7 @@ if __name__ == "__main__":
 			(254.2481, 30.37), (254.2483, 19.08), (254.2484, 22.68), (265.253, 10.69), (265.2531, 7.19), 
 			(268.2635, 18.68), (268.2637, 8.09), (268.2641, 6.49), (310.3106, 579.52), (310.3107, 1998.0)
 		],
-		13: [
+		2: [
 			(52.0181, 2.2), (53.0259, 2.0), (53.0385, 16.689999999999998), (53.0386, 26.07), 
 			(54.0337, 11.59), (54.0338, 31.97), (55.0289, 1.2), (55.029, 16.29), (55.0541, 2.2), 
 			(55.0542, 9.3), (56.0117, 4.0), (56.0118, 9.59), (56.0129, 421.28), (56.013, 6.1), 
@@ -526,7 +497,7 @@ if __name__ == "__main__":
 		metrics["topk_frac"].append(topk_frac.item())
 		metrics["cosine_similarity"].append(cosine_similarity.item())
 		# save best model
-		if args.fit_model and loss.item() < best_d.get("cross_entropy_loss",np.inf):
+		if loss.item() < best_d.get("cross_entropy_loss",np.inf):
 			best_d["iter"] = i
 			best_d["params"] = deepcopy(joint_model.state_dict())
 			best_d["cross_entropy_loss"] = loss.item()
@@ -542,57 +513,54 @@ if __name__ == "__main__":
 			best_d["true_batch_idxs"] = true_batch_idxs.detach().clone()
 		# backprop
 		loss.backward()
-		if args.fit_model:
-			# update parameters
-			optim.step()
+		# update parameters
+		optim.step()
 		# zero out gradients
 		optim.zero_grad()
 	
-	if args.fit_model:
-		## plot spectrum ##
-		pred_mzs = best_d["pred_mzs"]
-		pred_logits = best_d["pred_logits"]
-		pred_batch_idxs = best_d["pred_batch_idxs"]
-		true_mzs = best_d["true_mzs"]
-		true_logits = best_d["true_logits"]
-		true_batch_idxs = best_d["true_batch_idxs"]
-		best_iter = best_d["iter"]
-		loss = best_d["cross_entropy_loss"]
-		recall = best_d["recall"]
-		weighted_recall = best_d["weighted_recall"]
-		b_true_mask = true_batch_idxs==0
-		b_true_mzs = true_mzs[b_true_mask]
-		b_true_ints = th.exp(true_logits[b_true_mask]) / th.exp(th.logsumexp(true_logits[b_true_mask],0))
-		b_pred_mask = pred_batch_idxs==0
-		b_pred_mzs = pred_mzs[b_pred_mask]
-		b_pred_ints = th.exp(pred_logits[b_pred_mask]) / th.exp(th.logsumexp(pred_logits[b_pred_mask],0))
-		print("> prec_mz",prec_mz)
-		print("> prec_mz in true_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_true_mzs.device),b_true_mzs,use_ppm=True)))
-		print("> prec_mz in pred_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_pred_mzs.device),b_pred_mzs,use_ppm=True)))
-		plot_spectra_sparse(
-			b_true_mzs.cpu().numpy(),
-			b_true_ints.cpu().numpy(),
-			b_pred_mzs.cpu().numpy(),
-			b_pred_ints.cpu().numpy(),
-			prec_mz,
-			smiles,
-			f"figs/fit_model_{compound_idx}_spectra.png",
-			custom_title=f"iter = {best_iter}, loss = {loss:.5f}, recall = {recall:.3f}, w_recall = {weighted_recall:.3f}"
-		)
-		## plot spectrum ##
+	# plot spectrum
+	pred_mzs = best_d["pred_mzs"]
+	pred_logits = best_d["pred_logits"]
+	pred_batch_idxs = best_d["pred_batch_idxs"]
+	true_mzs = best_d["true_mzs"]
+	true_logits = best_d["true_logits"]
+	true_batch_idxs = best_d["true_batch_idxs"]
+	best_iter = best_d["iter"]
+	loss = best_d["cross_entropy_loss"]
+	recall = best_d["recall"]
+	weighted_recall = best_d["weighted_recall"]
+	b_true_mask = true_batch_idxs==0
+	b_true_mzs = true_mzs[b_true_mask]
+	b_true_ints = th.exp(true_logits[b_true_mask]) / th.exp(th.logsumexp(true_logits[b_true_mask],0))
+	b_pred_mask = pred_batch_idxs==0
+	b_pred_mzs = pred_mzs[b_pred_mask]
+	b_pred_ints = th.exp(pred_logits[b_pred_mask]) / th.exp(th.logsumexp(pred_logits[b_pred_mask],0))
+	print("> prec_mz",prec_mz)
+	print("> prec_mz in true_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_true_mzs.device),b_true_mzs,use_ppm=True)))
+	print("> prec_mz in pred_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_pred_mzs.device),b_pred_mzs,use_ppm=True)))
+	plot_spectra_sparse(
+		b_true_mzs.cpu().numpy(),
+		b_true_ints.cpu().numpy(),
+		b_pred_mzs.cpu().numpy(),
+		b_pred_ints.cpu().numpy(),
+		prec_mz,
+		smiles,
+		f"figs/fit_model_{compound_idx}_spectra.png",
+		custom_title=f"iter = {best_iter}, loss = {loss:.5f}, recall = {recall:.3f}, w_recall = {weighted_recall:.3f}"
+	)
 
-		# plot training metrics
-		plot_dual_axis(
-			metrics["step"],
-			{
-				"ce_loss": metrics["cross_entropy_loss"]
-			},
-			{
-				"topk_wrecall": metrics["topk_weighted_recall"],
-				"cos_sim": metrics["cosine_similarity"]
-			},
-			f"figs/fit_model_{compound_idx}_curves.png"
-		)
+	# plot training metrics
+	plot_dual_axis(
+		metrics["step"],
+		{
+			"ce_loss": metrics["cross_entropy_loss"]
+		},
+		{
+			"topk_wrecall": metrics["topk_weighted_recall"],
+			"cos_sim": metrics["cosine_similarity"]
+		},
+		f"figs/fit_model_{compound_idx}_curves.png"
+	)
 
 	# get memory usage
 	if args.device_id != -1 and th.cuda.is_available():
