@@ -58,11 +58,12 @@ def bin_func(mzs,ints,mz_max,mz_bin_res,ints_thresh,return_index,sum_ints):
 			bin_spec[-1] = 1.
 		return bin_spec
 
-def merge_sparse_specs(*peakses):
+def merge_sparse_specs(*peakses,renormalize=False):
 	"""
 	this will result in peaks that are really close in mass (<5ppm)
 	they are probably the same peak, but our model can handle this type of ambiguity
 	for now, let's keep them unmerged
+	TODO: this will result in inconsistent comparison with ICEBERG/SCARF
 	"""
 
 	merged_peaks = {}
@@ -75,6 +76,9 @@ def merge_sparse_specs(*peakses):
 			else:
 				merged_peaks[mz] = intensity
 	merged_peaks = sorted(list(merged_peaks.items()), key=lambda x: x[0])
+	if renormalize:
+		total_intensity = sum([intensity for mz, intensity in merged_peaks])
+		merged_peaks = [(mz, intensity/total_intensity) for mz, intensity in merged_peaks]
 	return merged_peaks
 
 

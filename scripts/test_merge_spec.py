@@ -19,6 +19,6 @@ if __name__ == "__main__":
     spec_subset = hcd_df[hcd_df["mol_id"]==args.mol_id]
     print(spec_subset)
     peaks = spec_subset["peaks"].tolist()
-    merged_peaks = merge_sparse_specs(*peaks)
+    merged_peaks = merge_sparse_specs(*peaks,renormalize=False)
 
     print(merged_peaks)
