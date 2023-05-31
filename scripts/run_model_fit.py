@@ -11,43 +11,18 @@ from copy import deepcopy
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed, get_pyg_memory_usage
-from frag_gnn.feat_utils import MolGraph, BatchedMolDAG
+from frag_gnn.feat_utils import get_mol_graph, get_frag_graph, batch_mols_frags
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
-from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, calculate_match_mzs, calculate_cosine_similarity
+from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, \
+	calculate_match_mzs, calculate_cosine_similarity, batch_func
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PERIODIC_TABLE, parse_formula
 from frag_gnn.utils.data_utils import mol_from_smiles, mol_to_formula
 from frag_gnn.utils.plot_utils import plot_dual_axis, plot_spectra_sparse
 
-def featurize_dag(dag_pyg,undirected):
+# print(f"> frag memory usage = {get_pyg_memory_usage(frag_pyg)/1e6:.3f} MB")
 
-	# convert data to the right data types
-	# TODO: put this conversion in the model, to reduce memory?
-	dag_pyg = deepcopy(dag_pyg)
-	dag_pyg.x = dag_pyg.x.long()
-	dag_pyg.edge_attr = dag_pyg.edge_attr.long()
-	dag_pyg.edge_index = dag_pyg.edge_index.long()
-	dag_pyg.node_feat_idxs = dag_pyg.node_feat_idxs.long()
-	dag_pyg.edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
-	if undirected:
-		# convert to undirected
-		dag_pyg.edge_index, dag_pyg.edge_attr = pyg.utils.to_undirected(
-			dag_pyg.edge_index, 
-			dag_pyg.edge_attr, 
-			dag_pyg.num_nodes,
-			reduce="mean"
-		)
-	print(dag_pyg)
-	print(f"> dag memory usage = {get_pyg_memory_usage(dag_pyg)/1e6:.3f} MB")
-	return dag_pyg
-
-def featurize_mol(mol):
-
-	mg = MolGraph(pe_embed_k=0)
-	mol_pyg = mg.get_pyg_graph(mol,bigraph=True)
-	print(mol_pyg)
-	print(f"> mol memory usage = {get_pyg_memory_usage(mol_pyg)/1e6:.3f} MB")
-	return mol_pyg
+# print(f"> mol memory usage = {get_pyg_memory_usage(mol_pyg)/1e6:.3f} MB")
 
 def torch_time(func):
 	def _time_func(*args,**kwargs):
@@ -98,8 +73,8 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--compound_idx",
 		type=int,
-		default=11,
-		help="Index of compound to run (only 11-13 have real spectra)"
+		default=0,
+		help="Index of compound to run"
 	)
 	parser.add_argument(
 		"--max_depth",
@@ -320,30 +295,36 @@ if __name__ == "__main__":
 
 	# prepare data
 	batch_size = args.batch_size
-	dag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
-	dag_pyg = featurize_dag(dag_d["dag"],undirected_dag)
-	mol_pyg = featurize_mol(mol_d["mol"])
-	mol_pyg = mol_pyg.to(device)
+	atom_feats = [
+		"a_onehot",
+		"a_degree",
+		"a_hybrid",
+		"a_formal",
+		"a_radical",
+		"a_ring",
+		"a_mass",
+		"a_chiral",
+	]
+	bond_feats = ["b_degree"]
+	pe_embed_k = 0
+	bigraph = True
+	mol_pyg = get_mol_graph(mol_d["mol"],atom_feats,bond_feats,pe_embed_k,bigraph)
+	frag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
+	frag_pyg = get_frag_graph(frag_d["dag"],undirected_dag)
+	# batch mol/dag stuff
 	mol_pygs = [deepcopy(mol_pyg) for i in range(batch_size)]
-	dag_pygs = [deepcopy(dag_pyg) for i in range(batch_size)]
+	frag_pygs = [deepcopy(frag_pyg) for i in range(batch_size)]
 	mass_diff = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
-	formula_peak_mzses = [dag_d["formula_peak_mzs"][:,:args.num_isotopes].detach().clone()+mass_diff for i in range(batch_size)]
-	formula_peak_probses = [dag_d["formula_peak_probs"][:,:args.num_isotopes].detach().clone() for i in range(batch_size)]
+	formula_mzses = [frag_d["formula_mzs"][:,:args.num_isotopes].detach().clone()+mass_diff for i in range(batch_size)]
+	formula_probses = [frag_d["formula_probs"][:,:args.num_isotopes].detach().clone() for i in range(batch_size)]
+	batched_frag_d = batch_mols_frags(mol_pygs,frag_pygs,formula_mzses,formula_probses)
+	for k in batched_frag_d.keys():
+		batched_frag_d[k] = batched_frag_d[k].to(device)
+	# batch spectrum stuff
 	spec_mzs = [mzs.detach().clone() for i in range(batch_size)]
 	spec_ints = [ints.detach().clone() for i in range(batch_size)]
-	batched_dag = BatchedMolDAG(
-		mol_pygs,
-		dag_pygs,
-		formula_peak_mzses,
-		formula_peak_probses,
-		spec_mzs=spec_mzs,
-		spec_ints=spec_ints,
-		device=th.device("cpu"),
-	)
-	batched_dag = batched_dag.to(device)
-	print(batched_dag)
-	# print(batched_dag.get_batched_mask("formula_peak_mzs"))
-	batched_dag_d = batched_dag.__dict__()
+	spec_mzs, spec_ints, spec_batch_idxs = batch_func(spec_mzs,spec_ints)
+	spec_mzs, spec_ints, spec_batch_idxs = spec_mzs.to(device), spec_ints.to(device), spec_batch_idxs.to(device)
 
 	# prepare_model
 	mol_kwargs = {
@@ -352,7 +333,7 @@ if __name__ == "__main__":
 		"gnn_edge_feats": mol_pyg.edge_attr.shape[1],
 		"mpnn_type": "GINE"
 	}
-	dag_kwargs = {
+	frag_kwargs = {
 		"hidden_size": hidden_size,
 		"mpnn_type": "GINE"
 		# node/edge feats are inferred
@@ -364,8 +345,8 @@ if __name__ == "__main__":
 		"use_residuals": True
 		# input/output sizes inferred
 	}
-	num_depth = dag_d["max_depth"]+1 # +1 for the root/precursor node
-	num_hs = dag_d["max_h_transfer"]
+	num_depth = frag_d["max_depth"]+1 # +1 for the root/precursor node
+	num_hs = frag_d["max_h_transfer"]
 	num_elements = frag_utils.NUM_ELEMENTS
 	int_embedder = "abs-sines"
 	joint_model = JointPredictor(
@@ -373,7 +354,7 @@ if __name__ == "__main__":
 		num_hs,
 		num_elements,
 		mol_kwargs,
-		dag_kwargs,
+		frag_kwargs,
 		mlp_kwargs,
 		int_embedder
 	)
@@ -415,7 +396,7 @@ if __name__ == "__main__":
 
 	def get_pred_true():
 		pred_mzs, pred_logits, pred_batch_idxs = joint_model_forward(
-			**deepcopy(batched_dag_d)
+			**deepcopy(batched_frag_d)
 		)
 		if args.random_targ or spec is None:
 			with th_temp_seed(420):
@@ -431,9 +412,9 @@ if __name__ == "__main__":
 					dim=0
 				)
 		else:
-			true_mzs = batched_dag_d["spec_mzs"]
-			true_logits = th.log(batched_dag_d["spec_ints"])
-			true_batch_idxs = batched_dag_d["spec_idxs"]
+			true_mzs = batched_frag_d["spec_mzs"]
+			true_logits = th.log(batched_frag_d["spec_ints"])
+			true_batch_idxs = batched_frag_d["spec_idxs"]
 		return pred_mzs, pred_logits, pred_batch_idxs, true_mzs, true_logits, true_batch_idxs
 
 	best_d = {}

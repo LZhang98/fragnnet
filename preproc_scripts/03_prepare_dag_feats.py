@@ -16,7 +16,7 @@ from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
 import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.spec_utils import merge_sparse_specs
+from frag_gnn.utils.dataset_utils import merge_spec_df
 
 def element_filter(formula,allowed_elements):
 	element_counts = parse_formula(formula)
@@ -102,16 +102,6 @@ def filter_spec_mol(spec_df,mol_df,allowed_elements,num_entries=-1):
 	# only keep molecules that are in the spectra
 	mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])].reset_index(drop=True)
 	return spec_df, mol_df
-
-def merge_spec_df(spec_df):
-
-	# merge the peaks (they are not normalized here)
-	m_func = lambda peakses: merge_sparse_specs(*peakses,renormalize=False)
-	m_spec_df = spec_df[["group_id","peaks"]].groupby("group_id").agg({"peaks":m_func}).reset_index()
-	# add the metadata back
-	meta_spec_df = spec_df.drop(columns=["peaks","spec_id"]).drop_duplicates(subset=["group_id"])
-	m_spec_df = m_spec_df.merge(meta_spec_df,on=["group_id"],how="inner")
-	return m_spec_df
 
 def print_and_log(name,series,wandb_flag,stats_d):
 
@@ -223,7 +213,7 @@ def main(args):
 		return dag_d
 
 
-	def compute_spectra_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,
+	def compute_spectra_stats(peaks,formula_mzs,formula_probs,idx_by_h_delta,
 			   tolerances:list, max_h_transfer:int):
 		"""_summary_
 
@@ -247,10 +237,10 @@ def main(args):
 				]
 
 				if 'ppm' in tolerance:
-					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
+					result = frag_utils.compute_frag_peak_stats(peaks,formula_mzs,formula_probs,idx_by_h_delta,\
 						 h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
 				else:
-					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,h_transfer,\
+					result = frag_utils.compute_frag_peak_stats(peaks,formula_mzs,formula_probs,idx_by_h_delta,h_transfer,\
 						 tolerance=float(tolerance),prec_type="[M+H]+")
 				cols += keys
 				reuslts.append(result)
@@ -273,8 +263,8 @@ def main(args):
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
 	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
 	#frag_stats_df["dag"] = list(map(lambda x: x.pop("dag",np.nan),frag_results))
-	frag_stats_df["formula_peak_mzs"] = list(map(lambda x: x.pop("formula_peak_mzs",np.nan),frag_results))
-	frag_stats_df["formula_peak_probs"] = list(map(lambda x: x.pop("formula_peak_probs",np.nan),frag_results))
+	frag_stats_df["formula_mzs"] = list(map(lambda x: x.pop("formula_mzs",np.nan),frag_results))
+	frag_stats_df["formula_probs"] = list(map(lambda x: x.pop("formula_probs",np.nan),frag_results))
 	frag_stats_df["idx_to_formula"] = list(map(lambda x: x.pop("idx_to_formula",np.nan),frag_results))
 	frag_stats_df["dag_num_edges"] = list(map(lambda x: x.pop("dag_num_edges",np.nan),frag_results))
 	frag_stats_df["dag_num_nodes"] = list(map(lambda x: x.pop("dag_num_nodes",np.nan),frag_results))
@@ -364,8 +354,8 @@ def main(args):
 			spectra_input_rows.append(
 				[
 					row['peaks'], 
-					row["formula_peak_mzs"], 
-					row['formula_peak_probs'], 
+					row["formula_mzs"], 
+					row['formula_probs'], 
 					row['idx_by_h_delta'], 
 					tolerances, 
 					args.max_h_transfer
