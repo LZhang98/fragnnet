@@ -98,8 +98,8 @@ class JointPredictor(nn.Module):
 		mol_num_nodes=None,
 		frag_num_nodes=None,
 		frag_formula_peak_idxs=None,
-		frag_formula_mzs=None,
-		frag_formula_probs=None,
+		frag_formula_peak_mzs=None,
+		frag_formula_peak_probs=None,
 		frag_formula_sizes=None,
 		frag_formula_cumsizes=None,
 		frag_formula_peak_sizes=None,
@@ -183,7 +183,6 @@ class JointPredictor(nn.Module):
 
 		# predict probabilities [N,2*T+1]
 		frag_formula_probs = self.output_module(frag_embed)
-		print(1,frag_formula_probs.shape)
 
 		# aggregate by formula
 		frag_formula_probs = frag_formula_probs.flatten()
@@ -194,8 +193,6 @@ class JointPredictor(nn.Module):
 			src=frag_formula_probs,
 			reduce="sum"
 		)
-		print(2,frag_formula_probs.shape)
-		# print(frag_formula_probs.sum())
 
 		# zero out NULL formula
 		frag_formula_mask = th.ones_like(frag_formula_probs)
@@ -214,13 +211,14 @@ class JointPredictor(nn.Module):
 			dim=0,
 			log=True
 		)
-		print(3,frag_formula_probs.shape)
-		# print(frag_formula_probs.sum())
 
 		# convert to spectrum
-		spec_mzs = frag_formula_mzs
-		import pdb; pdb.set_trace()
-		spec_logprobs = frag_formula_probs[frag_formula_peak_idxs] + th.log(frag_formula_probs)
+		spec_mzs = frag_formula_peak_mzs
+		# print(frag_formula_peak_idxs.shape)
+		# print(frag_formula_probs[frag_formula_peak_idxs].shape)
+		# print(frag_formula_peak_probs.shape)
+		# print(frag_formula_peak_idxs.tolist())
+		spec_logprobs = frag_formula_probs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
 		
 		# check that the total intensity sums up to 1 (approximately)
 		spec_batch_idxs = th.repeat_interleave(

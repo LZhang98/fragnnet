@@ -214,14 +214,14 @@ def SpecMolFragDataset(SpecMolDataset):
             frag_pyg = frag_entry["dag"]
             frag_pyg = get_frag_graph(frag_pyg,self.frag_params["undirected"])
             frag_data["frag_pyg"] = frag
-        if self.frag_params["formula_mzs"]:
-            formula_mzs = frag_entry["formula_mzs"]
-            formula_mzs = formula_mzs[:,:self.frag_params["num_isotopes"]]
-            frag_data["frag_formula_mzs"] = formula_mzs
-        if self.frag_params["formula_probs"]:    
-            formula_probs = frag_entry["formula_probs"]
-            formula_probs = formula_probs[:,:self.frag_params["num_isotopes"]]
-            frag_data["frag_formula_probs"] = formula_probs
+        if self.frag_params["formula_peak_mzs"]:
+            formula_peak_mzs = frag_entry["formula_peak_mzs"]
+            formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]
+            frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
+        if self.frag_params["formula_peak_probs"]:    
+            formula_peak_probs = frag_entry["formula_peak_probs"]
+            formula_peak_probs = formula_peak_probs[:,:self.frag_params["num_isotopes"]]
+            frag_data["frag_formula_peak_probs"] = formula_peak_probs
         return frag_data
 
     @staticmethod
@@ -249,8 +249,8 @@ def SpecMolFragDataset(SpecMolDataset):
             keys.remove(keys.index("spec_mzs"))
         if "frag_dag_pyg" in keys:
             assert "mol_pyg" in keys
-            assert "frag_formula_mzs" in keys
-            assert "frag_formula_probs" in keys
+            assert "frag_formula_peak_mzs" in keys
+            assert "frag_formula_peak_probs" in keys
             # process
             batch_mol_frag_data = batch_mols_frags(collate_data["mol_pyg"],collate_data["frag_dag_pyg"])
             for k,v in batch_mol_dag_data.items():
@@ -258,8 +258,8 @@ def SpecMolFragDataset(SpecMolDataset):
             # remove from list
             keys.remove(keys.index("frag_dag_pyg"))
             keys.remove(keys.index("mol_pyg"))
-            keys.remove(keys.index("frag_formula_mzs"))
-            keys.remove(keys.index("frag_formula_probs"))
+            keys.remove(keys.index("frag_formula_peak_mzs"))
+            keys.remove(keys.index("frag_formula_peak_probs"))
         # this only runs if "frag_dag_pyg" is not in keys
         if "mol_pyg" in keys:
             # batch

@@ -596,7 +596,7 @@ def formula_arr_to_str(formula_arr, get_h_template = False):
 		return formula_str, formula_str_no_h
 
 
-def compute_frag_peak_stats(peaks,formula_mzs,formula_probs,idx_by_h_delta,\
+def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
 							 allowed_h_transfer, tolerance=0.01, prec_type="[M+H]+", 
 				is_ppm = False):
 	"""_summary_
@@ -611,8 +611,8 @@ def compute_frag_peak_stats(peaks,formula_mzs,formula_probs,idx_by_h_delta,\
 	"""
 	ppm = 1/1000000
 	true_mzs, true_ints = list(zip(*peaks))
-	theoretical_mzs = formula_mzs
-	theoretica_probs = formula_probs
+	theoretical_mzs = formula_peak_mzs
+	theoretica_probs = formula_peak_probs
 
 	allowed_idx = list(idx_by_h_delta[0])
 	for h in range(1, allowed_h_transfer):
@@ -772,8 +772,8 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	pyg_node_feats = th.tensor(pyg_node_feats,dtype=NODE_FEAT_DTYPE)
 
 	# peak mzs array
-	formula_mzs = []
-	formula_probs = []
+	formula_peak_mzs = []
+	formula_peak_probs = []
 	peaks_for_element_cache = {}
 	for formula, idx in formula_to_idx.items():
 		if formula == "":
@@ -786,12 +786,12 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 			peak_mzs = np.pad(peak_mzs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_mzs)),"constant",constant_values=0)
 			peak_probs = np.array(peak_probs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
 			peak_probs = np.pad(peak_probs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_probs)),"constant",constant_values=0)
-		formula_mzs.append(peak_mzs)
-		formula_probs.append(peak_probs)
+		formula_peak_mzs.append(peak_mzs)
+		formula_peak_probs.append(peak_probs)
 
 	# save as bf16 or float32 for speed and lower ram usage
-	formula_mzs = th.as_tensor(np.stack(formula_mzs,axis=0), dtype = META_DATA_DTYPE)
-	formula_probs = th.as_tensor(np.stack(formula_probs,axis=0), dtype = META_DATA_DTYPE)
+	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = META_DATA_DTYPE)
+	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = META_DATA_DTYPE)
 
 	# add edges info
 	#pyg_edge_index = [[],[]]
@@ -831,8 +831,8 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	dag_d["reached_depth"] = reached_depth
 	dag_d["h_prior"] = h_prior
 	dag_d["max_h_transfer"] = max_h_transfer
-	dag_d["formula_mzs"] = formula_mzs
-	dag_d["formula_probs"] = formula_probs
+	dag_d["formula_peak_mzs"] = formula_peak_mzs
+	dag_d["formula_peak_probs"] = formula_peak_probs
 	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
 	dag_d["idx_by_h_delta"] = forumla_idx_by_h_delta # forumla idx for each h_delta
 	dag_d["dag"] = pyg_cc_g

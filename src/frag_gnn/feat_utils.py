@@ -392,7 +392,7 @@ def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
 
 	return list(map(lambda s: int(x == s), allowable_set))
 
-def batch_mols_frags(mol_pyg_list,frag_pyg_list,formula_mzs_list,formula_probs_list):
+def batch_mols_frags(mol_pyg_list,frag_pyg_list,formula_peak_mzs_list,formula_peak_probs_list):
 
 	batch_size = len(mol_pyg_list)
 	mol_pyg = pyg.data.Batch.from_data_list(mol_pyg_list)
@@ -405,35 +405,34 @@ def batch_mols_frags(mol_pyg_list,frag_pyg_list,formula_mzs_list,formula_probs_l
 	mol_num_nodes = th.cumsum(th.tensor([0]+mol_num_nodes),dim=0)
 	frag_num_nodes = th.cumsum(th.tensor([0]+frag_num_nodes),dim=0)
 	frag_formula_peak_idxs = []
-	frag_formula_mzs = []
-	frag_formula_probs = []
+	frag_formula_peak_mzs = []
+	frag_formula_peak_probs = []
 	frag_formula_sizes = []
 	frag_formula_peak_sizes = []
-	for mzs, probs in zip(formula_mzs_list,formula_probs_list):
+	for mzs, probs in zip(formula_peak_mzs_list,formula_peak_probs_list):
 		# sparsify
 		idx = th.nonzero(probs)
 		mzs = mzs[idx[:,0],idx[:,1]]
 		probs = probs[idx[:,0],idx[:,1]]
 		frag_formula_peak_idxs.append(idx[:,0])
-		frag_formula_mzs.append(mzs)
-		frag_formula_probs.append(probs)
+		frag_formula_peak_mzs.append(mzs)
+		frag_formula_peak_probs.append(probs)
 		frag_formula_sizes.append(th.unique(idx,sorted=True).shape[0])
 		frag_formula_peak_sizes.append(idx.shape[0])
 	frag_formula_peak_idxs = th.cat(frag_formula_peak_idxs,dim=0)
-	frag_formula_mzs = th.cat(frag_formula_mzs,dim=0)
-	frag_formula_probs = th.cat(frag_formula_probs,dim=0)
+	frag_formula_peak_mzs = th.cat(frag_formula_peak_mzs,dim=0)
+	frag_formula_peak_probs = th.cat(frag_formula_peak_probs,dim=0)
 	frag_formula_cumsizes = th.cumsum(th.tensor([0]+frag_formula_sizes),dim=0)
 	frag_formula_sizes = th.tensor(frag_formula_sizes)
 	frag_formula_peak_sizes = th.tensor(frag_formula_peak_sizes)	
-	import pdb; pdb.set_trace()
 	batched_mol_frag = {
 		"mol_pyg": mol_pyg,
 		"frag_pyg": frag_pyg,
 		"mol_num_nodes": mol_num_nodes,
 		"frag_num_nodes": frag_num_nodes,
 		"frag_formula_peak_idxs": frag_formula_peak_idxs,
-		"frag_formula_mzs": frag_formula_mzs,
-		"frag_formula_probs": frag_formula_probs,
+		"frag_formula_peak_mzs": frag_formula_peak_mzs,
+		"frag_formula_peak_probs": frag_formula_peak_probs,
 		"frag_formula_sizes": frag_formula_sizes,
 		"frag_formula_cumsizes": frag_formula_cumsizes,
 		"frag_formula_peak_sizes": frag_formula_peak_sizes,

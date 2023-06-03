@@ -246,7 +246,6 @@ def calculate_cosine_similarity(
 			true_ints,
 			mz_max,
 			mz_bin_res,
-			ints_thresh,
 			False,
 			sum_ints
 		)
@@ -257,7 +256,6 @@ def calculate_cosine_similarity(
 			pred_ints,
 			mz_max,
 			mz_bin_res,
-			ints_thresh,
 			False,
 			sum_ints
 		)

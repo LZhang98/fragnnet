@@ -315,8 +315,8 @@ if __name__ == "__main__":
 	mol_pygs = [deepcopy(mol_pyg) for i in range(batch_size)]
 	frag_pygs = [deepcopy(frag_pyg) for i in range(batch_size)]
 	mass_diff = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
-	formula_mzses = [frag_d["formula_mzs"][:,:args.num_isotopes].detach().clone()+mass_diff for i in range(batch_size)]
-	formula_probses = [frag_d["formula_probs"][:,:args.num_isotopes].detach().clone() for i in range(batch_size)]
+	formula_mzses = [frag_d["formula_peak_mzs"][:,:args.num_isotopes].detach().clone()+mass_diff for i in range(batch_size)]
+	formula_probses = [frag_d["formula_peak_probs"][:,:args.num_isotopes].detach().clone() for i in range(batch_size)]
 	batched_frag_d = batch_mols_frags(mol_pygs,frag_pygs,formula_mzses,formula_probses)
 	for k in batched_frag_d.keys():
 		batched_frag_d[k] = batched_frag_d[k].to(device)
@@ -325,6 +325,9 @@ if __name__ == "__main__":
 	spec_ints = [ints.detach().clone() for i in range(batch_size)]
 	spec_mzs, spec_ints, spec_batch_idxs = batch_func(spec_mzs,spec_ints)
 	spec_mzs, spec_ints, spec_batch_idxs = spec_mzs.to(device), spec_ints.to(device), spec_batch_idxs.to(device)
+	batched_frag_d["spec_mzs"] = spec_mzs
+	batched_frag_d["spec_ints"] = spec_ints
+	batched_frag_d["spec_idxs"] = spec_batch_idxs
 
 	# prepare_model
 	mol_kwargs = {
