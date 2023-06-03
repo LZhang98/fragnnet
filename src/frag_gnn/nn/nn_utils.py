@@ -214,10 +214,6 @@ class JointPredictor(nn.Module):
 
 		# convert to spectrum
 		spec_mzs = frag_formula_peak_mzs
-		# print(frag_formula_peak_idxs.shape)
-		# print(frag_formula_probs[frag_formula_peak_idxs].shape)
-		# print(frag_formula_peak_probs.shape)
-		# print(frag_formula_peak_idxs.tolist())
 		spec_logprobs = frag_formula_probs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
 		
 		# check that the total intensity sums up to 1 (approximately)
