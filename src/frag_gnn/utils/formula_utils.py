@@ -210,7 +210,7 @@ def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.0
 		threshold (float, optional): _description_. Defaults to 0.001.
 
 	Returns:
-		Tuple[List[float],List[float]: ([mass,mass,mass,mass],[prob,prob,prob,prb])
+		Tuple[List[float],List[float]]: ([mass,mass,mass,mass],[prob,prob,prob,prob])
 	"""
 	if peaks_for_element_cache is None:
 		peaks_for_element_cache = {}

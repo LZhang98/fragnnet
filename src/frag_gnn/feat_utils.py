@@ -1,4 +1,4 @@
-""" mol_graph.py (from SCARF)
+""" mol_graph.py (adapted from SCARF)
 
 Classes to featurize molecules into a graph with onehot concat feats on atoms
 and bonds. Inspired by the dgllife library.
@@ -9,7 +9,9 @@ import numpy as np
 import torch as th
 import networkx as nx
 import torch_geometric as pyg
+from copy import deepcopy
 
+from frag_gnn.frag.frag_utils import CANONICAL_ELEMENT_ORDER
 
 atom_feat_registry = {}
 bond_feat_registry = {}
@@ -173,12 +175,11 @@ class MolGraph:
 		)
 
 		if self.pe_embed_k > 0:
-			raise NotImplementedError()
-			# pe_embeds = nn_utils.random_walk_pe(
-			# 	g,
-			# 	k=self.pe_embed_k,
-			# )
-			# x = th.cat((x, pe_embeds), dim=-1)
+			pe_embeds = nn_utils.random_walk_pe(
+				g,
+				k=self.pe_embed_k,
+			)
+			x = th.cat((x, pe_embeds), dim=-1)
 		
 		return g		
 
@@ -200,51 +201,7 @@ class FeatBase:
 @register_atom_feat
 class AtomOneHot(FeatBase):
 	name = "a_onehot"
-	allowable_set = [
-		"C",
-		"N",
-		"O",
-		"S",
-		"F",
-		"Si",
-		"P",
-		"Cl",
-		"Br",
-		"Mg",
-		"Na",
-		"Ca",
-		"Fe",
-		"As",
-		"Al",
-		"I",
-		"B",
-		"V",
-		"K",
-		"Tl",
-		"Yb",
-		"Sb",
-		"Sn",
-		"Ag",
-		"Pd",
-		"Co",
-		"Se",
-		"Ti",
-		"Zn",
-		"H",
-		"Li",
-		"Ge",
-		"Cu",
-		"Au",
-		"Ni",
-		"Cd",
-		"In",
-		"Mn",
-		"Zr",
-		"Cr",
-		"Pt",
-		"Hg",
-		"Pb",
-	]
+	allowable_set = CANONICAL_ELEMENT_ORDER
 	feat_size = len(allowable_set) + 1
 
 	@classmethod
@@ -435,136 +392,98 @@ def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
 
 	return list(map(lambda s: int(x == s), allowable_set))
 
+def batch_mols_frags(mol_pyg_list,frag_pyg_list,formula_peak_mzs_list,formula_peak_probs_list):
 
-class BatchedMolDAG:
+	batch_size = len(mol_pyg_list)
+	mol_pyg = pyg.data.Batch.from_data_list(mol_pyg_list)
+	frag_pyg = pyg.data.Batch.from_data_list(frag_pyg_list)
+	assert mol_pyg.num_graphs == frag_pyg.num_graphs == batch_size
+	assert all(th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i]) for i in range(batch_size))
+	assert all(th.all(frag_pyg.edge_feat_idxs[0] == frag_pyg.edge_feat_idxs[i]) for i in range(batch_size))
+	mol_num_nodes = [g.num_nodes for g in mol_pyg_list]
+	frag_num_nodes = [g.num_nodes for g in frag_pyg_list]
+	mol_num_nodes = th.cumsum(th.tensor([0]+mol_num_nodes),dim=0)
+	frag_num_nodes = th.cumsum(th.tensor([0]+frag_num_nodes),dim=0)
+	frag_formula_peak_idxs = []
+	frag_formula_peak_mzs = []
+	frag_formula_peak_probs = []
+	frag_formula_sizes = []
+	frag_formula_peak_sizes = []
+	for mzs, probs in zip(formula_peak_mzs_list,formula_peak_probs_list):
+		# sparsify
+		idx = th.nonzero(probs)
+		mzs = mzs[idx[:,0],idx[:,1]]
+		probs = probs[idx[:,0],idx[:,1]]
+		frag_formula_peak_idxs.append(idx[:,0])
+		frag_formula_peak_mzs.append(mzs)
+		frag_formula_peak_probs.append(probs)
+		frag_formula_sizes.append(th.unique(idx,sorted=True).shape[0])
+		frag_formula_peak_sizes.append(idx.shape[0])
+	frag_formula_peak_idxs = th.cat(frag_formula_peak_idxs,dim=0)
+	frag_formula_peak_mzs = th.cat(frag_formula_peak_mzs,dim=0)
+	frag_formula_peak_probs = th.cat(frag_formula_peak_probs,dim=0)
+	frag_formula_cumsizes = th.cumsum(th.tensor([0]+frag_formula_sizes),dim=0)
+	frag_formula_sizes = th.tensor(frag_formula_sizes)
+	frag_formula_peak_sizes = th.tensor(frag_formula_peak_sizes)	
+	batched_mol_frag = {
+		"mol_pyg": mol_pyg,
+		"frag_pyg": frag_pyg,
+		"mol_num_nodes": mol_num_nodes,
+		"frag_num_nodes": frag_num_nodes,
+		"frag_formula_peak_idxs": frag_formula_peak_idxs,
+		"frag_formula_peak_mzs": frag_formula_peak_mzs,
+		"frag_formula_peak_probs": frag_formula_peak_probs,
+		"frag_formula_sizes": frag_formula_sizes,
+		"frag_formula_cumsizes": frag_formula_cumsizes,
+		"frag_formula_peak_sizes": frag_formula_peak_sizes,
+	}
+	return batched_mol_frag
 
-	def __init__(
-		self,
-		mol_pyg_list,
-		dag_pyg_list,
-		formula_peak_mzs,
-		formula_peak_probs,
-		spec_mzs=None,
-		spec_ints=None,
-		device=None
-	):
+# TODO: make this object oriented?
+def get_fp(mol,morgan,rdkit,maccs):
 
-		assert len(mol_pyg_list) == len(dag_pyg_list), (len(mol_pyg_list),len(dag_pyg_list))
-		self.batch_size = len(mol_pyg_list)
-		if device is not None:
-			self._set_device(device)
-		else:
-			self._set_device("cpu")
-		self.batch_size = th.tensor(self.batch_size,device=self.device)
-		self.mol_pyg = pyg.data.Batch.from_data_list(mol_pyg_list).to(self.device)
-		self.dag_pyg = pyg.data.Batch.from_data_list(dag_pyg_list).to(self.device)
-		assert self.mol_pyg.num_graphs == self.dag_pyg.num_graphs == self.batch_size
-		assert all(th.all(self.dag_pyg.node_feat_idxs[0] == self.dag_pyg.node_feat_idxs[i]) for i in range(self.batch_size))
-		assert all(th.all(self.dag_pyg.edge_feat_idxs[0] == self.dag_pyg.edge_feat_idxs[i]) for i in range(self.batch_size))
-		self._compute_batched_node_offsets(mol_pyg_list,dag_pyg_list)
-		dag_formula_peak_idxs = []
-		dag_formula_peak_mzs = []
-		dag_formula_peak_probs = []
-		dag_formula_sizes = []
-		dag_formula_peak_sizes = []
-		for mzs, probs in zip(formula_peak_mzs,formula_peak_probs):
-			# sparsify
-			idx = th.nonzero(probs)
-			mzs = mzs[idx[:,0],idx[:,1]]
-			probs = probs[idx[:,0],idx[:,1]]
-			dag_formula_peak_idxs.append(idx[:,0])
-			dag_formula_peak_mzs.append(mzs)
-			dag_formula_peak_probs.append(probs)
-			dag_formula_sizes.append(th.unique(idx,sorted=True).shape[0])
-			dag_formula_peak_sizes.append(idx.shape[0])
-		self.dag_formula_peak_idxs = th.cat(dag_formula_peak_idxs,dim=0).to(self.device)
-		self.dag_formula_peak_mzs = th.cat(dag_formula_peak_mzs,dim=0).to(self.device)
-		self.dag_formula_peak_probs = th.cat(dag_formula_peak_probs,dim=0).to(self.device)
-		self.dag_formula_sizes = th.tensor(dag_formula_sizes,device=self.device)
-		self.dag_formula_cumsizes = th.cumsum(th.tensor([0]+dag_formula_sizes,device=self.device),dim=0)
-		self.dag_formula_peak_sizes = th.tensor(dag_formula_peak_sizes,device=self.device)
-		self.has_spec = spec_mzs is not None and spec_ints is not None
-		if self.has_spec:
-			self.spec_mzs = []
-			self.spec_ints = []
-			self.spec_idxs = []
-			for idx,(mzs, ints) in enumerate(zip(spec_mzs,spec_ints)):
-				self.spec_mzs.append(mzs)
-				self.spec_ints.append(ints)
-				self.spec_idxs.append(th.full_like(mzs,idx,dtype=th.int64))
-			self.spec_mzs = th.cat(self.spec_mzs,dim=0).to(self.device)
-			self.spec_ints = th.cat(self.spec_ints,dim=0).to(self.device)
-			self.spec_idxs = th.cat(self.spec_idxs,dim=0).to(self.device)
-		else:
-			self.spec_mzs = None
-			self.spec_ints = None
-			self.spec_idxs = None
+	assert morgan or rdkit or maccs
+	fps = []
+	if morgan:
+		fp = make_morgan_fingerprint(mol)
+		fps.append(fp)
+	if rdkit:
+		fp = make_rdkit_fingerprint(mol)
+		fps.append(fp)
+	if maccs:
+		fp = make_maccs_fingerprint(mol)
+		fps.append(fp)
+	fp = th.as_tensor(np.concatenate(fps,axis=0))
+	return fp
 
-	def _compute_batched_node_offsets(self,mol_pyg_list,dag_pyg_list):
+def get_mol_graph(mol,atom_feats,bond_feats,pe_embed_k,bigraph):
 
-		# import pdb; pdb.set_trace()
-		mol_num_nodes = [g.num_nodes for g in mol_pyg_list]
-		dag_num_nodes = [g.num_nodes for g in dag_pyg_list]
-		self.mol_num_nodes = th.cumsum(th.tensor([0]+mol_num_nodes,device=self.device),dim=0)
-		self.dag_num_nodes = th.cumsum(th.tensor([0]+dag_num_nodes,device=self.device),dim=0)
+	mg = MolGraph(
+		atom_feats,
+		bond_feats,
+		pe_embed_k
+	)
+	mol_pyg = mg.get_pyg_graph(mol,bigraph=bigraph)
+	return mol_pyg
 
-	def to(self,device):
+def get_frag_graph(dag_pyg,undirected):
 
-		self._set_device(device)
-		self.batch_size = self.batch_size.to(self.device)
-		self.mol_pyg = self.mol_pyg.to(self.device)
-		self.dag_pyg = self.dag_pyg.to(self.device)
-		self.mol_num_nodes = self.mol_num_nodes.to(self.device)
-		self.dag_num_nodes = self.dag_num_nodes.to(self.device)
-		self.dag_formula_peak_idxs = self.dag_formula_peak_idxs.to(self.device)
-		self.dag_formula_peak_mzs = self.dag_formula_peak_mzs.to(self.device)
-		self.dag_formula_peak_probs = self.dag_formula_peak_probs.to(self.device)
-		self.dag_formula_sizes = self.dag_formula_sizes.to(self.device)
-		self.dag_formula_cumsizes = self.dag_formula_cumsizes.to(self.device)
-		self.dag_formula_peak_sizes = self.dag_formula_peak_sizes.to(self.device)
-		if self.has_spec:
-			self.spec_mzs = self.spec_mzs.to(self.device)
-			self.spec_ints = self.spec_ints.to(self.device)
-			self.spec_idxs = self.spec_idxs.to(self.device)
-		return self
+	dag_pyg = deepcopy(dag_pyg)
+	dag_pyg.x = dag_pyg.x.long()
+	dag_pyg.edge_attr = dag_pyg.edge_attr.long()
+	dag_pyg.edge_index = dag_pyg.edge_index.long()
+	dag_pyg.node_feat_idxs = dag_pyg.node_feat_idxs.long()
+	dag_pyg.edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
+	if undirected:
+		# convert to undirected
+		dag_pyg.edge_index, dag_pyg.edge_attr = pyg.utils.to_undirected(
+			dag_pyg.edge_index, 
+			dag_pyg.edge_attr, 
+			dag_pyg.num_nodes,
+			reduce="mean"
+		)
+	return dag_pyg
 
-	def _set_device(self,device):
-
-		if isinstance(device,str):
-			device = th.device(device)
-		self.device = device
-
-	def __str__(self):
-
-		str_format = f"BatchedMolDAG( batch_size={self.batch_size}, device={self.device} )"
-		return str_format
-
-	def __dict__(self):
-
-		# break down pyg graphs into dict
-		return {
-			"batch_size": self.batch_size,
-			# "device": self.device,
-			"mol_x": self.mol_pyg.x,
-			"mol_edge_index": self.mol_pyg.edge_index,
-			"mol_edge_attr": self.mol_pyg.edge_attr,
-			"dag_x": self.dag_pyg.x,
-			"dag_edge_index": self.dag_pyg.edge_index,
-			"dag_edge_attr": self.dag_pyg.edge_attr,
-			"dag_node_feat_idxs": self.dag_pyg.node_feat_idxs[0],
-			"dag_edge_feat_idxs": self.dag_pyg.edge_feat_idxs[0],
-			"mol_num_nodes": self.mol_num_nodes,
-			"dag_num_nodes": self.dag_num_nodes,
-			"dag_formula_peak_idxs": self.dag_formula_peak_idxs,
-			"dag_formula_peak_mzs": self.dag_formula_peak_mzs,
-			"dag_formula_peak_probs": self.dag_formula_peak_probs,
-			"dag_formula_sizes": self.dag_formula_sizes,
-			"dag_formula_cumsizes": self.dag_formula_cumsizes,
-			"dag_formula_peak_sizes": self.dag_formula_peak_sizes,
-			"spec_mzs": self.spec_mzs,
-			"spec_ints": self.spec_ints,
-			"spec_idxs": self.spec_idxs,
-		}
 
 if __name__ == "__main__":
 

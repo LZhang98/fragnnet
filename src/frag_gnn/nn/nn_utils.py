@@ -6,6 +6,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg
+import scipy
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats
@@ -43,7 +44,6 @@ def build_lr_scheduler(
 class JointPredictor(nn.Module):
 
 	# data: mol dgl, dag dgl, peaks arrays
-	# TODO: add reverse edges?
 	# TODO: allow for more sophisticated formula embeddings
 
 	def __init__(
@@ -52,7 +52,7 @@ class JointPredictor(nn.Module):
 		num_hs,
 		num_elements,
 		mol_kwargs,
-		dag_kwargs,
+		frag_kwargs,
 		mlp_kwargs,
 		int_embedder
 	):
@@ -65,20 +65,20 @@ class JointPredictor(nn.Module):
 		self.formula_embedder = get_embedder(int_embedder)
 		self.depth_embedder = get_embedder(int_embedder)
 		# molecule, formula, depth
-		self.dag_node_feats = self.mol_embedder.hidden_size \
+		self.frag_node_feats = self.mol_embedder.hidden_size \
 			+ self.num_elements*self.formula_embedder.num_dim \
 			+ self.num_depth*self.depth_embedder.num_dim
 		# molecule, formula
-		self.dag_edge_feats = self.mol_embedder.hidden_size \
+		self.frag_edge_feats = self.mol_embedder.hidden_size \
 			+ self.num_elements*self.formula_embedder.num_dim
-		dag_kwargs = {
-			"gnn_node_feats": self.dag_node_feats,
-			"gnn_edge_feats": self.dag_edge_feats,
-			**dag_kwargs
+		frag_kwargs = {
+			"gnn_node_feats": self.frag_node_feats,
+			"gnn_edge_feats": self.frag_edge_feats,
+			**frag_kwargs
 		}
-		self.dag_embedder = GNN(**dag_kwargs)
+		self.frag_embedder = GNN(**frag_kwargs)
 		mlp_kwargs = {
-			"input_size": self.dag_embedder.hidden_size,
+			"input_size": self.frag_embedder.hidden_size,
 			"output_size": 2*self.num_hs+1,
 			**mlp_kwargs
 		}
@@ -89,31 +89,29 @@ class JointPredictor(nn.Module):
 		self.mol_embedder = pyg.compile(self.mol_embedder,**kwargs)
 		self.formula_embedder = th.compile(self.formula_embedder,**kwargs)
 		self.depth_embedder = th.compile(self.depth_embedder,**kwargs)
-		self.dag_embedder = pyg.compile(self.dag_embedder,**kwargs)
+		self.frag_embedder = pyg.compile(self.frag_embedder,**kwargs)
 
 	def forward(
 		self, 
-		batch_size=None,
-		mol_x=None,
-		mol_edge_index=None,
-		mol_edge_attr=None,
-		dag_x=None,
-		dag_edge_index=None,
-		dag_edge_attr=None,
-		dag_node_feat_idxs=None,
-		dag_edge_feat_idxs=None,
+		mol_pyg,
+		frag_pyg,
 		mol_num_nodes=None,
-		dag_num_nodes=None,
-		dag_formula_peak_idxs=None,
-		dag_formula_peak_mzs=None,
-		dag_formula_peak_probs=None,
-		dag_formula_sizes=None,
-		dag_formula_cumsizes=None,
-		dag_formula_peak_sizes=None,
+		frag_num_nodes=None,
+		frag_formula_peak_idxs=None,
+		frag_formula_peak_mzs=None,
+		frag_formula_peak_probs=None,
+		frag_formula_sizes=None,
+		frag_formula_cumsizes=None,
+		frag_formula_peak_sizes=None,
 		**kwargs
 	):
 
-		device = batch_size.device
+		device = mol_num_nodes.device
+
+		mol_x, mol_edge_index, mol_edge_attr = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr
+		frag_x, frag_edge_index, frag_edge_attr = frag_pyg.x, frag_pyg.edge_index, frag_pyg.edge_attr
+		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
+		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
 
 		# get per-atom embeddings
 		mol_embed = self.mol_embedder(
@@ -123,107 +121,105 @@ class JointPredictor(nn.Module):
 		)
 		
 		# process dag
-		dag_ndata, dag_edata = [], []
-		batch_dag_num_nodes = dag_x.shape[0]
-		batch_dag_num_edges = dag_edge_index.shape[1]
+		frag_ndata, frag_edata = [], []
+		batch_frag_num_nodes = frag_x.shape[0]
+		batch_frag_num_edges = frag_edge_index.shape[1]
 		# get atom embeddings for each node
-		dag_node_mask_idxs = th.nonzero(get_node_feats(dag_x,dag_node_feat_idxs,"mask")).long()
-		dag_node_offsets = mol_num_nodes[th.bucketize(dag_node_mask_idxs[:,0],dag_num_nodes,right=True)-1]
-		dag_node_mask_idxs[:,1] = dag_node_mask_idxs[:,1] + dag_node_offsets
-		dag_node_mask_embed = scatter_reduce(
-			src=mol_embed[dag_node_mask_idxs[:,1]],
-			index=dag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+		frag_node_mask_idxs = th.nonzero(get_node_feats(frag_x,frag_node_feat_idxs,"mask")).long()
+		frag_node_offsets = mol_num_nodes[th.bucketize(frag_node_mask_idxs[:,0],frag_num_nodes,right=True)-1]
+		frag_node_mask_idxs[:,1] = frag_node_mask_idxs[:,1] + frag_node_offsets
+		frag_node_mask_embed = scatter_reduce(
+			src=mol_embed[frag_node_mask_idxs[:,1]],
+			index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
 			reduce="sum",
 			dim=0,
-			dim_size=batch_dag_num_nodes
+			dim_size=batch_frag_num_nodes
 		)
-		# print(dag_node_mask_embed.sum())
-		dag_ndata.append(dag_node_mask_embed)
+		# print(frag_node_mask_embed.sum())
+		frag_ndata.append(frag_node_mask_embed)
 		# do the same for edges
-		dag_edge_mask_idxs = th.nonzero(get_edge_feats(dag_edge_attr,dag_edge_feat_idxs,"mask")).long()
-		dag_edge_node_idxs = dag_edge_index[0][dag_edge_mask_idxs[:,0]]
-		dag_edge_offsets = mol_num_nodes[th.bucketize(dag_edge_node_idxs,dag_num_nodes,right=True)-1]
-		dag_edge_mask_idxs[:,1] = dag_edge_mask_idxs[:,1] + dag_edge_offsets
-		dag_edge_mask_embed = scatter_reduce(
-			src=mol_embed[dag_edge_mask_idxs[:,1]],
-			index=dag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+		frag_edge_mask_idxs = th.nonzero(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"mask")).long()
+		frag_edge_node_idxs = frag_edge_index[0][frag_edge_mask_idxs[:,0]]
+		frag_edge_offsets = mol_num_nodes[th.bucketize(frag_edge_node_idxs,frag_num_nodes,right=True)-1]
+		frag_edge_mask_idxs[:,1] = frag_edge_mask_idxs[:,1] + frag_edge_offsets
+		frag_edge_mask_embed = scatter_reduce(
+			src=mol_embed[frag_edge_mask_idxs[:,1]],
+			index=frag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
 			reduce="sum",
 			dim=0,
-			dim_size=batch_dag_num_edges
+			dim_size=batch_frag_num_edges
 		)
-		# print(dag_edge_mask_embed.sum())
-		dag_edata.append(dag_edge_mask_embed)
+		# print(frag_edge_mask_embed.sum())
+		frag_edata.append(frag_edge_mask_embed)
 		# embed node formulae
-		dag_node_formula = self.formula_embedder(
-			get_node_feats(dag_x,dag_node_feat_idxs,"base_formula")
-		).reshape(batch_dag_num_nodes,-1)
-		dag_ndata.append(dag_node_formula)
+		frag_node_formula = self.formula_embedder(
+			get_node_feats(frag_x,frag_node_feat_idxs,"base_formula")
+		).reshape(batch_frag_num_nodes,-1)
+		frag_ndata.append(frag_node_formula)
 		# do the same for edges
-		dag_edge_formula = self.formula_embedder(
-			get_edge_feats(dag_edge_attr,dag_edge_feat_idxs,"base_formula")
-		).reshape(batch_dag_num_edges,-1)
-		dag_edata.append(dag_edge_formula)
+		frag_edge_formula = self.formula_embedder(
+			get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"base_formula")
+		).reshape(batch_frag_num_edges,-1)
+		frag_edata.append(frag_edge_formula)
 		# embed node depth
-		dag_depth = self.depth_embedder(get_node_feats(dag_x,dag_node_feat_idxs,"depth")).reshape(batch_dag_num_nodes,-1)
-		dag_ndata.append(dag_depth)
+		frag_depth = self.depth_embedder(get_node_feats(frag_x,frag_node_feat_idxs,"depth")).reshape(batch_frag_num_nodes,-1)
+		frag_ndata.append(frag_depth)
 		
 		# get formula aggregation 
-		dag_formula_batch_idxs = th.bucketize(th.arange(dag_x.shape[0],device=device),dag_num_nodes,right=True)-1
-		dag_formula_offsets = dag_formula_cumsizes[dag_formula_batch_idxs]
-		dag_formula_idxs = (get_node_feats(dag_x,dag_node_feat_idxs,"h_formulae_idx")+dag_formula_offsets.unsqueeze(-1)).flatten()        
+		frag_formula_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
+		frag_formula_offsets = frag_formula_cumsizes[frag_formula_batch_idxs]
+		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_formula_offsets.unsqueeze(-1)).flatten()        
 		
 		# concatenate everything 
-		dag_x = th.cat(dag_ndata,dim=-1)
+		frag_x = th.cat(frag_ndata,dim=-1)
 		# concatenate everything 
-		dag_edge_attr = th.cat(dag_edata,dim=-1)
+		frag_edge_attr = th.cat(frag_edata,dim=-1)
 		# apply GNN
-		dag_embed = self.dag_embedder(
-			dag_x,
-			dag_edge_index,
-			dag_edge_attr
+		frag_embed = self.frag_embedder(
+			frag_x,
+			frag_edge_index,
+			frag_edge_attr
 		)
 
 		# predict probabilities [N,2*T+1]
-		dag_formula_probs = self.output_module(dag_embed)
-	
+		frag_formula_probs = self.output_module(frag_embed)
+
 		# aggregate by formula
-		dag_formula_probs = dag_formula_probs.flatten()
-		dag_formula_probs = th.scatter_reduce(
-			input=th.zeros([dag_formula_cumsizes[-1]],device=device),
+		frag_formula_probs = frag_formula_probs.flatten()
+		frag_formula_probs = th.scatter_reduce(
+			input=th.zeros([frag_formula_cumsizes[-1]],device=device),
 			dim=0,
-			index=dag_formula_idxs,
-			src=dag_formula_probs,
+			index=frag_formula_idxs,
+			src=frag_formula_probs,
 			reduce="sum"
 		)
-		# print(dag_formula_probs.sum())
 
 		# zero out NULL formula
-		dag_formula_mask = th.ones_like(dag_formula_probs)
-		dag_formula_mask[dag_formula_cumsizes[:-1]] = 0.
-		dag_formula_batch_idxs = th.bucketize(
-			th.arange(dag_formula_cumsizes[-1],device=device),
-			dag_formula_cumsizes,
+		frag_formula_mask = th.ones_like(frag_formula_probs)
+		frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.
+		frag_formula_batch_idxs = th.bucketize(
+			th.arange(frag_formula_cumsizes[-1],device=device),
+			frag_formula_cumsizes,
 			right=True
 		)-1
 		
 		# softmax with masked logits
-		dag_formula_probs = masked_subset_softmax(
-			dag_formula_probs,
-			dag_formula_mask,
-			dag_formula_batch_idxs,
+		frag_formula_probs = masked_subset_softmax(
+			frag_formula_probs,
+			frag_formula_mask,
+			frag_formula_batch_idxs,
 			dim=0,
 			log=True
 		)
-		# print(dag_formula_probs.sum())
 
 		# convert to spectrum
-		spec_mzs = dag_formula_peak_mzs
-		spec_logprobs = dag_formula_probs[dag_formula_peak_idxs] + th.log(dag_formula_peak_probs)
+		spec_mzs = frag_formula_peak_mzs
+		spec_logprobs = frag_formula_probs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
 		
 		# check that the total intensity sums up to 1 (approximately)
 		spec_batch_idxs = th.repeat_interleave(
-			th.arange(dag_formula_peak_sizes.shape[0],device=device),
-			dag_formula_peak_sizes
+			th.arange(frag_formula_peak_sizes.shape[0],device=device),
+			frag_formula_peak_sizes
 		)
 		
 		return spec_mzs, spec_logprobs, spec_batch_idxs
@@ -401,27 +397,29 @@ def random_walk_pe(g, k, eweight_name=None):
 	tensor([[0.0000, 0.5000],
 			[0.5000, 0.7500]])
 	"""
-	raise NotImplementedError()
-	# N = g.num_nodes  # number of nodes
-	# M = g.num_edges  # number of edges
-	# A = g.adj(scipy_fmt="csr")  # adjacency matrix
-	# if eweight_name is not None:
-	#	 # add edge weights if required
-	#	 W = sparse.csr_matrix(
-	#		 (g.edata[eweight_name].squeeze(), g.find_edges(list(range(M)))),
-	#		 shape=(N, N),
-	#	 )
-	#	 A = A.multiply(W)
-	# RW = np.array(A / (A.sum(1) + 1e-30))  # 1-step transition probability
 
-	# # Iterate for k steps
-	# PE = [dgl_F.astype(dgl_F.tensor(np.copy(RW.diagonal())), th.float32)]
-	# RW_power = RW
-	# for _ in range(k - 1):
-	#     RW_power = RW_power @ RW
-	#     PE.append(dgl_F.astype(dgl_F.tensor(np.copy(RW_power.diagonal())), th.float32))
-	# PE = dgl_F.stack(PE, dim=-1)
-	# return PE
+	N = g.num_nodes  # number of nodes
+	M = g.num_edges  # number of edges
+	# sparse adjacency matrix
+	A = scipy.sparse.csr_matrix(
+		(
+			th.ones_like(g.edge_index[0]).numpy(),
+			(
+				g.edge_index[0].numpy(),
+				g.edge_index[1].numpy()
+			)
+		)
+	)
+	RW = A / (A.sum(1).reshape(-1,1) + 1e-30)  # 1-step transition probability
+
+	# Iterate for k steps
+	PE = [th.as_tensor(RW).diagonal()]
+	RW_power = th.as_tensor(RW)
+	for _ in range(k - 1):
+	    RW_power = RW_power @ RW
+	    PE.append(RW_power.diagonal().clone())
+	PE = th.stack(PE, dim=-1)
+	return PE
 
 def masked_subset_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=True):
 	# apply mask
@@ -465,3 +463,13 @@ def scatter_normalize(logits,subset_idxs,dim=-1):
 	# apply normalizing constant
 	logits = logits - c[subset_idxs]
 	return logits
+
+
+if __name__ == "__main__":
+
+	edge_index = th.tensor([[0,1,1],[1,1,0]],dtype=th.long)
+	x = th.tensor([0,1],dtype=th.float)
+	g = pyg.data.Data(x=x,edge_index=edge_index)
+	print(g)
+	rw_g = random_walk_pe(g,2)
+	print(rw_g)
