@@ -20,8 +20,6 @@ def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes
 		dag = dag_d["dag"]
 		
 		print("> dag")
-		#frag_utils.save_dag_d(dag_d, smiles + '.pickle.pbz2', is_compressed = True)
-		#frag_utils.save_dag_d(dag_d, smiles + '.pickle', is_compressed = False)
 		dag_nn = dag_d["dag_num_nodes"]
 		dag_ne = dag_d["dag_num_edges"]
 		

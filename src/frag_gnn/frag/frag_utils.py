@@ -682,7 +682,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	Returns:
 		dict: _description_
 	"""
-	#print("compute_dags")
+
 	assert h_prior in [True,False], h_prior
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
 	# time the recursive part
@@ -826,33 +826,33 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 
 
 	# convert to pyg
-	dag_d = {}
-	dag_d["max_depth"] = max_depth
-	dag_d["reached_depth"] = reached_depth
-	dag_d["h_prior"] = h_prior
-	dag_d["max_h_transfer"] = max_h_transfer
-	dag_d["formula_peak_mzs"] = formula_peak_mzs
-	dag_d["formula_peak_probs"] = formula_peak_probs
-	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-	dag_d["idx_by_h_delta"] = forumla_idx_by_h_delta # forumla idx for each h_delta
-	dag_d["dag"] = pyg_cc_g
+	frag_d = {}
+	frag_d["max_depth"] = max_depth
+	frag_d["reached_depth"] = reached_depth
+	frag_d["h_prior"] = h_prior
+	frag_d["max_h_transfer"] = max_h_transfer
+	frag_d["formula_peak_mzs"] = formula_peak_mzs
+	frag_d["formula_peak_probs"] = formula_peak_probs
+	frag_d["idx_to_formula"] = idx_to_formula # useful for annotation
+	frag_d["idx_by_h_delta"] = forumla_idx_by_h_delta # forumla idx for each h_delta
+	frag_d["dag"] = pyg_cc_g
 	
-	dag_d["edges_min_depth"] = edges_min_depth
-	dag_d["nodes_min_depth"] = nodes_min_depth
+	frag_d["edges_min_depth"] = edges_min_depth
+	frag_d["nodes_min_depth"] = nodes_min_depth
 
 	# add stats here
 	# we need change data type again
 	# we just need to change this one place
-	dag_d["dag_num_edges"] = pyg_cc_g.num_edges
-	dag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
-	dag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
-	dag_d["formula_redundancy"] = node_num_formules_sum/pyg_cc_g.num_nodes
-	dag_d["node_feature_size"] = pyg_cc_g.num_features
-	dag_d["edge_feature_size"] = pyg_cc_g.num_edge_features
-	dag_d["is_directed"] = pyg_cc_g.is_directed()
-	dag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
-	dag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
-	return dag_d
+	frag_d["dag_num_edges"] = pyg_cc_g.num_edges
+	frag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
+	frag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
+	frag_d["formula_redundancy"] = node_num_formules_sum/pyg_cc_g.num_nodes
+	frag_d["node_feature_size"] = pyg_cc_g.num_features
+	frag_d["edge_feature_size"] = pyg_cc_g.num_edge_features
+	frag_d["is_directed"] = pyg_cc_g.is_directed()
+	frag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
+	frag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
+	return frag_d
 	
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
 	"""get node features by key used for pyg
@@ -904,21 +904,31 @@ def get_edge_feats(edge_feats:th.Tensor,edge_feat_idxs:int,key:str):
 		raise ValueError("key not found")
 	return key_edge_feats
 
-def save_dag_d(dag_d:dict, filepath:str, is_compressed:bool = False):
-	"""save dag_d use pickle if is_compressed save as .pbz
+def get_frag_fp(mol_id:int, frag_dp:str, is_compressed:bool):
+
+	fp = os.path.join(frag_dp,str(mol_id))
+	fp += ".pickle"
+	if is_compressed:
+		fp += ".bz2"
+	return fp
+
+def save_frag_d(frag_d:dict, mol_id:int, frag_dp:str, is_compressed:bool = False):
+	"""save frag_d use pickle if is_compressed save as .pbz
 
 	Args:
-		dag_d (dict): _description_
+		frag_d (dict): _description_
 		filepath (str): _description_
 	"""
+	
+	fp = get_frag_fp(mol_id, frag_dp, is_compressed)
 	if not is_compressed:
-		with open(filepath, 'wb') as fileout:
-			pickle.dump(dag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
+		with open(fp, 'wb') as fileout:
+			pickle.dump(frag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
 	else:
-		with bz2.BZ2File(filepath, 'wb') as fileout: 
-			cPickle.dump(dag_d, fileout)
+		with bz2.BZ2File(fp, 'wb') as fileout: 
+			cPickle.dump(frag_d, fileout)
 
-def load_dag_d(filepath:str, is_compressed:bool = False):
+def load_frag_d(mol_id:int, frag_dp:str, is_compressed:bool = False):
 	"""_summary_
 
 	Args:
@@ -927,13 +937,13 @@ def load_dag_d(filepath:str, is_compressed:bool = False):
 	Returns:
 		_type_: _description_
 	"""
-	dag_d = None
+	frag_d = None
+	fp = get_frag_fp(mol_id, frag_dp, is_compressed)
 	if not is_compressed:
-		with open(filepath, 'rb') as filein:
-			dag_d = pickle.load(filein)
+		with open(fp, 'rb') as filein:
+			frag_d = pickle.load(filein)
 	else:
-		with bz2.BZ2File(filepath, 'rb') as filein: 
-			dag_d = cPickle.load(filein)
+		with bz2.BZ2File(fp, 'rb') as filein: 
+			frag_d = cPickle.load(filein)
 
-	return  dag_d												   
-	
+	return  frag_d									   

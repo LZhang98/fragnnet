@@ -466,7 +466,7 @@ def get_mol_graph(mol,atom_feats,bond_feats,pe_embed_k,bigraph):
 	mol_pyg = mg.get_pyg_graph(mol,bigraph=bigraph)
 	return mol_pyg
 
-def get_frag_graph(dag_pyg,undirected):
+def get_frag_graph(dag_pyg,bigraph):
 
 	dag_pyg = deepcopy(dag_pyg)
 	dag_pyg.x = dag_pyg.x.long()
@@ -474,7 +474,7 @@ def get_frag_graph(dag_pyg,undirected):
 	dag_pyg.edge_index = dag_pyg.edge_index.long()
 	dag_pyg.node_feat_idxs = dag_pyg.node_feat_idxs.long()
 	dag_pyg.edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
-	if undirected:
+	if bigraph:
 		# convert to undirected
 		dag_pyg.edge_index, dag_pyg.edge_attr = pyg.utils.to_undirected(
 			dag_pyg.edge_index, 

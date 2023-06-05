@@ -185,10 +185,10 @@ def main(args):
 			_type_: _description_
 		"""
 
-		output_file =  f"{output_dir}/{mol_id}.pickle.pbz2" if compressed else f"{output_dir}/{mol_id}.pickle"
+		output_file = get_frag_fp(mol_id, output_dir, compressed)
 
 		if os.path.exists(output_file) and use_cached:
-			dag_d = frag_utils.load_dag_d(output_file, compressed)
+			dag_d = frag_utils.load_frag_d(mol_id, output_dir, compressed)
 		else:
 			dag_d = {}
 			try:
@@ -208,7 +208,7 @@ def main(args):
 				dag_d = {}
 			else:
 				if save_dag:
-					frag_utils.save_dag_d(dag_d, output_file, compressed)
+					frag_utils.save_frag_d(dag_d, mol_id, output_dir, compressed)
 				del dag_d["dag"]
 		return dag_d
 
