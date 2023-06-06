@@ -2,11 +2,18 @@
 
 set -e
 
+<<<<<<<< HEAD:env/env_setup_local_gpu_torch.sh
 conda create -n FRAG-GNN
 conda activate FRAG-GNN
+========
+source ~/.bashrc
+
+conda create -n FRAG-GNN-GPU2
+conda activate FRAG-GNN-GPU2
+>>>>>>>> adamo-pyg:env/env_setup_gpu_torch2.sh
 conda install python=3.10
 
-pip install torch==2.0.0+cu117 --index-url https://download.pytorch.org/whl/cu117
+pip install torch==2.0.0+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
 pip install rdkit-pypi==2022.9.4
 pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu117.html
 pip install cython
@@ -22,5 +29,6 @@ pip install pytest
 pip install dash
 pip install jupyter-dash
 pip install CairoSVG
+pip install pytorch-lightning
 
 pip install -I -e .

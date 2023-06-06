@@ -9,8 +9,9 @@ import torch_geometric as pyg
 import scipy
 
 from frag_gnn.nn.form_embedder import get_embedder
-from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats
+from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
 from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_normalize, scatter_reduce, scatter_masked_softmax
+from frag_gnn.utils.feat_utils import get_mol_feats_sizes
 
 
 def get_clones(module, N):
@@ -41,48 +42,94 @@ def build_lr_scheduler(
 	scheduler = th.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 	return scheduler
 
-class JointPredictor(nn.Module):
 
-	# data: mol dgl, dag dgl, peaks arrays
-	# TODO: allow for more sophisticated formula embeddings
+class JointPredictor(nn.Module):
 
 	def __init__(
 		self,
-		num_depth,
-		num_hs,
-		num_elements,
-		mol_kwargs,
-		frag_kwargs,
-		mlp_kwargs,
-		int_embedder
+		num_depth: int,
+		num_hs: int,
+		num_elements: int,
+		int_embedder: str,
+		mol_node_feats: list[str],
+		mol_edge_feats: list[str],
+		mol_pe_embed_k: int,
+		mol_hidden_size: int,
+		mol_num_layers: int,
+		mol_gnn_type: str,
+		mol_dropout: float,
+		frag_node_feats: list[str],
+		frag_edge_feats: list[str],
+		frag_hidden_size: int,
+		frag_num_layers: int,
+		frag_gnn_type: str,
+		frag_dropout: float,
+		mlp_hidden_size: int,
+		mlp_dropout: float,
+		mlp_num_layers: int,
+		mlp_use_residuals: bool
 	):
 
 		super().__init__()
 		self.num_depth = num_depth
 		self.num_hs = num_hs
 		self.num_elements = num_elements
+		# calculate node/edge feats sizes
+		self.mol_node_feats = mol_node_feats
+		self.mol_edge_feats = mol_edge_feats
+		self.mol_pe_embed_k = mol_pe_embed_k
+		self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
+			mol_node_feats, mol_edge_feats, mol_pe_embed_k
+		) 
+		mol_kwargs = {
+			"node_feats_size": self.mol_node_feats_size,
+			"edge_feats_size": self.mol_edge_feats_size,
+			"hidden_size": mol_hidden_size,
+			"num_layers": mol_num_layers,
+			"gnn_type": mol_gnn_type,
+			"dropout": mol_dropout
+		}
 		self.mol_embedder = GNN(**mol_kwargs)
 		self.formula_embedder = get_embedder(int_embedder)
 		self.depth_embedder = get_embedder(int_embedder)
-		# molecule, formula, depth
-		self.frag_node_feats = self.mol_embedder.hidden_size \
-			+ self.num_elements*self.formula_embedder.num_dim \
-			+ self.num_depth*self.depth_embedder.num_dim
-		# molecule, formula
-		self.frag_edge_feats = self.mol_embedder.hidden_size \
-			+ self.num_elements*self.formula_embedder.num_dim
+		self.frag_node_feats = frag_node_feats
+		self.frag_edge_feats = frag_edge_feats
+		self._compute_frag_node_feats_size()
+		self._compute_frag_edge_feats_size()
 		frag_kwargs = {
-			"gnn_node_feats": self.frag_node_feats,
-			"gnn_edge_feats": self.frag_edge_feats,
-			**frag_kwargs
+			"node_feats_size": self.frag_node_feats_size,
+			"edge_feats_size": self.frag_edge_feats_size,
+			"hidden_size": frag_hidden_size,
+			"num_layers": frag_num_layers,
+			"gnn_type": frag_gnn_type,
+			"dropout": frag_dropout
 		}
 		self.frag_embedder = GNN(**frag_kwargs)
 		mlp_kwargs = {
 			"input_size": self.frag_embedder.hidden_size,
 			"output_size": 2*self.num_hs+1,
-			**mlp_kwargs
+			"hidden_size": mlp_hidden_size,
+			"num_layers": mlp_num_layers,
+			"dropout": mlp_dropout,
+			"use_residuals": mlp_use_residuals
 		}
 		self.output_module = MLPBlocks(**mlp_kwargs)
+
+	def _compute_frag_node_feats_size(self):
+		self.frag_node_feats_size = 0
+		if "cc" in self.frag_node_feats:
+			self.frag_node_feats_size += self.mol_embedder.hidden_size
+		if "base_formula" in self.frag_node_feats:
+			self.frag_node_feats_size += self.num_elements*self.formula_embedder.num_dim
+		if "depth" in self.frag_node_feats:
+			self.frag_node_feats_size += self.num_depth*self.depth_embedder.num_dim
+
+	def _compute_frag_edge_feats_size(self):
+		self.frag_edge_feats_size = 0
+		if "cc" in self.frag_edge_feats:
+			self.frag_edge_feats_size += self.mol_embedder.hidden_size
+		if "base_formula" in self.frag_edge_feats:
+			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
 
 	def compile_submodules(self,**kwargs):
 		""" this doesn't work right now """
@@ -93,16 +140,16 @@ class JointPredictor(nn.Module):
 
 	def forward(
 		self, 
-		mol_pyg,
-		frag_pyg,
-		mol_num_nodes=None,
-		frag_num_nodes=None,
-		frag_formula_peak_idxs=None,
-		frag_formula_peak_mzs=None,
-		frag_formula_peak_probs=None,
-		frag_formula_sizes=None,
-		frag_formula_cumsizes=None,
-		frag_formula_peak_sizes=None,
+		mol_pyg: pyg.data.Data,
+		frag_pyg: pyg.data.Data,
+		mol_num_nodes: th.Tensor,
+		frag_num_nodes: th.Tensor,
+		frag_formula_peak_idxs: th.Tensor,
+		frag_formula_peak_mzs: th.Tensor,
+		frag_formula_peak_probs: th.Tensor,
+		frag_formula_sizes: th.Tensor,
+		frag_formula_cumsizes: th.Tensor,
+		frag_formula_peak_sizes: th.Tensor,
 		**kwargs
 	):
 
@@ -124,48 +171,55 @@ class JointPredictor(nn.Module):
 		frag_ndata, frag_edata = [], []
 		batch_frag_num_nodes = frag_x.shape[0]
 		batch_frag_num_edges = frag_edge_index.shape[1]
-		# get atom embeddings for each node
-		frag_node_mask_idxs = th.nonzero(get_node_feats(frag_x,frag_node_feat_idxs,"mask")).long()
-		frag_node_offsets = mol_num_nodes[th.bucketize(frag_node_mask_idxs[:,0],frag_num_nodes,right=True)-1]
-		frag_node_mask_idxs[:,1] = frag_node_mask_idxs[:,1] + frag_node_offsets
-		frag_node_mask_embed = scatter_reduce(
-			src=mol_embed[frag_node_mask_idxs[:,1]],
-			index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
-			reduce="sum",
-			dim=0,
-			dim_size=batch_frag_num_nodes
-		)
-		# print(frag_node_mask_embed.sum())
-		frag_ndata.append(frag_node_mask_embed)
-		# do the same for edges
-		frag_edge_mask_idxs = th.nonzero(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"mask")).long()
-		frag_edge_node_idxs = frag_edge_index[0][frag_edge_mask_idxs[:,0]]
-		frag_edge_offsets = mol_num_nodes[th.bucketize(frag_edge_node_idxs,frag_num_nodes,right=True)-1]
-		frag_edge_mask_idxs[:,1] = frag_edge_mask_idxs[:,1] + frag_edge_offsets
-		frag_edge_mask_embed = scatter_reduce(
-			src=mol_embed[frag_edge_mask_idxs[:,1]],
-			index=frag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
-			reduce="sum",
-			dim=0,
-			dim_size=batch_frag_num_edges
-		)
-		# print(frag_edge_mask_embed.sum())
-		frag_edata.append(frag_edge_mask_embed)
-		# embed node formulae
-		frag_node_formula = self.formula_embedder(
-			get_node_feats(frag_x,frag_node_feat_idxs,"base_formula")
-		).reshape(batch_frag_num_nodes,-1)
-		frag_ndata.append(frag_node_formula)
-		# do the same for edges
-		frag_edge_formula = self.formula_embedder(
-			get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"base_formula")
-		).reshape(batch_frag_num_edges,-1)
-		frag_edata.append(frag_edge_formula)
-		# embed node depth
-		frag_depth = self.depth_embedder(get_node_feats(frag_x,frag_node_feat_idxs,"depth")).reshape(batch_frag_num_nodes,-1)
-		frag_ndata.append(frag_depth)
+		# node atom embeddings
+		if "cc" in self.frag_node_feats:
+			frag_node_mask = th_long_to_mask(get_node_feats(frag_x,frag_node_feat_idxs,"cc"))
+			frag_node_mask_idxs = th.nonzero(frag_node_mask).long()
+			frag_node_offsets = mol_num_nodes[th.bucketize(frag_node_mask_idxs[:,0],frag_num_nodes,right=True)-1]
+			frag_node_mask_idxs[:,1] = frag_node_mask_idxs[:,1] + frag_node_offsets
+			frag_node_mask_embed = scatter_reduce(
+				src=mol_embed[frag_node_mask_idxs[:,1]],
+				index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+				reduce="sum",
+				dim=0,
+				dim_size=batch_frag_num_nodes
+			)
+			frag_ndata.append(frag_node_mask_embed)
+		# edge atom embeddings
+		if "cc" in self.frag_edge_feats:
+			frag_edge_mask = th_long_to_mask(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"cc"))
+			frag_edge_mask_idxs = th.nonzero(frag_edge_mask).long()
+			frag_edge_node_idxs = frag_edge_index[0][frag_edge_mask_idxs[:,0]]
+			frag_edge_offsets = mol_num_nodes[th.bucketize(frag_edge_node_idxs,frag_num_nodes,right=True)-1]
+			frag_edge_mask_idxs[:,1] = frag_edge_mask_idxs[:,1] + frag_edge_offsets
+			frag_edge_mask_embed = scatter_reduce(
+				src=mol_embed[frag_edge_mask_idxs[:,1]],
+				index=frag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+				reduce="sum",
+				dim=0,
+				dim_size=batch_frag_num_edges
+			)
+			frag_edata.append(frag_edge_mask_embed)
+		# node formulae
+		if "base_formula" in self.frag_node_feats:
+			frag_node_formula = self.formula_embedder(
+				get_node_feats(frag_x,frag_node_feat_idxs,"base_formula").reshape(batch_frag_num_nodes,-1)
+			)
+			frag_ndata.append(frag_node_formula)
+		# edge formulae
+		if "base_formula" in self.frag_edge_feats:
+			frag_edge_formula = self.formula_embedder(
+				get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"base_formula").reshape(batch_frag_num_edges,-1)
+			)
+			frag_edata.append(frag_edge_formula)
+		# node depth
+		if "depth" in self.frag_node_feats:
+			frag_depth = self.depth_embedder(
+				get_node_feats(frag_x,frag_node_feat_idxs,"depth").reshape(batch_frag_num_nodes,-1)
+			)
+			frag_ndata.append(frag_depth)
 		
-		# get formula aggregation 
+		# get output formula aggregation 
 		frag_formula_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
 		frag_formula_offsets = frag_formula_cumsizes[frag_formula_batch_idxs]
 		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_formula_offsets.unsqueeze(-1)).flatten()        
@@ -181,7 +235,7 @@ class JointPredictor(nn.Module):
 			frag_edge_attr
 		)
 
-		# predict probabilities [N,2*T+1]
+		# predict probabilities
 		frag_formula_probs = self.output_module(frag_embed)
 
 		# aggregate by formula
@@ -229,11 +283,11 @@ class GNN(nn.Module):
 	def __init__(
 		self,
 		hidden_size: int,
-		num_step_message_passing: int = 4,
-		gnn_node_feats: int = 74,
-		gnn_edge_feats: int = 4,  # 12,
-		mpnn_type: str = "GINE",
-		dropout: float = 0.,
+		num_layers: int,
+		node_feats_size: int,
+		edge_feats_size: int,
+		gnn_type: str,
+		dropout: float,
 		**kwargs
 	):
 		"""__init__.
@@ -243,25 +297,25 @@ class GNN(nn.Module):
 		"""
 		super().__init__()
 		self.hidden_size = hidden_size
-		self.gnn_edge_feats = gnn_edge_feats
-		self.gnn_node_feats = gnn_node_feats
+		self.edge_feats_size = edge_feats_size
+		self.node_feats_size = node_feats_size
 		self.dropout = dropout
 
-		self.mpnn_type = mpnn_type
+		self.gnn_type = gnn_type
 		self.hidden_size = hidden_size
-		self.num_step_message_passing = num_step_message_passing
-		self.input_project = nn.Linear(self.gnn_node_feats, self.hidden_size)
+		self.num_layers = num_layers
+		self.input_project = nn.Linear(self.node_feats_size, self.hidden_size)
 
-		if self.mpnn_type == "GINE":
+		if self.gnn_type == "GINE":
 			self.gnn = GINE(
 				hidden_size=self.hidden_size,
-				edge_feats=self.gnn_edge_feats,
-				node_feats=self.gnn_node_feats,
-				num_step_message_passing=num_step_message_passing,
+				edge_feats_size=self.edge_feats_size,
+				node_feats_size=self.node_feats_size,
+				num_layers=self.num_layers,
 				dropout=self.dropout,
 			)
 		else:
-			raise NotImplementedError()
+			raise NotImplementedError(self.gnn_type)
 
 	def forward(self, x, edge_index, edge_attr):
 		"""encode batch of molecule graph"""
@@ -273,10 +327,10 @@ class GNN(nn.Module):
 class GINE(nn.Module):
 	def __init__(
 		self,
-		hidden_size=64,
-		edge_feats=4,
-		num_step_message_passing=4,
-		dropout=0.,
+		hidden_size: int,
+		edge_feats_size: int,
+		num_layers: int,
+		dropout: float,
 		**kwargs
 	):
 		"""GINE.
@@ -291,10 +345,10 @@ class GINE(nn.Module):
 		"""
 		super().__init__()
 
-		self.edge_transform = nn.Linear(edge_feats, hidden_size)
+		self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
 
 		self.layers = []
-		for i in range(num_step_message_passing):
+		for i in range(num_layers):
 			apply_fn = nn.Sequential(
 				nn.Linear(hidden_size, hidden_size),
 				nn.ReLU(),
@@ -307,8 +361,8 @@ class GINE(nn.Module):
 			self.layers.append(temp_layer)
 
 		self.layers = nn.ModuleList(self.layers)
-		self.bnorms = get_clones(nn.BatchNorm1d(hidden_size), num_step_message_passing)
-		self.dropouts = get_clones(nn.Dropout(dropout), num_step_message_passing)
+		self.bnorms = get_clones(nn.BatchNorm1d(hidden_size), num_layers)
+		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
 	def forward(self, x, edge_index, edge_attr):
 		"""forward.

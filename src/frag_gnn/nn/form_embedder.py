@@ -271,3 +271,14 @@ def get_embedder(embedder):
 	else:
 		raise NotImplementedError
 	return embedder
+
+
+if __name__ == "__main__":
+
+	embedder = get_embedder("abs-sines")
+	print(embedder.num_dim)
+	example_inputs = th.tensor([0,1,2,16,255]).reshape(-1,1)
+	print(example_inputs.shape)
+	example_embeddings = embedder(example_inputs)
+	print(example_embeddings.shape)
+	print(example_embeddings)

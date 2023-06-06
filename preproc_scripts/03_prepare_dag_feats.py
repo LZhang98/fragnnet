@@ -185,10 +185,10 @@ def main(args):
 			_type_: _description_
 		"""
 
-		output_file =  f"{output_dir}/{mol_id}.pickle.pbz2" if compressed else f"{output_dir}/{mol_id}.pickle"
+		output_file = frag_utils.get_frag_fp(mol_id, output_dir, compressed)
 
 		if os.path.exists(output_file) and use_cached:
-			dag_d = frag_utils.load_dag_d(output_file, compressed)
+			dag_d = frag_utils.load_frag_d(mol_id, output_dir, compressed)
 		else:
 			dag_d = {}
 			try:
@@ -208,12 +208,12 @@ def main(args):
 				dag_d = {}
 			else:
 				if save_dag:
-					frag_utils.save_dag_d(dag_d, output_file, compressed)
+					frag_utils.save_frag_d(dag_d, mol_id, output_dir, compressed)
 				del dag_d["dag"]
 		return dag_d
 
 
-	def compute_spectra_stats(peaks,formula_mzs,formula_probs,idx_by_h_delta,
+	def compute_spectra_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,
 			   tolerances:list, max_h_transfer:int):
 		"""_summary_
 
@@ -237,10 +237,10 @@ def main(args):
 				]
 
 				if 'ppm' in tolerance:
-					result = frag_utils.compute_frag_peak_stats(peaks,formula_mzs,formula_probs,idx_by_h_delta,\
+					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
 						 h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
 				else:
-					result = frag_utils.compute_frag_peak_stats(peaks,formula_mzs,formula_probs,idx_by_h_delta,h_transfer,\
+					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,h_transfer,\
 						 tolerance=float(tolerance),prec_type="[M+H]+")
 				cols += keys
 				reuslts.append(result)
@@ -263,8 +263,8 @@ def main(args):
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
 	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
 	#frag_stats_df["dag"] = list(map(lambda x: x.pop("dag",np.nan),frag_results))
-	frag_stats_df["formula_mzs"] = list(map(lambda x: x.pop("formula_mzs",np.nan),frag_results))
-	frag_stats_df["formula_probs"] = list(map(lambda x: x.pop("formula_probs",np.nan),frag_results))
+	frag_stats_df["formula_peak_mzs"] = list(map(lambda x: x.pop("formula_peak_mzs",np.nan),frag_results))
+	frag_stats_df["formula_peak_probs"] = list(map(lambda x: x.pop("formula_peak_probs",np.nan),frag_results))
 	frag_stats_df["idx_to_formula"] = list(map(lambda x: x.pop("idx_to_formula",np.nan),frag_results))
 	frag_stats_df["dag_num_edges"] = list(map(lambda x: x.pop("dag_num_edges",np.nan),frag_results))
 	frag_stats_df["dag_num_nodes"] = list(map(lambda x: x.pop("dag_num_nodes",np.nan),frag_results))
@@ -354,8 +354,8 @@ def main(args):
 			spectra_input_rows.append(
 				[
 					row['peaks'], 
-					row["formula_mzs"], 
-					row['formula_probs'], 
+					row["formula_peak_mzs"], 
+					row['formula_peak_probs'], 
 					row['idx_by_h_delta'], 
 					tolerances, 
 					args.max_h_transfer

@@ -11,7 +11,7 @@ from copy import deepcopy
 
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed, get_pyg_memory_usage
-from frag_gnn.feat_utils import get_mol_graph, get_frag_graph, batch_mols_frags
+from frag_gnn.utils.feat_utils import get_mol_graph, get_frag_graph, batch_mols_frags
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
 from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, \
@@ -332,13 +332,20 @@ if __name__ == "__main__":
 	# prepare_model
 	mol_kwargs = {
 		"hidden_size": hidden_size,
-		"gnn_node_feats": mol_pyg.x.shape[1],
-		"gnn_edge_feats": mol_pyg.edge_attr.shape[1],
-		"mpnn_type": "GINE"
+		"node_feats": atom_feats,
+		"edge_feats": bond_feats,
+		"pe_embed_k": pe_embed_k,
+		"gnn_type": "GINE",
+		"num_layers": 4,
+		"dropout": 0.0,
 	}
 	frag_kwargs = {
 		"hidden_size": hidden_size,
-		"mpnn_type": "GINE"
+		"node_feats": ["cc","base_formula","depth"],
+		"edge_feats": ["cc","base_formula"],
+		"gnn_type": "GINE",
+		"num_layers": 4,
+		"dropout": 0.0,
 		# node/edge feats are inferred
 	}
 	mlp_kwargs = {
@@ -352,15 +359,16 @@ if __name__ == "__main__":
 	num_hs = frag_d["max_h_transfer"]
 	num_elements = frag_utils.NUM_ELEMENTS
 	int_embedder = "abs-sines"
-	joint_model = JointPredictor(
-		num_depth,
-		num_hs,
-		num_elements,
-		mol_kwargs,
-		frag_kwargs,
-		mlp_kwargs,
-		int_embedder
-	)
+	joint_kwargs = {
+		"num_depth": num_depth,
+		"num_hs": num_hs,
+		"num_elements": num_elements,
+		"int_embedder": int_embedder,
+		**{"mol_"+k:v for k,v in mol_kwargs.items()},
+		**{"frag_"+k:v for k,v in frag_kwargs.items()},
+		**{"mlp_"+k:v for k,v in mlp_kwargs.items()}
+	}
+	joint_model = JointPredictor(**joint_kwargs)
 	joint_model.to(device)
 
 	sparse_cross_entropy_fn = get_sparse_cross_entropy_fn(
@@ -468,8 +476,7 @@ if __name__ == "__main__":
 			true_batch_idxs,
 			pred_mzs,
 			pred_logits,
-			pred_batch_idxs,
-			batch_size
+			pred_batch_idxs
 		)
 		print(f"> loss = {loss:.4f}")
 		# update metrics

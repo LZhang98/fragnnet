@@ -7,7 +7,9 @@ import rdkit.Chem as Chem
 import rdkit.Chem.MolStandardize.rdMolStandardize as rdMolStandardize
 import rdkit.Chem.rdmolops as rdmolops
 import torch as th
+import torch.nn.functional as F
 import bz2
+import os
 
 import torch_geometric as pyg
 
@@ -50,11 +52,13 @@ IDX_TO_ELEMENT = { idx: elem for elem, idx in ELEMENT_TO_IDX.items()}
 MAX_H_TRANSFER = 4
 MAX_NUM_MZS_PER_FORMULA = 5
 
-# 8-bit unsigned integer (0 to 255), we may run into trouble for very large inputs (what can have 255 Cabons?)
-#MASK_DTYPE = np.ubyte 
-NODE_FEAT_DTYPE = th.int16
-EDGE_FEAT_DTYPE = th.int8
-META_DATA_DTYPE = th.float32 
+NODE_FEAT_DTYPE = th.int64
+EDGE_FEAT_DTYPE = th.int64
+META_DATA_DTYPE = th.float32
+
+MASK_SIZE = 128
+assert MASK_SIZE >= MAX_NUM_NODES, "MASK_SIZE should be larger than MAX_NUM_NODES"
+assert MASK_SIZE % 64 == 0, "MASK_SIZE should be a multiple of 64"
 
 def convert_cc_mask_to_int(cc:list|np.ndarray)->int:
 	"""covert a cc mask to an int
@@ -665,6 +669,24 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 		ppt_formula = np.nan
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
+
+def th_long_to_mask(long):
+	# long is N x MASK_SIZE//64
+	num_dims = long.shape[1]
+	long = long.reshape(long.shape[0],num_dims,1)
+	mask = 2**th.arange(64-1,-1,-1)
+	mask = mask.reshape(1,1,64)
+	return long.bitwise_and(mask).ne(0).reshape(long.shape[0],-1)
+
+
+def th_mask_to_long(mask):
+	# mask is N x MASK_SIZE
+	num_dims = mask.shape[1]//64
+	mask = mask.reshape(mask.shape[0],num_dims,64)
+	long = 2**th.arange(64-1,-1,-1).expand(1,num_dims,64)
+	return th.sum(long*mask,dim=2).long()
+
+
 def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_max_time:int, use_isotopes:bool = False) -> dict:
 	"""_summary_
 
@@ -682,7 +704,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	Returns:
 		dict: _description_
 	"""
-	#print("compute_dags")
+
 	assert h_prior in [True,False], h_prior
 	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
 	# time the recursive part
@@ -711,11 +733,11 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	# add node depth information
 	# convert to a one hot encoding
 	depth_node_feat_size = max_depth+1 #depth
-	mask_node_feat_size = num_nodes # mask
+	cc_node_feat_size = MASK_SIZE//64 # mask
 	base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
 	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
-	node_feat_shapes = [depth_node_feat_size,mask_node_feat_size,base_formula_node_feat_size,formula_node_feat_size]
-	edge_feat_shapes = [num_nodes, len(ELEMENT_TO_IDX)]
+	node_feat_shapes = [depth_node_feat_size,cc_node_feat_size,base_formula_node_feat_size,formula_node_feat_size]
+	edge_feat_shapes = [cc_node_feat_size,base_formula_node_feat_size]
 	total_node_feat_size = sum(node_feat_shapes)
 
 	# add node h count and element information
@@ -728,7 +750,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 		cc_formula = cc_bitmask_to_formula_arr(cc_mask,elem_idxs)
 		cc_formula[ELEMENT_TO_IDX["H"]] = cc_h_count
 		cc_formula_list.append(cc_formula)
-	node_formula_matrix = np.stack(cc_formula_list, dtype=MASK_DTYPE)
+	node_base_formula_matrix = np.stack(cc_formula_list, dtype=MASK_DTYPE)
 	
 	# map nodes to formulae
 	formulae_list = []
@@ -737,7 +759,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	node_num_formules_sum = 0
 	for idx, cc_mask in enumerate(nodes_mask_matrix):
 		#cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
-		base_formula = node_formula_matrix[idx]
+		base_formula = node_base_formula_matrix[idx]
 		base_formula[ELEMENT_TO_IDX["H"]] = 0 # remove Hs
 		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True, base_formula = base_formula)
 		formulae = list(delta_h_to_formula.values())
@@ -768,8 +790,19 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 
 	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.int16)
 	
-	pyg_node_feats = np.hstack((nodes_mask_matrix, nodes_depth_matrix,node_formula_matrix,node_formulae_matrix))
-	pyg_node_feats = th.tensor(pyg_node_feats,dtype=NODE_FEAT_DTYPE)
+	assert nodes_mask_matrix.shape[1] <= MASK_SIZE
+	nodes_cc_mask = th.as_tensor(nodes_mask_matrix,dtype=th.bool)
+	nodes_cc_mask = F.pad(nodes_cc_mask, (0, MASK_SIZE-nodes_cc_mask.shape[1]), "constant", 0)
+	nodes_cc_long = th_mask_to_long(nodes_cc_mask).type(NODE_FEAT_DTYPE)
+	# the order is important!
+	pyg_node_feats = th.cat(
+		[ 
+			th.as_tensor(nodes_depth_matrix,dtype=NODE_FEAT_DTYPE),
+			nodes_cc_long,
+			th.as_tensor(node_base_formula_matrix,dtype=NODE_FEAT_DTYPE), 
+			th.as_tensor(node_formulae_matrix,dtype=NODE_FEAT_DTYPE)
+		], dim=1
+	)
 
 	# peak mzs array
 	formula_peak_mzs = []
@@ -795,7 +828,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 
 	# add edges info
 	#pyg_edge_index = [[],[]]
-	pyg_edge_feat_list = []
+	edge_diff_cc_mask, edge_diff_formula_mask = [], []
 	for edge in dag_edges_matrix:
 		from_idx, to_idx = edge
 		from_cc_mask = nodes_mask_matrix[from_idx]
@@ -803,56 +836,59 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 		diff_cc_mask =  from_cc_mask - to_cc_mask
 
 		#diff_formula = cc_bitmask_to_formula_arr(diff_mask,elem_idxs)
-		from_formula_mask = node_formula_matrix[from_idx]
-		to_formula_mask = node_formula_matrix[to_idx]
+		from_formula_mask = node_base_formula_matrix[from_idx]
+		to_formula_mask = node_base_formula_matrix[to_idx]
 		diff_formula_mask = from_formula_mask - to_formula_mask
 		diff_formula_mask[CANONICAL_H_IDX] = 0 # we don't care Hs for this
 
-		pyg_edge_feat_list.append(np.concatenate((diff_cc_mask, diff_formula_mask)))
+		edge_diff_cc_mask.append(diff_cc_mask)
+		edge_diff_formula_mask.append(diff_formula_mask)
 
-	if len(pyg_edge_feat_list) > 0:
-		pyg_edge_feats = np.stack(pyg_edge_feat_list, dtype=np.int8)
+	assert len(edge_diff_cc_mask) == len(edge_diff_formula_mask)
+	assert len(edge_diff_cc_mask) > 0, "DAG has no edges"
 
-		# edge index need to be int64 or it will throw error where compute degree
-		pyg_edge_index = th.tensor(dag_edges_matrix.T, dtype =th.int64)
-		pyg_edge_feats = th.tensor(pyg_edge_feats, dtype=EDGE_FEAT_DTYPE)
+	edge_diff_cc_mask = th.as_tensor(np.stack(edge_diff_cc_mask,axis=0), dtype=th.bool)
+	edge_diff_cc_mask = F.pad(edge_diff_cc_mask, (0, MASK_SIZE-edge_diff_cc_mask.shape[1]), "constant", 0)
+	edge_diff_cc_long = th_mask_to_long(edge_diff_cc_mask).type(EDGE_FEAT_DTYPE)
+	edge_diff_formula_mask = th.as_tensor(np.stack(edge_diff_formula_mask,axis=0), dtype=EDGE_FEAT_DTYPE)
+	pyg_edge_feats = th.cat([edge_diff_cc_long,edge_diff_formula_mask],dim=1)
 
-		pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
-	else:
-		raise ValueError("DAG has no edegs")
+	# edge index need to be int64 or it will throw error where compute degree
+	pyg_edge_index = th.tensor(dag_edges_matrix.T, dtype=th.int64)
+
+	pyg_cc_g = pyg.data.Data(pyg_node_feats,pyg_edge_index,pyg_edge_feats)
 
 	pyg_cc_g.node_feat_idxs = th.cumsum(th.tensor([0]+node_feat_shapes,dtype=th.long),0).reshape(1,-1)
 	pyg_cc_g.edge_feat_idxs = th.cumsum(th.tensor([0]+edge_feat_shapes,dtype=th.long),0).reshape(1,-1)
 
-
 	# convert to pyg
-	dag_d = {}
-	dag_d["max_depth"] = max_depth
-	dag_d["reached_depth"] = reached_depth
-	dag_d["h_prior"] = h_prior
-	dag_d["max_h_transfer"] = max_h_transfer
-	dag_d["formula_peak_mzs"] = formula_peak_mzs
-	dag_d["formula_peak_probs"] = formula_peak_probs
-	dag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-	dag_d["idx_by_h_delta"] = forumla_idx_by_h_delta # forumla idx for each h_delta
-	dag_d["dag"] = pyg_cc_g
+	frag_d = {}
+	frag_d["max_depth"] = max_depth
+	frag_d["reached_depth"] = reached_depth
+	frag_d["h_prior"] = h_prior
+	frag_d["max_h_transfer"] = max_h_transfer
+	frag_d["formula_peak_mzs"] = formula_peak_mzs
+	frag_d["formula_peak_probs"] = formula_peak_probs
+	frag_d["idx_to_formula"] = idx_to_formula # useful for annotation
+	frag_d["idx_by_h_delta"] = forumla_idx_by_h_delta # forumla idx for each h_delta
+	frag_d["dag"] = pyg_cc_g
 	
-	dag_d["edges_min_depth"] = edges_min_depth
-	dag_d["nodes_min_depth"] = nodes_min_depth
+	frag_d["edges_min_depth"] = edges_min_depth
+	frag_d["nodes_min_depth"] = nodes_min_depth
 
 	# add stats here
 	# we need change data type again
 	# we just need to change this one place
-	dag_d["dag_num_edges"] = pyg_cc_g.num_edges
-	dag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
-	dag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
-	dag_d["formula_redundancy"] = node_num_formules_sum/pyg_cc_g.num_nodes
-	dag_d["node_feature_size"] = pyg_cc_g.num_features
-	dag_d["edge_feature_size"] = pyg_cc_g.num_edge_features
-	dag_d["is_directed"] = pyg_cc_g.is_directed()
-	dag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
-	dag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
-	return dag_d
+	frag_d["dag_num_edges"] = pyg_cc_g.num_edges
+	frag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
+	frag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
+	frag_d["formula_redundancy"] = node_num_formules_sum/pyg_cc_g.num_nodes
+	frag_d["node_feature_size"] = pyg_cc_g.num_features
+	frag_d["edge_feature_size"] = pyg_cc_g.num_edge_features
+	frag_d["is_directed"] = pyg_cc_g.is_directed()
+	frag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
+	frag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
+	return frag_d
 	
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
 	"""get node features by key used for pyg
@@ -871,7 +907,7 @@ def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
 
 	if key == "depth":
 		node_feats = node_feats[:,node_feat_idxs[0]:node_feat_idxs[1]]
-	elif key == "mask":
+	elif key == "cc":
 		node_feats = node_feats[:,node_feat_idxs[1]:node_feat_idxs[2]]
 	elif key == "base_formula":
 		node_feats = node_feats[:,node_feat_idxs[2]:node_feat_idxs[3]]
@@ -896,7 +932,7 @@ def get_edge_feats(edge_feats:th.Tensor,edge_feat_idxs:int,key:str):
 		_type_: _description_
 	"""
 
-	if key == "mask":
+	if key == "cc":
 		key_edge_feats = edge_feats[:,edge_feat_idxs[0]:edge_feat_idxs[1]]
 	elif key == "base_formula":
 		key_edge_feats = edge_feats[:,edge_feat_idxs[1]:edge_feat_idxs[2]]
@@ -904,21 +940,31 @@ def get_edge_feats(edge_feats:th.Tensor,edge_feat_idxs:int,key:str):
 		raise ValueError("key not found")
 	return key_edge_feats
 
-def save_dag_d(dag_d:dict, filepath:str, is_compressed:bool = False):
-	"""save dag_d use pickle if is_compressed save as .pbz
+def get_frag_fp(mol_id:int, frag_dp:str, is_compressed:bool):
+
+	fp = os.path.join(frag_dp,str(mol_id))
+	fp += ".pickle"
+	if is_compressed:
+		fp += ".bz2"
+	return fp
+
+def save_frag_d(frag_d:dict, mol_id:int, frag_dp:str, is_compressed:bool = False):
+	"""save frag_d use pickle if is_compressed save as .pbz
 
 	Args:
-		dag_d (dict): _description_
+		frag_d (dict): _description_
 		filepath (str): _description_
 	"""
+	
+	fp = get_frag_fp(mol_id, frag_dp, is_compressed)
 	if not is_compressed:
-		with open(filepath, 'wb') as fileout:
-			pickle.dump(dag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
+		with open(fp, 'wb') as fileout:
+			pickle.dump(frag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
 	else:
-		with bz2.BZ2File(filepath, 'wb') as fileout: 
-			cPickle.dump(dag_d, fileout)
+		with bz2.BZ2File(fp, 'wb') as fileout: 
+			cPickle.dump(frag_d, fileout)
 
-def load_dag_d(filepath:str, is_compressed:bool = False):
+def load_frag_d(mol_id:int, frag_dp:str, is_compressed:bool = False):
 	"""_summary_
 
 	Args:
@@ -927,13 +973,13 @@ def load_dag_d(filepath:str, is_compressed:bool = False):
 	Returns:
 		_type_: _description_
 	"""
-	dag_d = None
+	frag_d = None
+	fp = get_frag_fp(mol_id, frag_dp, is_compressed)
 	if not is_compressed:
-		with open(filepath, 'rb') as filein:
-			dag_d = pickle.load(filein)
+		with open(fp, 'rb') as filein:
+			frag_d = pickle.load(filein)
 	else:
-		with bz2.BZ2File(filepath, 'rb') as filein: 
-			dag_d = cPickle.load(filein)
+		with bz2.BZ2File(fp, 'rb') as filein: 
+			frag_d = cPickle.load(filein)
 
-	return  dag_d												   
-	
+	return frag_d									   

@@ -2,13 +2,13 @@
 
 set -e
 
-module load cuda-11.7
+source ~/.bashrc
 
-conda create -n FRAG-GNN
-conda activate FRAG-GNN
+conda create -n FRAG-GNN-CPU2
+conda activate FRAG-GNN-CPU2
 conda install python=3.10
 
-pip install torch==2.0.0+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
+pip install torch==2.0.0+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 pip install rdkit-pypi==2022.9.4
 pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cpu.html
 pip install cython
@@ -22,7 +22,8 @@ pip install matplotlib
 pip install pytest
 pip install cysignals
 pip install dash
-pip install jupyter-dash
+pip install jupyter-dash 
 pip install CairoSVG
+pip install pytorch-lightning
 
 pip install -I -e .
