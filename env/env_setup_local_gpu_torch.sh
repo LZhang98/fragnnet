@@ -2,15 +2,12 @@
 
 set -e
 
-<<<<<<<< HEAD:env/env_setup_local_gpu_torch.sh
-conda create -n FRAG-GNN
-conda activate FRAG-GNN
-========
+
 source ~/.bashrc
 
 conda create -n FRAG-GNN-GPU2
 conda activate FRAG-GNN-GPU2
->>>>>>>> adamo-pyg:env/env_setup_gpu_torch2.sh
+
 conda install python=3.10
 
 pip install torch==2.0.0+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
