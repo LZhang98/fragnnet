@@ -9,7 +9,7 @@ import torch_geometric as pyg
 import scipy
 
 from frag_gnn.nn.form_embedder import get_embedder
-from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats
+from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
 from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_normalize, scatter_reduce, scatter_masked_softmax
 from frag_gnn.utils.feat_utils import get_mol_feats_sizes
 
@@ -117,7 +117,7 @@ class JointPredictor(nn.Module):
 
 	def _compute_frag_node_feats_size(self):
 		self.frag_node_feats_size = 0
-		if "mask" in self.frag_node_feats:
+		if "cc" in self.frag_node_feats:
 			self.frag_node_feats_size += self.mol_embedder.hidden_size
 		if "base_formula" in self.frag_node_feats:
 			self.frag_node_feats_size += self.num_elements*self.formula_embedder.num_dim
@@ -126,7 +126,7 @@ class JointPredictor(nn.Module):
 
 	def _compute_frag_edge_feats_size(self):
 		self.frag_edge_feats_size = 0
-		if "mask" in self.frag_edge_feats:
+		if "cc" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.mol_embedder.hidden_size
 		if "base_formula" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
@@ -142,8 +142,8 @@ class JointPredictor(nn.Module):
 		self, 
 		mol_pyg: pyg.data.Data,
 		frag_pyg: pyg.data.Data,
-		mol_num_nodes: int,
-		frag_num_nodes: int,
+		mol_num_nodes: th.Tensor,
+		frag_num_nodes: th.Tensor,
 		frag_formula_peak_idxs: th.Tensor,
 		frag_formula_peak_mzs: th.Tensor,
 		frag_formula_peak_probs: th.Tensor,
@@ -172,8 +172,9 @@ class JointPredictor(nn.Module):
 		batch_frag_num_nodes = frag_x.shape[0]
 		batch_frag_num_edges = frag_edge_index.shape[1]
 		# node atom embeddings
-		if "mask" in self.frag_node_feats:
-			frag_node_mask_idxs = th.nonzero(get_node_feats(frag_x,frag_node_feat_idxs,"mask")).long()
+		if "cc" in self.frag_node_feats:
+			frag_node_mask = th_long_to_mask(get_node_feats(frag_x,frag_node_feat_idxs,"cc"))
+			frag_node_mask_idxs = th.nonzero(frag_node_mask).long()
 			frag_node_offsets = mol_num_nodes[th.bucketize(frag_node_mask_idxs[:,0],frag_num_nodes,right=True)-1]
 			frag_node_mask_idxs[:,1] = frag_node_mask_idxs[:,1] + frag_node_offsets
 			frag_node_mask_embed = scatter_reduce(
@@ -185,8 +186,9 @@ class JointPredictor(nn.Module):
 			)
 			frag_ndata.append(frag_node_mask_embed)
 		# edge atom embeddings
-		if "mask" in self.frag_edge_feats:
-			frag_edge_mask_idxs = th.nonzero(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"mask")).long()
+		if "cc" in self.frag_edge_feats:
+			frag_edge_mask = th_long_to_mask(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"cc"))
+			frag_edge_mask_idxs = th.nonzero(frag_edge_mask).long()
 			frag_edge_node_idxs = frag_edge_index[0][frag_edge_mask_idxs[:,0]]
 			frag_edge_offsets = mol_num_nodes[th.bucketize(frag_edge_node_idxs,frag_num_nodes,right=True)-1]
 			frag_edge_mask_idxs[:,1] = frag_edge_mask_idxs[:,1] + frag_edge_offsets

@@ -341,8 +341,8 @@ if __name__ == "__main__":
 	}
 	frag_kwargs = {
 		"hidden_size": hidden_size,
-		"node_feats": ["mask","base_formula","depth"],
-		"edge_feats": ["mask","base_formula"],
+		"node_feats": ["cc","base_formula","depth"],
+		"edge_feats": ["cc","base_formula"],
 		"gnn_type": "GINE",
 		"num_layers": 4,
 		"dropout": 0.0,
