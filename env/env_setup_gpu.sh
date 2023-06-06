@@ -2,8 +2,10 @@
 
 set -e
 
-conda create -n FRAG-GNN
-conda activate FRAG-GNN
+source ~/.bashrc
+
+conda create -n FRAG-GNN-GPU
+conda activate FRAG-GNN-GPU
 conda install python=3.10
 
 pip install torch==1.13.1+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
@@ -22,6 +24,6 @@ pip install pytest
 pip install dash
 pip install jupyter-dash
 pip install CairoSVG
-pip install git+https://github.com/7FeiW/SpectralEntropy.git #this is a fork from https://github.com/YuanyueLi/SpectralEntropy.git
+pip install pytorch-lightning
 
 pip install -I -e .

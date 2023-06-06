@@ -44,12 +44,13 @@ def momu_log_prob(samples,means,variances,log_weights,tolerances=1e-3):
 	return log_probs
 
 
-def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
+def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
 	"""
 	this is just for torch.compile
 	"""
 
 	mask_value = -1e9
+	batch_size = th.max(true_batch_idxs)+1
 	def vec_ce(true_batch_idx,true_logprob,true_mz):
 		b_pred_mask = (pred_batch_idxs==true_batch_idx).float()
 		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1.-b_pred_mask)
@@ -75,13 +76,14 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	return ce
 
 
-def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,batch_size,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
+def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
 	""" 
 	this is just for torch.compile
 	"""
 
 	ce = 0.
 	mask_value = -1e9
+	batch_size = th.max(true_batch_idxs)+1
 	for batch_idx in range(batch_size):
 		b_pred_mask = (pred_batch_idxs==batch_idx).float()
 		b_true_mask = (true_batch_idxs==batch_idx)

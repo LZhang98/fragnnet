@@ -8,6 +8,7 @@ import rdkit.Chem.MolStandardize.rdMolStandardize as rdMolStandardize
 import rdkit.Chem.rdmolops as rdmolops
 import torch as th
 import bz2
+import os
 
 import torch_geometric as pyg
 
@@ -946,4 +947,4 @@ def load_frag_d(mol_id:int, frag_dp:str, is_compressed:bool = False):
 		with bz2.BZ2File(fp, 'rb') as filein: 
 			frag_d = cPickle.load(filein)
 
-	return  frag_d									   
+	return frag_d									   
