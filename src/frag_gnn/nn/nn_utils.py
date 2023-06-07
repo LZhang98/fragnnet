@@ -173,7 +173,7 @@ class JointPredictor(nn.Module):
 		batch_frag_num_edges = frag_edge_index.shape[1]
 		# node atom embeddings
 		if "cc" in self.frag_node_feats:
-			frag_node_mask = th_long_to_mask(get_node_feats(frag_x,frag_node_feat_idxs,"cc"))
+			frag_node_mask = th_long_to_mask(get_node_feats(frag_x,frag_node_feat_idxs,"cc"), device)
 			frag_node_mask_idxs = th.nonzero(frag_node_mask).long()
 			frag_node_offsets = mol_num_nodes[th.bucketize(frag_node_mask_idxs[:,0],frag_num_nodes,right=True)-1]
 			frag_node_mask_idxs[:,1] = frag_node_mask_idxs[:,1] + frag_node_offsets
@@ -187,7 +187,7 @@ class JointPredictor(nn.Module):
 			frag_ndata.append(frag_node_mask_embed)
 		# edge atom embeddings
 		if "cc" in self.frag_edge_feats:
-			frag_edge_mask = th_long_to_mask(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"cc"))
+			frag_edge_mask = th_long_to_mask(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"cc"), device)
 			frag_edge_mask_idxs = th.nonzero(frag_edge_mask).long()
 			frag_edge_node_idxs = frag_edge_index[0][frag_edge_mask_idxs[:,0]]
 			frag_edge_offsets = mol_num_nodes[th.bucketize(frag_edge_node_idxs,frag_num_nodes,right=True)-1]
