@@ -6,7 +6,7 @@ import torch as th
 import torch.nn.functional as F
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.nn.nn_utils import scatter_normalize, scatter_reduce
+from frag_gnn.utils.misc_utils import scatter_lognormalize, scatter_normalize, scatter_reduce
 
 
 # TODO: actually fill these out
@@ -15,8 +15,11 @@ PREC_TYPES = [
 	"[M-H]-"
 ]
 PREC_TYPE_TO_IDX = {prec_type: idx for idx,prec_type in enumerate(PREC_TYPES)}
-CE_MEAN = 100.
-CE_STD = 50.
+NCE_MEAN = 100.
+NCE_STD = 50.
+MZ_MAX = 1500.0
+MZ_BIN_RES = 0.01
+INTS_THRESH = 0.0
 
 def prec_type_idx(prec_type):
 	idx = PREC_TYPE_TO_IDX[prec_type]
@@ -26,8 +29,8 @@ def prec_type_mass_diff(prec_type):
 	mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
 	return mass_diff
 
-def transform_ce(ce):
-	return (ce-CE_MEAN)/CE_STD	
+def transform_nce(nce):
+	return (nce-NCE_MEAN)/NCE_STD	
 
 def filter_func(mzs,ints,ints_thresh,mz_max):
 
@@ -74,6 +77,46 @@ def batch_func(mzs_list,ints_list):
 	ints = th.cat(ints_list,dim=0)
 	return mzs, ints, batch_idxs
 
+
+def batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max):
+
+	thresh_mask = ints > ints_thresh
+	max_mask = mzs < mz_max
+	both_mask = thresh_mask & max_mask
+	mzs = mzs[both_mask]
+	ints = ints[both_mask]
+	batch_idxs = batch_idxs[both_mask]
+	return mzs, ints, batch_idxs
+
+
+def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
+
+	if mzs.shape[0] == 0:
+		import pdb; pdb.set_trace()
+	assert th.max(mzs) < mz_max, (th.max(mzs),mz_max)
+	batch_size = th.max(batch_idxs)+1
+	bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype)
+	num_bins = bins.shape[0]
+	bin_idx = th.searchsorted(bins,mzs,side="right")
+	bin_offsets = (th.arange(batch_size,device=mzs.device)*num_bins)[batch_idxs]
+	bin_idx = bin_idx + bin_offsets
+	bin_spec = scatter_reduce(
+		src=ints,
+		index=bin_idx,
+		reduce="sum" if sum_ints else "max",
+		dim=0,
+		dim_size=num_bins*batch_size
+	)
+	bin_spec = bin_spec.reshape(batch_size,num_bins)
+	if th.any(th.all(bin_spec==0.,dim=1)):
+		print("> warning: bin_spec is all zeros!")
+		mask = th.zeros_like(bin_spec,dtype=th.bool)
+		mask[:,-1] = 1.
+		mask = mask*th.all(bin_spec==0.,dim=1,keepdim=True)
+		bin_spec[mask] = 1.
+	return bin_spec
+
+
 def merge_sparse_specs(*peakses,renormalize=False):
 	"""
 	this will result in peaks that are really close in mass (<5ppm)
@@ -101,7 +144,7 @@ def merge_sparse_specs(*peakses,renormalize=False):
 def calculate_spectrum_entropy(log_ints,batch_idxs):
 
 	k = th.max(batch_idxs)+1
-	log_norm_ints = scatter_normalize(log_ints,batch_idxs,dim=0)
+	log_norm_ints = scatter_lognormalize(log_ints,batch_idxs,dim=0)
 	entropy = -scatter_reduce(
 		src=th.exp(log_norm_ints)*log_norm_ints,
 		index=batch_idxs,
@@ -123,8 +166,8 @@ def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs
 	batch_size = th.max(true_batch_idxs)+1
 	topk_weighted_recall = th.zeros([batch_size],device=true_mzs.device)
 	topk_frac = th.zeros([batch_size],device=true_mzs.device)
-	true_ints = th.exp(scatter_normalize(true_logits,true_batch_idxs,dim=0))
-	pred_ints = th.exp(scatter_normalize(pred_logits,pred_batch_idxs,dim=0))
+	true_ints = th.exp(scatter_lognormalize(true_logits,true_batch_idxs,dim=0))
+	pred_ints = th.exp(scatter_lognormalize(pred_logits,pred_batch_idxs,dim=0))
 	for b in range(batch_size):
 		b_true_mask = (true_batch_idxs==b)
 		b_pred_mask = (pred_batch_idxs==b)
@@ -164,8 +207,8 @@ def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,
 	batch_size = th.max(true_batch_idxs)+1
 	recall = th.zeros([batch_size],device=true_mzs.device)
 	weighted_recall = th.zeros([batch_size],device=true_mzs.device)
-	true_ints = th.exp(scatter_normalize(true_logits,true_batch_idxs,dim=0))
-	pred_ints = th.exp(scatter_normalize(pred_logits,pred_batch_idxs,dim=0))
+	true_ints = th.exp(scatter_lognormalize(true_logits,true_batch_idxs,dim=0))
+	pred_ints = th.exp(scatter_lognormalize(pred_logits,pred_batch_idxs,dim=0))
 	for b in range(batch_size):
 		b_true_mask = (true_batch_idxs==b)
 		b_pred_mask = (pred_batch_idxs==b)
@@ -185,6 +228,7 @@ def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,
 		b_weighted_recall = th.sum(b_true_ints[b_true_match])/th.sum(b_true_ints)
 		weighted_recall[b] = weighted_recall[b] + b_weighted_recall
 	return recall, weighted_recall
+
 
 def calculate_match_mzs(
 		true_mzs,
@@ -220,6 +264,7 @@ def calculate_match_mzs(
 	match_mzs = diff_mzs < min_diff_mzs
 	return match_mzs
 
+
 def calculate_cosine_similarity(
 		true_mzs,
 		true_ints,
@@ -229,36 +274,61 @@ def calculate_cosine_similarity(
 		pred_batch_idxs,
 		mz_bin_res=0.01,
 		mz_max=1500.,
-		ints_thresh=0.0,
+		# ints_thresh=0.0,
 		sum_ints=True
 	):
-	"""
-	Note: this function could be parallelized with vmap
-	"""
 
-	batch_size = th.max(true_batch_idxs)+1
-	cos_sims = th.zeros([batch_size],device=true_mzs.device)
-	for b in range(batch_size):
-		true_mzs, true_ints = filter_func(true_mzs,true_ints,ints_thresh,mz_max)
-		true_spec = bin_func(
-			true_mzs,
-			true_ints,
-			mz_max,
-			mz_bin_res,
-			False,
-			sum_ints
-		)
-		true_spec = F.normalize(true_spec,p=2,dim=0)
-		pred_mzs, pred_ints = filter_func(pred_mzs,pred_ints,ints_thresh,mz_max)
-		pred_spec = bin_func(
-			pred_mzs,
-			pred_ints,
-			mz_max,
-			mz_bin_res,
-			False,
-			sum_ints
-		)
-		pred_spec = F.normalize(pred_spec,p=2,dim=0)
-		cos_sims[b] = th.dot(true_spec,pred_spec)
+	# true_mzs, true_ints, true_batch_idxs = batched_filter_func(true_mzs,true_ints,true_batch_idxs,ints_thresh,mz_max)
+	true_spec = batched_bin_func(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		mz_max,
+		mz_bin_res,
+		sum_ints
+	)
+	# pred_mzs, pred_ints, pred_batch_idxs = batched_filter_func(pred_mzs,pred_ints,pred_batch_idxs,ints_thresh,mz_max)
+	pred_spec = batched_bin_func(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max,
+		mz_bin_res,
+		sum_ints
+	)
+	cos_sims = binned_cosine_similarity(true_spec,pred_spec)
 	return cos_sims
 
+
+def binned_cosine_similarity(true_spec,pred_spec):
+
+	true_spec = F.normalize(true_spec,p=2,dim=1)
+	pred_spec = F.normalize(pred_spec,p=2,dim=1)
+	cos_sims = (true_spec.unsqueeze(1) @ pred_spec.unsqueeze(2)).squeeze(2).squeeze(1)
+	return cos_sims
+
+def get_ints_transform_func(ints_transform):
+
+	_func = None
+	if ints_transform == "log10":
+		_func = lambda ints: th.log10(ints+1.)
+	elif ints_transform == "log10t3":
+		_func = lambda ints: th.log10(ints/3.+1.)
+	elif ints_transform == "loge":
+		_func = lambda ints: th.log(ints+1.)
+	elif ints_transform == "sqrt":
+		_func = lambda ints: th.sqrt(ints)
+	elif ints_transform == "none":
+		_func = lambda ints: ints
+	else:
+		raise ValueError("Invalid ints_transform: {}".format(ints_transform))
+	return _func
+
+def batched_normalize(ints, batch_idxs):
+
+	ints = scatter_normalize(
+		ints,
+		batch_idxs,
+		dim=0
+	)
+	return ints

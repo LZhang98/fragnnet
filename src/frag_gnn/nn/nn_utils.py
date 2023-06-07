@@ -10,7 +10,7 @@ import scipy
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
-from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_normalize, scatter_reduce, scatter_masked_softmax
+from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_lognormalize, scatter_reduce, scatter_masked_softmax
 from frag_gnn.utils.feat_utils import get_mol_feats_sizes
 
 
@@ -153,6 +153,8 @@ class JointPredictor(nn.Module):
 		**kwargs
 	):
 
+		# TODO add collision energy support
+		
 		device = mol_num_nodes.device
 
 		mol_x, mol_edge_index, mol_edge_attr = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr
@@ -479,45 +481,12 @@ def masked_subset_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=Tru
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
 	# normalize
-	masked_logits = scatter_normalize(masked_logits,subset_idxs,dim)
+	masked_logits = scatter_lognormalize(masked_logits,subset_idxs,dim)
 	if not log:
 		# exponentiate
 		return th.exp(masked_logits)
 	else:
 		return masked_logits
-
-def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=1e-9):
-
-	k = th.max(subset_idxs)+1
-	sm = th.zeros([k],device=logits.device)
-	sm.scatter_reduce_(
-		dim=dim,
-		index=subset_idxs,
-		src=logits,
-		reduce="amax"
-	)
-	lm = th.gather(
-		input=sm,
-		index=subset_idxs,
-		dim=dim
-	)
-	logits = logits - lm
-	se = th.zeros([k],device=logits.device)
-	se.scatter_reduce_(
-		dim=dim,
-		index=subset_idxs,
-		src=th.exp(logits),
-		reduce="sum"
-	)
-	return sm + th.log(se + eps)
-
-def scatter_normalize(logits,subset_idxs,dim=-1):
-	# calculate normalizing constant
-	c = scatter_logsumexp(logits,subset_idxs,dim=dim)
-	# apply normalizing constant
-	logits = logits - c[subset_idxs]
-	return logits
-
 
 if __name__ == "__main__":
 

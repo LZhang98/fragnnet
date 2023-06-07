@@ -674,7 +674,7 @@ def th_long_to_mask(long):
 	# long is N x MASK_SIZE//64
 	num_dims = long.shape[1]
 	long = long.reshape(long.shape[0],num_dims,1)
-	mask = 2**th.arange(64-1,-1,-1)
+	mask = 2**th.arange(64-1,-1,-1,device=long.device)
 	mask = mask.reshape(1,1,64)
 	return long.bitwise_and(mask).ne(0).reshape(long.shape[0],-1)
 
@@ -683,7 +683,7 @@ def th_mask_to_long(mask):
 	# mask is N x MASK_SIZE
 	num_dims = mask.shape[1]//64
 	mask = mask.reshape(mask.shape[0],num_dims,64)
-	long = 2**th.arange(64-1,-1,-1).expand(1,num_dims,64)
+	long = 2**th.arange(64-1,-1,-1,device=mask.device).expand(1,num_dims,64)
 	return th.sum(long*mask,dim=2).long()
 
 

@@ -24,6 +24,6 @@ pip install pytest
 pip install dash
 pip install jupyter-dash
 pip install CairoSVG
-pip install pytorch-lightning
+pip install lightning
 
 pip install -I -e .
