@@ -1,0 +1,105 @@
+# wandb
+wandb_project: "frag-gnn"
+wandb_name: "template"
+# data
+spec_fp: data/proc/spec_df.pkl
+mol_fp: data/proc/mol_df.pkl
+split_fp: data/split/debug/train_ids.csv
+frag_dp: data/frag/debug/dags
+spec_merge: True
+spec_subsample_size: 0
+spec_subsample_seed: 420
+spec_ints_thresh: 0.0
+spec_mz_max: 1500.0
+spec_sparse: True
+spec_binned: False
+spec_mz_bin_res: 0.01
+spec_sum_ints: True
+spec_prec_type: True
+spec_prec_mz: True
+spec_prec_mass_diff: True
+spec_nce: False
+spec_ace: False
+mol_smiles: True
+mol_fingerprint: False
+mol_fingerprint_morgan: True
+mol_fingerprint_rdkit: True
+mol_fingerprint_maccs: True
+mol_pyg: True
+mol_pyg_node_feats:
+  - a_onehot
+  - a_degree
+  - a_hybrid
+  - a_formal
+  - a_radical
+  - a_ring
+  - a_mass
+  - a_chiral
+mol_pyg_edge_feats:
+  - b_degree
+mol_pyg_pe_embed_k: 0
+mol_pyg_bigraph: True
+frag_pyg: True
+frag_pyg_node_feats:
+  - cc
+  - base_formula
+  - depth
+frag_pyg_edge_feats:
+  - cc
+  - base_formula
+frag_pyg_bigraph: True
+frag_num_isotopes: 1
+frag_formula_peak_mzs: True
+frag_formula_peak_probs: True
+frag_compressed: True
+# model
+num_depth: 5
+num_hs: 4
+num_elements: 12
+int_embedder: abs-sines
+mol_hidden_size: 256
+mol_num_layers: 4
+mol_gnn_type: GINE
+mol_dropout: 0.0
+frag_hidden_size: 256
+frag_num_layers: 4
+frag_gnn_type: GINE
+frag_dropout: 0.0
+mlp_hidden_size: 256
+mlp_dropout: 0.0
+mlp_num_layers: 2
+mlp_use_residuals: True
+# other
+lr: 0.0001
+lr_schedule: False
+weight_decay: 0.0
+lr_decay_rate: 0.95
+warmup: 1000
+optimizer: adamw
+num_steps: 1000
+output_distribution: gaussian
+loss_vectorized: False
+loss_tolerance_ppm: 10
+loss_tolerance_abs: 
+auxiliary_scores:
+  - cos_sim
+ints_thresh: 0.0
+mz_max: 1500.0
+mz_bin_res: 0.01
+bin_sum_ints: True
+ints_transform: log10t3
+train_batch_size: 32
+eval_batch_size: 32
+epochs: 10
+accelerator: cpu
+devices: auto
+logging:
+  - console
+  - wandb
+num_workers: 8
+min_epochs: 1
+max_epochs: 1
+gradient_clip_val: 5.0
+gradient_clip_algorithm: norm
+accumulate_grad_batches: 1
+precision: 32 # 64, 16-mixed, bf16-mixed

@@ -78,9 +78,7 @@ class JointPredictor(nn.Module):
 		self.mol_node_feats = mol_node_feats
 		self.mol_edge_feats = mol_edge_feats
 		self.mol_pe_embed_k = mol_pe_embed_k
-		self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
-			mol_node_feats, mol_edge_feats, mol_pe_embed_k
-		) 
+		self._compute_mol_feats_sizes() 
 		mol_kwargs = {
 			"node_feats_size": self.mol_node_feats_size,
 			"edge_feats_size": self.mol_edge_feats_size,
@@ -94,8 +92,7 @@ class JointPredictor(nn.Module):
 		self.depth_embedder = get_embedder(int_embedder)
 		self.frag_node_feats = frag_node_feats
 		self.frag_edge_feats = frag_edge_feats
-		self._compute_frag_node_feats_size()
-		self._compute_frag_edge_feats_size()
+		self._compute_frag_feats_sizes()
 		frag_kwargs = {
 			"node_feats_size": self.frag_node_feats_size,
 			"edge_feats_size": self.frag_edge_feats_size,
@@ -115,7 +112,17 @@ class JointPredictor(nn.Module):
 		}
 		self.output_module = MLPBlocks(**mlp_kwargs)
 
-	def _compute_frag_node_feats_size(self):
+	def _compute_mol_feats_sizes(self):
+		# these features don't rely on any model parameters
+		self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
+			self.mol_node_feats, 
+			self.mol_edge_feats, 
+			self.mol_pe_embed_k
+		)
+
+	def _compute_frag_feats_sizes(self):
+		# these features do depend on model parameters
+		# nodes
 		self.frag_node_feats_size = 0
 		if "cc" in self.frag_node_feats:
 			self.frag_node_feats_size += self.mol_embedder.hidden_size
@@ -123,8 +130,7 @@ class JointPredictor(nn.Module):
 			self.frag_node_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "depth" in self.frag_node_feats:
 			self.frag_node_feats_size += self.num_depth*self.depth_embedder.num_dim
-
-	def _compute_frag_edge_feats_size(self):
+		# edges
 		self.frag_edge_feats_size = 0
 		if "cc" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.mol_embedder.hidden_size

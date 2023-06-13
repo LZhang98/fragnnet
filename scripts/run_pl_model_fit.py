@@ -2,148 +2,165 @@ import torch as th
 from torch.utils.data import DataLoader
 import lightning.pytorch as pl
 import logging
+import argparse
+import yaml
+import os
+from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 
-from frag_gnn.model import FragGNN
+from frag_gnn.model import FragGNN, get_default_model_params
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.misc_utils import ConsoleLogger
 from frag_gnn.dataset import get_default_ds_params, get_default_fps, SpecMolFragDataset
-from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
 
-logger = logging.getLogger('root')
-logger.setLevel(logging.DEBUG)
 
-# define configs
-logger.debug("setup config")
-default_config = {
-    "num_depth": 5, # max_depth + 1
-    "num_hs": 4,
-    "num_elements": NUM_ELEMENTS,
-    "int_embedder": "abs-sines",
-    "mol_node_feats": [
-		"a_onehot",
-		"a_degree",
-		"a_hybrid",
-		"a_formal",
-		"a_radical",
-		"a_ring",
-		"a_mass",
-		"a_chiral",
-	],
-    "mol_edge_feats": ["b_degree"],
-    "mol_pe_embed_k": 0,
-    "mol_hidden_size": 256,
-    "mol_num_layers": 4,
-    "mol_gnn_type": "GINE",
-    "mol_dropout": 0.0,
-    "frag_node_feats": ["cc","base_formula","depth"],
-    "frag_edge_feats": ["cc","base_formula"],
-    "frag_hidden_size": 256,
-    "frag_num_layers": 4,
-    "frag_gnn_type": "GINE",
-    "frag_dropout": 0.0,
-    "mlp_hidden_size": 256,
-    "mlp_dropout": 0.0,
-    "mlp_num_layers": 2,
-    "mlp_use_residuals": True,
-    "lr": 1e-4,
-    "lr_schedule": False,
-    "weight_decay": 0.0,
-    "lr_decay_rate": 0.95,
-    "warmup": 1000,
-    "optimizer": "adamw",
-    "num_steps": 1000,
-    "output_distribution": "gaussian",
-    "loss_vectorized": False,
-    "loss_tolerance_ppm": 10,
-    "loss_tolerance_abs": None, #0.001,
-    "auxiliary_scores": ["cos_sim"],
-    "ints_thresh": INTS_THRESH,
-    "mz_max": MZ_MAX,
-    "mz_bin_res": MZ_BIN_RES,
-    "bin_sum_ints": True,
-    "ints_transform": "log10t3" # none
-}
+def load_config(template_fp, custom_fp):
 
-# setup model
-logger.debug("setup model")
-model = FragGNN(**default_config)
+	assert os.path.isfile(template_fp), template_fp
+	if custom_fp:
+		assert os.path.isfile(custom_fp), custom_fp
 
-# setup logger
-logger.debug("setup logger")
-console_logger = ConsoleLogger()
-# TODO log to wandb
+	with open(template_fp, "r") as template_file:
+		config_d = yaml.load(template_file, Loader=yaml.FullLoader)
 
-# setup callbacks
+	# overwrite parts of the config
+	if custom_fp:
 
-# TODO checkpointing
+		with open(custom_fp, "r") as custom_file:
+			custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
 
-# setup datasets
-logger.debug("setup dataset")
-spec_fp, mol_fp, frag_dp, train_fp, val_fp, test_fp = get_default_fps()
-spec_params, mol_params, frag_params = get_default_ds_params()
-train_ds = SpecMolFragDataset(
-    spec_fp=spec_fp,
-    mol_fp=mol_fp,
-    frag_dp=frag_dp,
-    split_fp=train_fp,
-    spec_params=spec_params,
-    mol_params=mol_params,
-    frag_params=frag_params,
-)
-val_ds = SpecMolFragDataset(
-    spec_fp=spec_fp,
-    mol_fp=mol_fp,
-    frag_dp=frag_dp,
-    split_fp=val_fp,
-    spec_params=spec_params,
-    mol_params=mol_params,
-    frag_params=frag_params,
-)
-test_ds = SpecMolFragDataset(
-    spec_fp=spec_fp,
-    mol_fp=mol_fp,
-    frag_dp=frag_dp,
-    split_fp=test_fp,
-    spec_params=spec_params,
-    mol_params=mol_params,
-    frag_params=frag_params,
-)
+		for k, v in custom_d.items():
+			config_d[k] = v
 
-# setup dataloaders
-logger.debug("setup dataloader")
-train_dl = DataLoader(
-    train_ds, 
-    batch_size=2, 
-    shuffle=True, 
-    num_workers=0,
-    collate_fn=train_ds.get_collate_fn()
-)
-val_dl = DataLoader(
-    val_ds,
-    batch_size=2,
-    shuffle=False,
-    num_workers=0,
-    collate_fn=val_ds.get_collate_fn()
-)
-test_dl = DataLoader(
-    test_ds,
-    batch_size=2,
-    shuffle=False,
-    num_workers=0,
-    collate_fn=test_ds.get_collate_fn()
-)
+	return config_d
 
-# setup trainer
-logger.debug("setup trainer")
-# TODO add gradient clipping
-trainer = pl.Trainer(
-    logger=[console_logger],
-    accelerator="cpu",
-    min_steps=2,
-    max_steps=2,
-)
+if __name__ == "__main__":
 
-# fit
-logger.debug("fit model")
-trainer.fit(model, train_dl)
+	# setup logger
+	logging.basicConfig(
+		level=logging.INFO,
+		format="%(asctime)s [%(levelname)s] %(message)s",
+		handlers=[logging.StreamHandler()]
+	)
+
+	# # get arguments
+	parser = argparse.ArgumentParser()
+	parser.add_argument(
+		"-t",
+		"--template_fp",
+		type=str,
+		default="config/template.yml",
+		help="path to template config file"
+	)
+	parser.add_argument(
+		"-c",
+		"--custom_fp",
+		type=str,
+		required=False
+	)
+	# TODO add disabled
+	parser.add_argument(
+		"-w",
+		"--wandb_mode",
+		type=str, 
+		default="online",
+		choices=["online","offline"]
+	)
+	args = parser.parse_args()
+
+	# load config
+	config_d = load_config(args.template_fp, args.custom_fp)
+
+	# setup model
+	logging.info("setup model")
+	# model_config = get_default_model_params()
+	model = FragGNN(**config_d)
+
+	# setup logging
+	logging.info("setup loggers")
+	console_logger = ConsoleLogger()
+	wandb_logger = pl.loggers.WandbLogger(
+		project=config_d["wandb_project"],
+		name=config_d["wandb_name"],
+		offline=args.wandb_mode == "offline",
+	)
+	loggers = [console_logger, wandb_logger]
+
+	# setup callbacks
+	checkpoint_callback = ModelCheckpoint(
+		monitor="val_loss",
+		mode="min",
+	)
+	callbacks = [checkpoint_callback]
+
+	# setup datasets
+	logging.info("setup dataset")
+	# spec_fp, mol_fp, frag_dp, train_fp, val_fp, test_fp = get_default_fps()
+	# ds_params = get_default_ds_params()
+	# train_ds = SpecMolFragDataset(
+	# 	spec_fp=spec_fp,
+	# 	mol_fp=mol_fp,
+	# 	frag_dp=frag_dp,
+	# 	split_fp=train_fp,
+	# 	**ds_params
+	# )
+	# val_ds = SpecMolFragDataset(
+	# 	spec_fp=spec_fp,
+	# 	mol_fp=mol_fp,
+	# 	frag_dp=frag_dp,
+	# 	split_fp=val_fp,
+	# 	**ds_params
+	# )
+	# test_ds = SpecMolFragDataset(
+	# 	spec_fp=spec_fp,
+	# 	mol_fp=mol_fp,
+	# 	frag_dp=frag_dp,
+	# 	split_fp=test_fp,
+	# 	**ds_params
+	# )
+	train_ds = SpecMolFragDataset(**config_d)
+	val_ds = SpecMolFragDataset(**config_d)
+	test_ds = SpecMolFragDataset(**config_d)
+
+	# setup dataloaders
+	logging.info("setup dataloader")
+	train_dl = DataLoader(
+		train_ds, 
+		batch_size=config_d["train_batch_size"], 
+		shuffle=True, 
+		num_workers=config_d["num_workers"],
+		collate_fn=train_ds.get_collate_fn()
+	)
+	val_dl = DataLoader(
+		val_ds,
+		batch_size=config_d["eval_batch_size"],
+		shuffle=False,
+		num_workers=config_d["num_workers"],
+		collate_fn=val_ds.get_collate_fn()
+	)
+	test_dl = DataLoader(
+		test_ds,
+		batch_size=config_d["eval_batch_size"],
+		shuffle=False,
+		num_workers=config_d["num_workers"],
+		collate_fn=test_ds.get_collate_fn()
+	)
+
+	# setup trainer
+	logging.info("setup trainer")
+	trainer = pl.Trainer(
+		logger=loggers,
+		callbacks=callbacks,
+		accelerator=config_d["accelerator"],
+		devices=config_d["devices"],
+		min_epochs=config_d["min_epochs"],
+		max_epochs=config_d["max_epochs"],
+		gradient_clip_val=config_d["gradient_clip_val"],
+		gradient_clip_algorithm=config_d["gradient_clip_algorithm"],
+		accumulate_grad_batches=config_d["accumulate_grad_batches"],
+		precision=config_d["precision"],
+	)
+
+	# fit
+	logging.info("fit model")
+	trainer.fit(model, train_dl, val_dl)
 

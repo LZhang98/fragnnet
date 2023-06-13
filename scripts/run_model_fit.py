@@ -297,7 +297,7 @@ if __name__ == "__main__":
 		device = th.device("cpu")
 
 	# prepare data
-	atom_feats = [
+	mol_node_feats = [
 		"a_onehot",
 		"a_degree",
 		"a_hybrid",
@@ -307,9 +307,19 @@ if __name__ == "__main__":
 		"a_mass",
 		"a_chiral",
 	]
-	bond_feats = ["b_degree"]
-	pe_embed_k = 0
-	bigraph = True
+	mol_edge_feats = ["b_degree"]
+	mol_pe_embed_k = 0
+	mol_bigraph = True
+	frag_node_feats = [
+		"cc",
+		"base_formula",
+		"depth"
+	]
+	frag_edge_feats = [
+		"cc",
+		"base_formula"
+	]
+	frag_bigraph = undirected_dag
 	mass_diff = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
 	spec_mzs, spec_ints = [], []
 	mol_pygs, frag_pygs = [], []
@@ -329,13 +339,24 @@ if __name__ == "__main__":
 		else:
 			mol_d = frag_utils.extract_mol_info(smiles)
 			IDX_TO_MOL_D[compound_idx] = mol_d
-		mol_pyg = get_mol_graph(deepcopy(mol_d["mol"]),atom_feats,bond_feats,pe_embed_k,bigraph)
+		mol_pyg = get_mol_graph(
+			deepcopy(mol_d["mol"]),
+			mol_node_feats,
+			mol_edge_feats,
+			mol_pe_embed_k,
+			mol_bigraph
+		)
 		if compound_idx in IDX_TO_FRAG_D:
 			frag_d = IDX_TO_FRAG_D[compound_idx]
 		else:
 			frag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
 			IDX_TO_FRAG_D[compound_idx] = frag_d
-		frag_pyg = get_frag_graph(deepcopy(frag_d["dag"]),undirected_dag)
+		frag_pyg = get_frag_graph(
+			deepcopy(frag_d["dag"]),
+			frag_node_feats,
+			frag_edge_feats,
+			frag_bigraph
+		)
 		formula_peak_mzs = frag_d["formula_peak_mzs"][:,:args.num_isotopes].detach().clone()+mass_diff
 		formula_peak_probs = frag_d["formula_peak_probs"][:,:args.num_isotopes].detach().clone()
 		mol_pygs.append(mol_pyg)
@@ -356,17 +377,17 @@ if __name__ == "__main__":
 	# prepare_model
 	mol_kwargs = {
 		"hidden_size": hidden_size,
-		"node_feats": atom_feats,
-		"edge_feats": bond_feats,
-		"pe_embed_k": pe_embed_k,
+		"node_feats": mol_node_feats,
+		"edge_feats": mol_edge_feats,
+		"pe_embed_k": mol_pe_embed_k,
 		"gnn_type": "GINE",
 		"num_layers": 4,
 		"dropout": 0.0,
 	}
 	frag_kwargs = {
 		"hidden_size": hidden_size,
-		"node_feats": ["cc","base_formula","depth"],
-		"edge_feats": ["cc","base_formula"],
+		"node_feats": frag_node_feats,
+		"edge_feats": frag_edge_feats,
 		"gnn_type": "GINE",
 		"num_layers": 4,
 		"dropout": 0.0,

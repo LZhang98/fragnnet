@@ -13,16 +13,63 @@ from frag_gnn.frag.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol
 
 
+SPEC_PARAMS = [
+	"merge",
+	"subsample_size",
+	"subsample_seed",
+	"ints_thresh",
+	"mz_max",
+	"sparse",
+	"binned",
+	"mz_bin_res",
+	"sum_ints",
+	"prec_type",
+	"prec_mz",
+	"prec_mass_diff",
+	"nce",
+	"ace"
+]
+
+MOL_PARAMS = [
+	"smiles",
+	"fingerprint",
+	"fingerprint_morgan",
+	"fingerprint_rdkit",
+	"fingerprint_maccs",
+	"pyg",
+	"pyg_node_feats",
+	"pyg_edge_feats",
+	"pyg_pe_embed_k",
+	"pyg_bigraph"
+]
+
+FRAG_PARAMS = [
+	"pyg",
+	"pyg_node_feats",
+	"pyg_edge_feats",
+	"pyg_bigraph",
+	"num_isotopes",
+	"formula_peak_mzs",
+	"formula_peak_probs",
+	"compressed"
+]
+
 class SpecMolDataset(Dataset):
 
-	def __init__(self,spec_fp,mol_fp,split_fp,spec_params,mol_params):
+	def __init__(
+		self,
+		spec_fp: str,
+		mol_fp: str,
+		split_fp: str,
+		**kwargs):
 
 		super().__init__()
 		self.spec_df = pd.read_pickle(spec_fp)
 		self.mol_df = pd.read_pickle(mol_fp)
 		self.split_df = pd.read_csv(split_fp)
-		self.mol_params = mol_params
-		self.spec_params = spec_params
+		
+		self.spec_params = {k: kwargs["spec_"+k] for k in SPEC_PARAMS}
+		self.mol_params = {k: kwargs["mol_"+k] for k in MOL_PARAMS}
 
 		# select spectra
 		self.spec_df = self.spec_df[self.spec_df["spec_id"].isin(self.split_df["spec_id"])]
@@ -31,8 +78,7 @@ class SpecMolDataset(Dataset):
 		assert np.all(np.unique(self.mol_df["mol_id"]) == np.unique(self.spec_df["mol_id"]))
 
 		# merge spectra
-		self.merge = spec_params["merge"]
-		if self.merge:
+		if self.spec_params["merge"]:
 			self.spec_df = merge_spec_df(self.spec_df)            
 
 		# subsample
@@ -103,7 +149,7 @@ class SpecMolDataset(Dataset):
 			mass_diff = th.tensor([prec_type_mass_diff(prec_type)],dtype=th.float)
 			spec_data["spec_prec_mass_diff"] = mass_diff
 		if self.spec_params["nce"]:
-			assert not self.merge
+			assert not self.spec_params["merge"]
 			nce = spec_entry["nce"]
 			nce = th.tensor([transform_nce(nce)],dtype=th.float)
 			spec_data["spec_nce"] = nce
@@ -127,18 +173,18 @@ class SpecMolDataset(Dataset):
 		if self.mol_params["smiles"]:
 			smiles = mol_entry["smiles"]
 			mol_data["mol_smiles"] = [smiles]
-		if self.mol_params["fp"]:
-			fp = get_mol_fp(mol,
-				self.mol_params["fp_morgan"],
-				self.mol_params["fp_rdkit"],
-				self.mol_params["fp_maccs"]
+		if self.mol_params["fingerprint"]:
+			fingerprint = get_mol_fp(mol,
+				self.mol_params["fingerprint_morgan"],
+				self.mol_params["fingerprint_rdkit"],
+				self.mol_params["fingerprint_maccs"]
 			)
-			mol_data["mol_fp"] = fp
+			mol_data["mol_fingerprint"] = fingerprint
 		if self.mol_params["pyg"]:
 			mol_pyg = get_mol_graph(
 				mol,
-				self.mol_params["pyg_atom_feats"],
-				self.mol_params["pyg_bond_feats"],
+				self.mol_params["pyg_node_feats"],
+				self.mol_params["pyg_edge_feats"],
 				self.mol_params["pyg_pe_embed_k"],
 				self.mol_params["pyg_bigraph"]
 			)
@@ -196,11 +242,17 @@ class SpecMolDataset(Dataset):
 
 class SpecMolFragDataset(SpecMolDataset):
 
-	def __init__(self,spec_fp,mol_fp,frag_dp,split_fp,spec_params,mol_params,frag_params):
+	def __init__(
+		self,
+		spec_fp,
+		mol_fp,
+		frag_dp,
+		split_fp,
+		**kwargs):
 
-		super().__init__(spec_fp,mol_fp,split_fp,spec_params,mol_params)
+		super().__init__(spec_fp,mol_fp,split_fp,**kwargs)
 		self.frag_dp = frag_dp
-		self.frag_params = frag_params
+		self.frag_params = {k: kwargs["frag_"+k] for k in FRAG_PARAMS}
 
 	def __getitem__(self,idx):
 
@@ -224,7 +276,12 @@ class SpecMolFragDataset(SpecMolDataset):
 		frag_data = {}
 		if self.frag_params["pyg"]:
 			frag_pyg = frag_entry["dag"]
-			frag_pyg = get_frag_graph(frag_pyg,self.frag_params["pyg_bigraph"])
+			frag_pyg = get_frag_graph(
+				frag_pyg,
+				self.frag_params["pyg_node_feats"],
+				self.frag_params["pyg_edge_feats"],
+				self.frag_params["pyg_bigraph"]
+			)
 			frag_data["frag_pyg"] = frag_pyg
 		if self.frag_params["formula_peak_mzs"]:
 			formula_peak_mzs = frag_entry["formula_peak_mzs"]
@@ -313,7 +370,7 @@ def get_default_fps():
 	test_fp = "data/split/debug/test_ids.csv"
 	return spec_fp, mol_fp, frag_dp, train_fp, val_fp, test_fp
 
-def get_default_ds_params():
+def get_default_ds_params(frag=True):
 
 	spec_params = {
 		"merge": True,
@@ -333,12 +390,12 @@ def get_default_ds_params():
 	}
 	mol_params = {
 		"smiles": True,
-		"fp": False,
-		"fp_morgan": True,
-		"fp_rdkit": True,
-		"fp_maccs": True,
+		"fingerprint": False,
+		"fingerprint_morgan": True,
+		"fingerprint_rdkit": True,
+		"fingerprint_maccs": True,
 		"pyg": True,
-		"pyg_atom_feats": [
+		"pyg_node_feats": [
 			"a_onehot",
 			"a_degree",
 			"a_hybrid",
@@ -348,19 +405,39 @@ def get_default_ds_params():
 			"a_mass",
 			"a_chiral",
 		],
-		"pyg_bond_feats": ["b_degree"],
+		"pyg_edge_feats": ["b_degree"],
 		"pyg_pe_embed_k": 0,
 		"pyg_bigraph": True,
 	}
 	frag_params = {
 		"pyg": True,
+		"pyg_node_feats": [
+			"depth",
+			"cc",
+			"base_formula"
+		],
+		"pyg_edge_feats": [
+			"cc",
+			"base_formula"
+		],
 		"pyg_bigraph": True,
 		"num_isotopes": 1,
 		"formula_peak_mzs": True,
 		"formula_peak_probs": True,
 		"compressed": True,
 	}
-	return spec_params, mol_params, frag_params
+	assert set(spec_params.keys()) == set(SPEC_PARAMS)
+	assert set(mol_params.keys()) == set(MOL_PARAMS)
+	assert set(frag_params.keys()) == set(FRAG_PARAMS)
+	params = {}
+	for k,v in spec_params.items():
+		params[f"spec_{k}"] = v
+	for k,v in mol_params.items():
+		params[f"mol_{k}"] = v
+	if frag:
+		for k,v in frag_params.items():
+			params[f"frag_{k}"] = v
+	return params
 
 if __name__ == "__main__":
 
@@ -381,15 +458,14 @@ if __name__ == "__main__":
 
 	spec_fp, mol_fp, frag_dp, train_fp, _, _ = get_default_fps()	
 
-	spec_params, mol_params, frag_params = get_default_ds_params()
+	params = get_default_ds_params()
 
 	print(">>> SpecMolDataset")
 	sm_ds = SpecMolDataset(
 		spec_fp,
 		mol_fp,
 		train_fp,
-		spec_params,
-		mol_params,
+		**params
 	)
 	sm_dl = DataLoader(
 		sm_ds,
@@ -407,9 +483,7 @@ if __name__ == "__main__":
 		mol_fp,
 		frag_dp,
 		train_fp,
-		spec_params,
-		mol_params,
-		frag_params,
+		**params
 	)
 	smf_dl = DataLoader(
 		smf_ds,

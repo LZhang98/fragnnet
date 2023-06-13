@@ -5,6 +5,8 @@ from frag_gnn.nn.nn_utils import build_lr_scheduler, JointPredictor
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, batched_normalize
 from frag_gnn.utils.misc_utils import safelog
+from frag_gnn.frag.frag_utils import NUM_ELEMENTS
+from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
 
 
 class FragGNN(pl.LightningModule):
@@ -15,15 +17,15 @@ class FragGNN(pl.LightningModule):
 		num_hs: int,
 		num_elements: int,
 		int_embedder: str,
-		mol_node_feats: list[str],
-		mol_edge_feats: list[str],
-		mol_pe_embed_k: int,
+		mol_pyg_node_feats: list[str],
+		mol_pyg_edge_feats: list[str],
+		mol_pyg_pe_embed_k: int,
 		mol_hidden_size: int,
 		mol_num_layers: int,
 		mol_gnn_type: str,
 		mol_dropout: float,
-		frag_node_feats: list[str],
-		frag_edge_feats: list[str],
+		frag_pyg_node_feats: list[str],
+		frag_pyg_edge_feats: list[str],
 		frag_hidden_size: int,
 		frag_num_layers: int,
 		frag_gnn_type: str,
@@ -48,7 +50,8 @@ class FragGNN(pl.LightningModule):
         mz_max: float,
         mz_bin_res: float,
         bin_sum_ints: bool,
-        ints_transform: str
+        ints_transform: str,
+        **kwargs
     ):
         
         super().__init__()
@@ -58,15 +61,15 @@ class FragGNN(pl.LightningModule):
             num_hs=num_hs,
             num_elements=num_elements,
             int_embedder=int_embedder,
-            mol_node_feats=mol_node_feats,
-            mol_edge_feats=mol_edge_feats,
-            mol_pe_embed_k=mol_pe_embed_k,
+            mol_node_feats=mol_pyg_node_feats,
+            mol_edge_feats=mol_pyg_edge_feats,
+            mol_pe_embed_k=mol_pyg_pe_embed_k,
             mol_hidden_size=mol_hidden_size,
             mol_num_layers=mol_num_layers,
             mol_gnn_type=mol_gnn_type,
             mol_dropout=mol_dropout,
-            frag_node_feats=frag_node_feats,
-            frag_edge_feats=frag_edge_feats,
+            frag_node_feats=frag_pyg_node_feats,
+            frag_edge_feats=frag_pyg_edge_feats,
             frag_hidden_size=frag_hidden_size,
             frag_num_layers=frag_num_layers,
             frag_gnn_type=frag_gnn_type,
@@ -157,7 +160,6 @@ class FragGNN(pl.LightningModule):
 
     def _common_step(self, batch, name="train"):
 
-        print("_common_step")
         # preprocess spec
         spec_mzs = batch["spec_mzs"]
         spec_ints = batch["spec_ints"]
@@ -204,11 +206,11 @@ class FragGNN(pl.LightningModule):
 
         return self._common_step(batch, name="train")
 
-    def validation_step(self):
+    def validation_step(self, batch, batch_idx):
 
         return self._common_step(batch, name="val")
 
-    def test_step(self):
+    def test_step(self, batch, batch_idx):
 
         return self._common_step(batch, name="test")
 
@@ -230,3 +232,58 @@ class FragGNN(pl.LightningModule):
                 "interval": "step",
             }
         return ret
+
+
+def get_default_model_params():
+
+    default_model_params = {
+        "num_depth": 5, # max_depth + 1
+        "num_hs": 4,
+        "num_elements": NUM_ELEMENTS,
+        "int_embedder": "abs-sines",
+        "mol_node_feats": [
+            "a_onehot",
+            "a_degree",
+            "a_hybrid",
+            "a_formal",
+            "a_radical",
+            "a_ring",
+            "a_mass",
+            "a_chiral",
+        ],
+        "mol_edge_feats": ["b_degree"],
+        "mol_pe_embed_k": 0,
+        "mol_hidden_size": 256,
+        "mol_num_layers": 4,
+        "mol_gnn_type": "GINE",
+        "mol_dropout": 0.0,
+        "frag_node_feats": ["cc","base_formula","depth"],
+        "frag_edge_feats": ["cc","base_formula"],
+        "frag_hidden_size": 256,
+        "frag_num_layers": 4,
+        "frag_gnn_type": "GINE",
+        "frag_dropout": 0.0,
+        "mlp_hidden_size": 256,
+        "mlp_dropout": 0.0,
+        "mlp_num_layers": 2,
+        "mlp_use_residuals": True,
+        "lr": 1e-4,
+        "lr_schedule": False,
+        "weight_decay": 0.0,
+        "lr_decay_rate": 0.95,
+        "warmup": 1000,
+        "optimizer": "adamw",
+        "num_steps": 1000,
+        "output_distribution": "gaussian",
+        "loss_vectorized": False,
+        "loss_tolerance_ppm": 10,
+        "loss_tolerance_abs": None, #0.001,
+        "auxiliary_scores": ["cos_sim"],
+        "ints_thresh": INTS_THRESH,
+        "mz_max": MZ_MAX,
+        "mz_bin_res": MZ_BIN_RES,
+        "bin_sum_ints": True,
+        "ints_transform": "log10t3" # none
+    }
+
+    return default_model_params
