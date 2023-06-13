@@ -244,20 +244,24 @@ class JointPredictor(nn.Module):
 		)
 
 		# predict probabilities
-		frag_formula_probs = self.output_module(frag_embed)
+		frag_formula_logits = self.output_module(frag_embed)
 
+		# convert to logprobs
+		frag_formula_logits = frag_formula_logits.flatten()
+		frag_formula_logprobs = scatter_lognormalize(
+			frag_formula_logits,
+			frag_formula_idxs,
+			dim=0
+		)
 		# aggregate by formula
-		frag_formula_probs = frag_formula_probs.flatten()
-		frag_formula_probs = th.scatter_reduce(
-			input=th.zeros([frag_formula_cumsizes[-1]],device=device),
-			dim=0,
-			index=frag_formula_idxs,
-			src=frag_formula_probs,
-			reduce="sum"
+		frag_formula_logprobs = scatter_logsumexp(
+			frag_formula_logprobs,
+			frag_formula_idxs,
+			dim=0
 		)
 
 		# zero out NULL formula
-		frag_formula_mask = th.ones_like(frag_formula_probs)
+		frag_formula_mask = th.ones_like(frag_formula_logprobs)
 		frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.
 		frag_formula_batch_idxs = th.bucketize(
 			th.arange(frag_formula_cumsizes[-1],device=device),
@@ -266,20 +270,18 @@ class JointPredictor(nn.Module):
 		)-1
 		
 		# softmax with masked logits
-		frag_formula_probs = masked_subset_softmax(
-			frag_formula_probs,
+		frag_formula_logprobs = scatter_masked_softmax(
+			frag_formula_logprobs,
 			frag_formula_mask,
 			frag_formula_batch_idxs,
 			dim=0,
 			log=True
 		)
-		# print("frag_formula_probs",scatter_logsumexp(frag_formula_probs,frag_formula_batch_idxs,dim=0))
+		# print("frag_formula_logprobs",scatter_logsumexp(frag_formula_logprobs,frag_formula_batch_idxs,dim=0))
 
 		# convert to spectrum
 		spec_mzs = frag_formula_peak_mzs
-		spec_logprobs = frag_formula_probs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
-		# for numerical stability
-		spec_logprobs = th.clamp(spec_logprobs,min=np.log(1e-3))
+		spec_logprobs = frag_formula_logprobs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
 
 		# get batch idxs
 		spec_batch_idxs = th.repeat_interleave(
@@ -288,11 +290,15 @@ class JointPredictor(nn.Module):
 		)
 		
 		# log normalize
+		# print("spec_un",scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
 		spec_logprobs = scatter_lognormalize(
 			spec_logprobs,
 			spec_batch_idxs,
 			dim=0
 		)
+		# print("spec_n",scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
+		if th.any(th.abs(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))>1.):
+			import pdb; pdb.set_trace() 
 
 		return spec_mzs, spec_logprobs, spec_batch_idxs
 
@@ -493,7 +499,9 @@ def random_walk_pe(g, k, eweight_name=None):
 	PE = th.stack(PE, dim=-1)
 	return PE
 
-def masked_subset_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=True):
+def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=np.log(1e-4),dim=-1,log=True):
+	# # clamp
+	# logits = th.clamp(logits,min=np.log(1e-4))
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
 	# normalize
