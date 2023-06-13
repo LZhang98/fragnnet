@@ -9,6 +9,24 @@ from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
 
 
+def batchwise_max(xs, batch_idxs):
+    """ for debugging """
+
+    batch_size = th.max(batch_idxs)+1
+    maxs = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
+    for b in range(batch_size):
+        maxs[b] = th.max(xs[batch_idxs==b])
+    return maxs
+
+def batchwise_lse(xs, batch_idxs):
+    """ for debugging """
+
+    batch_size = th.max(batch_idxs)+1
+    lses = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
+    for b in range(batch_size):
+        lses[b] = th.logsumexp(xs[batch_idxs==b],0)
+    return lses
+
 class FragGNN(pl.LightningModule):
 
     def __init__(
@@ -160,17 +178,23 @@ class FragGNN(pl.LightningModule):
 
     def _common_step(self, batch, name="train"):
 
+        print("_common_step")
         # preprocess spec
         spec_mzs = batch["spec_mzs"]
         spec_ints = batch["spec_ints"]
         spec_batch_idxs = batch["spec_batch_idxs"]
         batch_size = batch["batch_size"]
+        # print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
         spec_mzs, spec_ints, spec_batch_idxs = self.preproc_spec(
             spec_mzs,
             spec_ints,
             spec_batch_idxs
         )
+        # print("post_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
+        # print("post_spec_lse",batchwise_lse(spec_ints,spec_batch_idxs))
         pred = self.forward(**batch)
+        # print("pred_max",batchwise_max(pred["pred_logits"],pred["pred_batch_idxs"]))
+        # print("pred_lse",batchwise_lse(pred["pred_logits"],pred["pred_batch_idxs"]))
         loss = self.loss_fn(
             spec_mzs,
             spec_ints,

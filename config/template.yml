@@ -88,8 +88,8 @@ mz_max: 1500.0
 mz_bin_res: 0.01
 bin_sum_ints: True
 ints_transform: log10t3
-train_batch_size: 32
-eval_batch_size: 32
+train_batch_size: 16
+eval_batch_size: 16
 epochs: 10
 accelerator: cpu
 devices: auto

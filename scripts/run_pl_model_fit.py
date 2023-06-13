@@ -29,9 +29,11 @@ def load_config(template_fp, custom_fp):
 			custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
 
 		for k, v in custom_d.items():
+			assert k in config_d, k
 			config_d[k] = v
 
 	return config_d
+
 
 if __name__ == "__main__":
 

@@ -123,6 +123,8 @@ class SpecMolDataset(Dataset):
 		mzs = th.tensor(mzs,dtype=th.float)
 		ints = th.tensor(ints,dtype=th.float)
 		# mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
+		assert mzs.shape[0] > 0
+		assert ints.shape[0] > 0
 		if self.spec_params["sparse"]:
 			# get sparse spectrum
 			spec_data["spec_mzs"] = mzs

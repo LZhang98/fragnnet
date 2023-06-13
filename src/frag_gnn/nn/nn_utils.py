@@ -273,17 +273,27 @@ class JointPredictor(nn.Module):
 			dim=0,
 			log=True
 		)
+		# print("frag_formula_probs",scatter_logsumexp(frag_formula_probs,frag_formula_batch_idxs,dim=0))
 
 		# convert to spectrum
 		spec_mzs = frag_formula_peak_mzs
 		spec_logprobs = frag_formula_probs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
-		
-		# check that the total intensity sums up to 1 (approximately)
+		# for numerical stability
+		spec_logprobs = th.clamp(spec_logprobs,min=np.log(1e-3))
+
+		# get batch idxs
 		spec_batch_idxs = th.repeat_interleave(
 			th.arange(frag_formula_peak_sizes.shape[0],device=device),
 			frag_formula_peak_sizes
 		)
 		
+		# log normalize
+		spec_logprobs = scatter_lognormalize(
+			spec_logprobs,
+			spec_batch_idxs,
+			dim=0
+		)
+
 		return spec_mzs, spec_logprobs, spec_batch_idxs
 
 class GNN(nn.Module):
