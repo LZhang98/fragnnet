@@ -10,7 +10,7 @@ import scipy
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
-from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_normalize, scatter_reduce, scatter_masked_softmax
+from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_lognormalize, scatter_reduce, scatter_masked_softmax
 from frag_gnn.utils.feat_utils import get_mol_feats_sizes
 
 
@@ -78,9 +78,7 @@ class JointPredictor(nn.Module):
 		self.mol_node_feats = mol_node_feats
 		self.mol_edge_feats = mol_edge_feats
 		self.mol_pe_embed_k = mol_pe_embed_k
-		self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
-			mol_node_feats, mol_edge_feats, mol_pe_embed_k
-		) 
+		self._compute_mol_feats_sizes() 
 		mol_kwargs = {
 			"node_feats_size": self.mol_node_feats_size,
 			"edge_feats_size": self.mol_edge_feats_size,
@@ -94,8 +92,7 @@ class JointPredictor(nn.Module):
 		self.depth_embedder = get_embedder(int_embedder)
 		self.frag_node_feats = frag_node_feats
 		self.frag_edge_feats = frag_edge_feats
-		self._compute_frag_node_feats_size()
-		self._compute_frag_edge_feats_size()
+		self._compute_frag_feats_sizes()
 		frag_kwargs = {
 			"node_feats_size": self.frag_node_feats_size,
 			"edge_feats_size": self.frag_edge_feats_size,
@@ -115,7 +112,17 @@ class JointPredictor(nn.Module):
 		}
 		self.output_module = MLPBlocks(**mlp_kwargs)
 
-	def _compute_frag_node_feats_size(self):
+	def _compute_mol_feats_sizes(self):
+		# these features don't rely on any model parameters
+		self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
+			self.mol_node_feats, 
+			self.mol_edge_feats, 
+			self.mol_pe_embed_k
+		)
+
+	def _compute_frag_feats_sizes(self):
+		# these features do depend on model parameters
+		# nodes
 		self.frag_node_feats_size = 0
 		if "cc" in self.frag_node_feats:
 			self.frag_node_feats_size += self.mol_embedder.hidden_size
@@ -123,8 +130,7 @@ class JointPredictor(nn.Module):
 			self.frag_node_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "depth" in self.frag_node_feats:
 			self.frag_node_feats_size += self.num_depth*self.depth_embedder.num_dim
-
-	def _compute_frag_edge_feats_size(self):
+		# edges
 		self.frag_edge_feats_size = 0
 		if "cc" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.mol_embedder.hidden_size
@@ -153,6 +159,8 @@ class JointPredictor(nn.Module):
 		**kwargs
 	):
 
+		# TODO add collision energy support
+		
 		device = mol_num_nodes.device
 
 		mol_x, mol_edge_index, mol_edge_attr = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr
@@ -236,20 +244,24 @@ class JointPredictor(nn.Module):
 		)
 
 		# predict probabilities
-		frag_formula_probs = self.output_module(frag_embed)
+		frag_formula_logits = self.output_module(frag_embed)
 
+		# convert to logprobs
+		frag_formula_logits = frag_formula_logits.flatten()
+		frag_formula_logprobs = scatter_lognormalize(
+			frag_formula_logits,
+			frag_formula_idxs,
+			dim=0
+		)
 		# aggregate by formula
-		frag_formula_probs = frag_formula_probs.flatten()
-		frag_formula_probs = th.scatter_reduce(
-			input=th.zeros([frag_formula_cumsizes[-1]],device=device),
-			dim=0,
-			index=frag_formula_idxs,
-			src=frag_formula_probs,
-			reduce="sum"
+		frag_formula_logprobs = scatter_logsumexp(
+			frag_formula_logprobs,
+			frag_formula_idxs,
+			dim=0
 		)
 
 		# zero out NULL formula
-		frag_formula_mask = th.ones_like(frag_formula_probs)
+		frag_formula_mask = th.ones_like(frag_formula_logprobs)
 		frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.
 		frag_formula_batch_idxs = th.bucketize(
 			th.arange(frag_formula_cumsizes[-1],device=device),
@@ -258,24 +270,36 @@ class JointPredictor(nn.Module):
 		)-1
 		
 		# softmax with masked logits
-		frag_formula_probs = masked_subset_softmax(
-			frag_formula_probs,
+		frag_formula_logprobs = scatter_masked_softmax(
+			frag_formula_logprobs,
 			frag_formula_mask,
 			frag_formula_batch_idxs,
 			dim=0,
 			log=True
 		)
+		# print("frag_formula_logprobs",scatter_logsumexp(frag_formula_logprobs,frag_formula_batch_idxs,dim=0))
 
 		# convert to spectrum
 		spec_mzs = frag_formula_peak_mzs
-		spec_logprobs = frag_formula_probs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
-		
-		# check that the total intensity sums up to 1 (approximately)
+		spec_logprobs = frag_formula_logprobs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
+
+		# get batch idxs
 		spec_batch_idxs = th.repeat_interleave(
 			th.arange(frag_formula_peak_sizes.shape[0],device=device),
 			frag_formula_peak_sizes
 		)
 		
+		# log normalize
+		# print("spec_un",scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
+		spec_logprobs = scatter_lognormalize(
+			spec_logprobs,
+			spec_batch_idxs,
+			dim=0
+		)
+		# print("spec_n",scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
+		if th.any(th.abs(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))>1.):
+			import pdb; pdb.set_trace() 
+
 		return spec_mzs, spec_logprobs, spec_batch_idxs
 
 class GNN(nn.Module):
@@ -475,49 +499,18 @@ def random_walk_pe(g, k, eweight_name=None):
 	PE = th.stack(PE, dim=-1)
 	return PE
 
-def masked_subset_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=True):
+def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=np.log(1e-4),dim=-1,log=True):
+	# # clamp
+	# logits = th.clamp(logits,min=np.log(1e-4))
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
 	# normalize
-	masked_logits = scatter_normalize(masked_logits,subset_idxs,dim)
+	masked_logits = scatter_lognormalize(masked_logits,subset_idxs,dim)
 	if not log:
 		# exponentiate
 		return th.exp(masked_logits)
 	else:
 		return masked_logits
-
-def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=1e-9):
-
-	k = th.max(subset_idxs)+1
-	sm = th.zeros([k],device=logits.device)
-	sm.scatter_reduce_(
-		dim=dim,
-		index=subset_idxs,
-		src=logits,
-		reduce="amax"
-	)
-	lm = th.gather(
-		input=sm,
-		index=subset_idxs,
-		dim=dim
-	)
-	logits = logits - lm
-	se = th.zeros([k],device=logits.device)
-	se.scatter_reduce_(
-		dim=dim,
-		index=subset_idxs,
-		src=th.exp(logits),
-		reduce="sum"
-	)
-	return sm + th.log(se + eps)
-
-def scatter_normalize(logits,subset_idxs,dim=-1):
-	# calculate normalizing constant
-	c = scatter_logsumexp(logits,subset_idxs,dim=dim)
-	# apply normalizing constant
-	logits = logits - c[subset_idxs]
-	return logits
-
 
 if __name__ == "__main__":
 

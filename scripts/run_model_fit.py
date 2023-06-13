@@ -12,7 +12,7 @@ from copy import deepcopy
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed, get_pyg_memory_usage
 from frag_gnn.utils.feat_utils import get_mol_graph, get_frag_graph, batch_mols_frags
-from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_normalize
+from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_lognormalize
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
 from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, \
 	calculate_match_mzs, calculate_cosine_similarity, batch_func
@@ -270,23 +270,26 @@ if __name__ == "__main__":
 
 	}
 
+	IDX_TO_MOL_D = {}
+	IDX_TO_FRAG_D = {}
+
 	compound_idx = args.compound_idx
 	max_depth = args.max_depth
 	h_prior = True 
 	max_h_transfer = args.max_h_transfer
 	vectorized = th.tensor(args.vectorized,dtype=th.bool)
-	batch_size = th.tensor(args.batch_size,dtype=th.int32)
+	batch_size = args.batch_size
 	tolerance = th.tensor(args.tolerance,dtype=th.float32)
 	frag_max_time = None
-	smiles = IDX_TO_SMILES[compound_idx]
-	mol_d = frag_utils.extract_mol_info(smiles)
 	hidden_size = 256
-	spec = IDX_TO_SPEC[compound_idx]
-	mzs, ints = zip(*spec)
-	mzs = th.tensor(mzs,dtype=th.float32)
-	ints = F.normalize(th.tensor(ints,dtype=th.float32),p=1,dim=0)
-	prec_mz = calc_prec_mz(smiles,"[M+H]+")
 	undirected_dag = args.undirected_dag
+	
+	if compound_idx == -1:
+		compound_idxs = []
+		for b in range(batch_size):
+			compound_idxs.append(b%len(IDX_TO_SMILES))
+	else:
+		compound_idxs = [compound_idx for i in range(batch_size)]
 
 	if args.device_id == 0:
 		device = th.device("cuda:0")
@@ -294,8 +297,7 @@ if __name__ == "__main__":
 		device = th.device("cpu")
 
 	# prepare data
-	batch_size = args.batch_size
-	atom_feats = [
+	mol_node_feats = [
 		"a_onehot",
 		"a_degree",
 		"a_hybrid",
@@ -305,24 +307,67 @@ if __name__ == "__main__":
 		"a_mass",
 		"a_chiral",
 	]
-	bond_feats = ["b_degree"]
-	pe_embed_k = 0
-	bigraph = True
-	mol_pyg = get_mol_graph(mol_d["mol"],atom_feats,bond_feats,pe_embed_k,bigraph)
-	frag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
-	frag_pyg = get_frag_graph(frag_d["dag"],undirected_dag)
-	# batch mol/dag stuff
-	mol_pygs = [deepcopy(mol_pyg) for i in range(batch_size)]
-	frag_pygs = [deepcopy(frag_pyg) for i in range(batch_size)]
+	mol_edge_feats = ["b_degree"]
+	mol_pe_embed_k = 0
+	mol_bigraph = True
+	frag_node_feats = [
+		"cc",
+		"base_formula",
+		"depth"
+	]
+	frag_edge_feats = [
+		"cc",
+		"base_formula"
+	]
+	frag_bigraph = undirected_dag
 	mass_diff = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
-	formula_mzses = [frag_d["formula_peak_mzs"][:,:args.num_isotopes].detach().clone()+mass_diff for i in range(batch_size)]
-	formula_probses = [frag_d["formula_peak_probs"][:,:args.num_isotopes].detach().clone() for i in range(batch_size)]
-	batched_frag_d = batch_mols_frags(mol_pygs,frag_pygs,formula_mzses,formula_probses)
+	spec_mzs, spec_ints = [], []
+	mol_pygs, frag_pygs = [], []
+	formula_peak_mzses, formula_peak_probses = [], []
+	for b in range(batch_size):
+		compound_idx = compound_idxs[b]
+		smiles = IDX_TO_SMILES[compound_idx]
+		spec = IDX_TO_SPEC[compound_idx]
+		mzs, ints = zip(*spec)
+		mzs = th.tensor(mzs,dtype=th.float32)
+		ints = F.normalize(th.tensor(ints,dtype=th.float32),p=1,dim=0)
+		spec_mzs.append(mzs)
+		spec_ints.append(ints)
+		prec_mz = calc_prec_mz(smiles,"[M+H]+")
+		if compound_idx in IDX_TO_MOL_D:
+			mol_d = IDX_TO_MOL_D[compound_idx]
+		else:
+			mol_d = frag_utils.extract_mol_info(smiles)
+			IDX_TO_MOL_D[compound_idx] = mol_d
+		mol_pyg = get_mol_graph(
+			deepcopy(mol_d["mol"]),
+			mol_node_feats,
+			mol_edge_feats,
+			mol_pe_embed_k,
+			mol_bigraph
+		)
+		if compound_idx in IDX_TO_FRAG_D:
+			frag_d = IDX_TO_FRAG_D[compound_idx]
+		else:
+			frag_d = timeit(frag_utils.compute_dags)(mol_d,max_depth,h_prior,max_h_transfer,frag_max_time)
+			IDX_TO_FRAG_D[compound_idx] = frag_d
+		frag_pyg = get_frag_graph(
+			deepcopy(frag_d["dag"]),
+			frag_node_feats,
+			frag_edge_feats,
+			frag_bigraph
+		)
+		formula_peak_mzs = frag_d["formula_peak_mzs"][:,:args.num_isotopes].detach().clone()+mass_diff
+		formula_peak_probs = frag_d["formula_peak_probs"][:,:args.num_isotopes].detach().clone()
+		mol_pygs.append(mol_pyg)
+		frag_pygs.append(frag_pyg)
+		formula_peak_mzses.append(formula_peak_mzs)
+		formula_peak_probses.append(formula_peak_probs)
+	# batch mol/dag stuff
+	batched_frag_d = batch_mols_frags(mol_pygs,frag_pygs,formula_peak_mzses,formula_peak_probses)
 	for k in batched_frag_d.keys():
 		batched_frag_d[k] = batched_frag_d[k].to(device)
 	# batch spectrum stuff
-	spec_mzs = [mzs.detach().clone() for i in range(batch_size)]
-	spec_ints = [ints.detach().clone() for i in range(batch_size)]
 	spec_mzs, spec_ints, spec_batch_idxs = batch_func(spec_mzs,spec_ints)
 	spec_mzs, spec_ints, spec_batch_idxs = spec_mzs.to(device), spec_ints.to(device), spec_batch_idxs.to(device)
 	batched_frag_d["spec_mzs"] = spec_mzs
@@ -332,17 +377,17 @@ if __name__ == "__main__":
 	# prepare_model
 	mol_kwargs = {
 		"hidden_size": hidden_size,
-		"node_feats": atom_feats,
-		"edge_feats": bond_feats,
-		"pe_embed_k": pe_embed_k,
+		"node_feats": mol_node_feats,
+		"edge_feats": mol_edge_feats,
+		"pe_embed_k": mol_pe_embed_k,
 		"gnn_type": "GINE",
 		"num_layers": 4,
 		"dropout": 0.0,
 	}
 	frag_kwargs = {
 		"hidden_size": hidden_size,
-		"node_feats": ["cc","base_formula","depth"],
-		"edge_feats": ["cc","base_formula"],
+		"node_feats": frag_node_feats,
+		"edge_feats": frag_edge_feats,
 		"gnn_type": "GINE",
 		"num_layers": 4,
 		"dropout": 0.0,
@@ -417,7 +462,7 @@ if __name__ == "__main__":
 				# add slight mass jitter
 				true_mzs = pred_mzs[true_mask] + 0.0002*th.rand_like(pred_mzs[true_mask]) - 0.0001
 				# random intensities
-				true_logits = scatter_normalize(
+				true_logits = scatter_lognormalize(
 					th.log(th.rand_like(pred_logits[true_mask])),
 					true_batch_idxs,
 					dim=0
@@ -457,10 +502,10 @@ if __name__ == "__main__":
 		weighted_recall = th.mean(weighted_recall)
 		cosine_similarity = calculate_cosine_similarity(
 			true_mzs,
-			th.exp(scatter_normalize(true_logits,true_batch_idxs,dim=0)),
+			th.exp(scatter_lognormalize(true_logits,true_batch_idxs,dim=0)),
 			true_batch_idxs,
 			pred_mzs,
-			th.exp(scatter_normalize(pred_logits,pred_batch_idxs,dim=0)),
+			th.exp(scatter_lognormalize(pred_logits,pred_batch_idxs,dim=0)),
 			pred_batch_idxs
 		)
 		cosine_similarity = th.mean(cosine_similarity)

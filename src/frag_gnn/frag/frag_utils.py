@@ -683,7 +683,7 @@ def th_long_to_mask(long, device='cpu'):
 	# long is N x MASK_SIZE//64
 	num_dims = long.shape[1]
 	long = long.reshape(long.shape[0],num_dims,1)
-	mask = 2**th.arange(64-1,-1,-1)
+	mask = 2**th.arange(64-1,-1,-1,device=long.device)
 	mask = mask.reshape(1,1,64)
 	if device != 'cpu':
 		mask = mask.to(device)
@@ -694,7 +694,7 @@ def th_mask_to_long(mask):
 	# mask is N x MASK_SIZE
 	num_dims = mask.shape[1]//64
 	mask = mask.reshape(mask.shape[0],num_dims,64)
-	long = 2**th.arange(64-1,-1,-1).expand(1,num_dims,64)
+	long = 2**th.arange(64-1,-1,-1,device=mask.device).expand(1,num_dims,64)
 	return th.sum(long*mask,dim=2).long()
 
 
@@ -900,7 +900,19 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	frag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
 	frag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
 	return frag_d
-	
+
+NODE_FEAT_TO_IDX = {
+	"depth":0,
+	"cc":1,
+	"base_formula":2,
+	"h_formulae_idx":3,
+}
+
+EDGE_FEAT_TO_IDX = {
+	"cc":0,
+	"base_formula":1
+}
+
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
 	"""get node features by key used for pyg
 
@@ -909,23 +921,12 @@ def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
 		node_feat_idxs (_type_): _description_
 		key (_type_): _description_
 
-	Raises:
-		ValueError: _description_
-
 	Returns:
 		_type_: _description_
 	"""
 
-	if key == "depth":
-		node_feats = node_feats[:,node_feat_idxs[0]:node_feat_idxs[1]]
-	elif key == "cc":
-		node_feats = node_feats[:,node_feat_idxs[1]:node_feat_idxs[2]]
-	elif key == "base_formula":
-		node_feats = node_feats[:,node_feat_idxs[2]:node_feat_idxs[3]]
-	elif key == "h_formulae_idx":
-		node_feats = node_feats[:,node_feat_idxs[3]:node_feat_idxs[4]]
-	else:
-		raise ValueError("key not found")
+	node_feat_idx = NODE_FEAT_TO_IDX[key]
+	node_feats = node_feats[:,node_feat_idxs[node_feat_idx]:node_feat_idxs[node_feat_idx+1]]
 	return node_feats
 
 def get_edge_feats(edge_feats:th.Tensor,edge_feat_idxs:int,key:str):
@@ -936,20 +937,13 @@ def get_edge_feats(edge_feats:th.Tensor,edge_feat_idxs:int,key:str):
 		edge_feat_idxs (_type_): _description_
 		key (_type_): _description_
 
-	Raises:
-		ValueError: _description_
-
 	Returns:
 		_type_: _description_
 	"""
 
-	if key == "cc":
-		key_edge_feats = edge_feats[:,edge_feat_idxs[0]:edge_feat_idxs[1]]
-	elif key == "base_formula":
-		key_edge_feats = edge_feats[:,edge_feat_idxs[1]:edge_feat_idxs[2]]
-	else:
-		raise ValueError("key not found")
-	return key_edge_feats
+	edge_feat_idx = EDGE_FEAT_TO_IDX[key]
+	edge_feats = edge_feats[:,edge_feat_idxs[edge_feat_idx]:edge_feat_idxs[edge_feat_idx+1]]
+	return edge_feats
 
 def get_frag_fp(mol_id:int, frag_dp:str, is_compressed:bool):
 

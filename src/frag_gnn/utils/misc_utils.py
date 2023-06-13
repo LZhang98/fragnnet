@@ -13,9 +13,16 @@ import signal
 import sys
 import threading
 import torch_geometric as pyg
+import lightning.pytorch as pl
+import logging
+from lightning.pytorch.utilities import rank_zero_only
+from lightning.pytorch.loggers.logger import rank_zero_experiment
+from lightning.pytorch.loggers import Logger
+import copy
 
 TQDM_DISABLE = False
 PPM = 1/1000000
+EPS = 1e-9
 
 def timeit(func):
 	# adapted from https://dev.to/kcdchennai/python-decorator-to-measure-execution-time-54hk
@@ -157,14 +164,14 @@ def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=Tr
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
 	# normalize
-	masked_logits = scatter_normalize(masked_logits,subset_idxs,dim)
+	masked_logits = scatter_lognormalize(masked_logits,subset_idxs,dim)
 	if not log:
 		# exponentiate
 		return th.exp(masked_logits)
 	else:
 		return masked_logits
 
-def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=1e-9):
+def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=EPS):
 
 	k = th.max(subset_idxs)+1
 	sm = scatter_reduce(
@@ -189,18 +196,31 @@ def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=1e-9):
 	)
 	return sm + th.log(se + eps)
 
-def scatter_normalize(logits,subset_idxs,dim=-1):
+def scatter_lognormalize(logits,subset_idxs,dim=-1):
 	# calculate normalizing constant
 	c = scatter_logsumexp(logits,subset_idxs,dim=dim)
 	# apply normalizing constant
 	logits = logits - c[subset_idxs]
 	return logits
 
+def scatter_normalize(vals,subset_idxs,dim=-1):
+	# calculate normalizing constant
+	c = scatter_reduce(
+		src=vals,
+		index=subset_idxs,
+		reduce="sum",
+		dim=dim,
+		dim_size=th.max(subset_idxs)+1
+	)
+	# apply normalizing constant
+	vals = vals/c[subset_idxs]
+	return vals
+
 def scatter_reduce(src,index,reduce,dim,dim_size):
 
 	result_shape = list(src.shape)
 	result_shape[dim] = dim_size
-	results = th.zeros(result_shape,dtype=src.dtype,device=src.device)
+	results = th.zeros(tuple(result_shape),dtype=src.dtype,device=src.device)
 	results.scatter_reduce_(
 		dim=dim,
 		index=index,
@@ -208,3 +228,48 @@ def scatter_reduce(src,index,reduce,dim,dim_size):
 		reduce=reduce
 	)
 	return results
+
+def safelog(x,eps=EPS):
+	return th.log(x+eps)
+
+class ConsoleLogger(Logger):
+    """Custom console logger class"""
+
+    def __init__(self):
+        super().__init__()
+
+    @property
+    @rank_zero_experiment
+    def name(self):
+        pass
+
+    @property
+    @rank_zero_experiment
+    def experiment(self):
+        pass
+
+    @property
+    @rank_zero_experiment
+    def version(self):
+        pass
+
+    @rank_zero_only
+    def log_hyperparams(self, params):
+        ## No need to log hparams
+        pass
+
+    @rank_zero_only
+    def log_metrics(self, metrics, step):
+
+        metrics = copy.deepcopy(metrics)
+
+        epoch_num = "??"
+        if "epoch" in metrics:
+            epoch_num = metrics.pop("epoch")
+
+        for k, v in metrics.items():
+            logging.info(f"Epoch {epoch_num}, step {step}-- {k} : {v}")
+
+    @rank_zero_only
+    def finalize(self, status):
+        pass

@@ -11,7 +11,7 @@ import networkx as nx
 import torch_geometric as pyg
 from copy import deepcopy
 
-from frag_gnn.frag.frag_utils import CANONICAL_ELEMENT_ORDER
+from frag_gnn.frag.frag_utils import CANONICAL_ELEMENT_ORDER, NODE_FEAT_TO_IDX, EDGE_FEAT_TO_IDX, get_node_feats, get_edge_feats
 
 # TODO: remove this registry
 
@@ -472,22 +472,59 @@ def get_mol_graph(mol,atom_feats,bond_feats,pe_embed_k,bigraph):
 	mol_pyg = mg.get_pyg_graph(mol,bigraph=bigraph)
 	return mol_pyg
 
-def get_frag_graph(dag_pyg,bigraph):
+def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph,include_h_formulae_idx=True):
 
-	dag_pyg = deepcopy(dag_pyg)
-	dag_pyg.x = dag_pyg.x.long()
-	dag_pyg.edge_attr = dag_pyg.edge_attr.long()
-	dag_pyg.edge_index = dag_pyg.edge_index.long()
-	dag_pyg.node_feat_idxs = dag_pyg.node_feat_idxs.long()
-	dag_pyg.edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
+	device = dag_pyg.x.device
+	# cast
+	x = dag_pyg.x.long()
+	edge_attr = dag_pyg.edge_attr.long()
+	edge_index = dag_pyg.edge_index.long()
+	node_feat_idxs = dag_pyg.node_feat_idxs.long()
+	edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
+	num_nodes = dag_pyg.num_nodes
+	# select node features
+	if include_h_formulae_idx and "h_formulae_idx" not in frag_node_feats:
+		frag_node_feats.append("h_formulae_idx")
+	_x = []
+	_node_feat_idxs = [0]
+	_node_feat_size = 0
+	for feat, feat_idx in NODE_FEAT_TO_IDX.items():
+		if feat in frag_node_feats:
+			_x_cur = get_node_feats(x,node_feat_idxs[0],feat)
+			_x.append(_x_cur)
+			_node_feat_size += _x_cur.shape[1]
+		_node_feat_idxs.append(_node_feat_size)
+	_x = th.cat(_x,dim=1)
+	_node_feat_idxs = th.tensor(_node_feat_idxs,device=device,dtype=th.int64).reshape(1,-1)
+	# select edge features
+	_edge_index = edge_index.clone()
+	_edge_attr = []
+	_edge_feat_idxs = [0]
+	_edge_feat_size = 0
+	for feat, feat_idx in EDGE_FEAT_TO_IDX.items():
+		if feat in frag_edge_feats:
+			_edge_attr_cur = get_edge_feats(edge_attr,edge_feat_idxs[0],feat)
+			_edge_attr.append(_edge_attr_cur)
+			_edge_feat_size += _edge_attr_cur.shape[1]
+		_edge_feat_idxs.append(_edge_feat_size)
+	_edge_attr = th.cat(_edge_attr,dim=1)
+	_edge_feat_idxs = th.tensor(_edge_feat_idxs,device=device,dtype=th.int64).reshape(1,-1)
+	# convert to undirected
 	if bigraph:
-		# convert to undirected
-		dag_pyg.edge_index, dag_pyg.edge_attr = pyg.utils.to_undirected(
-			dag_pyg.edge_index, 
-			dag_pyg.edge_attr, 
-			dag_pyg.num_nodes,
+		_edge_index, _edge_attr = pyg.utils.to_undirected(
+			_edge_index, 
+			_edge_attr, 
+			num_nodes,
 			reduce="mean"
 		)
+	# create pyg object
+	dag_pyg = pyg.data.Data(
+		x=_x,
+		edge_index=_edge_index,
+		edge_attr=_edge_attr,
+		node_feat_idxs=_node_feat_idxs,
+		edge_feat_idxs=_edge_feat_idxs
+	)
 	return dag_pyg
 
 
