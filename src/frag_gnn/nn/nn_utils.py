@@ -250,7 +250,7 @@ class JointPredictor(nn.Module):
 		frag_formula_logits = frag_formula_logits.flatten()
 		frag_formula_logprobs = scatter_lognormalize(
 			frag_formula_logits,
-			frag_formula_idxs,
+			th.repeat_interleave(frag_formula_batch_idxs,2*self.num_hs+1), # this is wrong
 			dim=0
 		)
 		# aggregate by formula

@@ -165,7 +165,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--undirected_dag",
 		type=booltype,
-		default=False,
+		default=True,
 		help="Whether to use undirected edges in the fragment DAG"
 	)
 	args = parser.parse_args()
