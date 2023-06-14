@@ -13,16 +13,13 @@ import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed, get_pyg_memory_usage
 from frag_gnn.utils.feat_utils import get_mol_graph, get_frag_graph, batch_mols_frags
 from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_lognormalize
-from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
+from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
 from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, \
 	calculate_match_mzs, calculate_cosine_similarity, batch_func
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PERIODIC_TABLE, parse_formula
 from frag_gnn.utils.data_utils import mol_from_smiles, mol_to_formula
 from frag_gnn.utils.plot_utils import plot_dual_axis, plot_spectra_sparse
 
-# print(f"> frag memory usage = {get_pyg_memory_usage(frag_pyg)/1e6:.3f} MB")
-
-# print(f"> mol memory usage = {get_pyg_memory_usage(mol_pyg)/1e6:.3f} MB")
 
 def torch_time(func):
 	def _time_func(*args,**kwargs):
@@ -58,23 +55,13 @@ def calc_prec_mz(smiles,prec_type):
 
 
 if __name__ == "__main__":
-
-	# to get compound 0 to work use the following configuration: 
-	# max_h_transfer=4
-	# num_isotopes=1
-	# tolerance=1e-3
-	# out_dist=gaussian
-	# lr=1e-4
-	# num_iters=1000 (should see convergence around 500)
-	# batch_size=2 (just used something small to speed up training)
-	# other parameters don't matter
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument(
 		"--compound_idx",
 		type=int,
 		default=0,
-		help="Index of compound to run"
+		help="Index of compound to run (-1 means all compounds)"
 	)
 	parser.add_argument(
 		"--max_depth",
@@ -146,7 +133,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--lr",
 		type=float,
-		default=1e-4, #1e-3,
+		default=1e-4,
 		help="Learning rate"
 	)
 	parser.add_argument(
@@ -159,7 +146,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--num_isotopes",
 		type=int,
-		default=1, #frag_utils.MAX_NUM_MZS_PER_FORMULA,
+		default=1,
 		help="Maximum number of isotopic trace peaks to consider"
 	)
 	parser.add_argument(
@@ -167,6 +154,18 @@ if __name__ == "__main__":
 		type=booltype,
 		default=True,
 		help="Whether to use undirected edges in the fragment DAG"
+	)
+	parser.add_argument(
+		"--formula_entropy_weight",
+		type=float,
+		default=0.,
+		help="Weight for the formula entropy term in the loss function"
+	)
+	parser.add_argument(
+		"--node_entropy_weight",
+		type=float,
+		default=0.,
+		help="Weight for the node entropy term in the loss function"
 	)
 	args = parser.parse_args()
 
@@ -422,6 +421,8 @@ if __name__ == "__main__":
 		args.tolerance,
 		args.relative
 	)
+
+	sparse_entropy_fn = get_sparse_entropy_fn()
 	
 	if args.jit:
 		th_dynamo.config.verbose = True
@@ -451,7 +452,7 @@ if __name__ == "__main__":
 	}
 
 	def get_pred_true():
-		pred_mzs, pred_logits, pred_batch_idxs = joint_model_forward(
+		both_d = joint_model_forward(
 			**deepcopy(batched_frag_d)
 		)
 		if args.random_targ or spec is None:
@@ -462,54 +463,67 @@ if __name__ == "__main__":
 				# add slight mass jitter
 				true_mzs = pred_mzs[true_mask] + 0.0002*th.rand_like(pred_mzs[true_mask]) - 0.0001
 				# random intensities
-				true_logits = scatter_lognormalize(
-					th.log(th.rand_like(pred_logits[true_mask])),
+				true_logprobs = scatter_lognormalize(
+					th.log(th.rand_like(pred_logprobs[true_mask])),
 					true_batch_idxs,
 					dim=0
 				)
 		else:
 			true_mzs = batched_frag_d["spec_mzs"]
-			true_logits = th.log(batched_frag_d["spec_ints"])
+			true_logprobs = th.log(batched_frag_d["spec_ints"])
 			true_batch_idxs = batched_frag_d["spec_idxs"]
-		return pred_mzs, pred_logits, pred_batch_idxs, true_mzs, true_logits, true_batch_idxs
+		both_d["true_mzs"] = true_mzs
+		both_d["true_logprobs"] = true_logprobs
+		both_d["true_batch_idxs"] = true_batch_idxs
+		return both_d
 
 	best_d = {}
 
 	for i in range(args.num_iters):
 		print(f">> iter {i}")
-		pred_mzs, pred_logits, pred_batch_idxs, true_mzs, true_logits, true_batch_idxs = get_pred_true()
-		pred_entropy = th.mean(calculate_spectrum_entropy(pred_logits,pred_batch_idxs))
-		true_entropy = th.mean(calculate_spectrum_entropy(true_logits,true_batch_idxs))
+		both_d = get_pred_true()
+		pred_mzs = both_d["pred_mzs"]
+		pred_logprobs = both_d["pred_logprobs"]
+		pred_batch_idxs = both_d["pred_batch_idxs"]
+		pred_formula_logprobs = both_d["pred_formula_logprobs"]
+		pred_formula_batch_idxs = both_d["pred_formula_batch_idxs"]
+		pred_node_logprobs = both_d["pred_node_logprobs"]
+		pred_node_batch_idxs = both_d["pred_node_batch_idxs"]
+		true_mzs = both_d["true_mzs"]
+		true_logprobs = both_d["true_logprobs"]
+		true_batch_idxs = both_d["true_batch_idxs"]
+		pred_entropy = th.mean(calculate_spectrum_entropy(pred_logprobs,pred_batch_idxs))
+		true_entropy = th.mean(calculate_spectrum_entropy(true_logprobs,true_batch_idxs))
 		topk_weighted_recall, topk_frac = calculate_topk_weighted_recall(
 			true_mzs,
-			true_logits,
+			true_logprobs,
 			true_batch_idxs,
 			pred_mzs,
-			pred_logits,
+			pred_logprobs,
 			pred_batch_idxs
 		)
 		topk_weighted_recall = th.mean(topk_weighted_recall)
 		topk_frac = th.mean(topk_frac)
 		recall, weighted_recall = calculate_recalls(
 			true_mzs,
-			true_logits,
+			true_logprobs,
 			true_batch_idxs,
 			pred_mzs,
-			pred_logits,
+			pred_logprobs,
 			pred_batch_idxs
 		)
 		recall = th.mean(recall)
 		weighted_recall = th.mean(weighted_recall)
 		cosine_similarity = calculate_cosine_similarity(
 			true_mzs,
-			th.exp(scatter_lognormalize(true_logits,true_batch_idxs,dim=0)),
+			th.exp(scatter_lognormalize(true_logprobs,true_batch_idxs,dim=0)),
 			true_batch_idxs,
 			pred_mzs,
-			th.exp(scatter_lognormalize(pred_logits,pred_batch_idxs,dim=0)),
+			th.exp(scatter_lognormalize(pred_logprobs,pred_batch_idxs,dim=0)),
 			pred_batch_idxs
 		)
 		cosine_similarity = th.mean(cosine_similarity)
-		print(f"> pred logits = {pred_logits.mean().item()}, true logits = {true_logits.mean().item()}")
+		print(f"> pred logits = {pred_logprobs.mean().item()}, true logits = {true_logprobs.mean().item()}")
 		print(f"> pred entropy = {pred_entropy.item()}, true entropy = {true_entropy.item()}")
 		print(f"> recall = {recall.item()}, weighted recall = {weighted_recall.item()}")
 		print(f"> topk weighted recall = {topk_weighted_recall.item()}, topk frac = {topk_frac.item()}")
@@ -517,12 +531,16 @@ if __name__ == "__main__":
 		# calculate loss
 		loss = loss_fn(
 			true_mzs,
-			true_logits,
+			true_logprobs,
 			true_batch_idxs,
 			pred_mzs,
-			pred_logits,
+			pred_logprobs,
 			pred_batch_idxs
 		)
+		if args.formula_entropy_weight != 0.:
+			loss = loss + args.formula_entropy_weight*sparse_entropy_fn(pred_formula_logprobs,pred_formula_batch_idxs)
+		if args.node_entropy_weight != 0.:
+			loss = loss + args.node_entropy_weight*sparse_entropy_fn(pred_node_logprobs,pred_node_batch_idxs)
 		print(f"> loss = {loss:.4f}")
 		# update metrics
 		metrics["step"].append(i+1)
@@ -542,10 +560,10 @@ if __name__ == "__main__":
 			best_d["topk_weighted_recall"] = topk_weighted_recall.item()
 			best_d["cosine_similarity"] = cosine_similarity.item()
 			best_d["pred_mzs"] = pred_mzs.detach().clone()
-			best_d["pred_logits"] = pred_logits.detach().clone()
+			best_d["pred_logprobs"] = pred_logprobs.detach().clone()
 			best_d["pred_batch_idxs"] = pred_batch_idxs.detach().clone()
 			best_d["true_mzs"] = true_mzs.detach().clone()
-			best_d["true_logits"] = true_logits.detach().clone()
+			best_d["true_logprobs"] = true_logprobs.detach().clone()
 			best_d["true_batch_idxs"] = true_batch_idxs.detach().clone()
 		# backprop
 		loss.backward()
@@ -556,10 +574,10 @@ if __name__ == "__main__":
 	
 	# plot spectrum
 	pred_mzs = best_d["pred_mzs"]
-	pred_logits = best_d["pred_logits"]
+	pred_logprobs = best_d["pred_logprobs"]
 	pred_batch_idxs = best_d["pred_batch_idxs"]
 	true_mzs = best_d["true_mzs"]
-	true_logits = best_d["true_logits"]
+	true_logprobs = best_d["true_logprobs"]
 	true_batch_idxs = best_d["true_batch_idxs"]
 	best_iter = best_d["iter"]
 	loss = best_d["cross_entropy_loss"]
@@ -567,10 +585,10 @@ if __name__ == "__main__":
 	weighted_recall = best_d["weighted_recall"]
 	b_true_mask = true_batch_idxs==0
 	b_true_mzs = true_mzs[b_true_mask]
-	b_true_ints = th.exp(true_logits[b_true_mask]) / th.exp(th.logsumexp(true_logits[b_true_mask],0))
+	b_true_ints = th.exp(true_logprobs[b_true_mask]) / th.exp(th.logsumexp(true_logprobs[b_true_mask],0))
 	b_pred_mask = pred_batch_idxs==0
 	b_pred_mzs = pred_mzs[b_pred_mask]
-	b_pred_ints = th.exp(pred_logits[b_pred_mask]) / th.exp(th.logsumexp(pred_logits[b_pred_mask],0))
+	b_pred_ints = th.exp(pred_logprobs[b_pred_mask]) / th.exp(th.logsumexp(pred_logprobs[b_pred_mask],0))
 	print("> prec_mz",prec_mz)
 	print("> prec_mz in true_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_true_mzs.device),b_true_mzs,use_ppm=True)))
 	print("> prec_mz in pred_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_pred_mzs.device),b_pred_mzs,use_ppm=True)))

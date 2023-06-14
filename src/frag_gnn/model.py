@@ -2,7 +2,7 @@ import torch as th
 import lightning.pytorch as pl
 
 from frag_gnn.nn.nn_utils import build_lr_scheduler, JointPredictor
-from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
+from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, batched_normalize
 from frag_gnn.utils.misc_utils import safelog
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
@@ -69,9 +69,12 @@ class FragGNN(pl.LightningModule):
         mz_bin_res: float,
         bin_sum_ints: bool,
         ints_transform: str,
+        formula_entropy_weight: float,
+        node_entropy_weight: float,
         **kwargs
     ):
-        
+
+        # TODO: add jit compile
         super().__init__()
         self.save_hyperparameters()
         self.model = JointPredictor(
@@ -108,19 +111,15 @@ class FragGNN(pl.LightningModule):
             self.optimizer_cls = th.optim.SGD
         else:
             raise ValueError(f"Unknown optimizer {self.optimizer}")
-        if loss_tolerance_ppm is not None:
-            loss_tolerance = loss_tolerance_ppm
-            loss_relative = True
-        else:
-            assert loss_tolerance_abs is not None
-            loss_tolerance = loss_tolerance_abs
-            loss_relative = False
-        self.loss_fn = get_sparse_cross_entropy_fn(
-            output_distribution,
-            loss_vectorized,
-            loss_tolerance,
-            loss_relative,
-        )
+        # self._get_loss_fn(
+        #     output_distribution,
+        #     loss_vectorized,
+        #     loss_tolerance,
+        #     loss_relative,
+        #     formula_entropy_weight,
+        #     node_entropy_weight,
+        # )
+        self._setup_loss_fn()
         def _filter_func(mzs, ints, batch_idxs):
             return batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max)
         self.filter_func = _filter_func
@@ -140,6 +139,65 @@ class FragGNN(pl.LightningModule):
         # if "topk_wrecall" in auxiliary_scores:
         #     self.auxiliary_score_fns["topk_wrecall"] = \
         #         lambda *args,**kwargs: calculate_topk_weighted_recalls(*args,**kwargs)[0]
+
+    def _setup_loss_fn(
+        self):
+        # output_distribution,
+        # loss_vectorized,
+        # loss_tolerance,
+        # loss_relative,
+        # formula_entropy_weight,
+        # node_entropy_weight):
+
+        if self.hparams.loss_tolerance_ppm is not None:
+            loss_tolerance = self.hparams.loss_tolerance_ppm
+            loss_relative = True
+        else:
+            assert self.hparams.loss_tolerance_abs is not None
+            loss_tolerance = self.hparams.loss_tolerance_abs
+            loss_relative = False
+        sparse_ce = get_sparse_cross_entropy_fn(
+            self.hparams.output_distribution,
+            self.hparams.loss_vectorized,
+            loss_tolerance,
+            loss_relative
+        )
+        sparse_entropy = get_sparse_entropy_fn()
+        # TODO: this might be bad for compiling
+        def _loss_fn(
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+            pred_formula_logprobs,
+            pred_formula_batch_idxs,
+            pred_node_logprobs,
+            pred_node_batch_idxs):
+            spec_ce = sparse_ce(
+                true_mzs,
+                true_logprobs,
+                true_batch_idxs,
+                pred_mzs,
+                pred_logprobs,
+                pred_batch_idxs
+            )
+            loss = spec_ce
+            if self.hparams.formula_entropy_weight != 0.:
+                formula_e = sparse_entropy(
+                    pred_formula_logprobs,
+                    pred_formula_batch_idxs
+                )
+                loss = loss + self.hparams.formula_entropy_weight * formula_e
+            if self.hparams.node_entropy_weight != 0.:
+                node_e = sparse_entropy(
+                    pred_node_logprobs,
+                    pred_node_batch_idxs
+                )
+                loss = loss + self.hparams.node_entropy_weight * node_e
+            return loss
+        self.loss_fn = _loss_fn
 
     def preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
@@ -167,18 +225,11 @@ class FragGNN(pl.LightningModule):
     def forward(self,**batch_kwargs):
 
         # get predictions
-        pred_mzs, pred_logits, pred_batch_idxs = self.model.forward(**batch_kwargs)
-        # collect in a dictionary
-        pred = {
-            "pred_mzs": pred_mzs,
-            "pred_logits": pred_logits,
-            "pred_batch_idxs": pred_batch_idxs
-        }
+        pred = self.model.forward(**batch_kwargs)
         return pred
 
     def _common_step(self, batch, name="train"):
 
-        print("_common_step")
         # preprocess spec
         spec_mzs = batch["spec_mzs"]
         spec_ints = batch["spec_ints"]
@@ -195,14 +246,13 @@ class FragGNN(pl.LightningModule):
         pred = self.forward(**batch)
         # print("pred_max",batchwise_max(pred["pred_logits"],pred["pred_batch_idxs"]))
         # print("pred_lse",batchwise_lse(pred["pred_logits"],pred["pred_batch_idxs"]))
-        loss = self.loss_fn(
-            spec_mzs,
-            spec_ints,
-            spec_batch_idxs,
-            pred["pred_mzs"],
-            pred["pred_logits"],
-            pred["pred_batch_idxs"]
-        )
+        both = {
+            "true_mzs": spec_mzs,
+            "true_logprobs": spec_ints,
+            "true_batch_idxs": spec_batch_idxs,
+            **pred
+        }
+        loss = self.loss_fn(**both)
         self.log(
             f"{name}_loss",
             loss.item(),
@@ -217,7 +267,7 @@ class FragGNN(pl.LightningModule):
                 th.exp(spec_ints),
                 spec_batch_idxs,
                 pred["pred_mzs"],
-                th.exp(pred["pred_logits"]),
+                th.exp(pred["pred_logprobs"]),
                 pred["pred_batch_idxs"]
             )
             self.log(

@@ -96,29 +96,6 @@ if __name__ == "__main__":
 
 	# setup datasets
 	logging.info("setup dataset")
-	# spec_fp, mol_fp, frag_dp, train_fp, val_fp, test_fp = get_default_fps()
-	# ds_params = get_default_ds_params()
-	# train_ds = SpecMolFragDataset(
-	# 	spec_fp=spec_fp,
-	# 	mol_fp=mol_fp,
-	# 	frag_dp=frag_dp,
-	# 	split_fp=train_fp,
-	# 	**ds_params
-	# )
-	# val_ds = SpecMolFragDataset(
-	# 	spec_fp=spec_fp,
-	# 	mol_fp=mol_fp,
-	# 	frag_dp=frag_dp,
-	# 	split_fp=val_fp,
-	# 	**ds_params
-	# )
-	# test_ds = SpecMolFragDataset(
-	# 	spec_fp=spec_fp,
-	# 	mol_fp=mol_fp,
-	# 	frag_dp=frag_dp,
-	# 	split_fp=test_fp,
-	# 	**ds_params
-	# )
 	train_ds = SpecMolFragDataset(**config_d)
 	val_ds = SpecMolFragDataset(**config_d)
 	test_ds = SpecMolFragDataset(**config_d)
@@ -130,7 +107,8 @@ if __name__ == "__main__":
 		batch_size=config_d["train_batch_size"], 
 		shuffle=True, 
 		num_workers=config_d["num_workers"],
-		collate_fn=train_ds.get_collate_fn()
+		collate_fn=train_ds.get_collate_fn(),
+		drop_last=True
 	)
 	val_dl = DataLoader(
 		val_ds,
@@ -149,6 +127,7 @@ if __name__ == "__main__":
 
 	# setup trainer
 	logging.info("setup trainer")
+	log_every_n_steps = min(len(train_dl),config_d["log_every_n_steps"])
 	trainer = pl.Trainer(
 		logger=loggers,
 		callbacks=callbacks,
@@ -160,9 +139,14 @@ if __name__ == "__main__":
 		gradient_clip_algorithm=config_d["gradient_clip_algorithm"],
 		accumulate_grad_batches=config_d["accumulate_grad_batches"],
 		precision=config_d["precision"],
+		log_every_n_steps=log_every_n_steps,
 	)
 
 	# fit
-	logging.info("fit model")
-	trainer.fit(model, train_dl, val_dl)
+	if config_d["debug_overfit"]:
+		logging.info("debug overfit model")
+		trainer.fit(model, train_dl)
+	else:
+		logging.info("fit model")
+		trainer.fit(model, train_dl, val_dl)
 

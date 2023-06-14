@@ -228,10 +228,10 @@ class JointPredictor(nn.Module):
 			frag_ndata.append(frag_depth)
 		
 		# get output formula aggregation 
-		frag_formula_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
-		frag_formula_offsets = frag_formula_cumsizes[frag_formula_batch_idxs]
-		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_formula_offsets.unsqueeze(-1)).flatten()        
-		
+		frag_node_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
+		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
+		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
+
 		# concatenate everything 
 		frag_x = th.cat(frag_ndata,dim=-1)
 		# concatenate everything 
@@ -242,17 +242,31 @@ class JointPredictor(nn.Module):
 			frag_edge_index,
 			frag_edge_attr
 		)
+		# frag_node_idxs = th.arange(frag_x.shape[0],device=device)
 
 		# predict probabilities
 		frag_formula_logits = self.output_module(frag_embed)
+		assert frag_formula_logits.shape[1] == 2*self.num_hs+1, (frag_formula_logits.shape[1],2*self.num_hs+1)
 
 		# convert to logprobs
+		frag_formula_batch_idxs = th.repeat_interleave(frag_node_batch_idxs,2*self.num_hs+1)
 		frag_formula_logits = frag_formula_logits.flatten()
 		frag_formula_logprobs = scatter_lognormalize(
 			frag_formula_logits,
-			th.repeat_interleave(frag_formula_batch_idxs,2*self.num_hs+1), # this is wrong
+			frag_formula_batch_idxs, # this is wrong
 			dim=0
 		)
+
+		# aggregate by node
+		frag_formula_mask = th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1]).float()
+		frag_node_logprobs = (frag_formula_logprobs*frag_formula_mask + -1e9*(1-frag_formula_mask)).reshape(-1,2*self.num_hs+1)
+		frag_node_logprobs = th.logsumexp(frag_node_logprobs,dim=1)
+		frag_node_logprobs = scatter_lognormalize(
+			frag_node_logprobs,
+			frag_node_batch_idxs,
+			dim=0
+		)
+
 		# aggregate by formula
 		frag_formula_logprobs = scatter_logsumexp(
 			frag_formula_logprobs,
@@ -261,6 +275,7 @@ class JointPredictor(nn.Module):
 		)
 
 		# zero out NULL formula
+		# TODO: could reuse masking from above
 		frag_formula_mask = th.ones_like(frag_formula_logprobs)
 		frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.
 		frag_formula_batch_idxs = th.bucketize(
@@ -300,7 +315,17 @@ class JointPredictor(nn.Module):
 		if th.any(th.abs(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))>1.):
 			import pdb; pdb.set_trace() 
 
-		return spec_mzs, spec_logprobs, spec_batch_idxs
+		out_d = {
+			"pred_mzs": spec_mzs,
+			"pred_logprobs": spec_logprobs,
+			"pred_batch_idxs": spec_batch_idxs,
+			"pred_formula_logprobs": frag_formula_logprobs,
+			"pred_formula_batch_idxs": frag_formula_batch_idxs,
+			"pred_node_logprobs": frag_node_logprobs,
+			"pred_node_batch_idxs": frag_node_batch_idxs,
+		}
+
+		return out_d
 
 class GNN(nn.Module):
 

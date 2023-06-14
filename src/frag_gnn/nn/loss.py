@@ -128,6 +128,26 @@ def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
 	return sce_fn
 
 
+def sparse_entropy_fn(logprobs,batch_idxs):
+
+	probs = th.exp(logprobs)	
+	plogp = probs*logprobs
+	batch_size = th.max(batch_idxs)+1
+	entropy = -scatter_reduce(
+		src=plogp,
+		index=batch_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=batch_size,
+	)
+	return th.mean(entropy)
+
+
+def get_sparse_entropy_fn():
+
+	return sparse_entropy_fn
+
+
 if __name__ == "__main__":
 
 	th.manual_seed(420)
