@@ -1,0 +1,19 @@
+wandb_name: overfit
+split_fp: data/split/debug_predefined/train_ids.csv
+frag_dp: data/frag/d4_h4_isoTrue/dags
+num_depth: 5
+num_hs: 4
+
+train_batch_size: 1
+eval_batch_size: 1
+accumulate_grad_batches: 1
+gradient_clip_val: 0.0
+lr: 0.0001
+accelerator: cpu # gpu
+devices: auto # 1
+min_epochs: 3
+max_epochs: 3
+debug_overfit: True
+formula_entropy_weight: 0.0
+node_entropy_weight: 0.0
+
