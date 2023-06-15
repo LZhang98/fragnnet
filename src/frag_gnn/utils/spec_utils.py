@@ -6,7 +6,7 @@ import torch as th
 import torch.nn.functional as F
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.misc_utils import scatter_lognormalize, scatter_normalize, scatter_reduce
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_reduce
 
 
 # TODO: actually fill these out
@@ -144,7 +144,7 @@ def merge_sparse_specs(*peakses,renormalize=False):
 def calculate_spectrum_entropy(log_ints,batch_idxs):
 
 	k = th.max(batch_idxs)+1
-	log_norm_ints = scatter_lognormalize(log_ints,batch_idxs,dim=0)
+	log_norm_ints = scatter_logsoftmax(log_ints,batch_idxs,dim=0)
 	entropy = -scatter_reduce(
 		src=th.exp(log_norm_ints)*log_norm_ints,
 		index=batch_idxs,
@@ -166,8 +166,8 @@ def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs
 	batch_size = th.max(true_batch_idxs)+1
 	topk_weighted_recall = th.zeros([batch_size],device=true_mzs.device)
 	topk_frac = th.zeros([batch_size],device=true_mzs.device)
-	true_ints = th.exp(scatter_lognormalize(true_logits,true_batch_idxs,dim=0))
-	pred_ints = th.exp(scatter_lognormalize(pred_logits,pred_batch_idxs,dim=0))
+	true_ints = th.exp(scatter_logsoftmax(true_logits,true_batch_idxs,dim=0))
+	pred_ints = th.exp(scatter_logsoftmax(pred_logits,pred_batch_idxs,dim=0))
 	for b in range(batch_size):
 		b_true_mask = (true_batch_idxs==b)
 		b_pred_mask = (pred_batch_idxs==b)
@@ -207,8 +207,8 @@ def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,
 	batch_size = th.max(true_batch_idxs)+1
 	recall = th.zeros([batch_size],device=true_mzs.device)
 	weighted_recall = th.zeros([batch_size],device=true_mzs.device)
-	true_ints = th.exp(scatter_lognormalize(true_logits,true_batch_idxs,dim=0))
-	pred_ints = th.exp(scatter_lognormalize(pred_logits,pred_batch_idxs,dim=0))
+	true_ints = th.exp(scatter_logsoftmax(true_logits,true_batch_idxs,dim=0))
+	pred_ints = th.exp(scatter_logsoftmax(pred_logits,pred_batch_idxs,dim=0))
 	for b in range(batch_size):
 		b_true_mask = (true_batch_idxs==b)
 		b_pred_mask = (pred_batch_idxs==b)
@@ -324,9 +324,9 @@ def get_ints_transform_func(ints_transform):
 		raise ValueError("Invalid ints_transform: {}".format(ints_transform))
 	return _func
 
-def batched_normalize(ints, batch_idxs):
+def batched_l1normalize(ints, batch_idxs):
 
-	ints = scatter_normalize(
+	ints = scatter_l1normalize(
 		ints,
 		batch_idxs,
 		dim=0

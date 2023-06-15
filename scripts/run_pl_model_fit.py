@@ -1,16 +1,31 @@
 import torch as th
 from torch.utils.data import DataLoader
 import lightning.pytorch as pl
+from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 import logging
 import argparse
 import yaml
 import os
-from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
+import numpy as np
 
 from frag_gnn.model import FragGNN, get_default_model_params
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.misc_utils import ConsoleLogger
 from frag_gnn.dataset import get_default_ds_params, get_default_fps, SpecMolFragDataset
+
+
+# class PrintGrad(Callback):
+
+# 	def on_after_backward(self, trainer, pl_module):
+
+# 		p_grads = []
+# 		model_params = trainer.parameters()
+# 		for p in model_params:
+# 			if p.grad is not None:
+# 				p_grads.append(p.grad.norm().item())
+# 		print(p_grads[:10])
+# 		print("grad_norm",np.mean(p_grads))
 
 
 def load_config(template_fp, custom_fp):
@@ -72,6 +87,10 @@ if __name__ == "__main__":
 	# load config
 	config_d = load_config(args.template_fp, args.custom_fp)
 
+	# set random seeds
+	th.manual_seed(config_d["seed"])
+	np.random.seed(config_d["seed"])
+
 	# setup model
 	logging.info("setup model")
 	# model_config = get_default_model_params()
@@ -84,6 +103,7 @@ if __name__ == "__main__":
 		project=config_d["wandb_project"],
 		name=config_d["wandb_name"],
 		offline=args.wandb_mode == "offline",
+		entity=config_d["wandb_entity"],
 	)
 	loggers = [console_logger, wandb_logger]
 
@@ -93,6 +113,8 @@ if __name__ == "__main__":
 		mode="min",
 	)
 	callbacks = [checkpoint_callback]
+	# print_grad_callback = PrintGrad()
+	# callbacks = [checkpoint_callback, print_grad_callback]
 
 	# setup datasets
 	logging.info("setup dataset")

@@ -11,6 +11,7 @@ from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_ty
 from frag_gnn.utils.dataset_utils import merge_spec_df
 from frag_gnn.frag.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 
 SPEC_PARAMS = [
@@ -264,7 +265,7 @@ class SpecMolFragDataset(SpecMolDataset):
 		spec_data = self._process_spec(spec_entry)
 		mol_data = self._process_mol(mol_entry)
 		frag_entry = self._load_frag_entry(mol_id)
-		frag_data = self._process_frag(frag_entry)
+		frag_data = self._process_frag(frag_entry,spec_entry)
 		data = {**spec_data,**mol_data,**frag_data}
 		return data
 
@@ -273,7 +274,7 @@ class SpecMolFragDataset(SpecMolDataset):
 		frag_entry = load_frag_d(mol_id,self.frag_dp,self.frag_params["compressed"])
 		return frag_entry
 
-	def _process_frag(self,frag_entry):
+	def _process_frag(self,frag_entry,spec_entry):
 
 		frag_data = {}
 		if self.frag_params["pyg"]:
@@ -288,7 +289,8 @@ class SpecMolFragDataset(SpecMolDataset):
 		if self.frag_params["formula_peak_mzs"]:
 			formula_peak_mzs = frag_entry["formula_peak_mzs"]
 			formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]
-			frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
+			prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
+			frag_data["frag_formula_peak_mzs"] = formula_peak_mzs + prec_type_mass_diff
 		if self.frag_params["formula_peak_probs"]:    
 			formula_peak_probs = frag_entry["formula_peak_probs"]
 			formula_peak_probs = formula_peak_probs[:,:self.frag_params["num_isotopes"]]

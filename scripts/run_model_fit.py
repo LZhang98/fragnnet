@@ -12,7 +12,7 @@ from copy import deepcopy
 import frag_gnn.frag.frag_utils as frag_utils
 from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed, get_pyg_memory_usage
 from frag_gnn.utils.feat_utils import get_mol_graph, get_frag_graph, batch_mols_frags
-from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_lognormalize
+from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_logsoftmax
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
 from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, \
 	calculate_match_mzs, calculate_cosine_similarity, batch_func
@@ -182,9 +182,9 @@ if __name__ == "__main__":
 	}
 
 	# just hard-coding some examples
-	# 0: mol_id=22041, smiles=O=C(Nc1nc(-c2ccccc2)cs1)c1ccncc1, wrecall=0.9814, depth=3
-	# 1: mol_id=7602, smiles=CCCCCCCCC=CCCCCCCCC(=O)NCC, wrecall=0.9947, depth=3
-	# 2: mol_id=11009, smiles=CNc1nc(C)c(C)c(OC(=O)N(C)C)n1, wrecall=0.9614, depth=3
+	# 0: mol_id=22041, group_id=62611, smiles=O=C(Nc1nc(-c2ccccc2)cs1)c1ccncc1, wrecall=0.9814, depth=3
+	# 1: mol_id=7602, group_id=33308, smiles=CCCCCCCCC=CCCCCCCCC(=O)NCC, wrecall=0.9947, depth=3
+	# 2: mol_id=11009, group_id=49816, smiles=CNc1nc(C)c(C)c(OC(=O)N(C)C)n1, wrecall=0.9614, depth=3
 	IDX_TO_SPEC = {
 		0: [
 			(50.0149, 41.36), (50.015, 11.19), (51.0227, 300.4), (51.0228, 9.19), (51.0229, 2.7), 
@@ -463,7 +463,7 @@ if __name__ == "__main__":
 				# add slight mass jitter
 				true_mzs = pred_mzs[true_mask] + 0.0002*th.rand_like(pred_mzs[true_mask]) - 0.0001
 				# random intensities
-				true_logprobs = scatter_lognormalize(
+				true_logprobs = scatter_logsoftmax(
 					th.log(th.rand_like(pred_logprobs[true_mask])),
 					true_batch_idxs,
 					dim=0
@@ -516,10 +516,10 @@ if __name__ == "__main__":
 		weighted_recall = th.mean(weighted_recall)
 		cosine_similarity = calculate_cosine_similarity(
 			true_mzs,
-			th.exp(scatter_lognormalize(true_logprobs,true_batch_idxs,dim=0)),
+			th.exp(scatter_logsoftmax(true_logprobs,true_batch_idxs,dim=0)),
 			true_batch_idxs,
 			pred_mzs,
-			th.exp(scatter_lognormalize(pred_logprobs,pred_batch_idxs,dim=0)),
+			th.exp(scatter_logsoftmax(pred_logprobs,pred_batch_idxs,dim=0)),
 			pred_batch_idxs
 		)
 		cosine_similarity = th.mean(cosine_similarity)
@@ -528,6 +528,7 @@ if __name__ == "__main__":
 		print(f"> recall = {recall.item()}, weighted recall = {weighted_recall.item()}")
 		print(f"> topk weighted recall = {topk_weighted_recall.item()}, topk frac = {topk_frac.item()}")
 		print(f"> cosine similarity = {cosine_similarity.item()}")
+		# import pdb; pdb.set_trace()
 		# calculate loss
 		loss = loss_fn(
 			true_mzs,
@@ -567,6 +568,13 @@ if __name__ == "__main__":
 			best_d["true_batch_idxs"] = true_batch_idxs.detach().clone()
 		# backprop
 		loss.backward()
+		# print gradient magnitudes
+		p_grads = []
+		for p in joint_model.parameters():
+			if p.grad is not None:
+				p_grads.append(p.grad.norm().item())
+		print(p_grads[:10])
+		print(np.mean(p_grads))
 		# update parameters
 		optim.step()
 		# zero out gradients

@@ -8,13 +8,8 @@ from frag_gnn.utils.misc_utils import booltype, np_temp_seed
 
 def make_splits(args):
 
-    if args.split_type == "predefined":
-        raise NotImplementedError
-
     mol_df = pd.read_pickle(os.path.join(args.proc_dp,"mol_df.pkl"))
     spec_df = pd.read_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
-    # with open(os.path.join(args.frag_dp,args.frag_name,"global_stats.json"),"r",encoding="utf-8") as f:
-    #     dag_global_stats = json.load(f)
     dag_stats_df = pd.read_pickle(
         os.path.join(args.frag_dp,args.frag_name,f"{args.dag_filter_grouping}_stats_df.pkl")
     )
@@ -55,36 +50,44 @@ def make_splits(args):
 
     print("> Intersection")
     # get intersection
-    # TODO: fix this
     if args.dag_filter_grouping in ["m_spec","m_mol"]:
         both_group_id = np.intersect1d(spec_mol_id,dag_group_id)
         split_df = spec_df[spec_df["group_id"].isin(dag_group_id)]
     else:
         both_spec_id = np.intersect1d(spec_spec_id,dag_spec_id)
         split_df = spec_df[spec_df["spec_id"].isin(both_spec_id)]
-    split_df = split_df.merge(mol_df[["mol_id",args.split_type]],on="mol_id",how="inner")
+    split_df = split_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
 
-    # split based on molecule
-    split_mol_id = np.unique(split_df["mol_id"])
-    split_key = split_df[split_df["mol_id"].isin(split_mol_id)][args.split_type]
-    split_key = np.unique(split_key)
-    total_num = split_key.shape[0]
-    test_num = int(np.ceil(total_num*args.test_frac))
-    val_num = int(np.ceil(total_num*args.val_frac))
-    train_num = total_num - test_num - val_num
-    with np_temp_seed(args.meta_rseed):
-        test_key = np.random.choice(split_key,size=test_num,replace=False)
-        train_val_key = np.setdiff1d(split_key,test_key)
-        val_key = np.random.choice(train_val_key,size=val_num,replace=False)
-        train_key = np.setdiff1d(train_val_key,val_key)
-    
+    if args.split_type == "random":
+        # split based on molecule
+        split_mol_id = np.unique(split_df["mol_id"])
+        split_keys = split_df[split_df["mol_id"].isin(split_mol_id)][args.split_key]
+        split_keys = np.unique(split_keys)
+        total_num = split_key.shape[0]
+        test_num = int(np.ceil(total_num*args.test_frac))
+        val_num = int(np.ceil(total_num*args.val_frac))
+        train_num = total_num - test_num - val_num
+        with np_temp_seed(args.meta_rseed):
+            test_keys = np.random.choice(split_keys,size=test_num,replace=False)
+            train_val_keys = np.setdiff1d(split_keys,test_keys)
+            val_keys = np.random.choice(train_val_keys,size=val_num,replace=False)
+            train_keys = np.setdiff1d(train_val_keys,val_keys)
+        train_df = split_df[split_df[args.split_key].isin(train_keys)][["spec_id","mol_id","group_id"]]
+        val_df = split_df[split_df[args.split_key].isin(val_keys)][["spec_id","mol_id","group_id"]]
+        test_df = split_df[split_df[args.split_key].isin(test_keys)][["spec_id","mol_id","group_id"]]
+    else:
+        assert args.split_type == "predefined"
+        train_ids = np.array([int(train_id) for train_id in args.train_ids.split("-")])
+        val_ids = np.array([int(val_id) for val_id in args.val_ids.split("-")])
+        test_ids = np.array([int(test_id) for test_id in args.test_ids.split("-")])
+        train_df = split_df[split_df[args.id_type].isin(train_ids)][["spec_id","mol_id","group_id"]]
+        val_df = split_df[split_df[args.id_type].isin(val_ids)][["spec_id","mol_id","group_id"]]
+        test_df = split_df[split_df[args.id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
+
     # create split directory
     os.makedirs(os.path.join(args.split_dp,args.split_name),exist_ok=True)
 
     # save ids
-    train_df = split_df[split_df[args.split_type].isin(train_key)][["spec_id","mol_id","group_id"]]
-    val_df = split_df[split_df[args.split_type].isin(val_key)][["spec_id","mol_id","group_id"]]
-    test_df = split_df[split_df[args.split_type].isin(test_key)][["spec_id","mol_id","group_id"]]
     train_fp = os.path.join(args.split_dp,args.split_name,"train_ids.csv")
     val_fp = os.path.join(args.split_dp,args.split_name,"val_ids.csv")
     test_fp = os.path.join(args.split_dp,args.split_name,"test_ids.csv")
@@ -103,7 +106,12 @@ def make_splits(args):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--split_type",type=str,choices=["inchikey_s","scaffold","predefined"],default="inchikey_s")
+    parser.add_argument("--split_type",type=str,choices=["random","predefined"],default="random")
+    parser.add_argument("--split_key",type=str,choices=["inchikey_s","scaffold"],default="inchikey_s")
+    parser.add_argument("--id_type",type=str,choices=["spec_id","mol_id","group_id"],default="group_id")
+    parser.add_argument("--train_ids",type=str,default="62611")
+    parser.add_argument("--val_ids",type=str,default="62611")
+    parser.add_argument("--test_ids",type=str,default="62611")
     # spec filtering criteria
     parser.add_argument("--dsets",type=str,default="nist")
     parser.add_argument("--prec_types",type=str,default="[M+H]+")

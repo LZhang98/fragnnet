@@ -164,7 +164,7 @@ def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=-1e9,dim=-1,log=Tr
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
 	# normalize
-	masked_logits = scatter_lognormalize(masked_logits,subset_idxs,dim)
+	masked_logits = scatter_logsoftmax(masked_logits,subset_idxs,dim)
 	if not log:
 		# exponentiate
 		return th.exp(masked_logits)
@@ -196,14 +196,14 @@ def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=EPS):
 	)
 	return sm + th.log(se + eps)
 
-def scatter_lognormalize(logits,subset_idxs,dim=-1):
+def scatter_logsoftmax(logits,subset_idxs,dim=-1):
 	# calculate normalizing constant
 	c = scatter_logsumexp(logits,subset_idxs,dim=dim)
 	# apply normalizing constant
 	logits = logits - c[subset_idxs]
 	return logits
 
-def scatter_normalize(vals,subset_idxs,dim=-1):
+def scatter_l1normalize(vals,subset_idxs,dim=-1):
 	# calculate normalizing constant
 	c = scatter_reduce(
 		src=vals,

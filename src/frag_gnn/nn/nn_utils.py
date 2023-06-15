@@ -10,7 +10,7 @@ import scipy
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
-from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_lognormalize, scatter_reduce, scatter_masked_softmax
+from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax
 from frag_gnn.utils.feat_utils import get_mol_feats_sizes
 
 
@@ -251,7 +251,7 @@ class JointPredictor(nn.Module):
 		# convert to logprobs
 		frag_formula_batch_idxs = th.repeat_interleave(frag_node_batch_idxs,2*self.num_hs+1)
 		frag_formula_logits = frag_formula_logits.flatten()
-		frag_formula_logprobs = scatter_lognormalize(
+		frag_formula_logprobs = scatter_logsoftmax(
 			frag_formula_logits,
 			frag_formula_batch_idxs, # this is wrong
 			dim=0
@@ -261,7 +261,7 @@ class JointPredictor(nn.Module):
 		frag_formula_mask = th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1]).float()
 		frag_node_logprobs = (frag_formula_logprobs*frag_formula_mask + -1e9*(1-frag_formula_mask)).reshape(-1,2*self.num_hs+1)
 		frag_node_logprobs = th.logsumexp(frag_node_logprobs,dim=1)
-		frag_node_logprobs = scatter_lognormalize(
+		frag_node_logprobs = scatter_logsoftmax(
 			frag_node_logprobs,
 			frag_node_batch_idxs,
 			dim=0
@@ -306,7 +306,7 @@ class JointPredictor(nn.Module):
 		
 		# log normalize
 		# print("spec_un",scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
-		spec_logprobs = scatter_lognormalize(
+		spec_logprobs = scatter_logsoftmax(
 			spec_logprobs,
 			spec_batch_idxs,
 			dim=0
@@ -530,7 +530,7 @@ def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=np.log(1e-4),dim=-
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
 	# normalize
-	masked_logits = scatter_lognormalize(masked_logits,subset_idxs,dim)
+	masked_logits = scatter_logsoftmax(masked_logits,subset_idxs,dim)
 	if not log:
 		# exponentiate
 		return th.exp(masked_logits)
