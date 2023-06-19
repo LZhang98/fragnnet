@@ -1,0 +1,19 @@
+wandb_entity: custom_d4
+split_fp: data/split/d4_h4_isoTrue/train_ids.csv
+frag_dp: data/frag/d4_h4_isoTrue/dags
+num_depth: 5
+num_hs: 4
+
+train_batch_size: 8
+eval_batch_size: 8
+accumulate_grad_batches: 4
+gradient_clip_val: 5.0
+lr: 0.00001
+accelerator: gpu
+devices: 1
+min_epochs: 50
+max_epochs: 50
+debug_overfit: False
+formula_entropy_weight: 0.0
+node_entropy_weight: 0.0
+

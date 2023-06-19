@@ -109,3 +109,5 @@ log_every_n_steps: 50
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
 seed: 420
+detect_anomaly: False
+automatic_optimization: True

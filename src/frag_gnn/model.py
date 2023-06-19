@@ -72,6 +72,7 @@ class FragGNN(pl.LightningModule):
 		ints_transform: str,
 		formula_entropy_weight: float,
 		node_entropy_weight: float,
+		automatic_optimization: bool,
 		**kwargs
 	):
 
@@ -101,25 +102,10 @@ class FragGNN(pl.LightningModule):
 			mlp_num_layers=mlp_num_layers,
 			mlp_use_residuals=mlp_use_residuals
 		)
-		self.lr_schedule = lr_schedule
-		self.lr = lr
-		self.weight_decay = weight_decay
-		if optimizer == "adam":
-			self.optimizer_cls = th.optim.Adam
-		elif optimizer == "adamw":
-			self.optimizer_cls = th.optim.AdamW
-		elif optimizer == "sgd":
-			self.optimizer_cls = th.optim.SGD
-		else:
-			raise ValueError(f"Unknown optimizer {self.optimizer}")
-		# self._get_loss_fn(
-		#     output_distribution,
-		#     loss_vectorized,
-		#     loss_tolerance,
-		#     loss_relative,
-		#     formula_entropy_weight,
-		#     node_entropy_weight,
-		# )
+		# self.lr_schedule = lr_schedule
+		# self.lr = lr
+		# self.weight_decay = weight_decay
+
 		self._setup_loss_fn()
 		def _filter_func(mzs, ints, batch_idxs):
 			return batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max)
@@ -134,22 +120,10 @@ class FragGNN(pl.LightningModule):
 			def _cos_sim(*args,**kwargs):
 				return th.mean(calculate_cosine_similarity(*args,**kwargs),dim=0)
 			self.auxiliary_score_fns["cos_sim"] = _cos_sim
-		# if "wrecall" in auxiliary_scores:
-		#     self.auxiliary_score_fns["wrecall"] = \
-		#         lambda *args,**kwargs: calculate_recalls(*args,**kwargs)[1]
-		# if "topk_wrecall" in auxiliary_scores:
-		#     self.auxiliary_score_fns["topk_wrecall"] = \
-		#         lambda *args,**kwargs: calculate_topk_weighted_recalls(*args,**kwargs)[0]
-		self.automatic_optimization = False
+		self.automatic_optimization = automatic_optimization
 
 	def _setup_loss_fn(
 		self):
-		# output_distribution,
-		# loss_vectorized,
-		# loss_tolerance,
-		# loss_relative,
-		# formula_entropy_weight,
-		# node_entropy_weight):
 
 		if self.hparams.loss_tolerance_ppm is not None:
 			loss_tolerance = self.hparams.loss_tolerance_ppm
@@ -282,20 +256,16 @@ class FragGNN(pl.LightningModule):
 
 	def training_step(self, batch, batch_idx):
 
-		opt = self.optimizers()
-		opt.zero_grad()
-		loss = self._common_step(batch, name="train")
-		self.manual_backward(loss)
-		# ###
-		# p_grads = []
-		# model_params = self.parameters()
-		# for p in model_params:
-		# 	if p.grad is not None:
-		# 		p_grads.append(p.grad.norm().item())
-		# print(p_grads[:10])
-		# print("grad_norm",np.mean(p_grads))
-		# ###
-		opt.step()
+		if self.hparams.automatic_optimization:
+			return self._common_step(batch, name="train")
+		else:
+			raise NotImplementedError("Manual optimization not implemented")
+			# opt = self.optimizers()
+			# opt.zero_grad()
+			# loss = self._common_step(batch, name="train")
+			# self.manual_backward(loss)
+			# opt.step()
+			# return loss
 
 	def validation_step(self, batch, batch_idx):
 
@@ -307,15 +277,27 @@ class FragGNN(pl.LightningModule):
 
 	def configure_optimizers(self):
 
-		optimizer = self.optimizer_cls(
-			self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+		if self.hparams.optimizer == "adam":
+			optimizer_cls = th.optim.Adam
+		elif self.hparams.optimizer == "adamw":
+			optimizer_cls = th.optim.AdamW
+		elif self.hparams.optimizer == "sgd":
+			optimizer_cls = th.optim.SGD
+		else:
+			raise ValueError(f"Unknown optimizer {self.optimizer}")
+		optimizer = optimizer_cls(
+			self.parameters(), 
+			lr=self.hparams.lr, 
+			weight_decay=self.hparams.weight_decay
 		)
 		ret = {
 			"optimizer": optimizer,
 		}
-		if self.lr_schedule:
+		if self.hparams.lr_schedule:
 			scheduler = build_lr_scheduler(
-				optimizer=optimizer, lr_decay_rate=self.lr_decay_rate, warmup=self.warmup
+				optimizer=optimizer, 
+				lr_decay_rate=self.hparams.lr_decay_rate, 
+				warmup=self.hparams.warmup
 			)
 			ret["lr_scheduler"] = {
 				"scheduler": scheduler,

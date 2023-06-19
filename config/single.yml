@@ -11,9 +11,9 @@ gradient_clip_val: 0.0
 lr: 0.0001
 accelerator: cpu # gpu
 devices: auto # 1
-min_epochs: 3
-max_epochs: 3
+min_epochs: 10
+max_epochs: 10
 debug_overfit: True
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
-
+detect_anomaly: True

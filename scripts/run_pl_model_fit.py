@@ -15,12 +15,21 @@ from frag_gnn.utils.misc_utils import ConsoleLogger
 from frag_gnn.dataset import get_default_ds_params, get_default_fps, SpecMolFragDataset
 
 
-# class PrintGrad(Callback):
+# class PrintGradCallback(Callback):
 
+# 	def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+
+# 		ps = []
+# 		model_params = pl_module.parameters()
+# 		for p in model_params:
+# 			ps.append(p.norm().item())
+# 		print(ps[:10])
+# 		print("param_norm",np.mean(ps))
+	
 # 	def on_after_backward(self, trainer, pl_module):
 
 # 		p_grads = []
-# 		model_params = trainer.parameters()
+# 		model_params = pl_module.parameters()
 # 		for p in model_params:
 # 			if p.grad is not None:
 # 				p_grads.append(p.grad.norm().item())
@@ -95,6 +104,7 @@ if __name__ == "__main__":
 	logging.info("setup model")
 	# model_config = get_default_model_params()
 	model = FragGNN(**config_d)
+	model.train()
 
 	# setup logging
 	logging.info("setup loggers")
@@ -113,7 +123,7 @@ if __name__ == "__main__":
 		mode="min",
 	)
 	callbacks = [checkpoint_callback]
-	# print_grad_callback = PrintGrad()
+	# print_grad_callback = PrintGradCallback()
 	# callbacks = [checkpoint_callback, print_grad_callback]
 
 	# setup datasets
@@ -162,6 +172,8 @@ if __name__ == "__main__":
 		accumulate_grad_batches=config_d["accumulate_grad_batches"],
 		precision=config_d["precision"],
 		log_every_n_steps=log_every_n_steps,
+		detect_anomaly=config_d["detect_anomaly"],
+		overfit_batches=10 if config_d["debug_overfit"] else 0,
 	)
 
 	# fit
