@@ -15,10 +15,7 @@ import threading
 import torch_geometric as pyg
 import lightning.pytorch as pl
 import logging
-from lightning.pytorch.utilities import rank_zero_only
-from lightning.pytorch.loggers.logger import rank_zero_experiment
-from lightning.pytorch.loggers import Logger
-import copy
+
 
 TQDM_DISABLE = False
 PPM = 1/1000000
@@ -232,44 +229,3 @@ def scatter_reduce(src,index,reduce,dim,dim_size):
 def safelog(x,eps=EPS):
 	return th.log(x+eps)
 
-class ConsoleLogger(Logger):
-    """Custom console logger class"""
-
-    def __init__(self):
-        super().__init__()
-
-    @property
-    @rank_zero_experiment
-    def name(self):
-        pass
-
-    @property
-    @rank_zero_experiment
-    def experiment(self):
-        pass
-
-    @property
-    @rank_zero_experiment
-    def version(self):
-        pass
-
-    @rank_zero_only
-    def log_hyperparams(self, params):
-        ## No need to log hparams
-        pass
-
-    @rank_zero_only
-    def log_metrics(self, metrics, step):
-
-        metrics = copy.deepcopy(metrics)
-
-        epoch_num = "??"
-        if "epoch" in metrics:
-            epoch_num = metrics.pop("epoch")
-
-        for k, v in metrics.items():
-            logging.info(f"Epoch {epoch_num}, step {step}-- {k} : {v}")
-
-    @rank_zero_only
-    def finalize(self, status):
-        pass

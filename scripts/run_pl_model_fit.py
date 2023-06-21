@@ -11,30 +11,8 @@ import numpy as np
 
 from frag_gnn.model import FragGNN, get_default_model_params
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
-from frag_gnn.utils.misc_utils import ConsoleLogger
+from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
 from frag_gnn.dataset import get_default_ds_params, get_default_fps, SpecMolFragDataset
-
-
-# class PrintGradCallback(Callback):
-
-# 	def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
-
-# 		ps = []
-# 		model_params = pl_module.parameters()
-# 		for p in model_params:
-# 			ps.append(p.norm().item())
-# 		print(ps[:10])
-# 		print("param_norm",np.mean(ps))
-	
-# 	def on_after_backward(self, trainer, pl_module):
-
-# 		p_grads = []
-# 		model_params = pl_module.parameters()
-# 		for p in model_params:
-# 			if p.grad is not None:
-# 				p_grads.append(p.grad.norm().item())
-# 		print(p_grads[:10])
-# 		print("grad_norm",np.mean(p_grads))
 
 
 def load_config(template_fp, custom_fp):
@@ -83,13 +61,12 @@ if __name__ == "__main__":
 		type=str,
 		required=False
 	)
-	# TODO add disabled
 	parser.add_argument(
 		"-w",
 		"--wandb_mode",
 		type=str, 
 		default="online",
-		choices=["online","offline"]
+		choices=["online","offline","disabled"]
 	)
 	args = parser.parse_args()
 
@@ -108,17 +85,26 @@ if __name__ == "__main__":
 
 	# setup logging
 	logging.info("setup loggers")
+	loggers = []
 	console_logger = ConsoleLogger()
-	wandb_logger = pl.loggers.WandbLogger(
-		project=config_d["wandb_project"],
-		name=config_d["wandb_name"],
-		offline=args.wandb_mode == "offline",
-		entity=config_d["wandb_entity"],
-	)
-	loggers = [console_logger, wandb_logger]
+	loggers.append(console_logger)
+	if args.wandb_mode != "disabled":
+		wandb_logger = pl.loggers.WandbLogger(
+			project=config_d["wandb_project"],
+			name=config_d["wandb_name"],
+			offline=args.wandb_mode == "offline",
+			entity=config_d["wandb_entity"],
+		)
+		loggers.append(wandb_logger)
 
 	# setup callbacks
+	if args.wandb_mode != "disabled":
+		chkpt_dp = os.path.join(wandb_logger.save_dir,"chkpt")
+	else:
+		chkpt_dp = "tmp_chkpt"
 	checkpoint_callback = ModelCheckpoint(
+		dirpath=chkpt_dp,
+		filename="model-{epoch:02d}",
 		monitor="val_loss",
 		mode="min",
 	)

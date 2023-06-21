@@ -63,7 +63,7 @@ def make_splits(args):
         split_mol_id = np.unique(split_df["mol_id"])
         split_keys = split_df[split_df["mol_id"].isin(split_mol_id)][args.split_key]
         split_keys = np.unique(split_keys)
-        total_num = split_key.shape[0]
+        total_num = split_keys.shape[0]
         test_num = int(np.ceil(total_num*args.test_frac))
         val_num = int(np.ceil(total_num*args.val_frac))
         train_num = total_num - test_num - val_num

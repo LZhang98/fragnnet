@@ -1,5 +1,5 @@
 # wandb
-wandb_entity: adamoyoung
+wandb_entity: frag-gnn
 wandb_project: frag-gnn
 wandb_name: template
 # data
