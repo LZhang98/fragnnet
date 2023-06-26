@@ -5,7 +5,7 @@ wandb_name: template
 # data
 spec_fp: data/proc/spec_df.pkl
 mol_fp: data/proc/mol_df.pkl
-split_fp: data/split/debug/train_ids.csv
+split_dp: data/split/debug
 frag_dp: data/frag/debug/dags
 spec_merge: True
 spec_subsample_size: 0
@@ -21,6 +21,7 @@ spec_prec_mz: True
 spec_prec_mass_diff: True
 spec_nce: False
 spec_ace: False
+spec_preprocess: False
 mol_smiles: True
 mol_fingerprint: False
 mol_fingerprint_morgan: True
@@ -40,6 +41,7 @@ mol_pyg_edge_feats:
   - b_degree
 mol_pyg_pe_embed_k: 0
 mol_pyg_bigraph: True
+mol_preprocess: False
 frag_pyg: True
 frag_pyg_node_feats:
   - cc
@@ -53,6 +55,8 @@ frag_num_isotopes: 1
 frag_formula_peak_mzs: True
 frag_formula_peak_probs: True
 frag_compressed: True
+frag_preload: False
+frag_preprocess: False
 # model
 num_depth: 5
 num_hs: 4
@@ -105,9 +109,12 @@ gradient_clip_algorithm: norm
 accumulate_grad_batches: 1
 precision: 32 # 64, 16-mixed, bf16-mixed
 debug_overfit: False
+debug_overfit_batches: 10
 log_every_n_steps: 50
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
 seed: 420
 detect_anomaly: False
 automatic_optimization: True
+profiler: none
+compile: False

@@ -5,8 +5,12 @@ import scipy.sparse as sparse
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.profiler import profile, record_function, ProfilerActivity
 import torch_geometric as pyg
 import scipy
+import torch_geometric
+from torch_geometric.profile import get_gpu_memory_from_gc, get_gpu_memory_from_nvidia_smi
+import logging
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
@@ -138,11 +142,11 @@ class JointPredictor(nn.Module):
 			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
 
 	def compile_submodules(self,**kwargs):
-		""" this doesn't work right now """
-		self.mol_embedder = pyg.compile(self.mol_embedder,**kwargs)
+		""" pyg does not support dynamic shape compiling """
+		# self.mol_embedder = pyg.compile(self.mol_embedder,**kwargs)
 		self.formula_embedder = th.compile(self.formula_embedder,**kwargs)
 		self.depth_embedder = th.compile(self.depth_embedder,**kwargs)
-		self.frag_embedder = pyg.compile(self.frag_embedder,**kwargs)
+		# self.frag_embedder = pyg.compile(self.frag_embedder,**kwargs)
 
 	def forward(
 		self, 
@@ -161,6 +165,16 @@ class JointPredictor(nn.Module):
 
 		# TODO add collision energy support
 		
+		def get_mem():
+			# th.cuda.empty_cache()
+			# return f"{get_gpu_memory_from_nvidia_smi()[1]} MB"
+			return None
+		def log_msg(msg):
+			# logging.info(msg)
+			return None
+
+		log_msg(f"initial: {get_mem()}")
+
 		device = mol_num_nodes.device
 
 		mol_x, mol_edge_index, mol_edge_attr = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr
@@ -175,6 +189,8 @@ class JointPredictor(nn.Module):
 			mol_edge_attr
 		)
 		
+		log_msg(f"mol_embed: {get_mem()}")
+
 		# process dag
 		frag_ndata, frag_edata = [], []
 		batch_frag_num_nodes = frag_x.shape[0]
@@ -193,6 +209,7 @@ class JointPredictor(nn.Module):
 				dim_size=batch_frag_num_nodes
 			)
 			frag_ndata.append(frag_node_mask_embed)
+		log_msg(f"frag_node_cc: {get_mem()}")
 		# edge atom embeddings
 		if "cc" in self.frag_edge_feats:
 			frag_edge_mask = th_long_to_mask(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"cc"))
@@ -208,25 +225,28 @@ class JointPredictor(nn.Module):
 				dim_size=batch_frag_num_edges
 			)
 			frag_edata.append(frag_edge_mask_embed)
+		log_msg(f"frag_edge_cc: {get_mem()}")
 		# node formulae
 		if "base_formula" in self.frag_node_feats:
 			frag_node_formula = self.formula_embedder(
 				get_node_feats(frag_x,frag_node_feat_idxs,"base_formula").reshape(batch_frag_num_nodes,-1)
 			)
 			frag_ndata.append(frag_node_formula)
+		log_msg(f"frag_node_formula: {get_mem()}")
 		# edge formulae
 		if "base_formula" in self.frag_edge_feats:
 			frag_edge_formula = self.formula_embedder(
 				get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"base_formula").reshape(batch_frag_num_edges,-1)
 			)
 			frag_edata.append(frag_edge_formula)
+		log_msg(f"frag_edge_formula: {get_mem()}")
 		# node depth
 		if "depth" in self.frag_node_feats:
 			frag_depth = self.depth_embedder(
 				get_node_feats(frag_x,frag_node_feat_idxs,"depth").reshape(batch_frag_num_nodes,-1)
 			)
 			frag_ndata.append(frag_depth)
-		
+		log_msg(f"frag_node_depth: {get_mem()}")
 		# get output formula aggregation 
 		frag_node_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
 		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
@@ -237,12 +257,23 @@ class JointPredictor(nn.Module):
 		# concatenate everything 
 		frag_edge_attr = th.cat(frag_edata,dim=-1)
 		# apply GNN
+		# with profile(
+		# 		activities=[ProfilerActivity.CUDA],
+		# 		profile_memory=True
+		# 	) as prof:
+		# 	with record_function("frag_embed"):
+		# 		frag_embed = self.frag_embedder(
+		# 			frag_x,
+		# 			frag_edge_index,
+		# 			frag_edge_attr
+		# 		)
+		# print(prof.key_averages().table(sort_by="cuda_time_total"))
 		frag_embed = self.frag_embedder(
 			frag_x,
 			frag_edge_index,
 			frag_edge_attr
 		)
-		# frag_node_idxs = th.arange(frag_x.shape[0],device=device)
+		log_msg(f"frag_embed: {get_mem()}")
 
 		# predict probabilities
 		frag_formula_logits = self.output_module(frag_embed)
@@ -256,6 +287,7 @@ class JointPredictor(nn.Module):
 			frag_formula_batch_idxs, # this is wrong
 			dim=0
 		)
+		log_msg(f"frag_formula_logprobs_1: {get_mem()}")
 
 		# aggregate by node
 		frag_formula_mask = th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1]).float()
@@ -266,6 +298,7 @@ class JointPredictor(nn.Module):
 			frag_node_batch_idxs,
 			dim=0
 		)
+		log_msg(f"frag_node_logprobs: {get_mem()}")
 
 		# aggregate by formula
 		frag_formula_logprobs = scatter_logsumexp(
@@ -273,6 +306,7 @@ class JointPredictor(nn.Module):
 			frag_formula_idxs,
 			dim=0
 		)
+		log_msg(f"frag_formula_logprobs_2: {get_mem()}")
 
 		# zero out NULL formula
 		# TODO: could reuse masking from above
@@ -292,11 +326,12 @@ class JointPredictor(nn.Module):
 			dim=0,
 			log=True
 		)
-		# print("frag_formula_logprobs",scatter_logsumexp(frag_formula_logprobs,frag_formula_batch_idxs,dim=0))
+		log_msg(f"frag_formula_logprobs_3: {get_mem()}")
 
 		# convert to spectrum
 		spec_mzs = frag_formula_peak_mzs
 		spec_logprobs = frag_formula_logprobs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
+		log_msg(f"spec_logprobs_1: {get_mem()}")
 
 		# get batch idxs
 		spec_batch_idxs = th.repeat_interleave(
@@ -305,13 +340,13 @@ class JointPredictor(nn.Module):
 		)
 		
 		# log normalize
-		# print("spec_un",scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
 		spec_logprobs = scatter_logsoftmax(
 			spec_logprobs,
 			spec_batch_idxs,
 			dim=0
 		)
-		# print("spec_n",scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
+		log_msg(f"spec_logprobs_2: {get_mem()}")
+
 		if th.any(th.abs(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))>1.):
 			import pdb; pdb.set_trace() 
 

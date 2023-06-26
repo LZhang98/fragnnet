@@ -215,9 +215,8 @@ def scatter_l1normalize(vals,subset_idxs,dim=-1):
 
 def scatter_reduce(src,index,reduce,dim,dim_size):
 
-	result_shape = list(src.shape)
-	result_shape[dim] = dim_size
-	results = th.zeros(tuple(result_shape),dtype=src.dtype,device=src.device)
+	result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim+1:]
+	results = th.zeros(result_shape,dtype=src.dtype,device=src.device)
 	results.scatter_reduce_(
 		dim=dim,
 		index=index,

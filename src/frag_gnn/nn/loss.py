@@ -84,7 +84,7 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	ce = 0.
 	mask_value = -1e9
 	batch_size = th.max(true_batch_idxs)+1
-	for batch_idx in range(batch_size):
+	for batch_idx in th.arange(batch_size):
 		b_pred_mask = (pred_batch_idxs==batch_idx).float()
 		b_true_mask = (true_batch_idxs==batch_idx)
 		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1-b_pred_mask)

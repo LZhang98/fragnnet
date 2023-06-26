@@ -427,9 +427,20 @@ if __name__ == "__main__":
 	if args.jit:
 		th_dynamo.config.verbose = True
 		dynamo_prof = th_dynamo.utils.CompileProfiler()
-		# don't compile the model for now
+		fullgraph = False
+		dynamic = True
+		joint_model.compile_submodules(
+			backend=dynamo_prof,
+			fullgraph=fullgraph,
+			dynamic=dynamic
+		)
 		joint_model_forward = joint_model.forward
-		loss_fn = th.compile(sparse_cross_entropy_fn,dynamic=True,backend=dynamo_prof)
+		# joint_model_forward = th.compile(joint_model.forward,dynamic=True,backend=dynamo_prof)
+		loss_fn = th.compile(sparse_cross_entropy_fn,
+			backend=dynamo_prof,
+			fullgraph=False, #fullgraph,
+			dynamic=dynamic
+		)
 	else:
 		joint_model_forward = joint_model.forward
 		loss_fn = sparse_cross_entropy_fn

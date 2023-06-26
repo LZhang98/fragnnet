@@ -32,17 +32,15 @@ class IntFeaturizer(nn.Module):
 		Convert the integer `tensor` into its new representation -- note that it gets stacked along final dimension.
 		"""
 		orig_shape = tensor.shape
-		out_tensor = th.empty(
-			(*orig_shape, self.embedding_dim), device=tensor.device
-		)
-		extra_embed = tensor >= self.MAX_COUNT_INT
+		# out_tensor = th.empty(
+		# 	(*orig_shape, self.embedding_dim), device=tensor.device
+		# )
+		extra_embed_mask = (tensor >= self.MAX_COUNT_INT).float()
 
 		tensor = tensor.long()
-		norm_embeds = self.int_to_feat_matrix[tensor[~extra_embed]]
-		extra_embeds = self._extra_embeddings[tensor[extra_embed] - self.MAX_COUNT_INT]
-
-		out_tensor[~extra_embed] = norm_embeds
-		out_tensor[extra_embed] = extra_embeds
+		norm_embeds = self.int_to_feat_matrix[tensor]
+		extra_embeds = self._extra_embeddings[th.maximum(tensor,self.MAX_COUNT_INT*th.ones_like(tensor))-self.MAX_COUNT_INT]
+		out_tensor = (1.-extra_embed_mask).unsqueeze(-1)*norm_embeds + extra_embed_mask.unsqueeze(-1)*extra_embeds
 
 		temp_out = out_tensor.reshape(*orig_shape[:-1], -1)
 		return temp_out

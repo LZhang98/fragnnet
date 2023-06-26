@@ -1,6 +1,8 @@
 import torch as th
 import numpy as np
 import lightning.pytorch as pl
+from torch.profiler import profile, record_function, ProfilerActivity
+import torch._dynamo as th_dynamo
 
 from frag_gnn.nn.nn_utils import build_lr_scheduler, JointPredictor
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
@@ -76,7 +78,6 @@ class FragGNN(pl.LightningModule):
 		**kwargs
 	):
 
-		# TODO: add jit compile
 		super().__init__()
 		self.save_hyperparameters()
 		self.model = JointPredictor(
@@ -102,9 +103,9 @@ class FragGNN(pl.LightningModule):
 			mlp_num_layers=mlp_num_layers,
 			mlp_use_residuals=mlp_use_residuals
 		)
-		# self.lr_schedule = lr_schedule
-		# self.lr = lr
-		# self.weight_decay = weight_decay
+		if self.hparams.compile:
+			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
+			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
 
 		self._setup_loss_fn()
 		def _filter_func(mzs, ints, batch_idxs):
@@ -139,7 +140,6 @@ class FragGNN(pl.LightningModule):
 			loss_relative
 		)
 		sparse_entropy = get_sparse_entropy_fn()
-		# TODO: this might be bad for compiling
 		def _loss_fn(
 			true_mzs,
 			true_logprobs,
@@ -160,18 +160,18 @@ class FragGNN(pl.LightningModule):
 				pred_batch_idxs
 			)
 			loss = spec_ce
-			if self.hparams.formula_entropy_weight != 0.:
-				formula_e = sparse_entropy(
-					pred_formula_logprobs,
-					pred_formula_batch_idxs
-				)
-				loss = loss + self.hparams.formula_entropy_weight * formula_e
-			if self.hparams.node_entropy_weight != 0.:
-				node_e = sparse_entropy(
-					pred_node_logprobs,
-					pred_node_batch_idxs
-				)
-				loss = loss + self.hparams.node_entropy_weight * node_e
+			# if self.hparams.formula_entropy_weight != 0.:
+			formula_e = sparse_entropy(
+				pred_formula_logprobs,
+				pred_formula_batch_idxs
+			)
+			loss = loss + self.hparams.formula_entropy_weight * formula_e
+			# if self.hparams.node_entropy_weight != 0.:
+			node_e = sparse_entropy(
+				pred_node_logprobs,
+				pred_node_batch_idxs
+			)
+			loss = loss + self.hparams.node_entropy_weight * node_e
 			return loss
 		self.loss_fn = _loss_fn
 
@@ -217,18 +217,22 @@ class FragGNN(pl.LightningModule):
 			spec_ints,
 			spec_batch_idxs
 		)
-		# print("post_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
-		# print("post_spec_lse",batchwise_lse(spec_ints,spec_batch_idxs))
+
 		pred = self.forward(**batch)
-		# print("pred_max",batchwise_max(pred["pred_logits"],pred["pred_batch_idxs"]))
-		# print("pred_lse",batchwise_lse(pred["pred_logits"],pred["pred_batch_idxs"]))
+
 		both = {
 			"true_mzs": spec_mzs,
 			"true_logprobs": spec_ints,
 			"true_batch_idxs": spec_batch_idxs,
 			**pred
 		}
-		# import pdb; pdb.set_trace()
+		# with profile(
+		# 		activities=[ProfilerActivity.CUDA],
+		# 		profile_memory=True
+		# 	) as prof:
+		# 	with record_function("loss"):
+		# 		loss = self.loss_fn(**both)
+		# print(prof.key_averages().table(sort_by="cuda_time_total"))
 		loss = self.loss_fn(**both)
 		self.log(
 			f"{name}_loss",
@@ -236,8 +240,7 @@ class FragGNN(pl.LightningModule):
 			batch_size=batch_size,
 			on_epoch=True
 		)
-		if spec_mzs.shape[0] == 0:
-			import pdb; pdb.set_trace()
+		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
 		for fn_name,fn in self.auxiliary_score_fns.items():
 			score = fn(
 				spec_mzs,
@@ -250,7 +253,8 @@ class FragGNN(pl.LightningModule):
 			self.log(
 				f"{name}_{fn_name}",
 				score,
-				batch_size=batch_size
+				batch_size=batch_size,
+				on_epoch=True
 			)
 		return loss
 
