@@ -6,7 +6,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.nn.nn_utils import build_lr_scheduler, JointPredictor
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, batched_l1normalize
+from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, batched_l1normalize, calculate_weighted_recall
 from frag_gnn.utils.misc_utils import safelog
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -120,28 +120,40 @@ class FragGNN(pl.LightningModule):
 		self.bin_func = _bin_func
 		self.ints_transform_func = get_ints_transform_func(ints_transform)
 		self.normalize_func = batched_l1normalize
+		# set tolerance
+		if self.hparams.loss_tolerance_ppm is not None:
+			self.tolerance = self.hparams.loss_tolerance_ppm
+			self.relative = True
+		else:
+			assert self.hparams.loss_tolerance_abs is not None
+			self.tolerance = self.hparams.loss_tolerance_abs
+			self.relative = False
 		self.auxiliary_score_fns = {}
 		if "cos_sim" in auxiliary_scores:
 			def _cos_sim(*args,**kwargs):
 				return th.mean(calculate_cosine_similarity(*args,**kwargs),dim=0)
 			self.auxiliary_score_fns["cos_sim"] = _cos_sim
+		if "wrecall" in auxiliary_scores:
+			def _wrecall(*args,**kwargs):
+				return th.mean(
+					calculate_weighted_recall(
+						*args,
+						tolerance=self.tolerance,
+						relative=self.relative,
+						**kwargs
+					), dim=0
+				)
+			self.auxiliary_score_fns["wrecall"] = _wrecall
 		self.automatic_optimization = automatic_optimization
 
 	def _setup_loss_fn(
 		self):
 
-		if self.hparams.loss_tolerance_ppm is not None:
-			loss_tolerance = self.hparams.loss_tolerance_ppm
-			loss_relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			loss_tolerance = self.hparams.loss_tolerance_abs
-			loss_relative = False
 		sparse_ce = get_sparse_cross_entropy_fn(
 			self.hparams.output_distribution,
 			self.hparams.loss_vectorized,
-			loss_tolerance,
-			loss_relative
+			self.tolerance,
+			self.relative
 		)
 		sparse_entropy = get_sparse_entropy_fn()
 		def _loss_fn(

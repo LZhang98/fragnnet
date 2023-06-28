@@ -170,7 +170,8 @@ def plot_spectra_sparse(
 		plot_title=True,
 		custom_title="",
 		match_peaks=True,
-		match_ppm=True
+		match_tolerance=1e-5,
+		match_relative=True
 	):
 
 	true_mask = true_ints > true_ints_thresh
@@ -238,7 +239,12 @@ def plot_spectra_sparse(
 	# get peaks
 	lines_top, styles_top = [], []
 	if match_peaks:
-		mz_match_matrix = calculate_match_mzs(true_mzs,pred_mzs,use_ppm=match_ppm)
+		mz_match_matrix = calculate_match_mzs(
+			true_mzs,
+			pred_mzs,
+			tolerance=match_tolerance,
+			relative=match_relative
+		)
 		mz_mask = np.any(mz_match_matrix,axis=1)
 		# print(mz_mask.sum())
 	else:

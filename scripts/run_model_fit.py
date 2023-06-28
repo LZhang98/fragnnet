@@ -611,8 +611,8 @@ if __name__ == "__main__":
 	b_pred_mzs = pred_mzs[b_pred_mask]
 	b_pred_ints = th.exp(pred_logprobs[b_pred_mask]) / th.exp(th.logsumexp(pred_logprobs[b_pred_mask],0))
 	print("> prec_mz",prec_mz)
-	print("> prec_mz in true_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_true_mzs.device),b_true_mzs,use_ppm=True)))
-	print("> prec_mz in pred_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_pred_mzs.device),b_pred_mzs,use_ppm=True)))
+	print("> prec_mz in true_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_true_mzs.device),b_true_mzs,tolerance=1e-5,relative=True)))
+	print("> prec_mz in pred_mzs",th.any(calculate_match_mzs(th.tensor([prec_mz],device=b_pred_mzs.device),b_pred_mzs,tolerance=1e-5,relative=True)))
 	plot_spectra_sparse(
 		b_true_mzs.cpu().numpy(),
 		b_true_ints.cpu().numpy(),

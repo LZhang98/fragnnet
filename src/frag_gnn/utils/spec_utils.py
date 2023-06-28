@@ -155,7 +155,7 @@ def calculate_spectrum_entropy(log_ints,batch_idxs):
 	return entropy
 
 
-def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,pred_batch_idxs,ppm_tolerance=10,k=10):
+def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,pred_batch_idxs,tolerance=1e-5,k=10):
 	"""
 	topk_weighted_recall: weighted fraction of top-k true peaks that are matched by at least one top-k true peak
 	topk_frac: fraction of true intensity that is explained by at least one top-k true peaks
@@ -184,8 +184,8 @@ def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs
 		b_true_topk_match = calculate_match_mzs(
 			b_true_topk_mzs,
 			b_pred_topk_mzs,
-			ppm_tolerance=ppm_tolerance,
-			use_ppm=True
+			tolerance=tolerance,
+			relative=True
 		)
 		b_true_topk_match = th.any(b_true_topk_match,dim=1)
 		b_true_ints_topk = true_ints[b_true_mask][b_true_argtopk]
@@ -199,7 +199,7 @@ def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs
 	return topk_weighted_recall, topk_frac
 
 
-def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,pred_batch_idxs,ppm_tolerance=10):
+def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,pred_batch_idxs,tolerance=1e-5):
 	"""
 	Note: this function could be parallelized with vmap
 	"""
@@ -219,8 +219,8 @@ def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,
 		b_true_match = calculate_match_mzs(
 			b_true_mzs,
 			b_pred_mzs,
-			ppm_tolerance=ppm_tolerance,
-			use_ppm=True
+			tolerance=tolerance,
+			relative=True
 		)
 		b_true_match = th.any(b_true_match,dim=1)
 		b_recall = th.sum(b_true_match)/b_true_mzs.shape[0]
@@ -233,9 +233,8 @@ def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,
 def calculate_match_mzs(
 		true_mzs,
 		pred_mzs,
-		ppm_tolerance=10,
-		abs_tolerance=1e-3,
-		use_ppm=True,
+		tolerance=1e-5,
+		relative=True,
 		divisor_mz_floor=200
 	):
 	"""
@@ -254,13 +253,11 @@ def calculate_match_mzs(
 		abs_func = np.abs
 		copy_func = np.copy
 	diff_mzs = abs_func(true_mzs.reshape(-1,1)-pred_mzs.reshape(1,-1))
-	if use_ppm:
+	min_diff_mzs = tolerance
+	if relative:
 		divisor_mzs = copy_func(true_mzs)
 		divisor_mzs[divisor_mzs<divisor_mz_floor] = divisor_mz_floor
-		diff_mzs = (diff_mzs / divisor_mzs.reshape(-1,1)) * 1e6
-		min_diff_mzs = ppm_tolerance
-	else:
-		min_diff_mzs = abs_tolerance
+		diff_mzs = (diff_mzs / divisor_mzs.reshape(-1,1))
 	match_mzs = diff_mzs < min_diff_mzs
 	return match_mzs
 
@@ -274,7 +271,6 @@ def calculate_cosine_similarity(
 		pred_batch_idxs,
 		mz_bin_res=0.01,
 		mz_max=1500.,
-		# ints_thresh=0.0,
 		sum_ints=True
 	):
 
@@ -300,12 +296,44 @@ def calculate_cosine_similarity(
 	return cos_sims
 
 
+def calculate_weighted_recall(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		tolerance=1e-5,
+		relative=True
+	):
+
+	batch_size = th.max(true_batch_idxs)+1
+	weighted_recall = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for b in range(batch_size):
+		b_true_mask = (true_batch_idxs==b)
+		b_pred_mask = (pred_batch_idxs==b)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_ints = true_ints[b_true_mask]
+		b_true_match = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
+		b_true_match = th.any(b_true_match,dim=1)
+		b_weighted_recall = th.sum(b_true_ints[b_true_match])/th.sum(b_true_ints)
+		weighted_recall[b] = b_weighted_recall
+	return weighted_recall
+
+
 def binned_cosine_similarity(true_spec,pred_spec):
 
 	true_spec = F.normalize(true_spec,p=2,dim=1)
 	pred_spec = F.normalize(pred_spec,p=2,dim=1)
 	cos_sims = (true_spec.unsqueeze(1) @ pred_spec.unsqueeze(2)).squeeze(2).squeeze(1)
 	return cos_sims
+
 
 def get_ints_transform_func(ints_transform):
 
@@ -323,6 +351,7 @@ def get_ints_transform_func(ints_transform):
 	else:
 		raise ValueError("Invalid ints_transform: {}".format(ints_transform))
 	return _func
+
 
 def batched_l1normalize(ints, batch_idxs):
 
