@@ -382,6 +382,7 @@ if __name__ == "__main__":
 		"gnn_type": "GINE",
 		"num_layers": 4,
 		"dropout": 0.0,
+		"pool_type": "none" #"mean"
 	}
 	frag_kwargs = {
 		"hidden_size": hidden_size,
@@ -390,13 +391,14 @@ if __name__ == "__main__":
 		"gnn_type": "GINE",
 		"num_layers": 4,
 		"dropout": 0.0,
+		"pool_type": "mean"
 		# node/edge feats are inferred
 	}
 	mlp_kwargs = {
 		"hidden_size": hidden_size,
 		"dropout": 0.0,
 		"num_layers": 2,
-		"use_residuals": True
+		"use_residuals": True,
 		# input/output sizes inferred
 	}
 	num_depth = frag_d["max_depth"]+1 # +1 for the root/precursor node

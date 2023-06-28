@@ -23,28 +23,62 @@ def get_clones(module, N):
 
 
 def build_lr_scheduler(
-	optimizer, lr_decay_rate: float, decay_steps: int = 5000, warmup: int = 1000
+	optimizer, decay_rate: float, decay_steps: int = 5000, warmup_steps: int = 1000
 ):
 	"""build_lr_scheduler.
 
 	Args:
 		optimizer:
-		lr_decay_rate (float): lr_decay_rate
+		decay_rate (float): decay_rate
 		decay_steps (int): decay_steps
 		warmup_steps (int): warmup_steps
 	"""
 
 	def lr_lambda(step):
-		if step >= warmup:
+		if step >= warmup_steps:
 			# Adjust
-			step = step - warmup
-			rate = lr_decay_rate ** (step // decay_steps)
+			step = step - warmup_steps
+			rate = decay_rate ** (step // decay_steps)
 		else:
-			rate = 1 - math.exp(-step / warmup)
+			rate = 1 - math.exp(-step / warmup_steps)
 		return rate
 
 	scheduler = th.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 	return scheduler
+
+
+class ZerosAggregation(nn.Module):
+
+	def __init__(self):
+		super().__init__()
+		self.dummy_agg = pyg.nn.SumAggregation()
+
+	def forward(self, x, batch):
+		agg = self.dummy_agg(x, batch)
+		return 0.*agg
+
+
+def build_pool_module(pool_type: str, node_dim: int):
+
+	if pool_type == "sum":
+		pool_module = pyg.nn.SumAggregation()
+	elif pool_type == "mean":
+		pool_module = pyg.nn.MeanAggregation()
+	elif pool_type == "max":
+		pool_module = pyg.nn.MaxAggregation()
+	elif pool_type == "attention":
+		pool_module = pyg.nn.AttentionalAggregation(
+			gate_nn = nn.Sequential(
+				nn.Linear(node_dim, node_dim),
+				nn.ReLU(),
+				nn.Linear(node_dim, 1)
+			)
+		)
+	else:
+		assert pool_type == "none", pool_type
+		# just return 0s
+		pool_module = ZerosAggregation()
+	return pool_module
 
 
 class JointPredictor(nn.Module):
@@ -62,12 +96,14 @@ class JointPredictor(nn.Module):
 		mol_num_layers: int,
 		mol_gnn_type: str,
 		mol_dropout: float,
+		mol_pool_type: str,
 		frag_node_feats: list[str],
 		frag_edge_feats: list[str],
 		frag_hidden_size: int,
 		frag_num_layers: int,
 		frag_gnn_type: str,
 		frag_dropout: float,
+		frag_pool_type: str,
 		mlp_hidden_size: int,
 		mlp_dropout: float,
 		mlp_num_layers: int,
@@ -92,6 +128,7 @@ class JointPredictor(nn.Module):
 			"dropout": mol_dropout
 		}
 		self.mol_embedder = GNN(**mol_kwargs)
+		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
 		self.formula_embedder = get_embedder(int_embedder)
 		self.depth_embedder = get_embedder(int_embedder)
 		self.frag_node_feats = frag_node_feats
@@ -106,6 +143,7 @@ class JointPredictor(nn.Module):
 			"dropout": frag_dropout
 		}
 		self.frag_embedder = GNN(**frag_kwargs)
+		self.frag_pool = build_pool_module(frag_pool_type,frag_hidden_size)
 		mlp_kwargs = {
 			"input_size": self.frag_embedder.hidden_size,
 			"output_size": 2*self.num_hs+1,
@@ -177,8 +215,8 @@ class JointPredictor(nn.Module):
 
 		device = mol_num_nodes.device
 
-		mol_x, mol_edge_index, mol_edge_attr = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr
-		frag_x, frag_edge_index, frag_edge_attr = frag_pyg.x, frag_pyg.edge_index, frag_pyg.edge_attr
+		mol_x, mol_edge_index, mol_edge_attr, mol_batch = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr, mol_pyg.batch
+		frag_x, frag_edge_index, frag_edge_attr, frag_batch = frag_pyg.x, frag_pyg.edge_index, frag_pyg.edge_attr, frag_pyg.batch
 		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
 
@@ -188,7 +226,7 @@ class JointPredictor(nn.Module):
 			mol_edge_index,
 			mol_edge_attr
 		)
-		
+		mol_embed_pool = self.mol_pool(mol_embed,mol_batch)
 		log_msg(f"mol_embed: {get_mem()}")
 
 		# process dag
@@ -208,6 +246,7 @@ class JointPredictor(nn.Module):
 				dim=0,
 				dim_size=batch_frag_num_nodes
 			)
+			frag_node_mask_embed = frag_node_mask_embed - mol_embed_pool[frag_batch]
 			frag_ndata.append(frag_node_mask_embed)
 		log_msg(f"frag_node_cc: {get_mem()}")
 		# edge atom embeddings
@@ -256,27 +295,17 @@ class JointPredictor(nn.Module):
 		frag_x = th.cat(frag_ndata,dim=-1)
 		# concatenate everything 
 		frag_edge_attr = th.cat(frag_edata,dim=-1)
-		# apply GNN
-		# with profile(
-		# 		activities=[ProfilerActivity.CUDA],
-		# 		profile_memory=True
-		# 	) as prof:
-		# 	with record_function("frag_embed"):
-		# 		frag_embed = self.frag_embedder(
-		# 			frag_x,
-		# 			frag_edge_index,
-		# 			frag_edge_attr
-		# 		)
-		# print(prof.key_averages().table(sort_by="cuda_time_total"))
+
 		frag_embed = self.frag_embedder(
 			frag_x,
 			frag_edge_index,
 			frag_edge_attr
 		)
+		frag_embed_pool = self.frag_pool(frag_embed,frag_batch)
 		log_msg(f"frag_embed: {get_mem()}")
 
 		# predict probabilities
-		frag_formula_logits = self.output_module(frag_embed)
+		frag_formula_logits = self.output_module(frag_embed - frag_embed_pool[frag_batch])
 		assert frag_formula_logits.shape[1] == 2*self.num_hs+1, (frag_formula_logits.shape[1],2*self.num_hs+1)
 
 		# convert to logprobs
