@@ -10,6 +10,7 @@ from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, cal
 from frag_gnn.utils.misc_utils import safelog
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
+from frag_gnn.utils.plot_utils import plot_spectra_sparse
 
 
 def batchwise_max(xs, batch_idxs):
@@ -107,10 +108,19 @@ class FragGNN(pl.LightningModule):
 			mlp_num_layers=mlp_num_layers,
 			mlp_use_residuals=mlp_use_residuals
 		)
+		# compile
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
-
+		# set tolerance
+		if self.hparams.loss_tolerance_ppm is not None:
+			self.tolerance = self.hparams.loss_tolerance_ppm
+			self.relative = True
+		else:
+			assert self.hparams.loss_tolerance_abs is not None
+			self.tolerance = self.hparams.loss_tolerance_abs
+			self.relative = False
+		# setup functions
 		self._setup_loss_fn()
 		def _filter_func(mzs, ints, batch_idxs):
 			return batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max)
@@ -120,28 +130,18 @@ class FragGNN(pl.LightningModule):
 		self.bin_func = _bin_func
 		self.ints_transform_func = get_ints_transform_func(ints_transform)
 		self.normalize_func = batched_l1normalize
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
 		self.auxiliary_score_fns = {}
 		if "cos_sim" in auxiliary_scores:
 			def _cos_sim(*args,**kwargs):
-				return th.mean(calculate_cosine_similarity(*args,**kwargs),dim=0)
+				return calculate_cosine_similarity(*args,**kwargs)
 			self.auxiliary_score_fns["cos_sim"] = _cos_sim
 		if "wrecall" in auxiliary_scores:
 			def _wrecall(*args,**kwargs):
-				return th.mean(
-					calculate_weighted_recall(
-						*args,
-						tolerance=self.tolerance,
-						relative=self.relative,
-						**kwargs
-					), dim=0
+				return calculate_weighted_recall(
+					*args,
+					tolerance=self.tolerance,
+					relative=self.relative,
+					**kwargs
 				)
 			self.auxiliary_score_fns["wrecall"] = _wrecall
 		self.automatic_optimization = automatic_optimization
@@ -223,10 +223,11 @@ class FragGNN(pl.LightningModule):
 	def _common_step(self, batch, name="train"):
 
 		# preprocess spec
+		batch_size = batch["batch_size"]
+		smiles = batch["mol_smiles"]
 		spec_mzs = batch["spec_mzs"]
 		spec_ints = batch["spec_ints"]
 		spec_batch_idxs = batch["spec_batch_idxs"]
-		batch_size = batch["batch_size"]
 		# print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
 		spec_mzs, spec_ints, spec_batch_idxs = self.preproc_spec(
 			spec_mzs,
@@ -242,42 +243,49 @@ class FragGNN(pl.LightningModule):
 			"true_batch_idxs": spec_batch_idxs,
 			**pred
 		}
-		# with profile(
-		# 		activities=[ProfilerActivity.CUDA],
-		# 		profile_memory=True
-		# 	) as prof:
-		# 	with record_function("loss"):
-		# 		loss = self.loss_fn(**both)
-		# print(prof.key_averages().table(sort_by="cuda_time_total"))
+
 		loss = self.loss_fn(**both)
+		mean_loss = th.mean(loss,dim=0)
 		self.log(
 			f"{name}_loss",
-			loss.item(),
+			mean_loss.item(),
 			batch_size=batch_size,
 			on_epoch=True
 		)
+		results = {
+			"batch_size": batch_size,
+			"smiles": smiles,
+			"loss": loss,
+			"mean_loss": mean_loss,
+			**both
+		}
 		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
-		for fn_name,fn in self.auxiliary_score_fns.items():
-			score = fn(
-				spec_mzs,
-				th.exp(spec_ints),
-				spec_batch_idxs,
-				pred["pred_mzs"],
-				th.exp(pred["pred_logprobs"]),
-				pred["pred_batch_idxs"]
-			)
-			self.log(
-				f"{name}_{fn_name}",
-				score,
-				batch_size=batch_size,
-				on_epoch=True
-			)
-		return loss
+		with th.no_grad():
+			for fn_name,fn in self.auxiliary_score_fns.items():
+				score = fn(
+					spec_mzs,
+					th.exp(spec_ints),
+					spec_batch_idxs,
+					pred["pred_mzs"],
+					th.exp(pred["pred_logprobs"]),
+					pred["pred_batch_idxs"]
+				)
+				mean_score = th.mean(score,dim=0)
+				self.log(
+					f"{name}_{fn_name}",
+					mean_score,
+					batch_size=batch_size,
+					on_epoch=True
+				)
+				results[fn_name] = score
+		return results
 
 	def training_step(self, batch, batch_idx):
 
 		if self.hparams.automatic_optimization:
-			return self._common_step(batch, name="train")
+			batch_results = self._common_step(batch, name="train")
+			self.last_batch_results = batch_results
+			return batch_results["mean_loss"]
 		else:
 			raise NotImplementedError("Manual optimization not implemented")
 			# opt = self.optimizers()
@@ -289,11 +297,11 @@ class FragGNN(pl.LightningModule):
 
 	def validation_step(self, batch, batch_idx):
 
-		return self._common_step(batch, name="val")
+		return self._common_step(batch, name="val")["mean_loss"]
 
 	def test_step(self, batch, batch_idx):
 
-		return self._common_step(batch, name="test")
+		return self._common_step(batch, name="test")["mean_loss"]
 
 	def configure_optimizers(self):
 
@@ -327,6 +335,40 @@ class FragGNN(pl.LightningModule):
 			}
 		return ret
 
+	def on_train_epoch_end(self):
+
+		wandb_logger = None
+		for logger in self.loggers:
+			if isinstance(logger, pl.loggers.WandbLogger):
+				wandb_logger = logger
+		if wandb_logger is None:
+			return
+		with th.no_grad():
+			true_mask = self.last_batch_results["true_batch_idxs"] == 0
+			pred_mask = self.last_batch_results["pred_batch_idxs"] == 0
+			smiles = self.last_batch_results["smiles"][0]
+			loss = self.last_batch_results["loss"][0]
+			cos_sim = self.last_batch_results.get("cos_sim",[np.nan])[0]
+			wrecall = self.last_batch_results.get("wrecall",[np.nan])[0]
+			true_mzs = self.last_batch_results["true_mzs"][true_mask].cpu().numpy()
+			true_ints = th.exp(self.last_batch_results["true_logprobs"][true_mask]).cpu().numpy()
+			pred_mzs = self.last_batch_results["pred_mzs"][pred_mask].cpu().numpy()
+			pred_ints = th.exp(self.last_batch_results["pred_logprobs"][pred_mask]).cpu().numpy()
+		assert np.isclose(np.sum(true_ints),1.0), np.sum(true_ints)
+		assert np.isclose(np.sum(pred_ints),1.0), np.sum(pred_ints)
+		data = plot_spectra_sparse(
+			true_mzs,
+			true_ints,
+			pred_mzs,
+			pred_ints,
+			smiles,
+			return_data=True
+		)
+		wandb_logger.log_image(
+			key="example_0",
+			caption=[f"epoch = {self.current_epoch:03d}, loss = {loss:.3f}, cos_sim = {cos_sim:.3f}, wrecall = {wrecall:.3f}"],
+			images=[data]
+		)
 
 def get_default_model_params():
 

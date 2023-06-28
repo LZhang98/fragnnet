@@ -157,9 +157,9 @@ def plot_spectra_sparse(
 		true_ints,
 		pred_mzs,
 		pred_ints,
-		prec_mz,
+		# prec_mz,
 		smiles,
-		fp,
+		fp=None,
 		mz_res=1e-3,
 		mz_max=1000.,
 		figsize=(20,20),
@@ -171,7 +171,8 @@ def plot_spectra_sparse(
 		custom_title="",
 		match_peaks=True,
 		match_tolerance=1e-5,
-		match_relative=True
+		match_relative=True,
+		return_data=False
 	):
 
 	true_mask = true_ints > true_ints_thresh
@@ -313,5 +314,10 @@ def plot_spectra_sparse(
 	]
 	leg = ax_top.legend(handles=handles,**leg_kws)
 
-	fig.savefig(fp,format="png")
-	plt.close("all")
+	if fp is not None:
+		fig.savefig(fp,format="png")
+		plt.close("all")
+	
+	if return_data:
+		data = fig_to_data(fig)
+		return data

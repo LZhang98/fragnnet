@@ -10,20 +10,20 @@ frag_preprocess: False #True
 
 train_batch_size: 8 # 4
 eval_batch_size: 8 # 4
-accumulate_grad_batches: 6 # 12
+accumulate_grad_batches: 1 # 12
 gradient_clip_val: 5.0
 lr: 0.0003 #0.001
 accelerator: gpu
 devices: 1
-min_epochs: 10 #200
-max_epochs: 10 #200
+min_epochs: 5
+max_epochs: 5
 lr_schedule: False #True
 lr_warmup_steps: 0
-lr_decay_steps: 10
-lr_decay_rate: 0.9
+lr_decay_steps: 20
+lr_decay_rate: 0.95
 # num_steps: 1000
 debug_overfit: True
-debug_overfit_batches: 12 # 24
+debug_overfit_batches: 1 # 24
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
 frag_pyg_node_feats:

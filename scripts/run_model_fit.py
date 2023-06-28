@@ -555,6 +555,7 @@ if __name__ == "__main__":
 			loss = loss + args.formula_entropy_weight*sparse_entropy_fn(pred_formula_logprobs,pred_formula_batch_idxs)
 		if args.node_entropy_weight != 0.:
 			loss = loss + args.node_entropy_weight*sparse_entropy_fn(pred_node_logprobs,pred_node_batch_idxs)
+		loss = th.mean(loss,dim=0)
 		print(f"> loss = {loss:.4f}")
 		# update metrics
 		metrics["step"].append(i+1)
@@ -618,9 +619,9 @@ if __name__ == "__main__":
 		b_true_ints.cpu().numpy(),
 		b_pred_mzs.cpu().numpy(),
 		b_pred_ints.cpu().numpy(),
-		prec_mz,
+		# prec_mz,
 		smiles,
-		f"figs/fit_model_{compound_idx}_spectra.png",
+		fp=f"figs/fit_model_{compound_idx}_spectra.png",
 		custom_title=f"iter = {best_iter}, loss = {loss:.5f}, recall = {recall:.3f}, w_recall = {weighted_recall:.3f}"
 	)
 

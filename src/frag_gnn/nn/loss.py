@@ -72,7 +72,7 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		dim=0,
 		dim_size=batch_size
 	)
-	ce = th.mean(ce)
+	# ce = th.mean(ce)
 	return ce
 
 
@@ -81,9 +81,9 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	this is just for torch.compile
 	"""
 
-	ce = 0.
 	mask_value = -1e9
 	batch_size = th.max(true_batch_idxs)+1
+	ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
 	for batch_idx in th.arange(batch_size):
 		b_pred_mask = (pred_batch_idxs==batch_idx).float()
 		b_true_mask = (true_batch_idxs==batch_idx)
@@ -96,9 +96,8 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		b_true_logprobs = true_logprobs[b_true_mask]
 		b_true_mzs = true_mzs[b_true_mask]
 		b_ce = th.sum(-th.exp(b_true_logprobs)*log_prob_fn(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
-		ce = ce + b_ce
-	ce = ce / batch_size
-	return ce
+		ces[batch_idx] = b_ce
+	return ces
 
 
 def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
@@ -140,7 +139,8 @@ def sparse_entropy_fn(logprobs,batch_idxs):
 		dim=0,
 		dim_size=batch_size,
 	)
-	return th.mean(entropy)
+	return entropy
+	# return th.mean(entropy)
 
 
 def get_sparse_entropy_fn():
