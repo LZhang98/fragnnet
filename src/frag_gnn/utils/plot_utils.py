@@ -316,8 +316,11 @@ def plot_spectra_sparse(
 
 	if fp is not None:
 		fig.savefig(fp,format="png")
-		plt.close("all")
 	
+	data = None
 	if return_data:
 		data = fig_to_data(fig)
-		return data
+	
+	plt.close("all")
+	
+	return data

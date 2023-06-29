@@ -119,3 +119,4 @@ detect_anomaly: False
 automatic_optimization: True
 profiler: none
 compile: False
+num_log_images: 0

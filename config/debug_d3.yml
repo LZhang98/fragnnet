@@ -8,20 +8,19 @@ mol_preprocess: False #True
 frag_preload: False #True
 frag_preprocess: False #True
 
-train_batch_size: 8 # 4
-eval_batch_size: 8 # 4
+train_batch_size: 2 # 4
+eval_batch_size: 2 # 4
 accumulate_grad_batches: 1 # 12
 gradient_clip_val: 5.0
-lr: 0.0003 #0.001
+lr: 0.0003
 accelerator: gpu
 devices: 1
-min_epochs: 5
-max_epochs: 5
-lr_schedule: False #True
+min_epochs: 100
+max_epochs: 100
+lr_schedule: True
 lr_warmup_steps: 0
-lr_decay_steps: 20
-lr_decay_rate: 0.95
-# num_steps: 1000
+lr_decay_steps: 10
+lr_decay_rate: 0.8
 debug_overfit: True
 debug_overfit_batches: 1 # 24
 formula_entropy_weight: 0.0
@@ -39,3 +38,4 @@ log_every_n_steps: 0
 auxiliary_scores:
   - cos_sim
   - wrecall
+num_log_images: 2

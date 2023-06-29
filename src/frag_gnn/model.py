@@ -78,6 +78,7 @@ class FragGNN(pl.LightningModule):
 		formula_entropy_weight: float,
 		node_entropy_weight: float,
 		automatic_optimization: bool,
+		num_log_images: int,
 		**kwargs
 	):
 
@@ -337,38 +338,49 @@ class FragGNN(pl.LightningModule):
 
 	def on_train_epoch_end(self):
 
+		num_log_images = min(
+			self.hparams.num_log_images,
+			int(self.last_batch_results["batch_size"])
+		)
 		wandb_logger = None
 		for logger in self.loggers:
 			if isinstance(logger, pl.loggers.WandbLogger):
 				wandb_logger = logger
 		if wandb_logger is None:
 			return
-		with th.no_grad():
-			true_mask = self.last_batch_results["true_batch_idxs"] == 0
-			pred_mask = self.last_batch_results["pred_batch_idxs"] == 0
-			smiles = self.last_batch_results["smiles"][0]
-			loss = self.last_batch_results["loss"][0]
-			cos_sim = self.last_batch_results.get("cos_sim",[np.nan])[0]
-			wrecall = self.last_batch_results.get("wrecall",[np.nan])[0]
-			true_mzs = self.last_batch_results["true_mzs"][true_mask].cpu().numpy()
-			true_ints = th.exp(self.last_batch_results["true_logprobs"][true_mask]).cpu().numpy()
-			pred_mzs = self.last_batch_results["pred_mzs"][pred_mask].cpu().numpy()
-			pred_ints = th.exp(self.last_batch_results["pred_logprobs"][pred_mask]).cpu().numpy()
-		assert np.isclose(np.sum(true_ints),1.0), np.sum(true_ints)
-		assert np.isclose(np.sum(pred_ints),1.0), np.sum(pred_ints)
-		data = plot_spectra_sparse(
-			true_mzs,
-			true_ints,
-			pred_mzs,
-			pred_ints,
-			smiles,
-			return_data=True
-		)
-		wandb_logger.log_image(
-			key="example_0",
-			caption=[f"epoch = {self.current_epoch:03d}, loss = {loss:.3f}, cos_sim = {cos_sim:.3f}, wrecall = {wrecall:.3f}"],
-			images=[data]
-		)
+		for i in range(num_log_images):
+			with th.no_grad():
+				true_mask = self.last_batch_results["true_batch_idxs"] == i
+				pred_mask = self.last_batch_results["pred_batch_idxs"] == i
+				smiles = self.last_batch_results["smiles"][i]
+				loss = self.last_batch_results["loss"][i]
+				if "cos_sim" in self.last_batch_results:
+					cos_sim = self.last_batch_results["cos_sim"][i].item()
+				else:
+					cos_sim = np.nan
+				if "wrecall" in self.last_batch_results:
+					wrecall = self.last_batch_results["wrecall"][i].item()
+				else:
+					wrecall = np.nan
+				true_mzs = self.last_batch_results["true_mzs"][true_mask].cpu().numpy()
+				true_ints = th.exp(self.last_batch_results["true_logprobs"][true_mask]).cpu().numpy()
+				pred_mzs = self.last_batch_results["pred_mzs"][pred_mask].cpu().numpy()
+				pred_ints = th.exp(self.last_batch_results["pred_logprobs"][pred_mask]).cpu().numpy()
+			assert np.isclose(np.sum(true_ints),1.0), np.sum(true_ints)
+			assert np.isclose(np.sum(pred_ints),1.0), np.sum(pred_ints)
+			data = plot_spectra_sparse(
+				true_mzs,
+				true_ints,
+				pred_mzs,
+				pred_ints,
+				smiles,
+				return_data=True
+			)
+			wandb_logger.log_image(
+				key=f"example_{i}",
+				caption=[f"epoch = {self.current_epoch:03d}, loss = {loss:.3f}, cos_sim = {cos_sim:.3f}, wrecall = {wrecall:.3f}"],
+				images=[data]
+			)
 
 def get_default_model_params():
 

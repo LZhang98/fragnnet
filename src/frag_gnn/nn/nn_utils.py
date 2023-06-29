@@ -145,7 +145,7 @@ class JointPredictor(nn.Module):
 		self.frag_embedder = GNN(**frag_kwargs)
 		self.frag_pool = build_pool_module(frag_pool_type,frag_hidden_size)
 		mlp_kwargs = {
-			"input_size": self.frag_embedder.hidden_size,
+			"input_size": 2*self.frag_embedder.hidden_size,
 			"output_size": 2*self.num_hs+1,
 			"hidden_size": mlp_hidden_size,
 			"num_layers": mlp_num_layers,
@@ -296,16 +296,24 @@ class JointPredictor(nn.Module):
 		# concatenate everything 
 		frag_edge_attr = th.cat(frag_edata,dim=-1)
 
-		frag_embed = self.frag_embedder(
+		frag_embed_gnn = self.frag_embedder(
 			frag_x,
 			frag_edge_index,
 			frag_edge_attr
 		)
-		frag_embed_pool = self.frag_pool(frag_embed,frag_batch)
+		frag_embed_gnn_pool = self.frag_pool(frag_embed_gnn,frag_batch)
+		frag_embed_node = self.frag_embedder.input_project(frag_x)
+		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
 		log_msg(f"frag_embed: {get_mem()}")
 
 		# predict probabilities
-		frag_formula_logits = self.output_module(frag_embed - frag_embed_pool[frag_batch])
+		frag_embed = th.cat(
+			[
+				frag_embed_node-frag_embed_node_pool[frag_batch],
+				frag_embed_gnn-frag_embed_gnn_pool[frag_batch]
+			], dim=1
+		)
+		frag_formula_logits = self.output_module(frag_embed)
 		assert frag_formula_logits.shape[1] == 2*self.num_hs+1, (frag_formula_logits.shape[1],2*self.num_hs+1)
 
 		# convert to logprobs
