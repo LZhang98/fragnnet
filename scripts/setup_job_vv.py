@@ -78,7 +78,7 @@ def main(args):
 			f"cd {home_dir}/frag-gnn"
 		]
 	)
-	python_line = f"python preproc_scripts/03_prepare_dag_feats.py --run_name={args.job_name}"
+	python_line = f"python {args.python_script_fp}"
 	script_kwargs = args.script_kwargs.split(",")
 	for kwarg in script_kwargs:
 		assert "=" in kwarg, kwarg
@@ -104,14 +104,15 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--script_dp",type=str, default="slurm_scripts")
+	parser.add_argument("--python_script_fp",type=str,required=True)
 	parser.add_argument("--mem", type=int, default=64)
 	parser.add_argument("--cpu", type=int, default=8)
 	parser.add_argument("--gpu", type=int, default=1)
 	parser.add_argument("--time", type=int, default=12)
-	parser.add_argument("--partition", type=str, default="cpu", choices=["t4v1","t4v2","p100","rtx6000","interactive","cpu"])
+	parser.add_argument("--partition", type=str, default="cpu", choices=["t4v2","rtx6000","interactive","cpu","a40"])
 	parser.add_argument("--qos", type=str, default="nopreemption", choices=["normal","high","nopreemption","deadline"])
 	parser.add_argument("--env", type=str, default="FRAG-GNN-2")
 	parser.add_argument("--script_kwargs", type=str, default="")
-	parser.add_argument("--job_name", type=str, default="debug")
+	parser.add_argument("--job_name", type=str, required=True)
 	args = parser.parse_args()
 	main(args)

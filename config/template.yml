@@ -1,10 +1,11 @@
 # wandb
-wandb_project: "frag-gnn"
-wandb_name: "template"
+wandb_entity: frag-gnn
+wandb_project: frag-gnn
+wandb_name: template
 # data
 spec_fp: data/proc/spec_df.pkl
 mol_fp: data/proc/mol_df.pkl
-split_fp: data/split/debug/train_ids.csv
+split_dp: data/split/debug
 frag_dp: data/frag/debug/dags
 spec_merge: True
 spec_subsample_size: 0
@@ -20,6 +21,7 @@ spec_prec_mz: True
 spec_prec_mass_diff: True
 spec_nce: False
 spec_ace: False
+spec_preprocess: False
 mol_smiles: True
 mol_fingerprint: False
 mol_fingerprint_morgan: True
@@ -39,6 +41,7 @@ mol_pyg_edge_feats:
   - b_degree
 mol_pyg_pe_embed_k: 0
 mol_pyg_bigraph: True
+mol_preprocess: False
 frag_pyg: True
 frag_pyg_node_feats:
   - cc
@@ -52,6 +55,8 @@ frag_num_isotopes: 1
 frag_formula_peak_mzs: True
 frag_formula_peak_probs: True
 frag_compressed: True
+frag_preload: False
+frag_preprocess: False
 # model
 num_depth: 5
 num_hs: 4
@@ -61,10 +66,12 @@ mol_hidden_size: 256
 mol_num_layers: 4
 mol_gnn_type: GINE
 mol_dropout: 0.0
+mol_pool_type: none
 frag_hidden_size: 256
 frag_num_layers: 4
 frag_gnn_type: GINE
 frag_dropout: 0.0
+frag_pool_type: none
 mlp_hidden_size: 256
 mlp_dropout: 0.0
 mlp_num_layers: 2
@@ -72,25 +79,24 @@ mlp_use_residuals: True
 # other
 lr: 0.0001
 lr_schedule: False
-weight_decay: 0.0
+weight_decay: 0.01
 lr_decay_rate: 0.95
-warmup: 1000
+lr_warmup_steps: 1000
+lr_decay_steps: 5000
 optimizer: adamw
-num_steps: 1000
 output_distribution: gaussian
 loss_vectorized: False
-loss_tolerance_ppm: 10
-loss_tolerance_abs: 
+loss_tolerance_ppm: 0.00001
+loss_tolerance_abs: #0.001
 auxiliary_scores:
   - cos_sim
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
 bin_sum_ints: True
-ints_transform: log10t3
+ints_transform: none #log10t3
 train_batch_size: 16
 eval_batch_size: 16
-epochs: 10
 accelerator: cpu
 devices: auto
 logging:
@@ -103,3 +109,14 @@ gradient_clip_val: 5.0
 gradient_clip_algorithm: norm
 accumulate_grad_batches: 1
 precision: 32 # 64, 16-mixed, bf16-mixed
+debug_overfit: False
+debug_overfit_batches: 10
+log_every_n_steps: 50
+formula_entropy_weight: 0.0
+node_entropy_weight: 0.0
+seed: 420
+detect_anomaly: False
+automatic_optimization: True
+profiler: none
+compile: False
+num_log_images: 0

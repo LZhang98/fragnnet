@@ -1,37 +1,41 @@
 import torch as th
+import numpy as np
 import lightning.pytorch as pl
+from torch.profiler import profile, record_function, ProfilerActivity
+import torch._dynamo as th_dynamo
 
 from frag_gnn.nn.nn_utils import build_lr_scheduler, JointPredictor
-from frag_gnn.nn.loss import get_sparse_cross_entropy_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, batched_normalize
+from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
+from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, batched_l1normalize, calculate_weighted_recall
 from frag_gnn.utils.misc_utils import safelog
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
+from frag_gnn.utils.plot_utils import plot_spectra_sparse
 
 
 def batchwise_max(xs, batch_idxs):
-    """ for debugging """
+	""" for debugging """
 
-    batch_size = th.max(batch_idxs)+1
-    maxs = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
-    for b in range(batch_size):
-        maxs[b] = th.max(xs[batch_idxs==b])
-    return maxs
+	batch_size = th.max(batch_idxs)+1
+	maxs = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
+	for b in range(batch_size):
+		maxs[b] = th.max(xs[batch_idxs==b])
+	return maxs
 
 def batchwise_lse(xs, batch_idxs):
-    """ for debugging """
+	""" for debugging """
 
-    batch_size = th.max(batch_idxs)+1
-    lses = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
-    for b in range(batch_size):
-        lses[b] = th.logsumexp(xs[batch_idxs==b],0)
-    return lses
+	batch_size = th.max(batch_idxs)+1
+	lses = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
+	for b in range(batch_size):
+		lses[b] = th.logsumexp(xs[batch_idxs==b],0)
+	return lses
 
 class FragGNN(pl.LightningModule):
 
-    def __init__(
-        self,
-        num_depth: int,
+	def __init__(
+		self,
+		num_depth: int,
 		num_hs: int,
 		num_elements: int,
 		int_embedder: str,
@@ -42,272 +46,391 @@ class FragGNN(pl.LightningModule):
 		mol_num_layers: int,
 		mol_gnn_type: str,
 		mol_dropout: float,
+		mol_pool_type: str,
 		frag_pyg_node_feats: list[str],
 		frag_pyg_edge_feats: list[str],
 		frag_hidden_size: int,
 		frag_num_layers: int,
 		frag_gnn_type: str,
 		frag_dropout: float,
+		frag_pool_type: str,
 		mlp_hidden_size: int,
 		mlp_dropout: float,
 		mlp_num_layers: int,
 		mlp_use_residuals: bool,
-        lr: float,
-        lr_schedule: bool,
-        weight_decay: float,
-        lr_decay_rate: float,
-        warmup: int,
-        optimizer: str,
-        num_steps: int,
-        output_distribution: str,
-        loss_vectorized: bool,
-        loss_tolerance_ppm: float,
-        loss_tolerance_abs: float,
-        auxiliary_scores: list[str],
-        ints_thresh: float,
-        mz_max: float,
-        mz_bin_res: float,
-        bin_sum_ints: bool,
-        ints_transform: str,
-        **kwargs
-    ):
-        
-        super().__init__()
-        self.save_hyperparameters()
-        self.model = JointPredictor(
-            num_depth=num_depth,
-            num_hs=num_hs,
-            num_elements=num_elements,
-            int_embedder=int_embedder,
-            mol_node_feats=mol_pyg_node_feats,
-            mol_edge_feats=mol_pyg_edge_feats,
-            mol_pe_embed_k=mol_pyg_pe_embed_k,
-            mol_hidden_size=mol_hidden_size,
-            mol_num_layers=mol_num_layers,
-            mol_gnn_type=mol_gnn_type,
-            mol_dropout=mol_dropout,
-            frag_node_feats=frag_pyg_node_feats,
-            frag_edge_feats=frag_pyg_edge_feats,
-            frag_hidden_size=frag_hidden_size,
-            frag_num_layers=frag_num_layers,
-            frag_gnn_type=frag_gnn_type,
-            frag_dropout=frag_dropout,
-            mlp_hidden_size=mlp_hidden_size,
-            mlp_dropout=mlp_dropout,
-            mlp_num_layers=mlp_num_layers,
-            mlp_use_residuals=mlp_use_residuals
-        )
-        self.lr_schedule = lr_schedule
-        self.lr = lr
-        self.weight_decay = weight_decay
-        if optimizer == "adam":
-            self.optimizer_cls = th.optim.Adam
-        elif optimizer == "adamw":
-            self.optimizer_cls = th.optim.AdamW
-        elif optimizer == "sgd":
-            self.optimizer_cls = th.optim.SGD
-        else:
-            raise ValueError(f"Unknown optimizer {self.optimizer}")
-        if loss_tolerance_ppm is not None:
-            loss_tolerance = loss_tolerance_ppm
-            loss_relative = True
-        else:
-            assert loss_tolerance_abs is not None
-            loss_tolerance = loss_tolerance_abs
-            loss_relative = False
-        self.loss_fn = get_sparse_cross_entropy_fn(
-            output_distribution,
-            loss_vectorized,
-            loss_tolerance,
-            loss_relative,
-        )
-        def _filter_func(mzs, ints, batch_idxs):
-            return batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max)
-        self.filter_func = _filter_func
-        def _bin_func(mzs, ints, batch_idxs):
-            return batched_bin_func(mzs,ints,batch_idxs,mz_bin_res,bin_sum_ints)
-        self.bin_func = _bin_func
-        self.ints_transform_func = get_ints_transform_func(ints_transform)
-        self.normalize_func = batched_normalize
-        self.auxiliary_score_fns = {}
-        if "cos_sim" in auxiliary_scores:
-            def _cos_sim(*args,**kwargs):
-                return th.mean(calculate_cosine_similarity(*args,**kwargs),dim=0)
-            self.auxiliary_score_fns["cos_sim"] = _cos_sim
-        # if "wrecall" in auxiliary_scores:
-        #     self.auxiliary_score_fns["wrecall"] = \
-        #         lambda *args,**kwargs: calculate_recalls(*args,**kwargs)[1]
-        # if "topk_wrecall" in auxiliary_scores:
-        #     self.auxiliary_score_fns["topk_wrecall"] = \
-        #         lambda *args,**kwargs: calculate_topk_weighted_recalls(*args,**kwargs)[0]
+		lr: float,
+		lr_schedule: bool,
+		weight_decay: float,
+		lr_decay_rate: float,
+		lr_warmup_steps: int,
+		lr_decay_steps: int,
+		optimizer: str,
+		output_distribution: str,
+		loss_vectorized: bool,
+		loss_tolerance_ppm: float,
+		loss_tolerance_abs: float,
+		auxiliary_scores: list[str],
+		ints_thresh: float,
+		mz_max: float,
+		mz_bin_res: float,
+		bin_sum_ints: bool,
+		ints_transform: str,
+		formula_entropy_weight: float,
+		node_entropy_weight: float,
+		automatic_optimization: bool,
+		num_log_images: int,
+		**kwargs
+	):
 
-    def preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
+		super().__init__()
+		self.save_hyperparameters()
+		self.model = JointPredictor(
+			num_depth=num_depth,
+			num_hs=num_hs,
+			num_elements=num_elements,
+			int_embedder=int_embedder,
+			mol_node_feats=mol_pyg_node_feats,
+			mol_edge_feats=mol_pyg_edge_feats,
+			mol_pe_embed_k=mol_pyg_pe_embed_k,
+			mol_hidden_size=mol_hidden_size,
+			mol_num_layers=mol_num_layers,
+			mol_gnn_type=mol_gnn_type,
+			mol_dropout=mol_dropout,
+			mol_pool_type=mol_pool_type,
+			frag_node_feats=frag_pyg_node_feats,
+			frag_edge_feats=frag_pyg_edge_feats,
+			frag_hidden_size=frag_hidden_size,
+			frag_num_layers=frag_num_layers,
+			frag_gnn_type=frag_gnn_type,
+			frag_dropout=frag_dropout,
+			frag_pool_type=frag_pool_type,
+			mlp_hidden_size=mlp_hidden_size,
+			mlp_dropout=mlp_dropout,
+			mlp_num_layers=mlp_num_layers,
+			mlp_use_residuals=mlp_use_residuals
+		)
+		# compile
+		if self.hparams.compile:
+			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
+			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
+		# set tolerance
+		if self.hparams.loss_tolerance_ppm is not None:
+			self.tolerance = self.hparams.loss_tolerance_ppm
+			self.relative = True
+		else:
+			assert self.hparams.loss_tolerance_abs is not None
+			self.tolerance = self.hparams.loss_tolerance_abs
+			self.relative = False
+		# setup functions
+		self._setup_loss_fn()
+		def _filter_func(mzs, ints, batch_idxs):
+			return batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max)
+		self.filter_func = _filter_func
+		def _bin_func(mzs, ints, batch_idxs):
+			return batched_bin_func(mzs,ints,batch_idxs,mz_bin_res,bin_sum_ints)
+		self.bin_func = _bin_func
+		self.ints_transform_func = get_ints_transform_func(ints_transform)
+		self.normalize_func = batched_l1normalize
+		self.auxiliary_score_fns = {}
+		if "cos_sim" in auxiliary_scores:
+			def _cos_sim(*args,**kwargs):
+				return calculate_cosine_similarity(*args,**kwargs)
+			self.auxiliary_score_fns["cos_sim"] = _cos_sim
+		if "wrecall" in auxiliary_scores:
+			def _wrecall(*args,**kwargs):
+				return calculate_weighted_recall(
+					*args,
+					tolerance=self.tolerance,
+					relative=self.relative,
+					**kwargs
+				)
+			self.auxiliary_score_fns["wrecall"] = _wrecall
+		self.automatic_optimization = automatic_optimization
 
-        # filter
-        spec_mzs, spec_ints, spec_batch_idxs = self.filter_func(
-            spec_mzs,
-            spec_ints,
-            spec_batch_idxs
-        )
-        # transform
-        spec_ints = self.ints_transform_func(spec_ints)
-        # renormalize
-        spec_ints = self.normalize_func(
-            spec_ints,
-            spec_batch_idxs
-        )
-        # log
-        spec_ints = safelog(spec_ints)
-        return spec_mzs, spec_ints, spec_batch_idxs
+	def _setup_loss_fn(
+		self):
 
-    def predict_step(self,**batch_kwargs):
-        # TODO: might need to change this
-        return self.forward(**batch_kwargs)
+		sparse_ce = get_sparse_cross_entropy_fn(
+			self.hparams.output_distribution,
+			self.hparams.loss_vectorized,
+			self.tolerance,
+			self.relative
+		)
+		sparse_entropy = get_sparse_entropy_fn()
+		def _loss_fn(
+			true_mzs,
+			true_logprobs,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs,
+			pred_formula_logprobs,
+			pred_formula_batch_idxs,
+			pred_node_logprobs,
+			pred_node_batch_idxs):
+			spec_ce = sparse_ce(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs
+			)
+			loss = spec_ce
+			# if self.hparams.formula_entropy_weight != 0.:
+			formula_e = sparse_entropy(
+				pred_formula_logprobs,
+				pred_formula_batch_idxs
+			)
+			loss = loss + self.hparams.formula_entropy_weight * formula_e
+			# if self.hparams.node_entropy_weight != 0.:
+			node_e = sparse_entropy(
+				pred_node_logprobs,
+				pred_node_batch_idxs
+			)
+			loss = loss + self.hparams.node_entropy_weight * node_e
+			return loss
+		self.loss_fn = _loss_fn
 
-    def forward(self,**batch_kwargs):
+	def preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
-        # get predictions
-        pred_mzs, pred_logits, pred_batch_idxs = self.model.forward(**batch_kwargs)
-        # collect in a dictionary
-        pred = {
-            "pred_mzs": pred_mzs,
-            "pred_logits": pred_logits,
-            "pred_batch_idxs": pred_batch_idxs
-        }
-        return pred
+		# filter
+		spec_mzs, spec_ints, spec_batch_idxs = self.filter_func(
+			spec_mzs,
+			spec_ints,
+			spec_batch_idxs
+		)
+		# transform
+		spec_ints = self.ints_transform_func(spec_ints)
+		# renormalize
+		spec_ints = self.normalize_func(
+			spec_ints,
+			spec_batch_idxs
+		)
+		# log
+		spec_ints = safelog(spec_ints)
+		return spec_mzs, spec_ints, spec_batch_idxs
 
-    def _common_step(self, batch, name="train"):
+	def predict_step(self,**batch_kwargs):
+		# TODO: might need to change this
+		return self.forward(**batch_kwargs)
 
-        print("_common_step")
-        # preprocess spec
-        spec_mzs = batch["spec_mzs"]
-        spec_ints = batch["spec_ints"]
-        spec_batch_idxs = batch["spec_batch_idxs"]
-        batch_size = batch["batch_size"]
-        # print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
-        spec_mzs, spec_ints, spec_batch_idxs = self.preproc_spec(
-            spec_mzs,
-            spec_ints,
-            spec_batch_idxs
-        )
-        # print("post_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
-        # print("post_spec_lse",batchwise_lse(spec_ints,spec_batch_idxs))
-        pred = self.forward(**batch)
-        # print("pred_max",batchwise_max(pred["pred_logits"],pred["pred_batch_idxs"]))
-        # print("pred_lse",batchwise_lse(pred["pred_logits"],pred["pred_batch_idxs"]))
-        loss = self.loss_fn(
-            spec_mzs,
-            spec_ints,
-            spec_batch_idxs,
-            pred["pred_mzs"],
-            pred["pred_logits"],
-            pred["pred_batch_idxs"]
-        )
-        self.log(
-            f"{name}_loss",
-            loss.item(),
-            batch_size=batch_size,
-            on_epoch=True
-        )
-        if spec_mzs.shape[0] == 0:
-            import pdb; pdb.set_trace()
-        for fn_name,fn in self.auxiliary_score_fns.items():
-            score = fn(
-                spec_mzs,
-                th.exp(spec_ints),
-                spec_batch_idxs,
-                pred["pred_mzs"],
-                th.exp(pred["pred_logits"]),
-                pred["pred_batch_idxs"]
-            )
-            self.log(
-                f"{name}_{fn_name}",
-                score,
-                batch_size=batch_size
-            )
+	def forward(self,**batch_kwargs):
 
-    def training_step(self, batch, batch_idx):
+		# get predictions
+		pred = self.model.forward(**batch_kwargs)
+		return pred
 
-        return self._common_step(batch, name="train")
+	def _common_step(self, batch, name="train"):
 
-    def validation_step(self, batch, batch_idx):
+		# preprocess spec
+		batch_size = batch["batch_size"]
+		smiles = batch["mol_smiles"]
+		spec_mzs = batch["spec_mzs"]
+		spec_ints = batch["spec_ints"]
+		spec_batch_idxs = batch["spec_batch_idxs"]
+		# print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
+		spec_mzs, spec_ints, spec_batch_idxs = self.preproc_spec(
+			spec_mzs,
+			spec_ints,
+			spec_batch_idxs
+		)
 
-        return self._common_step(batch, name="val")
+		pred = self.forward(**batch)
 
-    def test_step(self, batch, batch_idx):
+		both = {
+			"true_mzs": spec_mzs,
+			"true_logprobs": spec_ints,
+			"true_batch_idxs": spec_batch_idxs,
+			**pred
+		}
 
-        return self._common_step(batch, name="test")
+		loss = self.loss_fn(**both)
+		mean_loss = th.mean(loss,dim=0)
+		self.log(
+			f"{name}_loss",
+			mean_loss.item(),
+			batch_size=batch_size,
+			on_epoch=True
+		)
+		results = {
+			"batch_size": batch_size,
+			"smiles": smiles,
+			"loss": loss,
+			"mean_loss": mean_loss,
+			**both
+		}
+		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
+		with th.no_grad():
+			for fn_name,fn in self.auxiliary_score_fns.items():
+				score = fn(
+					spec_mzs,
+					th.exp(spec_ints),
+					spec_batch_idxs,
+					pred["pred_mzs"],
+					th.exp(pred["pred_logprobs"]),
+					pred["pred_batch_idxs"]
+				)
+				mean_score = th.mean(score,dim=0)
+				self.log(
+					f"{name}_{fn_name}",
+					mean_score,
+					batch_size=batch_size,
+					on_epoch=True
+				)
+				results[fn_name] = score
+		return results
 
-    def configure_optimizers(self):
+	def training_step(self, batch, batch_idx):
 
-        optimizer = self.optimizer_cls(
-            self.parameters(), lr=self.lr, weight_decay=self.weight_decay
-        )
-        ret = {
-            "optimizer": optimizer,
-        }
-        if self.lr_schedule:
-            scheduler = build_lr_scheduler(
-                optimizer=optimizer, lr_decay_rate=self.lr_decay_rate, warmup=self.warmup
-            )
-            ret["lr_scheduler"] = {
-                "scheduler": scheduler,
-                "frequency": 1,
-                "interval": "step",
-            }
-        return ret
+		if self.hparams.automatic_optimization:
+			batch_results = self._common_step(batch, name="train")
+			self.last_batch_results = batch_results
+			return batch_results["mean_loss"]
+		else:
+			raise NotImplementedError("Manual optimization not implemented")
+			# opt = self.optimizers()
+			# opt.zero_grad()
+			# loss = self._common_step(batch, name="train")
+			# self.manual_backward(loss)
+			# opt.step()
+			# return loss
 
+	def validation_step(self, batch, batch_idx):
+
+		return self._common_step(batch, name="val")["mean_loss"]
+
+	def test_step(self, batch, batch_idx):
+
+		return self._common_step(batch, name="test")["mean_loss"]
+
+	def configure_optimizers(self):
+
+		if self.hparams.optimizer == "adam":
+			optimizer_cls = th.optim.Adam
+		elif self.hparams.optimizer == "adamw":
+			optimizer_cls = th.optim.AdamW
+		elif self.hparams.optimizer == "sgd":
+			optimizer_cls = th.optim.SGD
+		else:
+			raise ValueError(f"Unknown optimizer {self.optimizer}")
+		optimizer = optimizer_cls(
+			self.parameters(), 
+			lr=self.hparams.lr, 
+			weight_decay=self.hparams.weight_decay
+		)
+		ret = {
+			"optimizer": optimizer,
+		}
+		if self.hparams.lr_schedule:
+			scheduler = build_lr_scheduler(
+				optimizer=optimizer, 
+				decay_rate=self.hparams.lr_decay_rate, 
+				warmup_steps=self.hparams.lr_warmup_steps,
+				decay_steps=self.hparams.lr_decay_steps,
+			)
+			ret["lr_scheduler"] = {
+				"scheduler": scheduler,
+				"frequency": 1,
+				"interval": "step",
+			}
+		return ret
+
+	def on_train_epoch_end(self):
+
+		num_log_images = min(
+			self.hparams.num_log_images,
+			int(self.last_batch_results["batch_size"])
+		)
+		wandb_logger = None
+		for logger in self.loggers:
+			if isinstance(logger, pl.loggers.WandbLogger):
+				wandb_logger = logger
+		if wandb_logger is None:
+			return
+		for i in range(num_log_images):
+			with th.no_grad():
+				true_mask = self.last_batch_results["true_batch_idxs"] == i
+				pred_mask = self.last_batch_results["pred_batch_idxs"] == i
+				smiles = self.last_batch_results["smiles"][i]
+				loss = self.last_batch_results["loss"][i]
+				if "cos_sim" in self.last_batch_results:
+					cos_sim = self.last_batch_results["cos_sim"][i].item()
+				else:
+					cos_sim = np.nan
+				if "wrecall" in self.last_batch_results:
+					wrecall = self.last_batch_results["wrecall"][i].item()
+				else:
+					wrecall = np.nan
+				true_mzs = self.last_batch_results["true_mzs"][true_mask].cpu().numpy()
+				true_ints = th.exp(self.last_batch_results["true_logprobs"][true_mask]).cpu().numpy()
+				pred_mzs = self.last_batch_results["pred_mzs"][pred_mask].cpu().numpy()
+				pred_ints = th.exp(self.last_batch_results["pred_logprobs"][pred_mask]).cpu().numpy()
+			assert np.isclose(np.sum(true_ints),1.0), np.sum(true_ints)
+			assert np.isclose(np.sum(pred_ints),1.0), np.sum(pred_ints)
+			data = plot_spectra_sparse(
+				true_mzs,
+				true_ints,
+				pred_mzs,
+				pred_ints,
+				smiles,
+				return_data=True
+			)
+			wandb_logger.log_image(
+				key=f"example_{i}",
+				caption=[f"epoch = {self.current_epoch:03d}, loss = {loss:.3f}, cos_sim = {cos_sim:.3f}, wrecall = {wrecall:.3f}"],
+				images=[data]
+			)
 
 def get_default_model_params():
 
-    default_model_params = {
-        "num_depth": 5, # max_depth + 1
-        "num_hs": 4,
-        "num_elements": NUM_ELEMENTS,
-        "int_embedder": "abs-sines",
-        "mol_node_feats": [
-            "a_onehot",
-            "a_degree",
-            "a_hybrid",
-            "a_formal",
-            "a_radical",
-            "a_ring",
-            "a_mass",
-            "a_chiral",
-        ],
-        "mol_edge_feats": ["b_degree"],
-        "mol_pe_embed_k": 0,
-        "mol_hidden_size": 256,
-        "mol_num_layers": 4,
-        "mol_gnn_type": "GINE",
-        "mol_dropout": 0.0,
-        "frag_node_feats": ["cc","base_formula","depth"],
-        "frag_edge_feats": ["cc","base_formula"],
-        "frag_hidden_size": 256,
-        "frag_num_layers": 4,
-        "frag_gnn_type": "GINE",
-        "frag_dropout": 0.0,
-        "mlp_hidden_size": 256,
-        "mlp_dropout": 0.0,
-        "mlp_num_layers": 2,
-        "mlp_use_residuals": True,
-        "lr": 1e-4,
-        "lr_schedule": False,
-        "weight_decay": 0.0,
-        "lr_decay_rate": 0.95,
-        "warmup": 1000,
-        "optimizer": "adamw",
-        "num_steps": 1000,
-        "output_distribution": "gaussian",
-        "loss_vectorized": False,
-        "loss_tolerance_ppm": 10,
-        "loss_tolerance_abs": None, #0.001,
-        "auxiliary_scores": ["cos_sim"],
-        "ints_thresh": INTS_THRESH,
-        "mz_max": MZ_MAX,
-        "mz_bin_res": MZ_BIN_RES,
-        "bin_sum_ints": True,
-        "ints_transform": "log10t3" # none
-    }
+	default_model_params = {
+		"num_depth": 5, # max_depth + 1
+		"num_hs": 4,
+		"num_elements": NUM_ELEMENTS,
+		"int_embedder": "abs-sines",
+		"mol_node_feats": [
+			"a_onehot",
+			"a_degree",
+			"a_hybrid",
+			"a_formal",
+			"a_radical",
+			"a_ring",
+			"a_mass",
+			"a_chiral",
+		],
+		"mol_edge_feats": ["b_degree"],
+		"mol_pe_embed_k": 0,
+		"mol_hidden_size": 256,
+		"mol_num_layers": 4,
+		"mol_gnn_type": "GINE",
+		"mol_dropout": 0.0,
+		"frag_node_feats": ["cc","base_formula","depth"],
+		"frag_edge_feats": ["cc","base_formula"],
+		"frag_hidden_size": 256,
+		"frag_num_layers": 4,
+		"frag_gnn_type": "GINE",
+		"frag_dropout": 0.0,
+		"mlp_hidden_size": 256,
+		"mlp_dropout": 0.0,
+		"mlp_num_layers": 2,
+		"mlp_use_residuals": True,
+		"lr": 1e-4,
+		"lr_schedule": False,
+		"weight_decay": 0.0,
+		"lr_decay_rate": 0.95,
+		"warmup": 1000,
+		"optimizer": "adamw",
+		"output_distribution": "gaussian",
+		"loss_vectorized": False,
+		"loss_tolerance_ppm": 10,
+		"loss_tolerance_abs": None, #0.001,
+		"auxiliary_scores": ["cos_sim"],
+		"ints_thresh": INTS_THRESH,
+		"mz_max": MZ_MAX,
+		"mz_bin_res": MZ_BIN_RES,
+		"bin_sum_ints": True,
+		"ints_transform": "log10t3" # none
+	}
 
-    return default_model_params
+	return default_model_params

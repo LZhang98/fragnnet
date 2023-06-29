@@ -5,12 +5,15 @@ from torch.utils.data import Dataset
 import numpy as np
 import torch_geometric as pyg
 from torch_geometric.data import Data, Batch
+import sys
+from tqdm import tqdm
 
 from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_graph, get_frag_graph
 from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_type_idx, transform_nce, prec_type_mass_diff
 from frag_gnn.utils.dataset_utils import merge_spec_df
 from frag_gnn.frag.frag_utils import load_frag_d
-from frag_gnn.utils.misc_utils import flatten_lol
+from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 
 SPEC_PARAMS = [
@@ -27,7 +30,8 @@ SPEC_PARAMS = [
 	"prec_mz",
 	"prec_mass_diff",
 	"nce",
-	"ace"
+	"ace",
+	"preprocess"
 ]
 
 MOL_PARAMS = [
@@ -40,7 +44,8 @@ MOL_PARAMS = [
 	"pyg_node_feats",
 	"pyg_edge_feats",
 	"pyg_pe_embed_k",
-	"pyg_bigraph"
+	"pyg_bigraph",
+	"preprocess"
 ]
 
 FRAG_PARAMS = [
@@ -51,7 +56,9 @@ FRAG_PARAMS = [
 	"num_isotopes",
 	"formula_peak_mzs",
 	"formula_peak_probs",
-	"compressed"
+	"compressed",
+	"preload",
+	"preprocess"
 ]
 
 class SpecMolDataset(Dataset):
@@ -60,12 +67,15 @@ class SpecMolDataset(Dataset):
 		self,
 		spec_fp: str,
 		mol_fp: str,
-		split_fp: str,
+		split_dp: str,
+		split: str,
 		**kwargs):
 
 		super().__init__()
 		self.spec_df = pd.read_pickle(spec_fp)
 		self.mol_df = pd.read_pickle(mol_fp)
+		assert split in ["train","val","test"], split
+		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
 		self.split_df = pd.read_csv(split_fp)
 		
 		self.spec_params = {k: kwargs["spec_"+k] for k in SPEC_PARAMS}
@@ -79,7 +89,7 @@ class SpecMolDataset(Dataset):
 
 		# merge spectra
 		if self.spec_params["merge"]:
-			self.spec_df = merge_spec_df(self.spec_df)            
+			self.spec_df = merge_spec_df(self.spec_df)
 
 		# subsample
 		if self.spec_params["subsample_size"] > 0:
@@ -96,6 +106,23 @@ class SpecMolDataset(Dataset):
 		# use mol_id as index for speedy access
 		self.mol_df = self.mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
 
+		# preload and pre-process spectra
+		if self.spec_params["preprocess"]:
+			self.spec_datas = {}
+			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess spec",total=len(self.spec_df)):
+				spec_data = self._process_spec(spec_entry)
+				self.spec_datas[idx] = spec_data
+
+		# preload and pre-process molecules
+		if self.mol_params["preprocess"]:
+			self.mol_datas = {}
+			total_mol_data_size = 0
+			for idx, mol_entry in tqdm(self.mol_df.iterrows(),desc="> preprocess mol",total=len(self.mol_df)):
+				mol_data = self._process_mol(mol_entry)
+				total_mol_data_size += get_pyg_memory_usage(mol_data["mol_pyg"])
+				self.mol_datas[mol_entry["mol_id"]] = mol_data
+			print(f"> total_mol_data_size: {total_mol_data_size/1e6:.2f} MB")
+
 	def __len__(self):
 
 		return len(self.spec_df)
@@ -105,8 +132,14 @@ class SpecMolDataset(Dataset):
 		spec_entry = self.spec_df.iloc[idx]
 		mol_id = spec_entry["mol_id"]
 		mol_entry = self.mol_df.loc[mol_id]
-		spec_data = self._process_spec(spec_entry)
-		mol_data = self._process_mol(mol_entry)
+		if self.spec_params["preprocess"]:
+			spec_data = self.spec_datas[idx].copy()
+		else:
+			spec_data = self._process_spec(spec_entry)
+		if self.mol_params["preprocess"]:
+			mol_data = self.mol_datas[mol_id].copy()
+		else:
+			mol_data = self._process_mol(mol_entry)
 		data = {**spec_data,**mol_data}
 		return data
 
@@ -176,7 +209,8 @@ class SpecMolDataset(Dataset):
 			smiles = mol_entry["smiles"]
 			mol_data["mol_smiles"] = [smiles]
 		if self.mol_params["fingerprint"]:
-			fingerprint = get_mol_fp(mol,
+			fingerprint = get_mol_fp(
+				mol,
 				self.mol_params["fingerprint_morgan"],
 				self.mol_params["fingerprint_rdkit"],
 				self.mol_params["fingerprint_maccs"]
@@ -249,31 +283,78 @@ class SpecMolFragDataset(SpecMolDataset):
 		spec_fp,
 		mol_fp,
 		frag_dp,
-		split_fp,
+		split_dp,
+		split,
 		**kwargs):
 
-		super().__init__(spec_fp,mol_fp,split_fp,**kwargs)
+		super().__init__(
+			spec_fp=spec_fp,
+			mol_fp=mol_fp,
+			split_dp=split_dp,
+			split=split,
+			**kwargs
+		)
 		self.frag_dp = frag_dp
 		self.frag_params = {k: kwargs["frag_"+k] for k in FRAG_PARAMS}
+		# preload frag dags
+		if self.frag_params["preload"]:
+			self.frag_entries = {}
+			total_frag_entry_size = 0
+			for mol_id in tqdm(self.mol_df["mol_id"].values,desc="> preload frag",total=len(self.mol_df)):
+				frag_entry = load_frag_d(mol_id,self.frag_dp,self.frag_params["compressed"])
+				total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
+				self.frag_entries[mol_id] = frag_entry
+			print(f"> total_frag_entry_size: {total_frag_entry_size/1e6:.2f} MB")
+		# preprocess frag dags
+		if self.frag_params["preprocess"]:
+			assert self.frag_params["preload"]
+			self.frag_data = {}
+			total_frag_data_size = 0
+			for k in tqdm(list(self.frag_entries.keys()),desc="> preprocess frag",total=len(self.frag_entries)):
+				frag_data = self._process_frag(self.frag_entries.pop(k),None)
+				total_frag_data_size += get_pyg_memory_usage(frag_data["frag_pyg"])
+				self.frag_data[k] = frag_data
+			print(f"> total_frag_data_size: {total_frag_data_size/1e6:.2f} MB")
 
 	def __getitem__(self,idx):
 
 		spec_entry = self.spec_df.iloc[idx]
 		mol_id = spec_entry["mol_id"]
 		mol_entry = self.mol_df.loc[mol_id]
+		if self.spec_params["preprocess"]:
+			spec_data = self.spec_datas[idx].copy()
+		else:
+			spec_data = self._process_spec(spec_entry)
 		spec_data = self._process_spec(spec_entry)
-		mol_data = self._process_mol(mol_entry)
-		frag_entry = self._load_frag_entry(mol_id)
-		frag_data = self._process_frag(frag_entry)
+		if self.mol_params["preprocess"]:
+			mol_data = self.mol_datas[mol_id].copy()
+		else:
+			mol_data = self._process_mol(mol_entry)
+		# frag stuff
+		if self.frag_params["preprocess"]:
+			frag_data = self.frag_data[mol_id].copy()
+			# update prec_mass_diff
+			prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
+			frag_data["frag_formula_peak_mzs"] = frag_data["frag_formula_peak_mzs"] + prec_type_mass_diff
+		elif self.frag_params["preload"]:
+			frag_entry = self.frag_entries[mol_id].copy()
+			frag_data = self._process_frag(frag_entry,spec_entry)
+		else:
+			frag_entry = self._load_frag_entry(mol_id)
+			frag_data = self._process_frag(frag_entry,spec_entry)
 		data = {**spec_data,**mol_data,**frag_data}
 		return data
 
 	def _load_frag_entry(self,mol_id):
 
-		frag_entry = load_frag_d(mol_id,self.frag_dp,self.frag_params["compressed"])
+		frag_entry = load_frag_d(
+			mol_id,
+			self.frag_dp,
+			self.frag_params["compressed"]
+		)
 		return frag_entry
 
-	def _process_frag(self,frag_entry):
+	def _process_frag(self,frag_entry,spec_entry):
 
 		frag_data = {}
 		if self.frag_params["pyg"]:
@@ -288,6 +369,9 @@ class SpecMolFragDataset(SpecMolDataset):
 		if self.frag_params["formula_peak_mzs"]:
 			formula_peak_mzs = frag_entry["formula_peak_mzs"]
 			formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]
+			if spec_entry is not None:
+				prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
+				formula_peak_mzs = formula_peak_mzs + prec_type_mass_diff
 			frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
 		if self.frag_params["formula_peak_probs"]:    
 			formula_peak_probs = frag_entry["formula_peak_probs"]
@@ -441,22 +525,47 @@ def get_default_ds_params(frag=True):
 			params[f"frag_{k}"] = v
 	return params
 
+def get_batch_memory(batch):
+
+	batch_mem_d = {}
+	for k,v in batch.items():
+		if isinstance(v, th.Tensor):
+			batch_mem_d[k] = v.element_size()*v.nelement()
+		elif isinstance(v, Batch):
+			batch_mem_d[k] = pyg.profile.get_data_size(v)
+		elif isinstance(v, list):
+			batch_mem_d[k] = sum(sys.getsizeof(x) for x in v)
+		else:
+			raise ValueError(f"Unsupported type: {type(v)}")
+	batch_mem_total = sum(batch_mem_d.values())
+	return batch_mem_d, batch_mem_total
+
+def find_largest_batch(dl):
+
+	batch_mem_ds, batch_mem_totals = [], []
+	for batch in iter(dl):
+		batch_mem_d, batch_mem_total = get_batch_memory(batch)
+		batch_mem_ds.append(batch_mem_d)
+		batch_mem_totals.append(batch_mem_total)
+	argmax_idx = np.argmax(batch_mem_totals)
+	return batch_mem_ds[argmax_idx], batch_mem_totals[argmax_idx]
+
+def print_shapes(th_d):
+	for k,v in th_d.items():
+		if isinstance(v, th.Tensor):
+			print(k,tuple(v.shape))
+		elif isinstance(v, Batch):
+			print(k,(v.num_nodes,v.num_edges))
+		elif isinstance(v, list):
+			print(k,(len(v),))
+		else:
+			raise ValueError(f"Unsupported type: {type(v)}")
+
 if __name__ == "__main__":
 
 	import pandas as pd
 	from torch.utils.data import DataLoader
 	from pprint import pprint
-
-	def print_shapes(th_d):
-		for k,v in th_d.items():
-			if isinstance(v,list):
-				print(k,(len(v),))
-			elif isinstance(v,th.Tensor):
-				print(k,tuple(v.shape))
-			elif isinstance(v,Batch):
-				print(k,(v.num_nodes,v.num_edges))
-			else:
-				raise ValueError(f"Unsupported type: {type(v)}")
 
 	spec_fp, mol_fp, frag_dp, train_fp, _, _ = get_default_fps()	
 
@@ -496,3 +605,8 @@ if __name__ == "__main__":
 	)
 	smf_b = next(iter(smf_dl))
 	print_shapes(smf_b)
+
+	# get the largest batch size
+	smf_b_mem_d, smf_b_mem_total = find_largest_batch(smf_dl)
+	print(f"largest batch size: {smf_b_mem_total/1e6:.3f} MB")
+	pprint({k:f"{v/1e6:.3f} MB" for k,v in smf_b_mem_d.items()})
