@@ -423,6 +423,7 @@ class FragGNN(pl.LightningModule):
 			raise NotImplementedError(split)
 		if num_log_images == 0:
 			return
+		# filter keys (filtering first to save time/memory)
 		keys = [
 			"unique_ids",
 			"smiles",
@@ -435,15 +436,17 @@ class FragGNN(pl.LightningModule):
 			"pred_unique_ids"
 		]
 		keys.extend(list(self.auxiliary_score_fns.keys()))
-		# update unique_ids
 		unique_ids = batch_results.pop("unique_id")
-		true_unique_ids = unique_ids[batch_results.pop("true_batch_idxs")]
-		pred_unique_ids = unique_ids[batch_results.pop("pred_batch_idxs")]
+		true_batch_idxs = batch_results.pop("true_batch_idxs")
+		pred_batch_idxs = batch_results.pop("pred_batch_idxs")
+		batch_results = {k:v for k,v in batch_results.items() if k in keys}
+		# update unique_ids
+		true_unique_ids = unique_ids[true_batch_idxs]
+		pred_unique_ids = unique_ids[pred_batch_idxs]
 		batch_results["unique_ids"] = unique_ids
 		batch_results["true_unique_ids"] = true_unique_ids
 		batch_results["pred_unique_ids"] = pred_unique_ids
 		# transfer to cpu
-		batch_results = {k:v for k,v in batch_results.items() if k in keys}
 		batch_results = to_cpu(batch_results)
 		# setup results dict
 		if getattr(self,results_attr) is None:
@@ -456,6 +459,19 @@ class FragGNN(pl.LightningModule):
 			results_dict[k].append(v)
 		# increment counter
 		setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
+
+	def _consolidate_results(self, split):
+		
+		results = getattr(self,f"{split}_results")
+		keys = results.keys()
+		for k in keys:
+			if isinstance(results[k][0],th.Tensor):
+				results[k] = th.cat(results[k],dim=0)
+				# print(k,results[k].shape,results[k].device)
+			else:
+				assert isinstance(results[k][0],list)
+				results[k] = flatten_lol(results[k])
+				# print(k,len(results[k]))
 
 	def _log_images(self, split):
 
@@ -475,15 +491,6 @@ class FragGNN(pl.LightningModule):
 		wandb_logger = self._get_wandb_logger()
 		if wandb_logger is None:
 			return
-		keys = results.keys()
-		for k in keys:
-			if isinstance(results[k][0],th.Tensor):
-				results[k] = th.cat(results[k],dim=0)
-				# print(k,results[k].shape,results[k].device)
-			else:
-				assert isinstance(results[k][0],list)
-				results[k] = flatten_lol(results[k])
-				# print(k,len(results[k]))
 		# randomly sample unique_ids
 		unique_ids = th.unique(results["unique_ids"],sorted=True)
 		with th_temp_seed(420):
@@ -544,6 +551,8 @@ class FragGNN(pl.LightningModule):
 
 	def on_train_epoch_end(self):
 
+		# consolidate results
+		self._consolidate_results("train")
 		# log images
 		self._log_images("train")
 		# reset
@@ -552,6 +561,8 @@ class FragGNN(pl.LightningModule):
 
 	def on_validation_epoch_end(self):
 		
+		# consolidate results
+		self._consolidate_results("val")
 		# log images
 		self._log_images("val")
 		# reset
