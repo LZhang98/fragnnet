@@ -353,6 +353,24 @@ def get_ints_transform_func(ints_transform):
 	return _func
 
 
+def get_ints_untransform_func(ints_transform):
+
+	_func = None
+	if ints_transform == "log10":
+		_func = lambda ints: 10**ints-1.
+	elif ints_transform == "log10t3":
+		_func = lambda ints: (10**ints-1.)*3.
+	elif ints_transform == "loge":
+		_func = lambda ints: th.exp(ints)-1.
+	elif ints_transform == "sqrt":
+		_func = lambda ints: ints**2
+	elif ints_transform == "none":
+		_func = lambda ints: ints
+	else:
+		raise ValueError("Invalid ints_transform: {}".format(ints_transform))
+	return _func
+
+
 def batched_l1normalize(ints, batch_idxs):
 
 	ints = scatter_l1normalize(

@@ -159,12 +159,45 @@ def merge_and_check(msp_df,mol_df,rename_dict):
 	return spec_df
 
 
+MS_KEY_DICT = {
+	">compound": "name",
+	">ionization": "prec_type",
+	">formula": "formula",
+	">parent_mass": "prec_mz",
+	"#smiles": "smiles",
+	"#instrumentation": "inst_type",
+	">collision": "col_energy",
+}
+
+def preproc_ms_files(ms_dp,keys,num_entries):
+
+	# get all .ms files
+	ms_fp_list = glob.glob(os.path.join(ms_dp,"*.ms"))
+	# read in all .ms files
+	def proc_ms_file(ms_fp):
+		ms_fn = os.path.basename(os.path.normpath(ms_fp))
+		spec_id = ms_fn.lstrip("ID").rstrip(".ms")
+		with open(ms_fp,'r') as f:
+			ms = f.read()
+		entry = dict(
+			spec_id=spec_id,
+			ms=ms
+		)
+		return entry
+	ms_df_entries = par_apply(ms_fp_list,proc_ms_file)
+	ms_df = pd.DataFrame(ms_df_entries)
+	# drop all-NaN rows
+	ms_df = ms_df.dropna(axis=0,how="all")
+	return ms_df
+
 if __name__ == "__main__":
 
 	## TODO: add support for canopus dataset!
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--msp_file', type=str, required=True)
+	parser.add_argument('--msp_file', type=str, required=False)
 	parser.add_argument('--mol_dir', type=str, required=False)
+	parser.add_argument('--ms_dir', type=str, required=False)
+	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
@@ -172,23 +205,23 @@ if __name__ == "__main__":
 	parser.add_argument('--output_type', type=str, default="json", choices=["json","csv"])
 	args = parser.parse_args()
 
-	msp_fp = os.path.join(args.raw_data_dp,args.msp_file)
-	assert os.path.isfile(msp_fp)
-	if args.mol_dir:
-		mol_dp = os.path.join(args.raw_data_dp,args.mol_dir)
-		assert os.path.isdir(mol_dp)
-	else:
-		mol_dp = None
-
 	os.makedirs(args.output_dp,exist_ok=True)
 
-	msp_df = preproc_msp(msp_fp,KEY_DICT.keys(),args.num_entries)
-
-	if mol_dp:
-		mol_df = preproc_nist_mol(mol_dp)
+	if args.input_format in ["msp","msp+mol"]:
+		msp_fp = os.path.join(args.raw_data_dp,args.msp_file)
+		assert os.path.isfile(msp_fp), msp_fp
+		msp_df = preproc_msp(msp_fp,KEY_DICT.keys(),args.num_entries)
+		if args.input_format == "msp+mol":
+			mol_dp = os.path.join(args.raw_data_dp,args.mol_dir)
+			assert os.path.isdir(mol_dp), mol_dp
+			mol_df = preproc_nist_mol(mol_dp)
+		spec_df = merge_and_check(msp_df,mol_df,KEY_DICT)
 	else:
-		mol_df = None
-	spec_df = merge_and_check(msp_df,mol_df,KEY_DICT)
+		assert args.input_format == "ms", ags.input_format
+		ms_dp = os.path.join(args.raw_data_dp,args.ms_dir)
+		assert os.path.isdir(ms_dp), ms_dp
+		spec_df = preproc_ms_files(ms_dp,KEY_DICT.keys(),args.num_entries)
+
 	# save files
 	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}.{args.output_type}")
 	if args.output_type == "json":

@@ -31,7 +31,8 @@ SPEC_PARAMS = [
 	"prec_mass_diff",
 	"nce",
 	"ace",
-	"preprocess"
+	"preprocess",
+	"unique_id"
 ]
 
 MOL_PARAMS = [
@@ -162,18 +163,6 @@ class SpecMolDataset(Dataset):
 			# get sparse spectrum
 			spec_data["spec_mzs"] = mzs
 			spec_data["spec_ints"] = ints
-		if self.spec_params["binned"]:
-			raise NotImplementedError
-			# # bin spectrum
-			# spec_bin = bin_func(
-			# 	mzs,
-			# 	ints,
-			# 	self.spec_params["mz_max"],
-			# 	self.spec_params["mz_bin_res"],
-			# 	False,
-			# 	self.spec_params["sum_ints"]
-			# )
-			# spec_data["spec_bin"] = spec_bin.reshape(1,-1)
 		# metadata
 		if self.spec_params["prec_type"]:
 			prec_type = spec_entry["prec_type"]
@@ -199,6 +188,14 @@ class SpecMolDataset(Dataset):
 			prec_mz = spec_entry["prec_mz"]
 			prec_mz = th.tensor([float(prec_mz)],dtype=th.float)
 			spec_data["spec_prec_mz"] = prec_mz
+		if self.spec_params["unique_id"]:
+			if self.spec_params["merge"]:
+				id_key = "group_id"
+			else:
+				id_key = "spec_id"
+			unique_id = spec_entry[id_key]
+			unique_id = th.tensor([unique_id],dtype=th.long)
+			spec_data["spec_unique_id"] = unique_id
 		return spec_data
 
 	def _process_mol(self,mol_entry):
