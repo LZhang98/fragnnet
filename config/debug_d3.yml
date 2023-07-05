@@ -9,8 +9,8 @@ frag_preload: False #True
 frag_preprocess: False #True
 # spec_subsample_size: 100
 
-train_batch_size: 4
-eval_batch_size: 4
+train_batch_size: 2 # 4
+eval_batch_size: 2 # 4
 accumulate_grad_batches: 1 # 12
 gradient_clip_val: 5.0
 lr: 0.0001
@@ -22,7 +22,7 @@ lr_schedule: False
 lr_warmup_steps: 0
 lr_decay_steps: 10
 lr_decay_rate: 0.8
-debug_overfit: False #True
+debug_overfit: True
 debug_overfit_batches: 1 # 24
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
