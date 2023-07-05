@@ -20,6 +20,10 @@ def load_df(df_dp,num_entries):
 	nist_df = pd.read_json(open(nist_fp,"r",encoding="utf8"))
 	nist_df.loc[:,"dset"] = "nist"
 	dfs.append(nist_df)
+	npllib_fp = os.path.join(df_dp,"npllib_df.json")
+	npllib_df = pd.read_json(open(npllib_fp,"r",encoding="utf8"))
+	npllib_df.loc[:,"dset"] = "npllib"
+	dfs.append(npllib_df)
 	# mb_na_fp = os.path.join(df_dp,"mb_na_df.json")
 	# mb_na_df = pd.read_json(open(mb_na_fp,"r",encoding="utf8"))
 	# mb_na_df.loc[:,"dset"] = "mb_na"
@@ -71,11 +75,11 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"ri"] = par_apply_series(spec_df["ri"],data_utils.parse_ri_str)
 
 	# remove columns from spec_df
-	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","col_gas","res","ace","nce","prec_mz","peaks","ri"]]
+	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","nce","prec_mz","peaks","ri"]]
 	# relabel spec_id (this is to make it unique across datasets)
 	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
 	# set group_id (same compound and precursor)
-	group_df = spec_df.drop(columns=["spec_id","peaks","nce","ace","res","prec_mz","ri","col_gas"]).drop_duplicates()
+	group_df = spec_df.drop(columns=["spec_id","dset_spec_id","peaks","nce","ace","res","prec_mz","ri","col_gas"]).drop_duplicates()
 	group_df.loc[:,"group_id"] = np.arange(group_df.shape[0])
 	spec_df = spec_df.merge(group_df,how="inner")
 

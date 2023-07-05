@@ -22,6 +22,7 @@ spec_prec_mass_diff: True
 spec_nce: False
 spec_ace: False
 spec_preprocess: False
+spec_unique_id: True
 mol_smiles: True
 mol_fingerprint: False
 mol_fingerprint_morgan: True
@@ -119,4 +120,5 @@ detect_anomaly: False
 automatic_optimization: True
 profiler: none
 compile: False
-num_log_images: 0
+num_log_train_images: 0
+num_log_val_images: 0
