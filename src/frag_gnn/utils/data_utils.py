@@ -371,6 +371,7 @@ def parse_nce_str(ce_str):
 # 	r"[\d]+[.]?[\d]*-[\d]+[.]?[\d]*": lambda x: (float(x.split("-")[0]),float(x.split("-")[1])),
 
 def parse_inst_info(df):
+	# TODO: separate FT from Orbitrap
 
 	inst_type_str = df["inst_type"]
 	inst_str = df["inst"]
@@ -419,6 +420,13 @@ def parse_inst_info(df):
 			"LC-ESI-IT": "IT",
 			"LC-QTOF": "QTOF",
 			"qToF": "QTOF",
+			# NPLLIB stuff
+			# "Q-ToF (LCMS)": "QTOF",
+			# "Bruker Q-ToF (LCMS)": "QTOF",
+			"Unknown (LCMS)": "Other",
+			"Ion Trap (LCMS)": "IT",
+			"Orbitrap (LCMS)": "FT",
+			"FTICR (LCMS)": "FT"
 		}
 		if inst_type_str in inst_type_map:
 			inst_type = inst_type_map[inst_type_str]
@@ -430,6 +438,7 @@ def parse_inst_info(df):
 	elif type(col_energy_str) == str and "HCD" in col_energy_str:
 		frag_mode = "HCD"
 	elif none_or_nan(frag_mode_str) or frag_mode_str == "CID":
+		# default is CID if we don't know
 		frag_mode = "CID"
 	elif frag_mode_str == "HCD":
 		frag_mode = "HCD"
