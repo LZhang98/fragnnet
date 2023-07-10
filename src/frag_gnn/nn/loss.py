@@ -77,17 +77,33 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 
 
 def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
-	""" 
-	this is just for torch.compile
+	"""compute sparse cross entropy in squence
+
+	Args:
+		true_mzs (_type_): groundtruth mzs
+		true_logprobs (_type_): groundtruth log prob of each mz aka intesnites
+		true_batch_idxs (_type_): spec idx signed to each groundtruth
+		pred_mzs (_type_): predicted mzs
+		pred_logprobs (_type_): predicted log prob of each mz aka intesnites
+		pred_batch_idxs (_type_): pec idx signed to each prediction
+		log_prob_fn (_type_, optional): _description_. Defaults to mog_log_prob.
+		tolerance (_type_, optional): _description_. Defaults to 1e-3.
+		relative (bool, optional): _description_. Defaults to False.
+
+	Returns:
+		_type_: _description_
 	"""
 
 	mask_value = -1e9
 	batch_size = th.max(true_batch_idxs)+1
 	ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
 	for batch_idx in th.arange(batch_size):
+		# get predictions belongs to this batch idx
 		b_pred_mask = (pred_batch_idxs==batch_idx).float()
+		# get groundtruth belongs to this batch idx
 		b_true_mask = (true_batch_idxs==batch_idx)
-		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1-b_pred_mask)
+		# predicted log probs + eps
+		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1 - b_pred_mask)
 		b_pred_mzs = pred_mzs
 		if relative:
 			b_variances = (th.clamp(b_pred_mzs,min=200.)*tolerance)**2
@@ -95,8 +111,13 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 			b_variances = (tolerance**2)*th.ones_like(b_pred_mzs)
 		b_true_logprobs = true_logprobs[b_true_mask]
 		b_true_mzs = true_mzs[b_true_mask]
-		b_ce = th.sum(-th.exp(b_true_logprobs)*log_prob_fn(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
+
+		# batch discrete Cross Entropy Loss 
+		# discrete probability distributions of p(ground truth) * log(q(predicted))
+		# TODO: Maybe we need normailzed this ?
+		b_ce = th.sum(-th.exp(b_true_logprobs) * log_prob_fn(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
 		ces[batch_idx] = b_ce
+	#print(ces)
 	return ces
 
 
