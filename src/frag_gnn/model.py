@@ -514,9 +514,13 @@ class FragGNN(pl.LightningModule):
 			return
 		# randomly sample unique_ids
 		unique_ids = th.unique(results["unique_ids"],sorted=True)
-		with th_temp_seed(420):
-			sample_idxs = th.randperm(unique_ids.shape[0])[:num_log_images]
-			sample_unique_ids = unique_ids[sample_idxs]
+		if num_log_images == unique_ids.shape[0]:
+			sample_idxs = th.arange(num_log_images)
+			sample_unique_ids = unique_ids
+		else:
+			with th_temp_seed(420):
+				sample_idxs = th.randperm(unique_ids.shape[0])[:num_log_images]
+				sample_unique_ids = unique_ids[sample_idxs]
 		# plot images
 		for i in range(num_log_images):
 			unique_id = sample_unique_ids[i].item()
