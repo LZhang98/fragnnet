@@ -200,22 +200,39 @@ if __name__ == "__main__":
 		overfit_batches = 0
 
 	log_every_n_steps = min(len(train_dl),config_d["log_every_n_steps"])
-	trainer = pl.Trainer(
-		logger=loggers,
-		callbacks=callbacks,
-		accelerator=config_d["accelerator"],
-		devices=config_d["devices"],
-		min_epochs=config_d["min_epochs"],
-		max_epochs=config_d["max_epochs"],
-		gradient_clip_val=config_d["gradient_clip_val"],
-		gradient_clip_algorithm=config_d["gradient_clip_algorithm"],
-		accumulate_grad_batches=config_d["accumulate_grad_batches"],
-		precision=config_d["precision"],
-		log_every_n_steps=config_d["log_every_n_steps"],
-		detect_anomaly=config_d["detect_anomaly"],
-		overfit_batches=overfit_batches,
-		profiler=profiler
-	)
+	if config_d['automatic_optimization']:
+		trainer = pl.Trainer(
+			logger=loggers,
+			callbacks=callbacks,
+			accelerator=config_d["accelerator"],
+			devices=config_d["devices"],
+			min_epochs=config_d["min_epochs"],
+			max_epochs=config_d["max_epochs"],
+			gradient_clip_val=config_d["gradient_clip_val"],
+			gradient_clip_algorithm=config_d["gradient_clip_algorithm"],
+			accumulate_grad_batches=config_d["accumulate_grad_batches"],
+			precision=config_d["precision"],
+			log_every_n_steps=config_d["log_every_n_steps"],
+			detect_anomaly=config_d["detect_anomaly"],
+			overfit_batches=overfit_batches,
+			profiler=profiler
+		)
+	else:
+		trainer = pl.Trainer(
+			logger=loggers,
+			callbacks=callbacks,
+			accelerator=config_d["accelerator"],
+			devices=config_d["devices"],
+			min_epochs=config_d["min_epochs"],
+			max_epochs=config_d["max_epochs"], 
+			accumulate_grad_batches=config_d["accumulate_grad_batches"],
+			precision=config_d["precision"],
+			log_every_n_steps=config_d["log_every_n_steps"],
+			detect_anomaly=config_d["detect_anomaly"],
+			overfit_batches=overfit_batches,
+			profiler=profiler
+		)
+
 
 	# fit
 	if config_d["debug_overfit"]:
