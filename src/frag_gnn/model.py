@@ -304,6 +304,8 @@ class FragGNN(pl.LightningModule):
 
 		loss = self.loss_fn(**both)
 		mean_loss = th.mean(loss,dim=0)
+		total_loss = th.sum(loss,dim=0)
+
 		self.log(
 			f"{name}_loss",
 			mean_loss.item(),
@@ -316,6 +318,7 @@ class FragGNN(pl.LightningModule):
 			"smiles": smiles,
 			"loss": loss,
 			"mean_loss": mean_loss,
+			"total_loss": total_loss,
 			**both
 		}
 		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
@@ -340,6 +343,18 @@ class FragGNN(pl.LightningModule):
 		return results
 
 	def training_step(self, batch, batch_idx):
+		""" training loop
+
+		Args:
+			batch (_type_): _description_
+			batch_idx (_type_): _description_
+
+		Raises:
+			NotImplementedError: _description_
+
+		Returns:
+			_type_: _description_
+		"""
 
 		if self.hparams.automatic_optimization:
 			batch_results = self._common_step(batch, name="train")
@@ -347,13 +362,15 @@ class FragGNN(pl.LightningModule):
 			self._update_results(batch_results,"train")
 			return mean_loss
 		else:
-			raise NotImplementedError("Manual optimization not implemented")
-			# opt = self.optimizers()
-			# opt.zero_grad()
-			# loss = self._common_step(batch, name="train")
-			# self.manual_backward(loss)
-			# opt.step()
-			# return loss
+			#raise NotImplementedError("Manual optimization not implemented")
+			opt = self.optimizers()
+			opt.zero_grad()
+			batch_results = self._common_step(batch, name="train")
+			total_loss = batch_results.pop("total_loss")
+			self.manual_backward(total_loss)
+			opt.step()
+			self._update_results(batch_results,"train")
+			return total_loss
 
 	def validation_step(self, batch, batch_idx):
 
@@ -435,6 +452,7 @@ class FragGNN(pl.LightningModule):
 			"pred_logprobs",
 			"pred_unique_ids"
 		]
+
 		keys.extend(list(self.auxiliary_score_fns.keys()))
 		unique_ids = batch_results.pop("unique_id")
 		true_batch_idxs = batch_results.pop("true_batch_idxs")
@@ -446,8 +464,11 @@ class FragGNN(pl.LightningModule):
 		batch_results["unique_ids"] = unique_ids
 		batch_results["true_unique_ids"] = true_unique_ids
 		batch_results["pred_unique_ids"] = pred_unique_ids
+
+
 		# transfer to cpu
 		batch_results = to_cpu(batch_results)
+		# print("loss",batch_results["loss"])
 		# setup results dict
 		if getattr(self,results_attr) is None:
 			setattr(self,results_attr,{k:list() for k in keys})
