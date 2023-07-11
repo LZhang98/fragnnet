@@ -5,8 +5,8 @@ set -e
 
 source ~/.bashrc
 
-conda create -n FRAG-GNN-GPU2
-conda activate FRAG-GNN-GPU2
+conda create -n FRAG-GNN-GPU
+conda activate FRAG-GNN-GPU
 
 conda install python=3.10
 
@@ -27,5 +27,8 @@ pip install dash
 pip install jupyter-dash
 pip install CairoSVG
 pip install lightning
+#pip install torch-tb-profiler
+#pip install pynvml
+#pip install PyYAML
 
 pip install -I -e .
