@@ -6,6 +6,17 @@ from frag_gnn.utils.misc_utils import scatter_reduce
 
 
 def mog_log_prob(samples,means,variances,log_weights):
+	""" Mixture of Gaussian
+		We are modeling each peaks are mixture of guassian for given set of fragments
+	Args:
+		samples (_type_): _description_
+		means (_type_): _description_
+		variances (_type_): _description_
+		log_weights (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
 	
 	samples = samples.reshape(-1,1)
 	means = means.reshape(1,-1)
