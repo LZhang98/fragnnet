@@ -48,12 +48,18 @@ def build_lr_scheduler(
 
 
 class ZerosAggregation(nn.Module):
-
+	""" Zero Aggreation module
+		Just sums up features acroess all elements
+	Args:
+		nn (_type_): _description_
+	"""
 	def __init__(self):
 		super().__init__()
 		self.dummy_agg = pyg.nn.SumAggregation()
 
 	def forward(self, x, batch):
+		# sum x for the indices of elements for applying the aggregation. 
+		# indices here work the same as reduce/sum
 		agg = self.dummy_agg(x, batch)
 		return 0.*agg
 
@@ -127,13 +133,19 @@ class JointPredictor(nn.Module):
 			"gnn_type": mol_gnn_type,
 			"dropout": mol_dropout
 		}
+
+		# Mol GNN
 		self.mol_embedder = GNN(**mol_kwargs)
 		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
+
+		# frag grahp GNN
 		self.formula_embedder = get_embedder(int_embedder)
 		self.depth_embedder = get_embedder(int_embedder)
 		self.frag_node_feats = frag_node_feats
 		self.frag_edge_feats = frag_edge_feats
 		self._compute_frag_feats_sizes()
+
+		# define frag-graph GNN to create frag-graph node level embedding
 		frag_kwargs = {
 			"node_feats_size": self.frag_node_feats_size,
 			"edge_feats_size": self.frag_edge_feats_size,
@@ -145,7 +157,9 @@ class JointPredictor(nn.Module):
 		self.frag_embedder = GNN(**frag_kwargs)
 		self.frag_pool = build_pool_module(frag_pool_type,frag_hidden_size)
 		mlp_kwargs = {
-			"input_size": 2*self.frag_embedder.hidden_size,
+			#input of starting node and ending nodes
+			"input_size": 2*self.frag_embedder.hidden_size, 
+			# num of allowed h transfer for both gain, loss and nothing
 			"output_size": 2*self.num_hs+1,
 			"hidden_size": mlp_hidden_size,
 			"num_layers": mlp_num_layers,
@@ -155,7 +169,9 @@ class JointPredictor(nn.Module):
 		self.output_module = MLPBlocks(**mlp_kwargs)
 
 	def _compute_mol_feats_sizes(self):
-		# these features don't rely on any model parameters
+		""" method compute mol feature size
+			these features don't rely on any model parameters
+		"""
 		self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
 			self.mol_node_feats, 
 			self.mol_edge_feats, 
@@ -163,7 +179,9 @@ class JointPredictor(nn.Module):
 		)
 
 	def _compute_frag_feats_sizes(self):
-		# these features do depend on model parameters
+		""" method compute frag-graph feature size
+			these features do depend on model parameters
+		"""
 		# nodes
 		self.frag_node_feats_size = 0
 		if "cc" in self.frag_node_feats:
@@ -200,6 +218,23 @@ class JointPredictor(nn.Module):
 		frag_formula_peak_sizes: th.Tensor,
 		**kwargs
 	):
+		"""forward methods for joint predictor
+
+		Args:
+			mol_pyg (pyg.data.Data): molecule pyg data object
+			frag_pyg (pyg.data.Data): fragmentation graph pyg data object
+			mol_num_nodes (th.Tensor): number of nodes in molecule graph
+			frag_num_nodes (th.Tensor): number of nodes in fragmentation graph
+			frag_formula_peak_idxs (th.Tensor): _description_
+			frag_formula_peak_mzs (th.Tensor): _description_
+			frag_formula_peak_probs (th.Tensor): _description_
+			frag_formula_sizes (th.Tensor): _description_
+			frag_formula_cumsizes (th.Tensor): _description_
+			frag_formula_peak_sizes (th.Tensor): _description_
+
+		Returns:
+			_type_: _description_
+		"""
 
 		# TODO add collision energy support
 		
@@ -215,8 +250,17 @@ class JointPredictor(nn.Module):
 
 		device = mol_num_nodes.device
 
+		# mol_x: mol level node feature matrix
+		# mol_edge_index: mol graph connectivity in COO format with shape [2, num_edges]
+		# edge_attr: mol graph edge feature matrix with shape [num_edges, num_edge_features]
+		# batch: sample idx repsect to current batch
 		mol_x, mol_edge_index, mol_edge_attr, mol_batch = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr, mol_pyg.batch
+		# frag_x: frag-graph level node feature matrix
+		# frag_edge_index: frag graph connectivity in COO format with shape [2, num_edges]
+		# frag_edge_attr: frag graph edge feature matrix with shape [num_edges, num_edge_features]
+		# batch: sample idx repsect to current batch
 		frag_x, frag_edge_index, frag_edge_attr, frag_batch = frag_pyg.x, frag_pyg.edge_index, frag_pyg.edge_attr, frag_pyg.batch
+
 		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
 
@@ -233,7 +277,7 @@ class JointPredictor(nn.Module):
 		frag_ndata, frag_edata = [], []
 		batch_frag_num_nodes = frag_x.shape[0]
 		batch_frag_num_edges = frag_edge_index.shape[1]
-		# node atom embeddings
+		# node atom embeddings for connected compoments
 		if "cc" in self.frag_node_feats:
 			frag_node_mask = th_long_to_mask(get_node_feats(frag_x,frag_node_feat_idxs,"cc"), device)
 			frag_node_mask_idxs = th.nonzero(frag_node_mask).long()
@@ -249,8 +293,10 @@ class JointPredictor(nn.Module):
 			frag_node_mask_embed = frag_node_mask_embed - mol_embed_pool[frag_batch]
 			frag_ndata.append(frag_node_mask_embed)
 		log_msg(f"frag_node_cc: {get_mem()}")
+
 		# edge atom embeddings
 		if "cc" in self.frag_edge_feats:
+			# connected competents
 			frag_edge_mask = th_long_to_mask(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"cc"), device)
 			frag_edge_mask_idxs = th.nonzero(frag_edge_mask).long()
 			frag_edge_node_idxs = frag_edge_index[0][frag_edge_mask_idxs[:,0]]
@@ -264,6 +310,7 @@ class JointPredictor(nn.Module):
 				dim_size=batch_frag_num_edges
 			)
 			frag_edata.append(frag_edge_mask_embed)
+
 		log_msg(f"frag_edge_cc: {get_mem()}")
 		# node formulae
 		if "base_formula" in self.frag_node_feats:
@@ -291,11 +338,13 @@ class JointPredictor(nn.Module):
 		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
 		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
 
+		# assmeble all features for dag
 		# concatenate everything 
 		frag_x = th.cat(frag_ndata,dim=-1)
 		# concatenate everything 
 		frag_edge_attr = th.cat(frag_edata,dim=-1)
 
+		# define frag network
 		frag_embed_gnn = self.frag_embedder(
 			frag_x,
 			frag_edge_index,
@@ -306,13 +355,15 @@ class JointPredictor(nn.Module):
 		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
 		log_msg(f"frag_embed: {get_mem()}")
 
-		# predict probabilities
+
+		# get frag dag embedding
 		frag_embed = th.cat(
 			[
-				frag_embed_node-frag_embed_node_pool[frag_batch],
-				frag_embed_gnn-frag_embed_gnn_pool[frag_batch]
+				frag_embed_node - frag_embed_node_pool[frag_batch],
+				frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
 			], dim=1
 		)
+		# predict probabilities
 		frag_formula_logits = self.output_module(frag_embed)
 		assert frag_formula_logits.shape[1] == 2*self.num_hs+1, (frag_formula_logits.shape[1],2*self.num_hs+1)
 
@@ -321,7 +372,7 @@ class JointPredictor(nn.Module):
 		frag_formula_logits = frag_formula_logits.flatten()
 		frag_formula_logprobs = scatter_logsoftmax(
 			frag_formula_logits,
-			frag_formula_batch_idxs, # this is wrong
+			frag_formula_batch_idxs, # this is wrong, we can have duplicated forumla by doing this
 			dim=0
 		)
 		log_msg(f"frag_formula_logprobs_1: {get_mem()}")
@@ -335,6 +386,7 @@ class JointPredictor(nn.Module):
 			frag_node_batch_idxs,
 			dim=0
 		)
+
 		log_msg(f"frag_node_logprobs: {get_mem()}")
 
 		# aggregate by formula
@@ -455,7 +507,7 @@ class GINE(nn.Module):
 		**kwargs
 	):
 		"""GINE.
-
+			Strategies for Pre-training Graph Neural Networks https://arxiv.org/abs/1905.12265
 		Args:
 			input_size (int): Size of edge features into the graph
 			hidden_size (int): Hidden size
@@ -591,8 +643,8 @@ def random_walk_pe(g, k, eweight_name=None):
 	PE = [th.as_tensor(RW).diagonal()]
 	RW_power = th.as_tensor(RW)
 	for _ in range(k - 1):
-	    RW_power = RW_power @ RW
-	    PE.append(RW_power.diagonal().clone())
+		RW_power = RW_power @ RW
+		PE.append(RW_power.diagonal().clone())
 	PE = th.stack(PE, dim=-1)
 	return PE
 
