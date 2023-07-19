@@ -164,7 +164,7 @@ if __name__ == "__main__":
 	train_dl = DataLoader(
 		train_ds, 
 		batch_size=config_d["train_batch_size"], 
-		shuffle=True, 
+		shuffle=not config_d["debug_overfit"],  # only enbale this if we are not overfit
 		num_workers=config_d["num_workers"],
 		collate_fn=train_ds.get_collate_fn(),
 		drop_last=True
