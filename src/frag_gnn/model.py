@@ -525,11 +525,6 @@ class FragGNN(pl.LightningModule):
 			true_ints = th.exp(results["true_logprobs"][true_mask])
 			pred_mzs = results["pred_mzs"][pred_mask]
 			pred_ints = th.exp(results["pred_logprobs"][pred_mask])
-			# print
-			# print(f"true_{i}_mzs",true_mzs[:10])
-			# print(f"true_{i}_ints",true_ints.sum(),true_ints[:10])
-			# print(f"pred_{i}_mzs",pred_mzs[:10])
-			# print(f"pred_{i}_ints",pred_ints.sum(),pred_ints[:10])
 			# untransform
 			true_ints = self.ints_untransform_func(true_ints)
 			true_ints = self.ints_normalize_func(

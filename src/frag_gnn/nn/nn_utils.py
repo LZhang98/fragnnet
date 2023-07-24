@@ -223,9 +223,6 @@ class JointPredictor(nn.Module):
 		frag_x, frag_edge_index, frag_edge_attr, frag_batch = frag_pyg.x, frag_pyg.edge_index, frag_pyg.edge_attr, frag_pyg.batch
 		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
-		# for i in range(mol_batch.max()+1):
-		# 	print(f"> mol_x ({i})")
-		# 	print(mol_x[mol_batch==i].mean(),mol_x[mol_batch==i].std())
 		
 		# get per-atom embeddings
 		mol_embed_gnn = self.mol_embedder(
@@ -235,9 +232,6 @@ class JointPredictor(nn.Module):
 		)
 		mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn,mol_batch)
 		log_msg(f"mol_embed_gnn: {get_mem()}")
-		# for i in range(mol_batch.max()+1):
-		# 	print(f"> mol_embed_gnn ({i})")
-		# 	print(mol_embed_gnn[mol_batch==i].mean(),mol_embed_gnn[mol_batch==i].std())
 
 		# process dag
 		frag_ndata, frag_edata = [], []
@@ -315,9 +309,6 @@ class JointPredictor(nn.Module):
 		frag_embed_node = self.frag_embedder.input_project(frag_x)
 		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
 		log_msg(f"frag_embed: {get_mem()}")
-		# for i in range(frag_batch.max()+1):
-		# 	print(f"> frag_embed ({i})")
-		# 	print(frag_embed_gnn[frag_batch==i].mean(),frag_embed_gnn[frag_batch==i].std())
 
 		# predict probabilities
 		frag_embed = th.cat(
@@ -377,9 +368,6 @@ class JointPredictor(nn.Module):
 			log=True
 		)
 		log_msg(f"frag_formula_logprobs_3: {get_mem()}")
-		# for i in range(frag_formula_batch_idxs.max()+1):
-		# 	print(f"> frag_formula_logprobs ({i})")
-		# 	print(frag_formula_logprobs[frag_formula_batch_idxs==i].mean(),frag_formula_logprobs[frag_formula_batch_idxs==i].std())
 
 		# convert to spectrum
 		frag_formula_offsets = th.repeat_interleave(
@@ -397,18 +385,12 @@ class JointPredictor(nn.Module):
 		)
 		
 		# log normalize
-		# for i in range(spec_batch_idxs.max()+1):
-		# 	print(f"> spec_logprobs_pre ({i})")
-		# 	print(F.log_softmax(spec_logprobs[spec_batch_idxs==i],dim=0).mean(),F.log_softmax(spec_logprobs[spec_batch_idxs==i],dim=0).std())
 		spec_logprobs = scatter_logsoftmax(
 			spec_logprobs,
 			spec_batch_idxs,
 			dim=0
 		)
 		log_msg(f"spec_logprobs_2: {get_mem()}")
-		# for i in range(spec_batch_idxs.max()+1):
-		# 	print(f"> spec_logprobs_post ({i})")
-		# 	print(spec_logprobs[spec_batch_idxs==i].mean(),spec_logprobs[spec_batch_idxs==i].std())
 
 		if th.any(th.abs(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))>1.):
 			import pdb; pdb.set_trace() 
