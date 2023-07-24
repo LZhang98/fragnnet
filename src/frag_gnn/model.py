@@ -1,4 +1,5 @@
 import torch as th
+import torch.nn.functional as F
 import numpy as np
 import lightning.pytorch as pl
 from torch.profiler import profile, record_function, ProfilerActivity
@@ -57,6 +58,7 @@ class FragGNN(pl.LightningModule):
 		mol_num_layers: int,
 		mol_gnn_type: str,
 		mol_dropout: float,
+		mol_normalization: str,
 		mol_pool_type: str,
 		frag_pyg_node_feats: list[str],
 		frag_pyg_edge_feats: list[str],
@@ -64,6 +66,7 @@ class FragGNN(pl.LightningModule):
 		frag_num_layers: int,
 		frag_gnn_type: str,
 		frag_dropout: float,
+		frag_normalization: str,
 		frag_pool_type: str,
 		mlp_hidden_size: int,
 		mlp_dropout: float,
@@ -108,6 +111,7 @@ class FragGNN(pl.LightningModule):
 			mol_num_layers=mol_num_layers,
 			mol_gnn_type=mol_gnn_type,
 			mol_dropout=mol_dropout,
+			mol_normalization=mol_normalization,
 			mol_pool_type=mol_pool_type,
 			frag_node_feats=frag_pyg_node_feats,
 			frag_edge_feats=frag_pyg_edge_feats,
@@ -115,6 +119,7 @@ class FragGNN(pl.LightningModule):
 			frag_num_layers=frag_num_layers,
 			frag_gnn_type=frag_gnn_type,
 			frag_dropout=frag_dropout,
+			frag_normalization=frag_normalization,
 			frag_pool_type=frag_pool_type,
 			mlp_hidden_size=mlp_hidden_size,
 			mlp_dropout=mlp_dropout,
@@ -520,6 +525,11 @@ class FragGNN(pl.LightningModule):
 			true_ints = th.exp(results["true_logprobs"][true_mask])
 			pred_mzs = results["pred_mzs"][pred_mask]
 			pred_ints = th.exp(results["pred_logprobs"][pred_mask])
+			# print
+			# print(f"true_{i}_mzs",true_mzs[:10])
+			# print(f"true_{i}_ints",true_ints.sum(),true_ints[:10])
+			# print(f"pred_{i}_mzs",pred_mzs[:10])
+			# print(f"pred_{i}_ints",pred_ints.sum(),pred_ints[:10])
 			# untransform
 			true_ints = self.ints_untransform_func(true_ints)
 			true_ints = self.ints_normalize_func(
@@ -625,3 +635,4 @@ def get_default_model_params():
 	}
 
 	return default_model_params
+import pdb

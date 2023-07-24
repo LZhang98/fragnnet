@@ -95,6 +95,7 @@ class JointPredictor(nn.Module):
 		mol_hidden_size: int,
 		mol_num_layers: int,
 		mol_gnn_type: str,
+		mol_normalization: str,
 		mol_dropout: float,
 		mol_pool_type: str,
 		frag_node_feats: list[str],
@@ -102,6 +103,7 @@ class JointPredictor(nn.Module):
 		frag_hidden_size: int,
 		frag_num_layers: int,
 		frag_gnn_type: str,
+		frag_normalization: str,
 		frag_dropout: float,
 		frag_pool_type: str,
 		mlp_hidden_size: int,
@@ -125,7 +127,8 @@ class JointPredictor(nn.Module):
 			"hidden_size": mol_hidden_size,
 			"num_layers": mol_num_layers,
 			"gnn_type": mol_gnn_type,
-			"dropout": mol_dropout
+			"dropout": mol_dropout,
+			"normalization": mol_normalization,
 		}
 		self.mol_embedder = GNN(**mol_kwargs)
 		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
@@ -140,7 +143,8 @@ class JointPredictor(nn.Module):
 			"hidden_size": frag_hidden_size,
 			"num_layers": frag_num_layers,
 			"gnn_type": frag_gnn_type,
-			"dropout": frag_dropout
+			"dropout": frag_dropout,
+			"normalization": frag_normalization
 		}
 		self.frag_embedder = GNN(**frag_kwargs)
 		self.frag_pool = build_pool_module(frag_pool_type,frag_hidden_size)
@@ -219,15 +223,21 @@ class JointPredictor(nn.Module):
 		frag_x, frag_edge_index, frag_edge_attr, frag_batch = frag_pyg.x, frag_pyg.edge_index, frag_pyg.edge_attr, frag_pyg.batch
 		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
-
+		# for i in range(mol_batch.max()+1):
+		# 	print(f"> mol_x ({i})")
+		# 	print(mol_x[mol_batch==i].mean(),mol_x[mol_batch==i].std())
+		
 		# get per-atom embeddings
-		mol_embed = self.mol_embedder(
+		mol_embed_gnn = self.mol_embedder(
 			mol_x,
 			mol_edge_index,
 			mol_edge_attr
 		)
-		mol_embed_pool = self.mol_pool(mol_embed,mol_batch)
-		log_msg(f"mol_embed: {get_mem()}")
+		mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn,mol_batch)
+		log_msg(f"mol_embed_gnn: {get_mem()}")
+		# for i in range(mol_batch.max()+1):
+		# 	print(f"> mol_embed_gnn ({i})")
+		# 	print(mol_embed_gnn[mol_batch==i].mean(),mol_embed_gnn[mol_batch==i].std())
 
 		# process dag
 		frag_ndata, frag_edata = [], []
@@ -240,13 +250,13 @@ class JointPredictor(nn.Module):
 			frag_node_offsets = mol_num_nodes[th.bucketize(frag_node_mask_idxs[:,0],frag_num_nodes,right=True)-1]
 			frag_node_mask_idxs[:,1] = frag_node_mask_idxs[:,1] + frag_node_offsets
 			frag_node_mask_embed = scatter_reduce(
-				src=mol_embed[frag_node_mask_idxs[:,1]],
-				index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+				src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
+				index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
 				reduce="sum",
 				dim=0,
 				dim_size=batch_frag_num_nodes
 			)
-			frag_node_mask_embed = frag_node_mask_embed - mol_embed_pool[frag_batch]
+			frag_node_mask_embed = frag_node_mask_embed - mol_embed_gnn_pool[frag_batch]
 			frag_ndata.append(frag_node_mask_embed)
 		log_msg(f"frag_node_cc: {get_mem()}")
 		# edge atom embeddings
@@ -257,8 +267,8 @@ class JointPredictor(nn.Module):
 			frag_edge_offsets = mol_num_nodes[th.bucketize(frag_edge_node_idxs,frag_num_nodes,right=True)-1]
 			frag_edge_mask_idxs[:,1] = frag_edge_mask_idxs[:,1] + frag_edge_offsets
 			frag_edge_mask_embed = scatter_reduce(
-				src=mol_embed[frag_edge_mask_idxs[:,1]],
-				index=frag_edge_mask_idxs[:,0:1].expand(-1,mol_embed.shape[1]),
+				src=mol_embed_gnn[frag_edge_mask_idxs[:,1]],
+				index=frag_edge_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
 				reduce="sum",
 				dim=0,
 				dim_size=batch_frag_num_edges
@@ -305,6 +315,9 @@ class JointPredictor(nn.Module):
 		frag_embed_node = self.frag_embedder.input_project(frag_x)
 		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
 		log_msg(f"frag_embed: {get_mem()}")
+		# for i in range(frag_batch.max()+1):
+		# 	print(f"> frag_embed ({i})")
+		# 	print(frag_embed_gnn[frag_batch==i].mean(),frag_embed_gnn[frag_batch==i].std())
 
 		# predict probabilities
 		frag_embed = th.cat(
@@ -364,10 +377,17 @@ class JointPredictor(nn.Module):
 			log=True
 		)
 		log_msg(f"frag_formula_logprobs_3: {get_mem()}")
+		# for i in range(frag_formula_batch_idxs.max()+1):
+		# 	print(f"> frag_formula_logprobs ({i})")
+		# 	print(frag_formula_logprobs[frag_formula_batch_idxs==i].mean(),frag_formula_logprobs[frag_formula_batch_idxs==i].std())
 
 		# convert to spectrum
+		frag_formula_offsets = th.repeat_interleave(
+			frag_formula_cumsizes[:-1],
+			frag_formula_sizes-1 # -1 is for NULL formulae
+		)
 		spec_mzs = frag_formula_peak_mzs
-		spec_logprobs = frag_formula_logprobs[frag_formula_peak_idxs] + th.log(frag_formula_peak_probs)
+		spec_logprobs = frag_formula_logprobs[frag_formula_peak_idxs+frag_formula_offsets] + th.log(frag_formula_peak_probs)
 		log_msg(f"spec_logprobs_1: {get_mem()}")
 
 		# get batch idxs
@@ -377,12 +397,18 @@ class JointPredictor(nn.Module):
 		)
 		
 		# log normalize
+		# for i in range(spec_batch_idxs.max()+1):
+		# 	print(f"> spec_logprobs_pre ({i})")
+		# 	print(F.log_softmax(spec_logprobs[spec_batch_idxs==i],dim=0).mean(),F.log_softmax(spec_logprobs[spec_batch_idxs==i],dim=0).std())
 		spec_logprobs = scatter_logsoftmax(
 			spec_logprobs,
 			spec_batch_idxs,
 			dim=0
 		)
 		log_msg(f"spec_logprobs_2: {get_mem()}")
+		# for i in range(spec_batch_idxs.max()+1):
+		# 	print(f"> spec_logprobs_post ({i})")
+		# 	print(spec_logprobs[spec_batch_idxs==i].mean(),spec_logprobs[spec_batch_idxs==i].std())
 
 		if th.any(th.abs(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))>1.):
 			import pdb; pdb.set_trace() 
@@ -409,6 +435,7 @@ class GNN(nn.Module):
 		edge_feats_size: int,
 		gnn_type: str,
 		dropout: float,
+		normalization: str,
 		**kwargs
 	):
 		"""__init__.
@@ -421,6 +448,7 @@ class GNN(nn.Module):
 		self.edge_feats_size = edge_feats_size
 		self.node_feats_size = node_feats_size
 		self.dropout = dropout
+		self.normalization = normalization
 
 		self.gnn_type = gnn_type
 		self.hidden_size = hidden_size
@@ -434,6 +462,7 @@ class GNN(nn.Module):
 				node_feats_size=self.node_feats_size,
 				num_layers=self.num_layers,
 				dropout=self.dropout,
+				normalization=self.normalization
 			)
 		else:
 			raise NotImplementedError(self.gnn_type)
@@ -452,6 +481,7 @@ class GINE(nn.Module):
 		edge_feats_size: int,
 		num_layers: int,
 		dropout: float,
+		normalization: str,
 		**kwargs
 	):
 		"""GINE.
@@ -462,6 +492,7 @@ class GINE(nn.Module):
 			edge_feats (int): Number of edge feats. Must be onehot!
 			node_feats (int): Num of node feats (default 74)
 			num_step_message_passing (int): Number of message passing steps
+			normalization (str): normalization type (batch, layer, none)
 			dropout
 		"""
 		super().__init__()
@@ -482,7 +513,14 @@ class GINE(nn.Module):
 			self.layers.append(temp_layer)
 
 		self.layers = nn.ModuleList(self.layers)
-		self.bnorms = get_clones(nn.BatchNorm1d(hidden_size), num_layers)
+		if normalization == "batch":
+			norm_mod = nn.BatchNorm1d(hidden_size)
+		elif normalization == "layer":
+			norm_mod = nn.LayerNorm(hidden_size)
+		else:
+			assert normalization == "none", normalization
+			norm_mod = nn.Identity()
+		self.norms = get_clones(norm_mod, num_layers)
 		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
 	def forward(self, x, edge_index, edge_attr):
@@ -490,7 +528,7 @@ class GINE(nn.Module):
 		"""
 		edge_attr = self.edge_transform(edge_attr)
 
-		for dropout, layer, norm in zip(self.dropouts, self.layers, self.bnorms):
+		for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
 			layer_out = layer(x, edge_index, edge_attr)
 			x = F.relu(dropout(norm(layer_out))) + x
 

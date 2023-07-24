@@ -83,7 +83,6 @@ if __name__ == "__main__":
 
 	# setup model
 	logging.info("setup model")
-	# model_config = get_default_model_params()
 	model = FragGNN(**config_d)
 	model.train()
 
@@ -164,7 +163,7 @@ if __name__ == "__main__":
 	train_dl = DataLoader(
 		train_ds, 
 		batch_size=config_d["train_batch_size"], 
-		shuffle=True, 
+		shuffle=(not config_d["debug_overfit"]), 
 		num_workers=config_d["num_workers"],
 		collate_fn=train_ds.get_collate_fn(),
 		drop_last=True
@@ -214,8 +213,11 @@ if __name__ == "__main__":
 		log_every_n_steps=config_d["log_every_n_steps"],
 		detect_anomaly=config_d["detect_anomaly"],
 		overfit_batches=overfit_batches,
-		profiler=profiler
+		profiler=profiler,
 	)
+
+	# set determinism
+	th.use_deterministic_algorithms(config_d["deterministic"],warn_only=True)
 
 	# fit
 	if config_d["debug_overfit"]:
