@@ -11,6 +11,7 @@ import scipy
 import torch_geometric
 from torch_geometric.profile import get_gpu_memory_from_gc, get_gpu_memory_from_nvidia_smi
 import logging
+from typing import Literal
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
@@ -65,6 +66,16 @@ class ZerosAggregation(nn.Module):
 
 
 def build_pool_module(pool_type: str, node_dim: int):
+	"""medthos build pooling layer for given pool_type and dim
+		node dim is required for attention layer. 
+		if pool type is not one of 'sum','mean','max','attention', return ZerosAggregation
+	Args:
+		pool_type (str): pooling type in ['sum','mean','max','attention']
+		node_dim (int): node_dim, used for attention
+
+	Returns:
+		_type_: _description_
+	"""
 
 	if pool_type == "sum":
 		pool_module = pyg.nn.SumAggregation()
@@ -88,6 +99,11 @@ def build_pool_module(pool_type: str, node_dim: int):
 
 
 class JointPredictor(nn.Module):
+	"""Joint Predictor for ms prediction
+
+	Args:
+		nn (_type_): _description_
+	"""
 
 	def __init__(
 		self,
@@ -100,14 +116,14 @@ class JointPredictor(nn.Module):
 		mol_pe_embed_k: int,
 		mol_hidden_size: int,
 		mol_num_layers: int,
-		mol_gnn_type: str,
+		mol_gnn_type: Literal['GINE'],
 		mol_dropout: float,
 		mol_pool_type: str,
 		frag_node_feats: list[str],
 		frag_edge_feats: list[str],
 		frag_hidden_size: int,
 		frag_num_layers: int,
-		frag_gnn_type: str,
+		frag_gnn_type: Literal['GINE'],
 		frag_dropout: float,
 		frag_pool_type: str,
 		mlp_hidden_size: int,
@@ -452,6 +468,8 @@ class JointPredictor(nn.Module):
 		return out_d
 
 class GNN(nn.Module):
+	""" Generic GNN Class
+	"""
 
 	def __init__(
 		self,
@@ -463,10 +481,18 @@ class GNN(nn.Module):
 		dropout: float,
 		**kwargs
 	):
-		"""__init__.
+		"""_summary_
+
 		Args:
-			hidden_size (int): Hidden size
-			num_mol_layers (int): Number of layers to encode for the molecule
+			hidden_size (int): _description_
+			num_layers (int): _description_
+			node_feats_size (int): _description_
+			edge_feats_size (int): _description_
+			gnn_type (str): _description_
+			dropout (float): _description_
+
+		Raises:
+			NotImplementedError: _description_
 		"""
 		super().__init__()
 		self.hidden_size = hidden_size
@@ -538,8 +564,6 @@ class GINE(nn.Module):
 		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
 	def forward(self, x, edge_index, edge_attr):
-		"""forward.
-		"""
 		edge_attr = self.edge_transform(edge_attr)
 
 		for dropout, layer, norm in zip(self.dropouts, self.layers, self.bnorms):
@@ -550,6 +574,12 @@ class GINE(nn.Module):
 
 
 class MLPBlocks(nn.Module):
+	"""Just Good Old Multilayer perceptron with residuals
+		layer->dropout->activation(Relu)
+		if residuals is True, add a skip connection between block
+	Args:
+		nn (_type_): _description_
+	"""
 	def __init__(
 		self,
 		input_size: int,
@@ -559,6 +589,16 @@ class MLPBlocks(nn.Module):
 		output_size: int = None,
 		use_residuals: bool = False,
 	):
+		"""_summary_
+
+		Args:
+			input_size (int): input dimensions
+			hidden_size (int): hidden_size layer dimensions
+			dropout (float): dropout ratio
+			num_layers (int): num of hidden layers + 1
+			output_size (int, optional): output dimensions. Defaults to None.
+			use_residuals (bool, optional): if residuals is True, add a skip connection between locks. Defaults to False.
+		"""
 		super().__init__()
 		self.activation = nn.ReLU()
 		self.dropout_layer = nn.Dropout(p=dropout)
