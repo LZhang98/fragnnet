@@ -128,7 +128,7 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		# TODO: Maybe we need normailzed this ?
 		b_ce = th.sum(-th.exp(b_true_logprobs) * log_prob_fn(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
 		ces[batch_idx] = b_ce
-	#print(ces)
+	print(ces)
 	return ces
 
 

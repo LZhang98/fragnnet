@@ -927,6 +927,7 @@ def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
 
 	node_feat_idx = NODE_FEAT_TO_IDX[key]
 	node_feats = node_feats[:,node_feat_idxs[node_feat_idx]:node_feat_idxs[node_feat_idx+1]]
+	#print(f"get_node_feats, node_feats tensor shape: {node_feats.shape}, num nodes: {len(node_feats)}, feature name: {key}" )
 	return node_feats
 
 def get_edge_feats(edge_feats:th.Tensor,edge_feat_idxs:int,key:str):

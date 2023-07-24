@@ -293,6 +293,7 @@ def calculate_cosine_similarity(
 		sum_ints
 	)
 	cos_sims = binned_cosine_similarity(true_spec,pred_spec)
+	print(f"cos_sims {cos_sims}")
 	return cos_sims
 
 
