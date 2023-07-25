@@ -9,22 +9,27 @@ virtualenv --no-download FRAG-GNN-GPU2
 source FRAG-GNN-GPU2/bin/activate
 pip install --no-index --upgrade pip
 
-pip install torch==2.0.0+cu117 --extra-index-url https://download.pytorch.org/whl/cu117
-pip install rdkit-pypi==2022.9.4
-pip install torch_geometric pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.0.0+cu117.html
-pip install cython
-pip install cysignals
-pip install pandas
-pip install networkx
-pip install wandb
-pip install tqdm
-pip install scipy
-pip install joblib
-pip install matplotlib
-pip install pytest
-pip install dash
-pip install jupyter-dash
-pip install CairoSVG
-pip install lightning
+pip install --no-index torch==2.0.1
+pip install --no-index rdkit==2022.3.5
+pip install --no-index torch_geometric==2.3.1
+pip install --no-index torch_scatter==2.1.1
+pip install --no-index torch_sparse==0.6.17
+pip install --no-index torch_cluster==1.6.1
+pip install --no-index torch_spline_conv==1.2.2
+pip install pyg_lib -f https://data.pyg.org/whl/torch-2.0.0+cu117.html
+pip install --no-index cython
+pip install --no-index cysignals
+pip install --no-index pandas
+pip install --no-index networkx
+pip install --no-index wandb
+pip install --no-index tqdm
+pip install --no-index scipy
+pip install --no-index joblib
+pip install --no-index matplotlib
+pip install --no-index pytest
+#pip install dash
+#pip install jupyter-dash
+#pip install CairoSVG
+pip install --no-index pytorch_lightning==2.0.2
 
 pip install -I -e .
