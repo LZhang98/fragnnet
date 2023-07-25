@@ -111,7 +111,7 @@ if __name__ == "__main__":
 	parser.add_argument("--time", type=int, default=12)
 	parser.add_argument("--partition", type=str, default="cpu", choices=["t4v2","rtx6000","interactive","cpu","a40"])
 	parser.add_argument("--qos", type=str, default="nopreemption", choices=["normal","high","nopreemption","deadline"])
-	parser.add_argument("--env", type=str, default="FRAG-GNN-2")
+	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU2")
 	parser.add_argument("--script_kwargs", type=str, default="")
 	parser.add_argument("--job_name", type=str, required=True)
 	args = parser.parse_args()

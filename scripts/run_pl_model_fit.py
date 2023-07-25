@@ -16,7 +16,7 @@ from pprint import pprint
 from frag_gnn.model import FragGNN, get_default_model_params
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
-from frag_gnn.dataset import get_default_ds_params, get_default_fps, SpecMolFragDataset, find_largest_batch
+from frag_gnn.dataset import SpecMolFragDataset, find_largest_batch
 
 
 def load_config(template_fp, custom_fp):
