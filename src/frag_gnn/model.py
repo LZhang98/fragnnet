@@ -238,18 +238,18 @@ class FragGNN(pl.LightningModule):
 				pred_batch_idxs
 			)
 			loss = spec_ce
-			# if self.hparams.formula_entropy_weight != 0.:
-			formula_e = sparse_entropy(
-				pred_formula_logprobs,
-				pred_formula_batch_idxs
-			)
-			loss = loss + self.hparams.formula_entropy_weight * formula_e
-			# if self.hparams.node_entropy_weight != 0.:
-			node_e = sparse_entropy(
-				pred_node_logprobs,
-				pred_node_batch_idxs
-			)
-			loss = loss + self.hparams.node_entropy_weight * node_e
+			if self.hparams.formula_entropy_weight != 0.:
+				formula_e = sparse_entropy(
+					pred_formula_logprobs,
+					pred_formula_batch_idxs
+				)
+				loss = loss + self.hparams.formula_entropy_weight * formula_e
+			if self.hparams.node_entropy_weight != 0.:
+				node_e = sparse_entropy(
+					pred_node_logprobs,
+					pred_node_batch_idxs
+				)
+				loss = loss + self.hparams.node_entropy_weight * node_e
 			return loss
 		self.loss_fn = _loss_fn
 
@@ -282,7 +282,7 @@ class FragGNN(pl.LightningModule):
 		pred = self.model.forward(**batch_kwargs)
 		return pred
 
-	def _common_step(self, batch, name="train"):
+	def _common_step(self, batch, split="train"):
 
 		# preprocess spec
 		batch_size = batch["batch_size"]
@@ -310,7 +310,7 @@ class FragGNN(pl.LightningModule):
 		loss = self.loss_fn(**both)
 		mean_loss = th.mean(loss,dim=0)
 		self.log(
-			f"{name}_loss",
+			f"{split}_loss_batch",
 			mean_loss.item(),
 			batch_size=batch_size,
 			on_epoch=True
@@ -325,8 +325,8 @@ class FragGNN(pl.LightningModule):
 		}
 		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
 		with th.no_grad():
-			for fn_name,fn in self.auxiliary_score_fns.items():
-				score = fn(
+			for metric_name,metric_fn in self.auxiliary_score_fns.items():
+				metric = metric_fn(
 					spec_mzs,
 					th.exp(spec_ints),
 					spec_batch_idxs,
@@ -334,42 +334,36 @@ class FragGNN(pl.LightningModule):
 					th.exp(pred["pred_logprobs"]),
 					pred["pred_batch_idxs"]
 				)
-				mean_score = th.mean(score,dim=0)
+				mean_metric = th.mean(metric,dim=0)
 				self.log(
-					f"{name}_{fn_name}",
-					mean_score,
+					f"{split}_{metric_name}_batch",
+					mean_metric,
 					batch_size=batch_size,
 					on_epoch=True
 				)
-				results[fn_name] = score
+				results[metric_name] = metric
 		return results
 
 	def training_step(self, batch, batch_idx):
 
 		if self.hparams.automatic_optimization:
-			batch_results = self._common_step(batch, name="train")
+			batch_results = self._common_step(batch, split="train")
 			mean_loss = batch_results.pop("mean_loss")
 			self._update_results(batch_results,"train")
 			return mean_loss
 		else:
 			raise NotImplementedError("Manual optimization not implemented")
-			# opt = self.optimizers()
-			# opt.zero_grad()
-			# loss = self._common_step(batch, name="train")
-			# self.manual_backward(loss)
-			# opt.step()
-			# return loss
 
 	def validation_step(self, batch, batch_idx):
 
-		batch_results = self._common_step(batch, name="val")
+		batch_results = self._common_step(batch, split="val")
 		mean_loss = batch_results.pop("mean_loss")
 		self._update_results(batch_results,"val")
 		return mean_loss
 
 	def test_step(self, batch, batch_idx):
 
-		batch_results = self._common_step(batch, name="test")
+		batch_results = self._common_step(batch, split="test")
 		mean_loss = batch_results.pop("mean_loss")
 		# self._update_results(batch_results,"test")
 		return mean_loss
@@ -426,8 +420,10 @@ class FragGNN(pl.LightningModule):
 			counter_attr = "val_counter"
 		else:
 			raise NotImplementedError(split)
-		if num_log_images == 0:
-			return
+		###
+		# if num_log_images == 0:
+		# 	return
+		###
 		# filter keys (filtering first to save time/memory)
 		keys = [
 			"unique_ids",
@@ -468,15 +464,15 @@ class FragGNN(pl.LightningModule):
 	def _consolidate_results(self, split):
 		
 		results = getattr(self,f"{split}_results")
+		if results is None:
+			return
 		keys = results.keys()
 		for k in keys:
 			if isinstance(results[k][0],th.Tensor):
 				results[k] = th.cat(results[k],dim=0)
-				# print(k,results[k].shape,results[k].device)
 			else:
 				assert isinstance(results[k][0],list)
 				results[k] = flatten_lol(results[k])
-				# print(k,len(results[k]))
 
 	def _log_images(self, split):
 
@@ -491,8 +487,14 @@ class FragGNN(pl.LightningModule):
 		else:
 			raise NotImplementedError(split)
 		num_log_images = min(num_log_images,counter)
-		if num_log_images == 0:
-			return
+		# log all the metrics
+		for metric_name in ["loss","cos_sim","wrecall"]:
+			self.log(
+				f"{split}_{metric_name}_epoch",
+				results[metric_name].mean()
+			)
+		# if num_log_images == 0:
+		# 	return
 		wandb_logger = self._get_wandb_logger()
 		if wandb_logger is None:
 			return
@@ -553,7 +555,7 @@ class FragGNN(pl.LightningModule):
 				return_data=True
 			)
 			wandb_logger.log_image(
-				key=f"example_{i}",
+				key=f"{split}_example_{i}",
 				caption=[f"unique_id = {unique_id}, epoch = {self.current_epoch:03d}, loss = {loss:.3f}, cos_sim = {cos_sim:.3f}, wrecall = {wrecall:.3f}"],
 				images=[data]
 			)
@@ -579,55 +581,7 @@ class FragGNN(pl.LightningModule):
 		self.val_counter = 0
 
 def get_default_model_params():
+	
+	raise NotImplementedError
 
-	default_model_params = {
-		"num_depth": 5, # max_depth + 1
-		"num_hs": 4,
-		"num_elements": NUM_ELEMENTS,
-		"int_embedder": "abs-sines",
-		"mol_node_feats": [
-			"a_onehot",
-			"a_degree",
-			"a_hybrid",
-			"a_formal",
-			"a_radical",
-			"a_ring",
-			"a_mass",
-			"a_chiral",
-		],
-		"mol_edge_feats": ["b_degree"],
-		"mol_pe_embed_k": 0,
-		"mol_hidden_size": 256,
-		"mol_num_layers": 4,
-		"mol_gnn_type": "GINE",
-		"mol_dropout": 0.0,
-		"frag_node_feats": ["cc","base_formula","depth"],
-		"frag_edge_feats": ["cc","base_formula"],
-		"frag_hidden_size": 256,
-		"frag_num_layers": 4,
-		"frag_gnn_type": "GINE",
-		"frag_dropout": 0.0,
-		"mlp_hidden_size": 256,
-		"mlp_dropout": 0.0,
-		"mlp_num_layers": 2,
-		"mlp_use_residuals": True,
-		"lr": 1e-4,
-		"lr_schedule": False,
-		"weight_decay": 0.0,
-		"lr_decay_rate": 0.95,
-		"warmup": 1000,
-		"optimizer": "adamw",
-		"output_distribution": "gaussian",
-		"loss_vectorized": False,
-		"loss_tolerance_ppm": 10,
-		"loss_tolerance_abs": None, #0.001,
-		"auxiliary_scores": ["cos_sim"],
-		"ints_thresh": INTS_THRESH,
-		"mz_max": MZ_MAX,
-		"mz_bin_res": MZ_BIN_RES,
-		"bin_sum_ints": True,
-		"ints_transform": "log10t3" # none
-	}
-
-	return default_model_params
 import pdb

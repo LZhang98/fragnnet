@@ -109,7 +109,7 @@ if __name__ == "__main__":
 	checkpoint_callback = ModelCheckpoint(
 		dirpath=chkpt_dp,
 		filename="model-{epoch:02d}",
-		monitor="val_loss",
+		monitor="val_loss_batch",
 		mode="min",
 	)
 	callbacks.append(checkpoint_callback)
@@ -166,7 +166,7 @@ if __name__ == "__main__":
 		shuffle=(not config_d["debug_overfit"]), 
 		num_workers=config_d["num_workers"],
 		collate_fn=train_ds.get_collate_fn(),
-		drop_last=True
+		drop_last=config_d["drop_last"]
 	)
 	val_dl = DataLoader(
 		val_ds,
