@@ -239,22 +239,26 @@ class FragGNN(pl.LightningModule):
 				pred_batch_idxs
 			)
 			loss = spec_ce
-			if self.hparams.formula_entropy_weight != 0.:
-				formula_e = sparse_entropy(
-					pred_formula_logprobs,
-					pred_formula_batch_idxs
-				)
-				loss = loss + self.hparams.formula_entropy_weight * formula_e
-			if self.hparams.node_entropy_weight != 0.:
-				node_e = sparse_entropy(
-					pred_node_logprobs,
-					pred_node_batch_idxs
-				)
-				loss = loss + self.hparams.node_entropy_weight * node_e
-			if self.hparams.node_formula_entropy_weight != 0.:
-				node_formula_e = th.sum(th.exp(pred_node_logprobs) * pred_node_formula_entropy,dim=0)
-				loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e
-			return loss
+			formula_e = sparse_entropy(
+				pred_formula_logprobs,
+				pred_formula_batch_idxs
+			)
+			loss = loss + self.hparams.formula_entropy_weight * formula_e
+			node_e = sparse_entropy(
+				pred_node_logprobs,
+				pred_node_batch_idxs
+			)
+			loss = loss + self.hparams.node_entropy_weight * node_e
+			node_formula_e = th.sum(th.exp(pred_node_logprobs) * pred_node_formula_entropy,dim=0)
+			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e
+			loss_d = {
+				"loss": loss,
+				"spec_ce": spec_ce,
+				"formula_e": formula_e,
+				"node_e": node_e,
+				"node_formula_e": node_formula_e
+			}
+			return loss_d
 		self.loss_fn = _loss_fn
 
 	def preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
@@ -311,16 +315,20 @@ class FragGNN(pl.LightningModule):
 			**pred
 		}
 
-		loss = self.loss_fn(**both)
+		loss_d = self.loss_fn(**both)
+		loss = loss_d["loss"]
 		mean_loss = th.mean(loss,dim=0)
-		self.log(
-			f"{split}_loss_batch",
-			mean_loss.item(),
-			batch_size=batch_size,
-			on_epoch=True
-		)
+		# log losses and entropies
+		with th.no_grad():
+			for k,v in loss_d.items():
+				mean_v = th.mean(v,dim=0)
+				self.log(
+					f"{split}_{k}_batch",
+					mean_v.item(),
+					batch_size=batch_size,
+					on_epoch=True
+				)
 		results = {
-			# "batch_size": batch_size,
 			"unique_id": unique_id,
 			"smiles": smiles,
 			"loss": loss,
