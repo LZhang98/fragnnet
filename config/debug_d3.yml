@@ -7,11 +7,11 @@ spec_preprocess: False #True
 mol_preprocess: False #True
 frag_preload: False #True
 frag_preprocess: False #True
-spec_subsample_size: 544
+# spec_subsample_size: 544
 
-train_batch_size: 4
-eval_batch_size: 4
-accumulate_grad_batches: 16
+train_batch_size: 2
+eval_batch_size: 2
+accumulate_grad_batches: 32
 gradient_clip_val: 5.0
 lr: 0.0001
 accelerator: gpu
@@ -26,6 +26,7 @@ debug_overfit: False
 debug_overfit_batches: 1 # 24
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
+node_formula_entropy_weight: 0.0
 frag_pyg_node_feats:
   - cc
   - base_formula
@@ -41,4 +42,4 @@ auxiliary_scores:
   - wrecall
 num_log_train_images: 0 #4
 num_log_val_images: 0 #4
-drop_last: False
+drop_last: True

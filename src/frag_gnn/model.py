@@ -228,7 +228,8 @@ class FragGNN(pl.LightningModule):
 			pred_formula_logprobs,
 			pred_formula_batch_idxs,
 			pred_node_logprobs,
-			pred_node_batch_idxs):
+			pred_node_batch_idxs,
+			pred_node_formula_entropy):
 			spec_ce = sparse_ce(
 				true_mzs,
 				true_logprobs,
@@ -250,6 +251,9 @@ class FragGNN(pl.LightningModule):
 					pred_node_batch_idxs
 				)
 				loss = loss + self.hparams.node_entropy_weight * node_e
+			if self.hparams.node_formula_entropy_weight != 0.:
+				node_formula_e = th.sum(th.exp(pred_node_logprobs) * pred_node_formula_entropy,dim=0)
+				loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e
 			return loss
 		self.loss_fn = _loss_fn
 
@@ -420,10 +424,6 @@ class FragGNN(pl.LightningModule):
 			counter_attr = "val_counter"
 		else:
 			raise NotImplementedError(split)
-		###
-		# if num_log_images == 0:
-		# 	return
-		###
 		# filter keys (filtering first to save time/memory)
 		keys = [
 			"unique_ids",

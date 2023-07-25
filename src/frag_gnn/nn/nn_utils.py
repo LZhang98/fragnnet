@@ -325,21 +325,26 @@ class JointPredictor(nn.Module):
 		frag_formula_logits = frag_formula_logits.flatten()
 		frag_formula_logprobs = scatter_logsoftmax(
 			frag_formula_logits,
-			frag_formula_batch_idxs, # this is wrong
+			frag_formula_batch_idxs,
 			dim=0
 		)
 		log_msg(f"frag_formula_logprobs_1: {get_mem()}")
 
 		# aggregate by node
 		frag_formula_mask = th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1]).float()
-		frag_node_logprobs = (frag_formula_logprobs*frag_formula_mask + -1e9*(1-frag_formula_mask)).reshape(-1,2*self.num_hs+1)
-		frag_node_logprobs = th.logsumexp(frag_node_logprobs,dim=1)
+		frag_node_formula_logits = (frag_formula_logprobs*frag_formula_mask + -1e9*(1-frag_formula_mask)).reshape(-1,2*self.num_hs+1)
+		frag_node_logprobs = th.logsumexp(frag_node_formula_logits,dim=1)
 		frag_node_logprobs = scatter_logsoftmax(
 			frag_node_logprobs,
 			frag_node_batch_idxs,
 			dim=0
 		)
 		log_msg(f"frag_node_logprobs: {get_mem()}")
+
+		# calculate conditional entropy
+		frag_node_formula_logprobs = th.log_softmax(frag_node_formula_logits,dim=1)
+		frag_node_formula_entropy = -th.sum(frag_node_formula_logprobs*th.exp(frag_node_formula_logprobs),dim=1)
+		log_msg(f"frag_node_formula_logprobs: {get_mem()}")
 
 		# aggregate by formula
 		frag_formula_logprobs = scatter_logsumexp(
@@ -403,6 +408,7 @@ class JointPredictor(nn.Module):
 			"pred_formula_batch_idxs": frag_formula_batch_idxs,
 			"pred_node_logprobs": frag_node_logprobs,
 			"pred_node_batch_idxs": frag_node_batch_idxs,
+			"pred_node_formula_entropy": frag_node_formula_entropy,
 		}
 
 		return out_d
