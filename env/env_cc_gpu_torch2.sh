@@ -18,7 +18,7 @@ pip install --no-index torch_cluster==1.6.1
 pip install --no-index torch_spline_conv==1.2.2
 pip install pyg_lib -f https://data.pyg.org/whl/torch-2.0.0+cu117.html
 pip install --no-index cython
-pip install --no-index cysignals
+pip install cysignals
 pip install --no-index pandas
 pip install --no-index networkx
 pip install --no-index wandb
