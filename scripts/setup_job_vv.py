@@ -84,6 +84,8 @@ def main(args):
 		assert "=" in kwarg, kwarg
 		key, value = kwarg.split("=")
 		python_line += f" --{key} {value}"
+	if args.add_job_id:
+		python_line += " --job_id ${SLURM_JOB_ID}"
 	script_lines.append(python_line)
 	script_lines.extend(
 		[
@@ -114,5 +116,6 @@ if __name__ == "__main__":
 	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU2")
 	parser.add_argument("--script_kwargs", type=str, default="")
 	parser.add_argument("--job_name", type=str, required=True)
+	parser.add_argument("--add_job_id", type=booltype, default=False)
 	args = parser.parse_args()
 	main(args)

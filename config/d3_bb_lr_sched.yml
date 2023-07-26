@@ -1,0 +1,42 @@
+wandb_name: d3_bb_lr_sched
+split_dp: data/split/d3_h4_isoTrue
+frag_dp: data/frag/d3_h4_isoTrue/dags
+num_depth: 4
+num_hs: 4
+
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 4
+gradient_clip_val: 5.0
+lr: 0.0001
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: True
+lr_warmup_steps: 0
+lr_decay_steps: 100
+lr_decay_rate: 0.9
+debug_overfit: False
+formula_entropy_weight: 0.0
+node_entropy_weight: 0.0
+node_formula_entropy_weight: 0.0
+frag_pyg_node_feats:
+  - cc
+  - base_formula
+  - depth
+frag_pyg_edge_feats:
+  - cc
+  - base_formula
+profiler: none
+compile: True
+log_every_n_steps: 0
+auxiliary_scores:
+  - cos_sim
+  - wrecall
+num_log_train_images: 0
+num_log_val_images: 0
+precision: bf16-mixed
+drop_last: False
+mol_pool_type: none
+frag_pool_type: none

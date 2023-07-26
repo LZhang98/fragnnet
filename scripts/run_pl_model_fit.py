@@ -12,6 +12,9 @@ import os
 import numpy as np
 import sys
 from pprint import pprint
+import wandb
+import glob
+import shutil
 
 from frag_gnn.model import FragGNN, get_default_model_params
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
@@ -72,6 +75,12 @@ if __name__ == "__main__":
 		default="online",
 		choices=["online","offline","disabled"]
 	)
+	parser.add_argument(
+		"-j",
+		"--job_id",
+		type=str,
+		required=False
+	)
 	args = parser.parse_args()
 
 	# load config
@@ -92,36 +101,64 @@ if __name__ == "__main__":
 	console_logger = ConsoleLogger()
 	loggers.append(console_logger)
 	if args.wandb_mode != "disabled":
-		wandb_logger = pl.loggers.WandbLogger(
+		wandb_d = dict(
 			project=config_d["wandb_project"],
 			name=config_d["wandb_name"],
 			offline=args.wandb_mode == "offline",
 			entity=config_d["wandb_entity"],
+			resume="allow",
 		)
+		if args.job_id:
+			job_id_fp = os.path.join("job_id",f"{args.job_id}.id")
+			if os.path.isfile(job_id_fp):
+				is_resume = True
+				with open(job_id_fp,"r") as job_id_file:
+					text = job_id_file.read()
+				run_id, old_wandb_dp = text.split(";")
+			else:
+				is_resume = False
+				run_id = old_wandb_dp = None
+			wandb_d["id"] = run_id
+		else:
+			is_resume = False
+			job_id_fp = None
+		wandb_logger = pl.loggers.WandbLogger(**wandb_d)
+		assert wandb_logger.version == wandb.run.id, (wandb_logger.version, wandb.run.id)
+		if job_id_fp:
+			with open(job_id_fp,"w") as job_id_file:
+				text = f"{wandb_logger.version};{os.path.abspath(wandb.run.dir)}"
+				job_id_file.write(text)
 		loggers.append(wandb_logger)
+	else:
+		is_resume = False
 
 	# setup callbacks
-	if args.wandb_mode != "disabled":
-		chkpt_dp = os.path.join(wandb_logger.save_dir,"chkpt")
-	else:
-		chkpt_dp = "tmp_chkpt"
 	callbacks = []
+	if args.wandb_mode != "disabled":
+		ckpt_dp = os.path.join(wandb.run.dir,"ckpt")
+	else:
+		ckpt_dp = "tmp_ckpt"
+	os.makedirs(ckpt_dp, exist_ok=True)
+	if is_resume:
+		# copy the checkpoint files
+		old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp,"ckpt","*.ckpt"))
+		print(old_ckpt_fps)
+		for old_ckpt_fp in old_ckpt_fps:
+			new_ckpt_fp = os.path.join(ckpt_dp,os.path.basename(old_ckpt_fp))
+			shutil.copyfile(old_ckpt_fp,new_ckpt_fp)
 	checkpoint_callback = ModelCheckpoint(
-		dirpath=chkpt_dp,
-		filename="model-{epoch:02d}",
-		monitor="val_loss_batch",
-		mode="min",
+		dirpath=ckpt_dp,
+		filename="model-{epoch:03d}",
+		monitor="epoch",
+		mode="max",
+		save_last=True,
 	)
 	callbacks.append(checkpoint_callback)
-	# dev_stats_callback = DeviceStatsMonitor(
-	# 	cpu_stats=True
-	# )
-	# callbacks.append(dev_stats_callback)
 
 	# setup profiler
 	logging.info("setup profiler")
 	if args.wandb_mode != "disabled":
-		profile_dp = os.path.join(wandb_logger.save_dir,"chkpt")
+		profile_dp = os.path.join(wandb.run.dir,"profile")
 	else:
 		profile_dp = "tmp_profile"
 	if config_d["profiler"] == "simple":
@@ -182,14 +219,6 @@ if __name__ == "__main__":
 		num_workers=config_d["num_workers"],
 		collate_fn=test_ds.get_collate_fn()
 	)
-	# #### find largest batch
-	# for dl_key, dl in zip(["train","val","test"],[train_dl,val_dl,test_dl]):
-	# 	batch_mem_d, batch_mem_size = find_largest_batch(dl)
-	# 	print(f">>> {dl_key}")
-	# 	print(f">> batch memory size: {batch_mem_size/1e6:.3f} MB")
-	# 	print(f">> batch memory_dict:")
-	# 	pprint({k:f"{v/1e6:.3f} MB" for k,v in batch_mem_d.items()})
-	# #### find largest batch
 
 	# setup trainer
 	logging.info("setup trainer")
@@ -197,8 +226,8 @@ if __name__ == "__main__":
 		overfit_batches = config_d["debug_overfit_batches"]
 	else:
 		overfit_batches = 0
-
 	log_every_n_steps = min(len(train_dl),config_d["log_every_n_steps"])
+
 	trainer = pl.Trainer(
 		logger=loggers,
 		callbacks=callbacks,
@@ -221,11 +250,34 @@ if __name__ == "__main__":
 
 	# fit
 	if config_d["debug_overfit"]:
+		assert not is_resume
 		logging.info("debug overfit model")
 		trainer.fit(model, train_dl)
 	else:
 		logging.info("fit model")
-		trainer.fit(model, train_dl, val_dl)
+		if is_resume:
+			ckpt_fp = os.path.join(ckpt_dp,"last.ckpt")
+			print(ckpt_fp)
+			if os.path.isfile(ckpt_fp):
+				logging.info(f"resuming from checkpoint: {ckpt_fp}")
+			else:
+				ckpt_fp = None
+		else:
+			ckpt_fp = None
+		trainer.fit(
+			model, 
+			train_dl, 
+			val_dl,
+			ckpt_path=ckpt_fp
+		)
 
 	if config_d["compile"]:
 		print(model.dynamo_prof.report())
+
+	if args.wandb_mode != "disabled" and not trainer.interrupted:
+		# cleanup
+		if job_id_fp:
+			os.remove(job_id_fp)
+		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
+		for ckpt_fp in ckpt_fps:
+			os.remove(ckpt_fp)

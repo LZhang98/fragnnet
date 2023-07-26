@@ -8,7 +8,7 @@ import torch._dynamo as th_dynamo
 from frag_gnn.nn.nn_utils import build_lr_scheduler, JointPredictor
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1normalize, calculate_weighted_recall
-from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed
+from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
 from frag_gnn.utils.plot_utils import plot_spectra_sparse
@@ -249,7 +249,13 @@ class FragGNN(pl.LightningModule):
 				pred_node_batch_idxs
 			)
 			loss = loss + self.hparams.node_entropy_weight * node_e
-			node_formula_e = th.sum(th.exp(pred_node_logprobs) * pred_node_formula_entropy,dim=0)
+			node_formula_e = scatter_reduce(
+				th.exp(pred_node_logprobs) * pred_node_formula_entropy,
+				pred_node_batch_idxs,
+				"sum",
+				0,
+				th.max(pred_node_batch_idxs)+1
+			)
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e
 			loss_d = {
 				"loss": loss,
