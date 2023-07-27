@@ -8,7 +8,7 @@ train_batch_size: 32
 eval_batch_size: 32
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
-lr: 0.0001
+lr: 0.0004
 accelerator: gpu
 devices: 1
 min_epochs: 100

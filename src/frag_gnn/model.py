@@ -487,6 +487,13 @@ class FragGNN(pl.LightningModule):
 			else:
 				assert isinstance(results[k][0],list)
 				results[k] = flatten_lol(results[k])
+		# log all the metrics
+		metric_names = ["loss"] + list(self.auxiliary_score_fns.keys())
+		for metric_name in metric_names:
+			self.log(
+				f"{split}_{metric_name}_epoch",
+				results[metric_name].mean()
+			)
 
 	def _log_images(self, split):
 
@@ -501,14 +508,6 @@ class FragGNN(pl.LightningModule):
 		else:
 			raise NotImplementedError(split)
 		num_log_images = min(num_log_images,counter)
-		# log all the metrics
-		for metric_name in ["loss","cos_sim","wrecall"]:
-			self.log(
-				f"{split}_{metric_name}_epoch",
-				results[metric_name].mean()
-			)
-		# if num_log_images == 0:
-		# 	return
 		wandb_logger = self._get_wandb_logger()
 		if wandb_logger is None:
 			return
@@ -598,4 +597,3 @@ def get_default_model_params():
 	
 	raise NotImplementedError
 
-import pdb

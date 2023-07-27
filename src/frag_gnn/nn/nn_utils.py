@@ -566,62 +566,6 @@ class MLPBlocks(nn.Module):
 		return output
 
 
-def random_walk_pe(g, k, eweight_name=None):
-	"""Random Walk Positional Encoding, as introduced in
-	`Graph Neural Networks with Learnable Structural and Positional Representations
-	<https://arxiv.org/abs/2110.07875>`__
-
-	This function computes the random walk positional encodings as landing probabilities
-	from 1-step to k-step, starting from each node to itself.
-
-	Parameters
-	----------
-	g : DGLGraph
-		The input graph. Must be homogeneous.
-	k : int
-		The number of random walk steps. The paper found the best value to be 16 and 20
-		for two experiments.
-	eweight_name : str, optional
-		The name to retrieve the edge weights. Default: None, not using the edge weights.
-
-	Returns
-	-------
-	Tensor
-		The random walk positional encodings of shape :math:`(N, k)`, where :math:`N` is the
-		number of nodes in the input graph.
-
-	Example
-	-------
-	>>> import dgl
-	>>> g = dgl.graph(([0,1,1], [1,1,0]))
-	>>> dgl.random_walk_pe(g, 2)
-	tensor([[0.0000, 0.5000],
-			[0.5000, 0.7500]])
-	"""
-
-	N = g.num_nodes  # number of nodes
-	M = g.num_edges  # number of edges
-	# sparse adjacency matrix
-	A = scipy.sparse.csr_matrix(
-		(
-			th.ones_like(g.edge_index[0]).numpy(),
-			(
-				g.edge_index[0].numpy(),
-				g.edge_index[1].numpy()
-			)
-		)
-	)
-	RW = A / (A.sum(1).reshape(-1,1) + 1e-30)  # 1-step transition probability
-
-	# Iterate for k steps
-	PE = [th.as_tensor(RW).diagonal()]
-	RW_power = th.as_tensor(RW)
-	for _ in range(k - 1):
-	    RW_power = RW_power @ RW
-	    PE.append(RW_power.diagonal().clone())
-	PE = th.stack(PE, dim=-1)
-	return PE
-
 def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=np.log(1e-4),dim=-1,log=True):
 	# # clamp
 	# logits = th.clamp(logits,min=np.log(1e-4))
@@ -635,11 +579,3 @@ def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=np.log(1e-4),dim=-
 	else:
 		return masked_logits
 
-if __name__ == "__main__":
-
-	edge_index = th.tensor([[0,1,1],[1,1,0]],dtype=th.long)
-	x = th.tensor([0,1],dtype=th.float)
-	g = pyg.data.Data(x=x,edge_index=edge_index)
-	print(g)
-	rw_g = random_walk_pe(g,2)
-	print(rw_g)

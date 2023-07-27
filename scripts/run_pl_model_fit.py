@@ -243,6 +243,7 @@ if __name__ == "__main__":
 		detect_anomaly=config_d["detect_anomaly"],
 		overfit_batches=overfit_batches,
 		profiler=profiler,
+		num_sanity_val_steps=config_d["num_sanity_val_steps"],
 	)
 
 	# set determinism

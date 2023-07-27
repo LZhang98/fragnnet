@@ -84,8 +84,12 @@ def main(args):
 		assert "=" in kwarg, kwarg
 		key, value = kwarg.split("=")
 		python_line += f" --{key} {value}"
-	if args.add_job_id:
-		python_line += " --job_id ${SLURM_JOB_ID}"
+	if args.job_id:
+		if args.job_id == -1:
+			# default
+			python_line += " --job_id ${SLURM_JOB_ID}"
+		else:
+			python_line += f" --job_id {args.job_id}"
 	script_lines.append(python_line)
 	script_lines.extend(
 		[
@@ -110,12 +114,12 @@ if __name__ == "__main__":
 	parser.add_argument("--mem", type=int, default=64)
 	parser.add_argument("--cpu", type=int, default=8)
 	parser.add_argument("--gpu", type=int, default=1)
-	parser.add_argument("--time", type=int, default=12)
+	parser.add_argument("--time", type=int, default=24)
 	parser.add_argument("--partition", type=str, default="cpu", choices=["t4v2","rtx6000","interactive","cpu","a40"])
 	parser.add_argument("--qos", type=str, default="nopreemption", choices=["normal","high","nopreemption","deadline"])
 	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU2")
 	parser.add_argument("--script_kwargs", type=str, default="")
 	parser.add_argument("--job_name", type=str, required=True)
-	parser.add_argument("--add_job_id", type=booltype, default=False)
+	parser.add_argument("--job_id", type=int, required=False)
 	args = parser.parse_args()
 	main(args)
