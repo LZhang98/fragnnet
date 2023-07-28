@@ -36,7 +36,8 @@ def make_splits(args):
     node_key = "dag_num_nodes"
     wrecall_key = "wrecall_10ppm_h4"
     dag_masks = []
-    dag_masks.append(dag_stats_df[node_key] <= args.max_num_dag_nodes)
+    if args.max_num_dag_nodes != -1:
+        dag_masks.append(dag_stats_df[node_key] <= args.max_num_dag_nodes)
     dag_masks.append(dag_stats_df[wrecall_key] >= args.min_dag_wrecall)
     dag_mask = np.all(dag_masks,axis=0)
     dag_stats_df = dag_stats_df[dag_mask]

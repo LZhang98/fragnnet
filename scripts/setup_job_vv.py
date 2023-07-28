@@ -34,6 +34,9 @@ def main(args):
 			"#SBATCH --open-mode=append"
 		]
 	)
+	if args.blacklist is not None:
+		for bl_node in args.blacklist:
+			script_lines.append(f"#SBATCH --exclude={bl_node}")
 	script_lines.extend(
 		[
 			"",
@@ -121,5 +124,6 @@ if __name__ == "__main__":
 	parser.add_argument("--script_kwargs", type=str, default="")
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument("--job_id", type=int, required=False)
+	parser.add_argument("--blacklist", type=str, nargs="+", required=False)
 	args = parser.parse_args()
 	main(args)

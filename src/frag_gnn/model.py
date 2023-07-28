@@ -7,7 +7,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.nn.nn_utils import build_lr_scheduler, JointPredictor
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1normalize, calculate_weighted_recall
+from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -148,7 +148,7 @@ class FragGNN(pl.LightningModule):
 		self.bin_func = _bin_func
 		self.ints_transform_func = get_ints_transform_func(ints_transform)
 		self.ints_untransform_func = get_ints_untransform_func(ints_transform)
-		self.ints_normalize_func = batched_l1normalize
+		self.ints_normalize_func = batched_l1_normalize
 		self.auxiliary_score_fns = {}
 		if "cos_sim" in auxiliary_scores:
 			def _cos_sim(
@@ -161,9 +161,7 @@ class FragGNN(pl.LightningModule):
 				**kwargs):
 				# untransform
 				true_ints = self.ints_untransform_func(true_ints)
-				# true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
 				pred_ints = self.ints_untransform_func(pred_ints)
-				# pred_ints = self.ints_normalize_func(pred_ints,pred_batch_idxs)
 				# calculate
 				return calculate_cosine_similarity(
 					true_mzs,

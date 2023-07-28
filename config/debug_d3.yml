@@ -44,5 +44,4 @@ num_log_train_images: 0 #4
 num_log_val_images: 0 #4
 drop_last: False
 mol_pyg_pe_embed_k: 5
-num_sanity_val_steps: 0
-# num_workers: 0
+ints_transform: none
