@@ -27,5 +27,5 @@ snakeviz run_frag_exp.
 Run ```env/env_cc_dev_gpu_torch2.sh``` or Create virtualenv via ```env/cc_requirement.txt```
 
 ```
- python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_mopdel_fit.py --job_name=first_cc_test --frag_gnn_dp=./ --script_kwargs="-w=online,-c=config/debug_d4_tiny.yml"
+ python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_mopdel_fit.py --job_name=first_cc_test --frag_gnn_dp=./ --script_kwargs="-w=online,-c=config/d3_forumla_only.yml"
 ```

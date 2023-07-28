@@ -1,8 +1,6 @@
 import os
 import argparse
 
-from frag_gnn.utils.misc_utils import booltype
-
 def main(args):
 
 	# create folders
