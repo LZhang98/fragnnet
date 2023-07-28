@@ -5,6 +5,11 @@ from frag_gnn.utils.misc_utils import booltype
 
 def main(args):
 
+	# create folders
+	os.makedirs(f"{os.path.abspath(args.frag_gnn_dp)}/wandb", exist_ok=True)
+	os.makedirs(f"{os.path.abspath(args.script_dp)}", exist_ok=True)
+	os.makedirs(f"{os.path.abspath(args.job_dp)}", exist_ok=True)
+
 	script_lines = []
 	# account, ram, cpu, gpu, and etc
 	script_lines.extend(
@@ -21,28 +26,28 @@ def main(args):
 		]
 	)
 
+	# config where to save job output and job error
+	# append to existing onces
+	script_lines.extend(
+		[
+			f"#SBATCH --output={os.path.abspath(args.job_dp)}/%j.out",
+			f"#SBATCH --error={os.path.abspath(args.job_dp)}/%j.err",
+			"#SBATCH --open-mode=append"
+		]
+	)
 	# add gpus
 	if args.gpu > 0:
 		script_lines.append(f"#SBATCH --gres=gpu:{args.gpu}")
-		
-	# script_lines.extend(
-	#	[
-	#		"", 
-	#		"# record start",
-	#		"echo `date`: Job ${SLURM_JOB_ID} is allocated resources"
-	#	]
-	#)
+
+	# start recording 	
+	script_lines.extend(
+		[
+			"", 
+			"# record start",
+			"echo `date`: Job ${SLURM_JOB_ID} is allocated resources"
+		]
+	)
 	
-	#script_lines.extend(
-	#	[
-	#		"",
-	#		"# make wandb directory (if necessary)",
-	#		f"mkdir -p /checkpoint/{user_dir}/wandb",
-	#		f"touch /checkpoint/{user_dir}/wandb/DELAYPURGE",
-	#		f"ln -sfn /checkpoint/{user_dir}/wandb {home_dir}/frag-gnn/wandb"
-	#	]
-	#)
-	 
     # load modules
 	script_lines.extend(
 		[
@@ -58,7 +63,7 @@ def main(args):
 		[
 			"",
 			"# run script",
-			f"cd {os.path.abspath(args.frag_gnn_dp)}"
+			f"cd {os.path.abspath(args.frag_gnn_dp)}",
 			f"source {args.python_env}/bin/activate"
 		]
 	)
@@ -92,6 +97,7 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--script_dp",type=str, default="slurm_scripts")
+	parser.add_argument("--job_dp",type=str, default="jobs")
 	parser.add_argument("--python_script_fp",type=str,required=True)
 	parser.add_argument("--frag_gnn_dp",type=str, help="location of frag-gnn project", required=True)
 	parser.add_argument("--mem", type=int, default=64)
