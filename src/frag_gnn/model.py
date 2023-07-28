@@ -385,11 +385,11 @@ class FragGNN(pl.LightningModule):
 			opt = self.optimizers()
 			opt.zero_grad()
 			batch_results = self._common_step(batch, name="train")
-			total_loss = batch_results.pop("total_loss")
-			self.manual_backward(total_loss)
+			mean_loss = batch_results.pop("mean_loss")
+			self.manual_backward(mean_loss)
 			opt.step()
 			self._update_results(batch_results,"train")
-			return total_loss
+			return mean_loss
 
 	def validation_step(self, batch, batch_idx):
 
