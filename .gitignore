@@ -12,3 +12,5 @@ data/
 wandb/
 figs/
 extra/
+jobs/
+slurm_scripts/
