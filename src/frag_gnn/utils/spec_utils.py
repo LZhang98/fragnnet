@@ -6,7 +6,7 @@ import torch as th
 import torch.nn.functional as F
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_reduce
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_reduce, EPS
 
 
 # TODO: actually fill these out
@@ -356,27 +356,49 @@ def get_ints_transform_func(ints_transform):
 
 def get_ints_untransform_func(ints_transform):
 
-	_func = None
 	if ints_transform == "log10":
-		_func = lambda ints: 10**ints-1.
+		max_ints = float(np.log10(1000. + 1.))
+		def _untransform_fn(x): return 10**x - 1.
 	elif ints_transform == "log10t3":
-		_func = lambda ints: (10**ints-1.)*3.
+		max_ints = float(np.log10(1000. + 1.) / 3.)
+		def _untransform_fn(x): return 10**(3 * x) - 1.
 	elif ints_transform == "loge":
-		_func = lambda ints: th.exp(ints)-1.
+		max_ints = float(np.log(1000. + 1.))
+		def _untransform_fn(x): return th.exp(x) - 1.
 	elif ints_transform == "sqrt":
-		_func = lambda ints: ints**2
+		max_ints = float(np.sqrt(1000.))
+		def _untransform_fn(x): return x**2
 	elif ints_transform == "none":
-		_func = lambda ints: ints
+		max_ints = 1000.
+		def _untransform_fn(x): return x
 	else:
-		raise ValueError("Invalid ints_transform: {}".format(ints_transform))
+		raise ValueError("invalid transform")
+	def _func(ints):
+		ints = ints / (th.max(ints) + EPS) * max_ints
+		ints = _untransform_fn(ints)
+		ints = th.clamp(ints, min=0.)
+		assert not th.isnan(ints).any()
+		return ints
 	return _func
 
 
-def batched_l1normalize(ints, batch_idxs):
+def batched_l1_normalize(ints, batch_idxs):
 
 	ints = scatter_l1normalize(
 		ints,
 		batch_idxs,
 		dim=0
 	)
+	return ints
+
+def batched_mf100_normalize(ints, batch_idxs):
+
+	max_ints = scatter_reduce(
+		ints,
+		batch_idxs,
+		reduce="max",
+		dim=0,
+		dim_size=th.max(batch_idxs)+1
+	)
+	ints = (ints / max_ints[batch_idxs]) * 1000.
 	return ints

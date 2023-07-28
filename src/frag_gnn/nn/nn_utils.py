@@ -392,15 +392,15 @@ class JointPredictor(nn.Module):
 		frag_formula_logits = frag_formula_logits.flatten()
 		frag_formula_logprobs = scatter_logsoftmax(
 			frag_formula_logits,
-			frag_formula_batch_idxs, # this is wrong, we can have duplicated forumla by doing this
+			frag_formula_batch_idxs,
 			dim=0
 		)
 		log_msg(f"frag_formula_logprobs_1: {get_mem()}")
 
 		# aggregate by node
 		frag_formula_mask = th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1]).float()
-		frag_node_logprobs = (frag_formula_logprobs*frag_formula_mask + -1e9*(1-frag_formula_mask)).reshape(-1,2*self.num_hs+1)
-		frag_node_logprobs = th.logsumexp(frag_node_logprobs,dim=1)
+		frag_node_formula_logits = (frag_formula_logprobs*frag_formula_mask + -1e9*(1-frag_formula_mask)).reshape(-1,2*self.num_hs+1)
+		frag_node_logprobs = th.logsumexp(frag_node_formula_logits,dim=1)
 		frag_node_logprobs = scatter_logsoftmax(
 			frag_node_logprobs,
 			frag_node_batch_idxs,
@@ -408,6 +408,11 @@ class JointPredictor(nn.Module):
 		)
 
 		log_msg(f"frag_node_logprobs: {get_mem()}")
+
+		# calculate conditional entropy
+		frag_node_formula_logprobs = th.log_softmax(frag_node_formula_logits,dim=1)
+		frag_node_formula_entropy = -th.sum(frag_node_formula_logprobs*th.exp(frag_node_formula_logprobs),dim=1)
+		log_msg(f"frag_node_formula_logprobs: {get_mem()}")
 
 		# aggregate by formula
 		frag_formula_logprobs = scatter_logsumexp(
@@ -471,6 +476,7 @@ class JointPredictor(nn.Module):
 			"pred_formula_batch_idxs": frag_formula_batch_idxs,
 			"pred_node_logprobs": frag_node_logprobs,
 			"pred_node_batch_idxs": frag_node_batch_idxs,
+			"pred_node_formula_entropy": frag_node_formula_entropy,
 		}
 
 		return out_d
@@ -652,62 +658,6 @@ class MLPBlocks(nn.Module):
 		return output
 
 
-def random_walk_pe(g, k, eweight_name=None):
-	"""Random Walk Positional Encoding, as introduced in
-	`Graph Neural Networks with Learnable Structural and Positional Representations
-	<https://arxiv.org/abs/2110.07875>`__
-
-	This function computes the random walk positional encodings as landing probabilities
-	from 1-step to k-step, starting from each node to itself.
-
-	Parameters
-	----------
-	g : DGLGraph
-		The input graph. Must be homogeneous.
-	k : int
-		The number of random walk steps. The paper found the best value to be 16 and 20
-		for two experiments.
-	eweight_name : str, optional
-		The name to retrieve the edge weights. Default: None, not using the edge weights.
-
-	Returns
-	-------
-	Tensor
-		The random walk positional encodings of shape :math:`(N, k)`, where :math:`N` is the
-		number of nodes in the input graph.
-
-	Example
-	-------
-	>>> import dgl
-	>>> g = dgl.graph(([0,1,1], [1,1,0]))
-	>>> dgl.random_walk_pe(g, 2)
-	tensor([[0.0000, 0.5000],
-			[0.5000, 0.7500]])
-	"""
-
-	N = g.num_nodes  # number of nodes
-	M = g.num_edges  # number of edges
-	# sparse adjacency matrix
-	A = scipy.sparse.csr_matrix(
-		(
-			th.ones_like(g.edge_index[0]).numpy(),
-			(
-				g.edge_index[0].numpy(),
-				g.edge_index[1].numpy()
-			)
-		)
-	)
-	RW = A / (A.sum(1).reshape(-1,1) + 1e-30)  # 1-step transition probability
-
-	# Iterate for k steps
-	PE = [th.as_tensor(RW).diagonal()]
-	RW_power = th.as_tensor(RW)
-	for _ in range(k - 1):
-		RW_power = RW_power @ RW
-		PE.append(RW_power.diagonal().clone())
-	PE = th.stack(PE, dim=-1)
-	return PE
-
 def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=np.log(1e-4),dim=-1,log=True):
 	# # clamp
 	# logits = th.clamp(logits,min=np.log(1e-4))
@@ -721,11 +671,3 @@ def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=np.log(1e-4),dim=-
 	else:
 		return masked_logits
 
-if __name__ == "__main__":
-
-	edge_index = th.tensor([[0,1,1],[1,1,0]],dtype=th.long)
-	x = th.tensor([0,1],dtype=th.float)
-	g = pyg.data.Data(x=x,edge_index=edge_index)
-	print(g)
-	rw_g = random_walk_pe(g,2)
-	print(rw_g)

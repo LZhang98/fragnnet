@@ -10,6 +10,7 @@ import torch as th
 import networkx as nx
 import torch_geometric as pyg
 from copy import deepcopy
+import scipy
 
 from frag_gnn.frag.frag_utils import CANONICAL_ELEMENT_ORDER, NODE_FEAT_TO_IDX, EDGE_FEAT_TO_IDX, get_node_feats, get_edge_feats
 
@@ -59,8 +60,6 @@ class MolGraph:
 			pe_embed_k (int)
 
 		"""
-		if pe_embed_k > 0:
-			raise NotImplementedError
 		self.pe_embed_k = pe_embed_k
 		self.atom_feats = atom_feats
 		self.bond_feats = bond_feats
@@ -181,11 +180,11 @@ class MolGraph:
 		)
 
 		if self.pe_embed_k > 0:
-			pe_embeds = nn_utils.random_walk_pe(
+			pe_embeds = random_walk_pe(
 				g,
 				k=self.pe_embed_k,
 			)
-			x = th.cat((x, pe_embeds), dim=-1)
+			g.x = th.cat((g.x, pe_embeds), dim=-1)
 		
 		return g		
 
@@ -527,16 +526,77 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph,include_h_for
 	)
 	return dag_pyg
 
+def random_walk_pe(g, k):
+	"""Random Walk Positional Encoding, as introduced in
+	`Graph Neural Networks with Learnable Structural and Positional Representations
+	<https://arxiv.org/abs/2110.07875>`__
+
+	This function computes the random walk positional encodings as landing probabilities
+	from 1-step to k-step, starting from each node to itself.
+
+	Parameters
+	----------
+	g : DGLGraph
+		The input graph. Must be homogeneous.
+	k : int
+		The number of random walk steps. The paper found the best value to be 16 and 20
+		for two experiments.
+
+	Returns
+	-------
+	Tensor
+		The random walk positional encodings of shape :math:`(N, k)`, where :math:`N` is the
+		number of nodes in the input graph.
+
+	Example
+	-------
+	>>> import dgl
+	>>> g = dgl.graph(([0,1,1], [1,1,0]))
+	>>> dgl.random_walk_pe(g, 2)
+	tensor([[0.0000, 0.5000],
+			[0.5000, 0.7500]])
+	"""
+
+	N = g.num_nodes  # number of nodes
+	M = g.num_edges  # number of edges
+	# sparse adjacency matrix
+	A = scipy.sparse.csr_matrix(
+		(
+			th.ones_like(g.edge_index[0]).numpy(),
+			(
+				g.edge_index[0].numpy(),
+				g.edge_index[1].numpy()
+			)
+		)
+	)
+	RW = A / (A.sum(1).reshape(-1,1) + 1e-30)  # 1-step transition probability
+
+	# Iterate for k steps
+	PE = [RW.diagonal()]
+	RW_power = RW.copy()
+	for _ in range(k - 1):
+	    RW_power = RW_power @ RW
+	    PE.append(RW_power.diagonal())
+	PE = np.stack(PE, axis=-1)
+	PE = th.as_tensor(PE,dtype=th.float32)
+	return PE
 
 if __name__ == "__main__":
 
-	import rdkit
-	import rdkit.Chem as Chem
-	from pprint import pprint
+	# import rdkit
+	# import rdkit.Chem as Chem
+	# from pprint import pprint
 
-	smiles = "CC(=O)OC1=CC=CC=C1C(=O)O" # aspirin
-	mol = Chem.MolFromSmiles(smiles)
-	mg = MolGraph()
-	g = mg.get_networkx_graph(mol)
-	pprint(dict(g.nodes(data=True)))
-	pprint(list(g.edges(data=True)))
+	# smiles = "CC(=O)OC1=CC=CC=C1C(=O)O" # aspirin
+	# mol = Chem.MolFromSmiles(smiles)
+	# mg = MolGraph()
+	# g = mg.get_networkx_graph(mol)
+	# pprint(dict(g.nodes(data=True)))
+	# pprint(list(g.edges(data=True)))
+
+	edge_index = th.tensor([[0,1,1],[1,1,0]],dtype=th.long)
+	x = th.tensor([0,1],dtype=th.float)
+	g = pyg.data.Data(x=x,edge_index=edge_index)
+	print(g)
+	rw_g = random_walk_pe(g,2)
+	print(rw_g)

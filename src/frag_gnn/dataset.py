@@ -455,72 +455,8 @@ def get_default_fps():
 
 def get_default_ds_params(frag=True):
 
-	spec_params = {
-		"merge": True,
-		"subsample_size": 0,
-		"subsample_seed": 420,
-		"ints_thresh": 0.0, # dont't filter in dataloader
-		"mz_max": 1500.0,
-		"sparse": True,
-		"binned": False, #True,
-		"mz_bin_res": 0.01,
-		"sum_ints": True,
-		"prec_type": True,
-		"prec_mz": True,
-		"prec_mass_diff": True,
-		"nce": False, # cannot be True if merge is True
-		"ace": False # cannot be True if merge is True
-	}
-	mol_params = {
-		"smiles": True,
-		"fingerprint": False,
-		"fingerprint_morgan": True,
-		"fingerprint_rdkit": True,
-		"fingerprint_maccs": True,
-		"pyg": True,
-		"pyg_node_feats": [
-			"a_onehot",
-			"a_degree",
-			"a_hybrid",
-			"a_formal",
-			"a_radical",
-			"a_ring",
-			"a_mass",
-			"a_chiral",
-		],
-		"pyg_edge_feats": ["b_degree"],
-		"pyg_pe_embed_k": 0,
-		"pyg_bigraph": True,
-	}
-	frag_params = {
-		"pyg": True,
-		"pyg_node_feats": [
-			"depth",
-			"cc",
-			"base_formula"
-		],
-		"pyg_edge_feats": [
-			"cc",
-			"base_formula"
-		],
-		"pyg_bigraph": True,
-		"num_isotopes": 1,
-		"formula_peak_mzs": True,
-		"formula_peak_probs": True,
-		"compressed": True,
-	}
-	assert set(spec_params.keys()) == set(SPEC_PARAMS)
-	assert set(mol_params.keys()) == set(MOL_PARAMS)
-	assert set(frag_params.keys()) == set(FRAG_PARAMS)
-	params = {}
-	for k,v in spec_params.items():
-		params[f"spec_{k}"] = v
-	for k,v in mol_params.items():
-		params[f"mol_{k}"] = v
-	if frag:
-		for k,v in frag_params.items():
-			params[f"frag_{k}"] = v
-	return params
+	# TODO: fix this
+	raise NotImplementedError
 
 def get_batch_memory(batch):
 
