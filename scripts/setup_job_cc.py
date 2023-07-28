@@ -4,28 +4,27 @@ import argparse
 from frag_gnn.utils.misc_utils import booltype
 
 def main(args):
-	
+
 	script_lines = []
 	# account, ram, cpu, gpu, and etc
 	script_lines.extend(
 		[
 			"#!/bin/bash",
-			f"#SBATCH  --account={args.cc_account}",			
-			"#SBATCH --nodes=1"
-			f"#SBATCH --job-name={args.job_name}"
-			f"#SBATCH --mem={args.mem}G"
-			f"#SBATCH --cpus-per-task={args.cpu}"
-			f"#SBATCH --time=0-{args.time}:00"
-			f"#SBATCH --mail-user={args.mail}"
+			f"#SBATCH --account={args.cc_account}",			
+			"#SBATCH --nodes=1",
+			f"#SBATCH --job-name={args.job_name}",
+			f"#SBATCH --mem={args.mem}G",
+			f"#SBATCH --cpus-per-task={args.cpu}",
+			f"#SBATCH --time=0-{args.time}:00",
+			f"#SBATCH --mail-user={args.cc_email}",
 			f"#SBATCH --mail-type=ALL"
 		]
 	)
 
-	if args.partition != "cpu":
-		assert args.gpu > 0, args.gpu
+	# add gpus
+	if args.gpu > 0:
 		script_lines.append(f"#SBATCH --gres=gpu:{args.gpu}")
-	
-	
+		
 	# script_lines.extend(
 	#	[
 	#		"", 
@@ -60,16 +59,19 @@ def main(args):
 			"",
 			"# run script",
 			f"cd {os.path.abspath(args.frag_gnn_dp)}"
+			f"source {args.python_env}/bin/activate"
 		]
 	)
  
 	# and not do copy
 	python_line = f"python {args.python_script_fp}"
-	script_kwargs = args.script_kwargs.split(",")
-	for kwarg in script_kwargs:
-		assert "=" in kwarg, kwarg
-		key, value = kwarg.split("=")
-		python_line += f" --{key} {value}"
+	#print(args.script_kwargs)
+	if args.script_kwargs not in [None, ""]:
+		script_kwargs = args.script_kwargs.split(",")
+		for kwarg in script_kwargs:
+			assert "=" in kwarg, kwarg
+			key, value = kwarg.split("=")
+			python_line += f" --{key} {value}"
 	script_lines.append(python_line)
 	script_lines.extend(
 		[
@@ -91,12 +93,15 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--script_dp",type=str, default="slurm_scripts")
 	parser.add_argument("--python_script_fp",type=str,required=True)
-	parser.add_argument("--frag_gnn_dp",type=str, description="location of frag-gnn project", required=True)
+	parser.add_argument("--frag_gnn_dp",type=str, help="location of frag-gnn project", required=True)
 	parser.add_argument("--mem", type=int, default=64)
 	parser.add_argument("--cpu", type=int, default=8)
 	parser.add_argument("--gpu", type=int, default=1)
 	parser.add_argument("--time", type=int, default=12)
-	parser.add_argument("--script_kwargs", type=str, default="")
+	parser.add_argument("--script_kwargs", type=str, help='arugments for python script eg."-w=online,-c=config/debug_d4_tiny.yml"', default="")
 	parser.add_argument("--job_name", type=str, required=True)
+	parser.add_argument('--cc_email', help='email', default='fw4@ualberta.ca')
+	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart'])
+	parser.add_argument('--python_env', default="./FRAG-GNN-GPU2", help="virtualenv location")
 	args = parser.parse_args()
 	main(args)
