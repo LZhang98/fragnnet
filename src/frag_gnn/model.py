@@ -337,7 +337,7 @@ class FragGNN(pl.LightningModule):
 			"smiles": smiles,
 			"loss": loss,
 			"mean_loss": mean_loss,
-			"total_loss": total_loss,
+			#"total_loss": th.sum(loss,dim=0),
 			**both
 		}
 		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
