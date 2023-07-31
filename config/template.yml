@@ -2,6 +2,7 @@
 wandb_entity: frag-gnn
 wandb_project: frag-gnn
 wandb_name: template
+wandb_tags: 
 # data
 spec_fp: data/proc/spec_df.pkl
 mol_fp: data/proc/mol_df.pkl
