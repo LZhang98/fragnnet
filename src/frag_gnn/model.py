@@ -7,7 +7,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.nn.nn_utils import build_lr_scheduler, JointPredictor
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall
+from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -203,6 +203,30 @@ class FragGNN(pl.LightningModule):
 				)
 			self.auxiliary_score_fns["wrecall"] = _wrecall
 			self.metric_min_max["wrecall"] = "max"
+		if "opt_cos_sim" in auxiliary_scores:
+			def _opt_cos_sim(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform
+				true_ints = self.ints_untransform_func(true_ints)
+				pred_ints = self.ints_untransform_func(pred_ints)
+				# calculate
+				return calculate_optimal_cosine_similarity(
+					true_mzs,
+					true_ints,
+					true_batch_idxs,
+					pred_mzs,
+					pred_ints,
+					pred_batch_idxs,
+					**kwargs
+				)
+			self.auxiliary_score_fns["opt_cos_sim"] = _opt_cos_sim
+			self.metric_min_max["opt_cos_sim"] = "max"
 		self.metric_names = list(self.metric_min_max.keys())
 		self.automatic_optimization = automatic_optimization
 		self.train_results = None
@@ -502,7 +526,7 @@ class FragGNN(pl.LightningModule):
 		mean_metrics_list = getattr(self,f"{split}_mean_metrics")
 		mean_metrics_list.append(mean_metrics)
 		# log best metric
-		for k in self.metric_names:
+		for k in ["loss","cos_sim"]:
 			metric_epochs = [item[k] for item in mean_metrics_list]
 			if self.metric_min_max[k] == "min":
 				metric_best = th.min(th.tensor(metric_epochs))

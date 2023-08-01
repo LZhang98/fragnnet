@@ -327,6 +327,38 @@ def calculate_weighted_recall(
 	return weighted_recall
 
 
+def calculate_optimal_cosine_similarity(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		tolerance=1e-5,
+		relative=True
+	):
+
+	batch_size = th.max(true_batch_idxs)+1
+	opt_cos_sim = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for b in range(batch_size):
+		b_true_mask = (true_batch_idxs==b)
+		b_pred_mask = (pred_batch_idxs==b)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_ints = true_ints[b_true_mask]
+		b_true_match = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
+		b_true_match = th.any(b_true_match,dim=1)
+		b_opt_cos_sim = th.sum(F.normalize(b_true_ints,p=2,dim=0)[b_true_match]**2,dim=0)
+		opt_cos_sim[b] = b_opt_cos_sim
+	assert th.all(opt_cos_sim>=0.) and th.all(opt_cos_sim<=1.), opt_cos_sim
+	return opt_cos_sim
+
+
 def binned_cosine_similarity(true_spec,pred_spec):
 
 	true_spec = F.normalize(true_spec,p=2,dim=1)
