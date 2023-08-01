@@ -95,6 +95,7 @@ loss_tolerance_abs: #0.001
 auxiliary_scores:
   - cos_sim
   - wrecall
+  - opt_cos_sim
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
@@ -116,7 +117,7 @@ accumulate_grad_batches: 1
 precision: 32 # 64, 16-mixed, bf16-mixed
 debug_overfit: False
 debug_overfit_batches: 10
-log_every_n_steps: 50
+log_every_n_steps: 0
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
 node_formula_entropy_weight: 0.0
@@ -124,9 +125,9 @@ seed: 420
 detect_anomaly: False
 automatic_optimization: True
 profiler: none
-compile: False
+compile: True
 num_log_train_images: 0
 num_log_val_images: 0
 deterministic: False
-drop_last: True
+drop_last: False
 num_sanity_val_steps: 2
