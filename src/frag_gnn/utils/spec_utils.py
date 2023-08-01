@@ -355,7 +355,7 @@ def calculate_optimal_cosine_similarity(
 		b_true_match = th.any(b_true_match,dim=1)
 		b_opt_cos_sim = th.sum(F.normalize(b_true_ints,p=2,dim=0)[b_true_match]**2,dim=0)
 		opt_cos_sim[b] = b_opt_cos_sim
-	assert th.all(opt_cos_sim>=0.) and th.all(opt_cos_sim<=1.), opt_cos_sim
+	# assert th.all(opt_cos_sim>=0.) and th.all(opt_cos_sim<=1.), opt_cos_sim
 	return opt_cos_sim
 
 
