@@ -10,45 +10,58 @@ def main(args):
 
 	script_lines = []
 	# account, ram, cpu, gpu, and etc
-	script_lines.extend(
-		[
-			"#!/bin/bash",
-			f"#SBATCH --account={args.cc_account}",			
-			"#SBATCH --nodes=1",
-			f"#SBATCH --job-name={args.job_name}",
-			f"#SBATCH --mem={args.mem}G",
-			f"#SBATCH --cpus-per-task={args.cpu}",
-			f"#SBATCH --time=0-{args.time}:00",
-			f"#SBATCH --mail-user={args.cc_email}",
-			f"#SBATCH --mail-type=ALL"
-		]
-	)
+	if not args.interactive:
+		script_lines.extend(
+			[
+				"#!/bin/bash",
+				f"#SBATCH --account={args.cc_account}",			
+				"#SBATCH --nodes=1",
+				f"#SBATCH --job-name={args.job_name}",
+				f"#SBATCH --mem={args.mem}G",
+				f"#SBATCH --cpus-per-task={args.cpu}",
+				f"#SBATCH --time=0-{args.time}:00",
+				f"#SBATCH --mail-user={args.cc_email}",
+				f"#SBATCH --mail-type=ALL"
+			]
+		)
+		# add gpus
+		if args.gpu > 0:
+			# eg. --gpus-per-node=v100:1 or --gpus-per-node=1
+			script_lines.append(f"#SBATCH --gpus-per-node={args.gpu}")
 
-	# config where to save job output and job error
-	# append to existing onces
-	script_lines.extend(
-		[
-			f"#SBATCH --output={os.path.abspath(args.job_dp)}/%j.out",
-			f"#SBATCH --error={os.path.abspath(args.job_dp)}/%j.err",
-			"#SBATCH --open-mode=append"
-		]
-	)
-	# add gpus
-	if args.gpu > 0:
-		script_lines.append(f"#SBATCH --gres=gpu:{args.gpu}")
 
-	# start recording 	
-	script_lines.extend(
-		[
-			"", 
-			"# record start",
-			"echo `date`: Job ${SLURM_JOB_ID} is allocated resources"
-		]
-	)
-	
+		# config where to save job output and job error
+		# append to existing onces
+		script_lines.extend(
+			[
+				f"#SBATCH --output={os.path.abspath(args.job_dp)}/%j.out",
+				f"#SBATCH --error={os.path.abspath(args.job_dp)}/%j.err",
+				"#SBATCH --open-mode=append"
+			]
+		)
+		# start recording 	
+		script_lines.extend(
+			[
+				"", 
+				"# record start",
+				"echo `date`: Job ${SLURM_JOB_ID} is allocated resources"
+			]
+		)
+		
+
+	else:
+		script_lines.append('#allocate job')
+		cmd = f"salloc --account={args.cc_account} --nodes=1 --mem={args.mem}G --cpus-per-task={args.cpu} --time=0-{args.time}:00"
+		if args.gpu > 0:
+			# eg. --gpus-per-node=v100:1 or --gpus-per-node=1
+			cmd += " --gpus-per-node={args.gpu}"
+		script_lines.append(cmd)
+
+
     # load modules
 	script_lines.extend(
-		[
+		[	
+			"#load modules"
 			"module load cuda/11.7",
 			"module load module load python/3.10",
 		]
@@ -60,8 +73,9 @@ def main(args):
 	script_lines.extend(
 		[
 			"",
-			"# run script",
+			"# go to script dir",
 			f"cd {os.path.abspath(args.frag_gnn_dp)}",
+			"# load env"
 			f"source {args.python_env}/bin/activate"
 		]
 	)
@@ -76,20 +90,24 @@ def main(args):
 			key, value = kwarg.split("=")
 			python_line += f" --{key} {value}"
 	script_lines.append(python_line)
-	script_lines.extend(
-		[
-			"",
-			"# record ending",
-			'echo `date`: Job ${SLURM_JOB_ID} finished running'
-		]
-	)
 
-	script_str = "\n".join(script_lines)
-	assert os.path.isdir(args.script_dp), args.script_dp
-	script_fp = os.path.join(args.script_dp,f"{args.job_name}.sh")
-	with open(script_fp,"w") as script_file:
-		print(script_str,file=script_file)
+	if not args.interactive:
+		script_lines.extend(
+			[
+				"",
+				"# record ending",
+				'echo `date`: Job ${SLURM_JOB_ID} finished running'
+			]
+		)
 
+		script_str = "\n".join(script_lines)
+		assert os.path.isdir(args.script_dp), args.script_dp
+		script_fp = os.path.join(args.script_dp,f"{args.job_name}.sh")
+		with open(script_fp,"w") as script_file:
+			print(script_str,file=script_file)
+	else:
+		for row in script_lines:
+			print(row)
 
 if __name__ == "__main__":
 
@@ -107,5 +125,6 @@ if __name__ == "__main__":
 	parser.add_argument('--cc_email', help='email', default='fw4@ualberta.ca')
 	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart'])
 	parser.add_argument('--python_env', default="./FRAG-GNN-GPU2", help="virtualenv location")
+	parser.add_argument('-i', '--interactive', type = bool, default=False, action=argparse.BooleanOptionalAction, help="set to true to print interative command")
 	args = parser.parse_args()
 	main(args)
