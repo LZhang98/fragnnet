@@ -123,7 +123,7 @@ if __name__ == "__main__":
 	parser.add_argument("--script_kwargs", type=str, help='arugments for python script eg."-w=online,-c=config/debug_d4_tiny.yml"', default="")
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument('--cc_email', help='email', default='fw4@ualberta.ca')
-	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart'])
+	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart','rrg-rgreiner'])
 	parser.add_argument('--python_env', default="./FRAG-GNN-GPU2", help="virtualenv location")
 	parser.add_argument('-i', '--interactive', type = bool, default=False, action=argparse.BooleanOptionalAction, help="set to true to print interative command")
 	args = parser.parse_args()
