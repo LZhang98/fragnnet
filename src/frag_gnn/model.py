@@ -7,7 +7,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.nn.nn_utils import build_lr_scheduler, JointPredictor
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall
+from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -149,6 +149,7 @@ class FragGNN(pl.LightningModule):
 		self.ints_transform_func = get_ints_transform_func(ints_transform)
 		self.ints_untransform_func = get_ints_untransform_func(ints_transform)
 		self.ints_normalize_func = batched_l1_normalize
+		self.metric_min_max = {"loss": "min"}
 		self.auxiliary_score_fns = {}
 		if "cos_sim" in auxiliary_scores:
 			def _cos_sim(
@@ -173,6 +174,7 @@ class FragGNN(pl.LightningModule):
 					**kwargs
 				)
 			self.auxiliary_score_fns["cos_sim"] = _cos_sim
+			self.metric_min_max["cos_sim"] = "max"
 		if "wrecall" in auxiliary_scores:
 			def _wrecall(
 				true_mzs,
@@ -200,11 +202,39 @@ class FragGNN(pl.LightningModule):
 					**kwargs
 				)
 			self.auxiliary_score_fns["wrecall"] = _wrecall
+			self.metric_min_max["wrecall"] = "max"
+		if "opt_cos_sim" in auxiliary_scores:
+			def _opt_cos_sim(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform
+				true_ints = self.ints_untransform_func(true_ints)
+				pred_ints = self.ints_untransform_func(pred_ints)
+				# calculate
+				return calculate_optimal_cosine_similarity(
+					true_mzs,
+					true_ints,
+					true_batch_idxs,
+					pred_mzs,
+					pred_ints,
+					pred_batch_idxs,
+					**kwargs
+				)
+			self.auxiliary_score_fns["opt_cos_sim"] = _opt_cos_sim
+			self.metric_min_max["opt_cos_sim"] = "max"
+		self.metric_names = list(self.metric_min_max.keys())
 		self.automatic_optimization = automatic_optimization
 		self.train_results = None
 		self.train_counter = 0
+		self.train_mean_metrics = []
 		self.val_results = None
 		self.val_counter = 0
+		self.val_mean_metrics = []
 
 	def _setup_loss_fn(
 		self):
@@ -511,11 +541,25 @@ class FragGNN(pl.LightningModule):
 				assert isinstance(results[k][0],list)
 				results[k] = flatten_lol(results[k])
 		# log all the metrics
-		metric_names = ["loss"] + list(self.auxiliary_score_fns.keys())
-		for metric_name in metric_names:
+		mean_metrics = {k:v.mean() for k,v in results.items() if k in self.metric_names}
+		for k,v in mean_metrics.items():
 			self.log(
-				f"{split}_{metric_name}_epoch",
-				results[metric_name].mean()
+				f"{split}_{k}_epoch",
+				v
+			)
+		# update epoch stats
+		mean_metrics_list = getattr(self,f"{split}_mean_metrics")
+		mean_metrics_list.append(mean_metrics)
+		# log best metric
+		for k in ["loss","cos_sim"]:
+			metric_epochs = [item[k] for item in mean_metrics_list]
+			if self.metric_min_max[k] == "min":
+				metric_best = th.min(th.tensor(metric_epochs))
+			else:
+				metric_best = th.max(th.tensor(metric_epochs))
+			self.log(
+				f"{split}_{k}_best",
+				metric_best
 			)
 
 	def _log_images(self, split):
@@ -608,13 +652,40 @@ class FragGNN(pl.LightningModule):
 
 	def on_validation_epoch_end(self):
 		
-		# consolidate results
-		self._consolidate_results("val")
-		# log images
-		self._log_images("val")
+		if not self.trainer.sanity_checking:
+			# consolidate results
+			self._consolidate_results("val")
+			# log images
+			self._log_images("val")
 		# reset
 		self.val_results = None
 		self.val_counter = 0
+
+	# def on_train_end(self):
+
+	# 	# log best val metrics
+	# 	for metric_name in self.metric_names:
+	# 		best_val_metric = self.get_best_val_metric(metric_name,self.metric_min_max[metric_name])
+	# 		if best_val_metric is not None:
+	# 			self.log(
+	# 				f"best_val_{metric_name}",
+	# 				best_val_metric
+	# 			)
+
+	# def get_best_val_metric(self,metric_name,min_max):
+
+	# 	assert min_max in ["min","max"], min_max
+	# 	assert metric_name in self.metric_names, (metric_name,self.metric_names)
+	# 	cur_metric = None
+	# 	for i in range(len(self.val_mean_metrics)):
+	# 		new_metric = self.val_mean_metrics[i][metric_name]
+	# 		if cur_metric is None:
+	# 			cur_metric = new_metric
+	# 		elif min_max == "max" and cur_metric < new_metric:
+	# 			cur_metric = new_metric
+	# 		elif min_max == "min" and cur_metric > new_metric:
+	# 			cur_metric = new_metric
+	# 	return cur_metric
 
 def get_default_model_params():
 	

@@ -1,0 +1,26 @@
+wandb_name: d3_sweep_template
+wandb_tags:
+  - sweep
+split_dp: data/split/d3_h4_isoTrue_hyperopt
+frag_dp: data/frag/d3_h4_isoTrue/dags
+num_depth: 4
+num_hs: 4
+spec_subsample_size: 0
+
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 4
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+frag_pyg_node_feats:
+  - cc
+  - base_formula
+  - depth
+frag_pyg_edge_feats:
+  - cc
+  - base_formula
+precision: bf16-mixed
