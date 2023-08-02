@@ -1,0 +1,43 @@
+wandb_name: d3_dirtectional_dag_forumla_only
+split_dp: data/split/d3_h4_isoTrue
+frag_dp: data/frag/d3_h4_isoTrue/dags
+num_depth: 4
+num_hs: 4
+spec_preprocess: False #True
+mol_preprocess: False #True
+frag_preload: False #True
+frag_preprocess: False #True
+#spec_subsample_size: 512
+
+train_batch_size: 4
+eval_batch_size: 4
+accumulate_grad_batches: 8
+gradient_clip_val: 5.0
+lr: 0.0001
+accelerator: gpu
+devices: 1
+min_epochs: 3 #100
+max_epochs: 100 #100
+lr_schedule: False
+lr_warmup_steps: 0
+lr_decay_steps: 10
+lr_decay_rate: 0.8
+debug_overfit: False
+debug_overfit_batches: 1 # 24
+formula_entropy_weight: 0.0
+node_entropy_weight: 0.0
+node_formula_entropy_weight: 0.0
+frag_pyg_node_feats:
+  - base_formula
+  - depth
+frag_pyg_edge_feats:
+  - base_formula
+frag_pyg_bigraph: False
+profiler: none
+compile: True
+log_every_n_steps: 0
+auxiliary_scores:
+  - cos_sim
+  - wrecall
+num_log_train_images: 2
+num_log_val_images: 2
