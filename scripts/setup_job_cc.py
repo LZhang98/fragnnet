@@ -63,7 +63,7 @@ def main(args):
 		[	
 			"#load modules"
 			"module load cuda/11.7",
-			"module load module load python/3.10",
+			"module load python/3.10",
 		]
 	)
   
@@ -88,7 +88,13 @@ def main(args):
 		for kwarg in script_kwargs:
 			assert "=" in kwarg, kwarg
 			key, value = kwarg.split("=")
-			python_line += f" --{key} {value}"
+			if len(key) == 1:
+				python_line += f" -{key} {value}"
+			elif key.startswith('-'):
+				python_line += f"{key} {value}"
+			else:
+				python_line += f" --{key} {value}"
+
 	script_lines.append(python_line)
 
 	if not args.interactive:
