@@ -75,7 +75,7 @@ def main(args):
 			"",
 			"# go to script dir",
 			f"cd {os.path.abspath(args.frag_gnn_dp)}",
-			"# load env"
+			"# load env",
 			f"source {args.python_env}/bin/activate"
 		]
 	)
