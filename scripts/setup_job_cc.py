@@ -61,7 +61,7 @@ def main(args):
     # load modules
 	script_lines.extend(
 		[	
-			"#load modules"
+			"#load modules",
 			"module load cuda/11.7",
 			"module load python/3.10",
 		]
@@ -91,7 +91,7 @@ def main(args):
 			if len(key) == 1:
 				python_line += f" -{key} {value}"
 			elif key.startswith('-'):
-				python_line += f"{key} {value}"
+				python_line += f" {key} {value}"
 			else:
 				python_line += f" --{key} {value}"
 
