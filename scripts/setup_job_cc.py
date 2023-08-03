@@ -62,8 +62,10 @@ def main(args):
 	script_lines.extend(
 		[	
 			"#load modules",
+			"module load StdEnv/2020",
 			"module load cuda/11.7",
 			"module load python/3.10",
+			"module load rust/1.7.0"
 		]
 	)
   
