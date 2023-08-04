@@ -1,7 +1,14 @@
-from lightning.pytorch.utilities import rank_zero_only
-from lightning.pytorch.loggers.logger import rank_zero_experiment
-from lightning.pytorch.loggers import Logger
-from lightning.pytorch.callbacks import Callback
+try:
+    from lightning.pytorch.utilities import rank_zero_only
+    from lightning.pytorch.loggers.logger import rank_zero_experiment
+    from lightning.pytorch.loggers import Logger
+    from lightning.pytorch.callbacks import Callback
+except ModuleNotFoundError:
+    from pytorch_lightning.pytorch.utilities import rank_zero_only
+    from pytorch_lightning.pytorch.loggers.logger import rank_zero_experiment
+    from pytorch_lightning.pytorch.loggers import Logger
+    from pytorch_lightning.pytorch.callbacks import Callback
+
 import copy
 import logging
 

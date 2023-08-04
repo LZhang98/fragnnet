@@ -1,10 +1,19 @@
 import torch as th
 from torch.utils.data import DataLoader
 import torch_geometric as pyg
-import lightning.pytorch as pl
-from lightning.pytorch.callbacks import DeviceStatsMonitor
-from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
-from lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
+
+try:
+	import lightning.pytorch as pl	
+	from lightning.pytorch.callbacks import DeviceStatsMonitor
+	from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
+	from lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
+except ModuleNotFoundError:
+	import pytorch_lightning as pl
+	from pytorch_lightning.pytorch.callbacks import DeviceStatsMonitor
+	from pytorch_lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
+	from pytorch_lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
+
+
 import logging
 import argparse
 import yaml

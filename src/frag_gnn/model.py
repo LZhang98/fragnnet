@@ -1,7 +1,13 @@
 import torch as th
 import torch.nn.functional as F
 import numpy as np
-import lightning.pytorch as pl
+
+# make cc happy
+try:
+	import lightning.pytorch as pl
+except ModuleNotFoundError:
+	import pytorch_lightning as pl
+	
 from torch.profiler import profile, record_function, ProfilerActivity
 import torch._dynamo as th_dynamo
 

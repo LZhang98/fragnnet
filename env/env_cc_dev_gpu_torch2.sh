@@ -31,7 +31,7 @@ pip install --no-index scipy
 pip install --no-index joblib
 pip install --no-index matplotlib
 pip install --no-index pytest
-pip install lightning
+pip install --no-index pytorch_lightning==2.0.2
 pip install CairoSVG
 
 pip install -I -e .
