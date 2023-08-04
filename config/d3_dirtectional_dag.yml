@@ -7,7 +7,6 @@ spec_preprocess: False #True
 mol_preprocess: False #True
 frag_preload: False #True
 frag_preprocess: False #True
-#spec_subsample_size: 512
 
 train_batch_size: 4
 eval_batch_size: 4

@@ -9,15 +9,15 @@ frag_preload: False #True
 frag_preprocess: False #True
 #spec_subsample_size: 512
 
-train_batch_size: 8
-eval_batch_size: 8
+train_batch_size: 4
+eval_batch_size: 4
 accumulate_grad_batches: 8
 gradient_clip_val: 5.0
 lr: 0.0001
 accelerator: gpu
 devices: 1
 min_epochs: 3 #100
-max_epochs: 100
+max_epochs: 100 #100
 lr_schedule: False
 lr_warmup_steps: 0
 lr_decay_steps: 10
@@ -32,14 +32,12 @@ frag_pyg_node_feats:
   - depth
 frag_pyg_edge_feats:
   - base_formula
+frag_pyg_bigraph: True
 profiler: none
 compile: True
 log_every_n_steps: 0
 auxiliary_scores:
   - cos_sim
   - wrecall
-num_log_train_images: 0 #4
-num_log_val_images: 0 #4
-drop_last: False
-mol_pyg_pe_embed_k: 5
-ints_transform: none
+num_log_train_images: 0
+num_log_val_images: 0
