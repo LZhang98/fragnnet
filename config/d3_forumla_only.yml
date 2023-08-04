@@ -28,11 +28,9 @@ formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
 node_formula_entropy_weight: 0.0
 frag_pyg_node_feats:
-  - cc
   - base_formula
   - depth
 frag_pyg_edge_feats:
-  - cc
   - base_formula
 profiler: none
 compile: True
