@@ -83,7 +83,8 @@ def main(args):
 	)
  
 	# and not do copy
-	python_line = f"python {args.python_script_fp}"
+	# https://lightning.ai/docs/pytorch/stable/clouds/cluster_advanced.html
+	python_line = f"srun python {args.python_script_fp}"
 	#print(args.script_kwargs)
 	if args.script_kwargs not in [None, ""]:
 		script_kwargs = args.script_kwargs.split(",")
