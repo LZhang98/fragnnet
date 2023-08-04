@@ -346,7 +346,7 @@ class JointPredictor(nn.Module):
 
 		# calculate conditional entropy
 		frag_node_formula_logprobs = th.log_softmax(frag_node_formula_logits,dim=1)
-		frag_node_formula_entropy = -th.sum(frag_node_formula_logprobs*th.exp(frag_node_formula_logprobs),dim=1)
+		# frag_node_formula_entropy = -th.sum(frag_node_formula_logprobs*th.exp(frag_node_formula_logprobs),dim=1)
 		log_msg(f"frag_node_formula_logprobs: {get_mem()}")
 
 		# aggregate by formula
@@ -411,7 +411,7 @@ class JointPredictor(nn.Module):
 			"pred_formula_batch_idxs": frag_formula_batch_idxs,
 			"pred_node_logprobs": frag_node_logprobs,
 			"pred_node_batch_idxs": frag_node_batch_idxs,
-			"pred_node_formula_entropy": frag_node_formula_entropy,
+			"pred_node_formula_logprobs": frag_node_formula_logprobs,
 		}
 
 		return out_d

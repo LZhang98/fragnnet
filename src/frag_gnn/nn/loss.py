@@ -157,8 +157,9 @@ def get_sparse_entropy_fn():
 	return sparse_entropy_fn
 
 
-def sparse_conditional_entropy_fn(logprobs,conditional_entropies,batch_idxs):
+def sparse_conditional_entropy_fn(logprobs,conditional_logprobs,batch_idxs):
 
+	conditional_entropies = th.sum(-th.exp(conditional_logprobs)*conditional_logprobs,dim=1)
 	conditional_entropy = scatter_reduce(
 		th.exp(logprobs) * conditional_entropies,
 		batch_idxs,
@@ -166,18 +167,9 @@ def sparse_conditional_entropy_fn(logprobs,conditional_entropies,batch_idxs):
 		0,
 		th.max(batch_idxs)+1
 	)
-	# TODO: this is hacky, assumes h_transfer=4, need to rework
-	max_conditional_entropy = np.log(9.)*th.ones_like(conditional_entropy,dtype=conditional_entropy.dtype)
-	# max_conditional_entropy = scatter_reduce(
-	# 	src=np.log(9.) #th.ones_like(batch_idxs,dtype=logprobs.dtype),
-	# 	index=batch_idxs,
-	# 	reduce="sum",
-	# 	dim=0,
-	# 	dim_size=batch_size,
-	# )
+	max_conditional_entropy = np.log(conditional_logprobs.shape[1])*th.ones_like(conditional_entropy,dtype=logprobs.dtype)
 	norm_conditional_entropy = conditional_entropy/max_conditional_entropy
 	return conditional_entropy, norm_conditional_entropy
-	# return conditional_entropy
 
 
 def get_sparse_conditional_entropy_fn():
