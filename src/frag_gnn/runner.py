@@ -9,9 +9,9 @@ try:
 	from lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
-	from pytorch_lightning.pytorch.callbacks import DeviceStatsMonitor
-	from pytorch_lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
-	from pytorch_lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
+	from pytorch_lightning.callbacks import DeviceStatsMonitor
+	from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+	from pytorch_lightning.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
 
 
 import logging

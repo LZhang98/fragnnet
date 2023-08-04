@@ -4,10 +4,10 @@ try:
     from lightning.pytorch.loggers import Logger
     from lightning.pytorch.callbacks import Callback
 except ModuleNotFoundError:
-    from pytorch_lightning.pytorch.utilities import rank_zero_only
-    from pytorch_lightning.pytorch.loggers.logger import rank_zero_experiment
-    from pytorch_lightning.pytorch.loggers import Logger
-    from pytorch_lightning.pytorch.callbacks import Callback
+    from pytorch_lightning.utilities import rank_zero_only
+    from pytorch_lightning.loggers.logger import rank_zero_experiment
+    from pytorch_lightning.loggers import Logger
+    from pytorch_lightning.callbacks import Callback
 
 import copy
 import logging
