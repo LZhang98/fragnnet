@@ -65,7 +65,7 @@ def main(args):
 			"module load StdEnv/2020",
 			"module load cuda/11.7",
 			"module load python/3.10",
-			"module load rust/1.7.0"
+			"module load rust/1.70.0"
 		]
 	)
   
