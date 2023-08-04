@@ -1,3 +1,4 @@
+import numpy as np
 import torch as th
 import torch.nn.functional as F
 import math
@@ -171,13 +172,41 @@ def sparse_entropy_fn(logprobs,batch_idxs):
 		dim=0,
 		dim_size=batch_size,
 	)
-	return entropy
-	# return th.mean(entropy)
+	max_entropy = scatter_reduce(
+		src=th.ones_like(batch_idxs,dtype=logprobs.dtype),
+		index=batch_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=batch_size,
+	)
+	max_entropy = th.log(max_entropy)
+	norm_entropy = entropy/max_entropy
+	return entropy, norm_entropy
 
 
 def get_sparse_entropy_fn():
 
 	return sparse_entropy_fn
+
+
+def sparse_conditional_entropy_fn(logprobs,conditional_logprobs,batch_idxs):
+
+	conditional_entropies = th.sum(-th.exp(conditional_logprobs)*conditional_logprobs,dim=1)
+	conditional_entropy = scatter_reduce(
+		th.exp(logprobs) * conditional_entropies,
+		batch_idxs,
+		"sum",
+		0,
+		th.max(batch_idxs)+1
+	)
+	max_conditional_entropy = np.log(conditional_logprobs.shape[1])*th.ones_like(conditional_entropy,dtype=logprobs.dtype)
+	norm_conditional_entropy = conditional_entropy/max_conditional_entropy
+	return conditional_entropy, norm_conditional_entropy
+
+
+def get_sparse_conditional_entropy_fn():
+
+	return sparse_conditional_entropy_fn
 
 
 if __name__ == "__main__":

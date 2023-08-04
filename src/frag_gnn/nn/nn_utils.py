@@ -287,6 +287,7 @@ class JointPredictor(nn.Module):
 		# get per-atom embeddings
 		mol_embed_gnn = self.mol_embedder(
 			mol_x,
+			mol_batch,
 			mol_edge_index,
 			mol_edge_attr
 		)
@@ -367,6 +368,7 @@ class JointPredictor(nn.Module):
 		# define frag network
 		frag_embed_gnn = self.frag_embedder(
 			frag_x,
+			frag_node_batch_idxs,
 			frag_edge_index,
 			frag_edge_attr
 		)
@@ -411,7 +413,7 @@ class JointPredictor(nn.Module):
 
 		# calculate conditional entropy
 		frag_node_formula_logprobs = th.log_softmax(frag_node_formula_logits,dim=1)
-		frag_node_formula_entropy = -th.sum(frag_node_formula_logprobs*th.exp(frag_node_formula_logprobs),dim=1)
+		# frag_node_formula_entropy = -th.sum(frag_node_formula_logprobs*th.exp(frag_node_formula_logprobs),dim=1)
 		log_msg(f"frag_node_formula_logprobs: {get_mem()}")
 
 		# aggregate by formula
@@ -476,7 +478,7 @@ class JointPredictor(nn.Module):
 			"pred_formula_batch_idxs": frag_formula_batch_idxs,
 			"pred_node_logprobs": frag_node_logprobs,
 			"pred_node_batch_idxs": frag_node_batch_idxs,
-			"pred_node_formula_entropy": frag_node_formula_entropy,
+			"pred_node_formula_logprobs": frag_node_formula_logprobs,
 		}
 
 		return out_d
@@ -533,10 +535,10 @@ class GNN(nn.Module):
 		else:
 			raise NotImplementedError(self.gnn_type)
 
-	def forward(self, x, edge_index, edge_attr):
+	def forward(self, x, batch_index, edge_index, edge_attr):
 		"""encode batch of molecule graph"""
 		x = self.input_project(x)
-		x = self.gnn(x, edge_index, edge_attr)
+		x = self.gnn(x, batch_index, edge_index, edge_attr)
 		return x
 
 
@@ -579,22 +581,32 @@ class GINE(nn.Module):
 			self.layers.append(temp_layer)
 
 		self.layers = nn.ModuleList(self.layers)
+		# setup norm and norm_fn
+		# norm_fn may or may not depend on the batch index
 		if normalization == "batch":
 			norm_mod = nn.BatchNorm1d(hidden_size)
+			self.norm_fn = lambda x, b, n: n(x)
 		elif normalization == "layer":
 			norm_mod = nn.LayerNorm(hidden_size)
+			self.norm_fn = lambda x, b, n: n(x)
+		elif normalization == "graph":
+			norm_mod = pyg.nn.GraphNorm(hidden_size)
+			self.norm_fn = lambda x, b, n: n(x,b)
 		else:
 			assert normalization == "none", normalization
 			norm_mod = nn.Identity()
+			self.norm_fn = lambda x, b, n: n(x)
 		self.norms = get_clones(norm_mod, num_layers)
 		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
-	def forward(self, x, edge_index, edge_attr):
+	def forward(self, x, batch_index, edge_index, edge_attr):
+		"""forward.
+		"""
 		edge_attr = self.edge_transform(edge_attr)
-
 		for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
 			layer_out = layer(x, edge_index, edge_attr)
-			x = F.relu(dropout(norm(layer_out))) + x
+			layer_out = self.norm_fn(layer_out, batch_index, norm)
+			x = F.relu(dropout(layer_out)) + x
 
 		return x
 

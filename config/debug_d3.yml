@@ -46,3 +46,5 @@ auxiliary_scores:
 num_log_train_images: 0 #4
 num_log_val_images: 0 #4
 drop_last: False
+mol_normalization: graph
+frag_normalization: graph
