@@ -32,5 +32,6 @@ pip install --no-index joblib
 pip install --no-index matplotlib
 pip install --no-index pytest
 pip install lightning
+pip install CairoSVG
 
 pip install -I -e .
