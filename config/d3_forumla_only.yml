@@ -9,9 +9,10 @@ frag_preload: False #True
 frag_preprocess: False #True
 #spec_subsample_size: 512
 
-train_batch_size: 4
-eval_batch_size: 4
-accumulate_grad_batches: 8
+# because we only use forumlas, we can fit much more in to vram
+train_batch_size: 128 #4
+eval_batch_size: 128 #4
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0001
 accelerator: gpu

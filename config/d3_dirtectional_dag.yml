@@ -8,9 +8,9 @@ mol_preprocess: False #True
 frag_preload: False #True
 frag_preprocess: False #True
 
-train_batch_size: 4
-eval_batch_size: 4
-accumulate_grad_batches: 8
+train_batch_size: 32 #4
+eval_batch_size: 32 #4
+accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0001
 accelerator: gpu
