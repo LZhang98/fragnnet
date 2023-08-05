@@ -39,5 +39,5 @@ log_every_n_steps: 0
 auxiliary_scores:
   - cos_sim
   - wrecall
-num_log_train_images: 2
-num_log_val_images: 2
+num_log_train_images: 0
+num_log_val_images: 0
