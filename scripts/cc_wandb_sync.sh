@@ -12,4 +12,4 @@ export WANDB_DIR='./wandb'
 export WANDB_CACHE_DIR='./wandb/.cache'
 export WANDB_CONFIG_DIR='./wandb/.config'
 
-wandb sync
+wandb sync --sync-all
