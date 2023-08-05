@@ -16,3 +16,4 @@ jobs/
 slurm_scripts/
 # default virtualenv on CC
 FRAG-GNN-GPU2/
+tmp_ckpt/
