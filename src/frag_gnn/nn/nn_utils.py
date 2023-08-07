@@ -647,50 +647,16 @@ class MPNN(nn.Module):
 			nn.Linear(edge_input_dim, edge_hidden_dim), nn.ReLU(),
 			nn.Linear(edge_hidden_dim, node_hidden_dim * node_hidden_dim))
 		self.conv = pyg.nn.NNConv(node_hidden_dim,
-		node_hidden_dim,
-		edge_network,
-		aggr='mean',
-		root_weight=False)
+			node_hidden_dim,
+			edge_network,
+			aggr='mean',
+			root_weight=False)
 		self.gru = nn.GRU(node_hidden_dim, node_hidden_dim)
 
 		self.set2set = pyg.nn.Set2Set(node_hidden_dim,processing_steps=num_step_set2set)
 		self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
 		self.lin2 = nn.Linear(node_hidden_dim, output_dim)
 			
-		self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
-
-		self.layers = []
-		for i in range(num_layers):
-			apply_fn = nn.Sequential(
-				nn.Linear(hidden_size, hidden_size),
-				nn.ReLU(),
-				nn.Linear(hidden_size, hidden_size),
-			)
-			temp_layer = pyg.nn.conv.GINEConv(
-				nn=apply_fn,
-				eps=0.
-			)
-			self.layers.append(temp_layer)
-
-		self.layers = nn.ModuleList(self.layers)
-		# setup norm and norm_fn
-		# norm_fn may or may not depend on the batch index
-		if normalization == "batch":
-			norm_mod = nn.BatchNorm1d(hidden_size)
-			self.norm_fn = lambda x, b, n: n(x)
-		elif normalization == "layer":
-			norm_mod = nn.LayerNorm(hidden_size)
-			self.norm_fn = lambda x, b, n: n(x)
-		elif normalization == "graph":
-			norm_mod = pyg.nn.GraphNorm(hidden_size)
-			self.norm_fn = lambda x, b, n: n(x,b)
-		else:
-			assert normalization == "none", normalization
-			norm_mod = nn.Identity()
-			self.norm_fn = lambda x, b, n: n(x)
-		self.norms = get_clones(norm_mod, num_layers)
-		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
-
 	def forward(self, x, batch_index, edge_index, edge_attr):
 		"""forward.
 		"""
