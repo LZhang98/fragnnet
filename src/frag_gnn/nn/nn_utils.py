@@ -613,14 +613,9 @@ class GINE(nn.Module):
 class MPNN(nn.Module):
 	def __init__(
 		self,
-		hidden_size: int,
+		node_feats_size: int,
 		edge_feats_size: int,
-		num_layers: int,
-		dropout: float,
-		normalization: str,
-		node_input_dim=15,
-		edge_input_dim=5,
-		output_dim=1,
+		output_size: int,
 		node_hidden_dim=64,
 		edge_hidden_dim=128,
 		num_step_message_passing=6,
@@ -642,9 +637,9 @@ class MPNN(nn.Module):
 
 
 		self.num_step_message_passing = num_step_message_passing
-		self.lin0 = nn.Linear(node_input_dim, node_hidden_dim)
+		self.lin0 = nn.Linear(node_feats_size, node_hidden_dim)
 		edge_network = nn.Sequential(
-			nn.Linear(edge_input_dim, edge_hidden_dim), nn.ReLU(),
+			nn.Linear(edge_feats_size, edge_hidden_dim), nn.ReLU(),
 			nn.Linear(edge_hidden_dim, node_hidden_dim * node_hidden_dim))
 		self.conv = pyg.nn.NNConv(node_hidden_dim,
 			node_hidden_dim,
@@ -655,7 +650,7 @@ class MPNN(nn.Module):
 
 		self.set2set = pyg.nn.Set2Set(node_hidden_dim,processing_steps=num_step_set2set)
 		self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
-		self.lin2 = nn.Linear(node_hidden_dim, output_dim)
+		self.lin2 = nn.Linear(node_hidden_dim, output_size)
 			
 	def forward(self, x, batch_index, edge_index, edge_attr):
 		"""forward.
