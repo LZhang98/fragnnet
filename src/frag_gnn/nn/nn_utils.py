@@ -107,6 +107,7 @@ class JointPredictor(nn.Module):
 		frag_normalization: str,
 		frag_dropout: float,
 		frag_pool_type: str,
+		mlp_output_format: str,
 		mlp_hidden_size: int,
 		mlp_dropout: float,
 		mlp_num_layers: int,
@@ -141,7 +142,7 @@ class JointPredictor(nn.Module):
 			formula_d = depth_d = complement_d = {}
 		self.formula_embedder = get_embedder(int_embedder,**formula_d)
 		self.depth_embedder = get_embedder(int_embedder,**depth_d)
-		self.complement_embedder = get_embedder(int_embedder,**complement_d)
+		self.complement_embedder = get_embedder(int_embedder,)
 		self.frag_node_feats = frag_node_feats
 		self.frag_edge_feats = frag_edge_feats
 		self._compute_frag_feats_sizes()
@@ -156,15 +157,29 @@ class JointPredictor(nn.Module):
 		}
 		self.frag_embedder = GNN(**frag_kwargs)
 		self.frag_pool = build_pool_module(frag_pool_type,frag_hidden_size)
-		mlp_kwargs = {
-			"input_size": 2*self.frag_embedder.hidden_size,
-			"output_size": 2*self.num_hs+1,
-			"hidden_size": mlp_hidden_size,
-			"num_layers": mlp_num_layers,
-			"dropout": mlp_dropout,
-			"use_residuals": mlp_use_residuals
-		}
-		self.output_module = MLPBlocks(**mlp_kwargs)
+		self.mlp_output_format = mlp_output_format
+		if self.mlp_output_format in ["formula","node_formula"]:
+			formula_mlp_kwargs = {
+				"input_size": 2*self.frag_embedder.hidden_size,
+				"output_size": 2*self.num_hs+1,
+				"hidden_size": mlp_hidden_size,
+				"num_layers": mlp_num_layers,
+				"dropout": mlp_dropout,
+				"use_residuals": mlp_use_residuals
+			}
+			self.formula_module = MLPBlocks(**formula_mlp_kwargs)
+		if self.mlp_output_format in ["node_formula"]:
+			node_mlp_kwargs = {
+				"input_size": 2*self.frag_embedder.hidden_size,
+				"output_size": 1,
+				"hidden_size": mlp_hidden_size,
+				"num_layers": mlp_num_layers,
+				"dropout": mlp_dropout,
+				"use_residuals": mlp_use_residuals
+			}
+			self.node_module = MLPBlocks(**node_mlp_kwargs)
+		else:
+			self.node_module = None
 
 	def _compute_mol_feats_sizes(self):
 		# these features don't rely on any model parameters
@@ -338,7 +353,8 @@ class JointPredictor(nn.Module):
 				frag_embed_gnn-frag_embed_gnn_pool[frag_batch]
 			], dim=1
 		)
-		frag_formula_logits = self.output_module(frag_embed)
+
+		frag_formula_logits = self.formula_module(frag_embed)
 		assert frag_formula_logits.shape[1] == 2*self.num_hs+1, (frag_formula_logits.shape[1],2*self.num_hs+1)
 
 		# convert to logprobs
@@ -351,20 +367,37 @@ class JointPredictor(nn.Module):
 		)
 		log_msg(f"frag_formula_logprobs_1: {get_mem()}")
 
-		# aggregate by node
 		frag_formula_mask = th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1]).float()
 		frag_node_formula_logits = (frag_formula_logprobs*frag_formula_mask + -1e9*(1-frag_formula_mask)).reshape(-1,2*self.num_hs+1)
-		frag_node_logprobs = th.logsumexp(frag_node_formula_logits,dim=1)
-		frag_node_logprobs = scatter_logsoftmax(
-			frag_node_logprobs,
-			frag_node_batch_idxs,
-			dim=0
-		)
+
+		if self.mlp_output_format == "formula":
+			
+			# aggregate formula logits by node, then normalize
+			# log p(n) = logsumexp_f log p(f,n)
+			frag_node_logprobs = th.logsumexp(frag_node_formula_logits,dim=1)
+			frag_node_logprobs = scatter_logsoftmax(
+				frag_node_logprobs,
+				frag_node_batch_idxs,
+				dim=0
+			)
+			
+		elif self.mlp_output_format == "node_formula":
+
+			# predict node logits, then normalize
+			frag_node_logits = self.node_module(frag_embed).squeeze(1)
+			frag_node_logprobs = scatter_logsoftmax(
+				frag_node_logits,
+				frag_node_batch_idxs,
+				dim=0
+			)
+			# adjust formula logprobs by node logprobs
+			# log p(f) = log p(f|n) + log p(n)
+			frag_formula_logprobs = frag_formula_logprobs + th.repeat_interleave(frag_node_logprobs,2*self.num_hs+1)
+
 		log_msg(f"frag_node_logprobs: {get_mem()}")
 
 		# calculate conditional entropy
 		frag_node_formula_logprobs = th.log_softmax(frag_node_formula_logits,dim=1)
-		# frag_node_formula_entropy = -th.sum(frag_node_formula_logprobs*th.exp(frag_node_formula_logprobs),dim=1)
 		log_msg(f"frag_node_formula_logprobs: {get_mem()}")
 
 		# aggregate by formula
