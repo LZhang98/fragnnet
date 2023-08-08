@@ -899,7 +899,8 @@ NODE_FEAT_TO_IDX = {
 
 EDGE_FEAT_TO_IDX = {
 	"cc":0,
-	"base_formula":1
+	"base_formula":1,
+	"complement":2
 }
 
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):

@@ -89,6 +89,7 @@ class JointPredictor(nn.Module):
 		num_hs: int,
 		num_elements: int,
 		int_embedder: str,
+		int_embedder_tight: bool,
 		mol_node_feats: list[str],
 		mol_edge_feats: list[str],
 		mol_pe_embed_k: int,
@@ -132,8 +133,15 @@ class JointPredictor(nn.Module):
 		}
 		self.mol_embedder = GNN(**mol_kwargs)
 		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
-		self.formula_embedder = get_embedder(int_embedder)
-		self.depth_embedder = get_embedder(int_embedder)
+		if int_embedder_tight:
+			formula_d = {"max_count_int": 127}
+			depth_d = {"max_count_int": num_depth+1}
+			complement_d = {"max_count_int": 2}
+		else:
+			formula_d = depth_d = complement_d = {}
+		self.formula_embedder = get_embedder(int_embedder,**formula_d)
+		self.depth_embedder = get_embedder(int_embedder,**depth_d)
+		self.complement_embedder = get_embedder(int_embedder,**complement_d)
 		self.frag_node_feats = frag_node_feats
 		self.frag_edge_feats = frag_edge_feats
 		self._compute_frag_feats_sizes()
@@ -182,12 +190,15 @@ class JointPredictor(nn.Module):
 			self.frag_edge_feats_size += self.mol_embedder.hidden_size
 		if "base_formula" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
+		if "complement" in self.frag_edge_feats:
+			self.frag_edge_feats_size += self.complement_embedder.num_dim
 
 	def compile_submodules(self,**kwargs):
 		""" pyg does not support dynamic shape compiling """
 		# self.mol_embedder = pyg.compile(self.mol_embedder,**kwargs)
 		self.formula_embedder = th.compile(self.formula_embedder,**kwargs)
 		self.depth_embedder = th.compile(self.depth_embedder,**kwargs)
+		self.complement_embedder = th.compile(self.complement_embedder,**kwargs)
 		# self.frag_embedder = pyg.compile(self.frag_embedder,**kwargs)
 
 	def forward(
@@ -291,6 +302,13 @@ class JointPredictor(nn.Module):
 			)
 			frag_ndata.append(frag_depth)
 		log_msg(f"frag_node_depth: {get_mem()}")
+		# edge complement
+		if "complement" in self.frag_edge_feats:
+			frag_edge_complement = self.complement_embedder(
+				get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"complement").reshape(batch_frag_num_edges,-1)
+			)
+			frag_edata.append(frag_edge_complement)
+		log_msg(f"frag_edge_complement: {get_mem()}")
 		# get output formula aggregation 
 		frag_node_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
 		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]

@@ -36,6 +36,7 @@ frag_pyg_node_feats:
 frag_pyg_edge_feats:
   - cc
   - base_formula
+  - complement
 profiler: none
 compile: True
 log_every_n_steps: 0
@@ -48,3 +49,5 @@ num_log_val_images: 0 #4
 drop_last: False
 mol_normalization: graph
 frag_normalization: graph
+num_workers: 0
+int_embedder_tight: True

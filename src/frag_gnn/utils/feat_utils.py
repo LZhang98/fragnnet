@@ -502,7 +502,10 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph,include_h_for
 	_edge_feat_size = 0
 	for feat, feat_idx in EDGE_FEAT_TO_IDX.items():
 		if feat in frag_edge_feats:
-			_edge_attr_cur = get_edge_feats(edge_attr,edge_feat_idxs[0],feat)
+			if feat == "complement":
+				_edge_attr_cur = th.zeros(edge_attr.shape[0],1,device=device,dtype=th.int64)
+			else:
+				_edge_attr_cur = get_edge_feats(edge_attr,edge_feat_idxs[0],feat)
 			_edge_attr.append(_edge_attr_cur)
 			_edge_feat_size += _edge_attr_cur.shape[1]
 		_edge_feat_idxs.append(_edge_feat_size)
@@ -510,12 +513,13 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph,include_h_for
 	_edge_feat_idxs = th.tensor(_edge_feat_idxs,device=device,dtype=th.int64).reshape(1,-1)
 	# convert to undirected
 	if bigraph:
-		_edge_index, _edge_attr = pyg.utils.to_undirected(
-			_edge_index, 
-			_edge_attr, 
-			num_nodes,
-			reduce="mean"
-		)
+		_edge_index_c = th.stack([_edge_index[1],_edge_index[0]],dim=0)
+		assert not th.any(th.all(_edge_index==_edge_index_c,dim=0),dim=0)
+		_edge_attr_c = _edge_attr.clone()
+		if "complement" in frag_edge_feats:
+			_edge_attr_c[:,-1] = 1 - _edge_attr_c[:,-1]
+		_edge_index = th.cat([_edge_index,_edge_index_c],dim=1)
+		_edge_attr = th.cat([_edge_attr,_edge_attr_c],dim=0)
 	# create pyg object
 	dag_pyg = pyg.data.Data(
 		x=_x,
@@ -583,16 +587,14 @@ def random_walk_pe(g, k):
 
 if __name__ == "__main__":
 
-	# import rdkit
-	# import rdkit.Chem as Chem
-	# from pprint import pprint
+	from frag_gnn.utils.data_utils import mol_from_smiles
 
-	# smiles = "CC(=O)OC1=CC=CC=C1C(=O)O" # aspirin
-	# mol = Chem.MolFromSmiles(smiles)
-	# mg = MolGraph()
-	# g = mg.get_networkx_graph(mol)
-	# pprint(dict(g.nodes(data=True)))
-	# pprint(list(g.edges(data=True)))
+	smiles = "CC(=O)OC1=CC=CC=C1C(=O)O" # aspirin
+	mol = mol_from_smiles(smiles)
+	mg = MolGraph()
+	g = mg.get_networkx_graph(mol)
+	pprint(dict(g.nodes(data=True)))
+	pprint(list(g.edges(data=True)))
 
 	edge_index = th.tensor([[0,1,1],[1,1,0]],dtype=th.long)
 	x = th.tensor([0,1],dtype=th.float)
