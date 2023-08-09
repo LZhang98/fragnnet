@@ -276,18 +276,21 @@ class FragGNN(pl.LightningModule):
 				pred_formula_logprobs,
 				pred_formula_batch_idxs
 			)
-			loss = loss + self.hparams.formula_entropy_weight * formula_e
+			loss = loss + self.hparams.formula_entropy_weight * formula_e \
+				+ self.hparams.formula_normalized_entropy_weight * formula_ne
 			node_e, node_ne = sparse_entropy(
 				pred_node_logprobs,
 				pred_node_batch_idxs
 			)
-			loss = loss + self.hparams.node_entropy_weight * node_e
+			loss = loss + self.hparams.node_entropy_weight * node_e \
+				+ self.hparams.node_normalized_entropy_weight * node_ne
 			node_formula_e, node_formula_ne = sparse_conditional_entropy(
 				pred_node_logprobs,
 				pred_node_formula_logprobs,
 				pred_node_batch_idxs
 			)
-			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e
+			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
+				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
 			loss_d = {
 				"loss": loss,
 				"spec_ce": spec_ce,

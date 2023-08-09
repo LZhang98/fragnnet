@@ -51,4 +51,7 @@ mol_normalization: graph
 frag_normalization: graph
 num_workers: 0
 # int_embedder_tight: True
-mlp_output_format: node_formula #formula
+# mlp_output_format: node_formula #formula
+formula_normalized_entropy_weight: 0.1
+node_normalized_entropy_weight: 0.2
+node_formula_normalized_entropy_weight: 0.3
