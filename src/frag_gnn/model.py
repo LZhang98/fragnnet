@@ -71,6 +71,7 @@ class FragGNN(pl.LightningModule):
 		frag_pool_type: str,
 		mlp_output_format: str,
 		mlp_hidden_size: int,
+		mlp_normalization: str,
 		mlp_dropout: float,
 		mlp_num_layers: int,
 		mlp_use_residuals: bool,
@@ -126,6 +127,7 @@ class FragGNN(pl.LightningModule):
 			frag_pool_type=frag_pool_type,
 			mlp_output_format=mlp_output_format,
 			mlp_hidden_size=mlp_hidden_size,
+			mlp_normalization=mlp_normalization,
 			mlp_dropout=mlp_dropout,
 			mlp_num_layers=mlp_num_layers,
 			mlp_use_residuals=mlp_use_residuals

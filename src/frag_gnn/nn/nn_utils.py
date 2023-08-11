@@ -109,6 +109,7 @@ class JointPredictor(nn.Module):
 		frag_pool_type: str,
 		mlp_output_format: str,
 		mlp_hidden_size: int,
+		mlp_normalization: str,
 		mlp_dropout: float,
 		mlp_num_layers: int,
 		mlp_use_residuals: bool
@@ -165,7 +166,8 @@ class JointPredictor(nn.Module):
 				"hidden_size": mlp_hidden_size,
 				"num_layers": mlp_num_layers,
 				"dropout": mlp_dropout,
-				"use_residuals": mlp_use_residuals
+				"use_residuals": mlp_use_residuals,
+				"normalization": mlp_normalization
 			}
 			self.formula_module = MLPBlocks(**formula_mlp_kwargs)
 		if self.mlp_output_format in ["node_formula"]:
@@ -175,7 +177,8 @@ class JointPredictor(nn.Module):
 				"hidden_size": mlp_hidden_size,
 				"num_layers": mlp_num_layers,
 				"dropout": mlp_dropout,
-				"use_residuals": mlp_use_residuals
+				"use_residuals": mlp_use_residuals,
+				"normalization": mlp_normalization
 			}
 			self.node_module = MLPBlocks(**node_mlp_kwargs)
 		else:
@@ -590,6 +593,7 @@ class MLPBlocks(nn.Module):
 		self,
 		input_size: int,
 		hidden_size: int,
+		normalization: str,
 		dropout: float,
 		num_layers: int,
 		output_size: int = None,
@@ -609,6 +613,16 @@ class MLPBlocks(nn.Module):
 
 		self.use_residuals = use_residuals
 
+		# setup norm
+		if normalization == "batch":
+			norm_mod = nn.BatchNorm1d(hidden_size)
+		elif normalization == "layer":
+			norm_mod = nn.LayerNorm(hidden_size)
+		else:
+			assert normalization == "none", normalization
+			norm_mod = nn.Identity()
+		self.norms = get_clones(norm_mod, num_layers)
+
 	def forward(self, x):
 		output = x
 		output = self.input_layer(x)
@@ -619,6 +633,7 @@ class MLPBlocks(nn.Module):
 			output = layer(output)
 			output = self.dropout_layer(output)
 			output = self.activation(output)
+			output = self.norms[layer_index](output)
 			if self.use_residuals:
 				output = output + old_op
 				old_op = output
