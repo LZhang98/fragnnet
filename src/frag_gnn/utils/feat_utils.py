@@ -461,6 +461,12 @@ def get_mol_fp(mol,morgan,rdkit,maccs):
 	fp = th.as_tensor(np.concatenate(fps,axis=0))
 	return fp
 
+def get_mol_fp_size(morgan,rdkit,maccs):
+
+	mol = Chem.MolFromSmiles("CCO")
+	fp = get_mol_fp(mol,morgan,rdkit,maccs)
+	return fp.shape[0]
+
 def get_mol_graph(mol,atom_feats,bond_feats,pe_embed_k,bigraph):
 
 	mg = MolGraph(

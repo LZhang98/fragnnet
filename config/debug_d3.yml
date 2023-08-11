@@ -47,7 +47,8 @@ auxiliary_scores:
 num_log_train_images: 5
 num_log_val_images: 5
 drop_last: False
-mol_normalization: graph
-frag_normalization: graph
-num_workers: 0
-mlp_normalization: batch
+num_workers: 8
+loss_type: cosine_distance
+# loss_type: cross_entropy
+# loss_vectorized: True
+# mz_bin_res: 0.001

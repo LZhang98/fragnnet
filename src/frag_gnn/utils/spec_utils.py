@@ -274,7 +274,6 @@ def calculate_cosine_similarity(
 		sum_ints=True
 	):
 
-	# true_mzs, true_ints, true_batch_idxs = batched_filter_func(true_mzs,true_ints,true_batch_idxs,ints_thresh,mz_max)
 	true_spec = batched_bin_func(
 		true_mzs,
 		true_ints,
@@ -283,7 +282,6 @@ def calculate_cosine_similarity(
 		mz_bin_res,
 		sum_ints
 	)
-	# pred_mzs, pred_ints, pred_batch_idxs = batched_filter_func(pred_mzs,pred_ints,pred_batch_idxs,ints_thresh,mz_max)
 	pred_spec = batched_bin_func(
 		pred_mzs,
 		pred_ints,

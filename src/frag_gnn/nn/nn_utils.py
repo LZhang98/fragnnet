@@ -15,7 +15,7 @@ import logging
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
 from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax
-from frag_gnn.utils.feat_utils import get_mol_feats_sizes
+from frag_gnn.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
 
 
 def get_clones(module, N):
@@ -81,7 +81,7 @@ def build_pool_module(pool_type: str, node_dim: int):
 	return pool_module
 
 
-class JointPredictor(nn.Module):
+class FragGNNModel(nn.Module):
 
 	def __init__(
 		self,
@@ -656,3 +656,69 @@ def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=np.log(1e-4),dim=-
 	else:
 		return masked_logits
 
+
+class NeimsBlock(nn.Module):
+	""" from the NEIMS paper (uses LeakyReLU instead of ReLU) """
+
+	def __init__(self, in_dim, out_dim, dropout):
+
+		super().__init__()
+		bottleneck_factor = 0.5
+		bottleneck_size = int(round(bottleneck_factor * out_dim))
+		self.in_batch_norm = nn.BatchNorm1d(in_dim)
+		self.in_activation = nn.LeakyReLU()
+		self.in_linear = nn.Linear(in_dim, bottleneck_size)
+		self.out_batch_norm = nn.BatchNorm1d(bottleneck_size)
+		self.out_linear = nn.Linear(bottleneck_size, out_dim)
+		self.out_activation = nn.LeakyReLU()
+		self.dropout = nn.Dropout(p=dropout)
+
+	def forward(self, x):
+
+		h = x
+		h = self.in_batch_norm(h)
+		h = self.in_activation(h)
+		h = self.dropout(h)
+		h = self.in_linear(h)
+		h = self.out_batch_norm(h)
+		h = self.out_activation(h)
+		h = self.out_linear(h)
+		return h
+
+
+def mask_prediction_by_mass(raw_prediction, prec_mass_idx, prec_mass_offset):
+	# adapted from NEIMS
+	# raw_prediction is [B,D], prec_mass_idx is [B]
+
+	max_idx = raw_prediction.shape[1]
+	assert th.all(prec_mass_idx < max_idx)
+	idx = th.arange(max_idx, device=prec_mass_idx.device)
+	mask = (
+		idx.unsqueeze(0) <= (
+			prec_mass_idx.unsqueeze(1) +
+			prec_mass_offset)).float()
+	return mask * raw_prediction
+
+
+def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
+	# adapted from NEIMS
+	# raw_prediction is [B,D], prec_mass_idx is [B]
+
+	batch_size = raw_prediction.shape[0]
+	max_idx = raw_prediction.shape[1]
+	assert th.all(prec_mass_idx < max_idx)
+	rev_prediction = th.flip(raw_prediction, dims=(1,))
+	# convention is to shift right, so we express as negative to go left
+	offset_idx = th.minimum(
+		max_idx * th.ones_like(prec_mass_idx),
+		prec_mass_idx + prec_mass_offset + 1)
+	shifts = - (max_idx - offset_idx)
+	gather_idx = th.arange(
+		max_idx,
+		device=raw_prediction.device).unsqueeze(0).expand(
+		batch_size,
+		max_idx)
+	gather_idx = (gather_idx - shifts.unsqueeze(1)) % max_idx
+	offset_rev_prediction = th.gather(rev_prediction, 1, gather_idx)
+	# you could mask_prediction_by_mass here but it's unnecessary
+	return offset_rev_prediction
