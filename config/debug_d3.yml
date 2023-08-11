@@ -44,14 +44,15 @@ auxiliary_scores:
   - cos_sim
   - wrecall
   - opt_cos_sim
-num_log_train_images: 0 #4
-num_log_val_images: 0 #4
+num_log_train_images: 5
+num_log_val_images: 5
 drop_last: False
 mol_normalization: graph
 frag_normalization: graph
 num_workers: 0
 # int_embedder_tight: True
 # mlp_output_format: node_formula #formula
-formula_normalized_entropy_weight: 0.1
-node_normalized_entropy_weight: 0.2
-node_formula_normalized_entropy_weight: 0.3
+# formula_normalized_entropy_weight: 0.1
+# node_normalized_entropy_weight: 0.2
+# node_formula_normalized_entropy_weight: 0.3
+loss_tolerance_ppm: 0.000005
