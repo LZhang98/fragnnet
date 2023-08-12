@@ -5,9 +5,9 @@ import lightning.pytorch as pl
 from torch.profiler import profile, record_function, ProfilerActivity
 import torch._dynamo as th_dynamo
 
-from frag_gnn.nn.nn_utils import build_lr_scheduler, FragGNNModel
+from frag_gnn.nn.nn_utils import build_lr_scheduler, FragGNNModel, NEIMSModel
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn, get_sparse_conditional_entropy_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall
+from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -67,19 +67,224 @@ class SpectrumPL(pl.LightningModule):
 	
 	def _setup_loss_fn(self):
 
-		raise NotImplementedError
+		# set tolerance
+		if self.hparams.loss_tolerance_ppm is not None:
+			self.tolerance = self.hparams.loss_tolerance_ppm
+			self.relative = True
+		else:
+			assert self.hparams.loss_tolerance_abs is not None
+			self.tolerance = self.hparams.loss_tolerance_abs
+			self.relative = False
+		# cross entropy
+		sparse_ce = get_sparse_cross_entropy_fn(
+			self.hparams.output_distribution,
+			self.hparams.loss_vectorized,
+			self.tolerance,
+			self.relative
+		)
+		sparse_entropy = get_sparse_entropy_fn()
+		sparse_conditional_entropy = get_sparse_conditional_entropy_fn()
+		def sparse_cosine_distance(
+			true_mzs,
+			true_ints,
+			true_batch_idxs,
+			pred_mzs,
+			pred_ints,
+			pred_batch_idxs,
+			**kwargs):
+			# calculate
+			return 1.-calculate_cosine_similarity(
+				true_mzs,
+				th.exp(true_ints),
+				true_batch_idxs,
+				pred_mzs,
+				th.exp(pred_ints),
+				pred_batch_idxs,
+				mz_bin_res=self.hparams.mz_bin_res,
+				mz_max=self.hparams.mz_max,
+				sum_ints=self.hparams.bin_sum_ints,
+				**kwargs
+			)
+		def _loss_fn(
+			true_mzs,
+			true_logprobs,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs,
+			pred_formula_logprobs,
+			pred_formula_batch_idxs,
+			pred_node_logprobs,
+			pred_node_batch_idxs,
+			pred_node_formula_logprobs):
+			spec_ce = sparse_ce(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs
+			)
+			spec_cd = sparse_cosine_distance(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs
+			)
+			if self.hparams.loss_type == "cross_entropy":
+				loss = spec_ce
+			else:
+				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
+				loss = spec_cd
+			formula_e, formula_ne = sparse_entropy(
+				pred_formula_logprobs,
+				pred_formula_batch_idxs
+			)
+			loss = loss + self.hparams.formula_entropy_weight * formula_e \
+				+ self.hparams.formula_normalized_entropy_weight * formula_ne
+			node_e, node_ne = sparse_entropy(
+				pred_node_logprobs,
+				pred_node_batch_idxs
+			)
+			loss = loss + self.hparams.node_entropy_weight * node_e \
+				+ self.hparams.node_normalized_entropy_weight * node_ne
+			node_formula_e, node_formula_ne = sparse_conditional_entropy(
+				pred_node_logprobs,
+				pred_node_formula_logprobs,
+				pred_node_batch_idxs
+			)
+			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
+				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
+			loss_d = {
+				"loss": loss,
+				"spec_cd": spec_cd,
+				"spec_ce": spec_ce,
+				"formula_e": formula_e,
+				"formula_ne": formula_ne,
+				"node_e": node_e,
+				"node_ne": node_ne,
+				"node_formula_e": node_formula_e,
+				"node_formula_ne": node_formula_ne
+			}
+			return loss_d
+		self.loss_fn = _loss_fn
 
 	def _setup_spec_fns(self):
 
-		raise NotImplementedError
+		def _filter_func(mzs, ints, batch_idxs):
+			return batched_filter_func(mzs,ints,batch_idxs,self.hparams.ints_thresh,self.hparams.mz_max)
+		self.filter_func = _filter_func
+		def _bin_func(mzs, ints, batch_idxs):
+			return batched_bin_func(mzs,ints,batch_idxs,self.hparams.mz_max,self.hparams.mz_bin_res,self.hparams.bin_sum_ints)
+		self.bin_func = _bin_func
+		self.ints_transform_func = get_ints_transform_func(self.hparams.ints_transform)
+		self.ints_untransform_func = get_ints_untransform_func(self.hparams.ints_transform)
+		self.ints_normalize_func = batched_l1_normalize
 
 	def _setup_metric_fns(self):
 
-		raise NotImplementedError
+		self.metric_min_max = {"loss": "min"}
+		self.metric_fns = {}
+		if "cos_sim" in self.hparams.auxiliary_scores:
+			def _cos_sim(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform
+				true_ints = self.ints_untransform_func(true_ints)
+				pred_ints = self.ints_untransform_func(pred_ints)
+				# calculate
+				return calculate_cosine_similarity(
+					true_mzs,
+					true_ints,
+					true_batch_idxs,
+					pred_mzs,
+					pred_ints,
+					pred_batch_idxs,
+					mz_bin_res=self.hparams.mz_bin_res,
+					mz_max=self.hparams.mz_max,
+					sum_ints=self.hparams.bin_sum_ints
+				)
+			self.metric_fns["cos_sim"] = _cos_sim
+			self.metric_min_max["cos_sim"] = "max"
+		if "wrecall" in self.hparams.auxiliary_scores:
+			def _wrecall(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform
+				true_ints = self.ints_untransform_func(true_ints)
+				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
+				pred_ints = self.ints_untransform_func(pred_ints)
+				pred_ints = self.ints_normalize_func(pred_ints,pred_batch_idxs)
+				# calculate
+				return calculate_weighted_recall(
+					true_mzs,
+					true_ints,
+					true_batch_idxs,
+					pred_mzs,
+					pred_ints,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+			self.metric_fns["wrecall"] = _wrecall
+			self.metric_min_max["wrecall"] = "max"
+		if "opt_cos_sim" in self.hparams.auxiliary_scores:
+			def _opt_cos_sim(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform
+				true_ints = self.ints_untransform_func(true_ints)
+				pred_ints = self.ints_untransform_func(pred_ints)
+				# calculate
+				return calculate_optimal_cosine_similarity(
+					true_mzs,
+					true_ints,
+					true_batch_idxs,
+					pred_mzs,
+					pred_ints,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
+			self.metric_min_max["opt_cos_sim"] = "max"
+		self.metric_names = list(self.metric_min_max.keys())
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
-		raise NotImplementedError
+		# filter
+		spec_mzs, spec_ints, spec_batch_idxs = self.filter_func(
+			spec_mzs,
+			spec_ints,
+			spec_batch_idxs
+		)
+		# transform
+		spec_ints = self.ints_transform_func(spec_ints)
+		# renormalize
+		spec_ints = self.ints_normalize_func(
+			spec_ints,
+			spec_batch_idxs
+		)
+		# log
+		spec_ints = safelog(spec_ints)
+		return spec_mzs, spec_ints, spec_batch_idxs
 
 	def predict_step(self,**batch_kwargs):
 		
@@ -93,7 +298,69 @@ class SpectrumPL(pl.LightningModule):
 
 	def _common_step(self, batch, split="train"):
 
-		raise NotImplementedError
+		# preprocess spec
+		batch_size = batch["batch_size"]
+		unique_id = batch["spec_unique_id"]
+		smiles = batch["mol_smiles"]
+		spec_mzs = batch["spec_mzs"]
+		spec_ints = batch["spec_ints"]
+		spec_batch_idxs = batch["spec_batch_idxs"]
+		# print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
+		spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
+			spec_mzs,
+			spec_ints,
+			spec_batch_idxs
+		)
+
+		pred = self.forward(**batch)
+
+		both = {
+			"true_mzs": spec_mzs,
+			"true_logprobs": spec_ints,
+			"true_batch_idxs": spec_batch_idxs,
+			**pred
+		}
+
+		loss_d = self.loss_fn(**both)
+		loss = loss_d["loss"]
+		mean_loss = th.mean(loss,dim=0)
+		# log losses and entropies
+		with th.no_grad():
+			for k,v in loss_d.items():
+				mean_v = th.mean(v,dim=0)
+				self.log(
+					f"{split}_{k}_batch",
+					mean_v.item(),
+					batch_size=batch_size,
+					on_epoch=True
+				)
+		results = {
+			"unique_id": unique_id,
+			"smiles": smiles,
+			"loss": loss,
+			"mean_loss": mean_loss,
+			**both
+		}
+		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
+		with th.no_grad():
+			for metric_name,metric_fn in self.metric_fns.items():
+				metric = metric_fn(
+					spec_mzs,
+					th.exp(spec_ints),
+					spec_batch_idxs,
+					pred["pred_mzs"],
+					th.exp(pred["pred_logprobs"]),
+					pred["pred_batch_idxs"]
+				)
+				mean_metric = th.mean(metric,dim=0)
+				self.log(
+					f"{split}_{metric_name}_batch",
+					mean_metric,
+					batch_size=batch_size,
+					on_epoch=True
+				)
+				results[metric_name] = metric
+		return results
 
 	def training_step(self, batch, batch_idx):
 
@@ -383,6 +650,28 @@ class FragGNNPL(SpectrumPL):
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
 
+class NEIMSPL(SpectrumPL):
+
+	def _setup_model(self):
+
+		self.model = NEIMSModel(
+			mol_fingerprint_morgan=self.hparams.mol_fingerprint_morgan,
+			mol_fingerprint_rdkit=self.hparams.mol_fingerprint_rdkit,
+			mol_fingerprint_maccs=self.hparams.mol_fingerprint_maccs,
+			mlp_hidden_size=self.hparams.mlp_hidden_size,
+			mlp_dropout=self.hparams.mlp_dropout,
+			mlp_num_layers=self.hparams.mlp_num_layers,
+			mlp_use_residuals=self.hparams.mlp_use_residuals,
+			mz_max=self.hparams.mz_max,
+			mz_bin_res=self.hparams.mz_bin_res,
+			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
+			ff_bidirectional=self.hparams.ff_bidirectional,
+		)
+		# compile
+		if self.hparams.compile:
+			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
+			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
+
 	def _setup_loss_fn(self):
 
 		# set tolerance
@@ -393,36 +682,8 @@ class FragGNNPL(SpectrumPL):
 			assert self.hparams.loss_tolerance_abs is not None
 			self.tolerance = self.hparams.loss_tolerance_abs
 			self.relative = False
-		# cross entropy
-		sparse_ce = get_sparse_cross_entropy_fn(
-			self.hparams.output_distribution,
-			self.hparams.loss_vectorized,
-			self.tolerance,
-			self.relative
-		)
-		sparse_entropy = get_sparse_entropy_fn()
-		sparse_conditional_entropy = get_sparse_conditional_entropy_fn()
-		def sparse_cosine_distance(
-			true_mzs,
-			true_ints,
-			true_batch_idxs,
-			pred_mzs,
-			pred_ints,
-			pred_batch_idxs,
-			**kwargs):
-			# calculate
-			return 1.-calculate_cosine_similarity(
-				true_mzs,
-				th.exp(true_ints),
-				true_batch_idxs,
-				pred_mzs,
-				th.exp(pred_ints),
-				pred_batch_idxs,
-				mz_bin_res=self.hparams.mz_bin_res,
-				mz_max=self.hparams.mz_max,
-				sum_ints=self.hparams.bin_sum_ints,
-				**kwargs
-			)
+		# define loss
+		assert self.hparams.loss_type in ["cosine_distance","cosine_distance_dense"], self.hparams.loss_type
 		def _loss_fn(
 			true_mzs,
 			true_logprobs,
@@ -430,246 +691,31 @@ class FragGNNPL(SpectrumPL):
 			pred_mzs,
 			pred_logprobs,
 			pred_batch_idxs,
-			pred_formula_logprobs,
-			pred_formula_batch_idxs,
-			pred_node_logprobs,
-			pred_node_batch_idxs,
-			pred_node_formula_logprobs):
-			spec_ce = sparse_ce(
-				true_mzs,
-				true_logprobs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_logprobs,
-				pred_batch_idxs
-			)
-			spec_cd = sparse_cosine_distance(
-				true_mzs,
-				true_logprobs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_logprobs,
-				pred_batch_idxs
-			)
-			if self.hparams.loss_type == "cross_entropy":
-				loss = spec_ce
-			else:
-				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
-				loss = spec_cd
-			formula_e, formula_ne = sparse_entropy(
-				pred_formula_logprobs,
-				pred_formula_batch_idxs
-			)
-			loss = loss + self.hparams.formula_entropy_weight * formula_e \
-				+ self.hparams.formula_normalized_entropy_weight * formula_ne
-			node_e, node_ne = sparse_entropy(
-				pred_node_logprobs,
-				pred_node_batch_idxs
-			)
-			loss = loss + self.hparams.node_entropy_weight * node_e \
-				+ self.hparams.node_normalized_entropy_weight * node_ne
-			node_formula_e, node_formula_ne = sparse_conditional_entropy(
-				pred_node_logprobs,
-				pred_node_formula_logprobs,
-				pred_node_batch_idxs
-			)
-			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
-				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
-			loss_d = {
-				"loss": loss,
-				"spec_cd": spec_cd,
-				"spec_ce": spec_ce,
-				"formula_e": formula_e,
-				"formula_ne": formula_ne,
-				"node_e": node_e,
-				"node_ne": node_ne,
-				"node_formula_e": node_formula_e,
-				"node_formula_ne": node_formula_ne
-			}
-			return loss_d
-		self.loss_fn = _loss_fn
-
-	def _setup_spec_fns(self):
-
-		def _filter_func(mzs, ints, batch_idxs):
-			return batched_filter_func(mzs,ints,batch_idxs,self.hparams.ints_thresh,self.hparams.mz_max)
-		self.filter_func = _filter_func
-		def _bin_func(mzs, ints, batch_idxs):
-			return batched_bin_func(mzs,ints,batch_idxs,self.hparams.mz_bin_res,self.hparams.bin_sum_ints)
-		self.bin_func = _bin_func
-		self.ints_transform_func = get_ints_transform_func(self.hparams.ints_transform)
-		self.ints_untransform_func = get_ints_untransform_func(self.hparams.ints_transform)
-		self.ints_normalize_func = batched_l1_normalize
-
-	def _setup_metric_fns(self):
-
-		self.metric_min_max = {"loss": "min"}
-		self.metric_fns = {}
-		if "cos_sim" in self.hparams.auxiliary_scores:
-			def _cos_sim(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				return calculate_cosine_similarity(
+			pred_specs,
+			**kwargs):
+			if self.hparams.loss_type == "cosine_distance":
+				spec_cd = 1.-calculate_cosine_similarity(
 					true_mzs,
-					true_ints,
+					th.exp(true_logprobs),
 					true_batch_idxs,
 					pred_mzs,
-					pred_ints,
+					th.exp(pred_logprobs),
 					pred_batch_idxs,
 					mz_bin_res=self.hparams.mz_bin_res,
 					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.bin_sum_ints,
-					**kwargs
+					sum_ints=self.hparams.bin_sum_ints
 				)
-			self.metric_fns["cos_sim"] = _cos_sim
-			self.metric_min_max["cos_sim"] = "max"
-		if "wrecall" in self.hparams.auxiliary_scores:
-			def _wrecall(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				pred_ints = self.ints_normalize_func(pred_ints,pred_batch_idxs)
-				# calculate
-				return calculate_weighted_recall(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative,
-					**kwargs
-				)
-			self.metric_fns["wrecall"] = _wrecall
-			self.metric_min_max["wrecall"] = "max"
-		if "opt_cos_sim" in self.hparams.auxiliary_scores:
-			def _opt_cos_sim(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				return calculate_optimal_cosine_similarity(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					**kwargs
-				)
-			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
-			self.metric_min_max["opt_cos_sim"] = "max"
-		self.metric_names = list(self.metric_min_max.keys())
-
-	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
-
-		# filter
-		spec_mzs, spec_ints, spec_batch_idxs = self.filter_func(
-			spec_mzs,
-			spec_ints,
-			spec_batch_idxs
-		)
-		# transform
-		spec_ints = self.ints_transform_func(spec_ints)
-		# renormalize
-		spec_ints = self.ints_normalize_func(
-			spec_ints,
-			spec_batch_idxs
-		)
-		# log
-		spec_ints = safelog(spec_ints)
-		return spec_mzs, spec_ints, spec_batch_idxs
-
-	def _common_step(self, batch, split="train"):
-
-		# preprocess spec
-		batch_size = batch["batch_size"]
-		unique_id = batch["spec_unique_id"]
-		smiles = batch["mol_smiles"]
-		spec_mzs = batch["spec_mzs"]
-		spec_ints = batch["spec_ints"]
-		spec_batch_idxs = batch["spec_batch_idxs"]
-		# print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
-		spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
-			spec_mzs,
-			spec_ints,
-			spec_batch_idxs
-		)
-
-		pred = self.forward(**batch)
-
-		both = {
-			"true_mzs": spec_mzs,
-			"true_logprobs": spec_ints,
-			"true_batch_idxs": spec_batch_idxs,
-			**pred
-		}
-
-		loss_d = self.loss_fn(**both)
-		loss = loss_d["loss"]
-		mean_loss = th.mean(loss,dim=0)
-		# log losses and entropies
-		with th.no_grad():
-			for k,v in loss_d.items():
-				mean_v = th.mean(v,dim=0)
-				self.log(
-					f"{split}_{k}_batch",
-					mean_v.item(),
-					batch_size=batch_size,
-					on_epoch=True
-				)
-		results = {
-			"unique_id": unique_id,
-			"smiles": smiles,
-			"loss": loss,
-			"mean_loss": mean_loss,
-			**both
-		}
-		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
-		with th.no_grad():
-			for metric_name,metric_fn in self.metric_fns.items():
-				metric = metric_fn(
-					spec_mzs,
-					th.exp(spec_ints),
-					spec_batch_idxs,
-					pred["pred_mzs"],
-					th.exp(pred["pred_logprobs"]),
-					pred["pred_batch_idxs"]
-				)
-				mean_metric = th.mean(metric,dim=0)
-				self.log(
-					f"{split}_{metric_name}_batch",
-					mean_metric,
-					batch_size=batch_size,
-					on_epoch=True
-				)
-				results[metric_name] = metric
-		return results
+			else:
+				# _pred_specs = self.bin_func(pred_mzs,th.exp(pred_logprobs),pred_batch_idxs)
+				true_specs = self.bin_func(true_mzs,th.exp(true_logprobs),true_batch_idxs)
+				spec_cd = 1.-binned_cosine_similarity(true_specs,pred_specs)
+			loss = spec_cd
+			loss_d = {
+				"loss": loss,
+				"spec_cd": spec_cd
+			}
+			return loss_d
+		self.loss_fn = _loss_fn
 
 def get_default_model_params():
 	

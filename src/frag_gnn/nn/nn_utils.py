@@ -14,7 +14,7 @@ import logging
 
 from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
-from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax
+from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax, safelog
 from frag_gnn.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
 
 
@@ -468,6 +468,120 @@ class FragGNNModel(nn.Module):
 			"pred_node_formula_logprobs": frag_node_formula_logprobs,
 		}
 
+		return out_d
+
+class NEIMSModel(nn.Module):
+
+	def __init__(
+		self,
+		mol_fingerprint_morgan: bool,
+		mol_fingerprint_rdkit: bool,
+		mol_fingerprint_maccs: bool,
+		mlp_hidden_size: int,
+		mlp_dropout: float,
+		mlp_num_layers: int,
+		mlp_use_residuals: bool,
+		mz_max: int,
+		mz_bin_res: float,
+		ff_prec_mz_offset: int,
+		ff_bidirectional: bool
+	):
+
+		super().__init__()
+		self.mol_fingerprint_morgan = mol_fingerprint_morgan
+		self.mol_fingerprint_rdkit = mol_fingerprint_rdkit
+		self.mol_fingerprint_maccs = mol_fingerprint_maccs
+		self.mz_max = mz_max
+		self.mz_bin_res = mz_bin_res
+		self.prec_mz_offset = ff_prec_mz_offset
+		self.bidirectional = ff_bidirectional
+		self.use_residuals = mlp_use_residuals
+		self._compute_input_size()
+		self._compute_output_size()
+
+		self.in_layer = nn.Linear(self.input_size, mlp_hidden_size)
+		self.ff_layers = nn.ModuleList([])
+		# self.ff_layers.append(nn.Linear(mlp_hidden_size, mlp_hidden_size))
+		for i in range(mlp_num_layers):
+			self.ff_layers.append(
+				NeimsBlock(
+					mlp_hidden_size,
+					mlp_hidden_size,
+					mlp_dropout))
+		if self.bidirectional:
+			# assumes gating, mass masking
+			self.forw_out_layer = nn.Linear(mlp_hidden_size, self.output_size)
+			self.rev_out_layer = nn.Linear(mlp_hidden_size, self.output_size)
+			self.out_gate = nn.Sequential(
+				*[nn.Linear(mlp_hidden_size, self.output_size), nn.Sigmoid()])
+		else:
+			self.out_layer = nn.Linear(mlp_hidden_size, self.output_size)
+			self.out_gate = nn.Sequential(
+				*[nn.Linear(mlp_hidden_size, self.output_size), nn.Sigmoid()])
+		self.out_activation = nn.ReLU()
+		self.out_normalization = lambda x: F.normalize(x, p=1, dim=1)
+
+	def _compute_input_size(self):
+
+		self.input_size = get_mol_fp_size(self.mol_fingerprint_morgan, self.mol_fingerprint_rdkit, self.mol_fingerprint_maccs)
+
+	def _compute_output_size(self):
+
+		self.mz_bins = th.arange(self.mz_bin_res,self.mz_max+self.mz_bin_res,self.mz_bin_res)
+		self.mzs = self.mz_bins-0.5*self.mz_bin_res
+		self.output_size = self.mzs.shape[0]
+
+	def _prec_mz_to_idx(self,prec_mz):
+
+		prec_mz_idx = th.bucketize(prec_mz,self.mz_bins.to(prec_mz.device),right=True)
+		assert th.max(prec_mz_idx) < self.output_size, (prec_mz_idx,self.output_size)
+		return prec_mz_idx
+
+	def forward(
+		self,
+		mol_fingerprint: th.Tensor, 
+		spec_prec_mz: th.Tensor, 
+		**kwargs
+	):
+
+		prec_mz_idxs = self._prec_mz_to_idx(spec_prec_mz)
+		# reshape fingerprints (they are flattened)
+		mol_fingerprint = mol_fingerprint.reshape(-1, self.input_size)
+		fh = self.in_layer(mol_fingerprint)
+		for layer in self.ff_layers:
+			if self.use_residuals:
+				fh = fh + layer(fh)
+			else:
+				fh = layer(fh)
+		if self.bidirectional:
+			ff = self.forw_out_layer(fh)
+			fr = reverse_prediction(
+				self.rev_out_layer(fh),
+				prec_mz_idxs,
+				self.prec_mz_offset)
+			fg = self.out_gate(fh)
+			fo = ff * fg + fr * (1. - fg)
+			fo = mask_prediction_by_mass(
+				fo, prec_mz_idxs, self.prec_mz_offset)
+		else:
+			# apply output layer
+			fo = self.out_layer(fh)
+			# apply gating
+			fg = self.out_gate(fh)
+			fo = fg * fo
+		fo = self.out_activation(fo)
+		spec = self.out_normalization(fo)
+		mask = spec>0.
+		pred_mzs = (self.mzs.to(mask.device).unsqueeze(0).expand(spec.shape[0],-1))[mask]
+		pred_logprobs = safelog(spec)[mask]
+		pred_batch_idxs = th.arange(spec.shape[0],device=spec.device).unsqueeze(1).expand(-1,spec.shape[1])[mask]
+		pred_specs = spec
+		out_d = {
+			"pred_mzs": pred_mzs,
+			"pred_logprobs": pred_logprobs,
+			"pred_batch_idxs": pred_batch_idxs,
+			"pred_specs": pred_specs
+		}
 		return out_d
 
 class GNN(nn.Module):

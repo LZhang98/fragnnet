@@ -108,12 +108,15 @@ def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
 		dim_size=num_bins*batch_size
 	)
 	bin_spec = bin_spec.reshape(batch_size,num_bins)
+	zeros_mask = th.max(bin_spec,dim=1,keepdim=True)==0.
+	# bin_spec = bin_spec + EPS*(~zeros_mask).float()
+	# assert not th.any(th.all(bin_spec==0.,dim=1))
 	if th.any(th.all(bin_spec==0.,dim=1)):
 		print("> warning: bin_spec is all zeros!")
 		mask = th.zeros_like(bin_spec,dtype=th.bool)
-		mask[:,-1] = 1.
+		mask[:,0] = 1.
 		mask = mask*th.all(bin_spec==0.,dim=1,keepdim=True)
-		bin_spec[mask] = 1.
+		bin_spec = bin_spec + mask.float()
 	return bin_spec
 
 

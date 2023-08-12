@@ -13,6 +13,7 @@ from copy import deepcopy
 import scipy
 
 from frag_gnn.frag.frag_utils import CANONICAL_ELEMENT_ORDER, NODE_FEAT_TO_IDX, EDGE_FEAT_TO_IDX, get_node_feats, get_edge_feats
+from frag_gnn.utils.data_utils import make_morgan_fingerprint, make_rdkit_fingerprint, make_maccs_fingerprint
 
 # TODO: remove this registry
 
@@ -458,7 +459,7 @@ def get_mol_fp(mol,morgan,rdkit,maccs):
 	if maccs:
 		fp = make_maccs_fingerprint(mol)
 		fps.append(fp)
-	fp = th.as_tensor(np.concatenate(fps,axis=0))
+	fp = th.as_tensor(np.concatenate(fps,axis=0),dtype=th.float)
 	return fp
 
 def get_mol_fp_size(morgan,rdkit,maccs):
