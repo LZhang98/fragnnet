@@ -622,7 +622,8 @@ class MPNN(nn.Module):
 		num_step_set2set=6,
 		**kwargs
 	):
-		"""MPNN.
+		"""Neural Message Passing for Quantum Chemistry
+			https://arxiv.org/abs/1704.01212
 			WIP
 		Args:
 			input_size (int): Size of edge features into the graph
@@ -641,6 +642,8 @@ class MPNN(nn.Module):
 		edge_network = nn.Sequential(
 			nn.Linear(edge_feats_size, edge_hidden_dim), nn.ReLU(),
 			nn.Linear(edge_hidden_dim, node_hidden_dim * node_hidden_dim))
+		
+		# MPNN 
 		self.conv = pyg.nn.NNConv(node_hidden_dim,
 			node_hidden_dim,
 			edge_network,
@@ -650,7 +653,7 @@ class MPNN(nn.Module):
 
 		self.set2set = pyg.nn.Set2Set(node_hidden_dim,processing_steps=num_step_set2set)
 		self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
-		self.lin2 = nn.Linear(node_hidden_dim, output_size)
+		#self.lin2 = nn.Linear(node_hidden_dim, output_size)
 			
 	def forward(self, x, batch_index, edge_index, edge_attr):
 		"""forward.
@@ -669,6 +672,78 @@ class MPNN(nn.Module):
 		out = self.lin2(out)
 		return out
 	
+class GAT(nn.Module):
+	"""Basic Graph attention networks. https://arxiv.org/abs/1710.10903
+		WIP
+	Args:
+		input_size (int): Size of edge features into the graph
+		hidden_size (int): Hidden size
+		edge_feats (int): Number of edge feats. Must be onehot!
+		node_feats (int): Num of node feats (default 74)
+		num_step_message_passing (int): Number of message passing steps
+		normalization (str): normalization type (batch, layer, none)
+		dropout
+	"""
+
+	def __init__(self,
+			node_feats_size: int,
+			edge_feats_size: int,
+			output_size: int,
+			node_hidden_dim=64,
+			edge_hidden_dim=128,
+			num_step_message_passing=6,
+			num_step_set2set=6,
+			**kwargs):
+		
+		super(GAT, self).__init__()
+		self.num_step_message_passing = num_step_message_passing
+		self.lin0 = nn.Linear(node_input_dim, node_hidden_dim)
+		self.conv = pyg.nn.conv.GATConv(node_hidden_dim, node_hidden_dim)
+		
+		self.set2set = pyg.nn.Set2Set(node_hidden_dim, processing_steps=num_step_set2set)
+		self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
+		self.lin2 = nn.Linear(node_hidden_dim, output_dim)
+
+	def forward(self, data):
+		out = F.relu(self.lin0(data.x))
+		
+		for i in range(self.num_step_message_passing):
+			out = F.relu(self.conv(out, data.edge_index))
+   
+		out = self.set2set(out, data.batch)
+		out = F.relu(self.lin1(out))
+		out = self.lin2(out)
+			   
+		return out
+	
+
+class GATv2(GAT):
+	"""Basic Graph attention networks. https://arxiv.org/abs/1710.10903
+		WIP
+	Args:
+		input_size (int): Size of edge features into the graph
+		hidden_size (int): Hidden size
+		edge_feats (int): Number of edge feats. Must be onehot!
+		node_feats (int): Num of node feats (default 74)
+		num_step_message_passing (int): Number of message passing steps
+		normalization (str): normalization type (batch, layer, none)
+		dropout
+	"""
+
+	def __init__(self,
+			node_feats_size: int,
+			edge_feats_size: int,
+			output_size: int,
+			node_hidden_dim=64,
+			edge_hidden_dim=128,
+			num_step_message_passing=6,
+			num_step_set2set=6,
+			**kwargs):
+		
+		super(GATv2, self).__init__()
+		self.conv = pyg.nn.conv.GATv2Conv(node_hidden_dim, node_hidden_dim)
+
+
 class MLPBlocks(nn.Module):
 	"""Just Good Old Multilayer perceptron with residuals
 		layer->dropout->activation(Relu)
