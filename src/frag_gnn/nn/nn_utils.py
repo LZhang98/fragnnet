@@ -532,6 +532,28 @@ class GNN(nn.Module):
 				dropout=self.dropout,
 				normalization=self.normalization
 			)
+		elif self.gnn_type == "GAT":
+			self.gnn = GAT(
+				edge_feats_size=self.edge_feats_size,
+				node_feats_size=self.node_feats_size,
+				node_hidden_dim=self.hidden_size, 
+			    num_step_message_passing =self.num_layers,
+				num_step_set2set=self.num_layers,
+				output_dim = self.hidden_size, # TODO this need to hook up correctly
+				gat_heads = 1, # TODO this need to hook up correctly
+				gat_dropout=self.dropout
+			)
+		elif self.gnn_type == "GATv2":
+			self.gnn = GATv2(
+				edge_feats_size=self.edge_feats_size,
+				node_feats_size=self.node_feats_size,
+				node_hidden_dim=self.hidden_size, 
+				num_step_message_passing =self.num_layers,
+				num_step_set2set=self.num_layers,
+				output_dim = self.hidden_size, # TODO this need to hook up correctly
+				gat_heads = 1, # TODO this need to hook up correctly
+				gat_dropout=self.dropout
+			)
 		else:
 			raise NotImplementedError(self.gnn_type)
 
@@ -558,8 +580,7 @@ class GINE(nn.Module):
 			input_size (int): Size of edge features into the graph
 			hidden_size (int): Hidden size
 			edge_feats (int): Number of edge feats. Must be onehot!
-			node_feats (int): Num of node feats (default 74)
-			num_step_message_passing (int): Number of message passing steps
+			num_layers (int): Number of message passing steps
 			normalization (str): normalization type (batch, layer, none)
 			dropout
 		"""
@@ -635,8 +656,6 @@ class MPNN(nn.Module):
 			dropout
 		"""
 		super().__init__()
-
-
 		self.num_step_message_passing = num_step_message_passing
 		self.lin0 = nn.Linear(node_feats_size, node_hidden_dim)
 		edge_network = nn.Sequential(
@@ -653,7 +672,7 @@ class MPNN(nn.Module):
 
 		self.set2set = pyg.nn.Set2Set(node_hidden_dim,processing_steps=num_step_set2set)
 		self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
-		#self.lin2 = nn.Linear(node_hidden_dim, output_size)
+		self.lin2 = nn.Linear(node_hidden_dim, output_size)
 			
 	def forward(self, x, batch_index, edge_index, edge_attr):
 		"""forward.
@@ -673,8 +692,8 @@ class MPNN(nn.Module):
 		return out
 	
 class GAT(nn.Module):
-	"""Basic Graph attention networks. https://arxiv.org/abs/1710.10903
-		WIP
+	"""Graph attention networks. https://arxiv.org/abs/1710.10903 
+		This implementation 
 	Args:
 		input_size (int): Size of edge features into the graph
 		hidden_size (int): Hidden size
@@ -685,38 +704,42 @@ class GAT(nn.Module):
 		dropout
 	"""
 
-	def __init__(self,
-			node_feats_size: int,
-			edge_feats_size: int,
-			output_size: int,
-			node_hidden_dim=64,
-			edge_hidden_dim=128,
-			num_step_message_passing=6,
-			num_step_set2set=6,
-			**kwargs):
-		
+	def __init__(
+		self,
+		node_feats_size: int,
+		edge_feats_size: int,
+		node_hidden_dim: int,
+		num_step_message_passing: int,
+		num_step_set2set: int,
+		output_dim: int,
+		gat_heads: int = 1,
+		gat_dropout: float = 0.0,
+		**kwargs
+	):
+
 		super(GAT, self).__init__()
 		self.num_step_message_passing = num_step_message_passing
-		self.lin0 = nn.Linear(node_input_dim, node_hidden_dim)
-		self.conv = pyg.nn.conv.GATConv(node_hidden_dim, node_hidden_dim)
+		self.lin0 = nn.Linear(node_feats_size, node_hidden_dim)
+		self.conv = pyg.nn.conv.GATConv(node_hidden_dim, node_hidden_dim, 
+				  heads  = gat_heads,
+				  edge_dim=edge_feats_size, dropout=gat_dropout)
 		
 		self.set2set = pyg.nn.Set2Set(node_hidden_dim, processing_steps=num_step_set2set)
 		self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
 		self.lin2 = nn.Linear(node_hidden_dim, output_dim)
 
-	def forward(self, data):
-		out = F.relu(self.lin0(data.x))
+	def forward(self, x, batch_index, edge_index, edge_attr):
+		out = F.relu(self.lin0(x))
 		
 		for i in range(self.num_step_message_passing):
-			out = F.relu(self.conv(out, data.edge_index))
+			out = F.relu(self.conv(out, edge_index, edge_attr=edge_attr))
    
-		out = self.set2set(out, data.batch)
+		out = self.set2set(out, batch_index)
 		out = F.relu(self.lin1(out))
 		out = self.lin2(out)
 			   
 		return out
 	
-
 class GATv2(GAT):
 	"""Basic Graph attention networks. https://arxiv.org/abs/1710.10903
 		WIP
@@ -730,19 +753,24 @@ class GATv2(GAT):
 		dropout
 	"""
 
-	def __init__(self,
-			node_feats_size: int,
-			edge_feats_size: int,
-			output_size: int,
-			node_hidden_dim=64,
-			edge_hidden_dim=128,
-			num_step_message_passing=6,
-			num_step_set2set=6,
-			**kwargs):
+	def __init__(
+		self,
+		node_feats_size: int,
+		edge_feats_size: int,
+		node_hidden_dim: int,
+		num_step_message_passing: int,
+		num_step_set2set: int,
+		output_dim: int,
+		gat_heads: int = 1,
+		gat_dropout: float = 0.0,
+		**kwargs
+	):	
+		super(GATv2, self).__init__(node_feats_size, edge_feats_size, node_hidden_dim, 
+			      num_step_message_passing,num_step_set2set,output_dim,gat_heads,gat_dropout,**kwargs)
 		
-		super(GATv2, self).__init__()
-		self.conv = pyg.nn.conv.GATv2Conv(node_hidden_dim, node_hidden_dim)
-
+		self.conv = pyg.nn.conv.GATv2Conv(node_hidden_dim, node_hidden_dim, 
+			heads  = gat_heads,
+			edge_dim=edge_feats_size, dropout=gat_dropout)
 
 class MLPBlocks(nn.Module):
 	"""Just Good Old Multilayer perceptron with residuals
