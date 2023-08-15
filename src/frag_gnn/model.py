@@ -67,109 +67,7 @@ class SpectrumPL(pl.LightningModule):
 	
 	def _setup_loss_fn(self):
 
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
-		# cross entropy
-		sparse_ce = get_sparse_cross_entropy_fn(
-			self.hparams.output_distribution,
-			self.hparams.loss_vectorized,
-			self.tolerance,
-			self.relative
-		)
-		sparse_entropy = get_sparse_entropy_fn()
-		sparse_conditional_entropy = get_sparse_conditional_entropy_fn()
-		def sparse_cosine_distance(
-			true_mzs,
-			true_ints,
-			true_batch_idxs,
-			pred_mzs,
-			pred_ints,
-			pred_batch_idxs,
-			**kwargs):
-			# calculate
-			return 1.-calculate_cosine_similarity(
-				true_mzs,
-				th.exp(true_ints),
-				true_batch_idxs,
-				pred_mzs,
-				th.exp(pred_ints),
-				pred_batch_idxs,
-				mz_bin_res=self.hparams.mz_bin_res,
-				mz_max=self.hparams.mz_max,
-				sum_ints=self.hparams.bin_sum_ints,
-				**kwargs
-			)
-		def _loss_fn(
-			true_mzs,
-			true_logprobs,
-			true_batch_idxs,
-			pred_mzs,
-			pred_logprobs,
-			pred_batch_idxs,
-			pred_formula_logprobs,
-			pred_formula_batch_idxs,
-			pred_node_logprobs,
-			pred_node_batch_idxs,
-			pred_node_formula_logprobs):
-			spec_ce = sparse_ce(
-				true_mzs,
-				true_logprobs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_logprobs,
-				pred_batch_idxs
-			)
-			spec_cd = sparse_cosine_distance(
-				true_mzs,
-				true_logprobs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_logprobs,
-				pred_batch_idxs
-			)
-			if self.hparams.loss_type == "cross_entropy":
-				loss = spec_ce
-			else:
-				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
-				loss = spec_cd
-			formula_e, formula_ne = sparse_entropy(
-				pred_formula_logprobs,
-				pred_formula_batch_idxs
-			)
-			loss = loss + self.hparams.formula_entropy_weight * formula_e \
-				+ self.hparams.formula_normalized_entropy_weight * formula_ne
-			node_e, node_ne = sparse_entropy(
-				pred_node_logprobs,
-				pred_node_batch_idxs
-			)
-			loss = loss + self.hparams.node_entropy_weight * node_e \
-				+ self.hparams.node_normalized_entropy_weight * node_ne
-			node_formula_e, node_formula_ne = sparse_conditional_entropy(
-				pred_node_logprobs,
-				pred_node_formula_logprobs,
-				pred_node_batch_idxs
-			)
-			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
-				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
-			loss_d = {
-				"loss": loss,
-				"spec_cd": spec_cd,
-				"spec_ce": spec_ce,
-				"formula_e": formula_e,
-				"formula_ne": formula_ne,
-				"node_e": node_e,
-				"node_ne": node_ne,
-				"node_formula_e": node_formula_e,
-				"node_formula_ne": node_formula_ne
-			}
-			return loss_d
-		self.loss_fn = _loss_fn
+		raise NotImplementedError
 
 	def _setup_spec_fns(self):
 
@@ -649,6 +547,112 @@ class FragGNNPL(SpectrumPL):
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
+
+	def _setup_loss_fn(self):
+
+				# set tolerance
+		if self.hparams.loss_tolerance_ppm is not None:
+			self.tolerance = self.hparams.loss_tolerance_ppm
+			self.relative = True
+		else:
+			assert self.hparams.loss_tolerance_abs is not None
+			self.tolerance = self.hparams.loss_tolerance_abs
+			self.relative = False
+		# cross entropy
+		sparse_ce = get_sparse_cross_entropy_fn(
+			self.hparams.output_distribution,
+			self.hparams.loss_vectorized,
+			self.tolerance,
+			self.relative
+		)
+		sparse_entropy = get_sparse_entropy_fn()
+		sparse_conditional_entropy = get_sparse_conditional_entropy_fn()
+		def sparse_cosine_distance(
+			true_mzs,
+			true_ints,
+			true_batch_idxs,
+			pred_mzs,
+			pred_ints,
+			pred_batch_idxs,
+			**kwargs):
+			# calculate
+			return 1.-calculate_cosine_similarity(
+				true_mzs,
+				th.exp(true_ints),
+				true_batch_idxs,
+				pred_mzs,
+				th.exp(pred_ints),
+				pred_batch_idxs,
+				mz_bin_res=self.hparams.mz_bin_res,
+				mz_max=self.hparams.mz_max,
+				sum_ints=self.hparams.bin_sum_ints,
+				**kwargs
+			)
+		def _loss_fn(
+			true_mzs,
+			true_logprobs,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs,
+			pred_formula_logprobs,
+			pred_formula_batch_idxs,
+			pred_node_logprobs,
+			pred_node_batch_idxs,
+			pred_node_formula_logprobs):
+			spec_ce = sparse_ce(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs
+			)
+			spec_cd = sparse_cosine_distance(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs
+			)
+			if self.hparams.loss_type == "cross_entropy":
+				loss = spec_ce
+			else:
+				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
+				loss = spec_cd
+			formula_e, formula_ne = sparse_entropy(
+				pred_formula_logprobs,
+				pred_formula_batch_idxs
+			)
+			loss = loss + self.hparams.formula_entropy_weight * formula_e \
+				+ self.hparams.formula_normalized_entropy_weight * formula_ne
+			node_e, node_ne = sparse_entropy(
+				pred_node_logprobs,
+				pred_node_batch_idxs
+			)
+			loss = loss + self.hparams.node_entropy_weight * node_e \
+				+ self.hparams.node_normalized_entropy_weight * node_ne
+			node_formula_e, node_formula_ne = sparse_conditional_entropy(
+				pred_node_logprobs,
+				pred_node_formula_logprobs,
+				pred_node_batch_idxs
+			)
+			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
+				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
+			loss_d = {
+				"loss": loss,
+				"spec_cd": spec_cd,
+				"spec_ce": spec_ce,
+				"formula_e": formula_e,
+				"formula_ne": formula_ne,
+				"node_e": node_e,
+				"node_ne": node_ne,
+				"node_formula_e": node_formula_e,
+				"node_formula_ne": node_formula_ne
+			}
+			return loss_d
+		self.loss_fn = _loss_fn
 
 class NEIMSPL(SpectrumPL):
 

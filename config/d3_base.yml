@@ -1,4 +1,4 @@
-wandb_name: d3_bb_pe5
+wandb_name: d3_base
 split_dp: data/split/d3_h4_isoTrue
 frag_dp: data/frag/d3_h4_isoTrue/dags
 num_depth: 4
@@ -8,25 +8,11 @@ train_batch_size: 32
 eval_batch_size: 32
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
-lr: 0.0001
+lr: 0.0004
 accelerator: gpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
 lr_schedule: False
-lr_warmup_steps: 0
-lr_decay_steps: 100
-lr_decay_rate: 0.9
 debug_overfit: False
-formula_entropy_weight: 0.0
-node_entropy_weight: 0.0
-node_formula_entropy_weight: 0.0
-frag_pyg_node_feats:
-  - cc
-  - base_formula
-  - depth
-frag_pyg_edge_feats:
-  - cc
-  - base_formula
 precision: bf16-mixed
-mol_pyg_pe_embed_k: 5
