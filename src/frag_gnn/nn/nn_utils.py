@@ -534,8 +534,8 @@ class GNN(nn.Module):
 			)
 		elif self.gnn_type == "GAT":
 			self.gnn = GAT(
-				edge_feats_size=self.edge_feats_size,
 				node_feats_size=self.node_feats_size,
+				edge_feats_size=self.edge_feats_size,
 				node_hidden_dim=self.hidden_size, 
 			    num_step_message_passing =self.num_layers,
 				num_step_set2set=self.num_layers,
@@ -545,9 +545,9 @@ class GNN(nn.Module):
 			)
 		elif self.gnn_type == "GATv2":
 			self.gnn = GATv2(
+				node_hidden_dim=self.hidden_size, 
 				edge_feats_size=self.edge_feats_size,
 				node_feats_size=self.node_feats_size,
-				node_hidden_dim=self.hidden_size, 
 				num_step_message_passing =self.num_layers,
 				num_step_set2set=self.num_layers,
 				output_dim = self.hidden_size, # TODO this need to hook up correctly
@@ -568,6 +568,7 @@ class GINE(nn.Module):
 	def __init__(
 		self,
 		hidden_size: int,
+		node_feats_size: int,
 		edge_feats_size: int,
 		num_layers: int,
 		dropout: float,
@@ -575,10 +576,10 @@ class GINE(nn.Module):
 		**kwargs
 	):
 		"""GINE.
-			Strategies for Pre-training Graph Neural Networks https://arxiv.org/abs/1905.12265
+			Strategies for Pre-training Graph Neural Networks 
+			https://arxiv.org/abs/1905.12265
 		Args:
-			input_size (int): Size of edge features into the graph
-			hidden_size (int): Hidden size
+			hidden_size (int): Hidden layer size
 			edge_feats (int): Number of edge feats. Must be onehot!
 			num_layers (int): Number of message passing steps
 			normalization (str): normalization type (batch, layer, none)
@@ -645,7 +646,6 @@ class MPNN(nn.Module):
 	):
 		"""Neural Message Passing for Quantum Chemistry
 			https://arxiv.org/abs/1704.01212
-			WIP
 		Args:
 			input_size (int): Size of edge features into the graph
 			hidden_size (int): Hidden size
@@ -690,18 +690,10 @@ class MPNN(nn.Module):
 		out = F.relu(self.lin1(out))
 		out = self.lin2(out)
 		return out
-	
+
 class GAT(nn.Module):
-	"""Graph attention networks. https://arxiv.org/abs/1710.10903 
-		This implementation 
-	Args:
-		input_size (int): Size of edge features into the graph
-		hidden_size (int): Hidden size
-		edge_feats (int): Number of edge feats. Must be onehot!
-		node_feats (int): Num of node feats (default 74)
-		num_step_message_passing (int): Number of message passing steps
-		normalization (str): normalization type (batch, layer, none)
-		dropout
+	""" Graph attention networks. https://arxiv.org/abs/1710.10903 
+		With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets) https://arxiv.org/abs/1511.06391
 	"""
 
 	def __init__(
@@ -716,7 +708,17 @@ class GAT(nn.Module):
 		gat_dropout: float = 0.0,
 		**kwargs
 	):
-
+		"""_summary_
+		Args:
+			node_feats_size (int): _description_
+			edge_feats_size (int): _description_
+			node_hidden_dim (int): _description_
+			num_step_message_passing (int): _description_
+			num_step_set2set (int): _description_
+			output_dim (int): _description_
+			gat_heads (int, optional): _description_. Defaults to 1.
+			gat_dropout (float, optional): _description_. Defaults to 0.0.
+		"""
 		super(GAT, self).__init__()
 		self.num_step_message_passing = num_step_message_passing
 		self.lin0 = nn.Linear(node_feats_size, node_hidden_dim)
@@ -724,33 +726,34 @@ class GAT(nn.Module):
 				  heads  = gat_heads,
 				  edge_dim=edge_feats_size, dropout=gat_dropout)
 		
-		self.set2set = pyg.nn.Set2Set(node_hidden_dim, processing_steps=num_step_set2set)
-		self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
-		self.lin2 = nn.Linear(node_hidden_dim, output_dim)
+		if num_step_set2set:
+			self.set2set = pyg.nn.Set2Set(node_hidden_dim, processing_steps=num_step_set2set)
+			# output of set2set is twice the dimensionality as the input
+			self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
+			self.lin2 = nn.Linear(node_hidden_dim, output_dim)
+		else:
+			self.set2set = None
+			self.lin1 =  None
+			self.lin2 = None
 
 	def forward(self, x, batch_index, edge_index, edge_attr):
 		out = F.relu(self.lin0(x))
 		
 		for i in range(self.num_step_message_passing):
 			out = F.relu(self.conv(out, edge_index, edge_attr=edge_attr))
-   
-		out = self.set2set(out, batch_index)
-		out = F.relu(self.lin1(out))
-		out = self.lin2(out)
-			   
+
+		# we don't need set2set for dag
+		# but it maybe helful for molucle net
+		if self.set2set is not None:
+			out = self.set2set(out, batch_index)
+			out = F.relu(self.lin1(out))
+			out = self.lin2(out)
+				
 		return out
 	
 class GATv2(GAT):
-	"""Basic Graph attention networks. https://arxiv.org/abs/1710.10903
-		WIP
-	Args:
-		input_size (int): Size of edge features into the graph
-		hidden_size (int): Hidden size
-		edge_feats (int): Number of edge feats. Must be onehot!
-		node_feats (int): Num of node feats (default 74)
-		num_step_message_passing (int): Number of message passing steps
-		normalization (str): normalization type (batch, layer, none)
-		dropout
+	"""Graph attention networks v2. (How Attentive are Graph Attention Networks?  https://arxiv.org/abs/2105.14491)
+		With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets https://arxiv.org/abs/1511.06391)
 	"""
 
 	def __init__(
@@ -765,6 +768,18 @@ class GATv2(GAT):
 		gat_dropout: float = 0.0,
 		**kwargs
 	):	
+		"""_summary_
+
+		Args:
+			node_feats_size (int): _description_
+			edge_feats_size (int): _description_
+			node_hidden_dim (int): _description_
+			num_step_message_passing (int): _description_
+			num_step_set2set (int): _description_
+			output_dim (int): _description_
+			gat_heads (int, optional): _description_. Defaults to 1.
+			gat_dropout (float, optional): _description_. Defaults to 0.0.
+		"""
 		super(GATv2, self).__init__(node_feats_size, edge_feats_size, node_hidden_dim, 
 			      num_step_message_passing,num_step_set2set,output_dim,gat_heads,gat_dropout,**kwargs)
 		
