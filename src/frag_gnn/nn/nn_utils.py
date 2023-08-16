@@ -532,7 +532,7 @@ class GNN(nn.Module):
 				dropout=self.dropout,
 				normalization=self.normalization
 			)
-		elif self.gnn_type == "GAT":
+		elif self.gnn_type == "GAT" or self.gnn_type == "GATv2":
 			self.gnn = GAT(
 				node_feats_size=self.node_feats_size,
 				edge_feats_size=self.edge_feats_size,
@@ -541,18 +541,8 @@ class GNN(nn.Module):
 				num_step_set2set=self.num_layers,
 				output_dim = self.hidden_size, # TODO this need to hook up correctly
 				gat_heads = 1, # TODO this need to hook up correctly
-				gat_dropout=self.dropout
-			)
-		elif self.gnn_type == "GATv2":
-			self.gnn = GATv2(
-				node_hidden_dim=self.hidden_size, 
-				edge_feats_size=self.edge_feats_size,
-				node_feats_size=self.node_feats_size,
-				num_step_message_passing =self.num_layers,
-				num_step_set2set=self.num_layers,
-				output_dim = self.hidden_size, # TODO this need to hook up correctly
-				gat_heads = 1, # TODO this need to hook up correctly
-				gat_dropout=self.dropout
+				gat_dropout=self.dropout,
+				is_v2 = True if self.gnn_type == "GATv2" else False
 			)
 		else:
 			raise NotImplementedError(self.gnn_type)
@@ -646,14 +636,6 @@ class MPNN(nn.Module):
 	):
 		"""Neural Message Passing for Quantum Chemistry
 			https://arxiv.org/abs/1704.01212
-		Args:
-			input_size (int): Size of edge features into the graph
-			hidden_size (int): Hidden size
-			edge_feats (int): Number of edge feats. Must be onehot!
-			node_feats (int): Num of node feats (default 74)
-			num_step_message_passing (int): Number of message passing steps
-			normalization (str): normalization type (batch, layer, none)
-			dropout
 		"""
 		super().__init__()
 		self.num_step_message_passing = num_step_message_passing
@@ -693,6 +675,7 @@ class MPNN(nn.Module):
 
 class GAT(nn.Module):
 	""" Graph attention networks. https://arxiv.org/abs/1710.10903 
+		Graph attention networks v2. (How Attentive are Graph Attention Networks?  https://arxiv.org/abs/2105.14491)
 		With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets) https://arxiv.org/abs/1511.06391
 	"""
 
@@ -706,6 +689,8 @@ class GAT(nn.Module):
 		output_dim: int,
 		gat_heads: int = 1,
 		gat_dropout: float = 0.0,
+		is_v2: bool = True,
+		is_concat: bool = True,
 		**kwargs
 	):
 		"""_summary_
@@ -718,14 +703,28 @@ class GAT(nn.Module):
 			output_dim (int): _description_
 			gat_heads (int, optional): _description_. Defaults to 1.
 			gat_dropout (float, optional): _description_. Defaults to 0.0.
+			is_v2 (bool, optional). use v2 GATConv, Defaults to True
+			is_concat (bool, optional). concatenated multihead attetion, Defaults to True
 		"""
 		super(GAT, self).__init__()
 		self.num_step_message_passing = num_step_message_passing
 		self.lin0 = nn.Linear(node_feats_size, node_hidden_dim)
-		self.conv = pyg.nn.conv.GATConv(node_hidden_dim, node_hidden_dim, 
-				  heads  = gat_heads,
-				  edge_dim=edge_feats_size, dropout=gat_dropout)
-		
+
+		gat_output_dim = node_hidden_dim//gat_heads if is_concat else node_hidden_dim
+
+		if is_concat and node_hidden_dim % gat_heads != 0:
+			raise ValueError(f"Ensure that the number of output channels of "
+                             f"'GAT' (got '{node_hidden_dim}') is divisible "
+                             f"by the number of heads (got '{gat_heads}')")	
+
+		# hook up to GATCOnv
+		GATConv_fn = pyg.nn.conv.GATConv if not is_v2 else pyg.nn.conv.GATv2Conv
+		self.conv = GATConv_fn(node_hidden_dim, gat_output_dim, 
+				heads  = gat_heads,
+				edge_dim=edge_feats_size, 
+				dropout=gat_dropout,
+				concat=is_concat)
+
 		if num_step_set2set:
 			self.set2set = pyg.nn.Set2Set(node_hidden_dim, processing_steps=num_step_set2set)
 			# output of set2set is twice the dimensionality as the input
@@ -751,42 +750,6 @@ class GAT(nn.Module):
 				
 		return out
 	
-class GATv2(GAT):
-	"""Graph attention networks v2. (How Attentive are Graph Attention Networks?  https://arxiv.org/abs/2105.14491)
-		With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets https://arxiv.org/abs/1511.06391)
-	"""
-
-	def __init__(
-		self,
-		node_feats_size: int,
-		edge_feats_size: int,
-		node_hidden_dim: int,
-		num_step_message_passing: int,
-		num_step_set2set: int,
-		output_dim: int,
-		gat_heads: int = 1,
-		gat_dropout: float = 0.0,
-		**kwargs
-	):	
-		"""_summary_
-
-		Args:
-			node_feats_size (int): _description_
-			edge_feats_size (int): _description_
-			node_hidden_dim (int): _description_
-			num_step_message_passing (int): _description_
-			num_step_set2set (int): _description_
-			output_dim (int): _description_
-			gat_heads (int, optional): _description_. Defaults to 1.
-			gat_dropout (float, optional): _description_. Defaults to 0.0.
-		"""
-		super(GATv2, self).__init__(node_feats_size, edge_feats_size, node_hidden_dim, 
-			      num_step_message_passing,num_step_set2set,output_dim,gat_heads,gat_dropout,**kwargs)
-		
-		self.conv = pyg.nn.conv.GATv2Conv(node_hidden_dim, node_hidden_dim, 
-			heads  = gat_heads,
-			edge_dim=edge_feats_size, dropout=gat_dropout)
-
 class MLPBlocks(nn.Module):
 	"""Just Good Old Multilayer perceptron with residuals
 		layer->dropout->activation(Relu)
