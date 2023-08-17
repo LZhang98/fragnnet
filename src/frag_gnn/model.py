@@ -6,7 +6,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 import torch._dynamo as th_dynamo
 
 from frag_gnn.nn.nn_utils import build_lr_scheduler, FragGNNModel, NEIMSModel
-from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn, get_sparse_conditional_entropy_fn
+from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn, get_sparse_conditional_entropy_fn, get_edge_loss_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
@@ -95,6 +95,8 @@ class SpectrumPL(pl.LightningModule):
 				pred_batch_idxs,
 				**kwargs):
 				# untransform
+				if th.isnan(true_ints).any() or th.isnan(pred_ints).any():
+					import pdb; pdb.set_trace()
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
@@ -559,14 +561,16 @@ class FragGNNPL(SpectrumPL):
 			self.tolerance = self.hparams.loss_tolerance_abs
 			self.relative = False
 		# cross entropy
-		sparse_ce = get_sparse_cross_entropy_fn(
+		sparse_ce_fn = get_sparse_cross_entropy_fn(
 			self.hparams.output_distribution,
 			self.hparams.loss_vectorized,
 			self.tolerance,
 			self.relative
 		)
-		sparse_entropy = get_sparse_entropy_fn()
-		sparse_conditional_entropy = get_sparse_conditional_entropy_fn()
+		sparse_entropy_fn = get_sparse_entropy_fn()
+		sparse_conditional_entropy_fn = get_sparse_conditional_entropy_fn()
+		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
+		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
 		def sparse_cosine_distance(
 			true_mzs,
 			true_ints,
@@ -589,21 +593,30 @@ class FragGNNPL(SpectrumPL):
 		def edge_loss(
 			pred_edge_logprobs,
 			pred_edge_h_diffs,
+			pred_edge_h_range_masks,
 			pred_edge_h_logprobs,
 			pred_edge_batch_idxs):
-			# TODO: add support for different kinds of cost functions
-			edge_h_costs = pred_edge_h_diffs**2 # can apply loss function (as long as 0 -> 0)
-			edge_h_costs = edge_h_costs.reshape(edge_h_costs.shape[0],-1,1)
-			edge_h_probs = th.exp(pred_edge_h_logprobs).reshape(pred_edge_h_logprobs.shape[0],1,-1)
-			edge_h_avg_cost = (edge_h_probs @ edge_h_costs).squeeze(1).squeeze(1)
-			edge_h_avg_cost_w = pred_edge_logprobs + safelog(edge_h_avg_cost)
-			# batch_size = th.max(pred_edge_batch_idxs)+1
-			loss = scatter_logsumexp(
-				edge_h_avg_cost_w,
+			edge_h_range_costs = edge_h_range_loss_fn(pred_edge_h_diffs * pred_edge_h_range_masks.float())
+			edge_h_range_costs = edge_h_range_costs.reshape(edge_h_range_costs.shape[0],-1)
+			edge_h_transfer_costs = edge_h_transfer_loss_fn(pred_edge_h_diffs)
+			edge_h_transfer_costs = edge_h_transfer_costs.reshape(edge_h_transfer_costs.shape[0],-1)
+			###
+			# edge_h_costs = (edge_h_range_costs + edge_h_transfer_costs).reshape(edge_h_range_costs.shape[0],-1)
+			edge_h_logprobs = pred_edge_h_logprobs.reshape(pred_edge_h_logprobs.shape[0],-1)
+			# print(-th.mean(th.sum(th.exp(edge_h_logprobs)*edge_h_logprobs,dim=1)))
+			edge_h_range_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_range_costs),dim=1)
+			edge_h_transfer_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_transfer_costs),dim=1)
+			h_range_loss = scatter_logsumexp(
+				pred_edge_logprobs + edge_h_range_avg_cost,
 				pred_edge_batch_idxs,
 				dim=0
 			)
-			return loss
+			h_transfer_loss = scatter_logsumexp(
+				pred_edge_logprobs + edge_h_transfer_avg_cost,
+				pred_edge_batch_idxs,
+				dim=0
+			)
+			return h_range_loss, h_transfer_loss
 		def _loss_fn(
 			true_mzs,
 			true_logprobs,
@@ -618,9 +631,10 @@ class FragGNNPL(SpectrumPL):
 			pred_node_formula_logprobs,
 			pred_edge_logprobs,
 			pred_edge_h_diffs,
+			pred_edge_h_range_masks,
 			pred_edge_h_logprobs,
 			pred_edge_batch_idxs):
-			spec_ce = sparse_ce(
+			spec_ce = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
@@ -641,32 +655,34 @@ class FragGNNPL(SpectrumPL):
 			else:
 				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
 				loss = spec_cd
-			formula_e, formula_ne = sparse_entropy(
+			formula_e, formula_ne = sparse_entropy_fn(
 				pred_formula_logprobs,
 				pred_formula_batch_idxs
 			)
 			loss = loss + self.hparams.formula_entropy_weight * formula_e \
 				+ self.hparams.formula_normalized_entropy_weight * formula_ne
-			node_e, node_ne = sparse_entropy(
+			node_e, node_ne = sparse_entropy_fn(
 				pred_node_logprobs,
 				pred_node_batch_idxs
 			)
 			loss = loss + self.hparams.node_entropy_weight * node_e \
 				+ self.hparams.node_normalized_entropy_weight * node_ne
-			node_formula_e, node_formula_ne = sparse_conditional_entropy(
+			node_formula_e, node_formula_ne = sparse_conditional_entropy_fn(
 				pred_node_logprobs,
 				pred_node_formula_logprobs,
 				pred_node_batch_idxs
 			)
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
-			el = edge_loss(
+			r_el, t_el = edge_loss(
 				pred_edge_logprobs,
 				pred_edge_h_diffs,
+				pred_edge_h_range_masks,
 				pred_edge_h_logprobs,
 				pred_edge_batch_idxs
 			)
-			loss = loss + self.hparams.edge_loss_weight * el
+			loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
+				+ self.hparams.edge_h_transfer_loss_weight * t_el
 			loss_d = {
 				"loss": loss,
 				"spec_cd": spec_cd,
@@ -677,7 +693,8 @@ class FragGNNPL(SpectrumPL):
 				"node_ne": node_ne,
 				"node_formula_e": node_formula_e,
 				"node_formula_ne": node_formula_ne,
-				"edge_loss": el
+				"edge_h_range_loss": r_el,
+				"edge_h_transfer_loss": t_el
 			}
 			return loss_d
 		self.loss_fn = _loss_fn
