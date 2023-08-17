@@ -84,7 +84,6 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		dim=0,
 		dim_size=batch_size
 	)
-	# ce = th.mean(ce)
 	return ce
 
 

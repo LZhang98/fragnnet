@@ -1,8 +1,8 @@
 wandb_name: debug_d3
 wandb_tags:
   - debug
-split_dp: data/split/d3_h4_isoTrue
-frag_dp: data/frag/d3_h4_isoTrue/dags
+split_dp: data/split/d3_h4_isoTrue_v2
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4
 num_hs: 4
 spec_preprocess: False #True
@@ -18,8 +18,8 @@ gradient_clip_val: 5.0
 lr: 0.0001
 accelerator: gpu
 devices: 1
-min_epochs: 2 #100
-max_epochs: 2 #100
+min_epochs: 10 #100
+max_epochs: 10 #100
 lr_schedule: False
 lr_warmup_steps: 0
 lr_decay_steps: 10
@@ -33,9 +33,12 @@ frag_pyg_node_feats:
   - cc
   - base_formula
   - depth
+  - h_formulae_idx
+  - h_counts
 frag_pyg_edge_feats:
   - cc
   - base_formula
+  - h_range
 profiler: none
 compile: True
 log_every_n_steps: 0
@@ -43,8 +46,19 @@ auxiliary_scores:
   - cos_sim
   - wrecall
   - opt_cos_sim
-num_log_train_images: 0 #4
-num_log_val_images: 0 #4
+num_log_train_images: 0
+num_log_val_images: 0
 drop_last: False
-mol_normalization: graph
-frag_normalization: graph
+num_workers: 0
+edge_loss_weight: 10.0
+# loss_type: cosine_distance
+# # mode_type: frag_gnn
+# model_type: neims
+# mol_fingerprint: True
+# mol_pyg: False
+# frag_pyg: False
+# mlp_num_layers: 5
+# mlp_hidden_size: 2000
+# mlp_dropout: 0.1
+# ints_transform: none #log10t3
+# mz_bin_res: 1.0 #0.1

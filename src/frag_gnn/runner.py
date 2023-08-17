@@ -25,7 +25,7 @@ import wandb
 import glob
 import shutil
 
-from frag_gnn.model import FragGNN, get_default_model_params
+from frag_gnn.model import FragGNNPL, NEIMSPL, get_default_model_params
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
 from frag_gnn.dataset import SpecMolFragDataset
@@ -139,7 +139,12 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# setup model
 	logging.info("setup model")
-	model = FragGNN(**config_d)
+	if config_d["model_type"] == "frag_gnn":
+		model = FragGNNPL(**config_d)
+	elif config_d["model_type"] == "neims":
+		model = NEIMSPL(**config_d)
+	else:
+		raise ValueError(config_d["model_type"])
 	model.train()
 
 	# setup callbacks

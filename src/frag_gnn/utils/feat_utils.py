@@ -13,6 +13,7 @@ from copy import deepcopy
 import scipy
 
 from frag_gnn.frag.frag_utils import CANONICAL_ELEMENT_ORDER, NODE_FEAT_TO_IDX, EDGE_FEAT_TO_IDX, get_node_feats, get_edge_feats
+from frag_gnn.utils.data_utils import make_morgan_fingerprint, make_rdkit_fingerprint, make_maccs_fingerprint
 
 # TODO: remove this registry
 
@@ -458,8 +459,14 @@ def get_mol_fp(mol,morgan,rdkit,maccs):
 	if maccs:
 		fp = make_maccs_fingerprint(mol)
 		fps.append(fp)
-	fp = th.as_tensor(np.concatenate(fps,axis=0))
+	fp = th.as_tensor(np.concatenate(fps,axis=0),dtype=th.float)
 	return fp
+
+def get_mol_fp_size(morgan,rdkit,maccs):
+
+	mol = Chem.MolFromSmiles("CCO")
+	fp = get_mol_fp(mol,morgan,rdkit,maccs)
+	return fp.shape[0]
 
 def get_mol_graph(mol,atom_feats,bond_feats,pe_embed_k,bigraph):
 
@@ -471,7 +478,7 @@ def get_mol_graph(mol,atom_feats,bond_feats,pe_embed_k,bigraph):
 	mol_pyg = mg.get_pyg_graph(mol,bigraph=bigraph)
 	return mol_pyg
 
-def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph,include_h_formulae_idx=True):
+def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph):
 
 	device = dag_pyg.x.device
 	# cast
@@ -482,8 +489,6 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph,include_h_for
 	edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
 	num_nodes = dag_pyg.num_nodes
 	# select node features
-	if include_h_formulae_idx and "h_formulae_idx" not in frag_node_feats:
-		frag_node_feats.append("h_formulae_idx")
 	_x = []
 	_node_feat_idxs = [0]
 	_node_feat_size = 0
@@ -492,6 +497,7 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph,include_h_for
 			_x_cur = get_node_feats(x,node_feat_idxs[0],feat)
 			_x.append(_x_cur)
 			_node_feat_size += _x_cur.shape[1]
+			# print(feat,feat_idx,_node_feat_size)
 		_node_feat_idxs.append(_node_feat_size)
 	_x = th.cat(_x,dim=1)
 	_node_feat_idxs = th.tensor(_node_feat_idxs,device=device,dtype=th.int64).reshape(1,-1)
@@ -502,20 +508,25 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph,include_h_for
 	_edge_feat_size = 0
 	for feat, feat_idx in EDGE_FEAT_TO_IDX.items():
 		if feat in frag_edge_feats:
-			_edge_attr_cur = get_edge_feats(edge_attr,edge_feat_idxs[0],feat)
+			if feat == "complement":
+				_edge_attr_cur = th.zeros(edge_attr.shape[0],1,device=device,dtype=th.int64)
+			else:
+				_edge_attr_cur = get_edge_feats(edge_attr,edge_feat_idxs[0],feat)
 			_edge_attr.append(_edge_attr_cur)
 			_edge_feat_size += _edge_attr_cur.shape[1]
+			# print(feat,feat_idx,_edge_feat_size)
 		_edge_feat_idxs.append(_edge_feat_size)
 	_edge_attr = th.cat(_edge_attr,dim=1)
 	_edge_feat_idxs = th.tensor(_edge_feat_idxs,device=device,dtype=th.int64).reshape(1,-1)
 	# convert to undirected
 	if bigraph:
-		_edge_index, _edge_attr = pyg.utils.to_undirected(
-			_edge_index, 
-			_edge_attr, 
-			num_nodes,
-			reduce="mean"
-		)
+		_edge_index_c = th.stack([_edge_index[1],_edge_index[0]],dim=0)
+		assert not th.any(th.all(_edge_index==_edge_index_c,dim=0),dim=0)
+		_edge_attr_c = _edge_attr.clone()
+		if "complement" in frag_edge_feats:
+			_edge_attr_c[:,-1] = 1 - _edge_attr_c[:,-1]
+		_edge_index = th.cat([_edge_index,_edge_index_c],dim=1)
+		_edge_attr = th.cat([_edge_attr,_edge_attr_c],dim=0)
 	# create pyg object
 	dag_pyg = pyg.data.Data(
 		x=_x,
@@ -583,16 +594,14 @@ def random_walk_pe(g, k):
 
 if __name__ == "__main__":
 
-	# import rdkit
-	# import rdkit.Chem as Chem
-	# from pprint import pprint
+	from frag_gnn.utils.data_utils import mol_from_smiles
 
-	# smiles = "CC(=O)OC1=CC=CC=C1C(=O)O" # aspirin
-	# mol = Chem.MolFromSmiles(smiles)
-	# mg = MolGraph()
-	# g = mg.get_networkx_graph(mol)
-	# pprint(dict(g.nodes(data=True)))
-	# pprint(list(g.edges(data=True)))
+	smiles = "CC(=O)OC1=CC=CC=C1C(=O)O" # aspirin
+	mol = mol_from_smiles(smiles)
+	mg = MolGraph()
+	g = mg.get_networkx_graph(mol)
+	pprint(dict(g.nodes(data=True)))
+	pprint(list(g.edges(data=True)))
 
 	edge_index = th.tensor([[0,1,1],[1,1,0]],dtype=th.long)
 	x = th.tensor([0,1],dtype=th.float)

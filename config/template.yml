@@ -49,9 +49,12 @@ frag_pyg_node_feats:
   - cc
   - base_formula
   - depth
+  - h_formulae_idx
+  # - h_counts
 frag_pyg_edge_feats:
   - cc
   - base_formula
+  # - h_range
 frag_pyg_bigraph: True
 frag_num_isotopes: 1
 frag_formula_peak_mzs: True
@@ -60,10 +63,12 @@ frag_compressed: True
 frag_preload: False
 frag_preprocess: False
 # model
+model_type: frag_gnn
 num_depth: 5
 num_hs: 4
 num_elements: 12
 int_embedder: abs-sines
+int_embedder_tight: False
 mol_hidden_size: 256
 mol_num_layers: 4
 mol_gnn_type: GINE
@@ -76,10 +81,14 @@ frag_gnn_type: GINE
 frag_dropout: 0.0
 frag_normalization: batch
 frag_pool_type: none
+mlp_output_format: formula
 mlp_hidden_size: 256
 mlp_dropout: 0.0
+mlp_normalization: none
 mlp_num_layers: 2
 mlp_use_residuals: True
+ff_prec_mz_offset: 0 #5
+ff_bidirectional: True
 # other
 lr: 0.0001
 lr_schedule: False
@@ -89,6 +98,7 @@ lr_warmup_steps: 1000
 lr_decay_steps: 5000
 optimizer: adamw
 output_distribution: gaussian
+loss_type: cross_entropy
 loss_vectorized: False
 loss_tolerance_ppm: 0.00001
 loss_tolerance_abs: #0.001
@@ -121,6 +131,10 @@ log_every_n_steps: 0
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
 node_formula_entropy_weight: 0.0
+formula_normalized_entropy_weight: 0.0
+node_normalized_entropy_weight: 0.0
+node_formula_normalized_entropy_weight: 0.0
+edge_loss_weight: 0.0
 seed: 420
 detect_anomaly: False
 automatic_optimization: True
