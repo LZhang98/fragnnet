@@ -65,7 +65,7 @@ class ZerosAggregation(nn.Module):
 		return 0.*agg
 
 
-def build_pool_module(pool_type: str, node_dim: int):
+def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
 	"""medthos build pooling layer for given pool_type and dim
 		node dim is required for attention layer. 
 		if pool type is not one of 'sum','mean','max','attention', return ZerosAggregation
@@ -90,6 +90,11 @@ def build_pool_module(pool_type: str, node_dim: int):
 				nn.ReLU(),
 				nn.Linear(node_dim, 1)
 			)
+		)
+	elif pool_type == "set2set":
+		pool_module = nn.Sequential(
+			pyg.nn.Set2Set(node_dim,processing_steps=num_step_set2set),
+			nn.Linear(2 * node_dim, node_dim),
 		)
 	else:
 		assert pool_type == "none", pool_type
