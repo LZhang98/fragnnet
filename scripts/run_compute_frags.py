@@ -36,12 +36,13 @@ def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes
 
 		print(f"node edges by depth: {dag_d['dag_num_edges_by_depth']}")
 		print(f"node node by depth: {dag_d['dag_num_nodes_by_depth']}")
-	# dag_d["dag_num_nodes_by_depth"] = { k:edges_min_depth.count(k) for k in range(reached_depth+1)} 
 
 		print(f"is directed = {dag_d['is_directed']}")
 		dag_memory = get_pyg_memory_usage(dag)
 		print(f"memory = {dag_memory/1e6} MB")
-	#print(f"idx to forumla = {dag_d['idx_to_formula']}")
+	
+		# print(dag.node_feat_idxs)
+		# print(dag.edge_feat_idxs)
 	return dag_d
 
 if __name__ == "__main__":

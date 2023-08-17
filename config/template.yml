@@ -49,9 +49,12 @@ frag_pyg_node_feats:
   - cc
   - base_formula
   - depth
+  - h_formulae_idx
+  # - h_counts
 frag_pyg_edge_feats:
   - cc
   - base_formula
+  # - h_range
 frag_pyg_bigraph: True
 frag_num_isotopes: 1
 frag_formula_peak_mzs: True
@@ -131,6 +134,7 @@ node_formula_entropy_weight: 0.0
 formula_normalized_entropy_weight: 0.0
 node_normalized_entropy_weight: 0.0
 node_formula_normalized_entropy_weight: 0.0
+edge_loss_weight: 0.0
 seed: 420
 detect_anomaly: False
 automatic_optimization: True

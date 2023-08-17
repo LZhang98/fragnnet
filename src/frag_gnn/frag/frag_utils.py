@@ -351,7 +351,7 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 				,formula_strs:bool=False
 				,bitmask:bool=True
 				,base_formula = None) ->dict[int,str]|dict[int,np.ndarray]:
-	"""given a connected component, comupute all forumla within give h shift
+	"""given a connected component, comupute all formula within give h shift
 
 	Args:
 		cc (list|np.ndarray): connected component
@@ -396,17 +396,19 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 	floor = max(floor,num_hs_prior-max_h_transfer)
 	cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
 
-	delta_h_to_formula = {}
+	delta_h_to_formula, delta_h_to_h_count = {}, {}
 
 	if formula_strs:
 		formula_template, formual_no_h = formula_arr_to_str(base_formula, get_h_template=True)
 
 	for delta_h in range(-max_h_transfer,max_h_transfer+1):
 		h = num_hs_prior + delta_h
+		# delta_h_to_h_count[delta_h] = h
 		if h < floor or h > cap:
 			# special invalid formula
 			formula = np.zeros_like(base_formula)
 			formula_str = ""
+			delta_h_to_h_count[delta_h] = -1
 		else:
 			formula = np.copy(base_formula)
 			formula[ELEMENT_TO_IDX["H"]] = h
@@ -415,54 +417,11 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 				formula_str = formual_no_h
 			else:
 				formula_str = formula_template.format(h)
+			delta_h_to_h_count[delta_h] = h
 		if formula_strs:
 			formula = formula_str
 		delta_h_to_formula[delta_h] = formula
-	return delta_h_to_formula
-
-def compute_approximate_formulae(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER,return_counts=False):
-	"""
-	Note: this assumes fragments are fully defined by their node cover,
-	not their edges. This might result in some undercounting.
-	Note: make sure which cc format is passed in there, this should not use bitmask
-	"""
-
-	bonds = mol_d["bonds"] # never mutated
-	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
-	ve_arr = np.copy(mol_d["ve_arr"])
-	sbond_arr = np.copy(mol_d["sbond_arr"])
-	num_hs = mol_d["num_hs"]
-	hs_arr = mol_d["hs_arr"]
-	elem_idxs = mol_d["elem_idxs"]
-	bond_mask_arr = mol_d["bond_mask_arr"]
-	formulae_to_counts = {}
-	for cc in list(set(ccs)):
-		base_formula = cc_bitmask_to_formula_arr(cc,elem_idxs)
-		sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-		cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
-		floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
-		assert floor <= cap, (floor,cap,cc)
-		assert floor >= 0, floor
-		if h_prior:
-			num_hs_prior = 0
-			for atom in cc:
-				num_hs_prior += hs_arr[atom]
-			floor = max(floor,num_hs_prior-max_h_transfer)
-			cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
-		else:
-			cap = min(cap,num_hs)
-		for h in range(floor,cap+1):
-			formula = np.copy(base_formula)
-			formula[ELEMENT_TO_IDX["H"]] = h
-			formula = tuple(formula)
-			if formula in formulae_to_counts:
-				formulae_to_counts[formula] += 1
-			else:
-				formulae_to_counts[formula] = 1
-	if return_counts:
-		return formulae_to_counts
-	else:
-		return set(formulae_to_counts.keys())
+	return delta_h_to_formula, delta_h_to_h_count
 
 def update_bonds(frag:list[int],sbond_arr,bond_mask_arr,bonds,atoms_to_bonds):
 	"""_summary_
@@ -539,7 +498,7 @@ def cc_to_formula_arr(cc,elems,bitmask=False):
 
 
 def cc_bitmask_to_formula_arr(cc,elem_idxs) -> np.ndarray:
-	""" fast cc bit mask to forumla arr
+	""" fast cc bit mask to formula arr
 
 	Args:
 		cc (_type_): _description_
@@ -736,8 +695,12 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	cc_node_feat_size = MASK_SIZE//64 # mask
 	base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
 	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
-	node_feat_shapes = [depth_node_feat_size,cc_node_feat_size,base_formula_node_feat_size,formula_node_feat_size]
-	edge_feat_shapes = [cc_node_feat_size,base_formula_node_feat_size]
+	h_count_node_feat_size = formula_node_feat_size
+	cc_edge_feat_size = cc_node_feat_size
+	base_formula_edge_feat_size = base_formula_node_feat_size
+	h_range_edge_size = 2
+	node_feat_shapes = [depth_node_feat_size,cc_node_feat_size,base_formula_node_feat_size,formula_node_feat_size,h_count_node_feat_size]
+	edge_feat_shapes = [cc_edge_feat_size,base_formula_edge_feat_size,h_range_edge_size]
 	total_node_feat_size = sum(node_feat_shapes)
 
 	# add node h count and element information
@@ -746,50 +709,50 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	cc_formula_list = []
 	hs_arr_np = np.array(hs_arr)
 	for cc_mask in nodes_mask_matrix:
-		cc_h_count = np.sum(np.multiply(cc_mask, hs_arr_np))#sum(cc_mask[i] * hs_arr[i] for i in range(len(cc_mask)))
+		cc_h_count = np.sum(np.multiply(cc_mask, hs_arr_np))
 		cc_formula = cc_bitmask_to_formula_arr(cc_mask,elem_idxs)
 		cc_formula[ELEMENT_TO_IDX["H"]] = cc_h_count
 		cc_formula_list.append(cc_formula)
 	node_base_formula_matrix = np.stack(cc_formula_list, dtype=MASK_DTYPE)
 	
 	# map nodes to formulae
-	formulae_list = []
-	#forumla_idx_by_depth = [set() for _ in range(max_depth + 1)]
+	formula_d_list, h_count_d_list = [], []
 	formulae_un = set()
 	node_num_formules_sum = 0
 	for idx, cc_mask in enumerate(nodes_mask_matrix):
-		#cc_mask = convert_cc_int_to_np_mask(num_nodes,cc,bitmask=False)
 		base_formula = node_base_formula_matrix[idx]
 		base_formula[ELEMENT_TO_IDX["H"]] = 0 # remove Hs
-		delta_h_to_formula = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True, base_formula = base_formula)
+		delta_h_to_formula, delta_h_to_h_count = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True, base_formula = base_formula)
+		formula_d_list.append(delta_h_to_formula)
+		h_count_d_list.append(delta_h_to_h_count)
 		formulae = list(delta_h_to_formula.values())
-		formulae_list.append(delta_h_to_formula)
 		formulae_un.update(formulae)
-		node_num_formules_sum += len(formulae)
-		# track forumla per depth
+		node_num_formules_sum += len(formulae)	
    
 	# map nodes to formulae indices
 	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
 	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
-	forumla_idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
+	formula_idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
  
-	formula_idx_list = []
-	for formulae_dict in formulae_list:
-		#formulae_dict = formulae_list[idx]
-		formulae_idx = np.zeros(formula_node_feat_size, dtype=np.int16)
+	formula_idx_list, h_count_list = [], []
+	for formulae_dict, h_count_dict in zip(formula_d_list,h_count_d_list):
+		formulae_idxs = np.zeros(formula_node_feat_size, dtype=np.int16)
+		h_counts = np.zeros(h_count_node_feat_size, dtype=np.int16)
 		for h_delta in formulae_dict:
 			formula = formulae_dict[h_delta]
+			h_count = h_count_dict[h_delta]
 			formula_idx = formula_to_idx[formula]
-			
-			#h_delta [0,-1,1,-2,2,-3,3,-4,4]
+			# h_delta [0,-1,1,-2,2,-3,3,-4,4]
 			h_delta_idx = h_delta * 2 if h_delta >= 0 else (-h_delta * 2) - 1
-			formulae_idx[h_delta_idx] = formula_idx
-			forumla_idx_by_h_delta[h_delta_idx].add(formula_idx)
-
-		formula_idx_list.append(formulae_idx)
+			formulae_idxs[h_delta_idx] = formula_idx
+			h_counts[h_delta_idx] = h_count
+			formula_idx_by_h_delta[h_delta_idx].add(formula_idx)
+		formula_idx_list.append(formulae_idxs)
+		h_count_list.append(h_counts)
 
 	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.int16)
-	
+	node_h_count_matrix = np.stack(h_count_list, dtype=np.int16)
+
 	assert nodes_mask_matrix.shape[1] <= MASK_SIZE
 	nodes_cc_mask = th.as_tensor(nodes_mask_matrix,dtype=th.bool)
 	nodes_cc_mask = F.pad(nodes_cc_mask, (0, MASK_SIZE-nodes_cc_mask.shape[1]), "constant", 0)
@@ -800,7 +763,8 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 			th.as_tensor(nodes_depth_matrix,dtype=NODE_FEAT_DTYPE),
 			nodes_cc_long,
 			th.as_tensor(node_base_formula_matrix,dtype=NODE_FEAT_DTYPE), 
-			th.as_tensor(node_formulae_matrix,dtype=NODE_FEAT_DTYPE)
+			th.as_tensor(node_formulae_matrix,dtype=NODE_FEAT_DTYPE),
+			th.as_tensor(node_h_count_matrix,dtype=NODE_FEAT_DTYPE)
 		], dim=1
 	)
 
@@ -827,22 +791,40 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = META_DATA_DTYPE)
 
 	# add edges info
-	#pyg_edge_index = [[],[]]
-	edge_diff_cc_mask, edge_diff_formula_mask = [], []
+	edge_diff_cc_mask, edge_diff_formula_mask, edge_diff_h_range = [], [], []
 	for edge in dag_edges_matrix:
 		from_idx, to_idx = edge
 		from_cc_mask = nodes_mask_matrix[from_idx]
 		to_cc_mask = nodes_mask_matrix[to_idx]
 		diff_cc_mask =  from_cc_mask - to_cc_mask
 
-		#diff_formula = cc_bitmask_to_formula_arr(diff_mask,elem_idxs)
 		from_formula_mask = node_base_formula_matrix[from_idx]
 		to_formula_mask = node_base_formula_matrix[to_idx]
 		diff_formula_mask = from_formula_mask - to_formula_mask
 		diff_formula_mask[CANONICAL_H_IDX] = 0 # we don't care Hs for this
 
+		diff_h_floor = compute_cc_h_floor(
+			diff_cc_mask,
+			mol_d["ve_arr"],
+			mol_d["sbond_arr"],
+			0,
+			mol_d["bonds"],
+			mol_d["atoms_to_bonds"],
+			mol_d["bond_mask_arr"]
+		)
+		diff_h_cap = compute_cc_h_cap(
+			diff_cc_mask,
+			mol_d["ve_arr"],
+			mol_d["sbond_arr"],
+			0
+		)
+		assert diff_h_floor <= diff_h_cap, (diff_h_floor,diff_h_cap)
+		assert diff_h_floor >= 0, diff_h_floor
+		diff_h_range = [diff_h_floor,diff_h_cap]
+
 		edge_diff_cc_mask.append(diff_cc_mask)
 		edge_diff_formula_mask.append(diff_formula_mask)
+		edge_diff_h_range.append(diff_h_range)
 
 	assert len(edge_diff_cc_mask) == len(edge_diff_formula_mask)
 	assert len(edge_diff_cc_mask) > 0, "DAG has no edges"
@@ -851,7 +833,8 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	edge_diff_cc_mask = F.pad(edge_diff_cc_mask, (0, MASK_SIZE-edge_diff_cc_mask.shape[1]), "constant", 0)
 	edge_diff_cc_long = th_mask_to_long(edge_diff_cc_mask).type(EDGE_FEAT_DTYPE)
 	edge_diff_formula_mask = th.as_tensor(np.stack(edge_diff_formula_mask,axis=0), dtype=EDGE_FEAT_DTYPE)
-	pyg_edge_feats = th.cat([edge_diff_cc_long,edge_diff_formula_mask],dim=1)
+	edge_diff_h_range = th.as_tensor(np.stack(edge_diff_h_range,axis=0), dtype=EDGE_FEAT_DTYPE)
+	pyg_edge_feats = th.cat([edge_diff_cc_long,edge_diff_formula_mask,edge_diff_h_range],dim=1)
 
 	# edge index need to be int64 or it will throw error where compute degree
 	pyg_edge_index = th.tensor(dag_edges_matrix.T, dtype=th.int64)
@@ -870,7 +853,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	frag_d["formula_peak_mzs"] = formula_peak_mzs
 	frag_d["formula_peak_probs"] = formula_peak_probs
 	frag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-	frag_d["idx_by_h_delta"] = forumla_idx_by_h_delta # forumla idx for each h_delta
+	frag_d["idx_by_h_delta"] = formula_idx_by_h_delta # formula idx for each h_delta
 	frag_d["dag"] = pyg_cc_g
 	
 	frag_d["edges_min_depth"] = edges_min_depth
@@ -895,12 +878,14 @@ NODE_FEAT_TO_IDX = {
 	"cc":1,
 	"base_formula":2,
 	"h_formulae_idx":3,
+	"h_counts":4
 }
 
 EDGE_FEAT_TO_IDX = {
 	"cc":0,
 	"base_formula":1,
-	"complement":2
+	"h_range":2,
+	"complement":3
 }
 
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):

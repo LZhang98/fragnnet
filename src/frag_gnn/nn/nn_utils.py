@@ -267,6 +267,7 @@ class FragGNNModel(nn.Module):
 		frag_ndata, frag_edata = [], []
 		batch_frag_num_nodes = frag_x.shape[0]
 		batch_frag_num_edges = frag_edge_index.shape[1]
+		batch_size = frag_batch[-1]+1
 		# node atom embeddings
 		if "cc" in self.frag_node_feats:
 			frag_node_mask = th_long_to_mask(get_node_feats(frag_x,frag_node_feat_idxs,"cc"))
@@ -333,19 +334,19 @@ class FragGNNModel(nn.Module):
 		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
 
 		# concatenate everything 
-		frag_x = th.cat(frag_ndata,dim=-1)
+		frag_x_embed = th.cat(frag_ndata,dim=-1)
 		# concatenate everything 
-		frag_edge_attr = th.cat(frag_edata,dim=-1)
+		frag_edge_attr_embed = th.cat(frag_edata,dim=-1)
 
 		# print(frag_node_batch_idxs)
 		frag_embed_gnn = self.frag_embedder(
-			frag_x,
+			frag_x_embed,
 			frag_node_batch_idxs,
 			frag_edge_index,
-			frag_edge_attr
+			frag_edge_attr_embed
 		)
 		frag_embed_gnn_pool = self.frag_pool(frag_embed_gnn,frag_batch)
-		frag_embed_node = self.frag_embedder.input_project(frag_x)
+		frag_embed_node = self.frag_embedder.input_project(frag_x_embed)
 		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
 		log_msg(f"frag_embed: {get_mem()}")
 
@@ -457,6 +458,28 @@ class FragGNNModel(nn.Module):
 		if th.any(th.abs(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))>1.):
 			import pdb; pdb.set_trace() 
 
+		# import pdb; pdb.set_trace()
+		frag_edge_batch_idxs = frag_batch[frag_edge_index[0]]
+		frag_edge_logits = frag_node_logprobs[frag_edge_index[0]] + frag_node_logprobs[frag_edge_index[1]]
+		frag_edge_logprobs = scatter_logsoftmax(
+			frag_edge_logits, #th.zeros_like(frag_edge_logits),
+			frag_edge_batch_idxs,
+			dim=0
+		)
+		print(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
+		frag_node_h_counts = get_node_feats(frag_x,frag_node_feat_idxs,"h_counts")
+		frag_edge_h_ranges = get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"h_range")
+		frag_edge_h_diffs = frag_node_h_counts[frag_edge_index[0]].unsqueeze(1) - frag_node_h_counts[frag_edge_index[1]].unsqueeze(2)
+		frag_edge_h_diffs = frag_edge_h_diffs.reshape(frag_edge_h_diffs.shape[0],-1)
+		# linear cost
+		frag_edge_h_diffs = frag_edge_h_diffs.float() * th.logical_or(
+			frag_edge_h_diffs<frag_edge_h_ranges[:,0].unsqueeze(-1), 
+			frag_edge_h_diffs>frag_edge_h_ranges[:,1].unsqueeze(-1)
+		).float()
+		frag_edge_h_logprobs = (frag_node_formula_logprobs[frag_edge_index[0]]).unsqueeze(1)  \
+			+ (frag_node_formula_logprobs[frag_edge_index[1]]).unsqueeze(2)
+		frag_edge_h_logprobs = frag_edge_h_logprobs.reshape(frag_edge_h_logprobs.shape[0],-1) 
+
 		out_d = {
 			"pred_mzs": spec_mzs,
 			"pred_logprobs": spec_logprobs,
@@ -466,6 +489,10 @@ class FragGNNModel(nn.Module):
 			"pred_node_logprobs": frag_node_logprobs,
 			"pred_node_batch_idxs": frag_node_batch_idxs,
 			"pred_node_formula_logprobs": frag_node_formula_logprobs,
+			"pred_edge_logprobs": frag_edge_logprobs,
+			"pred_edge_h_diffs": frag_edge_h_diffs,
+			"pred_edge_h_logprobs": frag_edge_h_logprobs,
+			"pred_edge_batch_idxs": frag_edge_batch_idxs,
 		}
 
 		return out_d

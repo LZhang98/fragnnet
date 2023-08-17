@@ -8,7 +8,7 @@ import torch._dynamo as th_dynamo
 from frag_gnn.nn.nn_utils import build_lr_scheduler, FragGNNModel, NEIMSModel
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn, get_sparse_conditional_entropy_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
-from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce
+from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
 from frag_gnn.utils.plot_utils import plot_spectra_sparse
@@ -550,7 +550,7 @@ class FragGNNPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
-				# set tolerance
+		# set tolerance
 		if self.hparams.loss_tolerance_ppm is not None:
 			self.tolerance = self.hparams.loss_tolerance_ppm
 			self.relative = True
@@ -573,8 +573,7 @@ class FragGNNPL(SpectrumPL):
 			true_batch_idxs,
 			pred_mzs,
 			pred_ints,
-			pred_batch_idxs,
-			**kwargs):
+			pred_batch_idxs):
 			# calculate
 			return 1.-calculate_cosine_similarity(
 				true_mzs,
@@ -585,9 +584,26 @@ class FragGNNPL(SpectrumPL):
 				pred_batch_idxs,
 				mz_bin_res=self.hparams.mz_bin_res,
 				mz_max=self.hparams.mz_max,
-				sum_ints=self.hparams.bin_sum_ints,
-				**kwargs
+				sum_ints=self.hparams.bin_sum_ints
 			)
+		def edge_loss(
+			pred_edge_logprobs,
+			pred_edge_h_diffs,
+			pred_edge_h_logprobs,
+			pred_edge_batch_idxs):
+			# TODO: add support for different kinds of cost functions
+			edge_h_costs = pred_edge_h_diffs**2 # can apply loss function (as long as 0 -> 0)
+			edge_h_costs = edge_h_costs.reshape(edge_h_costs.shape[0],-1,1)
+			edge_h_probs = th.exp(pred_edge_h_logprobs).reshape(pred_edge_h_logprobs.shape[0],1,-1)
+			edge_h_avg_cost = (edge_h_probs @ edge_h_costs).squeeze(1).squeeze(1)
+			edge_h_avg_cost_w = pred_edge_logprobs + safelog(edge_h_avg_cost)
+			# batch_size = th.max(pred_edge_batch_idxs)+1
+			loss = scatter_logsumexp(
+				edge_h_avg_cost_w,
+				pred_edge_batch_idxs,
+				dim=0
+			)
+			return loss
 		def _loss_fn(
 			true_mzs,
 			true_logprobs,
@@ -599,7 +615,11 @@ class FragGNNPL(SpectrumPL):
 			pred_formula_batch_idxs,
 			pred_node_logprobs,
 			pred_node_batch_idxs,
-			pred_node_formula_logprobs):
+			pred_node_formula_logprobs,
+			pred_edge_logprobs,
+			pred_edge_h_diffs,
+			pred_edge_h_logprobs,
+			pred_edge_batch_idxs):
 			spec_ce = sparse_ce(
 				true_mzs,
 				true_logprobs,
@@ -640,6 +660,13 @@ class FragGNNPL(SpectrumPL):
 			)
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
+			el = edge_loss(
+				pred_edge_logprobs,
+				pred_edge_h_diffs,
+				pred_edge_h_logprobs,
+				pred_edge_batch_idxs
+			)
+			loss = loss + self.hparams.edge_loss_weight * el
 			loss_d = {
 				"loss": loss,
 				"spec_cd": spec_cd,
@@ -649,7 +676,8 @@ class FragGNNPL(SpectrumPL):
 				"node_e": node_e,
 				"node_ne": node_ne,
 				"node_formula_e": node_formula_e,
-				"node_formula_ne": node_formula_ne
+				"node_formula_ne": node_formula_ne,
+				"edge_loss": el
 			}
 			return loss_d
 		self.loss_fn = _loss_fn
