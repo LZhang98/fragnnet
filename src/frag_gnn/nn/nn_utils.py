@@ -92,6 +92,7 @@ def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
 			)
 		)
 	elif pool_type == "set2set":
+		"With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets) https://arxiv.org/abs/1511.06391"
 		pool_module = nn.Sequential(
 			pyg.nn.Set2Set(node_dim,processing_steps=num_step_set2set),
 			nn.Linear(2 * node_dim, node_dim),
@@ -741,8 +742,8 @@ class GNN(nn.Module):
 				edge_feats_size=self.edge_feats_size,
 				node_hidden_dim=self.hidden_size, 
 			    num_step_message_passing =self.num_layers,
-				num_step_set2set=self.num_layers,
-				output_dim = self.hidden_size, # TODO this need to hook up correctly
+				#num_step_set2set=self.num_layers,
+				#output_dim = self.hidden_size, # TODO this need to hook up correctly
 				gat_heads = 1, # TODO this need to hook up correctly
 				gat_dropout=self.dropout,
 				is_v2 = True if self.gnn_type == "GATv2" else False
@@ -855,9 +856,9 @@ class MPNN(nn.Module):
 			root_weight=False)
 		self.gru = nn.GRU(node_hidden_dim, node_hidden_dim)
 
-		self.set2set = pyg.nn.Set2Set(node_hidden_dim,processing_steps=num_step_set2set)
-		self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
-		self.lin2 = nn.Linear(node_hidden_dim, output_size)
+		#self.set2set = pyg.nn.Set2Set(node_hidden_dim,processing_steps=num_step_set2set)
+		#self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
+		#self.lin2 = nn.Linear(node_hidden_dim, output_size)
 			
 	def forward(self, x, batch_index, edge_index, edge_attr):
 		"""forward.
@@ -871,15 +872,14 @@ class MPNN(nn.Module):
 			out, h = self.gru(m.unsqueeze(0), h)
 			out = out.squeeze(0)
 
-		out = self.set2set(out, batch_index)
-		out = F.relu(self.lin1(out))
-		out = self.lin2(out)
+		#out = self.set2set(out, batch_index)
+		#out = F.relu(self.lin1(out))
+		#out = self.lin2(out)
 		return out
 
 class GAT(nn.Module):
 	""" Graph attention networks. https://arxiv.org/abs/1710.10903 
 		Graph attention networks v2. (How Attentive are Graph Attention Networks?  https://arxiv.org/abs/2105.14491)
-		With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets) https://arxiv.org/abs/1511.06391
 	"""
 
 	def __init__(
@@ -888,8 +888,7 @@ class GAT(nn.Module):
 		edge_feats_size: int,
 		node_hidden_dim: int,
 		num_step_message_passing: int,
-		num_step_set2set: int,
-		output_dim: int,
+		#num_step_set2set: int,
 		gat_heads: int = 1,
 		gat_dropout: float = 0.0,
 		is_v2: bool = True,
@@ -911,7 +910,7 @@ class GAT(nn.Module):
 		"""
 		super(GAT, self).__init__()
 		self.num_step_message_passing = num_step_message_passing
-		self.lin0 = nn.Linear(node_feats_size, node_hidden_dim)
+		#self.lin0 = nn.Linear(node_feats_size, node_hidden_dim)
 
 		gat_output_dim = node_hidden_dim//gat_heads if is_concat else node_hidden_dim
 
@@ -928,29 +927,12 @@ class GAT(nn.Module):
 				dropout=gat_dropout,
 				concat=is_concat)
 
-		if num_step_set2set:
-			self.set2set = pyg.nn.Set2Set(node_hidden_dim, processing_steps=num_step_set2set)
-			# output of set2set is twice the dimensionality as the input
-			self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
-			self.lin2 = nn.Linear(node_hidden_dim, output_dim)
-		else:
-			self.set2set = None
-			self.lin1 =  None
-			self.lin2 = None
-
 	def forward(self, x, batch_index, edge_index, edge_attr):
-		out = F.relu(self.lin0(x))
-		
+		#out = F.relu(self.lin0(x))out
+		out = x
 		for i in range(self.num_step_message_passing):
 			out = F.relu(self.conv(out, edge_index, edge_attr=edge_attr))
 
-		# we don't need set2set for dag
-		# but it maybe helful for molucle net
-		if self.set2set is not None:
-			out = self.set2set(out, batch_index)
-			out = F.relu(self.lin1(out))
-			out = self.lin2(out)
-				
 		return out
 	
 class MLPBlocks(nn.Module):
