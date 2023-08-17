@@ -135,7 +135,8 @@ class FragGNNModel(nn.Module):
 		mlp_normalization: str,
 		mlp_dropout: float,
 		mlp_num_layers: int,
-		mlp_use_residuals: bool
+		mlp_use_residuals: bool,
+		cc_interstage_type: str,
 	):
 
 		super().__init__()
@@ -173,6 +174,12 @@ class FragGNNModel(nn.Module):
 		self.frag_edge_feats = frag_edge_feats
 		self._compute_frag_feats_sizes()
 
+		# define interstage
+		assert cc_interstage_type in ["add","sub","linear","direct"]
+		self.cc_interstage_type = cc_interstage_type
+		if self.cc_interstage_type == "linear":
+			self.cc_interstage = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
+   
 		# define frag-graph GNN to create frag-graph node level embedding
 		frag_kwargs = {
 			"node_feats_size": self.frag_node_feats_size,
@@ -344,8 +351,13 @@ class FragGNNModel(nn.Module):
 			# 1. frag_node_mask_embed plus mol_embed_gnn_pool
 			# 2. frag_node_mask_embed only, with out pooled embed for entire mol
 			# 3. a linear layer between masked embed and pooled embed
-			# 4 . attetion between frag embed and pooled mol embed
-			frag_node_mask_embed = frag_node_mask_embed + mol_embed_gnn_pool[frag_batch]
+			if self.cc_interstage_type == "add":
+				frag_node_mask_embed = frag_node_mask_embed + mol_embed_gnn_pool[frag_batch]
+			elif self.cc_interstage_type == "sub":
+				frag_node_mask_embed = frag_node_mask_embed - mol_embed_gnn_pool[frag_batch]
+			if self.cc_interstage_type == "linear":
+				frag_node_mask_embed =  self.cc_interstage(th.cat([frag_node_mask_embed,mol_embed_gnn_pool[frag_batch]], dim = 1))
+    
 			frag_ndata.append(frag_node_mask_embed)
 		log_msg(f"frag_node_cc: {get_mem()}")
 

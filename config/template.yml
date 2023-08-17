@@ -69,12 +69,16 @@ num_hs: 4
 num_elements: 12
 int_embedder: abs-sines
 int_embedder_tight: False
+# mol model
 mol_hidden_size: 256
 mol_num_layers: 4
 mol_gnn_type: GINE
 mol_dropout: 0.0
 mol_normalization: batch
 mol_pool_type: none
+# interstage
+cc_interstage_type: add
+# frag model
 frag_hidden_size: 256
 frag_num_layers: 4
 frag_gnn_type: GINE

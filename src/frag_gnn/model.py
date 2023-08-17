@@ -574,7 +574,8 @@ class FragGNNPL(SpectrumPL):
 			mlp_normalization=self.hparams.mlp_normalization,
 			mlp_dropout=self.hparams.mlp_dropout,
 			mlp_num_layers=self.hparams.mlp_num_layers,
-			mlp_use_residuals=self.hparams.mlp_use_residuals
+			mlp_use_residuals=self.hparams.mlp_use_residuals,
+			cc_interstage_type=self.hparams.cc_interstage_type
 		)
 		# compile
 		if self.hparams.compile:
