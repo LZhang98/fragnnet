@@ -419,8 +419,9 @@ class FragGNNModel(nn.Module):
 				frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
 			], dim=1
 		)
+
 		# predict probabilities
-		frag_formula_logits = self.output_module(frag_embed)
+		frag_formula_logits = self.formula_module(frag_embed)
 		assert frag_formula_logits.shape[1] == 2*self.num_hs+1, (frag_formula_logits.shape[1],2*self.num_hs+1)
 
 		# convert to logprobs
