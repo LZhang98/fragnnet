@@ -233,13 +233,14 @@ class SpectrumPL(pl.LightningModule):
 		# log losses and entropies
 		with th.no_grad():
 			for k,v in loss_d.items():
-				mean_v = th.mean(v,dim=0)
+				mean_v = th.mean(v,dim=0).item() if v is not None else 0.0
 				self.log(
 					f"{split}_{k}_batch",
-					mean_v.item(),
+					mean_v,
 					batch_size=batch_size,
 					on_epoch=True
 				)
+
 		results = {
 			"unique_id": unique_id,
 			"smiles": smiles,
@@ -599,8 +600,11 @@ class FragGNNPL(SpectrumPL):
 		)
 		sparse_entropy_fn = get_sparse_entropy_fn()
 		sparse_conditional_entropy_fn = get_sparse_conditional_entropy_fn()
+
+		# edge loss
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
 		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
+
 		def sparse_cosine_distance(
 			true_mzs,
 			true_ints,
@@ -620,6 +624,7 @@ class FragGNNPL(SpectrumPL):
 				mz_max=self.hparams.mz_max,
 				sum_ints=self.hparams.bin_sum_ints
 			)
+		
 		def edge_loss(
 			pred_edge_logprobs,
 			pred_edge_h_diffs,
@@ -647,6 +652,7 @@ class FragGNNPL(SpectrumPL):
 				dim=0
 			)
 			return h_range_loss, h_transfer_loss
+		
 		def _loss_fn(
 			true_mzs,
 			true_logprobs,
@@ -697,6 +703,7 @@ class FragGNNPL(SpectrumPL):
 			)
 			loss = loss + self.hparams.node_entropy_weight * node_e \
 				+ self.hparams.node_normalized_entropy_weight * node_ne
+			
 			node_formula_e, node_formula_ne = sparse_conditional_entropy_fn(
 				pred_node_logprobs,
 				pred_node_formula_logprobs,
@@ -704,15 +711,21 @@ class FragGNNPL(SpectrumPL):
 			)
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
-			r_el, t_el = edge_loss(
-				pred_edge_logprobs,
-				pred_edge_h_diffs,
-				pred_edge_h_range_masks,
-				pred_edge_h_logprobs,
-				pred_edge_batch_idxs
-			)
-			loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
-				+ self.hparams.edge_h_transfer_loss_weight * t_el
+			
+			# atm, r_el and t_el is only used for reporting out side this function
+			r_el, t_el = None, None
+			if self.hparams.edge_h_range_loss_weight != 0.0 \
+				or self.hparams.edge_h_transfer_loss_weight != 0.0:
+				r_el, t_el = edge_loss(
+					pred_edge_logprobs,
+					pred_edge_h_diffs,
+					pred_edge_h_range_masks,
+					pred_edge_h_logprobs,
+					pred_edge_batch_idxs
+				)
+				loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
+					+ self.hparams.edge_h_transfer_loss_weight * t_el
+				
 			loss_d = {
 				"loss": loss,
 				"spec_cd": spec_cd,

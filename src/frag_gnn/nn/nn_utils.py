@@ -529,18 +529,25 @@ class FragGNNModel(nn.Module):
 			frag_edge_batch_idxs,
 			dim=0
 		)
+
 		# print(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
-		frag_node_h_counts = get_node_feats(frag_x,frag_node_feat_idxs,"h_counts")
-		frag_edge_h_ranges = get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"h_range")
-		frag_edge_h_diffs = frag_node_h_counts[frag_edge_index[0]].unsqueeze(1) - frag_node_h_counts[frag_edge_index[1]].unsqueeze(2)
-		frag_edge_h_diffs = frag_edge_h_diffs.reshape(frag_edge_h_diffs.shape[0],-1)
-		frag_edge_h_range_masks = th.logical_or(
-			frag_edge_h_diffs<frag_edge_h_ranges[:,0].unsqueeze(-1), 
-			frag_edge_h_diffs>frag_edge_h_ranges[:,1].unsqueeze(-1)
-		)
-		frag_edge_h_logprobs = (frag_node_formula_logprobs[frag_edge_index[0]]).unsqueeze(1)  \
-			+ (frag_node_formula_logprobs[frag_edge_index[1]]).unsqueeze(2)
-		frag_edge_h_logprobs = frag_edge_h_logprobs.reshape(frag_edge_h_logprobs.shape[0],-1) 
+		# TODO: we need better defualt values
+		frag_edge_h_diffs = None
+		frag_edge_h_logprobs = None
+		frag_edge_h_range_masks = None
+		if "h_count" in self.frag_node_feats: 
+			frag_node_h_counts = get_node_feats(frag_x,frag_node_feat_idxs,"h_counts")
+		if "h_range" in self.frag_edge_feats:
+			frag_edge_h_ranges = get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"h_range")
+			frag_edge_h_diffs = frag_node_h_counts[frag_edge_index[0]].unsqueeze(1) - frag_node_h_counts[frag_edge_index[1]].unsqueeze(2)
+			frag_edge_h_diffs = frag_edge_h_diffs.reshape(frag_edge_h_diffs.shape[0],-1)
+			frag_edge_h_range_masks = th.logical_or(
+				frag_edge_h_diffs<frag_edge_h_ranges[:,0].unsqueeze(-1), 
+				frag_edge_h_diffs>frag_edge_h_ranges[:,1].unsqueeze(-1)
+			)
+			frag_edge_h_logprobs = (frag_node_formula_logprobs[frag_edge_index[0]]).unsqueeze(1)  \
+				+ (frag_node_formula_logprobs[frag_edge_index[1]]).unsqueeze(2)
+			frag_edge_h_logprobs = frag_edge_h_logprobs.reshape(frag_edge_h_logprobs.shape[0],-1) 
 
 		out_d = {
 			"pred_mzs": spec_mzs,
