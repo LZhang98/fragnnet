@@ -157,6 +157,9 @@ class JointPredictor(nn.Module):
 		self.mol_embedder = GNN(**mol_kwargs)
 		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
 
+		# interstage
+		# self.interatge = th.nn.MultiheadAttention()
+
 		# frag grahp GNN
 		self.formula_embedder = get_embedder(int_embedder)
 		self.depth_embedder = get_embedder(int_embedder)
@@ -295,6 +298,7 @@ class JointPredictor(nn.Module):
 		log_msg(f"mol_embed_gnn: {get_mem()}")
 
 		# process dag
+		# create interstage
 		frag_ndata, frag_edata = [], []
 		batch_frag_num_nodes = frag_x.shape[0]
 		batch_frag_num_edges = frag_edge_index.shape[1]
@@ -311,7 +315,13 @@ class JointPredictor(nn.Module):
 				dim=0,
 				dim_size=batch_frag_num_nodes
 			)
-			frag_node_mask_embed = frag_node_mask_embed - mol_embed_gnn_pool[frag_batch]
+
+			# frag_node_mask_embed can be one of following
+			# 1. frag_node_mask_embed plus mol_embed_gnn_pool
+			# 2. frag_node_mask_embed only, with out pooled embed for entire mol
+			# 3. a linear layer between masked embed and pooled embed
+			# 4 . attetion between frag embed and pooled mol embed
+			frag_node_mask_embed = frag_node_mask_embed + mol_embed_gnn_pool[frag_batch]
 			frag_ndata.append(frag_node_mask_embed)
 		log_msg(f"frag_node_cc: {get_mem()}")
 
@@ -376,7 +386,6 @@ class JointPredictor(nn.Module):
 		frag_embed_node = self.frag_embedder.input_project(frag_x)
 		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
 		log_msg(f"frag_embed: {get_mem()}")
-
 
 		# get frag dag embedding
 		frag_embed = th.cat(
