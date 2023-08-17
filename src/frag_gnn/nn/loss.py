@@ -208,6 +208,18 @@ def get_sparse_conditional_entropy_fn():
 	return sparse_conditional_entropy_fn
 
 
+def get_edge_loss_fn(edge_loss_fn_type,constant):
+
+	if edge_loss_fn_type == "quadratic":
+		edge_loss_fn = lambda x: constant*x**2
+	elif edge_loss_fn_type == "linear":
+		edge_loss_fn = lambda x: constant*th.abs(x)
+	elif edge_loss_fn_type == "exponential":
+		edge_loss_fn = lambda x: constant*th.exp(th.abs(x))
+	else:
+		raise NotImplementedError
+	return edge_loss_fn
+
 if __name__ == "__main__":
 
 	th.manual_seed(420)
