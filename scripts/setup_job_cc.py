@@ -133,7 +133,7 @@ if __name__ == "__main__":
 	parser.add_argument("--mem", type=int, default=64)
 	parser.add_argument("--cpu", type=int, default=8)
 	parser.add_argument("--gpu", type=int, default=1)
-	parser.add_argument("--time", type=int, default=12)
+	parser.add_argument("--time", type=int, default=3)
 	parser.add_argument("--script_kwargs", type=str, help='arugments for python script eg."-w=online,-c=config/debug_d4_tiny.yml"', default="")
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument('--cc_email', help='email', default='fw4@ualberta.ca')
