@@ -219,8 +219,7 @@ class FragGNNModel(nn.Module):
 			self.node_module = None
 		
 		# this is required
-		if "h_formulae_idx" not in self.frag_node_feats:
-			self.frag_node_feats.append("h_formulae_idx")
+		assert "h_formulae_idx" in self.frag_node_feats
 
 	def _compute_mol_feats_sizes(self):
 		""" method compute mol feature size
