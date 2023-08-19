@@ -4,9 +4,9 @@ frag_dp: data/frag/d4_h4_isoTrue/dags
 num_depth: 5
 num_hs: 4
 
-train_batch_size: 16
-eval_batch_size: 16
-accumulate_grad_batches: 4
+train_batch_size: 8
+eval_batch_size: 8
+accumulate_grad_batches: 8
 gradient_clip_val: 5.0
 lr: 0.0001
 accelerator: gpu
