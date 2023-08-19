@@ -217,6 +217,10 @@ class FragGNNModel(nn.Module):
 			self.node_module = MLPBlocks(**node_mlp_kwargs)
 		else:
 			self.node_module = None
+		
+		# this is required
+		if "h_formulae_idx" not in self.frag_node_feats:
+			self.frag_node_feats.append("h_formulae_idx")
 
 	def _compute_mol_feats_sizes(self):
 		""" method compute mol feature size
@@ -407,11 +411,11 @@ class FragGNNModel(nn.Module):
 			)
 			frag_edata.append(frag_edge_complement)
 		log_msg(f"frag_edge_complement: {get_mem()}")
+
 		# get output formula aggregation 
 		frag_node_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
 		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
 		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
-
 		# assmeble all features for dag
 		# concatenate everything 
 		frag_x_embed = th.cat(frag_ndata,dim=-1)
