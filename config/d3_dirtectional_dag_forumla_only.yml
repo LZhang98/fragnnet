@@ -30,6 +30,7 @@ node_formula_entropy_weight: 0.0
 frag_pyg_node_feats:
   - base_formula
   - depth
+  - h_formulae_idx
 frag_pyg_edge_feats:
   - base_formula
 frag_pyg_bigraph: False

@@ -25,6 +25,7 @@ frag_pyg_node_feats:
   - cc
   - base_formula
   - depth
+  - h_formulae_idx
 frag_pyg_edge_feats:
   - cc
   - base_formula
