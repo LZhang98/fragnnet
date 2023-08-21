@@ -125,7 +125,7 @@ def main(args):
 			print(row)
 
 	if not args.no_submit:
-		process = subprocess.Popen(['sbatch', script_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd = os.path.join(args.script_dp))
+		process = subprocess.Popen(['sbatch', script_fp], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd = os.path.join(args.script_dp))
 		out, err = process.communicate()
 		print(out.strip(), err.strip())
 
