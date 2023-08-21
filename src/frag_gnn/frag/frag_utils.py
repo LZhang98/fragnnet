@@ -717,8 +717,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	
 	# map nodes to formulae
 	formula_d_list, h_count_d_list = [], []
-	formulae_un = set()
-	node_num_formules_sum = 0
+	formula_counts = {}
 	for idx, cc_mask in enumerate(nodes_mask_matrix):
 		base_formula = node_base_formula_matrix[idx]
 		base_formula[ELEMENT_TO_IDX["H"]] = 0 # remove Hs
@@ -726,11 +725,11 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 		formula_d_list.append(delta_h_to_formula)
 		h_count_d_list.append(delta_h_to_h_count)
 		formulae = list(delta_h_to_formula.values())
-		formulae_un.update(formulae)
-		node_num_formules_sum += len(formulae)	
+		for formula in formulae:
+			formula_counts[formula] = formula_counts.get(formula,0) + 1
    
 	# map nodes to formulae indices
-	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formulae_un)))}
+	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formula_counts.keys())))}
 	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
 	formula_idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
  
@@ -865,7 +864,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	frag_d["dag_num_edges"] = pyg_cc_g.num_edges
 	frag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
 	frag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
-	frag_d["formula_redundancy"] = node_num_formules_sum/pyg_cc_g.num_nodes
+	frag_d["formula_redundancy"] = sum([v for k,v in formula_counts.items() if k != ""])/len([k for k in formula_counts.keys() if k != ""])
 	frag_d["node_feature_size"] = pyg_cc_g.num_features
 	frag_d["edge_feature_size"] = pyg_cc_g.num_edge_features
 	frag_d["is_directed"] = pyg_cc_g.is_directed()

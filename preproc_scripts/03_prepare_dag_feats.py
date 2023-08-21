@@ -414,7 +414,7 @@ if __name__ == "__main__":
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,default=default_elements)
-	parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001-10ppm-5ppm")
+	parser.add_argument("--tolerances",type=str,default="0.001-10ppm-5ppm") #"0.01-0.005-0.001-0.0001-10ppm-5ppm")
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="online",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")
