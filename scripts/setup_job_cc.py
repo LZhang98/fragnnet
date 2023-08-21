@@ -1,5 +1,6 @@
 import os
 import argparse
+import subprocess
 
 def main(args):
 
@@ -123,6 +124,11 @@ def main(args):
 		for row in script_lines:
 			print(row)
 
+	if not args.no_submit:
+		process = subprocess.Popen(['sbatch', script_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd = os.path.join(args.script_dp))
+		out, err = process.communicate()
+		print(out.strip(), err.strip())
+
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
@@ -140,5 +146,6 @@ if __name__ == "__main__":
 	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart','rrg-rgreiner'])
 	parser.add_argument('--python_env', default="./FRAG-GNN-GPU2", help="virtualenv location")
 	parser.add_argument('-i', '--interactive', type = bool, default=False, action=argparse.BooleanOptionalAction, help="set to true to print interative command")
+	parser.add_argument('--no_submit', type=bool, default=False)
 	args = parser.parse_args()
 	main(args)
