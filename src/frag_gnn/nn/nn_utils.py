@@ -97,6 +97,12 @@ def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
 			pyg.nn.Set2Set(node_dim,processing_steps=num_step_set2set),
 			nn.Linear(2 * node_dim, node_dim),
 		)
+	elif pool_type == "softmax":
+		pool_module = pyg.nn.SoftmaxAggregation(learn=True)
+	elif pool_type == "powermean":
+		pool_module = pyg.nn.PowerMeanAggregation(learn=True)
+	elif pool_type == "multiple":
+		pool_module = pyg.nn.MultiAggregation(['mean', 'std',  pyg.nn.SoftmaxAggregation(learn=True)])
 	else:
 		assert pool_type == "none", pool_type
 		# just return 0s
