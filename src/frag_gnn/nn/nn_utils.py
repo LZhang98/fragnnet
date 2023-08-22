@@ -101,8 +101,10 @@ def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
 		pool_module = pyg.nn.SoftmaxAggregation(learn=True)
 	elif pool_type == "powermean":
 		pool_module = pyg.nn.PowerMeanAggregation(learn=True)
-	elif pool_type == "multiple":
-		pool_module = pyg.nn.MultiAggregation(['mean', 'std',  pyg.nn.SoftmaxAggregation(learn=True)])
+	elif pool_type == "mean_std_softmax":
+		raise NotImplementedError
+		# TODO: this need hook up in the way that size of input need change respect this
+		#pool_module = pyg.nn.MultiAggregation(['mean', 'std',  pyg.nn.SoftmaxAggregation(learn=True)])
 	else:
 		assert pool_type == "none", pool_type
 		# just return 0s
