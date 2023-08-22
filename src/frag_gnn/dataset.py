@@ -317,7 +317,6 @@ class SpecMolFragDataset(SpecMolDataset):
 
 		spec_entry = self.spec_df.iloc[idx]
 		mol_id = spec_entry["mol_id"]
-		print(idx,mol_id)
 		mol_entry = self.mol_df.loc[mol_id]
 		if self.spec_params["preprocess"]:
 			spec_data = self.spec_datas[idx].copy()

@@ -361,7 +361,7 @@ class FragGNNModel(nn.Module):
 		frag_joint_logits = self.formula_module(frag_embed)
 		assert frag_joint_logits.shape[1] == 2*self.num_hs+1, (frag_joint_logits.shape[1],2*self.num_hs+1)
 
-		# convert to logprobs
+		# convert to logprobs p(f,n)
 		frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs,2*self.num_hs+1)
 		frag_joint_logits = frag_joint_logits.flatten()
 		frag_joint_mask = (~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])).float()
@@ -373,18 +373,19 @@ class FragGNNModel(nn.Module):
 			dim=0,
 			log=True
 		)
-		# # compute total NULL probability (before renormalization)
-		# frag_total_null_logprob = scatter_masked_softmax(
-		# 	frag_joint_logits,
-		# 	th.ones_like(frag_joint_logits),
-		# 	frag_joint_batch_idxs,
-		# 	dim=0,
-		# 	log=True
-		# )
-		# frag_total_null_logprob = th.logsumexp(
-		# 	(1.-frag_joint_mask) * frag_total_null_logprob + frag_joint_mask * (-1e9),
-		# 	dim=0
-		# )
+		# compute total NULL probability (before renormalization)
+		frag_null_formula_logprob = scatter_masked_softmax(
+			frag_joint_logits,
+			th.ones_like(frag_joint_logits),
+			frag_joint_batch_idxs,
+			dim=0,
+			log=True
+		)
+		frag_null_formula_logprob = scatter_logsumexp(
+			(1.-frag_joint_mask) * frag_null_formula_logprob + frag_joint_mask * (-1e9),
+			frag_joint_batch_idxs,
+			dim=0
+		)
 		# print(frag_joint_logprobs[~(frag_joint_mask.bool())].max())
 		frag_joint_logprobs = frag_joint_logprobs.reshape(-1,2*self.num_hs+1)
 		log_msg(f"frag_joint_logprobs: {get_mem()}")
@@ -496,7 +497,7 @@ class FragGNNModel(nn.Module):
 			"pred_edge_h_range_masks": frag_edge_h_range_masks,
 			"pred_edge_h_logprobs": frag_edge_h_logprobs,
 			"pred_edge_batch_idxs": frag_edge_batch_idxs,
-			# "pred_total_null_logprob": frag_total_null_logprob,
+			"pred_null_formula_logprob": frag_null_formula_logprob,
 		}
 
 		return out_d
