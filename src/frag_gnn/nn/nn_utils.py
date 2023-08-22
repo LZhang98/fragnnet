@@ -358,29 +358,44 @@ class FragGNNModel(nn.Module):
 			], dim=1
 		)
 
-		frag_formula_logits = self.formula_module(frag_embed)
-		assert frag_formula_logits.shape[1] == 2*self.num_hs+1, (frag_formula_logits.shape[1],2*self.num_hs+1)
+		frag_joint_logits = self.formula_module(frag_embed)
+		assert frag_joint_logits.shape[1] == 2*self.num_hs+1, (frag_joint_logits.shape[1],2*self.num_hs+1)
 
 		# convert to logprobs
-		frag_formula_batch_idxs = th.repeat_interleave(frag_node_batch_idxs,2*self.num_hs+1)
-		frag_formula_logits = frag_formula_logits.flatten()
-		frag_formula_logprobs = scatter_logsoftmax(
-			frag_formula_logits,
-			frag_formula_batch_idxs,
-			dim=0
+		frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs,2*self.num_hs+1)
+		frag_joint_logits = frag_joint_logits.flatten()
+		frag_joint_mask = (~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])).float()
+		# compute non-NULL renormalized intensity
+		frag_joint_logprobs = scatter_masked_softmax(
+			frag_joint_logits,
+			frag_joint_mask,
+			frag_joint_batch_idxs,
+			dim=0,
+			log=True
 		)
-		log_msg(f"frag_formula_logprobs_1: {get_mem()}")
-
-		frag_formula_mask = th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1]).float()
-		frag_node_formula_logits = (frag_formula_logprobs*frag_formula_mask + -1e9*(1-frag_formula_mask)).reshape(-1,2*self.num_hs+1)
+		# # compute total NULL probability (before renormalization)
+		# frag_total_null_logprob = scatter_masked_softmax(
+		# 	frag_joint_logits,
+		# 	th.ones_like(frag_joint_logits),
+		# 	frag_joint_batch_idxs,
+		# 	dim=0,
+		# 	log=True
+		# )
+		# frag_total_null_logprob = th.logsumexp(
+		# 	(1.-frag_joint_mask) * frag_total_null_logprob + frag_joint_mask * (-1e9),
+		# 	dim=0
+		# )
+		# print(frag_joint_logprobs[~(frag_joint_mask.bool())].max())
+		frag_joint_logprobs = frag_joint_logprobs.reshape(-1,2*self.num_hs+1)
+		log_msg(f"frag_joint_logprobs: {get_mem()}")
 
 		if self.mlp_output_format == "formula":
 			
 			# aggregate formula logits by node, then normalize
 			# log p(n) = logsumexp_f log p(f,n)
-			frag_node_logprobs = th.logsumexp(frag_node_formula_logits,dim=1)
+			frag_node_logits = th.logsumexp(frag_joint_logprobs,dim=1)
 			frag_node_logprobs = scatter_logsoftmax(
-				frag_node_logprobs,
+				frag_node_logits,
 				frag_node_batch_idxs,
 				dim=0
 			)
@@ -394,43 +409,31 @@ class FragGNNModel(nn.Module):
 				frag_node_batch_idxs,
 				dim=0
 			)
-			# adjust formula logprobs by node logprobs
-			# log p(f) = log p(f|n) + log p(n)
-			frag_formula_logprobs = frag_formula_logprobs + th.repeat_interleave(frag_node_logprobs,2*self.num_hs+1)
 
 		log_msg(f"frag_node_logprobs: {get_mem()}")
 
-		# calculate conditional entropy
-		frag_node_formula_logprobs = th.log_softmax(frag_node_formula_logits,dim=1)
+		# calculate conditional probability
+		# log p(f|n) = log p(f,n) - log p(n)
+		frag_node_formula_logprobs = frag_joint_logprobs - frag_node_logprobs.unsqueeze(-1)
 		log_msg(f"frag_node_formula_logprobs: {get_mem()}")
 
 		# aggregate by formula
+		# log p(f) = logsumexp_n log p(f,n)
+		frag_joint_logprobs = frag_joint_logprobs.flatten()
 		frag_formula_logprobs = scatter_logsumexp(
-			frag_formula_logprobs,
+			frag_joint_logprobs,
 			frag_formula_idxs,
 			dim=0
 		)
-		log_msg(f"frag_formula_logprobs_2: {get_mem()}")
-
-		# zero out NULL formula
-		# TODO: could reuse masking from above
-		frag_formula_mask = th.ones_like(frag_formula_logprobs)
-		frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.
 		frag_formula_batch_idxs = th.bucketize(
 			th.arange(frag_formula_cumsizes[-1],device=device),
 			frag_formula_cumsizes,
 			right=True
 		)-1
-		
-		# softmax with masked logits
-		frag_formula_logprobs = scatter_masked_softmax(
-			frag_formula_logprobs,
-			frag_formula_mask,
-			frag_formula_batch_idxs,
-			dim=0,
-			log=True
-		)
-		log_msg(f"frag_formula_logprobs_3: {get_mem()}")
+		frag_debug_mask = th.zeros_like(frag_formula_logprobs,dtype=th.bool)
+		frag_debug_mask[frag_formula_cumsizes[:-1]] = True
+		# print(frag_formula_logprobs[frag_debug_mask],th.exp(frag_formula_logprobs[frag_debug_mask]))
+		log_msg(f"frag_formula_logprobs: {get_mem()}")
 
 		# convert to spectrum
 		frag_formula_offsets = th.repeat_interleave(
@@ -493,6 +496,7 @@ class FragGNNModel(nn.Module):
 			"pred_edge_h_range_masks": frag_edge_h_range_masks,
 			"pred_edge_h_logprobs": frag_edge_h_logprobs,
 			"pred_edge_batch_idxs": frag_edge_batch_idxs,
+			# "pred_total_null_logprob": frag_total_null_logprob,
 		}
 
 		return out_d
@@ -782,20 +786,6 @@ class MLPBlocks(nn.Module):
 		if self.output_layer is not None:
 			output = self.output_layer(output)
 		return output
-
-
-def scatter_masked_softmax(logits,mask,subset_idxs,mask_value=np.log(1e-4),dim=-1,log=True):
-	# # clamp
-	# logits = th.clamp(logits,min=np.log(1e-4))
-	# apply mask
-	masked_logits = mask*logits + (1-mask)*mask_value
-	# normalize
-	masked_logits = scatter_logsoftmax(masked_logits,subset_idxs,dim)
-	if not log:
-		# exponentiate
-		return th.exp(masked_logits)
-	else:
-		return masked_logits
 
 
 class NeimsBlock(nn.Module):

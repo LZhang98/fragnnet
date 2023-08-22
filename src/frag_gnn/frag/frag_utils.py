@@ -887,7 +887,7 @@ EDGE_FEAT_TO_IDX = {
 	"complement":3
 }
 
-def get_node_feats(node_feats:th.Tensor,node_feat_idxs:int,key:str):
+def get_node_feats(node_feats:th.Tensor,node_feat_idxs:th.Tensor,key:str):
 	"""get node features by key used for pyg
 
 	Args:
