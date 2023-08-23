@@ -1,6 +1,8 @@
 wandb_name: d3_base
-split_dp: data/split/d3_h4_isoTrue
-frag_dp: data/frag/d3_h4_isoTrue/dags
+wandb_tags:
+- v2
+split_dp: data/split/d3_h4_isoTrue_v2
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4
 num_hs: 4
 

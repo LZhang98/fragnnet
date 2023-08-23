@@ -9,7 +9,7 @@ spec_preprocess: False #True
 mol_preprocess: False #True
 frag_preload: False #True
 frag_preprocess: False #True
-spec_subsample_size: 128
+spec_subsample_size: -1 #128
 
 train_batch_size: 2
 eval_batch_size: 2
@@ -49,11 +49,13 @@ auxiliary_scores:
 num_log_train_images: 3
 num_log_val_images: 3
 drop_last: False
-num_workers: 0
+num_workers: 8 #0
+detect_anomaly: True
+skip_edge_loss: False
 # edge_h_range_loss_weight: 0.0
 # edge_h_transfer_loss_weight: 0.0
 # edge_h_range_loss_fn: exponential
-# edge_h_transfer_loss_fn: exponential #linear
+edge_h_transfer_loss_fn: linear
 # loss_type: cosine_distance
 # # mode_type: frag_gnn
 # model_type: neims
