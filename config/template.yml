@@ -149,3 +149,4 @@ num_log_val_images: 0
 deterministic: False
 drop_last: False
 num_sanity_val_steps: 2
+mask_null_formula: True

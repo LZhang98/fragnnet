@@ -18,5 +18,5 @@ max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 precision: bf16-mixed
-node_normalized_entropy_weight: -2.0
-node_formula_normalized_entropy_weight: 2.0
+node_normalized_entropy_weight: -1.0
+node_formula_normalized_entropy_weight: 1.0
