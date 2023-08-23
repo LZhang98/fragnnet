@@ -17,6 +17,9 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"": 0.
 }
 
+def MASS(element: str):
+	return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
+
 # Just huge table grabbed for atomic number and its stable isotopes
 # if atomic number is not in this table, that means we should even see it in the sample
 # After all this is MS not Cyclotron and we are not try to finding super hevay elemet

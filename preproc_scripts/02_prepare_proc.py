@@ -34,6 +34,8 @@ def load_df(df_dp,dsets,num_entries):
 
 def preprocess_spec(spec_df):
 
+	# drop entries with the same dset_spec_id (this happens sometimes in MoNA)
+	spec_df = spec_df.drop_duplicates(subset=["dset","dset_spec_id"],keep="first")
 	# convert smiles to mol and back (for standardization/stereochemistry)
 	spec_df.loc[:,"mol"] = par_apply_series(spec_df["smiles"],data_utils.mol_from_smiles)
 	spec_df.loc[:,"smiles"] = par_apply_series(spec_df["mol"],data_utils.mol_to_smiles)
@@ -98,6 +100,9 @@ def preprocess_spec(spec_df):
 	print("> bad_mol_id",len(bad_mol_id))
 	spec_df = spec_df[~spec_df["mol_id"].isin(bad_mol_id)]
 
+	# fill in missing prec_mz by inferring them
+	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner"),data_utils.infer_prec_mz)
+
 	# reset indices
 	spec_df = spec_df.reset_index(drop=True)
 	mol_df = mol_df.reset_index(drop=True)
@@ -131,7 +136,7 @@ if __name__ == "__main__":
 
 		print("> creating new spec_df, mol_df")
 		assert os.path.isdir(flags.df_dp), flags.df_dp
-		all_df = load_df(flags.df_dp,flags.num_entries)
+		all_df = load_df(flags.df_dp,flags.dset,flags.num_entries)
 
 		spec_df, mol_df = preprocess_spec(all_df)
 

@@ -6,9 +6,10 @@ import numpy as np
 import joblib
 from tqdm import tqdm
 from pprint import pformat, pprint
-
-from .misc_utils import np_temp_seed, none_or_nan
 from typing import Dict
+
+from frag_gnn.utils.misc_utils import np_temp_seed, none_or_nan
+from frag_gnn.utils.formula_utils import MASS, ELECTRON_MASS
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
@@ -479,6 +480,28 @@ def parse_prec_type_str(prec_type_str):
 		return prec_type_str.replace("1-","-")
 	else:
 		return prec_type_str
+
+def infer_prec_mz(df):
+
+	# these were observed to be missing prec_mz in MoNA
+	prec_type_to_mass_diff = {
+		"[M+HCOO]-": MASS("H")+MASS("C")+2*MASS("O")+ELECTRON_MASS,
+		"[M]+": -ELECTRON_MASS,
+		"[M+HOO]-": MASS("H")+2*MASS("O")+ELECTRON_MASS,
+		"[M-OH]+": -MASS("H")-MASS("O")-ELECTRON_MASS,
+		"[M+H-C12H20O9]+": -19*MASS("H")-12*MASS("C")-9*MASS("O")-ELECTRON_MASS
+	}
+
+	prec_mz = df["prec_mz"]
+	spec_type = df["spec_type"]
+	if none_or_nan(prec_mz) and spec_type == "MS2":
+		dset = df["dset"]
+		assert dset == "mona23", dset
+		prec_type = df["prec_type"]
+		exact_mw = df["exact_mw"]
+		if not none_or_nan(prec_type):
+			prec_mz = exact_mw + prec_type_to_mass_diff[prec_type]
+	return prec_mz
 
 def parse_peaks_str(peaks_str):
 	# peaks still represented as string
