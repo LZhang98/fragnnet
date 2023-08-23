@@ -1,4 +1,4 @@
-wandb_name: d3_bb_hlr
+wandb_name: d3_bb_hlr_softxmax_pooling
 split_dp: data/split/d3_h4_isoTrue
 frag_dp: data/frag/d3_h4_isoTrue/dags
 num_depth: 4

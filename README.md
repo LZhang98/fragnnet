@@ -29,9 +29,16 @@ snakeviz run_frag_exp.
 ### Create Env
 Run ```env/env_cc_dev_gpu_torch2.sh``` or Create virtualenv via ```env/cc_requirement.txt```
 
+### d3 forumla only
 ```
  python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d3_forumla_only --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/d3_forumla_only.yml"
 ```
+
+### D3 GAT
+```
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d3_bb_hlr_gatv2_1head --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/d3_bb_hlr_gatv2_1head.yml" --time=12
+```
+
 ### D3 interstage
 ```
 python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d3_bb_hlr_int_add --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/d3_bb_hlr_int_add.yml" --time=12
@@ -39,6 +46,10 @@ python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.p
 python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d3_bb_hlr_int_linear --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/d3_bb_hlr_int_linear.yml" --time=12
 ```
 
+### D3 softmax pooling
+```
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d3_bb_hlr_softxmax_pooling --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/d3_bb_hlr_softxmax_pooling.yml,j=d3_bb_hlr_softxmax_pooling" --time=12
+```
 ### D4 Tasks
 ```
 python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_bb_hlr_negfe --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/d4_bb_hlr_negfe.yml" --time=12
