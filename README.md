@@ -23,7 +23,17 @@ memray flamegraph ./scripts/run_compute_frags.abc.bin
 ~ pip install snakeviz
 snakeviz run_frag_exp.
 
+## Preprocessing
+### Create frag and features
+```
+python ./preproc_scripts/03_prepare_dag_feats.py --max_depth=4 --wandb_mode=off --run_name=d4_h4_isoTrue_v2
+```
 
+### Create data split use script
+Data split should be done respect to different frag size
+```
+python ./preproc_scripts/04_prepare_split.py --max_num_dag_nodes=100000 --split_name=d4_h4_isoTrue_v2 --frag_name=d4_h4_isoTrue_v2
+```
 
 ## How to run this on ComputeCanada
 ### Create Env
