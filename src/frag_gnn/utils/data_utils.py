@@ -474,12 +474,20 @@ def parse_prec_type_str(prec_type_str):
 		return np.nan
 	if prec_type_str == "EI":
 		return "EI"
-	elif prec_type_str.endswith("1+"):
-		return prec_type_str.replace("1+","+")
+	if prec_type_str.endswith("1+"):
+		prec_type_str = prec_type_str.replace("1+","+")
 	elif prec_type_str.endswith("1-"):
-		return prec_type_str.replace("1-","-")
-	else:
-		return prec_type_str
+		prec_type_str = prec_type_str.replace("1-","-")
+	# manually replace some
+	prec_type_dict = {
+		# "M+H": "[M+H]+",
+		# "M-H": "[M-H]-",
+		"[M+FA-H]-": "[M+CH2O2-H]-"
+	}
+	if prec_type_str in prec_type_dict:
+		prec_type_str = prec_type_dict[prec_type_str]
+	return prec_type_str
+
 
 def infer_prec_mz(df):
 
@@ -489,7 +497,8 @@ def infer_prec_mz(df):
 		"[M]+": -ELECTRON_MASS,
 		"[M+HOO]-": MASS("H")+2*MASS("O")+ELECTRON_MASS,
 		"[M-OH]+": -MASS("H")-MASS("O")-ELECTRON_MASS,
-		"[M+H-C12H20O9]+": -19*MASS("H")-12*MASS("C")-9*MASS("O")-ELECTRON_MASS
+		"[M+H-C12H20O9]+": -19*MASS("H")-12*MASS("C")-9*MASS("O")-ELECTRON_MASS,
+		"[M-H]-": -MASS("H")+ELECTRON_MASS,
 	}
 
 	prec_mz = df["prec_mz"]
