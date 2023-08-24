@@ -120,7 +120,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		wandb_logger = pl.loggers.WandbLogger(**wandb_d)
 		assert wandb_logger.version == wandb.run.id, (wandb_logger.version, wandb.run.id)
 		if job_id_fp:
-			with open(job_id_fp,"w") as job_id_file:
+			os.makedirs("job_id", exist_ok=True)
+			with open(job_id_fp,"w+") as job_id_file:
 				text = f"{wandb.run.id};{os.path.abspath(wandb.run.dir)}"
 				job_id_file.write(text)
 		# update config results (primarily for wandb)
