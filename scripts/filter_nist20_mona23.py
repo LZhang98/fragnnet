@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 
 
+# Most of these adducts have more than 5k spectra
 PREC_ADDUCTS = [
 	"[M+H]+",
 	"[M-H]-",
@@ -33,7 +34,6 @@ def filter_spec_mol(spec_df,mol_df,num_entries=-1):
 	"""
 
 	masks = []
-	## spectrum criteria (TODO remove this)
 	# dataset mask
 	dset_mask = spec_df["dset"].isin(["nist20_hr","nist20_lr","mona23"])
 	masks.append(dset_mask)
@@ -92,14 +92,9 @@ if __name__ == "__main__":
     mol_df = pd.read_pickle("data/proc_all/mol_df.pkl")
     print("num_spec",spec_df.shape[0])
     print("num_mol",mol_df.shape[0])
-	print(spec_df["prec_type"].value_counts())
+	print(spec_df["prec_type"].value_counts()[:20])
     spec_df, mol_df = filter_spec_mol(spec_df,mol_df)
     print("num_spec",spec_df.shape[0])
     print("num_mol",mol_df.shape[0])
-    print(spec_df["prec_type"].value_counts())
-    import pdb; pdb.set_trace()
-
-    # prec_type_vcs = spec_df["prec_type"].value_counts()
-    # prec_types = prec_type_vcs.index.values[prec_type_vcs.values>1000]
-    # print(prec_types)
-    # import pdb; pdb.set_trace()
+    print(spec_df["prec_type"].value_counts()[:20])
+	

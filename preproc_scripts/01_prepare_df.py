@@ -78,7 +78,17 @@ def preproc_msp(msp_fp,keys,num_entries):
 
 	with open(msp_fp) as f:
 		raw_data_lines = f.readlines()
-	# raw_data_lines = raw_data_lines[:1000]
+	# split CAS# and NIST# on different lines
+	_raw_data_lines = []
+	for line in raw_data_lines:
+		if "CAS#" in line and "NIST#" in line:
+			assert ";" in line, line
+			split_lines = line.split(";")
+			_raw_data_lines.append(split_lines[0].rstrip(";")+"\n")
+			_raw_data_lines.append(split_lines[1].lstrip())
+		else:
+			_raw_data_lines.append(line)
+	raw_data_lines = _raw_data_lines
 	raw_data_list = []
 	raw_data_item = {key: None for key in keys}
 	read_ms = False
@@ -276,20 +286,21 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--msp_file', type=str, required=False)
 	parser.add_argument('--mol_dir', type=str, required=False)
+	parser.add_argument('--pkl_file', type=str, required=False)
 	parser.add_argument('--ms_dir', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
-	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta"], required=True)
+	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
 	parser.add_argument('--num_entries', type=int, default=-1)
 	parser.add_argument('--output_type', type=str, default="json", choices=["json","csv"])
-	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#"])
+	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#"])
 	args = parser.parse_args()
 
 	os.makedirs(args.output_dp,exist_ok=True)
 
-	if args.input_format in ["msp","msp+mol"]:
+	if args.input_format in ["msp","msp+mol","msp+pkl"]:
 		# select dset_spec_id
 		MSP_KEY_DICT[args.msp_dset_spec_id] = "dset_spec_id"
 		# nist or mona
@@ -300,11 +311,18 @@ if __name__ == "__main__":
 			mol_dp = os.path.join(args.raw_data_dp,args.mol_dir)
 			assert os.path.isdir(mol_dp), mol_dp
 			mol_df = preproc_nist_mol(mol_dp)
+		elif args.input_format == "msp+pkl":
+			pkl_fp = os.path.join(args.raw_data_dp,args.pkl_file)
+			assert os.path.isfile(pkl_fp), pkl_fp
+			nist_id_map = pd.read_pickle(pkl_fp)
+			nist_id_map	= nist_id_map.rename(columns={"nist_id":args.msp_dset_spec_id,"smiles":"SMILES"})
+			msp_df = msp_df.drop(columns=["SMILES"]).merge(nist_id_map,on=[args.msp_dset_spec_id],how="left")
+			mol_df = None
 		else:
 			mol_df = None
 		spec_df = merge_and_check(msp_df,mol_df,MSP_KEY_DICT)
 	else:
-		assert args.input_format == "ms+meta", ags.input_format
+		assert args.input_format == "ms+meta", args.input_format
 		# npllib
 		# just use NISTNO as default
 		MSP_KEY_DICT["NISTNO"] = "dset_spec_id"
