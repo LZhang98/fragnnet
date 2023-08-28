@@ -147,6 +147,7 @@ class FragGNNModel(nn.Module):
 		cc_interstage_type: str,
 		skip_edge_loss: bool,
 		mask_null_formula: bool,
+		ce_insert_type: str= None,
 	):
 
 		super().__init__()
@@ -157,7 +158,14 @@ class FragGNNModel(nn.Module):
 		self.mol_node_feats = mol_node_feats
 		self.mol_edge_feats = mol_edge_feats
 		self.mol_pe_embed_k = mol_pe_embed_k
-		self._compute_mol_feats_sizes() 
+		self._compute_mol_feats_sizes()
+
+		#check ce insertion type
+		assert ce_insert_type in ["mlp_insert","frag_insert","mol_insert", None]
+		self.ce_insert_type = ce_insert_type
+
+		# setup mol gnn
+		#mol_include_ce = ce_insert_type == "mol_insert"
 		mol_kwargs = {
 			"node_feats_size": self.mol_node_feats_size,
 			"edge_feats_size": self.mol_edge_feats_size,
@@ -166,10 +174,12 @@ class FragGNNModel(nn.Module):
 			"gnn_type": mol_gnn_type,
 			"dropout": mol_dropout,
 			"normalization": mol_normalization,
+			#"include_ce": mol_include_ce
 		}
-
+		
 		# Mol GNN
 		self.mol_embedder = GNN(**mol_kwargs)
+		self.mol_pool_type = mol_pool_type
 		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
 		if int_embedder_tight:
 			formula_d = {"max_count_int": 127}
@@ -189,7 +199,7 @@ class FragGNNModel(nn.Module):
 		self.cc_interstage_type = cc_interstage_type
 		if self.cc_interstage_type == "linear":
 			self.cc_interstage = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
-   
+
 		# define frag-graph GNN to create frag-graph node level embedding
 		frag_kwargs = {
 			"node_feats_size": self.frag_node_feats_size,
@@ -198,14 +208,20 @@ class FragGNNModel(nn.Module):
 			"num_layers": frag_num_layers,
 			"gnn_type": frag_gnn_type,
 			"dropout": frag_dropout,
-			"normalization": frag_normalization
+			"normalization": frag_normalization,
+			"include_ce": ce_insert_type == "frag_insert"
 		}
 		self.frag_embedder = GNN(**frag_kwargs)
+		self.frag_pool_type = frag_pool_type
 		self.frag_pool = build_pool_module(frag_pool_type,frag_hidden_size)
 		self.mlp_output_format = mlp_output_format
+
+		mlp_input_dim = 2*self.frag_embedder.hidden_size
+		if ce_insert_type == "mlp_insert":
+			mlp_input_dim += 1
 		if self.mlp_output_format in ["formula","node_formula"]:
 			formula_mlp_kwargs = {
-				"input_size": 2*self.frag_embedder.hidden_size,
+				"input_size": mlp_input_dim,
 				"output_size": 2*self.num_hs+1,
 				"hidden_size": mlp_hidden_size,
 				"num_layers": mlp_num_layers,
@@ -214,6 +230,7 @@ class FragGNNModel(nn.Module):
 				"normalization": mlp_normalization
 			}
 			self.formula_module = MLPBlocks(**formula_mlp_kwargs)
+		# TODO : do we need insert here？ 
 		if self.mlp_output_format in ["node_formula"]:
 			node_mlp_kwargs = {
 				"input_size": 2*self.frag_embedder.hidden_size,
@@ -304,8 +321,7 @@ class FragGNNModel(nn.Module):
 			_type_: _description_
 		"""
 
-		# TODO add collision energy support
-		
+
 		def get_mem():
 			# th.cuda.empty_cache()
 			# return f"{get_gpu_memory_from_nvidia_smi()[1]} MB"
@@ -332,6 +348,19 @@ class FragGNNModel(nn.Module):
 		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
 		
+		# get ce value
+		# maybe we should check if ce is provided by model does not handle it ?
+		# add collision energy support
+		# TODO fix this, we should also handle ace
+		# for k, v in kwargs.items():
+		#	print(f"{k} {v}")
+		
+		if self.ce_insert_type != None:
+			if "spec_nce" in kwargs:
+				ce = kwargs.pop('spec_nce')
+			elif "spec_ace" in kwargs:
+				ce = kwargs.pop('spec_ace')
+
 		# get per-atom embeddings
 		mol_embed_gnn = self.mol_embedder(
 			mol_x,
@@ -445,13 +474,18 @@ class FragGNNModel(nn.Module):
 		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
 		log_msg(f"frag_embed: {get_mem()}")
 
+		# if multiple pooling, we need change frag_emebed_size
+		# if self.frag_pool_type == "std_mean_softmax":
+
 		# get frag dag embedding
-		frag_embed = th.cat(
-			[
+		frag_embed_parts = [
 				frag_embed_node - frag_embed_node_pool[frag_batch],
 				frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
-			], dim=1
-		)
+			]
+		if self.ce_insert_type == "mlp_insert":
+			frag_embed_parts.append(ce)
+
+		frag_embed = th.cat(frag_embed_parts, dim=1)
 
 		frag_joint_logits = self.formula_module(frag_embed)
 		assert frag_joint_logits.shape[1] == 2*self.num_hs+1, (frag_joint_logits.shape[1],2*self.num_hs+1)
@@ -771,8 +805,10 @@ class GNN(nn.Module):
 		"""
 		super().__init__()
 		self.hidden_size = hidden_size
-		self.edge_feats_size = edge_feats_size
-		self.node_feats_size = node_feats_size
+		self.include_ce = kwargs.pop('include_ce', False)
+		# if include ce here, add ce value to each node
+		self.edge_feats_size = edge_feats_size if not self.include_ce else edge_feats_size + 1
+		self.node_feats_size = node_feats_size if not self.include_ce else node_feats_size + 1
 		self.dropout = dropout
 		self.normalization = normalization
 
@@ -780,6 +816,7 @@ class GNN(nn.Module):
 		self.hidden_size = hidden_size
 		self.num_layers = num_layers
 		self.input_project = nn.Linear(self.node_feats_size, self.hidden_size)
+
 
 		if self.gnn_type == "GINE":
 			self.gnn = GINE(
@@ -792,8 +829,8 @@ class GNN(nn.Module):
 			)
 		elif self.gnn_type == "GAT" or self.gnn_type == "GATv2":
 			self.gnn = GAT(
-				node_feats_size=self.node_feats_size,
 				edge_feats_size=self.edge_feats_size,
+				node_feats_size=self.node_feats_size,
 				node_hidden_dim=self.hidden_size, 
 			    num_step_message_passing =self.num_layers,
 				#num_step_set2set=self.num_layers,
