@@ -50,11 +50,11 @@ frag_pyg_node_feats:
   - base_formula
   - depth
   - h_formulae_idx
-  # - h_counts
+  - h_counts
 frag_pyg_edge_feats:
   - cc
   - base_formula
-  # - h_range
+  - h_range
 frag_pyg_bigraph: True
 frag_num_isotopes: 1
 frag_formula_peak_mzs: True
@@ -138,10 +138,11 @@ node_formula_entropy_weight: 0.0
 formula_normalized_entropy_weight: 0.0
 node_normalized_entropy_weight: 0.0
 node_formula_normalized_entropy_weight: 0.0
+skip_edge_loss: True
 edge_h_range_loss_weight: 0.0
 edge_h_transfer_loss_weight: 0.0
-edge_h_range_loss_fn: exponential
-edge_h_transfer_loss_fn: linear
+edge_h_range_loss_fn: linear # do not make exponential!
+edge_h_transfer_loss_fn: exponential
 seed: 420
 detect_anomaly: False
 automatic_optimization: True
@@ -152,3 +153,4 @@ num_log_val_images: 0
 deterministic: False
 drop_last: False
 num_sanity_val_steps: 2
+mask_null_formula: True

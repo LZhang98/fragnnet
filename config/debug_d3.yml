@@ -26,9 +26,9 @@ lr_decay_steps: 10
 lr_decay_rate: 0.8
 debug_overfit: False
 debug_overfit_batches: 1 # 24
-formula_entropy_weight: 0.0
-node_entropy_weight: 2.0
-node_formula_entropy_weight: -2.0
+formula_normalized_entropy_weight: 0.0
+node_normalized_entropy_weight: 0.0
+node_formula_normalized_entropy_weight: 0.0
 frag_pyg_node_feats:
   - cc
   - base_formula
@@ -46,14 +46,18 @@ auxiliary_scores:
   - cos_sim
   - wrecall
   - opt_cos_sim
-num_log_train_images: 0
-num_log_val_images: 0
+num_log_train_images: 3
+num_log_val_images: 3
 drop_last: False
-num_workers: 0
-edge_h_range_loss_weight: 2.0
-edge_h_transfer_loss_weight: 0.0
-edge_h_range_loss_fn: exponential
-edge_h_transfer_loss_fn: quadratic #linear
+num_workers: 8 #0
+mask_null_formula: False
+frag_num_isotopes: 1
+# detect_anomaly: False
+# skip_edge_loss: True
+# edge_h_range_loss_weight: 0.0
+# edge_h_transfer_loss_weight: 0.0
+# edge_h_range_loss_fn: exponential
+# edge_h_transfer_loss_fn: linear
 # loss_type: cosine_distance
 # # mode_type: frag_gnn
 # model_type: neims

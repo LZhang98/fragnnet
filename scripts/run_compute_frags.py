@@ -41,8 +41,6 @@ def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes
 		dag_memory = get_pyg_memory_usage(dag)
 		print(f"memory = {dag_memory/1e6} MB")
 	
-		# print(dag.node_feat_idxs)
-		# print(dag.edge_feat_idxs)
 	return dag_d
 
 if __name__ == "__main__":

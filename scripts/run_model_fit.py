@@ -10,9 +10,9 @@ import argparse
 from copy import deepcopy
 
 import frag_gnn.frag.frag_utils as frag_utils
-from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed, get_pyg_memory_usage
+from frag_gnn.utils.misc_utils import timeit, booltype, th_temp_seed, get_pyg_memory_usage, scatter_logsoftmax
 from frag_gnn.utils.feat_utils import get_mol_graph, get_frag_graph, batch_mols_frags
-from frag_gnn.nn.nn_utils import GNN, JointPredictor, scatter_logsoftmax
+from frag_gnn.nn.nn_utils import GNN, JointPredictor
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn
 from frag_gnn.utils.spec_utils import calculate_recalls, calculate_spectrum_entropy, calculate_topk_weighted_recall, \
 	calculate_match_mzs, calculate_cosine_similarity, batch_func

@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import torch as th
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 import numpy as np
 import torch_geometric as pyg
@@ -372,7 +373,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
 		if self.frag_params["formula_peak_probs"]:    
 			formula_peak_probs = frag_entry["formula_peak_probs"]
-			formula_peak_probs = formula_peak_probs[:,:self.frag_params["num_isotopes"]]
+			formula_peak_probs = F.normalize(formula_peak_probs[:,:self.frag_params["num_isotopes"]],dim=1,p=1)
 			frag_data["frag_formula_peak_probs"] = formula_peak_probs
 		return frag_data
 

@@ -102,7 +102,9 @@ class SpectrumPL(pl.LightningModule):
 				**kwargs):
 				# untransform
 				if th.isnan(true_ints).any() or th.isnan(pred_ints).any():
-					import pdb; pdb.set_trace()
+					print(true_ints)
+					print(pred_ints)
+					import sys; sys.exit(1)
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
@@ -575,6 +577,8 @@ class FragGNNPL(SpectrumPL):
 			mlp_dropout=self.hparams.mlp_dropout,
 			mlp_num_layers=self.hparams.mlp_num_layers,
 			mlp_use_residuals=self.hparams.mlp_use_residuals,
+			skip_edge_loss=self.hparams.skip_edge_loss,
+			mask_null_formula=self.hparams.mask_null_formula
 			cc_interstage_type=self.hparams.cc_interstage_type
 		)
 		# compile
@@ -670,7 +674,8 @@ class FragGNNPL(SpectrumPL):
 			pred_edge_h_diffs,
 			pred_edge_h_range_masks,
 			pred_edge_h_logprobs,
-			pred_edge_batch_idxs):
+			pred_edge_batch_idxs,
+			pred_null_formula_logprob):
 			spec_ce = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,
@@ -712,21 +717,7 @@ class FragGNNPL(SpectrumPL):
 			)
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
-			
-			# atm, r_el and t_el is only used for reporting out side this function
-			r_el, t_el = None, None
-			if self.hparams.edge_h_range_loss_weight != 0.0 \
-				or self.hparams.edge_h_transfer_loss_weight != 0.0:
-				r_el, t_el = edge_loss(
-					pred_edge_logprobs,
-					pred_edge_h_diffs,
-					pred_edge_h_range_masks,
-					pred_edge_h_logprobs,
-					pred_edge_batch_idxs
-				)
-				loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
-					+ self.hparams.edge_h_transfer_loss_weight * t_el
-				
+			null_formula_prob = th.exp(pred_null_formula_logprob)
 			loss_d = {
 				"loss": loss,
 				"spec_cd": spec_cd,
@@ -737,9 +728,20 @@ class FragGNNPL(SpectrumPL):
 				"node_ne": node_ne,
 				"node_formula_e": node_formula_e,
 				"node_formula_ne": node_formula_ne,
-				"edge_h_range_loss": r_el,
-				"edge_h_transfer_loss": t_el
+				"null_formula_prob": null_formula_prob
 			}
+			if not self.hparams.skip_edge_loss:
+				r_el, t_el = edge_loss(
+					pred_edge_logprobs,
+					pred_edge_h_diffs,
+					pred_edge_h_range_masks,
+					pred_edge_h_logprobs,
+					pred_edge_batch_idxs
+				)
+				loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
+					+ self.hparams.edge_h_transfer_loss_weight * t_el
+				loss_d["edge_h_range_loss"] = r_el
+				loss_d["edge_h_transfer_loss"] = t_el
 			return loss_d
 		self.loss_fn = _loss_fn
 

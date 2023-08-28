@@ -6,9 +6,10 @@ import numpy as np
 import joblib
 from tqdm import tqdm
 from pprint import pformat, pprint
-
-from .misc_utils import np_temp_seed, none_or_nan
 from typing import Dict
+
+from frag_gnn.utils.misc_utils import np_temp_seed, none_or_nan
+from frag_gnn.utils.formula_utils import MASS, ELECTRON_MASS
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
@@ -351,6 +352,7 @@ def parse_nce_str(ce_str):
 		# nist ones
 		r"^NCE=[\d]+[.]?[\d]*% [\d]+[.]?[\d]*eV$": lambda x: float(x.split()[0].lstrip("NCE=").rstrip("%")),
 		r"^NCE=[\d]+[.]?[\d]*%$": lambda x: float(x.lstrip("NCE=").rstrip("%")),
+		r"^[\d]+% resonant relative/normalized$": lambda x: float(x.split("%")[0]),
 		# other ones
 		r"^[\d]+[.]?[\d]*$": lambda x: 100.*float(x) if float(x) < 2. else np.nan, # this case is ambiguous
 		r"^[\d]+[.]?[\d]*[ ]?[%]? \(nominal\)$": lambda x: float(x.rstrip(" %(nominal)")),
@@ -472,12 +474,43 @@ def parse_prec_type_str(prec_type_str):
 		return np.nan
 	if prec_type_str == "EI":
 		return "EI"
-	elif prec_type_str.endswith("1+"):
-		return prec_type_str.replace("1+","+")
+	if prec_type_str.endswith("1+"):
+		prec_type_str = prec_type_str.replace("1+","+")
 	elif prec_type_str.endswith("1-"):
-		return prec_type_str.replace("1-","-")
-	else:
-		return prec_type_str
+		prec_type_str = prec_type_str.replace("1-","-")
+	# manually replace some
+	prec_type_dict = {
+		# "M+H": "[M+H]+",
+		# "M-H": "[M-H]-",
+		"[M+FA-H]-": "[M+CH2O2-H]-"
+	}
+	if prec_type_str in prec_type_dict:
+		prec_type_str = prec_type_dict[prec_type_str]
+	return prec_type_str
+
+
+def infer_prec_mz(df):
+
+	# these were observed to be missing prec_mz in MoNA
+	prec_type_to_mass_diff = {
+		"[M+HCOO]-": MASS("H")+MASS("C")+2*MASS("O")+ELECTRON_MASS,
+		"[M]+": -ELECTRON_MASS,
+		"[M+HOO]-": MASS("H")+2*MASS("O")+ELECTRON_MASS,
+		"[M-OH]+": -MASS("H")-MASS("O")-ELECTRON_MASS,
+		"[M+H-C12H20O9]+": -19*MASS("H")-12*MASS("C")-9*MASS("O")-ELECTRON_MASS,
+		"[M-H]-": -MASS("H")+ELECTRON_MASS,
+	}
+
+	prec_mz = df["prec_mz"]
+	spec_type = df["spec_type"]
+	if none_or_nan(prec_mz) and spec_type == "MS2":
+		dset = df["dset"]
+		assert dset == "mona23", dset
+		prec_type = df["prec_type"]
+		exact_mw = df["exact_mw"]
+		if not none_or_nan(prec_type):
+			prec_mz = exact_mw + prec_type_to_mass_diff[prec_type]
+	return prec_mz
 
 def parse_peaks_str(peaks_str):
 	# peaks still represented as string

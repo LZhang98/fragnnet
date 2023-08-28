@@ -12,6 +12,7 @@ data/
 wandb/
 figs/
 extra/
+*.code-workspace
 jobs/
 slurm_scripts/
 # default virtualenv on CC

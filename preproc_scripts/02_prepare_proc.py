@@ -13,21 +13,14 @@ from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows, seq_a
 from frag_gnn.utils.misc_utils import list_str2float, booltype
 
 
-def load_df(df_dp,num_entries):
+def load_df(df_dp,dsets,num_entries):
 	
 	dfs = []
-	nist_fp = os.path.join(df_dp,"nist_df.json")
-	nist_df = pd.read_json(open(nist_fp,"r",encoding="utf8"))
-	nist_df.loc[:,"dset"] = "nist"
-	dfs.append(nist_df)
-	npllib_fp = os.path.join(df_dp,"npllib_df.json")
-	npllib_df = pd.read_json(open(npllib_fp,"r",encoding="utf8"))
-	npllib_df.loc[:,"dset"] = "npllib"
-	dfs.append(npllib_df)
-	# mb_na_fp = os.path.join(df_dp,"mb_na_df.json")
-	# mb_na_df = pd.read_json(open(mb_na_fp,"r",encoding="utf8"))
-	# mb_na_df.loc[:,"dset"] = "mb_na"
-	# dfs.append(mb_na_df)
+	for dset in dsets:
+		dset_fp = os.path.join(df_dp,f"{dset}_df.json")
+		dset_df = pd.read_json(open(dset_fp,"r",encoding="utf8"))
+		dset_df.loc[:,"dset"] = dset
+		dfs.append(dset_df)
 	if num_entries > 0:
 		dfs = [df.sample(n=num_entries,replace=False,random_state=420) for df in dfs]
 	if len(dfs) > 1:
@@ -41,6 +34,8 @@ def load_df(df_dp,num_entries):
 
 def preprocess_spec(spec_df):
 
+	# drop entries with the same dset_spec_id (this happens sometimes in MoNA)
+	spec_df = spec_df.drop_duplicates(subset=["dset","dset_spec_id"],keep="first")
 	# convert smiles to mol and back (for standardization/stereochemistry)
 	spec_df.loc[:,"mol"] = par_apply_series(spec_df["smiles"],data_utils.mol_from_smiles)
 	spec_df.loc[:,"smiles"] = par_apply_series(spec_df["mol"],data_utils.mol_to_smiles)
@@ -105,6 +100,9 @@ def preprocess_spec(spec_df):
 	print("> bad_mol_id",len(bad_mol_id))
 	spec_df = spec_df[~spec_df["mol_id"].isin(bad_mol_id)]
 
+	# fill in missing prec_mz by inferring them
+	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner"),data_utils.infer_prec_mz)
+
 	# reset indices
 	spec_df = spec_df.reset_index(drop=True)
 	mol_df = mol_df.reset_index(drop=True)
@@ -119,6 +117,7 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp", type=str, default="data/proc")
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--ow_spec_mol", type=booltype, default=False)
+	parser.add_argument("--dset", type=str, nargs="+", default=["nist20_hr","nist20_lr","mona23"])
 	flags = parser.parse_args()
 
 	assert os.path.isdir(flags.proc_dp), flags.proc_dp
@@ -137,7 +136,7 @@ if __name__ == "__main__":
 
 		print("> creating new spec_df, mol_df")
 		assert os.path.isdir(flags.df_dp), flags.df_dp
-		all_df = load_df(flags.df_dp,flags.num_entries)
+		all_df = load_df(flags.df_dp,flags.dset,flags.num_entries)
 
 		spec_df, mol_df = preprocess_spec(all_df)
 

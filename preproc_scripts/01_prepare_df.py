@@ -14,7 +14,7 @@ import re
 from frag_gnn.utils.data_utils import rdkit_import, seq_apply, par_apply, seq_apply_series, par_apply_series, par_apply_df_rows
 from frag_gnn.utils.misc_utils import booltype, flatten_lol
 
-KEY_DICT = {
+MSP_KEY_DICT = {
 	"Precursor_type": "prec_type",
 	"Spectrum_type": "spec_type",
 	"PrecursorMZ": "prec_mz",
@@ -29,7 +29,7 @@ KEY_DICT = {
 	"MW": "mw",
 	"ExactMass": "exact_mass",
 	"CASNO": "cas_num",
-	"NISTNO": "dset_spec_id",
+	# "NISTNO": "dset_spec_id",
 	"Name": "name",
 	"MS": "peaks",
 	"SMILES": "smiles",
@@ -37,7 +37,20 @@ KEY_DICT = {
 	"Frag_mode": "frag_mode",
 	"Instrument": "inst",
 	"RI": "ri"
+	# "DB#": "dset_spec_id_2"
 }
+
+MS_KEY_DICT = {
+	">compound": "name",
+	# ">ionization": "prec_type",
+	# ">formula": "formula",
+	">parentmass": "prec_mz",
+	# "#smiles": "smiles",
+	"#instrumentation": "inst_type",
+	# ">collision": "col_energy",
+}
+META_KEYS = list(MS_KEY_DICT.keys())
+SPEC_KEYS = [">ms1peaks",">ms1merged",">ms2peaks",">ms2merged",">collision"]
 
 
 def extract_info_from_comments(comments,key):
@@ -65,7 +78,17 @@ def preproc_msp(msp_fp,keys,num_entries):
 
 	with open(msp_fp) as f:
 		raw_data_lines = f.readlines()
-	# raw_data_lines = raw_data_lines[:1000]
+	# split CAS# and NIST# on different lines
+	_raw_data_lines = []
+	for line in raw_data_lines:
+		if "CAS#" in line and "NIST#" in line:
+			assert ";" in line, line
+			split_lines = line.split(";")
+			_raw_data_lines.append(split_lines[0].rstrip(";")+"\n")
+			_raw_data_lines.append(split_lines[1].lstrip())
+		else:
+			_raw_data_lines.append(line)
+	raw_data_lines = _raw_data_lines
 	raw_data_list = []
 	raw_data_item = {key: None for key in keys}
 	read_ms = False
@@ -74,9 +97,13 @@ def preproc_msp(msp_fp,keys,num_entries):
 			break
 		raw_l = raw_l.replace('\n', '')
 		if raw_l == '':
-			raw_data_list.append(raw_data_item.copy())
-			raw_data_item = {key: None for key in keys}
-			read_ms = False
+			# check if double line
+			if all(v is None for v in raw_data_item.values()):
+				assert not read_ms	
+			else:
+				raw_data_list.append(raw_data_item.copy())
+				raw_data_item = {key: None for key in keys}
+				read_ms = False
 		elif read_ms:
 			raw_data_item['MS'] = raw_data_item['MS'] + raw_l + '\n'
 		else:
@@ -106,6 +133,8 @@ def preproc_msp(msp_fp,keys,num_entries):
 			elif key in keys:
 				value = raw_l_split[1]
 				raw_data_item[key] = value
+	if num_entries > -1:
+		import pdb; pdb.set_trace()
 	msp_df = pd.DataFrame(raw_data_list)
 	# drop all-NaN rows
 	msp_df = msp_df.dropna(axis=0,how="all")
@@ -146,7 +175,6 @@ def merge_and_check(msp_df,mol_df,rename_dict):
 	msp_df = msp_df.rename(columns=rename_dict)
 	if mol_df is None:
 		assert not msp_df["smiles"].isna().all()
-		assert msp_df["dset_spec_id"].isna().all()
 		msp_df.loc[:,"spec_id"] = np.arange(msp_df.shape[0])
 		spec_df = msp_df
 	else:
@@ -159,18 +187,6 @@ def merge_and_check(msp_df,mol_df,rename_dict):
 	spec_df = spec_df.reset_index(drop=True)
 	return spec_df
 
-
-MS_KEY_DICT = {
-	">compound": "name",
-	# ">ionization": "prec_type",
-	# ">formula": "formula",
-	">parentmass": "prec_mz",
-	# "#smiles": "smiles",
-	"#instrumentation": "inst_type",
-	# ">collision": "col_energy",
-}
-META_KEYS = list(MS_KEY_DICT.keys()) #[">compound",">ionization",">formula",">parent_mass","#smiles","#instrumentation"]
-SPEC_KEYS = [">ms1peaks",">ms1merged",">ms2peaks",">ms2merged",">collision"]
 
 def preproc_ms_files(ms_dp,ms_meta_fp,keys,num_entries):
 
@@ -247,12 +263,6 @@ def preproc_ms_files(ms_dp,ms_meta_fp,keys,num_entries):
 	ms_df = pd.DataFrame(ms_df_entries)
 	# drop all-NaN rows
 	ms_df = ms_df.dropna(axis=0,how="all")
-	# # group by spec, verify that the metadata is correct
-	# ms_df_nu = ms_df[["dset_spec_id_base","prec_type","formula","smiles"]].groupby("dset_spec_id_base").agg("nunique")
-	# assert (ms_df_nu.max() == 1).all(), ms_df_nu.max()
-	# ms_df_s = ms_df[["dset_spec_id_base","prec_type","formula","smiles"]].groupby("dset_spec_id_base").apply(lambda group: group.sample(n=1)).reset_index(drop=True)
-	# both_df = ms_df_s.merge(ms_meta_df[["dset_spec_id_base","prec_type","formula","smiles"]],how="inner")
-	# assert ms_df_s["dset_spec_id_base"].nunique() == both_df["dset_spec_id_base"].nunique(), (ms_df_s["dset_spec_id_base"].nunique(),both_df["dset_spec_id_base"].nunique())
 	# add metadata
 	ms_df = ms_df.merge(ms_meta_df[["dset_spec_id_base","prec_type","formula","smiles"]],on=["dset_spec_id_base"],how="inner")
 	# add ion_mode
@@ -262,7 +272,7 @@ def preproc_ms_files(ms_dp,ms_meta_fp,keys,num_entries):
 	# add spec_id (this will be relabeled later)
 	ms_df.loc[:,"spec_id"] = np.arange(len(ms_df))
 	# add extra columns for compatibility
-	for value in KEY_DICT.values():
+	for value in MSP_KEY_DICT.values():
 		if value not in ms_df.columns:
 			ms_df.loc[:,value] = np.nan
 	# drop unnecessary columns
@@ -276,36 +286,51 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--msp_file', type=str, required=False)
 	parser.add_argument('--mol_dir', type=str, required=False)
+	parser.add_argument('--pkl_file', type=str, required=False)
 	parser.add_argument('--ms_dir', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
-	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta"], required=True)
+	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
 	parser.add_argument('--num_entries', type=int, default=-1)
 	parser.add_argument('--output_type', type=str, default="json", choices=["json","csv"])
+	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#"])
 	args = parser.parse_args()
 
 	os.makedirs(args.output_dp,exist_ok=True)
 
-	if args.input_format in ["msp","msp+mol"]:
+	if args.input_format in ["msp","msp+mol","msp+pkl"]:
+		# select dset_spec_id
+		MSP_KEY_DICT[args.msp_dset_spec_id] = "dset_spec_id"
 		# nist or mona
 		msp_fp = os.path.join(args.raw_data_dp,args.msp_file)
 		assert os.path.isfile(msp_fp), msp_fp
-		msp_df = preproc_msp(msp_fp,KEY_DICT.keys(),args.num_entries)
+		msp_df = preproc_msp(msp_fp,MSP_KEY_DICT.keys(),args.num_entries)
 		if args.input_format == "msp+mol":
 			mol_dp = os.path.join(args.raw_data_dp,args.mol_dir)
 			assert os.path.isdir(mol_dp), mol_dp
 			mol_df = preproc_nist_mol(mol_dp)
-		spec_df = merge_and_check(msp_df,mol_df,KEY_DICT)
+		elif args.input_format == "msp+pkl":
+			pkl_fp = os.path.join(args.raw_data_dp,args.pkl_file)
+			assert os.path.isfile(pkl_fp), pkl_fp
+			nist_id_map = pd.read_pickle(pkl_fp)
+			nist_id_map	= nist_id_map.rename(columns={"nist_id":args.msp_dset_spec_id,"smiles":"SMILES"})
+			msp_df = msp_df.drop(columns=["SMILES"]).merge(nist_id_map,on=[args.msp_dset_spec_id],how="left")
+			mol_df = None
+		else:
+			mol_df = None
+		spec_df = merge_and_check(msp_df,mol_df,MSP_KEY_DICT)
 	else:
+		assert args.input_format == "ms+meta", args.input_format
 		# npllib
-		assert args.input_format == "ms+meta", ags.input_format
+		# just use NISTNO as default
+		MSP_KEY_DICT["NISTNO"] = "dset_spec_id"
 		ms_dp = os.path.join(args.raw_data_dp,args.ms_dir)
 		assert os.path.isdir(ms_dp), ms_dp
 		ms_meta_fp = os.path.join(args.raw_data_dp,args.ms_meta_file)
 		assert os.path.isfile(ms_meta_fp), ms_meta_fp
-		spec_df = preproc_ms_files(ms_dp,ms_meta_fp,KEY_DICT.keys(),args.num_entries)
+		spec_df = preproc_ms_files(ms_dp,ms_meta_fp,MSP_KEY_DICT.keys(),args.num_entries)
 
 	# save files
 	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}.{args.output_type}")
