@@ -578,7 +578,7 @@ class FragGNNPL(SpectrumPL):
 			mlp_num_layers=self.hparams.mlp_num_layers,
 			mlp_use_residuals=self.hparams.mlp_use_residuals,
 			skip_edge_loss=self.hparams.skip_edge_loss,
-			mask_null_formula=self.hparams.mask_null_formula
+			mask_null_formula=self.hparams.mask_null_formula,
 			cc_interstage_type=self.hparams.cc_interstage_type
 		)
 		# compile
