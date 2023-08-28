@@ -32,6 +32,22 @@ def prec_type_mass_diff(prec_type):
 def transform_nce(nce):
 	return (nce-NCE_MEAN)/NCE_STD	
 
+def transform_nce_to_ace(nce, mw):
+	return mw/500 * nce
+
+def transform_ace(ace):
+	""" ev most likely between 0 to 100
+
+	Args:
+		ace (_type_): _description_
+
+	Raises:
+		NotImplementedError: _description_
+	"""
+	# TODO fix this
+	raise NotImplementedError
+	#return ace/100 	
+
 def filter_func(mzs,ints,ints_thresh,mz_max):
 
 	thresh_mask = ints > ints_thresh
