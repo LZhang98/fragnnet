@@ -1,6 +1,8 @@
 wandb_name: d3_mlp_ce
 wandb_tags:
+- ce
 - v2
+
 split_dp: data/split/d3_h4_isoTrue_v2
 frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4

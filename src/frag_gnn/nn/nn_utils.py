@@ -201,6 +201,10 @@ class FragGNNModel(nn.Module):
 			self.cc_interstage = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
 
 		# define frag-graph GNN to create frag-graph node level embedding
+		if self.ce_insert_type == "frag_insert":
+			self.frag_node_feats_size += 1
+			self.frag_edge_feats_size += 1
+		
 		frag_kwargs = {
 			"node_feats_size": self.frag_node_feats_size,
 			"edge_feats_size": self.frag_edge_feats_size,
@@ -209,16 +213,20 @@ class FragGNNModel(nn.Module):
 			"gnn_type": frag_gnn_type,
 			"dropout": frag_dropout,
 			"normalization": frag_normalization,
-			"include_ce": ce_insert_type == "frag_insert"
+			"include_ce": self.ce_insert_type == "frag_insert"
 		}
+
 		self.frag_embedder = GNN(**frag_kwargs)
 		self.frag_pool_type = frag_pool_type
 		self.frag_pool = build_pool_module(frag_pool_type,frag_hidden_size)
 		self.mlp_output_format = mlp_output_format
 
+		# determine mlp input dims
+		# we mlp insert for ce is enabled, add ce here
 		mlp_input_dim = 2*self.frag_embedder.hidden_size
-		if ce_insert_type == "mlp_insert":
+		if self.ce_insert_type == "mlp_insert":
 			mlp_input_dim += 1
+
 		if self.mlp_output_format in ["formula","node_formula"]:
 			formula_mlp_kwargs = {
 				"input_size": mlp_input_dim,
@@ -230,7 +238,7 @@ class FragGNNModel(nn.Module):
 				"normalization": mlp_normalization
 			}
 			self.formula_module = MLPBlocks(**formula_mlp_kwargs)
-		# TODO : do we need insert here？ 
+
 		if self.mlp_output_format in ["node_formula"]:
 			node_mlp_kwargs = {
 				"input_size": 2*self.frag_embedder.hidden_size,
@@ -244,6 +252,7 @@ class FragGNNModel(nn.Module):
 			self.node_module = MLPBlocks(**node_mlp_kwargs)
 		else:
 			self.node_module = None
+
 		self.skip_edge_loss = skip_edge_loss
 		self.mask_null_formula = mask_null_formula
 		
@@ -451,6 +460,12 @@ class FragGNNModel(nn.Module):
 			)
 			frag_edata.append(frag_edge_complement)
 		log_msg(f"frag_edge_complement: {get_mem()}")
+
+		if self.ce_insert_type == "frag_insert":
+			edge_ce = ce.repeat(batch_frag_num_edges).T
+			frag_edata.append(edge_ce)
+			node_ce = ce.repeat(batch_frag_num_edges).T
+			frag_ndata.append(batch_frag_num_nodes)
 
 		# get output formula aggregation 
 		frag_node_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
