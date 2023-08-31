@@ -17,7 +17,8 @@ def main(args):
 	script_lines.append(f"#SBATCH --job-name={args.job_name}")
 	script_lines.append(f"#SBATCH --mem={args.mem}G")
 	script_lines.append(f"#SBATCH --cpus-per-task={args.cpu}")
-	script_lines.append(f"#SBATCH --time=0-{args.time}:00")
+	assert args.time > 0, args.time
+	script_lines.append(f"#SBATCH --time=0-{args.time-1}:59")
 	if args.partition != "cpu":
 		assert args.gpu > 0, args.gpu
 		script_lines.append(f"#SBATCH --gres=gpu:{args.gpu}")
