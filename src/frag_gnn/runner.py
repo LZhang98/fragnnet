@@ -150,7 +150,30 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp,"ckpt","*.ckpt"))
 		for old_ckpt_fp in old_ckpt_fps:
 			new_ckpt_fp = os.path.join(ckpt_dp,os.path.basename(old_ckpt_fp))
-			shutil.copyfile(old_ckpt_fp,new_ckpt_fp)
+			# modify checkpoint metadata (hacky)
+			new_ckpt_data = th.load(old_ckpt_fp)
+			ckpt_callback_data = None
+			for k,v in new_ckpt_data["callbacks"].items():
+				if k.startswith("ModelCheckpoint"):
+					ckpt_callback_data = v
+					break
+			assert ckpt_callback_data is not None
+			ckpt_keys = ["best_model_path","last_model_path","dirpath","kth_best_model_path"]
+			for k in ckpt_keys:
+				if k in ckpt_callback_data:
+					ckpt_callback_data[k] = ckpt_callback_data[k].replace(
+						os.path.abspath(old_wandb_dp),
+						os.path.abspath(wandb.run.dir)
+					)
+			if "best_k_models" in ckpt_callback_data:
+				for k in list(ckpt_callback_data["best_k_models"].keys()):
+					new_k = k.replace(
+						os.path.abspath(old_wandb_dp),
+						os.path.abspath(wandb.run.dir)
+					)
+					ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data["best_k_models"].pop(k)
+			# save modified checkpoint in new wandb dir
+			th.save(new_ckpt_data,new_ckpt_fp)
 	checkpoint_callback = ModelCheckpoint(
 		dirpath=ckpt_dp,
 		filename="model-{epoch:03d}",
@@ -263,7 +286,6 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		logging.info("fit model")
 		if is_resume:
 			ckpt_fp = os.path.join(ckpt_dp,"last.ckpt")
-			print(ckpt_fp)
 			if os.path.isfile(ckpt_fp):
 				logging.info(f"resuming from checkpoint: {ckpt_fp}")
 			else:

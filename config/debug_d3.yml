@@ -50,8 +50,8 @@ num_log_train_images: 3
 num_log_val_images: 3
 drop_last: False
 num_workers: 8 #0
-mask_null_formula: False
-frag_num_isotopes: 1
+# mask_null_formula: False
+# frag_num_isotopes: 1
 # detect_anomaly: False
 # skip_edge_loss: True
 # edge_h_range_loss_weight: 0.0
