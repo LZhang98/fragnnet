@@ -1,6 +1,9 @@
 wandb_name: debug_d3
 wandb_tags:
   - debug
+  - new_nn_utils
+  - no_mask
+  - node_formula_output
 split_dp: data/split/d3_h4_isoTrue_v2
 frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4
@@ -18,8 +21,8 @@ gradient_clip_val: 5.0
 lr: 0.0001
 accelerator: gpu
 devices: 1
-min_epochs: 10 #100
-max_epochs: 10 #100
+min_epochs: 5 #100
+max_epochs: 5 #100
 lr_schedule: False
 lr_warmup_steps: 0
 lr_decay_steps: 10
@@ -46,11 +49,12 @@ auxiliary_scores:
   - cos_sim
   - wrecall
   - opt_cos_sim
-num_log_train_images: 3
-num_log_val_images: 3
+num_log_train_images: 0
+num_log_val_images: 0
 drop_last: False
 num_workers: 8 #0
-# mask_null_formula: False
+mask_null_formula: False
+mlp_output_format: "node_formula"
 # frag_num_isotopes: 1
 # detect_anomaly: False
 # skip_edge_loss: True
