@@ -239,16 +239,6 @@ class FragGNNModel(nn.Module):
 	):
 
 		# TODO add collision energy support
-		
-		def get_mem():
-			# th.cuda.empty_cache()
-			# return f"{get_gpu_memory_from_nvidia_smi()[1]} MB"
-			return None
-		def log_msg(msg):
-			# logging.info(msg)
-			return None
-
-		log_msg(f"initial: {get_mem()}")
 
 		device = mol_num_nodes.device
 
@@ -265,7 +255,6 @@ class FragGNNModel(nn.Module):
 			mol_edge_attr
 		)
 		mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn,mol_batch)
-		log_msg(f"mol_embed_gnn: {get_mem()}")
 
 		# process dag
 		frag_ndata, frag_edata = [], []
@@ -287,7 +276,6 @@ class FragGNNModel(nn.Module):
 			)
 			frag_node_mask_embed = frag_node_mask_embed - mol_embed_gnn_pool[frag_batch]
 			frag_ndata.append(frag_node_mask_embed)
-		log_msg(f"frag_node_cc: {get_mem()}")
 		# edge atom embeddings
 		if "cc" in self.frag_edge_feats:
 			frag_edge_mask = th_long_to_mask(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"cc"))
@@ -303,35 +291,30 @@ class FragGNNModel(nn.Module):
 				dim_size=batch_frag_num_edges
 			)
 			frag_edata.append(frag_edge_mask_embed)
-		log_msg(f"frag_edge_cc: {get_mem()}")
 		# node formulae
 		if "base_formula" in self.frag_node_feats:
 			frag_node_formula = self.formula_embedder(
 				get_node_feats(frag_x,frag_node_feat_idxs,"base_formula").reshape(batch_frag_num_nodes,-1)
 			)
 			frag_ndata.append(frag_node_formula)
-		log_msg(f"frag_node_formula: {get_mem()}")
 		# edge formulae
 		if "base_formula" in self.frag_edge_feats:
 			frag_edge_formula = self.formula_embedder(
 				get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"base_formula").reshape(batch_frag_num_edges,-1)
 			)
 			frag_edata.append(frag_edge_formula)
-		log_msg(f"frag_edge_formula: {get_mem()}")
 		# node depth
 		if "depth" in self.frag_node_feats:
 			frag_depth = self.depth_embedder(
 				get_node_feats(frag_x,frag_node_feat_idxs,"depth").reshape(batch_frag_num_nodes,-1)
 			)
 			frag_ndata.append(frag_depth)
-		log_msg(f"frag_node_depth: {get_mem()}")
 		# edge complement
 		if "complement" in self.frag_edge_feats:
 			frag_edge_complement = self.complement_embedder(
 				get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"complement").reshape(batch_frag_num_edges,-1)
 			)
 			frag_edata.append(frag_edge_complement)
-		log_msg(f"frag_edge_complement: {get_mem()}")
 		# get output formula aggregation 
 		frag_node_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
 		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
@@ -352,7 +335,6 @@ class FragGNNModel(nn.Module):
 		frag_embed_gnn_pool = self.frag_pool(frag_embed_gnn,frag_batch)
 		frag_embed_node = self.frag_embedder.input_project(frag_x_embed)
 		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
-		log_msg(f"frag_embed: {get_mem()}")
 
 		# predict probabilities
 		frag_embed = th.cat(
@@ -464,6 +446,26 @@ class FragGNNModel(nn.Module):
 			dim=0
 		)
 
+		# print(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu())
+
+		# softmax over formulae
+		if self.mask_null_formula:
+			frag_formula_logprobs = scatter_masked_softmax(
+				frag_formula_logprobs,
+				frag_formula_mask,
+				frag_formula_batch_idxs,
+				dim=0,
+				log=True
+			)
+		else:
+			frag_formula_logprobs = scatter_logsoftmax(
+				frag_formula_logprobs,
+				frag_formula_batch_idxs,
+				dim=0
+			)
+
+		# print(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu())
+
 		# convert to spectrum
 		frag_formula_offsets = th.repeat_interleave(
 			frag_formula_cumsizes[:-1],
@@ -471,7 +473,6 @@ class FragGNNModel(nn.Module):
 		)
 		spec_mzs = frag_formula_peak_mzs
 		spec_logprobs = frag_formula_logprobs[frag_formula_peak_idxs+frag_formula_offsets] + th.log(frag_formula_peak_probs)
-		log_msg(f"spec_logprobs_1: {get_mem()}")
 
 		# get batch idxs
 		spec_batch_idxs = th.repeat_interleave(
