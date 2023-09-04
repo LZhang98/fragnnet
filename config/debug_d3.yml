@@ -1,9 +1,7 @@
 wandb_name: debug_d3
 wandb_tags:
   - debug
-  - new_nn_utils
-  - no_mask
-  - node_formula_output
+  - edge_loss
 split_dp: data/split/d3_h4_isoTrue_v2
 frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4
@@ -54,14 +52,14 @@ num_log_val_images: 0
 drop_last: False
 num_workers: 8 #0
 mask_null_formula: False
-mlp_output_format: "node_formula"
+mlp_output_format: "formula"
 # frag_num_isotopes: 1
 # detect_anomaly: False
-# skip_edge_loss: True
-# edge_h_range_loss_weight: 0.0
-# edge_h_transfer_loss_weight: 0.0
-# edge_h_range_loss_fn: exponential
-# edge_h_transfer_loss_fn: linear
+skip_edge_loss: False
+edge_h_range_loss_weight: 1.0
+edge_h_transfer_loss_weight: 1.0
+edge_h_range_loss_fn: linear
+edge_h_transfer_loss_fn: linear
 # loss_type: cosine_distance
 # # mode_type: frag_gnn
 # model_type: neims

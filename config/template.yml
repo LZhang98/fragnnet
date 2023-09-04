@@ -138,7 +138,7 @@ skip_edge_loss: True
 edge_h_range_loss_weight: 0.0
 edge_h_transfer_loss_weight: 0.0
 edge_h_range_loss_fn: linear # do not make exponential!
-edge_h_transfer_loss_fn: exponential
+edge_h_transfer_loss_fn: linear
 seed: 420
 detect_anomaly: False
 automatic_optimization: True
