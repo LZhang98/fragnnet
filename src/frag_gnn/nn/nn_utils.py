@@ -495,11 +495,11 @@ class FragGNNModel(nn.Module):
 			frag_edge_batch_idxs = frag_batch[frag_edge_index[0]]
 			frag_edge_logits = frag_node_logprobs[frag_edge_index[0]] + frag_node_logprobs[frag_edge_index[1]]
 			frag_edge_logprobs = scatter_logsoftmax(
-				frag_edge_logits, #th.zeros_like(frag_edge_logits),
+				frag_edge_logits,
 				frag_edge_batch_idxs,
 				dim=0
 			)
-			# print(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))
+			# print(scatter_logsumexp(frag_edge_logprobs,frag_edge_batch_idxs,dim=0))
 			frag_node_h_counts = get_node_feats(frag_x,frag_node_feat_idxs,"h_counts")
 			frag_edge_h_ranges = get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"h_range")
 			frag_edge_h_diffs = frag_node_h_counts[frag_edge_index[0]].unsqueeze(1) - frag_node_h_counts[frag_edge_index[1]].unsqueeze(2)
