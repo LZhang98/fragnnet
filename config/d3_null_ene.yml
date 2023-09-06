@@ -1,4 +1,4 @@
-wandb_name: d3_null_etlinhw
+wandb_name: d3_null_ene
 wandb_tags:
 - v2
 split_dp: data/split/d3_h4_isoTrue_v2
@@ -22,5 +22,6 @@ mask_null_formula: False
 skip_edge_loss: False
 edge_h_range_loss_weight: 0.0
 edge_h_range_loss_fn: linear
-edge_h_transfer_loss_weight: 3.0
+edge_h_transfer_loss_weight: 0.0
 edge_h_transfer_loss_fn: linear
+edge_normalized_entropy_weight: 1.0
