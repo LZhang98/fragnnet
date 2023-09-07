@@ -512,18 +512,18 @@ class SpectrumPL(pl.LightningModule):
 		self.val_results = None
 		self.val_counter = 0
 
-	def on_after_backward(self):
+	# def on_after_backward(self):
 
-		num = 0
-		for k,v in self.named_parameters():
-			if num == 3:
-				break
-			g = v.grad
-			print(f">> {k}")
-			print(th.mean(v).detach().cpu().item(),th.norm(v).detach().cpu().item())
-			if g is not None:
-				print(th.mean(g).detach().cpu().item(),th.norm(g).detach().cpu().item())
-			num += 1
+	# 	num = 0
+	# 	for k,v in self.named_parameters():
+	# 		if num == 3:
+	# 			break
+	# 		g = v.grad
+	# 		print(f">> {k}")
+	# 		print(th.mean(v).detach().cpu().item(),th.norm(v).detach().cpu().item())
+	# 		if g is not None:
+	# 			print(th.mean(g).detach().cpu().item(),th.norm(g).detach().cpu().item())
+	# 		num += 1
 
 class FragGNNPL(SpectrumPL):
 
