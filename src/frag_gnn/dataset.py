@@ -2,12 +2,14 @@ import pandas as pd
 import os
 import torch as th
 import torch.nn.functional as F
+from torch.utils.data.sampler import Sampler, BatchSampler
 from torch.utils.data import Dataset
 import numpy as np
 import torch_geometric as pyg
 from torch_geometric.data import Data, Batch
 import sys
 from tqdm import tqdm
+from typing import Iterator, Iterable, Optional, Sequence, List, TypeVar, Generic, Sized, Union
 
 from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_graph, get_frag_graph
 from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_type_idx, transform_nce, prec_type_mass_diff
@@ -16,6 +18,7 @@ from frag_gnn.frag.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
+import warnings
 
 SPEC_PARAMS = [
 	"merge",
@@ -314,8 +317,10 @@ class SpecMolFragDataset(SpecMolDataset):
 				self.frag_data[k] = frag_data
 			print(f"> total_frag_data_size: {total_frag_data_size/1e6:.2f} MB")
 
-	def __getitem__(self,idx):
-
+	def __getitem__(self, idx):
+		#print(idx)
+		#print(type(idx))
+		#print(self.spec_df.shape)
 		spec_entry = self.spec_df.iloc[idx]
 		mol_id = spec_entry["mol_id"]
 		mol_entry = self.mol_df.loc[mol_id]
@@ -371,7 +376,7 @@ class SpecMolFragDataset(SpecMolDataset):
 				prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
 				formula_peak_mzs = formula_peak_mzs + prec_type_mass_diff
 			frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
-		if self.frag_params["formula_peak_probs"]:    
+		if self.frag_params["formula_peak_probs"]:	
 			formula_peak_probs = frag_entry["formula_peak_probs"]
 			formula_peak_probs = F.normalize(formula_peak_probs[:,:self.frag_params["num_isotopes"]],dim=1,p=1)
 			frag_data["frag_formula_peak_probs"] = formula_peak_probs
@@ -494,6 +499,107 @@ def print_shapes(th_d):
 			print(k,(len(v),))
 		else:
 			raise ValueError(f"Unsupported type: {type(v)}")
+		
+class SpecMolFragDynamicBatchSampler(BatchSampler):
+	"""Dynamically adds samples to a mini-batch up to a maximum size  either based on number of nodes on frag DAG or number of edges on frag DAG.
+	 This is used to avoid CUDA OOM errors, implmentaion is inspired by PyG DynamicBatchSampler, and this should be used to replace default BatchSampler
+	 This should have the same random sampling beheivor as RandomSampler
+	"""
+	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'dag_node',
+					shuffle: bool = False, skip_too_big: bool = False, max_sampling_step  = None) -> None:
+		"""_summary_
+
+		Args:
+			dataset (Dataset): 
+			max_num (int): _description_
+			mode (str, optional): _description_. Defaults to 'node'.
+			shuffle (bool, optional): Samples elements randomly each epoch. Defaults to False.
+			skip_too_big (bool, optional): _description_. Defaults to False.
+			num_sampling_step (Optional[int], optional): num of steps look forawrd. Defaults to None.
+
+		Raises:
+			ValueError: _description_
+			ValueError: _description_
+		"""
+		if not isinstance(max_num, int) or max_num <= 0:
+			raise ValueError("`dag_node` should be a positive integer value "
+							"(got {max_num}).")
+		if limited_by not in ['dag_node', 'dag_edge']:
+			raise ValueError("`limited_by` choice should be either "
+							f"'dag_node' or 'dag_edge' (got '{limited_by}').")
+
+		if max_sampling_step is None:
+			max_sampling_step = len(data_source)
+
+		self.data_source = data_source
+		self.max_num = max_num
+		self.limited_by = limited_by
+		self.skip_too_big = skip_too_big
+		self.max_sampling_step = max_sampling_step
+		self.shuffle = shuffle
+
+	def __iter__(self) -> Iterator[List[int]]:
+		"""_summary_
+
+		Yields:
+			Iterator[List[int]]: _description_
+		"""
+		batch = []
+		batch_n = 0
+		num_steps = 0
+		num_processed = 0
+
+		if self.shuffle:
+			indices = th.randperm(len(self.data_source), dtype=th.long)
+		else:
+			indices = th.arange(len(self.data_source), dtype=th.long)
+
+		while (num_processed < len(self.data_source)
+			   and num_steps < self.max_sampling_step):
+			# Fill batch
+			for idx in indices[num_processed:]:
+				# Size of sample
+				data = self.data_source[idx.item()]
+				
+				#print(data['mol_pyg'].num_nodes)
+				##print(data['mol_pyg'].num_edges) 
+				#print(data['frag_pyg'].num_nodes)
+				#print(data['frag_pyg'].num_edges)
+				
+				# TODO maybe I can get ram usage here ?
+				n = data['frag_pyg'].num_nodes if data['frag_pyg'].num_edges == 'dag_node' else data['frag_pyg'].num_edges
+
+				if batch_n + n > self.max_num:
+					if batch_n == 0:
+						if self.skip_too_big:
+							continue
+						else:
+							warnings.warn("Size of data sample at index "
+										  f"{idx} is larger than "
+										  f"{self.max_num} {self.limited_by}s "
+										  f"(got {n} {self.limited_by}s.")
+					else:
+						# Mini-batch filled
+						break
+
+				# Add sample to current batch
+				batch.append(idx.item())
+				num_processed += 1
+				batch_n += n
+
+			yield batch
+			batch = []
+			batch_n = 0
+			num_steps += 1
+
+	def __len__(self) -> int:
+		""" Note The __len__() method isn't strictly required by DataLoader, but is expected in any calculation involving the length of a DataLoader.
+			ref: https://pytorch.org/docs/stable/data.html#torch.utils.data.Sampler
+		Returns:
+			int: length of datasource
+		"""
+		return len(self.data_source)
+
 
 if __name__ == "__main__":
 

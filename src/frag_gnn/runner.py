@@ -28,7 +28,66 @@ import shutil
 from frag_gnn.model import FragGNNPL, NEIMSPL, get_default_model_params
 from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
-from frag_gnn.dataset import SpecMolFragDataset
+from frag_gnn.dataset import SpecMolFragDataset, SpecMolFragDynamicBatchSampler
+
+		
+class SpecMolDataModule(pl.LightningDataModule):
+
+	def __init__(self, config_d: dict):
+		super().__init__()
+		self.config_d =  config_d
+
+	def prepare_data(self):
+		super().prepare_data()
+
+	def setup(self, stage: str):
+		# Assign train/val datasets for use in dataloaders
+		if stage == "fit":
+			self.train_ds = SpecMolFragDataset(split="train",**self.config_d)
+			self.val_ds = SpecMolFragDataset(split="val",**self.config_d)
+
+		# Assign test dataset for use in dataloader(s)
+		if stage == "test":
+			self.test_ds = SpecMolFragDataset(split="test",**self.config_d)
+
+		if stage == "predict":
+			raise NotImplementedError
+
+	def train_dataloader(self):
+		train_dl = DataLoader(
+			self.train_ds, 
+			batch_size=self.config_d["train_batch_size"], 
+			shuffle=(not self.config_d["debug_overfit"]), 
+			num_workers=self.config_d["num_workers"],
+			collate_fn=self.train_ds.get_collate_fn(),
+			drop_last=self.config_d["drop_last"],
+		)
+		return train_dl
+		
+
+	def val_dataloader(self):
+		val_dl = DataLoader(
+			self.val_ds,
+			batch_size=self.config_d["eval_batch_size"],
+			shuffle=False,
+			num_workers=self.config_d["num_workers"],
+			collate_fn=self.get_collate_fn()
+		)
+
+		return val_dl
+
+	def test_dataloader(self):
+		test_dl = DataLoader(
+			self.test_ds,
+			batch_size=self.config_d["eval_batch_size"],
+			shuffle=False,
+			num_workers=self.config_d["num_workers"],
+			collate_fn=self.get_collate_fn()
+		)
+		return test_dl
+
+	def predict_dataloader(self):
+		raise NotImplementedError
 
 
 def load_config(template_fp, custom_fp):
@@ -212,14 +271,21 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# setup dataloaders
 	logging.info("setup dataloader")
+	# is_train_sampler = True
+	#train_sampler = SpecMolBatchSampler(train_ds, batch_size=config_d["train_batch_size"], drop_last=config_d["drop_last"]) if is_train_sampler else None
+	train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, max_num = 100000)
+	
 	train_dl = DataLoader(
 		train_ds, 
 		batch_size=config_d["train_batch_size"], 
-		shuffle=(not config_d["debug_overfit"]), 
+		shuffle=(not config_d["debug_overfit"] and train_batchsampler is None), 
 		num_workers=config_d["num_workers"],
 		collate_fn=train_ds.get_collate_fn(),
-		drop_last=config_d["drop_last"]
+		drop_last=config_d["drop_last"],
+		batch_sampler=train_batchsampler
+		#sampler = train_sampler
 	)
+	iter(train_dl)
 	val_dl = DataLoader(
 		val_ds,
 		batch_size=config_d["eval_batch_size"],
