@@ -389,6 +389,10 @@ class SpecMolFragDataset(SpecMolDataset):
 	@staticmethod
 	def collate_fn(data_list):
 
+		# prevent edge case causing crash
+		if len(data_list) == 0:
+			return  {"batch_size": th.tensor(0)}
+
 		batch_size = len(data_list)
 		keys = list(data_list[0].keys())
 		collate_data = {key: [] for key in keys}
@@ -574,7 +578,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				n = data['frag_pyg'].num_nodes if data['frag_pyg'].num_edges == 'dag_node' else data['frag_pyg'].num_edges
 
 				if n > self.max_num:
-						# if skip too big is true, just move to the next iteration
+					#  fill this anyway ... 
 					if not self.skip_too_big:
 						warnings.warn("Size of data sample at index "
 											f"{idx} is larger than "
@@ -582,7 +586,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 											f"(got {n} {self.limited_by}s."
 											"This sample can not fit into batch")
 
-					# else fill this anyway ... 
+					# if skip too big is true, just move to the next iteration
+					# this will have edge case where a "batch" can be empty if this is the last batch
 					else:
 						continue
 				

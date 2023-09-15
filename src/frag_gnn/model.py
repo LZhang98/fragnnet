@@ -781,7 +781,10 @@ class FragGNNPL(SpectrumPL):
 			return mean_loss
 		else:
 			# use total loss in manual optimization average over total number of samples in update
-
+			# check if we have things to do
+			if batch['batch_size'].item() == 0:
+				return th.tensor(0.0)
+					
 			batch_results = self._common_step(batch, split="train")
 			total_loss = batch_results.pop("total_loss")
 			self.manual_backward(total_loss)
