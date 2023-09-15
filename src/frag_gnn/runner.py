@@ -273,8 +273,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	logging.info("setup dataloader")
 	# is_train_sampler = True
 	#train_sampler = SpecMolBatchSampler(train_ds, batch_size=config_d["train_batch_size"], drop_last=config_d["drop_last"]) if is_train_sampler else None
-	train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, max_num = 500000, shuffle=(not config_d["debug_overfit"]), skip_too_big = True)
-	train_batchsampler = None
+	train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, max_num = 50000, shuffle=(not config_d["debug_overfit"]), skip_too_big = True)
+	#train_batchsampler = None
 	train_dl = DataLoader(
 		train_ds, 
 		batch_size=config_d["train_batch_size"], 

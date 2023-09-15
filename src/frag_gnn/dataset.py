@@ -594,7 +594,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				batch.append(idx.item())
 				num_processed += 1
 				batch_n += n
-
+			#print(batch)
 			yield batch
 			batch = []
 			batch_n = 0

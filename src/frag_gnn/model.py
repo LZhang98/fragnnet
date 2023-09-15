@@ -246,7 +246,7 @@ class SpectrumPL(pl.LightningModule):
 			"smiles": smiles,
 			"loss": loss,
 			"mean_loss": mean_loss,
-			#"total_loss": th.sum(loss,dim=0),
+			"total_loss": th.sum(loss,dim=0),
 			**both
 		}
 		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
@@ -751,13 +751,12 @@ class FragGNNPL(SpectrumPL):
 		# THIS is hack
 		lr_scale = 1/self._num_need_update 
 		for pg in opt.param_groups:
-			pg['lr'] = lr_scale * self.hparams.learning_rate
+			pg['lr'] = lr_scale * self.hparams.lr
 		# call opt
 		opt.step()
 		# clean gradient
 		opt.zero_grad()
-		# reset few values
-		self._num_need_update = 0
+
 
 	def training_step(self, batch, batch_idx):
 		""" training loop for FragGNNPL
@@ -774,7 +773,6 @@ class FragGNNPL(SpectrumPL):
 		"""
 
 		if self.hparams.automatic_optimization:
-
 			#print(f"batch_size {batch['batch_size'].item()}")
 			batch_results = self._common_step(batch, split="train")
 			#print(batch_results)
@@ -784,14 +782,17 @@ class FragGNNPL(SpectrumPL):
 		else:
 			# use total loss in manual optimization average over total number of samples in update
 
-
 			batch_results = self._common_step(batch, split="train")
-			total_loss = batch_results.pop("loss")
+			total_loss = batch_results.pop("total_loss")
 			self.manual_backward(total_loss)
 			
 			# accumulate gradients of N samples
+			self._num_need_update += batch['batch_size'].item()
+			#print(batch['batch_size'].item(), self._num_need_update, self._num_acc_gradient)
 			if self._num_need_update >= self._num_acc_gradient:
+				#print('>_manual_opt()')
 				self._manual_opt()
+				self._num_need_update  = 0
 
 			self._update_results(batch_results,"train")
 			return total_loss
@@ -800,15 +801,16 @@ class FragGNNPL(SpectrumPL):
 		""" this is used for manul opt when lr_schedulers is not avaibale from torch lightning
 		"""
 		if not self.hparams.automatic_optimization:
-			sch = self.lr_schedulers()
+			#sch = self.lr_schedulers()
 			# If the selected scheduler is a ReduceLROnPlateau scheduler.
-			if isinstance(sch, th.optim.lr_scheduler.ReduceLROnPlateau):
-				sch.step(self.trainer.callback_metrics["loss"])
+			#if isinstance(sch, th.optim.lr_scheduler.ReduceLROnPlateau):
+		#		sch.step(self.trainer.callback_metrics["loss"])
 			# update last bit 
 			# disable this equals to do drop last
 			# since we scaled by true batch size this should be fine
 			if self._num_need_update > 0:
 				self._manual_opt()
+				self._num_need_update = 0	
 
 
 class NEIMSPL(SpectrumPL):
