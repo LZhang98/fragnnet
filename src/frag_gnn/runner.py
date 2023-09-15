@@ -273,8 +273,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	logging.info("setup dataloader")
 	# is_train_sampler = True
 	#train_sampler = SpecMolBatchSampler(train_ds, batch_size=config_d["train_batch_size"], drop_last=config_d["drop_last"]) if is_train_sampler else None
-	train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, max_num = 100000)
-	
+	train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, max_num = 500000, shuffle=(not config_d["debug_overfit"]), skip_too_big = True)
+	train_batchsampler = None
 	train_dl = DataLoader(
 		train_ds, 
 		batch_size=config_d["train_batch_size"], 
@@ -285,7 +285,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		batch_sampler=train_batchsampler
 		#sampler = train_sampler
 	)
-	iter(train_dl)
+
 	val_dl = DataLoader(
 		val_ds,
 		batch_size=config_d["eval_batch_size"],
@@ -309,23 +309,28 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		overfit_batches = 0
 	log_every_n_steps = min(len(train_dl),config_d["log_every_n_steps"])
 
-	trainer = pl.Trainer(
-		logger=loggers,
-		callbacks=callbacks,
-		accelerator=config_d["accelerator"],
-		devices=config_d["devices"],
-		min_epochs=config_d["min_epochs"],
-		max_epochs=config_d["max_epochs"],
-		gradient_clip_val=config_d["gradient_clip_val"],
-		gradient_clip_algorithm=config_d["gradient_clip_algorithm"],
-		accumulate_grad_batches=config_d["accumulate_grad_batches"],
-		precision=config_d["precision"],
-		log_every_n_steps=config_d["log_every_n_steps"],
-		detect_anomaly=config_d["detect_anomaly"],
-		overfit_batches=overfit_batches,
-		profiler=profiler,
-		num_sanity_val_steps=config_d["num_sanity_val_steps"],
-	)
+	trainer_param_d  = {
+		'logger':loggers,
+		'callbacks':callbacks,
+		'accelerator':config_d["accelerator"],
+		'devices':config_d["devices"],
+		'min_epochs':config_d["min_epochs"],
+		'max_epochs':config_d["max_epochs"],
+		'precision':config_d["precision"],
+		'log_every_n_steps':config_d["log_every_n_steps"],
+		'detect_anomaly':config_d["detect_anomaly"],
+		'overfit_batches':overfit_batches,
+		'profiler':profiler,
+		'num_sanity_val_steps':config_d["num_sanity_val_steps"],
+	}
+
+	# this things can only set if automatic_optimization 
+	if config_d['automatic_optimization']:
+		trainer_param_d['accumulate_grad_batches'] = config_d["accumulate_grad_batches"]
+		trainer_param_d['gradient_clip_val'] = config_d["gradient_clip_val"]
+		trainer_param_d['gradient_clip_algorithm'] = config_d["gradient_clip_algorithm"]
+
+	trainer = pl.Trainer(**trainer_param_d)
 
 	# set determinism
 	th.use_deterministic_algorithms(config_d["deterministic"],warn_only=True)

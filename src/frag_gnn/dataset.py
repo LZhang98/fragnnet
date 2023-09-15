@@ -506,7 +506,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 	 This should have the same random sampling beheivor as RandomSampler
 	"""
 	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'dag_node',
-					shuffle: bool = False, skip_too_big: bool = False, max_sampling_step  = None) -> None:
+					shuffle: bool = False, skip_too_big: bool = False, num_samples  = None, generator =None) -> None:
 		"""_summary_
 
 		Args:
@@ -515,7 +515,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			mode (str, optional): _description_. Defaults to 'node'.
 			shuffle (bool, optional): Samples elements randomly each epoch. Defaults to False.
 			skip_too_big (bool, optional): _description_. Defaults to False.
-			num_sampling_step (Optional[int], optional): num of steps look forawrd. Defaults to None.
+			num_samples (Optional[int], optional): num of samples to draw. Defaults to None. if None set to all samples in dataset
 
 		Raises:
 			ValueError: _description_
@@ -528,15 +528,16 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			raise ValueError("`limited_by` choice should be either "
 							f"'dag_node' or 'dag_edge' (got '{limited_by}').")
 
-		if max_sampling_step is None:
-			max_sampling_step = len(data_source)
+		if num_samples is None:
+			num_samples = len(data_source)
 
 		self.data_source = data_source
 		self.max_num = max_num
 		self.limited_by = limited_by
 		self.skip_too_big = skip_too_big
-		self.max_sampling_step = max_sampling_step
+		self.max_sampling_step = num_samples
 		self.shuffle = shuffle
+		self.generator = generator
 
 	def __iter__(self) -> Iterator[List[int]]:
 		"""_summary_
@@ -549,6 +550,15 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		num_steps = 0
 		num_processed = 0
 
+		# setup generator
+		if self.generator is None:
+			seed = int(th.empty((), dtype=th.int64).random_().item())
+			generator = th.Generator()
+			generator.manual_seed(seed)
+		else:
+			generator = self.generator
+
+		# beacuse this is an iter, shuffle only happen once per batch
 		if self.shuffle:
 			indices = th.randperm(len(self.data_source), dtype=th.long)
 		else:
@@ -561,26 +571,24 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				# Size of sample
 				data = self.data_source[idx.item()]
 				
-				#print(data['mol_pyg'].num_nodes)
-				##print(data['mol_pyg'].num_edges) 
-				#print(data['frag_pyg'].num_nodes)
-				#print(data['frag_pyg'].num_edges)
-				
-				# TODO maybe I can get ram usage here ?
 				n = data['frag_pyg'].num_nodes if data['frag_pyg'].num_edges == 'dag_node' else data['frag_pyg'].num_edges
 
-				if batch_n + n > self.max_num:
-					if batch_n == 0:
-						if self.skip_too_big:
-							continue
-						else:
-							warnings.warn("Size of data sample at index "
-										  f"{idx} is larger than "
-										  f"{self.max_num} {self.limited_by}s "
-										  f"(got {n} {self.limited_by}s.")
+				if n > self.max_num:
+						# if skip too big is true, just move to the next iteration
+					if not self.skip_too_big:
+						warnings.warn("Size of data sample at index "
+											f"{idx} is larger than "
+											f"{self.max_num} {self.limited_by}s "
+											f"(got {n} {self.limited_by}s."
+											"This sample can not fit into batch")
+
+					# else fill this anyway ... 
 					else:
-						# Mini-batch filled
-						break
+						continue
+				
+				if batch_n + n > self.max_num:
+					# Mini-batch filled
+					break
 
 				# Add sample to current batch
 				batch.append(idx.item())

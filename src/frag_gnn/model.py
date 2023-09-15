@@ -68,11 +68,9 @@ class SpectrumPL(pl.LightningModule):
 		self.val_mean_metrics = []
 
 	def _setup_model(self):
-
 		raise NotImplementedError
 	
 	def _setup_loss_fn(self):
-
 		raise NotImplementedError
 
 	def _setup_spec_fns(self):
@@ -292,15 +290,7 @@ class SpectrumPL(pl.LightningModule):
 			self._update_results(batch_results,"train")
 			return mean_loss
 		else:
-			#raise NotImplementedError("Manual optimization not implemented")
-			opt = self.optimizers()
-			opt.zero_grad()
-			batch_results = self._common_step(batch, name="train")
-			mean_loss = batch_results.pop("mean_loss")
-			self.manual_backward(mean_loss)
-			opt.step()
-			self._update_results(batch_results,"train")
-			return mean_loss
+			raise NotImplementedError("Manual optimization not implemented")
 
 	def validation_step(self, batch, batch_idx):
 
@@ -586,6 +576,12 @@ class FragGNNPL(SpectrumPL):
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
 
+		# for sampler
+		self._num_need_update = 0
+		# this used in manul update
+		self._num_acc_gradient = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
+		self.automatic_optimization = self.hparams.automatic_optimization
+
 	def _setup_loss_fn(self):
 
 		# set tolerance
@@ -744,6 +740,76 @@ class FragGNNPL(SpectrumPL):
 				loss_d["edge_h_transfer_loss"] = t_el
 			return loss_d
 		self.loss_fn = _loss_fn
+
+	def _manual_opt(self):
+		""" run manual opt
+			this should only be used in junction with SpecMolFragDynamicBatchSampler
+		"""
+		opt = self.optimizers()
+		# clip gradients
+		self.clip_gradients(opt, gradient_clip_val=self.hparams.gradient_clip_val, gradient_clip_algorithm=self.hparams.gradient_clip_algorithm)
+		# THIS is hack
+		lr_scale = 1/self._num_need_update 
+		for pg in opt.param_groups:
+			pg['lr'] = lr_scale * self.hparams.learning_rate
+		# call opt
+		opt.step()
+		# clean gradient
+		opt.zero_grad()
+		# reset few values
+		self._num_need_update = 0
+
+	def training_step(self, batch, batch_idx):
+		""" training loop for FragGNNPL
+
+		Args:
+			batch (_type_): _description_
+			batch_idx (_type_): _description_
+
+		Raises:
+			NotImplementedError: _description_
+
+		Returns:
+			_type_: _description_
+		"""
+
+		if self.hparams.automatic_optimization:
+
+			#print(f"batch_size {batch['batch_size'].item()}")
+			batch_results = self._common_step(batch, split="train")
+			#print(batch_results)
+			mean_loss = batch_results.pop("mean_loss")
+			self._update_results(batch_results,"train")
+			return mean_loss
+		else:
+			# use total loss in manual optimization average over total number of samples in update
+
+
+			batch_results = self._common_step(batch, split="train")
+			total_loss = batch_results.pop("loss")
+			self.manual_backward(total_loss)
+			
+			# accumulate gradients of N samples
+			if self._num_need_update >= self._num_acc_gradient:
+				self._manual_opt()
+
+			self._update_results(batch_results,"train")
+			return total_loss
+
+	def on_train_epoch_end(self):
+		""" this is used for manul opt when lr_schedulers is not avaibale from torch lightning
+		"""
+		if not self.hparams.automatic_optimization:
+			sch = self.lr_schedulers()
+			# If the selected scheduler is a ReduceLROnPlateau scheduler.
+			if isinstance(sch, th.optim.lr_scheduler.ReduceLROnPlateau):
+				sch.step(self.trainer.callback_metrics["loss"])
+			# update last bit 
+			# disable this equals to do drop last
+			# since we scaled by true batch size this should be fine
+			if self._num_need_update > 0:
+				self._manual_opt()
+
 
 class NEIMSPL(SpectrumPL):
 
