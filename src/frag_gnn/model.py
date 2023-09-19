@@ -741,17 +741,21 @@ class FragGNNPL(SpectrumPL):
 			return loss_d
 		self.loss_fn = _loss_fn
 
-	def _manual_opt(self):
+	def _manual_opt(self, is_smf):
 		""" run manual opt
-			this should only be used in junction with SpecMolFragDynamicBatchSampler
+		Args:
+			is_smf (bool): flag for SpecMolFragDynamicBatchSampler
 		"""
 		opt = self.optimizers()
 		# clip gradients
 		self.clip_gradients(opt, gradient_clip_val=self.hparams.gradient_clip_val, gradient_clip_algorithm=self.hparams.gradient_clip_algorithm)
+		
 		# THIS is hack
-		lr_scale = 1/self._num_need_update 
-		for pg in opt.param_groups:
-			pg['lr'] = lr_scale * self.hparams.lr
+		if is_smf:
+			lr_scale = 1/self._num_need_update 
+			for pg in opt.param_groups:
+				pg['lr'] = lr_scale * self.hparams.lr
+			
 		# call opt
 		opt.step()
 		# clean gradient
@@ -779,7 +783,7 @@ class FragGNNPL(SpectrumPL):
 			mean_loss = batch_results.pop("mean_loss")
 			self._update_results(batch_results,"train")
 			return mean_loss
-		else:
+		elif self.hparams.custom_sampler == 'SpecMolFragDynamicBatchSampler':
 			# use total loss in manual optimization average over total number of samples in update
 			# check if we have things to do
 			if batch['batch_size'].item() == 0:
@@ -794,27 +798,41 @@ class FragGNNPL(SpectrumPL):
 			#print(batch['batch_size'].item(), self._num_need_update, self._num_acc_gradient)
 			if self._num_need_update >= self._num_acc_gradient:
 				#print('>_manual_opt()')
-				self._manual_opt()
+				self._manual_opt(is_smf= True)
 				self._num_need_update  = 0
 
 			self._update_results(batch_results,"train")
+			# TODO 
 			return total_loss
+		else:
+			batch_results = self._common_step(batch, split="train")
+			mean_loss = batch_results.pop("mean_loss")
+			self.manual_backward(mean_loss)
+		
+			# accumulate gradients of N samples
+			if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
+				self._manual_opt(is_smf= False)
+
+			self._update_results(batch_results,"train")
+			return mean_loss
 
 	def on_train_epoch_end(self):
 		""" this is used for manul opt when lr_schedulers is not avaibale from torch lightning
 		"""
 		if not self.hparams.automatic_optimization:
-			#sch = self.lr_schedulers()
-			# If the selected scheduler is a ReduceLROnPlateau scheduler.
-			#if isinstance(sch, th.optim.lr_scheduler.ReduceLROnPlateau):
-		#		sch.step(self.trainer.callback_metrics["loss"])
+			sch = self.lr_schedulers()
+			#If the selected scheduler is a ReduceLROnPlateau scheduler.
+			if isinstance(sch, th.optim.lr_scheduler.ReduceLROnPlateau):
+				sch.step(self.trainer.callback_metrics["loss"])
+			else:
+				sch.step()
+			
 			# update last bit 
 			# disable this equals to do drop last
 			# since we scaled by true batch size this should be fine
-			if self._num_need_update > 0:
-				self._manual_opt()
+			if self.hparams.custom_sampler == 'SpecMolFragDynamicBatchSampler' and self._num_need_update > 0:
+				self._manual_opt(is_smf = True)
 				self._num_need_update = 0	
-
 
 class NEIMSPL(SpectrumPL):
 

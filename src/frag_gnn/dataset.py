@@ -509,7 +509,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 	 This is used to avoid CUDA OOM errors, implmentaion is inspired by PyG DynamicBatchSampler, and this should be used to replace default BatchSampler
 	 This should have the same random sampling beheivor as RandomSampler
 	"""
-	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'dag_node',
+	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_node',
 					shuffle: bool = False, skip_too_big: bool = False, num_samples  = None, generator =None) -> None:
 		"""_summary_
 
@@ -528,9 +528,9 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		if not isinstance(max_num, int) or max_num <= 0:
 			raise ValueError("`dag_node` should be a positive integer value "
 							"(got {max_num}).")
-		if limited_by not in ['dag_node', 'dag_edge']:
+		if limited_by not in ['frag_node', 'dag_edge']:
 			raise ValueError("`limited_by` choice should be either "
-							f"'dag_node' or 'dag_edge' (got '{limited_by}').")
+							f"'frag_node' or 'dag_edge' (got '{limited_by}').")
 
 		if num_samples is None:
 			num_samples = len(data_source)
@@ -575,22 +575,24 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				# Size of sample
 				data = self.data_source[idx.item()]
 				
-				n = data['frag_pyg'].num_nodes if data['frag_pyg'].num_edges == 'dag_node' else data['frag_pyg'].num_edges
+				n = data['frag_pyg'].num_nodes if data['frag_pyg'].num_edges == 'frag_node' else data['frag_pyg'].num_edges
 
 				if n > self.max_num:
-					#  fill this anyway ... 
-					if not self.skip_too_big:
-						warnings.warn("Size of data sample at index "
-											f"{idx} is larger than "
-											f"{self.max_num} {self.limited_by}s "
-											f"(got {n} {self.limited_by}s."
-											"This sample can not fit into batch")
-
+					warning_msg = "Size of data sample at index " +\
+						f"{idx} is larger than " +\
+						f"{self.max_num} {self.limited_by}s " +\
+						f"(got {n} {self.limited_by}s." +\
+						"This sample can not fit into batch "
+					if self.skip_too_big:
+						warning_msg += " and sampler will skip this to prevent CUDA OOM ERROR"
+					else:
+						warning_msg += " attempt to fit this in to batch and this may let to CUDA OOM ERROR"
+					warnings.warn(warning_msg)
 					# if skip too big is true, just move to the next iteration
 					# this will have edge case where a "batch" can be empty if this is the last batch
-					else:
+					if self.skip_too_big:
 						continue
-				
+						
 				if batch_n + n > self.max_num:
 					# Mini-batch filled
 					break

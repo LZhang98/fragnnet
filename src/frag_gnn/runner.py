@@ -269,11 +269,29 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	val_ds = SpecMolFragDataset(split="val",**config_d)
 	test_ds = SpecMolFragDataset(split="test",**config_d)
 
+	# check config for sampler
+	assert (config_d['automatic_optimization'] and config_d['custom_sampler'] is None) or \
+	( not config_d['automatic_optimization'] and config_d['custom_sampler'] is not None) ,\
+		f"custom sampler {config_d['custom_sampler']} can not use in junction of automatic optimization {config_d['automatic_optimization']}"
+
+	if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		assert config_d['specmolfrag_dynamic_batch_sampler_mode'] in ['frag_node','frag_edge'],\
+			f"SpecMolFragDynamicBatchSampler only support frag_node or frag_edge mode (given {config_d['specmolfrag_dynamic_batch_sampler_mode']}) "
+		assert config_d['specmolfrag_dynamic_batch_sampler_max'] is not None,\
+			"SpecMolFragDynamicBatchSampler need a max num"
+	
 	# setup dataloaders
 	logging.info("setup dataloader")
 	# is_train_sampler = True
 	#train_sampler = SpecMolBatchSampler(train_ds, batch_size=config_d["train_batch_size"], drop_last=config_d["drop_last"]) if is_train_sampler else None
-	train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, max_num = 50000, shuffle=(not config_d["debug_overfit"]), skip_too_big = True)
+	train_batchsampler = None
+	if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, 
+								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
+								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
+								shuffle=(not config_d["debug_overfit"]), 
+								skip_too_big = True)
+		
 	#train_batchsampler = None
 	train_dl = DataLoader(
 		train_ds, 
@@ -283,7 +301,6 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		collate_fn=train_ds.get_collate_fn(),
 		drop_last=config_d["drop_last"],
 		batch_sampler=train_batchsampler
-		#sampler = train_sampler
 	)
 
 	val_dl = DataLoader(
