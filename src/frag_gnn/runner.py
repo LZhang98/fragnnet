@@ -284,23 +284,26 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	logging.info("setup dataloader")
 	# is_train_sampler = True
 	#train_sampler = SpecMolBatchSampler(train_ds, batch_size=config_d["train_batch_size"], drop_last=config_d["drop_last"]) if is_train_sampler else None
-	train_batchsampler = None
+	train_dl_param_d = {
+		'dataset':train_ds,
+		'num_workers':config_d["num_workers"],
+		'collate_fn':train_ds.get_collate_fn(),
+	}
+
 	if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
 		train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, 
 								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
 								shuffle=(not config_d["debug_overfit"]), 
 								skip_too_big = True)
-		
-	#train_batchsampler = None
+		train_dl_param_d['batch_sampler'] = train_batchsampler
+	else:
+		train_dl_param_d['batch_size'] = config_d["train_batch_size"]
+		train_dl_param_d['shuffle'] = not config_d["debug_overfit"]
+		train_dl_param_d['drop_last'] = config_d["drop_last"]
+	
 	train_dl = DataLoader(
-		train_ds, 
-		batch_size=config_d["train_batch_size"], 
-		shuffle=(not config_d["debug_overfit"] and train_batchsampler is None), 
-		num_workers=config_d["num_workers"],
-		collate_fn=train_ds.get_collate_fn(),
-		drop_last=config_d["drop_last"],
-		batch_sampler=train_batchsampler
+		**train_dl_param_d
 	)
 
 	val_dl = DataLoader(
