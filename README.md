@@ -75,6 +75,16 @@ python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.p
 python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_bb_hlr_posnfe --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/d4_bb_hlr_posnfe.yml" --time=12
 python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_bb_hlr_posnne --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/d4_bb_hlr_posnne.yml" --time=12
 ```
+
+### Test sampler
+```
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d3_base_ds_fp16 --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d3_base_ds_fp16.yml,-j=d3_base_ds_fp16" --time=12 --cc_account=rrg-rgreiner
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d3_base_ds_fp32 --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d3_base_ds_fp32.yml,-j=d3_base_ds_fp32" --time=12 --cc_account=rrg-rgreiner
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d3_base_ds --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d3_base_ds.yml,-j=d3_base_ds" --time=12 --cc_account=rrg-rgreiner
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_100K_ds --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d4_100K_ds.yml,-j=d4_100K_ds" --time=12 --cc_account=rrg-rgreiner
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_30K_ds --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d4_30K_ds.yml,-j=d4_30K_ds" --time=12 --cc_account=rrg-rgreiner
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_50K_ds --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d4_50K_ds.yml,-j=d4_50K_ds" --time=12 --cc_account=rrg-rgreiner
+```
 ### login to wandb before do anything
 [https://docs.wandb.ai/quickstart]
 ```
