@@ -270,11 +270,11 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	test_ds = SpecMolFragDataset(split="test",**config_d)
 
 	# check config for sampler
-	assert (config_d['automatic_optimization'] and config_d['custom_sampler'] is None) or \
-	( not config_d['automatic_optimization'] and config_d['custom_sampler'] is not None) ,\
-		f"custom sampler {config_d['custom_sampler']} can not use in junction of automatic optimization {config_d['automatic_optimization']}"
+
 
 	if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		assert config_d['automatic_optimization'] == False,\
+			f"custom sampler {config_d['custom_sampler']} can not use in junction of automatic optimization {config_d['automatic_optimization']}"
 		assert config_d['specmolfrag_dynamic_batch_sampler_mode'] in ['frag_node','frag_edge'],\
 			f"SpecMolFragDynamicBatchSampler only support frag_node or frag_edge mode (given {config_d['specmolfrag_dynamic_batch_sampler_mode']}) "
 		assert config_d['specmolfrag_dynamic_batch_sampler_max'] is not None,\

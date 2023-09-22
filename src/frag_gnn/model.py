@@ -820,12 +820,13 @@ class FragGNNPL(SpectrumPL):
 		""" this is used for manul opt when lr_schedulers is not avaibale from torch lightning
 		"""
 		if not self.hparams.automatic_optimization:
-			sch = self.lr_schedulers()
+			# Disbaled for now as lr_schedulers need setup manually 
+			#sch = self.lr_schedulers()
 			#If the selected scheduler is a ReduceLROnPlateau scheduler.
-			if isinstance(sch, th.optim.lr_scheduler.ReduceLROnPlateau):
-				sch.step(self.trainer.callback_metrics["loss"])
-			else:
-				sch.step()
+			#if isinstance(sch, th.optim.lr_scheduler.ReduceLROnPlateau):
+			#	sch.step(self.trainer.callback_metrics["loss"])
+			#else:
+			#	sch.step()
 			
 			# update last bit 
 			# disable this equals to do drop last
