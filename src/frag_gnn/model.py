@@ -533,6 +533,19 @@ class SpectrumPL(pl.LightningModule):
 		self.val_results = None
 		self.val_counter = 0
 
+	# def on_after_backward(self):
+
+	# 	num = 0
+	# 	for k,v in self.named_parameters():
+	# 		if num == 3:
+	# 			break
+	# 		g = v.grad
+	# 		print(f">> {k}")
+	# 		print(th.mean(v).detach().cpu().item(),th.norm(v).detach().cpu().item())
+	# 		if g is not None:
+	# 			print(th.mean(g).detach().cpu().item(),th.norm(g).detach().cpu().item())
+	# 		num += 1
+
 class FragGNNPL(SpectrumPL):
 
 	def _setup_model(self):
@@ -636,10 +649,7 @@ class FragGNNPL(SpectrumPL):
 			edge_h_range_costs = edge_h_range_costs.reshape(edge_h_range_costs.shape[0],-1)
 			edge_h_transfer_costs = edge_h_transfer_loss_fn(pred_edge_h_diffs)
 			edge_h_transfer_costs = edge_h_transfer_costs.reshape(edge_h_transfer_costs.shape[0],-1)
-			###
-			# edge_h_costs = (edge_h_range_costs + edge_h_transfer_costs).reshape(edge_h_range_costs.shape[0],-1)
 			edge_h_logprobs = pred_edge_h_logprobs.reshape(pred_edge_h_logprobs.shape[0],-1)
-			# print(-th.mean(th.sum(th.exp(edge_h_logprobs)*edge_h_logprobs,dim=1)))
 			edge_h_range_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_range_costs),dim=1)
 			edge_h_transfer_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_transfer_costs),dim=1)
 			h_range_loss = scatter_logsumexp(
@@ -666,12 +676,12 @@ class FragGNNPL(SpectrumPL):
 			pred_node_logprobs,
 			pred_node_batch_idxs,
 			pred_node_formula_logprobs,
+			pred_null_formula_logprob,
 			pred_edge_logprobs,
 			pred_edge_h_diffs,
 			pred_edge_h_range_masks,
 			pred_edge_h_logprobs,
-			pred_edge_batch_idxs,
-			pred_null_formula_logprob):
+			pred_edge_batch_idxs):
 			spec_ce = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,
@@ -693,6 +703,7 @@ class FragGNNPL(SpectrumPL):
 			else:
 				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
 				loss = spec_cd
+			loss = self.hparams.primary_loss_weight * loss
 			formula_e, formula_ne = sparse_entropy_fn(
 				pred_formula_logprobs,
 				pred_formula_batch_idxs
@@ -736,8 +747,17 @@ class FragGNNPL(SpectrumPL):
 				)
 				loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
 					+ self.hparams.edge_h_transfer_loss_weight * t_el
+				edge_e, edge_ne = sparse_entropy_fn(
+					pred_edge_logprobs,
+					pred_edge_batch_idxs
+				)
+				loss = loss + self.hparams.edge_entropy_weight * edge_e \
+					+ self.hparams.edge_normalized_entropy_weight * edge_ne
+				loss_d["loss"] = loss
 				loss_d["edge_h_range_loss"] = r_el
 				loss_d["edge_h_transfer_loss"] = t_el
+				loss_d["edge_e"] = edge_e
+				loss_d["edge_ne"] = edge_ne
 			return loss_d
 		self.loss_fn = _loss_fn
 

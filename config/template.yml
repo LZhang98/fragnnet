@@ -135,6 +135,7 @@ precision: 32 # 64, 16-mixed, bf16-mixed
 debug_overfit: False
 debug_overfit_batches: 10
 log_every_n_steps: 0
+primary_loss_weight: 1.0
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
 node_formula_entropy_weight: 0.0
@@ -145,7 +146,9 @@ skip_edge_loss: True
 edge_h_range_loss_weight: 0.0
 edge_h_transfer_loss_weight: 0.0
 edge_h_range_loss_fn: linear # do not make exponential!
-edge_h_transfer_loss_fn: exponential
+edge_h_transfer_loss_fn: linear
+edge_entropy_weight: 0.0
+edge_normalized_entropy_weight: 0.0
 seed: 420
 detect_anomaly: False
 automatic_optimization: True
