@@ -1,4 +1,4 @@
-wandb_name: d3_base_ds
+wandb_name: d3_base_ds_fp16
 wandb_tags:
 - v2
 - DynamicBatchSampler
@@ -20,7 +20,7 @@ max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 
-precision: 16
+precision: 16-mixed
 automatic_optimization: False
 custom_sampler: SpecMolFragDynamicBatchSampler
 specmolfrag_dynamic_batch_sampler_mode: frag_node
