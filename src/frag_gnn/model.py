@@ -100,9 +100,8 @@ class SpectrumPL(pl.LightningModule):
 				**kwargs):
 				# untransform
 				if th.isnan(true_ints).any() or th.isnan(pred_ints).any():
-					print(true_ints)
-					print(pred_ints)
-					import sys; sys.exit(1)
+					raise ValueError(f'cos sim, nan in true_ints: {true_ints} and/or in pred_ints {pred_ints}')
+
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
