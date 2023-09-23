@@ -10,15 +10,7 @@
       "request": "launch",
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
-      "args": ["-w","disabled","-c","config/debug_d3.yml"]
-    },
-    {
-      "name": "why you segfault",
-      "type": "python",
-      "request": "launch",
-      "program": "scripts/run_pl_model_fit.py",
-      "console": "integratedTerminal",
-      "args": ["-w","disabled","-c","config/d3_forumla_only.yml"]
+      "args": ["-w","disabled","-c","config/d3_base_debug_fw.yml"]
     }
   ]
 }
