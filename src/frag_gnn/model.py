@@ -760,6 +760,17 @@ class FragGNNPL(SpectrumPL):
 			return loss_d
 		self.loss_fn = _loss_fn
 
+	def _validate_gradients(self):
+		""" method to validate gradients, return true if nan is not in the gradient 
+		"""
+		valid_gradients = True
+		for _ , param in self.named_parameters():
+			if param.grad is not None:
+				valid_gradients = not (th.isnan(param.grad).any())
+				if not valid_gradients:
+					break
+		return valid_gradients
+
 	def _manual_opt(self, is_smf):
 		""" run manual opt
 		Args:
