@@ -1,0 +1,28 @@
+wandb_name: debug_fp32
+wandb_tags:
+- debug
+
+split_dp: data/split/debug_fw
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
+num_depth: 4
+num_hs: 4
+spec_subsample_size: 128
+
+train_batch_size: 1
+eval_batch_size: 4
+accumulate_grad_batches: 8
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: cpu #gpu
+devices: 1
+min_epochs: 1
+max_epochs: 1
+lr_schedule: False
+debug_overfit: False
+precision: bf16-mixed #32
+
+automatic_optimization: True
+detect_anomaly: True
+# custom_sampler: SpecMolFragDynamicBatchSampler
+# specmolfrag_dynamic_batch_sampler_mode: frag_node
+# specmolfrag_dynamic_batch_sampler_max: 10000 #100000
