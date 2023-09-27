@@ -165,3 +165,4 @@ custom_sampler: none
 specmolfrag_dynamic_batch_sampler_mode: frag_node
 specmolfrag_dynamic_batch_sampler_max: 100000
 mp_sharing_strategy: file_descriptor
+check_gradient_norm: False
