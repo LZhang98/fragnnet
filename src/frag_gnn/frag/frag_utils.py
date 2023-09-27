@@ -629,12 +629,11 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
 
 
-def th_long_to_mask(long, device='cpu'):
+def th_long_to_mask(long):
 	"""_summary_
 
 	Args:
 		long (_type_): _description_
-		device (str, optional): _description_. Defaults to 'cpu'.
 
 	Returns:
 		_type_: _description_
@@ -644,8 +643,6 @@ def th_long_to_mask(long, device='cpu'):
 	long = long.reshape(long.shape[0],num_dims,1)
 	mask = 2**th.arange(64-1,-1,-1,device=long.device)
 	mask = mask.reshape(1,1,64)
-	if device != 'cpu':
-		mask = mask.to(device)
 	return long.bitwise_and(mask).ne(0).reshape(long.shape[0],-1)
 
 

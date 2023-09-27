@@ -380,11 +380,8 @@ class SpectrumPL(pl.LightningModule):
 		batch_results["unique_ids"] = unique_ids
 		batch_results["true_unique_ids"] = true_unique_ids
 		batch_results["pred_unique_ids"] = pred_unique_ids
-
-
 		# transfer to cpu
 		batch_results = to_cpu(batch_results)
-		# print("loss",batch_results["loss"])
 		# setup results dict
 		if getattr(self,results_attr) is None:
 			setattr(self,results_attr,{k:list() for k in keys})
@@ -532,18 +529,6 @@ class SpectrumPL(pl.LightningModule):
 		self.val_results = None
 		self.val_counter = 0
 
-	# def on_after_backward(self):
-
-	# 	num = 0
-	# 	for k,v in self.named_parameters():
-	# 		if num == 3:
-	# 			break
-	# 		g = v.grad
-	# 		print(f">> {k}")
-	# 		print(th.mean(v).detach().cpu().item(),th.norm(v).detach().cpu().item())
-	# 		if g is not None:
-	# 			print(th.mean(g).detach().cpu().item(),th.norm(g).detach().cpu().item())
-	# 		num += 1
 
 class FragGNNPL(SpectrumPL):
 
@@ -589,7 +574,9 @@ class FragGNNPL(SpectrumPL):
 			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
 
 		# for sampler
+		self._smf = self.hparams.custom_sampler == "SpecMolFragDynamicBatchSampler"
 		self._num_need_update = 0
+
 		# this used in manul update
 		self._num_acc_gradient = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
 		self.automatic_optimization = self.hparams.automatic_optimization
@@ -760,37 +747,24 @@ class FragGNNPL(SpectrumPL):
 			return loss_d
 		self.loss_fn = _loss_fn
 
-	def _validate_gradients(self):
-		""" method to validate gradients, return true if nan is not in the gradient 
-		"""
-		valid_gradients = True
-		for _ , param in self.named_parameters():
-			if param.grad is not None:
-				valid_gradients = not (th.isnan(param.grad).any())
-				if not valid_gradients:
-					break
-		return valid_gradients
-
-	def _manual_opt(self, is_smf):
+	def _manual_opt(self):
 		""" run manual opt
-		Args:
-			is_smf (bool): flag for SpecMolFragDynamicBatchSampler
 		"""
 		opt = self.optimizers()
+		# scale gradients
+		if self._smf:
+			for pg in opt.param_groups:
+				for p in pg['params']:
+					if p.grad is not None:
+						p.grad.data.mul_(self._num_acc_gradient / self._num_need_update)					
+		self.on_before_optimizer_step(opt)
 		# clip gradients
 		self.clip_gradients(opt, gradient_clip_val=self.hparams.gradient_clip_val, gradient_clip_algorithm=self.hparams.gradient_clip_algorithm)
-		
-		# THIS is hack
-		if is_smf:
-			lr_scale = 1/self._num_need_update 
-			for pg in opt.param_groups:
-				pg['lr'] = lr_scale * self.hparams.lr
-			
 		# call opt
 		opt.step()
+		self.on_after_optimizer_step(opt)
 		# clean gradient
 		opt.zero_grad()
-
 
 	def training_step(self, batch, batch_idx):
 		""" training loop for FragGNNPL
@@ -807,42 +781,35 @@ class FragGNNPL(SpectrumPL):
 		"""
 
 		if self.hparams.automatic_optimization:
-			#print(f"batch_size {batch['batch_size'].item()}")
 			batch_results = self._common_step(batch, split="train")
-			#print(batch_results)
 			mean_loss = batch_results.pop("mean_loss")
+			self._num_need_update += self.hparams.train_batch_size
 			self._update_results(batch_results,"train")
 			return mean_loss
-		elif self.hparams.custom_sampler == 'SpecMolFragDynamicBatchSampler':
-			# use total loss in manual optimization average over total number of samples in update
-			# check if we have things to do
+		
+		elif self._smf:
 			if batch['batch_size'].item() == 0:
-				return th.tensor(0.0)
-					
+				return th.tensor(0.0)		
 			batch_results = self._common_step(batch, split="train")
+			batch_size = batch['batch_size'].item()
 			total_loss = batch_results.pop("total_loss")
-			self.manual_backward(total_loss)
-			
+			mean_loss = total_loss / self._num_acc_gradient
+			self.manual_backward(mean_loss)
 			# accumulate gradients of N samples
-			self._num_need_update += batch['batch_size'].item()
-			#print(batch['batch_size'].item(), self._num_need_update, self._num_acc_gradient)
+			self._num_need_update += batch_size
 			if self._num_need_update >= self._num_acc_gradient:
-				#print('>_manual_opt()')
-				self._manual_opt(is_smf= True)
-				self._num_need_update  = 0
-
+				self._manual_opt()
 			self._update_results(batch_results,"train")
-			# TODO 
-			return total_loss
+			return mean_loss
+		
 		else:
 			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss")
+			mean_loss = batch_results.pop("mean_loss") / self.hparams.accumulate_grad_batches
 			self.manual_backward(mean_loss)
-		
 			# accumulate gradients of N samples
+			self._num_need_update += self.hparams.train_batch_size
 			if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
-				self._manual_opt(is_smf= False)
-
+				self._manual_opt()
 			self._update_results(batch_results,"train")
 			return mean_loss
 
@@ -861,9 +828,46 @@ class FragGNNPL(SpectrumPL):
 			# update last bit 
 			# disable this equals to do drop last
 			# since we scaled by true batch size this should be fine
-			if self.hparams.custom_sampler == 'SpecMolFragDynamicBatchSampler' and self._num_need_update > 0:
-				self._manual_opt(is_smf = True)
-				self._num_need_update = 0	
+			# TODO: add drop_last check?
+			if self._smf and self._num_need_update > 0:
+				self._manual_opt()
+
+	def _print_grad_norm(self,prefix=None,total_num_params=5):
+
+		if prefix is None:
+			prefix = "no_prefix"
+		print(f">> {prefix}, {self._num_need_update}, {self._num_acc_gradient}")
+		opt = self.optimizers()
+		num_params = 0
+		for pg in opt.param_groups:
+			for p in pg['params']:
+				if p.grad is not None:
+					print(th.norm(p.grad))
+					num_params += 1
+				if num_params > total_num_params:
+					break
+			if num_params > total_num_params:
+				break
+	
+	def on_after_backward(self):
+		
+		if self.hparams.check_gradient_norm:
+			self._print_grad_norm(prefix="after_backward")
+
+	def on_before_optimizer_step(self, optimizer):
+
+		if self.hparams.check_gradient_norm:
+			self._print_grad_norm(prefix="before_optimizer_step")
+
+	def on_after_optimizer_step(self, optimizer):
+
+		self._num_need_update = 0
+
+	def optimizer_step(self, *args, **kwargs):
+		super().optimizer_step(*args, **kwargs)
+		opt = self.optimizers()
+		self.on_after_optimizer_step(opt)
+
 
 class NEIMSPL(SpectrumPL):
 
