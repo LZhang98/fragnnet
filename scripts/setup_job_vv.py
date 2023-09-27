@@ -61,13 +61,15 @@ def main(args):
 			f". {home_dir}/miniconda3/etc/profile.d/conda.sh"
 		]
 	)
-	script_lines.extend(
-		[
-			"",
-			"# load modules",
-			"module load cuda-11.7",
-		]
-	)
+	if args.modules is not None:
+		script_lines.extend(
+			[
+				"",
+				"# load modules",
+			]
+		)
+		for module in args.modules:
+			script_lines.append(f"module load {module}")
 	script_lines.extend(
 		[
 			"",
@@ -126,5 +128,6 @@ if __name__ == "__main__":
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument("--job_id", type=int, required=False)
 	parser.add_argument("--blacklist", type=str, nargs="+", required=False)
+	parser.add_argument("--modules", type=str, nargs="+", required=False)
 	args = parser.parse_args()
 	main(args)

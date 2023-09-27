@@ -144,6 +144,9 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	th.manual_seed(config_d["seed"])
 	np.random.seed(config_d["seed"])
 
+	# set torch multiprocessing strategy
+	th.multiprocessing.set_sharing_strategy(config_d["mp_sharing_strategy"])
+
 	# setup logging and wandb
 	logging.info("setup loggers")
 	loggers = []
