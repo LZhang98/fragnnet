@@ -84,6 +84,10 @@ python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.p
 python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_100K_ds --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d4_100K_ds.yml,-j=d4_100K_ds" --time=12 --cc_account=rrg-rgreiner
 python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_30K_ds --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d4_30K_ds.yml,-j=d4_30K_ds" --time=12 --cc_account=rrg-rgreiner
 python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_50K_ds --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d4_50K_ds.yml,-j=d4_50K_ds" --time=12 --cc_account=rrg-rgreiner
+
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d3_base_ds_fp32_250K --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d3_base_ds_fp32_250K.yml,-j=d4_50K_ds" --time=1 --cc_account=rrg-rgreiner
+
+python ./scripts/setup_job_cc.py --python_script_fp=./scripts/run_pl_model_fit.py --job_name=d4_30K_fp32_250K --frag_gnn_dp=./ --script_kwargs="w=offline,c=config/samplers_exp/d4_30K_fp32_250K.yml,-j=d4_50K_ds" --time=1 --cc_account=rrg-rgreiner
 ```
 ### login to wandb before do anything
 [https://docs.wandb.ai/quickstart]
