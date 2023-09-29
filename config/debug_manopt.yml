@@ -13,17 +13,19 @@ eval_batch_size: 4
 accumulate_grad_batches: 8
 gradient_clip_val: 5.0
 lr: 0.0004
-accelerator: gpu
+accelerator: cpu
 devices: 1
 min_epochs: 1
 max_epochs: 1
 lr_schedule: False
 debug_overfit: False
-precision: 32
+precision: bf16-mixed
 
 automatic_optimization: False
 detect_anomaly: True
 # custom_sampler: SpecMolFragDynamicBatchSampler
 # specmolfrag_dynamic_batch_sampler_mode: frag_node
 # specmolfrag_dynamic_batch_sampler_max: 10000 #100000
-check_gradient_norm: False
+# check_gradient_norm: False
+nan_module_hook: True
+debug_zero_loss: True
