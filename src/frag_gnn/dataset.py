@@ -510,7 +510,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 	 This should have the same random sampling beheivor as RandomSampler
 	"""
 	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_node',
-					shuffle: bool = False, skip_too_big: bool = False, num_samples  = None, generator =None) -> None:
+					shuffle: bool = False, skip_too_big: bool = False, num_samples  = None, generator = None,
+					return_batch_at = 0) -> None:
 		"""_summary_
 
 		Args:
@@ -542,6 +543,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		self.max_sampling_step = num_samples
 		self.shuffle = shuffle
 		self.generator = generator
+		self.return_batch_at = return_batch_at
+
 
 	def __iter__(self) -> Iterator[List[int]]:
 		"""_summary_
@@ -592,16 +595,22 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					# this will have edge case where a "batch" can be empty if this is the last batch
 					if self.skip_too_big:
 						continue
-						
-				if batch_n + n > self.max_num:
-					# Mini-batch filled
+
+
+				if  batch_n + n > self.max_num:
+					# no more budget left
 					break
 
 				# Add sample to current batch
 				batch.append(idx.item())
 				num_processed += 1
 				batch_n += n
-			#print(batch)
+		
+				if (self.return_batch_at > 0 and num_processed > 0 and num_processed % self.return_batch_at == 0):
+					# Mini-batch filled
+					break
+
+			#print(f"self.return_batch_at {self.return_batch_at} num_processed {num_processed}")
 			yield batch
 			batch = []
 			batch_n = 0

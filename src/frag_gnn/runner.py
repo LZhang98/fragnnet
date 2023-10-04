@@ -329,7 +329,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
 								shuffle=(not config_d["debug_overfit"]), 
-								skip_too_big = True)
+								skip_too_big = True,
+								return_batch_at = config_d['train_batch_size'] * config_d['accumulate_grad_batches'])
 		train_dl_param_d['batch_sampler'] = train_batchsampler
 	else:
 		train_dl_param_d['batch_size'] = config_d["train_batch_size"]
