@@ -1,0 +1,29 @@
+wandb_name: d3_base_ds_tf32
+wandb_tags:
+- v2
+- DynamicBatchSampler
+- SamplerNode600K
+
+split_dp: data/split/d3_h4_isoTrue_v2
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
+num_depth: 4
+num_hs: 4
+
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 4
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+
+precision: 32
+use_tensor_float32: True
+automatic_optimization: False
+custom_sampler: SpecMolFragDynamicBatchSampler
+specmolfrag_dynamic_batch_sampler_mode: frag_node
+specmolfrag_dynamic_batch_sampler_max: 600000

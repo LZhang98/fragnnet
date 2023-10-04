@@ -2,6 +2,8 @@ wandb_name: d3_base_ds_fp32
 wandb_tags:
 - v2
 - DynamicBatchSampler
+- SamplerNode600K
+- FP32
 
 split_dp: data/split/d3_h4_isoTrue_v2
 frag_dp: data/frag/d3_h4_isoTrue_v2/dags
@@ -24,4 +26,4 @@ precision: 32
 automatic_optimization: False
 custom_sampler: SpecMolFragDynamicBatchSampler
 specmolfrag_dynamic_batch_sampler_mode: frag_node
-specmolfrag_dynamic_batch_sampler_max: 100000
+specmolfrag_dynamic_batch_sampler_max: 600000
