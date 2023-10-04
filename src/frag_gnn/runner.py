@@ -30,7 +30,7 @@ from frag_gnn.frag.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolFragDynamicBatchSampler
 
-		
+# THIS IS NOT USED YET		
 class SpecMolDataModule(pl.LightningDataModule):
 
 	def __init__(self, config_d: dict):
@@ -199,6 +199,14 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		loggers.append(wandb_logger)
 	else:
 		is_resume = False
+
+	# CUDA and TF32 setup
+
+	if config_d['use_tensor_float32'] == True and config_d['accelerator'] == 'gpu':
+		# The flag below controls whether to allow TF32 on matmul. This flag defaults to False in PyTorch 1.12 and later.
+		th.backends.cuda.matmul.allow_tf32 = True
+		# The flag below controls whether to allow TF32 on cuDNN. This flag defaults to True.
+		th.backends.cudnn.allow_tf32 = True
 
 	# setup model
 	logging.info("setup model")
