@@ -544,14 +544,11 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		self.shuffle = shuffle
 		self.generator = generator
 		self.return_batch_at = return_batch_at
-
-
-	def __iter__(self) -> Iterator[List[int]]:
-		"""_summary_
-
-		Yields:
-			Iterator[List[int]]: _description_
-		"""
+		self.batches = []
+		self._pre_compute_batches()
+	
+	def _pre_compute_batches(self):
+		self.batches = []
 		batch = []
 		batch_n = 0
 		num_steps = 0
@@ -580,21 +577,21 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				
 				n = data['frag_pyg'].num_nodes if data['frag_pyg'].num_edges == 'frag_node' else data['frag_pyg'].num_edges
 
-				if n > self.max_num:
-					warning_msg = "Size of data sample at index " +\
-						f"{idx} is larger than " +\
-						f"{self.max_num} {self.limited_by}s " +\
-						f"(got {n} {self.limited_by}s." +\
-						"This sample can not fit into batch "
-					if self.skip_too_big:
-						warning_msg += " and sampler will skip this to prevent CUDA OOM ERROR"
-					else:
-						warning_msg += " attempt to fit this in to batch and this may let to CUDA OOM ERROR"
-					warnings.warn(warning_msg)
+				if n > self.max_num and self.skip_too_big:
+					#warning_msg = "Size of data sample at index " +\
+					#	f"{idx} is larger than " +\
+					#	f"{self.max_num} {self.limited_by}s " +\
+					#	f"(got {n} {self.limited_by}s." +\
+					#	"This sample can not fit into batch "
+					#if self.skip_too_big:
+					#	warning_msg += " and sampler will skip this to prevent CUDA OOM ERROR"
+					#else:
+					#	warning_msg += " attempt to fit this in to batch and this may let to CUDA OOM ERROR"
+					#warnings.warn(warning_msg)
 					# if skip too big is true, just move to the next iteration
 					# this will have edge case where a "batch" can be empty if this is the last batch
-					if self.skip_too_big:
-						continue
+					#if self.skip_too_big:
+					continue
 
 
 				if  batch_n + n > self.max_num:
@@ -610,11 +607,21 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					# Mini-batch filled
 					break
 
-			#print(f"self.return_batch_at {self.return_batch_at} num_processed {num_processed}")
-			yield batch
+			self.batches.append(batch)
 			batch = []
 			batch_n = 0
 			num_steps += 1
+
+	def __iter__(self) -> Iterator[List[int]]:
+		""" we use a pre computed batche list, this way we could have a correct batch size
+			PL uses last batch in progress to toggle val step in training
+
+		Yields:
+			Iterator[List[int]]: _description_
+		"""
+		for batch in self.batches:
+			yield batch
+		self._pre_compute_batches()
 
 	def __len__(self) -> int:
 		""" Note The __len__() method isn't strictly required by DataLoader, but is expected in any calculation involving the length of a DataLoader.
@@ -622,7 +629,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		Returns:
 			int: length of datasource
 		"""
-		return len(self.data_source)
+		return len(self.batches)
 
 
 if __name__ == "__main__":
