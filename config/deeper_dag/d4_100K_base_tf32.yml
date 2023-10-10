@@ -1,0 +1,46 @@
+wandb_name: d4_100K_base_tf32
+wandb_tags:
+- v2
+- TF32
+- D4
+- DynamicBatchSampler
+- SamplerNode600K
+
+split_dp: data/split/d4_h4_isoTrue_v2_10
+frag_dp: data/frag/d4_h4_isoTrue_v2/dags
+num_depth: 5
+num_hs: 4
+
+train_batch_size: 16
+eval_batch_size: 16
+accumulate_grad_batches: 8
+gradient_clip_val: 5.0
+lr: 0.0001
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+lr_warmup_steps: 0
+lr_decay_steps: 100
+lr_decay_rate: 0.9
+debug_overfit: False
+formula_entropy_weight: 0.0
+node_entropy_weight: 0.0
+node_formula_entropy_weight: 0.0
+frag_pyg_node_feats:
+  - cc
+  - base_formula
+  - depth
+  - h_formulae_idx
+frag_pyg_edge_feats:
+  - cc
+  - base_formula
+precision: 32
+mol_pool_type: none
+frag_pool_type: none
+
+automatic_optimization: False
+custom_sampler: SpecMolFragDynamicBatchSampler
+specmolfrag_dynamic_batch_sampler_mode: frag_node
+specmolfrag_dynamic_batch_sampler_max: 600000
