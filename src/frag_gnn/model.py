@@ -873,16 +873,12 @@ class FragGNNPL(SpectrumPL):
 			return mean_loss
 
 	def on_train_epoch_end(self):
-		"""
-		this is used for manul opt when lr_schedulers is not available from torch lightning
-		"""
 
-		if self.hparams.automatic_optimization:
-			super().on_train_epoch_end()
-		else:
+		if not self.hparams.automatic_optimization and self._smf and self._num_need_update > 0:
+			# this is used for manul opt when lr_schedulers is not available from torch lightning
 			# TODO: add drop_last check?
-			if self._smf and self._num_need_update > 0:
-				self._manual_opt()
+			self._manual_opt()
+		super().on_train_epoch_end()
 
 	def optimizer_step(self, *args, **kwargs):
 		super().optimizer_step(*args, **kwargs)

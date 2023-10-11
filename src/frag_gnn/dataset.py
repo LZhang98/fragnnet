@@ -581,12 +581,12 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					warning_msg = "Size of data sample at index " +\
 						f"{idx} is larger than " +\
 						f"{self.max_num} {self.limited_by}s " +\
-						f"(got {n} {self.limited_by}s." +\
+						f"(got {n} {self.limited_by}s. " +\
 						"This sample can not fit into batch "
 					if self.skip_too_big:
-						warning_msg += " and sampler will skip this to prevent CUDA OOM ERROR"
+						warning_msg += "and sampler will skip this to prevent CUDA OOM ERROR"
 					else:
-						warning_msg += " attempt to fit this in to batch and this may let to CUDA OOM ERROR"
+						warning_msg += "attempt to fit this in to batch and this may let to CUDA OOM ERROR"
 					warnings.warn(warning_msg)
 					#if skip too big is true, just move to the next iteration
 					# this will have edge case where a "batch" can be empty if this is the last batch
