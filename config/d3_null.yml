@@ -1,6 +1,7 @@
 wandb_name: d3_null
 wandb_tags:
 - v2
+- cu118
 split_dp: data/split/d3_h4_isoTrue_v2
 frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4
