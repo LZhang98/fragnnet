@@ -783,6 +783,9 @@ class FragGNNPL(SpectrumPL):
 		if self.hparams.automatic_optimization:
 			batch_results = self._common_step(batch, split="train")
 			mean_loss = batch_results.pop("mean_loss")
+			if self.hparams.debug_zero_loss:
+				mean_loss = 0. * mean_loss
+				self.print(mean_loss)
 			self._num_need_update += self.hparams.train_batch_size
 			self._update_results(batch_results,"train")
 			return mean_loss
@@ -794,6 +797,9 @@ class FragGNNPL(SpectrumPL):
 			batch_size = batch['batch_size'].item()
 			total_loss = batch_results.pop("total_loss")
 			mean_loss = total_loss / self._num_acc_gradient
+			if self.hparams.debug_zero_loss:
+				mean_loss = 0. * mean_loss
+				self.print(mean_loss)
 			self.manual_backward(mean_loss)
 			# accumulate gradients of N samples
 			self._num_need_update += batch_size
@@ -805,7 +811,11 @@ class FragGNNPL(SpectrumPL):
 		else:
 			batch_results = self._common_step(batch, split="train")
 			mean_loss = batch_results.pop("mean_loss") / self.hparams.accumulate_grad_batches
+			if self.hparams.debug_zero_loss:
+				mean_loss = 0. * mean_loss
+				self.print(mean_loss)
 			self.manual_backward(mean_loss)
+			# self.backward(mean_loss)
 			# accumulate gradients of N samples
 			self._num_need_update += self.hparams.train_batch_size
 			if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:

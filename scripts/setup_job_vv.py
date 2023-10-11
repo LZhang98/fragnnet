@@ -85,7 +85,7 @@ def main(args):
 		]
 	)
 	python_line = f"python {args.python_script_fp}"
-	script_kwargs = args.script_kwargs.split(",")
+	script_kwargs = args.script_kwargs
 	for kwarg in script_kwargs:
 		assert "=" in kwarg, kwarg
 		key, value = kwarg.split("=")
@@ -124,7 +124,7 @@ if __name__ == "__main__":
 	parser.add_argument("--partition", type=str, default="cpu", choices=["t4v2","rtx6000","interactive","cpu","a40"])
 	parser.add_argument("--qos", type=str, default="nopreemption", choices=["normal","high","nopreemption","deadline"])
 	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU2")
-	parser.add_argument("--script_kwargs", type=str, default="")
+	parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument("--job_id", type=int, required=False)
 	parser.add_argument("--blacklist", type=str, nargs="+", required=False)
