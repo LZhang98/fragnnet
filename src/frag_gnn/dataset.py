@@ -509,7 +509,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 	 This is used to avoid CUDA OOM errors, implmentaion is inspired by PyG DynamicBatchSampler, and this should be used to replace default BatchSampler
 	 This should have the same random sampling beheivor as RandomSampler
 	"""
-	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_node',
+	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_edge',
 					shuffle: bool = False, skip_too_big: bool = False, num_samples  = None, generator = None,
 					return_batch_at = 0) -> None:
 		"""_summary_
@@ -575,7 +575,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				# Size of sample
 				data = self.data_source[idx.item()]
 				
-				n = data['frag_pyg'].num_nodes if data['frag_pyg'].num_edges == 'frag_node' else data['frag_pyg'].num_edges
+				n = data['frag_pyg'].num_nodes if  self.limited_by == 'frag_node' else data['frag_pyg'].num_edges
 
 				if n > self.max_num:
 					warning_msg = "Size of data sample at index " +\
