@@ -10,7 +10,7 @@ num_hs: 4
 
 train_batch_size: 1
 eval_batch_size: 1
-accumulate_grad_batches: 8
+accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
@@ -27,4 +27,5 @@ detect_anomaly: True
 custom_sampler: SpecMolFragDynamicBatchSampler
 specmolfrag_dynamic_batch_sampler_mode: frag_edge
 specmolfrag_dynamic_batch_sampler_max: 100000
-spec_subsample_size: 16
+spec_subsample_size: 21
+pl_enable_progress_bar: True
