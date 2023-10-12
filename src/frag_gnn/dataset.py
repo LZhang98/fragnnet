@@ -529,7 +529,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		if not isinstance(max_num, int) or max_num <= 0:
 			raise ValueError("`dag_node` should be a positive integer value "
 							"(got {max_num}).")
-		if limited_by not in ['frag_node', 'dag_edge']:
+		if limited_by not in ['frag_node', 'frag_edge']:
 			raise ValueError("`limited_by` choice should be either "
 							f"'frag_node' or 'dag_edge' (got '{limited_by}').")
 
