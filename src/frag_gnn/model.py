@@ -15,7 +15,7 @@ from frag_gnn.nn.nn_utils import build_lr_scheduler, FragGNNModel, NEIMSModel
 from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn, get_sparse_conditional_entropy_fn, get_edge_loss_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp
-from frag_gnn.frag.frag_utils import NUM_ELEMENTS
+from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
 from frag_gnn.utils.plot_utils import plot_spectra_sparse
 

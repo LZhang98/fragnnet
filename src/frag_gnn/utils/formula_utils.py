@@ -17,8 +17,8 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"": 0.
 }
 
-def MASS(element: str):
-	return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
+def MASS(element: str | int) -> float:
+	return PERIODIC_TABLE.GetMostCommonIsotopeMass(element_symbol)
 
 # Just huge table grabbed for atomic number and its stable isotopes
 # if atomic number is not in this table, that means we should even see it in the sample

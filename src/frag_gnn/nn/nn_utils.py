@@ -14,7 +14,7 @@ import logging
 from typing import Literal
 
 from frag_gnn.nn.form_embedder import get_embedder
-from frag_gnn.frag.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
+from frag_gnn.utils.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
 from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax, scatter_masked_logsumexp, safelog
 from frag_gnn.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
 

@@ -11,7 +11,7 @@ import json
 import traceback
 import sys
 
-import frag_gnn.frag.frag_utils as frag_utils
+import frag_gnn.utils.frag_utils as frag_utils
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
 import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.formula_utils import parse_formula

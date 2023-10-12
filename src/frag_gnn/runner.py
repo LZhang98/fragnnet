@@ -26,7 +26,7 @@ import glob
 import shutil
 
 from frag_gnn.model import FragGNNPL, NEIMSPL, get_default_model_params
-from frag_gnn.frag.frag_utils import NUM_ELEMENTS
+from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolFragDynamicBatchSampler
 
