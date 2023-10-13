@@ -136,12 +136,11 @@ def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
 	return bin_spec
 
 
-def merge_sparse_specs(*peakses,renormalize=False):
+def merge_sparse_specs(*peakses,renormalize=False,sum_ints=True):
 	"""
 	this will result in peaks that are really close in mass (<5ppm)
 	they are probably the same peak, but our model can handle this type of ambiguity
 	for now, let's keep them unmerged
-	TODO: this will result in inconsistent comparison with ICEBERG/SCARF
 	"""
 
 	merged_peaks = {}
@@ -149,8 +148,10 @@ def merge_sparse_specs(*peakses,renormalize=False):
 	for peaks in peakses:
 		for mz, intensity in peaks:
 			if mz in merged_peaks:
-				# TODO: sum or max?
-				merged_peaks[mz] += intensity
+				if sum_ints:
+					merged_peaks[mz] += intensity
+				else:
+					merged_peaks[mz] = max(merged_peaks[mz],intensity)
 			else:
 				merged_peaks[mz] = intensity
 	merged_peaks = sorted(list(merged_peaks.items()), key=lambda x: x[0])

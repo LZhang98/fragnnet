@@ -43,7 +43,7 @@ NUM_HEAVY_ELEMENTS = len(HEAVY_ELEMENTS)
 ELEMENTS = HEAVY_ELEMENTS + ["H"]
 NUM_ELEMENTS = len(ELEMENTS)
 
-CANONICAL_ELEMENT_ORDER = ["C","H"] + sorted([elem for elem in ELEMENT_TO_VE.keys() if elem != "C" and elem != "H"])
+CANONICAL_ELEMENT_ORDER = ["C","H"] + sorted([elem for elem in HEAVY_ELEMENTS if elem != "C"])
 CANONICAL_H_IDX = CANONICAL_ELEMENT_ORDER.index("H")
 
 ELEMENT_TO_IDX = { elem: idx for idx, elem in enumerate(ELEMENT_TO_VE.keys())}

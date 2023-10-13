@@ -12,99 +12,11 @@ import traceback
 import sys
 
 import frag_gnn.utils.frag_utils as frag_utils
-from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
 import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.dataset_utils import merge_spec_df
+from frag_gnn.utils.dataset_utils import filter_spec_mol, merge_spec_df
 
-def element_filter(formula,allowed_elements):
-	try:
-		element_counts = parse_formula(formula)
-	except ValueError as e:
-		return False
-	for k,v in element_counts.items():
-		if v > 0 and k not in allowed_elements:
-			return False
-	return True
-
-def filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=-1):
-	"""
-	The purpose of this filtering is to prevent errors
-	"""
-
-	masks = []
-	## spectrum criteria (TODO remove this)
-	# dataset mask
-	dset_mask = spec_df["dset"].isin(dsets)
-	masks.append(dset_mask)
-	# instrument type
-	inst_type_mask = spec_df["inst_type"].isin(["FT"])
-	masks.append(inst_type_mask)
-	# frag mode
-	frag_mode_mask = spec_df["frag_mode"].isin(["HCD"])
-	masks.append(frag_mode_mask)
-	# ce
-	ce_mask = (spec_df["inst_type"]=="FT") & (~spec_df["nce"].isna())
-	masks.append(ce_mask)
-	# ion mode
-	ion_mode_mask = spec_df["ion_mode"] == "P"
-	masks.append(ion_mode_mask)
-	# precursor type
-	prec_type_mask = spec_df["prec_type"].isin(["[M+H]+"])
-	masks.append(prec_type_mask)
-	# resolution
-	res_mask = spec_df["res"].isin([1,2,3,4,5,6,7])
-	masks.append(res_mask)
-	# spectrum type 
-	spec_type_mask = spec_df["spec_type"] == "MS2"
-	masks.append(spec_type_mask)
-	# precursor mz
-	prec_mz_mask = ~spec_df["prec_mz"].isna()
-	masks.append(prec_mz_mask)
-	## molecule criteria
-	# single molecule
-	single_mol_ids = mol_df[mol_df["single_mol"]]["mol_id"]
-	single_mol_mask = spec_df["mol_id"].isin(single_mol_ids)
-	masks.append(single_mol_mask)
-	# neutral molecule
-	neutral_ids = mol_df[mol_df["charge"]==0]["mol_id"]
-	neutral_mask = spec_df["mol_id"].isin(neutral_ids)
-	masks.append(neutral_mask)
-	# element composition
-	element_ids = mol_df[mol_df["formula"].apply(lambda formula: element_filter(formula,allowed_elements))]["mol_id"]
-	element_mask = spec_df["mol_id"].isin(element_ids)
-	print(f">> element: {element_mask.mean()}")
-	masks.append(element_mask)
-	# atom count
-	atom_count_ids = mol_df[mol_df["num_atoms"]<=MAX_NUM_NODES]["mol_id"]
-	atom_count_mask = spec_df["mol_id"].isin(atom_count_ids)
-	print(f">> atom count: {atom_count_mask.mean()}")
-	masks.append(atom_count_mask)
-	# bond count
-	bond_count_ids = mol_df[mol_df["num_bonds"]<=MAX_NUM_EDGES]["mol_id"]
-	bond_count_mask = spec_df["mol_id"].isin(bond_count_ids)
-	print(f">> bond count: {bond_count_mask.mean()}")
-	masks.append(bond_count_mask)
-	# radical stats
-	non_radical_ids = mol_df[mol_df["num_radicals"]==0]["mol_id"]
-	non_radical_mask = spec_df["mol_id"].isin(non_radical_ids)
-	print(f">> non radical: {non_radical_mask.mean()}")
-	masks.append(non_radical_mask)
-	# put them together
-	all_mask = masks[0]
-	for mask in masks:
-		all_mask = all_mask & mask
-	if np.sum(all_mask) == 0:
-		raise ValueError("select removed all items")
-	print(f">> everything: {all_mask.mean()}")
-	spec_df = spec_df[all_mask].reset_index(drop=True)
-	# sample
-	if num_entries > 0:
-		spec_df = spec_df.sample(n=num_entries,replace=False,random_state=420).reset_index(drop=True)
-	# only keep molecules that are in the spectra
-	mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])].reset_index(drop=True)
-	return spec_df, mol_df
 
 def print_and_log(name,series,wandb_flag,stats_d):
 
@@ -167,10 +79,14 @@ def main(args):
 	group_stats_fp = os.path.join(args.frag_dp,args.run_name,f"group_stats_df.pkl")
 	global_stats_fp = os.path.join(args.frag_dp,args.run_name,f"global_stats.json")
 
-	def timed_get_dags(mol, mol_id, 
-			max_depth,h_prior,max_h_transfer, max_time,
-			use_isotopes:bool,
-			output_dir:str, 
+	def timed_get_dags(mol, 
+			mol_id, 
+			max_depth,
+			h_prior,
+			max_h_transfer, 
+			max_time,
+			use_isotopes: bool,
+			output_dir: str, 
 			use_cached = True, 
 			compressed = False,
 			save_dag = True):
@@ -198,7 +114,14 @@ def main(args):
 			try:
 				mol_d = frag_utils.extract_mol_info(mol)
 				# this maybe dangers in multi processing because of scopes
-				dag_d = frag_utils.compute_dags(mol_d,max_depth,h_prior,max_h_transfer, max_time, use_isotopes)
+				dag_d = frag_utils.compute_dags(
+					mol_d,
+					max_depth,
+					h_prior,
+					max_h_transfer, 
+					max_time, 
+					use_isotopes
+				)
 			except KeyboardInterrupt as e:
 				# let these through
 				raise e
@@ -257,8 +180,20 @@ def main(args):
 	print("> Compute Fragments")
 	mol_input_rows = []
 	for _, row in tqdm(mol_df.iterrows(), total=mol_df.shape[0], desc= "prepare inputs"):
-		mol_input_rows.append([row['mol'],row['mol_id'], args.max_depth,args.h_prior,args.max_h_transfer,args.max_time,args.isotopes, dag_dp, \
-			 True, args.compress_dags])
+		mol_input_rows.append(
+			[
+				row['mol'],
+				row['mol_id'], 
+				args.max_depth,
+				True, # h_prior
+				args.max_h_transfer,
+				args.max_time,
+				args.isotopes, 
+				dag_dp,
+				True, # use_cached
+				args.compress_dags
+			]
+		)
 	tqdm_iter = tqdm(mol_input_rows,desc=pformat(timed_get_dags),total=len(mol_input_rows))
 	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
 	print("> Fragments Computed")
@@ -406,8 +341,6 @@ def main(args):
 
 if __name__ == "__main__":
 
-	default_elements = list(frag_utils.CANONICAL_ELEMENT_ORDER)
-
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries",type=int,default=-1)
 	parser.add_argument("--max_depth",type=int,default=4)
@@ -415,10 +348,9 @@ if __name__ == "__main__":
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
 	parser.add_argument("--frag_dp",type=str,default="data/frag")
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
-	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--allowed_elements",type=str,nargs="+",default=default_elements)
-	parser.add_argument("--dsets",type=str,nargs="+",default="nist")
+	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
+	parser.add_argument("--dsets",type=str,nargs="+",default=["nist"])
 	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="online",choices=["online","offline","off"])
