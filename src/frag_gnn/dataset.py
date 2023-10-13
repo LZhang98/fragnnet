@@ -546,6 +546,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		self.shuffle = shuffle
 		self.generator = generator
 		self.return_batch_at = return_batch_at
+		self.max_bacth_sample_size = max_bacth_sample_size
 		self.batches = []
 		self._pre_compute_batches()
 	
