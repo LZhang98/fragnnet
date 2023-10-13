@@ -17,17 +17,12 @@ from pprint import pformat
 from rdkit import RDLogger
 
 # Custom import
-import frag_gnn.iceberg.parallel_utils as parallel_utils
+import frag_gnn.iceberg.common as common
 import frag_gnn.iceberg.fragmentation as fragmentation
-import frag_gnn.iceberg.misc_utils as misc_utils
-import frag_gnn.iceberg.chem_utils as chem_utils
 import frag_gnn.utils.frag_utils as frag_utils
 from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
 from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.data_utils import seq_apply, par_apply
-
-
-FRAGMENT_ENGINE_PARAMS = {"max_broken_bonds": 6, "max_tree_depth": 3}
 
 
 def greedy_prune(
@@ -176,7 +171,7 @@ def magma_augmentation(
 	spectras = [(None,np.array(spec_entry["peaks"]))]
 
 	# Step 1 - Generate fragmentations inside fragmentation engine
-	fe = fragmentation.FragmentEngine(mol_str=spectra_smiles, **FRAGMENT_ENGINE_PARAMS)
+	fe = fragmentation.FragmentEngine(mol_str=spectra_smiles, **fragmentation.FRAGMENT_ENGINE_PARAMS)
 
 	# Outside try except loop
 	if not parallel:
@@ -191,18 +186,18 @@ def magma_augmentation(
 
 	# Step 2: Process spec and get comparison points
 	# Read in file and filter it down
-	spectra = misc_utils.process_spec_file(meta, spectras)
+	spectra = common.process_spec_file(meta, spectras)
 	if spectra is None:
 		print(f"Error with generating fragments for spec {spectra_name}")
 		return False
 
-	spectra = misc_utils.max_inten_spec(
+	spectra = common.max_inten_spec(
 		spectra, max_num_inten=max_peaks, inten_thresh=0.001
 	)
 	s_m, s_i = spectra[:, 0], spectra[:, 1]
 
 	# Correct for s_m by subtracting it
-	adjusted_m = s_m - chem_utils.ion2mass[spectra_adduct]
+	adjusted_m = s_m - common.ion2mass[spectra_adduct]
 
 	# Step 3: Make all assignments
 	frag_hashes, frag_inds, shift_inds, masses, scores = fe.get_frag_masses()
@@ -473,7 +468,7 @@ def run_magma_augmentation(
 		# [partial_aug_safe(i) for i in tqdm(spec_entries)]
 		results = seq_apply(spec_entry_iter,partial_aug_safe)
 	else:
-		# parallel_utils.chunked_parallel(spec_entries, partial_aug_safe, max_cpu=60)
+		# common.chunked_parallel(spec_entries, partial_aug_safe, max_cpu=60)
 		results = par_apply(spec_entry_iter,partial_aug_safe)
 	# with open(magma_dir / "results.json","w") as fp:
 	# 	json.dump(results,fp,indent=2)

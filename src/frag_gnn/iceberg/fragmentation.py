@@ -23,6 +23,8 @@ MAX_ATOM_BONDS = 6
 # CC bonds are strongest --> higher score = harder to break
 HETEROW = {False: 2, True: 1}
 
+FRAGMENT_ENGINE_PARAMS = {"max_broken_bonds": 6, "max_tree_depth": 3}
+
 
 class FragmentEngine(object):
     """FragmentEngine."""
