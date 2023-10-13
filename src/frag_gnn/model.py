@@ -1,965 +1,686 @@
 import torch as th
-import torch.nn.functional as F
-import numpy as np
+import torch.nn as nn
 
-# make cc happy
-try:
-	import lightning.pytorch as pl
-except ModuleNotFoundError:
-	import pytorch_lightning as pl
-	
-from torch.profiler import profile, record_function, ProfilerActivity
-import torch._dynamo as th_dynamo
+from frag_gnn.nn
 
-from frag_gnn.nn.nn_utils import build_lr_scheduler, FragGNNModel, NEIMSModel
-from frag_gnn.nn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn, get_sparse_conditional_entropy_fn, get_edge_loss_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
-from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp
-from frag_gnn.utils.frag_utils import NUM_ELEMENTS
-from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
-from frag_gnn.utils.plot_utils import plot_spectra_sparse
+class FragGNNModel(nn.Module):
 
-
-def batchwise_max(xs, batch_idxs):
-	""" for debugging """
-
-	batch_size = th.max(batch_idxs)+1
-	maxs = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
-	for b in range(batch_size):
-		maxs[b] = th.max(xs[batch_idxs==b])
-	return maxs
-
-def batchwise_lse(xs, batch_idxs):
-	""" for debugging """
-
-	batch_size = th.max(batch_idxs)+1
-	lses = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
-	for b in range(batch_size):
-		lses[b] = th.logsumexp(xs[batch_idxs==b],0)
-	return lses
-
-def to_cpu(data_d,non_blocking=True,detach=True):
-
-	for k in data_d.keys():
-		if isinstance(data_d[k],th.Tensor):
-			data = data_d[k]
-			if detach:
-				data = data.detach()
-			data = data.to("cpu",non_blocking=non_blocking)
-			data_d[k] = data
-	return data_d
-
-class SpectrumPL(pl.LightningModule):
-
-	def __init__(self,**kwargs):
+	def __init__(
+		self,
+		num_depth: int,
+		num_hs: int,
+		num_elements: int,
+		int_embedder: str,
+		int_embedder_tight: bool,
+		mol_node_feats: list[str],
+		mol_edge_feats: list[str],
+		mol_pe_embed_k: int,
+		mol_hidden_size: int,
+		mol_num_layers: int,
+		mol_gnn_type: str,
+		mol_normalization: str,
+		mol_dropout: float,
+		mol_pool_type: str,
+		frag_node_feats: list[str],
+		frag_edge_feats: list[str],
+		frag_hidden_size: int,
+		frag_num_layers: int,
+		frag_gnn_type: str,
+		frag_normalization: str,
+		frag_dropout: float,
+		frag_pool_type: str,
+		mlp_output_format: str,
+		mlp_hidden_size: int,
+		mlp_normalization: str,
+		mlp_dropout: float,
+		mlp_num_layers: int,
+		mlp_use_residuals: bool,
+		cc_interstage_type: str,
+		skip_edge_loss: bool,
+		mask_null_formula: bool,
+		ce_insert_type: str= None,
+	):
 
 		super().__init__()
-		self.save_hyperparameters()
-		# setup functions
-		self.metric_names = set()
-		self._setup_model()
-		self._setup_loss_fn()
-		self._setup_spec_fns()
-		self._setup_metric_fns()
-		self.train_results = None
-		self.train_counter = 0
-		self.train_mean_metrics = []
-		self.val_results = None
-		self.val_counter = 0
-		self.val_mean_metrics = []
+		self.num_depth = num_depth
+		self.num_hs = num_hs
+		self.num_elements = num_elements
+		# calculate node/edge feats sizes
+		self.mol_node_feats = mol_node_feats
+		self.mol_edge_feats = mol_edge_feats
+		self.mol_pe_embed_k = mol_pe_embed_k
+		self._compute_mol_feats_sizes()
 
-	def _setup_model(self):
-		raise NotImplementedError
-	
-	def _setup_loss_fn(self):
-		raise NotImplementedError
+		#check ce insertion type
+		assert ce_insert_type in ["mlp_insert","frag_insert","mol_insert", None]
+		self.ce_insert_type = ce_insert_type
 
-	def _setup_spec_fns(self):
-
-		def _filter_func(mzs, ints, batch_idxs):
-			return batched_filter_func(mzs,ints,batch_idxs,self.hparams.ints_thresh,self.hparams.mz_max)
-		self.filter_func = _filter_func
-		def _bin_func(mzs, ints, batch_idxs):
-			return batched_bin_func(mzs,ints,batch_idxs,self.hparams.mz_max,self.hparams.mz_bin_res,self.hparams.bin_sum_ints)
-		self.bin_func = _bin_func
-		self.ints_transform_func = get_ints_transform_func(self.hparams.ints_transform)
-		self.ints_untransform_func = get_ints_untransform_func(self.hparams.ints_transform)
-		self.ints_normalize_func = batched_l1_normalize
-
-	def _setup_metric_fns(self):
-
-		self.metric_min_max = {"loss": "min"}
-		self.metric_fns = {}
-		if "cos_sim" in self.hparams.auxiliary_scores:
-			def _cos_sim(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				if th.isnan(true_ints).any() or th.isnan(pred_ints).any():
-					raise ValueError(f'cos sim, nan in true_ints: {true_ints} and/or in pred_ints {pred_ints}')
-
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				return calculate_cosine_similarity(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					mz_bin_res=self.hparams.mz_bin_res,
-					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.bin_sum_ints
-				)
-			self.metric_fns["cos_sim"] = _cos_sim
-			self.metric_min_max["cos_sim"] = "max"
-		if "wrecall" in self.hparams.auxiliary_scores:
-			def _wrecall(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				pred_ints = self.ints_normalize_func(pred_ints,pred_batch_idxs)
-				# calculate
-				return calculate_weighted_recall(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
-				)
-			self.metric_fns["wrecall"] = _wrecall
-			self.metric_min_max["wrecall"] = "max"
-		if "opt_cos_sim" in self.hparams.auxiliary_scores:
-			def _opt_cos_sim(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				return calculate_optimal_cosine_similarity(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
-				)
-			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
-			self.metric_min_max["opt_cos_sim"] = "max"
-		self.metric_names.update(list(self.metric_min_max.keys()))
-
-	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
-
-		# filter
-		spec_mzs, spec_ints, spec_batch_idxs = self.filter_func(
-			spec_mzs,
-			spec_ints,
-			spec_batch_idxs
-		)
-		# transform
-		spec_ints = self.ints_transform_func(spec_ints)
-		# renormalize
-		spec_ints = self.ints_normalize_func(
-			spec_ints,
-			spec_batch_idxs
-		)
-		# log
-		spec_ints = safelog(spec_ints)
-		return spec_mzs, spec_ints, spec_batch_idxs
-
-	def predict_step(self,**batch_kwargs):
+		# setup mol gnn
+		#mol_include_ce = ce_insert_type == "mol_insert"
+		mol_kwargs = {
+			"node_feats_size": self.mol_node_feats_size,
+			"edge_feats_size": self.mol_edge_feats_size,
+			"hidden_size": mol_hidden_size,
+			"num_layers": mol_num_layers,
+			"gnn_type": mol_gnn_type,
+			"dropout": mol_dropout,
+			"normalization": mol_normalization,
+			#"include_ce": mol_include_ce
+		}
 		
-		return self.forward(**batch_kwargs)
+		# Mol GNN
+		self.mol_embedder = GNN(**mol_kwargs)
+		self.mol_pool_type = mol_pool_type
+		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
+		if int_embedder_tight:
+			formula_d = {"max_count_int": 127}
+			depth_d = {"max_count_int": num_depth+1}
+			complement_d = {"max_count_int": 2}
+		else:
+			formula_d = depth_d = complement_d = {}
+		self.formula_embedder = get_embedder(int_embedder,**formula_d)
+		self.depth_embedder = get_embedder(int_embedder,**depth_d)
+		self.complement_embedder = get_embedder(int_embedder,)
+		self.frag_node_feats = frag_node_feats
+		self.frag_edge_feats = frag_edge_feats
+		self._compute_frag_feats_sizes()
 
-	def forward(self,**batch_kwargs):
+		# define interstage
+		assert cc_interstage_type in ["add","sub","linear","direct"]
+		self.cc_interstage_type = cc_interstage_type
+		if self.cc_interstage_type == "linear":
+			self.cc_interstage = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
 
-		# get predictions
-		pred = self.model.forward(**batch_kwargs)
-		return pred
-
-	def _common_step(self, batch, split="train"):
-
-		# preprocess spec
-		batch_size = batch["batch_size"]
-		unique_id = batch["spec_unique_id"]
-		smiles = batch["mol_smiles"]
-		spec_mzs = batch["spec_mzs"]
-		spec_ints = batch["spec_ints"]
-		spec_batch_idxs = batch["spec_batch_idxs"]
-		# print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
-		spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
-			spec_mzs,
-			spec_ints,
-			spec_batch_idxs
-		)
-
-		pred = self.forward(**batch)
-
-		both = {
-			"true_mzs": spec_mzs,
-			"true_logprobs": spec_ints,
-			"true_batch_idxs": spec_batch_idxs,
-			**pred
+		# define frag-graph GNN to create frag-graph node level embedding
+		if self.ce_insert_type == "frag_insert":
+			self.frag_node_feats_size += 1
+			self.frag_edge_feats_size += 1
+		
+		frag_kwargs = {
+			"node_feats_size": self.frag_node_feats_size,
+			"edge_feats_size": self.frag_edge_feats_size,
+			"hidden_size": frag_hidden_size,
+			"num_layers": frag_num_layers,
+			"gnn_type": frag_gnn_type,
+			"dropout": frag_dropout,
+			"normalization": frag_normalization,
+			"include_ce": self.ce_insert_type == "frag_insert"
 		}
 
-		loss_d = self.loss_fn(**both)
-		loss = loss_d["loss"]
-		mean_loss = th.mean(loss,dim=0)
-		# just log loss
-		self.log(
-			f"{split}_batch_loss",
-			mean_loss,
-			batch_size=batch_size,
-			on_epoch=True
+		self.frag_embedder = GNN(**frag_kwargs)
+		self.frag_pool_type = frag_pool_type
+		self.frag_pool = build_pool_module(frag_pool_type,frag_hidden_size)
+		self.mlp_output_format = mlp_output_format
+
+		# determine mlp input dims
+		# we mlp insert for ce is enabled, add ce here
+		mlp_input_dim = 2*self.frag_embedder.hidden_size
+		if self.ce_insert_type == "mlp_insert":
+			mlp_input_dim += 1
+
+		if self.mlp_output_format in ["formula","node_formula"]:
+			formula_mlp_kwargs = {
+				"input_size": mlp_input_dim,
+				"output_size": 2*self.num_hs+1,
+				"hidden_size": mlp_hidden_size,
+				"num_layers": mlp_num_layers,
+				"dropout": mlp_dropout,
+				"use_residuals": mlp_use_residuals,
+				"normalization": mlp_normalization
+			}
+			self.formula_module = MLPBlocks(**formula_mlp_kwargs)
+
+		if self.mlp_output_format in ["node_formula"]:
+			node_mlp_kwargs = {
+				"input_size": 2*self.frag_embedder.hidden_size,
+				"output_size": 1,
+				"hidden_size": mlp_hidden_size,
+				"num_layers": mlp_num_layers,
+				"dropout": mlp_dropout,
+				"use_residuals": mlp_use_residuals,
+				"normalization": mlp_normalization
+			}
+			self.node_module = MLPBlocks(**node_mlp_kwargs)
+		else:
+			self.node_module = None
+
+		self.skip_edge_loss = skip_edge_loss
+		self.mask_null_formula = mask_null_formula
+		
+		# this is required
+		assert "h_formulae_idx" in self.frag_node_feats
+
+	def _compute_mol_feats_sizes(self):
+		""" method compute mol feature size
+			these features don't rely on any model parameters
+		"""
+		self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
+			self.mol_node_feats, 
+			self.mol_edge_feats, 
+			self.mol_pe_embed_k
 		)
 
-		results = {
-			"unique_id": unique_id,
-			"smiles": smiles,
-			"mean_loss": mean_loss,
-			"total_loss": th.sum(loss,dim=0),
-			**both,
-			**loss_d
-		}
-		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
-		with th.no_grad():
-			for metric_name,metric_fn in self.metric_fns.items():
-				metric = metric_fn(
-					spec_mzs,
-					th.exp(spec_ints),
-					spec_batch_idxs,
-					pred["pred_mzs"],
-					th.exp(pred["pred_logprobs"]),
-					pred["pred_batch_idxs"]
-				)
-				results[metric_name] = metric
-		for metric_name in self.metric_names:
-			assert metric_name in results, metric_name
-		return results
+	def _compute_frag_feats_sizes(self):
+		""" method compute frag-graph feature size
+			these features do depend on model parameters
+		"""
+		# nodes
+		self.frag_node_feats_size = 0
+		if "cc" in self.frag_node_feats:
+			self.frag_node_feats_size += self.mol_embedder.hidden_size
+		if "base_formula" in self.frag_node_feats:
+			self.frag_node_feats_size += self.num_elements*self.formula_embedder.num_dim
+		if "depth" in self.frag_node_feats:
+			self.frag_node_feats_size += self.num_depth*self.depth_embedder.num_dim
+		# edges
+		self.frag_edge_feats_size = 0
+		if "cc" in self.frag_edge_feats:
+			self.frag_edge_feats_size += self.mol_embedder.hidden_size
+		if "base_formula" in self.frag_edge_feats:
+			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
+		if "complement" in self.frag_edge_feats:
+			self.frag_edge_feats_size += self.complement_embedder.num_dim
 
-	def training_step(self, batch, batch_idx):
-		""" training loop
+	def compile_submodules(self,**kwargs):
+		""" pyg does not support dynamic shape compiling """
+		# self.mol_embedder = pyg.compile(self.mol_embedder,**kwargs)
+		self.formula_embedder = th.compile(self.formula_embedder,**kwargs)
+		self.depth_embedder = th.compile(self.depth_embedder,**kwargs)
+		self.complement_embedder = th.compile(self.complement_embedder,**kwargs)
+		# self.frag_embedder = pyg.compile(self.frag_embedder,**kwargs)
+
+	def forward(
+		self, 
+		mol_pyg: pyg.data.Data,
+		frag_pyg: pyg.data.Data,
+		mol_num_nodes: th.Tensor,
+		frag_num_nodes: th.Tensor,
+		frag_formula_peak_idxs: th.Tensor,
+		frag_formula_peak_mzs: th.Tensor,
+		frag_formula_peak_probs: th.Tensor,
+		frag_formula_sizes: th.Tensor,
+		frag_formula_cumsizes: th.Tensor,
+		frag_formula_peak_sizes: th.Tensor,
+		**kwargs
+	):
+		"""forward methods for joint predictor
 
 		Args:
-			batch (_type_): _description_
-			batch_idx (_type_): _description_
-
-		Raises:
-			NotImplementedError: _description_
+			mol_pyg (pyg.data.Data): molecule pyg data object
+			frag_pyg (pyg.data.Data): fragmentation graph pyg data object
+			mol_num_nodes (th.Tensor): number of nodes in molecule graph
+			frag_num_nodes (th.Tensor): number of nodes in fragmentation graph
+			frag_formula_peak_idxs (th.Tensor): _description_
+			frag_formula_peak_mzs (th.Tensor): _description_
+			frag_formula_peak_probs (th.Tensor): _description_
+			frag_formula_sizes (th.Tensor): _description_
+			frag_formula_cumsizes (th.Tensor): _description_
+			frag_formula_peak_sizes (th.Tensor): _description_
 
 		Returns:
 			_type_: _description_
 		"""
 
-		if self.hparams.automatic_optimization:
-			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss")
-			self._update_results(batch_results,"train")
-			return mean_loss
-		else:
-			raise NotImplementedError("Manual optimization not implemented")
 
-	def validation_step(self, batch, batch_idx):
+		# TODO add collision energy support
 
-		batch_results = self._common_step(batch, split="val")
-		mean_loss = batch_results.pop("mean_loss")
-		self._update_results(batch_results,"val")
-		return mean_loss
+		device = mol_num_nodes.device
 
-	def test_step(self, batch, batch_idx):
+		# mol_x: mol level node feature matrix
+		# mol_edge_index: mol graph connectivity in COO format with shape [2, num_edges]
+		# edge_attr: mol graph edge feature matrix with shape [num_edges, num_edge_features]
+		# batch: sample idx repsect to current batch
+		mol_x, mol_edge_index, mol_edge_attr, mol_batch = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr, mol_pyg.batch
+		# frag_x: frag-graph level node feature matrix
+		# frag_edge_index: frag graph connectivity in COO format with shape [2, num_edges]
+		# frag_edge_attr: frag graph edge feature matrix with shape [num_edges, num_edge_features]
+		# batch: sample idx repsect to current batch
+		frag_x, frag_edge_index, frag_edge_attr, frag_batch = frag_pyg.x, frag_pyg.edge_index, frag_pyg.edge_attr, frag_pyg.batch
 
-		batch_results = self._common_step(batch, split="test")
-		mean_loss = batch_results.pop("mean_loss")
-		# self._update_results(batch_results,"test")
-		return mean_loss
+		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
+		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
+		
+		# get ce value
+		# maybe we should check if ce is provided by model does not handle it ?
+		# add collision energy support
+		# TODO fix this, we should also handle ace
+		# for k, v in kwargs.items():
+		#	print(f"{k} {v}")
+		
+		if self.ce_insert_type != None:
+			if "spec_nce" in kwargs:
+				ce = kwargs.pop('spec_nce')
+			elif "spec_ace" in kwargs:
+				ce = kwargs.pop('spec_ace')
 
-	def configure_optimizers(self):
-
-		if self.hparams.optimizer == "adam":
-			optimizer_cls = th.optim.Adam
-		elif self.hparams.optimizer == "adamw":
-			optimizer_cls = th.optim.AdamW
-		elif self.hparams.optimizer == "sgd":
-			optimizer_cls = th.optim.SGD
-		else:
-			raise ValueError(f"Unknown optimizer {self.optimizer}")
-		optimizer = optimizer_cls(
-			self.parameters(), 
-			lr=self.hparams.lr, 
-			weight_decay=self.hparams.weight_decay
+		# get per-atom embeddings
+		mol_embed_gnn = self.mol_embedder(
+			mol_x,
+			mol_batch,
+			mol_edge_index,
+			mol_edge_attr
 		)
-		ret = {
-			"optimizer": optimizer,
-		}
-		if self.hparams.lr_schedule:
-			scheduler = build_lr_scheduler(
-				optimizer=optimizer, 
-				decay_rate=self.hparams.lr_decay_rate, 
-				warmup_steps=self.hparams.lr_warmup_steps,
-				decay_steps=self.hparams.lr_decay_steps,
-			)
-			ret["lr_scheduler"] = {
-				"scheduler": scheduler,
-				"frequency": 1,
-				"interval": "step",
-			}
-		return ret
+		mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn,mol_batch)
 
-	def _get_wandb_logger(self):
-
-		wandb_logger = None
-		for logger in self.loggers:
-			if isinstance(logger, pl.loggers.WandbLogger):
-				wandb_logger = logger		
-		return wandb_logger
-
-	def _update_results(self, batch_results, split):
-
-		if split == "train":
-			num_log_images = self.hparams.num_log_train_images
-			results_attr = "train_results"
-			counter_attr = "train_counter"
-		elif split == "val":
-			num_log_images = self.hparams.num_log_val_images
-			results_attr = "val_results"
-			counter_attr = "val_counter"
-		else:
-			raise NotImplementedError(split)
-		# filter keys (filtering first to save time/memory)
-		keys = [
-			"unique_ids",
-			"smiles",
-			"true_mzs",
-			"true_logprobs",
-			"true_unique_ids",
-			"pred_mzs",
-			"pred_logprobs",
-			"pred_unique_ids"
-		]
-		keys.extend(list(self.metric_names))
-		unique_ids = batch_results.pop("unique_id")
-		true_batch_idxs = batch_results.pop("true_batch_idxs")
-		pred_batch_idxs = batch_results.pop("pred_batch_idxs")
-		batch_results = {k:v for k,v in batch_results.items() if k in keys}
-		# update unique_ids
-		true_unique_ids = unique_ids[true_batch_idxs]
-		pred_unique_ids = unique_ids[pred_batch_idxs]
-		batch_results["unique_ids"] = unique_ids
-		batch_results["true_unique_ids"] = true_unique_ids
-		batch_results["pred_unique_ids"] = pred_unique_ids
-		# check all metrics
-		for metric_name in self.metric_names:
-			assert metric_name in batch_results, metric_name
-		# transfer to cpu
-		batch_results = to_cpu(batch_results)
-		# setup results dict
-		if getattr(self,results_attr) is None:
-			setattr(self,results_attr,{k:list() for k in keys})
-		else:
-			assert set(keys) == set(getattr(self,results_attr).keys())
-		results_dict = getattr(self,results_attr)
-		# add to results dict
-		for k,v in batch_results.items():
-			results_dict[k].append(v)
-		# increment counter
-		setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
-
-	def _consolidate_results(self, split):
-		
-		results = getattr(self,f"{split}_results")
-		if results is None:
-			return
-		keys = results.keys()
-		for k in keys:
-			if isinstance(results[k][0],th.Tensor):
-				results[k] = th.cat(results[k],dim=0)
-			else:
-				assert isinstance(results[k][0],list)
-				results[k] = flatten_lol(results[k])
-		# log all the metrics
-		mean_metrics = {k:v.mean() for k,v in results.items() if k in self.metric_names}
-		for k,v in mean_metrics.items():
-			self.log(
-				f"{split}_{k}_epoch",
-				v
-			)
-		# update epoch stats
-		mean_metrics_list = getattr(self,f"{split}_mean_metrics")
-		mean_metrics_list.append(mean_metrics)
-		# log best metric
-		for k in ["loss","cos_sim"]:
-			if k not in self.metric_names:
-				continue
-			metric_epochs = [item[k] for item in mean_metrics_list]
-			if self.metric_min_max[k] == "min":
-				metric_best = th.min(th.tensor(metric_epochs))
-			else:
-				metric_best = th.max(th.tensor(metric_epochs))
-			self.log(
-				f"{split}_{k}_best",
-				metric_best
+		# process dag
+		# create interstage
+		frag_ndata, frag_edata = [], []
+		batch_frag_num_nodes = frag_x.shape[0]
+		batch_frag_num_edges = frag_edge_index.shape[1]
+		batch_size = frag_batch[-1]+1
+		# node atom embeddings
+		if "cc" in self.frag_node_feats:
+			frag_node_mask = th_long_to_mask(get_node_feats(frag_x,frag_node_feat_idxs,"cc").to(device))
+			frag_node_mask_idxs = th.nonzero(frag_node_mask).long()
+			frag_node_offsets = mol_num_nodes[th.bucketize(frag_node_mask_idxs[:,0],frag_num_nodes,right=True)-1]
+			frag_node_mask_idxs[:,1] = frag_node_mask_idxs[:,1] + frag_node_offsets
+			frag_node_mask_embed = scatter_reduce(
+				src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
+				index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
+				reduce="sum",
+				dim=0,
+				dim_size=batch_frag_num_nodes
 			)
 
-	def _log_images(self, split):
-
-		if split == "train":
-			results = self.train_results
-			num_log_images = self.hparams.num_log_train_images
-			counter = self.train_counter
-		elif split == "val":
-			results = self.val_results
-			num_log_images = self.hparams.num_log_val_images
-			counter = self.val_counter
-		else:
-			raise NotImplementedError(split)
-		num_log_images = min(num_log_images,counter)
-		wandb_logger = self._get_wandb_logger()
-		if wandb_logger is None:
-			return
-		# randomly sample unique_ids
-		unique_ids = th.unique(results["unique_ids"],sorted=True)
-		if num_log_images == unique_ids.shape[0]:
-			sample_idxs = th.arange(num_log_images)
-			sample_unique_ids = unique_ids
-		else:
-			with th_temp_seed(420):
-				sample_idxs = th.randperm(unique_ids.shape[0])[:num_log_images]
-				sample_unique_ids = unique_ids[sample_idxs]
-		# plot images
-		for i in range(num_log_images):
-			unique_id = sample_unique_ids[i].item()
-			unique_idx = th.nonzero(results["unique_ids"] == unique_id,as_tuple=False).item()
-			true_mask = results["true_unique_ids"] == unique_id
-			pred_mask = results["pred_unique_ids"] == unique_id
-			smiles = results["smiles"][unique_idx]
-			loss = results["loss"][unique_idx].item()
-			if "cos_sim" in results:
-				cos_sim = results["cos_sim"][unique_idx].item()
-			else:
-				cos_sim = np.nan
-			if "wrecall" in results:
-				wrecall = results["wrecall"][unique_idx].item()
-			else:
-				wrecall = np.nan
-			true_mzs = results["true_mzs"][true_mask]
-			true_ints = th.exp(results["true_logprobs"][true_mask])
-			pred_mzs = results["pred_mzs"][pred_mask]
-			pred_ints = th.exp(results["pred_logprobs"][pred_mask])
-			# untransform
-			true_ints = self.ints_untransform_func(true_ints)
-			true_ints = self.ints_normalize_func(
-				true_ints,
-				th.zeros_like(true_ints,dtype=th.long)
+			# frag_node_mask_embed can be one of following
+			# 1. frag_node_mask_embed plus mol_embed_gnn_pool
+			# 2. frag_node_mask_embed only, with out pooled embed for entire mol
+			# 3. a linear layer between masked embed and pooled embed
+			if self.cc_interstage_type == "add":
+				frag_node_mask_embed = frag_node_mask_embed + mol_embed_gnn_pool[frag_batch]
+			elif self.cc_interstage_type == "sub":
+				frag_node_mask_embed = frag_node_mask_embed - mol_embed_gnn_pool[frag_batch]
+			if self.cc_interstage_type == "linear":
+				frag_node_mask_embed =  self.cc_interstage(th.cat([frag_node_mask_embed,mol_embed_gnn_pool[frag_batch]], dim = 1))
+    
+			frag_ndata.append(frag_node_mask_embed)
+		# edge atom embeddings
+		if "cc" in self.frag_edge_feats:
+			# connected competents
+			frag_edge_mask = th_long_to_mask(get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"cc").to(device))
+			frag_edge_mask_idxs = th.nonzero(frag_edge_mask).long()
+			frag_edge_node_idxs = frag_edge_index[0][frag_edge_mask_idxs[:,0]]
+			frag_edge_offsets = mol_num_nodes[th.bucketize(frag_edge_node_idxs,frag_num_nodes,right=True)-1]
+			frag_edge_mask_idxs[:,1] = frag_edge_mask_idxs[:,1] + frag_edge_offsets
+			frag_edge_mask_embed = scatter_reduce(
+				src=mol_embed_gnn[frag_edge_mask_idxs[:,1]],
+				index=frag_edge_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
+				reduce="sum",
+				dim=0,
+				dim_size=batch_frag_num_edges
 			)
-			pred_ints = self.ints_untransform_func(pred_ints)
-			pred_ints = self.ints_normalize_func(
-				pred_ints,
-				th.zeros_like(pred_ints,dtype=th.long)
+			frag_edata.append(frag_edge_mask_embed)
+		# node formulae
+		if "base_formula" in self.frag_node_feats:
+			frag_node_formula = self.formula_embedder(
+				get_node_feats(frag_x,frag_node_feat_idxs,"base_formula").reshape(batch_frag_num_nodes,-1)
 			)
-			# cast to numpy
-			true_mzs = true_mzs.numpy()
-			true_ints = true_ints.numpy()
-			pred_mzs = pred_mzs.numpy()
-			pred_ints = pred_ints.numpy()
-			assert np.isclose(np.sum(true_ints),1.0), np.sum(true_ints)
-			assert np.isclose(np.sum(pred_ints),1.0), np.sum(pred_ints)
-			# plot
-			data = plot_spectra_sparse(
-				true_mzs,
-				true_ints,
-				pred_mzs,
-				pred_ints,
-				smiles,
-				return_data=True
+			frag_ndata.append(frag_node_formula)
+		# edge formulae
+		if "base_formula" in self.frag_edge_feats:
+			frag_edge_formula = self.formula_embedder(
+				get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"base_formula").reshape(batch_frag_num_edges,-1)
 			)
-			wandb_logger.log_image(
-				key=f"{split}_example_{i}",
-				caption=[f"unique_id = {unique_id}, epoch = {self.current_epoch:03d}, loss = {loss:.3f}, cos_sim = {cos_sim:.3f}, wrecall = {wrecall:.3f}"],
-				images=[data]
+			frag_edata.append(frag_edge_formula)
+		# node depth
+		if "depth" in self.frag_node_feats:
+			frag_depth = self.depth_embedder(
+				get_node_feats(frag_x,frag_node_feat_idxs,"depth").reshape(batch_frag_num_nodes,-1)
 			)
-
-	def on_train_epoch_end(self):
-
-		# consolidate results
-		self._consolidate_results("train")
-		# log images
-		self._log_images("train")
-		# reset
-		self.train_results = None
-		self.train_counter = 0
-
-	def on_validation_epoch_end(self):
-		
-		if not self.trainer.sanity_checking:
-			# consolidate results
-			self._consolidate_results("val")
-			# log images
-			self._log_images("val")
-		# reset
-		self.val_results = None
-		self.val_counter = 0
-
-	def _print_grad_norm(self,prefix=None,total_num_params=5):
-
-		if prefix is None:
-			prefix = "no_prefix"
-		print(f">> {prefix}, {self._num_need_update}, {self._num_acc_gradient}")
-		opt = self.optimizers()
-		num_params = 0
-		for pg in opt.param_groups:
-			for p in pg['params']:
-				if p.grad is not None:
-					print(th.norm(p.grad))
-					num_params += 1
-				if num_params > total_num_params:
-					break
-			if num_params > total_num_params:
-				break
-	
-	def on_after_backward(self):
-		
-		if self.hparams.check_gradient_norm:
-			self._print_grad_norm(prefix="after_backward")
-
-	def on_before_optimizer_step(self, optimizer):
-
-		if self.hparams.check_gradient_norm:
-			self._print_grad_norm(prefix="before_optimizer_step")
-
-	def on_after_optimizer_step(self, optimizer):
-
-		self._num_need_update = 0
+			frag_ndata.append(frag_depth)
+		# edge complement
+		if "complement" in self.frag_edge_feats:
+			frag_edge_complement = self.complement_embedder(
+				get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"complement").reshape(batch_frag_num_edges,-1)
+			)
+			frag_edata.append(frag_edge_complement)
 
 
-class FragGNNPL(SpectrumPL):
+		if self.ce_insert_type == "frag_insert":
+			edge_ce = ce.repeat(batch_frag_num_edges).T
+			frag_edata.append(edge_ce)
+			node_ce = ce.repeat(batch_frag_num_edges).T
+			frag_ndata.append(batch_frag_num_nodes)
 
-	def _setup_model(self):
+		# get output formula aggregation 
+		frag_node_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
+		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
+		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
+		# assmeble all features for dag
+		# concatenate everything 
+		frag_x_embed = th.cat(frag_ndata,dim=-1)
+		# concatenate everything 
+		frag_edge_attr_embed = th.cat(frag_edata,dim=-1)
 
-		# frag GNN
-		self.model = FragGNNModel(
-			num_depth=self.hparams.num_depth,
-			num_hs=self.hparams.num_hs,
-			num_elements=self.hparams.num_elements,
-			int_embedder=self.hparams.int_embedder,
-			int_embedder_tight=self.hparams.int_embedder_tight,
-			mol_node_feats=self.hparams.mol_pyg_node_feats,
-			mol_edge_feats=self.hparams.mol_pyg_edge_feats,
-			mol_pe_embed_k=self.hparams.mol_pyg_pe_embed_k,
-			mol_hidden_size=self.hparams.mol_hidden_size,
-			mol_num_layers=self.hparams.mol_num_layers,
-			mol_gnn_type=self.hparams.mol_gnn_type,
-			mol_dropout=self.hparams.mol_dropout,
-			mol_normalization=self.hparams.mol_normalization,
-			mol_pool_type=self.hparams.mol_pool_type,
-			frag_node_feats=self.hparams.frag_pyg_node_feats,
-			frag_edge_feats=self.hparams.frag_pyg_edge_feats,
-			frag_hidden_size=self.hparams.frag_hidden_size,
-			frag_num_layers=self.hparams.frag_num_layers,
-			frag_gnn_type=self.hparams.frag_gnn_type,
-			frag_dropout=self.hparams.frag_dropout,
-			frag_normalization=self.hparams.frag_normalization,
-			frag_pool_type=self.hparams.frag_pool_type,
-			mlp_output_format=self.hparams.mlp_output_format,
-			mlp_hidden_size=self.hparams.mlp_hidden_size,
-			mlp_normalization=self.hparams.mlp_normalization,
-			mlp_dropout=self.hparams.mlp_dropout,
-			mlp_num_layers=self.hparams.mlp_num_layers,
-			mlp_use_residuals=self.hparams.mlp_use_residuals,
-			skip_edge_loss=self.hparams.skip_edge_loss,
-			mask_null_formula=self.hparams.mask_null_formula,
-			cc_interstage_type=self.hparams.cc_interstage_type
+		# define frag network
+		frag_embed_gnn = self.frag_embedder(
+			frag_x_embed,
+			frag_node_batch_idxs,
+			frag_edge_index,
+			frag_edge_attr_embed
 		)
-		# compile
-		if self.hparams.compile:
-			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
+		frag_embed_gnn_pool = self.frag_pool(frag_embed_gnn,frag_batch)
+		frag_embed_node = self.frag_embedder.input_project(frag_x_embed)
+		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
 
-		# for sampler
-		self._smf = self.hparams.custom_sampler == "SpecMolFragDynamicBatchSampler"
-		self._num_need_update = 0
+		# if multiple pooling, we need change frag_emebed_size
+		# if self.frag_pool_type == "std_mean_softmax":
 
-		# this used in manul update
-		self._num_acc_gradient = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
-		self.automatic_optimization = self.hparams.automatic_optimization
+		# get frag dag embedding
+		frag_embed_parts = [
+				frag_embed_node - frag_embed_node_pool[frag_batch],
+				frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
+			]
+		if self.ce_insert_type == "mlp_insert":
+			frag_embed_parts.append(ce)
 
-	def _setup_loss_fn(self):
+		frag_embed = th.cat(frag_embed_parts, dim=1)
 
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
-		# cross entropy
-		sparse_ce_fn = get_sparse_cross_entropy_fn(
-			self.hparams.output_distribution,
-			self.hparams.loss_vectorized,
-			self.tolerance,
-			self.relative
-		)
-		sparse_entropy_fn = get_sparse_entropy_fn()
-		sparse_conditional_entropy_fn = get_sparse_conditional_entropy_fn()
+		frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs,2*self.num_hs+1)
+		frag_joint_mask = (~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])).float()
 
-		# edge loss
-		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
-		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
+		if self.mlp_output_format == "formula":
 
-		def sparse_cosine_distance(
-			true_mzs,
-			true_ints,
-			true_batch_idxs,
-			pred_mzs,
-			pred_ints,
-			pred_batch_idxs):
-			# calculate
-			return 1.-calculate_cosine_similarity(
-				true_mzs,
-				th.exp(true_ints),
-				true_batch_idxs,
-				pred_mzs,
-				th.exp(pred_ints),
-				pred_batch_idxs,
-				mz_bin_res=self.hparams.mz_bin_res,
-				mz_max=self.hparams.mz_max,
-				sum_ints=self.hparams.bin_sum_ints
-			)
-		
-		def edge_loss(
-			pred_edge_logprobs,
-			pred_edge_h_diffs,
-			pred_edge_h_range_masks,
-			pred_edge_h_logprobs,
-			pred_edge_batch_idxs):
-			edge_h_range_costs = edge_h_range_loss_fn(pred_edge_h_diffs * pred_edge_h_range_masks.float())
-			edge_h_range_costs = edge_h_range_costs.reshape(edge_h_range_costs.shape[0],-1)
-			edge_h_transfer_costs = edge_h_transfer_loss_fn(pred_edge_h_diffs)
-			edge_h_transfer_costs = edge_h_transfer_costs.reshape(edge_h_transfer_costs.shape[0],-1)
-			edge_h_logprobs = pred_edge_h_logprobs.reshape(pred_edge_h_logprobs.shape[0],-1)
-			edge_h_range_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_range_costs),dim=1)
-			edge_h_transfer_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_transfer_costs),dim=1)
-			h_range_loss = scatter_logsumexp(
-				pred_edge_logprobs + edge_h_range_avg_cost,
-				pred_edge_batch_idxs,
-				dim=0
-			)
-			h_transfer_loss = scatter_logsumexp(
-				pred_edge_logprobs + edge_h_transfer_avg_cost,
-				pred_edge_batch_idxs,
-				dim=0
-			)
-			return h_range_loss, h_transfer_loss
-		
-		def _loss_fn(
-			true_mzs,
-			true_logprobs,
-			true_batch_idxs,
-			pred_mzs,
-			pred_logprobs,
-			pred_batch_idxs,
-			pred_formula_logprobs,
-			pred_formula_batch_idxs,
-			pred_node_logprobs,
-			pred_node_batch_idxs,
-			pred_node_formula_logprobs,
-			pred_null_formula_logprob,
-			pred_edge_logprobs,
-			pred_edge_h_diffs,
-			pred_edge_h_range_masks,
-			pred_edge_h_logprobs,
-			pred_edge_batch_idxs):
-			spec_ce = sparse_ce_fn(
-				true_mzs,
-				true_logprobs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_logprobs,
-				pred_batch_idxs
-			)
-			spec_cd = sparse_cosine_distance(
-				true_mzs,
-				true_logprobs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_logprobs,
-				pred_batch_idxs
-			)
-			if self.hparams.loss_type == "cross_entropy":
-				loss = spec_ce
-			else:
-				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
-				loss = spec_cd
-			loss = self.hparams.primary_loss_weight * loss
-			formula_e, formula_ne = sparse_entropy_fn(
-				pred_formula_logprobs,
-				pred_formula_batch_idxs
-			)
-			loss = loss + self.hparams.formula_entropy_weight * formula_e \
-				+ self.hparams.formula_normalized_entropy_weight * formula_ne
-			node_e, node_ne = sparse_entropy_fn(
-				pred_node_logprobs,
-				pred_node_batch_idxs
-			)
-			loss = loss + self.hparams.node_entropy_weight * node_e \
-				+ self.hparams.node_normalized_entropy_weight * node_ne
+			# log p(f,n)
+			frag_joint_logits = self.formula_module(frag_embed)
+			assert frag_joint_logits.shape[1] == 2*self.num_hs+1, (frag_joint_logits.shape[1],2*self.num_hs+1)
+			frag_joint_logits = frag_joint_logits.flatten()
 			
-			node_formula_e, node_formula_ne = sparse_conditional_entropy_fn(
-				pred_node_logprobs,
-				pred_node_formula_logprobs,
-				pred_node_batch_idxs
+			# compute total NULL probability (before renormalization)
+			frag_joint_logprobs = scatter_logsoftmax(
+				frag_joint_logits,
+				frag_joint_batch_idxs,
+				dim=0
 			)
-			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
-				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
-			null_formula_prob = th.exp(pred_null_formula_logprob)
-			loss_d = {
-				"loss": loss,
-				"spec_cd": spec_cd,
-				"spec_ce": spec_ce,
-				"formula_e": formula_e,
-				"formula_ne": formula_ne,
-				"node_e": node_e,
-				"node_ne": node_ne,
-				"node_formula_e": node_formula_e,
-				"node_formula_ne": node_formula_ne,
-				"null_formula_prob": null_formula_prob
-			}
-			if not self.hparams.skip_edge_loss:
-				r_el, t_el = edge_loss(
-					pred_edge_logprobs,
-					pred_edge_h_diffs,
-					pred_edge_h_range_masks,
-					pred_edge_h_logprobs,
-					pred_edge_batch_idxs
-				)
-				loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
-					+ self.hparams.edge_h_transfer_loss_weight * t_el
-				edge_e, edge_ne = sparse_entropy_fn(
-					pred_edge_logprobs,
-					pred_edge_batch_idxs
-				)
-				loss = loss + self.hparams.edge_entropy_weight * edge_e \
-					+ self.hparams.edge_normalized_entropy_weight * edge_ne
-				loss_d["loss"] = loss
-				loss_d["edge_h_range_loss"] = r_el
-				loss_d["edge_h_transfer_loss"] = t_el
-				loss_d["edge_e"] = edge_e
-				loss_d["edge_ne"] = edge_ne
-			return loss_d
-		self.loss_fn = _loss_fn
-		# flag losses for tracking
-		loss_names = [
-			"loss",
-			"spec_cd",
-			"spec_ce",
-			"formula_e",
-			"formula_ne",
-			"node_e",
-			"node_ne",
-			"node_formula_e",
-			"node_formula_ne",
-			"null_formula_prob"
-		]
-		if not self.hparams.skip_edge_loss:
-			loss_names.extend(
-				[
-					"edge_h_range_loss",
-					"edge_h_transfer_loss",
-					"edge_e",
-					"edge_ne"
-				]
+			frag_null_formula_logprob = scatter_logsumexp(
+				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * (-1e9),
+				frag_joint_batch_idxs,
+				dim=0
 			)
-		self.metric_names.update(loss_names)
 
-	def _manual_opt(self):
-		""" run manual opt
-		"""
-		opt = self.optimizers()
-		# scale gradients
-		if self._smf:
-			for pg in opt.param_groups:
-				for p in pg['params']:
-					if p.grad is not None:
-						p.grad.data.mul_(self._num_acc_gradient / self._num_need_update)					
-		self.on_before_optimizer_step(opt)
-		# clip gradients
-		self.clip_gradients(opt, gradient_clip_val=self.hparams.gradient_clip_val, gradient_clip_algorithm=self.hparams.gradient_clip_algorithm)
-		# call opt
-		opt.step()
-		self.on_after_optimizer_step(opt)
-		# clean gradient
-		opt.zero_grad()
+			if self.mask_null_formula:
+				# compute non-NULL renormalized intensity
+				frag_joint_logprobs = scatter_masked_softmax(
+					frag_joint_logits,
+					frag_joint_mask,
+					frag_joint_batch_idxs,
+					dim=0,
+					log=True
+				)
+			
+			# reshape
+			frag_joint_logprobs = frag_joint_logprobs.reshape(-1,2*self.num_hs+1)
 
-	def training_step(self, batch, batch_idx):
-		""" training loop for FragGNNPL
+			# aggregate formula logits by node, then normalize
+			# log p(n) = logsumexp_f log p(f,n)
+			frag_node_logits = th.logsumexp(frag_joint_logprobs,dim=1)
+			frag_node_logprobs = scatter_logsoftmax(
+				frag_node_logits,
+				frag_node_batch_idxs,
+				dim=0
+			)
+			
+			# calculate conditional probability
+			# log p(f|n) = log p(f,n) - log p(n)
+			frag_node_formula_logprobs = frag_joint_logprobs - frag_node_logprobs.unsqueeze(-1)
 
-		Args:
-			batch (_type_): _description_
-			batch_idx (_type_): _description_
-
-		Raises:
-			NotImplementedError: _description_
-
-		Returns:
-			_type_: _description_
-		"""
-
-		if self.hparams.automatic_optimization:
-			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss")
-			if self.hparams.debug_zero_loss:
-				mean_loss = 0. * mean_loss
-				self.print(mean_loss)
-			self._num_need_update += self.hparams.train_batch_size
-			self._update_results(batch_results,"train")
-			return mean_loss
-		
-		elif self._smf:
-			if batch['batch_size'].item() == 0:
-				return th.tensor(0.0)		
-			batch_results = self._common_step(batch, split="train")
-			batch_size = batch['batch_size'].item()
-			total_loss = batch_results.pop("total_loss")
-			mean_loss = total_loss / self._num_acc_gradient
-			if self.hparams.debug_zero_loss:
-				mean_loss = 0. * mean_loss
-				self.print(mean_loss)
-			self.manual_backward(mean_loss)
-			# accumulate gradients of N samples
-			self._num_need_update += batch_size
-			if self._num_need_update >= self._num_acc_gradient:
-				self._manual_opt()
-			self._update_results(batch_results,"train")
-			return mean_loss
-		
 		else:
-			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss") / self.hparams.accumulate_grad_batches
-			if self.hparams.debug_zero_loss:
-				mean_loss = 0. * mean_loss
-				self.print(mean_loss)
-			self.manual_backward(mean_loss)
-			# self.backward(mean_loss)
-			# accumulate gradients of N samples
-			self._num_need_update += self.hparams.train_batch_size
-			if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
-				self._manual_opt()
-			self._update_results(batch_results,"train")
-			return mean_loss
 
-	def on_train_epoch_end(self):
+			assert self.mlp_output_format == "node_formula", self.mlp_output_format
 
-		if not self.hparams.automatic_optimization and self._smf and self._num_need_update > 0:
-			# this is used for manul opt when lr_schedulers is not available from torch lightning
-			# TODO: add drop_last check?
-			self._manual_opt()
-		super().on_train_epoch_end()
+			# log p(f|n)
+			frag_node_formula_logits = self.formula_module(frag_embed)
+			assert frag_node_formula_logits.shape[1] == 2*self.num_hs+1, (frag_node_formula_logits.shape[1],2*self.num_hs+1)
+			frag_node_formula_logprobs = th.log_softmax(frag_node_formula_logits,dim=1)
 
-	def optimizer_step(self, *args, **kwargs):
-		super().optimizer_step(*args, **kwargs)
-		opt = self.optimizers()
-		self.on_after_optimizer_step(opt)
+			# log p(n)
+			frag_node_logits = self.node_module(frag_embed).squeeze(1)
+			frag_node_logprobs = scatter_logsoftmax(
+				frag_node_logits,
+				frag_node_batch_idxs,
+				dim=0
+			)
 
+			# log p(f,n) = log p(f|n) + log p(n)
+			frag_joint_logprobs = frag_node_formula_logprobs + frag_node_logprobs.unsqueeze(-1)
+			frag_joint_logprobs = frag_joint_logprobs.flatten()
 
-class NEIMSPL(SpectrumPL):
+			# compute total NULL probability (before renormalization)
+			frag_null_formula_logprob = scatter_logsumexp(
+				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * (-1e9),
+				frag_joint_batch_idxs,
+				dim=0
+			)
 
-	def _setup_model(self):
+			if self.mask_null_formula:
+				# compute non-NULL renormalized intensity
+				frag_joint_logprobs = scatter_masked_softmax(
+					frag_joint_logprobs,
+					frag_joint_mask,
+					frag_joint_batch_idxs,
+					dim=0,
+					log=True
+				)
 
-		self.model = NEIMSModel(
-			mol_fingerprint_morgan=self.hparams.mol_fingerprint_morgan,
-			mol_fingerprint_rdkit=self.hparams.mol_fingerprint_rdkit,
-			mol_fingerprint_maccs=self.hparams.mol_fingerprint_maccs,
-			mlp_hidden_size=self.hparams.mlp_hidden_size,
-			mlp_dropout=self.hparams.mlp_dropout,
-			mlp_num_layers=self.hparams.mlp_num_layers,
-			mlp_use_residuals=self.hparams.mlp_use_residuals,
-			mz_max=self.hparams.mz_max,
-			mz_bin_res=self.hparams.mz_bin_res,
-			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
-			ff_bidirectional=self.hparams.ff_bidirectional,
+		# aggregate by formula
+		# log p(f) = logsumexp_n log p(f,n)
+		frag_formula_batch_idxs = th.bucketize(
+			th.arange(frag_formula_cumsizes[-1],device=device),
+			frag_formula_cumsizes,
+			right=True
+		)-1
+		frag_formula_mask = th.ones_like(frag_formula_batch_idxs,dtype=frag_joint_logprobs.dtype)
+		frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.
+		# aggregate by formula
+		frag_formula_logprobs = scatter_logsumexp(
+			frag_joint_logprobs.flatten(),
+			frag_formula_idxs,
+			dim=0
 		)
-		# compile
-		if self.hparams.compile:
-			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
 
-	def _setup_loss_fn(self):
+		# print(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu())
 
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
+		# softmax over formulae
+		if self.mask_null_formula:
+			frag_formula_logprobs = scatter_masked_softmax(
+				frag_formula_logprobs,
+				frag_formula_mask,
+				frag_formula_batch_idxs,
+				dim=0,
+				log=True
+			)
 		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
-		# define loss
-		assert self.hparams.loss_type in ["cosine_distance","cosine_distance_dense"], self.hparams.loss_type
-		def _loss_fn(
-			true_mzs,
-			true_logprobs,
-			true_batch_idxs,
-			pred_mzs,
-			pred_logprobs,
-			pred_batch_idxs,
-			pred_specs,
-			**kwargs):
-			if self.hparams.loss_type == "cosine_distance":
-				spec_cd = 1.-calculate_cosine_similarity(
-					true_mzs,
-					th.exp(true_logprobs),
-					true_batch_idxs,
-					pred_mzs,
-					th.exp(pred_logprobs),
-					pred_batch_idxs,
-					mz_bin_res=self.hparams.mz_bin_res,
-					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.bin_sum_ints
-				)
+			frag_formula_logprobs = scatter_logsoftmax(
+				frag_formula_logprobs,
+				frag_formula_batch_idxs,
+				dim=0
+			)
+
+		# print(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu())
+
+		# convert to spectrum
+		frag_formula_offsets = th.repeat_interleave(
+			frag_formula_cumsizes[:-1],
+			frag_formula_sizes-1 # -1 is for NULL formulae
+		)
+		spec_mzs = frag_formula_peak_mzs
+		spec_logprobs = frag_formula_logprobs[frag_formula_peak_idxs+frag_formula_offsets] + th.log(frag_formula_peak_probs)
+
+		# get batch idxs
+		spec_batch_idxs = th.repeat_interleave(
+			th.arange(frag_formula_peak_sizes.shape[0],device=device),
+			frag_formula_peak_sizes
+		)
+		
+		# print(
+		# 	self.mask_null_formula,
+		# 	scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0).detach().cpu(),
+		# 	frag_null_formula_logprob.detach().cpu(),
+		# 	frag_formula_logprobs[~(frag_formula_mask.bool())].detach().cpu()
+		# )
+
+		# if th.any(th.abs(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))>1.):
+		# 	import pdb; pdb.set_trace() 
+
+		if not self.skip_edge_loss:
+
+			frag_edge_batch_idxs = frag_batch[frag_edge_index[0]]
+			frag_edge_logits = frag_node_logprobs[frag_edge_index[0]] + frag_node_logprobs[frag_edge_index[1]]
+			frag_edge_logprobs = scatter_logsoftmax(
+				frag_edge_logits,
+				frag_edge_batch_idxs,
+				dim=0
+			)
+			# print(scatter_logsumexp(frag_edge_logprobs,frag_edge_batch_idxs,dim=0))
+			frag_node_h_counts = get_node_feats(frag_x,frag_node_feat_idxs,"h_counts")
+			frag_edge_h_ranges = get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"h_range")
+			frag_edge_h_diffs = frag_node_h_counts[frag_edge_index[0]].unsqueeze(1) - frag_node_h_counts[frag_edge_index[1]].unsqueeze(2)
+			frag_edge_h_diffs = frag_edge_h_diffs.reshape(frag_edge_h_diffs.shape[0],-1)
+			frag_edge_h_range_masks = th.logical_or(
+				frag_edge_h_diffs<frag_edge_h_ranges[:,0].unsqueeze(-1), 
+				frag_edge_h_diffs>frag_edge_h_ranges[:,1].unsqueeze(-1)
+			)
+			frag_edge_h_logprobs = (frag_node_formula_logprobs[frag_edge_index[0]]).unsqueeze(1)  \
+				+ (frag_node_formula_logprobs[frag_edge_index[1]]).unsqueeze(2)
+			frag_edge_h_logprobs = frag_edge_h_logprobs.reshape(frag_edge_h_logprobs.shape[0],-1) 
+
+		else:
+
+			frag_edge_logprobs = None
+			frag_edge_h_diffs = None
+			frag_edge_h_range_masks = None
+			frag_edge_h_logprobs = None
+			frag_edge_batch_idxs = None
+
+		out_d = {
+			"pred_mzs": spec_mzs,
+			"pred_logprobs": spec_logprobs,
+			"pred_batch_idxs": spec_batch_idxs,
+			"pred_formula_logprobs": frag_formula_logprobs,
+			"pred_formula_batch_idxs": frag_formula_batch_idxs,
+			"pred_node_logprobs": frag_node_logprobs,
+			"pred_node_batch_idxs": frag_node_batch_idxs,
+			"pred_node_formula_logprobs": frag_node_formula_logprobs,
+			"pred_null_formula_logprob": frag_null_formula_logprob,
+			"pred_edge_logprobs": frag_edge_logprobs,
+			"pred_edge_h_diffs": frag_edge_h_diffs,
+			"pred_edge_h_range_masks": frag_edge_h_range_masks,
+			"pred_edge_h_logprobs": frag_edge_h_logprobs,
+			"pred_edge_batch_idxs": frag_edge_batch_idxs,
+		}
+
+		return out_d
+
+class NEIMSModel(nn.Module):
+
+	def __init__(
+		self,
+		mol_fingerprint_morgan: bool,
+		mol_fingerprint_rdkit: bool,
+		mol_fingerprint_maccs: bool,
+		mlp_hidden_size: int,
+		mlp_dropout: float,
+		mlp_num_layers: int,
+		mlp_use_residuals: bool,
+		mz_max: int,
+		mz_bin_res: float,
+		ff_prec_mz_offset: int,
+		ff_bidirectional: bool
+	):
+
+		super().__init__()
+		self.mol_fingerprint_morgan = mol_fingerprint_morgan
+		self.mol_fingerprint_rdkit = mol_fingerprint_rdkit
+		self.mol_fingerprint_maccs = mol_fingerprint_maccs
+		self.mz_max = mz_max
+		self.mz_bin_res = mz_bin_res
+		self.prec_mz_offset = ff_prec_mz_offset
+		self.bidirectional = ff_bidirectional
+		self.use_residuals = mlp_use_residuals
+		self._compute_input_size()
+		self._compute_output_size()
+
+		self.in_layer = nn.Linear(self.input_size, mlp_hidden_size)
+		self.ff_layers = nn.ModuleList([])
+		# self.ff_layers.append(nn.Linear(mlp_hidden_size, mlp_hidden_size))
+		for i in range(mlp_num_layers):
+			self.ff_layers.append(
+				NeimsBlock(
+					mlp_hidden_size,
+					mlp_hidden_size,
+					mlp_dropout))
+		if self.bidirectional:
+			# assumes gating, mass masking
+			self.forw_out_layer = nn.Linear(mlp_hidden_size, self.output_size)
+			self.rev_out_layer = nn.Linear(mlp_hidden_size, self.output_size)
+			self.out_gate = nn.Sequential(
+				*[nn.Linear(mlp_hidden_size, self.output_size), nn.Sigmoid()])
+		else:
+			self.out_layer = nn.Linear(mlp_hidden_size, self.output_size)
+			self.out_gate = nn.Sequential(
+				*[nn.Linear(mlp_hidden_size, self.output_size), nn.Sigmoid()])
+		self.out_activation = nn.ReLU()
+		self.out_normalization = lambda x: F.normalize(x, p=1, dim=1)
+
+	def _compute_input_size(self):
+
+		self.input_size = get_mol_fp_size(self.mol_fingerprint_morgan, self.mol_fingerprint_rdkit, self.mol_fingerprint_maccs)
+
+	def _compute_output_size(self):
+
+		self.mz_bins = th.arange(self.mz_bin_res,self.mz_max+self.mz_bin_res,self.mz_bin_res)
+		self.mzs = self.mz_bins-0.5*self.mz_bin_res
+		self.output_size = self.mzs.shape[0]
+
+	def _prec_mz_to_idx(self,prec_mz):
+
+		prec_mz_idx = th.bucketize(prec_mz,self.mz_bins.to(prec_mz.device),right=True)
+		assert th.max(prec_mz_idx) < self.output_size, (prec_mz_idx,self.output_size)
+		return prec_mz_idx
+
+	def forward(
+		self,
+		mol_fingerprint: th.Tensor, 
+		spec_prec_mz: th.Tensor, 
+		**kwargs
+	):
+
+		prec_mz_idxs = self._prec_mz_to_idx(spec_prec_mz)
+		# reshape fingerprints (they are flattened)
+		mol_fingerprint = mol_fingerprint.reshape(-1, self.input_size)
+		fh = self.in_layer(mol_fingerprint)
+		for layer in self.ff_layers:
+			if self.use_residuals:
+				fh = fh + layer(fh)
 			else:
-				# _pred_specs = self.bin_func(pred_mzs,th.exp(pred_logprobs),pred_batch_idxs)
-				true_specs = self.bin_func(true_mzs,th.exp(true_logprobs),true_batch_idxs)
-				spec_cd = 1.-binned_cosine_similarity(true_specs,pred_specs)
-			loss = spec_cd
-			loss_d = {
-				"loss": loss,
-				"spec_cd": spec_cd
-			}
-			return loss_d
-		self.loss_fn = _loss_fn
-		# flag metrics for tracking
-		loss_names = [
-			"loss",
-			"spec_cd"
-		]
-		self.metric_names.update(loss_names)
-
-def get_default_model_params():
-	
-	raise NotImplementedError
-
+				fh = layer(fh)
+		if self.bidirectional:
+			ff = self.forw_out_layer(fh)
+			fr = reverse_prediction(
+				self.rev_out_layer(fh),
+				prec_mz_idxs,
+				self.prec_mz_offset)
+			fg = self.out_gate(fh)
+			fo = ff * fg + fr * (1. - fg)
+			fo = mask_prediction_by_mass(
+				fo, prec_mz_idxs, self.prec_mz_offset)
+		else:
+			# apply output layer
+			fo = self.out_layer(fh)
+			# apply gating
+			fg = self.out_gate(fh)
+			fo = fg * fo
+		fo = self.out_activation(fo)
+		spec = self.out_normalization(fo)
+		mask = spec>0.
+		pred_mzs = (self.mzs.to(mask.device).unsqueeze(0).expand(spec.shape[0],-1))[mask]
+		pred_logprobs = safelog(spec)[mask]
+		pred_batch_idxs = th.arange(spec.shape[0],device=spec.device).unsqueeze(1).expand(-1,spec.shape[1])[mask]
+		pred_specs = spec
+		out_d = {
+			"pred_mzs": pred_mzs,
+			"pred_logprobs": pred_logprobs,
+			"pred_batch_idxs": pred_batch_idxs,
+			"pred_specs": pred_specs
+		}
+		return out_d
