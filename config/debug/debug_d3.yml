@@ -21,7 +21,7 @@ lr_schedule: False
 debug_overfit: False
 
 precision: 32
-automatic_optimization: True #False
-custom_sampler: none #SpecMolFragDynamicBatchSampler
+automatic_optimization: False
+custom_sampler: SpecMolFragDynamicBatchSampler
 specmolfrag_dynamic_batch_sampler_mode: frag_node
 specmolfrag_dynamic_batch_sampler_max: 10000 #600000

@@ -25,7 +25,7 @@ import wandb
 import glob
 import shutil
 
-from frag_gnn.pl_model import FragGNNPL, NEIMSPL, get_default_model_params
+from frag_gnn.pl_model import FragGNNPL, NEIMSPL
 from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback

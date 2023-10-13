@@ -527,7 +527,6 @@ class SpectrumPL(pl.LightningModule):
 
 		self._num_need_update = 0
 
-
 class FragGNNPL(SpectrumPL):
 
 	def _setup_model(self):
@@ -857,7 +856,6 @@ class FragGNNPL(SpectrumPL):
 		opt = self.optimizers()
 		self.on_after_optimizer_step(opt)
 
-
 class NEIMSPL(SpectrumPL):
 
 	def _setup_model(self):
@@ -930,8 +928,3 @@ class NEIMSPL(SpectrumPL):
 			"spec_cd"
 		]
 		self.metric_names.update(loss_names)
-
-def get_default_model_params():
-	
-	raise NotImplementedError
-

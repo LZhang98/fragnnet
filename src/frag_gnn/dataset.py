@@ -453,21 +453,6 @@ class SpecMolFragDataset(SpecMolDataset):
 		collate_data["batch_size"] = th.tensor(batch_size)
 		return collate_data
 
-def get_default_fps():
-
-	spec_fp = "data/proc/spec_df.pkl"
-	mol_fp = "data/proc/mol_df.pkl"
-	frag_dp = "data/frag/debug/dags"
-	train_fp = "data/split/debug/train_ids.csv"
-	val_fp = "data/split/debug/val_ids.csv"
-	test_fp = "data/split/debug/test_ids.csv"
-	return spec_fp, mol_fp, frag_dp, train_fp, val_fp, test_fp
-
-def get_default_ds_params(frag=True):
-
-	# TODO: fix this
-	raise NotImplementedError
-
 def get_batch_memory(batch):
 
 	batch_mem_d = {}
@@ -639,9 +624,7 @@ if __name__ == "__main__":
 	from torch.utils.data import DataLoader
 	from pprint import pprint
 
-	spec_fp, mol_fp, frag_dp, train_fp, _, _ = get_default_fps()	
-
-	params = get_default_ds_params()
+	# TODO: read stuff from a config file
 
 	print(">>> SpecMolDataset")
 	sm_ds = SpecMolDataset(
