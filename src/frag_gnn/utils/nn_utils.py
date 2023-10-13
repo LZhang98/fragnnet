@@ -21,7 +21,6 @@ from frag_gnn.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
 def get_clones(module, N):
 	return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
-
 def build_lr_scheduler(
 	optimizer, decay_rate: float, decay_steps: int = 5000, warmup_steps: int = 1000
 ):

@@ -15,7 +15,7 @@ import frag_gnn.utils.frag_utils as frag_utils
 import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.dataset_utils import filter_spec_mol, merge_spec_df
+from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 
 def print_and_log(name,series,wandb_flag,stats_d):

@@ -22,7 +22,7 @@ import frag_gnn.iceberg.fragmentation as fragmentation
 import frag_gnn.iceberg.misc_utils as misc_utils
 import frag_gnn.iceberg.chem_utils as chem_utils
 import frag_gnn.utils.frag_utils as frag_utils
-from frag_gnn.utils.dataset_utils import filter_spec_mol, merge_spec_df
+from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
 from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.data_utils import seq_apply, par_apply
 

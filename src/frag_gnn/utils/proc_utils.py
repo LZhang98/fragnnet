@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 
-
 from frag_gnn.utils.spec_utils import merge_sparse_specs
 from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
@@ -16,7 +15,6 @@ def element_filter(formula,allowed_elements):
 		if v > 0 and k not in allowed_elements:
 			return False
 	return True
-
 
 def filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=-1):
 	"""
@@ -95,7 +93,6 @@ def filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=-1):
 	# only keep molecules that are in the spectra
 	mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])].reset_index(drop=True)
 	return spec_df, mol_df
-
 
 def merge_spec_df(spec_df,renormalize=False,sum_ints=True):
 

@@ -239,3 +239,31 @@ def scatter_reduce(src,index,reduce,dim,dim_size):
 def safelog(x,eps=EPS):
 	return th.log(x+eps)
 
+def batchwise_max(xs, batch_idxs):
+	""" for debugging """
+
+	batch_size = th.max(batch_idxs)+1
+	maxs = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
+	for b in range(batch_size):
+		maxs[b] = th.max(xs[batch_idxs==b])
+	return maxs
+
+def batchwise_lse(xs, batch_idxs):
+	""" for debugging """
+
+	batch_size = th.max(batch_idxs)+1
+	lses = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
+	for b in range(batch_size):
+		lses[b] = th.logsumexp(xs[batch_idxs==b],0)
+	return lses
+
+def to_cpu(data_d,non_blocking=True,detach=True):
+
+	for k in data_d.keys():
+		if isinstance(data_d[k],th.Tensor):
+			data = data_d[k]
+			if detach:
+				data = data.detach()
+			data = data.to("cpu",non_blocking=non_blocking)
+			data_d[k] = data
+	return data_d

@@ -15,40 +15,11 @@ from frag_gnn.utils.nn_utils import build_lr_scheduler
 from frag_gnn.model import FragGNNModel, NEIMSModel
 from frag_gnn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn, get_sparse_conditional_entropy_fn, get_edge_loss_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
-from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp
+from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
 from frag_gnn.utils.plot_utils import plot_spectra_sparse
 
-
-def batchwise_max(xs, batch_idxs):
-	""" for debugging """
-
-	batch_size = th.max(batch_idxs)+1
-	maxs = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
-	for b in range(batch_size):
-		maxs[b] = th.max(xs[batch_idxs==b])
-	return maxs
-
-def batchwise_lse(xs, batch_idxs):
-	""" for debugging """
-
-	batch_size = th.max(batch_idxs)+1
-	lses = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
-	for b in range(batch_size):
-		lses[b] = th.logsumexp(xs[batch_idxs==b],0)
-	return lses
-
-def to_cpu(data_d,non_blocking=True,detach=True):
-
-	for k in data_d.keys():
-		if isinstance(data_d[k],th.Tensor):
-			data = data_d[k]
-			if detach:
-				data = data.detach()
-			data = data.to("cpu",non_blocking=non_blocking)
-			data_d[k] = data
-	return data_d
 
 class SpectrumPL(pl.LightningModule):
 
