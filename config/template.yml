@@ -21,10 +21,7 @@ spec_prec_type: True
 spec_prec_mz: True
 spec_prec_mass_diff: True
 spec_nce: False
-spec_nce_preprocess: none
 spec_ace: False
-spec_ace_preprocess: none
-
 spec_preprocess: False
 spec_unique_id: True
 mol_smiles: True
