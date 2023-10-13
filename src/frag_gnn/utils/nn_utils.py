@@ -13,7 +13,6 @@ from torch_geometric.profile import get_gpu_memory_from_gc, get_gpu_memory_from_
 import logging
 from typing import Literal
 
-from frag_gnn.nn.form_embedder import get_embedder
 from frag_gnn.utils.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
 from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax, scatter_masked_logsumexp, safelog
 from frag_gnn.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
@@ -498,3 +497,35 @@ def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
 	offset_rev_prediction = th.gather(rev_prediction, 1, gather_idx)
 	# you could mask_prediction_by_mass here but it's unnecessary
 	return offset_rev_prediction
+
+
+def nan_forward_hook(self, input, output):
+	if isinstance(output, tuple):
+		outputs = list(output)
+	elif isinstance(output, dict):
+		outputs = list(output.values())
+	else:
+		outputs = [output]
+	for i, val in enumerate(outputs):
+		nan_mask = th.isnan(val)
+		if nan_mask.any():
+			print(">> In", self.__class__.__name__)
+			raise RuntimeError(f"Found NAN in output {i} at indices: ", nan_mask.nonzero(), "where:", val[nan_mask.nonzero()[:, 0].unique(sorted=True)])
+
+
+def nan_backward_hook(self, grad_input, grad_output):
+	for i, val in enumerate(grad_input):
+		if val is None:
+			continue
+		nan_mask = th.isnan(val)
+		if nan_mask.any():
+			print(">> In", self.__class__.__name__)
+			raise RuntimeError(f"Found NAN in grad_input {i} at indices: ", nan_mask.nonzero(), "where:", val[nan_mask.nonzero()[:, 0].unique(sorted=True)])
+	for i, val in enumerate(grad_output):
+		if val is None:
+			continue
+		nan_mask = th.isnan(val)
+		if nan_mask.any():
+			print(">> In", self.__class__.__name__)
+			raise RuntimeError(f"Found NAN in grad_output {i} at indices: ", nan_mask.nonzero(), "where:", val[nan_mask.nonzero()[:, 0].unique(sorted=True)])
+	

@@ -26,6 +26,7 @@ import glob
 import shutil
 
 from frag_gnn.pl_model import FragGNNPL, NEIMSPL, get_default_model_params
+from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolFragDynamicBatchSampler
@@ -392,34 +393,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# register nan hook
 	if config_d["nan_module_hook"]:
-		def nan_forward_hook(self, input, output):
-			if isinstance(output, tuple):
-				outputs = list(output)
-			elif isinstance(output, dict):
-				outputs = list(output.values())
-			else:
-				outputs = [output]
-			for i, val in enumerate(outputs):
-				nan_mask = th.isnan(val)
-				if nan_mask.any():
-					print(">> In", self.__class__.__name__)
-					raise RuntimeError(f"Found NAN in output {i} at indices: ", nan_mask.nonzero(), "where:", val[nan_mask.nonzero()[:, 0].unique(sorted=True)])
 		th.nn.modules.module.register_module_forward_hook(nan_forward_hook)
-		def nan_backward_hook(self, grad_input, grad_output):
-			for i, val in enumerate(grad_input):
-				if val is None:
-					continue
-				nan_mask = th.isnan(val)
-				if nan_mask.any():
-					print(">> In", self.__class__.__name__)
-					raise RuntimeError(f"Found NAN in grad_input {i} at indices: ", nan_mask.nonzero(), "where:", val[nan_mask.nonzero()[:, 0].unique(sorted=True)])
-			for i, val in enumerate(grad_output):
-				if val is None:
-					continue
-				nan_mask = th.isnan(val)
-				if nan_mask.any():
-					print(">> In", self.__class__.__name__)
-					raise RuntimeError(f"Found NAN in grad_output {i} at indices: ", nan_mask.nonzero(), "where:", val[nan_mask.nonzero()[:, 0].unique(sorted=True)])
 		th.nn.modules.module.register_module_full_backward_hook(nan_backward_hook)
 	
 	# fit

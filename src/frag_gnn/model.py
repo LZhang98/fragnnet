@@ -1,7 +1,9 @@
 import torch as th
 import torch.nn as nn
 
-from frag_gnn.nn
+from frag_gnn.utils.nn_utils import *
+from frag_gnn.form_embedder import get_embedder
+
 
 class FragGNNModel(nn.Module):
 
