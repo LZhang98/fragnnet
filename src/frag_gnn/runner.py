@@ -29,66 +29,7 @@ from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
-from frag_gnn.dataset import SpecMolFragDataset, SpecMolFragDynamicBatchSampler
-
-# THIS IS NOT USED YET		
-class SpecMolDataModule(pl.LightningDataModule):
-
-	def __init__(self, config_d: dict):
-		super().__init__()
-		self.config_d =  config_d
-
-	def prepare_data(self):
-		super().prepare_data()
-
-	def setup(self, stage: str):
-		# Assign train/val datasets for use in dataloaders
-		if stage == "fit":
-			self.train_ds = SpecMolFragDataset(split="train",**self.config_d)
-			self.val_ds = SpecMolFragDataset(split="val",**self.config_d)
-
-		# Assign test dataset for use in dataloader(s)
-		if stage == "test":
-			self.test_ds = SpecMolFragDataset(split="test",**self.config_d)
-
-		if stage == "predict":
-			raise NotImplementedError
-
-	def train_dataloader(self):
-		train_dl = DataLoader(
-			self.train_ds, 
-			batch_size=self.config_d["train_batch_size"], 
-			shuffle=(not self.config_d["debug_overfit"]), 
-			num_workers=self.config_d["num_workers"],
-			collate_fn=self.train_ds.get_collate_fn(),
-			drop_last=self.config_d["drop_last"],
-		)
-		return train_dl
-		
-
-	def val_dataloader(self):
-		val_dl = DataLoader(
-			self.val_ds,
-			batch_size=self.config_d["eval_batch_size"],
-			shuffle=False,
-			num_workers=self.config_d["num_workers"],
-			collate_fn=self.get_collate_fn()
-		)
-
-		return val_dl
-
-	def test_dataloader(self):
-		test_dl = DataLoader(
-			self.test_ds,
-			batch_size=self.config_d["eval_batch_size"],
-			shuffle=False,
-			num_workers=self.config_d["num_workers"],
-			collate_fn=self.get_collate_fn()
-		)
-		return test_dl
-
-	def predict_dataloader(self):
-		raise NotImplementedError
+from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, SpecMolFragDynamicBatchSampler
 
 
 def load_config(template_fp, custom_fp):
@@ -300,13 +241,15 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# setup datasets
 	logging.info("setup dataset")
-	train_ds = SpecMolFragDataset(split="train",**config_d)
-	val_ds = SpecMolFragDataset(split="val",**config_d)
-	test_ds = SpecMolFragDataset(split="test",**config_d)
+	if config_d["model_type"] == "frag_gnn":
+		dataset_cls = SpecMolFragDataset
+	else:
+		dataset_cls = SpecMolDataset
+	train_ds = dataset_cls(split="train",**config_d)
+	val_ds = dataset_cls(split="val",**config_d)
+	test_ds = dataset_cls(split="test",**config_d)
 
 	# check config for sampler
-
-
 	if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
 		assert config_d['automatic_optimization'] == False,\
 			f"custom sampler {config_d['custom_sampler']} can not use in junction of automatic optimization {config_d['automatic_optimization']}"
