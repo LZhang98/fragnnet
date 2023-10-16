@@ -81,6 +81,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# load config
 	config_d = load_config(template_fp, custom_fp)
+	print(config_d)
 
 	# set random seeds
 	th.manual_seed(config_d["seed"])
@@ -98,7 +99,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		wandb_d = dict(
 			project=config_d["wandb_project"],
 			name=config_d["wandb_name"],
-			offline=wandb_mode == "offline",
+			mode=wandb_mode,
 			entity=config_d["wandb_entity"],
 			tags=config_d["wandb_tags"],
 			resume="allow",
@@ -121,8 +122,10 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			is_resume = False
 			job_id_fp = None
 			wandb_d["config"] = config_d
+		wandb.init(**wandb_d)
+		assert wandb.run is not None, wandb.run
+		wandb_d["offline"] = wandb_mode == "offline"
 		wandb_logger = pl.loggers.WandbLogger(**wandb_d)
-		assert wandb_logger.version == wandb.run.id, (wandb_logger.version, wandb.run.id)
 		if job_id_fp:
 			os.makedirs("job_id", exist_ok=True)
 			with open(job_id_fp,"w+") as job_id_file:
