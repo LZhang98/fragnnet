@@ -573,7 +573,7 @@ class FragGNNModel(nn.Module):
 
 		return out_d
 
-class NEIMSModel(nn.Module):
+class NeimsModel(nn.Module):
 
 	def __init__(
 		self,

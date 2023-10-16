@@ -25,7 +25,7 @@ import wandb
 import glob
 import shutil
 
-from frag_gnn.pl_model import FragGNNPL, NEIMSPL
+from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
@@ -214,7 +214,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	if config_d["model_type"] == "frag_gnn":
 		model = FragGNNPL(**config_d)
 	elif config_d["model_type"] == "neims":
-		model = NEIMSPL(**config_d)
+		model = NeimsPL(**config_d)
 	else:
 		raise ValueError(config_d["model_type"])
 	model.train()
