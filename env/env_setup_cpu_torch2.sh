@@ -23,7 +23,7 @@ pip install pytest
 pip install cysignals
 #pip install dash
 #pip install jupyter-dash 
-#pip install CairoSVG
+pip install CairoSVG
 pip install lightning
 
 pip install -I -e .
