@@ -132,10 +132,6 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 				text = f"{wandb.run.id};{os.path.abspath(wandb.run.dir)}"
 				job_id_file.write(text)
 		# update config results (primarily for wandb)
-		# print("> config_d")
-		# print(config_d)
-		# print("> wandb.config")
-		# print(wandb.config)
 		for k in list(config_d.keys()):
 			if k in wandb.config:
 				if config_d[k] != wandb.config[k]:
