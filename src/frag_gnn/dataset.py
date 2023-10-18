@@ -116,12 +116,12 @@ class SpecMolDataset(BaseDataset):
 		split: str,
 		**kwargs):
 
-		super().__init__()
+		BaseDataset.__init__(self)
 		self._base_init(
-			spec_fp,
-			mol_fp,
-			split_dp,
-			split,
+			spec_fp=spec_fp,
+			mol_fp=mol_fp,
+			split_dp=split_dp,
+			split=split,
 			**kwargs
 		)
 		self.mol_params = kwargs["mol_params"]
@@ -272,7 +272,8 @@ class SpecMolFragDataset(SpecMolDataset):
 		frag_dp,
 		**kwargs):
 
-		super().__init__(
+		BaseDataset.__init__(self)
+		self._base_init(
 			spec_fp=spec_fp,
 			mol_fp=mol_fp,
 			split_dp=split_dp,
@@ -280,7 +281,14 @@ class SpecMolFragDataset(SpecMolDataset):
 			**kwargs
 		)
 		self.frag_dp = frag_dp
+		self.mol_params = kwargs["mol_params"]
 		self.frag_params = kwargs["frag_params"]
+		self._preprocess_spec()
+		self._preprocess_mol()
+		self._preprocess_frag()
+		
+	def _preprocess_frag(self):
+
 		# preload frag dags
 		if self.frag_params["preload"]:
 			self.frag_entries = {}
