@@ -19,13 +19,16 @@ from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.dataset_utils import merge_spec_df
 
 def element_filter(formula,allowed_elements):
-	element_counts = parse_formula(formula)
+	try:
+		element_counts = parse_formula(formula)
+	except ValueError as e:
+		return False
 	for k,v in element_counts.items():
 		if v > 0 and k not in allowed_elements:
 			return False
 	return True
 
-def filter_spec_mol(spec_df,mol_df,allowed_elements,num_entries=-1):
+def filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=-1):
 	"""
 	The purpose of this filtering is to prevent errors
 	"""
@@ -33,7 +36,7 @@ def filter_spec_mol(spec_df,mol_df,allowed_elements,num_entries=-1):
 	masks = []
 	## spectrum criteria (TODO remove this)
 	# dataset mask
-	dset_mask = spec_df["dset"].isin(["nist"])
+	dset_mask = spec_df["dset"].isin(dsets)
 	masks.append(dset_mask)
 	# instrument type
 	inst_type_mask = spec_df["inst_type"].isin(["FT"])
@@ -121,7 +124,8 @@ def main(args):
 
 	assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
 
-	allowed_elements = args.allowed_elements.split("-")
+	allowed_elements = args.allowed_elements
+	dsets = args.dsets
 	# init wandb
 	wandb_flag = args.wandb_mode != "off"
 	if wandb_flag:
@@ -144,7 +148,7 @@ def main(args):
 	print()
 
 	# perform selection
-	spec_df, mol_df = filter_spec_mol(spec_df,mol_df,allowed_elements,num_entries=args.num_entries)
+	spec_df, mol_df = filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=args.num_entries)
 	m_spec_df = merge_spec_df(spec_df)
 
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules") #, {len(m_spec_df)} merged spectra")
@@ -349,7 +353,7 @@ def main(args):
 		assert peak_spec_df.shape[0] == peak_spec_df.drop_duplicates(subset=[spec_key,"mol_id"]).shape[0]
 
 		spectra_input_rows = []
-		tolerances = [tolerance for tolerance in args.tolerances.split("-")]
+		tolerances = args.tolerances
 		for _, row in tqdm(peak_spec_df.iterrows(), total=peak_spec_df.shape[0], desc= "prepare spectra stats inputs"):
 			spectra_input_rows.append(
 				[
@@ -402,7 +406,7 @@ def main(args):
 
 if __name__ == "__main__":
 
-	default_elements = "-".join(frag_utils.CANONICAL_ELEMENT_ORDER)
+	default_elements = list(frag_utils.CANONICAL_ELEMENT_ORDER)
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries",type=int,default=-1)
@@ -413,8 +417,9 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp",type=str,default="data/proc")
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--allowed_elements",type=str,default=default_elements)
-	parser.add_argument("--tolerances",type=str,default="0.01-0.005-0.001-0.0001-10ppm-5ppm")
+	parser.add_argument("--allowed_elements",type=str,nargs="+",default=default_elements)
+	parser.add_argument("--dsets",type=str,nargs="+",default="nist")
+	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="online",choices=["online","offline","off"])
 	parser.add_argument("--run_name",type=str,default="debug")

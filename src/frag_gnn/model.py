@@ -56,6 +56,7 @@ class SpectrumPL(pl.LightningModule):
 		super().__init__()
 		self.save_hyperparameters()
 		# setup functions
+		self.metric_names = set()
 		self._setup_model()
 		self._setup_loss_fn()
 		self._setup_spec_fns()
@@ -170,7 +171,7 @@ class SpectrumPL(pl.LightningModule):
 				)
 			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
 			self.metric_min_max["opt_cos_sim"] = "max"
-		self.metric_names = list(self.metric_min_max.keys())
+		self.metric_names.update(list(self.metric_min_max.keys()))
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
@@ -229,24 +230,21 @@ class SpectrumPL(pl.LightningModule):
 		loss_d = self.loss_fn(**both)
 		loss = loss_d["loss"]
 		mean_loss = th.mean(loss,dim=0)
-		# log losses and entropies
-		with th.no_grad():
-			for k,v in loss_d.items():
-				mean_v = th.mean(v,dim=0).item() if v is not None else 0.0
-				self.log(
-					f"{split}_{k}_batch",
-					mean_v,
-					batch_size=batch_size,
-					on_epoch=True
-				)
+		# just log loss
+		self.log(
+			f"{split}_batch_loss",
+			mean_loss,
+			batch_size=batch_size,
+			on_epoch=True
+		)
 
 		results = {
 			"unique_id": unique_id,
 			"smiles": smiles,
-			"loss": loss,
 			"mean_loss": mean_loss,
 			"total_loss": th.sum(loss,dim=0),
-			**both
+			**both,
+			**loss_d
 		}
 		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
 		with th.no_grad():
@@ -259,14 +257,9 @@ class SpectrumPL(pl.LightningModule):
 					th.exp(pred["pred_logprobs"]),
 					pred["pred_batch_idxs"]
 				)
-				mean_metric = th.mean(metric,dim=0)
-				self.log(
-					f"{split}_{metric_name}_batch",
-					mean_metric,
-					batch_size=batch_size,
-					on_epoch=True
-				)
 				results[metric_name] = metric
+		for metric_name in self.metric_names:
+			assert metric_name in results, metric_name
 		return results
 
 	def training_step(self, batch, batch_idx):
@@ -361,7 +354,6 @@ class SpectrumPL(pl.LightningModule):
 		keys = [
 			"unique_ids",
 			"smiles",
-			"loss",
 			"true_mzs",
 			"true_logprobs",
 			"true_unique_ids",
@@ -369,7 +361,7 @@ class SpectrumPL(pl.LightningModule):
 			"pred_logprobs",
 			"pred_unique_ids"
 		]
-		keys.extend(list(self.metric_fns.keys()))
+		keys.extend(list(self.metric_names))
 		unique_ids = batch_results.pop("unique_id")
 		true_batch_idxs = batch_results.pop("true_batch_idxs")
 		pred_batch_idxs = batch_results.pop("pred_batch_idxs")
@@ -380,6 +372,9 @@ class SpectrumPL(pl.LightningModule):
 		batch_results["unique_ids"] = unique_ids
 		batch_results["true_unique_ids"] = true_unique_ids
 		batch_results["pred_unique_ids"] = pred_unique_ids
+		# check all metrics
+		for metric_name in self.metric_names:
+			assert metric_name in batch_results, metric_name
 		# transfer to cpu
 		batch_results = to_cpu(batch_results)
 		# setup results dict
@@ -528,6 +523,37 @@ class SpectrumPL(pl.LightningModule):
 		# reset
 		self.val_results = None
 		self.val_counter = 0
+
+	def _print_grad_norm(self,prefix=None,total_num_params=5):
+
+		if prefix is None:
+			prefix = "no_prefix"
+		print(f">> {prefix}, {self._num_need_update}, {self._num_acc_gradient}")
+		opt = self.optimizers()
+		num_params = 0
+		for pg in opt.param_groups:
+			for p in pg['params']:
+				if p.grad is not None:
+					print(th.norm(p.grad))
+					num_params += 1
+				if num_params > total_num_params:
+					break
+			if num_params > total_num_params:
+				break
+	
+	def on_after_backward(self):
+		
+		if self.hparams.check_gradient_norm:
+			self._print_grad_norm(prefix="after_backward")
+
+	def on_before_optimizer_step(self, optimizer):
+
+		if self.hparams.check_gradient_norm:
+			self._print_grad_norm(prefix="before_optimizer_step")
+
+	def on_after_optimizer_step(self, optimizer):
+
+		self._num_need_update = 0
 
 
 class FragGNNPL(SpectrumPL):
@@ -746,6 +772,29 @@ class FragGNNPL(SpectrumPL):
 				loss_d["edge_ne"] = edge_ne
 			return loss_d
 		self.loss_fn = _loss_fn
+		# flag losses for tracking
+		loss_names = [
+			"loss",
+			"spec_cd",
+			"spec_ce",
+			"formula_e",
+			"formula_ne",
+			"node_e",
+			"node_ne",
+			"node_formula_e",
+			"node_formula_ne",
+			"null_formula_prob"
+		]
+		if not self.hparams.skip_edge_loss:
+			loss_names.extend(
+				[
+					"edge_h_range_loss",
+					"edge_h_transfer_loss",
+					"edge_e",
+					"edge_ne"
+				]
+			)
+		self.metric_names.update(loss_names)
 
 	def _manual_opt(self):
 		""" run manual opt
@@ -783,6 +832,9 @@ class FragGNNPL(SpectrumPL):
 		if self.hparams.automatic_optimization:
 			batch_results = self._common_step(batch, split="train")
 			mean_loss = batch_results.pop("mean_loss")
+			if self.hparams.debug_zero_loss:
+				mean_loss = 0. * mean_loss
+				self.print(mean_loss)
 			self._num_need_update += self.hparams.train_batch_size
 			self._update_results(batch_results,"train")
 			return mean_loss
@@ -794,6 +846,9 @@ class FragGNNPL(SpectrumPL):
 			batch_size = batch['batch_size'].item()
 			total_loss = batch_results.pop("total_loss")
 			mean_loss = total_loss / self._num_acc_gradient
+			if self.hparams.debug_zero_loss:
+				mean_loss = 0. * mean_loss
+				self.print(mean_loss)
 			self.manual_backward(mean_loss)
 			# accumulate gradients of N samples
 			self._num_need_update += batch_size
@@ -805,7 +860,11 @@ class FragGNNPL(SpectrumPL):
 		else:
 			batch_results = self._common_step(batch, split="train")
 			mean_loss = batch_results.pop("mean_loss") / self.hparams.accumulate_grad_batches
+			if self.hparams.debug_zero_loss:
+				mean_loss = 0. * mean_loss
+				self.print(mean_loss)
 			self.manual_backward(mean_loss)
+			# self.backward(mean_loss)
 			# accumulate gradients of N samples
 			self._num_need_update += self.hparams.train_batch_size
 			if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
@@ -814,54 +873,12 @@ class FragGNNPL(SpectrumPL):
 			return mean_loss
 
 	def on_train_epoch_end(self):
-		""" this is used for manul opt when lr_schedulers is not avaibale from torch lightning
-		"""
-		if not self.hparams.automatic_optimization:
-			# Disbaled for now as lr_schedulers need setup manually 
-			#sch = self.lr_schedulers()
-			#If the selected scheduler is a ReduceLROnPlateau scheduler.
-			#if isinstance(sch, th.optim.lr_scheduler.ReduceLROnPlateau):
-			#	sch.step(self.trainer.callback_metrics["loss"])
-			#else:
-			#	sch.step()
-			
-			# update last bit 
-			# disable this equals to do drop last
-			# since we scaled by true batch size this should be fine
+
+		if not self.hparams.automatic_optimization and self._smf and self._num_need_update > 0:
+			# this is used for manul opt when lr_schedulers is not available from torch lightning
 			# TODO: add drop_last check?
-			if self._smf and self._num_need_update > 0:
-				self._manual_opt()
-
-	def _print_grad_norm(self,prefix=None,total_num_params=5):
-
-		if prefix is None:
-			prefix = "no_prefix"
-		print(f">> {prefix}, {self._num_need_update}, {self._num_acc_gradient}")
-		opt = self.optimizers()
-		num_params = 0
-		for pg in opt.param_groups:
-			for p in pg['params']:
-				if p.grad is not None:
-					print(th.norm(p.grad))
-					num_params += 1
-				if num_params > total_num_params:
-					break
-			if num_params > total_num_params:
-				break
-	
-	def on_after_backward(self):
-		
-		if self.hparams.check_gradient_norm:
-			self._print_grad_norm(prefix="after_backward")
-
-	def on_before_optimizer_step(self, optimizer):
-
-		if self.hparams.check_gradient_norm:
-			self._print_grad_norm(prefix="before_optimizer_step")
-
-	def on_after_optimizer_step(self, optimizer):
-
-		self._num_need_update = 0
+			self._manual_opt()
+		super().on_train_epoch_end()
 
 	def optimizer_step(self, *args, **kwargs):
 		super().optimizer_step(*args, **kwargs)
@@ -935,6 +952,12 @@ class NEIMSPL(SpectrumPL):
 			}
 			return loss_d
 		self.loss_fn = _loss_fn
+		# flag metrics for tracking
+		loss_names = [
+			"loss",
+			"spec_cd"
+		]
+		self.metric_names.update(loss_names)
 
 def get_default_model_params():
 	

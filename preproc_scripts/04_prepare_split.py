@@ -19,8 +19,8 @@ def make_splits(args):
 
     print("> Spectrum filters")
     # filter spectra
-    dsets = args.dsets.split("-")
-    prec_types = args.prec_types.split("-")
+    dsets = args.dsets
+    prec_types = args.prec_types
     spec_masks = []
     spec_masks.append(spec_df["dset"].isin(dsets))
     spec_masks.append(spec_df["prec_type"].isin(prec_types))
@@ -78,9 +78,10 @@ def make_splits(args):
         test_df = split_df[split_df[args.split_key].isin(test_keys)][["spec_id","mol_id","group_id"]]
     else:
         assert args.split_type == "predefined"
-        train_ids = np.array([int(train_id) for train_id in args.train_ids.split("-")])
-        val_ids = np.array([int(val_id) for val_id in args.val_ids.split("-")])
-        test_ids = np.array([int(test_id) for test_id in args.test_ids.split("-")])
+        assert len(args.train_ids) > 1 and len(args.val_ids) > 1 and len(args.test_ids) > 1
+        train_ids = np.array([args.train_ids])
+        val_ids = np.array(args.val_ids)
+        test_ids = np.array(args.test_ids)
         train_df = split_df[split_df[args.id_type].isin(train_ids)][["spec_id","mol_id","group_id"]]
         val_df = split_df[split_df[args.id_type].isin(val_ids)][["spec_id","mol_id","group_id"]]
         test_df = split_df[split_df[args.id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
@@ -110,12 +111,12 @@ if __name__ == "__main__":
     parser.add_argument("--split_type",type=str,choices=["random","predefined"],default="random")
     parser.add_argument("--split_key",type=str,choices=["inchikey_s","scaffold"],default="inchikey_s")
     parser.add_argument("--id_type",type=str,choices=["spec_id","mol_id","group_id"],default="group_id")
-    parser.add_argument("--train_ids",type=str,default="62611")
-    parser.add_argument("--val_ids",type=str,default="62611")
-    parser.add_argument("--test_ids",type=str,default="62611")
+    parser.add_argument("--train_ids",type=int,nargs="+",default=[62611])
+    parser.add_argument("--val_ids",type=int,nargs="+",default=[62611])
+    parser.add_argument("--test_ids",type=int,nargs="+",default=[62611])
     # spec filtering criteria
-    parser.add_argument("--dsets",type=str,default="nist")
-    parser.add_argument("--prec_types",type=str,default="[M+H]+")
+    parser.add_argument("--dsets",type=str,nargs="+",default=["nist"])
+    parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
     parser.add_argument("--max_peak_mz",type=float,default=1500.)
     # dag filtering criteria
     parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec")
