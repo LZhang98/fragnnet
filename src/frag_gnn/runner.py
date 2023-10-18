@@ -304,8 +304,6 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	test_ds = SpecMolFragDataset(split="test",**config_d)
 
 	# check config for sampler
-
-
 	if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
 		assert config_d['automatic_optimization'] == False,\
 			f"custom sampler {config_d['custom_sampler']} can not use in junction of automatic optimization {config_d['automatic_optimization']}"
@@ -331,6 +329,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	}
 
 	if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		# taining 
 		train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, 
 								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
@@ -339,7 +338,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 								return_batch_at = config_d['train_batch_size'] * config_d['accumulate_grad_batches'])
 		train_dl_param_d['batch_sampler'] = train_batchsampler
 
-
+		# validation
 		val_batchsampler = SpecMolFragDynamicBatchSampler(val_ds, 
 						max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 						limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
@@ -398,6 +397,11 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		trainer_param_d['accumulate_grad_batches'] = config_d["accumulate_grad_batches"]
 		trainer_param_d['gradient_clip_val'] = config_d["gradient_clip_val"]
 		trainer_param_d['gradient_clip_algorithm'] = config_d["gradient_clip_algorithm"]
+	elif config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		# with out this progress will not track dataset length change
+		# this will call train_dataloader and val_dataloader before every epoch
+		# not sure why this fixed our problem but it works 
+		trainer_param_d['reload_dataloaders_every_n_epochs'] = 1
 
 	trainer = pl.Trainer(**trainer_param_d)
 
