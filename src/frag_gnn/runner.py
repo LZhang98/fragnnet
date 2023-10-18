@@ -30,6 +30,7 @@ from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
 from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, SpecMolFragDynamicBatchSampler
+from frag_gnn.utils.misc_utils import deep_update
 
 
 def load_config(template_fp, custom_fp):
@@ -37,20 +38,14 @@ def load_config(template_fp, custom_fp):
 	assert os.path.isfile(template_fp), template_fp
 	if custom_fp:
 		assert os.path.isfile(custom_fp), custom_fp
-
 	with open(template_fp, "r") as template_file:
 		config_d = yaml.load(template_file, Loader=yaml.FullLoader)
-
 	# overwrite parts of the config
 	if custom_fp:
-
 		with open(custom_fp, "r") as custom_file:
 			custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
-
-		for k, v in custom_d.items():
-			assert k in config_d, k
-			config_d[k] = v
-
+		assert all([k in config_d for k in custom_d]), set(custom_d.keys()) - set(config_d.keys())
+		config_d = deep_update(config_d, custom_d)
 	return config_d
 
 

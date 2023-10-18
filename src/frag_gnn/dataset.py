@@ -10,6 +10,7 @@ from torch_geometric.data import Data, Batch
 import sys
 from tqdm import tqdm
 from typing import Iterator, Iterable, Optional, Sequence, List, TypeVar, Generic, Sized, Union
+import warnings
 
 from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_graph, get_frag_graph
 from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_type_idx, transform_nce, prec_type_mass_diff
@@ -18,53 +19,6 @@ from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
-import warnings
-
-SPEC_PARAMS = [
-	"merge",
-	"subsample_size",
-	"subsample_seed",
-	"ints_thresh",
-	"mz_max",
-	"sparse",
-	"binned",
-	"mz_bin_res",
-	"sum_ints",
-	"prec_type",
-	"prec_mz",
-	"prec_mass_diff",
-	"nce",
-	"ace",
-	"preprocess",
-	"unique_id"
-]
-
-MOL_PARAMS = [
-	"smiles",
-	"fingerprint",
-	"fingerprint_morgan",
-	"fingerprint_rdkit",
-	"fingerprint_maccs",
-	"pyg",
-	"pyg_node_feats",
-	"pyg_edge_feats",
-	"pyg_pe_embed_k",
-	"pyg_bigraph",
-	"preprocess"
-]
-
-FRAG_PARAMS = [
-	"pyg",
-	"pyg_node_feats",
-	"pyg_edge_feats",
-	"pyg_bigraph",
-	"num_isotopes",
-	"formula_peak_mzs",
-	"formula_peak_probs",
-	"compressed",
-	"preload",
-	"preprocess"
-]
 
 class BaseDataset(Dataset):
 
@@ -75,7 +29,7 @@ class BaseDataset(Dataset):
 		assert split in ["train","val","test"], split
 		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
 		self.split_df = pd.read_csv(split_fp)
-		self.spec_params = {k: kwargs["spec_"+k] for k in SPEC_PARAMS}
+		self.spec_params = kwargs["spec_params"]
 		# select spectra
 		self.spec_df = self.spec_df[self.spec_df["spec_id"].isin(self.split_df["spec_id"])]
 		# select molecules
@@ -170,7 +124,7 @@ class SpecMolDataset(BaseDataset):
 			split,
 			**kwargs
 		)
-		self.mol_params = {k: kwargs["mol_"+k] for k in MOL_PARAMS}
+		self.mol_params = kwargs["mol_params"]
 		self._preprocess_spec()
 		self._preprocess_mol()
 
@@ -326,7 +280,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			**kwargs
 		)
 		self.frag_dp = frag_dp
-		self.frag_params = {k: kwargs["frag_"+k] for k in FRAG_PARAMS}
+		self.frag_params = kwargs["frag_params"]
 		# preload frag dags
 		if self.frag_params["preload"]:
 			self.frag_entries = {}
