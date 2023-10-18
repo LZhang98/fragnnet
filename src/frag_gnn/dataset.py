@@ -66,7 +66,93 @@ FRAG_PARAMS = [
 	"preprocess"
 ]
 
-class SpecMolDataset(Dataset):
+class BaseDataset(Dataset):
+
+	def _base_init(self, spec_fp, mol_fp, split_dp, split, **kwargs):
+		
+		self.spec_df = pd.read_pickle(spec_fp)
+		self.mol_df = pd.read_pickle(mol_fp)
+		assert split in ["train","val","test"], split
+		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
+		self.split_df = pd.read_csv(split_fp)
+		self.spec_params = {k: kwargs["spec_"+k] for k in SPEC_PARAMS}
+		# select spectra
+		self.spec_df = self.spec_df[self.spec_df["spec_id"].isin(self.split_df["spec_id"])]
+		# select molecules
+		self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.split_df["mol_id"])]
+		assert np.all(np.unique(self.mol_df["mol_id"]) == np.unique(self.spec_df["mol_id"]))
+		# merge spectra
+		if self.spec_params["merge"]:
+			self.spec_df = merge_spec_df(self.spec_df)
+		# subsample
+		if self.spec_params["subsample_size"] > 0:
+			self.spec_df = self.spec_df.sample(
+				n=self.spec_params["subsample_size"],
+				random_state=self.spec_params["subsample_seed"],
+				replace=False)
+			self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
+		# reset indices
+		self.spec_df = self.spec_df.reset_index(drop=True)
+		self.mol_df = self.mol_df.reset_index(drop=True)
+		# use mol_id as index for speedy access
+		self.mol_df = self.mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
+
+	def _preprocess_spec(self):
+
+		# preload and pre-process spectra
+		if self.spec_params["preprocess"]:
+			self.spec_datas = {}
+			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess spec",total=len(self.spec_df)):
+				spec_data = self._process_spec(spec_entry)
+				self.spec_datas[idx] = spec_data
+
+	def __getitem__(self, idx):
+
+		raise NotImplementedError()
+
+	def __len__(self):
+
+		return len(self.spec_df)
+
+	@staticmethod
+	def get_collate_fn():
+		
+		return BaseDataset.collate_fn
+
+	@staticmethod
+	def _setup_collate(data_list):
+
+		batch_size = len(data_list)
+		keys = list(data_list[0].keys())
+		collate_data = {key: [] for key in keys}
+		for data in data_list:
+			for key in keys:
+				collate_data[key].append(data[key])
+		return batch_size, keys, collate_data
+
+	@staticmethod
+	def _standard_collate(keys,collate_data):
+		""" mutates collate_data """
+
+		for key in keys:
+			values = collate_data[key]
+			if isinstance(values[0],list):
+				# flatten
+				values = flatten_lol(values)
+				collate_data[key] = values
+			elif isinstance(values[0],th.Tensor):
+				# cat
+				values = th.cat(values,dim=0)
+				collate_data[key] = values
+			else:
+				raise TypeError(f"Unsupported type: {type(values[0])}")
+
+	@staticmethod
+	def collate_fn(data_list):
+
+		raise NotImplementedError()
+		
+class SpecMolDataset(BaseDataset):
 
 	def __init__(
 		self,
@@ -77,46 +163,18 @@ class SpecMolDataset(Dataset):
 		**kwargs):
 
 		super().__init__()
-		self.spec_df = pd.read_pickle(spec_fp)
-		self.mol_df = pd.read_pickle(mol_fp)
-		assert split in ["train","val","test"], split
-		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
-		self.split_df = pd.read_csv(split_fp)
-		
-		self.spec_params = {k: kwargs["spec_"+k] for k in SPEC_PARAMS}
+		self._base_init(
+			spec_fp,
+			mol_fp,
+			split_dp,
+			split,
+			**kwargs
+		)
 		self.mol_params = {k: kwargs["mol_"+k] for k in MOL_PARAMS}
+		self._preprocess_spec()
+		self._preprocess_mol()
 
-		# select spectra
-		self.spec_df = self.spec_df[self.spec_df["spec_id"].isin(self.split_df["spec_id"])]
-		# select molecules
-		self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.split_df["mol_id"])]
-		assert np.all(np.unique(self.mol_df["mol_id"]) == np.unique(self.spec_df["mol_id"]))
-
-		# merge spectra
-		if self.spec_params["merge"]:
-			self.spec_df = merge_spec_df(self.spec_df)
-
-		# subsample
-		if self.spec_params["subsample_size"] > 0:
-			self.spec_df = self.spec_df.sample(
-				n=self.spec_params["subsample_size"],
-				random_state=self.spec_params["subsample_seed"],
-				replace=False)
-			self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
-
-		# reset indices
-		self.spec_df = self.spec_df.reset_index(drop=True)
-		self.mol_df = self.mol_df.reset_index(drop=True)
-
-		# use mol_id as index for speedy access
-		self.mol_df = self.mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
-
-		# preload and pre-process spectra
-		if self.spec_params["preprocess"]:
-			self.spec_datas = {}
-			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess spec",total=len(self.spec_df)):
-				spec_data = self._process_spec(spec_entry)
-				self.spec_datas[idx] = spec_data
+	def _preprocess_mol(self):
 
 		# preload and pre-process molecules
 		if self.mol_params["preprocess"]:
@@ -127,10 +185,6 @@ class SpecMolDataset(Dataset):
 				total_mol_data_size += get_pyg_memory_usage(mol_data["mol_pyg"])
 				self.mol_datas[mol_entry["mol_id"]] = mol_data
 			print(f"> total_mol_data_size: {total_mol_data_size/1e6:.2f} MB")
-
-	def __len__(self):
-
-		return len(self.spec_df)
 
 	def __getitem__(self,idx):
 
@@ -182,12 +236,7 @@ class SpecMolDataset(Dataset):
 			nce = th.tensor([transform_nce(nce)],dtype=th.float)
 			spec_data["spec_nce"] = nce
 		if self.spec_params["ace"]:
-			# TODO: implement ace
-			raise NotImplementedError
-			# assert not self.merge
-			# ace = spec_entry["ace"]
-			# ace = th.tensor([transform_ace(ace)],dtype=th.float)
-			# spec_data["spec_ace"] = ace
+			raise NotImplementedError()
 		if self.spec_params["prec_mz"]:
 			prec_mz = spec_entry["prec_mz"]
 			prec_mz = th.tensor([float(prec_mz)],dtype=th.float)
@@ -234,14 +283,8 @@ class SpecMolDataset(Dataset):
 
 	@staticmethod
 	def collate_fn(data_list):
-
-		batch_size = len(data_list)
-		keys = list(data_list[0].keys())
-		collate_data = {key: [] for key in keys}
-		for data in data_list:
-			for key in keys:
-				collate_data[key].append(data[key])
-		# special handling
+		
+		batch_size, keys, collate_data = SpecMolDataset._setup_collate(data_list)
 		if "spec_ints" in keys and "spec_mzs" in keys:
 			# create batch_idxs
 			mzs, ints, batch_idxs = batch_func(
@@ -259,23 +302,10 @@ class SpecMolDataset(Dataset):
 			collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
 			# remove from list
 			keys.remove("mol_pyg")
-		# regular handling
-		for key in keys:
-			values = collate_data[key]
-			if isinstance(values[0],list):
-				# flatten
-				values = flatten_lol(values)
-				collate_data[key] = values
-			elif isinstance(values[0],th.Tensor):
-				# cat
-				values = th.cat(values,dim=0)
-				collate_data[key] = values
-			else:
-				raise TypeError(f"Unsupported type: {type(values[0])}")
+		SpecMolDataset._standard_collate(keys,collate_data)
 		# add batch_size
 		collate_data["batch_size"] = th.tensor(batch_size)
 		return collate_data
-
 
 class SpecMolFragDataset(SpecMolDataset):
 
@@ -283,9 +313,9 @@ class SpecMolFragDataset(SpecMolDataset):
 		self,
 		spec_fp,
 		mol_fp,
-		frag_dp,
 		split_dp,
 		split,
+		frag_dp,
 		**kwargs):
 
 		super().__init__(
@@ -318,9 +348,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			print(f"> total_frag_data_size: {total_frag_data_size/1e6:.2f} MB")
 
 	def __getitem__(self, idx):
-		#print(idx)
-		#print(type(idx))
-		#print(self.spec_df.shape)
+
 		spec_entry = self.spec_df.iloc[idx]
 		mol_id = spec_entry["mol_id"]
 		mol_entry = self.mol_df.loc[mol_id]
@@ -392,13 +420,7 @@ class SpecMolFragDataset(SpecMolDataset):
 		# prevent edge case causing crash
 		if len(data_list) == 0:
 			return  {"batch_size": th.tensor(0)}
-
-		batch_size = len(data_list)
-		keys = list(data_list[0].keys())
-		collate_data = {key: [] for key in keys}
-		for data in data_list:
-			for key in keys:
-				collate_data[key].append(data[key])
+		batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
 		# special handling
 		if "spec_ints" in keys and "spec_mzs" in keys:
 			# create batch_idxs
@@ -436,19 +458,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
 			# remove from list
 			keys.remove("mol_pyg")
-		# regular handling
-		for key in keys:
-			values = collate_data[key]
-			if isinstance(values[0],list):
-				# flatten
-				values = flatten_lol(values)
-				collate_data[key] = values
-			elif isinstance(values[0],th.Tensor):
-				# cat
-				values = th.cat(values,dim=0)
-				collate_data[key] = values
-			else:
-				raise TypeError(f"Unsupported type: {type(values[0])}")
+		SpecMolFragDataset._standard_collate(keys,collate_data)
 		# add batch_size
 		collate_data["batch_size"] = th.tensor(batch_size)
 		return collate_data

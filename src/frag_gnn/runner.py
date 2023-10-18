@@ -81,7 +81,6 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# load config
 	config_d = load_config(template_fp, custom_fp)
-	print(config_d)
 
 	# set random seeds
 	th.manual_seed(config_d["seed"])
