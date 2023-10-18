@@ -10,6 +10,7 @@ import tqdm
 import pandas as pd
 import threading
 import torch_geometric as pyg
+import dgl
 
 TQDM_DISABLE = False
 PPM = 1/1000000
@@ -281,3 +282,17 @@ def deep_update(mapping, *updating_mappings):
 			else:
 				updated_mapping[k] = v
 	return updated_mapping
+
+def print_shapes(input_dict):
+
+	for k,v in input_dict.items():
+		if isinstance(v,th.Tensor) or isinstance(v,np.ndarray):
+			print(k,"/",tuple(v.shape),"/",type(v))
+		elif isinstance(v,list) or isinstance(v,tuple):
+			print(k,"/",len(v),"/",type(v))
+		elif isinstance(v,pyg.data.Data):
+			print(k,"/",(v.num_nodes,v.num_edges),"/",type(v))
+		elif isinstance(v,dgl.DGLGraph):
+			print(k,"/",(v.number_of_nodes(),v.number_of_edges()),"/",type(v))
+		else:
+			print(k,"/",None,"/",type(v))

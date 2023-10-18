@@ -14,7 +14,7 @@ from tqdm import tqdm
 # from pytorch_lightning.loggers.base import rank_zero_experiment
 
 
-import frag_gnn.iceberg.chem_utils as chem_utils
+import frag_gnn.iceberg.common.chem_utils as chem_utils
 
 
 def get_data_dir(dataset_name: str) -> Path:

@@ -9,7 +9,7 @@ from hashlib import blake2b
 from typing import Tuple, List
 from rdkit import Chem
 
-from frag_gnn.iceberg import chem_utils as chem_utils
+from frag_gnn.iceberg.common import chem_utils as chem_utils
 
 TYPEW = {
     Chem.rdchem.BondType.names["AROMATIC"]: 2,

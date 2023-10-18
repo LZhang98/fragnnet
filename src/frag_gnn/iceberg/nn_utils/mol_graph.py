@@ -8,7 +8,7 @@ from rdkit import Chem
 import numpy as np
 import torch
 import dgl
-import ms_pred.nn_utils.nn_utils as nn_utils
+import frag_gnn.iceberg.nn_utils.nn_utils as nn_utils
 
 atom_feat_registry = {}
 bond_feat_registry = {}

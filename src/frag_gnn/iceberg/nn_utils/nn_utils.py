@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from dgl.backend import pytorch as dgl_F
-import ms_pred.nn_utils.dgl_modules as dgl_mods
+import frag_gnn.iceberg.nn_utils.dgl_modules as dgl_mods
 
 
 def get_clones(module, N):

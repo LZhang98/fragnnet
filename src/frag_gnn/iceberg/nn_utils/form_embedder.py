@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-import ms_pred.common as common
+import frag_gnn.iceberg.common as common
 
 
 class IntFeaturizer(nn.Module):

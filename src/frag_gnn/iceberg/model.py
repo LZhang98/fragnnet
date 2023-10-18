@@ -5,7 +5,7 @@ import torch.nn as nn
 import dgl
 import dgl.nn as dgl_nn
 
-import frag_gnn.common as common
+import frag_gnn.iceberg.common as common
 import frag_gnn.iceberg.nn_utils as nn_utils
 import frag_gnn.iceberg.fragmentation as fragmentation
 
