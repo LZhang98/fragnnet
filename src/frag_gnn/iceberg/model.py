@@ -9,7 +9,7 @@ import frag_gnn.common as common
 import frag_gnn.iceberg.nn_utils as nn_utils
 import frag_gnn.iceberg.fragmentation as fragmentation
 
-class ICEBERGGenModel(nn.Module):
+class IcebergGenModel(nn.Module):
 
 	def __init__(
 		self,
