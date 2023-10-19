@@ -313,11 +313,9 @@ class SpectrumPL(pl.LightningModule):
 	def _update_results(self, batch_results, split):
 
 		if split == "train":
-			num_log_images = self.hparams.num_log_train_images
 			results_attr = "train_results"
 			counter_attr = "train_counter"
 		elif split == "val":
-			num_log_images = self.hparams.num_log_val_images
 			results_attr = "val_results"
 			counter_attr = "val_counter"
 		else:
@@ -334,7 +332,7 @@ class SpectrumPL(pl.LightningModule):
 			"pred_unique_ids"
 		]
 		keys.extend(list(self.metric_names))
-		unique_ids = batch_results.pop("unique_id")
+		
 		true_batch_idxs = batch_results.pop("true_batch_idxs")
 		pred_batch_idxs = batch_results.pop("pred_batch_idxs")
 		batch_results = {k:v for k,v in batch_results.items() if k in keys}
@@ -345,8 +343,7 @@ class SpectrumPL(pl.LightningModule):
 		batch_results["true_unique_ids"] = true_unique_ids
 		batch_results["pred_unique_ids"] = pred_unique_ids
 		# check all metrics
-		for metric_name in self.metric_names:
-			assert metric_name in batch_results, metric_name
+		assert all([metric_name in batch_results for metric_name in self.metric_names])
 		# transfer to cpu
 		batch_results = to_cpu(batch_results)
 		# setup results dict

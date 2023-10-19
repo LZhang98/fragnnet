@@ -26,10 +26,12 @@ import glob
 import shutil
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
+from frag_gnn.iceberg.pl_model import IcebergGenPL
 from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
 from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, SpecMolFragDynamicBatchSampler
+from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset
 from frag_gnn.utils.misc_utils import deep_update
 
 
@@ -149,6 +151,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		model = FragGNNPL(**config_d)
 	elif config_d["model_type"] == "neims":
 		model = NeimsPL(**config_d)
+	elif config_d["model_type"] == "iceberg_gen":
+		model = IcebergGenPL(**config_d)
 	else:
 		raise ValueError(config_d["model_type"])
 	model.train()
@@ -236,6 +240,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	logging.info("setup dataset")
 	if config_d["model_type"] == "frag_gnn":
 		dataset_cls = SpecMolFragDataset
+	elif config_d["model_type"] == "iceberg_gen":
+		dataset_cls = SpecMolMagmaGenDataset
 	else:
 		dataset_cls = SpecMolDataset
 	train_ds = dataset_cls(split="train",**config_d)

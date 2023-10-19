@@ -7,10 +7,13 @@ magma_dp: data/magma
 spec_params:
   subsample_size: 128
 
-
-
-model_type: iceberg
-loss_type: iceberg_cross_entropy
+model_type: iceberg_gen
+loss_type: iceberg_gen_cross_entropy
+mol_params:
+  smiles: True
+  fingerprint: False
+  pyg: False
+  preprocess: False
 magma_params:
   pe_embed_k: 14
   root_encode: gnn
@@ -24,16 +27,17 @@ iceberg_pool_type: avg
 iceberg_inject_early: False
 iceberg_embed_adduct: True
 iceberg_encode_forms: True
-
+auxiliary_scores: []
 
 train_batch_size: 32
 eval_batch_size: 32
-accumulate_grad_batches: 2
+accumulate_grad_batches: 2 # 1
 gradient_clip_val: 5.0
-lr: 0.0004
-accelerator: gpu
+lr: 0.0004 # 0.001
+accelerator: cpu # gpu
 devices: 1
 min_epochs: 2
 max_epochs: 2
-lr_schedule: False
+lr_schedule: False #True
+weight_decay: 0.01 # 0.0
 debug_overfit: False

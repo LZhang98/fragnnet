@@ -18,7 +18,7 @@ from torch.utils.data.dataset import Dataset
 import frag_gnn.iceberg.common as common
 import frag_gnn.iceberg.nn_utils as nn_utils
 import frag_gnn.iceberg.fragmentation as fragmentation
-from frag_gnn.dataset import BaseDataset
+from frag_gnn.dataset import BaseDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import flatten_lol, print_shapes
 from frag_gnn.utils.spec_utils import batch_func
 
@@ -370,7 +370,7 @@ class TreeProcessor:
 		return self.pe_embed_k + common.ELEMENT_DIM + common.MAX_H
 
 
-class SpecMagmaDataset(BaseDataset):
+class SpecMolMagmaDataset(SpecMolDataset):
 	""" """
 
 	def __init__(
@@ -394,8 +394,16 @@ class SpecMagmaDataset(BaseDataset):
 			**kwargs
 		)
 		self.magma_dp = magma_dp
+		self.mol_params = kwargs["mol_params"]
 		self.magma_params = kwargs["magma_params"]
-		magma_dir = Path(magma_dp)
+		self._init_magma()
+		self._preprocess_spec()
+		self._preprocess_mol()
+		# self._preprocess_magma()
+
+	def _init_magma(self):
+
+		magma_dir = Path(self.magma_dp)
 		magma_tree_dir = magma_dir / "magma_tree"
 		assert magma_tree_dir.exists(), magma_tree_dir
 		tree_names, tree_files = [], []
@@ -421,6 +429,8 @@ class SpecMagmaDataset(BaseDataset):
 
 		spec_entry = self.spec_df.iloc[idx]
 		spec_data = self._process_spec(spec_entry)
+		mol_entry = self.mol_df.iloc[idx]
+		mol_data = self._process_mol(mol_entry)
 		name = str(spec_entry["group_id"])
 		adduct = common.ion2onehot_pos[spec_entry["prec_type"]]
 		magma_entry = self.read_fn(name)["dgl_tree"]
@@ -430,37 +440,16 @@ class SpecMagmaDataset(BaseDataset):
 			**magma_entry
 		}
 		magma_data = self._process_magma(magma_entry)
-		data = {**spec_data, **magma_data}
+		data = {**spec_data, **mol_data, **magma_data}
 		return data
 
-	def get_node_feats(self) -> int:
-		"""get_node_feats."""
-		
-		return self.tree_processor.get_node_feats()
 
-
-class SpecMagmaGenDataset(SpecMagmaDataset):
+class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 	"""TODO: fold this into the parent class"""
 
-	def __init__(
-		self,
-		spec_fp: str,
-		mol_fp: str,
-		split_dp: str,
-		split: str,
-		magma_dp: str,
-		**kwargs,
-	):
-		"""__init__.
-		"""
-		super().__init__(
-			spec_fp=spec_fp,
-			mol_fp=mol_fp,
-			split_dp=split_dp,
-			split=split,
-			magma_dp=magma_dp,
-			**kwargs
-		)
+	def _init_magma(self):
+
+		super()._init_magma()
 		tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
 		assert self.spec_df["group_id"].isin(tree_group_ids).all()
 		self.tree_processor = TreeProcessor(
@@ -469,7 +458,7 @@ class SpecMagmaGenDataset(SpecMagmaDataset):
 			add_hs=self.magma_params["add_hs"],
 			binned_targs=False
 		)
-		
+
 	def _read_tree(self, tree_json):
 		
 		tree = self.tree_processor.process_tree_gen(tree_json)
@@ -496,12 +485,12 @@ class SpecMagmaGenDataset(SpecMagmaDataset):
 
 	@classmethod
 	def get_collate_fn(cls):
-		return SpecMagmaGenDataset.collate_fn
+		return SpecMolMagmaGenDataset.collate_fn
 
 	@staticmethod
 	def collate_fn(data_list):
 
-		batch_size, keys, collate_data = SpecMagmaGenDataset._setup_collate(data_list)
+		batch_size, keys, collate_data = SpecMolMagmaGenDataset._setup_collate(data_list)
 		###
 		frag_graphs = collate_data["magma_frag_graphs"]
 		num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]],dtype=th.long)
@@ -546,8 +535,7 @@ class SpecMagmaGenDataset(SpecMagmaDataset):
 			# remove from list
 			keys.remove("spec_ints")
 			keys.remove("spec_mzs")
-		print(keys)
-		SpecMagmaGenDataset._standard_collate(keys,collate_data)
+		SpecMolMagmaGenDataset._standard_collate(keys,collate_data)
 		# add batch_size
 		collate_data["batch_size"] = th.tensor(batch_size)
 		return collate_data
@@ -579,6 +567,30 @@ if __name__ == "__main__":
 			preprocess=False,
 			unique_id=True
 		),
+		mol_params=dict(
+			smiles=True,
+			fingerprint=False,
+			fingerprint_morgan=True,
+			fingerprint_rdkit=True,
+			fingerprint_maccs=True,
+			pyg=False,
+			pyg_node_feats=[
+				"a_onehot",
+				"a_degree",
+				"a_hybrid",
+				"a_formal",
+				"a_radical",
+				"a_ring",
+				"a_mass",
+				"a_chiral"
+			],	
+			pyg_edge_feats=[
+				"b_degree"
+			],
+			pyg_pe_embed_k=0,
+			pyg_bigraph=True,
+			preprocess=False
+		),
 		magma_params=dict(
 			pe_embed_k=0,
 			root_encode="gnn",
@@ -586,7 +598,7 @@ if __name__ == "__main__":
 		)
 	)
 
-	ds = SpecMagmaGenDataset(**config_d)
+	ds = SpecMolMagmaGenDataset(**config_d)
 	item = ds[0]
 	print(">>> item shapes")
 	print_shapes(item)
