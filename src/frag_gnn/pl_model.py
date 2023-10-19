@@ -345,7 +345,7 @@ class SpectrumPL(pl.LightningModule):
 		# check all metrics
 		assert all([metric_name in batch_results for metric_name in self.metric_names])
 		# transfer to cpu
-		batch_results = to_cpu(batch_results)
+		batch_results = to_cpu(batch_results,detach=True)
 		# setup results dict
 		if getattr(self,results_attr) is None:
 			setattr(self,results_attr,{k:list() for k in keys})

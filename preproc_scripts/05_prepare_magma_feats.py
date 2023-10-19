@@ -465,10 +465,8 @@ def run_magma_augmentation(
 	)
 	spec_entry_iter = tqdm(spec_entries,desc=pformat(partial_aug_safe),total=len(spec_entries))
 	if not parallel:
-		# [partial_aug_safe(i) for i in tqdm(spec_entries)]
 		results = seq_apply(spec_entry_iter,partial_aug_safe)
 	else:
-		# common.chunked_parallel(spec_entries, partial_aug_safe, max_cpu=60)
 		results = par_apply(spec_entry_iter,partial_aug_safe)
 	# with open(magma_dir / "results.json","w") as fp:
 	# 	json.dump(results,fp,indent=2)
