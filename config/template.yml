@@ -167,6 +167,8 @@ specmolfrag_dynamic_batch_sampler_max: 100000
 mp_sharing_strategy: file_descriptor
 check_gradient_norm: False
 use_tensor_float32: False
-nan_module_hook: False
-debug_zero_loss: False
 pl_enable_progress_bar: True
+# debug config
+debug_zero_loss: False
+nan_module_hook: False
+debug_val_loop_trigger: False

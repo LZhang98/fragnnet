@@ -568,6 +568,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		# get data meta once and cache them
 		if len(self._data_meta) == 0:
 			expected_total = 0
+			warning_msg = ""
 			for dataset_idx in range(len(self._data_source)):
 				data = self._data_source[dataset_idx]
 				self._data_meta.append((data['frag_pyg'].num_nodes,data['frag_pyg'].num_edges))
@@ -575,7 +576,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				if not (n > self._max_num and self._skip_too_big):
 					expected_total += 1
 				else:
-					warning_msg = "Size of data sample at index " +\
+					warning_msg += "Size of data sample at index " +\
 						f"{dataset_idx} is larger than " +\
 						f"{self._max_num} {self._limited_by}s " +\
 						f"Got {n} {self._limited_by}s." +\
@@ -585,9 +586,10 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					else:
 						warning_msg += "Attempting to fit this in to batch, this may cause CUDA OOM ERROR"
 					#warnings.warn(warning_msg)
-					print(warning_msg)
-
-			print(f"[SpecMolFragDynamicBatchSampler] Expecting {expected_total}/{len(self._data_source)} samples with skip_too_big:{self._skip_too_big}")
+					#print(warning_msg)
+			if warning_msg != "":
+				print("[SpecMolFragDynamicBatchSampler]", warning_msg)
+			#print(f"[SpecMolFragDynamicBatchSampler] Expecting {expected_total}/{len(self._data_source)} samples with skip_too_big:{self._skip_too_big}")
 
 		# beacuse this is an iter, shuffle only happen once per batch
 		if self._shuffle:
@@ -641,6 +643,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
 		if len(batch) > 0:
 			self._batches.append(batch)
+		#print(f"[SpecMolFragDynamicBatchSampler] Expecting {len(self._batches)} mini-batch for next epoch")
+
 
 	def __iter__(self) -> Iterator[List[int]]:
 		""" we use a pre computed batche list, this way we could have a correct batch size

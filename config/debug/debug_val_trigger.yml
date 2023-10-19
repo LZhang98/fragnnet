@@ -14,13 +14,28 @@ eval_batch_size: 1
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0004
-accelerator: gpu
+accelerator: cpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 precision: 32
+
+
+# mol model
+mol_hidden_size: 16
+mol_num_layers: 1
+mol_gnn_type: GINE
+mol_dropout: 0.0
+mol_normalization: batch
+mol_pool_type: none
+# interstage
+cc_interstage_type: add
+# frag model
+frag_hidden_size: 16
+frag_num_layers: 1
+frag_gnn_type: GINE
 
 automatic_optimization: False
 use_tensor_float32: True
@@ -30,3 +45,4 @@ specmolfrag_dynamic_batch_sampler_mode: frag_edge
 specmolfrag_dynamic_batch_sampler_max: 10000
 spec_subsample_size: 256
 pl_enable_progress_bar: True
+debug_val_loop_trigger: True

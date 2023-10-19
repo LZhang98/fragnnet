@@ -1,0 +1,60 @@
+wandb_name: fw_debug_run
+wandb_tags:
+- v2
+- DynamicBatchSampler
+- debug
+
+split_dp: data/split/d3_h4_isoTrue_v2
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
+num_depth: 4
+num_hs: 4
+
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 4
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: cpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+precision: 32
+
+# mol model
+mol_hidden_size: 8
+mol_num_layers: 1
+mol_gnn_type: GAT
+mol_dropout: 0.0
+mol_normalization: batch
+mol_pool_type: none
+# interstage
+cc_interstage_type: add
+# frag model
+frag_hidden_size: 8
+frag_num_layers: 1
+frag_gnn_type: GAT
+
+mol_pyg_node_feats:
+  - a_onehot
+mol_pyg_edge_feats:
+  - b_degree
+frag_pyg: True
+frag_pyg_node_feats:
+  - base_formula
+  - depth
+  - h_formulae_idx
+  - h_counts
+frag_pyg_edge_feats:
+  - base_formula
+  - h_range
+
+automatic_optimization: False
+use_tensor_float32: True
+detect_anomaly: True
+custom_sampler: SpecMolFragDynamicBatchSampler
+specmolfrag_dynamic_batch_sampler_mode: frag_edge
+specmolfrag_dynamic_batch_sampler_max: 600000
+pl_enable_progress_bar: True
+debug_val_loop_trigger: False
