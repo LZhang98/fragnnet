@@ -543,6 +543,8 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 
 if __name__ == "__main__":
 
+	from frag_gnn.utils.misc_utils import to_gpu
+
 	config_d = dict(
 		spec_fp="data/proc/spec_df.pkl",
 		mol_fp="data/proc/mol_df.pkl",
@@ -602,6 +604,7 @@ if __name__ == "__main__":
 	item = ds[0]
 	print(">>> item shapes")
 	print_shapes(item)
+	item = to_gpu(item)
 
 	dl = th.utils.data.DataLoader(
 		ds,
@@ -614,3 +617,4 @@ if __name__ == "__main__":
 	batch = next(dl_iter)
 	print(">>> batch shapes")
 	print_shapes(batch)
+	batch = to_gpu(batch)

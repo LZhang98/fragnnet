@@ -258,7 +258,7 @@ def batchwise_lse(xs, batch_idxs):
 		lses[b] = th.logsumexp(xs[batch_idxs==b],0)
 	return lses
 
-def to_cpu(data_d,non_blocking=True,detach=True):
+def to_cpu(data_d, non_blocking=True, detach=False):
 
 	for k in data_d.keys():
 		if isinstance(data_d[k],th.Tensor):
@@ -266,6 +266,15 @@ def to_cpu(data_d,non_blocking=True,detach=True):
 			if detach:
 				data = data.detach()
 			data = data.to("cpu",non_blocking=non_blocking)
+			data_d[k] = data
+	return data_d
+
+def to_gpu(data_d, non_blocking=True):
+
+	for k in data_d.keys():
+		if isinstance(data_d[k], th.Tensor) or isinstance(data_d[k], dgl.DGLGraph):
+			data = data_d[k]
+			data = data.to("cuda:0",non_blocking=non_blocking)
 			data_d[k] = data
 	return data_d
 
