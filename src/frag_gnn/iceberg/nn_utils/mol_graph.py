@@ -6,7 +6,7 @@ and bonds. Inspired by the dgllife library.
 """
 from rdkit import Chem
 import numpy as np
-import torch
+import torch as th
 import dgl
 import frag_gnn.iceberg.nn_utils.nn_utils as nn_utils
 
@@ -142,9 +142,9 @@ class MolDGLGraph:
         """
         mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
 
-        bond_inds = torch.from_numpy(mol_graph["bond_tuples"]).long()
-        bond_feats = torch.from_numpy(mol_graph["bond_feats"]).float()
-        atom_feats = torch.from_numpy(mol_graph["atom_feats"]).float()
+        bond_inds = th.from_numpy(mol_graph["bond_tuples"]).long()
+        bond_feats = th.from_numpy(mol_graph["bond_feats"]).float()
+        atom_feats = th.from_numpy(mol_graph["atom_feats"]).float()
 
         g = dgl.graph(
             data=(bond_inds[:, 0], bond_inds[:, 1]), num_nodes=atom_feats.shape[0]
@@ -157,7 +157,7 @@ class MolDGLGraph:
                 g,
                 k=self.pe_embed_k,
             )
-            g.ndata["h"] = torch.cat((g.ndata["h"], pe_embeds), -1)
+            g.ndata["h"] = th.cat((g.ndata["h"], pe_embeds), -1)
 
         return g
 

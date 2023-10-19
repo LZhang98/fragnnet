@@ -1,5 +1,5 @@
 import numpy as np
-import torch
+import torch as th
 import pytorch_lightning as pl
 import torch.nn as nn
 import dgl
@@ -55,7 +55,7 @@ class IcebergGenModel(nn.Module):
 		self.dropout = dropout
 
 		self.max_broken = max_broken + 1
-		self.broken_onehot = torch.nn.Parameter(torch.eye(self.max_broken))
+		self.broken_onehot = th.nn.Parameter(th.eye(self.max_broken))
 		self.broken_onehot.requires_grad = False
 		self.broken_clamp = max_broken
 
@@ -69,7 +69,7 @@ class IcebergGenModel(nn.Module):
 		adduct_shift = 0
 		if self.embed_adduct:
 			adduct_types = len(common.ion2onehot_pos)
-			onehot = torch.eye(adduct_types)
+			onehot = th.eye(adduct_types)
 			self.adduct_embedder = nn.Parameter(onehot.float())
 			self.adduct_embedder.requires_grad = False
 			adduct_shift = adduct_types
@@ -171,7 +171,7 @@ class IcebergGenModel(nn.Module):
 						root_repr.batch_num_nodes(), 0
 					)
 					ndata = root_repr.ndata["h"]
-					ndata = torch.cat([ndata, embed_adducts_expand], -1)
+					ndata = th.cat([ndata, embed_adducts_expand], -1)
 					root_repr.ndata["h"] = ndata
 				root_embeddings = self.root_module(root_repr)
 				root_embeddings = self.pool(root_repr, root_embeddings)
@@ -183,7 +183,7 @@ class IcebergGenModel(nn.Module):
 		ext_root = root_embeddings[ind_maps]
 
 		# Extend the root further to cover each individual atom
-		ext_root_atoms = torch.repeat_interleave(
+		ext_root_atoms = th.repeat_interleave(
 			ext_root, graphs.batch_num_nodes(), dim=0
 		)
 		concat_list = [graphs.ndata["h"]]
@@ -193,13 +193,13 @@ class IcebergGenModel(nn.Module):
 
 		if self.embed_adduct:
 			adducts_mapped = embed_adducts[ind_maps]
-			adducts_exp = torch.repeat_interleave(
+			adducts_exp = th.repeat_interleave(
 				adducts_mapped, graphs.batch_num_nodes(), dim=0
 			)
 			concat_list.append(adducts_exp)
 
 		with graphs.local_scope():
-			graphs.ndata["h"] = torch.cat(concat_list, -1).float()
+			graphs.ndata["h"] = th.cat(concat_list, -1).float()
 
 			frag_embeddings = self.gnn(graphs)
 
@@ -207,15 +207,15 @@ class IcebergGenModel(nn.Module):
 			avg_frags = self.pool(graphs, frag_embeddings)
 
 		# Extend the avg of each fragment
-		ext_frag_atoms = torch.repeat_interleave(
+		ext_frag_atoms = th.repeat_interleave(
 			avg_frags, graphs.batch_num_nodes(), dim=0
 		)
 
 		exp_num = graphs.batch_num_nodes()
 		# Do the same with the avg fragments
 
-		broken = torch.clamp(broken, max=self.broken_clamp)
-		ext_frag_broken = torch.repeat_interleave(broken, exp_num, dim=0)
+		broken = th.clamp(broken, max=self.broken_clamp)
+		ext_frag_broken = th.repeat_interleave(broken, exp_num, dim=0)
 		broken_onehots = self.broken_onehot[ext_frag_broken.long()]
 
 		mlp_cat_vec = [
@@ -229,12 +229,12 @@ class IcebergGenModel(nn.Module):
 			diffs = root_exp - frag_forms
 			form_encodings = self.embedder(frag_forms)
 			diff_encodings = self.embedder(diffs)
-			form_atom_exp = torch.repeat_interleave(form_encodings, exp_num, dim=0)
-			diff_atom_exp = torch.repeat_interleave(diff_encodings, exp_num, dim=0)
+			form_atom_exp = th.repeat_interleave(form_encodings, exp_num, dim=0)
+			diff_atom_exp = th.repeat_interleave(diff_encodings, exp_num, dim=0)
 
 			mlp_cat_vec.extend([form_atom_exp, diff_atom_exp])
 
-		hidden = torch.cat(
+		hidden = th.cat(
 			mlp_cat_vec,
 			dim=1,
 		)
@@ -242,7 +242,7 @@ class IcebergGenModel(nn.Module):
 		output = self.output_map(hidden)
 		output = self.sigmoid(output)
 		padded_out = nn_utils.pad_packed_tensor(output, graphs.batch_num_nodes(), 0)
-		padded_out = torch.squeeze(padded_out, -1)
+		padded_out = th.squeeze(padded_out, -1)
 		return padded_out
 
 	def predict_mol(
@@ -275,9 +275,9 @@ class IcebergGenModel(nn.Module):
 		max_depth = engine.max_tree_depth
 		root_frag = engine.get_root_frag()
 		root_form = common.form_from_smi(root_smi)
-		root_form_vec = torch.FloatTensor(common.formula_to_dense(root_form))
+		root_form_vec = th.FloatTensor(common.formula_to_dense(root_form))
 		root_form_vec = root_form_vec.reshape(1, -1)
-		adducts = torch.LongTensor([common.ion2onehot_pos[adduct]])
+		adducts = th.LongTensor([common.ion2onehot_pos[adduct]])
 
 		# Step 2: Featurize the root molecule
 		root_graph_dict = self.tree_processor.featurize_frag(
@@ -290,7 +290,7 @@ class IcebergGenModel(nn.Module):
 		if self.root_encode == "gnn":
 			root_repr = root_graph_dict["graph"].to(device)
 		elif self.root_encode == "fp":
-			root_fp = torch.from_numpy(np.array(common.get_morgan_fp_smi(root_smi)))
+			root_fp = th.from_numpy(np.array(common.get_morgan_fp_smi(root_smi)))
 			root_repr = root_fp.float().to(device)[None, :]
 
 		form_to_min_score = {}
@@ -321,7 +321,7 @@ class IcebergGenModel(nn.Module):
 		frag_hash_to_entry[root_hash] = root_entry
 
 		# Step 3: Run the autoregressive gen loop
-		with torch.no_grad():
+		with th.no_grad():
 
 			# Note: we don't fragment at the final depth
 			while len(stack) > 0 and depth < max_depth:
@@ -346,14 +346,14 @@ class IcebergGenModel(nn.Module):
 				mol_batch_graph = [i["graph"] for i in new_dgl_dicts]
 				frag_forms = [i["form"] for i in new_dgl_dicts]
 				frag_form_vecs = [common.formula_to_dense(i) for i in frag_forms]
-				frag_form_vecs = torch.FloatTensor(np.array(frag_form_vecs))
+				frag_form_vecs = th.FloatTensor(np.array(frag_form_vecs))
 
 				new_frag_hashes = [engine.wl_hash(i) for i in stack]
 
 				frag_to_hash.update(dict(zip(stack, new_frag_hashes)))
 
 				frag_batch = dgl.batch(mol_batch_graph).to(device)
-				inds = torch.zeros(frag_batch.batch_size).long().to(device)
+				inds = th.zeros(frag_batch.batch_size).long().to(device)
 
 				# Note: Can speed by reducing redundant root graph passes
 				# TODO: Figure out how to include frag form vec and root form
@@ -364,13 +364,13 @@ class IcebergGenModel(nn.Module):
 				broken_nums_ar = np.array(
 					[frag_hash_to_entry[i]["max_broken"] for i in new_frag_hashes]
 				)
-				broken_nums_tensor = torch.FloatTensor(broken_nums_ar).to(device)
+				broken_nums_tensor = th.FloatTensor(broken_nums_ar).to(device)
 
 				pred_leaving = self.forward(
 					graphs=frag_batch,
 					root_repr=root_repr,
 					ind_maps=inds,
-					broken=broken_nums_tensor,  # torch.ones_like(inds) * depth,
+					broken=broken_nums_tensor,  # th.ones_like(inds) * depth,
 					adducts=adducts,
 					root_forms=root_form_vec,
 					frag_forms=frag_form_vecs,

@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from functools import reduce
 
-import torch
+import torch as th
 from rdkit import Chem
 from rdkit.Chem import Atom
 from rdkit.Chem.rdMolDescriptors import CalcMolFormula
@@ -47,10 +47,10 @@ VALID_ATOM_NUM = [Atom(i).GetAtomicNum() for i in VALID_ELEMENTS]
 CHEM_ELEMENT_NUM = len(VALID_ELEMENTS)
 
 
-ATOM_NUM_TO_ONEHOT = torch.zeros((max(VALID_ATOM_NUM) + 1, CHEM_ELEMENT_NUM))
+ATOM_NUM_TO_ONEHOT = th.zeros((max(VALID_ATOM_NUM) + 1, CHEM_ELEMENT_NUM))
 
 # Convert to onehot
-ATOM_NUM_TO_ONEHOT[VALID_ATOM_NUM, torch.arange(CHEM_ELEMENT_NUM)] = 1
+ATOM_NUM_TO_ONEHOT[VALID_ATOM_NUM, th.arange(CHEM_ELEMENT_NUM)] = 1
 
 # Use Monoisotopic
 # VALID_MASSES = np.array([Atom(i).GetMass() for i in VALID_ELEMENTS])

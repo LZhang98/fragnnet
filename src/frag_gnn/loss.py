@@ -58,7 +58,7 @@ def momu_log_prob(samples,means,variances,log_weights,tolerances=1e-3):
 
 def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
 	"""
-	this is just for torch.compile
+	this is just for th.compile
 	"""
 
 	mask_value = -1e9

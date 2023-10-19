@@ -6,7 +6,7 @@ Hold pairwise attention enabled transformers
 import math
 from typing import Optional, Union, Callable, Tuple
 
-import torch
+import torch as th
 from torch import Tensor
 from torch.nn import functional as F
 from torch.nn import Module, LayerNorm, Linear, Dropout, Parameter
@@ -40,12 +40,12 @@ class TransformerEncoderLayer(Module):
         pairwise_featurization: If ``True``
     Examples::
         >>> encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8)
-        >>> src = torch.rand(10, 32, 512)
+        >>> src = th.rand(10, 32, 512)
         >>> out = encoder_layer(src)
 
     Alternatively, when ``batch_first`` is ``True``:
         >>> encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8, batch_first=True)
-        >>> src = torch.rand(32, 10, 512)
+        >>> src = th.rand(32, 10, 512)
         >>> out = encoder_layer(src)
     """
     __constants__ = ["batch_first", "norm_first"]
@@ -215,19 +215,19 @@ class MultiheadAttention(Module):
                 self.head_dim * 3 if self.pairwise_featurization else self.head_dim * 2
             )
             self.attn_weight_1_weight = Parameter(
-                torch.empty(
+                th.empty(
                     (self.num_heads, head_1_input, self.head_dim), **factory_kwargs
                 ),
             )
             self.attn_weight_1_bias = Parameter(
-                torch.empty((self.num_heads, self.head_dim), **factory_kwargs),
+                th.empty((self.num_heads, self.head_dim), **factory_kwargs),
             )
 
             self.attn_weight_2_weight = Parameter(
-                torch.empty((self.num_heads, self.head_dim, 1), **factory_kwargs),
+                th.empty((self.num_heads, self.head_dim, 1), **factory_kwargs),
             )
             self.attn_weight_2_bias = Parameter(
-                torch.empty((self.num_heads, 1), **factory_kwargs),
+                th.empty((self.num_heads, 1), **factory_kwargs),
             )
             # self.attn_weight_1 = Linear(head_1_input, self.head_dim)
             # self.attn_weight_2 = Linear(self.head_dim, 1)
@@ -236,16 +236,16 @@ class MultiheadAttention(Module):
                 ## Bias term u
                 ##
                 self.bias_u = Parameter(
-                    torch.empty((self.num_heads, self.head_dim), **factory_kwargs),
+                    th.empty((self.num_heads, self.head_dim), **factory_kwargs),
                 )
                 self.bias_v = Parameter(
-                    torch.empty((self.num_heads, self.head_dim), **factory_kwargs),
+                    th.empty((self.num_heads, self.head_dim), **factory_kwargs),
                 )
 
         self.in_proj_weight = Parameter(
-            torch.empty((3 * embed_dim, embed_dim), **factory_kwargs)
+            th.empty((3 * embed_dim, embed_dim), **factory_kwargs)
         )
-        self.in_proj_bias = Parameter(torch.empty(3 * embed_dim, **factory_kwargs))
+        self.in_proj_bias = Parameter(th.empty(3 * embed_dim, **factory_kwargs))
         self.out_proj = NonDynamicallyQuantizableLinear(
             embed_dim, embed_dim, bias=True, **factory_kwargs
         )
@@ -400,7 +400,7 @@ class MultiheadAttention(Module):
         assert (
             embed_dim == embed_dim_to_check
         ), f"was expecting embedding dimension of {embed_dim_to_check}, but got {embed_dim}"
-        if isinstance(embed_dim, torch.Tensor):
+        if isinstance(embed_dim, th.Tensor):
             # embed_dim can be a tensor when JIT tracing
             head_dim = embed_dim.div(num_heads, rounding_mode="trunc")
         else:
@@ -452,7 +452,7 @@ class MultiheadAttention(Module):
                 .reshape(bsz * num_heads, 1, src_len)
             )
             attn_mask = key_padding_mask
-            assert attn_mask.dtype == torch.bool
+            assert attn_mask.dtype == th.bool
 
         # adjust dropout probability
         if not training:
@@ -537,7 +537,7 @@ class MultiheadAttention(Module):
         if pairwise_features is not None:
             cat_ar.append(pairwise_features)
 
-        output = torch.cat(cat_ar, -1)
+        output = th.cat(cat_ar, -1)
         E_long = E * len(cat_ar)
 
         output = output.view(-1, self.num_heads, Nt, Nt, E_long)
@@ -545,7 +545,7 @@ class MultiheadAttention(Module):
         # B x Nt x Nt x len(cat_ar)*E => B x Nt x Nt x E
         ## This was a fixed attn weight for each head, now separating
         # output = self.attn_weight_1(output)
-        output = torch.einsum("bnlwe,neh->bnlwh", output, self.attn_weight_1_weight)
+        output = th.einsum("bnlwe,neh->bnlwh", output, self.attn_weight_1_weight)
 
         output = output + self.attn_weight_1_bias[None, :, None, None, :]
 
@@ -553,15 +553,15 @@ class MultiheadAttention(Module):
 
         # B x Nt x Nt x len(cat_ar)*E => B x Nt x Nt
         # attn = self.attn_weight_2(output).squeeze()
-        attn = torch.einsum("bnlwh,nhi->bnlwi", output, self.attn_weight_2_weight)
+        attn = th.einsum("bnlwh,nhi->bnlwi", output, self.attn_weight_2_weight)
         attn = attn + self.attn_weight_2_bias[None, :, None, None, :]
         attn = attn.contiguous().view(-1, Nt, Nt)
         if attn_mask is not None:
-            new_attn_mask = torch.zeros_like(attn_mask, dtype=q.dtype)
+            new_attn_mask = th.zeros_like(attn_mask, dtype=q.dtype)
             new_attn_mask.masked_fill_(attn_mask, float("-inf"))
             attn += attn_mask
         attn = F.softmax(attn, dim=-1)
-        output = torch.bmm(attn, v)
+        output = th.bmm(attn, v)
         return output, attn
 
     def _scaled_dot_product_attention(
@@ -616,19 +616,19 @@ class MultiheadAttention(Module):
             q_2 = q_2.view(-1, Nt, E)
 
             # B x Nh x Nt x E => B x Nh x Nt x Nt
-            a_c = torch.einsum("ble,bwe->blw", q_1, k)
+            a_c = th.einsum("ble,bwe->blw", q_1, k)
 
             # pairwise: B*Nh x Nt x Nt x E
             # q_2: B*Nh x Nt x E
-            b_d = torch.einsum("ble,blwe->blw", q_2, pairwise_features)
+            b_d = th.einsum("ble,blwe->blw", q_2, pairwise_features)
 
             attn = a_c + b_d
         else:
             # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
-            attn = torch.bmm(q, k.transpose(-2, -1))
+            attn = th.bmm(q, k.transpose(-2, -1))
 
         if attn_mask is not None:
-            new_attn_mask = torch.zeros_like(attn_mask, dtype=q.dtype)
+            new_attn_mask = th.zeros_like(attn_mask, dtype=q.dtype)
             new_attn_mask.masked_fill_(attn_mask, float("-inf"))
             attn += attn_mask
 
@@ -636,5 +636,5 @@ class MultiheadAttention(Module):
         if dropout_p > 0.0:
             attn = F.dropout(attn, p=dropout_p)
         # (B, Nt, Ns) x (B, Ns, E) -> (B, Nt, E)
-        output = torch.bmm(attn, v)
+        output = th.bmm(attn, v)
         return output, attn

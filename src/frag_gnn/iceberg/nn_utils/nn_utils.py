@@ -5,7 +5,7 @@ import math
 import numpy as np
 import scipy.sparse as sparse
 
-import torch
+import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -39,7 +39,7 @@ def build_lr_scheduler(
 			rate = 1 - math.exp(-step / warmup)
 		return rate
 
-	scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+	scheduler = th.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 	return scheduler
 
 
@@ -436,7 +436,7 @@ class MultiHeadAttention(nn.Module):
 		values = dgl_F.pad_packed_tensor(values, lengths_mem, 0)
 
 		# attention score with shape (B, num_heads, max_len_x, max_len_mem)
-		e = torch.einsum("bxhd,byhd->bhxy", queries, keys)
+		e = th.einsum("bxhd,byhd->bhxy", queries, keys)
 		# normalize
 		e = e / np.sqrt(self.d_head)
 
@@ -445,13 +445,13 @@ class MultiHeadAttention(nn.Module):
 		e = e.masked_fill(mask == 0, -float("inf"))
 
 		# apply softmax
-		alpha = torch.softmax(e, dim=-1)
+		alpha = th.softmax(e, dim=-1)
 		# the following line addresses the NaN issue, see
 		# https://github.com/dmlc/dgl/issues/2657
 		alpha = alpha.masked_fill(mask == 0, 0.0)
 
 		# sum of value weighted by alpha
-		out = torch.einsum("bhxy,byhd->bxhd", alpha, values)
+		out = th.einsum("bhxy,byhd->bxhd", alpha, values)
 		# project to output
 		out = self.proj_o(
 			out.contiguous().view(batch_size, max_len_x, self.num_heads * self.d_head)
@@ -466,9 +466,9 @@ class MultiHeadAttention(nn.Module):
 
 		Parameters
 		----------
-		x : torch.Tensor
+		x : th.Tensor
 			The input tensor used to compute queries.
-		mem : torch.Tensor
+		mem : th.Tensor
 			The memory tensor used to compute keys and values.
 		lengths_x : list
 			The array of node numbers, used to segment x.
@@ -527,7 +527,7 @@ class SetAttentionBlock(nn.Module):
 
 		Parameters
 		----------
-		feat : torch.Tensor
+		feat : th.Tensor
 			The input feature.
 		lengths : list
 			The array of node numbers, used to segment feat tensor.
@@ -573,14 +573,14 @@ class SetTransformerEncoder(nn.Module):
 	>>> from dgl.nn import SetTransformerEncoder
 	>>>
 	>>> g1 = dgl.rand_graph(3, 4)  # g1 is a random graph with 3 nodes and 4 edges
-	>>> g1_node_feats = torch.rand(3, 5)  # feature size is 5
+	>>> g1_node_feats = th.rand(3, 5)  # feature size is 5
 	>>> g1_node_feats
 	tensor([[0.8948, 0.0699, 0.9137, 0.7567, 0.3637],
 			[0.8137, 0.8938, 0.8377, 0.4249, 0.6118],
 			[0.5197, 0.9030, 0.6825, 0.5725, 0.4755]])
 	>>>
 	>>> g2 = dgl.rand_graph(4, 6)  # g2 is a random graph with 4 nodes and 6 edges
-	>>> g2_node_feats = torch.rand(4, 5)  # feature size is 5
+	>>> g2_node_feats = th.rand(4, 5)  # feature size is 5
 	>>> g2_node_feats
 	tensor([[0.2053, 0.2426, 0.4111, 0.9028, 0.5658],
 			[0.5278, 0.6365, 0.9990, 0.2351, 0.8945],
@@ -602,7 +602,7 @@ class SetTransformerEncoder(nn.Module):
 	Build a batch of DGL graphs and concatenate all graphs' node features into one tensor.
 
 	>>> batch_g = dgl.batch([g1, g2])
-	>>> batch_f = torch.cat([g1_node_feats, g2_node_feats])
+	>>> batch_f = th.cat([g1_node_feats, g2_node_feats])
 	>>>
 	>>> set_trans_enc(batch_g, batch_f)
 	tensor([[ 0.1262, -1.9081,  0.7287,  0.1678,  0.8854],
@@ -677,13 +677,13 @@ class SetTransformerEncoder(nn.Module):
 		----------
 		graph : DGLGraph
 			The input graph.
-		feat : torch.Tensor
+		feat : th.Tensor
 			The input feature with shape :math:`(N, D)`, where :math:`N` is the
 			number of nodes in the graph.
 
 		Returns
 		-------
-		torch.Tensor
+		th.Tensor
 			The output feature with shape :math:`(N, D)`.
 		"""
 		lengths = graph.batch_num_nodes()
@@ -713,11 +713,11 @@ def _gen_mask(lengths_x, lengths_y, max_len_x, max_len_y):
 	"""
 	device = lengths_x.device
 	# x_mask: (batch_size, max_len_x)
-	x_mask = torch.arange(max_len_x, device=device).unsqueeze(0) < lengths_x.unsqueeze(
+	x_mask = th.arange(max_len_x, device=device).unsqueeze(0) < lengths_x.unsqueeze(
 		1
 	)
 	# y_mask: (batch_size, max_len_y)
-	y_mask = torch.arange(max_len_y, device=device).unsqueeze(0) < lengths_y.unsqueeze(
+	y_mask = th.arange(max_len_y, device=device).unsqueeze(0) < lengths_y.unsqueeze(
 		1
 	)
 	# mask: (batch_size, 1, max_len_x, max_len_y)
@@ -729,7 +729,7 @@ def pad_packed_tensor(input, lengths, value):
 	"""pad_packed_tensor"""
 	old_shape = input.shape
 	device = input.device
-	if not isinstance(lengths, torch.Tensor):
+	if not isinstance(lengths, th.Tensor):
 		lengths = lengths.clone().detach().long().to(device)
 	else:
 		lengths = lengths.to(device)
@@ -740,17 +740,17 @@ def pad_packed_tensor(input, lengths, value):
 	x.fill_(value)
 
 	# Initialize a tensor with an index for every value in the array
-	index = torch.ones(len(input), dtype=torch.int64, device=device)
+	index = th.ones(len(input), dtype=th.int64, device=device)
 
 	# Row shifts
-	row_shifts = torch.cumsum(max_len - lengths, 0)
+	row_shifts = th.cumsum(max_len - lengths, 0)
 
 	# Calculate shifts for second row, third row... nth row (not the n+1th row)
 	# Expand this out to match the shape of all entries after the first row
 	row_shifts_expanded = row_shifts[:-1].repeat_interleave(lengths[1:])
 
 	# Add this to the list of inds _after_ the first row
-	cumsum_inds = torch.cumsum(index, 0) - 1
+	cumsum_inds = th.cumsum(index, 0) - 1
 	cumsum_inds[lengths[0] :] += row_shifts_expanded
 	x[cumsum_inds] = input
 	return x.view(batch_size, max_len, *old_shape[1:])
@@ -806,14 +806,14 @@ def random_walk_pe(g, k, eweight_name=None):
 		RW_power = RW_power @ RW
 		PE.append(RW_power.diagonal())
 	PE = np.stack(PE, axis=-1)
-	PE = torch.as_tensor(PE,dtype=torch.float32)
+	PE = th.as_tensor(PE,dtype=th.float32)
 	return PE
 
 
 def dict_to_device(data_dict, device):
 	sent_dict = {}
 	for key, value in data_dict.items():
-		if torch.is_tensor(value):
+		if th.is_tensor(value):
 			sent_dict[key] = value.to(device)
 		else:
 			sent_dict[key] = value

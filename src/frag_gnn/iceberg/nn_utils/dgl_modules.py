@@ -5,7 +5,7 @@ Directly copy dgl modules to patch them
 """
 import numpy as np
 
-import torch
+import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
@@ -47,9 +47,9 @@ class GatedGraphConv(nn.Module):
     >>> from dgl.nn import GatedGraphConv
     >>>
     >>> g = dgl.graph(([0,1,2,3,2,5], [1,2,3,4,0,3]))
-    >>> feat = torch.ones(6, 10)
+    >>> feat = th.ones(6, 10)
     >>> conv = GatedGraphConv(10, 10, 2, 3)
-    >>> etype = torch.tensor([0,1,2,0,1,2])
+    >>> etype = th.tensor([0,1,2,0,1,2])
     >>> res = conv(g, feat, etype)
     >>> res
     tensor([[ 0.4652,  0.4458,  0.5169,  0.4126,  0.4847,  0.2303,  0.2757,  0.7721,
@@ -121,18 +121,18 @@ class GatedGraphConv(nn.Module):
         ----------
         graph : DGLGraph
             The graph.
-        feat : torch.Tensor
+        feat : th.Tensor
             The input feature of shape :math:`(N, D_{in})` where :math:`N`
             is the number of nodes of the graph and :math:`D_{in}` is the
             input feature size.
-        etypes : torch.LongTensor, or None
+        etypes : th.LongTensor, or None
             The edge type tensor of shape :math:`(E,)` where :math:`E` is
             the number of edges of the graph. When there's only one edge type,
             this argument can be skipped
 
         Returns
         -------
-        torch.Tensor
+        th.Tensor
             The output feature of shape :math:`(N, D_{out})` where :math:`D_{out}`
             is the output feature size.
         """
@@ -147,7 +147,7 @@ class GatedGraphConv(nn.Module):
                 ), "edge type indices out of range [0, {})".format(self._n_etypes)
 
             zero_pad = feat.new_zeros((feat.shape[0], self._out_feats - feat.shape[1]))
-            feat = torch.cat([feat, zero_pad], -1)
+            feat = th.cat([feat, zero_pad], -1)
 
             for _ in range(self._n_steps):
                 if self._n_etypes == 1 and etypes is None:
@@ -159,7 +159,7 @@ class GatedGraphConv(nn.Module):
                     graph.ndata["h"] = feat
                     for i in range(self._n_etypes):
                         eids = (
-                            torch.nonzero(etypes == i, as_tuple=False)
+                            th.nonzero(etypes == i, as_tuple=False)
                             .contiguous()
                             .view(-1)
                             .type(graph.idtype)
@@ -179,42 +179,42 @@ class GatedGraphConv(nn.Module):
 
 def aggregate_mean(h):
     """mean aggregation"""
-    return torch.mean(h, dim=1)
+    return th.mean(h, dim=1)
 
 
 def aggregate_max(h):
     """max aggregation"""
-    return torch.max(h, dim=1)[0]
+    return th.max(h, dim=1)[0]
 
 
 def aggregate_min(h):
     """min aggregation"""
-    return torch.min(h, dim=1)[0]
+    return th.min(h, dim=1)[0]
 
 
 def aggregate_sum(h):
     """sum aggregation"""
-    return torch.sum(h, dim=1)
+    return th.sum(h, dim=1)
 
 
 def aggregate_std(h):
     """standard deviation aggregation"""
-    return torch.sqrt(aggregate_var(h) + 1e-30)
+    return th.sqrt(aggregate_var(h) + 1e-30)
 
 
 def aggregate_var(h):
     """variance aggregation"""
-    h_mean_squares = torch.mean(h * h, dim=1)
-    h_mean = torch.mean(h, dim=1)
-    var = torch.relu(h_mean_squares - h_mean * h_mean)
+    h_mean_squares = th.mean(h * h, dim=1)
+    h_mean = th.mean(h, dim=1)
+    var = th.relu(h_mean_squares - h_mean * h_mean)
     return var
 
 
 def _aggregate_moment(h, n):
     """moment aggregation: for each node (E[(X-E[X])^n])^{1/n}"""
-    h_mean = torch.mean(h, dim=1, keepdim=True)
-    h_n = torch.mean(torch.pow(h - h_mean, n), dim=1)
-    rooted_h_n = torch.sign(h_n) * torch.pow(torch.abs(h_n) + 1e-30, 1.0 / n)
+    h_mean = th.mean(h, dim=1, keepdim=True)
+    h_n = th.mean(th.pow(h - h_mean, n), dim=1)
+    rooted_h_n = th.sign(h_n) * th.pow(th.abs(h_n) + 1e-30, 1.0 / n)
     return rooted_h_n
 
 
@@ -297,8 +297,8 @@ class PNAConvTower(nn.Module):
         tensordot of multiple aggregation and scaling operations"""
         msg = nodes.mailbox["msg"]
         degree = msg.size(1)
-        h = torch.cat([AGGREGATORS[agg](msg) for agg in self.aggregators], dim=1)
-        h = torch.cat(
+        h = th.cat([AGGREGATORS[agg](msg) for agg in self.aggregators], dim=1)
+        h = th.cat(
             [
                 SCALERS[scaler](h, D=degree, delta=self.delta)
                 if scaler != "identity"
@@ -312,16 +312,16 @@ class PNAConvTower(nn.Module):
     def message(self, edges):
         """message function for PNA layer"""
         if self.edge_feat_size > 0:
-            f = torch.cat([edges.src["h"], edges.dst["h"], edges.data["a"]], dim=-1)
+            f = th.cat([edges.src["h"], edges.dst["h"], edges.data["a"]], dim=-1)
         else:
-            f = torch.cat([edges.src["h"], edges.dst["h"]], dim=-1)
+            f = th.cat([edges.src["h"], edges.dst["h"]], dim=-1)
         return {"msg": self.M(f)}
 
     def forward(self, graph, node_feat, edge_feat=None):
         """compute the forward pass of a single tower in PNA convolution layer"""
         # calculate graph normalization factors
-        snorm_n = torch.cat(
-            [torch.ones(N, 1).to(node_feat) / N for N in graph.batch_num_nodes()], dim=0
+        snorm_n = th.cat(
+            [th.ones(N, 1).to(node_feat) / N for N in graph.batch_num_nodes()], dim=0
         ).sqrt()
         with graph.local_scope():
             graph.ndata["h"] = node_feat
@@ -330,7 +330,7 @@ class PNAConvTower(nn.Module):
                 graph.edata["a"] = edge_feat
 
             graph.update_all(self.message, self.reduce_func)
-            h = self.U(torch.cat([node_feat, graph.ndata["h_neigh"]], dim=-1))
+            h = self.U(th.cat([node_feat, graph.ndata["h_neigh"]], dim=-1))
             h = h * snorm_n
             return self.dropout(self.batchnorm(h))
 
@@ -411,7 +411,7 @@ class PNAConv(nn.Module):
     >>> from dgl.nn import PNAConv
     >>>
     >>> g = dgl.graph(([0,1,2,3,2,5], [1,2,3,4,0,3]))
-    >>> feat = torch.ones(6, 10)
+    >>> feat = th.ones(6, 10)
     >>> conv = PNAConv(10, 10, ['mean', 'max', 'sum'], ['identity', 'amplification'], 2.5)
     >>> ret = conv(g, feat)
     """
@@ -468,20 +468,20 @@ class PNAConv(nn.Module):
         ----------
         graph : DGLGraph
             The graph.
-        node_feat : torch.Tensor
+        node_feat : th.Tensor
             The input feature of shape :math:`(N, h_n)`. :math:`N` is the number of
             nodes, and :math:`h_n` must be the same as in_size.
-        edge_feat : torch.Tensor, optional
+        edge_feat : th.Tensor, optional
             The edge feature of shape :math:`(M, h_e)`. :math:`M` is the number of
             edges, and :math:`h_e` must be the same as edge_feat_size.
 
         Returns
         -------
-        torch.Tensor
+        th.Tensor
             The output node feature of shape :math:`(N, h_n')` where :math:`h_n'`
             should be the same as out_size.
         """
-        h_cat = torch.cat(
+        h_cat = th.cat(
             [
                 tower(
                     graph,
@@ -527,18 +527,18 @@ class GINEConv(nn.Module):
 
     >>> import dgl
     >>> import torch
-    >>> import torch.nn as nn
+    >>> import th.nn as nn
     >>> from dgl.nn import GINEConv
 
     >>> g = dgl.graph(([0, 1, 2], [1, 1, 3]))
     >>> in_feats = 10
     >>> out_feats = 20
-    >>> nfeat = torch.randn(g.num_nodes(), in_feats)
-    >>> efeat = torch.randn(g.num_edges(), in_feats)
+    >>> nfeat = th.randn(g.num_nodes(), in_feats)
+    >>> efeat = th.randn(g.num_edges(), in_feats)
     >>> conv = GINEConv(nn.Linear(in_feats, out_feats))
     >>> res = conv(g, nfeat, efeat)
     >>> print(res.shape)
-    torch.Size([4, 20])
+    th.Size([4, 20])
     """
 
     def __init__(self, apply_func=None, init_eps=0, learn_eps=False):
@@ -546,9 +546,9 @@ class GINEConv(nn.Module):
         self.apply_func = apply_func
         # to specify whether eps is trainable or not.
         if learn_eps:
-            self.eps = nn.Parameter(torch.FloatTensor([init_eps]))
+            self.eps = nn.Parameter(th.FloatTensor([init_eps]))
         else:
-            self.register_buffer("eps", torch.FloatTensor([init_eps]))
+            self.register_buffer("eps", th.FloatTensor([init_eps]))
 
     def message(self, edges):
         r"""User-defined Message Function"""
@@ -561,20 +561,20 @@ class GINEConv(nn.Module):
         ----------
         graph : DGLGraph
             The graph.
-        node_feat : torch.Tensor or pair of torch.Tensor
-            If a torch.Tensor is given, it is the input feature of shape :math:`(N, D_{in})` where
+        node_feat : th.Tensor or pair of th.Tensor
+            If a th.Tensor is given, it is the input feature of shape :math:`(N, D_{in})` where
             :math:`D_{in}` is size of input feature, :math:`N` is the number of nodes.
-            If a pair of torch.Tensor is given, the pair must contain two tensors of shape
+            If a pair of th.Tensor is given, the pair must contain two tensors of shape
             :math:`(N_{in}, D_{in})` and :math:`(N_{out}, D_{in})`.
             If ``apply_func`` is not None, :math:`D_{in}` should
             fit the input feature size requirement of ``apply_func``.
-        edge_feat : torch.Tensor
+        edge_feat : th.Tensor
             Edge feature. It is a tensor of shape :math:`(E, D_{in})` where :math:`E`
             is the number of edges.
 
         Returns
         -------
-        torch.Tensor
+        th.Tensor
             The output feature of shape :math:`(N, D_{out})` where
             :math:`D_{out}` is the output feature size of ``apply_func``.
             If ``apply_func`` is None, :math:`D_{out}` should be the same
