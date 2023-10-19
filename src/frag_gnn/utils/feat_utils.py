@@ -567,9 +567,6 @@ def random_walk_pe(g, k):
 	tensor([[0.0000, 0.5000],
 			[0.5000, 0.7500]])
 	"""
-
-	N = g.num_nodes  # number of nodes
-	M = g.num_edges  # number of edges
 	# sparse adjacency matrix
 	A = scipy.sparse.csr_matrix(
 		(

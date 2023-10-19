@@ -60,6 +60,55 @@ class BaseDataset(Dataset):
 				spec_data = self._process_spec(spec_entry)
 				self.spec_datas[idx] = spec_data
 
+	def _process_spec(self,spec_entry):
+
+		spec_data = {}
+		# peak data
+		peaks = spec_entry["peaks"]
+		mzs, ints = [], []
+		for peak in peaks:
+			p_mz, p_int = peak
+			mzs.append(p_mz)
+			ints.append(p_int)
+		mzs = th.tensor(mzs,dtype=th.float)
+		ints = th.tensor(ints,dtype=th.float)
+		# mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
+		assert mzs.shape[0] > 0
+		assert ints.shape[0] > 0
+		if self.spec_params["sparse"]:
+			# get sparse spectrum
+			spec_data["spec_mzs"] = mzs
+			spec_data["spec_ints"] = ints
+		# metadata
+		if self.spec_params["prec_type"]:
+			prec_type = spec_entry["prec_type"]
+			prec_type = th.tensor([prec_type_idx(prec_type)],dtype=th.long)
+			spec_data["spec_prec_type"] = prec_type
+		if self.spec_params["prec_mass_diff"]:
+			prec_type = spec_entry["prec_type"]
+			mass_diff = th.tensor([prec_type_mass_diff(prec_type)],dtype=th.float)
+			spec_data["spec_prec_mass_diff"] = mass_diff
+		if self.spec_params["nce"]:
+			assert not self.spec_params["merge"]
+			nce = spec_entry["nce"]
+			nce = th.tensor([transform_nce(nce)],dtype=th.float)
+			spec_data["spec_nce"] = nce
+		if self.spec_params["ace"]:
+			raise NotImplementedError()
+		if self.spec_params["prec_mz"]:
+			prec_mz = spec_entry["prec_mz"]
+			prec_mz = th.tensor([float(prec_mz)],dtype=th.float)
+			spec_data["spec_prec_mz"] = prec_mz
+		if self.spec_params["unique_id"]:
+			if self.spec_params["merge"]:
+				id_key = "group_id"
+			else:
+				id_key = "spec_id"
+			unique_id = spec_entry[id_key]
+			unique_id = th.tensor([unique_id],dtype=th.long)
+			spec_data["spec_unique_id"] = unique_id
+		return spec_data
+
 	def __getitem__(self, idx):
 
 		raise NotImplementedError()
@@ -155,55 +204,6 @@ class SpecMolDataset(BaseDataset):
 			mol_data = self._process_mol(mol_entry)
 		data = {**spec_data,**mol_data}
 		return data
-
-	def _process_spec(self,spec_entry):
-
-		spec_data = {}
-		# peak data
-		peaks = spec_entry["peaks"]
-		mzs, ints = [], []
-		for peak in peaks:
-			p_mz, p_int = peak
-			mzs.append(p_mz)
-			ints.append(p_int)
-		mzs = th.tensor(mzs,dtype=th.float)
-		ints = th.tensor(ints,dtype=th.float)
-		# mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
-		assert mzs.shape[0] > 0
-		assert ints.shape[0] > 0
-		if self.spec_params["sparse"]:
-			# get sparse spectrum
-			spec_data["spec_mzs"] = mzs
-			spec_data["spec_ints"] = ints
-		# metadata
-		if self.spec_params["prec_type"]:
-			prec_type = spec_entry["prec_type"]
-			prec_type = th.tensor([prec_type_idx(prec_type)],dtype=th.long)
-			spec_data["spec_prec_type"] = prec_type
-		if self.spec_params["prec_mass_diff"]:
-			prec_type = spec_entry["prec_type"]
-			mass_diff = th.tensor([prec_type_mass_diff(prec_type)],dtype=th.float)
-			spec_data["spec_prec_mass_diff"] = mass_diff
-		if self.spec_params["nce"]:
-			assert not self.spec_params["merge"]
-			nce = spec_entry["nce"]
-			nce = th.tensor([transform_nce(nce)],dtype=th.float)
-			spec_data["spec_nce"] = nce
-		if self.spec_params["ace"]:
-			raise NotImplementedError()
-		if self.spec_params["prec_mz"]:
-			prec_mz = spec_entry["prec_mz"]
-			prec_mz = th.tensor([float(prec_mz)],dtype=th.float)
-			spec_data["spec_prec_mz"] = prec_mz
-		if self.spec_params["unique_id"]:
-			if self.spec_params["merge"]:
-				id_key = "group_id"
-			else:
-				id_key = "spec_id"
-			unique_id = spec_entry[id_key]
-			unique_id = th.tensor([unique_id],dtype=th.long)
-			spec_data["spec_unique_id"] = unique_id
-		return spec_data
 
 	def _process_mol(self,mol_entry):
 

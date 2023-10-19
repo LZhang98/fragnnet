@@ -20,6 +20,7 @@ import frag_gnn.iceberg.nn_utils as nn_utils
 import frag_gnn.iceberg.fragmentation as fragmentation
 from frag_gnn.dataset import BaseDataset
 from frag_gnn.utils.misc_utils import flatten_lol, print_shapes
+from frag_gnn.utils.spec_utils import batch_func
 
 
 class TreeProcessor:
@@ -419,12 +420,18 @@ class SpecMagmaDataset(BaseDataset):
 		"""__getitem__."""
 
 		spec_entry = self.spec_df.iloc[idx]
+		spec_data = self._process_spec(spec_entry)
 		name = str(spec_entry["group_id"])
 		adduct = common.ion2onehot_pos[spec_entry["prec_type"]]
-		dgl_entry = self.read_fn(name)["dgl_tree"]
-		dgl_entry = {"name": name, "adduct": adduct, **dgl_entry}
-		dgl_entry = self._process_dgl_entry(dgl_entry)
-		return dgl_entry
+		magma_entry = self.read_fn(name)["dgl_tree"]
+		magma_entry = {
+			"name": name, 
+			"adduct": adduct,
+			**magma_entry
+		}
+		magma_data = self._process_magma(magma_entry)
+		data = {**spec_data, **magma_data}
+		return data
 
 	def get_node_feats(self) -> int:
 		"""get_node_feats."""
@@ -445,8 +452,6 @@ class SpecMagmaGenDataset(SpecMagmaDataset):
 		**kwargs,
 	):
 		"""__init__.
-
-		Args:
 		"""
 		super().__init__(
 			spec_fp=spec_fp,
@@ -470,109 +475,82 @@ class SpecMagmaGenDataset(SpecMagmaDataset):
 		tree = self.tree_processor.process_tree_gen(tree_json)
 		return tree
 
-	def _process_dgl_entry(self, dgl_entry):
+	def _process_magma(self, magma_entry):
 
-		if self.magma_params["old"]:
-			return dgl_entry
+		magma_data = {}
+		magma_data["magma_names"] = [magma_entry["name"]]
+		if isinstance(magma_entry["root_repr"], dgl.DGLGraph):
+			magma_data["magma_root_reprs"] = magma_entry["root_repr"]
 		else:
-			new_dgl_entry = {}
-			new_dgl_entry["names"] = [dgl_entry["name"]]
-			if isinstance(dgl_entry["root_repr"], dgl.DGLGraph):
-				new_dgl_entry["root_reprs"] = dgl_entry["root_repr"]
-			else:
-				assert isinstance(dgl_entry["root_repr"], np.ndarray)
-				new_dgl_entry["root_reprs"] = torch.tensor(dgl_entry["root_repr"], dtype=torch.float).unsqueeze(0)
-			new_dgl_entry["frag_graphs"] = dgl_entry["dgl_frags"]
-			new_dgl_entry["targ_atoms"] = torch.nn.utils.rnn.pad_sequence([i for i in dgl_entry["targs"]], batch_first=True) ##
-			new_dgl_entry["frag_atoms"] = torch.tensor([i.num_nodes() for i in dgl_entry["dgl_frags"]], dtype=torch.long) ##
-			new_dgl_entry["inds"] = torch.zeros([len(dgl_entry["dgl_frags"])], dtype=torch.long) ##
-			new_dgl_entry["broken_bonds"] = torch.tensor(dgl_entry["max_broken"], dtype=torch.long)
-			new_dgl_entry["adducts"] = torch.tensor([dgl_entry["adduct"]], dtype=torch.float)
-			new_dgl_entry["frag_form_vecs"] = torch.tensor(np.array([i for i in dgl_entry["form_vecs"]]), dtype=torch.long) ##
-			new_dgl_entry["root_form_vecs"] = torch.tensor(np.array([dgl_entry["root_form_vec"]]), dtype=torch.long)
-			return new_dgl_entry
+			assert isinstance(magma_entry["root_repr"], np.ndarray)
+			magma_data["magma_root_reprs"] = torch.tensor(magma_entry["root_repr"], dtype=torch.float).unsqueeze(0)
+		magma_data["magma_frag_graphs"] = magma_entry["dgl_frags"]
+		magma_data["magma_targ_atoms"] = torch.nn.utils.rnn.pad_sequence([i for i in magma_entry["targs"]], batch_first=True) ##
+		magma_data["magma_frag_atoms"] = torch.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=torch.long) ##
+		magma_data["magma_inds"] = torch.zeros([len(magma_entry["dgl_frags"])], dtype=torch.long) ##
+		magma_data["magma_broken_bonds"] = torch.tensor(magma_entry["max_broken"], dtype=torch.long)
+		magma_data["magma_adducts"] = torch.tensor([magma_entry["adduct"]], dtype=torch.float)
+		magma_data["magma_frag_form_vecs"] = torch.tensor(np.array([i for i in magma_entry["form_vecs"]]), dtype=torch.long) ##
+		magma_data["magma_root_form_vecs"] = torch.tensor(np.array([magma_entry["root_form_vec"]]), dtype=torch.long)
+		return magma_data
 
 	@classmethod
-	def get_collate_fn(cls,old):
-		if old:
-			return SpecMagmaGenDataset.collate_fn_old
-		else:
-			return SpecMagmaGenDataset.collate_fn
+	def get_collate_fn(cls):
+		return SpecMagmaGenDataset.collate_fn
 
 	@staticmethod
 	def collate_fn(data_list):
 
 		batch_size, keys, collate_data = SpecMagmaGenDataset._setup_collate(data_list)
 		###
-		frag_graphs = collate_data["frag_graphs"]
-		num_frags = torch.tensor([len(i) for i in collate_data["inds"]],dtype=torch.long)
+		frag_graphs = collate_data["magma_frag_graphs"]
+		num_frags = torch.tensor([len(i) for i in collate_data["magma_inds"]],dtype=torch.long)
 		targ_atoms = []
-		for i in collate_data["targ_atoms"]:
+		for i in collate_data["magma_targ_atoms"]:
 			targ_atoms.extend([j.squeeze(0) for j in torch.split(i,1,dim=0)])
 		###
-		collate_data["names"] = flatten_lol(collate_data["names"])
-		if isinstance(collate_data["root_reprs"][0], dgl.DGLGraph):
-			collate_data["root_reprs"] = dgl.batch(collate_data["root_reprs"])
+		collate_data["magma_names"] = flatten_lol(collate_data["magma_names"])
+		keys.remove("magma_names")
+		if isinstance(collate_data["magma_root_reprs"][0], dgl.DGLGraph):
+			collate_data["magma_root_reprs"] = dgl.batch(collate_data["magma_root_reprs"])
 		else:
-			assert isinstance(collate_data["root_reprs"][0], torch.Tensor)
-			collate_data["root_reprs"] = torch.cat(collate_data["root_reprs"],dim=0)
-		collate_data["frag_graphs"] = dgl.batch(flatten_lol(frag_graphs))
-		collate_data["targ_atoms"] = torch.nn.utils.rnn.pad_sequence(targ_atoms, batch_first=True)
-		collate_data["frag_atoms"] = torch.cat(collate_data["frag_atoms"], dim=0)
-		collate_data["inds"] = torch.arange(len(frag_graphs),dtype=torch.long).repeat_interleave(num_frags)
-		collate_data["broken_bonds"] = torch.cat(collate_data["broken_bonds"], dim=0)
-		collate_data["adducts"] = torch.cat(collate_data["adducts"], dim=0)
-		collate_data["frag_form_vecs"] = torch.cat(collate_data["frag_form_vecs"], dim=0)
-		collate_data["root_form_vecs"] = torch.cat(collate_data["root_form_vecs"], dim=0)
+			assert isinstance(collate_data["magma_root_reprs"][0], torch.Tensor)
+			collate_data["magma_root_reprs"] = torch.cat(collate_data["magma_root_reprs"],dim=0)
+		keys.remove("magma_root_reprs")
+		collate_data["magma_frag_graphs"] = dgl.batch(flatten_lol(frag_graphs))
+		keys.remove("magma_frag_graphs")
+		collate_data["magma_targ_atoms"] = torch.nn.utils.rnn.pad_sequence(targ_atoms, batch_first=True)
+		keys.remove("magma_targ_atoms")
+		collate_data["magma_frag_atoms"] = torch.cat(collate_data["magma_frag_atoms"], dim=0)
+		keys.remove("magma_frag_atoms")
+		collate_data["magma_inds"] = torch.arange(len(frag_graphs),dtype=torch.long).repeat_interleave(num_frags)
+		keys.remove("magma_inds")
+		collate_data["magma_broken_bonds"] = torch.cat(collate_data["magma_broken_bonds"], dim=0)
+		keys.remove("magma_broken_bonds")
+		collate_data["magma_adducts"] = torch.cat(collate_data["magma_adducts"], dim=0)
+		keys.remove("magma_adducts")
+		collate_data["magma_frag_form_vecs"] = torch.cat(collate_data["magma_frag_form_vecs"], dim=0)
+		keys.remove("magma_frag_form_vecs")
+		collate_data["magma_root_form_vecs"] = torch.cat(collate_data["magma_root_form_vecs"], dim=0)
+		keys.remove("magma_root_form_vecs")
 		###
+		if "spec_ints" in keys and "spec_mzs" in keys:
+			# create batch_idxs
+			mzs, ints, batch_idxs = batch_func(
+				collate_data["spec_mzs"],
+				collate_data["spec_ints"]
+			)
+			collate_data["spec_mzs"] = mzs
+			collate_data["spec_ints"] = ints
+			collate_data["spec_batch_idxs"] = batch_idxs
+			# remove from list
+			keys.remove("spec_ints")
+			keys.remove("spec_mzs")
+		print(keys)
+		SpecMagmaGenDataset._standard_collate(keys,collate_data)
 		# add batch_size
 		collate_data["batch_size"] = torch.tensor(batch_size)
 		return collate_data
-
-	@staticmethod
-	def collate_fn_old(data_list):
-
-		names = [j["name"] for j in data_list]
-		frag_graphs = [j["dgl_frags"] for j in data_list]
-		frag_graphs_e = [j for i in frag_graphs for j in i]
-		num_frags = torch.LongTensor([len(i) for i in frag_graphs])
-		frag_atoms = torch.LongTensor([j.num_nodes() for i in frag_graphs for j in i])
-		targs = [j for i in data_list for j in i["targs"]]
-		targs_padded = torch.nn.utils.rnn.pad_sequence(targs, batch_first=True)
-		batched_reprs = _collate_root(data_list)
-		frag_batch = dgl.batch(frag_graphs_e)
-		root_inds = torch.arange(len(frag_graphs)).repeat_interleave(num_frags)
-		max_broken = [torch.LongTensor(i["max_broken"]) for i in data_list]
-		max_broken = torch.cat(max_broken)
-		adducts = [j["adduct"] for j in data_list]
-		adducts = torch.FloatTensor(adducts)
-		# Collate forms
-		form_vecs = torch.LongTensor([j for i in data_list for j in i["form_vecs"]])
-		root_vecs = torch.LongTensor([i["root_form_vec"] for i in data_list])
-		output = {
-			"names": names,
-			"root_reprs": batched_reprs,
-			"frag_graphs": frag_batch,
-			"targ_atoms": targs_padded,
-			"frag_atoms": frag_atoms,
-			"inds": root_inds,
-			"broken_bonds": max_broken,
-			"adducts": adducts,
-			"root_form_vecs": root_vecs,
-			"frag_form_vecs": form_vecs,
-		}
-		return output
-
-
-def _collate_root(input_list):
-    root_reprs = [j["root_repr"] for j in input_list]
-    if isinstance(root_reprs[0], dgl.DGLGraph):
-        batched_reprs = dgl.batch(root_reprs)
-    elif isinstance(root_reprs[0], np.ndarray):
-        batched_reprs = torch.FloatTensor(np.vstack(root_reprs)).float()
-    else:
-        raise NotImplementedError()
-    return batched_reprs
 
 
 if __name__ == "__main__":
@@ -604,40 +582,23 @@ if __name__ == "__main__":
 		magma_params=dict(
 			pe_embed_k=0,
 			root_encode="gnn",
-			add_hs=False,
-			old=False
+			add_hs=False
 		)
 	)
 
-	batches = []
+	ds = SpecMagmaGenDataset(**config_d)
+	item = ds[0]
+	print(">>> item shapes")
+	print_shapes(item)
 
-	for old in [True,False]:
-
-		print(f">>> old={old}")
-
-		config_d["magma_params"]["old"] = old
-
-		ds = SpecMagmaGenDataset(**config_d)
-
-		item = ds[0]
-		print(">>> item shapes")
-		print_shapes(item)
-
-		dl = torch.utils.data.DataLoader(
-			ds,
-			batch_size=2,
-			shuffle=False,
-			num_workers=0,
-			collate_fn=ds.get_collate_fn(config_d["magma_params"]["old"]),
-		)
-		dl_iter = iter(dl)
-		batch = next(dl_iter)
-		print(">>> batch shapes")
-		print_shapes(batch)
-
-		batches.append(batch)
-
-	for k in batches[0].keys():
-		print(f">>> {k}")
-		print(batches[0][k])
-		print(batches[1][k])
+	dl = torch.utils.data.DataLoader(
+		ds,
+		batch_size=2,
+		shuffle=False,
+		num_workers=0,
+		collate_fn=ds.get_collate_fn(),
+	)
+	dl_iter = iter(dl)
+	batch = next(dl_iter)
+	print(">>> batch shapes")
+	print_shapes(batch)
