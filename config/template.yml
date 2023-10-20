@@ -186,3 +186,6 @@ check_gradient_norm: False
 use_tensor_float32: False
 nan_module_hook: False
 debug_zero_loss: False
+checkpoint_metric: epoch
+checkpoint_metric_mode: max
+clear_checkpoints: True

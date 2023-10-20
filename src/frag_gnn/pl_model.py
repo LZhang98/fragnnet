@@ -332,7 +332,7 @@ class SpectrumPL(pl.LightningModule):
 			"pred_unique_ids"
 		]
 		keys.extend(list(self.metric_names))
-		
+		unique_ids = batch_results.pop("unique_id")
 		true_batch_idxs = batch_results.pop("true_batch_idxs")
 		pred_batch_idxs = batch_results.pop("pred_batch_idxs")
 		batch_results = {k:v for k,v in batch_results.items() if k in keys}

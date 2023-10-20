@@ -13,7 +13,6 @@ except ModuleNotFoundError:
 	from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 	from pytorch_lightning.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
 
-
 import logging
 import argparse
 import yaml
@@ -24,6 +23,7 @@ from pprint import pprint
 import wandb
 import glob
 import shutil
+
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.iceberg.pl_model import IcebergGenPL
@@ -196,8 +196,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	checkpoint_callback = ModelCheckpoint(
 		dirpath=ckpt_dp,
 		filename="model-{epoch:03d}",
-		monitor="epoch",
-		mode="max",
+		monitor=config_d["checkpoint_metric"],
+		mode=config_d["checkpoint_metric_mode"],
 		save_last=True,
 	)
 	callbacks.append(checkpoint_callback)
@@ -250,6 +250,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# check config for sampler
 	if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		assert config_d["model_type"] == "frag_gnn",\
+			f"custom sampler {config_d['custom_sampler']} can only be use with frag_gnn model"
 		assert config_d['automatic_optimization'] == False,\
 			f"custom sampler {config_d['custom_sampler']} can not use in junction of automatic optimization {config_d['automatic_optimization']}"
 		assert config_d['specmolfrag_dynamic_batch_sampler_mode'] in ['frag_node','frag_edge'],\
@@ -308,18 +310,18 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	log_every_n_steps = min(len(train_dl),config_d["log_every_n_steps"])
 
 	trainer_param_d  = {
-		'logger':loggers,
-		'callbacks':callbacks,
-		'accelerator':config_d["accelerator"],
-		'devices':config_d["devices"],
-		'min_epochs':config_d["min_epochs"],
-		'max_epochs':config_d["max_epochs"],
-		'precision':config_d["precision"],
-		'log_every_n_steps':config_d["log_every_n_steps"],
-		'detect_anomaly':config_d["detect_anomaly"],
-		'overfit_batches':overfit_batches,
-		'profiler':profiler,
-		'num_sanity_val_steps':config_d["num_sanity_val_steps"],
+		'logger': loggers,
+		'callbacks': callbacks,
+		'accelerator': config_d["accelerator"],
+		'devices': config_d["devices"],
+		'min_epochs': config_d["min_epochs"],
+		'max_epochs': config_d["max_epochs"],
+		'precision': config_d["precision"],
+		'log_every_n_steps': config_d["log_every_n_steps"],
+		'detect_anomaly': config_d["detect_anomaly"],
+		'overfit_batches': overfit_batches,
+		'profiler': profiler,
+		'num_sanity_val_steps': config_d["num_sanity_val_steps"],
 	}
 
 	# this things can only set if automatic_optimization 
@@ -359,6 +361,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			val_dl,
 			ckpt_path=ckpt_fp
 		)
+	logging.info("callback metrics")
 
 	if config_d["compile"]:
 		print(model.dynamo_prof.report())
@@ -367,6 +370,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		# cleanup
 		if job_id_fp:
 			os.remove(job_id_fp)
+	
+	if config_d["clear_checkpoints"] and not trainer.interrupted:
 		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
 		for ckpt_fp in ckpt_fps:
 			os.remove(ckpt_fp)
