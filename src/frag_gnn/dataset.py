@@ -177,17 +177,26 @@ class SpecMolDataset(BaseDataset):
 		self._preprocess_spec()
 		self._preprocess_mol()
 
+	def _get_mol_graph_size(self, mol_data):
+
+		if self.mol_params["pyg"]:
+			mol_pyg = mol_data["mol_pyg"]
+			mol_graph_size = get_pyg_memory_usage(mol_pyg)
+		else:
+			mol_graph_size = 0
+		return mol_graph_size
+
 	def _preprocess_mol(self):
 
 		# preload and pre-process molecules
 		if self.mol_params["preprocess"]:
 			self.mol_datas = {}
-			total_mol_data_size = 0
+			total_mol_graph_size = 0
 			for idx, mol_entry in tqdm(self.mol_df.iterrows(),desc="> preprocess mol",total=len(self.mol_df)):
 				mol_data = self._process_mol(mol_entry)
-				total_mol_data_size += get_pyg_memory_usage(mol_data["mol_pyg"])
+				total_mol_graph_size += self._get_mol_graph_size(mol_data)
 				self.mol_datas[mol_entry["mol_id"]] = mol_data
-			print(f"> total_mol_data_size: {total_mol_data_size/1e6:.2f} MB")
+			print(f"> total_mol_graph_size: {total_mol_graph_size/1e6:.2f} MB")
 
 	def __getitem__(self,idx):
 
