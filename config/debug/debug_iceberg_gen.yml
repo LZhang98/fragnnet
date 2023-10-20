@@ -4,8 +4,8 @@ wandb_tags:
 
 split_dp: data/split/d3_h4_isoTrue_v2
 magma_dp: data/magma
-spec_params:
-  subsample_size: 128
+# spec_params:
+#   subsample_size: 128
 
 model_type: iceberg_gen
 loss_type: iceberg_gen_cross_entropy
@@ -31,14 +31,17 @@ auxiliary_scores: []
 
 train_batch_size: 32
 eval_batch_size: 32
-accumulate_grad_batches: 2 # 1
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0004 # 0.001
+lr: 0.001
 accelerator: gpu
 devices: 1
 min_epochs: 2
 max_epochs: 2
-lr_schedule: False #True
-weight_decay: 0.01 # 0.0
+lr_schedule: True
+lr_decay_rate: 0.72
+lr_warmup_steps: 1000
+lr_decay_steps: 5000
+weight_decay: 0.0
 debug_overfit: False
 num_workers: 8

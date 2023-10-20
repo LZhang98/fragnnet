@@ -3,9 +3,37 @@ import argparse
 
 from frag_gnn.utils.misc_utils import booltype
 
+def time_check(time, qos):
+
+	assert time > 0, time
+	if qos == "normal":
+		assert time <= 16, time
+	elif qos == "m":
+		assert time <= 12, time
+	elif qos == ["m2", "high", "affiliate"]:
+		assert time <= 8, time
+	elif qos == "m3":
+		assert time <= 4, time
+	elif qos == "long":
+		assert time <= 48, time
+
+def gpu_check(gpu, qos):
+
+	if qos in ["normal", "affiliate"]:
+		assert gpu <= 2, gpu
+	elif qos in ["m", "high"]:
+		assert gpu <= 4, gpu
+	elif qos == "m2":
+		assert gpu <= 8, gpu
+	elif qos == "m3":
+		assert gpu <= 16, gpu
+	elif qos == "long":
+		assert gpu <= 1, gpu
+	elif qos == "deadline":
+		assert gpu <= 12, gpu
+
 def main(args):
 
-	home_dir = "/ssd005/home/adamo"
 	script_lines = []
 	script_lines.extend(
 		[
@@ -17,21 +45,18 @@ def main(args):
 	script_lines.append(f"#SBATCH --job-name={args.job_name}")
 	script_lines.append(f"#SBATCH --mem={args.mem}G")
 	script_lines.append(f"#SBATCH --cpus-per-task={args.cpu}")
-	assert args.time > 0, args.time
+	time_check(args.time, args.qos)
 	script_lines.append(f"#SBATCH --time=0-{args.time-1}:59")
-	if args.partition != "cpu":
-		assert args.gpu > 0, args.gpu
-		script_lines.append(f"#SBATCH --gres=gpu:{args.gpu}")
-	else:
-		assert args.qos == "nopreemption", args.qos
-	script_lines.append(f"#SBATCH --partition={args.partition}")
+	if args.gpu > 0:
+		gpu_check(args.gpu, args.qos)
+		script_lines.append(f"#SBATCH --gres=gpu:{args.gpu_type}:{args.gpu}")
 	if args.qos == "deadline":
 		script_lines.append("#SBATCH --account=deadline")
 	script_lines.append(f"#SBATCH --qos={args.qos}")
 	script_lines.extend(
 		[
-			f"#SBATCH --output={home_dir}/jobs/%j.out",
-			f"#SBATCH --error={home_dir}/jobs/%j.err",
+			f"#SBATCH --output={args.home_dir}/jobs/%j.out",
+			f"#SBATCH --error={args.home_dir}/jobs/%j.err",
 			"#SBATCH --open-mode=append"
 		]
 	)
@@ -51,14 +76,14 @@ def main(args):
 			"# make wandb directory (if necessary)",
 			"mkdir -p /checkpoint/adamo/wandb",
 			"touch /checkpoint/adamo/wandb/DELAYPURGE",
-			f"ln -sfn /checkpoint/adamo/wandb {home_dir}/frag-gnn/wandb"
+			f"ln -sfn /checkpoint/adamo/wandb {args.home_dir}/frag-gnn/wandb"
 		]
 	)
 	script_lines.extend(
 		[
 			"",
 			"# source .bashrc",
-			f". {home_dir}/miniconda3/etc/profile.d/conda.sh"
+			f". {args.home_dir}/miniconda3/etc/profile.d/conda.sh"
 		]
 	)
 	if args.modules is not None:
@@ -81,7 +106,7 @@ def main(args):
 		[
 			"",
 			"# run script",
-			f"cd {home_dir}/frag-gnn"
+			f"cd {args.home_dir}/frag-gnn"
 		]
 	)
 	python_line = f"python {args.python_script_fp}"
@@ -120,14 +145,15 @@ if __name__ == "__main__":
 	parser.add_argument("--mem", type=int, default=64)
 	parser.add_argument("--cpu", type=int, default=8)
 	parser.add_argument("--gpu", type=int, default=1)
-	parser.add_argument("--time", type=int, default=24)
-	parser.add_argument("--partition", type=str, default="cpu", choices=["t4v2","rtx6000","interactive","cpu","a40"])
-	parser.add_argument("--qos", type=str, default="nopreemption", choices=["normal","high","nopreemption","deadline"])
-	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU2")
+	parser.add_argument("--time", type=int, default=16)
+	parser.add_argument("--gpu_type", type=str, default="t4", choices=["t4","rtx6000","a40"])
+	parser.add_argument("--qos", type=str, default="normal", choices=["normal","m","m2","m3","long","high","deadline","affiliate"])
+	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU3")
 	parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument("--job_id", type=int, required=False)
 	parser.add_argument("--blacklist", type=str, nargs="+", required=False)
-	parser.add_argument("--modules", type=str, nargs="+", required=False)
+	parser.add_argument("--modules", type=str, nargs="+", default=["cuda-11.8"])
+	parser.add_argument("--home_dir", type=str, default="/fs01/home/adamo")
 	args = parser.parse_args()
 	main(args)
