@@ -513,13 +513,14 @@ class SpectrumPL(pl.LightningModule):
 	def on_train_epoch_end(self):
 		if self.hparams.debug_val_loop_trigger == True:
 			print(">[DEBUG] on_validation_epoch_end")
-		# consolidate results
-		self._consolidate_results("train")
-		# log images
-		self._log_images("train")
-		# reset
-		self.train_results = None
-		self.train_counter = 0
+		else:
+			# consolidate results
+			self._consolidate_results("train")
+			# log images
+			self._log_images("train")
+			# reset
+			self.train_results = None
+			self.train_counter = 0
 
 	def on_validation_epoch_start(self):
 		if self.hparams.debug_val_loop_trigger == True:
