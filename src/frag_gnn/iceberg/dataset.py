@@ -452,12 +452,18 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 		super()._init_magma()
 		tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
 		assert self.spec_df["group_id"].isin(tree_group_ids).all()
-		self.tree_processor = TreeProcessor(
-			pe_embed_k=self.magma_params["pe_embed_k"],
-			root_encode=self.magma_params["root_encode"],
-			add_hs=self.magma_params["add_hs"],
+		self.tree_processor = SpecMolMagmaGenDataset.init_tree_processor(self.magma_params)
+
+	@staticmethod
+	def init_tree_processor(magma_params):
+
+		tree_processor = TreeProcessor(
+			pe_embed_k=magma_params["pe_embed_k"],
+			root_encode=magma_params["root_encode"],
+			add_hs=magma_params["add_hs"],
 			binned_targs=False
 		)
+		return tree_processor
 
 	def _read_tree(self, tree_json):
 		
@@ -602,7 +608,7 @@ if __name__ == "__main__":
 
 	ds = SpecMolMagmaGenDataset(**config_d)
 	item = ds[0]
-	print(">>> item shapes")
+	print(">>> item")
 	print_shapes(item)
 	item = to_gpu(item)
 
@@ -615,6 +621,6 @@ if __name__ == "__main__":
 	)
 	dl_iter = iter(dl)
 	batch = next(dl_iter)
-	print(">>> batch shapes")
+	print(">>> batch")
 	print_shapes(batch)
 	batch = to_gpu(batch)

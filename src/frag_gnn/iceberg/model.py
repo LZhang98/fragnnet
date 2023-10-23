@@ -140,7 +140,7 @@ class IcebergGenModel(nn.Module):
 		broken,
 		adducts,
 		root_forms=None,
-		frag_forms=None,
+		frag_forms=None
 	):
 		"""forward _summary_
 
@@ -244,287 +244,387 @@ class IcebergGenModel(nn.Module):
 		padded_out = nn_utils.pad_packed_tensor(output, graphs.batch_num_nodes(), 0)
 		padded_out = th.squeeze(padded_out, -1)
 		return padded_out
+		
 
-	def predict_mol(
+class IcebergIntenModel(nn.Module):
+
+	def __init__(
 		self,
-		root_smi: str,
-		adduct,
-		threshold=0,
-		device: str = "cpu",
-		max_nodes: int = None,
-	) -> dict:
-		"""predict_mol.
+		hidden_size: int,
+		gnn_layers: int = 2,
+		mlp_layers: int = 0,
+		set_layers: int = 2,
+		dropout: float = 0,
+		mpnn_type: str = "PNA",
+		pool_op: str = "avg",
+		node_feats: int = common.ELEMENT_DIM + common.MAX_H,
+		pe_embed_k: int = 0,
+		max_broken: int = fragmentation.FRAGMENT_ENGINE_PARAMS["max_broken_bonds"],
+		frag_set_layers: int = 0,
+		root_encode: str = "gnn",
+		inject_early: bool = False,
+		embed_adduct=False,
+		binned_targs: bool = True,
+		encode_forms: bool = False,
+		add_hs: bool = False,
+		**kwargs,
+	):
+		super().__init__()
+		self.save_hyperparameters()
+		self.hidden_size = hidden_size
+		self.pe_embed_k = pe_embed_k
+		self.root_encode = root_encode
+		self.pool_op = pool_op
+		self.inject_early = inject_early
+		self.embed_adduct = embed_adduct
+		self.binned_targs = binned_targs
+		self.encode_forms = encode_forms
+		self.add_hs = add_hs
 
-		Predict a new fragmentation tree from a starting root molecule
-		autoregressively. First a new fragment is added to the
-		frag_hash_to_entry dict and also put on the stack. Then it is
-		fragmented and its "atoms_pulled" and "left_pred" are updated
-		accordingly. The resulting new fragments are added to the hash.
+		self.formula_in_dim = 0
+		if self.encode_forms:
+			self.embedder = nn_utils.get_embedder("abs-sines")
+			self.formula_dim = common.NORM_VEC.shape[0]
 
-		Args:
-			root_smi (smi)
-			threshold: Leaving probability
-			device: Device
-			max_nodes (int): Max number to include
+			# Calculate formula dim
+			self.formula_in_dim = self.formula_dim * self.embedder.num_dim
 
-		Return:
-			Dictionary containing results
-		"""
-		# Step 1: Get a fragmentation engine for root mol
-		engine = fragmentation.FragmentEngine(root_smi)
-		max_depth = engine.max_tree_depth
-		root_frag = engine.get_root_frag()
-		root_form = common.form_from_smi(root_smi)
-		root_form_vec = th.FloatTensor(common.formula_to_dense(root_form))
-		root_form_vec = root_form_vec.reshape(1, -1)
-		adducts = th.LongTensor([common.ion2onehot_pos[adduct]])
+			# Account for diffs
+			self.formula_in_dim *= 2
 
-		# Step 2: Featurize the root molecule
-		root_graph_dict = self.tree_processor.featurize_frag(
-			frag=root_frag,
-			engine=engine,
-			add_random_walk=True,
+		self.gnn_layers = gnn_layers
+		self.set_layers = set_layers
+		self.frag_set_layers = frag_set_layers
+		self.mpnn_type = mpnn_type
+		self.mlp_layers = mlp_layers
+		self.dropout = dropout
+
+		self.max_broken = max_broken + 1
+		self.broken_onehot = torch.nn.Parameter(torch.eye(self.max_broken))
+		self.broken_onehot.requires_grad = False
+		self.broken_clamp = max_broken
+
+		edge_feats = fragmentation.MAX_BONDS
+
+		orig_node_feats = node_feats
+		if self.inject_early:
+			node_feats = node_feats + self.hidden_size
+
+		adduct_shift = 0
+		if self.embed_adduct:
+			adduct_types = len(common.ion2onehot_pos)
+			onehot = torch.eye(adduct_types)
+			self.adduct_embedder = nn.Parameter(onehot.float())
+			self.adduct_embedder.requires_grad = False
+			adduct_shift = adduct_types
+
+		# Define network
+		self.gnn = nn_utils.MoleculeGNN(
+			hidden_size=self.hidden_size,
+			num_step_message_passing=self.gnn_layers,
+			set_transform_layers=self.set_layers,
+			mpnn_type=self.mpnn_type,
+			gnn_node_feats=node_feats + adduct_shift,
+			gnn_edge_feats=edge_feats,
+			dropout=self.dropout,
 		)
 
-		root_repr = None
 		if self.root_encode == "gnn":
-			root_repr = root_graph_dict["graph"].to(device)
+			self.root_module = self.gnn
+
+			# if inject early, need separate root and child GNN's
+			if self.inject_early:
+				self.root_module = nn_utils.MoleculeGNN(
+					hidden_size=self.hidden_size,
+					num_step_message_passing=self.gnn_layers,
+					set_transform_layers=self.set_layers,
+					mpnn_type=self.mpnn_type,
+					gnn_node_feats=node_feats + adduct_shift,
+					gnn_edge_feats=edge_feats,
+					dropout=self.dropout,
+				)
 		elif self.root_encode == "fp":
-			root_fp = th.from_numpy(np.array(common.get_morgan_fp_smi(root_smi)))
-			root_repr = root_fp.float().to(device)[None, :]
-
-		form_to_min_score = {}
-		frag_hash_to_entry = {}
-		frag_to_hash = {}
-		stack = [root_frag]
-		depth = 0
-		root_hash = engine.wl_hash(root_frag)
-		frag_to_hash[root_frag] = root_hash
-		root_score = engine.score_fragment(root_frag)[1]
-		id_ = 0
-		# TODO: Compute as in fragment engine
-		root_entry = {
-			"frag": int(root_frag),
-			"frag_hash": root_hash,
-			"parents": [],
-			"atoms_pulled": [],
-			"left_pred": [],
-			"max_broken": 0,
-			"tree_depth": 0,
-			"id": 0,
-			"prob_gen": 1,
-			"score": root_score,
-		}
-		id_ += 1
-		root_entry.update(engine.atom_pass_stats(root_frag, depth=0))
-		form_to_min_score[root_entry["form"]] = root_entry["score"]
-		frag_hash_to_entry[root_hash] = root_entry
-
-		# Step 3: Run the autoregressive gen loop
-		with th.no_grad():
-
-			# Note: we don't fragment at the final depth
-			while len(stack) > 0 and depth < max_depth:
-				# Convert all new frags to graphs (stack is to run next)
-
-				new_dgl_dicts = [
-					self.tree_processor.featurize_frag(
-						frag=i, engine=engine, add_random_walk=True
-					)
-					for i in stack
-				]
-				tuple_list = [
-					(i, j)
-					for i, j in zip(new_dgl_dicts, stack)
-					if i["graph"].num_nodes() > 1
-				]
-
-				if len(tuple_list) == 0:
-					break
-
-				new_dgl_dicts, stack = zip(*tuple_list)
-				mol_batch_graph = [i["graph"] for i in new_dgl_dicts]
-				frag_forms = [i["form"] for i in new_dgl_dicts]
-				frag_form_vecs = [common.formula_to_dense(i) for i in frag_forms]
-				frag_form_vecs = th.FloatTensor(np.array(frag_form_vecs))
-
-				new_frag_hashes = [engine.wl_hash(i) for i in stack]
-
-				frag_to_hash.update(dict(zip(stack, new_frag_hashes)))
-
-				frag_batch = dgl.batch(mol_batch_graph).to(device)
-				inds = th.zeros(frag_batch.batch_size).long().to(device)
-
-				# Note: Can speed by reducing redundant root graph passes
-				# TODO: Figure out how to include frag form vec and root form
-				# vec
-
-				# TODO: Compute broken for each of these...
-
-				broken_nums_ar = np.array(
-					[frag_hash_to_entry[i]["max_broken"] for i in new_frag_hashes]
-				)
-				broken_nums_tensor = th.FloatTensor(broken_nums_ar).to(device)
-
-				pred_leaving = self.forward(
-					graphs=frag_batch,
-					root_repr=root_repr,
-					ind_maps=inds,
-					broken=broken_nums_tensor,  # th.ones_like(inds) * depth,
-					adducts=adducts,
-					root_forms=root_form_vec,
-					frag_forms=frag_form_vecs,
-				)
-				depth += 1
-
-				# Rank order all the atom preds and predictions
-				# Continuously add items to the stack as long as they maintain
-				# the max node constraint ranked by prob
-
-				# Get all frag probabilities and sort them
-				cur_probs = sorted(
-					[i["prob_gen"] for i in frag_hash_to_entry.values()]
-				)[::-1]
-				if max_nodes is None or len(cur_probs) < max_nodes:
-					min_prob = threshold
-				elif max_nodes is not None and len(cur_probs) >= max_nodes:
-					min_prob = cur_probs[max_nodes - 1]
-				else:
-					raise NotImplementedError()
-
-				new_items = list(
-					zip(stack, new_frag_hashes, pred_leaving, new_dgl_dicts)
-				)
-				sorted_order = []
-				for item_ind, item in enumerate(new_items):
-					frag_hash = item[1]
-					pred_vals_f = item[2]
-					parent_prob = frag_hash_to_entry[frag_hash]["prob_gen"]
-					for atom_ind, (atom_pred, prob_gen) in enumerate(
-						zip(pred_vals_f, parent_prob * pred_vals_f)
-					):
-
-						sorted_order.append(
-							dict(
-								item_ind=item_ind,
-								atom_ind=atom_ind,
-								prob_gen=prob_gen.item(),
-								atom_pred=atom_pred.item(),
-							)
-						)
-
-				sorted_order = sorted(sorted_order, key=lambda x: -x["prob_gen"])
-				new_stack = []
-
-				# Process ordered list continuously
-				for new_item in sorted_order:
-					prob_gen = new_item["prob_gen"]
-					atom_ind = new_item["atom_ind"]
-					atom_pred = new_item["atom_pred"]
-					item_ind = new_item["item_ind"]
-
-					# Filter out on minimum prob
-					if prob_gen <= min_prob:
-						continue
-
-					# Calc stack ind
-					orig_entry = new_items[item_ind]
-					frag_int = orig_entry[0]
-					frag_hash = orig_entry[1]
-					dgl_dict = orig_entry[3]
-
-					# Get atom ind
-					atom = dgl_dict["new_to_old"][atom_ind]
-
-					# Calc remove dict
-					out_dicts = engine.remove_atom(frag_int, int(atom))
-
-					# Update atoms_pulled for parent
-					frag_hash_to_entry[frag_hash]["atoms_pulled"].append(int(atom))
-					frag_hash_to_entry[frag_hash]["left_pred"].append(float(atom_pred))
-					parent_broken = frag_hash_to_entry[frag_hash]["max_broken"]
-
-					for out_dict in out_dicts:
-						out_hash = out_dict["new_hash"]
-						out_frag = out_dict["new_frag"]
-						rm_bond_t = out_dict["rm_bond_t"]
-						frag_to_hash[out_frag] = out_hash
-						current_entry = frag_hash_to_entry.get(out_hash)
-
-						max_broken = parent_broken + rm_bond_t
-
-						# Define probability of generating
-						if current_entry is None:
-							score = engine.score_fragment(int(out_frag))[1]
-
-							new_stack.append(out_frag)
-							new_entry = {
-								"frag": int(out_frag),
-								"frag_hash": out_hash,
-								"score": score,
-								"id": id_,
-								"parents": [frag_hash],
-								"atoms_pulled": [],
-								"left_pred": [],
-								"max_broken": max_broken,
-								"tree_depth": depth,
-								"prob_gen": prob_gen,
-							}
-							id_ += 1
-							new_entry.update(
-								engine.atom_pass_stats(out_frag, depth=max_broken)
-							)
-
-							# reset to best score
-							temp_form = new_entry["form"]
-							prev_best_score = form_to_min_score.get(
-								temp_form, float("inf")
-							)
-							form_to_min_score[temp_form] = min(
-								new_entry["score"], prev_best_score
-							)
-							frag_hash_to_entry[out_hash] = new_entry
-
-						else:
-							current_entry["parents"].append(frag_hash)
-							current_entry["prob_gen"] = max(
-								current_entry["prob_gen"], prob_gen
-							)
-
-						# Update cur probs
-						# This is inefficeint and can be made smarter withotu
-						# doing another minimum calculation
-						cur_probs = sorted(
-							[i["prob_gen"] for i in frag_hash_to_entry.values()]
-						)[::-1]
-						if max_nodes is None or len(cur_probs) < max_nodes:
-							min_prob = threshold
-						elif max_nodes is not None and len(cur_probs) >= max_nodes:
-							min_prob = cur_probs[max_nodes - 1]
-						else:
-							raise NotImplementedError()
-
-				# Truncate stack; this should be handled above by min prob
-				# if max_nodes is not None:
-				#    new_stack = sorted(new_stack,
-				#                       key=lambda x:
-				#                       -frag_hash_to_entry[frag_to_hash[x]]['prob_gen'])
-				#    new_stack = new_stack[:max_nodes]
-				stack = new_stack
-
-		# Only get min score for ech formula
-		frag_hash_to_entry = {
-			k: v
-			for k, v in frag_hash_to_entry.items()
-			if form_to_min_score[v["form"]] == v["score"]
-		}
-
-		if max_nodes is not None:
-			sorted_keys = sorted(
-				list(frag_hash_to_entry.keys()),
-				key=lambda x: -frag_hash_to_entry[x]["prob_gen"],
+			self.root_module = nn_utils.MLPBlocks(
+				input_size=2048,
+				hidden_size=self.hidden_size,
+				output_size=None,
+				dropout=self.dropout,
+				num_layers=1,
+				use_residuals=True,
 			)
-			frag_hash_to_entry = {
-				k: frag_hash_to_entry[k] for k in sorted_keys[:max_nodes]
-			}
-		return frag_hash_to_entry
+		else:
+			raise ValueError()
+
+		# MLP layer to take representations from the pooling layer
+		# And predict a single scalar value at each of them
+		# I.e., Go from size B x 2h -> B x 1
+		self.intermediate_out = nn_utils.MLPBlocks(
+			input_size=self.hidden_size * 3 + self.max_broken + self.formula_in_dim,
+			hidden_size=self.hidden_size,
+			output_size=self.hidden_size,
+			dropout=self.dropout,
+			num_layers=self.mlp_layers,
+			use_residuals=True,
+		)
+
+		trans_layer = nn_utils.TransformerEncoderLayer(
+			self.hidden_size,
+			nhead=8,
+			batch_first=True,
+			norm_first=False,
+			dim_feedforward=self.hidden_size * 4,
+		)
+		self.trans_layers = nn_utils.get_clones(trans_layer, self.frag_set_layers)
+
+		self.loss_fn_name = loss_fn
+		if loss_fn == "mse":
+			raise NotImplementedError()
+		elif loss_fn == "cosine":
+			self.loss_fn = self.cos_loss
+			self.cos_fn = nn.CosineSimilarity()
+			self.output_activations = [nn.Sigmoid()]
+		else:
+			raise NotImplementedError()
+
+		self.num_outputs = len(self.output_activations)
+		self.output_size = fragmentation.FRAGMENT_ENGINE_PARAMS["max_broken_bonds"] * 2 + 1
+		self.output_map = nn.Linear(
+			self.hidden_size, self.num_outputs * self.output_size
+		)
+
+		# Define map from output layer to attn
+		self.isomer_attn_out = copy.deepcopy(self.output_map)
+
+		# Define buckets
+		buckets = torch.DoubleTensor(np.linspace(0, 1500, 15000))
+		self.inten_buckets = nn.Parameter(buckets)
+		self.inten_buckets.requires_grad = False
+
+		if self.pool_op == "avg":
+			self.pool = dgl_nn.AvgPooling()
+		elif self.pool_op == "attn":
+			self.pool = dgl_nn.GlobalAttentionPooling(nn.Linear(hidden_size, 1))
+		else:
+			raise NotImplementedError()
+
+		self.sigmoid = nn.Sigmoid()
+
+	def forward(
+		self,
+		graphs,
+		root_repr,
+		ind_maps,
+		num_frags,
+		broken,
+		adducts,
+		max_add_hs=None,
+		max_remove_hs=None,
+		masses=None,
+		root_forms=None,
+		frag_forms=None,
+	):
+		"""forward _summary_
+
+		Args:
+			graphs (_type_): _description_
+			root_repr (_type_): _description_
+			ind_maps (_type_): _description_
+			num_frags (_type_): _description_
+			broken (_type_): _description_
+			adducts (_type_): _description_
+			max_add_hs (_type_, optional): _description_. Defaults to None.
+			max_remove_hs (_type_, optional): _description_. Defaults to None.
+			masses (_type_, optional): _description_. Defaults to None.
+			root_forms (_type_, optional): _description_. Defaults to None.
+			frag_forms (_type_, optional): _description_. Defaults to None.
+
+		Raises:
+			NotImplementedError: _description_
+
+		Returns:
+			_type_: _description_
+		"""
+		device = num_frags.device
+
+		# if root fingerprints:
+		embed_adducts = self.adduct_embedder[adducts.long()]
+		if self.root_encode == "fp":
+			root_embeddings = self.root_module(root_repr)
+			raise NotImplementedError()
+		elif self.root_encode == "gnn":
+			with root_repr.local_scope():
+				if self.embed_adduct:
+					embed_adducts_expand = embed_adducts.repeat_interleave(
+						root_repr.batch_num_nodes(), 0
+					)
+					ndata = root_repr.ndata["h"]
+					ndata = torch.cat([ndata, embed_adducts_expand], -1)
+					root_repr.ndata["h"] = ndata
+				root_embeddings = self.root_module(root_repr)
+				root_embeddings = self.pool(root_repr, root_embeddings)
+		else:
+			pass
+
+		# Line up the features to be parallel between fragment avgs and root
+		# graphs
+		ext_root = root_embeddings[ind_maps]
+		# Extend the root further to cover each individual atom
+		ext_root_atoms = torch.repeat_interleave(
+			ext_root, graphs.batch_num_nodes(), dim=0
+		)
+		concat_list = [graphs.ndata["h"]]
+
+		if self.inject_early:
+			concat_list.append(ext_root_atoms)
+
+		if self.embed_adduct:
+			adducts_mapped = embed_adducts[ind_maps]
+			adducts_exp = torch.repeat_interleave(
+				adducts_mapped, graphs.batch_num_nodes(), dim=0
+			)
+			concat_list.append(adducts_exp)
+
+		with graphs.local_scope():
+			graphs.ndata["h"] = torch.cat(concat_list, -1).float()
+
+			frag_embeddings = self.gnn(graphs)
+
+			# Average embed the full root molecules and fragments
+			avg_frags = self.pool(graphs, frag_embeddings)
+
+		# expand broken and map it to each fragment
+		broken_arange = torch.arange(broken.shape[-1]).to(device)
+		broken_mask = broken_arange[None, :] < num_frags[:, None]
+
+		broken = torch.clamp(broken[broken_mask], max=self.broken_clamp)
+		broken_onehots = self.broken_onehot[broken.long()]
+
+		### Build hidden with forms
+		mlp_cat_list = [ext_root, ext_root - avg_frags, avg_frags, broken_onehots]
+
+		hidden = torch.cat(mlp_cat_list, dim=1)
+
+		# Pack so we can use interpeak attn
+		padded_hidden = nn_utils.pad_packed_tensor(hidden, num_frags, 0)
+
+		if self.encode_forms:
+			diffs = root_forms[:, None, :] - frag_forms
+			form_encodings = self.embedder(frag_forms)
+			diff_encodings = self.embedder(diffs)
+			new_hidden = torch.cat(
+				[padded_hidden, form_encodings, diff_encodings], dim=-1
+			)
+			padded_hidden = new_hidden
+
+		padded_hidden = self.intermediate_out(padded_hidden)
+		batch_size, max_frags, hidden_dim = padded_hidden.shape
+
+		# Build up a mask
+		arange_frags = torch.arange(padded_hidden.shape[1]).to(device)
+		attn_mask = ~(arange_frags[None, :] < num_frags[:, None])
+
+		hidden = padded_hidden
+		for trans_layer in self.trans_layers:
+			hidden, _ = trans_layer(hidden, src_key_padding_mask=attn_mask)
+
+		# hidden: B x L x h
+		# attn_mask: B x L
+
+		# Build mask
+		max_inten_shift = (self.output_size - 1) / 2
+		max_break_ar = torch.arange(self.output_size, device=device)[None, None, :].to(
+			device
+		)
+		max_breaks_ub = max_add_hs + max_inten_shift
+		max_breaks_lb = -max_remove_hs + max_inten_shift
+
+		ub_mask = max_break_ar <= max_breaks_ub[:, :, None]
+		lb_mask = max_break_ar >= max_breaks_lb[:, :, None]
+
+		# B x Length x Mass shifts
+		valid_pos = torch.logical_and(ub_mask, lb_mask)
+
+		# B x Length x outputs x Mass shift
+		valid_pos = valid_pos[:, :, None, :].expand(
+			batch_size, max_frags, self.num_outputs, self.output_size
+		)
+		# B x L x Output
+		output = self.output_map(hidden)
+		attn_weights = self.isomer_attn_out(hidden)
+
+		# B x L x Out x Mass shifts
+		output = output.reshape(batch_size, max_frags, self.num_outputs, -1)
+		attn_weights = attn_weights.reshape(batch_size, max_frags, self.num_outputs, -1)
+
+		# Mask attn weights
+		# attn_weights.masked_fill_(~valid_pos, -float("inf"))
+		attn_weights.masked_fill_(~valid_pos, -99999)  # -float("inf"))
+
+		# B x Out x L x Mass shifts
+		output = output.transpose(1, 2)
+		attn_weights = attn_weights.transpose(1, 2)
+		valid_pos_binned = valid_pos.transpose(1, 2)
+
+		# Calc inverse indices => B x Out x L x shift
+		inverse_indices = torch.bucketize(masses, self.inten_buckets, right=False)
+		inverse_indices = inverse_indices[:, None, :, :].expand(attn_weights.shape)
+
+		# B x Out x (L * Mass shifts)
+		attn_weights = attn_weights.reshape(batch_size, self.num_outputs, -1)
+		output = output.reshape(batch_size, self.num_outputs, -1)
+		inverse_indices = inverse_indices.reshape(batch_size, self.num_outputs, -1)
+		valid_pos_binned = valid_pos.reshape(batch_size, self.num_outputs, -1)
+
+		# B x Outs x ( L * mass shifts )
+		pool_weights = ts.scatter_softmax(attn_weights, index=inverse_indices, dim=-1)
+		weighted_out = pool_weights * output
+
+		# B x Outs x (UNIQUE(L * mass shifts))
+		output_binned = ts.scatter_add(
+			weighted_out,
+			index=inverse_indices,
+			dim=-1,
+			dim_size=self.inten_buckets.shape[-1],
+		)
+
+		output = output.reshape(batch_size, max_frags, self.num_outputs, -1)
+		pool_weights_reshaped = pool_weights.reshape(
+			batch_size, max_frags, self.num_outputs, -1
+		)
+		inverse_indices_reshaped = inverse_indices.reshape(
+			batch_size, max_frags, self.num_outputs, -1
+		)
+
+		# B x Outs x binned
+		valid_pos_binned = ts.scatter_max(
+			(valid_pos_binned).long(),
+			index=inverse_indices,
+			dim_size=self.inten_buckets.shape[-1],
+			dim=-1,
+		)[0].bool()
+
+		# Activate each dim with its respective output activation
+		# Helpful for hurdle or probabilistic models
+		new_outputs_binned = []
+		for output_ind, act in enumerate(self.output_activations):
+			new_outputs_binned.append(
+				act(output_binned[:, output_ind : output_ind + 1, :])
+			)
+		output_binned = torch.cat(new_outputs_binned, -2)
+		output_binned.masked_fill_(~valid_pos_binned, 0)
+
+		# Index into output binned using inverse_indices_reshaped
+		# Revert the binned output back to frags for attribution
+		# B x Out x L x Mass shifts
+		inverse_indices_reshaped_temp = inverse_indices_reshaped.transpose(
+			1, 2
+		).reshape(batch_size, self.num_outputs, -1)
+		output_unbinned = torch.take_along_dim(
+			output_binned, inverse_indices_reshaped_temp, dim=-1
+		)
+		output_unbinned = output_unbinned.reshape(
+			batch_size, self.num_outputs, max_frags, -1
+		).transpose(1, 2)
+		output_unbinned_alpha = output_unbinned * pool_weights_reshaped
+
+		return {"output_binned": output_binned, "output": output_unbinned_alpha}
