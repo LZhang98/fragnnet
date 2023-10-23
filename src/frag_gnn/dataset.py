@@ -582,9 +582,9 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 						f"Got {n} {self._limited_by}s." +\
 						"This sample can not fit into batch. "
 					if self._skip_too_big:
-						warning_msg += "Sampler will skip this to prevent CUDA OOM ERROR"
+						warning_msg += "Sampler will skip this to prevent CUDA OOM ERROR \n"
 					else:
-						warning_msg += "Attempting to fit this in to batch, this may cause CUDA OOM ERROR"
+						warning_msg += "Attempting to fit this in to batch, this may cause CUDA OOM ERROR  \n"
 					#warnings.warn(warning_msg)
 					#print(warning_msg)
 			if warning_msg != "":
