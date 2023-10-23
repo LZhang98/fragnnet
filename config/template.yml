@@ -188,4 +188,4 @@ nan_module_hook: False
 debug_zero_loss: False
 checkpoint_metric: epoch
 checkpoint_metric_mode: max
-clear_checkpoints: True
+upload_checkpoints: False

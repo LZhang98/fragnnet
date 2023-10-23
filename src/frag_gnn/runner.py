@@ -366,14 +366,23 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	if config_d["compile"]:
 		print(model.dynamo_prof.report())
 
-	if wandb_mode != "disabled" and not trainer.interrupted:
-		# cleanup
-		if job_id_fp:
-			os.remove(job_id_fp)
-	
-	if config_d["clear_checkpoints"] and not trainer.interrupted:
+	if not trainer.interrupted:
+		# find checkpoints
 		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
-		for ckpt_fp in ckpt_fps:
-			os.remove(ckpt_fp)
+		if wandb_mode != "disabled":
+			# upload or remove checkpoints
+			# if in offline mode, you shouldn't remove the checkpoint before syncing
+			for ckpt_fp in ckpt_fps:
+				if config_d["upload_checkpoints"]:
+					wandb.save(ckpt_fp)
+				else:
+					os.remove(ckpt_fp)
+			# cleanup
+			if job_id_fp:
+				os.remove(job_id_fp)
+		else:
+			# remove checkpoints
+			for ckpt_fp in ckpt_fps:
+				os.remove(ckpt_fp)
 
 	return model

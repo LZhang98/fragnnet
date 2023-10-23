@@ -16,8 +16,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 20
-max_epochs: 20
+min_epochs: 10
+max_epochs: 10
 lr_schedule: False
 debug_overfit: False
 
@@ -28,4 +28,4 @@ automatic_optimization: True
 # specmolfrag_dynamic_batch_sampler_max: 10000 #600000
 checkpoint_metric: val_loss_epoch
 checkpoint_metric_mode: min
-clear_checkpoints: False
+upload_checkpoints: True
