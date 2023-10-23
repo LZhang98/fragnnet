@@ -285,9 +285,6 @@ class SpectrumPL(pl.LightningModule):
 			raise NotImplementedError("Manual optimization not implemented")
 
 	def validation_step(self, batch, batch_idx):
-		# this is for debug
-		if self.hparams.debug_val_loop_trigger == True:
-			return th.tensor(0.0)	
 		batch_results = self._common_step(batch, split="val")
 		mean_loss = batch_results.pop("mean_loss")
 		self._update_results(batch_results,"val")
@@ -508,27 +505,26 @@ class SpectrumPL(pl.LightningModule):
 
 	def on_train_epoch_start(self):
 		if self.hparams.debug_val_loop_trigger == True:
-			print(">[DEBUG] on_train_epoch_start")
+			print("[DEBUG] Training Epoch Start")
 	
 	def on_train_epoch_end(self):
 		if self.hparams.debug_val_loop_trigger == True:
-			print(">[DEBUG] on_validation_epoch_end")
-		else:
-			# consolidate results
-			self._consolidate_results("train")
-			# log images
-			self._log_images("train")
-			# reset
-			self.train_results = None
-			self.train_counter = 0
+			print("[DEBUG] Training Epoch End")
+		# consolidate results
+		self._consolidate_results("train")
+		# log images
+		self._log_images("train")
+		# reset
+		self.train_results = None
+		self.train_counter = 0
 
 	def on_validation_epoch_start(self):
 		if self.hparams.debug_val_loop_trigger == True:
-			print(">[DEBUG] on_validation_epoch_start")
+			print("[DEBUG] Validation Loop Start")
 
 	def on_validation_epoch_end(self):
 		if self.hparams.debug_val_loop_trigger == True:
-			print(">[DEBUG] on_validation_epoch_end")
+			print("[DEBUG] Validation Loop End")
 		if not self.trainer.sanity_checking:
 			# consolidate results
 			self._consolidate_results("val")
@@ -854,9 +850,6 @@ class FragGNNPL(SpectrumPL):
 			return mean_loss
 		
 		elif self._smf:
-			#  for debug only
-			if self.hparams.debug_val_loop_trigger == True:
-				return th.tensor(0.0)		
 			batch_results = self._common_step(batch, split="train")
 			batch_size = batch['batch_size'].item()
 			total_loss = batch_results.pop("total_loss")
@@ -893,8 +886,6 @@ class FragGNNPL(SpectrumPL):
 			# this is used for manul opt when lr_schedulers is not available from torch lightning
 			# TODO: add drop_last check?
 			self._manual_opt()
-		if self.hparams.debug_val_loop_trigger == True:
-			print(">[DEBUG] on_train_epoch_end")
 		super().on_train_epoch_end()
 
 	def optimizer_step(self, *args, **kwargs):
