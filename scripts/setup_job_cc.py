@@ -35,8 +35,8 @@ def main(args):
 		# append to existing onces
 		script_lines.extend(
 			[
-				f"#SBATCH --output={os.path.abspath(args.job_dp)}/%j.out",
-				f"#SBATCH --error={os.path.abspath(args.job_dp)}/%j.err",
+				f"#SBATCH --output={os.path.abspath(args.job_dp)}/{args.job_name}_%j.out",
+				f"#SBATCH --error={os.path.abspath(args.job_dp)}/{args.job_name}_%j.err",
 				"#SBATCH --open-mode=append"
 			]
 		)
