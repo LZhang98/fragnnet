@@ -589,7 +589,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					#print(warning_msg)
 			if warning_msg != "":
 				print("[SpecMolFragDynamicBatchSampler]", warning_msg)
-			#print(f"[SpecMolFragDynamicBatchSampler] Expecting {expected_total}/{len(self._data_source)} samples with skip_too_big:{self._skip_too_big}")
+			print(f"[SpecMolFragDynamicBatchSampler] Expecting {expected_total}/{len(self._data_source)} samples with skip_too_big:{self._skip_too_big}")
 
 		# beacuse this is an iter, shuffle only happen once per batch
 		if self._shuffle:
@@ -643,7 +643,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
 		if len(batch) > 0:
 			self._batches.append(batch)
-		#print(f"[SpecMolFragDynamicBatchSampler] Expecting {len(self._batches)} mini-batch for next epoch")
+		print(f"[SpecMolFragDynamicBatchSampler] Expecting {len(self._batches)} mini-batch for next epoch")
 
 
 	def __iter__(self) -> Iterator[List[int]]:
