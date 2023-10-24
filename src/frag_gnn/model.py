@@ -285,6 +285,8 @@ class SpectrumPL(pl.LightningModule):
 			raise NotImplementedError("Manual optimization not implemented")
 
 	def validation_step(self, batch, batch_idx):
+		if self.hparams.debug_bypass_train_val:
+			return th.tensor(0.0)
 		batch_results = self._common_step(batch, split="val")
 		mean_loss = batch_results.pop("mean_loss")
 		self._update_results(batch_results,"val")
@@ -850,6 +852,8 @@ class FragGNNPL(SpectrumPL):
 			return mean_loss
 		
 		elif self._smf:
+			if self.hparams.debug_bypass_train_val:
+				return th.tensor(0.0)
 			batch_results = self._common_step(batch, split="train")
 			batch_size = batch['batch_size'].item()
 			total_loss = batch_results.pop("total_loss")
@@ -886,6 +890,12 @@ class FragGNNPL(SpectrumPL):
 			# this is used for manul opt when lr_schedulers is not available from torch lightning
 			# TODO: add drop_last check?
 			self._manual_opt()
+		if self._smf:
+			# compute next batch index
+			# put this logic within iter() insider sampler may cause validation loop not get called after each epcoh
+			# since num of mini batches changed before training epoch finishes (training take time)
+			self.trainer.train_dataloader.batch_sampler._pre_compute_batches()
+			
 		super().on_train_epoch_end()
 
 	def optimizer_step(self, *args, **kwargs):

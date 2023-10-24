@@ -172,3 +172,4 @@ pl_enable_progress_bar: True
 debug_zero_loss: False
 nan_module_hook: False
 debug_val_loop_trigger: False
+debug_bypass_train_val: False

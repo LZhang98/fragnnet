@@ -636,15 +636,13 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				batch_filled = False
 				batch_n = 0
 
-			#print(f"num_processed after, {num_processed} current indice {dataset_idx}")
 			batch.append(dataset_idx)
 			num_processed += 1
 			batch_n += n
 
 		if len(batch) > 0:
 			self._batches.append(batch)
-		print(f"[SpecMolFragDynamicBatchSampler] Expecting {len(self._batches)} mini-batch for next epoch")
-
+		print(f"[SpecMolFragDynamicBatchSampler]Batch indices computed, Expecting {len(self._batches)} mini-batch for next epoch")
 
 	def __iter__(self) -> Iterator[List[int]]:
 		""" we use a pre computed batche list, this way we could have a correct batch size
@@ -653,10 +651,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		Yields:
 			Iterator[List[int]]: _description_
 		"""
-		# print(">Sampler current batch", self.batches)
 		for batch in self._batches:
 			yield batch
-		self._pre_compute_batches()
 
 	def __len__(self) -> int:
 		""" Note The __len__() method isn't strictly required by DataLoader, but is expected in any calculation involving the length of a DataLoader.
