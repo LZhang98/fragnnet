@@ -107,6 +107,9 @@ ff_bidirectional: True
 iceberg_hidden_size: 256
 iceberg_num_layers: 3
 iceberg_num_set_layers: 1
+iceberg_num_frag_set_layers: 0
+iceberg_num_mlp_layers: 0
+iceberg_num_gnn_layers: 0
 iceberg_dropout: 0.0
 iceberg_gnn_type: GGNN
 iceberg_pool_type: avg

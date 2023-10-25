@@ -4,6 +4,8 @@ import pytorch_lightning as pl
 import torch.nn as nn
 import dgl
 import dgl.nn as dgl_nn
+import copy
+import torch_scatter as ts
 
 import frag_gnn.iceberg.common as common
 import frag_gnn.iceberg.nn_utils as nn_utils
@@ -267,10 +269,12 @@ class IcebergIntenModel(nn.Module):
 		binned_targs: bool = True,
 		encode_forms: bool = False,
 		add_hs: bool = False,
+		mz_bin_res: float = 0.1,
+		mz_max: float = 1500.0,
+		sum_ints: bool = True,
 		**kwargs,
 	):
 		super().__init__()
-		self.save_hyperparameters()
 		self.hidden_size = hidden_size
 		self.pe_embed_k = pe_embed_k
 		self.root_encode = root_encode
@@ -300,7 +304,7 @@ class IcebergIntenModel(nn.Module):
 		self.dropout = dropout
 
 		self.max_broken = max_broken + 1
-		self.broken_onehot = torch.nn.Parameter(torch.eye(self.max_broken))
+		self.broken_onehot = th.nn.Parameter(th.eye(self.max_broken))
 		self.broken_onehot.requires_grad = False
 		self.broken_clamp = max_broken
 
@@ -313,7 +317,7 @@ class IcebergIntenModel(nn.Module):
 		adduct_shift = 0
 		if self.embed_adduct:
 			adduct_types = len(common.ion2onehot_pos)
-			onehot = torch.eye(adduct_types)
+			onehot = th.eye(adduct_types)
 			self.adduct_embedder = nn.Parameter(onehot.float())
 			self.adduct_embedder.requires_grad = False
 			adduct_shift = adduct_types
@@ -376,17 +380,8 @@ class IcebergIntenModel(nn.Module):
 		)
 		self.trans_layers = nn_utils.get_clones(trans_layer, self.frag_set_layers)
 
-		self.loss_fn_name = loss_fn
-		if loss_fn == "mse":
-			raise NotImplementedError()
-		elif loss_fn == "cosine":
-			self.loss_fn = self.cos_loss
-			self.cos_fn = nn.CosineSimilarity()
-			self.output_activations = [nn.Sigmoid()]
-		else:
-			raise NotImplementedError()
-
-		self.num_outputs = len(self.output_activations)
+		self.num_outputs = 1
+		self.output_activations = [nn.Sigmoid()]
 		self.output_size = fragmentation.FRAGMENT_ENGINE_PARAMS["max_broken_bonds"] * 2 + 1
 		self.output_map = nn.Linear(
 			self.hidden_size, self.num_outputs * self.output_size
@@ -396,7 +391,8 @@ class IcebergIntenModel(nn.Module):
 		self.isomer_attn_out = copy.deepcopy(self.output_map)
 
 		# Define buckets
-		buckets = torch.DoubleTensor(np.linspace(0, 1500, 15000))
+		assert self.binned_targs
+		buckets = th.DoubleTensor(np.arange(mz_bin_res,mz_max+mz_bin_res,mz_bin_res))
 		self.inten_buckets = nn.Parameter(buckets)
 		self.inten_buckets.requires_grad = False
 
@@ -458,7 +454,7 @@ class IcebergIntenModel(nn.Module):
 						root_repr.batch_num_nodes(), 0
 					)
 					ndata = root_repr.ndata["h"]
-					ndata = torch.cat([ndata, embed_adducts_expand], -1)
+					ndata = th.cat([ndata, embed_adducts_expand], -1)
 					root_repr.ndata["h"] = ndata
 				root_embeddings = self.root_module(root_repr)
 				root_embeddings = self.pool(root_repr, root_embeddings)
@@ -469,7 +465,7 @@ class IcebergIntenModel(nn.Module):
 		# graphs
 		ext_root = root_embeddings[ind_maps]
 		# Extend the root further to cover each individual atom
-		ext_root_atoms = torch.repeat_interleave(
+		ext_root_atoms = th.repeat_interleave(
 			ext_root, graphs.batch_num_nodes(), dim=0
 		)
 		concat_list = [graphs.ndata["h"]]
@@ -479,13 +475,13 @@ class IcebergIntenModel(nn.Module):
 
 		if self.embed_adduct:
 			adducts_mapped = embed_adducts[ind_maps]
-			adducts_exp = torch.repeat_interleave(
+			adducts_exp = th.repeat_interleave(
 				adducts_mapped, graphs.batch_num_nodes(), dim=0
 			)
 			concat_list.append(adducts_exp)
 
 		with graphs.local_scope():
-			graphs.ndata["h"] = torch.cat(concat_list, -1).float()
+			graphs.ndata["h"] = th.cat(concat_list, -1).float()
 
 			frag_embeddings = self.gnn(graphs)
 
@@ -493,16 +489,16 @@ class IcebergIntenModel(nn.Module):
 			avg_frags = self.pool(graphs, frag_embeddings)
 
 		# expand broken and map it to each fragment
-		broken_arange = torch.arange(broken.shape[-1]).to(device)
+		broken_arange = th.arange(broken.shape[-1]).to(device)
 		broken_mask = broken_arange[None, :] < num_frags[:, None]
 
-		broken = torch.clamp(broken[broken_mask], max=self.broken_clamp)
+		broken = th.clamp(broken[broken_mask], max=self.broken_clamp)
 		broken_onehots = self.broken_onehot[broken.long()]
 
 		### Build hidden with forms
 		mlp_cat_list = [ext_root, ext_root - avg_frags, avg_frags, broken_onehots]
 
-		hidden = torch.cat(mlp_cat_list, dim=1)
+		hidden = th.cat(mlp_cat_list, dim=1)
 
 		# Pack so we can use interpeak attn
 		padded_hidden = nn_utils.pad_packed_tensor(hidden, num_frags, 0)
@@ -511,7 +507,7 @@ class IcebergIntenModel(nn.Module):
 			diffs = root_forms[:, None, :] - frag_forms
 			form_encodings = self.embedder(frag_forms)
 			diff_encodings = self.embedder(diffs)
-			new_hidden = torch.cat(
+			new_hidden = th.cat(
 				[padded_hidden, form_encodings, diff_encodings], dim=-1
 			)
 			padded_hidden = new_hidden
@@ -520,7 +516,7 @@ class IcebergIntenModel(nn.Module):
 		batch_size, max_frags, hidden_dim = padded_hidden.shape
 
 		# Build up a mask
-		arange_frags = torch.arange(padded_hidden.shape[1]).to(device)
+		arange_frags = th.arange(padded_hidden.shape[1]).to(device)
 		attn_mask = ~(arange_frags[None, :] < num_frags[:, None])
 
 		hidden = padded_hidden
@@ -532,7 +528,7 @@ class IcebergIntenModel(nn.Module):
 
 		# Build mask
 		max_inten_shift = (self.output_size - 1) / 2
-		max_break_ar = torch.arange(self.output_size, device=device)[None, None, :].to(
+		max_break_ar = th.arange(self.output_size, device=device)[None, None, :].to(
 			device
 		)
 		max_breaks_ub = max_add_hs + max_inten_shift
@@ -542,7 +538,7 @@ class IcebergIntenModel(nn.Module):
 		lb_mask = max_break_ar >= max_breaks_lb[:, :, None]
 
 		# B x Length x Mass shifts
-		valid_pos = torch.logical_and(ub_mask, lb_mask)
+		valid_pos = th.logical_and(ub_mask, lb_mask)
 
 		# B x Length x outputs x Mass shift
 		valid_pos = valid_pos[:, :, None, :].expand(
@@ -557,8 +553,7 @@ class IcebergIntenModel(nn.Module):
 		attn_weights = attn_weights.reshape(batch_size, max_frags, self.num_outputs, -1)
 
 		# Mask attn weights
-		# attn_weights.masked_fill_(~valid_pos, -float("inf"))
-		attn_weights.masked_fill_(~valid_pos, -99999)  # -float("inf"))
+		attn_weights.masked_fill_(~valid_pos, -99999)
 
 		# B x Out x L x Mass shifts
 		output = output.transpose(1, 2)
@@ -566,7 +561,7 @@ class IcebergIntenModel(nn.Module):
 		valid_pos_binned = valid_pos.transpose(1, 2)
 
 		# Calc inverse indices => B x Out x L x shift
-		inverse_indices = torch.bucketize(masses, self.inten_buckets, right=False)
+		inverse_indices = th.bucketize(masses, self.inten_buckets, right=False)
 		inverse_indices = inverse_indices[:, None, :, :].expand(attn_weights.shape)
 
 		# B x Out x (L * Mass shifts)
@@ -610,7 +605,7 @@ class IcebergIntenModel(nn.Module):
 			new_outputs_binned.append(
 				act(output_binned[:, output_ind : output_ind + 1, :])
 			)
-		output_binned = torch.cat(new_outputs_binned, -2)
+		output_binned = th.cat(new_outputs_binned, -2)
 		output_binned.masked_fill_(~valid_pos_binned, 0)
 
 		# Index into output binned using inverse_indices_reshaped
@@ -619,7 +614,7 @@ class IcebergIntenModel(nn.Module):
 		inverse_indices_reshaped_temp = inverse_indices_reshaped.transpose(
 			1, 2
 		).reshape(batch_size, self.num_outputs, -1)
-		output_unbinned = torch.take_along_dim(
+		output_unbinned = th.take_along_dim(
 			output_binned, inverse_indices_reshaped_temp, dim=-1
 		)
 		output_unbinned = output_unbinned.reshape(

@@ -669,17 +669,18 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 			magma_data["magma_root_reprs"] = th.tensor(magma_entry["root_repr"], dtype=th.float).unsqueeze(0)
 		magma_data["magma_frag_graphs"] = magma_entry["dgl_frags"]
 		magma_data["magma_frag_atoms"] = th.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long) ##
-		magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long) ##
-		magma_data["magma_broken_bonds"] = th.tensor(magma_entry["max_broken"], dtype=th.long)
+		magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long)
+		magma_data["magma_broken_bonds"] = th.tensor(magma_entry["max_broken"], dtype=th.long).unsqueeze(0)
 		magma_data["magma_adducts"] = th.tensor([magma_entry["adduct"]], dtype=th.float)
-		magma_data["magma_frag_form_vecs"] = th.tensor(np.array([i for i in magma_entry["form_vecs"]]), dtype=th.long) ##
+		magma_data["magma_frag_form_vecs"] = th.tensor(np.array([i for i in magma_entry["form_vecs"]]), dtype=th.long).unsqueeze(0)
 		magma_data["magma_root_form_vecs"] = th.tensor(np.array([magma_entry["root_form_vec"]]), dtype=th.long)
 		###
 		magma_data["magma_num_frags"] = th.tensor([len(magma_entry["dgl_frags"])], dtype=th.long)
 		magma_data["magma_inten_targs"] = th.tensor(magma_entry["inten_targs"], dtype=th.float).unsqueeze(0)
-		magma_data["magma_masses"] = th.tensor(magma_entry["masses"], dtype=th.float)
-		magma_data["magma_max_add_hs"] = th.tensor(magma_entry["max_add_hs"], dtype=th.float)
-		magma_data["magma_max_remove_hs"] = th.tensor(magma_entry["max_remove_hs"], dtype=th.float)
+		magma_data["magma_masses"] = th.tensor(magma_entry["masses"], dtype=th.float).unsqueeze(0)
+		print(magma_entry["masses"].shape)
+		magma_data["magma_max_add_hs"] = th.tensor(magma_entry["max_add_hs"], dtype=th.float).unsqueeze(0)
+		magma_data["magma_max_remove_hs"] = th.tensor(magma_entry["max_remove_hs"], dtype=th.float).unsqueeze(0)
 		magma_data["magma_inten_frag_ids"] = [magma_entry["inten_frag_ids"]]
 		return magma_data
 
@@ -706,11 +707,17 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		keys.remove("magma_frag_atoms")
 		collate_data["magma_inds"] = th.arange(len(frag_graphs),dtype=th.long).repeat_interleave(num_frags)
 		keys.remove("magma_inds")
-		collate_data["magma_broken_bonds"] = th.cat(collate_data["magma_broken_bonds"], dim=0)
+		collate_data["magma_broken_bonds"] = th.nn.utils.rnn.pad_sequence(
+			[i.squeeze(0) for i in collate_data["magma_broken_bonds"]], 
+			batch_first=True
+		)
 		keys.remove("magma_broken_bonds")
 		collate_data["magma_adducts"] = th.cat(collate_data["magma_adducts"], dim=0)
 		keys.remove("magma_adducts")
-		collate_data["magma_frag_form_vecs"] = th.cat(collate_data["magma_frag_form_vecs"], dim=0)
+		collate_data["magma_frag_form_vecs"] = th.nn.utils.rnn.pad_sequence(
+			[i.squeeze(0) for i in collate_data["magma_frag_form_vecs"]], 
+			batch_first=True
+		)
 		keys.remove("magma_frag_form_vecs")
 		collate_data["magma_root_form_vecs"] = th.cat(collate_data["magma_root_form_vecs"], dim=0)
 		keys.remove("magma_root_form_vecs")
@@ -720,13 +727,19 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		collate_data["magma_inten_targs"] = th.cat(collate_data["magma_inten_targs"], dim=0) ### not sure
 		keys.remove("magma_inten_targs")
 		collate_data["magma_masses"] = th.nn.utils.rnn.pad_sequence(
-			flatten_lol([[j.squeeze(0) for j in th.split(i, 1, dim=0)] for i in collate_data["magma_masses"]]), 
+			[i.squeeze(0) for i in collate_data["magma_masses"]], 
 			batch_first=True
 		)
 		keys.remove("magma_masses")
-		collate_data["magma_max_add_hs"] = th.nn.utils.rnn.pad_sequence(collate_data["magma_max_add_hs"], batch_first=True)
+		collate_data["magma_max_add_hs"] = th.nn.utils.rnn.pad_sequence(
+			[i.squeeze(0) for i in collate_data["magma_max_add_hs"]], 
+			batch_first=True
+		)
 		keys.remove("magma_max_add_hs")
-		collate_data["magma_max_remove_hs"] = th.nn.utils.rnn.pad_sequence(collate_data["magma_max_remove_hs"], batch_first=True)
+		collate_data["magma_max_remove_hs"] = th.nn.utils.rnn.pad_sequence(
+			[i.squeeze(0) for i in collate_data["magma_max_remove_hs"]], 
+			batch_first=True
+		)
 		keys.remove("magma_max_remove_hs")
 		collate_data["magma_inten_frag_ids"] = flatten_lol(collate_data["magma_inten_frag_ids"])
 		keys.remove("magma_inten_frag_ids")

@@ -212,6 +212,10 @@ def scatter_logsoftmax(logits,subset_idxs,dim=-1):
 	logits = logits - c[subset_idxs]
 	return logits
 
+def scatter_softmax(logits,subset_idxs,dim=-1):
+
+	return th.exp(scatter_logsoftmax(logits,subset_idxs,dim=dim))
+
 def scatter_l1normalize(vals,subset_idxs,dim=-1):
 	# calculate normalizing constant
 	c = scatter_reduce(

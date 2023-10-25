@@ -7,7 +7,7 @@ import dgl
 from frag_gnn.pl_model import SpectrumPL
 from frag_gnn.utils.misc_utils import to_cpu, scatter_reduce
 import frag_gnn.iceberg.common as common
-from frag_gnn.iceberg.model import IcebergGenModel
+from frag_gnn.iceberg.model import IcebergGenModel, IcebergIntenModel
 from frag_gnn.iceberg.dataset import TreeProcessor
 from frag_gnn.iceberg import fragmentation
 
@@ -438,14 +438,72 @@ class IcebergGenPL(SpectrumPL):
 		return frag_hash_to_entry
 
 
-if __name__ == "__main__":
+class IcebergIntenPL(SpectrumPL):
+
+	def _setup_model(self):
+
+		self.model = IcebergIntenModel(
+			hidden_size=self.hparams.iceberg_hidden_size,
+			mlp_layers=self.hparams.iceberg_num_mlp_layers,
+			gnn_layers=self.hparams.iceberg_num_gnn_layers,
+			set_layers=self.hparams.iceberg_num_set_layers,
+			frag_set_layers=self.hparams.iceberg_num_frag_set_layers,
+			dropout=self.hparams.iceberg_dropout,
+			mpnn_type=self.hparams.iceberg_gnn_type,
+			pool_op=self.hparams.iceberg_pool_type,
+			inject_early=self.hparams.iceberg_inject_early,
+			embed_adduct=self.hparams.iceberg_embed_adduct,
+			encode_forms=self.hparams.iceberg_encode_forms,
+			root_encode=self.hparams.magma_params["root_encode"],
+			pe_embed_k=self.hparams.magma_params["pe_embed_k"],
+			add_hs=self.hparams.magma_params["add_hs"],
+			binned_targs=True,
+			mz_bin_res=self.hparams.spec_params["mz_bin_res"],
+			mz_max=self.hparams.spec_params["mz_max"],
+			sum_ints=self.hparams.spec_params["sum_ints"],
+		)
+
+		# compile
+		if self.hparams.compile:
+			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
+
+	def _setup_loss_fn(self):
+
+		assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
+		def _loss_fn():
+			pass
+		self.loss_fn = _loss_fn
+
+	def forward(self,**kwargs):
+
+		outputs = self.model(
+			graphs=kwargs["magma_frag_graphs"],
+			root_repr=kwargs["magma_root_reprs"],
+			ind_maps=kwargs["magma_inds"],
+			num_frags=kwargs["magma_num_frags"],
+			broken=kwargs["magma_broken_bonds"],
+			adducts=kwargs["magma_adducts"],
+			max_add_hs=kwargs["magma_max_add_hs"],
+			max_remove_hs=kwargs["magma_max_remove_hs"],
+			masses=kwargs["magma_masses"],
+			root_forms=kwargs["magma_root_form_vecs"],
+			frag_forms=kwargs["magma_frag_form_vecs"],
+		)
+		return outputs
+
+	def _common_step(self, batch, split="train"):
+
+		pass
+
+
+def test_gen():
 
 	from frag_gnn.runner import load_config
 	from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset
 	from frag_gnn.utils.misc_utils import print_shapes
 
 	template_fp = "config/template.yml"
-	custom_fp = "config/debug/debug_iceberg_gen.yml"
+	custom_fp = "config/iceberg/d3_iceberg_gen.yml"
 
 	config_d = load_config(template_fp, custom_fp)
 
@@ -494,3 +552,42 @@ if __name__ == "__main__":
 	)
 	print("> inference outputs")
 	print_shapes(next(iter(outputs.values())))
+
+def test_inten():
+
+	from frag_gnn.runner import load_config
+	from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset
+	from frag_gnn.utils.misc_utils import print_shapes
+
+	template_fp = "config/template.yml"
+	custom_fp = "config/iceberg/d3_iceberg_inten.yml"
+
+	config_d = load_config(template_fp, custom_fp)
+
+	ds = SpecMolMagmaIntenDataset(split="train", **config_d)
+	dl = th.utils.data.DataLoader(
+		ds,
+		batch_size=2,
+		shuffle=False,
+		num_workers=0,
+		collate_fn=ds.get_collate_fn(),
+	)
+	dl_iter = iter(dl)
+	batch = next(dl_iter)
+	print("> batch")
+	print_shapes(batch)
+
+	pl_model = IcebergIntenPL(**config_d)
+	pl_model.train()
+
+	outputs = pl_model.forward(**batch)
+	print("> train outputs")
+	print_shapes(outputs)
+
+	import pdb; pdb.set_trace()
+
+
+if __name__ == "__main__":
+
+	# test_gen()
+	test_inten()
