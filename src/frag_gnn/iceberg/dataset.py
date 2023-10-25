@@ -36,6 +36,9 @@ class TreeProcessor:
 		root_encode: str = "gnn",
 		binned_targs: bool = False,
 		add_hs: bool = False,
+		mz_max: float = 1500.0,
+		mz_bin_res: float = 0.1,
+		sum_ints: bool = True,
 	):
 		""" """
 		self.pe_embed_k = pe_embed_k
@@ -44,8 +47,8 @@ class TreeProcessor:
 		self.add_hs = add_hs
 
 		# Hard coded bins (for now)
-		# NOTE: these are not multiples of 0.1!
-		self.bins = np.linspace(0, 1500, 15000)
+		self.bins = np.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res)
+		self.sum_ints = sum_ints
 
 	def featurize_frag(
 		self,
@@ -255,11 +258,13 @@ class TreeProcessor:
 		if include_targets and self.binned_targs:
 			intens = out_dict["inten_targs"]
 			# print(np.sort(intens[:,0]))
-			bin_posts = np.digitize(intens[:, 0], self.bins, right=False)
-			# bin_posts = np.digitize(intens[:, 0], np.arange(0.1,1500.0+0.1,0.1), right=True)
+			bin_posts = np.digitize(intens[:, 0], self.bins, right=True)
 			new_out = np.zeros_like(self.bins)
 			for bin_post, inten in zip(bin_posts, intens[:, 1]):
-				new_out[bin_post] = max(new_out[bin_post], inten)
+				if self.sum_ints:
+					new_out[bin_post] += inten
+				else:
+					new_out[bin_post] = max(new_out[bin_post], inten)
 			# print(new_out.nonzero()[0])
 			out_dict["inten_targs"] = new_out
 			# ###
@@ -430,7 +435,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
 			tree_files.append(Path(fp))
 		self.name_to_tree_file = {tree_name: tree_file for tree_name, tree_file in zip(tree_names, tree_files)}
 		self.tree_fn = lambda x: self._read_tree(self._load_tree(x))
-		self.tree_processor = self.__class__.init_tree_processor(self.magma_params)
+		self.tree_processor = self.__class__.init_tree_processor(self.spec_params,self.magma_params)
 
 	def _load_tree(self, name):
 		
@@ -467,7 +472,7 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 	"""TODO: fold this into the parent class"""
 
 	@staticmethod
-	def init_tree_processor(magma_params):
+	def init_tree_processor(spec_params, magma_params):
 
 		tree_processor = TreeProcessor(
 			pe_embed_k=magma_params["pe_embed_k"],
@@ -591,13 +596,16 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		self.name_to_formula_file = {formula_name: formula_file for formula_name, formula_file in zip(formula_names, formula_files)}
 
 	@staticmethod
-	def init_tree_processor(magma_params):
+	def init_tree_processor(spec_params, magma_params):
 
 		tree_processor = TreeProcessor(
 			pe_embed_k=magma_params["pe_embed_k"],
 			root_encode=magma_params["root_encode"],
 			add_hs=magma_params["add_hs"],
-			binned_targs=True
+			binned_targs=True,
+			mz_bin_res=spec_params["mz_bin_res"],
+			mz_max=spec_params["mz_max"],
+			sum_ints=spec_params["sum_ints"]
 		)
 		return tree_processor
 
@@ -605,13 +613,21 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		
 		tree_json = super()._load_tree(name)
 		formula_json = self._load_formula(name)
-		raw_spec = self._read_formula(formula_json)
+		raw_spec, adduct = self._read_formula(formula_json)
 		tree_json["raw_spec"] = raw_spec
+		tree_json["adduct"] = adduct
 		return tree_json
 
 	def _read_tree(self, tree_json):
 		
+		adduct = tree_json.pop("adduct")
 		tree = self.tree_processor.process_tree_inten(tree_json)
+		# adduct correction on masses
+		# print("before masses")
+		# print(tree["dgl_tree"]["masses"])
+		tree["dgl_tree"]["masses"] = tree["dgl_tree"]["masses"] + common.ion2mass[adduct]
+		# print("after masses")
+		# print(tree["dgl_tree"]["masses"])
 		return tree
 
 	def _load_formula(self, name):
@@ -624,8 +640,18 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 	def _read_formula(self, formula_json):
 
 		true_tbl = formula_json["output_tbl"]
-		raw_spec = list(zip(true_tbl["formula_mass_no_adduct"], true_tbl["rel_inten"]))
-		return raw_spec
+		true_adduct = formula_json["cand_ion"]
+		# raw_spec = list(zip(true_tbl["formula_mass_no_adduct"], true_tbl["rel_inten"]))
+		# print("before raw_spec")
+		# print(raw_spec)
+		mz_diff = common.ion2mass[true_adduct]
+		raw_spec = []
+		for mz, inten in zip(true_tbl["formula_mass_no_adduct"], true_tbl["rel_inten"]):
+			# adduct correction on raw_spec
+			raw_spec.append((mz + mz_diff, inten))
+		# print("after raw_spec")
+		# print(raw_spec)
+		return raw_spec, true_adduct
 
 	@classmethod
 	def get_collate_fn(cls):
@@ -650,7 +676,7 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		magma_data["magma_root_form_vecs"] = th.tensor(np.array([magma_entry["root_form_vec"]]), dtype=th.long)
 		###
 		magma_data["magma_num_frags"] = th.tensor([len(magma_entry["dgl_frags"])], dtype=th.long)
-		magma_data["magma_inten_targs"] = th.tensor(magma_entry["inten_targs"], dtype=th.float).unsqueeze(0) ### not sure
+		magma_data["magma_inten_targs"] = th.tensor(magma_entry["inten_targs"], dtype=th.float).unsqueeze(0)
 		magma_data["magma_masses"] = th.tensor(magma_entry["masses"], dtype=th.float)
 		magma_data["magma_max_add_hs"] = th.tensor(magma_entry["max_add_hs"], dtype=th.float)
 		magma_data["magma_max_remove_hs"] = th.tensor(magma_entry["max_remove_hs"], dtype=th.float)
@@ -767,80 +793,82 @@ if __name__ == "__main__":
 		)
 	)
 
-	for ds_cls in [SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset]:
+	# for ds_cls in [SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset]:
 
-		ds = ds_cls(**config_d)
-		item = ds[0]
-		print(f">>> {ds_cls} item")
-		print_shapes(item)
-		item = to_gpu(item)
+	# 	ds = ds_cls(**config_d)
+	# 	item = ds[0]
+	# 	print(f">>> {ds_cls} item")
+	# 	print_shapes(item)
+	# 	item = to_gpu(item)
 
-	for ds_cls in [SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset]:
+	# for ds_cls in [SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset]:
 
-		ds = ds_cls(**config_d)
-		dl = th.utils.data.DataLoader(
-			ds,
-			batch_size=2,
-			shuffle=False,
-			num_workers=0,
-			collate_fn=ds.get_collate_fn(),
-		)
-		dl_iter = iter(dl)
-		batch = next(dl_iter)
-		print(">>> batch")
-		print_shapes(batch)
-		batch = to_gpu(batch)
+	# 	ds = ds_cls(**config_d)
+	# 	dl = th.utils.data.DataLoader(
+	# 		ds,
+	# 		batch_size=2,
+	# 		shuffle=False,
+	# 		num_workers=0,
+	# 		collate_fn=ds.get_collate_fn(),
+	# 	)
+	# 	dl_iter = iter(dl)
+	# 	batch = next(dl_iter)
+	# 	print(">>> batch")
+	# 	print_shapes(batch)
+	# 	batch = to_gpu(batch)
 
-	# from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
-	# from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+	from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
+	from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+	import torch.nn.functional as F
 
-	# diff = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+	diff = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
 
-	# ds = SpecMolMagmaIntenDataset(**config_d)
-	# item = ds[0]
-	# bin_spec_1 = bin_func(
-	# 	item["spec_mzs"]-diff, 
-	# 	item["spec_ints"], 
-	# 	1500.0, 
-	# 	0.1,
-	# 	False,
-	# 	False # True
-	# )
-	# bin_spec_1 = th.roll(bin_spec_1, shifts=1, dims=0)
-	# bin_spec_2 = item["magma_inten_targs"].squeeze(0)
-	# print("> shapes")
-	# print(bin_spec_1.shape)
-	# print(bin_spec_2.shape)
-	# print("> mzs")
-	# print(item["spec_mzs"]-diff)
-	# print("> nonzero idxs")
-	# print(bin_spec_1.nonzero())
-	# print(bin_spec_2.nonzero())
-	# print("> cosine similarity")
-	# print(binned_cosine_similarity(bin_spec_1.unsqueeze(0),bin_spec_2.unsqueeze(0)))
-	# import pdb; pdb.set_trace()
+	ds = SpecMolMagmaIntenDataset(**config_d)
+	item = ds[0]
+	bin_spec_1 = bin_func(
+		item["spec_mzs"], 
+		item["spec_ints"], 
+		1500.0, 
+		0.1,
+		False,
+		True
+	)
+	bin_spec_1 = th.sqrt(F.normalize(bin_spec_1,p=0,dim=0))
+	bin_spec_2 = item["magma_inten_targs"].squeeze(0)
+	print("> shapes")
+	print(bin_spec_1.shape)
+	print(bin_spec_2.shape)
+	print("> mzs")
+	print(item["spec_mzs"])
+	print("> nonzero idxs")
+	print(bin_spec_1.nonzero().squeeze(1))
+	print(bin_spec_2.nonzero().squeeze(1))
+	print(th.all(bin_spec_1.nonzero()==bin_spec_2.nonzero()))
+	print("> cosine similarity")
+	print(binned_cosine_similarity(bin_spec_1.unsqueeze(0),bin_spec_2.unsqueeze(0)))
+	import pdb; pdb.set_trace()
 
-	# dl = th.utils.data.DataLoader(
-	# 	ds,
-	# 	batch_size=2,
-	# 	shuffle=False,
-	# 	num_workers=0,
-	# 	collate_fn=ds.get_collate_fn(),
-	# )
-	# dl_iter = iter(dl)
-	# batch = next(dl_iter)
-	# print(">>> batch")
-	# print_shapes(batch)
-	# bin_spec_1 = batched_bin_func(
-	# 	batch["spec_mzs"], 
-	# 	batch["spec_ints"], 
-	# 	batch["spec_batch_idxs"],
-	# 	1500.0,
-	# 	0.1,
-	# 	True
-	# )
-	# bin_spec_2 = batch["magma_inten_targs"]
-	# print(bin_spec_1.shape)
-	# print(bin_spec_2.shape)
-	# print(binned_cosine_similarity(bin_spec_1,bin_spec_2))
-	# import pdb; pdb.set_trace()
+	dl = th.utils.data.DataLoader(
+		ds,
+		batch_size=2,
+		shuffle=False,
+		num_workers=0,
+		collate_fn=ds.get_collate_fn(),
+	)
+	dl_iter = iter(dl)
+	batch = next(dl_iter)
+	print(">>> batch")
+	print_shapes(batch)
+	bin_spec_1 = batched_bin_func(
+		batch["spec_mzs"], 
+		batch["spec_ints"], 
+		batch["spec_batch_idxs"],
+		1500.0,
+		0.1,
+		True
+	)
+	bin_spec_2 = batch["magma_inten_targs"]
+	print(bin_spec_1.shape)
+	print(bin_spec_2.shape)
+	print(binned_cosine_similarity(bin_spec_1,bin_spec_2))
+	import pdb; pdb.set_trace()
