@@ -32,3 +32,4 @@ specmolfrag_dynamic_batch_sampler_max: 500000
 
 pl_enable_progress_bar: True
 debug_val_loop_trigger: True
+debug_bypass_train_val: False
