@@ -44,6 +44,7 @@ class TreeProcessor:
 		self.add_hs = add_hs
 
 		# Hard coded bins (for now)
+		# NOTE: these are not multiples of 0.1!
 		self.bins = np.linspace(0, 1500, 15000)
 
 	def featurize_frag(
@@ -253,12 +254,27 @@ class TreeProcessor:
 
 		if include_targets and self.binned_targs:
 			intens = out_dict["inten_targs"]
-			bin_posts = np.digitize(intens[:, 0], self.bins)
+			# print(np.sort(intens[:,0]))
+			bin_posts = np.digitize(intens[:, 0], self.bins, right=False)
+			# bin_posts = np.digitize(intens[:, 0], np.arange(0.1,1500.0+0.1,0.1), right=True)
 			new_out = np.zeros_like(self.bins)
 			for bin_post, inten in zip(bin_posts, intens[:, 1]):
 				new_out[bin_post] = max(new_out[bin_post], inten)
-			inten_targets = new_out
-			out_dict["inten_targs"] = inten_targets
+			# print(new_out.nonzero()[0])
+			out_dict["inten_targs"] = new_out
+			# ###
+			# from frag_gnn.utils.spec_utils import bin_func
+			# bin_spec = bin_func(
+			# 	th.as_tensor(intens[:,0]).reshape(-1), 
+			# 	th.as_tensor(intens[:,1]).reshape(-1), 
+			# 	1500, 
+			# 	0.1, 
+			# 	False, 
+			# 	False
+			# )
+			# print(bin_spec.numpy().nonzero()[0])
+			# import pdb; pdb.set_trace()
+			# ###
 		return out_dict
 
 	def add_pe_embed(self, graph):
@@ -397,6 +413,8 @@ class SpecMolMagmaDataset(SpecMolDataset):
 		self.mol_params = kwargs["mol_params"]
 		self.magma_params = kwargs["magma_params"]
 		self._init_magma()
+		tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
+		assert self.spec_df["group_id"].isin(tree_group_ids).all()
 		self._preprocess_spec()
 		self._preprocess_mol()
 		# self._preprocess_magma()
@@ -411,7 +429,8 @@ class SpecMolMagmaDataset(SpecMolDataset):
 			tree_names.append(fp.stem)
 			tree_files.append(Path(fp))
 		self.name_to_tree_file = {tree_name: tree_file for tree_name, tree_file in zip(tree_names, tree_files)}
-		self.read_fn = lambda x: self._read_tree(self._load_tree(x))
+		self.tree_fn = lambda x: self._read_tree(self._load_tree(x))
+		self.tree_processor = self.__class__.init_tree_processor(self.magma_params)
 
 	def _load_tree(self, name):
 		
@@ -433,7 +452,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
 		mol_data = self._process_mol(mol_entry)
 		name = str(spec_entry["group_id"])
 		adduct = common.ion2onehot_pos[spec_entry["prec_type"]]
-		magma_entry = self.read_fn(name)["dgl_tree"]
+		magma_entry = self.tree_fn(name)["dgl_tree"]
 		magma_entry = {
 			"name": name, 
 			"adduct": adduct,
@@ -446,13 +465,6 @@ class SpecMolMagmaDataset(SpecMolDataset):
 
 class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 	"""TODO: fold this into the parent class"""
-
-	def _init_magma(self):
-
-		super()._init_magma()
-		tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
-		assert self.spec_df["group_id"].isin(tree_group_ids).all()
-		self.tree_processor = SpecMolMagmaGenDataset.init_tree_processor(self.magma_params)
 
 	@staticmethod
 	def init_tree_processor(magma_params):
@@ -491,6 +503,7 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 
 	@classmethod
 	def get_collate_fn(cls):
+		
 		return SpecMolMagmaGenDataset.collate_fn
 
 	@staticmethod
@@ -529,23 +542,171 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 		collate_data["magma_root_form_vecs"] = th.cat(collate_data["magma_root_form_vecs"], dim=0)
 		keys.remove("magma_root_form_vecs")
 		###
-		if "spec_ints" in keys and "spec_mzs" in keys:
-			# create batch_idxs
-			mzs, ints, batch_idxs = batch_func(
-				collate_data["spec_mzs"],
-				collate_data["spec_ints"]
-			)
-			collate_data["spec_mzs"] = mzs
-			collate_data["spec_ints"] = ints
-			collate_data["spec_batch_idxs"] = batch_idxs
-			# remove from list
-			keys.remove("spec_ints")
-			keys.remove("spec_mzs")
-		SpecMolMagmaGenDataset._standard_collate(keys,collate_data)
-		# add batch_size
-		collate_data["batch_size"] = th.tensor(batch_size)
+		SpecMolMagmaGenDataset._standard_collate(batch_size, keys, collate_data)
 		return collate_data
 
+
+class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
+
+	def __init__(
+		self,
+		spec_fp: str,
+		mol_fp: str,
+		split_dp: str,
+		split: str,
+		magma_dp: str,
+		**kwargs,
+	):
+
+		BaseDataset.__init__(self)
+		self._base_init(
+			spec_fp=spec_fp,
+			mol_fp=mol_fp,
+			split_dp=split_dp,
+			split=split,
+			**kwargs
+		)
+		self.magma_dp = magma_dp
+		self.mol_params = kwargs["mol_params"]
+		self.magma_params = kwargs["magma_params"]
+		self._init_magma()
+		tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
+		assert self.spec_df["group_id"].isin(tree_group_ids).all()
+		formula_group_ids = [int(name) for name in self.name_to_formula_file.keys()]
+		assert self.spec_df["group_id"].isin(formula_group_ids).all()
+		self._preprocess_spec()
+		self._preprocess_mol()
+		# self._preprocess_magma()
+
+	def _init_magma(self):
+
+		super()._init_magma()
+		magma_dir = Path(self.magma_dp)
+		formula_dir = magma_dir / "magma_formula"
+		assert formula_dir.exists(), formula_dir
+		formula_names, formula_files = [], []
+		for fp in formula_dir.glob("*.json"):
+			formula_names.append(fp.stem)
+			formula_files.append(Path(fp))
+		self.name_to_formula_file = {formula_name: formula_file for formula_name, formula_file in zip(formula_names, formula_files)}
+
+	@staticmethod
+	def init_tree_processor(magma_params):
+
+		tree_processor = TreeProcessor(
+			pe_embed_k=magma_params["pe_embed_k"],
+			root_encode=magma_params["root_encode"],
+			add_hs=magma_params["add_hs"],
+			binned_targs=True
+		)
+		return tree_processor
+
+	def _load_tree(self, name):
+		
+		tree_json = super()._load_tree(name)
+		formula_json = self._load_formula(name)
+		raw_spec = self._read_formula(formula_json)
+		tree_json["raw_spec"] = raw_spec
+		return tree_json
+
+	def _read_tree(self, tree_json):
+		
+		tree = self.tree_processor.process_tree_inten(tree_json)
+		return tree
+
+	def _load_formula(self, name):
+
+		json_file = self.name_to_formula_file[name]
+		with open(str(json_file), "r") as file:
+			formula_json = json.load(file)
+		return formula_json
+
+	def _read_formula(self, formula_json):
+
+		true_tbl = formula_json["output_tbl"]
+		raw_spec = list(zip(true_tbl["formula_mass_no_adduct"], true_tbl["rel_inten"]))
+		return raw_spec
+
+	@classmethod
+	def get_collate_fn(cls):
+		
+		return SpecMolMagmaIntenDataset.collate_fn
+
+	def _process_magma(self, magma_entry):
+
+		magma_data = {}
+		magma_data["magma_names"] = [magma_entry["name"]]
+		if isinstance(magma_entry["root_repr"], dgl.DGLGraph):
+			magma_data["magma_root_reprs"] = magma_entry["root_repr"]
+		else:
+			assert isinstance(magma_entry["root_repr"], np.ndarray)
+			magma_data["magma_root_reprs"] = th.tensor(magma_entry["root_repr"], dtype=th.float).unsqueeze(0)
+		magma_data["magma_frag_graphs"] = magma_entry["dgl_frags"]
+		magma_data["magma_frag_atoms"] = th.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long) ##
+		magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long) ##
+		magma_data["magma_broken_bonds"] = th.tensor(magma_entry["max_broken"], dtype=th.long)
+		magma_data["magma_adducts"] = th.tensor([magma_entry["adduct"]], dtype=th.float)
+		magma_data["magma_frag_form_vecs"] = th.tensor(np.array([i for i in magma_entry["form_vecs"]]), dtype=th.long) ##
+		magma_data["magma_root_form_vecs"] = th.tensor(np.array([magma_entry["root_form_vec"]]), dtype=th.long)
+		###
+		magma_data["magma_num_frags"] = th.tensor([len(magma_entry["dgl_frags"])], dtype=th.long)
+		magma_data["magma_inten_targs"] = th.tensor(magma_entry["inten_targs"], dtype=th.float).unsqueeze(0) ### not sure
+		magma_data["magma_masses"] = th.tensor(magma_entry["masses"], dtype=th.float)
+		magma_data["magma_max_add_hs"] = th.tensor(magma_entry["max_add_hs"], dtype=th.float)
+		magma_data["magma_max_remove_hs"] = th.tensor(magma_entry["max_remove_hs"], dtype=th.float)
+		magma_data["magma_inten_frag_ids"] = [magma_entry["inten_frag_ids"]]
+		return magma_data
+
+	@staticmethod
+	def collate_fn(data_list):
+
+		batch_size, keys, collate_data = SpecMolMagmaIntenDataset._setup_collate(data_list)
+		###
+		frag_graphs = collate_data["magma_frag_graphs"]
+		num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]],dtype=th.long)
+		assert th.all(num_frags == th.cat(collate_data["magma_num_frags"],dim=0))
+		###
+		collate_data["magma_names"] = flatten_lol(collate_data["magma_names"])
+		keys.remove("magma_names")
+		if isinstance(collate_data["magma_root_reprs"][0], dgl.DGLGraph):
+			collate_data["magma_root_reprs"] = dgl.batch(collate_data["magma_root_reprs"])
+		else:
+			assert isinstance(collate_data["magma_root_reprs"][0], th.Tensor)
+			collate_data["magma_root_reprs"] = th.cat(collate_data["magma_root_reprs"],dim=0)
+		keys.remove("magma_root_reprs")
+		collate_data["magma_frag_graphs"] = dgl.batch(flatten_lol(frag_graphs))
+		keys.remove("magma_frag_graphs")
+		collate_data["magma_frag_atoms"] = th.cat(collate_data["magma_frag_atoms"], dim=0)
+		keys.remove("magma_frag_atoms")
+		collate_data["magma_inds"] = th.arange(len(frag_graphs),dtype=th.long).repeat_interleave(num_frags)
+		keys.remove("magma_inds")
+		collate_data["magma_broken_bonds"] = th.cat(collate_data["magma_broken_bonds"], dim=0)
+		keys.remove("magma_broken_bonds")
+		collate_data["magma_adducts"] = th.cat(collate_data["magma_adducts"], dim=0)
+		keys.remove("magma_adducts")
+		collate_data["magma_frag_form_vecs"] = th.cat(collate_data["magma_frag_form_vecs"], dim=0)
+		keys.remove("magma_frag_form_vecs")
+		collate_data["magma_root_form_vecs"] = th.cat(collate_data["magma_root_form_vecs"], dim=0)
+		keys.remove("magma_root_form_vecs")
+		###
+		collate_data["magma_num_frags"] = th.cat(collate_data["magma_num_frags"], dim=0)
+		keys.remove("magma_num_frags")
+		collate_data["magma_inten_targs"] = th.cat(collate_data["magma_inten_targs"], dim=0) ### not sure
+		keys.remove("magma_inten_targs")
+		collate_data["magma_masses"] = th.nn.utils.rnn.pad_sequence(
+			flatten_lol([[j.squeeze(0) for j in th.split(i, 1, dim=0)] for i in collate_data["magma_masses"]]), 
+			batch_first=True
+		)
+		keys.remove("magma_masses")
+		collate_data["magma_max_add_hs"] = th.nn.utils.rnn.pad_sequence(collate_data["magma_max_add_hs"], batch_first=True)
+		keys.remove("magma_max_add_hs")
+		collate_data["magma_max_remove_hs"] = th.nn.utils.rnn.pad_sequence(collate_data["magma_max_remove_hs"], batch_first=True)
+		keys.remove("magma_max_remove_hs")
+		collate_data["magma_inten_frag_ids"] = flatten_lol(collate_data["magma_inten_frag_ids"])
+		keys.remove("magma_inten_frag_ids")
+		###
+		SpecMolMagmaIntenDataset._standard_collate(batch_size, keys, collate_data)
+		return collate_data
 
 if __name__ == "__main__":
 
@@ -565,7 +726,7 @@ if __name__ == "__main__":
 			mz_max=1500.0,
 			sparse=True,
 			binned=False,
-			mz_bin_res=0.01,
+			mz_bin_res=0.1,
 			sum_ints=True,
 			prec_type=True,
 			prec_mz=True,
@@ -606,21 +767,80 @@ if __name__ == "__main__":
 		)
 	)
 
-	ds = SpecMolMagmaGenDataset(**config_d)
-	item = ds[0]
-	print(">>> item")
-	print_shapes(item)
-	item = to_gpu(item)
+	for ds_cls in [SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset]:
 
-	dl = th.utils.data.DataLoader(
-		ds,
-		batch_size=2,
-		shuffle=False,
-		num_workers=0,
-		collate_fn=ds.get_collate_fn(),
-	)
-	dl_iter = iter(dl)
-	batch = next(dl_iter)
-	print(">>> batch")
-	print_shapes(batch)
-	batch = to_gpu(batch)
+		ds = ds_cls(**config_d)
+		item = ds[0]
+		print(f">>> {ds_cls} item")
+		print_shapes(item)
+		item = to_gpu(item)
+
+	for ds_cls in [SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset]:
+
+		ds = ds_cls(**config_d)
+		dl = th.utils.data.DataLoader(
+			ds,
+			batch_size=2,
+			shuffle=False,
+			num_workers=0,
+			collate_fn=ds.get_collate_fn(),
+		)
+		dl_iter = iter(dl)
+		batch = next(dl_iter)
+		print(">>> batch")
+		print_shapes(batch)
+		batch = to_gpu(batch)
+
+	# from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
+	# from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+
+	# diff = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
+
+	# ds = SpecMolMagmaIntenDataset(**config_d)
+	# item = ds[0]
+	# bin_spec_1 = bin_func(
+	# 	item["spec_mzs"]-diff, 
+	# 	item["spec_ints"], 
+	# 	1500.0, 
+	# 	0.1,
+	# 	False,
+	# 	False # True
+	# )
+	# bin_spec_1 = th.roll(bin_spec_1, shifts=1, dims=0)
+	# bin_spec_2 = item["magma_inten_targs"].squeeze(0)
+	# print("> shapes")
+	# print(bin_spec_1.shape)
+	# print(bin_spec_2.shape)
+	# print("> mzs")
+	# print(item["spec_mzs"]-diff)
+	# print("> nonzero idxs")
+	# print(bin_spec_1.nonzero())
+	# print(bin_spec_2.nonzero())
+	# print("> cosine similarity")
+	# print(binned_cosine_similarity(bin_spec_1.unsqueeze(0),bin_spec_2.unsqueeze(0)))
+	# import pdb; pdb.set_trace()
+
+	# dl = th.utils.data.DataLoader(
+	# 	ds,
+	# 	batch_size=2,
+	# 	shuffle=False,
+	# 	num_workers=0,
+	# 	collate_fn=ds.get_collate_fn(),
+	# )
+	# dl_iter = iter(dl)
+	# batch = next(dl_iter)
+	# print(">>> batch")
+	# print_shapes(batch)
+	# bin_spec_1 = batched_bin_func(
+	# 	batch["spec_mzs"], 
+	# 	batch["spec_ints"], 
+	# 	batch["spec_batch_idxs"],
+	# 	1500.0,
+	# 	0.1,
+	# 	True
+	# )
+	# bin_spec_2 = batch["magma_inten_targs"]
+	# print(bin_spec_1.shape)
+	# print(bin_spec_2.shape)
+	# print(binned_cosine_similarity(bin_spec_1,bin_spec_2))
+	# import pdb; pdb.set_trace()

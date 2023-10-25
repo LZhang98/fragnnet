@@ -134,9 +134,23 @@ class BaseDataset(Dataset):
 		return batch_size, keys, collate_data
 
 	@staticmethod
-	def _standard_collate(keys,collate_data):
+	def _standard_collate(batch_size,keys,collate_data):
 		""" mutates collate_data """
 
+		# handle sparse spectra
+		if "spec_ints" in keys and "spec_mzs" in keys:
+			# create batch_idxs
+			mzs, ints, batch_idxs = batch_func(
+				collate_data["spec_mzs"],
+				collate_data["spec_ints"]
+			)
+			collate_data["spec_mzs"] = mzs
+			collate_data["spec_ints"] = ints
+			collate_data["spec_batch_idxs"] = batch_idxs
+			# remove from list
+			keys.remove("spec_ints")
+			keys.remove("spec_mzs")
+		# handle generic data
 		for key in keys:
 			values = collate_data[key]
 			if isinstance(values[0],list):
@@ -149,12 +163,15 @@ class BaseDataset(Dataset):
 				collate_data[key] = values
 			else:
 				raise TypeError(f"Unsupported type: {type(values[0])}")
+			keys.remove(key)
+		# add batch size
+		collate_data["batch_size"] = th.tensor(batch_size, dtype=th.long)
 
 	@staticmethod
 	def collate_fn(data_list):
 
 		raise NotImplementedError()
-		
+
 class SpecMolDataset(BaseDataset):
 
 	def __init__(
@@ -248,26 +265,12 @@ class SpecMolDataset(BaseDataset):
 	def collate_fn(data_list):
 		
 		batch_size, keys, collate_data = SpecMolDataset._setup_collate(data_list)
-		if "spec_ints" in keys and "spec_mzs" in keys:
-			# create batch_idxs
-			mzs, ints, batch_idxs = batch_func(
-				collate_data["spec_mzs"],
-				collate_data["spec_ints"]
-			)
-			collate_data["spec_mzs"] = mzs
-			collate_data["spec_ints"] = ints
-			collate_data["spec_batch_idxs"] = batch_idxs
-			# remove from list
-			keys.remove("spec_ints")
-			keys.remove("spec_mzs")
 		if "mol_pyg" in keys:
 			# batch
 			collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
 			# remove from list
 			keys.remove("mol_pyg")
-		SpecMolDataset._standard_collate(keys,collate_data)
-		# add batch_size
-		collate_data["batch_size"] = th.tensor(batch_size)
+		SpecMolDataset._standard_collate(batch_size,keys,collate_data)
 		return collate_data
 
 class SpecMolFragDataset(SpecMolDataset):
@@ -393,18 +396,6 @@ class SpecMolFragDataset(SpecMolDataset):
 			return  {"batch_size": th.tensor(0)}
 		batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
 		# special handling
-		if "spec_ints" in keys and "spec_mzs" in keys:
-			# create batch_idxs
-			mzs, ints, batch_idxs = batch_func(
-				collate_data["spec_mzs"],
-				collate_data["spec_ints"]
-			)
-			collate_data["spec_mzs"] = mzs
-			collate_data["spec_ints"] = ints
-			collate_data["spec_batch_idxs"] = batch_idxs
-			# remove from list
-			keys.remove("spec_ints")
-			keys.remove("spec_mzs")
 		if "frag_pyg" in keys:
 			assert "mol_pyg" in keys
 			assert "frag_formula_peak_mzs" in keys
@@ -429,9 +420,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
 			# remove from list
 			keys.remove("mol_pyg")
-		SpecMolFragDataset._standard_collate(keys,collate_data)
-		# add batch_size
-		collate_data["batch_size"] = th.tensor(batch_size)
+		SpecMolFragDataset._standard_collate(batch_size,keys,collate_data)
 		return collate_data
 
 def get_batch_memory(batch):
@@ -458,17 +447,6 @@ def find_largest_batch(dl):
 		batch_mem_totals.append(batch_mem_total)
 	argmax_idx = np.argmax(batch_mem_totals)
 	return batch_mem_ds[argmax_idx], batch_mem_totals[argmax_idx]
-
-def print_shapes(th_d):
-	for k,v in th_d.items():
-		if isinstance(v, th.Tensor):
-			print(k,tuple(v.shape))
-		elif isinstance(v, Batch):
-			print(k,(v.num_nodes,v.num_edges))
-		elif isinstance(v, list):
-			print(k,(len(v),))
-		else:
-			raise ValueError(f"Unsupported type: {type(v)}")
 		
 class SpecMolFragDynamicBatchSampler(BatchSampler):
 	"""Dynamically adds samples to a mini-batch up to a maximum size  either based on number of nodes on frag DAG or number of edges on frag DAG.
@@ -604,6 +582,7 @@ if __name__ == "__main__":
 	import pandas as pd
 	from torch.utils.data import DataLoader
 	from pprint import pprint
+	from frag_gnn.utils.misc_utils import print_shapes
 
 	# TODO: read stuff from a config file
 

@@ -310,7 +310,6 @@ def get_formula_dict(
 def magma_augmentation(
 	spec_entry: dict,
 	magma_dir: Path,
-	formula_dir: Path,
 	max_peaks: int,
 	ppm_diff: float,
 	mass_diff_thresh: float,
@@ -338,6 +337,7 @@ def magma_augmentation(
 	assert tree_dir.exists(), f"Missing tree dir: {tree_dir}"
 	tsv_filename = tsv_dir / f"{spectra_name}.magma"
 	tree_filename = tree_dir / f"{spectra_name}.json"
+	formula_dir = magma_dir / "magma_formula"
 	assert formula_dir.exists(), f"Missing formula dir: {formula_dir}"
 	formula_file = formula_dir / f"{spectra_name}.json"
 
@@ -610,7 +610,6 @@ def magma_augmentation(
 def run_magma_augmentation(
 	proc_dp: str,
 	magma_dp: str,
-	formula_dp: str,
 	max_peaks: int,
 	parallel: bool,
 	ppm_diff: int,
@@ -640,7 +639,7 @@ def run_magma_augmentation(
 	tree_dir = magma_dir / "magma_tree"
 	tsv_dir.mkdir(exist_ok=True)
 	tree_dir.mkdir(exist_ok=True)
-	formula_dir = Path(formula_dp)
+	formula_dir = magma_dir / "magma_formula"
 	formula_dir.mkdir(exist_ok=True)
 
 	proc_dir = Path(proc_dp)
@@ -666,7 +665,6 @@ def run_magma_augmentation(
 	partial_aug_safe = lambda spec_entry: magma_augmentation(
 		spec_entry=spec_entry,
 		magma_dir=magma_dir,
-		formula_dir=formula_dir,
 		max_peaks=max_peaks,
 		ppm_diff=ppm_diff,
 		mass_diff_thresh=mass_diff_thresh,
@@ -688,7 +686,6 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--magma_dp", type=str, default="data/magma")
-	parser.add_argument("--formula_dp", type=str, default="data/formula")
 	parser.add_argument("--proc_dp", type=str, default="data/proc")
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist"])
