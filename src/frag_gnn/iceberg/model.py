@@ -622,4 +622,19 @@ class IcebergIntenModel(nn.Module):
 		).transpose(1, 2)
 		output_unbinned_alpha = output_unbinned * pool_weights_reshaped
 
-		return {"output_binned": output_binned, "output": output_unbinned_alpha}
+		# convert
+		output_mask = (output_unbinned_alpha > 0.).squeeze(2)
+		batch_idxs = th.arange(th.max(ind_maps)+1).reshape(-1,1,1).expand(output_mask.shape)
+		flat_masses = masses[output_mask]
+		flat_log_probs = th.log(output_unbinned_alpha.squeeze(2)[output_mask])
+		flat_batch_idxs = batch_idxs[output_mask]
+
+		out_d = {
+			"output_binned": output_binned, 
+			"output": output_unbinned_alpha,
+			"pred_mzs": flat_masses,
+			"pred_log_probs": flat_log_probs,
+			"pred_batch_idxs": flat_batch_idxs,	
+		}
+
+		return out_d

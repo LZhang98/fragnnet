@@ -23,7 +23,7 @@ mz_max: 1500.0
 mz_bin_res: 1.0
 ff_prec_mz_offset: 
 ff_bidirectional: 
-loss_type: "cosine_distance_dense"
+loss_type: "cosine_distance"
 
 train_batch_size: 32
 eval_batch_size: 32
