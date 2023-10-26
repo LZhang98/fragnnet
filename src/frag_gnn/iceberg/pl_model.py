@@ -10,6 +10,7 @@ import frag_gnn.iceberg.common as common
 from frag_gnn.iceberg.model import IcebergGenModel, IcebergIntenModel
 from frag_gnn.iceberg.dataset import TreeProcessor
 from frag_gnn.iceberg import fragmentation
+from frag_gnn.utils.spec_utils import calculate_cosine_similarity, binned_cosine_similarity
 
 
 class IcebergGenPL(SpectrumPL):
@@ -42,7 +43,8 @@ class IcebergGenPL(SpectrumPL):
 			outputs,
 			targets,
 			natoms,
-			batch_idxs):
+			batch_idxs,
+			**kwargs):
 			bce_loss_fn = nn.BCELoss(reduction="none")
 			loss = bce_loss_fn(outputs, targets.float())
 			is_valid = (
@@ -57,7 +59,10 @@ class IcebergGenPL(SpectrumPL):
 				dim=0,
 				dim_size=th.max(batch_idxs)+1
 			)
-			return loss
+			loss_d = {
+				"loss": loss
+			}
+			return loss_d
 		self.loss_fn = _loss_fn
 
 	def forward(self,**kwargs):
@@ -88,7 +93,8 @@ class IcebergGenPL(SpectrumPL):
 			"outputs": outputs,
 			"batch_idxs": batch_idxs
 		}
-		loss = self.loss_fn(**both)
+		loss_d = self.loss_fn(**both)
+		loss = loss_d["loss"]
 		mean_loss = th.mean(loss,dim=0)
 		# just log loss
 		self.log(
@@ -102,7 +108,8 @@ class IcebergGenPL(SpectrumPL):
 			"smiles": smiles,
 			"loss": loss,
 			"mean_loss": mean_loss,
-			**both
+			**both,
+			**loss_d
 		}
 		return results
 
@@ -457,11 +464,15 @@ class IcebergIntenPL(SpectrumPL):
 			root_encode=self.hparams.magma_params["root_encode"],
 			pe_embed_k=self.hparams.magma_params["pe_embed_k"],
 			add_hs=self.hparams.magma_params["add_hs"],
-			binned_targs=True,
-			mz_bin_res=self.hparams.spec_params["mz_bin_res"],
-			mz_max=self.hparams.spec_params["mz_max"],
-			sum_ints=self.hparams.spec_params["sum_ints"],
+			binned_targs=self.hparams.magma_params["binned_targs"],
+			mz_bin_res=self.hparams.magma_params["mz_bin_res"],
+			mz_max=self.hparams.magma_params["mz_max"],
+			sum_ints=self.hparams.magma_params["sum_ints"],
 		)
+		if self.hparams.magma_params["binned_targs"]:
+			assert self.hparams.mz_bin_res == self.hparams.magma_params["mz_bin_res"]
+			assert self.hparams.mz_max == self.hparams.magma_params["mz_max"]
+			assert self.hparams.sum_ints == self.hparams.magma_params["sum_ints"]
 
 		# compile
 		if self.hparams.compile:
@@ -469,9 +480,39 @@ class IcebergIntenPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
-		assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
-		def _loss_fn():
-			pass
+		if self.hparams.loss_type == "cosine_distance_dense":
+			def _loss_fn(true_spec, pred_spec, **kwargs):
+				loss = 1. - binned_cosine_similarity(true_spec, pred_spec)
+				loss_d = {
+					"loss": loss,
+				}
+				return loss_d
+		elif self.hparams.loss_type == "cosine_distance":
+			def _loss_fn(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs,
+				**kwargs):
+				loss = 1. - calculate_cosine_similarity(
+					true_mzs,
+					th.exp(true_logprobs),
+					true_batch_idxs,
+					pred_mzs,
+					th.exp(pred_logprobs),
+					pred_batch_idxs,
+					mz_bin_res=self.hparams.mz_bin_res,
+					mz_max=self.hparams.mz_max,
+					sum_ints=self.hparams.sum_ints
+				)
+				loss_d = {
+					"loss": loss,
+				}
+				return loss_d
+		else:
+			raise ValueError(f"{self.hparams.loss_type} is not a valid loss type for IcebergIntenPL")
 		self.loss_fn = _loss_fn
 
 	def forward(self,**kwargs):
@@ -493,7 +534,45 @@ class IcebergIntenPL(SpectrumPL):
 
 	def _common_step(self, batch, split="train"):
 
-		pass
+		batch_size = batch["batch_size"]
+		unique_id = batch["spec_unique_id"]
+		smiles = batch["mol_smiles"]
+		true_mzs = batch["spec_mzs"]
+		true_ints = batch["spec_ints"]
+		true_batch_idxs = batch["spec_batch_idxs"]
+		true_mzs, true_logprobs, true_batch_idxs = self._preproc_spec(
+			true_mzs,
+			true_ints,
+			true_batch_idxs
+		)
+		pred = self.forward(**batch)
+		both = {
+			"true_mzs": true_mzs,
+			"true_logprobs": true_logprobs,
+			"true_batch_idxs": true_batch_idxs,
+			**pred
+		}
+		if "magma_inten_targs" in batch:
+			assert self.hparams.magma_params["binned_targs"]
+			both["true_spec"] = batch["magma_inten_targs"]
+		loss_d = self.loss_fn(**both)
+		loss = loss_d["loss"]
+		mean_loss = th.mean(loss,dim=0)
+		# just log loss
+		self.log(
+			f"{split}_batch_loss",
+			mean_loss,
+			batch_size=batch_size,
+			on_epoch=True
+		)
+		results = {
+			"unique_id": unique_id,
+			"smiles": smiles,
+			"mean_loss": mean_loss,
+			**both,
+			**loss_d
+		}
+		return results
 
 
 def test_gen():
@@ -533,7 +612,8 @@ def test_gen():
 		"outputs": outputs,
 		"batch_idxs": batch["magma_inds"]
 	}
-	loss, mean_loss = pl_model.loss_fn(**both)
+	loss_d = pl_model.loss_fn(**both)
+	mean_loss = th.mean(loss_d["loss"],dim=0)
 	print("> loss")
 	print(mean_loss)
 	mean_loss.backward()
@@ -543,7 +623,10 @@ def test_gen():
 	smiles = "CC(=O)OC1=CC=CC=C1C(=O)O"
 	adduct = "[M+H]+"
 	device = "cpu"
-	tree_processor = SpecMolMagmaGenDataset.init_tree_processor(config_d["magma_params"])
+	tree_processor = SpecMolMagmaGenDataset.init_tree_processor(
+		config_d["spec_params"],	
+		config_d["magma_params"]
+	)
 	outputs = pl_model.predict_mol(
 		root_smi=smiles,
 		adduct=adduct,
@@ -558,36 +641,80 @@ def test_inten():
 	from frag_gnn.runner import load_config
 	from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset
 	from frag_gnn.utils.misc_utils import print_shapes
+	from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
+	import torch.nn.functional as F
 
 	template_fp = "config/template.yml"
-	custom_fp = "config/iceberg/d3_iceberg_inten.yml"
+	custom_fps = [
+		"config/iceberg/d3_iceberg_inten.yml",
+		"config/iceberg/d3_iceberg_inten_dense.yml",
+	]
+	
+	for custom_fp in custom_fps:
 
-	config_d = load_config(template_fp, custom_fp)
+		print(custom_fp)
 
-	ds = SpecMolMagmaIntenDataset(split="train", **config_d)
-	dl = th.utils.data.DataLoader(
-		ds,
-		batch_size=2,
-		shuffle=False,
-		num_workers=0,
-		collate_fn=ds.get_collate_fn(),
-	)
-	dl_iter = iter(dl)
-	batch = next(dl_iter)
-	print("> batch")
-	print_shapes(batch)
+		config_d = load_config(template_fp, custom_fp)
 
-	pl_model = IcebergIntenPL(**config_d)
-	pl_model.train()
+		ds = SpecMolMagmaIntenDataset(split="train", **config_d)
+		dl = th.utils.data.DataLoader(
+			ds,
+			batch_size=8,
+			shuffle=False,
+			num_workers=0,
+			collate_fn=ds.get_collate_fn(),
+		)
+		dl_iter = iter(dl)
+		batch = next(dl_iter)
+		print("> batch")
+		print_shapes(batch)
 
-	outputs = pl_model.forward(**batch)
-	print("> train outputs")
-	print_shapes(outputs)
+		pl_model = IcebergIntenPL(**config_d)
+		pl_model.train()
 
-	import pdb; pdb.set_trace()
+		outputs = pl_model.forward(**batch)
+		print("> train outputs")
+		print_shapes(outputs)
+		print(th.exp(outputs["pred_logprobs"]).sum())
+		if "pred_spec" in outputs:
+			print(outputs["pred_spec"].sum())
+
+		results = pl_model._common_step(batch, split="train")
+		print_shapes(results)
+
+		mean_loss = results.pop("mean_loss")
+		print("> loss")
+		print(mean_loss)
+		mean_loss.backward()
+
+		import pdb; pdb.set_trace()
+
+	# # check that the spectra are consistent
+	# spec_mzs = batch["spec_mzs"]
+	# spec_ints = batch["spec_ints"]
+	# spec_batch_idxs = batch["spec_batch_idxs"]
+	# # print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
+	# spec_mzs, spec_ints, spec_batch_idxs = pl_model._preproc_spec(
+	# 	spec_mzs,
+	# 	spec_ints,
+	# 	spec_batch_idxs
+	# )
+	# true_spec_2 = batched_bin_func(
+	# 	spec_mzs,
+	# 	th.exp(spec_ints),
+	# 	spec_batch_idxs,
+	# 	mz_bin_res=config_d["spec_params"]["mz_bin_res"],
+	# 	mz_max=config_d["spec_params"]["mz_max"],
+	# 	sum_ints=config_d["spec_params"]["sum_ints"],
+	# )
+	# print(binned_cosine_similarity(true_spec,true_spec_2))
 
 
 if __name__ == "__main__":
 
-	# test_gen()
-	test_inten()
+	from frag_gnn.utils.misc_utils import th_temp_seed
+
+	# with th_temp_seed(420):
+	# 	test_gen()
+	with th_temp_seed(420):
+		test_inten()

@@ -435,7 +435,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
 			tree_files.append(Path(fp))
 		self.name_to_tree_file = {tree_name: tree_file for tree_name, tree_file in zip(tree_names, tree_files)}
 		self.tree_fn = lambda x: self._read_tree(self._load_tree(x))
-		self.tree_processor = self.__class__.init_tree_processor(self.spec_params,self.magma_params)
+		self.tree_processor = self.__class__.init_tree_processor(**self.magma_params)
 
 	def _load_tree(self, name):
 		
@@ -472,12 +472,12 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 	"""TODO: fold this into the parent class"""
 
 	@staticmethod
-	def init_tree_processor(spec_params, magma_params):
+	def init_tree_processor(pe_embed_k,root_encode,add_hs,**magma_params):
 
 		tree_processor = TreeProcessor(
-			pe_embed_k=magma_params["pe_embed_k"],
-			root_encode=magma_params["root_encode"],
-			add_hs=magma_params["add_hs"],
+			pe_embed_k=pe_embed_k,
+			root_encode=root_encode,
+			add_hs=add_hs,
 			binned_targs=False
 		)
 		return tree_processor
@@ -596,16 +596,25 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		self.name_to_formula_file = {formula_name: formula_file for formula_name, formula_file in zip(formula_names, formula_files)}
 
 	@staticmethod
-	def init_tree_processor(spec_params, magma_params):
+	def init_tree_processor(
+		pe_embed_k,
+		root_encode,
+		add_hs,
+		binned_targs,
+		mz_bin_res,
+		mz_max,
+		sum_ints,
+		**magma_params
+	):
 
 		tree_processor = TreeProcessor(
-			pe_embed_k=magma_params["pe_embed_k"],
-			root_encode=magma_params["root_encode"],
-			add_hs=magma_params["add_hs"],
-			binned_targs=True,
-			mz_bin_res=spec_params["mz_bin_res"],
-			mz_max=spec_params["mz_max"],
-			sum_ints=spec_params["sum_ints"]
+			pe_embed_k=pe_embed_k,
+			root_encode=root_encode,
+			add_hs=add_hs,
+			binned_targs=binned_targs,
+			mz_bin_res=mz_bin_res,
+			mz_max=mz_max,
+			sum_ints=sum_ints
 		)
 		return tree_processor
 
@@ -676,9 +685,9 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		magma_data["magma_root_form_vecs"] = th.tensor(np.array([magma_entry["root_form_vec"]]), dtype=th.long)
 		###
 		magma_data["magma_num_frags"] = th.tensor([len(magma_entry["dgl_frags"])], dtype=th.long)
-		magma_data["magma_inten_targs"] = th.tensor(magma_entry["inten_targs"], dtype=th.float).unsqueeze(0)
+		if self.magma_params["binned_targs"]:
+			magma_data["magma_inten_targs"] = th.tensor(magma_entry["inten_targs"], dtype=th.float).unsqueeze(0)
 		magma_data["magma_masses"] = th.tensor(magma_entry["masses"], dtype=th.float).unsqueeze(0)
-		print(magma_entry["masses"].shape)
 		magma_data["magma_max_add_hs"] = th.tensor(magma_entry["max_add_hs"], dtype=th.float).unsqueeze(0)
 		magma_data["magma_max_remove_hs"] = th.tensor(magma_entry["max_remove_hs"], dtype=th.float).unsqueeze(0)
 		magma_data["magma_inten_frag_ids"] = [magma_entry["inten_frag_ids"]]
@@ -724,8 +733,9 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		###
 		collate_data["magma_num_frags"] = th.cat(collate_data["magma_num_frags"], dim=0)
 		keys.remove("magma_num_frags")
-		collate_data["magma_inten_targs"] = th.cat(collate_data["magma_inten_targs"], dim=0) ### not sure
-		keys.remove("magma_inten_targs")
+		if "magma_inten_targs" in keys:
+			collate_data["magma_inten_targs"] = th.cat(collate_data["magma_inten_targs"], dim=0) ### not sure
+			keys.remove("magma_inten_targs")
 		collate_data["magma_masses"] = th.nn.utils.rnn.pad_sequence(
 			[i.squeeze(0) for i in collate_data["magma_masses"]], 
 			batch_first=True
@@ -761,12 +771,8 @@ if __name__ == "__main__":
 			merge=True,
 			subsample_size=0,
 			subsample_seed=420,
-			ints_thresh=0.0,
-			mz_max=1500.0,
 			sparse=True,
 			binned=False,
-			mz_bin_res=0.1,
-			sum_ints=True,
 			prec_type=True,
 			prec_mz=True,
 			prec_mass_diff=True,
@@ -802,8 +808,15 @@ if __name__ == "__main__":
 		magma_params=dict(
 			pe_embed_k=0,
 			root_encode="gnn",
-			add_hs=False
-		)
+			add_hs=False,
+			binned_targs=True,
+			mz_bin_res=0.1,
+			mz_max=1500.0,
+			sum_ints=True,
+		),
+		mz_max=1500.0,
+		mz_bin_res=0.1,
+		sum_ints=True,
 	)
 
 	# for ds_cls in [SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset]:

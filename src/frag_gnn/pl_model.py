@@ -52,7 +52,7 @@ class SpectrumPL(pl.LightningModule):
 			return batched_filter_func(mzs,ints,batch_idxs,self.hparams.ints_thresh,self.hparams.mz_max)
 		self.filter_func = _filter_func
 		def _bin_func(mzs, ints, batch_idxs):
-			return batched_bin_func(mzs,ints,batch_idxs,self.hparams.mz_max,self.hparams.mz_bin_res,self.hparams.bin_sum_ints)
+			return batched_bin_func(mzs,ints,batch_idxs,self.hparams.mz_max,self.hparams.mz_bin_res,self.hparams.sum_ints)
 		self.bin_func = _bin_func
 		self.ints_transform_func = get_ints_transform_func(self.hparams.ints_transform)
 		self.ints_untransform_func = get_ints_untransform_func(self.hparams.ints_transform)
@@ -72,9 +72,6 @@ class SpectrumPL(pl.LightningModule):
 				pred_batch_idxs,
 				**kwargs):
 				# untransform
-				if th.isnan(true_ints).any() or th.isnan(pred_ints).any():
-					raise ValueError(f'cos sim, nan in true_ints: {true_ints} and/or in pred_ints {pred_ints}')
-
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
@@ -87,7 +84,7 @@ class SpectrumPL(pl.LightningModule):
 					pred_batch_idxs,
 					mz_bin_res=self.hparams.mz_bin_res,
 					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.bin_sum_ints
+					sum_ints=self.hparams.sum_ints
 				)
 			self.metric_fns["cos_sim"] = _cos_sim
 			self.metric_min_max["cos_sim"] = "max"
@@ -140,7 +137,7 @@ class SpectrumPL(pl.LightningModule):
 					pred_batch_idxs,
 					mz_bin_res=self.hparams.mz_bin_res,
 					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.bin_sum_ints
+					sum_ints=self.hparams.sum_ints
 				)
 			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
 			self.metric_min_max["opt_cos_sim"] = None
@@ -213,25 +210,22 @@ class SpectrumPL(pl.LightningModule):
 		batch_size = batch["batch_size"]
 		unique_id = batch["spec_unique_id"]
 		smiles = batch["mol_smiles"]
-		spec_mzs = batch["spec_mzs"]
-		spec_ints = batch["spec_ints"]
-		spec_batch_idxs = batch["spec_batch_idxs"]
+		true_mzs = batch["spec_mzs"]
+		true_ints = batch["spec_ints"]
+		true_batch_idxs = batch["spec_batch_idxs"]
 		# print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
-		spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
-			spec_mzs,
-			spec_ints,
-			spec_batch_idxs
+		true_mzs, true_logprobs, true_batch_idxs = self._preproc_spec(
+			true_mzs,
+			true_ints,
+			true_batch_idxs
 		)
-
 		pred = self.forward(**batch)
-
 		both = {
-			"true_mzs": spec_mzs,
-			"true_logprobs": spec_ints,
-			"true_batch_idxs": spec_batch_idxs,
+			"true_mzs": true_mzs,
+			"true_logprobs": true_logprobs,
+			"true_batch_idxs": true_batch_idxs,
 			**pred
 		}
-
 		loss_d = self.loss_fn(**both)
 		loss = loss_d["loss"]
 		mean_loss = th.mean(loss,dim=0)
@@ -242,7 +236,6 @@ class SpectrumPL(pl.LightningModule):
 			batch_size=batch_size,
 			on_epoch=True
 		)
-
 		results = {
 			"unique_id": unique_id,
 			"smiles": smiles,
@@ -251,13 +244,13 @@ class SpectrumPL(pl.LightningModule):
 			**both,
 			**loss_d
 		}
-		assert spec_mzs.shape[0] > 0, spec_mzs.shape[0]
+		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
 		with th.no_grad():
 			for metric_name,metric_fn in self.metric_fns.items():
 				metric = metric_fn(
-					spec_mzs,
-					th.exp(spec_ints),
-					spec_batch_idxs,
+					true_mzs,
+					th.exp(true_logprobs),
+					true_batch_idxs,
 					pred["pred_mzs"],
 					th.exp(pred["pred_logprobs"]),
 					pred["pred_batch_idxs"]
@@ -649,7 +642,7 @@ class FragGNNPL(SpectrumPL):
 				pred_batch_idxs,
 				mz_bin_res=self.hparams.mz_bin_res,
 				mz_max=self.hparams.mz_max,
-				sum_ints=self.hparams.bin_sum_ints
+				sum_ints=self.hparams.sum_ints
 			)
 		
 		def edge_loss(
@@ -947,7 +940,7 @@ class NeimsPL(SpectrumPL):
 					pred_batch_idxs,
 					mz_bin_res=self.hparams.mz_bin_res,
 					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.bin_sum_ints
+					sum_ints=self.hparams.sum_ints
 				)
 			else:
 				# _pred_specs = self.bin_func(pred_mzs,th.exp(pred_logprobs),pred_batch_idxs)

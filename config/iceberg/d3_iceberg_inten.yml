@@ -17,6 +17,14 @@ magma_params:
   pe_embed_k: 0
   root_encode: gnn
   add_hs: True
+  binned_targs: False
+  mz_bin_res: 0.1
+  mz_max: 1500.0
+  sum_ints: True
+mz_bin_res: 0.1
+mz_max: 1500.0
+sum_ints: True
+ints_transform: sqrt
 iceberg_hidden_size: 256
 iceberg_num_mlp_layers: 1
 iceberg_num_gnn_layers: 4

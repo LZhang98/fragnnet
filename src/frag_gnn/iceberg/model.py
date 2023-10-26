@@ -391,7 +391,6 @@ class IcebergIntenModel(nn.Module):
 		self.isomer_attn_out = copy.deepcopy(self.output_map)
 
 		# Define buckets
-		assert self.binned_targs
 		buckets = th.DoubleTensor(np.arange(mz_bin_res,mz_max+mz_bin_res,mz_bin_res))
 		self.inten_buckets = nn.Parameter(buckets)
 		self.inten_buckets.requires_grad = False
@@ -622,19 +621,23 @@ class IcebergIntenModel(nn.Module):
 		).transpose(1, 2)
 		output_unbinned_alpha = output_unbinned * pool_weights_reshaped
 
+		# delete stupid dimension
+		output_binned = output_binned.squeeze(1)
+		output_unbinned_alpha = output_unbinned_alpha.squeeze(2)
+
 		# convert
-		output_mask = (output_unbinned_alpha > 0.).squeeze(2)
+		output_mask = output_unbinned_alpha > 0.
 		batch_idxs = th.arange(th.max(ind_maps)+1).reshape(-1,1,1).expand(output_mask.shape)
 		flat_masses = masses[output_mask]
-		flat_log_probs = th.log(output_unbinned_alpha.squeeze(2)[output_mask])
+		flat_log_probs = th.log(output_unbinned_alpha[output_mask])
 		flat_batch_idxs = batch_idxs[output_mask]
 
 		out_d = {
-			"output_binned": output_binned, 
-			"output": output_unbinned_alpha,
 			"pred_mzs": flat_masses,
-			"pred_log_probs": flat_log_probs,
+			"pred_logprobs": flat_log_probs,
 			"pred_batch_idxs": flat_batch_idxs,	
 		}
+		if self.binned_targs:
+			out_d["pred_spec"] = output_binned
 
 		return out_d
