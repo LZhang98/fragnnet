@@ -311,7 +311,6 @@ def calculate_cosine_similarity(
 		sum_ints
 	)
 	cos_sims = binned_cosine_similarity(true_spec,pred_spec)
-	#print(f"cos_sims {cos_sims}")
 	return cos_sims
 
 
@@ -347,6 +346,40 @@ def calculate_weighted_recall(
 
 
 def calculate_optimal_cosine_similarity(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_bin_res=0.01,
+		mz_max=1500.,
+		sum_ints=True
+	):
+
+	true_spec = batched_bin_func(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		mz_max,
+		mz_bin_res,
+		sum_ints
+	)
+	pred_spec = batched_bin_func(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max,
+		mz_bin_res,
+		sum_ints
+	)
+	pred_mask = pred_spec > 0.
+	pred_spec = true_spec * pred_mask.float() + pred_spec * (~pred_mask).float()
+	opt_cos_sim = binned_cosine_similarity(true_spec,pred_spec)
+	return opt_cos_sim
+
+
+def calculate_optimal_unbinned_cosine_similarity(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,

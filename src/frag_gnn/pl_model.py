@@ -138,8 +138,9 @@ class SpectrumPL(pl.LightningModule):
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
+					mz_bin_res=self.hparams.mz_bin_res,
+					mz_max=self.hparams.mz_max,
+					sum_ints=self.hparams.bin_sum_ints
 				)
 			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
 			self.metric_min_max["opt_cos_sim"] = None
