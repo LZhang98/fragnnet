@@ -135,7 +135,7 @@ class BaseDataset(Dataset):
 
 	@staticmethod
 	def _standard_collate(batch_size,keys,collate_data):
-		""" mutates collate_data """
+		""" mutates keys and collate_data """
 
 		# handle sparse spectra
 		if "spec_ints" in keys and "spec_mzs" in keys:
@@ -163,7 +163,8 @@ class BaseDataset(Dataset):
 				collate_data[key] = values
 			else:
 				raise TypeError(f"Unsupported type: {type(values[0])}")
-			keys.remove(key)
+		# remove everything
+		keys.clear()
 		# add batch size
 		collate_data["batch_size"] = th.tensor(batch_size, dtype=th.long)
 

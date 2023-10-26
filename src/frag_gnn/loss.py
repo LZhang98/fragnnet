@@ -183,11 +183,6 @@ def sparse_entropy_fn(logprobs,batch_idxs):
 	return entropy, norm_entropy
 
 
-def get_sparse_entropy_fn():
-
-	return sparse_entropy_fn
-
-
 def sparse_conditional_entropy_fn(logprobs,conditional_logprobs,batch_idxs):
 
 	conditional_entropies = th.sum(-th.exp(conditional_logprobs)*conditional_logprobs,dim=1)
@@ -201,11 +196,6 @@ def sparse_conditional_entropy_fn(logprobs,conditional_logprobs,batch_idxs):
 	max_conditional_entropy = np.log(conditional_logprobs.shape[1])*th.ones_like(conditional_entropy,dtype=logprobs.dtype)
 	norm_conditional_entropy = conditional_entropy/max_conditional_entropy
 	return conditional_entropy, norm_conditional_entropy
-
-
-def get_sparse_conditional_entropy_fn():
-
-	return sparse_conditional_entropy_fn
 
 
 def get_edge_loss_fn(edge_loss_fn_type,constant):

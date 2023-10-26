@@ -133,6 +133,8 @@ auxiliary_scores:
   - cos_sim
   - wrecall
   - opt_cos_sim
+  - true_spec_e
+  - true_spec_ne
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01

@@ -13,7 +13,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.utils.nn_utils import build_lr_scheduler
 from frag_gnn.model import FragGNNModel, NeimsModel
-from frag_gnn.loss import get_sparse_cross_entropy_fn, get_sparse_entropy_fn, get_sparse_conditional_entropy_fn, get_edge_loss_fn
+from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
@@ -142,7 +142,39 @@ class SpectrumPL(pl.LightningModule):
 					relative=self.relative
 				)
 			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
-			self.metric_min_max["opt_cos_sim"] = "max"
+			self.metric_min_max["opt_cos_sim"] = None
+		if "true_spec_e" in self.hparams.auxiliary_scores:
+			def _true_spec_e(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform, normalize, log
+				true_ints = self.ints_untransform_func(true_ints)
+				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
+				true_log_probs = th.log(true_ints)
+				return sparse_entropy_fn(true_log_probs,true_batch_idxs)[0]
+			self.metric_fns["true_spec_e"] = _true_spec_e
+			self.metric_min_max["true_spec_e"] = None
+		if "true_spec_ne" in self.hparams.auxiliary_scores:
+			def _true_spec_ne(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform, normalize, log
+				true_ints = self.ints_untransform_func(true_ints)
+				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
+				true_log_probs = th.log(true_ints)
+				return sparse_entropy_fn(true_log_probs,true_batch_idxs)[1]
+			self.metric_fns["true_spec_ne"] = _true_spec_ne
+			self.metric_min_max["true_spec_ne"] = None
 		self.metric_names.update(list(self.metric_min_max.keys()))
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
@@ -387,8 +419,11 @@ class SpectrumPL(pl.LightningModule):
 			metric_epochs = [item[k] for item in mean_metrics_list]
 			if self.metric_min_max[k] == "min":
 				metric_best = th.min(th.tensor(metric_epochs))
-			else:
+			elif self.metric_min_max[k] == "max":
 				metric_best = th.max(th.tensor(metric_epochs))
+			else:
+				assert self.metric_min_max[k] is None, self.metric_min_max[k]
+				continue
 			self.log(
 				f"{split}_{k}_best",
 				metric_best
@@ -592,9 +627,6 @@ class FragGNNPL(SpectrumPL):
 			self.tolerance,
 			self.relative
 		)
-		sparse_entropy_fn = get_sparse_entropy_fn()
-		sparse_conditional_entropy_fn = get_sparse_conditional_entropy_fn()
-
 		# edge loss
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
 		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
@@ -684,6 +716,10 @@ class FragGNNPL(SpectrumPL):
 				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
 				loss = spec_cd
 			loss = self.hparams.primary_loss_weight * loss
+			spec_e, spec_ne = sparse_entropy_fn(
+				pred_logprobs,
+				pred_batch_idxs
+			)
 			formula_e, formula_ne = sparse_entropy_fn(
 				pred_formula_logprobs,
 				pred_formula_batch_idxs
@@ -709,6 +745,8 @@ class FragGNNPL(SpectrumPL):
 				"loss": loss,
 				"spec_cd": spec_cd,
 				"spec_ce": spec_ce,
+				"spec_e": spec_e,
+				"spec_ne": spec_ne,
 				"formula_e": formula_e,
 				"formula_ne": formula_ne,
 				"node_e": node_e,
@@ -745,6 +783,8 @@ class FragGNNPL(SpectrumPL):
 			"loss",
 			"spec_cd",
 			"spec_ce",
+			"spec_e",
+			"spec_ne",
 			"formula_e",
 			"formula_ne",
 			"node_e",

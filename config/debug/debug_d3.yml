@@ -23,9 +23,10 @@ debug_overfit: False
 
 precision: 32
 automatic_optimization: True
+num_workers: 0
 # custom_sampler: SpecMolFragDynamicBatchSampler
 # specmolfrag_dynamic_batch_sampler_mode: frag_node
 # specmolfrag_dynamic_batch_sampler_max: 10000 #600000
-checkpoint_metric: val_loss_epoch
-checkpoint_metric_mode: min
-upload_checkpoints: True
+# checkpoint_metric: val_loss_epoch
+# checkpoint_metric_mode: min
+# upload_checkpoints: True
