@@ -22,14 +22,20 @@ from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 class BaseDataset(Dataset):
 
-	def _base_init(self, spec_fp, mol_fp, split_dp, split, **kwargs):
+	def _base_init(self, 
+		spec_fp: str,
+		mol_fp: str,
+		split_dp: str,
+		split: str,
+		spec_params: dict
+	):
 		
 		self.spec_df = pd.read_pickle(spec_fp)
 		self.mol_df = pd.read_pickle(mol_fp)
 		assert split in ["train","val","test"], split
 		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
 		self.split_df = pd.read_csv(split_fp)
-		self.spec_params = kwargs["spec_params"]
+		self.spec_params = spec_params
 		# select spectra
 		self.spec_df = self.spec_df[self.spec_df["spec_id"].isin(self.split_df["spec_id"])]
 		# select molecules
@@ -181,7 +187,9 @@ class SpecMolDataset(BaseDataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
-		**kwargs):
+		spec_params: dict,
+		**kwargs
+	):
 
 		BaseDataset.__init__(self)
 		self._base_init(
@@ -189,7 +197,7 @@ class SpecMolDataset(BaseDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
-			**kwargs
+			spec_params=spec_params
 		)
 		self.mol_params = kwargs["mol_params"]
 		self._preprocess_spec()
@@ -278,12 +286,16 @@ class SpecMolFragDataset(SpecMolDataset):
 
 	def __init__(
 		self,
-		spec_fp,
-		mol_fp,
-		split_dp,
-		split,
-		frag_dp,
-		**kwargs):
+		spec_fp: str,
+		mol_fp: str,
+		split_dp: str,
+		split: str,
+		frag_dp: str,
+		spec_params: dict,
+		mol_params: dict,
+		frag_params: dict,
+		**kwargs
+	):
 
 		BaseDataset.__init__(self)
 		self._base_init(
@@ -291,11 +303,11 @@ class SpecMolFragDataset(SpecMolDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
-			**kwargs
+			spec_params=spec_params
 		)
 		self.frag_dp = frag_dp
-		self.mol_params = kwargs["mol_params"]
-		self.frag_params = kwargs["frag_params"]
+		self.mol_params = mol_params
+		self.frag_params = frag_params
 		self._preprocess_spec()
 		self._preprocess_mol()
 		self._preprocess_frag()

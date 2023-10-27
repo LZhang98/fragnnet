@@ -401,6 +401,9 @@ class SpecMolMagmaDataset(SpecMolDataset):
 		split_dp: str,
 		split: str,
 		magma_dp: str,
+		spec_params: dict,
+		mol_params: dict,
+		magma_params: dict,
 		**kwargs,
 	):
 		"""__init__.
@@ -412,11 +415,11 @@ class SpecMolMagmaDataset(SpecMolDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
-			**kwargs
+			spec_params=spec_params
 		)
 		self.magma_dp = magma_dp
-		self.mol_params = kwargs["mol_params"]
-		self.magma_params = kwargs["magma_params"]
+		self.mol_params = mol_params
+		self.magma_params = magma_params
 		self._init_magma()
 		tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
 		assert self.spec_df["group_id"].isin(tree_group_ids).all()
@@ -560,6 +563,9 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		split_dp: str,
 		split: str,
 		magma_dp: str,
+		spec_params: str,
+		mol_params: str,
+		magma_params: str,
 		**kwargs,
 	):
 
@@ -569,11 +575,11 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
-			**kwargs
+			spec_params=spec_params
 		)
 		self.magma_dp = magma_dp
-		self.mol_params = kwargs["mol_params"]
-		self.magma_params = kwargs["magma_params"]
+		self.mol_params = mol_params
+		self.magma_params = magma_params
 		self._init_magma()
 		tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
 		assert self.spec_df["group_id"].isin(tree_group_ids).all()
@@ -756,145 +762,3 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		###
 		SpecMolMagmaIntenDataset._standard_collate(batch_size, keys, collate_data)
 		return collate_data
-
-if __name__ == "__main__":
-
-	from frag_gnn.utils.misc_utils import to_gpu
-
-	config_d = dict(
-		spec_fp="data/proc/spec_df.pkl",
-		mol_fp="data/proc/mol_df.pkl",
-		split_dp="data/split/d3_h4_isoTrue_v2",
-		split="train",
-		magma_dp="data/magma",
-		spec_params=dict(
-			merge=True,
-			subsample_size=0,
-			subsample_seed=420,
-			sparse=True,
-			binned=False,
-			prec_type=True,
-			prec_mz=True,
-			prec_mass_diff=True,
-			nce=False,
-			ace=False,
-			preprocess=False,
-			unique_id=True
-		),
-		mol_params=dict(
-			smiles=True,
-			fingerprint=False,
-			fingerprint_morgan=True,
-			fingerprint_rdkit=True,
-			fingerprint_maccs=True,
-			pyg=False,
-			pyg_node_feats=[
-				"a_onehot",
-				"a_degree",
-				"a_hybrid",
-				"a_formal",
-				"a_radical",
-				"a_ring",
-				"a_mass",
-				"a_chiral"
-			],	
-			pyg_edge_feats=[
-				"b_degree"
-			],
-			pyg_pe_embed_k=0,
-			pyg_bigraph=True,
-			preprocess=False
-		),
-		magma_params=dict(
-			pe_embed_k=0,
-			root_encode="gnn",
-			add_hs=False,
-			binned_targs=True,
-			mz_bin_res=0.1,
-			mz_max=1500.0,
-			sum_ints=True,
-		),
-		mz_max=1500.0,
-		mz_bin_res=0.1,
-		sum_ints=True,
-	)
-
-	# for ds_cls in [SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset]:
-
-	# 	ds = ds_cls(**config_d)
-	# 	item = ds[0]
-	# 	print(f">>> {ds_cls} item")
-	# 	print_shapes(item)
-	# 	item = to_gpu(item)
-
-	# for ds_cls in [SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset]:
-
-	# 	ds = ds_cls(**config_d)
-	# 	dl = th.utils.data.DataLoader(
-	# 		ds,
-	# 		batch_size=2,
-	# 		shuffle=False,
-	# 		num_workers=0,
-	# 		collate_fn=ds.get_collate_fn(),
-	# 	)
-	# 	dl_iter = iter(dl)
-	# 	batch = next(dl_iter)
-	# 	print(">>> batch")
-	# 	print_shapes(batch)
-	# 	batch = to_gpu(batch)
-
-	from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
-	from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-	import torch.nn.functional as F
-
-	diff = PREC_TYPE_TO_MASS_DIFF["[M+H]+"]
-
-	ds = SpecMolMagmaIntenDataset(**config_d)
-	item = ds[0]
-	bin_spec_1 = bin_func(
-		item["spec_mzs"], 
-		item["spec_ints"], 
-		1500.0, 
-		0.1,
-		False,
-		True
-	)
-	bin_spec_1 = th.sqrt(F.normalize(bin_spec_1,p=0,dim=0))
-	bin_spec_2 = item["magma_inten_targs"].squeeze(0)
-	print("> shapes")
-	print(bin_spec_1.shape)
-	print(bin_spec_2.shape)
-	print("> mzs")
-	print(item["spec_mzs"])
-	print("> nonzero idxs")
-	print(bin_spec_1.nonzero().squeeze(1))
-	print(bin_spec_2.nonzero().squeeze(1))
-	print(th.all(bin_spec_1.nonzero()==bin_spec_2.nonzero()))
-	print("> cosine similarity")
-	print(binned_cosine_similarity(bin_spec_1.unsqueeze(0),bin_spec_2.unsqueeze(0)))
-	import pdb; pdb.set_trace()
-
-	dl = th.utils.data.DataLoader(
-		ds,
-		batch_size=2,
-		shuffle=False,
-		num_workers=0,
-		collate_fn=ds.get_collate_fn(),
-	)
-	dl_iter = iter(dl)
-	batch = next(dl_iter)
-	print(">>> batch")
-	print_shapes(batch)
-	bin_spec_1 = batched_bin_func(
-		batch["spec_mzs"], 
-		batch["spec_ints"], 
-		batch["spec_batch_idxs"],
-		1500.0,
-		0.1,
-		True
-	)
-	bin_spec_2 = batch["magma_inten_targs"]
-	print(bin_spec_1.shape)
-	print(bin_spec_2.shape)
-	print(binned_cosine_similarity(bin_spec_1,bin_spec_2))
-	import pdb; pdb.set_trace()

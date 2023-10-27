@@ -687,8 +687,6 @@ def test_inten():
 		print(mean_loss)
 		mean_loss.backward()
 
-		import pdb; pdb.set_trace()
-
 	# # check that the spectra are consistent
 	# spec_mzs = batch["spec_mzs"]
 	# spec_ints = batch["spec_ints"]
