@@ -166,7 +166,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			if os.path.isfile(job_id_fp):
 				is_resume = True
 				with open(job_id_fp,"r") as job_id_file:
-					text = job_id_file.read()
+					text = job_id_file.read().strip()
 				run_id, old_wandb_dp = text.split(";")
 				wandb_config = load_wandb_config(old_wandb_dp)
 			else:
