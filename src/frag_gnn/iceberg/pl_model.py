@@ -190,9 +190,9 @@ class IcebergGenPL(SpectrumPL):
 		max_depth = engine.max_tree_depth
 		root_frag = engine.get_root_frag()
 		root_form = common.form_from_smi(root_smi)
-		root_form_vec = th.tensor(common.formula_to_dense(root_form), dtype=th.float)
+		root_form_vec = th.tensor(common.formula_to_dense(root_form), dtype=th.float, device=device)
 		root_form_vec = root_form_vec.reshape(1, -1)
-		adducts = th.tensor([common.ion2onehot_pos[adduct]], dtype=th.long)
+		adducts = th.tensor([common.ion2onehot_pos[adduct]], dtype=th.long, device=device)
 
 		# Step 2: Featurize the root molecule
 		root_graph_dict = tree_processor.featurize_frag(
@@ -261,7 +261,7 @@ class IcebergGenPL(SpectrumPL):
 				mol_batch_graph = [i["graph"] for i in new_dgl_dicts]
 				frag_forms = [i["form"] for i in new_dgl_dicts]
 				frag_form_vecs = [common.formula_to_dense(i) for i in frag_forms]
-				frag_form_vecs = th.tensor(np.array(frag_form_vecs), dtype=th.float)
+				frag_form_vecs = th.tensor(np.array(frag_form_vecs), dtype=th.float, device=device)
 
 				new_frag_hashes = [engine.wl_hash(i) for i in stack]
 
@@ -279,13 +279,13 @@ class IcebergGenPL(SpectrumPL):
 				broken_nums_ar = np.array(
 					[frag_hash_to_entry[i]["max_broken"] for i in new_frag_hashes]
 				)
-				broken_nums_tensor = th.tensor(broken_nums_ar, dtype=th.float).to(device)
+				broken_nums_tensor = th.tensor(broken_nums_ar, dtype=th.float, device=device)
 
 				pred_leaving = self.model.forward(
 					graphs=frag_batch,
 					root_repr=root_repr,
 					ind_maps=inds,
-					broken=broken_nums_tensor,  # th.ones_like(inds) * depth,
+					broken=broken_nums_tensor,
 					adducts=adducts,
 					root_forms=root_form_vec,
 					frag_forms=frag_form_vecs,

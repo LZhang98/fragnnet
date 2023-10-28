@@ -1,8 +1,3 @@
-""" run_magma.py
-
-Entry point into running magma program
-
-"""
 import sys
 import argparse
 import logging
@@ -673,7 +668,11 @@ def run_magma_augmentation(
 		max_formulae=max_formulae,
 		parallel=parallel,
 	)
-	spec_entry_iter = tqdm(spec_entries,desc=pformat(partial_aug_safe),total=len(spec_entries))
+	spec_entry_iter = tqdm(
+		spec_entries,
+		desc=pformat(partial_aug_safe),
+		total=len(spec_entries)
+	)
 	if not parallel:
 		results = seq_apply(spec_entry_iter,partial_aug_safe)
 	else:
