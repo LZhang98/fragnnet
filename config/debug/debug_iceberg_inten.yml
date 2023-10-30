@@ -3,12 +3,12 @@ wandb_tags:
 - iceberg
 
 split_dp: data/split/d3_h4_isoTrue_v2
-magma_dp: data/magma_gen
+magma_dp: data/magma_inten
 # spec_params:
 #   subsample_size: 128
 
 model_type: iceberg_inten
-loss_type: cosine_distance
+loss_type: cosine_distance_dense
 # auxiliary_scores: []
 mol_params:
   smiles: True
@@ -19,7 +19,7 @@ magma_params:
   pe_embed_k: 0
   root_encode: gnn
   add_hs: True
-  binned_targs: False
+  binned_targs: True
   mz_bin_res: 0.1
   mz_max: 1500.0
   sum_ints: True

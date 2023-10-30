@@ -675,8 +675,8 @@ def test_inten():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/iceberg/d3_iceberg_inten.yml",
-		"config/iceberg/d3_iceberg_inten_dense.yml",
+		"config/iceberg/d3_iceberg_inten_100.yml",
+		"config/iceberg/d3_iceberg_inten_100_dense.yml",
 	]
 	
 	for custom_fp in custom_fps:
