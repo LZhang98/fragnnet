@@ -73,7 +73,7 @@ def bin_func(mzs,ints,mz_max,mz_bin_res,return_index,sum_ints):
 		bin_spec = scatter_reduce(
 			src=ints,
 			index=bin_idx,
-			reduce="sum" if sum_ints else "max",
+			reduce="sum" if sum_ints else "amax",
 			dim=0,
 			dim_size=bins.shape[0]
 		)
@@ -119,7 +119,7 @@ def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
 	bin_spec = scatter_reduce(
 		src=ints,
 		index=bin_idx,
-		reduce="sum" if sum_ints else "max",
+		reduce="sum" if sum_ints else "amax",
 		dim=0,
 		dim_size=num_bins*batch_size
 	)
