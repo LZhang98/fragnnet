@@ -112,19 +112,30 @@ def load_config(template_fp, custom_fp):
 	return config_d
 
 
-def load_wandb_config(wandb_config_dp):
+def load_wandb_config(wandb_config_dp) -> dict:
+	"""Load wandb config file if exists, else return empty dict
 
+	Args:
+		wandb_config_dp (_type_): _description_
+
+	Returns:
+		dict: wandb config
+	"""
 	wandb_config_dp = os.path.join(wandb_config_dp,"config.yaml")
-	with open(wandb_config_dp,"r") as wandb_config_file:	
-		_config_d = yaml.load(
-			wandb_config_file,
-			Loader=yaml.FullLoader
-		)
-	del _config_d["wandb_version"]
-	del _config_d["_wandb"]
-	config_d = {}
-	for k in _config_d.keys():
-		config_d[k] = _config_d[k]["value"]
+
+	if os.path.isfile(wandb_config_dp):
+		with open(wandb_config_dp,"r") as wandb_config_file:	
+			_config_d = yaml.load(
+				wandb_config_file,
+				Loader=yaml.FullLoader
+			)
+		del _config_d["wandb_version"]
+		del _config_d["_wandb"]
+		config_d = {}
+		for k in _config_d.keys():
+			config_d[k] = _config_d[k]["value"]
+	else:
+		config_d = {}
 	return config_d
 
 
@@ -152,6 +163,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	loggers = []
 	console_logger = ConsoleLogger()
 	loggers.append(console_logger)
+
 	if wandb_mode != "disabled":
 		wandb_d = dict(
 			project=config_d["wandb_project"],
@@ -161,6 +173,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			tags=config_d["wandb_tags"],
 			resume="allow",
 		)
+
 		if job_id:
 			job_id_fp = os.path.join("job_id",f"{job_id}.id")
 			if os.path.isfile(job_id_fp):
@@ -169,6 +182,11 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 					text = job_id_file.read().strip()
 				run_id, old_wandb_dp = text.split(";")
 				wandb_config = load_wandb_config(old_wandb_dp)
+				
+				# for offline mode, if there is no configure file, just skip it
+				# wandb config only exists after wandb sync
+				if len(wandb_config) == 0:
+					wandb_config = config_d
 			else:
 				is_resume = False
 				run_id = old_wandb_dp = None

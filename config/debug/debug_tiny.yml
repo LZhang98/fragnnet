@@ -9,15 +9,15 @@ frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4
 num_hs: 4
 
-train_batch_size: 32
-eval_batch_size: 32
-accumulate_grad_batches: 4
+train_batch_size: 16
+eval_batch_size: 16
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: cpu
 devices: 1
-min_epochs: 2
-max_epochs: 2
+min_epochs: 5
+max_epochs: 40
 lr_schedule: False
 debug_overfit: False
 precision: 32
@@ -59,4 +59,4 @@ specmolfrag_dynamic_batch_sampler_max: 600000
 pl_enable_progress_bar: True
 debug_val_loop_trigger: False
 
-spec_subsample_size: 512
+spec_subsample_size: 16
