@@ -3,34 +3,36 @@ import argparse
 
 from frag_gnn.utils.misc_utils import booltype
 
+QOS_TO_TIME = {
+	"normal": 16,
+	"m": 12,
+	"m2": 8,
+	"m3": 4,
+	"long": 48,
+	"high": 8,
+	"affiliate": 8,
+	"deadline": 7*24 # big number
+}
+
+QOS_TO_GPU = {
+	"normal": 2,
+	"m": 4,
+	"m2": 8,
+	"m3": 16,
+	"long": 1,
+	"high": 4,
+	"affiliate": 2,
+	"deadline": 12
+}
+
 def time_check(time, qos):
 
 	assert time > 0, time
-	if qos == "normal":
-		assert time <= 16, time
-	elif qos == "m":
-		assert time <= 12, time
-	elif qos == ["m2", "high", "affiliate"]:
-		assert time <= 8, time
-	elif qos == "m3":
-		assert time <= 4, time
-	elif qos == "long":
-		assert time <= 48, time
+	assert time <= QOS_TO_TIME[qos], (time, qos, QOS_TO_TIME[qos])
 
 def gpu_check(gpu, qos):
 
-	if qos in ["normal", "affiliate"]:
-		assert gpu <= 2, gpu
-	elif qos in ["m", "high"]:
-		assert gpu <= 4, gpu
-	elif qos == "m2":
-		assert gpu <= 8, gpu
-	elif qos == "m3":
-		assert gpu <= 16, gpu
-	elif qos == "long":
-		assert gpu <= 1, gpu
-	elif qos == "deadline":
-		assert gpu <= 12, gpu
+	assert gpu <= QOS_TO_GPU[qos], (gpu, qos, QOS_TO_GPU[qos])
 
 def main(args):
 
@@ -45,6 +47,8 @@ def main(args):
 	script_lines.append(f"#SBATCH --job-name={args.job_name}")
 	script_lines.append(f"#SBATCH --mem={args.mem}G")
 	script_lines.append(f"#SBATCH --cpus-per-task={args.cpu}")
+	if args.time == -1:
+		args.time = QOS_TO_TIME[args.qos]
 	time_check(args.time, args.qos)
 	script_lines.append(f"#SBATCH --time=0-{args.time-1}:59")
 	if args.gpu > 0:
@@ -145,13 +149,13 @@ if __name__ == "__main__":
 	parser.add_argument("--mem", type=int, default=64)
 	parser.add_argument("--cpu", type=int, default=8)
 	parser.add_argument("--gpu", type=int, default=1)
-	parser.add_argument("--time", type=int, default=16)
+	parser.add_argument("--time", type=int, default=-1, help="time in hours (-1 means use default)")
 	parser.add_argument("--gpu_type", type=str, default="t4", choices=["t4","rtx6000","a40"])
 	parser.add_argument("--qos", type=str, default="normal", choices=["normal","m","m2","m3","long","high","deadline","affiliate"])
 	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU3")
 	parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
 	parser.add_argument("--job_name", type=str, required=True)
-	parser.add_argument("--job_id", type=int, required=False)
+	parser.add_argument("--job_id", type=int, required=False, help="job_id (-1 means use the slurm job id)")
 	parser.add_argument("--blacklist", type=str, nargs="+", required=False)
 	parser.add_argument("--modules", type=str, nargs="+", default=["cuda-11.8"])
 	parser.add_argument("--home_dir", type=str, default="/fs01/home/adamo")
