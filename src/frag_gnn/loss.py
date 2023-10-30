@@ -3,7 +3,7 @@ import torch as th
 import torch.nn.functional as F
 import math
 
-from frag_gnn.utils.misc_utils import scatter_reduce
+from frag_gnn.utils.misc_utils import scatter_reduce, EPS
 
 
 def mog_log_prob(samples,means,variances,log_weights):
@@ -179,7 +179,7 @@ def sparse_entropy_fn(logprobs,batch_idxs):
 		dim_size=batch_size,
 	)
 	max_entropy = th.log(max_entropy)
-	norm_entropy = entropy/max_entropy
+	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
 	return entropy, norm_entropy
 
 
@@ -194,7 +194,7 @@ def sparse_conditional_entropy_fn(logprobs,conditional_logprobs,batch_idxs):
 		th.max(batch_idxs)+1
 	)
 	max_conditional_entropy = np.log(conditional_logprobs.shape[1])*th.ones_like(conditional_entropy,dtype=logprobs.dtype)
-	norm_conditional_entropy = conditional_entropy/max_conditional_entropy
+	norm_conditional_entropy = conditional_entropy/th.clamp(max_conditional_entropy,min=EPS)
 	return conditional_entropy, norm_conditional_entropy
 
 
