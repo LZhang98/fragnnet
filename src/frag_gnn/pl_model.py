@@ -154,7 +154,9 @@ class SpectrumPL(pl.LightningModule):
 				true_ints = self.ints_untransform_func(true_ints)
 				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
 				true_log_probs = th.log(true_ints)
-				return sparse_entropy_fn(true_log_probs,true_batch_idxs)[0]
+				true_spec_e = sparse_entropy_fn(true_log_probs,true_batch_idxs)[0]
+				assert not th.isnan(true_spec_e).any(), true_spec_e
+				return true_spec_e
 			self.metric_fns["true_spec_e"] = _true_spec_e
 			self.metric_min_max["true_spec_e"] = None
 		if "true_spec_ne" in self.hparams.auxiliary_scores:
@@ -170,7 +172,9 @@ class SpectrumPL(pl.LightningModule):
 				true_ints = self.ints_untransform_func(true_ints)
 				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
 				true_log_probs = th.log(true_ints)
-				return sparse_entropy_fn(true_log_probs,true_batch_idxs)[1]
+				true_spec_ne = sparse_entropy_fn(true_log_probs,true_batch_idxs)[1]
+				assert not th.isnan(true_spec_ne).any(), true_spec_ne
+				return true_spec_ne
 			self.metric_fns["true_spec_ne"] = _true_spec_ne
 			self.metric_min_max["true_spec_ne"] = None
 		self.metric_names.update(list(self.metric_min_max.keys()))
@@ -229,6 +233,7 @@ class SpectrumPL(pl.LightningModule):
 		loss_d = self.loss_fn(**both)
 		loss = loss_d["loss"]
 		mean_loss = th.mean(loss,dim=0)
+		total_loss = th.sum(loss,dim=0)
 		# just log loss
 		self.log(
 			f"{split}_batch_loss",
@@ -240,7 +245,7 @@ class SpectrumPL(pl.LightningModule):
 			"unique_id": unique_id,
 			"smiles": smiles,
 			"mean_loss": mean_loss,
-			"total_loss": th.sum(loss,dim=0),
+			"total_loss": total_loss,
 			**both,
 			**loss_d
 		}

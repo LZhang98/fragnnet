@@ -1,13 +1,12 @@
-wandb_name: d3_iceberg_inten
+wandb_name: d3_iceberg_inten_100_dense
 wandb_tags:
 - iceberg
 
 split_dp: data/split/d3_h4_isoTrue_v2
-magma_dp: data/magma
+magma_dp: data/magma_inten
 
 model_type: iceberg_inten
-loss_type: cosine_distance
-auxiliary_scores: []
+loss_type: cosine_distance_dense
 mol_params:
   smiles: True
   fingerprint: False
@@ -17,7 +16,7 @@ magma_params:
   pe_embed_k: 0
   root_encode: gnn
   add_hs: True
-  binned_targs: False
+  binned_targs: True
   mz_bin_res: 0.1
   mz_max: 1500.0
   sum_ints: True
@@ -44,8 +43,8 @@ gradient_clip_val: 5.0
 lr: 0.000736
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 200
+max_epochs: 200
 lr_schedule: True
 lr_decay_rate: 0.825
 lr_warmup_steps: 1000

@@ -169,6 +169,7 @@ class IcebergGenModel(nn.Module):
 		elif self.root_encode == "gnn":
 			with root_repr.local_scope():
 				if self.embed_adduct:
+					import pdb; pdb.set_trace()
 					embed_adducts_expand = embed_adducts.repeat_interleave(
 						root_repr.batch_num_nodes(), 0
 					)
@@ -627,7 +628,7 @@ class IcebergIntenModel(nn.Module):
 
 		# convert
 		output_mask = output_unbinned_alpha > 0.
-		batch_idxs = th.arange(th.max(ind_maps)+1).reshape(-1,1,1).expand(output_mask.shape)
+		batch_idxs = th.arange(th.max(ind_maps)+1, device=output_mask.device).reshape(-1,1,1).expand(output_mask.shape)
 		flat_masses = masses[output_mask]
 		flat_log_probs = th.log(output_unbinned_alpha[output_mask])
 		flat_batch_idxs = batch_idxs[output_mask]

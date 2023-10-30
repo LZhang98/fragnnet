@@ -273,12 +273,12 @@ def to_cpu(data_d, non_blocking=True, detach=False):
 			data_d[k] = data
 	return data_d
 
-def to_gpu(data_d, non_blocking=True):
+def to_device(data_d, device, non_blocking=True):
 
 	for k in data_d.keys():
 		if isinstance(data_d[k], th.Tensor) or isinstance(data_d[k], dgl.DGLGraph):
 			data = data_d[k]
-			data = data.to("cuda:0",non_blocking=non_blocking)
+			data = data.to(device,non_blocking=non_blocking)
 			data_d[k] = data
 	return data_d
 

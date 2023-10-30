@@ -26,12 +26,12 @@ import shutil
 
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
-from frag_gnn.iceberg.pl_model import IcebergGenPL
+from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
 from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, SpecMolFragDynamicBatchSampler
-from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset
+from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset
 from frag_gnn.utils.misc_utils import deep_update
 
 
@@ -148,13 +148,16 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	# setup model
 	logging.info("setup model")
 	if config_d["model_type"] == "frag_gnn":
-		model = FragGNNPL(**config_d)
+		model_cls = FragGNNPL
 	elif config_d["model_type"] == "neims":
-		model = NeimsPL(**config_d)
+		model_cls = NeimsPL
 	elif config_d["model_type"] == "iceberg_gen":
-		model = IcebergGenPL(**config_d)
+		model_cls = IcebergGenPL
+	elif config_d["model_type"] == "iceberg_inten":
+		model_cls = IcebergIntenPL
 	else:
 		raise ValueError(config_d["model_type"])
+	model = model_cls(**config_d)
 	model.train()
 
 	# setup callbacks
@@ -242,6 +245,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		dataset_cls = SpecMolFragDataset
 	elif config_d["model_type"] == "iceberg_gen":
 		dataset_cls = SpecMolMagmaGenDataset
+	elif config_d["model_type"] == "iceberg_inten":
+		dataset_cls = SpecMolMagmaIntenDataset
 	else:
 		dataset_cls = SpecMolDataset
 	train_ds = dataset_cls(split="train",**config_d)

@@ -10,6 +10,7 @@ from typing import Tuple, List
 from rdkit import Chem
 
 from frag_gnn.iceberg.common import chem_utils as chem_utils
+from frag_gnn.utils.data_utils import rdkit_import
 
 TYPEW = {
 	Chem.rdchem.BondType.names["AROMATIC"]: 2,
@@ -44,29 +45,31 @@ class FragmentEngine(object):
 			max_broken_bonds (int): Max order of broken bonds (i.e,. determinant of h shift)
 			mol_str_type (str): Define smiles
 		"""
+		# do import here (to avoid warnings)
+		rdkit_Chem = rdkit_import("rdkit.Chem")[0]
 
 		# Standardize mol by roundtripping it
 		if mol_str_type == "smiles":
 			self.smiles = mol_str
-			self.mol = Chem.MolFromSmiles(self.smiles)
+			self.mol = rdkit_Chem.MolFromSmiles(self.smiles)
 			if self.mol is None:
 				return
-			self.inchi = Chem.MolToInchi(self.mol)
-			self.mol = Chem.MolFromInchi(self.inchi)
+			self.inchi = rdkit_Chem.MolToInchi(self.mol)
+			self.mol = rdkit_Chem.MolFromInchi(self.inchi)
 
 		elif mol_str_type == "inchi":
 			self.inchi = mol_str
-			self.mol = Chem.MolFromInchi(self.inchi)
+			self.mol = rdkit_Chem.MolFromInchi(self.inchi)
 			if self.mol is None:
 				return
-			self.smiles = Chem.MolToSmiles(self.mol)
+			self.smiles = rdkit_Chem.MolToSmiles(self.mol)
 		else:
 			raise NotImplementedError()
 
 		self.natoms = self.mol.GetNumAtoms()
 
 		# Kekulize the molecule
-		Chem.Kekulize(self.mol, clearAromaticFlags=True)
+		rdkit_Chem.Kekulize(self.mol, clearAromaticFlags=True)
 
 		# Calculate number of hs on each atom and masses
 		self.atom_symbols = [i.GetSymbol() for i in self.mol.GetAtoms()]

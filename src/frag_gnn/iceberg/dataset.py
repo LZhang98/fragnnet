@@ -306,7 +306,7 @@ class TreeProcessor:
 
 	def process_tree_inten(self, tree, convert_to_dgl=True):
 		proc_out = self._process_tree(
-			tree, include_targets=True, last_row=True, convert_to_dgl=convert_to_dgl
+			tree, include_targets=self.binned_targs, last_row=True, convert_to_dgl=convert_to_dgl
 		)
 		keys = {
 			"root_repr",

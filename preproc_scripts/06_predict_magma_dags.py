@@ -49,7 +49,7 @@ def run_magma_gen(
 	magma_gen_dir = Path(magma_gen_dp)
 	magma_gen_dir.mkdir(exist_ok=True)
 	magma_gen_args_file = magma_gen_dir / "args.yml"
-	magma_gen_tree_dir = magma_gen_dir / "tree_preds"
+	magma_gen_tree_dir = magma_gen_dir / "magma_tree"
 	magma_gen_tree_dir.mkdir(exist_ok=True)
 	magma_gen_ckpt_file = magma_gen_dir / "gen_ckpt.ckpt"
 	shutil.copy(gen_ckpt_file, magma_gen_ckpt_file)
@@ -114,7 +114,7 @@ def run_magma_gen(
 				"name": name,
 				"frags": pred,
 			}
-			out_file = magma_gen_tree_dir / f"pred_{name}.json"
+			out_file = magma_gen_tree_dir / f"{name}.json"
 			with open(out_file, "w") as fp:
 				json.dump(output, fp, indent=2)
 			return output
@@ -133,7 +133,7 @@ def get_args():
 	"""get args"""
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--magma_gen_dp", type=str, default="data/magma_gen")
+	parser.add_argument("--magma_gen_dp", type=str, default="data/magma_inten")
 	parser.add_argument("--proc_dp", type=str, default="data/proc")
 	parser.add_argument("--gen_ckpt_fp", type=str, default="model-epoch=074.ckpt")
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)

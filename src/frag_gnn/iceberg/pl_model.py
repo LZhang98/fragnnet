@@ -480,11 +480,21 @@ class IcebergIntenPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
+		# set tolerance
+		if self.hparams.loss_tolerance_ppm is not None:
+			self.tolerance = self.hparams.loss_tolerance_ppm
+			self.relative = True
+		else:
+			assert self.hparams.loss_tolerance_abs is not None
+			self.tolerance = self.hparams.loss_tolerance_abs
+			self.relative = False
+		# cosine distance
 		if self.hparams.loss_type == "cosine_distance_dense":
 			def _loss_fn(true_spec, pred_spec, **kwargs):
 				loss = 1. - binned_cosine_similarity(true_spec, pred_spec)
 				loss_d = {
 					"loss": loss,
+					"spec_cd": loss
 				}
 				return loss_d
 		elif self.hparams.loss_type == "cosine_distance":
@@ -509,11 +519,14 @@ class IcebergIntenPL(SpectrumPL):
 				)
 				loss_d = {
 					"loss": loss,
+					"spec_cd": loss
 				}
 				return loss_d
 		else:
 			raise ValueError(f"{self.hparams.loss_type} is not a valid loss type for IcebergIntenPL")
 		self.loss_fn = _loss_fn
+		loss_names = ["loss", "spec_cd"]
+		self.metric_names.update(loss_names)
 
 	def forward(self,**kwargs):
 
@@ -558,6 +571,7 @@ class IcebergIntenPL(SpectrumPL):
 		loss_d = self.loss_fn(**both)
 		loss = loss_d["loss"]
 		mean_loss = th.mean(loss,dim=0)
+		total_loss = th.sum(loss,dim=0)
 		# just log loss
 		self.log(
 			f"{split}_batch_loss",
@@ -572,6 +586,20 @@ class IcebergIntenPL(SpectrumPL):
 			**both,
 			**loss_d
 		}
+		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
+		with th.no_grad():
+			for metric_name,metric_fn in self.metric_fns.items():
+				metric = metric_fn(
+					true_mzs,
+					th.exp(true_logprobs),
+					true_batch_idxs,
+					pred["pred_mzs"],
+					th.exp(pred["pred_logprobs"]),
+					pred["pred_batch_idxs"]
+				)
+				results[metric_name] = metric
+		for metric_name in self.metric_names:
+			assert metric_name in results, metric_name
 		return results
 
 
@@ -643,6 +671,7 @@ def test_inten():
 	from frag_gnn.utils.misc_utils import print_shapes
 	from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
 	import torch.nn.functional as F
+	from frag_gnn.utils.misc_utils import to_device
 
 	template_fp = "config/template.yml"
 	custom_fps = [
@@ -655,6 +684,7 @@ def test_inten():
 		print(custom_fp)
 
 		config_d = load_config(template_fp, custom_fp)
+		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
 
 		ds = SpecMolMagmaIntenDataset(split="train", **config_d)
 		dl = th.utils.data.DataLoader(
@@ -668,9 +698,11 @@ def test_inten():
 		batch = next(dl_iter)
 		print("> batch")
 		print_shapes(batch)
+		batch = to_device(batch,device)
 
 		pl_model = IcebergIntenPL(**config_d)
 		pl_model.train()
+		pl_model.to(device)
 
 		outputs = pl_model.forward(**batch)
 		print("> train outputs")
