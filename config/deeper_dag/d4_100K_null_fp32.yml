@@ -4,7 +4,7 @@ wandb_tags:
 - FP32
 - D4
 - DynamicBatchSampler
-- SamplerNode500K
+- SamplerEdge500K
 
 split_dp: data/split/d4_h4_isoTrue_v2_10
 frag_dp: data/frag/d4_h4_isoTrue_v2/dags
@@ -28,5 +28,7 @@ precision: 32
 use_tensor_float32: False
 automatic_optimization: False
 custom_sampler: SpecMolFragDynamicBatchSampler
-specmolfrag_dynamic_batch_sampler_mode: frag_node
+specmolfrag_dynamic_batch_sampler_mode: frag_edge
 specmolfrag_dynamic_batch_sampler_max: 500000
+
+pl_enable_progress_bar: False

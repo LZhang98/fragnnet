@@ -193,3 +193,4 @@ debug_zero_loss: False
 checkpoint_metric: epoch
 checkpoint_metric_mode: max
 upload_checkpoints: False
+pl_enable_progress_bar: True

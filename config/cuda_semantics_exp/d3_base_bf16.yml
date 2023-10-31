@@ -22,3 +22,4 @@ debug_overfit: False
 
 precision: bf16-mixed
 automatic_optimization: True
+pl_enable_progress_bar: False

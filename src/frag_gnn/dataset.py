@@ -466,9 +466,9 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 	 This is used to avoid CUDA OOM errors, implmentaion is inspired by PyG DynamicBatchSampler, and this should be used to replace default BatchSampler
 	 This should have the same random sampling beheivor as RandomSampler
 	"""
-	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_node',
+	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_edge',
 					shuffle: bool = False, skip_too_big: bool = False, num_samples  = None, generator = None,
-					return_batch_at = 0) -> None:
+					return_batch_at = 0, max_batch_sample_size = None) -> None:
 		"""_summary_
 
 		Args:
@@ -478,7 +478,9 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			shuffle (bool, optional): Samples elements randomly each epoch. Defaults to False.
 			skip_too_big (bool, optional): _description_. Defaults to False.
 			num_samples (Optional[int], optional): num of samples to draw. Defaults to None. if None set to all samples in dataset
-
+			generator
+			return_batch_at 
+			max_batch_sample_size
 		Raises:
 			ValueError: _description_
 			ValueError: _description_
@@ -486,7 +488,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		if not isinstance(max_num, int) or max_num <= 0:
 			raise ValueError("`dag_node` should be a positive integer value "
 							"(got {max_num}).")
-		if limited_by not in ['frag_node', 'dag_edge']:
+		if limited_by not in ['frag_node', 'frag_edge']:
 			raise ValueError("`limited_by` choice should be either "
 							f"'frag_node' or 'dag_edge' (got '{limited_by}').")
 
@@ -526,13 +528,15 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			indices = th.arange(len(self.data_source), dtype=th.long)
 
 		while (num_processed < len(self.data_source)
-			   and num_steps < self.max_sampling_step):
+			and num_steps < self.max_sampling_step):
+
 			# Fill batch
 			for idx in indices[num_processed:]:
 				# Size of sample
 				data = self.data_source[idx.item()]
 				
-				n = data['frag_pyg'].num_nodes if data['frag_pyg'].num_edges == 'frag_node' else data['frag_pyg'].num_edges
+				n = data['frag_pyg'].num_nodes if  self.limited_by == 'frag_node' \
+					else data['frag_pyg'].num_edges
 
 				if n > self.max_num:
 					warning_msg = "Size of data sample at index " +\
@@ -550,22 +554,31 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					if self.skip_too_big:
 						continue
 
-
 				if  batch_n + n > self.max_num:
-					# no more budget left
+					# no more budget left, mini-batch filled
 					break
-
+				
 				# Add sample to current batch
 				batch.append(idx.item())
 				num_processed += 1
 				batch_n += n
-		
-				if (self.return_batch_at > 0 and num_processed > 0 and num_processed % self.return_batch_at == 0):
+
+				# check if batch has more samples then max sample size
+				if self.max_batch_sample_size is not None \
+					and self.max_batch_sample_size == len(batch):
+					# mini-batch filled
+					break
+				
+				# check we need return at this point for ga
+				if self.return_batch_at > 0 \
+					and num_processed > 0 \
+					and num_processed % self.return_batch_at == 0:
 					# Mini-batch filled
 					break
-
-			self.batches.append(batch)
-			batch = []
+			
+			if len(batch) > 0:
+				self.batches.append(batch)
+				batch = []
 			batch_n = 0
 			num_steps += 1
 
