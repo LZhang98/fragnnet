@@ -480,14 +480,6 @@ class IcebergIntenPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
 		# cosine distance
 		if self.hparams.loss_type == "cosine_distance_dense":
 			def _loss_fn(true_spec, pred_spec, **kwargs):

@@ -330,7 +330,7 @@ def magma_augmentation(
 	tree_dir = magma_dir / "magma_tree"
 	assert tsv_dir.exists(), f"Missing tsv dir: {tsv_dir}"
 	assert tree_dir.exists(), f"Missing tree dir: {tree_dir}"
-	tsv_filename = tsv_dir / f"{spectra_name}.magma"
+	tsv_filename = tsv_dir / f"{spectra_name}.tsv"
 	tree_filename = tree_dir / f"{spectra_name}.json"
 	formula_dir = magma_dir / "magma_formula"
 	assert formula_dir.exists(), f"Missing formula dir: {formula_dir}"
@@ -379,6 +379,7 @@ def magma_augmentation(
 
 	# Step 3: Make all assignments
 	frag_hashes, frag_inds, shift_inds, masses, scores = fe.get_frag_masses()
+	# print(f"Number of raw fragments = {len(scores)}")
 
 	# Argsort by bond breaking scores
 	# Lower bond scores are better
@@ -464,6 +465,7 @@ def magma_augmentation(
 				hash_to_peaks[h].append(peak_info_ex)
 
 		tsv_export_list.append(new_entry)
+	# print(f"Number of peaks (with or without assignment): {len(tsv_export_list)}")
 
 	df = pd.DataFrame(tsv_export_list)
 	df.sort_values(by="mz_observed", inplace=True)
@@ -474,6 +476,7 @@ def magma_augmentation(
 		j for i in tsv_export_list for j in i["frag_hashes"].split(",") if len(j) > 0
 	]
 	tree_nodes = list(set(tree_nodes))
+	# print(f"Number of nodes (with assignment to at least one peak): {len(tree_nodes)}")
 
 	# Now do a breadth first search back on the tree via its parents
 	explore_queue = copy.deepcopy(tree_nodes)
@@ -684,7 +687,7 @@ def get_args():
 	"""get args"""
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--magma_dp", type=str, default="data/magma_inten")
+	parser.add_argument("--magma_dp", type=str, default="data/magma_gen")
 	parser.add_argument("--proc_dp", type=str, default="data/proc")
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist"])

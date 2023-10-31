@@ -630,8 +630,8 @@ class NeimsModel(nn.Module):
 
 	def _compute_output_size(self):
 
-		self.mz_bins = th.arange(self.mz_bin_res,self.mz_max+self.mz_bin_res,self.mz_bin_res)
-		self.mzs = self.mz_bins-0.5*self.mz_bin_res
+		self.mz_bins = nn.Parameter(th.arange(self.mz_bin_res,self.mz_max+self.mz_bin_res,self.mz_bin_res))
+		self.mzs = nn.Parameter(self.mz_bins-0.5*self.mz_bin_res)
 		self.output_size = self.mzs.shape[0]
 
 	def _prec_mz_to_idx(self,prec_mz):
@@ -681,7 +681,7 @@ class NeimsModel(nn.Module):
 		spec = spec + all_zero_bonus
 		# convert dense spectrum to sparse
 		mask = spec>0.
-		pred_mzs = (self.mzs.to(mask.device).unsqueeze(0).expand(spec.shape[0],-1))[mask]
+		pred_mzs = (self.mzs.unsqueeze(0).expand(spec.shape[0],-1))[mask]
 		pred_logprobs = safelog(spec)[mask]
 		pred_batch_idxs = th.arange(spec.shape[0],device=spec.device).unsqueeze(1).expand(-1,spec.shape[1])[mask]
 		pred_specs = spec

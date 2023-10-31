@@ -20,7 +20,7 @@ lr_schedule: False
 debug_overfit: False
 precision: bf16-mixed
 loss_type: cosine_distance
-loss_tolerance_ppm: 
+loss_tolerance_rel: 
 loss_tolerance_abs: 0.01
 mz_bin_res: 0.01
 mz_max: 1500.

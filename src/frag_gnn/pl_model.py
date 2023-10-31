@@ -30,6 +30,7 @@ class SpectrumPL(pl.LightningModule):
 		# setup functions
 		self.metric_names = set()
 		self._setup_model()
+		self._setup_tolerance()
 		self._setup_loss_fn()
 		self._setup_spec_fns()
 		self._setup_metric_fns()
@@ -42,7 +43,18 @@ class SpectrumPL(pl.LightningModule):
 
 	def _setup_model(self):
 		raise NotImplementedError
-	
+
+	def _setup_tolerance(self):
+
+		# set tolerance
+		if self.hparams.loss_tolerance_rel is not None:
+			self.tolerance = self.hparams.loss_tolerance_rel
+			self.relative = True
+		else:
+			assert self.hparams.loss_tolerance_abs is not None
+			self.tolerance = self.hparams.loss_tolerance_abs
+			self.relative = False
+
 	def _setup_loss_fn(self):
 		raise NotImplementedError
 
@@ -60,6 +72,7 @@ class SpectrumPL(pl.LightningModule):
 
 	def _setup_metric_fns(self):
 
+		# setup metrics
 		self.metric_min_max = {"loss": "min"}
 		self.metric_fns = {}
 		if "cos_sim" in self.hparams.auxiliary_scores:
@@ -611,14 +624,6 @@ class FragGNNPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
 		# cross entropy
 		sparse_ce_fn = get_sparse_cross_entropy_fn(
 			self.hparams.output_distribution,
@@ -916,14 +921,6 @@ class NeimsPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
 		# define loss
 		assert self.hparams.loss_type in ["cosine_distance","cosine_distance_dense"], self.hparams.loss_type
 		def _loss_fn(

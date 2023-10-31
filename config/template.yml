@@ -126,7 +126,7 @@ optimizer: adamw
 output_distribution: gaussian
 loss_type: cross_entropy
 loss_vectorized: False
-loss_tolerance_ppm: 0.00001
+loss_tolerance_rel: 0.00001 # 10 ppm
 loss_tolerance_abs: #0.001
 auxiliary_scores:
   - cos_sim
@@ -138,7 +138,7 @@ ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
 sum_ints: True
-ints_transform: none #log10t3
+ints_transform: none
 train_batch_size: 16
 eval_batch_size: 16
 accelerator: cpu

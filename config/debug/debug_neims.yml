@@ -3,8 +3,8 @@ wandb_tags:
 - debug
 
 split_dp: data/split/d3_h4_isoTrue_v2
-# spec_params:
-#   subsample_size: 128
+spec_params:
+  subsample_size: 128
 
 model_type: neims
 loss_type: "cosine_distance"
