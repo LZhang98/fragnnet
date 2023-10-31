@@ -1,9 +1,9 @@
 entity: frag-gnn
 project: frag-gnn
-program: /h/adamo/frag-gnn/scripts/run_wandb_sweep.py
+program: ./scripts/run_wandb_sweep.py
 method: random
 name: d4_sweep
-description: Optimize FRAG-GNN hyperparameters (first attempt)
+description: Optimize FRAG-GNN hyperparameters (first attempt for d4)
 metric:
   goal: maximize
   name: val_cos_sim_best
