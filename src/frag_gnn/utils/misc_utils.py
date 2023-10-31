@@ -10,6 +10,7 @@ import tqdm
 import pandas as pd
 import threading
 import torch_geometric as pyg
+import dgl
 
 TQDM_DISABLE = False
 PPM = 1/1000000
@@ -211,6 +212,10 @@ def scatter_logsoftmax(logits,subset_idxs,dim=-1):
 	logits = logits - c[subset_idxs]
 	return logits
 
+def scatter_softmax(logits,subset_idxs,dim=-1):
+
+	return th.exp(scatter_logsoftmax(logits,subset_idxs,dim=dim))
+
 def scatter_l1normalize(vals,subset_idxs,dim=-1):
 	# calculate normalizing constant
 	c = scatter_reduce(
@@ -239,3 +244,68 @@ def scatter_reduce(src,index,reduce,dim,dim_size):
 def safelog(x,eps=EPS):
 	return th.log(x+eps)
 
+def batchwise_max(xs, batch_idxs):
+	""" for debugging """
+
+	batch_size = th.max(batch_idxs)+1
+	maxs = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
+	for b in range(batch_size):
+		maxs[b] = th.max(xs[batch_idxs==b])
+	return maxs
+
+def batchwise_lse(xs, batch_idxs):
+	""" for debugging """
+
+	batch_size = th.max(batch_idxs)+1
+	lses = th.zeros([batch_size],device=xs.device,dtype=xs.dtype)
+	for b in range(batch_size):
+		lses[b] = th.logsumexp(xs[batch_idxs==b],0)
+	return lses
+
+def to_cpu(data_d, non_blocking=True, detach=False):
+
+	for k in data_d.keys():
+		if isinstance(data_d[k],th.Tensor):
+			data = data_d[k]
+			if detach:
+				data = data.detach()
+			data = data.to("cpu",non_blocking=non_blocking)
+			data_d[k] = data
+	return data_d
+
+def to_device(data_d, device, non_blocking=True):
+
+	for k in data_d.keys():
+		if isinstance(data_d[k], th.Tensor) or isinstance(data_d[k], dgl.DGLGraph):
+			data = data_d[k]
+			data = data.to(device,non_blocking=non_blocking)
+			data_d[k] = data
+	return data_d
+
+def deep_update(mapping, *updating_mappings):
+	""" 
+	adapted from pydantic 
+	https://github.com/pydantic/pydantic/blob/fd2991fe6a73819b48c906e3c3274e8e47d0f761/pydantic/utils.py#L200-L208 
+	"""
+	updated_mapping = mapping.copy()
+	for updating_mapping in updating_mappings:
+		for k, v in updating_mapping.items():
+			if k in updated_mapping and isinstance(updated_mapping[k], dict) and isinstance(v, dict):
+				updated_mapping[k] = deep_update(updated_mapping[k], v)
+			else:
+				updated_mapping[k] = v
+	return updated_mapping
+
+def print_shapes(input_dict):
+
+	for k,v in input_dict.items():
+		if isinstance(v,th.Tensor) or isinstance(v,np.ndarray):
+			print(k,"/",tuple(v.shape),"/",type(v))
+		elif isinstance(v,list) or isinstance(v,tuple):
+			print(k,"/",len(v),"/",type(v))
+		elif isinstance(v,pyg.data.Data):
+			print(k,"/",(v.num_nodes,v.num_edges),"/",type(v))
+		elif isinstance(v,dgl.DGLGraph):
+			print(k,"/",(v.number_of_nodes(),v.number_of_edges()),"/",type(v))
+		else:
+			print(k,"/",None,"/",type(v))

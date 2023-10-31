@@ -10,92 +10,40 @@ from torch_geometric.data import Data, Batch
 import sys
 from tqdm import tqdm
 from typing import Iterator, Iterable, Optional, Sequence, List, TypeVar, Generic, Sized, Union
+import warnings
 
 from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_graph, get_frag_graph
 from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_type_idx, transform_nce, prec_type_mass_diff
-from frag_gnn.utils.dataset_utils import merge_spec_df
-from frag_gnn.frag.frag_utils import load_frag_d
+from frag_gnn.utils.proc_utils import merge_spec_df
+from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
-import warnings
 
-SPEC_PARAMS = [
-	"merge",
-	"subsample_size",
-	"subsample_seed",
-	"ints_thresh",
-	"mz_max",
-	"sparse",
-	"binned",
-	"mz_bin_res",
-	"sum_ints",
-	"prec_type",
-	"prec_mz",
-	"prec_mass_diff",
-	"nce",
-	"ace",
-	"preprocess",
-	"unique_id"
-]
+class BaseDataset(Dataset):
 
-MOL_PARAMS = [
-	"smiles",
-	"fingerprint",
-	"fingerprint_morgan",
-	"fingerprint_rdkit",
-	"fingerprint_maccs",
-	"pyg",
-	"pyg_node_feats",
-	"pyg_edge_feats",
-	"pyg_pe_embed_k",
-	"pyg_bigraph",
-	"preprocess"
-]
-
-FRAG_PARAMS = [
-	"pyg",
-	"pyg_node_feats",
-	"pyg_edge_feats",
-	"pyg_bigraph",
-	"num_isotopes",
-	"formula_peak_mzs",
-	"formula_peak_probs",
-	"compressed",
-	"preload",
-	"preprocess"
-]
-
-class SpecMolDataset(Dataset):
-
-	def __init__(
-		self,
+	def _base_init(self, 
 		spec_fp: str,
 		mol_fp: str,
 		split_dp: str,
 		split: str,
-		**kwargs):
-
-		super().__init__()
+		spec_params: dict
+	):
+		
 		self.spec_df = pd.read_pickle(spec_fp)
 		self.mol_df = pd.read_pickle(mol_fp)
 		assert split in ["train","val","test"], split
 		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
 		self.split_df = pd.read_csv(split_fp)
-		
-		self.spec_params = {k: kwargs["spec_"+k] for k in SPEC_PARAMS}
-		self.mol_params = {k: kwargs["mol_"+k] for k in MOL_PARAMS}
-
+		self.spec_params = spec_params
 		# select spectra
 		self.spec_df = self.spec_df[self.spec_df["spec_id"].isin(self.split_df["spec_id"])]
 		# select molecules
 		self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.split_df["mol_id"])]
 		assert np.all(np.unique(self.mol_df["mol_id"]) == np.unique(self.spec_df["mol_id"]))
-
 		# merge spectra
 		if self.spec_params["merge"]:
 			self.spec_df = merge_spec_df(self.spec_df)
-
 		# subsample
 		if self.spec_params["subsample_size"] > 0:
 			self.spec_df = self.spec_df.sample(
@@ -103,13 +51,13 @@ class SpecMolDataset(Dataset):
 				random_state=self.spec_params["subsample_seed"],
 				replace=False)
 			self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
-
 		# reset indices
 		self.spec_df = self.spec_df.reset_index(drop=True)
 		self.mol_df = self.mol_df.reset_index(drop=True)
-
 		# use mol_id as index for speedy access
 		self.mol_df = self.mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
+
+	def _preprocess_spec(self):
 
 		# preload and pre-process spectra
 		if self.spec_params["preprocess"]:
@@ -117,36 +65,6 @@ class SpecMolDataset(Dataset):
 			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess spec",total=len(self.spec_df)):
 				spec_data = self._process_spec(spec_entry)
 				self.spec_datas[idx] = spec_data
-
-		# preload and pre-process molecules
-		if self.mol_params["preprocess"]:
-			self.mol_datas = {}
-			total_mol_data_size = 0
-			for idx, mol_entry in tqdm(self.mol_df.iterrows(),desc="> preprocess mol",total=len(self.mol_df)):
-				mol_data = self._process_mol(mol_entry)
-				total_mol_data_size += get_pyg_memory_usage(mol_data["mol_pyg"])
-				self.mol_datas[mol_entry["mol_id"]] = mol_data
-			print(f"> total_mol_data_size: {total_mol_data_size/1e6:.2f} MB")
-
-	def __len__(self):
-
-		return len(self.spec_df)
-
-	def __getitem__(self,idx):
-
-		spec_entry = self.spec_df.iloc[idx]
-		mol_id = spec_entry["mol_id"]
-		mol_entry = self.mol_df.loc[mol_id]
-		if self.spec_params["preprocess"]:
-			spec_data = self.spec_datas[idx].copy()
-		else:
-			spec_data = self._process_spec(spec_entry)
-		if self.mol_params["preprocess"]:
-			mol_data = self.mol_datas[mol_id].copy()
-		else:
-			mol_data = self._process_mol(mol_entry)
-		data = {**spec_data,**mol_data}
-		return data
 
 	def _process_spec(self,spec_entry):
 
@@ -182,12 +100,7 @@ class SpecMolDataset(Dataset):
 			nce = th.tensor([transform_nce(nce)],dtype=th.float)
 			spec_data["spec_nce"] = nce
 		if self.spec_params["ace"]:
-			# TODO: implement ace
-			raise NotImplementedError
-			# assert not self.merge
-			# ace = spec_entry["ace"]
-			# ace = th.tensor([transform_ace(ace)],dtype=th.float)
-			# spec_data["spec_ace"] = ace
+			raise NotImplementedError()
 		if self.spec_params["prec_mz"]:
 			prec_mz = spec_entry["prec_mz"]
 			prec_mz = th.tensor([float(prec_mz)],dtype=th.float)
@@ -201,6 +114,131 @@ class SpecMolDataset(Dataset):
 			unique_id = th.tensor([unique_id],dtype=th.long)
 			spec_data["spec_unique_id"] = unique_id
 		return spec_data
+
+	def __getitem__(self, idx):
+
+		raise NotImplementedError()
+
+	def __len__(self):
+
+		return len(self.spec_df)
+
+	@staticmethod
+	def get_collate_fn():
+		
+		return BaseDataset.collate_fn
+
+	@staticmethod
+	def _setup_collate(data_list):
+
+		batch_size = len(data_list)
+		keys = list(data_list[0].keys())
+		collate_data = {key: [] for key in keys}
+		for data in data_list:
+			for key in keys:
+				collate_data[key].append(data[key])
+		return batch_size, keys, collate_data
+
+	@staticmethod
+	def _standard_collate(batch_size,keys,collate_data):
+		""" mutates keys and collate_data """
+
+		# handle sparse spectra
+		if "spec_ints" in keys and "spec_mzs" in keys:
+			# create batch_idxs
+			mzs, ints, batch_idxs = batch_func(
+				collate_data["spec_mzs"],
+				collate_data["spec_ints"]
+			)
+			collate_data["spec_mzs"] = mzs
+			collate_data["spec_ints"] = ints
+			collate_data["spec_batch_idxs"] = batch_idxs
+			# remove from list
+			keys.remove("spec_ints")
+			keys.remove("spec_mzs")
+		# handle generic data
+		for key in keys:
+			values = collate_data[key]
+			if isinstance(values[0],list):
+				# flatten
+				values = flatten_lol(values)
+				collate_data[key] = values
+			elif isinstance(values[0],th.Tensor):
+				# cat
+				values = th.cat(values,dim=0)
+				collate_data[key] = values
+			else:
+				raise TypeError(f"Unsupported type: {type(values[0])}")
+		# remove everything
+		keys.clear()
+		# add batch size
+		collate_data["batch_size"] = th.tensor(batch_size, dtype=th.long)
+
+	@staticmethod
+	def collate_fn(data_list):
+
+		raise NotImplementedError()
+
+class SpecMolDataset(BaseDataset):
+
+	def __init__(
+		self,
+		spec_fp: str,
+		mol_fp: str,
+		split_dp: str,
+		split: str,
+		spec_params: dict,
+		**kwargs
+	):
+
+		BaseDataset.__init__(self)
+		self._base_init(
+			spec_fp=spec_fp,
+			mol_fp=mol_fp,
+			split_dp=split_dp,
+			split=split,
+			spec_params=spec_params
+		)
+		self.mol_params = kwargs["mol_params"]
+		self._preprocess_spec()
+		self._preprocess_mol()
+
+	def _get_mol_graph_size(self, mol_data):
+
+		if self.mol_params["pyg"]:
+			mol_pyg = mol_data["mol_pyg"]
+			mol_graph_size = get_pyg_memory_usage(mol_pyg)
+		else:
+			mol_graph_size = 0
+		return mol_graph_size
+
+	def _preprocess_mol(self):
+
+		# preload and pre-process molecules
+		if self.mol_params["preprocess"]:
+			self.mol_datas = {}
+			total_mol_graph_size = 0
+			for idx, mol_entry in tqdm(self.mol_df.iterrows(),desc="> preprocess mol",total=len(self.mol_df)):
+				mol_data = self._process_mol(mol_entry)
+				total_mol_graph_size += self._get_mol_graph_size(mol_data)
+				self.mol_datas[mol_entry["mol_id"]] = mol_data
+			print(f"> total_mol_graph_size: {total_mol_graph_size/1e6:.2f} MB")
+
+	def __getitem__(self,idx):
+
+		spec_entry = self.spec_df.iloc[idx]
+		mol_id = spec_entry["mol_id"]
+		mol_entry = self.mol_df.loc[mol_id]
+		if self.spec_params["preprocess"]:
+			spec_data = self.spec_datas[idx].copy()
+		else:
+			spec_data = self._process_spec(spec_entry)
+		if self.mol_params["preprocess"]:
+			mol_data = self.mol_datas[mol_id].copy()
+		else:
+			mol_data = self._process_mol(mol_entry)
+		data = {**spec_data,**mol_data}
+		return data
 
 	def _process_mol(self,mol_entry):
 
@@ -234,69 +272,48 @@ class SpecMolDataset(Dataset):
 
 	@staticmethod
 	def collate_fn(data_list):
-
-		batch_size = len(data_list)
-		keys = list(data_list[0].keys())
-		collate_data = {key: [] for key in keys}
-		for data in data_list:
-			for key in keys:
-				collate_data[key].append(data[key])
-		# special handling
-		if "spec_ints" in keys and "spec_mzs" in keys:
-			# create batch_idxs
-			mzs, ints, batch_idxs = batch_func(
-				collate_data["spec_mzs"],
-				collate_data["spec_ints"]
-			)
-			collate_data["spec_mzs"] = mzs
-			collate_data["spec_ints"] = ints
-			collate_data["spec_batch_idxs"] = batch_idxs
-			# remove from list
-			keys.remove("spec_ints")
-			keys.remove("spec_mzs")
+		
+		batch_size, keys, collate_data = SpecMolDataset._setup_collate(data_list)
 		if "mol_pyg" in keys:
 			# batch
 			collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
 			# remove from list
 			keys.remove("mol_pyg")
-		# regular handling
-		for key in keys:
-			values = collate_data[key]
-			if isinstance(values[0],list):
-				# flatten
-				values = flatten_lol(values)
-				collate_data[key] = values
-			elif isinstance(values[0],th.Tensor):
-				# cat
-				values = th.cat(values,dim=0)
-				collate_data[key] = values
-			else:
-				raise TypeError(f"Unsupported type: {type(values[0])}")
-		# add batch_size
-		collate_data["batch_size"] = th.tensor(batch_size)
+		SpecMolDataset._standard_collate(batch_size,keys,collate_data)
 		return collate_data
-
 
 class SpecMolFragDataset(SpecMolDataset):
 
 	def __init__(
 		self,
-		spec_fp,
-		mol_fp,
-		frag_dp,
-		split_dp,
-		split,
-		**kwargs):
+		spec_fp: str,
+		mol_fp: str,
+		split_dp: str,
+		split: str,
+		frag_dp: str,
+		spec_params: dict,
+		mol_params: dict,
+		frag_params: dict,
+		**kwargs
+	):
 
-		super().__init__(
+		BaseDataset.__init__(self)
+		self._base_init(
 			spec_fp=spec_fp,
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
-			**kwargs
+			spec_params=spec_params
 		)
 		self.frag_dp = frag_dp
-		self.frag_params = {k: kwargs["frag_"+k] for k in FRAG_PARAMS}
+		self.mol_params = mol_params
+		self.frag_params = frag_params
+		self._preprocess_spec()
+		self._preprocess_mol()
+		self._preprocess_frag()
+		
+	def _preprocess_frag(self):
+
 		# preload frag dags
 		if self.frag_params["preload"]:
 			self.frag_entries = {}
@@ -318,9 +335,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			print(f"> total_frag_data_size: {total_frag_data_size/1e6:.2f} MB")
 
 	def __getitem__(self, idx):
-		#print(idx)
-		#print(type(idx))
-		#print(self.spec_df.shape)
+
 		spec_entry = self.spec_df.iloc[idx]
 		mol_id = spec_entry["mol_id"]
 		mol_entry = self.mol_df.loc[mol_id]
@@ -392,26 +407,8 @@ class SpecMolFragDataset(SpecMolDataset):
 		# prevent edge case causing crash
 		if len(data_list) == 0:
 			return  {"batch_size": th.tensor(0)}
-
-		batch_size = len(data_list)
-		keys = list(data_list[0].keys())
-		collate_data = {key: [] for key in keys}
-		for data in data_list:
-			for key in keys:
-				collate_data[key].append(data[key])
+		batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
 		# special handling
-		if "spec_ints" in keys and "spec_mzs" in keys:
-			# create batch_idxs
-			mzs, ints, batch_idxs = batch_func(
-				collate_data["spec_mzs"],
-				collate_data["spec_ints"]
-			)
-			collate_data["spec_mzs"] = mzs
-			collate_data["spec_ints"] = ints
-			collate_data["spec_batch_idxs"] = batch_idxs
-			# remove from list
-			keys.remove("spec_ints")
-			keys.remove("spec_mzs")
 		if "frag_pyg" in keys:
 			assert "mol_pyg" in keys
 			assert "frag_formula_peak_mzs" in keys
@@ -436,37 +433,8 @@ class SpecMolFragDataset(SpecMolDataset):
 			collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
 			# remove from list
 			keys.remove("mol_pyg")
-		# regular handling
-		for key in keys:
-			values = collate_data[key]
-			if isinstance(values[0],list):
-				# flatten
-				values = flatten_lol(values)
-				collate_data[key] = values
-			elif isinstance(values[0],th.Tensor):
-				# cat
-				values = th.cat(values,dim=0)
-				collate_data[key] = values
-			else:
-				raise TypeError(f"Unsupported type: {type(values[0])}")
-		# add batch_size
-		collate_data["batch_size"] = th.tensor(batch_size)
+		SpecMolFragDataset._standard_collate(batch_size,keys,collate_data)
 		return collate_data
-
-def get_default_fps():
-
-	spec_fp = "data/proc/spec_df.pkl"
-	mol_fp = "data/proc/mol_df.pkl"
-	frag_dp = "data/frag/debug/dags"
-	train_fp = "data/split/debug/train_ids.csv"
-	val_fp = "data/split/debug/val_ids.csv"
-	test_fp = "data/split/debug/test_ids.csv"
-	return spec_fp, mol_fp, frag_dp, train_fp, val_fp, test_fp
-
-def get_default_ds_params(frag=True):
-
-	# TODO: fix this
-	raise NotImplementedError
 
 def get_batch_memory(batch):
 
@@ -492,17 +460,6 @@ def find_largest_batch(dl):
 		batch_mem_totals.append(batch_mem_total)
 	argmax_idx = np.argmax(batch_mem_totals)
 	return batch_mem_ds[argmax_idx], batch_mem_totals[argmax_idx]
-
-def print_shapes(th_d):
-	for k,v in th_d.items():
-		if isinstance(v, th.Tensor):
-			print(k,tuple(v.shape))
-		elif isinstance(v, Batch):
-			print(k,(v.num_nodes,v.num_edges))
-		elif isinstance(v, list):
-			print(k,(len(v),))
-		else:
-			raise ValueError(f"Unsupported type: {type(v)}")
 		
 class SpecMolFragDynamicBatchSampler(BatchSampler):
 	"""Dynamically adds samples to a mini-batch up to a maximum size  either based on number of nodes on frag DAG or number of edges on frag DAG.
@@ -510,8 +467,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 	 This should have the same random sampling beheivor as RandomSampler
 	"""
 	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_edge',
-					shuffle: bool = False, skip_too_big: bool = False, num_samples = None, generator = None,
-					return_batch_at = 0, max_bacth_sample_size = None) -> None:
+					shuffle: bool = False, skip_too_big: bool = False, num_samples  = None, generator = None,
+					return_batch_at = 0, max_batch_sample_size = None) -> None:
 		"""_summary_
 
 		Args:
@@ -523,7 +480,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			num_samples (Optional[int], optional): num of samples to draw. Defaults to None. if None set to all samples in dataset
 			generator
 			return_batch_at 
-			max_bacth_sample_size
+			max_batch_sample_size
 		Raises:
 			ValueError: _description_
 			ValueError: _description_
@@ -600,7 +557,50 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		batch_filled = False
 		while num_processed < len(self._data_source) and num_processed < self._max_sampling_step:
 			# Fill batch
-			dataset_idx = indices[num_processed].item()
+			for idx in indices[num_processed:]:
+				# Size of sample
+				data = self.data_source[idx.item()]
+				
+				n = data['frag_pyg'].num_nodes if  self.limited_by == 'frag_node' \
+					else data['frag_pyg'].num_edges
+
+				if n > self.max_num:
+					warning_msg = "Size of data sample at index " +\
+						f"{idx} is larger than " +\
+						f"{self.max_num} {self.limited_by}s " +\
+						f"(got {n} {self.limited_by}s. " +\
+						"This sample can not fit into batch "
+					if self.skip_too_big:
+						warning_msg += "and sampler will skip this to prevent CUDA OOM ERROR"
+					else:
+						warning_msg += "attempt to fit this in to batch and this may let to CUDA OOM ERROR"
+					warnings.warn(warning_msg)
+					#if skip too big is true, just move to the next iteration
+					# this will have edge case where a "batch" can be empty if this is the last batch
+					if self.skip_too_big:
+						continue
+
+				if  batch_n + n > self.max_num:
+					# no more budget left, mini-batch filled
+					break
+				
+				# Add sample to current batch
+				batch.append(idx.item())
+				num_processed += 1
+				batch_n += n
+
+				# check if batch has more samples then max sample size
+				if self.max_batch_sample_size is not None \
+					and self.max_batch_sample_size == len(batch):
+					# mini-batch filled
+					break
+				
+				# check we need return at this point for ga
+				if self.return_batch_at > 0 \
+					and num_processed > 0 \
+					and num_processed % self.return_batch_at == 0:
+					# Mini-batch filled
+					break
 			
 			n = self._data_meta[dataset_idx][0] if self._limited_by == 'frag_node' \
 				else self._data_meta[dataset_idx][1]
@@ -668,10 +668,9 @@ if __name__ == "__main__":
 	import pandas as pd
 	from torch.utils.data import DataLoader
 	from pprint import pprint
+	from frag_gnn.utils.misc_utils import print_shapes
 
-	spec_fp, mol_fp, frag_dp, train_fp, _, _ = get_default_fps()	
-
-	params = get_default_ds_params()
+	# TODO: read stuff from a config file
 
 	print(">>> SpecMolDataset")
 	sm_ds = SpecMolDataset(

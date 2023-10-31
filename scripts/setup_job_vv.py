@@ -3,9 +3,39 @@ import argparse
 
 from frag_gnn.utils.misc_utils import booltype
 
+QOS_TO_TIME = {
+	"normal": 16,
+	"m": 12,
+	"m2": 8,
+	"m3": 4,
+	"long": 48,
+	"high": 8,
+	"affiliate": 8,
+	"deadline": 7*24 # big number
+}
+
+QOS_TO_GPU = {
+	"normal": 2,
+	"m": 4,
+	"m2": 8,
+	"m3": 16,
+	"long": 1,
+	"high": 4,
+	"affiliate": 2,
+	"deadline": 12
+}
+
+def time_check(time, qos):
+
+	assert time > 0, time
+	assert time <= QOS_TO_TIME[qos], (time, qos, QOS_TO_TIME[qos])
+
+def gpu_check(gpu, qos):
+
+	assert gpu <= QOS_TO_GPU[qos], (gpu, qos, QOS_TO_GPU[qos])
+
 def main(args):
 
-	home_dir = "/ssd005/home/adamo"
 	script_lines = []
 	script_lines.extend(
 		[
@@ -17,21 +47,20 @@ def main(args):
 	script_lines.append(f"#SBATCH --job-name={args.job_name}")
 	script_lines.append(f"#SBATCH --mem={args.mem}G")
 	script_lines.append(f"#SBATCH --cpus-per-task={args.cpu}")
-	assert args.time > 0, args.time
+	if args.time == -1:
+		args.time = QOS_TO_TIME[args.qos]
+	time_check(args.time, args.qos)
 	script_lines.append(f"#SBATCH --time=0-{args.time-1}:59")
-	if args.partition != "cpu":
-		assert args.gpu > 0, args.gpu
-		script_lines.append(f"#SBATCH --gres=gpu:{args.gpu}")
-	else:
-		assert args.qos == "nopreemption", args.qos
-	script_lines.append(f"#SBATCH --partition={args.partition}")
+	if args.gpu > 0:
+		gpu_check(args.gpu, args.qos)
+		script_lines.append(f"#SBATCH --gres=gpu:{args.gpu_type}:{args.gpu}")
 	if args.qos == "deadline":
 		script_lines.append("#SBATCH --account=deadline")
 	script_lines.append(f"#SBATCH --qos={args.qos}")
 	script_lines.extend(
 		[
-			f"#SBATCH --output={home_dir}/jobs/%j.out",
-			f"#SBATCH --error={home_dir}/jobs/%j.err",
+			f"#SBATCH --output={args.home_dir}/jobs/%j.out",
+			f"#SBATCH --error={args.home_dir}/jobs/%j.err",
 			"#SBATCH --open-mode=append"
 		]
 	)
@@ -51,14 +80,14 @@ def main(args):
 			"# make wandb directory (if necessary)",
 			"mkdir -p /checkpoint/adamo/wandb",
 			"touch /checkpoint/adamo/wandb/DELAYPURGE",
-			f"ln -sfn /checkpoint/adamo/wandb {home_dir}/frag-gnn/wandb"
+			f"ln -sfn /checkpoint/adamo/wandb {args.home_dir}/frag-gnn/wandb"
 		]
 	)
 	script_lines.extend(
 		[
 			"",
 			"# source .bashrc",
-			f". {home_dir}/miniconda3/etc/profile.d/conda.sh"
+			f". {args.home_dir}/miniconda3/etc/profile.d/conda.sh"
 		]
 	)
 	if args.modules is not None:
@@ -81,7 +110,7 @@ def main(args):
 		[
 			"",
 			"# run script",
-			f"cd {home_dir}/frag-gnn"
+			f"cd {args.home_dir}/frag-gnn"
 		]
 	)
 	python_line = f"python {args.python_script_fp}"
@@ -120,14 +149,15 @@ if __name__ == "__main__":
 	parser.add_argument("--mem", type=int, default=64)
 	parser.add_argument("--cpu", type=int, default=8)
 	parser.add_argument("--gpu", type=int, default=1)
-	parser.add_argument("--time", type=int, default=24)
-	parser.add_argument("--partition", type=str, default="cpu", choices=["t4v2","rtx6000","interactive","cpu","a40"])
-	parser.add_argument("--qos", type=str, default="nopreemption", choices=["normal","high","nopreemption","deadline"])
-	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU2")
+	parser.add_argument("--time", type=int, default=-1, help="time in hours (-1 means use default)")
+	parser.add_argument("--gpu_type", type=str, default="t4", choices=["t4","rtx6000","a40"])
+	parser.add_argument("--qos", type=str, default="normal", choices=["normal","m","m2","m3","long","high","deadline","affiliate"])
+	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU3")
 	parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
 	parser.add_argument("--job_name", type=str, required=True)
-	parser.add_argument("--job_id", type=int, required=False)
+	parser.add_argument("--job_id", type=int, required=False, help="job_id (-1 means use the slurm job id)")
 	parser.add_argument("--blacklist", type=str, nargs="+", required=False)
-	parser.add_argument("--modules", type=str, nargs="+", required=False)
+	parser.add_argument("--modules", type=str, nargs="+", default=["cuda-11.8"])
+	parser.add_argument("--home_dir", type=str, default="/fs01/home/adamo")
 	args = parser.parse_args()
 	main(args)

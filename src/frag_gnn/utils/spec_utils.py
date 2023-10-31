@@ -73,7 +73,7 @@ def bin_func(mzs,ints,mz_max,mz_bin_res,return_index,sum_ints):
 		bin_spec = scatter_reduce(
 			src=ints,
 			index=bin_idx,
-			reduce="sum" if sum_ints else "max",
+			reduce="sum" if sum_ints else "amax",
 			dim=0,
 			dim_size=bins.shape[0]
 		)
@@ -119,14 +119,11 @@ def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
 	bin_spec = scatter_reduce(
 		src=ints,
 		index=bin_idx,
-		reduce="sum" if sum_ints else "max",
+		reduce="sum" if sum_ints else "amax",
 		dim=0,
 		dim_size=num_bins*batch_size
 	)
 	bin_spec = bin_spec.reshape(batch_size,num_bins)
-	zeros_mask = th.max(bin_spec,dim=1,keepdim=True)==0.
-	# bin_spec = bin_spec + EPS*(~zeros_mask).float()
-	# assert not th.any(th.all(bin_spec==0.,dim=1))
 	if th.any(th.all(bin_spec==0.,dim=1)):
 		print("> warning: bin_spec is all zeros!")
 		mask = th.zeros_like(bin_spec,dtype=th.bool)
@@ -136,12 +133,11 @@ def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
 	return bin_spec
 
 
-def merge_sparse_specs(*peakses,renormalize=False):
+def merge_sparse_specs(*peakses,renormalize=False,sum_ints=True):
 	"""
 	this will result in peaks that are really close in mass (<5ppm)
 	they are probably the same peak, but our model can handle this type of ambiguity
 	for now, let's keep them unmerged
-	TODO: this will result in inconsistent comparison with ICEBERG/SCARF
 	"""
 
 	merged_peaks = {}
@@ -149,8 +145,10 @@ def merge_sparse_specs(*peakses,renormalize=False):
 	for peaks in peakses:
 		for mz, intensity in peaks:
 			if mz in merged_peaks:
-				# TODO: sum or max?
-				merged_peaks[mz] += intensity
+				if sum_ints:
+					merged_peaks[mz] += intensity
+				else:
+					merged_peaks[mz] = max(merged_peaks[mz],intensity)
 			else:
 				merged_peaks[mz] = intensity
 	merged_peaks = sorted(list(merged_peaks.items()), key=lambda x: x[0])
@@ -310,7 +308,6 @@ def calculate_cosine_similarity(
 		sum_ints
 	)
 	cos_sims = binned_cosine_similarity(true_spec,pred_spec)
-	#print(f"cos_sims {cos_sims}")
 	return cos_sims
 
 
@@ -346,6 +343,40 @@ def calculate_weighted_recall(
 
 
 def calculate_optimal_cosine_similarity(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_bin_res=0.01,
+		mz_max=1500.,
+		sum_ints=True
+	):
+
+	true_spec = batched_bin_func(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		mz_max,
+		mz_bin_res,
+		sum_ints
+	)
+	pred_spec = batched_bin_func(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max,
+		mz_bin_res,
+		sum_ints
+	)
+	pred_mask = pred_spec > 0.
+	pred_spec = true_spec * pred_mask.float() + pred_spec * (~pred_mask).float()
+	opt_cos_sim = binned_cosine_similarity(true_spec,pred_spec)
+	return opt_cos_sim
+
+
+def calculate_optimal_unbinned_cosine_similarity(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,

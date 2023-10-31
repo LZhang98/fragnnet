@@ -38,10 +38,12 @@ ELEMENT_TO_VE = {
 	"Se": 2, # up to 6, same as S
 	"Si": 4
 }
-NUM_HEAVY_ELEMENTS = len(ELEMENT_TO_VE.keys())
-NUM_ELEMENTS = NUM_HEAVY_ELEMENTS+1
+HEAVY_ELEMENTS = list(ELEMENT_TO_VE.keys())
+NUM_HEAVY_ELEMENTS = len(HEAVY_ELEMENTS)
+ELEMENTS = HEAVY_ELEMENTS + ["H"]
+NUM_ELEMENTS = len(ELEMENTS)
 
-CANONICAL_ELEMENT_ORDER = ["C","H"] + sorted([elem for elem in ELEMENT_TO_VE.keys() if elem != "C" and elem != "H"])
+CANONICAL_ELEMENT_ORDER = ["C","H"] + sorted([elem for elem in HEAVY_ELEMENTS if elem != "C"])
 CANONICAL_H_IDX = CANONICAL_ELEMENT_ORDER.index("H")
 
 ELEMENT_TO_IDX = { elem: idx for idx, elem in enumerate(ELEMENT_TO_VE.keys())}

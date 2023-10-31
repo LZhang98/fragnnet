@@ -3,7 +3,7 @@ import argparse
 import torch_geometric as pyg
 import pstats, cProfile
 
-import frag_gnn.frag.frag_utils as frag_utils
+import frag_gnn.utils.frag_utils as frag_utils
 from frag_gnn.utils.misc_utils import timeit, booltype, get_pyg_memory_usage
 
 def run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes):

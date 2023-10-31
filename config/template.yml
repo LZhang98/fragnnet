@@ -8,63 +8,67 @@ spec_fp: data/proc/spec_df.pkl
 mol_fp: data/proc/mol_df.pkl
 split_dp: data/split/debug
 frag_dp: data/frag/debug/dags
-spec_merge: True
-spec_subsample_size: 0
-spec_subsample_seed: 420
-spec_ints_thresh: 0.0
-spec_mz_max: 1500.0
-spec_sparse: True
-spec_binned: False
-spec_mz_bin_res: 0.01
-spec_sum_ints: True
-spec_prec_type: True
-spec_prec_mz: True
-spec_prec_mass_diff: True
-spec_nce: False
-spec_nce_preprocess: none
-spec_ace: False
-spec_ace_preprocess: none
-
-spec_preprocess: False
-spec_unique_id: True
-mol_smiles: True
-mol_fingerprint: False
-mol_fingerprint_morgan: True
-mol_fingerprint_rdkit: True
-mol_fingerprint_maccs: True
-mol_pyg: True
-mol_pyg_node_feats:
-  - a_onehot
-  - a_degree
-  - a_hybrid
-  - a_formal
-  - a_radical
-  - a_ring
-  - a_mass
-  - a_chiral
-mol_pyg_edge_feats:
-  - b_degree
-mol_pyg_pe_embed_k: 0
-mol_pyg_bigraph: True
-mol_preprocess: False
-frag_pyg: True
-frag_pyg_node_feats:
-  - cc
-  - base_formula
-  - depth
-  - h_formulae_idx
-  - h_counts
-frag_pyg_edge_feats:
-  - cc
-  - base_formula
-  - h_range
-frag_pyg_bigraph: True
-frag_num_isotopes: 1
-frag_formula_peak_mzs: True
-frag_formula_peak_probs: True
-frag_compressed: True
-frag_preload: False
-frag_preprocess: False
+magma_dp: data/magma
+spec_params:
+  merge: True
+  subsample_size: 0
+  subsample_seed: 420
+  sparse: True
+  prec_type: True
+  prec_mz: True
+  prec_mass_diff: True
+  nce: False
+  ace: False
+  preprocess: False
+  unique_id: True
+mol_params:
+  smiles: True
+  fingerprint: False
+  fingerprint_morgan: True
+  fingerprint_rdkit: True
+  fingerprint_maccs: True
+  pyg: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_mass
+    - a_chiral
+  pyg_edge_feats:
+    - b_degree
+  pyg_pe_embed_k: 0
+  pyg_bigraph: True
+  preprocess: False
+frag_params:
+  pyg: True
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - h_counts
+  pyg_edge_feats:
+    - cc
+    - base_formula
+    - h_range
+  pyg_bigraph: True
+  num_isotopes: 1
+  formula_peak_mzs: True
+  formula_peak_probs: True
+  compressed: True
+  preload: False
+  preprocess: False
+magma_params:
+  pe_embed_k: 0
+  root_encode: gnn
+  add_hs: False
+  binned_targs: False
+  mz_bin_res: 0.1
+  mz_max: 1500.0
+  sum_ints: True
 # model
 model_type: frag_gnn
 num_depth: 5
@@ -88,14 +92,29 @@ frag_gnn_type: GINE
 frag_dropout: 0.0
 frag_normalization: batch
 frag_pool_type: none
+# generic model
 mlp_output_format: formula
 mlp_hidden_size: 256
 mlp_dropout: 0.0
 mlp_normalization: none
 mlp_num_layers: 2
 mlp_use_residuals: True
+# bin-specific model
 ff_prec_mz_offset: 0 #5
 ff_bidirectional: True
+# iceberg model
+iceberg_hidden_size: 256
+iceberg_num_layers: 3
+iceberg_num_set_layers: 1
+iceberg_num_frag_set_layers: 0
+iceberg_num_mlp_layers: 0
+iceberg_num_gnn_layers: 0
+iceberg_dropout: 0.0
+iceberg_gnn_type: GGNN
+iceberg_pool_type: avg
+iceberg_inject_early: False
+iceberg_embed_adduct: False
+iceberg_encode_forms: False
 # other
 lr: 0.0001
 lr_schedule: False
@@ -113,10 +132,12 @@ auxiliary_scores:
   - cos_sim
   - wrecall
   - opt_cos_sim
+  - true_spec_e
+  - true_spec_ne
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
-bin_sum_ints: True
+sum_ints: True
 ints_transform: none #log10t3
 train_batch_size: 16
 eval_batch_size: 16
@@ -167,9 +188,11 @@ specmolfrag_dynamic_batch_sampler_max: 100000
 mp_sharing_strategy: file_descriptor
 check_gradient_norm: False
 use_tensor_float32: False
-pl_enable_progress_bar: True
-# debug config
-debug_zero_loss: False
 nan_module_hook: False
+debug_zero_loss: False
+checkpoint_metric: epoch
+checkpoint_metric_mode: max
+upload_checkpoints: False
+pl_enable_progress_bar: True
 debug_val_loop_trigger: False
 debug_bypass_train_val: False

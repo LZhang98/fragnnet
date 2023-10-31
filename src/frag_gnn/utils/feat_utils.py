@@ -12,7 +12,7 @@ import torch_geometric as pyg
 from copy import deepcopy
 import scipy
 
-from frag_gnn.frag.frag_utils import CANONICAL_ELEMENT_ORDER, NODE_FEAT_TO_IDX, EDGE_FEAT_TO_IDX, get_node_feats, get_edge_feats
+from frag_gnn.utils.frag_utils import CANONICAL_ELEMENT_ORDER, NODE_FEAT_TO_IDX, EDGE_FEAT_TO_IDX, get_node_feats, get_edge_feats
 from frag_gnn.utils.data_utils import make_morgan_fingerprint, make_rdkit_fingerprint, make_maccs_fingerprint
 
 # TODO: remove this registry
@@ -567,9 +567,6 @@ def random_walk_pe(g, k):
 	tensor([[0.0000, 0.5000],
 			[0.5000, 0.7500]])
 	"""
-
-	N = g.num_nodes  # number of nodes
-	M = g.num_edges  # number of edges
 	# sparse adjacency matrix
 	A = scipy.sparse.csr_matrix(
 		(
