@@ -3,7 +3,6 @@ wandb_tags:
 - v2
 - cu118
 split_dp: data/split/d3_h4_isoTrue_v2
-frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4
 num_hs: 4
 
@@ -14,8 +13,6 @@ mol_params:
   fingerprint_rdkit: True
   fingerprint_maccs: True
   fingerprint: True
-  pyg: False
-frag_params:
   pyg: False
 mlp_num_layers: 5
 mlp_hidden_size: 2000

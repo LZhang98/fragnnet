@@ -674,6 +674,12 @@ class NeimsModel(nn.Module):
 			fo = fg * fo
 		fo = self.out_activation(fo)
 		spec = self.out_normalization(fo)
+		# handle all zeroes (set to first bin by default)
+		all_zero_mask = th.max(spec,dim=1)[0]<=0.
+		all_zero_bonus = th.zeros_like(spec)
+		all_zero_bonus[all_zero_mask,0] = 1.
+		spec = spec + all_zero_bonus
+		# convert dense spectrum to sparse
 		mask = spec>0.
 		pred_mzs = (self.mzs.to(mask.device).unsqueeze(0).expand(spec.shape[0],-1))[mask]
 		pred_logprobs = safelog(spec)[mask]

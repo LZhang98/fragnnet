@@ -248,6 +248,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	elif config_d["model_type"] == "iceberg_inten":
 		dataset_cls = SpecMolMagmaIntenDataset
 	else:
+		assert config_d["model_type"] == "neims", config_d["model_type"]
 		dataset_cls = SpecMolDataset
 	train_ds = dataset_cls(split="train",**config_d)
 	val_ds = dataset_cls(split="val",**config_d)
