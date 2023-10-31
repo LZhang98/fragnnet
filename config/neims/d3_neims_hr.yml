@@ -7,6 +7,22 @@ frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4
 num_hs: 4
 
+model_type: neims
+loss_type: cosine_distance
+mol_params:
+  fingerprint_morgan: True
+  fingerprint_rdkit: True
+  fingerprint_maccs: True
+  fingerprint: True
+  pyg: False
+frag_params:
+  pyg: False
+mlp_num_layers: 5
+mlp_hidden_size: 2000
+mlp_dropout: 0.1
+ff_prec_mz_offset: 5
+ff_bidirectional: True
+
 train_batch_size: 256
 eval_batch_size: 256
 accumulate_grad_batches: 1
@@ -21,13 +37,7 @@ debug_overfit: False
 precision: 32
 mz_bin_res: 0.1
 mz_max: 1500.0
+sum_ints: True
+ints_transform: none
 
-loss_type: cosine_distance
-model_type: neims
-mol_fingerprint: True
-mol_pyg: False
-frag_pyg: False
-mlp_num_layers: 5
-mlp_hidden_size: 2000
-mlp_dropout: 0.1
-ints_transform: none #log10t3
+
