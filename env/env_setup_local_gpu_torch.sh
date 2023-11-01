@@ -27,8 +27,6 @@ pip install dash
 pip install jupyter-dash
 pip install CairoSVG
 pip install lightning
-#pip install torch-tb-profiler
-#pip install pynvml
-#pip install PyYAML
+pip install dgl==1.0.4 -f https://data.dgl.ai/wheels/cu117/repo.html
 
 pip install -I -e .

@@ -15,7 +15,7 @@ pip install --no-index --upgrade pip
 
 pip install --no-index torch==2.0.1
 pip install --no-index rdkit==2022.3.5
-pip install --no-index torch_geometric==2.3.1
+pip install --no-index torch_geometric==2.3.1 
 pip install --no-index torch_scatter==2.1.1
 pip install --no-index torch_sparse==0.6.17
 pip install --no-index torch_cluster==1.6.1
@@ -33,5 +33,6 @@ pip install --no-index matplotlib
 pip install --no-index pytest
 pip install --no-index pytorch_lightning==2.0.2
 pip install CairoSVG
-
+# this is only needed on CC because there is no internet 
+pip install wandb[sweeps]
 pip install -I -e .
