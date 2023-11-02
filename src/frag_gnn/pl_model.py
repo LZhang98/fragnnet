@@ -13,7 +13,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.utils.nn_utils import build_lr_scheduler
 from frag_gnn.model import FragGNNModel, NeimsModel
-from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn
+from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, get_sparse_oos_cross_entropy_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
@@ -607,6 +607,7 @@ class FragGNNPL(SpectrumPL):
 			mlp_use_residuals=self.hparams.mlp_use_residuals,
 			skip_edge_loss=self.hparams.skip_edge_loss,
 			mask_null_formula=self.hparams.mask_null_formula,
+			predict_oos=self.hparams.predict_oos,
 			cc_interstage_type=self.hparams.cc_interstage_type
 		)
 		# compile
@@ -634,6 +635,8 @@ class FragGNNPL(SpectrumPL):
 		# edge loss
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
 		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
+		# oos
+		sparse_oos_ce_fn = get_sparse_oos_cross_entropy_fn(self.tolerance,self.relative)
 
 		def sparse_cosine_distance(
 			true_mzs,
@@ -697,7 +700,8 @@ class FragGNNPL(SpectrumPL):
 			pred_edge_h_diffs,
 			pred_edge_h_range_masks,
 			pred_edge_h_logprobs,
-			pred_edge_batch_idxs):
+			pred_edge_batch_idxs,
+			pred_oos_logprobs):
 			spec_ce = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,
@@ -716,10 +720,19 @@ class FragGNNPL(SpectrumPL):
 			)
 			if self.hparams.loss_type == "cross_entropy":
 				loss = spec_ce
+				oos_ce = sparse_oos_ce_fn(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_batch_idxs,
+					pred_oos_logprobs
+				)
 			else:
 				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
 				loss = spec_cd
-			loss = self.hparams.primary_loss_weight * loss
+				oos_ce = 0.
+			loss = self.hparams.primary_loss_weight * (loss + oos_ce)
 			spec_e, spec_ne = sparse_entropy_fn(
 				pred_logprobs,
 				pred_batch_idxs
@@ -745,6 +758,7 @@ class FragGNNPL(SpectrumPL):
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
 			null_formula_prob = th.exp(pred_null_formula_logprob)
+			# oos_prob = th.exp(pred_oos_logprobs)
 			loss_d = {
 				"loss": loss,
 				"spec_cd": spec_cd,
@@ -757,7 +771,8 @@ class FragGNNPL(SpectrumPL):
 				"node_ne": node_ne,
 				"node_formula_e": node_formula_e,
 				"node_formula_ne": node_formula_ne,
-				"null_formula_prob": null_formula_prob
+				"null_formula_prob": null_formula_prob,
+				"oos_ce": oos_ce,
 			}
 			if not self.hparams.skip_edge_loss:
 				r_el, t_el = edge_loss(
@@ -795,7 +810,8 @@ class FragGNNPL(SpectrumPL):
 			"node_ne",
 			"node_formula_e",
 			"node_formula_ne",
-			"null_formula_prob"
+			"null_formula_prob",
+			"oos_ce",
 		]
 		if not self.hparams.skip_edge_loss:
 			loss_names.extend(
@@ -961,3 +977,66 @@ class NeimsPL(SpectrumPL):
 			"spec_cd"
 		]
 		self.metric_names.update(loss_names)
+
+
+def test_fraggnn():
+
+	from frag_gnn.runner import load_config
+	from frag_gnn.dataset import SpecMolFragDataset
+	from frag_gnn.utils.misc_utils import print_shapes
+	from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
+	import torch.nn.functional as F
+	from frag_gnn.utils.misc_utils import to_device
+
+	template_fp = "config/template.yml"
+	custom_fps = [
+		"config/debug/debug_d3.yml",
+	]
+	
+	for custom_fp in custom_fps:
+
+		print(custom_fp)
+
+		config_d = load_config(template_fp, custom_fp)
+		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
+
+		ds = SpecMolFragDataset(split="train", **config_d)
+		dl = th.utils.data.DataLoader(
+			ds,
+			batch_size=8,
+			shuffle=False,
+			num_workers=0,
+			collate_fn=ds.get_collate_fn(),
+		)
+		dl_iter = iter(dl)
+		batch = next(dl_iter)
+		print("> batch")
+		print_shapes(batch)
+		batch = to_device(batch,device)
+
+		pl_model = FragGNNPL(**config_d)
+		pl_model.train()
+		pl_model.to(device)
+
+		outputs = pl_model.forward(**batch)
+		print("> train outputs")
+		print_shapes(outputs)
+		print(th.exp(outputs["pred_logprobs"]).sum())
+
+		results = pl_model._common_step(batch, split="train")
+		print_shapes(results)
+
+		mean_loss = results.pop("mean_loss")
+		print("> loss")
+		print(mean_loss)
+		mean_loss.backward()
+
+
+if __name__ == "__main__":
+
+	from frag_gnn.utils.misc_utils import th_temp_seed
+
+	with th_temp_seed(420):
+		test_fraggnn()
+	# with th_temp_seed(420):
+	# 	test_neims()

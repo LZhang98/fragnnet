@@ -181,6 +181,7 @@ deterministic: False
 drop_last: False
 num_sanity_val_steps: 2
 mask_null_formula: True
+predict_oos: False
 ce_insert_type: none
 custom_sampler: none
 specmolfrag_dynamic_batch_sampler_mode: frag_node

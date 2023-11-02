@@ -276,10 +276,10 @@ def to_cpu(data_d, non_blocking=True, detach=False):
 def to_device(data_d, device, non_blocking=True):
 
 	for k in data_d.keys():
-		if isinstance(data_d[k], th.Tensor) or isinstance(data_d[k], dgl.DGLGraph):
-			data = data_d[k]
-			data = data.to(device,non_blocking=non_blocking)
-			data_d[k] = data
+		v = data_d[k]
+		if isinstance(v, th.Tensor) or isinstance(v, dgl.DGLGraph) or isinstance(v, pyg.data.Data):
+			v = v.to(device,non_blocking=non_blocking)
+			data_d[k] = v
 	return data_d
 
 def deep_update(mapping, *updating_mappings):

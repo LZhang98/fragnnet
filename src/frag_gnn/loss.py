@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import math
 
 from frag_gnn.utils.misc_utils import scatter_reduce, EPS
+from frag_gnn.utils.spec_utils import calculate_match_mzs
 
 
 def mog_log_prob(samples,means,variances,log_weights):
@@ -132,15 +133,51 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	return ces
 
 
+def sparse_oos_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_batch_idxs,pred_oos_logprobs,tolerance=1e-3,relative=False):
+
+	mask_value = -1e9
+	batch_size = th.max(true_batch_idxs)+1
+	oos_ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
+	for batch_idx in th.arange(batch_size):
+		# get groundtruth belongs to this batch idx
+		b_true_mask = true_batch_idxs==batch_idx
+		# get predictions belongs to this batch idx
+		b_pred_mask = pred_batch_idxs==batch_idx
+		# get mzs
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		# get logprobs
+		b_true_logprobs = true_logprobs[b_true_mask]
+		# get matches
+		b_match_mask = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=3*tolerance,
+			relative=relative
+		)
+		b_true_match_mask = th.any(b_match_mask,dim=1)
+		# calculate true and pred oos
+		b_true_oos_logprobs = th.logsumexp(mask_value*b_true_match_mask.float() + b_true_logprobs*(~b_true_match_mask).float(), dim=0)
+		b_pred_oos_logprobs = pred_oos_logprobs[batch_idx]
+		# # calculate true and pred is
+		# b_true_is_logprobs = th.logsumexp(b_true_logprobs*b_true_match_mask.float() + mask_value*(~b_true_match_mask).float(), dim=0)
+		# b_pred_is_logprobs = th.log1p(-th.exp(b_pred_oos_logprobs))
+		# calculate cross-entropy
+		b_ce = - th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs
+		# b_ce = - th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs - th.exp(b_true_is_logprobs) * b_pred_is_logprobs
+		oos_ces[batch_idx] = b_ce
+	return oos_ces
+
+
 def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
 
 	if dist == "gaussian":
-		log_prob_fn = mog_log_prob	
+		log_prob_fn = mog_log_prob
 	elif dist == "mol_uniform":
 		log_prob_fn = momu_log_prob
 	else:
 		raise NotImplementedError()
-	
+
 	if vectorized:
 		sce_fn = lambda *args: sparse_cross_entropy_vec(
 			*args,
@@ -155,8 +192,18 @@ def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
 			tolerance=tolerance,
 			relative=relative
 		)
-
+		
 	return sce_fn
+
+
+def get_sparse_oos_cross_entropy_fn(tolerance,relative):
+
+	oos_sce_fn = lambda *args: sparse_oos_cross_entropy_seq(
+		*args,
+		tolerance=tolerance,
+		relative=relative
+	)
+	return oos_sce_fn
 
 
 def sparse_entropy_fn(logprobs,batch_idxs):

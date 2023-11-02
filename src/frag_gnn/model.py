@@ -40,6 +40,7 @@ class FragGNNModel(nn.Module):
 		cc_interstage_type: str,
 		skip_edge_loss: bool,
 		mask_null_formula: bool,
+		predict_oos: bool,
 		ce_insert_type: str= None,
 	):
 
@@ -145,10 +146,25 @@ class FragGNNModel(nn.Module):
 			self.node_module = MLPBlocks(**node_mlp_kwargs)
 		else:
 			self.node_module = None
+		
+		self.predict_oos = predict_oos
+		if self.predict_oos:
+			oos_mlp_kwargs = {
+				"input_size": self.mol_embedder.hidden_size+self.frag_embedder.hidden_size,
+				"output_size": 1,
+				"hidden_size": mlp_hidden_size,
+				"num_layers": mlp_num_layers,
+				"dropout": mlp_dropout,
+				"use_residuals": mlp_use_residuals,
+				"normalization": mlp_normalization
+			}
+			self.oos_module = MLPBlocks(**oos_mlp_kwargs)
+		else:
+			self.oos_module = None
 
 		self.skip_edge_loss = skip_edge_loss
 		self.mask_null_formula = mask_null_formula
-		
+
 		# this is required
 		assert "h_formulae_idx" in self.frag_node_feats
 
@@ -365,9 +381,6 @@ class FragGNNModel(nn.Module):
 		frag_embed_node = self.frag_embedder.input_project(frag_x_embed)
 		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
 
-		# if multiple pooling, we need change frag_emebed_size
-		# if self.frag_pool_type == "std_mean_softmax":
-
 		# get frag dag embedding
 		frag_embed_parts = [
 				frag_embed_node - frag_embed_node_pool[frag_batch],
@@ -480,7 +493,8 @@ class FragGNNModel(nn.Module):
 			dim=0
 		)
 
-		# print(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu())
+		# print("> before null masking")
+		# print(th.exp(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu()))
 
 		# softmax over formulae
 		if self.mask_null_formula:
@@ -492,13 +506,46 @@ class FragGNNModel(nn.Module):
 				log=True
 			)
 		else:
-			frag_formula_logprobs = scatter_logsoftmax(
+			frag_formula_mask = th.ones_like(frag_formula_logprobs)
+			frag_formula_logprobs = scatter_masked_softmax(
 				frag_formula_logprobs,
+				frag_formula_mask,
 				frag_formula_batch_idxs,
-				dim=0
+				dim=0,
+				log=True
 			)
 
-		# print(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu())
+		# print("> after null masking")
+		# print(th.exp(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu()))
+
+		if self.predict_oos:
+			# get OOS logits and logprobs
+			oos_logits = self.oos_module(th.cat([mol_embed_gnn_pool,frag_embed_gnn_pool],dim=1))
+			oos_logits = oos_logits.flatten()
+			oos_logprobs = F.logsigmoid(oos_logits)
+			# adjust frag_formula_logprobs
+			not_oos_logprobs = F.logsigmoid(-oos_logits)
+			frag_formula_logprobs = frag_formula_logprobs + \
+				th.repeat_interleave(not_oos_logprobs, frag_formula_sizes, dim=0)
+			# frag_formula_oos_logprobs = th.cat([frag_formula_logprobs,oos_logits],dim=0)
+			# frag_formula_oos_mask = th.cat([frag_formula_mask,th.ones_like(oos_logits,dtype=frag_formula_mask.dtype)],dim=0)
+			# frag_formula_oos_batch_idxs = th.cat([frag_formula_batch_idxs,th.arange(batch_size,device=device)],dim=0)
+			# frag_formula_oos_logprobs = scatter_masked_softmax(
+			# 	frag_formula_oos_logprobs,
+			# 	frag_formula_oos_mask,
+			# 	frag_formula_oos_batch_idxs,
+			# 	dim=0,
+			# 	log=True
+			# )
+			# frag_formula_logprobs = frag_formula_oos_logprobs[:-batch_size]
+			# oos_logprobs = frag_formula_oos_logprobs[-batch_size:]
+		else:
+			# set them to 0
+			oos_logprobs = np.log(1e-4)*th.ones([batch_size],device=device)
+
+		# print("> after oos adjustment")
+		# print(th.exp(oos_logprobs))
+		# print(th.exp(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu()))
 
 		# convert to spectrum
 		frag_formula_offsets = th.repeat_interleave(
@@ -513,16 +560,6 @@ class FragGNNModel(nn.Module):
 			th.arange(frag_formula_peak_sizes.shape[0],device=device),
 			frag_formula_peak_sizes
 		)
-		
-		# print(
-		# 	self.mask_null_formula,
-		# 	scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0).detach().cpu(),
-		# 	frag_null_formula_logprob.detach().cpu(),
-		# 	frag_formula_logprobs[~(frag_formula_mask.bool())].detach().cpu()
-		# )
-
-		# if th.any(th.abs(scatter_logsumexp(spec_logprobs,spec_batch_idxs,dim=0))>1.):
-		# 	import pdb; pdb.set_trace() 
 
 		if not self.skip_edge_loss:
 
@@ -569,6 +606,7 @@ class FragGNNModel(nn.Module):
 			"pred_edge_h_range_masks": frag_edge_h_range_masks,
 			"pred_edge_h_logprobs": frag_edge_h_logprobs,
 			"pred_edge_batch_idxs": frag_edge_batch_idxs,
+			"pred_oos_logprobs": oos_logprobs
 		}
 
 		return out_d
