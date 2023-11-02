@@ -13,7 +13,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.utils.nn_utils import build_lr_scheduler
 from frag_gnn.model import FragGNNModel, NeimsModel
-from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, get_sparse_oos_cross_entropy_fn
+from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
@@ -635,8 +635,6 @@ class FragGNNPL(SpectrumPL):
 		# edge loss
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
 		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
-		# oos
-		sparse_oos_ce_fn = get_sparse_oos_cross_entropy_fn(self.tolerance,self.relative)
 
 		def sparse_cosine_distance(
 			true_mzs,
@@ -708,7 +706,8 @@ class FragGNNPL(SpectrumPL):
 				true_batch_idxs,
 				pred_mzs,
 				pred_logprobs,
-				pred_batch_idxs
+				pred_batch_idxs,
+				pred_oos_logprobs
 			)
 			spec_cd = sparse_cosine_distance(
 				true_mzs,
@@ -720,19 +719,10 @@ class FragGNNPL(SpectrumPL):
 			)
 			if self.hparams.loss_type == "cross_entropy":
 				loss = spec_ce
-				oos_ce = sparse_oos_ce_fn(
-					true_mzs,
-					true_logprobs,
-					true_batch_idxs,
-					pred_mzs,
-					pred_batch_idxs,
-					pred_oos_logprobs
-				)
 			else:
 				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
 				loss = spec_cd
-				oos_ce = 0.
-			loss = self.hparams.primary_loss_weight * (loss + oos_ce)
+			loss = self.hparams.primary_loss_weight * loss
 			spec_e, spec_ne = sparse_entropy_fn(
 				pred_logprobs,
 				pred_batch_idxs
@@ -758,7 +748,7 @@ class FragGNNPL(SpectrumPL):
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
 			null_formula_prob = th.exp(pred_null_formula_logprob)
-			# oos_prob = th.exp(pred_oos_logprobs)
+			oos_prob = th.exp(pred_oos_logprobs)
 			loss_d = {
 				"loss": loss,
 				"spec_cd": spec_cd,
@@ -772,7 +762,7 @@ class FragGNNPL(SpectrumPL):
 				"node_formula_e": node_formula_e,
 				"node_formula_ne": node_formula_ne,
 				"null_formula_prob": null_formula_prob,
-				"oos_ce": oos_ce,
+				"oos_prob": oos_prob,
 			}
 			if not self.hparams.skip_edge_loss:
 				r_el, t_el = edge_loss(
@@ -811,7 +801,7 @@ class FragGNNPL(SpectrumPL):
 			"node_formula_e",
 			"node_formula_ne",
 			"null_formula_prob",
-			"oos_ce",
+			"oos_prob",
 		]
 		if not self.hparams.skip_edge_loss:
 			loss_names.extend(

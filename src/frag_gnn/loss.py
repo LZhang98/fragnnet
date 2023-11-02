@@ -88,7 +88,7 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	return ce
 
 
-def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
+def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,pred_oos_logprobs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
 	"""compute sparse cross entropy in squence
 
 	Args:
@@ -110,44 +110,16 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	batch_size = th.max(true_batch_idxs)+1
 	ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
 	for batch_idx in th.arange(batch_size):
-		# get predictions belongs to this batch idx
-		b_pred_mask = (pred_batch_idxs==batch_idx).float()
-		# get groundtruth belongs to this batch idx
-		b_true_mask = (true_batch_idxs==batch_idx)
-		# predicted log probs + eps
-		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1 - b_pred_mask)
-		b_pred_mzs = pred_mzs
-		if relative:
-			b_variances = (th.clamp(b_pred_mzs,min=200.)*tolerance)**2
-		else:
-			b_variances = (tolerance**2)*th.ones_like(b_pred_mzs)
-		b_true_logprobs = true_logprobs[b_true_mask]
-		b_true_mzs = true_mzs[b_true_mask]
-
-		# batch discrete Cross Entropy Loss 
-		# discrete probability distributions of p(ground truth) * log(q(predicted))
-		# TODO: Maybe we need normailzed this ?
-		b_ce = th.sum(-th.exp(b_true_logprobs) * log_prob_fn(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
-		ces[batch_idx] = b_ce
-	#print(ces)
-	return ces
-
-
-def sparse_oos_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_batch_idxs,pred_oos_logprobs,tolerance=1e-3,relative=False):
-
-	mask_value = -1e9
-	batch_size = th.max(true_batch_idxs)+1
-	oos_ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
-	for batch_idx in th.arange(batch_size):
 		# get groundtruth belongs to this batch idx
 		b_true_mask = true_batch_idxs==batch_idx
 		# get predictions belongs to this batch idx
 		b_pred_mask = pred_batch_idxs==batch_idx
-		# get mzs
-		b_true_mzs = true_mzs[b_true_mask]
-		b_pred_mzs = pred_mzs[b_pred_mask]
-		# get logprobs
+		# predicted log probs + eps
+		# TODO: can I replace with indexing operation? I should be able to...
+		b_pred_logprobs = pred_logprobs*b_pred_mask.float() + mask_value*(~b_pred_mask).float()
+		b_pred_mzs = pred_mzs
 		b_true_logprobs = true_logprobs[b_true_mask]
+		b_true_mzs = true_mzs[b_true_mask]
 		# get matches
 		b_match_mask = calculate_match_mzs(
 			b_true_mzs,
@@ -155,18 +127,23 @@ def sparse_oos_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs
 			tolerance=3*tolerance,
 			relative=relative
 		)
-		b_true_match_mask = th.any(b_match_mask,dim=1)
-		# calculate true and pred oos
+		b_true_match_mask = th.any(b_match_mask & b_pred_mask.reshape(1,-1),dim=1)
+		assert th.any(b_true_match_mask)
+		# batch discrete Cross Entropy Loss 
+		# discrete probability distributions of p(ground truth) * log(q(predicted))
+		if relative:
+			b_variances = (th.clamp(b_pred_mzs,min=200.)*tolerance)**2
+		else:
+			b_variances = (tolerance**2)*th.ones_like(b_pred_mzs)
+		b_is_ce = th.sum(b_true_match_mask.float() * -th.exp(b_true_logprobs) * log_prob_fn(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
+		# calculate oos logprobs
 		b_true_oos_logprobs = th.logsumexp(mask_value*b_true_match_mask.float() + b_true_logprobs*(~b_true_match_mask).float(), dim=0)
 		b_pred_oos_logprobs = pred_oos_logprobs[batch_idx]
-		# # calculate true and pred is
-		# b_true_is_logprobs = th.logsumexp(b_true_logprobs*b_true_match_mask.float() + mask_value*(~b_true_match_mask).float(), dim=0)
-		# b_pred_is_logprobs = th.log1p(-th.exp(b_pred_oos_logprobs))
-		# calculate cross-entropy
-		b_ce = - th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs
-		# b_ce = - th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs - th.exp(b_true_is_logprobs) * b_pred_is_logprobs
-		oos_ces[batch_idx] = b_ce
-	return oos_ces
+		b_oos_ce = -th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs
+		# combine
+		b_ce = b_is_ce + b_oos_ce
+		ces[batch_idx] = b_ce
+	return ces
 
 
 def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
@@ -179,12 +156,13 @@ def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
 		raise NotImplementedError()
 
 	if vectorized:
-		sce_fn = lambda *args: sparse_cross_entropy_vec(
-			*args,
-			log_prob_fn=log_prob_fn,
-			tolerance=tolerance,
-			relative=relative
-		)
+		raise NotImplementedError
+		# sce_fn = lambda *args: sparse_cross_entropy_vec(
+		# 	*args,
+		# 	log_prob_fn=log_prob_fn,
+		# 	tolerance=tolerance,
+		# 	relative=relative
+		# )
 	else:
 		sce_fn = lambda *args: sparse_cross_entropy_seq(
 			*args,
@@ -194,16 +172,6 @@ def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
 		)
 		
 	return sce_fn
-
-
-def get_sparse_oos_cross_entropy_fn(tolerance,relative):
-
-	oos_sce_fn = lambda *args: sparse_oos_cross_entropy_seq(
-		*args,
-		tolerance=tolerance,
-		relative=relative
-	)
-	return oos_sce_fn
 
 
 def sparse_entropy_fn(logprobs,batch_idxs):

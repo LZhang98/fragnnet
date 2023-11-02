@@ -523,25 +523,15 @@ class FragGNNModel(nn.Module):
 			oos_logits = self.oos_module(th.cat([mol_embed_gnn_pool,frag_embed_gnn_pool],dim=1))
 			oos_logits = oos_logits.flatten()
 			oos_logprobs = F.logsigmoid(oos_logits)
-			# adjust frag_formula_logprobs
 			not_oos_logprobs = F.logsigmoid(-oos_logits)
-			frag_formula_logprobs = frag_formula_logprobs + \
-				th.repeat_interleave(not_oos_logprobs, frag_formula_sizes, dim=0)
-			# frag_formula_oos_logprobs = th.cat([frag_formula_logprobs,oos_logits],dim=0)
-			# frag_formula_oos_mask = th.cat([frag_formula_mask,th.ones_like(oos_logits,dtype=frag_formula_mask.dtype)],dim=0)
-			# frag_formula_oos_batch_idxs = th.cat([frag_formula_batch_idxs,th.arange(batch_size,device=device)],dim=0)
-			# frag_formula_oos_logprobs = scatter_masked_softmax(
-			# 	frag_formula_oos_logprobs,
-			# 	frag_formula_oos_mask,
-			# 	frag_formula_oos_batch_idxs,
-			# 	dim=0,
-			# 	log=True
-			# )
-			# frag_formula_logprobs = frag_formula_oos_logprobs[:-batch_size]
-			# oos_logprobs = frag_formula_oos_logprobs[-batch_size:]
 		else:
 			# set them to 0
-			oos_logprobs = np.log(1e-4)*th.ones([batch_size],device=device)
+			# TODO: can I use a lower value?
+			oos_logprobs = np.log(1e-6)*th.ones([batch_size],device=device)
+			not_oos_logprobs = np.log(1.-1e-6)*th.ones([batch_size],device=device)
+		# adjust frag_formula_logprobs
+		frag_formula_logprobs = frag_formula_logprobs + \
+			th.repeat_interleave(not_oos_logprobs, frag_formula_sizes, dim=0)
 
 		# print("> after oos adjustment")
 		# print(th.exp(oos_logprobs))
