@@ -25,6 +25,7 @@ precision: 32
 automatic_optimization: True
 mask_null_formula: False
 predict_oos: True
+oos_tolerance_multiple: 1
 # custom_sampler: SpecMolFragDynamicBatchSampler
 # specmolfrag_dynamic_batch_sampler_mode: frag_node
 # specmolfrag_dynamic_batch_sampler_max: 10000 #600000

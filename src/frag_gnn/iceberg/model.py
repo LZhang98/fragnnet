@@ -632,11 +632,13 @@ class IcebergIntenModel(nn.Module):
 		flat_masses = masses[output_mask]
 		flat_log_probs = th.log(output_unbinned_alpha[output_mask])
 		flat_batch_idxs = batch_idxs[output_mask]
+		# oos_log_probs = 1e-6*th.ones([batch_size],dtype=flat_log_probs.dtype,device=flat_log_probs.device)
 
 		out_d = {
 			"pred_mzs": flat_masses,
 			"pred_logprobs": flat_log_probs,
-			"pred_batch_idxs": flat_batch_idxs,	
+			"pred_batch_idxs": flat_batch_idxs,
+			# "pred_oos_logprobs": oos_log_probs,
 		}
 		if self.binned_targs:
 			out_d["pred_spec"] = output_binned

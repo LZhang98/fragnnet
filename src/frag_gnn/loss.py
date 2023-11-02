@@ -88,7 +88,7 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	return ce
 
 
-def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,pred_oos_logprobs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
+def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,pred_oos_logprobs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False,oos_tolerance_multiple=1):
 	"""compute sparse cross entropy in squence
 
 	Args:
@@ -114,20 +114,23 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		b_true_mask = true_batch_idxs==batch_idx
 		# get predictions belongs to this batch idx
 		b_pred_mask = pred_batch_idxs==batch_idx
-		# predicted log probs + eps
-		# TODO: can I replace with indexing operation? I should be able to...
-		b_pred_logprobs = pred_logprobs*b_pred_mask.float() + mask_value*(~b_pred_mask).float()
-		b_pred_mzs = pred_mzs
+		# get mzs and logprobs
+		b_pred_logprobs = pred_logprobs[b_pred_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
 		b_true_logprobs = true_logprobs[b_true_mask]
 		b_true_mzs = true_mzs[b_true_mask]
 		# get matches
-		b_match_mask = calculate_match_mzs(
-			b_true_mzs,
-			b_pred_mzs,
-			tolerance=3*tolerance,
-			relative=relative
-		)
-		b_true_match_mask = th.any(b_match_mask & b_pred_mask.reshape(1,-1),dim=1)
+		if oos_tolerance_multiple == -1:
+			b_true_match_mask = th.ones_like(b_true_mzs,dtype=th.bool)
+		else:
+			assert oos_tolerance_multiple > 0, oos_tolerance_multiple
+			b_match_mask = calculate_match_mzs(
+				b_true_mzs,
+				b_pred_mzs,
+				tolerance=oos_tolerance_multiple*tolerance,
+				relative=relative
+			)
+			b_true_match_mask = th.any(b_match_mask,dim=1)
 		assert th.any(b_true_match_mask)
 		# batch discrete Cross Entropy Loss 
 		# discrete probability distributions of p(ground truth) * log(q(predicted))
@@ -146,7 +149,7 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	return ces
 
 
-def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
+def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative,oos_tolerance_multiple):
 
 	if dist == "gaussian":
 		log_prob_fn = mog_log_prob
@@ -168,7 +171,8 @@ def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
 			*args,
 			log_prob_fn=log_prob_fn,
 			tolerance=tolerance,
-			relative=relative
+			relative=relative,
+			oos_tolerance_multiple=oos_tolerance_multiple
 		)
 		
 	return sce_fn

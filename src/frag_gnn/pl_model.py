@@ -630,7 +630,8 @@ class FragGNNPL(SpectrumPL):
 			self.hparams.output_distribution,
 			self.hparams.loss_vectorized,
 			self.tolerance,
-			self.relative
+			self.relative,
+			self.hparams.oos_tolerance_multiple
 		)
 		# edge loss
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
