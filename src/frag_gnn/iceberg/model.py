@@ -169,7 +169,6 @@ class IcebergGenModel(nn.Module):
 		elif self.root_encode == "gnn":
 			with root_repr.local_scope():
 				if self.embed_adduct:
-					import pdb; pdb.set_trace()
 					embed_adducts_expand = embed_adducts.repeat_interleave(
 						root_repr.batch_num_nodes(), 0
 					)
