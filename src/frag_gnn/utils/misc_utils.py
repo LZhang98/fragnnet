@@ -152,7 +152,7 @@ def get_pyg_memory_usage(pyg_graph):
 
 	return pyg.profile.get_data_size(pyg_graph)
 
-def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=np.log(1e-4),dim=-1,log=True):
+def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=-1e-9,dim=-1,log=True):
 	# calculate appropriate mask value
 	with th.no_grad():
 		c = scatter_masked_logsumexp(logits,mask,subset_idxs,dim=dim)

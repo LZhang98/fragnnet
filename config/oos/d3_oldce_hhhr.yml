@@ -1,0 +1,26 @@
+wandb_name: d3_oldce_hhhr
+wandb_tags:
+- v2
+- cu118
+split_dp: data/split/d3_h4_isoTrue_v2
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
+num_depth: 4
+num_hs: 4
+
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 4
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+precision: 32
+mask_null_formula: False
+predict_oos: False
+oos_tolerance_multiple: -1
+mz_bin_res: 0.005
+mz_max: 1500.0

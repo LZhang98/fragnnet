@@ -526,9 +526,8 @@ class FragGNNModel(nn.Module):
 			not_oos_logprobs = F.logsigmoid(-oos_logits)
 		else:
 			# set them to 0
-			# TODO: can I use a lower value?
-			oos_logprobs = np.log(1e-6)*th.ones([batch_size],device=device)
-			not_oos_logprobs = np.log(1.-1e-6)*th.ones([batch_size],device=device)
+			oos_logprobs = (-1e9)*th.ones([batch_size],device=device)
+			not_oos_logprobs = th.zeros([batch_size],device=device)
 		# adjust frag_formula_logprobs
 		frag_formula_logprobs = frag_formula_logprobs + \
 			th.repeat_interleave(not_oos_logprobs, frag_formula_sizes, dim=0)

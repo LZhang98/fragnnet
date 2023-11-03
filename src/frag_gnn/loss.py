@@ -109,6 +109,7 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	mask_value = -1e9
 	batch_size = th.max(true_batch_idxs)+1
 	ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
+	true_oos_logprobs = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
 	for batch_idx in th.arange(batch_size):
 		# get groundtruth belongs to this batch idx
 		b_true_mask = true_batch_idxs==batch_idx
@@ -147,7 +148,8 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		# combine
 		b_ce = b_is_ce + b_oos_ce
 		ces[batch_idx] = b_ce
-	return ces
+		true_oos_logprobs[batch_idx] = b_true_oos_logprobs
+	return ces, true_oos_logprobs
 
 
 def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative,oos_tolerance_multiple):

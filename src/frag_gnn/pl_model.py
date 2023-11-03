@@ -725,7 +725,7 @@ class FragGNNPL(SpectrumPL):
 			pred_edge_h_logprobs,
 			pred_edge_batch_idxs,
 			pred_oos_logprobs):
-			spec_ce = sparse_ce_fn(
+			spec_ce, true_oos_logprobs = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
@@ -774,6 +774,7 @@ class FragGNNPL(SpectrumPL):
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
 			null_formula_prob = th.exp(pred_null_formula_logprob)
 			oos_prob = th.exp(pred_oos_logprobs)
+			true_oos_prob = th.exp(true_oos_logprobs)
 			loss_d = {
 				"loss": loss,
 				"spec_cd": spec_cd,
@@ -788,6 +789,7 @@ class FragGNNPL(SpectrumPL):
 				"node_formula_ne": node_formula_ne,
 				"null_formula_prob": null_formula_prob,
 				"oos_prob": oos_prob,
+				"true_oos_prob": true_oos_prob
 			}
 			if not self.hparams.skip_edge_loss:
 				r_el, t_el = edge_loss(
@@ -827,6 +829,7 @@ class FragGNNPL(SpectrumPL):
 			"node_formula_ne",
 			"null_formula_prob",
 			"oos_prob",
+			"true_oos_prob"
 		]
 		if not self.hparams.skip_edge_loss:
 			loss_names.extend(
