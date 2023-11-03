@@ -1,6 +1,7 @@
 wandb_name: d3_iceberg_gen
 wandb_tags:
 - iceberg
+- new_magma
 
 split_dp: data/split/d3_h4_isoTrue_v2
 magma_dp: data/magma_gen

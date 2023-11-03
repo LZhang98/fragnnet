@@ -116,10 +116,10 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		# get predictions belongs to this batch idx
 		b_pred_mask = pred_batch_idxs==batch_idx
 		# get mzs and logprobs
-		b_pred_logprobs = pred_logprobs[b_pred_mask]
-		b_pred_mzs = pred_mzs[b_pred_mask]
 		b_true_logprobs = true_logprobs[b_true_mask]
 		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_logprobs = pred_logprobs[b_pred_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
 		# get matches
 		if oos_tolerance_multiple == -1:
 			b_true_match_mask = th.ones_like(b_true_mzs,dtype=th.bool)
@@ -231,6 +231,7 @@ def get_edge_loss_fn(edge_loss_fn_type,constant):
 	else:
 		raise NotImplementedError
 	return edge_loss_fn
+
 
 if __name__ == "__main__":
 

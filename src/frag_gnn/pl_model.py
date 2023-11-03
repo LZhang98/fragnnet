@@ -669,7 +669,7 @@ class FragGNNPL(SpectrumPL):
 			pred_ints,
 			pred_batch_idxs):
 			# calculate
-			return 1.-calculate_cosine_similarity(
+			return 1.-calculate_sparse_cosine_similarity(
 				true_mzs,
 				th.exp(true_ints),
 				true_batch_idxs,
