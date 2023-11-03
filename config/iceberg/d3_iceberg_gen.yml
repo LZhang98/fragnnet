@@ -31,13 +31,13 @@ train_batch_size: 32
 eval_batch_size: 32
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.001
+lr: 0.000996
 accelerator: gpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
 lr_schedule: True
-lr_decay_rate: 0.72
+lr_decay_rate: 0.7214
 lr_warmup_steps: 1000
 lr_decay_steps: 5000
 weight_decay: 0.0

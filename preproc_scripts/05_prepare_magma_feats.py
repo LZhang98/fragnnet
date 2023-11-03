@@ -694,7 +694,7 @@ def get_args():
 	# iceberg magma params
 	parser.add_argument(
 		"--max-peaks",
-		default=20,
+		default=50,
 		help="Maximum number of peaks",
 		type=int,
 	)
