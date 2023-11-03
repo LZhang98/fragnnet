@@ -134,10 +134,10 @@ def get_formula_dict(
 	mass_diff_thresh: float,
 	inten_thresh: float,
 	adduct_type: str,
-	max_formulae: int = 100,
-	use_all=False,
-	smiles: str = "",
-	use_magma: bool = False,
+	max_formulae: int,
+	use_all: bool,
+	smiles: str,
+	use_magma: bool,
 ) -> dict:
 	"""get_output_dict.
 
@@ -595,6 +595,7 @@ def magma_augmentation(
 		mass_diff_thresh=mass_diff_thresh,
 		inten_thresh=inten_thresh,
 		adduct_type=spectra_adduct,
+		max_formulae=max_formulae,
 		use_all=True,
 		smiles=spectra_smiles,
 		use_magma=False
