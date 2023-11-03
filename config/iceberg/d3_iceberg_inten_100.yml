@@ -2,13 +2,13 @@ wandb_name: d3_iceberg_inten_100
 wandb_tags:
 - iceberg
 - new_magma
-- sparse_cd
 
 split_dp: data/split/d3_h4_isoTrue_v2
 magma_dp: data/magma_inten
 
 model_type: iceberg_inten
 loss_type: cosine_distance
+sparse_cosine_similarity: False
 mol_params:
   smiles: True
   fingerprint: False

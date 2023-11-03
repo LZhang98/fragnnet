@@ -197,3 +197,4 @@ checkpoint_metric: epoch
 checkpoint_metric_mode: max
 upload_checkpoints: False
 pl_enable_progress_bar: True
+sparse_cosine_similarity: True

@@ -79,6 +79,10 @@ class SpectrumPL(pl.LightningModule):
 		self.metric_min_max = {"loss": "min"}
 		self.metric_fns = {}
 		if "cos_sim" in self.hparams.auxiliary_scores:
+			if self.hparams.sparse_cosine_similarity:
+				cosine_similarity_fn = calculate_sparse_cosine_similarity
+			else:
+				cosine_similarity_fn = calculate_cosine_similarity
 			def _cos_sim(
 				true_mzs,
 				true_ints,
@@ -91,7 +95,7 @@ class SpectrumPL(pl.LightningModule):
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
-				cos_sim = calculate_sparse_cosine_similarity(
+				cos_sim = cosine_similarity_fn(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
@@ -152,6 +156,10 @@ class SpectrumPL(pl.LightningModule):
 			self.metric_fns["wrecall"] = _wrecall
 			self.metric_min_max["wrecall"] = "max"
 		if "opt_cos_sim" in self.hparams.auxiliary_scores:
+			if self.hparams.sparse_cosine_similarity:
+				optimal_cosine_similarity_fn = calculate_optimal_sparse_cosine_similarity
+			else:
+				optimal_cosine_similarity_fn = calculate_optimal_cosine_similarity
 			def _opt_cos_sim(
 				true_mzs,
 				true_ints,
@@ -164,7 +172,7 @@ class SpectrumPL(pl.LightningModule):
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
-				opt_cos_sim =  calculate_optimal_sparse_cosine_similarity(
+				opt_cos_sim = optimal_cosine_similarity_fn(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
@@ -661,7 +669,11 @@ class FragGNNPL(SpectrumPL):
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
 		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
 
-		def sparse_cosine_distance(
+		if self.hparams.sparse_cosine_similarity:
+			cosine_similarity_fn = calculate_sparse_cosine_similarity
+		else:
+			cosine_similarity_fn = calculate_cosine_similarity
+		def cosine_distance_fn(
 			true_mzs,
 			true_ints,
 			true_batch_idxs,
@@ -669,7 +681,7 @@ class FragGNNPL(SpectrumPL):
 			pred_ints,
 			pred_batch_idxs):
 			# calculate
-			return 1.-calculate_sparse_cosine_similarity(
+			return 1.-cosine_similarity_fn(
 				true_mzs,
 				th.exp(true_ints),
 				true_batch_idxs,
@@ -680,7 +692,7 @@ class FragGNNPL(SpectrumPL):
 				mz_max=self.hparams.mz_max,
 				sum_ints=self.hparams.sum_ints
 			)
-		
+
 		def edge_loss(
 			pred_edge_logprobs,
 			pred_edge_h_diffs,
@@ -734,7 +746,7 @@ class FragGNNPL(SpectrumPL):
 				pred_batch_idxs,
 				pred_oos_logprobs
 			)
-			spec_cd = sparse_cosine_distance(
+			spec_cd = cosine_distance_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
@@ -967,7 +979,11 @@ class NeimsPL(SpectrumPL):
 			pred_specs,
 			**kwargs):
 			if self.hparams.loss_type == "cosine_distance":
-				spec_cd = 1.-calculate_cosine_similarity(
+				if self.hparams.sparse_cosine_similarity:
+					cosine_similarity_fn = calculate_sparse_cosine_similarity
+				else:
+					cosine_similarity_fn = calculate_cosine_similarity
+				spec_cd = 1.-cosine_similarity_fn(
 					true_mzs,
 					th.exp(true_logprobs),
 					true_batch_idxs,
