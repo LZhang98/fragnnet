@@ -131,7 +131,8 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 				relative=relative
 			)
 			b_true_match_mask = th.any(b_match_mask,dim=1)
-		assert th.any(b_true_match_mask)
+		if not th.any(b_true_match_mask):
+			print("> Warning: Everything is OOS!")
 		# batch discrete Cross Entropy Loss 
 		# discrete probability distributions of p(ground truth) * log(q(predicted))
 		if relative:

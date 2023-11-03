@@ -324,6 +324,34 @@ def calculate_cosine_similarity(
 	return cos_sims
 
 
+def calculate_recall(
+		true_mzs,
+		true_batch_idxs,
+		pred_mzs,
+		pred_batch_idxs,
+		tolerance=1e-5,
+		relative=True
+	):
+
+	batch_size = th.max(true_batch_idxs)+1
+	recall = th.zeros([batch_size],device=true_mzs.device,dtype=th.float)
+	for b in range(batch_size):
+		b_true_mask = (true_batch_idxs==b)
+		b_pred_mask = (pred_batch_idxs==b)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_match = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
+		b_true_match = th.any(b_true_match,dim=1)
+		b_recall = th.sum(b_true_match.float())/b_true_mzs.shape[0]
+		recall[b] = b_recall
+	return recall
+
+
 def calculate_weighted_recall(
 		true_mzs,
 		true_ints,

@@ -130,6 +130,7 @@ loss_tolerance_rel: 0.00001 # 10 ppm
 loss_tolerance_abs: #0.001
 auxiliary_scores:
   - cos_sim
+  - recall
   - wrecall
   - opt_cos_sim
   - true_spec_e

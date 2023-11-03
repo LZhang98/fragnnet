@@ -16,7 +16,8 @@ from frag_gnn.model import FragGNNModel, NeimsModel
 from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, \
 	calculate_sparse_cosine_similarity, calculate_optimal_cosine_similarity, calculate_optimal_sparse_cosine_similarity, \
-	get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
+	get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_recall, calculate_weighted_recall, \
+	binned_cosine_similarity
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -104,6 +105,25 @@ class SpectrumPL(pl.LightningModule):
 				return cos_sim
 			self.metric_fns["cos_sim"] = _cos_sim
 			self.metric_min_max["cos_sim"] = "max"
+		if "recall" in self.hparams.auxiliary_scores:
+			def _recall(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				return calculate_recall(
+					true_mzs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+			self.metric_fns["recall"] = _recall
+			self.metric_min_max["recall"] = "max"
 		if "wrecall" in self.hparams.auxiliary_scores:
 			def _wrecall(
 				true_mzs,
