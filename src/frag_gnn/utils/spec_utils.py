@@ -6,7 +6,7 @@ import torch as th
 import torch.nn.functional as F
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_reduce, EPS
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS
 
 
 # TODO: actually fill these out
@@ -105,7 +105,7 @@ def batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max):
 	return mzs, ints, batch_idxs
 
 
-def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
+def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints,sparse=False):
 
 	if mzs.shape[0] == 0:
 		import pdb; pdb.set_trace()
@@ -116,21 +116,34 @@ def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
 	bin_idx = th.searchsorted(bins,mzs,side="right")
 	bin_offsets = (th.arange(batch_size,device=mzs.device)*num_bins)[batch_idxs]
 	bin_idx = bin_idx + bin_offsets
-	bin_spec = scatter_reduce(
-		src=ints,
-		index=bin_idx,
-		reduce="sum" if sum_ints else "amax",
-		dim=0,
-		dim_size=num_bins*batch_size
-	)
-	bin_spec = bin_spec.reshape(batch_size,num_bins)
-	if th.any(th.all(bin_spec==0.,dim=1)):
-		print("> warning: bin_spec is all zeros!")
-		mask = th.zeros_like(bin_spec,dtype=th.bool)
-		mask[:,0] = 1.
-		mask = mask*th.all(bin_spec==0.,dim=1,keepdim=True)
-		bin_spec = bin_spec + mask.float()
-	return bin_spec
+	if sparse:
+		un_bin_idxs, un_bin_idxs_rev = th.unique(bin_idx,return_inverse=True)
+		new_bin_idxs = th.arange(un_bin_idxs.shape[0],device=un_bin_idxs.device)
+		un_bin_ints = scatter_reduce(
+			src=ints,
+			index=new_bin_idxs[un_bin_idxs_rev],
+			reduce="sum" if sum_ints else "amax",
+			dim=0,
+			dim_size=new_bin_idxs.shape[0]
+		)
+		un_bin_batch_idxs = un_bin_idxs // num_bins
+		return un_bin_idxs, un_bin_ints, un_bin_batch_idxs
+	else:
+		bin_spec = scatter_reduce(
+			src=ints,
+			index=bin_idx,
+			reduce="sum" if sum_ints else "amax",
+			dim=0,
+			dim_size=num_bins*batch_size
+		)
+		bin_spec = bin_spec.reshape(batch_size,num_bins)
+		if th.any(th.all(bin_spec==0.,dim=1)):
+			print("> warning: bin_spec is all zeros!")
+			mask = th.zeros_like(bin_spec,dtype=th.bool)
+			mask[:,0] = 1.
+			mask = mask*th.all(bin_spec==0.,dim=1,keepdim=True)
+			bin_spec = bin_spec + mask.float()
+		return bin_spec
 
 
 def merge_sparse_specs(*peakses,renormalize=False,sum_ints=True):
@@ -372,8 +385,96 @@ def calculate_optimal_cosine_similarity(
 	)
 	pred_mask = pred_spec > 0.
 	pred_spec = true_spec * pred_mask.float() + pred_spec * (~pred_mask).float()
-	opt_cos_sim = binned_cosine_similarity(true_spec,pred_spec)
-	return opt_cos_sim
+	opt_cos_sims = binned_cosine_similarity(true_spec,pred_spec)
+	return opt_cos_sims
+
+
+def calculate_sparse_cosine_similarity(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max=1500.,
+		mz_bin_res=0.01,
+		sum_ints=True
+	):
+
+	# sparse bin
+	true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		sum_ints=sum_ints,
+		sparse=True
+	)
+	pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		sum_ints=sum_ints,
+		sparse=True
+	)
+	cos_sims = sparse_binned_cosine_similarity(
+		true_bin_idxs,
+		true_bin_ints,
+		true_bin_batch_idxs,
+		pred_bin_idxs,
+		pred_bin_ints,
+		pred_bin_batch_idxs
+	)
+	return cos_sims
+
+
+def calculate_optimal_sparse_cosine_similarity(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max=1500.,
+		mz_bin_res=0.01,
+		sum_ints=True
+	):
+
+	# sparse bin
+	true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		sum_ints=sum_ints,
+		sparse=True
+	)
+	pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		sum_ints=sum_ints,
+		sparse=True
+	)
+	pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
+	true_mask = th.isin(true_bin_idxs, pred_bin_idxs[pred_mask])
+	pred_bin_ints[~pred_mask] = 0.
+	pred_bin_ints[pred_mask] = true_bin_ints[true_mask]
+	opt_cos_sims = sparse_binned_cosine_similarity(
+		true_bin_idxs,
+		true_bin_ints,
+		true_bin_batch_idxs,
+		pred_bin_idxs,
+		pred_bin_ints,
+		pred_bin_batch_idxs
+	)
+	return opt_cos_sims
 
 
 def calculate_optimal_unbinned_cosine_similarity(
@@ -413,6 +514,34 @@ def binned_cosine_similarity(true_spec,pred_spec):
 	true_spec = F.normalize(true_spec,p=2,dim=1)
 	pred_spec = F.normalize(pred_spec,p=2,dim=1)
 	cos_sims = (true_spec.unsqueeze(1) @ pred_spec.unsqueeze(2)).squeeze(2).squeeze(1)
+	return cos_sims
+
+
+def sparse_binned_cosine_similarity(true_bin_idxs, true_bin_ints, true_bin_batch_idxs, pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs):
+
+	# l2 normalize
+	true_bin_ints = scatter_l2normalize(
+		true_bin_ints,
+		true_bin_batch_idxs,
+		dim=0
+	)
+	pred_bin_ints = scatter_l2normalize(
+		pred_bin_ints,
+		pred_bin_batch_idxs,
+		dim=0
+	)
+	# dot product
+	pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
+	true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
+	both_bin_ints = pred_bin_ints[pred_mask] * true_bin_ints[true_mask]
+	assert th.all(pred_bin_batch_idxs[pred_mask] == true_bin_batch_idxs[true_mask])
+	cos_sims = scatter_reduce(
+		src=both_bin_ints,
+		index=pred_bin_batch_idxs[pred_mask],
+		reduce="sum",
+		dim=0,
+		dim_size=th.max(true_bin_batch_idxs)+1
+	)
 	return cos_sims
 
 

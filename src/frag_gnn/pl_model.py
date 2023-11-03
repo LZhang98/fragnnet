@@ -14,7 +14,9 @@ import torch._dynamo as th_dynamo
 from frag_gnn.utils.nn_utils import build_lr_scheduler
 from frag_gnn.model import FragGNNModel, NeimsModel
 from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
+from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, \
+	calculate_sparse_cosine_similarity, calculate_optimal_cosine_similarity, calculate_optimal_sparse_cosine_similarity, \
+	get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -88,7 +90,7 @@ class SpectrumPL(pl.LightningModule):
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
-				return calculate_cosine_similarity(
+				cos_sim = calculate_sparse_cosine_similarity(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
@@ -99,6 +101,7 @@ class SpectrumPL(pl.LightningModule):
 					mz_max=self.hparams.mz_max,
 					sum_ints=self.hparams.sum_ints
 				)
+				return cos_sim
 			self.metric_fns["cos_sim"] = _cos_sim
 			self.metric_min_max["cos_sim"] = "max"
 		if "wrecall" in self.hparams.auxiliary_scores:
@@ -141,7 +144,7 @@ class SpectrumPL(pl.LightningModule):
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
-				return calculate_optimal_cosine_similarity(
+				opt_cos_sim =  calculate_optimal_sparse_cosine_similarity(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
@@ -152,6 +155,7 @@ class SpectrumPL(pl.LightningModule):
 					mz_max=self.hparams.mz_max,
 					sum_ints=self.hparams.sum_ints
 				)
+				return opt_cos_sim
 			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
 			self.metric_min_max["opt_cos_sim"] = None
 		if "true_spec_e" in self.hparams.auxiliary_scores:

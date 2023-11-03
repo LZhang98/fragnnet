@@ -229,6 +229,20 @@ def scatter_l1normalize(vals,subset_idxs,dim=-1):
 	vals = vals/c[subset_idxs]
 	return vals
 
+def scatter_l2normalize(vals,subset_idxs,dim=-1):
+	# calculate normalizing constant
+	c = scatter_reduce(
+		src=vals**2,
+		index=subset_idxs,
+		reduce="sum",
+		dim=dim,
+		dim_size=th.max(subset_idxs)+1
+	)
+	c = th.sqrt(c)
+	# apply normalizing constant
+	vals = vals/c[subset_idxs]
+	return vals
+
 def scatter_reduce(src,index,reduce,dim,dim_size):
 
 	result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim+1:]

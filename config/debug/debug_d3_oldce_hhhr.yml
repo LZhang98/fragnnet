@@ -1,0 +1,34 @@
+wandb_name: debug_d3_oldce_hhhr
+wandb_tags:
+- debug
+
+split_dp: data/split/d3_h4_isoTrue_v2
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
+num_depth: 4
+num_hs: 4
+spec_params:
+  subsample_size: 128
+
+train_batch_size: 2
+eval_batch_size: 2
+accumulate_grad_batches: 16
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 10
+max_epochs: 10
+lr_schedule: False
+debug_overfit: False
+
+precision: 32
+automatic_optimization: True
+mask_null_formula: False
+predict_oos: False
+oos_tolerance_multiple: -1
+# custom_sampler: SpecMolFragDynamicBatchSampler
+# specmolfrag_dynamic_batch_sampler_mode: frag_node
+# specmolfrag_dynamic_batch_sampler_max: 10000 #600000
+# checkpoint_metric: val_loss_epoch
+# checkpoint_metric_mode: min
+# upload_checkpoints: True
