@@ -135,14 +135,14 @@ def get_args():
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--magma_gen_dp", type=str, default="data/magma_inten")
 	parser.add_argument("--proc_dp", type=str, default="data/proc")
-	parser.add_argument("--gen_ckpt_fp", type=str, default="model-epoch=074.ckpt")
+	parser.add_argument("--gen_ckpt_fp", type=str, default="iceberg_gen_2.ckpt")
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist"])
-	parser.add_argument("--parallel", type=booltype, default=True)
-	parser.add_argument("--gpu", type=booltype, default=False)
+	parser.add_argument("--parallel", type=booltype, default=False)
+	parser.add_argument("--gpu", type=booltype, default=True)
 	parser.add_argument("--rseed", type=int, default=420)
 	### gen params
-	parser.add_argument("--threshold", type=float, default=0.5)
+	parser.add_argument("--threshold", type=float, default=0.0)
 	parser.add_argument("--max-nodes", type=int, default=100)
 	args = parser.parse_args()
 	return args

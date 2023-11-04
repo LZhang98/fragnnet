@@ -793,11 +793,13 @@ def random_walk_pe(g, k, eweight_name=None):
 		edges[0].numpy(),
 		edges[1].numpy()
 	)
+	num_edges = g.num_edges()
+	num_nodes = g.num_nodes()
 	if eweight_name:
 		vals = g.edata[eweight_name].squeeze().numpy()
 	else:
-		vals = np.ones([g.num_edges()],dtype=np.float32)
-	A = sparse.csr_matrix((vals,indices))
+		vals = np.ones([num_edges],dtype=np.float32)
+	A = sparse.csr_matrix((vals,indices),shape=(num_nodes,num_nodes))
 	RW = A / (A.sum(axis=1).reshape(-1,1) + 1e-30)
 	# Iterate for k steps
 	PE = [RW.diagonal()]

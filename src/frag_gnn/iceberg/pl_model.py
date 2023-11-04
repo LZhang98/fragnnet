@@ -640,12 +640,12 @@ def test_gen():
 
 	# test inference
 	pl_model.eval()
-	smiles = "CC(=O)OC1=CC=CC=C1C(=O)O"
+	# smiles = "CC(=O)OC1=CC=CC=C1C(=O)O"
+	smiles = "OCC(CO)(CO)NCCCNC(CO)(CO)CO"
 	adduct = "[M+H]+"
 	device = "cpu"
-	tree_processor = SpecMolMagmaGenDataset.init_tree_processor(
-		config_d["spec_params"],	
-		config_d["magma_params"]
+	tree_processor = SpecMolMagmaGenDataset.init_tree_processor(	
+		**config_d["magma_params"]
 	)
 	outputs = pl_model.predict_mol(
 		root_smi=smiles,
@@ -736,7 +736,7 @@ if __name__ == "__main__":
 
 	from frag_gnn.utils.misc_utils import th_temp_seed
 
-	# with th_temp_seed(420):
-	# 	test_gen()
 	with th_temp_seed(420):
-		test_inten()
+		test_gen()
+	# with th_temp_seed(420):
+	# 	test_inten()
