@@ -1,4 +1,4 @@
-wandb_name: d3_oos
+wandb_name: d3_oos_hhr
 wandb_tags:
 - v2
 - cu118
@@ -21,6 +21,6 @@ debug_overfit: False
 precision: 32
 mask_null_formula: False
 predict_oos: True
-oos_tolerance_multiple: 2
+oos_tolerance_multiple: 3
 mz_bin_res: 0.01
 mz_max: 1500.0
