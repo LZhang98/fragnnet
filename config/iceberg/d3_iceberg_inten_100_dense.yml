@@ -4,7 +4,7 @@ wandb_tags:
 - new_magma
 
 split_dp: data/split/d3_h4_isoTrue_v2
-magma_dp: data/magma_inten
+magma_dp: data/magma_2/magma_inten
 
 model_type: iceberg_inten
 loss_type: cosine_distance_dense

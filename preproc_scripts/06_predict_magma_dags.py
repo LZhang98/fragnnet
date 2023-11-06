@@ -26,7 +26,7 @@ from frag_gnn.utils.data_utils import seq_apply, par_apply, rdkit_import
 
 def run_magma_gen(
 	num_entries: int,
-	magma_gen_dp: str,
+	magma_inten_dp: str,
 	proc_dp: str,
 	gen_ckpt_fp: str,
 	allowed_elements: list[str],
@@ -46,7 +46,7 @@ def run_magma_gen(
 	assert gen_ckpt_file.exists(), f"Missing gen ckpt file: {gen_ckpt_file}"
 	pl_model = IcebergGenPL.load_from_checkpoint(gen_ckpt_fp, map_location=device)
 
-	magma_gen_dir = Path(magma_gen_dp)
+	magma_gen_dir = Path(magma_inten_dp)
 	magma_gen_dir.mkdir(exist_ok=True)
 	magma_gen_args_file = magma_gen_dir / "args.yml"
 	magma_gen_tree_dir = magma_gen_dir / "magma_tree"
@@ -56,7 +56,7 @@ def run_magma_gen(
 
 	args = dict(
 		num_entries=num_entries,
-		magma_gen_dp=magma_gen_dp,
+		magma_inten_dp=magma_inten_dp,
 		proc_dp=proc_dp,
 		gen_ckpt_fp=gen_ckpt_fp,
 		threshold=threshold,
@@ -133,7 +133,7 @@ def get_args():
 	"""get args"""
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--magma_gen_dp", type=str, default="data/magma_inten")
+	parser.add_argument("--magma_inten_dp", type=str, default="data/magma_2/magma_inten")
 	parser.add_argument("--proc_dp", type=str, default="data/proc")
 	parser.add_argument("--gen_ckpt_fp", type=str, default="iceberg_gen_2.ckpt")
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
