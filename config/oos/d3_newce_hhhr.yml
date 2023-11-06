@@ -24,3 +24,4 @@ predict_oos: False
 oos_tolerance_multiple: 3
 mz_bin_res: 0.005
 mz_max: 1500.0
+sparse_cosine_similarity: True
