@@ -637,10 +637,12 @@ class FragGNNPL(SpectrumPL):
 			mlp_dropout=self.hparams.mlp_dropout,
 			mlp_num_layers=self.hparams.mlp_num_layers,
 			mlp_use_residuals=self.hparams.mlp_use_residuals,
+			cc_interstage_type=self.hparams.cc_interstage_type,
 			skip_edge_loss=self.hparams.skip_edge_loss,
 			mask_null_formula=self.hparams.mask_null_formula,
 			predict_oos=self.hparams.predict_oos,
-			cc_interstage_type=self.hparams.cc_interstage_type
+			ce_insert_type=self.hparams.ce_insert_type,
+			node_formula_null_aggregate=self.hparams.node_formula_null_aggregate
 		)
 		# compile
 		if self.hparams.compile:
@@ -730,6 +732,8 @@ class FragGNNPL(SpectrumPL):
 			pred_node_logprobs,
 			pred_node_batch_idxs,
 			pred_node_formula_logprobs,
+			pred_node_formula_node_idxs,
+			pred_node_formula_batch_idxs,
 			pred_null_formula_logprob,
 			pred_edge_logprobs,
 			pred_edge_h_diffs,
@@ -762,11 +766,14 @@ class FragGNNPL(SpectrumPL):
 			loss = self.hparams.primary_loss_weight * loss
 			spec_e, spec_ne = sparse_entropy_fn(
 				pred_logprobs,
-				pred_batch_idxs
+				pred_batch_idxs,
+				oos_logprobs=pred_oos_logprobs,
+				renormalize=True
 			)
 			formula_e, formula_ne = sparse_entropy_fn(
 				pred_formula_logprobs,
-				pred_formula_batch_idxs
+				pred_formula_batch_idxs,
+				oos_logprobs=pred_oos_logprobs
 			)
 			loss = loss + self.hparams.formula_entropy_weight * formula_e \
 				+ self.hparams.formula_normalized_entropy_weight * formula_ne
@@ -779,8 +786,10 @@ class FragGNNPL(SpectrumPL):
 			
 			node_formula_e, node_formula_ne = sparse_conditional_entropy_fn(
 				pred_node_logprobs,
+				pred_node_batch_idxs,
 				pred_node_formula_logprobs,
-				pred_node_batch_idxs
+				pred_node_formula_node_idxs,
+				pred_node_formula_batch_idxs
 			)
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
@@ -1024,7 +1033,7 @@ def test_fraggnn():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3.yml",
+		"config/debug/debug_d3_entropies.yml",
 	]
 	
 	for custom_fp in custom_fps:

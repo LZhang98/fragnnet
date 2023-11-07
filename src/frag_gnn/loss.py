@@ -3,7 +3,7 @@ import torch as th
 import torch.nn.functional as F
 import math
 
-from frag_gnn.utils.misc_utils import scatter_reduce, EPS
+from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, scatter_logsumexp
 from frag_gnn.utils.spec_utils import calculate_match_mzs
 
 
@@ -181,8 +181,22 @@ def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative,oos_tolerance
 	return sce_fn
 
 
-def sparse_entropy_fn(logprobs,batch_idxs):
+def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False):
 
+	if renormalize:
+		logpartition = scatter_logsumexp(
+			logprobs,
+			batch_idxs,
+			dim=0
+		)
+		if oos_logprobs is not None:
+			logpartition = th.logsumexp(th.stack([logpartition,oos_logprobs],dim=1),dim=1)
+			oos_logprobs = oos_logprobs - logpartition
+		logprobs = logprobs - th.gather(
+			input=logpartition,
+			index=batch_idxs,
+			dim=0
+		)
 	probs = th.exp(logprobs)	
 	plogp = probs*logprobs
 	batch_size = th.max(batch_idxs)+1
@@ -193,32 +207,65 @@ def sparse_entropy_fn(logprobs,batch_idxs):
 		dim=0,
 		dim_size=batch_size,
 	)
-	max_entropy = scatter_reduce(
+	support_size = scatter_reduce(
 		src=th.ones_like(batch_idxs,dtype=logprobs.dtype),
 		index=batch_idxs,
 		reduce="sum",
 		dim=0,
 		dim_size=batch_size,
 	)
-	max_entropy = th.log(max_entropy)
+	support_size = th.clamp(support_size,min=1.)
+	if oos_logprobs is not None:
+		assert oos_logprobs.shape[0] == batch_size, (oos_logprobs.shape,batch_size)
+		entropy = entropy - th.exp(oos_logprobs)*oos_logprobs
+		support_size = support_size + 1
+	max_entropy = th.log(support_size)
 	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
 	return entropy, norm_entropy
 
 
-def sparse_conditional_entropy_fn(logprobs,conditional_logprobs,batch_idxs):
+def sparse_conditional_entropy_fn(
+	node_logprobs,
+	node_batch_idxs,
+	node_formula_logprobs,
+	node_formula_node_idxs,
+	node_formula_batch_idxs
+):
 
-	conditional_entropies = th.sum(-th.exp(conditional_logprobs)*conditional_logprobs,dim=1)
-	conditional_entropy = scatter_reduce(
-		th.exp(logprobs) * conditional_entropies,
-		batch_idxs,
-		"sum",
-		0,
-		th.max(batch_idxs)+1
+	batch_size = th.max(node_batch_idxs)+1
+	num_nodes = node_logprobs.shape[0]
+	node_probs = th.exp(node_logprobs)
+	node_formula_plogp = th.exp(node_formula_logprobs)*node_formula_logprobs
+	node_formula_entropy = -scatter_reduce(
+		node_formula_plogp,
+		index=node_formula_node_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=num_nodes
 	)
-	max_conditional_entropy = np.log(conditional_logprobs.shape[1])*th.ones_like(conditional_entropy,dtype=logprobs.dtype)
-	norm_conditional_entropy = conditional_entropy/th.clamp(max_conditional_entropy,min=EPS)
-	return conditional_entropy, norm_conditional_entropy
-
+	entropy = scatter_reduce(
+		node_probs * node_formula_entropy,
+		index=node_batch_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=batch_size
+	)
+	node_support_size = scatter_reduce(
+		th.ones_like(node_formula_logprobs,dtype=node_logprobs.dtype),
+		index=node_formula_node_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=num_nodes
+	)
+	max_entropy = scatter_reduce(
+		node_probs * safelog(node_support_size),
+		index=node_batch_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=batch_size
+	)
+	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
+	return entropy, norm_entropy
 
 def get_edge_loss_fn(edge_loss_fn_type,constant):
 

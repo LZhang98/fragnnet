@@ -41,7 +41,8 @@ class FragGNNModel(nn.Module):
 		skip_edge_loss: bool,
 		mask_null_formula: bool,
 		predict_oos: bool,
-		ce_insert_type: str= None,
+		ce_insert_type: str,
+		node_formula_null_aggregate: bool
 	):
 
 		super().__init__()
@@ -55,7 +56,7 @@ class FragGNNModel(nn.Module):
 		self._compute_mol_feats_sizes()
 
 		#check ce insertion type
-		assert ce_insert_type in ["mlp_insert","frag_insert","mol_insert", None]
+		assert ce_insert_type in ["mlp_insert","frag_insert","mol_insert","none"]
 		self.ce_insert_type = ce_insert_type
 
 		# setup mol gnn
@@ -164,6 +165,7 @@ class FragGNNModel(nn.Module):
 
 		self.skip_edge_loss = skip_edge_loss
 		self.mask_null_formula = mask_null_formula
+		self.node_formula_null_aggregate = node_formula_null_aggregate
 
 		# this is required
 		assert "h_formulae_idx" in self.frag_node_feats
@@ -265,7 +267,7 @@ class FragGNNModel(nn.Module):
 		# for k, v in kwargs.items():
 		#	print(f"{k} {v}")
 		
-		if self.ce_insert_type != None:
+		if self.ce_insert_type != "none":
 			if "spec_nce" in kwargs:
 				ce = kwargs.pop('spec_nce')
 			elif "spec_ace" in kwargs:
@@ -352,7 +354,6 @@ class FragGNNModel(nn.Module):
 				get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"complement").reshape(batch_frag_num_edges,-1)
 			)
 			frag_edata.append(frag_edge_complement)
-
 
 		if self.ce_insert_type == "frag_insert":
 			edge_ce = ce.repeat(batch_frag_num_edges).T
@@ -580,6 +581,30 @@ class FragGNNModel(nn.Module):
 			frag_edge_h_logprobs = None
 			frag_edge_batch_idxs = None
 
+		# convert node_formula to sparse representation
+		frag_node_formula_mask = frag_joint_mask.bool().reshape(-1,2*self.num_hs+1)
+
+		if self.node_formula_null_aggregate:
+		
+			# non-null
+			frag_node_formula_logprobs_1 = frag_node_formula_logprobs[frag_node_formula_mask]
+			frag_node_formula_node_idxs_1 = th.arange(frag_node_formula_mask.shape[0],device=device).unsqueeze(1).expand_as(frag_node_formula_mask)[frag_node_formula_mask]
+			frag_node_formula_batch_idxs_1 = frag_node_batch_idxs.unsqueeze(1).expand_as(frag_node_formula_mask)[frag_node_formula_mask]
+			# null
+			frag_node_formula_logprobs_2 = th.logsumexp((~frag_node_formula_mask).float()*frag_node_formula_logprobs + frag_node_formula_mask.float()*(-1e9),dim=1)[~th.all(frag_node_formula_mask,dim=1)]
+			frag_node_formula_node_idxs_2 = th.arange(frag_node_formula_mask.shape[0],device=device)[~th.all(frag_node_formula_mask,dim=1)]
+			frag_node_formula_batch_idxs_2 = frag_node_batch_idxs[~th.all(frag_node_formula_mask,dim=1)]
+			# together
+			frag_node_formula_logprobs = th.cat([frag_node_formula_logprobs_1,frag_node_formula_logprobs_2],dim=0)
+			frag_node_formula_node_idxs = th.cat([frag_node_formula_node_idxs_1,frag_node_formula_node_idxs_2],dim=0)
+			frag_node_formula_batch_idxs = th.cat([frag_node_formula_batch_idxs_1,frag_node_formula_batch_idxs_2],dim=0)
+		
+		else:
+		
+			frag_node_formula_logprobs = frag_node_formula_logprobs.flatten()
+			frag_node_formula_node_idxs = th.arange(frag_node_formula_mask.shape[0],device=device).unsqueeze(1).expand_as(frag_node_formula_mask).flatten()
+			frag_node_formula_batch_idxs = frag_node_batch_idxs.unsqueeze(1).expand_as(frag_node_formula_mask).flatten()
+		
 		out_d = {
 			"pred_mzs": spec_mzs,
 			"pred_logprobs": spec_logprobs,
@@ -589,6 +614,8 @@ class FragGNNModel(nn.Module):
 			"pred_node_logprobs": frag_node_logprobs,
 			"pred_node_batch_idxs": frag_node_batch_idxs,
 			"pred_node_formula_logprobs": frag_node_formula_logprobs,
+			"pred_node_formula_node_idxs": frag_node_formula_node_idxs,
+			"pred_node_formula_batch_idxs": frag_node_formula_batch_idxs,
 			"pred_null_formula_logprob": frag_null_formula_logprob,
 			"pred_edge_logprobs": frag_edge_logprobs,
 			"pred_edge_h_diffs": frag_edge_h_diffs,

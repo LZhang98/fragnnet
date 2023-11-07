@@ -256,7 +256,7 @@ def scatter_reduce(src,index,reduce,dim,dim_size):
 	return results
 
 def safelog(x,eps=EPS):
-	return th.log(x+eps)
+	return th.log(th.clamp(x,min=eps))
 
 def batchwise_max(xs, batch_idxs):
 	""" for debugging """
