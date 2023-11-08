@@ -4,6 +4,8 @@ from rdkit.Chem import Descriptors
 from rdkit.Chem import  AllChem
 import torch as th
 import torch.nn.functional as F
+import scipy
+import scipy.optimize
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
 from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS
@@ -639,3 +641,100 @@ def batched_mf100_normalize(ints, batch_idxs):
 	)
 	ints = (ints / max_ints[batch_idxs]) * 1000.
 	return ints
+
+def calculate_sparse_cosine_hungarian(
+	true_mzs, 
+	true_ints, 
+	true_batch_idxs, 
+	pred_mzs, 
+	pred_ints, 
+	pred_batch_idxs,
+	tolerance=1e-5,
+	relative=True,
+	sum_ints=True
+):
+
+	# round peaks
+	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		sum_ints=sum_ints
+	)
+	pred_mzs, pred_ints, pred_batch_idxs = round_aggregate_peaks(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		sum_ints=sum_ints
+	)
+	# l2 normalize
+	true_ints = scatter_l2normalize(
+		true_ints,
+		true_batch_idxs,
+		dim=0
+	)
+	pred_ints = scatter_l2normalize(
+		pred_ints,
+		pred_batch_idxs,
+		dim=0
+	)
+	# calculate
+	batch_size = th.max(true_batch_idxs)+1
+	cos_hun = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for b in range(batch_size):
+		b_true_mask = (true_batch_idxs==b)
+		b_pred_mask = (pred_batch_idxs==b)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_ints = true_ints[b_true_mask]
+		b_pred_ints = pred_ints[b_pred_mask]
+		b_match_mzs = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
+		b_true_match_mzs = th.any(b_match_mzs,dim=1)
+		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
+			(b_true_ints[b_true_match_mzs].unsqueeze(1) * b_pred_ints[b_pred_match_mzs].unsqueeze(0))
+		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+		b_cos_hun = th.dot(
+			b_true_ints[b_true_match_mzs][b_true_idxs],
+			b_pred_ints[b_pred_match_mzs][b_pred_idxs],
+		)
+		cos_hun[b] = b_cos_hun
+	return cos_hun
+
+def round_aggregate_peaks(mzs,ints,batch_idxs,decimals=4,sum_ints=True):
+
+	batch_size = th.max(batch_idxs)+1
+	round_mzs, round_ints, round_batch_idxs = [], [], []
+	for b in range(batch_size):
+		b_mask = (batch_idxs==b)
+		b_round_mzs = th.round(mzs[b_mask], decimals=decimals)
+		b_ints = ints[b_mask]
+		b_round_mzs_un, b_round_mzs_inv = th.unique(b_round_mzs, return_inverse=True)
+		b_round_ints = scatter_reduce(
+			src=b_ints,
+			index=b_round_mzs_inv,
+			reduce="sum" if sum_ints else "amax",
+			dim=0,
+			dim_size=b_round_mzs_un.shape[0]
+		)
+		round_mzs.append(b_round_mzs_un)
+		round_ints.append(b_round_ints)
+		round_batch_idxs.append(th.full_like(b_round_mzs_un,b,dtype=batch_idxs.dtype))
+	round_mzs = th.cat(round_mzs,dim=0)
+	round_ints = th.cat(round_ints,dim=0)
+	round_batch_idxs = th.cat(round_batch_idxs,dim=0)
+	return round_mzs, round_ints, round_batch_idxs
+
+def scipy_linear_sum_assignment(matrix, maximize=False):
+
+	device = matrix.device
+	matrix = matrix.cpu().numpy()
+	x_idx, y_idx = scipy.optimize.linear_sum_assignment(matrix, maximize=maximize)
+	x_idx = th.as_tensor(x_idx,dtype=th.long,device=device)
+	y_idx = th.as_tensor(y_idx,dtype=th.long,device=device)
+	return x_idx, y_idx

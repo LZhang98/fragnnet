@@ -135,6 +135,7 @@ auxiliary_scores:
   - opt_cos_sim
   - true_spec_e
   - true_spec_ne
+  - cos_hun
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
