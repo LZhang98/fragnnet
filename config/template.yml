@@ -84,7 +84,7 @@ mol_dropout: 0.0
 mol_normalization: batch
 mol_pool_type: none
 # interstage
-cc_interstage_type: add
+cc_interstage_type: direct
 # frag model
 frag_hidden_size: 256
 frag_num_layers: 4

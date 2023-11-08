@@ -301,7 +301,6 @@ class FragGNNModel(nn.Module):
 				dim=0,
 				dim_size=batch_frag_num_nodes
 			)
-
 			# frag_node_mask_embed can be one of following
 			# 1. frag_node_mask_embed plus mol_embed_gnn_pool
 			# 2. frag_node_mask_embed only, with out pooled embed for entire mol
@@ -310,9 +309,11 @@ class FragGNNModel(nn.Module):
 				frag_node_mask_embed = frag_node_mask_embed + mol_embed_gnn_pool[frag_batch]
 			elif self.cc_interstage_type == "sub":
 				frag_node_mask_embed = frag_node_mask_embed - mol_embed_gnn_pool[frag_batch]
-			if self.cc_interstage_type == "linear":
-				frag_node_mask_embed =  self.cc_interstage(th.cat([frag_node_mask_embed,mol_embed_gnn_pool[frag_batch]], dim = 1))
-    
+			elif self.cc_interstage_type == "linear":
+				frag_node_mask_embed = self.cc_interstage(th.cat([frag_node_mask_embed,mol_embed_gnn_pool[frag_batch]], dim = 1))
+			else:
+				assert self.cc_interstage_type == "direct", self.cc_interstage_type
+				frag_node_mask_embed = frag_node_mask_embed
 			frag_ndata.append(frag_node_mask_embed)
 		# edge atom embeddings
 		if "cc" in self.frag_edge_feats:

@@ -2,6 +2,8 @@ wandb_name: d3_newce_hr
 wandb_tags:
 - v2
 - cu118
+- new_entropy
+- new_oos
 split_dp: data/split/d3_h4_isoTrue_v2
 frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 num_depth: 4
@@ -25,3 +27,5 @@ oos_tolerance_multiple: 3
 mz_bin_res: 0.1
 mz_max: 1500.0
 sparse_cosine_similarity: True
+mol_pool_type: mean
+frag_pool_type: mean
