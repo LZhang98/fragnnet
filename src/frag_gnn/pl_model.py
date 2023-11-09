@@ -83,32 +83,33 @@ class SpectrumPL(pl.LightningModule):
 				cosine_similarity_fn = calculate_sparse_cosine_similarity
 			else:
 				cosine_similarity_fn = calculate_cosine_similarity
-			def _cos_sim(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				cos_sim = cosine_similarity_fn(
+			for mz_bin_res in self.hparams.eval_mz_bin_res:
+				def _cos_sim(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
-					mz_bin_res=self.hparams.mz_bin_res,
-					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.sum_ints
-				)
-				return cos_sim
-			self.metric_fns["cos_sim"] = _cos_sim
-			self.metric_min_max["cos_sim"] = "max"
+					**kwargs):
+					# untransform
+					true_ints = self.ints_untransform_func(true_ints)
+					pred_ints = self.ints_untransform_func(pred_ints)
+					# calculate
+					cos_sim = cosine_similarity_fn(
+						true_mzs,
+						true_ints,
+						true_batch_idxs,
+						pred_mzs,
+						pred_ints,
+						pred_batch_idxs,
+						mz_bin_res=mz_bin_res,
+						mz_max=self.hparams.mz_max,
+						sum_ints=self.hparams.sum_ints
+					)
+					return cos_sim
+				self.metric_fns[f"cos_sim_{mz_bin_res}"] = _cos_sim
+				self.metric_min_max[f"cos_sim_{mz_bin_res}"] = "max"
 		if "recall" in self.hparams.auxiliary_scores:
 			def _recall(
 				true_mzs,
@@ -160,32 +161,33 @@ class SpectrumPL(pl.LightningModule):
 				optimal_cosine_similarity_fn = calculate_optimal_sparse_cosine_similarity
 			else:
 				optimal_cosine_similarity_fn = calculate_optimal_cosine_similarity
-			def _opt_cos_sim(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				opt_cos_sim = optimal_cosine_similarity_fn(
+			for mz_bin_res in self.hparams.eval_mz_bin_res:
+				def _opt_cos_sim(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
-					mz_bin_res=self.hparams.mz_bin_res,
-					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.sum_ints
-				)
-				return opt_cos_sim
-			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
-			self.metric_min_max["opt_cos_sim"] = None
+					**kwargs):
+					# untransform
+					true_ints = self.ints_untransform_func(true_ints)
+					pred_ints = self.ints_untransform_func(pred_ints)
+					# calculate
+					opt_cos_sim = optimal_cosine_similarity_fn(
+						true_mzs,
+						true_ints,
+						true_batch_idxs,
+						pred_mzs,
+						pred_ints,
+						pred_batch_idxs,
+						mz_bin_res=mz_bin_res,
+						mz_max=self.hparams.mz_max,
+						sum_ints=self.hparams.sum_ints
+					)
+					return opt_cos_sim
+				self.metric_fns[f"opt_cos_sim_{mz_bin_res}"] = _opt_cos_sim
+				self.metric_min_max[f"opt_cos_sim_{mz_bin_res}"] = None
 		if "true_spec_e" in self.hparams.auxiliary_scores:
 			def _true_spec_e(
 				true_mzs,
