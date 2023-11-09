@@ -152,7 +152,7 @@ def get_pyg_memory_usage(pyg_graph):
 
 	return pyg.profile.get_data_size(pyg_graph)
 
-def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=np.log(1e-4),dim=-1,log=True):
+def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=-1e-9,dim=-1,log=True):
 	# calculate appropriate mask value
 	with th.no_grad():
 		c = scatter_masked_logsumexp(logits,mask,subset_idxs,dim=dim)
@@ -229,6 +229,20 @@ def scatter_l1normalize(vals,subset_idxs,dim=-1):
 	vals = vals/c[subset_idxs]
 	return vals
 
+def scatter_l2normalize(vals,subset_idxs,dim=-1):
+	# calculate normalizing constant
+	c = scatter_reduce(
+		src=vals**2,
+		index=subset_idxs,
+		reduce="sum",
+		dim=dim,
+		dim_size=th.max(subset_idxs)+1
+	)
+	c = th.sqrt(c)
+	# apply normalizing constant
+	vals = vals/c[subset_idxs]
+	return vals
+
 def scatter_reduce(src,index,reduce,dim,dim_size):
 
 	result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim+1:]
@@ -242,7 +256,7 @@ def scatter_reduce(src,index,reduce,dim,dim_size):
 	return results
 
 def safelog(x,eps=EPS):
-	return th.log(x+eps)
+	return th.log(th.clamp(x,min=eps))
 
 def batchwise_max(xs, batch_idxs):
 	""" for debugging """
@@ -276,10 +290,10 @@ def to_cpu(data_d, non_blocking=True, detach=False):
 def to_device(data_d, device, non_blocking=True):
 
 	for k in data_d.keys():
-		if isinstance(data_d[k], th.Tensor) or isinstance(data_d[k], dgl.DGLGraph):
-			data = data_d[k]
-			data = data.to(device,non_blocking=non_blocking)
-			data_d[k] = data
+		v = data_d[k]
+		if isinstance(v, th.Tensor) or isinstance(v, dgl.DGLGraph) or isinstance(v, pyg.data.Data):
+			v = v.to(device,non_blocking=non_blocking)
+			data_d[k] = v
 	return data_d
 
 def deep_update(mapping, *updating_mappings):

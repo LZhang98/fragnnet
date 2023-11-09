@@ -188,6 +188,7 @@ class SpecMolDataset(BaseDataset):
 		split_dp: str,
 		split: str,
 		spec_params: dict,
+		mol_params: dict,
 		**kwargs
 	):
 
@@ -199,7 +200,7 @@ class SpecMolDataset(BaseDataset):
 			split=split,
 			spec_params=spec_params
 		)
-		self.mol_params = kwargs["mol_params"]
+		self.mol_params = mol_params
 		self._preprocess_spec()
 		self._preprocess_mol()
 

@@ -3,7 +3,8 @@ import torch as th
 import torch.nn.functional as F
 import math
 
-from frag_gnn.utils.misc_utils import scatter_reduce, EPS
+from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, scatter_logsumexp
+from frag_gnn.utils.spec_utils import calculate_match_mzs
 
 
 def mog_log_prob(samples,means,variances,log_weights):
@@ -87,7 +88,7 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	return ce
 
 
-def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False):
+def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pred_logprobs,pred_batch_idxs,pred_oos_logprobs,log_prob_fn=mog_log_prob,tolerance=1e-3,relative=False,oos_tolerance_multiple=1):
 	"""compute sparse cross entropy in squence
 
 	Args:
@@ -108,59 +109,94 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	mask_value = -1e9
 	batch_size = th.max(true_batch_idxs)+1
 	ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
+	true_oos_logprobs = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
 	for batch_idx in th.arange(batch_size):
-		# get predictions belongs to this batch idx
-		b_pred_mask = (pred_batch_idxs==batch_idx).float()
 		# get groundtruth belongs to this batch idx
-		b_true_mask = (true_batch_idxs==batch_idx)
-		# predicted log probs + eps
-		b_pred_logprobs = pred_logprobs*b_pred_mask + mask_value*(1 - b_pred_mask)
-		b_pred_mzs = pred_mzs
+		b_true_mask = true_batch_idxs==batch_idx
+		# get predictions belongs to this batch idx
+		b_pred_mask = pred_batch_idxs==batch_idx
+		# get mzs and logprobs
+		b_true_logprobs = true_logprobs[b_true_mask]
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_logprobs = pred_logprobs[b_pred_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		# get matches
+		if oos_tolerance_multiple == -1:
+			b_true_match_mask = th.ones_like(b_true_mzs,dtype=th.bool)
+		else:
+			assert oos_tolerance_multiple > 0, oos_tolerance_multiple
+			b_match_mask = calculate_match_mzs(
+				b_true_mzs,
+				b_pred_mzs,
+				tolerance=oos_tolerance_multiple*tolerance,
+				relative=relative
+			)
+			b_true_match_mask = th.any(b_match_mask,dim=1)
+		if not th.any(b_true_match_mask):
+			print("> Warning: Everything is OOS!")
+		# batch discrete Cross Entropy Loss 
+		# discrete probability distributions of p(ground truth) * log(q(predicted))
 		if relative:
 			b_variances = (th.clamp(b_pred_mzs,min=200.)*tolerance)**2
 		else:
 			b_variances = (tolerance**2)*th.ones_like(b_pred_mzs)
-		b_true_logprobs = true_logprobs[b_true_mask]
-		b_true_mzs = true_mzs[b_true_mask]
-
-		# batch discrete Cross Entropy Loss 
-		# discrete probability distributions of p(ground truth) * log(q(predicted))
-		# TODO: Maybe we need normailzed this ?
-		b_ce = th.sum(-th.exp(b_true_logprobs) * log_prob_fn(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
+		b_is_ce = th.sum(b_true_match_mask.float() * -th.exp(b_true_logprobs) * log_prob_fn(b_true_mzs,b_pred_mzs,b_variances,b_pred_logprobs))
+		# calculate oos logprobs
+		b_true_oos_logprobs = th.logsumexp(mask_value*b_true_match_mask.float() + b_true_logprobs*(~b_true_match_mask).float(), dim=0)
+		b_pred_oos_logprobs = pred_oos_logprobs[batch_idx]
+		b_oos_ce = -th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs
+		# combine
+		b_ce = b_is_ce + b_oos_ce
 		ces[batch_idx] = b_ce
-	#print(ces)
-	return ces
+		true_oos_logprobs[batch_idx] = b_true_oos_logprobs
+	return ces, true_oos_logprobs
 
 
-def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative):
+def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative,oos_tolerance_multiple):
 
 	if dist == "gaussian":
-		log_prob_fn = mog_log_prob	
+		log_prob_fn = mog_log_prob
 	elif dist == "mol_uniform":
 		log_prob_fn = momu_log_prob
 	else:
 		raise NotImplementedError()
-	
+
 	if vectorized:
-		sce_fn = lambda *args: sparse_cross_entropy_vec(
-			*args,
-			log_prob_fn=log_prob_fn,
-			tolerance=tolerance,
-			relative=relative
-		)
+		raise NotImplementedError
+		# sce_fn = lambda *args: sparse_cross_entropy_vec(
+		# 	*args,
+		# 	log_prob_fn=log_prob_fn,
+		# 	tolerance=tolerance,
+		# 	relative=relative
+		# )
 	else:
 		sce_fn = lambda *args: sparse_cross_entropy_seq(
 			*args,
 			log_prob_fn=log_prob_fn,
 			tolerance=tolerance,
-			relative=relative
+			relative=relative,
+			oos_tolerance_multiple=oos_tolerance_multiple
 		)
-
+		
 	return sce_fn
 
 
-def sparse_entropy_fn(logprobs,batch_idxs):
+def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False):
 
+	if renormalize:
+		logpartition = scatter_logsumexp(
+			logprobs,
+			batch_idxs,
+			dim=0
+		)
+		if oos_logprobs is not None:
+			logpartition = th.logsumexp(th.stack([logpartition,oos_logprobs],dim=1),dim=1)
+			oos_logprobs = oos_logprobs - logpartition
+		logprobs = logprobs - th.gather(
+			input=logpartition,
+			index=batch_idxs,
+			dim=0
+		)
 	probs = th.exp(logprobs)	
 	plogp = probs*logprobs
 	batch_size = th.max(batch_idxs)+1
@@ -171,32 +207,65 @@ def sparse_entropy_fn(logprobs,batch_idxs):
 		dim=0,
 		dim_size=batch_size,
 	)
-	max_entropy = scatter_reduce(
+	support_size = scatter_reduce(
 		src=th.ones_like(batch_idxs,dtype=logprobs.dtype),
 		index=batch_idxs,
 		reduce="sum",
 		dim=0,
 		dim_size=batch_size,
 	)
-	max_entropy = th.log(max_entropy)
+	support_size = th.clamp(support_size,min=1.)
+	if oos_logprobs is not None:
+		assert oos_logprobs.shape[0] == batch_size, (oos_logprobs.shape,batch_size)
+		entropy = entropy - th.exp(oos_logprobs)*oos_logprobs
+		support_size = support_size + 1
+	max_entropy = th.log(support_size)
 	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
 	return entropy, norm_entropy
 
 
-def sparse_conditional_entropy_fn(logprobs,conditional_logprobs,batch_idxs):
+def sparse_conditional_entropy_fn(
+	node_logprobs,
+	node_batch_idxs,
+	node_formula_logprobs,
+	node_formula_node_idxs,
+	node_formula_batch_idxs
+):
 
-	conditional_entropies = th.sum(-th.exp(conditional_logprobs)*conditional_logprobs,dim=1)
-	conditional_entropy = scatter_reduce(
-		th.exp(logprobs) * conditional_entropies,
-		batch_idxs,
-		"sum",
-		0,
-		th.max(batch_idxs)+1
+	batch_size = th.max(node_batch_idxs)+1
+	num_nodes = node_logprobs.shape[0]
+	node_probs = th.exp(node_logprobs)
+	node_formula_plogp = th.exp(node_formula_logprobs)*node_formula_logprobs
+	node_formula_entropy = -scatter_reduce(
+		node_formula_plogp,
+		index=node_formula_node_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=num_nodes
 	)
-	max_conditional_entropy = np.log(conditional_logprobs.shape[1])*th.ones_like(conditional_entropy,dtype=logprobs.dtype)
-	norm_conditional_entropy = conditional_entropy/th.clamp(max_conditional_entropy,min=EPS)
-	return conditional_entropy, norm_conditional_entropy
-
+	entropy = scatter_reduce(
+		node_probs * node_formula_entropy,
+		index=node_batch_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=batch_size
+	)
+	node_support_size = scatter_reduce(
+		th.ones_like(node_formula_logprobs,dtype=node_logprobs.dtype),
+		index=node_formula_node_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=num_nodes
+	)
+	max_entropy = scatter_reduce(
+		node_probs * safelog(node_support_size),
+		index=node_batch_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=batch_size
+	)
+	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
+	return entropy, norm_entropy
 
 def get_edge_loss_fn(edge_loss_fn_type,constant):
 
@@ -209,6 +278,7 @@ def get_edge_loss_fn(edge_loss_fn_type,constant):
 	else:
 		raise NotImplementedError
 	return edge_loss_fn
+
 
 if __name__ == "__main__":
 

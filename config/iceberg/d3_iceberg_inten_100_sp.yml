@@ -1,12 +1,14 @@
-wandb_name: d3_iceberg_inten_100_maxints
+wandb_name: d3_iceberg_inten_100_sp
 wandb_tags:
 - iceberg
+- new_magma
 
 split_dp: data/split/d3_h4_isoTrue_v2
-magma_dp: data/magma_inten
+magma_dp: data/magma_2/magma_inten
 
 model_type: iceberg_inten
 loss_type: cosine_distance
+sparse_cosine_similarity: True
 mol_params:
   smiles: True
   fingerprint: False
@@ -19,10 +21,10 @@ magma_params:
   binned_targs: False
   mz_bin_res: 0.1
   mz_max: 1500.0
-  sum_ints: False
+  sum_ints: True
 mz_bin_res: 0.1
 mz_max: 1500.0
-sum_ints: False
+sum_ints: True
 ints_transform: sqrt
 iceberg_hidden_size: 256
 iceberg_num_mlp_layers: 1

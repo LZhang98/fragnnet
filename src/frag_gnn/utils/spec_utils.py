@@ -4,9 +4,11 @@ from rdkit.Chem import Descriptors
 from rdkit.Chem import  AllChem
 import torch as th
 import torch.nn.functional as F
+import scipy
+import scipy.optimize
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_reduce, EPS
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS
 
 
 # TODO: actually fill these out
@@ -105,7 +107,7 @@ def batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max):
 	return mzs, ints, batch_idxs
 
 
-def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
+def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints,sparse=False):
 
 	if mzs.shape[0] == 0:
 		import pdb; pdb.set_trace()
@@ -116,21 +118,34 @@ def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints):
 	bin_idx = th.searchsorted(bins,mzs,side="right")
 	bin_offsets = (th.arange(batch_size,device=mzs.device)*num_bins)[batch_idxs]
 	bin_idx = bin_idx + bin_offsets
-	bin_spec = scatter_reduce(
-		src=ints,
-		index=bin_idx,
-		reduce="sum" if sum_ints else "amax",
-		dim=0,
-		dim_size=num_bins*batch_size
-	)
-	bin_spec = bin_spec.reshape(batch_size,num_bins)
-	if th.any(th.all(bin_spec==0.,dim=1)):
-		print("> warning: bin_spec is all zeros!")
-		mask = th.zeros_like(bin_spec,dtype=th.bool)
-		mask[:,0] = 1.
-		mask = mask*th.all(bin_spec==0.,dim=1,keepdim=True)
-		bin_spec = bin_spec + mask.float()
-	return bin_spec
+	if sparse:
+		un_bin_idxs, un_bin_idxs_rev = th.unique(bin_idx,return_inverse=True)
+		new_bin_idxs = th.arange(un_bin_idxs.shape[0],device=un_bin_idxs.device)
+		un_bin_ints = scatter_reduce(
+			src=ints,
+			index=new_bin_idxs[un_bin_idxs_rev],
+			reduce="sum" if sum_ints else "amax",
+			dim=0,
+			dim_size=new_bin_idxs.shape[0]
+		)
+		un_bin_batch_idxs = un_bin_idxs // num_bins
+		return un_bin_idxs, un_bin_ints, un_bin_batch_idxs
+	else:
+		bin_spec = scatter_reduce(
+			src=ints,
+			index=bin_idx,
+			reduce="sum" if sum_ints else "amax",
+			dim=0,
+			dim_size=num_bins*batch_size
+		)
+		bin_spec = bin_spec.reshape(batch_size,num_bins)
+		if th.any(th.all(bin_spec==0.,dim=1)):
+			print("> warning: bin_spec is all zeros!")
+			mask = th.zeros_like(bin_spec,dtype=th.bool)
+			mask[:,0] = 1.
+			mask = mask*th.all(bin_spec==0.,dim=1,keepdim=True)
+			bin_spec = bin_spec + mask.float()
+		return bin_spec
 
 
 def merge_sparse_specs(*peakses,renormalize=False,sum_ints=True):
@@ -311,6 +326,34 @@ def calculate_cosine_similarity(
 	return cos_sims
 
 
+def calculate_recall(
+		true_mzs,
+		true_batch_idxs,
+		pred_mzs,
+		pred_batch_idxs,
+		tolerance=1e-5,
+		relative=True
+	):
+
+	batch_size = th.max(true_batch_idxs)+1
+	recall = th.zeros([batch_size],device=true_mzs.device,dtype=th.float)
+	for b in range(batch_size):
+		b_true_mask = (true_batch_idxs==b)
+		b_pred_mask = (pred_batch_idxs==b)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_match = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
+		b_true_match = th.any(b_true_match,dim=1)
+		b_recall = th.sum(b_true_match.float())/b_true_mzs.shape[0]
+		recall[b] = b_recall
+	return recall
+
+
 def calculate_weighted_recall(
 		true_mzs,
 		true_ints,
@@ -372,8 +415,96 @@ def calculate_optimal_cosine_similarity(
 	)
 	pred_mask = pred_spec > 0.
 	pred_spec = true_spec * pred_mask.float() + pred_spec * (~pred_mask).float()
-	opt_cos_sim = binned_cosine_similarity(true_spec,pred_spec)
-	return opt_cos_sim
+	opt_cos_sims = binned_cosine_similarity(true_spec,pred_spec)
+	return opt_cos_sims
+
+
+def calculate_sparse_cosine_similarity(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max=1500.,
+		mz_bin_res=0.01,
+		sum_ints=True
+	):
+
+	# sparse bin
+	true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		sum_ints=sum_ints,
+		sparse=True
+	)
+	pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		sum_ints=sum_ints,
+		sparse=True
+	)
+	cos_sims = sparse_binned_cosine_similarity(
+		true_bin_idxs,
+		true_bin_ints,
+		true_bin_batch_idxs,
+		pred_bin_idxs,
+		pred_bin_ints,
+		pred_bin_batch_idxs
+	)
+	return cos_sims
+
+
+def calculate_optimal_sparse_cosine_similarity(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max=1500.,
+		mz_bin_res=0.01,
+		sum_ints=True
+	):
+
+	# sparse bin
+	true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		sum_ints=sum_ints,
+		sparse=True
+	)
+	pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		sum_ints=sum_ints,
+		sparse=True
+	)
+	pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
+	true_mask = th.isin(true_bin_idxs, pred_bin_idxs[pred_mask])
+	pred_bin_ints[~pred_mask] = 0.
+	pred_bin_ints[pred_mask] = true_bin_ints[true_mask]
+	opt_cos_sims = sparse_binned_cosine_similarity(
+		true_bin_idxs,
+		true_bin_ints,
+		true_bin_batch_idxs,
+		pred_bin_idxs,
+		pred_bin_ints,
+		pred_bin_batch_idxs
+	)
+	return opt_cos_sims
 
 
 def calculate_optimal_unbinned_cosine_similarity(
@@ -413,6 +544,34 @@ def binned_cosine_similarity(true_spec,pred_spec):
 	true_spec = F.normalize(true_spec,p=2,dim=1)
 	pred_spec = F.normalize(pred_spec,p=2,dim=1)
 	cos_sims = (true_spec.unsqueeze(1) @ pred_spec.unsqueeze(2)).squeeze(2).squeeze(1)
+	return cos_sims
+
+
+def sparse_binned_cosine_similarity(true_bin_idxs, true_bin_ints, true_bin_batch_idxs, pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs):
+
+	# l2 normalize
+	true_bin_ints = scatter_l2normalize(
+		true_bin_ints,
+		true_bin_batch_idxs,
+		dim=0
+	)
+	pred_bin_ints = scatter_l2normalize(
+		pred_bin_ints,
+		pred_bin_batch_idxs,
+		dim=0
+	)
+	# dot product
+	pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
+	true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
+	both_bin_ints = pred_bin_ints[pred_mask] * true_bin_ints[true_mask]
+	assert th.all(pred_bin_batch_idxs[pred_mask] == true_bin_batch_idxs[true_mask])
+	cos_sims = scatter_reduce(
+		src=both_bin_ints,
+		index=pred_bin_batch_idxs[pred_mask],
+		reduce="sum",
+		dim=0,
+		dim_size=th.max(true_bin_batch_idxs)+1
+	)
 	return cos_sims
 
 
@@ -482,3 +641,100 @@ def batched_mf100_normalize(ints, batch_idxs):
 	)
 	ints = (ints / max_ints[batch_idxs]) * 1000.
 	return ints
+
+def calculate_sparse_cosine_hungarian(
+	true_mzs, 
+	true_ints, 
+	true_batch_idxs, 
+	pred_mzs, 
+	pred_ints, 
+	pred_batch_idxs,
+	tolerance=1e-5,
+	relative=True,
+	sum_ints=True
+):
+
+	# round peaks
+	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		sum_ints=sum_ints
+	)
+	pred_mzs, pred_ints, pred_batch_idxs = round_aggregate_peaks(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		sum_ints=sum_ints
+	)
+	# l2 normalize
+	true_ints = scatter_l2normalize(
+		true_ints,
+		true_batch_idxs,
+		dim=0
+	)
+	pred_ints = scatter_l2normalize(
+		pred_ints,
+		pred_batch_idxs,
+		dim=0
+	)
+	# calculate
+	batch_size = th.max(true_batch_idxs)+1
+	cos_hun = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for b in range(batch_size):
+		b_true_mask = (true_batch_idxs==b)
+		b_pred_mask = (pred_batch_idxs==b)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_ints = true_ints[b_true_mask]
+		b_pred_ints = pred_ints[b_pred_mask]
+		b_match_mzs = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
+		b_true_match_mzs = th.any(b_match_mzs,dim=1)
+		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
+			(b_true_ints[b_true_match_mzs].unsqueeze(1) * b_pred_ints[b_pred_match_mzs].unsqueeze(0))
+		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+		b_cos_hun = th.dot(
+			b_true_ints[b_true_match_mzs][b_true_idxs],
+			b_pred_ints[b_pred_match_mzs][b_pred_idxs],
+		)
+		cos_hun[b] = b_cos_hun
+	return cos_hun
+
+def round_aggregate_peaks(mzs,ints,batch_idxs,decimals=4,sum_ints=True):
+
+	batch_size = th.max(batch_idxs)+1
+	round_mzs, round_ints, round_batch_idxs = [], [], []
+	for b in range(batch_size):
+		b_mask = (batch_idxs==b)
+		b_round_mzs = th.round(mzs[b_mask], decimals=decimals)
+		b_ints = ints[b_mask]
+		b_round_mzs_un, b_round_mzs_inv = th.unique(b_round_mzs, return_inverse=True)
+		b_round_ints = scatter_reduce(
+			src=b_ints,
+			index=b_round_mzs_inv,
+			reduce="sum" if sum_ints else "amax",
+			dim=0,
+			dim_size=b_round_mzs_un.shape[0]
+		)
+		round_mzs.append(b_round_mzs_un)
+		round_ints.append(b_round_ints)
+		round_batch_idxs.append(th.full_like(b_round_mzs_un,b,dtype=batch_idxs.dtype))
+	round_mzs = th.cat(round_mzs,dim=0)
+	round_ints = th.cat(round_ints,dim=0)
+	round_batch_idxs = th.cat(round_batch_idxs,dim=0)
+	return round_mzs, round_ints, round_batch_idxs
+
+def scipy_linear_sum_assignment(matrix, maximize=False):
+
+	device = matrix.device
+	matrix = matrix.cpu().numpy()
+	x_idx, y_idx = scipy.optimize.linear_sum_assignment(matrix, maximize=maximize)
+	x_idx = th.as_tensor(x_idx,dtype=th.long,device=device)
+	y_idx = th.as_tensor(y_idx,dtype=th.long,device=device)
+	return x_idx, y_idx

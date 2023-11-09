@@ -14,7 +14,10 @@ import torch._dynamo as th_dynamo
 from frag_gnn.utils.nn_utils import build_lr_scheduler
 from frag_gnn.model import FragGNNModel, NeimsModel
 from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, calculate_optimal_cosine_similarity, get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_weighted_recall, binned_cosine_similarity
+from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, \
+	calculate_sparse_cosine_similarity, calculate_optimal_cosine_similarity, calculate_optimal_sparse_cosine_similarity, \
+	get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_recall, calculate_weighted_recall, \
+	binned_cosine_similarity, calculate_sparse_cosine_hungarian
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -30,6 +33,7 @@ class SpectrumPL(pl.LightningModule):
 		# setup functions
 		self.metric_names = set()
 		self._setup_model()
+		self._setup_tolerance()
 		self._setup_loss_fn()
 		self._setup_spec_fns()
 		self._setup_metric_fns()
@@ -42,7 +46,18 @@ class SpectrumPL(pl.LightningModule):
 
 	def _setup_model(self):
 		raise NotImplementedError
-	
+
+	def _setup_tolerance(self):
+
+		# set tolerance
+		if self.hparams.loss_tolerance_rel is not None:
+			self.tolerance = self.hparams.loss_tolerance_rel
+			self.relative = True
+		else:
+			assert self.hparams.loss_tolerance_abs is not None
+			self.tolerance = self.hparams.loss_tolerance_abs
+			self.relative = False
+
 	def _setup_loss_fn(self):
 		raise NotImplementedError
 
@@ -60,10 +75,15 @@ class SpectrumPL(pl.LightningModule):
 
 	def _setup_metric_fns(self):
 
+		# setup metrics
 		self.metric_min_max = {"loss": "min"}
 		self.metric_fns = {}
 		# measure cos sim between predicted and ground truth
 		if "cos_sim" in self.hparams.auxiliary_scores:
+			if self.hparams.sparse_cosine_similarity:
+				cosine_similarity_fn = calculate_sparse_cosine_similarity
+			else:
+				cosine_similarity_fn = calculate_cosine_similarity
 			def _cos_sim(
 				true_mzs,
 				true_ints,
@@ -76,7 +96,7 @@ class SpectrumPL(pl.LightningModule):
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
-				return calculate_cosine_similarity(
+				cos_sim = cosine_similarity_fn(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
@@ -87,11 +107,28 @@ class SpectrumPL(pl.LightningModule):
 					mz_max=self.hparams.mz_max,
 					sum_ints=self.hparams.sum_ints
 				)
+				return cos_sim
 			self.metric_fns["cos_sim"] = _cos_sim
 			self.metric_min_max["cos_sim"] = "max"
-
-		# measure max weighted recall between ground truth spectra and dag
-		# this give us an upper bound of what can be done
+		if "recall" in self.hparams.auxiliary_scores:
+			def _recall(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				return calculate_recall(
+					true_mzs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+			self.metric_fns["recall"] = _recall
+			self.metric_min_max["recall"] = "max"
 		if "wrecall" in self.hparams.auxiliary_scores:
 			def _wrecall(
 				true_mzs,
@@ -123,6 +160,10 @@ class SpectrumPL(pl.LightningModule):
 		# measure max possible cos sim  between ground truth spectra and dag
 		# this give us an upper bound for cos sim
 		if "opt_cos_sim" in self.hparams.auxiliary_scores:
+			if self.hparams.sparse_cosine_similarity:
+				optimal_cosine_similarity_fn = calculate_optimal_sparse_cosine_similarity
+			else:
+				optimal_cosine_similarity_fn = calculate_optimal_cosine_similarity
 			def _opt_cos_sim(
 				true_mzs,
 				true_ints,
@@ -135,7 +176,7 @@ class SpectrumPL(pl.LightningModule):
 				true_ints = self.ints_untransform_func(true_ints)
 				pred_ints = self.ints_untransform_func(pred_ints)
 				# calculate
-				return calculate_optimal_cosine_similarity(
+				opt_cos_sim = optimal_cosine_similarity_fn(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
@@ -146,6 +187,7 @@ class SpectrumPL(pl.LightningModule):
 					mz_max=self.hparams.mz_max,
 					sum_ints=self.hparams.sum_ints
 				)
+				return opt_cos_sim
 			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
 			self.metric_min_max["opt_cos_sim"] = None
 
@@ -188,6 +230,32 @@ class SpectrumPL(pl.LightningModule):
 				return true_spec_ne
 			self.metric_fns["true_spec_ne"] = _true_spec_ne
 			self.metric_min_max["true_spec_ne"] = None
+		if "cos_hun" in self.hparams.auxiliary_scores:
+			def _cos_hun(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform
+				true_ints = self.ints_untransform_func(true_ints)
+				pred_ints = self.ints_untransform_func(pred_ints)
+				# calculate
+				cos_hun = calculate_sparse_cosine_hungarian(
+					true_mzs,
+					true_ints,
+					true_batch_idxs,
+					pred_mzs,
+					pred_ints,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+				return cos_hun
+			self.metric_fns["cos_hun"] = _cos_hun
+			self.metric_min_max["cos_hun"] = "max"
 		self.metric_names.update(list(self.metric_min_max.keys()))
 
 		# measure normialized entropy
@@ -610,9 +678,12 @@ class FragGNNPL(SpectrumPL):
 			mlp_dropout=self.hparams.mlp_dropout,
 			mlp_num_layers=self.hparams.mlp_num_layers,
 			mlp_use_residuals=self.hparams.mlp_use_residuals,
+			cc_interstage_type=self.hparams.cc_interstage_type,
 			skip_edge_loss=self.hparams.skip_edge_loss,
 			mask_null_formula=self.hparams.mask_null_formula,
-			cc_interstage_type=self.hparams.cc_interstage_type
+			predict_oos=self.hparams.predict_oos,
+			ce_insert_type=self.hparams.ce_insert_type,
+			node_formula_null_aggregate=self.hparams.node_formula_null_aggregate
 		)
 		# compile
 		if self.hparams.compile:
@@ -629,26 +700,23 @@ class FragGNNPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
 		# cross entropy
 		sparse_ce_fn = get_sparse_cross_entropy_fn(
 			self.hparams.output_distribution,
 			self.hparams.loss_vectorized,
 			self.tolerance,
-			self.relative
+			self.relative,
+			self.hparams.oos_tolerance_multiple
 		)
 		# edge loss
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
 		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
 
-		def sparse_cosine_distance(
+		if self.hparams.sparse_cosine_similarity:
+			cosine_similarity_fn = calculate_sparse_cosine_similarity
+		else:
+			cosine_similarity_fn = calculate_cosine_similarity
+		def cosine_distance_fn(
 			true_mzs,
 			true_ints,
 			true_batch_idxs,
@@ -656,7 +724,7 @@ class FragGNNPL(SpectrumPL):
 			pred_ints,
 			pred_batch_idxs):
 			# calculate
-			return 1.-calculate_cosine_similarity(
+			return 1.-cosine_similarity_fn(
 				true_mzs,
 				th.exp(true_ints),
 				true_batch_idxs,
@@ -667,7 +735,7 @@ class FragGNNPL(SpectrumPL):
 				mz_max=self.hparams.mz_max,
 				sum_ints=self.hparams.sum_ints
 			)
-		
+
 		def edge_loss(
 			pred_edge_logprobs,
 			pred_edge_h_diffs,
@@ -705,21 +773,25 @@ class FragGNNPL(SpectrumPL):
 			pred_node_logprobs,
 			pred_node_batch_idxs,
 			pred_node_formula_logprobs,
+			pred_node_formula_node_idxs,
+			pred_node_formula_batch_idxs,
 			pred_null_formula_logprob,
 			pred_edge_logprobs,
 			pred_edge_h_diffs,
 			pred_edge_h_range_masks,
 			pred_edge_h_logprobs,
-			pred_edge_batch_idxs):
-			spec_ce = sparse_ce_fn(
+			pred_edge_batch_idxs,
+			pred_oos_logprobs):
+			spec_ce, true_oos_logprobs = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
 				pred_mzs,
 				pred_logprobs,
-				pred_batch_idxs
+				pred_batch_idxs,
+				pred_oos_logprobs
 			)
-			spec_cd = sparse_cosine_distance(
+			spec_cd = cosine_distance_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
@@ -735,11 +807,14 @@ class FragGNNPL(SpectrumPL):
 			loss = self.hparams.primary_loss_weight * loss
 			spec_e, spec_ne = sparse_entropy_fn(
 				pred_logprobs,
-				pred_batch_idxs
+				pred_batch_idxs,
+				oos_logprobs=pred_oos_logprobs,
+				renormalize=True
 			)
 			formula_e, formula_ne = sparse_entropy_fn(
 				pred_formula_logprobs,
-				pred_formula_batch_idxs
+				pred_formula_batch_idxs,
+				oos_logprobs=pred_oos_logprobs
 			)
 			loss = loss + self.hparams.formula_entropy_weight * formula_e \
 				+ self.hparams.formula_normalized_entropy_weight * formula_ne
@@ -752,12 +827,16 @@ class FragGNNPL(SpectrumPL):
 			
 			node_formula_e, node_formula_ne = sparse_conditional_entropy_fn(
 				pred_node_logprobs,
+				pred_node_batch_idxs,
 				pred_node_formula_logprobs,
-				pred_node_batch_idxs
+				pred_node_formula_node_idxs,
+				pred_node_formula_batch_idxs
 			)
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
 			null_formula_prob = th.exp(pred_null_formula_logprob)
+			oos_prob = th.exp(pred_oos_logprobs)
+			true_oos_prob = th.exp(true_oos_logprobs)
 			loss_d = {
 				"loss": loss,
 				"spec_cd": spec_cd,
@@ -770,7 +849,9 @@ class FragGNNPL(SpectrumPL):
 				"node_ne": node_ne,
 				"node_formula_e": node_formula_e,
 				"node_formula_ne": node_formula_ne,
-				"null_formula_prob": null_formula_prob
+				"null_formula_prob": null_formula_prob,
+				"oos_prob": oos_prob,
+				"true_oos_prob": true_oos_prob
 			}
 			if not self.hparams.skip_edge_loss:
 				r_el, t_el = edge_loss(
@@ -808,7 +889,9 @@ class FragGNNPL(SpectrumPL):
 			"node_ne",
 			"node_formula_e",
 			"node_formula_ne",
-			"null_formula_prob"
+			"null_formula_prob",
+			"oos_prob",
+			"true_oos_prob"
 		]
 		if not self.hparams.skip_edge_loss:
 			loss_names.extend(
@@ -934,14 +1017,6 @@ class NeimsPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
 		# define loss
 		assert self.hparams.loss_type in ["cosine_distance","cosine_distance_dense"], self.hparams.loss_type
 		def _loss_fn(
@@ -954,7 +1029,11 @@ class NeimsPL(SpectrumPL):
 			pred_specs,
 			**kwargs):
 			if self.hparams.loss_type == "cosine_distance":
-				spec_cd = 1.-calculate_cosine_similarity(
+				if self.hparams.sparse_cosine_similarity:
+					cosine_similarity_fn = calculate_sparse_cosine_similarity
+				else:
+					cosine_similarity_fn = calculate_cosine_similarity
+				spec_cd = 1.-cosine_similarity_fn(
 					true_mzs,
 					th.exp(true_logprobs),
 					true_batch_idxs,
@@ -982,3 +1061,66 @@ class NeimsPL(SpectrumPL):
 			"spec_cd"
 		]
 		self.metric_names.update(loss_names)
+
+
+def test_fraggnn():
+
+	from frag_gnn.runner import load_config
+	from frag_gnn.dataset import SpecMolFragDataset
+	from frag_gnn.utils.misc_utils import print_shapes
+	from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
+	import torch.nn.functional as F
+	from frag_gnn.utils.misc_utils import to_device
+
+	template_fp = "config/template.yml"
+	custom_fps = [
+		"config/debug/debug_d3_entropies.yml",
+	]
+	
+	for custom_fp in custom_fps:
+
+		print(custom_fp)
+
+		config_d = load_config(template_fp, custom_fp)
+		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
+
+		ds = SpecMolFragDataset(split="train", **config_d)
+		dl = th.utils.data.DataLoader(
+			ds,
+			batch_size=8,
+			shuffle=False,
+			num_workers=0,
+			collate_fn=ds.get_collate_fn(),
+		)
+		dl_iter = iter(dl)
+		batch = next(dl_iter)
+		print("> batch")
+		print_shapes(batch)
+		batch = to_device(batch,device)
+
+		pl_model = FragGNNPL(**config_d)
+		pl_model.train()
+		pl_model.to(device)
+
+		outputs = pl_model.forward(**batch)
+		print("> train outputs")
+		print_shapes(outputs)
+		print(th.exp(outputs["pred_logprobs"]).sum())
+
+		results = pl_model._common_step(batch, split="train")
+		print_shapes(results)
+
+		mean_loss = results.pop("mean_loss")
+		print("> loss")
+		print(mean_loss)
+		mean_loss.backward()
+
+
+if __name__ == "__main__":
+
+	from frag_gnn.utils.misc_utils import th_temp_seed
+
+	with th_temp_seed(420):
+		test_fraggnn()
+	# with th_temp_seed(420):
+	# 	test_neims()

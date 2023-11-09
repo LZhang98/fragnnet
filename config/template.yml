@@ -84,7 +84,7 @@ mol_dropout: 0.0
 mol_normalization: batch
 mol_pool_type: none
 # interstage
-cc_interstage_type: add
+cc_interstage_type: direct
 # frag model
 frag_hidden_size: 256
 frag_num_layers: 4
@@ -126,19 +126,21 @@ optimizer: adamw
 output_distribution: gaussian
 loss_type: cross_entropy
 loss_vectorized: False
-loss_tolerance_ppm: 0.00001
+loss_tolerance_rel: 0.00001 # 10 ppm
 loss_tolerance_abs: #0.001
 auxiliary_scores:
   - cos_sim
+  - recall
   - wrecall
   - opt_cos_sim
   - true_spec_e
   - true_spec_ne
+  - cos_hun
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
 sum_ints: True
-ints_transform: none #log10t3
+ints_transform: none
 train_batch_size: 16
 eval_batch_size: 16
 accelerator: cpu
@@ -181,6 +183,8 @@ deterministic: False
 drop_last: False
 num_sanity_val_steps: 2
 mask_null_formula: True
+predict_oos: False
+oos_tolerance_multiple: -1
 ce_insert_type: none
 custom_sampler: none
 specmolfrag_dynamic_batch_sampler_mode: frag_node
@@ -194,5 +198,7 @@ checkpoint_metric: epoch
 checkpoint_metric_mode: max
 upload_checkpoints: False
 pl_enable_progress_bar: True
+sparse_cosine_similarity: False
+node_formula_null_aggregate: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False

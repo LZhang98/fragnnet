@@ -480,14 +480,6 @@ class IcebergIntenPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
-		# set tolerance
-		if self.hparams.loss_tolerance_ppm is not None:
-			self.tolerance = self.hparams.loss_tolerance_ppm
-			self.relative = True
-		else:
-			assert self.hparams.loss_tolerance_abs is not None
-			self.tolerance = self.hparams.loss_tolerance_abs
-			self.relative = False
 		# cosine distance
 		if self.hparams.loss_type == "cosine_distance_dense":
 			def _loss_fn(true_spec, pred_spec, **kwargs):
@@ -648,12 +640,12 @@ def test_gen():
 
 	# test inference
 	pl_model.eval()
-	smiles = "CC(=O)OC1=CC=CC=C1C(=O)O"
+	# smiles = "CC(=O)OC1=CC=CC=C1C(=O)O"
+	smiles = "OCC(CO)(CO)NCCCNC(CO)(CO)CO"
 	adduct = "[M+H]+"
 	device = "cpu"
-	tree_processor = SpecMolMagmaGenDataset.init_tree_processor(
-		config_d["spec_params"],	
-		config_d["magma_params"]
+	tree_processor = SpecMolMagmaGenDataset.init_tree_processor(	
+		**config_d["magma_params"]
 	)
 	outputs = pl_model.predict_mol(
 		root_smi=smiles,
@@ -744,7 +736,7 @@ if __name__ == "__main__":
 
 	from frag_gnn.utils.misc_utils import th_temp_seed
 
-	# with th_temp_seed(420):
-	# 	test_gen()
 	with th_temp_seed(420):
-		test_inten()
+		test_gen()
+	# with th_temp_seed(420):
+	# 	test_inten()
