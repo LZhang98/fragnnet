@@ -687,8 +687,8 @@ def run_magma_augmentation(
 def get_args():
 	"""get args"""
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--magma_dp", type=str, default="data/magma_gen")
+	parser.add_argument("--num_ehntries", type=int, default=-1)
+	parser.add_argument("--magma_dp", type=str, default="data/magma/gen_2")
 	parser.add_argument("--proc_dp", type=str, default="data/proc")
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist"])

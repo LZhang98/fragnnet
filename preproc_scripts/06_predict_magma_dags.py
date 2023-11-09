@@ -133,7 +133,7 @@ def get_args():
 	"""get args"""
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--magma_inten_dp", type=str, default="data/magma_2/magma_inten")
+	parser.add_argument("--magma_inten_dp", type=str, default="data/magma/inten_100_2")
 	parser.add_argument("--proc_dp", type=str, default="data/proc")
 	parser.add_argument("--gen_ckpt_fp", type=str, default="iceberg_gen_2.ckpt")
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)

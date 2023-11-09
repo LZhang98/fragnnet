@@ -347,7 +347,7 @@ if __name__ == "__main__":
 	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
 	parser.add_argument("--frag_dp",type=str,default="data/frag")
-	parser.add_argument("--proc_dp",type=str,default="data/proc")
+	parser.add_argument("--proc_dp",type=str,default="data/proc/nist")
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 	parser.add_argument("--dsets",type=str,nargs="+",default=["nist"])

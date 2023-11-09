@@ -4,7 +4,7 @@ wandb_tags:
 - new_magma
 
 split_dp: data/split/d3_h4_isoTrue_v2
-magma_dp: data/magma_2/magma_gen
+magma_dp: data/magma/gen_2
 
 model_type: iceberg_gen
 loss_type: iceberg_gen_cross_entropy
