@@ -79,11 +79,11 @@ class SpectrumPL(pl.LightningModule):
 		self.metric_min_max = {"loss": "min"}
 		self.metric_fns = {}
 		if "cos_sim" in self.hparams.auxiliary_scores:
-			if self.hparams.sparse_cosine_similarity:
-				cosine_similarity_fn = calculate_sparse_cosine_similarity
-			else:
-				cosine_similarity_fn = calculate_cosine_similarity
-			for mz_bin_res in self.hparams.eval_mz_bin_res:
+			def get_cos_sim(mz_bin_res):
+				if self.hparams.sparse_cosine_similarity:
+					cosine_similarity_fn = calculate_sparse_cosine_similarity
+				else:
+					cosine_similarity_fn = calculate_cosine_similarity
 				def _cos_sim(
 					true_mzs,
 					true_ints,
@@ -108,7 +108,9 @@ class SpectrumPL(pl.LightningModule):
 						sum_ints=self.hparams.sum_ints
 					)
 					return cos_sim
-				self.metric_fns[f"cos_sim_{mz_bin_res}"] = _cos_sim
+				return _cos_sim
+			for mz_bin_res in self.hparams.eval_mz_bin_res:
+				self.metric_fns[f"cos_sim_{mz_bin_res}"] = get_cos_sim(mz_bin_res)
 				self.metric_min_max[f"cos_sim_{mz_bin_res}"] = "max"
 		if "recall" in self.hparams.auxiliary_scores:
 			def _recall(
@@ -157,11 +159,11 @@ class SpectrumPL(pl.LightningModule):
 			self.metric_fns["wrecall"] = _wrecall
 			self.metric_min_max["wrecall"] = "max"
 		if "opt_cos_sim" in self.hparams.auxiliary_scores:
-			if self.hparams.sparse_cosine_similarity:
-				optimal_cosine_similarity_fn = calculate_optimal_sparse_cosine_similarity
-			else:
-				optimal_cosine_similarity_fn = calculate_optimal_cosine_similarity
-			for mz_bin_res in self.hparams.eval_mz_bin_res:
+			def get_opt_cos_sim(mz_bin_res):
+				if self.hparams.sparse_cosine_similarity:
+					optimal_cosine_similarity_fn = calculate_optimal_sparse_cosine_similarity
+				else:
+					optimal_cosine_similarity_fn = calculate_optimal_cosine_similarity
 				def _opt_cos_sim(
 					true_mzs,
 					true_ints,
@@ -186,7 +188,9 @@ class SpectrumPL(pl.LightningModule):
 						sum_ints=self.hparams.sum_ints
 					)
 					return opt_cos_sim
-				self.metric_fns[f"opt_cos_sim_{mz_bin_res}"] = _opt_cos_sim
+				return _opt_cos_sim
+			for mz_bin_res in self.hparams.eval_mz_bin_res:
+				self.metric_fns[f"opt_cos_sim_{mz_bin_res}"] = get_opt_cos_sim(mz_bin_res)
 				self.metric_min_max[f"opt_cos_sim_{mz_bin_res}"] = None
 		if "true_spec_e" in self.hparams.auxiliary_scores:
 			def _true_spec_e(
