@@ -279,7 +279,7 @@ def calculate_match_mzs(
 		divisor_mz_floor (float, optional): divisor floor used in relative. Defaults to 200 Da.
 
 	Returns:
-		th.tensor: macthed m/zs in a 2 by N tensor, row 0 is true_mzs, row 1 is pred_mzs
+		th.tensor: macthed m/zs tensor, dim 0 for predicted, dim 1 for ground truth
 	"""
 
 	if isinstance(true_mzs,th.Tensor):
@@ -362,9 +362,9 @@ def calculate_recall(
 						  tolerance, 
 						  relative, 
 						  b)
-		b_true_match = th.any(b_true_match,dim=1)
+		b_true_match_mzs = th.any(b_true_match,dim=1)
 		b_relevant = true_mzs[(true_batch_idxs==b)].shape[0]
-		b_recall = th.sum(b_true_match.float())/b_relevant
+		b_recall = th.sum(b_true_match_mzs.float())/b_relevant
 		recall[b] = b_recall
 	return recall
 
@@ -404,9 +404,9 @@ def calculate_weighted_recall(
 					tolerance, 
 					relative, 
 					b)
-		b_true_match = th.any(b_true_match,dim=1)
+		b_true_match_mzs = th.any(b_true_match,dim=1)
 		b_relevant_int = true_ints[(true_batch_idxs==b)]		
-		b_weighted_recall = th.sum(b_relevant_int[b_true_match])/th.sum(b_relevant_int)
+		b_weighted_recall = th.sum(b_relevant_int[b_true_match_mzs])/th.sum(b_relevant_int)
 		weighted_recall[b] = b_weighted_recall
 	return weighted_recall
 
@@ -445,9 +445,9 @@ def calculate_precision(
 						  tolerance, 
 						  relative, 
 						  b)
-		b_predicted_match = th.any(b_true_match,dim=0)
+		b_pred_match_mzs = th.any(b_true_match,dim=0)
 		b_retrieved  = pred_mzs[(true_batch_idxs==b)].shape[0]
-		b_precision = th.sum(b_predicted_match.float())/b_retrieved
+		b_precision = th.sum(b_pred_match_mzs.float())/b_retrieved
 		precision[b] = b_precision
 
 	return precision
@@ -466,15 +466,13 @@ def calculate_weighted_precision(
 
 	Args:
 		true_mzs (th.tensor): ground truth m/z s
-		true_ints (th.tensor): ground truth intensities
 		true_batch_idxs (th.tensor): batch idxs for ground truth
 		pred_mzs (th.tensor): predicted m/z s
-		pred_ints (th.tensor): predicted intensities
 		pred_batch_idxs (th.tensor): batch idxs for prediction
 		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): flag to use relative measure. Defaults to True.
 	Returns:
-		th.tensor: weighted precisions
+		th.tensor: recalls
 	"""
 	batch_size = th.max(true_batch_idxs)+1
 	weighted_precision = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
@@ -487,14 +485,55 @@ def calculate_weighted_precision(
 					relative, 
 					b)
 		
-		b_true_match = th.any(b_true_match,dim=0)
+		b_pred_match_mzs = th.any(b_true_match,dim=0)
 		b_retrieved_int = pred_ints[(true_batch_idxs==b)]
-		b_weighted_precision = th.sum(b_retrieved_int[b_true_match])/th.sum(b_retrieved_int)
+		b_weighted_precision = th.sum(b_retrieved_int[b_pred_match_mzs])/th.sum(b_retrieved_int)
 		weighted_precision[b] = b_weighted_precision
 	return weighted_precision
 
-# cosine similarity code ... all of them
+def calculate_dice(
+		true_mzs:th.tensor, 
+		true_ints:th.tensor,
+		true_batch_idxs:th.tensor,
+		pred_mzs:th.tensor,
+		pred_ints:th.tensor,
+		pred_batch_idxs:th.tensor,
+		tolerance:float=1e-5,
+		relative:bool=True,
+	):
+	"""calculate m/z dice between two spectra
 
+	Args:
+		true_mzs (th.tensor): ground truth m/z s
+		true_ints (th.tensor): ground truth intensities
+		true_batch_idxs (th.tensor): batch idxs for ground truth
+		pred_mzs (th.tensor): predicted m/z s
+		pred_ints (th.tensor): predicted intensities
+		pred_batch_idxs (th.tensor): batch idxs for prediction
+		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
+		relative (bool, optional): flag to use relative measure. Defaults to True.
+	Returns:
+		th.tensor: dices
+	"""
+	batch_size = th.max(true_batch_idxs)+1
+	dice = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for b in range(batch_size):
+		b_true_match = match_mz_for_batch_idx(true_mzs,
+					true_batch_idxs,
+					pred_mzs, 
+					pred_batch_idxs, 
+					tolerance, 
+					relative, 
+					b)
+		
+		b_pred_match_mzs = th.any(b_true_match,dim=0)
+		b_retrieved  = pred_mzs[(true_batch_idxs==b)].shape[0]
+		b_relevant = true_ints[(true_batch_idxs==b)].shape[0]	
+		b_dice = th.sum(b_pred_match_mzs.float())/(b_retrieved + b_relevant) * 2.0
+		dice[b] = b_dice
+	return dice
+
+# cosine similarity code ... all of them
 def calculate_cosine_similarity(
 		true_mzs:th.tensor,
 		true_ints:th.tensor,
@@ -573,7 +612,6 @@ def calculate_optimal_cosine_similarity(
 	pred_spec = true_spec * pred_mask.float() + pred_spec * (~pred_mask).float()
 	opt_cos_sims = binned_cosine_similarity(true_spec,pred_spec)
 	return opt_cos_sims
-
 
 def calculate_sparse_cosine_similarity(
 		true_mzs,
@@ -871,8 +909,6 @@ def calculate_sparse_cosine_hungarian(
 				tolerance=tolerance,
 				relative=relative
 			)
-		b_true_match_mzs = th.any(b_match_mzs,dim=1)
-		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
 
 		b_true_match_mzs = th.any(b_match_mzs,dim=1)
 		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
