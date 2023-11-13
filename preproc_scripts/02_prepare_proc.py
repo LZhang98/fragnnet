@@ -101,7 +101,9 @@ def preprocess_spec(spec_df):
 	spec_df = spec_df[~spec_df["mol_id"].isin(bad_mol_id)]
 
 	# fill in missing prec_mz by inferring them
-	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner"),data_utils.infer_prec_mz)
+	spec_df = spec_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner")
+	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
+	spec_df = spec_df.drop(columns=["exact_mw"])
 
 	# reset indices
 	spec_df = spec_df.reset_index(drop=True)
@@ -114,13 +116,12 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--df_dp", type=str, default="data/df")
-	parser.add_argument("--proc_dp", type=str, default="data/proc")
+	parser.add_argument("--proc_dp", type=str, default="data/proc/debug")
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--ow_spec_mol", type=booltype, default=False)
-	parser.add_argument("--dset", type=str, nargs="+", default=["nist20_hr","nist20_lr","mona23"])
+	parser.add_argument("--dsets", type=str, nargs="+", default=["nist20_hr","mona23"])
 	flags = parser.parse_args()
 
-	assert os.path.isdir(flags.proc_dp), flags.proc_dp
 	data_dp = flags.proc_dp
 
 	spec_df_fp = os.path.join(data_dp,"spec_df.pkl")
@@ -129,6 +130,9 @@ if __name__ == "__main__":
 	if not flags.ow_spec_mol and os.path.isfile(spec_df_fp) and os.path.isfile(mol_df_fp):
 
 		print("> loading previous spec_df, mol_df")
+		assert os.path.isdir(flags.proc_dp), flags.proc_dp
+		assert os.path.isfile(spec_df_fp), spec_df_fp
+		assert os.path.isfile(mol_df_fp), mol_df_fp
 		spec_df = pd.read_pickle(spec_df_fp)
 		mol_df = pd.read_pickle(mol_df_fp)
 
@@ -136,7 +140,8 @@ if __name__ == "__main__":
 
 		print("> creating new spec_df, mol_df")
 		assert os.path.isdir(flags.df_dp), flags.df_dp
-		all_df = load_df(flags.df_dp,flags.dset,flags.num_entries)
+		os.makedirs(flags.proc_dp,exist_ok=True)
+		all_df = load_df(flags.df_dp,flags.dsets,flags.num_entries)
 
 		spec_df, mol_df = preprocess_spec(all_df)
 
