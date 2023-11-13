@@ -230,6 +230,8 @@ class SpectrumPL(pl.LightningModule):
 				return true_spec_ne
 			self.metric_fns["true_spec_ne"] = _true_spec_ne
 			self.metric_min_max["true_spec_ne"] = None
+
+		# cos sim using Hungarian algorithm
 		if "cos_hun" in self.hparams.auxiliary_scores:
 			def _cos_hun(
 				true_mzs,

@@ -107,7 +107,21 @@ def batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max):
 	return mzs, ints, batch_idxs
 
 
-def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints,sparse=False):
+def batched_bin_func(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,mz_max:float,mz_bin_res:float,sum_ints:bool,sparse:bool=False) -> th.tensor:
+	"""method to get binned spectra for batch
+
+	Args:
+		mzs (th.tensor): tensor of mzs
+		ints (th.tensor): tensor of intensity
+		batch_idxs (th.tensor): tensor of batch idxs
+		mz_max (float): max mz value allowed
+		mz_bin_res (float): bin size
+		sum_ints (bool): flag for sum intensities within the bin, else take max
+		sparse (bool, optional): flag to use sparse  method. Defaults to False.
+
+	Returns:
+		_type_: binned spectra
+	"""
 
 	if mzs.shape[0] == 0:
 		import pdb; pdb.set_trace()
@@ -148,13 +162,19 @@ def batched_bin_func(mzs,ints,batch_idxs,mz_max,mz_bin_res,sum_ints,sparse=False
 		return bin_spec
 
 
-def merge_sparse_specs(*peakses,renormalize=False,sum_ints=True):
+def merge_sparse_specs(*peakses,renormalize:bool=False,sum_ints:bool=True) -> th.tensor:
 	"""
 	this will result in peaks that are really close in mass (<5ppm)
 	they are probably the same peak, but our model can handle this type of ambiguity
 	for now, let's keep them unmerged
-	"""
 
+	Args:
+		renormalize (bool, optional): flag to get renormalize spectra. Defaults to False.
+		sum_ints (bool, optional): flag for sum intensities within the bin, else take max
+
+	Returns:
+		_type_: _description_
+	"""
 	merged_peaks = {}
 	# total_intensity = 0.
 	for peaks in peakses:
@@ -173,7 +193,17 @@ def merge_sparse_specs(*peakses,renormalize=False,sum_ints=True):
 	return merged_peaks
 
 
-def calculate_spectrum_entropy(log_ints,batch_idxs):
+def calculate_spectrum_entropy(log_ints:th.tensor,batch_idxs:th.tensor) -> th.tensor:
+	""" method to compute entropy.
+		NOTE: this is NOT same spectra entropy in this https://www.nature.com/articles/s41592-023-02012-9 a
+		nd https://www.nature.com/articles/s41592-021-01331-z
+	Args:
+		log_ints (th.tensor): intensity in log scale
+		batch_idxs (th.tensor): batch idx
+
+	Returns:
+		th.tensor: spectrum entropy
+	"""
 
 	k = th.max(batch_idxs)+1
 	log_norm_ints = scatter_logsoftmax(log_ints,batch_idxs,dim=0)
@@ -230,49 +260,26 @@ def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs
 		topk_frac[b] = topk_frac[b] + b_topk_frac
 	return topk_weighted_recall, topk_frac
 
-
-def calculate_recalls(true_mzs,true_logits,true_batch_idxs,pred_mzs,pred_logits,pred_batch_idxs,tolerance=1e-5):
-	"""
-	Note: this function could be parallelized with vmap
-	"""
-
-	batch_size = th.max(true_batch_idxs)+1
-	recall = th.zeros([batch_size],device=true_mzs.device)
-	weighted_recall = th.zeros([batch_size],device=true_mzs.device)
-	true_ints = th.exp(scatter_logsoftmax(true_logits,true_batch_idxs,dim=0))
-	pred_ints = th.exp(scatter_logsoftmax(pred_logits,pred_batch_idxs,dim=0))
-	for b in range(batch_size):
-		b_true_mask = (true_batch_idxs==b)
-		b_pred_mask = (pred_batch_idxs==b)
-		b_true_mzs = true_mzs[b_true_mask]
-		b_pred_mzs = pred_mzs[b_pred_mask]
-		b_true_ints = true_ints[b_true_mask]
-		b_pred_ints = pred_ints[b_pred_mask]
-		b_true_match = calculate_match_mzs(
-			b_true_mzs,
-			b_pred_mzs,
-			tolerance=tolerance,
-			relative=True
-		)
-		b_true_match = th.any(b_true_match,dim=1)
-		b_recall = th.sum(b_true_match)/b_true_mzs.shape[0]
-		recall[b] = recall[b] + b_recall
-		b_weighted_recall = th.sum(b_true_ints[b_true_match])/th.sum(b_true_ints)
-		weighted_recall[b] = weighted_recall[b] + b_weighted_recall
-	return recall, weighted_recall
-
-
 def calculate_match_mzs(
-		true_mzs,
-		pred_mzs,
-		tolerance=1e-5,
-		relative=True,
-		divisor_mz_floor=200
-	):
+		true_mzs:th.tensor,
+		pred_mzs:th.tensor,
+		tolerance:float=1e-5,
+		relative:bool=True,
+		divisor_mz_floor:float=200
+	) -> th.tensor:
 	"""
-	works with numpy arrays or torch tensors
-	inspired by the function in ms-pred
+	Method to match two spectra based on m/z
+	works with numpy arrays or torch tensors  inspired by the function in ms-pred
 	NOT BATCHED
+	Args:
+		true_mzs (th.tensor): ground truth m/z s
+		pred_mzs (th.tensor): predicted m/z s
+		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
+		relative (bool, optional): flag to use relative measure. Defaults to True.
+		divisor_mz_floor (float, optional): divisor floor used in relative. Defaults to 200 Da.
+
+	Returns:
+		th.tensor: macthed m/zs in a 2 by N tensor, row 0 is true_mzs, row 1 is pred_mzs
 	"""
 
 	if isinstance(true_mzs,th.Tensor):
@@ -293,19 +300,228 @@ def calculate_match_mzs(
 	match_mzs = diff_mzs < min_diff_mzs
 	return match_mzs
 
+def match_mz_for_batch_idx(true_mzs:th.tensor,
+						  true_batch_idxs:th.tensor,
+						  pred_mzs:th.tensor, 
+						  pred_batch_idxs:th.tensor, 
+						  tolerance:float, 
+						  relative:bool, 
+						  batch_idx:int):
+	""" aux function to mathc mzs
+	Args:
+		true_mzs (th.tensor): ground truth m/z s
+		true_batch_idxs (th.tensor): batch idxs for ground truth
+		pred_mzs (th.tensor): predicted m/z s
+		pred_batch_idxs (th.tensor): batch idxs for prediction
+		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
+		relative (bool, optional): flag to use relative measure. Defaults to True.
+		batch_idx (int): batch idx
+	Returns:
+		_type_: _description_
+	"""
 
-def calculate_cosine_similarity(
+	b_true_mask = (true_batch_idxs==batch_idx)
+	b_pred_mask = (pred_batch_idxs==batch_idx)
+	b_true_mzs = true_mzs[b_true_mask]
+	b_pred_mzs = pred_mzs[b_pred_mask]
+	b_true_match = calculate_match_mzs(
+		b_true_mzs,
+		b_pred_mzs,
+		tolerance=tolerance,
+		relative=relative
+	)
+	return b_true_match
+
+def calculate_recall(
+		true_mzs:th.tensor,
+		true_batch_idxs:th.tensor,
+		pred_mzs:th.tensor,
+		pred_batch_idxs:th.tensor,
+		tolerance:float=1e-5,
+		relative:bool=True
+	) -> th.tensor:
+	"""calculate m/z recall between two spectra
+
+	Args:
+		true_mzs (th.tensor): ground truth m/z s
+		true_batch_idxs (th.tensor): batch idxs for ground truth
+		pred_mzs (th.tensor): predicted m/z s
+		pred_batch_idxs (th.tensor): batch idxs for prediction
+		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
+		relative (bool, optional): flag to use relative measure. Defaults to True.
+	Returns:
+		th.tensor: recalls
+	"""
+	batch_size = th.max(true_batch_idxs)+1
+	recall = th.zeros([batch_size],device=true_mzs.device,dtype=th.float)
+	for b in range(batch_size):
+		b_true_match = match_mz_for_batch_idx(true_mzs,
+						  true_batch_idxs,
+						  pred_mzs, 
+						  pred_batch_idxs, 
+						  tolerance, 
+						  relative, 
+						  b)
+		b_true_match = th.any(b_true_match,dim=1)
+		b_relevant = true_mzs[(true_batch_idxs==b)].shape[0]
+		b_recall = th.sum(b_true_match.float())/b_relevant
+		recall[b] = b_recall
+	return recall
+
+
+def calculate_weighted_recall(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,
 		pred_mzs,
 		pred_ints,
 		pred_batch_idxs,
-		mz_bin_res=0.01,
-		mz_max=1500.,
-		sum_ints=True
-	):
+		tolerance=1e-5,
+		relative=True
+	) -> th.tensor:
+	"""calculate  m/z recall weighted by ground truth ints between two spectra
 
+	Args:
+		true_mzs (th.tensor): ground truth m/z s
+		true_ints (th.tensor): ground truth intensities
+		true_batch_idxs (th.tensor): batch idxs for ground truth
+		pred_mzs (th.tensor): predicted m/z s
+		pred_ints (th.tensor): predicted intensities
+		pred_batch_idxs (th.tensor): batch idxs for prediction
+		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
+		relative (bool, optional): flag to use relative measure. Defaults to True.
+	Returns:
+		th.tensor: weighted recalls
+	"""
+
+	batch_size = th.max(true_batch_idxs)+1
+	weighted_recall = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for b in range(batch_size):
+		b_true_match = match_mz_for_batch_idx(true_mzs,
+					true_batch_idxs,
+					pred_mzs, 
+					pred_batch_idxs, 
+					tolerance, 
+					relative, 
+					b)
+		b_true_match = th.any(b_true_match,dim=1)
+		b_relevant_int = true_ints[(true_batch_idxs==b)]		
+		b_weighted_recall = th.sum(b_relevant_int[b_true_match])/th.sum(b_relevant_int)
+		weighted_recall[b] = b_weighted_recall
+	return weighted_recall
+
+def calculate_precision(
+	true_mzs:th.tensor, 
+	true_ints:th.tensor,
+	true_batch_idxs:th.tensor,
+	pred_mzs:th.tensor,
+	pred_ints:th.tensor,
+	pred_batch_idxs:th.tensor,
+	tolerance:float=1e-5,
+	relative:bool=True,
+)	-> th.tensor:
+	"""calculate m/z precision between two spectra
+
+	Args:
+		true_mzs (th.tensor): ground truth m/z s
+		true_batch_idxs (th.tensor): batch idxs for ground truth
+		pred_mzs (th.tensor): predicted m/z s
+		pred_batch_idxs (th.tensor): batch idxs for prediction
+		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
+		relative (bool, optional): flag to use relative measure. Defaults to True.
+	Returns:
+		th.tensor: recalls
+	"""
+	# calculate
+	batch_size = th.max(true_batch_idxs)+1
+	precision = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+
+
+	for b in range(batch_size):
+		b_true_match = match_mz_for_batch_idx(true_mzs,
+						  true_batch_idxs,
+						  pred_mzs, 
+						  pred_batch_idxs, 
+						  tolerance, 
+						  relative, 
+						  b)
+		b_predicted_match = th.any(b_true_match,dim=0)
+		b_retrieved  = pred_mzs[(true_batch_idxs==b)].shape[0]
+		b_precision = th.sum(b_predicted_match.float())/b_retrieved
+		precision[b] = b_precision
+
+	return precision
+
+def calculate_weighted_precision(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		tolerance=1e-5,
+		relative=True
+	):
+	"""calculate  m/z precision weighted by ground truth ints between two spectra
+
+	Args:
+		true_mzs (th.tensor): ground truth m/z s
+		true_ints (th.tensor): ground truth intensities
+		true_batch_idxs (th.tensor): batch idxs for ground truth
+		pred_mzs (th.tensor): predicted m/z s
+		pred_ints (th.tensor): predicted intensities
+		pred_batch_idxs (th.tensor): batch idxs for prediction
+		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
+		relative (bool, optional): flag to use relative measure. Defaults to True.
+	Returns:
+		th.tensor: weighted precisions
+	"""
+	batch_size = th.max(true_batch_idxs)+1
+	weighted_precision = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for b in range(batch_size):
+		b_true_match = match_mz_for_batch_idx(true_mzs,
+					true_batch_idxs,
+					pred_mzs, 
+					pred_batch_idxs, 
+					tolerance, 
+					relative, 
+					b)
+		
+		b_true_match = th.any(b_true_match,dim=0)
+		b_retrieved_int = pred_ints[(true_batch_idxs==b)]
+		b_weighted_precision = th.sum(b_retrieved_int[b_true_match])/th.sum(b_retrieved_int)
+		weighted_precision[b] = b_weighted_precision
+	return weighted_precision
+
+# cosine similarity code ... all of them
+
+def calculate_cosine_similarity(
+		true_mzs:th.tensor,
+		true_ints:th.tensor,
+		true_batch_idxs:th.tensor,
+		pred_mzs:th.tensor,
+		pred_ints:th.tensor,
+		pred_batch_idxs:th.tensor,
+		mz_bin_res:float=0.01,
+		mz_max:float=1500.,
+		sum_ints:bool=True
+	):
+	"""calculate cosine similarity using binned spectra
+
+	Args:
+		true_mzs (th.tensor): ground truth m/z s
+		true_ints (th.tensor): ground truth intensities
+		true_batch_idxs (th.tensor): batch idxs for ground truth
+		pred_mzs (th.tensor): predicted m/z s
+		pred_ints (th.tensor): predicted intensities
+		pred_batch_idxs (th.tensor): batch idxs for prediction
+		mz_bin_res (float, optional): bin size measured in Da. Defaults to 0.01.
+		mz_max (float, optional): max mz. Defaults to 1500..
+		sum_ints (bool, optional): flag to get sum intensities in the same bin else use max. Defaults to True.
+
+	Returns:
+		_type_: _description_
+	"""
 	true_spec = batched_bin_func(
 		true_mzs,
 		true_ints,
@@ -324,66 +540,6 @@ def calculate_cosine_similarity(
 	)
 	cos_sims = binned_cosine_similarity(true_spec,pred_spec)
 	return cos_sims
-
-
-def calculate_recall(
-		true_mzs,
-		true_batch_idxs,
-		pred_mzs,
-		pred_batch_idxs,
-		tolerance=1e-5,
-		relative=True
-	):
-
-	batch_size = th.max(true_batch_idxs)+1
-	recall = th.zeros([batch_size],device=true_mzs.device,dtype=th.float)
-	for b in range(batch_size):
-		b_true_mask = (true_batch_idxs==b)
-		b_pred_mask = (pred_batch_idxs==b)
-		b_true_mzs = true_mzs[b_true_mask]
-		b_pred_mzs = pred_mzs[b_pred_mask]
-		b_true_match = calculate_match_mzs(
-			b_true_mzs,
-			b_pred_mzs,
-			tolerance=tolerance,
-			relative=relative
-		)
-		b_true_match = th.any(b_true_match,dim=1)
-		b_recall = th.sum(b_true_match.float())/b_true_mzs.shape[0]
-		recall[b] = b_recall
-	return recall
-
-
-def calculate_weighted_recall(
-		true_mzs,
-		true_ints,
-		true_batch_idxs,
-		pred_mzs,
-		pred_ints,
-		pred_batch_idxs,
-		tolerance=1e-5,
-		relative=True
-	):
-
-	batch_size = th.max(true_batch_idxs)+1
-	weighted_recall = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
-	for b in range(batch_size):
-		b_true_mask = (true_batch_idxs==b)
-		b_pred_mask = (pred_batch_idxs==b)
-		b_true_mzs = true_mzs[b_true_mask]
-		b_pred_mzs = pred_mzs[b_pred_mask]
-		b_true_ints = true_ints[b_true_mask]
-		b_true_match = calculate_match_mzs(
-			b_true_mzs,
-			b_pred_mzs,
-			tolerance=tolerance,
-			relative=relative
-		)
-		b_true_match = th.any(b_true_match,dim=1)
-		b_weighted_recall = th.sum(b_true_ints[b_true_match])/th.sum(b_true_ints)
-		weighted_recall[b] = b_weighted_recall
-	return weighted_recall
-
 
 def calculate_optimal_cosine_similarity(
 		true_mzs,
@@ -576,6 +732,17 @@ def sparse_binned_cosine_similarity(true_bin_idxs, true_bin_ints, true_bin_batch
 
 
 def get_ints_transform_func(ints_transform):
+	""" method to get int transferom func
+
+	Args:
+		ints_transform (_type_): _description_
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		_type_: _description_
+	"""
 
 	_func = None
 	if ints_transform == "log10":
@@ -594,7 +761,17 @@ def get_ints_transform_func(ints_transform):
 
 
 def get_ints_untransform_func(ints_transform):
+	"""
 
+	Args:
+		ints_transform (_type_): _description_
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		_type_: _description_
+	"""
 	if ints_transform == "log10":
 		max_ints = float(np.log10(1000. + 1.))
 		def _untransform_fn(x): return 10**x - 1.
@@ -689,13 +866,17 @@ def calculate_sparse_cosine_hungarian(
 		b_true_ints = true_ints[b_true_mask]
 		b_pred_ints = pred_ints[b_pred_mask]
 		b_match_mzs = calculate_match_mzs(
-			b_true_mzs,
-			b_pred_mzs,
-			tolerance=tolerance,
-			relative=relative
-		)
+				b_true_mzs,
+				b_pred_mzs,
+				tolerance=tolerance,
+				relative=relative
+			)
 		b_true_match_mzs = th.any(b_match_mzs,dim=1)
 		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+
+		b_true_match_mzs = th.any(b_match_mzs,dim=1)
+		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+
 		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
 			(b_true_ints[b_true_match_mzs].unsqueeze(1) * b_pred_ints[b_pred_match_mzs].unsqueeze(0))
 		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
@@ -706,8 +887,19 @@ def calculate_sparse_cosine_hungarian(
 		cos_hun[b] = b_cos_hun
 	return cos_hun
 
-def round_aggregate_peaks(mzs,ints,batch_idxs,decimals=4,sum_ints=True):
+def round_aggregate_peaks(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,decimals:int=4,sum_ints:bool=True):
+	""" methds to round and aggreate peaks to give decimals points
 
+	Args:
+		mzs (th.tensor): list of mzs
+		ints (th.tensor): list of intensities
+		batch_idxs (th.tensor): batch_idxs
+		decimals (int, optional): decimals. Defaults to 4.
+		sum_ints (bool, optional): flag sum intensities if True. Defaults to True.
+
+	Returns:
+		_type_: _description_
+	"""
 	batch_size = th.max(batch_idxs)+1
 	round_mzs, round_ints, round_batch_idxs = [], [], []
 	for b in range(batch_size):
