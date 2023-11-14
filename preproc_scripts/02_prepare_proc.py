@@ -116,16 +116,14 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--df_dp", type=str, default="data/df")
-	parser.add_argument("--proc_dp", type=str, default="data/proc/debug")
+	parser.add_argument("--proc_dp", type=str, default="data/proc/nist")
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--ow_spec_mol", type=booltype, default=False)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist20_hr","mona23"])
 	flags = parser.parse_args()
 
-	data_dp = flags.proc_dp
-
-	spec_df_fp = os.path.join(data_dp,"spec_df.pkl")
-	mol_df_fp = os.path.join(data_dp,"mol_df.pkl")
+	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
+	mol_df_fp = os.path.join(flags.proc_dp,"mol_df.pkl")
 
 	if not flags.ow_spec_mol and os.path.isfile(spec_df_fp) and os.path.isfile(mol_df_fp):
 

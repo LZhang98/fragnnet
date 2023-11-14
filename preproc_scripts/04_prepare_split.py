@@ -91,19 +91,19 @@ def make_splits(args):
         test_df = split_df[split_df[args.id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
 
     # create split directory
-    os.makedirs(os.path.join(args.split_dp,args.split_name),exist_ok=True)
+    os.makedirs(args.split_dp,exist_ok=True)
 
     # save ids
-    train_fp = os.path.join(args.split_dp,args.split_name,"train_ids.csv")
-    val_fp = os.path.join(args.split_dp,args.split_name,"val_ids.csv")
-    test_fp = os.path.join(args.split_dp,args.split_name,"test_ids.csv")
+    train_fp = os.path.join(args.split_dp,"train_ids.csv")
+    val_fp = os.path.join(args.split_dp,"val_ids.csv")
+    test_fp = os.path.join(args.split_dp,"test_ids.csv")
     train_df.to_csv(train_fp,index=False)
     val_df.to_csv(val_fp,index=False)
     test_df.to_csv(test_fp,index=False)
 
     # save split metadata
     meta_d = vars(args)
-    meta_fp = os.path.join(args.split_dp,args.split_name,"meta.json")
+    meta_fp = os.path.join(args.split_dp,"meta.json")
     with open(meta_fp,"w") as f:
         json.dump(meta_d,f,indent=4)
 
@@ -131,9 +131,8 @@ if __name__ == "__main__":
     parser.add_argument("--test_frac",type=float,default=0.2)
     parser.add_argument("--val_frac",type=float,default=0.2)
     parser.add_argument("--proc_dp",type=str,default="data/proc/nist")
-    parser.add_argument("--frag_dp",type=str,default="data/frag/d3_h4_isoTrue")
-    parser.add_argument("--split_dp",type=str,default="data/split")
-    parser.add_argument("--split_name",type=str,default="debug")
+    parser.add_argument("--frag_dp",type=str,default="data/frag/d3_h4_isoTrue_v2")
+    parser.add_argument("--split_dp",type=str,default="data/split/d3_h4_isoTrue_v2")
 
     args = parser.parse_args()
 
