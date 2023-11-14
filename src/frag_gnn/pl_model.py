@@ -78,6 +78,7 @@ class SpectrumPL(pl.LightningModule):
 		# setup metrics
 		self.metric_min_max = {"loss": "min"}
 		self.metric_fns = {}
+		# measure cos sim between predicted and ground truth
 		if "cos_sim" in self.hparams.auxiliary_scores:
 			def get_cos_sim(mz_bin_res):
 				if self.hparams.sparse_cosine_similarity:
@@ -158,6 +159,8 @@ class SpectrumPL(pl.LightningModule):
 				)
 			self.metric_fns["wrecall"] = _wrecall
 			self.metric_min_max["wrecall"] = "max"
+		# measure max possible cos sim between ground truth spectra and dag
+		# this gives us an upper bound for cos sim
 		if "opt_cos_sim" in self.hparams.auxiliary_scores:
 			def get_opt_cos_sim(mz_bin_res):
 				if self.hparams.sparse_cosine_similarity:
@@ -210,6 +213,7 @@ class SpectrumPL(pl.LightningModule):
 				return true_spec_e
 			self.metric_fns["true_spec_e"] = _true_spec_e
 			self.metric_min_max["true_spec_e"] = None
+		# measure normalized entropy
 		if "true_spec_ne" in self.hparams.auxiliary_scores:
 			def _true_spec_ne(
 				true_mzs,
@@ -255,6 +259,12 @@ class SpectrumPL(pl.LightningModule):
 			self.metric_fns["cos_hun"] = _cos_hun
 			self.metric_min_max["cos_hun"] = "max"
 		self.metric_names.update(list(self.metric_min_max.keys()))
+		# measure precision and recall
+		if "pred_spec_recall" in self.hparams.auxiliary_scores:
+			pass
+		if "pred_spec_precision" in self.hparams.auxiliary_scores:
+			pass
+		
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 

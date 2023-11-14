@@ -25,5 +25,6 @@ pip install cysignals
 #pip install jupyter-dash 
 pip install CairoSVG
 pip install lightning
+pip install dgl==1.0.4 -f https://data.dgl.ai/wheels/repo.html
 
 pip install -I -e .

@@ -51,19 +51,30 @@ def load_config(template_fp, custom_fp):
 	return config_d
 
 
-def load_wandb_config(wandb_config_dp):
+def load_wandb_config(wandb_config_dp) -> dict:
+	"""Load wandb config file if exists, else return empty dict
 
+	Args:
+		wandb_config_dp (_type_): _description_
+
+	Returns:
+		dict: wandb config
+	"""
 	wandb_config_dp = os.path.join(wandb_config_dp,"config.yaml")
-	with open(wandb_config_dp,"r") as wandb_config_file:	
-		_config_d = yaml.load(
-			wandb_config_file,
-			Loader=yaml.FullLoader
-		)
-	del _config_d["wandb_version"]
-	del _config_d["_wandb"]
-	config_d = {}
-	for k in _config_d.keys():
-		config_d[k] = _config_d[k]["value"]
+
+	if os.path.isfile(wandb_config_dp):
+		with open(wandb_config_dp,"r") as wandb_config_file:	
+			_config_d = yaml.load(
+				wandb_config_file,
+				Loader=yaml.FullLoader
+			)
+		del _config_d["wandb_version"]
+		del _config_d["_wandb"]
+		config_d = {}
+		for k in _config_d.keys():
+			config_d[k] = _config_d[k]["value"]
+	else:
+		config_d = {}
 	return config_d
 
 
@@ -91,6 +102,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	loggers = []
 	console_logger = ConsoleLogger()
 	loggers.append(console_logger)
+
 	if wandb_mode != "disabled":
 		wandb_d = dict(
 			project=config_d["wandb_project"],
@@ -100,14 +112,20 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			tags=config_d["wandb_tags"],
 			resume="allow",
 		)
+
 		if job_id:
 			job_id_fp = os.path.join("job_id",f"{job_id}.id")
 			if os.path.isfile(job_id_fp):
 				is_resume = True
 				with open(job_id_fp,"r") as job_id_file:
-					text = job_id_file.read()
+					text = job_id_file.read().strip()
 				run_id, old_wandb_dp = text.split(";")
 				wandb_config = load_wandb_config(old_wandb_dp)
+				
+				# for offline mode, if there is no configure file, just skip it
+				# wandb config only exists after wandb sync
+				if len(wandb_config) == 0:
+					wandb_config = config_d
 			else:
 				is_resume = False
 				run_id = old_wandb_dp = None
@@ -282,6 +300,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	}
 
 	if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		# taining 
 		train_batchsampler = SpecMolFragDynamicBatchSampler(train_ds, 
 								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
@@ -290,7 +309,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 								return_batch_at = config_d['train_batch_size'] * config_d['accumulate_grad_batches'])
 		train_dl_param_d['batch_sampler'] = train_batchsampler
 
-
+		# validation
 		val_batchsampler = SpecMolFragDynamicBatchSampler(val_ds, 
 						max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 						limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
@@ -349,6 +368,11 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		trainer_param_d['accumulate_grad_batches'] = config_d["accumulate_grad_batches"]
 		trainer_param_d['gradient_clip_val'] = config_d["gradient_clip_val"]
 		trainer_param_d['gradient_clip_algorithm'] = config_d["gradient_clip_algorithm"]
+	elif config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		# with out this progress will not track dataset length change
+		# this will call train_dataloader and val_dataloader before every epoch
+		# not sure why this fixed our problem but it works 
+		trainer_param_d['reload_dataloaders_every_n_epochs'] = 1
 
 	trainer = pl.Trainer(**trainer_param_d)
 

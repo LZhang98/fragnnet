@@ -1,0 +1,40 @@
+entity: frag-gnn
+project: frag-gnn
+program: ./scripts/run_wandb_sweep.py
+method: random
+name: d4_sweep
+description: Optimize FRAG-GNN hyperparameters - debug run
+metric:
+  goal: maximize
+  name: val_cos_sim_best
+parameters:
+  # general optimization
+  lr:
+    min: 0.0001
+    max: 0.001
+  weight_decay:
+    values: [0.,0.001,0.01,0.1]
+  # model architecture
+  mol_num_layers:
+    values: [2,3,4,5,6,8]
+  frag_num_layers:
+    values: [2,3,4,5,6,8]
+  mol_dropout:
+    values: [0.00,0.05,0.10,0.15,0.20]
+  frag_dropout:
+    values: [0.00,0.05,0.10,0.15,0.20]
+  mol_normalization:
+    values: ["batch","layer"]
+  frag_normalization:
+    values: ["batch","layer"]
+  mol_pool_type:
+    values: ["none","mean"]
+  frag_pool_type:
+    values: ["none","mean"]
+  # objectives
+  formula_entropy_weight:
+    values: [-0.4,-0.2,0.0,0.2,0.4]
+  node_entropy_weight:
+    values: [-0.4,-0.2,0.0,0.2,0.4]
+  node_formula_entropy_weight:
+    values: [-0.4,-0.2,0.0,0.2,0.4]

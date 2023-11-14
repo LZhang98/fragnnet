@@ -11,10 +11,10 @@ def mog_log_prob(samples,means,variances,log_weights):
 	""" Mixture of Gaussian
 		We are modeling each peaks are mixture of guassian for given set of fragments
 	Args:
-		samples (_type_): _description_
-		means (_type_): _description_
-		variances (_type_): _description_
-		log_weights (_type_): _description_
+		samples (_type_): b_true_mz,
+		means (_type_): b_pred_mzs
+		variances (_type_): b_variances
+		log_weights (_type_): b_pred_logprobs
 
 	Returns:
 		_type_: _description_

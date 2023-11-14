@@ -1,7 +1,7 @@
 wandb_name: d3_sweep_template
 wandb_tags:
   - sweep
-split_dp: data/split/d3_h4_isoTrue_hyperopt
+split_dp: data/split/d4_h4_isoTrue_hyperopt
 frag_dp: data/frag/d3_h4_isoTrue/dags
 num_depth: 4
 num_hs: 4
