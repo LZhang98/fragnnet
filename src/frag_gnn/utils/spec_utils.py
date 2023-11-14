@@ -9,7 +9,7 @@ import scipy.optimize
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
 from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS
-
+from typing import List
 
 # TODO: actually fill these out
 PREC_TYPES = [
