@@ -5,6 +5,7 @@ wandb_tags:
 - d3
 - wr75
 - scaffold
+- new_proc
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
 split_dp: data/split/nist20_d3_wr75_scaffold

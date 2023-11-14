@@ -72,6 +72,8 @@ def main(args):
 	if args.blacklist is not None:
 		for bl_node in args.blacklist:
 			script_lines.append(f"#SBATCH --exclude={bl_node}")
+	if args.requeue:
+		script_lines.append("#SBATCH --requeue")
 	script_lines.extend(
 		[
 			"",
@@ -164,5 +166,6 @@ if __name__ == "__main__":
 	parser.add_argument("--blacklist", type=str, nargs="+", required=False)
 	parser.add_argument("--modules", type=str, nargs="+", default=["cuda-11.8"])
 	parser.add_argument("--home_dir", type=str, default="/fs01/home/adamo")
+	parser.add_argument("--requeue", type=booltype, default=False)
 	args = parser.parse_args()
 	main(args)

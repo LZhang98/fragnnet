@@ -401,6 +401,18 @@ def magma_augmentation(
 	min_ppms = ppm_diffs.min(-1)
 	is_min = min_ppms[:, None] == ppm_diffs
 	peak_mask = min_ppms < ppm_diff
+	if peak_mask.sum() == 0:
+		# just choose the one closest to the precursor (to prevent empty tree)
+		adjusted_pm = spectra_parentmass - common.ion2mass[spectra_adduct]
+		peak_idx = np.argmin(np.abs(adjusted_m - adjusted_pm) / adjusted_pm * 1e6)
+		import pdb; pdb.set_trace()
+		peak_mask = np.arange(peak_mask.shape[0]) == peak_idx
+		mass_idx = np.argmin(np.abs(masses - adjusted_pm) / masses * 1e6)
+		is_min = np.zeros_like(is_min)
+		is_min[peak_idx][mass_idx] = True
+		min_ppms = np.zeros_like(min_ppms)
+		min_ppms[peak_idx] = np.abs(adjusted_m[peak_idx] - adjusted_pm) / adjusted_m[peak_idx] * 1e6
+	assert peak_mask.sum() >= 1, peak_mask.sum()
 
 	# Step 4: Make exports
 	# Now collect all inds and results
@@ -652,7 +664,7 @@ def run_magma_augmentation(
 	# filter and merge
 	spec_df, mol_df = filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=num_entries)
 	m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
-
+	
 	# get smiles, peaks, and metadata
 	both_df = m_spec_df[["group_id","mol_id","peaks","prec_type","prec_mz"]].merge(mol_df[["mol_id","smiles","formula"]],on="mol_id",how="inner")
 	del spec_df, mol_df, m_spec_df

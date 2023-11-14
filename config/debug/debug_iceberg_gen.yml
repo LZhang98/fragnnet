@@ -2,8 +2,10 @@ wandb_name: debug_iceberg_gen
 wandb_tags:
 - debug
 
-split_dp: data/split/d3_h4_isoTrue_v2
-magma_dp: data/magma
+spec_fp: data/proc/nist20mona23/spec_df.pkl
+mol_fp: data/proc/nist20mona23/mol_df.pkl
+split_dp: data/split/nist20_d3_wr00_inchikey
+magma_dp: data/magma/nist20mona23_gen
 # spec_params:
 #   subsample_size: 128
 
