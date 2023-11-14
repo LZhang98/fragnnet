@@ -6,17 +6,25 @@ import numpy as np
 import joblib
 from tqdm import tqdm
 from pprint import pformat, pprint
-from typing import Dict
+from typing import Dict, Union, List, TYPE_CHECKING
 
 from frag_gnn.utils.misc_utils import np_temp_seed, none_or_nan
 from frag_gnn.utils.formula_utils import MASS, ELECTRON_MASS
+
+# don't do expesive import in runtime
+if TYPE_CHECKING:
+    import rdkit
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
 JOBLIB_TIMEOUT = 1000 # default is 300 seconds for "loky"
 
-def rdkit_import(*module_strs):
+def rdkit_import(*module_strs) -> tuple:
+	""" until function for import rdkit modules
 
+	Returns:
+		tuple: tuple of loaded modules
+	"""
 	RDLogger = importlib.import_module("rdkit.RDLogger")
 	RDLogger.DisableLog('rdApp.*')
 	modules = []
@@ -24,7 +32,15 @@ def rdkit_import(*module_strs):
 		modules.append(importlib.import_module(module_str))
 	return tuple(modules)
 
-def normalize_ints(ints):
+def normalize_ints(ints:List[float]) -> List[float]:
+	"""normalize intensities to 0-1.0
+
+	Args:
+		ints (List[float]): list of intensities
+
+	Returns:
+		List[float]: normalized intensities
+	"""
 	total_ints = sum(ints)
 	ints = [ints[i] / total_ints for i in range(len(ints))]
 	return ints
@@ -45,29 +61,34 @@ def randomize_smiles(smiles, rseed, isomeric=False, kekule=False):
 	assert not (smiles is None)
 	return smiles
 
-def split_smiles(smiles_str):
-	
+def split_smiles(smiles_str:str) -> List:
+	"""Tokenize a SMILES molecule use regex
+
+	Args:
+		smiles_str (str): _description_
+
+	Returns:
+		List: tokens
+	"""
 	token_list = []
-	ptr = 0
-
-	while ptr < len(smiles_str):
-		if smiles_str[ptr:ptr + 2] in TWO_LETTER_TOKEN_NAMES:
-			smiles_char = smiles_str[ptr:ptr + 2]
-			if smiles_char in LC_TWO_LETTER_MAP:
-				smiles_char = LC_TWO_LETTER_MAP[smiles_char]
-			token_list.append(smiles_char)
-			ptr += 2
-		else:
-			smiles_char = smiles_str[ptr]
-			token_list.append(smiles_char)
-			ptr += 1
-
+	pattern =  "(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+	regex = re.compile(pattern)
+	token_list = [token for token in regex.findall(smiles_str)]
+	assert smiles_str == ''.join(token_list)
 	return token_list
 
 def list_replace(l,d):
 	return [d[data] for data in l]
 
-def mol_from_inchi(inchi):
+def mol_from_inchi(inchi:str) -> Union["rdkit.Chem.rdchem.Mol",np.nan]:
+	"""return a rdkit mol from inchi str
+
+	Args:
+		inchi (str): inchi string, np.nan if fails
+
+	Returns:
+		rdkit.Chem.rdchem.Mol: rdkit mol object
+	"""
 	modules = rdkit_import("rdkit.Chem")
 	Chem = modules[0]
 	try:
@@ -78,7 +99,15 @@ def mol_from_inchi(inchi):
 		mol = np.nan
 	return mol
 
-def rdkit_standardize(mol):
+def rdkit_standardize(mol:"rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol":
+	"""standardize given mol
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+
+	Returns:
+		rdkit.Chem.rdchem.Mol: rdkit mol object after standardize
+	"""
 	# adapted from https://bitsilla.com/blog/2021/06/standardizing-a-molecule-using-rdkit/
 	modules = rdkit_import("rdkit.Chem","rdkit.Chem.MolStandardize","rdkit.Chem.MolStandardize.rdMolStandardize")
 	rdMolStandardize = modules[-1]
@@ -97,7 +126,16 @@ def rdkit_standardize(mol):
 	mol = te.Canonicalize(mol)
 	return mol
 
-def mol_from_smiles(smiles,standardize=True):
+def mol_from_smiles(smiles,standardize:bool=True) -> Union["rdkit.Chem.rdchem.Mol",np.nan]:
+	"""return a rdkit mol from smiles str
+
+	Args:
+		smiles (_type_): smiles str
+		standardize (bool, optional): flag to apply standardize. Defaults to True.
+
+	Returns:
+		rdkit.Chem.rdchem.Mol: mol object, np.nan if fails
+	"""
 	modules = rdkit_import("rdkit.Chem")
 	Chem = modules[0]
 	try:
@@ -110,7 +148,18 @@ def mol_from_smiles(smiles,standardize=True):
 		mol = np.nan
 	return mol
 
-def mol_to_smiles(mol,canonical=True,isomericSmiles=False,kekuleSmiles=False):
+def mol_to_smiles(mol:"rdkit.Chem.rdchem.Mol",canonical:bool=True,isomericSmiles:bool=False,kekuleSmiles:bool=False) -> Union[str,np.nan]:
+	""" get smiles string from give mol object
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+		canonical (bool, optional):flag to get canonical smiles. Defaults to True.
+		isomericSmiles (bool, optional): flag to get isomeric smiles. Defaults to False.
+		kekuleSmiles (bool, optional): flag to get kekule version of smiles. Defaults to False.
+
+	Returns:
+		str: smile string, np.nan if fails
+	"""
 	modules = rdkit_import("rdkit.Chem")
 	Chem = modules[0]
 	try:
@@ -119,7 +168,15 @@ def mol_to_smiles(mol,canonical=True,isomericSmiles=False,kekuleSmiles=False):
 		smiles = np.nan
 	return smiles
 
-def mol_to_formula(mol):
+def mol_to_formula(mol:"rdkit.Chem.rdchem.Mol") -> Union[str,np.nan]:
+	"""get formula string from give mol object
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+
+	Returns:
+		str: formula, np.nan if fails
+	"""
 	modules = rdkit_import("rdkit.Chem.AllChem")
 	AllChem = modules[0]
 	try:
@@ -128,7 +185,15 @@ def mol_to_formula(mol):
 		formula = np.nan
 	return formula
 
-def mol_to_inchikey(mol):
+def mol_to_inchikey(mol:"rdkit.Chem.rdchem.Mol") -> Union[str,np.nan]:
+	"""get inchikey string from give mol object
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+
+	Returns:
+		str: inchikey, np.nan if fails
+	"""
 	modules = rdkit_import("rdkit.Chem.inchi")
 	inchi = modules[0]
 	try:
@@ -137,7 +202,15 @@ def mol_to_inchikey(mol):
 		inchikey = np.nan
 	return inchikey
 
-def mol_to_inchikey_s(mol):
+def mol_to_inchi(mol:"rdkit.Chem.rdchem.Mol")  -> Union[str,np.nan]:
+	"""get inchi string from give mol object
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+
+	Returns:
+		str: inchi, np.nan if fails
+	"""
 	modules = rdkit_import("rdkit.Chem.inchi")
 	inchi = modules[0]
 	try:
@@ -147,7 +220,16 @@ def mol_to_inchikey_s(mol):
 		inchikey_s = np.nan
 	return inchikey_s
 
-def mol_to_inchi(mol):
+def mol_to_mol_weight(mol,exact=True)  -> Union[float,np.nan]:
+	"""get mol weight from mol object
+
+	Args:
+		mol (_type_): mol object
+		exact (bool, optional): flag to get extact mass. Defaults to True.
+
+	Returns:
+		Union[float,np.nan]: mw
+	"""
 	modules = rdkit_import("rdkit.Chem.rdinchi")
 	rdinchi = modules[0]
 	try:
@@ -168,7 +250,12 @@ def mol_to_mol_weight(mol,exact=True):
 		mol_weight = np.nan
 	return mol_weight
 
-def mol_to_charge(mol):
+def mol_to_charge(mol:"rdkit.Chem.rdchem.Mol") -> Union[int,np.nan]:
+	""" get number of charges from mol object
+
+	Returns:
+		Union[int,np.nan]: total number of charges, np.nan if fails
+	"""
 	modules = rdkit_import("rdkit.Chem.rdmolops")
 	rdmolops = modules[0]
 	try:
@@ -177,21 +264,47 @@ def mol_to_charge(mol):
 		charge = np.nan
 	return charge
 
-def mol_to_num_atoms(mol,heavy=True):
+def mol_to_num_atoms(mol:"rdkit.Chem.rdchem.Mol", heavy:bool=True) -> Union[int,np.nan]:
+	""" get total number of atoms in get mol object
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+		heavy (bool, optional): count heavy atom only. Defaults to True.
+
+	Returns:
+		Union[int,np.nan]: total number of atoms, np.nan if fails
+	"""
 	try:
 		num_atoms = mol.GetNumAtoms(onlyHeavy=heavy)
 	except:
 		num_atoms = np.nan
 	return num_atoms
 
-def mol_to_num_bonds(mol,heavy=True):
+def mol_to_num_bonds(mol:"rdkit.Chem.rdchem.Mol",heavy:bool=True) -> Union[int,np.nan]:
+	""" get total number of bondss in get mol object
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+		heavy (bool, optional): count bond between heavy atom only. Defaults to True.
+
+	Returns:
+		Union[int,np.nan]: total number of bonds, np.nan if fails
+	"""
 	try:
 		num_bonds = mol.GetNumBonds(onlyHeavy=heavy)
 	except:
 		num_bonds = np.nan
 	return num_bonds
 
-def mol_to_num_radicals(mol):
+def mol_to_num_radicals(mol:"rdkit.Chem.rdchem.Mol") -> Union[int,np.nan]:
+	"""get total number of radicals in the mol object
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+
+	Returns:
+		Union[int,np.nan]: number of radicals, np.nan if fails
+	"""
 	try:
 		num_radicals = 0
 		for atom in mol.GetAtoms():
@@ -200,11 +313,26 @@ def mol_to_num_radicals(mol):
 		num_radicals = np.nan
 	return num_radicals
 
-def check_neutral_charge(mol):
+def check_neutral_charge(mol:"rdkit.Chem.rdchem.Mol")-> bool:
+	"""check if mol is nertral
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): _description_
+
+	Returns:
+		bool: _description_
+	"""
 	valid = mol_to_charge(mol) == 0
 	return valid
 
-def check_single_mol(mol):
+def check_single_mol(mol:"rdkit.Chem.rdchem.Mol") -> bool:
+	""" check if mol object is a single mol (connected graph)
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+
+	Returns:
+		bool: True if is single mol, else false
+	"""
 	modules = rdkit_import("rdkit.Chem.rdmolops")
 	rdmolops = modules[0]
 	try:
@@ -214,7 +342,15 @@ def check_single_mol(mol):
 	valid = num_frags == 1
 	return valid
 
-def inchi_to_smiles(inchi):
+def inchi_to_smiles(inchi:str) -> str:
+	"""convert between inchi and smiles
+
+	Args:
+		inchi (str): inchi string
+
+	Returns:
+		str: smiles string
+	"""
 	try:
 		mol = mol_from_inchi(inchi)
 		smiles = mol_to_smiles(mol)
@@ -222,7 +358,15 @@ def inchi_to_smiles(inchi):
 		smiles = np.nan
 	return smiles
 
-def smiles_to_selfies(smiles):
+def smiles_to_selfies(smiles:str) -> str:
+	"""convert from smiles to selfies string
+
+	Args:
+		smiles (str): smiles string
+
+	Returns:
+		str: selfies
+	"""
 	sf, Chem = rdkit_import("selfies","rdkit.Chem")
 	try:
 		# canonicalize, strip isomeric information, kekulize
@@ -233,8 +377,15 @@ def smiles_to_selfies(smiles):
 		selfies = np.nan
 	return selfies
 
-def make_morgan_fingerprint(mol, radius=3):
+def make_morgan_fingerprint(mol:"rdkit.Chem.rdchem.Mol", radius:int=3)  -> np.array:
+	"""make morgan fingerpirnt from mol object
 
+	Args:
+		mol (rdkit mol): mol object
+
+	Returns:
+		fp_arr
+	"""
 	modules = rdkit_import("rdkit.Chem.rdMolDescriptors","rdkit.DataStructs")
 	rmd = modules[0]
 	ds = modules[1]
@@ -243,7 +394,15 @@ def make_morgan_fingerprint(mol, radius=3):
 	ds.ConvertToNumpyArray(fp, fp_arr)
 	return fp_arr
 
-def make_rdkit_fingerprint(mol):
+def make_rdkit_fingerprint(mol:"rdkit.Chem.rdchem.Mol") -> np.array:
+	"""make rdkit fingerpirnt from mol object
+
+	Args:
+		mol (rdkit mol): mol object
+
+	Returns:
+		fp_arr:  np.array
+	"""
 
 	chem, ds = rdkit_import("rdkit.Chem","rdkit.DataStructs")
 	fp = chem.RDKFingerprint(mol)
@@ -251,7 +410,15 @@ def make_rdkit_fingerprint(mol):
 	ds.ConvertToNumpyArray(fp,fp_arr)
 	return fp_arr
 
-def make_maccs_fingerprint(mol):
+def make_maccs_fingerprint(mol:"rdkit.Chem.rdchem.Mol") -> np.array:
+	"""make maccs fingerpirnt from mol object
+
+	Args:
+		mol (rdkit mol): mol object
+
+	Returns:
+		fp_arr:  np.array
+	"""
 
 	maccs, ds = rdkit_import("rdkit.Chem.MACCSkeys","rdkit.DataStructs")
 	fp = maccs.GenMACCSKeys(mol)
@@ -259,7 +426,15 @@ def make_maccs_fingerprint(mol):
 	ds.ConvertToNumpyArray(fp,fp_arr)
 	return fp_arr
 
-def split_selfies(selfies_str):
+def split_selfies(selfies_str:str) -> List[str]:
+	"""method to splt selfies strngs to list of tokens
+
+	Args:
+		selfies_str (str): selfies string
+
+	Returns:
+		 List[str]: list of tokens
+	"""
 	selfies = importlib.import_module("selfies")
 	selfies_tokens = list(selfies.split_selfies(selfies_str))
 	return selfies_tokens
