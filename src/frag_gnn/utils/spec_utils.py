@@ -34,23 +34,34 @@ def prec_type_mass_diff(prec_type):
 def transform_nce(nce):
 	return (nce-NCE_MEAN)/NCE_STD	
 
-def transform_nce_to_ace(nce, mw):
-	return mw/500 * nce
+def transform_nce_to_ace(nce:float, mw:float, charge_factor:int = 1) -> float:
+	"""get ace from given nce and mw
+	   Absolute energy (eV) = (settling NCE) x (Isolation center) / (500 m/z) x (charge factor)
+	Args:
+		nce (float): normalized collision energy
+		mw (float): Isolation center mw, most time it is the precursor ion mass
 
-def transform_ace(ace):
-	""" ev most likely between 0 to 100
+	Returns:
+		float: absolute energy
+	"""
+	return nce  * mw  / 500 *  charge_factor 
+
+def transform_ace(ace:float) -> float:
+	""" ev most likely between 0 to 100, return normalized absolute collision energy for ml
 
 	Args:
 		ace (_type_): _description_
 
 	Raises:
 		NotImplementedError: _description_
+	Returns:
+		float: normalized absolute collision energy for ml
 	"""
 	# TODO fix this
 	raise NotImplementedError
 	#return ace/100 	
 
-def filter_func(mzs,ints,ints_thresh,mz_max):
+def filter_func(mzs:List[float],ints:List[float],ints_thresh:float,mz_max:float):
 
 	thresh_mask = ints > ints_thresh
 	max_mask = mzs < mz_max
@@ -59,12 +70,21 @@ def filter_func(mzs,ints,ints_thresh,mz_max):
 	ints = ints[both_mask]
 	return mzs, ints
 
-def bin_func(mzs,ints,mz_max,mz_bin_res,return_index,sum_ints):
+def bin_func(mzs:th.tensor,ints:th.tensor,mz_max:float,mz_bin_res:float,return_index:bool,sum_ints:bool):
 	"""
 	Note: if return_index is True, returns the (possibly non-unique) bin index for each mz
 	Note: intensities may not be normalized due to peak merging
+	Args:
+		mzs (th.tensor): tensor of mzs
+		ints (th.tensor): tensor of intensity
+		mz_max (float): max mz value allowed
+		mz_bin_res (float): bin size
+		return_index (bool): if return_index is True, returns the (possibly non-unique) bin index for each mz
+		sum_ints (bool): flag for sum intensities within the bin, else take max
+	Returns:
+		_type_: _description_
 	"""
-
+	
 	assert th.max(mzs) < mz_max, (th.max(mzs),mz_max)
 	# bin
 	bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype)
