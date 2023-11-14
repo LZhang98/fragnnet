@@ -72,8 +72,6 @@ def main(args):
 	if args.blacklist is not None:
 		for bl_node in args.blacklist:
 			script_lines.append(f"#SBATCH --exclude={bl_node}")
-	if args.requeue:
-		script_lines.append("#SBATCH --requeue")
 	script_lines.extend(
 		[
 			"",
@@ -132,7 +130,19 @@ def main(args):
 			python_line += " --job_id ${SLURM_JOB_ID}"
 		else:
 			python_line += f" --job_id {args.job_id}"
-	script_lines.append(python_line)
+	if args.requeue:
+		python_line = f"timeout -k 2m {args.time*60-5}m " + python_line
+		script_lines.append(python_line)
+		script_lines.extend(
+			[
+				"if [[ $? == 124 ]]; then",
+				'    echo "Timed out, Requeuing"',
+				"    scontrol requeue ${SLURM_JOB_ID}",
+				"fi"
+			]
+		)
+	else:
+		script_lines.append(python_line)
 	script_lines.extend(
 		[
 			"",
