@@ -439,11 +439,14 @@ def split_selfies(selfies_str:str) -> List[str]:
 	selfies_tokens = list(selfies.split_selfies(selfies_str))
 	return selfies_tokens
 
-def seq_apply(iterator,func):
+def seq_apply(iterator,func,need_unpack=False):
 
 	result = []
 	for i in iterator:
-		result.append(func(i))
+		if not need_unpack:
+			result.append(func(i))
+		else:
+			result.append(func(*i))
 	return result
 
 def par_apply(iterator,func,need_unpack=False):

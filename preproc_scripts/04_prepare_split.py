@@ -11,7 +11,7 @@ def make_splits(args):
     mol_df = pd.read_pickle(os.path.join(args.proc_dp,"mol_df.pkl"))
     spec_df = pd.read_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
     dag_stats_df = pd.read_pickle(
-        os.path.join(args.frag_dp,args.frag_name,f"{args.dag_filter_grouping}_stats_df.pkl")
+        os.path.join(args.frag_dp,f"{args.dag_filter_grouping}_stats_df.pkl")
     )
 
     def get_max_mz(peaks):
@@ -25,7 +25,9 @@ def make_splits(args):
     spec_masks.append(spec_df["dset"].isin(dsets))
     spec_masks.append(spec_df["prec_type"].isin(prec_types))
     spec_masks.append(spec_df["peaks"].apply(get_max_mz) <= args.max_peak_mz)
-    spec_mask = np.all(spec_masks,axis=0)
+    spec_masks = np.stack(spec_masks,axis=1)
+    spec_mask = np.all(spec_masks,axis=1)
+    print(np.sum(spec_mask), spec_mask.shape[0], np.mean(spec_mask))
     spec_df = spec_df[spec_mask]
     spec_spec_id = spec_df["spec_id"]
     spec_group_id = spec_df["group_id"]
@@ -41,7 +43,9 @@ def make_splits(args):
     if args.max_num_dag_edges != -1:
         dag_masks.append(dag_stats_df[node_key] <= args.max_num_dag_edges)
     dag_masks.append(dag_stats_df[wrecall_key] >= args.min_dag_wrecall)
-    dag_mask = np.all(dag_masks,axis=0)
+    dag_masks = np.stack(dag_masks,axis=1)
+    dag_mask = np.all(dag_masks,axis=1)
+    print(np.sum(dag_mask), dag_mask.shape[0], np.mean(dag_mask))
     dag_stats_df = dag_stats_df[dag_mask]
     dag_mol_id = dag_stats_df["mol_id"]
     if args.dag_filter_grouping in ["m_spec","m_mol"]:
@@ -89,19 +93,19 @@ def make_splits(args):
         test_df = split_df[split_df[args.id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
 
     # create split directory
-    os.makedirs(os.path.join(args.split_dp,args.split_name),exist_ok=True)
+    os.makedirs(args.split_dp,exist_ok=True)
 
     # save ids
-    train_fp = os.path.join(args.split_dp,args.split_name,"train_ids.csv")
-    val_fp = os.path.join(args.split_dp,args.split_name,"val_ids.csv")
-    test_fp = os.path.join(args.split_dp,args.split_name,"test_ids.csv")
+    train_fp = os.path.join(args.split_dp,"train_ids.csv")
+    val_fp = os.path.join(args.split_dp,"val_ids.csv")
+    test_fp = os.path.join(args.split_dp,"test_ids.csv")
     train_df.to_csv(train_fp,index=False)
     val_df.to_csv(val_fp,index=False)
     test_df.to_csv(test_fp,index=False)
 
     # save split metadata
     meta_d = vars(args)
-    meta_fp = os.path.join(args.split_dp,args.split_name,"meta.json")
+    meta_fp = os.path.join(args.split_dp,"meta.json")
     with open(meta_fp,"w") as f:
         json.dump(meta_d,f,indent=4)
 
@@ -129,11 +133,9 @@ if __name__ == "__main__":
     parser.add_argument("--meta_rseed",type=int,default=420420)
     parser.add_argument("--test_frac",type=float,default=0.2)
     parser.add_argument("--val_frac",type=float,default=0.2)
-    parser.add_argument("--proc_dp",type=str,default="data/proc")
-    parser.add_argument("--frag_dp",type=str,default="data/frag")
-    parser.add_argument("--split_dp",type=str,default="data/split")
-    parser.add_argument("--split_name",type=str,default="debug")
-    parser.add_argument("--frag_name",type=str,default="debug")
+    parser.add_argument("--proc_dp",type=str,default="data/proc/nist")
+    parser.add_argument("--frag_dp",type=str,default="data/frag/d3_h4_isoTrue_v2")
+    parser.add_argument("--split_dp",type=str,default="data/split/d3_h4_isoTrue_v2")
 
     args = parser.parse_args()
 

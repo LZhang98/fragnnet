@@ -225,6 +225,7 @@ def scatter_l1normalize(vals,subset_idxs,dim=-1):
 		dim=dim,
 		dim_size=th.max(subset_idxs)+1
 	)
+	c = th.clamp(c,min=EPS)
 	# apply normalizing constant
 	vals = vals/c[subset_idxs]
 	return vals
@@ -238,7 +239,7 @@ def scatter_l2normalize(vals,subset_idxs,dim=-1):
 		dim=dim,
 		dim_size=th.max(subset_idxs)+1
 	)
-	c = th.sqrt(c)
+	c = th.clamp(th.sqrt(c),min=EPS)
 	# apply normalizing constant
 	vals = vals/c[subset_idxs]
 	return vals

@@ -562,8 +562,8 @@ def formula_arr_to_str(formula_arr, get_h_template = False):
 
 
 def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
-							 allowed_h_transfer, tolerance=0.01, prec_type="[M+H]+", 
-				is_ppm = False):
+							 prec_mz, allowed_h_transfer, tolerance=0.01,\
+							 prec_type="[M+H]+", is_ppm=False):
 	"""_summary_
 
 	Args:
@@ -577,7 +577,7 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 	ppm = 1/1000000
 	true_mzs, true_ints = list(zip(*peaks))
 	theoretical_mzs = formula_peak_mzs
-	theoretica_probs = formula_peak_probs
+	theoretical_probs = formula_peak_probs
 
 	allowed_idx = list(idx_by_h_delta[0])
 	for h in range(1, allowed_h_transfer):
@@ -587,9 +587,9 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 	#print(allowed_idx)
 	indices = th.tensor(allowed_idx)
 	theoretical_mzs = th.index_select(theoretical_mzs,0, indices)
-	theoretica_probs = th.index_select(theoretica_probs,0, indices)
+	theoretical_probs = th.index_select(theoretical_probs,0, indices)
 
-	prec_mask = (theoretica_probs > 0.).type(th.float32)
+	prec_mask = (theoretical_probs > 0.).type(th.float32)
 	# account for adduct mass
 	theoretical_mzs = theoretical_mzs + prec_mask * PREC_TYPE_TO_MASS_DIFF[prec_type]
 	# compute overlap
@@ -599,6 +599,7 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 	overlap_pred_peak_counts = []
 	overlap_pred_formula_counts = []
 
+	# check true_mzs
 	for true_idx, true_mz in enumerate(true_mzs):
 		mz_diffs = th.abs(theoretical_mzs-true_mz)
 		if not is_ppm:
@@ -621,14 +622,27 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 		overlap_pred_idxs = th.zeros((0,2))
 	recall = len(overlap_true_idxs) / len(true_mzs)
 	w_recall = np.sum(overlap_true_ints) / np.sum(true_ints)
-	prec = len(overlap_pred_idxs) / th.sum((theoretica_probs>0.).type(th.int32)).item()
+	prec = len(overlap_pred_idxs) / th.sum((theoretical_probs>0.).type(th.int32)).item()
 	if len(overlap_pred_peak_counts) > 0:
 		ppt_peak = np.mean(overlap_pred_peak_counts)
 		ppt_formula = np.mean(overlap_pred_formula_counts)
 	else:
 		ppt_peak = np.nan
 		ppt_formula = np.nan
-	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula])
+	# check prec_mz stuff
+	prec_recalls = []
+	for comp_mzs in [theoretical_mzs,th.tensor(true_mzs)]:
+		prec_mz_diffs = th.abs(comp_mzs-prec_mz)
+		if not is_ppm:
+			prec_mz_close = prec_mz_diffs < tolerance 
+		else:
+			prec_mz_close = prec_mz_diffs < (prec_mz * tolerance * ppm)
+		if th.any(prec_mz_close):
+			prec_recalls.append(1.)
+		else:
+			prec_recalls.append(0.)
+	prec_recall, prec_spec_recall = prec_recalls
+	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula,prec_recall,prec_spec_recall])
 
 
 def th_long_to_mask(long):

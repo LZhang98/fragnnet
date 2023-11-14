@@ -11,7 +11,8 @@ QOS_TO_TIME = {
 	"long": 48,
 	"high": 8,
 	"affiliate": 8,
-	"deadline": 7*24 # big number
+	"deadline": 7*24, # big number
+	"cpu_qos": 7*24 # big number
 }
 
 QOS_TO_GPU = {
@@ -22,7 +23,8 @@ QOS_TO_GPU = {
 	"long": 1,
 	"high": 4,
 	"affiliate": 2,
-	"deadline": 12
+	"deadline": 12,
+	"cpu_qos": 0
 }
 
 def time_check(time, qos):
@@ -52,10 +54,13 @@ def main(args):
 	time_check(args.time, args.qos)
 	script_lines.append(f"#SBATCH --time=0-{args.time-1}:59")
 	if args.gpu > 0:
+		assert args.qos != "cpu_qos", args.qos
 		gpu_check(args.gpu, args.qos)
 		script_lines.append(f"#SBATCH --gres=gpu:{args.gpu_type}:{args.gpu}")
 	if args.qos == "deadline":
 		script_lines.append("#SBATCH --account=deadline")
+	elif args.qos == "cpu_qos":
+		script_lines.append("#SBATCH --partition=cpu")
 	script_lines.append(f"#SBATCH --qos={args.qos}")
 	script_lines.extend(
 		[
@@ -151,7 +156,7 @@ if __name__ == "__main__":
 	parser.add_argument("--gpu", type=int, default=1)
 	parser.add_argument("--time", type=int, default=-1, help="time in hours (-1 means use default)")
 	parser.add_argument("--gpu_type", type=str, default="t4", choices=["t4","rtx6000","a40"])
-	parser.add_argument("--qos", type=str, default="normal", choices=["normal","m","m2","m3","long","high","deadline","affiliate"])
+	parser.add_argument("--qos", type=str, default="normal", choices=["normal","m","m2","m3","long","high","deadline","affiliate","cpu_qos"])
 	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU3")
 	parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
 	parser.add_argument("--job_name", type=str, required=True)

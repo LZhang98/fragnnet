@@ -45,7 +45,7 @@ def main(args):
 		wandb_run = wandb.init(
 			project="frag-gnn",
 			entity="frag-gnn",
-			name=args.run_name if args.wandb_run_name is None else args.wandb_run_name,
+			name=args.wandb_run_name,
 			mode=args.wandb_mode,
 			config=wandb_config,
 			dir=args.project_dp,
@@ -72,12 +72,11 @@ def main(args):
 	num_bonds = mol_df["num_bonds"]
 	print_and_log("num_bonds",num_bonds,wandb_flag,{})
 
-	os.makedirs(os.path.join(args.frag_dp,args.run_name),exist_ok=True)
-	# dag_fp = os.path.join(args.frag_dp,args.run_name,f"dag_df.pkl")
-	dag_dp = os.path.join(args.frag_dp,args.run_name,f"dags")
+	os.makedirs(args.frag_dp,exist_ok=True)
+	dag_dp = os.path.join(args.frag_dp,f"dags")
 	os.makedirs(dag_dp,exist_ok=True)
-	group_stats_fp = os.path.join(args.frag_dp,args.run_name,f"group_stats_df.pkl")
-	global_stats_fp = os.path.join(args.frag_dp,args.run_name,f"global_stats.json")
+	group_stats_fp = os.path.join(args.frag_dp,f"group_stats_df.pkl")
+	global_stats_fp = os.path.join(args.frag_dp,f"global_stats.json")
 
 	def timed_get_dags(mol, 
 			mol_id, 
@@ -140,8 +139,14 @@ def main(args):
 		return dag_d
 
 
-	def compute_spectra_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,
-			   tolerances:list, max_h_transfer:int):
+	def compute_spectra_stats(
+			peaks,
+			formula_peak_mzs,
+			formula_peak_probs,
+			idx_by_h_delta,
+			prec_mz,
+			tolerances:list, 
+			max_h_transfer:int):
 		"""_summary_
 
 		Args:
@@ -151,7 +156,7 @@ def main(args):
 		Returns:
 			_type_: _description_
 		"""
-		reuslts = []
+		results = []
 		cols = []
 		for tolerance in tolerances:
 			for h_transfer in range(1, max_h_transfer + 1):
@@ -160,19 +165,19 @@ def main(args):
 					f"wrecall_{tolerance}_h{h_transfer}",
 					f"prec_{tolerance}_h{h_transfer}",
 					f"ppt_peak_{tolerance}_h{h_transfer}",
-					f"ppt_formula_{tolerance}_h{h_transfer}"
+					f"ppt_formula_{tolerance}_h{h_transfer}",
+					f"prec_recall_{tolerance}_h{h_transfer}",
+					f"prec_spec_recall_{tolerance}_h{h_transfer}",
 				]
-
 				if 'ppm' in tolerance:
 					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
-						 h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+", is_ppm = True)
+						 prec_mz,h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+",is_ppm=True)
 				else:
-					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,h_transfer,\
-						 tolerance=float(tolerance),prec_type="[M+H]+")
+					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
+						 prec_mz,h_transfer,tolerance=float(tolerance),prec_type="[M+H]+")
 				cols += keys
-				reuslts.append(result)
-
-		result_series  = pd.concat(reuslts, axis = 0)
+				results.append(result)
+		result_series = pd.concat(results, axis=0)
 		result_df = result_series.to_frame().T
 		result_df.columns = cols
 		return result_df
@@ -273,15 +278,15 @@ def main(args):
 			_spec_df = spec_df
 			spec_prefix = "spec/"
 			mol_prefix = "mol/"
-			spec_stats_fp = os.path.join(args.frag_dp,args.run_name,f"spec_stats_df.pkl")
-			mol_stats_fp = os.path.join(args.frag_dp,args.run_name,f"mol_stats_df.pkl")
+			spec_stats_fp = os.path.join(args.frag_dp,f"spec_stats_df.pkl")
+			mol_stats_fp = os.path.join(args.frag_dp,f"mol_stats_df.pkl")
 		else:
 			spec_key = "group_id"
 			_spec_df = m_spec_df
 			spec_prefix = "m_spec/"
 			mol_prefix = "m_mol/"
-			spec_stats_fp = os.path.join(args.frag_dp,args.run_name,f"m_spec_stats_df.pkl")
-			mol_stats_fp = os.path.join(args.frag_dp,args.run_name,f"m_mol_stats_df.pkl")
+			spec_stats_fp = os.path.join(args.frag_dp,f"m_spec_stats_df.pkl")
+			mol_stats_fp = os.path.join(args.frag_dp,f"m_mol_stats_df.pkl")
 
 		# compute spectra stats
 		peak_spec_df = _spec_df[[spec_key,"mol_id","peaks","prec_mz"]].merge(frag_stats_df[id_cols+data_cols],on="mol_id",how="inner")
@@ -296,6 +301,7 @@ def main(args):
 					row["formula_peak_mzs"], 
 					row['formula_peak_probs'], 
 					row['idx_by_h_delta'], 
+					row['prec_mz'],
 					tolerances, 
 					args.max_h_transfer
 				]
@@ -304,7 +310,7 @@ def main(args):
 		# run stats
 		stats_results = data_utils.par_apply(tqdm_iter,compute_spectra_stats,True)
 		# Loky and job lib should kep ordering
-		stats_results_df =  pd.concat(stats_results, axis=0, ignore_index=True)
+		stats_results_df = pd.concat(stats_results, axis=0, ignore_index=True)
 		metric_keys = list(stats_results_df.columns)
 
 		# add peak stats
@@ -346,18 +352,17 @@ if __name__ == "__main__":
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
-	parser.add_argument("--frag_dp",type=str,default="data/frag")
-	parser.add_argument("--proc_dp",type=str,default="data/proc")
+	parser.add_argument("--frag_dp",type=str,default="data/frag/d3_h4_isoTrue_v2")
+	parser.add_argument("--proc_dp",type=str,default="data/proc/nist")
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 	parser.add_argument("--dsets",type=str,nargs="+",default=["nist"])
 	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="online",choices=["online","offline","off"])
-	parser.add_argument("--run_name",type=str,default="debug")
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
 	parser.add_argument("--compress_dags",type=booltype,default=True)
-	parser.add_argument("--wandb_run_name",type=str,default=None)
+	parser.add_argument("--wandb_run_name",type=str,default="d3_h4_isoTrue_v2")
 	parser.add_argument("--save_dag",type=booltype,default=True)
 	args = parser.parse_args()
 

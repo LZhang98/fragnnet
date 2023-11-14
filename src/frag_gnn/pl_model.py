@@ -80,36 +80,39 @@ class SpectrumPL(pl.LightningModule):
 		self.metric_fns = {}
 		# measure cos sim between predicted and ground truth
 		if "cos_sim" in self.hparams.auxiliary_scores:
-			if self.hparams.sparse_cosine_similarity:
-				cosine_similarity_fn = calculate_sparse_cosine_similarity
-			else:
-				cosine_similarity_fn = calculate_cosine_similarity
-			def _cos_sim(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				cos_sim = cosine_similarity_fn(
+			def get_cos_sim(mz_bin_res):
+				if self.hparams.sparse_cosine_similarity:
+					cosine_similarity_fn = calculate_sparse_cosine_similarity
+				else:
+					cosine_similarity_fn = calculate_cosine_similarity
+				def _cos_sim(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
-					mz_bin_res=self.hparams.mz_bin_res,
-					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.sum_ints
-				)
-				return cos_sim
-			self.metric_fns["cos_sim"] = _cos_sim
-			self.metric_min_max["cos_sim"] = "max"
+					**kwargs):
+					# untransform
+					true_ints = self.ints_untransform_func(true_ints)
+					pred_ints = self.ints_untransform_func(pred_ints)
+					# calculate
+					cos_sim = cosine_similarity_fn(
+						true_mzs,
+						true_ints,
+						true_batch_idxs,
+						pred_mzs,
+						pred_ints,
+						pred_batch_idxs,
+						mz_bin_res=mz_bin_res,
+						mz_max=self.hparams.mz_max,
+						sum_ints=self.hparams.sum_ints
+					)
+					return cos_sim
+				return _cos_sim
+			for mz_bin_res in self.hparams.eval_mz_bin_res:
+				self.metric_fns[f"cos_sim_{mz_bin_res}"] = get_cos_sim(mz_bin_res)
+				self.metric_min_max[f"cos_sim_{mz_bin_res}"] = "max"
 		if "recall" in self.hparams.auxiliary_scores:
 			def _recall(
 				true_mzs,
@@ -156,42 +159,42 @@ class SpectrumPL(pl.LightningModule):
 				)
 			self.metric_fns["wrecall"] = _wrecall
 			self.metric_min_max["wrecall"] = "max"
-
-		# measure max possible cos sim  between ground truth spectra and dag
-		# this give us an upper bound for cos sim
+		# measure max possible cos sim between ground truth spectra and dag
+		# this gives us an upper bound for cos sim
 		if "opt_cos_sim" in self.hparams.auxiliary_scores:
-			if self.hparams.sparse_cosine_similarity:
-				optimal_cosine_similarity_fn = calculate_optimal_sparse_cosine_similarity
-			else:
-				optimal_cosine_similarity_fn = calculate_optimal_cosine_similarity
-			def _opt_cos_sim(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				opt_cos_sim = optimal_cosine_similarity_fn(
+			def get_opt_cos_sim(mz_bin_res):
+				if self.hparams.sparse_cosine_similarity:
+					optimal_cosine_similarity_fn = calculate_optimal_sparse_cosine_similarity
+				else:
+					optimal_cosine_similarity_fn = calculate_optimal_cosine_similarity
+				def _opt_cos_sim(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
-					mz_bin_res=self.hparams.mz_bin_res,
-					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.sum_ints
-				)
-				return opt_cos_sim
-			self.metric_fns["opt_cos_sim"] = _opt_cos_sim
-			self.metric_min_max["opt_cos_sim"] = None
-
-		# measure entropy
+					**kwargs):
+					# untransform
+					true_ints = self.ints_untransform_func(true_ints)
+					pred_ints = self.ints_untransform_func(pred_ints)
+					# calculate
+					opt_cos_sim = optimal_cosine_similarity_fn(
+						true_mzs,
+						true_ints,
+						true_batch_idxs,
+						pred_mzs,
+						pred_ints,
+						pred_batch_idxs,
+						mz_bin_res=mz_bin_res,
+						mz_max=self.hparams.mz_max,
+						sum_ints=self.hparams.sum_ints
+					)
+					return opt_cos_sim
+				return _opt_cos_sim
+			for mz_bin_res in self.hparams.eval_mz_bin_res:
+				self.metric_fns[f"opt_cos_sim_{mz_bin_res}"] = get_opt_cos_sim(mz_bin_res)
+				self.metric_min_max[f"opt_cos_sim_{mz_bin_res}"] = None
 		if "true_spec_e" in self.hparams.auxiliary_scores:
 			def _true_spec_e(
 				true_mzs,
@@ -210,8 +213,7 @@ class SpectrumPL(pl.LightningModule):
 				return true_spec_e
 			self.metric_fns["true_spec_e"] = _true_spec_e
 			self.metric_min_max["true_spec_e"] = None
-
-		# measure normialized entropy
+		# measure normalized entropy
 		if "true_spec_ne" in self.hparams.auxiliary_scores:
 			def _true_spec_ne(
 				true_mzs,
@@ -259,8 +261,7 @@ class SpectrumPL(pl.LightningModule):
 			self.metric_fns["cos_hun"] = _cos_hun
 			self.metric_min_max["cos_hun"] = "max"
 		self.metric_names.update(list(self.metric_min_max.keys()))
-
-		# measure normialized entropy
+		# measure precision and recall
 		if "pred_spec_recall" in self.hparams.auxiliary_scores:
 			pass
 		if "pred_spec_precision" in self.hparams.auxiliary_scores:
@@ -1076,7 +1077,7 @@ def test_fraggnn():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3_entropies.yml",
+		"config/debug/debug_d3_splits.yml",
 	]
 	
 	for custom_fp in custom_fps:

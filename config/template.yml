@@ -4,10 +4,10 @@ wandb_project: frag-gnn
 wandb_name: template
 wandb_tags: 
 # data
-spec_fp: data/proc/spec_df.pkl
-mol_fp: data/proc/mol_df.pkl
-split_dp: data/split/debug
-frag_dp: data/frag/debug/dags
+spec_fp: data/proc/nist/spec_df.pkl
+mol_fp: data/proc/nist/mol_df.pkl
+split_dp: data/split/d3_h4_isoTrue_v2
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 magma_dp: data/magma
 spec_params:
   merge: True
@@ -139,6 +139,10 @@ auxiliary_scores:
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
+eval_mz_bin_res:
+- 0.1
+- 0.01
+- 0.005
 sum_ints: True
 ints_transform: none
 train_batch_size: 16
