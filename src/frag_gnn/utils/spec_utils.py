@@ -1,7 +1,7 @@
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Descriptors
-from rdkit.Chem import  AllChem
+from rdkit.Chem import AllChem
 import torch as th
 import torch.nn.functional as F
 import scipy

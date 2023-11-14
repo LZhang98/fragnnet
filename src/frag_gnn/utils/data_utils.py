@@ -6,7 +6,7 @@ import numpy as np
 import joblib
 from tqdm import tqdm
 from pprint import pformat, pprint
-from typing import Dict, Union, List, TYPE_CHECKING
+from typing import Tuple, Union, List, TYPE_CHECKING
 
 from frag_gnn.utils.misc_utils import np_temp_seed, none_or_nan
 from frag_gnn.utils.formula_utils import MASS, ELECTRON_MASS
@@ -19,7 +19,7 @@ JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
 JOBLIB_TIMEOUT = 1000 # default is 300 seconds for "loky"
 
-def rdkit_import(*module_strs) -> tuple:
+def rdkit_import(*module_strs:List[str]) -> Tuple:
 	""" until function for import rdkit modules
 
 	Returns:
