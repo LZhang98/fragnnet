@@ -370,7 +370,7 @@ def magma_augmentation(
 		return False
 
 	spectra_f = common.max_inten_spec(
-		spectra, max_num_inten=max_peaks, inten_thresh=0.001
+		spectra, max_num_inten=max_peaks, inten_thresh=inten_thresh
 	)
 	s_m, s_i = spectra_f[:, 0], spectra_f[:, 1]
 
@@ -405,7 +405,6 @@ def magma_augmentation(
 		# just choose the one closest to the precursor (to prevent empty tree)
 		adjusted_pm = spectra_parentmass - common.ion2mass[spectra_adduct]
 		peak_idx = np.argmin(np.abs(adjusted_m - adjusted_pm) / adjusted_pm * 1e6)
-		import pdb; pdb.set_trace()
 		peak_mask = np.arange(peak_mask.shape[0]) == peak_idx
 		mass_idx = np.argmin(np.abs(masses - adjusted_pm) / masses * 1e6)
 		is_min = np.zeros_like(is_min)
@@ -664,7 +663,7 @@ def run_magma_augmentation(
 	# filter and merge
 	spec_df, mol_df = filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=num_entries)
 	m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
-	
+
 	# get smiles, peaks, and metadata
 	both_df = m_spec_df[["group_id","mol_id","peaks","prec_type","prec_mz"]].merge(mol_df[["mol_id","smiles","formula"]],on="mol_id",how="inner")
 	del spec_df, mol_df, m_spec_df
