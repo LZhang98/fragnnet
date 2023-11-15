@@ -1,7 +1,9 @@
 import os
 import argparse
+from distutils.util import strtobool
 
-from frag_gnn.utils.misc_utils import booltype
+def booltype(x):
+	return bool(strtobool(x))
 
 QOS_TO_TIME = {
 	"normal": 16,
