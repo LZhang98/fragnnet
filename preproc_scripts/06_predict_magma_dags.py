@@ -133,9 +133,9 @@ def get_args():
 	"""get args"""
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--magma_dp", type=str, default="data/magma/inten_100_2")
+	parser.add_argument("--magma_dp", type=str, default="data/magma/inten/nist_2")
 	parser.add_argument("--proc_dp", type=str, default="data/proc/nist")
-	parser.add_argument("--gen_ckpt_fp", type=str, default="iceberg_gen_2.ckpt")
+	parser.add_argument("--gen_ckpt_fp", type=str, default="data/magma/ckpt/nist_2.ckpt")
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist"])
 	parser.add_argument("--parallel", type=booltype, default=False)
