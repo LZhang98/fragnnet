@@ -582,7 +582,7 @@ def calculate_precision(
 						  relative, 
 						  b)
 		b_pred_match_mzs = th.any(b_true_match,dim=0)
-		b_retrieved  = pred_mzs[(true_batch_idxs==b)].shape[0]
+		b_retrieved  = pred_mzs[(pred_batch_idxs==b)].shape[0]
 		b_precision = th.sum(b_pred_match_mzs.float())/b_retrieved
 		precision[b] = b_precision
 
@@ -625,7 +625,7 @@ def calculate_weighted_precision(
 					b)
 		
 		b_pred_match_mzs = th.any(b_true_match,dim=0)
-		b_retrieved_int = pred_ints[(true_batch_idxs==b)]
+		b_retrieved_int = pred_ints[(pred_batch_idxs==b)]
 		b_weighted_precision = th.sum(b_retrieved_int[b_pred_match_mzs])/th.sum(b_retrieved_int)
 		weighted_precision[b] = b_weighted_precision
 	return weighted_precision
@@ -639,6 +639,7 @@ def calculate_dice(
 		relative:bool=True,
 	):
 	""" calculate m/z dice between two m/z lists
+		Note: since we can have mulitple matches, this is usinge total_macthed from both m/z list / total_m/z
 		Note: it is caller's repsonse to filter ultra low peaks
 	Args:
 		true_mzs (th.tensor): ground truth m/z s
@@ -662,9 +663,11 @@ def calculate_dice(
 					b)
 		
 		b_pred_match_mzs = th.any(b_true_match,dim=0)
-		b_retrieved  = pred_mzs[(true_batch_idxs==b)].shape[0]
-		b_relevant = true_mzs[(true_batch_idxs==b)].shape[0]	
-		b_dice = th.sum(b_pred_match_mzs.float())/(b_retrieved + b_relevant) * 2.0
+		b_true_match_mzs = th.any(b_true_match,dim=1)
+		b_total_matched = th.sum(b_pred_match_mzs.float()) + th.sum(b_true_match_mzs.float())
+		b_retrieved  = pred_mzs[(pred_batch_idxs==b)].shape[0]
+		b_relevant = true_mzs[(true_batch_idxs==b)].shape[0]
+		b_dice = b_total_matched /(b_retrieved + b_relevant)
 		dice[b] = b_dice
 	return dice
 
@@ -741,7 +744,7 @@ def calculate_ndcg_hungarian(
 		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
 			(b_true_ints[b_true_match_mzs].unsqueeze(1) * b_pred_ints[b_pred_match_mzs].unsqueeze(0))
 		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
-		
+		print(b_true_idxs, b_pred_idxs)
 		b_ncdg = np.nan
 		ncdg[batch_idx] = b_ncdg
 	return ncdg
