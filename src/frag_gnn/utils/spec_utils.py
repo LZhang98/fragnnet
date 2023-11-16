@@ -9,7 +9,7 @@ import scipy.optimize
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
 from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS
-from typing import List
+from typing import List, Tuple, Union
 
 # TODO: actually fill these out
 PREC_TYPES = [
@@ -23,6 +23,7 @@ MZ_MAX = 1500.0
 MZ_BIN_RES = 0.01
 INTS_THRESH = 0.0
 
+
 def prec_type_idx(prec_type):
 	idx = PREC_TYPE_TO_IDX[prec_type]
 	return idx
@@ -30,6 +31,72 @@ def prec_type_idx(prec_type):
 def prec_type_mass_diff(prec_type):
 	mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
 	return mass_diff
+
+def get_ints_transform_func(ints_transform):
+	""" method to get int transferom func
+
+	Args:
+		ints_transform (_type_): _description_
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		_type_: _description_
+	"""
+
+	_func = None
+	if ints_transform == "log10":
+		_func = lambda ints: th.log10(ints+1.)
+	elif ints_transform == "log10t3":
+		_func = lambda ints: th.log10(ints/3.+1.)
+	elif ints_transform == "loge":
+		_func = lambda ints: th.log(ints+1.)
+	elif ints_transform == "sqrt":
+		_func = lambda ints: th.sqrt(ints)
+	elif ints_transform == "none":
+		_func = lambda ints: ints
+	else:
+		raise ValueError("Invalid ints_transform: {}".format(ints_transform))
+	return _func
+
+
+def get_ints_untransform_func(ints_transform):
+	"""
+
+	Args:
+		ints_transform (_type_): _description_
+
+	Raises:
+		ValueError: _description_
+
+	Returns:
+		_type_: _description_
+	"""
+	if ints_transform == "log10":
+		max_ints = float(np.log10(1000. + 1.))
+		def _untransform_fn(x): return 10**x - 1.
+	elif ints_transform == "log10t3":
+		max_ints = float(np.log10(1000. + 1.) / 3.)
+		def _untransform_fn(x): return 10**(3 * x) - 1.
+	elif ints_transform == "loge":
+		max_ints = float(np.log(1000. + 1.))
+		def _untransform_fn(x): return th.exp(x) - 1.
+	elif ints_transform == "sqrt":
+		max_ints = float(np.sqrt(1000.))
+		def _untransform_fn(x): return x**2
+	elif ints_transform == "none":
+		max_ints = 1000.
+		def _untransform_fn(x): return x
+	else:
+		raise ValueError("invalid transform")
+	def _func(ints):
+		ints = ints / (th.max(ints) + EPS) * max_ints
+		ints = _untransform_fn(ints)
+		ints = th.clamp(ints, min=0.)
+		assert not th.isnan(ints).any()
+		return ints
+	return _func
 
 def transform_nce(nce):
 	return (nce-NCE_MEAN)/NCE_STD	
@@ -61,17 +128,35 @@ def transform_ace(ace:float) -> float:
 	raise NotImplementedError
 	#return ace/100 	
 
-def filter_func(mzs:List[float],ints:List[float],ints_thresh:float,mz_max:float):
+def filter_func(mzs: Union[th.tensor,np.array], 
+				ints:Union[th.tensor,np.array], 
+				ints_thresh:float, mz_max:float) -> Tuple[Union[th.tensor,np.array], Union[th.tensor,np.array]]:
+	"""filter spectrum by intesnity value and max mz
 
+	Args:
+		mzs (Union[th.tensor,np.array]): m/z s
+		ints (Union[th.tensor,np.array]): intesnities 
+		ints_thresh (float): intesnity thresh hold
+		mz_max (float): max mz, if mz_max <= 0, mz_max filter will be ignored
+
+	Returns:
+		Tuple[Union[th.tensor,np.array], Union[th.tensor,np.array]]: mzs, ints
+	"""
 	thresh_mask = ints > ints_thresh
-	max_mask = mzs < mz_max
-	both_mask = thresh_mask & max_mask
+	
+	if mz_max > 0:
+		max_mask = mzs < mz_max
+		both_mask = thresh_mask & max_mask
+	else:
+		both_mask = thresh_mask
+
 	mzs = mzs[both_mask]
 	ints = ints[both_mask]
 	return mzs, ints
 
 def bin_func(mzs:th.tensor,ints:th.tensor,mz_max:float,mz_bin_res:float,return_index:bool,sum_ints:bool):
 	"""
+	return binned spectra
 	Note: if return_index is True, returns the (possibly non-unique) bin index for each mz
 	Note: intensities may not be normalized due to peak merging
 	Args:
@@ -104,7 +189,16 @@ def bin_func(mzs:th.tensor,ints:th.tensor,mz_max:float,mz_bin_res:float,return_i
 			bin_spec[-1] = 1.
 		return bin_spec
 
-def batch_func(mzs_list,ints_list):
+def batch_func(mzs_list:List[List[float]],ints_list:List[List[float]]) -> Tuple[th.tensor,th.tensor,th.tensor]:
+	""" create a batch for given list of peak list, batch size is the size of peak list
+
+	Args:
+		mzs_list (th.tensor): list of m/z list
+		ints_list (th.tensor): list of intensity list
+
+	Returns:
+		Tuple[th.tensor,th.tensor,th.tensor]: mz tensoer, intensity tensor, batch_idxs tensor
+	"""
 
 	assert len(mzs_list) == len(ints_list)
 	batch_size = len(mzs_list)
@@ -116,11 +210,26 @@ def batch_func(mzs_list,ints_list):
 	return mzs, ints, batch_idxs
 
 
-def batched_filter_func(mzs,ints,batch_idxs,ints_thresh,mz_max):
+def batched_filter_func(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,ints_thresh:float,mz_max: float) -> Tuple[th.tensor,th.tensor,th.tensor]:
+	"""bacthed filter func for filter spectra
+
+	Args:
+		mzs (th.tensor): list of m/z list
+		ints (th.tensor): ist of intensity list
+		batch_idxs (th.tensor): batch_idxs
+		ints_thresh (float): intesnity thresh hold
+		mz_max (float): max m/z, if mz_max <= 0, mz_max filter will be ignored
+
+	Returns:
+		Tuple[th.tensor,th.tensor,th.tensor]: mz tensoer, intensity tensor, batch_idxs tensor
+	"""
 
 	thresh_mask = ints > ints_thresh
-	max_mask = mzs < mz_max
-	both_mask = thresh_mask & max_mask
+	if mz_max > 0:
+		max_mask = mzs < mz_max
+		both_mask = thresh_mask & max_mask
+	else:
+		both_mask = thresh_mask
 	mzs = mzs[both_mask]
 	ints = ints[both_mask]
 	batch_idxs = batch_idxs[both_mask]
@@ -243,6 +352,7 @@ def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs
 	topk_frac: fraction of true intensity that is explained by at least one top-k true peaks
 	topk_frac is an upper bound on topk_weighted_recall
 	Note: this function could be parallelized with vmap
+	Note: this function is not used, and need fix
 	"""
 
 	batch_size = th.max(true_batch_idxs)+1
@@ -288,8 +398,9 @@ def calculate_match_mzs(
 		divisor_mz_floor:float=200
 	) -> th.tensor:
 	"""
-	Method to match two spectra based on m/z
-	works with numpy arrays or torch tensors  inspired by the function in ms-pred
+	Method to match two spectra based on m/z, return a N x M matrix, where N is number of mz in pred_mzs, M is number of mz in pred_mzs
+	Each cellm i,j means if pred_mzs[i] matches true_mzs[j]
+	works with numpy arrays or torch tensors inspired by the function in ms-pred
 	NOT BATCHED
 	Args:
 		true_mzs (th.tensor): ground truth m/z s
@@ -299,7 +410,7 @@ def calculate_match_mzs(
 		divisor_mz_floor (float, optional): divisor floor used in relative. Defaults to 200 Da.
 
 	Returns:
-		th.tensor: macthed m/zs tensor, dim 0 for predicted, dim 1 for ground truth
+		th.tensor: return a N x M matrix of True or False, dim 0 for predicted, dim 1 for ground truth
 	"""
 
 	if isinstance(true_mzs,th.Tensor):
@@ -358,9 +469,10 @@ def calculate_recall(
 		pred_mzs:th.tensor,
 		pred_batch_idxs:th.tensor,
 		tolerance:float=1e-5,
-		relative:bool=True
+		relative:bool=True,
 	) -> th.tensor:
-	"""calculate m/z recall between two spectra
+	"""calculate m/z recall between two m/z lists
+	   	Note: it is  caller's repsonse to filter ultra low peaks
 
 	Args:
 		true_mzs (th.tensor): ground truth m/z s
@@ -374,6 +486,7 @@ def calculate_recall(
 	"""
 	batch_size = th.max(true_batch_idxs)+1
 	recall = th.zeros([batch_size],device=true_mzs.device,dtype=th.float)
+
 	for b in range(batch_size):
 		b_true_match = match_mz_for_batch_idx(true_mzs,
 						  true_batch_idxs,
@@ -399,8 +512,8 @@ def calculate_weighted_recall(
 		tolerance=1e-5,
 		relative=True
 	) -> th.tensor:
-	"""calculate  m/z recall weighted by ground truth ints between two spectra
-
+	""" calculate  m/z recall weighted by ground truth ints between two spectra
+		Note: it is  caller's repsonse to filter ultra low peaks
 	Args:
 		true_mzs (th.tensor): ground truth m/z s
 		true_ints (th.tensor): ground truth intensities
@@ -432,16 +545,14 @@ def calculate_weighted_recall(
 
 def calculate_precision(
 	true_mzs:th.tensor, 
-	true_ints:th.tensor,
 	true_batch_idxs:th.tensor,
 	pred_mzs:th.tensor,
-	pred_ints:th.tensor,
 	pred_batch_idxs:th.tensor,
 	tolerance:float=1e-5,
 	relative:bool=True,
 )	-> th.tensor:
-	"""calculate m/z precision between two spectra
-
+	""" calculate m/z precision between two m/z lists
+		Note: it is  caller's repsonse to filter ultra low peaks
 	Args:
 		true_mzs (th.tensor): ground truth m/z s
 		true_batch_idxs (th.tensor): batch idxs for ground truth
@@ -454,8 +565,7 @@ def calculate_precision(
 	"""
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
-	precision = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
-
+	precision = th.zeros([batch_size],device=true_mzs.device,dtype=true_mzs.dtype)
 
 	for b in range(batch_size):
 		b_true_match = match_mz_for_batch_idx(true_mzs,
@@ -482,8 +592,8 @@ def calculate_weighted_precision(
 		tolerance=1e-5,
 		relative=True
 	):
-	"""calculate  m/z precision weighted by ground truth ints between two spectra
-
+	""" calculate  m/z precision weighted by ground truth ints between two spectra
+		Note: it is  caller's repsonse to filter ultra low peaks
 	Args:
 		true_mzs (th.tensor): ground truth m/z s
 		true_batch_idxs (th.tensor): batch idxs for ground truth
@@ -513,22 +623,18 @@ def calculate_weighted_precision(
 
 def calculate_dice(
 		true_mzs:th.tensor, 
-		true_ints:th.tensor,
 		true_batch_idxs:th.tensor,
 		pred_mzs:th.tensor,
-		pred_ints:th.tensor,
 		pred_batch_idxs:th.tensor,
 		tolerance:float=1e-5,
 		relative:bool=True,
 	):
-	"""calculate m/z dice between two spectra
-
+	""" calculate m/z dice between two m/z lists
+		Note: it is caller's repsonse to filter ultra low peaks
 	Args:
 		true_mzs (th.tensor): ground truth m/z s
-		true_ints (th.tensor): ground truth intensities
 		true_batch_idxs (th.tensor): batch idxs for ground truth
 		pred_mzs (th.tensor): predicted m/z s
-		pred_ints (th.tensor): predicted intensities
 		pred_batch_idxs (th.tensor): batch idxs for prediction
 		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): flag to use relative measure. Defaults to True.
@@ -536,7 +642,7 @@ def calculate_dice(
 		th.tensor: dices
 	"""
 	batch_size = th.max(true_batch_idxs)+1
-	dice = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	dice = th.zeros([batch_size],device=true_mzs.device,dtype=true_mzs.dtype)
 	for b in range(batch_size):
 		b_true_match = match_mz_for_batch_idx(true_mzs,
 					true_batch_idxs,
@@ -548,10 +654,88 @@ def calculate_dice(
 		
 		b_pred_match_mzs = th.any(b_true_match,dim=0)
 		b_retrieved  = pred_mzs[(true_batch_idxs==b)].shape[0]
-		b_relevant = true_ints[(true_batch_idxs==b)].shape[0]	
+		b_relevant = true_mzs[(true_batch_idxs==b)].shape[0]	
 		b_dice = th.sum(b_pred_match_mzs.float())/(b_retrieved + b_relevant) * 2.0
 		dice[b] = b_dice
 	return dice
+
+def calculate_ndcg_hungarian(
+	true_mzs:th.tensor, 
+	true_ints:th.tensor,
+	true_batch_idxs:th.tensor,
+	pred_mzs:th.tensor,
+	pred_ints:th.tensor,
+	pred_batch_idxs:th.tensor,
+	tolerance:float=1e-5,
+	relative:bool=True,
+	sum_ints:bool=True
+	):
+	"""calculate m/z Normalized Discounted Cumulative Gain between two peak list
+		WIP
+	Args:
+		true_mzs (th.tensor): _description_
+		true_ints (th.tensor): _description_
+		true_batch_idxs (th.tensor): _description_
+		pred_mzs (th.tensor): _description_
+		pred_ints (th.tensor): _description_
+		pred_batch_idxs (th.tensor): _description_
+		tolerance (float, optional): _description_. Defaults to 1e-5.
+		relative (bool, optional): _description_. Defaults to True.
+		sum_ints (bool, optional): _description_. Defaults to True.
+
+	Returns:
+		_type_: _description_
+	"""
+	# round peaks
+	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		sum_ints=sum_ints
+	)
+	pred_mzs, pred_ints, pred_batch_idxs = round_aggregate_peaks(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		sum_ints=sum_ints
+	)
+	# l1 normalize
+	true_ints = scatter_l1normalize(
+		true_ints,
+		true_batch_idxs,
+		dim=0
+	)
+	pred_ints = scatter_l1normalize(
+		pred_ints,
+		pred_batch_idxs,
+		dim=0
+	)
+	# calculate
+	batch_size = th.max(true_batch_idxs)+1
+	ncdg = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for batch_idx in range(batch_size):
+
+		b_true_ints = true_ints[(true_batch_idxs==batch_idx)]
+		b_pred_ints = pred_ints[(pred_batch_idxs==batch_idx)]
+
+		b_match_mzs = match_mz_for_batch_idx(true_mzs,
+			true_batch_idxs,
+			pred_mzs, 
+			pred_batch_idxs, 
+			tolerance, 
+			relative, 
+			batch_idx)
+		
+		b_true_match_mzs = th.any(b_match_mzs,dim=1)
+		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+
+		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
+			(b_true_ints[b_true_match_mzs].unsqueeze(1) * b_pred_ints[b_pred_match_mzs].unsqueeze(0))
+		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+		
+		b_ncdg = np.nan
+		ncdg[batch_idx] = b_ncdg
+	return ncdg
 
 # cosine similarity code ... all of them
 def calculate_cosine_similarity(
@@ -788,74 +972,6 @@ def sparse_binned_cosine_similarity(true_bin_idxs, true_bin_ints, true_bin_batch
 	)
 	return cos_sims
 
-
-def get_ints_transform_func(ints_transform):
-	""" method to get int transferom func
-
-	Args:
-		ints_transform (_type_): _description_
-
-	Raises:
-		ValueError: _description_
-
-	Returns:
-		_type_: _description_
-	"""
-
-	_func = None
-	if ints_transform == "log10":
-		_func = lambda ints: th.log10(ints+1.)
-	elif ints_transform == "log10t3":
-		_func = lambda ints: th.log10(ints/3.+1.)
-	elif ints_transform == "loge":
-		_func = lambda ints: th.log(ints+1.)
-	elif ints_transform == "sqrt":
-		_func = lambda ints: th.sqrt(ints)
-	elif ints_transform == "none":
-		_func = lambda ints: ints
-	else:
-		raise ValueError("Invalid ints_transform: {}".format(ints_transform))
-	return _func
-
-
-def get_ints_untransform_func(ints_transform):
-	"""
-
-	Args:
-		ints_transform (_type_): _description_
-
-	Raises:
-		ValueError: _description_
-
-	Returns:
-		_type_: _description_
-	"""
-	if ints_transform == "log10":
-		max_ints = float(np.log10(1000. + 1.))
-		def _untransform_fn(x): return 10**x - 1.
-	elif ints_transform == "log10t3":
-		max_ints = float(np.log10(1000. + 1.) / 3.)
-		def _untransform_fn(x): return 10**(3 * x) - 1.
-	elif ints_transform == "loge":
-		max_ints = float(np.log(1000. + 1.))
-		def _untransform_fn(x): return th.exp(x) - 1.
-	elif ints_transform == "sqrt":
-		max_ints = float(np.sqrt(1000.))
-		def _untransform_fn(x): return x**2
-	elif ints_transform == "none":
-		max_ints = 1000.
-		def _untransform_fn(x): return x
-	else:
-		raise ValueError("invalid transform")
-	def _func(ints):
-		ints = ints / (th.max(ints) + EPS) * max_ints
-		ints = _untransform_fn(ints)
-		ints = th.clamp(ints, min=0.)
-		assert not th.isnan(ints).any()
-		return ints
-	return _func
-
-
 def batched_l1_normalize(ints, batch_idxs):
 
 	ints = scatter_l1normalize(
@@ -878,17 +994,32 @@ def batched_mf100_normalize(ints, batch_idxs):
 	return ints
 
 def calculate_sparse_cosine_hungarian(
-	true_mzs, 
-	true_ints, 
-	true_batch_idxs, 
-	pred_mzs, 
-	pred_ints, 
-	pred_batch_idxs,
-	tolerance=1e-5,
-	relative=True,
-	sum_ints=True
-):
+	true_mzs:th.tensor, 
+	true_ints:th.tensor,
+	true_batch_idxs:th.tensor,
+	pred_mzs:th.tensor,
+	pred_ints:th.tensor,
+	pred_batch_idxs:th.tensor,
+	tolerance:float=1e-5,
+	relative:bool=True,
+	sum_ints:bool=True
+	):
+	"""_summary_
 
+	Args:
+		true_mzs (th.tensor): _description_
+		true_ints (th.tensor): _description_
+		true_batch_idxs (th.tensor): _description_
+		pred_mzs (th.tensor): _description_
+		pred_ints (th.tensor): _description_
+		pred_batch_idxs (th.tensor): _description_
+		tolerance (float, optional): _description_. Defaults to 1e-5.
+		relative (bool, optional): _description_. Defaults to True.
+		sum_ints (bool, optional): _description_. Defaults to True.
+
+	Returns:
+		_type_: _description_
+	"""
 	# round peaks
 	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
 		true_mzs,
@@ -916,20 +1047,19 @@ def calculate_sparse_cosine_hungarian(
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
 	cos_hun = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
-	for b in range(batch_size):
-		b_true_mask = (true_batch_idxs==b)
-		b_pred_mask = (pred_batch_idxs==b)
-		b_true_mzs = true_mzs[b_true_mask]
-		b_pred_mzs = pred_mzs[b_pred_mask]
-		b_true_ints = true_ints[b_true_mask]
-		b_pred_ints = pred_ints[b_pred_mask]
-		b_match_mzs = calculate_match_mzs(
-				b_true_mzs,
-				b_pred_mzs,
-				tolerance=tolerance,
-				relative=relative
-			)
+	for batch_idx in range(batch_size):
 
+		b_true_ints = true_ints[(true_batch_idxs==batch_idx)]
+		b_pred_ints = pred_ints[(pred_batch_idxs==batch_idx)]
+
+		b_match_mzs = match_mz_for_batch_idx(true_mzs,
+			true_batch_idxs,
+			pred_mzs, 
+			pred_batch_idxs, 
+			tolerance, 
+			relative, 
+			batch_idx)
+		
 		b_true_match_mzs = th.any(b_match_mzs,dim=1)
 		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
 
@@ -940,10 +1070,10 @@ def calculate_sparse_cosine_hungarian(
 			b_true_ints[b_true_match_mzs][b_true_idxs],
 			b_pred_ints[b_pred_match_mzs][b_pred_idxs],
 		)
-		cos_hun[b] = b_cos_hun
+		cos_hun[batch_idx] = b_cos_hun
 	return cos_hun
 
-def round_aggregate_peaks(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,decimals:int=4,sum_ints:bool=True):
+def round_aggregate_peaks(mzs:th.tensor, ints:th.tensor, batch_idxs:th.tensor,decimals:int=4,sum_ints:bool=True):
 	""" methds to round and aggreate peaks to give decimals points
 
 	Args:

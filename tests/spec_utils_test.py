@@ -97,11 +97,54 @@ def calculate_match_mzs_test():
     expected_macthes = th.tensor([
         [True, False, False, False, False],
         [False, True, False, False, False],
-        [False, False,  True,  False, False],
-        [False, False,  False,  True,  False],
+        [False, False,  True, False, False],
+        [False, False,  False, True,  False],
     ])
     # check if size is correct
     assert macthes.shape[0] == predicted_mzs.shape[0]
     assert macthes.shape[1] == ground_truth_mzs.shape[0]
     # check if matches are correct
     assert th.equal(macthes, expected_macthes)
+
+def calculate_recall_test():
+    p_mzs = th.tensor([[0.1,0.201,0.305,0.306]])
+    p_batch_idxs = th.tensor([[0,0,0,0]])
+    t_mzs= th.tensor([[0.1,0.201,0.305,0.306]])
+    t_batch_idxs = th.tensor([[0,0,0,0]])
+    recall = calculate_recall(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
+
+    # this should be 1.0
+    assert th.equal(recall, th.tensor([1.0]))
+
+def calculate_precision_test():
+    p_mzs = th.tensor([[0.1,0.201,0.305,0.306]])
+    p_batch_idxs = th.tensor([[0,0,0,0]])
+    t_mzs= th.tensor([[0.1,0.201,0.305,0.306]])
+    t_batch_idxs = th.tensor([[0,0,0,0]])
+    precision = calculate_recall(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
+
+    # this should be 1.0
+    assert th.equal(precision, th.tensor([1.0]))
+
+def calculate_ndcg_hungarian_test():
+
+    p_mzs = th.tensor([[0.1,0.201,0.305,0.306]])
+    p_ints = th.tensor([[1,1,0.5,1]])
+    t_batch_idxs = th.tensor([[0,0,0,0]])
+    t_mzs= th.tensor([[0.1,0.201,0.305,0.306]])
+    t_ints = th.tensor([[1,1,0.5,1]])
+    p_batch_idxs = th.tensor([[0,0,0,0]])
+    calculate_ndcg_hungarian(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
+
+
+def calculate_sparse_cosine_hungarian_test():
+
+    p_mzs = th.tensor([[0.1,0.201,0.305,0.306]])
+    p_ints = th.tensor([[1,1,0.5,1]])
+    t_batch_idxs = th.tensor([[0,0,0,0]])
+    t_mzs= th.tensor([[0.1,0.201,0.305,0.306]])
+    t_ints = th.tensor([[1,1,0.5,1]])
+    p_batch_idxs = th.tensor([[0,0,0,0]])
+    dt = calculate_sparse_cosine_hungarian(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
+
+#calculate_sparse_cosine_hungarian_test()
