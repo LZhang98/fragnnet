@@ -30,8 +30,8 @@ def test_filter_func():
     mzs_th = th.tensor(mzs_np)
     ints_th = th.tensor(ints_np)
     f_mzs, f_ints = filter_func(mzs_th, ints_th, ints_thresh=-1, mz_max=4)
-    assert th.equal(mzs_th, f_mzs)
-    assert th.equal(ints_th, f_ints)
+    th.testing.assert_close(mzs_th, f_mzs)
+    th.testing.assert_close(ints_th, f_ints)
 
     # this should remove 3 peaks
     f_mzs, f_ints = filter_func(mzs_np, ints_np, ints_thresh=0.3, mz_max=4)
@@ -76,7 +76,7 @@ def test_bin_func():
     bin_idx = bin_func(mzs_th, ints_th, mz_max,
                        mz_bin_res, return_index, sum_ints)
     expected_bin_idx = th.tensor([10, 20, 30, 30])
-    assert th.equal(bin_idx, expected_bin_idx)
+    th.testing.assert_close(bin_idx, expected_bin_idx)
 
 
 def test_batch_func():
@@ -98,7 +98,7 @@ def test_calculate_match_mzs():
     assert macthes.shape[0] == predicted_mzs.shape[0]
     assert macthes.shape[1] == ground_truth_mzs.shape[0]
     # check if matches are correct
-    assert th.equal(macthes, expected_macthes)
+    th.testing.assert_close(macthes, expected_macthes)
 
     # check if abs tol works
     macthes = calculate_match_mzs(
@@ -114,8 +114,7 @@ def test_calculate_match_mzs():
     assert macthes.shape[0] == predicted_mzs.shape[0]
     assert macthes.shape[1] == ground_truth_mzs.shape[0]
     # check if matches are correct
-    assert th.equal(macthes, expected_macthes)
-
+    th.testing.assert_close(macthes, expected_macthes)
 
 def test_calculate_recall():
     p_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
@@ -125,9 +124,46 @@ def test_calculate_recall():
     recall = calculate_recall(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
 
     # this should be 1.0
-    assert th.equal(recall, th.tensor([1.0]))
+    th.testing.assert_close(recall, th.tensor([1.0]))
 
+    # this has 4 matching, 10 items, dice = 0.8, precision = 4/6, recall = 4/4 
+    p_mzs = th.tensor([0.01, 0.1, 0.201, 0.305, 0.306, 0.38])
+    p_batch_idxs = th.tensor([0, 0, 0, 0, 0, 0])
+    t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    t_batch_idxs = th.tensor([0, 0, 0, 0])
+    recall = calculate_recall(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
+    th.testing.assert_close(recall, th.tensor([1.0]))
 
+def test_calculate_weighted_recall():
+    p_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    p_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
+    p_batch_idxs = th.tensor([0, 0, 0, 0])
+    
+    t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    t_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
+    t_batch_idxs = th.tensor([0, 0, 0, 0])
+
+    w_recall = calculate_weighted_recall(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
+
+    # this should be 1.0
+    th.testing.assert_close(w_recall, th.tensor([1.0]))
+
+    # this has 4 matching, 10 items, dice = 0.8, precision = 4/6, recall = 4/4 
+    p_mzs = th.tensor([0.01, 0.1, 0.201, 0.305, 0.306, 0.38])
+    p_ints = th.tensor([0.1, 0.2, 0.3, 0.1, 0.1, 0.2])
+    p_batch_idxs = th.tensor([0, 0, 0, 0, 0, 0])
+
+    t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    t_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
+    t_batch_idxs = th.tensor([0, 0, 0, 0])
+
+    w_recall = calculate_weighted_recall(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
+    th.testing.assert_close(w_recall, th.tensor([1.0]))
+
+    # do it backward
+    w_recall = calculate_weighted_recall(p_mzs, p_ints, p_batch_idxs, t_mzs, t_ints, t_batch_idxs)
+    th.testing.assert_close(w_recall, th.tensor([0.7]))
+    
 def test_calculate_precision():
     p_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
     p_batch_idxs = th.tensor([0, 0, 0, 0])
@@ -136,8 +172,45 @@ def test_calculate_precision():
     precision = calculate_precision(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
 
     # this should be 1.0
-    assert th.equal(precision, th.tensor([1.0]))
+    th.testing.assert_close(precision, th.tensor([1.0]))
 
+    # this has 4 matching, 10 items, dice = 0.8, precision = 4/6
+    p_mzs = th.tensor([0.01, 0.1, 0.201, 0.305, 0.306, 0.38])
+    p_batch_idxs = th.tensor([0, 0, 0, 0, 0, 0])
+    t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    t_batch_idxs = th.tensor([0, 0, 0, 0])
+    precision = calculate_precision(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
+    th.testing.assert_close(precision, th.tensor([4/6]))
+
+def test_calculate_weighted_precision():
+    p_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    p_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
+    p_batch_idxs = th.tensor([0, 0, 0, 0])
+    
+    t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    t_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
+    t_batch_idxs = th.tensor([0, 0, 0, 0])
+
+    w_precision = calculate_weighted_precision(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
+
+    # this should be 1.0
+    th.testing.assert_close(w_precision, th.tensor([1.0]))
+
+    # this has 4 matching, 10 items, dice = 0.8, precision = 4/6, recall = 4/4 
+    p_mzs = th.tensor([0.01, 0.1, 0.201, 0.305, 0.306, 0.38])
+    p_ints = th.tensor([0.1, 0.2, 0.3, 0.1, 0.1, 0.2])
+    p_batch_idxs = th.tensor([0, 0, 0, 0, 0, 0])
+
+    t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    t_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
+    t_batch_idxs = th.tensor([0, 0, 0, 0])
+
+    w_precision = calculate_weighted_precision(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
+    th.testing.assert_close(w_precision, th.tensor([0.7]))
+
+    # do it backward
+    w_precision = calculate_weighted_precision(p_mzs, p_ints, p_batch_idxs, t_mzs, t_ints, t_batch_idxs)
+    th.testing.assert_close(w_precision, th.tensor([1.0]))
 
 def test_calculate_dice():
 
@@ -148,7 +221,7 @@ def test_calculate_dice():
     t_batch_idxs = th.tensor([0, 0, 0, 0])
 
     dice = calculate_dice(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
-    assert th.equal(dice, th.tensor([1.0]))
+    th.testing.assert_close(dice, th.tensor([1.0]))
 
     # this has 4 matching, 10 items, dice = 0.8
     p_mzs = th.tensor([0.01, 0.1, 0.201, 0.305, 0.306, 0.38])
@@ -157,17 +230,17 @@ def test_calculate_dice():
     t_batch_idxs = th.tensor([0, 0, 0, 0])
     dice = calculate_dice(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
 
-    assert th.equal(dice, th.tensor([0.8]))
+    th.testing.assert_close(dice, th.tensor([0.8]))
 
 
 def test_calculate_ndcg_hungarian():
 
     p_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
-    p_ints = th.tensor([1, 1, 0.5, 1])
+    p_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
     p_batch_idxs = th.tensor([0, 0, 0, 0])
 
     t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
-    t_ints = th.tensor([1, 1, 0.5, 1])
+    t_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
     t_batch_idxs = th.tensor([0, 0, 0, 0])
     calculate_ndcg_hungarian(t_mzs, t_ints, t_batch_idxs,
                              p_mzs, p_ints, p_batch_idxs)
@@ -176,18 +249,19 @@ def test_calculate_ndcg_hungarian():
 def test_calculate_sparse_cosine_hungarian():
 
     p_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
-    p_ints = th.tensor([1, 1, 0.5, 1])
+    p_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
     p_batch_idxs = th.tensor([0, 0, 0, 0])
 
     t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
-    t_ints = th.tensor([1, 1, 0.5, 1])
+    t_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
     t_batch_idxs = th.tensor([0, 0, 0, 0])
+
+    # these are the same
     dt = calculate_sparse_cosine_hungarian(
         t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
-    assert th.equal(dt, th.tensor([1.0]))
+    th.testing.assert_close(dt, th.tensor([1.0]))
 
 # calculate_sparse_cosine_hungarian_test()
-
 
 def round_aggregate_peaks_test():
     p_mzs = th.tensor([0.1, 0.201, 0.306, 0.307])
@@ -199,9 +273,9 @@ def round_aggregate_peaks_test():
     sum_ints = True
     r_mzs, r_ints, r_batch_idxs = round_aggregate_peaks(
         p_mzs, p_ints, p_batch_idxs, decimals, sum_ints)
-    assert th.equal(th.round(p_mzs, decimals=decimals), r_mzs)
-    assert th.equal(p_ints, r_ints)
-    assert th.equal(p_batch_idxs, r_batch_idxs)
+    th.testing.assert_close(th.round(p_mzs, decimals=decimals), r_mzs)
+    th.testing.assert_close(p_ints, r_ints)
+    th.testing.assert_close(p_batch_idxs, r_batch_idxs)
 
     # this should do nothing
     except_r_mzs = th.tensor([0.1, 0.2, 0.31])
@@ -212,15 +286,17 @@ def round_aggregate_peaks_test():
     sum_ints = True
     r_mzs, r_ints, r_batch_idxs = round_aggregate_peaks(
         p_mzs, p_ints, p_batch_idxs, decimals, sum_ints)
-    assert th.equal(except_r_mzs, r_mzs)
-    assert th.equal(except_r_ints, r_ints)
-    assert th.equal(except_r_batch_idxs, r_batch_idxs)
+    th.testing.assert_close(except_r_mzs, r_mzs)
+    th.testing.assert_close(except_r_ints, r_ints)
+    th.testing.assert_close(except_r_batch_idxs, r_batch_idxs)
 
     decimals = 2
     sum_ints = False
     except_r_ints = th.tensor([1, 1, 1.0])
     r_mzs, r_ints, r_batch_idxs = round_aggregate_peaks(
         p_mzs, p_ints, p_batch_idxs, decimals, sum_ints)
-    assert th.equal(except_r_mzs, r_mzs)
-    assert th.equal(except_r_ints, r_ints)
-    assert th.equal(except_r_batch_idxs, r_batch_idxs)
+    th.testing.assert_close(except_r_mzs, r_mzs)
+    th.testing.assert_close(except_r_ints, r_ints)
+    th.testing.assert_close(except_r_batch_idxs, r_batch_idxs)
+
+test_calculate_weighted_recall()
