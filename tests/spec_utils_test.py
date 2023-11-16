@@ -107,20 +107,20 @@ def calculate_match_mzs_test():
     assert th.equal(macthes, expected_macthes)
 
 def calculate_recall_test():
-    p_mzs = th.tensor([[0.1,0.201,0.305,0.306]])
-    p_batch_idxs = th.tensor([[0,0,0,0]])
-    t_mzs= th.tensor([[0.1,0.201,0.305,0.306]])
-    t_batch_idxs = th.tensor([[0,0,0,0]])
+    p_mzs = th.tensor([0.1,0.201,0.305,0.306])
+    p_batch_idxs = th.tensor([0,0,0,0])
+    t_mzs= th.tensor([0.1,0.201,0.305,0.306])
+    t_batch_idxs = th.tensor([0,0,0,0])
     recall = calculate_recall(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
 
     # this should be 1.0
     assert th.equal(recall, th.tensor([1.0]))
 
 def calculate_precision_test():
-    p_mzs = th.tensor([[0.1,0.201,0.305,0.306]])
-    p_batch_idxs = th.tensor([[0,0,0,0]])
-    t_mzs= th.tensor([[0.1,0.201,0.305,0.306]])
-    t_batch_idxs = th.tensor([[0,0,0,0]])
+    p_mzs = th.tensor([0.1,0.201,0.305,0.306])
+    p_batch_idxs = th.tensor([0,0,0,0])
+    t_mzs= th.tensor([0.1,0.201,0.305,0.306])
+    t_batch_idxs = th.tensor([0,0,0,0])
     precision = calculate_recall(t_mzs, t_batch_idxs, p_mzs, p_batch_idxs)
 
     # this should be 1.0
@@ -128,23 +128,61 @@ def calculate_precision_test():
 
 def calculate_ndcg_hungarian_test():
 
-    p_mzs = th.tensor([[0.1,0.201,0.305,0.306]])
-    p_ints = th.tensor([[1,1,0.5,1]])
-    t_batch_idxs = th.tensor([[0,0,0,0]])
-    t_mzs= th.tensor([[0.1,0.201,0.305,0.306]])
-    t_ints = th.tensor([[1,1,0.5,1]])
-    p_batch_idxs = th.tensor([[0,0,0,0]])
+    p_mzs = th.tensor([0.1,0.201,0.305,0.306])
+    p_ints = th.tensor([1,1,0.5,1])
+    p_batch_idxs = th.tensor([0,0,0,0])
+
+    t_mzs= th.tensor([0.1,0.201,0.305,0.306])
+    t_ints = th.tensor([1,1,0.5,1])
+    t_batch_idxs = th.tensor([0,0,0,0])
     calculate_ndcg_hungarian(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
 
 
 def calculate_sparse_cosine_hungarian_test():
 
-    p_mzs = th.tensor([[0.1,0.201,0.305,0.306]])
-    p_ints = th.tensor([[1,1,0.5,1]])
-    t_batch_idxs = th.tensor([[0,0,0,0]])
-    t_mzs= th.tensor([[0.1,0.201,0.305,0.306]])
-    t_ints = th.tensor([[1,1,0.5,1]])
-    p_batch_idxs = th.tensor([[0,0,0,0]])
+    p_mzs = th.tensor([0.1,0.201,0.305,0.306])
+    p_ints = th.tensor([1,1,0.5,1])
+    p_batch_idxs = th.tensor([0,0,0,0])
+
+    t_mzs= th.tensor([0.1,0.201,0.305,0.306])
+    t_ints = th.tensor([1,1,0.5,1])
+    t_batch_idxs = th.tensor([0,0,0,0])
     dt = calculate_sparse_cosine_hungarian(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
+    assert th.equal(dt, th.tensor([1.0]))
 
 #calculate_sparse_cosine_hungarian_test()
+
+def round_aggregate_peaks_test():
+    p_mzs = th.tensor([0.1,0.201,0.306,0.307])
+    p_ints = th.tensor([1,1,0.5,1])
+    p_batch_idxs = th.tensor([0,0,0,0])
+
+    # this should do nothing
+    decimals = 3
+    sum_ints = True
+    r_mzs,r_ints,r_batch_idxs =round_aggregate_peaks(p_mzs,p_ints,p_batch_idxs,decimals,sum_ints)
+    assert th.equal(th.round(p_mzs,decimals = decimals), r_mzs)
+    assert th.equal(p_ints, r_ints)
+    assert th.equal(p_batch_idxs, r_batch_idxs)
+
+    # this should do nothing
+    except_r_mzs = th.tensor([0.1,0.2,0.31])
+    except_r_ints = th.tensor([1,1,1.5])
+    except_r_batch_idxs = th.tensor([0,0,0])
+
+    decimals = 2
+    sum_ints = True
+    r_mzs,r_ints,r_batch_idxs =round_aggregate_peaks(p_mzs,p_ints,p_batch_idxs,decimals,sum_ints)
+    assert th.equal(except_r_mzs, r_mzs)
+    assert th.equal(except_r_ints, r_ints)
+    assert th.equal(except_r_batch_idxs, r_batch_idxs)
+
+    decimals = 2
+    sum_ints = False
+    except_r_ints = th.tensor([1,1,1.0])
+    r_mzs,r_ints,r_batch_idxs =round_aggregate_peaks(p_mzs,p_ints,p_batch_idxs,decimals,sum_ints)
+    assert th.equal(except_r_mzs, r_mzs)
+    assert th.equal(except_r_ints, r_ints)
+    assert th.equal(except_r_batch_idxs, r_batch_idxs)
+
+round_aggregate_peaks_test()
