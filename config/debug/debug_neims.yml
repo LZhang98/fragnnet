@@ -2,7 +2,10 @@ wandb_name: debug_neims
 wandb_tags:
 - debug
 
+spec_fp: data/proc/nist/spec_df.pkl
+mol_fp: data/proc/nist/mol_df.pkl
 split_dp: data/split/d3_h4_isoTrue_v2
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 spec_params:
   subsample_size: 128
 

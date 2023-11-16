@@ -37,6 +37,7 @@ class SpectrumPL(pl.LightningModule):
 		self._setup_loss_fn()
 		self._setup_spec_fns()
 		self._setup_metric_fns()
+		self._setup_batch_metric_reduce_fns()
 		self.train_results = None
 		self.train_counter = 0
 		self.train_mean_metrics = []
@@ -265,6 +266,27 @@ class SpectrumPL(pl.LightningModule):
 		if "pred_spec_precision" in self.hparams.auxiliary_scores:
 			pass
 		
+	def _setup_batch_metric_reduce_fns(self):
+
+		if self.hparams.sample_weight == "none":
+			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: th.ones_like(spec_per_group, dtype=th.float32)
+		elif self.hparams.sample_weight == "group":
+			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / spec_per_group
+		elif self.hparams.sample_weight == "mol":
+			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / spec_per_mol
+		elif self.hparams.sample_weight == "group_mol":
+			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / (spec_per_group*group_per_mol)
+		def _batch_metric_reduce(b_metric, b_spec_per_group, b_spec_per_mol, b_group_per_mol, reduce):
+			b_sample_weight = calc_sample_weights(b_spec_per_group, b_spec_per_mol, b_group_per_mol)
+			if reduce == "w_mean":
+				b_reduce_metric = th.sum(b_sample_weight * b_metric, dim=0) / th.sum(b_sample_weight, dim=0)
+			elif reduce == "mean":
+				b_reduce_metric = th.mean(b_sample_weight * b_metric, dim=0)
+			else:
+				assert reduce == "sum", reduce
+				b_reduce_metric = th.sum(b_sample_weight * b_metric, dim=0)
+			return b_reduce_metric
+		self.batch_metric_reduce_fn = _batch_metric_reduce
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
@@ -304,6 +326,9 @@ class SpectrumPL(pl.LightningModule):
 		true_mzs = batch["spec_mzs"]
 		true_ints = batch["spec_ints"]
 		true_batch_idxs = batch["spec_batch_idxs"]
+		spec_per_group = batch["spec_per_group"]
+		spec_per_mol = batch["spec_per_mol"]
+		group_per_mol = batch["group_per_mol"]
 		# print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
 		true_mzs, true_logprobs, true_batch_idxs = self._preproc_spec(
 			true_mzs,
@@ -319,8 +344,20 @@ class SpectrumPL(pl.LightningModule):
 		}
 		loss_d = self.loss_fn(**both)
 		loss = loss_d["loss"]
-		mean_loss = th.mean(loss,dim=0)
-		total_loss = th.sum(loss,dim=0)
+		mean_loss = self.batch_metric_reduce_fn(
+			b_metric=loss,
+			b_spec_per_group=spec_per_group,
+			b_spec_per_mol=spec_per_mol,
+			b_group_per_mol=group_per_mol,
+			reduce="w_mean"
+		)
+		total_loss = self.batch_metric_reduce_fn(
+			b_metric=loss,
+			b_spec_per_group=spec_per_group,
+			b_spec_per_mol=spec_per_mol,
+			b_group_per_mol=group_per_mol,
+			reduce="sum"
+		)
 		# just log loss
 		self.log(
 			f"{split}_batch_loss",
@@ -333,6 +370,9 @@ class SpectrumPL(pl.LightningModule):
 			"smiles": smiles,
 			"mean_loss": mean_loss,
 			"total_loss": total_loss,
+			"spec_per_group": spec_per_group,
+			"spec_per_mol": spec_per_mol,
+			"group_per_mol": group_per_mol,
 			**both,
 			**loss_d
 		}
@@ -447,7 +487,10 @@ class SpectrumPL(pl.LightningModule):
 			"true_unique_ids",
 			"pred_mzs",
 			"pred_logprobs",
-			"pred_unique_ids"
+			"pred_unique_ids",
+			"spec_per_group",
+			"spec_per_mol",
+			"group_per_mol"
 		]
 		keys.extend(list(self.metric_names))
 		unique_ids = batch_results.pop("unique_id")
@@ -489,7 +532,16 @@ class SpectrumPL(pl.LightningModule):
 				assert isinstance(results[k][0],list)
 				results[k] = flatten_lol(results[k])
 		# log all the metrics
-		mean_metrics = {k:v.mean() for k,v in results.items() if k in self.metric_names}
+		mean_metrics = {}
+		for k, v in results.items():
+			if k in self.metric_names:
+				mean_metrics[k] = self.batch_metric_reduce_fn(
+					b_metric=v,
+					b_spec_per_group=results["spec_per_group"],
+					b_spec_per_mol=results["spec_per_mol"],
+					b_group_per_mol=results["group_per_mol"],
+					reduce="w_mean"
+				)
 		for k,v in mean_metrics.items():
 			self.log(
 				f"{split}_{k}_epoch",
@@ -686,6 +738,7 @@ class FragGNNPL(SpectrumPL):
 			ce_insert_type=self.hparams.ce_insert_type,
 			node_formula_null_aggregate=self.hparams.node_formula_null_aggregate
 		)
+		
 		# compile
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
@@ -698,6 +751,8 @@ class FragGNNPL(SpectrumPL):
 		# this used in manul update
 		self._num_acc_gradient = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
 		self.automatic_optimization = self.hparams.automatic_optimization
+		if not self.automatic_optimization:
+			assert self.hparams.sample_weight == "none", self.hparams.sample_weight
 
 	def _setup_loss_fn(self):
 
@@ -1011,6 +1066,8 @@ class NeimsPL(SpectrumPL):
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
 		)
+		assert self.hparams.spec_params["merge"]
+		
 		# compile
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
@@ -1075,7 +1132,7 @@ def test_fraggnn():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3_splits.yml",
+		"config/debug/debug_d3_weight.yml",
 	]
 	
 	for custom_fp in custom_fps:

@@ -56,6 +56,17 @@ class BaseDataset(Dataset):
 		self.mol_df = self.mol_df.reset_index(drop=True)
 		# use mol_id as index for speedy access
 		self.mol_df = self.mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
+		self._compute_counts()
+
+	def _compute_counts(self):
+
+		self.group_per_mol = self.spec_df[["mol_id","group_id"]].drop_duplicates().groupby("mol_id").size().to_dict()
+		if self.spec_params["merge"]:
+			self.spec_per_mol = {mol_id: 1 for mol_id in self.spec_df["mol_id"].unique()}
+			self.spec_per_group = {group_id: 1 for group_id in self.spec_df["group_id"].unique()}
+		else:
+			self.spec_per_mol = self.spec_df[["mol_id","spec_id"]].drop_duplicates().groupby("mol_id").size().to_dict()
+			self.spec_per_group = self.spec_df[["group_id","spec_id"]].drop_duplicates().groupby("group_id").size().to_dict()
 
 	def _preprocess_spec(self):
 
@@ -113,6 +124,16 @@ class BaseDataset(Dataset):
 			unique_id = spec_entry[id_key]
 			unique_id = th.tensor([unique_id],dtype=th.long)
 			spec_data["spec_unique_id"] = unique_id
+		if self.spec_params["counts"]:
+			spec_per_mol = self.spec_per_mol[spec_entry["mol_id"]]
+			spec_per_mol = th.tensor([spec_per_mol],dtype=th.long)
+			spec_data["spec_per_mol"] = spec_per_mol
+			group_per_mol = self.group_per_mol[spec_entry["mol_id"]]
+			group_per_mol = th.tensor([group_per_mol],dtype=th.long)
+			spec_data["group_per_mol"] = group_per_mol
+			spec_per_group = self.spec_per_group[spec_entry["group_id"]]
+			spec_per_group = th.tensor([spec_per_group],dtype=th.long)
+			spec_data["spec_per_group"] = spec_per_group
 		return spec_data
 
 	def __getitem__(self, idx):
@@ -203,7 +224,7 @@ class SpecMolDataset(BaseDataset):
 		self.mol_params = mol_params
 		self._preprocess_spec()
 		self._preprocess_mol()
-
+		
 	def _get_mol_graph_size(self, mol_data):
 
 		if self.mol_params["pyg"]:
