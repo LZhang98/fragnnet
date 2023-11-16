@@ -253,12 +253,7 @@ class FragmentEngine(object):
 		Return:
 			new_fragment
 		"""
-		# Step 1: Define initial hashes by symbol + num hydrogens + num bonds
-		cur_hashes = [
-			f"{i}_{j}_{len(k)}"
-			for i, j, k in zip(self.atom_symbols, self.atom_hs, self.bonded_atoms)
-		]
-
+		# Step 1: Define initial hashes by symbol
 		cur_hashes = [
 			f"{i}"
 			for i, j, k in zip(self.atom_symbols, self.atom_hs, self.bonded_atoms)

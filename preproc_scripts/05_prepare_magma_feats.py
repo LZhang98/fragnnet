@@ -370,7 +370,7 @@ def magma_augmentation(
 		return False
 
 	spectra_f = common.max_inten_spec(
-		spectra, max_num_inten=max_peaks, inten_thresh=0.001
+		spectra, max_num_inten=max_peaks, inten_thresh=inten_thresh
 	)
 	s_m, s_i = spectra_f[:, 0], spectra_f[:, 1]
 
@@ -401,6 +401,17 @@ def magma_augmentation(
 	min_ppms = ppm_diffs.min(-1)
 	is_min = min_ppms[:, None] == ppm_diffs
 	peak_mask = min_ppms < ppm_diff
+	if peak_mask.sum() == 0:
+		# just choose the one closest to the precursor (to prevent empty tree)
+		adjusted_pm = spectra_parentmass - common.ion2mass[spectra_adduct]
+		peak_idx = np.argmin(np.abs(adjusted_m - adjusted_pm) / adjusted_pm * 1e6)
+		peak_mask = np.arange(peak_mask.shape[0]) == peak_idx
+		mass_idx = np.argmin(np.abs(masses - adjusted_pm) / masses * 1e6)
+		is_min = np.zeros_like(is_min)
+		is_min[peak_idx][mass_idx] = True
+		min_ppms = np.zeros_like(min_ppms)
+		min_ppms[peak_idx] = np.abs(adjusted_m[peak_idx] - adjusted_pm) / adjusted_m[peak_idx] * 1e6
+	assert peak_mask.sum() >= 1, peak_mask.sum()
 
 	# Step 4: Make exports
 	# Now collect all inds and results
