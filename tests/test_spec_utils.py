@@ -245,8 +245,7 @@ def test_calculate_ndcg_hungarian():
     calculate_ndcg_hungarian(t_mzs, t_ints, t_batch_idxs,
                              p_mzs, p_ints, p_batch_idxs)
 
-
-def test_calculate_sparse_cosine_hungarian():
+def test_calculate_sparse_cosine():
 
     p_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
     p_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
@@ -257,11 +256,28 @@ def test_calculate_sparse_cosine_hungarian():
     t_batch_idxs = th.tensor([0, 0, 0, 0])
 
     # these are the same
-    dt = calculate_sparse_cosine_hungarian(
+    cos = calculate_sparse_cosine_hungarian(
         t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
-    th.testing.assert_close(dt, th.tensor([1.0]))
+    th.testing.assert_close(cos, th.tensor([1.0]))
 
-# calculate_sparse_cosine_hungarian_test()
+    # eqauls to do bin size  0.0001
+    cos = calculate_sparse_cosine_similarity(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs, mz_bin_res= 0.0001)
+    th.testing.assert_close(cos, th.tensor([1.0]))
+
+    # this has 4 matching, 10 items, dice = 0.8, precision = 4/6, recall = 4/4 
+    p_mzs = th.tensor([0.01, 0.1, 0.201, 0.305, 0.306, 0.38])
+    p_ints = th.tensor([0.1, 0.2, 0.3, 0.1, 0.1, 0.2])
+    p_batch_idxs = th.tensor([0, 0, 0, 0, 0, 0])
+
+    t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    t_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
+    t_batch_idxs = th.tensor([0, 0, 0, 0])
+
+    cos = calculate_sparse_cosine_hungarian(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
+    th.testing.assert_close(cos, th.tensor([0.61237]))
+
+    cos = calculate_sparse_cosine_similarity(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs, mz_bin_res= 0.0001)
+    th.testing.assert_close(cos, th.tensor([0.61237]))
 
 def round_aggregate_peaks_test():
     p_mzs = th.tensor([0.1, 0.201, 0.306, 0.307])
@@ -298,5 +314,3 @@ def round_aggregate_peaks_test():
     th.testing.assert_close(except_r_mzs, r_mzs)
     th.testing.assert_close(except_r_ints, r_ints)
     th.testing.assert_close(except_r_batch_idxs, r_batch_idxs)
-
-test_calculate_weighted_recall()
