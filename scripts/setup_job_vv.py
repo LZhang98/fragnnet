@@ -66,8 +66,8 @@ def main(args):
 	script_lines.append(f"#SBATCH --qos={args.qos}")
 	script_lines.extend(
 		[
-			f"#SBATCH --output={args.home_dir}/jobs/%j.out",
-			f"#SBATCH --error={args.home_dir}/jobs/%j.err",
+			f"#SBATCH --output={args.home_dp}/jobs/%j.out",
+			f"#SBATCH --error={args.home_dp}/jobs/%j.err",
 			"#SBATCH --open-mode=append"
 		]
 	)
@@ -87,14 +87,14 @@ def main(args):
 			"# make wandb directory (if necessary)",
 			"mkdir -p /checkpoint/adamo/wandb",
 			"touch /checkpoint/adamo/wandb/DELAYPURGE",
-			f"ln -sfn /checkpoint/adamo/wandb {args.home_dir}/frag-gnn/wandb"
+			f"ln -sfn /checkpoint/adamo/wandb {args.root_dp}/wandb"
 		]
 	)
 	script_lines.extend(
 		[
 			"",
 			"# source .bashrc",
-			f". {args.home_dir}/miniconda3/etc/profile.d/conda.sh"
+			f". {args.home_dp}/miniconda3/etc/profile.d/conda.sh"
 		]
 	)
 	if args.modules is not None:
@@ -117,7 +117,7 @@ def main(args):
 		[
 			"",
 			"# run script",
-			f"cd {args.home_dir}/frag-gnn"
+			f"cd {args.root_dp}"
 		]
 	)
 	python_line = f"python {args.python_script_fp}"
@@ -164,6 +164,7 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--script_dp",type=str, default="slurm_scripts")
+	parser.add_argument("--root_dp", type=str, default="/fs01/home/adamo/frag-gnn")
 	parser.add_argument("--python_script_fp",type=str,required=True)
 	parser.add_argument("--mem", type=int, default=64)
 	parser.add_argument("--cpu", type=int, default=8)
@@ -177,7 +178,7 @@ if __name__ == "__main__":
 	parser.add_argument("--job_id", type=int, required=False, help="job_id (-1 means use the slurm job id)")
 	parser.add_argument("--blacklist", type=str, nargs="+", required=False)
 	parser.add_argument("--modules", type=str, nargs="+", default=["cuda-11.8"])
-	parser.add_argument("--home_dir", type=str, default="/fs01/home/adamo")
+	parser.add_argument("--home_dp", type=str, default="/fs01/home/adamo")
 	parser.add_argument("--requeue", type=booltype, default=False)
 	args = parser.parse_args()
 	main(args)

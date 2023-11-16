@@ -11,7 +11,7 @@ wandb_tags:
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
 split_dp: data/split/nist20_d3_wr00_inchikey
-magma_dp: data/magma/nist20mona23_gen
+magma_dp: data/magma/gen/nist20mona23
 
 model_type: iceberg_inten
 loss_type: cosine_distance
