@@ -17,7 +17,7 @@ from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, \
 	calculate_sparse_cosine_similarity, calculate_optimal_cosine_similarity, calculate_optimal_sparse_cosine_similarity, \
 	get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_recall, calculate_weighted_recall, \
-	binned_cosine_similarity, calculate_sparse_cosine_hungarian
+	binned_cosine_similarity, calculate_sparse_cosine_hungarian, calculate_ndcg_hungarian, calculate_precision, calculate_dice
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -80,6 +80,7 @@ class SpectrumPL(pl.LightningModule):
 		self.metric_min_max = {"loss": "min"}
 		self.metric_fns = {}
 		self.metric_bests = ["loss"]
+		
 		# measure cos sim between predicted and ground truth
 		if "cos_sim" in self.hparams.auxiliary_scores:
 			def get_cos_sim(mz_bin_res):
@@ -116,6 +117,7 @@ class SpectrumPL(pl.LightningModule):
 				self.metric_fns[f"cos_sim_{mz_bin_res}"] = get_cos_sim(mz_bin_res)
 				self.metric_min_max[f"cos_sim_{mz_bin_res}"] = "max"
 				self.metric_bests.append(f"cos_sim_{mz_bin_res}")
+		
 		if "recall" in self.hparams.auxiliary_scores:
 			def _recall(
 				true_mzs,
@@ -135,6 +137,7 @@ class SpectrumPL(pl.LightningModule):
 				)
 			self.metric_fns["recall"] = _recall
 			self.metric_min_max["recall"] = "max"
+
 		if "wrecall" in self.hparams.auxiliary_scores:
 			def _wrecall(
 				true_mzs,
@@ -162,6 +165,7 @@ class SpectrumPL(pl.LightningModule):
 				)
 			self.metric_fns["wrecall"] = _wrecall
 			self.metric_min_max["wrecall"] = "max"
+		
 		# measure max possible cos sim between ground truth spectra and dag
 		# this gives us an upper bound for cos sim
 		if "opt_cos_sim" in self.hparams.auxiliary_scores:
@@ -198,6 +202,7 @@ class SpectrumPL(pl.LightningModule):
 			for mz_bin_res in self.hparams.eval_mz_bin_res:
 				self.metric_fns[f"opt_cos_sim_{mz_bin_res}"] = get_opt_cos_sim(mz_bin_res)
 				self.metric_min_max[f"opt_cos_sim_{mz_bin_res}"] = None
+		
 		if "true_spec_e" in self.hparams.auxiliary_scores:
 			def _true_spec_e(
 				true_mzs,
@@ -216,6 +221,7 @@ class SpectrumPL(pl.LightningModule):
 				return true_spec_e
 			self.metric_fns["true_spec_e"] = _true_spec_e
 			self.metric_min_max["true_spec_e"] = None
+		
 		# measure normalized entropy
 		if "true_spec_ne" in self.hparams.auxiliary_scores:
 			def _true_spec_ne(
@@ -235,6 +241,8 @@ class SpectrumPL(pl.LightningModule):
 				return true_spec_ne
 			self.metric_fns["true_spec_ne"] = _true_spec_ne
 			self.metric_min_max["true_spec_ne"] = None
+
+		# cos sim using Hungarian algorithm
 		if "cos_hun" in self.hparams.auxiliary_scores:
 			def _cos_hun(
 				true_mzs,
@@ -262,13 +270,81 @@ class SpectrumPL(pl.LightningModule):
 			self.metric_fns["cos_hun"] = _cos_hun
 			self.metric_min_max["cos_hun"] = "max"
 			self.metric_bests.append("cos_hun")
-		self.metric_names.update(list(self.metric_min_max.keys()))
-		# measure precision and recall
-		if "pred_spec_recall" in self.hparams.auxiliary_scores:
-			pass
-		if "pred_spec_precision" in self.hparams.auxiliary_scores:
-			pass
+
+		# measure precision, recall, dice
+		# this requires some level of post processing
+		if "precision" in self.hparams.auxiliary_scores:
+			def _precision(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				return calculate_precision(
+					true_mzs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+			self.metric_fns["precision"] = _precision
+			self.metric_min_max["precision"] = "max"
+			self.metric_bests.append("precision")
 		
+		if "dice" in self.hparams.auxiliary_scores:
+			def _dice(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				return calculate_dice(
+					true_mzs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+			self.metric_fns["dice"] = _dice
+			self.metric_min_max["dice"] = "max"
+			self.metric_bests.append("dice")
+		
+		if "ndcg" in self.hparams.auxiliary_scores:
+			def _ndcg_hun(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform
+				true_ints = self.ints_untransform_func(true_ints)
+				pred_ints = self.ints_untransform_func(pred_ints)
+				# calculate
+				ndcg_hun = calculate_ndcg_hungarian(
+					true_mzs,
+					true_ints,
+					true_batch_idxs,
+					pred_mzs,
+					pred_ints,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+				return ndcg_hun
+			self.metric_fns["ndcg"] = _ndcg_hun
+			self.metric_min_max["ndcg"] = "max"
+			self.metric_bests.append("ndcg")
+
+		self.metric_names.update(list(self.metric_min_max.keys()))
+
 	def _setup_batch_metric_reduce_fns(self):
 
 		if self.hparams.sample_weight == "none":
