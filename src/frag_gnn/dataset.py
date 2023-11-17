@@ -504,7 +504,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		self._shuffle = shuffle
 		self._generator = generator
 		self._return_batch_at = return_batch_at
-		self._max_bacth_sample_size = max_batch_sample_size
+		self._max_batch_sample_size = max_batch_sample_size
 		self._batches = []
 		self._data_meta = []
 		self._pre_compute_batches()
@@ -562,26 +562,26 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				# Size of sample
 				data = self._data_source[idx.item()]
 				
-				n = data['frag_pyg'].num_nodes if  self.limited_by == 'frag_node' \
+				n = data['frag_pyg'].num_nodes if  self._limited_by == 'frag_node' \
 					else data['frag_pyg'].num_edges
 
-				if n > self.max_num:
+				if n > self._max_num:
 					warning_msg = "Size of data sample at index " +\
 						f"{idx} is larger than " +\
-						f"{self.max_num} {self.limited_by}s " +\
-						f"(got {n} {self.limited_by}s. " +\
+						f"{self._max_num} {self._limited_by}s " +\
+						f"(got {n} {self._limited_by}s. " +\
 						"This sample can not fit into batch "
-					if self.skip_too_big:
+					if self._skip_too_big:
 						warning_msg += "and sampler will skip this to prevent CUDA OOM ERROR"
 					else:
 						warning_msg += "attempt to fit this in to batch and this may let to CUDA OOM ERROR"
 					warnings.warn(warning_msg)
 					#if skip too big is true, just move to the next iteration
 					# this will have edge case where a "batch" can be empty if this is the last batch
-					if self.skip_too_big:
+					if self._skip_too_big:
 						continue
 
-				if  batch_n + n > self.max_num:
+				if  batch_n + n > self._max_num:
 					# no more budget left, mini-batch filled
 					break
 				
@@ -591,15 +591,15 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				batch_n += n
 
 				# check if batch has more samples then max sample size
-				if self.max_batch_sample_size is not None \
-					and self.max_batch_sample_size == len(batch):
+				if self._max_batch_sample_size is not None \
+					and self._max_batch_sample_size == len(batch):
 					# mini-batch filled
 					break
 				
 				# check we need return at this point for ga
-				if self.return_batch_at > 0 \
+				if self._return_batch_at > 0 \
 					and num_processed > 0 \
-					and num_processed % self.return_batch_at == 0:
+					and num_processed % self._return_batch_at == 0:
 					# Mini-batch filled
 					break
 			
@@ -618,8 +618,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				batch_filled = True
 
 			# check if batch has more samples then max sample size
-			if self._max_bacth_sample_size is not None \
-				and self._max_bacth_sample_size == len(batch):
+			if self._max_batch_sample_size is not None \
+				and self._max_batch_sample_size == len(batch):
 				batch_filled = True
 			
 			# check we need return at this point for ga

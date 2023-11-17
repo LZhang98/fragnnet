@@ -726,7 +726,8 @@ def calculate_ndcg_hungarian(
 
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
-	ncdg = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	th_device = true_ints.device
+	ncdg = th.zeros([batch_size],device=th_device,dtype=true_ints.dtype)
 	for batch_idx in range(batch_size):
 
 		b_true_ints = true_ints[(true_batch_idxs==batch_idx)]
@@ -756,17 +757,17 @@ def calculate_ndcg_hungarian(
 		b_pred_idx_sort_by_int = b_pred_ints.argsort(descending=True)
 		
 		# use true intensities as graded relevance
-		b_pred_grade_rel = th.zeros(b_pred_ints.shape)
+		b_pred_grade_rel = th.zeros(b_pred_ints.shape, device=th_device)
 		b_pred_grade_rel[b_pred_match_mzs] = b_true_ints[b_true_match_mzs][b_true_matched_idxs]
 		# under this based on order
 		b_pred_grade_rel = b_pred_grade_rel[b_pred_idx_sort_by_int]
 
 		# discounted cumulative gain
-		b_dcg = th.sum(b_pred_grade_rel / th.log(1 + th.arange(1, b_pred_ints.shape[0] + 1)))
+		b_dcg = th.sum(b_pred_grade_rel / th.log(1 + th.arange(1, b_pred_ints.shape[0] + 1, device=th_device)))
 
 		# ideal discounted cumulative gain
 		b_true_grade_rel, _ = th.sort(b_true_ints, descending=True)
-		b_idcg = th.sum(b_true_grade_rel / th.log(1 +th.arange(1, b_true_grade_rel.shape[0] + 1)))
+		b_idcg = th.sum(b_true_grade_rel / th.log(1 +th.arange(1, b_true_grade_rel.shape[0] + 1, device=th_device)))
 
 		# normalized discounted cumulative gain
 		b_ncdg = b_dcg/b_idcg
