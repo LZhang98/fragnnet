@@ -455,8 +455,9 @@ class SpecMolMagmaDataset(SpecMolDataset):
 		"""__getitem__."""
 
 		spec_entry = self.spec_df.iloc[idx]
+		mol_id = spec_entry["mol_id"]
+		mol_entry = self.mol_df.loc[mol_id]
 		spec_data = self._process_spec(spec_entry)
-		mol_entry = self.mol_df.iloc[idx]
 		mol_data = self._process_mol(mol_entry)
 		name = str(spec_entry["group_id"])
 		adduct = common.ion2onehot_pos[spec_entry["prec_type"]]
