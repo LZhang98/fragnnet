@@ -7,6 +7,7 @@ wandb_tags:
 - inchikey
 - new_proc
 - iceberg
+- inten_all
 
 spec_fp: data/proc/nist23mona23/spec_df.pkl
 mol_fp: data/proc/nist23mona23/mol_df.pkl

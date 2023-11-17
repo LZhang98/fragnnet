@@ -6,10 +6,12 @@ wandb_tags:
 - wr75
 - inchikey
 - new_proc
+- fraggnn_d3
+
 spec_fp: data/proc/nist23mona23/spec_df.pkl
 mol_fp: data/proc/nist23mona23/mol_df.pkl
 split_dp: data/split/nist23_d3_wr75_inchikey
-frag_dp: data/frag/nist23_d3_h4_isoFalse/dags
+frag_dp: data/frag/nist23mona23_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 
