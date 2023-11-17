@@ -20,9 +20,6 @@ min_epochs: 10
 max_epochs: 10
 lr_schedule: False
 debug_overfit: False
-auxiliary_scores:
-  - cos_sim
-  - cos_hun
 
 precision: 32
 automatic_optimization: True
