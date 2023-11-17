@@ -1064,6 +1064,15 @@ def sparse_binned_cosine_similarity(true_bin_idxs, true_bin_ints, true_bin_batch
 	)
 	return cos_sims
 
+def batched_l1_normalize(ints, batch_idxs):
+
+	ints = scatter_l1normalize(
+		ints,
+		batch_idxs,
+		dim=0
+	)
+	return ints
+
 def batched_mf100_normalize(ints, batch_idxs):
 
 	max_ints = scatter_reduce(

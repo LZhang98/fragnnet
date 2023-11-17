@@ -17,7 +17,7 @@ from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, \
 	calculate_sparse_cosine_similarity, calculate_optimal_cosine_similarity, calculate_optimal_sparse_cosine_similarity, \
 	get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_recall, calculate_weighted_recall, \
-	binned_cosine_similarity, calculate_sparse_cosine_hungarian
+	binned_cosine_similarity, calculate_sparse_cosine_hungarian, calculate_ndcg_hungarian
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -261,12 +261,42 @@ class SpectrumPL(pl.LightningModule):
 			self.metric_fns["cos_hun"] = _cos_hun
 			self.metric_min_max["cos_hun"] = "max"
 		self.metric_names.update(list(self.metric_min_max.keys()))
-		# measure precision and recall
-		if "pred_spec_recall" in self.hparams.auxiliary_scores:
+
+		# measure precision, recall, dice
+		if "recall" in self.hparams.auxiliary_scores:
 			pass
-		if "pred_spec_precision" in self.hparams.auxiliary_scores:
+		if "precision" in self.hparams.auxiliary_scores:
+			pass
+		if "dice" in self.hparams.auxiliary_scores:
 			pass
 		
+		if "ndcg" in self.hparams.auxiliary_scores:
+			def _ndcg_hun(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				# untransform
+				true_ints = self.ints_untransform_func(true_ints)
+				pred_ints = self.ints_untransform_func(pred_ints)
+				# calculate
+				cos_hun = calculate_ndcg_hungarian(
+					true_mzs,
+					true_ints,
+					true_batch_idxs,
+					pred_mzs,
+					pred_ints,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+				return cos_hun
+			self.metric_fns["ndcg"] = _cos_hun
+			self.metric_min_max["ndcg"] = "max"
+		self.metric_names.update(list(self.metric_min_max.keys()))
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
