@@ -797,16 +797,35 @@ def calculate_cosine_similarity(
 	return cos_sims
 
 def calculate_optimal_cosine_similarity(
-		true_mzs,
-		true_ints,
-		true_batch_idxs,
-		pred_mzs,
-		pred_ints,
-		pred_batch_idxs,
+		true_mzs:th.tensor,
+		true_ints:th.tensor,
+		true_batch_idxs:th.tensor,
+		pred_mzs:th.tensor,
+		pred_ints:th.tensor,
+		pred_batch_idxs:th.tensor,
 		mz_max=1500.,
 		mz_bin_res=0.01,
 		sum_ints=True
-	):
+	) -> th.tensor:
+	""" 
+	Calculate the optimal cosine similarity using binned spectra, 
+	Assuming all intensities are correctly predicted for m/z s appeared both in predicted and true spectrum,
+	Using predicted intensities if m/z s are not in true spectrum.
+	
+	Args:
+		true_mzs (th.tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
+		true_ints (th.tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
+		true_batch_idxs (th.tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
+		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
+		pred_ints (th.tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
+		pred_batch_idxs (th.tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
+		mz_max (float, optional): max mz. Defaults to 1500.
+		mz_bin_res (float, optional): bin size measured in Da. Defaults to 0.01.
+		sum_ints (bool, optional): flag to get sum intensities in the same bin else use max. Defaults to True.
+
+	Returns:
+		th.tensor: optimal cosine similarity
+	"""
 
 	true_spec = batched_bin_func(
 		true_mzs,
@@ -840,7 +859,8 @@ def calculate_sparse_cosine_similarity(
 		mz_bin_res:float=0.01,
 		sum_ints:bool=True
 	) -> th.tensor:
-	"""_summary_
+	"""
+	Calculate the cosine similarity using binned spectra and sparse methods,
 
 	Args:
 		true_mzs (th.tensor): _description_
@@ -854,7 +874,7 @@ def calculate_sparse_cosine_similarity(
 		sum_ints (bool, optional): _description_. Defaults to True.
 
 	Returns:
-		th.tensor: _description_
+		th.tensor: cosine similarity
 	"""
 
 	# sparse bin
@@ -897,8 +917,11 @@ def calculate_optimal_sparse_cosine_similarity(
 		mz_max=1500.,
 		mz_bin_res=0.01,
 		sum_ints=True
-	):
-	"""_summary_
+	) -> th.tensor:
+	"""	
+	Calculate the optimal cosine similarity using binned spectra and sparse methods, 
+	Assuming all intensities are correctly predicted for m/z s appeared both in predicted and true spectrum,
+	Using predicted intensities if m/z s are not in true spectrum.
 
 	Args:
 		true_mzs (th.tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
@@ -912,7 +935,7 @@ def calculate_optimal_sparse_cosine_similarity(
 		sum_ints (bool, optional): _description_. Defaults to True.
 
 	Returns:
-		_type_: _description_
+		th.tensor: optimal cosine similarity
 	"""
 	# sparse bin
 	true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
@@ -1014,15 +1037,6 @@ def sparse_binned_cosine_similarity(true_bin_idxs, true_bin_ints, true_bin_batch
 		dim_size=th.max(true_bin_batch_idxs)+1
 	)
 	return cos_sims
-
-def batched_l1_normalize(ints, batch_idxs):
-
-	ints = scatter_l1normalize(
-		ints,
-		batch_idxs,
-		dim=0
-	)
-	return ints
 
 def batched_mf100_normalize(ints, batch_idxs):
 

@@ -245,7 +245,7 @@ def test_calculate_ndcg_hungarian():
     calculate_ndcg_hungarian(t_mzs, t_ints, t_batch_idxs,
                              p_mzs, p_ints, p_batch_idxs)
 
-def test_calculate_sparse_cosine():
+def test_calculate_cosine():
 
     p_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
     p_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
@@ -264,6 +264,12 @@ def test_calculate_sparse_cosine():
     cos = calculate_sparse_cosine_similarity(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs, mz_bin_res= 0.0001)
     th.testing.assert_close(cos, th.tensor([1.0]))
 
+    cos = calculate_cosine_similarity(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs, mz_bin_res= 0.0001)
+    th.testing.assert_close(cos, th.tensor([1.0]))
+
+    cos = calculate_optimal_cosine_similarity(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs, mz_bin_res= 0.0001)
+    th.testing.assert_close(cos, th.tensor([1.0]))
+
     # this has 4 matching, 10 items, dice = 0.8, precision = 4/6, recall = 4/4 
     p_mzs = th.tensor([0.01, 0.1, 0.201, 0.305, 0.306, 0.38])
     p_ints = th.tensor([0.1, 0.2, 0.3, 0.1, 0.1, 0.2])
@@ -279,6 +285,9 @@ def test_calculate_sparse_cosine():
     cos = calculate_sparse_cosine_similarity(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs, mz_bin_res= 0.0001)
     th.testing.assert_close(cos, th.tensor([0.61237]))
 
+    cos = calculate_cosine_similarity(t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs, mz_bin_res= 0.0001)
+    th.testing.assert_close(cos, th.tensor([0.61237]))
+    
 def round_aggregate_peaks_test():
     p_mzs = th.tensor([0.1, 0.201, 0.306, 0.307])
     p_ints = th.tensor([1, 1, 0.5, 1])
