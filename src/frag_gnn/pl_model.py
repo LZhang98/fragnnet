@@ -522,6 +522,20 @@ class SpectrumPL(pl.LightningModule):
 		# increment counter
 		setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
 
+	def _reduce_metrics(self, results):
+
+		mean_metrics = {}
+		for k, v in results.items():
+			if k in self.metric_names:
+				mean_metrics[k] = self.batch_metric_reduce_fn(
+					b_metric=v,
+					b_spec_per_group=results["spec_per_group"],
+					b_spec_per_mol=results["spec_per_mol"],
+					b_group_per_mol=results["group_per_mol"],
+					reduce="w_mean"
+				)
+		return mean_metrics
+
 	def _consolidate_results(self, split):
 		
 		results = getattr(self,f"{split}_results")
@@ -535,16 +549,7 @@ class SpectrumPL(pl.LightningModule):
 				assert isinstance(results[k][0],list)
 				results[k] = flatten_lol(results[k])
 		# log all the metrics
-		mean_metrics = {}
-		for k, v in results.items():
-			if k in self.metric_names:
-				mean_metrics[k] = self.batch_metric_reduce_fn(
-					b_metric=v,
-					b_spec_per_group=results["spec_per_group"],
-					b_spec_per_mol=results["spec_per_mol"],
-					b_group_per_mol=results["group_per_mol"],
-					reduce="w_mean"
-				)
+		mean_metrics = self._reduce_metrics(results)
 		for k,v in mean_metrics.items():
 			self.log(
 				f"{split}_{k}_epoch",

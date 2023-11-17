@@ -151,6 +151,14 @@ class IcebergGenPL(SpectrumPL):
 		# increment counter
 		setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
 
+	def _reduce_metrics(self, results):
+
+		mean_metrics = {}
+		for k, v in results.items():
+			if k in self.metric_names:
+				mean_metrics[k] = th.mean(v, dim=0)
+		return mean_metrics
+
 	def _log_images(self,split):
 
 		if split == "train":
