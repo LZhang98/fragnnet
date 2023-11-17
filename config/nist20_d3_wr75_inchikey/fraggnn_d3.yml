@@ -1,14 +1,14 @@
-wandb_name: d3_wr75_scaffold
+wandb_name: fraggnn_d3
 wandb_tags:
 - splits
 - nist20
 - d3
 - wr75
-- scaffold
+- inchikey
 - new_proc
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
-split_dp: data/split/nist20_d3_wr75_scaffold
+split_dp: data/split/nist20_d3_wr75_inchikey
 frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4

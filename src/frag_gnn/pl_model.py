@@ -79,6 +79,7 @@ class SpectrumPL(pl.LightningModule):
 		# setup metrics
 		self.metric_min_max = {"loss": "min"}
 		self.metric_fns = {}
+		self.metric_bests = ["loss"]
 		# measure cos sim between predicted and ground truth
 		if "cos_sim" in self.hparams.auxiliary_scores:
 			def get_cos_sim(mz_bin_res):
@@ -114,6 +115,7 @@ class SpectrumPL(pl.LightningModule):
 			for mz_bin_res in self.hparams.eval_mz_bin_res:
 				self.metric_fns[f"cos_sim_{mz_bin_res}"] = get_cos_sim(mz_bin_res)
 				self.metric_min_max[f"cos_sim_{mz_bin_res}"] = "max"
+				self.metric_bests.append(f"cos_sim_{mz_bin_res}")
 		if "recall" in self.hparams.auxiliary_scores:
 			def _recall(
 				true_mzs,
@@ -259,6 +261,7 @@ class SpectrumPL(pl.LightningModule):
 				return cos_hun
 			self.metric_fns["cos_hun"] = _cos_hun
 			self.metric_min_max["cos_hun"] = "max"
+			self.metric_bests.append("cos_hun")
 		self.metric_names.update(list(self.metric_min_max.keys()))
 		# measure precision and recall
 		if "pred_spec_recall" in self.hparams.auxiliary_scores:
@@ -551,9 +554,8 @@ class SpectrumPL(pl.LightningModule):
 		mean_metrics_list = getattr(self,f"{split}_mean_metrics")
 		mean_metrics_list.append(mean_metrics)
 		# log best metric
-		for k in ["loss","cos_sim"]:
-			if k not in self.metric_names:
-				continue
+		for k in self.metric_bests:
+			assert k in self.metric_names, (k, self.metric_names)
 			metric_epochs = [item[k] for item in mean_metrics_list]
 			if self.metric_min_max[k] == "min":
 				metric_best = th.min(th.tensor(metric_epochs))

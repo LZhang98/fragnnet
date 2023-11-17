@@ -10,8 +10,8 @@ num_depth: 4
 num_hs: 4
 spec_params:
   subsample_size: 256
-  merge: False
-sample_weight: group
+  merge: True
+sample_weight: none
 
 train_batch_size: 2
 eval_batch_size: 2
@@ -20,8 +20,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 10
-max_epochs: 10
+min_epochs: 100
+max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 
