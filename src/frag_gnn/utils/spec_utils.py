@@ -711,6 +711,7 @@ def calculate_ndcg_hungarian(
 		pred_batch_idxs,
 		sum_ints=sum_ints
 	)
+
 	# l1 normalize
 	true_ints = scatter_l1normalize(
 		true_ints,
@@ -722,6 +723,7 @@ def calculate_ndcg_hungarian(
 		pred_batch_idxs,
 		dim=0
 	)
+
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
 	ncdg = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
@@ -729,7 +731,6 @@ def calculate_ndcg_hungarian(
 
 		b_true_ints = true_ints[(true_batch_idxs==batch_idx)]
 		b_pred_ints = pred_ints[(pred_batch_idxs==batch_idx)]
-
 		b_match_mzs = match_mz_for_batch_idx(true_mzs,
 			true_batch_idxs,
 			pred_mzs, 
@@ -743,10 +744,35 @@ def calculate_ndcg_hungarian(
 
 		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
 			(b_true_ints[b_true_match_mzs].unsqueeze(1) * b_pred_ints[b_pred_match_mzs].unsqueeze(0))
-		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
-		print(b_true_idxs, b_pred_idxs)
-		b_ncdg = np.nan
+		b_true_matched_idxs, b_pred_matched_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+
+		#print(b_true_ints)
+		#print(b_pred_ints)
+		#print(b_true_ints[b_true_match_mzs][b_true_matched_idxs])
+		#print(b_pred_ints[b_pred_match_mzs][b_pred_matched_idxs])
+
+		# we need to break tie here
+		# use predicted intensities as descending order
+		b_pred_idx_sort_by_int = b_pred_ints.argsort(descending=True)
+		
+		# use true intensities as graded relevance
+		b_pred_grade_rel = th.zeros(b_pred_ints.shape)
+		b_pred_grade_rel[b_pred_match_mzs] = b_true_ints[b_true_match_mzs][b_true_matched_idxs]
+		# under this based on order
+		b_pred_grade_rel = b_pred_grade_rel[b_pred_idx_sort_by_int]
+
+		# discounted cumulative gain
+		b_dcg = th.sum(b_pred_grade_rel / th.log(1 + th.arange(1, b_pred_ints.shape[0] + 1)))
+
+		# ideal discounted cumulative gain
+		b_true_grade_rel, _ = th.sort(b_true_ints, descending=True)
+		b_idcg = th.sum(b_true_grade_rel / th.log(1 +th.arange(1, b_true_grade_rel.shape[0] + 1)))
+
+		# normalized discounted cumulative gain
+		b_ncdg = b_dcg/b_idcg
+
 		ncdg[batch_idx] = b_ncdg
+		#print(b_ncdg)
 	return ncdg
 
 # cosine similarity code ... all of them
