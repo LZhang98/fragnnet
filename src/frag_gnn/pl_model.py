@@ -17,7 +17,7 @@ from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse
 from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, \
 	calculate_sparse_cosine_similarity, calculate_optimal_cosine_similarity, calculate_optimal_sparse_cosine_similarity, \
 	get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_recall, calculate_weighted_recall, \
-	binned_cosine_similarity, calculate_sparse_cosine_hungarian, calculate_ndcg_hungarian
+	binned_cosine_similarity, calculate_sparse_cosine_hungarian, calculate_ndcg_hungarian, calculate_precision, calculate_dice
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
 from frag_gnn.utils.frag_utils import NUM_ELEMENTS
 from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
@@ -113,6 +113,7 @@ class SpectrumPL(pl.LightningModule):
 			for mz_bin_res in self.hparams.eval_mz_bin_res:
 				self.metric_fns[f"cos_sim_{mz_bin_res}"] = get_cos_sim(mz_bin_res)
 				self.metric_min_max[f"cos_sim_{mz_bin_res}"] = "max"
+
 		if "recall" in self.hparams.auxiliary_scores:
 			def _recall(
 				true_mzs,
@@ -132,6 +133,7 @@ class SpectrumPL(pl.LightningModule):
 				)
 			self.metric_fns["recall"] = _recall
 			self.metric_min_max["recall"] = "max"
+
 		if "wrecall" in self.hparams.auxiliary_scores:
 			def _wrecall(
 				true_mzs,
@@ -263,12 +265,46 @@ class SpectrumPL(pl.LightningModule):
 		self.metric_names.update(list(self.metric_min_max.keys()))
 
 		# measure precision, recall, dice
-		if "recall" in self.hparams.auxiliary_scores:
-			pass
+		# this requires some level of post processing
 		if "precision" in self.hparams.auxiliary_scores:
-			pass
+			def _precision(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				return calculate_precision(
+					true_mzs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+			self.metric_fns["precision"] = _precision
+			self.metric_min_max["precision"] = "max"
+		
 		if "dice" in self.hparams.auxiliary_scores:
-			pass
+			def _dice(
+				true_mzs,
+				true_ints,
+				true_batch_idxs,
+				pred_mzs,
+				pred_ints,
+				pred_batch_idxs,
+				**kwargs):
+				return calculate_dice(
+					true_mzs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative
+				)
+			self.metric_fns["dice"] = _dice
+			self.metric_min_max["dice"] = "max"
 		
 		if "ndcg" in self.hparams.auxiliary_scores:
 			def _ndcg_hun(
@@ -294,7 +330,7 @@ class SpectrumPL(pl.LightningModule):
 					relative=self.relative
 				)
 				return cos_hun
-			self.metric_fns["ndcg"] = _cos_hun
+			self.metric_fns["ndcg"] = _ndcg_hun
 			self.metric_min_max["ndcg"] = "max"
 		self.metric_names.update(list(self.metric_min_max.keys()))
 
