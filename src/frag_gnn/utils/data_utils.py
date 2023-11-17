@@ -80,7 +80,7 @@ def split_smiles(smiles_str:str) -> List:
 def list_replace(l,d):
 	return [d[data] for data in l]
 
-def mol_from_inchi(inchi:str) -> Union["rdkit.Chem.rdchem.Mol",np.nan]:
+def mol_from_inchi(inchi:str) -> "rdkit.Chem.rdchem.Mol":
 	"""return a rdkit mol from inchi str
 
 	Args:
@@ -126,7 +126,7 @@ def rdkit_standardize(mol:"rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol":
 	mol = te.Canonicalize(mol)
 	return mol
 
-def mol_from_smiles(smiles,standardize:bool=True) -> Union["rdkit.Chem.rdchem.Mol",np.nan]:
+def mol_from_smiles(smiles,standardize:bool=True) -> "rdkit.Chem.rdchem.Mol":
 	"""return a rdkit mol from smiles str
 
 	Args:
@@ -148,7 +148,7 @@ def mol_from_smiles(smiles,standardize:bool=True) -> Union["rdkit.Chem.rdchem.Mo
 		mol = np.nan
 	return mol
 
-def mol_to_smiles(mol:"rdkit.Chem.rdchem.Mol",canonical:bool=True,isomericSmiles:bool=False,kekuleSmiles:bool=False) -> Union[str,np.nan]:
+def mol_to_smiles(mol:"rdkit.Chem.rdchem.Mol",canonical:bool=True,isomericSmiles:bool=False,kekuleSmiles:bool=False) -> str:
 	""" get smiles string from give mol object
 
 	Args:
@@ -168,7 +168,7 @@ def mol_to_smiles(mol:"rdkit.Chem.rdchem.Mol",canonical:bool=True,isomericSmiles
 		smiles = np.nan
 	return smiles
 
-def mol_to_formula(mol:"rdkit.Chem.rdchem.Mol") -> Union[str,np.nan]:
+def mol_to_formula(mol:"rdkit.Chem.rdchem.Mol") -> str:
 	"""get formula string from give mol object
 
 	Args:
@@ -185,7 +185,7 @@ def mol_to_formula(mol:"rdkit.Chem.rdchem.Mol") -> Union[str,np.nan]:
 		formula = np.nan
 	return formula
 
-def mol_to_inchikey(mol:"rdkit.Chem.rdchem.Mol") -> Union[str,np.nan]:
+def mol_to_inchikey(mol:"rdkit.Chem.rdchem.Mol") -> str:
 	"""get inchikey string from give mol object
 
 	Args:
@@ -202,7 +202,7 @@ def mol_to_inchikey(mol:"rdkit.Chem.rdchem.Mol") -> Union[str,np.nan]:
 		inchikey = np.nan
 	return inchikey
 
-def mol_to_inchi(mol:"rdkit.Chem.rdchem.Mol")  -> Union[str,np.nan]:
+def mol_to_inchi(mol:"rdkit.Chem.rdchem.Mol")  -> str:
 	"""get inchi string from give mol object
 
 	Args:
@@ -220,7 +220,7 @@ def mol_to_inchi(mol:"rdkit.Chem.rdchem.Mol")  -> Union[str,np.nan]:
 		inchikey_s = np.nan
 	return inchikey_s
 
-def mol_to_mol_weight(mol,exact=True)  -> Union[float,np.nan]:
+def mol_to_mol_weight(mol,exact=True)  -> float:
 	"""get mol weight from mol object
 
 	Args:
@@ -228,7 +228,7 @@ def mol_to_mol_weight(mol,exact=True)  -> Union[float,np.nan]:
 		exact (bool, optional): flag to get extact mass. Defaults to True.
 
 	Returns:
-		Union[float,np.nan]: mw
+		float: mw
 	"""
 	modules = rdkit_import("rdkit.Chem.rdinchi")
 	rdinchi = modules[0]
@@ -250,11 +250,11 @@ def mol_to_mol_weight(mol,exact=True):
 		mol_weight = np.nan
 	return mol_weight
 
-def mol_to_charge(mol:"rdkit.Chem.rdchem.Mol") -> Union[int,np.nan]:
+def mol_to_charge(mol:"rdkit.Chem.rdchem.Mol") -> int:
 	""" get number of charges from mol object
 
 	Returns:
-		Union[int,np.nan]: total number of charges, np.nan if fails
+		int: total number of charges, np.nan if fails
 	"""
 	modules = rdkit_import("rdkit.Chem.rdmolops")
 	rdmolops = modules[0]
@@ -264,7 +264,7 @@ def mol_to_charge(mol:"rdkit.Chem.rdchem.Mol") -> Union[int,np.nan]:
 		charge = np.nan
 	return charge
 
-def mol_to_num_atoms(mol:"rdkit.Chem.rdchem.Mol", heavy:bool=True) -> Union[int,np.nan]:
+def mol_to_num_atoms(mol:"rdkit.Chem.rdchem.Mol", heavy:bool=True) -> int:
 	""" get total number of atoms in get mol object
 
 	Args:
@@ -272,7 +272,7 @@ def mol_to_num_atoms(mol:"rdkit.Chem.rdchem.Mol", heavy:bool=True) -> Union[int,
 		heavy (bool, optional): count heavy atom only. Defaults to True.
 
 	Returns:
-		Union[int,np.nan]: total number of atoms, np.nan if fails
+		int: total number of atoms, np.nan if fails
 	"""
 	try:
 		num_atoms = mol.GetNumAtoms(onlyHeavy=heavy)
@@ -280,7 +280,7 @@ def mol_to_num_atoms(mol:"rdkit.Chem.rdchem.Mol", heavy:bool=True) -> Union[int,
 		num_atoms = np.nan
 	return num_atoms
 
-def mol_to_num_bonds(mol:"rdkit.Chem.rdchem.Mol",heavy:bool=True) -> Union[int,np.nan]:
+def mol_to_num_bonds(mol:"rdkit.Chem.rdchem.Mol",heavy:bool=True) -> int:
 	""" get total number of bondss in get mol object
 
 	Args:
@@ -288,7 +288,7 @@ def mol_to_num_bonds(mol:"rdkit.Chem.rdchem.Mol",heavy:bool=True) -> Union[int,n
 		heavy (bool, optional): count bond between heavy atom only. Defaults to True.
 
 	Returns:
-		Union[int,np.nan]: total number of bonds, np.nan if fails
+		int: total number of bonds, np.nan if fails
 	"""
 	try:
 		num_bonds = mol.GetNumBonds(onlyHeavy=heavy)
@@ -296,14 +296,14 @@ def mol_to_num_bonds(mol:"rdkit.Chem.rdchem.Mol",heavy:bool=True) -> Union[int,n
 		num_bonds = np.nan
 	return num_bonds
 
-def mol_to_num_radicals(mol:"rdkit.Chem.rdchem.Mol") -> Union[int,np.nan]:
+def mol_to_num_radicals(mol:"rdkit.Chem.rdchem.Mol") -> int:
 	"""get total number of radicals in the mol object
 
 	Args:
 		mol (rdkit.Chem.rdchem.Mol): mol object
 
 	Returns:
-		Union[int,np.nan]: number of radicals, np.nan if fails
+		int: number of radicals, np.nan if fails
 	"""
 	try:
 		num_radicals = 0

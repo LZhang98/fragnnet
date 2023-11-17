@@ -560,7 +560,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			# Fill batch
 			for idx in indices[num_processed:]:
 				# Size of sample
-				data = self.data_source[idx.item()]
+				data = self._data_source[idx.item()]
 				
 				n = data['frag_pyg'].num_nodes if  self.limited_by == 'frag_node' \
 					else data['frag_pyg'].num_edges
