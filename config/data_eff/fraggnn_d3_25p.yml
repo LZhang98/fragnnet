@@ -1,6 +1,5 @@
 wandb_name: fraggnn_d3_25p
 wandb_tags:
-- splits
 - nist20
 - d3
 - wr75
