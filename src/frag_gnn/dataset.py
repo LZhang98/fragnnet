@@ -27,6 +27,7 @@ class BaseDataset(Dataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		split_subsample: dict,
 		spec_params: dict
 	):
 		
@@ -45,9 +46,17 @@ class BaseDataset(Dataset):
 		if self.spec_params["merge"]:
 			self.spec_df = merge_spec_df(self.spec_df)
 		# subsample
-		if self.spec_params["subsample_size"] > 0:
+		if (split_subsample[split] or split_subsample["all"]) and self.spec_params["subsample_size"] > 0:
+			if isinstance(self.spec_params["subsample_size"],int):
+				n = self.spec_params["subsample_size"]
+				frac = None
+			else:
+				assert isinstance(self.spec_params["subsample_size"],float)
+				n = None
+				frac = self.spec_params["subsample_size"]
 			self.spec_df = self.spec_df.sample(
-				n=self.spec_params["subsample_size"],
+				n=n,
+				frac=frac,
 				random_state=self.spec_params["subsample_seed"],
 				replace=False)
 			self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
@@ -208,6 +217,7 @@ class SpecMolDataset(BaseDataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		split_subsample: dict,
 		spec_params: dict,
 		mol_params: dict,
 		**kwargs
@@ -219,6 +229,7 @@ class SpecMolDataset(BaseDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
+			split_subsample=split_subsample,
 			spec_params=spec_params
 		)
 		self.mol_params = mol_params
@@ -312,6 +323,7 @@ class SpecMolFragDataset(SpecMolDataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		split_subsample: dict,
 		frag_dp: str,
 		spec_params: dict,
 		mol_params: dict,
@@ -325,6 +337,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
+			split_subsample=split_subsample,
 			spec_params=spec_params
 		)
 		self.frag_dp = frag_dp

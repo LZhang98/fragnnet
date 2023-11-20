@@ -400,6 +400,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		split_subsample: dict,
 		magma_dp: str,
 		spec_params: dict,
 		mol_params: dict,
@@ -415,6 +416,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
+			split_subsample=split_subsample,
 			spec_params=spec_params
 		)
 		self.magma_dp = magma_dp
@@ -563,6 +565,7 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		split_subsample: dict,
 		magma_dp: str,
 		spec_params: str,
 		mol_params: str,
@@ -576,6 +579,7 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
+			split_subsample=split_subsample,
 			spec_params=spec_params
 		)
 		self.magma_dp = magma_dp
