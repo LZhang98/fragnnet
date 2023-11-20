@@ -50,8 +50,8 @@ gradient_clip_val: 5.0
 lr: 0.000736
 accelerator: gpu
 devices: 1
-min_epochs: 200
-max_epochs: 200
+min_epochs: 20
+max_epochs: 20
 lr_schedule: True
 lr_decay_rate: 0.825
 lr_warmup_steps: 1000

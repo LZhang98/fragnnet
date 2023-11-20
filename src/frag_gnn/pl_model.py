@@ -1,4 +1,5 @@
 import torch as th
+import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
@@ -40,10 +41,21 @@ class SpectrumPL(pl.LightningModule):
 		self._setup_batch_metric_reduce_fns()
 		self.train_results = None
 		self.train_counter = 0
-		self.train_mean_metrics = []
 		self.val_results = None
 		self.val_counter = 0
-		self.val_mean_metrics = []
+		# store epoch mean metric in lightning module, for ease of reloading
+		self.train_mean_metrics = nn.ParameterDict()
+		self.val_mean_metrics = nn.ParameterDict()
+		for name in self.metric_names:
+			_name = name.replace(".","-")
+			self.train_mean_metrics[_name] = nn.Parameter(
+				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				requires_grad=False
+			)
+			self.val_mean_metrics[_name] = nn.Parameter(
+				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				requires_grad=False
+			)
 
 	def _setup_model(self):
 		raise NotImplementedError
@@ -632,16 +644,17 @@ class SpectrumPL(pl.LightningModule):
 				v
 			)
 		# update epoch stats
-		mean_metrics_list = getattr(self,f"{split}_mean_metrics")
-		mean_metrics_list.append(mean_metrics)
+		mean_metrics_epochs = getattr(self,f"{split}_mean_metrics")
+		for k,v in mean_metrics.items():
+			mean_metrics_epochs[k.replace(".","-")][self.current_epoch] = v
 		# log best metric
 		for k in self.metric_bests:
 			assert k in self.metric_names, (k, self.metric_names)
-			metric_epochs = [item[k] for item in mean_metrics_list]
+			mean_metric_epochs = mean_metrics_epochs[k.replace(".","-")][:self.current_epoch+1]
 			if self.metric_min_max[k] == "min":
-				metric_best = th.min(th.tensor(metric_epochs))
+				metric_best = th.min(mean_metric_epochs)
 			elif self.metric_min_max[k] == "max":
-				metric_best = th.max(th.tensor(metric_epochs))
+				metric_best = th.max(mean_metric_epochs)
 			else:
 				assert self.metric_min_max[k] is None, self.metric_min_max[k]
 				continue
