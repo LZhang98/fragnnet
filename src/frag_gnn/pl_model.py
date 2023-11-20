@@ -328,32 +328,48 @@ class SpectrumPL(pl.LightningModule):
 			self.metric_bests.append("dice")
 		
 		if "ndcg" in self.hparams.auxiliary_scores:
-			def _ndcg_hun(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				ndcg_hun = calculate_ndcg_hungarian(
+			def get_ndcg(union,optimistic):
+				def _ndcg_hun(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
-				)
-				return ndcg_hun
-			self.metric_fns["ndcg"] = _ndcg_hun
-			self.metric_min_max["ndcg"] = "max"
-			self.metric_bests.append("ndcg")
+					**kwargs):
+					# untransform
+					true_ints = self.ints_untransform_func(true_ints)
+					pred_ints = self.ints_untransform_func(pred_ints)
+					# calculate
+					ndcg_hun = calculate_ndcg_hungarian(
+						true_mzs,
+						true_ints,
+						true_batch_idxs,
+						pred_mzs,
+						pred_ints,
+						pred_batch_idxs,
+						tolerance=self.tolerance,
+						relative=self.relative,
+						union=union,
+						optimistic=optimistic
+					)
+					return ndcg_hun
+				return _ndcg_hun
+			for union in [True,False]:
+				if union:
+					fname = "ndcg_un"
+					tie_break_vals = [True,False]
+				else:
+					fname = "ndcg_int"
+					tie_break_vals = [True]
+				for optimistic in tie_break_vals:
+					if union:
+						suffix = "_opt" if optimistic else "_pess"
+					else:
+						suffix = ""
+					self.metric_fns[fname+suffix] = get_ndcg(union,optimistic)
+					self.metric_min_max[fname+suffix] = "max"
+					self.metric_bests.append(fname+suffix)
 
 		self.metric_names.update(list(self.metric_min_max.keys()))
 
