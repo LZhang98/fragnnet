@@ -6,7 +6,8 @@ split_dp: data/split/d3_h4_isoTrue_hyperopt
 frag_dp: data/frag/d3_h4_isoTrue/dags
 num_depth: 4
 num_hs: 4
-spec_subsample_size: 256 # 0
+subsample_params:
+  subsample_size: 256
 
 train_batch_size: 2 # 32
 eval_batch_size: 2 # 32

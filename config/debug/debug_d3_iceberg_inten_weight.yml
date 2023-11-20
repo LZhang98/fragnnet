@@ -7,8 +7,9 @@ mol_fp: data/proc/nist20mona23/mol_df.pkl
 split_dp: data/split/nist20_d3_wr00_inchikey
 magma_dp: data/magma/gen/nist20mona23
 spec_params:
-  subsample_size: 128
   merge: True
+subsample_params:
+  subsample_size: 128
 sample_weight: group
 
 model_type: iceberg_inten

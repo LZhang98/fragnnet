@@ -9,8 +9,9 @@ frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 spec_params:
-  subsample_size: 256
   merge: True
+subsample_params:
+  subsample_size: 256
 sample_weight: none
 
 train_batch_size: 32

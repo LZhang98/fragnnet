@@ -9,10 +9,14 @@ mol_fp: data/proc/nist/mol_df.pkl
 split_dp: data/split/d3_h4_isoTrue_v2
 frag_dp: data/frag/d3_h4_isoTrue_v2/dags
 magma_dp: data/magma
-spec_params:
-  merge: True
+subsample_params:
   subsample_size: 0
   subsample_seed: 420
+  train: True
+  val: True
+  test: True
+spec_params:
+  merge: True
   sparse: True
   prec_type: True
   prec_mz: True
@@ -211,8 +215,3 @@ node_formula_null_aggregate: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False
 sample_weight: none
-split_subsample:
-  train: False
-  val: False
-  test: False
-  all: True
