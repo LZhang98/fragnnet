@@ -242,9 +242,6 @@ class FragGNNModel(nn.Module):
 			_type_: _description_
 		"""
 
-
-		# TODO add collision energy support
-
 		device = mol_num_nodes.device
 
 		# mol_x: mol level node feature matrix
@@ -263,16 +260,12 @@ class FragGNNModel(nn.Module):
 		
 		# get ce value
 		# maybe we should check if ce is provided by model does not handle it ?
-		# add collision energy support
-		# TODO fix this, we should also handle ace
-		# for k, v in kwargs.items():
-		#	print(f"{k} {v}")
 		
 		if self.ce_insert_type != "none":
 			if "spec_nce" in kwargs:
-				ce = kwargs.pop('spec_nce')
+				ce = kwargs["spec_nce"]
 			elif "spec_ace" in kwargs:
-				ce = kwargs.pop('spec_ace')
+				ce = kwargs["spec_ace"]
 
 		# get per-atom embeddings
 		mol_embed_gnn = self.mol_embedder(

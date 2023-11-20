@@ -734,7 +734,7 @@ def test_inten():
 		results = pl_model._common_step(batch, split="train")
 		print_shapes(results)
 
-		mean_loss = results.pop("mean_loss")
+		mean_loss = results["mean_loss"]
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()

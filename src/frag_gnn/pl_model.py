@@ -39,23 +39,8 @@ class SpectrumPL(pl.LightningModule):
 		self._setup_spec_fns()
 		self._setup_metric_fns()
 		self._setup_batch_metric_reduce_fns()
-		self.train_results = None
-		self.train_counter = 0
-		self.val_results = None
-		self.val_counter = 0
-		# store epoch mean metric in lightning module, for ease of reloading
-		self.train_mean_metrics = nn.ParameterDict()
-		self.val_mean_metrics = nn.ParameterDict()
-		for name in self.metric_names:
-			_name = name.replace(".","-")
-			self.train_mean_metrics[_name] = nn.Parameter(
-				th.zeros([self.hparams.max_epochs],dtype=th.float32),
-				requires_grad=False
-			)
-			self.val_mean_metrics[_name] = nn.Parameter(
-				th.zeros([self.hparams.max_epochs],dtype=th.float32),
-				requires_grad=False
-			)
+		self._setup_result_trackers()
+		self._setup_sampler()
 
 	def _setup_model(self):
 		raise NotImplementedError
@@ -383,17 +368,49 @@ class SpectrumPL(pl.LightningModule):
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / spec_per_mol
 		elif self.hparams.sample_weight == "group_mol":
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / (spec_per_group*group_per_mol)
-		def _batch_metric_reduce(b_metric, b_spec_per_group, b_spec_per_mol, b_group_per_mol, reduce):
+		def _batch_metric_reduce(b_metric, b_spec_per_group, b_spec_per_mol, b_group_per_mol, reduce, return_weights=False):
 			b_sample_weight = calc_sample_weights(b_spec_per_group, b_spec_per_mol, b_group_per_mol)
+			b_total_weight = th.sum(b_sample_weight, dim=0)
 			if reduce == "w_mean":
-				b_reduce_metric = th.sum(b_sample_weight * b_metric, dim=0) / th.sum(b_sample_weight, dim=0)
+				b_reduce_metric = th.sum(b_sample_weight * b_metric, dim=0) / b_total_weight
 			elif reduce == "mean":
 				b_reduce_metric = th.mean(b_sample_weight * b_metric, dim=0)
 			else:
 				assert reduce == "sum", reduce
 				b_reduce_metric = th.sum(b_sample_weight * b_metric, dim=0)
-			return b_reduce_metric
+			if return_weights:
+				return b_reduce_metric, b_total_weight
+			else:
+				return b_reduce_metric
 		self.batch_metric_reduce_fn = _batch_metric_reduce
+
+	def _setup_result_trackers(self):
+
+		self.train_results = None
+		self.train_counter = 0
+		self.val_results = None
+		self.val_counter = 0
+		# store epoch mean metric in lightning module, for ease of reloading
+		self.train_mean_metrics = nn.ParameterDict()
+		self.val_mean_metrics = nn.ParameterDict()
+		for name in self.metric_names:
+			_name = name.replace(".","-")
+			self.train_mean_metrics[_name] = nn.Parameter(
+				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				requires_grad=False
+			)
+			self.val_mean_metrics[_name] = nn.Parameter(
+				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				requires_grad=False
+			)
+
+	def _setup_sampler(self):
+
+		self._smf = self.hparams.custom_sampler == "SpecMolFragDynamicBatchSampler"
+		self._cur_batch_size = 0
+		self._cur_batch_weight = 0.
+		self._max_batch_size = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
+		self.automatic_optimization = self.hparams.automatic_optimization
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
@@ -458,12 +475,13 @@ class SpectrumPL(pl.LightningModule):
 			b_group_per_mol=group_per_mol,
 			reduce="w_mean"
 		)
-		total_loss = self.batch_metric_reduce_fn(
+		total_loss, total_weight = self.batch_metric_reduce_fn(
 			b_metric=loss,
 			b_spec_per_group=spec_per_group,
 			b_spec_per_mol=spec_per_mol,
 			b_group_per_mol=group_per_mol,
-			reduce="sum"
+			reduce="sum",
+			return_weights=True
 		)
 		# just log loss
 		self.log(
@@ -477,6 +495,7 @@ class SpectrumPL(pl.LightningModule):
 			"smiles": smiles,
 			"mean_loss": mean_loss,
 			"total_loss": total_loss,
+			"total_weight": total_weight,
 			"spec_per_group": spec_per_group,
 			"spec_per_mol": spec_per_mol,
 			"group_per_mol": group_per_mol,
@@ -515,7 +534,7 @@ class SpectrumPL(pl.LightningModule):
 
 		if self.hparams.automatic_optimization:
 			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss")
+			mean_loss = batch_results["mean_loss"]
 			self._update_results(batch_results,"train")
 			return mean_loss
 		else:
@@ -524,14 +543,14 @@ class SpectrumPL(pl.LightningModule):
 	def validation_step(self, batch, batch_idx):
 
 		batch_results = self._common_step(batch, split="val")
-		mean_loss = batch_results.pop("mean_loss")
+		mean_loss = batch_results["mean_loss"]
 		self._update_results(batch_results,"val")
 		return mean_loss
 
 	def test_step(self, batch, batch_idx):
 
 		batch_results = self._common_step(batch, split="test")
-		mean_loss = batch_results.pop("mean_loss")
+		mean_loss = batch_results["mean_loss"]
 		# self._update_results(batch_results,"test")
 		return mean_loss
 
@@ -782,7 +801,7 @@ class SpectrumPL(pl.LightningModule):
 
 		if prefix is None:
 			prefix = "no_prefix"
-		print(f">> {prefix}, {self._num_need_update}, {self._num_acc_gradient}")
+		print(f">> {prefix}, {self._cur_batch_size}, {self._max_batch_size}")
 		opt = self.optimizers()
 		num_params = 0
 		for pg in opt.param_groups:
@@ -807,7 +826,8 @@ class SpectrumPL(pl.LightningModule):
 
 	def on_after_optimizer_step(self, optimizer):
 
-		self._num_need_update = 0
+		self._cur_batch_size = 0
+		self._cur_batch_weight = 0.
 
 class FragGNNPL(SpectrumPL):
 
@@ -855,16 +875,6 @@ class FragGNNPL(SpectrumPL):
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
-
-		# for sampler
-		self._smf = self.hparams.custom_sampler == "SpecMolFragDynamicBatchSampler"
-		self._num_need_update = 0
-
-		# this used in manul update
-		self._num_acc_gradient = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
-		self.automatic_optimization = self.hparams.automatic_optimization
-		if not self.automatic_optimization:
-			assert self.hparams.sample_weight == "none", self.hparams.sample_weight
 
 	def _setup_loss_fn(self):
 
@@ -1081,7 +1091,7 @@ class FragGNNPL(SpectrumPL):
 			for pg in opt.param_groups:
 				for p in pg['params']:
 					if p.grad is not None:
-						p.grad.data.mul_(self._num_acc_gradient / self._num_need_update)					
+						p.grad.data.mul_(self._max_batch_size / self._cur_batch_weight)					
 		self.on_before_optimizer_step(opt)
 		# clip gradients
 		self.clip_gradients(opt, gradient_clip_val=self.hparams.gradient_clip_val, gradient_clip_algorithm=self.hparams.gradient_clip_algorithm)
@@ -1103,15 +1113,16 @@ class FragGNNPL(SpectrumPL):
 
 		Returns:
 			_type_: _description_
+		TODO: is the dictionary popping necessary?
 		"""
 
 		if self.hparams.automatic_optimization:
 			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss")
+			mean_loss = batch_results["mean_loss"]
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
-			self._num_need_update += self.hparams.train_batch_size
+			self._cur_batch_size += self.hparams.train_batch_size
 			self._update_results(batch_results,"train")
 			return mean_loss
 		
@@ -1120,29 +1131,33 @@ class FragGNNPL(SpectrumPL):
 				return th.tensor(0.0)		
 			batch_results = self._common_step(batch, split="train")
 			batch_size = batch['batch_size'].item()
-			total_loss = batch_results.pop("total_loss")
-			mean_loss = total_loss / self._num_acc_gradient
+			total_loss = batch_results["total_loss"]
+			total_weight = batch_results["total_weight"]
+			mean_loss = total_loss / self._max_batch_size
+			self._cur_batch_weight += total_weight
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
 			self.manual_backward(mean_loss)
 			# accumulate gradients of N samples
-			self._num_need_update += batch_size
-			if self._num_need_update >= self._num_acc_gradient:
+			self._cur_batch_size += batch_size
+			self._cur_batch_weight += total_weight
+			if self._cur_batch_size >= self._max_batch_size:
 				self._manual_opt()
 			self._update_results(batch_results,"train")
 			return mean_loss
 		
 		else:
 			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss") / self.hparams.accumulate_grad_batches
+			mean_loss = batch_results["mean_loss"] / self.hparams.accumulate_grad_batches
+			total_weight = batch_results["total_weight"]
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
 			self.manual_backward(mean_loss)
-			# self.backward(mean_loss)
 			# accumulate gradients of N samples
-			self._num_need_update += self.hparams.train_batch_size
+			self._cur_batch_size += self.hparams.train_batch_size
+			self._cur_batch_weight += total_weight
 			if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
 				self._manual_opt()
 			self._update_results(batch_results,"train")
@@ -1150,9 +1165,8 @@ class FragGNNPL(SpectrumPL):
 
 	def on_train_epoch_end(self):
 
-		if not self.hparams.automatic_optimization and self._smf and self._num_need_update > 0:
+		if not self.hparams.automatic_optimization and self._smf and self._cur_batch_size > 0:
 			# this is used for manul opt when lr_schedulers is not available from torch lightning
-			# TODO: add drop_last check?
 			self._manual_opt()
 		super().on_train_epoch_end()
 
@@ -1280,7 +1294,7 @@ def test_fraggnn():
 		results = pl_model._common_step(batch, split="train")
 		print_shapes(results)
 
-		mean_loss = results.pop("mean_loss")
+		mean_loss = results["mean_loss"]
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()
