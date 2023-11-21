@@ -1168,6 +1168,14 @@ class FragGNNPL(SpectrumPL):
 		if not self.hparams.automatic_optimization and self._smf and self._cur_batch_size > 0:
 			# this is used for manul opt when lr_schedulers is not available from torch lightning
 			self._manual_opt()
+		# # subsample data
+		# train_dl = self.trainer.train_dataloader
+		# self.trainer.train_dataloader = Dataloader(
+		# 	train_dl.train_ds,
+		# 	num_workers=train_dl.num_workers,
+		# 	collate_fn=train_dl.train_ds.get_collate_fn(),
+		# 	batch_sampler=SubsetRandomSampler(indices=th.arange(len(train_dl.train_ds) // 4)),
+		# )
 		super().on_train_epoch_end()
 
 	def optimizer_step(self, *args, **kwargs):

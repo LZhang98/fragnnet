@@ -18,6 +18,7 @@ num_hs: 4
 spec_params:
   merge: False
   nce: True
+sample_weight: group
 
 train_batch_size: 32
 eval_batch_size: 32

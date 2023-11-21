@@ -38,7 +38,7 @@ sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
 
-automatic_optimization: False
+automatic_optimization: True
 custom_sampler: none # SpecMolFragDynamicBatchSampler
 specmolfrag_dynamic_batch_sampler_mode: frag_edge
 specmolfrag_dynamic_batch_sampler_max: 600000

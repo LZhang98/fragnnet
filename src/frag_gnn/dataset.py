@@ -3,7 +3,7 @@ import os
 import torch as th
 import torch.nn.functional as F
 from torch.utils.data.sampler import Sampler, BatchSampler
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import torch_geometric as pyg
 from torch_geometric.data import Data, Batch
@@ -18,6 +18,69 @@ from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+
+
+def init_dataloader(ds, split, **config_d):
+
+	if split in ["train", "val"]:
+		
+		dl_param_d = {
+			'dataset': ds,
+			'num_workers': config_d["num_workers"],
+			'collate_fn': ds.get_collate_fn(),
+		}
+
+		if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+			
+			if split == "train":
+				
+				batchsampler = SpecMolFragDynamicBatchSampler(train_ds, 
+										max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
+										limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
+										shuffle=(not config_d["debug_overfit"]), 
+										skip_too_big = True,
+										return_batch_at = config_d['train_batch_size'] * config_d['accumulate_grad_batches'])
+				
+			else:
+
+				batchsampler = SpecMolFragDynamicBatchSampler(val_ds, 
+								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
+								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
+								shuffle=False, 
+								skip_too_big = True)
+
+			dl_param_d['batch_sampler'] = batchsampler
+
+		else:
+			
+			if split == "train":
+			
+				dl_param_d['batch_size'] = config_d["train_batch_size"]	
+				dl_param_d['drop_last'] = config_d["drop_last"]
+				dl_param_d["shuffle"] = True
+				# dl_param_d['batch_sampler'] = SubsetRandomSampler(indices=th.arange(len(train_ds) // 2))
+			
+			else:
+
+				dl_param_d['batch_size'] = config_d["eval_batch_size"]
+				dl_param_d["drop_last"] = False
+				dl_param_d['shuffle'] = False
+	
+		dl = DataLoader(
+			**dl_param_d
+		)
+
+	else:
+
+		dl = DataLoader(
+			ds,
+			batch_size=config_d["eval_batch_size"],
+			shuffle=False,
+			num_workers=config_d["num_workers"],
+			collate_fn=ds.get_collate_fn()
+		)
+
+	return dl
 
 
 class BaseDataset(Dataset):
