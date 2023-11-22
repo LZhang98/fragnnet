@@ -34,7 +34,7 @@ def init_dataloader(ds, split, **config_d):
 			
 			if split == "train":
 				
-				batchsampler = SpecMolFragDynamicBatchSampler(train_ds, 
+				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 										max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 										limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
 										shuffle=(not config_d["debug_overfit"]), 
@@ -43,7 +43,7 @@ def init_dataloader(ds, split, **config_d):
 				
 			else:
 
-				batchsampler = SpecMolFragDynamicBatchSampler(val_ds, 
+				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
 								shuffle=False, 

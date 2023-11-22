@@ -1,15 +1,18 @@
 wandb_name: debug_d4
-split_dp: data/split/d4_h4_isoTrue_v2
-frag_dp: data/frag/d4_h4_isoTrue_v2/dags
+wandb_tags:
+- DynamicBatchSampler
+- debug
+- D4
+
+spec_fp: data/proc/nist20mona23/spec_df.pkl
+mol_fp: data/proc/nist20mona23/mol_df.pkl
+split_dp: data/split/nist20_d4_wr75_inchikey
+frag_dp: data/frag/nist20_d4_h4_isoFalse/dags
 num_depth: 5
 num_hs: 4
-spec_preprocess: False #True
-mol_preprocess: False #True
-frag_preload: False #True
-frag_preprocess: False #True
 
-train_batch_size: 2 # 4
-eval_batch_size: 2 # 4
+train_batch_size: 1 # 4
+eval_batch_size: 1 # 4
 accumulate_grad_batches: 24 # 12
 gradient_clip_val: 5.0
 lr: 0.0003
@@ -21,13 +24,53 @@ debug_overfit: True
 debug_overfit_batches: 48 # 24
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.5 #0.0
-frag_pyg_node_feats:
-  - cc
-  - base_formula
-  - depth
-frag_pyg_edge_feats:
-  - cc
-  - base_formula
-profiler: none
-compile: True
-log_every_n_steps: 0
+
+mol_params:
+  smiles: True
+  fingerprint: False
+  fingerprint_morgan: True
+  fingerprint_rdkit: True
+  fingerprint_maccs: True
+  pyg: True
+  pyg_node_feats:
+    - a_onehot
+    - a_degree
+    - a_hybrid
+    - a_formal
+    - a_radical
+    - a_ring
+    - a_mass
+    - a_chiral
+  pyg_edge_feats:
+    - b_degree
+  pyg_pe_embed_k: 0
+  pyg_bigraph: True
+  preprocess: False
+frag_params:
+  pyg: True
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - h_counts
+  pyg_edge_feats:
+    - cc
+    - base_formula
+    - h_range
+  pyg_bigraph: True
+  num_isotopes: 1
+  formula_peak_mzs: True
+  formula_peak_probs: True
+  compressed: True
+  preload: False
+  preprocess: False
+
+automatic_optimization: False
+use_tensor_float32: False
+detect_anomaly: False
+custom_sampler: SpecMolFragDynamicBatchSampler
+specmolfrag_dynamic_batch_sampler_mode: frag_edge
+specmolfrag_dynamic_batch_sampler_max: 500000
+pl_enable_progress_bar: True
+debug_val_loop_trigger: False

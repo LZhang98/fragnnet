@@ -4,10 +4,10 @@ wandb_project: frag-gnn
 wandb_name: template
 wandb_tags: 
 # data
-spec_fp: data/proc/nist/spec_df.pkl
-mol_fp: data/proc/nist/mol_df.pkl
-split_dp: data/split/d3_h4_isoTrue_v2
-frag_dp: data/frag/d3_h4_isoTrue_v2/dags
+spec_fp: data/proc/nist20mona23/spec_df.pkl
+mol_fp: data/proc/nist20mona23/mol_df.pkl
+split_dp: data/split/nist20_d3_wr75_inchikey
+frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
 magma_dp: data/magma
 subsample_params:
   subsample_size: 0
