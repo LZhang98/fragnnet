@@ -1,4 +1,5 @@
 import torch as th
+import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
@@ -37,12 +38,9 @@ class SpectrumPL(pl.LightningModule):
 		self._setup_loss_fn()
 		self._setup_spec_fns()
 		self._setup_metric_fns()
-		self.train_results = None
-		self.train_counter = 0
-		self.train_mean_metrics = []
-		self.val_results = None
-		self.val_counter = 0
-		self.val_mean_metrics = []
+		self._setup_batch_metric_reduce_fns()
+		self._setup_result_trackers()
+		self._setup_sampler()
 
 	def _setup_model(self):
 		raise NotImplementedError
@@ -78,6 +76,8 @@ class SpectrumPL(pl.LightningModule):
 		# setup metrics
 		self.metric_min_max = {"loss": "min"}
 		self.metric_fns = {}
+		self.metric_bests = ["loss"]
+		
 		# measure cos sim between predicted and ground truth
 		if "cos_sim" in self.hparams.auxiliary_scores:
 			def get_cos_sim(mz_bin_res):
@@ -113,7 +113,8 @@ class SpectrumPL(pl.LightningModule):
 			for mz_bin_res in self.hparams.eval_mz_bin_res:
 				self.metric_fns[f"cos_sim_{mz_bin_res}"] = get_cos_sim(mz_bin_res)
 				self.metric_min_max[f"cos_sim_{mz_bin_res}"] = "max"
-
+				self.metric_bests.append(f"cos_sim_{mz_bin_res}")
+		
 		if "recall" in self.hparams.auxiliary_scores:
 			def _recall(
 				true_mzs,
@@ -161,6 +162,7 @@ class SpectrumPL(pl.LightningModule):
 				)
 			self.metric_fns["wrecall"] = _wrecall
 			self.metric_min_max["wrecall"] = "max"
+		
 		# measure max possible cos sim between ground truth spectra and dag
 		# this gives us an upper bound for cos sim
 		if "opt_cos_sim" in self.hparams.auxiliary_scores:
@@ -197,6 +199,7 @@ class SpectrumPL(pl.LightningModule):
 			for mz_bin_res in self.hparams.eval_mz_bin_res:
 				self.metric_fns[f"opt_cos_sim_{mz_bin_res}"] = get_opt_cos_sim(mz_bin_res)
 				self.metric_min_max[f"opt_cos_sim_{mz_bin_res}"] = None
+		
 		if "true_spec_e" in self.hparams.auxiliary_scores:
 			def _true_spec_e(
 				true_mzs,
@@ -215,6 +218,7 @@ class SpectrumPL(pl.LightningModule):
 				return true_spec_e
 			self.metric_fns["true_spec_e"] = _true_spec_e
 			self.metric_min_max["true_spec_e"] = None
+		
 		# measure normalized entropy
 		if "true_spec_ne" in self.hparams.auxiliary_scores:
 			def _true_spec_ne(
@@ -262,7 +266,7 @@ class SpectrumPL(pl.LightningModule):
 				return cos_hun
 			self.metric_fns["cos_hun"] = _cos_hun
 			self.metric_min_max["cos_hun"] = "max"
-		self.metric_names.update(list(self.metric_min_max.keys()))
+			self.metric_bests.append("cos_hun")
 
 		# measure precision, recall, dice
 		# this requires some level of post processing
@@ -285,6 +289,7 @@ class SpectrumPL(pl.LightningModule):
 				)
 			self.metric_fns["precision"] = _precision
 			self.metric_min_max["precision"] = "max"
+			self.metric_bests.append("precision")
 		
 		if "dice" in self.hparams.auxiliary_scores:
 			def _dice(
@@ -305,34 +310,107 @@ class SpectrumPL(pl.LightningModule):
 				)
 			self.metric_fns["dice"] = _dice
 			self.metric_min_max["dice"] = "max"
+			self.metric_bests.append("dice")
 		
 		if "ndcg" in self.hparams.auxiliary_scores:
-			def _ndcg_hun(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				cos_hun = calculate_ndcg_hungarian(
+			def get_ndcg(union,optimistic):
+				def _ndcg_hun(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
-				)
-				return cos_hun
-			self.metric_fns["ndcg"] = _ndcg_hun
-			self.metric_min_max["ndcg"] = "max"
+					**kwargs):
+					# untransform
+					true_ints = self.ints_untransform_func(true_ints)
+					pred_ints = self.ints_untransform_func(pred_ints)
+					# calculate
+					ndcg_hun = calculate_ndcg_hungarian(
+						true_mzs,
+						true_ints,
+						true_batch_idxs,
+						pred_mzs,
+						pred_ints,
+						pred_batch_idxs,
+						tolerance=self.tolerance,
+						relative=self.relative,
+						union=union,
+						optimistic=optimistic
+					)
+					return ndcg_hun
+				return _ndcg_hun
+			for union in [True,False]:
+				if union:
+					fname = "ndcg_un"
+					tie_break_vals = [True,False]
+				else:
+					fname = "ndcg_int"
+					tie_break_vals = [True]
+				for optimistic in tie_break_vals:
+					if union:
+						suffix = "_opt" if optimistic else "_pess"
+					else:
+						suffix = ""
+					self.metric_fns[fname+suffix] = get_ndcg(union,optimistic)
+					self.metric_min_max[fname+suffix] = "max"
+					self.metric_bests.append(fname+suffix)
+
 		self.metric_names.update(list(self.metric_min_max.keys()))
+
+	def _setup_batch_metric_reduce_fns(self):
+
+		if self.hparams.sample_weight == "none":
+			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: th.ones_like(spec_per_group, dtype=th.float32)
+		elif self.hparams.sample_weight == "group":
+			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / spec_per_group
+		elif self.hparams.sample_weight == "mol":
+			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / spec_per_mol
+		elif self.hparams.sample_weight == "group_mol":
+			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / (spec_per_group*group_per_mol)
+		def _batch_metric_reduce(b_metric, b_spec_per_group, b_spec_per_mol, b_group_per_mol, reduce, return_weights=False):
+			b_sample_weight = calc_sample_weights(b_spec_per_group, b_spec_per_mol, b_group_per_mol)
+			b_total_weight = th.sum(b_sample_weight, dim=0)
+			if reduce == "w_mean":
+				b_reduce_metric = th.sum(b_sample_weight * b_metric, dim=0) / b_total_weight
+			elif reduce == "mean":
+				b_reduce_metric = th.mean(b_sample_weight * b_metric, dim=0)
+			else:
+				assert reduce == "sum", reduce
+				b_reduce_metric = th.sum(b_sample_weight * b_metric, dim=0)
+			if return_weights:
+				return b_reduce_metric, b_total_weight
+			else:
+				return b_reduce_metric
+		self.batch_metric_reduce_fn = _batch_metric_reduce
+
+	def _setup_result_trackers(self):
+
+		self.train_results = None
+		self.train_counter = 0
+		self.val_results = None
+		self.val_counter = 0
+		# store epoch mean metric in lightning module, for ease of reloading
+		self.train_mean_metrics = nn.ParameterDict()
+		self.val_mean_metrics = nn.ParameterDict()
+		for name in self.metric_names:
+			_name = name.replace(".","-")
+			self.train_mean_metrics[_name] = nn.Parameter(
+				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				requires_grad=False
+			)
+			self.val_mean_metrics[_name] = nn.Parameter(
+				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				requires_grad=False
+			)
+
+	def _setup_sampler(self):
+
+		self._smf = self.hparams.custom_sampler == "SpecMolFragDynamicBatchSampler"
+		self._cur_batch_size = 0
+		self._cur_batch_weight = 0.
+		self._max_batch_size = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
+		self.automatic_optimization = self.hparams.automatic_optimization
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
@@ -372,6 +450,9 @@ class SpectrumPL(pl.LightningModule):
 		true_mzs = batch["spec_mzs"]
 		true_ints = batch["spec_ints"]
 		true_batch_idxs = batch["spec_batch_idxs"]
+		spec_per_group = batch["spec_per_group"]
+		spec_per_mol = batch["spec_per_mol"]
+		group_per_mol = batch["group_per_mol"]
 		# print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
 		true_mzs, true_logprobs, true_batch_idxs = self._preproc_spec(
 			true_mzs,
@@ -387,8 +468,21 @@ class SpectrumPL(pl.LightningModule):
 		}
 		loss_d = self.loss_fn(**both)
 		loss = loss_d["loss"]
-		mean_loss = th.mean(loss,dim=0)
-		total_loss = th.sum(loss,dim=0)
+		mean_loss = self.batch_metric_reduce_fn(
+			b_metric=loss,
+			b_spec_per_group=spec_per_group,
+			b_spec_per_mol=spec_per_mol,
+			b_group_per_mol=group_per_mol,
+			reduce="w_mean"
+		)
+		total_loss, total_weight = self.batch_metric_reduce_fn(
+			b_metric=loss,
+			b_spec_per_group=spec_per_group,
+			b_spec_per_mol=spec_per_mol,
+			b_group_per_mol=group_per_mol,
+			reduce="sum",
+			return_weights=True
+		)
 		# just log loss
 		self.log(
 			f"{split}_batch_loss",
@@ -401,6 +495,10 @@ class SpectrumPL(pl.LightningModule):
 			"smiles": smiles,
 			"mean_loss": mean_loss,
 			"total_loss": total_loss,
+			"total_weight": total_weight,
+			"spec_per_group": spec_per_group,
+			"spec_per_mol": spec_per_mol,
+			"group_per_mol": group_per_mol,
 			**both,
 			**loss_d
 		}
@@ -436,7 +534,7 @@ class SpectrumPL(pl.LightningModule):
 
 		if self.hparams.automatic_optimization:
 			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss")
+			mean_loss = batch_results["mean_loss"]
 			self._update_results(batch_results,"train")
 			return mean_loss
 		else:
@@ -445,14 +543,14 @@ class SpectrumPL(pl.LightningModule):
 	def validation_step(self, batch, batch_idx):
 
 		batch_results = self._common_step(batch, split="val")
-		mean_loss = batch_results.pop("mean_loss")
+		mean_loss = batch_results["mean_loss"]
 		self._update_results(batch_results,"val")
 		return mean_loss
 
 	def test_step(self, batch, batch_idx):
 
 		batch_results = self._common_step(batch, split="test")
-		mean_loss = batch_results.pop("mean_loss")
+		mean_loss = batch_results["mean_loss"]
 		# self._update_results(batch_results,"test")
 		return mean_loss
 
@@ -515,7 +613,10 @@ class SpectrumPL(pl.LightningModule):
 			"true_unique_ids",
 			"pred_mzs",
 			"pred_logprobs",
-			"pred_unique_ids"
+			"pred_unique_ids",
+			"spec_per_group",
+			"spec_per_mol",
+			"group_per_mol"
 		]
 		keys.extend(list(self.metric_names))
 		unique_ids = batch_results.pop("unique_id")
@@ -544,6 +645,20 @@ class SpectrumPL(pl.LightningModule):
 		# increment counter
 		setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
 
+	def _reduce_metrics(self, results):
+
+		mean_metrics = {}
+		for k, v in results.items():
+			if k in self.metric_names:
+				mean_metrics[k] = self.batch_metric_reduce_fn(
+					b_metric=v,
+					b_spec_per_group=results["spec_per_group"],
+					b_spec_per_mol=results["spec_per_mol"],
+					b_group_per_mol=results["group_per_mol"],
+					reduce="w_mean"
+				)
+		return mean_metrics
+
 	def _consolidate_results(self, split):
 		
 		results = getattr(self,f"{split}_results")
@@ -557,24 +672,24 @@ class SpectrumPL(pl.LightningModule):
 				assert isinstance(results[k][0],list)
 				results[k] = flatten_lol(results[k])
 		# log all the metrics
-		mean_metrics = {k:v.mean() for k,v in results.items() if k in self.metric_names}
+		mean_metrics = self._reduce_metrics(results)
 		for k,v in mean_metrics.items():
 			self.log(
 				f"{split}_{k}_epoch",
 				v
 			)
 		# update epoch stats
-		mean_metrics_list = getattr(self,f"{split}_mean_metrics")
-		mean_metrics_list.append(mean_metrics)
+		mean_metrics_epochs = getattr(self,f"{split}_mean_metrics")
+		for k,v in mean_metrics.items():
+			mean_metrics_epochs[k.replace(".","-")][self.current_epoch] = v
 		# log best metric
-		for k in ["loss","cos_sim"]:
-			if k not in self.metric_names:
-				continue
-			metric_epochs = [item[k] for item in mean_metrics_list]
+		for k in self.metric_bests:
+			assert k in self.metric_names, (k, self.metric_names)
+			mean_metric_epochs = mean_metrics_epochs[k.replace(".","-")][:self.current_epoch+1]
 			if self.metric_min_max[k] == "min":
-				metric_best = th.min(th.tensor(metric_epochs))
+				metric_best = th.min(mean_metric_epochs)
 			elif self.metric_min_max[k] == "max":
-				metric_best = th.max(th.tensor(metric_epochs))
+				metric_best = th.max(mean_metric_epochs)
 			else:
 				assert self.metric_min_max[k] is None, self.metric_min_max[k]
 				continue
@@ -686,7 +801,7 @@ class SpectrumPL(pl.LightningModule):
 
 		if prefix is None:
 			prefix = "no_prefix"
-		print(f">> {prefix}, {self._num_need_update}, {self._num_acc_gradient}")
+		print(f">> {prefix}, {self._cur_batch_size}, {self._max_batch_size}")
 		opt = self.optimizers()
 		num_params = 0
 		for pg in opt.param_groups:
@@ -711,7 +826,8 @@ class SpectrumPL(pl.LightningModule):
 
 	def on_after_optimizer_step(self, optimizer):
 
-		self._num_need_update = 0
+		self._cur_batch_size = 0
+		self._cur_batch_weight = 0.
 
 class FragGNNPL(SpectrumPL):
 
@@ -754,18 +870,11 @@ class FragGNNPL(SpectrumPL):
 			ce_insert_type=self.hparams.ce_insert_type,
 			node_formula_null_aggregate=self.hparams.node_formula_null_aggregate
 		)
+		
 		# compile
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
-
-		# for sampler
-		self._smf = self.hparams.custom_sampler == "SpecMolFragDynamicBatchSampler"
-		self._num_need_update = 0
-
-		# this used in manul update
-		self._num_acc_gradient = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
-		self.automatic_optimization = self.hparams.automatic_optimization
 
 	def _setup_loss_fn(self):
 
@@ -982,7 +1091,7 @@ class FragGNNPL(SpectrumPL):
 			for pg in opt.param_groups:
 				for p in pg['params']:
 					if p.grad is not None:
-						p.grad.data.mul_(self._num_acc_gradient / self._num_need_update)					
+						p.grad.data.mul_(self._max_batch_size / self._cur_batch_weight)					
 		self.on_before_optimizer_step(opt)
 		# clip gradients
 		self.clip_gradients(opt, gradient_clip_val=self.hparams.gradient_clip_val, gradient_clip_algorithm=self.hparams.gradient_clip_algorithm)
@@ -1004,15 +1113,16 @@ class FragGNNPL(SpectrumPL):
 
 		Returns:
 			_type_: _description_
+		TODO: is the dictionary popping necessary?
 		"""
 
 		if self.hparams.automatic_optimization:
 			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss")
+			mean_loss = batch_results["mean_loss"]
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
-			self._num_need_update += self.hparams.train_batch_size
+			self._cur_batch_size += self.hparams.train_batch_size
 			self._update_results(batch_results,"train")
 			return mean_loss
 		
@@ -1021,29 +1131,33 @@ class FragGNNPL(SpectrumPL):
 				return th.tensor(0.0)		
 			batch_results = self._common_step(batch, split="train")
 			batch_size = batch['batch_size'].item()
-			total_loss = batch_results.pop("total_loss")
-			mean_loss = total_loss / self._num_acc_gradient
+			total_loss = batch_results["total_loss"]
+			total_weight = batch_results["total_weight"]
+			mean_loss = total_loss / self._max_batch_size
+			self._cur_batch_weight += total_weight
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
 			self.manual_backward(mean_loss)
 			# accumulate gradients of N samples
-			self._num_need_update += batch_size
-			if self._num_need_update >= self._num_acc_gradient:
+			self._cur_batch_size += batch_size
+			self._cur_batch_weight += total_weight
+			if self._cur_batch_size >= self._max_batch_size:
 				self._manual_opt()
 			self._update_results(batch_results,"train")
 			return mean_loss
 		
 		else:
 			batch_results = self._common_step(batch, split="train")
-			mean_loss = batch_results.pop("mean_loss") / self.hparams.accumulate_grad_batches
+			mean_loss = batch_results["mean_loss"] / self.hparams.accumulate_grad_batches
+			total_weight = batch_results["total_weight"]
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
 			self.manual_backward(mean_loss)
-			# self.backward(mean_loss)
 			# accumulate gradients of N samples
-			self._num_need_update += self.hparams.train_batch_size
+			self._cur_batch_size += self.hparams.train_batch_size
+			self._cur_batch_weight += total_weight
 			if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
 				self._manual_opt()
 			self._update_results(batch_results,"train")
@@ -1051,10 +1165,17 @@ class FragGNNPL(SpectrumPL):
 
 	def on_train_epoch_end(self):
 
-		if not self.hparams.automatic_optimization and self._smf and self._num_need_update > 0:
+		if not self.hparams.automatic_optimization and self._smf and self._cur_batch_size > 0:
 			# this is used for manul opt when lr_schedulers is not available from torch lightning
-			# TODO: add drop_last check?
 			self._manual_opt()
+		# # subsample data
+		# train_dl = self.trainer.train_dataloader
+		# self.trainer.train_dataloader = Dataloader(
+		# 	train_dl.train_ds,
+		# 	num_workers=train_dl.num_workers,
+		# 	collate_fn=train_dl.train_ds.get_collate_fn(),
+		# 	batch_sampler=SubsetRandomSampler(indices=th.arange(len(train_dl.train_ds) // 4)),
+		# )
 		super().on_train_epoch_end()
 
 	def optimizer_step(self, *args, **kwargs):
@@ -1079,6 +1200,8 @@ class NeimsPL(SpectrumPL):
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
 		)
+		assert self.hparams.spec_params["merge"]
+		
 		# compile
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
@@ -1143,7 +1266,7 @@ def test_fraggnn():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3_splits.yml",
+		"config/debug/debug_d3_weight.yml",
 	]
 	
 	for custom_fp in custom_fps:
@@ -1179,7 +1302,7 @@ def test_fraggnn():
 		results = pl_model._common_step(batch, split="train")
 		print_shapes(results)
 
-		mean_loss = results.pop("mean_loss")
+		mean_loss = results["mean_loss"]
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()

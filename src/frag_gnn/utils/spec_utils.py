@@ -8,7 +8,7 @@ import scipy
 import scipy.optimize
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d
 from typing import List, Tuple, Union
 
 # TODO: actually fill these out
@@ -680,7 +680,9 @@ def calculate_ndcg_hungarian(
 	pred_batch_idxs:th.tensor,
 	tolerance:float=1e-5,
 	relative:bool=True,
-	sum_ints:bool=True
+	sum_ints:bool=True,
+	union:bool=False,
+	optimistic:bool=True
 	) -> th.tensor:
 	"""calculate m/z Normalized Discounted Cumulative Gain between two peak list
 		WIP
@@ -727,54 +729,85 @@ def calculate_ndcg_hungarian(
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
 	th_device = true_ints.device
-	ncdg = th.zeros([batch_size],device=th_device,dtype=true_ints.dtype)
+	ndcg = th.zeros([batch_size],device=th_device,dtype=true_ints.dtype)
 	for batch_idx in range(batch_size):
 
 		b_true_ints = true_ints[(true_batch_idxs==batch_idx)]
 		b_pred_ints = pred_ints[(pred_batch_idxs==batch_idx)]
-		b_match_mzs = match_mz_for_batch_idx(true_mzs,
+		b_match_mzs = match_mz_for_batch_idx(
+			true_mzs,
 			true_batch_idxs,
 			pred_mzs, 
 			pred_batch_idxs, 
 			tolerance, 
 			relative, 
-			batch_idx)
+			batch_idx
+		)
 		
 		b_true_match_mzs = th.any(b_match_mzs,dim=1)
 		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
 
 		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
 			(b_true_ints[b_true_match_mzs].unsqueeze(1) * b_pred_ints[b_pred_match_mzs].unsqueeze(0))
-		b_true_matched_idxs, b_pred_matched_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+		b_true_match_idxs, b_pred_match_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
 
-		#print(b_true_ints)
-		#print(b_pred_ints)
-		#print(b_true_ints[b_true_match_mzs][b_true_matched_idxs])
-		#print(b_pred_ints[b_pred_match_mzs][b_pred_matched_idxs])
+		b_pred_match_ints = b_pred_ints[b_pred_match_mzs][b_pred_match_idxs]
+		b_true_match_ints = b_true_ints[b_true_match_mzs][b_true_match_idxs]
 
-		# we need to break tie here
-		# use predicted intensities as descending order
-		b_pred_idx_sort_by_int = b_pred_ints.argsort(descending=True)
-		
-		# use true intensities as graded relevance
-		b_pred_grade_rel = th.zeros(b_pred_ints.shape, device=th_device)
-		b_pred_grade_rel[b_pred_match_mzs] = b_true_ints[b_true_match_mzs][b_true_matched_idxs]
-		# under this based on order
-		b_pred_grade_rel = b_pred_grade_rel[b_pred_idx_sort_by_int]
+		if union:
 
-		# discounted cumulative gain
-		b_dcg = th.sum(b_pred_grade_rel / th.log(1 + th.arange(1, b_pred_ints.shape[0] + 1, device=th_device)))
+			b_pred_unmatch_idxs = th_setdiff1d(th.arange(b_pred_match_mzs.sum(),device=th_device),b_pred_match_idxs)
+			b_pred_unmatch_ints = th.cat([b_pred_ints[~b_pred_match_mzs],b_pred_ints[b_pred_match_mzs][b_pred_unmatch_idxs]],dim=0)
+			b_true_unmatch_idxs = th_setdiff1d(th.arange(b_true_match_mzs.sum(),device=th_device),b_true_match_idxs)
+			b_true_unmatch_ints = th.cat([b_true_ints[~b_true_match_mzs],b_true_ints[b_true_match_mzs][b_true_unmatch_idxs]],dim=0)
 
-		# ideal discounted cumulative gain
-		b_true_grade_rel, _ = th.sort(b_true_ints, descending=True)
-		b_idcg = th.sum(b_true_grade_rel / th.log(1 +th.arange(1, b_true_grade_rel.shape[0] + 1, device=th_device)))
+			b_pred_all_ints = th.cat(
+				[
+					b_pred_match_ints,
+					b_pred_unmatch_ints,
+					# heuristic: rank the unmatched true peaks by their intensity
+					-(th.argsort(b_true_unmatch_ints,descending=optimistic)+1).type(b_true_unmatch_ints.dtype)
+				],
+				dim=0
+			)
 
-		# normalized discounted cumulative gain
-		b_ncdg = b_dcg/b_idcg
+			b_true_all_ints = th.cat(
+				[
+					b_true_match_ints,
+					# score of zero for the unmatched predicted peaks
+					th.zeros_like(b_pred_unmatch_ints),
+					b_true_unmatch_ints
+				],
+				dim=0
+			)
 
-		ncdg[batch_idx] = b_ncdg
-		#print(b_ncdg)
-	return ncdg
+			b_pred_ranking = th.argsort(b_pred_all_ints,descending=True)
+			b_true_ranking = th.argsort(b_true_all_ints,descending=True)
+
+			b_denom = th.log2(2 + th.arange(b_true_all_ints.shape[0], dtype=b_true_all_ints.dtype, device=th_device))
+			b_dcg = th.sum(b_true_all_ints[b_pred_ranking] / b_denom)
+			b_idcg = th.sum(b_true_all_ints[b_true_ranking] / b_denom)
+			b_ndcg = b_dcg/b_idcg
+
+		else: # intersection
+
+			if b_true_match_idxs.shape[0] == 0:
+
+				b_ndcg = 0.
+
+			else:
+
+				b_pred_ranking = th.argsort(b_pred_match_ints,descending=True)
+				b_true_ranking = th.argsort(b_true_match_ints,descending=True)
+
+				b_denom = th.log2(2 + th.arange(b_true_match_ints.shape[0], dtype=b_true_match_ints.dtype, device=th_device))
+				b_dcg = th.sum(b_true_match_ints[b_pred_ranking] / b_denom)
+				b_idcg = th.sum(b_true_match_ints[b_true_ranking] / b_denom)
+				b_ndcg = b_dcg/b_idcg
+
+		ndcg[batch_idx] = b_ndcg
+
+	return ndcg
 
 # cosine similarity code ... all of them
 def calculate_cosine_similarity(

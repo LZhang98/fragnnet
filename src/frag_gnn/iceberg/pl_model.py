@@ -31,6 +31,7 @@ class IcebergGenPL(SpectrumPL):
 			pe_embed_k=self.hparams.magma_params["pe_embed_k"],
 			add_hs=self.hparams.magma_params["add_hs"],
 		)
+		assert self.hparams.spec_params["merge"]
 
 		# compile
 		if self.hparams.compile:
@@ -149,6 +150,14 @@ class IcebergGenPL(SpectrumPL):
 			results_dict[k].append(v)
 		# increment counter
 		setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
+
+	def _reduce_metrics(self, results):
+
+		mean_metrics = {}
+		for k, v in results.items():
+			if k in self.metric_names:
+				mean_metrics[k] = th.mean(v, dim=0)
+		return mean_metrics
 
 	def _log_images(self,split):
 
@@ -473,6 +482,7 @@ class IcebergIntenPL(SpectrumPL):
 			assert self.hparams.mz_bin_res == self.hparams.magma_params["mz_bin_res"]
 			assert self.hparams.mz_max == self.hparams.magma_params["mz_max"]
 			assert self.hparams.sum_ints == self.hparams.magma_params["sum_ints"]
+		assert self.hparams.spec_params["merge"]
 
 		# compile
 		if self.hparams.compile:
@@ -545,6 +555,9 @@ class IcebergIntenPL(SpectrumPL):
 		true_mzs = batch["spec_mzs"]
 		true_ints = batch["spec_ints"]
 		true_batch_idxs = batch["spec_batch_idxs"]
+		spec_per_group = batch["spec_per_group"]
+		spec_per_mol = batch["spec_per_mol"]
+		group_per_mol = batch["group_per_mol"]
 		true_mzs, true_logprobs, true_batch_idxs = self._preproc_spec(
 			true_mzs,
 			true_ints,
@@ -562,8 +575,20 @@ class IcebergIntenPL(SpectrumPL):
 			both["true_spec"] = batch["magma_inten_targs"]
 		loss_d = self.loss_fn(**both)
 		loss = loss_d["loss"]
-		mean_loss = th.mean(loss,dim=0)
-		total_loss = th.sum(loss,dim=0)
+		mean_loss = self.batch_metric_reduce_fn(
+			b_metric=loss,
+			b_spec_per_group=spec_per_group,
+			b_spec_per_mol=spec_per_mol,
+			b_group_per_mol=group_per_mol,
+			reduce="w_mean"
+		)
+		total_loss = self.batch_metric_reduce_fn(
+			b_metric=loss,
+			b_spec_per_group=spec_per_group,
+			b_spec_per_mol=spec_per_mol,
+			b_group_per_mol=group_per_mol,
+			reduce="sum"
+		)
 		# just log loss
 		self.log(
 			f"{split}_batch_loss",
@@ -575,6 +600,9 @@ class IcebergIntenPL(SpectrumPL):
 			"unique_id": unique_id,
 			"smiles": smiles,
 			"mean_loss": mean_loss,
+			"spec_per_group": spec_per_group,
+			"spec_per_mol": spec_per_mol,
+			"group_per_mol": group_per_mol,
 			**both,
 			**loss_d
 		}
@@ -706,7 +734,7 @@ def test_inten():
 		results = pl_model._common_step(batch, split="train")
 		print_shapes(results)
 
-		mean_loss = results.pop("mean_loss")
+		mean_loss = results["mean_loss"]
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()

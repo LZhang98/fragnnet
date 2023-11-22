@@ -7,7 +7,8 @@ spec_preprocess: False #True
 mol_preprocess: False #True
 frag_preload: False #True
 frag_preprocess: False #True
-#spec_subsample_size: 512
+# subsample_params:
+#   subsample_size: 512
 
 # because we only use forumlas, we can fit much more in to vram
 train_batch_size: 128 #4

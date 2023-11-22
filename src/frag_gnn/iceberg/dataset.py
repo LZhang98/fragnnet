@@ -400,6 +400,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		subsample_params: dict,
 		magma_dp: str,
 		spec_params: dict,
 		mol_params: dict,
@@ -415,6 +416,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
+			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
 		self.magma_dp = magma_dp
@@ -455,8 +457,9 @@ class SpecMolMagmaDataset(SpecMolDataset):
 		"""__getitem__."""
 
 		spec_entry = self.spec_df.iloc[idx]
+		mol_id = spec_entry["mol_id"]
+		mol_entry = self.mol_df.loc[mol_id]
 		spec_data = self._process_spec(spec_entry)
-		mol_entry = self.mol_df.iloc[idx]
 		mol_data = self._process_mol(mol_entry)
 		name = str(spec_entry["group_id"])
 		adduct = common.ion2onehot_pos[spec_entry["prec_type"]]
@@ -562,6 +565,7 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		subsample_params: dict,
 		magma_dp: str,
 		spec_params: str,
 		mol_params: str,
@@ -575,6 +579,7 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
+			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
 		self.magma_dp = magma_dp

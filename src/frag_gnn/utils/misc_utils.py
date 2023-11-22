@@ -324,3 +324,9 @@ def print_shapes(input_dict):
 			print(k,"/",(v.number_of_nodes(),v.number_of_edges()),"/",type(v))
 		else:
 			print(k,"/",None,"/",type(v))
+
+def th_setdiff1d(t1, t2):
+
+	t1 = th.unique(t1)
+	t2 = th.unique(t2)
+	return t1[(t1[:, None] != t2).all(dim=1)]

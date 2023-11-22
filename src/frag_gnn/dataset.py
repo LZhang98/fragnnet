@@ -3,7 +3,7 @@ import os
 import torch as th
 import torch.nn.functional as F
 from torch.utils.data.sampler import Sampler, BatchSampler
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import torch_geometric as pyg
 from torch_geometric.data import Data, Batch
@@ -20,6 +20,69 @@ from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 
+def init_dataloader(ds, split, **config_d):
+
+	if split in ["train", "val"]:
+		
+		dl_param_d = {
+			'dataset': ds,
+			'num_workers': config_d["num_workers"],
+			'collate_fn': ds.get_collate_fn(),
+		}
+
+		if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+			
+			if split == "train":
+				
+				batchsampler = SpecMolFragDynamicBatchSampler(train_ds, 
+										max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
+										limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
+										shuffle=(not config_d["debug_overfit"]), 
+										skip_too_big = True,
+										return_batch_at = config_d['train_batch_size'] * config_d['accumulate_grad_batches'])
+				
+			else:
+
+				batchsampler = SpecMolFragDynamicBatchSampler(val_ds, 
+								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
+								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
+								shuffle=False, 
+								skip_too_big = True)
+
+			dl_param_d['batch_sampler'] = batchsampler
+
+		else:
+			
+			if split == "train":
+			
+				dl_param_d['batch_size'] = config_d["train_batch_size"]	
+				dl_param_d['drop_last'] = config_d["drop_last"]
+				dl_param_d["shuffle"] = True
+				# dl_param_d['batch_sampler'] = SubsetRandomSampler(indices=th.arange(len(train_ds) // 2))
+			
+			else:
+
+				dl_param_d['batch_size'] = config_d["eval_batch_size"]
+				dl_param_d["drop_last"] = False
+				dl_param_d['shuffle'] = False
+	
+		dl = DataLoader(
+			**dl_param_d
+		)
+
+	else:
+
+		dl = DataLoader(
+			ds,
+			batch_size=config_d["eval_batch_size"],
+			shuffle=False,
+			num_workers=config_d["num_workers"],
+			collate_fn=ds.get_collate_fn()
+		)
+
+	return dl
+
+
 class BaseDataset(Dataset):
 
 	def _base_init(self, 
@@ -27,6 +90,7 @@ class BaseDataset(Dataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		subsample_params: dict,
 		spec_params: dict
 	):
 		
@@ -45,10 +109,18 @@ class BaseDataset(Dataset):
 		if self.spec_params["merge"]:
 			self.spec_df = merge_spec_df(self.spec_df)
 		# subsample
-		if self.spec_params["subsample_size"] > 0:
+		if subsample_params[split] and subsample_params["subsample_size"] > 0:
+			if isinstance(subsample_params["subsample_size"],int):
+				n = subsample_params["subsample_size"]
+				frac = None
+			else:
+				assert isinstance(subsample_params["subsample_size"],float)
+				n = None
+				frac = subsample_params["subsample_size"]
 			self.spec_df = self.spec_df.sample(
-				n=self.spec_params["subsample_size"],
-				random_state=self.spec_params["subsample_seed"],
+				n=n,
+				frac=frac,
+				random_state=subsample_params["subsample_seed"],
 				replace=False)
 			self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
 		# reset indices
@@ -56,6 +128,17 @@ class BaseDataset(Dataset):
 		self.mol_df = self.mol_df.reset_index(drop=True)
 		# use mol_id as index for speedy access
 		self.mol_df = self.mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
+		self._compute_counts()
+
+	def _compute_counts(self):
+
+		self.group_per_mol = self.spec_df[["mol_id","group_id"]].drop_duplicates().groupby("mol_id").size().to_dict()
+		if self.spec_params["merge"]:
+			self.spec_per_mol = {mol_id: 1 for mol_id in self.spec_df["mol_id"].unique()}
+			self.spec_per_group = {group_id: 1 for group_id in self.spec_df["group_id"].unique()}
+		else:
+			self.spec_per_mol = self.spec_df[["mol_id","spec_id"]].drop_duplicates().groupby("mol_id").size().to_dict()
+			self.spec_per_group = self.spec_df[["group_id","spec_id"]].drop_duplicates().groupby("group_id").size().to_dict()
 
 	def _preprocess_spec(self):
 
@@ -113,6 +196,16 @@ class BaseDataset(Dataset):
 			unique_id = spec_entry[id_key]
 			unique_id = th.tensor([unique_id],dtype=th.long)
 			spec_data["spec_unique_id"] = unique_id
+		if self.spec_params["counts"]:
+			spec_per_mol = self.spec_per_mol[spec_entry["mol_id"]]
+			spec_per_mol = th.tensor([spec_per_mol],dtype=th.long)
+			spec_data["spec_per_mol"] = spec_per_mol
+			group_per_mol = self.group_per_mol[spec_entry["mol_id"]]
+			group_per_mol = th.tensor([group_per_mol],dtype=th.long)
+			spec_data["group_per_mol"] = group_per_mol
+			spec_per_group = self.spec_per_group[spec_entry["group_id"]]
+			spec_per_group = th.tensor([spec_per_group],dtype=th.long)
+			spec_data["spec_per_group"] = spec_per_group
 		return spec_data
 
 	def __getitem__(self, idx):
@@ -187,6 +280,7 @@ class SpecMolDataset(BaseDataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		subsample_params: dict,
 		spec_params: dict,
 		mol_params: dict,
 		**kwargs
@@ -198,12 +292,13 @@ class SpecMolDataset(BaseDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
+			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
 		self.mol_params = mol_params
 		self._preprocess_spec()
 		self._preprocess_mol()
-
+		
 	def _get_mol_graph_size(self, mol_data):
 
 		if self.mol_params["pyg"]:
@@ -291,6 +386,7 @@ class SpecMolFragDataset(SpecMolDataset):
 		mol_fp: str,
 		split_dp: str,
 		split: str,
+		subsample_params: dict,
 		frag_dp: str,
 		spec_params: dict,
 		mol_params: dict,
@@ -304,6 +400,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			mol_fp=mol_fp,
 			split_dp=split_dp,
 			split=split,
+			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
 		self.frag_dp = frag_dp

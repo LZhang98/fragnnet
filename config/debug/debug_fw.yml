@@ -22,10 +22,11 @@ lr_schedule: False
 debug_overfit: False
 precision: 32
 
-spec_params:
-  merge: True
+subsample_params:
   subsample_size: 10
   subsample_seed: 420
+spec_params:
+  merge: True
   sparse: True
   prec_type: True
   prec_mz: True

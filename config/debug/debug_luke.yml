@@ -3,7 +3,8 @@ wandb_tags:
 - debug
 
 split_dp: data/split/luke
-spec_subsample_size: 128
+subsample_params:
+  subsample_size: 128
 
 model_type: neims
 mol_fingerprint_morgan: True

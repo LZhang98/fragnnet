@@ -2,8 +2,11 @@ wandb_name: debug_neims
 wandb_tags:
 - debug
 
+spec_fp: data/proc/nist/spec_df.pkl
+mol_fp: data/proc/nist/mol_df.pkl
 split_dp: data/split/d3_h4_isoTrue_v2
-spec_params:
+frag_dp: data/frag/d3_h4_isoTrue_v2/dags
+subsample_params:
   subsample_size: 128
 
 model_type: neims
@@ -33,7 +36,7 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 2
-max_epochs: 2
+min_epochs: 20
+max_epochs: 20
 lr_schedule: False
 debug_overfit: False

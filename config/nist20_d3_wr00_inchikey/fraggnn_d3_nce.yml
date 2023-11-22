@@ -1,4 +1,4 @@
-wandb_name: d3_wr00_inchikey
+wandb_name: fraggnn_d3_nce
 wandb_tags:
 - splits
 - nist20
@@ -6,12 +6,19 @@ wandb_tags:
 - wr00
 - inchikey
 - new_proc
+- fraggnn_d3
+- nce
+
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
 split_dp: data/split/nist20_d3_wr00_inchikey
 frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
+spec_params:
+  merge: False
+  nce: True
+sample_weight: group
 
 train_batch_size: 32
 eval_batch_size: 32
