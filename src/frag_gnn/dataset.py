@@ -31,9 +31,7 @@ def init_dataloader(ds, split, **config_d):
 		}
 
 		if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
-			
 			if split == "train":
-				
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 										max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 										limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
@@ -42,7 +40,6 @@ def init_dataloader(ds, split, **config_d):
 										return_batch_at = config_d['train_batch_size'] * config_d['accumulate_grad_batches'])
 				
 			else:
-
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
 								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
