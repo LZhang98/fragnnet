@@ -8,9 +8,9 @@ module load rust/1.70.0
 
 source FRAG-GNN-GPU2/bin/activate
 
-export WANDB_DIR='./wandb'
-export WANDB_CACHE_DIR='./wandb/.cache'
-export WANDB_CONFIG_DIR='./wandb/.config'
+#export WANDB_DIR='./wandb'
+#export WANDB_CACHE_DIR='./wandb/.cache'
+#export WANDB_CONFIG_DIR='./wandb/.config'
 
 # https://github.com/wandb/wandb/issues/2423
 wandb sync --sync-all --append
