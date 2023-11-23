@@ -80,10 +80,10 @@ def main(args):
 			f"cd {os.path.abspath(args.frag_gnn_dp)}",
 			"# load env",
 			f"source {args.python_env}/bin/activate",
-			"# env setup for wandb",
-			"export WANDB_DIR='./wandb'",
-			"export WANDB_CACHE_DIR='./wandb/.cache'",
-			"export WANDB_CONFIG_DIR='./wandb/.config'",
+			#"# env setup for wandb",
+			#"export WANDB_DIR='./wandb'",
+			#"export WANDB_CACHE_DIR='./wandb/.cache'",
+			#"export WANDB_CONFIG_DIR='./wandb/.config'",
 			""
 		]
 	)

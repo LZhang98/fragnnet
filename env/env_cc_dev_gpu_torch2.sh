@@ -33,6 +33,7 @@ pip install --no-index matplotlib
 pip install --no-index pytest
 pip install --no-index pytorch_lightning==2.0.2
 pip install CairoSVG
+pip install --no-index dgl==1.1.1
 # this is only needed on CC because there is no internet 
-pip install wandb[sweeps]
+# pip install wandb[sweeps]
 pip install -I -e .
