@@ -215,3 +215,4 @@ node_formula_null_aggregate: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False
 sample_weight: none
+log_hist_metrics: True
