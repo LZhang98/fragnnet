@@ -36,12 +36,13 @@ def make_splits(args):
     print("> DAG filters")
     # filter dags
     node_key = "dag_num_nodes"
+    edge_key = "dag_num_edges"
     wrecall_key = "wrecall_10ppm_h4"
     dag_masks = []
     if args.max_num_dag_nodes != -1:
         dag_masks.append(dag_stats_df[node_key] <= args.max_num_dag_nodes)
     if args.max_num_dag_edges != -1:
-        dag_masks.append(dag_stats_df[node_key] <= args.max_num_dag_edges)
+        dag_masks.append(dag_stats_df[edge_key] <= args.max_num_dag_edges)
     dag_masks.append(dag_stats_df[wrecall_key] >= args.min_dag_wrecall)
     dag_masks = np.stack(dag_masks,axis=1)
     dag_mask = np.all(dag_masks,axis=1)
@@ -127,7 +128,7 @@ if __name__ == "__main__":
     # dag filtering criteria
     parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec")
     parser.add_argument("--max_num_dag_nodes",type=int,default=100000)
-    parser.add_argument("--max_num_dag_edges",type=int,default=500000)
+    parser.add_argument("--max_num_dag_edges",type=int,default=250000)
     parser.add_argument("--min_dag_wrecall",type=float,default=0.75)
     # non-filtering args
     parser.add_argument("--meta_rseed",type=int,default=420420)
