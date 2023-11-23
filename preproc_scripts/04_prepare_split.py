@@ -126,8 +126,8 @@ if __name__ == "__main__":
     parser.add_argument("--max_peak_mz",type=float,default=1500.)
     # dag filtering criteria
     parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec")
-    parser.add_argument("--max_num_dag_nodes",type=int,default=10000)
-    parser.add_argument("--max_num_dag_edges",type=int,default=50000)
+    parser.add_argument("--max_num_dag_nodes",type=int,default=100000)
+    parser.add_argument("--max_num_dag_edges",type=int,default=500000)
     parser.add_argument("--min_dag_wrecall",type=float,default=0.75)
     # non-filtering args
     parser.add_argument("--meta_rseed",type=int,default=420420)
