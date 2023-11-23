@@ -7,7 +7,7 @@ wandb_tags:
 - inchikey
 - new_proc
 - fraggnn_d4
-- SpecMolFragDynamicBatchSampler
+- dynamic_sampler
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
@@ -43,4 +43,4 @@ automatic_optimization: False
 custom_sampler: SpecMolFragDynamicBatchSampler
 specmolfrag_dynamic_batch_sampler_mode: frag_edge
 specmolfrag_dynamic_batch_sampler_max: 500000
-pl_enable_progress_bar: False
+pl_enable_progress_bar: True
