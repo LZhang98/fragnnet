@@ -1,4 +1,4 @@
-wandb_name: iceberg_inten_100_50p
+wandb_name: iceberg_inten_100_25p
 wandb_tags:
 - nist20
 - d3
@@ -15,7 +15,7 @@ mol_fp: data/proc/nist20mona23/mol_df.pkl
 split_dp: data/split/nist20_d3_wr75_inchikey
 magma_dp: data/magma/inten/data_eff_25p_100
 subsample_params:
-  subsample_size: 0.50
+  subsample_size: 0.25
   train: True
   val: False
   test: False
