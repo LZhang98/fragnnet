@@ -22,7 +22,6 @@ from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 def init_dataloader(ds, split, **config_d):
 
 	if split in ["train", "val"]:
-		
 		dl_param_d = {
 			'dataset': ds,
 			'num_workers': config_d["num_workers"],
@@ -35,7 +34,7 @@ def init_dataloader(ds, split, **config_d):
 			sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['specmolfrag_group_sampler_max'] ,replacement=True)	
 			dl_param_d['sampler'] = sampler
 			dl_param_d['drop_last'] = config_d["drop_last"]
-		
+
 		# for bacth sampler 
 		if config_d['custom_batch_sampler'] == 'SpecMolFragDynamicBatchSampler':
 			if split == "train":
@@ -58,7 +57,8 @@ def init_dataloader(ds, split, **config_d):
 			if split == "train":
 				dl_param_d['batch_size'] = config_d["train_batch_size"]	
 				dl_param_d['drop_last'] = config_d["drop_last"]
-				# dl_param_d["shuffle"] = True
+				if 'batch_sampler' not in dl_param_d and 'sampler' not in dl_param_d:
+					dl_param_d["shuffle"] = True
 			else:
 				dl_param_d['batch_size'] = config_d["eval_batch_size"]
 				dl_param_d["drop_last"] = False
