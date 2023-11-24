@@ -22,7 +22,7 @@ precision: bf16-mixed
 
 automatic_optimization: False
 detect_anomaly: True
-#custom_sampler: SpecMolFragDynamicBatchSampler
+#custom_batch_sampler: SpecMolFragDynamicBatchSampler
 #specmolfrag_dynamic_batch_sampler_mode: frag_node
 #specmolfrag_dynamic_batch_sampler_max: 100000
 nan_module_hook: True

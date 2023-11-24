@@ -22,6 +22,6 @@ debug_overfit: False
 
 precision: 32
 automatic_optimization: False
-custom_sampler: SpecMolFragDynamicBatchSampler
+custom_batch_sampler: SpecMolFragDynamicBatchSampler
 specmolfrag_dynamic_batch_sampler_mode: frag_node
 specmolfrag_dynamic_batch_sampler_max: 250000

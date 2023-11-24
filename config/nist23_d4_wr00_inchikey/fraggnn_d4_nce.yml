@@ -1,0 +1,51 @@
+wandb_name: fraggnn_d4_nce
+wandb_tags:
+- splits
+- nist23
+- d4
+- wr00
+- inchikey
+- new_proc
+- fraggnn_d4
+- nce
+- dynamic_sampler
+
+spec_fp: data/proc/nist23mona23/spec_df.pkl
+mol_fp: data/proc/nist23mona23/mol_df.pkl
+split_dp: data/split/nist23_d4_wr00_inchikey
+frag_dp: data/frag/nist23_d4_h4_isoFalse/dags
+num_depth: 5
+num_hs: 4
+spec_params:
+  merge: False
+  nce: True
+sample_weight: group
+
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 4
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+precision: 32
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 3
+mz_bin_res: 0.01
+mz_max: 1500.0
+sparse_cosine_similarity: True
+mol_pool_type: mean
+frag_pool_type: mean
+
+precision: 32
+use_tensor_float32: True
+automatic_optimization: False
+custom_batch_sampler: SpecMolFragDynamicBatchSampler
+specmolfrag_dynamic_batch_sampler_mode: frag_edge
+specmolfrag_dynamic_batch_sampler_max: 500000
+pl_enable_progress_bar: False

@@ -32,7 +32,7 @@ frag_pyg_edge_feats:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-custom_sampler: SpecMolFragDynamicBatchSampler
+custom_batch_sampler: SpecMolFragDynamicBatchSampler
 specmolfrag_dynamic_batch_sampler_mode: frag_edge
 specmolfrag_dynamic_batch_sampler_max: 500000
 pl_enable_progress_bar: False

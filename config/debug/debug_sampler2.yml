@@ -1,0 +1,57 @@
+wandb_name: fw_debug_run
+wandb_tags:
+- v2
+- debug
+
+spec_fp: data/proc/nist20mona23/spec_df.pkl
+mol_fp: data/proc/nist20mona23/mol_df.pkl
+split_dp: data/split/nist20_d3_wr75_inchikey
+frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
+num_depth: 4
+num_hs: 4
+
+train_batch_size: 1
+eval_batch_size: 1
+accumulate_grad_batches: 4
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 10
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+precision: 32
+
+subsample_params:
+  subsample_size: 5120
+  subsample_seed: 420
+spec_params:
+  merge: False
+  sparse: True
+  prec_type: True
+  prec_mz: True
+  prec_mass_diff: True
+  nce: False
+  ace: False
+  preprocess: False
+  unique_id: True
+
+auxiliary_scores:
+  - cos_sim
+  - recall
+  - wrecall
+  - opt_cos_sim
+  - true_spec_e
+  - true_spec_ne
+  - cos_hun
+  - ndcg
+  
+automatic_optimization: False
+use_tensor_float32: False
+detect_anomaly: False
+custom_batch_sampler: none
+custom_sampler: SpecMolFragGroupSampler
+specmolfrag_group_sampler_max: 20
+pl_enable_progress_bar: True
+debug_val_loop_trigger: False
