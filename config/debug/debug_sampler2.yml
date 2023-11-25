@@ -47,7 +47,7 @@ auxiliary_scores:
   - cos_hun
   - ndcg
   
-automatic_optimization: False
+automatic_optimization: True
 use_tensor_float32: False
 detect_anomaly: False
 custom_batch_sampler: none
