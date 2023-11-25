@@ -2,6 +2,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import wandb
 
 # make cc happy
 try:
@@ -80,11 +81,15 @@ class SpectrumPL(pl.LightningModule):
 		
 		# measure cos sim between predicted and ground truth
 		if "cos_sim" in self.hparams.auxiliary_scores:
-			def get_cos_sim(mz_bin_res):
+			def get_cos_sim(sqrt,mz_bin_res):
 				if self.hparams.sparse_cosine_similarity:
 					cosine_similarity_fn = calculate_sparse_cosine_similarity
 				else:
 					cosine_similarity_fn = calculate_cosine_similarity
+				if sqrt:
+					ints_transform_fn = get_ints_transform_func("sqrt")
+				else:
+					ints_transform_fn = get_ints_transform_func("none")
 				def _cos_sim(
 					true_mzs,
 					true_ints,
@@ -96,6 +101,8 @@ class SpectrumPL(pl.LightningModule):
 					# untransform
 					true_ints = self.ints_untransform_func(true_ints)
 					pred_ints = self.ints_untransform_func(pred_ints)
+					true_ints = ints_transform_fn(true_ints)
+					pred_ints = ints_transform_fn(pred_ints)
 					# calculate
 					cos_sim = cosine_similarity_fn(
 						true_mzs,
@@ -110,11 +117,16 @@ class SpectrumPL(pl.LightningModule):
 					)
 					return cos_sim
 				return _cos_sim
-			for mz_bin_res in self.hparams.eval_mz_bin_res:
-				self.metric_fns[f"cos_sim_{mz_bin_res}"] = get_cos_sim(mz_bin_res)
-				self.metric_min_max[f"cos_sim_{mz_bin_res}"] = "max"
-				self.metric_bests.append(f"cos_sim_{mz_bin_res}")
-		
+			for sqrt in [True, False]:
+				for mz_bin_res in self.hparams.eval_mz_bin_res:
+					if sqrt:
+						fname = f"cos_sim_sqrt_{mz_bin_res}"
+					else:
+						fname = f"cos_sim_{mz_bin_res}"
+					self.metric_fns[fname] = get_cos_sim(sqrt,mz_bin_res)
+					self.metric_min_max[fname] = "max"
+					self.metric_bests.append(fname)
+
 		if "recall" in self.hparams.auxiliary_scores:
 			def _recall(
 				true_mzs,
@@ -682,6 +694,15 @@ class SpectrumPL(pl.LightningModule):
 		mean_metrics_epochs = getattr(self,f"{split}_mean_metrics")
 		for k,v in mean_metrics.items():
 			mean_metrics_epochs[k.replace(".","-")][self.current_epoch] = v
+		if self.hparams.log_hist_metrics:
+			wandb_logger = self._get_wandb_logger()
+			for k,v in results.items():
+				if k in self.metric_names:
+					log_d = {
+						f"{split}_{k}_hist": wandb.Histogram(v.cpu()),
+						"epoch": self.current_epoch
+					}
+					wandb_logger.experiment.log(log_d)
 		# log best metric
 		for k in self.metric_bests:
 			assert k in self.metric_names, (k, self.metric_names)
