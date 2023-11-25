@@ -653,7 +653,6 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		batch_filled = False
 		while num_processed < len(self._data_source) and num_processed < self._max_sampling_step:
 			# Fill batch
-			import pdb; pdb.set_trace()
 			for idx in indices[num_processed:]:
 				# Size of sample
 				data = self._data_source[idx.item()]
