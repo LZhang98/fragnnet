@@ -36,6 +36,7 @@ mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
+upload_checkpoints: True
 
 precision: 32
 use_tensor_float32: True

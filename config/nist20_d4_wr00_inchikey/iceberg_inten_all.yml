@@ -11,7 +11,7 @@ wandb_tags:
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
-split_dp: data/split/nist20_d3_wr00_inchikey
+split_dp: data/split/nist20_d4_wr00_inchikey
 magma_dp: data/magma/gen/nist20mona23
 
 model_type: iceberg_inten
@@ -53,8 +53,8 @@ gradient_clip_val: 5.0
 lr: 0.000736
 accelerator: gpu
 devices: 1
-min_epochs: 200
-max_epochs: 200
+min_epochs: 100
+max_epochs: 100
 lr_schedule: True
 lr_decay_rate: 0.825
 lr_warmup_steps: 1000
@@ -62,6 +62,4 @@ lr_decay_steps: 5000
 weight_decay: 0.0000001 # 1e-7
 debug_overfit: False
 num_workers: 8
-checkpoint_metric: val_loss_epoch
-checkpoint_metric_mode: min
 upload_checkpoints: True
