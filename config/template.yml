@@ -202,7 +202,7 @@ custom_batch_sampler: none
 specmolfrag_dynamic_batch_sampler_mode: frag_node
 specmolfrag_dynamic_batch_sampler_max: 100000
 custom_sampler: none
-specmolfrag_group_sampler_max: 10000
+specmol_weighted_sampler_max: 10000
 mp_sharing_strategy: file_descriptor
 check_gradient_norm: False
 use_tensor_float32: False

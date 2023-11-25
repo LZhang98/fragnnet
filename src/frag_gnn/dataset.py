@@ -29,14 +29,21 @@ def init_dataloader(ds, split, **config_d):
 		}
 
 		# for sampler 
-		if config_d['custom_sampler'] == 'SpecMolFragGroupSampler' and split == 'train':
-			sample_weights = 1.0/th.cat([ i['spec_per_group'] for i in ds])
-			sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['specmolfrag_group_sampler_max'] ,replacement=True)	
+		if config_d['custom_sampler'] in ['specmol_weighted_group_sampler','specmol_weighted_mol_sampler','specmol_weighted_group_mol_sampler']\
+			  and split == 'train':
+			if config_d['custom_sampler']  == 'specmol_weighted_group_sampler':
+				sample_weights = 1.0/th.cat([ i['spec_per_group'] for i in ds])
+			if config_d['custom_sampler']  == 'specmol_weighted_mol_sampler':
+				sample_weights = 1.0/th.cat([ i['spec_per_mol'] for i in ds])
+			if config_d['custom_sampler']  == 'specmol_weighted_group_mol_sampler':
+				sample_weights = 1.0/th.cat([ i['group_per_mol'] * i['spec_per_group']  for i in ds])
+				
+			sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['specmol_weighted_sampler_max'] ,replacement=True)	
 			dl_param_d['sampler'] = sampler
 			dl_param_d['drop_last'] = config_d["drop_last"]
-
+		
 		# for bacth sampler 
-		if config_d['custom_batch_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		if config_d['custom_batch_sampler'] == 'specmolfrag_dynamic_batch_sampler':
 			if split == "train":
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 										max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
@@ -641,8 +648,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					#warnings.warn(warning_msg)
 					#print(warning_msg)
 			if warning_msg != "":
-				print("[SpecMolFragDynamicBatchSampler]", warning_msg)
-			print(f"[SpecMolFragDynamicBatchSampler] Expecting {expected_total}/{len(self._data_source)} samples with skip_too_big:{self._skip_too_big}")
+				print("[specmolfrag_dynamic_batch_sampler]", warning_msg)
+			print(f"[specmolfrag_dynamic_batch_sampler] Expecting {expected_total}/{len(self._data_source)} samples with skip_too_big:{self._skip_too_big}")
 
 		# beacuse this is an iter, shuffle only happen once per batch
 		if self._shuffle:

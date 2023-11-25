@@ -22,6 +22,6 @@ precision: 32
 
 automatic_optimization: False
 detect_anomaly: True
-#custom_batch_sampler: SpecMolFragDynamicBatchSampler
+#custom_batch_sampler: specmolfrag_dynamic_batch_sampler
 #specmolfrag_dynamic_batch_sampler_mode: frag_node
 #specmolfrag_dynamic_batch_sampler_max: 100000

@@ -38,6 +38,6 @@ mol_pool_type: none
 frag_pool_type: none
 
 automatic_optimization: False
-custom_batch_sampler: SpecMolFragDynamicBatchSampler
+custom_batch_sampler: specmolfrag_dynamic_batch_sampler
 specmolfrag_dynamic_batch_sampler_mode: frag_node
 specmolfrag_dynamic_batch_sampler_max: 250000
