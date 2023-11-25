@@ -284,9 +284,9 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	
 	# setup dataloaders
 	logging.info("setup dataloader")
-	train_dl = init_dataloader(train_ds, "train", **config_d)
-	val_dl = init_dataloader(val_ds, "val", **config_d)
-	test_dl = init_dataloader(test_ds, "test", **config_d)
+	train_dl = init_dataloader(train_ds, **config_d)
+	val_dl = init_dataloader(val_ds, **config_d)
+	test_dl = init_dataloader(test_ds, **config_d)
 
 	# setup trainer
 	logging.info("setup trainer")
@@ -304,7 +304,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		'min_epochs': config_d["min_epochs"],
 		'max_epochs': config_d["max_epochs"],
 		'precision': config_d["precision"],
-		'log_every_n_steps': config_d["log_every_n_steps"],
+		'log_every_n_steps': log_every_n_steps,
 		'detect_anomaly': config_d["detect_anomaly"],
 		'overfit_batches': overfit_batches,
 		'profiler': profiler,

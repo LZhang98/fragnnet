@@ -702,7 +702,8 @@ class SpectrumPL(pl.LightningModule):
 						f"{split}_{k}_hist": wandb.Histogram(v.cpu()),
 						"epoch": self.current_epoch
 					}
-					wandb_logger.experiment.log(log_d)
+					if wandb_logger is not None:
+						wandb_logger.experiment.log(log_d)
 		# log best metric
 		for k in self.metric_bests:
 			assert k in self.metric_names, (k, self.metric_names)
@@ -1281,8 +1282,6 @@ def test_fraggnn():
 	from frag_gnn.runner import load_config
 	from frag_gnn.dataset import SpecMolFragDataset
 	from frag_gnn.utils.misc_utils import print_shapes
-	from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
-	import torch.nn.functional as F
 	from frag_gnn.utils.misc_utils import to_device
 
 	template_fp = "config/template.yml"
