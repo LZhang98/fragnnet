@@ -8,6 +8,7 @@ wandb_tags:
 - new_proc
 - fraggnn_d3
 - nce
+- specmol_weighted_group_sampler
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
@@ -41,5 +42,5 @@ sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
 
-custom_sampler: none
-specmol_weighted_sampler_max: 10000
+custom_sampler: specmol_weighted_group_sampler
+specmol_weighted_sampler_max: 25600
