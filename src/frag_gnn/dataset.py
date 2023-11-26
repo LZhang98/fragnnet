@@ -19,8 +19,10 @@ from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
-def init_dataloader(ds, split, **config_d):
 
+def init_dataloader(ds, **config_d):
+
+	split = ds.split
 	if split in ["train", "val"]:
 		dl_param_d = {
 			'dataset': ds,
@@ -64,6 +66,8 @@ def init_dataloader(ds, split, **config_d):
 			if split == "train":
 				dl_param_d['batch_size'] = config_d["train_batch_size"]	
 				dl_param_d['drop_last'] = config_d["drop_last"]
+				dl_param_d["shuffle"] = True
+			
 				if 'batch_sampler' not in dl_param_d and 'sampler' not in dl_param_d:
 					dl_param_d["shuffle"] = True
 			else:
@@ -101,6 +105,7 @@ class BaseDataset(Dataset):
 		
 		self.spec_df = pd.read_pickle(spec_fp)
 		self.mol_df = pd.read_pickle(mol_fp)
+		self.split = split
 		assert split in ["train","val","test"], split
 		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
 		self.split_df = pd.read_csv(split_fp)
@@ -739,7 +744,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				batch_filled = False
 				batch_n = 0
 
-			batch.append(dataset_idx)
+			# batch.append(dataset_idx)
 			num_processed += 1
 			batch_n += n
 
