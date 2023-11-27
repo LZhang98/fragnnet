@@ -418,7 +418,7 @@ class SpectrumPL(pl.LightningModule):
 
 	def _setup_sampler(self):
 
-		self._smf = self.hparams.custom_sampler == "specmolfrag_dynamic_batch_sampler"
+		self._smf = self.hparams.custom_batch_sampler == "specmolfrag_dynamic_batch_sampler"
 		self._cur_batch_size = 0
 		self._cur_batch_weight = 0.
 		self._max_batch_size = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
