@@ -1148,11 +1148,10 @@ class FragGNNPL(SpectrumPL):
 			self._update_results(batch_results,"train")
 			return mean_loss
 		
-		elif self._smf:
-			if batch['batch_size'].item() == 0:
-				return th.tensor(0.0)		
-			batch_results = self._common_step(batch, split="train")
+		elif self._smf:	
 			batch_size = batch['batch_size'].item()
+			assert batch_size > 0, batch_size
+			batch_results = self._common_step(batch, split="train")
 			total_loss = batch_results["total_loss"]
 			total_weight = batch_results["total_weight"]
 			mean_loss = total_loss / self._max_batch_size
