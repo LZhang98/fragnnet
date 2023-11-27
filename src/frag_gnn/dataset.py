@@ -29,17 +29,18 @@ def init_dataloader(ds, **config_d):
 			'num_workers': config_d["num_workers"],
 			'collate_fn': ds.get_collate_fn(),
 		}
-				# for sampler 
-		if config_d['custom_sampler'] in ['specmol_weighted_group_sampler','specmol_weighted_mol_sampler','specmol_weighted_group_mol_sampler']\
-			  and split == 'train':
-			if config_d['custom_sampler']  == 'specmol_weighted_group_sampler':
+		
+		# for group sampler 
+		if config_d['group_sampler'] and split == 'train':
+
+			if config_d['group_sampler_type']  == 'group':
 				sample_weights = 1.0/th.cat([ i['spec_per_group'] for i in ds])
-			if config_d['custom_sampler']  == 'specmol_weighted_mol_sampler':
+			if config_d['group_sampler_type']  == 'mol':
 				sample_weights = 1.0/th.cat([ i['spec_per_mol'] for i in ds])
-			if config_d['custom_sampler']  == 'specmol_weighted_group_mol_sampler':
+			if config_d['group_sampler_type']  == 'group_mol':
 				sample_weights = 1.0/th.cat([ i['group_per_mol'] * i['spec_per_group']  for i in ds])
 				
-			sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['specmol_weighted_sampler_max'] ,replacement=True)	
+			sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['group_sampler_max'] ,replacement=True)	
 			dl_param_d['sampler'] = sampler
 			dl_param_d['drop_last'] = config_d["drop_last"]
 		

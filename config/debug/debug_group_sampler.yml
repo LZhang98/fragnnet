@@ -1,4 +1,4 @@
-wandb_name: fw_debug_run
+wandb_name: debug_group_sampler
 wandb_tags:
 - v2
 - debug
@@ -50,10 +50,12 @@ auxiliary_scores:
 automatic_optimization: True
 use_tensor_float32: False
 detect_anomaly: False
-custom_batch_sampler: none
-custom_sampler: specmol_weighted_group_sampler
+group_sampler: False
+group_sampler_type: group
+group_sampler_max: 200
+#custom_sampler: specmol_weighted_group_sampler
 #custom_sampler: specmol_weighted_mol_sampler
 #custom_sampler: specmol_weighted_group_mol_sampler
-specmol_weighted_sampler_max: 20
+#specmol_weighted_sampler_max: 20
 pl_enable_progress_bar: True
 debug_val_loop_trigger: False
