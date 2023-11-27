@@ -272,15 +272,15 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	test_ds = dataset_cls(split="test",**config_d)
 
 	# check config for sampler
-	if config_d['custom_sampler'] == 'specmolfrag_dynamic_batch_sampler':
+	if config_d["dynamic_batch_sampler"]:
 		assert config_d["model_type"] == "frag_gnn",\
-			f"custom sampler {config_d['custom_sampler']} can only be use with frag_gnn model"
+			f"Dynamic batch sampler can only be use with frag_gnn model"
 		assert config_d['automatic_optimization'] == False,\
-			f"custom sampler {config_d['custom_sampler']} can not use in junction of automatic optimization {config_d['automatic_optimization']}"
-		assert config_d['specmolfrag_dynamic_batch_sampler_mode'] in ['frag_node','frag_edge'],\
-			f"specmolfrag_dynamic_batch_sampler only support frag_node or frag_edge mode (given {config_d['specmolfrag_dynamic_batch_sampler_mode']}) "
-		assert config_d['specmolfrag_dynamic_batch_sampler_max'] is not None,\
-			"specmolfrag_dynamic_batch_sampler need a max num"
+			f"Dynamic batch sampler can not use in junction of automatic optimization {config_d['automatic_optimization']}"
+		assert config_d['dynamic_batch_sampler_mode'] in ['frag_node','frag_edge'],\
+			f"Dynamic batch sampler only support frag_node or frag_edge mode (given {config_d['dynamic_batch_sampler_mode']}) "
+		assert config_d['dynamic_batch_sampler_max'] is not None,\
+			"Dynamic batch sampler needs a max num"
 	
 	# setup dataloaders
 	logging.info("setup dataloader")
@@ -317,7 +317,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		trainer_param_d['accumulate_grad_batches'] = config_d["accumulate_grad_batches"]
 		trainer_param_d['gradient_clip_val'] = config_d["gradient_clip_val"]
 		trainer_param_d['gradient_clip_algorithm'] = config_d["gradient_clip_algorithm"]
-	elif config_d['custom_sampler'] == 'specmolfrag_dynamic_batch_sampler':
+	elif config_d['dynamic_batch_sampler']:
 		# with out this progress will not track dataset length change
 		# this will call train_dataloader and val_dataloader before every epoch
 		# not sure why this fixed our problem but it works 
