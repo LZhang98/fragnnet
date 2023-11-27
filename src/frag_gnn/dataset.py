@@ -31,6 +31,7 @@ def init_dataloader(ds, **config_d):
 		}
 		
 		# for group sampler 
+		sampler = None
 		if config_d['group_sampler'] and split == 'train':
 
 			if config_d['group_sampler_type']  == 'group':
@@ -40,10 +41,8 @@ def init_dataloader(ds, **config_d):
 			if config_d['group_sampler_type']  == 'group_mol':
 				sample_weights = 1.0/th.cat([ i['group_per_mol'] * i['spec_per_group']  for i in ds])
 				
-			sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['group_sampler_max'] ,replacement=True)	
-			dl_param_d['sampler'] = sampler
-			dl_param_d['drop_last'] = config_d["drop_last"]
-		
+			sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['group_sampler_max'] ,replacement=True)
+			
 		# for bacth sampler 
 		if config_d['dynamic_batch_sampler']:
 			chunk_size = config_d['dynamic_batch_sampler_chunk_size']
@@ -62,9 +61,11 @@ def init_dataloader(ds, **config_d):
 										shuffle=(not config_d["debug_overfit"]), 
 										skip_too_big = True,
 										max_batch_sample_size = chunk_size,
-										return_batch_at = max_batch_size)
+										return_batch_at = max_batch_size,
+										sampler = sampler)
 				
 			else:
+				print(f">{split}")
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 								max_num = config_d['dynamic_batch_sampler_max'], 
 								limited_by = config_d['dynamic_batch_sampler_mode'], 
@@ -76,8 +77,9 @@ def init_dataloader(ds, **config_d):
 			if split == "train":
 				dl_param_d['batch_size'] = config_d["train_batch_size"]	
 				dl_param_d['drop_last'] = config_d["drop_last"]
-				dl_param_d["shuffle"] = True
-			
+				if sampler is not None:
+					dl_param_d['sampler'] = sampler
+
 				if 'batch_sampler' not in dl_param_d and 'sampler' not in dl_param_d:
 					dl_param_d["shuffle"] = True
 			else:
@@ -586,7 +588,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 	"""
 	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_edge',
 					shuffle: bool = False, skip_too_big: bool = False, num_samples  = None, generator = None,
-					return_batch_at = 0, max_batch_sample_size = None) -> None:
+					return_batch_at = 0, max_batch_sample_size = None, sampler=None) -> None:
 		"""_summary_
 
 		Args:
@@ -624,13 +626,14 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		self._max_batch_sample_size = max_batch_sample_size
 		self._batches = []
 		self._data_meta = []
+		self._sampler = sampler
 		self._pre_compute_batches()
-	
+
 	def _pre_compute_batches(self):
 		self._batches = []
 		batch = []
 		batch_n = 0
-		num_processed = 0
+
 
 		# setup generator
 		if self._generator is None:
@@ -664,40 +667,32 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					#print(warning_msg)
 			if warning_msg != "":
 				print("[specmolfrag_dynamic_batch_sampler]", warning_msg)
-			print(f"[specmolfrag_dynamic_batch_sampler] Expecting {expected_total}/{len(self._data_source)} samples with skip_too_big:{self._skip_too_big}")
-
-		# beacuse this is an iter, shuffle only happen once per batch
-		if self._shuffle:
-			indices = th.randperm(len(self._data_source), generator = generator, dtype=th.long)
+			print(f"[SpecMolFragDynamicBatchSampler] Expecting {expected_total}/{len(self._data_source)} samples with skip_too_big:{self._skip_too_big}")
+		
+		if self._sampler is not None:
+			indices = th.tensor([idx for idx in self._sampler])
 		else:
-			indices = th.arange(len(self._data_source), dtype=th.long)
+			if self._shuffle:
+				indices = th.randperm(len(self._data_source), generator = generator, dtype=th.long)
+			else:
+				indices = th.arange(len(self._data_source), dtype=th.long)
 
 		batch_filled = False
-		while num_processed < len(self._data_source) and num_processed < self._max_sampling_step:
+		num_processed = 0
+		while num_processed < len(indices) and num_processed < self._max_sampling_step:
 			
 			# Fill batch
 			for idx in indices[num_processed:]:
 				# Size of sample
-				data = self._data_source[idx.item()]
-				
-				n = data['frag_pyg'].num_nodes if  self._limited_by == 'frag_node' \
-					else data['frag_pyg'].num_edges
+				#data = self._data_source[idx.item()]
+				#n1 = data['frag_pyg'].num_nodes if  self._limited_by == 'frag_node' else data['frag_pyg'].num_edges
+				n = self._data_meta[idx][0] if self._limited_by == 'frag_node' else self._data_meta[idx][1]
+				# assert n == n1
 
-				if n > self._max_num:
-					warning_msg = "Size of data sample at index " +\
-						f"{idx} is larger than " +\
-						f"{self._max_num} {self._limited_by}s " +\
-						f"(got {n} {self._limited_by}s. " +\
-						"This sample can not fit into batch "
-					if self._skip_too_big:
-						warning_msg += "and sampler will skip this to prevent CUDA OOM ERROR"
-					else:
-						warning_msg += "attempt to fit this in to batch and this may let to CUDA OOM ERROR"
-					warnings.warn(warning_msg)
-					#if skip too big is true, just move to the next iteration
-					# this will have edge case where a "batch" can be empty if this is the last batch
-					if self._skip_too_big:
-						continue
+				# skip too large sample
+				if n > self._max_num and self._skip_too_big:
+					num_processed += 1
+					continue
 
 				if batch_n + n > self._max_num:
 					# no more budget left, mini-batch filled
@@ -740,18 +735,24 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			# if mini batch filled, add to list
 			if not batch_filled:
 				# must be the end
-				assert num_processed == min(len(self._data_source), self._max_sampling_step)
+				if self._sampler is None:
+					assert num_processed == min(len(self._data_source), self._max_sampling_step)
+				else:
+					assert num_processed == min(len(self._sampler), self._max_sampling_step)
+
 			if len(batch) > 0:
 				self._batches.append(batch)
 			else:
 				# must have skipped something
 				assert self._skip_too_big
+
 			batch = []
 			batch_filled = False
 			batch_n = 0
 
 		if len(batch) > 0:
 			self._batches.append(batch)
+		
 		print(f"[SpecMolFragDynamicBatchSampler]Batch indices computed, Expecting {len(self._batches)} mini-batch for next epoch")
 
 	def __iter__(self) -> Iterator[List[int]]:

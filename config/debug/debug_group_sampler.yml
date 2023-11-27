@@ -47,10 +47,10 @@ auxiliary_scores:
   - cos_hun
   - ndcg
   
-automatic_optimization: True
+automatic_optimization: False
 use_tensor_float32: False
 detect_anomaly: False
-group_sampler: False
+group_sampler: True
 group_sampler_type: group
 group_sampler_max: 200
 #custom_sampler: specmol_weighted_group_sampler
