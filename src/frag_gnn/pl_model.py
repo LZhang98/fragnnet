@@ -1156,7 +1156,6 @@ class FragGNNPL(SpectrumPL):
 			total_loss = batch_results["total_loss"]
 			total_weight = batch_results["total_weight"]
 			mean_loss = total_loss / self._max_batch_size
-			self._cur_batch_weight += total_weight
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
