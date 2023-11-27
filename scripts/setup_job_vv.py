@@ -81,15 +81,16 @@ def main(args):
 			"echo `date`: Job ${SLURM_JOB_ID} is allocated resources"
 		]
 	)
-	script_lines.extend(
-		[
-			"",
-			"# make wandb directory (if necessary)",
-			"mkdir -p /checkpoint/adamo/wandb",
-			"touch /checkpoint/adamo/wandb/DELAYPURGE",
-			f"ln -sfn /checkpoint/adamo/wandb {args.root_dp}/wandb"
-		]
-	)
+	if args.link_wandb:
+		script_lines.extend(
+			[
+				"",
+				"# make wandb directory (if necessary)",
+				"mkdir -p /checkpoint/adamo/wandb",
+				"touch /checkpoint/adamo/wandb/DELAYPURGE",
+				f"ln -sfn /checkpoint/adamo/wandb {args.root_dp}/wandb"
+			]
+		)
 	script_lines.extend(
 		[
 			"",
@@ -180,5 +181,6 @@ if __name__ == "__main__":
 	parser.add_argument("--modules", type=str, nargs="+", default=["cuda-11.8"])
 	parser.add_argument("--home_dp", type=str, default="/fs01/home/adamo")
 	parser.add_argument("--requeue", type=booltype, default=False)
+	parser.add_argument("--link_wandb", type=booltype, default=False)
 	args = parser.parse_args()
 	main(args)
