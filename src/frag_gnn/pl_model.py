@@ -418,7 +418,6 @@ class SpectrumPL(pl.LightningModule):
 
 	def _setup_sampler(self):
 
-		self._smf = self.hparams.custom_sampler == "SpecMolFragDynamicBatchSampler"
 		self._cur_batch_size = 0
 		self._cur_batch_weight = 0.
 		self._max_batch_size = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
@@ -798,6 +797,22 @@ class SpectrumPL(pl.LightningModule):
 				images=[data]
 			)
 
+	# def on_train_epoch_start(self):
+
+	# 	dl = self.trainer.train_dataloader
+	# 	ds = dl.dataset
+	# 	bs = dl.batch_sampler
+	# 	if self.hparams.dynamic_batch_sampler:
+	# 		batch_lens = [len(b) for b in bs._batches]
+	# 		print(batch_lens)
+	# 		ids = flatten_lol(bs._batches)
+	# 		un_ids = np.unique(ids)
+	# 		print(
+	# 			ds.spec_df.shape[0],
+	# 			len(ids),
+	# 			len(un_ids)
+	# 		)
+
 	def on_train_epoch_end(self):
 
 		# consolidate results
@@ -1109,7 +1124,7 @@ class FragGNNPL(SpectrumPL):
 		"""
 		opt = self.optimizers()
 		# scale gradients
-		if self._smf:
+		if self.hparams.dynamic_batch_sampler:
 			for pg in opt.param_groups:
 				for p in pg['params']:
 					if p.grad is not None:
@@ -1148,7 +1163,7 @@ class FragGNNPL(SpectrumPL):
 			self._update_results(batch_results,"train")
 			return mean_loss
 		
-		elif self._smf:	
+		elif self.hparams.dynamic_batch_sampler:
 			batch_size = batch['batch_size'].item()
 			assert batch_size > 0, batch_size
 			batch_results = self._common_step(batch, split="train")
@@ -1185,7 +1200,7 @@ class FragGNNPL(SpectrumPL):
 
 	def on_train_epoch_end(self):
 
-		if not self.hparams.automatic_optimization and self._smf and self._cur_batch_size > 0:
+		if not self.hparams.automatic_optimization and self.hparams.dynamic_batch_sampler and self._cur_batch_size > 0:
 			# this is used for manul opt when lr_schedulers is not available from torch lightning
 			self._manual_opt()
 		# # subsample data

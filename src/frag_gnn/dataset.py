@@ -31,20 +31,30 @@ def init_dataloader(ds, **config_d):
 			'collate_fn': ds.get_collate_fn(),
 		}
 
-		if config_d['custom_sampler'] == 'SpecMolFragDynamicBatchSampler':
+		if config_d['dynamic_batch_sampler']:
+			chunk_size = config_d['dynamic_batch_sampler_chunk_size']
+			max_batch_size = config_d['train_batch_size'] * config_d['accumulate_grad_batches']
+			if chunk_size == -1:
+				# use return_batch_at = max_batch_size
+				chunk_size = None
+			else:
+				# use max_batch_sample_size == chunk_size
+				assert chunk_size <= max_batch_size, (chunk_size, max_batch_size)
+				max_batch_size = 0
 			if split == "train":
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
-										max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
-										limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
+										max_num = config_d['dynamic_batch_sampler_max'], 
+										limited_by = config_d['dynamic_batch_sampler_mode'], 
 										shuffle=(not config_d["debug_overfit"]), 
 										skip_too_big = True,
-										return_batch_at = config_d['train_batch_size'] * config_d['accumulate_grad_batches'])
+										max_batch_sample_size = chunk_size,
+										return_batch_at = max_batch_size)
 				
 			else:
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
-								max_num = config_d['specmolfrag_dynamic_batch_sampler_max'], 
-								limited_by = config_d['specmolfrag_dynamic_batch_sampler_mode'], 
-								shuffle=False, 
+								max_num = config_d['dynamic_batch_sampler_max'], 
+								limited_by = config_d['dynamic_batch_sampler_mode'], 
+								shuffle = False, 
 								skip_too_big = True)
 
 			dl_param_d['batch_sampler'] = batchsampler
@@ -652,6 +662,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
 		batch_filled = False
 		while num_processed < len(self._data_source) and num_processed < self._max_sampling_step:
+			
 			# Fill batch
 			for idx in indices[num_processed:]:
 				# Size of sample
@@ -676,7 +687,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					if self._skip_too_big:
 						continue
 
-				if  batch_n + n > self._max_num:
+				if batch_n + n > self._max_num:
 					# no more budget left, mini-batch filled
 					break
 				
@@ -698,18 +709,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 					# Mini-batch filled
 					break
 			
-			n = self._data_meta[dataset_idx][0] if self._limited_by == 'frag_node' \
-				else self._data_meta[dataset_idx][1]
-			
-			#print(f"num_processed before, {num_processed}, current indice {dataset_idx}")
-			if n > self._max_num and self._skip_too_big:
-				#if skip too big is true, just move to the next iteration
-				# this will have edge case where a "batch" can be empty if this is the last batch
-				num_processed += 1
-				continue
-			
 			# no more budget left, mini-batch filled
-			if  batch_n + n > self._max_num:
+			if batch_n + n > self._max_num:
 				batch_filled = True
 
 			# check if batch has more samples then max sample size
@@ -725,16 +726,17 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 				batch_filled = True
 				
 			# if mini batch filled, add to list
-			if  batch_filled == True:
-				if len(batch) > 0:
-					self._batches.append(batch)
-					batch = []
-				batch_filled = False
-				batch_n = 0
-
-			# batch.append(dataset_idx)
-			num_processed += 1
-			batch_n += n
+			if not batch_filled:
+				# must be the end
+				assert num_processed == min(len(self._data_source), self._max_sampling_step)
+			if len(batch) > 0:
+				self._batches.append(batch)
+			else:
+				# must have skipped something
+				assert self._skip_too_big
+			batch = []
+			batch_filled = False
+			batch_n = 0
 
 		if len(batch) > 0:
 			self._batches.append(batch)

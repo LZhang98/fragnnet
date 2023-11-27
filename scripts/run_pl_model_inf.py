@@ -11,7 +11,7 @@ print("Loading configs")
 template_fp = "config/template.yml"
 custom_fp = "config/nist20_d4_wr00_inchikey/fraggnn_d4.yml"
 config_d = load_config(template_fp, custom_fp)
-# config_d["custom_sampler"] = "none"
+# config_d["custom_batch_sampler"] = False
 # config_d["eval_batch_size"] = 2
 
 # load datasets
