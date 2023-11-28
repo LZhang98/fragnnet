@@ -55,8 +55,7 @@ def init_dataloader(ds, config_d):
 			else:
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 								max_num = config_d['dynamic_batch_sampler_max'], 
-								limited_by = config_d['dynamic_batch_sampler_mode'], 
-								shuffle = False, 
+								limited_by = config_d['dynamic_batch_sampler_mode'],
 								skip_too_big = True)
 
 			dl_param_d['batch_sampler'] = batchsampler
