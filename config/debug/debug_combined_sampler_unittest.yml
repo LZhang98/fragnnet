@@ -23,7 +23,7 @@ debug_overfit: False
 precision: 32
 
 subsample_params:
-  subsample_size: 64
+  subsample_size: 128
   subsample_seed: 420
 spec_params:
   merge: False
@@ -31,7 +31,7 @@ spec_params:
   prec_type: True
   prec_mz: True
   prec_mass_diff: True
-  nce: False
+  nce: True
   ace: False
   preprocess: False
   unique_id: True
@@ -55,5 +55,5 @@ dynamic_batch_sampler_max: 2000
 dynamic_batch_sampler_chunk_size: 4
 group_sampler: True
 group_sampler_type: group
-group_sampler_max: 20
+group_sampler_max: 64
 pl_enable_progress_bar: True
