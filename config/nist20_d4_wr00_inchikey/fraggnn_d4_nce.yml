@@ -20,6 +20,10 @@ spec_params:
   merge: False
   nce: True
 sample_weight: group
+ce_insert_mol: True
+ce_insert_frag: True
+ce_insert_mlp: True
+ce_insert_mlp_lin: False
 
 train_batch_size: 32
 eval_batch_size: 32
@@ -45,7 +49,7 @@ frag_pool_type: mean
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-custom_batch_sampler: specmolfrag_dynamic_batch_sampler
-specmolfrag_dynamic_batch_sampler_mode: frag_edge
-specmolfrag_dynamic_batch_sampler_max: 500000
+dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler_mode: frag_edge
+dynamic_batch_sampler_max: 500000
 pl_enable_progress_bar: False

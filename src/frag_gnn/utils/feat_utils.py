@@ -593,8 +593,8 @@ def random_walk_pe(g, k):
 	PE = [RW.diagonal()]
 	RW_power = RW.copy()
 	for _ in range(k - 1):
-	    RW_power = RW_power @ RW
-	    PE.append(RW_power.diagonal())
+		RW_power = RW_power @ RW
+		PE.append(RW_power.diagonal())
 	PE = np.stack(PE, axis=-1)
 	PE = th.as_tensor(PE,dtype=th.float32)
 	return PE

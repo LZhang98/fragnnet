@@ -139,10 +139,9 @@ class GNN(nn.Module):
 		"""
 		super().__init__()
 		self.hidden_size = hidden_size
-		self.include_ce = kwargs.get('include_ce', False)
 		# if include ce here, add ce value to each node
-		self.edge_feats_size = edge_feats_size if not self.include_ce else edge_feats_size + 1
-		self.node_feats_size = node_feats_size if not self.include_ce else node_feats_size + 1
+		self.edge_feats_size = edge_feats_size
+		self.node_feats_size = node_feats_size
 		self.dropout = dropout
 		self.normalization = normalization
 

@@ -42,7 +42,10 @@ class FragGNNModel(nn.Module):
 		skip_edge_loss: bool,
 		mask_null_formula: bool,
 		predict_oos: bool,
-		ce_insert_type: str,
+		ce_insert_mol: bool,
+		ce_insert_frag: bool,
+		ce_insert_mlp: bool,
+		ce_insert_mlp_lin: bool,
 		node_formula_null_aggregate: bool
 	):
 
@@ -50,18 +53,20 @@ class FragGNNModel(nn.Module):
 		self.num_depth = num_depth
 		self.num_hs = num_hs
 		self.num_elements = num_elements
+
+		# check ce insertion type
+		self.ce_insert_mol = ce_insert_mol
+		self.ce_insert_frag = ce_insert_frag
+		self.ce_insert_mlp = ce_insert_mlp
+		self.ce_insert_mlp_lin = ce_insert_mlp_lin
+
 		# calculate node/edge feats sizes
 		self.mol_node_feats = mol_node_feats
 		self.mol_edge_feats = mol_edge_feats
 		self.mol_pe_embed_k = mol_pe_embed_k
 		self._compute_mol_feats_sizes()
 
-		#check ce insertion type
-		assert ce_insert_type in ["mlp_insert","frag_insert","mol_insert","none"]
-		self.ce_insert_type = ce_insert_type
-
 		# setup mol gnn
-		#mol_include_ce = ce_insert_type == "mol_insert"
 		mol_kwargs = {
 			"node_feats_size": self.mol_node_feats_size,
 			"edge_feats_size": self.mol_edge_feats_size,
@@ -70,7 +75,6 @@ class FragGNNModel(nn.Module):
 			"gnn_type": mol_gnn_type,
 			"dropout": mol_dropout,
 			"normalization": mol_normalization,
-			#"include_ce": mol_include_ce
 		}
 		
 		# Mol GNN
@@ -85,7 +89,7 @@ class FragGNNModel(nn.Module):
 			formula_d = depth_d = complement_d = {}
 		self.formula_embedder = get_embedder(int_embedder,**formula_d)
 		self.depth_embedder = get_embedder(int_embedder,**depth_d)
-		self.complement_embedder = get_embedder(int_embedder,)
+		self.complement_embedder = get_embedder(int_embedder,**complement_d)
 		self.frag_node_feats = frag_node_feats
 		self.frag_edge_feats = frag_edge_feats
 		self._compute_frag_feats_sizes()
@@ -96,11 +100,6 @@ class FragGNNModel(nn.Module):
 		if self.cc_interstage_type == "linear":
 			self.cc_interstage = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
 
-		# define frag-graph GNN to create frag-graph node level embedding
-		if self.ce_insert_type == "frag_insert":
-			self.frag_node_feats_size += 1
-			self.frag_edge_feats_size += 1
-		
 		frag_kwargs = {
 			"node_feats_size": self.frag_node_feats_size,
 			"edge_feats_size": self.frag_edge_feats_size,
@@ -108,8 +107,7 @@ class FragGNNModel(nn.Module):
 			"num_layers": frag_num_layers,
 			"gnn_type": frag_gnn_type,
 			"dropout": frag_dropout,
-			"normalization": frag_normalization,
-			"include_ce": self.ce_insert_type == "frag_insert"
+			"normalization": frag_normalization
 		}
 
 		self.frag_embedder = GNN(**frag_kwargs)
@@ -120,8 +118,11 @@ class FragGNNModel(nn.Module):
 		# determine mlp input dims
 		# we mlp insert for ce is enabled, add ce here
 		mlp_input_dim = 2*self.frag_embedder.hidden_size
-		if self.ce_insert_type == "mlp_insert":
+		if self.ce_insert_mlp:
 			mlp_input_dim += 1
+		if self.ce_insert_mlp_lin:
+			self.ce_embedder = nn.Linear(1,max(self.frag_embedder.hidden_size//16,2))
+			mlp_input_dim += max(self.frag_embedder.hidden_size//16,2)
 
 		if self.mlp_output_format in ["formula","node_formula"]:
 			formula_mlp_kwargs = {
@@ -180,6 +181,8 @@ class FragGNNModel(nn.Module):
 			self.mol_edge_feats, 
 			self.mol_pe_embed_k
 		)
+		if self.ce_insert_mol:
+			self.mol_node_feats_size += 1
 
 	def _compute_frag_feats_sizes(self):
 		""" method compute frag-graph feature size
@@ -201,6 +204,10 @@ class FragGNNModel(nn.Module):
 			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "complement" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.complement_embedder.num_dim
+		# define frag-graph GNN to create frag-graph node level embedding
+		if self.ce_insert_frag:
+			self.frag_node_feats_size += 1
+			self.frag_edge_feats_size += 1
 
 	def compile_submodules(self,**kwargs):
 		""" pyg does not support dynamic shape compiling """
@@ -222,6 +229,7 @@ class FragGNNModel(nn.Module):
 		frag_formula_sizes: th.Tensor,
 		frag_formula_cumsizes: th.Tensor,
 		frag_formula_peak_sizes: th.Tensor,
+		spec_nce: th.Tensor = None,
 		**kwargs
 	):
 		"""forward methods for joint predictor
@@ -258,14 +266,14 @@ class FragGNNModel(nn.Module):
 		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
 		
-		# get ce value
-		# maybe we should check if ce is provided by model does not handle it ?
-		
-		if self.ce_insert_type != "none":
-			if "spec_nce" in kwargs:
-				ce = kwargs["spec_nce"]
-			elif "spec_ace" in kwargs:
-				ce = kwargs["spec_ace"]
+		# get ce value)
+		ce = spec_nce
+		if ce is not None:
+			ce = ce.reshape(-1,1)
+
+		if self.ce_insert_mol:
+			mol_ce_embed = th.repeat_interleave(ce,th.unique(mol_batch,return_counts=True)[1],dim=0)
+			mol_x = th.cat([mol_x,mol_ce_embed],dim=1)
 
 		# get per-atom embeddings
 		mol_embed_gnn = self.mol_embedder(
@@ -350,14 +358,14 @@ class FragGNNModel(nn.Module):
 			)
 			frag_edata.append(frag_edge_complement)
 
-		if self.ce_insert_type == "frag_insert":
-			edge_ce = ce.repeat(batch_frag_num_edges).T
+		if self.ce_insert_frag:
+			edge_ce = th.repeat_interleave(ce,th.unique(frag_batch[frag_edge_index[0]],return_counts=True)[1],dim=0)
 			frag_edata.append(edge_ce)
-			node_ce = ce.repeat(batch_frag_num_edges).T
-			frag_ndata.append(batch_frag_num_nodes)
+			node_ce = th.repeat_interleave(ce,th.unique(frag_batch,return_counts=True)[1],dim=0)
+			frag_ndata.append(node_ce)
 
 		# get output formula aggregation 
-		frag_node_batch_idxs = th.bucketize(th.arange(frag_x.shape[0],device=device),frag_num_nodes,right=True)-1
+		frag_node_batch_idxs = frag_batch
 		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
 		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
 		# assmeble all features for dag
@@ -379,12 +387,17 @@ class FragGNNModel(nn.Module):
 
 		# get frag dag embedding
 		frag_embed_parts = [
-				frag_embed_node - frag_embed_node_pool[frag_batch],
-				frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
-			]
-		if self.ce_insert_type == "mlp_insert":
-			frag_embed_parts.append(ce)
-
+			frag_embed_node - frag_embed_node_pool[frag_batch],
+			frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
+		]
+		if self.ce_insert_mlp:
+			mlp_ce_embed = ce
+			mlp_ce_embed = th.repeat_interleave(mlp_ce_embed,th.unique(frag_node_batch_idxs,return_counts=True)[1],dim=0)
+			frag_embed_parts.append(mlp_ce_embed)
+		if self.ce_insert_mlp_lin:
+			mlp_ce_embed = self.ce_embedder(ce)
+			mlp_ce_embed = th.repeat_interleave(mlp_ce_embed,th.unique(frag_node_batch_idxs,return_counts=True)[1],dim=0)
+			frag_embed_parts.append(mlp_ce_embed)
 		frag_embed = th.cat(frag_embed_parts, dim=1)
 
 		frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs,2*self.num_hs+1)
@@ -636,7 +649,11 @@ class NeimsModel(nn.Module):
 		mz_max: int,
 		mz_bin_res: float,
 		ff_prec_mz_offset: int,
-		ff_bidirectional: bool
+		ff_bidirectional: bool,
+		ce_insert_mol: bool,
+		ce_insert_frag: bool,
+		ce_insert_mlp: bool,
+		ce_insert_mlp_lin: bool,
 	):
 
 		super().__init__()
@@ -648,9 +665,18 @@ class NeimsModel(nn.Module):
 		self.prec_mz_offset = ff_prec_mz_offset
 		self.bidirectional = ff_bidirectional
 		self.use_residuals = mlp_use_residuals
+		
+		# check ce insertion type
+		self.ce_insert_mol = ce_insert_mol
+		self.ce_insert_frag = ce_insert_frag
+		self.ce_insert_mlp = ce_insert_mlp
+		self.ce_insert_mlp_lin = ce_insert_mlp_lin
+
 		self._compute_input_size()
 		self._compute_output_size()
 
+		if self.ce_insert_mlp_lin:
+			self.ce_embedder = nn.Linear(1,12)
 		self.in_layer = nn.Linear(self.input_size, mlp_hidden_size)
 		self.ff_layers = nn.ModuleList([])
 		# self.ff_layers.append(nn.Linear(mlp_hidden_size, mlp_hidden_size))
@@ -675,7 +701,12 @@ class NeimsModel(nn.Module):
 
 	def _compute_input_size(self):
 
-		self.input_size = get_mol_fp_size(self.mol_fingerprint_morgan, self.mol_fingerprint_rdkit, self.mol_fingerprint_maccs)
+		self.mol_fp_size = get_mol_fp_size(self.mol_fingerprint_morgan, self.mol_fingerprint_rdkit, self.mol_fingerprint_maccs)
+		self.input_size = self.mol_fp_size
+		if self.ce_insert_mlp:
+			self.input_size += 1
+		if self.ce_insert_mlp_lin:
+			self.input_size += 12
 
 	def _compute_output_size(self):
 
@@ -689,22 +720,40 @@ class NeimsModel(nn.Module):
 		assert th.max(prec_mz_idx) < self.output_size, (prec_mz_idx,self.output_size)
 		return prec_mz_idx
 
+	# def compile_submodules(self,**kwargs):
+
+	# 	self.ff_layers = th.compile(self.ff_layers,**kwargs)
+	# 	self.forw_out_layer = th.compile(self.forw_out_layer,**kwargs)
+	# 	self.rev_out_layer = th.compile(self.rev_out_layer,**kwargs)
+
 	def forward(
 		self,
 		mol_fingerprint: th.Tensor, 
-		spec_prec_mz: th.Tensor, 
+		spec_prec_mz: th.Tensor,
+		spec_nce: th.Tensor = None,
 		**kwargs
 	):
 
 		prec_mz_idxs = self._prec_mz_to_idx(spec_prec_mz)
-		# reshape fingerprints (they are flattened)
-		mol_fingerprint = mol_fingerprint.reshape(-1, self.input_size)
-		fh = self.in_layer(mol_fingerprint)
+		# get ce
+		ce = spec_nce
+		fh = mol_fingerprint.reshape(-1,self.mol_fp_size)
+		# add CE information
+		if self.ce_insert_mlp:
+			ce_embed = ce.reshape(-1,1)
+			fh = th.cat([fh,ce_embed],dim=1)
+		if self.ce_insert_mlp_lin:
+			ce_embed = self.ce_embedder(ce.reshape(-1,1))
+			fh = th.cat([fh,ce_embed],dim=1)
+		# process fingerprint
+		fh = self.in_layer(fh)
+		# big MLP
 		for layer in self.ff_layers:
 			if self.use_residuals:
 				fh = fh + layer(fh)
 			else:
 				fh = layer(fh)
+		# bidirectional prediction
 		if self.bidirectional:
 			ff = self.forw_out_layer(fh)
 			fr = reverse_prediction(

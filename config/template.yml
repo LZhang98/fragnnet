@@ -197,7 +197,10 @@ num_sanity_val_steps: 2
 mask_null_formula: True
 predict_oos: False
 oos_tolerance_multiple: -1
-ce_insert_type: none
+ce_insert_mol: False
+ce_insert_frag: False
+ce_insert_mlp: False
+ce_insert_mlp_lin: False
 dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000
@@ -219,5 +222,4 @@ node_formula_null_aggregate: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False
 sample_weight: none
-
 log_hist_metrics: True
