@@ -1168,7 +1168,6 @@ class FragGNNPL(SpectrumPL):
 
 		Returns:
 			_type_: _description_
-		TODO: is the dictionary popping necessary?
 		"""
 
 		if self.hparams.automatic_optimization:

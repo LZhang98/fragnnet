@@ -14,9 +14,9 @@ spec_params:
   merge: False # True
   nce: True # False
 sample_weight: "group"
-ce_insert_mol: False
+ce_insert_mol: True # False
 ce_insert_frag: False
-ce_insert_mlp: True #False
+ce_insert_mlp: True # False
 ce_insert_mlp_lin: False
 
 train_batch_size: 32

@@ -9,27 +9,19 @@ frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 subsample_params:
-  subsample_size: 256
-  # subsample_size: -1
+  subsample_size: 2048
 spec_params:
-  merge: False #True
-  nce: True #False
+  merge: False # True
+  nce: True # False
 compile: False
 sample_weight: "group"
 ce_insert_mol: False
 ce_insert_frag: False
-ce_insert_mlp: True
+ce_insert_mlp: True # False
 ce_insert_mlp_lin: False
-# spec_params:
-#   merge: True
-#   nce: False
-# compile: True
-# sample_weight: "group"
-# ce_insert_mol: False
-# ce_insert_frag: False
-# ce_insert_mlp: False
-# ce_insert_mlp_lin: False
-
+eval_mz_bin_res:
+- 1.0
+- 0.1
 
 train_batch_size: 512
 eval_batch_size: 512
@@ -42,15 +34,7 @@ min_epochs: 100
 max_epochs: 100
 lr_schedule: False
 debug_overfit: False
-precision: 32
-mask_null_formula: False
-predict_oos: True
-oos_tolerance_multiple: 3
-mz_bin_res: 0.1
-mz_max: 1500.0
 sparse_cosine_similarity: True
-mol_pool_type: mean
-frag_pool_type: mean
 upload_checkpoints: True
 
 precision: 32
@@ -72,7 +56,7 @@ mlp_dropout: 0.1
 mlp_num_layers: 5
 mlp_use_residuals: True
 mz_max: 1500.0
-mz_bin_res: 1.0
+mz_bin_res: 0.1
 sum_ints: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
