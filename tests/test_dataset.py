@@ -37,6 +37,7 @@ def test_train_split():
 		assert min(batch_indices_flatten) == 0
 		assert max(batch_indices_flatten) == 63
 
+		# check return at
 		accumulated_batch_sizes = [0]
 		for batch in batch_indices:
 			accumulated_batch_sizes.append(len(batch) + accumulated_batch_sizes[-1])
@@ -45,9 +46,14 @@ def test_train_split():
 			assert i * 5 in accumulated_batch_sizes
 		assert 64 in accumulated_batch_sizes
 
+		# check if random suffule works
 		all_batch_indices_strs.append(','.join([str(i) for i in batch_indices_flatten]))
 		train_dl.batch_sampler._pre_compute_batches()
-	
+
+		# make sure size fits requirmenets
+		# for batch in batch_indices:
+			# assert sum([train_ds[i].num_edges for i in batch]) <= 2000
+			#accumulated_batch_sizes.append(len(batch) + accumulated_batch_sizes[-1])
 	# check if random suffule works
 	assert len(set(all_batch_indices_strs)) == 10
 
@@ -66,3 +72,4 @@ def test_train_split():
 	# without random suffuling, we should have the same order same time
 	assert len(set(all_batch_indices_strs)) == 1
 
+test_train_split()
