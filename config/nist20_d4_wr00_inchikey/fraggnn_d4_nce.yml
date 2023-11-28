@@ -20,6 +20,10 @@ spec_params:
   merge: False
   nce: True
 sample_weight: group
+ce_insert_mol: True
+ce_insert_frag: True
+ce_insert_mlp: True
+ce_insert_mlp_lin: False
 
 train_batch_size: 32
 eval_batch_size: 32

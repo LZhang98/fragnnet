@@ -909,10 +909,23 @@ class FragGNNPL(SpectrumPL):
 			skip_edge_loss=self.hparams.skip_edge_loss,
 			mask_null_formula=self.hparams.mask_null_formula,
 			predict_oos=self.hparams.predict_oos,
-			ce_insert_type=self.hparams.ce_insert_type,
+			ce_insert_mol=self.hparams.ce_insert_mol,
+			ce_insert_frag=self.hparams.ce_insert_frag,
+			ce_insert_mlp=self.hparams.ce_insert_mlp,
+			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
 			node_formula_null_aggregate=self.hparams.node_formula_null_aggregate
 		)
 		
+		# check merge params
+		if self.hparams.spec_params["merge"]:
+			assert not self.hparams.spec_params["nce"]
+			assert not self.hparams.ce_insert_mol
+			assert not self.hparams.ce_insert_frag
+			assert not self.hparams.ce_insert_mlp
+			assert not self.hparams.ce_insert_mlp_lin
+		else:
+			assert self.hparams.spec_params["nce"]
+
 		# compile
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
@@ -1243,13 +1256,27 @@ class NeimsPL(SpectrumPL):
 			mz_bin_res=self.hparams.mz_bin_res,
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
+			ce_insert_mol=self.hparams.ce_insert_mol,
+			ce_insert_frag=self.hparams.ce_insert_frag,
+			ce_insert_mlp=self.hparams.ce_insert_mlp,
+			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
 		)
-		assert self.hparams.spec_params["merge"]
 		
+		# check merge params
+		if self.hparams.spec_params["merge"]:
+			assert not self.hparams.spec_params["nce"]
+			assert not self.hparams.ce_insert_mol
+			assert not self.hparams.ce_insert_frag
+			assert not self.hparams.ce_insert_mlp
+			assert not self.hparams.ce_insert_mlp_lin
+		else:
+			assert self.hparams.spec_params["nce"]
+
 		# compile
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
+			# self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
 
 	def _setup_loss_fn(self):
 

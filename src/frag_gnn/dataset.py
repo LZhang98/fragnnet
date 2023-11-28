@@ -370,6 +370,7 @@ class SpecMolDataset(BaseDataset):
 
 	@staticmethod
 	def get_collate_fn():
+
 		return SpecMolDataset.collate_fn
 
 	@staticmethod
@@ -503,6 +504,7 @@ class SpecMolFragDataset(SpecMolDataset):
 
 	@staticmethod
 	def get_collate_fn():
+
 		return SpecMolFragDataset.collate_fn
 
 	@staticmethod
