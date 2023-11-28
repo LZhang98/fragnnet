@@ -21,7 +21,7 @@ num_hs: 4
 
 train_batch_size: 1
 eval_batch_size: 1
-accumulate_grad_batches: 4
+accumulate_grad_batches: 5
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu

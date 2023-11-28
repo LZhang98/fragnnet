@@ -20,7 +20,7 @@ from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 
-def init_dataloader(ds, **config_d):
+def init_dataloader(ds, config_d):
 
 	split = ds.split
 	if split in ["train", "val"]:
@@ -33,27 +33,21 @@ def init_dataloader(ds, **config_d):
 		# for group sampler 
 		sampler = None
 		if config_d['group_sampler'] and split == 'train':
+			sampler = get_group_sampler(ds,config_d)
 
-			if config_d['group_sampler_type']  == 'group':
-				sample_weights = 1.0/th.cat([ i['spec_per_group'] for i in ds])
-			if config_d['group_sampler_type']  == 'mol':
-				sample_weights = 1.0/th.cat([ i['spec_per_mol'] for i in ds])
-			if config_d['group_sampler_type']  == 'group_mol':
-				sample_weights = 1.0/th.cat([ i['group_per_mol'] * i['spec_per_group']  for i in ds])
-				
-			sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['group_sampler_max'] ,replacement=True)
 			
 		# for bacth sampler 
 		if config_d['dynamic_batch_sampler']:
 			chunk_size = config_d['dynamic_batch_sampler_chunk_size']
 			max_batch_size = config_d['train_batch_size'] * config_d['accumulate_grad_batches']
-			if chunk_size == -1:
+			#print("max_batch_size", max_batch_size)
+			#if chunk_size == -1:
 				# use return_batch_at = max_batch_size
-				chunk_size = None
-			else:
+			#	chunk_size = None
+			#else:
 				# use max_batch_sample_size == chunk_size
-				assert chunk_size <= max_batch_size, (chunk_size, max_batch_size)
-				max_batch_size = 0
+			#	assert chunk_size <= max_batch_size, (chunk_size, max_batch_size)
+			#	max_batch_size = 0
 			if split == "train":
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 										max_num = config_d['dynamic_batch_sampler_max'], 
@@ -65,7 +59,7 @@ def init_dataloader(ds, **config_d):
 										sampler = sampler)
 				
 			else:
-				print(f">{split}")
+				#print(f">{split}")
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 								max_num = config_d['dynamic_batch_sampler_max'], 
 								limited_by = config_d['dynamic_batch_sampler_mode'], 
@@ -100,9 +94,7 @@ def init_dataloader(ds, **config_d):
 			num_workers=config_d["num_workers"],
 			collate_fn=ds.get_collate_fn()
 		)
-
 	return dl
-
 
 class BaseDataset(Dataset):
 
@@ -628,12 +620,10 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		self._data_meta = []
 		self._sampler = sampler
 		self._pre_compute_batches()
+		#print("_return_batch_at", self._return_batch_at, return_batch_at)
 
 	def _pre_compute_batches(self):
 		self._batches = []
-		batch = []
-		batch_n = 0
-
 
 		# setup generator
 		if self._generator is None:
@@ -677,82 +667,96 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			else:
 				indices = th.arange(len(self._data_source), dtype=th.long)
 
-		batch_filled = False
+		# limited index to _max_sampling_step
+		indices = indices[:self._max_sampling_step]
+
 		num_processed = 0
-		while num_processed < len(indices) and num_processed < self._max_sampling_step:
-			
-			# Fill batch
-			for idx in indices[num_processed:]:
-				# Size of sample
-				#data = self._data_source[idx.item()]
-				#n1 = data['frag_pyg'].num_nodes if  self._limited_by == 'frag_node' else data['frag_pyg'].num_edges
-				n = self._data_meta[idx][0] if self._limited_by == 'frag_node' else self._data_meta[idx][1]
-				# assert n == n1
+		batch = []
+		batch_n = 0
+		batch_filled = False
+		# while num_processed < len(indices) and num_processed < self._max_sampling_step:
+		# Fill batch
+		for idx in indices: #[num_processed:]:
+			# Size of sample
+			data = self._data_source[idx.item()]
+			#n1 = data['frag_pyg'].num_nodes if  self._limited_by == 'frag_node' else data['frag_pyg'].num_edges
+			n = self._data_meta[idx.item()][0] if self._limited_by == 'frag_node' else self._data_meta[idx.item()][1]
+			#print(idx, n, n1)
+			# assert n == n1
 
-				# skip too large sample
-				if n > self._max_num and self._skip_too_big:
-					num_processed += 1
-					continue
+			if n > self._max_num and self._skip_too_big:
+				continue 
 
-				if batch_n + n > self._max_num:
-					# no more budget left, mini-batch filled
-					break
-				
-				# Add sample to current batch
-				batch.append(idx.item())
-				num_processed += 1
-				batch_n += n
-
-				# check if batch has more samples then max sample size
-				if self._max_batch_sample_size is not None \
-					and self._max_batch_sample_size == len(batch):
-					# mini-batch filled
-					break
-				
-				# check we need return at this point for ga
-				if self._return_batch_at > 0 \
-					and num_processed > 0 \
-					and num_processed % self._return_batch_at == 0:
-					# Mini-batch filled
-					break
-			
-			# no more budget left, mini-batch filled
+			# check batch_filled condition
 			if batch_n + n > self._max_num:
+				# no more budget left, mini-batch filled
+				# break
 				batch_filled = True
-
+			
 			# check if batch has more samples then max sample size
-			if self._max_batch_sample_size is not None \
-				and self._max_batch_sample_size == len(batch):
-				batch_filled = True
+			# if self._max_batch_sample_size is not None \
+			#	and self._max_batch_sample_size == len(batch):
+				# mini-batch filled
+			#	batch_filled = True
 			
 			# check we need return at this point for ga
+			#print("self._return_batch_at", self._return_batch_at)
 			if self._return_batch_at > 0 \
 				and num_processed > 0 \
 				and num_processed % self._return_batch_at == 0:
+				#print(">num_processed", num_processed)
 				# Mini-batch filled
 				batch_filled = True
+
+			if batch_filled:
+				self._batches.append(batch)
+				batch_n = 0
+				batch = []
+				batch_filled = False
+			
+			# Add sample to current batch
+			#print(idx.item())
+			batch.append(idx.item())
+			num_processed += 1
+			batch_n += n
+			
+			# no more budget left, mini-batch filled
+			#if batch_n + n > self._max_num:
+			#	batch_filled = True
+
+			# check if batch has more samples then max sample size
+			#if self._max_batch_sample_size is not None \
+			#	and self._max_batch_sample_size == len(batch):
+			#	batch_filled = True
+			
+			# check we need return at this point for ga
+			# if self._return_batch_at > 0 \
+			#	and num_processed > 0 \
+			#	and num_processed % self._return_batch_at == 0:
+				# Mini-batch filled
+			#	batch_filled = True
 				
 			# if mini batch filled, add to list
-			if not batch_filled:
+			# if not batch_filled:
 				# must be the end
-				if self._sampler is None:
-					assert num_processed == min(len(self._data_source), self._max_sampling_step)
-				else:
-					assert num_processed == min(len(self._sampler), self._max_sampling_step)
+			#	if self._sampler is None:
+			#		assert num_processed == min(len(self._data_source), self._max_sampling_step)
+			#	else:
+			#		assert num_processed == min(len(self._sampler), self._max_sampling_step)
 
-			if len(batch) > 0:
-				self._batches.append(batch)
-			else:
+			# if len(batch) > 0:
+			#	self._batches.append(batch)
+			#else:
 				# must have skipped something
-				assert self._skip_too_big
+			#	assert self._skip_too_big
 
-			batch = []
-			batch_filled = False
-			batch_n = 0
+			#batch = []
+			#batch_filled = False
+			#batch_n = 0
 
 		if len(batch) > 0:
 			self._batches.append(batch)
-		
+		#print(self._batches)
 		print(f"[SpecMolFragDynamicBatchSampler]Batch indices computed, Expecting {len(self._batches)} mini-batch for next epoch")
 
 	def __iter__(self) -> Iterator[List[int]]:
@@ -772,7 +776,29 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			int: length of datasource
 		"""
 		return len(self._batches)
+
+def get_group_sampler(ds:SpecMolFragDataset, config_d: dict) -> WeightedRandomSampler:
+	"""get WeightedRandomSampler based on input
+
+	Args:
+		ds (SpecMolFragDataset): _description_
+		config_d (dict): _description_
+
+	Returns:
+		_type_: _description_
+	"""
+	if config_d['group_sampler_type']  == 'group':
+		sample_weights = 1.0/th.cat([ i['spec_per_group'] for i in ds])
+	elif config_d['group_sampler_type']  == 'mol':
+		sample_weights = 1.0/th.cat([ i['spec_per_mol'] for i in ds])
+	elif config_d['group_sampler_type']  == 'group_mol':
+		sample_weights = 1.0/th.cat([ i['group_per_mol'] * i['spec_per_group']  for i in ds])
+	else:
+		return None
 	
+	sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['group_sampler_max'] ,replacement=True)
+	return sampler
+
 if __name__ == "__main__":
 
 	import pandas as pd

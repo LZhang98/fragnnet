@@ -267,6 +267,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	else:
 		assert config_d["model_type"] == "neims", config_d["model_type"]
 		dataset_cls = SpecMolDataset
+		
 	train_ds = dataset_cls(split="train",**config_d)
 	val_ds = dataset_cls(split="val",**config_d)
 	test_ds = dataset_cls(split="test",**config_d)
@@ -284,9 +285,9 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	
 	# setup dataloaders
 	logging.info("setup dataloader")
-	train_dl = init_dataloader(train_ds, **config_d)
-	val_dl = init_dataloader(val_ds, **config_d)
-	test_dl = init_dataloader(test_ds, **config_d)
+	train_dl = init_dataloader(train_ds, config_d)
+	val_dl = init_dataloader(val_ds, config_d)
+	test_dl = init_dataloader(test_ds, config_d)
 
 	# setup trainer
 	logging.info("setup trainer")
