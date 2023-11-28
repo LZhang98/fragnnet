@@ -16,8 +16,8 @@ split_dp: data/split/nist20_d4_wr00_inchikey
 frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
-# subsample_params:
-#   subsample_size: 1024
+subsample_params:
+  subsample_size: 2048
 
 train_batch_size: 32
 eval_batch_size: 32

@@ -803,10 +803,15 @@ class SpectrumPL(pl.LightningModule):
 	# 	ds = dl.dataset
 	# 	bs = dl.batch_sampler
 	# 	if self.hparams.dynamic_batch_sampler:
+	# 		print(f"total num batches = {len(bs._batches)}")
 	# 		batch_lens = [len(b) for b in bs._batches]
-	# 		print(batch_lens)
+	# 		print("> first 50")
+	# 		print(batch_lens[:50])
+	# 		print("> last 50")
+	# 		print(batch_lens[-50:])
 	# 		ids = flatten_lol(bs._batches)
 	# 		un_ids = np.unique(ids)
+	# 		print("> id coverage")
 	# 		print(
 	# 			ds.spec_df.shape[0],
 	# 			len(ids),
