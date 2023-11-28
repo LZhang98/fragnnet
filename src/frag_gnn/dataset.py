@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import torch as th
 import torch.nn.functional as F
-from torch.utils.data.sampler import Sampler, BatchSampler, WeightedRandomSampler, RandomSampler
+from torch.utils.data.sampler import BatchSampler, WeightedRandomSampler, RandomSampler
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import torch_geometric as pyg
