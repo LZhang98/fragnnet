@@ -1205,6 +1205,7 @@ class FragGNNPL(SpectrumPL):
 			self._manual_opt()
 		
 		if self.hparams.dynamic_batch_sampler:
+			# compute mini batch for next epoches
 			self.trainer.train_dataloader.batch_sampler._pre_compute_batches()
 		# # subsample data
 		# train_dl = self.trainer.train_dataloader
