@@ -22,12 +22,15 @@ def make_splits(args):
     dsets = args.dsets
     prec_types = args.prec_types
     spec_masks = []
+    print(f"> filtering: dsets {args.dsets}")
     spec_masks.append(spec_df["dset"].isin(dsets))
+    print(f"> filtering: prec_type {prec_types}")
     spec_masks.append(spec_df["prec_type"].isin(prec_types))
+    print(f"> filtering: max peak mz {args.max_peak_mz}")
     spec_masks.append(spec_df["peaks"].apply(get_max_mz) <= args.max_peak_mz)
     spec_masks = np.stack(spec_masks,axis=1)
     spec_mask = np.all(spec_masks,axis=1)
-    print(np.sum(spec_mask), spec_mask.shape[0], np.mean(spec_mask))
+    print(f"> Selected {np.sum(spec_mask)}/{spec_mask.shape[0]} spectra ({np.mean(spec_mask) * 100 } % total specturm)")
     spec_df = spec_df[spec_mask]
     spec_spec_id = spec_df["spec_id"]
     spec_group_id = spec_df["group_id"]
@@ -40,13 +43,16 @@ def make_splits(args):
     wrecall_key = "wrecall_10ppm_h4"
     dag_masks = []
     if args.max_num_dag_nodes != -1:
+        print(f"> filtering on max dag nodes {args.max_num_dag_nodes}")
         dag_masks.append(dag_stats_df[node_key] <= args.max_num_dag_nodes)
     if args.max_num_dag_edges != -1:
+        print(f"> filtering: max dag edges {args.max_num_dag_nodes}")
         dag_masks.append(dag_stats_df[edge_key] <= args.max_num_dag_edges)
+    print(f"> filtering: min dag wrcall {args.min_dag_wrecall}")
     dag_masks.append(dag_stats_df[wrecall_key] >= args.min_dag_wrecall)
     dag_masks = np.stack(dag_masks,axis=1)
     dag_mask = np.all(dag_masks,axis=1)
-    print(np.sum(dag_mask), dag_mask.shape[0], np.mean(dag_mask))
+    print(f"> Selected {np.sum(dag_mask)}/{dag_mask.shape[0]} Dags ({np.mean(dag_mask) * 100 } % total dags)")
     dag_stats_df = dag_stats_df[dag_mask]
     dag_mol_id = dag_stats_df["mol_id"]
     if args.dag_filter_grouping in ["m_spec","m_mol"]:

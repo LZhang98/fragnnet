@@ -202,6 +202,9 @@ dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000
 dynamic_batch_sampler_chunk_size: -1
+group_sampler: False
+group_sampler_type: group #[group, group_mol, mol]
+group_sampler_max: 10000
 mp_sharing_strategy: file_descriptor
 check_gradient_norm: False
 use_tensor_float32: False
@@ -216,4 +219,5 @@ node_formula_null_aggregate: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False
 sample_weight: none
+
 log_hist_metrics: True

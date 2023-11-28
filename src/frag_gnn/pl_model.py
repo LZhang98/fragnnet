@@ -1208,6 +1208,10 @@ class FragGNNPL(SpectrumPL):
 		if not self.hparams.automatic_optimization and self.hparams.dynamic_batch_sampler and self._cur_batch_size > 0:
 			# this is used for manul opt when lr_schedulers is not available from torch lightning
 			self._manual_opt()
+		
+		if self.hparams.dynamic_batch_sampler:
+			# compute mini batch for next epoches
+			self.trainer.train_dataloader.batch_sampler._pre_compute_batches()
 		# # subsample data
 		# train_dl = self.trainer.train_dataloader
 		# self.trainer.train_dataloader = Dataloader(
