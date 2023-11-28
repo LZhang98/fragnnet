@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import torch as th
 import torch.nn.functional as F
-from torch.utils.data.sampler import Sampler, BatchSampler, WeightedRandomSampler
+from torch.utils.data.sampler import BatchSampler, WeightedRandomSampler, RandomSampler
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import torch_geometric as pyg
@@ -40,30 +40,22 @@ def init_dataloader(ds, config_d):
 		if config_d['dynamic_batch_sampler']:
 			chunk_size = config_d['dynamic_batch_sampler_chunk_size']
 			max_batch_size = config_d['train_batch_size'] * config_d['accumulate_grad_batches']
-			#print("max_batch_size", max_batch_size)
-			#if chunk_size == -1:
-				# use return_batch_at = max_batch_size
-			#	chunk_size = None
-			#else:
-				# use max_batch_sample_size == chunk_size
-			#	assert chunk_size <= max_batch_size, (chunk_size, max_batch_size)
-			#	max_batch_size = 0
+	
 			if split == "train":
+				if sampler is None and not config_d["debug_overfit"]:
+					sampler = RandomSampler(ds, False)
+
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 										max_num = config_d['dynamic_batch_sampler_max'], 
 										limited_by = config_d['dynamic_batch_sampler_mode'], 
-										shuffle=(not config_d["debug_overfit"]), 
 										skip_too_big = True,
-										max_batch_sample_size = chunk_size,
 										return_batch_at = max_batch_size,
 										sampler = sampler)
 				
 			else:
-				#print(f">{split}")
 				batchsampler = SpecMolFragDynamicBatchSampler(ds, 
 								max_num = config_d['dynamic_batch_sampler_max'], 
-								limited_by = config_d['dynamic_batch_sampler_mode'], 
-								shuffle = False, 
+								limited_by = config_d['dynamic_batch_sampler_mode'],
 								skip_too_big = True)
 
 			dl_param_d['batch_sampler'] = batchsampler
@@ -579,8 +571,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 	 This should have the same random sampling beheivor as RandomSampler
 	"""
 	def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_edge',
-					shuffle: bool = False, skip_too_big: bool = False, num_samples  = None, generator = None,
-					return_batch_at = 0, max_batch_sample_size = None, sampler=None) -> None:
+			  	 	skip_too_big: bool = False, num_samples  = None, 
+					return_batch_at = 0, sampler=None) -> None:
 		"""_summary_
 
 		Args:
@@ -612,10 +604,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		self._limited_by = limited_by
 		self._skip_too_big = skip_too_big
 		self._max_sampling_step = num_samples
-		self._shuffle = shuffle
-		self._generator = generator
 		self._return_batch_at = return_batch_at
-		self._max_batch_sample_size = max_batch_sample_size
 		self._batches = []
 		self._data_meta = []
 		self._sampler = sampler
@@ -624,14 +613,6 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
 	def _pre_compute_batches(self):
 		self._batches = []
-
-		# setup generator
-		if self._generator is None:
-			seed = int(th.empty((), dtype=th.int64).random_().item())
-			generator = th.Generator()
-			generator.manual_seed(seed)
-		else:
-			generator = self._generator
 
 		# get data meta once and cache them
 		if len(self._data_meta) == 0:
@@ -662,10 +643,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		if self._sampler is not None:
 			indices = th.tensor([idx for idx in self._sampler])
 		else:
-			if self._shuffle:
-				indices = th.randperm(len(self._data_source), generator = generator, dtype=th.long)
-			else:
-				indices = th.arange(len(self._data_source), dtype=th.long)
+			indices = th.arange(len(self._data_source), dtype=th.long)
 
 		# limited index to _max_sampling_step
 		indices = indices[:self._max_sampling_step]
@@ -690,15 +668,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			# check batch_filled condition
 			if batch_n + n > self._max_num:
 				# no more budget left, mini-batch filled
-				# break
 				batch_filled = True
-			
-			# check if batch has more samples then max sample size
-			# if self._max_batch_sample_size is not None \
-			#	and self._max_batch_sample_size == len(batch):
-				# mini-batch filled
-			#	batch_filled = True
-			
+						
 			# check we need return at this point for ga
 			#print("self._return_batch_at", self._return_batch_at)
 			if self._return_batch_at > 0 \
@@ -720,40 +691,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			num_processed += 1
 			batch_n += n
 			
-			# no more budget left, mini-batch filled
-			#if batch_n + n > self._max_num:
-			#	batch_filled = True
-
-			# check if batch has more samples then max sample size
-			#if self._max_batch_sample_size is not None \
-			#	and self._max_batch_sample_size == len(batch):
-			#	batch_filled = True
 			
-			# check we need return at this point for ga
-			# if self._return_batch_at > 0 \
-			#	and num_processed > 0 \
-			#	and num_processed % self._return_batch_at == 0:
-				# Mini-batch filled
-			#	batch_filled = True
-				
-			# if mini batch filled, add to list
-			# if not batch_filled:
-				# must be the end
-			#	if self._sampler is None:
-			#		assert num_processed == min(len(self._data_source), self._max_sampling_step)
-			#	else:
-			#		assert num_processed == min(len(self._sampler), self._max_sampling_step)
-
-			# if len(batch) > 0:
-			#	self._batches.append(batch)
-			#else:
-				# must have skipped something
-			#	assert self._skip_too_big
-
-			#batch = []
-			#batch_filled = False
-			#batch_n = 0
-
 		if len(batch) > 0:
 			self._batches.append(batch)
 		#print(self._batches)
@@ -796,7 +734,7 @@ def get_group_sampler(ds:SpecMolFragDataset, config_d: dict) -> WeightedRandomSa
 	else:
 		return None
 	
-	sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['group_sampler_max'] ,replacement=True)
+	sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['group_sampler_max'] ,replacement=False)
 	return sampler
 
 if __name__ == "__main__":
