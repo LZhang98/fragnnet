@@ -19,9 +19,9 @@ num_hs: 4
 # subsample_params:
 #   subsample_size: 1024
 
-train_batch_size: 1
-eval_batch_size: 1
-accumulate_grad_batches: 5
+train_batch_size: 4
+eval_batch_size: 4
+accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
