@@ -216,6 +216,7 @@ debug_zero_loss: False
 checkpoint_metric: epoch
 checkpoint_metric_mode: max
 upload_checkpoints: False
+disable_checkpoints: False
 pl_enable_progress_bar: True
 sparse_cosine_similarity: False
 node_formula_null_aggregate: False

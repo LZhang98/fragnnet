@@ -1,4 +1,4 @@
-wandb_name: neims_hr
+wandb_name: neims_hhr
 wandb_tags:
 - splits
 - nist20
@@ -8,7 +8,6 @@ wandb_tags:
 - new_proc
 - neims_hhr
 - dev
-- tf32
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
@@ -52,7 +51,8 @@ min_epochs: 100
 max_epochs: 100
 lr_schedule: False
 debug_overfit: False
-upload_checkpoints: True
+upload_checkpoints: False
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
+disable_checkpoints: True

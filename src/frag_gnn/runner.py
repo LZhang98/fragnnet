@@ -112,7 +112,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			resume="allow",
 		)
 
-		if job_id:
+		if job_id and not config_d["disable_checkpoints"]:
 			job_id_fp = os.path.join("job_id",f"{job_id}.id")
 			if os.path.isfile(job_id_fp):
 				is_resume = True
@@ -185,6 +185,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		ckpt_dp = "tmp_ckpt"
 	os.makedirs(ckpt_dp, exist_ok=True)
 	if is_resume:
+		assert not config_d["disable_checkpoints"]
 		# copy the checkpoint files
 		old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp,"ckpt","*.ckpt"))
 		for old_ckpt_fp in old_ckpt_fps:
@@ -213,14 +214,15 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 					ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data["best_k_models"].pop(k)
 			# save modified checkpoint in new wandb dir
 			th.save(new_ckpt_data,new_ckpt_fp)
-	checkpoint_callback = ModelCheckpoint(
-		dirpath=ckpt_dp,
-		filename="model-{epoch:03d}",
-		monitor=config_d["checkpoint_metric"],
-		mode=config_d["checkpoint_metric_mode"],
-		save_last=True,
-	)
-	callbacks.append(checkpoint_callback)
+	if not config_d["disable_checkpoints"]:
+		checkpoint_callback = ModelCheckpoint(
+			dirpath=ckpt_dp,
+			filename="model-{epoch:03d}",
+			monitor=config_d["checkpoint_metric"],
+			mode=config_d["checkpoint_metric_mode"],
+			save_last=True,
+		)
+		callbacks.append(checkpoint_callback)
 
 	# setup profiler
 	logging.info("setup profiler")
