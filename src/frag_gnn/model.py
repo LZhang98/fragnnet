@@ -196,6 +196,7 @@ class FragGNNModel(nn.Module):
 			self.frag_node_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "depth" in self.frag_node_feats:
 			self.frag_node_feats_size += self.num_depth*self.depth_embedder.num_dim
+		assert self.frag_node_feats_size > 0, self.frag_node_feats_size
 		# edges
 		self.frag_edge_feats_size = 0
 		if "cc" in self.frag_edge_feats:
@@ -204,6 +205,8 @@ class FragGNNModel(nn.Module):
 			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "complement" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.complement_embedder.num_dim
+		if self.frag_edge_feats_size == 0:
+			self.frag_edge_feats_size = 1
 		# define frag-graph GNN to create frag-graph node level embedding
 		if self.ce_insert_frag:
 			self.frag_node_feats_size += 1
@@ -250,8 +253,6 @@ class FragGNNModel(nn.Module):
 			_type_: _description_
 		"""
 
-		device = mol_num_nodes.device
-
 		# mol_x: mol level node feature matrix
 		# mol_edge_index: mol graph connectivity in COO format with shape [2, num_edges]
 		# edge_attr: mol graph edge feature matrix with shape [num_edges, num_edge_features]
@@ -263,6 +264,9 @@ class FragGNNModel(nn.Module):
 		# batch: sample idx repsect to current batch
 		frag_x, frag_edge_index, frag_edge_attr, frag_batch = frag_pyg.x, frag_pyg.edge_index, frag_pyg.edge_attr, frag_pyg.batch
 
+		device = mol_num_nodes.device
+		# int_dtype = mol_edge_index.dtype
+		float_dtype = mol_edge_attr.dtype
 		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
 		
@@ -357,6 +361,10 @@ class FragGNNModel(nn.Module):
 				get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"complement").reshape(batch_frag_num_edges,-1)
 			)
 			frag_edata.append(frag_edge_complement)
+		# empty feats check
+		assert len(self.frag_node_feats) > 0, len(self.frag_node_feats)
+		if len(frag_edata) == 0:
+			frag_edata.append(th.zeros([batch_frag_num_edges,1],dtype=float_dtype,device=device))
 
 		if self.ce_insert_frag:
 			edge_ce = th.repeat_interleave(ce,th.unique(frag_batch[frag_edge_index[0]],return_counts=True)[1],dim=0)
@@ -493,7 +501,7 @@ class FragGNNModel(nn.Module):
 			frag_formula_cumsizes,
 			right=True
 		)-1
-		frag_formula_mask = th.ones_like(frag_formula_batch_idxs,dtype=frag_joint_logprobs.dtype)
+		frag_formula_mask = th.ones_like(frag_formula_batch_idxs,dtype=float_dtype)
 		frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.
 		# aggregate by formula
 		frag_formula_logprobs = scatter_logsumexp(

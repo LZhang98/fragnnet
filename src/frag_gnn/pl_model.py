@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import wandb
+import logging
 
 # make cc happy
 try:
@@ -925,6 +926,16 @@ class FragGNNPL(SpectrumPL):
 			assert not self.hparams.ce_insert_mlp_lin
 		else:
 			assert self.hparams.spec_params["nce"]
+
+		# check edge loss params
+		if not self.hparams.skip_edge_loss:
+			assert "h_counts" in self.hparams.frag_params["pyg_node_feats"]
+			assert "h_range" in self.hparams.frag_params["pyg_edge_feats"]
+		else:
+			if "h_counts" in self.hparams.frag_params["pyg_node_feats"]:
+				logging.warning("h_counts in frag pyg_node_feats but edge_loss is disabled!")
+			if "h_range" in self.hparams.frag_params["pyg_edge_feats"]:
+				logging.warning("h_range in frag pyg_edge_feats but edge_loss is disabled!")
 
 		# compile
 		if self.hparams.compile:

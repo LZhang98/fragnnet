@@ -40,6 +40,9 @@ sum_ints: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
 ints_transform: sqrt
+spec_params:
+  merge: False
+  nce: True
 sample_weight: "group"
 ce_insert_mol: False
 ce_insert_frag: False

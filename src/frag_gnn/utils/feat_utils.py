@@ -526,6 +526,8 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph):
 			_edge_feat_size += _edge_attr_cur.shape[1]
 			# print(feat,feat_idx,_edge_feat_size)
 		_edge_feat_idxs.append(_edge_feat_size)
+	if len(_edge_attr) == 0:
+		_edge_attr = [th.zeros(edge_attr.shape[0],1,device=device,dtype=th.int64)]
 	_edge_attr = th.cat(_edge_attr,dim=1)
 	_edge_feat_idxs = th.tensor(_edge_feat_idxs,device=device,dtype=th.int64).reshape(1,-1)
 	# convert to undirected

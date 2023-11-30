@@ -54,11 +54,11 @@ frag_params:
     - base_formula
     - depth
     - h_formulae_idx
-    - h_counts
+    # - h_counts
   pyg_edge_feats:
     - cc
     - base_formula
-    - h_range
+    # - h_range
   pyg_bigraph: True
   num_isotopes: 1
   formula_peak_mzs: True
