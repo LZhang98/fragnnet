@@ -82,7 +82,7 @@ class FragGNNModel(nn.Module):
 		self.mol_pool_type = mol_pool_type
 		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
 		if int_embedder_tight:
-			formula_d = {"max_count_int": 127}
+			formula_d = {"max_count_int": 255}
 			depth_d = {"max_count_int": num_depth+1}
 			complement_d = {"max_count_int": 2}
 		else:

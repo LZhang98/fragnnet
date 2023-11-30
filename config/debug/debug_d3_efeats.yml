@@ -11,8 +11,11 @@ num_hs: 4
 subsample_params:
   subsample_size: 256
 frag_params:
-  pyg_edge_feats: []
-  pyg_bigraph: False
+  pyg_edge_feats:
+    - cc
+    - base_formula
+  pyg_bigraph: True
+int_embedder_tight: True
 
 train_batch_size: 32
 eval_batch_size: 32
