@@ -914,7 +914,6 @@ class FragGNNPL(SpectrumPL):
 			ce_insert_frag=self.hparams.ce_insert_frag,
 			ce_insert_mlp=self.hparams.ce_insert_mlp,
 			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
-			node_formula_null_aggregate=self.hparams.node_formula_null_aggregate
 		)
 		
 		# check merge params
@@ -1055,10 +1054,10 @@ class FragGNNPL(SpectrumPL):
 				oos_logprobs=pred_oos_logprobs,
 				renormalize=True
 			)
+			# formula logprobs do not consider NULL, OOS
 			formula_e, formula_ne = sparse_entropy_fn(
 				pred_formula_logprobs,
 				pred_formula_batch_idxs,
-				oos_logprobs=pred_oos_logprobs
 			)
 			loss = loss + self.hparams.formula_entropy_weight * formula_e \
 				+ self.hparams.formula_normalized_entropy_weight * formula_ne
@@ -1068,7 +1067,7 @@ class FragGNNPL(SpectrumPL):
 			)
 			loss = loss + self.hparams.node_entropy_weight * node_e \
 				+ self.hparams.node_normalized_entropy_weight * node_ne
-			
+			# node_formula logprobs do not consider NULL, OOS
 			node_formula_e, node_formula_ne = sparse_conditional_entropy_fn(
 				pred_node_logprobs,
 				pred_node_batch_idxs,

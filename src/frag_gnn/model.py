@@ -46,7 +46,6 @@ class FragGNNModel(nn.Module):
 		ce_insert_frag: bool,
 		ce_insert_mlp: bool,
 		ce_insert_mlp_lin: bool,
-		node_formula_null_aggregate: bool
 	):
 
 		super().__init__()
@@ -167,7 +166,6 @@ class FragGNNModel(nn.Module):
 
 		self.skip_edge_loss = skip_edge_loss
 		self.mask_null_formula = mask_null_formula
-		self.node_formula_null_aggregate = node_formula_null_aggregate
 
 		# this is required
 		assert "h_formulae_idx" in self.frag_node_feats
@@ -510,9 +508,6 @@ class FragGNNModel(nn.Module):
 			dim=0
 		)
 
-		# print("> before null masking")
-		# print(th.exp(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu()))
-
 		# softmax over formulae
 		if self.mask_null_formula:
 			frag_formula_logprobs = scatter_masked_softmax(
@@ -523,17 +518,13 @@ class FragGNNModel(nn.Module):
 				log=True
 			)
 		else:
-			frag_formula_mask = th.ones_like(frag_formula_logprobs)
 			frag_formula_logprobs = scatter_masked_softmax(
 				frag_formula_logprobs,
-				frag_formula_mask,
+				th.ones_like(frag_formula_logprobs),
 				frag_formula_batch_idxs,
 				dim=0,
 				log=True
 			)
-
-		# print("> after null masking")
-		# print(th.exp(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu()))
 
 		if self.predict_oos:
 			# get OOS logits and logprobs
@@ -546,12 +537,8 @@ class FragGNNModel(nn.Module):
 			oos_logprobs = (-1e9)*th.ones([batch_size],device=device)
 			not_oos_logprobs = th.zeros([batch_size],device=device)
 		# adjust frag_formula_logprobs
-		frag_formula_logprobs = frag_formula_logprobs + \
+		frag_formula_oos_logprobs = frag_formula_logprobs + \
 			th.repeat_interleave(not_oos_logprobs, frag_formula_sizes, dim=0)
-
-		# print("> after oos adjustment")
-		# print(th.exp(oos_logprobs))
-		# print(th.exp(scatter_logsumexp(frag_formula_logprobs.flatten(),frag_formula_batch_idxs,dim=0).detach().cpu()))
 
 		# convert to spectrum
 		frag_formula_offsets = th.repeat_interleave(
@@ -559,7 +546,7 @@ class FragGNNModel(nn.Module):
 			frag_formula_sizes-1 # -1 is for NULL formulae
 		)
 		spec_mzs = frag_formula_peak_mzs
-		spec_logprobs = frag_formula_logprobs[frag_formula_peak_idxs+frag_formula_offsets] + th.log(frag_formula_peak_probs)
+		spec_logprobs = frag_formula_oos_logprobs[frag_formula_peak_idxs+frag_formula_offsets] + th.log(frag_formula_peak_probs)
 
 		# get batch idxs
 		spec_batch_idxs = th.repeat_interleave(
@@ -597,30 +584,27 @@ class FragGNNModel(nn.Module):
 			frag_edge_h_logprobs = None
 			frag_edge_batch_idxs = None
 
-		# convert node_formula to sparse representation
-		frag_node_formula_mask = frag_joint_mask.bool().reshape(-1,2*self.num_hs+1)
 
-		if self.node_formula_null_aggregate:
-		
-			# non-null
-			frag_node_formula_logprobs_1 = frag_node_formula_logprobs[frag_node_formula_mask]
-			frag_node_formula_node_idxs_1 = th.arange(frag_node_formula_mask.shape[0],device=device).unsqueeze(1).expand_as(frag_node_formula_mask)[frag_node_formula_mask]
-			frag_node_formula_batch_idxs_1 = frag_node_batch_idxs.unsqueeze(1).expand_as(frag_node_formula_mask)[frag_node_formula_mask]
-			# null
-			frag_node_formula_logprobs_2 = th.logsumexp((~frag_node_formula_mask).float()*frag_node_formula_logprobs + frag_node_formula_mask.float()*(-1e9),dim=1)[~th.all(frag_node_formula_mask,dim=1)]
-			frag_node_formula_node_idxs_2 = th.arange(frag_node_formula_mask.shape[0],device=device)[~th.all(frag_node_formula_mask,dim=1)]
-			frag_node_formula_batch_idxs_2 = frag_node_batch_idxs[~th.all(frag_node_formula_mask,dim=1)]
-			# together
-			frag_node_formula_logprobs = th.cat([frag_node_formula_logprobs_1,frag_node_formula_logprobs_2],dim=0)
-			frag_node_formula_node_idxs = th.cat([frag_node_formula_node_idxs_1,frag_node_formula_node_idxs_2],dim=0)
-			frag_node_formula_batch_idxs = th.cat([frag_node_formula_batch_idxs_1,frag_node_formula_batch_idxs_2],dim=0)
-		
-		else:
-		
-			frag_node_formula_logprobs = frag_node_formula_logprobs.flatten()
-			frag_node_formula_node_idxs = th.arange(frag_node_formula_mask.shape[0],device=device).unsqueeze(1).expand_as(frag_node_formula_mask).flatten()
-			frag_node_formula_batch_idxs = frag_node_batch_idxs.unsqueeze(1).expand_as(frag_node_formula_mask).flatten()
-		
+		# get renormalized frag_node_formula_logprobs
+		frag_node_formula_mask = frag_joint_mask.bool().reshape(-1,2*self.num_hs+1)
+		frag_node_formula_logprobs = frag_node_formula_logprobs[frag_node_formula_mask]
+		frag_node_formula_node_idxs = th.arange(frag_node_formula_mask.shape[0],device=device).unsqueeze(1).expand_as(frag_node_formula_mask)[frag_node_formula_mask]
+		frag_node_formula_batch_idxs = frag_node_batch_idxs.unsqueeze(1).expand_as(frag_node_formula_mask)[frag_node_formula_mask]
+		frag_node_formula_logprobs = scatter_logsoftmax(
+			frag_node_formula_logprobs,
+			frag_node_formula_node_idxs,
+			dim=0
+		)
+
+		# get renormalized frag_formula_logprobs
+		frag_formula_logprobs = scatter_masked_softmax(
+			frag_formula_logprobs,
+			frag_formula_mask,
+			frag_formula_batch_idxs,
+			dim=0,
+			log=True
+		)
+
 		out_d = {
 			"pred_mzs": spec_mzs,
 			"pred_logprobs": spec_logprobs,

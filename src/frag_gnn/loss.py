@@ -214,12 +214,12 @@ def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False):
 		dim=0,
 		dim_size=batch_size,
 	)
-	support_size = th.clamp(support_size,min=1.)
+	# support_size = th.clamp(support_size,min=1.)
 	if oos_logprobs is not None:
 		assert oos_logprobs.shape[0] == batch_size, (oos_logprobs.shape,batch_size)
 		entropy = entropy - th.exp(oos_logprobs)*oos_logprobs
 		support_size = support_size + 1
-	max_entropy = th.log(support_size)
+	max_entropy = safelog(support_size)
 	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
 	return entropy, norm_entropy
 
@@ -258,12 +258,14 @@ def sparse_conditional_entropy_fn(
 		dim_size=num_nodes
 	)
 	max_entropy = scatter_reduce(
-		node_probs * safelog(node_support_size),
+		node_probs * th.clamp(safelog(node_support_size),min=0.),
 		index=node_batch_idxs,
 		reduce="sum",
 		dim=0,
 		dim_size=batch_size
 	)
+	if th.any(max_entropy < 0.):
+		import pdb; pdb.set_trace()
 	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
 	return entropy, norm_entropy
 

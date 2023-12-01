@@ -219,7 +219,6 @@ upload_checkpoints: False
 disable_checkpoints: False
 pl_enable_progress_bar: True
 sparse_cosine_similarity: False
-node_formula_null_aggregate: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False
 sample_weight: none
