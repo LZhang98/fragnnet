@@ -2,7 +2,7 @@ import pandas as pd
 import os
 import torch as th
 import torch.nn.functional as F
-from torch.utils.data.sampler import BatchSampler, WeightedRandomSampler, RandomSampler
+from torch.utils.data.sampler import BatchSampler, Sampler, WeightedRandomSampler, RandomSampler
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import torch_geometric as pyg
@@ -33,9 +33,10 @@ def init_dataloader(ds, config_d):
 		# for group sampler 
 		sampler = None
 		if config_d['group_sampler'] and split == 'train':
+			sampler = GroupSampler(ds,sample_k=config_d['group_sampler_max_per_group'])
+		if config_d['simple_group_sampler'] and split == 'train' and not config_d['group_sampler']:
 			sampler = get_group_sampler(ds,config_d)
 
-			
 		# for bacth sampler 
 		if config_d['dynamic_batch_sampler']:
 			chunk_size = config_d['dynamic_batch_sampler_chunk_size']
@@ -202,6 +203,8 @@ class BaseDataset(Dataset):
 			unique_id = spec_entry[id_key]
 			unique_id = th.tensor([unique_id],dtype=th.long) 
 			spec_data["spec_unique_id"] = unique_id
+			spec_data['group_id'] =  th.tensor([spec_entry['group_id']],dtype=th.long)
+			spec_data['mol_id'] = th.tensor([spec_entry['mol_id']],dtype=th.long)
 		if self.spec_params["counts"]:
 			spec_per_mol = self.spec_per_mol[spec_entry["mol_id"]]
 			spec_per_mol = th.tensor([spec_per_mol],dtype=th.long)
@@ -327,7 +330,6 @@ class SpecMolDataset(BaseDataset):
 			print(f"> total_mol_graph_size: {total_mol_graph_size/1e6:.2f} MB")
 
 	def __getitem__(self,idx):
-
 		spec_entry = self.spec_df.iloc[idx]
 		mol_id = spec_entry["mol_id"]
 		mol_entry = self.mol_df.loc[mol_id]
@@ -717,6 +719,79 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		"""
 		return len(self._batches)
 
+class GroupSampler(Sampler):
+
+	def __init__(self, data_source: SpecMolFragDataset, sample_k=None) -> None:
+		"""_summary_
+
+		Args:
+			data_source (SpecMolFragDataset): _description_
+			sample_k (_type_, optional): _description_. Defaults to None.
+		"""
+		#if num_samples is None:
+		num_samples = len(data_source)
+
+		self._data_source = data_source
+		self._num_samples = num_samples
+		self._data_meta_d = {}
+		self._sample_k = 3 if sample_k is None else sample_k
+		self._pre_compute()
+
+	def _pre_compute(self):
+
+		for dataset_idx in range(len(self._data_source)):
+			data = self._data_source[dataset_idx]
+			group_id = data['group_id'].item()
+			#mol_id = data['mol_id']
+
+			if group_id not in self._data_meta_d:
+				self._data_meta_d[group_id] = []
+			self._data_meta_d[group_id].append(dataset_idx)
+		
+		for group_id in self._data_meta_d:
+			self._data_meta_d[group_id] =  th.tensor(self._data_meta_d[group_id])
+
+	@property
+	def num_samples(self) -> int:
+		# dataset size might change at runtime
+		if self._num_samples is None:
+			return len(self.data_source)
+		return self._num_samples
+
+	def __iter__(self) -> Iterator[int]:
+		""" 
+		Yields:
+			Iterator[List[int]]: _description_
+		"""
+		sampled_indices = []
+		for group_id in self._data_meta_d:
+			#print(group_id)
+			group_indices =self._data_meta_d[group_id]
+			#print(group_indices)
+			sampled_group_indices = group_indices[th.randperm(min(len(group_indices),self._sample_k))]
+			#print(sampled_group_indices)
+			sampled_indices.append(sampled_group_indices)
+		
+		sampled_indices = th.cat(sampled_indices)
+		
+		self._num_samples = len(sampled_indices)
+		#print(sampled_indices)
+		for i in th.randperm(len(sampled_indices)):
+			#print(sampled_indices[i])
+			yield sampled_indices[i].item()
+	
+	@property
+	def num_samples(self) -> int:
+		return self._num_samples
+
+	def __len__(self) -> int:
+		""" Note The __len__() method isn't strictly required by DataLoader
+			ref: https://pytorch.org/docs/stable/data.html#torch.utils.data.Sampler
+		Returns:
+			int: length of datasource
+		"""
+		return self._num_samples 
+	
 def get_group_sampler(ds:SpecMolFragDataset, config_d: dict) -> WeightedRandomSampler:
 	"""get WeightedRandomSampler based on input
 
@@ -727,16 +802,16 @@ def get_group_sampler(ds:SpecMolFragDataset, config_d: dict) -> WeightedRandomSa
 	Returns:
 		_type_: _description_
 	"""
-	if config_d['group_sampler_type']  == 'group':
+	if config_d['simple_group_sampler_type']  == 'group':
 		sample_weights = 1.0/th.cat([ i['spec_per_group'] for i in ds])
-	elif config_d['group_sampler_type']  == 'mol':
+	elif config_d['simple_group_sampler_type']  == 'mol':
 		sample_weights = 1.0/th.cat([ i['spec_per_mol'] for i in ds])
-	elif config_d['group_sampler_type']  == 'group_mol':
+	elif config_d['simple_group_sampler_type']  == 'group_mol':
 		sample_weights = 1.0/th.cat([ i['group_per_mol'] * i['spec_per_group']  for i in ds])
 	else:
 		return None
 	
-	sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['group_sampler_max'] ,replacement=False)
+	sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['simple_group_sampler_max'] ,replacement=False)
 	return sampler
 
 if __name__ == "__main__":
