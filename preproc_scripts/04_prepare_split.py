@@ -77,11 +77,16 @@ def make_splits(args):
         split_mol_id = np.unique(split_df["mol_id"])
         split_keys = split_df[split_df["mol_id"].isin(split_mol_id)][args.split_key]
         split_keys = np.unique(split_keys)
-        total_num = split_keys.shape[0]
+        if args.total_frac == 1.0:
+            total_num = split_keys.shape[0]
+        else:
+            total_num = int(np.ceil(split_keys.shape[0]*args.total_frac))
         test_num = int(np.ceil(total_num*args.test_frac))
         val_num = int(np.ceil(total_num*args.val_frac))
         train_num = total_num - test_num - val_num
         with np_temp_seed(args.meta_rseed):
+            if args.total_frac < 1.0:
+                split_keys = np.random.choice(split_keys,size=total_num,replace=False)
             test_keys = np.random.choice(split_keys,size=test_num,replace=False)
             train_val_keys = np.setdiff1d(split_keys,test_keys)
             val_keys = np.random.choice(train_val_keys,size=val_num,replace=False)
@@ -138,6 +143,7 @@ if __name__ == "__main__":
     parser.add_argument("--min_dag_wrecall",type=float,default=0.75)
     # non-filtering args
     parser.add_argument("--meta_rseed",type=int,default=420420)
+    parser.add_argument("--total_frac",type=float,default=1.0)
     parser.add_argument("--test_frac",type=float,default=0.2)
     parser.add_argument("--val_frac",type=float,default=0.2)
     parser.add_argument("--proc_dp",type=str,default="data/proc/nist")
