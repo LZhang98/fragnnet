@@ -453,6 +453,7 @@ class FragGNNModel(nn.Module):
 			# calculate conditional probability
 			# log p(f|n) = log p(f,n) - log p(n)
 			frag_node_formula_logprobs = frag_joint_logprobs - frag_node_logprobs.unsqueeze(-1)
+			frag_node_formula_logprobs = th.log_softmax(frag_node_formula_logprobs,dim=1)
 
 		else:
 
@@ -586,18 +587,18 @@ class FragGNNModel(nn.Module):
 
 
 		# get renormalized frag_node_formula_logprobs
-		frag_node_formula_mask = frag_joint_mask.bool().reshape(-1,2*self.num_hs+1)
-		frag_node_formula_logprobs = frag_node_formula_logprobs[frag_node_formula_mask]
-		frag_node_formula_node_idxs = th.arange(frag_node_formula_mask.shape[0],device=device).unsqueeze(1).expand_as(frag_node_formula_mask)[frag_node_formula_mask]
-		frag_node_formula_batch_idxs = frag_node_batch_idxs.unsqueeze(1).expand_as(frag_node_formula_mask)[frag_node_formula_mask]
-		frag_node_formula_logprobs = scatter_logsoftmax(
-			frag_node_formula_logprobs,
-			frag_node_formula_node_idxs,
+		frag_node_formula_real_mask = frag_joint_mask.bool().reshape(-1,2*self.num_hs+1)
+		frag_node_formula_real_logprobs = frag_node_formula_logprobs[frag_node_formula_real_mask]
+		frag_node_formula_real_node_idxs = th.arange(frag_node_formula_real_mask.shape[0],device=device).unsqueeze(1).expand_as(frag_node_formula_real_mask)[frag_node_formula_real_mask]
+		frag_node_formula_real_batch_idxs = frag_node_batch_idxs.unsqueeze(1).expand_as(frag_node_formula_real_mask)[frag_node_formula_real_mask]
+		frag_node_formula_real_logprobs = scatter_logsoftmax(
+			frag_node_formula_real_logprobs,
+			frag_node_formula_real_node_idxs,
 			dim=0
 		)
 
 		# get renormalized frag_formula_logprobs
-		frag_formula_logprobs = scatter_masked_softmax(
+		frag_formula_real_logprobs = scatter_masked_softmax(
 			frag_formula_logprobs,
 			frag_formula_mask,
 			frag_formula_batch_idxs,
@@ -605,17 +606,74 @@ class FragGNNModel(nn.Module):
 			log=True
 		)
 
+		# get renormalized frag_node_logprobs
+		# frag_node_formula_null_mask = ~frag_node_formula_real_mask	
+		# frag_node_formula_null_logprobs = frag_node_formula_logprobs[frag_node_formula_null_mask]
+		# frag_node_formula_null_node_idxs = th.arange(frag_node_formula_null_mask.shape[0],device=device).unsqueeze(1).expand_as(frag_node_formula_null_mask)[frag_node_formula_null_mask]
+		# frag_node_null_logprobs = scatter_logsumexp(
+		# 	frag_node_formula_null_logprobs,
+		# 	frag_node_formula_null_node_idxs,
+		# 	dim=0
+		# )
+		# print(frag_node_null_logprobs.min(), frag_node_null_logprobs.max())
+		# frag_node_real_logprobs = scatter_logsoftmax(
+		# 	safelog(th.exp(frag_node_logprobs) - th.exp(frag_node_null_logprobs)),
+		# 	frag_node_batch_idxs,
+		# 	dim=0
+		# )
+		import pdb; pdb.set_trace()
+		frag_joint_real_logprobs = scatter_masked_softmax(
+			frag_joint_logits,
+			frag_joint_mask,
+			frag_joint_batch_idxs,
+			dim=0,
+			log=True
+		)
+		frag_joint_node_idxs = th.arange(frag_node_formula_real_mask.shape[0],device=device).unsqueeze(1).expand_as(frag_node_formula_real_mask).flatten()
+		frag_node_real_logprobs = scatter_logsumexp(
+			frag_joint_real_logprobs,
+			frag_joint_node_idxs,
+			dim=0
+		)
+		sum_n = scatter_logsumexp(
+			frag_node_real_logprobs,
+			frag_node_batch_idxs,
+			dim=0
+		)
+		print(sum_n.min(), sum_n.max())
+
+		# calculate frag_formula_node_logprobs
+		import pdb; pdb.set_trace()
+		frag_node_formula_formula_idxs = frag_formula_idxs[frag_joint_mask.bool()]
+		debug_j = frag_node_formula_real_logprobs + frag_node_real_logprobs[frag_node_formula_real_node_idxs]
+		debug_f_1 = scatter_logsumexp(debug_j, frag_node_formula_formula_idxs, dim=0)
+		debug_fn_1 = debug_j - debug_f_1[frag_node_formula_formula_idxs]
+		sum_fn_1 = scatter_logsumexp(debug_fn_1, frag_node_formula_formula_idxs, dim=0)
+		sum_f_1 = scatter_logsumexp(debug_f_1, frag_formula_batch_idxs, dim=0)
+		debug_f_2 = frag_formula_real_logprobs
+		debug_fn_2 = debug_j - debug_f_2[frag_node_formula_formula_idxs]
+		sum_fn_2 = scatter_logsumexp(debug_fn_2, frag_node_formula_formula_idxs, dim=0)
+		sum_f_2 = scatter_logsumexp(debug_f_2, frag_formula_batch_idxs, dim=0)
+		print(sum_f_1.min(), sum_f_1.max())
+		print(sum_fn_1.min(), sum_fn_1.max())
+		print(sum_f_2.min(), sum_f_2.max())
+		print(sum_fn_2.min(), sum_fn_2.max())
+		# frag_formula_node_logprobs = frag_node_formula_logprobs \
+		# 	+ frag_node_logprobs[frag_node_formula_node_idxs] \
+		# 	- frag_formula_logprobs[frag_node_formula_formula_idxs]
+
 		out_d = {
 			"pred_mzs": spec_mzs,
 			"pred_logprobs": spec_logprobs,
 			"pred_batch_idxs": spec_batch_idxs,
-			"pred_formula_logprobs": frag_formula_logprobs,
+			"pred_formula_logprobs": frag_formula_real_logprobs,
 			"pred_formula_batch_idxs": frag_formula_batch_idxs,
 			"pred_node_logprobs": frag_node_logprobs,
 			"pred_node_batch_idxs": frag_node_batch_idxs,
 			"pred_node_formula_logprobs": frag_node_formula_logprobs,
-			"pred_node_formula_node_idxs": frag_node_formula_node_idxs,
-			"pred_node_formula_batch_idxs": frag_node_formula_batch_idxs,
+			"pred_formula_node_logprobs": frag_formula_node_real_logprobs,
+			"pred_node_formula_node_idxs": frag_node_formula_real_node_idxs,
+			"pred_node_formula_batch_idxs": frag_node_formula_real_batch_idxs,
 			"pred_null_formula_logprob": frag_null_formula_logprob,
 			"pred_edge_logprobs": frag_edge_logprobs,
 			"pred_edge_h_diffs": frag_edge_h_diffs,

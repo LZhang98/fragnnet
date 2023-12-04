@@ -3,7 +3,7 @@ import torch as th
 import torch.nn.functional as F
 import math
 
-from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, scatter_logsumexp
+from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, scatter_logsumexp, LOG_ZERO
 from frag_gnn.utils.spec_utils import calculate_match_mzs
 
 
@@ -62,7 +62,7 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 	this is just for th.compile
 	"""
 
-	mask_value = -1e9
+	mask_value = LOG_ZERO
 	batch_size = th.max(true_batch_idxs)+1
 	def vec_ce(true_batch_idx,true_logprob,true_mz):
 		b_pred_mask = (pred_batch_idxs==true_batch_idx).float()
@@ -106,7 +106,7 @@ def sparse_cross_entropy_seq(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		_type_: _description_
 	"""
 
-	mask_value = -1e9
+	mask_value = LOG_ZERO
 	batch_size = th.max(true_batch_idxs)+1
 	ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
 	true_oos_logprobs = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)

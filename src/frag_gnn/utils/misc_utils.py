@@ -15,6 +15,7 @@ import dgl
 TQDM_DISABLE = False
 PPM = 1/1000000
 EPS = 1e-9
+LOG_ZERO = -1e9
 
 def timeit(func):
 	# adapted from https://dev.to/kcdchennai/python-decorator-to-measure-execution-time-54hk
@@ -152,7 +153,7 @@ def get_pyg_memory_usage(pyg_graph):
 
 	return pyg.profile.get_data_size(pyg_graph)
 
-def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=-1e-9,dim=-1,log=True):
+def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=LOG_ZERO,dim=-1,log=True):
 	# calculate appropriate mask value
 	with th.no_grad():
 		c = scatter_masked_logsumexp(logits,mask,subset_idxs,dim=dim)
@@ -172,7 +173,7 @@ def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=-1e-9,dim=-1,log
 	else:
 		return masked_logits
 
-def scatter_masked_logsumexp(logits,mask,subset_idxs,mask_value=-1e9,dim=-1):
+def scatter_masked_logsumexp(logits,mask,subset_idxs,mask_value=LOG_ZERO,dim=-1):
 
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
@@ -188,7 +189,8 @@ def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=EPS):
 		index=subset_idxs,
 		reduce="amax",
 		dim=dim,
-		dim_size=k
+		dim_size=k,
+		default=LOG_ZERO
 	)
 	lm = th.gather(
 		input=sm,
@@ -201,7 +203,8 @@ def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=EPS):
 		index=subset_idxs,
 		reduce="sum",
 		dim=dim,
-		dim_size=k
+		dim_size=k,
+		default=0.
 	)
 	return sm + th.log(se + eps)
 
@@ -244,10 +247,10 @@ def scatter_l2normalize(vals,subset_idxs,dim=-1):
 	vals = vals/c[subset_idxs]
 	return vals
 
-def scatter_reduce(src,index,reduce,dim,dim_size):
+def scatter_reduce(src,index,reduce,dim,dim_size,default=0.):
 
 	result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim+1:]
-	results = th.zeros(result_shape,dtype=src.dtype,device=src.device)
+	results = th.full(result_shape,default,dtype=src.dtype,device=src.device)
 	results.scatter_reduce_(
 		dim=dim,
 		index=index,
