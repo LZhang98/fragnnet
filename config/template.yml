@@ -174,9 +174,11 @@ primary_loss_weight: 1.0
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
 node_formula_entropy_weight: 0.0
+formula_node_entropy_weight: 0.0
 formula_normalized_entropy_weight: 0.0
 node_normalized_entropy_weight: 0.0
 node_formula_normalized_entropy_weight: 0.0
+formula_node_normalized_entropy_weight: 0.0
 skip_edge_loss: True
 edge_h_range_loss_weight: 0.0
 edge_h_transfer_loss_weight: 0.0

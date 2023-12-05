@@ -1016,8 +1016,10 @@ class FragGNNPL(SpectrumPL):
 			pred_node_logprobs,
 			pred_node_batch_idxs,
 			pred_node_formula_logprobs,
-			pred_node_formula_node_idxs,
-			pred_node_formula_batch_idxs,
+			pred_formula_node_logprobs,
+			pred_joint_node_idxs,
+			pred_joint_formula_idxs,
+			pred_joint_batch_idxs,
 			pred_null_formula_logprob,
 			pred_edge_logprobs,
 			pred_edge_h_diffs,
@@ -1058,6 +1060,7 @@ class FragGNNPL(SpectrumPL):
 			formula_e, formula_ne = sparse_entropy_fn(
 				pred_formula_logprobs,
 				pred_formula_batch_idxs,
+				support_size_delta=-1. # for NULL formula
 			)
 			loss = loss + self.hparams.formula_entropy_weight * formula_e \
 				+ self.hparams.formula_normalized_entropy_weight * formula_ne
@@ -1072,11 +1075,22 @@ class FragGNNPL(SpectrumPL):
 				pred_node_logprobs,
 				pred_node_batch_idxs,
 				pred_node_formula_logprobs,
-				pred_node_formula_node_idxs,
-				pred_node_formula_batch_idxs
+				pred_joint_node_idxs,
+				pred_joint_batch_idxs,
+				# conditional_support_size_delta=-1. # for NULL formula
 			)
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
+			# formula_node logprobs do not consider NULL, OOS
+			formula_node_e, formula_node_ne = sparse_conditional_entropy_fn(
+				pred_formula_logprobs,
+				pred_formula_batch_idxs,
+				pred_formula_node_logprobs,
+				pred_joint_formula_idxs,
+				pred_joint_batch_idxs
+			)
+			loss = loss + self.hparams.formula_node_entropy_weight * formula_node_e \
+				+ self.hparams.formula_node_normalized_entropy_weight * formula_node_ne
 			null_formula_prob = th.exp(pred_null_formula_logprob)
 			oos_prob = th.exp(pred_oos_logprobs)
 			true_oos_prob = th.exp(true_oos_logprobs)
@@ -1092,6 +1106,8 @@ class FragGNNPL(SpectrumPL):
 				"node_ne": node_ne,
 				"node_formula_e": node_formula_e,
 				"node_formula_ne": node_formula_ne,
+				"formula_node_e": formula_node_e,
+				"formula_node_ne": formula_node_ne,
 				"null_formula_prob": null_formula_prob,
 				"oos_prob": oos_prob,
 				"true_oos_prob": true_oos_prob
@@ -1132,6 +1148,8 @@ class FragGNNPL(SpectrumPL):
 			"node_ne",
 			"node_formula_e",
 			"node_formula_ne",
+			"formula_node_e",
+			"formula_node_ne",
 			"null_formula_prob",
 			"oos_prob",
 			"true_oos_prob"

@@ -181,9 +181,12 @@ def scatter_masked_logsumexp(logits,mask,subset_idxs,mask_value=LOG_ZERO,dim=-1)
 	masked_logsumexp = scatter_logsumexp(masked_logits,subset_idxs,dim=dim)
 	return masked_logsumexp
 
-def scatter_logsumexp(logits,subset_idxs,dim=-1,eps=EPS):
+def scatter_logsumexp(logits,subset_idxs,dim,eps=EPS,dim_size=None):
 
-	k = th.max(subset_idxs)+1
+	if dim_size is None:
+		k = th.max(subset_idxs)+1
+	else:
+		k = dim_size
 	sm = scatter_reduce(
 		src=logits,
 		index=subset_idxs,

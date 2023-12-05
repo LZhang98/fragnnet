@@ -181,7 +181,7 @@ def get_sparse_cross_entropy_fn(dist,vectorized,tolerance,relative,oos_tolerance
 	return sce_fn
 
 
-def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False):
+def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False,support_size_delta=0.):
 
 	if renormalize:
 		logpartition = scatter_logsumexp(
@@ -214,52 +214,54 @@ def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False):
 		dim=0,
 		dim_size=batch_size,
 	)
-	# support_size = th.clamp(support_size,min=1.)
+	support_size += support_size_delta
 	if oos_logprobs is not None:
 		assert oos_logprobs.shape[0] == batch_size, (oos_logprobs.shape,batch_size)
 		entropy = entropy - th.exp(oos_logprobs)*oos_logprobs
-		support_size = support_size + 1
+		support_size = support_size + 1.
 	max_entropy = safelog(support_size)
 	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
 	return entropy, norm_entropy
 
 
 def sparse_conditional_entropy_fn(
-	node_logprobs,
-	node_batch_idxs,
-	node_formula_logprobs,
-	node_formula_node_idxs,
-	node_formula_batch_idxs
+	marginal_logprobs,
+	marginal_batch_idxs,
+	conditional_logprobs,
+	conditional_idxs,
+	conditional_batch_idxs,
+	conditional_support_size_delta=0.
 ):
 
-	batch_size = th.max(node_batch_idxs)+1
-	num_nodes = node_logprobs.shape[0]
-	node_probs = th.exp(node_logprobs)
-	node_formula_plogp = th.exp(node_formula_logprobs)*node_formula_logprobs
-	node_formula_entropy = -scatter_reduce(
-		node_formula_plogp,
-		index=node_formula_node_idxs,
+	batch_size = th.max(conditional_batch_idxs)+1
+	marginal_support_size = marginal_logprobs.shape[0]
+	marginal_probs = th.exp(marginal_logprobs)
+	conditional_plogp = th.exp(conditional_logprobs)*conditional_logprobs
+	conditional_entropy = -scatter_reduce(
+		conditional_plogp,
+		index=conditional_idxs,
 		reduce="sum",
 		dim=0,
-		dim_size=num_nodes
+		dim_size=marginal_support_size
 	)
 	entropy = scatter_reduce(
-		node_probs * node_formula_entropy,
-		index=node_batch_idxs,
+		marginal_probs * conditional_entropy,
+		index=marginal_batch_idxs,
 		reduce="sum",
 		dim=0,
 		dim_size=batch_size
 	)
-	node_support_size = scatter_reduce(
-		th.ones_like(node_formula_logprobs,dtype=node_logprobs.dtype),
-		index=node_formula_node_idxs,
+	conditional_support_size = scatter_reduce(
+		th.ones_like(conditional_logprobs,dtype=marginal_logprobs.dtype),
+		index=conditional_idxs,
 		reduce="sum",
 		dim=0,
-		dim_size=num_nodes
+		dim_size=marginal_support_size
 	)
+	conditional_support_size += conditional_support_size_delta
 	max_entropy = scatter_reduce(
-		node_probs * th.clamp(safelog(node_support_size),min=0.),
-		index=node_batch_idxs,
+		marginal_probs * th.clamp(safelog(conditional_support_size),min=0.),
+		index=marginal_batch_idxs,
 		reduce="sum",
 		dim=0,
 		dim_size=batch_size
