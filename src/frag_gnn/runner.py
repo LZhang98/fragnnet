@@ -369,9 +369,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			# upload or remove checkpoints
 			# if in offline mode, you shouldn't remove the checkpoint before syncing
 			for ckpt_fp in ckpt_fps:
-				if config_d["upload_checkpoints"]:
-					wandb.save(ckpt_fp)
-				else:
+				if not config_d["upload_checkpoints"]:
 					os.remove(ckpt_fp)
 			# cleanup
 			if job_id_fp:

@@ -386,10 +386,12 @@ class SpectrumPL(pl.LightningModule):
 			b_total_weight = th.sum(b_sample_weight, dim=0)
 			if reduce == "w_mean":
 				b_reduce_metric = th.sum(b_sample_weight * b_metric, dim=0) / b_total_weight
-			elif reduce == "mean":
-				b_reduce_metric = th.mean(b_sample_weight * b_metric, dim=0)
+			elif reduce == "w_std":
+				b_reduce_metric = th.sqrt(
+					th.sum(b_sample_weight * (b_metric - th.sum(b_sample_weight * b_metric, dim=0) / b_total_weight)**2, dim=0) / b_total_weight
+				)
 			else:
-				assert reduce == "sum", reduce
+				assert reduce == "w_sum", reduce
 				b_reduce_metric = th.sum(b_sample_weight * b_metric, dim=0)
 			if return_weights:
 				return b_reduce_metric, b_total_weight
@@ -406,6 +408,17 @@ class SpectrumPL(pl.LightningModule):
 		# store epoch mean metric in lightning module, for ease of reloading
 		self.train_mean_metrics = nn.ParameterDict()
 		self.val_mean_metrics = nn.ParameterDict()
+		self.train_std_metrics = nn.ParameterDict()
+		self.val_std_metrics = nn.ParameterDict()
+		if self.hparams.track_datapoint_metrics:
+			self.train_datapoint_metrics = nn.ParameterDict()
+			self.val_datapoint_metrics = nn.ParameterDict()
+			if self.hparams.spec_params["merge"]:
+				num_datapoints = 22000
+			else:
+				num_datapoints = 270000
+			self.train_num_datapoints = None
+			self.val_num_datapoints = None
 		for name in self.metric_names:
 			_name = name.replace(".","-")
 			self.train_mean_metrics[_name] = nn.Parameter(
@@ -416,6 +429,23 @@ class SpectrumPL(pl.LightningModule):
 				th.zeros([self.hparams.max_epochs],dtype=th.float32),
 				requires_grad=False
 			)
+			self.train_std_metrics[_name] = nn.Parameter(
+				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				requires_grad=False
+			)
+			self.val_std_metrics[_name] = nn.Parameter(
+				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				requires_grad=False
+			)
+			if self.hparams.track_datapoint_metrics:
+				self.train_datapoint_metrics[_name] = nn.Parameter(
+					th.zeros([num_datapoints],dtype=th.float32),
+					requires_grad=False
+				)
+				self.val_datapoint_metrics[_name] = nn.Parameter(
+					th.zeros([num_datapoints],dtype=th.float32),
+					requires_grad=False
+				)
 
 	def _setup_sampler(self):
 
@@ -492,7 +522,7 @@ class SpectrumPL(pl.LightningModule):
 			b_spec_per_group=spec_per_group,
 			b_spec_per_mol=spec_per_mol,
 			b_group_per_mol=group_per_mol,
-			reduce="sum",
+			reduce="w_sum",
 			return_weights=True
 		)
 		# just log loss
@@ -659,7 +689,7 @@ class SpectrumPL(pl.LightningModule):
 
 	def _reduce_metrics(self, results):
 
-		mean_metrics = {}
+		mean_metrics, std_metrics = {}, {}
 		for k, v in results.items():
 			if k in self.metric_names:
 				mean_metrics[k] = self.batch_metric_reduce_fn(
@@ -669,7 +699,14 @@ class SpectrumPL(pl.LightningModule):
 					b_group_per_mol=results["group_per_mol"],
 					reduce="w_mean"
 				)
-		return mean_metrics
+				std_metrics[k] = self.batch_metric_reduce_fn(
+					b_metric=v,
+					b_spec_per_group=results["spec_per_group"],
+					b_spec_per_mol=results["spec_per_mol"],
+					b_group_per_mol=results["group_per_mol"],
+					reduce="w_std"
+				)
+		return mean_metrics, std_metrics
 
 	def _consolidate_results(self, split):
 		
@@ -684,16 +721,23 @@ class SpectrumPL(pl.LightningModule):
 				assert isinstance(results[k][0],list)
 				results[k] = flatten_lol(results[k])
 		# log all the metrics
-		mean_metrics = self._reduce_metrics(results)
-		for k,v in mean_metrics.items():
+		mean_metrics, std_metrics = self._reduce_metrics(results)
+		for k in mean_metrics.keys():
 			self.log(
-				f"{split}_{k}_epoch",
-				v
+				f"{split}_{k}_epoch/mean",
+				mean_metrics[k],
+			)
+			self.log(
+				f"{split}_{k}_epoch/std",
+				std_metrics[k],
 			)
 		# update epoch stats
 		mean_metrics_epochs = getattr(self,f"{split}_mean_metrics")
-		for k,v in mean_metrics.items():
-			mean_metrics_epochs[k.replace(".","-")][self.current_epoch] = v
+		std_metrics_epochs = getattr(self,f"{split}_std_metrics")
+		for k in mean_metrics.keys():
+			mean_metrics_epochs[k.replace(".","-")][self.current_epoch] = mean_metrics[k]
+			std_metrics_epochs[k.replace(".","-")][self.current_epoch] = std_metrics[k]
+		# log histograms
 		if self.hparams.log_hist_metrics:
 			wandb_logger = self._get_wandb_logger()
 			for k,v in results.items():
@@ -705,20 +749,46 @@ class SpectrumPL(pl.LightningModule):
 					if wandb_logger is not None:
 						wandb_logger.experiment.log(log_d)
 		# log best metric
+		update_datapoint_metrics = False
+		checkpoint_metric = self.hparams.checkpoint_metric.removeprefix("train_").removeprefix("val_").removesuffix("/mean").removesuffix("/std").removesuffix("_epoch")
 		for k in self.metric_bests:
 			assert k in self.metric_names, (k, self.metric_names)
 			mean_metric_epochs = mean_metrics_epochs[k.replace(".","-")][:self.current_epoch+1]
+			std_metric_epochs = std_metrics_epochs[k.replace(".","-")][:self.current_epoch+1]
 			if self.metric_min_max[k] == "min":
-				metric_best = th.min(mean_metric_epochs)
+				argbest_metric = th.argmin(mean_metric_epochs)
 			elif self.metric_min_max[k] == "max":
-				metric_best = th.max(mean_metric_epochs)
+				argbest_metric = th.argmax(mean_metric_epochs)
 			else:
 				assert self.metric_min_max[k] is None, self.metric_min_max[k]
 				continue
+			mean_metric_best = mean_metric_epochs[argbest_metric]
+			std_metric_best = std_metric_epochs[argbest_metric]
 			self.log(
-				f"{split}_{k}_best",
-				metric_best
+				f"{split}_{k}_best/mean",
+				mean_metric_best
 			)
+			self.log(
+				f"{split}_{k}_best/std",
+				std_metric_best
+			)
+			# if it's the best, update the datapoint metrics
+			if k == checkpoint_metric and argbest_metric == self.current_epoch:
+				update_datapoint_metrics = True
+		if checkpoint_metric == "epoch":
+			assert not update_datapoint_metrics
+			update_datapoint_metrics = True
+		if self.hparams.track_datapoint_metrics and update_datapoint_metrics:
+			datapoint_metrics = getattr(self,f"{split}_datapoint_metrics")
+			num_datapoints = getattr(self,f"{split}_num_datapoints")
+			example_key = list(mean_metrics.keys())[0]
+			if num_datapoints is None:
+				num_datapoints = len(results[example_key])
+				setattr(self,f"{split}_num_datapoints",num_datapoints)
+			assert num_datapoints <= datapoint_metrics[example_key.replace(".","-")].shape[0], (num_datapoints, datapoint_metrics[example_key.replace(".","-")].shape[0])
+			for k in mean_metrics.keys():
+				assert len(results[k]) == num_datapoints, (k, len(results[k]), num_datapoints)
+				datapoint_metrics[k.replace(".","-")][:num_datapoints] = results[k]
 
 	def _log_images(self, split):
 

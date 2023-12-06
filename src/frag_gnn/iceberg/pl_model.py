@@ -582,13 +582,6 @@ class IcebergIntenPL(SpectrumPL):
 			b_group_per_mol=group_per_mol,
 			reduce="w_mean"
 		)
-		total_loss = self.batch_metric_reduce_fn(
-			b_metric=loss,
-			b_spec_per_group=spec_per_group,
-			b_spec_per_mol=spec_per_mol,
-			b_group_per_mol=group_per_mol,
-			reduce="sum"
-		)
 		# just log loss
 		self.log(
 			f"{split}_batch_loss",

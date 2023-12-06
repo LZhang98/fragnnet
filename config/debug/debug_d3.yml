@@ -11,7 +11,6 @@ num_hs: 4
 subsample_params:
   subsample_size: -1
 compile: False
-frag_remove_edges: True
 
 train_batch_size: 32
 eval_batch_size: 32
@@ -20,8 +19,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 2
-max_epochs: 2
+min_epochs: 3
+max_epochs: 3
 lr_schedule: False
 debug_overfit: False
 precision: 32
@@ -33,9 +32,10 @@ mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
-upload_checkpoints: False
-disable_checkpoints: True
-checkpoint_metric: val_cos_hun_epoch
+upload_checkpoints: True
+disable_checkpoints: False
+checkpoint_metric: val_cos_hun_epoch/mean
+track_datapoint_metrics: True
 
 precision: 32
 use_tensor_float32: True
