@@ -19,8 +19,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 2
+max_epochs: 2
 lr_schedule: False
 debug_overfit: False
 precision: 32
@@ -32,8 +32,9 @@ mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
-upload_checkpoints: False
-disable_checkpoints: True
+upload_checkpoints: True # False
+disable_checkpoints: False # True
+checkpoint_metric: val_cos_hun_epoch
 
 precision: 32
 use_tensor_float32: True

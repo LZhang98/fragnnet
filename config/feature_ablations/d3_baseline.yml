@@ -42,6 +42,7 @@ sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
 upload_checkpoints: True
+checkpoint_metric: val_cos_hun_epoch
 
 precision: 32
 use_tensor_float32: True

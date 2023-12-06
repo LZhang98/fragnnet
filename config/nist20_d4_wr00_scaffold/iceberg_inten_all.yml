@@ -63,3 +63,4 @@ weight_decay: 0.0000001 # 1e-7
 debug_overfit: False
 num_workers: 8
 upload_checkpoints: True
+checkpoint_metric: val_cos_hun_epoch
