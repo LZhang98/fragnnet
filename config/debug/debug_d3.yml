@@ -11,6 +11,7 @@ num_hs: 4
 subsample_params:
   subsample_size: -1
 compile: False
+frag_remove_edges: True
 
 train_batch_size: 32
 eval_batch_size: 32
@@ -32,8 +33,8 @@ mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
-upload_checkpoints: True # False
-disable_checkpoints: False # True
+upload_checkpoints: False
+disable_checkpoints: True
 checkpoint_metric: val_cos_hun_epoch
 
 precision: 32

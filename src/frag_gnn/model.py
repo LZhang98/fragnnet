@@ -32,6 +32,7 @@ class FragGNNModel(nn.Module):
 		frag_normalization: str,
 		frag_dropout: float,
 		frag_pool_type: str,
+		frag_remove_edges: bool,
 		mlp_output_format: str,
 		mlp_hidden_size: int,
 		mlp_normalization: str,
@@ -45,7 +46,7 @@ class FragGNNModel(nn.Module):
 		ce_insert_mol: bool,
 		ce_insert_frag: bool,
 		ce_insert_mlp: bool,
-		ce_insert_mlp_lin: bool,
+		ce_insert_mlp_lin: bool
 	):
 
 		super().__init__()
@@ -92,6 +93,7 @@ class FragGNNModel(nn.Module):
 		self.frag_node_feats = frag_node_feats
 		self.frag_edge_feats = frag_edge_feats
 		self._compute_frag_feats_sizes()
+		self.frag_remove_edges = frag_remove_edges
 
 		# define interstage
 		assert cc_interstage_type in ["add","sub","linear","direct"]
@@ -382,6 +384,9 @@ class FragGNNModel(nn.Module):
 		frag_edge_attr_embed = th.cat(frag_edata,dim=-1)
 
 		# define frag network
+		if self.frag_remove_edges:
+			frag_edge_index = frag_edge_index[:,:0]
+			frag_edge_attr_embed = frag_edge_attr_embed[:0,:]
 		frag_embed_gnn = self.frag_embedder(
 			frag_x_embed,
 			frag_node_batch_idxs,
