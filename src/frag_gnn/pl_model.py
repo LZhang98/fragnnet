@@ -82,7 +82,7 @@ class SpectrumPL(pl.LightningModule):
 		
 		# measure cos sim between predicted and ground truth
 		if "cos_sim" in self.hparams.auxiliary_scores:
-			def get_cos_sim(sqrt,mz_bin_res):
+			def get_cos_sim(sqrt,remove_prec_peak,mz_bin_res):
 				if self.hparams.sparse_cosine_similarity:
 					cosine_similarity_fn = calculate_sparse_cosine_similarity
 				else:
@@ -98,6 +98,7 @@ class SpectrumPL(pl.LightningModule):
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
+					true_prec_mzs,
 					**kwargs):
 					# untransform
 					true_ints = self.ints_untransform_func(true_ints)
@@ -114,27 +115,30 @@ class SpectrumPL(pl.LightningModule):
 						pred_batch_idxs,
 						mz_bin_res=mz_bin_res,
 						mz_max=self.hparams.mz_max,
-						sum_ints=self.hparams.sum_ints
+						sum_ints=self.hparams.sum_ints,
+						remove_prec_peaks=remove_prec_peak,
+						true_prec_mzs=true_prec_mzs
 					)
 					return cos_sim
 				return _cos_sim
-			for sqrt in [True, False]:
-				for mz_bin_res in self.hparams.eval_mz_bin_res:
-					if sqrt:
-						fname = f"cos_sim_sqrt_{mz_bin_res}"
-					else:
-						fname = f"cos_sim_{mz_bin_res}"
-					self.metric_fns[fname] = get_cos_sim(sqrt,mz_bin_res)
-					self.metric_min_max[fname] = "max"
-					self.metric_bests.append(fname)
+			for remove_prec_peak in [True, False]:
+				for sqrt in [True, False]:
+					for mz_bin_res in self.hparams.eval_mz_bin_res:
+						fname_base = "cos_sim"
+						if sqrt:
+							fname_base += "_sqrt"
+						if remove_prec_peak:
+							fname_base += "_np"
+						fname = f"{fname_base}_{mz_bin_res}"
+						self.metric_fns[fname] = get_cos_sim(sqrt,remove_prec_peak,mz_bin_res)
+						self.metric_min_max[fname] = "max"
+						self.metric_bests.append(fname)
 
 		if "recall" in self.hparams.auxiliary_scores:
 			def _recall(
 				true_mzs,
-				true_ints,
 				true_batch_idxs,
 				pred_mzs,
-				pred_ints,
 				pred_batch_idxs,
 				**kwargs):
 				return calculate_recall(
@@ -215,12 +219,8 @@ class SpectrumPL(pl.LightningModule):
 		
 		if "true_spec_e" in self.hparams.auxiliary_scores:
 			def _true_spec_e(
-				true_mzs,
 				true_ints,
 				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
 				**kwargs):
 				# untransform, normalize, log
 				true_ints = self.ints_untransform_func(true_ints)
@@ -235,12 +235,8 @@ class SpectrumPL(pl.LightningModule):
 		# measure normalized entropy
 		if "true_spec_ne" in self.hparams.auxiliary_scores:
 			def _true_spec_ne(
-				true_mzs,
 				true_ints,
 				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
 				**kwargs):
 				# untransform, normalize, log
 				true_ints = self.ints_untransform_func(true_ints)
@@ -254,42 +250,57 @@ class SpectrumPL(pl.LightningModule):
 
 		# cos sim using Hungarian algorithm
 		if "cos_hun" in self.hparams.auxiliary_scores:
-			def _cos_hun(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				# calculate
-				cos_hun = calculate_sparse_cosine_hungarian(
+			def get_cos_hun(sqrt,remove_prec_peak):
+				if sqrt:
+					ints_transform_fn = get_ints_transform_func("sqrt")
+				else:
+					ints_transform_fn = get_ints_transform_func("none")
+				def _cos_hun(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
-				)
-				return cos_hun
-			self.metric_fns["cos_hun"] = _cos_hun
-			self.metric_min_max["cos_hun"] = "max"
-			self.metric_bests.append("cos_hun")
+					true_prec_mzs,
+					**kwargs):
+					# untransform
+					true_ints = ints_transform_fn(true_ints)
+					pred_ints = ints_transform_fn(pred_ints)
+					# calculate
+					cos_hun = calculate_sparse_cosine_hungarian(
+						true_mzs,
+						true_ints,
+						true_batch_idxs,
+						pred_mzs,
+						pred_ints,
+						pred_batch_idxs,
+						tolerance=self.tolerance,
+						relative=self.relative,
+						remove_prec_peaks=remove_prec_peak,
+						true_prec_mzs=true_prec_mzs
+					)
+					return cos_hun
+				return _cos_hun
+			for remove_prec_peak in [True, False]:
+				for sqrt in [True, False]:
+					fname_base = "cos_hun"
+					if sqrt:
+						fname_base += "_sqrt"
+					if remove_prec_peak:
+						fname_base += "_np"
+					fname = f"{fname_base}"
+					self.metric_fns[fname] = get_cos_hun(sqrt,remove_prec_peak)
+					self.metric_min_max[fname] = "max"
+					self.metric_bests.append(fname)
 
 		# measure precision, recall, dice
 		# this requires some level of post processing
 		if "precision" in self.hparams.auxiliary_scores:
 			def _precision(
 				true_mzs,
-				true_ints,
 				true_batch_idxs,
 				pred_mzs,
-				pred_ints,
 				pred_batch_idxs,
 				**kwargs):
 				return calculate_precision(
@@ -307,10 +318,8 @@ class SpectrumPL(pl.LightningModule):
 		if "dice" in self.hparams.auxiliary_scores:
 			def _dice(
 				true_mzs,
-				true_ints,
 				true_batch_idxs,
 				pred_mzs,
-				pred_ints,
 				pred_batch_idxs,
 				**kwargs):
 				return calculate_dice(
@@ -492,10 +501,11 @@ class SpectrumPL(pl.LightningModule):
 		true_mzs = batch["spec_mzs"]
 		true_ints = batch["spec_ints"]
 		true_batch_idxs = batch["spec_batch_idxs"]
+		true_prec_mzs = batch["spec_prec_mz"]
 		spec_per_group = batch["spec_per_group"]
 		spec_per_mol = batch["spec_per_mol"]
 		group_per_mol = batch["group_per_mol"]
-		# print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
+		print(true_prec_mzs.shape)
 		true_mzs, true_logprobs, true_batch_idxs = self._preproc_spec(
 			true_mzs,
 			true_ints,
@@ -506,6 +516,7 @@ class SpectrumPL(pl.LightningModule):
 			"true_mzs": true_mzs,
 			"true_logprobs": true_logprobs,
 			"true_batch_idxs": true_batch_idxs,
+			"true_prec_mzs": true_prec_mzs,
 			**pred
 		}
 		loss_d = self.loss_fn(**both)
@@ -546,15 +557,17 @@ class SpectrumPL(pl.LightningModule):
 		}
 		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
 		with th.no_grad():
+			metric_d = {
+				"true_mzs": true_mzs,
+				"true_ints": th.exp(true_logprobs),
+				"true_batch_idxs": true_batch_idxs,
+				"pred_mzs": pred["pred_mzs"],
+				"pred_ints": th.exp(pred["pred_logprobs"]),
+				"pred_batch_idxs": pred["pred_batch_idxs"],
+				"true_prec_mzs": true_prec_mzs
+			}
 			for metric_name,metric_fn in self.metric_fns.items():
-				metric = metric_fn(
-					true_mzs,
-					th.exp(true_logprobs),
-					true_batch_idxs,
-					pred["pred_mzs"],
-					th.exp(pred["pred_logprobs"]),
-					pred["pred_batch_idxs"]
-				)
+				metric = metric_fn(**metric_d)
 				results[metric_name] = metric
 		for metric_name in self.metric_names:
 			assert metric_name in results, metric_name
@@ -1097,7 +1110,8 @@ class FragGNNPL(SpectrumPL):
 			pred_edge_h_range_masks,
 			pred_edge_h_logprobs,
 			pred_edge_batch_idxs,
-			pred_oos_logprobs):
+			pred_oos_logprobs,
+			**kwargs):
 			spec_ce, true_oos_logprobs = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,

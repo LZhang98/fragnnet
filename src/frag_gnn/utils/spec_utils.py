@@ -8,7 +8,7 @@ import scipy
 import scipy.optimize
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d, safelog
 from typing import List, Tuple, Union
 
 # TODO: actually fill these out
@@ -237,7 +237,16 @@ def batched_filter_func(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,ints_t
 	return mzs, ints, batch_idxs
 
 
-def batched_bin_func(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,mz_max:float,mz_bin_res:float,sum_ints:bool,sparse:bool=False) -> th.tensor:
+def batched_bin_func(
+		mzs:th.tensor,
+		ints:th.tensor,
+		batch_idxs:th.tensor,
+		mz_max:float,
+		mz_bin_res:float,
+		sum_ints:bool,
+		sparse:bool=False,
+		remove_prec_peaks:bool=False,
+		prec_mzs:th.tensor=None) -> th.tensor:
 	"""method to get binned spectra for batch
 
 	Args:
@@ -259,11 +268,19 @@ def batched_bin_func(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,mz_max:fl
 	batch_size = th.max(batch_idxs)+1
 	bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype)
 	num_bins = bins.shape[0]
-	bin_idx = th.searchsorted(bins,mzs,side="right")
+	bin_idxs = th.searchsorted(bins,mzs,side="right")
 	bin_offsets = (th.arange(batch_size,device=mzs.device)*num_bins)[batch_idxs]
-	bin_idx = bin_idx + bin_offsets
+	bin_idxs = bin_idxs + bin_offsets
+	if remove_prec_peaks:
+		assert prec_mzs is not None
+		assert th.max(prec_mzs) <  mz_max, (th.max(prec_mzs),mz_max)
+		prec_mz_bin_idxs = th.searchsorted(bins,prec_mzs,side="right")
+		prec_mz_bin_offsets = th.arange(batch_size,device=mzs.device)*num_bins
+		prec_mz_bin_idxs = prec_mz_bin_idxs + prec_mz_bin_offsets
+		prec_ints_mask = th.isin(bin_idxs,prec_mz_bin_idxs)
+		ints = ints*(1-prec_ints_mask.float())
 	if sparse:
-		un_bin_idxs, un_bin_idxs_rev = th.unique(bin_idx,return_inverse=True)
+		un_bin_idxs, un_bin_idxs_rev = th.unique(bin_idxs,return_inverse=True)
 		new_bin_idxs = th.arange(un_bin_idxs.shape[0],device=un_bin_idxs.device)
 		un_bin_ints = scatter_reduce(
 			src=ints,
@@ -277,7 +294,7 @@ def batched_bin_func(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,mz_max:fl
 	else:
 		bin_spec = scatter_reduce(
 			src=ints,
-			index=bin_idx,
+			index=bin_idxs,
 			reduce="sum" if sum_ints else "amax",
 			dim=0,
 			dim_size=num_bins*batch_size
@@ -820,7 +837,9 @@ def calculate_cosine_similarity(
 		pred_batch_idxs:th.tensor,
 		mz_max:float=1500.,
 		mz_bin_res:float=0.01,
-		sum_ints:bool=True
+		sum_ints:bool=True,
+		remove_prec_peaks:bool=False,
+		true_prec_mzs:th.tensor=None,
 	) -> th.tensor:
 	"""calculate cosine similarity using binned spectra
 
@@ -844,7 +863,10 @@ def calculate_cosine_similarity(
 		true_batch_idxs,
 		mz_max,
 		mz_bin_res,
-		sum_ints
+		sum_ints,
+		sparse=False,
+		remove_prec_peaks=remove_prec_peaks,
+		prec_mzs=true_prec_mzs
 	)
 	pred_spec = batched_bin_func(
 		pred_mzs,
@@ -852,7 +874,10 @@ def calculate_cosine_similarity(
 		pred_batch_idxs,
 		mz_max,
 		mz_bin_res,
-		sum_ints
+		sum_ints,
+		sparse=False,
+		remove_prec_peaks=remove_prec_peaks,
+		prec_mzs=true_prec_mzs
 	)
 	cos_sims = binned_cosine_similarity(true_spec,pred_spec)
 	return cos_sims
@@ -918,7 +943,9 @@ def calculate_sparse_cosine_similarity(
 		pred_batch_idxs:th.tensor,
 		mz_max:float=1500.,
 		mz_bin_res:float=0.01,
-		sum_ints:bool=True
+		sum_ints:bool=True,
+		remove_prec_peaks:bool=False,
+		true_prec_mzs:th.tensor=None,
 	) -> th.tensor:
 	"""
 	Calculate the cosine similarity using binned spectra and sparse methods,
@@ -946,7 +973,9 @@ def calculate_sparse_cosine_similarity(
 		mz_max=mz_max,
 		mz_bin_res=mz_bin_res,
 		sum_ints=sum_ints,
-		sparse=True
+		sparse=True,
+		remove_prec_peaks=remove_prec_peaks,
+		prec_mzs=true_prec_mzs
 	)
 	pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
 		pred_mzs,
@@ -955,7 +984,9 @@ def calculate_sparse_cosine_similarity(
 		mz_max=mz_max,
 		mz_bin_res=mz_bin_res,
 		sum_ints=sum_ints,
-		sparse=True
+		sparse=True,
+		remove_prec_peaks=remove_prec_peaks,
+		prec_mzs=true_prec_mzs
 	)
 	cos_sims = sparse_binned_cosine_similarity(
 		true_bin_idxs,
@@ -1129,7 +1160,9 @@ def calculate_sparse_cosine_hungarian(
 	pred_batch_idxs:th.tensor,
 	tolerance:float=1e-5,
 	relative:bool=True,
-	sum_ints:bool=True
+	sum_ints:bool=True,
+	remove_prec_peaks:bool=False,
+	true_prec_mzs:th.tensor=None,
 	) -> th.tensor:
 	""" Calculate cosine similarity using the Hungarian algorithm as the matching method.
 
@@ -1160,36 +1193,45 @@ def calculate_sparse_cosine_hungarian(
 		pred_batch_idxs,
 		sum_ints=sum_ints
 	)
-	# l2 normalize
-	true_ints = scatter_l2normalize(
-		true_ints,
-		true_batch_idxs,
-		dim=0
-	)
-	pred_ints = scatter_l2normalize(
-		pred_ints,
-		pred_batch_idxs,
-		dim=0
-	)
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
 	cos_hun = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
 	for batch_idx in range(batch_size):
-
-		b_true_ints = true_ints[(true_batch_idxs==batch_idx)]
-		b_pred_ints = pred_ints[(pred_batch_idxs==batch_idx)]
-
-		b_match_mzs = match_mz_for_batch_idx(true_mzs,
-			true_batch_idxs,
-			pred_mzs, 
-			pred_batch_idxs, 
-			tolerance, 
-			relative, 
-			batch_idx)
-		
+		b_true_mask = (true_batch_idxs==batch_idx)
+		b_pred_mask = (pred_batch_idxs==batch_idx)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_ints = true_ints[b_true_mask]
+		b_pred_ints = pred_ints[b_pred_mask]
+		if remove_prec_peaks:
+			# remove precursor peaks
+			assert true_prec_mzs is not None
+			b_true_prec_mz = true_prec_mzs[batch_idx:batch_idx+1]
+			b_true_prec_mask = calculate_match_mzs(
+				b_true_mzs,
+				b_true_prec_mz,
+				tolerance=tolerance,
+				relative=relative
+			).squeeze(1)
+			b_true_ints = b_true_ints*(1-b_true_prec_mask.float())
+			b_pred_prec_mask = calculate_match_mzs(
+				b_pred_mzs,
+				b_true_prec_mz,
+				tolerance=tolerance,
+				relative=relative
+			).squeeze(1)
+			b_pred_ints = b_pred_ints*(1-b_pred_prec_mask.float())
+		# l2 normalize
+		b_true_ints = F.normalize(b_true_ints,p=2,dim=0)
+		b_pred_ints = F.normalize(b_pred_ints,p=2,dim=0)
+		b_match_mzs = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
 		b_true_match_mzs = th.any(b_match_mzs,dim=1)
 		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
-
 		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
 			(b_true_ints[b_true_match_mzs].unsqueeze(1) * b_pred_ints[b_pred_match_mzs].unsqueeze(0))
 		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
