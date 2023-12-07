@@ -196,7 +196,8 @@ class FragGNNModel(nn.Module):
 			self.frag_node_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "depth" in self.frag_node_feats:
 			self.frag_node_feats_size += self.num_depth*self.depth_embedder.num_dim
-		assert self.frag_node_feats_size > 0, self.frag_node_feats_size
+		if self.frag_node_feats_size == 0:
+			self.frag_node_feats_size = 1
 		# edges
 		self.frag_edge_feats_size = 0
 		if "cc" in self.frag_edge_feats:
@@ -207,7 +208,6 @@ class FragGNNModel(nn.Module):
 			self.frag_edge_feats_size += self.complement_embedder.num_dim
 		if self.frag_edge_feats_size == 0:
 			self.frag_edge_feats_size = 1
-		# define frag-graph GNN to create frag-graph node level embedding
 		if self.ce_insert_frag:
 			self.frag_node_feats_size += 1
 			self.frag_edge_feats_size += 1
@@ -363,7 +363,8 @@ class FragGNNModel(nn.Module):
 			)
 			frag_edata.append(frag_edge_complement)
 		# empty feats check
-		assert len(self.frag_node_feats) > 0, len(self.frag_node_feats)
+		if len(frag_ndata) == 0:
+			frag_ndata.append(th.zeros([batch_frag_num_nodes,1],dtype=float_dtype,device=device))
 		if len(frag_edata) == 0:
 			frag_edata.append(th.zeros([batch_frag_num_edges,1],dtype=float_dtype,device=device))
 
