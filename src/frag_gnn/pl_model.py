@@ -1374,7 +1374,6 @@ class NeimsPL(SpectrumPL):
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
-			# self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
 
 	def _setup_loss_fn(self):
 

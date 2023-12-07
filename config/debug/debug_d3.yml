@@ -10,7 +10,7 @@ num_depth: 4
 num_hs: 4
 subsample_params:
   subsample_size: -1
-compile: False
+compile: True
 
 train_batch_size: 32
 eval_batch_size: 32

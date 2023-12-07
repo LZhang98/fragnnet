@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.form_embedder import get_embedder
-from frag_gnn.utils.misc_utils import safelog
+from frag_gnn.utils.misc_utils import safelog, check_pyg_compile
 
 
 class FragGNNModel(nn.Module):
@@ -214,11 +214,12 @@ class FragGNNModel(nn.Module):
 
 	def compile_submodules(self,**kwargs):
 		""" pyg does not support dynamic shape compiling """
-		# self.mol_embedder = pyg.compile(self.mol_embedder,**kwargs)
 		self.formula_embedder = th.compile(self.formula_embedder,**kwargs)
 		self.depth_embedder = th.compile(self.depth_embedder,**kwargs)
 		self.complement_embedder = th.compile(self.complement_embedder,**kwargs)
-		# self.frag_embedder = pyg.compile(self.frag_embedder,**kwargs)
+		if check_pyg_compile():
+			self.mol_embedder = pyg.compile(self.mol_embedder,**kwargs)
+			self.frag_embedder = pyg.compile(self.frag_embedder,**kwargs)
 
 	def forward(
 		self, 
@@ -762,12 +763,6 @@ class NeimsModel(nn.Module):
 		prec_mz_idx = th.bucketize(prec_mz,self.mz_bins.to(prec_mz.device),right=True)
 		assert th.max(prec_mz_idx) < self.output_size, (prec_mz_idx,self.output_size)
 		return prec_mz_idx
-
-	# def compile_submodules(self,**kwargs):
-
-	# 	self.ff_layers = th.compile(self.ff_layers,**kwargs)
-	# 	self.forw_out_layer = th.compile(self.forw_out_layer,**kwargs)
-	# 	self.rev_out_layer = th.compile(self.rev_out_layer,**kwargs)
 
 	def forward(
 		self,

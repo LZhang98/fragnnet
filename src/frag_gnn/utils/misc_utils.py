@@ -336,3 +336,17 @@ def th_setdiff1d(t1, t2):
 	t1 = th.unique(t1)
 	t2 = th.unique(t2)
 	return t1[(t1[:, None] != t2).all(dim=1)]
+
+def get_package_version(package):
+
+	version = package.__version__.split("+")[0]
+	major, minor, patch = version.split(".")
+	return (int(major), int(minor), int(patch))
+
+def check_pyg_compile():
+
+	th_major_version, th_minor_version = get_package_version(th)[:2]
+	pyg_major_version, pyg_minor_version = get_package_version(pyg)[:2]
+	assert th_major_version == 2, th_major_version
+	assert pyg_major_version == 2, pyg_major_version
+	return th_minor_version >= 1 and pyg_minor_version >= 4
