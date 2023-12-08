@@ -129,19 +129,19 @@ def transform_ace(ace:float) -> float:
 	raise NotImplementedError
 	#return ace/100 	
 
-def filter_func(mzs: Union[th.tensor,np.array], 
-				ints:Union[th.tensor,np.array], 
-				ints_thresh:float, mz_max:float) -> Tuple[Union[th.tensor,np.array], Union[th.tensor,np.array]]:
+def filter_func(mzs: Union[th.Tensor,np.ndarray], 
+				ints:Union[th.Tensor,np.ndarray], 
+				ints_thresh:float, mz_max:float) -> Tuple[Union[th.Tensor,np.ndarray], Union[th.Tensor,np.ndarray]]:
 	"""filter spectrum by intesnity value and max mz
 
 	Args:
-		mzs (Union[th.tensor,np.array]): m/z s
-		ints (Union[th.tensor,np.array]): intesnities 
+		mzs (Union[th.Tensor,np.ndarray]): m/z s
+		ints (Union[th.Tensor,np.ndarray]): intesnities 
 		ints_thresh (float): intesnity thresh hold
 		mz_max (float): max mz, if mz_max <= 0, mz_max filter will be ignored
 
 	Returns:
-		Tuple[Union[th.tensor,np.array], Union[th.tensor,np.array]]: mzs, ints
+		Tuple[Union[th.Tensor,np.ndarray], Union[th.Tensor,np.ndarray]]: mzs, ints
 	"""
 	thresh_mask = ints > ints_thresh
 	
@@ -155,14 +155,14 @@ def filter_func(mzs: Union[th.tensor,np.array],
 	ints = ints[both_mask]
 	return mzs, ints
 
-def bin_func(mzs:th.tensor,ints:th.tensor,mz_max:float,mz_bin_res:float,return_index:bool,sum_ints:bool):
+def bin_func(mzs:th.Tensor,ints:th.Tensor,mz_max:float,mz_bin_res:float,return_index:bool,sum_ints:bool):
 	"""
 	return binned spectra
 	Note: if return_index is True, returns the (possibly non-unique) bin index for each mz
 	Note: intensities may not be normalized due to peak merging
 	Args:
-		mzs (th.tensor): 1d flat tensor of m/zs; multiple m/z lists are concatenated.  
-		ints (th.tensor): 1d flat tensor of intensities; multiple intensities lists are concatenated.  
+		mzs (th.Tensor): 1d flat tensor of m/zs; multiple m/z lists are concatenated.  
+		ints (th.Tensor): 1d flat tensor of intensities; multiple intensities lists are concatenated.  
 		mz_max (float): max mz value allowed
 		mz_bin_res (float): bin size
 		return_index (bool): if return_index is True, returns the (possibly non-unique) bin index for each mz
@@ -190,15 +190,15 @@ def bin_func(mzs:th.tensor,ints:th.tensor,mz_max:float,mz_bin_res:float,return_i
 			bin_spec[-1] = 1.
 		return bin_spec
 
-def batch_func(mzs_list:Union[th.tensor,np.array],ints_list:Union[th.tensor,np.array]) -> Tuple[th.tensor,th.tensor,th.tensor]:
+def batch_func(mzs_list:Union[th.Tensor,np.ndarray],ints_list:Union[th.Tensor,np.ndarray]) -> Tuple[th.Tensor,th.Tensor,th.Tensor]:
 	""" create a batch for given list of peak list, batch size is the size of peak list
 
 	Args:
-		mzs_list (th.tensor): list of m/z list
-		ints_list (th.tensor): list of intensity list
+		mzs_list (th.Tensor): list of m/z list
+		ints_list (th.Tensor): list of intensity list
 
 	Returns:
-		Tuple[th.tensor,th.tensor,th.tensor]: mz tensoer, intensity tensor, batch_idxs tensor
+		Tuple[th.Tensor,th.Tensor,th.Tensor]: mz tensoer, intensity tensor, batch_idxs tensor
 	"""
 
 	assert len(mzs_list) == len(ints_list)
@@ -211,18 +211,18 @@ def batch_func(mzs_list:Union[th.tensor,np.array],ints_list:Union[th.tensor,np.a
 	return mzs, ints, batch_idxs
 
 
-def batched_filter_func(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,ints_thresh:float,mz_max: float) -> Tuple[th.tensor,th.tensor,th.tensor]:
+def batched_filter_func(mzs:th.Tensor,ints:th.Tensor,batch_idxs:th.Tensor,ints_thresh:float,mz_max: float) -> Tuple[th.Tensor,th.Tensor,th.Tensor]:
 	"""bacthed filter func for filter spectra
 
 	Args:
-		mzs (th.tensor): 1d flat tensor of m/zs; multiple m/z lists are concatenated.  
-		ints (th.tensor): 1d flat tensor of intensities; multiple intensities lists are concatenated.  
-		batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor. 
+		mzs (th.Tensor): 1d flat tensor of m/zs; multiple m/z lists are concatenated.  
+		ints (th.Tensor): 1d flat tensor of intensities; multiple intensities lists are concatenated.  
+		batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor. 
 		ints_thresh (float): intesnity thresh hold
 		mz_max (float): max m/z, if mz_max <= 0, mz_max filter will be ignored
 
 	Returns:
-		Tuple[th.tensor,th.tensor,th.tensor]: mz tensoer, intensity tensor, batch_idxs tensor
+		Tuple[th.Tensor,th.Tensor,th.Tensor]: mz tensoer, intensity tensor, batch_idxs tensor
 	"""
 
 	thresh_mask = ints > ints_thresh
@@ -238,21 +238,21 @@ def batched_filter_func(mzs:th.tensor,ints:th.tensor,batch_idxs:th.tensor,ints_t
 
 
 def batched_bin_func(
-		mzs:th.tensor,
-		ints:th.tensor,
-		batch_idxs:th.tensor,
+		mzs:th.Tensor,
+		ints:th.Tensor,
+		batch_idxs:th.Tensor,
 		mz_max:float,
 		mz_bin_res:float,
 		sum_ints:bool,
 		sparse:bool=False,
 		remove_prec_peaks:bool=False,
-		prec_mzs:th.tensor=None) -> th.tensor:
+		prec_mzs:th.Tensor=None) -> th.Tensor:
 	"""method to get binned spectra for batch
 
 	Args:
-		mzs (th.tensor): 1d flat tensor of m/zs; multiple m/z lists are concatenated.  
-		ints (th.tensor): 1d flat tensor of intensities; multiple intensities lists are concatenated.  
-		batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor. 
+		mzs (th.Tensor): 1d flat tensor of m/zs; multiple m/z lists are concatenated.  
+		ints (th.Tensor): 1d flat tensor of intensities; multiple intensities lists are concatenated.  
+		batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor. 
 		mz_max (float): max mz value allowed
 		mz_bin_res (float): bin size
 		sum_ints (bool): flag for sum intensities within the bin, else take max
@@ -309,7 +309,7 @@ def batched_bin_func(
 		return bin_spec
 
 
-def merge_sparse_specs(*peakses,renormalize:bool=False,sum_ints:bool=True) -> th.tensor:
+def merge_sparse_specs(*peakses,renormalize:bool=False,sum_ints:bool=True) -> th.Tensor:
 	"""
 	this will result in peaks that are really close in mass (<5ppm)
 	they are probably the same peak, but our model can handle this type of ambiguity
@@ -340,16 +340,16 @@ def merge_sparse_specs(*peakses,renormalize:bool=False,sum_ints:bool=True) -> th
 	return merged_peaks
 
 
-def calculate_spectrum_entropy(log_ints:th.tensor,batch_idxs:th.tensor) -> th.tensor:
+def calculate_spectrum_entropy(log_ints:th.Tensor,batch_idxs:th.Tensor) -> th.Tensor:
 	""" method to compute entropy.
 		NOTE: this is NOT same spectra entropy in this https://www.nature.com/articles/s41592-023-02012-9 a
 		nd https://www.nature.com/articles/s41592-021-01331-z
 	Args:
-		log_ints (th.tensor): intensity in log scale
-		batch_idxs (th.tensor): batch idx
+		log_ints (th.Tensor): intensity in log scale
+		batch_idxs (th.Tensor): batch idx
 
 	Returns:
-		th.tensor: spectrum entropy
+		th.Tensor: spectrum entropy
 	"""
 
 	k = th.max(batch_idxs)+1
@@ -409,26 +409,26 @@ def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs
 	return topk_weighted_recall, topk_frac
 
 def calculate_match_mzs(
-		true_mzs:th.tensor,
-		pred_mzs:th.tensor,
+		true_mzs:th.Tensor,
+		pred_mzs:th.Tensor,
 		tolerance:float=1e-5,
 		relative:bool=True,
 		divisor_mz_floor:float=200
-	) -> th.tensor:
+	) -> th.Tensor:
 	"""
 	Method to match two spectra based on m/z, return a N x M matrix, where N is number of mz in pred_mzs, M is number of mz in pred_mzs
 	Each cellm i,j means if pred_mzs[i] matches true_mzs[j]
 	works with numpy arrays or torch tensors inspired by the function in ms-pred
 	NOT BATCHED
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
+		true_mzs (th.Tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
 		tolerance (float, optional): Tolerance; Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): Flag to use a relative measure. Defaults to True.
 		divisor_mz_floor (float, optional): Divisor floor used in relative measure. Defaults to 200 Da.
 
 	Returns:
-		th.tensor: return a N x M matrix of True or False, dim 0 for predicted, dim 1 for ground truth
+		th.Tensor: return a N x M matrix of True or False, dim 0 for predicted, dim 1 for ground truth
 	"""
 
 	if isinstance(true_mzs,th.Tensor):
@@ -449,27 +449,27 @@ def calculate_match_mzs(
 	match_mzs = diff_mzs < min_diff_mzs
 	return match_mzs
 
-def match_mz_for_batch_idx(true_mzs:th.tensor,
-						  true_batch_idxs:th.tensor,
-						  pred_mzs:th.tensor, 
-						  pred_batch_idxs:th.tensor, 
+def match_mz_for_batch_idx(true_mzs:th.Tensor,
+						  true_batch_idxs:th.Tensor,
+						  pred_mzs:th.Tensor, 
+						  pred_batch_idxs:th.Tensor, 
 						  tolerance:float, 
 						  relative:bool, 
-						  batch_idx:int) -> th.tensor:
+						  batch_idx:int) -> th.Tensor:
 	""" 
 	Auxiliary function to match m/z values for a given batch index.
 
     Args:
-        true_mzs (th.tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
-        true_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
-        pred_mzs (th.tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
-        pred_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+        true_mzs (th.Tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
+        true_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+        pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
+        pred_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
         tolerance (float, optional): Tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
         relative (bool, optional): Flag to use a relative measure. Defaults to True.
         batch_idx (int): Batch index.
 
     Returns:
-        th.tensor: 2d binary matrix
+        th.Tensor: 2d binary matrix
 	"""
 
 	b_true_mask = (true_batch_idxs==batch_idx)
@@ -485,27 +485,27 @@ def match_mz_for_batch_idx(true_mzs:th.tensor,
 	return b_true_match
 
 def calculate_recall(
-		true_mzs:th.tensor,
-		true_batch_idxs:th.tensor,
-		pred_mzs:th.tensor,
-		pred_batch_idxs:th.tensor,
+		true_mzs:th.Tensor,
+		true_batch_idxs:th.Tensor,
+		pred_mzs:th.Tensor,
+		pred_batch_idxs:th.Tensor,
 		tolerance:float=1e-5,
 		relative:bool=True,
-	) -> th.tensor:
+	) -> th.Tensor:
 	"""  
 	Calculate m/z recall between two m/z lists.
 
 	Note: it is  caller's repsonse to filter ultra low peaks
 
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
-        true_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
-        pred_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+		true_mzs (th.Tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
+        true_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
+        pred_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
 		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): flag to use relative measure. Defaults to True.
 	Returns:
-		th.tensor: recalls
+		th.Tensor: recalls
 	"""
 	batch_size = th.max(true_batch_idxs)+1
 	recall = th.zeros([batch_size],device=true_mzs.device,dtype=th.float)
@@ -526,29 +526,29 @@ def calculate_recall(
 
 
 def calculate_weighted_recall(
-		true_mzs:th.tensor,
-		true_ints:th.tensor,
-		true_batch_idxs:th.tensor,
-		pred_mzs:th.tensor,
-		pred_ints:th.tensor,
-		pred_batch_idxs:th.tensor,
+		true_mzs:th.Tensor,
+		true_ints:th.Tensor,
+		true_batch_idxs:th.Tensor,
+		pred_mzs:th.Tensor,
+		pred_ints:th.Tensor,
+		pred_batch_idxs:th.Tensor,
 		tolerance:float=1e-5,
 		relative:bool=True
-	) -> th.tensor:
+	) -> th.Tensor:
 	""" calculate  m/z recall weighted by ground truth ints between two spectra
 		Note: it is  caller's repsonse to filter ultra low peaks
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
-        true_ints (th.tensor): ground truth intensities
-		true_ints (th.tensor): 1d flat tensor of true intensities, each row is an intensities array, should be the same size as mz tensor
-		true_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
-        pred_ints (th.tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-		pred_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+		true_mzs (th.Tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
+        true_ints (th.Tensor): ground truth intensities
+		true_ints (th.Tensor): 1d flat tensor of true intensities, each row is an intensities array, should be the same size as mz tensor
+		true_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
+        pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
+		pred_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
 		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): flag to use relative measure. Defaults to True.
 	Returns:
-		th.tensor: weighted recalls
+		th.Tensor: weighted recalls
 	"""
 
 	batch_size = th.max(true_batch_idxs)+1
@@ -568,24 +568,24 @@ def calculate_weighted_recall(
 	return weighted_recall
 
 def calculate_precision(
-	true_mzs:th.tensor, 
-	true_batch_idxs:th.tensor,
-	pred_mzs:th.tensor,
-	pred_batch_idxs:th.tensor,
+	true_mzs:th.Tensor, 
+	true_batch_idxs:th.Tensor,
+	pred_mzs:th.Tensor,
+	pred_batch_idxs:th.Tensor,
 	tolerance:float=1e-5,
 	relative:bool=True,
-)	-> th.tensor:
+)	-> th.Tensor:
 	""" calculate m/z precision between two m/z lists
 		Note: it is  caller's repsonse to filter ultra low peaks
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
-        true_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
-        pred_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+		true_mzs (th.Tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
+        true_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
+        pred_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
 		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): flag to use relative measure. Defaults to True.
 	Returns:
-		th.tensor: precisions
+		th.Tensor: precisions
 	"""
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
@@ -607,29 +607,29 @@ def calculate_precision(
 	return precision
 
 def calculate_weighted_precision(
-		true_mzs:th.tensor,
-		true_ints:th.tensor,
-		true_batch_idxs:th.tensor,
-		pred_mzs:th.tensor,
-		pred_ints:th.tensor,
-		pred_batch_idxs:th.tensor,
+		true_mzs:th.Tensor,
+		true_ints:th.Tensor,
+		true_batch_idxs:th.Tensor,
+		pred_mzs:th.Tensor,
+		pred_ints:th.Tensor,
+		pred_batch_idxs:th.Tensor,
 		tolerance:float=1e-5,
 		relative:bool=True
 	):
 	""" calculate  m/z precision weighted by ground truth ints between two spectra
 		Note: it is  caller's repsonse to filter ultra low peaks
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
-        true_ints (th.tensor): ground truth intensities
-		true_ints (th.tensor): 1d flat tensor of true intensities, each row is an intensities array, should be the same size as mz tensor
-		true_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
-        pred_ints (th.tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-		pred_batch_idxs (th.tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+		true_mzs (th.Tensor): 1d flat tensor of true m/zs; multiple m/z lists are concatenated.  
+        true_ints (th.Tensor): ground truth intensities
+		true_ints (th.Tensor): 1d flat tensor of true intensities, each row is an intensities array, should be the same size as mz tensor
+		true_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs; multiple m/z lists are concatenated.  
+        pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
+		pred_batch_idxs (th.Tensor): 1d flat tensor of batch indices; each cell, batch_idxs[i] indicates the batch index for mzs[i] and ints[i], should be the same size as mz tensor.  
 		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): flag to use relative measure. Defaults to True.e.
 	Returns:
-		th.tensor: recalls
+		th.Tensor: recalls
 	"""
 	batch_size = th.max(true_batch_idxs)+1
 	weighted_precision = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
@@ -649,10 +649,10 @@ def calculate_weighted_precision(
 	return weighted_precision
 
 def calculate_dice(
-		true_mzs:th.tensor, 
-		true_batch_idxs:th.tensor,
-		pred_mzs:th.tensor,
-		pred_batch_idxs:th.tensor,
+		true_mzs:th.Tensor, 
+		true_batch_idxs:th.Tensor,
+		pred_mzs:th.Tensor,
+		pred_batch_idxs:th.Tensor,
 		tolerance:float=1e-5,
 		relative:bool=True,
 	):
@@ -660,14 +660,14 @@ def calculate_dice(
 		Note: since we can have mulitple matches, this is usinge total_macthed from both m/z list / total_m/z
 		Note: it is caller's repsonse to filter ultra low peaks
 	Args:
-		true_mzs (th.tensor): ground truth m/z s
-		true_batch_idxs (th.tensor): batch idxs for ground truth
-		pred_mzs (th.tensor): predicted m/z s
-		pred_batch_idxs (th.tensor): batch idxs for prediction
+		true_mzs (th.Tensor): ground truth m/z s
+		true_batch_idxs (th.Tensor): batch idxs for ground truth
+		pred_mzs (th.Tensor): predicted m/z s
+		pred_batch_idxs (th.Tensor): batch idxs for prediction
 		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): flag to use relative measure. Defaults to True.
 	Returns:
-		th.tensor: dices
+		th.Tensor: dices
 	"""
 	batch_size = th.max(true_batch_idxs)+1
 	dice = th.zeros([batch_size],device=true_mzs.device,dtype=true_mzs.dtype)
@@ -690,33 +690,33 @@ def calculate_dice(
 	return dice
 
 def calculate_ndcg_hungarian(
-	true_mzs:th.tensor, 
-	true_ints:th.tensor,
-	true_batch_idxs:th.tensor,
-	pred_mzs:th.tensor,
-	pred_ints:th.tensor,
-	pred_batch_idxs:th.tensor,
+	true_mzs:th.Tensor, 
+	true_ints:th.Tensor,
+	true_batch_idxs:th.Tensor,
+	pred_mzs:th.Tensor,
+	pred_ints:th.Tensor,
+	pred_batch_idxs:th.Tensor,
 	tolerance:float=1e-5,
 	relative:bool=True,
 	sum_ints:bool=True,
 	union:bool=False,
 	optimistic:bool=True
-	) -> th.tensor:
+	) -> th.Tensor:
 	"""calculate m/z Normalized Discounted Cumulative Gain between two peak list
 		WIP
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
-		true_ints (th.tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
-		true_batch_idxs (th.tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
-		pred_ints (th.tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-		pred_batch_idxs (th.tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
+		true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
+		true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
+		true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
+		pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
+		pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
 		tolerance (float, optional): tolerance, Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): flag to use relative match else use abs tolerance measured in Da. Defaults to True.
 		sum_ints (bool, optional): flag to get summed intesnities in aggregate, else get max. Defaults to True.
 
 	Returns:
-		th.tensor:  Normalized Discounted Cumulative Gain
+		th.Tensor:  Normalized Discounted Cumulative Gain
 	"""
 	# round peaks
 	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
@@ -829,33 +829,33 @@ def calculate_ndcg_hungarian(
 
 # cosine similarity code ... all of them
 def calculate_cosine_similarity(
-		true_mzs:th.tensor,
-		true_ints:th.tensor,
-		true_batch_idxs:th.tensor,
-		pred_mzs:th.tensor,
-		pred_ints:th.tensor,
-		pred_batch_idxs:th.tensor,
+		true_mzs:th.Tensor,
+		true_ints:th.Tensor,
+		true_batch_idxs:th.Tensor,
+		pred_mzs:th.Tensor,
+		pred_ints:th.Tensor,
+		pred_batch_idxs:th.Tensor,
 		mz_max:float=1500.,
 		mz_bin_res:float=0.01,
 		sum_ints:bool=True,
 		remove_prec_peaks:bool=False,
-		true_prec_mzs:th.tensor=None,
-	) -> th.tensor:
+		true_prec_mzs:th.Tensor=None,
+	) -> th.Tensor:
 	"""calculate cosine similarity using binned spectra
 
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
-		true_ints (th.tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
-		true_batch_idxs (th.tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
-		pred_ints (th.tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-		pred_batch_idxs (th.tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
+		true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
+		true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
+		true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
+		pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
+		pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
 		mz_max (float, optional): max mz. Defaults to 1500.
 		mz_bin_res (float, optional): bin size measured in Da. Defaults to 0.01.
 		sum_ints (bool, optional): flag to get sum intensities in the same bin else use max. Defaults to True.
 
 	Returns:
-		th.tensor: cosine similarity using binned spectra
+		th.Tensor: cosine similarity using binned spectra
 	"""
 	true_spec = batched_bin_func(
 		true_mzs,
@@ -883,34 +883,34 @@ def calculate_cosine_similarity(
 	return cos_sims
 
 def calculate_optimal_cosine_similarity(
-		true_mzs:th.tensor,
-		true_ints:th.tensor,
-		true_batch_idxs:th.tensor,
-		pred_mzs:th.tensor,
-		pred_ints:th.tensor,
-		pred_batch_idxs:th.tensor,
+		true_mzs:th.Tensor,
+		true_ints:th.Tensor,
+		true_batch_idxs:th.Tensor,
+		pred_mzs:th.Tensor,
+		pred_ints:th.Tensor,
+		pred_batch_idxs:th.Tensor,
 		mz_max=1500.,
 		mz_bin_res=0.01,
 		sum_ints=True
-	) -> th.tensor:
+	) -> th.Tensor:
 	""" 
 	Calculate the optimal cosine similarity using binned spectra, 
 	Assuming all intensities are correctly predicted for m/z s appeared both in predicted and true spectrum,
 	Using predicted intensities if m/z s are not in true spectrum.
 	
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
-		true_ints (th.tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
-		true_batch_idxs (th.tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
-		pred_ints (th.tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-		pred_batch_idxs (th.tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
+		true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
+		true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
+		true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
+		pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
+		pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
 		mz_max (float, optional): max mz. Defaults to 1500.
 		mz_bin_res (float, optional): bin size measured in Da. Defaults to 0.01.
 		sum_ints (bool, optional): flag to get sum intensities in the same bin else use max. Defaults to True.
 
 	Returns:
-		th.tensor: optimal cosine similarity
+		th.Tensor: optimal cosine similarity
 	"""
 
 	true_spec = batched_bin_func(
@@ -935,34 +935,34 @@ def calculate_optimal_cosine_similarity(
 	return opt_cos_sims
 
 def calculate_sparse_cosine_similarity(
-		true_mzs:th.tensor,
-		true_ints:th.tensor,
-		true_batch_idxs:th.tensor,
-		pred_mzs:th.tensor,
-		pred_ints:th.tensor,
-		pred_batch_idxs:th.tensor,
+		true_mzs:th.Tensor,
+		true_ints:th.Tensor,
+		true_batch_idxs:th.Tensor,
+		pred_mzs:th.Tensor,
+		pred_ints:th.Tensor,
+		pred_batch_idxs:th.Tensor,
 		mz_max:float=1500.,
 		mz_bin_res:float=0.01,
 		sum_ints:bool=True,
 		remove_prec_peaks:bool=False,
-		true_prec_mzs:th.tensor=None,
-	) -> th.tensor:
+		true_prec_mzs:th.Tensor=None,
+	) -> th.Tensor:
 	"""
 	Calculate the cosine similarity using binned spectra and sparse methods,
 
 	Args:
-		true_mzs (th.tensor): _description_
-		true_ints (th.tensor): _description_
-		true_batch_idxs (th.tensor): _description_
-		pred_mzs (th.tensor): _description_
-		pred_ints (th.tensor): _description_
-		pred_batch_idxs (th.tensor): _description_
+		true_mzs (th.Tensor): _description_
+		true_ints (th.Tensor): _description_
+		true_batch_idxs (th.Tensor): _description_
+		pred_mzs (th.Tensor): _description_
+		pred_ints (th.Tensor): _description_
+		pred_batch_idxs (th.Tensor): _description_
 		mz_max (float, optional): _description_. Defaults to 1500..
 		mz_bin_res (float, optional): _description_. Defaults to 0.01.
 		sum_ints (bool, optional): _description_. Defaults to True.
 
 	Returns:
-		th.tensor: cosine similarity
+		th.Tensor: cosine similarity
 	"""
 
 	# sparse bin
@@ -1009,25 +1009,25 @@ def calculate_optimal_sparse_cosine_similarity(
 		mz_max=1500.,
 		mz_bin_res=0.01,
 		sum_ints=True
-	) -> th.tensor:
+	) -> th.Tensor:
 	"""	
 	Calculate the optimal cosine similarity using binned spectra and sparse methods, 
 	Assuming all intensities are correctly predicted for m/z s appeared both in predicted and true spectrum,
 	Using predicted intensities if m/z s are not in true spectrum.
 
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
-		true_ints (th.tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
-		true_batch_idxs (th.tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
-		pred_ints (th.tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-		pred_batch_idxs (th.tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
+		true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
+		true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
+		true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
+		pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
+		pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
 		mz_max (_type_, optional): _description_. Defaults to 1500Da.
 		mz_bin_res (float, optional): _description_. Defaults to 0.01.
 		sum_ints (bool, optional): _description_. Defaults to True.
 
 	Returns:
-		th.tensor: optimal cosine similarity
+		th.Tensor: optimal cosine similarity
 	"""
 	# sparse bin
 	true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
@@ -1152,33 +1152,33 @@ def batched_mf100_normalize(ints, batch_idxs):
 	return ints
 
 def calculate_sparse_cosine_hungarian(
-	true_mzs:th.tensor, 
-	true_ints:th.tensor,
-	true_batch_idxs:th.tensor,
-	pred_mzs:th.tensor,
-	pred_ints:th.tensor,
-	pred_batch_idxs:th.tensor,
+	true_mzs:th.Tensor, 
+	true_ints:th.Tensor,
+	true_batch_idxs:th.Tensor,
+	pred_mzs:th.Tensor,
+	pred_ints:th.Tensor,
+	pred_batch_idxs:th.Tensor,
 	tolerance:float=1e-5,
 	relative:bool=True,
 	sum_ints:bool=True,
 	remove_prec_peaks:bool=False,
-	true_prec_mzs:th.tensor=None,
-	) -> th.tensor:
+	true_prec_mzs:th.Tensor=None,
+	) -> th.Tensor:
 	""" Calculate cosine similarity using the Hungarian algorithm as the matching method.
 
 	Args:
-		true_mzs (th.tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
-		true_ints (th.tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
-		true_batch_idxs (th.tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
-		pred_mzs (th.tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
-		pred_ints (th.tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-		pred_batch_idxs (th.tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
+		true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
+		true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
+		true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
+		pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
+		pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
 		tolerance (float):
 		relative (bool, optional): flag to use relative match else use abs tolerance measured in Da. Defaults to True.
 		sum_ints (bool, optional): flag to get summed intesnities in aggregate, else get max. Defaults to True.
 
 	Returns:
-		th.tensor: cosine similarity tensor, one per pair 
+		th.Tensor: cosine similarity tensor, one per pair 
 	"""
 	# round peaks
 	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
@@ -1242,13 +1242,13 @@ def calculate_sparse_cosine_hungarian(
 		cos_hun[batch_idx] = b_cos_hun
 	return cos_hun
 
-def round_aggregate_peaks(mzs:th.tensor, ints:th.tensor, batch_idxs:th.tensor,decimals:int=4,sum_ints:bool=True) -> Tuple[th.Tensor,th.Tensor,th.Tensor]:
+def round_aggregate_peaks(mzs:th.Tensor, ints:th.Tensor, batch_idxs:th.Tensor,decimals:int=4,sum_ints:bool=True) -> Tuple[th.Tensor,th.Tensor,th.Tensor]:
 	""" methds to round and aggreate peaks to give decimals points
 
 	Args:
-		mzs (th.tensor): 1d flat tensor of m/zs, each row is an m/z array 
-		ints (th.tensor): 1d flat tensor of intensities, each row is an intensities array, should be the same size as mz tensor
-		batch_idxs (th.tensor): 1d flat tensor of batch indices, each cell, batch_idxs[i] indicates batch index for mzs[i] and ints[i], should be the same size as mz tensor
+		mzs (th.Tensor): 1d flat tensor of m/zs, each row is an m/z array 
+		ints (th.Tensor): 1d flat tensor of intensities, each row is an intensities array, should be the same size as mz tensor
+		batch_idxs (th.Tensor): 1d flat tensor of batch indices, each cell, batch_idxs[i] indicates batch index for mzs[i] and ints[i], should be the same size as mz tensor
 		decimals (int, optional): Decimals. Defaults to 4.
 		sum_ints (bool, optional): Flag to sum intensities if True. Defaults to True.
 	Returns:
