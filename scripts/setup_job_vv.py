@@ -173,7 +173,7 @@ if __name__ == "__main__":
 	parser.add_argument("--time", type=int, default=-1, help="time in hours (-1 means use default)")
 	parser.add_argument("--gpu_type", type=str, default="t4", choices=["t4","rtx6000","a40"])
 	parser.add_argument("--qos", type=str, default="normal", choices=["normal","m","m2","m3","long","high","deadline","affiliate","cpu_qos"])
-	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU3")
+	parser.add_argument("--env", type=str, default="FRAG-GNN-GPU4")
 	parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument("--job_id", type=int, required=False, help="job_id (-1 means use the slurm job id)")
