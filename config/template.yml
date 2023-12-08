@@ -152,6 +152,8 @@ eval_mz_bin_res:
 - 0.1
 - 0.01
 - 0.005
+eval_sqrt: True
+eval_remove_prec_peaks: True
 sum_ints: True
 ints_transform: none
 train_batch_size: 16

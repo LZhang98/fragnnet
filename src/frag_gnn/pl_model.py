@@ -121,8 +121,14 @@ class SpectrumPL(pl.LightningModule):
 					)
 					return cos_sim
 				return _cos_sim
-			for remove_prec_peak in [True, False]:
-				for sqrt in [True, False]:
+			sqrt_flags = [False]
+			if self.hparams.eval_sqrt:
+				sqrt_flags.append(True)
+			remove_prec_peak_flags = [False]
+			if self.hparams.eval_remove_prec_peaks:
+				remove_prec_peak_flags.append(True)
+			for remove_prec_peak in remove_prec_peak_flags:
+				for sqrt in sqrt_flags:
 					for mz_bin_res in self.hparams.eval_mz_bin_res:
 						fname_base = "cos_sim"
 						if sqrt:
@@ -282,8 +288,14 @@ class SpectrumPL(pl.LightningModule):
 					)
 					return cos_hun
 				return _cos_hun
-			for remove_prec_peak in [True, False]:
-				for sqrt in [True, False]:
+			sqrt_flags = [False]
+			if self.hparams.eval_sqrt:
+				sqrt_flags.append(True)
+			remove_prec_peak_flags = [False]
+			if self.hparams.eval_remove_prec_peaks:
+				remove_prec_peak_flags.append(True)
+			for remove_prec_peak in remove_prec_peak_flags:
+				for sqrt in sqrt_flags:
 					fname_base = "cos_hun"
 					if sqrt:
 						fname_base += "_sqrt"

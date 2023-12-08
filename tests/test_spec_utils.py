@@ -333,3 +333,17 @@ def round_aggregate_peaks_test():
     th.testing.assert_close(except_r_mzs, r_mzs)
     th.testing.assert_close(except_r_ints, r_ints)
     th.testing.assert_close(except_r_batch_idxs, r_batch_idxs)
+
+def jensen_hungarian_test():
+
+    p_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    p_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
+    p_batch_idxs = th.tensor([0, 0, 0, 0])
+
+    t_mzs = th.tensor([0.1, 0.201, 0.305, 0.306])
+    t_ints = th.tensor([0.1, 0.2, 0.3, 0.4])
+    t_batch_idxs = th.tensor([0, 0, 0, 0])
+
+    js = calculate_sparse_jensen_hungarian(
+        t_mzs, t_ints, t_batch_idxs, p_mzs, p_ints, p_batch_idxs)
+    th.testing.assert_close(js, th.tensor([1.0]))

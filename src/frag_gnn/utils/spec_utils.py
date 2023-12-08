@@ -524,7 +524,6 @@ def calculate_recall(
 		recall[b] = b_recall
 	return recall
 
-
 def calculate_weighted_recall(
 		true_mzs:th.Tensor,
 		true_ints:th.Tensor,
@@ -1285,3 +1284,169 @@ def scipy_linear_sum_assignment(matrix, maximize=False):
 	x_idx = th.as_tensor(x_idx,dtype=th.long,device=device)
 	y_idx = th.as_tensor(y_idx,dtype=th.long,device=device)
 	return x_idx, y_idx
+
+
+def calculate_union_distribution(
+	true_mzs:th.Tensor, 
+	true_ints:th.Tensor,
+	true_batch_idxs:th.Tensor,
+	pred_mzs:th.Tensor,
+	pred_ints:th.Tensor,
+	pred_batch_idxs:th.Tensor,
+	tolerance:float=1e-5,
+	relative:bool=True,
+	sum_ints:bool=True,
+	) -> th.Tensor:
+
+	# round peaks
+	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		sum_ints=sum_ints
+	)
+	pred_mzs, pred_ints, pred_batch_idxs = round_aggregate_peaks(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		sum_ints=sum_ints
+	)
+	# calculate
+	batch_size = th.max(true_batch_idxs)+1
+	union_mzs, union_ints, union_batch_idxs = [], [], []
+	for batch_idx in range(batch_size):
+		b_true_mask = (true_batch_idxs==batch_idx)
+		b_pred_mask = (pred_batch_idxs==batch_idx)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_ints = true_ints[b_true_mask]
+		b_pred_ints = pred_ints[b_pred_mask]
+		# l1 normalize
+		b_true_ints = F.normalize(b_true_ints,p=1,dim=0)
+		b_pred_ints = F.normalize(b_pred_ints,p=1,dim=0)
+		b_match_mzs = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
+		b_true_match_mzs = th.any(b_match_mzs,dim=1)
+		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
+			b_true_ints[b_true_match_mzs].unsqueeze(1) + b_pred_ints[b_pred_match_mzs].unsqueeze(0)
+		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+		# combine the matches with the ones that didn't match
+		# for the matches, take the average mz
+		b_union_mzs = th.cat(
+			[
+				b_true_mzs[~b_true_match_mzs],
+				b_pred_mzs[~b_pred_match_mzs],
+				0.5*(b_true_mzs[b_true_match_mzs][b_true_idxs]+b_pred_mzs[b_pred_match_mzs][b_pred_idxs])
+			],dim=0
+		)
+		b_union_ints = th.cat(
+			[
+				0.5*b_true_ints[~b_true_match_mzs],
+				0.5*b_pred_ints[~b_pred_match_mzs],
+				0.5*b_score[b_true_idxs,b_pred_idxs]
+			],dim=0
+		)
+		b_union_as = th.argsort(b_union_mzs)
+		b_union_mzs = b_union_mzs[b_union_as]
+		b_union_ints = F.normalize(b_union_ints[b_union_as],p=1,dim=0)
+		b_union_batch_idxs = th.full_like(b_union_mzs,batch_idx,dtype=true_batch_idxs.dtype)
+		union_mzs.append(b_union_mzs)
+		union_ints.append(b_union_ints)
+		union_batch_idxs.append(b_union_batch_idxs)
+	return union_mzs, union_ints, union_batch_idxs
+
+def calculate_sparse_jensen_hungarian(
+	true_mzs:th.Tensor, 
+	true_ints:th.Tensor,
+	true_batch_idxs:th.Tensor,
+	pred_mzs:th.Tensor,
+	pred_ints:th.Tensor,
+	pred_batch_idxs:th.Tensor,
+	tolerance:float=1e-5,
+	relative:bool=True,
+	sum_ints:bool=True,
+	remove_prec_peaks:bool=False,
+	true_prec_mzs:th.Tensor=None,
+	) -> th.Tensor:
+
+	# round peaks
+	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		sum_ints=sum_ints
+	)
+	pred_mzs, pred_ints, pred_batch_idxs = round_aggregate_peaks(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		sum_ints=sum_ints
+	)
+	# calculate
+	batch_size = th.max(true_batch_idxs)+1
+	jensen_hun = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for batch_idx in range(batch_size):
+		b_true_mask = (true_batch_idxs==batch_idx)
+		b_pred_mask = (pred_batch_idxs==batch_idx)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_ints = true_ints[b_true_mask]
+		b_pred_ints = pred_ints[b_pred_mask]
+		# l1 normalize
+		b_true_ints = F.normalize(b_true_ints,p=1,dim=0)
+		b_pred_ints = F.normalize(b_pred_ints,p=1,dim=0)
+		b_match_mzs = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
+		b_true_match_mzs = th.any(b_match_mzs,dim=1)
+		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+		b_score = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs] * \
+			b_true_ints[b_true_match_mzs].unsqueeze(1) + b_pred_ints[b_pred_match_mzs].unsqueeze(0)
+		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+		b_union_ints = th.cat(
+			[
+				0.5*b_true_ints[~b_true_match_mzs],
+				0.5*b_pred_ints[~b_pred_match_mzs],
+				0.5*b_score[b_true_idxs,b_pred_idxs]
+			],dim=0
+		)
+		b_union_ints = F.normalize(b_union_ints,p=1,dim=0)
+		b_true_range = (0,(~b_true_match_mzs).long().sum())
+		b_pred_range = (b_true_range[1],b_true_range[1]+(~b_pred_match_mzs).long().sum())
+		b_kl1_true_probs = th.cat(
+			[
+				b_true_ints[~b_true_match_mzs],
+				b_true_ints[b_true_match_mzs][b_true_idxs]
+			],dim=0
+		)
+		b_kl1_union_probs = th.cat(
+			[
+				b_union_ints[b_true_range[0]:b_true_range[1]],
+				b_union_ints[b_pred_range[1]:]
+			],dim=0
+		)
+		b_kl1 = th.sum(b_kl1_true_probs*(safelog(b_kl1_true_probs)-safelog(b_kl1_union_probs)), dim=0)
+		b_kl2_pred_probs = th.cat(
+			[
+				b_pred_ints[~b_pred_match_mzs],
+				b_pred_ints[b_pred_match_mzs][b_pred_idxs]
+			],dim=0
+		)
+		b_kl2_union_probs = th.cat(
+			[
+				b_union_ints[b_pred_range[0]:b_pred_range[1]],
+				b_union_ints[b_pred_range[1]:]
+			],dim=0
+		)
+		b_kl2 = th.sum(b_kl2_pred_probs*(safelog(b_kl2_pred_probs)-safelog(b_kl2_union_probs)), dim=0)
+		b_jensen = 0.5*(b_kl1+b_kl2)
+		jensen_hun[batch_idx] = b_jensen
+	return jensen_hun
