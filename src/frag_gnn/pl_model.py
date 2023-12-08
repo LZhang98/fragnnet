@@ -505,7 +505,6 @@ class SpectrumPL(pl.LightningModule):
 		spec_per_group = batch["spec_per_group"]
 		spec_per_mol = batch["spec_per_mol"]
 		group_per_mol = batch["group_per_mol"]
-		print(true_prec_mzs.shape)
 		true_mzs, true_logprobs, true_batch_idxs = self._preproc_spec(
 			true_mzs,
 			true_ints,
