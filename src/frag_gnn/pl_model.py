@@ -17,13 +17,8 @@ import torch._dynamo as th_dynamo
 from frag_gnn.utils.nn_utils import build_lr_scheduler
 from frag_gnn.model import FragGNNModel, NeimsModel
 from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn
-from frag_gnn.utils.spec_utils import batched_filter_func, batched_bin_func, calculate_cosine_similarity, \
-	calculate_sparse_cosine_similarity, calculate_optimal_cosine_similarity, calculate_optimal_sparse_cosine_similarity, \
-	get_ints_transform_func, get_ints_untransform_func, batched_l1_normalize, calculate_recall, calculate_weighted_recall, \
-	binned_cosine_similarity, calculate_sparse_cosine_hungarian, calculate_ndcg_hungarian, calculate_precision, calculate_dice
-from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_reduce, scatter_logsumexp, to_cpu
-from frag_gnn.utils.frag_utils import NUM_ELEMENTS
-from frag_gnn.utils.spec_utils import MZ_MAX, MZ_BIN_RES, INTS_THRESH
+from frag_gnn.utils.spec_utils import *
+from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_logsumexp, to_cpu, scatter_l1normalize
 from frag_gnn.utils.plot_utils import plot_spectra_sparse
 
 
@@ -77,320 +72,429 @@ class SpectrumPL(pl.LightningModule):
 
 		# setup metrics
 		self.metric_min_max = {"loss": "min"}
-		self.metric_fns = {}
 		self.metric_bests = ["loss"]
+		for k in self.metric_names:
+			if k not in self.metric_min_max:
+				self.metric_min_max[k] = None
+		self.auxiliary_metric_names = set()
+
+		bin_sqrt_flags = [False]
+		if self.hparams.eval_bin_sqrt:
+			bin_sqrt_flags.append(True)
+		bin_remove_prec_peak_flags = [False]
+		if self.hparams.eval_bin_remove_prec_peaks:
+			bin_remove_prec_peak_flags.append(True)
+		hun_sqrt_flags = [False]
+		if self.hparams.eval_hun_sqrt:
+			hun_sqrt_flags.append(True)
+		hun_remove_prec_peak_flags = [False]
+		if self.hparams.eval_hun_remove_prec_peaks:
+			hun_remove_prec_peak_flags.append(True)
 		
-		# measure cos sim between predicted and ground truth
-		if "cos_sim" in self.hparams.auxiliary_scores:
-			def get_cos_sim(sqrt,remove_prec_peak,mz_bin_res):
-				if self.hparams.sparse_cosine_similarity:
-					cosine_similarity_fn = calculate_sparse_cosine_similarity
-				else:
-					cosine_similarity_fn = calculate_cosine_similarity
-				if sqrt:
-					ints_transform_fn = get_ints_transform_func("sqrt")
-				else:
-					ints_transform_fn = get_ints_transform_func("none")
-				def _cos_sim(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					true_prec_mzs,
-					**kwargs):
-					# untransform
-					true_ints = self.ints_untransform_func(true_ints)
-					pred_ints = self.ints_untransform_func(pred_ints)
-					true_ints = ints_transform_fn(true_ints)
-					pred_ints = ints_transform_fn(pred_ints)
-					# calculate
-					cos_sim = cosine_similarity_fn(
-						true_mzs,
-						true_ints,
-						true_batch_idxs,
-						pred_mzs,
-						pred_ints,
-						pred_batch_idxs,
-						mz_bin_res=mz_bin_res,
-						mz_max=self.hparams.mz_max,
-						sum_ints=self.hparams.sum_ints,
-						remove_prec_peaks=remove_prec_peak,
-						true_prec_mzs=true_prec_mzs
-					)
-					return cos_sim
-				return _cos_sim
-			sqrt_flags = [False]
-			if self.hparams.eval_sqrt:
-				sqrt_flags.append(True)
-			remove_prec_peak_flags = [False]
-			if self.hparams.eval_remove_prec_peaks:
-				remove_prec_peak_flags.append(True)
-			for remove_prec_peak in remove_prec_peak_flags:
-				for sqrt in sqrt_flags:
-					for mz_bin_res in self.hparams.eval_mz_bin_res:
-						fname_base = "cos_sim"
+		eval_mz_bin_reses = self.hparams.eval_mz_bin_res
+
+		assert self.hparams.sparse_cosine_similarity
+		compute_match_mzs = False
+		compute_rounded_match_mzs = False
+		compute_bin_specs = False
+		compute_entropies = False
+
+		for metric_name in self.hparams.auxiliary_scores:
+			if metric_name == "cos_sim":
+				for remove_prec_peak in bin_remove_prec_peak_flags:
+					for sqrt in bin_sqrt_flags:
+						for mz_bin_res in eval_mz_bin_reses:
+							fname_base = "cos_sim"
+							if sqrt:
+								fname_base += "_sqrt"
+							if remove_prec_peak:
+								fname_base += "_np"
+							fname = f"{fname_base}_{mz_bin_res}"
+							self.metric_min_max[fname] = "max"
+							self.metric_bests.append(fname)
+							self.auxiliary_metric_names.add(fname)
+					compute_bin_specs = True
+			elif metric_name == "js":
+				for remove_prec_peak in bin_remove_prec_peak_flags:
+					for sqrt in bin_sqrt_flags:
+						for mz_bin_res in eval_mz_bin_reses:
+							fname_base = "js"
+							if sqrt:
+								fname_base += "_sqrt"
+							if remove_prec_peak:
+								fname_base += "_np"
+							fname = f"{fname_base}_{mz_bin_res}"
+							self.metric_min_max[fname] = "min"
+							self.metric_bests.append(fname)
+							self.auxiliary_metric_names.add(fname)
+			elif metric_name == "recall":
+				self.metric_min_max["recall"] = "max"
+				self.auxiliary_metric_names.add("recall")
+				compute_match_mzs = True
+			elif metric_name == "wrecall":
+				self.metric_min_max["wrecall"] = "max"
+				self.auxiliary_metric_names.add("wrecall")
+				compute_match_mzs = True
+			elif metric_name == "opt_cos_sim":
+				for remove_prec_peak in bin_remove_prec_peak_flags:
+					for sqrt in bin_sqrt_flags:
+						for mz_bin_res in eval_mz_bin_reses:
+							fname_base = "cos_sim"
+							if sqrt:
+								fname_base += "_sqrt"
+							if remove_prec_peak:
+								fname_base += "_np"
+							fname = f"{fname_base}_{mz_bin_res}"
+							self.metric_min_max[fname] = None
+							self.auxiliary_metric_names.add(fname)
+					compute_bin_specs = True
+			elif metric_name == "true_spec_e":
+				self.metric_min_max["true_spec_e"] = None
+				self.auxiliary_metric_names.add("true_spec_e")
+				compute_entropies = True
+			elif metric_name == "true_spec_ne":
+				self.metric_min_max["true_spec_ne"] = None
+				self.auxiliary_metric_names.add("true_spec_ne")
+				compute_entropies = True
+			elif metric_name == "cos_hun":
+				for remove_prec_peak in hun_remove_prec_peak_flags:
+					for sqrt in hun_sqrt_flags:
+						fname_base = "cos_hun"
 						if sqrt:
 							fname_base += "_sqrt"
 						if remove_prec_peak:
 							fname_base += "_np"
-						fname = f"{fname_base}_{mz_bin_res}"
-						self.metric_fns[fname] = get_cos_sim(sqrt,remove_prec_peak,mz_bin_res)
+						fname = f"{fname_base}"
 						self.metric_min_max[fname] = "max"
 						self.metric_bests.append(fname)
-
-		if "recall" in self.hparams.auxiliary_scores:
-			def _recall(
-				true_mzs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_batch_idxs,
-				**kwargs):
-				return calculate_recall(
-					true_mzs,
-					true_batch_idxs,
-					pred_mzs,
-					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
-				)
-			self.metric_fns["recall"] = _recall
-			self.metric_min_max["recall"] = "max"
-
-		if "wrecall" in self.hparams.auxiliary_scores:
-			def _wrecall(
-				true_mzs,
-				true_ints,
-				true_batch_idxs,
-				pred_mzs,
-				pred_ints,
-				pred_batch_idxs,
-				**kwargs):
-				# untransform
-				true_ints = self.ints_untransform_func(true_ints)
-				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
-				pred_ints = self.ints_untransform_func(pred_ints)
-				pred_ints = self.ints_normalize_func(pred_ints,pred_batch_idxs)
-				# calculate
-				return calculate_weighted_recall(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
-				)
-			self.metric_fns["wrecall"] = _wrecall
-			self.metric_min_max["wrecall"] = "max"
-		
-		# measure max possible cos sim between ground truth spectra and dag
-		# this gives us an upper bound for cos sim
-		if "opt_cos_sim" in self.hparams.auxiliary_scores:
-			def get_opt_cos_sim(mz_bin_res):
-				if self.hparams.sparse_cosine_similarity:
-					optimal_cosine_similarity_fn = calculate_optimal_sparse_cosine_similarity
-				else:
-					optimal_cosine_similarity_fn = calculate_optimal_cosine_similarity
-				def _opt_cos_sim(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					**kwargs):
-					# untransform
-					true_ints = self.ints_untransform_func(true_ints)
-					pred_ints = self.ints_untransform_func(pred_ints)
-					# calculate
-					opt_cos_sim = optimal_cosine_similarity_fn(
-						true_mzs,
-						true_ints,
-						true_batch_idxs,
-						pred_mzs,
-						pred_ints,
-						pred_batch_idxs,
-						mz_bin_res=mz_bin_res,
-						mz_max=self.hparams.mz_max,
-						sum_ints=self.hparams.sum_ints
-					)
-					return opt_cos_sim
-				return _opt_cos_sim
-			for mz_bin_res in self.hparams.eval_mz_bin_res:
-				self.metric_fns[f"opt_cos_sim_{mz_bin_res}"] = get_opt_cos_sim(mz_bin_res)
-				self.metric_min_max[f"opt_cos_sim_{mz_bin_res}"] = None
-		
-		if "true_spec_e" in self.hparams.auxiliary_scores:
-			def _true_spec_e(
-				true_ints,
-				true_batch_idxs,
-				**kwargs):
-				# untransform, normalize, log
-				true_ints = self.ints_untransform_func(true_ints)
-				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
-				true_log_probs = th.log(true_ints)
-				true_spec_e = sparse_entropy_fn(true_log_probs,true_batch_idxs)[0]
-				assert not th.isnan(true_spec_e).any(), true_spec_e
-				return true_spec_e
-			self.metric_fns["true_spec_e"] = _true_spec_e
-			self.metric_min_max["true_spec_e"] = None
-		
-		# measure normalized entropy
-		if "true_spec_ne" in self.hparams.auxiliary_scores:
-			def _true_spec_ne(
-				true_ints,
-				true_batch_idxs,
-				**kwargs):
-				# untransform, normalize, log
-				true_ints = self.ints_untransform_func(true_ints)
-				true_ints = self.ints_normalize_func(true_ints,true_batch_idxs)
-				true_log_probs = th.log(true_ints)
-				true_spec_ne = sparse_entropy_fn(true_log_probs,true_batch_idxs)[1]
-				assert not th.isnan(true_spec_ne).any(), true_spec_ne
-				return true_spec_ne
-			self.metric_fns["true_spec_ne"] = _true_spec_ne
-			self.metric_min_max["true_spec_ne"] = None
-
-		# cos sim using Hungarian algorithm
-		if "cos_hun" in self.hparams.auxiliary_scores:
-			def get_cos_hun(sqrt,remove_prec_peak):
-				if sqrt:
-					ints_transform_fn = get_ints_transform_func("sqrt")
-				else:
-					ints_transform_fn = get_ints_transform_func("none")
-				def _cos_hun(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					true_prec_mzs,
-					**kwargs):
-					# untransform
-					true_ints = ints_transform_fn(true_ints)
-					pred_ints = ints_transform_fn(pred_ints)
-					# calculate
-					cos_hun = calculate_sparse_cosine_hungarian(
-						true_mzs,
-						true_ints,
-						true_batch_idxs,
-						pred_mzs,
-						pred_ints,
-						pred_batch_idxs,
-						tolerance=self.tolerance,
-						relative=self.relative,
-						remove_prec_peaks=remove_prec_peak,
-						true_prec_mzs=true_prec_mzs
-					)
-					return cos_hun
-				return _cos_hun
-			sqrt_flags = [False]
-			if self.hparams.eval_sqrt:
-				sqrt_flags.append(True)
-			remove_prec_peak_flags = [False]
-			if self.hparams.eval_remove_prec_peaks:
-				remove_prec_peak_flags.append(True)
-			for remove_prec_peak in remove_prec_peak_flags:
-				for sqrt in sqrt_flags:
-					fname_base = "cos_hun"
-					if sqrt:
-						fname_base += "_sqrt"
-					if remove_prec_peak:
-						fname_base += "_np"
-					fname = f"{fname_base}"
-					self.metric_fns[fname] = get_cos_hun(sqrt,remove_prec_peak)
-					self.metric_min_max[fname] = "max"
-					self.metric_bests.append(fname)
-
-		# measure precision, recall, dice
-		# this requires some level of post processing
-		if "precision" in self.hparams.auxiliary_scores:
-			def _precision(
-				true_mzs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_batch_idxs,
-				**kwargs):
-				return calculate_precision(
-					true_mzs,
-					true_batch_idxs,
-					pred_mzs,
-					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
-				)
-			self.metric_fns["precision"] = _precision
-			self.metric_min_max["precision"] = "max"
-			self.metric_bests.append("precision")
-		
-		if "dice" in self.hparams.auxiliary_scores:
-			def _dice(
-				true_mzs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_batch_idxs,
-				**kwargs):
-				return calculate_dice(
-					true_mzs,
-					true_batch_idxs,
-					pred_mzs,
-					pred_batch_idxs,
-					tolerance=self.tolerance,
-					relative=self.relative
-				)
-			self.metric_fns["dice"] = _dice
-			self.metric_min_max["dice"] = "max"
-			self.metric_bests.append("dice")
-		
-		if "ndcg" in self.hparams.auxiliary_scores:
-			def get_ndcg(union,optimistic):
-				def _ndcg_hun(
-					true_mzs,
-					true_ints,
-					true_batch_idxs,
-					pred_mzs,
-					pred_ints,
-					pred_batch_idxs,
-					**kwargs):
-					# untransform
-					true_ints = self.ints_untransform_func(true_ints)
-					pred_ints = self.ints_untransform_func(pred_ints)
-					# calculate
-					ndcg_hun = calculate_ndcg_hungarian(
-						true_mzs,
-						true_ints,
-						true_batch_idxs,
-						pred_mzs,
-						pred_ints,
-						pred_batch_idxs,
-						tolerance=self.tolerance,
-						relative=self.relative,
-						union=union,
-						optimistic=optimistic
-					)
-					return ndcg_hun
-				return _ndcg_hun
-			for union in [True,False]:
-				if union:
-					fname = "ndcg_un"
-					tie_break_vals = [True,False]
-				else:
-					fname = "ndcg_int"
-					tie_break_vals = [True]
-				for optimistic in tie_break_vals:
+						self.auxiliary_metric_names.add(fname)
+				compute_rounded_match_mzs = True
+			elif metric_name == "precision":
+				self.metric_min_max["precision"] = "max"
+				self.metric_bests.append("precision")
+				self.auxiliary_metric_names.add("precision")
+				compute_match_mzs = True
+			# elif metric_name == "dice":
+			# 	self.metric_min_max["dice"] = "max"
+			# 	self.metric_bests.append("dice")
+			# 	compute_match_mzs = True
+			elif metric_name == "ndcg":
+				for union in [True,False]:
 					if union:
-						suffix = "_opt" if optimistic else "_pess"
+						fname_base = "ndcg_un"
+						tie_break_flags = [True,False]
 					else:
-						suffix = ""
-					self.metric_fns[fname+suffix] = get_ndcg(union,optimistic)
-					self.metric_min_max[fname+suffix] = "max"
-					self.metric_bests.append(fname+suffix)
+						fname_base = "ndcg_int"
+						tie_break_flags = [True]
+					for optimistic in tie_break_flags:
+						if union:
+							suffix = "_opt" if optimistic else "_pess"
+						else:
+							suffix = ""
+						fname = f"{fname_base}{suffix}"
+						self.metric_min_max[fname] = "max"
+						self.metric_bests.append(fname)
+						self.auxiliary_metric_names.add(fname)
+				compute_rounded_match_mzs = True
+			elif metric_name == "js_hun":
+				for remove_prec_peak in hun_remove_prec_peak_flags:
+					for sqrt in hun_sqrt_flags:
+						fname_base = "js_hun"
+						if sqrt:
+							fname_base += "_sqrt"
+						if remove_prec_peak:
+							fname_base += "_np"
+						fname = f"{fname_base}"
+						self.metric_min_max[fname] = "min"
+						self.metric_bests.append(fname)
+						self.auxiliary_metric_names.add(fname)
+				compute_rounded_match_mzs = True
 
-		self.metric_names.update(list(self.metric_min_max.keys()))
+		self.metric_names.update(self.auxiliary_metric_names)
+		# print(self.metric_names)
+		# print(self.auxiliary_metric_names)
+
+		def calculate_all_auxiliary_metrics(
+			true_mzs,
+			true_ints,
+			true_batch_idxs,
+			pred_mzs,
+			pred_ints,
+			pred_batch_idxs,
+			true_prec_mzs,
+			**kwargs):
+
+			batch_size = th.max(true_batch_idxs)+1
+			assert batch_size == th.max(pred_batch_idxs)+1, (batch_size, th.max(pred_batch_idxs)+1)
+
+			metric_d = {k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device) for k in self.auxiliary_metric_names}
+
+			# untransform
+			true_ints = self.ints_untransform_func(true_ints)
+			pred_ints = self.ints_untransform_func(pred_ints)
+
+			# global calculations
+
+			if compute_rounded_match_mzs:
+				true_mzs_r, true_ints_r, true_batch_idxs_r = round_aggregate_peaks(
+					true_mzs,
+					true_ints,
+					true_batch_idxs,
+					sum_ints=self.hparams.sum_ints
+				)
+				pred_mzs_r, pred_ints_r, pred_batch_idxs_r = round_aggregate_peaks(
+					pred_mzs,
+					pred_ints,
+					pred_batch_idxs,
+					sum_ints=self.hparams.sum_ints
+				)
+
+			if compute_bin_specs:
+				for remove_prec_peak in bin_remove_prec_peak_flags:
+					for sqrt in bin_sqrt_flags:
+						if sqrt:
+							ints_transform = get_ints_transform_func("sqrt")
+						else:
+							ints_transform = get_ints_transform_func("none")
+						for mz_bin_res in eval_mz_bin_reses:
+							true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
+								true_mzs,
+								ints_transform(true_ints),
+								true_batch_idxs,
+								mz_max=self.hparams.mz_max,
+								mz_bin_res=mz_bin_res,
+								sum_ints=self.hparams.sum_ints,
+								sparse=True,
+								remove_prec_peaks=remove_prec_peak,
+								prec_mzs=true_prec_mzs
+							)
+							pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
+								pred_mzs,
+								ints_transform(pred_ints),
+								pred_batch_idxs,
+								mz_max=self.hparams.mz_max,
+								mz_bin_res=mz_bin_res,
+								sum_ints=self.hparams.sum_ints,
+								sparse=True,
+								remove_prec_peaks=remove_prec_peak,
+								prec_mzs=true_prec_mzs
+							)
+							# print(mz_bin_res,sqrt,remove_prec_peak)
+							if "cos_sim" in self.hparams.auxiliary_scores:
+								fname_base = f"cos_sim"
+								if sqrt:
+									fname_base += "_sqrt"
+								if remove_prec_peak:
+									fname_base += "_np"
+								fname = f"{fname_base}_{mz_bin_res}"
+								cos_sim = cos_sim_helper(
+									true_bin_idxs,
+									true_bin_ints,
+									true_bin_batch_idxs,
+									pred_bin_idxs,
+									pred_bin_ints,
+									pred_bin_batch_idxs
+								)
+								# print(cos_sim)
+								metric_d[fname] = cos_sim
+							if "opt_cos_sim" in self.hparams.auxiliary_scores:
+								fname_base = f"opt_cos_sim"
+								if sqrt:
+									fname_base += "_sqrt"
+								if remove_prec_peak:
+									fname_base += "_np"
+								fname = f"{fname_base}_{mz_bin_res}"
+								opt_cos_sim = opt_cos_sim_helper(
+									true_bin_idxs,
+									true_bin_ints,
+									true_bin_batch_idxs,
+									pred_bin_idxs,
+									pred_bin_ints,
+									pred_bin_batch_idxs,
+								)
+								metric_d[fname] = opt_cos_sim
+							if "js" in self.hparams.auxiliary_scores:
+								fname_base = f"js"
+								if sqrt:
+									fname_base += "_sqrt"
+								if remove_prec_peak:
+									fname_base += "_np"
+								fname = f"{fname_base}_{mz_bin_res}"
+								js = js_helper(
+									true_bin_idxs,
+									true_bin_ints,
+									true_bin_batch_idxs,
+									pred_bin_idxs,
+									pred_bin_ints,
+									pred_bin_batch_idxs
+								)
+								metric_d[fname] = js
+
+			if compute_entropies:
+				true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs,dim=0))
+				true_spec_e, true_spec_ne = sparse_entropy_fn(true_log_probs,true_batch_idxs)
+				if "true_spec_e" in self.hparams.auxiliary_scores:
+					metric_d["true_spec_e"] = true_spec_e
+				if "true_spec_ne" in self.hparams.auxiliary_scores:
+					metric_d["true_spec_ne"] = true_spec_ne
+
+			# local calculations
+
+			for b_idx in range(batch_size):
+
+				b_true_mask = (true_batch_idxs==b_idx)
+				b_pred_mask = (pred_batch_idxs==b_idx)
+				b_true_mzs = true_mzs[b_true_mask]
+				b_pred_mzs = pred_mzs[b_pred_mask]
+				b_true_ints = true_ints[b_true_mask]
+				b_pred_ints = pred_ints[b_pred_mask]
+				# b_true_batch_idxs = true_batch_idxs[b_true_mask]
+				# b_pred_batch_idxs = pred_batch_idxs[b_pred_mask]
+				b_true_prec_mz = true_prec_mzs[b_idx:b_idx+1]
+				# b_true_prec_mask = calculate_match_mzs(
+				# 	b_true_mzs,
+				# 	b_true_prec_mz,
+				# 	tolerance=self.tolerance,
+				# 	relative=self.relative
+				# ).squeeze(1)
+				# b_pred_prec_mask = calculate_match_mzs(
+				# 	b_pred_mzs,
+				# 	b_true_prec_mz,
+				# 	tolerance=self.tolerance,
+				# 	relative=self.relative
+				# ).squeeze(1)
+
+				if compute_match_mzs:
+					b_match_mask = calculate_match_mzs(
+						b_true_mzs,
+						b_pred_mzs,
+						tolerance=self.tolerance,
+						relative=self.relative
+					)
+					b_true_match_mask = th.any(b_match_mask,dim=1)
+					b_pred_match_mask = th.any(b_match_mask,dim=0)
+
+				if compute_rounded_match_mzs:
+					b_true_mask_r = (true_batch_idxs_r==b_idx)
+					b_pred_mask_r = (pred_batch_idxs_r==b_idx)
+					b_true_mzs_r = true_mzs_r[b_true_mask_r]
+					b_pred_mzs_r = pred_mzs_r[b_pred_mask_r]
+					b_true_ints_r = true_ints_r[b_true_mask_r]
+					b_pred_ints_r = pred_ints_r[b_pred_mask_r]
+					# precursor
+					b_true_prec_mask_r = calculate_match_mzs(
+						b_true_mzs_r,
+						b_true_prec_mz,
+						tolerance=self.tolerance,
+						relative=self.relative
+					).squeeze(1)
+					b_pred_prec_mask_r = calculate_match_mzs(
+						b_pred_mzs_r,
+						b_true_prec_mz,
+						tolerance=self.tolerance,
+						relative=self.relative
+					).squeeze(1)
+					# match
+					b_match_mask_r = calculate_match_mzs(
+						b_true_mzs_r,
+						b_pred_mzs_r,
+						tolerance=self.tolerance,
+						relative=self.relative
+					)
+					b_true_match_mask_r = th.any(b_match_mask_r,dim=1)
+					b_pred_match_mask_r = th.any(b_match_mask_r,dim=0)
+					
+
+				if "recall" in self.hparams.auxiliary_scores:
+					b_recall = th.sum(b_true_match_mask.float()) / b_true_match_mask.shape[0]
+					metric_d["recall"][b_idx] = b_recall
+								
+				if "wrecall" in self.hparams.auxiliary_scores:
+					b_wrecall = th.sum(b_true_ints[b_true_match_mask]) / th.sum(b_true_ints)
+					metric_d["wrecall"][b_idx] = b_wrecall
+
+				if "precision" in self.hparams.auxiliary_scores:
+					b_precision = th.sum(b_pred_match_mask.float()) / b_pred_match_mask.shape[0]
+					metric_d["precision"][b_idx] = b_precision
+
+				if "cos_hun" in self.hparams.auxiliary_scores:
+					for remove_prec_peak in hun_remove_prec_peak_flags:
+						for sqrt in hun_sqrt_flags:
+							if sqrt:
+								ints_transform = get_ints_transform_func("sqrt")
+							else:
+								ints_transform = get_ints_transform_func("none")
+							b_cos_hun = cos_hun_helper(
+								ints_transform(b_true_ints_r),
+								ints_transform(b_pred_ints_r),
+								b_match_mask_r,
+								b_true_match_mask_r,
+								b_pred_match_mask_r,
+								remove_prec_peak,
+								b_true_prec_mask_r,
+								b_pred_prec_mask_r
+							)
+							fname_base = f"cos_hun"
+							if sqrt:
+								fname_base += "_sqrt"
+							if remove_prec_peak:
+								fname_base += "_np"
+							fname = f"{fname_base}"
+							metric_d[fname][b_idx] = b_cos_hun
+
+				if "ndcg" in self.hparams.auxiliary_scores:
+					for union in [True,False]:
+						if union:
+							fname_base = "ndcg_un"
+							tie_break_flags = [True,False]
+						else:
+							fname_base = "ndcg_int"
+							tie_break_flags = [True]
+						for optimistic in tie_break_flags:
+							if union:
+								suffix = "_opt" if optimistic else "_pess"
+							else:
+								suffix = ""
+							b_ndcg = ndcg_helper(
+								b_true_ints,
+								b_pred_ints,
+								b_match_mask,
+								b_true_match_mask,
+								b_pred_match_mask,
+								optimistic,
+								union
+							)
+							fname = f"{fname_base}{suffix}"
+							metric_d[fname][b_idx] = b_ndcg
+
+				if "js_hun" in self.hparams.auxiliary_scores:
+					for remove_prec_peak in hun_remove_prec_peak_flags:
+						for sqrt in hun_sqrt_flags:
+							if sqrt:
+								ints_transform = get_ints_transform_func("sqrt")
+							else:
+								ints_transform = get_ints_transform_func("none")
+							b_js_hun = js_hun_helper(
+								ints_transform(b_true_ints_r),
+								ints_transform(b_pred_ints_r),
+								b_match_mask_r,
+								b_true_match_mask_r,
+								b_pred_match_mask_r,
+								remove_prec_peak,
+								b_true_prec_mask_r,
+								b_pred_prec_mask_r
+							)
+							fname_base = f"js_hun"
+							if sqrt:
+								fname_base += "_sqrt"
+							if remove_prec_peak:
+								fname_base += "_np"
+							fname = f"{fname_base}"
+							metric_d[fname][b_idx] = b_js_hun
+
+			return metric_d
+	
+		self.metric_fn = calculate_all_auxiliary_metrics
 
 	def _setup_batch_metric_reduce_fns(self):
 
@@ -568,7 +672,7 @@ class SpectrumPL(pl.LightningModule):
 		}
 		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
 		with th.no_grad():
-			metric_d = {
+			metric_input_d = {
 				"true_mzs": true_mzs,
 				"true_ints": th.exp(true_logprobs),
 				"true_batch_idxs": true_batch_idxs,
@@ -577,9 +681,10 @@ class SpectrumPL(pl.LightningModule):
 				"pred_batch_idxs": pred["pred_batch_idxs"],
 				"true_prec_mzs": true_prec_mzs
 			}
-			for metric_name,metric_fn in self.metric_fns.items():
-				metric = metric_fn(**metric_d)
-				results[metric_name] = metric
+			metric_output_d = self.metric_fn(**metric_input_d)
+			for k,v in metric_output_d.items():
+				assert k not in results, k
+				results[k] = v
 		for metric_name in self.metric_names:
 			assert metric_name in results, metric_name
 		return results
@@ -891,27 +996,6 @@ class SpectrumPL(pl.LightningModule):
 				caption=[f"unique_id = {unique_id}, epoch = {self.current_epoch:03d}, loss = {loss:.3f}, cos_sim = {cos_sim:.3f}, wrecall = {wrecall:.3f}"],
 				images=[data]
 			)
-
-	# def on_train_epoch_start(self):
-
-	# 	dl = self.trainer.train_dataloader
-	# 	ds = dl.dataset
-	# 	bs = dl.batch_sampler
-	# 	if self.hparams.dynamic_batch_sampler:
-	# 		print(f"total num batches = {len(bs._batches)}")
-	# 		batch_lens = [len(b) for b in bs._batches]
-	# 		print("> first 50")
-	# 		print(batch_lens[:50])
-	# 		print("> last 50")
-	# 		print(batch_lens[-50:])
-	# 		ids = flatten_lol(bs._batches)
-	# 		un_ids = np.unique(ids)
-	# 		print("> id coverage")
-	# 		print(
-	# 			ds.spec_df.shape[0],
-	# 			len(ids),
-	# 			len(un_ids)
-	# 		)
 
 	def on_train_epoch_end(self):
 
@@ -1457,7 +1541,7 @@ def test_fraggnn():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3_weight.yml",
+		"config/debug/debug_d3.yml",
 	]
 	
 	for custom_fp in custom_fps:

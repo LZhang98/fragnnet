@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.form_embedder import get_embedder
-from frag_gnn.utils.misc_utils import safelog, check_pyg_compile
+from frag_gnn.utils.misc_utils import safelog, check_pyg_compile, LOG_HALF
 
 
 class FragGNNModel(nn.Module):

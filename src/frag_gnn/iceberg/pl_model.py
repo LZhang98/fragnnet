@@ -555,6 +555,7 @@ class IcebergIntenPL(SpectrumPL):
 		true_mzs = batch["spec_mzs"]
 		true_ints = batch["spec_ints"]
 		true_batch_idxs = batch["spec_batch_idxs"]
+		true_prec_mzs = batch["spec_prec_mz"]
 		spec_per_group = batch["spec_per_group"]
 		spec_per_mol = batch["spec_per_mol"]
 		group_per_mol = batch["group_per_mol"]
@@ -601,16 +602,19 @@ class IcebergIntenPL(SpectrumPL):
 		}
 		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
 		with th.no_grad():
-			for metric_name,metric_fn in self.metric_fns.items():
-				metric = metric_fn(
-					true_mzs,
-					th.exp(true_logprobs),
-					true_batch_idxs,
-					pred["pred_mzs"],
-					th.exp(pred["pred_logprobs"]),
-					pred["pred_batch_idxs"]
-				)
-				results[metric_name] = metric
+			metric_input_d = {
+				"true_mzs": true_mzs,
+				"true_ints": th.exp(true_logprobs),
+				"true_batch_idxs": true_batch_idxs,
+				"pred_mzs": pred["pred_mzs"],
+				"pred_ints": th.exp(pred["pred_logprobs"]),
+				"pred_batch_idxs": pred["pred_batch_idxs"],
+				"true_prec_mzs": true_prec_mzs
+			}
+			metric_output_d = self.metric_fn(**metric_input_d)
+			for k,v in metric_output_d.items():
+				assert k not in results, k
+				results[k] = v
 		for metric_name in self.metric_names:
 			assert metric_name in results, metric_name
 		return results

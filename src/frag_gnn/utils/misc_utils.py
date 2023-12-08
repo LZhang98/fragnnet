@@ -16,6 +16,7 @@ TQDM_DISABLE = False
 PPM = 1/1000000
 EPS = 1e-9
 LOG_ZERO = -1e9
+LOG_HALF = np.log(0.5)
 
 def timeit(func):
 	# adapted from https://dev.to/kcdchennai/python-decorator-to-measure-execution-time-54hk

@@ -143,17 +143,19 @@ auxiliary_scores:
   - true_spec_ne
   - cos_hun
   - precision
-  - dice
   - ndcg
+  - js
+  - js_hun
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
 eval_mz_bin_res:
 - 0.1
 - 0.01
-- 0.005
-eval_sqrt: True
-eval_remove_prec_peaks: True
+eval_bin_sqrt: True
+eval_bin_remove_prec_peaks: True
+eval_hun_sqrt: False
+eval_hun_remove_prec_peaks: False
 sum_ints: True
 ints_transform: none
 train_batch_size: 16

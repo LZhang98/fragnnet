@@ -987,7 +987,7 @@ def calculate_sparse_cosine_similarity(
 		remove_prec_peaks=remove_prec_peaks,
 		prec_mzs=true_prec_mzs
 	)
-	cos_sims = sparse_binned_cosine_similarity(
+	cos_sims = cos_sim_helper(
 		true_bin_idxs,
 		true_bin_ints,
 		true_bin_batch_idxs,
@@ -1051,7 +1051,7 @@ def calculate_optimal_sparse_cosine_similarity(
 	true_mask = th.isin(true_bin_idxs, pred_bin_idxs[pred_mask])
 	pred_bin_ints[~pred_mask] = 0.
 	pred_bin_ints[pred_mask] = true_bin_ints[true_mask]
-	opt_cos_sims = sparse_binned_cosine_similarity(
+	opt_cos_sims = cos_sim_helper(
 		true_bin_idxs,
 		true_bin_ints,
 		true_bin_batch_idxs,
@@ -1102,7 +1102,7 @@ def binned_cosine_similarity(true_spec,pred_spec):
 	return cos_sims
 
 
-def sparse_binned_cosine_similarity(true_bin_idxs, true_bin_ints, true_bin_batch_idxs, pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs):
+def cos_sim_helper(true_bin_idxs, true_bin_ints, true_bin_batch_idxs, pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs):
 
 	# l2 normalize
 	true_bin_ints = scatter_l2normalize(
@@ -1450,3 +1450,234 @@ def calculate_sparse_jensen_hungarian(
 		b_jensen = 0.5*(b_kl1+b_kl2)
 		jensen_hun[batch_idx] = b_jensen
 	return jensen_hun
+
+### helpers
+
+def opt_cos_sim_helper(
+	true_bin_idxs,
+	true_bin_ints,
+	true_bin_batch_idxs,
+	pred_bin_idxs,
+	pred_bin_ints,
+	pred_bin_batch_idxs
+):
+
+	pred_opt_mask = th.isin(pred_bin_idxs, true_bin_idxs)
+	true_opt_mask = th.isin(true_bin_idxs, pred_bin_idxs[pred_opt_mask])
+	pred_opt_bin_ints = pred_bin_ints.clone()
+	pred_opt_bin_ints[~pred_opt_mask] = 0.
+	pred_opt_bin_ints[pred_opt_mask] = true_bin_ints[true_opt_mask]
+	opt_cos_sim = cos_sim_helper(
+		true_bin_idxs,
+		true_bin_ints,
+		true_bin_batch_idxs,
+		pred_bin_idxs,
+		pred_opt_bin_ints,
+		pred_bin_batch_idxs
+	)
+	return opt_cos_sim
+
+def cos_hun_helper(
+	b_true_ints,
+	b_pred_ints,
+	b_match_mask,
+	b_true_match_mask,
+	b_pred_match_mask,
+	remove_prec_peak,
+	b_true_prec_mask,
+	b_pred_prec_mask):
+
+	if remove_prec_peak:
+		import pdb; pdb.set_trace()
+		b_true_ints = b_true_ints*(1-b_true_prec_mask.float())
+		b_pred_ints = b_pred_ints*(1-b_pred_prec_mask.float())
+	b_true_ints = F.normalize(b_true_ints,p=2,dim=0)
+	b_pred_ints = F.normalize(b_pred_ints,p=2,dim=0)
+	b_score = b_match_mask[b_true_match_mask][:,b_pred_match_mask] * \
+		(b_true_ints[b_true_match_mask].unsqueeze(1) * b_pred_ints[b_pred_match_mask].unsqueeze(0))
+	b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+	b_cos_hun = th.dot(
+		b_true_ints[b_true_match_mask][b_true_idxs],
+		b_pred_ints[b_pred_match_mask][b_pred_idxs],
+	)
+	return b_cos_hun
+
+def ndcg_helper(
+	b_true_ints,
+	b_pred_ints,
+	b_match_mask,
+	b_true_match_mask,
+	b_pred_match_mask,
+	optimistic,
+	union):
+
+	th_device = b_true_ints.device
+	b_score = b_match_mask[b_true_match_mask][:,b_pred_match_mask] * \
+			(b_true_ints[b_true_match_mask].unsqueeze(1) * b_pred_ints[b_pred_match_mask].unsqueeze(0))
+	b_true_match_idxs, b_pred_match_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+	b_pred_match_ints = b_pred_ints[b_pred_match_mask][b_pred_match_idxs]
+	b_true_match_ints = b_true_ints[b_true_match_mask][b_true_match_idxs]
+	if union:
+		b_pred_unmatch_idxs = th_setdiff1d(th.arange(b_pred_match_mask.sum(),device=th_device),b_pred_match_idxs)
+		b_pred_unmatch_ints = th.cat([b_pred_ints[~b_pred_match_mask],b_pred_ints[b_pred_match_mask][b_pred_unmatch_idxs]],dim=0)
+		b_true_unmatch_idxs = th_setdiff1d(th.arange(b_true_match_mask.sum(),device=th_device),b_true_match_idxs)
+		b_true_unmatch_ints = th.cat([b_true_ints[~b_true_match_mask],b_true_ints[b_true_match_mask][b_true_unmatch_idxs]],dim=0)
+		b_pred_all_ints = th.cat(
+			[
+				b_pred_match_ints,
+				b_pred_unmatch_ints,
+				# heuristic: rank the unmatched true peaks by their intensity
+				-(th.argsort(b_true_unmatch_ints,descending=optimistic)+1).type(b_true_unmatch_ints.dtype)
+			],
+			dim=0
+		)
+		b_true_all_ints = th.cat(
+			[
+				b_true_match_ints,
+				# score of zero for the unmatched predicted peaks
+				th.zeros_like(b_pred_unmatch_ints),
+				b_true_unmatch_ints
+			],
+			dim=0
+		)
+		b_pred_ranking = th.argsort(b_pred_all_ints,descending=True)
+		b_true_ranking = th.argsort(b_true_all_ints,descending=True)
+		b_denom = th.log2(2 + th.arange(b_true_all_ints.shape[0], dtype=b_true_all_ints.dtype, device=th_device))
+		b_dcg = th.sum(b_true_all_ints[b_pred_ranking] / b_denom)
+		b_idcg = th.sum(b_true_all_ints[b_true_ranking] / b_denom)
+		b_ndcg = b_dcg/b_idcg
+	else: # intersection
+		if b_true_match_idxs.shape[0] == 0:
+			b_ndcg = 0.
+		else:
+			b_pred_ranking = th.argsort(b_pred_match_ints,descending=True)
+			b_true_ranking = th.argsort(b_true_match_ints,descending=True)
+			b_denom = th.log2(2 + th.arange(b_true_match_ints.shape[0], dtype=b_true_match_ints.dtype, device=th_device))
+			b_dcg = th.sum(b_true_match_ints[b_pred_ranking] / b_denom)
+			b_idcg = th.sum(b_true_match_ints[b_true_ranking] / b_denom)
+			b_ndcg = b_dcg/b_idcg
+	return b_ndcg
+
+def js_hun_helper(
+	b_true_ints,
+	b_pred_ints,
+	b_match_mask,
+	b_true_match_mask,
+	b_pred_match_mask,
+	remove_prec_peak,
+	b_true_prec_mask,
+	b_pred_prec_mask):
+
+	if remove_prec_peak:
+		b_true_ints = b_true_ints*(1-b_true_prec_mask.float())
+		b_pred_ints = b_pred_ints*(1-b_pred_prec_mask.float())
+	b_true_ints = F.normalize(b_true_ints,p=1,dim=0)
+	b_pred_ints = F.normalize(b_pred_ints,p=1,dim=0)
+	if th.all(b_pred_ints) == 0.:
+		# heuristic to prevent nan
+		b_pred_ints = th.ones_like(b_pred_ints) / b_pred_ints.shape[0]
+	b_score = b_match_mask[b_true_match_mask][:,b_pred_match_mask] * \
+		(b_true_ints[b_true_match_mask].unsqueeze(1) + b_pred_ints[b_pred_match_mask].unsqueeze(0))
+	b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+	b_union_ints = th.cat(
+		[
+			0.5*b_true_ints[~b_true_match_mask],
+			0.5*b_pred_ints[~b_pred_match_mask],
+			0.5*b_score[b_true_idxs,b_pred_idxs]
+		],dim=0
+	)
+	b_union_ints = F.normalize(b_union_ints,p=1,dim=0)
+	b_true_range = (0,(~b_true_match_mask).long().sum())
+	b_pred_range = (b_true_range[1],b_true_range[1]+(~b_pred_match_mask).long().sum())
+	b_kl1_true_probs = th.cat(
+		[
+			b_true_ints[~b_true_match_mask],
+			b_true_ints[b_true_match_mask][b_true_idxs]
+		],dim=0
+	)
+	b_kl1_union_probs = th.cat(
+		[
+			b_union_ints[b_true_range[0]:b_true_range[1]],
+			b_union_ints[b_pred_range[1]:]
+		],dim=0
+	)
+	b_kl1 = th.sum(b_kl1_true_probs*(safelog(b_kl1_true_probs)-safelog(b_kl1_union_probs)), dim=0)
+	b_kl2_pred_probs = th.cat(
+		[
+			b_pred_ints[~b_pred_match_mask],
+			b_pred_ints[b_pred_match_mask][b_pred_idxs]
+		],dim=0
+	)
+	b_kl2_union_probs = th.cat(
+		[
+			b_union_ints[b_pred_range[0]:b_pred_range[1]],
+			b_union_ints[b_pred_range[1]:]
+		],dim=0
+	)
+	b_kl2 = th.sum(b_kl2_pred_probs*(safelog(b_kl2_pred_probs)-safelog(b_kl2_union_probs)), dim=0)
+	b_js_hun = 0.5*(b_kl1+b_kl2)
+
+	return b_js_hun
+
+def js_helper(
+	true_bin_idxs,
+	true_bin_ints,
+	true_bin_batch_idxs,
+	pred_bin_idxs,
+	pred_bin_ints,
+	pred_bin_batch_idxs):
+	
+	batch_size = th.max(true_bin_batch_idxs)+1
+	# l1 normalize
+	true_bin_ints = scatter_l1normalize(
+		true_bin_ints,
+		true_bin_batch_idxs,
+		dim=0
+	)
+	pred_bin_ints = scatter_l1normalize(
+		pred_bin_ints,
+		pred_bin_batch_idxs,
+		dim=0
+	)
+	# union distribution
+	union_bin_idxs, union_bin_idxs_rev = th.unique(th.cat([true_bin_idxs,pred_bin_idxs],dim=0),return_inverse=True)
+	union_bin_ints = scatter_reduce(
+		src=0.5*th.cat([true_bin_ints,pred_bin_ints],dim=0),
+		index=union_bin_idxs_rev,
+		reduce="sum",
+		dim=0,
+		dim_size=union_bin_idxs.shape[0]
+	)
+	# union_bin_batch_idxs = scatter_reduce(
+	# 	src=th.cat([true_bin_batch_idxs,pred_bin_batch_idxs],dim=0),
+	# 	index=union_bin_idxs_rev,
+	# 	reduce="amax",
+	# 	dim=0,
+	# 	dim_size=union_bin_idxs.shape[0]
+	# )
+	# union_bin_ints = scatter_l1normalize(
+	# 	union_bin_ints,
+	# 	union_bin_batch_idxs,
+	# 	dim=0
+	# )
+	# kl1
+	kl1_union_bin_ints = union_bin_ints[union_bin_idxs_rev[:true_bin_idxs.shape[0]]]
+	kl1 = scatter_reduce(
+		true_bin_ints * (safelog(true_bin_ints) - safelog(kl1_union_bin_ints)),
+		true_bin_batch_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=batch_size
+	)
+	# kl2
+	kl2_union_bin_ints = union_bin_ints[union_bin_idxs_rev[true_bin_idxs.shape[0]:]]
+	kl2 = scatter_reduce(
+		pred_bin_ints * (safelog(pred_bin_ints) - safelog(kl2_union_bin_ints)),
+		pred_bin_batch_idxs,
+		reduce="sum",
+		dim=0,
+		dim_size=batch_size
+	)
+	# js
+	js = 0.5*(kl1+kl2)
+	return js
