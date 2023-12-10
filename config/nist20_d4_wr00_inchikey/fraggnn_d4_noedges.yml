@@ -1,4 +1,4 @@
-wandb_name: fraggnn_d4
+wandb_name: fraggnn_d4_noedges
 wandb_tags:
 - splits
 - nist20
