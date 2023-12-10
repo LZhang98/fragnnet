@@ -539,36 +539,42 @@ class SpectrumPL(pl.LightningModule):
 			self.train_datapoint_metrics = nn.ParameterDict()
 			self.val_datapoint_metrics = nn.ParameterDict()
 			if self.hparams.spec_params["merge"]:
-				num_datapoints = 22000
+				max_num_datapoints = 22000
 			else:
-				num_datapoints = 270000
-			self.train_num_datapoints = None
-			self.val_num_datapoints = None
+				max_num_datapoints = 270000
+			self.train_num_datapoints = nn.Parameter(
+				-th.ones([1],dtype=th.int64),
+				requires_grad=False
+			)
+			self.val_num_datapoints = nn.Parameter(
+				-th.ones([1],dtype=th.int64),
+				requires_grad=False
+			)
 		for name in self.metric_names:
 			_name = name.replace(".","-")
 			self.train_mean_metrics[_name] = nn.Parameter(
-				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				-th.ones([self.hparams.max_epochs],dtype=th.float32),
 				requires_grad=False
 			)
 			self.val_mean_metrics[_name] = nn.Parameter(
-				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				-th.ones([self.hparams.max_epochs],dtype=th.float32),
 				requires_grad=False
 			)
 			self.train_std_metrics[_name] = nn.Parameter(
-				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				-th.ones([self.hparams.max_epochs],dtype=th.float32),
 				requires_grad=False
 			)
 			self.val_std_metrics[_name] = nn.Parameter(
-				th.zeros([self.hparams.max_epochs],dtype=th.float32),
+				-th.ones([self.hparams.max_epochs],dtype=th.float32),
 				requires_grad=False
 			)
 			if self.hparams.track_datapoint_metrics:
 				self.train_datapoint_metrics[_name] = nn.Parameter(
-					th.zeros([num_datapoints],dtype=th.float32),
+					-th.ones([max_num_datapoints],dtype=th.float32),
 					requires_grad=False
 				)
 				self.val_datapoint_metrics[_name] = nn.Parameter(
-					th.zeros([num_datapoints],dtype=th.float32),
+					-th.ones([max_num_datapoints],dtype=th.float32),
 					requires_grad=False
 				)
 
@@ -909,11 +915,12 @@ class SpectrumPL(pl.LightningModule):
 			update_datapoint_metrics = True
 		if self.hparams.track_datapoint_metrics and update_datapoint_metrics:
 			datapoint_metrics = getattr(self,f"{split}_datapoint_metrics")
-			num_datapoints = getattr(self,f"{split}_num_datapoints")
+			num_datapoints_p = getattr(self,f"{split}_num_datapoints")
 			example_key = list(mean_metrics.keys())[0]
-			if num_datapoints is None:
-				num_datapoints = len(results[example_key])
-				setattr(self,f"{split}_num_datapoints",num_datapoints)
+			num_datapoints = num_datapoints_p.item()
+			if num_datapoints == -1:
+				num_datapoints_p[0] = len(results[example_key])
+				num_datapoints = num_datapoints_p.item()
 			assert num_datapoints <= datapoint_metrics[example_key.replace(".","-")].shape[0], (num_datapoints, datapoint_metrics[example_key.replace(".","-")].shape[0])
 			for k in mean_metrics.keys():
 				assert len(results[k]) == num_datapoints, (k, len(results[k]), num_datapoints)
