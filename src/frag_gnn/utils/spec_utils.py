@@ -1558,7 +1558,7 @@ def ndcg_helper(
 			b_ndcg = b_dcg/b_idcg
 	return b_ndcg
 
-def js_hun_helper(
+def jss_hun_helper(
 	b_true_ints,
 	b_pred_ints,
 	b_match_mask,
@@ -1615,11 +1615,11 @@ def js_hun_helper(
 		],dim=0
 	)
 	b_kl2 = th.sum(b_kl2_pred_probs*(safelog(b_kl2_pred_probs)-safelog(b_kl2_union_probs)), dim=0)
-	b_js_hun = 0.5*(b_kl1+b_kl2)
+	b_jss_hun = 1.-0.5*(b_kl1+b_kl2)
 
-	return b_js_hun
+	return b_jss_hun
 
-def js_helper(
+def jss_helper(
 	true_bin_idxs,
 	true_bin_ints,
 	true_bin_batch_idxs,

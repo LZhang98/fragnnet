@@ -93,7 +93,8 @@ class SpectrumPL(pl.LightningModule):
 		
 		eval_mz_bin_reses = self.hparams.eval_mz_bin_res
 
-		assert self.hparams.sparse_cosine_similarity
+		if len(self.hparams.auxiliary_scores) > 0:
+			assert self.hparams.sparse_cosine_similarity
 		compute_match_mzs = False
 		compute_rounded_match_mzs = False
 		compute_bin_specs = False
@@ -114,11 +115,11 @@ class SpectrumPL(pl.LightningModule):
 							self.metric_bests.append(fname)
 							self.auxiliary_metric_names.add(fname)
 					compute_bin_specs = True
-			elif metric_name == "js":
+			elif metric_name == "jss":
 				for remove_prec_peak in bin_remove_prec_peak_flags:
 					for sqrt in bin_sqrt_flags:
 						for mz_bin_res in eval_mz_bin_reses:
-							fname_base = "js"
+							fname_base = "jss"
 							if sqrt:
 								fname_base += "_sqrt"
 							if remove_prec_peak:
@@ -196,10 +197,10 @@ class SpectrumPL(pl.LightningModule):
 						self.metric_bests.append(fname)
 						self.auxiliary_metric_names.add(fname)
 				compute_rounded_match_mzs = True
-			elif metric_name == "js_hun":
+			elif metric_name == "jss_hun":
 				for remove_prec_peak in hun_remove_prec_peak_flags:
 					for sqrt in hun_sqrt_flags:
-						fname_base = "js_hun"
+						fname_base = "jss_hun"
 						if sqrt:
 							fname_base += "_sqrt"
 						if remove_prec_peak:
@@ -313,14 +314,14 @@ class SpectrumPL(pl.LightningModule):
 									pred_bin_batch_idxs,
 								)
 								metric_d[fname] = opt_cos_sim
-							if "js" in self.hparams.auxiliary_scores:
-								fname_base = f"js"
+							if "jss" in self.hparams.auxiliary_scores:
+								fname_base = f"jss"
 								if sqrt:
 									fname_base += "_sqrt"
 								if remove_prec_peak:
 									fname_base += "_np"
 								fname = f"{fname_base}_{mz_bin_res}"
-								js = js_helper(
+								jss = jss_helper(
 									true_bin_idxs,
 									true_bin_ints,
 									true_bin_batch_idxs,
@@ -328,7 +329,7 @@ class SpectrumPL(pl.LightningModule):
 									pred_bin_ints,
 									pred_bin_batch_idxs
 								)
-								metric_d[fname] = js
+								metric_d[fname] = jss
 
 			if compute_entropies:
 				true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs,dim=0))
@@ -467,14 +468,14 @@ class SpectrumPL(pl.LightningModule):
 							fname = f"{fname_base}{suffix}"
 							metric_d[fname][b_idx] = b_ndcg
 
-				if "js_hun" in self.hparams.auxiliary_scores:
+				if "jss_hun" in self.hparams.auxiliary_scores:
 					for remove_prec_peak in hun_remove_prec_peak_flags:
 						for sqrt in hun_sqrt_flags:
 							if sqrt:
 								ints_transform = get_ints_transform_func("sqrt")
 							else:
 								ints_transform = get_ints_transform_func("none")
-							b_js_hun = js_hun_helper(
+							b_jss_hun = jss_hun_helper(
 								ints_transform(b_true_ints_r),
 								ints_transform(b_pred_ints_r),
 								b_match_mask_r,
@@ -484,13 +485,13 @@ class SpectrumPL(pl.LightningModule):
 								b_true_prec_mask_r,
 								b_pred_prec_mask_r
 							)
-							fname_base = f"js_hun"
+							fname_base = f"jss_hun"
 							if sqrt:
 								fname_base += "_sqrt"
 							if remove_prec_peak:
 								fname_base += "_np"
 							fname = f"{fname_base}"
-							metric_d[fname][b_idx] = b_js_hun
+							metric_d[fname][b_idx] = b_jss_hun
 
 			return metric_d
 	
