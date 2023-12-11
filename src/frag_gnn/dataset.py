@@ -66,8 +66,7 @@ def init_dataloader(ds, config_d):
 				dl_param_d['drop_last'] = config_d["drop_last"]
 				if sampler is not None:
 					dl_param_d['sampler'] = sampler
-
-				if 'batch_sampler' not in dl_param_d and 'sampler' not in dl_param_d:
+				else:
 					dl_param_d["shuffle"] = True
 			else:
 				dl_param_d['batch_size'] = config_d["eval_batch_size"]
@@ -811,7 +810,8 @@ def get_group_sampler(ds:SpecMolFragDataset, config_d: dict) -> WeightedRandomSa
 	else:
 		return None
 	
-	sampler = WeightedRandomSampler(sample_weights, num_samples = config_d['simple_group_sampler_max'] ,replacement=False)
+	num_samples = min(config_d['simple_group_sampler_max'], len(ds))
+	sampler = WeightedRandomSampler(sample_weights,num_samples=num_samples,replacement=False)
 	return sampler
 
 if __name__ == "__main__":
