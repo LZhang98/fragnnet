@@ -214,7 +214,10 @@ dynamic_batch_sampler_max: 100000
 dynamic_batch_sampler_chunk_size: -1
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
-group_sampler_max: 10000
+group_sampler_max_per_group: 3
+simple_group_sampler: False
+simple_group_sampler_max: 10000
+simple_group_sampler_type: group #[group, group_mol, mol]
 mp_sharing_strategy: file_descriptor
 check_gradient_norm: False
 use_tensor_float32: False
