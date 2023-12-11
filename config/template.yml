@@ -144,8 +144,8 @@ auxiliary_scores:
   - cos_hun
   - precision
   - ndcg
-  - js
-  - js_hun
+  - jss
+  - jss_hun
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
