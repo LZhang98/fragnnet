@@ -125,7 +125,7 @@ class SpectrumPL(pl.LightningModule):
 							if remove_prec_peak:
 								fname_base += "_np"
 							fname = f"{fname_base}_{mz_bin_res}"
-							self.metric_min_max[fname] = "min"
+							self.metric_min_max[fname] = "max"
 							self.metric_bests.append(fname)
 							self.auxiliary_metric_names.add(fname)
 			elif metric_name == "recall":
