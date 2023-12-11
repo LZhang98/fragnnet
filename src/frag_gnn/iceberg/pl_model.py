@@ -65,6 +65,7 @@ class IcebergGenPL(SpectrumPL):
 			}
 			return loss_d
 		self.loss_fn = _loss_fn
+		self.metric_names.add("loss")
 
 	def forward(self,**kwargs):
 
@@ -153,11 +154,12 @@ class IcebergGenPL(SpectrumPL):
 
 	def _reduce_metrics(self, results):
 
-		mean_metrics = {}
+		mean_metrics, std_metrics = {}, {}
 		for k, v in results.items():
 			if k in self.metric_names:
 				mean_metrics[k] = th.mean(v, dim=0)
-		return mean_metrics
+				std_metrics[k] = th.std(v, dim=0)
+		return mean_metrics, std_metrics
 
 	def _log_images(self,split):
 
