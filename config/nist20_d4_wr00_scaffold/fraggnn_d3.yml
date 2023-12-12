@@ -7,6 +7,7 @@ wandb_tags:
 - scaffold
 - new_proc
 - fraggnn_d3
+- new_metrics
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
@@ -36,7 +37,7 @@ sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
 upload_checkpoints: True
-checkpoint_metric: val_cos_hun_epoch
+checkpoint_metric: val_cos_hun_epoch/mean
 
 precision: 32
 use_tensor_float32: True

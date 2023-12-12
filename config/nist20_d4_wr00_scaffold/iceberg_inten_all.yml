@@ -8,6 +8,7 @@ wandb_tags:
 - new_proc
 - iceberg
 - inten_all
+- new_metrics
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
@@ -63,4 +64,4 @@ weight_decay: 0.0000001 # 1e-7
 debug_overfit: False
 num_workers: 8
 upload_checkpoints: True
-checkpoint_metric: val_cos_hun_epoch
+checkpoint_metric: val_cos_hun_epoch/mean
