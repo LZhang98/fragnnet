@@ -206,7 +206,7 @@ class SpectrumPL(pl.LightningModule):
 						if remove_prec_peak:
 							fname_base += "_np"
 						fname = f"{fname_base}"
-						self.metric_min_max[fname] = "min"
+						self.metric_min_max[fname] = "max"
 						self.metric_bests.append(fname)
 						self.auxiliary_metric_names.add(fname)
 				compute_rounded_match_mzs = True

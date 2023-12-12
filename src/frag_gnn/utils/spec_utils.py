@@ -1616,7 +1616,6 @@ def jss_hun_helper(
 	)
 	b_kl2 = th.sum(b_kl2_pred_probs*(safelog(b_kl2_pred_probs)-safelog(b_kl2_union_probs)), dim=0)
 	b_jss_hun = 1.-0.5*(b_kl1+b_kl2)
-
 	return b_jss_hun
 
 def jss_helper(
@@ -1678,6 +1677,6 @@ def jss_helper(
 		dim=0,
 		dim_size=batch_size
 	)
-	# js
-	js = 0.5*(kl1+kl2)
-	return js
+	# jss
+	jss = 1.-0.5*(kl1+kl2)
+	return jss
