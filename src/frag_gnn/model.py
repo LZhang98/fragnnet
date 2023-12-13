@@ -206,8 +206,8 @@ class FragGNNModel(nn.Module):
 			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "complement" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.complement_embedder.num_dim
-		# if self.frag_edge_feats_size == 0:
-		# 	self.frag_edge_feats_size = 1
+		if self.frag_edge_feats_size == 0:
+			self.frag_edge_feats_size = 1
 		if self.ce_insert_frag:
 			self.frag_node_feats_size += 1
 			self.frag_edge_feats_size += 1
@@ -368,8 +368,8 @@ class FragGNNModel(nn.Module):
 			assert self.frag_node_feats_size == 1, self.frag_node_feats_size
 			frag_ndata.append(th.zeros([batch_frag_num_nodes,1],dtype=float_dtype,device=device))
 		if len(frag_edata) == 0:
-			assert self.frag_edge_feats_size == 0, self.frag_edge_feats_size
-			frag_edata.append(th.zeros([batch_frag_num_edges,0],dtype=float_dtype,device=device))
+			assert self.frag_edge_feats_size == 1, self.frag_edge_feats_size
+			frag_edata.append(th.zeros([batch_frag_num_edges,1],dtype=float_dtype,device=device))
 
 		if self.ce_insert_frag:
 			edge_ce = th.repeat_interleave(ce,th.unique(frag_batch[frag_edge_index[0]],return_counts=True)[1],dim=0)
