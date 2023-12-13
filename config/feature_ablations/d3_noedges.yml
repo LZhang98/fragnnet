@@ -4,6 +4,7 @@ wandb_tags:
 - d4
 - wr00
 - inchikey
+- new_proc
 - fraggnn_d3
 - feature_ablations
 - no_edges
@@ -42,7 +43,7 @@ sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
 upload_checkpoints: True
-checkpoint_metric: val_cos_hun_epoch
+checkpoint_metric: val_cos_hun_epoch/mean
 
 precision: 32
 use_tensor_float32: True

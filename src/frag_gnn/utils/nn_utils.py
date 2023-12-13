@@ -150,7 +150,6 @@ class GNN(nn.Module):
 		self.num_layers = num_layers
 		self.input_project = nn.Linear(self.node_feats_size, self.hidden_size)
 
-
 		if self.gnn_type == "GINE":
 			self.gnn = GINE(
 				hidden_size=self.hidden_size,
@@ -160,18 +159,25 @@ class GNN(nn.Module):
 				dropout=self.dropout,
 				normalization=self.normalization
 			)
-		elif self.gnn_type == "GAT" or self.gnn_type == "GATv2":
-			self.gnn = GAT(
+		elif self.gnn_type == "NodeMLP":
+			self.gnn = NodeMLP(
+				hidden_size=self.hidden_size,
 				edge_feats_size=self.edge_feats_size,
 				node_feats_size=self.node_feats_size,
-				node_hidden_dim=self.hidden_size, 
-			    num_step_message_passing =self.num_layers,
-				#num_step_set2set=self.num_layers,
-				#output_dim = self.hidden_size, # TODO this need to hook up correctly
-				gat_heads = 1, # TODO this need to hook up correctly
-				gat_dropout=self.dropout,
-				is_v2 = True if self.gnn_type == "GATv2" else False
+				num_layers=self.num_layers,
+				dropout=self.dropout,
+				normalization=self.normalization
 			)
+		# elif self.gnn_type == "GAT" or self.gnn_type == "GATv2":
+		# 	self.gnn = GAT(
+		# 		edge_feats_size=self.edge_feats_size,
+		# 		node_feats_size=self.node_feats_size,
+		# 		node_hidden_dim=self.hidden_size, 
+		# 	    num_step_message_passing =self.num_layers,
+		# 		gat_heads = 1, # TODO this need to hook up correctly
+		# 		gat_dropout=self.dropout,
+		# 		is_v2 = True if self.gnn_type == "GATv2" else False
+		# 	)
 		else:
 			raise NotImplementedError(self.gnn_type)
 
@@ -205,6 +211,7 @@ class GINE(nn.Module):
 		"""
 		super().__init__()
 
+		assert edge_feats_size >= 0, edge_feats_size
 		self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
 
 		self.layers = []
@@ -216,7 +223,8 @@ class GINE(nn.Module):
 			)
 			temp_layer = pyg.nn.conv.GINEConv(
 				nn=apply_fn,
-				eps=0.
+				eps=0.,
+				edge_dim=None
 			)
 			self.layers.append(temp_layer)
 
@@ -247,7 +255,62 @@ class GINE(nn.Module):
 			layer_out = layer(x, edge_index, edge_attr)
 			layer_out = self.norm_fn(layer_out, batch_index, norm)
 			x = F.relu(dropout(layer_out)) + x
+		return x
 
+class NodeMLP(nn.Module):
+
+	def __init__(
+		self,
+		hidden_size: int,
+		node_feats_size: int,
+		edge_feats_size: int,
+		num_layers: int,
+		dropout: float,
+		normalization: str,
+		**kwargs
+	):
+		"""NodeMLP
+		"""
+		super().__init__()
+
+		assert edge_feats_size == 0, edge_feats_size
+
+		self.layers = []
+		for i in range(num_layers):
+			apply_fn = nn.Sequential(
+				nn.Linear(hidden_size, hidden_size),
+				nn.ReLU(),
+				nn.Linear(hidden_size, hidden_size),
+			)
+			temp_layer = apply_fn
+			self.layers.append(temp_layer)
+
+		self.layers = nn.ModuleList(self.layers)
+		# setup norm and norm_fn
+		# norm_fn may or may not depend on the batch index
+		if normalization == "batch":
+			norm_mod = nn.BatchNorm1d(hidden_size)
+			self.norm_fn = lambda x, b, n: n(x)
+		elif normalization == "layer":
+			norm_mod = nn.LayerNorm(hidden_size)
+			self.norm_fn = lambda x, b, n: n(x)
+		elif normalization == "graph":
+			norm_mod = pyg.nn.GraphNorm(hidden_size)
+			self.norm_fn = lambda x, b, n: n(x,b)
+		else:
+			assert normalization == "none", normalization
+			norm_mod = nn.Identity()
+			self.norm_fn = lambda x, b, n: n(x)
+		self.norms = get_clones(norm_mod, num_layers)
+		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
+
+	def forward(self, x, batch_index, edge_index, edge_attr):
+		"""forward.
+		"""
+		for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
+			layer_out = layer(x)
+			layer_out = self.norm_fn(layer_out, batch_index, norm)
+			x = F.relu(dropout(layer_out)) + x
 		return x
 
 class MPNN(nn.Module):

@@ -53,6 +53,6 @@ lr_decay_steps: 5000
 weight_decay: 0.0
 debug_overfit: False
 num_workers: 8
-checkpoint_metric: val_loss_epoch
+checkpoint_metric: val_loss_epoch/mean
 checkpoint_metric_mode: min
 upload_checkpoints: True
