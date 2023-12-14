@@ -13,7 +13,7 @@ from typing import Iterator, Iterable, Optional, Sequence, List, TypeVar, Generi
 import warnings
 
 from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_graph, get_frag_graph
-from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_type_idx, transform_nce, prec_type_mass_diff
+from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_type_idx, prec_type_mass_diff
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
@@ -113,7 +113,7 @@ class BaseDataset(Dataset):
 		assert np.all(np.unique(self.mol_df["mol_id"]) == np.unique(self.spec_df["mol_id"]))
 		# merge spectra
 		if self.spec_params["merge"]:
-			self.spec_df = merge_spec_df(self.spec_df)
+			self.spec_df = merge_spec_df(self.spec_df,keep_ces=self.spec_params["merge_keep_ces"])
 		# subsample
 		if subsample_params[split] and subsample_params["subsample_size"] > 0:
 			if isinstance(subsample_params["subsample_size"],int):
@@ -184,10 +184,17 @@ class BaseDataset(Dataset):
 			mass_diff = th.tensor([prec_type_mass_diff(prec_type)],dtype=th.float)
 			spec_data["spec_prec_mass_diff"] = mass_diff
 		if self.spec_params["nce"]:
-			assert not self.spec_params["merge"]
+			assert (not self.spec_params["merge"]) or self.spec_params["merge_keep_ces"]
 			nce = spec_entry["nce"]
-			nce = th.tensor([transform_nce(nce)],dtype=th.float)
-			spec_data["spec_nce"] = nce
+			if self.spec_params["merge"]:
+				assert self.spec_params["merge_keep_ces"]
+				assert isinstance(nce,list), type(nce)
+				nce = th.tensor(nce,dtype=th.float)
+				spec_data["spec_m_nce"] = nce
+			else:
+				assert isinstance(nce,float), type(nce)
+				nce = th.tensor([nce],dtype=th.float)
+				spec_data["spec_nce"] = nce
 		if self.spec_params["ace"]:
 			raise NotImplementedError()
 		if self.spec_params["prec_mz"]:
@@ -257,6 +264,17 @@ class BaseDataset(Dataset):
 			# remove from list
 			keys.remove("spec_ints")
 			keys.remove("spec_mzs")
+		# handle sparse ces
+		if "spec_m_nce" in keys:
+			# create batch_idxs
+			nces, _, batch_idxs = batch_func(
+				collate_data["spec_m_nce"],
+				collate_data["spec_m_nce"] # duplicate for compatibility
+			)
+			collate_data["spec_m_nce"] = nces
+			collate_data["spec_m_nce_batch_idxs"] = batch_idxs
+			# remove from list
+			keys.remove("spec_m_nce")
 		# handle generic data
 		for key in keys:
 			values = collate_data[key]

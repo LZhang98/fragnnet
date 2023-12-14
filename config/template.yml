@@ -17,6 +17,7 @@ subsample_params:
   test: True
 spec_params:
   merge: True
+  merge_keep_ces: False
   sparse: True
   prec_type: True
   prec_mz: True
@@ -208,6 +209,9 @@ ce_insert_mol: False
 ce_insert_frag: False
 ce_insert_mlp: False
 ce_insert_mlp_lin: False
+m_ce_insert_mlp_embed: False
+m_ce_insert_mlp_bin: False
+# m_ce_insert_mlp_lin: False
 dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000

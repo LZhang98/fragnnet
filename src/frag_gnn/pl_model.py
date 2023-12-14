@@ -1101,17 +1101,24 @@ class FragGNNPL(SpectrumPL):
 			ce_insert_frag=self.hparams.ce_insert_frag,
 			ce_insert_mlp=self.hparams.ce_insert_mlp,
 			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
+			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,
+			m_ce_insert_mlp_bin=self.hparams.m_ce_insert_mlp_bin,
 		)
 		
 		# check merge params
 		if self.hparams.spec_params["merge"]:
-			assert not self.hparams.spec_params["nce"]
+			assert (not self.hparams.spec_params["nce"]) or self.hparams.spec_params["merge_keep_ces"]
 			assert not self.hparams.ce_insert_mol
 			assert not self.hparams.ce_insert_frag
 			assert not self.hparams.ce_insert_mlp
 			assert not self.hparams.ce_insert_mlp_lin
+			if self.hparams.spec_params["merge_keep_ces"]:
+				assert (self.hparams.m_ce_insert_mlp_embed or self.hparams.m_ce_insert_mlp_bin)
+				assert not (self.hparams.m_ce_insert_mlp_embed and self.hparams.m_ce_insert_mlp_bin)
 		else:
-			assert self.hparams.spec_params["nce"]
+			assert self.hparams.spec_params["nce"] and (not self.hparams.spec_params["merge_keep_ces"])
+			assert not (self.hparams.ce_insert_mlp and self.hparams.ce_insert_mlp_lin)
+			assert not (self.hparams.m_ce_insert_mlp_embed or self.hparams.m_ce_insert_mlp_bin)
 
 		# check edge loss params
 		if not self.hparams.skip_edge_loss:
@@ -1549,7 +1556,7 @@ def test_fraggnn():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3.yml",
+		"config/debug/debug_d3_merge_nce.yml",
 	]
 	
 	for custom_fp in custom_fps:

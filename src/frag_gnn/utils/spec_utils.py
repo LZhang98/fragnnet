@@ -20,6 +20,7 @@ PREC_TYPE_TO_IDX = {prec_type: idx for idx,prec_type in enumerate(PREC_TYPES)}
 # rough approximations from NIST20
 NCE_MEAN = 60.
 NCE_STD = 40.
+NCE_MAX = 200.
 MZ_MAX = 1500.0
 MZ_BIN_RES = 0.01
 INTS_THRESH = 0.0

@@ -4,6 +4,7 @@ import torch.nn as nn
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.form_embedder import get_embedder
 from frag_gnn.utils.misc_utils import safelog, check_pyg_compile, LOG_HALF
+from frag_gnn.utils.spec_utils import transform_nce, NCE_MAX
 
 
 class FragGNNModel(nn.Module):
@@ -46,7 +47,9 @@ class FragGNNModel(nn.Module):
 		ce_insert_mol: bool,
 		ce_insert_frag: bool,
 		ce_insert_mlp: bool,
-		ce_insert_mlp_lin: bool
+		ce_insert_mlp_lin: bool,
+		m_ce_insert_mlp_embed: bool,
+		m_ce_insert_mlp_bin: bool,
 	):
 
 		super().__init__()
@@ -59,6 +62,8 @@ class FragGNNModel(nn.Module):
 		self.ce_insert_frag = ce_insert_frag
 		self.ce_insert_mlp = ce_insert_mlp
 		self.ce_insert_mlp_lin = ce_insert_mlp_lin
+		self.m_ce_insert_mlp_embed = m_ce_insert_mlp_embed
+		self.m_ce_insert_mlp_bin = m_ce_insert_mlp_bin
 
 		# calculate node/edge feats sizes
 		self.mol_node_feats = mol_node_feats
@@ -120,10 +125,43 @@ class FragGNNModel(nn.Module):
 		# we mlp insert for ce is enabled, add ce here
 		mlp_input_dim = 2*self.frag_embedder.hidden_size
 		if self.ce_insert_mlp:
+			self.ce_transform = transform_nce
+			self.ce_embedder = nn.Identity()
 			mlp_input_dim += 1
 		if self.ce_insert_mlp_lin:
-			self.ce_embedder = nn.Linear(1,max(self.frag_embedder.hidden_size//16,2))
-			mlp_input_dim += max(self.frag_embedder.hidden_size//16,2)
+			self.ce_transform = transform_nce
+			self.ce_embedder = nn.Linear(1,max(self.frag_embedder.hidden_size//8,2))
+			mlp_input_dim += max(self.frag_embedder.hidden_size//8,2)
+		if self.m_ce_insert_mlp_embed:
+			def m_ce_transform(m_ce):
+				m_ce = th.clamp(m_ce, min=0, max=int(NCE_MAX)-1)
+				m_ce = th.round(m_ce, decimals=0).long()
+				m_ce = m_ce.reshape(-1,1)
+				return m_ce
+			self.m_ce_transform = m_ce_transform
+			embedder = get_embedder(int_embedder, max_count_int=int(NCE_MAX))
+			self.m_ce_embedder = nn.Sequential(
+				embedder,
+				nn.Linear(embedder.num_dim,max(self.frag_embedder.hidden_size//8,2))
+			)	
+			mlp_input_dim += max(self.frag_embedder.hidden_size//8,2)
+		if self.m_ce_insert_mlp_bin:
+			def m_ce_transform(m_ce):
+				m_ce = th.clamp(m_ce, min=0, max=int(NCE_MAX)-10)
+				m_ce = th.round(m_ce, decimals=-1).long() // 10
+				m_ce = F.one_hot(m_ce, num_classes=int(NCE_MAX)//10).float()
+				return m_ce
+			self.m_ce_transform = m_ce_transform
+			self.m_ce_embedder = nn.Linear(int(NCE_MAX)//10,max(self.frag_embedder.hidden_size//8,2))
+			mlp_input_dim += max(self.frag_embedder.hidden_size//8,2)
+		# if self.m_ce_insert_mlp_lin:
+		# 	def m_ce_transform(m_ce):
+		# 		m_ce = transform_nce(m_ce)
+		# 		m_ce = m_ce.reshape(-1,1)
+		# 		return m_ce
+		# 	self.m_ce_transform = m_ce_transform
+		# 	self.m_ce_embedder = nn.Linear(1,max(self.frag_embedder.hidden_size//8,2))
+		# 	mlp_input_dim += max(self.frag_embedder.hidden_size//8,2)
 
 		if self.mlp_output_format in ["formula","node_formula"]:
 			formula_mlp_kwargs = {
@@ -234,6 +272,8 @@ class FragGNNModel(nn.Module):
 		frag_formula_cumsizes: th.Tensor,
 		frag_formula_peak_sizes: th.Tensor,
 		spec_nce: th.Tensor = None,
+		spec_m_nce: th.Tensor = None,
+		spec_m_nce_batch_idxs: th.Tensor = None,
 		**kwargs
 	):
 		"""forward methods for joint predictor
@@ -275,6 +315,8 @@ class FragGNNModel(nn.Module):
 		ce = spec_nce
 		if ce is not None:
 			ce = ce.reshape(-1,1)
+		m_ce = spec_m_nce
+		m_ce_batch_idxs = spec_m_nce_batch_idxs
 
 		if self.ce_insert_mol:
 			mol_ce_embed = th.repeat_interleave(ce,th.unique(mol_batch,return_counts=True)[1],dim=0)
@@ -406,14 +448,23 @@ class FragGNNModel(nn.Module):
 			frag_embed_node - frag_embed_node_pool[frag_batch],
 			frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
 		]
-		if self.ce_insert_mlp:
-			mlp_ce_embed = ce
+		if self.ce_insert_mlp or self.ce_insert_mlp_lin:
+			mlp_ce_embed = self.ce_embedder(self.ce_transform(ce))
 			mlp_ce_embed = th.repeat_interleave(mlp_ce_embed,th.unique(frag_node_batch_idxs,return_counts=True)[1],dim=0)
 			frag_embed_parts.append(mlp_ce_embed)
-		if self.ce_insert_mlp_lin:
-			mlp_ce_embed = self.ce_embedder(ce)
-			mlp_ce_embed = th.repeat_interleave(mlp_ce_embed,th.unique(frag_node_batch_idxs,return_counts=True)[1],dim=0)
-			frag_embed_parts.append(mlp_ce_embed)
+		if self.m_ce_insert_mlp_embed or self.m_ce_insert_mlp_bin: #or self.m_ce_insert_mlp_lin:
+			mlp_m_ce_embed = self.m_ce_transform(m_ce)
+			mlp_m_ce_embed = self.m_ce_embedder(mlp_m_ce_embed)
+			mlp_m_ce_embed = scatter_reduce(
+				src=mlp_m_ce_embed,
+				index=m_ce_batch_idxs.unsqueeze(1).expand_as(mlp_m_ce_embed),
+				reduce="mean",
+				dim=0,
+				dim_size=batch_size
+			)
+			mlp_m_ce_embed = th.repeat_interleave(mlp_m_ce_embed,th.unique(frag_node_batch_idxs,return_counts=True)[1],dim=0)
+			frag_embed_parts.append(mlp_m_ce_embed)
+
 		frag_embed = th.cat(frag_embed_parts, dim=1)
 
 		frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs,2*self.num_hs+1)

@@ -94,12 +94,18 @@ def filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=-1):
 	mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])].reset_index(drop=True)
 	return spec_df, mol_df
 
-def merge_spec_df(spec_df,renormalize=False,sum_ints=True):
+def merge_spec_df(spec_df,renormalize=False,sum_ints=True,keep_ces=False):
 
 	# merge the peaks (they are not normalized here)
-	m_func = lambda peakses: merge_sparse_specs(*peakses,renormalize=renormalize,sum_ints=sum_ints)
-	m_spec_df = spec_df[["group_id","peaks"]].groupby("group_id").agg({"peaks":m_func}).reset_index()
-	# add the metadata back
-	meta_spec_df = spec_df.drop(columns=["peaks","spec_id"]).drop_duplicates(subset=["group_id"])
-	m_spec_df = m_spec_df.merge(meta_spec_df,on=["group_id"],how="inner")
+	m_peaks_func = lambda peakses: merge_sparse_specs(*peakses,renormalize=renormalize,sum_ints=sum_ints)
+	m_spec_peaks_df = spec_df[["group_id","peaks"]].groupby("group_id").agg({"peaks":m_peaks_func}).reset_index()
+	m_spec_meta_df = spec_df.drop(columns=["peaks","spec_id"]).drop_duplicates(subset=["group_id"])
+	m_spec_df = m_spec_peaks_df.merge(m_spec_meta_df,on=["group_id"],how="inner")
+	if keep_ces:
+		m_spec_ce_df = spec_df[["group_id","nce","ace"]].groupby("group_id").agg({"nce":list,"ace":list}).reset_index()
+		m_spec_df = m_spec_df.drop(columns=["nce","ace"])
+		m_spec_df = m_spec_df.merge(m_spec_ce_df,on=["group_id"],how="inner")
+	else:
+		m_spec_df.loc[:,"nce"] = np.nan
+		m_spec_df.loc[:,"ace"] = np.nan
 	return m_spec_df
