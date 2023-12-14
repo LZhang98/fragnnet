@@ -255,6 +255,10 @@ class FragGNNModel(nn.Module):
 		self.formula_embedder = th.compile(self.formula_embedder,**kwargs)
 		self.depth_embedder = th.compile(self.depth_embedder,**kwargs)
 		self.complement_embedder = th.compile(self.complement_embedder,**kwargs)
+		if hasattr(self,"ce_embedder"):
+			self.ce_embedder = th.compile(self.ce_embedder,**kwargs)
+		if hasattr(self,"m_ce_embedder"):
+			self.m_ce_embedder = th.compile(self.m_ce_embedder,**kwargs)
 		if check_pyg_compile():
 			self.mol_embedder = pyg.compile(self.mol_embedder,**kwargs)
 			self.frag_embedder = pyg.compile(self.frag_embedder,**kwargs)
