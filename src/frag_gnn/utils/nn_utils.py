@@ -273,7 +273,7 @@ class NodeMLP(nn.Module):
 		"""
 		super().__init__()
 
-		assert edge_feats_size == 1, edge_feats_size
+		assert edge_feats_size == 0, edge_feats_size
 
 		self.layers = []
 		for i in range(num_layers):
