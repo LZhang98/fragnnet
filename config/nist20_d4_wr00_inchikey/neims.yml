@@ -1,4 +1,4 @@
-wandb_name: neims_hr
+wandb_name: neims
 wandb_tags:
 - splits
 - nist20
@@ -6,7 +6,7 @@ wandb_tags:
 - wr00
 - inchikey
 - new_proc
-- neims_hr
+- neims
 - new_metrics
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
@@ -26,11 +26,11 @@ mol_params:
 frag_params:
   pyg: False
 mlp_hidden_size: 2000
-mlp_dropout: 0.1
+mlp_dropout: 0.01
 mlp_num_layers: 5
 mlp_use_residuals: True
 mz_max: 1500.0
-mz_bin_res: 0.1
+mz_bin_res: 0.01
 sum_ints: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
@@ -47,8 +47,9 @@ min_epochs: 100
 max_epochs: 100
 lr_schedule: False
 debug_overfit: False
-upload_checkpoints: True
+upload_checkpoints: False
+disable_checkpoints: True
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-checkpoint_metric: val_cos_hun_epoch/mean
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
