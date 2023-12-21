@@ -688,7 +688,6 @@ def test_inten():
 	from frag_gnn.runner import load_config
 	from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset
 	from frag_gnn.utils.misc_utils import print_shapes
-	from frag_gnn.utils.spec_utils import bin_func, batched_bin_func, binned_cosine_similarity
 	import torch.nn.functional as F
 	from frag_gnn.utils.misc_utils import to_device
 
@@ -737,26 +736,6 @@ def test_inten():
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()
-
-	# # check that the spectra are consistent
-	# spec_mzs = batch["spec_mzs"]
-	# spec_ints = batch["spec_ints"]
-	# spec_batch_idxs = batch["spec_batch_idxs"]
-	# # print("pre_spec_max",batchwise_max(spec_ints,spec_batch_idxs))
-	# spec_mzs, spec_ints, spec_batch_idxs = pl_model._preproc_spec(
-	# 	spec_mzs,
-	# 	spec_ints,
-	# 	spec_batch_idxs
-	# )
-	# true_spec_2 = batched_bin_func(
-	# 	spec_mzs,
-	# 	th.exp(spec_ints),
-	# 	spec_batch_idxs,
-	# 	mz_bin_res=config_d["spec_params"]["mz_bin_res"],
-	# 	mz_max=config_d["spec_params"]["mz_max"],
-	# 	sum_ints=config_d["spec_params"]["sum_ints"],
-	# )
-	# print(binned_cosine_similarity(true_spec,true_spec_2))
 
 
 if __name__ == "__main__":

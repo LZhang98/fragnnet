@@ -1,10 +1,10 @@
-import numpy as np
 import torch as th
 import torch.nn.functional as F
 import math
+from typing import Tuple
 
-from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, scatter_logsumexp, LOG_ZERO
-from frag_gnn.utils.spec_utils import calculate_match_mzs
+from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize
+from frag_gnn.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func
 
 
 def mog_log_prob(samples,means,variances,log_weights):
@@ -271,6 +271,7 @@ def sparse_conditional_entropy_fn(
 	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
 	return entropy, norm_entropy
 
+
 def get_edge_loss_fn(edge_loss_fn_type,constant):
 
 	if edge_loss_fn_type == "quadratic":
@@ -282,6 +283,120 @@ def get_edge_loss_fn(edge_loss_fn_type,constant):
 	else:
 		raise NotImplementedError
 	return edge_loss_fn
+
+
+def sparse_cosine_distance(
+	true_mzs:th.Tensor, 
+	true_logprobs:th.Tensor,
+	true_batch_idxs:th.Tensor,
+	pred_mzs:th.Tensor,
+	pred_logprobs:th.Tensor,
+	pred_batch_idxs:th.Tensor,
+	mz_max:float=1500.,
+	mz_bin_res:float=0.01) -> th.Tensor:
+
+	# sparse bin
+	true_bin_idxs, true_bin_logprobs, true_bin_batch_idxs = batched_bin_func(
+		true_mzs,
+		true_logprobs,
+		true_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		agg="lse",
+		sparse=True
+	)
+	pred_bin_idxs, pred_bin_logprobs, pred_bin_batch_idxs = batched_bin_func(
+		pred_mzs,
+		pred_logprobs,
+		pred_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		agg="lse",
+		sparse=True
+	)
+	# l2 normalize
+	true_bin_logprobs = scatter_logl2normalize(
+		true_bin_logprobs,
+		true_bin_batch_idxs,
+		dim=0
+	)
+	pred_bin_logprobs = scatter_logl2normalize(
+		pred_bin_logprobs,
+		pred_bin_batch_idxs,
+		dim=0
+	)
+	# dot product
+	pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
+	true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
+	both_bin_logprobs = pred_bin_logprobs[pred_mask] + true_bin_logprobs[true_mask]
+	assert th.all(pred_bin_batch_idxs[pred_mask] == true_bin_batch_idxs[true_mask])
+	log_cos_sims = scatter_logsumexp(
+		both_bin_logprobs,
+		pred_bin_batch_idxs[pred_mask],
+		dim=0,
+		dim_size=th.max(true_bin_batch_idxs)+1
+	)
+	cos_sims = th.exp(log_cos_sims)
+	return 1. - cos_sims
+
+
+def sparse_cosine_distance_hungarian(
+	true_mzs:th.Tensor, 
+	true_logprobs:th.Tensor,
+	true_batch_idxs:th.Tensor,
+	pred_mzs:th.Tensor,
+	pred_logprobs:th.Tensor,
+	pred_batch_idxs:th.Tensor,
+	tolerance:float=1e-5,
+	relative:bool=True) -> th.Tensor:
+
+	# round peaks
+	true_mzs, true_logprobs, true_batch_idxs = round_aggregate_peaks(
+		true_mzs,
+		true_logprobs,
+		true_batch_idxs,
+		agg="lse"
+	)
+	pred_mzs, pred_logprobs, pred_batch_idxs = round_aggregate_peaks(
+		pred_mzs,
+		pred_logprobs,
+		pred_batch_idxs,
+		agg="lse"
+	)
+	# calculate
+	batch_size = th.max(true_batch_idxs)+1
+	cos_hun = th.zeros([batch_size],device=true_logprobs.device,dtype=true_logprobs.dtype)
+	for batch_idx in range(batch_size):
+		b_true_mask = (true_batch_idxs==batch_idx)
+		b_pred_mask = (pred_batch_idxs==batch_idx)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_logprobs = true_logprobs[b_true_mask]
+		b_pred_logprobs = pred_logprobs[b_pred_mask]
+		# l2 normalize
+		b_true_logprobs = b_true_logprobs - 0.5*th.logsumexp(2*b_true_logprobs,dim=0)
+		b_pred_logprobs = b_pred_logprobs - 0.5*th.logsumexp(2*b_pred_logprobs,dim=0)
+		b_match_mzs = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative
+		)
+		b_true_match_mzs = th.any(b_match_mzs,dim=1)
+		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+		b_score = th.exp(
+			b_true_logprobs[b_true_match_mzs].detach().unsqueeze(1) + \
+			b_pred_logprobs[b_pred_match_mzs].detach().unsqueeze(0)
+		)
+		b_score[~b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs]] = LOG_ZERO
+		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+		b_log_cos_hun = th.logsumexp(
+			b_true_logprobs[b_true_match_mzs][b_true_idxs] + \
+			b_pred_logprobs[b_pred_match_mzs][b_pred_idxs],
+			dim=0
+		)
+		cos_hun[batch_idx] = th.exp(b_log_cos_hun)
+	return 1. - cos_hun
 
 
 if __name__ == "__main__":

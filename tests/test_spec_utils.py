@@ -305,9 +305,9 @@ def round_aggregate_peaks_test():
 
     # this should do nothing
     decimals = 3
-    sum_ints = True
+    agg = "sum"
     r_mzs, r_ints, r_batch_idxs = round_aggregate_peaks(
-        p_mzs, p_ints, p_batch_idxs, decimals, sum_ints)
+        p_mzs, p_ints, p_batch_idxs, decimals, agg)
     th.testing.assert_close(th.round(p_mzs, decimals=decimals), r_mzs)
     th.testing.assert_close(p_ints, r_ints)
     th.testing.assert_close(p_batch_idxs, r_batch_idxs)
@@ -318,18 +318,18 @@ def round_aggregate_peaks_test():
     except_r_batch_idxs = th.tensor([0, 0, 0])
 
     decimals = 2
-    sum_ints = True
+    agg = "sum"
     r_mzs, r_ints, r_batch_idxs = round_aggregate_peaks(
-        p_mzs, p_ints, p_batch_idxs, decimals, sum_ints)
+        p_mzs, p_ints, p_batch_idxs, decimals, agg)
     th.testing.assert_close(except_r_mzs, r_mzs)
     th.testing.assert_close(except_r_ints, r_ints)
     th.testing.assert_close(except_r_batch_idxs, r_batch_idxs)
 
     decimals = 2
-    sum_ints = False
+    agg = "amax"
     except_r_ints = th.tensor([1, 1, 1.0])
     r_mzs, r_ints, r_batch_idxs = round_aggregate_peaks(
-        p_mzs, p_ints, p_batch_idxs, decimals, sum_ints)
+        p_mzs, p_ints, p_batch_idxs, decimals, agg)
     th.testing.assert_close(except_r_mzs, r_mzs)
     th.testing.assert_close(except_r_ints, r_ints)
     th.testing.assert_close(except_r_batch_idxs, r_batch_idxs)

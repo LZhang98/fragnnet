@@ -1,15 +1,12 @@
 import numpy as np
-from rdkit import Chem
-from rdkit.Chem import Descriptors
-from rdkit.Chem import AllChem
 import torch as th
 import torch.nn.functional as F
 import scipy
 import scipy.optimize
+from typing import Tuple, Union
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d, safelog
-from typing import List, Tuple, Union
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d, safelog, scatter_logsumexp
 
 # TODO: actually fill these out
 PREC_TYPES = [
@@ -244,7 +241,7 @@ def batched_bin_func(
 		batch_idxs:th.Tensor,
 		mz_max:float,
 		mz_bin_res:float,
-		sum_ints:bool,
+		agg:str,
 		sparse:bool=False,
 		remove_prec_peaks:bool=False,
 		prec_mzs:th.Tensor=None) -> th.Tensor:
@@ -283,25 +280,43 @@ def batched_bin_func(
 	if sparse:
 		un_bin_idxs, un_bin_idxs_rev = th.unique(bin_idxs,return_inverse=True)
 		new_bin_idxs = th.arange(un_bin_idxs.shape[0],device=un_bin_idxs.device)
-		un_bin_ints = scatter_reduce(
-			src=ints,
-			index=new_bin_idxs[un_bin_idxs_rev],
-			reduce="sum" if sum_ints else "amax",
-			dim=0,
-			dim_size=new_bin_idxs.shape[0]
-		)
+		if agg in ["sum","amax"]:
+			un_bin_ints = scatter_reduce(
+				src=ints,
+				index=new_bin_idxs[un_bin_idxs_rev],
+				reduce=agg,
+				dim=0,
+				dim_size=new_bin_idxs.shape[0]
+			)
+		else:
+			assert agg == "lse", agg
+			un_bin_ints = scatter_logsumexp(
+				ints,
+				new_bin_idxs[un_bin_idxs_rev],
+				dim=0,
+				dim_size=new_bin_idxs.shape[0]
+			)
 		un_bin_batch_idxs = un_bin_idxs // num_bins
 		return un_bin_idxs, un_bin_ints, un_bin_batch_idxs
 	else:
-		bin_spec = scatter_reduce(
-			src=ints,
-			index=bin_idxs,
-			reduce="sum" if sum_ints else "amax",
-			dim=0,
-			dim_size=num_bins*batch_size
-		)
+		if agg in ["sum","amax"]:
+			bin_spec = scatter_reduce(
+				src=ints,
+				index=bin_idxs,
+				reduce=agg,
+				dim=0,
+				dim_size=num_bins*batch_size
+			)
+		else:
+			assert agg == "lse", agg
+			bin_spec = scatter_logsumexp(
+				ints,
+				bin_idxs,
+				dim=0,
+				dim_size=num_bins*batch_size
+			)
 		bin_spec = bin_spec.reshape(batch_size,num_bins)
-		if th.any(th.all(bin_spec==0.,dim=1)):
+		if agg in ["sum","amax"] and th.any(th.all(bin_spec==0.,dim=1)):
 			print("> warning: bin_spec is all zeros!")
 			mask = th.zeros_like(bin_spec,dtype=th.bool)
 			mask[:,0] = 1.
@@ -719,17 +734,18 @@ def calculate_ndcg_hungarian(
 		th.Tensor:  Normalized Discounted Cumulative Gain
 	"""
 	# round peaks
+	agg = "sum" if sum_ints else "amax"
 	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,
-		sum_ints=sum_ints
+		agg=agg
 	)
 	pred_mzs, pred_ints, pred_batch_idxs = round_aggregate_peaks(
 		pred_mzs,
 		pred_ints,
 		pred_batch_idxs,
-		sum_ints=sum_ints
+		agg=agg
 	)
 
 	# l1 normalize
@@ -857,13 +873,14 @@ def calculate_cosine_similarity(
 	Returns:
 		th.Tensor: cosine similarity using binned spectra
 	"""
+	agg = "sum" if sum_ints else "amax"
 	true_spec = batched_bin_func(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,
 		mz_max,
 		mz_bin_res,
-		sum_ints,
+		agg=agg,
 		sparse=False,
 		remove_prec_peaks=remove_prec_peaks,
 		prec_mzs=true_prec_mzs
@@ -874,7 +891,7 @@ def calculate_cosine_similarity(
 		pred_batch_idxs,
 		mz_max,
 		mz_bin_res,
-		sum_ints,
+		agg=agg,
 		sparse=False,
 		remove_prec_peaks=remove_prec_peaks,
 		prec_mzs=true_prec_mzs
@@ -913,13 +930,14 @@ def calculate_optimal_cosine_similarity(
 		th.Tensor: optimal cosine similarity
 	"""
 
+	agg = "sum" if sum_ints else "amax"
 	true_spec = batched_bin_func(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,
 		mz_max,
 		mz_bin_res,
-		sum_ints
+		agg
 	)
 	pred_spec = batched_bin_func(
 		pred_mzs,
@@ -927,7 +945,7 @@ def calculate_optimal_cosine_similarity(
 		pred_batch_idxs,
 		mz_max,
 		mz_bin_res,
-		sum_ints
+		agg
 	)
 	pred_mask = pred_spec > 0.
 	pred_spec = true_spec * pred_mask.float() + pred_spec * (~pred_mask).float()
@@ -966,13 +984,14 @@ def calculate_sparse_cosine_similarity(
 	"""
 
 	# sparse bin
+	agg = "sum" if sum_ints else "amax"
 	true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,
 		mz_max=mz_max,
 		mz_bin_res=mz_bin_res,
-		sum_ints=sum_ints,
+		agg=agg,
 		sparse=True,
 		remove_prec_peaks=remove_prec_peaks,
 		prec_mzs=true_prec_mzs
@@ -983,7 +1002,7 @@ def calculate_sparse_cosine_similarity(
 		pred_batch_idxs,
 		mz_max=mz_max,
 		mz_bin_res=mz_bin_res,
-		sum_ints=sum_ints,
+		agg=agg,
 		sparse=True,
 		remove_prec_peaks=remove_prec_peaks,
 		prec_mzs=true_prec_mzs
@@ -1030,13 +1049,14 @@ def calculate_optimal_sparse_cosine_similarity(
 		th.Tensor: optimal cosine similarity
 	"""
 	# sparse bin
+	agg = "sum" if sum_ints else "amax"
 	true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,
 		mz_max=mz_max,
 		mz_bin_res=mz_bin_res,
-		sum_ints=sum_ints,
+		agg=agg,
 		sparse=True
 	)
 	pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
@@ -1045,7 +1065,7 @@ def calculate_optimal_sparse_cosine_similarity(
 		pred_batch_idxs,
 		mz_max=mz_max,
 		mz_bin_res=mz_bin_res,
-		sum_ints=sum_ints,
+		agg=agg,
 		sparse=True
 	)
 	pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
@@ -1181,17 +1201,18 @@ def calculate_sparse_cosine_hungarian(
 		th.Tensor: cosine similarity tensor, one per pair 
 	"""
 	# round peaks
+	agg = "sum" if sum_ints else "amax"
 	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,
-		sum_ints=sum_ints
+		agg=agg
 	)
 	pred_mzs, pred_ints, pred_batch_idxs = round_aggregate_peaks(
 		pred_mzs,
 		pred_ints,
 		pred_batch_idxs,
-		sum_ints=sum_ints
+		agg=agg
 	)
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
@@ -1242,7 +1263,12 @@ def calculate_sparse_cosine_hungarian(
 		cos_hun[batch_idx] = b_cos_hun
 	return cos_hun
 
-def round_aggregate_peaks(mzs:th.Tensor, ints:th.Tensor, batch_idxs:th.Tensor,decimals:int=4,sum_ints:bool=True) -> Tuple[th.Tensor,th.Tensor,th.Tensor]:
+def round_aggregate_peaks(
+		mzs:th.Tensor, 
+		ints:th.Tensor, 
+		batch_idxs:th.Tensor, 
+		decimals:int=4, 
+		agg="sum") -> Tuple[th.Tensor,th.Tensor,th.Tensor]:
 	""" methds to round and aggreate peaks to give decimals points
 
 	Args:
@@ -1262,13 +1288,22 @@ def round_aggregate_peaks(mzs:th.Tensor, ints:th.Tensor, batch_idxs:th.Tensor,de
 		b_round_mzs = th.round(mzs[b_mask], decimals=decimals)
 		b_ints = ints[b_mask]
 		b_round_mzs_un, b_round_mzs_inv = th.unique(b_round_mzs, return_inverse=True)
-		b_round_ints = scatter_reduce(
-			src=b_ints,
-			index=b_round_mzs_inv,
-			reduce="sum" if sum_ints else "amax",
-			dim=0,
-			dim_size=b_round_mzs_un.shape[0]
-		)
+		if agg in ["sum","amax"]:
+			b_round_ints = scatter_reduce(
+				src=b_ints,
+				index=b_round_mzs_inv,
+				reduce=agg,
+				dim=0,
+				dim_size=b_round_mzs_un.shape[0]
+			)
+		else:
+			assert agg == "lse", agg
+			b_round_ints = scatter_logsumexp(
+				logits=b_ints,
+				subset_idxs=b_round_mzs_inv,
+				dim=0,
+				dim_size=b_round_mzs_un.shape[0]
+			)
 		round_mzs.append(b_round_mzs_un)
 		round_ints.append(b_round_ints)
 		round_batch_idxs.append(th.full_like(b_round_mzs_un,b,dtype=batch_idxs.dtype))
@@ -1300,17 +1335,18 @@ def calculate_union_distribution(
 	) -> th.Tensor:
 
 	# round peaks
+	agg = "sum" if sum_ints else "amax"
 	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,
-		sum_ints=sum_ints
+		agg=agg
 	)
 	pred_mzs, pred_ints, pred_batch_idxs = round_aggregate_peaks(
 		pred_mzs,
 		pred_ints,
 		pred_batch_idxs,
-		sum_ints=sum_ints
+		agg=agg
 	)
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
@@ -1376,17 +1412,18 @@ def calculate_sparse_jensen_hungarian(
 	) -> th.Tensor:
 
 	# round peaks
+	agg = "sum" if sum_ints else "amax"
 	true_mzs, true_ints, true_batch_idxs = round_aggregate_peaks(
 		true_mzs,
 		true_ints,
 		true_batch_idxs,
-		sum_ints=sum_ints
+		agg=agg
 	)
 	pred_mzs, pred_ints, pred_batch_idxs = round_aggregate_peaks(
 		pred_mzs,
 		pred_ints,
 		pred_batch_idxs,
-		sum_ints=sum_ints
+		agg=agg
 	)
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1

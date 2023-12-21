@@ -16,7 +16,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.utils.nn_utils import build_lr_scheduler
 from frag_gnn.model import FragGNNModel, NeimsModel
-from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn
+from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance, sparse_cosine_distance_hungarian
 from frag_gnn.utils.spec_utils import *
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_logsumexp, to_cpu, scatter_l1normalize
 from frag_gnn.utils.plot_utils import plot_spectra_sparse
@@ -62,7 +62,8 @@ class SpectrumPL(pl.LightningModule):
 			return batched_filter_func(mzs,ints,batch_idxs,self.hparams.ints_thresh,self.hparams.mz_max)
 		self.filter_func = _filter_func
 		def _bin_func(mzs, ints, batch_idxs):
-			return batched_bin_func(mzs,ints,batch_idxs,self.hparams.mz_max,self.hparams.mz_bin_res,self.hparams.sum_ints)
+			agg = "sum" if self.hparams.sum_ints else "amax"
+			return batched_bin_func(mzs,ints,batch_idxs,self.hparams.mz_max,self.hparams.mz_bin_res,agg)
 		self.bin_func = _bin_func
 		self.ints_transform_func = get_ints_transform_func(self.hparams.ints_transform)
 		self.ints_untransform_func = get_ints_untransform_func(self.hparams.ints_transform)
@@ -234,20 +235,22 @@ class SpectrumPL(pl.LightningModule):
 			true_ints = self.ints_untransform_func(true_ints)
 			pred_ints = self.ints_untransform_func(pred_ints)
 
-			# global calculations
+			# define aggregation
+			agg = "sum" if self.hparams.sum_ints else "amax"
 
+			# global calculations
 			if compute_rounded_match_mzs:
 				true_mzs_r, true_ints_r, true_batch_idxs_r = round_aggregate_peaks(
 					true_mzs,
 					true_ints,
 					true_batch_idxs,
-					sum_ints=self.hparams.sum_ints
+					agg=agg
 				)
 				pred_mzs_r, pred_ints_r, pred_batch_idxs_r = round_aggregate_peaks(
 					pred_mzs,
 					pred_ints,
 					pred_batch_idxs,
-					sum_ints=self.hparams.sum_ints
+					agg=agg
 				)
 
 			if compute_bin_specs:
@@ -264,7 +267,7 @@ class SpectrumPL(pl.LightningModule):
 								true_batch_idxs,
 								mz_max=self.hparams.mz_max,
 								mz_bin_res=mz_bin_res,
-								sum_ints=self.hparams.sum_ints,
+								agg=agg,
 								sparse=True,
 								remove_prec_peaks=remove_prec_peak,
 								prec_mzs=true_prec_mzs
@@ -275,7 +278,7 @@ class SpectrumPL(pl.LightningModule):
 								pred_batch_idxs,
 								mz_max=self.hparams.mz_max,
 								mz_bin_res=mz_bin_res,
-								sum_ints=self.hparams.sum_ints,
+								agg=agg,
 								sparse=True,
 								remove_prec_peaks=remove_prec_peak,
 								prec_mzs=true_prec_mzs
@@ -1149,28 +1152,41 @@ class FragGNNPL(SpectrumPL):
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
 		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
 
-		if self.hparams.sparse_cosine_similarity:
-			cosine_similarity_fn = calculate_sparse_cosine_similarity
-		else:
-			cosine_similarity_fn = calculate_cosine_similarity
+		assert self.hparams.sparse_cosine_similarity
+		assert self.hparams.sum_ints
 		def cosine_distance_fn(
 			true_mzs,
-			true_ints,
+			true_logprobs,
 			true_batch_idxs,
 			pred_mzs,
-			pred_ints,
+			pred_logprobs,
 			pred_batch_idxs):
-			# calculate
-			return 1.-cosine_similarity_fn(
+			return sparse_cosine_distance(
 				true_mzs,
-				th.exp(true_ints),
+				true_logprobs,
 				true_batch_idxs,
 				pred_mzs,
-				th.exp(pred_ints),
+				pred_logprobs,
 				pred_batch_idxs,
 				mz_bin_res=self.hparams.mz_bin_res,
-				mz_max=self.hparams.mz_max,
-				sum_ints=self.hparams.sum_ints
+				mz_max=self.hparams.mz_max
+			)
+		def cosine_distance_hungarian_fn(
+			true_mzs,
+			true_logprobs,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs):
+			return sparse_cosine_distance_hungarian(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs,
+				tolerance=self.tolerance,
+				relative=self.relative,
 			)
 
 		def edge_loss(
@@ -1231,19 +1247,29 @@ class FragGNNPL(SpectrumPL):
 				pred_batch_idxs,
 				pred_oos_logprobs
 			)
-			spec_cd = cosine_distance_fn(
-				true_mzs,
-				true_logprobs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_logprobs,
-				pred_batch_idxs
-			)
 			if self.hparams.loss_type == "cross_entropy":
 				loss = spec_ce
-			else:
-				assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
+			elif self.hparams.loss_type == "cosine_distance":
+				spec_cd = cosine_distance_fn(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs
+				)
 				loss = spec_cd
+			else:
+				assert self.hparams.loss_type == "cosine_distance_hungarian", self.hparams.loss_type
+				spec_cd_hun = cosine_distance_hungarian_fn(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs
+				)
+				loss = spec_cd_hun
 			loss = self.hparams.primary_loss_weight * loss
 			spec_e, spec_ne = sparse_entropy_fn(
 				pred_logprobs,
@@ -1291,7 +1317,6 @@ class FragGNNPL(SpectrumPL):
 			true_oos_prob = th.exp(true_oos_logprobs)
 			loss_d = {
 				"loss": loss,
-				"spec_cd": spec_cd,
 				"spec_ce": spec_ce,
 				"spec_e": spec_e,
 				"spec_ne": spec_ne,
@@ -1307,6 +1332,10 @@ class FragGNNPL(SpectrumPL):
 				"oos_prob": oos_prob,
 				"true_oos_prob": true_oos_prob
 			}
+			if self.hparams.loss_type == "cosine_distance":
+				loss_d["spec_cd"] = spec_cd
+			if self.hparams.loss_type == "cosine_distance_hungarian":
+				loss_d["spec_cd_hun"] = spec_cd_hun
 			if not self.hparams.skip_edge_loss:
 				r_el, t_el = edge_loss(
 					pred_edge_logprobs,
@@ -1333,7 +1362,6 @@ class FragGNNPL(SpectrumPL):
 		# flag losses for tracking
 		loss_names = [
 			"loss",
-			"spec_cd",
 			"spec_ce",
 			"spec_e",
 			"spec_ne",
@@ -1349,6 +1377,10 @@ class FragGNNPL(SpectrumPL):
 			"oos_prob",
 			"true_oos_prob"
 		]
+		if self.hparams.loss_type == "cosine_distance":
+			loss_names.append("spec_cd")
+		if self.hparams.loss_type == "cosine_distance_hungarian":
+			loss_names.append("spec_cd_hun")
 		if not self.hparams.skip_edge_loss:
 			loss_names.extend(
 				[

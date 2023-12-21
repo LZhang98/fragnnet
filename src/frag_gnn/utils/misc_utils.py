@@ -251,6 +251,13 @@ def scatter_l2normalize(vals,subset_idxs,dim=-1):
 	vals = vals/c[subset_idxs]
 	return vals
 
+def scatter_logl2normalize(logits,subset_idxs,dim=-1):
+	# calculate normalizing constant
+	c = scatter_logsumexp(2*logits,subset_idxs,dim=dim)
+	# apply normalizing constant
+	logits = logits - 0.5*c[subset_idxs]
+	return logits
+
 def scatter_reduce(src,index,reduce,dim,dim_size,default=0.):
 
 	result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim+1:]
