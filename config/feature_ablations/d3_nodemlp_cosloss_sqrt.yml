@@ -25,7 +25,7 @@ frag_params:
   pyg_edge_feats: []
   pyg_bigraph: False
 frag_remove_edges: True
-loss_type: cosine_distance_hungarian
+loss_type: cosine_distance
 ints_transform: sqrt
 
 train_batch_size: 32

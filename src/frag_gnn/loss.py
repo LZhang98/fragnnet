@@ -293,7 +293,8 @@ def sparse_cosine_distance(
 	pred_logprobs:th.Tensor,
 	pred_batch_idxs:th.Tensor,
 	mz_max:float=1500.,
-	mz_bin_res:float=0.01) -> th.Tensor:
+	mz_bin_res:float=0.01,
+	log_distance:bool=False) -> th.Tensor:
 
 	# sparse bin
 	true_bin_idxs, true_bin_logprobs, true_bin_batch_idxs = batched_bin_func(
@@ -330,14 +331,17 @@ def sparse_cosine_distance(
 	true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
 	both_bin_logprobs = pred_bin_logprobs[pred_mask] + true_bin_logprobs[true_mask]
 	assert th.all(pred_bin_batch_idxs[pred_mask] == true_bin_batch_idxs[true_mask])
-	log_cos_sims = scatter_logsumexp(
+	log_cos_sim = scatter_logsumexp(
 		both_bin_logprobs,
 		pred_bin_batch_idxs[pred_mask],
 		dim=0,
 		dim_size=th.max(true_bin_batch_idxs)+1
 	)
-	cos_sims = th.exp(log_cos_sims)
-	return 1. - cos_sims
+	if log_distance:
+		cos_dist = th.log1p(-th.exp(log_cos_sim))
+	else:
+		cos_dist = 1.-th.exp(log_cos_sim)
+	return cos_dist
 
 
 def sparse_cosine_distance_hungarian(
@@ -348,7 +352,8 @@ def sparse_cosine_distance_hungarian(
 	pred_logprobs:th.Tensor,
 	pred_batch_idxs:th.Tensor,
 	tolerance:float=1e-5,
-	relative:bool=True) -> th.Tensor:
+	relative:bool=True,
+	log_distance:bool=False) -> th.Tensor:
 
 	# round peaks
 	true_mzs, true_logprobs, true_batch_idxs = round_aggregate_peaks(
@@ -365,7 +370,7 @@ def sparse_cosine_distance_hungarian(
 	)
 	# calculate
 	batch_size = th.max(true_batch_idxs)+1
-	cos_hun = th.zeros([batch_size],device=true_logprobs.device,dtype=true_logprobs.dtype)
+	cos_dist_hun = th.zeros([batch_size],device=true_logprobs.device,dtype=true_logprobs.dtype)
 	for batch_idx in range(batch_size):
 		b_true_mask = (true_batch_idxs==batch_idx)
 		b_pred_mask = (pred_batch_idxs==batch_idx)
@@ -395,8 +400,12 @@ def sparse_cosine_distance_hungarian(
 			b_pred_logprobs[b_pred_match_mzs][b_pred_idxs],
 			dim=0
 		)
-		cos_hun[batch_idx] = th.exp(b_log_cos_hun)
-	return 1. - cos_hun
+		if log_distance:
+			b_cos_dist_hun = th.log1p(-th.exp(b_log_cos_hun))
+		else:
+			b_cos_dist_hun = 1.-th.exp(b_log_cos_hun)
+		cos_dist_hun[batch_idx] = b_cos_dist_hun
+	return cos_dist_hun
 
 
 if __name__ == "__main__":

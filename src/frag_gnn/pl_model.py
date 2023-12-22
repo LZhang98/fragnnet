@@ -1154,40 +1154,46 @@ class FragGNNPL(SpectrumPL):
 
 		assert self.hparams.sparse_cosine_similarity
 		assert self.hparams.sum_ints
-		def cosine_distance_fn(
-			true_mzs,
-			true_logprobs,
-			true_batch_idxs,
-			pred_mzs,
-			pred_logprobs,
-			pred_batch_idxs):
-			return sparse_cosine_distance(
+		if self.hparams.loss_type in ["cosine_distance", "log_cosine_distance"]:
+			log_distance = self.hparams.loss_type == "log_cosine_distance"
+			def cosine_distance_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
 				pred_mzs,
 				pred_logprobs,
-				pred_batch_idxs,
-				mz_bin_res=self.hparams.mz_bin_res,
-				mz_max=self.hparams.mz_max
-			)
-		def cosine_distance_hungarian_fn(
-			true_mzs,
-			true_logprobs,
-			true_batch_idxs,
-			pred_mzs,
-			pred_logprobs,
-			pred_batch_idxs):
-			return sparse_cosine_distance_hungarian(
+				pred_batch_idxs):
+				return sparse_cosine_distance(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs,
+					mz_bin_res=self.hparams.mz_bin_res,
+					mz_max=self.hparams.mz_max,
+					log_distance=log_distance
+				)
+		if self.hparams.loss_type in ["cosine_distance_hungarian", "log_cosine_distance_hungarian"]:
+			log_distance = self.hparams.loss_type == "log_cosine_distance_hungarian"
+			def cosine_distance_hungarian_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
 				pred_mzs,
 				pred_logprobs,
-				pred_batch_idxs,
-				tolerance=self.tolerance,
-				relative=self.relative,
-			)
+				pred_batch_idxs):
+				return sparse_cosine_distance_hungarian(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative,
+					log_distance=log_distance
+				)
 
 		def edge_loss(
 			pred_edge_logprobs,
@@ -1248,8 +1254,8 @@ class FragGNNPL(SpectrumPL):
 				pred_oos_logprobs
 			)
 			if self.hparams.loss_type == "cross_entropy":
-				loss = spec_ce
-			elif self.hparams.loss_type == "cosine_distance":
+				primary_loss = spec_ce
+			elif self.hparams.loss_type in ["cosine_distance","log_cosine_distance"]:
 				spec_cd = cosine_distance_fn(
 					true_mzs,
 					true_logprobs,
@@ -1258,9 +1264,9 @@ class FragGNNPL(SpectrumPL):
 					pred_logprobs,
 					pred_batch_idxs
 				)
-				loss = spec_cd
+				primary_loss = spec_cd
 			else:
-				assert self.hparams.loss_type == "cosine_distance_hungarian", self.hparams.loss_type
+				assert self.hparams.loss_type in ["cosine_distance_hungarian","log_cosine_distance_hungarian"], self.hparams.loss_type
 				spec_cd_hun = cosine_distance_hungarian_fn(
 					true_mzs,
 					true_logprobs,
@@ -1269,8 +1275,8 @@ class FragGNNPL(SpectrumPL):
 					pred_logprobs,
 					pred_batch_idxs
 				)
-				loss = spec_cd_hun
-			loss = self.hparams.primary_loss_weight * loss
+				primary_loss = spec_cd_hun
+			loss = self.hparams.primary_loss_weight * primary_loss
 			spec_e, spec_ne = sparse_entropy_fn(
 				pred_logprobs,
 				pred_batch_idxs,
@@ -1317,6 +1323,7 @@ class FragGNNPL(SpectrumPL):
 			true_oos_prob = th.exp(true_oos_logprobs)
 			loss_d = {
 				"loss": loss,
+				"primary_loss": primary_loss,
 				"spec_ce": spec_ce,
 				"spec_e": spec_e,
 				"spec_ne": spec_ne,
@@ -1332,10 +1339,6 @@ class FragGNNPL(SpectrumPL):
 				"oos_prob": oos_prob,
 				"true_oos_prob": true_oos_prob
 			}
-			if self.hparams.loss_type == "cosine_distance":
-				loss_d["spec_cd"] = spec_cd
-			if self.hparams.loss_type == "cosine_distance_hungarian":
-				loss_d["spec_cd_hun"] = spec_cd_hun
 			if not self.hparams.skip_edge_loss:
 				r_el, t_el = edge_loss(
 					pred_edge_logprobs,
@@ -1362,6 +1365,7 @@ class FragGNNPL(SpectrumPL):
 		# flag losses for tracking
 		loss_names = [
 			"loss",
+			"primary_loss",
 			"spec_ce",
 			"spec_e",
 			"spec_ne",
@@ -1377,10 +1381,6 @@ class FragGNNPL(SpectrumPL):
 			"oos_prob",
 			"true_oos_prob"
 		]
-		if self.hparams.loss_type == "cosine_distance":
-			loss_names.append("spec_cd")
-		if self.hparams.loss_type == "cosine_distance_hungarian":
-			loss_names.append("spec_cd_hun")
 		if not self.hparams.skip_edge_loss:
 			loss_names.extend(
 				[
