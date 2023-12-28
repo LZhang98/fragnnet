@@ -2,6 +2,7 @@
 wandb_entity: frag-gnn
 wandb_project: frag-gnn
 wandb_name: template
+wandb_group:
 wandb_tags: 
 # data
 spec_fp: data/proc/nist20mona23/spec_df.pkl

@@ -106,6 +106,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		wandb_d = dict(
 			project=config_d["wandb_project"],
 			name=config_d["wandb_name"],
+			group=config_d["wandb_group"],
 			mode=wandb_mode,
 			entity=config_d["wandb_entity"],
 			tags=config_d["wandb_tags"],
