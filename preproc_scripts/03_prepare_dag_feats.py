@@ -84,7 +84,7 @@ def main(args):
 			h_prior,
 			max_h_transfer, 
 			max_time,
-			use_isotopes: bool,
+			isotopes: bool,
 			output_dir: str, 
 			use_cached = True, 
 			compressed = False,
@@ -119,7 +119,7 @@ def main(args):
 					h_prior,
 					max_h_transfer, 
 					max_time, 
-					use_isotopes
+					isotopes
 				)
 			except KeyboardInterrupt as e:
 				# let these through

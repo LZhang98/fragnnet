@@ -10,11 +10,11 @@ import torch as th
 import torch.nn.functional as F
 import bz2
 import os
-
 import torch_geometric as pyg
+from collections import Counter
+from hashlib import blake2b
 
 import frag_gnn.frag.compute_frags as compute_frags
-from frag_gnn.utils.misc_utils import timeit
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from frag_gnn.frag.compute_frags import (
 	MASK_DTYPE,
@@ -61,6 +61,13 @@ META_DATA_DTYPE = th.float32
 MASK_SIZE = 128
 assert MASK_SIZE >= MAX_NUM_NODES, "MASK_SIZE should be larger than MAX_NUM_NODES"
 assert MASK_SIZE % 64 == 0, "MASK_SIZE should be a multiple of 64"
+
+BOND_TYPE_TO_IDX = {
+	Chem.rdchem.BondType.names["AROMATIC"]: 2,
+	Chem.rdchem.BondType.names["DOUBLE"]: 2,
+	Chem.rdchem.BondType.names["TRIPLE"]: 3,
+	Chem.rdchem.BondType.names["SINGLE"]: 1,
+}
 
 def convert_cc_mask_to_int(cc:list|np.ndarray)->int:
 	"""covert a cc mask to an int
@@ -144,13 +151,13 @@ def get_fraggen_input_arrays(mol_d:dict):
 	for bond_idx, bond in enumerate(mol_d["bonds"]):
 		edges[bond_idx,0] = bond[0]
 		edges[bond_idx,1] = bond[1]
-	edge_to_node_idx = compute_frags.py_compute_node_to_edge_idx(num_nodes,num_edges,edges)
-	# print(edge_to_node_idx)
+	node_to_edge_idx = compute_frags.py_compute_node_to_edge_idx(num_nodes,num_edges,edges)
+	# print(node_to_edge_idx)
 	node_mask = np.zeros((num_nodes,),dtype=MASK_DTYPE)
 	node_mask[:num_nodes] = 1
 	edge_mask = np.zeros((num_edges,),dtype=MASK_DTYPE)
 	edge_mask[:num_edges] = 1
-	return num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx
+	return num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx
 
 def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 	"""Method to exatract mol infomation in to dict
@@ -244,7 +251,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 	ve_arr = np.array(ve_arr)
 	# enumerate bonds
 	atoms_to_bonds = {}
-	bonds = []
+	bonds, bond_type_idxs = [], []
 	num_bonds = 0
 	adj = np.zeros((num_atoms, num_atoms), dtype=np.int32)
 	#adj = Chem.rdmolops.GetAdjacencyMatrix(mol)
@@ -252,10 +259,12 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 		cur_idx = bond.GetIdx()
 		from_idx = bond.GetBeginAtomIdx()
 		to_idx = bond.GetEndAtomIdx()
+		cur_type_idx = BOND_TYPE_TO_IDX[bond.GetBondType()]
 		assert from_idx != to_idx
 		adj[from_idx, to_idx] = 1
 
 		bonds.append((from_idx, to_idx))
+		bond_type_idxs.append(cur_type_idx)
 
 		if from_idx not in atoms_to_bonds:
 			atoms_to_bonds[from_idx] = [cur_idx]
@@ -268,7 +277,6 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 			atoms_to_bonds[to_idx].append(cur_idx)
 		num_bonds += 1
 
-
 	mol_d = {}
 	mol_d["mol"] = mol
 	mol_d["num_hs"] = num_hs
@@ -278,6 +286,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 	mol_d["elems"] = elems
 	mol_d["elem_idxs"] = elem_idxs
 	mol_d["bonds"] = bonds
+	mol_d["bond_type_idxs"] = bond_type_idxs
 	mol_d["bond_mask_arr"] = np.ones((num_bonds,), dtype=bool)
 	mol_d["atom_mask_arr"] = np.ones((num_atoms,), dtype=bool) # can be computed
 	mol_d["atoms_to_bonds"] = atoms_to_bonds # can be computed
@@ -670,7 +679,15 @@ def th_mask_to_long(mask):
 	return th.sum(long*mask,dim=2).long()
 
 
-def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_max_time:int, use_isotopes:bool = False) -> dict:
+def compute_dags(
+		mol_d:dict,
+		max_depth:int,
+		h_prior:bool,
+		max_h_transfer:int,
+		frag_max_time:int,
+		isotopes:bool = False,
+		nb_isomorphic:bool = False,
+		b_isomorphic:bool = False) -> dict:
 	"""_summary_
 
 	Args:
@@ -679,7 +696,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 		h_prior (bool): _description_
 		max_h_transfer (int): _description_
 		frag_max_time (int): _description_
-		use_isotopes (bool, optional): _description_. Defaults to False.
+		isotopes (bool, optional): _description_. Defaults to False.
 
 	Raises:
 		ValueError: _description_
@@ -689,24 +706,47 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 	"""
 
 	assert h_prior in [True,False], h_prior
-	num_nodes, num_edges, node_mask, edges, edge_mask, edge_to_node_idx = get_fraggen_input_arrays(mol_d)
+	num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx = get_fraggen_input_arrays(mol_d)
 	# time the recursive part
 	if frag_max_time is None:
 		frag_max_time = int(1e6)
 	
 	node_mask = node_mask.astype(MASK_DTYPE)
 	edge_mask = edge_mask.astype(MASK_DTYPE)
-	#def _compute_frags():
 	nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = compute_frags.compute_ccs(
 		num_nodes,
 		num_edges,
 		node_mask,
 		edges,
 		edge_mask,
-		edge_to_node_idx,
+		node_to_edge_idx,
 		max_depth,
 		frag_max_time
 	)
+
+	if nb_isomorphic:
+		nb_subgraph_hashes = get_subgraph_hashes(
+			nodes_mask_matrix=nodes_mask_matrix,
+			elems=mol_d["elems"], 
+			bond_type_idxs=mol_d["bond_type_idxs"], 
+			edges=edges[:num_edges], 
+			node_to_edge_idx=node_to_edge_idx[:num_nodes], 
+			include_bond_type=False)
+		# print(len(nb_subgraph_hashes),len(set(nb_subgraph_hashes)))
+	else:
+		nb_subgraph_hashes = None
+
+	if b_isomorphic:
+		b_subgraph_hashes = get_subgraph_hashes(
+			nodes_mask_matrix=nodes_mask_matrix,
+			elems=mol_d["elems"], 
+			bond_type_idxs=mol_d["bond_type_idxs"], 
+			edges=edges[:num_edges], 
+			node_to_edge_idx=node_to_edge_idx[:num_nodes], 
+			include_bond_type=True)
+		# print(len(b_subgraph_hashes),len(set(b_subgraph_hashes)))
+	else:
+		b_subgraph_hashes = None
 
 	# get meta
 	reached_depth = dag_frag_meta["reached_depth"]
@@ -800,7 +840,7 @@ def compute_dags(mol_d:dict,max_depth:int,h_prior:bool,max_h_transfer:int,frag_m
 			peak_mzs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
 			peak_probs = np.zeros(MAX_NUM_MZS_PER_FORMULA,dtype=np.float32)
 		else:
-			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"", isotopes = use_isotopes, return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
+			peak_mzs, peak_probs = formula_to_peak_mzs(formula,"", isotopes = isotopes, return_probs=True, peaks_for_element_cache = peaks_for_element_cache)
 			peak_mzs, peak_probs = zip(*sorted(zip(peak_mzs, peak_probs), key=lambda x: x[1], reverse=True))
 			peak_mzs = np.array(peak_mzs[:MAX_NUM_MZS_PER_FORMULA],dtype=np.float32)
 			peak_mzs = np.pad(peak_mzs,(0,MAX_NUM_MZS_PER_FORMULA-len(peak_mzs)),"constant",constant_values=0)
@@ -986,4 +1026,120 @@ def load_frag_d(mol_id:int, frag_dp:str, is_compressed:bool = False):
 		with bz2.BZ2File(fp, 'rb') as filein: 
 			frag_d = cPickle.load(filein)
 
-	return frag_d									   
+	return frag_d
+
+def _hash_label(label, digest_size=32):
+	"""
+	Adapted from 
+	https://github.com/samgoldman97/ms-pred/blob/4ac340f1c697d54b50d0efe43eb1878d60fbaef8/src/ms_pred/magma/fragmentation.py
+	"""
+	return blake2b(label.encode("ascii"), digest_size=digest_size).hexdigest()
+
+def wl_hash(
+	elems: list,
+	bond_type_idxs: list,
+	node_mask: np.ndarray,
+	edges: np.ndarray,
+	node_to_edge_idx: np.ndarray,
+	include_bond_type: bool = False,
+) -> int:
+	""" 
+	Adapted from 
+	https://github.com/samgoldman97/ms-pred/blob/4ac340f1c697d54b50d0efe43eb1878d60fbaef8/src/ms_pred/magma/fragmentation.py
+	"""
+
+	cur_hashes = [
+		str(i) for i in elems
+	]
+	# cur_hashes = [_hash_label(i) for i in cur_hashes]
+	num_nodes = len(elems)
+
+	def get_graph_hash(full_hashes):
+		"""get_graph_hash."""
+		counter = Counter(full_hashes)
+		counter_str = str(tuple(sorted(counter.items(), key=lambda x: x[0])))
+		counter_hash = _hash_label(counter_str)
+		return counter_hash
+
+	graph_hash = get_graph_hash(cur_hashes)
+	iterations = num_nodes
+	changed = True
+	ct = 0
+
+	while ct <= iterations and changed:
+		# print(cur_hashes)
+		new_hashes = []
+		temp_atoms = 0
+		# Step 2: Update hashes with local neighborhoods
+		for node_idx in range(num_nodes):
+
+			cur_hash = cur_hashes[node_idx]
+
+			if not node_mask[node_idx]:
+				new_hashes.append(cur_hash)
+				continue
+
+			# Count num atoms in this loop
+			temp_atoms += 1
+
+			# Get local neighbors
+			neighbor_labels = []
+			for edge_idx in node_to_edge_idx[node_idx]:
+				if edge_idx == -1:
+					break
+				node_idx_1, node_idx_2 = edges[edge_idx]
+				if node_idx_1 == node_idx:
+					targ_node_idx = node_idx_2
+				else:
+					targ_node_idx = node_idx_1
+				assert targ_node_idx != node_idx
+				if not node_mask[targ_node_idx]:
+					continue
+				targ_hash = cur_hashes[targ_node_idx]
+				if include_bond_type:
+					bondtype = bond_type_idxs[edge_idx]
+					neighbor_label = f"_{bondtype}_{targ_hash}"
+				else:
+					neighbor_label = f"_{targ_hash}"
+				neighbor_labels.append(neighbor_label)
+			new_hash = cur_hash + "".join(sorted(neighbor_labels))
+			new_hash = _hash_label(new_hash)
+			new_hashes.append(new_hash)
+
+		# Update num atoms to be correct for fragment
+		iterations = temp_atoms
+		# Check if the overall hash changed
+		new_graph_hash = get_graph_hash(new_hashes)
+		changed = new_graph_hash != graph_hash
+
+		# Update count and set new graph hash & cur_hash
+		graph_hash = new_graph_hash
+		cur_hash = new_hashes
+		# cur_hashes = new_hashes
+		# print(f"> {ct}")
+		# print(new_graph_hash)
+		# print(cur_hashes)
+		ct += 1
+	return graph_hash							   
+
+def get_subgraph_hashes(
+	nodes_mask_matrix: np.ndarray,
+	elems: list, 
+	bond_type_idxs: list, 
+	edges: np.ndarray, 
+	node_to_edge_idx: np.ndarray, 
+	include_bond_type: bool):
+
+	subgraph_hashes = []
+	num_subgraphs = nodes_mask_matrix.shape[0]
+	for i in range(num_subgraphs):
+		subgraph_mask = nodes_mask_matrix[i]
+		subgraph_hash = wl_hash(
+			elems, 
+			bond_type_idxs, 
+			subgraph_mask, 
+			edges, 
+			node_to_edge_idx,
+			include_bond_type=include_bond_type)
+		subgraph_hashes.append(subgraph_hash)
+	return subgraph_hashes
