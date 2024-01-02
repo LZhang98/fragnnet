@@ -121,11 +121,11 @@ def subgraph_test_3():
 	subgraph_hashes_b = subgraph_hash_helper(mol, include_bond_type=True)
 	assert len(subgraph_hashes_nb) == len(subgraph_hashes_b)
 	assert len(subgraph_hashes_nb) == 48
-	assert len(set(subgraph_hashes_nb)) == 11, len(set(subgraph_hashes_nb))
-	# assert len(set(subgraph_hashes_nb)) == 12, len(set(subgraph_hashes_nb))
+	# assert len(set(subgraph_hashes_nb)) == 11, len(set(subgraph_hashes_nb))
+	assert len(set(subgraph_hashes_nb)) == 12, len(set(subgraph_hashes_nb))
 	assert len(subgraph_hashes_b) == 48
-	assert len(set(subgraph_hashes_b)) == 20, len(set(subgraph_hashes_b))
-	# assert len(set(subgraph_hashes_b)) == 21, len(set(subgraph_hashes_b))
+	# assert len(set(subgraph_hashes_b)) == 20, len(set(subgraph_hashes_b))
+	assert len(set(subgraph_hashes_b)) == 21, len(set(subgraph_hashes_b))
 
 if __name__ == "__main__":
 

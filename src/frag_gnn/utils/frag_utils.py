@@ -1030,8 +1030,7 @@ def load_frag_d(mol_id:int, frag_dp:str, is_compressed:bool = False):
 
 def _hash_label(label, digest_size=32):
 	"""
-	Adapted from 
-	https://github.com/samgoldman97/ms-pred/blob/4ac340f1c697d54b50d0efe43eb1878d60fbaef8/src/ms_pred/magma/fragmentation.py
+	Adapted from https://networkx.org/documentation/stable/_modules/networkx/algorithms/graph_hashing.html
 	"""
 	return blake2b(label.encode("ascii"), digest_size=digest_size).hexdigest()
 
@@ -1044,44 +1043,34 @@ def wl_hash(
 	include_bond_type: bool = False,
 ) -> int:
 	""" 
-	Adapted from 
-	https://github.com/samgoldman97/ms-pred/blob/4ac340f1c697d54b50d0efe43eb1878d60fbaef8/src/ms_pred/magma/fragmentation.py
+	Adapted from https://networkx.org/documentation/stable/_modules/networkx/algorithms/graph_hashing.html
 	"""
 
-	cur_hashes = [
-		str(i) for i in elems
-	]
-	# cur_hashes = [_hash_label(i) for i in cur_hashes]
+	cur_hashes = []
 	num_nodes = len(elems)
-
-	def get_graph_hash(full_hashes):
-		"""get_graph_hash."""
-		counter = Counter(full_hashes)
-		counter_str = str(tuple(sorted(counter.items(), key=lambda x: x[0])))
-		counter_hash = _hash_label(counter_str)
-		return counter_hash
-
-	graph_hash = get_graph_hash(cur_hashes)
-	iterations = num_nodes
-	changed = True
+	for i in range(num_nodes):
+		if node_mask[i]:
+			cur_hashes.append(str(elems[i]))
+		else:
+			cur_hashes.append("")
+	cur_counter = Counter(cur_hashes)
+	cur_counter.pop("", None)
+	graph_hash_counts = sorted(cur_counter.items(), key=lambda x: x[0])
+	iterations = np.sum(node_mask)
+	assert iterations <= num_nodes, (iterations, num_nodes)
 	ct = 0
-
-	while ct <= iterations and changed:
+	while ct <= iterations:
 		# print(cur_hashes)
 		new_hashes = []
 		temp_atoms = 0
 		# Step 2: Update hashes with local neighborhoods
 		for node_idx in range(num_nodes):
-
 			cur_hash = cur_hashes[node_idx]
-
 			if not node_mask[node_idx]:
 				new_hashes.append(cur_hash)
 				continue
-
 			# Count num atoms in this loop
 			temp_atoms += 1
-
 			# Get local neighbors
 			neighbor_labels = []
 			for edge_idx in node_to_edge_idx[node_idx]:
@@ -1105,22 +1094,17 @@ def wl_hash(
 			new_hash = cur_hash + "".join(sorted(neighbor_labels))
 			new_hash = _hash_label(new_hash)
 			new_hashes.append(new_hash)
-
-		# Update num atoms to be correct for fragment
-		iterations = temp_atoms
-		# Check if the overall hash changed
-		new_graph_hash = get_graph_hash(new_hashes)
-		changed = new_graph_hash != graph_hash
-
-		# Update count and set new graph hash & cur_hash
-		graph_hash = new_graph_hash
-		cur_hash = new_hashes
-		# cur_hashes = new_hashes
+		assert temp_atoms == iterations, (temp_atoms, iterations)
+		new_counter = Counter(new_hashes)
+		new_counter.pop("", None)
+		graph_hash_counts.extend(sorted(new_counter.items(), key=lambda x: x[0]))
+		cur_hashes = new_hashes
 		# print(f"> {ct}")
 		# print(new_graph_hash)
 		# print(cur_hashes)
 		ct += 1
-	return graph_hash							   
+	graph_hash = _hash_label(str(tuple(graph_hash_counts)))
+	return graph_hash
 
 def get_subgraph_hashes(
 	nodes_mask_matrix: np.ndarray,
