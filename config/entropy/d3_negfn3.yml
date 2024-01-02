@@ -31,7 +31,7 @@ spec_params:
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
 formula_node_normalized_entropy_weight: -0.5
-formula_normalized_entropy_weight: 0.20
+formula_normalized_entropy_weight: 0.2
 
 train_batch_size: 32
 eval_batch_size: 32
