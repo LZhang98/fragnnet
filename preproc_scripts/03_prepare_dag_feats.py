@@ -21,9 +21,9 @@ from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
 def print_and_log(name,series,wandb_flag,stats_d):
 
 	stats = series.describe()
-	print(f"> {name}")
-	print(stats)
-	print()
+	# print(f"> {name}")
+	# print(stats)
+	# print()
 	for stat in ["mean","std","min","25%","50%","75%","max"]:
 		stats_d[f"{name}/{stat}"] = stats[stat]
 	if wandb_flag:
@@ -85,6 +85,8 @@ def main(args):
 			max_h_transfer, 
 			max_time,
 			isotopes: bool,
+			nb_isomorphic: bool,
+			max_iterations: int,
 			output_dir: str, 
 			use_cached = True, 
 			compressed = False,
@@ -103,6 +105,7 @@ def main(args):
 		Returns:
 			_type_: _description_
 		"""
+		# TODO: get this out of the main() scope
 
 		output_file = frag_utils.get_frag_fp(mol_id, output_dir, compressed)
 
@@ -119,7 +122,9 @@ def main(args):
 					h_prior,
 					max_h_transfer, 
 					max_time, 
-					isotopes
+					isotopes,
+					nb_isomorphic,
+					max_iterations
 				)
 			except KeyboardInterrupt as e:
 				# let these through
@@ -156,6 +161,7 @@ def main(args):
 		Returns:
 			_type_: _description_
 		"""
+		# TODO: get this out of the main() scope
 		results = []
 		cols = []
 		for tolerance in tolerances:
@@ -194,6 +200,8 @@ def main(args):
 				args.max_h_transfer,
 				args.max_time,
 				args.isotopes, 
+				args.nb_isomorphic,
+				args.max_iterations,
 				dag_dp,
 				True, # use_cached
 				args.compress_dags
@@ -356,6 +364,8 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp",type=str,default="data/proc/nist")
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
+	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
+	parser.add_argument("--max_iterations",type=int,default=3)
 	parser.add_argument("--dsets",type=str,nargs="+",default=["nist"])
 	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)

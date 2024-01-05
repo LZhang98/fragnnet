@@ -22,7 +22,7 @@ def graph_hash_helper(mol, include_bond_type=False):
 		include_bond_type=include_bond_type)
 	return graph_hash
 
-def subgraph_hash_helper(mol, max_depth=3, include_bond_type=False):
+def subgraph_hash_helper(mol, max_depth=3, include_bond_type=False, max_iterations=-1):
 
 	mol_d = frag_utils.extract_mol_info(mol)
 	elems = mol_d["elems"]
@@ -48,7 +48,8 @@ def subgraph_hash_helper(mol, max_depth=3, include_bond_type=False):
 			subgraph_mask, 
 			edges[:num_edges], 
 			node_to_edge_idx[:num_nodes],
-			include_bond_type=include_bond_type)
+			include_bond_type=include_bond_type,
+			max_iterations=max_iterations)
 		subgraph_hashes.append(subgraph_hash)
 	return subgraph_hashes
 
@@ -113,7 +114,31 @@ def subgraph_test_2():
 	assert len(set(subgraph_hashes_b)) == 4
 
 def subgraph_test_3():
-	""" 1-Methylcyclohexene """
+	""" 1-Methylcyclohexane """
+
+	smiles = "CC1CCCCC1"
+	mol = Chem.MolFromSmiles(smiles)
+	subgraph_hashes_nb = subgraph_hash_helper(mol, include_bond_type=False)
+	subgraph_hashes_b = subgraph_hash_helper(mol, include_bond_type=True)
+	assert len(subgraph_hashes_nb) == len(subgraph_hashes_b)
+	assert len(subgraph_hashes_nb) == 48
+	assert len(set(subgraph_hashes_nb)) == 12, len(set(subgraph_hashes_nb))
+	assert len(subgraph_hashes_b) == 48
+	assert len(set(subgraph_hashes_b)) == 12, len(set(subgraph_hashes_b))
+	# try out max_iterations
+	subgraph_hashes_nb_2 = subgraph_hash_helper(mol, include_bond_type=False, max_iterations=2)
+	assert len(subgraph_hashes_nb_2) == len(subgraph_hashes_nb)
+	assert len(set(subgraph_hashes_nb_2)) == 12, len(set(subgraph_hashes_nb_2))
+	subgraph_hashes_nb_1 = subgraph_hash_helper(mol, include_bond_type=False, max_iterations=1)
+	assert len(subgraph_hashes_nb_1) == len(subgraph_hashes_nb)
+	assert len(set(subgraph_hashes_nb_1)) == 11, len(set(subgraph_hashes_nb_1))
+	subgraph_hashes_nb_0 = subgraph_hash_helper(mol, include_bond_type=False, max_iterations=0)
+	assert len(subgraph_hashes_nb_0) == len(subgraph_hashes_nb)
+	assert len(set(subgraph_hashes_nb_0)) == 7, len(set(subgraph_hashes_nb_0))
+
+
+def subgraph_test_4():
+	""" 1-Methylcyclohexene (formerly subgraph_test_3) """
 
 	smiles = "CC1=CCCCC1"
 	mol = Chem.MolFromSmiles(smiles)
@@ -121,19 +146,15 @@ def subgraph_test_3():
 	subgraph_hashes_b = subgraph_hash_helper(mol, include_bond_type=True)
 	assert len(subgraph_hashes_nb) == len(subgraph_hashes_b)
 	assert len(subgraph_hashes_nb) == 48
-	# assert len(set(subgraph_hashes_nb)) == 11, len(set(subgraph_hashes_nb))
 	assert len(set(subgraph_hashes_nb)) == 12, len(set(subgraph_hashes_nb))
 	assert len(subgraph_hashes_b) == 48
-	# assert len(set(subgraph_hashes_b)) == 20, len(set(subgraph_hashes_b))
 	assert len(set(subgraph_hashes_b)) == 21, len(set(subgraph_hashes_b))
 
 if __name__ == "__main__":
 
-	# TODO: test with variety of molecules
-	# TODO: time it (integrate with run_compute_frags.py?)
-
-	graph_test_1()
-	graph_test_2()
-	subgraph_test_1()
-	subgraph_test_2()
+	# graph_test_1()
+	# graph_test_2()
+	# subgraph_test_1()
+	# subgraph_test_2()
 	subgraph_test_3()
+	subgraph_test_4()

@@ -15,36 +15,38 @@ def run_frag(smiles, **kwargs):
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
 	print(f"> num heavy atoms {num_nodes}")
 	dag_d = {}
-	try:
-		dag_d = timeit(frag_utils.compute_dags)(mol_d,**kwargs)
-	except Exception as e:
-		print("> error when computing dag")
-		print(f'{e}')
+	dag_d = timeit(frag_utils.compute_dags)(mol_d,**kwargs)
+	# try:
+	# 	dag_d = timeit(frag_utils.compute_dags)(mol_d,**kwargs)
+	# except Exception as e:
+	# 	print("> error when computing dag")
+	# 	print(f'{e}')
 
 	dag = dag_d["dag"]
 	
 	print("> dag")
+	dag_pyg = dag_d["dag"]
 	dag_nn = dag_d["dag_num_nodes"]
 	dag_ne = dag_d["dag_num_edges"]
+	dag_nni = dag_d["dag_num_nodes_nb_iso"]
 	
 	dag_indeg = pyg.utils.degree(dag.edge_index[1]).numpy()
 	dag_outdeg = pyg.utils.degree(dag.edge_index[0]).numpy()
+	dag_memory = get_pyg_memory_usage(dag)
 
 	print(f"reached_depth = {dag_d['reached_depth']}")
 	print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {2*dag_ne/(dag_nn*(dag_nn-1))}")
+	print(f"num_nodes_nb_iso = {dag_nni}")
 	print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
 	print(f"avg_outdeg = {np.mean(dag_outdeg)}, std_outdeg = {np.std(dag_outdeg)}")
-
 	print(f"num unique forumla = {len(dag_d['idx_to_formula'])}")
 	print(f"node feature size = {dag_d['node_feature_size']}, edge feature size = {dag_d['edge_feature_size']}")
-
 	print(f"node edges by depth: {dag_d['dag_num_edges_by_depth']}")
 	print(f"node node by depth: {dag_d['dag_num_nodes_by_depth']}")
-
 	print(f"is directed = {dag_d['is_directed']}")
-	dag_memory = get_pyg_memory_usage(dag)
 	print(f"memory = {dag_memory/1e6} MB")
-	
+	print(f"dag_pyg = {dag_pyg}")
+
 	return dag_d
 
 if __name__ == "__main__":
@@ -57,6 +59,7 @@ if __name__ == "__main__":
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
 	parser.add_argument("--b_isomorphic",type=booltype,default=False)
+	parser.add_argument("--max_iterations",type=int,default=-1)
 	args = parser.parse_args()
 
 	np.random.seed(420)
@@ -87,10 +90,11 @@ if __name__ == "__main__":
 		frag_max_time=None,
 		isotopes=args.isotopes,
 		nb_isomorphic=args.nb_isomorphic,
-		b_isomorphic=args.b_isomorphic
+		b_isomorphic=args.b_isomorphic,
+		max_iterations=args.max_iterations
 	)
 	dag_d = run_frag(smiles, **frag_kw_d)
-	import pdb; pdb.set_trace()
+	# import pdb; pdb.set_trace()
 
 	# cProfile.runctx("run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes)", globals(), locals(), "run_frag_exp.prof")
 	# s = pstats.Stats("run_frag_exp.prof")

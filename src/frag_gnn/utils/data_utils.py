@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
-JOBLIB_TIMEOUT = 1000 # default is 300 seconds for "loky"
+JOBLIB_TIMEOUT = 10800 # default is 300 seconds for "loky"
 
 def rdkit_import(*module_strs:List[str]) -> Tuple:
 	""" until function for import rdkit modules

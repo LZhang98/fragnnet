@@ -687,7 +687,8 @@ def compute_dags(
 		frag_max_time:int,
 		isotopes:bool = False,
 		nb_isomorphic:bool = False,
-		b_isomorphic:bool = False) -> dict:
+		b_isomorphic:bool = False,
+		max_iterations:int = -1) -> dict:
 	"""_summary_
 
 	Args:
@@ -725,28 +726,27 @@ def compute_dags(
 	)
 
 	if nb_isomorphic:
-		nb_subgraph_hashes = get_subgraph_hashes(
+		node_nb_hashes = get_subgraph_hashes(
 			nodes_mask_matrix=nodes_mask_matrix,
 			elems=mol_d["elems"], 
 			bond_type_idxs=mol_d["bond_type_idxs"], 
 			edges=edges[:num_edges], 
 			node_to_edge_idx=node_to_edge_idx[:num_nodes], 
-			include_bond_type=False)
-		# print(len(nb_subgraph_hashes),len(set(nb_subgraph_hashes)))
+			include_bond_type=False,
+			max_iterations=max_iterations)
 	else:
-		nb_subgraph_hashes = None
+		node_nb_hashes = None
 
-	if b_isomorphic:
-		b_subgraph_hashes = get_subgraph_hashes(
-			nodes_mask_matrix=nodes_mask_matrix,
-			elems=mol_d["elems"], 
-			bond_type_idxs=mol_d["bond_type_idxs"], 
-			edges=edges[:num_edges], 
-			node_to_edge_idx=node_to_edge_idx[:num_nodes], 
-			include_bond_type=True)
-		# print(len(b_subgraph_hashes),len(set(b_subgraph_hashes)))
-	else:
-		b_subgraph_hashes = None
+	# if b_isomorphic:
+	# 	node_b_hashes = get_subgraph_hashes(
+	# 		nodes_mask_matrix=nodes_mask_matrix,
+	# 		elems=mol_d["elems"], 
+	# 		bond_type_idxs=mol_d["bond_type_idxs"], 
+	# 		edges=edges[:num_edges], 
+	# 		node_to_edge_idx=node_to_edge_idx[:num_nodes], 
+	# 		include_bond_type=True)
+	# else:
+	# 	node_b_hashes = None
 
 	# get meta
 	reached_depth = dag_frag_meta["reached_depth"]
@@ -760,12 +760,13 @@ def compute_dags(
 	base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
 	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
 	h_count_node_feat_size = formula_node_feat_size
+	nb_iso_node_feat_size = 1 if nb_isomorphic else 0
 	cc_edge_feat_size = cc_node_feat_size
 	base_formula_edge_feat_size = base_formula_node_feat_size
-	h_range_edge_size = 2
-	node_feat_shapes = [depth_node_feat_size,cc_node_feat_size,base_formula_node_feat_size,formula_node_feat_size,h_count_node_feat_size]
-	edge_feat_shapes = [cc_edge_feat_size,base_formula_edge_feat_size,h_range_edge_size]
-	total_node_feat_size = sum(node_feat_shapes)
+	h_range_edge_feat_size = 2
+	node_feat_shapes = [depth_node_feat_size,cc_node_feat_size,base_formula_node_feat_size,formula_node_feat_size,h_count_node_feat_size,nb_iso_node_feat_size]
+	edge_feat_shapes = [cc_edge_feat_size,base_formula_edge_feat_size,h_range_edge_feat_size]
+	# total_node_feat_size = sum(node_feat_shapes)
 
 	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
@@ -796,7 +797,7 @@ def compute_dags(
 	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formula_counts.keys())))}
 	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
 	formula_idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
- 
+
 	formula_idx_list, h_count_list = [], []
 	for formulae_dict, h_count_dict in zip(formula_d_list,h_count_d_list):
 		formulae_idxs = np.zeros(formula_node_feat_size, dtype=np.int16)
@@ -816,18 +817,28 @@ def compute_dags(
 	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.int16)
 	node_h_count_matrix = np.stack(h_count_list, dtype=np.int16)
 
+	# map nodes to nb_isomorphism indices
+	if nb_isomorphic:
+		nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
+		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=np.int16).reshape(-1,1)
+		dag_num_nodes_nb_iso = len(set(node_nb_hashes))
+	else:
+		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=np.int16)
+		dag_num_nodes_nb_iso = -1
+
 	assert nodes_mask_matrix.shape[1] <= MASK_SIZE
-	nodes_cc_mask = th.as_tensor(nodes_mask_matrix,dtype=th.bool)
-	nodes_cc_mask = F.pad(nodes_cc_mask, (0, MASK_SIZE-nodes_cc_mask.shape[1]), "constant", 0)
-	nodes_cc_long = th_mask_to_long(nodes_cc_mask).type(NODE_FEAT_DTYPE)
+	node_cc_mask = th.as_tensor(nodes_mask_matrix,dtype=th.bool)
+	node_cc_mask = F.pad(node_cc_mask, (0, MASK_SIZE-node_cc_mask.shape[1]), "constant", 0)
+	node_cc_long = th_mask_to_long(node_cc_mask).type(NODE_FEAT_DTYPE)
 	# the order is important!
 	pyg_node_feats = th.cat(
 		[ 
 			th.as_tensor(nodes_depth_matrix,dtype=NODE_FEAT_DTYPE),
-			nodes_cc_long,
+			node_cc_long,
 			th.as_tensor(node_base_formula_matrix,dtype=NODE_FEAT_DTYPE), 
 			th.as_tensor(node_formulae_matrix,dtype=NODE_FEAT_DTYPE),
-			th.as_tensor(node_h_count_matrix,dtype=NODE_FEAT_DTYPE)
+			th.as_tensor(node_h_count_matrix,dtype=NODE_FEAT_DTYPE),
+			th.as_tensor(node_nb_iso_idx,dtype=NODE_FEAT_DTYPE)
 		], dim=1
 	)
 
@@ -927,6 +938,7 @@ def compute_dags(
 	# we just need to change this one place
 	frag_d["dag_num_edges"] = pyg_cc_g.num_edges
 	frag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
+	frag_d["dag_num_nodes_nb_iso"] = dag_num_nodes_nb_iso
 	frag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
 	frag_d["formula_redundancy"] = sum([v for k,v in formula_counts.items() if k != ""])/len([k for k in formula_counts.keys() if k != ""])
 	frag_d["node_feature_size"] = pyg_cc_g.num_features
@@ -941,7 +953,8 @@ NODE_FEAT_TO_IDX = {
 	"cc":1,
 	"base_formula":2,
 	"h_formulae_idx":3,
-	"h_counts":4
+	"h_counts":4,
+	"nb_iso_idx":5
 }
 
 EDGE_FEAT_TO_IDX = {
@@ -1041,6 +1054,7 @@ def wl_hash(
 	edges: np.ndarray,
 	node_to_edge_idx: np.ndarray,
 	include_bond_type: bool = False,
+	max_iterations: int = -1
 ) -> int:
 	""" 
 	Adapted from https://networkx.org/documentation/stable/_modules/networkx/algorithms/graph_hashing.html
@@ -1058,8 +1072,12 @@ def wl_hash(
 	graph_hash_counts = sorted(cur_counter.items(), key=lambda x: x[0])
 	iterations = np.sum(node_mask)
 	assert iterations <= num_nodes, (iterations, num_nodes)
+	if max_iterations == -1:
+		max_iterations = iterations
+	else:
+		assert max_iterations >= 0, max_iterations
 	ct = 0
-	while ct <= iterations:
+	while ct < iterations and ct < max_iterations:
 		# print(cur_hashes)
 		new_hashes = []
 		temp_atoms = 0
@@ -1112,7 +1130,8 @@ def get_subgraph_hashes(
 	bond_type_idxs: list, 
 	edges: np.ndarray, 
 	node_to_edge_idx: np.ndarray, 
-	include_bond_type: bool):
+	include_bond_type: bool,
+	max_iterations: int):
 
 	subgraph_hashes = []
 	num_subgraphs = nodes_mask_matrix.shape[0]
@@ -1124,6 +1143,7 @@ def get_subgraph_hashes(
 			subgraph_mask, 
 			edges, 
 			node_to_edge_idx,
-			include_bond_type=include_bond_type)
+			include_bond_type=include_bond_type,
+			max_iterations=max_iterations)
 		subgraph_hashes.append(subgraph_hash)
 	return subgraph_hashes
