@@ -21,9 +21,9 @@ from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
 def print_and_log(name,series,wandb_flag,stats_d):
 
 	stats = series.describe()
-	# print(f"> {name}")
-	# print(stats)
-	# print()
+	print(f"> {name}")
+	print(stats)
+	print()
 	for stat in ["mean","std","min","25%","50%","75%","max"]:
 		stats_d[f"{name}/{stat}"] = stats[stat]
 	if wandb_flag:
@@ -221,6 +221,7 @@ def main(args):
 	frag_stats_df["dag_num_edges"] = list(map(lambda x: x.pop("dag_num_edges",np.nan),frag_results))
 	frag_stats_df["dag_num_nodes"] = list(map(lambda x: x.pop("dag_num_nodes",np.nan),frag_results))
 	frag_stats_df["dag_sparsity"] = list(map(lambda x: x.pop("dag_sparsity",np.nan),frag_results))
+	frag_stats_df["dag_num_nodes_nb"] = list(map(lambda x: x.pop("dag_num_nodes_nb",np.nan),frag_results))
 	frag_stats_df["formula_redundancy"] = list(map(lambda x: x.pop("formula_redundancy",np.nan),frag_results))	
 	frag_stats_df["idx_by_h_delta"] = list(map(lambda x: x.pop("idx_by_h_delta",np.nan),frag_results))	
 
@@ -262,6 +263,7 @@ def main(args):
 	print_and_log("dag_num_edges",frag_stats_df["dag_num_edges"],wandb_flag,frag_stats_d)
 	print_and_log("dag_num_nodes",frag_stats_df["dag_num_nodes"],wandb_flag,frag_stats_d)
 	print_and_log("dag_sparsity",frag_stats_df["dag_sparsity"],wandb_flag,frag_stats_d)
+	print_and_log("dag_num_nodes_nb",frag_stats_df["dag_num_nodes_nb"],wandb_flag,frag_stats_d)
 	print_and_log("formula_redundancy",frag_stats_df["formula_redundancy"],wandb_flag,frag_stats_d)
 
 	# count number of formula per molecule
@@ -275,7 +277,7 @@ def main(args):
 
 	print("> Compute Spectra Stats")
 
-	stats_cols = ["num_formulae","depth","formula_redundancy","dag_num_edges","dag_num_nodes","dag_sparsity"]
+	stats_cols = ["num_formulae","depth","formula_redundancy","dag_num_edges","dag_num_nodes","dag_sparsity","dag_num_nodes_nb"]
 	id_cols = ["mol_id"]
 	data_cols = list(set(frag_stats_df.columns)-set(stats_cols)-set(id_cols))
 

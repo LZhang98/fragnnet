@@ -821,10 +821,10 @@ def compute_dags(
 	if nb_isomorphic:
 		nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
 		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=np.int16).reshape(-1,1)
-		dag_num_nodes_nb_iso = len(set(node_nb_hashes))
+		dag_num_nodes_nb = len(set(node_nb_hashes))
 	else:
 		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=np.int16)
-		dag_num_nodes_nb_iso = -1
+		dag_num_nodes_nb = -1
 
 	assert nodes_mask_matrix.shape[1] <= MASK_SIZE
 	node_cc_mask = th.as_tensor(nodes_mask_matrix,dtype=th.bool)
@@ -938,7 +938,7 @@ def compute_dags(
 	# we just need to change this one place
 	frag_d["dag_num_edges"] = pyg_cc_g.num_edges
 	frag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
-	frag_d["dag_num_nodes_nb_iso"] = dag_num_nodes_nb_iso
+	frag_d["dag_num_nodes_nb"] = dag_num_nodes_nb
 	frag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
 	frag_d["formula_redundancy"] = sum([v for k,v in formula_counts.items() if k != ""])/len([k for k in formula_counts.keys() if k != ""])
 	frag_d["node_feature_size"] = pyg_cc_g.num_features

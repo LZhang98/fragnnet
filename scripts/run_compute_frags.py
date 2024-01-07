@@ -6,6 +6,7 @@ from pprint import pprint
 
 import frag_gnn.utils.frag_utils as frag_utils
 from frag_gnn.utils.misc_utils import timeit, booltype, get_pyg_memory_usage
+from frag_gnn.utils.feat_utils import get_frag_graph
 
 def run_frag(smiles, **kwargs):
 	
@@ -28,7 +29,7 @@ def run_frag(smiles, **kwargs):
 	dag_pyg = dag_d["dag"]
 	dag_nn = dag_d["dag_num_nodes"]
 	dag_ne = dag_d["dag_num_edges"]
-	dag_nni = dag_d["dag_num_nodes_nb_iso"]
+	dag_nn_nb = dag_d["dag_num_nodes_nb"]
 	
 	dag_indeg = pyg.utils.degree(dag.edge_index[1]).numpy()
 	dag_outdeg = pyg.utils.degree(dag.edge_index[0]).numpy()
@@ -36,7 +37,7 @@ def run_frag(smiles, **kwargs):
 
 	print(f"reached_depth = {dag_d['reached_depth']}")
 	print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {2*dag_ne/(dag_nn*(dag_nn-1))}")
-	print(f"num_nodes_nb_iso = {dag_nni}")
+	print(f"num_nodes_nb = {dag_nn_nb}")
 	print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
 	print(f"avg_outdeg = {np.mean(dag_outdeg)}, std_outdeg = {np.std(dag_outdeg)}")
 	print(f"num unique forumla = {len(dag_d['idx_to_formula'])}")
@@ -46,6 +47,23 @@ def run_frag(smiles, **kwargs):
 	print(f"is directed = {dag_d['is_directed']}")
 	print(f"memory = {dag_memory/1e6} MB")
 	print(f"dag_pyg = {dag_pyg}")
+
+	# get features
+	frag_node_feats = [
+		"cc",
+		"base_formula",
+		"depth",
+		"h_formula_idx",
+		"nb_iso_idx"
+	]
+	frag_edge_feats = [
+		"cc",
+		"base_formula"
+	]
+	bigraph = False
+	dag_f_pyg = get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, bigraph=bigraph)
+	nb_iso_idx = frag_utils.get_node_feats(dag_f_pyg.x, dag_f_pyg.node_feat_idxs[0],"nb_iso_idx")
+	import pdb; pdb.set_trace()
 
 	return dag_d
 
@@ -59,7 +77,7 @@ if __name__ == "__main__":
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
 	parser.add_argument("--b_isomorphic",type=booltype,default=False)
-	parser.add_argument("--max_iterations",type=int,default=-1)
+	parser.add_argument("--max_iterations",type=int,default=2)
 	args = parser.parse_args()
 
 	np.random.seed(420)
