@@ -1588,7 +1588,7 @@ def test_fraggnn():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3_merge_nce.yml",
+		"config/debug/debug_d3_nb.yml",
 	]
 	
 	for custom_fp in custom_fps:
