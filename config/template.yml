@@ -57,6 +57,7 @@ frag_params:
     - depth
     - h_formulae_idx
     # - h_counts
+    # - nb_iso_idx
   pyg_edge_feats:
     - cc
     - base_formula
@@ -186,6 +187,14 @@ formula_normalized_entropy_weight: 0.0
 node_normalized_entropy_weight: 0.0
 node_formula_normalized_entropy_weight: 0.0
 formula_node_normalized_entropy_weight: 0.0
+nb_iso: False
+nb_node_entropy_weight: 0.0
+nb_node_formula_entropy_weight: 0.0
+nb_formula_node_entropy_weight: 0.0
+nb_formula_normalized_entropy_weight: 0.0
+nb_node_normalized_entropy_weight: 0.0
+nb_node_formula_normalized_entropy_weight: 0.0
+nb_formula_node_normalized_entropy_weight: 0.0
 skip_edge_loss: True
 edge_h_range_loss_weight: 0.0
 edge_h_transfer_loss_weight: 0.0

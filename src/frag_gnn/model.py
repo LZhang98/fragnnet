@@ -44,6 +44,7 @@ class FragGNNModel(nn.Module):
 		mlp_num_layers: int,
 		mlp_use_residuals: bool,
 		cc_interstage_type: str,
+		nb_iso: bool,
 		skip_edge_loss: bool,
 		mask_null_formula: bool,
 		predict_oos: bool,
@@ -209,6 +210,7 @@ class FragGNNModel(nn.Module):
 
 		self.skip_edge_loss = skip_edge_loss
 		self.mask_null_formula = mask_null_formula
+		self.nb_iso = nb_iso
 
 		# this is required
 		assert "h_formulae_idx" in self.frag_node_feats
@@ -430,31 +432,33 @@ class FragGNNModel(nn.Module):
 		frag_node_batch_idxs = frag_batch
 		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
 		frag_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
+		
 		# get isomorphism aggregation
-		frag_nb_idxs = get_node_feats(frag_x,frag_node_feat_idxs,"nb_iso_idx").flatten()
-		frag_nb_offsets = scatter_reduce(
-			frag_nb_idxs,
-			frag_node_batch_idxs,
-			reduce="amax",
-			dim=0,
-			dim_size=batch_size
-		)
-		frag_nb_offsets = th.cat(
-			[
-				th.zeros([1],dtype=frag_nb_offsets.dtype,device=device),
-				frag_nb_offsets+1
-			], dim=0
-		)
-		frag_nb_offsets = th.cumsum(frag_nb_offsets,dim=0)
-		batch_frag_num_nodes_nb = frag_nb_offsets[-1].item()
-		frag_nb_offsets = th.gather(
-			input=frag_nb_offsets[:-1],
-			index=frag_node_batch_idxs,
-			dim=0
-		)
-		frag_nb_idxs = frag_nb_idxs + frag_nb_offsets
-		assert th.max(frag_nb_idxs) < batch_frag_num_nodes_nb, (th.max(frag_nb_idxs),batch_frag_num_nodes_nb)
-		frag_nb_un_idxs, frag_nb_inv_idxs = th.unique(frag_nb_idxs,return_inverse=True)
+		if self.nb_iso:
+			frag_nb_idxs = get_node_feats(frag_x,frag_node_feat_idxs,"nb_iso_idx").flatten()
+			frag_nb_offsets = scatter_reduce(
+				frag_nb_idxs,
+				frag_node_batch_idxs,
+				reduce="amax",
+				dim=0,
+				dim_size=batch_size
+			)
+			frag_nb_offsets = th.cat(
+				[
+					th.zeros([1],dtype=frag_nb_offsets.dtype,device=device),
+					frag_nb_offsets+1
+				], dim=0
+			)
+			frag_nb_offsets = th.cumsum(frag_nb_offsets,dim=0)
+			batch_frag_nb_num_nodes = frag_nb_offsets[-1].item()
+			frag_nb_offsets = th.gather(
+				input=frag_nb_offsets[:-1],
+				index=frag_node_batch_idxs,
+				dim=0
+			)
+			frag_nb_idxs = frag_nb_idxs + frag_nb_offsets
+			assert th.max(frag_nb_idxs) < batch_frag_nb_num_nodes, (th.max(frag_nb_idxs),batch_frag_nb_num_nodes)
+			frag_nb_un_idxs, frag_nb_inv_idxs = th.unique(frag_nb_idxs,return_inverse=True)
 
 		# assemble all features for dag
 		# concatenate everything 
@@ -730,56 +734,73 @@ class FragGNNModel(nn.Module):
 			dim=0,
 		)
 		# calculate isomorphic distributions
-		# P'(n)
-		frag_node_nb_logprobs = scatter_logsumexp(
-			frag_real_node_logprobs,
-			frag_nb_idxs,
-			dim=0,
-			dim_size=batch_frag_num_nodes_nb
-		)
-		frag_node_nb_batch_idxs = scatter_reduce(
-			frag_node_batch_idxs,
-			frag_nb_idxs,
-			reduce="amax",
-			dim=0,
-			dim_size=batch_frag_num_nodes_nb
-		)
-		frag_node_nb_idxs = frag_nb_un_idxs
-		# P'(n|f)
-		frag_joint_nb_idxs = frag_nb_idxs[frag_real_joint_node_idxs]
-		frag_joint_nb_both_idxs = th.stack(
-			[
-				frag_joint_nb_idxs,
-				frag_real_joint_formula_idxs
-			], dim=1
-		)
-		frag_joint_nb_both_un_idxs, frag_joint_nb_both_inv_idxs = th.unique(
-			frag_joint_nb_both_idxs,
-			return_inverse=True,
-			dim=0
-		)
-		frag_joint_nb_node_idxs = frag_joint_nb_both_un_idxs[:,0]
-		frag_joint_nb_formula_idxs = frag_joint_nb_both_un_idxs[:,1]
-		frag_joint_nb_batch_idxs = frag_node_nb_batch_idxs[frag_joint_nb_node_idxs]
-		frag_formula_node_nb_logprobs = scatter_logsumexp(
-			frag_real_node_formula_logprobs,
-			frag_joint_nb_both_inv_idxs,
-			dim=0,
-			dim_size=frag_joint_nb_both_un_idxs.shape[0]
-		)
-		# P'(f|n)
-		frag_node_rel_logprobs = frag_real_node_logprobs - frag_node_nb_logprobs[frag_nb_inv_idxs]
-		frag_node_rel_logprobs = (frag_real_node_logprobs<=LOG_ZERO).float() * LOG_ZERO + \
-			(frag_real_node_logprobs>LOG_ZERO).float() * frag_node_rel_logprobs
-		lse_debug = scatter_logsumexp(frag_node_rel_logprobs, frag_nb_idxs, dim=0, dim_size=batch_frag_num_nodes_nb)
-		assert th.all(lse_debug < 1e-6)
-		frag_node_formula_nb_logprobs = frag_real_node_formula_logprobs + frag_node_rel_logprobs[frag_real_joint_node_idxs]
-		frag_node_formula_nb_logprobs = scatter_logsumexp(
-			frag_node_formula_nb_logprobs,
-			frag_joint_nb_both_inv_idxs,
-			dim=0,
-			dim_size=frag_joint_nb_both_un_idxs.shape[0]
-		)
+		if self.nb_iso:
+			# P'(n)
+			frag_nb_node_logprobs = scatter_logsumexp(
+				frag_real_node_logprobs,
+				frag_nb_idxs,
+				dim=0,
+				dim_size=batch_frag_nb_num_nodes
+			)
+			frag_nb_node_batch_idxs = scatter_reduce(
+				frag_node_batch_idxs,
+				frag_nb_idxs,
+				reduce="amax",
+				dim=0,
+				dim_size=batch_frag_nb_num_nodes
+			)
+			frag_nb_node_idxs = frag_nb_un_idxs
+			# P'(n|f)
+			frag_nb_joint_idxs = frag_nb_idxs[frag_real_joint_node_idxs]
+			frag_nb_joint_both_idxs = th.stack(
+				[
+					frag_nb_joint_idxs,
+					frag_real_joint_formula_idxs
+				], dim=1
+			)
+			frag_nb_joint_both_un_idxs, frag_nb_joint_both_inv_idxs = th.unique(
+				frag_nb_joint_both_idxs,
+				return_inverse=True,
+				dim=0
+			)
+			frag_nb_joint_node_idxs = frag_nb_joint_both_un_idxs[:,0]
+			frag_nb_joint_formula_idxs = frag_nb_joint_both_un_idxs[:,1]
+			frag_nb_joint_batch_idxs = frag_nb_node_batch_idxs[frag_nb_joint_node_idxs]
+			frag_nb_formula_node_logprobs = scatter_logsumexp(
+				frag_real_node_formula_logprobs,
+				frag_nb_joint_both_inv_idxs,
+				dim=0,
+				dim_size=frag_nb_joint_both_un_idxs.shape[0]
+			)
+			# P'(f|n)
+			# frag_rel_node_logprobs = frag_real_node_logprobs - frag_nb_node_logprobs[frag_nb_inv_idxs]
+			# frag_rel_node_logprobs = (frag_real_node_logprobs<=LOG_ZERO).float() * LOG_ZERO + \
+			# 	(frag_real_node_logprobs>LOG_ZERO).float() * frag_rel_node_logprobs
+			frag_rel_node_logprobs = scatter_logsoftmax(
+				frag_real_node_logprobs,
+				frag_nb_idxs,
+				dim=0
+			)
+			assert th.all(frag_rel_node_logprobs <= 0.)
+			# lse_debug = scatter_logsumexp(frag_rel_node_logprobs, frag_nb_idxs, dim=0, dim_size=batch_frag_nb_num_nodes)
+			# if not th.all(lse_debug < 1e-6):
+			# 	import pdb; pdb.set_trace()
+			frag_nb_node_formula_logprobs = frag_real_node_formula_logprobs + frag_rel_node_logprobs[frag_real_joint_node_idxs]
+			frag_nb_node_formula_logprobs = scatter_logsumexp(
+				frag_nb_node_formula_logprobs,
+				frag_nb_joint_both_inv_idxs,
+				dim=0,
+				dim_size=frag_nb_joint_both_un_idxs.shape[0]
+			)
+		else:
+			frag_nb_node_logprobs = None
+			frag_nb_node_formula_logprobs = None
+			frag_nb_formula_node_logprobs = None
+			frag_nb_node_idxs = None
+			frag_nb_node_batch_idxs = None
+			frag_nb_joint_node_idxs = None
+			frag_nb_joint_formula_idxs = None
+			frag_nb_joint_batch_idxs = None
 
 		out_d = {
 			"pred_mzs": spec_mzs,
@@ -801,15 +822,14 @@ class FragGNNModel(nn.Module):
 			"pred_edge_h_logprobs": frag_edge_h_logprobs,
 			"pred_edge_batch_idxs": frag_edge_batch_idxs,
 			"pred_oos_logprobs": oos_logprobs,
-			# nb stuff
-			"pred_node_nb_logprobs": frag_node_nb_logprobs,
-			"pred_node_formula_nb_logprobs": frag_node_formula_nb_logprobs,
-			"pred_formula_node_nb_logprobs": frag_formula_node_nb_logprobs,
-			"pred_node_nb_idxs": frag_node_nb_idxs,
-			"pred_node_nb_batch_idxs": frag_node_nb_batch_idxs,
-			"pred_joint_nb_node_idxs": frag_joint_nb_node_idxs,
-			"pred_joint_nb_formula_idxs": frag_joint_nb_formula_idxs,
-			"pred_joint_nb_batch_idxs": frag_joint_nb_batch_idxs,
+			"pred_nb_node_logprobs": frag_nb_node_logprobs,
+			"pred_nb_node_formula_logprobs": frag_nb_node_formula_logprobs,
+			"pred_nb_formula_node_logprobs": frag_nb_formula_node_logprobs,
+			"pred_nb_node_idxs": frag_nb_node_idxs,
+			"pred_nb_node_batch_idxs": frag_nb_node_batch_idxs,
+			"pred_nb_joint_node_idxs": frag_nb_joint_node_idxs,
+			"pred_nb_joint_formula_idxs": frag_nb_joint_formula_idxs,
+			"pred_nb_joint_batch_idxs": frag_nb_joint_batch_idxs,
 		}
 
 		return out_d

@@ -1097,6 +1097,7 @@ class FragGNNPL(SpectrumPL):
 			mlp_num_layers=self.hparams.mlp_num_layers,
 			mlp_use_residuals=self.hparams.mlp_use_residuals,
 			cc_interstage_type=self.hparams.cc_interstage_type,
+			nb_iso=self.hparams.nb_iso,
 			skip_edge_loss=self.hparams.skip_edge_loss,
 			mask_null_formula=self.hparams.mask_null_formula,
 			predict_oos=self.hparams.predict_oos,
@@ -1243,6 +1244,14 @@ class FragGNNPL(SpectrumPL):
 			pred_edge_h_logprobs,
 			pred_edge_batch_idxs,
 			pred_oos_logprobs,
+			pred_nb_node_logprobs,
+			pred_nb_node_formula_logprobs,
+			pred_nb_formula_node_logprobs,
+			pred_nb_node_idxs,
+			pred_nb_node_batch_idxs,
+			pred_nb_joint_node_idxs,
+			pred_nb_joint_formula_idxs,
+			pred_nb_joint_batch_idxs,
 			**kwargs):
 			spec_ce, true_oos_logprobs = sparse_ce_fn(
 				true_mzs,
@@ -1304,7 +1313,6 @@ class FragGNNPL(SpectrumPL):
 				pred_node_formula_logprobs,
 				pred_joint_node_idxs,
 				pred_joint_batch_idxs,
-				# conditional_support_size_delta=-1. # for NULL formula
 			)
 			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
 				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
@@ -1360,6 +1368,49 @@ class FragGNNPL(SpectrumPL):
 				loss_d["edge_h_transfer_loss"] = t_el
 				loss_d["edge_e"] = edge_e
 				loss_d["edge_ne"] = edge_ne
+			else:
+				assert self.hparams.edge_h_range_loss_weight == 0.0
+				assert self.hparams.edge_h_transfer_loss_weight == 0.0
+				assert self.hparams.edge_entropy_weight == 0.0
+				assert self.hparams.edge_normalized_entropy_weight == 0.0
+			if self.hparams.nb_iso:
+				nb_node_e, nb_node_ne = sparse_entropy_fn(
+					pred_nb_node_logprobs,
+					pred_nb_node_batch_idxs
+				)
+				loss = loss + self.hparams.nb_node_entropy_weight * nb_node_e + \
+					self.hparams.nb_node_normalized_entropy_weight * nb_node_ne
+				nb_node_formula_e, nb_node_formula_ne = sparse_conditional_entropy_fn(
+					pred_nb_node_logprobs,
+					pred_nb_node_batch_idxs,
+					pred_nb_node_formula_logprobs,
+					pred_nb_joint_node_idxs,
+					pred_nb_joint_batch_idxs,
+				)
+				loss = loss + self.hparams.nb_node_formula_entropy_weight * nb_node_formula_e + \
+					self.hparams.nb_node_formula_normalized_entropy_weight * nb_node_formula_ne
+				nb_formula_node_e, nb_formula_node_ne = sparse_conditional_entropy_fn(
+					pred_formula_logprobs,
+					pred_formula_batch_idxs,
+					pred_nb_formula_node_logprobs,
+					pred_nb_joint_formula_idxs,
+					pred_nb_joint_batch_idxs
+				)
+				loss = loss + self.hparams.nb_formula_node_entropy_weight * nb_formula_node_e + \
+					self.hparams.nb_formula_node_normalized_entropy_weight * nb_formula_node_ne
+				loss_d["nb_node_e"] = nb_node_e
+				loss_d["nb_node_ne"] = nb_node_ne
+				loss_d["nb_node_formula_e"] = nb_node_formula_e
+				loss_d["nb_node_formula_ne"] = nb_node_formula_ne
+				loss_d["nb_formula_node_e"] = nb_formula_node_e
+				loss_d["nb_formula_node_ne"] = nb_formula_node_ne
+			else:
+				assert self.hparams.nb_node_entropy_weight == 0.0
+				assert self.hparams.nb_node_normalized_entropy_weight == 0.0
+				assert self.hparams.nb_node_formula_entropy_weight == 0.0
+				assert self.hparams.nb_node_formula_normalized_entropy_weight == 0.0
+				assert self.hparams.nb_formula_node_entropy_weight == 0.0
+				assert self.hparams.nb_formula_node_normalized_entropy_weight == 0.0
 			return loss_d
 		self.loss_fn = _loss_fn
 		# flag losses for tracking
@@ -1388,6 +1439,17 @@ class FragGNNPL(SpectrumPL):
 					"edge_h_transfer_loss",
 					"edge_e",
 					"edge_ne"
+				]
+			)
+		if self.hparams.nb_iso:
+			loss_names.extend(
+				[
+					"nb_node_e",
+					"nb_node_ne",
+					"nb_node_formula_e",
+					"nb_node_formula_ne",
+					"nb_formula_node_e",
+					"nb_formula_node_ne"
 				]
 			)
 		self.metric_names.update(loss_names)
