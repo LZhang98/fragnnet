@@ -1,4 +1,4 @@
-wandb_name: fraggnn_d4_nodemlp_mnce
+wandb_name: fraggnn_d4_nb_nodemlp_mnce
 wandb_tags:
 - splits
 - nist20
