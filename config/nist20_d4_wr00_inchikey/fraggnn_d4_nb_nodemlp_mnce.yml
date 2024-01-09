@@ -21,7 +21,7 @@ num_depth: 5
 num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
-  pyg: node_feats:
+  pyg_node_feats:
     - cc
     - base_formula
     - depth
