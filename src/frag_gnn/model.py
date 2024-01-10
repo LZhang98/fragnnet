@@ -767,7 +767,7 @@ class FragGNNModel(nn.Module):
 			frag_nb_joint_formula_idxs = frag_nb_joint_both_un_idxs[:,1]
 			frag_nb_joint_batch_idxs = frag_nb_node_batch_idxs[frag_nb_joint_node_idxs]
 			frag_nb_formula_node_logprobs = scatter_logsumexp(
-				frag_real_node_formula_logprobs,
+				frag_real_formula_node_logprobs,
 				frag_nb_joint_both_inv_idxs,
 				dim=0,
 				dim_size=frag_nb_joint_both_un_idxs.shape[0]
