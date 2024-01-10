@@ -1398,6 +1398,7 @@ class FragGNNPL(SpectrumPL):
 				)
 				loss = loss + self.hparams.nb_formula_node_entropy_weight * nb_formula_node_e + \
 					self.hparams.nb_formula_node_normalized_entropy_weight * nb_formula_node_ne
+				loss_d["loss"] = loss
 				loss_d["nb_node_e"] = nb_node_e
 				loss_d["nb_node_ne"] = nb_node_ne
 				loss_d["nb_node_formula_e"] = nb_node_formula_e
