@@ -1,4 +1,4 @@
-wandb_name: d3_posfn_0.30_-0.15
+wandb_name: d3_posfn_0,30_-0,15
 wandb_tags:
 - nb_entropy
 - nist20

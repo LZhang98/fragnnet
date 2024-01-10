@@ -1,4 +1,4 @@
-wandb_name: d3_negnf_-0.50_0.25
+wandb_name: d3_nbnegn_-0,50_0,25
 wandb_tags:
 - nb_entropy
 - nist20
@@ -11,7 +11,7 @@ wandb_tags:
 - nodemlp
 - m_nce_embed
 - nb_iso
-- node_formula_ne_neg
+- nb_node_ne_neg
 - formula_ne_pos
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
@@ -38,7 +38,7 @@ spec_params:
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
 nb_iso: True
-node_formula_normalized_entropy_weight: -0.50
+nb_node_normalized_entropy_weight: -0.50
 formula_normalized_entropy_weight: 0.25
 
 train_batch_size: 32
