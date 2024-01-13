@@ -1247,11 +1247,14 @@ class FragGNNPL(SpectrumPL):
 			pred_nb_node_logprobs,
 			pred_nb_node_formula_logprobs,
 			pred_nb_formula_node_logprobs,
+			pred_nb_node_node_logprobs,
 			pred_nb_node_idxs,
 			pred_nb_node_batch_idxs,
 			pred_nb_joint_node_idxs,
 			pred_nb_joint_formula_idxs,
 			pred_nb_joint_batch_idxs,
+			pred_nb_node_node_node_idxs,
+			pred_nb_node_node_batch_idxs,
 			**kwargs):
 			spec_ce, true_oos_logprobs = sparse_ce_fn(
 				true_mzs,
@@ -1326,6 +1329,10 @@ class FragGNNPL(SpectrumPL):
 			)
 			loss = loss + self.hparams.formula_node_entropy_weight * formula_node_e \
 				+ self.hparams.formula_node_normalized_entropy_weight * formula_node_ne
+			# mi
+			node_formula_mi =  formula_e - node_formula_e
+			formula_node_mi = node_e - formula_node_e
+			# special probabilities
 			null_formula_prob = th.exp(pred_null_formula_logprob)
 			oos_prob = th.exp(pred_oos_logprobs)
 			true_oos_prob = th.exp(true_oos_logprobs)
@@ -1343,6 +1350,8 @@ class FragGNNPL(SpectrumPL):
 				"node_formula_ne": node_formula_ne,
 				"formula_node_e": formula_node_e,
 				"formula_node_ne": formula_node_ne,
+				"node_formula_mi": node_formula_mi,
+				"formula_node_mi": formula_node_mi,
 				"null_formula_prob": null_formula_prob,
 				"oos_prob": oos_prob,
 				"true_oos_prob": true_oos_prob
@@ -1398,6 +1407,19 @@ class FragGNNPL(SpectrumPL):
 				)
 				loss = loss + self.hparams.nb_formula_node_entropy_weight * nb_formula_node_e + \
 					self.hparams.nb_formula_node_normalized_entropy_weight * nb_formula_node_ne
+				nb_node_node_e, nb_node_node_ne = sparse_conditional_entropy_fn(
+					pred_nb_node_logprobs,
+					pred_nb_node_batch_idxs,
+					pred_nb_node_node_logprobs,
+					pred_nb_node_node_node_idxs,
+					pred_nb_node_node_batch_idxs
+				)
+				loss = loss + self.hparams.nb_node_node_entropy_weight * nb_node_node_e + \
+					self.hparams.nb_node_node_normalized_entropy_weight * nb_node_node_ne
+				# mi
+				nb_node_formula_mi =  formula_e - nb_node_formula_e
+				nb_formula_node_mi = nb_node_e - nb_formula_node_e
+				nb_node_node_mi = nb_node_e - nb_node_node_e
 				loss_d["loss"] = loss
 				loss_d["nb_node_e"] = nb_node_e
 				loss_d["nb_node_ne"] = nb_node_ne
@@ -1405,6 +1427,11 @@ class FragGNNPL(SpectrumPL):
 				loss_d["nb_node_formula_ne"] = nb_node_formula_ne
 				loss_d["nb_formula_node_e"] = nb_formula_node_e
 				loss_d["nb_formula_node_ne"] = nb_formula_node_ne
+				loss_d["nb_node_node_e"] = nb_node_node_e
+				loss_d["nb_node_node_ne"] = nb_node_node_ne
+				loss_d["nb_node_formula_mi"] = nb_node_formula_mi
+				loss_d["nb_formula_node_mi"] = nb_formula_node_mi
+				loss_d["nb_node_node_mi"] = nb_node_node_mi
 			else:
 				assert self.hparams.nb_node_entropy_weight == 0.0
 				assert self.hparams.nb_node_normalized_entropy_weight == 0.0
@@ -1429,6 +1456,8 @@ class FragGNNPL(SpectrumPL):
 			"node_formula_ne",
 			"formula_node_e",
 			"formula_node_ne",
+			"node_formula_mi",
+			"formula_node_mi",
 			"null_formula_prob",
 			"oos_prob",
 			"true_oos_prob"
@@ -1450,7 +1479,12 @@ class FragGNNPL(SpectrumPL):
 					"nb_node_formula_e",
 					"nb_node_formula_ne",
 					"nb_formula_node_e",
-					"nb_formula_node_ne"
+					"nb_formula_node_ne",
+					"nb_node_node_e",
+					"nb_node_node_ne",
+					"nb_node_formula_mi",
+					"nb_formula_node_mi",
+					"nb_node_node_mi"
 				]
 			)
 		self.metric_names.update(loss_names)
@@ -1692,6 +1726,15 @@ def test_fraggnn():
 		print(mean_loss)
 		mean_loss.backward()
 
+		# print(results["node_formula_mi"])
+		# print(results["formula_node_mi"])
+
+		# print(results["nb_node_formula_mi"])
+		# print(results["nb_formula_node_mi"])
+		# print(results["nb_node_node_mi"])
+
+		# print(results["nb_node_node_e"])
+		# print(results["nb_node_node_ne"])
 
 if __name__ == "__main__":
 

@@ -735,7 +735,7 @@ class FragGNNModel(nn.Module):
 		)
 		# calculate isomorphic distributions
 		if self.nb_iso:
-			# P'(n)
+			# P(n')
 			frag_nb_node_logprobs = scatter_logsumexp(
 				frag_real_node_logprobs,
 				frag_nb_idxs,
@@ -750,7 +750,7 @@ class FragGNNModel(nn.Module):
 				dim_size=batch_frag_nb_num_nodes
 			)
 			frag_nb_node_idxs = frag_nb_un_idxs
-			# P'(n|f)
+			# P(n'|f)
 			frag_nb_joint_idxs = frag_nb_idxs[frag_real_joint_node_idxs]
 			frag_nb_joint_both_idxs = th.stack(
 				[
@@ -772,20 +772,17 @@ class FragGNNModel(nn.Module):
 				dim=0,
 				dim_size=frag_nb_joint_both_un_idxs.shape[0]
 			)
-			# P'(f|n)
-			# frag_rel_node_logprobs = frag_real_node_logprobs - frag_nb_node_logprobs[frag_nb_inv_idxs]
-			# frag_rel_node_logprobs = (frag_real_node_logprobs<=LOG_ZERO).float() * LOG_ZERO + \
-			# 	(frag_real_node_logprobs>LOG_ZERO).float() * frag_rel_node_logprobs
-			frag_rel_node_logprobs = scatter_logsoftmax(
+			# P(n|n')
+			frag_nb_node_node_logprobs = scatter_logsoftmax(
 				frag_real_node_logprobs,
 				frag_nb_idxs,
 				dim=0
 			)
-			assert th.all(frag_rel_node_logprobs <= 0.)
-			# lse_debug = scatter_logsumexp(frag_rel_node_logprobs, frag_nb_idxs, dim=0, dim_size=batch_frag_nb_num_nodes)
-			# if not th.all(lse_debug < 1e-6):
-			# 	import pdb; pdb.set_trace()
-			frag_nb_node_formula_logprobs = frag_real_node_formula_logprobs + frag_rel_node_logprobs[frag_real_joint_node_idxs]
+			frag_nb_node_node_node_idxs = frag_nb_idxs # frag_nb_node_idxs[frag_nb_inv_idxs]
+			frag_nb_node_node_batch_idxs = frag_nb_node_batch_idxs[frag_nb_inv_idxs]
+			assert th.all(frag_nb_node_node_logprobs <= 0.)
+			# P(f|n')
+			frag_nb_node_formula_logprobs = frag_real_node_formula_logprobs + frag_nb_node_node_logprobs[frag_real_joint_node_idxs]
 			frag_nb_node_formula_logprobs = scatter_logsumexp(
 				frag_nb_node_formula_logprobs,
 				frag_nb_joint_both_inv_idxs,
@@ -796,6 +793,7 @@ class FragGNNModel(nn.Module):
 			frag_nb_node_logprobs = None
 			frag_nb_node_formula_logprobs = None
 			frag_nb_formula_node_logprobs = None
+			frag_nb_node_node_logprobs = None
 			frag_nb_node_idxs = None
 			frag_nb_node_batch_idxs = None
 			frag_nb_joint_node_idxs = None
@@ -825,11 +823,14 @@ class FragGNNModel(nn.Module):
 			"pred_nb_node_logprobs": frag_nb_node_logprobs,
 			"pred_nb_node_formula_logprobs": frag_nb_node_formula_logprobs,
 			"pred_nb_formula_node_logprobs": frag_nb_formula_node_logprobs,
+			"pred_nb_node_node_logprobs": frag_nb_node_node_logprobs,
 			"pred_nb_node_idxs": frag_nb_node_idxs,
 			"pred_nb_node_batch_idxs": frag_nb_node_batch_idxs,
 			"pred_nb_joint_node_idxs": frag_nb_joint_node_idxs,
 			"pred_nb_joint_formula_idxs": frag_nb_joint_formula_idxs,
 			"pred_nb_joint_batch_idxs": frag_nb_joint_batch_idxs,
+			"pred_nb_node_node_node_idxs": frag_nb_node_node_node_idxs,
+			"pred_nb_node_node_batch_idxs": frag_nb_node_node_batch_idxs,
 		}
 
 		return out_d
