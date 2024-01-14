@@ -1,23 +1,24 @@
-wandb_name: fraggnn_d4_nb_nodemlp_mnce
+wandb_name: d3_baseline_s0
+wandb_group: nb_entropy_d3_baseline
 wandb_tags:
-- splits
+- nb_entropy
 - nist20
 - d4
 - wr00
 - inchikey
 - new_proc
-- fraggnn_d4
-- dynamic_sampler
+- fraggnn_d3
 - new_metrics
 - nodemlp
 - m_nce_embed
 - nb_iso
+- s0
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
 split_dp: data/split/nist20_d4_wr00_inchikey
-frag_dp: data/frag/nist20_d4_h4_isoFalse_nb2/dags
-num_depth: 5
+frag_dp: data/frag/nist20_d3_h4_isoFalse_nb2/dags
+num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
@@ -37,6 +38,7 @@ spec_params:
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
 nb_iso: True
+seed: 397623
 
 train_batch_size: 32
 eval_batch_size: 32
@@ -63,8 +65,4 @@ checkpoint_metric: val_cos_hun_epoch/mean
 
 precision: 32
 use_tensor_float32: True
-automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
-dynamic_batch_sampler_mode: frag_edge
-dynamic_batch_sampler_max: 500000
-pl_enable_progress_bar: True
+automatic_optimization: True

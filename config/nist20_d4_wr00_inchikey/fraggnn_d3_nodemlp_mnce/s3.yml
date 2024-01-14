@@ -30,7 +30,7 @@ spec_params:
   merge_keep_ces: True
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
-seed: 1
+seed: 103976
 
 train_batch_size: 32
 eval_batch_size: 32
