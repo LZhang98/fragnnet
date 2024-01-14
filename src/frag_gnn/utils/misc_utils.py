@@ -187,6 +187,7 @@ def scatter_logsumexp(logits,subset_idxs,dim,eps=EPS,dim_size=None):
 	if dim_size is None:
 		k = th.max(subset_idxs)+1
 	else:
+		assert dim_size >= th.max(subset_idxs)+1
 		k = dim_size
 	sm = scatter_reduce(
 		src=logits,
@@ -257,6 +258,64 @@ def scatter_logl2normalize(logits,subset_idxs,dim=-1):
 	# apply normalizing constant
 	logits = logits - 0.5*c[subset_idxs]
 	return logits
+
+def scatter_var(src,index,dim=-1,dim_size=None,sqrt=False):
+
+	# calculate dim_size
+	if dim_size is None:
+		dim_size = th.max(index)+1
+	else:
+		assert dim_size >= th.max(index)+1
+	# calculate mean
+	m = scatter_reduce(
+		src=src,
+		index=index,
+		reduce="mean",
+		dim=dim,
+		dim_size=dim_size
+	)
+	# calculate variance
+	v = scatter_reduce(
+		src=(src-m[index])**2,
+		index=index,
+		reduce="mean",
+		dim=dim,
+		dim_size=dim_size
+	)
+	if sqrt:
+		v = th.sqrt(v)
+	return v
+
+def scatter_argmax(src,index,dim=-1,dim_size=None):
+
+	# calculate dim_size
+	if dim_size is None:
+		dim_size = th.max(index)+1
+	else:
+		assert dim_size >= th.max(index)+1
+	# calculate max
+	mx = scatter_reduce(
+		src=src,
+		index=index,
+		reduce="amax",
+		dim=dim,
+		dim_size=dim_size
+	)
+	# calculate mask
+	ma = src==mx[index]
+	# calculate indices
+	idx = th.arange(src.shape[dim],device=src.device,dtype=index.dtype)
+	# calculate argmax
+	ma_idx = idx.type(index.dtype)*ma + (~idx).type(index.dtype)*(-1)
+	amx = scatter_reduce(
+		src=ma_idx,
+		index=index,
+		reduce="amax",
+		dim=dim,
+		dim_size=dim_size
+	)
+	assert th.min(amx) >= 0, th.min(amx)
+	return amx
 
 def scatter_reduce(src,index,reduce,dim,dim_size,default=0.):
 

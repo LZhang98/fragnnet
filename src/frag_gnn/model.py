@@ -697,6 +697,7 @@ class FragGNNModel(nn.Module):
 			dim=0
 		)
 		# sum, renormalize, but keep all-NULL nodes (as zeros)
+		frag_real_node_idxs = th.arange(batch_frag_num_nodes,device=device)
 		frag_real_node_logprobs = scatter_logsumexp(
 			frag_real_joint_logprobs,
 			frag_real_joint_node_idxs,
@@ -749,7 +750,7 @@ class FragGNNModel(nn.Module):
 				dim=0,
 				dim_size=batch_frag_nb_num_nodes
 			)
-			frag_nb_node_idxs = frag_nb_un_idxs
+			frag_nb_node_node_idxs = frag_nb_un_idxs
 			# P(n'|f)
 			frag_nb_joint_idxs = frag_nb_idxs[frag_real_joint_node_idxs]
 			frag_nb_joint_both_idxs = th.stack(
@@ -778,7 +779,7 @@ class FragGNNModel(nn.Module):
 				frag_nb_idxs,
 				dim=0
 			)
-			frag_nb_node_node_node_idxs = frag_nb_idxs # frag_nb_node_idxs[frag_nb_inv_idxs]
+			frag_nb_node_node_node_idxs = frag_nb_idxs # frag_nb_node_node_idxs[frag_nb_inv_idxs]
 			frag_nb_node_node_batch_idxs = frag_nb_node_batch_idxs[frag_nb_inv_idxs]
 			assert th.all(frag_nb_node_node_logprobs <= 0.)
 			# P(f|n')
@@ -794,7 +795,7 @@ class FragGNNModel(nn.Module):
 			frag_nb_node_formula_logprobs = None
 			frag_nb_formula_node_logprobs = None
 			frag_nb_node_node_logprobs = None
-			frag_nb_node_idxs = None
+			frag_nb_node_node_idxs = None
 			frag_nb_node_batch_idxs = None
 			frag_nb_joint_node_idxs = None
 			frag_nb_joint_formula_idxs = None
@@ -809,6 +810,7 @@ class FragGNNModel(nn.Module):
 			"pred_formula_logprobs": frag_real_formula_logprobs,
 			"pred_formula_batch_idxs": frag_formula_batch_idxs,
 			"pred_node_logprobs": frag_real_node_logprobs,
+			"pred_node_node_idxs": frag_real_node_idxs,
 			"pred_node_batch_idxs": frag_node_batch_idxs,
 			"pred_node_formula_logprobs": frag_real_node_formula_logprobs,
 			"pred_formula_node_logprobs": frag_real_formula_node_logprobs,
@@ -826,7 +828,7 @@ class FragGNNModel(nn.Module):
 			"pred_nb_node_formula_logprobs": frag_nb_node_formula_logprobs,
 			"pred_nb_formula_node_logprobs": frag_nb_formula_node_logprobs,
 			"pred_nb_node_node_logprobs": frag_nb_node_node_logprobs,
-			"pred_nb_node_idxs": frag_nb_node_idxs,
+			"pred_nb_node_node_idxs": frag_nb_node_node_idxs,
 			"pred_nb_node_batch_idxs": frag_nb_node_batch_idxs,
 			"pred_nb_joint_node_idxs": frag_nb_joint_node_idxs,
 			"pred_nb_joint_formula_idxs": frag_nb_joint_formula_idxs,
