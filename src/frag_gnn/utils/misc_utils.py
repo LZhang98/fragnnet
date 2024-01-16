@@ -305,8 +305,11 @@ def scatter_argmax(src,index,dim=-1,dim_size=None):
 	ma = src==mx[index]
 	# calculate indices
 	idx = th.arange(src.shape[dim],device=src.device,dtype=index.dtype)
+	idx_offset = th.cumsum(th.unique(index,return_counts=True)[1], dim=0)
+	idx_offset = th.cat([th.zeros([1],dtype=idx_offset.dtype,device=idx_offset.device),idx_offset],dim=0)
+	idx = idx - idx_offset[index]
 	# calculate argmax
-	ma_idx = idx.type(index.dtype)*ma + (~idx).type(index.dtype)*(-1)
+	ma_idx = idx.type(index.dtype)*ma + (-1)*(~ma)
 	amx = scatter_reduce(
 		src=ma_idx,
 		index=index,
