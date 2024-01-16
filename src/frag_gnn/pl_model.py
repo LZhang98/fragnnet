@@ -1227,6 +1227,7 @@ class FragGNNPL(SpectrumPL):
 			pred_logprobs,
 			pred_batch_idxs,
 			pred_formula_logprobs,
+			pred_formula_formula_idxs,
 			pred_formula_batch_idxs,
 			pred_node_logprobs,
 			pred_node_node_idxs,

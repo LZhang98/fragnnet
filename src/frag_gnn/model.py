@@ -682,7 +682,7 @@ class FragGNNModel(nn.Module):
 			frag_real_joint_batch_idxs
 		)
 		# sum, renormalize, but keep all-NULL nodes (as zeros)
-		frag_real_node_idxs = th.arange(batch_frag_num_nodes,device=device)
+		frag_real_node_node_idxs = th.arange(batch_frag_num_nodes,device=device)
 		frag_real_node_logprobs = scatter_logsumexp(
 			frag_real_joint_logprobs,
 			frag_real_joint_node_idxs,
@@ -702,6 +702,7 @@ class FragGNNModel(nn.Module):
 			frag_real_formula_logprobs,
 			frag_formula_batch_idxs,
 		)
+		frag_real_formula_formula_idxs = th.arange(batch_frag_num_formulae,device=device)
 		# remove all NULLs from conditionals
 		frag_real_node_formula_logprobs = frag_real_joint_logprobs - frag_real_node_logprobs[frag_real_joint_node_idxs]
 		frag_real_node_formula_logprobs = scatter_logsoftmax(
@@ -777,14 +778,19 @@ class FragGNNModel(nn.Module):
 			frag_nb_node_node_node_idxs = None
 			frag_nb_node_node_batch_idxs = None
 
+		assert th.unique(frag_real_node_node_idxs).shape[0] == frag_real_node_node_idxs.max()+1 == batch_frag_num_nodes
+		assert th.unique(frag_real_formula_formula_idxs).shape[0] == frag_real_formula_formula_idxs.max()+1 == batch_frag_num_formulae
+		assert th.unique(frag_nb_node_node_idxs).shape[0] == frag_nb_node_node_idxs.max()+1 == batch_frag_nb_num_nodes
+
 		out_d = {
 			"pred_mzs": spec_mzs,
 			"pred_logprobs": spec_logprobs,
 			"pred_batch_idxs": spec_batch_idxs,
 			"pred_formula_logprobs": frag_real_formula_logprobs,
+			"pred_formula_formula_idxs": frag_real_formula_formula_idxs,
 			"pred_formula_batch_idxs": frag_formula_batch_idxs,
 			"pred_node_logprobs": frag_real_node_logprobs,
-			"pred_node_node_idxs": frag_real_node_idxs,
+			"pred_node_node_idxs": frag_real_node_node_idxs,
 			"pred_node_batch_idxs": frag_node_batch_idxs,
 			"pred_node_formula_logprobs": frag_real_node_formula_logprobs,
 			"pred_formula_node_logprobs": frag_real_formula_node_logprobs,

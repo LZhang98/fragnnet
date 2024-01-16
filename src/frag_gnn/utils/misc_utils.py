@@ -288,7 +288,7 @@ def scatter_var(src,index,dim_size=None,correction=1,sqrt=False):
 		v = th.sqrt(v)
 	return v
 
-def scatter_argmax(src,index,dim_size=None):
+def scatter_argmax(src,index,other_index,dim_size=None):
 
 	# calculate dim_size
 	if dim_size is None:
@@ -305,13 +305,8 @@ def scatter_argmax(src,index,dim_size=None):
 	)
 	# calculate mask
 	ma = src==mx[index]
-	# calculate indices
-	idx = th.arange(src.shape[0],device=src.device,dtype=index.dtype)
-	idx_offset = th.cumsum(th.unique(index,return_counts=True)[1], dim=0)
-	idx_offset = th.cat([th.zeros([1],dtype=idx_offset.dtype,device=idx_offset.device),idx_offset],dim=0)
-	idx = idx - idx_offset[index]
 	# calculate argmax
-	ma_idx = idx.type(index.dtype)*ma + (-1)*(~ma)
+	ma_idx = other_index*ma + (-1)*(~ma)
 	amx = scatter_reduce(
 		src=ma_idx,
 		index=index,
