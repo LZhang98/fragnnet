@@ -335,7 +335,7 @@ class SpectrumPL(pl.LightningModule):
 								metric_d[fname] = jss
 
 			if compute_entropies:
-				true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs,dim=0))
+				true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs))
 				true_spec_e, true_spec_ne = sparse_entropy_fn(true_log_probs,true_batch_idxs)
 				if "true_spec_e" in self.hparams.auxiliary_scores:
 					metric_d["true_spec_e"] = true_spec_e
@@ -1211,13 +1211,11 @@ class FragGNNPL(SpectrumPL):
 			edge_h_transfer_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_transfer_costs),dim=1)
 			h_range_loss = scatter_logsumexp(
 				pred_edge_logprobs + edge_h_range_avg_cost,
-				pred_edge_batch_idxs,
-				dim=0
+				pred_edge_batch_idxs
 			)
 			h_transfer_loss = scatter_logsumexp(
 				pred_edge_logprobs + edge_h_transfer_avg_cost,
-				pred_edge_batch_idxs,
-				dim=0
+				pred_edge_batch_idxs
 			)
 			return h_range_loss, h_transfer_loss
 		

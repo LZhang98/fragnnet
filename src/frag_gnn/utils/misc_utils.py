@@ -154,35 +154,35 @@ def get_pyg_memory_usage(pyg_graph):
 
 	return pyg.profile.get_data_size(pyg_graph)
 
-def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=LOG_ZERO,dim=-1,log=True):
+def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=LOG_ZERO,log=True):
 	# calculate appropriate mask value
 	with th.no_grad():
-		c = scatter_masked_logsumexp(logits,mask,subset_idxs,dim=dim)
+		c = scatter_masked_logsumexp(logits,mask,subset_idxs)
 		lm = th.gather(
 			input=c,
 			index=subset_idxs,
-			dim=dim
+			dim=0
 		)
 		mask_value = mask_logprob + lm
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
 	# normalize
-	masked_logits = scatter_logsoftmax(masked_logits,subset_idxs,dim)
+	masked_logits = scatter_logsoftmax(masked_logits,subset_idxs)
 	if not log:
 		# exponentiate
 		return th.exp(masked_logits)
 	else:
 		return masked_logits
 
-def scatter_masked_logsumexp(logits,mask,subset_idxs,mask_value=LOG_ZERO,dim=-1):
+def scatter_masked_logsumexp(logits,mask,subset_idxs,mask_value=LOG_ZERO):
 
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
 	# normalize
-	masked_logsumexp = scatter_logsumexp(masked_logits,subset_idxs,dim=dim)
+	masked_logsumexp = scatter_logsumexp(masked_logits,subset_idxs)
 	return masked_logsumexp
 
-def scatter_logsumexp(logits,subset_idxs,dim,eps=EPS,dim_size=None):
+def scatter_logsumexp(logits,subset_idxs,eps=EPS,dim_size=None):
 
 	if dim_size is None:
 		k = th.max(subset_idxs)+1
@@ -193,44 +193,41 @@ def scatter_logsumexp(logits,subset_idxs,dim,eps=EPS,dim_size=None):
 		src=logits,
 		index=subset_idxs,
 		reduce="amax",
-		dim=dim,
 		dim_size=k,
 		default=LOG_ZERO
 	)
 	lm = th.gather(
 		input=sm,
 		index=subset_idxs,
-		dim=dim
+		dim=0
 	)
 	logits = logits - lm
 	se = scatter_reduce(
 		src=th.exp(logits),
 		index=subset_idxs,
 		reduce="sum",
-		dim=dim,
 		dim_size=k,
 		default=0.
 	)
 	return sm + th.log(se + eps)
 
-def scatter_logsoftmax(logits,subset_idxs,dim=-1):
+def scatter_logsoftmax(logits,subset_idxs):
 	# calculate normalizing constant
-	c = scatter_logsumexp(logits,subset_idxs,dim=dim)
+	c = scatter_logsumexp(logits,subset_idxs)
 	# apply normalizing constant
 	logits = logits - c[subset_idxs]
 	return logits
 
-def scatter_softmax(logits,subset_idxs,dim=-1):
+def scatter_softmax(logits,subset_idxs):
 
-	return th.exp(scatter_logsoftmax(logits,subset_idxs,dim=dim))
+	return th.exp(scatter_logsoftmax(logits,subset_idxs))
 
-def scatter_l1normalize(vals,subset_idxs,dim=-1):
+def scatter_l1normalize(vals,subset_idxs):
 	# calculate normalizing constant
 	c = scatter_reduce(
 		src=vals,
 		index=subset_idxs,
 		reduce="sum",
-		dim=dim,
 		dim_size=th.max(subset_idxs)+1
 	)
 	c = th.clamp(c,min=EPS)
@@ -238,13 +235,12 @@ def scatter_l1normalize(vals,subset_idxs,dim=-1):
 	vals = vals/c[subset_idxs]
 	return vals
 
-def scatter_l2normalize(vals,subset_idxs,dim=-1):
+def scatter_l2normalize(vals,subset_idxs):
 	# calculate normalizing constant
 	c = scatter_reduce(
 		src=vals**2,
 		index=subset_idxs,
 		reduce="sum",
-		dim=dim,
 		dim_size=th.max(subset_idxs)+1
 	)
 	c = th.clamp(th.sqrt(c),min=EPS)
@@ -252,14 +248,14 @@ def scatter_l2normalize(vals,subset_idxs,dim=-1):
 	vals = vals/c[subset_idxs]
 	return vals
 
-def scatter_logl2normalize(logits,subset_idxs,dim=-1):
+def scatter_logl2normalize(logits,subset_idxs):
 	# calculate normalizing constant
-	c = scatter_logsumexp(2*logits,subset_idxs,dim=dim)
+	c = scatter_logsumexp(2*logits,subset_idxs)
 	# apply normalizing constant
 	logits = logits - 0.5*c[subset_idxs]
 	return logits
 
-def scatter_var(src,index,dim=-1,dim_size=None,sqrt=False):
+def scatter_var(src,index,dim_size=None,correction=1,sqrt=False):
 
 	# calculate dim_size
 	if dim_size is None:
@@ -271,22 +267,28 @@ def scatter_var(src,index,dim=-1,dim_size=None,sqrt=False):
 		src=src,
 		index=index,
 		reduce="mean",
-		dim=dim,
-		dim_size=dim_size
+		dim_size=dim_size,
+		include_self=False
 	)
 	# calculate variance
-	v = scatter_reduce(
+	v_num = scatter_reduce(
 		src=(src-m[index])**2,
 		index=index,
-		reduce="mean",
-		dim=dim,
+		reduce="sum",
 		dim_size=dim_size
 	)
+	v_den = scatter_reduce(
+		src=th.ones_like(src),
+		index=index,
+		reduce="sum",
+		dim_size=dim_size
+	)
+	v = v_num/th.clamp(v_den-correction,min=EPS)
 	if sqrt:
 		v = th.sqrt(v)
 	return v
 
-def scatter_argmax(src,index,dim=-1,dim_size=None):
+def scatter_argmax(src,index,dim_size=None):
 
 	# calculate dim_size
 	if dim_size is None:
@@ -298,13 +300,13 @@ def scatter_argmax(src,index,dim=-1,dim_size=None):
 		src=src,
 		index=index,
 		reduce="amax",
-		dim=dim,
-		dim_size=dim_size
+		dim_size=dim_size,
+		include_self=False
 	)
 	# calculate mask
 	ma = src==mx[index]
 	# calculate indices
-	idx = th.arange(src.shape[dim],device=src.device,dtype=index.dtype)
+	idx = th.arange(src.shape[0],device=src.device,dtype=index.dtype)
 	idx_offset = th.cumsum(th.unique(index,return_counts=True)[1], dim=0)
 	idx_offset = th.cat([th.zeros([1],dtype=idx_offset.dtype,device=idx_offset.device),idx_offset],dim=0)
 	idx = idx - idx_offset[index]
@@ -314,21 +316,28 @@ def scatter_argmax(src,index,dim=-1,dim_size=None):
 		src=ma_idx,
 		index=index,
 		reduce="amax",
-		dim=dim,
-		dim_size=dim_size
+		dim_size=dim_size,
+		include_self=False
 	)
 	assert th.min(amx) >= 0, th.min(amx)
 	return amx
 
-def scatter_reduce(src,index,reduce,dim,dim_size,default=0.):
+def scatter_reduce(src,index,reduce,dim=0,dim_size=None,default=0.,include_self=True):
 
+	if reduce == "mean" and include_self:
+		print("scatter_reduce: mean reduce with include_self=True is not recommended")
+	if dim_size is None:
+		dim_size = th.max(index)+1
+	else:
+		assert dim_size >= th.max(index)+1
 	result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim+1:]
 	results = th.full(result_shape,default,dtype=src.dtype,device=src.device)
 	results.scatter_reduce_(
 		dim=dim,
 		index=index,
 		src=src,
-		reduce=reduce
+		reduce=reduce,
+		include_self=include_self
 	)
 	return results
 

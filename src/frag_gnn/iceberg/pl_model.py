@@ -57,7 +57,6 @@ class IcebergGenPL(SpectrumPL):
 				loss, 
 				batch_idxs,
 				"sum",
-				dim=0,
 				dim_size=th.max(batch_idxs)+1
 			)
 			loss_d = {

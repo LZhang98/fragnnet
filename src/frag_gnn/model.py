@@ -357,7 +357,6 @@ class FragGNNModel(nn.Module):
 				src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
 				index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
 				reduce="sum",
-				dim=0,
 				dim_size=batch_frag_num_nodes
 			)
 			# frag_node_mask_embed can be one of following
@@ -386,7 +385,6 @@ class FragGNNModel(nn.Module):
 				src=mol_embed_gnn[frag_edge_mask_idxs[:,1]],
 				index=frag_edge_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
 				reduce="sum",
-				dim=0,
 				dim_size=batch_frag_num_edges
 			)
 			frag_edata.append(frag_edge_mask_embed)
@@ -440,7 +438,6 @@ class FragGNNModel(nn.Module):
 				frag_nb_idxs,
 				frag_node_batch_idxs,
 				reduce="amax",
-				dim=0,
 				dim_size=batch_size
 			)
 			frag_nb_offsets = th.cat(
@@ -497,8 +494,8 @@ class FragGNNModel(nn.Module):
 				src=mlp_m_ce_embed,
 				index=m_ce_batch_idxs.unsqueeze(1).expand_as(mlp_m_ce_embed),
 				reduce="mean",
-				dim=0,
-				dim_size=batch_size
+				dim_size=batch_size,
+				include_self=False
 			)
 			mlp_m_ce_embed = th.repeat_interleave(mlp_m_ce_embed,th.unique(frag_node_batch_idxs,return_counts=True)[1],dim=0)
 			frag_embed_parts.append(mlp_m_ce_embed)
@@ -518,13 +515,11 @@ class FragGNNModel(nn.Module):
 			# compute total NULL probability (before renormalization)
 			frag_joint_logprobs = scatter_logsoftmax(
 				frag_joint_logits,
-				frag_joint_batch_idxs,
-				dim=0
+				frag_joint_batch_idxs
 			)
 			frag_null_formula_logprob = scatter_logsumexp(
 				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * (-1e9),
-				frag_joint_batch_idxs,
-				dim=0
+				frag_joint_batch_idxs
 			)
 
 			if self.mask_null_formula:
@@ -533,7 +528,6 @@ class FragGNNModel(nn.Module):
 					frag_joint_logits,
 					frag_joint_mask,
 					frag_joint_batch_idxs,
-					dim=0,
 					log=True
 				)
 			
@@ -545,8 +539,7 @@ class FragGNNModel(nn.Module):
 			frag_node_logits = th.logsumexp(frag_joint_logprobs,dim=1)
 			frag_node_logprobs = scatter_logsoftmax(
 				frag_node_logits,
-				frag_node_batch_idxs,
-				dim=0
+				frag_node_batch_idxs
 			)
 			
 			# calculate conditional probability
@@ -567,8 +560,7 @@ class FragGNNModel(nn.Module):
 			frag_node_logits = self.node_module(frag_embed).squeeze(1)
 			frag_node_logprobs = scatter_logsoftmax(
 				frag_node_logits,
-				frag_node_batch_idxs,
-				dim=0
+				frag_node_batch_idxs
 			)
 
 			# log p(f,n) = log p(f|n) + log p(n)
@@ -578,8 +570,7 @@ class FragGNNModel(nn.Module):
 			# compute total NULL probability (before renormalization)
 			frag_null_formula_logprob = scatter_logsumexp(
 				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * (-1e9),
-				frag_joint_batch_idxs,
-				dim=0
+				frag_joint_batch_idxs
 			)
 
 			if self.mask_null_formula:
@@ -588,7 +579,6 @@ class FragGNNModel(nn.Module):
 					frag_joint_logprobs,
 					frag_joint_mask,
 					frag_joint_batch_idxs,
-					dim=0,
 					log=True
 				)
 
@@ -604,8 +594,7 @@ class FragGNNModel(nn.Module):
 		# aggregate by formula
 		frag_formula_logprobs = scatter_logsumexp(
 			frag_joint_logprobs.flatten(),
-			frag_formula_idxs,
-			dim=0
+			frag_formula_idxs
 		)
 
 		# softmax over formulae
@@ -614,7 +603,6 @@ class FragGNNModel(nn.Module):
 				frag_formula_logprobs,
 				frag_formula_mask,
 				frag_formula_batch_idxs,
-				dim=0,
 				log=True
 			)
 		else:
@@ -622,7 +610,6 @@ class FragGNNModel(nn.Module):
 				frag_formula_logprobs,
 				th.ones_like(frag_formula_logprobs),
 				frag_formula_batch_idxs,
-				dim=0,
 				log=True
 			)
 
@@ -660,10 +647,9 @@ class FragGNNModel(nn.Module):
 			frag_edge_logits = frag_node_logprobs[frag_edge_index[0]] + frag_node_logprobs[frag_edge_index[1]]
 			frag_edge_logprobs = scatter_logsoftmax(
 				frag_edge_logits,
-				frag_edge_batch_idxs,
-				dim=0
+				frag_edge_batch_idxs
 			)
-			# print(scatter_logsumexp(frag_edge_logprobs,frag_edge_batch_idxs,dim=0))
+			# print(scatter_logsumexp(frag_edge_logprobs,frag_edge_batch_idxs))
 			frag_node_h_counts = get_node_feats(frag_x,frag_node_feat_idxs,"h_counts")
 			frag_edge_h_ranges = get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"h_range")
 			frag_edge_h_diffs = frag_node_h_counts[frag_edge_index[0]].unsqueeze(1) - frag_node_h_counts[frag_edge_index[1]].unsqueeze(2)
@@ -693,46 +679,39 @@ class FragGNNModel(nn.Module):
 		frag_real_joint_batch_idxs = frag_joint_batch_idxs[frag_joint_mask.bool()]
 		frag_real_joint_logprobs = scatter_logsoftmax(
 			frag_real_joint_logits,
-			frag_real_joint_batch_idxs,
-			dim=0
+			frag_real_joint_batch_idxs
 		)
 		# sum, renormalize, but keep all-NULL nodes (as zeros)
 		frag_real_node_idxs = th.arange(batch_frag_num_nodes,device=device)
 		frag_real_node_logprobs = scatter_logsumexp(
 			frag_real_joint_logprobs,
 			frag_real_joint_node_idxs,
-			dim=0,
 			dim_size=batch_frag_num_nodes
 		)
 		frag_real_node_logprobs = scatter_logsoftmax(
 			frag_real_node_logprobs,
-			frag_node_batch_idxs,
-			dim=0
+			frag_node_batch_idxs
 		)
 		# sum, renormalize, but keep NULL formulae (as zeros)
 		frag_real_formula_logprobs = scatter_logsumexp(
 			frag_real_joint_logprobs,
 			frag_real_joint_formula_idxs,
-			dim=0,
 			dim_size=batch_frag_num_formulae
 		)
 		frag_real_formula_logprobs = scatter_logsoftmax(
 			frag_real_formula_logprobs,
 			frag_formula_batch_idxs,
-			dim=0
 		)
 		# remove all NULLs from conditionals
 		frag_real_node_formula_logprobs = frag_real_joint_logprobs - frag_real_node_logprobs[frag_real_joint_node_idxs]
 		frag_real_node_formula_logprobs = scatter_logsoftmax(
 			frag_real_node_formula_logprobs,
-			frag_real_joint_node_idxs,
-			dim=0,
+			frag_real_joint_node_idxs
 		)
 		frag_real_formula_node_logprobs = frag_real_joint_logprobs - frag_real_formula_logprobs[frag_real_joint_formula_idxs]
 		frag_real_formula_node_logprobs = scatter_logsoftmax(
 			frag_real_formula_node_logprobs,
-			frag_real_joint_formula_idxs,
-			dim=0,
+			frag_real_joint_formula_idxs
 		)
 		# calculate isomorphic distributions
 		if self.nb_iso:
@@ -740,14 +719,12 @@ class FragGNNModel(nn.Module):
 			frag_nb_node_logprobs = scatter_logsumexp(
 				frag_real_node_logprobs,
 				frag_nb_idxs,
-				dim=0,
 				dim_size=batch_frag_nb_num_nodes
 			)
 			frag_nb_node_batch_idxs = scatter_reduce(
 				frag_node_batch_idxs,
 				frag_nb_idxs,
 				reduce="amax",
-				dim=0,
 				dim_size=batch_frag_nb_num_nodes
 			)
 			frag_nb_node_node_idxs = frag_nb_un_idxs
@@ -770,14 +747,12 @@ class FragGNNModel(nn.Module):
 			frag_nb_formula_node_logprobs = scatter_logsumexp(
 				frag_real_formula_node_logprobs,
 				frag_nb_joint_both_inv_idxs,
-				dim=0,
 				dim_size=frag_nb_joint_both_un_idxs.shape[0]
 			)
 			# P(n|n')
 			frag_nb_node_node_logprobs = scatter_logsoftmax(
 				frag_real_node_logprobs,
-				frag_nb_idxs,
-				dim=0
+				frag_nb_idxs
 			)
 			frag_nb_node_node_node_idxs = frag_nb_idxs # frag_nb_node_node_idxs[frag_nb_inv_idxs]
 			frag_nb_node_node_batch_idxs = frag_nb_node_batch_idxs[frag_nb_inv_idxs]
@@ -787,7 +762,6 @@ class FragGNNModel(nn.Module):
 			frag_nb_node_formula_logprobs = scatter_logsumexp(
 				frag_nb_node_formula_logprobs,
 				frag_nb_joint_both_inv_idxs,
-				dim=0,
 				dim_size=frag_nb_joint_both_un_idxs.shape[0]
 			)
 		else:

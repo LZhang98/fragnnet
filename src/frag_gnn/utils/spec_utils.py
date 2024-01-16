@@ -180,7 +180,6 @@ def bin_func(mzs:th.Tensor,ints:th.Tensor,mz_max:float,mz_bin_res:float,return_i
 			src=ints,
 			index=bin_idx,
 			reduce="sum" if sum_ints else "amax",
-			dim=0,
 			dim_size=bins.shape[0]
 		)
 		if th.all(bin_spec == 0.):
@@ -285,7 +284,6 @@ def batched_bin_func(
 				src=ints,
 				index=new_bin_idxs[un_bin_idxs_rev],
 				reduce=agg,
-				dim=0,
 				dim_size=new_bin_idxs.shape[0]
 			)
 		else:
@@ -293,7 +291,6 @@ def batched_bin_func(
 			un_bin_ints = scatter_logsumexp(
 				ints,
 				new_bin_idxs[un_bin_idxs_rev],
-				dim=0,
 				dim_size=new_bin_idxs.shape[0]
 			)
 		un_bin_batch_idxs = un_bin_idxs // num_bins
@@ -304,7 +301,6 @@ def batched_bin_func(
 				src=ints,
 				index=bin_idxs,
 				reduce=agg,
-				dim=0,
 				dim_size=num_bins*batch_size
 			)
 		else:
@@ -312,7 +308,6 @@ def batched_bin_func(
 			bin_spec = scatter_logsumexp(
 				ints,
 				bin_idxs,
-				dim=0,
 				dim_size=num_bins*batch_size
 			)
 		bin_spec = bin_spec.reshape(batch_size,num_bins)
@@ -374,7 +369,6 @@ def calculate_spectrum_entropy(log_ints:th.Tensor,batch_idxs:th.Tensor) -> th.Te
 		src=th.exp(log_norm_ints)*log_norm_ints,
 		index=batch_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=k
 	)
 	return entropy
@@ -392,8 +386,8 @@ def calculate_topk_weighted_recall(true_mzs,true_logits,true_batch_idxs,pred_mzs
 	batch_size = th.max(true_batch_idxs)+1
 	topk_weighted_recall = th.zeros([batch_size],device=true_mzs.device)
 	topk_frac = th.zeros([batch_size],device=true_mzs.device)
-	true_ints = th.exp(scatter_logsoftmax(true_logits,true_batch_idxs,dim=0))
-	pred_ints = th.exp(scatter_logsoftmax(pred_logits,pred_batch_idxs,dim=0))
+	true_ints = th.exp(scatter_logsoftmax(true_logits,true_batch_idxs))
+	pred_ints = th.exp(scatter_logsoftmax(pred_logits,pred_batch_idxs))
 	for b in range(batch_size):
 		b_true_mask = (true_batch_idxs==b)
 		b_pred_mask = (pred_batch_idxs==b)
@@ -751,13 +745,11 @@ def calculate_ndcg_hungarian(
 	# l1 normalize
 	true_ints = scatter_l1normalize(
 		true_ints,
-		true_batch_idxs,
-		dim=0
+		true_batch_idxs
 	)
 	pred_ints = scatter_l1normalize(
 		pred_ints,
-		pred_batch_idxs,
-		dim=0
+		pred_batch_idxs
 	)
 
 	# calculate
@@ -1128,13 +1120,11 @@ def cos_sim_helper(true_bin_idxs, true_bin_ints, true_bin_batch_idxs, pred_bin_i
 	# l2 normalize
 	true_bin_ints = scatter_l2normalize(
 		true_bin_ints,
-		true_bin_batch_idxs,
-		dim=0
+		true_bin_batch_idxs
 	)
 	pred_bin_ints = scatter_l2normalize(
 		pred_bin_ints,
-		pred_bin_batch_idxs,
-		dim=0
+		pred_bin_batch_idxs
 	)
 	# dot product
 	pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
@@ -1145,7 +1135,6 @@ def cos_sim_helper(true_bin_idxs, true_bin_ints, true_bin_batch_idxs, pred_bin_i
 		src=both_bin_ints,
 		index=pred_bin_batch_idxs[pred_mask],
 		reduce="sum",
-		dim=0,
 		dim_size=th.max(true_bin_batch_idxs)+1
 	)
 	return cos_sims
@@ -1154,8 +1143,7 @@ def batched_l1_normalize(ints, batch_idxs):
 
 	ints = scatter_l1normalize(
 		ints,
-		batch_idxs,
-		dim=0
+		batch_idxs
 	)
 	return ints
 
@@ -1165,7 +1153,6 @@ def batched_mf100_normalize(ints, batch_idxs):
 		ints,
 		batch_idxs,
 		reduce="max",
-		dim=0,
 		dim_size=th.max(batch_idxs)+1
 	)
 	ints = (ints / max_ints[batch_idxs]) * 1000.
@@ -1293,7 +1280,6 @@ def round_aggregate_peaks(
 				src=b_ints,
 				index=b_round_mzs_inv,
 				reduce=agg,
-				dim=0,
 				dim_size=b_round_mzs_un.shape[0]
 			)
 		else:
@@ -1301,7 +1287,6 @@ def round_aggregate_peaks(
 			b_round_ints = scatter_logsumexp(
 				logits=b_ints,
 				subset_idxs=b_round_mzs_inv,
-				dim=0,
 				dim_size=b_round_mzs_un.shape[0]
 			)
 		round_mzs.append(b_round_mzs_un)
@@ -1668,13 +1653,11 @@ def jss_helper(
 	# l1 normalize
 	true_bin_ints = scatter_l1normalize(
 		true_bin_ints,
-		true_bin_batch_idxs,
-		dim=0
+		true_bin_batch_idxs
 	)
 	pred_bin_ints = scatter_l1normalize(
 		pred_bin_ints,
-		pred_bin_batch_idxs,
-		dim=0
+		pred_bin_batch_idxs
 	)
 	# union distribution
 	union_bin_idxs, union_bin_idxs_rev = th.unique(th.cat([true_bin_idxs,pred_bin_idxs],dim=0),return_inverse=True)
@@ -1682,20 +1665,17 @@ def jss_helper(
 		src=0.5*th.cat([true_bin_ints,pred_bin_ints],dim=0),
 		index=union_bin_idxs_rev,
 		reduce="sum",
-		dim=0,
 		dim_size=union_bin_idxs.shape[0]
 	)
 	# union_bin_batch_idxs = scatter_reduce(
 	# 	src=th.cat([true_bin_batch_idxs,pred_bin_batch_idxs],dim=0),
 	# 	index=union_bin_idxs_rev,
 	# 	reduce="amax",
-	# 	dim=0,
 	# 	dim_size=union_bin_idxs.shape[0]
 	# )
 	# union_bin_ints = scatter_l1normalize(
 	# 	union_bin_ints,
-	# 	union_bin_batch_idxs,
-	# 	dim=0
+	# 	union_bin_batch_idxs
 	# )
 	# kl1
 	kl1_union_bin_ints = union_bin_ints[union_bin_idxs_rev[:true_bin_idxs.shape[0]]]
@@ -1703,7 +1683,6 @@ def jss_helper(
 		true_bin_ints * (safelog(true_bin_ints) - safelog(kl1_union_bin_ints)),
 		true_bin_batch_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=batch_size
 	)
 	# kl2
@@ -1712,7 +1691,6 @@ def jss_helper(
 		pred_bin_ints * (safelog(pred_bin_ints) - safelog(kl2_union_bin_ints)),
 		pred_bin_batch_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=batch_size
 	)
 	# jss

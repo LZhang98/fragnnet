@@ -82,7 +82,6 @@ def sparse_cross_entropy_vec(true_mzs,true_logprobs,true_batch_idxs,pred_mzs,pre
 		src=ce,
 		index=true_batch_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=batch_size
 	)
 	return ce
@@ -186,8 +185,7 @@ def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False,su
 	if renormalize:
 		logpartition = scatter_logsumexp(
 			logprobs,
-			batch_idxs,
-			dim=0
+			batch_idxs
 		)
 		if oos_logprobs is not None:
 			logpartition = th.logsumexp(th.stack([logpartition,oos_logprobs],dim=1),dim=1)
@@ -204,14 +202,12 @@ def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False,su
 		src=plogp,
 		index=batch_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=batch_size,
 	)
 	support_size = scatter_reduce(
 		src=th.ones_like(batch_idxs,dtype=logprobs.dtype),
 		index=batch_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=batch_size,
 	)
 	support_size += support_size_delta
@@ -241,21 +237,18 @@ def sparse_conditional_entropy_fn(
 		conditional_plogp,
 		index=conditional_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=marginal_support_size
 	)
 	entropy = scatter_reduce(
 		marginal_probs * conditional_entropy,
 		index=marginal_batch_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=batch_size
 	)
 	conditional_support_size = scatter_reduce(
 		th.ones_like(conditional_logprobs,dtype=marginal_logprobs.dtype),
 		index=conditional_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=marginal_support_size
 	)
 	conditional_support_size += conditional_support_size_delta
@@ -263,7 +256,6 @@ def sparse_conditional_entropy_fn(
 		marginal_probs * th.clamp(safelog(conditional_support_size),min=0.),
 		index=marginal_batch_idxs,
 		reduce="sum",
-		dim=0,
 		dim_size=batch_size
 	)
 	if th.any(max_entropy < 0.):
@@ -318,13 +310,11 @@ def sparse_cosine_distance(
 	# l2 normalize
 	true_bin_logprobs = scatter_logl2normalize(
 		true_bin_logprobs,
-		true_bin_batch_idxs,
-		dim=0
+		true_bin_batch_idxs
 	)
 	pred_bin_logprobs = scatter_logl2normalize(
 		pred_bin_logprobs,
-		pred_bin_batch_idxs,
-		dim=0
+		pred_bin_batch_idxs
 	)
 	# dot product
 	pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
@@ -334,7 +324,6 @@ def sparse_cosine_distance(
 	log_cos_sim = scatter_logsumexp(
 		both_bin_logprobs,
 		pred_bin_batch_idxs[pred_mask],
-		dim=0,
 		dim_size=th.max(true_bin_batch_idxs)+1
 	)
 	if log_distance:
