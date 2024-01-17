@@ -780,7 +780,8 @@ class FragGNNModel(nn.Module):
 
 		assert th.unique(frag_real_node_node_idxs).shape[0] == frag_real_node_node_idxs.max()+1 == batch_frag_num_nodes
 		assert th.unique(frag_real_formula_formula_idxs).shape[0] == frag_real_formula_formula_idxs.max()+1 == batch_frag_num_formulae
-		assert th.unique(frag_nb_node_node_idxs).shape[0] == frag_nb_node_node_idxs.max()+1 == batch_frag_nb_num_nodes
+		if self.nb_iso:
+			assert th.unique(frag_nb_node_node_idxs).shape[0] == frag_nb_node_node_idxs.max()+1 == batch_frag_nb_num_nodes
 
 		out_d = {
 			"pred_mzs": spec_mzs,
