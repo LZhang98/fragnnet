@@ -204,6 +204,8 @@ def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False,su
 		reduce="sum",
 		dim_size=batch_size,
 	)
+	if th.min(entropy) < -0.001:
+		import pdb; pdb.set_trace()
 	support_size = scatter_reduce(
 		src=th.ones_like(batch_idxs,dtype=logprobs.dtype),
 		index=batch_idxs,
@@ -216,7 +218,11 @@ def sparse_entropy_fn(logprobs,batch_idxs,oos_logprobs=None,renormalize=False,su
 		entropy = entropy - th.exp(oos_logprobs)*oos_logprobs
 		support_size = support_size + 1.
 	max_entropy = safelog(support_size)
-	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
+	# rescale entropy
+	max_entropy = th.clamp(max_entropy,min=EPS)
+	entropy = th.clamp(entropy,min=th.zeros_like(max_entropy),max=max_entropy)
+	norm_entropy = entropy/max_entropy
+	assert not th.any(norm_entropy < 0.) and not th.any(norm_entropy > 1.)
 	return entropy, norm_entropy
 
 
@@ -245,6 +251,8 @@ def sparse_conditional_entropy_fn(
 		reduce="sum",
 		dim_size=batch_size
 	)
+	if th.min(entropy) < -0.001:
+		import pdb; pdb.set_trace()
 	conditional_support_size = scatter_reduce(
 		th.ones_like(conditional_logprobs,dtype=marginal_logprobs.dtype),
 		index=conditional_idxs,
@@ -260,7 +268,11 @@ def sparse_conditional_entropy_fn(
 	)
 	if th.any(max_entropy < 0.):
 		import pdb; pdb.set_trace()
-	norm_entropy = entropy/th.clamp(max_entropy,min=EPS)
+	# rescale entropy
+	max_entropy = th.clamp(max_entropy,min=EPS)
+	entropy = th.clamp(entropy,min=th.zeros_like(max_entropy),max=max_entropy)
+	norm_entropy = entropy/max_entropy
+	assert not th.any(norm_entropy < 0.) and not th.any(norm_entropy > 1.)
 	return entropy, norm_entropy
 
 

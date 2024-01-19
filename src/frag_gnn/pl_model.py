@@ -1405,6 +1405,8 @@ class FragGNNPL(SpectrumPL):
 					pred_nb_joint_formula_idxs,
 					pred_nb_joint_batch_idxs
 				)
+				assert not th.any(nb_formula_node_ne < 0.), nb_formula_node_ne
+				assert not th.any(nb_formula_node_ne > 1.), nb_formula_node_ne
 				loss = loss + self.hparams.nb_formula_node_entropy_weight * nb_formula_node_e + \
 					self.hparams.nb_formula_node_normalized_entropy_weight * nb_formula_node_ne
 				nb_node_node_e, nb_node_node_ne = sparse_conditional_entropy_fn(
