@@ -1663,10 +1663,11 @@ class NeimsPL(BinnedPL):
 			mz_bin_res=self.hparams.mz_bin_res,
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
-			ce_insert_mol=self.hparams.ce_insert_mol,
-			ce_insert_frag=self.hparams.ce_insert_frag,
 			ce_insert_mlp=self.hparams.ce_insert_mlp,
 			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
+			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,
+			m_ce_insert_mlp_bin=self.hparams.m_ce_insert_mlp_bin,
+			int_embedder=self.hparams.int_embedder,
 		)
 		
 		self._check_ce_params()
@@ -1723,10 +1724,17 @@ def test_fraggnn():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3_nb.yml",
+		# "config/debug/debug_d3_nb.yml",
+		# "config/debug/debug_d3_nb_nce.yml",
+		"config/debug/debug_d3_neims.yml"
 	]
-	
-	for custom_fp in custom_fps:
+	pl_model_clses = [
+		# FragGNNPL,
+		# FragGNNPL,
+		NeimsPL
+	]
+
+	for custom_fp, pl_model_cls in zip(custom_fps,pl_model_clses):
 
 		print(custom_fp)
 
@@ -1747,7 +1755,7 @@ def test_fraggnn():
 		print_shapes(batch)
 		batch = to_device(batch,device)
 
-		pl_model = FragGNNPL(**config_d)
+		pl_model = pl_model_cls(**config_d)
 		pl_model.train()
 		pl_model.to(device)
 

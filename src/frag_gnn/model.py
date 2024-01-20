@@ -13,8 +13,6 @@ from frag_gnn.utils.spec_utils import transform_nce, NCE_MAX
 class CEModel(nn.Module):
 
 	def __init__(self,
-			ce_insert_mol: bool,
-			ce_insert_frag: bool,
 			ce_insert_mlp: bool,
 			ce_insert_mlp_lin: bool,
 			m_ce_insert_mlp_embed: bool,
@@ -26,24 +24,23 @@ class CEModel(nn.Module):
 		super().__init__()
 
 		# check ce insertion type
-		self.ce_insert_mol = ce_insert_mol
-		self.ce_insert_frag = ce_insert_frag
 		self.ce_insert_mlp = ce_insert_mlp
 		self.ce_insert_mlp_lin = ce_insert_mlp_lin
 		self.m_ce_insert_mlp_embed = m_ce_insert_mlp_embed
 		self.m_ce_insert_mlp_bin = m_ce_insert_mlp_bin
 		self.int_embedder = int_embedder
+		self.ce_mlp_input_dim = 0
 
-	def _setup_ce(self,mlp_input_dim,ce_dim):
+	def _setup_ce(self, ce_dim: int) -> None:
 
 		if self.ce_insert_mlp:
 			self.ce_transform = transform_nce
 			self.ce_embedder = nn.Identity()
-			mlp_input_dim += 1
+			self.ce_mlp_input_dim += 1
 		if self.ce_insert_mlp_lin:
 			self.ce_transform = transform_nce
-			self.ce_embedder = nn.Linear(1,max(ce_dim//8,2))
-			mlp_input_dim += max(ce_dim//8,2)
+			self.ce_embedder = nn.Linear(1,ce_dim)
+			self.ce_mlp_input_dim += ce_dim
 		if self.m_ce_insert_mlp_embed:
 			def m_ce_transform(m_ce):
 				m_ce = th.clamp(m_ce, min=0, max=int(NCE_MAX)-1)
@@ -54,9 +51,9 @@ class CEModel(nn.Module):
 			embedder = get_embedder(self.int_embedder, max_count_int=int(NCE_MAX))
 			self.m_ce_embedder = nn.Sequential(
 				embedder,
-				nn.Linear(embedder.num_dim,max(ce_dim//8,2))
+				nn.Linear(embedder.num_dim,ce_dim)
 			)	
-			mlp_input_dim += max(ce_dim//8,2)
+			self.ce_mlp_input_dim += ce_dim
 		if self.m_ce_insert_mlp_bin:
 			def m_ce_transform(m_ce):
 				m_ce = th.clamp(m_ce, min=0, max=int(NCE_MAX)-10)
@@ -64,9 +61,8 @@ class CEModel(nn.Module):
 				m_ce = F.one_hot(m_ce, num_classes=int(NCE_MAX)//10).float()
 				return m_ce
 			self.m_ce_transform = m_ce_transform
-			self.m_ce_embedder = nn.Linear(int(NCE_MAX)//10,max(ce_dim//8,2))
-			mlp_input_dim += max(ce_dim//8,2)
-		return mlp_input_dim
+			self.m_ce_embedder = nn.Linear(int(NCE_MAX)//10,ce_dim)
+			self.ce_mlp_input_dim += ce_dim
 		
 
 class FragGNNModel(CEModel):
@@ -115,10 +111,21 @@ class FragGNNModel(CEModel):
 		m_ce_insert_mlp_bin: bool,
 	):
 
-		super().__init__()
+		super().__init__(
+			ce_insert_mlp=ce_insert_mlp,
+			ce_insert_mlp_lin=ce_insert_mlp_lin,
+			m_ce_insert_mlp_embed=m_ce_insert_mlp_embed,
+			m_ce_insert_mlp_bin=m_ce_insert_mlp_bin,
+			int_embedder=int_embedder,
+		)
 		self.num_depth = num_depth
 		self.num_hs = num_hs
 		self.num_elements = num_elements
+
+		# ce stuff
+		self.ce_insert_mol = ce_insert_mol
+		self.ce_insert_frag = ce_insert_frag
+		assert not self.ce_insert_frag, "ce_insert_frag not supported"
 
 		# calculate node/edge feats sizes
 		self.mol_node_feats = mol_node_feats
@@ -152,8 +159,8 @@ class FragGNNModel(CEModel):
 		self.complement_embedder = get_embedder(int_embedder,**complement_d)
 		self.frag_node_feats = frag_node_feats
 		self.frag_edge_feats = frag_edge_feats
-		self._compute_frag_feats_sizes()
 		self.frag_remove_edges = frag_remove_edges
+		self._compute_frag_feats_sizes()
 
 		# define interstage
 		assert cc_interstage_type in ["add","sub","linear","direct"]
@@ -177,9 +184,9 @@ class FragGNNModel(CEModel):
 		self.mlp_output_format = mlp_output_format
 
 		# determine mlp input dims
-		# we mlp insert for ce is enabled, add ce here
 		mlp_input_dim = 2*self.frag_embedder.hidden_size
-		mlp_input_dim = self._setup_ce(mlp_input_dim,self.frag_embedder.hidden_size)
+		self._setup_ce(max(mlp_input_dim//8,2))
+		mlp_input_dim += self.ce_mlp_input_dim
 
 		if self.mlp_output_format in ["formula","node_formula"]:
 			formula_mlp_kwargs = {
@@ -263,11 +270,13 @@ class FragGNNModel(CEModel):
 			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "complement" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.complement_embedder.num_dim
-		# if self.frag_edge_feats_size == 0:
-		# 	self.frag_edge_feats_size = 1
-		if self.ce_insert_frag:
-			self.frag_node_feats_size += 1
-			self.frag_edge_feats_size += 1
+		# # ce stuff
+		# if self.ce_insert_frag:
+		# 	self.frag_node_feats_size += 1
+		# 	if not self.frag_remove_edges:
+		# 		self.frag_edge_feats_size += 1
+		if self.frag_remove_edges:
+			assert self.frag_edge_feats_size == 0, self.frag_edge_feats_size
 
 	def compile_submodules(self,**kwargs):
 		""" pyg does not support dynamic shape compiling """
@@ -334,14 +343,14 @@ class FragGNNModel(CEModel):
 		frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 		frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
 		
-		# get ce value)
+		# get ce value
 		ce = spec_nce
-		if ce is not None:
-			ce = ce.reshape(-1,1)
 		m_ce = spec_m_nce
 		m_ce_batch_idxs = spec_m_nce_batch_idxs
 
 		if self.ce_insert_mol:
+			assert ce is not None
+			ce = ce.reshape(-1,1)
 			mol_ce_embed = th.repeat_interleave(ce,th.unique(mol_batch,return_counts=True)[1],dim=0)
 			mol_x = th.cat([mol_x,mol_ce_embed],dim=1)
 
@@ -434,11 +443,13 @@ class FragGNNModel(CEModel):
 			assert self.frag_edge_feats_size == 0, self.frag_edge_feats_size
 			frag_edata.append(th.zeros([batch_frag_num_edges,0],dtype=float_dtype,device=device))
 
-		if self.ce_insert_frag:
-			edge_ce = th.repeat_interleave(ce,th.unique(frag_batch[frag_edge_index[0]],return_counts=True)[1],dim=0)
-			frag_edata.append(edge_ce)
-			node_ce = th.repeat_interleave(ce,th.unique(frag_batch,return_counts=True)[1],dim=0)
-			frag_ndata.append(node_ce)
+		# if self.ce_insert_frag:
+		# 	assert ce is not None
+		# 	ce = ce.reshape(-1)
+		# 	edge_ce = th.repeat_interleave(ce,th.unique(frag_batch[frag_edge_index[0]],return_counts=True)[1],dim=0)
+		# 	frag_edata.append(edge_ce)
+		# 	node_ce = th.repeat_interleave(ce,th.unique(frag_batch,return_counts=True)[1],dim=0)
+		# 	frag_ndata.append(node_ce)
 
 		# get output formula aggregation 
 		frag_node_batch_idxs = frag_batch
@@ -498,10 +509,14 @@ class FragGNNModel(CEModel):
 			frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
 		]
 		if self.ce_insert_mlp or self.ce_insert_mlp_lin:
+			assert ce is not None
+			ce = ce.reshape(-1,1)
 			mlp_ce_embed = self.ce_embedder(self.ce_transform(ce))
 			mlp_ce_embed = th.repeat_interleave(mlp_ce_embed,th.unique(frag_node_batch_idxs,return_counts=True)[1],dim=0)
 			frag_embed_parts.append(mlp_ce_embed)
-		if self.m_ce_insert_mlp_embed or self.m_ce_insert_mlp_bin: #or self.m_ce_insert_mlp_lin:
+		if self.m_ce_insert_mlp_embed or self.m_ce_insert_mlp_bin:
+			assert m_ce is not None
+			assert m_ce_batch_idxs is not None
 			mlp_m_ce_embed = self.m_ce_transform(m_ce)
 			mlp_m_ce_embed = self.m_ce_embedder(mlp_m_ce_embed)
 			mlp_m_ce_embed = scatter_reduce(
@@ -857,11 +872,11 @@ class NeimsModel(CEModel):
 	):
 
 		super().__init__(
-			ce_insert_mlp,
-			ce_insert_mlp_lin,
-			m_ce_insert_mlp_embed,
-			m_ce_insert_mlp_bin,
-			int_embedder
+			ce_insert_mlp=ce_insert_mlp,
+			ce_insert_mlp_lin=ce_insert_mlp_lin,
+			m_ce_insert_mlp_embed=m_ce_insert_mlp_embed,
+			m_ce_insert_mlp_bin=m_ce_insert_mlp_bin,
+			int_embedder=int_embedder,
 		)
 		self.mol_fingerprint_morgan = mol_fingerprint_morgan
 		self.mol_fingerprint_rdkit = mol_fingerprint_rdkit
@@ -872,15 +887,9 @@ class NeimsModel(CEModel):
 		self.bidirectional = ff_bidirectional
 		self.use_residuals = mlp_use_residuals
 		
-		# check ce insertion type
-		self.ce_insert_mlp = ce_insert_mlp
-		self.ce_insert_mlp_lin = ce_insert_mlp_lin
-		self.m_ce_insert_mlp_embed = m_ce_insert_mlp_embed
-		self.m_ce_insert_mlp_bin = m_ce_insert_mlp_bin
-
+		self._setup_ce(12)
 		self._compute_input_size()
 		self._compute_output_size()
-
 
 		self.in_layer = nn.Linear(self.input_size, mlp_hidden_size)
 		self.ff_layers = nn.ModuleList([])
@@ -908,10 +917,7 @@ class NeimsModel(CEModel):
 
 		self.mol_fp_size = get_mol_fp_size(self.mol_fingerprint_morgan, self.mol_fingerprint_rdkit, self.mol_fingerprint_maccs)
 		self.input_size = self.mol_fp_size
-		if self.ce_insert_mlp:
-			self.input_size += 1
-		if self.ce_insert_mlp_lin:
-			self.input_size += 12
+		self.input_size += self.ce_mlp_input_dim
 
 	def _compute_output_size(self):
 
@@ -930,21 +936,38 @@ class NeimsModel(CEModel):
 		mol_fingerprint: th.Tensor, 
 		spec_prec_mz: th.Tensor,
 		spec_nce: th.Tensor = None,
+		spec_m_nce: th.Tensor = None,
+		spec_m_nce_batch_idxs: th.Tensor = None,
 		**kwargs
 	):
 
 		prec_mz_idxs = self._prec_mz_to_idx(spec_prec_mz)
+		fh = mol_fingerprint.reshape(-1,self.mol_fp_size)
+		batch_size = fh.shape[0]
 		# get ce
 		ce = spec_nce
-		fh = mol_fingerprint.reshape(-1,self.mol_fp_size)
+		m_ce = spec_m_nce
+		m_ce_batch_idxs = spec_m_nce_batch_idxs
 		# add CE information
-		if self.ce_insert_mlp:
-			ce_embed = ce.reshape(-1,1)
-			fh = th.cat([fh,ce_embed],dim=1)
-		if self.ce_insert_mlp_lin:
-			ce_embed = self.ce_embedder(ce.reshape(-1,1))
-			fh = th.cat([fh,ce_embed],dim=1)
-		# process fingerprint
+		if self.ce_insert_mlp or self.ce_insert_mlp_lin:
+			assert ce is not None
+			ce = ce.reshape(-1,1)
+			mlp_ce_embed = self.ce_embedder(self.ce_transform(ce))
+			fh = th.cat([fh,mlp_ce_embed],dim=1)
+		if self.m_ce_insert_mlp_embed or self.m_ce_insert_mlp_bin:
+			assert m_ce is not None
+			assert m_ce_batch_idxs is not None
+			mlp_m_ce_embed = self.m_ce_transform(m_ce)
+			mlp_m_ce_embed = self.m_ce_embedder(mlp_m_ce_embed)
+			mlp_m_ce_embed = scatter_reduce(
+				src=mlp_m_ce_embed,
+				index=m_ce_batch_idxs.unsqueeze(1).expand_as(mlp_m_ce_embed),
+				reduce="mean",
+				dim_size=batch_size,
+				include_self=False
+			)
+			fh = th.cat([fh,mlp_m_ce_embed],dim=1)
+		# process inputs
 		fh = self.in_layer(fh)
 		# big MLP
 		for layer in self.ff_layers:
