@@ -10,7 +10,66 @@ from frag_gnn.utils.misc_utils import safelog, check_pyg_compile, LOG_ZERO
 from frag_gnn.utils.spec_utils import transform_nce, NCE_MAX
 
 
-class FragGNNModel(nn.Module):
+class CEModel(nn.Module):
+
+	def __init__(self,
+			ce_insert_mol: bool,
+			ce_insert_frag: bool,
+			ce_insert_mlp: bool,
+			ce_insert_mlp_lin: bool,
+			m_ce_insert_mlp_embed: bool,
+			m_ce_insert_mlp_bin: bool,
+			int_embedder: str,
+			**kwargs	
+		):
+
+		super().__init__()
+
+		# check ce insertion type
+		self.ce_insert_mol = ce_insert_mol
+		self.ce_insert_frag = ce_insert_frag
+		self.ce_insert_mlp = ce_insert_mlp
+		self.ce_insert_mlp_lin = ce_insert_mlp_lin
+		self.m_ce_insert_mlp_embed = m_ce_insert_mlp_embed
+		self.m_ce_insert_mlp_bin = m_ce_insert_mlp_bin
+		self.int_embedder = int_embedder
+
+	def _setup_ce(self,mlp_input_dim,ce_dim):
+
+		if self.ce_insert_mlp:
+			self.ce_transform = transform_nce
+			self.ce_embedder = nn.Identity()
+			mlp_input_dim += 1
+		if self.ce_insert_mlp_lin:
+			self.ce_transform = transform_nce
+			self.ce_embedder = nn.Linear(1,max(ce_dim//8,2))
+			mlp_input_dim += max(ce_dim//8,2)
+		if self.m_ce_insert_mlp_embed:
+			def m_ce_transform(m_ce):
+				m_ce = th.clamp(m_ce, min=0, max=int(NCE_MAX)-1)
+				m_ce = th.round(m_ce, decimals=0).long()
+				m_ce = m_ce.reshape(-1,1)
+				return m_ce
+			self.m_ce_transform = m_ce_transform
+			embedder = get_embedder(self.int_embedder, max_count_int=int(NCE_MAX))
+			self.m_ce_embedder = nn.Sequential(
+				embedder,
+				nn.Linear(embedder.num_dim,max(ce_dim//8,2))
+			)	
+			mlp_input_dim += max(ce_dim//8,2)
+		if self.m_ce_insert_mlp_bin:
+			def m_ce_transform(m_ce):
+				m_ce = th.clamp(m_ce, min=0, max=int(NCE_MAX)-10)
+				m_ce = th.round(m_ce, decimals=-1).long() // 10
+				m_ce = F.one_hot(m_ce, num_classes=int(NCE_MAX)//10).float()
+				return m_ce
+			self.m_ce_transform = m_ce_transform
+			self.m_ce_embedder = nn.Linear(int(NCE_MAX)//10,max(ce_dim//8,2))
+			mlp_input_dim += max(ce_dim//8,2)
+		return mlp_input_dim
+		
+
+class FragGNNModel(CEModel):
 
 	def __init__(
 		self,
@@ -60,14 +119,6 @@ class FragGNNModel(nn.Module):
 		self.num_depth = num_depth
 		self.num_hs = num_hs
 		self.num_elements = num_elements
-
-		# check ce insertion type
-		self.ce_insert_mol = ce_insert_mol
-		self.ce_insert_frag = ce_insert_frag
-		self.ce_insert_mlp = ce_insert_mlp
-		self.ce_insert_mlp_lin = ce_insert_mlp_lin
-		self.m_ce_insert_mlp_embed = m_ce_insert_mlp_embed
-		self.m_ce_insert_mlp_bin = m_ce_insert_mlp_bin
 
 		# calculate node/edge feats sizes
 		self.mol_node_feats = mol_node_feats
@@ -128,44 +179,7 @@ class FragGNNModel(nn.Module):
 		# determine mlp input dims
 		# we mlp insert for ce is enabled, add ce here
 		mlp_input_dim = 2*self.frag_embedder.hidden_size
-		if self.ce_insert_mlp:
-			self.ce_transform = transform_nce
-			self.ce_embedder = nn.Identity()
-			mlp_input_dim += 1
-		if self.ce_insert_mlp_lin:
-			self.ce_transform = transform_nce
-			self.ce_embedder = nn.Linear(1,max(self.frag_embedder.hidden_size//8,2))
-			mlp_input_dim += max(self.frag_embedder.hidden_size//8,2)
-		if self.m_ce_insert_mlp_embed:
-			def m_ce_transform(m_ce):
-				m_ce = th.clamp(m_ce, min=0, max=int(NCE_MAX)-1)
-				m_ce = th.round(m_ce, decimals=0).long()
-				m_ce = m_ce.reshape(-1,1)
-				return m_ce
-			self.m_ce_transform = m_ce_transform
-			embedder = get_embedder(int_embedder, max_count_int=int(NCE_MAX))
-			self.m_ce_embedder = nn.Sequential(
-				embedder,
-				nn.Linear(embedder.num_dim,max(self.frag_embedder.hidden_size//8,2))
-			)	
-			mlp_input_dim += max(self.frag_embedder.hidden_size//8,2)
-		if self.m_ce_insert_mlp_bin:
-			def m_ce_transform(m_ce):
-				m_ce = th.clamp(m_ce, min=0, max=int(NCE_MAX)-10)
-				m_ce = th.round(m_ce, decimals=-1).long() // 10
-				m_ce = F.one_hot(m_ce, num_classes=int(NCE_MAX)//10).float()
-				return m_ce
-			self.m_ce_transform = m_ce_transform
-			self.m_ce_embedder = nn.Linear(int(NCE_MAX)//10,max(self.frag_embedder.hidden_size//8,2))
-			mlp_input_dim += max(self.frag_embedder.hidden_size//8,2)
-		# if self.m_ce_insert_mlp_lin:
-		# 	def m_ce_transform(m_ce):
-		# 		m_ce = transform_nce(m_ce)
-		# 		m_ce = m_ce.reshape(-1,1)
-		# 		return m_ce
-		# 	self.m_ce_transform = m_ce_transform
-		# 	self.m_ce_embedder = nn.Linear(1,max(self.frag_embedder.hidden_size//8,2))
-		# 	mlp_input_dim += max(self.frag_embedder.hidden_size//8,2)
+		mlp_input_dim = self._setup_ce(mlp_input_dim,self.frag_embedder.hidden_size)
 
 		if self.mlp_output_format in ["formula","node_formula"]:
 			formula_mlp_kwargs = {
@@ -820,7 +834,7 @@ class FragGNNModel(nn.Module):
 
 		return out_d
 
-class NeimsModel(nn.Module):
+class NeimsModel(CEModel):
 
 	def __init__(
 		self,
@@ -835,13 +849,20 @@ class NeimsModel(nn.Module):
 		mz_bin_res: float,
 		ff_prec_mz_offset: int,
 		ff_bidirectional: bool,
-		ce_insert_mol: bool,
-		ce_insert_frag: bool,
 		ce_insert_mlp: bool,
 		ce_insert_mlp_lin: bool,
+		m_ce_insert_mlp_embed: bool,
+		m_ce_insert_mlp_bin: bool,
+		int_embedder: str,
 	):
 
-		super().__init__()
+		super().__init__(
+			ce_insert_mlp,
+			ce_insert_mlp_lin,
+			m_ce_insert_mlp_embed,
+			m_ce_insert_mlp_bin,
+			int_embedder
+		)
 		self.mol_fingerprint_morgan = mol_fingerprint_morgan
 		self.mol_fingerprint_rdkit = mol_fingerprint_rdkit
 		self.mol_fingerprint_maccs = mol_fingerprint_maccs
@@ -852,16 +873,15 @@ class NeimsModel(nn.Module):
 		self.use_residuals = mlp_use_residuals
 		
 		# check ce insertion type
-		self.ce_insert_mol = ce_insert_mol
-		self.ce_insert_frag = ce_insert_frag
 		self.ce_insert_mlp = ce_insert_mlp
 		self.ce_insert_mlp_lin = ce_insert_mlp_lin
+		self.m_ce_insert_mlp_embed = m_ce_insert_mlp_embed
+		self.m_ce_insert_mlp_bin = m_ce_insert_mlp_bin
 
 		self._compute_input_size()
 		self._compute_output_size()
 
-		if self.ce_insert_mlp_lin:
-			self.ce_embedder = nn.Linear(1,12)
+
 		self.in_layer = nn.Linear(self.input_size, mlp_hidden_size)
 		self.ff_layers = nn.ModuleList([])
 		# self.ff_layers.append(nn.Linear(mlp_hidden_size, mlp_hidden_size))
@@ -969,3 +989,8 @@ class NeimsModel(nn.Module):
 			"pred_specs": pred_specs
 		}
 		return out_d
+	
+
+# class MassFormerModel(nn.Module):
+
+# 	pass
