@@ -288,7 +288,7 @@ def scatter_var(src,index,dim_size=None,correction=1,sqrt=False):
 		v = th.sqrt(v)
 	return v
 
-def scatter_argmax(src,index,other_index,dim_size=None):
+def scatter_argmax(src,index,other_index,dim_size=None,return_max=False):
 
 	# calculate dim_size
 	if dim_size is None:
@@ -312,10 +312,13 @@ def scatter_argmax(src,index,other_index,dim_size=None):
 		index=index,
 		reduce="amax",
 		dim_size=dim_size,
-		include_self=False
+		include_self=True,
+		default=-1
 	)
-	assert th.min(amx) >= 0, th.min(amx)
-	return amx
+	if return_max:
+		return amx, mx
+	else:
+		return amx
 
 def scatter_reduce(src,index,reduce,dim=0,dim_size=None,default=0.,include_self=True):
 

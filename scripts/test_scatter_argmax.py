@@ -35,7 +35,7 @@ i = th.tensor(
     ]
 )
 
-am = scatter_argmax(x, b, i)
+am = scatter_argmax(x, b, i, dim_size=7)
 
 # 3, 0, 2, 1, 0, 2
 print(am)
