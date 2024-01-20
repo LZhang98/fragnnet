@@ -1,7 +1,7 @@
 from frag_gnn.runner import load_config
 from frag_gnn.pl_model import FragGNNPL
 from frag_gnn.dataset import SpecMolFragDataset, init_dataloader
-from frag_gnn.utils.misc_utils import to_device, scatter_reduce, scatter_var, scatter_argmax, flatten_lol, print_shapes, get_tensor_memory_usage, LOG_ZERO, EPS, booltype
+from frag_gnn.utils.misc_utils import to_device, scatter_reduce, scatter_var, scatter_argmax, flatten_lol, print_shapes, get_tensor_memory_usage, LOG_ZERO, EPS, booltype, scatter_masked_softmax, scatter_logsumexp
 
 import numpy as np
 import torch as th
@@ -242,231 +242,236 @@ def unique_counts(x,dim=0):
 	assert th.all(c <= k)
 	return c
 
-fn_argmaxes = []
-nb_fn_argmaxes = []
-for model, vals in model_to_vals.items():
-	# top-1 agreement P(n|f)
-	fn_logprobs = vals["pred_formula_node_logprobs"]
-	fn_formula_idxs = vals["pred_joint_formula_idxs"]
-	fn_node_idxs = vals["pred_joint_node_idxs"]
-	f_formula_idxs = vals["pred_formula_formula_idxs"]
-	fn_argmax = scatter_argmax(
-		fn_logprobs, 
-		fn_formula_idxs,
-		fn_node_idxs,
-		dim_size=f_formula_idxs.max()+1
-	)
-	fn_argmaxes.append(fn_argmax)
-	# top-1 agreement P(n'|f)
-	nb_fn_logprobs = vals["pred_nb_formula_node_logprobs"]
-	nb_fn_formula_idxs = vals["pred_nb_joint_formula_idxs"]
-	nb_fn_node_idxs = vals["pred_nb_joint_node_idxs"]
-	nb_fn_argmax = scatter_argmax(
-		nb_fn_logprobs, 
-		nb_fn_formula_idxs,
-		nb_fn_node_idxs,
-		dim_size=f_formula_idxs.max()+1
-	)
-	nb_fn_argmaxes.append(nb_fn_argmax)
-# calculate majority vote and agreements
-# P(n|f)
-fn_argmaxes = th.stack(fn_argmaxes, dim=0)
-fn_argmax_majority = th.mode(fn_argmaxes,dim=0).values
-fn_argmax_agrees = fn_argmaxes == fn_argmax_majority.unsqueeze(0)
-fn_argmax_counts = unique_counts(fn_argmaxes,dim=0)
-fn_argmax_probs = th.mean(fn_argmax_agrees.float(),dim=0)
-fn_argmax_cons = th.all(fn_argmax_agrees,dim=0)
-# P(n'|f)
-nb_fn_argmaxes = th.stack(nb_fn_argmaxes, dim=0)
-nb_fn_argmax_majority = th.mode(nb_fn_argmaxes,dim=0).values
-nb_fn_argmax_agrees = nb_fn_argmaxes == nb_fn_argmax_majority.unsqueeze(0)
-nb_fn_argmax_counts = unique_counts(nb_fn_argmaxes,dim=0)
-nb_fn_argmax_probs = th.mean(nb_fn_argmax_agrees.float(),dim=0)
-nb_fn_argmax_cons = th.all(nb_fn_argmax_agrees,dim=0)
-# compute agreements
-keys = [
-	"pred_formula_logprobs",
-	"pred_formula_batch_idxs",
-	"pred_joint_node_idxs",
-	"pred_joint_formula_idxs",
-	"pred_joint_batch_idxs"
-]
-select_d = select_model_vals(model_to_vals, keys)
-f_logprobses = select_d["pred_formula_logprobs"]
-f_batch_idxses = select_d["pred_formula_batch_idxs"]
-fn_node_idxses = select_d["pred_joint_node_idxs"]
-fn_formula_idxses = select_d["pred_joint_formula_idxs"]
-fn_batch_idxses = select_d["pred_joint_batch_idxs"]
-del select_d
-# compute averages
-fn_argmax_agree_fws, fn_argmax_agree_uws = [], []
-nb_fn_argmax_agree_fws, nb_fn_argmax_agree_uws = [], []
-for model_idx in range(num_models):
-	# P(f)
-	f_logprobs = f_logprobses[model_idx]
-	f_batch_idxs = f_batch_idxses[model_idx]
-	# argmax
-	fn_argmax_agree = fn_argmax_agrees[model_idx]
-	# average with formula probs
-	fn_argmax_agree_fw = scatter_reduce(
-		fn_argmax_agree.float() * th.exp(f_logprobs),
-		f_batch_idxs,
-		reduce="sum",
-		dim_size=th.max(f_batch_idxs)+1
-	)
-	fn_argmax_agree_fws.append(fn_argmax_agree_fw)
-	# average with uniform probs
-	fn_argmax_agree_uw = scatter_reduce(
-		fn_argmax_agree.float(),
-		f_batch_idxs,
-		reduce="mean",
-		dim_size=th.max(f_batch_idxs)+1,
-		include_self=False
-	)
-	fn_argmax_agree_uws.append(fn_argmax_agree_uw)
-	# argmax
-	nb_fn_argmax_agree = nb_fn_argmax_agrees[model_idx]
-	# average with formula probs
-	nb_fn_argmax_agree_fw = scatter_reduce(
-		nb_fn_argmax_agree.float() * th.exp(f_logprobs),
-		f_batch_idxs,
-		reduce="sum",
-		dim_size=th.max(f_batch_idxs)+1
-	)
-	nb_fn_argmax_agree_fws.append(nb_fn_argmax_agree_fw)
-	# average with uniform probs
-	nb_fn_argmax_agree_uw = scatter_reduce(
-		nb_fn_argmax_agree.float(),
-		f_batch_idxs,
-		reduce="mean",
-		dim_size=th.max(f_batch_idxs)+1,
-		include_self=False
-	)
-	nb_fn_argmax_agree_uws.append(nb_fn_argmax_agree_uw)
-fn_argmax_agree_fws = th.stack(fn_argmax_agree_fws, dim=0)
-fn_argmax_agree_uws = th.stack(fn_argmax_agree_uws, dim=0)
-nb_fn_argmax_agree_fws = th.stack(nb_fn_argmax_agree_fws, dim=0)
-nb_fn_argmax_agree_uws = th.stack(nb_fn_argmax_agree_uws, dim=0)
-fn_argmax_agree_fw_mean = th.mean(fn_argmax_agree_fws,dim=0)
-fn_argmax_agree_uw_mean = th.mean(fn_argmax_agree_uws,dim=0)
-nb_fn_argmax_agree_fw_mean = th.mean(nb_fn_argmax_agree_fws,dim=0)
-nb_fn_argmax_agree_uw_mean = th.mean(nb_fn_argmax_agree_uws,dim=0)
+def compute_argmaxes(model_to_vals, distribution):
 
-argmax_d = {}
-argmax_d["fn_argmax_agree_fw_mean"] = fn_argmax_agree_fw_mean
-argmax_d["fn_argmax_agree_uw_mean"] = fn_argmax_agree_uw_mean
-argmax_d["nb_fn_argmax_agree_fw_mean"] = nb_fn_argmax_agree_fw_mean
-argmax_d["nb_fn_argmax_agree_uw_mean"] = nb_fn_argmax_agree_uw_mean
+	argmax_d = {}
+	# constants
+	def_model = list(model_to_vals.keys())[0]
+	if distribution == "formula_node":
+		dm = "formula_node"
+		dm_idxs_1 = model_to_vals[def_model]["pred_joint_formula_idxs"]
+		dm_idxs_2 = model_to_vals[def_model]["pred_joint_node_idxs"]
+		da = "formula"
+		da_idxs = model_to_vals[def_model]["pred_formula_formula_idxs"]
+		da_size = da_idxs.max()+1
+	elif distribution == "node_formula":
+		dm = "node_formula"
+		dm_idxs_1 = model_to_vals[def_model]["pred_joint_node_idxs"]
+		dm_idxs_2 = model_to_vals[def_model]["pred_joint_formula_idxs"]
+		da = "node"
+		da_idxs = model_to_vals[def_model]["pred_node_node_idxs"]
+		da_size = da_idxs.max()+1
+	elif distribution == "nb_formula_node":
+		dm = "nb_formula_node"
+		dm_idxs_1 = model_to_vals[def_model]["pred_nb_joint_formula_idxs"]
+		dm_idxs_2 = model_to_vals[def_model]["pred_nb_joint_node_idxs"]
+		da = "formula"
+		da_idxs = model_to_vals[def_model]["pred_formula_formula_idxs"]
+		da_size = da_idxs.max()+1
+	elif distribution == "nb_node_formula":
+		dm = "nb_node_formula"
+		dm_idxs_1 = model_to_vals[def_model]["pred_nb_joint_node_idxs"]
+		dm_idxs_2 = model_to_vals[def_model]["pred_nb_joint_formula_idxs"]
+		da = "nb_node"
+		da_idxs = model_to_vals[def_model]["pred_nb_node_node_idxs"]
+		da_size = da_idxs.max()+1
+	else:
+		raise ValueError(f"Invalid distribution - {distribution}")
+	num_batches = model_to_vals[def_model]["pred_formula_batch_idxs"].max()+1
+	argmaxes, maxes = [], []
+	da_logprobses = []
+	da_batch_idxses = []
+	###
+	# argmaxes_alts, maxes_alts = [], []
+	###
+	for model, vals in model_to_vals.items():
+		# da probs
+		da_logprobs = model_to_vals[model][f"pred_{da}_logprobs"]
+		da_batch_idxs = model_to_vals[model][f"pred_{da}_batch_idxs"]
+		da_logprobses.append(da_logprobs)
+		da_batch_idxses.append(da_batch_idxs)
+		# top-1 agreement P(n|f)
+		dm_logprobs = vals[f"pred_{dm}_logprobs"]
+		dm_argmax, dm_max = scatter_argmax(
+			dm_logprobs, 
+			dm_idxs_1,
+			dm_idxs_2,
+			dim_size=da_size,
+			return_max=True
+		)
+		argmaxes.append(dm_argmax)
+		maxes.append(dm_max)
+		# ###
+		# dm_argmax_alt, dm_max_alt = [], []
+		# for dm_idx_1 in dm_idxs_1.unique():
+		# 	idx_logprobs = dm_logprobs[dm_idxs_1==dm_idx_1]
+		# 	idx_argmax = th.argmax(idx_logprobs,dim=0)
+		# 	idx_max = idx_logprobs[idx_argmax]
+		# 	idx_argmax_alt = dm_idxs_2[dm_idxs_1==dm_idx_1][idx_argmax]
+		# 	# if dm_argmax[dm_idx_1] != idx_argmax_alt:
+		# 	# 	import pdb; pdb.set_trace()
+		# 	dm_argmax_alt.append(idx_argmax_alt)
+		# 	dm_max_alt.append(idx_max)
+		# dm_argmax_alt = th.stack(dm_argmax_alt,dim=0)
+		# dm_max_alt = th.stack(dm_max_alt,dim=0)
+		# argmaxes_alts.append(dm_argmax_alt)
+		# maxes_alts.append(dm_max_alt)
+		# ###
+	# calculate majority vote and agreements
+	# P(n|f)
+	argmaxes = th.stack(argmaxes, dim=0)
+	maxes = th.stack(maxes, dim=0)
+	argmax_majority = th.mode(argmaxes,dim=0).values
+	argmax_agrees = argmaxes == argmax_majority.unsqueeze(0)
+	argmax_counts = unique_counts(argmaxes,dim=0)
+	assert not th.any(argmax_counts < 1.)
+	argmax_probs = th.mean(argmax_agrees.float(),dim=0)
+	argmax_conses = th.all(argmax_agrees,dim=0)
+	argmax_invalid = th.any(argmaxes == -1,dim=0)
+	assert th.all(argmax_invalid == th.all(argmaxes == -1,dim=0))
+	# da logprobs
+	da_logprobses = th.stack(da_logprobses, dim=0)
+	da_batch_idxses = th.stack(da_batch_idxses, dim=0)
+	da_logprobs_mean = log_mean(da_logprobses,num_models,dim=0)
+	da_u_logprobs_mean = th.ones_like(da_logprobs_mean)
+	da_u_logprobs_mean = scatter_masked_softmax(
+		da_u_logprobs_mean,
+		(~argmax_invalid).float(),
+		da_batch_idxses[0],
+		log=True
+	)
+	argmax_invalid_2 = th.any(th.exp(da_logprobses) < 0.025,dim=0)
+	argmax_invalid_2 = argmax_invalid_2 | argmax_invalid
+	da_t_logprobs_mean = th.ones_like(da_logprobs_mean)
+	da_t_logprobs_mean = scatter_masked_softmax(
+		da_t_logprobs_mean,
+		(~argmax_invalid_2).float(),
+		da_batch_idxses[0],
+		log=True
+	)
+	da_t_invalid = scatter_logsumexp(
+		da_t_logprobs_mean,
+		da_batch_idxses[0],
+		dim_size=num_batches
+	) < 0.
+	print(th.sum(da_t_invalid))
+	# ###
+	# argmaxes_alts = th.stack(argmaxes_alts, dim=0)
+	# maxes_alts = th.stack(maxes_alts, dim=0)
+	# argmax_majority_alt = th.mode(argmaxes_alts,dim=0).values
+	# argmax_agrees_alt = argmaxes_alts == argmax_majority_alt.unsqueeze(0)
+	# argmax_invalid_2_alt = th.any(th.exp(da_logprobses[:,~argmax_invalid]) < 0.05,dim=0)
+	# import pdb; pdb.set_trace()
+	# print(th.sum(argmax_majority[~argmax_invalid] == argmax_majority_alt))
+	# print(th.sum(argmax_agrees[:,~argmax_invalid] == argmax_agrees_alt,dim=1))
+	# print(th.sum(argmax_majority[~argmax_invalid_2] == argmax_majority_alt[~argmax_invalid_2_alt]))
+	# print(th.sum(argmax_agrees[:,~argmax_invalid_2] == argmax_agrees_alt[:,~argmax_invalid_2_alt],dim=1))
+	# argmax_diff_mask = argmax_agrees[:,~argmax_invalid_2] != argmax_agrees_alt[:,~argmax_invalid_2_alt]
+	# maxes_diff = maxes[:,~argmax_invalid_2][argmax_diff_mask]
+	# maxes_alt_diff =  maxes_alts[:,~argmax_invalid_2_alt][argmax_diff_mask]
+	# ###
+	# compute agreements
+	argmax_agree_ws, argmax_agree_uws, argmax_agree_tws = [], [], []
+	for model_idx in range(num_models):
+		# argmax
+		argmax_agree = argmax_agrees[model_idx]
+		# average with formula probs
+		argmax_agree_w = scatter_reduce(
+			argmax_agree.float() * th.exp(da_logprobs),
+			da_batch_idxs,
+			reduce="sum",
+			dim_size=num_batches
+		)
+		argmax_agree_ws.append(argmax_agree_w)
+		# average with uniform probs
+		da_u_logprobs = th.ones_like(da_logprobs)
+		da_u_logprobs = scatter_masked_softmax(
+			da_u_logprobs,
+			(~argmax_invalid).float(),
+			da_batch_idxs,
+			log=True
+		)
+		argmax_agree_uw = scatter_reduce(
+			argmax_agree.float() * th.exp(da_u_logprobs),
+			da_batch_idxs,
+			reduce="sum",
+			dim_size=num_batches
+		)
+		argmax_agree_uws.append(argmax_agree_uw)
+		da_t_logprobs = th.ones_like(da_logprobs)
+		da_t_logprobs = scatter_masked_softmax(
+			da_t_logprobs,
+			(~argmax_invalid_2).float(),
+			da_batch_idxs,
+			log=True
+		)
+		argmax_agree_tw = scatter_reduce(
+			argmax_agree.float() * th.exp(da_t_logprobs),
+			da_batch_idxs,
+			reduce="sum",
+			dim_size=num_batches
+		)
+		argmax_agree_tws.append(argmax_agree_tw)
+	argmax_agree_ws = th.stack(argmax_agree_ws, dim=0)
+	argmax_agree_uws = th.stack(argmax_agree_uws, dim=0)
+	argmax_agree_tws = th.stack(argmax_agree_tws, dim=0)
+	argmax_agree_w_mean = th.mean(argmax_agree_ws,dim=0)
+	argmax_agree_uw_mean = th.mean(argmax_agree_uws,dim=0)
+	argmax_agree_tw_mean = th.mean(argmax_agree_tws,dim=0)
 
-num_formulae = th.max(f_batch_idxses[0])+1
+	argmax_d[f"{dm}_argmax_agree_w_mean"] = argmax_agree_w_mean
+	argmax_d[f"{dm}_argmax_agree_uw_mean"] = argmax_agree_uw_mean
+	argmax_d[f"{dm}_argmax_agree_tw_mean"] = argmax_agree_tw_mean
 
-# deal with counts
-f_logprobs_mean = log_mean(f_logprobses,num_models)
-fn_argmax_counts_fw = scatter_reduce(
-	fn_argmax_counts.float() * th.exp(f_logprobs_mean),
-	f_batch_idxses[0],
-	reduce="sum",
-	dim_size=num_formulae
-)
-nb_fn_argmax_counts_fw = scatter_reduce(
-	nb_fn_argmax_counts.float() * th.exp(f_logprobs_mean),
-	f_batch_idxs,
-	reduce="sum",
-	dim_size=num_formulae
-)
-fn_argmax_counts_uw = scatter_reduce(
-	fn_argmax_counts.float(),
-	f_batch_idxses[0],
-	reduce="mean",
-	dim_size=num_formulae,
-	include_self=False
-)
-nb_fn_argmax_counts_uw = scatter_reduce(
-	nb_fn_argmax_counts.float(),
-	f_batch_idxses[0],
-	reduce="mean",
-	dim_size=num_formulae,
-	include_self=False
-)
-argmax_d["n_argmax_counts_fw"] = fn_argmax_counts_fw
-argmax_d["fn_argmax_counts_uw"] = fn_argmax_counts_uw
-argmax_d["nb_fn_argmax_counts_fw"] = nb_fn_argmax_counts_fw
-argmax_d["nb_fn_argmax_counts_uw"] = nb_fn_argmax_counts_uw
+	for key in ["counts","probs","conses"]:
+		if key == "counts":
+			argmax_val = argmax_counts
+		elif key == "probs":
+			argmax_val = argmax_probs
+		elif key == "conses":
+			argmax_val = argmax_conses
+		argmax_val_w = scatter_reduce(
+			argmax_val.float() * th.exp(da_logprobs_mean),
+			da_batch_idxses[0],
+			reduce="sum",
+			dim_size=num_batches
+		)
+		argmax_val_uw = scatter_reduce(
+			argmax_val.float() * th.exp(da_u_logprobs_mean),
+			da_batch_idxses[0],
+			reduce="sum",
+			dim_size=num_batches
+		)
+		argmax_val_tw = scatter_reduce(
+			argmax_val.float() * th.exp(da_t_logprobs_mean),
+			da_batch_idxses[0],
+			reduce="sum",
+			dim_size=num_batches
+		)
+		argmax_val_tw[da_t_invalid] = float("nan")
+		if key == "counts":
+			assert not th.any(argmax_val_tw < 0.999)
+		argmax_d[f"{dm}_argmax_{key}_w"] = argmax_val_w
+		argmax_d[f"{dm}_argmax_{key}_uw"] = argmax_val_uw
+		argmax_d[f"{dm}_argmax_{key}_tw"] = argmax_val_tw
+	argmax_df = []
+	for k, v in argmax_d.items():
+		argmax_df.append({
+			"metric": k,
+			"mean": th.nanmean(v).item()
+		})
+	argmax_df = pd.DataFrame(argmax_df)
+	return argmax_df
 
-# deal with probs
-fn_argmax_probs_fw = scatter_reduce(
-	fn_argmax_probs.float() * th.exp(f_logprobs_mean),
-	f_batch_idxses[0],
-	reduce="sum",
-	dim_size=num_formulae
-)
-nb_fn_argmax_probs_fw = scatter_reduce(
-	nb_fn_argmax_probs.float() * th.exp(f_logprobs_mean),
-	f_batch_idxses[0],
-	reduce="sum",
-	dim_size=num_formulae
-)
-fn_argmax_probs_uw = scatter_reduce(
-	fn_argmax_probs.float(),
-	f_batch_idxses[0],
-	reduce="mean",
-	dim_size=num_formulae,
-	include_self=False
-)
-nb_fn_argmax_probs_uw = scatter_reduce(
-	nb_fn_argmax_probs.float(),
-	f_batch_idxses[0],
-	reduce="mean",
-	dim_size=num_formulae,
-	include_self=False
-)
-argmax_d["fn_argmax_probs_fw"] = fn_argmax_probs_fw
-argmax_d["fn_argmax_probs_uw"] = fn_argmax_probs_uw
-argmax_d["nb_fn_argmax_probs_fw"] = nb_fn_argmax_probs_fw
-argmax_d["nb_fn_argmax_probs_uw"] = nb_fn_argmax_probs_uw
-
-# deal with consensus
-fn_argmax_cons_fw = scatter_reduce(
-	fn_argmax_cons.float() * th.exp(f_logprobs_mean),
-	f_batch_idxses[0],
-	reduce="sum",
-	dim_size=num_formulae
-)
-nb_fn_argmax_cons_fw = scatter_reduce(
-	nb_fn_argmax_cons.float() * th.exp(f_logprobs_mean),
-	f_batch_idxses[0],
-	reduce="sum",
-	dim_size=num_formulae
-)
-fn_argmax_cons_uw = scatter_reduce(
-	fn_argmax_cons.float(),
-	f_batch_idxses[0],
-	reduce="mean",
-	dim_size=num_formulae,
-	include_self=False
-)
-nb_fn_argmax_cons_uw = scatter_reduce(
-	nb_fn_argmax_cons.float(),
-	f_batch_idxses[0],
-	reduce="mean",
-	dim_size=num_formulae,
-	include_self=False
-)
-argmax_d["fn_argmax_cons_fw"] = fn_argmax_cons_fw
-argmax_d["fn_argmax_cons_uw"] = fn_argmax_cons_uw
-argmax_d["nb_fn_argmax_cons_fw"] = nb_fn_argmax_cons_fw
-argmax_d["nb_fn_argmax_cons_uw"] = nb_fn_argmax_cons_uw
-
-argmax_df = []
-for k, v in argmax_d.items():
-	v_mean = th.mean(v).item()
-	argmax_df.append({
-		"metric": k,
-		"mean": v_mean,
-	})
-argmax_df = pd.DataFrame(argmax_df)
-print(argmax_df)
-argmax_df.to_csv(f"{mode}_argmax_df.csv",index=False)	
+for distribution in ["formula_node","node_formula"]:
+	argmax_df = compute_argmaxes(model_to_vals, distribution)
+	print(argmax_df)
+	nb_argmax_df = compute_argmaxes(model_to_vals, "nb_"+distribution)
+	print(nb_argmax_df)
+	if not debug:
+		argmax_df.to_csv(f"figs/{mode}_{distribution}_argmax_df.csv",index=False)
+		nb_argmax_df.to_csv(f"figs/{mode}_nb_{distribution}_argmax_df.csv",index=False)
+import pdb; pdb.set_trace()
 
 ### H(n|f) and H(n'|f)
 print("> Entropies")
@@ -477,56 +482,60 @@ entropies = [
 	"node_e",
 	"node_formula_e",
 	"formula_node_e",
-	"nb_node_e",
-	"nb_node_formula_e",
-	"nb_formula_node_e",
-	"nb_node_node_e",
 	"formula_ne",
 	"node_ne",
 	"node_formula_ne",
 	"formula_node_ne",
+]
+nb_entropies = [
+	"nb_node_e",
+	"nb_node_formula_e",
+	"nb_formula_node_e",
+	"nb_node_node_e",
 	"nb_node_ne",
 	"nb_node_formula_ne",
 	"nb_formula_node_ne",
 	"nb_node_node_ne"
 ]
 entropy_df = []
-for entropy in entropies:
-	all_entropy = th.stack([vals[entropy] for vals in model_to_vals.values()], dim=0)
-	ensemble_metrics[entropy+"s"] = all_entropy
-	entropy_mean = th.mean(all_entropy, dim=0)
-	entropy_std = th.std(all_entropy, dim=0)
-	entropy_cv = entropy_std / th.clamp(entropy_mean, min=EPS)
-	if th.mean(entropy_cv) > 100:
-		import pdb; pdb.set_trace()
-	entropy_min = th.min(all_entropy, dim=0).values
-	entropy_max = th.max(all_entropy, dim=0).values
-	entropy_range = entropy_max - entropy_min
-	entropy_expmax = th.exp(th.max(all_entropy, dim=0).values)
-	if th.mean(entropy_expmax) > 100:
-		import pdb; pdb.set_trace()
-	entropy_expmin = th.exp(th.min(all_entropy, dim=0).values)
-	entropy_exprange = entropy_expmax - entropy_expmin
-	entropy_exprange2 = th.exp(entropy_range)
-	ensemble_metrics[entropy+"_mean"] = entropy_mean
-	ensemble_metrics[entropy+"_std"] = entropy_std
-	ensemble_metrics[entropy+"_cv"] = entropy_cv
-	entropy_df.append({
-		"entropy": entropy,
-		"mean": th.mean(entropy_mean).item(),
-		"std": th.mean(entropy_std).item(),
-		"cv": th.mean(entropy_cv).item(),
-		"min": th.mean(entropy_min).item(),
-		"max": th.mean(entropy_max).item(),
-		"range": th.mean(entropy_range).item(),
-		"exp_min": th.mean(entropy_expmin).item(),
-		"exp_max": th.mean(entropy_expmax).item(),
-		"exp_range": th.mean(entropy_exprange).item(),
-		"exp_range_2": th.mean(entropy_exprange2).item()
-	})
-entropy_df = pd.DataFrame(entropy_df)
-print(entropy_df)
-entropy_df.to_csv(f"{mode}_entropy_df.csv",index=False)
+for entropy_group in [entropies, nb_entropies]:
+	for entropy in entropy_group:
+		all_entropy = th.stack([vals[entropy] for vals in model_to_vals.values()], dim=0)
+		ensemble_metrics[entropy+"s"] = all_entropy
+		entropy_mean = th.mean(all_entropy, dim=0)
+		entropy_std = th.std(all_entropy, dim=0)
+		entropy_cv = entropy_std / th.clamp(entropy_mean, min=EPS)
+		entropy_min = th.min(all_entropy, dim=0).values
+		entropy_max = th.max(all_entropy, dim=0).values
+		entropy_range = entropy_max - entropy_min
+		entropy_expmax = th.exp(th.max(all_entropy, dim=0).values)
+		entropy_expmin = th.exp(th.min(all_entropy, dim=0).values)
+		entropy_exprange = entropy_expmax - entropy_expmin
+		entropy_exprange2 = th.exp(entropy_range)
+		ensemble_metrics[entropy+"_mean"] = entropy_mean
+		ensemble_metrics[entropy+"_std"] = entropy_std
+		ensemble_metrics[entropy+"_cv"] = entropy_cv
+		entropy_df.append({
+			"entropy": entropy,
+			"mean": th.mean(entropy_mean).item(),
+			"std": th.mean(entropy_std).item(),
+			"cv": th.mean(entropy_cv).item(),
+			"min": th.mean(entropy_min).item(),
+			"max": th.mean(entropy_max).item(),
+			"range": th.mean(entropy_range).item(),
+			"exp_min": th.mean(entropy_expmin).item(),
+			"exp_max": th.mean(entropy_expmax).item(),
+			"exp_range": th.mean(entropy_exprange).item(),
+			"exp_range_2": th.mean(entropy_exprange2).item()
+		})
+	if entropy_group[0].startswith("nb_"):
+		nb_flag = "nb_"
+	else:
+		nb_flag = ""
+	entropy_df = pd.DataFrame(entropy_df)
+	print(entropy_df)
+	if not debug:
+		entropy_df.to_csv(f"figs/{mode}_{nb_flag}h_df.csv",index=False)
 
 import pdb; pdb.set_trace()
 
@@ -670,7 +679,8 @@ for ensemble_r_metric in ensemble_r_metrics:
 	})
 ensemble_r_df = pd.DataFrame(ensemble_r_df)
 print(ensemble_r_df)
-ensemble_r_df.to_csv(f"{mode}_ensemble_r_df.csv",index=False)
+if not debug:
+	ensemble_r_df.to_csv(f"{mode}_ensemble_r_df.csv",index=False)
 
 # TODO: per-formula ensemble correlations
 # get P(f) for each formula
@@ -766,7 +776,8 @@ for ensemble_r_metric in ensemble_r_metrics:
 	})
 ensemble_r_df = pd.DataFrame(ensemble_r_df)
 print(ensemble_r_df)
-ensemble_r_df.to_csv(f"{mode}_ensemble_r_df_2.csv",index=False)
+if debug:
+	ensemble_r_df.to_csv(f"{mode}_ensemble_r_df_2.csv",index=False)
 import pdb; pdb.set_trace()
 
 
