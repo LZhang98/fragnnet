@@ -15,12 +15,12 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("--debug", type=booltype, default=False)
 parser.add_argument("--mode", type=str, choices=["baseline","entropy"], default="entropy")
-parser.add_argument("--batch_cutoff", type=int, default=int(1e6))
+parser.add_argument("--tw_thresh", type=float, default=0.025)
 args = parser.parse_args()
 
 debug = args.debug
 mode = args.mode
-batch_cutoff = args.batch_cutoff
+tw_thresh = args.tw_thresh
 pd.options.display.float_format = '{:.4f}'.format
 
 # load configs
@@ -54,38 +54,42 @@ if debug:
 			"d3_baseline_s0": "u9wy1bez",
 			"d3_baseline_s1": "b41o0odi"
 		}
+	batch_cutoff = 3
 else:
 	if mode == "entropy":
 		model_to_run_id = {
-			"d3_baseline": "45csl4n4",
-			# "d3_posn": "31dlwe6a",
-			# "d3_negn": "7y090yc5",
-			# "d3_posnf": "rwoixgf0",
-			# "d3_negnf": "63qysyr1",
-			"d3_posfn": "gzb25hmk",
-			"d3_negfn": "phg6ta1y",
-			# "d3_nbposn": "q90tr6zy",
-			# "d3_nbnegn": "6yo3kgf5",
-			# "d3_nbposnf": "6yo3kgf5",
-			# "d3_nbnegnf": "b73djt3d",
-			"d3_nbposfn": "j8nixjvp",
-			"d3_nbnegfn": "xf93r2oe"
+			"d3_baseline_s0": "u9wy1bez",
+			"d3_baseline_s1": "b41o0odi",
+			"d3_baseline_s2": "1i6owhp1",
+			# "d3_baseline_s3": "kduczhxt",
+			# "d3_baseline_s4": "ppiru3q2",
+			"d3_posfn_s0": "8rsxiw68",
+			"d3_posfn_s1": "x6lrm3ry",
+			"d3_posfn_s2": "tu7dqx4x",
+			# "d3_posfn_s3": "0n3r3c0a",
+			# "d3_posfn_s4": "z89eby5f",
+			"d3_negfn_s0": "5tify0br",
+			"d3_negfn_s1": "m1lsfyny",
+			"d3_negfn_s2": "vaypohln",
+			# "d3_negfn_s3": "alp72as7",
+			# "d3_negfn_s4": "altmgdpb"
 		}
 	else:
 		assert mode == "baseline"
 		model_to_run_id = {
-			"d3_baseline":  "45csl4n4",
+			# "d3_baseline":  "45csl4n4",
 			"d3_baseline_s0": "u9wy1bez",
 			"d3_baseline_s1": "b41o0odi",
 			"d3_baseline_s2": "1i6owhp1",
 			"d3_baseline_s3": "kduczhxt",
-			# "d3_baseline_s4": "ppiru3q2",
-			# "d3_baseline_s5": "5anh3g2x",
-			# "d3_baseline_s6": "4oaj4vf6",
-			# "d3_baseline_s7": "p05lunqn",
-			# "d3_baseline_s8": "kf2fuiya",
+			"d3_baseline_s4": "ppiru3q2",
+			"d3_baseline_s5": "5anh3g2x",
+			"d3_baseline_s6": "4oaj4vf6",
+			"d3_baseline_s7": "p05lunqn",
+			"d3_baseline_s8": "kf2fuiya",
 			# "d3_baseline_s9": "xzvo8kly"
 		}
+	batch_cutoff = int(1e6)
 
 model_to_vals = {}
 num_models = len(model_to_run_id.keys())
@@ -340,7 +344,7 @@ def compute_argmaxes(model_to_vals, distribution):
 		da_batch_idxses[0],
 		log=True
 	)
-	argmax_invalid_2 = th.any(th.exp(da_logprobses) < 0.025,dim=0)
+	argmax_invalid_2 = th.any(th.exp(da_logprobses) < tw_thresh,dim=0)
 	argmax_invalid_2 = argmax_invalid_2 | argmax_invalid
 	da_t_logprobs_mean = th.ones_like(da_logprobs_mean)
 	da_t_logprobs_mean = scatter_masked_softmax(
