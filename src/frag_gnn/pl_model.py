@@ -777,14 +777,8 @@ class SpectrumPL(pl.LightningModule):
 
 	def _update_results(self, batch_results, split):
 
-		if split == "train":
-			results_attr = "train_results"
-			counter_attr = "train_counter"
-		elif split == "val":
-			results_attr = "val_results"
-			counter_attr = "val_counter"
-		else:
-			raise NotImplementedError(split)
+		results_attr = f"{split}_results"
+		counter_attr = f"{split}_counter"
 		# filter keys (filtering first to save time/memory)
 		keys = [
 			"unique_ids",
@@ -932,16 +926,9 @@ class SpectrumPL(pl.LightningModule):
 
 	def _log_images(self, split):
 
-		if split == "train":
-			results = self.train_results
-			num_log_images = self.hparams.num_log_train_images
-			counter = self.train_counter
-		elif split == "val":
-			results = self.val_results
-			num_log_images = self.hparams.num_log_val_images
-			counter = self.val_counter
-		else:
-			raise NotImplementedError(split)
+		results = getattr(self,f"{split}_results")
+		num_log_images = getattr(self.hparams,f"num_log_{split}_images")
+		counter = getattr(self,f"{split}_counter")
 		num_log_images = min(num_log_images,counter)
 		wandb_logger = self._get_wandb_logger()
 		if wandb_logger is None:

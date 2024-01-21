@@ -107,7 +107,11 @@ for model_name, run_id in model_to_run_id.items():
 		run = api.run(f"frag-gnn/frag-gnn/{run_id}")
 		ckpt_file_local = run.file("ckpt/last.ckpt").download(root=temp_dp,replace=False)
 		ckpt_fp = ckpt_file_local.name
-		model = FragGNNPL.load_from_checkpoint(ckpt_fp)
+		try:
+			model = FragGNNPL.load_from_checkpoint(ckpt_fp,stict=True)
+		except RuntimeError as e:
+			print(f"> error when loading from checkpoint id {run_id}, will try with strict=False")
+			model = FragGNNPL.load_from_checkpoint(ckpt_fp,stict=False)
 	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 	model.to(device)
 	model.eval()
