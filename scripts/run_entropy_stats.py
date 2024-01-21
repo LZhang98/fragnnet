@@ -16,11 +16,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--debug", type=booltype, default=False)
 parser.add_argument("--mode", type=str, choices=["baseline","entropy"], default="entropy")
 parser.add_argument("--tw_thresh", type=float, default=0.025)
+parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test"])
 args = parser.parse_args()
 
 debug = args.debug
 mode = args.mode
 tw_thresh = args.tw_thresh
+eval_split = args.eval_split
 pd.options.display.float_format = '{:.4f}'.format
 
 # load configs
@@ -37,7 +39,7 @@ if debug:
 
 # load datasets
 print(">>> Loading datasets")
-ds = SpecMolFragDataset(split="val", **config_d)
+ds = SpecMolFragDataset(split=eval_split, **config_d)
 dl = init_dataloader(ds, config_d)
 
 if debug:
@@ -107,7 +109,11 @@ for model_name, run_id in model_to_run_id.items():
 		run = api.run(f"frag-gnn/frag-gnn/{run_id}")
 		ckpt_file_local = run.file("ckpt/last.ckpt").download(root=temp_dp,replace=False)
 		ckpt_fp = ckpt_file_local.name
-		model = FragGNNPL.load_from_checkpoint(ckpt_fp)
+		try:
+			model = FragGNNPL.load_from_checkpoint(ckpt_fp,strict=True)
+		except RuntimeError as e:
+			print(f"> error when loading from checkpoint id {run_id}, will try with strict=False")
+			model = FragGNNPL.load_from_checkpoint(ckpt_fp,strict=False)
 	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 	model.to(device)
 	model.eval()
@@ -146,7 +152,7 @@ for model_name, run_id in model_to_run_id.items():
 		for b_idx, b_input in tqdm(enumerate(dl),total=len(dl)):
 			# transfer data, make predictions
 			b_input = to_device(b_input, device,non_blocking=False)
-			b_output = model._common_step(b_input, split="val")
+			b_output = model._common_step(b_input, split=eval_split)
 			b_output = to_device(b_output, "cpu",non_blocking=False)
 			# print(th.any(b_output["nb_formula_node_ne"] < -0.001))
 			if th.any(b_output["nb_formula_node_ne"] < -0.001):
