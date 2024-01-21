@@ -10,7 +10,6 @@ from torch_geometric.data import Data, Batch
 import sys
 from tqdm import tqdm
 from typing import Iterator, Iterable, Optional, Sequence, List, TypeVar, Generic, Sized, Union
-import warnings
 
 from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_graph, get_frag_graph
 from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_type_idx, prec_type_mass_diff
@@ -18,6 +17,7 @@ from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+import frag_gnn.massformer.data_utils as mf_data_utils
 
 
 def init_dataloader(ds, config_d):
@@ -248,8 +248,7 @@ class BaseDataset(Dataset):
 		return batch_size, keys, collate_data
 
 	@staticmethod
-	def _standard_collate(batch_size,keys,collate_data):
-		""" mutates keys and collate_data """
+	def _special_collate(keys, collate_data):
 
 		# handle sparse spectra
 		if "spec_ints" in keys and "spec_mzs" in keys:
@@ -275,6 +274,11 @@ class BaseDataset(Dataset):
 			collate_data["spec_m_nce_batch_idxs"] = batch_idxs
 			# remove from list
 			keys.remove("spec_m_nce")
+
+	@staticmethod
+	def _standard_collate(batch_size,keys,collate_data):
+		""" mutates keys and collate_data """
+
 		# handle generic data
 		for key in keys:
 			values = collate_data[key]
@@ -385,6 +389,9 @@ class SpecMolDataset(BaseDataset):
 				self.mol_params["pyg_bigraph"]
 			)
 			mol_data["mol_pyg"] = mol_pyg
+		if self.mol_params["mf"]:
+			mol_mf = mf_data_utils.gf_preprocess(mol,-1)
+			mol_data["mol_mf"] = mol_mf
 		return mol_data
 
 	@staticmethod
@@ -393,14 +400,28 @@ class SpecMolDataset(BaseDataset):
 		return SpecMolDataset.collate_fn
 
 	@staticmethod
-	def collate_fn(data_list):
-		
-		batch_size, keys, collate_data = SpecMolDataset._setup_collate(data_list)
+	def _special_collate(keys, collate_data):
+
 		if "mol_pyg" in keys:
 			# batch
 			collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
 			# remove from list
 			keys.remove("mol_pyg")
+		if "mol_mf" in keys:
+			# batch
+			mol_mf_d = mf_data_utils.collator(collate_data["mol_mf"])
+			for k, v in mol_mf_d.items():
+				collate_data["mol_mf_"+k] = v
+			# remove from list
+			collate_data.pop("mol_mf")
+			keys.remove("mol_mf")
+		BaseDataset._special_collate(keys,collate_data)
+
+	@staticmethod
+	def collate_fn(data_list):
+		
+		batch_size, keys, collate_data = SpecMolDataset._setup_collate(data_list)
+		SpecMolDataset._special_collate(keys,collate_data)
 		SpecMolDataset._standard_collate(batch_size,keys,collate_data)
 		return collate_data
 
@@ -527,13 +548,8 @@ class SpecMolFragDataset(SpecMolDataset):
 		return SpecMolFragDataset.collate_fn
 
 	@staticmethod
-	def collate_fn(data_list):
+	def _special_collate(keys, collate_data):
 
-		# prevent edge case causing crash
-		if len(data_list) == 0:
-			return  {"batch_size": th.tensor(0)}
-		batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
-		# special handling
 		if "frag_pyg" in keys:
 			assert "mol_pyg" in keys
 			assert "frag_formula_peak_mzs" in keys
@@ -552,12 +568,17 @@ class SpecMolFragDataset(SpecMolDataset):
 			keys.remove("mol_pyg")
 			keys.remove("frag_formula_peak_mzs")
 			keys.remove("frag_formula_peak_probs")
-		# this only runs if "frag_pyg" is not in keys
-		if "mol_pyg" in keys:
-			# batch
-			collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
-			# remove from list
-			keys.remove("mol_pyg")
+		SpecMolDataset._special_collate(keys,collate_data)
+
+	@staticmethod
+	def collate_fn(data_list):
+
+		# prevent edge case causing crash
+		if len(data_list) == 0:
+			return  {"batch_size": th.tensor(0)}
+		batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
+		# special handling
+		SpecMolFragDataset._special_collate(keys,collate_data)
 		SpecMolFragDataset._standard_collate(batch_size,keys,collate_data)
 		return collate_data
 
@@ -809,7 +830,7 @@ class GroupSampler(Sampler):
 		"""
 		return self._num_samples 
 	
-def get_group_sampler(ds:SpecMolFragDataset, config_d: dict) -> WeightedRandomSampler:
+def get_group_sampler(ds: SpecMolFragDataset, config_d: dict) -> WeightedRandomSampler:
 	"""get WeightedRandomSampler based on input
 
 	Args:
@@ -832,51 +853,44 @@ def get_group_sampler(ds:SpecMolFragDataset, config_d: dict) -> WeightedRandomSa
 	sampler = WeightedRandomSampler(sample_weights,num_samples=num_samples,replacement=False)
 	return sampler
 
+def test_dataset():
+
+	from frag_gnn.runner import load_config
+	from frag_gnn.utils.misc_utils import print_shapes
+	from frag_gnn.utils.misc_utils import to_device
+
+	template_fp = "config/template.yml"
+	custom_fps = [
+		"config/debug/debug_d3_nb.yml",
+		# "config/debug/debug_d3_nb_nce.yml",
+		"config/debug/debug_d3_neims.yml"
+	]
+
+	for custom_fp in custom_fps:
+
+		print(custom_fp)
+
+		config_d = load_config(template_fp, custom_fp)
+		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
+
+		ds = SpecMolFragDataset(split="train", **config_d)
+		dl = th.utils.data.DataLoader(
+			ds,
+			batch_size=8,
+			shuffle=False,
+			num_workers=0,
+			collate_fn=ds.get_collate_fn(),
+		)
+		dl_iter = iter(dl)
+		batch = next(dl_iter)
+		print("> batch")
+		print_shapes(batch)
+		batch = to_device(batch,device)
+
+
 if __name__ == "__main__":
 
-	import pandas as pd
-	from torch.utils.data import DataLoader
-	from pprint import pprint
-	from frag_gnn.utils.misc_utils import print_shapes
+	from frag_gnn.utils.misc_utils import th_temp_seed
 
-	# TODO: read stuff from a config file
-
-	print(">>> SpecMolDataset")
-	sm_ds = SpecMolDataset(
-		spec_fp,
-		mol_fp,
-		train_fp,
-		**params
-	)
-	sm_dl = DataLoader(
-		sm_ds,
-		batch_size=2,
-		shuffle=False,
-		collate_fn=sm_ds.get_collate_fn(),
-		num_workers=0
-	)
-	sm_b = next(iter(sm_dl))
-	print_shapes(sm_b)
-	
-	print(">>> SpecMolFragDataset")
-	smf_ds = SpecMolFragDataset(
-		spec_fp,
-		mol_fp,
-		frag_dp,
-		train_fp,
-		**params
-	)
-	smf_dl = DataLoader(
-		smf_ds,
-		batch_size=2,
-		shuffle=False,
-		collate_fn=smf_ds.get_collate_fn(),
-		num_workers=0
-	)
-	smf_b = next(iter(smf_dl))
-	print_shapes(smf_b)
-
-	# get the largest batch size
-	smf_b_mem_d, smf_b_mem_total = find_largest_batch(smf_dl)
-	print(f"largest batch size: {smf_b_mem_total/1e6:.3f} MB")
-	pprint({k:f"{v/1e6:.3f} MB" for k,v in smf_b_mem_d.items()})
+	with th_temp_seed(420):
+		test_dataset()

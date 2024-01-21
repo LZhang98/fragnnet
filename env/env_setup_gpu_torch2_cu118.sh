@@ -26,5 +26,6 @@ pip install pytest
 pip install CairoSVG
 pip install lightning
 pip install dgl==1.0.4 -f https://data.dgl.ai/wheels/cu118/repo.html
+pip install omegaconf
 
 pip install -I -e .

@@ -11,11 +11,10 @@ try:
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
 	
-from torch.profiler import profile, record_function, ProfilerActivity
 import torch._dynamo as th_dynamo
 
 from frag_gnn.utils.nn_utils import build_lr_scheduler
-from frag_gnn.model import FragGNNModel, NeimsModel #, MassFormerModel
+from frag_gnn.model import FragGNNModel, NeimsModel
 from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance, sparse_cosine_distance_hungarian
 from frag_gnn.utils.spec_utils import *
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_logsumexp, to_cpu, scatter_l1normalize
@@ -1664,45 +1663,8 @@ class NeimsPL(BinnedPL):
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
 
-# class MassFormerPL(BinnedPL):
 
-# 	def _setup_model(self):
-
-# 		self.model = MassFormerModel(
-# 			mol_fingerprint_morgan=self.hparams.mol_params["fingerprint_morgan"],
-# 			mol_fingerprint_rdkit=self.hparams.mol_params["fingerprint_rdkit"],
-# 			mol_fingerprint_maccs=self.hparams.mol_params["fingerprint_maccs"],
-# 			mlp_hidden_size=self.hparams.mlp_hidden_size,
-# 			mlp_dropout=self.hparams.mlp_dropout,
-# 			mlp_num_layers=self.hparams.mlp_num_layers,
-# 			mlp_use_residuals=self.hparams.mlp_use_residuals,
-# 			mz_max=self.hparams.mz_max,
-# 			mz_bin_res=self.hparams.mz_bin_res,
-# 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
-# 			ff_bidirectional=self.hparams.ff_bidirectional,
-# 			ce_insert_mol=self.hparams.ce_insert_mol,
-# 			ce_insert_frag=self.hparams.ce_insert_frag,
-# 			ce_insert_mlp=self.hparams.ce_insert_mlp,
-# 			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
-# 		)
-		
-# 		# check merge params
-# 		if self.hparams.spec_params["merge"]:
-# 			assert not self.hparams.spec_params["nce"]
-# 			assert not self.hparams.ce_insert_mol
-# 			assert not self.hparams.ce_insert_frag
-# 			assert not self.hparams.ce_insert_mlp
-# 			assert not self.hparams.ce_insert_mlp_lin
-# 		else:
-# 			assert self.hparams.spec_params["nce"]
-
-# 		# compile
-# 		if self.hparams.compile:
-# 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-# 			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)		
-
-
-def test_fraggnn():
+def test_models():
 
 	from frag_gnn.runner import load_config
 	from frag_gnn.dataset import SpecMolFragDataset
@@ -1712,12 +1674,14 @@ def test_fraggnn():
 	template_fp = "config/template.yml"
 	custom_fps = [
 		# "config/debug/debug_d3_nb.yml",
-		# "config/debug/debug_d3_nb_nce.yml",
-		"config/debug/debug_d3_neims.yml"
+		"config/debug/debug_d3_nb_nce.yml",
+		# "config/debug/debug_d3_neims.yml",
+		"config/debug/debug_d3_neims_nce.yml"
 	]
 	pl_model_clses = [
 		# FragGNNPL,
-		# FragGNNPL,
+		FragGNNPL,
+		# NeimsPL,
 		NeimsPL
 	]
 
@@ -1759,21 +1723,12 @@ def test_fraggnn():
 		print(mean_loss)
 		mean_loss.backward()
 
-		# print(results["node_formula_mi"])
-		# print(results["formula_node_mi"])
-
-		# print(results["nb_node_formula_mi"])
-		# print(results["nb_formula_node_mi"])
-		# print(results["nb_node_node_mi"])
-
-		# print(results["nb_node_node_e"])
-		# print(results["nb_node_node_ne"])
 
 if __name__ == "__main__":
 
 	from frag_gnn.utils.misc_utils import th_temp_seed
 
 	with th_temp_seed(420):
-		test_fraggnn()
+		test_models()
 	# with th_temp_seed(420):
 	# 	test_neims()

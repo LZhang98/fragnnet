@@ -1131,12 +1131,20 @@ def cos_sim_helper(true_bin_idxs, true_bin_ints, true_bin_batch_idxs, pred_bin_i
 	true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
 	both_bin_ints = pred_bin_ints[pred_mask] * true_bin_ints[true_mask]
 	assert th.all(pred_bin_batch_idxs[pred_mask] == true_bin_batch_idxs[true_mask])
-	cos_sims = scatter_reduce(
-		src=both_bin_ints,
-		index=pred_bin_batch_idxs[pred_mask],
-		reduce="sum",
-		dim_size=th.max(true_bin_batch_idxs)+1
-	)
+	if pred_mask.sum() == 0:
+		cos_sims = scatter_reduce(
+			src=0.*pred_bin_ints,
+			index=pred_bin_batch_idxs,
+			reduce="sum",
+			dim_size=th.max(true_bin_batch_idxs)+1
+		)
+	else:
+		cos_sims = scatter_reduce(
+			src=both_bin_ints,
+			index=pred_bin_batch_idxs[pred_mask],
+			reduce="sum",
+			dim_size=th.max(true_bin_batch_idxs)+1
+		)
 	return cos_sims
 
 def batched_l1_normalize(ints, batch_idxs):

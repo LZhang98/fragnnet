@@ -3,24 +3,18 @@
 Fragment dataset to build out model class
 
 """
-import logging
 from pathlib import Path
 from typing import List
 import json
-import copy
 import numpy as np
-import pandas as pd
-from tqdm import tqdm
 import torch as th
 import dgl
-from torch.utils.data.dataset import Dataset
 
 import frag_gnn.iceberg.common as common
 import frag_gnn.iceberg.nn_utils as nn_utils
 import frag_gnn.iceberg.fragmentation as fragmentation
 from frag_gnn.dataset import BaseDataset, SpecMolDataset
-from frag_gnn.utils.misc_utils import flatten_lol, print_shapes
-from frag_gnn.utils.spec_utils import batch_func
+from frag_gnn.utils.misc_utils import flatten_lol
 
 
 class TreeProcessor:

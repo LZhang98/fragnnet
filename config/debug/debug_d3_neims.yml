@@ -9,18 +9,10 @@ frag_dp: data/frag/nist20_d3_h4_isoFalse_nb2/dags
 subsample_params:
   subsample_size: 0.25
 compile: False
-# spec_params:
-#   merge: False
-#   nce: True
-# ce_insert_mlp: True
-# ce_insert_mlp_lin: False
-spec_params:
-  merge: True
-  nce: True
-  merge_keep_ces: True
-m_ce_insert_mlp_embed: True
-m_ce_insert_mlp_bin: False
-
+eval_mz_bin_res:
+- 1.0
+- 0.1
+- 0.01
 
 model_type: neims
 loss_type: cosine_distance
@@ -38,7 +30,7 @@ mlp_dropout: 0.01
 mlp_num_layers: 5
 mlp_use_residuals: True
 mz_max: 1500.0
-mz_bin_res: 0.01
+mz_bin_res: 1.0
 sum_ints: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True

@@ -26,9 +26,9 @@ import shutil
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
+from frag_gnn.massformer.pl_model import MassFormerPL
 from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
-from frag_gnn.utils.frag_utils import NUM_ELEMENTS
-from frag_gnn.utils.pl_utils import ConsoleLogger, PrintGradCallback
+from frag_gnn.utils.pl_utils import ConsoleLogger
 from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, init_dataloader
 from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset
 from frag_gnn.utils.misc_utils import deep_update
@@ -173,6 +173,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		model_cls = IcebergGenPL
 	elif config_d["model_type"] == "iceberg_inten":
 		model_cls = IcebergIntenPL
+	elif config_d["model_type"] == "massformer":
+		model_cls = MassFormerPL
 	else:
 		raise ValueError(config_d["model_type"])
 	model = model_cls(**config_d)
@@ -268,7 +270,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	elif config_d["model_type"] == "iceberg_inten":
 		dataset_cls = SpecMolMagmaIntenDataset
 	else:
-		assert config_d["model_type"] == "neims", config_d["model_type"]
+		assert config_d["model_type"] in ["neims","massformer"], config_d["model_type"]
 		dataset_cls = SpecMolDataset
 		
 	train_ds = dataset_cls(split="train",**config_d)

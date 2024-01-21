@@ -1,0 +1,52 @@
+wandb_name: massformer
+wandb_tags:
+- debug
+
+spec_fp: data/proc/debug_small/spec_df.pkl
+mol_fp: data/proc/debug_small/mol_df.pkl
+split_dp: data/split/debug_small
+frag_dp: data/frag/nist20_d3_h4_isoFalse_nb2/dags
+subsample_params:
+  subsample_size: 0.25
+compile: False
+eval_mz_bin_res:
+- 1.0
+- 0.1
+- 0.01
+
+model_type: massformer
+loss_type: cosine_distance
+sparse_cosine_similarity: True
+mol_params:
+  pyg: False
+  mf: True
+frag_params:
+  pyg: False
+mlp_hidden_size: 2000
+mlp_dropout: 0.01
+mlp_num_layers: 5
+mlp_use_residuals: True
+mz_max: 1500.0
+mz_bin_res: 1.0
+sum_ints: True
+ff_prec_mz_offset: 5
+ff_bidirectional: True
+ints_transform: sqrt
+
+train_batch_size: 100
+eval_batch_size: 100
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+upload_checkpoints: False
+disable_checkpoints: True
+precision: 32
+use_tensor_float32: True
+automatic_optimization: True
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
