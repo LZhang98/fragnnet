@@ -58,26 +58,25 @@ if debug:
 else:
 	if mode == "entropy":
 		model_to_run_id = {
-			"d3_baseline_s0": "u9wy1bez",
-			"d3_baseline_s1": "b41o0odi",
-			"d3_baseline_s2": "1i6owhp1",
-			# "d3_baseline_s3": "kduczhxt",
-			# "d3_baseline_s4": "ppiru3q2",
 			"d3_posfn_s0": "8rsxiw68",
 			"d3_posfn_s1": "x6lrm3ry",
 			"d3_posfn_s2": "tu7dqx4x",
-			# "d3_posfn_s3": "0n3r3c0a",
-			# "d3_posfn_s4": "z89eby5f",
-			"d3_negfn_s0": "5tify0br",
-			"d3_negfn_s1": "m1lsfyny",
-			"d3_negfn_s2": "vaypohln",
-			# "d3_negfn_s3": "alp72as7",
-			# "d3_negfn_s4": "altmgdpb"
+			"d3_posfn_s3": "0n3r3c0a",
+			"d3_posfn_s4": "z89eby5f",
+			"d3_negfn_s5": "sezkh2lu",
+			"d3_negfn_s6": "2yba8u45",
+			"d3_negfn_s7": "nrq935fe",
+			"d3_negfn_s8": "gs6wku8w",
+			"d3_negfn_s9": "pbaierew",
+			"d3_baseline_s10": "br6jl4du",
+			"d3_baseline_s11": "fgxmpnbz",
+			"d3_baseline_s12": "r0xbwsyn",
+			"d3_baseline_s13": "me1cjx88",
+			"d3_baseline_s14": "qqg593r6",
 		}
 	else:
 		assert mode == "baseline"
 		model_to_run_id = {
-			# "d3_baseline":  "45csl4n4",
 			"d3_baseline_s0": "u9wy1bez",
 			"d3_baseline_s1": "b41o0odi",
 			"d3_baseline_s2": "1i6owhp1",
@@ -87,7 +86,12 @@ else:
 			"d3_baseline_s6": "4oaj4vf6",
 			"d3_baseline_s7": "p05lunqn",
 			"d3_baseline_s8": "kf2fuiya",
-			# "d3_baseline_s9": "xzvo8kly"
+			"d3_baseline_s9": "xzvo8kly",
+			"d3_baseline_s10": "br6jl4du",
+			"d3_baseline_s11": "fgxmpnbz",
+			"d3_baseline_s12": "r0xbwsyn",
+			"d3_baseline_s13": "me1cjx88",
+			"d3_baseline_s14": "qqg593r6",
 		}
 	batch_cutoff = int(1e6)
 
