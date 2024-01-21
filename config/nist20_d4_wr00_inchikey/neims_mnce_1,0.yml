@@ -47,8 +47,8 @@ eval_mz_bin_res:
 - 0.1
 - 0.01
 
-train_batch_size: 8 #256
-eval_batch_size: 8 #256
+train_batch_size: 256
+eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004

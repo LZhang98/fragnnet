@@ -43,8 +43,8 @@ spec_params:
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
 
-train_batch_size: 8 #256
-eval_batch_size: 8 #256
+train_batch_size: 256
+eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004
