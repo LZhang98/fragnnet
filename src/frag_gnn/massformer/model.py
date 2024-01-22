@@ -66,6 +66,12 @@ class MassFormerModel(nn.Module):
 			use_residuals=mlp_use_residuals
 		)
 
+	def get_split_params(self):
+
+		nopt_params, pt_params = self.gf.get_split_params()
+		pt_params.extend(list(self.ffn.parameters()))
+		return nopt_params, pt_params
+
 	def forward(
 		self,
 		mol_mf_idx: th.Tensor,

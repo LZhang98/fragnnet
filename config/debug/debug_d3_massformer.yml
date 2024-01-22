@@ -22,31 +22,35 @@ mol_params:
   mf: True
 frag_params:
   pyg: False
-mlp_hidden_size: 2000
-mlp_dropout: 0.01
-mlp_num_layers: 5
+mlp_hidden_size: 1000
+mlp_dropout: 0.4
+mlp_num_layers: 4
 mlp_use_residuals: True
 mz_max: 1500.0
 mz_bin_res: 1.0
 sum_ints: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
-ints_transform: sqrt
+ints_transform: log10t3
 
 train_batch_size: 100
 eval_batch_size: 100
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0004
+lr: 0.0004 # ignored
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
-lr_schedule: False
+min_epochs: 20
+max_epochs: 20
+###
+weight_decay: 0.001
+pt_weight_decay: 0.0
+lr_schedule: True
+###
 debug_overfit: False
 upload_checkpoints: False
 disable_checkpoints: True
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric: val_cos_sim_1.0_epoch/mean

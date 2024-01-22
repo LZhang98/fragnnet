@@ -1,4 +1,4 @@
-wandb_name: neims_mnce_0,1
+wandb_name: neims_0,1
 wandb_tags:
 - splits
 - nist20
@@ -8,7 +8,6 @@ wandb_tags:
 - new_proc
 - neims
 - new_metrics
-- m_nce_embed
 - mz_bin_res_0,1
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
@@ -27,7 +26,7 @@ mol_params:
 frag_params:
   pyg: False
 mlp_hidden_size: 2000
-mlp_dropout: 0.01
+mlp_dropout: 0.1
 mlp_num_layers: 5
 mlp_use_residuals: True
 ff_prec_mz_offset: 5
@@ -36,12 +35,6 @@ mz_max: 1500.0
 mz_bin_res: 0.1
 sum_ints: True
 ints_transform: sqrt
-spec_params:
-  merge: True
-  nce: True
-  merge_keep_ces: True
-m_ce_insert_mlp_embed: True
-m_ce_insert_mlp_bin: False
 
 train_batch_size: 256
 eval_batch_size: 256

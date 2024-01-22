@@ -3,7 +3,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.massformer.model import MassFormerModel
 from frag_gnn.pl_model import BinnedPL
-from frag_gnn.massformer.nn_utils import flag_bounded
+from frag_gnn.massformer.nn_utils import flag_bounded, PolynomialDecayLR
 
 
 class MassFormerPL(BinnedPL):
@@ -26,6 +26,8 @@ class MassFormerPL(BinnedPL):
 			int_embedder=self.hparams.int_embedder,
 		)
 
+		assert self.hparams.automatic_optimization
+
 		self._check_ce_params()
 
 		# compile
@@ -37,8 +39,49 @@ class MassFormerPL(BinnedPL):
 		if self.mf_flag:
 			raise NotImplementedError
 			assert self.hparams.precision == 32, self.hparams.precision
-			assert self.hparams.manual_optimization
+			assert not self.hparams.automatic_optimization
 		
+	def configure_optimizers(self):
+		
+		if self.hparams.optimizer == "adam":
+			optimizer_cls = th.optim.Adam
+		elif self.hparams.optimizer == "adamw":
+			optimizer_cls = th.optim.AdamW
+		elif self.hparams.optimizer == "sgd":
+			optimizer_cls = th.optim.SGD
+		else:
+			raise ValueError(f"Unknown optimizer {self.optimizer}")
+		
+		nopt_params, pt_params = self.model.get_split_params()
+		
+		optimizer = optimizer_cls(
+			[
+				{"params": nopt_params, "weight_decay": self.hparams.weight_decay},
+				{"params": pt_params, "weight_decay": self.hparams.pt_weight_decay},
+			], 
+			lr=self.hparams.lr
+		)
+		ret = {
+			"optimizer": optimizer,
+		}
+		if self.hparams.lr_schedule:
+			num_batches = 400 # approximation
+			tot_updates = self.hparams.max_epochs * (num_batches // self.hparams.accumulate_grad_batches)
+			warmup_updates = int(0.1 * tot_updates)
+			scheduler = PolynomialDecayLR(
+				optimizer,
+				warmup_updates=warmup_updates,
+				tot_updates=tot_updates,
+				lr=0.0002,
+				end_lr=0.000000001,
+				power=1.0
+			)
+			ret["lr_scheduler"] = {
+				"scheduler": scheduler,
+				"frequency": 1,
+				"interval": "step",
+			}
+		return ret
 
 	# def _common_step(self, batch, split="train"):
 

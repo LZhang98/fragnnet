@@ -1,4 +1,4 @@
-wandb_name: massformer_mnce_1,0
+wandb_name: massformer_mnce_0,01
 wandb_tags:
 - splits
 - nist20
@@ -9,24 +9,18 @@ wandb_tags:
 - massformer
 - new_metrics
 - m_nce_embed
-- mz_bin_res_1,0
+- mz_bin_res_0,01
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
 split_dp: data/split/nist20_d4_wr00_inchikey
 frag_dp: data/frag/nist20_d3_h4_isoFalse_nb2/dags
-subsample_params:
-  subsample_size: 0.25
 spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
-eval_mz_bin_res:
-- 1.0
-- 0.1
-- 0.01
 
 model_type: massformer
 loss_type: cosine_distance
@@ -41,7 +35,7 @@ mlp_dropout: 0.01
 mlp_num_layers: 5
 mlp_use_residuals: True
 mz_max: 1500.0
-mz_bin_res: 1.0
+mz_bin_res: 0.01
 sum_ints: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
@@ -63,4 +57,4 @@ disable_checkpoints: True
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-checkpoint_metric: val_cos_sim_1.0_epoch/mean
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
