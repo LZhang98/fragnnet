@@ -1,8 +1,9 @@
 import torch as th
 import torch._dynamo as th_dynamo
 
-from frag_gnn.massformer.model import MassFormerModel
 from frag_gnn.pl_model import BinnedPL
+from frag_gnn.utils.nn_utils import build_lr_scheduler
+from frag_gnn.massformer.model import MassFormerModel
 from frag_gnn.massformer.nn_utils import flag_bounded, PolynomialDecayLR
 
 
@@ -24,6 +25,9 @@ class MassFormerPL(BinnedPL):
 			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,
 			m_ce_insert_mlp_bin=self.hparams.m_ce_insert_mlp_bin,
 			int_embedder=self.hparams.int_embedder,
+			mf_fix_num_pt_layers=self.hparams.mf_fix_num_pt_layers,
+			mf_reinit_num_pt_layers=self.hparams.mf_reinit_num_pt_layers,
+			mf_reinit_layernorm=self.hparams.mf_reinit_layernorm,
 		)
 
 		assert self.hparams.automatic_optimization
@@ -51,29 +55,39 @@ class MassFormerPL(BinnedPL):
 			optimizer_cls = th.optim.SGD
 		else:
 			raise ValueError(f"Unknown optimizer {self.optimizer}")
-		
 		nopt_params, pt_params = self.model.get_split_params()
-		
 		optimizer = optimizer_cls(
 			[
 				{"params": nopt_params, "weight_decay": self.hparams.weight_decay},
-				{"params": pt_params, "weight_decay": self.hparams.pt_weight_decay},
+				{"params": pt_params, "weight_decay": self.hparams.mf_pt_weight_decay},
 			], 
 			lr=self.hparams.lr
 		)
 		ret = {
 			"optimizer": optimizer,
 		}
+		assert not (self.hparams.lr_schedule and self.hparams.mf_lr_schedule)
 		if self.hparams.lr_schedule:
-			num_batches = 400 # approximation
-			tot_updates = self.hparams.max_epochs * (num_batches // self.hparams.accumulate_grad_batches)
+			scheduler = build_lr_scheduler(
+				optimizer=optimizer, 
+				decay_rate=self.hparams.lr_decay_rate, 
+				warmup_steps=self.hparams.lr_warmup_steps,
+				decay_steps=self.hparams.lr_decay_steps,
+			)
+			ret["lr_scheduler"] = {
+				"scheduler": scheduler,
+				"frequency": 1,
+				"interval": "step",
+			}
+		if self.hparams.mf_lr_schedule:
+			tot_updates = self.hparams.mf_tot_updates
 			warmup_updates = int(0.1 * tot_updates)
 			scheduler = PolynomialDecayLR(
 				optimizer,
 				warmup_updates=warmup_updates,
 				tot_updates=tot_updates,
-				lr=0.0002,
-				end_lr=0.000000001,
+				lr=self.hparams.mf_high_lr,
+				end_lr=self.hparams.mf_low_lr,
 				power=1.0
 			)
 			ret["lr_scheduler"] = {

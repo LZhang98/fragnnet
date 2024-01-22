@@ -1091,9 +1091,9 @@ class GFv2Embedder(nn.Module):
     def __init__(self, 
             gf_model_name="graphormer_base",
             gf_pretrain_name="pcqm4mv2_graphormer_base",
-            fix_num_pt_layers=-1,
-            reinit_num_pt_layers=0,
-            reinit_layernorm=False,):
+            fix_num_pt_layers=0,
+            reinit_num_pt_layers=-1,
+            reinit_layernorm=True):
 
         super().__init__()
         self.args = argparse.Namespace()

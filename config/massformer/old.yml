@@ -41,6 +41,16 @@ m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
 eval_mz_bin_res:
 - 1.0
+mf_flag: False
+mf_pt_weight_decay: 0.0
+mf_fix_num_pt_layers: 0
+mf_reinit_num_pt_layers: -1
+mf_reinit_layernorm: True
+mf_lr_schedule: True
+mf_tot_updates: 400
+mf_warmup_frac: 0.1
+mf_high_lr: 0.0002
+mf_low_lr: 0.000000001
 
 train_batch_size: 100
 eval_batch_size: 100
@@ -48,12 +58,11 @@ accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004 # ignored
 weight_decay: 0.001
-pt_weight_decay: 0.0
 accelerator: gpu
 devices: 1
 min_epochs: 20
 max_epochs: 20
-lr_schedule: True
+lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
 disable_checkpoints: True

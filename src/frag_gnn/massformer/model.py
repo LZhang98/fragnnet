@@ -23,12 +23,19 @@ class MassFormerModel(nn.Module):
 		ce_insert_mlp_lin: bool,
 		m_ce_insert_mlp_embed: bool,
 		m_ce_insert_mlp_bin: bool,
-		int_embedder: str,    
+		int_embedder: str,
+		mf_fix_num_pt_layers: int,
+		mf_reinit_num_pt_layers: int,
+		mf_reinit_layernorm: bool,
 	):
 		
 		super().__init__()
 
-		self.gf = GFv2Embedder()
+		self.gf = GFv2Embedder(
+			fix_num_pt_layers=mf_fix_num_pt_layers,
+			reinit_num_pt_layers=mf_reinit_num_pt_layers,
+			reinit_layernorm=mf_reinit_layernorm,
+		)
 		self.mlp_input_dim = self.gf.get_embed_dim()
 
 		# ce stuff
