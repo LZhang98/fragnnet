@@ -315,7 +315,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		'overfit_batches': overfit_batches,
 		'profiler': profiler,
 		'num_sanity_val_steps': config_d["num_sanity_val_steps"],
-		'enable_progress_bar': config_d["pl_enable_progress_bar"]
+		'enable_progress_bar': config_d["pl_enable_progress_bar"],
+		'enable_checkpointing': not config_d["disable_checkpoints"],
 	}
 
 	# this things can only set if automatic_optimization 
