@@ -219,27 +219,32 @@ def select_model_vals(model_to_vals, keys):
 	select_d = {k: th.stack(v, dim=0) for k,v in select_d.items()}
 	return select_d
 
-def log_mean(log_p,support_size,dim=0):
-	return th.logsumexp(log_p,dim=dim) - np.log(support_size)
+def log_mean(log_p,dim=0):
+	return th.logsumexp(log_p,dim=dim) - np.log(log_p.shape[dim])
 
-def log_std(log_p,support_size,dim=0,correction=1):
-	log_mean_p = log_mean(log_p,support_size,dim=dim)
-	log_mean_p_sq = log_mean(2*log_p,support_size,dim=dim)
+def log_std(log_p,dim=0,correction=1):
+	support_size = log_p.shape[dim]
+	log_mean_p = log_mean(log_p,dim=dim)
+	log_mean_p_sq = log_mean(2*log_p,dim=dim)
 	log_var = th.log(th.exp(log_mean_p_sq) - th.exp(2*log_mean_p))
-	log_std = 0.5*(log_var + np.log(support_size) - np.log(support_size - correction))
-	return log_std
+	return 0.5*(log_var + np.log(support_size) - np.log(support_size - correction))
 
 ### spectrum similarity metrics
 print("> Spectrum Similarity Metrics")
 spec_sims = th.stack([vals["cos_hun"] for vals in model_to_vals.values()], dim=0)
-ensemble_metrics["spec_sims"] = spec_sims
 print(th.mean(spec_sims, dim=1))
 spec_sims_mean = th.mean(spec_sims, dim=0)
 spec_sims_std = th.std(spec_sims, dim=0)
 spec_sims_cv = spec_sims_std / th.clamp(spec_sims_mean, min=EPS)
-ensemble_metrics["spec_sims_mean"] = spec_sims_mean
-ensemble_metrics["spec_sims_std"] = spec_sims_std
-ensemble_metrics["spec_sims_cv"] = spec_sims_cv
+spec_df = [
+	{"metric": "spec_sims_mean", "mean": th.mean(spec_sims_mean).item()},
+	{"metric": "spec_sims_std", "mean": th.mean(spec_sims_std).item()},
+	{"metric": "spec_sims_cv", "mean": th.mean(spec_sims_cv).item()}
+]
+spec_df = pd.DataFrame(spec_df)
+print(spec_df)
+if not debug:
+	spec_df.to_csv(f"figs/{mode}_spec_sims_df.csv",index=False)
 
 ### top-1 agreement P(n|f) and P(n'|f)
 print("> Top-1 Agreement P(n|f) and P(n'|f)")
@@ -295,9 +300,6 @@ def compute_argmaxes(model_to_vals, distribution):
 	argmaxes, maxes = [], []
 	da_logprobses = []
 	da_batch_idxses = []
-	###
-	# argmaxes_alts, maxes_alts = [], []
-	###
 	for model, vals in model_to_vals.items():
 		# da probs
 		da_logprobs = model_to_vals[model][f"pred_{da}_logprobs"]
@@ -315,22 +317,6 @@ def compute_argmaxes(model_to_vals, distribution):
 		)
 		argmaxes.append(dm_argmax)
 		maxes.append(dm_max)
-		# ###
-		# dm_argmax_alt, dm_max_alt = [], []
-		# for dm_idx_1 in dm_idxs_1.unique():
-		# 	idx_logprobs = dm_logprobs[dm_idxs_1==dm_idx_1]
-		# 	idx_argmax = th.argmax(idx_logprobs,dim=0)
-		# 	idx_max = idx_logprobs[idx_argmax]
-		# 	idx_argmax_alt = dm_idxs_2[dm_idxs_1==dm_idx_1][idx_argmax]
-		# 	# if dm_argmax[dm_idx_1] != idx_argmax_alt:
-		# 	# 	import pdb; pdb.set_trace()
-		# 	dm_argmax_alt.append(idx_argmax_alt)
-		# 	dm_max_alt.append(idx_max)
-		# dm_argmax_alt = th.stack(dm_argmax_alt,dim=0)
-		# dm_max_alt = th.stack(dm_max_alt,dim=0)
-		# argmaxes_alts.append(dm_argmax_alt)
-		# maxes_alts.append(dm_max_alt)
-		# ###
 	# calculate majority vote and agreements
 	# P(n|f)
 	argmaxes = th.stack(argmaxes, dim=0)
@@ -346,7 +332,7 @@ def compute_argmaxes(model_to_vals, distribution):
 	# da logprobs
 	da_logprobses = th.stack(da_logprobses, dim=0)
 	da_batch_idxses = th.stack(da_batch_idxses, dim=0)
-	da_logprobs_mean = log_mean(da_logprobses,num_models,dim=0)
+	da_logprobs_mean = log_mean(da_logprobses,dim=0)
 	da_u_logprobs_mean = th.ones_like(da_logprobs_mean)
 	da_u_logprobs_mean = scatter_masked_softmax(
 		da_u_logprobs_mean,
@@ -369,21 +355,6 @@ def compute_argmaxes(model_to_vals, distribution):
 		dim_size=num_batches
 	) < 0.
 	print(th.sum(da_t_invalid))
-	# ###
-	# argmaxes_alts = th.stack(argmaxes_alts, dim=0)
-	# maxes_alts = th.stack(maxes_alts, dim=0)
-	# argmax_majority_alt = th.mode(argmaxes_alts,dim=0).values
-	# argmax_agrees_alt = argmaxes_alts == argmax_majority_alt.unsqueeze(0)
-	# argmax_invalid_2_alt = th.any(th.exp(da_logprobses[:,~argmax_invalid]) < 0.05,dim=0)
-	# import pdb; pdb.set_trace()
-	# print(th.sum(argmax_majority[~argmax_invalid] == argmax_majority_alt))
-	# print(th.sum(argmax_agrees[:,~argmax_invalid] == argmax_agrees_alt,dim=1))
-	# print(th.sum(argmax_majority[~argmax_invalid_2] == argmax_majority_alt[~argmax_invalid_2_alt]))
-	# print(th.sum(argmax_agrees[:,~argmax_invalid_2] == argmax_agrees_alt[:,~argmax_invalid_2_alt],dim=1))
-	# argmax_diff_mask = argmax_agrees[:,~argmax_invalid_2] != argmax_agrees_alt[:,~argmax_invalid_2_alt]
-	# maxes_diff = maxes[:,~argmax_invalid_2][argmax_diff_mask]
-	# maxes_alt_diff =  maxes_alts[:,~argmax_invalid_2_alt][argmax_diff_mask]
-	# ###
 	# compute agreements
 	argmax_agree_ws, argmax_agree_uws, argmax_agree_tws = [], [], []
 	for model_idx in range(num_models):
@@ -550,10 +521,8 @@ for entropy_group in [entropies, nb_entropies]:
 	if not debug:
 		entropy_df.to_csv(f"figs/{mode}_{nb_flag}h_df.csv",index=False)
 
-import pdb; pdb.set_trace()
-
 ### JSS(n|f) and JSS(n'|f)
-print("> Pairwise JSS(n|f) and JSS(n'|f)")
+print("> Ensemble JSS(n|f) and JSS(n'|f)")
 
 # get P(n|f), P(f), P(n'|f)
 select_keys = [
@@ -565,7 +534,8 @@ select_keys = [
 	"pred_nb_joint_node_idxs",
 	"pred_formula_logprobs",
 	"pred_formula_formula_idxs",
-	"pred_formula_batch_idxs"
+	"pred_formula_batch_idxs",
+	"pred_node_node_idxs"
 ]
 select_d = select_model_vals(model_to_vals, select_keys)
 formula_node_logprobses = select_d["pred_formula_node_logprobs"]
@@ -577,7 +547,17 @@ nb_formula_node_node_idxses = select_d["pred_nb_joint_node_idxs"]
 formula_logprobses = select_d["pred_formula_logprobs"]
 formula_formula_idxses = select_d["pred_formula_formula_idxs"]
 formula_batch_idxes = select_d["pred_formula_batch_idxs"]
+node_node_idxses = select_d["pred_node_node_idxs"]
 del select_d
+
+# define constants
+num_formulae = formula_formula_idxses[0].max()+1
+num_batches = formula_batch_idxes[0].max()+1
+num_nodes = node_node_idxses[0].max()+1
+
+# compute ensemble probabilities
+formula_logprobs_mean = log_mean(formula_logprobses,dim=0)
+formula_node_logprobs_mean = log_mean(formula_node_logprobses,dim=0)
 
 # define sparse kl divergence
 def sparse_kl(log_p,log_q,b_idx,dim_size):
@@ -591,206 +571,254 @@ def sparse_kl(log_p,log_q,b_idx,dim_size):
 	kl = th.clamp(kl,min=0.0)
 	return kl
 
+# calculate ensemble JSS
+ensemble_jsses = []
+for i in range(num_models):
+	# merge formula-node predictions
+	m_formula_node_logprobs = th.stack([formula_node_logprobses[i],formula_node_logprobs_mean],dim=0)
+	m_formula_node_logprobs = th.logsumexp(m_formula_node_logprobs,dim=0) - np.log(2.0)
+	# compute kls
+	kl_ij = sparse_kl(
+		formula_node_logprobses[i], 
+		m_formula_node_logprobs, 
+		formula_node_formula_idxses[i],
+		num_formulae
+	)
+	kl_ji = sparse_kl(
+		formula_node_logprobs_mean, 
+		m_formula_node_logprobs, 
+		formula_node_formula_idxses[i],
+		num_formulae
+	)
+	# compute jsds
+	jsd = 0.5 * (kl_ij + kl_ji)
+	ensemble_jsd = scatter_reduce(
+		jsd * th.exp(formula_logprobs_mean),
+		formula_batch_idxes[i],
+		reduce="sum",
+		dim_size=num_batches
+	)
+	ensemble_jss = 1. - ensemble_jsd
+	ensemble_jsses.append(ensemble_jss)
+ensemble_jsses = th.stack(ensemble_jsses, dim=0)
+ensemble_jss_mean = th.mean(ensemble_jsses, dim=0)
+ensemble_jss_std = th.std(ensemble_jsses, dim=0)
+ensemble_jss_cv = ensemble_jss_std / th.clamp(ensemble_jss_mean, min=EPS)
+
+print("> Pairwise JSS(n|f) and JSS(n'|f)")
+
 # calculate pairwise comparisons
-pairwise_jss = []
+pairwise_jsses = []
 pairwise_ids = []
 for i in range(num_models):
 	for j in range(i+1,num_models):
-		# merge formula predictions
+		# verify idxs
 		assert th.all(formula_formula_idxses[i] == formula_formula_idxses[j],dim=0)
-		m_formula_logprobs_ij = th.stack([formula_logprobses[i],formula_logprobses[j]],dim=0)
-		m_formula_logprobs_ij = th.logsumexp(m_formula_logprobs_ij,dim=0) - np.log(2.0)
-		# merge formula-node predictions
 		assert th.all(formula_node_formula_idxses[i] == formula_node_formula_idxses[j],dim=0)
 		assert th.all(formula_node_node_idxses[i] == formula_node_node_idxses[j],dim=0)
-		m_formula_node_logprobs_ij = th.stack([formula_node_logprobses[i],formula_node_logprobses[j]],dim=0)
-		m_formula_node_logprobs_ij = th.logsumexp(m_formula_node_logprobs_ij,dim=0) - np.log(2.0)
+		# merge formula predictions
+		m_formula_logprobs = th.stack([formula_logprobses[i],formula_logprobses[j]],dim=0)
+		m_formula_logprobs = th.logsumexp(m_formula_logprobs,dim=0) - np.log(2.0)
+		# merge formula-node predictions
+		m_formula_node_logprobs = th.stack([formula_node_logprobses[i],formula_node_logprobses[j]],dim=0)
+		m_formula_node_logprobs = th.logsumexp(m_formula_node_logprobs,dim=0) - np.log(2.0)
 		# compute kls
 		kl_ij = sparse_kl(
 			formula_node_logprobses[i], 
-			m_formula_node_logprobs_ij, 
+			m_formula_node_logprobs, 
 			formula_node_formula_idxses[i],
 			formula_formula_idxses[i].max()+1
 		)
 		kl_ji = sparse_kl(
 			formula_node_logprobses[j], 
-			m_formula_node_logprobs_ij, 
+			m_formula_node_logprobs, 
 			formula_node_formula_idxses[j],
 			formula_formula_idxses[j].max()+1
 		)
 		# compute jsds
-		jsd_ij = 0.5 * (kl_ij + kl_ji)
-		jsd_b_ij = scatter_reduce(
-			jsd_ij * th.exp(m_formula_logprobs_ij),
+		jsd = 0.5 * (kl_ij + kl_ji)
+		pairwise_jsd = scatter_reduce(
+			jsd * th.exp(m_formula_logprobs),
 			formula_batch_idxes[i],
 			reduce="sum",
 			dim_size=formula_batch_idxes[i].max()+1
 		)
-		pairwise_jss_ij = 1. - jsd_b_ij
-		pairwise_jss.append(pairwise_jss_ij)
+		pairwise_jss = 1. - pairwise_jsd
+		pairwise_jsses.append(pairwise_jss)
 		pairwise_ids.append(th.tensor((i,j),dtype=th.long))
-pairwise_jss = th.stack(pairwise_jss, dim=0)
+pairwise_jsses = th.stack(pairwise_jsses, dim=0)
 pairwise_ids = th.stack(pairwise_ids, dim=0)
 pairwise_jss_mean = th.mean(pairwise_jss,dim=0)
 pairwise_jss_std = th.std(pairwise_jss,dim=0)
-ensemble_metrics["pairwise_jss"] = pairwise_jss
-ensemble_metrics["pairwise_ids"] = pairwise_ids
-ensemble_metrics["pairwise_jss_mean"] = pairwise_jss_mean
-ensemble_metrics["pairwise_jss_std"] = pairwise_jss_std
-ensemble_metrics["pairwise_jss_cv"] = pairwise_jss_std / th.clamp(pairwise_jss_mean, min=EPS)
+pairwise_jss_cv = pairwise_jss_std / th.clamp(pairwise_jss_mean, min=EPS)
 
-### Correlation between spec_sims and the other metrics
-print("> Correlation between sims and other metrics")
-
-def pearson_r(x,y):
-	x_mean = th.mean(x,dim=0)
-	y_mean = th.mean(y,dim=0)
-	x_std = th.std(x,dim=0)
-	y_std = th.std(y,dim=0)
-	r = th.mean((x-x_mean)*(y-y_mean),dim=0) / (x_std * y_std)
-	return r
-
-# # per-model correlations
-# r_agrees, r_nb_agrees = [], []
-# for model_idx, model in enumerate(model_to_vals.keys()):
-# 	spec_sims = ensemble_metrics["spec_sims"][model_idx]
-# 	argmax_agree = ensemble_metrics["formula_node_argmax_agree"][model_idx]
-# 	nb_argmax_agree = ensemble_metrics["nb_formula_node_argmax_agree"][model_idx]
-# 	r_agree = pearson_r(spec_sims, argmax_agree)
-# 	r_nb_agree = pearson_r(spec_sims, nb_argmax_agree)
-# 	r_agrees.append(r_agree)
-# 	r_nb_agrees.append(r_nb_agree)
-# r_agrees = th.stack(r_agrees, dim=0)
-# r_nb_agrees = th.stack(r_nb_agrees, dim=0)
-# print(th.mean(r_agrees))
-# print(th.mean(r_nb_agrees))
-
-# ensemble correlations
-ensemble_r_metrics = []
-for agg in ["mean","std","cv"]:
-	ensemble_r_metrics.extend([entropy+f"_{agg}" for entropy in entropies])
-	ensemble_r_metrics.extend([f"pairwise_jss_{agg}"])
-	ensemble_r_metrics.extend([f"formula_node_argmax_agree_{agg}"])
-	ensemble_r_metrics.extend([f"nb_formula_node_argmax_agree_{agg}"])
-ensemble_r_metrics.extend(["formula_node_argmax_counts","nb_formula_node_argmax_counts"])
-ensemble_r_df = []
-for ensemble_r_metric in ensemble_r_metrics:
-	ensemble_mean = th.mean(ensemble_metrics[ensemble_r_metric],dim=0)
-	ensemble_std = th.std(ensemble_metrics[ensemble_r_metric],dim=0)
-	ensemble_cv = ensemble_std / th.clamp(ensemble_mean, min=EPS)
-	ensemble_r_simmean = pearson_r(ensemble_metrics["spec_sims_mean"], ensemble_metrics[ensemble_r_metric])
-	ensemble_r_simstd = pearson_r(ensemble_metrics["spec_sims_std"], ensemble_metrics[ensemble_r_metric])
-	ensemble_r_simcv = pearson_r(ensemble_metrics["spec_sims_cv"], ensemble_metrics[ensemble_r_metric])
-	ensemble_r_df.append({
-		"metric": ensemble_r_metric,
-		"mean": ensemble_mean.item(),
-		"std": ensemble_std.item(),
-		"cv": ensemble_cv.item(),
-		"r_sim_mean": ensemble_r_simmean.item(),
-		"r_sim_std": ensemble_r_simstd.item(),
-		"r_sim_cv": ensemble_r_simcv.item()
-	})
-ensemble_r_df = pd.DataFrame(ensemble_r_df)
-print(ensemble_r_df)
-if not debug:
-	ensemble_r_df.to_csv(f"{mode}_ensemble_r_df.csv",index=False)
-
-# TODO: per-formula ensemble correlations
-# get P(f) for each formula
-# get each metric by formula (where applicable) for each model
-# measure correlation between mean/std/cv P(f) and mean/std/cv metric
-# also ger formula masses and measure correlation between mean/std masses and mean/std metric
-
-# is it something about the scales of the metrics??
-
-### formula probabilities P(F) and conditional entropies H(N|F=f)
-print("> Formula shit")
-select_keys = [
-	"pred_formula_logprobs",
-	"pred_formula_formula_idxs",
-	"pred_formula_batch_idxs",
-	"pred_formula_node_logprobs",
-	"pred_joint_formula_idxs",
-	"pred_joint_node_idxs",
-	"pred_joint_batch_idxs"
+jss_df = [
+	{"metric": "ensemble_jss_mean", "mean": ensemble_jss_mean.mean().item()},
+	{"metric": "ensemble_jss_std", "mean": ensemble_jss_std.mean().item()},
+	{"metric": "ensemble_jss_cv", "mean": ensemble_jss_cv.mean().item()},
+	{"metric": "pairwise_jss_mean", "mean": pairwise_jss_mean.mean().item()},
+	{"metric": "pairwise_jss_std", "mean": pairwise_jss_std.mean().item()},
+	{"metric": "pairwise_jss_cv", "mean": pairwise_jss_cv.mean().item()}
 ]
-select_d = select_model_vals(model_to_vals, select_keys)
-formula_logprobses = select_d["pred_formula_logprobs"]
-formula_formula_idxses = select_d["pred_formula_formula_idxs"]
-formula_batch_idxses = select_d["pred_formula_batch_idxs"]
-formula_node_logprobses = select_d["pred_formula_node_logprobs"]
-formula_node_formula_idxses = select_d["pred_joint_formula_idxs"]
-formula_node_node_idxses = select_d["pred_joint_node_idxs"]
-formula_node_batch_idxses = select_d["pred_joint_batch_idxs"]
-del select_d
+jss_df = pd.DataFrame(jss_df)
+print(jss_df)
+if not debug:
+	jss_df.to_csv(f"figs/{mode}_jss_df.csv",index=False)
 
-# calculate H(N|F=f)
-formula_node_ces = []
-for i in range(num_models):
-	formula_node_logprobs = formula_node_logprobses[i]
-	formula_node_formula_idxs = formula_node_formula_idxses[i]
-	formula_formula_idxs = formula_formula_idxses[i]
-	formula_node_ce = -scatter_reduce(
-		th.exp(formula_node_logprobs) * formula_node_logprobs,
-		formula_node_formula_idxs,
-		reduce="sum",
-		dim_size=formula_formula_idxs.max()+1
-	)
-	formula_node_ces.append(formula_node_ce)
-formula_node_ces = th.stack(formula_node_ces, dim=0)
-
-# calculate correlation
-formula_node_logprobs_mean = th.exp(log_mean(formula_node_logprobses,num_models,dim=0))
-formula_node_ces_mean = th.mean(formula_node_ces,dim=0)
-formula_node_logprobs_std = th.exp(log_std(formula_node_logprobses,num_models,dim=0))
-formula_node_ces_std = th.std(formula_node_ces,dim=0)
-formula_node_logprobs_cv = formula_node_logprobs_std / th.clamp(formula_node_logprobs_mean, min=EPS)
-formula_node_ces_cv = formula_node_ces_std / th.clamp(formula_node_ces_mean, min=EPS)
-
-formula_logprobs_mean = th.exp(log_mean(formula_logprobses,num_models,dim=0))
-formula_logprobs_std = th.exp(log_std(formula_logprobses,num_models,dim=0))
-formula_logprobs_cv = formula_logprobs_std / th.clamp(formula_logprobs_mean, min=EPS)
-
-for agg in ["mean","std","cv"]:
-	key1 = "formula_node_ce_"+agg
-	key2 = "formula_logprobs_"+agg
-	if agg == "mean":
-		val1 = formula_node_ces_mean
-		val2 = formula_logprobs_mean
-	elif agg == "std":
-		val1 = formula_node_ces_std
-		val2 = formula_logprobs_std
-	elif agg == "cv":
-		val1 = formula_node_ces_cv
-		val2 = formula_logprobs_cv
-	ensemble_metrics[key1] = val1
-	ensemble_metrics[key2] = val2
-
-ensemble_r_metrics = []
-for agg in ["mean","std","cv"]:
-	ensemble_r_metrics.extend([f"formula_node_ce_{agg}"])
-
-ensemble_r_df = []
-for ensemble_r_metric in ensemble_r_metrics:
-	ensemble_mean = th.mean(ensemble_metrics[ensemble_r_metric],dim=0)
-	ensemble_std = th.std(ensemble_metrics[ensemble_r_metric],dim=0)
-	ensemble_cv = ensemble_std / th.clamp(ensemble_mean, min=EPS)
-	ensemble_r_pfmean = pearson_r(ensemble_metrics["formula_logprobs_mean"], ensemble_metrics[ensemble_r_metric])
-	ensemble_r_pfstd = pearson_r(ensemble_metrics["formula_logprobs_std"], ensemble_metrics[ensemble_r_metric])
-	ensemble_r_pfcv = pearson_r(ensemble_metrics["formula_logprobs_cv"], ensemble_metrics[ensemble_r_metric])
-	ensemble_r_df.append({
-		"metric": ensemble_r_metric,
-		"mean": ensemble_mean.item(),
-		"std": ensemble_std.item(),
-		"cv": ensemble_cv.item(),
-		"r_pf_mean": ensemble_r_pfmean.item(),
-		"r_pf_std": ensemble_r_pfstd.item(),
-		"r_pf_cv": ensemble_r_pfcv.item()
-	})
-ensemble_r_df = pd.DataFrame(ensemble_r_df)
-print(ensemble_r_df)
-if debug:
-	ensemble_r_df.to_csv(f"{mode}_ensemble_r_df_2.csv",index=False)
 import pdb; pdb.set_trace()
+
+# ### Correlation between spec_sims and the other metrics
+# print("> Correlation between sims and other metrics")
+
+# def pearson_r(x,y):
+# 	x_mean = th.mean(x,dim=0)
+# 	y_mean = th.mean(y,dim=0)
+# 	x_std = th.std(x,dim=0)
+# 	y_std = th.std(y,dim=0)
+# 	r = th.mean((x-x_mean)*(y-y_mean),dim=0) / (x_std * y_std)
+# 	return r
+
+# # # per-model correlations
+# # r_agrees, r_nb_agrees = [], []
+# # for model_idx, model in enumerate(model_to_vals.keys()):
+# # 	spec_sims = ensemble_metrics["spec_sims"][model_idx]
+# # 	argmax_agree = ensemble_metrics["formula_node_argmax_agree"][model_idx]
+# # 	nb_argmax_agree = ensemble_metrics["nb_formula_node_argmax_agree"][model_idx]
+# # 	r_agree = pearson_r(spec_sims, argmax_agree)
+# # 	r_nb_agree = pearson_r(spec_sims, nb_argmax_agree)
+# # 	r_agrees.append(r_agree)
+# # 	r_nb_agrees.append(r_nb_agree)
+# # r_agrees = th.stack(r_agrees, dim=0)
+# # r_nb_agrees = th.stack(r_nb_agrees, dim=0)
+# # print(th.mean(r_agrees))
+# # print(th.mean(r_nb_agrees))
+
+# # ensemble correlations
+# ensemble_r_metrics = []
+# for agg in ["mean","std","cv"]:
+# 	ensemble_r_metrics.extend([entropy+f"_{agg}" for entropy in entropies])
+# 	ensemble_r_metrics.extend([f"pairwise_jss_{agg}"])
+# 	ensemble_r_metrics.extend([f"formula_node_argmax_agree_{agg}"])
+# 	ensemble_r_metrics.extend([f"nb_formula_node_argmax_agree_{agg}"])
+# ensemble_r_metrics.extend(["formula_node_argmax_counts","nb_formula_node_argmax_counts"])
+# ensemble_r_df = []
+# for ensemble_r_metric in ensemble_r_metrics:
+# 	ensemble_mean = th.mean(ensemble_metrics[ensemble_r_metric],dim=0)
+# 	ensemble_std = th.std(ensemble_metrics[ensemble_r_metric],dim=0)
+# 	ensemble_cv = ensemble_std / th.clamp(ensemble_mean, min=EPS)
+# 	ensemble_r_simmean = pearson_r(ensemble_metrics["spec_sims_mean"], ensemble_metrics[ensemble_r_metric])
+# 	ensemble_r_simstd = pearson_r(ensemble_metrics["spec_sims_std"], ensemble_metrics[ensemble_r_metric])
+# 	ensemble_r_simcv = pearson_r(ensemble_metrics["spec_sims_cv"], ensemble_metrics[ensemble_r_metric])
+# 	ensemble_r_df.append({
+# 		"metric": ensemble_r_metric,
+# 		"mean": ensemble_mean.item(),
+# 		"std": ensemble_std.item(),
+# 		"cv": ensemble_cv.item(),
+# 		"r_sim_mean": ensemble_r_simmean.item(),
+# 		"r_sim_std": ensemble_r_simstd.item(),
+# 		"r_sim_cv": ensemble_r_simcv.item()
+# 	})
+# ensemble_r_df = pd.DataFrame(ensemble_r_df)
+# print(ensemble_r_df)
+# if not debug:
+# 	ensemble_r_df.to_csv(f"{mode}_ensemble_r_df.csv",index=False)
+
+# # TODO: per-formula ensemble correlations
+# # get P(f) for each formula
+# # get each metric by formula (where applicable) for each model
+# # measure correlation between mean/std/cv P(f) and mean/std/cv metric
+# # also ger formula masses and measure correlation between mean/std masses and mean/std metric
+
+# # is it something about the scales of the metrics??
+
+# ### formula probabilities P(F) and conditional entropies H(N|F=f)
+# print("> Formula shit")
+# select_keys = [
+# 	"pred_formula_logprobs",
+# 	"pred_formula_formula_idxs",
+# 	"pred_formula_batch_idxs",
+# 	"pred_formula_node_logprobs",
+# 	"pred_joint_formula_idxs",
+# 	"pred_joint_node_idxs",
+# 	"pred_joint_batch_idxs"
+# ]
+# select_d = select_model_vals(model_to_vals, select_keys)
+# formula_logprobses = select_d["pred_formula_logprobs"]
+# formula_formula_idxses = select_d["pred_formula_formula_idxs"]
+# formula_batch_idxses = select_d["pred_formula_batch_idxs"]
+# formula_node_logprobses = select_d["pred_formula_node_logprobs"]
+# formula_node_formula_idxses = select_d["pred_joint_formula_idxs"]
+# formula_node_node_idxses = select_d["pred_joint_node_idxs"]
+# formula_node_batch_idxses = select_d["pred_joint_batch_idxs"]
+# del select_d
+
+# # calculate H(N|F=f)
+# formula_node_ces = []
+# for i in range(num_models):
+# 	formula_node_logprobs = formula_node_logprobses[i]
+# 	formula_node_formula_idxs = formula_node_formula_idxses[i]
+# 	formula_formula_idxs = formula_formula_idxses[i]
+# 	formula_node_ce = -scatter_reduce(
+# 		th.exp(formula_node_logprobs) * formula_node_logprobs,
+# 		formula_node_formula_idxs,
+# 		reduce="sum",
+# 		dim_size=formula_formula_idxs.max()+1
+# 	)
+# 	formula_node_ces.append(formula_node_ce)
+# formula_node_ces = th.stack(formula_node_ces, dim=0)
+
+# # calculate correlation
+# formula_node_logprobs_mean = th.exp(log_mean(formula_node_logprobses,dim=0))
+# formula_node_ces_mean = th.mean(formula_node_ces,dim=0)
+# formula_node_logprobs_std = th.exp(log_std(formula_node_logprobses,dim=0))
+# formula_node_ces_std = th.std(formula_node_ces,dim=0)
+# formula_node_logprobs_cv = formula_node_logprobs_std / th.clamp(formula_node_logprobs_mean, min=EPS)
+# formula_node_ces_cv = formula_node_ces_std / th.clamp(formula_node_ces_mean, min=EPS)
+
+# formula_logprobs_mean = th.exp(log_mean(formula_logprobses,dim=0))
+# formula_logprobs_std = th.exp(log_std(formula_logprobses,dim=0))
+# formula_logprobs_cv = formula_logprobs_std / th.clamp(formula_logprobs_mean, min=EPS)
+
+# for agg in ["mean","std","cv"]:
+# 	key1 = "formula_node_ce_"+agg
+# 	key2 = "formula_logprobs_"+agg
+# 	if agg == "mean":
+# 		val1 = formula_node_ces_mean
+# 		val2 = formula_logprobs_mean
+# 	elif agg == "std":
+# 		val1 = formula_node_ces_std
+# 		val2 = formula_logprobs_std
+# 	elif agg == "cv":
+# 		val1 = formula_node_ces_cv
+# 		val2 = formula_logprobs_cv
+# 	ensemble_metrics[key1] = val1
+# 	ensemble_metrics[key2] = val2
+
+# ensemble_r_metrics = []
+# for agg in ["mean","std","cv"]:
+# 	ensemble_r_metrics.extend([f"formula_node_ce_{agg}"])
+
+# ensemble_r_df = []
+# for ensemble_r_metric in ensemble_r_metrics:
+# 	ensemble_mean = th.mean(ensemble_metrics[ensemble_r_metric],dim=0)
+# 	ensemble_std = th.std(ensemble_metrics[ensemble_r_metric],dim=0)
+# 	ensemble_cv = ensemble_std / th.clamp(ensemble_mean, min=EPS)
+# 	ensemble_r_pfmean = pearson_r(ensemble_metrics["formula_logprobs_mean"], ensemble_metrics[ensemble_r_metric])
+# 	ensemble_r_pfstd = pearson_r(ensemble_metrics["formula_logprobs_std"], ensemble_metrics[ensemble_r_metric])
+# 	ensemble_r_pfcv = pearson_r(ensemble_metrics["formula_logprobs_cv"], ensemble_metrics[ensemble_r_metric])
+# 	ensemble_r_df.append({
+# 		"metric": ensemble_r_metric,
+# 		"mean": ensemble_mean.item(),
+# 		"std": ensemble_std.item(),
+# 		"cv": ensemble_cv.item(),
+# 		"r_pf_mean": ensemble_r_pfmean.item(),
+# 		"r_pf_std": ensemble_r_pfstd.item(),
+# 		"r_pf_cv": ensemble_r_pfcv.item()
+# 	})
+# ensemble_r_df = pd.DataFrame(ensemble_r_df)
+# print(ensemble_r_df)
+# if debug:
+# 	ensemble_r_df.to_csv(f"{mode}_ensemble_r_df_2.csv",index=False)
+# import pdb; pdb.set_trace()
 
 
