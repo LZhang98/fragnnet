@@ -223,7 +223,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			filename="model-{epoch:03d}",
 			monitor=config_d["checkpoint_metric"],
 			mode=config_d["checkpoint_metric_mode"],
-			save_last=True,
+			save_last=config_d["checkpoint_save_last"],
 		)
 		callbacks.append(checkpoint_callback)
 
@@ -366,7 +366,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	if config_d["compile"]:
 		print(model.dynamo_prof.report())
 
-	if not trainer.interrupted:
+	if not trainer.interrupted and config_d["delete_checkpoints"]:
 		# find checkpoints
 		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
 		if wandb_mode != "disabled":

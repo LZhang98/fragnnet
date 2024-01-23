@@ -56,8 +56,10 @@ max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
-disable_checkpoints: True
+disable_checkpoints: False
+delete_checkpoints: False
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_save_last: False

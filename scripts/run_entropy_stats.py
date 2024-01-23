@@ -404,9 +404,9 @@ def compute_argmaxes(model_to_vals, distribution):
 	argmax_agree_uw_mean = th.mean(argmax_agree_uws,dim=0)
 	argmax_agree_tw_mean = th.mean(argmax_agree_tws,dim=0)
 
-	argmax_d[f"{dm}_argmax_agree_w_mean"] = argmax_agree_w_mean
-	argmax_d[f"{dm}_argmax_agree_uw_mean"] = argmax_agree_uw_mean
-	argmax_d[f"{dm}_argmax_agree_tw_mean"] = argmax_agree_tw_mean
+	argmax_d["argmax_agree_w_mean"] = argmax_agree_w_mean
+	argmax_d["argmax_agree_uw_mean"] = argmax_agree_uw_mean
+	argmax_d["argmax_agree_tw_mean"] = argmax_agree_tw_mean
 
 	for key in ["counts","probs","conses"]:
 		if key == "counts":
@@ -436,9 +436,9 @@ def compute_argmaxes(model_to_vals, distribution):
 		argmax_val_tw[da_t_invalid] = float("nan")
 		if key == "counts":
 			assert not th.any(argmax_val_tw < 0.999)
-		argmax_d[f"{dm}_argmax_{key}_w"] = argmax_val_w
-		argmax_d[f"{dm}_argmax_{key}_uw"] = argmax_val_uw
-		argmax_d[f"{dm}_argmax_{key}_tw"] = argmax_val_tw
+		argmax_d[f"argmax_{key}_w"] = argmax_val_w
+		argmax_d[f"argmax_{key}_uw"] = argmax_val_uw
+		argmax_d[f"argmax_{key}_tw"] = argmax_val_tw
 	argmax_df = []
 	for k, v in argmax_d.items():
 		argmax_df.append({
@@ -627,13 +627,13 @@ for i in range(num_models):
 			formula_node_logprobses[i], 
 			m_formula_node_logprobs, 
 			formula_node_formula_idxses[i],
-			formula_formula_idxses[i].max()+1
+			num_formulae
 		)
 		kl_ji = sparse_kl(
 			formula_node_logprobses[j], 
 			m_formula_node_logprobs, 
 			formula_node_formula_idxses[j],
-			formula_formula_idxses[j].max()+1
+			num_formulae
 		)
 		# compute jsds
 		jsd = 0.5 * (kl_ij + kl_ji)
@@ -641,7 +641,7 @@ for i in range(num_models):
 			jsd * th.exp(m_formula_logprobs),
 			formula_batch_idxes[i],
 			reduce="sum",
-			dim_size=formula_batch_idxes[i].max()+1
+			dim_size=num_batches
 		)
 		pairwise_jss = 1. - pairwise_jsd
 		pairwise_jsses.append(pairwise_jss)
