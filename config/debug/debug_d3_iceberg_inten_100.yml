@@ -1,15 +1,15 @@
-wandb_name: debug_iceberg_inten
+wandb_name: debug_d3_iceberg_inten_100
 wandb_tags:
-- iceberg
+- debug
 
-split_dp: data/split/d3_h4_isoTrue_v2
-magma_dp: data/magma_inten
-# subsample_params:
-#   subsample_size: 128
+spec_fp: data/proc/debug_small/spec_df.pkl
+mol_fp: data/proc/debug_small/mol_df.pkl
+split_dp: data/split/debug_small
+magma_dp: data/magma/inten/nist20_d4_wr00_inchikey_100
 
 model_type: iceberg_inten
-loss_type: cosine_distance_dense
-# auxiliary_scores: []
+loss_type: cosine_distance
+sparse_cosine_similarity: True
 mol_params:
   smiles: True
   fingerprint: False
@@ -19,11 +19,11 @@ magma_params:
   pe_embed_k: 0
   root_encode: gnn
   add_hs: True
-  binned_targs: True
-  mz_bin_res: 0.1
+  binned_targs: False
+  mz_bin_res: 0.01
   mz_max: 1500.0
   sum_ints: True
-mz_bin_res: 0.1
+mz_bin_res: 0.01
 mz_max: 1500.0
 sum_ints: True
 ints_transform: sqrt
@@ -46,8 +46,8 @@ gradient_clip_val: 5.0
 lr: 0.000736
 accelerator: gpu
 devices: 1
-min_epochs: 10
-max_epochs: 10
+min_epochs: 100
+max_epochs: 100
 lr_schedule: True
 lr_decay_rate: 0.825
 lr_warmup_steps: 1000
@@ -55,6 +55,5 @@ lr_decay_steps: 5000
 weight_decay: 0.0000001 # 1e-7
 debug_overfit: False
 num_workers: 8
-checkpoint_metric: val_loss_epoch
-checkpoint_metric_mode: min
-upload_checkpoints: False
+upload_checkpoints: True
+checkpoint_metric: val_cos_hun_epoch/mean

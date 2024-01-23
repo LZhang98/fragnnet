@@ -628,7 +628,7 @@ def test_gen():
 	from frag_gnn.utils.misc_utils import print_shapes
 
 	template_fp = "config/template.yml"
-	custom_fp = "config/iceberg/d3_iceberg_gen.yml"
+	custom_fp = "config/debug/debug_d3_iceberg_gen.yml"
 
 	config_d = load_config(template_fp, custom_fp)
 
@@ -692,8 +692,8 @@ def test_inten():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/iceberg/d3_iceberg_inten_100.yml",
-		"config/iceberg/d3_iceberg_inten_100_dense.yml",
+		"config/debug/debug_d3_iceberg_inten_100.yml",
+		"config/debug/debug_d3_iceberg_inten_all.yml",
 	]
 	
 	for custom_fp in custom_fps:
@@ -743,5 +743,5 @@ if __name__ == "__main__":
 
 	with th_temp_seed(420):
 		test_gen()
-	# with th_temp_seed(420):
-	# 	test_inten()
+	with th_temp_seed(420):
+		test_inten()

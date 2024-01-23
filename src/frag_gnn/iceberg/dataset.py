@@ -512,16 +512,13 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 		return SpecMolMagmaGenDataset.collate_fn
 
 	@staticmethod
-	def collate_fn(data_list):
-
-		batch_size, keys, collate_data = SpecMolMagmaGenDataset._setup_collate(data_list)
-		###
+	def _special_collate(keys, collate_data):
+		
 		frag_graphs = collate_data["magma_frag_graphs"]
 		num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]],dtype=th.long)
 		targ_atoms = []
 		for i in collate_data["magma_targ_atoms"]:
 			targ_atoms.extend([j.squeeze(0) for j in th.split(i,1,dim=0)])
-		###
 		collate_data["magma_names"] = flatten_lol(collate_data["magma_names"])
 		keys.remove("magma_names")
 		if isinstance(collate_data["magma_root_reprs"][0], dgl.DGLGraph):
@@ -546,7 +543,13 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 		keys.remove("magma_frag_form_vecs")
 		collate_data["magma_root_form_vecs"] = th.cat(collate_data["magma_root_form_vecs"], dim=0)
 		keys.remove("magma_root_form_vecs")
-		###
+		SpecMolMagmaDataset._special_collate(keys, collate_data)
+
+	@staticmethod
+	def collate_fn(data_list):
+
+		batch_size, keys, collate_data = SpecMolMagmaGenDataset._setup_collate(data_list)
+		SpecMolMagmaGenDataset._special_collate(keys, collate_data)
 		SpecMolMagmaGenDataset._standard_collate(batch_size, keys, collate_data)
 		return collate_data
 
@@ -699,9 +702,8 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		return magma_data
 
 	@staticmethod
-	def collate_fn(data_list):
+	def _special_collate(keys, collate_data):
 
-		batch_size, keys, collate_data = SpecMolMagmaIntenDataset._setup_collate(data_list)
 		###
 		frag_graphs = collate_data["magma_frag_graphs"]
 		num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]],dtype=th.long)
@@ -759,5 +761,12 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		collate_data["magma_inten_frag_ids"] = flatten_lol(collate_data["magma_inten_frag_ids"])
 		keys.remove("magma_inten_frag_ids")
 		###
+		SpecMolMagmaDataset._special_collate(keys, collate_data)
+
+	@staticmethod
+	def collate_fn(data_list):
+
+		batch_size, keys, collate_data = SpecMolMagmaIntenDataset._setup_collate(data_list)
+		SpecMolMagmaIntenDataset._special_collate(keys, collate_data)
 		SpecMolMagmaIntenDataset._standard_collate(batch_size, keys, collate_data)
 		return collate_data

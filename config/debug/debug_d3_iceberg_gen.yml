@@ -1,13 +1,11 @@
-wandb_name: debug_iceberg_gen
+wandb_name: iceberg_gen
 wandb_tags:
 - debug
 
-spec_fp: data/proc/nist20mona23/spec_df.pkl
-mol_fp: data/proc/nist20mona23/mol_df.pkl
-split_dp: data/split/nist20_d4_wr00_inchikey
+spec_fp: data/proc/debug_small/spec_df.pkl
+mol_fp: data/proc/debug_small/mol_df.pkl
+split_dp: data/split/debug_small
 magma_dp: data/magma/gen/nist20mona23
-subsample_params:
-  subsample_size: 128
 
 model_type: iceberg_gen
 loss_type: iceberg_gen_cross_entropy

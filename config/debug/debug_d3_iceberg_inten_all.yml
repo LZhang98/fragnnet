@@ -1,16 +1,11 @@
-wandb_name: debug_d3_iceberg_inten_weight
+wandb_name: debug_d3_iceberg_inten_all
 wandb_tags:
 - debug
 
-spec_fp: data/proc/nist20mona23/spec_df.pkl
-mol_fp: data/proc/nist20mona23/mol_df.pkl
-split_dp: data/split/nist20_d3_wr00_inchikey
+spec_fp: data/proc/debug_small/spec_df.pkl
+mol_fp: data/proc/debug_small/mol_df.pkl
+split_dp: data/split/debug_small
 magma_dp: data/magma/gen/nist20mona23
-spec_params:
-  merge: True
-subsample_params:
-  subsample_size: 128
-sample_weight: group
 
 model_type: iceberg_inten
 loss_type: cosine_distance
@@ -25,10 +20,10 @@ magma_params:
   root_encode: gnn
   add_hs: True
   binned_targs: False
-  mz_bin_res: 0.1
+  mz_bin_res: 0.01
   mz_max: 1500.0
   sum_ints: True
-mz_bin_res: 0.1
+mz_bin_res: 0.01
 mz_max: 1500.0
 sum_ints: True
 ints_transform: sqrt
@@ -51,8 +46,8 @@ gradient_clip_val: 5.0
 lr: 0.000736
 accelerator: gpu
 devices: 1
-min_epochs: 20
-max_epochs: 20
+min_epochs: 100
+max_epochs: 100
 lr_schedule: True
 lr_decay_rate: 0.825
 lr_warmup_steps: 1000
@@ -60,6 +55,5 @@ lr_decay_steps: 5000
 weight_decay: 0.0000001 # 1e-7
 debug_overfit: False
 num_workers: 8
-checkpoint_metric: val_loss_epoch
-checkpoint_metric_mode: min
 upload_checkpoints: True
+checkpoint_metric: val_cos_hun_epoch/mean
