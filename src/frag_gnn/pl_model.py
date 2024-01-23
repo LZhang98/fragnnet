@@ -11,7 +11,6 @@ try:
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
 	
-from torch.profiler import profile, record_function, ProfilerActivity
 import torch._dynamo as th_dynamo
 
 from frag_gnn.utils.nn_utils import build_lr_scheduler
@@ -1048,6 +1047,24 @@ class SpectrumPL(pl.LightningModule):
 		self._cur_batch_size = 0
 		self._cur_batch_weight = 0.
 
+	def _check_ce_params(self):
+
+		# check merge params
+		if self.hparams.spec_params["merge"]:
+			assert (not self.hparams.spec_params["nce"]) or self.hparams.spec_params["merge_keep_ces"]
+			assert not self.hparams.ce_insert_mol
+			assert not self.hparams.ce_insert_frag
+			assert not self.hparams.ce_insert_mlp
+			assert not self.hparams.ce_insert_mlp_lin
+			if self.hparams.spec_params["merge_keep_ces"]:
+				assert (self.hparams.m_ce_insert_mlp_embed or self.hparams.m_ce_insert_mlp_bin)
+				assert not (self.hparams.m_ce_insert_mlp_embed and self.hparams.m_ce_insert_mlp_bin)
+		else:
+			assert self.hparams.spec_params["nce"] and (not self.hparams.spec_params["merge_keep_ces"])
+			assert not (self.hparams.ce_insert_mlp and self.hparams.ce_insert_mlp_lin)
+			assert not (self.hparams.m_ce_insert_mlp_embed or self.hparams.m_ce_insert_mlp_bin)
+
+
 class FragGNNPL(SpectrumPL):
 
 	def _setup_model(self):
@@ -1096,20 +1113,7 @@ class FragGNNPL(SpectrumPL):
 			m_ce_insert_mlp_bin=self.hparams.m_ce_insert_mlp_bin,
 		)
 		
-		# check merge params
-		if self.hparams.spec_params["merge"]:
-			assert (not self.hparams.spec_params["nce"]) or self.hparams.spec_params["merge_keep_ces"]
-			assert not self.hparams.ce_insert_mol
-			assert not self.hparams.ce_insert_frag
-			assert not self.hparams.ce_insert_mlp
-			assert not self.hparams.ce_insert_mlp_lin
-			if self.hparams.spec_params["merge_keep_ces"]:
-				assert (self.hparams.m_ce_insert_mlp_embed or self.hparams.m_ce_insert_mlp_bin)
-				assert not (self.hparams.m_ce_insert_mlp_embed and self.hparams.m_ce_insert_mlp_bin)
-		else:
-			assert self.hparams.spec_params["nce"] and (not self.hparams.spec_params["merge_keep_ces"])
-			assert not (self.hparams.ce_insert_mlp and self.hparams.ce_insert_mlp_lin)
-			assert not (self.hparams.m_ce_insert_mlp_embed or self.hparams.m_ce_insert_mlp_bin)
+		self._check_ce_params()
 
 		# check edge loss params
 		if not self.hparams.skip_edge_loss:
@@ -1580,42 +1584,7 @@ class FragGNNPL(SpectrumPL):
 		opt = self.optimizers()
 		self.on_after_optimizer_step(opt)
 
-class NeimsPL(SpectrumPL):
-
-	def _setup_model(self):
-
-		self.model = NeimsModel(
-			mol_fingerprint_morgan=self.hparams.mol_params["fingerprint_morgan"],
-			mol_fingerprint_rdkit=self.hparams.mol_params["fingerprint_rdkit"],
-			mol_fingerprint_maccs=self.hparams.mol_params["fingerprint_maccs"],
-			mlp_hidden_size=self.hparams.mlp_hidden_size,
-			mlp_dropout=self.hparams.mlp_dropout,
-			mlp_num_layers=self.hparams.mlp_num_layers,
-			mlp_use_residuals=self.hparams.mlp_use_residuals,
-			mz_max=self.hparams.mz_max,
-			mz_bin_res=self.hparams.mz_bin_res,
-			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
-			ff_bidirectional=self.hparams.ff_bidirectional,
-			ce_insert_mol=self.hparams.ce_insert_mol,
-			ce_insert_frag=self.hparams.ce_insert_frag,
-			ce_insert_mlp=self.hparams.ce_insert_mlp,
-			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
-		)
-		
-		# check merge params
-		if self.hparams.spec_params["merge"]:
-			assert not self.hparams.spec_params["nce"]
-			assert not self.hparams.ce_insert_mol
-			assert not self.hparams.ce_insert_frag
-			assert not self.hparams.ce_insert_mlp
-			assert not self.hparams.ce_insert_mlp_lin
-		else:
-			assert self.hparams.spec_params["nce"]
-
-		# compile
-		if self.hparams.compile:
-			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
+class BinnedPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
@@ -1664,8 +1633,38 @@ class NeimsPL(SpectrumPL):
 		]
 		self.metric_names.update(loss_names)
 
+class NeimsPL(BinnedPL):
 
-def test_fraggnn():
+	def _setup_model(self):
+
+		self.model = NeimsModel(
+			mol_fingerprint_morgan=self.hparams.mol_params["fingerprint_morgan"],
+			mol_fingerprint_rdkit=self.hparams.mol_params["fingerprint_rdkit"],
+			mol_fingerprint_maccs=self.hparams.mol_params["fingerprint_maccs"],
+			mlp_hidden_size=self.hparams.mlp_hidden_size,
+			mlp_dropout=self.hparams.mlp_dropout,
+			mlp_num_layers=self.hparams.mlp_num_layers,
+			mlp_use_residuals=self.hparams.mlp_use_residuals,
+			mz_max=self.hparams.mz_max,
+			mz_bin_res=self.hparams.mz_bin_res,
+			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
+			ff_bidirectional=self.hparams.ff_bidirectional,
+			ce_insert_mlp=self.hparams.ce_insert_mlp,
+			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
+			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,
+			m_ce_insert_mlp_bin=self.hparams.m_ce_insert_mlp_bin,
+			int_embedder=self.hparams.int_embedder,
+		)
+		
+		self._check_ce_params()
+
+		# compile
+		if self.hparams.compile:
+			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
+			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
+
+
+def test_models():
 
 	from frag_gnn.runner import load_config
 	from frag_gnn.dataset import SpecMolFragDataset
@@ -1674,10 +1673,19 @@ def test_fraggnn():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3_nb.yml",
+		# "config/debug/debug_d3_nb.yml",
+		"config/debug/debug_d3_nb_nce.yml",
+		# "config/debug/debug_d3_neims.yml",
+		"config/debug/debug_d3_neims_nce.yml"
 	]
-	
-	for custom_fp in custom_fps:
+	pl_model_clses = [
+		# FragGNNPL,
+		FragGNNPL,
+		# NeimsPL,
+		NeimsPL
+	]
+
+	for custom_fp, pl_model_cls in zip(custom_fps,pl_model_clses):
 
 		print(custom_fp)
 
@@ -1698,7 +1706,7 @@ def test_fraggnn():
 		print_shapes(batch)
 		batch = to_device(batch,device)
 
-		pl_model = FragGNNPL(**config_d)
+		pl_model = pl_model_cls(**config_d)
 		pl_model.train()
 		pl_model.to(device)
 
@@ -1715,21 +1723,12 @@ def test_fraggnn():
 		print(mean_loss)
 		mean_loss.backward()
 
-		# print(results["node_formula_mi"])
-		# print(results["formula_node_mi"])
-
-		# print(results["nb_node_formula_mi"])
-		# print(results["nb_formula_node_mi"])
-		# print(results["nb_node_node_mi"])
-
-		# print(results["nb_node_node_e"])
-		# print(results["nb_node_node_ne"])
 
 if __name__ == "__main__":
 
 	from frag_gnn.utils.misc_utils import th_temp_seed
 
 	with th_temp_seed(420):
-		test_fraggnn()
+		test_models()
 	# with th_temp_seed(420):
 	# 	test_neims()

@@ -10,16 +10,25 @@ num_depth: 4
 num_hs: 4
 subsample_params:
   subsample_size: 0.25
-compile: False
+frag_gnn_type: NodeMLP
 frag_params:
-  pyg: True
   pyg_node_feats:
     - cc
     - base_formula
     - depth
     - h_formulae_idx
     - nb_iso_idx
+  pyg_edge_feats: []
+  pyg_bigraph: False
+frag_remove_edges: True
+spec_params:
+  merge: True
+  nce: True
+  merge_keep_ces: True
+m_ce_insert_mlp_embed: False
+m_ce_insert_mlp_bin: True
 nb_iso: True
+
 
 train_batch_size: 32
 eval_batch_size: 32

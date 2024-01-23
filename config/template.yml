@@ -48,6 +48,7 @@ mol_params:
     - b_degree
   pyg_pe_embed_k: 0
   pyg_bigraph: True
+  mf: False
   preprocess: False
 frag_params:
   pyg: True
@@ -124,6 +125,17 @@ iceberg_pool_type: avg
 iceberg_inject_early: False
 iceberg_embed_adduct: False
 iceberg_encode_forms: False
+# massformer model
+mf_flag: False
+mf_pt_weight_decay: 0.0
+mf_fix_num_pt_layers: 0
+mf_reinit_num_pt_layers: -1
+mf_reinit_layernorm: True
+mf_lr_schedule: True
+mf_tot_updates: 400
+mf_warmup_frac: 0.1
+mf_high_lr: 0.0002
+mf_low_lr: 0.000000001
 # other
 lr: 0.0001
 lr_schedule: False

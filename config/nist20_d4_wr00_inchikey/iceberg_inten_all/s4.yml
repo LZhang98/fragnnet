@@ -1,5 +1,5 @@
-wandb_name: iceberg_inten_all_s4
-wandb_group: iceberg_inten_all
+wandb_name: nist20_inchikey_iceberg_inten_all_s4
+wandb_group: nist20_inchikey_iceberg_inten_all
 wandb_tags:
 - splits
 - nist20
@@ -10,6 +10,7 @@ wandb_tags:
 - iceberg
 - inten_all
 - new_metrics
+- mz_bin_res_0,01
 - s4
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl

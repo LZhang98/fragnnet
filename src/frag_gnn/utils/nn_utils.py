@@ -1,17 +1,11 @@
 import copy
 import math
-import numpy as np
-import scipy.sparse as sparse
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.profiler import profile, record_function, ProfilerActivity
 import torch_geometric as pyg
-import scipy
-import torch_geometric
-from torch_geometric.profile import get_gpu_memory_from_gc, get_gpu_memory_from_nvidia_smi
-import logging
-from typing import Literal
+
+from frag_gnn.utils.misc_utils import safelog
 
 
 def get_clones(module, N):
@@ -516,6 +510,108 @@ class NeimsBlock(nn.Module):
 		h = self.out_activation(h)
 		h = self.out_linear(h)
 		return h
+
+
+class SpecFFN(nn.Module):
+
+	def __init__(self, 
+		input_size, 
+		hidden_size,
+		mz_max,
+		mz_bin_res,
+		num_layers,
+		dropout, 
+		prec_mz_offset,
+		bidirectional,
+		use_residuals):
+
+		super().__init__()
+
+		self.input_size = input_size
+		self.mz_max = mz_max
+		self.mz_bin_res = mz_bin_res
+		self.prec_mz_offset = prec_mz_offset
+		self.bidirectional = bidirectional
+		self.use_residuals = use_residuals
+		self._compute_output_size()
+
+		self.in_layer = nn.Linear(input_size, hidden_size)
+		self.ff_layers = nn.ModuleList([])
+		# self.ff_layers.append(nn.Linear(mlp_hidden_size, mlp_hidden_size))
+		for i in range(num_layers):
+			self.ff_layers.append(
+				NeimsBlock(
+					hidden_size,
+					hidden_size,
+					dropout))
+		if self.bidirectional:
+			# assumes gating, mass masking
+			self.forw_out_layer = nn.Linear(hidden_size, self.output_size)
+			self.rev_out_layer = nn.Linear(hidden_size, self.output_size)
+			self.out_gate = nn.Sequential(
+				*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+		else:
+			self.out_layer = nn.Linear(hidden_size, self.output_size)
+			self.out_gate = nn.Sequential(
+				*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+		self.out_activation = nn.ReLU()
+		self.out_normalization = lambda x: F.normalize(x, p=1, dim=1)
+
+	def _compute_output_size(self):
+
+		self.mz_bins = nn.Parameter(th.arange(self.mz_bin_res,self.mz_max+self.mz_bin_res,self.mz_bin_res))
+		self.mzs = nn.Parameter(self.mz_bins-0.5*self.mz_bin_res)
+		self.output_size = self.mzs.shape[0]
+
+	def _prec_mz_to_idx(self,prec_mz):
+
+		prec_mz_idx = th.bucketize(prec_mz,self.mz_bins.to(prec_mz.device),right=True)
+		assert th.max(prec_mz_idx) < self.output_size, (prec_mz_idx,self.output_size)
+		return prec_mz_idx
+
+	def forward(self, input_h, prec_mz):
+
+		# get prec_mz_idxs
+		prec_mz_idxs = self._prec_mz_to_idx(prec_mz)
+		# process inputs
+		fh = self.in_layer(input_h)
+		# big MLP
+		for layer in self.ff_layers:
+			if self.use_residuals:
+				fh = fh + layer(fh)
+			else:
+				fh = layer(fh)
+		# bidirectional prediction
+		if self.bidirectional:
+			ff = self.forw_out_layer(fh)
+			fr = reverse_prediction(
+				self.rev_out_layer(fh),
+				prec_mz_idxs,
+				self.prec_mz_offset)
+			fg = self.out_gate(fh)
+			fo = ff * fg + fr * (1. - fg)
+			fo = mask_prediction_by_mass(
+				fo, prec_mz_idxs, self.prec_mz_offset)
+		else:
+			# apply output layer
+			fo = self.out_layer(fh)
+			# apply gating
+			fg = self.out_gate(fh)
+			fo = fg * fo
+		fo = self.out_activation(fo)
+		spec = self.out_normalization(fo)
+		# handle all zeroes (set to first bin by default)
+		all_zero_mask = th.max(spec,dim=1)[0]<=0.
+		all_zero_bonus = th.zeros_like(spec)
+		all_zero_bonus[all_zero_mask,0] = 1.
+		spec = spec + all_zero_bonus
+		# convert dense spectrum to sparse
+		mask = spec>0.
+		pred_mzs = (self.mzs.unsqueeze(0).expand(spec.shape[0],-1))[mask]
+		pred_logprobs = safelog(spec)[mask]
+		pred_batch_idxs = th.arange(spec.shape[0],device=spec.device).unsqueeze(1).expand(-1,spec.shape[1])[mask]
+		pred_specs = spec
+		return pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs
 
 
 def mask_prediction_by_mass(raw_prediction, prec_mass_idx, prec_mass_offset):
