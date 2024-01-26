@@ -24,7 +24,7 @@ frag_params:
   pyg_bigraph: False
 frag_remove_edges: True
 spec_params:
-  merge: False
+  merge: True
   nce: False
   merge_keep_ces: False
 m_ce_insert_mlp_embed: False
