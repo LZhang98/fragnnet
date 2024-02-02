@@ -11,6 +11,7 @@ import pandas as pd
 import threading
 import torch_geometric as pyg
 import dgl
+from collections import defaultdict
 
 TQDM_DISABLE = False
 PPM = 1/1000000
@@ -427,3 +428,11 @@ def check_pyg_compile():
 	assert th_major_version == 2, th_major_version
 	assert pyg_major_version == 2, pyg_major_version
 	return th_minor_version >= 1 and pyg_minor_version >= 4
+
+class NestedDefaultDict(defaultdict):
+	""" https://stackoverflow.com/questions/19189274/nested-defaultdict-of-defaultdict """
+	def __init__(self, *args, **kwargs):
+		super(NestedDefaultDict, self).__init__(NestedDefaultDict, *args, **kwargs)
+
+	def __repr__(self):
+		return repr(dict(self))
