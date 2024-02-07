@@ -1138,7 +1138,9 @@ class FragGNNPL(SpectrumPL):
 			self.hparams.loss_vectorized,
 			self.tolerance,
 			self.relative,
-			self.hparams.oos_tolerance_multiple
+			self.hparams.oos_tolerance_multiple,
+			self.hparams.gaussian_renormalize,
+			self.hparams.pm_tolerance_multiple
 		)
 		# edge loss
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
@@ -1672,22 +1674,18 @@ def test_models():
 	from frag_gnn.utils.misc_utils import to_device
 
 	template_fp = "config/template.yml"
-	custom_fps = [
-		# "config/debug/debug_d3_nb.yml",
-		"config/debug/debug_d3_nb_nce.yml",
-		# "config/debug/debug_d3_neims.yml",
-		"config/debug/debug_d3_neims_nce.yml"
-	]
-	pl_model_clses = [
-		# FragGNNPL,
-		FragGNNPL,
-		# NeimsPL,
-		NeimsPL
-	]
+	custom_fp_to_model_cls = {
+		"config/debug/debug_d3_nb.yml": FragGNNPL,
+		"config/debug/debug_d3_gr.yml": FragGNNPL,
+		"config/debug/debug_d3_pm.yml": FragGNNPL,
+		# "config/debug/debug_d3_nb_nce.yml": FragGNNPL,
+		# "config/debug/debug_d3_neims.yml": NeimsPL,
+		# "config/debug/debug_d3_neims_nce.yml": NeimsPL
+	}
+	
+	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
 
-	for custom_fp, pl_model_cls in zip(custom_fps,pl_model_clses):
-
-		print(custom_fp)
+		print(">>>", custom_fp)
 
 		config_d = load_config(template_fp, custom_fp)
 		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
@@ -1703,7 +1701,7 @@ def test_models():
 		dl_iter = iter(dl)
 		batch = next(dl_iter)
 		print("> batch")
-		print_shapes(batch)
+		# print_shapes(batch)
 		batch = to_device(batch,device)
 
 		pl_model = pl_model_cls(**config_d)
@@ -1712,16 +1710,18 @@ def test_models():
 
 		outputs = pl_model.forward(**batch)
 		print("> train outputs")
-		print_shapes(outputs)
+		# print_shapes(outputs)
 		print(th.exp(outputs["pred_logprobs"]).sum())
 
 		results = pl_model._common_step(batch, split="train")
-		print_shapes(results)
+		# print_shapes(results)
 
 		mean_loss = results["mean_loss"]
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()
+		
+		print()
 
 
 if __name__ == "__main__":
