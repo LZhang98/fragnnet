@@ -712,11 +712,12 @@ class FragGNNModel(nn.Module):
 		frag_real_joint_node_idxs = frag_joint_node_idxs[frag_joint_mask.bool()]
 		frag_real_joint_formula_idxs = frag_joint_formula_idxs[frag_joint_mask.bool()]
 		frag_real_joint_batch_idxs = frag_joint_batch_idxs[frag_joint_mask.bool()]
+		# P(f,n)
 		frag_real_joint_logprobs = scatter_logsoftmax(
 			frag_real_joint_logits,
 			frag_real_joint_batch_idxs
 		)
-		# sum, renormalize, but keep all-NULL nodes (as zeros)
+		# P(n) - sum, renormalize, but keep all-NULL nodes (as zeros)
 		frag_real_node_node_idxs = th.arange(batch_frag_num_nodes,device=device)
 		frag_real_node_logprobs = scatter_logsumexp(
 			frag_real_joint_logprobs,
@@ -727,7 +728,7 @@ class FragGNNModel(nn.Module):
 			frag_real_node_logprobs,
 			frag_node_batch_idxs
 		)
-		# sum, renormalize, but keep NULL formulae (as zeros)
+		# P(f) - sum, renormalize, but keep NULL formulae (as zeros)
 		frag_real_formula_logprobs = scatter_logsumexp(
 			frag_real_joint_logprobs,
 			frag_real_joint_formula_idxs,
@@ -738,12 +739,13 @@ class FragGNNModel(nn.Module):
 			frag_formula_batch_idxs,
 		)
 		frag_real_formula_formula_idxs = th.arange(batch_frag_num_formulae,device=device)
-		# remove all NULLs from conditionals
+		# P(f|n) - remove all NULLs from conditionals
 		frag_real_node_formula_logprobs = frag_real_joint_logprobs - frag_real_node_logprobs[frag_real_joint_node_idxs]
 		frag_real_node_formula_logprobs = scatter_logsoftmax(
 			frag_real_node_formula_logprobs,
 			frag_real_joint_node_idxs
 		)
+		# P(n|f) - remove all NULLs from conditionals
 		frag_real_formula_node_logprobs = frag_real_joint_logprobs - frag_real_formula_logprobs[frag_real_joint_formula_idxs]
 		frag_real_formula_node_logprobs = scatter_logsoftmax(
 			frag_real_formula_node_logprobs,
@@ -800,6 +802,12 @@ class FragGNNModel(nn.Module):
 				frag_nb_joint_both_inv_idxs,
 				dim_size=frag_nb_joint_both_un_idxs.shape[0]
 			)
+			# P(f,n')
+			frag_nb_joint_logprobs = scatter_logsumexp(
+				frag_real_joint_logprobs,
+				frag_nb_joint_both_inv_idxs,
+				dim_size=frag_nb_joint_both_un_idxs.shape[0]
+			)
 		else:
 			frag_nb_node_logprobs = None
 			frag_nb_node_formula_logprobs = None
@@ -830,6 +838,7 @@ class FragGNNModel(nn.Module):
 			"pred_node_batch_idxs": frag_node_batch_idxs,
 			"pred_node_formula_logprobs": frag_real_node_formula_logprobs,
 			"pred_formula_node_logprobs": frag_real_formula_node_logprobs,
+			"pred_joint_logprobs": frag_real_joint_logprobs,
 			"pred_joint_node_idxs": frag_real_joint_node_idxs,
 			"pred_joint_formula_idxs": frag_real_joint_formula_idxs,
 			"pred_joint_batch_idxs": frag_real_joint_batch_idxs,
@@ -846,6 +855,7 @@ class FragGNNModel(nn.Module):
 			"pred_nb_node_node_logprobs": frag_nb_node_node_logprobs,
 			"pred_nb_node_node_idxs": frag_nb_node_node_idxs,
 			"pred_nb_node_batch_idxs": frag_nb_node_batch_idxs,
+			"pred_nb_joint_logprobs": frag_nb_joint_logprobs,
 			"pred_nb_joint_node_idxs": frag_nb_joint_node_idxs,
 			"pred_nb_joint_formula_idxs": frag_nb_joint_formula_idxs,
 			"pred_nb_joint_batch_idxs": frag_nb_joint_batch_idxs,

@@ -1227,6 +1227,7 @@ class FragGNNPL(SpectrumPL):
 			pred_node_batch_idxs,
 			pred_node_formula_logprobs,
 			pred_formula_node_logprobs,
+			pred_joint_logprobs,
 			pred_joint_node_idxs,
 			pred_joint_formula_idxs,
 			pred_joint_batch_idxs,
@@ -1240,6 +1241,7 @@ class FragGNNPL(SpectrumPL):
 			pred_nb_node_logprobs,
 			pred_nb_node_formula_logprobs,
 			pred_nb_formula_node_logprobs,
+			pred_nb_joint_logprobs,
 			pred_nb_node_node_logprobs,
 			pred_nb_node_node_idxs,
 			pred_nb_node_batch_idxs,
@@ -1249,7 +1251,7 @@ class FragGNNPL(SpectrumPL):
 			pred_nb_node_node_node_idxs,
 			pred_nb_node_node_batch_idxs,
 			**kwargs):
-			spec_ce, true_oos_logprobs = sparse_ce_fn(
+			spec_ce, ios_ce, oos_ce, true_oos_logprob, true_oos_e = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
@@ -1322,17 +1324,28 @@ class FragGNNPL(SpectrumPL):
 			)
 			loss = loss + self.hparams.formula_node_entropy_weight * formula_node_e \
 				+ self.hparams.formula_node_normalized_entropy_weight * formula_node_ne
+			# joint
+			joint_e, joint_ne = sparse_entropy_fn(
+				pred_joint_logprobs,
+				pred_joint_batch_idxs
+			)
+			assert th.all(th.isclose(joint_e, node_formula_e+node_e,rtol=0.,atol=0.001))
+			assert th.all(th.isclose(joint_e, formula_node_e+formula_e,rtol=0.,atol=0.001))
+			loss = loss + self.hparams.joint_entropy_weight * joint_e \
+				+ self.hparams.joint_normalized_entropy_weight * joint_ne
 			# mi
 			node_formula_mi =  formula_e - node_formula_e
 			formula_node_mi = node_e - formula_node_e
 			# special probabilities
 			null_formula_prob = th.exp(pred_null_formula_logprob)
 			oos_prob = th.exp(pred_oos_logprobs)
-			true_oos_prob = th.exp(true_oos_logprobs)
+			true_oos_prob = th.exp(true_oos_logprob)
 			loss_d = {
 				"loss": loss,
 				"primary_loss": primary_loss,
 				"spec_ce": spec_ce,
+				"ios_ce": ios_ce,
+				"oos_ce": oos_ce,
 				"spec_e": spec_e,
 				"spec_ne": spec_ne,
 				"formula_e": formula_e,
@@ -1343,11 +1356,14 @@ class FragGNNPL(SpectrumPL):
 				"node_formula_ne": node_formula_ne,
 				"formula_node_e": formula_node_e,
 				"formula_node_ne": formula_node_ne,
+				"joint_e": joint_e,
+				"joint_ne": joint_ne,
 				"node_formula_mi": node_formula_mi,
 				"formula_node_mi": formula_node_mi,
 				"null_formula_prob": null_formula_prob,
 				"oos_prob": oos_prob,
-				"true_oos_prob": true_oos_prob
+				"true_oos_prob": true_oos_prob,
+				"true_oos_e": true_oos_e
 			}
 			if not self.hparams.skip_edge_loss:
 				r_el, t_el = edge_loss(
@@ -1411,6 +1427,15 @@ class FragGNNPL(SpectrumPL):
 				)
 				loss = loss + self.hparams.nb_node_node_entropy_weight * nb_node_node_e + \
 					self.hparams.nb_node_node_normalized_entropy_weight * nb_node_node_ne
+				# joint
+				nb_joint_e, nb_joint_ne = sparse_entropy_fn(
+					pred_nb_joint_logprobs,
+					pred_nb_joint_batch_idxs
+				)
+				assert th.all(th.isclose(nb_joint_e, nb_node_formula_e+nb_node_e,rtol=0.,atol=0.001))
+				assert th.all(th.isclose(nb_joint_e, nb_formula_node_e+formula_e,rtol=0.,atol=0.001))
+				loss = loss + self.hparams.nb_joint_entropy_weight * nb_joint_e \
+					+ self.hparams.nb_joint_normalized_entropy_weight * nb_joint_ne
 				# mi
 				nb_node_formula_mi =  formula_e - nb_node_formula_e
 				nb_formula_node_mi = nb_node_e - nb_formula_node_e
@@ -1422,6 +1447,8 @@ class FragGNNPL(SpectrumPL):
 				loss_d["nb_node_formula_ne"] = nb_node_formula_ne
 				loss_d["nb_formula_node_e"] = nb_formula_node_e
 				loss_d["nb_formula_node_ne"] = nb_formula_node_ne
+				loss_d["nb_joint_e"] = nb_joint_e
+				loss_d["nb_joint_ne"] = nb_joint_ne
 				loss_d["nb_node_node_e"] = nb_node_node_e
 				loss_d["nb_node_node_ne"] = nb_node_node_ne
 				loss_d["nb_node_formula_mi"] = nb_node_formula_mi
@@ -1451,6 +1478,8 @@ class FragGNNPL(SpectrumPL):
 			"node_formula_ne",
 			"formula_node_e",
 			"formula_node_ne",
+			"joint_e",
+			"joint_ne",
 			"node_formula_mi",
 			"formula_node_mi",
 			"null_formula_prob",
@@ -1475,6 +1504,8 @@ class FragGNNPL(SpectrumPL):
 					"nb_node_formula_ne",
 					"nb_formula_node_e",
 					"nb_formula_node_ne",
+					"nb_joint_e",
+					"nb_joint_ne",
 					"nb_node_node_e",
 					"nb_node_node_ne",
 					"nb_node_formula_mi",
@@ -1676,8 +1707,8 @@ def test_models():
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
 		"config/debug/debug_d3_nb.yml": FragGNNPL,
-		"config/debug/debug_d3_gr.yml": FragGNNPL,
-		"config/debug/debug_d3_pm.yml": FragGNNPL,
+		# "config/debug/debug_d3_gr.yml": FragGNNPL,
+		# "config/debug/debug_d3_pm.yml": FragGNNPL,
 		# "config/debug/debug_d3_nb_nce.yml": FragGNNPL,
 		# "config/debug/debug_d3_neims.yml": NeimsPL,
 		# "config/debug/debug_d3_neims_nce.yml": NeimsPL
@@ -1714,7 +1745,7 @@ def test_models():
 		print(th.exp(outputs["pred_logprobs"]).sum())
 
 		results = pl_model._common_step(batch, split="train")
-		# print_shapes(results)
+		print_shapes(results)
 
 		mean_loss = results["mean_loss"]
 		print("> loss")
