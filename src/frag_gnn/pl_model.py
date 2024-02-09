@@ -1484,6 +1484,8 @@ class FragGNNPL(SpectrumPL):
 			"loss",
 			"primary_loss",
 			"spec_ce",
+			"oos_ce",
+			"ios_ce",
 			"spec_e",
 			"spec_ne",
 			"formula_e",
@@ -1501,6 +1503,7 @@ class FragGNNPL(SpectrumPL):
 			"null_formula_prob",
 			"oos_prob",
 			"true_oos_prob",
+			"true_oos_e",
 			"h_mean",
 			"h_e",
 			"h_ne"
