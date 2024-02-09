@@ -539,6 +539,7 @@ class FragGNNModel(nn.Module):
 
 		frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs,2*self.num_hs+1)
 		frag_joint_mask = (~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])).float()
+		frag_joint_h_counts = th.arange(-self.num_hs,self.num_hs+1,device=device).repeat(frag_node_batch_idxs.shape[0])
 
 		if self.mlp_output_format == "formula":
 
@@ -709,6 +710,7 @@ class FragGNNModel(nn.Module):
 		frag_joint_formula_idxs = frag_formula_idxs
 		# select (will remove all NULL formula idxs, potentially some node idxs too if they contain only NULLs)
 		frag_real_joint_logits = frag_joint_logits[frag_joint_mask.bool()]
+		frag_real_joint_h_counts = frag_joint_h_counts[frag_joint_mask.bool()]
 		frag_real_joint_node_idxs = frag_joint_node_idxs[frag_joint_mask.bool()]
 		frag_real_joint_formula_idxs = frag_joint_formula_idxs[frag_joint_mask.bool()]
 		frag_real_joint_batch_idxs = frag_joint_batch_idxs[frag_joint_mask.bool()]
@@ -751,6 +753,16 @@ class FragGNNModel(nn.Module):
 			frag_real_formula_node_logprobs,
 			frag_real_joint_formula_idxs
 		)
+		# hydrogens
+		frag_real_joint_h_idxs = frag_real_joint_h_counts + self.num_hs + frag_real_joint_batch_idxs * (2*self.num_hs+1)
+		frag_real_h_logprobs = scatter_logsumexp(
+			frag_real_joint_logprobs,
+			frag_real_joint_h_idxs,
+			dim_size=batch_size*(2*self.num_hs+1)
+		)
+		frag_real_h_counts = th.arange(-self.num_hs,self.num_hs+1,device=device).repeat(batch_size)
+		frag_real_h_batch_idxs = th.repeat_interleave(th.arange(batch_size,device=device),2*self.num_hs+1)
+
 		# calculate isomorphic distributions
 		if self.nb_iso:
 			# P(n')
@@ -842,6 +854,8 @@ class FragGNNModel(nn.Module):
 			"pred_joint_node_idxs": frag_real_joint_node_idxs,
 			"pred_joint_formula_idxs": frag_real_joint_formula_idxs,
 			"pred_joint_batch_idxs": frag_real_joint_batch_idxs,
+			"pred_joint_h_counts": frag_real_joint_h_counts,
+			"pred_joint_h_idxs": frag_real_joint_h_idxs,
 			"pred_null_formula_logprob": frag_null_formula_logprob,
 			"pred_edge_logprobs": frag_edge_logprobs,
 			"pred_edge_h_diffs": frag_edge_h_diffs,
@@ -849,6 +863,9 @@ class FragGNNModel(nn.Module):
 			"pred_edge_h_logprobs": frag_edge_h_logprobs,
 			"pred_edge_batch_idxs": frag_edge_batch_idxs,
 			"pred_oos_logprobs": oos_logprobs,
+			"pred_h_counts": frag_real_h_counts,
+			"pred_h_batch_idxs": frag_real_h_batch_idxs,
+			"pred_h_logprobs": frag_real_h_logprobs,
 			"pred_nb_node_logprobs": frag_nb_node_logprobs,
 			"pred_nb_node_formula_logprobs": frag_nb_node_formula_logprobs,
 			"pred_nb_formula_node_logprobs": frag_nb_formula_node_logprobs,

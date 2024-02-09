@@ -1238,6 +1238,9 @@ class FragGNNPL(SpectrumPL):
 			pred_edge_h_logprobs,
 			pred_edge_batch_idxs,
 			pred_oos_logprobs,
+			pred_h_logprobs,
+			pred_h_counts,
+			pred_h_batch_idxs,
 			pred_nb_node_logprobs,
 			pred_nb_node_formula_logprobs,
 			pred_nb_formula_node_logprobs,
@@ -1340,6 +1343,16 @@ class FragGNNPL(SpectrumPL):
 			null_formula_prob = th.exp(pred_null_formula_logprob)
 			oos_prob = th.exp(pred_oos_logprobs)
 			true_oos_prob = th.exp(true_oos_logprob)
+			# hydrogens
+			h_mean = scatter_reduce(
+				th.exp(pred_h_logprobs) * pred_h_counts,
+				pred_h_batch_idxs,
+				reduce="sum"
+			)
+			h_e, h_ne = sparse_entropy_fn(
+				pred_h_logprobs,
+				pred_h_batch_idxs
+			)
 			loss_d = {
 				"loss": loss,
 				"primary_loss": primary_loss,
@@ -1363,7 +1376,10 @@ class FragGNNPL(SpectrumPL):
 				"null_formula_prob": null_formula_prob,
 				"oos_prob": oos_prob,
 				"true_oos_prob": true_oos_prob,
-				"true_oos_e": true_oos_e
+				"true_oos_e": true_oos_e,
+				"h_mean": h_mean,
+				"h_e": h_e,
+				"h_ne": h_ne
 			}
 			if not self.hparams.skip_edge_loss:
 				r_el, t_el = edge_loss(
@@ -1484,7 +1500,10 @@ class FragGNNPL(SpectrumPL):
 			"formula_node_mi",
 			"null_formula_prob",
 			"oos_prob",
-			"true_oos_prob"
+			"true_oos_prob",
+			"h_mean",
+			"h_e",
+			"h_ne"
 		]
 		if not self.hparams.skip_edge_loss:
 			loss_names.extend(
