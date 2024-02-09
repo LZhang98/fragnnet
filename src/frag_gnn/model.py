@@ -830,6 +830,7 @@ class FragGNNModel(nn.Module):
 			frag_nb_joint_node_idxs = None
 			frag_nb_joint_formula_idxs = None
 			frag_nb_joint_batch_idxs = None
+			frag_nb_joint_logprobs = None
 			frag_nb_node_node_node_idxs = None
 			frag_nb_node_node_batch_idxs = None
 
