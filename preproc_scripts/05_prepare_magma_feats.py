@@ -626,6 +626,7 @@ def run_magma_augmentation(
 	allowed_elements: list[str],
 	dsets: list[str],
 	num_entries: int,
+	group_ids: list[int],
 	mass_diff_thresh: float,
 	mass_diff_type: str,
 	inten_thresh: float,
@@ -661,8 +662,16 @@ def run_magma_augmentation(
 	spec_df = pd.read_pickle(spec_df_file)
 
 	# filter and merge
-	spec_df, mol_df = filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=num_entries)
+	spec_df, mol_df = filter_spec_mol(
+		spec_df,
+		mol_df,
+		allowed_elements=allowed_elements,
+		dsets=dsets,
+		prec_types=["[M+H]+"],
+		num_entries=num_entries)
 	m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
+	if len(group_ids) > 0:
+		m_spec_df = m_spec_df[m_spec_df["group_id"].isin(group_ids)].reset_index(drop=True)
 
 	# get smiles, peaks, and metadata
 	both_df = m_spec_df[["group_id","mol_id","peaks","prec_type","prec_mz"]].merge(mol_df[["mol_id","smiles","formula"]],on="mol_id",how="inner")
@@ -703,6 +712,7 @@ def get_args():
 	parser.add_argument("--proc_dp", type=str, default="data/proc/nist")
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist"])
+	parser.add_argument("--group_ids", type=int, nargs="+", default=[])
 	# iceberg magma params
 	parser.add_argument(
 		"--max-peaks",

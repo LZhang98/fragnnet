@@ -19,9 +19,9 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--debug", type=booltype, default=False)
-	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test"])
+	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
 	parser.add_argument("--num_seeds", type=int, default=5)
-	parser.add_argument("--local_path", type=str, default="/h/adamo/frag-gnn/local_runs")
+	parser.add_argument("--local_path", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/local_runs")
 	parser.add_argument("--vals_dp", type=str, default="/h/adamo/frag-gnn/inference_outputs")
 	parser.add_argument("--force_overwrite", type=booltype, default=False)
 	args = parser.parse_args()
@@ -40,11 +40,11 @@ if __name__ == "__main__":
 		batch_cutoff = int(1e6)
 		seed_cutoff = num_seeds
 	else:
-		split_types = ["scaffold"] #["inchikey"]
-		wandb_model_types = [] #["fraggnn_d3"]
-		local_model_types = ["massformer"] # ["neims"]
-		batch_cutoff = int(1e6) # 3
-		seed_cutoff = num_seeds # 2
+		split_types = ["inchikey","scaffold"]
+		wandb_model_types = ["iceberg_inten_all"]
+		local_model_types = []
+		batch_cutoff = int(1e6)
+		seed_cutoff = num_seeds
 	
 	model_type_to_model_cls = {
 		"neims": NeimsPL,
@@ -114,15 +114,15 @@ if __name__ == "__main__":
 				print(f">>> Starting seed {seed}")
 				if model_type in wandb_model_types:
 					run_id = model_to_run_id[split_type][model_type][seed]
-					model = init_wandb_ckpt(run_id,last_ckpt=False,model_cls=model_cls)
+					model = init_wandb_ckpt(run_id,last_ckpt=False,model_cls=model_cls,config_d=config_d)
 				else:
 					assert model_type in local_model_types, model_type
 					ckpt_fp = model_to_ckpt[split_type][model_type][seed]
 					try:
-						model = model_cls.load_from_checkpoint(ckpt_fp,strict=True)
+						model = model_cls.load_from_checkpoint(ckpt_fp,strict=True,**config_d)
 					except RuntimeError as e:
 						print(f"> error when loading from checkpoint file {ckpt_fp}, will try with strict=False")
-						model = model_cls.load_from_checkpoint(ckpt_fp,strict=False)
+						model = model_cls.load_from_checkpoint(ckpt_fp,strict=False,**config_d)
 				model.to(device)
 				model.eval()
 				# define output subset

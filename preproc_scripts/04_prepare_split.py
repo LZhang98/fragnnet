@@ -5,6 +5,8 @@ import numpy as np
 import json
 
 from frag_gnn.utils.misc_utils import booltype, np_temp_seed
+from frag_gnn.utils.frag_utils import ELEMENTS
+from frag_gnn.utils.proc_utils import filter_spec_mol
 
 def make_splits(args):
 
@@ -14,27 +16,25 @@ def make_splits(args):
         os.path.join(args.frag_dp,f"{args.dag_filter_grouping}_stats_df.pkl")
     )
 
-    def get_max_mz(peaks):
-        return max([peak[0] for peak in peaks])
-
     print("> Spectrum filters")
     # filter spectra
-    dsets = args.dsets
-    prec_types = args.prec_types
-    spec_masks = []
-    print(f"> filtering: dsets {args.dsets}")
-    spec_masks.append(spec_df["dset"].isin(dsets))
-    print(f"> filtering: prec_type {prec_types}")
-    spec_masks.append(spec_df["prec_type"].isin(prec_types))
-    print(f"> filtering: max peak mz {args.max_peak_mz}")
-    spec_masks.append(spec_df["peaks"].apply(get_max_mz) <= args.max_peak_mz)
-    spec_masks = np.stack(spec_masks,axis=1)
-    spec_mask = np.all(spec_masks,axis=1)
-    print(f"> Selected {np.sum(spec_mask)}/{spec_mask.shape[0]} spectra ({np.mean(spec_mask) * 100 } % total specturm)")
-    spec_df = spec_df[spec_mask]
-    spec_spec_id = spec_df["spec_id"]
-    spec_group_id = spec_df["group_id"]
-    spec_mol_id = spec_df["mol_id"]
+    dsets = args.primary_dsets + args.secondary_dsets
+    f_spec_df, f_mol_df = filter_spec_mol(
+        spec_df,
+        mol_df,
+        dsets=dsets,
+        prec_types=args.prec_types,
+        max_peak_mz=args.max_peak_mz,
+        allowed_elements=ELEMENTS
+    )
+    print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
+    spec_df = f_spec_df
+    mol_df = f_mol_df
+    primary_spec_df = spec_df[spec_df["dset"].isin(args.primary_dsets)]
+    secondary_spec_df = spec_df[spec_df["dset"].isin(args.secondary_dsets)]
+    # primary_spec_id = primary_spec_df["spec_id"]
+    # primary_group_id = primary_spec_df["group_id"]
+    # primary_mol_id = primary_spec_df["mol_id "]
 
     print("> DAG filters")
     # filter dags
@@ -54,7 +54,7 @@ def make_splits(args):
     dag_mask = np.all(dag_masks,axis=1)
     print(f"> Selected {np.sum(dag_mask)}/{dag_mask.shape[0]} Dags ({np.mean(dag_mask) * 100 } % total dags)")
     dag_stats_df = dag_stats_df[dag_mask]
-    dag_mol_id = dag_stats_df["mol_id"]
+    # dag_mol_id = dag_stats_df["mol_id"]
     if args.dag_filter_grouping in ["m_spec","m_mol"]:
         dag_spec_id = None
         dag_group_id = dag_stats_df["group_id"]
@@ -65,17 +65,23 @@ def make_splits(args):
     print("> Intersection")
     # get intersection
     if args.dag_filter_grouping in ["m_spec","m_mol"]:
-        both_group_id = np.intersect1d(spec_mol_id,dag_group_id)
-        split_df = spec_df[spec_df["group_id"].isin(dag_group_id)]
+        primary_both_group_id = np.intersect1d(primary_spec_df["group_id"],dag_group_id)
+        primary_split_df = primary_spec_df[primary_spec_df["group_id"].isin(primary_both_group_id)]
+        secondary_both_group_id = np.intersect1d(secondary_spec_df["group_id"],dag_group_id)
+        secondary_split_df = secondary_spec_df[secondary_spec_df["group_id"].isin(secondary_both_group_id)]
     else:
-        both_spec_id = np.intersect1d(spec_spec_id,dag_spec_id)
-        split_df = spec_df[spec_df["spec_id"].isin(both_spec_id)]
-    split_df = split_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
+        primary_both_spec_id = np.intersect1d(primary_spec_df["spec_id"],dag_spec_id)
+        primary_split_df = primary_spec_df[primary_spec_df["spec_id"].isin(primary_both_spec_id)]
+        secondary_both_spec_id = np.intersect1d(secondary_spec_df["spec_id"],dag_spec_id)
+        secondary_split_df = secondary_spec_df[secondary_spec_df["spec_id"].isin(secondary_both_spec_id)]
+    primary_split_df = primary_split_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
+    secondary_split_df = secondary_split_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
 
     if args.split_type == "random":
         # split based on molecule
-        split_mol_id = np.unique(split_df["mol_id"])
-        split_keys = split_df[split_df["mol_id"].isin(split_mol_id)][args.split_key]
+        # primary split
+        primary_split_mol_id = np.unique(primary_split_df["mol_id"])
+        split_keys = primary_split_df[primary_split_df["mol_id"].isin(primary_split_mol_id)][args.split_key]
         split_keys = np.unique(split_keys)
         if args.total_frac == 1.0:
             total_num = split_keys.shape[0]
@@ -91,18 +97,22 @@ def make_splits(args):
             train_val_keys = np.setdiff1d(split_keys,test_keys)
             val_keys = np.random.choice(train_val_keys,size=val_num,replace=False)
             train_keys = np.setdiff1d(train_val_keys,val_keys)
-        train_df = split_df[split_df[args.split_key].isin(train_keys)][["spec_id","mol_id","group_id"]]
-        val_df = split_df[split_df[args.split_key].isin(val_keys)][["spec_id","mol_id","group_id"]]
-        test_df = split_df[split_df[args.split_key].isin(test_keys)][["spec_id","mol_id","group_id"]]
+        train_df = primary_split_df[primary_split_df[args.split_key].isin(train_keys)][["spec_id","mol_id","group_id"]]
+        val_df = primary_split_df[primary_split_df[args.split_key].isin(val_keys)][["spec_id","mol_id","group_id"]]
+        test_df = primary_split_df[primary_split_df[args.split_key].isin(test_keys)][["spec_id","mol_id","group_id"]]
+        # secondary split
+        secondary_df = secondary_split_df[~secondary_split_df[args.split_key].isin(train_val_keys)][["spec_id","mol_id","group_id"]]
     else:
         assert args.split_type == "predefined"
+        assert len(args.secondary_dsets) == 0, len(args.secondary_dsets)
         assert len(args.train_ids) > 1 and len(args.val_ids) > 1 and len(args.test_ids) > 1
-        train_ids = np.array([args.train_ids])
+        train_ids = np.array(args.train_ids)
         val_ids = np.array(args.val_ids)
         test_ids = np.array(args.test_ids)
-        train_df = split_df[split_df[args.id_type].isin(train_ids)][["spec_id","mol_id","group_id"]]
-        val_df = split_df[split_df[args.id_type].isin(val_ids)][["spec_id","mol_id","group_id"]]
-        test_df = split_df[split_df[args.id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
+        train_df = primary_split_df[primary_split_df[args.id_type].isin(train_ids)][["spec_id","mol_id","group_id"]]
+        val_df = primary_split_df[primary_split_df[args.id_type].isin(val_ids)][["spec_id","mol_id","group_id"]]
+        test_df = primary_split_df[primary_split_df[args.id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
+        secondary_df = primary_split_df[np.zeros(primary_split_df.shape[0],dtype=bool)][["spec_id","mol_id","group_id"]]
 
     # create split directory
     os.makedirs(args.split_dp,exist_ok=True)
@@ -111,9 +121,11 @@ def make_splits(args):
     train_fp = os.path.join(args.split_dp,"train_ids.csv")
     val_fp = os.path.join(args.split_dp,"val_ids.csv")
     test_fp = os.path.join(args.split_dp,"test_ids.csv")
+    secondary_fp = os.path.join(args.split_dp,"secondary_ids.csv")
     train_df.to_csv(train_fp,index=False)
     val_df.to_csv(val_fp,index=False)
     test_df.to_csv(test_fp,index=False)
+    secondary_df.to_csv(secondary_fp,index=False)
 
     # save split metadata
     meta_d = vars(args)
@@ -133,7 +145,8 @@ if __name__ == "__main__":
     parser.add_argument("--val_ids",type=int,nargs="+",default=[62611])
     parser.add_argument("--test_ids",type=int,nargs="+",default=[62611])
     # spec filtering criteria
-    parser.add_argument("--dsets",type=str,nargs="+",default=["nist"])
+    parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr"])
+    parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
     parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
     parser.add_argument("--max_peak_mz",type=float,default=1500.)
     # dag filtering criteria

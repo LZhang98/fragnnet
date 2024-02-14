@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--debug", type=booltype, default=False)
-	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test"])
+	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
 	parser.add_argument("--num_seeds", type=int, default=5)
 	parser.add_argument("--vals_dp", type=str, default="/h/adamo/frag-gnn/inference_outputs")
 	parser.add_argument("--output_dp", type=str, default="figs/stats")
@@ -56,10 +56,10 @@ if __name__ == "__main__":
 		local_model_types = ["neims","massformer"]
 		seed_cutoff = num_seeds
 	else:
-		split_types = ["inchikey"]
-		wandb_model_types = ["fraggnn_d3"]
-		local_model_types = ["neims"]
-		seed_cutoff = 2
+		split_types = ["inchikey","scaffold"]
+		wandb_model_types = ["iceberg_inten_all"]
+		local_model_types = []
+		seed_cutoff = num_seeds #2
 
 	stats_df = []
 
@@ -131,7 +131,7 @@ if __name__ == "__main__":
 		"neims": "NEIMS",
 		"massformer": "MassFormer",
 		"iceberg_inten_100": "Iceberg",
-		"iceberg_inten_all": "Iceberg-UB",
+		"iceberg_inten_all": "Iceberg-ADV",
 	}
 
 	latex_df = stats_df.copy()

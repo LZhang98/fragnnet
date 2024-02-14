@@ -34,6 +34,7 @@ def run_magma_gen(
 	threshold: float,
 	max_nodes: int,
 	parallel: bool,
+	group_ids: list[int],
 	gpu: bool,
 	rseed: int,
 ):
@@ -78,8 +79,16 @@ def run_magma_gen(
 	spec_df = pd.read_pickle(spec_df_file)
 
 	# filter and merge
-	spec_df, mol_df = filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=num_entries)
+	spec_df, mol_df = filter_spec_mol(
+		spec_df,
+		mol_df,
+		allowed_elements=allowed_elements,
+		dsets=dsets,
+		prec_types=["[M+H]+"],
+		num_entries=num_entries)
 	m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
+	if len(group_ids) > 0:
+		m_spec_df = m_spec_df[m_spec_df["group_id"].isin(group_ids)].reset_index(drop=True)
 	both_df = m_spec_df[["group_id","mol_id","prec_type"]].merge(mol_df[["mol_id","smiles"]],on="mol_id",how="inner")
 	spec_entries = both_df[["group_id","prec_type","smiles"]].to_dict("records")
 
@@ -141,6 +150,7 @@ def get_args():
 	parser.add_argument("--parallel", type=booltype, default=False)
 	parser.add_argument("--gpu", type=booltype, default=True)
 	parser.add_argument("--rseed", type=int, default=420)
+	parser.add_argument("--group_ids", type=int, nargs="+", default=[])
 	### gen params
 	parser.add_argument("--threshold", type=float, default=0.0)
 	parser.add_argument("--max-nodes", type=int, default=100)

@@ -60,7 +60,13 @@ def main(args):
 	print()
 
 	# perform selection
-	spec_df, mol_df = filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=args.num_entries)
+	spec_df, mol_df = filter_spec_mol(
+		spec_df,
+		mol_df,
+		allowed_elements=allowed_elements,
+		dsets=dsets,
+		prec_types=["[M+H]+"],
+		num_entries=args.num_entries)
 	m_spec_df = merge_spec_df(spec_df)
 
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules") #, {len(m_spec_df)} merged spectra")

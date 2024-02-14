@@ -9,7 +9,7 @@ from frag_gnn.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LO
 from frag_gnn.pl_model import FragGNNPL
 
 
-def init_wandb_ckpt(run_id,last_ckpt,model_cls):
+def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 
 	# load model
 	with tempfile.TemporaryDirectory(dir=os.getcwd()) as temp_dp:
@@ -31,10 +31,10 @@ def init_wandb_ckpt(run_id,last_ckpt,model_cls):
 		ckpt_file_local = run.file(ckpt_wandb_fp).download(root=temp_dp,replace=False)
 		ckpt_fp = ckpt_file_local.name
 		try:
-			model = model_cls.load_from_checkpoint(ckpt_fp,strict=True)
+			model = model_cls.load_from_checkpoint(ckpt_fp,strict=True,**config_d)
 		except RuntimeError as e:
 			print(f"> error when loading from checkpoint id {run_id}, will try with strict=False")
-			model = model_cls.load_from_checkpoint(ckpt_fp,strict=False)
+			model = model_cls.load_from_checkpoint(ckpt_fp,strict=False,**config_d)
 	return model
 
 

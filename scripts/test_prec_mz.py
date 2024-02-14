@@ -12,7 +12,12 @@ def main(args):
     spec_df = pd.read_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
     mol_df = pd.read_pickle(os.path.join(args.proc_dp,"mol_df.pkl"))
 
-    f_spec_df, f_mol_df = filter_spec_mol(spec_df,mol_df,ELEMENTS,args.dsets)
+    f_spec_df, f_mol_df = filter_spec_mol(
+        spec_df,
+        mol_df,
+        allowed_elements=ELEMENTS,
+        dsets=args.dsets,
+        prec_types=["[M+H]+"])
 
     find_min_mz = lambda peaks: min(p[0] for p in peaks)
     find_max_mz = lambda peaks: max(p[0] for p in peaks)

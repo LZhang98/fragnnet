@@ -16,7 +16,14 @@ def element_filter(formula,allowed_elements):
 			return False
 	return True
 
-def filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=-1):
+def filter_spec_mol(
+		spec_df,
+		mol_df,
+		allowed_elements=None,
+		dsets=None,
+		max_peak_mz=None,
+		prec_types=None,
+		num_entries=-1,):
 	"""
 	The purpose of this filtering is to prevent errors
 	"""
@@ -24,8 +31,9 @@ def filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=-1):
 	masks = []
 	## spectrum criteria (TODO remove this)
 	# dataset mask
-	dset_mask = spec_df["dset"].isin(dsets)
-	masks.append(dset_mask)
+	if dsets is not None:
+		dset_mask = spec_df["dset"].isin(dsets)
+		masks.append(dset_mask)
 	# instrument type
 	inst_type_mask = spec_df["inst_type"].isin(["FT"])
 	masks.append(inst_type_mask)
@@ -39,8 +47,9 @@ def filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=-1):
 	ion_mode_mask = spec_df["ion_mode"] == "P"
 	masks.append(ion_mode_mask)
 	# precursor type
-	prec_type_mask = spec_df["prec_type"].isin(["[M+H]+"])
-	masks.append(prec_type_mask)
+	if prec_types is not None:
+		prec_type_mask = spec_df["prec_type"].isin(prec_types)
+		masks.append(prec_type_mask)
 	# resolution
 	res_mask = spec_df["res"].isin([1,2,3,4,5,6,7])
 	masks.append(res_mask)
@@ -50,6 +59,12 @@ def filter_spec_mol(spec_df,mol_df,allowed_elements,dsets,num_entries=-1):
 	# precursor mz
 	prec_mz_mask = ~spec_df["prec_mz"].isna()
 	masks.append(prec_mz_mask)
+	# max peak mz
+	if max_peak_mz is not None:
+		def get_max_mz(peaks):
+			return max([peak[0] for peak in peaks])
+		max_peak_mz_mask = spec_df["peaks"].apply(get_max_mz) <= max_peak_mz
+		masks.append(max_peak_mz_mask)
 	## molecule criteria
 	# single molecule
 	single_mol_ids = mol_df[mol_df["single_mol"]]["mol_id"]

@@ -102,7 +102,7 @@ class BaseDataset(Dataset):
 		self.spec_df = pd.read_pickle(spec_fp)
 		self.mol_df = pd.read_pickle(mol_fp)
 		self.split = split
-		assert split in ["train","val","test"], split
+		assert split in ["train","val","test","secondary"], split
 		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
 		self.split_df = pd.read_csv(split_fp)
 		self.spec_params = spec_params
