@@ -16,6 +16,7 @@ subsample_params:
   train: True
   val: True
   test: True
+  secondary: True
 spec_params:
   merge: True
   merge_keep_ces: False
