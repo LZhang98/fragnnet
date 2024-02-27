@@ -22,6 +22,7 @@ from pprint import pprint
 import wandb
 import glob
 import shutil
+import tempfile
 
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
@@ -366,21 +367,38 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	if config_d["compile"]:
 		print(model.dynamo_prof.report())
 
-	if not trainer.interrupted and config_d["delete_checkpoints"]:
+	if not trainer.interrupted:
 		# find checkpoints
 		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
-		if wandb_mode != "disabled":
-			# upload or remove checkpoints
-			# if in offline mode, you shouldn't remove the checkpoint before syncing
+		delete_before_ckpt_flag = not config_d["upload_checkpoints"] and \
+			not config_d["disable_checkpoints"]
+		transfer_ckpt_flag = not config_d["delete_checkpoints"] and \
+			delete_before_ckpt_flag
+		if transfer_ckpt_flag:
+			temp_ckpt_dir = tempfile.TemporaryDirectory()
 			for ckpt_fp in ckpt_fps:
-				if not config_d["upload_checkpoints"]:
-					os.remove(ckpt_fp)
-			# cleanup
-			if job_id_fp:
-				os.remove(job_id_fp)
-		else:
-			# remove checkpoints
+				shutil.move(ckpt_fp,os.path.join(temp_ckpt_dir.name,os.path.basename(ckpt_fp)))
+		elif delete_before_ckpt_flag:
 			for ckpt_fp in ckpt_fps:
 				os.remove(ckpt_fp)
+
+	wandb.finish()
+
+	if not trainer.interrupted:
+		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
+		delete_after_ckpt_flag = config_d["delete_checkpoints"] and \
+			not config_d["disable_checkpoints"]
+		assert not (delete_after_ckpt_flag and transfer_ckpt_flag)
+		if transfer_ckpt_flag:
+			# transfer checkpoints
+			for ckpt_fp in glob.glob(os.path.join(temp_ckpt_dir.name,"*.ckpt")):
+				shutil.move(ckpt_fp,os.path.join(ckpt_dp,os.path.basename(ckpt_fp)))
+			temp_ckpt_dir.cleanup()
+		elif delete_after_ckpt_flag:
+			for ckpt_fp in ckpt_fps:
+				os.remove(ckpt_fp)
+		# cleanup (post-wandb)
+		if job_id_fp:
+			os.remove(job_id_fp)
 
 	return model
