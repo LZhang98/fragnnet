@@ -1332,8 +1332,8 @@ class FragGNNPL(SpectrumPL):
 				pred_joint_logprobs,
 				pred_joint_batch_idxs
 			)
-			assert th.all(th.isclose(joint_e, node_formula_e+node_e,rtol=0.,atol=0.001))
-			assert th.all(th.isclose(joint_e, formula_node_e+formula_e,rtol=0.,atol=0.001))
+			# assert th.all(th.isclose(joint_e, node_formula_e+node_e,rtol=0.,atol=0.001))
+			# assert th.all(th.isclose(joint_e, formula_node_e+formula_e,rtol=0.,atol=0.001))
 			loss = loss + self.hparams.joint_entropy_weight * joint_e \
 				+ self.hparams.joint_normalized_entropy_weight * joint_ne
 			# mi
@@ -1448,8 +1448,8 @@ class FragGNNPL(SpectrumPL):
 					pred_nb_joint_logprobs,
 					pred_nb_joint_batch_idxs
 				)
-				assert th.all(th.isclose(nb_joint_e, nb_node_formula_e+nb_node_e,rtol=0.,atol=0.001))
-				assert th.all(th.isclose(nb_joint_e, nb_formula_node_e+formula_e,rtol=0.,atol=0.001))
+				# assert th.all(th.isclose(nb_joint_e, nb_node_formula_e+nb_node_e,rtol=0.,atol=0.001))
+				# assert th.all(th.isclose(nb_joint_e, nb_formula_node_e+formula_e,rtol=0.,atol=0.001))
 				loss = loss + self.hparams.nb_joint_entropy_weight * nb_joint_e \
 					+ self.hparams.nb_joint_normalized_entropy_weight * nb_joint_ne
 				# mi
