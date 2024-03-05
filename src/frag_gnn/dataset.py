@@ -102,7 +102,7 @@ class BaseDataset(Dataset):
 		self.spec_df = pd.read_pickle(spec_fp)
 		self.mol_df = pd.read_pickle(mol_fp)
 		self.split = split
-		assert split in ["train","val","test","secondary"], split
+		# assert split in ["train","val","test","secondary"], split
 		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
 		self.split_df = pd.read_csv(split_fp)
 		self.spec_params = spec_params
@@ -115,7 +115,7 @@ class BaseDataset(Dataset):
 		if self.spec_params["merge"]:
 			self.spec_df = merge_spec_df(self.spec_df,keep_ces=self.spec_params["merge_keep_ces"])
 		# subsample
-		if subsample_params[split] and subsample_params["subsample_size"] > 0:
+		if subsample_params.get(split,False) and subsample_params["subsample_size"] > 0:
 			if isinstance(subsample_params["subsample_size"],int):
 				n = subsample_params["subsample_size"]
 				frac = None
