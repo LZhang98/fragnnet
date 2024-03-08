@@ -5,7 +5,8 @@ import numpy as np
 import dgl
 
 from frag_gnn.pl_model import SpectrumPL
-from frag_gnn.utils.misc_utils import to_cpu, scatter_reduce
+from frag_gnn.utils.misc_utils import to_cpu, scatter_reduce, LOG_ZERO
+from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_cosine_distance_hungarian
 import frag_gnn.iceberg.common as common
 from frag_gnn.iceberg.model import IcebergGenModel, IcebergIntenModel
 from frag_gnn.iceberg.dataset import TreeProcessor
@@ -491,17 +492,24 @@ class IcebergIntenPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
+		# cross entropy
+		sparse_ce_fn = get_sparse_cross_entropy_fn(
+			self.hparams.output_distribution,
+			self.hparams.loss_vectorized,
+			self.tolerance,
+			self.relative,
+			self.hparams.oos_tolerance_multiple,
+			self.hparams.gaussian_renormalize,
+			self.hparams.pm_tolerance_multiple
+		)
+
 		# cosine distance
 		if self.hparams.loss_type == "cosine_distance_dense":
-			def _loss_fn(true_spec, pred_spec, **kwargs):
-				loss = 1. - binned_cosine_similarity(true_spec, pred_spec)
-				loss_d = {
-					"loss": loss,
-					"spec_cd": loss
-				}
-				return loss_d
+			def cosine_distance_fn(true_spec, pred_spec, **kwargs):
+				cd = 1. - binned_cosine_similarity(true_spec, pred_spec)
+				return cd
 		elif self.hparams.loss_type == "cosine_distance":
-			def _loss_fn(
+			def cosine_distance_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
@@ -509,7 +517,7 @@ class IcebergIntenPL(SpectrumPL):
 				pred_logprobs,
 				pred_batch_idxs,
 				**kwargs):
-				loss = 1. - calculate_cosine_similarity(
+				cd = 1. - calculate_cosine_similarity(
 					true_mzs,
 					th.exp(true_logprobs),
 					true_batch_idxs,
@@ -520,15 +528,88 @@ class IcebergIntenPL(SpectrumPL):
 					mz_max=self.hparams.mz_max,
 					sum_ints=self.hparams.sum_ints
 				)
-				loss_d = {
-					"loss": loss,
-					"spec_cd": loss
-				}
-				return loss_d
+				return cd
+		elif self.hparams.loss_type == "cosine_distance_hungarian":
+			log_distance = False
+			def cosine_distance_hungarian_fn(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs):
+				return sparse_cosine_distance_hungarian(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs,
+					tolerance=self.tolerance,
+					relative=self.relative,
+					log_distance=log_distance
+				)
+
 		else:
 			raise ValueError(f"{self.hparams.loss_type} is not a valid loss type for IcebergIntenPL")
+		
+		def _loss_fn(true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs,
+				**kwargs):
+		
+			batch_size = th.max(true_batch_idxs)+1
+			if self.hparams.loss_type in ["cosine_distance_dense","cosine_distance"]:
+				spec_cd = cosine_distance_fn(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs,
+				)
+				primary_loss = spec_cd
+			else:
+				spec_cd_hun = cosine_distance_hungarian_fn(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs,
+				)
+				primary_loss = spec_cd_hun
+			ios_ce, oos_ce, true_oos_logprob, true_oos_e = sparse_ce_fn(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs,
+				th.full((batch_size,), LOG_ZERO, device=pred_logprobs.device, dtype=pred_logprobs.dtype),
+			)
+			spec_ce = ios_ce + oos_ce
+			loss = primary_loss
+			loss_d = {
+				"loss": loss,
+				"primary_loss": primary_loss,
+				"spec_ce": spec_ce,
+				"true_oos_prob": th.exp(true_oos_logprob),
+				"true_oos_e": true_oos_e,
+			}
+			return loss_d
+
 		self.loss_fn = _loss_fn
-		loss_names = ["loss", "spec_cd"]
+		loss_names = [
+			"loss",
+			"primary_loss",
+			"spec_ce",
+			"true_oos_prob",
+			"true_oos_e"
+		]
 		self.metric_names.update(loss_names)
 
 	def forward(self,**kwargs):
@@ -687,13 +768,15 @@ def test_inten():
 	from frag_gnn.runner import load_config
 	from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset
 	from frag_gnn.utils.misc_utils import print_shapes
-	import torch.nn.functional as F
 	from frag_gnn.utils.misc_utils import to_device
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_d3_iceberg_inten_100.yml",
-		"config/debug/debug_d3_iceberg_inten_all.yml",
+		# "config/debug/debug_d3_iceberg_inten_100.yml",
+		# "config/debug/debug_d3_iceberg_inten_all.yml",
+		"config/debug/debug_d3_iceberg_inten_all_oos.yml",
+		# "config/debug/debug_d3_iceberg_inten_100_oos.yml",
+		"config/debug/debug_d3_iceberg_inten_all_hun.yml",
 	]
 	
 	for custom_fp in custom_fps:
@@ -735,6 +818,10 @@ def test_inten():
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()
+
+		mean_true_oos_prob = results["true_oos_prob"].mean()
+		print("> true_oos_prob")
+		print(mean_true_oos_prob)
 
 
 if __name__ == "__main__":

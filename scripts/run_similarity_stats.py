@@ -57,7 +57,7 @@ if __name__ == "__main__":
 		seed_cutoff = num_seeds
 	else:
 		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["iceberg_inten_all"]
+		wandb_model_types = ["iceberg_inten_all","iceberg_inten_100"]
 		local_model_types = []
 		seed_cutoff = num_seeds #2
 

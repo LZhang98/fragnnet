@@ -133,8 +133,9 @@ def sparse_cross_entropy_seq(
 
 	mask_value = LOG_ZERO
 	batch_size = th.max(true_batch_idxs)+1
-	ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
-	ios_ces, oos_ces = th.zeros_like(ces), th.zeros_like(ces)
+	# ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
+	ios_ces = th.zeros([batch_size], dtype=true_logprobs.dtype,device=true_logprobs.device)
+	oos_ces = th.zeros([batch_size], dtype=true_logprobs.dtype,device=true_logprobs.device)
 	true_oos_logprobs = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
 	true_oos_entropies = th.zeros_like(true_oos_logprobs)
 	for batch_idx in th.arange(batch_size):
@@ -178,13 +179,11 @@ def sparse_cross_entropy_seq(
 		b_pred_oos_logprobs = pred_oos_logprobs[batch_idx]
 		b_oos_ce = -th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs
 		# combine
-		b_ce = b_ios_ce + b_oos_ce
-		ces[batch_idx] = b_ce
 		ios_ces[batch_idx] = b_ios_ce
 		oos_ces[batch_idx] = b_oos_ce
 		true_oos_logprobs[batch_idx] = b_true_oos_logprobs
 		true_oos_entropies[batch_idx] = b_true_oos_entropy
-	return ces, ios_ces, oos_ces, true_oos_logprobs, true_oos_entropies
+	return ios_ces, oos_ces, true_oos_logprobs, true_oos_entropies
 
 def get_sparse_cross_entropy_fn(
 		dist: str,

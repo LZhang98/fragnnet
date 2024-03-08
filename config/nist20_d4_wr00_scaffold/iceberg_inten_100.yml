@@ -28,7 +28,7 @@ magma_params:
   root_encode: gnn
   add_hs: True
   binned_targs: False
-  mz_bin_res: 0.005
+  mz_bin_res: 0.01
   mz_max: 1500.0
   sum_ints: True
 mz_bin_res: 0.01

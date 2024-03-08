@@ -21,6 +21,8 @@ seed: 634340
 
 model_type: iceberg_inten
 loss_type: cosine_distance
+oos_tolerance_multiple: 3
+oos_loss: False
 sparse_cosine_similarity: True
 mol_params:
   smiles: True

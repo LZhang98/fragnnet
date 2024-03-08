@@ -45,6 +45,7 @@ precision: 32
 mask_null_formula: False
 predict_oos: True
 oos_tolerance_multiple: 3
+oos_loss: True
 mz_bin_res: 0.01
 mz_max: 1500.0
 sparse_cosine_similarity: True

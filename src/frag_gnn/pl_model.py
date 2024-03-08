@@ -1254,7 +1254,7 @@ class FragGNNPL(SpectrumPL):
 			pred_nb_node_node_node_idxs,
 			pred_nb_node_node_batch_idxs,
 			**kwargs):
-			spec_ce, ios_ce, oos_ce, true_oos_logprob, true_oos_e = sparse_ce_fn(
+			ios_ce, oos_ce, true_oos_logprob, true_oos_e = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
@@ -1263,8 +1263,12 @@ class FragGNNPL(SpectrumPL):
 				pred_batch_idxs,
 				pred_oos_logprobs
 			)
+			spec_ce = ios_ce + oos_ce
 			if self.hparams.loss_type == "cross_entropy":
-				primary_loss = spec_ce
+				if self.hparams.oos_loss:
+					primary_loss = spec_ce
+				else:
+					primary_loss = ios_ce
 			elif self.hparams.loss_type in ["cosine_distance","log_cosine_distance"]:
 				spec_cd = cosine_distance_fn(
 					true_mzs,
