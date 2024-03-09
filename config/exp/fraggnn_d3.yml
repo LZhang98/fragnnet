@@ -1,6 +1,6 @@
-wandb_name: d3_log10t3
+wandb_name: fraggnn_d3
 wandb_tags:
-- experimental
+- exp
 - nist20
 - d4
 - wr00
@@ -10,7 +10,6 @@ wandb_tags:
 - new_metrics
 - nodemlp
 - m_nce_embed
-- log10t3
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
@@ -29,7 +28,6 @@ spec_params:
   merge_keep_ces: True
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
-ints_transform: log10t3
 
 train_batch_size: 32
 eval_batch_size: 32
@@ -46,6 +44,7 @@ precision: 32
 mask_null_formula: False
 predict_oos: True
 oos_tolerance_multiple: 3
+oos_loss: True
 mz_bin_res: 0.01
 mz_max: 1500.0
 sparse_cosine_similarity: True

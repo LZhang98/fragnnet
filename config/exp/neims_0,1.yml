@@ -1,6 +1,6 @@
 wandb_name: neims_0,1
 wandb_tags:
-- splits
+- exp
 - nist20
 - d4
 - wr00
