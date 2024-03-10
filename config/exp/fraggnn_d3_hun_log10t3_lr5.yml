@@ -1,4 +1,4 @@
-wandb_name: fraggnn_d3_hun_log10t3_lr3
+wandb_name: fraggnn_d3_hun_log10t3_lr5
 wandb_tags:
 - exp
 - nist20
