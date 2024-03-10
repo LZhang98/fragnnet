@@ -162,6 +162,8 @@ auxiliary_scores:
   - ndcg
   - jss
   - jss_hun
+  - true_oos_prob
+  - true_oos_e
 ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01

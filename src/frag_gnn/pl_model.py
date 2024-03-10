@@ -210,6 +210,16 @@ class SpectrumPL(pl.LightningModule):
 						self.metric_bests.append(fname)
 						self.auxiliary_metric_names.add(fname)
 				compute_rounded_match_mzs = True
+			elif metric_name == "true_oos_prob":
+				self.metric_min_max["true_oos_prob"] = None
+				self.auxiliary_metric_names.add("true_oos_prob")
+				compute_oos = True
+			elif metric_name == "true_oos_e":
+				self.metric_min_max["true_oos_e"] = None
+				self.auxiliary_metric_names.add("true_oos_e")
+				compute_oos = True
+			else:
+				raise ValueError(f"metric_name {metric_name} not recognized")
 
 		self.metric_names.update(self.auxiliary_metric_names)
 		# print(self.metric_names)
@@ -341,8 +351,16 @@ class SpectrumPL(pl.LightningModule):
 				if "true_spec_ne" in self.hparams.auxiliary_scores:
 					metric_d["true_spec_ne"] = true_spec_ne
 
-			# local calculations
+			# if compute_oos:
+			# 	true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs))
+			# 	true_oos_logprob, true_oos_e = fn()
+			# 	true_oos_prob = th.exp(true_oos_logprob)
+			# 	if "true_oos_prob" in self.hparams.auxiliary_scores:
+			# 		metric_d["true_oos_prob"] = true_oos_prob
+			# 	if "true_oos_e" in self.hparams.auxiliary_scores:
+			# 		metric_d["true_oos_e"] = true_oos_e
 
+			# local calculations
 			for b_idx in range(batch_size):
 
 				b_true_mask = (true_batch_idxs==b_idx)
@@ -494,6 +512,18 @@ class SpectrumPL(pl.LightningModule):
 								fname_base += "_np"
 							fname = f"{fname_base}"
 							metric_d[fname][b_idx] = b_jss_hun
+
+				if "true_oos_prob" in self.hparams.auxiliary_scores:
+					
+					b_true_oos_prob = th.sum(b_true_ints[~b_true_match_mask]) / th.sum(b_true_ints)
+					metric_d["true_oos_prob"][b_idx] = b_true_oos_prob
+
+				if "true_oos_e" in self.hparams.auxiliary_scores:
+
+					b_true_oos_probs = b_true_ints[~b_true_match_mask] / th.sum(b_true_ints[~b_true_match_mask])
+					b_true_oos_logprobs = safelog(b_true_oos_probs)
+					b_true_oos_e = -th.sum(b_true_oos_probs * b_true_oos_logprobs)
+					metric_d["true_oos_e"][b_idx] = b_true_oos_e
 
 			return metric_d
 	
@@ -1346,7 +1376,6 @@ class FragGNNPL(SpectrumPL):
 			# special probabilities
 			null_formula_prob = th.exp(pred_null_formula_logprob)
 			oos_prob = th.exp(pred_oos_logprobs)
-			true_oos_prob = th.exp(true_oos_logprob)
 			# hydrogens
 			h_mean = scatter_reduce(
 				th.exp(pred_h_logprobs) * pred_h_counts,
@@ -1379,8 +1408,6 @@ class FragGNNPL(SpectrumPL):
 				"formula_node_mi": formula_node_mi,
 				"null_formula_prob": null_formula_prob,
 				"oos_prob": oos_prob,
-				"true_oos_prob": true_oos_prob,
-				"true_oos_e": true_oos_e,
 				"h_mean": h_mean,
 				"h_e": h_e,
 				"h_ne": h_ne
@@ -1506,8 +1533,6 @@ class FragGNNPL(SpectrumPL):
 			"formula_node_mi",
 			"null_formula_prob",
 			"oos_prob",
-			"true_oos_prob",
-			"true_oos_e",
 			"h_mean",
 			"h_e",
 			"h_ne"
@@ -1732,12 +1757,10 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug/debug_d3_nb.yml": FragGNNPL,
-		# "config/debug/debug_d3_gr.yml": FragGNNPL,
-		# "config/debug/debug_d3_pm.yml": FragGNNPL,
-		# "config/debug/debug_d3_nb_nce.yml": FragGNNPL,
-		# "config/debug/debug_d3_neims.yml": NeimsPL,
-		# "config/debug/debug_d3_neims_nce.yml": NeimsPL
+		"config/debug/debug_ce.yml": FragGNNPL,
+		"config/debug/debug_ce_oosm1.yml": FragGNNPL,
+		# "config/debug/debug_cos_hun_oos.yml": FragGNNPL,
+		# "config/debug/debug_cos_hun_nooos.yml": FragGNNPL,
 	}
 	
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
@@ -1777,7 +1800,16 @@ def test_models():
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()
-		
+
+		print("> oos_ce")
+		print(results["oos_ce"].mean())
+
+		print("> true_oos_prob")
+		print(results["true_oos_prob"].mean())
+
+		print("> true_oos_e")
+		print(results["true_oos_e"].mean())
+
 		print()
 
 
