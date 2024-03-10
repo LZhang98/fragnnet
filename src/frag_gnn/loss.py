@@ -235,6 +235,7 @@ def sparse_entropy_fn(
 			index=batch_idxs,
 			dim=0
 		)
+	logprobs = th.clamp(logprobs,max=0.)
 	probs = th.exp(logprobs)	
 	plogp = probs*logprobs
 	batch_size = th.max(batch_idxs)+1
@@ -274,6 +275,8 @@ def sparse_conditional_entropy_fn(
 
 	batch_size = th.max(conditional_batch_idxs)+1
 	marginal_support_size = marginal_logprobs.shape[0]
+	marginal_logprobs = th.clamp(marginal_logprobs,max=0.)
+	conditional_logprobs = th.clamp(conditional_logprobs,max=0.)
 	marginal_probs = th.exp(marginal_logprobs)
 	conditional_plogp = th.exp(conditional_logprobs)*conditional_logprobs
 	conditional_entropy = -scatter_reduce(
@@ -288,8 +291,7 @@ def sparse_conditional_entropy_fn(
 		reduce="sum",
 		dim_size=batch_size
 	)
-	if th.min(entropy) < -0.001:
-		import pdb; pdb.set_trace()
+	assert th.min(entropy) >= -0.001, th.min(entropy)
 	conditional_support_size = scatter_reduce(
 		th.ones_like(conditional_logprobs,dtype=marginal_logprobs.dtype),
 		index=conditional_idxs,

@@ -1,5 +1,6 @@
 import torch as th
 import torch.nn as nn
+from pprint import pprint
 
 from frag_gnn.utils.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
 from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax, scatter_masked_logsumexp
@@ -554,9 +555,10 @@ class FragGNNModel(nn.Module):
 				frag_joint_batch_idxs
 			)
 			frag_null_formula_logprob = scatter_logsumexp(
-				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * (-1e9),
+				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * LOG_ZERO,
 				frag_joint_batch_idxs
 			)
+			frag_null_formula_logprob = th.clamp(frag_null_formula_logprob, max=0.)
 
 			if self.mask_null_formula:
 				# compute non-NULL renormalized intensity
@@ -605,9 +607,10 @@ class FragGNNModel(nn.Module):
 
 			# compute total NULL probability (before renormalization)
 			frag_null_formula_logprob = scatter_logsumexp(
-				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * (-1e9),
+				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * LOG_ZERO,
 				frag_joint_batch_idxs
 			)
+			frag_null_formula_logprob = th.clamp(frag_null_formula_logprob, max=0.)
 
 			if self.mask_null_formula:
 				# compute non-NULL renormalized intensity
@@ -657,7 +660,7 @@ class FragGNNModel(nn.Module):
 			not_oos_logprobs = F.logsigmoid(-oos_logits)
 		else:
 			# set them to 0
-			oos_logprobs = (-1e9)*th.ones([batch_size],device=device)
+			oos_logprobs = LOG_ZERO*th.ones([batch_size],device=device)
 			not_oos_logprobs = th.zeros([batch_size],device=device)
 		# adjust frag_formula_logprobs
 		frag_formula_oos_logprobs = frag_formula_logprobs + \
@@ -760,6 +763,7 @@ class FragGNNModel(nn.Module):
 			frag_real_joint_h_idxs,
 			dim_size=batch_size*(2*self.num_hs+1)
 		)
+		frag_real_h_logprobs = th.clamp(frag_real_h_logprobs, max=0.)
 		frag_real_h_counts = th.arange(-self.num_hs,self.num_hs+1,device=device).repeat(batch_size)
 		frag_real_h_batch_idxs = th.repeat_interleave(th.arange(batch_size,device=device),2*self.num_hs+1)
 
@@ -880,6 +884,10 @@ class FragGNNModel(nn.Module):
 			"pred_nb_node_node_node_idxs": frag_nb_node_node_node_idxs,
 			"pred_nb_node_node_batch_idxs": frag_nb_node_node_batch_idxs,
 		}
+
+		for k, v in out_d.items():
+			if "logprob" in k and v is not None and v.max() > 0.:
+				print(f"> Warning: {k} has value {v.max()} > 0")
 
 		return out_d
 
