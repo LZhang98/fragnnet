@@ -1321,6 +1321,13 @@ class FragGNNPL(SpectrumPL):
 				)
 				primary_loss = spec_cd_hun
 			loss = self.hparams.primary_loss_weight * primary_loss
+			if self.hparams.null_loss:
+				assert self.hparams.loss_type != "cross_entropy", self.hparams.loss_type
+				if self.hparams.loss_type in ["cosine_distance","cosine_distance_hungarian"]:
+					loss = loss + self.hparams.null_loss_weight * th.exp(pred_null_formula_logprob)
+				elif self.hparams.loss_type in ["log_cosine_distance","log_cosine_distance_hungarian"]:
+					loss = loss + self.hparams.null_loss_weight * pred_null_formula_logprob
+
 			spec_e, spec_ne = sparse_entropy_fn(
 				pred_logprobs,
 				pred_batch_idxs,
@@ -1757,10 +1764,12 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug/debug_ce.yml": FragGNNPL,
-		"config/debug/debug_ce_oosm1.yml": FragGNNPL,
-		# "config/debug/debug_cos_hun_oos.yml": FragGNNPL,
+		# "config/debug/debug_ce.yml": FragGNNPL,
+		# "config/debug/debug_ce_oosm1.yml": FragGNNPL,
 		# "config/debug/debug_cos_hun_nooos.yml": FragGNNPL,
+		# "config/debug/debug_ce_nonull.yml": FragGNNPL,
+		"config/debug/debug_cos_hun.yml": FragGNNPL,
+		"config/debug/debug_cos_hun_nm.yml": FragGNNPL,
 	}
 	
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
@@ -1809,6 +1818,9 @@ def test_models():
 
 		print("> true_oos_e")
 		print(results["true_oos_e"].mean())
+
+		print("> null_formula_prob")
+		print(results["null_formula_prob"].mean())
 
 		print()
 

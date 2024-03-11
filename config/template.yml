@@ -237,6 +237,8 @@ mask_null_formula: True
 predict_oos: False
 oos_tolerance_multiple: -1
 oos_loss: False
+null_loss: False
+null_loss_weight: 1.0
 ce_insert_mol: False
 ce_insert_frag: False
 ce_insert_mlp: False
