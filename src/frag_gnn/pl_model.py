@@ -666,6 +666,7 @@ class SpectrumPL(pl.LightningModule):
 			true_batch_idxs
 		)
 		pred = self.forward(**batch)
+		assert th.unique(pred["pred_formula_batch_idxs"]).shape[0] == batch_size
 		both = {
 			"true_mzs": true_mzs,
 			"true_logprobs": true_logprobs,
@@ -1768,8 +1769,11 @@ def test_models():
 		# "config/debug/debug_ce_oosm1.yml": FragGNNPL,
 		# "config/debug/debug_cos_hun_nooos.yml": FragGNNPL,
 		# "config/debug/debug_ce_nonull.yml": FragGNNPL,
-		"config/debug/debug_cos_hun.yml": FragGNNPL,
-		"config/debug/debug_cos_hun_nm.yml": FragGNNPL,
+		# "config/debug/debug_cos_hun.yml": FragGNNPL,
+		# "config/debug/debug_cos_hun_nm.yml": FragGNNPL,
+		"config/debug/debug_ce_h3.yml": FragGNNPL,
+		# "config/debug/debug_ce_d4.yml": FragGNNPL,
+		# "config/debug/debug_ce_d4_h3.yml": FragGNNPL,
 	}
 	
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
@@ -1799,11 +1803,11 @@ def test_models():
 
 		outputs = pl_model.forward(**batch)
 		print("> train outputs")
-		# print_shapes(outputs)
+		print_shapes(outputs)
 		print(th.exp(outputs["pred_logprobs"]).sum())
 
 		results = pl_model._common_step(batch, split="train")
-		print_shapes(results)
+		# print_shapes(results)
 
 		mean_loss = results["mean_loss"]
 		print("> loss")
