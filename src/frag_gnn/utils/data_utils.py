@@ -201,6 +201,23 @@ def mol_to_inchikey(mol:"rdkit.Chem.rdchem.Mol") -> str:
 		inchikey = np.nan
 	return inchikey
 
+def mol_to_inchikey_s(mol:"rdkit.Chem.rdchem.Mol") -> str:
+	"""get inchikey string from give mol object
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+
+	Returns:
+		str: inchikey, np.nan if fails
+	"""
+	modules = rdkit_import("rdkit.Chem.inchi")
+	inchi = modules[0]
+	try:
+		inchikey_s = inchi.MolToInchiKey(mol)[:14]
+	except:
+		inchikey_s = np.nan
+	return inchikey_s
+
 def mol_to_inchi(mol:"rdkit.Chem.rdchem.Mol")  -> str:
 	"""get inchi string from give mol object
 
