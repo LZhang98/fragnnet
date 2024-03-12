@@ -20,7 +20,7 @@ if __name__ == "__main__":
 		"-c",
 		"--custom_fp",
 		type=str,
-		default="config/d3_sweep_template.yml"
+		default="config/sweep/d3_sweep.yml"
 	)
 	parser.add_argument(
 		"-w",
@@ -46,7 +46,6 @@ if __name__ == "__main__":
 	def agent_func():
 
 		model = init_run(args.template_fp,args.custom_fp,args.wandb_mode,args.job_id)
-		# return model.get_best_val_metric()
 
 	# load config, just for wandb info
 	config_d = load_config(args.template_fp, args.custom_fp)
