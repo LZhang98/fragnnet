@@ -213,17 +213,13 @@ class SpectrumPL(pl.LightningModule):
 			elif metric_name == "true_oos_prob":
 				self.metric_min_max["true_oos_prob"] = None
 				self.auxiliary_metric_names.add("true_oos_prob")
-				compute_oos = True
 			elif metric_name == "true_oos_e":
 				self.metric_min_max["true_oos_e"] = None
 				self.auxiliary_metric_names.add("true_oos_e")
-				compute_oos = True
 			else:
 				raise ValueError(f"metric_name {metric_name} not recognized")
 
 		self.metric_names.update(self.auxiliary_metric_names)
-		# print(self.metric_names)
-		# print(self.auxiliary_metric_names)
 
 		def calculate_all_auxiliary_metrics(
 			true_mzs,
@@ -351,15 +347,6 @@ class SpectrumPL(pl.LightningModule):
 				if "true_spec_ne" in self.hparams.auxiliary_scores:
 					metric_d["true_spec_ne"] = true_spec_ne
 
-			# if compute_oos:
-			# 	true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs))
-			# 	true_oos_logprob, true_oos_e = fn()
-			# 	true_oos_prob = th.exp(true_oos_logprob)
-			# 	if "true_oos_prob" in self.hparams.auxiliary_scores:
-			# 		metric_d["true_oos_prob"] = true_oos_prob
-			# 	if "true_oos_e" in self.hparams.auxiliary_scores:
-			# 		metric_d["true_oos_e"] = true_oos_e
-
 			# local calculations
 			for b_idx in range(batch_size):
 
@@ -369,21 +356,7 @@ class SpectrumPL(pl.LightningModule):
 				b_pred_mzs = pred_mzs[b_pred_mask]
 				b_true_ints = true_ints[b_true_mask]
 				b_pred_ints = pred_ints[b_pred_mask]
-				# b_true_batch_idxs = true_batch_idxs[b_true_mask]
-				# b_pred_batch_idxs = pred_batch_idxs[b_pred_mask]
 				b_true_prec_mz = true_prec_mzs[b_idx:b_idx+1]
-				# b_true_prec_mask = calculate_match_mzs(
-				# 	b_true_mzs,
-				# 	b_true_prec_mz,
-				# 	tolerance=self.tolerance,
-				# 	relative=self.relative
-				# ).squeeze(1)
-				# b_pred_prec_mask = calculate_match_mzs(
-				# 	b_pred_mzs,
-				# 	b_true_prec_mz,
-				# 	tolerance=self.tolerance,
-				# 	relative=self.relative
-				# ).squeeze(1)
 
 				if compute_match_mzs:
 					b_match_mask = calculate_match_mzs(
@@ -1765,13 +1738,13 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		# "config/debug/debug_ce.yml": FragGNNPL,
+		"config/debug/debug_ce.yml": FragGNNPL,
 		# "config/debug/debug_ce_oosm1.yml": FragGNNPL,
 		# "config/debug/debug_cos_hun_nooos.yml": FragGNNPL,
 		# "config/debug/debug_ce_nonull.yml": FragGNNPL,
 		# "config/debug/debug_cos_hun.yml": FragGNNPL,
 		# "config/debug/debug_cos_hun_nm.yml": FragGNNPL,
-		"config/debug/debug_ce_h3.yml": FragGNNPL,
+		# "config/debug/debug_ce_h3.yml": FragGNNPL,
 		# "config/debug/debug_ce_d4.yml": FragGNNPL,
 		# "config/debug/debug_ce_d4_h3.yml": FragGNNPL,
 	}
@@ -1807,7 +1780,7 @@ def test_models():
 		print(th.exp(outputs["pred_logprobs"]).sum())
 
 		results = pl_model._common_step(batch, split="train")
-		# print_shapes(results)
+		print_shapes(results)
 
 		mean_loss = results["mean_loss"]
 		print("> loss")
@@ -1819,9 +1792,6 @@ def test_models():
 
 		print("> true_oos_prob")
 		print(results["true_oos_prob"].mean())
-
-		print("> true_oos_e")
-		print(results["true_oos_e"].mean())
 
 		print("> null_formula_prob")
 		print(results["null_formula_prob"].mean())
