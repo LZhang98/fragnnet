@@ -140,7 +140,7 @@ class SpectrumPL(pl.LightningModule):
 				for remove_prec_peak in bin_remove_prec_peak_flags:
 					for sqrt in bin_sqrt_flags:
 						for mz_bin_res in eval_mz_bin_reses:
-							fname_base = "cos_sim"
+							fname_base = "opt_cos_sim"
 							if sqrt:
 								fname_base += "_sqrt"
 							if remove_prec_peak:
