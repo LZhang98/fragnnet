@@ -147,8 +147,6 @@ def preproc_nist_mol(mol_dp):
 	def proc_mol_file(mol_fp):
 		modules = rdkit_import("rdkit.Chem","rdkit.Chem.rdinchi","rdkit.Chem.AllChem")
 		Chem = modules[0]
-		rdinchi = modules[1]
-		AllChem = modules[2]
 		mol_fn = os.path.basename(os.path.normpath(mol_fp))
 		spec_id = mol_fn.lstrip("ID").rstrip(".MOL")
 		mol = Chem.MolFromMolFile(mol_fp, sanitize=True)

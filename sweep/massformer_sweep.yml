@@ -1,0 +1,27 @@
+entity: frag-gnn
+project: frag-gnn
+program: /h/adamo/frag-gnn/scripts/run_wandb_sweep.py
+method: random
+name: massformer_sweep
+description: Optimize MassFormer hyperparameters at 0.01 Da
+metric:
+  goal: maximize
+  name: val_cos_sim_0.01_best/mean
+parameters:
+  # general optimization
+  ints_transform:
+    values: ["sqrt", "log10t3"]
+  lr:
+    distribution: log_uniform_values
+    min: 0.0001 # 1e-4
+    max: 0.01 # 1e-2
+  weight_decay:
+    distribution: log_uniform_values
+    min: 0.000000001 # 1e-9
+    max: 0.0001 # 1e-4
+  lr_decay_rate:
+    distribution: uniform
+    min: 0.7
+    max: 1.0
+  accumulate_grad_batches:
+    values: [1,2,4,8]

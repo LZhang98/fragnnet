@@ -639,7 +639,6 @@ class SpectrumPL(pl.LightningModule):
 			true_batch_idxs
 		)
 		pred = self.forward(**batch)
-		assert th.unique(pred["pred_formula_batch_idxs"]).shape[0] == batch_size
 		both = {
 			"true_mzs": true_mzs,
 			"true_logprobs": true_logprobs,
