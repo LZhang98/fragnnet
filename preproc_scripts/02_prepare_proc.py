@@ -46,6 +46,9 @@ def preprocess_spec(spec_df):
 	smiles_to_mid = {smiles:i for i,smiles in enumerate(sorted(smiles_set))}
 	spec_df.loc[:,"mol_id"] = spec_df["smiles"].replace(smiles_to_mid)
 
+	# copy for ann_df
+	ann_df = spec_df[["dset_spec_id","mol_id","notes","peaks","dset"]].copy()
+
 	# extract peak info (still represented as str)
 	spec_df.loc[:,"peaks"] = par_apply_series(spec_df["peaks"],data_utils.parse_peaks_str)
 	# get mz resolution
@@ -105,11 +108,24 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
 	spec_df = spec_df.drop(columns=["exact_mw"])
 
+	# extract annotation info
+	ann_df = ann_df.merge(spec_df[["dset_spec_id","spec_id","prec_type"]],on="dset_spec_id",how="inner")
+	ann_df = ann_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner")
+	ann_results = par_apply_df_rows(ann_df,data_utils.parse_annotations)
+	ann_df.loc[:,"ann_peak_mzs"] = ann_results[0]
+	ann_df.loc[:,"ann_products"] = ann_results[1]
+	ann_df.loc[:,"ann_losses"] = ann_results[2]
+	ann_df.loc[:,"ann_isotopes"] = ann_results[3]
+	import pdb; pdb.set_trace()
+	ann_df = ann_df.dropna(axis=0,how="any")
+	ann_df = ann_df.drop(columns=["notes","peaks"])
+
 	# reset indices
 	spec_df = spec_df.reset_index(drop=True)
 	mol_df = mol_df.reset_index(drop=True)
+	ann_df = ann_df.reset_index(drop=True)
 
-	return spec_df, mol_df
+	return spec_df, mol_df, ann_df
 
 
 if __name__ == "__main__":
@@ -124,31 +140,36 @@ if __name__ == "__main__":
 
 	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
 	mol_df_fp = os.path.join(flags.proc_dp,"mol_df.pkl")
+	ann_df_fp = os.path.join(flags.proc_dp,"ann_df.pkl")
 
 	if not flags.ow_spec_mol and os.path.isfile(spec_df_fp) and os.path.isfile(mol_df_fp):
 
-		print("> loading previous spec_df, mol_df")
+		print("> loading previous spec_df, mol_df, ann_df")
 		assert os.path.isdir(flags.proc_dp), flags.proc_dp
 		assert os.path.isfile(spec_df_fp), spec_df_fp
 		assert os.path.isfile(mol_df_fp), mol_df_fp
 		spec_df = pd.read_pickle(spec_df_fp)
 		mol_df = pd.read_pickle(mol_df_fp)
+		ann_df = pd.read_pickle(ann_df_fp)
 
 	else:
 
-		print("> creating new spec_df, mol_df")
+		print("> creating new spec_df, mol_df, ann_df")
 		assert os.path.isdir(flags.df_dp), flags.df_dp
 		os.makedirs(flags.proc_dp,exist_ok=True)
 		all_df = load_df(flags.df_dp,flags.dsets,flags.num_entries)
 
-		spec_df, mol_df = preprocess_spec(all_df)
+		spec_df, mol_df, ann_df = preprocess_spec(all_df)
 
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
+		ann_df.to_pickle(ann_df_fp)
 
 	print(spec_df.shape)
 	print(spec_df.isna().sum())
 	print(mol_df.shape)
 	print(mol_df.isna().sum())
+	print(ann_df.shape)
+	print(ann_df.isna().sum())
 

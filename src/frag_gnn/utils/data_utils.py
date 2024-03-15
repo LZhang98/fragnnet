@@ -6,13 +6,15 @@ import joblib
 from tqdm import tqdm
 from pprint import pformat, pprint
 from typing import Tuple, Union, List, TYPE_CHECKING
+import pyteomics
+from pyteomics.mass import Composition
 
 from frag_gnn.utils.misc_utils import np_temp_seed, none_or_nan
-from frag_gnn.utils.formula_utils import MASS, ELECTRON_MASS
+from frag_gnn.utils.formula_utils import MASS, ELECTRON_MASS, parse_formula
 
 # don't do expesive import in runtime
 if TYPE_CHECKING:
-    import rdkit
+	import rdkit
 
 JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
@@ -721,6 +723,138 @@ def parse_peaks_str(peaks_str):
 		peaks.append((mz,ints))
 	return peaks
 
+def composition_to_string(x):
+    return ''.join([a+str(x[a]) for a in sorted(x)])
+
+def parse_product_isotope(annot, precursor):
+    formula = Composition('')
+    precursor = Composition(formula=precursor)
+    adducts = []
+    losses = []
+    isotope = 0
+    charge = 1
+    chunks = [''] + re.split(r'([\+-])',annot)
+    for prefix, chunk in zip(chunks[::2],chunks[1::2]):
+        if len(chunk) == 0:
+            continue
+        elif prefix == '^':
+            charge = int(chunk)
+        else:
+            if chunk[-1] == 'i' and chunk[-2:] != "Si":
+                chunk = chunk[:-1]
+                isotope = int(chunk) if chunk else 1
+                if prefix == '-':
+                    isotope = -isotope
+            else:
+                if chunk[0].isdigit():
+                    n = int(chunk[0])
+                    chunk = chunk[1:]
+                else:
+                    n = 1
+                if chunk == 'p':
+                    chunk = precursor
+                else:
+                    chunk = Composition(formula=chunk) * n
+                if prefix == '':
+                    formula += chunk
+                elif prefix == '+':
+                    adducts.append(chunk)
+                    formula += chunk
+                elif prefix == '-':
+                    losses.append(chunk)
+                    formula -= chunk
+    return formula, adducts, losses, isotope, charge
+
+def is_pep_annot(annot):
+	pattern = r"(?:a|b|y)\d+|pi"
+	return re.match(pattern,annot) is not None
+
+def parse_annotations(row):
+	peaks_str = row["peaks"]
+	prec_type = row["prec_type"]
+	dset = row["dset"]
+	formula = row["formula"]
+	notes = row["notes"]
+	error = None
+	if dset not in ["nist20_hr"]:
+		error = ValueError(f"dataset not supported")
+	elif "glycan" in notes.lower():
+		error = ValueError(f"glycans not supported (1)")
+	elif "peptide" in notes.lower():
+		error = ValueError(f"peptide not supported (1)")
+	elif prec_type not in ["[M+H]+","[M-H]-"]:
+		error = ValueError(f"prec_type not supported")
+	elif none_or_nan(peaks_str):
+		error = ValueError(f"peaks_str is invalid")
+	if error is not None:	
+		error = repr(error)
+		return np.nan, np.nan, np.nan, np.nan, error
+	precursor = Composition(formula)
+	if prec_type == "[M+H]+":
+		precursor["H"] += 1
+	elif prec_type == "[M-H]-":
+		precursor["H"] -= 1
+	precursor = composition_to_string(precursor)
+	lines = peaks_str.split("\n")
+	peak_mzs, products, losses, isotopes = [], [], [], []
+	all_good = True
+	for line in lines:
+		if not all_good:
+			break
+		if len(line) == 0:
+			continue
+		line = line.split(" ")
+		if len(line) < 3:
+			continue
+		mz = line[0]
+		annots = " ".join(line[2:]).strip('\"')
+		# glycan parsing not implemented
+		if "|" in annots:
+			error = ValueError(f"glycans not supported (2)")
+			all_good = False
+			break
+		# peptide parsing not implemented
+		if is_pep_annot(annots):
+			error = ValueError(f"peptides not supported (2)")
+			all_good = False
+			break
+		annots = annots.split(";")
+		for annot in annots:
+			# strip the peak count
+			annot = re.sub(r' ?\d+/\d+$','',annot)
+			if len(annot) == 0:
+				error = ValueError(f"empty annotation")
+				all_good = False
+				break
+			if annot in ('?','more'):
+				continue
+			if '/' in annot:
+				annot, ppm = annot.split('/')
+			if '=' in annot:
+				annot, _ = annot.split('=')
+			try:
+				product, _, _, isotope, _ = parse_product_isotope(annot, precursor)
+			except pyteomics.auxiliary.structures.PyteomicsError as e:
+				error = e
+				all_good = False
+				break
+			except ValueError as e:
+				error = e
+				all_good = False
+				break
+			loss = Composition(formula=precursor) - product
+			product = composition_to_string(product)
+			loss = composition_to_string(loss)
+			peak_mzs.append(mz)
+			products.append(product)
+			losses.append(loss)
+			isotopes.append(isotope)
+	error = repr(error)
+	if all_good:
+		return peak_mzs, products, losses, isotopes, error
+	else:
+		return np.nan, np.nan, np.nan, np.nan, error
+
 def convert_peaks_to_float(peaks):
 	# assumes no nan
 	float_peaks = []
@@ -767,7 +901,7 @@ def analyze_mol(mol):
 	bond_counts = {"single": 0, "double": 0, "triple": 0, "aromatic": 0}
 	cnops_bond_counts = {"C": [-1], "N": [-1], "O": [-1], "P": [-1], "S": [-1], "Cl": [-1]}
 	h_counts = 0
-	p_num_bonds = 	[-1]
+	p_num_bonds = [-1]
 	s_num_bonds = [-1]
 	other_atoms = set()
 	for atom in mol.GetAtoms():

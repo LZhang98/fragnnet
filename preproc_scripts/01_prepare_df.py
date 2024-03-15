@@ -36,8 +36,9 @@ MSP_KEY_DICT = {
 	"Rating": "rating",
 	"Frag_mode": "frag_mode",
 	"Instrument": "inst",
-	"RI": "ri"
-	# "DB#": "dset_spec_id_2"
+	"RI": "ri",
+	# "DB#": "dset_spec_id_2",
+	"Notes": "notes", # NIST only
 }
 
 MS_KEY_DICT = {
