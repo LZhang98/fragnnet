@@ -35,22 +35,24 @@ if __name__ == "__main__":
 
 	if not debug:
 		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["fraggnn_d3","fraggnn_d4","iceberg_inten_100","iceberg_inten_all"]
+		wandb_model_types = ["fraggnn_d3_v2","fraggnn_d4_v2","iceberg_inten_100","iceberg_inten_all"]
 		local_model_types = ["neims","massformer"]
 		batch_cutoff = int(1e6)
 		seed_cutoff = num_seeds
 	else:
 		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["iceberg_inten_100"] #"iceberg_inten_all"
-		local_model_types = []
+		wandb_model_types = [] #["iceberg_inten_all","iceberg_inten_100"]
+		local_model_types = ["neims"] # ["neims","massformer"]
 		batch_cutoff = int(1e6)
-		seed_cutoff = num_seeds
+		seed_cutoff = 1 #num_seeds
 	
 	model_type_to_model_cls = {
 		"neims": NeimsPL,
 		"massformer": MassFormerPL,
 		"fraggnn_d3": FragGNNPL,
+		"fraggnn_d3_v2": FragGNNPL,
 		"fraggnn_d4": FragGNNPL,
+		"fraggnn_d4_v2": FragGNNPL,
 		"iceberg_inten_100": IcebergIntenPL,
 		"iceberg_inten_all": IcebergIntenPL,
 	}
@@ -59,7 +61,9 @@ if __name__ == "__main__":
 		"neims": SpecMolDataset,
 		"massformer": SpecMolDataset,
 		"fraggnn_d3": SpecMolFragDataset,
+		"fraggnn_d3_v2": SpecMolFragDataset,
 		"fraggnn_d4": SpecMolFragDataset,
+		"fraggnn_d4_v2": SpecMolFragDataset,
 		"iceberg_inten_100": SpecMolMagmaIntenDataset,
 		"iceberg_inten_all": SpecMolMagmaIntenDataset,
 	}

@@ -52,14 +52,14 @@ if __name__ == "__main__":
 
 	if not debug:
 		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["fraggnn_d3","fraggnn_d4","iceberg_inten_100","iceberg_inten_all"]
+		wandb_model_types = ["fraggnn_d3_v2","fraggnn_d4_v2","iceberg_inten_100","iceberg_inten_all"]
 		local_model_types = ["neims","massformer"]
 		seed_cutoff = num_seeds
 	else:
 		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["iceberg_inten_all","iceberg_inten_100"]
+		wandb_model_types = ["fraggnn_d3_v2","fraggnn_d4_v2","iceberg_inten_all","iceberg_inten_100"]
 		local_model_types = []
-		seed_cutoff = num_seeds #2
+		seed_cutoff = num_seeds
 
 	stats_df = []
 
@@ -116,6 +116,7 @@ if __name__ == "__main__":
 			stats_df.append(stats_df_entry)
 	
 	stats_df = pd.DataFrame(stats_df)
+	os.makedirs(args.output_dp,exist_ok=True)
 	stats_df.to_csv(os.path.join(args.output_dp,f"{eval_split}_df.csv"),index=False)
 	print(stats_df)
 	import pdb; pdb.set_trace()
@@ -127,7 +128,9 @@ if __name__ == "__main__":
 	
 	model_type_to_name = {
 		"fraggnn_d3": "FragNet-D3",
+		"fraggnn_d3_v2": "FragNet-D3",
 		"fraggnn_d4": "FragNet-D4",
+		"fraggnn_d4_v2": "FragNet-D4",
 		"neims": "NEIMS",
 		"massformer": "MassFormer",
 		"iceberg_inten_100": "Iceberg",
