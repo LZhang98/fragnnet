@@ -116,7 +116,6 @@ def preprocess_spec(spec_df):
 	ann_df.loc[:,"ann_products"] = ann_results[1]
 	ann_df.loc[:,"ann_losses"] = ann_results[2]
 	ann_df.loc[:,"ann_isotopes"] = ann_results[3]
-	import pdb; pdb.set_trace()
 	ann_df = ann_df.dropna(axis=0,how="any")
 	ann_df = ann_df.drop(columns=["notes","peaks"])
 
