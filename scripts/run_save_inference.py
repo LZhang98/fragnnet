@@ -44,7 +44,7 @@ if __name__ == "__main__":
 		wandb_model_types = [] #["iceberg_inten_all","iceberg_inten_100"]
 		local_model_types = ["neims"] # ["neims","massformer"]
 		batch_cutoff = int(1e6)
-		seed_cutoff = 1 #num_seeds
+		seed_cutoff = num_seeds
 	
 	model_type_to_model_cls = {
 		"neims": NeimsPL,
@@ -83,8 +83,8 @@ if __name__ == "__main__":
 			model_to_config[split_type][model_type] = f"config/nist20_d4_wr00_{split_type}/{model_type}/s0.yml"
 			for run in runs:
 				seed = int(run.name.split("_")[-1].removeprefix("s"))
-				assert seed < num_seeds, (seed, num_seeds)
-				model_to_run_id[split_type][model_type][seed] = run.id
+				if seed < num_seeds:
+					model_to_run_id[split_type][model_type][seed] = run.id
 	del api
 	pprint(model_to_config)
 	pprint(model_to_run_id)
