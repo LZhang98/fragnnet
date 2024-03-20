@@ -19,6 +19,7 @@ class MassFormerModel(nn.Module):
 		mz_bin_res: float,
 		ff_prec_mz_offset: int,
 		ff_bidirectional: bool,
+		ff_output_map_size: int,
 		ce_insert_mlp: bool,
 		ce_insert_mlp_lin: bool,
 		m_ce_insert_mlp_embed: bool,
@@ -70,7 +71,8 @@ class MassFormerModel(nn.Module):
 			dropout=mlp_dropout,
 			prec_mz_offset=ff_prec_mz_offset,
 			bidirectional=ff_bidirectional,
-			use_residuals=mlp_use_residuals
+			use_residuals=mlp_use_residuals,
+			output_map_size=ff_output_map_size
 		)
 
 	def get_split_params(self):

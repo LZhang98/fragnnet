@@ -523,7 +523,8 @@ class SpecFFN(nn.Module):
 		dropout, 
 		prec_mz_offset,
 		bidirectional,
-		use_residuals):
+		use_residuals,
+		output_map_size):
 
 		super().__init__()
 
@@ -544,16 +545,28 @@ class SpecFFN(nn.Module):
 					hidden_size,
 					hidden_size,
 					dropout))
-		if self.bidirectional:
-			# assumes gating, mass masking
-			self.forw_out_layer = nn.Linear(hidden_size, self.output_size)
-			self.rev_out_layer = nn.Linear(hidden_size, self.output_size)
-			self.out_gate = nn.Sequential(
-				*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+		if output_map_size == -1:
+			if self.bidirectional:
+				# assumes gating, mass masking
+				self.forw_out_layer = nn.Linear(hidden_size, self.output_size)
+				self.rev_out_layer = nn.Linear(hidden_size, self.output_size)
+				self.out_gate = nn.Sequential(
+					*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+			else:
+				self.out_layer = nn.Linear(hidden_size, self.output_size)
+				self.out_gate = nn.Sequential(
+					*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
 		else:
-			self.out_layer = nn.Linear(hidden_size, self.output_size)
-			self.out_gate = nn.Sequential(
-				*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+			if self.bidirectional:
+				# assumes gating, mass masking
+				self.forw_out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
+				self.rev_out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
+				self.out_gate = nn.Sequential(
+					*[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()])
+			else:
+				self.out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
+				self.out_gate = nn.Sequential(
+					*[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()])
 		self.out_activation = nn.ReLU()
 		self.out_normalization = lambda x: F.normalize(x, p=1, dim=1)
 
@@ -681,4 +694,16 @@ def nan_backward_hook(self, grad_input, grad_output):
 		if nan_mask.any():
 			print(">> In", self.__class__.__name__)
 			raise RuntimeError(f"Found NAN in grad_output {i} at indices: ", nan_mask.nonzero(), "where:", val[nan_mask.nonzero()[:, 0].unique(sorted=True)])
-	
+
+
+class LowRankDense(nn.Module):
+
+    def __init__(self, input_dim, output_dim, rank):
+        super(LowRankDense, self).__init__()
+        self.layer1 = nn.Linear(input_dim, rank, bias=False)
+        self.layer2 = nn.Linear(rank, output_dim)
+
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.layer2(x)
+        return x

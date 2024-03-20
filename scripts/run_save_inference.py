@@ -42,7 +42,7 @@ if __name__ == "__main__":
 	else:
 		split_types = ["inchikey","scaffold"]
 		wandb_model_types = [] #["iceberg_inten_all","iceberg_inten_100"]
-		local_model_types = ["neims"] # ["neims","massformer"]
+		local_model_types = ["massformer"] # ["neims","massformer"]
 		batch_cutoff = int(1e6)
 		seed_cutoff = num_seeds
 	

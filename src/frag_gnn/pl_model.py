@@ -1713,6 +1713,7 @@ class NeimsPL(BinnedPL):
 			mz_bin_res=self.hparams.mz_bin_res,
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
+			ff_output_map_size=self.hparams.ff_output_map_size,
 			ce_insert_mlp=self.hparams.ce_insert_mlp,
 			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
 			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,

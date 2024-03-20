@@ -113,6 +113,7 @@ mlp_use_residuals: True
 # bin-specific model
 ff_prec_mz_offset: 0 #5
 ff_bidirectional: True
+ff_output_map_size: -1
 # iceberg model
 iceberg_hidden_size: 256
 iceberg_num_layers: 3
