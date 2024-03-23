@@ -18,6 +18,7 @@ from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 import frag_gnn.massformer.data_utils as mf_data_utils
+import frag_gnn.graff.data_utils as graff_data_utils
 
 
 def init_dataloader(ds, config_d):
@@ -112,8 +113,12 @@ class BaseDataset(Dataset):
 		self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.split_df["mol_id"])]
 		assert np.all(np.unique(self.mol_df["mol_id"]) == np.unique(self.spec_df["mol_id"]))
 		# merge spectra
+		self.um_spec_df = self.spec_df[["spec_id","group_id","mol_id","peaks"]].copy()
 		if self.spec_params["merge"]:
 			self.spec_df = merge_spec_df(self.spec_df,keep_ces=self.spec_params["merge_keep_ces"])
+			self.id_key = "group_id"
+		else:
+			self.id_key = "spec_id"
 		# subsample
 		if subsample_params.get(split,False) and subsample_params["subsample_size"] > 0:
 			if isinstance(subsample_params["subsample_size"],int):
@@ -129,6 +134,7 @@ class BaseDataset(Dataset):
 				random_state=subsample_params["subsample_seed"],
 				replace=False)
 			self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
+			self.um_spec_df = self.um_spec_df[self.um_spec_df[self.id_key].isin(self.spec_df[self.id_key])]
 		# reset indices
 		self.spec_df = self.spec_df.reset_index(drop=True)
 		self.mol_df = self.mol_df.reset_index(drop=True)
@@ -202,11 +208,7 @@ class BaseDataset(Dataset):
 			prec_mz = th.tensor([float(prec_mz)],dtype=th.float)
 			spec_data["spec_prec_mz"] = prec_mz
 		if self.spec_params["unique_id"]:
-			if self.spec_params["merge"]:
-				id_key = "group_id"
-			else:
-				id_key = "spec_id"
-			unique_id = spec_entry[id_key]
+			unique_id = spec_entry[self.id_key]
 			unique_id = th.tensor([unique_id],dtype=th.long) 
 			spec_data["spec_unique_id"] = unique_id
 			spec_data['group_id'] =  th.tensor([spec_entry['group_id']],dtype=th.long)
@@ -415,6 +417,11 @@ class SpecMolDataset(BaseDataset):
 			# remove from list
 			collate_data.pop("mol_mf")
 			keys.remove("mol_mf")
+		if "mol_graff" in keys:
+			# batch
+			collate_data["mol_graff"] = Batch.from_data_list(collate_data["mol_graff"])
+			# remove from list
+			keys.remove("mol_graff")
 		BaseDataset._special_collate(keys,collate_data)
 
 	@staticmethod
@@ -434,9 +441,9 @@ class SpecMolFragDataset(SpecMolDataset):
 		split_dp: str,
 		split: str,
 		subsample_params: dict,
-		frag_dp: str,
 		spec_params: dict,
 		mol_params: dict,
+		frag_dp: str,
 		frag_params: dict,
 		**kwargs
 	):
@@ -450,8 +457,8 @@ class SpecMolFragDataset(SpecMolDataset):
 			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
-		self.frag_dp = frag_dp
 		self.mol_params = mol_params
+		self.frag_dp = frag_dp
 		self.frag_params = frag_params
 		self._preprocess_spec()
 		self._preprocess_mol()

@@ -10,6 +10,7 @@ mol_fp: data/proc/nist20mona23/mol_df.pkl
 split_dp: data/split/nist20_d3_wr75_inchikey
 frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
 magma_dp: data/magma
+ann_fp: data/proc/nist20mona23/ann_df.pkl
 subsample_params:
   subsample_size: 0
   subsample_seed: 420
@@ -50,6 +51,7 @@ mol_params:
   pyg_pe_embed_k: 0
   pyg_bigraph: True
   mf: False
+  graff: False
   preprocess: False
 frag_params:
   pyg: True
@@ -79,6 +81,10 @@ magma_params:
   mz_bin_res: 0.1
   mz_max: 1500.0
   sum_ints: True
+ann_params:
+  max_isotope: 3
+  library_size: 1000 #10000
+  num_eigs: 8
 # model
 model_type: frag_gnn
 num_depth: 5
@@ -137,6 +143,17 @@ mf_tot_updates: 400
 mf_warmup_frac: 0.1
 mf_high_lr: 0.0002
 mf_low_lr: 0.000000001
+# graff stuff
+graff_encoder_dim: 
+graff_decoder_dim:
+graff_encoder_depth:
+graff_decoder_depth:
+graff_eig_dim:
+graff_eig_depth:
+graff_dropout:
+graff_min_probability:
+graff_min_mz:
+graff_isotopes:
 # other
 lr: 0.0001
 lr_schedule: False
