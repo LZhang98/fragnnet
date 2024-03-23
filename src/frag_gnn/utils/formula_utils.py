@@ -16,6 +16,7 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"[M-H]-": -H_MASS + ELECTRON_MASS,
 	"": 0.
 }
+NEUTRON_MASS = 1.008665
 
 def MASS(element: str | int) -> float:
 	return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)

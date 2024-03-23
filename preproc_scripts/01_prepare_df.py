@@ -39,6 +39,8 @@ MSP_KEY_DICT = {
 	"RI": "ri",
 	# "DB#": "dset_spec_id_2",
 	"Notes": "notes", # NIST only
+	"Formula": "formula",
+	"InChIKey": "inchikey"
 }
 
 MS_KEY_DICT = {
@@ -182,6 +184,8 @@ def merge_and_check(msp_df,mol_df,rename_dict):
 		# merge with mol on spec_id
 		msp_df = msp_df.drop(columns=["smiles"])
 		spec_df = pd.merge(msp_df,mol_df,how="inner",on="spec_id")
+	if "dset_spec_id" not in spec_df.columns:
+		spec_df.loc[:,"dset_spec_id"] = spec_df["spec_id"]
 	print(spec_df.isna().sum())
 	spec_df = spec_df.reset_index(drop=True)
 	return spec_df
@@ -294,14 +298,17 @@ if __name__ == "__main__":
 	parser.add_argument('--output_dp', type=str, default='data/df')
 	parser.add_argument('--num_entries', type=int, default=-1)
 	parser.add_argument('--output_type', type=str, default="json", choices=["json","csv"])
-	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#"])
+	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#","ID"])
 	args = parser.parse_args()
 
 	os.makedirs(args.output_dp,exist_ok=True)
 
 	if args.input_format in ["msp","msp+mol","msp+pkl"]:
 		# select dset_spec_id
-		MSP_KEY_DICT[args.msp_dset_spec_id] = "dset_spec_id"
+		if args.msp_dset_spec_id not in MSP_KEY_DICT:
+			MSP_KEY_DICT[args.msp_dset_spec_id] = "dset_spec_id"
+		else:
+			assert "dset_spec_id" not in MSP_KEY_DICT.values()
 		# nist or mona
 		msp_fp = os.path.join(args.raw_data_dp,args.msp_file)
 		assert os.path.isfile(msp_fp), msp_fp

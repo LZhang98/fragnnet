@@ -7,6 +7,7 @@ from pprint import pprint, pformat
 import joblib
 from tqdm import tqdm
 import argparse
+from rdkit import RDLogger
 
 import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_series, seq_apply_df_rows
@@ -30,7 +31,6 @@ def load_df(df_dp,dsets,num_entries):
 	all_df = all_df.reset_index(drop=True)
 
 	return all_df
-
 
 def preprocess_spec(spec_df):
 
@@ -73,11 +73,11 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"ri"] = par_apply_series(spec_df["ri"],data_utils.parse_ri_str)
 
 	# remove columns from spec_df
-	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","nce","prec_mz","peaks","ri"]]
+	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","nce","prec_mz","peaks","ri","formula","inchikey","exact_mass"]]
 	# relabel spec_id (this is to make it unique across datasets)
 	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
 	# set group_id (same compound and precursor)
-	group_df = spec_df.drop(columns=["spec_id","dset_spec_id","peaks","nce","ace","res","prec_mz","ri","col_gas"]).drop_duplicates()
+	group_df = spec_df.drop(columns=["spec_id","dset_spec_id","peaks","nce","ace","res","prec_mz","ri","col_gas","formula","inchikey","exact_mass"]).drop_duplicates()
 	group_df.loc[:,"group_id"] = np.arange(group_df.shape[0])
 	spec_df = spec_df.merge(group_df,how="inner")
 
@@ -103,6 +103,26 @@ def preprocess_spec(spec_df):
 	print("> bad_mol_id",len(bad_mol_id))
 	spec_df = spec_df[~spec_df["mol_id"].isin(bad_mol_id)]
 
+	# check how many formulae/inchikeys are different
+	formula_df = spec_df[["dset_spec_id","spec_id","mol_id","formula"]].copy()
+	formula_df = formula_df[formula_df["formula"] != ""]
+	formula_df = formula_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner")
+	diff_formula_df = formula_df[formula_df["formula_x"] != formula_df["formula_y"]]
+	print("> formula inconsistencies")
+	print(diff_formula_df["mol_id"].nunique(), diff_formula_df["spec_id"].nunique())
+	inchikey_df = spec_df[["dset_spec_id","spec_id","mol_id","inchikey"]].copy().dropna()
+	inchikey_df["inchikey_s"] = inchikey_df["inchikey"].str[:14]
+	inchikey_df = inchikey_df.drop(columns=["inchikey"])
+	inchikey_df = inchikey_df.merge(mol_df[["mol_id","inchikey_s"]],on="mol_id",how="inner")
+	diff_inchikey_df = inchikey_df[inchikey_df["inchikey_s_x"] != inchikey_df["inchikey_s_y"]]
+	print("> inchikey_s inconsistencies")
+	print(diff_inchikey_df["mol_id"].nunique(), diff_inchikey_df["spec_id"].nunique())
+	mass_df = spec_df[["dset_spec_id","spec_id","mol_id","exact_mass"]].copy().rename(columns={"exact_mass":"exact_mw"})
+	mass_df = mass_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner")
+	diff_mass_df = mass_df[(mass_df["exact_mw_x"] - mass_df["exact_mw_y"]).abs() > 0.1]
+	print("> mass inconsistencies")
+	print(diff_mass_df["mol_id"].nunique(), diff_mass_df["spec_id"].nunique())
+
 	# fill in missing prec_mz by inferring them
 	spec_df = spec_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner")
 	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
@@ -116,6 +136,7 @@ def preprocess_spec(spec_df):
 	ann_df.loc[:,"ann_products"] = ann_results[1]
 	ann_df.loc[:,"ann_losses"] = ann_results[2]
 	ann_df.loc[:,"ann_isotopes"] = ann_results[3]
+	ann_df.loc[:,"ann_exact_mzs"] = ann_results[4]
 	ann_df = ann_df.dropna(axis=0,how="any")
 	ann_df = ann_df.drop(columns=["notes","peaks"])
 
@@ -124,10 +145,12 @@ def preprocess_spec(spec_df):
 	mol_df = mol_df.reset_index(drop=True)
 	ann_df = ann_df.reset_index(drop=True)
 
-	return spec_df, mol_df, ann_df
+	return spec_df, mol_df, ann_df, diff_formula_df, diff_inchikey_df, diff_mass_df
 
 
 if __name__ == "__main__":
+
+	RDLogger.DisableLog("rdApp.*")
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--df_dp", type=str, default="data/df")
@@ -140,6 +163,9 @@ if __name__ == "__main__":
 	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
 	mol_df_fp = os.path.join(flags.proc_dp,"mol_df.pkl")
 	ann_df_fp = os.path.join(flags.proc_dp,"ann_df.pkl")
+	diff_formula_fp = os.path.join(flags.proc_dp,"diff_formula_df.pkl")
+	diff_inchikey_fp = os.path.join(flags.proc_dp,"diff_inchikey_df.pkl")
+	diff_mass_fp = os.path.join(flags.proc_dp,"diff_mass_df.pkl")
 
 	if not flags.ow_spec_mol and os.path.isfile(spec_df_fp) and os.path.isfile(mol_df_fp):
 
@@ -150,6 +176,9 @@ if __name__ == "__main__":
 		spec_df = pd.read_pickle(spec_df_fp)
 		mol_df = pd.read_pickle(mol_df_fp)
 		ann_df = pd.read_pickle(ann_df_fp)
+		diff_formula_df = pd.read_pickle(diff_formula_fp)
+		diff_inchikey_df = pd.read_pickle(diff_inchikey_fp)
+		diff_mass_df = pd.read_pickle(diff_mass_fp)
 
 	else:
 
@@ -158,12 +187,15 @@ if __name__ == "__main__":
 		os.makedirs(flags.proc_dp,exist_ok=True)
 		all_df = load_df(flags.df_dp,flags.dsets,flags.num_entries)
 
-		spec_df, mol_df, ann_df = preprocess_spec(all_df)
+		spec_df, mol_df, ann_df, diff_formula_df, diff_inchikey_df, diff_mass_df = preprocess_spec(all_df)
 
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
 		ann_df.to_pickle(ann_df_fp)
+		diff_formula_df.to_pickle(diff_formula_fp)
+		diff_inchikey_df.to_pickle(diff_inchikey_fp)
+		diff_mass_df.to_pickle(diff_mass_fp)
 
 	print(spec_df.shape)
 	print(spec_df.isna().sum())

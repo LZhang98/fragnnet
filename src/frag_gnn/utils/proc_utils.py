@@ -75,10 +75,11 @@ def filter_spec_mol(
 	neutral_mask = spec_df["mol_id"].isin(neutral_ids)
 	masks.append(neutral_mask)
 	# element composition
-	element_ids = mol_df[mol_df["formula"].apply(lambda formula: element_filter(formula,allowed_elements))]["mol_id"]
-	element_mask = spec_df["mol_id"].isin(element_ids)
-	print(f">> element: {element_mask.mean()}")
-	masks.append(element_mask)
+	if allowed_elements is not None:
+		element_ids = mol_df[mol_df["formula"].apply(lambda formula: element_filter(formula,allowed_elements))]["mol_id"]
+		element_mask = spec_df["mol_id"].isin(element_ids)
+		print(f">> element: {element_mask.mean()}")
+		masks.append(element_mask)
 	# atom count
 	atom_count_ids = mol_df[mol_df["num_atoms"]<=MAX_NUM_NODES]["mol_id"]
 	atom_count_mask = spec_df["mol_id"].isin(atom_count_ids)

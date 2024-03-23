@@ -8,9 +8,10 @@ from pprint import pformat, pprint
 from typing import Tuple, Union, List, TYPE_CHECKING
 import pyteomics
 from pyteomics.mass import Composition
+import rdkit.RDLogger as RDLogger
 
 from frag_gnn.utils.misc_utils import np_temp_seed, none_or_nan
-from frag_gnn.utils.formula_utils import MASS, ELECTRON_MASS, parse_formula
+from frag_gnn.utils.formula_utils import MASS, ELECTRON_MASS, parse_formula, NEUTRON_MASS
 
 # don't do expesive import in runtime
 if TYPE_CHECKING:
@@ -770,6 +771,9 @@ def is_pep_annot(annot):
 	return re.match(pattern,annot) is not None
 
 def parse_annotations(row):
+	
+	RDLogger = importlib.import_module("rdkit.RDLogger")
+	RDLogger.DisableLog('rdApp.*')
 	peaks_str = row["peaks"]
 	prec_type = row["prec_type"]
 	dset = row["dset"]
@@ -788,7 +792,7 @@ def parse_annotations(row):
 		error = ValueError(f"peaks_str is invalid")
 	if error is not None:	
 		error = repr(error)
-		return np.nan, np.nan, np.nan, np.nan, error
+		return np.nan, np.nan, np.nan, np.nan, np.nan, error
 	precursor = Composition(formula)
 	if prec_type == "[M+H]+":
 		precursor["H"] += 1
@@ -796,7 +800,7 @@ def parse_annotations(row):
 		precursor["H"] -= 1
 	precursor = composition_to_string(precursor)
 	lines = peaks_str.split("\n")
-	peak_mzs, products, losses, isotopes = [], [], [], []
+	peak_mzs, products, losses, isotopes, exact_mzs = [], [], [], [], []
 	all_good = True
 	for line in lines:
 		if not all_good:
@@ -806,7 +810,7 @@ def parse_annotations(row):
 		line = line.split(" ")
 		if len(line) < 3:
 			continue
-		mz = line[0]
+		peak_mz = line[0]
 		annots = " ".join(line[2:]).strip('\"')
 		# glycan parsing not implemented
 		if "|" in annots:
@@ -842,18 +846,36 @@ def parse_annotations(row):
 				error = e
 				all_good = False
 				break
+			try:
+				exact_mz = composition_to_mass(product,isotope)
+			except RuntimeError as e:
+				# something wrong with the formula
+				error = e
+				all_good = False
+				break
 			loss = Composition(formula=precursor) - product
 			product = composition_to_string(product)
 			loss = composition_to_string(loss)
-			peak_mzs.append(mz)
+			peak_mzs.append(peak_mz)
 			products.append(product)
 			losses.append(loss)
 			isotopes.append(isotope)
+			exact_mzs.append(exact_mz)
 	error = repr(error)
 	if all_good:
-		return peak_mzs, products, losses, isotopes, error
+		return peak_mzs, products, losses, isotopes, exact_mzs, error
 	else:
-		return np.nan, np.nan, np.nan, np.nan, error
+		return np.nan, np.nan, np.nan, np.nan, np.nan, error
+
+def composition_to_mass(formula,isotope):
+	mass = isotope * NEUTRON_MASS
+	for k,v in formula.items():
+		mass += MASS(k) * v
+	return mass
+
+def formula_to_mass(formula):
+	formula = Composition(formula=formula)
+	return composition_to_mass(formula,0)
 
 def convert_peaks_to_float(peaks):
 	# assumes no nan
