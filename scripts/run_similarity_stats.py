@@ -53,11 +53,11 @@ if __name__ == "__main__":
 	if not debug:
 		split_types = ["inchikey","scaffold"]
 		wandb_model_types = ["fraggnn_d3_v2","fraggnn_d4_v2","iceberg_inten_100","iceberg_inten_all"]
-		local_model_types = ["neims","massformer"]
+		local_model_types = ["neims_v2","massformer_v2"]
 		seed_cutoff = num_seeds
 	else:
 		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["fraggnn_d3_v2","fraggnn_d4_v2","iceberg_inten_all","iceberg_inten_100"]
+		wandb_model_types = []
 		local_model_types = []
 		seed_cutoff = num_seeds
 
@@ -132,7 +132,9 @@ if __name__ == "__main__":
 		"fraggnn_d4": "FragNet-D4",
 		"fraggnn_d4_v2": "FragNet-D4",
 		"neims": "NEIMS",
+		"neims_v2": "NEIMS",
 		"massformer": "MassFormer",
+		"massformer_v2": "MassFormer",
 		"iceberg_inten_100": "Iceberg",
 		"iceberg_inten_all": "Iceberg-ADV",
 	}

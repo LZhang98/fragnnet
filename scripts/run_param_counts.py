@@ -29,16 +29,18 @@ if __name__ == "__main__":
 
 	if not debug:
 		wandb_model_types = ["fraggnn_d3_v2","fraggnn_d4_v2","iceberg_gen","iceberg_inten_100","iceberg_inten_all"]
-		local_model_types = ["neims","massformer"]
+		local_model_types = ["neims_v2","massformer_v2"]
 	else:
-		wandb_model_types = ["iceberg_gen"] #["iceberg_inten_all","iceberg_inten_100"]
-		local_model_types = [] # ["neims","massformer"]
+		wandb_model_types = [] 
+		local_model_types = []
 	
 	model_types = wandb_model_types + local_model_types
 
 	model_type_to_model_cls = {
 		"neims": NeimsPL,
+		"neims_v2": NeimsPL,
 		"massformer": MassFormerPL,
+		"massformer_v2": MassFormerPL,
 		"fraggnn_d3": FragGNNPL,
 		"fraggnn_d3_v2": FragGNNPL,
 		"fraggnn_d4": FragGNNPL,
@@ -70,9 +72,8 @@ if __name__ == "__main__":
 		print(f">>> Initializing model")
 		model_cls = model_type_to_model_cls[model_type]
 		model = model_cls(**config_d)
-		if model_type in ["neims","massformer"]:
+		if model_type in ["neims","massformer","neims_v2","massformer_v2"]:
 			model_param_counts = pl.utilities.model_summary.ModelSummary(model, max_depth=4)
-			# import pdb; pdb.set_trace()
 			model_idx = model_param_counts.layer_names.index("model")
 			output_idxs = [model_param_counts.layer_names.index(f"model._orig_mod.ffn.{k}") for k in ["forw_out_layer","rev_out_layer","out_gate"]]
 			model_to_param_counts[model_type] = model_param_counts.param_nums[model_idx]
