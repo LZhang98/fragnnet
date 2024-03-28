@@ -1,4 +1,4 @@
-wandb_name: retrieval_neims_v2
+wandb_name: inchikey_neims_v2
 wandb_tags:
 - retrieval
 - nist20
