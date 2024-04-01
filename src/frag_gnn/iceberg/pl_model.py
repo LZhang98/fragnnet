@@ -596,9 +596,7 @@ class IcebergIntenPL(SpectrumPL):
 			loss_d = {
 				"loss": loss,
 				"primary_loss": primary_loss,
-				"spec_ce": spec_ce,
-				"true_oos_prob": th.exp(true_oos_logprob),
-				"true_oos_e": true_oos_e,
+				"spec_ce": spec_ce
 			}
 			return loss_d
 
@@ -606,9 +604,7 @@ class IcebergIntenPL(SpectrumPL):
 		loss_names = [
 			"loss",
 			"primary_loss",
-			"spec_ce",
-			"true_oos_prob",
-			"true_oos_e"
+			"spec_ce"
 		]
 		self.metric_names.update(loss_names)
 

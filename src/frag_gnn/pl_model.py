@@ -140,7 +140,7 @@ class SpectrumPL(pl.LightningModule):
 				for remove_prec_peak in bin_remove_prec_peak_flags:
 					for sqrt in bin_sqrt_flags:
 						for mz_bin_res in eval_mz_bin_reses:
-							fname_base = "cos_sim"
+							fname_base = "opt_cos_sim"
 							if sqrt:
 								fname_base += "_sqrt"
 							if remove_prec_peak:
@@ -1713,6 +1713,7 @@ class NeimsPL(BinnedPL):
 			mz_bin_res=self.hparams.mz_bin_res,
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
+			ff_output_map_size=self.hparams.ff_output_map_size,
 			ce_insert_mlp=self.hparams.ce_insert_mlp,
 			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
 			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,

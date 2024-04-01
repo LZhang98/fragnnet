@@ -840,6 +840,7 @@ class FragGNNModel(nn.Module):
 				frag_nb_joint_both_inv_idxs,
 				dim_size=frag_nb_joint_both_un_idxs.shape[0]
 			)
+			frag_nb_formula_node_logprobs = th.clamp(frag_nb_formula_node_logprobs, max=0.)
 			# P(n|n')
 			frag_nb_node_node_logprobs = scatter_logsoftmax(
 				frag_real_node_logprobs,
@@ -855,6 +856,7 @@ class FragGNNModel(nn.Module):
 				frag_nb_joint_both_inv_idxs,
 				dim_size=frag_nb_joint_both_un_idxs.shape[0]
 			)
+			frag_nb_node_formula_logprobs = th.clamp(frag_nb_node_formula_logprobs, max=0.)
 			# P(f,n')
 			frag_nb_joint_logprobs = scatter_logsumexp(
 				frag_real_joint_logprobs,
@@ -948,6 +950,7 @@ class NeimsModel(nn.Module):
 		mz_bin_res: float,
 		ff_prec_mz_offset: int,
 		ff_bidirectional: bool,
+		ff_output_map_size: int,
 		ce_insert_mlp: bool,
 		ce_insert_mlp_lin: bool,
 		m_ce_insert_mlp_embed: bool,
@@ -996,7 +999,8 @@ class NeimsModel(nn.Module):
 			dropout=mlp_dropout,
 			use_residuals=mlp_use_residuals,
 			bidirectional=ff_bidirectional,
-			prec_mz_offset=ff_prec_mz_offset
+			prec_mz_offset=ff_prec_mz_offset,
+			output_map_size=ff_output_map_size,
 		)
 
 	def forward(

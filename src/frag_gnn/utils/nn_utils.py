@@ -158,16 +158,25 @@ class GNN(nn.Module):
 				dropout=self.dropout,
 				normalization=self.normalization
 			)
-		# elif self.gnn_type == "GAT" or self.gnn_type == "GATv2":
-		# 	self.gnn = GAT(
-		# 		edge_feats_size=self.edge_feats_size,
-		# 		node_feats_size=self.node_feats_size,
-		# 		node_hidden_dim=self.hidden_size, 
-		# 	    num_step_message_passing =self.num_layers,
-		# 		gat_heads = 1, # TODO this need to hook up correctly
-		# 		gat_dropout=self.dropout,
-		# 		is_v2 = True if self.gnn_type == "GATv2" else False
-		# 	)
+		elif self.gnn_type == "MPNN":
+			self.gnn = MPNN(
+				node_feats_size=self.node_feats_size,
+				edge_feats_size=self.edge_feats_size,
+				hidden_size=self.hidden_size,
+				num_layers=self.num_layers,
+				dropout=self.dropout,
+				normalization=self.normalization
+			)
+		elif self.gnn_type == "GAT" or self.gnn_type == "GATv2":
+			self.gnn = GAT(
+				node_feats_size=self.node_feats_size,
+				edge_feats_size=self.edge_feats_size,
+				hidden_size=self.hidden_size,
+				num_layers=self.num_layers,
+				dropout=self.dropout,
+				normalization=self.normalization,
+				is_v2=(self.gnn_type == "GATv2")
+			)
 		else:
 			raise NotImplementedError(self.gnn_type)
 
@@ -177,6 +186,23 @@ class GNN(nn.Module):
 		z = self.gnn(z, batch_index, edge_index, edge_attr)
 		return z
 
+def get_norm(normalization,hidden_size):
+
+	# norm_fn may or may not depend on the batch index
+	if normalization == "batch":
+		norm_mod = nn.BatchNorm1d(hidden_size)
+		norm_fn = lambda x, b, n: n(x)
+	elif normalization == "layer":
+		norm_mod = nn.LayerNorm(hidden_size)
+		norm_fn = lambda x, b, n: n(x)
+	elif normalization == "graph":
+		norm_mod = pyg.nn.GraphNorm(hidden_size)
+		norm_fn = lambda x, b, n: n(x,b)
+	else:
+		assert normalization == "none", normalization
+		norm_mod = nn.Identity()
+		norm_fn = lambda x, b, n: n(x)	
+	return norm_mod, norm_fn
 
 class GINE(nn.Module):
 	def __init__(
@@ -219,21 +245,9 @@ class GINE(nn.Module):
 			self.layers.append(temp_layer)
 
 		self.layers = nn.ModuleList(self.layers)
-		# setup norm and norm_fn
-		# norm_fn may or may not depend on the batch index
-		if normalization == "batch":
-			norm_mod = nn.BatchNorm1d(hidden_size)
-			self.norm_fn = lambda x, b, n: n(x)
-		elif normalization == "layer":
-			norm_mod = nn.LayerNorm(hidden_size)
-			self.norm_fn = lambda x, b, n: n(x)
-		elif normalization == "graph":
-			norm_mod = pyg.nn.GraphNorm(hidden_size)
-			self.norm_fn = lambda x, b, n: n(x,b)
-		else:
-			assert normalization == "none", normalization
-			norm_mod = nn.Identity()
-			self.norm_fn = lambda x, b, n: n(x)
+		# setup norms and dropout
+		norm_mod, norm_fn = get_norm(normalization, hidden_size)
+		self.norm_fn = norm_fn
 		self.norms = get_clones(norm_mod, num_layers)
 		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
@@ -306,53 +320,49 @@ class NodeMLP(nn.Module):
 class MPNN(nn.Module):
 	def __init__(
 		self,
+		hidden_size: int,
 		node_feats_size: int,
 		edge_feats_size: int,
-		output_size: int,
-		node_hidden_dim=64,
-		edge_hidden_dim=128,
-		num_step_message_passing=6,
-		num_step_set2set=6,
+		num_layers: int,
+		dropout: float,
+		normalization: str,
 		**kwargs
 	):
 		"""Neural Message Passing for Quantum Chemistry
 			https://arxiv.org/abs/1704.01212
 		"""
 		super().__init__()
-		self.num_step_message_passing = num_step_message_passing
-		self.lin0 = nn.Linear(node_feats_size, node_hidden_dim)
-		edge_network = nn.Sequential(
-			nn.Linear(edge_feats_size, edge_hidden_dim), nn.ReLU(),
-			nn.Linear(edge_hidden_dim, node_hidden_dim * node_hidden_dim))
-		
+		assert edge_feats_size >= 0, edge_feats_size
+		self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
 		# MPNN 
-		self.conv = pyg.nn.NNConv(node_hidden_dim,
-			node_hidden_dim,
-			edge_network,
-			aggr='mean',
-			root_weight=False)
-		self.gru = nn.GRU(node_hidden_dim, node_hidden_dim)
+		self.layers = []
+		for i in range(num_layers):
+			edge_network = edge_network = nn.Sequential(
+				nn.Linear(hidden_size, hidden_size), nn.ReLU(),
+				nn.Linear(hidden_size, hidden_size * hidden_size))
+			layer = pyg.nn.NNConv(
+				hidden_size,
+				hidden_size,
+				edge_network,
+				aggr='mean',
+				root_weight=False)
+			self.layers.append(layer)
+		self.layers = nn.ModuleList(self.layers)
+		# setup norms and dropout
+		norm_mod, norm_fn = get_norm(normalization, hidden_size)
+		self.norm_fn = norm_fn
+		self.norms = get_clones(norm_mod, num_layers)
+		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
-		#self.set2set = pyg.nn.Set2Set(node_hidden_dim,processing_steps=num_step_set2set)
-		#self.lin1 = nn.Linear(2 * node_hidden_dim, node_hidden_dim)
-		#self.lin2 = nn.Linear(node_hidden_dim, output_size)
-			
 	def forward(self, x, batch_index, edge_index, edge_attr):
 		"""forward.
 		"""
-		out = F.relu(self.lin0(x))
-		h = out.unsqueeze(0)
-
-		# for each setup, pass messages
-		for _ in range(self.num_step_message_passing):
-			m = F.relu(self.conv(out, edge_index, edge_attr))
-			out, h = self.gru(m.unsqueeze(0), h)
-			out = out.squeeze(0)
-
-		#out = self.set2set(out, batch_index)
-		#out = F.relu(self.lin1(out))
-		#out = self.lin2(out)
-		return out
+		edge_attr = self.edge_transform(edge_attr)
+		for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
+			layer_out = layer(x, edge_index, edge_attr)
+			layer_out = self.norm_fn(layer_out, batch_index, norm)
+			x = F.relu(dropout(layer_out)) + x
+		return x
 
 class GAT(nn.Module):
 	""" Graph attention networks. https://arxiv.org/abs/1710.10903 
@@ -363,10 +373,11 @@ class GAT(nn.Module):
 		self,
 		node_feats_size: int,
 		edge_feats_size: int,
-		node_hidden_dim: int,
-		num_step_message_passing: int,
-		#num_step_set2set: int,
-		gat_heads: int = 1,
+		hidden_size: int,
+		num_layers: int,
+		dropout: float,
+		normalization: str,
+		num_gat_heads: int = 8,
 		gat_dropout: float = 0.0,
 		is_v2: bool = True,
 		is_concat: bool = True,
@@ -386,31 +397,38 @@ class GAT(nn.Module):
 			is_concat (bool, optional). concatenated multihead attetion, Defaults to True
 		"""
 		super(GAT, self).__init__()
-		self.num_step_message_passing = num_step_message_passing
-		#self.lin0 = nn.Linear(node_feats_size, node_hidden_dim)
-
-		gat_output_dim = node_hidden_dim//gat_heads if is_concat else node_hidden_dim
-
-		if is_concat and node_hidden_dim % gat_heads != 0:
+		assert edge_feats_size >= 0, edge_feats_size
+		self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
+		gat_output_size = hidden_size // num_gat_heads if is_concat else hidden_size
+		if is_concat and hidden_size % num_gat_heads != 0:
 			raise ValueError(f"Ensure that the number of output channels of "
-                             f"'GAT' (got '{node_hidden_dim}') is divisible "
-                             f"by the number of heads (got '{gat_heads}')")	
-
-		# hook up to GATCOnv
+                             f"'GAT' (got '{hidden_size}') is divisible "
+                             f"by the number of heads (got '{num_gat_heads}')")	
 		GATConv_fn = pyg.nn.conv.GATConv if not is_v2 else pyg.nn.conv.GATv2Conv
-		self.conv = GATConv_fn(node_hidden_dim, gat_output_dim, 
-				heads  = gat_heads,
-				edge_dim=edge_feats_size, 
+		self.layers = []
+		for i in range(num_layers):
+			layer = GATConv_fn(
+				in_channels=hidden_size,
+				out_channels=gat_output_size,
+				heads=num_gat_heads,
+				edge_dim=hidden_size,
 				dropout=gat_dropout,
 				concat=is_concat)
+			self.layers.append(layer)
+		self.layers = nn.ModuleList(self.layers)
+		# setup norms and dropout
+		norm_mod, norm_fn = get_norm(normalization, hidden_size)
+		self.norm_fn = norm_fn
+		self.norms = get_clones(norm_mod, num_layers)
+		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
 	def forward(self, x, batch_index, edge_index, edge_attr):
-		#out = F.relu(self.lin0(x))out
-		out = x
-		for i in range(self.num_step_message_passing):
-			out = F.relu(self.conv(out, edge_index, edge_attr=edge_attr))
-
-		return out
+		edge_attr = self.edge_transform(edge_attr)
+		for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
+			layer_out = layer(x, edge_index, edge_attr)
+			layer_out = self.norm_fn(layer_out, batch_index, norm)
+			x = F.relu(dropout(layer_out)) + x
+		return x
 	
 class MLPBlocks(nn.Module):
 	"""Just Good Old Multilayer perceptron with residuals
@@ -523,7 +541,8 @@ class SpecFFN(nn.Module):
 		dropout, 
 		prec_mz_offset,
 		bidirectional,
-		use_residuals):
+		use_residuals,
+		output_map_size):
 
 		super().__init__()
 
@@ -544,16 +563,28 @@ class SpecFFN(nn.Module):
 					hidden_size,
 					hidden_size,
 					dropout))
-		if self.bidirectional:
-			# assumes gating, mass masking
-			self.forw_out_layer = nn.Linear(hidden_size, self.output_size)
-			self.rev_out_layer = nn.Linear(hidden_size, self.output_size)
-			self.out_gate = nn.Sequential(
-				*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+		if output_map_size == -1:
+			if self.bidirectional:
+				# assumes gating, mass masking
+				self.forw_out_layer = nn.Linear(hidden_size, self.output_size)
+				self.rev_out_layer = nn.Linear(hidden_size, self.output_size)
+				self.out_gate = nn.Sequential(
+					*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+			else:
+				self.out_layer = nn.Linear(hidden_size, self.output_size)
+				self.out_gate = nn.Sequential(
+					*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
 		else:
-			self.out_layer = nn.Linear(hidden_size, self.output_size)
-			self.out_gate = nn.Sequential(
-				*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+			if self.bidirectional:
+				# assumes gating, mass masking
+				self.forw_out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
+				self.rev_out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
+				self.out_gate = nn.Sequential(
+					*[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()])
+			else:
+				self.out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
+				self.out_gate = nn.Sequential(
+					*[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()])
 		self.out_activation = nn.ReLU()
 		self.out_normalization = lambda x: F.normalize(x, p=1, dim=1)
 
@@ -681,4 +712,16 @@ def nan_backward_hook(self, grad_input, grad_output):
 		if nan_mask.any():
 			print(">> In", self.__class__.__name__)
 			raise RuntimeError(f"Found NAN in grad_output {i} at indices: ", nan_mask.nonzero(), "where:", val[nan_mask.nonzero()[:, 0].unique(sorted=True)])
-	
+
+
+class LowRankDense(nn.Module):
+
+    def __init__(self, input_dim, output_dim, rank):
+        super(LowRankDense, self).__init__()
+        self.layer1 = nn.Linear(input_dim, rank, bias=False)
+        self.layer2 = nn.Linear(rank, output_dim)
+
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.layer2(x)
+        return x

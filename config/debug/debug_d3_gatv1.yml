@@ -1,0 +1,62 @@
+wandb_name: debug_d3_gatv1
+wandb_tags:
+- debug
+
+spec_fp: data/proc/debug_small/spec_df.pkl
+mol_fp: data/proc/debug_small/mol_df.pkl
+split_dp: data/split/debug_small
+frag_dp: data/frag/nist20_d3_h4_isoFalse_nb2/dags
+num_depth: 4
+num_hs: 4
+subsample_params:
+  subsample_size: 0.25
+mol_gnn_type: GAT
+frag_gnn_type: NodeMLP
+frag_params:
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - nb_iso_idx
+  pyg_edge_feats: []
+  pyg_bigraph: False
+frag_remove_edges: True
+spec_params:
+  merge: True
+  nce: True
+  merge_keep_ces: True
+m_ce_insert_mlp_embed: False
+m_ce_insert_mlp_bin: True
+nb_iso: True
+gaussian_renormalize: True
+compile: False
+
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 3
+max_epochs: 3
+lr_schedule: False
+debug_overfit: False
+precision: 32
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 3
+mz_bin_res: 0.01
+mz_max: 1500.0
+sparse_cosine_similarity: True
+mol_pool_type: mean
+frag_pool_type: mean
+upload_checkpoints: True
+disable_checkpoints: False
+checkpoint_metric: val_cos_hun_epoch/mean
+track_datapoint_metrics: True
+
+precision: 32
+use_tensor_float32: True
+automatic_optimization: True

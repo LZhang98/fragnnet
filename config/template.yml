@@ -119,6 +119,7 @@ mlp_use_residuals: True
 # bin-specific model
 ff_prec_mz_offset: 0 #5
 ff_bidirectional: True
+ff_output_map_size: -1
 # iceberg model
 iceberg_hidden_size: 256
 iceberg_num_layers: 3
@@ -185,8 +186,8 @@ ints_thresh: 0.0
 mz_max: 1500.0
 mz_bin_res: 0.01
 eval_mz_bin_res:
-- 0.1
-- 0.01
+  - 0.1
+  - 0.01
 eval_bin_sqrt: True
 eval_bin_remove_prec_peaks: True
 eval_hun_sqrt: False

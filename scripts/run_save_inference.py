@@ -35,31 +35,39 @@ if __name__ == "__main__":
 
 	if not debug:
 		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["fraggnn_d3","fraggnn_d4","iceberg_inten_100","iceberg_inten_all"]
-		local_model_types = ["neims","massformer"]
+		wandb_model_types = ["fraggnn_d3_v2","fraggnn_d4_v2","iceberg_inten_100","iceberg_inten_all"]
+		local_model_types = ["neims_v2","massformer_v2"]
 		batch_cutoff = int(1e6)
 		seed_cutoff = num_seeds
 	else:
 		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["iceberg_inten_100"] #"iceberg_inten_all"
+		wandb_model_types = []
 		local_model_types = []
 		batch_cutoff = int(1e6)
 		seed_cutoff = num_seeds
 	
 	model_type_to_model_cls = {
 		"neims": NeimsPL,
+		"neims_v2": NeimsPL,
 		"massformer": MassFormerPL,
+		"massformer_v2": MassFormerPL,
 		"fraggnn_d3": FragGNNPL,
+		"fraggnn_d3_v2": FragGNNPL,
 		"fraggnn_d4": FragGNNPL,
+		"fraggnn_d4_v2": FragGNNPL,
 		"iceberg_inten_100": IcebergIntenPL,
 		"iceberg_inten_all": IcebergIntenPL,
 	}
 
 	model_type_ds_cls = {
 		"neims": SpecMolDataset,
+		"neims_v2": SpecMolDataset,
 		"massformer": SpecMolDataset,
+		"massformer_v2": SpecMolDataset,
 		"fraggnn_d3": SpecMolFragDataset,
+		"fraggnn_d3_v2": SpecMolFragDataset,
 		"fraggnn_d4": SpecMolFragDataset,
+		"fraggnn_d4_v2": SpecMolFragDataset,
 		"iceberg_inten_100": SpecMolMagmaIntenDataset,
 		"iceberg_inten_all": SpecMolMagmaIntenDataset,
 	}
@@ -79,8 +87,8 @@ if __name__ == "__main__":
 			model_to_config[split_type][model_type] = f"config/nist20_d4_wr00_{split_type}/{model_type}/s0.yml"
 			for run in runs:
 				seed = int(run.name.split("_")[-1].removeprefix("s"))
-				assert seed < num_seeds, (seed, num_seeds)
-				model_to_run_id[split_type][model_type][seed] = run.id
+				if seed < num_seeds:
+					model_to_run_id[split_type][model_type][seed] = run.id
 	del api
 	pprint(model_to_config)
 	pprint(model_to_run_id)
@@ -147,8 +155,10 @@ if __name__ == "__main__":
 				seed_vals_fp = os.path.join(seed_vals_dp,f"{eval_split}.pkl")
 				if os.path.isfile(seed_vals_fp):
 					print(f"> Info: {seed_vals_fp} exists already")
-				if not debug or (debug and force_overwrite):
-					print(f"> Warning: overwriting {seed_vals_fp}")
+					if force_overwrite:
+						print(f"> Warning: overwriting {seed_vals_fp}")
+						th.save(vals, seed_vals_fp)
+				else:
 					th.save(vals, seed_vals_fp)
 				del model
 				del vals

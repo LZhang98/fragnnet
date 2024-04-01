@@ -1,8 +1,7 @@
-wandb_name: d3_hun_sweep_template
+wandb_name: massformer_sweep_template
 wandb_tags:
   - sweep
-  - fraggnn_d3
-  - cos_hun_loss
+  - massformer
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
