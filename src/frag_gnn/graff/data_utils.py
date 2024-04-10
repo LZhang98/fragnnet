@@ -14,9 +14,9 @@ from frag_gnn.utils.data_utils import formula_to_mass
 RDLogger.DisableLog('rdApp.*')
 
 
-def fit_ann_library(spec_df,ann_df,library_size,max_isotope):
+def fit_ann_library(spec_df,ann_df,library_size,max_isotope,debug=False):
 	
-	orig_spec_ids = spec_df["spec_id"].copy()
+	orig_spec_ids = spec_df[["dset","dset_spec_id","spec_id"]].copy()
 	spec_df = spec_df[spec_df["spec_id"].isin(ann_df["spec_id"])]
 	spec_df = spec_df[["spec_id","peaks"]]
 	# spec_df.loc[:,"peaks"] = spec_df["peaks"].apply(l1_normalize_peaks)
@@ -75,9 +75,9 @@ def fit_ann_library(spec_df,ann_df,library_size,max_isotope):
 
 	# check fractions
 	ann_frac = ann_df[["spec_id","ints"]].groupby(by=["spec_id"])["ints"].sum().reset_index()
-	ann_frac = ann_frac.merge(pd.DataFrame({"spec_id":orig_spec_ids}),on="spec_id",how="right").fillna(0.)
+	ann_frac = ann_frac.merge(pd.DataFrame({"spec_id":orig_spec_ids["spec_id"]}),on="spec_id",how="right").fillna(0.)
 	iso_frac = ann_df[ann_df["isotopes"]>0][["spec_id","ints"]].groupby(by=["spec_id"])["ints"].sum().reset_index()
-	iso_frac = iso_frac.merge(pd.DataFrame({"spec_id":orig_spec_ids}),on="spec_id",how="right").fillna(0.)
+	iso_frac = iso_frac.merge(pd.DataFrame({"spec_id":orig_spec_ids["spec_id"]}),on="spec_id",how="right").fillna(0.)
 	print("> distribution of annotated intensity fraction:")
 	print(ann_frac["ints"].describe())
 	print("> distribution of isotope intensity fraction:")
@@ -103,7 +103,10 @@ def fit_ann_library(spec_df,ann_df,library_size,max_isotope):
 	# calculate mzs
 	library_df["mzs"] = library_df["formula"].apply(formula_to_mass)
 
-	return library_df
+	if debug:
+		return library_df, big_mz_diff_ids
+	else:
+		return library_df
 
 ### chemical featurization stuff
 

@@ -41,6 +41,8 @@ def none_or_nan(thing):
 		return True
 	elif pd.isnull(thing):
 		return True
+	elif isinstance(thing,str) and thing == "":
+		return True
 	else:
 		return False
 

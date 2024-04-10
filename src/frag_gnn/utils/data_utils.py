@@ -168,6 +168,8 @@ def mol_to_smiles(mol:"rdkit.Chem.rdchem.Mol",canonical:bool=True,isomericSmiles
 		smiles = Chem.MolToSmiles(mol,canonical=canonical,isomericSmiles=isomericSmiles,kekuleSmiles=kekuleSmiles)
 	except:
 		smiles = np.nan
+	if none_or_nan(smiles):
+		smiles = np.nan
 	return smiles
 
 def mol_to_formula(mol:"rdkit.Chem.rdchem.Mol") -> str:

@@ -18,8 +18,7 @@ def load_df(df_dp,dsets,num_entries):
 	
 	dfs = []
 	for dset in dsets:
-		dset_fp = os.path.join(df_dp,f"{dset}_df.json")
-		dset_df = pd.read_json(open(dset_fp,"r",encoding="utf8"))
+		dset_df = pd.read_csv(os.path.join(df_dp,f"{dset}_df.csv"),dtype=str)
 		dset_df.loc[:,"dset"] = dset
 		dfs.append(dset_df)
 	if num_entries > 0:
@@ -39,9 +38,12 @@ def preprocess_spec(spec_df):
 	# convert smiles to mol and back (for standardization/stereochemistry)
 	spec_df.loc[:,"mol"] = par_apply_series(spec_df["smiles"],data_utils.mol_from_smiles)
 	spec_df.loc[:,"smiles"] = par_apply_series(spec_df["mol"],data_utils.mol_to_smiles)
+	no_mol_df = spec_df[spec_df["mol"].isna()|spec_df["smiles"].isna()][["dset_spec_id"]]
 	spec_df = spec_df.dropna(subset=["mol","smiles"])
+	assert not (spec_df["smiles"] == "").any()
 	# enumerate smiles to create molecule ids
 	smiles_set = set(spec_df["smiles"])
+	assert not "" in smiles_set
 	print("> num_smiles", len(smiles_set))
 	smiles_to_mid = {smiles:i for i,smiles in enumerate(sorted(smiles_set))}
 	spec_df.loc[:,"mol_id"] = spec_df["smiles"].replace(smiles_to_mid)
@@ -95,6 +97,9 @@ def preprocess_spec(spec_df):
 	mol_df.loc[:,"charge"] = par_apply_series(mol_df["mol"],data_utils.mol_to_charge)
 	mol_df.loc[:,"single_mol"] = par_apply_series(mol_df["mol"],data_utils.check_single_mol)
 	mol_df.loc[:,"num_radicals"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_radicals)
+	assert not (mol_df["smiles"] == "").any()
+	assert not (mol_df["formula"] == "").any()
+	assert not (mol_df["exact_mw"] == 0).any()
 
 	# remove invalid mols and corresponding spectra
 	all_mol_id = set(mol_df["mol_id"])
@@ -118,12 +123,16 @@ def preprocess_spec(spec_df):
 	print("> inchikey_s inconsistencies")
 	print(diff_inchikey_df["mol_id"].nunique(), diff_inchikey_df["spec_id"].nunique())
 	mass_df = spec_df[["dset_spec_id","spec_id","mol_id","exact_mass"]].copy().rename(columns={"exact_mass":"exact_mw"})
+	mass_df = mass_df[mass_df["exact_mw"] > 0.0]
 	mass_df = mass_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner")
 	diff_mass_df = mass_df[(mass_df["exact_mw_x"] - mass_df["exact_mw_y"]).abs() > 0.1]
 	print("> mass inconsistencies")
 	print(diff_mass_df["mol_id"].nunique(), diff_mass_df["spec_id"].nunique())
+	spec_df = spec_df.drop(columns=["formula","inchikey","exact_mass"])
 
 	# fill in missing prec_mz by inferring them
+	spec_df = spec_df[~spec_df["spec_id"].isin(diff_formula_df["spec_id"])]
+	spec_df = spec_df[~spec_df["spec_id"].isin(diff_mass_df["spec_id"])]
 	spec_df = spec_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner")
 	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
 	spec_df = spec_df.drop(columns=["exact_mw"])
@@ -138,6 +147,7 @@ def preprocess_spec(spec_df):
 	ann_df.loc[:,"ann_isotopes"] = ann_results[3]
 	ann_df.loc[:,"ann_exact_mzs"] = ann_results[4]
 	ann_df = ann_df.dropna(axis=0,how="any")
+	ann_df = ann_df[ann_df["ann_peak_mzs"].apply(len) > 0]
 	ann_df = ann_df.drop(columns=["notes","peaks"])
 
 	# reset indices
@@ -145,7 +155,14 @@ def preprocess_spec(spec_df):
 	mol_df = mol_df.reset_index(drop=True)
 	ann_df = ann_df.reset_index(drop=True)
 
-	return spec_df, mol_df, ann_df, diff_formula_df, diff_inchikey_df, diff_mass_df
+	debug_dfs = {
+		"no_mol_df": no_mol_df,
+		"diff_formula_df": diff_formula_df,
+		"diff_inchikey_df": diff_inchikey_df,
+		"diff_mass_df": diff_mass_df
+	}
+
+	return spec_df, mol_df, ann_df, debug_dfs
 
 
 if __name__ == "__main__":
@@ -163,9 +180,6 @@ if __name__ == "__main__":
 	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
 	mol_df_fp = os.path.join(flags.proc_dp,"mol_df.pkl")
 	ann_df_fp = os.path.join(flags.proc_dp,"ann_df.pkl")
-	diff_formula_fp = os.path.join(flags.proc_dp,"diff_formula_df.pkl")
-	diff_inchikey_fp = os.path.join(flags.proc_dp,"diff_inchikey_df.pkl")
-	diff_mass_fp = os.path.join(flags.proc_dp,"diff_mass_df.pkl")
 
 	if not flags.ow_spec_mol and os.path.isfile(spec_df_fp) and os.path.isfile(mol_df_fp):
 
@@ -176,9 +190,6 @@ if __name__ == "__main__":
 		spec_df = pd.read_pickle(spec_df_fp)
 		mol_df = pd.read_pickle(mol_df_fp)
 		ann_df = pd.read_pickle(ann_df_fp)
-		diff_formula_df = pd.read_pickle(diff_formula_fp)
-		diff_inchikey_df = pd.read_pickle(diff_inchikey_fp)
-		diff_mass_df = pd.read_pickle(diff_mass_fp)
 
 	else:
 
@@ -187,15 +198,14 @@ if __name__ == "__main__":
 		os.makedirs(flags.proc_dp,exist_ok=True)
 		all_df = load_df(flags.df_dp,flags.dsets,flags.num_entries)
 
-		spec_df, mol_df, ann_df, diff_formula_df, diff_inchikey_df, diff_mass_df = preprocess_spec(all_df)
+		spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df)
 
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
 		ann_df.to_pickle(ann_df_fp)
-		diff_formula_df.to_pickle(diff_formula_fp)
-		diff_inchikey_df.to_pickle(diff_inchikey_fp)
-		diff_mass_df.to_pickle(diff_mass_fp)
+		for k, v in debug_dfs.items():
+			v.to_pickle(os.path.join(flags.proc_dp,f"{k}.pkl"))
 
 	print(spec_df.shape)
 	print(spec_df.isna().sum())

@@ -306,7 +306,7 @@ def parse_formula(formula:str) -> Dict[str,int]:
 		Dict[str,int]: count per element eg {"C":1, "H":4}
 	"""
 
-	assert not none_or_nan(formula)
+	# assert not none_or_nan(formula)
 	cur_element = None
 	cur_count = 1
 	element_counts = {}

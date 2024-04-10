@@ -297,7 +297,7 @@ if __name__ == "__main__":
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
 	parser.add_argument('--num_entries', type=int, default=-1)
-	parser.add_argument('--output_type', type=str, default="json", choices=["json","csv"])
+	parser.add_argument('--output_format', type=str, default="json", choices=["json","csv"])
 	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#","ID"])
 	args = parser.parse_args()
 
@@ -339,9 +339,9 @@ if __name__ == "__main__":
 		spec_df = preproc_ms_files(ms_dp,ms_meta_fp,MSP_KEY_DICT.keys(),args.num_entries)
 
 	# save files
-	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}.{args.output_type}")
-	if args.output_type == "json":
+	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}.{args.output_format}")
+	if args.output_format == "json":
 		spec_df.to_json(spec_df_fp)
 	else:
-		assert args.output_type == "csv"
+		assert args.output_format == "csv"
 		spec_df.to_csv(spec_df_fp,index=False)
