@@ -238,7 +238,13 @@ class SpectrumPL(pl.LightningModule):
 
 			# untransform
 			true_ints = self.ints_untransform_func(true_ints)
-			pred_ints = self.ints_untransform_func(pred_ints)
+			try:
+				un_pred_ints = pred_ints.clone()
+				pred_ints = self.ints_untransform_func(pred_ints)
+			except AssertionError as e:
+				print(e)
+				print(th.isinf(pred_ints))
+				import pdb; pdb.set_trace()
 
 			# define aggregation
 			agg = "sum" if self.hparams.sum_ints else "amax"

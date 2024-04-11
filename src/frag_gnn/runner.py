@@ -28,10 +28,12 @@ import tempfile
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from frag_gnn.massformer.pl_model import MassFormerPL
+from frag_gnn.graff.pl_model import GrAFFPL
 from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from frag_gnn.utils.pl_utils import ConsoleLogger
 from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, init_dataloader
 from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset
+from frag_gnn.graff.dataset import SpecMolAnnDataset
 from frag_gnn.utils.misc_utils import deep_update
 
 
@@ -176,6 +178,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		model_cls = IcebergIntenPL
 	elif config_d["model_type"] == "massformer":
 		model_cls = MassFormerPL
+	elif config_d["model_type"] == "graff":
+		model_cls = GrAFFPL
 	else:
 		raise ValueError(config_d["model_type"])
 	model = model_cls(**config_d)
@@ -270,13 +274,15 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		dataset_cls = SpecMolMagmaGenDataset
 	elif config_d["model_type"] == "iceberg_inten":
 		dataset_cls = SpecMolMagmaIntenDataset
+	elif config_d["model_type"] == "graff":
+		dataset_cls = SpecMolAnnDataset
 	else:
 		assert config_d["model_type"] in ["neims","massformer"], config_d["model_type"]
 		dataset_cls = SpecMolDataset
 		
 	train_ds = dataset_cls(split="train",**config_d)
 	val_ds = dataset_cls(split="val",**config_d)
-	test_ds = dataset_cls(split="test",**config_d)
+	# test_ds = dataset_cls(split="test",**config_d)
 
 	# check config for sampler
 	if config_d["dynamic_batch_sampler"]:
@@ -293,7 +299,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	logging.info("setup dataloader")
 	train_dl = init_dataloader(train_ds, config_d)
 	val_dl = init_dataloader(val_ds, config_d)
-	test_dl = init_dataloader(test_ds, config_d)
+	# test_dl = init_dataloader(test_ds, config_d)
 
 	# setup trainer
 	logging.info("setup trainer")

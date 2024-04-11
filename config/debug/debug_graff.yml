@@ -2,17 +2,12 @@ wandb_name: debug_graff
 wandb_tags:
 - debug
 
-spec_fp: data/proc/debug_small/spec_df.pkl
-mol_fp: data/proc/debug_small/mol_df.pkl
-split_dp: data/split/debug_small
-ann_fp: data/proc/debug_annot_2/ann_df.pkl
-num_depth: 4
-num_hs: 4
-frag_gnn_type: NodeMLP
+spec_fp: data/proc/debug_small/spec_df.pkl # this is old
+mol_fp: data/proc/debug_small/mol_df.pkl # this is old
+split_dp: data/split/debug_small # this is old
+ann_fp: data/proc/debug_annot_6/ann_df.pkl # this is new
 frag_params:
-  pyg_edge_feats: []
-  pyg_bigraph: False
-frag_remove_edges: True
+  pyg: False
 spec_params:
   merge: True
   nce: True
@@ -20,8 +15,13 @@ spec_params:
 mol_params:
   pyg: False
   graff: True
+ann_params:
+  max_isotope: 3
+  library_size: 10000
+  num_eigs: 8
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
+model_type: graff
 loss_type: cross_entropy
 output_distribution: peak_marginal
 
@@ -44,11 +44,11 @@ oos_loss: False
 mz_bin_res: 0.01
 mz_max: 1500.0
 sparse_cosine_similarity: True
-mol_pool_type: mean
-frag_pool_type: mean
 upload_checkpoints: True
 checkpoint_metric: val_cos_hun_epoch/mean
+num_workers: 8
 
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
+# profiler: pytorch

@@ -51,8 +51,9 @@ def fit_ann_library(spec_df,ann_df,library_size,max_isotope,debug=False):
 	# verify mz diffs
 	mz_diffs = ann_df[["spec_id","peak_mzs","exact_mzs"]].copy()
 	mz_diffs["mz_diffs"] = (mz_diffs["peak_mzs"] - mz_diffs["exact_mzs"]).abs()
-	print("> distribution of mzs diff:")
-	print(mz_diffs["mz_diffs"].describe())
+	if debug:
+		print("> distribution of mzs diff:")
+		print(mz_diffs["mz_diffs"].describe())
 	big_mz_diffs = mz_diffs[mz_diffs["mz_diffs"]>0.1]
 	big_mz_diff_ids = big_mz_diffs["spec_id"].unique()
 	if big_mz_diff_ids.shape[0] > 0:
@@ -60,8 +61,9 @@ def fit_ann_library(spec_df,ann_df,library_size,max_isotope,debug=False):
 		ann_df = ann_df[~(ann_df["spec_id"].isin(big_mz_diffs["spec_id"]))]
 
 	# verify isotopes
-	print("> distribution of isotopes:")
-	print(ann_df["isotopes"].value_counts())
+	if debug:
+		print("> distribution of isotopes:")
+		print(ann_df["isotopes"].value_counts())
 	invalid_isotopes = (ann_df["isotopes"] > max_isotope) | (ann_df["isotopes"] < 0)
 	if invalid_isotopes.any():
 		print(f"> warning: dropping invalid isotopes: {invalid_isotopes.sum()} annotations")
@@ -78,10 +80,11 @@ def fit_ann_library(spec_df,ann_df,library_size,max_isotope,debug=False):
 	ann_frac = ann_frac.merge(pd.DataFrame({"spec_id":orig_spec_ids["spec_id"]}),on="spec_id",how="right").fillna(0.)
 	iso_frac = ann_df[ann_df["isotopes"]>0][["spec_id","ints"]].groupby(by=["spec_id"])["ints"].sum().reset_index()
 	iso_frac = iso_frac.merge(pd.DataFrame({"spec_id":orig_spec_ids["spec_id"]}),on="spec_id",how="right").fillna(0.)
-	print("> distribution of annotated intensity fraction:")
-	print(ann_frac["ints"].describe())
-	print("> distribution of isotope intensity fraction:")
-	print(iso_frac["ints"].describe())
+	if debug:
+		print("> distribution of annotated intensity fraction:")
+		print(ann_frac["ints"].describe())
+		print("> distribution of isotope intensity fraction:")
+		print(iso_frac["ints"].describe())
 
 	# aggregate intensity by annotation
 	product_df = ann_df[["products","ints"]].groupby("products")["ints"].sum().reset_index()

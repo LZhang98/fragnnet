@@ -12,13 +12,17 @@ class GrAFFPL(SpectrumPL):
 	def _setup_model(self):
 
 		node_feats = {
-			'is_virtual_node': {False: 0, True: 1},
-			**x_map
+			**x_map,
+			**{
+				'is_virtual_node': {False: 0, True: 1}
+			}
 		}
 		edge_feats = {
-			'is_virtual_in_edge': {False: 0, True: 1},
-			'is_virtual_out_edge': {False: 0, True: 1},
-			**e_map
+			**e_map,
+			**{
+				'is_virtual_in_edge': {False: 0, True: 1},
+				'is_virtual_out_edge': {False: 0, True: 1}
+			}
 		}
 
 		self.model = GrAFFModel(
@@ -79,9 +83,7 @@ class GrAFFPL(SpectrumPL):
 			loss_d = {
 				"loss": loss,
 				"primary_loss": primary_loss,
-				"spec_ce": spec_ce,
-				"true_oos_prob": th.exp(true_oos_logprob),
-				"true_oos_e": true_oos_e,
+				"spec_ce": spec_ce
 			}
 			return loss_d
 		
@@ -89,9 +91,62 @@ class GrAFFPL(SpectrumPL):
 		loss_names = [
 			"loss",
 			"primary_loss",
-			"spec_ce",
-			"true_oos_prob",
-			"true_oos_e"
+			"spec_ce"
 		]
 		self.metric_names.update(loss_names)
 
+def test_models():
+
+	from frag_gnn.runner import load_config
+	from frag_gnn.utils.misc_utils import print_shapes
+	from frag_gnn.utils.misc_utils import to_device
+	from frag_gnn.graff.dataset import SpecMolAnnDataset
+
+	template_fp = "config/template.yml"
+	custom_fp_to_model_cls = {
+		"config/debug/debug_graff.yml": GrAFFPL,
+	}
+
+	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
+
+		print(">>>", custom_fp)
+
+		config_d = load_config(template_fp, custom_fp)
+		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
+
+		ds = SpecMolAnnDataset(split="train", **config_d)
+		dl = th.utils.data.DataLoader(
+			ds,
+			batch_size=8,
+			shuffle=False,
+			num_workers=0,
+			collate_fn=ds.get_collate_fn(),
+		)
+		dl_iter = iter(dl)
+		batch = next(dl_iter)
+		print("> batch")
+		print_shapes(batch)
+		batch = to_device(batch,device)
+
+		pl_model = pl_model_cls(**config_d)
+		pl_model.train()
+		pl_model.to(device)
+
+		outputs = pl_model.forward(**batch)
+		print("> train outputs")
+		print_shapes(outputs)
+
+		results = pl_model._common_step(batch, split="train")
+		print_shapes(results)
+
+		mean_loss = results["mean_loss"]
+		print("> loss")
+		print(mean_loss)
+		mean_loss.backward()
+
+if __name__ == "__main__":
+
+	from frag_gnn.utils.misc_utils import th_temp_seed
+
+	with th_temp_seed(420):
+		test_models()

@@ -95,13 +95,14 @@ class SpecMolAnnDataset(SpecMolDataset):
 		loss_formulae_df = self.library_df[self.library_df["kind"] == "loss"][["ann_id","formula"]]
 		loss_formulae_df.loc[:,"formula"] = loss_formulae_df["formula"].apply(lambda formula: composition_to_string(prec_formula_c - Composition(formula=formula)))
 		both_formulae_df = product_formulae_df.merge(loss_formulae_df,on="formula",how="inner")
-		dup_mask = th.zeros([1,self.library_df.shape[0],2],dtype=th.float32)
-		dup_mask[:,both_formulae_df["ann_id_x"].values,0] = 1
-		dup_mask[:,both_formulae_df["ann_id_y"].values,1] = 1
+		assert len(set(both_formulae_df["ann_id_x"])&set(both_formulae_df["ann_id_y"])) == 0
+		dup_mask = th.zeros([1,self.library_df.shape[0]],dtype=th.float32)
+		dup_mask[:,both_formulae_df["ann_id_x"].values] = 1
+		dup_mask[:,both_formulae_df["ann_id_y"].values] = 1
 		ann_data = {
-			"library_mzs": library_mzs,
-			"isotope_mask": isotope_mask,
-			"dup_mask": dup_mask,
+			"ann_library_mzs": library_mzs,
+			"ann_isotope_mask": isotope_mask,
+			"ann_dup_mask": dup_mask,
 		}
 		return ann_data
 

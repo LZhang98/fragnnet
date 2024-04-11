@@ -113,7 +113,7 @@ class BaseDataset(Dataset):
 		self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.split_df["mol_id"])]
 		assert np.all(np.unique(self.mol_df["mol_id"]) == np.unique(self.spec_df["mol_id"]))
 		# merge spectra
-		self.um_spec_df = self.spec_df[["spec_id","group_id","mol_id","peaks"]].copy()
+		self.um_spec_df = self.spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
 		if self.spec_params["merge"]:
 			self.spec_df = merge_spec_df(self.spec_df,keep_ces=self.spec_params["merge_keep_ces"])
 			self.id_key = "group_id"

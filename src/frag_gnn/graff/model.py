@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 import torch_geometric as pyg
 
+from frag_gnn.utils.misc_utils import LOG_TWO
 from frag_gnn.graff.nn_utils import *
 
 class GrAFFModel(nn.Module):
@@ -102,9 +103,8 @@ class GrAFFModel(nn.Module):
 		self.decoder = nn.Sequential(*layers)
 		
 		self.isotope_shift = nn.Linear(decoder_dim, self.num_isotope_types)
-		self.clf = nn.Linear(decoder_dim, self.vocab_size + 1)
+		self.clf = nn.Linear(decoder_dim, self.vocab_size)
 
-		self.log_2 = float(np.log(2))
 		self.isotopes = isotopes
 
 	# def set_ann_library(self, library_mzs, library_loss_mask):
@@ -116,33 +116,34 @@ class GrAFFModel(nn.Module):
 
 	def forward(
 			self,
-			g: pyg.data.Data,
-			library_mzs: th.Tensor,
-			isotope_mask: th.Tensor,
-			dup_mask: th.Tensor,
+			mol_graff: pyg.data.Data,
+			ann_library_mzs: th.Tensor,
+			ann_isotope_mask: th.Tensor,
+			ann_dup_mask: th.Tensor,
 			**kwargs):
 
-		batch_size = len(g.ptr) - 1
-		device = g.x.device
-		
+		batch_size = len(mol_graff.ptr) - 1
+		device = mol_graff.x.device
+		num_peaks = ann_library_mzs.shape[1] * ann_library_mzs.shape[2]
+
 		# embed node, edge, eigenfeatures
-		x_atom, x_bond = self.onehot(g.x, g.edge_attr)
+		x_atom, x_bond = self.onehot(mol_graff.x, mol_graff.edge_attr)
 		x_atom = self.node_emb(x_atom)
 		x_bond = self.edge_emb(x_bond)
 		if self.num_eigs > 0:
-			x_eig = self.signnet(g.eigvecs[:,:self.num_eigs],
-								 g.eigvals[:,:self.num_eigs][g.batch])
+			x_eig = self.signnet(mol_graff.eigvecs[:,:self.num_eigs],
+								 mol_graff.eigvals[:,:self.num_eigs][mol_graff.batch])
 		else:
 			x_eig = 0
 
 		# run message passing
-		x_mol = self.encoder(g, x_atom + x_eig, x_bond)
+		x_mol = self.encoder(mol_graff, x_atom + x_eig, x_bond)
 		# and attention-pool across atoms
-		w = pyg.utils.softmax(self.attn(x_mol), g.batch)
-		z = pyg.nn.global_add_pool(x_mol * w, g.batch)
+		w = pyg.utils.softmax(self.attn(x_mol), mol_graff.batch)
+		z = pyg.nn.global_add_pool(x_mol * w, mol_graff.batch)
 		
 		# condition molecule representation on covariates
-		covariates = isotope_mask.reshape(batch_size,1)
+		covariates = ann_isotope_mask.reshape(batch_size,1)
 		z = z + self.cov_emb(covariates)
 		# transform to spectrum representation
 		z = self.decoder(z)
@@ -155,17 +156,25 @@ class GrAFFModel(nn.Module):
 		log_y_pred = log_y_pred + isotope_shift
 		
 		# correct intensities of double-counted formulas
-		log_y_pred = log_y_pred - dup_mask * self.log_2
+		log_y_pred = log_y_pred - ann_dup_mask.unsqueeze(-1) * LOG_TWO
 		
-		pred_mzs = library_mzs.reshape(batch_size,-1)
-		pred_logprobs = log_y_pred.reshape(batch_size,-1)
-		pred_batch_idxs = th.arange(batch_size,device=device).view(-1,1).repeat(1,pred_mzs.shape[1])
+		# softmax
+		log_y_pred = log_y_pred.reshape(batch_size,-1)
+		log_y_pred = th.log_softmax(log_y_pred, dim=1)
+
+		pred_mzs = ann_library_mzs.reshape(batch_size*num_peaks) #.reshape(batch_size,-1)
+		pred_logprobs = log_y_pred.reshape(batch_size*num_peaks) #.reshape(batch_size,-1)
+		pred_batch_idxs = th.repeat_interleave(th.arange(batch_size,device=device),num_peaks) #.reshape(batch_size,-1)
 
 		out_d = {
 			"pred_mzs": pred_mzs,
 			"pred_logprobs": pred_logprobs,
 			"pred_batch_idxs": pred_batch_idxs
 		}
+
+		# print(pred_logprobs.mean(), pred_logprobs.max())
+		if th.isinf(th.exp(pred_logprobs)).any():
+			import pdb; pdb.set_trace()
 
 		return out_d
 

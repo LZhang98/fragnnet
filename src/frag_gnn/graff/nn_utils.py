@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torch_geometric as pyg
 
 class ResBlock(nn.Module):
     def __init__(self, ch, dr):
@@ -14,7 +16,7 @@ class ResBlock(nn.Module):
         x = self.norm(x)
         return x
 
-class GINEConv(pyg.GINEConv):
+class GINEConv(pyg.nn.GINEConv):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.act = nn.SiLU(inplace=True)
@@ -46,7 +48,7 @@ class GINELayer(nn.Module):
         self.lin1 = nn.Linear(model_dim, model_dim // bottleneck)
         self.lin2 = nn.Linear(model_dim // bottleneck, model_dim) if bottleneck>1 else nn.Identity()
         self.dropout = nn.Dropout(dropout, inplace=True)
-        self.norm = GraphNorm(model_dim)
+        self.norm = pyg.nn.GraphNorm(model_dim)
         self.act = nn.SiLU(inplace=True)
         
     def forward(self, x, e, batch, edge_index):
@@ -67,7 +69,7 @@ class GINEEdgeLayer(nn.Module):
         self.lin2 = nn.Linear(model_dim // bottleneck, model_dim) if bottleneck>1 else nn.Identity()
         self.act = nn.SiLU(inplace=True)
         self.dropout = nn.Dropout(dropout, inplace=True)
-        self.norm = GraphNorm(model_dim)
+        self.norm = pyg.nn.GraphNorm(model_dim)
 
     def forward(self, x, e, batch, edge_index):
         de = torch.cat([e, x[edge_index[0]], x[edge_index[1]]], 1)
@@ -152,7 +154,15 @@ class CanonicalOneHot(nn.Module):
             else:
                 d = len(levels)
                 mask = x[:,i] == self.mask_value
-                x_onehot[~mask,j:j+d] = F.one_hot(x[~mask,i].long(),d).float()
+                try:
+                    x_onehot[~mask,j:j+d] = F.one_hot(x[~mask,i].long(),d).float()
+                except RuntimeError as e:
+                    print(e)
+                    print(x[~mask,i].long())
+                    print(d)
+                    print(feat)
+                    print(levels)
+                    import pdb; pdb.set_trace()
                 j += d
             
         e_onehot = torch.zeros(e.shape[0],self.edge_dim,device=x.device)

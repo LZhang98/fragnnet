@@ -145,16 +145,16 @@ mf_warmup_frac: 0.1
 mf_high_lr: 0.0002
 mf_low_lr: 0.000000001
 # graff stuff
-graff_encoder_dim: 
-graff_decoder_dim:
-graff_encoder_depth:
-graff_decoder_depth:
-graff_eig_dim:
-graff_eig_depth:
-graff_dropout:
-graff_min_probability:
-graff_min_mz:
-graff_isotopes:
+graff_encoder_dim: 512
+graff_decoder_dim: 1024
+graff_encoder_depth: 6
+graff_decoder_depth: 2
+graff_eig_dim: 32
+graff_eig_depth: 2
+graff_dropout: 0.1
+graff_min_probability: 0.0
+graff_min_mz: 0.0
+graff_isotopes: 3
 # other
 lr: 0.0001
 lr_schedule: False
