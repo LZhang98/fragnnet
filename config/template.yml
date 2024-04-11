@@ -85,6 +85,9 @@ ann_params:
   max_isotope: 3
   library_size: 1000 #10000
   num_eigs: 8
+  filter_peaks: False
+  filter_peaks_tol: 1.0
+  preprocess: False
 # model
 model_type: frag_gnn
 num_depth: 5

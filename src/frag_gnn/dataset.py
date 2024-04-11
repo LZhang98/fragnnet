@@ -161,11 +161,9 @@ class BaseDataset(Dataset):
 				spec_data = self._process_spec(spec_entry)
 				self.spec_datas[idx] = spec_data
 
-	def _process_spec(self,spec_entry):
+	@staticmethod
+	def _get_mzs_ints(peaks):
 
-		spec_data = {}
-		# peak data
-		peaks = spec_entry["peaks"]
 		mzs, ints = [], []
 		for peak in peaks:
 			p_mz, p_int = peak
@@ -176,6 +174,13 @@ class BaseDataset(Dataset):
 		# mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
 		assert mzs.shape[0] > 0
 		assert ints.shape[0] > 0
+		return mzs, ints
+
+	def _process_spec(self,spec_entry):
+
+		spec_data = {}
+		# peak data
+		mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
 		if self.spec_params["sparse"]:
 			# get sparse spectrum
 			spec_data["spec_mzs"] = mzs

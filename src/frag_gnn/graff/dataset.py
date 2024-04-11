@@ -2,11 +2,13 @@ import numpy as np
 import pandas as pd
 import torch as th
 from pyteomics.mass import Composition
+from tqdm import tqdm
 
 from frag_gnn.dataset import BaseDataset, SpecMolDataset
 from frag_gnn.graff.data_utils import fit_ann_library, graff_preprocess
 from frag_gnn.utils.formula_utils import NEUTRON_MASS
 from frag_gnn.utils.data_utils import composition_to_string
+from frag_gnn.utils.spec_utils import batch_func
 
 def calculate_prec_formula(prec_formula,prec_type):
 
@@ -46,11 +48,12 @@ class SpecMolAnnDataset(SpecMolDataset):
 		self.mol_params = mol_params
 		self.ann_fp = ann_fp
 		self.ann_params = ann_params
+		self._setup_ann()
 		self._preprocess_spec()
 		self._preprocess_mol()
 		self._preprocess_ann()
 	
-	def _preprocess_ann(self):
+	def _setup_ann(self):
 
 		ann_df = pd.read_pickle(self.ann_fp)
 		library_df = fit_ann_library(
@@ -68,6 +71,8 @@ class SpecMolAnnDataset(SpecMolDataset):
 		self.library_loss_mask = self.library_loss_mask.unsqueeze(1).repeat(1,self.ann_params["max_isotope"])
 		for i in range(self.ann_params["max_isotope"]):
 			self.library_mzs[:,i] = self.library_mzs[:,i] + (-2*self.library_loss_mask[:,i]+1) * (i*NEUTRON_MASS)
+		self.library_loss_mask = self.library_loss_mask.flatten()
+		self.library_mzs = self.library_mzs.flatten()
 		# setup isotope stuff
 		self.isotope_df = ann_df[["spec_id","ann_isotopes"]]
 		self.isotope_df.loc[:,"has_isotopes"] = ann_df["ann_isotopes"].apply(any)
@@ -78,12 +83,20 @@ class SpecMolAnnDataset(SpecMolDataset):
 			self.isotope_df = self.isotope_df.groupby("group_id")["has_isotopes"].apply(any).reset_index()
 		self.isotope_df = self.isotope_df.set_index(self.id_key,drop=False)
 
+	def _preprocess_ann(self):
+
+		if self.ann_params["preprocess"]:
+			self.ann_datas = {}
+			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess ann",total=len(self.spec_df)):
+				mol_entry = self.mol_df.loc[spec_entry["mol_id"]]
+				self.ann_datas[idx] = self._process_ann(spec_entry, mol_entry)
+
 	def _process_ann(self, spec_entry, mol_entry):
 
 		# set up mzs
 		prec_mz = spec_entry["prec_mz"]
+		mzs, ints = SpecMolAnnDataset._get_mzs_ints(spec_entry["peaks"])
 		library_mzs = prec_mz * self.library_loss_mask + self.library_mzs * (-2*self.library_loss_mask+1)
-		library_mzs = library_mzs.unsqueeze(0)
 		# check for isotopes
 		has_isotopes = self.isotope_df.loc[spec_entry[self.id_key]]["has_isotopes"]
 		isotope_mask = th.tensor([has_isotopes],dtype=th.float32)
@@ -96,13 +109,25 @@ class SpecMolAnnDataset(SpecMolDataset):
 		loss_formulae_df.loc[:,"formula"] = loss_formulae_df["formula"].apply(lambda formula: composition_to_string(prec_formula_c - Composition(formula=formula)))
 		both_formulae_df = product_formulae_df.merge(loss_formulae_df,on="formula",how="inner")
 		assert len(set(both_formulae_df["ann_id_x"])&set(both_formulae_df["ann_id_y"])) == 0
-		dup_mask = th.zeros([1,self.library_df.shape[0]],dtype=th.float32)
-		dup_mask[:,both_formulae_df["ann_id_x"].values] = 1
-		dup_mask[:,both_formulae_df["ann_id_y"].values] = 1
+		dup_mask = th.zeros([self.library_df.shape[0],self.ann_params["max_isotope"]],dtype=th.bool)
+		dup_mask[both_formulae_df["ann_id_x"].values,:] = True
+		dup_mask[both_formulae_df["ann_id_y"].values,:] = True
+		dup_mask = dup_mask.flatten()
+		if self.ann_params["filter_peaks"]:
+			# this could be slow...
+			mzs_diff = th.abs(library_mzs.unsqueeze(1) - mzs.unsqueeze(0))
+			filter_mask = th.any(mzs_diff <= self.ann_params["filter_peaks_tol"], dim=1)
+			filter_idxs = th.nonzero(filter_mask,as_tuple=True)[0]
+			library_mzs = library_mzs[filter_idxs]
+			dup_idxs = th.nonzero(dup_mask & filter_mask,as_tuple=True)[0]
+		else:
+			filter_idxs = th.arange(library_mzs.shape[0],device=library_mzs.device)
+			dup_idxs = th.nonzero(dup_mask,as_tuple=True)[0]
 		ann_data = {
 			"ann_library_mzs": library_mzs,
 			"ann_isotope_mask": isotope_mask,
-			"ann_dup_mask": dup_mask,
+			"ann_dup_idxs": dup_idxs,
+			"ann_library_idxs": filter_idxs
 		}
 		return ann_data
 
@@ -128,7 +153,10 @@ class SpecMolAnnDataset(SpecMolDataset):
 			mol_data = self.mol_datas[mol_id].copy()
 		else:
 			mol_data = self._process_mol(mol_entry)
-		ann_data = self._process_ann(spec_entry, mol_entry)
+		if self.ann_params["preprocess"]:
+			ann_data = self.ann_datas[idx].copy()
+		else:
+			ann_data = self._process_ann(spec_entry, mol_entry)
 		data = {**spec_data, **mol_data, **ann_data}
 		return data
 
@@ -137,10 +165,30 @@ class SpecMolAnnDataset(SpecMolDataset):
 
 		return SpecMolAnnDataset.collate_fn
 	
-	# @staticmethod
-	# def _special_collate(keys, collate_data):
+	@staticmethod
+	def _special_collate(keys, collate_data):
 
-	# 	pass
+		assert "ann_library_mzs" in keys
+		assert "ann_dup_idxs" in keys
+		assert "ann_library_idxs" in keys
+		# collate ann_library_mzs
+		ann_batched = batch_func(
+			*[
+				collate_data["ann_library_mzs"],
+				collate_data["ann_dup_idxs"],
+				collate_data["ann_library_idxs"]
+			],
+			offset_flags=[False, True, True],
+		)
+		collate_data["ann_library_mzs"] = ann_batched[0]
+		collate_data["ann_dup_idxs"] = ann_batched[1]
+		collate_data["ann_library_idxs"] = ann_batched[2]
+		collate_data["ann_batch_idxs"] = ann_batched[3]
+		# remove from list
+		keys.remove("ann_library_mzs")
+		keys.remove("ann_dup_idxs")
+		keys.remove("ann_library_idxs")
+		SpecMolDataset._special_collate(keys, collate_data)
 
 	@staticmethod
 	def collate_fn(data_list):

@@ -2,10 +2,13 @@ wandb_name: debug_graff
 wandb_tags:
 - debug
 
-spec_fp: data/proc/debug_small/spec_df.pkl # this is old
-mol_fp: data/proc/debug_small/mol_df.pkl # this is old
-split_dp: data/split/debug_small # this is old
-ann_fp: data/proc/debug_annot_6/ann_df.pkl # this is new
+spec_fp: data/proc/debug_annot_6/spec_df.pkl
+mol_fp: data/proc/debug_annot_6/mol_df.pkl
+split_dp: data/split/nist20_mona23_d4_wr00_inchikey_2
+# spec_fp: data/proc/debug_small/spec_df.pkl
+# mol_fp: data/proc/debug_small/mol_df.pkl
+# split_dp: data/split/debug_small
+ann_fp: data/proc/debug_annot_6/ann_df.pkl
 frag_params:
   pyg: False
 spec_params:
@@ -18,16 +21,20 @@ mol_params:
 ann_params:
   max_isotope: 3
   library_size: 10000
+  # library_size: 1000
   num_eigs: 8
+  filter_peaks: False
+  filter_peaks_tol: 0.02
+  preprocess: False
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
 model_type: graff
 loss_type: cross_entropy
 output_distribution: peak_marginal
 
-train_batch_size: 32
-eval_batch_size: 32
-accumulate_grad_batches: 4
+train_batch_size: 64 #32
+eval_batch_size: 64 #32
+accumulate_grad_batches: 2 #4
 gradient_clip_val: 5.0
 lr: 0.01
 accelerator: gpu

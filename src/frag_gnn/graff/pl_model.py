@@ -1,4 +1,5 @@
 import torch as th
+import torch._dynamo as th_dynamo
 
 from frag_gnn.graff.model import GrAFFModel
 from frag_gnn.pl_model import SpectrumPL
@@ -42,6 +43,11 @@ class GrAFFPL(SpectrumPL):
 			node_feats=node_feats,
 			edge_feats=edge_feats
 		)
+
+		# compile
+		if self.hparams.compile:
+			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
+			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)		
 
 	def _setup_loss_fn(self):
 

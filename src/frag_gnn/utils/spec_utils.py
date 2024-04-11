@@ -187,25 +187,27 @@ def bin_func(mzs:th.Tensor,ints:th.Tensor,mz_max:float,mz_bin_res:float,return_i
 			bin_spec[-1] = 1.
 		return bin_spec
 
-def batch_func(mzs_list:Union[th.Tensor,np.ndarray],ints_list:Union[th.Tensor,np.ndarray]) -> Tuple[th.Tensor,th.Tensor,th.Tensor]:
-	""" create a batch for given list of peak list, batch size is the size of peak list
-
-	Args:
-		mzs_list (th.Tensor): list of m/z list
-		ints_list (th.Tensor): list of intensity list
-
-	Returns:
-		Tuple[th.Tensor,th.Tensor,th.Tensor]: mz tensoer, intensity tensor, batch_idxs tensor
+def batch_func(*lists, offset_flags=False) -> Tuple[th.Tensor]:
+	""" 
 	"""
 
-	assert len(mzs_list) == len(ints_list)
-	batch_size = len(mzs_list)
+	if offset_flags is False:
+		offset_flags = [False]*len(lists)
+	batch_size = len(lists[0])
 	batch_idxs = th.arange(batch_size)
-	spec_sizes = th.tensor([mzs.shape[0] for mzs in mzs_list])
-	batch_idxs = th.repeat_interleave(batch_idxs,spec_sizes)
-	mzs = th.cat(mzs_list,dim=0)
-	ints = th.cat(ints_list,dim=0)
-	return mzs, ints, batch_idxs
+	repeat_sizes = th.tensor([th.numel(item) for item in lists[0]])
+	batch_idxs = th.repeat_interleave(batch_idxs,repeat_sizes)
+	if any(offset_flags):
+		offsets = th.cat([th.zeros([1],dtype=th.long),th.cumsum(repeat_sizes,dim=0)[:-1]],dim=0)
+	b_lists = []
+	for l_idx, l in enumerate(lists):
+		b_list = th.cat(l,dim=0)
+		if offset_flags[l_idx]:
+			repeat_sizes = th.tensor([th.numel(item) for item in l])
+			repeat_offsets = th.repeat_interleave(offsets,repeat_sizes)
+			b_list = b_list + repeat_offsets
+		b_lists.append(b_list)
+	return tuple(b_lists) + (batch_idxs,)
 
 
 def batched_filter_func(mzs:th.Tensor,ints:th.Tensor,batch_idxs:th.Tensor,ints_thresh:float,mz_max: float) -> Tuple[th.Tensor,th.Tensor,th.Tensor]:

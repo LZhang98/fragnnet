@@ -1738,13 +1738,14 @@ class NeimsPL(BinnedPL):
 def test_models():
 
 	from frag_gnn.runner import load_config
-	from frag_gnn.dataset import SpecMolFragDataset
+	from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset
 	from frag_gnn.utils.misc_utils import print_shapes
 	from frag_gnn.utils.misc_utils import to_device
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug/debug_ce.yml": FragGNNPL,
+		# "config/debug/debug_ce.yml": FragGNNPL,
+		"config/debug/debug_neims.yml": NeimsPL,
 		# "config/debug/debug_ce_oosm1.yml": FragGNNPL,
 		# "config/debug/debug_cos_hun_nooos.yml": FragGNNPL,
 		# "config/debug/debug_ce_nonull.yml": FragGNNPL,
@@ -1755,6 +1756,11 @@ def test_models():
 		# "config/debug/debug_ce_d4_h3.yml": FragGNNPL,
 	}
 	
+	model_cls_to_ds_cls = {
+		"NeimsPL": SpecMolDataset,
+		"FragGNNPL": SpecMolFragDataset
+	}
+
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
 
 		print(">>>", custom_fp)
@@ -1762,7 +1768,8 @@ def test_models():
 		config_d = load_config(template_fp, custom_fp)
 		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
 
-		ds = SpecMolFragDataset(split="train", **config_d)
+		ds_cls = model_cls_to_ds_cls[pl_model_cls.__name__]
+		ds = ds_cls(split="train", **config_d)
 		dl = th.utils.data.DataLoader(
 			ds,
 			batch_size=8,
@@ -1792,15 +1799,6 @@ def test_models():
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()
-
-		print("> oos_ce")
-		print(results["oos_ce"].mean())
-
-		print("> true_oos_prob")
-		print(results["true_oos_prob"].mean())
-
-		print("> null_formula_prob")
-		print(results["null_formula_prob"].mean())
 
 		print()
 

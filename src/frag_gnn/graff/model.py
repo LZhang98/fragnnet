@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import torch_geometric as pyg
 
-from frag_gnn.utils.misc_utils import LOG_TWO
+from frag_gnn.utils.misc_utils import LOG_TWO, check_pyg_compile
 from frag_gnn.graff.nn_utils import *
 
 class GrAFFModel(nn.Module):
@@ -107,24 +107,31 @@ class GrAFFModel(nn.Module):
 
 		self.isotopes = isotopes
 
-	# def set_ann_library(self, library_mzs, library_loss_mask):
+	def compile_submodules(self,**kwargs):
 
-	# 	self.library_mzs = nn.Parameter(library_mzs.copy())
-	# 	self.library_mzs.requires_grad = False
-	# 	self.library_loss_mask = nn.Parameter(library_loss_mask.copy())
-	# 	self.library_loss_mask.requires_grad = False
+		import pdb; pdb.set_trace()
+		self.onehot = th.compile(self.onehot,**kwargs)
+		self.node_emb = th.compile(self.node_emb,**kwargs)
+		self.edge_emb = th.compile(self.edge_emb,**kwargs)
+		if check_pyg_compile():
+			if self.signnet is not None:
+				self.signnet = pyg.compile(self.signnet,**kwargs)
+			self.encoder = pyg.compile(self.encoder,**kwargs)
+		self.cov_emd = th.compile(self.cov_emb,**kwargs)
+		self.decoder = th.compile(self.decoder,**kwargs)
 
 	def forward(
 			self,
 			mol_graff: pyg.data.Data,
 			ann_library_mzs: th.Tensor,
 			ann_isotope_mask: th.Tensor,
-			ann_dup_mask: th.Tensor,
+			ann_dup_idxs: th.Tensor,
+			ann_library_idxs: th.Tensor,
+			ann_batch_idxs: th.Tensor,
 			**kwargs):
 
 		batch_size = len(mol_graff.ptr) - 1
 		device = mol_graff.x.device
-		num_peaks = ann_library_mzs.shape[1] * ann_library_mzs.shape[2]
 
 		# embed node, edge, eigenfeatures
 		x_atom, x_bond = self.onehot(mol_graff.x, mol_graff.edge_attr)
@@ -156,15 +163,17 @@ class GrAFFModel(nn.Module):
 		log_y_pred = log_y_pred + isotope_shift
 		
 		# correct intensities of double-counted formulas
-		log_y_pred = log_y_pred - ann_dup_mask.unsqueeze(-1) * LOG_TWO
+		log_y_pred = log_y_pred.flatten()
+		log_y_pred[ann_dup_idxs] = log_y_pred[ann_dup_idxs] - LOG_TWO
 		
 		# softmax
 		log_y_pred = log_y_pred.reshape(batch_size,-1)
 		log_y_pred = th.log_softmax(log_y_pred, dim=1)
+		log_y_pred = log_y_pred.flatten()[ann_library_idxs]
 
-		pred_mzs = ann_library_mzs.reshape(batch_size*num_peaks) #.reshape(batch_size,-1)
-		pred_logprobs = log_y_pred.reshape(batch_size*num_peaks) #.reshape(batch_size,-1)
-		pred_batch_idxs = th.repeat_interleave(th.arange(batch_size,device=device),num_peaks) #.reshape(batch_size,-1)
+		pred_mzs = ann_library_mzs
+		pred_logprobs = log_y_pred
+		pred_batch_idxs = ann_batch_idxs
 
 		out_d = {
 			"pred_mzs": pred_mzs,
