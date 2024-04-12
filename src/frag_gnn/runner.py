@@ -238,6 +238,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		profile_dp = os.path.join(wandb.run.dir,"profile")
 	else:
 		profile_dp = "tmp_profile"
+	os.makedirs(profile_dp, exist_ok=True)
 	if config_d["profiler"] == "simple":
 		profiler = SimpleProfiler(
 			dirpath=profile_dp,
@@ -249,6 +250,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			filename="profile"
 		)
 	elif config_d["profiler"] == "pytorch":
+		th.profiler._utils._init_for_cuda_graphs()
 		profiler = PyTorchProfiler(
 			dirpath=profile_dp,
 			filename="profile",
@@ -259,7 +261,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			profile_memory=True,
 			record_shapes=True,
 			with_flops=True,
-			with_stack=True
+			with_stack=True,
+			export_to_chrome=True
 		)
 	else:
 		assert config_d["profiler"] == "none", config_d["profiler"]

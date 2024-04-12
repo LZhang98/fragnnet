@@ -428,9 +428,16 @@ def check_pyg_compile():
 
 	th_major_version, th_minor_version = get_package_version(th)[:2]
 	pyg_major_version, pyg_minor_version = get_package_version(pyg)[:2]
-	assert th_major_version == 2, th_major_version
-	assert pyg_major_version == 2, pyg_major_version
+	assert th_major_version >= 2, th_major_version
+	assert pyg_major_version >= 2, pyg_major_version
 	return th_minor_version >= 1 and pyg_minor_version >= 4
+
+def check_pyg_full_compile():
+
+	th_major_version, th_minor_version = get_package_version(th)[:2]
+	pyg_major_version, pyg_minor_version = get_package_version(pyg)[:2]
+	assert th_major_version >= 2, th_major_version
+	return pyg_major_version >= 2 and pyg_minor_version >= 5
 
 class NestedDefaultDict(defaultdict):
 	""" https://stackoverflow.com/questions/19189274/nested-defaultdict-of-defaultdict """

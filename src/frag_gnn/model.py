@@ -7,7 +7,7 @@ from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, sca
 from frag_gnn.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.form_embedder import get_embedder
-from frag_gnn.utils.misc_utils import safelog, check_pyg_compile, LOG_ZERO
+from frag_gnn.utils.misc_utils import safelog, check_pyg_compile, LOG_ZERO, check_pyg_full_compile
 from frag_gnn.utils.spec_utils import transform_nce, NCE_MAX
 
 
@@ -283,6 +283,14 @@ class FragGNNModel(nn.Module):
 		# 		self.frag_edge_feats_size += 1
 		if self.frag_remove_edges:
 			assert self.frag_edge_feats_size == 0, self.frag_edge_feats_size
+
+	def get_compile(self, **kwargs):
+
+		if check_pyg_full_compile():
+			return th.compile(self,**kwargs)
+		else:
+			self.compile_submodules(**kwargs)
+			return self
 
 	def compile_submodules(self,**kwargs):
 		""" pyg does not support dynamic shape compiling """

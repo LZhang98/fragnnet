@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import torch_geometric as pyg
 
-from frag_gnn.utils.misc_utils import LOG_TWO, check_pyg_compile
+from frag_gnn.utils.misc_utils import LOG_TWO, check_pyg_compile, check_pyg_full_compile
 from frag_gnn.graff.nn_utils import *
 
 class GrAFFModel(nn.Module):
@@ -107,9 +107,16 @@ class GrAFFModel(nn.Module):
 
 		self.isotopes = isotopes
 
-	def compile_submodules(self,**kwargs):
+	def get_compile(self, **kwargs):
 
-		import pdb; pdb.set_trace()
+		if check_pyg_full_compile():
+			return th.compile(self,**kwargs)
+		else:
+			self.compile_submodules(**kwargs)
+			return self
+
+	def compile_submodules(self, **kwargs):
+
 		self.onehot = th.compile(self.onehot,**kwargs)
 		self.node_emb = th.compile(self.node_emb,**kwargs)
 		self.edge_emb = th.compile(self.edge_emb,**kwargs)

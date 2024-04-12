@@ -1137,7 +1137,7 @@ class FragGNNPL(SpectrumPL):
 		# compile
 		if self.hparams.compile:
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-			self.model.compile_submodules(backend=self.dynamo_prof,dynamic=True)
+			self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
 
 	def _setup_loss_fn(self):
 
@@ -1744,8 +1744,8 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		# "config/debug/debug_ce.yml": FragGNNPL,
-		"config/debug/debug_neims.yml": NeimsPL,
+		"config/debug/debug_ce.yml": FragGNNPL,
+		# "config/debug/debug_neims.yml": NeimsPL,
 		# "config/debug/debug_ce_oosm1.yml": FragGNNPL,
 		# "config/debug/debug_cos_hun_nooos.yml": FragGNNPL,
 		# "config/debug/debug_ce_nonull.yml": FragGNNPL,
