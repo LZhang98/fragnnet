@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import wandb
 import logging
+import inspect
 
 # make cc happy
 try:
@@ -623,7 +624,16 @@ class SpectrumPL(pl.LightningModule):
 	def forward(self,**batch_kwargs):
 
 		# get predictions
-		pred = self.model.forward(**batch_kwargs)
+		if self.hparams.activation_checkpointing:
+			forward_keys = list(inspect.signature(self.model.forward).parameters.keys())
+			forward_keys.remove("kwargs")
+			forward_args = [batch_kwargs.get(k,None) for k in forward_keys]
+			pred = th.utils.checkpoint.checkpoint(
+				self.model.forward,
+				*forward_args,
+				use_reentrant=False)
+		else:
+			pred = self.model.forward(**batch_kwargs)
 		return pred
 
 	def _common_step(self, batch, split="train"):
@@ -689,7 +699,7 @@ class SpectrumPL(pl.LightningModule):
 			**loss_d
 		}
 		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
-		with th.no_grad():
+		with th.inference_mode():
 			metric_input_d = {
 				"true_mzs": true_mzs,
 				"true_ints": th.exp(true_logprobs),
@@ -1744,16 +1754,8 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug/debug_ce.yml": FragGNNPL,
+		"config/debug/debug_d3.yml": FragGNNPL,
 		# "config/debug/debug_neims.yml": NeimsPL,
-		# "config/debug/debug_ce_oosm1.yml": FragGNNPL,
-		# "config/debug/debug_cos_hun_nooos.yml": FragGNNPL,
-		# "config/debug/debug_ce_nonull.yml": FragGNNPL,
-		# "config/debug/debug_cos_hun.yml": FragGNNPL,
-		# "config/debug/debug_cos_hun_nm.yml": FragGNNPL,
-		# "config/debug/debug_ce_h3.yml": FragGNNPL,
-		# "config/debug/debug_ce_d4.yml": FragGNNPL,
-		# "config/debug/debug_ce_d4_h3.yml": FragGNNPL,
 	}
 	
 	model_cls_to_ds_cls = {
@@ -1809,5 +1811,3 @@ if __name__ == "__main__":
 
 	with th_temp_seed(420):
 		test_models()
-	# with th_temp_seed(420):
-	# 	test_neims()

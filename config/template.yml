@@ -205,6 +205,7 @@ logging:
   - console
   - wandb
 num_workers: 8
+pin_memory: True
 min_epochs: 1
 max_epochs: 1
 gradient_clip_val: 5.0
@@ -297,3 +298,4 @@ log_hist_metrics: True
 track_datapoint_metrics: True
 gaussian_renormalize: False
 pm_tolerance_multiple: 3.0
+activation_checkpointing: False

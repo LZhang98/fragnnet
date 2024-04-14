@@ -89,7 +89,7 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 		FORMULA_IDX_VARS = [k for k in FORMULA_IDX_VARS if k in output_subset]
 		NB_NODE_IDX_VARS = [k for k in NB_NODE_IDX_VARS if k in output_subset]
 	vals = {}
-	with th.no_grad(): 
+	with th.inference_mode(): 
 		for b_idx, b_input in tqdm(enumerate(dl),total=min(len(dl),batch_cutoff)):
 			# transfer data, make predictions
 			b_input = to_device(b_input, device,non_blocking=False)

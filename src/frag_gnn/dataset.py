@@ -29,6 +29,7 @@ def init_dataloader(ds, config_d):
 			'dataset': ds,
 			'num_workers': config_d["num_workers"],
 			'collate_fn': ds.get_collate_fn(),
+			'pin_memory': config_d["pin_memory"] and (config_d["accelerator"] != "cpu")
 		}
 		
 		# for group sampler 
@@ -85,7 +86,8 @@ def init_dataloader(ds, config_d):
 			batch_size=config_d["eval_batch_size"],
 			shuffle=False,
 			num_workers=config_d["num_workers"],
-			collate_fn=ds.get_collate_fn()
+			collate_fn=ds.get_collate_fn(),
+			pin_memory=config_d["pin_memory"] and (config_d["accelerator"] != "cpu")
 		)
 	return dl
 

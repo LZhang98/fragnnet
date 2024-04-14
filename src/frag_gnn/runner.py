@@ -258,9 +258,9 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 				th.profiler.ProfilerActivity.CPU,
 				th.profiler.ProfilerActivity.CUDA
 			],
-			profile_memory=True,
-			record_shapes=True,
-			with_flops=True,
+			profile_memory=False, #True,
+			record_shapes=False, #True,
+			with_flops=False, #True,
 			with_stack=True,
 			export_to_chrome=True
 		)

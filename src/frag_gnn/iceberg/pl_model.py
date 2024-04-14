@@ -247,7 +247,7 @@ class IcebergGenPL(SpectrumPL):
 		frag_hash_to_entry[root_hash] = root_entry
 
 		# Step 3: Run the autoregressive gen loop
-		with th.no_grad():
+		with th.inference_mode():
 
 			# Note: we don't fragment at the final depth
 			while len(stack) > 0 and depth < max_depth:
@@ -679,7 +679,7 @@ class IcebergIntenPL(SpectrumPL):
 			**loss_d
 		}
 		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
-		with th.no_grad():
+		with th.inference_mode():
 			metric_input_d = {
 				"true_mzs": true_mzs,
 				"true_ints": th.exp(true_logprobs),
