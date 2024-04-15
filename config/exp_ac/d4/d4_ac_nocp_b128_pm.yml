@@ -1,0 +1,72 @@
+wandb_name: d4_ac_nocp_b128_pm
+wandb_tags:
+- exp_ac
+- nist20
+- d4
+- wr00
+- inchikey
+- new_proc
+- fraggnn_d4
+- dynamic_sampler
+- new_metrics
+- nodemlp
+- m_nce_embed
+- oos_multiple_1
+- gaussian_renormalize
+- activation_checkpointing
+- no_compile
+- b128
+
+spec_fp: data/proc/nist20mona23/spec_df.pkl
+mol_fp: data/proc/nist20mona23/mol_df.pkl
+split_dp: data/split/nist20_mona23_d4_wr00_inchikey
+frag_dp: data/frag/nist20mona23_d4_h4_isoFalse_nb2/dags
+num_depth: 5
+num_hs: 4
+frag_gnn_type: NodeMLP
+frag_params:
+  pyg_edge_feats: []
+  pyg_bigraph: False
+frag_remove_edges: True
+spec_params:
+  merge: True
+  nce: True
+  merge_keep_ces: True
+m_ce_insert_mlp_embed: True
+m_ce_insert_mlp_bin: False
+
+train_batch_size: 128
+eval_batch_size: 128
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 20
+max_epochs: 20
+lr_schedule: False
+debug_overfit: False
+precision: 32
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
+mz_bin_res: 0.01
+mz_max: 1500.0
+sparse_cosine_similarity: True
+mol_pool_type: mean
+frag_pool_type: mean
+upload_checkpoints: True
+checkpoint_metric: val_cos_hun_epoch/mean
+
+precision: 32
+use_tensor_float32: True
+automatic_optimization: False
+dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler_mode: frag_edge
+dynamic_batch_sampler_max: 500000
+pl_enable_progress_bar: True
+activation_checkpointing: True
+compile: False
+pin_memory: True

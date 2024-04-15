@@ -35,6 +35,7 @@ from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, init_dataloader
 from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset
 from frag_gnn.graff.dataset import SpecMolAnnDataset
 from frag_gnn.utils.misc_utils import deep_update
+from frag_gnn.utils.profile_utils import MyPyTorchProfiler
 
 
 def load_config(template_fp, custom_fp):
@@ -251,18 +252,22 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		)
 	elif config_d["profiler"] == "pytorch":
 		th.profiler._utils._init_for_cuda_graphs()
-		profiler = PyTorchProfiler(
+		profiler = MyPyTorchProfiler(
 			dirpath=profile_dp,
 			filename="profile",
 			activities=[
 				th.profiler.ProfilerActivity.CPU,
 				th.profiler.ProfilerActivity.CUDA
 			],
-			profile_memory=False, #True,
+			# on_trace_ready=th.profiler.tensorboard_trace_handler(profile_dp),
+			profile_memory=True,
 			record_shapes=False, #True,
 			with_flops=False, #True,
 			with_stack=True,
-			export_to_chrome=True
+			with_modules=False,
+			export_to_chrome=False,
+			export_to_flame_graph=True,
+			experimental_config=th._C._profiler._ExperimentalConfig(verbose=True)
 		)
 	else:
 		assert config_d["profiler"] == "none", config_d["profiler"]
