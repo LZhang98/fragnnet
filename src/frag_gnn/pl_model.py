@@ -1159,7 +1159,8 @@ class FragGNNPL(SpectrumPL):
 			self.relative,
 			self.hparams.oos_tolerance_multiple,
 			self.hparams.gaussian_renormalize,
-			self.hparams.pm_tolerance_multiple
+			self.hparams.pm_tolerance_multiple,
+			self.hparams.loss_batch_size
 		)
 		# edge loss
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
@@ -1754,7 +1755,7 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug/debug_d3.yml": FragGNNPL,
+		"config/debug/debug_d3_vec.yml": FragGNNPL,
 		# "config/debug/debug_neims.yml": NeimsPL,
 	}
 	

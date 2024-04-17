@@ -7,6 +7,10 @@ from typing import Callable
 from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize
 from frag_gnn.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func
 
+# LOG_TRUNC_FACTOR = {
+# 	i: float(th.log(th.erf(th.tensor(i)/np.sqrt(2)))) for i in range(0,6)
+# }
+
 def mog_log_prob(
 		samples: th.Tensor,
 		means: th.Tensor,
@@ -38,14 +42,6 @@ def mog_log_prob(
 	log_probs = th.logsumexp(normal_log_probs + log_weights, dim=1)
 	return log_probs
 
-# def calculate_trunc_gaussian_factor(
-# 		mus: th.Tensor, 
-# 		stds: th.Tensor, 
-# 		truncs: th.Tensor) -> th.Tensor:
-
-# 	z = 0.5*(1+th.erf((truncs-mus)/(stds*float(np.sqrt(2)))))
-# 	return 2.*z - 1.
-
 def mog_ce_fn(
 		b_true_mzs: th.Tensor,
 		b_pred_mzs: th.Tensor,
@@ -63,6 +59,8 @@ def mog_ce_fn(
 	b_vars = b_stds**2
 	if gaussian_renormalize:
 		assert oos_tolerance_multiple > 0, oos_tolerance_multiple
+		# log_trunc_factor = LOG_TRUNC_FACTOR.get(oos_tolerance_multiple,1.)
+		# b_log_trunc_factors = log_trunc_factor*th.ones_like(b_pred_mzs)
 		trunc_factor = th.erf(th.tensor(oos_tolerance_multiple,device=b_pred_mzs.device)/float(np.sqrt(2)))
 		b_log_trunc_factors = th.log(trunc_factor*th.ones_like(b_pred_mzs))
 	else:
@@ -131,6 +129,7 @@ def sparse_cross_entropy_seq(
 		_type_: _description_
 	"""
 
+	# print(pred_logprobs.shape[0]*true_logprobs.shape[0]*4 / 1e6)
 	mask_value = LOG_ZERO
 	batch_size = th.max(true_batch_idxs)+1
 	# ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
@@ -185,6 +184,122 @@ def sparse_cross_entropy_seq(
 		true_oos_entropies[batch_idx] = b_true_oos_entropy
 	return ios_ces, oos_ces, true_oos_logprobs, true_oos_entropies
 
+def sparse_cross_entropy_vec(
+		true_mzs: th.Tensor,
+		true_logprobs: th.Tensor,
+		true_batch_idxs: th.Tensor,
+		pred_mzs: th.Tensor,
+		pred_logprobs: th.Tensor,
+		pred_batch_idxs: th.Tensor,
+		pred_oos_logprobs: th.Tensor,
+		tolerance: float,
+		relative: bool,
+		oos_tolerance_multiple: int,
+		gaussian_renormalize: bool,
+		loss_batch_size: int) -> th.Tensor:
+	
+	# print(pred_logprobs.shape[0]*true_logprobs.shape[0]*4 / 1e6)
+	float_dtype = true_logprobs.dtype
+	int_type = true_batch_idxs.dtype
+	device = true_logprobs.device
+	mask_value = LOG_ZERO
+	batch_size = th.max(true_batch_idxs)+1
+	loss_num_batches = (batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0)
+	true_batch_cumsum = th.cumsum(F.pad(th.unique(true_batch_idxs,return_counts=True)[1],(1,0),"constant",0),dim=0)
+	pred_batch_cumsum = th.cumsum(F.pad(th.unique(pred_batch_idxs,return_counts=True)[1],(1,0),"constant",0),dim=0)
+
+	ios_ce = th.zeros([batch_size],dtype=float_dtype,device=device)
+	oos_ce = th.zeros([batch_size],dtype=float_dtype,device=device)
+
+	for bl in range(loss_num_batches):
+
+		bl_lower = bl*loss_batch_size
+		bl_upper = min((bl+1)*loss_batch_size,batch_size)
+		bl_true_lower = true_batch_cumsum[bl_lower]
+		bl_true_upper = true_batch_cumsum[bl_upper]
+		bl_pred_lower = pred_batch_cumsum[bl_lower]
+		bl_pred_upper = pred_batch_cumsum[bl_upper]
+		bl_batch_size = bl_upper-bl_lower
+		# print((bl_true_upper-bl_true_lower)*(bl_pred_upper-bl_pred_lower)*4)
+
+		bl_true_batch_idxs = true_batch_idxs[bl_true_lower:bl_true_upper] - bl_lower
+		bl_pred_batch_idxs = pred_batch_idxs[bl_pred_lower:bl_pred_upper] - bl_lower
+		bl_true_logprobs = true_logprobs[bl_true_lower:bl_true_upper]
+		bl_pred_logprobs = pred_logprobs[bl_pred_lower:bl_pred_upper]
+		bl_true_mzs = true_mzs[bl_true_lower:bl_true_upper]
+		bl_pred_mzs = pred_mzs[bl_pred_lower:bl_pred_upper]
+		bl_pred_oos_logprobs = pred_oos_logprobs[bl_lower:bl_upper]
+
+		# this should be optimized
+		bl_batch_mask = bl_true_batch_idxs.reshape(-1,1) == bl_pred_batch_idxs.reshape(1,-1)
+		bl_match_mask = calculate_match_mzs(
+			bl_true_mzs,
+			bl_pred_mzs,
+			tolerance=oos_tolerance_multiple*tolerance,
+			relative=relative
+		)
+		bl_both_mask = bl_batch_mask & bl_match_mask
+		del bl_batch_mask, bl_match_mask
+
+		bl_true_both_mask = th.any(bl_both_mask,dim=1)
+
+		# TODO: move this before the loop?
+		if relative:
+			bl_stds = th.clamp(bl_pred_mzs,min=200.)*tolerance
+		else:
+			bl_stds = tolerance*th.ones_like(bl_pred_mzs)
+		bl_vars = bl_stds**2
+		if gaussian_renormalize:
+			assert oos_tolerance_multiple > 0, oos_tolerance_multiple
+			bl_trunc_factor = th.erf(th.tensor(oos_tolerance_multiple,device=device)/float(np.sqrt(2)))
+			bl_log_trunc_factors = th.log(bl_trunc_factor*th.ones_like(bl_pred_mzs))
+		else:
+			bl_log_trunc_factors = th.zeros_like(bl_pred_mzs)
+		
+		# import pdb; pdb.set_trace()
+		bl_ios_log_probs = -0.5*(bl_true_mzs.reshape(-1,1)-bl_pred_mzs.reshape(1,-1))**2/bl_vars.reshape(1,-1) - 0.5*th.log(2*th.pi*bl_vars.reshape(1,-1))
+		bl_ios_log_probs = bl_ios_log_probs + bl_pred_logprobs.reshape(1,-1) - bl_log_trunc_factors.reshape(1,-1)
+		bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).float()*mask_value
+		bl_ios_log_probs = th.logsumexp(bl_ios_log_probs,dim=1)
+		# bl_ios_log_probs_2 = th.zeros_like(bl_ios_log_probs)
+		# for b in range(batch_size):
+		# 	b_logprobs = bl_ios_log_probs[true_batch_idxs==b]
+		# 	b_logprobs_2 = mog_log_prob(
+		# 		true_mzs[true_batch_idxs==b],
+		# 		pred_mzs[pred_batch_idxs==b],
+		# 		vars[pred_batch_idxs==b],
+		# 		pred_logprobs[pred_batch_idxs==b],
+		# 		log_trunc_factors[pred_batch_idxs==b]
+		# 	)
+		# 	bl_ios_log_probs_2[true_batch_idxs==b] = b_logprobs_2
+		# print((bl_ios_log_probs.exp()-bl_ios_log_probs_2.exp()).abs().max())
+		# print((bl_ios_log_probs[true_both_mask].exp()-bl_ios_log_probs_2[true_both_mask].exp()).abs().mean())
+
+		bl_ios_ce = scatter_reduce(
+			(-th.exp(bl_true_logprobs)*bl_ios_log_probs)[bl_true_both_mask],
+			bl_true_batch_idxs[bl_true_both_mask],
+			"sum",
+			dim=0,
+			dim_size=bl_batch_size,
+			default=0.)
+		# ios_ce_2 = scatter_reduce(-th.exp(true_logprobs)*normal_log_probs_2, true_batch_idxs, "sum", dim_size=batch_size)
+		# print((ios_ce-ios_ce_2).abs().max())
+		ios_ce[bl_lower:bl_upper] = bl_ios_ce
+
+		if not th.all(bl_true_both_mask):
+			bl_true_oos_logprobs = scatter_logsumexp(
+				bl_true_logprobs[~bl_true_both_mask],
+				bl_true_batch_idxs[~bl_true_both_mask],
+				dim_size=bl_batch_size
+			)
+		else:
+			# all zeros
+			bl_true_oos_logprobs = th.full([bl_batch_size],LOG_ZERO,dtype=float_dtype,device=device)
+		bl_oos_ce = -th.exp(bl_true_oos_logprobs)*bl_pred_oos_logprobs
+		oos_ce[bl_lower:bl_upper] = bl_oos_ce
+		
+	return ios_ce, oos_ce, 0., 1.
+
 def get_sparse_cross_entropy_fn(
 		dist: str,
 		vectorized: bool,
@@ -192,7 +307,8 @@ def get_sparse_cross_entropy_fn(
 		relative: bool,
 		oos_tolerance_multiple: float,
 		gaussian_renormalize: bool,
-		pm_tolerance_multiple: float) -> Callable:
+		pm_tolerance_multiple: float,
+		loss_batch_size: int) -> Callable:
 
 	if dist == "gaussian":
 		ce_fn = mog_ce_fn
@@ -202,7 +318,15 @@ def get_sparse_cross_entropy_fn(
 		raise NotImplementedError
 
 	if vectorized:
-		raise NotImplementedError
+		assert dist == "gaussian", dist
+		sce_fn = lambda *args: sparse_cross_entropy_vec(
+			*args,
+			tolerance=tolerance,
+			relative=relative,
+			oos_tolerance_multiple=oos_tolerance_multiple,
+			gaussian_renormalize=gaussian_renormalize,
+			loss_batch_size=loss_batch_size
+		)
 	else:
 		sce_fn = lambda *args: sparse_cross_entropy_seq(
 			*args,

@@ -44,7 +44,7 @@ mol_pool_type: mean
 frag_pool_type: mean
 upload_checkpoints: True
 checkpoint_metric: val_cos_hun_epoch/mean
-profiler: pytorch
+profiler: none
 compile: False
 
 precision: 32

@@ -62,7 +62,8 @@ class GrAFFPL(SpectrumPL):
 			self.relative,
 			self.hparams.oos_tolerance_multiple,
 			self.hparams.gaussian_renormalize,
-			self.hparams.pm_tolerance_multiple
+			self.hparams.pm_tolerance_multiple,
+			self.hparams.loss_batch_size
 		)
 
 		def _loss_fn(true_mzs,

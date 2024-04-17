@@ -1,4 +1,4 @@
-wandb_name: d4_noac_cp_b128_pm_1aux
+wandb_name: d4_noac_cp_b128_pm_noaux
 wandb_tags:
 - exp_ac
 - nist20
@@ -14,6 +14,7 @@ wandb_tags:
 - oos_multiple_1
 - gaussian_renormalize
 - b128
+- no_auxiliary_scores
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl

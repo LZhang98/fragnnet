@@ -500,7 +500,8 @@ class IcebergIntenPL(SpectrumPL):
 			self.relative,
 			self.hparams.oos_tolerance_multiple,
 			self.hparams.gaussian_renormalize,
-			self.hparams.pm_tolerance_multiple
+			self.hparams.pm_tolerance_multiple,
+			self.hparams.loss_batch_size
 		)
 
 		# cosine distance
