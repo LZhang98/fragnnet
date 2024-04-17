@@ -1,9 +1,35 @@
 import torch
 import os
-from lightning.pytorch.profilers.pytorch import PyTorchProfiler, _KINETO_AVAILABLE, _PROFILER, warning_cache, tensorboard_trace_handler, rank_zero_warn
+from lightning.pytorch.profilers.pytorch import PyTorchProfiler, _KINETO_AVAILABLE, _PROFILER, warning_cache, tensorboard_trace_handler, rank_zero_warn, MisconfigurationException, ProfilerAction, ScheduleWrapper, Any
 
 
 class MyPyTorchProfiler(PyTorchProfiler):
+
+    def _init_kineto(self, profiler_kwargs: Any) -> None:
+        has_schedule = "schedule" in profiler_kwargs
+        self._has_on_trace_ready = "on_trace_ready" in profiler_kwargs
+
+        schedule = profiler_kwargs.get("schedule", None)
+        if schedule is not None:
+            if not callable(schedule):
+                raise MisconfigurationException(f"Schedule should be a callable. Found: {schedule}")
+            action = schedule(0)
+            if not isinstance(action, ProfilerAction):
+                raise MisconfigurationException(
+                    f"Schedule should return a `torch.profiler.ProfilerAction`. Found: {action}"
+                )
+        self._default_schedule()
+        schedule = schedule if has_schedule else self._default_schedule()
+        self._schedule = ScheduleWrapper(schedule) if schedule is not None else schedule
+        self._profiler_kwargs["schedule"] = self._schedule
+
+        activities = profiler_kwargs.get("activities", None)
+        self._profiler_kwargs["activities"] = activities or self._default_activities()
+        self._export_to_flame_graph = profiler_kwargs.get("export_to_flame_graph", False)
+        self._export_metrics = profiler_kwargs.get("export_metrics", ("self_cpu_time_total","self_cuda_time_total"))
+        # self._metric = profiler_kwargs.get("metric", "self_cuda_time_total")
+        with_stack = profiler_kwargs.get("with_stack", False) or self._export_to_flame_graph
+        self._profiler_kwargs["with_stack"] = with_stack
 
     def stop(self, action_name: str) -> None:
         if action_name in self._recording_map:
@@ -37,10 +63,12 @@ class MyPyTorchProfiler(PyTorchProfiler):
                         handler(profiler)
 
                     if self._export_to_flame_graph:
-                        path = os.path.join(
-                            self.dirpath, self._prepare_filename(action_name=action_name, extension=".stack")
-                        )
-                        profiler.export_stacks(path, metric=self._metric)
+                        for export_metric in self._export_metrics:
+                            path = os.path.join(
+                                self.dirpath, self._prepare_filename(action_name=action_name+f".{export_metric}", extension=".stack")
+                            )
+                            print(path, export_metric)
+                            profiler.export_stacks(path, metric=export_metric)
                 else:
                     rank_zero_warn("The PyTorchProfiler failed to export trace as `dirpath` is None")
 
