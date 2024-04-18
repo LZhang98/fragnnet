@@ -267,7 +267,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			with_modules=False,
 			export_to_chrome=False,
 			export_to_flame_graph=True,
-			experimental_config=th._C._profiler._ExperimentalConfig(verbose=True)
+			experimental_config=th._C._profiler._ExperimentalConfig(verbose=True),
+			schedule=th.profiler.schedule(wait=1, warmup=1, active=6, repeat=0, skip_first=0)
 		)
 	else:
 		assert config_d["profiler"] == "none", config_d["profiler"]
