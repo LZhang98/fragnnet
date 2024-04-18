@@ -1,4 +1,4 @@
-wandb_name: d3_vec_b128_lb128
+wandb_name: d3_vec_b512_lb16
 wandb_tags:
 - exp_vec
 - nist20
@@ -12,10 +12,10 @@ wandb_tags:
 - m_nce_embed
 - oos_multiple_1
 - gaussian_renormalize
-- b128
+- b512
 - no_auxiliary_scores
 - vectorized_loss
-- lb128
+- lb16
 
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
@@ -35,8 +35,8 @@ spec_params:
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
 
-train_batch_size: 128
-eval_batch_size: 128
+train_batch_size: 256
+eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004
@@ -68,4 +68,4 @@ activation_checkpointing: False
 compile: True
 pin_memory: True
 loss_vectorized: True
-loss_batch_size: 128
+loss_batch_size: 16
