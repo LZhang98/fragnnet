@@ -488,7 +488,7 @@ def get_mol_graph(mol,atom_feats,bond_feats,pe_embed_k,bigraph):
 	mol_pyg = mg.get_pyg_graph(mol,bigraph=bigraph)
 	return mol_pyg
 
-def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph):
+def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,edges,bigraph):
 
 	device = dag_pyg.x.device
 	# cast
@@ -518,6 +518,7 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph):
 	_edge_feat_size = 0
 	for feat, feat_idx in EDGE_FEAT_TO_IDX.items():
 		if feat in frag_edge_feats:
+			assert edges
 			if feat == "complement":
 				_edge_attr_cur = th.zeros(edge_attr.shape[0],1,device=device,dtype=th.int64)
 			else:
@@ -532,6 +533,7 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph):
 	_edge_feat_idxs = th.tensor(_edge_feat_idxs,device=device,dtype=th.int64).reshape(1,-1)
 	# convert to undirected
 	if bigraph:
+		assert edges
 		_edge_index_c = th.stack([_edge_index[1],_edge_index[0]],dim=0)
 		assert not th.any(th.all(_edge_index==_edge_index_c,dim=0),dim=0)
 		_edge_attr_c = _edge_attr.clone()
@@ -539,6 +541,10 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,bigraph):
 			_edge_attr_c[:,-1] = 1 - _edge_attr_c[:,-1]
 		_edge_index = th.cat([_edge_index,_edge_index_c],dim=1)
 		_edge_attr = th.cat([_edge_attr,_edge_attr_c],dim=0)
+	if not edges:
+		assert not bigraph
+		_edge_index = _edge_index[:,:0]
+		_edge_attr = _edge_attr[:0,:]
 	# create pyg object
 	dag_pyg = pyg.data.Data(
 		x=_x,

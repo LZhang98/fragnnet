@@ -83,7 +83,6 @@ class FragGNNModel(nn.Module):
 		frag_normalization: str,
 		frag_dropout: float,
 		frag_pool_type: str,
-		frag_remove_edges: bool,
 		mlp_output_format: str,
 		mlp_hidden_size: int,
 		mlp_normalization: str,
@@ -150,7 +149,6 @@ class FragGNNModel(nn.Module):
 		self.complement_embedder = get_embedder(int_embedder,**complement_d)
 		self.frag_node_feats = frag_node_feats
 		self.frag_edge_feats = frag_edge_feats
-		self.frag_remove_edges = frag_remove_edges
 		self._compute_frag_feats_sizes()
 
 		# define interstage
@@ -266,8 +264,6 @@ class FragGNNModel(nn.Module):
 			self.frag_node_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "depth" in self.frag_node_feats:
 			self.frag_node_feats_size += self.num_depth*self.depth_embedder.num_dim
-		if self.frag_node_feats_size == 0:
-			self.frag_node_feats_size = 1
 		# edges
 		self.frag_edge_feats_size = 0
 		if "cc" in self.frag_edge_feats:
@@ -276,13 +272,6 @@ class FragGNNModel(nn.Module):
 			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "complement" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.complement_embedder.num_dim
-		# # ce stuff
-		# if self.ce_insert_frag:
-		# 	self.frag_node_feats_size += 1
-		# 	if not self.frag_remove_edges:
-		# 		self.frag_edge_feats_size += 1
-		if self.frag_remove_edges:
-			assert self.frag_edge_feats_size == 0, self.frag_edge_feats_size
 
 	def get_compile(self, **kwargs):
 
@@ -451,8 +440,8 @@ class FragGNNModel(nn.Module):
 			frag_edata.append(frag_edge_complement)
 		# empty feats check
 		if len(frag_ndata) == 0:
-			assert self.frag_node_feats_size == 1, self.frag_node_feats_size
-			frag_ndata.append(th.zeros([batch_frag_num_nodes,1],dtype=float_dtype,device=device))
+			assert self.frag_node_feats_size == 0, self.frag_node_feats_size
+			frag_ndata.append(th.zeros([batch_frag_num_nodes,0],dtype=float_dtype,device=device))
 		if len(frag_edata) == 0:
 			assert self.frag_edge_feats_size == 0, self.frag_edge_feats_size
 			frag_edata.append(th.zeros([batch_frag_num_edges,0],dtype=float_dtype,device=device))
@@ -543,10 +532,6 @@ class FragGNNModel(nn.Module):
 		frag_edge_attr_embed = th.cat(frag_edata,dim=-1)
 
 		# define frag network
-		if self.frag_remove_edges:
-			assert self.frag_edge_feats_size == 0, self.frag_edge_feats_size
-			frag_edge_index = frag_edge_index[:,:0]
-			frag_edge_attr_embed = frag_edge_attr_embed[:0,:]
 		frag_embed_gnn = self.frag_embedder(
 			frag_x_embed,
 			frag_node_batch_idxs,

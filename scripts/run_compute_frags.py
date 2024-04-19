@@ -61,7 +61,7 @@ def run_frag(smiles, **kwargs):
 		"base_formula"
 	]
 	bigraph = False
-	dag_f_pyg = get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, bigraph=bigraph)
+	dag_f_pyg = get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges=edges, bigraph=bigraph)
 	nb_iso_idx = frag_utils.get_node_feats(dag_f_pyg.x, dag_f_pyg.node_feat_idxs[0],"nb_iso_idx")
 	import pdb; pdb.set_trace()
 

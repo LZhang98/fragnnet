@@ -540,6 +540,7 @@ class SpecMolFragDataset(SpecMolDataset):
 				frag_pyg,
 				self.frag_params["pyg_node_feats"],
 				self.frag_params["pyg_edge_feats"],
+				self.frag_params["pyg_edges"],
 				self.frag_params["pyg_bigraph"]
 			)
 			frag_data["frag_pyg"] = frag_pyg
@@ -751,7 +752,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		if len(batch) > 0:
 			self._batches.append(batch)
 		#print(self._batches)
-		print(f"[SpecMolFragDynamicBatchSampler]Batch indices computed, Expecting {len(self._batches)} mini-batch for next epoch")
+		print(f"[SpecMolFragDynamicBatchSampler] Batch indices computed, Expecting {len(self._batches)} mini-batch for next epoch")
 
 	def __iter__(self) -> Iterator[List[int]]:
 		""" we use a pre computed batche list, this way we could have a correct batch size
