@@ -91,7 +91,7 @@ def pm_ce_fn(
 		relative=relative
 	)
 	b_logprobs = th.logsumexp(
-		b_pred_logprobs.reshape(1,-1)*b_match_mask.float() + LOG_ZERO*(~b_match_mask).float(),
+		b_pred_logprobs.reshape(1,-1)*b_match_mask.float() + LOG_ZERO(b_pred_logprobs.dtype)*(~b_match_mask).float(),
 		dim=1)
 	return b_logprobs
 
@@ -130,7 +130,7 @@ def sparse_cross_entropy_seq(
 	"""
 
 	# print(pred_logprobs.shape[0]*true_logprobs.shape[0]*4 / 1e6)
-	mask_value = LOG_ZERO
+	mask_value = LOG_ZERO(true_logprobs.dtype)
 	batch_size = th.max(true_batch_idxs)+1
 	# ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
 	ios_ces = th.zeros([batch_size], dtype=true_logprobs.dtype,device=true_logprobs.device)
@@ -202,7 +202,7 @@ def sparse_cross_entropy_vec(
 	float_dtype = true_logprobs.dtype
 	int_type = true_batch_idxs.dtype
 	device = true_logprobs.device
-	mask_value = LOG_ZERO
+	mask_value = LOG_ZERO(float_dtype)
 	batch_size = th.max(true_batch_idxs)+1
 	loss_num_batches = (batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0)
 	true_batch_cumsum = th.cumsum(F.pad(th.unique(true_batch_idxs,return_counts=True)[1],(1,0),"constant",0),dim=0)
@@ -294,7 +294,7 @@ def sparse_cross_entropy_vec(
 			)
 		else:
 			# all zeros
-			bl_true_oos_logprobs = th.full([bl_batch_size],LOG_ZERO,dtype=float_dtype,device=device)
+			bl_true_oos_logprobs = th.full([bl_batch_size],LOG_ZERO(float_dtype),dtype=float_dtype,device=device)
 		bl_oos_ce = -th.exp(bl_true_oos_logprobs)*bl_pred_oos_logprobs
 		oos_ce[bl_lower:bl_upper] = bl_oos_ce
 		
@@ -554,7 +554,7 @@ def sparse_cosine_distance_hungarian(
 			b_true_logprobs[b_true_match_mzs].detach().unsqueeze(1) + \
 			b_pred_logprobs[b_pred_match_mzs].detach().unsqueeze(0)
 		)
-		b_score[~b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs]] = LOG_ZERO
+		b_score[~b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs]] = LOG_ZERO(b_score.dtype)
 		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
 		b_log_cos_hun = th.logsumexp(
 			b_true_logprobs[b_true_match_mzs][b_true_idxs] + \

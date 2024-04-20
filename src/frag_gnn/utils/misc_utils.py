@@ -16,9 +16,11 @@ from collections import defaultdict
 TQDM_DISABLE = False
 PPM = 1/1000000
 EPS = 1e-9
-LOG_ZERO = -1e9
 LOG_HALF = float(np.log(0.5))
 LOG_TWO = float(np.log(2.0))
+
+def LOG_ZERO(dtype):
+	return th.finfo(dtype).min
 
 def timeit(func):
 	# adapted from https://dev.to/kcdchennai/python-decorator-to-measure-execution-time-54hk
@@ -158,7 +160,10 @@ def get_pyg_memory_usage(pyg_graph):
 
 	return pyg.profile.get_data_size(pyg_graph)
 
-def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=LOG_ZERO,log=True):
+def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=None,log=True):
+	
+	if mask_logprob is None:
+		mask_logprob = LOG_ZERO(logits.dtype)	
 	# calculate appropriate mask value
 	with th.no_grad():
 		c = scatter_masked_logsumexp(logits,mask,subset_idxs)
@@ -178,8 +183,10 @@ def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=LOG_ZERO,log=Tru
 	else:
 		return masked_logits
 
-def scatter_masked_logsumexp(logits,mask,subset_idxs,mask_value=LOG_ZERO):
+def scatter_masked_logsumexp(logits,mask,subset_idxs,mask_value=None):
 
+	if mask_value is None:
+		mask_value = LOG_ZERO(logits.dtype)
 	# apply mask
 	masked_logits = mask*logits + (1-mask)*mask_value
 	# normalize
@@ -198,7 +205,7 @@ def scatter_logsumexp(logits,subset_idxs,eps=EPS,dim_size=None):
 		index=subset_idxs,
 		reduce="amax",
 		dim_size=k,
-		default=LOG_ZERO
+		default=LOG_ZERO(logits.dtype)
 	)
 	lm = th.gather(
 		input=sm,

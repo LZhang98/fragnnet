@@ -178,7 +178,7 @@ def log_std(log_p,dim=0,correction=1):
 def sparse_kl(log_p,log_q,b_idx,dim_size):
 	p = th.exp(log_p)
 	kl = scatter_reduce(
-		p * (log_p - th.clamp(log_q,min=LOG_ZERO)),
+		p * (log_p - th.clamp(log_q,min=LOG_ZERO(log_p.dtype))),
 		b_idx,
 		reduce="sum",
 		dim_size=dim_size

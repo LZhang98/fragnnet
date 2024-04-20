@@ -591,7 +591,7 @@ class FragGNNModel(nn.Module):
 				frag_joint_batch_idxs
 			)
 			frag_null_formula_logprob = scatter_logsumexp(
-				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * LOG_ZERO,
+				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * LOG_ZERO(frag_joint_logprobs.dtype),
 				frag_joint_batch_idxs
 			)
 			frag_null_formula_logprob = th.clamp(frag_null_formula_logprob, max=0.)
@@ -643,7 +643,7 @@ class FragGNNModel(nn.Module):
 
 			# compute total NULL probability (before renormalization)
 			frag_null_formula_logprob = scatter_logsumexp(
-				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * LOG_ZERO,
+				(1.-frag_joint_mask) * frag_joint_logprobs + frag_joint_mask * LOG_ZERO(frag_joint_logprobs.dtype),
 				frag_joint_batch_idxs
 			)
 			frag_null_formula_logprob = th.clamp(frag_null_formula_logprob, max=0.)
@@ -691,7 +691,7 @@ class FragGNNModel(nn.Module):
 			not_oos_logprobs = F.logsigmoid(-oos_logits)
 		else:
 			# set them to 0
-			oos_logprobs = LOG_ZERO*th.ones([batch_size],device=device)
+			oos_logprobs = LOG_ZERO(oos_logits.dtype)*th.ones([batch_size],device=device)
 			not_oos_logprobs = th.zeros([batch_size],device=device)
 		# adjust frag_formula_logprobs
 		frag_formula_oos_logprobs = frag_formula_logprobs + \

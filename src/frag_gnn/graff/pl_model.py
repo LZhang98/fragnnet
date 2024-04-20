@@ -82,7 +82,7 @@ class GrAFFPL(SpectrumPL):
 				pred_mzs,
 				pred_logprobs,
 				pred_batch_idxs,
-				th.full((batch_size,), LOG_ZERO, device=pred_logprobs.device, dtype=pred_logprobs.dtype),
+				th.full((batch_size,), LOG_ZERO(true_logprobs.dtype), device=pred_logprobs.device, dtype=pred_logprobs.dtype),
 			)
 			spec_ce = ios_ce + oos_ce
 			primary_loss = ios_ce
