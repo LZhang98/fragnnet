@@ -192,8 +192,8 @@ mz_bin_res: 0.01
 eval_mz_bin_res:
   - 0.1
   - 0.01
-eval_bin_sqrt: True
-eval_bin_remove_prec_peaks: True
+eval_bin_sqrt: False
+eval_bin_remove_prec_peaks: False
 eval_hun_sqrt: False
 eval_hun_remove_prec_peaks: False
 sum_ints: True
