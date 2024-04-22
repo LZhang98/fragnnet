@@ -649,8 +649,6 @@ class SpectrumPL(pl.LightningModule):
 			true_batch_idxs
 		)
 		pred = self.forward(**batch)
-		if th.isnan(pred["pred_logprobs"]).any():
-			import pdb; pdb.set_trace()
 		both = {
 			"true_mzs": true_mzs,
 			"true_logprobs": true_logprobs,
