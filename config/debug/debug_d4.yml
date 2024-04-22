@@ -71,7 +71,7 @@ upload_checkpoints: True
 checkpoint_metric: val_loss_epoch/mean
 auxiliary_scores: []
 
-precision: 32
+precision: 16-mixed
 use_tensor_float32: True
 automatic_optimization: True #False
 dynamic_batch_sampler: False #SpecMolFragDynamicBatchSampler
