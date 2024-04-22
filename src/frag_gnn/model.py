@@ -584,7 +584,7 @@ class FragGNNModel(nn.Module):
 			frag_joint_logits = self.formula_module(frag_embed)
 			assert frag_joint_logits.shape[1] == 2*self.num_hs+1, (frag_joint_logits.shape[1],2*self.num_hs+1)
 			frag_joint_logits = frag_joint_logits.flatten()
-			
+
 			# compute total NULL probability (before renormalization)
 			frag_joint_logprobs = scatter_logsoftmax(
 				frag_joint_logits,
@@ -693,6 +693,7 @@ class FragGNNModel(nn.Module):
 			# set them to 0
 			oos_logprobs = LOG_ZERO(oos_logits.dtype)*th.ones([batch_size],device=device)
 			not_oos_logprobs = th.zeros([batch_size],device=device)
+		
 		# adjust frag_formula_logprobs
 		frag_formula_oos_logprobs = frag_formula_logprobs + \
 			th.repeat_interleave(not_oos_logprobs, frag_formula_sizes, dim=0)

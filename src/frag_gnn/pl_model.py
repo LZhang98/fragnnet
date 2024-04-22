@@ -239,13 +239,7 @@ class SpectrumPL(pl.LightningModule):
 
 			# untransform
 			true_ints = self.ints_untransform_func(true_ints)
-			try:
-				un_pred_ints = pred_ints.clone()
-				pred_ints = self.ints_untransform_func(pred_ints)
-			except AssertionError as e:
-				print(e)
-				print(th.isinf(pred_ints))
-				import pdb; pdb.set_trace()
+			pred_ints = self.ints_untransform_func(pred_ints)
 
 			# define aggregation
 			agg = "sum" if self.hparams.sum_ints else "amax"
@@ -655,6 +649,8 @@ class SpectrumPL(pl.LightningModule):
 			true_batch_idxs
 		)
 		pred = self.forward(**batch)
+		if th.isnan(pred["pred_logprobs"]).any():
+			import pdb; pdb.set_trace()
 		both = {
 			"true_mzs": true_mzs,
 			"true_logprobs": true_logprobs,
@@ -1148,6 +1144,128 @@ class FragGNNPL(SpectrumPL):
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
 
+	def _setup_loss_names(self):
+
+				# flag losses for tracking
+		loss_names = [
+			"loss",
+			"primary_loss",
+			"spec_ce",
+			"oos_ce",
+			"ios_ce",
+			"null_formula_prob",
+			"oos_prob",
+		]
+		if not self.hparams.skip_extra_losses:
+			loss_names.extend([
+				"spec_e",
+				"spec_ne",
+				"formula_e",
+				"formula_ne",
+				"node_e",
+				"node_ne",
+				"node_formula_e",
+				"node_formula_ne",
+				"formula_node_e",
+				"formula_node_ne",
+				"joint_e",
+				"joint_ne",
+				"node_formula_mi",
+				"formula_node_mi",
+				"h_mean",
+				"h_e",
+				"h_ne"
+			])
+			if not self.hparams.skip_edge_loss:
+				loss_names.extend([
+					"edge_h_range_loss",
+					"edge_h_transfer_loss",
+					"edge_e",
+					"edge_ne"
+				])
+			if self.hparams.nb_iso:
+				loss_names.extend([
+					"nb_node_e",
+					"nb_node_ne",
+					"nb_node_formula_e",
+					"nb_node_formula_ne",
+					"nb_formula_node_e",
+					"nb_formula_node_ne",
+					"nb_joint_e",
+					"nb_joint_ne",
+					"nb_node_node_e",
+					"nb_node_node_ne",
+					"nb_node_formula_mi",
+					"nb_formula_node_mi",
+					"nb_node_node_mi"
+				])
+
+		else:
+			if not (self.hparams.formula_entropy_weight == self.hparams.formula_normalized_entropy_weight == 0.):
+				loss_names.extend([
+					"formula_e",
+					"formula_ne",
+				])
+			if not (self.hparams.node_entropy_weight == self.hparams.node_normalized_entropy_weight == 0.):
+				loss_names.extend([
+					"node_e",
+					"node_ne",
+				])
+			if not (self.hparams.node_formula_entropy_weight == self.hparams.node_formula_normalized_entropy_weight == 0.):
+				loss_names.extend([
+					"node_formula_e",
+					"node_formula_ne",
+				])
+			if not (self.hparams.formula_node_entropy_weight == self.hparams.formula_node_normalized_entropy_weight == 0.):
+				loss_names.extend([
+					"formula_node_e",
+					"formula_node_ne",
+				])
+			if not (self.hparams.joint_entropy_weight == self.hparams.joint_normalized_entropy_weight == 0.):
+				loss_names.extend([
+					"joint_e",
+					"joint_ne",
+				])
+			if self.hparams.skip_edge_loss:
+				if not (self.hparams.edge_h_range_loss_weight == self.hparams.edge_h_transfer_loss_weight == 0.):
+					loss_names.extend([
+						"edge_h_range_loss",
+						"edge_h_transfer_loss",
+					])
+				if not (self.hparams.edge_entropy_weight == self.hparams.edge_normalized_entropy_weight == 0.):
+					loss_names.extend([
+						"edge_e",
+						"edge_ne",
+					])
+			if self.hparams.nb_iso:
+				if not (self.hparams.nb_node_entropy_weight == self.hparams.nb_node_normalized_entropy_weight == 0.):
+					loss_names.extend([
+						"nb_node_e",
+						"nb_node_ne",
+					])
+				if not (self.hparams.nb_node_formula_entropy_weight == self.hparams.nb_node_formula_normalized_entropy_weight == 0.):
+					loss_names.extend([
+						"nb_node_formula_e",
+						"nb_node_formula_ne",
+					])
+				if not (self.hparams.nb_formula_node_entropy_weight == self.hparams.nb_formula_node_normalized_entropy_weight == 0.):
+					loss_names.extend([
+						"nb_formula_node_e",
+						"nb_formula_node_ne",
+					])
+				if not (self.hparams.nb_joint_entropy_weight == self.hparams.nb_joint_normalized_entropy_weight == 0.):
+					loss_names.extend([
+						"nb_joint_e",
+						"nb_joint_ne",
+					])
+				if not (self.hparams.nb_node_node_entropy_weight == self.hparams.nb_node_node_normalized_entropy_weight == 0.):
+					loss_names.extend([
+						"nb_node_node_e",
+						"nb_node_node_ne",
+					])
+		self.loss_names = loss_names
+		self.metric_names.update(loss_names)
+
 	def _setup_loss_fn(self):
 
 		# cross entropy
@@ -1231,6 +1349,8 @@ class FragGNNPL(SpectrumPL):
 			)
 			return h_range_loss, h_transfer_loss
 		
+		self._setup_loss_names()
+
 		def _loss_fn(
 			true_mzs,
 			true_logprobs,
@@ -1273,6 +1393,8 @@ class FragGNNPL(SpectrumPL):
 			pred_nb_node_node_node_idxs,
 			pred_nb_node_node_batch_idxs,
 			**kwargs):
+			
+			loss_d = {}
 			ios_ce, oos_ce, true_oos_logprob, true_oos_e = sparse_ce_fn(
 				true_mzs,
 				true_logprobs,
@@ -1283,6 +1405,10 @@ class FragGNNPL(SpectrumPL):
 				pred_oos_logprobs
 			)
 			spec_ce = ios_ce + oos_ce
+			loss_d["spec_ce"] = spec_ce
+			loss_d["ios_ce"] = ios_ce
+			loss_d["oos_ce"] = oos_ce
+			
 			if self.hparams.loss_type == "cross_entropy":
 				if self.hparams.oos_loss:
 					primary_loss = spec_ce
@@ -1310,6 +1436,8 @@ class FragGNNPL(SpectrumPL):
 				)
 				primary_loss = spec_cd_hun
 			loss = self.hparams.primary_loss_weight * primary_loss
+			loss_d["primary_loss"] = primary_loss
+			
 			if self.hparams.null_loss:
 				assert self.hparams.loss_type != "cross_entropy", self.hparams.loss_type
 				if self.hparams.loss_type in ["cosine_distance","cosine_distance_hungarian"]:
@@ -1317,186 +1445,205 @@ class FragGNNPL(SpectrumPL):
 				elif self.hparams.loss_type in ["log_cosine_distance","log_cosine_distance_hungarian"]:
 					loss = loss + self.hparams.null_loss_weight * pred_null_formula_logprob
 
-			spec_e, spec_ne = sparse_entropy_fn(
-				pred_logprobs,
-				pred_batch_idxs,
-				oos_logprobs=pred_oos_logprobs,
-				renormalize=True
-			)
-			# formula logprobs do not consider NULL, OOS
-			formula_e, formula_ne = sparse_entropy_fn(
-				pred_formula_logprobs,
-				pred_formula_batch_idxs,
-				support_size_delta=-1. # for NULL formula
-			)
-			loss = loss + self.hparams.formula_entropy_weight * formula_e \
-				+ self.hparams.formula_normalized_entropy_weight * formula_ne
-			node_e, node_ne = sparse_entropy_fn(
-				pred_node_logprobs,
-				pred_node_batch_idxs
-			)
-			loss = loss + self.hparams.node_entropy_weight * node_e \
-				+ self.hparams.node_normalized_entropy_weight * node_ne
-			# node_formula logprobs do not consider NULL, OOS
-			node_formula_e, node_formula_ne = sparse_conditional_entropy_fn(
-				pred_node_logprobs,
-				pred_node_batch_idxs,
-				pred_node_formula_logprobs,
-				pred_joint_node_idxs,
-				pred_joint_batch_idxs,
-			)
-			loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
-				+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
-			# formula_node logprobs do not consider NULL, OOS
-			formula_node_e, formula_node_ne = sparse_conditional_entropy_fn(
-				pred_formula_logprobs,
-				pred_formula_batch_idxs,
-				pred_formula_node_logprobs,
-				pred_joint_formula_idxs,
-				pred_joint_batch_idxs
-			)
-			loss = loss + self.hparams.formula_node_entropy_weight * formula_node_e \
-				+ self.hparams.formula_node_normalized_entropy_weight * formula_node_ne
-			# joint
-			joint_e, joint_ne = sparse_entropy_fn(
-				pred_joint_logprobs,
-				pred_joint_batch_idxs
-			)
-			# assert th.all(th.isclose(joint_e, node_formula_e+node_e,rtol=0.,atol=0.001))
-			# assert th.all(th.isclose(joint_e, formula_node_e+formula_e,rtol=0.,atol=0.001))
-			loss = loss + self.hparams.joint_entropy_weight * joint_e \
-				+ self.hparams.joint_normalized_entropy_weight * joint_ne
-			# mi
-			node_formula_mi =  formula_e - node_formula_e
-			formula_node_mi = node_e - formula_node_e
+			if "spec_e" in self.loss_names or "spec_ne" in self.loss_names:
+				spec_e, spec_ne = sparse_entropy_fn(
+					pred_logprobs,
+					pred_batch_idxs,
+					oos_logprobs=pred_oos_logprobs,
+					renormalize=True
+				)
+				loss_d["spec_e"] = spec_e
+				loss_d["spec_ne"] = spec_ne
+
+			if "formula_e" in self.loss_names or "formula_ne" in self.loss_names:
+				# formula logprobs do not consider NULL, OOS
+				formula_e, formula_ne = sparse_entropy_fn(
+					pred_formula_logprobs,
+					pred_formula_batch_idxs,
+					support_size_delta=-1. # for NULL formula
+				)
+				loss = loss + self.hparams.formula_entropy_weight * formula_e \
+					+ self.hparams.formula_normalized_entropy_weight * formula_ne
+				loss_d["formula_e"] = formula_e
+				loss_d["formula_ne"] = formula_ne
+
+			if "node_e" in self.loss_names or "node_ne" in self.loss_names:
+				node_e, node_ne = sparse_entropy_fn(
+					pred_node_logprobs,
+					pred_node_batch_idxs
+				)
+				loss = loss + self.hparams.node_entropy_weight * node_e \
+					+ self.hparams.node_normalized_entropy_weight * node_ne
+				loss_d["node_e"] = node_e
+				loss_d["node_ne"] = node_ne
+			
+			if "node_formula_e" in self.loss_names or "node_formula_ne" in self.loss_names:
+				# node_formula logprobs do not consider NULL, OOS
+				node_formula_e, node_formula_ne = sparse_conditional_entropy_fn(
+					pred_node_logprobs,
+					pred_node_batch_idxs,
+					pred_node_formula_logprobs,
+					pred_joint_node_idxs,
+					pred_joint_batch_idxs,
+				)
+				loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
+					+ self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
+				loss_d["node_formula_e"] = node_formula_e
+				loss_d["node_formula_ne"] = node_formula_ne
+			
+			if "formula_node_e" in self.loss_names or "formula_node_ne" in self.loss_names:
+				# formula_node logprobs do not consider NULL, OOS
+				formula_node_e, formula_node_ne = sparse_conditional_entropy_fn(
+					pred_formula_logprobs,
+					pred_formula_batch_idxs,
+					pred_formula_node_logprobs,
+					pred_joint_formula_idxs,
+					pred_joint_batch_idxs
+				)
+				loss = loss + self.hparams.formula_node_entropy_weight * formula_node_e \
+					+ self.hparams.formula_node_normalized_entropy_weight * formula_node_ne
+				loss_d["formula_node_e"] = formula_node_e
+				loss_d["formula_node_ne"] = formula_node_ne
+			
+			if "joint_e" in self.loss_names or "joint_ne" in self.loss_names:
+				# joint
+				joint_e, joint_ne = sparse_entropy_fn(
+					pred_joint_logprobs,
+					pred_joint_batch_idxs
+				)
+				# assert th.all(th.isclose(joint_e, node_formula_e+node_e,rtol=0.,atol=0.001))
+				# assert th.all(th.isclose(joint_e, formula_node_e+formula_e,rtol=0.,atol=0.001))
+				loss = loss + self.hparams.joint_entropy_weight * joint_e \
+					+ self.hparams.joint_normalized_entropy_weight * joint_ne
+				loss_d["joint_e"] = joint_e
+				loss_d["joint_ne"] = joint_ne
+			
+			if "node_formula_mi" in self.loss_names:
+				# mi
+				node_formula_mi = formula_e - node_formula_e
+				loss_d["node_formula_mi"] = node_formula_mi
+
+			if "formula_node_mi" in self.loss_names:
+				formula_node_mi = node_e - formula_node_e
+				loss_d["formula_node_mi"] = formula_node_mi
+
 			# special probabilities
 			null_formula_prob = th.exp(pred_null_formula_logprob)
 			oos_prob = th.exp(pred_oos_logprobs)
-			# hydrogens
-			h_mean = scatter_reduce(
-				th.exp(pred_h_logprobs) * pred_h_counts,
-				pred_h_batch_idxs,
-				reduce="sum"
-			)
-			h_e, h_ne = sparse_entropy_fn(
-				pred_h_logprobs,
-				pred_h_batch_idxs
-			)
-			loss_d = {
-				"loss": loss,
-				"primary_loss": primary_loss,
-				"spec_ce": spec_ce,
-				"ios_ce": ios_ce,
-				"oos_ce": oos_ce,
-				"spec_e": spec_e,
-				"spec_ne": spec_ne,
-				"formula_e": formula_e,
-				"formula_ne": formula_ne,
-				"node_e": node_e,
-				"node_ne": node_ne,
-				"node_formula_e": node_formula_e,
-				"node_formula_ne": node_formula_ne,
-				"formula_node_e": formula_node_e,
-				"formula_node_ne": formula_node_ne,
-				"joint_e": joint_e,
-				"joint_ne": joint_ne,
-				"node_formula_mi": node_formula_mi,
-				"formula_node_mi": formula_node_mi,
-				"null_formula_prob": null_formula_prob,
-				"oos_prob": oos_prob,
-				"h_mean": h_mean,
-				"h_e": h_e,
-				"h_ne": h_ne
-			}
+			loss_d["null_formula_prob"] = null_formula_prob
+			loss_d["oos_prob"] = oos_prob
+
+			if "h_mean" in self.loss_names or "h_e" in self.loss_names or "h_ne" in self.loss_names:
+				# hydrogens
+				h_mean = scatter_reduce(
+					th.exp(pred_h_logprobs) * pred_h_counts,
+					pred_h_batch_idxs,
+					reduce="sum"
+				)
+				h_e, h_ne = sparse_entropy_fn(
+					pred_h_logprobs,
+					pred_h_batch_idxs
+				)
+				loss_d["h_mean"] = h_mean
+				loss_d["h_e"] = h_e
+				loss_d["h_ne"] = h_ne
+			
 			if not self.hparams.skip_edge_loss:
-				r_el, t_el = edge_loss(
-					pred_edge_logprobs,
-					pred_edge_h_diffs,
-					pred_edge_h_range_masks,
-					pred_edge_h_logprobs,
-					pred_edge_batch_idxs
-				)
-				loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
-					+ self.hparams.edge_h_transfer_loss_weight * t_el
-				edge_e, edge_ne = sparse_entropy_fn(
-					pred_edge_logprobs,
-					pred_edge_batch_idxs
-				)
-				loss = loss + self.hparams.edge_entropy_weight * edge_e \
-					+ self.hparams.edge_normalized_entropy_weight * edge_ne
-				loss_d["loss"] = loss
-				loss_d["edge_h_range_loss"] = r_el
-				loss_d["edge_h_transfer_loss"] = t_el
-				loss_d["edge_e"] = edge_e
-				loss_d["edge_ne"] = edge_ne
+				if "edge_h_range_loss" in self.loss_names or "edge_h_transfer_loss" in self.loss_names:
+					r_el, t_el = edge_loss(
+						pred_edge_logprobs,
+						pred_edge_h_diffs,
+						pred_edge_h_range_masks,
+						pred_edge_h_logprobs,
+						pred_edge_batch_idxs
+					)
+					loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
+						+ self.hparams.edge_h_transfer_loss_weight * t_el
+					loss_d["edge_h_range_loss"] = r_el
+					loss_d["edge_h_transfer_loss"] = t_el
+				if "edge_e" in self.loss_names or "edge_ne" in self.loss_names:
+					edge_e, edge_ne = sparse_entropy_fn(
+						pred_edge_logprobs,
+						pred_edge_batch_idxs
+					)
+					loss = loss + self.hparams.edge_entropy_weight * edge_e \
+						+ self.hparams.edge_normalized_entropy_weight * edge_ne
+					loss_d["edge_e"] = edge_e
+					loss_d["edge_ne"] = edge_ne
 			else:
 				assert self.hparams.edge_h_range_loss_weight == 0.0
 				assert self.hparams.edge_h_transfer_loss_weight == 0.0
 				assert self.hparams.edge_entropy_weight == 0.0
 				assert self.hparams.edge_normalized_entropy_weight == 0.0
+			
 			if self.hparams.nb_iso:
-				nb_node_e, nb_node_ne = sparse_entropy_fn(
-					pred_nb_node_logprobs,
-					pred_nb_node_batch_idxs
-				)
-				loss = loss + self.hparams.nb_node_entropy_weight * nb_node_e + \
-					self.hparams.nb_node_normalized_entropy_weight * nb_node_ne
-				nb_node_formula_e, nb_node_formula_ne = sparse_conditional_entropy_fn(
-					pred_nb_node_logprobs,
-					pred_nb_node_batch_idxs,
-					pred_nb_node_formula_logprobs,
-					pred_nb_joint_node_idxs,
-					pred_nb_joint_batch_idxs,
-				)
-				loss = loss + self.hparams.nb_node_formula_entropy_weight * nb_node_formula_e + \
-					self.hparams.nb_node_formula_normalized_entropy_weight * nb_node_formula_ne
-				nb_formula_node_e, nb_formula_node_ne = sparse_conditional_entropy_fn(
-					pred_formula_logprobs,
-					pred_formula_batch_idxs,
-					pred_nb_formula_node_logprobs,
-					pred_nb_joint_formula_idxs,
-					pred_nb_joint_batch_idxs
-				)
-				assert not th.any(nb_formula_node_ne < 0.), nb_formula_node_ne
-				assert not th.any(nb_formula_node_ne > 1.), nb_formula_node_ne
-				loss = loss + self.hparams.nb_formula_node_entropy_weight * nb_formula_node_e + \
-					self.hparams.nb_formula_node_normalized_entropy_weight * nb_formula_node_ne
-				nb_node_node_e, nb_node_node_ne = sparse_conditional_entropy_fn(
-					pred_nb_node_logprobs,
-					pred_nb_node_batch_idxs,
-					pred_nb_node_node_logprobs,
-					pred_nb_node_node_node_idxs,
-					pred_nb_node_node_batch_idxs
-				)
-				loss = loss + self.hparams.nb_node_node_entropy_weight * nb_node_node_e + \
-					self.hparams.nb_node_node_normalized_entropy_weight * nb_node_node_ne
-				# joint
-				nb_joint_e, nb_joint_ne = sparse_entropy_fn(
-					pred_nb_joint_logprobs,
-					pred_nb_joint_batch_idxs
-				)
-				# assert th.all(th.isclose(nb_joint_e, nb_node_formula_e+nb_node_e,rtol=0.,atol=0.001))
-				# assert th.all(th.isclose(nb_joint_e, nb_formula_node_e+formula_e,rtol=0.,atol=0.001))
-				loss = loss + self.hparams.nb_joint_entropy_weight * nb_joint_e \
-					+ self.hparams.nb_joint_normalized_entropy_weight * nb_joint_ne
-				# mi
-				nb_node_formula_mi =  formula_e - nb_node_formula_e
-				nb_formula_node_mi = nb_node_e - nb_formula_node_e
-				nb_node_node_mi = nb_node_e - nb_node_node_e
-				loss_d["loss"] = loss
-				loss_d["nb_node_e"] = nb_node_e
-				loss_d["nb_node_ne"] = nb_node_ne
-				loss_d["nb_node_formula_e"] = nb_node_formula_e
-				loss_d["nb_node_formula_ne"] = nb_node_formula_ne
-				loss_d["nb_formula_node_e"] = nb_formula_node_e
-				loss_d["nb_formula_node_ne"] = nb_formula_node_ne
-				loss_d["nb_joint_e"] = nb_joint_e
-				loss_d["nb_joint_ne"] = nb_joint_ne
-				loss_d["nb_node_node_e"] = nb_node_node_e
-				loss_d["nb_node_node_ne"] = nb_node_node_ne
-				loss_d["nb_node_formula_mi"] = nb_node_formula_mi
-				loss_d["nb_formula_node_mi"] = nb_formula_node_mi
-				loss_d["nb_node_node_mi"] = nb_node_node_mi
+				if "nb_node_e" in self.loss_names or "nb_node_ne" in self.loss_names:
+					nb_node_e, nb_node_ne = sparse_entropy_fn(
+						pred_nb_node_logprobs,
+						pred_nb_node_batch_idxs
+					)
+					loss = loss + self.hparams.nb_node_entropy_weight * nb_node_e + \
+						self.hparams.nb_node_normalized_entropy_weight * nb_node_ne
+					loss_d["nb_node_e"] = nb_node_e
+					loss_d["nb_node_ne"] = nb_node_ne
+				if "nb_node_formula_e" in self.loss_names or "nb_node_formula_ne" in self.loss_names:
+					nb_node_formula_e, nb_node_formula_ne = sparse_conditional_entropy_fn(
+						pred_nb_node_logprobs,
+						pred_nb_node_batch_idxs,
+						pred_nb_node_formula_logprobs,
+						pred_nb_joint_node_idxs,
+						pred_nb_joint_batch_idxs,
+					)
+					loss = loss + self.hparams.nb_node_formula_entropy_weight * nb_node_formula_e + \
+						self.hparams.nb_node_formula_normalized_entropy_weight * nb_node_formula_ne
+					loss_d["nb_node_formula_e"] = nb_node_formula_e
+					loss_d["nb_node_formula_ne"] = nb_node_formula_ne
+				if "nb_formula_node_e" in self.loss_names or "nb_formula_node_ne" in self.loss_names:
+					nb_formula_node_e, nb_formula_node_ne = sparse_conditional_entropy_fn(
+						pred_formula_logprobs,
+						pred_formula_batch_idxs,
+						pred_nb_formula_node_logprobs,
+						pred_nb_joint_formula_idxs,
+						pred_nb_joint_batch_idxs
+					)
+					assert not th.any(nb_formula_node_ne < 0.), nb_formula_node_ne
+					assert not th.any(nb_formula_node_ne > 1.), nb_formula_node_ne
+					loss = loss + self.hparams.nb_formula_node_entropy_weight * nb_formula_node_e + \
+						self.hparams.nb_formula_node_normalized_entropy_weight * nb_formula_node_ne
+					loss_d["nb_formula_node_e"] = nb_formula_node_e
+					loss_d["nb_formula_node_ne"] = nb_formula_node_ne
+				if "nb_node_node_e" in self.loss_names or "nb_node_node_ne" in self.loss_names:
+					nb_node_node_e, nb_node_node_ne = sparse_conditional_entropy_fn(
+						pred_nb_node_logprobs,
+						pred_nb_node_batch_idxs,
+						pred_nb_node_node_logprobs,
+						pred_nb_node_node_node_idxs,
+						pred_nb_node_node_batch_idxs
+					)
+					loss = loss + self.hparams.nb_node_node_entropy_weight * nb_node_node_e + \
+						self.hparams.nb_node_node_normalized_entropy_weight * nb_node_node_ne
+					loss_d["nb_node_node_e"] = nb_node_node_e
+					loss_d["nb_node_node_ne"] = nb_node_node_ne
+				if "nb_joint_e" in self.loss_names or "nb_joint_ne" in self.loss_names:
+					nb_joint_e, nb_joint_ne = sparse_entropy_fn(
+						pred_nb_joint_logprobs,
+						pred_nb_joint_batch_idxs
+					)
+					# assert th.all(th.isclose(nb_joint_e, nb_node_formula_e+nb_node_e,rtol=0.,atol=0.001))
+					# assert th.all(th.isclose(nb_joint_e, nb_formula_node_e+formula_e,rtol=0.,atol=0.001))
+					loss = loss + self.hparams.nb_joint_entropy_weight * nb_joint_e \
+						+ self.hparams.nb_joint_normalized_entropy_weight * nb_joint_ne
+					loss_d["nb_joint_e"] = nb_joint_e
+					loss_d["nb_joint_ne"] = nb_joint_ne
+				if "nb_node_formula_mi" in self.loss_names:
+					nb_node_formula_mi = formula_e - nb_node_formula_e
+					loss_d["nb_node_formula_mi"] = nb_node_formula_mi
+				if "nb_formula_node_mi" in self.loss_names:
+					nb_formula_node_mi = nb_node_e - nb_formula_node_e
+					loss_d["nb_formula_node_mi"] = nb_formula_node_mi
+				if "nb_node_node_mi" in self.loss_names:
+					nb_node_node_mi = nb_node_e - nb_node_node_e
+					loss_d["nb_node_node_mi"] = nb_node_node_mi
 			else:
 				assert self.hparams.nb_node_entropy_weight == 0.0
 				assert self.hparams.nb_node_normalized_entropy_weight == 0.0
@@ -1504,63 +1651,13 @@ class FragGNNPL(SpectrumPL):
 				assert self.hparams.nb_node_formula_normalized_entropy_weight == 0.0
 				assert self.hparams.nb_formula_node_entropy_weight == 0.0
 				assert self.hparams.nb_formula_node_normalized_entropy_weight == 0.0
+			
+			# finally, update the loss
+			loss_d["loss"] = loss
+			
 			return loss_d
+		
 		self.loss_fn = _loss_fn
-		# flag losses for tracking
-		loss_names = [
-			"loss",
-			"primary_loss",
-			"spec_ce",
-			"oos_ce",
-			"ios_ce",
-			"spec_e",
-			"spec_ne",
-			"formula_e",
-			"formula_ne",
-			"node_e",
-			"node_ne",
-			"node_formula_e",
-			"node_formula_ne",
-			"formula_node_e",
-			"formula_node_ne",
-			"joint_e",
-			"joint_ne",
-			"node_formula_mi",
-			"formula_node_mi",
-			"null_formula_prob",
-			"oos_prob",
-			"h_mean",
-			"h_e",
-			"h_ne"
-		]
-		if not self.hparams.skip_edge_loss:
-			loss_names.extend(
-				[
-					"edge_h_range_loss",
-					"edge_h_transfer_loss",
-					"edge_e",
-					"edge_ne"
-				]
-			)
-		if self.hparams.nb_iso:
-			loss_names.extend(
-				[
-					"nb_node_e",
-					"nb_node_ne",
-					"nb_node_formula_e",
-					"nb_node_formula_ne",
-					"nb_formula_node_e",
-					"nb_formula_node_ne",
-					"nb_joint_e",
-					"nb_joint_ne",
-					"nb_node_node_e",
-					"nb_node_node_ne",
-					"nb_node_formula_mi",
-					"nb_formula_node_mi",
-					"nb_node_node_mi"
-				]
-			)
-		self.metric_names.update(loss_names)
 
 	def _manual_opt(self):
 		""" run manual opt
