@@ -34,6 +34,7 @@ from frag_gnn.utils.pl_utils import ConsoleLogger
 from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, init_dataloader
 from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset
 from frag_gnn.graff.dataset import SpecMolAnnDataset
+import frag_gnn.utils.misc_utils as misc_utils
 from frag_gnn.utils.misc_utils import deep_update
 from frag_gnn.utils.profile_utils import MyPyTorchProfiler
 
@@ -160,12 +161,17 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		is_resume = False
 
 	# CUDA and TF32 setup
-
 	if config_d['use_tensor_float32'] == True and config_d['accelerator'] == 'gpu':
 		# The flag below controls whether to allow TF32 on matmul. This flag defaults to False in PyTorch 1.12 and later.
 		th.backends.cuda.matmul.allow_tf32 = True
 		# The flag below controls whether to allow TF32 on cuDNN. This flag defaults to True.
 		th.backends.cudnn.allow_tf32 = True
+
+	# LOG_ZERO setup
+	if config_d["log_zero_fp32"] is not None:
+		misc_utils.LOG_ZERO_FP32 = float(config_d["log_zero_fp32"])
+	if config_d["log_zero_fp16"] is not None:
+		misc_utils.LOG_ZERO_FP16 = float(config_d["log_zero_fp16"])
 
 	# setup model
 	logging.info("setup model")

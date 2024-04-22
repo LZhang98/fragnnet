@@ -301,3 +301,5 @@ gaussian_renormalize: False
 pm_tolerance_multiple: 3.0
 activation_checkpointing: False
 skip_extra_losses: False
+log_zero_fp16: null
+log_zero_fp32: null

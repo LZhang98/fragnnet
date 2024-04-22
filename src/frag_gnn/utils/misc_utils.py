@@ -18,9 +18,16 @@ PPM = 1/1000000
 EPS = 1e-9
 LOG_HALF = float(np.log(0.5))
 LOG_TWO = float(np.log(2.0))
+LOG_ZERO_FP32 = float(th.finfo(th.float32).min)
+LOG_ZERO_FP16 = float(th.finfo(th.float16).min)
 
 def LOG_ZERO(dtype):
-	return th.finfo(dtype).min
+	if dtype == th.float32:
+		return LOG_ZERO_FP32
+	elif dtype == th.float16:
+		return LOG_ZERO_FP16
+	else:
+		raise ValueError(dtype)
 
 def timeit(func):
 	# adapted from https://dev.to/kcdchennai/python-decorator-to-measure-execution-time-54hk
