@@ -83,6 +83,8 @@ class FragGNNModel(nn.Module):
 		frag_normalization: str,
 		frag_dropout: float,
 		frag_pool_type: str,
+		frag_embed_combine: str,
+		frag_pool_combine: str,
 		mlp_output_format: str,
 		mlp_hidden_size: int,
 		mlp_normalization: str,
@@ -170,10 +172,16 @@ class FragGNNModel(nn.Module):
 		self.frag_embedder = GNN(**frag_kwargs)
 		self.frag_pool_type = frag_pool_type
 		self.frag_pool = build_pool_module(frag_pool_type,frag_hidden_size)
+		self.frag_embed_combine = frag_embed_combine
+		self.frag_pool_combine = frag_pool_combine
 		self.mlp_output_format = mlp_output_format
 
 		# determine mlp input dims
-		mlp_input_dim = 2*self.frag_embedder.hidden_size
+		if self.frag_embed_combine == "cat":
+			mlp_input_dim = 2*self.frag_embedder.hidden_size
+		else:
+			assert self.frag_embed_combine == "avg", self.frag_embed_combine
+			mlp_input_dim = self.frag_embedder.hidden_size
 		ce_mlp_stuff = get_ce_mlp_stuff(
 			ce_insert_mlp=self.ce_insert_mlp,
 			ce_insert_mlp_lin=self.ce_insert_mlp_lin,
@@ -538,15 +546,24 @@ class FragGNNModel(nn.Module):
 			frag_edge_index,
 			frag_edge_attr_embed
 		)
-		frag_embed_gnn_pool = self.frag_pool(frag_embed_gnn,frag_batch)
 		frag_embed_node = self.frag_embedder.input_project(frag_x_embed)
+		frag_embed_gnn_pool = self.frag_pool(frag_embed_gnn,frag_batch)
 		frag_embed_node_pool = self.frag_pool(frag_embed_node,frag_batch)
+		if self.frag_pool_combine == "subtract":
+			frag_embed_gnn = frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
+			frag_embed_node = frag_embed_node - frag_embed_node_pool[frag_batch]
+		elif self.frag_pool_combine == "add":
+			frag_embed_gnn = frag_embed_gnn + frag_embed_gnn_pool[frag_batch]
+			frag_embed_node = frag_embed_node + frag_embed_node_pool[frag_batch]
+		else:
+			assert self.frag_pool_combine == "none", self.frag_pool_combine
 
 		# get frag dag embedding
-		frag_embed_parts = [
-			frag_embed_node - frag_embed_node_pool[frag_batch],
-			frag_embed_gnn - frag_embed_gnn_pool[frag_batch]
-		]
+		if self.frag_embed_combine == "cat":
+			frag_embed_parts = [frag_embed_gnn, frag_embed_node]
+		else:
+			assert self.frag_embed_combine == "avg", self.frag_embed_combine
+			frag_embed_parts = [0.5*frag_embed_gnn + 0.5*frag_embed_node]
 		if self.ce_insert_mlp or self.ce_insert_mlp_lin:
 			assert ce is not None
 			ce = ce.reshape(-1,1)

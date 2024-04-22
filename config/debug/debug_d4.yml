@@ -66,12 +66,13 @@ mz_bin_res: 0.01
 mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
-frag_pool_type: mean
+frag_pool_type: none #mean
+frag_pool_combine: none #subtract
 upload_checkpoints: True
 checkpoint_metric: val_loss_epoch/mean
 auxiliary_scores: []
 
-precision: 16-mixed
+precision: 32
 use_tensor_float32: True
 automatic_optimization: True #False
 dynamic_batch_sampler: False #SpecMolFragDynamicBatchSampler
@@ -82,3 +83,4 @@ pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: False
+frag_embed_combine: avg

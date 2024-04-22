@@ -1106,6 +1106,8 @@ class FragGNNPL(SpectrumPL):
 			frag_dropout=self.hparams.frag_dropout,
 			frag_normalization=self.hparams.frag_normalization,
 			frag_pool_type=self.hparams.frag_pool_type,
+			frag_embed_combine=self.hparams.frag_embed_combine,
+			frag_pool_combine=self.hparams.frag_pool_combine,
 			mlp_output_format=self.hparams.mlp_output_format,
 			mlp_hidden_size=self.hparams.mlp_hidden_size,
 			mlp_normalization=self.hparams.mlp_normalization,

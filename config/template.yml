@@ -112,6 +112,8 @@ frag_gnn_type: GINE
 frag_dropout: 0.0
 frag_normalization: batch
 frag_pool_type: none
+frag_embed_combine: cat
+frag_pool_combine: subtract
 # generic model
 mlp_output_format: formula
 mlp_hidden_size: 256
