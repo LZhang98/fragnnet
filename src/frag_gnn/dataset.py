@@ -87,7 +87,8 @@ def init_dataloader(ds, config_d):
 			shuffle=False,
 			num_workers=config_d["num_workers"],
 			collate_fn=ds.get_collate_fn(),
-			pin_memory=config_d["pin_memory"] and (config_d["accelerator"] != "cpu")
+			pin_memory=config_d["pin_memory"] and (config_d["accelerator"] != "cpu"),
+			drop_last=False
 		)
 	return dl
 
