@@ -235,7 +235,7 @@ class FragGNNModel(nn.Module):
 				"num_layers": mlp_num_layers,
 				"dropout": mlp_dropout,
 				"use_residuals": mlp_use_residuals,
-				"normalization": mlp_normalization
+				"normalization": "none" # never normalized
 			}
 			self.oos_module = MLPBlocks(**oos_mlp_kwargs)
 		else:
