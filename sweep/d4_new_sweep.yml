@@ -19,7 +19,7 @@ parameters:
     values: [32, 64, 128, 256]
   # mol-specific
   mol_normalization:
-    values: [batch, layer, graph]
+    values: [none, batch, layer, graph]
   mol_hidden_size:
     values: [64, 128, 256]
   mol_dropout:
@@ -28,7 +28,7 @@ parameters:
   frag_hidden_size:
     values: [64, 128, 256]
   frag_normalization:
-    values: [batch, layer, graph]
+    values: [none, batch, layer, graph]
   frag_embed_combine:
     values: [cat, avg]
   frag_pool_combine:
@@ -37,7 +37,7 @@ parameters:
     values: [0.0,0.1,0.2,0.3,0.4]
   # mlp-specific
   mlp_normalization:
-    values: [batch, layer]
+    values: [none, batch, layer]
   mlp_hidden_size:
     values: [64, 128, 256]
   mlp_dropout:
