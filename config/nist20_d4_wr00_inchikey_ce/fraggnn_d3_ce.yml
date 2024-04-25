@@ -1,22 +1,21 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ce_lin
+wandb_name: nist20_inchikey_fraggnn_d3_ce
 wandb_group: nist20_inchikey_fraggnn_nce_d3
 wandb_tags:
 - retrieval
 - nist20
-- d3
+- d4
 - wr00
 - inchikey
 - new_proc
-- fraggnn_d4
+- fraggnn_d3
 - dynamic_sampler
 - new_metrics
 - nodemlp
-- m_nce_embed
 - oos_multiple_1
 - gaussian_renormalize
-- b128
+- b256
 - vectorized_loss
-- lb16
+- lb32
 - preload
 - preprocess
 - new_no_edges
@@ -48,8 +47,8 @@ ce_insert_mlp_lin: False
 mol_params:
   preprocess: True
 
-train_batch_size: 32
-eval_batch_size: 32
+train_batch_size: 256
+eval_batch_size: 256
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0004
@@ -83,5 +82,5 @@ activation_checkpointing: False
 compile: True
 pin_memory: True
 loss_vectorized: True
-loss_batch_size: 16
+loss_batch_size: 32
 skip_extra_losses: True
