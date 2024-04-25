@@ -568,7 +568,13 @@ class SpectrumPL(pl.LightningModule):
 		self._cur_batch_weight = 0.
 		self._max_batch_size = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
 		self.automatic_optimization = self.hparams.automatic_optimization
-		self.train_dl_seeds = th.randint(0,2**32-1,[self.hparams.max_epochs+1])
+		train_dl_generator = th.Generator()
+		train_dl_generator.manual_seed(self.hparams.seed)
+		self.train_dl_seeds = th.randint(
+			low=0,
+			high=2**32-1,
+			size=[self.hparams.max_epochs+1],
+			generator=train_dl_generator)
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
