@@ -25,7 +25,6 @@ def init_dataloader(ds, config_d):
 
 	split = ds.split
 	assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), "Cannot use both group_sampler and simple_group_sampler"
-	assert not (config_d["debug_overfit"] and (config_d["group_sampler"] or config_d['simple_group_sampler'])), "Cannot use both debug_overfit and dynamic_batch_sampler"
 	dl_param_d = {
 		"dataset": ds,
 		"num_workers": config_d["num_workers"],
@@ -48,7 +47,7 @@ def init_dataloader(ds, config_d):
 				config_d["group_sampler_sampler_type"],
 				config_d["group_sampler_max_per_group"],
 				generator)
-		elif config_d["debug_overfit"]:
+		elif split == "val":
 			sampler = SequentialSampler(ds)
 		else:
 			sampler = RandomSampler(ds, False, generator=generator)
