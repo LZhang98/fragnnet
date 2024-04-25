@@ -1,6 +1,6 @@
 wandb_name: d4_new_sweep_sirgk8ij
 wandb_tags:
-- sweep
+- sweep_opt
 - nist20
 - d4
 - wr00
