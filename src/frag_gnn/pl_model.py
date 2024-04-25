@@ -1,6 +1,6 @@
 import torch as th
 import torch.nn as nn
-import torch.nn.functional as F
+from torch.utils.data import RandomSampler
 import numpy as np
 import wandb
 import logging
@@ -592,6 +592,7 @@ class SpectrumPL(pl.LightningModule):
 		self._cur_batch_weight = 0.
 		self._max_batch_size = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
 		self.automatic_optimization = self.hparams.automatic_optimization
+		self.train_dl_seeds = th.randint(0,2**32-1,[self.hparams.max_epochs+1])
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
@@ -1738,7 +1739,21 @@ class FragGNNPL(SpectrumPL):
 			self._update_results(batch_results,"train")
 			return mean_loss
 
-	# def on_train_epoch_start(self):
+	def _seed_dataloader(self, seed):
+
+		generator = th.Generator()
+		generator.manual_seed(self.train_dl_seeds[seed].item())
+		if self.hparams.dynamic_batch_sampler:
+			if hasattr(self.trainer.train_dataloader.batch_sampler.sampler, "generator"):
+				self.trainer.train_dataloader.batch_sampler.sampler.generator = generator
+			self.trainer.train_dataloader.batch_sampler._pre_compute_batches()
+		else:
+			if hasattr(self.trainer.train_dataloader.sampler, "generator"):
+				self.trainer.train_dataloader.sampler.generator = generator
+
+	def on_train_epoch_start(self):
+
+		self._seed_dataloader(self.current_epoch)
 
 	# 	cur_states = _collect_rng_states(include_cuda=th.cuda.is_available())
 	# 	self.start_np_state = cur_states["numpy"][1].copy()
@@ -1752,9 +1767,7 @@ class FragGNNPL(SpectrumPL):
 			# this is used for manul opt when lr_schedulers is not available from torch lightning
 			self._manual_opt()
 		
-		if self.hparams.dynamic_batch_sampler:
-			# compute mini batch for next epoches
-			self.trainer.train_dataloader.batch_sampler._pre_compute_batches()
+		self._seed_dataloader(self.current_epoch+1)
 
 		# super().on_train_epoch_end()
 
