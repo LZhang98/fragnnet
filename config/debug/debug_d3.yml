@@ -1,6 +1,24 @@
 wandb_name: debug_d3
 wandb_tags:
 - debug
+- nist20
+- d4
+- wr00
+- inchikey
+- new_proc
+- fraggnn_d3
+- dynamic_sampler
+- new_metrics
+- nodemlp
+- m_nce_embed
+- oos_multiple_1
+- gaussian_renormalize
+- b32x4
+- no_auxiliary_scores
+- vectorized_loss
+- lb16
+- preload
+- preprocess
 
 spec_fp: data/proc/debug_small/spec_df.pkl
 mol_fp: data/proc/debug_small/mol_df.pkl
@@ -11,14 +29,21 @@ num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
   pyg_edge_feats: []
+  pyg_edges: False
   pyg_bigraph: False
-frag_remove_edges: True
+  preload: False #True
+  preprocess: False #True
 spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
+  preprocess: False #True
 m_ce_insert_mlp_embed: True
 m_ce_insert_mlp_bin: False
+mol_params:
+  preprocess: False #True
+subsample_params:
+  subsample_size: 0.05
 
 train_batch_size: 32
 eval_batch_size: 32
@@ -27,8 +52,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 1
-max_epochs: 1
+min_epochs: 5
+max_epochs: 5
 lr_schedule: False
 debug_overfit: False
 precision: 32
@@ -43,11 +68,19 @@ sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
 upload_checkpoints: True
-checkpoint_metric: val_cos_hun_epoch/mean
-profiler: none
-compile: False
+delete_checkpoints: False
+checkpoint_metric: val_loss_epoch/mean
+auxiliary_scores: []
 
 precision: 32
 use_tensor_float32: True
-automatic_optimization: True
+automatic_optimization: False
+dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+pl_enable_progress_bar: True
 activation_checkpointing: False
+compile: True
+pin_memory: True
+loss_vectorized: True
+loss_batch_size: 16
+skip_extra_losses: True
+mol_dropout: 0.2

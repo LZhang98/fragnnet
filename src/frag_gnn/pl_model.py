@@ -9,6 +9,7 @@ import inspect
 # make cc happy
 try:
 	import lightning.pytorch as pl
+	from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
 	
@@ -1737,6 +1738,14 @@ class FragGNNPL(SpectrumPL):
 			self._update_results(batch_results,"train")
 			return mean_loss
 
+	# def on_train_epoch_start(self):
+
+	# 	cur_states = _collect_rng_states(include_cuda=th.cuda.is_available())
+	# 	self.start_np_state = cur_states["numpy"][1].copy()
+	# 	self.start_th_state = cur_states["torch"].clone()
+	# 	if th.cuda.is_available():
+	# 		self.start_th_cuda_state = cur_states["torch.cuda"][0].clone()
+
 	def on_train_epoch_end(self):
 
 		if not self.hparams.automatic_optimization and self.hparams.dynamic_batch_sampler and self._cur_batch_size > 0:
@@ -1746,20 +1755,38 @@ class FragGNNPL(SpectrumPL):
 		if self.hparams.dynamic_batch_sampler:
 			# compute mini batch for next epoches
 			self.trainer.train_dataloader.batch_sampler._pre_compute_batches()
-		# # subsample data
-		# train_dl = self.trainer.train_dataloader
-		# self.trainer.train_dataloader = Dataloader(
-		# 	train_dl.train_ds,
-		# 	num_workers=train_dl.num_workers,
-		# 	collate_fn=train_dl.train_ds.get_collate_fn(),
-		# 	batch_sampler=SubsetRandomSampler(indices=th.arange(len(train_dl.train_ds) // 4)),
-		# )
-		super().on_train_epoch_end()
+
+		# super().on_train_epoch_end()
+
+		# # r = th.rand(5,device="cuda")
+		# th.cuda.manual_seed(self.current_epoch)
+
+		# cur_states = _collect_rng_states(include_cuda=th.cuda.is_available())
+		# self.end_np_state = cur_states["numpy"][1].copy()
+		# self.end_th_state = cur_states["torch"].clone()
+		# if th.cuda.is_available():
+		# 	self.end_th_cuda_state = cur_states["torch.cuda"][0].clone()
+		# print((self.start_np_state == self.end_np_state).all())
+		# print((self.start_th_state == self.end_th_state).all())
+		# if th.cuda.is_available():
+		# 	print((self.start_th_cuda_state == self.end_th_cuda_state).all())
 
 	def optimizer_step(self, *args, **kwargs):
+		
 		super().optimizer_step(*args, **kwargs)
 		opt = self.optimizers()
 		self.on_after_optimizer_step(opt)
+
+	def on_save_checkpoint(self, checkpoint):
+
+		# rng
+		cur_states = _collect_rng_states(include_cuda=th.cuda.is_available())
+		checkpoint["rng_states"] = cur_states
+
+	def on_load_checkpoint(self, checkpoint):
+		
+		# rng
+		_set_rng_states(checkpoint["rng_states"])
 
 class BinnedPL(SpectrumPL):
 
