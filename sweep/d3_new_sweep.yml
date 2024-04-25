@@ -15,7 +15,7 @@ parameters:
     max: 0.01 # -4.60517 == np.log(0.01)
   weight_decay:
     values: [0.,0.001,0.01,0.1]
-  batch_size:
+  train_batch_size:
     values: [32, 64, 128, 256]
   # mol-specific
   mol_normalization:
