@@ -21,3 +21,4 @@ tmp_ckpt/
 job_id/
 # VSCode
 *.code-workspace
+saved_ckpts
