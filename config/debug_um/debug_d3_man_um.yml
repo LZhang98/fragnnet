@@ -31,24 +31,22 @@ frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: False #True
-  preprocess: False #True
+  preload: True
+  preprocess: True
 spec_params:
   merge: False
   nce: True
   merge_keep_ces: False
-  preprocess: False #True
+  preprocess: True
 ce_insert_mlp_lin: True
 mol_params:
-  preprocess: False #True
+  preprocess: True
 subsample_params:
   subsample_size: 0.05
-group_sampler: True
-sample_weight: group
 
-train_batch_size: 32
-eval_batch_size: 32
-accumulate_grad_batches: 4
+train_batch_size: 128
+eval_batch_size: 128
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
@@ -70,8 +68,11 @@ mol_pool_type: mean
 frag_pool_type: mean
 upload_checkpoints: True
 delete_checkpoints: False
-checkpoint_metric: val_loss_epoch/mean
-auxiliary_scores: []
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+auxiliary_scores:
+- cos_sim
+eval_mz_bin_res:
+- 0.01
 
 precision: 32
 use_tensor_float32: True
@@ -84,5 +85,7 @@ pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
+group_sampler: True #False
+simple_group_sampler: False #True
 train_sample_weight: none
 eval_sample_weight: group

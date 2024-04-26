@@ -7,13 +7,12 @@ wandb_tags:
 - inchikey
 - new_proc
 - fraggnn_d3
-- dynamic_sampler
 - new_metrics
 - nodemlp
 - m_nce_embed
 - oos_multiple_1
 - gaussian_renormalize
-- b128
+- b64x2
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
@@ -42,9 +41,9 @@ ce_insert_mlp_lin: True
 mol_params:
   preprocess: True
 
-train_batch_size: 128
-eval_batch_size: 128
-accumulate_grad_batches: 1
+train_batch_size: 64
+eval_batch_size: 64
+accumulate_grad_batches: 2
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
