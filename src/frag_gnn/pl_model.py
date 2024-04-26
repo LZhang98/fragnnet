@@ -1748,23 +1748,32 @@ class FragGNNPL(SpectrumPL):
 
 		generator = th.Generator()
 		generator.manual_seed(self.train_dl_seeds[seed].item())
+		train_dataloader = self.trainer.train_dataloader
+		batch_sampler = train_dataloader.batch_sampler
+		sampler = train_dataloader.sampler
 		if self.hparams.dynamic_batch_sampler:
-			if hasattr(self.trainer.train_dataloader.batch_sampler.sampler, "generator"):
-				self.trainer.train_dataloader.batch_sampler.sampler.generator = generator
-			self.trainer.train_dataloader.batch_sampler._pre_compute_batches()
+			if hasattr(batch_sampler.sampler, "generator"):
+				# print("p3")
+				batch_sampler.sampler.generator = generator
+			if hasattr(batch_sampler.sampler, "_pre_compute_batches"):
+				# print("p4")
+				batch_sampler.sampler._pre_compute_batches()
+			if hasattr(batch_sampler, "_pre_compute_batches"):
+				# print("p5")
+				batch_sampler._pre_compute_batches()
 		else:
-			if hasattr(self.trainer.train_dataloader.sampler, "generator"):
-				self.trainer.train_dataloader.sampler.generator = generator
+			assert batch_sampler.sampler is sampler
+			if hasattr(sampler, "generator"):
+				# print("p1")
+				sampler.generator = generator
+			if hasattr(sampler, "_pre_compute_batches"):
+				# print("p2")
+				sampler._pre_compute_batches()
+		
 
 	def on_train_epoch_start(self):
 
 		self._seed_dataloader(self.current_epoch)
-
-	# 	cur_states = _collect_rng_states(include_cuda=th.cuda.is_available())
-	# 	self.start_np_state = cur_states["numpy"][1].copy()
-	# 	self.start_th_state = cur_states["torch"].clone()
-	# 	if th.cuda.is_available():
-	# 		self.start_th_cuda_state = cur_states["torch.cuda"][0].clone()
 
 	def optimizer_step(self, *args, **kwargs):
 		

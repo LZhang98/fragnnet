@@ -33,46 +33,58 @@ def filter_spec_mol(
 	# dataset mask
 	if dsets is not None:
 		dset_mask = spec_df["dset"].isin(dsets)
+		print(f">> dsets: {dset_mask.mean()}")
 		masks.append(dset_mask)
 	# instrument type
 	inst_type_mask = spec_df["inst_type"].isin(["FT"])
+	print(f">> inst type: {inst_type_mask.mean()}")
 	masks.append(inst_type_mask)
 	# frag mode
 	frag_mode_mask = spec_df["frag_mode"].isin(["HCD"])
+	print(f">> frag mode: {frag_mode_mask.mean()}")
 	masks.append(frag_mode_mask)
 	# ce
 	ce_mask = (spec_df["inst_type"]=="FT") & (~spec_df["nce"].isna())
+	print(f">> ce: {ce_mask.mean()}")
 	masks.append(ce_mask)
 	# ion mode
 	ion_mode_mask = spec_df["ion_mode"] == "P"
+	print(f">> ion mode: {ion_mode_mask.mean()}")
 	masks.append(ion_mode_mask)
 	# precursor type
 	if prec_types is not None:
 		prec_type_mask = spec_df["prec_type"].isin(prec_types)
+		print(f">> prec type: {prec_type_mask.mean()}")
 		masks.append(prec_type_mask)
 	# resolution
 	res_mask = spec_df["res"].isin([1,2,3,4,5,6,7])
+	print(f">> res: {res_mask.mean()}")
 	masks.append(res_mask)
 	# spectrum type 
 	spec_type_mask = spec_df["spec_type"] == "MS2"
+	print(f">> spec type: {spec_type_mask.mean()}")
 	masks.append(spec_type_mask)
 	# precursor mz
 	prec_mz_mask = ~spec_df["prec_mz"].isna()
+	print(f">> prec mz: {prec_mz_mask.mean()}")
 	masks.append(prec_mz_mask)
 	# max peak mz
 	if max_peak_mz is not None:
 		def get_max_mz(peaks):
 			return max([peak[0] for peak in peaks])
 		max_peak_mz_mask = spec_df["peaks"].apply(get_max_mz) <= max_peak_mz
+		print(f">> max peak mz: {max_peak_mz_mask.mean()}")
 		masks.append(max_peak_mz_mask)
 	## molecule criteria
 	# single molecule
 	single_mol_ids = mol_df[mol_df["single_mol"]]["mol_id"]
 	single_mol_mask = spec_df["mol_id"].isin(single_mol_ids)
+	print(f">> single mol: {single_mol_mask.mean()}")
 	masks.append(single_mol_mask)
 	# neutral molecule
 	neutral_ids = mol_df[mol_df["charge"]==0]["mol_id"]
 	neutral_mask = spec_df["mol_id"].isin(neutral_ids)
+	print(f">> neutral: {neutral_mask.mean()}")
 	masks.append(neutral_mask)
 	# element composition
 	if allowed_elements is not None:

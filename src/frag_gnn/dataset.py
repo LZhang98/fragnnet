@@ -34,18 +34,18 @@ def init_dataloader(ds, config_d):
 
 	if split in ["train", "val"]:	
 
+		# note: this generator will get overwritten at the beginning/ending of each training epoch
 		generator = th.Generator() 
 		if config_d["group_sampler"] and split == "train":
-			raise NotImplementedError()
-			# sampler = GroupSampler(
-			# 	ds,
-			# 	sample_k=config_d['group_sampler_max_per_group'],
-			# 	generator=generator)
+			sampler = GroupSampler(
+				ds,
+				sample_k=config_d['group_sampler_max_per_group'],
+				generator=generator)
 		elif config_d["simple_group_sampler"] and split == "train":
 			sampler = get_group_sampler(
 				ds,
-				config_d["group_sampler_sampler_type"],
-				config_d["group_sampler_max_per_group"],
+				config_d["simple_group_sampler_type"],
+				config_d["simple_group_sampler_avg_per_group"],
 				generator)
 		elif split == "val":
 			sampler = SequentialSampler(ds)
@@ -147,6 +147,28 @@ class BaseDataset(Dataset):
 		else:
 			self.spec_per_mol = self.spec_df[["mol_id","spec_id"]].drop_duplicates().groupby("mol_id").size().to_dict()
 			self.spec_per_group = self.spec_df[["group_id","spec_id"]].drop_duplicates().groupby("group_id").size().to_dict()
+
+	def get_group_mol_stats(self):
+
+		spec_per_group_stats = []
+		group_ids = []
+		spec_per_mol_stats = []
+		mol_ids = []
+		for row_idx, row in self.spec_df.iterrows():
+			spec_entry = row
+			mol_id = spec_entry["mol_id"]
+			group_id = spec_entry["group_id"]
+			spec_per_group = self.spec_per_group[group_id]
+			spec_per_mol = self.spec_per_mol[mol_id]
+			group_ids.append(group_id)
+			spec_per_group_stats.append(spec_per_group)
+			mol_ids.append(mol_id)
+			spec_per_mol_stats.append(spec_per_mol)
+		group_ids = th.tensor(group_ids)
+		spec_per_group_stats = th.tensor(spec_per_group_stats)
+		mol_ids = th.tensor(mol_ids)
+		spec_per_mol_stats = th.tensor(spec_per_mol_stats)
+		return group_ids, spec_per_group_stats, mol_ids, spec_per_mol_stats
 
 	def _preprocess_spec(self):
 
@@ -765,13 +787,14 @@ class GroupSampler(Sampler):
 			sample_k (_type_, optional): _description_. Defaults to None.
 		"""
 		self.data_source = data_source
-		self._num_samples = len(data_source)
+		self.num_samples = None
 		self._data_meta_d = {}
 		self.sample_k = 3 if sample_k is None else sample_k
-		self.genetator = generator
-		self._pre_compute()
+		self.generator = generator
+		self._pre_compute_meta()
+		self._pre_compute_batches()
 
-	def _pre_compute(self):
+	def _pre_compute_meta(self):
 
 		for dataset_idx in range(len(self.data_source)):
 			data = self.data_source[dataset_idx]
@@ -783,11 +806,8 @@ class GroupSampler(Sampler):
 		for group_id in self._data_meta_d:
 			self._data_meta_d[group_id] =  th.tensor(self._data_meta_d[group_id])
 
-	def __iter__(self) -> Iterator[int]:
-		""" 
-		Yields:
-			Iterator[List[int]]: _description_
-		"""
+	def _pre_compute_batches(self):
+
 		if self.generator is None:
 			seed = int(th.empty((), dtype=th.int64).random_().item())
 			generator = th.Generator()
@@ -798,13 +818,20 @@ class GroupSampler(Sampler):
 		sampled_indices = []
 		for group_id in self._data_meta_d:
 			group_indices = self._data_meta_d[group_id]
-			sampled_group_indices = group_indices[th.randperm(min(len(group_indices),self.sample_k,generator=generator))]
+			sampled_group_indices = group_indices[th.randperm(min(len(group_indices),self.sample_k),generator=generator)]
 			sampled_indices.append(sampled_group_indices)
 		sampled_indices = th.cat(sampled_indices)
+		self.sampled_indices = th.randperm(len(sampled_indices),generator=generator)
+		self.num_samples = len(sampled_indices)
+
+	def __iter__(self) -> Iterator[int]:
+		""" 
+		Yields:
+			Iterator[List[int]]: _description_
+		"""
 		
-		self._num_samples = len(sampled_indices)
-		for i in th.randperm(len(sampled_indices),generator=generator):
-			yield sampled_indices[i].item()
+		for i in range(self.num_samples):
+			yield self.sampled_indices[i].item()
 
 	def __len__(self) -> int:
 		""" Note The __len__() method isn't strictly required by DataLoader
@@ -812,9 +839,10 @@ class GroupSampler(Sampler):
 		Returns:
 			int: length of datasource
 		"""
-		return self._num_samples 
+		assert self.num_samples is not None
+		return self.num_samples 
 	
-def get_group_sampler(ds: SpecMolFragDataset, sampler_type: str, sampler_max: int, generator) -> WeightedRandomSampler:
+def get_group_sampler(ds: SpecMolFragDataset, sampler_type: str, avg_per_group: int, generator) -> WeightedRandomSampler:
 	"""get WeightedRandomSampler based on input
 
 	Args:
@@ -824,16 +852,20 @@ def get_group_sampler(ds: SpecMolFragDataset, sampler_type: str, sampler_max: in
 	Returns:
 		_type_: _description_
 	"""
-	if sampler_type == 'group':
-		sample_weights = 1.0/th.cat([ i['spec_per_group'] for i in ds])
-	elif sampler_type  == 'mol':
-		sample_weights = 1.0/th.cat([ i['spec_per_mol'] for i in ds])
-	elif sampler_type  == 'group_mol':
-		sample_weights = 1.0/th.cat([ i['group_per_mol'] * i['spec_per_group']  for i in ds])
+	group_ids, spec_per_group, mol_ids, spec_per_mol = ds.get_group_mol_stats()
+
+	if sampler_type == "group":
+		sample_weights = 1.0 / spec_per_group
+	elif sampler_type  == "mol":
+		sample_weights = 1.0 / spec_per_mol
+	elif sampler_type  == "group_mol":
+		sample_weights = 1.0 / (spec_per_group * spec_per_mol)
 	else:
 		return None
 	
-	num_samples = min(sampler_max, len(ds))
+	spec_per_group_2 = th.mean(th.unique(group_ids,return_counts=True)[1].float(),dim=0)
+	num_samples = th.ceil(len(ds) / spec_per_group_2 * avg_per_group).long()
+	num_samples = min(num_samples.item(), len(ds))
 	sampler = WeightedRandomSampler(
 		sample_weights,
 		num_samples=num_samples,
