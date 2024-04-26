@@ -296,7 +296,8 @@ pl_enable_progress_bar: True
 sparse_cosine_similarity: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False
-sample_weight: none
+train_sample_weight: none
+eval_sample_weight: none
 log_hist_metrics: True
 track_datapoint_metrics: True
 gaussian_renormalize: False

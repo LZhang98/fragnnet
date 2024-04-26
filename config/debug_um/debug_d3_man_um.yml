@@ -53,8 +53,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 5
-max_epochs: 5
+min_epochs: 100
+max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 precision: 32
@@ -84,3 +84,5 @@ pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
+train_sample_weight: none
+eval_sample_weight: group

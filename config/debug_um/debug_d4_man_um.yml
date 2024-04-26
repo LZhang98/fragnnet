@@ -31,16 +31,16 @@ frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: True
-  preprocess: True
+  preload: False #True
+  preprocess: False #True
 spec_params:
   merge: False
   nce: True
   merge_keep_ces: False
-  preprocess: True
+  preprocess: False #True
 ce_insert_mlp_lin: True
 mol_params:
-  preprocess: True
+  preprocess: False #True
 subsample_params:
   subsample_size: 0.05
 
@@ -51,8 +51,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 5
-max_epochs: 5
+min_epochs: 100
+max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 mask_null_formula: False
@@ -85,4 +85,5 @@ loss_batch_size: 16
 skip_extra_losses: True
 group_sampler: False
 simple_group_sampler: True
-sample_weight: group
+train_sample_weight: none
+eval_sample_weight: group

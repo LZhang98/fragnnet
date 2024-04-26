@@ -504,15 +504,15 @@ class SpectrumPL(pl.LightningModule):
 	
 		self.metric_fn = calculate_all_auxiliary_metrics
 
-	def _setup_batch_metric_reduce_fns(self):
+	def _get_batch_metric_reduce_fn(self, sample_weight):
 
-		if self.hparams.sample_weight == "none":
+		if sample_weight == "none":
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: th.ones_like(spec_per_group, dtype=th.float32)
-		elif self.hparams.sample_weight == "group":
+		elif sample_weight == "group":
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / spec_per_group
-		elif self.hparams.sample_weight == "mol":
+		elif sample_weight == "mol":
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / spec_per_mol
-		elif self.hparams.sample_weight == "group_mol":
+		elif sample_weight == "group_mol":
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / (spec_per_group*group_per_mol)
 		def _batch_metric_reduce(b_metric, b_spec_per_group, b_spec_per_mol, b_group_per_mol, reduce, return_weights=False):
 			b_sample_weight = calc_sample_weights(b_spec_per_group, b_spec_per_mol, b_group_per_mol)
@@ -530,7 +530,18 @@ class SpectrumPL(pl.LightningModule):
 				return b_reduce_metric, b_total_weight
 			else:
 				return b_reduce_metric
-		self.batch_metric_reduce_fn = _batch_metric_reduce
+		return _batch_metric_reduce
+
+	def _setup_batch_metric_reduce_fns(self):
+		
+		self.train_batch_metric_reduce_fn = self._get_batch_metric_reduce_fn(self.hparams.train_sample_weight)
+		self.eval_batch_metric_reduce_fn = self._get_batch_metric_reduce_fn(self.hparams.eval_sample_weight)
+		def _batch_metric_reduce_fn(split,**kwargs):
+			if split == "train":
+				return self.train_batch_metric_reduce_fn(**kwargs)
+			else:
+				return self.eval_batch_metric_reduce_fn(**kwargs)
+		self.batch_metric_reduce_fn = _batch_metric_reduce_fn
 
 	def _setup_result_trackers(self):
 
@@ -647,7 +658,8 @@ class SpectrumPL(pl.LightningModule):
 			b_spec_per_group=spec_per_group,
 			b_spec_per_mol=spec_per_mol,
 			b_group_per_mol=group_per_mol,
-			reduce="w_mean"
+			reduce="w_mean",
+			split=split
 		)
 		total_loss, total_weight = self.batch_metric_reduce_fn(
 			b_metric=loss,
@@ -655,7 +667,8 @@ class SpectrumPL(pl.LightningModule):
 			b_spec_per_mol=spec_per_mol,
 			b_group_per_mol=group_per_mol,
 			reduce="w_sum",
-			return_weights=True
+			return_weights=True,
+			split=split
 		)
 		# just log loss
 		self.log(
@@ -816,7 +829,7 @@ class SpectrumPL(pl.LightningModule):
 		# increment counter
 		setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
 
-	def _reduce_metrics(self, results):
+	def _reduce_metrics(self, results, split):
 
 		mean_metrics, std_metrics = {}, {}
 		for k, v in results.items():
@@ -826,14 +839,16 @@ class SpectrumPL(pl.LightningModule):
 					b_spec_per_group=results["spec_per_group"],
 					b_spec_per_mol=results["spec_per_mol"],
 					b_group_per_mol=results["group_per_mol"],
-					reduce="w_mean"
+					reduce="w_mean",
+					split=split
 				)
 				std_metrics[k] = self.batch_metric_reduce_fn(
 					b_metric=v,
 					b_spec_per_group=results["spec_per_group"],
 					b_spec_per_mol=results["spec_per_mol"],
 					b_group_per_mol=results["group_per_mol"],
-					reduce="w_std"
+					reduce="w_std",
+					split=split
 				)
 		return mean_metrics, std_metrics
 
@@ -850,7 +865,7 @@ class SpectrumPL(pl.LightningModule):
 				assert isinstance(results[k][0],list)
 				results[k] = flatten_lol(results[k])
 		# log all the metrics
-		mean_metrics, std_metrics = self._reduce_metrics(results)
+		mean_metrics, std_metrics = self._reduce_metrics(results, split)
 		for k in mean_metrics.keys():
 			self.log(
 				f"{split}_{k}_epoch/mean",
