@@ -43,9 +43,9 @@ m_ce_insert_mlp_bin: False
 mol_params:
   preprocess: True
 
-train_batch_size: 32
-eval_batch_size: 32
-accumulate_grad_batches: 4
+train_batch_size: 128
+eval_batch_size: 128
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu

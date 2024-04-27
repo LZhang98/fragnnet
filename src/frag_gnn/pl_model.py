@@ -1,6 +1,6 @@
 import torch as th
 import torch.nn as nn
-import torch.nn.functional as F
+from torch.utils.data import RandomSampler
 import numpy as np
 import wandb
 import logging
@@ -9,6 +9,7 @@ import inspect
 # make cc happy
 try:
 	import lightning.pytorch as pl
+	from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
 	
@@ -503,15 +504,15 @@ class SpectrumPL(pl.LightningModule):
 	
 		self.metric_fn = calculate_all_auxiliary_metrics
 
-	def _setup_batch_metric_reduce_fns(self):
+	def _get_batch_metric_reduce_fn(self, sample_weight):
 
-		if self.hparams.sample_weight == "none":
+		if sample_weight == "none":
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: th.ones_like(spec_per_group, dtype=th.float32)
-		elif self.hparams.sample_weight == "group":
+		elif sample_weight == "group":
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / spec_per_group
-		elif self.hparams.sample_weight == "mol":
+		elif sample_weight == "mol":
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / spec_per_mol
-		elif self.hparams.sample_weight == "group_mol":
+		elif sample_weight == "group_mol":
 			calc_sample_weights = lambda spec_per_group, spec_per_mol, group_per_mol: 1. / (spec_per_group*group_per_mol)
 		def _batch_metric_reduce(b_metric, b_spec_per_group, b_spec_per_mol, b_group_per_mol, reduce, return_weights=False):
 			b_sample_weight = calc_sample_weights(b_spec_per_group, b_spec_per_mol, b_group_per_mol)
@@ -529,7 +530,18 @@ class SpectrumPL(pl.LightningModule):
 				return b_reduce_metric, b_total_weight
 			else:
 				return b_reduce_metric
-		self.batch_metric_reduce_fn = _batch_metric_reduce
+		return _batch_metric_reduce
+
+	def _setup_batch_metric_reduce_fns(self):
+		
+		self.train_batch_metric_reduce_fn = self._get_batch_metric_reduce_fn(self.hparams.train_sample_weight)
+		self.eval_batch_metric_reduce_fn = self._get_batch_metric_reduce_fn(self.hparams.eval_sample_weight)
+		def _batch_metric_reduce_fn(split,**kwargs):
+			if split == "train":
+				return self.train_batch_metric_reduce_fn(**kwargs)
+			else:
+				return self.eval_batch_metric_reduce_fn(**kwargs)
+		self.batch_metric_reduce_fn = _batch_metric_reduce_fn
 
 	def _setup_result_trackers(self):
 
@@ -538,52 +550,28 @@ class SpectrumPL(pl.LightningModule):
 		self.val_results = None
 		self.val_counter = 0
 		# store epoch mean metric in lightning module, for ease of reloading
-		self.train_mean_metrics = nn.ParameterDict()
-		self.val_mean_metrics = nn.ParameterDict()
-		self.train_std_metrics = nn.ParameterDict()
-		self.val_std_metrics = nn.ParameterDict()
+		self.train_mean_metrics = {}
+		self.val_mean_metrics = {}
+		self.train_std_metrics = {}
+		self.val_std_metrics = {}
 		if self.hparams.track_datapoint_metrics:
-			self.train_datapoint_metrics = nn.ParameterDict()
-			self.val_datapoint_metrics = nn.ParameterDict()
+			self.train_datapoint_metrics = {}
+			self.val_datapoint_metrics = {}
 			if self.hparams.spec_params["merge"]:
 				max_num_datapoints = 22000
 			else:
 				max_num_datapoints = 270000
-			self.train_num_datapoints = nn.Parameter(
-				-th.ones([1],dtype=th.int64),
-				requires_grad=False
-			)
-			self.val_num_datapoints = nn.Parameter(
-				-th.ones([1],dtype=th.int64),
-				requires_grad=False
-			)
+			self.train_num_datapoints = -th.ones([1],dtype=th.int64)
+			self.val_num_datapoints = -th.ones([1],dtype=th.int64)
 		for name in self.metric_names:
 			_name = name.replace(".","-")
-			self.train_mean_metrics[_name] = nn.Parameter(
-				-th.ones([self.hparams.max_epochs],dtype=th.float32),
-				requires_grad=False
-			)
-			self.val_mean_metrics[_name] = nn.Parameter(
-				-th.ones([self.hparams.max_epochs],dtype=th.float32),
-				requires_grad=False
-			)
-			self.train_std_metrics[_name] = nn.Parameter(
-				-th.ones([self.hparams.max_epochs],dtype=th.float32),
-				requires_grad=False
-			)
-			self.val_std_metrics[_name] = nn.Parameter(
-				-th.ones([self.hparams.max_epochs],dtype=th.float32),
-				requires_grad=False
-			)
+			self.train_mean_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
+			self.val_mean_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
+			self.train_std_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
+			self.val_std_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
 			if self.hparams.track_datapoint_metrics:
-				self.train_datapoint_metrics[_name] = nn.Parameter(
-					-th.ones([max_num_datapoints],dtype=th.float32),
-					requires_grad=False
-				)
-				self.val_datapoint_metrics[_name] = nn.Parameter(
-					-th.ones([max_num_datapoints],dtype=th.float32),
-					requires_grad=False
-				)
+				self.train_datapoint_metrics[_name] = -th.ones([max_num_datapoints],dtype=th.float32)
+				self.val_datapoint_metrics[_name] = -th.ones([max_num_datapoints],dtype=th.float32)
 
 	def _setup_sampler(self):
 
@@ -591,6 +579,13 @@ class SpectrumPL(pl.LightningModule):
 		self._cur_batch_weight = 0.
 		self._max_batch_size = self.hparams.train_batch_size * self.hparams.accumulate_grad_batches
 		self.automatic_optimization = self.hparams.automatic_optimization
+		train_dl_generator = th.Generator()
+		train_dl_generator.manual_seed(self.hparams.seed)
+		self.train_dl_seeds = th.randint(
+			low=0,
+			high=2**32-1,
+			size=[self.hparams.max_epochs+1],
+			generator=train_dl_generator)
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
 
@@ -663,7 +658,8 @@ class SpectrumPL(pl.LightningModule):
 			b_spec_per_group=spec_per_group,
 			b_spec_per_mol=spec_per_mol,
 			b_group_per_mol=group_per_mol,
-			reduce="w_mean"
+			reduce="w_mean",
+			split=split
 		)
 		total_loss, total_weight = self.batch_metric_reduce_fn(
 			b_metric=loss,
@@ -671,7 +667,8 @@ class SpectrumPL(pl.LightningModule):
 			b_spec_per_mol=spec_per_mol,
 			b_group_per_mol=group_per_mol,
 			reduce="w_sum",
-			return_weights=True
+			return_weights=True,
+			split=split
 		)
 		# just log loss
 		self.log(
@@ -832,7 +829,7 @@ class SpectrumPL(pl.LightningModule):
 		# increment counter
 		setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
 
-	def _reduce_metrics(self, results):
+	def _reduce_metrics(self, results, split):
 
 		mean_metrics, std_metrics = {}, {}
 		for k, v in results.items():
@@ -842,14 +839,16 @@ class SpectrumPL(pl.LightningModule):
 					b_spec_per_group=results["spec_per_group"],
 					b_spec_per_mol=results["spec_per_mol"],
 					b_group_per_mol=results["group_per_mol"],
-					reduce="w_mean"
+					reduce="w_mean",
+					split=split
 				)
 				std_metrics[k] = self.batch_metric_reduce_fn(
 					b_metric=v,
 					b_spec_per_group=results["spec_per_group"],
 					b_spec_per_mol=results["spec_per_mol"],
 					b_group_per_mol=results["group_per_mol"],
-					reduce="w_std"
+					reduce="w_std",
+					split=split
 				)
 		return mean_metrics, std_metrics
 
@@ -866,7 +865,7 @@ class SpectrumPL(pl.LightningModule):
 				assert isinstance(results[k][0],list)
 				results[k] = flatten_lol(results[k])
 		# log all the metrics
-		mean_metrics, std_metrics = self._reduce_metrics(results)
+		mean_metrics, std_metrics = self._reduce_metrics(results, split)
 		for k in mean_metrics.keys():
 			self.log(
 				f"{split}_{k}_epoch/mean",
@@ -923,6 +922,8 @@ class SpectrumPL(pl.LightningModule):
 		if checkpoint_metric == "epoch":
 			assert not update_datapoint_metrics
 			update_datapoint_metrics = True
+		# setattr(self,f"{split}_mean_metrics",mean_metrics_epochs)
+		# setattr(self,f"{split}_std_metrics",std_metrics_epochs)
 		if self.hparams.track_datapoint_metrics and update_datapoint_metrics:
 			datapoint_metrics = getattr(self,f"{split}_datapoint_metrics")
 			num_datapoints_p = getattr(self,f"{split}_num_datapoints")
@@ -935,6 +936,8 @@ class SpectrumPL(pl.LightningModule):
 			for k in mean_metrics.keys():
 				assert len(results[k]) == num_datapoints, (k, len(results[k]), num_datapoints)
 				datapoint_metrics[k.replace(".","-")][:num_datapoints] = results[k]
+			# setattr(self,f"{split}_datapoint_metrics",datapoint_metrics)
+			# setattr(self,f"{split}_num_datapoints",num_datapoints_p)
 
 	def _log_images(self, split):
 
@@ -1016,6 +1019,25 @@ class SpectrumPL(pl.LightningModule):
 		# reset
 		self.train_results = None
 		self.train_counter = 0
+
+		if not self.hparams.automatic_optimization and self.hparams.dynamic_batch_sampler and self._cur_batch_size > 0:
+			# this is used for manul opt when lr_schedulers is not available from torch lightning
+			self._manual_opt()
+		
+		self._seed_dataloader(self.current_epoch+1)
+
+		# # r = th.rand(5,device="cuda")
+		# th.cuda.manual_seed(self.current_epoch)
+
+		# cur_states = _collect_rng_states(include_cuda=th.cuda.is_available())
+		# self.end_np_state = cur_states["numpy"][1].copy()
+		# self.end_th_state = cur_states["torch"].clone()
+		# if th.cuda.is_available():
+		# 	self.end_th_cuda_state = cur_states["torch.cuda"][0].clone()
+		# print((self.start_np_state == self.end_np_state).all())
+		# print((self.start_th_state == self.end_th_state).all())
+		# if th.cuda.is_available():
+		# 	print((self.start_th_cuda_state == self.end_th_cuda_state).all())
 
 	def on_validation_epoch_end(self):
 		
@@ -1737,29 +1759,72 @@ class FragGNNPL(SpectrumPL):
 			self._update_results(batch_results,"train")
 			return mean_loss
 
-	def on_train_epoch_end(self):
+	def _seed_dataloader(self, seed):
 
-		if not self.hparams.automatic_optimization and self.hparams.dynamic_batch_sampler and self._cur_batch_size > 0:
-			# this is used for manul opt when lr_schedulers is not available from torch lightning
-			self._manual_opt()
-		
+		generator = th.Generator()
+		generator.manual_seed(self.train_dl_seeds[seed].item())
+		train_dataloader = self.trainer.train_dataloader
+		batch_sampler = train_dataloader.batch_sampler
+		sampler = train_dataloader.sampler
 		if self.hparams.dynamic_batch_sampler:
-			# compute mini batch for next epoches
-			self.trainer.train_dataloader.batch_sampler._pre_compute_batches()
-		# # subsample data
-		# train_dl = self.trainer.train_dataloader
-		# self.trainer.train_dataloader = Dataloader(
-		# 	train_dl.train_ds,
-		# 	num_workers=train_dl.num_workers,
-		# 	collate_fn=train_dl.train_ds.get_collate_fn(),
-		# 	batch_sampler=SubsetRandomSampler(indices=th.arange(len(train_dl.train_ds) // 4)),
-		# )
-		super().on_train_epoch_end()
+			if hasattr(batch_sampler.sampler, "generator"):
+				# print("p3")
+				batch_sampler.sampler.generator = generator
+			if hasattr(batch_sampler.sampler, "_pre_compute_batches"):
+				# print("p4")
+				batch_sampler.sampler._pre_compute_batches()
+			if hasattr(batch_sampler, "_pre_compute_batches"):
+				# print("p5")
+				batch_sampler._pre_compute_batches()
+		else:
+			assert batch_sampler.sampler is sampler
+			if hasattr(sampler, "generator"):
+				# print("p1")
+				sampler.generator = generator
+			if hasattr(sampler, "_pre_compute_batches"):
+				# print("p2")
+				sampler._pre_compute_batches()
+		
+
+	def on_train_epoch_start(self):
+
+		self._seed_dataloader(self.current_epoch)
 
 	def optimizer_step(self, *args, **kwargs):
+		
 		super().optimizer_step(*args, **kwargs)
 		opt = self.optimizers()
 		self.on_after_optimizer_step(opt)
+
+	def on_save_checkpoint(self, checkpoint):
+
+		# rng
+		checkpoint["rng_states"] = _collect_rng_states(include_cuda=th.cuda.is_available())
+		# metrics
+		checkpoint["train_mean_metrics"] = self.train_mean_metrics
+		checkpoint["val_mean_metrics"] = self.val_mean_metrics
+		checkpoint["train_std_metrics"] = self.train_std_metrics
+		checkpoint["val_std_metrics"] = self.val_std_metrics
+		if self.hparams.track_datapoint_metrics:
+			checkpoint["train_num_datapoints"] = self.train_num_datapoints
+			checkpoint["val_num_datapoints"] = self.val_num_datapoints
+			checkpoint["train_datapoint_metrics"] = self.train_datapoint_metrics
+			checkpoint["val_datapoint_metrics"] = self.val_datapoint_metrics
+
+	def on_load_checkpoint(self, checkpoint):
+		
+		# rng
+		_set_rng_states(checkpoint["rng_states"])
+		# metrics
+		self.train_mean_metrics = checkpoint["train_mean_metrics"]
+		self.val_mean_metrics = checkpoint["val_mean_metrics"]
+		self.train_std_metrics = checkpoint["train_std_metrics"]
+		self.val_std_metrics = checkpoint["val_std_metrics"]
+		if self.hparams.track_datapoint_metrics:
+			self.train_num_datapoints = checkpoint["train_num_datapoints"]
+			self.val_num_datapoints = checkpoint["val_num_datapoints"]
+			self.train_datapoint_metrics = checkpoint["train_datapoint_metrics"]
+			self.val_datapoint_metrics = checkpoint["val_datapoint_metrics"]
 
 class BinnedPL(SpectrumPL):
 

@@ -473,9 +473,7 @@ class FragGNNModel(nn.Module):
 			frag_formula_batch_idxs = frag_formula_batch_idxs[frag_joint_formula_idxs_un]
 			frag_joint_formula_idxs = th.arange(batch_frag_num_formulae,device=device)[frag_joint_formula_idxs_inv]
 			frag_formula_peak_mask = th.isin(frag_formula_idxs[~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])],frag_joint_formula_idxs_un)
-			# frag_formula_idxs_old = frag_formula_idxs.clone()
 			frag_formula_idxs = th.arange(batch_frag_num_formulae,device=device)
-			# print(frag_formula_sizes)
 			frag_formula_sizes = scatter_reduce(
 				th.ones_like(frag_joint_formula_idxs_un),
 				frag_formula_batch_idxs,
@@ -484,25 +482,15 @@ class FragGNNModel(nn.Module):
 			)
 			if th.any(frag_formula_sizes <= 1):
 				import pdb; pdb.set_trace()
-			# print(frag_formula_sizes)
-			# print(frag_formula_cumsizes)
 			frag_formula_cumsizes = th.cat([th.zeros([1],device=device,dtype=frag_formula_sizes.dtype),frag_formula_sizes],dim=0)
 			frag_formula_cumsizes = th.cumsum(frag_formula_cumsizes,dim=0)
-			# print(frag_formula_cumsizes)
 			frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
 			# peak stuff
-			# print(frag_formula_peak_idxs)
 			frag_formula_peak_idxs = frag_formula_idxs[~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])]
 			frag_formula_peak_idxs = frag_formula_peak_idxs-frag_formula_cumsizes[:-1][frag_formula_batch_idxs[~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])]]
-			# print(frag_formula_peak_idxs)
-			# print(frag_formula_peak_probs)
-			# print(frag_formula_peak_sizes)
 			frag_formula_peak_probs = frag_formula_peak_probs[frag_formula_peak_mask]
 			frag_formula_peak_mzs = frag_formula_peak_mzs[frag_formula_peak_mask]
 			frag_formula_peak_sizes = frag_formula_sizes - 1
-			# print(frag_formula_peak_idxs)
-			# print(frag_formula_peak_probs)
-			# print(frag_formula_peak_sizes)
 		else:
 			# no removal required
 			frag_joint_formula_idxs = frag_joint_formula_idxs.flatten()

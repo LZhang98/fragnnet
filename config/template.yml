@@ -279,7 +279,7 @@ group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 3
 simple_group_sampler: False
-simple_group_sampler_max: 10000
+simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group #[group, group_mol, mol]
 mp_sharing_strategy: file_descriptor
 check_gradient_norm: False
@@ -296,7 +296,8 @@ pl_enable_progress_bar: True
 sparse_cosine_similarity: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False
-sample_weight: none
+train_sample_weight: none
+eval_sample_weight: none
 log_hist_metrics: True
 track_datapoint_metrics: True
 gaussian_renormalize: False

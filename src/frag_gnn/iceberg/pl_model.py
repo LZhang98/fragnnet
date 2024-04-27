@@ -152,7 +152,7 @@ class IcebergGenPL(SpectrumPL):
 		# increment counter
 		setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
 
-	def _reduce_metrics(self, results):
+	def _reduce_metrics(self, results, split):
 
 		mean_metrics, std_metrics = {}, {}
 		for k, v in results.items():
@@ -660,7 +660,8 @@ class IcebergIntenPL(SpectrumPL):
 			b_spec_per_group=spec_per_group,
 			b_spec_per_mol=spec_per_mol,
 			b_group_per_mol=group_per_mol,
-			reduce="w_mean"
+			reduce="w_mean",
+			split=split
 		)
 		# just log loss
 		self.log(

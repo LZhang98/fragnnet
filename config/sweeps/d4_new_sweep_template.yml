@@ -55,7 +55,6 @@ min_epochs: 100
 max_epochs: 100
 lr_schedule: False
 debug_overfit: False
-precision: 32
 mask_null_formula: False
 predict_oos: True
 oos_tolerance_multiple: 1

@@ -6,6 +6,7 @@ try:
 	from lightning.pytorch.callbacks import DeviceStatsMonitor
 	from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 	from lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
+	from lightning.fabric.utilities.seed import seed_everything
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
 	from pytorch_lightning.callbacks import DeviceStatsMonitor
@@ -95,8 +96,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	config_d = load_config(template_fp, custom_fp)
 
 	# set random seeds
-	th.manual_seed(config_d["seed"])
-	np.random.seed(config_d["seed"])
+	seed_everything(config_d["seed"],workers=True)
 
 	# set torch multiprocessing strategy
 	th.multiprocessing.set_sharing_strategy(config_d["mp_sharing_strategy"])
