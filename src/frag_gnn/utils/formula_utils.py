@@ -16,7 +16,6 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"[M-H]-": -H_MASS + ELECTRON_MASS,
 	"": 0.
 }
-NEUTRON_MASS = 1.008665
 
 def MASS(element: str | int) -> float:
 	return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
@@ -306,7 +305,7 @@ def parse_formula(formula:str) -> Dict[str,int]:
 		Dict[str,int]: count per element eg {"C":1, "H":4}
 	"""
 
-	# assert not none_or_nan(formula)
+	assert not none_or_nan(formula)
 	cur_element = None
 	cur_count = 1
 	element_counts = {}
@@ -330,6 +329,11 @@ def parse_formula(formula:str) -> Dict[str,int]:
 		assert cur_element not in element_counts
 		element_counts[cur_element] = cur_count
 	return element_counts
+
+def get_elements_set(formula:str) -> set[str]:
+    """
+    """
+    return set(list(parse_formula(formula).keys()))
 
 #if __name__ == "__main__":
 

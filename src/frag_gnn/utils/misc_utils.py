@@ -1,3 +1,5 @@
+import shutil
+import tempfile
 import time
 from functools import wraps
 from distutils.util import strtobool
@@ -452,6 +454,74 @@ def check_pyg_full_compile():
 	pyg_major_version, pyg_minor_version = get_package_version(pyg)[:2]
 	assert th_major_version >= 2, th_major_version
 	return pyg_major_version >= 2 and pyg_minor_version >= 5
+def repair_checkpoint(path):
+    # inspired by
+    # https://github.com/pytorch/pytorch/issues/101107#issuecomment-1801128683
+    
+    print(">Repair checkpoint")
+    ckpt = th.load(path)
+    #print(ckpt.keys())
+    in_state_dict = ckpt["state_dict"]
+    pairings = [
+        (src_key, src_key.replace('._orig_mod',''))
+        for src_key in in_state_dict.keys()
+    ]
+    if all(src_key == dest_key for src_key, dest_key in pairings):
+        return  # Do not write checkpoint if no need to repair!
+    out_state_dict = {}
+    for src_key, dest_key in pairings:
+        print(f"{src_key}  ==>  {dest_key}")
+        out_state_dict[dest_key] = in_state_dict[src_key]
+    ckpt["state_dict"] = out_state_dict
+    th.save(ckpt, path)
+
+def get_ckpt_from_wandb(saved_dp, run_id, entity='frag-gnn', project='frag-gnn'):
+	import wandb
+	api = wandb.Api()
+	run = api.run(f"{entity}/{project}/{run_id}")
+	#print(run.id, run.name, run.tags)
+	print(f"> Processing model files for run {run.id} {run.name}")
+	model_tag = f"{run.name}"
+	model_save_dp = f"{saved_dp}/{model_tag}"
+	os.makedirs(model_save_dp, exist_ok=True)
+	ckpt_file, ckpt_epoch_num = None, None
+	for file in run.files():
+		if file.name.startswith("ckpt/model-epoch="):
+			epoch_num = int(file.name.removeprefix("ckpt/model-epoch=").removesuffix(".ckpt"))
+			#print(epoch_num)
+			if ckpt_file is None or epoch_num > ckpt_epoch_num:
+				ckpt_epoch_num = epoch_num
+				ckpt_file = file.name
+
+	if ckpt_file is None or ckpt_epoch_num is None:
+		print("> Skip, ckpt_file is None or  ckpt_epoch_num is None")
+	
+	#assert not ckpt_file is None
+	#assert not ckpt_epoch_num is None
+	with tempfile.TemporaryDirectory() as tmp_dir:
+		ckpt_fp = f"{model_save_dp}/{run.name}.ckpt"
+		#if not os.path.exists(ckpt_fp):
+		print(f"> Downloading ckpt {ckpt_file}")
+		run.file(ckpt_file).download(root=tmp_dir,replace=False)
+		print(f"> Save ckpt {ckpt_fp}")
+		shutil.copy(f'{tmp_dir}/{ckpt_file}', ckpt_fp)
+	return ckpt_fp, model_tag
+
+def get_runs_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
+	import wandb
+	api = wandb.Api()
+	runs = api.runs(f"{entity}/{project}", include_sweeps=False, filters = {"group": group_name})
+	return runs
+
+
+def detele_ckpt_from_wandb(run_id, entity='frag-gnn', project='frag-gnn'):
+	import wandb
+	api = wandb.Api()
+	run = api.run(f"{entity}/{project}/{run_id}")
+
+	for file in run.files():
+		if file.name.startswith("ckpt/model-epoch="):
+			file.delete()
 
 class NestedDefaultDict(defaultdict):
 	""" https://stackoverflow.com/questions/19189274/nested-defaultdict-of-defaultdict """

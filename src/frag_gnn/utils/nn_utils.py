@@ -725,3 +725,31 @@ class LowRankDense(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         return x
+        
+def decompile_jit_ckpt(path:str, pacthed_path:str):
+	"""
+	convert compiled ckpt to normal version and save to disk
+	"""
+	# inspired by
+	# https://github.com/pytorch/pytorch/issues/101107#issuecomment-1801128683
+	print(f"> src: {path}")
+	print(f"> dst: {pacthed_path}")
+	ckpt = th.load(path)
+	if ckpt['hyper_parameters']['compile'] == False:
+		return
+
+	in_state_dict = ckpt["state_dict"]
+	pairings = [
+		(src_key,  src_key.replace('._orig_mod',''))
+		for src_key in in_state_dict.keys()
+	]
+	#if all(src_key == dest_key for src_key, dest_key in pairings):
+	#	return  # Do not write checkpoint if no need to repair!
+	out_state_dict = {}
+	for src_key, dest_key in pairings:
+		if src_key != dest_key:
+			print(f"{src_key}  ==>  {dest_key}")
+			out_state_dict[dest_key] = in_state_dict[src_key]
+	ckpt["state_dict"] = out_state_dict
+	ckpt['hyper_parameters']['compile'] = False
+	th.save(ckpt, pacthed_path)

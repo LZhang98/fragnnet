@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image, ImageOps
 import io
 from rdkit.Chem.Draw import rdMolDraw2D
-import cairosvg
+
 
 from frag_gnn.utils.data_utils import mol_from_smiles
 from frag_gnn.utils.spec_utils import calculate_match_mzs
@@ -59,7 +59,7 @@ def trim_img_by_white(img, padding=0):
 
 
 def get_mol_im(smiles):
-
+	import cairosvg
 	width = 1000
 	height = 1000
 	mols = [mol_from_smiles(smiles)]
@@ -157,7 +157,6 @@ def plot_spectra_sparse(
 		true_ints,
 		pred_mzs,
 		pred_ints,
-		# prec_mz,
 		smiles,
 		fp=None,
 		mz_res=1e-3,
@@ -172,7 +171,10 @@ def plot_spectra_sparse(
 		match_peaks=True,
 		match_tolerance=1e-5,
 		match_relative=True,
-		return_data=False
+		return_data=False,
+		colors = None,
+		bar_width = 3.,
+		dpi = 200,
 	):
 
 	true_mask = true_ints > true_ints_thresh
@@ -182,8 +184,6 @@ def plot_spectra_sparse(
 	pred_mzs = pred_mzs[pred_mask]
 	pred_ints = pred_ints[pred_mask]
 	true_mz_max = max(np.max(true_mzs),np.max(pred_mzs))
-
-	bar_width = 1.
 
 	mz_max = int(np.floor(1.05*min(mz_max,true_mz_max)))
 	true_mask = true_mzs < mz_max
@@ -197,7 +197,7 @@ def plot_spectra_sparse(
 	ints_max = np.max(true_ints)
 	y_max = 1.05*ints_max
 
-	fig = plt.figure(figsize=figsize, dpi=200)
+	fig = plt.figure(figsize=figsize, dpi=dpi)
 
 	if plot_title:
 		title_y = 0.975
@@ -212,6 +212,10 @@ def plot_spectra_sparse(
 	x_pad = int(size)
 	tick_size = int(0.8*size)
 	font_size = int(0.8*size)
+
+	# defualt colors
+	if colors == None or len(colors) < 2:
+		colors = ['#52B4FA', '#E63434']
 
 	# set up gridspec
 	left = 0.12
@@ -263,7 +267,7 @@ def plot_spectra_sparse(
 	# print(lines_top[:10])
 	lc_top = mc.LineCollection(
 		lines_top, 
-		colors="tab:blue", 
+		colors=colors[0], 
 		linewidths=bar_width, 
 		linestyles=styles_top
 	)
@@ -285,7 +289,7 @@ def plot_spectra_sparse(
 		line_end = (mz,ints)
 		lines_bottom.append((line_start,line_end))
 	# print(lines_bottom[:10])
-	lc_bottom = mc.LineCollection(lines_bottom, colors="tab:red", linewidths=bar_width)
+	lc_bottom = mc.LineCollection(lines_bottom, colors=colors[1], linewidths=bar_width)
 	ax_bottom.add_collection(lc_bottom)
 
 	# Remove overlapping 0's from middle of y-axis
@@ -304,18 +308,18 @@ def plot_spectra_sparse(
 
 	# x/y axis labels
 	fig.supxlabel('Mass/Charge (m/z)',fontsize=font_size,x=left+0.5*(right-left),y=0.2*bottom)
-	fig.supylabel('Relative Intensity',fontsize=font_size,y=ylabel_y,x=0.2*left)
+	fig.supylabel('Intensity',fontsize=font_size,y=ylabel_y,x=0.2*left)
 
 	leg_font_size = 0.9*font_size
 	leg_kws = {'ncol': 1, 'fontsize': leg_font_size, "loc": "upper left"}
 	handles = [
-		patches.Patch(facecolor="tab:blue",label="Real",alpha=1.0),
-		patches.Patch(facecolor="tab:red",label="Predicted",alpha=1.0),
+		patches.Patch(facecolor=colors[0],label="Ground Truth",alpha=1.0),
+		patches.Patch(facecolor=colors[1],label="Predicted",alpha=1.0),
 	]
 	leg = ax_top.legend(handles=handles,**leg_kws)
 
 	if fp is not None:
-		fig.savefig(fp,format="png")
+		fig.savefig(fp)
 	
 	data = None
 	if return_data:
@@ -324,3 +328,15 @@ def plot_spectra_sparse(
 	plt.close("all")
 	
 	return data
+
+def get_highlighted_bonds(mol, node_atom_indices):
+    atoms = []
+    for a in mol.GetAtoms():
+        atoms.append(a.GetIdx())
+    bonds = []
+    for bond in mol.GetBonds():
+        aid1 = atoms[bond.GetBeginAtomIdx()]
+        aid2 = atoms[bond.GetEndAtomIdx()]
+        if aid1 in node_atom_indices and aid2 in node_atom_indices:
+            bonds.append(mol.GetBondBetweenAtoms(aid1,aid2).GetIdx())
+    return bonds

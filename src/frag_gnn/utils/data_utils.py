@@ -398,7 +398,20 @@ def smiles_to_selfies(smiles:str) -> str:
 		selfies = np.nan
 	return selfies
 
-def make_morgan_fingerprint(mol:"rdkit.Chem.rdchem.Mol", radius:int=3)  -> np.array:
+def get_tanmimoto(fp, other_fp):
+	"""return tanmimoto distance, does not work with np yet
+
+	Args:
+		fp (_type_): _description_
+		other_fp (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
+	ds = rdkit_import("rdkit.DataStructs")[0]
+	return ds.DiceSimilarity(fp, other_fp)
+
+def make_morgan_fingerprint(mol:"rdkit.Chem.rdchem.Mol", radius:int=3, covert_to_np = True)  -> np.array:
 	"""make morgan fingerpirnt from mol object
 
 	Args:
@@ -411,8 +424,11 @@ def make_morgan_fingerprint(mol:"rdkit.Chem.rdchem.Mol", radius:int=3)  -> np.ar
 	rmd = modules[0]
 	ds = modules[1]
 	fp = rmd.GetHashedMorganFingerprint(mol,radius)
-	fp_arr = np.zeros(1)
-	ds.ConvertToNumpyArray(fp, fp_arr)
+	if covert_to_np:
+		fp_arr = np.zeros(1)
+		ds.ConvertToNumpyArray(fp, fp_arr)
+	else:
+		fp_arr = fp
 	return fp_arr
 
 def make_rdkit_fingerprint(mol:"rdkit.Chem.rdchem.Mol") -> np.array:
@@ -447,6 +463,15 @@ def make_maccs_fingerprint(mol:"rdkit.Chem.rdchem.Mol") -> np.array:
 	ds.ConvertToNumpyArray(fp,fp_arr)
 	return fp_arr
 
+def remove_stereochemistry(mol:"rdkit.Chem.rdchem.Mol"):
+	"""_summary_
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): _description_
+	"""
+	chem = rdkit_import("rdkit.Chem")[0]
+	mol = chem.RemoveStereochemistry(mol)
+	
 def split_selfies(selfies_str:str) -> List[str]:
 	"""method to splt selfies strngs to list of tokens
 
@@ -470,13 +495,14 @@ def seq_apply(iterator,func,need_unpack=False):
 			result.append(func(*i))
 	return result
 
-def par_apply(iterator,func,need_unpack=False):
+def par_apply(iterator,func,need_unpack=False, return_as_generator=False):
 
 	par_func = joblib.delayed(func)
 	parallel = joblib.Parallel(
 		backend=JOBLIB_BACKEND,
 		n_jobs=JOBLIB_N_JOBS,
-		timeout=JOBLIB_TIMEOUT
+		timeout=JOBLIB_TIMEOUT,
+		return_as="list" if not return_as_generator else "generator"
 	)
 	if not need_unpack:
 		result = parallel(par_func(i) for i in iterator)
