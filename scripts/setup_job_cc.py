@@ -63,10 +63,8 @@ def main(args):
 	script_lines.extend(
 		[	
 			"#load modules",
-			"module load StdEnv/2020",
-			"module load cuda/11.7",
+			"module load StdEnv/2023",
 			"module load python/3.10",
-			"module load rust/1.70.0"
 		]
 	)
   
@@ -143,8 +141,8 @@ if __name__ == "__main__":
 	parser.add_argument("--script_kwargs", type=str, help='arugments for python script eg."-w=online,-c=config/debug_d4_tiny.yml"', default="")
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument('--cc_email', help='email', default='fw4@ualberta.ca')
-	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart','rrg-rgreiner'])
-	parser.add_argument('--python_env', default="./FRAG-GNN-GPU2", help="virtualenv location")
+	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart','rrg-rgreiner','def-dwishart','def-rgreiner'])
+	parser.add_argument('--python_env', default="./FRAG-GNN-GPU", help="virtualenv location")
 	parser.add_argument('-i', '--interactive', type = bool, default=False, action=argparse.BooleanOptionalAction, help="set to true to print interative command")
 	parser.add_argument('--no_submit', type=bool, default=False)
 	args = parser.parse_args()
