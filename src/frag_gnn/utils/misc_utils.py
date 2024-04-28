@@ -475,13 +475,16 @@ def repair_checkpoint(path):
     ckpt["state_dict"] = out_state_dict
     th.save(ckpt, path)
 
-def get_ckpt_from_wandb(saved_dp, run_id, entity='frag-gnn', project='frag-gnn'):
+def get_ckpt_from_wandb(saved_dp, run_id, 
+                        entity='frag-gnn', 
+                        project='frag-gnn',
+                        save_use_model_name = True):
 	import wandb
 	api = wandb.Api()
 	run = api.run(f"{entity}/{project}/{run_id}")
 	#print(run.id, run.name, run.tags)
 	print(f"> Processing model files for run {run.id} {run.name}")
-	model_tag = f"{run.name}"
+	model_tag = f"{run.name}" if save_use_model_name else f"{run_id}"
 	model_save_dp = f"{saved_dp}/{model_tag}"
 	os.makedirs(model_save_dp, exist_ok=True)
 	ckpt_file, ckpt_epoch_num = None, None
@@ -498,14 +501,14 @@ def get_ckpt_from_wandb(saved_dp, run_id, entity='frag-gnn', project='frag-gnn')
 	
 	#assert not ckpt_file is None
 	#assert not ckpt_epoch_num is None
+	ckpt_fp = f"{model_save_dp}/{model_tag}.ckpt" if save_use_model_name else f"{model_save_dp}/{run_id}.ckpt"
 	with tempfile.TemporaryDirectory() as tmp_dir:
-		ckpt_fp = f"{model_save_dp}/{run.name}.ckpt"
 		#if not os.path.exists(ckpt_fp):
 		print(f"> Downloading ckpt {ckpt_file}")
 		run.file(ckpt_file).download(root=tmp_dir,replace=False)
 		print(f"> Save ckpt {ckpt_fp}")
 		shutil.copy(f'{tmp_dir}/{ckpt_file}', ckpt_fp)
-	return ckpt_fp, model_tag
+	return ckpt_fp
 
 def get_runs_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
 	import wandb
