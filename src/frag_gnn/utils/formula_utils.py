@@ -8,14 +8,15 @@ from typing import List, Tuple, Dict, Literal
 from .misc_utils import none_or_nan
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
-
 ELECTRON_MASS = 0.00054858
+
 H_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("H")
 PREC_TYPE_TO_MASS_DIFF = {
 	"[M+H]+": H_MASS - ELECTRON_MASS,
 	"[M-H]-": -H_MASS + ELECTRON_MASS,
 	"": 0.
 }
+NEUTRON_MASS = 1.008665
 
 def MASS(element: str | int) -> float:
 	return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
