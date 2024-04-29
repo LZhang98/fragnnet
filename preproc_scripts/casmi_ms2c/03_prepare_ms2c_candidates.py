@@ -174,15 +174,14 @@ if __name__ == "__main__":
 	casmi_df = pd.concat([casmi_cat1_df, casmi_cat23_df])
 	
 	casmi_df = casmi_df[casmi_df['ION_MODE'] == 'POSITIVE']
-	print(casmi_df[])
-	casmi_df['mw'] = casmi_df.apply(lambda x : ExactMolWt(Chem.MolFromInchi(x['INCHI'])))
+	#print(casmi_df['INCHI'])
+	casmi_df['mol'] = casmi_df.apply(lambda x : ExactMolWt(Chem.MolFromInchi(x['INCHI'])), axis=1)
+	casmi_df['mw'] = casmi_df.apply(lambda x : ExactMolWt(Chem.MolFromInchi(x['INCHI'])), axis=1)
 	
 	#casmi_df = casmi_df[casmi_df['ION_MODE'] == 'POSITIVE']
  
 	print(casmi_df)
-	casmi_inchikeys= list(casmi_cat1_df['INCHIKEY']) + list(casmi_cat23_df['INCHIKEY'])
-	casmi_inchikeys_s = [x.split('-')[0] for x in casmi_inchikeys]
-	
+
 	#PRECURSOR_MZ,ION_MODE
 	tol_type = f"{args.tolerance}Da" if not args.use_ppm else f"{args.tolerance}ppm" 
 	#candidate_name = f'pubchem_{split_basename}_{split_type}_{tol_type}_{args.fp_type}_{args.max_candidates}'
@@ -190,27 +189,22 @@ if __name__ == "__main__":
 	#	candidate_name += f'_s{args.subset_size}'
   
 	#candidate_dp = os.path.join(args.candidate_dp, split_basename)
-	os.makedirs(args.candidate_dp, exist_ok= True)
-	args_fp = os.path.join(args.candidate_dp, f'{candidate_name}.yaml')
+	#os.makedirs(args.candidate_dp, exist_ok= True)
+	#args_fp = os.path.join(args.candidate_dp, f'{candidate_name}.yaml')
 
-	candidates_fp = os.path.join(args.candidate_dp,f'{candidate_name}.pkl.gz')
+	#candidates_fp = os.path.join(args.candidate_dp,f'{candidate_name}.pkl.gz')
 
-	mol_df_fp = os.path.join(args.proc_dp,"mol_df.pkl")
-	print(f"> Read mol df from {mol_df_fp}")
-	mol_df = pd.read_pickle(mol_df_fp)
-
-	id_fp = os.path.join(args.split_dp, split_csv_filename)
-	print(f"> Processing {split_type} split, read ids from {id_fp}")
+	#id_fp = os.path.join(args.split_dp, split_csv_filename)
+	#print(f"> Processing {split_type} split, read ids from {id_fp}")
 	#val_sp_fp = os.path.join(args.split_dp,"val_ids.csv")
-	sp_mol_ids = pd.read_csv(id_fp)['mol_id'].drop_duplicates().to_frame()
-	sp_mol_df = sp_mol_ids.merge(mol_df, how="left", on="mol_id")
+	#sp_mol_ids = pd.read_csv(id_fp)['mol_id'].drop_duplicates().to_frame()
+	#sp_mol_df = sp_mol_ids.merge(mol_df, how="left", on="mol_id")
 
 	db_file = args.db_file
 	db_query_input = []
 	filter_candidates_input_l = []
-	if args.subset_size > 0:
-		sp_mol_df = sp_mol_df[:args.subset_size]
-	for _, row in tqdm(sp_mol_df.iterrows(), total = len(sp_mol_df), desc = "Prepare pubchem database input"):
+	
+	for _, row in tqdm(casmi_df.iterrows(), total = len(casmi_df), desc = "Prepare pubchem database input"):
 		# we can frag them, just ignore	
 		if Chem.rdMolDescriptors.CalcNumHeavyAtoms(row['mol']) > MAX_NUM_NODES:
 			continue
