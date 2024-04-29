@@ -241,15 +241,14 @@ def mol_to_inchi(mol:"rdkit.Chem.rdchem.Mol")  -> str:
 		inchikey_s = np.nan
 	return inchikey_s
 
-def mol_to_mol_weight(mol,exact=True)  -> float:
+def mol_to_inchi(mol)  -> str:
 	"""get mol weight from mol object
 
 	Args:
 		mol (_type_): mol object
-		exact (bool, optional): flag to get extact mass. Defaults to True.
-
+		
 	Returns:
-		float: mw
+		str: inchi
 	"""
 	modules = rdkit_import("rdkit.Chem.rdinchi")
 	rdinchi = modules[0]
@@ -260,6 +259,14 @@ def mol_to_mol_weight(mol,exact=True)  -> float:
 	return inchi
 
 def mol_to_mol_weight(mol,exact=True):
+	"""get mol weight from mol object
+	Args:
+		mol (_type_): mol object
+		exact (bool, optional): flag to get extact mass. Defaults to True.
+
+	Returns:
+		float: mw
+	"""
 	modules = rdkit_import("rdkit.Chem.Descriptors")
 	Desc = modules[0]
 	try:
@@ -753,46 +760,46 @@ def parse_peaks_str(peaks_str):
 	return peaks
 
 def composition_to_string(x):
-    return ''.join([a+str(x[a]) for a in sorted(x)])
+	return ''.join([a+str(x[a]) for a in sorted(x)])
 
 def parse_product_isotope(annot, precursor):
-    formula = Composition('')
-    precursor = Composition(formula=precursor)
-    adducts = []
-    losses = []
-    isotope = 0
-    charge = 1
-    chunks = [''] + re.split(r'([\+-])',annot)
-    for prefix, chunk in zip(chunks[::2],chunks[1::2]):
-        if len(chunk) == 0:
-            continue
-        elif prefix == '^':
-            charge = int(chunk)
-        else:
-            if chunk[-1] == 'i' and chunk[-2:] != "Si":
-                chunk = chunk[:-1]
-                isotope = int(chunk) if chunk else 1
-                if prefix == '-':
-                    isotope = -isotope
-            else:
-                if chunk[0].isdigit():
-                    n = int(chunk[0])
-                    chunk = chunk[1:]
-                else:
-                    n = 1
-                if chunk == 'p':
-                    chunk = precursor
-                else:
-                    chunk = Composition(formula=chunk) * n
-                if prefix == '':
-                    formula += chunk
-                elif prefix == '+':
-                    adducts.append(chunk)
-                    formula += chunk
-                elif prefix == '-':
-                    losses.append(chunk)
-                    formula -= chunk
-    return formula, adducts, losses, isotope, charge
+	formula = Composition('')
+	precursor = Composition(formula=precursor)
+	adducts = []
+	losses = []
+	isotope = 0
+	charge = 1
+	chunks = [''] + re.split(r'([\+-])',annot)
+	for prefix, chunk in zip(chunks[::2],chunks[1::2]):
+		if len(chunk) == 0:
+			continue
+		elif prefix == '^':
+			charge = int(chunk)
+		else:
+			if chunk[-1] == 'i' and chunk[-2:] != "Si":
+				chunk = chunk[:-1]
+				isotope = int(chunk) if chunk else 1
+				if prefix == '-':
+					isotope = -isotope
+			else:
+				if chunk[0].isdigit():
+					n = int(chunk[0])
+					chunk = chunk[1:]
+				else:
+					n = 1
+				if chunk == 'p':
+					chunk = precursor
+				else:
+					chunk = Composition(formula=chunk) * n
+				if prefix == '':
+					formula += chunk
+				elif prefix == '+':
+					adducts.append(chunk)
+					formula += chunk
+				elif prefix == '-':
+					losses.append(chunk)
+					formula -= chunk
+	return formula, adducts, losses, isotope, charge
 
 def is_pep_annot(annot):
 	pattern = r"(?:a|b|y)\d+|pi"
