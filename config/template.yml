@@ -268,6 +268,7 @@ ce_insert_mol: False
 ce_insert_frag: False
 ce_insert_mlp: False
 ce_insert_mlp_lin: False
+ce_insert_mlp_embed: False
 m_ce_insert_mlp_embed: False
 m_ce_insert_mlp_bin: False
 # m_ce_insert_mlp_lin: False

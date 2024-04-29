@@ -39,6 +39,7 @@ spec_params:
   merge_keep_ces: False
   preprocess: True
 ce_insert_mlp_lin: True
+ce_insert_mlp_embed: False
 mol_params:
   preprocess: True
 subsample_params:
@@ -51,8 +52,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 5
+max_epochs: 5
 lr_schedule: False
 debug_overfit: False
 mask_null_formula: False

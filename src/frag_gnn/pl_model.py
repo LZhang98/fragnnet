@@ -1145,6 +1145,7 @@ class FragGNNPL(SpectrumPL):
 			ce_insert_frag=self.hparams.ce_insert_frag,
 			ce_insert_mlp=self.hparams.ce_insert_mlp,
 			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
+			ce_insert_mlp_embed=self.hparams.ce_insert_mlp_embed,
 			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,
 			m_ce_insert_mlp_bin=self.hparams.m_ce_insert_mlp_bin,
 		)
@@ -1916,8 +1917,7 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug/debug_d4.yml": FragGNNPL,
-		# "config/debug/debug_neims.yml": NeimsPL,
+		"config/debug_um/debug_d3_auto_um.yml": FragGNNPL,
 	}
 	
 	model_cls_to_ds_cls = {
@@ -1944,7 +1944,8 @@ def test_models():
 		dl_iter = iter(dl)
 		batch = next(dl_iter)
 		print("> batch")
-		# print_shapes(batch)
+		print_shapes(batch)
+		import pdb; pdb.set_trace()
 		batch = to_device(batch,device)
 
 		pl_model = pl_model_cls(**config_d)
