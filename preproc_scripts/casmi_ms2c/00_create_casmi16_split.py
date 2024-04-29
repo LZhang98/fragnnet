@@ -16,17 +16,17 @@ def get_args():
 
 if __name__ == "__main__":
 	
-	casmsi_cat1_df = pd.read_csv('data/misc/casmi2016/solutions_casmi2016_cat1.csv')
-	casmsi_cat23_df = pd.read_csv('data/misc/casmi2016/solutions_casmi2016_cat2and3.csv')
-	casmsi_inchikeys= list(casmsi_cat1_df['INCHIKEY']) + list(casmsi_cat23_df['INCHIKEY'])
-	casmsi_inchikeys_s = [x.split('-')[0] for x in casmsi_inchikeys]
- 	#print(casmsi_cat1_df)
-	#print(casmsi_cat23_df)
+	casmi_cat1_df = pd.read_csv('data/misc/casmi2016/solutions_casmi2016_cat1.csv')
+	casmi_cat23_df = pd.read_csv('data/misc/casmi2016/solutions_casmi2016_cat2and3.csv')
+	casmi_inchikeys= list(casmi_cat1_df['INCHIKEY']) + list(casmi_cat23_df['INCHIKEY'])
+	casmi_inchikeys_s = [x.split('-')[0] for x in casmi_inchikeys]
+ 	#print(casmi_cat1_df)
+	#print(casmi_cat23_df)
 	
 	args = get_args()
 	mol_df_fp = os.path.join(args.proc_dp,"mol_df.pkl")
 	mol_df = pd.read_pickle(mol_df_fp)
-	mol_id_list = mol_df[mol_df['inchikey_s'].isin(casmsi_inchikeys_s)]['mol_id'].values.tolist()
+	mol_id_list = mol_df[mol_df['inchikey_s'].isin(casmi_inchikeys_s)]['mol_id'].values.tolist()
  
 	spec_df_fp = os.path.join(args.proc_dp,"spec_df.pkl")
 	spec_df = pd.read_pickle(spec_df_fp)
