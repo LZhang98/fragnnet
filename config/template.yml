@@ -207,7 +207,7 @@ devices: auto
 logging:
   - console
   - wandb
-num_workers: 8
+num_workers: 7
 pin_memory: True
 min_epochs: 1
 max_epochs: 1
