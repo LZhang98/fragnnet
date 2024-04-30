@@ -70,6 +70,8 @@ class PubChemCandidateDB():
             # pass exception to function
             #DatabaseUtilities.print_psycopg2_exception(err)
             print(f'{err}')
+            print(query)
+            print(data)
             self.conn.rollback()
             return None
         else:
@@ -155,7 +157,7 @@ class PubChemCandidateDB():
             else:
                 return f"({data})"
     
-    def add_compounds_from_df(self, df, chunk_size = 1000):
+    def add_compounds_from_df(self, df, chunk_size = 10000):
         compound_query = """INSERT OR IGNORE INTO compound(id, inchikey, exact_mass, formula, smiles) VALUES (?,?,?,?,?); """
         for i in tqdm(range(0,df.shape[0],chunk_size), leave = False):
             compound_insert_data = df[i:i+chunk_size].values.tolist()

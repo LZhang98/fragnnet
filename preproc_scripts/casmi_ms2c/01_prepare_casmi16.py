@@ -49,6 +49,8 @@ if __name__ == "__main__":
 
 	casmi_cat1_df = pd.read_csv('data/misc/casmi2016/solutions_casmi2016_cat1.csv')
 	casmi_cat23_df = pd.read_csv('data/misc/casmi2016/solutions_casmi2016_cat2and3.csv')
+	casmi_cat1_df['cat'] = 1
+	casmi_cat23_df['cat'] = 2
 	casmil_df = pd.concat([casmi_cat1_df,casmi_cat23_df])
 	print(casmil_df)
 
@@ -75,6 +77,7 @@ if __name__ == "__main__":
 	print(f">read mgf from {cat23_pos_zip_fp}")
 	archive = zipfile.ZipFile(cat23_pos_zip_fp, 'r')
 	
+ 
 	for file in tqdm(archive.namelist()):
 		if file.endswith('mgf'):
 			print(file)
