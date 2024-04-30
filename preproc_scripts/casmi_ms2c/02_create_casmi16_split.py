@@ -30,6 +30,8 @@ if __name__ == "__main__":
  
 	spec_df_fp = os.path.join(args.proc_dp,"spec_df.pkl")
 	spec_df = pd.read_pickle(spec_df_fp)
+	print(spec_df.head())
+	exit()
 	#print(spec_df[spec_df['mol_id'].isin(mol_id_list)])
 	selected_spec_df = spec_df[spec_df['mol_id'].isin(mol_id_list)]
 	#selected_spec_df = selected_spec_df[selected_spec_df['dset']]

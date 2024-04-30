@@ -35,48 +35,26 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag candidates configs
-	parser.add_argument("--proc_dp", type=str, default="./data/proc/nist20mona23")
-	parser.add_argument("--split_dp", type=str, default="./data/split/nist20_d4_wr00_inchikey")
 	parser.add_argument("--db_file", type=str, default= "./data/ms2c/pubchem/pubchem.sqlite")
 	parser.add_argument("--tolerance", type=float, default= 10, help="Default 10ppm")
 	parser.add_argument("--use_ppm", type=booltype, default= True)
-	parser.add_argument("--max_candidates", type=int, default= 50, help="max canidates include target itself")
-	parser.add_argument("--subset_size", type=int, default=-1)
-	parser.add_argument("--fp_type", type=str, default='MORGAN-R2', help="")
 	parser.add_argument("--split_type", type=str,default="test", help="")
-	parser.add_argument("--candidate_dp",type=str,default='./data/ms2c/pubchem/candidates')
+	parser.add_argument("--candidate_dp",type=str,default='./data/ms2c/casmi16/pubchem_candidates')
 	parser.add_argument("--use_cached_candidate",type=booltype,default=False)
 	
-	# frag feats configs
-	parser.add_argument("--max_depth",type=int,default=4)
-	parser.add_argument("--max_time",type=int,default=150)
-	parser.add_argument("--project_dp",type=str,default=os.getcwd())
-	parser.add_argument("--frag_dp",type=str,default="./data/ms2c/pubchem/frags/")
-	parser.add_argument("--per_candididte",type=booltype,default=False)
-	parser.add_argument("--tar_frag",type=booltype,default=True)
-	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
-	parser.add_argument("--max_iterations",type=int,default=3)
-	parser.add_argument("--isotopes",type=booltype,default=False)
 
 	args = parser.parse_args()
 	return args
 
-def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, morgen_radius = 3):
+def filter_candidates(db_results, target_smiles, target_mol_id):
 
-	chem, rd_fpgen, rdmolops, rd_ds, rd_moldesc, rd_logger = data_utils.rdkit_import("rdkit.Chem",
-																			   "rdkit.Chem.rdFingerprintGenerator", 
+	chem, rdmolops, rd_moldesc, rd_logger = data_utils.rdkit_import("rdkit.Chem",
 																			   "rdkit.Chem.rdmolops", 
-																			   "rdkit.DataStructs", 
-																			   "rdkit.Chem.rdMolDescriptors",
+																			   "rdkit.Chem.rdMolDescriptors", 
 																			   "rdkit.RDLogger")
 	
 	rd_logger.DisableLog('rdApp.*') 
-
-	mfpgen = rd_fpgen.GetMorganGenerator(radius=morgen_radius)
 	t_mol = chem.MolFromSmiles(target_smiles)
-	t_fp = mfpgen.GetFingerprint(t_mol)
 
 	# make sure target in there
 	#print(targert_smiles)
@@ -137,21 +115,16 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 			continue
 		
 		case_cdf.at[idx,"smiles"] = data_utils.mol_to_smiles(mol)
-		#tanimoto  distance
-		case_cdf.at[idx,"tanimoto"] = rd_ds.TanimotoSimilarity(t_fp, mfpgen.GetFingerprint(mol))
 
-
-	case_cdf = case_cdf[case_cdf['tanimoto'] >= 0.0]
-	case_cdf = case_cdf.sort_values('tanimoto',ascending = False)
 	
-	if top_k is not None and top_k > 0:
-		case_cdf = case_cdf[:top_k]
-
 	return target_mol_id, target_smiles, case_cdf
 
 def fetch_db(db_file, mw, mass_tol ):
 	with PubChemCandidateDB(db_file) as db:
 		db_results = db.get_compounds_by_exact_mass_range(mw -mass_tol, mw + mass_tol)
+	return db_results
+
+def fetch_hmdb(hmdb_csv, mw, mass_tol ):
 	return db_results
 
 if __name__ == "__main__":
@@ -160,45 +133,15 @@ if __name__ == "__main__":
 
 	args = get_args()
 
-
-	# disable rdkit warning
-	if args.fp_type == 'MORGAN-R2':
-		morgen_radius = 2
-	elif args.fp_type == 'MORGAN-R3':
-		morgen_radius = 3
-	else:
-		print("Not Supported Fingerprint")
-
-	casmi_cat1_df = pd.read_csv('data/misc/casmi2016/solutions_casmi2016_cat1.csv')
+	#casmi_cat1_df = pd.read_csv('data/misc/casmi2016/solutions_casmi2016_cat1.csv')
 	casmi_cat23_df = pd.read_csv('data/misc/casmi2016/solutions_casmi2016_cat2and3.csv')
-	casmi_df = pd.concat([casmi_cat1_df, casmi_cat23_df])
+	casmi_df = pd.concat([casmi_cat23_df])
 	
-	casmi_df = casmi_df[casmi_df['ION_MODE'] == 'POSITIVE']
-	#print(casmi_df['INCHI'])
-	casmi_df['mol'] = casmi_df.apply(lambda x : ExactMolWt(Chem.MolFromInchi(x['INCHI'])), axis=1)
-	casmi_df['mw'] = casmi_df.apply(lambda x : ExactMolWt(Chem.MolFromInchi(x['INCHI'])), axis=1)
-	
-	#casmi_df = casmi_df[casmi_df['ION_MODE'] == 'POSITIVE']
- 
+	casmi_df.loc[:,"mol"] = par_apply_series(casmi_df["SMILES"],data_utils.mol_from_smiles)
+	casmi_df.loc[:,"smiles"] = par_apply_series(casmi_df["mol"],data_utils.mol_to_smiles)
+	casmi_df.loc[:,"exact_mw"] = par_apply_series(casmi_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=True))
+	casmi_df['mol_id'] = casmi_df['ChallengeName']
 	print(casmi_df)
-
-	#PRECURSOR_MZ,ION_MODE
-	tol_type = f"{args.tolerance}Da" if not args.use_ppm else f"{args.tolerance}ppm" 
-	#candidate_name = f'pubchem_{split_basename}_{split_type}_{tol_type}_{args.fp_type}_{args.max_candidates}'
-	#if args.subset_size > 0:
-	#	candidate_name += f'_s{args.subset_size}'
-  
-	#candidate_dp = os.path.join(args.candidate_dp, split_basename)
-	#os.makedirs(args.candidate_dp, exist_ok= True)
-	#args_fp = os.path.join(args.candidate_dp, f'{candidate_name}.yaml')
-
-	#candidates_fp = os.path.join(args.candidate_dp,f'{candidate_name}.pkl.gz')
-
-	#id_fp = os.path.join(args.split_dp, split_csv_filename)
-	#print(f"> Processing {split_type} split, read ids from {id_fp}")
-	#val_sp_fp = os.path.join(args.split_dp,"val_ids.csv")
-	#sp_mol_ids = pd.read_csv(id_fp)['mol_id'].drop_duplicates().to_frame()
-	#sp_mol_df = sp_mol_ids.merge(mol_df, how="left", on="mol_id")
 
 	db_file = args.db_file
 	db_query_input = []
@@ -216,7 +159,7 @@ if __name__ == "__main__":
 			mass_tol = args.tolerance
 		db_query_input.append([db_file,mw,mass_tol])
 			#db_results = db.get_compounds_by_exact_mass_range(mw -mass_tol, mw + mass_tol)
-		filter_candidates_input_l.append([None, row['smiles'],row['mol_id'], args.max_candidates, morgen_radius])
+		filter_candidates_input_l.append([None, row['smiles'],row['mol_id']])
 
 	db_results = data_utils.par_apply(iter(db_query_input),fetch_db, True, return_as_generator=True)	
 	for idx, res in enumerate(tqdm(db_results, total =  len(db_query_input), desc = "Fetch pubchem database ")):
@@ -237,6 +180,11 @@ if __name__ == "__main__":
 	candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
 	candidates_df.loc[:,"smiles"] = par_apply_series(candidates_df["mol"],data_utils.mol_to_smiles)
 	candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
-	print(f"> Save to {candidates_fp}")
+	
+ 	#print(f"> Save to {candidates_fp}")
+	candidate_name = 'casmi16_cat3'
+	args_fp = os.path.join(args.candidate_dp, f'{candidate_name}.yaml')
+	candidates_fp = os.path.join(args.candidate_dp,f'{candidate_name}.pkl.gz')
+
 	candidates_df.reset_index(drop=True, inplace=True)
 	candidates_df.to_pickle(candidates_fp)
