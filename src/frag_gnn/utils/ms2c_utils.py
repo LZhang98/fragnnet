@@ -2,7 +2,7 @@ import sqlite3
 import sys
 from tqdm import tqdm
 
-class PubChemCandidateDB():
+class MolCandidateDB():
 
     def __init__(self, db_config: str):
         self.conn = None

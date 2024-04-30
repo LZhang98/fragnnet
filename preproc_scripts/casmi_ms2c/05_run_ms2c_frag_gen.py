@@ -12,16 +12,16 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag feats configs
-	parser.add_argument("--max_depth",type=int,default=4)
+	parser.add_argument("--max_depth",type=int,default=3)
 	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
-	parser.add_argument("--frag_dp",type=str,default="data/frag/debug")
+	parser.add_argument("--frag_dp",type=str,default="data/ms2c/casmi2016/frags/hmdb5_d3")
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
 	parser.add_argument("--max_iterations",type=int,default=-1)
 	parser.add_argument("--isotopes",type=booltype,default=False)
-	parser.add_argument("--proc_dp", type=str,default="data/ms2c/pubchem/pred_inputs/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50_sanity", help="")
+	parser.add_argument("--candidate_fp", type=str,default="data/ms2c/casmi2016/hmdb5_candidates", help="")
 	parser.add_argument("--allow_cached", type=booltype,default=True, help="")
 	
 	args = parser.parse_args()

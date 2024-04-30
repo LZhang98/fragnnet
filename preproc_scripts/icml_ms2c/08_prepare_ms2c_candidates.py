@@ -15,7 +15,7 @@ import numpy as np
 
 from tqdm import tqdm
 import pandas as pd
-from frag_gnn.utils.ms2c_utils import PubChemCandidateDB
+from frag_gnn.utils.ms2c_utils import MolCandidateDB
 from frag_gnn.utils.misc_utils import booltype, PPM
 import frag_gnn.utils.formula_utils as formula_utils
 import frag_gnn.utils.frag_utils as frag_utils
@@ -152,7 +152,7 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	return target_mol_id, target_smiles, case_cdf
 
 def fetch_db(db_file, mw, mass_tol ):
-	with PubChemCandidateDB(db_file) as db:
+	with MolCandidateDB(db_file) as db:
 		db_results = db.get_compounds_by_exact_mass_range(mw -mass_tol, mw + mass_tol)
 	return db_results
 

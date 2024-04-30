@@ -15,7 +15,7 @@ import concurrent.futures
 import signal
 import hashlib
 from threading import Event
-from frag_gnn.utils.ms2c_utils import PubChemCandidateDB
+from frag_gnn.utils.ms2c_utils import MolCandidateDB
 import numpy as np
 import frag_gnn.utils.data_utils as data_utils
 
@@ -40,7 +40,7 @@ if __name__ == "__main__":
 	df = df.dropna()
 
 	db_file  = f"{data_dir}/hmdb5.sqlite"
-	with PubChemCandidateDB(db_file) as db:
+	with MolCandidateDB(db_file) as db:
 		db._go_fast_at_all_cost()
 		db.create_tables()
   

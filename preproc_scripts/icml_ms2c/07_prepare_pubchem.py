@@ -15,7 +15,7 @@ import concurrent.futures
 import signal
 import hashlib
 from threading import Event
-from frag_gnn.utils.ms2c_utils import PubChemCandidateDB
+from frag_gnn.utils.ms2c_utils import MolCandidateDB
 import numpy as np
 
 def tqdm_hook(t):
@@ -189,7 +189,7 @@ if __name__ == "__main__":
 	signal.signal(signal.SIGTERM, og_sigterm_handler)
 
 	db_file  = f"{data_dir}/pubchem.sqlite"
-	with PubChemCandidateDB(db_file) as db:
+	with MolCandidateDB(db_file) as db:
 		db._go_fast_at_all_cost()
 		db.create_tables()
 		for sdf_filename in tqdm(sdf_names, desc = "Build DB"):

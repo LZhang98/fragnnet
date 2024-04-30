@@ -15,7 +15,7 @@ import numpy as np
 
 from tqdm import tqdm
 import pandas as pd
-from frag_gnn.utils.ms2c_utils import PubChemCandidateDB
+from frag_gnn.utils.ms2c_utils import MolCandidateDB
 from frag_gnn.utils.misc_utils import booltype, PPM
 import frag_gnn.utils.formula_utils as formula_utils
 import frag_gnn.utils.frag_utils as frag_utils
@@ -35,14 +35,13 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag candidates configs
-	parser.add_argument("--db_file", type=str, default= "./data/ms2c/pubchem/pubchem.sqlite")
+	parser.add_argument("--db_file", type=str, default= "./data/ms2c/databases/hmdb5.sqlite")
 	parser.add_argument("--tolerance", type=float, default= 10, help="Default 10ppm")
 	parser.add_argument("--use_ppm", type=booltype, default= True)
 	parser.add_argument("--split_type", type=str,default="test", help="")
-	parser.add_argument("--candidate_dp",type=str,default='./data/ms2c/casmi16/pubchem_candidates')
+	parser.add_argument("--candidate_dp",type=str,default='./data/ms2c/casmi16/hmdb5_candidates')
 	parser.add_argument("--use_cached_candidate",type=booltype,default=False)
 	
-
 	args = parser.parse_args()
 	return args
 
@@ -120,11 +119,8 @@ def filter_candidates(db_results, target_smiles, target_mol_id):
 	return target_mol_id, target_smiles, case_cdf
 
 def fetch_db(db_file, mw, mass_tol ):
-	with PubChemCandidateDB(db_file) as db:
+	with MolCandidateDB(db_file) as db:
 		db_results = db.get_compounds_by_exact_mass_range(mw -mass_tol, mw + mass_tol)
-	return db_results
-
-def fetch_hmdb(hmdb_csv, mw, mass_tol ):
 	return db_results
 
 if __name__ == "__main__":
@@ -141,8 +137,7 @@ if __name__ == "__main__":
 	casmi_df.loc[:,"smiles"] = par_apply_series(casmi_df["mol"],data_utils.mol_to_smiles)
 	casmi_df.loc[:,"exact_mw"] = par_apply_series(casmi_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=True))
 	casmi_df['mol_id'] = casmi_df['ChallengeName']
-	print(casmi_df)
-
+	
 	db_file = args.db_file
 	db_query_input = []
 	filter_candidates_input_l = []
@@ -162,7 +157,7 @@ if __name__ == "__main__":
 		filter_candidates_input_l.append([None, row['smiles'],row['mol_id']])
 
 	db_results = data_utils.par_apply(iter(db_query_input),fetch_db, True, return_as_generator=True)	
-	for idx, res in enumerate(tqdm(db_results, total =  len(db_query_input), desc = "Fetch pubchem database ")):
+	for idx, res in enumerate(tqdm(db_results, total =  len(db_query_input), desc = "Fetch hmdb database ")):
 		filter_candidates_input_l[idx][0] = res
 	
 	candidate_data_df_l = []
@@ -183,6 +178,7 @@ if __name__ == "__main__":
 	
  	#print(f"> Save to {candidates_fp}")
 	candidate_name = 'casmi16_cat3'
+	os.makedirs(args.candidate_dp, exist_ok=True)
 	args_fp = os.path.join(args.candidate_dp, f'{candidate_name}.yaml')
 	candidates_fp = os.path.join(args.candidate_dp,f'{candidate_name}.pkl.gz')
 
