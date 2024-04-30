@@ -1023,21 +1023,8 @@ class SpectrumPL(pl.LightningModule):
 		if not self.hparams.automatic_optimization and self.hparams.dynamic_batch_sampler and self._cur_batch_size > 0:
 			# this is used for manul opt when lr_schedulers is not available from torch lightning
 			self._manual_opt()
-		
-		self._seed_dataloader(self.current_epoch+1)
 
-		# # r = th.rand(5,device="cuda")
-		# th.cuda.manual_seed(self.current_epoch)
-
-		# cur_states = _collect_rng_states(include_cuda=th.cuda.is_available())
-		# self.end_np_state = cur_states["numpy"][1].copy()
-		# self.end_th_state = cur_states["torch"].clone()
-		# if th.cuda.is_available():
-		# 	self.end_th_cuda_state = cur_states["torch.cuda"][0].clone()
-		# print((self.start_np_state == self.end_np_state).all())
-		# print((self.start_th_state == self.end_th_state).all())
-		# if th.cuda.is_available():
-		# 	print((self.start_th_cuda_state == self.end_th_cuda_state).all())
+		super().on_train_epoch_end()
 
 	def on_validation_epoch_end(self):
 		
@@ -1087,18 +1074,72 @@ class SpectrumPL(pl.LightningModule):
 		# check merge params
 		if self.hparams.spec_params["merge"]:
 			assert (not self.hparams.spec_params["nce"]) or self.hparams.spec_params["merge_keep_ces"]
-			assert not self.hparams.ce_insert_mol
-			assert not self.hparams.ce_insert_frag
-			assert not self.hparams.ce_insert_mlp
-			assert not self.hparams.ce_insert_mlp_lin
-			if self.hparams.spec_params["merge_keep_ces"]:
-				assert (self.hparams.m_ce_insert_mlp_embed or self.hparams.m_ce_insert_mlp_bin)
-				assert not (self.hparams.m_ce_insert_mlp_embed and self.hparams.m_ce_insert_mlp_bin)
 		else:
 			assert self.hparams.spec_params["nce"] and (not self.hparams.spec_params["merge_keep_ces"])
-			assert not (self.hparams.ce_insert_mlp and self.hparams.ce_insert_mlp_lin)
-			assert not (self.hparams.m_ce_insert_mlp_embed or self.hparams.m_ce_insert_mlp_bin)
 
+	def _seed_dataloader(self, seed):
+
+		generator = th.Generator()
+		generator.manual_seed(self.train_dl_seeds[seed].item())
+		train_dataloader = self.trainer.train_dataloader
+		batch_sampler = train_dataloader.batch_sampler
+		sampler = train_dataloader.sampler
+		if self.hparams.dynamic_batch_sampler:
+			if hasattr(batch_sampler.sampler, "generator"):
+				# print("p3")
+				batch_sampler.sampler.generator = generator
+			if hasattr(batch_sampler.sampler, "_pre_compute_batches"):
+				# print("p4")
+				batch_sampler.sampler._pre_compute_batches()
+			if hasattr(batch_sampler, "_pre_compute_batches"):
+				# print("p5")
+				batch_sampler._pre_compute_batches()
+		else:
+			assert batch_sampler.sampler is sampler
+			if hasattr(sampler, "generator"):
+				# print("p1")
+				sampler.generator = generator
+			if hasattr(sampler, "_pre_compute_batches"):
+				# print("p2")
+				sampler._pre_compute_batches()
+
+	def on_train_epoch_start(self):
+
+		self._seed_dataloader(self.current_epoch)
+
+	def on_train_epoch_end(self):
+
+		self._seed_dataloader(self.current_epoch+1)	
+
+	def on_save_checkpoint(self, checkpoint):
+
+		# rng
+		checkpoint["rng_states"] = _collect_rng_states(include_cuda=th.cuda.is_available())
+		# metrics
+		checkpoint["train_mean_metrics"] = self.train_mean_metrics
+		checkpoint["val_mean_metrics"] = self.val_mean_metrics
+		checkpoint["train_std_metrics"] = self.train_std_metrics
+		checkpoint["val_std_metrics"] = self.val_std_metrics
+		if self.hparams.track_datapoint_metrics:
+			checkpoint["train_num_datapoints"] = self.train_num_datapoints
+			checkpoint["val_num_datapoints"] = self.val_num_datapoints
+			checkpoint["train_datapoint_metrics"] = self.train_datapoint_metrics
+			checkpoint["val_datapoint_metrics"] = self.val_datapoint_metrics
+
+	def on_load_checkpoint(self, checkpoint):
+		
+		# rng
+		_set_rng_states(checkpoint["rng_states"])
+		# metrics
+		self.train_mean_metrics = checkpoint["train_mean_metrics"]
+		self.val_mean_metrics = checkpoint["val_mean_metrics"]
+		self.train_std_metrics = checkpoint["train_std_metrics"]
+		self.val_std_metrics = checkpoint["val_std_metrics"]
+		if self.hparams.track_datapoint_metrics:
+			self.train_num_datapoints = checkpoint["train_num_datapoints"]
+			self.val_num_datapoints = checkpoint["val_num_datapoints"]
+			self.train_datapoint_metrics = checkpoint["train_datapoint_metrics"]
+			self.val_datapoint_metrics = checkpoint["val_datapoint_metrics"]
 
 class FragGNNPL(SpectrumPL):
 
@@ -1141,12 +1182,10 @@ class FragGNNPL(SpectrumPL):
 			skip_edge_loss=self.hparams.skip_edge_loss,
 			mask_null_formula=self.hparams.mask_null_formula,
 			predict_oos=self.hparams.predict_oos,
-			ce_insert_mol=self.hparams.ce_insert_mol,
-			ce_insert_frag=self.hparams.ce_insert_frag,
-			ce_insert_mlp=self.hparams.ce_insert_mlp,
-			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
-			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,
-			m_ce_insert_mlp_bin=self.hparams.m_ce_insert_mlp_bin,
+			ce_insert_type=self.hparams.ce_insert_type,
+			ce_insert_location=self.hparams.ce_insert_location,
+			ce_insert_merge=self.hparams.ce_insert_merge,
+			ce_insert_size=self.hparams.ce_insert_size,
 		)
 		
 		self._check_ce_params()
@@ -1758,73 +1797,12 @@ class FragGNNPL(SpectrumPL):
 				self._manual_opt()
 			self._update_results(batch_results,"train")
 			return mean_loss
-
-	def _seed_dataloader(self, seed):
-
-		generator = th.Generator()
-		generator.manual_seed(self.train_dl_seeds[seed].item())
-		train_dataloader = self.trainer.train_dataloader
-		batch_sampler = train_dataloader.batch_sampler
-		sampler = train_dataloader.sampler
-		if self.hparams.dynamic_batch_sampler:
-			if hasattr(batch_sampler.sampler, "generator"):
-				# print("p3")
-				batch_sampler.sampler.generator = generator
-			if hasattr(batch_sampler.sampler, "_pre_compute_batches"):
-				# print("p4")
-				batch_sampler.sampler._pre_compute_batches()
-			if hasattr(batch_sampler, "_pre_compute_batches"):
-				# print("p5")
-				batch_sampler._pre_compute_batches()
-		else:
-			assert batch_sampler.sampler is sampler
-			if hasattr(sampler, "generator"):
-				# print("p1")
-				sampler.generator = generator
-			if hasattr(sampler, "_pre_compute_batches"):
-				# print("p2")
-				sampler._pre_compute_batches()
 		
-
-	def on_train_epoch_start(self):
-
-		self._seed_dataloader(self.current_epoch)
-
 	def optimizer_step(self, *args, **kwargs):
 		
 		super().optimizer_step(*args, **kwargs)
 		opt = self.optimizers()
 		self.on_after_optimizer_step(opt)
-
-	def on_save_checkpoint(self, checkpoint):
-
-		# rng
-		checkpoint["rng_states"] = _collect_rng_states(include_cuda=th.cuda.is_available())
-		# metrics
-		checkpoint["train_mean_metrics"] = self.train_mean_metrics
-		checkpoint["val_mean_metrics"] = self.val_mean_metrics
-		checkpoint["train_std_metrics"] = self.train_std_metrics
-		checkpoint["val_std_metrics"] = self.val_std_metrics
-		if self.hparams.track_datapoint_metrics:
-			checkpoint["train_num_datapoints"] = self.train_num_datapoints
-			checkpoint["val_num_datapoints"] = self.val_num_datapoints
-			checkpoint["train_datapoint_metrics"] = self.train_datapoint_metrics
-			checkpoint["val_datapoint_metrics"] = self.val_datapoint_metrics
-
-	def on_load_checkpoint(self, checkpoint):
-		
-		# rng
-		_set_rng_states(checkpoint["rng_states"])
-		# metrics
-		self.train_mean_metrics = checkpoint["train_mean_metrics"]
-		self.val_mean_metrics = checkpoint["val_mean_metrics"]
-		self.train_std_metrics = checkpoint["train_std_metrics"]
-		self.val_std_metrics = checkpoint["val_std_metrics"]
-		if self.hparams.track_datapoint_metrics:
-			self.train_num_datapoints = checkpoint["train_num_datapoints"]
-			self.val_num_datapoints = checkpoint["val_num_datapoints"]
-			self.train_datapoint_metrics = checkpoint["train_datapoint_metrics"]
-			self.val_datapoint_metrics = checkpoint["val_datapoint_metrics"]
 
 class BinnedPL(SpectrumPL):
 
@@ -1892,11 +1870,11 @@ class NeimsPL(BinnedPL):
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
 			ff_output_map_size=self.hparams.ff_output_map_size,
-			ce_insert_mlp=self.hparams.ce_insert_mlp,
-			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
-			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,
-			m_ce_insert_mlp_bin=self.hparams.m_ce_insert_mlp_bin,
 			int_embedder=self.hparams.int_embedder,
+			ce_insert_type=self.hparams.ce_insert_type,
+			ce_insert_location=self.hparams.ce_insert_location,
+			ce_insert_merge=self.hparams.ce_insert_merge,
+			ce_insert_size=self.hparams.ce_insert_size,
 		)
 		
 		self._check_ce_params()
@@ -1916,8 +1894,10 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug/debug_d4.yml": FragGNNPL,
-		# "config/debug/debug_neims.yml": NeimsPL,
+		"config/debug_um/debug_d3_auto_um.yml": FragGNNPL,
+		"config/debug_m/debug_d3_auto_m.yml": FragGNNPL,
+		"config/debug_um/debug_neims_auto_um.yml": NeimsPL,
+		"config/debug_m/debug_neims_auto_m.yml": NeimsPL
 	}
 	
 	model_cls_to_ds_cls = {
@@ -1944,7 +1924,7 @@ def test_models():
 		dl_iter = iter(dl)
 		batch = next(dl_iter)
 		print("> batch")
-		# print_shapes(batch)
+		print_shapes(batch)
 		batch = to_device(batch,device)
 
 		pl_model = pl_model_cls(**config_d)

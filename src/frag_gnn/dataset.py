@@ -219,7 +219,7 @@ class BaseDataset(Dataset):
 				assert self.spec_params["merge_keep_ces"]
 				assert isinstance(nce,list), type(nce)
 				nce = th.tensor(nce,dtype=th.float)
-				spec_data["spec_m_nce"] = nce
+				spec_data["spec_nce"] = nce
 			else:
 				assert isinstance(nce,float), type(nce)
 				nce = th.tensor([nce],dtype=th.float)
@@ -289,16 +289,16 @@ class BaseDataset(Dataset):
 			keys.remove("spec_ints")
 			keys.remove("spec_mzs")
 		# handle sparse ces
-		if "spec_m_nce" in keys:
+		if "spec_nce" in keys:
 			# create batch_idxs
 			nces, _, batch_idxs = batch_func(
-				collate_data["spec_m_nce"],
-				collate_data["spec_m_nce"] # duplicate for compatibility
+				collate_data["spec_nce"],
+				collate_data["spec_nce"] # duplicate for compatibility
 			)
-			collate_data["spec_m_nce"] = nces
-			collate_data["spec_m_nce_batch_idxs"] = batch_idxs
+			collate_data["spec_nce"] = nces
+			collate_data["spec_nce_batch_idxs"] = batch_idxs
 			# remove from list
-			keys.remove("spec_m_nce")
+			keys.remove("spec_nce")
 
 	@staticmethod
 	def _standard_collate(batch_size,keys,collate_data):
