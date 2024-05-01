@@ -180,6 +180,7 @@ class BaseDataset(Dataset):
 				spec_data = self._process_spec(spec_entry)
 				total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
 				self.spec_datas[idx] = spec_data
+			print(f"> total_spec_data_size: {total_spec_data_size/1e6:.2f} MB")
 
 	@staticmethod
 	def _get_mzs_ints(peaks):
