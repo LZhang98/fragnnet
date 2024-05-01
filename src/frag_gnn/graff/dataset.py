@@ -9,6 +9,7 @@ from frag_gnn.graff.data_utils import fit_ann_library, graff_preprocess
 from frag_gnn.utils.formula_utils import NEUTRON_MASS
 from frag_gnn.utils.data_utils import composition_to_string
 from frag_gnn.utils.spec_utils import batch_func
+from frag_gnn.utils.misc_utils import get_tensor_dict_memory_usage
 
 def calculate_prec_formula(prec_formula,prec_type):
 
@@ -87,9 +88,13 @@ class SpecMolAnnDataset(SpecMolDataset):
 
 		if self.ann_params["preprocess"]:
 			self.ann_datas = {}
+			total_ann_data_size = 0
 			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess ann",total=len(self.spec_df)):
 				mol_entry = self.mol_df.loc[spec_entry["mol_id"]]
-				self.ann_datas[idx] = self._process_ann(spec_entry, mol_entry)
+				ann_data = self._process_ann(spec_entry, mol_entry)
+				total_ann_data_size += get_tensor_dict_memory_usage(**ann_data)
+				self.ann_datas[idx] = ann_data
+			print(f"> total_ann_data_size = {total_ann_data_size/1e6:.2f} MB")
 
 	def _process_ann(self, spec_entry, mol_entry):
 

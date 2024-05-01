@@ -4,7 +4,7 @@ import torch._dynamo as th_dynamo
 from frag_gnn.graff.model import GrAFFModel
 from frag_gnn.pl_model import SpectrumPL
 from frag_gnn.graff.data_utils import x_map, e_map
-from frag_gnn.utils.misc_utils import LOG_ZERO
+from frag_gnn.utils.misc_utils import LOG_ZERO, MAX_CROSS_ENTROPY
 from frag_gnn.loss import get_sparse_cross_entropy_fn
 
 
@@ -49,6 +49,21 @@ class GrAFFPL(SpectrumPL):
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)		
 
+	def _setup_loss_names(self):
+
+		# flag losses for tracking
+		loss_names = [
+			"loss",
+			"primary_loss",
+			# "spec_ce",
+			# "oos_ce",
+			# "ios_ce",
+			# "null_formula_prob",
+			# "oos_prob",
+		]
+		self.loss_names = loss_names
+		self.metric_names.update(loss_names)
+
 	def _setup_loss_fn(self):
 
 		assert self.hparams.loss_type == "cross_entropy", self.hparams.loss_type
@@ -65,6 +80,8 @@ class GrAFFPL(SpectrumPL):
 			self.hparams.pm_tolerance_multiple,
 			self.hparams.loss_batch_size
 		)
+
+		self._setup_loss_names()
 
 		def _loss_fn(true_mzs,
 			true_logprobs,
@@ -85,22 +102,20 @@ class GrAFFPL(SpectrumPL):
 				th.full((batch_size,), LOG_ZERO(true_logprobs.dtype), device=pred_logprobs.device, dtype=pred_logprobs.dtype),
 			)
 			spec_ce = ios_ce + oos_ce
-			primary_loss = ios_ce
+			if self.hparams.oos_loss:
+				raise NotImplementedError
+				primary_loss = spec_ce
+			else:
+				primary_loss = ios_ce
 			loss = primary_loss
 			loss_d = {
 				"loss": loss,
 				"primary_loss": primary_loss,
-				"spec_ce": spec_ce
+				# "spec_ce": spec_ce
 			}
 			return loss_d
 		
 		self.loss_fn = _loss_fn
-		loss_names = [
-			"loss",
-			"primary_loss",
-			"spec_ce"
-		]
-		self.metric_names.update(loss_names)
 
 def test_models():
 
@@ -111,7 +126,7 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug/debug_graff.yml": GrAFFPL,
+		"config/debug_m/debug_graff_auto_m.yml": GrAFFPL,
 	}
 
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
