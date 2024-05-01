@@ -12,6 +12,7 @@ import threading
 import torch_geometric as pyg
 import dgl
 from collections import defaultdict
+import sys
 
 TQDM_DISABLE = False
 PPM = 1/1000000
@@ -20,6 +21,7 @@ LOG_HALF = float(np.log(0.5))
 LOG_TWO = float(np.log(2.0))
 LOG_ZERO_FP32 = float(th.finfo(th.float32).min)
 LOG_ZERO_FP16 = float(th.finfo(th.float16).min)
+MAX_CROSS_ENTROPY = 1e19
 
 def LOG_ZERO(dtype):
 	if dtype == th.float32:
@@ -163,8 +165,14 @@ def my_tqdm(*args,**kwargs):
 def get_tensor_memory_usage(tensor):
 	return tensor.nelement()*tensor.element_size()
 
-def get_pyg_memory_usage(pyg_graph):
+def get_tensor_dict_memory_usage(**tensor_dict):
+	total_memory = 0
+	for k,v in tensor_dict.items():
+		if isinstance(v,th.Tensor):
+			total_memory += get_tensor_memory_usage(v)
+	return total_memory
 
+def get_pyg_memory_usage(pyg_graph):
 	return pyg.profile.get_data_size(pyg_graph)
 
 def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=None,log=True):

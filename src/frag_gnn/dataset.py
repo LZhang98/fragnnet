@@ -15,7 +15,7 @@ from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_grap
 from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_type_idx, prec_type_mass_diff
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
-from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
+from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 import frag_gnn.massformer.data_utils as mf_data_utils
 import frag_gnn.graff.data_utils as graff_data_utils
@@ -175,8 +175,10 @@ class BaseDataset(Dataset):
 		# preload and pre-process spectra
 		if self.spec_params["preprocess"]:
 			self.spec_datas = {}
+			total_spec_data_size = 0
 			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess spec",total=len(self.spec_df)):
 				spec_data = self._process_spec(spec_entry)
+				total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
 				self.spec_datas[idx] = spec_data
 
 	@staticmethod

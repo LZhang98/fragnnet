@@ -346,6 +346,11 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		trainer_param_d['accumulate_grad_batches'] = config_d["accumulate_grad_batches"]
 		trainer_param_d['gradient_clip_val'] = config_d["gradient_clip_val"]
 		trainer_param_d['gradient_clip_algorithm'] = config_d["gradient_clip_algorithm"]
+		if config_d["num_workers"] > 0:
+			# little hack to prevent memory explosion
+			# https://discuss.pytorch.org/t/how-to-share-data-among-dataloader-processes-to-save-memory/108772
+			# https://ppwwyyxx.com/blog/2022/Demystify-RAM-Usage-in-Multiprocess-DataLoader/
+			trainer_param_d['reload_dataloaders_every_n_epochs'] = 1
 	elif config_d['dynamic_batch_sampler']:
 		# with out this progress will not track dataset length change
 		# this will call train_dataloader and val_dataloader before every epoch
