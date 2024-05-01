@@ -57,6 +57,8 @@ output_distribution: peak_marginal
 sparse_cosine_similarity: True
 oos_loss: False
 skip_extra_losses: True # currently does nothing...
+predict_oos: True
+oos_tolerance_multiple: 1
 
 # optimization stuff
 train_batch_size: 64
