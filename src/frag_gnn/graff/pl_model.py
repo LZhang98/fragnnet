@@ -119,10 +119,9 @@ class GrAFFPL(SpectrumPL):
 
 def test_models():
 
-	from frag_gnn.runner import load_config
+	from frag_gnn.runner import load_config, init_dataset
 	from frag_gnn.utils.misc_utils import print_shapes
 	from frag_gnn.utils.misc_utils import to_device
-	from frag_gnn.graff.dataset import SpecMolAnnDataset
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
@@ -136,7 +135,7 @@ def test_models():
 		config_d = load_config(template_fp, custom_fp)
 		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
 
-		ds = SpecMolAnnDataset(split="train", **config_d)
+		ds = init_dataset(config_d)[0]
 		dl = th.utils.data.DataLoader(
 			ds,
 			batch_size=8,

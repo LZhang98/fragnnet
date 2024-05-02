@@ -1888,7 +1888,6 @@ class NeimsPL(BinnedPL):
 def test_models():
 
 	from frag_gnn.runner import load_config, init_dataset
-	from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset
 	from frag_gnn.utils.misc_utils import print_shapes
 	from frag_gnn.utils.misc_utils import to_device
 

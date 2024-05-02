@@ -34,6 +34,7 @@ class SpecMolAnnDataset(SpecMolDataset):
 		mol_params: dict,
 		ann_fp: str,
 		ann_params: dict,
+		library_df: pd.DataFrame = None,
 		spec_pp_sd: dict = dict(),
 		mol_pp_sd: dict = dict(),
 		ann_pp_sd: dict = dict(),
@@ -52,7 +53,9 @@ class SpecMolAnnDataset(SpecMolDataset):
 		self.mol_params = mol_params
 		self.ann_fp = ann_fp
 		self.ann_params = ann_params
-		self._setup_ann()
+		self._setup_ann(
+			library_df
+		)
 		self._preprocess_spec(spec_pp_sd)
 		self._preprocess_mol(mol_pp_sd)
 		self._preprocess_ann(ann_pp_sd)
@@ -61,15 +64,21 @@ class SpecMolAnnDataset(SpecMolDataset):
 	def get_data_dict_types():
 		return ["spec_pp_sd", "mol_pp_sd", "ann_pp_sd"]
 
-	def _setup_ann(self):
+	def _setup_ann(self, library_df):
 
 		ann_df = pd.read_pickle(self.ann_fp)
-		library_df = fit_ann_library(
-			self.um_spec_df.copy(),
-			ann_df.copy(), 
-			self.ann_params["library_size"],
-			self.ann_params["max_isotope"])
-		self.library_df = library_df
+		# only fit it if it's in training mode
+		if self.split != "train":
+			assert library_df is not None
+			self.library_df = library_df
+		else:
+			assert library_df is None
+			library_df = fit_ann_library(
+				self.um_spec_df.copy(),
+				ann_df.copy(), 
+				self.ann_params["library_size"],
+				self.ann_params["max_isotope"])
+			self.library_df = library_df
 		# setup mzs stuff
 		self.library_mzs = th.as_tensor(library_df["mzs"].values, dtype=th.float32)
 		self.library_mzs  = self.library_mzs.unsqueeze(1).repeat(1,self.ann_params["max_isotope"])
