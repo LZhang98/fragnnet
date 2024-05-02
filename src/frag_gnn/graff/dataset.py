@@ -34,6 +34,9 @@ class SpecMolAnnDataset(SpecMolDataset):
 		mol_params: dict,
 		ann_fp: str,
 		ann_params: dict,
+		spec_pp_sd: dict = dict(),
+		mol_pp_sd: dict = dict(),
+		ann_pp_sd: dict = dict(),
 		**kwargs
 	):
 		
@@ -50,10 +53,14 @@ class SpecMolAnnDataset(SpecMolDataset):
 		self.ann_fp = ann_fp
 		self.ann_params = ann_params
 		self._setup_ann()
-		self._preprocess_spec()
-		self._preprocess_mol()
-		self._preprocess_ann()
+		self._preprocess_spec(spec_pp_sd)
+		self._preprocess_mol(mol_pp_sd)
+		self._preprocess_ann(ann_pp_sd)
 	
+	@staticmethod
+	def get_data_dict_types():
+		return ["spec_pp_sd", "mol_pp_sd", "ann_pp_sd"]
+
 	def _setup_ann(self):
 
 		ann_df = pd.read_pickle(self.ann_fp)
@@ -84,10 +91,10 @@ class SpecMolAnnDataset(SpecMolDataset):
 			self.isotope_df = self.isotope_df.groupby("group_id")["has_isotopes"].apply(any).reset_index()
 		self.isotope_df = self.isotope_df.set_index(self.id_key,drop=False)
 
-	def _preprocess_ann(self):
+	def _preprocess_ann(self, ann_pp_sd: dict):
 
 		if self.ann_params["preprocess"]:
-			self.ann_datas = {}
+			self.ann_datas = ann_pp_sd
 			total_ann_data_size = 0
 			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess ann",total=len(self.spec_df)):
 				mol_entry = self.mol_df.loc[spec_entry["mol_id"]]
@@ -231,7 +238,6 @@ def test_dataset():
 		)
 		dl_iter = iter(dl)
 		batch = next(dl_iter)
-		import pdb; pdb.set_trace()
 		print("> batch")
 		print_shapes(batch)
 		# batch = to_device(batch,device)

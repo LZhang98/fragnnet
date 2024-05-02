@@ -24,7 +24,9 @@ import wandb
 import glob
 import shutil
 import tempfile
-
+from multiprocessing import Manager
+from torch.utils.data import DataLoader
+from torch.utils.data.sampler import SequentialSampler, RandomSampler
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
@@ -32,7 +34,7 @@ from frag_gnn.massformer.pl_model import MassFormerPL
 from frag_gnn.graff.pl_model import GrAFFPL
 from frag_gnn.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from frag_gnn.utils.pl_utils import ConsoleLogger
-from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, init_dataloader
+from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, GroupSampler, get_group_sampler, SpecMolFragDynamicBatchSampler
 from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset
 from frag_gnn.graff.dataset import SpecMolAnnDataset
 import frag_gnn.utils.misc_utils as misc_utils
@@ -81,6 +83,104 @@ def load_wandb_config(wandb_config_dp) -> dict:
 	else:
 		config_d = {}
 	return config_d
+
+
+def init_dataset(config_d):
+
+	if config_d["model_type"] == "frag_gnn":
+		dataset_cls = SpecMolFragDataset
+	elif config_d["model_type"] == "iceberg_gen":
+		dataset_cls = SpecMolMagmaGenDataset
+	elif config_d["model_type"] == "iceberg_inten":
+		dataset_cls = SpecMolMagmaIntenDataset
+	elif config_d["model_type"] == "graff":
+		dataset_cls = SpecMolAnnDataset
+	else:
+		assert config_d["model_type"] in ["neims","massformer"], config_d["model_type"]
+		dataset_cls = SpecMolDataset
+	
+	data_dict_types = dataset_cls.get_data_dict_types()
+	if config_d["num_workers"] > 0 and config_d["share_memory"]:
+		manager = Manager()
+		train_data_sds = {k: manager.dict() for k in data_dict_types}
+		val_data_sds = {k: manager.dict() for k in data_dict_types}
+	else:
+		train_data_sds = {k: dict() for k in data_dict_types}
+		val_data_sds = {k: dict() for k in data_dict_types}
+	train_ds = dataset_cls(
+		split="train",
+		**{**train_data_sds,**config_d})
+	val_ds = dataset_cls(
+		split="val",
+		**{**val_data_sds,**config_d})
+	# test_ds = dataset_cls(split="test",**config_d)
+ 
+	return train_ds, val_ds
+
+
+def init_dataloader(ds, config_d):
+
+	split = ds.split
+	assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), "Cannot use both group_sampler and simple_group_sampler"
+	dl_param_d = {
+		"dataset": ds,
+		"num_workers": config_d["num_workers"],
+		"collate_fn": ds.get_collate_fn(),
+		"pin_memory": config_d["pin_memory"] and (config_d["accelerator"] != "cpu")
+	}
+
+	if split in ["train", "val"]:	
+
+		# note: this generator will get overwritten at the beginning/ending of each training epoch
+		generator = th.Generator() 
+		if config_d["group_sampler"] and split == "train":
+			sampler = GroupSampler(
+				ds,
+				sample_k=config_d['group_sampler_max_per_group'],
+				generator=generator)
+		elif config_d["simple_group_sampler"] and split == "train":
+			sampler = get_group_sampler(
+				ds,
+				config_d["simple_group_sampler_type"],
+				config_d["simple_group_sampler_avg_per_group"],
+				generator)
+		elif split == "val":
+			sampler = SequentialSampler(ds)
+		else:
+			sampler = RandomSampler(ds, False, generator=generator)
+		# for batch sampler 
+		if config_d["dynamic_batch_sampler"]:
+			max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
+			if split == "train":
+				return_batch_at = max_batch_size
+			else:
+				return_batch_at = 0
+			batch_sampler = SpecMolFragDynamicBatchSampler(
+								ds, 
+								max_num = config_d["dynamic_batch_sampler_max"], 
+								limited_by = config_d["dynamic_batch_sampler_mode"], 
+								skip_too_big = True,
+								return_batch_at = return_batch_at,
+								sampler = sampler)
+			dl_param_d["batch_sampler"] = batch_sampler
+		else:
+			dl_param_d["sampler"] = sampler
+			if split == "train":
+				dl_param_d["batch_size"] = config_d["train_batch_size"]	
+				dl_param_d["drop_last"] = config_d["drop_last"]
+			else:
+				dl_param_d["batch_size"] = config_d["eval_batch_size"]
+				dl_param_d["drop_last"] = False
+		dl = DataLoader(**dl_param_d)
+
+	else:
+
+		dl_param_d["batch_size"] = config_d["eval_batch_size"]
+		dl_param_d["sampler"] = SequentialSampler(ds)
+		dl_param_d["drop_last"] = False
+		dl = DataLoader(**dl_param_d)
+
+	return dl
 
 
 def init_run(template_fp, custom_fp, wandb_mode, job_id):
@@ -283,21 +383,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# setup datasets
 	logging.info("setup dataset")
-	if config_d["model_type"] == "frag_gnn":
-		dataset_cls = SpecMolFragDataset
-	elif config_d["model_type"] == "iceberg_gen":
-		dataset_cls = SpecMolMagmaGenDataset
-	elif config_d["model_type"] == "iceberg_inten":
-		dataset_cls = SpecMolMagmaIntenDataset
-	elif config_d["model_type"] == "graff":
-		dataset_cls = SpecMolAnnDataset
-	else:
-		assert config_d["model_type"] in ["neims","massformer"], config_d["model_type"]
-		dataset_cls = SpecMolDataset
-		
-	train_ds = dataset_cls(split="train",**config_d)
-	val_ds = dataset_cls(split="val",**config_d)
-	# test_ds = dataset_cls(split="test",**config_d)
+	train_ds, val_ds = init_dataset(config_d)
 
 	# check config for sampler
 	if config_d["dynamic_batch_sampler"]:

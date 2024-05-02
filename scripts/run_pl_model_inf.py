@@ -1,6 +1,6 @@
-from frag_gnn.runner import load_config
+from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL
-from frag_gnn.dataset import SpecMolFragDataset, init_dataloader
+from frag_gnn.dataset import SpecMolFragDataset
 from frag_gnn.utils.misc_utils import to_device
 
 import torch as th

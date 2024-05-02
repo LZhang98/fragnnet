@@ -304,3 +304,4 @@ activation_checkpointing: False
 skip_extra_losses: False
 log_zero_fp16: null
 log_zero_fp32: null
+share_memory: False

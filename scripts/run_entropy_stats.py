@@ -1,6 +1,6 @@
-from frag_gnn.runner import load_config
+from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL
-from frag_gnn.dataset import SpecMolFragDataset, init_dataloader
+from frag_gnn.dataset import SpecMolFragDataset
 from frag_gnn.utils.misc_utils import scatter_reduce, scatter_argmax, EPS, booltype, scatter_masked_softmax, scatter_logsumexp
 from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference, select_model_vals, sparse_kl, log_mean, log_std
 

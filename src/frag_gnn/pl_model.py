@@ -1010,6 +1010,10 @@ class SpectrumPL(pl.LightningModule):
 				images=[data]
 			)
 
+	def on_train_epoch_start(self):
+
+		self._seed_dataloader(self.current_epoch)
+
 	def on_train_epoch_end(self):
 
 		# consolidate results
@@ -1019,12 +1023,8 @@ class SpectrumPL(pl.LightningModule):
 		# reset
 		self.train_results = None
 		self.train_counter = 0
-
-		if not self.hparams.automatic_optimization and self.hparams.dynamic_batch_sampler and self._cur_batch_size > 0:
-			# this is used for manul opt when lr_schedulers is not available from torch lightning
-			self._manual_opt()
-
-		super().on_train_epoch_end()
+		# seed dataloader
+		self._seed_dataloader(self.current_epoch+1)
 
 	def on_validation_epoch_end(self):
 		
@@ -1102,14 +1102,6 @@ class SpectrumPL(pl.LightningModule):
 			if hasattr(sampler, "_pre_compute_batches"):
 				# print("p2")
 				sampler._pre_compute_batches()
-
-	def on_train_epoch_start(self):
-
-		self._seed_dataloader(self.current_epoch)
-
-	def on_train_epoch_end(self):
-
-		self._seed_dataloader(self.current_epoch+1)	
 
 	def on_save_checkpoint(self, checkpoint):
 
@@ -1720,6 +1712,14 @@ class FragGNNPL(SpectrumPL):
 		
 		self.loss_fn = _loss_fn
 
+	def on_train_epoch_end(self):
+
+		if not self.hparams.automatic_optimization and self.hparams.dynamic_batch_sampler and self._cur_batch_size > 0:
+			# this is used for manul opt when lr_schedulers is not available from torch lightning
+			self._manual_opt()
+
+		super().on_train_epoch_end()
+
 	def _manual_opt(self):
 		""" run manual opt
 		"""
@@ -1887,7 +1887,7 @@ class NeimsPL(BinnedPL):
 
 def test_models():
 
-	from frag_gnn.runner import load_config
+	from frag_gnn.runner import load_config, init_dataset
 	from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset
 	from frag_gnn.utils.misc_utils import print_shapes
 	from frag_gnn.utils.misc_utils import to_device
@@ -1899,11 +1899,6 @@ def test_models():
 		"config/debug_um/debug_neims_auto_um.yml": NeimsPL,
 		"config/debug_m/debug_neims_auto_m.yml": NeimsPL
 	}
-	
-	model_cls_to_ds_cls = {
-		"NeimsPL": SpecMolDataset,
-		"FragGNNPL": SpecMolFragDataset
-	}
 
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
 
@@ -1912,8 +1907,7 @@ def test_models():
 		config_d = load_config(template_fp, custom_fp)
 		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
 
-		ds_cls = model_cls_to_ds_cls[pl_model_cls.__name__]
-		ds = ds_cls(split="train", **config_d)
+		ds = init_dataset(config_d)[0]
 		dl = th.utils.data.DataLoader(
 			ds,
 			batch_size=8,
