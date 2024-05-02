@@ -30,18 +30,18 @@ spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: True
+  preprocess: False #True
 mol_params:
   pyg: False
   graff: True
-  preprocess: True
+  preprocess: False #True
 ann_params:
   max_isotope: 3
   library_size: 10000
   num_eigs: 8
   filter_peaks: False
   filter_peaks_tol: 0.02
-  preprocess: True
+  preprocess: False #True
 # subsample_params:
 #   subsample_size: 0.25 # 0.05 is too small
 
@@ -53,23 +53,25 @@ ce_insert_merge: True
 
 # loss stuff
 loss_type: cross_entropy
-output_distribution: peak_marginal
+output_distribution: gaussian #peak_marginal
 sparse_cosine_similarity: True
 oos_loss: False
 skip_extra_losses: True # currently does nothing...
 predict_oos: True
 oos_tolerance_multiple: 1
+gaussian_renormalize: True
+pm_tolerance_multiple: 1
 
 # optimization stuff
 train_batch_size: 64
 eval_batch_size: 64
 accumulate_grad_batches: 2
-gradient_clip_val: 5.0
-lr: 0.01
+gradient_clip_val: 100.0
+lr: 0.0005 # 5e-4
 accelerator: gpu
 devices: 1
-min_epochs: 100 #5
-max_epochs: 100 #5
+min_epochs: 100
+max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
@@ -82,3 +84,5 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: True
 compile: True
+optimizer: adam
+weight_decay: 0.00001 # 1e-5

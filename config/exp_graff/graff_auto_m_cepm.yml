@@ -16,6 +16,7 @@ wandb_tags:
 - preload
 - preprocess
 - peak_maginal
+- pm_multiple_1
 
 # data stuff
 spec_fp: data/proc/debug_annot_6/spec_df.pkl
@@ -56,11 +57,12 @@ skip_extra_losses: True
 predict_oos: False
 oos_tolerance_multiple: 1
 gaussian_renormalize: True
+pm_tolerance_multiple: 1
 
 # optimization stuff
-train_batch_size: 256
-eval_batch_size: 256
-accumulate_grad_batches: 2
+train_batch_size: 128
+eval_batch_size: 128
+accumulate_grad_batches: 4
 gradient_clip_val: 100.0
 lr: 0.0005 # 5e-4
 accelerator: gpu
