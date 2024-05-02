@@ -268,7 +268,6 @@ ce_insert_type: none
 ce_insert_location: none
 ce_insert_merge: False
 ce_insert_size: 32
-# m_ce_insert_mlp_lin: False
 dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000

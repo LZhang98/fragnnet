@@ -1,4 +1,4 @@
-wandb_name: exp_ce_d3_auto_um_molembed
+wandb_name: d3_auto_um_molembed
 wandb_tags:
 - exp_ce
 - nist20
