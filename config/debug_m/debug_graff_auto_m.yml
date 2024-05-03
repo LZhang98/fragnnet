@@ -17,12 +17,13 @@ wandb_tags:
 - preprocess
 
 # data stuff
-spec_fp: data/proc/debug_small/spec_df.pkl
-mol_fp: data/proc/debug_small/mol_df.pkl
-split_dp: data/split/debug_small
-# spec_fp: data/proc/debug_annot_6/spec_df.pkl
-# mol_fp: data/proc/debug_annot_6/mol_df.pkl
+# spec_fp: data/proc/debug_small/spec_df.pkl
+# mol_fp: data/proc/debug_small/mol_df.pkl
+# split_dp: data/split/debug_small
+spec_fp: data/proc/debug_annot_6/spec_df.pkl
+mol_fp: data/proc/debug_annot_6/mol_df.pkl
 # split_dp: data/split/nist20_mona23_d4_wr00_inchikey_2 # needs to be _2
+split_dp: data/split/debug_graff
 ann_fp: data/proc/debug_annot_6/ann_df.pkl
 frag_params:
   pyg: False
