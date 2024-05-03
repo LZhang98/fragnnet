@@ -215,9 +215,11 @@ class SpectrumPL(pl.LightningModule):
 			elif metric_name == "true_oos_prob":
 				self.metric_min_max["true_oos_prob"] = None
 				self.auxiliary_metric_names.add("true_oos_prob")
+				compute_match_mzs = True
 			elif metric_name == "true_oos_e":
 				self.metric_min_max["true_oos_e"] = None
 				self.auxiliary_metric_names.add("true_oos_e")
+				compute_match_mzs = True
 			else:
 				raise ValueError(f"metric_name {metric_name} not recognized")
 

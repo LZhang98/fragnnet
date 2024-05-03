@@ -75,6 +75,7 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
+- true_oos_prob
 eval_mz_bin_res:
 - 0.01
 precision: 32
