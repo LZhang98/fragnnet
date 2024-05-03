@@ -39,7 +39,6 @@ class GrAFFPL(SpectrumPL):
 			dropout=self.hparams.graff_dropout,
 			min_probability=self.hparams.graff_min_probability,
 			min_mz=self.hparams.graff_min_mz,
-			isotopes=self.hparams.graff_isotopes,
 			node_feats=node_feats,
 			edge_feats=edge_feats
 		)

@@ -159,7 +159,6 @@ graff_eig_depth: 2
 graff_dropout: 0.1
 graff_min_probability: 0.0
 graff_min_mz: 0.0
-graff_isotopes: 3
 # other
 lr: 0.0001
 lr_schedule: False

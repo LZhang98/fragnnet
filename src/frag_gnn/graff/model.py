@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import torch_geometric as pyg
 
-from frag_gnn.utils.misc_utils import LOG_TWO, check_pyg_compile, check_pyg_full_compile
+from frag_gnn.utils.misc_utils import LOG_TWO, check_pyg_compile, check_pyg_full_compile, scatter_reduce
 from frag_gnn.graff.nn_utils import *
 
 class GrAFFModel(nn.Module):
@@ -21,7 +21,6 @@ class GrAFFModel(nn.Module):
 		dropout,
 		min_probability,
 		min_mz,
-		isotopes,
 		node_feats,
 		edge_feats,
 		**kwargs
@@ -39,8 +38,7 @@ class GrAFFModel(nn.Module):
 
 		self.vocab_size = vocab_size
 		self.num_isotope_types = num_isotope_types
-		# TODO: add collision energy
-		self.covariates_dim = 1
+		self.covariates_dim = 2
 		
 		# inference time only
 		self.min_probability = min_probability
@@ -105,8 +103,6 @@ class GrAFFModel(nn.Module):
 		self.isotope_shift = nn.Linear(decoder_dim, self.num_isotope_types)
 		self.clf = nn.Linear(decoder_dim, self.vocab_size)
 
-		self.isotopes = isotopes
-
 	def get_compile(self, **kwargs):
 
 		if check_pyg_full_compile():
@@ -135,6 +131,8 @@ class GrAFFModel(nn.Module):
 			ann_dup_idxs: th.Tensor,
 			ann_library_idxs: th.Tensor,
 			ann_batch_idxs: th.Tensor,
+			spec_nce: th.Tensor = None,
+			spec_nce_batch_idxs: th.Tensor = None,
 			**kwargs):
 
 		batch_size = len(mol_graff.ptr) - 1
@@ -157,7 +155,16 @@ class GrAFFModel(nn.Module):
 		z = pyg.nn.global_add_pool(x_mol * w, mol_graff.batch)
 		
 		# condition molecule representation on covariates
-		covariates = ann_isotope_mask.reshape(batch_size,1)
+		isotope_mask = ann_isotope_mask.reshape(batch_size,1)
+		ce = scatter_reduce(
+			spec_nce,
+			spec_nce_batch_idxs,
+			reduce="mean",
+			dim_size=batch_size,
+			include_self=False
+		)
+		ce = ce.reshape(batch_size,1)
+		covariates = th.cat([isotope_mask, ce], dim=1)
 		z = z + self.cov_emb(covariates)
 		# transform to spectrum representation
 		z = self.decoder(z)
