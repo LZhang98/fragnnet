@@ -227,7 +227,8 @@ def test_dataset():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_graff.yml"
+		"config/debug_um/debug_graff_auto_um.yml"
+		"config/debug_m/debug_graff_auto_m.yml"
 	]
 
 	for custom_fp in custom_fps:

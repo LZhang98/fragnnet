@@ -37,7 +37,7 @@ mol_params:
   preprocess: False #True
 ann_params:
   max_isotope: 3
-  library_size: 1000 #10000
+  library_size: 1000
   num_eigs: 8
   filter_peaks: False
   filter_peaks_tol: 0.02
@@ -53,7 +53,7 @@ ce_insert_merge: True
 
 # loss stuff
 loss_type: cross_entropy
-output_distribution: gaussian #peak_marginal
+output_distribution: peak_marginal
 sparse_cosine_similarity: True
 oos_loss: False
 skip_extra_losses: True # currently does nothing...
@@ -78,6 +78,7 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
+- true_oos_prob
 eval_mz_bin_res:
 - 0.01
 precision: 32

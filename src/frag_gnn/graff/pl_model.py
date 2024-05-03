@@ -124,7 +124,8 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug_m/debug_graff_auto_m.yml": GrAFFPL,
+		"config/debug_um/debug_graff_auto_um.yml": GrAFFPL,
+		"config/debug_m/debug_graff_auto_m.yml": GrAFFPL
 	}
 
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
