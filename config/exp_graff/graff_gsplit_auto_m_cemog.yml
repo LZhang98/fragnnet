@@ -1,4 +1,4 @@
-wandb_name: graff_gsplit_auto_um_cemog
+wandb_name: graff_gsplit_auto_m_cemog
 wandb_tags:
 - exp_graff
 - nist20
@@ -8,7 +8,7 @@ wandb_tags:
 - new_metrics
 - nodemlp
 - ce_embed
-- unmerged
+- merged
 - oos_multiple_1
 - gaussian_renormalize
 - b64x2
@@ -20,14 +20,14 @@ wandb_tags:
 # data stuff
 spec_fp: data/proc/debug_annot_6/spec_df.pkl
 mol_fp: data/proc/debug_annot_6/mol_df.pkl
-split_dp: data/split/debug_graff # needs to be _2
+split_dp: data/split/nist20_mona23_d4_wr00_inchikey_2 # needs to be _2
 ann_fp: data/proc/debug_annot_6/ann_df.pkl
 frag_params:
   pyg: False
 spec_params:
-  merge: False
+  merge: True
   nce: True
-  merge_keep_ces: False
+  merge_keep_ces: True
   preprocess: True
 mol_params:
   pyg: False
@@ -45,7 +45,7 @@ ann_params:
 model_type: graff
 ce_insert_type: embed
 ce_insert_location: mlp
-ce_insert_merge: False
+ce_insert_merge: True
 
 # loss stuff
 loss_type: cross_entropy
@@ -74,6 +74,7 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
+- true_oos_prob
 eval_mz_bin_res:
 - 0.01
 precision: 32
