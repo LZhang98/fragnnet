@@ -60,8 +60,8 @@ loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
 group_sampler: False
-simple_group_sampler: True
-train_sample_weight: group
+simple_group_sampler: False
+train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
