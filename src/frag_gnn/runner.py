@@ -110,17 +110,9 @@ def init_dataset(config_d):
 	train_ds = dataset_cls(
 		split="train",
 		**{**train_data_sds,**config_d})
-	if dataset_cls == SpecMolAnnDataset:
-		ann_d = {
-			"library_df": train_ds.library_df.copy(deep=True),
-		}
-	else:
-		ann_d = {
-			"library_df": None,
-		}
 	val_ds = dataset_cls(
 		split="val",
-		**{**val_data_sds,**ann_d,**config_d})
+		**{**val_data_sds,**config_d})
 	# test_ds = dataset_cls(split="test",**config_d)
  
 	return train_ds, val_ds

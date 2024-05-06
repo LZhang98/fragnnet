@@ -34,7 +34,6 @@ class SpecMolAnnDataset(SpecMolDataset):
 		mol_params: dict,
 		ann_fp: str,
 		ann_params: dict,
-		library_df: pd.DataFrame = None,
 		spec_pp_sd: dict = dict(),
 		mol_pp_sd: dict = dict(),
 		ann_pp_sd: dict = dict(),
@@ -54,8 +53,9 @@ class SpecMolAnnDataset(SpecMolDataset):
 		self.ann_fp = ann_fp
 		self.ann_params = ann_params
 		self._setup_ann(
-			library_df
-		)
+			spec_fp=spec_fp,
+			mol_fp=mol_fp,
+			split_dp=split_dp)
 		self._preprocess_spec(spec_pp_sd)
 		self._preprocess_mol(mol_pp_sd)
 		self._preprocess_ann(ann_pp_sd)
@@ -64,29 +64,33 @@ class SpecMolAnnDataset(SpecMolDataset):
 	def get_data_dict_types():
 		return ["spec_pp_sd", "mol_pp_sd", "ann_pp_sd"]
 
-	def _setup_ann(self, library_df):
+	def _setup_ann(self, spec_fp, mol_fp, split_dp):
 
+		um_spec_df = BaseDataset._setup_dfs(
+			spec_fp=spec_fp,
+			mol_fp=mol_fp,
+			split_dp=split_dp,
+			splits=self.ann_params["library_splits"],
+			subsample_params=self.subsample_params,
+			spec_params=self.spec_params)[2]
 		ann_df = pd.read_pickle(self.ann_fp)
 		# only fit it if it's in training mode
-		if self.split != "train":
-			assert library_df is not None
-			self.library_df = library_df
-		else:
-			assert library_df is None
-			library_df = fit_ann_library(
-				self.um_spec_df.copy(),
-				ann_df.copy(), 
-				self.ann_params["library_size"],
-				self.ann_params["max_isotope"])
-			self.library_df = library_df
+		assert self.ann_params["max_isotope"] >= 0, self.ann_params["max_isotope"]
+		self.num_isotopes = self.ann_params["max_isotope"] + 1
+		library_df = fit_ann_library(
+			um_spec_df.copy(),
+			ann_df.copy(), 
+			self.ann_params["library_size"],
+			self.ann_params["max_isotope"])
+		self.library_df = library_df
 		# setup mzs stuff
 		self.library_mzs = th.as_tensor(library_df["mzs"].values, dtype=th.float32)
-		self.library_mzs  = self.library_mzs.unsqueeze(1).repeat(1,self.ann_params["max_isotope"])
+		self.library_mzs  = self.library_mzs.unsqueeze(1).repeat(1,self.num_isotopes)
 		self.library_loss_mask = th.as_tensor(
 			self.library_df.loc[:,"kind"].apply(lambda x: int(x == "loss")).values,
 			dtype=th.float32)
-		self.library_loss_mask = self.library_loss_mask.unsqueeze(1).repeat(1,self.ann_params["max_isotope"])
-		for i in range(self.ann_params["max_isotope"]):
+		self.library_loss_mask = self.library_loss_mask.unsqueeze(1).repeat(1,self.num_isotopes)
+		for i in range(self.num_isotopes):
 			self.library_mzs[:,i] = self.library_mzs[:,i] + (-2*self.library_loss_mask[:,i]+1) * (i*NEUTRON_MASS)
 		self.library_loss_mask = self.library_loss_mask.flatten()
 		self.library_mzs = self.library_mzs.flatten()
@@ -130,7 +134,7 @@ class SpecMolAnnDataset(SpecMolDataset):
 		loss_formulae_df.loc[:,"formula"] = loss_formulae_df["formula"].apply(lambda formula: composition_to_string(prec_formula_c - Composition(formula=formula)))
 		both_formulae_df = product_formulae_df.merge(loss_formulae_df,on="formula",how="inner")
 		assert len(set(both_formulae_df["ann_id_x"])&set(both_formulae_df["ann_id_y"])) == 0
-		dup_mask = th.zeros([self.library_df.shape[0],self.ann_params["max_isotope"]],dtype=th.bool)
+		dup_mask = th.zeros([self.library_df.shape[0],self.num_isotopes],dtype=th.bool)
 		dup_mask[both_formulae_df["ann_id_x"].values,:] = True
 		dup_mask[both_formulae_df["ann_id_y"].values,:] = True
 		dup_mask = dup_mask.flatten()

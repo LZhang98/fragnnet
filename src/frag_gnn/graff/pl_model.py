@@ -28,7 +28,7 @@ class GrAFFPL(SpectrumPL):
 
 		self.model = GrAFFModel(
 			vocab_size=self.hparams.ann_params["library_size"],
-			num_isotope_types=self.hparams.ann_params["max_isotope"],
+			num_isotope_types=self.hparams.ann_params["max_isotope"]+1,
 			encoder_dim=self.hparams.graff_encoder_dim,
 			decoder_dim=self.hparams.graff_decoder_dim,
 			encoder_depth=self.hparams.graff_encoder_depth,

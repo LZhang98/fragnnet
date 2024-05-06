@@ -20,10 +20,10 @@ wandb_tags:
 - max_isotope_1
 
 # data stuff
-spec_fp: data/proc/debug_annot_6/spec_df.pkl
-mol_fp: data/proc/debug_annot_6/mol_df.pkl
+spec_fp: data/proc/nist20mona23v2/spec_df.pkl
+mol_fp: data/proc/nist20mona23v2/mol_df.pkl
 split_dp: data/split/nist20_mona23_d4_wr00_inchikey_2 # needs to be _2
-ann_fp: data/proc/debug_annot_6/ann_df.pkl
+ann_fp: data/proc/nist20mona23v2/ann_df.pkl
 frag_params:
   pyg: False
 spec_params:
@@ -41,6 +41,8 @@ ann_params:
   num_eigs: 8
   filter_peaks: False
   filter_peaks_tol: 0.02
+  library_splits:
+    - train
   preprocess: True
 
 # model stuff
@@ -76,8 +78,11 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
+- true_oos_prob
 eval_mz_bin_res:
 - 0.01
+- 0.05
+- 0.1
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
