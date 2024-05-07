@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import math
 from typing import Callable
 
-from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize
+from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize, TOLERANCE_MIN_MZ
 from frag_gnn.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func
 
 # LOG_TRUNC_FACTOR = {
@@ -53,7 +53,7 @@ def mog_ce_fn(
 		**kwargs) -> th.Tensor:
 
 	if relative:
-		b_stds = th.clamp(b_pred_mzs,min=200.)*tolerance
+		b_stds = th.clamp(b_pred_mzs,min=TOLERANCE_MIN_MZ)*tolerance
 	else:
 		b_stds = tolerance*th.ones_like(b_pred_mzs)
 	b_vars = b_stds**2
@@ -243,7 +243,7 @@ def sparse_cross_entropy_vec(
 
 		# TODO: move this before the loop?
 		if relative:
-			bl_stds = th.clamp(bl_pred_mzs,min=200.)*tolerance
+			bl_stds = th.clamp(bl_pred_mzs,min=TOLERANCE_MIN_MZ)*tolerance
 		else:
 			bl_stds = tolerance*th.ones_like(bl_pred_mzs)
 		bl_vars = bl_stds**2

@@ -6,7 +6,7 @@ import scipy.optimize
 from typing import Tuple, Union
 
 from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d, safelog, scatter_logsumexp
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d, safelog, scatter_logsumexp, TOLERANCE_MIN_MZ
 
 # TODO: actually fill these out
 PREC_TYPES = [
@@ -425,7 +425,7 @@ def calculate_match_mzs(
 		pred_mzs:th.Tensor,
 		tolerance:float=1e-5,
 		relative:bool=True,
-		divisor_mz_floor:float=200
+		divisor_mz_floor:float=TOLERANCE_MIN_MZ
 	) -> th.Tensor:
 	"""
 	Method to match two spectra based on m/z, return a N x M matrix, where N is number of mz in pred_mzs, M is number of mz in pred_mzs
