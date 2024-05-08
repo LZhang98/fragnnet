@@ -104,3 +104,4 @@ mlp_normalization: none
 mlp_hidden_size: 256
 mlp_dropout: 0.1
 train_batch_size: 32
+accumulate_grad_batches: 1
