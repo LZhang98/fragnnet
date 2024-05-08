@@ -1,4 +1,4 @@
-wandb_name: d3_new_sweep_iblhsda4
+wandb_name: d4_sweep_inchikey_7m4eybdo
 wandb_tags:
 - sweep_opt
 - nist20
@@ -6,25 +6,26 @@ wandb_tags:
 - wr00
 - inchikey
 - new_proc
-- fraggnn_d3
+- fraggnn_d4
+- dynamic_sampler
 - new_metrics
 - nodemlp
-- ce_embed
-- merged
+- m_nce_embed
 - oos_multiple_1
 - gaussian_renormalize
-- b64x2
-- no_auxiliary_scores
 - vectorized_loss
 - lb16
 - preload
 - preprocess
+- new_no_edges
+- skip_extra_losses
+- binned_cosine_similarity
 
 # data stuff
 spec_fp: data/proc/nist20mona23v2/spec_df.pkl
 mol_fp: data/proc/nist20mona23v2/mol_df.pkl
 split_dp: data/split/nist20mona23v2_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23v2_d3_h4_isoFalse_nb3/dags
+frag_dp: data/frag/nist20mona23v2_d4_h4_isoFalse_nb3/dags
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False
@@ -41,7 +42,7 @@ mol_params:
 
 # model stuff
 frag_gnn_type: NodeMLP
-num_depth: 4
+num_depth: 5
 num_hs: 4
 ce_insert_type: embed
 ce_insert_location: mlp
@@ -65,9 +66,9 @@ train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 32
-eval_batch_size: 32
-accumulate_grad_batches: 4
+train_batch_size: 128
+eval_batch_size: 128
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
@@ -84,24 +85,23 @@ eval_mz_bin_res:
 - 0.01
 precision: 32
 use_tensor_float32: True
-automatic_optimization: True
-dynamic_batch_sampler: False
+automatic_optimization: False
+dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
 compile: True
 
 # sweep stuff
-lr: 0.000515
-weight_decay: 0.001
-mol_normalization: graph
+lr: 0.00123
+weight_decay: 0.01
+mol_normalization: batch
 mol_hidden_size: 256
-mol_dropout: 0.1
+mol_dropout: 0.3
 frag_hidden_size: 256
-frag_normalization: batch
-frag_embed_combine: avg
-frag_pool_combine: add
-frag_dropout: 0.1
-mlp_normalization: none
+frag_normalization: layer
+frag_embed_combine: cat
+frag_pool_combine: subtract
+frag_dropout: 0.4
+mlp_normalization: layer
 mlp_hidden_size: 256
-mlp_dropout: 0.1
-train_batch_size: 32
-accumulate_grad_batches: 1
+mlp_dropout: 0.3
+train_batch_size: 128
