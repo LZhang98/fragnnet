@@ -1,7 +1,7 @@
-wandb_name: nist20_inchikey_fraggnn_d3_new_s3
-wandb_group: nist20_inchikey_fraggnn_d3_new
+wandb_name: nist20_inchikey_fraggnn_d3_orig_s0
+wandb_group: nist20_inchikey_fraggnn_d3_orig
 wandb_tags:
-- splits_2
+- splits
 - nist20
 - d4
 - wr00
@@ -20,17 +20,16 @@ wandb_tags:
 - lb16
 - preload
 - preprocess
-- s3
-- xi6bawy4
+- s0
 
 # seed
-seed: 103976
+seed: 397623
 
 # data stuff
-spec_fp: data/proc/nist20mona23v2/spec_df.pkl
-mol_fp: data/proc/nist20mona23v2/mol_df.pkl
-split_dp: data/split/nist20mona23v2_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23v2_d3_h4_isoFalse_nb3/dags
+spec_fp: data/proc/nist20mona23/spec_df.pkl
+mol_fp: data/proc/nist20mona23/mol_df.pkl
+split_dp: data/split/nist20_mona23_d4_wr00_inchikey
+frag_dp: data/frag/nist20mona23_d3_h4_isoFalse_nb2/dags
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False
@@ -54,17 +53,6 @@ ce_insert_location: mlp
 ce_insert_merge: True
 mol_pool_type: mean
 frag_pool_type: mean
-mol_normalization: batch
-mol_hidden_size: 256
-mol_dropout: 0.2
-frag_hidden_size: 256
-frag_normalization: graph
-frag_embed_combine: avg
-frag_pool_combine: subtract
-frag_dropout: 0.1
-mlp_normalization: layer
-mlp_hidden_size: 64
-mlp_dropout: 0.2
 
 # loss stuff
 mask_null_formula: False
@@ -86,8 +74,7 @@ train_batch_size: 32
 eval_batch_size: 32
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
-lr: 0.0003033
-weight_decay: 0.01
+lr: 0.0004
 accelerator: gpu
 devices: 1
 min_epochs: 100

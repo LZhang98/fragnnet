@@ -1,8 +1,8 @@
-wandb_name: nist20_inchikey_fraggnn_d4_new_s0
-wandb_group: nist20_inchikey_fraggnn_d4_new
+wandb_name: nist20v2_inchikey_fraggnn_d4_new_s0
+wandb_group: nist20v2_inchikey_fraggnn_d4_new
 wandb_tags:
-- splits_2
-- nist20
+- splits
+- nist20v2
 - d4
 - wr00
 - inchikey

@@ -1,20 +1,20 @@
-wandb_name: nist20_inchikey_fraggnn_d4_orig_s2
-wandb_group: nist20_inchikey_fraggnn_d4_orig
+wandb_name: nist20_inchikey_fraggnn_d3_orig_s2
+wandb_group: nist20_inchikey_fraggnn_d3_orig
 wandb_tags:
-- splits_2
+- splits
 - nist20
 - d4
 - wr00
 - inchikey
 - new_proc
-- fraggnn_d4
+- fraggnn_d3
 - new_metrics
 - nodemlp
 - ce_embed
 - merged
 - oos_multiple_1
 - gaussian_renormalize
-- b128x1
+- b32x4
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
@@ -29,7 +29,7 @@ seed: 444303
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
 split_dp: data/split/nist20_mona23_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23_d4_h4_isoFalse_nb2/dags
+frag_dp: data/frag/nist20mona23_d3_h4_isoFalse_nb2/dags
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False
@@ -46,7 +46,7 @@ mol_params:
 
 # model stuff
 frag_gnn_type: NodeMLP
-num_depth: 5
+num_depth: 4
 num_hs: 4
 ce_insert_type: embed
 ce_insert_location: mlp
@@ -70,9 +70,9 @@ train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 128
-eval_batch_size: 128
-accumulate_grad_batches: 1
+train_batch_size: 64
+eval_batch_size: 64
+accumulate_grad_batches: 2
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
@@ -89,7 +89,7 @@ eval_mz_bin_res:
 - 0.01
 precision: 32
 use_tensor_float32: True
-automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+automatic_optimization: True
+dynamic_batch_sampler: False
 pl_enable_progress_bar: True
 compile: True
