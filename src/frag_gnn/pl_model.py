@@ -49,10 +49,12 @@ class SpectrumPL(pl.LightningModule):
 		if self.hparams.loss_tolerance_rel is not None:
 			self.tolerance = self.hparams.loss_tolerance_rel
 			self.relative = True
+			self.tolerance_min_mz = self.hparams.loss_tolerance_min_mz
 		else:
 			assert self.hparams.loss_tolerance_abs is not None
 			self.tolerance = self.hparams.loss_tolerance_abs
 			self.relative = False
+			self.tolerance_min_mz = None
 
 	def _setup_loss_fn(self):
 		raise NotImplementedError
@@ -367,7 +369,8 @@ class SpectrumPL(pl.LightningModule):
 						b_true_mzs,
 						b_pred_mzs,
 						tolerance=self.tolerance,
-						relative=self.relative
+						relative=self.relative,
+						tolerance_min_mz=self.tolerance_min_mz
 					)
 					b_true_match_mask = th.any(b_match_mask,dim=1)
 					b_pred_match_mask = th.any(b_match_mask,dim=0)
@@ -384,20 +387,23 @@ class SpectrumPL(pl.LightningModule):
 						b_true_mzs_r,
 						b_true_prec_mz,
 						tolerance=self.tolerance,
-						relative=self.relative
+						relative=self.relative,
+						tolerance_min_mz=self.tolerance_min_mz
 					).squeeze(1)
 					b_pred_prec_mask_r = calculate_match_mzs(
 						b_pred_mzs_r,
 						b_true_prec_mz,
 						tolerance=self.tolerance,
-						relative=self.relative
+						relative=self.relative,
+						tolerance_min_mz=self.tolerance_min_mz
 					).squeeze(1)
 					# match
 					b_match_mask_r = calculate_match_mzs(
 						b_true_mzs_r,
 						b_pred_mzs_r,
 						tolerance=self.tolerance,
-						relative=self.relative
+						relative=self.relative,
+						tolerance_min_mz=self.tolerance_min_mz
 					)
 					b_true_match_mask_r = th.any(b_match_mask_r,dim=1)
 					b_pred_match_mask_r = th.any(b_match_mask_r,dim=0)
@@ -1325,14 +1331,15 @@ class FragGNNPL(SpectrumPL):
 
 		# cross entropy
 		sparse_ce_fn = get_sparse_cross_entropy_fn(
-			self.hparams.output_distribution,
-			self.hparams.loss_vectorized,
-			self.tolerance,
-			self.relative,
-			self.hparams.oos_tolerance_multiple,
-			self.hparams.gaussian_renormalize,
-			self.hparams.pm_tolerance_multiple,
-			self.hparams.loss_batch_size
+			dist=self.hparams.output_distribution,
+			vectorized=self.hparams.loss_vectorized,
+			tolerance=self.tolerance,
+			relative=self.relative,
+			tolerance_min_mz=self.tolerance_min_mz,
+			oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
+			gaussian_renormalize=self.hparams.gaussian_renormalize,
+			pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
+			loss_batch_size=self.hparams.loss_batch_size
 		)
 		# edge loss
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)

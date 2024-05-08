@@ -12,6 +12,7 @@ import cairosvg
 
 from frag_gnn.utils.data_utils import mol_from_smiles
 from frag_gnn.utils.spec_utils import calculate_match_mzs
+from frag_gnn.utils.misc_utils import TOLERANCE_MIN_MZ
 
 EPS = np.finfo(np.float32).eps
 
@@ -172,6 +173,7 @@ def plot_spectra_sparse(
 		match_peaks=True,
 		match_tolerance=1e-5,
 		match_relative=True,
+		match_tolerance_min_mz=TOLERANCE_MIN_MZ,
 		return_data=False
 	):
 
@@ -244,7 +246,8 @@ def plot_spectra_sparse(
 			true_mzs,
 			pred_mzs,
 			tolerance=match_tolerance,
-			relative=match_relative
+			relative=match_relative,
+			tolerance_min_mz=match_tolerance_min_mz
 		)
 		mz_mask = np.any(mz_match_matrix,axis=1)
 		# print(mz_mask.sum())

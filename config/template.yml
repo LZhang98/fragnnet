@@ -175,6 +175,7 @@ loss_vectorized: False
 loss_tolerance_rel: 0.00001 # 10 ppm
 loss_tolerance_abs: #0.001
 loss_batch_size: 32
+loss_tolerance_min_mz: 200.0
 auxiliary_scores:
   - cos_sim
   - recall

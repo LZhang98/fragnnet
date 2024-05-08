@@ -48,12 +48,13 @@ def mog_ce_fn(
 		b_pred_logprobs: th.Tensor,
 		relative: bool,
 		tolerance: float,
+		tolerance_min_mz: float,
 		tolerance_multiple: float,
 		gaussian_renormalize: bool,
 		**kwargs) -> th.Tensor:
 
 	if relative:
-		b_stds = th.clamp(b_pred_mzs,min=TOLERANCE_MIN_MZ)*tolerance
+		b_stds = th.clamp(b_pred_mzs,min=tolerance_min_mz)*tolerance
 	else:
 		b_stds = tolerance*th.ones_like(b_pred_mzs)
 	b_vars = b_stds**2
@@ -82,13 +83,15 @@ def pm_ce_fn(
 		relative: bool,
 		tolerance: float,
 		tolerance_multiple: float,
+		tolerance_min_mz: float,
 		**kwargs) -> th.Tensor:
 
 	b_match_mask = calculate_match_mzs(
 		b_true_mzs,
 		b_pred_mzs,
 		tolerance=tolerance*tolerance_multiple,
-		relative=relative
+		relative=relative,
+		tolerance_min_mz=tolerance_min_mz
 	)
 	b_logprobs = th.logsumexp(
 		b_pred_logprobs.reshape(1,-1)*b_match_mask.float() + LOG_ZERO(b_pred_logprobs.dtype)*(~b_match_mask).float(),
@@ -106,6 +109,7 @@ def sparse_cross_entropy_seq(
 		ce_fn: Callable,
 		tolerance: float,
 		relative: bool,
+		tolerance_min_mz: float,
 		tolerance_multiple: int,
 		gaussian_renormalize: bool) -> th.Tensor:
 	"""compute sparse cross entropy in squence
@@ -151,7 +155,8 @@ def sparse_cross_entropy_seq(
 			b_true_mzs,
 			b_pred_mzs,
 			tolerance=tolerance_multiple*tolerance,
-			relative=relative
+			relative=relative,
+			tolerance_min_mz=tolerance_min_mz
 		)
 		if tolerance_multiple == -1:
 			b_true_match_mask = th.ones_like(b_true_mzs,dtype=th.bool)
@@ -167,6 +172,7 @@ def sparse_cross_entropy_seq(
 			b_pred_logprobs=b_pred_logprobs,
 			relative=relative,
 			tolerance=tolerance,
+			tolerance_min_mz=tolerance_min_mz,
 			tolerance_multiple=tolerance_multiple,
 			gaussian_renormalize=gaussian_renormalize)
 		b_ios_ce = th.sum(b_true_match_mask.float() * -th.exp(b_true_logprobs) * b_ios_logprobs)
@@ -192,6 +198,7 @@ def sparse_cross_entropy_vec(
 		pred_oos_logprobs: th.Tensor,
 		tolerance: float,
 		relative: bool,
+		tolerance_min_mz: float,
 		oos_tolerance_multiple: int,
 		gaussian_renormalize: bool,
 		loss_batch_size: int) -> th.Tensor:
@@ -234,7 +241,8 @@ def sparse_cross_entropy_vec(
 			bl_true_mzs,
 			bl_pred_mzs,
 			tolerance=oos_tolerance_multiple*tolerance,
-			relative=relative
+			relative=relative,
+			tolerance_min_mz=tolerance_min_mz
 		)
 		bl_both_mask = bl_batch_mask & bl_match_mask
 		del bl_batch_mask, bl_match_mask
@@ -243,7 +251,7 @@ def sparse_cross_entropy_vec(
 
 		# TODO: move this before the loop?
 		if relative:
-			bl_stds = th.clamp(bl_pred_mzs,min=TOLERANCE_MIN_MZ)*tolerance
+			bl_stds = th.clamp(bl_pred_mzs,min=tolerance_min_mz)*tolerance
 		else:
 			bl_stds = tolerance*th.ones_like(bl_pred_mzs)
 		bl_vars = bl_stds**2
@@ -287,6 +295,7 @@ def get_sparse_cross_entropy_fn(
 		vectorized: bool,
 		tolerance: float,
 		relative: bool,
+		tolerance_min_mz: float,
 		oos_tolerance_multiple: float,
 		gaussian_renormalize: bool,
 		pm_tolerance_multiple: float,
@@ -305,6 +314,7 @@ def get_sparse_cross_entropy_fn(
 			*args,
 			tolerance=tolerance,
 			relative=relative,
+			tolerance_min_mz=tolerance_min_mz,
 			oos_tolerance_multiple=oos_tolerance_multiple,
 			gaussian_renormalize=gaussian_renormalize,
 			loss_batch_size=loss_batch_size
@@ -319,6 +329,7 @@ def get_sparse_cross_entropy_fn(
 			ce_fn=ce_fn,
 			tolerance=tolerance,
 			relative=relative,
+			tolerance_min_mz=tolerance_min_mz,
 			tolerance_multiple=tolerance_multiple,
 			gaussian_renormalize=gaussian_renormalize,
 		)
@@ -499,6 +510,7 @@ def sparse_cosine_distance_hungarian(
 		pred_batch_idxs: th.Tensor,
 		tolerance: float=1e-5,
 		relative: bool=True,
+		tolerance_min_mz: float=TOLERANCE_MIN_MZ,
 		log_distance: bool=False) -> th.Tensor:
 
 	# round peaks
@@ -531,7 +543,8 @@ def sparse_cosine_distance_hungarian(
 			b_true_mzs,
 			b_pred_mzs,
 			tolerance=tolerance,
-			relative=relative
+			relative=relative,
+			tolerance_min_mz=tolerance_min_mz
 		)
 		b_true_match_mzs = th.any(b_match_mzs,dim=1)
 		b_pred_match_mzs = th.any(b_match_mzs,dim=0)

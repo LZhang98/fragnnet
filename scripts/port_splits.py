@@ -29,7 +29,10 @@ if __name__ == "__main__":
 
         old_split_fp = os.path.join(args.old_split_dp, f"{split}_ids.csv")
         new_split_fp = os.path.join(args.new_split_dp, f"{split}_ids.csv")
-        assert os.path.isfile(old_split_fp), old_split_fp
+        if split == "secondary" and not os.path.isfile(old_split_fp):
+            continue
+        else:
+            assert os.path.isfile(old_split_fp), old_split_fp
         assert not os.path.isfile(new_split_fp), new_split_fp
 
         old_split_df = pd.read_csv(old_split_fp)

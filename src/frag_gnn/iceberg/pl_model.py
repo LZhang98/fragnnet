@@ -494,14 +494,15 @@ class IcebergIntenPL(SpectrumPL):
 
 		# cross entropy
 		sparse_ce_fn = get_sparse_cross_entropy_fn(
-			self.hparams.output_distribution,
-			self.hparams.loss_vectorized,
-			self.tolerance,
-			self.relative,
-			self.hparams.oos_tolerance_multiple,
-			self.hparams.gaussian_renormalize,
-			self.hparams.pm_tolerance_multiple,
-			self.hparams.loss_batch_size
+			dist=self.hparams.output_distribution,
+			vectorized=self.hparams.loss_vectorized,
+			tolerance=self.tolerance,
+			relative=self.relative,
+			tolerance_min_mz=self.tolerance_min_mz,
+			oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
+			gaussian_renormalize=self.hparams.gaussian_renormalize,
+			pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
+			loss_batch_size=self.hparams.loss_batch_size
 		)
 
 		# cosine distance
@@ -548,6 +549,7 @@ class IcebergIntenPL(SpectrumPL):
 					pred_batch_idxs,
 					tolerance=self.tolerance,
 					relative=self.relative,
+					tolerance_min_mz=self.tolerance_min_mz,
 					log_distance=log_distance
 				)
 
