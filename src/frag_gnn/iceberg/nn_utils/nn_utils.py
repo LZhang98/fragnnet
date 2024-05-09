@@ -324,7 +324,7 @@ class MLPBlocks(nn.Module):
 			self.bn_mids = get_clones(bn, num_layers - 1)
 
 	def safe_apply_bn(self, x, bn):
-		"""transpose and untranspose after linear for 3 dim items to us
+		"""transpose and untranspose after linear for 3 dim items to use
 		batchnorm"""
 		temp_shape = x.shape
 		if len(x.shape) == 2:
@@ -353,7 +353,7 @@ class MLPBlocks(nn.Module):
 				output = self.safe_apply_bn(output, self.bn_mids[layer_index])
 
 			if self.use_residuals:
-				output += old_op
+				output = output + old_op
 				old_op = output
 
 		if self.output_layer is not None:
