@@ -51,7 +51,7 @@ eval_batch_size: 32
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.000736
-weight_decay: 0.0000001 # 1e-7
+weight_decay: 0.0000001
 accelerator: gpu
 devices: 1
 min_epochs: 100
