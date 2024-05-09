@@ -251,11 +251,21 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 				text = f"{wandb.run.id};{os.path.abspath(wandb.run.dir)}"
 				job_id_file.write(text)
 		# update config results (primarily for wandb)
+		# configs can be nested up to 2 levels
 		for k in list(config_d.keys()):
 			if k in wandb.config:
-				if config_d[k] != wandb.config[k]:
-					print(f"> config diff -- {k}: {config_d[k]} vs {wandb.config[k]}")
-				config_d[k] = wandb.config[k]
+				if isinstance(config_d[k],dict):
+					# nested
+					assert isinstance(wandb.config[k],dict)
+					for kk in list(config_d[k].keys()):
+						if kk in wandb.config[k]:
+							if config_d[k][kk] != wandb.config[k][kk]:
+								print(f"> config diff -- {k}->{kk}: {config_d[k][kk]} vs {wandb.config[k][kk]}")
+							config_d[k][kk] = wandb.config[k][kk]
+				else:
+					if config_d[k] != wandb.config[k]:
+						print(f"> config diff -- {k}: {config_d[k]} vs {wandb.config[k]}")
+					config_d[k] = wandb.config[k]
 		loggers.append(wandb_logger)
 	else:
 		is_resume = False
