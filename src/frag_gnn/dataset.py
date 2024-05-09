@@ -143,15 +143,12 @@ class BaseDataset(Dataset):
 		# preload and pre-process spectra
 		if self.spec_params["preprocess"]:
 			self.spec_datas = spec_pp_sd
-			# spec_datas = {}
 			total_spec_data_size = 0
 			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess spec",total=len(self.spec_df)):
 				spec_data = self._process_spec(spec_entry)
 				total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
 				self.spec_datas[idx] = spec_data
-				# spec_datas[idx] = spec_data
 			print(f"> total_spec_data_size: {total_spec_data_size/1e6:.2f} MB")
-			# self.spec_datas.update(spec_datas)
 
 	@staticmethod
 	def _get_mzs_ints(peaks):
@@ -508,7 +505,6 @@ class SpecMolFragDataset(SpecMolDataset):
 			spec_data = self.spec_datas[idx].copy()
 		else:
 			spec_data = self._process_spec(spec_entry)
-		spec_data = self._process_spec(spec_entry)
 		if self.mol_params["preprocess"]:
 			mol_data = self.mol_datas[mol_id].copy()
 		else:
