@@ -315,7 +315,7 @@ class SpecMolDataset(BaseDataset):
 	):
 
 		BaseDataset.__init__(self)
-		BaseDataset._base_init(
+		self._base_init(
 			spec_fp=spec_fp,
 			mol_fp=mol_fp,
 			split_dp=split_dp,

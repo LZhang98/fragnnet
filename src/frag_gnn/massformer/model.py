@@ -1,12 +1,13 @@
 import torch as th
 import torch.nn as nn
 
+from frag_gnn.model import CEModel
 from frag_gnn.massformer.nn_utils import GFv2Embedder
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.utils.misc_utils import scatter_reduce
 
 
-class MassFormerModel(nn.Module):
+class MassFormerModel(CEModel):
 
 	def __init__(
 		self, 
@@ -19,17 +20,23 @@ class MassFormerModel(nn.Module):
 		ff_prec_mz_offset: int,
 		ff_bidirectional: bool,
 		ff_output_map_size: int,
-		ce_insert_mlp: bool,
-		ce_insert_mlp_lin: bool,
-		m_ce_insert_mlp_embed: bool,
-		m_ce_insert_mlp_bin: bool,
-		int_embedder: str,
 		mf_fix_num_pt_layers: int,
 		mf_reinit_num_pt_layers: int,
 		mf_reinit_layernorm: bool,
+		int_embedder: str,
+		ce_insert_type: str,
+		ce_insert_location: str,
+		ce_insert_merge: bool,
+		ce_insert_size: int,
 	):
 		
-		super().__init__()
+		super().__init__(
+			int_embedder=int_embedder,
+			ce_insert_type=ce_insert_type,
+			ce_insert_location=ce_insert_location,
+			ce_insert_merge=ce_insert_merge,
+			ce_insert_size=ce_insert_size,
+		)
 
 		self.gf = GFv2Embedder(
 			fix_num_pt_layers=mf_fix_num_pt_layers,
@@ -37,6 +44,8 @@ class MassFormerModel(nn.Module):
 			reinit_layernorm=mf_reinit_layernorm,
 		)
 		self.mlp_input_dim = self.gf.get_embed_dim()
+
+		self._setup_ce()
 		self.mlp_input_dim += self.ce_mlp_input_dim
 
 		self.ffn = SpecFFN(
@@ -51,6 +60,10 @@ class MassFormerModel(nn.Module):
 			use_residuals=mlp_use_residuals,
 			output_map_size=ff_output_map_size
 		)
+
+	def _location_check(self):
+
+		assert self.ce_insert_location == "mlp", f"ce_insert_location={self.ce_insert_location} not supported"
 
 	def get_split_params(self):
 
@@ -85,7 +98,6 @@ class MassFormerModel(nn.Module):
 			"x": mol_mf_x,
 			"edge_input": mol_mf_edge_input,
 			"y": mol_mf_y,
-
 		}
 		fh = self.gf(gf_d,perturb=mf_perturb)
 		batch_size = fh.shape[0]
