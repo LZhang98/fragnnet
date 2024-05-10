@@ -1,4 +1,4 @@
-wandb_name: debug_iceberg_gen
+wandb_name: debug_iceberg_gen_m
 wandb_tags:
 - debug
 

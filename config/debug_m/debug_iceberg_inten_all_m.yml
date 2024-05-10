@@ -1,4 +1,4 @@
-wandb_name: debug_iceberg_inten_all
+wandb_name: debug_iceberg_inten_all_m
 wandb_tags:
 - debug
 

@@ -1,4 +1,4 @@
-wandb_name: debug_massformer
+wandb_name: debug_massformer_m
 wandb_tags:
 - debug
 - nist20v2
