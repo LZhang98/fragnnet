@@ -59,7 +59,7 @@ lr_decay_rate: 0.7214
 lr_warmup_steps: 1000
 lr_decay_steps: 5000
 debug_overfit: False
-upload_checkpoints: True
+upload_checkpoints: False
 checkpoint_metric: val_loss_epoch/mean
 checkpoint_metric_mode: min
 auxiliary_scores: []
