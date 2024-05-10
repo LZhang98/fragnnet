@@ -110,17 +110,9 @@ def init_dataset(config_d):
 	train_ds = dataset_cls(
 		split="train",
 		**{**train_data_sds,**config_d})
-	if dataset_cls == SpecMolAnnDataset:
-		ann_d = {
-			"library_df": train_ds.library_df.copy(deep=True),
-		}
-	else:
-		ann_d = {
-			"library_df": None,
-		}
 	val_ds = dataset_cls(
 		split="val",
-		**{**val_data_sds,**ann_d,**config_d})
+		**{**val_data_sds,**config_d})
 	# test_ds = dataset_cls(split="test",**config_d)
  
 	return train_ds, val_ds
@@ -259,11 +251,21 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 				text = f"{wandb.run.id};{os.path.abspath(wandb.run.dir)}"
 				job_id_file.write(text)
 		# update config results (primarily for wandb)
+		# configs can be nested up to 2 levels
 		for k in list(config_d.keys()):
 			if k in wandb.config:
-				if config_d[k] != wandb.config[k]:
-					print(f"> config diff -- {k}: {config_d[k]} vs {wandb.config[k]}")
-				config_d[k] = wandb.config[k]
+				if isinstance(config_d[k],dict):
+					# nested
+					assert isinstance(wandb.config[k],dict)
+					for kk in list(config_d[k].keys()):
+						if kk in wandb.config[k]:
+							if config_d[k][kk] != wandb.config[k][kk]:
+								print(f"> config diff -- {k}->{kk}: {config_d[k][kk]} vs {wandb.config[k][kk]}")
+							config_d[k][kk] = wandb.config[k][kk]
+				else:
+					if config_d[k] != wandb.config[k]:
+						print(f"> config diff -- {k}: {config_d[k]} vs {wandb.config[k]}")
+					config_d[k] = wandb.config[k]
 		loggers.append(wandb_logger)
 	else:
 		is_resume = False

@@ -21,14 +21,14 @@ class MassFormerPL(BinnedPL):
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
 			ff_output_map_size=self.hparams.ff_output_map_size,
-			ce_insert_mlp=self.hparams.ce_insert_mlp,
-			ce_insert_mlp_lin=self.hparams.ce_insert_mlp_lin,
-			m_ce_insert_mlp_embed=self.hparams.m_ce_insert_mlp_embed,
-			m_ce_insert_mlp_bin=self.hparams.m_ce_insert_mlp_bin,
-			int_embedder=self.hparams.int_embedder,
 			mf_fix_num_pt_layers=self.hparams.mf_fix_num_pt_layers,
 			mf_reinit_num_pt_layers=self.hparams.mf_reinit_num_pt_layers,
 			mf_reinit_layernorm=self.hparams.mf_reinit_layernorm,
+			int_embedder=self.hparams.int_embedder,
+			ce_insert_type=self.hparams.ce_insert_type,
+			ce_insert_location=self.hparams.ce_insert_location,
+			ce_insert_merge=self.hparams.ce_insert_merge,
+			ce_insert_size=self.hparams.ce_insert_size,
 		)
 
 		assert self.hparams.automatic_optimization
@@ -102,28 +102,23 @@ class MassFormerPL(BinnedPL):
 def test_massformer():
 
 	from frag_gnn.runner import load_config
-	from frag_gnn.dataset import SpecMolFragDataset
+	from frag_gnn.dataset import SpecMolDataset
 	from frag_gnn.utils.misc_utils import print_shapes
 	from frag_gnn.utils.misc_utils import to_device
 
 	template_fp = "config/template.yml"
-	custom_fps = [
-		"config/debug/debug_d3_massformer.yml",
-		"config/debug/debug_d3_massformer_mnce.yml"
-	]
-	pl_model_clses = [
-		MassFormerPL,
-		MassFormerPL
-	]
+	custom_fp_to_model_cls = {
+		"config/debug_m/debug_massformer.yml": MassFormerPL
+	}
 
-	for custom_fp, pl_model_cls in zip(custom_fps,pl_model_clses):
+	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
 
 		print(custom_fp)
 
 		config_d = load_config(template_fp, custom_fp)
 		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
 
-		ds = SpecMolFragDataset(split="train", **config_d)
+		ds = SpecMolDataset(split="train", **config_d)
 		dl = th.utils.data.DataLoader(
 			ds,
 			batch_size=8,

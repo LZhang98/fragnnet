@@ -9,19 +9,22 @@ metric:
   name: val_cos_sim_0.01_best/mean
 parameters:
   # general optimization
-  ints_transform:
-    values: ["sqrt", "log10t3"]
   lr:
     distribution: log_uniform_values
     min: 0.0001 # 1e-4
-    max: 0.01 # 1e-2
-  weight_decay:
-    distribution: log_uniform_values
-    min: 0.000000001 # 1e-9
-    max: 0.0001 # 1e-4
+    max: 0.001 # 1e-3
   lr_decay_rate:
     distribution: uniform
     min: 0.7
     max: 1.0
-  accumulate_grad_batches:
-    values: [1,2,4,8]
+  weight_decay:
+    values: [0., 0.0000001, 0.000001]
+  train_batch_size:
+    values: [32, 64, 128]
+  # massformer-specific
+  mlp_hidden_size:
+    values: [64, 128, 256, 512, 1024]
+  mlp_dropout:
+    values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+  mlp_num_layers:
+    values: [1, 2, 3, 4, 5]

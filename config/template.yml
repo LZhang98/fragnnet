@@ -83,11 +83,13 @@ magma_params:
   mz_max: 1500.0
   sum_ints: True
 ann_params:
-  max_isotope: 3
+  max_isotope: 2
   library_size: 1000 #10000
   num_eigs: 8
   filter_peaks: False
   filter_peaks_tol: 1.0
+  library_splits:
+    - train
   preprocess: False
 # model
 model_type: frag_gnn
@@ -173,6 +175,7 @@ loss_vectorized: False
 loss_tolerance_rel: 0.00001 # 10 ppm
 loss_tolerance_abs: #0.001
 loss_batch_size: 32
+loss_tolerance_min_mz: 200.0
 auxiliary_scores:
   - cos_sim
   - recall

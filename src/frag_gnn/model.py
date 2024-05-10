@@ -991,7 +991,6 @@ class NeimsModel(CEModel):
 		self.mlp_input_dim = self.mol_fp_dim
 
 		# ce stuff
-		assert ce_insert_location not in ["mol","frag"], ce_insert_location
 		self._setup_ce()
 		self.mlp_input_dim += self.ce_mlp_input_dim
 

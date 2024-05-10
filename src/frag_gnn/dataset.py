@@ -21,34 +21,64 @@ import frag_gnn.massformer.data_utils as mf_data_utils
 
 class BaseDataset(Dataset):
 
-	def _base_init(self, 
+	def _base_init(
+		self,
 		spec_fp: str,
 		mol_fp: str,
 		split_dp: str,
-		split: str,
+		split: List[str],
 		subsample_params: dict,
-		spec_params: dict,
-	):
-		
-		self.spec_df = pd.read_pickle(spec_fp)
-		self.mol_df = pd.read_pickle(mol_fp)
+		spec_params: dict):
+
 		self.split = split
-		# assert split in ["train","val","test","secondary"], split
-		split_fp = os.path.join(split_dp,f"{split}_ids.csv")
-		self.split_df = pd.read_csv(split_fp)
+		self.subsample_params = subsample_params
 		self.spec_params = spec_params
+		spec_df, mol_df, um_spec_df, split_df, id_key = BaseDataset._setup_dfs(
+			spec_fp=spec_fp,
+			mol_fp=mol_fp,
+			split_dp=split_dp,
+			splits=[split],
+			subsample_params=subsample_params,
+			spec_params=spec_params
+		)
+		self.spec_df = spec_df
+		self.mol_df = mol_df
+		self.um_spec_df = um_spec_df
+		self.split_df = split_df
+		self.id_key = id_key
+		self._compute_counts()
+
+	@staticmethod
+	def _setup_dfs( 
+		spec_fp: str,
+		mol_fp: str,
+		split_dp: str,
+		splits: List[str],
+		subsample_params: dict,
+		spec_params: dict):
+		
+		spec_df = pd.read_pickle(spec_fp)
+		mol_df = pd.read_pickle(mol_fp)
+		split_dfs = []
+		for split in splits:
+			assert split in ["train","val","test","secondary"], split
+			split_fp = os.path.join(split_dp,f"{split}_ids.csv")
+			split_df = pd.read_csv(split_fp)
+			split_dfs.append(split_df)
+		split_df = pd.concat(split_dfs)
+		del split_dfs
 		# select spectra
-		self.spec_df = self.spec_df[self.spec_df["spec_id"].isin(self.split_df["spec_id"])]
+		spec_df = spec_df[spec_df["spec_id"].isin(split_df["spec_id"])]
 		# select molecules
-		self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.split_df["mol_id"])]
-		assert np.all(np.unique(self.mol_df["mol_id"]) == np.unique(self.spec_df["mol_id"]))
+		mol_df = mol_df[mol_df["mol_id"].isin(split_df["mol_id"])]
+		assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 		# merge spectra
-		self.um_spec_df = self.spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
-		if self.spec_params["merge"]:
-			self.spec_df = merge_spec_df(self.spec_df,keep_ces=self.spec_params["merge_keep_ces"])
-			self.id_key = "group_id"
+		um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
+		if spec_params["merge"]:
+			spec_df = merge_spec_df(spec_df,keep_ces=spec_params["merge_keep_ces"])
+			id_key = "group_id"
 		else:
-			self.id_key = "spec_id"
+			id_key = "spec_id"
 		# subsample
 		if subsample_params.get(split,False) and subsample_params["subsample_size"] > 0:
 			if isinstance(subsample_params["subsample_size"],int):
@@ -58,19 +88,19 @@ class BaseDataset(Dataset):
 				assert isinstance(subsample_params["subsample_size"],float)
 				n = None
 				frac = subsample_params["subsample_size"]
-			self.spec_df = self.spec_df.sample(
+			spec_df = spec_df.sample(
 				n=n,
 				frac=frac,
 				random_state=subsample_params["subsample_seed"],
 				replace=False)
-			self.mol_df = self.mol_df[self.mol_df["mol_id"].isin(self.spec_df["mol_id"])]
-			self.um_spec_df = self.um_spec_df[self.um_spec_df[self.id_key].isin(self.spec_df[self.id_key])]
+			mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
+			um_spec_df = um_spec_df[um_spec_df[id_key].isin(spec_df[id_key])]
 		# reset indices
-		self.spec_df = self.spec_df.reset_index(drop=True)
-		self.mol_df = self.mol_df.reset_index(drop=True)
+		spec_df = spec_df.reset_index(drop=True)
+		mol_df = mol_df.reset_index(drop=True)
 		# use mol_id as index for speedy access
-		self.mol_df = self.mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
-		self._compute_counts()
+		mol_df = mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
+		return spec_df, mol_df, um_spec_df, split_df, id_key
 
 	def _compute_counts(self):
 
@@ -113,15 +143,12 @@ class BaseDataset(Dataset):
 		# preload and pre-process spectra
 		if self.spec_params["preprocess"]:
 			self.spec_datas = spec_pp_sd
-			# spec_datas = {}
 			total_spec_data_size = 0
 			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess spec",total=len(self.spec_df)):
 				spec_data = self._process_spec(spec_entry)
 				total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
 				self.spec_datas[idx] = spec_data
-				# spec_datas[idx] = spec_data
 			print(f"> total_spec_data_size: {total_spec_data_size/1e6:.2f} MB")
-			# self.spec_datas.update(spec_datas)
 
 	@staticmethod
 	def _get_mzs_ints(peaks):
@@ -478,7 +505,6 @@ class SpecMolFragDataset(SpecMolDataset):
 			spec_data = self.spec_datas[idx].copy()
 		else:
 			spec_data = self._process_spec(spec_entry)
-		spec_data = self._process_spec(spec_entry)
 		if self.mol_params["preprocess"]:
 			mol_data = self.mol_datas[mol_id].copy()
 		else:

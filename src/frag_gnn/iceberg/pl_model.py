@@ -494,14 +494,15 @@ class IcebergIntenPL(SpectrumPL):
 
 		# cross entropy
 		sparse_ce_fn = get_sparse_cross_entropy_fn(
-			self.hparams.output_distribution,
-			self.hparams.loss_vectorized,
-			self.tolerance,
-			self.relative,
-			self.hparams.oos_tolerance_multiple,
-			self.hparams.gaussian_renormalize,
-			self.hparams.pm_tolerance_multiple,
-			self.hparams.loss_batch_size
+			dist=self.hparams.output_distribution,
+			vectorized=self.hparams.loss_vectorized,
+			tolerance=self.tolerance,
+			relative=self.relative,
+			tolerance_min_mz=self.tolerance_min_mz,
+			oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
+			gaussian_renormalize=self.hparams.gaussian_renormalize,
+			pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
+			loss_batch_size=self.hparams.loss_batch_size
 		)
 
 		# cosine distance
@@ -548,6 +549,7 @@ class IcebergIntenPL(SpectrumPL):
 					pred_batch_idxs,
 					tolerance=self.tolerance,
 					relative=self.relative,
+					tolerance_min_mz=self.tolerance_min_mz,
 					log_distance=log_distance
 				)
 
@@ -583,21 +585,21 @@ class IcebergIntenPL(SpectrumPL):
 					pred_batch_idxs,
 				)
 				primary_loss = spec_cd_hun
-			ios_ce, oos_ce, true_oos_logprob, true_oos_e = sparse_ce_fn(
-				true_mzs,
-				true_logprobs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_logprobs,
-				pred_batch_idxs,
-				th.full((batch_size,), LOG_ZERO(true_logprobs.dtype), device=pred_logprobs.device, dtype=pred_logprobs.dtype),
-			)
-			spec_ce = ios_ce + oos_ce
+			# ios_ce, oos_ce, true_oos_logprob, true_oos_e = sparse_ce_fn(
+			# 	true_mzs,
+			# 	true_logprobs,
+			# 	true_batch_idxs,
+			# 	pred_mzs,
+			# 	pred_logprobs,
+			# 	pred_batch_idxs,
+			# 	th.full((batch_size,), LOG_ZERO(true_logprobs.dtype), device=pred_logprobs.device, dtype=pred_logprobs.dtype),
+			# )
+			# spec_ce = ios_ce + oos_ce
 			loss = primary_loss
 			loss_d = {
 				"loss": loss,
 				"primary_loss": primary_loss,
-				"spec_ce": spec_ce
+				# "spec_ce": spec_ce
 			}
 			return loss_d
 
@@ -605,7 +607,7 @@ class IcebergIntenPL(SpectrumPL):
 		loss_names = [
 			"loss",
 			"primary_loss",
-			"spec_ce"
+			# "spec_ce"
 		]
 		self.metric_names.update(loss_names)
 

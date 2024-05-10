@@ -26,7 +26,7 @@ class IcebergGenModel(nn.Module):
 		max_broken: int = fragmentation.FRAGMENT_ENGINE_PARAMS["max_broken_bonds"],
 		root_encode: str = "gnn",
 		inject_early: bool = False,
-		embed_adduct=False,
+		embed_adduct: bool = False,
 		encode_forms: bool = False,
 		add_hs: bool = False,
 	):
@@ -265,7 +265,7 @@ class IcebergIntenModel(nn.Module):
 		frag_set_layers: int = 0,
 		root_encode: str = "gnn",
 		inject_early: bool = False,
-		embed_adduct=False,
+		embed_adduct: bool = False,
 		binned_targs: bool = True,
 		encode_forms: bool = False,
 		add_hs: bool = False,

@@ -28,7 +28,7 @@ class GrAFFPL(SpectrumPL):
 
 		self.model = GrAFFModel(
 			vocab_size=self.hparams.ann_params["library_size"],
-			num_isotope_types=self.hparams.ann_params["max_isotope"],
+			num_isotope_types=self.hparams.ann_params["max_isotope"]+1,
 			encoder_dim=self.hparams.graff_encoder_dim,
 			decoder_dim=self.hparams.graff_decoder_dim,
 			encoder_depth=self.hparams.graff_encoder_depth,
@@ -70,14 +70,15 @@ class GrAFFPL(SpectrumPL):
 
 		# cross entropy
 		sparse_ce_fn = get_sparse_cross_entropy_fn(
-			self.hparams.output_distribution,
-			self.hparams.loss_vectorized,
-			self.tolerance,
-			self.relative,
-			self.hparams.oos_tolerance_multiple,
-			self.hparams.gaussian_renormalize,
-			self.hparams.pm_tolerance_multiple,
-			self.hparams.loss_batch_size
+			dist=self.hparams.output_distribution,
+			vectorized=self.hparams.loss_vectorized,
+			tolerance=self.tolerance,
+			relative=self.relative,
+			tolerance_min_mz=self.tolerance_min_mz,
+			oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
+			gaussian_renormalize=self.hparams.gaussian_renormalize,
+			pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
+			loss_batch_size=self.hparams.loss_batch_size
 		)
 
 		self._setup_loss_names()

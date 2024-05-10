@@ -9,6 +9,7 @@ import json
 import numpy as np
 import torch as th
 import dgl
+from tqdm import tqdm
 
 import frag_gnn.iceberg.common as common
 import frag_gnn.iceberg.nn_utils as nn_utils
@@ -399,6 +400,8 @@ class SpecMolMagmaDataset(SpecMolDataset):
 		spec_params: dict,
 		mol_params: dict,
 		magma_params: dict,
+		spec_pp_sd: dict = dict(),
+		magma_pp_sd: dict = dict(),
 		**kwargs,
 	):
 		"""__init__.
@@ -419,9 +422,9 @@ class SpecMolMagmaDataset(SpecMolDataset):
 		self._init_magma()
 		tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
 		assert self.spec_df["group_id"].isin(tree_group_ids).all()
-		self._preprocess_spec()
-		self._preprocess_mol()
-		# self._preprocess_magma()
+		self._preprocess_spec(spec_pp_sd)
+		self._preprocess_mol({})
+		self._preprocess_magma(magma_pp_sd)
 
 	def _init_magma(self):
 
@@ -447,14 +450,8 @@ class SpecMolMagmaDataset(SpecMolDataset):
 
 		raise NotImplementedError()
 
-	def __getitem__(self, idx):
-		"""__getitem__."""
-
-		spec_entry = self.spec_df.iloc[idx]
-		mol_id = spec_entry["mol_id"]
-		mol_entry = self.mol_df.loc[mol_id]
-		spec_data = self._process_spec(spec_entry)
-		mol_data = self._process_mol(mol_entry)
+	def _get_magma_entry(self, spec_entry):
+		
 		name = str(spec_entry["group_id"])
 		adduct = common.ion2onehot_pos[spec_entry["prec_type"]]
 		magma_entry = self.tree_fn(name)["dgl_tree"]
@@ -463,10 +460,42 @@ class SpecMolMagmaDataset(SpecMolDataset):
 			"adduct": adduct,
 			**magma_entry
 		}
-		magma_data = self._process_magma(magma_entry)
+		return magma_entry
+
+	def __getitem__(self, idx):
+		"""__getitem__."""
+
+		spec_entry = self.spec_df.iloc[idx]
+		mol_id = spec_entry["mol_id"]
+		mol_entry = self.mol_df.loc[mol_id]
+		if self.spec_params["preprocess"]:
+			spec_data = self.spec_datas[idx].copy()
+		else:
+			spec_data = self._process_spec(spec_entry)
+		if self.mol_params["preprocess"]:
+			mol_data = self.mol_datas[mol_id].copy()
+		else:
+			mol_data = self._process_mol(mol_entry)
+		if self.magma_params["preprocess"]:
+			magma_data = self.magma_datas[idx].copy()
+		else:
+			magma_data = self._process_magma(spec_entry)
 		data = {**spec_data, **mol_data, **magma_data}
 		return data
+	
+	def _preprocess_magma(self, magma_pp_sd: dict):
 
+		if self.magma_params["preprocess"]:
+			self.magma_datas = magma_pp_sd
+			# total_magma_data_size = 0
+			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess magma",total=len(self.spec_df)):
+				magma_data = self._process_magma(spec_entry)
+				self.magma_datas[idx] = magma_data
+			# print(f"> total_magma_data_size = {total_magma_data_size/1e6:.2f} MB")
+
+	@staticmethod
+	def get_data_dict_types():
+		return ["spec_pp_sd", "magma_pp_sd"]
 
 class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 	"""TODO: fold this into the parent class"""
@@ -487,8 +516,9 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 		tree = self.tree_processor.process_tree_gen(tree_json)
 		return tree
 
-	def _process_magma(self, magma_entry):
+	def _process_magma(self, spec_entry):
 
+		magma_entry = self._get_magma_entry(spec_entry)
 		magma_data = {}
 		magma_data["magma_names"] = [magma_entry["name"]]
 		if isinstance(magma_entry["root_repr"], dgl.DGLGraph):
@@ -567,6 +597,8 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		spec_params: str,
 		mol_params: str,
 		magma_params: str,
+		spec_pp_sd: dict = dict(),
+		magma_pp_sd: dict = dict(),
 		**kwargs,
 	):
 
@@ -587,9 +619,9 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		assert self.spec_df["group_id"].isin(tree_group_ids).all()
 		formula_group_ids = [int(name) for name in self.name_to_formula_file.keys()]
 		assert self.spec_df["group_id"].isin(formula_group_ids).all()
-		self._preprocess_spec()
-		self._preprocess_mol()
-		# self._preprocess_magma()
+		self._preprocess_spec(spec_pp_sd)
+		self._preprocess_mol({})
+		self._preprocess_magma(magma_pp_sd)
 
 	def _init_magma(self):
 
@@ -675,8 +707,9 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		
 		return SpecMolMagmaIntenDataset.collate_fn
 
-	def _process_magma(self, magma_entry):
+	def _process_magma(self, spec_entry):
 
+		magma_entry = self._get_magma_entry(spec_entry)
 		magma_data = {}
 		magma_data["magma_names"] = [magma_entry["name"]]
 		if isinstance(magma_entry["root_repr"], dgl.DGLGraph):
