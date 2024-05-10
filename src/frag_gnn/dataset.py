@@ -3,87 +3,21 @@ import os
 import torch as th
 import torch.nn.functional as F
 from torch.utils.data.sampler import BatchSampler, Sampler, WeightedRandomSampler, RandomSampler, SequentialSampler
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import numpy as np
 import torch_geometric as pyg
-from torch_geometric.data import Data, Batch
+from torch_geometric.data import Batch
 import sys
 from tqdm import tqdm
-from typing import Iterator, Iterable, Optional, Sequence, List, TypeVar, Generic, Sized, Union
+from typing import Iterator, List
 
 from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_graph, get_frag_graph
-from frag_gnn.utils.spec_utils import bin_func, filter_func, batch_func, prec_type_idx, prec_type_mass_diff
+from frag_gnn.utils.spec_utils import batch_func, prec_type_idx, prec_type_mass_diff
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
-from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage
+from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 import frag_gnn.massformer.data_utils as mf_data_utils
-import frag_gnn.graff.data_utils as graff_data_utils
-
-
-def init_dataloader(ds, config_d):
-
-	split = ds.split
-	assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), "Cannot use both group_sampler and simple_group_sampler"
-	dl_param_d = {
-		"dataset": ds,
-		"num_workers": config_d["num_workers"],
-		"collate_fn": ds.get_collate_fn(),
-		"pin_memory": config_d["pin_memory"] and (config_d["accelerator"] != "cpu")
-	}
-
-	if split in ["train", "val"]:	
-
-		# note: this generator will get overwritten at the beginning/ending of each training epoch
-		generator = th.Generator() 
-		if config_d["group_sampler"] and split == "train":
-			sampler = GroupSampler(
-				ds,
-				sample_k=config_d['group_sampler_max_per_group'],
-				generator=generator)
-		elif config_d["simple_group_sampler"] and split == "train":
-			sampler = get_group_sampler(
-				ds,
-				config_d["simple_group_sampler_type"],
-				config_d["simple_group_sampler_avg_per_group"],
-				generator)
-		elif split == "val":
-			sampler = SequentialSampler(ds)
-		else:
-			sampler = RandomSampler(ds, False, generator=generator)
-		# for batch sampler 
-		if config_d["dynamic_batch_sampler"]:
-			max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
-			if split == "train":
-				return_batch_at = max_batch_size
-			else:
-				return_batch_at = 0
-			batch_sampler = SpecMolFragDynamicBatchSampler(
-								ds, 
-								max_num = config_d["dynamic_batch_sampler_max"], 
-								limited_by = config_d["dynamic_batch_sampler_mode"], 
-								skip_too_big = True,
-								return_batch_at = return_batch_at,
-								sampler = sampler)
-			dl_param_d["batch_sampler"] = batch_sampler
-		else:
-			dl_param_d["sampler"] = sampler
-			if split == "train":
-				dl_param_d["batch_size"] = config_d["train_batch_size"]	
-				dl_param_d["drop_last"] = config_d["drop_last"]
-			else:
-				dl_param_d["batch_size"] = config_d["eval_batch_size"]
-				dl_param_d["drop_last"] = False
-		dl = DataLoader(**dl_param_d)
-
-	else:
-
-		dl_param_d["batch_size"] = config_d["eval_batch_size"]
-		dl_param_d["sampler"] = SequentialSampler(ds)
-		dl_param_d["drop_last"] = False
-		dl = DataLoader(**dl_param_d)
-
-	return dl
 
 class BaseDataset(Dataset):
 
@@ -93,7 +27,7 @@ class BaseDataset(Dataset):
 		split_dp: str,
 		split: str,
 		subsample_params: dict,
-		spec_params: dict
+		spec_params: dict,
 	):
 		
 		self.spec_df = pd.read_pickle(spec_fp)
@@ -170,14 +104,24 @@ class BaseDataset(Dataset):
 		spec_per_mol_stats = th.tensor(spec_per_mol_stats)
 		return group_ids, spec_per_group_stats, mol_ids, spec_per_mol_stats
 
-	def _preprocess_spec(self):
+	@staticmethod
+	def get_data_dict_types():
+		return ["spec_pp_sd"]
+
+	def _preprocess_spec(self,spec_pp_sd: dict):
 
 		# preload and pre-process spectra
 		if self.spec_params["preprocess"]:
-			self.spec_datas = {}
+			self.spec_datas = spec_pp_sd
+			# spec_datas = {}
+			total_spec_data_size = 0
 			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess spec",total=len(self.spec_df)):
 				spec_data = self._process_spec(spec_entry)
+				total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
 				self.spec_datas[idx] = spec_data
+				# spec_datas[idx] = spec_data
+			print(f"> total_spec_data_size: {total_spec_data_size/1e6:.2f} MB")
+			# self.spec_datas.update(spec_datas)
 
 	@staticmethod
 	def _get_mzs_ints(peaks):
@@ -338,6 +282,8 @@ class SpecMolDataset(BaseDataset):
 		subsample_params: dict,
 		spec_params: dict,
 		mol_params: dict,
+		spec_pp_sd: dict = dict(),
+		mol_pp_sd: dict = dict(),
 		**kwargs
 	):
 
@@ -351,9 +297,13 @@ class SpecMolDataset(BaseDataset):
 			spec_params=spec_params
 		)
 		self.mol_params = mol_params
-		self._preprocess_spec()
-		self._preprocess_mol()
-		
+		self._preprocess_spec(spec_pp_sd)
+		self._preprocess_mol(mol_pp_sd)
+	
+	@staticmethod
+	def get_data_dict_types():
+		return ["spec_pp_sd", "mol_pp_sd"]
+
 	def _get_mol_graph_size(self, mol_data):
 
 		if self.mol_params["pyg"]:
@@ -363,11 +313,11 @@ class SpecMolDataset(BaseDataset):
 			mol_graph_size = 0
 		return mol_graph_size
 
-	def _preprocess_mol(self):
+	def _preprocess_mol(self, mol_pp_sd: dict):
 
 		# preload and pre-process molecules
 		if self.mol_params["preprocess"]:
-			self.mol_datas = {}
+			self.mol_datas = mol_pp_sd
 			total_mol_graph_size = 0
 			for idx, mol_entry in tqdm(self.mol_df.iterrows(),desc="> preprocess mol",total=len(self.mol_df)):
 				mol_data = self._process_mol(mol_entry)
@@ -468,6 +418,10 @@ class SpecMolFragDataset(SpecMolDataset):
 		mol_params: dict,
 		frag_dp: str,
 		frag_params: dict,
+		spec_pp_sd: dict = dict(),
+		mol_pp_sd: dict = dict(),
+		frag_pl_sd: dict = dict(),
+		frag_pp_sd: dict = dict(),
 		**kwargs
 	):
 
@@ -483,15 +437,19 @@ class SpecMolFragDataset(SpecMolDataset):
 		self.mol_params = mol_params
 		self.frag_dp = frag_dp
 		self.frag_params = frag_params
-		self._preprocess_spec()
-		self._preprocess_mol()
-		self._preprocess_frag()
-		
-	def _preprocess_frag(self):
+		self._preprocess_spec(spec_pp_sd)
+		self._preprocess_mol(mol_pp_sd)
+		self._preprocess_frag(frag_pl_sd, frag_pp_sd)
+	
+	@staticmethod
+	def get_data_dict_types():
+		return ["spec_pp_sd", "mol_pp_sd", "frag_pl_sd", "frag_pp_sd"]
+
+	def _preprocess_frag(self, frag_pl_sd: dict, frag_pp_sd: dict):
 
 		# preload frag dags
 		if self.frag_params["preload"]:
-			self.frag_entries = {}
+			self.frag_entries = frag_pl_sd
 			total_frag_entry_size = 0
 			for mol_id in tqdm(self.mol_df["mol_id"].values,desc="> preload frag",total=len(self.mol_df)):
 				frag_entry = load_frag_d(mol_id,self.frag_dp,self.frag_params["compressed"])
@@ -501,13 +459,15 @@ class SpecMolFragDataset(SpecMolDataset):
 		# preprocess frag dags
 		if self.frag_params["preprocess"]:
 			assert self.frag_params["preload"]
-			self.frag_data = {}
+			self.frag_data = frag_pp_sd
 			total_frag_data_size = 0
 			for k in tqdm(list(self.frag_entries.keys()),desc="> preprocess frag",total=len(self.frag_entries)):
 				frag_data = self._process_frag(self.frag_entries.pop(k),None)
 				total_frag_data_size += get_pyg_memory_usage(frag_data["frag_pyg"])
 				self.frag_data[k] = frag_data
 			print(f"> total_frag_data_size: {total_frag_data_size/1e6:.2f} MB")
+			# remove them from the entries
+			self.frag_entries = {}
 
 	def __getitem__(self, idx):
 

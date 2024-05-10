@@ -1,6 +1,7 @@
 import torch as th
 import numpy as np
-from frag_gnn.dataset import SpecMolFragDataset, init_dataloader
+from frag_gnn.runner import init_dataloader
+from frag_gnn.dataset import SpecMolFragDataset
 
 import pytest
 

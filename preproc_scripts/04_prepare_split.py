@@ -36,46 +36,53 @@ def make_splits(args):
     # primary_group_id = primary_spec_df["group_id"]
     # primary_mol_id = primary_spec_df["mol_id "]
 
-    print("> DAG filters")
-    # filter dags
-    node_key = "dag_num_nodes"
-    edge_key = "dag_num_edges"
-    wrecall_key = "wrecall_10ppm_h4"
-    dag_masks = []
-    if args.max_num_dag_nodes != -1:
-        print(f"> filtering on max dag nodes {args.max_num_dag_nodes}")
-        dag_masks.append(dag_stats_df[node_key] <= args.max_num_dag_nodes)
-    if args.max_num_dag_edges != -1:
-        print(f"> filtering: max dag edges {args.max_num_dag_nodes}")
-        dag_masks.append(dag_stats_df[edge_key] <= args.max_num_dag_edges)
-    print(f"> filtering: min dag wrcall {args.min_dag_wrecall}")
-    dag_masks.append(dag_stats_df[wrecall_key] >= args.min_dag_wrecall)
-    dag_masks = np.stack(dag_masks,axis=1)
-    dag_mask = np.all(dag_masks,axis=1)
-    print(f"> Selected {np.sum(dag_mask)}/{dag_mask.shape[0]} Dags ({np.mean(dag_mask) * 100 } % total dags)")
-    dag_stats_df = dag_stats_df[dag_mask]
-    # dag_mol_id = dag_stats_df["mol_id"]
-    if args.dag_filter_grouping in ["m_spec","m_mol"]:
-        dag_spec_id = None
-        dag_group_id = dag_stats_df["group_id"]
-    else:
-        dag_spec_id = dag_stats_df["spec_id"]
-        dag_group_id = None
+    if args.dag_filtering:
 
-    print("> Intersection")
-    # get intersection
-    if args.dag_filter_grouping in ["m_spec","m_mol"]:
-        primary_both_group_id = np.intersect1d(primary_spec_df["group_id"],dag_group_id)
-        primary_split_df = primary_spec_df[primary_spec_df["group_id"].isin(primary_both_group_id)]
-        secondary_both_group_id = np.intersect1d(secondary_spec_df["group_id"],dag_group_id)
-        secondary_split_df = secondary_spec_df[secondary_spec_df["group_id"].isin(secondary_both_group_id)]
+        print("> DAG filters")
+        # filter dags
+        node_key = "dag_num_nodes"
+        edge_key = "dag_num_edges"
+        wrecall_key = "wrecall_10ppm_h4"
+        dag_masks = []
+        if args.max_num_dag_nodes != -1:
+            print(f"> filtering on max dag nodes {args.max_num_dag_nodes}")
+            dag_masks.append(dag_stats_df[node_key] <= args.max_num_dag_nodes)
+        if args.max_num_dag_edges != -1:
+            print(f"> filtering: max dag edges {args.max_num_dag_edges}")
+            dag_masks.append(dag_stats_df[edge_key] <= args.max_num_dag_edges)
+        print(f"> filtering: min dag wrecall {args.min_dag_wrecall}")
+        dag_masks.append(dag_stats_df[wrecall_key] >= args.min_dag_wrecall)
+        dag_masks = np.stack(dag_masks,axis=1)
+        dag_mask = np.all(dag_masks,axis=1)
+        print(f"> Selected {np.sum(dag_mask)}/{dag_mask.shape[0]} Dags ({np.mean(dag_mask) * 100 } % total dags)")
+        dag_stats_df = dag_stats_df[dag_mask]
+        # dag_mol_id = dag_stats_df["mol_id"]
+        if args.dag_filter_grouping in ["m_spec","m_mol"]:
+            dag_spec_id = None
+            dag_group_id = dag_stats_df["group_id"]
+        else:
+            dag_spec_id = dag_stats_df["spec_id"]
+            dag_group_id = None
+
+        print("> Intersection")
+        # get intersection
+        if args.dag_filter_grouping in ["m_spec","m_mol"]:
+            primary_both_group_id = np.intersect1d(primary_spec_df["group_id"],dag_group_id)
+            primary_split_df = primary_spec_df[primary_spec_df["group_id"].isin(primary_both_group_id)]
+            secondary_both_group_id = np.intersect1d(secondary_spec_df["group_id"],dag_group_id)
+            secondary_split_df = secondary_spec_df[secondary_spec_df["group_id"].isin(secondary_both_group_id)]
+        else:
+            primary_both_spec_id = np.intersect1d(primary_spec_df["spec_id"],dag_spec_id)
+            primary_split_df = primary_spec_df[primary_spec_df["spec_id"].isin(primary_both_spec_id)]
+            secondary_both_spec_id = np.intersect1d(secondary_spec_df["spec_id"],dag_spec_id)
+            secondary_split_df = secondary_spec_df[secondary_spec_df["spec_id"].isin(secondary_both_spec_id)]
+        primary_split_df = primary_split_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
+        secondary_split_df = secondary_split_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
+
     else:
-        primary_both_spec_id = np.intersect1d(primary_spec_df["spec_id"],dag_spec_id)
-        primary_split_df = primary_spec_df[primary_spec_df["spec_id"].isin(primary_both_spec_id)]
-        secondary_both_spec_id = np.intersect1d(secondary_spec_df["spec_id"],dag_spec_id)
-        secondary_split_df = secondary_spec_df[secondary_spec_df["spec_id"].isin(secondary_both_spec_id)]
-    primary_split_df = primary_split_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
-    secondary_split_df = secondary_split_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
+
+        primary_split_df = primary_spec_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
+        secondary_split_df = secondary_spec_df.merge(mol_df[["mol_id",args.split_key]],on="mol_id",how="inner")
 
     if args.split_type == "random":
         # split based on molecule
@@ -118,6 +125,7 @@ def make_splits(args):
     os.makedirs(args.split_dp,exist_ok=True)
 
     # save ids
+    print(f"> Split sizes (spec_id): train = {train_df.shape[0]}, val = {val_df.shape[0]}, test = {test_df.shape[0]}")
     train_fp = os.path.join(args.split_dp,"train_ids.csv")
     val_fp = os.path.join(args.split_dp,"val_ids.csv")
     test_fp = os.path.join(args.split_dp,"test_ids.csv")
@@ -150,10 +158,11 @@ if __name__ == "__main__":
     parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
     parser.add_argument("--max_peak_mz",type=float,default=1500.)
     # dag filtering criteria
+    parser.add_argument("--dag_filtering",type=booltype,default=True)
     parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec")
     parser.add_argument("--max_num_dag_nodes",type=int,default=100000)
     parser.add_argument("--max_num_dag_edges",type=int,default=250000)
-    parser.add_argument("--min_dag_wrecall",type=float,default=0.75)
+    parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
     # non-filtering args
     parser.add_argument("--meta_rseed",type=int,default=420420)
     parser.add_argument("--total_frac",type=float,default=1.0)

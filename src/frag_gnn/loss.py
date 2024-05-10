@@ -48,7 +48,7 @@ def mog_ce_fn(
 		b_pred_logprobs: th.Tensor,
 		relative: bool,
 		tolerance: float,
-		oos_tolerance_multiple: float,
+		tolerance_multiple: float,
 		gaussian_renormalize: bool,
 		**kwargs) -> th.Tensor:
 
@@ -58,10 +58,10 @@ def mog_ce_fn(
 		b_stds = tolerance*th.ones_like(b_pred_mzs)
 	b_vars = b_stds**2
 	if gaussian_renormalize:
-		assert oos_tolerance_multiple > 0, oos_tolerance_multiple
-		# log_trunc_factor = LOG_TRUNC_FACTOR.get(oos_tolerance_multiple,1.)
+		assert tolerance_multiple > 0, tolerance_multiple
+		# log_trunc_factor = LOG_TRUNC_FACTOR.get(tolerance_multiple,1.)
 		# b_log_trunc_factors = log_trunc_factor*th.ones_like(b_pred_mzs)
-		trunc_factor = th.erf(th.tensor(oos_tolerance_multiple,device=b_pred_mzs.device)/float(np.sqrt(2)))
+		trunc_factor = th.erf(th.tensor(tolerance_multiple,device=b_pred_mzs.device)/float(np.sqrt(2)))
 		b_log_trunc_factors = th.log(trunc_factor*th.ones_like(b_pred_mzs))
 	else:
 		b_log_trunc_factors = th.zeros_like(b_pred_mzs)
@@ -81,13 +81,13 @@ def pm_ce_fn(
 		b_pred_logprobs: th.Tensor,
 		relative: bool,
 		tolerance: float,
-		pm_tolerance_multiple: float,
+		tolerance_multiple: float,
 		**kwargs) -> th.Tensor:
 
 	b_match_mask = calculate_match_mzs(
 		b_true_mzs,
 		b_pred_mzs,
-		tolerance=tolerance*pm_tolerance_multiple,
+		tolerance=tolerance*tolerance_multiple,
 		relative=relative
 	)
 	b_logprobs = th.logsumexp(
@@ -106,9 +106,8 @@ def sparse_cross_entropy_seq(
 		ce_fn: Callable,
 		tolerance: float,
 		relative: bool,
-		oos_tolerance_multiple: int,
-		gaussian_renormalize: bool,
-		pm_tolerance_multiple: int) -> th.Tensor:
+		tolerance_multiple: int,
+		gaussian_renormalize: bool) -> th.Tensor:
 	"""compute sparse cross entropy in squence
 
 	Args:
@@ -151,13 +150,13 @@ def sparse_cross_entropy_seq(
 		b_match_mask = calculate_match_mzs(
 			b_true_mzs,
 			b_pred_mzs,
-			tolerance=oos_tolerance_multiple*tolerance,
+			tolerance=tolerance_multiple*tolerance,
 			relative=relative
 		)
-		if oos_tolerance_multiple == -1:
+		if tolerance_multiple == -1:
 			b_true_match_mask = th.ones_like(b_true_mzs,dtype=th.bool)
 		else:
-			assert oos_tolerance_multiple > 0, oos_tolerance_multiple	
+			assert tolerance_multiple > 0, tolerance_multiple	
 			b_true_match_mask = th.any(b_match_mask,dim=1)
 		if not th.any(b_true_match_mask):
 			print("> Warning: Everything is OOS!")
@@ -168,9 +167,8 @@ def sparse_cross_entropy_seq(
 			b_pred_logprobs=b_pred_logprobs,
 			relative=relative,
 			tolerance=tolerance,
-			oos_tolerance_multiple=oos_tolerance_multiple,
-			gaussian_renormalize=gaussian_renormalize,
-			pm_tolerance_multiple=pm_tolerance_multiple)
+			tolerance_multiple=tolerance_multiple,
+			gaussian_renormalize=gaussian_renormalize)
 		b_ios_ce = th.sum(b_true_match_mask.float() * -th.exp(b_true_logprobs) * b_ios_logprobs)
 		# calculate oos logprobs
 		b_true_oos_logprobs = th.logsumexp( mask_value*b_true_match_mask.float() + b_true_logprobs*(~b_true_match_mask).float(), dim=0)
@@ -256,24 +254,10 @@ def sparse_cross_entropy_vec(
 		else:
 			bl_log_trunc_factors = th.zeros_like(bl_pred_mzs)
 		
-		# import pdb; pdb.set_trace()
 		bl_ios_log_probs = -0.5*(bl_true_mzs.reshape(-1,1)-bl_pred_mzs.reshape(1,-1))**2/bl_vars.reshape(1,-1) - 0.5*th.log(2*th.pi*bl_vars.reshape(1,-1))
 		bl_ios_log_probs = bl_ios_log_probs + bl_pred_logprobs.reshape(1,-1) - bl_log_trunc_factors.reshape(1,-1)
 		bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).float()*mask_value
 		bl_ios_log_probs = th.logsumexp(bl_ios_log_probs,dim=1)
-		# bl_ios_log_probs_2 = th.zeros_like(bl_ios_log_probs)
-		# for b in range(batch_size):
-		# 	b_logprobs = bl_ios_log_probs[true_batch_idxs==b]
-		# 	b_logprobs_2 = mog_log_prob(
-		# 		true_mzs[true_batch_idxs==b],
-		# 		pred_mzs[pred_batch_idxs==b],
-		# 		vars[pred_batch_idxs==b],
-		# 		pred_logprobs[pred_batch_idxs==b],
-		# 		log_trunc_factors[pred_batch_idxs==b]
-		# 	)
-		# 	bl_ios_log_probs_2[true_batch_idxs==b] = b_logprobs_2
-		# print((bl_ios_log_probs.exp()-bl_ios_log_probs_2.exp()).abs().max())
-		# print((bl_ios_log_probs[true_both_mask].exp()-bl_ios_log_probs_2[true_both_mask].exp()).abs().mean())
 
 		bl_ios_ce = scatter_reduce(
 			(-th.exp(bl_true_logprobs)*bl_ios_log_probs)[bl_true_both_mask],
@@ -282,8 +266,6 @@ def sparse_cross_entropy_vec(
 			dim=0,
 			dim_size=bl_batch_size,
 			default=0.)
-		# ios_ce_2 = scatter_reduce(-th.exp(true_logprobs)*normal_log_probs_2, true_batch_idxs, "sum", dim_size=batch_size)
-		# print((ios_ce-ios_ce_2).abs().max())
 		ios_ce[bl_lower:bl_upper] = bl_ios_ce
 
 		if not th.all(bl_true_both_mask):
@@ -328,14 +310,17 @@ def get_sparse_cross_entropy_fn(
 			loss_batch_size=loss_batch_size
 		)
 	else:
+		if dist == "gaussian":
+			tolerance_multiple = oos_tolerance_multiple
+		else:
+			tolerance_multiple = pm_tolerance_multiple
 		sce_fn = lambda *args: sparse_cross_entropy_seq(
 			*args,
 			ce_fn=ce_fn,
 			tolerance=tolerance,
 			relative=relative,
-			oos_tolerance_multiple=oos_tolerance_multiple,
+			tolerance_multiple=tolerance_multiple,
 			gaussian_renormalize=gaussian_renormalize,
-			pm_tolerance_multiple=pm_tolerance_multiple
 		)
 	return sce_fn
 

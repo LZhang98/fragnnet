@@ -29,19 +29,20 @@ frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: False #True
-  preprocess: False #True
+  preload: True
+  preprocess: True
 spec_params:
   merge: False
   nce: True
   merge_keep_ces: False
-  preprocess: False #True
+  preprocess: True
 mol_params:
-  preprocess: False #True
+  preprocess: True
 subsample_params:
   subsample_size: 0.05
 
 # model stuff
+model_type: frag_gnn
 frag_gnn_type: NodeMLP
 num_depth: 4
 num_hs: 4
@@ -90,3 +91,5 @@ automatic_optimization: True
 dynamic_batch_sampler: False
 pl_enable_progress_bar: True
 compile: True
+# shared_data: True
+# mp_sharing_strategy: file_system

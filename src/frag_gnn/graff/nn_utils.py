@@ -2,6 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg
+from torch import Tensor
+from typing import Callable, Optional, Union
+from torch_geometric.typing import (
+    Adj,
+    OptPairTensor,
+    OptTensor,
+    Size,
+    SparseTensor,
+)
 
 class ResBlock(nn.Module):
     def __init__(self, ch, dr):
@@ -16,11 +25,13 @@ class ResBlock(nn.Module):
         x = self.norm(x)
         return x
 
-class GINEConv(pyg.nn.GINEConv):
+class GINEConv(pyg.nn.conv.GINEConv):
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.act = nn.SiLU(inplace=True)
-    def message(self, x_j, edge_attr):
+        self.act = nn.SiLU(inplace=False)
+    
+    def message(self, x_j: Tensor, edge_attr: Tensor) -> Tensor:
         if self.lin is None and x_j.size(-1) != edge_attr.size(-1):
             raise ValueError("Node and edge feature dimensionalities do not "
                              "match. Consider setting the 'edge_dim' "
@@ -30,6 +41,26 @@ class GINEConv(pyg.nn.GINEConv):
             edge_attr = self.lin(edge_attr)
 
         return self.act(x_j + edge_attr)
+    
+    def forward(
+        self,
+        x: Union[Tensor, OptPairTensor],
+        edge_index: Adj,
+        edge_attr: OptTensor = None,
+        size: Size = None,
+        ) -> Tensor:
+
+        if isinstance(x, Tensor):
+            x = (x, x)
+
+        # propagate_type: (x: OptPairTensor, edge_attr: OptTensor)
+        out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=size)
+
+        x_r = x[1]
+        if x_r is not None:
+            out = out + (1 + self.eps) * x_r
+
+        return self.nn(out)
 
 class GINELayer(nn.Module):
     def __init__(self, model_dim, dropout=0, bottleneck=1):
@@ -53,7 +84,7 @@ class GINELayer(nn.Module):
         
     def forward(self, x, e, batch, edge_index):
         dx = self.lin1(x)
-        dx = self.conv(dx, edge_index, e)
+        dx = self.conv(x=dx, edge_index=edge_index, edge_attr=e)
         dx = self.dropout(dx)
         dx = self.lin2(dx)
         dx = self.act(dx)

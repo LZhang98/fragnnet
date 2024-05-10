@@ -9,6 +9,7 @@ from frag_gnn.graff.data_utils import fit_ann_library, graff_preprocess
 from frag_gnn.utils.formula_utils import NEUTRON_MASS
 from frag_gnn.utils.data_utils import composition_to_string
 from frag_gnn.utils.spec_utils import batch_func
+from frag_gnn.utils.misc_utils import get_tensor_dict_memory_usage
 
 def calculate_prec_formula(prec_formula,prec_type):
 
@@ -33,6 +34,10 @@ class SpecMolAnnDataset(SpecMolDataset):
 		mol_params: dict,
 		ann_fp: str,
 		ann_params: dict,
+		library_df: pd.DataFrame = None,
+		spec_pp_sd: dict = dict(),
+		mol_pp_sd: dict = dict(),
+		ann_pp_sd: dict = dict(),
 		**kwargs
 	):
 		
@@ -48,20 +53,32 @@ class SpecMolAnnDataset(SpecMolDataset):
 		self.mol_params = mol_params
 		self.ann_fp = ann_fp
 		self.ann_params = ann_params
-		self._setup_ann()
-		self._preprocess_spec()
-		self._preprocess_mol()
-		self._preprocess_ann()
+		self._setup_ann(
+			library_df
+		)
+		self._preprocess_spec(spec_pp_sd)
+		self._preprocess_mol(mol_pp_sd)
+		self._preprocess_ann(ann_pp_sd)
 	
-	def _setup_ann(self):
+	@staticmethod
+	def get_data_dict_types():
+		return ["spec_pp_sd", "mol_pp_sd", "ann_pp_sd"]
+
+	def _setup_ann(self, library_df):
 
 		ann_df = pd.read_pickle(self.ann_fp)
-		library_df = fit_ann_library(
-			self.um_spec_df.copy(),
-			ann_df.copy(), 
-			self.ann_params["library_size"],
-			self.ann_params["max_isotope"])
-		self.library_df = library_df
+		# only fit it if it's in training mode
+		if self.split != "train":
+			assert library_df is not None
+			self.library_df = library_df
+		else:
+			assert library_df is None
+			library_df = fit_ann_library(
+				self.um_spec_df.copy(),
+				ann_df.copy(), 
+				self.ann_params["library_size"],
+				self.ann_params["max_isotope"])
+			self.library_df = library_df
 		# setup mzs stuff
 		self.library_mzs = th.as_tensor(library_df["mzs"].values, dtype=th.float32)
 		self.library_mzs  = self.library_mzs.unsqueeze(1).repeat(1,self.ann_params["max_isotope"])
@@ -83,13 +100,17 @@ class SpecMolAnnDataset(SpecMolDataset):
 			self.isotope_df = self.isotope_df.groupby("group_id")["has_isotopes"].apply(any).reset_index()
 		self.isotope_df = self.isotope_df.set_index(self.id_key,drop=False)
 
-	def _preprocess_ann(self):
+	def _preprocess_ann(self, ann_pp_sd: dict):
 
 		if self.ann_params["preprocess"]:
-			self.ann_datas = {}
+			self.ann_datas = ann_pp_sd
+			total_ann_data_size = 0
 			for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess ann",total=len(self.spec_df)):
 				mol_entry = self.mol_df.loc[spec_entry["mol_id"]]
-				self.ann_datas[idx] = self._process_ann(spec_entry, mol_entry)
+				ann_data = self._process_ann(spec_entry, mol_entry)
+				total_ann_data_size += get_tensor_dict_memory_usage(**ann_data)
+				self.ann_datas[idx] = ann_data
+			print(f"> total_ann_data_size = {total_ann_data_size/1e6:.2f} MB")
 
 	def _process_ann(self, spec_entry, mol_entry):
 
@@ -206,7 +227,8 @@ def test_dataset():
 
 	template_fp = "config/template.yml"
 	custom_fps = [
-		"config/debug/debug_graff.yml"
+		"config/debug_um/debug_graff_auto_um.yml"
+		"config/debug_m/debug_graff_auto_m.yml"
 	]
 
 	for custom_fp in custom_fps:
@@ -226,7 +248,6 @@ def test_dataset():
 		)
 		dl_iter = iter(dl)
 		batch = next(dl_iter)
-		import pdb; pdb.set_trace()
 		print("> batch")
 		print_shapes(batch)
 		# batch = to_device(batch,device)
