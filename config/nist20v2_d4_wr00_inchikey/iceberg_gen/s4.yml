@@ -15,7 +15,7 @@ wandb_tags:
 - s4
 
 # seed
-seed: 103976
+seed: 132548
 
 # data stuff
 spec_fp: data/proc/nist20mona23v2/spec_df.pkl
