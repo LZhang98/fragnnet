@@ -30,7 +30,7 @@ seed: 103976
 spec_fp: data/proc/nist20mona23v2/spec_df.pkl
 mol_fp: data/proc/nist20mona23v2/mol_df.pkl
 split_dp: data/split/nist20mona23v2_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23v2_d4_h4_isoFalse_nb2/dags
+frag_dp: data/frag/nist20mona23v2_d4_h4_isoFalse_nb3/dags
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False
