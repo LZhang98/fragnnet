@@ -60,6 +60,7 @@ lr_warmup_steps: 1000
 lr_decay_steps: 5000
 debug_overfit: False
 upload_checkpoints: False
+delete_checkpoints: True
 checkpoint_metric: val_loss_epoch/mean
 checkpoint_metric_mode: min
 auxiliary_scores: []
