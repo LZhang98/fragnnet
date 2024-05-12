@@ -81,16 +81,6 @@ def main(args):
 			"echo `date`: Job ${SLURM_JOB_ID} is allocated resources"
 		]
 	)
-	if args.link_wandb:
-		script_lines.extend(
-			[
-				"",
-				"# make wandb directory (if necessary)",
-				"mkdir -p /checkpoint/adamo/wandb",
-				"touch /checkpoint/adamo/wandb/DELAYPURGE",
-				f"ln -sfn /checkpoint/adamo/wandb {args.root_dp}/wandb"
-			]
-		)
 	script_lines.extend(
 		[
 			"",

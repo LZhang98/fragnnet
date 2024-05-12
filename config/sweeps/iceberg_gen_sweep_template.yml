@@ -1,4 +1,5 @@
 wandb_name: iceberg_gen_sweep_template
+wandb_root_dir: /checkpoint/adamo
 wandb_tags:
 - sweep
 - nist20v2
