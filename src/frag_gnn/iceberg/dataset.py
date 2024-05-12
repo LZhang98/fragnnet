@@ -526,7 +526,7 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 		else:
 			assert isinstance(magma_entry["root_repr"], np.ndarray)
 			magma_data["magma_root_reprs"] = th.tensor(magma_entry["root_repr"], dtype=th.float).unsqueeze(0)
-		magma_data["magma_frag_graphs"] = magma_entry["dgl_frags"]
+		magma_data["magma_frag_graphs"] = dgl.batch(magma_entry["dgl_frags"])
 		magma_data["magma_targ_atoms"] = th.nn.utils.rnn.pad_sequence([i for i in magma_entry["targs"]], batch_first=True) ##
 		magma_data["magma_frag_atoms"] = th.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long) ##
 		magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long) ##
@@ -544,7 +544,7 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 	@staticmethod
 	def _special_collate(keys, collate_data):
 		
-		frag_graphs = collate_data["magma_frag_graphs"]
+		frag_graphs = dgl.unbatch(collate_data["magma_frag_graphs"])
 		num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]],dtype=th.long)
 		targ_atoms = []
 		for i in collate_data["magma_targ_atoms"]:
@@ -717,8 +717,8 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		else:
 			assert isinstance(magma_entry["root_repr"], np.ndarray)
 			magma_data["magma_root_reprs"] = th.tensor(magma_entry["root_repr"], dtype=th.float).unsqueeze(0)
-		magma_data["magma_frag_graphs"] = magma_entry["dgl_frags"]
-		magma_data["magma_frag_atoms"] = th.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long) ##
+		magma_data["magma_frag_graphs"] = dgl.batch(magma_entry["dgl_frags"]) # batching for memory
+		magma_data["magma_frag_atoms"] = th.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long)
 		magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long)
 		magma_data["magma_broken_bonds"] = th.tensor(magma_entry["max_broken"], dtype=th.long).unsqueeze(0)
 		magma_data["magma_adducts"] = th.tensor([magma_entry["adduct"]], dtype=th.float)
@@ -738,7 +738,7 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 	def _special_collate(keys, collate_data):
 
 		###
-		frag_graphs = collate_data["magma_frag_graphs"]
+		frag_graphs = [dgl.unbatch(gs) for gs in collate_data["magma_frag_graphs"]]
 		num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]],dtype=th.long)
 		assert th.all(num_frags == th.cat(collate_data["magma_num_frags"],dim=0))
 		###
