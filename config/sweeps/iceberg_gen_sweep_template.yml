@@ -68,6 +68,4 @@ auxiliary_scores: []
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-dynamic_batch_sampler: False
-pl_enable_progress_bar: True
 compile: True

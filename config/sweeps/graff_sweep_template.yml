@@ -74,14 +74,18 @@ pm_tolerance_multiple: 1
 # optimization stuff
 train_batch_size: 128
 eval_batch_size: 128
-accumulate_grad_batches: 4
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0005 # 5e-4
+lr: 0.0
+weight_decay: 0.0
 accelerator: gpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
-lr_schedule: False
+lr_schedule: True
+lr_decay_rate: 0.000
+lr_warmup_steps: 1000
+lr_decay_steps: 5000
 debug_overfit: False
 upload_checkpoints: False
 delete_checkpoints: True
