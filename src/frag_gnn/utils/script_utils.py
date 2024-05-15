@@ -50,12 +50,14 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 	if not fraggnn_model:
 		assert not nb_iso
 		BATCH_IDX_VARS = [
-			"pred_batch_idxs"
+			"pred_batch_idxs",
+			"true_batch_idxs"
 		]
 		NODE_IDX_VARS = FORMULA_IDX_VARS = NB_NODE_IDX_VARS = []
 	else:
 		BATCH_IDX_VARS = [
 			"pred_batch_idxs",
+			"true_batch_idxs",
 			"pred_formula_batch_idxs",
 			"pred_node_batch_idxs",
 			"pred_joint_batch_idxs"
@@ -97,20 +99,23 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 			b_output = to_device(b_output, "cpu",non_blocking=False)
 			if output_subset is not None:
 				b_output = {k: b_output[k] for k in b_output if k in output_subset}
+			output_keys = b_output.keys()
 			# rebatch stuff
-			if "pred_batch_idxs" in output_subset:
+			if "pred_batch_idxs" in output_keys:
 				b_num_datapoints = b_output["pred_batch_idxs"].max()+1
+			elif "true_batch_idxs" in output_keys:
+				b_num_datapoints = b_output["true_batch_idxs"].max()+1
 			else:
 				b_num_datapoints = 0
-			if fraggnn_model and "pred_node_node_idxs" in output_subset:
+			if fraggnn_model and "pred_node_node_idxs" in output_keys:
 				b_num_nodes = b_output["pred_node_node_idxs"].max()+1
 			else:
 				b_num_nodes = 0
-			if fraggnn_model and "pred_formula_formula_idxs" in output_subset:
+			if fraggnn_model and "pred_formula_formula_idxs" in output_keys:
 				b_num_formulas = b_output["pred_formula_formula_idxs"].max()+1
 			else:
 				b_num_formulas = 0
-			if fraggnn_model and nb_iso and "pred_nb_node_node_idxs" in output_subset:
+			if fraggnn_model and nb_iso and "pred_nb_node_node_idxs" in output_keys:
 				b_num_nb_nodes = b_output["pred_nb_node_node_idxs"].max()+1
 			else:
 				b_num_nb_nodes = 0
@@ -155,13 +160,13 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 				vals[k] = th.cat(vals[k], dim=0)
 	return vals
 
-def select_model_vals(model_to_vals, keys):
+def select_model_vals(model_to_vals, keys, stack_dim=0):
 
 	select_d = {k: [] for k in keys}
 	for model, vals in model_to_vals.items():
 		for k in keys:
 			select_d[k].append(vals[k])
-	select_d = {k: th.stack(v, dim=0) for k,v in select_d.items()}
+	select_d = {k: th.stack(v, dim=stack_dim) for k,v in select_d.items()}
 	return select_d
 
 def log_mean(log_p,dim=0):
