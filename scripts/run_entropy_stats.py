@@ -31,7 +31,7 @@ if __name__ == "__main__":
 	# load configs
 	print(">>> Loading configs")
 	template_fp = "config/template.yml"
-	custom_fp = "config/entropyv2/fraggnn_d3.yml"
+	custom_fp = "config/entropyv2/d3_baseline.yml"
 	config_d = load_config(template_fp, custom_fp)
 
 	# if debug:
