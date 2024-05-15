@@ -85,7 +85,7 @@ def load_wandb_config(wandb_config_dp) -> dict:
 	return config_d
 
 
-def init_dataset(config_d):
+def init_dataset(config_d, splits=("train","val")):
 
 	if config_d["model_type"] == "frag_gnn":
 		dataset_cls = SpecMolFragDataset
@@ -100,22 +100,20 @@ def init_dataset(config_d):
 		dataset_cls = SpecMolDataset
 	
 	data_dict_types = dataset_cls.get_data_dict_types()
-	if config_d["num_workers"] > 0 and config_d["share_memory"]:
-		manager = Manager()
-		train_data_sds = {k: manager.dict() for k in data_dict_types}
-		val_data_sds = {k: manager.dict() for k in data_dict_types}
-	else:
-		train_data_sds = {k: dict() for k in data_dict_types}
-		val_data_sds = {k: dict() for k in data_dict_types}
-	train_ds = dataset_cls(
-		split="train",
-		**{**train_data_sds,**config_d})
-	val_ds = dataset_cls(
-		split="val",
-		**{**val_data_sds,**config_d})
-	# test_ds = dataset_cls(split="test",**config_d)
+	
+	dses = []
+	for split in splits:
+		if config_d["num_workers"] > 0 and config_d["share_memory"]:
+			manager = Manager()
+			data_sds = {k: manager.dict() for k in data_dict_types}
+		else:
+			data_sds = {k: dict() for k in data_dict_types}
+		ds = dataset_cls(
+			split=split,
+			**{**data_sds,**config_d})
+		dses.append(ds)
  
-	return train_ds, val_ds
+	return tuple(dses)
 
 
 def init_dataloader(ds, config_d):
@@ -399,7 +397,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# setup datasets
 	logging.info("setup dataset")
-	train_ds, val_ds = init_dataset(config_d)
+	train_ds, val_ds = init_dataset(config_d, splits=("train","val"))
 
 	# check config for sampler
 	if config_d["dynamic_batch_sampler"]:
