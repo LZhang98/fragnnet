@@ -1,5 +1,4 @@
 wandb_name: debug_massformer_m
-# wandb_root_dir: /checkpoint/adamo
 wandb_tags:
 - debug
 - nist20v2

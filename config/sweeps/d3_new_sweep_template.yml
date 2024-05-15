@@ -1,5 +1,4 @@
 wandb_name: d3_new_sweep_template
-wandb_root_dir: /checkpoint/adamo
 wandb_tags:
 - sweep
 - nist20

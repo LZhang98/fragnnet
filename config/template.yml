@@ -4,7 +4,7 @@ wandb_project: frag-gnn
 wandb_name: template
 wandb_group:
 wandb_tags: 
-wandb_root_dir:
+wandb_root_dir: checkpoint
 # data
 spec_fp: data/proc/nist20mona23/spec_df.pkl
 mol_fp: data/proc/nist20mona23/mol_df.pkl
