@@ -8,10 +8,9 @@ wandb_tags:
 - new_proc
 - graff
 - new_metrics
-- nodemlp
 - ce_embed
 - merged
-- oos_multiple_1
+- pm_multiple_1
 - gaussian_renormalize
 - no_auxiliary_scores
 - preload
