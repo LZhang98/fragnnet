@@ -1919,7 +1919,7 @@ def test_models():
 		config_d = load_config(template_fp, custom_fp)
 		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
 
-		ds = init_dataset(config_d)[0]
+		ds = init_dataset(config_d, splits=("train",))[0]
 		dl = th.utils.data.DataLoader(
 			ds,
 			batch_size=8,
