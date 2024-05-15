@@ -237,6 +237,12 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 				wandb_config = config_d
 			wandb_d["id"] = run_id
 			wandb_d["config"] = wandb_config
+			if config_d["wandb_root_dir"] is not None:
+				wandb_dir = os.path.join(config_d["wandb_root_dir"],str(job_id))
+				if os.path.isdir(wandb_dir):
+					wandb_d["dir"] = wandb_dir
+				else:
+					print(f"> wandb dir does not exist: {wandb_dir}, using default instead")
 		else:
 			is_resume = False
 			job_id_fp = None

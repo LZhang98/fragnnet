@@ -1,5 +1,5 @@
-wandb_name: nist20v2_inchikey_fraggnn_d4_new_s2
-wandb_group: nist20v2_inchikey_fraggnn_d4_new
+wandb_name: nist20v2_inchikey_fraggnn_d4_s0
+wandb_group: nist20v2_inchikey_fraggnn_d4
 wandb_tags:
 - splits
 - nist20v2
@@ -20,17 +20,17 @@ wandb_tags:
 - lb16
 - preload
 - preprocess
-- s2
+- s0
 - 7m4eybdo
 
 # seed
-seed: 444303
+seed: 397623
 
 # data stuff
-spec_fp: data/proc/nist20mona23/spec_df.pkl
-mol_fp: data/proc/nist20mona23/mol_df.pkl
-split_dp: data/split/nist20_mona23_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23_d4_h4_isoFalse_nb2/dags
+spec_fp: data/proc/nist20mona23v2/spec_df.pkl
+mol_fp: data/proc/nist20mona23v2/mol_df.pkl
+split_dp: data/split/nist20mona23v2_d4_wr00_inchikey
+frag_dp: data/frag/nist20mona23v2_d4_h4_isoFalse_nb3/dags
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False

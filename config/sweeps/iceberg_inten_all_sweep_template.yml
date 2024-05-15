@@ -71,6 +71,7 @@ lr_warmup_steps: 1000
 lr_decay_steps: 5000
 debug_overfit: False
 upload_checkpoints: False
+delete_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 checkpoint_metric_mode: max
 auxiliary_scores:
@@ -80,6 +81,4 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-dynamic_batch_sampler: False
-pl_enable_progress_bar: True
 compile: True

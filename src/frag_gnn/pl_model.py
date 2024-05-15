@@ -1129,6 +1129,10 @@ class SpectrumPL(pl.LightningModule):
 	def on_load_checkpoint(self, checkpoint):
 		
 		# rng
+		if "torch" in checkpoint["rng_states"]:
+			checkpoint["rng_states"]["torch"] = checkpoint["rng_states"]["torch"].cpu()
+		if "torch.cuda" in checkpoint["rng_states"]:
+			checkpoint["rng_states"]["torch.cuda"][0] = checkpoint["rng_states"]["torch.cuda"][0].cpu()
 		_set_rng_states(checkpoint["rng_states"])
 		# metrics
 		self.train_mean_metrics = checkpoint["train_mean_metrics"]

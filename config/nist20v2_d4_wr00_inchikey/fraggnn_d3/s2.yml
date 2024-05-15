@@ -1,5 +1,5 @@
-wandb_name: nist20v2_inchikey_fraggnn_d3_new_s4
-wandb_group: nist20v2_inchikey_fraggnn_d3_new
+wandb_name: nist20v2_inchikey_fraggnn_d3_s2
+wandb_group: nist20v2_inchikey_fraggnn_d3
 wandb_tags:
 - splits
 - nist20v2
@@ -20,11 +20,11 @@ wandb_tags:
 - lb16
 - preload
 - preprocess
-- s4
+- s2
 - xi6bawy4
 
 # seed
-seed: 132548
+seed: 444303
 
 # data stuff
 spec_fp: data/proc/nist20mona23v2/spec_df.pkl
