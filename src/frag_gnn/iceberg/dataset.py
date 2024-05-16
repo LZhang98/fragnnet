@@ -544,7 +544,7 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 	@staticmethod
 	def _special_collate(keys, collate_data):
 		
-		frag_graphs = dgl.unbatch(collate_data["magma_frag_graphs"])
+		frag_graphs = [dgl.unbatch(gs) for gs in collate_data["magma_frag_graphs"]]
 		num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]],dtype=th.long)
 		targ_atoms = []
 		for i in collate_data["magma_targ_atoms"]:
