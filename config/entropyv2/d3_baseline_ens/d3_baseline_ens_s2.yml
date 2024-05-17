@@ -102,8 +102,8 @@ min_epochs: 100
 max_epochs: 100
 lr_schedule: False
 debug_overfit: False
-upload_checkpoints: False
-delete_checkpoints: True
+upload_checkpoints: True
+delete_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
