@@ -1,7 +1,7 @@
-wandb_name: debug_d3_auto_m
+wandb_name: debug_d3_m
 wandb_tags:
 - debug
-- nist20
+- nist20v2
 - d4
 - wr00
 - inchikey
@@ -13,36 +13,34 @@ wandb_tags:
 - merged
 - oos_multiple_1
 - gaussian_renormalize
-- b64x2
+- b32x4
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
 - preload
 - preprocess
+- xi6bawy4
 
 # data stuff
-spec_fp: data/proc/debug_small/spec_df.pkl
-mol_fp: data/proc/debug_small/mol_df.pkl
-split_dp: data/split/debug_small
-frag_dp: data/frag/nist20mona23_d3_h4_isoFalse_nb2/dags
+spec_fp: data/proc/debug_smallv2/spec_df.pkl
+mol_fp: data/proc/debug_smallv2/mol_df.pkl
+split_dp: data/split/debug_smallv2
+frag_dp: data/frag/nist20mona23v2_d3_h4_isoFalse_nb3/dags
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: False #True
-  preprocess: False #True
+  preload: True
+  preprocess: True
 spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: False #True
+  preprocess: True
 mol_params:
-  preprocess: False #True
-subsample_params:
-  subsample_size: 0.05
+  preprocess: True
 
 # model stuff
-model_type: frag_gnn
 frag_gnn_type: NodeMLP
 num_depth: 4
 num_hs: 4
@@ -51,6 +49,17 @@ ce_insert_location: mlp
 ce_insert_merge: True
 mol_pool_type: mean
 frag_pool_type: mean
+mol_normalization: batch
+mol_hidden_size: 256
+mol_dropout: 0.2
+frag_hidden_size: 256
+frag_normalization: graph
+frag_embed_combine: avg
+frag_pool_combine: subtract
+frag_dropout: 0.1
+mlp_normalization: layer
+mlp_hidden_size: 64
+mlp_dropout: 0.2
 
 # loss stuff
 mask_null_formula: False
@@ -63,20 +72,21 @@ loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
 group_sampler: False
-simple_group_sampler: True
+simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 64
-eval_batch_size: 64
-accumulate_grad_batches: 2
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 4
 gradient_clip_val: 5.0
-lr: 0.0004
+lr: 0.0003033
+weight_decay: 0.01
 accelerator: gpu
 devices: 1
-min_epochs: 5
-max_epochs: 5
+min_epochs: 100
+max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
