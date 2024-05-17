@@ -1,4 +1,5 @@
 wandb_name: d3_negfn_ens_s3
+wandb_group: d3_negfn_ens
 wandb_tags:
 - entropyv2
 - negfn_ens
