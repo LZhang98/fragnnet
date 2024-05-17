@@ -633,7 +633,7 @@ class SpectrumPL(pl.LightningModule):
 			pred = self.model.forward(**batch_kwargs)
 		return pred
 
-	def _common_step(self, batch, split="train"):
+	def _common_step(self, batch, split="train", log=True):
 
 		# preprocess spec
 		batch_size = batch["batch_size"]
@@ -679,12 +679,13 @@ class SpectrumPL(pl.LightningModule):
 			split=split
 		)
 		# just log loss
-		self.log(
-			f"{split}_batch_loss",
-			mean_loss,
-			batch_size=batch_size,
-			on_epoch=True
-		)
+		if log:
+			self.log(
+				f"{split}_batch_loss",
+				mean_loss,
+				batch_size=batch_size,
+				on_epoch=True
+			)
 		results = {
 			"unique_id": unique_id,
 			"smiles": smiles,
@@ -751,6 +752,11 @@ class SpectrumPL(pl.LightningModule):
 		mean_loss = batch_results["mean_loss"]
 		# self._update_results(batch_results,"test")
 		return mean_loss
+	
+	def inference_step(self, batch, split):
+
+		batch_results = self._common_step(batch, split=split, log=False)
+		return batch_results
 
 	def configure_optimizers(self):
 
@@ -1206,6 +1212,7 @@ class FragGNNPL(SpectrumPL):
 
 		# compile
 		if self.hparams.compile:
+			th_dynamo.reset()
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
 
@@ -1894,6 +1901,7 @@ class NeimsPL(BinnedPL):
 
 		# compile
 		if self.hparams.compile:
+			th_dynamo.reset()
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
 
@@ -1942,7 +1950,7 @@ def test_models():
 		print_shapes(outputs)
 		print(th.exp(outputs["pred_logprobs"]).sum())
 
-		results = pl_model._common_step(batch, split="train")
+		results = pl_model._common_step(batch, split="train", log=False)
 		print_shapes(results)
 
 		mean_loss = results["mean_loss"]

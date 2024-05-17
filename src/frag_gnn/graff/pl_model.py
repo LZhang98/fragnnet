@@ -45,6 +45,7 @@ class GrAFFPL(SpectrumPL):
 
 		# compile
 		if self.hparams.compile:
+			th_dynamo.reset()
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)		
 
@@ -158,7 +159,7 @@ def test_models():
 		print("> train outputs")
 		print_shapes(outputs)
 
-		results = pl_model._common_step(batch, split="train")
+		results = pl_model._common_step(batch, split="train", log=False)
 		print_shapes(results)
 
 		mean_loss = results["mean_loss"]

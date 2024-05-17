@@ -36,6 +36,7 @@ class IcebergGenPL(SpectrumPL):
 
 		# compile
 		if self.hparams.compile:
+			th_dynamo.reset()
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 
 	def _setup_loss_fn(self):
@@ -80,7 +81,7 @@ class IcebergGenPL(SpectrumPL):
 		)
 		return outputs
 
-	def _common_step(self, batch, split="train"):
+	def _common_step(self, batch, split="train", log=True):
 
 		batch_size = batch["batch_size"]
 		unique_id = batch["spec_unique_id"]
@@ -99,12 +100,13 @@ class IcebergGenPL(SpectrumPL):
 		loss = loss_d["loss"]
 		mean_loss = th.mean(loss,dim=0)
 		# just log loss
-		self.log(
-			f"{split}_batch_loss",
-			mean_loss,
-			batch_size=batch_size,
-			on_epoch=True
-		)
+		if log:
+			self.log(
+				f"{split}_batch_loss",
+				mean_loss,
+				batch_size=batch_size,
+				on_epoch=True
+			)
 		results = {
 			"unique_id": unique_id,
 			"smiles": smiles,
@@ -488,6 +490,7 @@ class IcebergIntenPL(SpectrumPL):
 
 		# compile
 		if self.hparams.compile:
+			th_dynamo.reset()
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 
 	def _setup_loss_fn(self):
@@ -628,7 +631,7 @@ class IcebergIntenPL(SpectrumPL):
 		)
 		return outputs
 
-	def _common_step(self, batch, split="train"):
+	def _common_step(self, batch, split="train", log=True):
 
 		batch_size = batch["batch_size"]
 		unique_id = batch["spec_unique_id"]
@@ -665,13 +668,14 @@ class IcebergIntenPL(SpectrumPL):
 			reduce="w_mean",
 			split=split
 		)
-		# just log loss
-		self.log(
-			f"{split}_batch_loss",
-			mean_loss,
-			batch_size=batch_size,
-			on_epoch=True
-		)
+		if log:
+			# just log loss
+			self.log(
+				f"{split}_batch_loss",
+				mean_loss,
+				batch_size=batch_size,
+				on_epoch=True
+			)
 		results = {
 			"unique_id": unique_id,
 			"smiles": smiles,
@@ -811,7 +815,7 @@ def test_inten():
 		if "pred_spec" in outputs:
 			print(outputs["pred_spec"].sum())
 
-		results = pl_model._common_step(batch, split="train")
+		results = pl_model._common_step(batch, split="train", log=False)
 		print_shapes(results)
 
 		mean_loss = results["mean_loss"]

@@ -37,6 +37,7 @@ class MassFormerPL(BinnedPL):
 
 		# compile
 		if self.hparams.compile:
+			th_dynamo.reset()
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
 
@@ -141,7 +142,7 @@ def test_massformer():
 		print_shapes(outputs)
 		print(th.exp(outputs["pred_logprobs"]).sum())
 
-		results = pl_model._common_step(batch, split="train")
+		results = pl_model._common_step(batch, split="train", log=False)
 		print_shapes(results)
 
 		mean_loss = results["mean_loss"]
