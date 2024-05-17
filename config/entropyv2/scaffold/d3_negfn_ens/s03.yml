@@ -1,10 +1,12 @@
-wandb_name: script_config
+wandb_name: entropyv2_scaffold_d3_negfn_ens_s03
+wandb_group: entropyv2_scaffold_d3_negfn_ens
 wandb_tags:
 - entropyv2
+- negfn_ens
 - nist20v2
 - d4
 - wr00
-- inchikey
+- scaffold
 - new_proc
 - fraggnn_d3
 - new_metrics
@@ -19,25 +21,41 @@ wandb_tags:
 - preload
 - preprocess
 - xi6bawy4
+- nb_iso
+- formula_node_ne_neg
+- formula_ne_pos
+- s03
+
+# seed stuff
+seed: 103976
 
 # data stuff
 spec_fp: data/proc/nist20mona23v2/spec_df.pkl
 mol_fp: data/proc/nist20mona23v2/mol_df.pkl
-split_dp: data/split/nist20mona23v2_d4_wr00_inchikey
+split_dp: data/split/nist20mona23v2_d4_wr00_scaffold
 frag_dp: data/frag/nist20mona23v2_d3_h4_isoFalse_nb3/dags
 frag_params:
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - nb_iso_idx
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: False #True
-  preprocess: False #True
+  preload: True
+  preprocess: True
 spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: False #True
+  preprocess: True
 mol_params:
-  preprocess: False #True
+  preprocess: True
+nb_iso: True
+formula_node_normalized_entropy_weight: -0.10
+formula_normalized_entropy_weight: 0.00
 
 # model stuff
 frag_gnn_type: NodeMLP
@@ -89,11 +107,12 @@ max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
+delete_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
-# auxiliary_scores:
-# - cos_sim
-# eval_mz_bin_res:
-# - 0.01
+auxiliary_scores:
+- cos_sim
+eval_mz_bin_res:
+- 0.01
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
