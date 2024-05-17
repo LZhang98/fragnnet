@@ -21,8 +21,6 @@ wandb_tags:
 - preprocess
 - xi6bawy4
 - nb_iso
-- formula_node_ne_pos
-- formula_ne_neg
 
 # data stuff
 spec_fp: data/proc/nist20mona23v2/spec_df.pkl
