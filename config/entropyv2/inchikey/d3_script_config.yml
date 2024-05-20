@@ -19,6 +19,7 @@ wandb_tags:
 - preload
 - preprocess
 - xi6bawy4
+- nb_iso
 
 # data stuff
 spec_fp: data/proc/nist20mona23v2/spec_df.pkl
@@ -26,6 +27,12 @@ mol_fp: data/proc/nist20mona23v2/mol_df.pkl
 split_dp: data/split/nist20mona23v2_d4_wr00_inchikey
 frag_dp: data/frag/nist20mona23v2_d3_h4_isoFalse_nb3/dags
 frag_params:
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - nb_iso_idx
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
@@ -38,6 +45,7 @@ spec_params:
   preprocess: False #True
 mol_params:
   preprocess: False #True
+nb_iso: True
 
 # model stuff
 frag_gnn_type: NodeMLP
