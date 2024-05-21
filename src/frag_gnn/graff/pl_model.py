@@ -55,11 +55,6 @@ class GrAFFPL(SpectrumPL):
 		loss_names = [
 			"loss",
 			"primary_loss",
-			# "spec_ce",
-			# "oos_ce",
-			# "ios_ce",
-			# "null_formula_prob",
-			# "oos_prob",
 		]
 		self.loss_names = loss_names
 		self.metric_names.update(loss_names)
@@ -84,7 +79,8 @@ class GrAFFPL(SpectrumPL):
 
 		self._setup_loss_names()
 
-		def _loss_fn(true_mzs,
+		def _loss_fn(
+			true_mzs,
 			true_logprobs,
 			true_batch_idxs,
 			pred_mzs,
