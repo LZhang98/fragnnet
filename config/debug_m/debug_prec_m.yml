@@ -6,7 +6,8 @@ wandb_tags:
 - wr00
 - inchikey
 - new_proc
-- prec_model
+- precursor_model
+- merged
 
 # data stuff
 spec_fp: data/proc/debug_smallv2/spec_df.pkl
