@@ -74,11 +74,11 @@ class MassFormerModel(nn.Module, CEModel, PrecModel):
 
 	def _ce_location_check(self):
 
-		assert self.ce_insert_location == "mlp", f"ce_insert_location={self.ce_insert_location} not supported"
+		assert self.ce_insert_location in ["mlp","none"], f"ce_insert_location={self.ce_insert_location} not supported"
 
 	def _prec_location_check(self):
 
-		assert self.prec_insert_location == "mlp", f"prec_insert_location={self.prec_insert_location} not supported"
+		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
 
 	def get_split_params(self):
 

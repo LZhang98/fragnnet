@@ -82,6 +82,7 @@ class CEModel:
 			ce_mol_input_dim = 0
 			ce_mlp_input_dim = ce_input_dim
 		else:
+			assert self.ce_insert_location == "none"
 			ce_mol_input_dim = 0
 			ce_mlp_input_dim = 0
 		self.ce_transform = ce_transform
@@ -128,6 +129,7 @@ class PrecModel:
 			prec_mol_input_dim = 0
 			prec_mlp_input_dim = prec_dim
 		else:
+			assert self.prec_insert_location == "none"
 			prec_mol_input_dim = 0
 			prec_mlp_input_dim = 0
 		self.prec_mol_input_dim = prec_mol_input_dim
@@ -1077,11 +1079,11 @@ class NeimsModel(nn.Module, CEModel, PrecModel):
 
 	def _ce_location_check(self):
 
-		assert self.ce_insert_location == "mlp", f"ce_insert_location={self.ce_insert_location} not supported"
+		assert self.ce_insert_location in ["mlp","none"], f"ce_insert_location={self.ce_insert_location} not supported"
 
 	def _prec_location_check(self):
 		
-		assert self.prec_insert_location == "mlp", f"prec_insert_location={self.prec_insert_location} not supported"
+		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
 
 	def forward(
 		self,
