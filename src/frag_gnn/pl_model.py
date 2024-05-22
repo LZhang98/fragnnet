@@ -1196,6 +1196,9 @@ class FragGNNPL(SpectrumPL):
 			ce_insert_location=self.hparams.ce_insert_location,
 			ce_insert_merge=self.hparams.ce_insert_merge,
 			ce_insert_size=self.hparams.ce_insert_size,
+			prec_insert_location=self.hparams.prec_insert_location,
+			prec_insert_size=self.hparams.prec_insert_size,
+			prec_types=self.hparams.spec_params["prec_types"],
 		)
 		
 		self._check_ce_params()
@@ -1895,6 +1898,9 @@ class NeimsPL(BinnedPL):
 			ce_insert_location=self.hparams.ce_insert_location,
 			ce_insert_merge=self.hparams.ce_insert_merge,
 			ce_insert_size=self.hparams.ce_insert_size,
+			prec_insert_location=self.hparams.prec_insert_location,
+			prec_insert_size=self.hparams.prec_insert_size,
+			prec_types=self.hparams.spec_params["prec_types"],
 		)
 		
 		self._check_ce_params()
@@ -1985,10 +1991,9 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug_um/debug_d3_auto_um.yml": FragGNNPL,
-		"config/debug_m/debug_d3_auto_m.yml": FragGNNPL,
-		"config/debug_um/debug_neims_auto_um.yml": NeimsPL,
-		"config/debug_m/debug_neims_auto_m.yml": NeimsPL
+		# "config/debug_m/debug_d3_m.yml": FragGNNPL,
+		"config/debug_m/debug_d3_prec_m.yml": FragGNNPL,
+		"config/debug_m/debug_neims_prec_m.yml": NeimsPL
 	}
 
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():

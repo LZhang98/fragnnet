@@ -153,7 +153,7 @@ if __name__ == "__main__":
     parser.add_argument("--val_ids",type=int,nargs="+",default=[62611])
     parser.add_argument("--test_ids",type=int,nargs="+",default=[62611])
     # spec filtering criteria
-    parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr"])
+    parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
     parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
     parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
     parser.add_argument("--max_peak_mz",type=float,default=1500.)
@@ -168,9 +168,9 @@ if __name__ == "__main__":
     parser.add_argument("--total_frac",type=float,default=1.0)
     parser.add_argument("--test_frac",type=float,default=0.2)
     parser.add_argument("--val_frac",type=float,default=0.2)
-    parser.add_argument("--proc_dp",type=str,default="data/proc/nist")
-    parser.add_argument("--frag_dp",type=str,default="data/frag/d3_h4_isoTrue_v2")
-    parser.add_argument("--split_dp",type=str,default="data/split/d3_h4_isoTrue_v2")
+    parser.add_argument("--proc_dp",type=str,required=True)
+    parser.add_argument("--frag_dp",type=str,required=True)
+    parser.add_argument("--split_dp",type=str,required=True)
 
     args = parser.parse_args()
 

@@ -12,7 +12,7 @@ from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
 
 MAX_NUM_NODES = 60 # hard cap on 64!!
-MAX_NUM_EDGES = 4 * MAX_NUM_NODES # ~4*MAX_NUM_NODES 
+MAX_NUM_EDGES = 4*60 # ~4*MAX_NUM_NODES 
 #DTYPE = np.intc
 MASK_DTYPE = np.uint8
 MAX_EDGE_PER_NODE = 6 # Sulfur
