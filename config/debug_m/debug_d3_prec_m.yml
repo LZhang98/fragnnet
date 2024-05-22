@@ -52,7 +52,9 @@ num_hs: 4
 ce_insert_type: embed
 ce_insert_location: mlp
 ce_insert_merge: True
+ce_insert_size: 24
 prec_insert_location: mlp
+prec_insert_size: 8
 mol_pool_type: mean
 frag_pool_type: mean
 mol_normalization: batch
@@ -83,9 +85,9 @@ train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 8
-eval_batch_size: 8
-accumulate_grad_batches: 1
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01

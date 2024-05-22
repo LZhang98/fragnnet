@@ -1993,7 +1993,8 @@ def test_models():
 	custom_fp_to_model_cls = {
 		# "config/debug_m/debug_d3_m.yml": FragGNNPL,
 		"config/debug_m/debug_d3_prec_m.yml": FragGNNPL,
-		"config/debug_m/debug_neims_prec_m.yml": NeimsPL
+		# "config/debug_m/debug_neims_prec_m.yml": NeimsPL,
+		"config/debug_um/debug_d3_prec_um.yml": FragGNNPL,
 	}
 
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
@@ -2001,6 +2002,10 @@ def test_models():
 		print(">>>", custom_fp)
 
 		config_d = load_config(template_fp, custom_fp)
+		for k in ["spec_params","mol_params","frag_params"]:
+			config_d[k]["preprocess"] = False
+			if "preload" in config_d[k]:
+				config_d[k]["preload"] = False
 		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
 
 		ds = init_dataset(config_d, splits=("train",))[0]
