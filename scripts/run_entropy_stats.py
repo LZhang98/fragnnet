@@ -114,6 +114,9 @@ if __name__ == "__main__":
 
 		th.save(model_to_vals,vals_fp)
 
+		# delete dataset, dataloader
+		del ds, dl
+
 	else:
 
 		print(f">>> Loading previous values from {vals_fp}")
