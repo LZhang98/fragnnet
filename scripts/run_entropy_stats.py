@@ -123,6 +123,9 @@ if __name__ == "__main__":
 	# load model
 	model = FragGNNPL(**config_d)
 
+	# delete dataset, dataloader
+	del ds, dl
+
 	# compute ensemble distributions
 	print(">>> Cosine Similarity")
 
