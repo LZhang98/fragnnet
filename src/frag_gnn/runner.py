@@ -127,56 +127,47 @@ def init_dataloader(ds, config_d):
 		"pin_memory": config_d["pin_memory"] and (config_d["accelerator"] != "cpu")
 	}
 
-	if split in ["train", "val"]:	
-
-		# note: this generator will get overwritten at the beginning/ending of each training epoch
-		generator = th.Generator() 
-		if config_d["group_sampler"] and split == "train":
-			sampler = GroupSampler(
-				ds,
-				sample_k=config_d['group_sampler_max_per_group'],
-				generator=generator)
-		elif config_d["simple_group_sampler"] and split == "train":
-			sampler = get_group_sampler(
-				ds,
-				config_d["simple_group_sampler_type"],
-				config_d["simple_group_sampler_avg_per_group"],
-				generator)
-		elif split == "val":
-			sampler = SequentialSampler(ds)
-		else:
-			sampler = RandomSampler(ds, False, generator=generator)
-		# for batch sampler 
-		if config_d["dynamic_batch_sampler"]:
-			max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
-			if split == "train":
-				return_batch_at = max_batch_size
-			else:
-				return_batch_at = 0
-			batch_sampler = SpecMolFragDynamicBatchSampler(
-								ds, 
-								max_num = config_d["dynamic_batch_sampler_max"], 
-								limited_by = config_d["dynamic_batch_sampler_mode"], 
-								skip_too_big = True,
-								return_batch_at = return_batch_at,
-								sampler = sampler)
-			dl_param_d["batch_sampler"] = batch_sampler
-		else:
-			dl_param_d["sampler"] = sampler
-			if split == "train":
-				dl_param_d["batch_size"] = config_d["train_batch_size"]	
-				dl_param_d["drop_last"] = config_d["drop_last"]
-			else:
-				dl_param_d["batch_size"] = config_d["eval_batch_size"]
-				dl_param_d["drop_last"] = False
-		dl = DataLoader(**dl_param_d)
-
+	# note: this generator will get overwritten at the beginning/ending of each training epoch
+	generator = th.Generator() 
+	if config_d["group_sampler"] and split == "train":
+		sampler = GroupSampler(
+			ds,
+			sample_k=config_d['group_sampler_max_per_group'],
+			generator=generator)
+	elif config_d["simple_group_sampler"] and split == "train":
+		sampler = get_group_sampler(
+			ds,
+			config_d["simple_group_sampler_type"],
+			config_d["simple_group_sampler_avg_per_group"],
+			generator)
+	elif split in ["val", "test"]:
+		sampler = SequentialSampler(ds)
 	else:
-
-		dl_param_d["batch_size"] = config_d["eval_batch_size"]
-		dl_param_d["sampler"] = SequentialSampler(ds)
-		dl_param_d["drop_last"] = False
-		dl = DataLoader(**dl_param_d)
+		sampler = RandomSampler(ds, False, generator=generator)
+	# for batch sampler 
+	if config_d["dynamic_batch_sampler"]:
+		max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
+		if split == "train":
+			return_batch_at = max_batch_size
+		else:
+			return_batch_at = 0
+		batch_sampler = SpecMolFragDynamicBatchSampler(
+							ds, 
+							max_num = config_d["dynamic_batch_sampler_max"], 
+							limited_by = config_d["dynamic_batch_sampler_mode"], 
+							skip_too_big = True,
+							return_batch_at = return_batch_at,
+							sampler = sampler)
+		dl_param_d["batch_sampler"] = batch_sampler
+	else:
+		dl_param_d["sampler"] = sampler
+		if split == "train":
+			dl_param_d["batch_size"] = config_d["train_batch_size"]	
+			dl_param_d["drop_last"] = config_d["drop_last"]
+		else:
+			dl_param_d["batch_size"] = config_d["eval_batch_size"]
+			dl_param_d["drop_last"] = False
+	dl = DataLoader(**dl_param_d)
 
 	return dl
 

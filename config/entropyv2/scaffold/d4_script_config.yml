@@ -36,15 +36,15 @@ frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: False #True
-  preprocess: False #True
+  preload: True
+  preprocess: True
 spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: False #True
+  preprocess: True
 mol_params:
-  preprocess: False #True
+  preprocess: True
 nb_iso: True
 
 # model stuff
