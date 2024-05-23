@@ -62,6 +62,10 @@ sum_ints: True
 loss_type: cosine_distance
 sparse_cosine_similarity: True
 ints_transform: log10t3
+group_sampler: False
+simple_group_sampler: False
+train_sample_weight: mol
+eval_sample_weight: mol
 
 # optimization stuff
 train_batch_size: 128

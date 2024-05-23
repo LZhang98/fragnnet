@@ -64,8 +64,9 @@ sparse_cosine_similarity: True
 ints_transform: log10t3
 group_sampler: False
 simple_group_sampler: True
+simple_group_sampler_type: group_mol
 train_sample_weight: none
-eval_sample_weight: group
+eval_sample_weight: group_mol
 
 # optimization stuff
 train_batch_size: 128

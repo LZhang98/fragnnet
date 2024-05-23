@@ -13,7 +13,7 @@ wandb_tags:
 - unmerged
 - oos_multiple_1
 - gaussian_renormalize
-- b32x4
+- b128x1
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
@@ -81,13 +81,14 @@ loss_batch_size: 16
 skip_extra_losses: True
 group_sampler: False
 simple_group_sampler: True
+simple_group_sampler_type: group_mol
 train_sample_weight: none
-eval_sample_weight: group
+eval_sample_weight: group_mol
 
 # optimization stuff
-train_batch_size: 32
-eval_batch_size: 32
-accumulate_grad_batches: 4
+train_batch_size: 128
+eval_batch_size: 128
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01

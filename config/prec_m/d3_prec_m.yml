@@ -81,8 +81,8 @@ loss_batch_size: 16
 skip_extra_losses: True
 group_sampler: False
 simple_group_sampler: False
-train_sample_weight: none
-eval_sample_weight: none
+train_sample_weight: mol
+eval_sample_weight: mol
 
 # optimization stuff
 train_batch_size: 32
