@@ -12,6 +12,7 @@ try:
 	from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
+	from pytorch_lightning.utilities.seed import _collect_rng_states, _set_rng_states
 	
 import torch._dynamo as th_dynamo
 

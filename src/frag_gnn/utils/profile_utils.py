@@ -1,7 +1,9 @@
 import torch
 import os
-from lightning.pytorch.profilers.pytorch import PyTorchProfiler, _KINETO_AVAILABLE, _PROFILER, warning_cache, tensorboard_trace_handler, rank_zero_warn, MisconfigurationException, ProfilerAction, ScheduleWrapper, Any
-
+try:
+    from lightning.pytorch.profilers.pytorch import PyTorchProfiler, _KINETO_AVAILABLE, _PROFILER, warning_cache, tensorboard_trace_handler, rank_zero_warn, MisconfigurationException, ProfilerAction, ScheduleWrapper, Any
+except ModuleNotFoundError:
+    from pytorch_lightning.profilers.pytorch import PyTorchProfiler, _KINETO_AVAILABLE, _PROFILER, warning_cache, tensorboard_trace_handler, rank_zero_warn, MisconfigurationException, ProfilerAction, ScheduleWrapper, Any
 
 class MyPyTorchProfiler(PyTorchProfiler):
 
