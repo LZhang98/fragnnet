@@ -49,6 +49,7 @@ class BaseDataset(Dataset):
 		self.id_key = id_key
 		self._compute_counts()
 		self._setup_prec_type_to_idx()
+		self._setup_inst_type_to_idx()
 
 	@staticmethod
 	def _setup_dfs( 
@@ -178,6 +179,12 @@ class BaseDataset(Dataset):
 		self.prec_type_to_idx = {prec_type: idx for idx, prec_type in enumerate(prec_types)}
 		self.num_prec_types = len(prec_types)+1
 
+	def _setup_inst_type_to_idx(self):
+
+		inst_types = sorted(self.spec_params["inst_types"])
+		self.inst_type_to_idx = {inst_type: idx for idx, inst_type in enumerate(inst_types)}
+		self.num_inst_types = len(inst_types)+1
+
 	def _process_spec(self,spec_entry):
 
 		spec_data = {}
@@ -192,6 +199,10 @@ class BaseDataset(Dataset):
 			prec_type = spec_entry["prec_type"]
 			prec_type = th.tensor([self.prec_type_to_idx.get(prec_type,self.num_prec_types)],dtype=th.long)
 			spec_data["spec_prec_type"] = prec_type
+		if self.spec_params["inst_type"]:
+			inst_type = spec_entry["inst_type"]
+			inst_type = th.tensor([self.inst_type_to_idx.get(inst_type,self.num_inst_types)],dtype=th.long)
+			spec_data["spec_inst_type"] = inst_type
 		if self.spec_params["prec_mass_diff"]:
 			prec_type = spec_entry["prec_type"]
 			mass_diff = th.tensor([prec_type_mass_diff(prec_type)],dtype=th.float)

@@ -26,6 +26,9 @@ spec_params:
   prec_type: True
   prec_types:
     - "[M+H]+"
+  inst_type: True
+  inst_types:
+    - "FT"
   prec_mz: True
   prec_mass_diff: True
   nce: False
@@ -275,6 +278,8 @@ ce_insert_merge: False
 ce_insert_size: 32
 prec_insert_location: none
 prec_insert_size: 32
+inst_insert_location: none
+inst_insert_size: 32
 dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000

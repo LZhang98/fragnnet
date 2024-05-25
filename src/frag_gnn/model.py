@@ -147,8 +147,46 @@ class PrecModel:
 			prec_embed = None
 		return prec_embed
 
+class InstModel:
 
-class FragGNNModel(nn.Module, CEModel, PrecModel):
+	def _inst_init(
+		self,
+		inst_insert_location: str,
+		inst_insert_size: int,
+		inst_num_types: int):
+
+		self.inst_insert_location = inst_insert_location
+		self.inst_embedder = nn.Embedding(inst_num_types+1, inst_insert_size)	
+		inst_dim = inst_insert_size
+
+		self._inst_location_check()
+
+		if self.inst_insert_location == "mol":
+			inst_mol_input_dim = inst_dim
+			inst_mlp_input_dim = 0
+		elif self.inst_insert_location == "mlp":
+			inst_mol_input_dim = 0
+			inst_mlp_input_dim = inst_dim
+		else:
+			assert self.inst_insert_location == "none"
+			inst_mol_input_dim = 0
+			inst_mlp_input_dim = 0
+		self.inst_mol_input_dim = inst_mol_input_dim
+		self.inst_mlp_input_dim = inst_mlp_input_dim
+
+	def _inst_location_check(self):
+
+		raise NotImplementedError
+
+	def embed_inst(self, inst_type):
+
+		if self.inst_insert_location != "none":
+			inst_embed = self.inst_embedder(inst_type)
+		else:
+			inst_embed = None
+		return inst_embed
+
+class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 
 	def __init__(
 		self,
@@ -193,8 +231,10 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 		ce_insert_size: int,
 		prec_insert_location: str,
 		prec_insert_size: int,
-		prec_types: list[str]
-	):
+		prec_types: list[str],
+		inst_insert_location: str,
+		inst_insert_size: int,
+		inst_types: list[str]):
 
 		# nn.Module init
 		super().__init__()
@@ -213,6 +253,12 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 			prec_num_types=len(prec_types)
 		)
 
+		self._inst_init(
+			inst_insert_location=inst_insert_location,
+			inst_insert_size=inst_insert_size,
+			inst_num_types=len(inst_types)
+		)
+
 		self.num_depth = num_depth
 		self.num_hs = num_hs
 		self.num_elements = num_elements
@@ -224,7 +270,7 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 		self._compute_mol_feats_sizes()
 
 		# setup mol gnn
-		self.mol_node_feats_size += self.ce_mol_input_dim + self.prec_mol_input_dim
+		self.mol_node_feats_size += self.ce_mol_input_dim + self.prec_mol_input_dim + self.inst_mol_input_dim
 		mol_kwargs = {
 			"node_feats_size": self.mol_node_feats_size,
 			"edge_feats_size": self.mol_edge_feats_size,
@@ -281,7 +327,7 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 		else:
 			assert self.frag_embed_combine == "avg", self.frag_embed_combine
 			mlp_input_dim = self.frag_embedder.hidden_size
-		mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim
+		mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
 
 		if self.mlp_output_format in ["formula","node_formula"]:
 			formula_mlp_kwargs = {
@@ -338,6 +384,10 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 	def _prec_location_check(self):
 
 		assert not self.prec_insert_location == "frag", "prec_insert_location=frag not supported"
+
+	def _inst_location_check(self):
+
+		assert not self.inst_insert_location == "frag", "inst_insert_location=frag not supported"
 
 	def _compute_mol_feats_sizes(self):
 		""" method compute mol feature size
@@ -406,6 +456,7 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 		spec_nce: th.Tensor = None,
 		spec_nce_batch_idxs: th.Tensor = None,
 		spec_prec_type: th.Tensor = None,
+		spec_inst_type: th.Tensor = None,
 		**kwargs
 	):
 		"""forward methods for joint predictor
@@ -453,6 +504,8 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 		ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
 		# get prec value
 		prec_embed = self.embed_prec(spec_prec_type)
+		# get inst value
+		inst_embed = self.embed_inst(spec_inst_type)
 
 		if self.ce_insert_location == "mol":
 			mol_ce_embed = th.repeat_interleave(ce_embed,th.unique(mol_batch,return_counts=True)[1],dim=0)
@@ -460,6 +513,9 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 		if self.prec_insert_location == "mol":
 			mol_prec_embed = th.repeat_interleave(prec_embed,th.unique(mol_batch,return_counts=True)[1],dim=0)
 			mol_x = th.cat([mol_x,mol_prec_embed],dim=1)
+		if self.inst_insert_location == "mol":
+			mol_inst_embed = th.repeat_interleave(inst_embed,th.unique(mol_batch,return_counts=True)[1],dim=0)
+			mol_x = th.cat([mol_x,mol_inst_embed],dim=1)
 
 		# get per-atom embeddings
 		mol_embed_gnn = self.mol_embedder(
@@ -650,6 +706,9 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 		if self.prec_insert_location == "mlp":
 			mlp_prec_embed = th.repeat_interleave(prec_embed,th.unique(frag_node_batch_idxs,return_counts=True)[1],dim=0)
 			frag_embed_parts.append(mlp_prec_embed)
+		if self.inst_insert_location == "mlp":
+			mlp_inst_embed = th.repeat_interleave(inst_embed,th.unique(frag_node_batch_idxs,return_counts=True)[1],dim=0)
+			frag_embed_parts.append(mlp_inst_embed)
 
 		frag_embed = th.cat(frag_embed_parts, dim=1)
 
@@ -1011,7 +1070,7 @@ class FragGNNModel(nn.Module, CEModel, PrecModel):
 
 		return out_d
 
-class NeimsModel(nn.Module, CEModel, PrecModel):
+class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 
 	def __init__(
 		self,
@@ -1035,7 +1094,9 @@ class NeimsModel(nn.Module, CEModel, PrecModel):
 		prec_insert_location: str,
 		prec_insert_size: int,
 		prec_types: list[str],
-	):
+		inst_insert_location: str,
+		inst_insert_size: int,
+		inst_types: list[str]):
 
 		# nn.Module init
 		super().__init__()
@@ -1064,6 +1125,13 @@ class NeimsModel(nn.Module, CEModel, PrecModel):
 			prec_num_types=len(prec_types))
 		self.mlp_input_dim += self.prec_mlp_input_dim
 
+		# inst stuff
+		self._inst_init(
+			inst_insert_location=inst_insert_location,
+			inst_insert_size=inst_insert_size,
+			inst_num_types=len(inst_types))
+		self.mlp_input_dim += self.inst_mlp_input_dim
+
 		self.ffn = SpecFFN(
 			input_size=self.mlp_input_dim,
 			hidden_size=mlp_hidden_size,
@@ -1085,6 +1153,10 @@ class NeimsModel(nn.Module, CEModel, PrecModel):
 		
 		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
 
+	def _inst_location_check(self):
+
+		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+
 	def forward(
 		self,
 		mol_fingerprint: th.Tensor, 
@@ -1092,6 +1164,7 @@ class NeimsModel(nn.Module, CEModel, PrecModel):
 		spec_nce: th.Tensor = None,
 		spec_nce_batch_idxs: th.Tensor = None,
 		spec_prec_type: th.Tensor = None,
+		spec_inst_type: th.Tensor = None,
 		**kwargs
 	):
 
@@ -1102,6 +1175,7 @@ class NeimsModel(nn.Module, CEModel, PrecModel):
 		ce_batch_idxs = spec_nce_batch_idxs
 		ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
 		prec_embed = self.embed_prec(spec_prec_type)
+		inst_embed = self.embed_inst(spec_inst_type)
 		if self.ce_insert_location == "mlp":
 			fh = th.cat([fh,ce_embed],dim=1)
 		if self.prec_insert_location == "mlp":

@@ -1,13 +1,13 @@
 import torch as th
 import torch.nn as nn
 
-from frag_gnn.model import CEModel, PrecModel
+from frag_gnn.model import CEModel, PrecModel, InstModel
 from frag_gnn.massformer.nn_utils import GFv2Embedder
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.utils.misc_utils import scatter_reduce
 
 
-class MassFormerModel(nn.Module, CEModel, PrecModel):
+class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 
 	def __init__(
 		self, 
@@ -31,7 +31,9 @@ class MassFormerModel(nn.Module, CEModel, PrecModel):
 		prec_insert_location: str,
 		prec_insert_size: int,
 		prec_types: list[str],
-	):
+		inst_insert_location: str,
+		inst_insert_size: int,
+		inst_types: list[str]):
 		
 		# nn.Module init
 		super().__init__()
@@ -59,6 +61,13 @@ class MassFormerModel(nn.Module, CEModel, PrecModel):
 			prec_num_types=len(prec_types))
 		self.mlp_input_dim += self.prec_mlp_input_dim
 
+				# inst stuff
+		self._inst_init(
+			inst_insert_location=inst_insert_location,
+			inst_insert_size=inst_insert_size,
+			inst_num_types=len(inst_types))
+		self.mlp_input_dim += self.inst_mlp_input_dim
+
 		self.ffn = SpecFFN(
 			input_size=self.mlp_input_dim,
 			hidden_size=mlp_hidden_size,
@@ -77,6 +86,10 @@ class MassFormerModel(nn.Module, CEModel, PrecModel):
 		assert self.ce_insert_location in ["mlp","none"], f"ce_insert_location={self.ce_insert_location} not supported"
 
 	def _prec_location_check(self):
+
+		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+
+	def _inst_location_check(self):
 
 		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
 
@@ -101,6 +114,7 @@ class MassFormerModel(nn.Module, CEModel, PrecModel):
 		spec_nce: th.Tensor = None,
 		spec_nce_batch_idxs: th.Tensor = None,
 		spec_prec_type: th.Tensor = None,
+		spec_inst_type: th.Tensor = None,
 		mf_perturb: th.Tensor = None,
 		**kwargs):
 
@@ -122,10 +136,13 @@ class MassFormerModel(nn.Module, CEModel, PrecModel):
 		ce_batch_idxs = spec_nce_batch_idxs
 		ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
 		prec_embed = self.embed_prec(spec_prec_type)
+		inst_embed = self.embed_inst(spec_inst_type)
 		if self.ce_insert_location == "mlp":
 			fh = th.cat([fh,ce_embed],dim=1)
 		if self.prec_insert_location == "mlp":
 			fh = th.cat([fh,prec_embed],dim=1)
+		if self.inst_insert_location == "mlp":
+			fh = th.cat([fh,inst_embed],dim=1)
 
 		# apply ffn
 		pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(fh,spec_prec_mz)
