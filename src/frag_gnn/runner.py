@@ -12,6 +12,7 @@ except ModuleNotFoundError:
 	from pytorch_lightning.callbacks import DeviceStatsMonitor
 	from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 	from pytorch_lightning.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
+	from pytorch_lightning import seed_everything
 
 import logging
 import argparse
