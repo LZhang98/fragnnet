@@ -1180,6 +1180,8 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 			fh = th.cat([fh,ce_embed],dim=1)
 		if self.prec_insert_location == "mlp":
 			fh = th.cat([fh,prec_embed],dim=1)
+		if self.inst_insert_location == "mlp":
+			fh = th.cat([fh,inst_embed],dim=1)
 
 		# apply ffn
 		pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(fh,spec_prec_mz)

@@ -55,6 +55,9 @@ ce_insert_type: embed
 ce_insert_location: mlp
 ce_insert_merge: True
 prec_insert_location: mlp
+prec_insert_size: 4
+inst_insert_location: mlp
+inst_insert_size: 4
 mz_max: 1500.0
 mz_bin_res: 0.01
 sum_ints: True
