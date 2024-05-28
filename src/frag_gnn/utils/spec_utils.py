@@ -5,15 +5,8 @@ import scipy
 import scipy.optimize
 from typing import Tuple, Union
 
-from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
 from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d, safelog, scatter_logsumexp, TOLERANCE_MIN_MZ
 
-# TODO: actually fill these out
-PREC_TYPES = [
-	"[M+H]+",
-	"[M-H]-"
-]
-PREC_TYPE_TO_IDX = {prec_type: idx for idx,prec_type in enumerate(PREC_TYPES)}
 # rough approximations from NIST20
 NCE_MEAN = 60.
 NCE_STD = 40.
@@ -21,15 +14,6 @@ NCE_MAX = 200.
 MZ_MAX = 1500.0
 MZ_BIN_RES = 0.01
 INTS_THRESH = 0.0
-
-
-def prec_type_idx(prec_type):
-	idx = PREC_TYPE_TO_IDX[prec_type]
-	return idx
-
-def prec_type_mass_diff(prec_type):
-	mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
-	return mass_diff
 
 def get_ints_transform_func(ints_transform):
 	""" method to get int transferom func

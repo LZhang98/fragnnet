@@ -1155,7 +1155,7 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 
 	def _inst_location_check(self):
 
-		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+		assert self.inst_insert_location in ["mlp","none"], f"prec_insert_location={self.inst_insert_location} not supported"
 
 	def forward(
 		self,
