@@ -29,7 +29,7 @@ from multiprocessing import Manager
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SequentialSampler, RandomSampler
 
-from frag_gnn.pl_model import FragGNNPL, NeimsPL, PrecursorPL
+from frag_gnn.pl_model import FragGNNPL, NeimsPL, PrecursorPL, GNNPL
 from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from frag_gnn.massformer.pl_model import MassFormerPL
 from frag_gnn.graff.pl_model import GrAFFPL
@@ -97,7 +97,7 @@ def init_dataset(config_d, splits=("train","val")):
 	elif config_d["model_type"] == "graff":
 		dataset_cls = SpecMolAnnDataset
 	else:
-		assert config_d["model_type"] in ["neims","massformer","precursor"], config_d["model_type"]
+		assert config_d["model_type"] in ["neims","massformer","precursor", "gnn"], config_d["model_type"]
 		dataset_cls = SpecMolDataset
 	
 	data_dict_types = dataset_cls.get_data_dict_types()
@@ -295,6 +295,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		model_cls = GrAFFPL
 	elif config_d["model_type"] == "precursor":
 		model_cls = PrecursorPL
+	elif config_d["model_type"] == "gnn":
+		model_cls = GNNPL
 	else:
 		raise ValueError(config_d["model_type"])
 	model = model_cls(**config_d)
