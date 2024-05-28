@@ -267,14 +267,18 @@ def sparse_cross_entropy_vec(
 		bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).float()*mask_value
 		bl_ios_log_probs = th.logsumexp(bl_ios_log_probs,dim=1)
 
-		bl_ios_ce = scatter_reduce(
-			(-th.exp(bl_true_logprobs)*bl_ios_log_probs)[bl_true_both_mask],
-			bl_true_batch_idxs[bl_true_both_mask],
-			"sum",
-			dim=0,
-			dim_size=bl_batch_size,
-			default=0.)
-		ios_ce[bl_lower:bl_upper] = bl_ios_ce
+		if not th.any(bl_true_both_mask):
+			# all zeros
+			bl_ios_ce = th.full([bl_batch_size],LOG_ZERO(float_dtype),dtype=float_dtype,device=device)
+		else:
+			bl_ios_ce = scatter_reduce(
+				(-th.exp(bl_true_logprobs)*bl_ios_log_probs)[bl_true_both_mask],
+				bl_true_batch_idxs[bl_true_both_mask],
+				"sum",
+				dim=0,
+				dim_size=bl_batch_size,
+				default=0.)
+			ios_ce[bl_lower:bl_upper] = bl_ios_ce
 
 		if not th.all(bl_true_both_mask):
 			bl_true_oos_logprobs = scatter_logsumexp(

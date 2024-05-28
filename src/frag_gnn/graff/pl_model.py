@@ -45,6 +45,7 @@ class GrAFFPL(SpectrumPL):
 
 		# compile
 		if self.hparams.compile:
+			th_dynamo.reset()
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)		
 
@@ -54,11 +55,6 @@ class GrAFFPL(SpectrumPL):
 		loss_names = [
 			"loss",
 			"primary_loss",
-			# "spec_ce",
-			# "oos_ce",
-			# "ios_ce",
-			# "null_formula_prob",
-			# "oos_prob",
 		]
 		self.loss_names = loss_names
 		self.metric_names.update(loss_names)
@@ -83,7 +79,8 @@ class GrAFFPL(SpectrumPL):
 
 		self._setup_loss_names()
 
-		def _loss_fn(true_mzs,
+		def _loss_fn(
+			true_mzs,
 			true_logprobs,
 			true_batch_idxs,
 			pred_mzs,
@@ -158,7 +155,7 @@ def test_models():
 		print("> train outputs")
 		print_shapes(outputs)
 
-		results = pl_model._common_step(batch, split="train")
+		results = pl_model._common_step(batch, split="train", log=False)
 		print_shapes(results)
 
 		mean_loss = results["mean_loss"]

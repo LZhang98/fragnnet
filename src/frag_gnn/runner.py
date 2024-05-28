@@ -12,6 +12,7 @@ except ModuleNotFoundError:
 	from pytorch_lightning.callbacks import DeviceStatsMonitor
 	from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 	from pytorch_lightning.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
+	from pytorch_lightning import seed_everything
 
 import logging
 import argparse
@@ -28,7 +29,7 @@ from multiprocessing import Manager
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SequentialSampler, RandomSampler
 
-from frag_gnn.pl_model import FragGNNPL, NeimsPL
+from frag_gnn.pl_model import FragGNNPL, NeimsPL, PrecursorPL
 from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from frag_gnn.massformer.pl_model import MassFormerPL
 from frag_gnn.graff.pl_model import GrAFFPL
@@ -96,7 +97,7 @@ def init_dataset(config_d, splits=("train","val")):
 	elif config_d["model_type"] == "graff":
 		dataset_cls = SpecMolAnnDataset
 	else:
-		assert config_d["model_type"] in ["neims","massformer"], config_d["model_type"]
+		assert config_d["model_type"] in ["neims","massformer","precursor"], config_d["model_type"]
 		dataset_cls = SpecMolDataset
 	
 	data_dict_types = dataset_cls.get_data_dict_types()
@@ -127,56 +128,47 @@ def init_dataloader(ds, config_d):
 		"pin_memory": config_d["pin_memory"] and (config_d["accelerator"] != "cpu")
 	}
 
-	if split in ["train", "val"]:	
-
-		# note: this generator will get overwritten at the beginning/ending of each training epoch
-		generator = th.Generator() 
-		if config_d["group_sampler"] and split == "train":
-			sampler = GroupSampler(
-				ds,
-				sample_k=config_d['group_sampler_max_per_group'],
-				generator=generator)
-		elif config_d["simple_group_sampler"] and split == "train":
-			sampler = get_group_sampler(
-				ds,
-				config_d["simple_group_sampler_type"],
-				config_d["simple_group_sampler_avg_per_group"],
-				generator)
-		elif split == "val":
-			sampler = SequentialSampler(ds)
-		else:
-			sampler = RandomSampler(ds, False, generator=generator)
-		# for batch sampler 
-		if config_d["dynamic_batch_sampler"]:
-			max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
-			if split == "train":
-				return_batch_at = max_batch_size
-			else:
-				return_batch_at = 0
-			batch_sampler = SpecMolFragDynamicBatchSampler(
-								ds, 
-								max_num = config_d["dynamic_batch_sampler_max"], 
-								limited_by = config_d["dynamic_batch_sampler_mode"], 
-								skip_too_big = True,
-								return_batch_at = return_batch_at,
-								sampler = sampler)
-			dl_param_d["batch_sampler"] = batch_sampler
-		else:
-			dl_param_d["sampler"] = sampler
-			if split == "train":
-				dl_param_d["batch_size"] = config_d["train_batch_size"]	
-				dl_param_d["drop_last"] = config_d["drop_last"]
-			else:
-				dl_param_d["batch_size"] = config_d["eval_batch_size"]
-				dl_param_d["drop_last"] = False
-		dl = DataLoader(**dl_param_d)
-
+	# note: this generator will get overwritten at the beginning/ending of each training epoch
+	generator = th.Generator() 
+	if config_d["group_sampler"] and split == "train":
+		sampler = GroupSampler(
+			ds,
+			sample_k=config_d['group_sampler_max_per_group'],
+			generator=generator)
+	elif config_d["simple_group_sampler"] and split == "train":
+		sampler = get_group_sampler(
+			ds,
+			config_d["simple_group_sampler_type"],
+			config_d["simple_group_sampler_avg_per_group"],
+			generator)
+	elif split in ["val", "test"]:
+		sampler = SequentialSampler(ds)
 	else:
-
-		dl_param_d["batch_size"] = config_d["eval_batch_size"]
-		dl_param_d["sampler"] = SequentialSampler(ds)
-		dl_param_d["drop_last"] = False
-		dl = DataLoader(**dl_param_d)
+		sampler = RandomSampler(ds, False, generator=generator)
+	# for batch sampler 
+	if config_d["dynamic_batch_sampler"]:
+		max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
+		if split == "train":
+			return_batch_at = max_batch_size
+		else:
+			return_batch_at = 0
+		batch_sampler = SpecMolFragDynamicBatchSampler(
+							ds, 
+							max_num = config_d["dynamic_batch_sampler_max"], 
+							limited_by = config_d["dynamic_batch_sampler_mode"], 
+							skip_too_big = True,
+							return_batch_at = return_batch_at,
+							sampler = sampler)
+		dl_param_d["batch_sampler"] = batch_sampler
+	else:
+		dl_param_d["sampler"] = sampler
+		if split == "train":
+			dl_param_d["batch_size"] = config_d["train_batch_size"]	
+			dl_param_d["drop_last"] = config_d["drop_last"]
+		else:
+			dl_param_d["batch_size"] = config_d["eval_batch_size"]
+			dl_param_d["drop_last"] = False
+	dl = DataLoader(**dl_param_d)
 
 	return dl
 
@@ -301,6 +293,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		model_cls = MassFormerPL
 	elif config_d["model_type"] == "graff":
 		model_cls = GrAFFPL
+	elif config_d["model_type"] == "precursor":
+		model_cls = PrecursorPL
 	else:
 		raise ValueError(config_d["model_type"])
 	model = model_cls(**config_d)
