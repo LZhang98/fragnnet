@@ -1,0 +1,91 @@
+wandb_name: nist20v2_inchikey_gnn_s0
+wandb_group: nist20v2_inchikey_gnn
+wandb_tags:
+- splits
+- nist20v2
+- d4
+- wr00
+- inchikey
+- new_proc
+- gnn
+- new_metrics
+- mz_bin_res_0,01
+- no_auxiliary_scores
+- preprocess
+- s0
+
+# seed
+seed: 69
+
+# data stuff
+spec_fp: data/proc/nist20mona23v2/spec_df.pkl
+mol_fp: data/proc/nist20mona23v2/mol_df.pkl
+split_dp: data/split/nist20mona23v2_d4_wr00_inchikey
+spec_params:
+  merge: True
+  nce: True
+  merge_keep_ces: True
+  preprocess: True
+mol_params:
+  fingerprint_morgan: False
+  fingerprint_rdkit: False
+  fingerprint_maccs: False
+  fingerprint: False
+  pyg: True
+  preprocess: True
+
+# model stuff
+model_type: gnn
+mol_pool_type: mean
+mol_normalization: batch
+mol_hidden_size: 256
+mol_dropout: 0.2
+mlp_normalization: layer
+mlp_hidden_size: 64
+mlp_dropout: 0.2
+mlp_hidden_size: 1024
+mlp_dropout: 0.1
+mlp_num_layers: 4
+mlp_use_residuals: True
+ff_prec_mz_offset: 5
+ff_bidirectional: True
+ff_output_map_size: 256
+ce_insert_type: embed
+ce_insert_location: mlp
+ce_insert_merge: True
+mz_max: 1500.0
+mz_bin_res: 0.01
+sum_ints: True
+
+# loss stuff
+loss_type: cosine_distance
+sparse_cosine_similarity: True
+ints_transform: log10t3
+
+# optimization stuff
+train_batch_size: 128
+eval_batch_size: 128
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.0002972
+weight_decay: 0.0000001
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: True
+lr_decay_rate: 0.7174
+lr_warmup_steps: 1000
+lr_decay_steps: 5000
+debug_overfit: False
+upload_checkpoints: True
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+eval_mz_bin_res:
+- 0.01
+precision: 32
+use_tensor_float32: True
+automatic_optimization: True
+compile: True
