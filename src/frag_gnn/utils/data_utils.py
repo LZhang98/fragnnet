@@ -816,15 +816,15 @@ def parse_annotations(row):
 	notes = row["notes"]
 	error = None
 	if dset not in ["nist20_hr"]:
-		error = ValueError(f"dataset not supported")
+		error = ValueError("dataset not supported")
 	elif "glycan" in notes.lower():
-		error = ValueError(f"glycans not supported (1)")
+		error = ValueError("glycans not supported (1)")
 	elif "peptide" in notes.lower():
-		error = ValueError(f"peptide not supported (1)")
+		error = ValueError("peptide not supported (1)")
 	elif prec_type not in ["[M+H]+","[M-H]-"]:
-		error = ValueError(f"prec_type not supported")
+		error = ValueError("prec_type not supported")
 	elif none_or_nan(peaks_str):
-		error = ValueError(f"peaks_str is invalid")
+		error = ValueError("peaks_str is invalid")
 	if error is not None:	
 		error = repr(error)
 		return np.nan, np.nan, np.nan, np.nan, np.nan, error
@@ -849,12 +849,12 @@ def parse_annotations(row):
 		annots = " ".join(line[2:]).strip('\"')
 		# glycan parsing not implemented
 		if "|" in annots:
-			error = ValueError(f"glycans not supported (2)")
+			error = ValueError("glycans not supported (2)")
 			all_good = False
 			break
 		# peptide parsing not implemented
 		if is_pep_annot(annots):
-			error = ValueError(f"peptides not supported (2)")
+			error = ValueError("peptides not supported (2)")
 			all_good = False
 			break
 		annots = annots.split(";")
@@ -862,7 +862,7 @@ def parse_annotations(row):
 			# strip the peak count
 			annot = re.sub(r' ?\d+/\d+$','',annot)
 			if len(annot) == 0:
-				error = ValueError(f"empty annotation")
+				error = ValueError("empty annotation")
 				all_good = False
 				break
 			if annot in ('?','more'):
@@ -1065,7 +1065,6 @@ def parse_ce_str(ce_str):
 
     ce_str = str(ce_str)
     normal_regex = re.compile(r'\d+(\.\d+)?')
-    # ramped_regex = re.compile(r'\d+(\.\d+)?-\d+(\.\d+)?')
     ramped_regex = re.compile(r'\d+(\.\d+)?(V)?(-|->)\d+(\.\d+)?(V)?')
     ce_str = ce_str.split(";")[-1]
     try:
@@ -1085,7 +1084,7 @@ def parse_ce_str(ce_str):
             ramped = False
             ce = normal_regex.search(ce_str).group(0)
             ce = float(ce)
-    except:
+    except AttributeError as e:
         ce = np.nan
         normalized = False
         ramped = False
