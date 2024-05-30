@@ -353,6 +353,11 @@ def read_pcdl(zipped_spectra_dp: str):
 	ms_df = ms_df.loc[selected_idx]
 	ms_df.loc[:,"spec_id"] = np.arange(ms_df.shape[0])
 
+	# add extra columns for compatibility
+	for value in MSP_KEY_DICT.values():
+		if value not in ms_df.columns:
+			ms_df.loc[:,value] = np.nan
+   
 	print(f"> {len(ms_df['inchikey'].unique())} unique inchikey")
 	return ms_df
 
@@ -372,6 +377,11 @@ def process_ms_gym(ms_gym_tsv_fp):
 	
 	ms_gym_df["col_energy"], ms_gym_df["normalized"], ms_gym_df["ramped"] = zip(*ms_gym_df["col_energy"].apply(parse_ce_str))
 	ms_gym_df["col_energy"] = ms_gym_df.apply(lambda x: f"{x['col_energy']}%" if x["normalized"] else f"{x['col_energy']}eV",axis=1)
+	# add extra columns for compatibility
+	for value in MSP_KEY_DICT.values():
+		if value not in ms_gym_df.columns:
+			ms_gym_df.loc[:,value] = np.nan
+   
 	return ms_gym_df
  
 if __name__ == "__main__":
