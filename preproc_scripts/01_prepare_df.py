@@ -371,6 +371,7 @@ def process_ms_gym(ms_gym_tsv_fp):
                   	inplace=True)
 	
 	ms_gym_df["col_energy"], ms_gym_df["normalized"], ms_gym_df["ramped"] = zip(*ms_gym_df["col_energy"].apply(parse_ce_str))
+	ms_gym_df["col_energy"] = ms_gym_df.apply(lambda x: f"{x['col_energy']}%" if x["normalized"] else f"{x['col_energy']}eV",axis=1)
 	return ms_gym_df
  
 if __name__ == "__main__":
@@ -433,7 +434,7 @@ if __name__ == "__main__":
 		spec_df = read_pcdl(os.path.join(args.raw_data_dp,args.pcdl_zip))
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
-	 
+	
 	# save files
 	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}.{args.output_format}")
 	if args.output_format == "json":
