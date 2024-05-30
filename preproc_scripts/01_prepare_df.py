@@ -1,4 +1,5 @@
 from collections import Counter
+import zipfile
 import numpy as np
 import os
 import pandas as pd
@@ -11,7 +12,7 @@ import glob
 import importlib
 import re
 
-from frag_gnn.utils.data_utils import rdkit_import, seq_apply, par_apply, seq_apply_series, par_apply_series, par_apply_df_rows
+from frag_gnn.utils.data_utils import rdkit_import, seq_apply, par_apply, seq_apply_series, par_apply_series, par_apply_df_rows, parse_ce_str
 from frag_gnn.utils.misc_utils import booltype, flatten_lol
 
 MSP_KEY_DICT = {
@@ -283,6 +284,95 @@ def preproc_ms_files(ms_dp,ms_meta_fp,keys,num_entries):
 	ms_df = ms_df.reset_index(drop=True)
 	return ms_df
 
+PCDL_KEYS = {
+	"ACCESSION:" : "dset_spec_id",
+	"CH$SMILES:" : "smiles",
+	"CH$IUPAC: InChI" : "inchi",
+	"CH$NAME:" : "name",
+	"CH$FORMULA:" : "formula",
+	"CH$LINK: INCHIKEY" : "inchikey",
+	"CH$EXACT_MASS:" : "exact_mass",
+	"AC$MASS_SPECTROMETRY: ION_MODE" : "ion_mode",
+	"AC$MASS_SPECTROMETRY: COLLISION_ENERGY" : "col_energy",
+	"AC$INSTRUMENT_TYPE: " : "inst_type",
+	"AC$MASS_SPECTROMETRY: MS_TYPE" : "spec_type",
+	"MS$FOCUSED_ION: PRECURSOR_M/Z" : "prec_mz",
+	"MS$FOCUSED_ION: PRECURSOR_TYPE" : "ion_type",
+	"PK$NUM_PEAK:" : "num_peaks",
+}
+
+
+def read_pcdl(zipped_spectra_dp: str):
+	
+	def parse_pcdl(text_list: list[str], id_prefix = None):
+		data_dict = {}
+		for row in text_list:
+			str_row = row.decode("utf-8")
+			if str_row.startswith(" "):
+				mz, rel_int, _ = [float(i) for i in str_row.split()]
+				if "peaks" not in data_dict:
+					data_dict["peaks"] = ""
+				data_dict["peaks"] += f"{mz} {rel_int}\n"
+			else:
+				for key, col in PCDL_KEYS.items():
+					if str_row.startswith(key):
+						value = str_row.removeprefix(key).strip()
+						if col in ["exact_mass",'prec_mz','col_energy']:
+							value = float(value)
+						elif col  == "ion_mode" and value == "POSITIVE":
+							value = "P"
+						elif col  == "ion_mode" and value == "NEGATIVE":
+							value = "N"
+						elif col == "num_peaks":
+							value = int(value)
+						elif col == "smiles": #in case of chemaxon smiles eg.CC1C[C@H](C)C[C@H](OC) |t:46|
+							value = value.split()[0]
+						data_dict[col] = value
+		data_dict["dset_spec_id"] = f"{id_prefix}_{data_dict['dset_spec_id']}"
+		return data_dict
+
+	spectrum_list = []
+	
+	zipped_spectra_filenames = [f for f in os.listdir(zipped_spectra_dp) if f.endswith(".zip")]
+	for zipped_spectra_filename in zipped_spectra_filenames:
+		zipped_spectra_fp = f"{zipped_spectra_dp}/{zipped_spectra_filename}"
+		spectra_libname = zipped_spectra_filename.removesuffix(".zip")
+		print(f"> parse zip file {zipped_spectra_fp}")
+		archive = zipfile.ZipFile(zipped_spectra_fp, 'r')
+		for file in archive.namelist():
+			with archive.open(file) as f:
+				text_list = f.readlines()
+				spectrum_list.append(parse_pcdl(text_list, spectra_libname))
+	
+	print(f"> {len(spectrum_list)} spectra parsed")
+	ms_df = pd.DataFrame(spectrum_list)
+	# fill some extrat meta data
+	ms_df.loc[:,"frag_mode"] = "CID"
+	ms_df.loc[:,"notes"] = ""
+	selected_idx = ms_df.groupby(["inchikey","ion_type","col_energy"])['num_peaks'].idxmax()
+	ms_df = ms_df.loc[selected_idx]
+	ms_df.loc[:,"spec_id"] = np.arange(ms_df.shape[0])
+
+	print(f"> {len(ms_df['inchikey'].unique())} unique inchikey")
+	return ms_df
+
+def process_ms_gym(ms_gym_tsv_fp):
+	""" """
+	ms_gym_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
+	ms_gym_df["peaks"] = ms_gym_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
+	ms_gym_df = ms_gym_df.drop(columns=["mzs","intensities"])
+	ms_gym_df["dset_spec_id"] = "ms_gym"
+	ms_gym_df.rename(columns={"precursor_mz":"prec_mz", 
+                           "adduct":"ion_type",
+                           "parent_mass":"prec_mass",
+                           "instrument_type":"inst_type",
+                           "collision_energy":"col_energy",
+                           "identifier":"dset_spec_id"},
+                  	inplace=True)
+	
+	ms_gym_df["col_energy"], ms_gym_df["normalized"], ms_gym_df["ramped"] = zip(*ms_gym_df["col_energy"].apply(parse_ce_str))
+	return ms_gym_df
+ 
 if __name__ == "__main__":
 
 	## TODO: add support for NPLLIB
@@ -292,13 +382,14 @@ if __name__ == "__main__":
 	parser.add_argument('--pkl_file', type=str, required=False)
 	parser.add_argument('--ms_dir', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
-	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl"], required=True)
+	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "pcdl_zip"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
 	parser.add_argument('--num_entries', type=int, default=-1)
 	parser.add_argument('--output_format', type=str, default="json", choices=["json","csv"])
 	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#","ID"])
+	parser.add_argument('--ms_gym_tsv', type=str, required=False)
 	args = parser.parse_args()
 
 	os.makedirs(args.output_dp,exist_ok=True)
@@ -327,8 +418,7 @@ if __name__ == "__main__":
 		else:
 			mol_df = None
 		spec_df = merge_and_check(msp_df,mol_df,MSP_KEY_DICT)
-	else:
-		assert args.input_format == "ms+meta", args.input_format
+	elif args.input_format == "ms+meta":
 		# npllib
 		# just use NISTNO as default
 		MSP_KEY_DICT["NISTNO"] = "dset_spec_id"
@@ -337,7 +427,13 @@ if __name__ == "__main__":
 		ms_meta_fp = os.path.join(args.raw_data_dp,args.ms_meta_file)
 		assert os.path.isfile(ms_meta_fp), ms_meta_fp
 		spec_df = preproc_ms_files(ms_dp,ms_meta_fp,MSP_KEY_DICT.keys(),args.num_entries)
-
+	elif args.input_format == "ms_gym":
+		spec_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv))
+	elif args.input_format == "pcdl_zip":
+		spec_df = read_pcdl(os.path.join(args.raw_data_dp,args.pcdl_zip))
+	else:
+		raise ValueError(f"Invalid input format: {args.input_format}")
+	 
 	# save files
 	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}.{args.output_format}")
 	if args.output_format == "json":
