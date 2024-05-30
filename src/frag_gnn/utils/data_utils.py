@@ -1061,3 +1061,32 @@ def ace_to_nce(row):
 	nce = ace_to_nce_helper(ace,charge,prec_mz)
 	return nce
 
+def parse_ce_str(ce_str):
+
+    ce_str = str(ce_str)
+    normal_regex = re.compile(r'\d+(\.\d+)?')
+    # ramped_regex = re.compile(r'\d+(\.\d+)?-\d+(\.\d+)?')
+    ramped_regex = re.compile(r'\d+(\.\d+)?(V)?(-|->)\d+(\.\d+)?(V)?')
+    ce_str = ce_str.split(";")[-1]
+    try:
+        if "%" in ce_str:
+            normalized = True
+        else:
+            normalized = False
+        if "-" in ce_str or "Ramp" in ce_str or "RAMP" in ce_str or "->" in ce_str:
+            ramped = True
+            ramped_ce = ramped_regex.search(ce_str).group(0)
+            if "->" in ramped_ce:
+                min_ce, max_ce = ramped_ce.split("->")
+            else:
+                min_ce, max_ce = ramped_ce.split("-")
+            ce = 0.5*float(min_ce.strip("V")) + 0.5*float(max_ce.strip("V"))
+        else:
+            ramped = False
+            ce = normal_regex.search(ce_str).group(0)
+            ce = float(ce)
+    except:
+        ce = np.nan
+        normalized = False
+        ramped = False
+    return ce, normalized, ramped
