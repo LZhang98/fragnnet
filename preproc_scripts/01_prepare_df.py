@@ -371,14 +371,17 @@ def process_ms_gym(ms_gym_tsv_fp):
 	ms_df["dset_spec_id"] = "ms_gym"
 	ms_df.rename(columns={"precursor_mz":"prec_mz", 
 						   "adduct":"prec_type",
-						   "parent_mass":"prec_mass",
+						    "precursor_mz" :"prec_mass",
+						   "parent_mass":"exact_mass",
 						   "instrument_type":"inst_type",
 						   "collision_energy":"col_energy",
 						   "identifier":"dset_spec_id"},
 				  	inplace=True)
 	
 	ms_df["col_energy"], ms_df["normalized"], ms_df["ramped"] = zip(*ms_df["col_energy"].apply(parse_mass_gym_ce_str))
-	
+
+	ms_df = ms_df.astype({"prec_mass":float,"exact_mass":float})
+ 
 	# add ion_mode
 	ms_df.loc[:,"ion_mode"] = "P"
 	# add spec_type
