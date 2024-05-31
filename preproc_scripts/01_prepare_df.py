@@ -12,7 +12,7 @@ import glob
 import importlib
 import re
 
-from frag_gnn.utils.data_utils import rdkit_import, seq_apply, par_apply, seq_apply_series, par_apply_series, par_apply_df_rows, parse_ce_str
+from frag_gnn.utils.data_utils import rdkit_import, seq_apply, par_apply, seq_apply_series, par_apply_series, par_apply_df_rows, parse_mass_gym_ce_str
 from frag_gnn.utils.misc_utils import booltype, flatten_lol
 
 MSP_KEY_DICT = {
@@ -297,7 +297,7 @@ PCDL_KEYS = {
 	"AC$INSTRUMENT_TYPE: " : "inst_type",
 	"AC$MASS_SPECTROMETRY: MS_TYPE" : "spec_type",
 	"MS$FOCUSED_ION: PRECURSOR_M/Z" : "prec_mz",
-	"MS$FOCUSED_ION: PRECURSOR_TYPE" : "ion_type",
+	"MS$FOCUSED_ION: PRECURSOR_TYPE" : "prec_type",
 	"PK$NUM_PEAK:" : "num_peaks",
 }
 
@@ -349,10 +349,12 @@ def read_pcdl(zipped_spectra_dp: str):
 	# fill some extrat meta data
 	ms_df.loc[:,"frag_mode"] = "CID"
 	ms_df.loc[:,"notes"] = ""
-	selected_idx = ms_df.groupby(["inchikey","ion_type","col_energy"])['num_peaks'].idxmax()
+	selected_idx = ms_df.groupby(["inchikey","prec_type","col_energy"])['num_peaks'].idxmax()
 	ms_df = ms_df.loc[selected_idx]
 	ms_df.loc[:,"spec_id"] = np.arange(ms_df.shape[0])
 
+	# add ion_type
+	ms_df.loc[:,"ion_type"] = "ESI"
 	# add extra columns for compatibility
 	for value in MSP_KEY_DICT.values():
 		if value not in ms_df.columns:
@@ -363,26 +365,32 @@ def read_pcdl(zipped_spectra_dp: str):
 
 def process_ms_gym(ms_gym_tsv_fp):
 	""" """
-	ms_gym_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
-	ms_gym_df["peaks"] = ms_gym_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
-	ms_gym_df = ms_gym_df.drop(columns=["mzs","intensities"])
-	ms_gym_df["dset_spec_id"] = "ms_gym"
-	ms_gym_df.rename(columns={"precursor_mz":"prec_mz", 
-                           "adduct":"ion_type",
-                           "parent_mass":"prec_mass",
-                           "instrument_type":"inst_type",
-                           "collision_energy":"col_energy",
-                           "identifier":"dset_spec_id"},
-                  	inplace=True)
+	ms_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
+	ms_df["peaks"] = ms_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
+	ms_df = ms_df.drop(columns=["mzs","intensities"])
+	ms_df["dset_spec_id"] = "ms_gym"
+	ms_df.rename(columns={"precursor_mz":"prec_mz", 
+						   "adduct":"prec_type",
+						   "parent_mass":"prec_mass",
+						   "instrument_type":"inst_type",
+						   "collision_energy":"col_energy",
+						   "identifier":"dset_spec_id"},
+				  	inplace=True)
 	
-	ms_gym_df["col_energy"], ms_gym_df["normalized"], ms_gym_df["ramped"] = zip(*ms_gym_df["col_energy"].apply(parse_ce_str))
-	ms_gym_df["col_energy"] = ms_gym_df.apply(lambda x: f"{x['col_energy']}%" if x["normalized"] else f"{x['col_energy']}eV",axis=1)
+	ms_df["col_energy"], ms_df["normalized"], ms_df["ramped"] = zip(*ms_df["col_energy"].apply(parse_mass_gym_ce_str))
+	
+	# add ion_mode
+	ms_df.loc[:,"ion_mode"] = "P"
+	# add spec_type
+	ms_df.loc[:,"spec_type"] = "MS2"
+	# add ion_type
+	ms_df.loc[:,"ion_type"] = "ESI"
 	# add extra columns for compatibility
 	for value in MSP_KEY_DICT.values():
-		if value not in ms_gym_df.columns:
-			ms_gym_df.loc[:,value] = np.nan
+		if value not in ms_df.columns:
+			ms_df.loc[:,value] = np.nan
    
-	return ms_gym_df
+	return ms_df
  
 if __name__ == "__main__":
 

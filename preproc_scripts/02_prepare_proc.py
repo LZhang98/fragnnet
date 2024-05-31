@@ -31,7 +31,7 @@ def load_df(df_dp,dsets,num_entries):
 
 	return all_df
 
-def preprocess_spec(spec_df, extract_ann_df=False):
+def preprocess_spec(spec_df):
 
 	# drop entries with the same dset_spec_id (this happens sometimes in MoNA)
 	spec_df = spec_df.drop_duplicates(subset=["dset","dset_spec_id"],keep="first")
@@ -49,12 +49,8 @@ def preprocess_spec(spec_df, extract_ann_df=False):
 	spec_df.loc[:,"mol_id"] = spec_df["smiles"].replace(smiles_to_mid)
 
 	# copy for ann_df
-	# skip this unless nist
-	if extract_ann_df:
-		ann_df = spec_df[["dset_spec_id","mol_id","notes","peaks","dset"]].copy()
-	else:
-		ann_df = None
-  
+	ann_df = spec_df[["dset_spec_id","mol_id","notes","peaks","dset"]].copy()
+
 	# extract peak info (still represented as str)
 	spec_df.loc[:,"peaks"] = par_apply_series(spec_df["peaks"],data_utils.parse_peaks_str)
 	# get mz resolution
@@ -142,19 +138,18 @@ def preprocess_spec(spec_df, extract_ann_df=False):
 	spec_df = spec_df.drop(columns=["exact_mw"])
 
 	# extract annotation info
-	if extract_ann_df:
-		ann_df = ann_df.merge(spec_df[["dset_spec_id","spec_id","prec_type"]],on="dset_spec_id",how="inner")
-		ann_df = ann_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner")
-		ann_results = par_apply_df_rows(ann_df,data_utils.parse_annotations)
-		ann_df.loc[:,"ann_peak_mzs"] = ann_results[0]
-		ann_df.loc[:,"ann_products"] = ann_results[1]
-		ann_df.loc[:,"ann_losses"] = ann_results[2]
-		ann_df.loc[:,"ann_isotopes"] = ann_results[3]
-		ann_df.loc[:,"ann_exact_mzs"] = ann_results[4]
-		ann_df = ann_df.dropna(axis=0,how="any")
-		ann_df = ann_df[ann_df["ann_peak_mzs"].apply(len) > 0]
-		ann_df = ann_df.drop(columns=["notes","peaks"])
-		ann_df = ann_df.reset_index(drop=True)
+	ann_df = ann_df.merge(spec_df[["dset_spec_id","spec_id","prec_type"]],on="dset_spec_id",how="inner")
+	ann_df = ann_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner")
+	ann_results = par_apply_df_rows(ann_df,data_utils.parse_annotations)
+	ann_df.loc[:,"ann_peak_mzs"] = ann_results[0]
+	ann_df.loc[:,"ann_products"] = ann_results[1]
+	ann_df.loc[:,"ann_losses"] = ann_results[2]
+	ann_df.loc[:,"ann_isotopes"] = ann_results[3]
+	ann_df.loc[:,"ann_exact_mzs"] = ann_results[4]
+	ann_df = ann_df.dropna(axis=0,how="any")
+	ann_df = ann_df[ann_df["ann_peak_mzs"].apply(len) > 0]
+	ann_df = ann_df.drop(columns=["notes","peaks"])
+	ann_df = ann_df.reset_index(drop=True)
    
 	# reset indices
 	spec_df = spec_df.reset_index(drop=True)
@@ -179,7 +174,6 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp", type=str, default="data/proc/nist")
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--ow_spec_mol", type=booltype, default=False)
-	parser.add_argument("--extract_ann_df", type=booltype, default=False)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist20_hr","mona23"])
 	flags = parser.parse_args()
 
@@ -198,15 +192,12 @@ if __name__ == "__main__":
 		ann_df = pd.read_pickle(ann_df_fp)
 
 	else:
-		if flags.extract_ann_df:
-			print("> creating new spec_df, mol_df, ann_df")
-		else:
-			print("> creating new spec_df, mol_df")
+		print("> creating new spec_df, mol_df, ann_df")
 		assert os.path.isdir(flags.df_dp), flags.df_dp
 		os.makedirs(flags.proc_dp,exist_ok=True)
 		all_df = load_df(flags.df_dp,flags.dsets,flags.num_entries)
 
-		spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df,flags.extract_ann_df)
+		spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df)
 
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
@@ -216,11 +207,9 @@ if __name__ == "__main__":
 		for k, v in debug_dfs.items():
 			v.to_pickle(os.path.join(flags.proc_dp,f"{k}.pkl"))
 
-	print(spec_df.shape)
-	print(spec_df.isna().sum())
-	print(mol_df.shape)
-	print(mol_df.isna().sum())
-	if ann_df is not None:
-		print(ann_df.shape)
-		print(ann_df.isna().sum())
-
+	print(f">spec_df {spec_df.shape}")
+	print(f">spec_df num nan: {spec_df.isna().sum()}")
+	print(f">mol_df {mol_df.shape}")
+	print(f">mol_df num nan:\n{mol_df.isna().sum()}")
+	print(f">ann_df {ann_df.shape}")
+	print(f">ann_df num nan: {ann_df.isna().sum()}")
