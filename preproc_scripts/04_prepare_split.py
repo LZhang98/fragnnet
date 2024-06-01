@@ -30,7 +30,8 @@ def make_splits(args):
 		allowed_frag_modes=args.allowed_frag_modes,
 		allowed_ion_modes=args.allowed_ion_modes,
 		allowed_inst_types=args.allowed_inst_types,
-		require_ce=args.require_ce
+		require_ace=args.require_ace,
+		require_nce=args.require_nce
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
 	spec_df = f_spec_df
@@ -182,7 +183,8 @@ if __name__ == "__main__":
 	parser.add_argument("--allowed_inst_types",nargs="+",default=None)
 	parser.add_argument("--allowed_frag_modes",nargs="+",default=None)
 	parser.add_argument("--allowed_ion_modes",nargs="+",default=None)
-	parser.add_argument("--require_ce",type=booltype,default=False)
+	parser.add_argument("--require_nce",type=booltype,default=True)
+	parser.add_argument("--require_ace",type=booltype,default=False)
 	args = parser.parse_args()
 
 	make_splits(args)

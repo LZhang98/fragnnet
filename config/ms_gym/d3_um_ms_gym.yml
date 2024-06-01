@@ -1,7 +1,7 @@
 wandb_name: d3_um_ms_gym
 wandb_tags:
 - um
-- d4
+- d3
 - wr00
 - inchikey
 - new_proc
@@ -20,6 +20,7 @@ wandb_tags:
 - preprocess
 - xi6bawy4
 
+
 # data stuff
 spec_fp: data/proc/ms_gym/spec_df.pkl
 mol_fp: data/proc/ms_gym/mol_df.pkl
@@ -34,12 +35,12 @@ frag_params:
 spec_params:
   merge: False
   nce: True
+  ace: False
   merge_keep_ces: False
   preprocess: True
   prec_type: False
   prec_types:
     - "[M+H]+"
-    - "[M-H]-"
 mol_params:
   preprocess: True
 
@@ -90,7 +91,7 @@ accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01
-accelerator: gpu
+accelerator: cpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
