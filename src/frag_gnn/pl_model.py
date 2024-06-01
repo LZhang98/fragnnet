@@ -17,7 +17,7 @@ except ModuleNotFoundError:
 import torch._dynamo as th_dynamo
 
 from frag_gnn.utils.nn_utils import build_lr_scheduler
-from frag_gnn.model import FragGNNModel, NeimsModel, PrecursorModel
+from frag_gnn.model import FragGNNModel, NeimsModel, PrecursorModel, GNNModel
 from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance, sparse_cosine_distance_hungarian
 from frag_gnn.utils.spec_utils import *
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_logsumexp, to_cpu, scatter_l1normalize, LOG_ZERO
@@ -1197,6 +1197,12 @@ class FragGNNPL(SpectrumPL):
 			ce_insert_location=self.hparams.ce_insert_location,
 			ce_insert_merge=self.hparams.ce_insert_merge,
 			ce_insert_size=self.hparams.ce_insert_size,
+			prec_insert_location=self.hparams.prec_insert_location,
+			prec_insert_size=self.hparams.prec_insert_size,
+			prec_types=self.hparams.spec_params["prec_types"],
+			inst_insert_location=self.hparams.inst_insert_location,
+			inst_insert_size=self.hparams.inst_insert_size,
+			inst_types=self.hparams.spec_params["inst_types"],
 		)
 		
 		self._check_ce_params()
@@ -1896,6 +1902,12 @@ class NeimsPL(BinnedPL):
 			ce_insert_location=self.hparams.ce_insert_location,
 			ce_insert_merge=self.hparams.ce_insert_merge,
 			ce_insert_size=self.hparams.ce_insert_size,
+			prec_insert_location=self.hparams.prec_insert_location,
+			prec_insert_size=self.hparams.prec_insert_size,
+			prec_types=self.hparams.spec_params["prec_types"],
+			inst_insert_location=self.hparams.inst_insert_location,
+			inst_insert_size=self.hparams.inst_insert_size,
+			inst_types=self.hparams.spec_params["inst_types"],
 		)
 		
 		self._check_ce_params()
@@ -1977,6 +1989,48 @@ class PrecursorPL(SpectrumPL):
 
 		self.loss_fn = loss_fn
 
+class GNNPL(BinnedPL):
+	def _setup_model(self):
+
+		self.model = GNNModel( 	# TODO: initialize model based on params. finalize params
+			mol_node_feats=self.hparams.mol_params["pyg_node_feats"],	# mol feats
+			mol_edge_feats=self.hparams.mol_params["pyg_edge_feats"],
+			mol_pe_embed_k=self.hparams.mol_params["pyg_pe_embed_k"],
+			mol_hidden_size=self.hparams.mol_hidden_size,
+			mol_num_layers=self.hparams.mol_num_layers,
+			mol_gnn_type=self.hparams.mol_gnn_type,
+			mol_normalization=self.hparams.mol_normalization,
+			mol_dropout=self.hparams.mol_dropout,
+			mol_pool_type=self.hparams.mol_pool_type,
+			mlp_hidden_size=self.hparams.mlp_hidden_size,				# FFN
+			mlp_dropout=self.hparams.mlp_dropout,
+			mlp_num_layers=self.hparams.mlp_num_layers,
+			mlp_use_residuals=self.hparams.mlp_use_residuals,
+			mz_max=self.hparams.mz_max,
+			mz_bin_res=self.hparams.mz_bin_res,
+			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
+			ff_bidirectional=self.hparams.ff_bidirectional,
+			ff_output_map_size=self.hparams.ff_output_map_size,
+			int_embedder=self.hparams.int_embedder,						# cross entropy
+			ce_insert_type=self.hparams.ce_insert_type,
+			ce_insert_location=self.hparams.ce_insert_location,
+			ce_insert_merge=self.hparams.ce_insert_merge,
+			ce_insert_size=self.hparams.ce_insert_size,
+			prec_insert_location=self.hparams.prec_insert_location,		# precursor
+			prec_insert_size=self.hparams.prec_insert_size,
+			prec_types=self.hparams.spec_params["prec_types"],
+			inst_insert_location=self.hparams.inst_insert_location,		# instrument
+			inst_insert_size=self.hparams.inst_insert_size,
+			inst_types=self.hparams.spec_params["inst_types"],
+		)
+
+		self._check_ce_params()
+	
+		# compile
+		if self.hparams.compile:
+			th_dynamo.reset()
+			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
+			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
 
 def test_models():
 
@@ -1986,10 +2040,11 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug_um/debug_d3_auto_um.yml": FragGNNPL,
-		"config/debug_m/debug_d3_auto_m.yml": FragGNNPL,
-		"config/debug_um/debug_neims_auto_um.yml": NeimsPL,
-		"config/debug_m/debug_neims_auto_m.yml": NeimsPL
+		"config/debug_m/debug_d3_m.yml": FragGNNPL,
+		# "config/debug_m/debug_d3_prec_m.yml": FragGNNPL,
+		# "config/debug_m/debug_neims_prec_m.yml": NeimsPL,
+		# "config/debug_um/debug_d3_prec_um.yml": FragGNNPL,
+		'config/debug_m/debug_gnn.yml': GNNPL
 	}
 
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
@@ -1997,6 +2052,10 @@ def test_models():
 		print(">>>", custom_fp)
 
 		config_d = load_config(template_fp, custom_fp)
+		for k in ["spec_params","mol_params","frag_params"]:
+			config_d[k]["preprocess"] = False
+			if "preload" in config_d[k]:
+				config_d[k]["preload"] = False
 		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
 
 		ds = init_dataset(config_d, splits=("train",))[0]

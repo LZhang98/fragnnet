@@ -24,6 +24,11 @@ spec_params:
   merge_keep_ces: False
   sparse: True
   prec_type: True
+  prec_types:
+    - "[M+H]+"
+  inst_type: True
+  inst_types:
+    - "FT"
   prec_mz: True
   prec_mass_diff: True
   nce: False
@@ -267,10 +272,14 @@ oos_tolerance_multiple: -1
 oos_loss: False
 null_loss: False
 null_loss_weight: 1.0
-ce_insert_type: none
+ce_insert_type: id
 ce_insert_location: none
 ce_insert_merge: False
 ce_insert_size: 32
+prec_insert_location: none
+prec_insert_size: 32
+inst_insert_location: none
+inst_insert_size: 32
 dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000

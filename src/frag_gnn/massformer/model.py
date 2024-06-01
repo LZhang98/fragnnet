@@ -1,13 +1,13 @@
 import torch as th
 import torch.nn as nn
 
-from frag_gnn.model import CEModel
+from frag_gnn.model import CEModel, PrecModel, InstModel
 from frag_gnn.massformer.nn_utils import GFv2Embedder
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.utils.misc_utils import scatter_reduce
 
 
-class MassFormerModel(CEModel):
+class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 
 	def __init__(
 		self, 
@@ -28,15 +28,15 @@ class MassFormerModel(CEModel):
 		ce_insert_location: str,
 		ce_insert_merge: bool,
 		ce_insert_size: int,
-	):
+		prec_insert_location: str,
+		prec_insert_size: int,
+		prec_types: list[str],
+		inst_insert_location: str,
+		inst_insert_size: int,
+		inst_types: list[str]):
 		
-		super().__init__(
-			int_embedder=int_embedder,
-			ce_insert_type=ce_insert_type,
-			ce_insert_location=ce_insert_location,
-			ce_insert_merge=ce_insert_merge,
-			ce_insert_size=ce_insert_size,
-		)
+		# nn.Module init
+		super().__init__()
 
 		self.gf = GFv2Embedder(
 			fix_num_pt_layers=mf_fix_num_pt_layers,
@@ -45,8 +45,28 @@ class MassFormerModel(CEModel):
 		)
 		self.mlp_input_dim = self.gf.get_embed_dim()
 
-		self._setup_ce()
+		# ce stuff
+		self._ce_init(
+			int_embedder=int_embedder,
+			ce_insert_type=ce_insert_type,
+			ce_insert_location=ce_insert_location,
+			ce_insert_merge=ce_insert_merge,
+			ce_insert_size=ce_insert_size)
 		self.mlp_input_dim += self.ce_mlp_input_dim
+
+		# prec stuff
+		self._prec_init(
+			prec_insert_location=prec_insert_location,
+			prec_insert_size=prec_insert_size,
+			prec_num_types=len(prec_types))
+		self.mlp_input_dim += self.prec_mlp_input_dim
+
+				# inst stuff
+		self._inst_init(
+			inst_insert_location=inst_insert_location,
+			inst_insert_size=inst_insert_size,
+			inst_num_types=len(inst_types))
+		self.mlp_input_dim += self.inst_mlp_input_dim
 
 		self.ffn = SpecFFN(
 			input_size=self.mlp_input_dim,
@@ -61,9 +81,17 @@ class MassFormerModel(CEModel):
 			output_map_size=ff_output_map_size
 		)
 
-	def _location_check(self):
+	def _ce_location_check(self):
 
-		assert self.ce_insert_location == "mlp", f"ce_insert_location={self.ce_insert_location} not supported"
+		assert self.ce_insert_location in ["mlp","none"], f"ce_insert_location={self.ce_insert_location} not supported"
+
+	def _prec_location_check(self):
+
+		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+
+	def _inst_location_check(self):
+
+		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
 
 	def get_split_params(self):
 
@@ -85,6 +113,8 @@ class MassFormerModel(CEModel):
 		spec_prec_mz: th.Tensor,
 		spec_nce: th.Tensor = None,
 		spec_nce_batch_idxs: th.Tensor = None,
+		spec_prec_type: th.Tensor = None,
+		spec_inst_type: th.Tensor = None,
 		mf_perturb: th.Tensor = None,
 		**kwargs):
 
@@ -105,8 +135,15 @@ class MassFormerModel(CEModel):
 		ce = spec_nce
 		ce_batch_idxs = spec_nce_batch_idxs
 		ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
-		if self.ce_insert_type != "none" and self.ce_insert_location == "mlp":
+		prec_embed = self.embed_prec(spec_prec_type)
+		inst_embed = self.embed_inst(spec_inst_type)
+		if self.ce_insert_location == "mlp":
 			fh = th.cat([fh,ce_embed],dim=1)
+		if self.prec_insert_location == "mlp":
+			fh = th.cat([fh,prec_embed],dim=1)
+		if self.inst_insert_location == "mlp":
+			fh = th.cat([fh,inst_embed],dim=1)
+
 		# apply ffn
 		pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(fh,spec_prec_mz)
 		out_d = {

@@ -30,15 +30,15 @@ frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: True
-  preprocess: True
+  preload: False #True
+  preprocess: False #True
 spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: True
+  preprocess: False #True
 mol_params:
-  preprocess: True
+  preprocess: False #True
 
 # model stuff
 frag_gnn_type: NodeMLP
