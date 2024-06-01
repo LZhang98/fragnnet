@@ -138,6 +138,10 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
 	spec_df = spec_df.drop(columns=["exact_mw"])
 
+	# covert ace and nce if there is data
+	spec_df.loc[:,"ace"] = par_apply_df_rows(spec_df,data_utils.fill_missing_ace)
+	spec_df.loc[:,"nce"] = par_apply_df_rows(spec_df,data_utils.fill_missing_nce)
+ 
 	# extract annotation info
 	ann_df = ann_df.merge(spec_df[["dset_spec_id","spec_id","prec_type"]],on="dset_spec_id",how="inner")
 	ann_df = ann_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner")

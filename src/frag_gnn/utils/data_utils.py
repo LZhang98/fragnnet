@@ -1063,6 +1063,22 @@ def ace_to_nce(row):
 	nce = ace_to_nce_helper(ace,charge,prec_mz)
 	return nce
 
+def fill_missing_nce(row):
+	nce = row["nce"]
+	ace = row["ace"]
+	if none_or_nan(nce) and not none_or_nan(ace):
+		return ace_to_nce(row)
+	else:
+		return nce
+
+def fill_missing_ace(row):
+	nce = row["nce"]
+	ace = row["ace"]
+	if none_or_nan(ace) and not none_or_nan(nce):
+		return nce_to_ace(row)
+	else:
+		return ace
+
 def parse_mass_gym_ce_str(ce_str):
 	"""make it comparable to NIST so we can parse it
 
