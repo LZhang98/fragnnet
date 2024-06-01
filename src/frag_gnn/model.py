@@ -1205,8 +1205,8 @@ class PrecursorModel(nn.Module):
 		spec_prec_mz: th.Tensor,
 		**kwargs):
 
-		pred_mzs = 0.*self.dummy_params + spec_prec_mz
-		pred_logprobs = th.zeros_like(pred_mzs)
+		pred_mzs = spec_prec_mz
+		pred_logprobs = 0.*self.dummy_params + th.zeros_like(pred_mzs)
 		pred_batch_idxs = th.arange(pred_mzs.shape[0],device=pred_mzs.device)
 
 		out_d = {
