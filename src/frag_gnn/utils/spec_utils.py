@@ -60,8 +60,8 @@ def get_ints_untransform_func(ints_transform):
 		max_ints = float(np.log10(1000. + 1.))
 		def _untransform_fn(x): return 10**x - 1.
 	elif ints_transform == "log10t3":
-		max_ints = float(np.log10(1000. + 1.) / 3.)
-		def _untransform_fn(x): return 10**(3 * x) - 1.
+		max_ints = float(np.log10(1000. / 3. + 1.))
+		def _untransform_fn(x): return 3. * (10**x - 1.)
 	elif ints_transform == "loge":
 		max_ints = float(np.log(1000. + 1.))
 		def _untransform_fn(x): return th.exp(x) - 1.
