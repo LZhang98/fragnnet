@@ -317,8 +317,10 @@ def read_pcdl(zipped_spectra_dp: str):
 				for key, col in PCDL_KEYS.items():
 					if str_row.startswith(key):
 						value = str_row.removeprefix(key).strip()
-						if col in ["exact_mass",'prec_mz','col_energy']:
+						if col in ["exact_mass",'prec_mz']:
 							value = float(value)
+						elif col == 'col_energy':
+							value = f"{value} eV"
 						elif col  == "ion_mode" and value == "POSITIVE":
 							value = "P"
 						elif col  == "ion_mode" and value == "NEGATIVE":
@@ -332,7 +334,7 @@ def read_pcdl(zipped_spectra_dp: str):
 		return data_dict
 
 	spectrum_list = []
-	
+	print(zipped_spectra_dp)
 	zipped_spectra_filenames = [f for f in os.listdir(zipped_spectra_dp) if f.endswith(".zip")]
 	for zipped_spectra_filename in zipped_spectra_filenames:
 		zipped_spectra_fp = f"{zipped_spectra_dp}/{zipped_spectra_filename}"
@@ -371,7 +373,7 @@ def process_ms_gym(ms_gym_tsv_fp):
 	ms_df["dset_spec_id"] = "ms_gym"
 	ms_df.rename(columns={"precursor_mz":"prec_mz", 
 						   "adduct":"prec_type",
-						    "precursor_mz" :"prec_mass",
+						    "precursor_mz" :"prec_mz",
 						   "parent_mass":"exact_mass",
 						   "instrument_type":"inst_type",
 						   "collision_energy":"col_energy",
@@ -380,7 +382,7 @@ def process_ms_gym(ms_gym_tsv_fp):
 	
 	ms_df["col_energy"], ms_df["normalized"], ms_df["ramped"] = zip(*ms_df["col_energy"].apply(parse_mass_gym_ce_str))
 
-	ms_df = ms_df.astype({"prec_mass":float,"exact_mass":float})
+	#ms_df = ms_df.astype({"prec_mz":float,"exact_mass":float})
  
 	# add ion_mode
 	ms_df.loc[:,"ion_mode"] = "P"
@@ -452,7 +454,7 @@ if __name__ == "__main__":
 	elif args.input_format == "ms_gym":
 		spec_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv))
 	elif args.input_format == "pcdl_zip":
-		spec_df = read_pcdl(os.path.join(args.raw_data_dp,args.pcdl_zip))
+		spec_df = read_pcdl(args.raw_data_dp)
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	

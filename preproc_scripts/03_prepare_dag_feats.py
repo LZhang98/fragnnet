@@ -64,9 +64,13 @@ def main(args):
 		spec_df,
 		mol_df,
 		allowed_elements=allowed_elements,
-		dsets=dsets,
-		prec_types=["[M+H]+"],
-		num_entries=args.num_entries)
+		allowed_dsets=dsets,
+		allowed_prec_types=args.allowed_prec_types,
+		num_entries=args.num_entries,
+  		allowed_frag_modes=args.allowed_frag_modes,
+    	allowed_ion_modes=args.allowed_ion_modes,
+		allowed_inst_types=args.allowed_inst_types)
+ 
 	m_spec_df = merge_spec_df(spec_df)
 
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules") #, {len(m_spec_df)} merged spectra")
@@ -382,6 +386,11 @@ if __name__ == "__main__":
 	parser.add_argument("--compress_dags",type=booltype,default=True)
 	parser.add_argument("--wandb_run_name",type=str,default="d3_h4_isoTrue_v2")
 	parser.add_argument("--save_dag",type=booltype,default=True)
+	parser.add_argument("--allowed_prec_types",nargs="+",default=None)
+	parser.add_argument("--allowed_inst_types",nargs="+",default=None)
+	parser.add_argument("--allowed_frag_modes",nargs="+",default=None)
+	parser.add_argument("--allowed_ion_modes",nargs="+",default=None)
+	parse_formula
 	args = parser.parse_args()
 
 	tqdm.pandas()

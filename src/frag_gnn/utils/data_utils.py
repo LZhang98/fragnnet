@@ -731,13 +731,15 @@ def infer_prec_mz(df):
 		"[M-OH]+": -MASS("H")-MASS("O")-ELECTRON_MASS,
 		"[M+H-C12H20O9]+": -19*MASS("H")-12*MASS("C")-9*MASS("O")-ELECTRON_MASS,
 		"[M-H]-": -MASS("H")+ELECTRON_MASS,
+		"[M+H]+": MASS("H")-ELECTRON_MASS,
+		"[M+Na]+": MASS("Na")-ELECTRON_MASS,
 	}
 
 	prec_mz = df["prec_mz"]
 	spec_type = df["spec_type"]
 	if none_or_nan(prec_mz) and spec_type == "MS2":
 		dset = df["dset"]
-		assert dset == "mona23", dset
+		#assert dset == "mona23", dset
 		prec_type = df["prec_type"]
 		exact_mw = df["exact_mw"]
 		if not none_or_nan(prec_type):

@@ -27,8 +27,9 @@ def load_df(df_dp,dsets,num_entries):
 		all_df = pd.concat(dfs,ignore_index=True)
 	else:
 		all_df = dfs[0]
+  
+	all_df = all_df.astype({"prec_mz":float,"exact_mass":float})
 	all_df = all_df.reset_index(drop=True)
-
 	return all_df
 
 def preprocess_spec(spec_df):
