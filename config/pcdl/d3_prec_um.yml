@@ -1,6 +1,6 @@
-wandb_name: d3_prec_m
+wandb_name: d3_prec_um_pcdl
 wandb_tags:
-- prec_m
+- prec_um
 - nist20v2
 - d4
 - wr00
@@ -10,10 +10,10 @@ wandb_tags:
 - new_metrics
 - nodemlp
 - ce_embed
-- merged
+- unmerged
 - oos_multiple_1
 - gaussian_renormalize
-- b32x4
+- b128x1
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
@@ -34,14 +34,14 @@ frag_params:
   preload: True
   preprocess: True
 spec_params:
-  merge: True
+  merge: False
   nce: True
-  merge_keep_ces: True
+  merge_keep_ces: False
   preprocess: True
   prec_type: True
   prec_types:
     - "[M+H]+"
-    - "[M+Na]+"
+    - "[M-H]+"
 mol_params:
   preprocess: True
 
@@ -80,14 +80,15 @@ loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
 group_sampler: False
-simple_group_sampler: False
-train_sample_weight: mol
-eval_sample_weight: mol
+simple_group_sampler: True
+simple_group_sampler_type: group_mol
+train_sample_weight: none
+eval_sample_weight: group_mol
 
 # optimization stuff
-train_batch_size: 32
-eval_batch_size: 32
-accumulate_grad_batches: 4
+train_batch_size: 128
+eval_batch_size: 128
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01
@@ -105,7 +106,7 @@ eval_mz_bin_res:
 - 0.01
 precision: 32
 use_tensor_float32: True
-automatic_optimization: True
-dynamic_batch_sampler: False
+automatic_optimization: False
+dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
 compile: False
