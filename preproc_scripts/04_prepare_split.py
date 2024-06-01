@@ -22,8 +22,8 @@ def make_splits(args):
     f_spec_df, f_mol_df = filter_spec_mol(
         spec_df,
         mol_df,
-        dsets=dsets,
-        prec_types=args.prec_types,
+        allowed_dsets=dsets,
+        allowed_prec_types=args.prec_types,
         max_peak_mz=args.max_peak_mz,
         allowed_elements=ELEMENTS
     )
