@@ -41,8 +41,6 @@ mol_normalization: batch
 mol_hidden_size: 256
 mol_dropout: 0.2
 mlp_normalization: layer
-mlp_hidden_size: 64
-mlp_dropout: 0.2
 mlp_hidden_size: 1024
 mlp_dropout: 0.1
 mlp_num_layers: 4
