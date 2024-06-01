@@ -173,7 +173,6 @@ def plot_spectra_sparse(
 		match_tolerance=1e-5,
 		match_relative=True,
 		match_tolerance_min_mz=TOLERANCE_MIN_MZ,
-		return_data=False
 		return_data=False,
 		colors = None,
 		bar_width = 3.,
