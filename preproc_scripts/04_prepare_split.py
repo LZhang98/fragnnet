@@ -115,18 +115,31 @@ def make_splits(args):
 		test_df = primary_split_df[primary_split_df[args.split_key].isin(test_keys)][["spec_id","mol_id","group_id"]]
 		# secondary split
 		secondary_df = secondary_split_df[~secondary_split_df[args.split_key].isin(train_val_keys)][["spec_id","mol_id","group_id"]]
-	else:
-		assert args.split_type == "predefined"
+	elif args.split_type == "predefined":
+		#assert args.split_type == "predefined"
 		assert len(args.secondary_dsets) == 0, len(args.secondary_dsets)
 		assert len(args.train_ids) > 1 and len(args.val_ids) > 1 and len(args.test_ids) > 1
 		train_ids = np.array(args.train_ids)
 		val_ids = np.array(args.val_ids)
 		test_ids = np.array(args.test_ids)
+
 		train_df = primary_split_df[primary_split_df[args.id_type].isin(train_ids)][["spec_id","mol_id","group_id"]]
 		val_df = primary_split_df[primary_split_df[args.id_type].isin(val_ids)][["spec_id","mol_id","group_id"]]
 		test_df = primary_split_df[primary_split_df[args.id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
 		secondary_df = primary_split_df[np.zeros(primary_split_df.shape[0],dtype=bool)][["spec_id","mol_id","group_id"]]
-
+	elif args.split_type == "predefined_dsetid_csv":
+     
+		predefined_df = pd.read_csv(args.predefined_dsetid_csv)
+		train_dest_ids = predefined_df[predefined_df['fold'] == 'train']['dset_spec_id'].to_list()
+		train_df = primary_split_df[primary_split_df['dset_spec_id'].isin(train_dest_ids)][["spec_id","mol_id","group_id"]]
+		val_dest_ids = predefined_df[predefined_df['fold'] == 'val']['dset_spec_id'].to_list()
+		val_df = primary_split_df[primary_split_df['dset_spec_id'].isin(val_dest_ids)][["spec_id","mol_id","group_id"]]
+		test_dest_ids = predefined_df[predefined_df['fold'] == 'test']['dset_spec_id'].to_list()
+		test_df = primary_split_df[primary_split_df['dset_spec_id'].isin(test_dest_ids)][["spec_id","mol_id","group_id"]]
+		secondary_df = primary_split_df[np.zeros(primary_split_df.shape[0],dtype=bool)][["spec_id","mol_id","group_id"]]
+	else:
+		raise ValueError(f"{args.split_type} is not supported")
+  
 	# create split directory
 	os.makedirs(args.split_dp,exist_ok=True)
 
@@ -152,12 +165,13 @@ def make_splits(args):
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--split_type",type=str,choices=["random","predefined"],default="random")
+	parser.add_argument("--split_type",type=str,choices=["random","predefined","predefined_dsetid_csv"],default="random")
 	parser.add_argument("--split_key",type=str,choices=["inchikey_s","scaffold"],default="inchikey_s")
 	parser.add_argument("--id_type",type=str,choices=["spec_id","mol_id","group_id"],default="group_id")
 	parser.add_argument("--train_ids",type=int,nargs="+",default=[62611])
 	parser.add_argument("--val_ids",type=int,nargs="+",default=[62611])
 	parser.add_argument("--test_ids",type=int,nargs="+",default=[62611])
+	parser.add_argument("--predefined_dsetid_csv",type=str,default=None)
 	# spec filtering criteria
 	parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
 	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])

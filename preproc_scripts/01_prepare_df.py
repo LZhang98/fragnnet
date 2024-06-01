@@ -370,7 +370,6 @@ def process_ms_gym(ms_gym_tsv_fp):
 	ms_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
 	ms_df["peaks"] = ms_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
 	ms_df = ms_df.drop(columns=["mzs","intensities"])
-	ms_df["dset_spec_id"] = "ms_gym"
 	ms_df.rename(columns={"precursor_mz":"prec_mz", 
 						   "adduct":"prec_type",
 						    "precursor_mz" :"prec_mz",
@@ -394,8 +393,10 @@ def process_ms_gym(ms_gym_tsv_fp):
 	for value in MSP_KEY_DICT.values():
 		if value not in ms_df.columns:
 			ms_df.loc[:,value] = np.nan
-   
-	return ms_df
+	
+	split_df = ms_df[["dset_spec_id","fold"]]
+	#print(split_df)
+	return ms_df, split_df
  
 if __name__ == "__main__":
 
@@ -452,7 +453,9 @@ if __name__ == "__main__":
 		assert os.path.isfile(ms_meta_fp), ms_meta_fp
 		spec_df = preproc_ms_files(ms_dp,ms_meta_fp,MSP_KEY_DICT.keys(),args.num_entries)
 	elif args.input_format == "ms_gym":
-		spec_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv))
+		spec_df, split_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv))
+		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
+		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "pcdl_zip":
 		spec_df = read_pcdl(args.raw_data_dp)
 	else:

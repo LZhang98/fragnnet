@@ -18,4 +18,4 @@ spec_df = pd.read_pickle("data/proc/ms_gym/spec_df.pkl")
 #print(spec_df_id_set - mol_df_id_set)
 #print(mol_df[mol_df["mol_id"] == 46]['inchikey_s'])
 
-print(spec_df["nce"])
+print(spec_df["inst_type"].unique())

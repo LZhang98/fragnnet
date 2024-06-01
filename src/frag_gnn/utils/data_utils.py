@@ -660,7 +660,10 @@ def parse_inst_info(df):
 			"Unknown (LCMS)": "Other",
 			"Ion Trap (LCMS)": "IT",
 			"Orbitrap (LCMS)": "FT",
-			"FTICR (LCMS)": "FT"
+			"FTICR (LCMS)": "FT",
+			"ITFT": "FT",
+			"Orbitrap": "Orbitrap",
+			"QFT": "FT",
 		}
 		if inst_type_str in inst_type_map:
 			inst_type = inst_type_map[inst_type_str]
