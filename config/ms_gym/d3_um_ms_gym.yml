@@ -108,4 +108,7 @@ use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
-compile: False
+compile: True
+
+# run faster
+dynamic_batch_sampler_max: 300000
