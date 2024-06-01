@@ -374,7 +374,6 @@ if __name__ == "__main__":
 	parser.add_argument("--frag_dp",type=str,required=True)
 	parser.add_argument("--proc_dp",type=str,required=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 	#parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
 	parser.add_argument("--nb_isomorphic",type=booltype,default=True)
 	parser.add_argument("--max_iterations",type=int,default=3)
@@ -386,10 +385,12 @@ if __name__ == "__main__":
 	parser.add_argument("--compress_dags",type=booltype,default=True)
 	parser.add_argument("--wandb_run_name",type=str,required=True)
 	parser.add_argument("--save_dag",type=booltype,default=True)
+	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 	parser.add_argument("--allowed_prec_types",nargs="+",default=["[M+H]+"])
 	parser.add_argument("--allowed_inst_types",nargs="+",default=None)
 	parser.add_argument("--allowed_frag_modes",nargs="+",default=None)
 	parser.add_argument("--allowed_ion_modes",nargs="+",default=None)
+	parser.add_argument("--require_ce",type=booltype,default=False)
 	parse_formula
 	args = parser.parse_args()
 

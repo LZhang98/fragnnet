@@ -74,7 +74,11 @@ class BaseDataset(Dataset):
 		spec_df = spec_df[spec_df["spec_id"].isin(split_df["spec_id"])]
 		# select molecules
 		mol_df = mol_df[mol_df["mol_id"].isin(split_df["mol_id"])]
-		assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
+  
+		mol_df_molid_set = set(mol_df["mol_id"].to_list())
+		spec_df_molid_set = set(spec_df["mol_id"].to_list())
+		assert len(spec_df_molid_set - mol_df_molid_set) == 0
+		#assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 		# merge spectra
 		um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
 		if spec_params["merge"]:

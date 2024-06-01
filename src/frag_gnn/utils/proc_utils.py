@@ -26,7 +26,8 @@ def filter_spec_mol(
 		num_entries=-1,
   		allowed_inst_types = None,
     	allowed_frag_modes = None,
-     	allowed_ion_modes = None,):
+     	allowed_ion_modes = None,
+      	require_ce:bool = False):
 	"""
 	The purpose of this filtering is to prevent errors
 	"""
@@ -35,37 +36,44 @@ def filter_spec_mol(
 	## spectrum criteria (TODO remove this)
 	# dataset mask
 	if allowed_dsets is not None:
+		print(f">> dsets filter: {allowed_dsets}")
 		dset_mask = spec_df["dset"].isin(allowed_dsets)
-		print(f">> dsets: {dset_mask.mean()}")
+		print(f">> dsets filter mean: {dset_mask.mean()}")
 		masks.append(dset_mask)
 
 	# instrument type
 	if allowed_inst_types is not None:
+		print(f">> inst type: {allowed_inst_types}")
 		inst_type_mask = spec_df["inst_type"].isin(allowed_inst_types)
-		print(f">> inst type: {inst_type_mask.mean()}")
+		print(f">> inst type filter mean: {inst_type_mask.mean()}")
 		masks.append(inst_type_mask)
   
 	# frag mode
 	if allowed_frag_modes is not None:
+		print(f">> frag mode filter: {allowed_frag_modes}")
 		frag_mode_mask = spec_df["frag_mode"].isin(allowed_frag_modes)
-		print(f">> frag mode: {frag_mode_mask.mean()}")
+		print(f">> frag mode filter mean: {frag_mode_mask.mean()}")
 		masks.append(frag_mode_mask)
   
 	# ce filter
-	#ce_mask = (spec_df["inst_type"]=="FT") & (~spec_df["nce"].isna())
-	#print(f">> ce: {ce_mask.mean()}")
-	#masks.append(ce_mask)
+	if require_ce:
+		print(f">> require_ce")
+		ce_mask = (~spec_df["nce"].isna() | ~spec_df["ace"].isna())
+		print(f">> ce: {ce_mask.mean()}")
+		masks.append(ce_mask)
  
 	# ion mode
 	if allowed_ion_modes is not None:
+		print(f">> ion mode filter: {allowed_ion_modes}")
 		ion_mode_mask = spec_df["ion_mode"].isin(allowed_ion_modes)
-		print(f">> ion mode: {ion_mode_mask.mean()}")
+		print(f">> ion mode filter mean: {ion_mode_mask.mean()}")
 		masks.append(ion_mode_mask)
   
 	# precursor type
 	if allowed_prec_types is not None:
+		print(f">> prec type filter: {allowed_prec_types}")
 		prec_type_mask = spec_df["prec_type"].isin(allowed_prec_types)
-		print(f">> prec type: {prec_type_mask.mean()}")
+		print(f">> prec type filter mean: {prec_type_mask.mean()}")
 		masks.append(prec_type_mask)
   
 	# resolution
