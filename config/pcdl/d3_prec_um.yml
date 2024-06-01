@@ -41,7 +41,7 @@ spec_params:
   prec_type: True
   prec_types:
     - "[M+H]+"
-    - "[M-H]+"
+    - "[M-H]-"
 mol_params:
   preprocess: True
 

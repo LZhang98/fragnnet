@@ -175,7 +175,7 @@ class BaseDataset(Dataset):
 	def _setup_prec_type_to_idx(self):
 
 		prec_types = sorted(self.spec_params["prec_types"])
-		assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types)
+		assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types), prec_types
 		self.prec_type_to_idx = {prec_type: idx for idx, prec_type in enumerate(prec_types)}
 		self.num_prec_types = len(prec_types)+1
 
