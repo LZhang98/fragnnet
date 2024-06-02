@@ -72,8 +72,8 @@ def main(args):
 		]
 	)
 	if args.blacklist is not None:
-		for bl_node in args.blacklist:
-			script_lines.append(f"#SBATCH --exclude={bl_node}")
+		bl_node_str = ",".join(args.blacklist)
+		script_lines.append(f"#SBATCH --exclude={bl_node_str}")
 	script_lines.extend(
 		[
 			"",
