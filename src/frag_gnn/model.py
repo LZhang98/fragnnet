@@ -1220,7 +1220,7 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 
 	def __init__(
 		self,
-		mol_node_feats: list[str],		# mol gnn
+		mol_node_feats: list[str],
 		mol_edge_feats: list[str],
 		mol_pe_embed_k: int,
 		mol_hidden_size: int,
@@ -1229,7 +1229,7 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		mol_normalization: str,
 		mol_dropout: float,
 		mol_pool_type: str,
-		mlp_hidden_size: int,			# FFN
+		mlp_hidden_size: int,
 		mlp_dropout: float,
 		mlp_num_layers: int,
 		mlp_use_residuals: bool,
@@ -1238,15 +1238,15 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		ff_prec_mz_offset: int,
 		ff_bidirectional: bool,
 		ff_output_map_size: int,
-		int_embedder: str,				# cross entropy
+		int_embedder: str,
 		ce_insert_type: str,
 		ce_insert_location: str,
 		ce_insert_merge: bool,
 		ce_insert_size: int,
-		prec_insert_location: str,		# precursor
+		prec_insert_location: str,
 		prec_insert_size: int,
 		prec_types: list[str],
-		inst_insert_location: str,		# instrument
+		inst_insert_location: str,
 		inst_insert_size: int,
 		inst_types: list[str]
 	):
@@ -1388,16 +1388,16 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			self.mol_node_feats, 
 			self.mol_edge_feats, 
 			self.mol_pe_embed_k
-		)	
+		)
 
 	def _ce_location_check(self):
 
-		assert self.ce_insert_location in ["mlp","none"], f"ce_insert_location={self.ce_insert_location} not supported"
+		assert self.ce_insert_location in ["mlp","mol","none"], f"ce_insert_location={self.ce_insert_location} not supported"
 
 	def _prec_location_check(self):
 		
-		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+		assert self.prec_insert_location in ["mlp","mol","none"], f"prec_insert_location={self.prec_insert_location} not supported"
 
 	def _inst_location_check(self):
 
-		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+		assert self.inst_insert_location in ["mlp","mol","none"], f"prec_insert_location={self.inst_insert_location} not supported"
