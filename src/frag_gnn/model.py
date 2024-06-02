@@ -1155,7 +1155,7 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 
 	def _inst_location_check(self):
 
-		assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+		assert self.inst_insert_location in ["mlp","none"], f"prec_insert_location={self.inst_insert_location} not supported"
 
 	def forward(
 		self,
@@ -1205,8 +1205,8 @@ class PrecursorModel(nn.Module):
 		spec_prec_mz: th.Tensor,
 		**kwargs):
 
-		pred_mzs = 0.*self.dummy_params + spec_prec_mz
-		pred_logprobs = th.zeros_like(pred_mzs)
+		pred_mzs = spec_prec_mz
+		pred_logprobs = 0.*self.dummy_params + th.zeros_like(pred_mzs)
 		pred_batch_idxs = th.arange(pred_mzs.shape[0],device=pred_mzs.device)
 
 		out_d = {
