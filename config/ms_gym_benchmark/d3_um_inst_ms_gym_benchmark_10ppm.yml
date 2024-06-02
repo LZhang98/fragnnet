@@ -1,29 +1,30 @@
-wandb_name: nemis_um_ms_gym
+wandb_name: d3_um_inst_ms_gym_benchmark_0.01
 wandb_tags:
 - um
-- nemis
+- d3
 - wr00
 - inchikey
 - new_proc
+- fraggnn_d3
 - new_metrics
 - nodemlp
 - ce_embed
 - unmerged
 - oos_multiple_1
 - gaussian_renormalize
-- b512x1
+- b128x1
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
 - preload
 - preprocess
 - xi6bawy4
-
+- ms_gym_benchmark
 
 # data stuff
 spec_fp: data/proc/ms_gym/spec_df.pkl
 mol_fp: data/proc/ms_gym/mol_df.pkl
-split_dp: data/split/ms_gym_d3_h4
+split_dp: data/split/ms_gym_d3_h4_benchmark
 frag_dp: data/frag/ms_gym_d3_h4/dags
 frag_params:
   pyg_edge_feats: []
@@ -40,45 +41,60 @@ spec_params:
   prec_type: False
   prec_types:
     - "[M+H]+"
+  inst_type: True
+  inst_types:
+    - "FT"
+    - "QTOF"
+    - "Orbitrap"
+    - "Unknown"
 mol_params:
   preprocess: True
-  fingerprint_morgan: True
-  fingerprint_rdkit: True
-  fingerprint_maccs: True
-  fingerprint: True
-  pyg: False
 
 # model stuff
-model_type: neims
-mlp_hidden_size: 1024
-mlp_dropout: 0.1
-mlp_num_layers: 4
-mlp_use_residuals: True
-ff_prec_mz_offset: 5
-ff_bidirectional: True
-ff_output_map_size: 256
+frag_gnn_type: NodeMLP
+num_depth: 4
+num_hs: 4
 ce_insert_type: embed
 ce_insert_location: mlp
 ce_insert_merge: True
 ce_insert_size: 24
 #prec_insert_location: mlp
 #prec_insert_size: 8
-mz_max: 1500.0
-mz_bin_res: 0.01
-sum_ints: True
+inst_insert_location: mlp
+inst_insert_size: 8
+mol_pool_type: mean
+frag_pool_type: mean
+mol_normalization: batch
+mol_hidden_size: 256
+mol_dropout: 0.2
+frag_hidden_size: 256
+frag_normalization: graph
+frag_embed_combine: avg
+frag_pool_combine: subtract
+frag_dropout: 0.1
+mlp_normalization: layer
+mlp_hidden_size: 64
+mlp_dropout: 0.2
 
 # loss stuff
-loss_type: cosine_distance
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
 sparse_cosine_similarity: True
-ints_transform: log10t3
+loss_vectorized: True
+loss_batch_size: 16
+skip_extra_losses: True
+group_sampler: False
 simple_group_sampler: True
 simple_group_sampler_type: group_mol
 train_sample_weight: none
 eval_sample_weight: group_mol
 
 # optimization stuff
-train_batch_size: 512
-eval_batch_size: 512
+train_batch_size: 128
+eval_batch_size: 128
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0003033
@@ -97,4 +113,7 @@ eval_mz_bin_res:
 - 0.01
 precision: 32
 use_tensor_float32: True
-automatic_optimization: True
+automatic_optimization: False
+dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+pl_enable_progress_bar: True
+compile: True

@@ -180,6 +180,7 @@ if __name__ == "__main__":
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--ow_spec_mol", type=booltype, default=False)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist20_hr","mona23"])
+	parser.add_argument("--replace_nan_unknown", type=booltype, default=False)
 	flags = parser.parse_args()
 
 	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
@@ -204,6 +205,8 @@ if __name__ == "__main__":
 
 		spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df)
 
+		if flags.replace_nan_unknown:
+			spec_df["inst_type"] = spec_df["inst_type"].fillna('Unknown')
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
@@ -211,7 +214,7 @@ if __name__ == "__main__":
 			ann_df.to_pickle(ann_df_fp)
 		for k, v in debug_dfs.items():
 			v.to_pickle(os.path.join(flags.proc_dp,f"{k}.pkl"))
-
+		
 	print(f">spec_df {spec_df.shape}")
 	print(f">spec_df num nan: {spec_df.isna().sum()}")
 	print(f">mol_df {mol_df.shape}")
