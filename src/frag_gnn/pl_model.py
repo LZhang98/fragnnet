@@ -244,8 +244,14 @@ class SpectrumPL(pl.LightningModule):
 			metric_d = {k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device) for k in self.auxiliary_metric_names}
 
 			# untransform
-			true_ints = self.ints_untransform_func(true_ints)
-			pred_ints = self.ints_untransform_func(pred_ints)
+			true_ints = self.ints_untransform_func(
+				true_ints,
+				true_batch_idxs
+			)
+			pred_ints = self.ints_untransform_func(
+				pred_ints,
+				pred_batch_idxs
+			)
 
 			# define aggregation
 			agg = "sum" if self.hparams.sum_ints else "amax"
@@ -998,7 +1004,10 @@ class SpectrumPL(pl.LightningModule):
 				true_ints,
 				th.zeros_like(true_ints,dtype=th.long)
 			)
-			pred_ints = self.ints_untransform_func(pred_ints)
+			pred_ints = self.ints_untransform_func(
+				pred_ints,
+				th.zeros_like(pred_ints,dtype=th.long)
+			)
 			pred_ints = self.ints_normalize_func(
 				pred_ints,
 				th.zeros_like(pred_ints,dtype=th.long)

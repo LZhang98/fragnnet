@@ -73,8 +73,15 @@ def get_ints_untransform_func(ints_transform):
 		def _untransform_fn(x): return x
 	else:
 		raise ValueError("invalid transform")
-	def _func(ints):
-		ints = ints / (th.max(ints) + EPS) * max_ints
+	def _func(ints, batch_idxs):
+		old_max_ints = scatter_reduce(
+			ints,
+			batch_idxs,
+			"amax",
+			default=0.,
+			include_self=False
+		)
+		ints = ints / (old_max_ints[batch_idxs] + EPS) * max_ints
 		ints = _untransform_fn(ints)
 		ints = th.clamp(ints, min=0.)
 		assert not th.isnan(ints).any()
