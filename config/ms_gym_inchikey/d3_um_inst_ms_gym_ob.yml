@@ -110,3 +110,5 @@ dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
 compile: True
 
+# run faster
+dynamic_batch_sampler_max: 50000
