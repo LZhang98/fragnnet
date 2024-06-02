@@ -5,15 +5,8 @@ import scipy
 import scipy.optimize
 from typing import Tuple, Union
 
-from frag_gnn.utils.formula_utils import ELECTRON_MASS, PREC_TYPE_TO_MASS_DIFF
 from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d, safelog, scatter_logsumexp, TOLERANCE_MIN_MZ
 
-# TODO: actually fill these out
-PREC_TYPES = [
-	"[M+H]+",
-	"[M-H]-"
-]
-PREC_TYPE_TO_IDX = {prec_type: idx for idx,prec_type in enumerate(PREC_TYPES)}
 # rough approximations from NIST20
 NCE_MEAN = 60.
 NCE_STD = 40.
@@ -21,15 +14,6 @@ NCE_MAX = 200.
 MZ_MAX = 1500.0
 MZ_BIN_RES = 0.01
 INTS_THRESH = 0.0
-
-
-def prec_type_idx(prec_type):
-	idx = PREC_TYPE_TO_IDX[prec_type]
-	return idx
-
-def prec_type_mass_diff(prec_type):
-	mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
-	return mass_diff
 
 def get_ints_transform_func(ints_transform):
 	""" method to get int transferom func
@@ -76,8 +60,8 @@ def get_ints_untransform_func(ints_transform):
 		max_ints = float(np.log10(1000. + 1.))
 		def _untransform_fn(x): return 10**x - 1.
 	elif ints_transform == "log10t3":
-		max_ints = float(np.log10(1000. + 1.) / 3.)
-		def _untransform_fn(x): return 10**(3 * x) - 1.
+		max_ints = float(np.log10(1000. / 3. + 1.))
+		def _untransform_fn(x): return 3. * (10**x - 1.)
 	elif ints_transform == "loge":
 		max_ints = float(np.log(1000. + 1.))
 		def _untransform_fn(x): return th.exp(x) - 1.
@@ -89,8 +73,15 @@ def get_ints_untransform_func(ints_transform):
 		def _untransform_fn(x): return x
 	else:
 		raise ValueError("invalid transform")
-	def _func(ints):
-		ints = ints / (th.max(ints) + EPS) * max_ints
+	def _func(ints, batch_idxs):
+		old_max_ints = scatter_reduce(
+			ints,
+			batch_idxs,
+			"amax",
+			default=0.,
+			include_self=False
+		)
+		ints = ints / (old_max_ints[batch_idxs] + EPS) * max_ints
 		ints = _untransform_fn(ints)
 		ints = th.clamp(ints, min=0.)
 		assert not th.isnan(ints).any()

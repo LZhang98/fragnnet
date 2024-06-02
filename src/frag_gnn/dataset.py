@@ -13,12 +13,12 @@ from typing import Iterator, List
 import copy
 
 from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_graph, get_frag_graph
-from frag_gnn.utils.spec_utils import batch_func, prec_type_idx, prec_type_mass_diff
+from frag_gnn.utils.spec_utils import batch_func
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage
-from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 import frag_gnn.massformer.data_utils as mf_data_utils
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 class BaseDataset(Dataset):
 
@@ -209,7 +209,7 @@ class BaseDataset(Dataset):
 			spec_data["spec_inst_type"] = inst_type
 		if self.spec_params["prec_mass_diff"]:
 			prec_type = spec_entry["prec_type"]
-			mass_diff = th.tensor([prec_type_mass_diff(prec_type)],dtype=th.float)
+			mass_diff = th.tensor([PREC_TYPE_TO_MASS_DIFF[prec_type]],dtype=th.float)
 			spec_data["spec_prec_mass_diff"] = mass_diff
 		if self.spec_params["nce"]:
 			assert (not self.spec_params["merge"]) or self.spec_params["merge_keep_ces"]
