@@ -18,6 +18,7 @@ from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage
 import frag_gnn.massformer.data_utils as mf_data_utils
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 class BaseDataset(Dataset):
 
