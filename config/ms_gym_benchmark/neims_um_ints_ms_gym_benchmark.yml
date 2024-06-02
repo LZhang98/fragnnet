@@ -78,7 +78,7 @@ sum_ints: True
 # loss stuff
 loss_type: cosine_distance
 sparse_cosine_similarity: True
-ints_transform: log10t3
+ints_transform: sqrt
 simple_group_sampler: True
 simple_group_sampler_type: group_mol
 train_sample_weight: none
