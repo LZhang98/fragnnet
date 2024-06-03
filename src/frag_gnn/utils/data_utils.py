@@ -1022,7 +1022,7 @@ def get_charge(prec_type_str):
 		charge_str = "1+"
 	assert len(charge_str) >= 2
 	sign = charge_str[-1]
-	assert sign in ["+","-"]
+	assert sign in ["+","-"], prec_type_str
 	magnitude = int(charge_str[:-1])
 	if sign == "+":
 		charge = magnitude
