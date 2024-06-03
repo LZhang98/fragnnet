@@ -21,8 +21,8 @@ wandb_tags:
 - pcdl_pos
 
 # data stuff
-spec_fp: data/proc/ms_gym/spec_df.pkl
-mol_fp: data/proc/ms_gym/mol_df.pkl
+spec_fp: data/proc/pcdl/spec_df.pkl
+mol_fp: data/proc/pcdl/mol_df.pkl
 split_dp: data/split/pcdl_pos
 frag_dp: data/frag/pcdl_d3_h4/dags
 frag_params:
@@ -40,7 +40,7 @@ spec_params:
   prec_type: False
   prec_types:
     - "[M+H]+"
-  inst_type: True
+  inst_type: False
   inst_types:
     - "FT"
     - "QTOF"
@@ -69,8 +69,8 @@ ce_insert_merge: True
 ce_insert_size: 24
 #prec_insert_location: mlp
 #prec_insert_size: 8
-inst_insert_location: mlp
-inst_insert_size: 8
+#inst_insert_location: mlp
+#inst_insert_size: 8
 mz_max: 1500.0
 mz_bin_res: 0.01
 sum_ints: True

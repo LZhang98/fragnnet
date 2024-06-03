@@ -348,6 +348,8 @@ def read_pcdl(zipped_spectra_dp: str):
 	
 	print(f"> {len(spectrum_list)} spectra parsed")
 	ms_df = pd.DataFrame(spectrum_list)
+	# this is one off, we need fix this
+	ms_df = ms_df.drop(ms_df[~ms_df["prec_type"].isin(["[M+H]+","[M-H]-"])].index)
 	# fill some extrat meta data
 	ms_df.loc[:,"frag_mode"] = "CID"
 	ms_df.loc[:,"notes"] = ""
@@ -372,7 +374,7 @@ def process_ms_gym(ms_gym_tsv_fp):
 	ms_df = ms_df.drop(columns=["mzs","intensities"])
 	ms_df.rename(columns={"precursor_mz":"prec_mz", 
 						   "adduct":"prec_type",
-						    "precursor_mz" :"prec_mz",
+							"precursor_mz" :"prec_mz",
 						   "parent_mass":"exact_mass",
 						   "instrument_type":"inst_type",
 						   "collision_energy":"col_energy",

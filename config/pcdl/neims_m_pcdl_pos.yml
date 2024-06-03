@@ -1,4 +1,4 @@
-wandb_name: nemis_m_inst_ms_gym_ob_inchikey
+wandb_name: neims_um_pcdl_pos
 wandb_tags:
 - um
 - nemis
@@ -21,8 +21,8 @@ wandb_tags:
 - pcdl_pos
 
 # data stuff
-spec_fp: data/proc/ms_gym/spec_df.pkl
-mol_fp: data/proc/ms_gym/mol_df.pkl
+spec_fp: data/proc/pcdl/spec_df.pkl
+mol_fp: data/proc/pcdl/mol_df.pkl
 split_dp: data/split/pcdl_pos
 frag_dp: data/frag/pcdl_d3_h4/dags
 frag_params:
