@@ -58,7 +58,7 @@ mol_params:
 model_type: neims
 mlp_hidden_size: 1024
 mlp_dropout: 0.1
-mlp_num_layers: 4
+mlp_num_layers: 2
 mlp_use_residuals: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
@@ -81,16 +81,16 @@ sparse_cosine_similarity: True
 ints_transform: sqrt
 simple_group_sampler: True
 simple_group_sampler_type: group_mol
-train_sample_weight: none
+train_sample_weight: group_mol
 eval_sample_weight: group_mol
 
 # optimization stuff
-train_batch_size: 512
+train_batch_size: 128
 eval_batch_size: 512
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0003033
-weight_decay: 0.01
+lr: 0.0001563
+weight_decay: 0.84
 accelerator: gpu
 devices: 1
 min_epochs: 100
