@@ -1,8 +1,7 @@
-wandb_name: d3_prec_m_pcdl
+wandb_name: d3_m_pcdl_pos
 wandb_tags:
-- prec_m
-- nist20v2
-- d4
+- um
+- d3
 - wr00
 - inchikey
 - new_proc
@@ -10,22 +9,22 @@ wandb_tags:
 - new_metrics
 - nodemlp
 - ce_embed
-- merged
+- unmerged
 - oos_multiple_1
 - gaussian_renormalize
-- b32x4
+- b128x1
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
 - preload
 - preprocess
 - xi6bawy4
-- prec_types
+
 
 # data stuff
-spec_fp: data/proc/pcdl/spec_df.pkl
-mol_fp: data/proc/pcdl/mol_df.pkl
-split_dp: data/split/pdcl_d3_h4
+spec_fp: data/proc/ms_gym/spec_df.pkl
+mol_fp: data/proc/ms_gym/mol_df.pkl
+split_dp: data/split/pcdl_pos
 frag_dp: data/frag/pcdl_d3_h4/dags
 frag_params:
   pyg_edge_feats: []
@@ -34,14 +33,14 @@ frag_params:
   preload: True
   preprocess: True
 spec_params:
-  merge: True
+  merge: False
   nce: True
-  merge_keep_ces: True
+  ace: False
+  merge_keep_ces: False
   preprocess: True
-  prec_type: True
+  prec_type: False
   prec_types:
     - "[M+H]+"
-    - "[M-H]-"
 mol_params:
   preprocess: True
 
@@ -53,8 +52,8 @@ ce_insert_type: embed
 ce_insert_location: mlp
 ce_insert_merge: True
 ce_insert_size: 24
-prec_insert_location: mlp
-prec_insert_size: 8
+#prec_insert_location: mlp
+#prec_insert_size: 8
 mol_pool_type: mean
 frag_pool_type: mean
 mol_normalization: batch
@@ -80,14 +79,15 @@ loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
 group_sampler: False
-simple_group_sampler: False
-train_sample_weight: mol
-eval_sample_weight: mol
+simple_group_sampler: True
+simple_group_sampler_type: group_mol
+train_sample_weight: none
+eval_sample_weight: group_mol
 
 # optimization stuff
-train_batch_size: 32
-eval_batch_size: 32
-accumulate_grad_batches: 4
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01
@@ -105,7 +105,10 @@ eval_mz_bin_res:
 - 0.01
 precision: 32
 use_tensor_float32: True
-automatic_optimization: True
-dynamic_batch_sampler: False
+automatic_optimization: False
+dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
-compile: False
+compile: True
+
+# run faster
+dynamic_batch_sampler_max: 50000
