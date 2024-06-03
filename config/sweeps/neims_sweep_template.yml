@@ -8,6 +8,9 @@ wandb_tags:
 - new_proc
 - neims
 - new_metrics
+- mz_bin_res_0,01
+- no_auxiliary_scores
+- preprocess
 
 # data stuff
 spec_fp: data/proc/nist20mona23v2/spec_df.pkl
