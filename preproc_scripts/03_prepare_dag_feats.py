@@ -67,9 +67,9 @@ def main(args):
 		allowed_dsets=dsets,
 		allowed_prec_types=args.allowed_prec_types,
 		num_entries=args.num_entries,
-  		allowed_frag_modes=args.allowed_frag_modes,
-    	allowed_ion_modes=args.allowed_ion_modes,
-		allowed_inst_types=args.allowed_inst_types)
+  		allowed_frag_modes=args.allowed_frag_modes if args.allowed_frag_modes != 'Any' else None,
+    	allowed_ion_modes=args.allowed_ion_modes if args.allowed_ion_modes != 'Any' else None,
+		allowed_inst_types=args.allowed_inst_types if args.allowed_inst_types != 'Any' else None,)
  
 	m_spec_df = merge_spec_df(spec_df)
 
@@ -387,9 +387,9 @@ if __name__ == "__main__":
 	parser.add_argument("--save_dag",type=booltype,default=True)
 	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 	parser.add_argument("--allowed_prec_types",nargs="+",default=["[M+H]+"])
-	parser.add_argument("--allowed_inst_types",nargs="+",default=None)
-	parser.add_argument("--allowed_frag_modes",nargs="+",default=None)
-	parser.add_argument("--allowed_ion_modes",nargs="+",default=None)
+	parser.add_argument("--allowed_inst_types",nargs="+",default='Any')
+	parser.add_argument("--allowed_frag_modes",nargs="+",default='Any')
+	parser.add_argument("--allowed_ion_modes",nargs="+",default='Any')
 	parser.add_argument("--require_ce",type=booltype,default=False)
 	parse_formula
 	args = parser.parse_args()

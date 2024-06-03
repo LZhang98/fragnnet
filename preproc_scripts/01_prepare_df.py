@@ -415,6 +415,7 @@ if __name__ == "__main__":
 	parser.add_argument('--output_format', type=str, default="json", choices=["json","csv"])
 	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#","ID"])
 	parser.add_argument('--ms_gym_tsv', type=str, required=False)
+	parser.add_argument('--pcdl_dir', type=str, required=False)
 	args = parser.parse_args()
 
 	os.makedirs(args.output_dp,exist_ok=True)
@@ -457,7 +458,7 @@ if __name__ == "__main__":
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "pcdl_zip":
-		spec_df = read_pcdl(args.raw_data_dp)
+		spec_df = read_pcdl(os.path.join(args.raw_data_dp,args.pcdl_dir))
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	

@@ -178,6 +178,8 @@ if __name__ == "__main__":
 	#parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
 	
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
+	parser.add_argument("--max_prec_mz",type=float,default=1500.)
+	parser.add_argument("--min_prec_mz",type=float,default=0.)
 	# dag filtering criteria
 	parser.add_argument("--dag_filtering",type=booltype,default=True)
 	parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec")

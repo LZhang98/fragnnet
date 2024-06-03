@@ -22,13 +22,15 @@ def filter_spec_mol(
 		allowed_elements=None,
 		allowed_dsets=None,
 		max_peak_mz=None,
+		max_prez_mz=None,
+		min_prez_mz=None,
 		allowed_prec_types:list = None,
 		num_entries=-1,
   		allowed_inst_types:list = None,
     	allowed_frag_modes:list = None,
      	allowed_ion_modes:list = None,
       	require_ace:bool = False,
-        require_nce:bool = False):
+        require_nce:bool = False,):
 	"""
 	The purpose of this filtering is to prevent errors
 	"""
@@ -94,6 +96,13 @@ def filter_spec_mol(
 	prec_mz_mask = ~spec_df["prec_mz"].isna()
 	print(f">> prec mz: {prec_mz_mask.mean()}")
 	masks.append(prec_mz_mask)
+  
+	if max_prez_mz is not None:
+		print("f >> ")
+		max_prez_mz_mask = (spec_df["prec_mz"] <= max_prez_mz)
+		print(f">> prec mz: {prec_mz_mask.max_prez_mz_mask()}")
+		masks.append(max_prez_mz_mask)
+
 	# max peak mz
 	if max_peak_mz is not None:
 		def get_max_mz(peaks):
@@ -101,6 +110,7 @@ def filter_spec_mol(
 		max_peak_mz_mask = spec_df["peaks"].apply(get_max_mz) <= max_peak_mz
 		print(f">> max peak mz: {max_peak_mz_mask.mean()}")
 		masks.append(max_peak_mz_mask)
+
 	## molecule criteria
 	# single molecule
 	single_mol_ids = mol_df[mol_df["single_mol"]]["mol_id"]
