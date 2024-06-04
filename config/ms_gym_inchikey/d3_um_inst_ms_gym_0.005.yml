@@ -24,7 +24,7 @@ wandb_tags:
 # data stuff
 spec_fp: data/proc/ms_gym/spec_df.pkl
 mol_fp: data/proc/ms_gym/mol_df.pkl
-split_dp: data/split/ms_gym_d3_h4
+split_dp: data/split/ms_gym_h3_h4_inchikey
 frag_dp: data/frag/ms_gym_d3_h4/dags
 frag_params:
   pyg_edge_feats: []
