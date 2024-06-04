@@ -32,20 +32,20 @@ mol_params:
 
 # model stuff
 model_type: gnn
-mol_pool_type: mean
-mol_normalization: batch
 mol_hidden_size: 256
+mol_num_layers: 4
+mol_gnn_type: GGNN #GINE
+mol_normalization: batch
 mol_dropout: 0.2
+mol_pool_type: mean
 mlp_normalization: layer
-mlp_hidden_size: 64
-mlp_dropout: 0.2
 mlp_hidden_size: 1024
 mlp_dropout: 0.1
-mlp_num_layers: 4
+mlp_num_layers: 0
 mlp_use_residuals: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
-ff_output_map_size: 256
+ff_output_map_size: -1
 ce_insert_type: embed
 ce_insert_location: mlp
 ce_insert_merge: True
