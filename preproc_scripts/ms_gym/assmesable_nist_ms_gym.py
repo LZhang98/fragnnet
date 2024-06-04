@@ -1,5 +1,17 @@
 import pandas as pd
+import argparse
+import os
+import pandas as pd
+import numpy as np
+import json
 
+from frag_gnn.utils import frag_utils
+from frag_gnn.utils.misc_utils import booltype, np_temp_seed
+from frag_gnn.utils.frag_utils import ELEMENTS
+from frag_gnn.utils.proc_utils import filter_spec_mol
+import shutil
+from tqdm import tqdm
+import os
 
 ms_gym_mol_df = pd.read_pickle("data/proc/ms_gym/mol_df.pkl")
 ms_gym_spec_df = pd.read_pickle("data/proc/ms_gym/spec_df.pkl")
@@ -17,8 +29,8 @@ ms_gym_spec_test_df['dset'] = "ms_gym_test"
 ms_gym_mol_val_df = ms_gym_mol_df[ms_gym_mol_df['mol_id'].isin(ms_gym_spec_val_df['mol_id'])].copy()
 ms_gym_mol_test_df  = ms_gym_mol_df[ms_gym_mol_df['mol_id'].isin(ms_gym_spec_test_df['mol_id'])].copy()
 
-ms_gym_mol_val_df['dset'] = "ms_gym"
-ms_gym_mol_test_df['dset'] = "ms_gym"
+ms_gym_mol_val_df['dset'] = "ms_gym_val"
+ms_gym_mol_test_df['dset'] = "ms_gym_test"
 
 print(">ms_gym_spec_val_df",ms_gym_spec_val_df.shape)
 print(">ms_gym_spec_test_df",ms_gym_spec_test_df.shape)
@@ -35,7 +47,7 @@ print(">ms_gym_mol_test_df",ms_gym_mol_test_df.shape)
 #mol_df = "data/proc/nist20mona23v2/mol_df.pkl"
 print(">read nist_mol_df")
 nist_mol_df = pd.read_pickle("data/proc/nist20mona23v2/mol_df.pkl")
-#nist_mol_df['dset'] = 'nist20mona23'
+nist_mol_df['dset'] = 'nist20mona23'
 
 #duplicated_df = nist_mol_df[nist_mol_df.duplicated(subset=["inchikey_s"], keep=False)]
 #grps = duplicated_df.groupby("inchikey_s")
@@ -43,36 +55,28 @@ nist_mol_df = pd.read_pickle("data/proc/nist20mona23v2/mol_df.pkl")
 #    print(grp_df)
 #print(nist_mol_df[nist_mol_df.duplicated(subset="inchikey_s")]["inchikey_s"])
 
-last_nist20mona23_molid = max(nist_mol_df["mol_id"])
-#print(last_nist20mona23_molid)
-#nist_spec_df = pd.read_pickle("data/proc/nist20mona23v2/spec_df.pkl")
 print(">nist_mol_df",nist_mol_df.shape)
 merged_mol_df = pd.concat([nist_mol_df,ms_gym_mol_val_df,ms_gym_mol_test_df])
 print(">mol_df",merged_mol_df.shape)
-#print(merged_mol_df['dset'].unique())
-#print(merged_mol_df.tail())
+
 merged_mol_df.rename(columns={"mol_id":"org_mol_id"}, inplace=True)
+merged_mol_df.drop_duplicates(subset=["smiles"], inplace=True)
 merged_mol_df.reset_index(inplace=True, drop=True)
 merged_mol_df["mol_id"] = merged_mol_df.index
+print(merged_mol_df.tail())
 
 #assert len(mol_df[(mol_df["mol_id"] != mol_df["org_mol_id"]) & (mol_df["dset"] == "nist20mona23")]) == 0
-mol_ids = merged_mol_df[merged_mol_df["dset"] == "ms_gym"]['mol_id'].to_list()
-org_mol_ids = merged_mol_df[merged_mol_df["dset"] == "ms_gym"]['org_mol_id'].to_list()
+mol_ids = merged_mol_df[merged_mol_df["dset"].isin(["ms_gym_val","ms_gym_test"])]['mol_id'].to_list()
+org_mol_ids = merged_mol_df[merged_mol_df["dset"].isin(["ms_gym_val","ms_gym_test"])]['org_mol_id'].to_list()
 #print(org_mol_ids)
 update_mol_id_dict = {org_mol_ids[i]: mol_ids[i] for i in range(len(org_mol_ids))}
+print("update_mol_id_dict size",len(update_mol_id_dict))
 
-#print(val_mol_id_dict)
-#mol_ids = merged_mol_df[merged_mol_df["dset"] == "ms_gym_test"]['org_mol_id']
-#org_mol_ids = merged_mol_df[merged_mol_df["dset"] == "ms_gym_test"]['mol_id']
-#test_mol_id_dict = {org_mol_ids[i]: mol_ids[i] for i in range(len(org_mol_ids))}
 
 ms_gym_spec_val_df["mol_id"]  = ms_gym_spec_val_df["mol_id"].replace(update_mol_id_dict)
 ms_gym_spec_test_df["mol_id"] = ms_gym_spec_test_df["mol_id"].replace(update_mol_id_dict)
 ms_gym_frag_dp = "./data/frag/ms_gym_d3_h4"
 new_frag_dp = "./data/frag/nist20mona23ms_gym_valtest_d3_h4"
-import shutil
-from tqdm import tqdm
-import os
 
 for org_mol_id in tqdm(update_mol_id_dict):
 
@@ -81,22 +85,47 @@ for org_mol_id in tqdm(update_mol_id_dict):
     if os.path.isfile(src):
         dst = f"{ms_gym_frag_dp}/dags/{mol_id}.pickle.bz2"
         shutil.copyfile(src, dst)
-    else:
+    #else:
         # not all of them have dags
-        print(src)
-
-    
+        #print(src)
     #print(org_mol_id, update_mol_id_dict[org_mol_id])
     
 nist_spec_df = pd.read_pickle("data/proc/nist20mona23v2/spec_df.pkl")
 merged_spec_df = pd.concat([nist_spec_df,ms_gym_spec_val_df,ms_gym_spec_test_df])
+print(f"> merged_mol_df {merged_mol_df.shape}")
 print(f"> merged_spec_df {merged_spec_df.shape}")
-print(f"> merged_spec_df {merged_spec_df.shape}")
-#print(merged_mol_df['dset'].unique())
-print(merged_spec_df['dset'].unique())
-merged_mol_df.to_pickle("data/proc/nist20mona23ms_gym_valtest/mol_df.pkl")
-merged_spec_df.to_pickle("data/proc/nist20mona23ms_gym_valtest/spec_df.pkl")
+print("merged_mol_df",merged_mol_df['dset'].unique())
+print("merged_spec_df",merged_spec_df['dset'].unique())
+
+#merged_mol_df.to_pickle("data/proc/nist20mona23ms_gym_valtest/mol_df.pkl")
+#merged_spec_df.to_pickle("data/proc/nist20mona23ms_gym_valtest/spec_df.pkl")
  
+dsets = ['nist20_hr','ms_gym_test','ms_gym_val']
+max_peak_mz = 1000
+allowed_inst_types = None
+f_spec_df, f_mol_df = filter_spec_mol(
+    merged_spec_df,
+    merged_mol_df,
+    allowed_dsets=dsets,
+    allowed_prec_types=["[M+H]+"],
+    max_peak_mz=1000.0,
+    allowed_elements=ELEMENTS,
+    allowed_frag_modes=None,
+    allowed_ion_modes=None,
+    allowed_inst_types=None,
+    require_ace=False,
+    require_nce=True,
+)
+
+spec_df = f_spec_df
+mol_df = f_mol_df
+train_spec_df = spec_df[spec_df["dset"].isin(['nist20_hr'])]
+val_test_inchikey_s_list = spec_df[spec_df["dset"].isin(['ms_gym_test','ms_gym_val'])]['inchikey_s'].to_list()
+train_spec_df = train_spec_df[~train_spec_df['inchikey_s'].isin(val_test_inchikey_s_list)]
+val_spec_set = spec_df[spec_df["dset"].isin(['ms_gym_test'])]
+test_spec_set = spec_df[spec_df["dset"].isin(['ms_gym_val'])]
+
+   
 #print(mol_df[(mol_df["mol_id"] != mol_df["org_mol_id"])].head())
 #need_relocate = mol_df[mol_df["mol_id"] != mol_df["org_mol_id"]]
 #print(need_relocate)
