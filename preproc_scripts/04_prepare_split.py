@@ -13,9 +13,6 @@ def make_splits(args):
 
 	mol_df = pd.read_pickle(os.path.join(args.proc_dp,"mol_df.pkl"))
 	spec_df = pd.read_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
-	dag_stats_df = pd.read_pickle(
-		os.path.join(args.frag_dp,f"{args.dag_filter_grouping}_stats_df.pkl")
-	)
 
 	print("> Spectrum filters")
 	# filter spectra
@@ -43,7 +40,10 @@ def make_splits(args):
 	# primary_mol_id = primary_spec_df["mol_id "]
 
 	if args.dag_filtering:
-
+		print("> Read DAG stats")
+		dag_stats_df = pd.read_pickle(
+			os.path.join(args.frag_dp,f"{args.dag_filter_grouping}_stats_df.pkl")
+		)
 		print("> DAG filters")
 		# filter dags
 		node_key = "dag_num_nodes"
@@ -111,10 +111,11 @@ def make_splits(args):
 				train_val_keys = np.setdiff1d(split_keys,test_keys)
 				val_keys = np.random.choice(train_val_keys,size=val_num,replace=False)
 				train_keys = np.setdiff1d(train_val_keys,val_keys)
-    
+			
 			train_df = primary_split_df[primary_split_df[args.split_key].isin(train_keys)][["spec_id","mol_id","group_id"]]
 			val_df = primary_split_df[primary_split_df[args.split_key].isin(val_keys)][["spec_id","mol_id","group_id"]]
 			test_df = primary_split_df[primary_split_df[args.split_key].isin(test_keys)][["spec_id","mol_id","group_id"]]
+   
 			# secondary split
 			secondary_df = secondary_split_df[~secondary_split_df[args.split_key].isin(train_val_keys)][["spec_id","mol_id","group_id"]]
 			split_data = { 
@@ -202,9 +203,9 @@ def make_splits(args):
 	for split_data in split_data_list:
 		os.makedirs(split_data['split_dp'],exist_ok=True)
 		print(f"> save split to {split_data['split_dp']}")
-		print(f"> Split sizes (spec_id): train = {split_data['train_df'].shape[0]}, \
-        	val = {split_data['val_df'].shape[0]}, test = {split_data['test_df'].shape[0]} \
-            secondary_df = {split_data['secondary_df'].shape[0]}	")
+		print(f"> Split sizes (spec_id): train = {split_data['train_df'].shape[0]},"
+        	f"val = {split_data['val_df'].shape[0]}, test = {split_data['test_df'].shape[0]} "
+            f"secondary test df = {split_data['secondary_df'].shape[0]}")
 		# save ids
 		train_fp = os.path.join(split_data['split_dp'],"train_ids.csv")
 		val_fp = os.path.join(split_data['split_dp'],"val_ids.csv")
@@ -251,6 +252,7 @@ if __name__ == "__main__":
 	# spec filtering criteria
 	parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
 	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
+	parser.add_argument("--secondary_bias",type=bool,default=False, dest="if true, keep every thing in secondary and drop from train")
 	#parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
 	
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
