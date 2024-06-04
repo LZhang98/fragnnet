@@ -90,7 +90,7 @@ skip_extra_losses: True
 group_sampler: False
 simple_group_sampler: True
 simple_group_sampler_type: group_mol
-train_sample_weight: none
+train_sample_weight: group_mol
 eval_sample_weight: group_mol
 
 # optimization stuff
