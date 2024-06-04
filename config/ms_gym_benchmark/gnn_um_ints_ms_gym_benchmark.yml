@@ -1,8 +1,8 @@
-wandb_name: nemis_um_inst_ms_gym_benchmark
+wandb_name: gnn_um_ints_ms_gym_benchmark
 wandb_group: ms_gym_benchmark
 wandb_tags:
 - um
-- nemis
+- gnn
 - wr00
 - inchikey
 - new_proc
@@ -49,25 +49,31 @@ spec_params:
     - "Unknown"
 mol_params:
   preprocess: True
-  fingerprint_morgan: True
-  fingerprint_rdkit: True
-  fingerprint_maccs: True
-  fingerprint: True
-  pyg: False
+  fingerprint_morgan: False
+  fingerprint_rdkit: False
+  fingerprint_maccs: False
+  fingerprint: False
+  pyg: True
 
 # model stuff
-model_type: neims
+model_type: gnn
+mol_hidden_size: 256
+mol_num_layers: 4
+mol_gnn_type: GGNN #GINE
+mol_normalization: batch
+mol_dropout: 0.2
+mol_pool_type: mean
+mlp_normalization: layer
 mlp_hidden_size: 1024
 mlp_dropout: 0.1
-mlp_num_layers: 2
+mlp_num_layers: 0
 mlp_use_residuals: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
-ff_output_map_size: 256
+ff_output_map_size: -1
 ce_insert_type: embed
 ce_insert_location: mlp
 ce_insert_merge: True
-ce_insert_size: 24
 #prec_insert_location: mlp
 #prec_insert_size: 8
 inst_insert_location: mlp
