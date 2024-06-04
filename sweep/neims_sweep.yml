@@ -21,7 +21,7 @@ parameters:
     values: [0., 0.0000001, 0.000001]
   train_batch_size:
     values: [32, 64, 128, 256]
-  # massformer-specific
+  # neims-specific
   mlp_hidden_size:
     values: [256, 512, 1024]
   mlp_dropout:

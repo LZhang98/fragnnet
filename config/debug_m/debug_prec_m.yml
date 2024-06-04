@@ -23,6 +23,7 @@ spec_params:
   precursor_mz: True
 mol_params:
   pyg: False
+
 # model stuff
 model_type: precursor
 

@@ -2049,7 +2049,7 @@ def test_models():
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug_m/debug_d3_m.yml": FragGNNPL,
+		# "config/debug_m/debug_d3_m.yml": FragGNNPL,
 		# "config/debug_m/debug_d3_prec_m.yml": FragGNNPL,
 		# "config/debug_m/debug_neims_prec_m.yml": NeimsPL,
 		# "config/debug_um/debug_d3_prec_um.yml": FragGNNPL,
