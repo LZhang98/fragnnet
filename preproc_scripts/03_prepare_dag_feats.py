@@ -154,8 +154,10 @@ def main(args):
 		)
   
 	print(f"> Running frag gen")
-	frag_results = data_utils.par_apply(iter(mol_input_rows),frag_utils.timed_get_dags,True, return_as_generator=True)
-	[_ for _ in tqdm(frag_results, total = len(mol_input_rows), desc = "Compute Frags")]
+	frag_results_gen = data_utils.par_apply(iter(mol_input_rows),frag_utils.timed_get_dags,True, return_as_generator=True)
+	frag_results = []
+	for fr in tqdm(frag_results_gen, total = len(mol_input_rows), desc = "Compute Frags"):
+		frag_results.append(fr)
 
 	print("> Fragments Computed")
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
