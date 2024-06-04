@@ -25,15 +25,21 @@ parameters:
   mol_normalization:
     values: [none, batch, layer, graph]
   mol_hidden_size:
-    values: [64, 128, 256]
+    values: [64, 128, 256, 512]
   mol_num_layers:
-    values: [3, 4, 5, 6]
+    values: [2, 3, 4, 5, 6]
   mol_dropout:
-    values: [0.0, 0.1, 0.2, 0.3, 0.4]
+    values: [0.0, 0.1, 0.2, 0.3]
+  mol_params:
+    parameters:
+      pe_embed_k:
+        distribution: int_uniform
+        min: 0
+        max: 20
   # mlp-specific
   mlp_hidden_size:
     values: [256, 512, 1024]
   mlp_dropout:
-    values: [0.0, 0.1, 0.2, 0.3, 0.4]
+    values: [0.0, 0.1, 0.2, 0.3]
   mlp_num_layers:
     values: [2, 3, 4, 5]

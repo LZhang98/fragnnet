@@ -56,7 +56,7 @@ def filter_spec_mol(
 		prec_type_mask = spec_df["prec_type"].isin(prec_types)
 		print(f">> prec type: {prec_type_mask.mean()}")
 		masks.append(prec_type_mask)
-	# resolution
+	# resolution (TODO: disable this...)
 	res_mask = spec_df["res"].isin([1,2,3,4,5,6,7])
 	print(f">> res: {res_mask.mean()}")
 	masks.append(res_mask)

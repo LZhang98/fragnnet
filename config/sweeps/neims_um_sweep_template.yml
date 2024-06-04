@@ -52,6 +52,8 @@ sum_ints: True
 loss_type: cosine_distance
 sparse_cosine_similarity: True
 ints_transform: sqrt
+train_sample_weight: mol
+eval_sample_weight: mol
 
 # optimization stuff
 train_batch_size: 128
