@@ -86,8 +86,8 @@ train_sample_weight: none
 eval_sample_weight: group_mol
 
 # optimization stuff
-train_batch_size: 512
-eval_batch_size: 512
+train_batch_size: 256
+eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0003033
