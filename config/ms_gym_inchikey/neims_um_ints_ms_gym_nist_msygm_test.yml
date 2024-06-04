@@ -22,7 +22,7 @@ wandb_tags:
 # data stuff
 spec_fp: data/proc/ms_gym/spec_df.pkl
 mol_fp: data/proc/ms_gym/mol_df.pkl
-split_dp: data/split/ms_gym_ob
+split_dp: data/split/nist20mona23ms_gym_valtest_d3_h4_inchikey
 frag_dp: data/frag/ms_gym_d3_h4/dags
 frag_params:
   pyg_edge_feats: []
@@ -82,6 +82,7 @@ simple_group_sampler: True
 simple_group_sampler_type: group_mol
 train_sample_weight: none
 eval_sample_weight: group_mol
+
 
 # optimization stuff
 train_batch_size: 512
