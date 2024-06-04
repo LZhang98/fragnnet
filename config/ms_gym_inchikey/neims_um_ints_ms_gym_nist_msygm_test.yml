@@ -19,7 +19,6 @@ wandb_tags:
 - preprocess
 - xi6bawy4
 
-
 # data stuff
 spec_fp: data/proc/ms_gym/spec_df.pkl
 mol_fp: data/proc/ms_gym/mol_df.pkl
@@ -71,8 +70,8 @@ ce_insert_size: 24
 #prec_insert_size: 8
 inst_insert_location: mlp
 inst_insert_size: 8
-mz_max: 1500.0
-mz_bin_res: 0.01
+mz_max: 1000.0
+mz_bin_res: 0.1
 sum_ints: True
 
 # loss stuff

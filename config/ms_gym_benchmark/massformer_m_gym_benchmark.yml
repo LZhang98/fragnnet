@@ -1,7 +1,7 @@
-wandb_name: nemis_um_inst_ms_gym_benchmark
+wandb_name: massformer_m_ms_gym_benchmark
 wandb_tags:
 - um
-- nemis
+- massformer
 - wr00
 - inchikey
 - new_proc
@@ -19,7 +19,6 @@ wandb_tags:
 - preprocess
 - xi6bawy4
 
-
 # data stuff
 spec_fp: data/proc/ms_gym/spec_df.pkl
 mol_fp: data/proc/ms_gym/mol_df.pkl
@@ -32,29 +31,27 @@ frag_params:
   preload: True
   preprocess: True
 spec_params:
-  merge: False
+  merge: True
   nce: True
   ace: False
-  merge_keep_ces: False
+  merge_keep_ces: True
   preprocess: True
   prec_type: False
   prec_types:
     - "[M+H]+"
-  inst_type: True
+  inst_type: False
   inst_types:
     - "FT"
     - "QTOF"
     - "Orbitrap"
     - "Unknown"
 mol_params:
+  pyg: False
+  mf: True
   preprocess: True
-  fingerprint_morgan: True
-  fingerprint_rdkit: True
-  fingerprint_maccs: True
-  fingerprint: True
+frag_params:
   pyg: False
 
-# model stuff
 # model stuff
 model_type: massformer
 mlp_hidden_size: 1024
@@ -75,12 +72,11 @@ ce_insert_location: mlp
 ce_insert_merge: True
 #prec_insert_location: mlp
 #prec_insert_size: 8
-inst_insert_location: mlp
-inst_insert_size: 8
+#inst_insert_location: mlp
+#inst_insert_size: 8
 mz_max: 1500.0
 mz_bin_res: 0.01
 sum_ints: True
-
 
 # loss stuff
 loss_type: cosine_distance
