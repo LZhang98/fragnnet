@@ -1,4 +1,5 @@
-wandb_name: nemis_um_inst_ms_gym
+wandb_name: neims_um_ints_ms_gym_inchikey
+wandb_group: ms_gym_inchikey
 wandb_tags:
 - um
 - nemis

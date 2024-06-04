@@ -1,4 +1,5 @@
 wandb_name: nemis_um_inst_ms_gym_benchmark
+wandb_group: ms_gym_benchmark
 wandb_tags:
 - um
 - nemis
