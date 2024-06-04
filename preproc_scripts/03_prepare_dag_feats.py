@@ -16,7 +16,7 @@ import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
-
+from frag_gnn.utils.frag_utils import timed_get_dags
 
 def print_and_log(name,series,wandb_flag,stats_d):
 
@@ -88,72 +88,6 @@ def main(args):
 	group_stats_fp = os.path.join(args.frag_dp,f"group_stats_df.pkl")
 	global_stats_fp = os.path.join(args.frag_dp,f"global_stats.json")
 
-	def timed_get_dags(mol, 
-			mol_id, 
-			max_depth,
-			h_prior,
-			max_h_transfer, 
-			max_time,
-			isotopes: bool,
-			nb_isomorphic: bool,
-			max_iterations: int,
-			output_dir: str, 
-			use_cached = True, 
-			compressed = False,
-			save_dag = True):
-		""" 
-		Args:
-			mol (_type_): _description_
-			mol_id (int): _description_
-
-			output_dir (str): _description_
-			compressed (bool, optional): _description_. Defaults to False.
-
-		Raises:
-			e: _description_
-
-		Returns:
-			_type_: _description_
-		"""
-		# TODO: get this out of the main() scope
-
-		output_file = frag_utils.get_frag_fp(mol_id, output_dir, compressed)
-
-		if os.path.exists(output_file) and use_cached:
-			dag_d = frag_utils.load_frag_d(mol_id, output_dir, compressed)
-		else:
-			dag_d = {}
-			try:
-				mol_d = frag_utils.extract_mol_info(mol)
-				# this maybe dangers in multi processing because of scopes
-				dag_d = frag_utils.compute_dags(
-					mol_d,
-					max_depth,
-					h_prior,
-					max_h_transfer, 
-					max_time, 
-					isotopes,
-					nb_isomorphic,
-					max_iterations
-				)
-			except KeyboardInterrupt as e:
-				# let these through
-				raise e
-			except Exception as e:
-				# don't retry, theres a bug
-				if type(mol) is not str:
-					mol = Chem.MolToSmiles(mol)
-				print(f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}",file=sys.stderr)
-				print("> Traceback",file=sys.stderr)
-				traceback.print_exc(file=sys.stderr)
-				dag_d = {}
-			else:
-				if save_dag:
-					frag_utils.save_frag_d(dag_d, mol_id, output_dir, compressed)
-				del dag_d["dag"]
-		return dag_d
-
-
 	def compute_spectra_stats(
 			peaks,
 			formula_peak_mzs,
@@ -218,10 +152,12 @@ def main(args):
 				args.compress_dags
 			]
 		)
-	tqdm_iter = tqdm(mol_input_rows,desc=pformat(timed_get_dags),total=len(mol_input_rows))
-	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
-	print("> Fragments Computed")
+  
+	print(f"> Running frag gen")
+	frag_results = data_utils.par_apply(iter(mol_input_rows),frag_utils.timed_get_dags,True, return_as_generator=True)
+	[_ for _ in tqdm(frag_results, total = len(mol_input_rows), desc = "Compute Frags")]
 
+	print("> Fragments Computed")
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
 	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
 	frag_stats_df["formula_peak_mzs"] = list(map(lambda x: x.pop("formula_peak_mzs",np.nan),frag_results))
