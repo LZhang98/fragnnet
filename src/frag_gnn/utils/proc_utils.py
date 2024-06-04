@@ -83,12 +83,12 @@ def filter_spec_mol(
 		prec_type_mask = spec_df["prec_type"].isin(allowed_prec_types)
 		print(f">> prec type filter mean: {prec_type_mask.mean()}")
 		masks.append(prec_type_mask)
-  
+
 	# resolution
 	# res_mask = spec_df["res"].isin([1,2,3,4,5,6,7])
 	# print(f">> res: {res_mask.mean()}")
 	# masks.append(res_mask)
- 
+
 	# spectrum type 
 	spec_type_mask = spec_df["spec_type"] == "MS2"
 	print(f">> spec type: {spec_type_mask.mean()}")
