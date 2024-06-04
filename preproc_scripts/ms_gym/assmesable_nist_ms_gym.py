@@ -57,13 +57,13 @@ nist_mol_df['dset'] = 'nist20mona23'
 
 print(">nist_mol_df",nist_mol_df.shape)
 merged_mol_df = pd.concat([nist_mol_df,ms_gym_mol_val_df,ms_gym_mol_test_df])
-print(">mol_df size ",merged_mol_df.shape)
+print(">merged_mol_df size ",merged_mol_df.shape)
 
 merged_mol_df.rename(columns={"mol_id":"org_mol_id"}, inplace=True)
 merged_mol_df.drop_duplicates(subset=["smiles"], inplace=True)
 merged_mol_df.reset_index(inplace=True, drop=True)
 merged_mol_df["mol_id"] = merged_mol_df.index
-print(">mol_df size after duplicate ",merged_mol_df.shape)
+print(">merged_mol_df size after duplicate ",merged_mol_df.shape)
 
 print(">> update mol_id")
 mol_ids = merged_mol_df[merged_mol_df["dset"].isin(["ms_gym_val","ms_gym_test"])]['mol_id'].to_list()
@@ -80,15 +80,19 @@ print(">> read nist spec df")
 nist_spec_df = pd.read_pickle("data/proc/nist20mona23v2/spec_df.pkl")
 print(">> create merged spec df")
 merged_spec_df = pd.concat([nist_spec_df,ms_gym_spec_val_df,ms_gym_spec_test_df])
+merged_spec_df.reset_index(inplace=True, drop=True)
+merged_spec_df['spec_id'] = merged_spec_df.index
+#mol_id_a = merged_mol_df['mol_id'].to_list()
+#mol_id_b = merged_spec_df['mol_id'].to_list()
+#print(set(mol_id_b) - set(mol_id_a))
 
 print(f"> merged_mol_df {merged_mol_df.shape}")
 print(f"> merged_spec_df {merged_spec_df.shape}")
 print("merged_mol_df",merged_mol_df['dset'].unique())
 print("merged_spec_df",merged_spec_df['dset'].unique())
-
 merged_mol_df.to_pickle("data/proc/nist20mona23ms_gym_valtest/mol_df.pkl")
 merged_spec_df.to_pickle("data/proc/nist20mona23ms_gym_valtest/spec_df.pkl")
- 
+
 ms_gym_frag_dp = "./data/frag/ms_gym_d3_h4"
 new_frag_dp = "./data/frag/nist20mona23ms_gym_valtest_d3_h4"
 

@@ -77,7 +77,10 @@ class BaseDataset(Dataset):
   
 		mol_df_molid_set = set(mol_df["mol_id"].to_list())
 		spec_df_molid_set = set(spec_df["mol_id"].to_list())
-		assert len(spec_df_molid_set - mol_df_molid_set) == 0
+		mol_id_diff = spec_df_molid_set - mol_df_molid_set
+		#if len(mol_id_diff) > 0:
+		#	print(spec_df[spec_df['mol_id'].isin(list(mol_id_diff))])
+		assert len(mol_id_diff) == 0, len(mol_id_diff) 
 		#assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 		# merge spectra
 		um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()

@@ -20,10 +20,10 @@ wandb_tags:
 - xi6bawy4
 
 # data stuff
-spec_fp: data/proc/ms_gym/spec_df.pkl
-mol_fp: data/proc/ms_gym/mol_df.pkl
+spec_fp: data/proc/nist20mona23ms_gym_valtest/spec_df.pkl
+mol_fp: data/proc/nist20mona23ms_gym_valtest/mol_df.pkl
 split_dp: data/split/nist20mona23ms_gym_valtest_d3_h4_inchikey
-frag_dp: data/frag/ms_gym_d3_h4/dags
+frag_dp: data/frag/nist20mona23ms_gym_valtest_d3_h4/dags
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False
