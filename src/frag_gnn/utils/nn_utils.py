@@ -788,7 +788,8 @@ def decompile_jit_ckpt(path:str, pacthed_path:str):
 	for src_key, dest_key in pairings:
 		if src_key != dest_key:
 			print(f"{src_key}  ==>  {dest_key}")
-			out_state_dict[dest_key] = in_state_dict[src_key]
+		out_state_dict[dest_key] = in_state_dict[src_key]
+
 	ckpt["state_dict"] = out_state_dict
 	ckpt['hyper_parameters']['compile'] = False
 	th.save(ckpt, pacthed_path)

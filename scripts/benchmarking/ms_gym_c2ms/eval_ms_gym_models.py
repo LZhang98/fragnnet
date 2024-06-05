@@ -53,7 +53,7 @@ def run_frag_gnn(ckpt_fp,
 	config_d['eval_batch_size'] = batch_size
 	# https://discuss.pytorch.org/t/pytorch-cannot-allocate-memory/134754
 	config_d['num_workers']= 0
-
+	config_d["compile"] = False
 	ds = model_ds_cls(split='test', **config_d)
 	dl = init_dataloader(ds, config_d)
 	# load models
@@ -140,13 +140,13 @@ if __name__ == "__main__":
 	model_save_dp = "./saved_ckpts/ms_gym_benchmark"
 
 	model_id_configs = [
-		#['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml', 32, "fragnnet"],
+		['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml', 32, "fragnnet"],
 		['hpnwdaoq','config/msg/msg_fp_0,1.yml', 32, "fp"],
 		['ajgc9p5x','config/msg/msg_fp_0,01.yml', 32,"fp"],
-		['9zxgadu4','config/msg/msg_gnn_0,1', 32, "gnn"],
+		['9zxgadu4','config/msg/msg_gnn_0,1.yml', 32, "gnn"],
 		['ht1o1wrs','config/msg/msg_gnn_0,01.yml', 32, "gnn"],
 		['zka7gid2','config/msg/msg_fragnnet_0,1.yml', 32, "fragnnet"],
-		['vclvoh0t ','msg_fragnnet_0,01', 32, "fragnnet"],
+		['vclvoh0t ','config/msg_fragnnet_0,01.yml', 32, "fragnnet"],
 	]
 	
 	
@@ -158,11 +158,9 @@ if __name__ == "__main__":
 		if args.decompile:
 			print(f"> decompiling model {run_id}")
 			np_ckpt_fp = ckpt_fp.replace(".ckpt","_np.ckpt")
-			if args.use_cahced_ckpt and os.path.isfile(np_ckpt_fp):
-				ckpt_fp = np_ckpt_fp
-			else:
-				decompile_jit_ckpt(ckpt_fp, np_ckpt_fp)
-				ckpt_fp = np_ckpt_fp
+			decompile_jit_ckpt(ckpt_fp, np_ckpt_fp)
+			ckpt_fp = np_ckpt_fp
+			#decompile_jit_ckpt(np_ckpt_fp, np_ckpt_fp)
 
 		#print(f"> {np_ckpt_fp}")
 		save_fp = os.path.join(args.save_dp, run_id+'.csv')
