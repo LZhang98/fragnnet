@@ -77,7 +77,7 @@ ce_insert_merge: True
 #prec_insert_size: 8
 inst_insert_location: mlp
 inst_insert_size: 8
-mz_max: 1000.0
+mz_max: 1500.0
 mz_bin_res: 0.01
 sum_ints: True
 
