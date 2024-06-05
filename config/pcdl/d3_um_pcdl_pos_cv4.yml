@@ -39,9 +39,12 @@ spec_params:
   ace: False
   merge_keep_ces: False
   preprocess: True
-  prec_type: False
+  prec_type: True
   prec_types:
     - "[M+H]+"
+  inst_type: True
+  inst_types:
+    - "QTOF"
 mol_params:
   preprocess: True
 
@@ -53,8 +56,10 @@ ce_insert_type: embed
 ce_insert_location: mlp
 ce_insert_merge: True
 ce_insert_size: 24
-#prec_insert_location: mlp
-#prec_insert_size: 8
+prec_insert_location: none
+prec_insert_size: 8
+inst_insert_location: none
+inst_insert_size: 8
 mol_pool_type: mean
 frag_pool_type: mean
 mol_normalization: batch
