@@ -487,7 +487,8 @@ def repair_checkpoint(path):
 def get_ckpt_from_wandb(saved_dp, run_id, 
                         entity='frag-gnn', 
                         project='frag-gnn',
-                        save_use_model_name = True):
+                        save_use_model_name = True,
+                        use_cached = False):
 	import wandb
 	api = wandb.Api()
 	run = api.run(f"{entity}/{project}/{run_id}")
@@ -506,11 +507,14 @@ def get_ckpt_from_wandb(saved_dp, run_id,
 				ckpt_file = file.name
 
 	if ckpt_file is None or ckpt_epoch_num is None:
-		print("> Skip, ckpt_file is None or  ckpt_epoch_num is None")
+		print("> Skip, ckpt_file is None or ckpt_epoch_num is None")
 	
 	#assert not ckpt_file is None
 	#assert not ckpt_epoch_num is None
 	ckpt_fp = f"{model_save_dp}/{model_tag}.ckpt" if save_use_model_name else f"{model_save_dp}/{run_id}.ckpt"
+	if os.path.isfile(ckpt_fp) and use_cached:
+		return ckpt_fp
+
 	with tempfile.TemporaryDirectory() as tmp_dir:
 		#if not os.path.exists(ckpt_fp):
 		print(f"> Downloading ckpt {ckpt_file}")

@@ -5,13 +5,13 @@ from tqdm import tqdm
 
 from frag_gnn.runner import load_config
 from frag_gnn.massformer.pl_model import MassFormerPL
-from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset, init_dataloader
+from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset
 
-from frag_gnn.runner import load_config
+from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.massformer.pl_model import MassFormerPL
 from frag_gnn.utils.misc_utils import to_device, booltype
-from frag_gnn.dataset import SpecMolDataset, init_dataloader
+from frag_gnn.dataset import SpecMolDataset
 
 import os
 import multiprocessing

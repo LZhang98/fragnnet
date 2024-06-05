@@ -1,5 +1,4 @@
 wandb_name: d3_um_inst_ms_gym_inchikey_0.01
-wandb_group: ms_gym_inchikey
 wandb_tags:
 - um
 - d3
