@@ -76,7 +76,6 @@ def run_frag_gnn(ckpt_fp,
 	config_d['auxiliary_scores'] = ['cos_hun','cos_sim']
 	config_d['eval_mz_bin_res'] = [0.01, 0.1]
  
-
 	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
 
 	model.eval()
@@ -141,7 +140,7 @@ if __name__ == "__main__":
 	model_save_dp = "./saved_ckpts/ms_gym_benchmark"
 
 	model_id_configs = [
-		['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml', 32, "fragnnet"],
+		#['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml', 32, "fragnnet"],
 		['hpnwdaoq','config/msg/msg_fp_0,1.yml', 32, "fp"],
 		['ajgc9p5x','config/msg/msg_fp_0,01.yml', 32,"fp"],
 		['9zxgadu4','config/msg/msg_gnn_0,1', 32, "gnn"],
@@ -169,7 +168,7 @@ if __name__ == "__main__":
 		save_fp = os.path.join(args.save_dp, run_id+'.csv')
 		print(f"> {custom_fp}")
 		print(f"> {save_fp}")
-		#print(f"> {np_ckpt_fp}")
+		print(f"> {ckpt_fp}")
 		run_frag_gnn(ckpt_fp = ckpt_fp,   
 					save_fp = save_fp,
 					template_fp = args.template_fp,
