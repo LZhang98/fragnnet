@@ -91,4 +91,4 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: True
 compile: True
-# mp_sharing_strategy: file_system
+mp_sharing_strategy: file_system

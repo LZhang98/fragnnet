@@ -109,4 +109,4 @@ automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
 compile: True
-# mp_sharing_strategy: file_system
+mp_sharing_strategy: file_system

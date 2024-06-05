@@ -76,4 +76,4 @@ automatic_optimization: True
 dynamic_batch_sampler: False
 pl_enable_progress_bar: True
 compile: False
-# mp_sharing_strategy: file_system
+mp_sharing_strategy: file_system
