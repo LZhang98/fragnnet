@@ -23,6 +23,7 @@ def make_splits(args):
 		allowed_dsets=dsets,
 		allowed_prec_types=args.allowed_prec_types,
 		max_peak_mz=args.max_peak_mz,
+		max_prec_mz=args.max_prec_mz,
 		allowed_elements=args.allowed_elements,
 		allowed_frag_modes=args.allowed_frag_modes,
 		allowed_ion_modes=args.allowed_ion_modes,

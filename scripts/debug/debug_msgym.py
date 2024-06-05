@@ -11,5 +11,6 @@ for split in ['train','val','test']:
     split_spec_df = spec_df[spec_df["spec_id"].isin(spec_ids_list)]
     print("split_spec_df",split_spec_df['inst_type'].unique())
     print("split_spec_df",split_spec_df.shape)
+    print("split_spec_df max_prec_mz",split_spec_df["prec_mz"].max())
     #split_mol_id_set = set(mol_ids_list)
     #print(split_mol_id_set -total_mol_ids_set )
