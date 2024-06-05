@@ -662,7 +662,7 @@ def parse_inst_info(df):
 			"Orbitrap (LCMS)": "FT",
 			"FTICR (LCMS)": "FT",
 			"ITFT": "FT",
-			"Orbitrap": "Orbitrap",
+			"Orbitrap": "FT",
 			"QFT": "FT",
 		}
 		if inst_type_str in inst_type_map:
