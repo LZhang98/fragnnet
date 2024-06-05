@@ -114,7 +114,7 @@ use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
-compile: True
+compile: False
 
 # change tol for worse data
 loss_tolerance_rel: #0.00001 # 10 ppm
