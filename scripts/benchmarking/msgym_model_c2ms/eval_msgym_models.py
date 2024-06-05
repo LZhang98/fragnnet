@@ -134,6 +134,7 @@ if __name__ == "__main__":
 		print(f"> {run_id}")
 		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id)
 		if args.decompile:
+			print(f"> decompile model {run_id}")
 			np_ckpt_fp = ckpt_fp.replace(".ckpt","_np.ckpt")
 			decompile_jit_ckpt(ckpt_fp, np_ckpt_fp)
 			ckpt_fp = np_ckpt_fp
