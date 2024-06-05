@@ -7,13 +7,13 @@ import argparse
 import torch as th
 from tqdm import tqdm
 
-from frag_gnn.runner import load_config
+from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL
 from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from frag_gnn.utils.plot_utils import plot_spectra_sparse
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.data_utils import mol_to_inchikey
-from frag_gnn.dataset import SpecMolFragDataset, init_dataloader, SpecMolDataset
+from frag_gnn.dataset import SpecMolFragDataset, , SpecMolDataset
 
 
 import os
@@ -93,24 +93,10 @@ def run_frag_gnn(ckpt_fp,
 				# oos
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
 
-				# peaks
-				b_pred_mzs = pred_mzs[b_peak_mask]
-				b_pred_ints = pred_ints[b_peak_mask]
-				b_pred_ints = model.ints_untransform_func(b_pred_ints)
-				b_pred_mzs = b_pred_mzs.numpy()
-				b_pred_ints = b_pred_ints.numpy()
-				#print(b_pred_mzs)
-				#print(b_pred_ints)
-				#print(cos_sim_bin[b_idx])
-				#print(cos_sim_hun[b_idx])
-				#print(str(mol_smiles[b_idx]), cos_sim_bin[b_idx].item(), cos_sim_hun[b_idx].item())
-
-			#exit()
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
 				b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
 				preds_l.append((b_inchikey,b_smi,b_nce,cos_sim_bin[b_idx].item(), cos_sim_hun[b_idx].item()))
-				#plot_spectra_sparse()
 
 	df = pd.DataFrame(preds_l, columns=['inchikey','smiles','nce','cos_sim_bin','cos_sim_hun'])
 	print('cos_sim_bin', df.loc[:, 'cos_sim_bin'].mean())
