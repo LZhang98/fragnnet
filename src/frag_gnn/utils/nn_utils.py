@@ -768,11 +768,7 @@ def decompile_jit_ckpt(path:str, pacthed_path:str):
 	"""
 	convert compiled ckpt to normal version and save to disk
 	"""
-	def remove_prefix(text, prefix):
-		if text.startswith(prefix):
-			return text[len(prefix) :]
-		return text
-
+ 
 	# inspired by
 	# https://github.com/pytorch/pytorch/issues/101107#issuecomment-1801128683
 	print(f"> src: {path}")
@@ -784,7 +780,6 @@ def decompile_jit_ckpt(path:str, pacthed_path:str):
 	in_state_dict = ckpt["state_dict"]
 	pairings = [
 		(src_key,  src_key.replace('._orig_mod',''))
-		#(src_key, remove_prefix(src_key, "_orig_mod."))
 		for src_key in in_state_dict.keys()
 	]
 	#if all(src_key == dest_key for src_key, dest_key in pairings):

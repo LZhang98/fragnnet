@@ -15,7 +15,7 @@ from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.data_utils import mol_to_inchikey
 from frag_gnn.utils.nn_utils import decompile_jit_ckpt
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
-
+from frag_gnn.utils.misc_utils import booltype
 
 import os
 import multiprocessing
@@ -89,9 +89,6 @@ def run_frag_gnn(ckpt_fp,
 			cos_sim_bin_lr = batch_result['cos_sim_0.1'].cpu()
 			cos_sim_bin_hr = batch_result['cos_sim_0.01'].cpu()
 			#cos_sim_hun = batch_result['cos_hun'].cpu()
-			#print(pred_mzs)
-			#print(batch_result["pred_logprobs"])
-
 
 			#pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 			for b_idx in range(batch_size):
@@ -99,20 +96,6 @@ def run_frag_gnn(ckpt_fp,
 				# oos
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
     
-				#b_pred_mzs = pred_mzs[b_peak_mask]
-				#b_pred_ints = pred_ints[b_peak_mask]
-				# peaks
-				#b_pred_mzs = pred_mzs[b_peak_mask]
-				#b_pred_ints = pred_ints[b_peak_mask]
-				#b_pred_ints = model.ints_untransform_func(b_pred_ints)
-				#b_pred_mzs = b_pred_mzs.numpy()
-				#b_pred_ints = b_pred_ints.numpy()
-				#print(b_pred_mzs)
-				#print(b_pred_ints)
-				#print(cos_sim_bin[b_idx])
-				#print(cos_sim_hun[b_idx])
-				#print(str(mol_smiles[b_idx]), cos_sim_bin[b_idx].item(), cos_sim_hun[b_idx].item())
-
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
 				b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
@@ -131,33 +114,36 @@ def get_args():
 	parser.add_argument("--template_fp",type=str,default="config/template.yml")
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_dp",type=str,default="./model_eval")
+	parser.add_argument("--decompile",type=booltype,default=False)
+ 
 	args = parser.parse_args()
 	return args
 
 if __name__ == "__main__":
 
 	args = get_args()
-	#save_dp = os.path.dirname(os.path.abspath(args.save_fp))
 	os.makedirs(args.save_dp, exist_ok=True)	
 	model_save_dp = "./saved_ckpts/ms_gym_benchmark"
 
 	model_id_configs = [
-		#['0jeuscvs','config/nist20_d4_wr00_inchikey_ce/fraggnn_d3_ce_lin.yml',32],
 		['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml', 32]
 	]
 	
 	for run_id,custom_fp,batch_size in model_id_configs:
 		#for run_id in inchikey_splits_runs:
 		print(f"> {run_id}")
-		org_ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id)
-		np_ckpt_fp = org_ckpt_fp.replace(".ckpt","_np.ckpt")
-		decompile_jit_ckpt(org_ckpt_fp, np_ckpt_fp)
+		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id)
+		if args.decompile:
+			np_ckpt_fp = ckpt_fp.replace(".ckpt","_np.ckpt")
+			decompile_jit_ckpt(ckpt_fp, np_ckpt_fp)
+			ckpt_fp = np_ckpt_fp
+   
 		#print(f"> {np_ckpt_fp}")
 		save_fp = os.path.join(args.save_dp, run_id+'.csv')
 		print(f"> {custom_fp}")
 		print(f"> {save_fp}")
 		#print(f"> {np_ckpt_fp}")
-		run_frag_gnn(ckpt_fp = np_ckpt_fp,   
+		run_frag_gnn(ckpt_fp = ckpt_fp,   
 					save_fp = save_fp,
 					template_fp = args.template_fp,
 					custom_fp = custom_fp,
