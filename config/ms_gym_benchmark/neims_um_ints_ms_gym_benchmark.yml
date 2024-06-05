@@ -12,13 +12,13 @@ wandb_tags:
 - unmerged
 - oos_multiple_1
 - gaussian_renormalize
-- b512x1
+- b256x1
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
 - preload
 - preprocess
-- xi6bawy4
+- 2y43u8gx
 
 
 # data stuff
@@ -59,7 +59,7 @@ mol_params:
 model_type: neims
 mlp_hidden_size: 1024
 mlp_dropout: 0.1
-mlp_num_layers: 2
+mlp_num_layers: 3
 mlp_use_residuals: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
@@ -86,12 +86,12 @@ train_sample_weight: group_mol
 eval_sample_weight: group_mol
 
 # optimization stuff
-train_batch_size: 128
-eval_batch_size: 128
+train_batch_size: 256
+eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0001563
-weight_decay: 0.84
+lr: 0.0008699594500335577
+weight_decay: 0.8841475344717761
 accelerator: gpu
 devices: 1
 min_epochs: 100

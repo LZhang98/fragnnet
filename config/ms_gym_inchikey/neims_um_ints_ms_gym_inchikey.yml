@@ -12,13 +12,13 @@ wandb_tags:
 - unmerged
 - oos_multiple_1
 - gaussian_renormalize
-- b512x1
+- b256x1
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
 - preload
 - preprocess
-- xi6bawy4
+- 2y43u8gx
 
 
 # data stuff
@@ -76,23 +76,43 @@ mz_max: 1000.0
 mz_bin_res: 0.01
 sum_ints: True
 
+# model stuff
+model_type: neims
+mlp_hidden_size: 1024
+mlp_dropout: 0.1
+mlp_num_layers: 3
+mlp_use_residuals: True
+ff_prec_mz_offset: 5
+ff_bidirectional: True
+ff_output_map_size: 256
+ce_insert_type: embed
+ce_insert_location: mlp
+ce_insert_merge: True
+ce_insert_size: 24
+#prec_insert_location: mlp
+#prec_insert_size: 8
+inst_insert_location: mlp
+inst_insert_size: 8
+mz_max: 1000.0
+mz_bin_res: 0.01
+sum_ints: True
+
 # loss stuff
 loss_type: cosine_distance
 sparse_cosine_similarity: True
-#ints_transform: log10t3
 ints_transform: sqrt
 simple_group_sampler: True
 simple_group_sampler_type: group_mol
-train_sample_weight: none
+train_sample_weight: group_mol
 eval_sample_weight: group_mol
 
 # optimization stuff
-train_batch_size: 128
-eval_batch_size: 128
+train_batch_size: 256
+eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0003033
-weight_decay: 0.01
+lr: 0.0008699594500335577
+weight_decay: 0.8841475344717761
 accelerator: gpu
 devices: 1
 min_epochs: 100
