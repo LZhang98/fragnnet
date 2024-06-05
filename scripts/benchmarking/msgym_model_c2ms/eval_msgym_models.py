@@ -62,6 +62,7 @@ def run_frag_gnn(ckpt_fp,
 	#print(device)
 	config_d['track_datapoint_metrics'] = False 
 	config_d['auxiliary_scores'] = ['cos_hun','cos_sim']
+	config_d['eval_mz_bin_res'] = [0.01, 0.1]
 	model = FragGNNPL.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
 
 	model.eval()
@@ -84,8 +85,10 @@ def run_frag_gnn(ckpt_fp,
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
 			pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
-			cos_sim_bin = batch_result['cos_sim_0.01'].cpu()
-			cos_sim_hun = batch_result['cos_hun'].cpu()
+
+			cos_sim_bin_lr = batch_result['cos_sim_0.1'].cpu()
+			cos_sim_bin_hr = batch_result['cos_sim_0.01'].cpu()
+			#cos_sim_hun = batch_result['cos_hun'].cpu()
 			#print(pred_mzs)
 			#print(batch_result["pred_logprobs"])
 
@@ -113,12 +116,12 @@ def run_frag_gnn(ckpt_fp,
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
 				b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
-				preds_l.append((b_inchikey,b_smi,b_nce,cos_sim_bin[b_idx].item(), cos_sim_hun[b_idx].item()))
+				preds_l.append((b_inchikey,b_smi,b_nce,cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item()))
 				#plot_spectra_sparse()
 
-	df = pd.DataFrame(preds_l, columns=['inchikey','smiles','nce','cos_sim_bin','cos_sim_hun'])
-	print('cos_sim_bin', df.loc[:, 'cos_sim_bin'].mean())
-	print('cos_sim_hun', df.loc[:, 'cos_sim_hun'].mean())
+	df = pd.DataFrame(preds_l, columns=['inchikey','smiles','nce','cos_sim_0.1','cos_sim_0.01'])
+	print('cos_sim_0.1', df.loc[:, 'cos_sim_0.1'].mean())
+	print('cos_sim_0.01', df.loc[:, 'cos_sim_0.01'].mean())
 	df.to_csv(save_fp, index=False)
 
 
@@ -149,11 +152,11 @@ if __name__ == "__main__":
 		org_ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id)
 		np_ckpt_fp = org_ckpt_fp.replace(".ckpt","_np.ckpt")
 		decompile_jit_ckpt(org_ckpt_fp, np_ckpt_fp)
-		print(f"> {np_ckpt_fp}")
+		#print(f"> {np_ckpt_fp}")
 		save_fp = os.path.join(args.save_dp, run_id+'.csv')
 		print(f"> {custom_fp}")
 		print(f"> {save_fp}")
-		print(f"> {np_ckpt_fp}")
+		#print(f"> {np_ckpt_fp}")
 		run_frag_gnn(ckpt_fp = np_ckpt_fp,   
 					save_fp = save_fp,
 					template_fp = args.template_fp,
