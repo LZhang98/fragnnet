@@ -1,4 +1,4 @@
-wandb_name: d3_um_pcdl_pos
+wandb_name: d3_um_prec_pcdl_inchikey
 wandb_tags:
 - um
 - d3
@@ -20,6 +20,7 @@ wandb_tags:
 - preprocess
 - xi6bawy4
 - pcdl
+- prec
 
 # data stuff
 spec_fp: data/proc/pcdl/spec_df.pkl
@@ -57,8 +58,10 @@ ce_insert_type: embed
 ce_insert_location: mlp
 ce_insert_merge: True
 ce_insert_size: 24
-#prec_insert_location: mlp
-#prec_insert_size: 8
+prec_insert_location: mlp
+prec_insert_size: 8
+inst_insert_location: none
+inst_insert_size: 8
 mol_pool_type: mean
 frag_pool_type: mean
 mol_normalization: batch
