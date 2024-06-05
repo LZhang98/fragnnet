@@ -1,4 +1,4 @@
-wandb_name: nemis_um_inst_ms_gym_benchmark
+wandb_name: nemis_um_inst_ms_gym_benchmark_0.01
 wandb_group: ms_gym_benchmark
 wandb_tags:
 - um
@@ -55,21 +55,19 @@ mol_params:
 # model stuff
 model_type: neims
 mlp_hidden_size: 1024
-mlp_dropout: 0.1
-mlp_num_layers: 3
+mlp_dropout: 0.0
+mlp_num_layers: 5
 mlp_use_residuals: True
 ff_prec_mz_offset: 5
 ff_bidirectional: True
 ff_output_map_size: 256
 ce_insert_type: embed
 ce_insert_location: mlp
-ce_insert_merge: True
+ce_insert_merge: False
 ce_insert_size: 24
-#prec_insert_location: mlp
-#prec_insert_size: 8
 inst_insert_location: mlp
 inst_insert_size: 8
-mz_max: 1500.0
+mz_max: 1005.0
 mz_bin_res: 0.01
 sum_ints: True
 
@@ -77,31 +75,34 @@ sum_ints: True
 loss_type: cosine_distance
 sparse_cosine_similarity: True
 ints_transform: sqrt
-simple_group_sampler: True
-simple_group_sampler_type: group_mol
-train_sample_weight: group_mol
-eval_sample_weight: group_mol
+train_sample_weight: none
+eval_sample_weight: none
 
 # optimization stuff
 train_batch_size: 256
 eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0008699594500335577
-weight_decay: 0.8841475344717761
+lr: 0.0001563
+weight_decay: 0.0000001
 accelerator: gpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
-lr_schedule: False
+lr_schedule: True
+lr_decay_rate: 0.9866
+lr_warmup_steps: 1000
+lr_decay_steps: 5000
 debug_overfit: False
-upload_checkpoints: False
-checkpoint_metric: val_cos_sim_0.01_epoch/mean
+upload_checkpoints: True
+checkpoint_metric: val_cos_sim_0.1_epoch/mean
+checkpoint_metric_mode: max
 auxiliary_scores:
 - cos_sim
 eval_mz_bin_res:
-- 0.01
+- 0.1
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
 compile: False
+mp_sharing_strategy: file_system
