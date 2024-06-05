@@ -45,6 +45,7 @@ spec_params:
   inst_type: True
   inst_types:
     - "QTOF"
+    - "Other"
 mol_params:
   preprocess: True
 

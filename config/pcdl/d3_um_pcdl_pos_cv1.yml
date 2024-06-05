@@ -44,6 +44,7 @@ spec_params:
     - "[M+H]+"
   inst_type: False
     - "QTOF"
+    - "Other"
 mol_params:
   preprocess: True
 

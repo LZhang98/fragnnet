@@ -38,10 +38,14 @@ spec_params:
   ace: False
   merge_keep_ces: False
   preprocess: True
-prec_type: True
+  prec_type: True
   prec_types:
     - "[M+H]+"
     - "[M-H]-"
+  inst_type: True
+  inst_types:
+    - "QTOF"
+    - "Other"
 mol_params:
   preprocess: True
 
