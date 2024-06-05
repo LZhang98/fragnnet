@@ -146,7 +146,7 @@ if __name__ == "__main__":
 		['9zxgadu4','config/msg/msg_gnn_0,1.yml', 32, "gnn"],
 		['ht1o1wrs','config/msg/msg_gnn_0,01.yml', 32, "gnn"],
 		['zka7gid2','config/msg/msg_fragnnet_0,1.yml', 32, "fragnnet"],
-		['vclvoh0t ','config/msg_fragnnet_0,01.yml', 32, "fragnnet"],
+		['vclvoh0t ','config/msg/msg_fragnnet_0,01.yml', 32, "fragnnet"],
 	]
 	
 	
@@ -156,11 +156,11 @@ if __name__ == "__main__":
 		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
 		
 		if args.decompile:
-			print(f"> decompiling model {run_id}")
 			np_ckpt_fp = ckpt_fp.replace(".ckpt","_np.ckpt")
-			decompile_jit_ckpt(ckpt_fp, np_ckpt_fp)
+			if not os.path.exists(np_ckpt_fp) or not args.use_cahced_ckpt:
+				print(f"> decompiling model {run_id}")
+				decompile_jit_ckpt(ckpt_fp, np_ckpt_fp)
 			ckpt_fp = np_ckpt_fp
-			#decompile_jit_ckpt(np_ckpt_fp, np_ckpt_fp)
 
 		#print(f"> {np_ckpt_fp}")
 		save_fp = os.path.join(args.save_dp, run_id+'.csv')
