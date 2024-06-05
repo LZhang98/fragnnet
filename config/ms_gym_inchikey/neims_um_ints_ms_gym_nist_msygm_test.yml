@@ -70,7 +70,7 @@ ce_insert_size: 24
 #prec_insert_size: 8
 inst_insert_location: mlp
 inst_insert_size: 8
-mz_max: 1000.0
+mz_max: 1500.0
 mz_bin_res: 0.1
 sum_ints: True
 
@@ -82,7 +82,6 @@ simple_group_sampler: True
 simple_group_sampler_type: group_mol
 train_sample_weight: none
 eval_sample_weight: group_mol
-
 
 # optimization stuff
 train_batch_size: 512
