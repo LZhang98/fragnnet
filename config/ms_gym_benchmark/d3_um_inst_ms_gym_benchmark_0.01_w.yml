@@ -46,7 +46,6 @@ spec_params:
   inst_types:
     - "FT"
     - "QTOF"
-    - "Orbitrap"
     - "Unknown"
 mol_params:
   preprocess: True
