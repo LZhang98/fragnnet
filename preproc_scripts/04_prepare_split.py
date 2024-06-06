@@ -203,10 +203,12 @@ def make_splits(args):
 	# create split directory
 	for split_data in split_data_list:
 		os.makedirs(split_data['split_dp'],exist_ok=True)
-		print(f"> save split to {split_data['split_dp']}")
+		print(f"> Save split to {split_data['split_dp']}")
+		
 		print(f"> Split sizes (spec_id): train = {split_data['train_df'].shape[0]},"
         	f"val = {split_data['val_df'].shape[0]}, test = {split_data['test_df'].shape[0]} "
             f"secondary test df = {split_data['secondary_df'].shape[0]}")
+		
 		# save ids
 		train_fp = os.path.join(split_data['split_dp'],"train_ids.csv")
 		val_fp = os.path.join(split_data['split_dp'],"val_ids.csv")
