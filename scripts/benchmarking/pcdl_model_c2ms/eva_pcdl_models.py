@@ -137,10 +137,14 @@ if __name__ == "__main__":
  
 
 	os.makedirs(args.save_dp, exist_ok=True)	
-	model_save_dp = "./saved_ckpts/ms_gym_benchmark"
+	model_save_dp = "./saved_ckpts/pcdl_pos_cv_benchmark"
 
 	model_id_configs = [
-		[]
+		['fou0p5ja','config/pcdl/d3_um_pcdl_pos_cv0.yml'],
+    	['e36zaqef','config/pcdl/d3_um_pcdl_pos_cv1.yml'],
+      	['d5tdvw8f','config/pcdl/d3_um_pcdl_pos_cv2.yml'],
+        ['mb605bjp','config/pcdl/d3_um_pcdl_pos_cv3.yml'],
+		['0tbh8pee','config/pcdl/d3_um_pcdl_pos_cv4.yml'],
 	]
 
 	for run_id,custom_fp in model_id_configs:
