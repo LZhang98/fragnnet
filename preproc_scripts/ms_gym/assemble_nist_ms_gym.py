@@ -97,9 +97,13 @@ ms_gym_frag_dp = "./data/frag/ms_gym_d3_h4"
 new_frag_dp = "./data/frag/nist20mona23ms_gym_valtest_d3_h4"
 
 for org_mol_id in tqdm(update_mol_id_dict):
-
     mol_id = update_mol_id_dict[org_mol_id]
     src = f"{ms_gym_frag_dp}/dags/{org_mol_id}.pickle.bz2"
     if os.path.isfile(src):
         dst = f"{ms_gym_frag_dp}/dags/{mol_id}.pickle.bz2"
         shutil.copyfile(src, dst)
+        
+merged_spec_df_nist_molid = merged_spec_df[merged_spec_df['dest'] == "nist20_hr"]["mol_id"]
+spec_df_nist_molid = nist_spec_df[nist_spec_df['dest'] == "nist20_hr"]["mol_id"]
+
+print(set(merged_spec_df_nist_molid) == (set(spec_df_nist_molid)))
