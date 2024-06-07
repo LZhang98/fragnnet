@@ -1,4 +1,4 @@
-wandb_name: d3_um_pcdl_cv1
+wandb_name: d3_um_pcdl_cv_1
 wandb_group: d3_um_pcdl_cv
 wandb_tags:
 - um
@@ -39,11 +39,12 @@ spec_params:
   ace: False
   merge_keep_ces: False
   preprocess: True
-  prec_type: False
+  prec_type: True
   prec_types:
     - "[M+H]+"
     - "[M-H]-"
-  inst_type: False
+  inst_type: True
+  inst_types:
     - "QTOF"
     - "Other"
 mol_params:

@@ -1,4 +1,4 @@
-wandb_name: d3_um_pcdl_cv4
+wandb_name: d3_um_pcdl_cv_4
 wandb_group: d3_um_pcdl_cv
 wandb_tags:
 - um
