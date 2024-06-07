@@ -5,10 +5,8 @@ from tqdm import tqdm
 
 from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
-from frag_gnn.utils.plot_utils import plot_spectra_sparse
 from frag_gnn.utils.misc_utils import to_device
-from frag_gnn.utils.data_utils import mol_to_inchikey
-from frag_gnn.utils.nn_utils import decompile_jit_ckpt
+from frag_gnn.utils.nn_utils import is_ckpt_compiled
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 
@@ -49,8 +47,9 @@ def run_models(ckpt_fp,
 	config_d['eval_batch_size'] = batch_size
 	# https://discuss.pytorch.org/t/pytorch-cannot-allocate-memory/134754
 	config_d['num_workers']= 0
-	#config_d["compile"] = False
-
+	config_d["compile"] = is_ckpt_compiled(ckpt_fp)
+	print(f"> ckpt is compiled: {config_d['compile']}")
+ 
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 	model_ds_cls = model_type_ds_cls[model_type]
@@ -127,8 +126,8 @@ def get_args():
 	parser.add_argument("--template_fp",type=str,default="config/template.yml")
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_dp",type=str,default="./model_eval")
-	parser.add_argument("--decompile",type=booltype,default=True)
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=True)
+	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--batch_size",type=int,default=32)
 	args = parser.parse_args()
 	return args
 
@@ -141,27 +140,13 @@ if __name__ == "__main__":
 	model_save_dp = "./saved_ckpts/ms_gym_benchmark"
 
 	model_id_configs = [
-		['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml'],
-		['hpnwdaoq','config/msg/msg_fp_0,1.yml'],
-		['ajgc9p5x','config/msg/msg_fp_0,01.yml'],
-		['9zxgadu4','config/msg/msg_gnn_0,1.yml'],
-		['ht1o1wrs','config/msg/msg_gnn_0,01.yml'],
-		['zka7gid2','config/msg/msg_fragnnet_0,1.yml'],
-		['vclvoh0t ','config/msg/msg_fragnnet_0,01.yml'],
+		[]
 	]
-	
-	
-	for run_id,custom_fp,batch_size, model_type in model_id_configs:
+
+	for run_id,custom_fp in model_id_configs:
 		#for run_id in inchikey_splits_runs:
 		print(f"> wandb run id: {run_id}")
 		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
-		
-		if args.decompile:
-			np_ckpt_fp = ckpt_fp.replace(".ckpt","_np.ckpt")
-			if not os.path.exists(np_ckpt_fp) or not args.use_cahced_ckpt:
-				print(f"> decompiling model {run_id}")
-				decompile_jit_ckpt(ckpt_fp, np_ckpt_fp)
-			ckpt_fp = np_ckpt_fp
 
 		#print(f"> {np_ckpt_fp}")
 		save_fp = os.path.join(args.save_dp, run_id+'.csv')
@@ -173,4 +158,4 @@ if __name__ == "__main__":
 					template_fp = args.template_fp,
 					custom_fp = custom_fp,
 					device = args.device,
-					batch_size = batch_size)
+					batch_size = args.batch_size)
