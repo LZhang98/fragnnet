@@ -115,7 +115,3 @@ automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
 compile: False
-
-# change tol for worse data
-loss_tolerance_rel: #0.00001 # 10 ppm
-loss_tolerance_abs: 0.005
