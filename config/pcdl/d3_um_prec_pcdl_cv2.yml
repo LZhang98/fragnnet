@@ -1,5 +1,5 @@
-wandb_name: d3_um_pcdl_cv_2
-wandb_group: d3_um_pcdl_cv
+wandb_name: d3_um_prec_pcdl_cv_2
+wandb_group: d3_um_prec_pcdl_cv
 wandb_tags:
 - um
 - d3
