@@ -8,7 +8,7 @@ from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
 from frag_gnn.utils.plot_utils import plot_spectra_sparse
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.data_utils import mol_to_inchikey
-from frag_gnn.utils.nn_utils import decompile_jit_ckpt
+from frag_gnn.utils.nn_utils import decompile_jit_ckpt, is_ckpt_compiled
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 
@@ -20,30 +20,26 @@ import pandas as pd
 from rdkit import Chem
 
 model_type_to_model_cls = {
-	"fp": NeimsPL,
+	"neims": NeimsPL,
 	"gnn": GNNPL,
-	"fragnnet": FragGNNPL,
+	"frag_gnn": FragGNNPL,
 }
 
 model_type_ds_cls = {
-	"fp": SpecMolDataset,
+	"neims": SpecMolDataset,
 	"gnn": SpecMolDataset,
-	"fragnnet": SpecMolFragDataset,
+	"frag_gnn": SpecMolFragDataset,
 }
   
-def run_frag_gnn(ckpt_fp,   
+def run_models(ckpt_fp,   
 				 save_fp,
 				 template_fp,
 				 custom_fp,
-				 model_type,
 				 device = None,
 				 batch_size = 32,
 				 ):
 
 
-	model_cls = model_type_to_model_cls[model_type]
-	model_ds_cls = model_type_ds_cls[model_type]
- 
 	# load configs
 	print("> Loading configs")
 	config_d = load_config(template_fp, custom_fp)
@@ -53,7 +49,13 @@ def run_frag_gnn(ckpt_fp,
 	config_d['eval_batch_size'] = batch_size
 	# https://discuss.pytorch.org/t/pytorch-cannot-allocate-memory/134754
 	config_d['num_workers']= 0
-	config_d["compile"] = False
+	config_d["compile"] = is_ckpt_compiled(ckpt_fp)
+	print(f"> ckpt is compiled: {config_d['compile']}")
+ 
+	model_type = config_d['model_type']
+	model_cls = model_type_to_model_cls[model_type]
+	model_ds_cls = model_type_ds_cls[model_type]
+ 
 	ds = model_ds_cls(split='test', **config_d)
 	dl = init_dataloader(ds, config_d)
 	# load models
@@ -126,8 +128,8 @@ def get_args():
 	parser.add_argument("--template_fp",type=str,default="config/template.yml")
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_dp",type=str,default="./model_eval")
-	parser.add_argument("--decompile",type=booltype,default=True)
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=True)
+	parser.add_argument("--decompile",type=booltype,default=False)
+	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	args = parser.parse_args()
 	return args
 
@@ -140,17 +142,17 @@ if __name__ == "__main__":
 	model_save_dp = "./saved_ckpts/ms_gym_benchmark"
 
 	model_id_configs = [
-		['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml', 32, "fragnnet"],
-		['hpnwdaoq','config/msg/msg_fp_0,1.yml', 32, "fp"],
-		['ajgc9p5x','config/msg/msg_fp_0,01.yml', 32,"fp"],
-		['9zxgadu4','config/msg/msg_gnn_0,1.yml', 32, "gnn"],
-		['ht1o1wrs','config/msg/msg_gnn_0,01.yml', 32, "gnn"],
-		['zka7gid2','config/msg/msg_fragnnet_0,1.yml', 32, "fragnnet"],
-		['vclvoh0t ','config/msg/msg_fragnnet_0,01.yml', 32, "fragnnet"],
+		['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml'],
+		['hpnwdaoq','config/msg/msg_fp_0,1.yml'],
+		['ajgc9p5x','config/msg/msg_fp_0,01.yml'],
+		['9zxgadu4','config/msg/msg_gnn_0,1.yml'],
+		['ht1o1wrs','config/msg/msg_gnn_0,01.yml'],
+		['zka7gid2','config/msg/msg_fragnnet_0,1.yml'],
+		['vclvoh0t ','config/msg/msg_fragnnet_0,01.yml'],
 	]
 	
-	
-	for run_id,custom_fp,batch_size, model_type in model_id_configs:
+	batch_size = 32
+	for run_id,custom_fp in model_id_configs:
 		#for run_id in inchikey_splits_runs:
 		print(f"> wandb run id: {run_id}")
 		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
@@ -167,10 +169,9 @@ if __name__ == "__main__":
 		print(f"> {custom_fp}")
 		print(f"> {save_fp}")
 		print(f"> {ckpt_fp}")
-		run_frag_gnn(ckpt_fp = ckpt_fp,   
+		run_models(ckpt_fp = ckpt_fp,   
 					save_fp = save_fp,
 					template_fp = args.template_fp,
 					custom_fp = custom_fp,
-					model_type = model_type,
 					device = args.device,
 					batch_size = batch_size)

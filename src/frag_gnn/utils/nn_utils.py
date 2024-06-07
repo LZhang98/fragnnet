@@ -763,7 +763,7 @@ class LowRankDense(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         return x
-        
+
 def decompile_jit_ckpt(path:str, pacthed_path:str):
 	"""
 	convert compiled ckpt to normal version and save to disk
@@ -793,3 +793,11 @@ def decompile_jit_ckpt(path:str, pacthed_path:str):
 	ckpt["state_dict"] = out_state_dict
 	ckpt['hyper_parameters']['compile'] = False
 	th.save(ckpt, pacthed_path)
+
+def is_ckpt_compiled(path:str):
+	ckpt = th.load(path)
+	state_dict = ckpt["state_dict"]
+	for key in state_dict.keys():
+		if '_orig_mod' in key:
+			return True
+	return False
