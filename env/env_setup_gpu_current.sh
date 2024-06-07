@@ -24,7 +24,7 @@ pip install wandb
 pip install matplotlib
 pip install pytest
 pip install CairoSVG
-pip install lightning
+pip install lightning==2.1.2
 pip install dgl==1.0.4 -f https://data.dgl.ai/wheels/cu118/repo.html
 pip install omegaconf
 pip install pyteomics
