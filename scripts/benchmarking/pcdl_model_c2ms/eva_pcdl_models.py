@@ -6,7 +6,7 @@ from tqdm import tqdm
 from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
 from frag_gnn.utils.misc_utils import to_device
-from frag_gnn.utils.nn_utils import is_ckpt_compiled
+from frag_gnn.utils.nn_utils import get_pl_hparams
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 
@@ -31,25 +31,40 @@ model_type_ds_cls = {
   
 def run_models(ckpt_fp,   
 				 save_fp,
-				 template_fp,
-				 custom_fp,
+				 use_ckpt_config = True,
+				 template_fp = None,
+				 custom_fp = None,
 				 device = None,
 				 batch_size = 32,
-				 ):
 
+				 ):
 
 	# load configs
 	print("> Loading configs")
-	config_d = load_config(template_fp, custom_fp)
+	if use_ckpt_config:
+		ckpt_hparams_d = get_pl_hparams(ckpt_fp)
+		config_d= ckpt_hparams_d
+	else:
+		assert template_fp != None
+		assert custom_fp != None
+		config_d = load_config(template_fp, custom_fp)
 
+	# set eval batch size
+	config_d['eval_batch_size'] = batch_size
+	print(f"> ckpt is compiled: {config_d['compile']}")
+ 	
+	#config_d['eval_batch_size'] = batch_size
+	# https://discuss.pytorch.org/t/pytorch-cannot-allocate-memory/134754
+	#config_d['num_workers']= 0
+	#config_d["compile"] = is_ckpt_compiled(ckpt_fp)
+ 
+ 	#config_d['num_workers']= 0
+	#for key in config_d:
+	#	if ckpt_hparams_d[key] != config_d[key]:
+	#		print(key, ckpt_hparams_d[key],config_d[key])
+	
 	# load datasets
 	print("> Loading datasets")
-	config_d['eval_batch_size'] = batch_size
-	# https://discuss.pytorch.org/t/pytorch-cannot-allocate-memory/134754
-	config_d['num_workers']= 0
-	config_d["compile"] = is_ckpt_compiled(ckpt_fp)
-	print(f"> ckpt is compiled: {config_d['compile']}")
- 
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 	model_ds_cls = model_type_ds_cls[model_type]
@@ -59,7 +74,6 @@ def run_models(ckpt_fp,
 	# load models
 	print("> Loading models")
 
-	print(f"> {save_fp}")
 	if device is None:
 		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 	elif not th.cuda.is_available() and device != "cpu":
@@ -71,20 +85,20 @@ def run_models(ckpt_fp,
 		th.use_deterministic_algorithms(True)
 
 	print(f"> using {device}")
-	#print(device)
 	config_d['track_datapoint_metrics'] = False 
 	config_d['auxiliary_scores'] = ['cos_hun','cos_sim']
 	config_d['eval_mz_bin_res'] = [0.01, 0.1]
- 
+	config_d['frag_params']['preload'] = False
+	config_d['frag_params']['preprocess'] = False
+
 	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
 
 	model.eval()
 	# make predictions on validation data
-	# print("Iterating over data")
 	preds_l = []
 	with th.inference_mode():
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
-			print(batch_input)
+			#print(batch_input)
 			mol_smiles = batch_input['mol_smiles']
 			spec_nces = batch_input['spec_nce']
 			spec_prec_types = batch_input['spec_prec_type']
@@ -110,18 +124,22 @@ def run_models(ckpt_fp,
 				#b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
-				b_spec_prec_type = int(spec_prec_types[b_idx])
-				b_spec_inst_type = int(spec_inst_types[b_idx])
+				b_spec_prec_type_idx = int(spec_prec_types[b_idx])
+				b_spec_inst_type_idx = int(spec_inst_types[b_idx])
 				b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
+
+				b_spec_prec_type = config_d['spec_params']['prec_types'][b_spec_prec_type_idx]
+				b_spec_inst_type = config_d['spec_params']['inst_types'][b_spec_inst_type_idx] 
 				preds_l.append((b_inchikey,b_smi,b_nce, b_spec_prec_type, b_spec_inst_type,
-                    cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
+					cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
 				#plot_spectra_sparse()
 
 	df = pd.DataFrame(preds_l, columns=['inchikey','smiles','nce',\
-     	'pre_type','inst_type','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun'])
+	 	'pre_type','inst_type','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun'])
 	print('cos_sim_0.1', df.loc[:, 'cos_sim_0.1'].mean())
 	print('cos_sim_0.01', df.loc[:, 'cos_sim_0.01'].mean())
 	print('cos_sim_hun', df.loc[:, 'cos_sim_hun'].mean())
+	print(f"> save csv to {save_fp}")
 	df.to_csv(save_fp, index=False)
 
 
@@ -144,11 +162,12 @@ if __name__ == "__main__":
 	model_save_dp = "./saved_ckpts/pcdl"
 
 	model_id_configs = [
-		['0kxgjooa','config/pcdl/d3_um_prec_pcdl_inchikey.yml'],
-		#['kn09eh7l','config/pcdl/d3_um_prec_pcdl_cv2.yml'],
-      	#['agap0bur','config/pcdl/d3_um_prec_pcdl_cv3.yml'],
-        #['mb605bjp','config/pcdl/d3_um_pcdl_pos_cv3.yml'],
-		#['0tbh8pee','config/pcdl/d3_um_pcdl_pos_cv4.yml'],
+		#['0kxgjooa','config/pcdl/d3_um_prec_pcdl_inchikey.yml'],
+		#['t1etochx','config/pcdl/d3_um_prec_pcdl_cv0.yml']
+		['4xq01qnl','config/pcdl/d3_um_prec_pcdl_cv1.yml'],
+		['wz0k2re5','config/pcdl/d3_um_prec_pcdl_cv2.yml'],
+		#['qr15frx6','config/pcdl/d3_um_prec_pcdl_cv3.yml'],
+		#['4xq01qnl','config/pcdl/d3_um_prec_pcdl_cv4.yml'],
 	]
 
 	for run_id,custom_fp in model_id_configs:
@@ -163,7 +182,5 @@ if __name__ == "__main__":
 		print(f"> {ckpt_fp}")
 		run_models(ckpt_fp = ckpt_fp,   
 					save_fp = save_fp,
-					template_fp = args.template_fp,
-					custom_fp = custom_fp,
 					device = args.device,
 					batch_size = args.batch_size)

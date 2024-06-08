@@ -794,10 +794,17 @@ def decompile_jit_ckpt(path:str, pacthed_path:str):
 	ckpt['hyper_parameters']['compile'] = False
 	th.save(ckpt, pacthed_path)
 
-def is_ckpt_compiled(path:str):
+def is_ckpt_compiled(path:str) -> bool:
 	ckpt = th.load(path)
 	state_dict = ckpt["state_dict"]
 	for key in state_dict.keys():
 		if '_orig_mod' in key:
 			return True
 	return False
+
+def get_pl_hparams(path:str) -> dict:
+	"""
+ 	"""
+	ckpt = th.load(path)
+	hyper_parameters = ckpt["hyper_parameters"]
+	return hyper_parameters
