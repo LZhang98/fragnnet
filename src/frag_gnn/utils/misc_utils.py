@@ -487,14 +487,14 @@ def repair_checkpoint(path):
 def get_ckpt_from_wandb(saved_dp, run_id, 
                         entity='frag-gnn', 
                         project='frag-gnn',
-                        save_use_model_name = True,
+                        #save_use_model_name = True,
                         use_cached = False):
 	import wandb
 	api = wandb.Api()
 	run = api.run(f"{entity}/{project}/{run_id}")
 	#print(run.id, run.name, run.tags)
 	print(f"> Processing model files for run {run.id} {run.name}")
-	model_tag = f"{run.name}" if save_use_model_name else f"{run_id}"
+	model_tag = f"{run.name}_{run_id}"
 	model_save_dp = f"{saved_dp}/{model_tag}"
 	os.makedirs(model_save_dp, exist_ok=True)
 	ckpt_file, ckpt_epoch_num = None, None
@@ -511,7 +511,7 @@ def get_ckpt_from_wandb(saved_dp, run_id,
 	
 	#assert not ckpt_file is None
 	#assert not ckpt_epoch_num is None
-	ckpt_fp = f"{model_save_dp}/{model_tag}.ckpt" if save_use_model_name else f"{model_save_dp}/{run_id}.ckpt"
+	ckpt_fp = f"{model_save_dp}/{model_tag}.ckpt"
 	if os.path.isfile(ckpt_fp) and use_cached:
 		return ckpt_fp
 
