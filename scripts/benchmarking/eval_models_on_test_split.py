@@ -159,29 +159,21 @@ def get_args():
 	parser.add_argument("--save_dp",type=str,default="./model_eval")
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
+	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
+	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['4xq01qnl'])
+ 
 	args = parser.parse_args()
 	return args
 
 if __name__ == "__main__":
 
 	args = get_args()
- 
 	os.makedirs(args.save_dp, exist_ok=True)	
-	model_save_dp = "./saved_ckpts/pcdl"
+	model_save_dp = args.model_save_dp
+	print(f"> save model to {model_save_dp} from wandb")
+	assert args.wandb_run_ids is not None
 
-	model_id_configs = [
-		#['0kxgjooa','config/pcdl/d3_um_prec_pcdl_inchikey.yml'],
-		#['t1etochx','config/pcdl/d3_um_prec_pcdl_cv0.yml']
-		#['4xq01qnl','config/pcdl/d3_um_prec_pcdl_cv1.yml'],
-		#['wz0k2re5','config/pcdl/d3_um_prec_pcdl_cv2.yml'],
-		#['qr15frx6','config/pcdl/d3_um_prec_pcdl_cv3.yml'],
-		#['4xq01qnl','config/pcdl/d3_um_prec_pcdl_cv4.yml'],
-	]
-	wandb_run_ids = [
-		'4xq01qnl' #'config/pcdl/d3_um_prec_pcdl_cv1.yml',
-	]
-
-	for run_id in wandb_run_ids:
+	for run_id in args.wandb_run_ids:
 		#for run_id in inchikey_splits_runs:
 		print(f"> wandb run id: {run_id}")
 		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)

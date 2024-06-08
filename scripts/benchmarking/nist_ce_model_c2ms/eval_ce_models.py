@@ -92,7 +92,7 @@ def run_frag_gnn(ckpt_fp,
 				b_peak_mask = pred_batch_idxs == b_idx
 				# oos
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
-
+    
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
 				b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
