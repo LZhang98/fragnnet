@@ -84,16 +84,17 @@ def run_models(ckpt_fp,
 	preds_l = []
 	with th.inference_mode():
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
-			#print(batch_input)
+			print(batch_input)
 			mol_smiles = batch_input['mol_smiles']
 			spec_nces = batch_input['spec_nce']
-   
+			spec_prec_types = batch_input['spec_prec_type']
+			spec_inst_types = batch_input['spec_inst_type']
 			batch_result = to_device(batch_input, device)
 
 			batch_result = model._common_step(batch_input, split="val")
 			batch_size = batch_input['batch_size'].detach().cpu()
-			#print(batch_result)
 
+			#print(batch_result)
 			#pred_mzs = batch_result["pred_mzs"].detach().cpu()
 			#pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			#pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
@@ -101,22 +102,26 @@ def run_models(ckpt_fp,
 
 			cos_sim_bin_lr = batch_result['cos_sim_0.1'].cpu()
 			cos_sim_bin_hr = batch_result['cos_sim_0.01'].cpu()
-			#cos_sim_hun = batch_result['cos_hun'].cpu()
+			cos_sim_hun = batch_result['cos_hun'].cpu()
 			#pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 			for b_idx in range(batch_size):
 				#b_peak_mask = pred_batch_idxs == b_idx
 				# oos
 				#b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
-    
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
+				b_spec_prec_type = int(spec_prec_types[b_idx])
+				b_spec_inst_type = int(spec_inst_types[b_idx])
 				b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
-				preds_l.append((b_inchikey,b_smi,b_nce,cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item()))
+				preds_l.append((b_inchikey,b_smi,b_nce, b_spec_prec_type, b_spec_inst_type,
+                    cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
 				#plot_spectra_sparse()
 
-	df = pd.DataFrame(preds_l, columns=['inchikey','smiles','nce','cos_sim_0.1','cos_sim_0.01'])
+	df = pd.DataFrame(preds_l, columns=['inchikey','smiles','nce',\
+     	'pre_type','inst_type','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun'])
 	print('cos_sim_0.1', df.loc[:, 'cos_sim_0.1'].mean())
 	print('cos_sim_0.01', df.loc[:, 'cos_sim_0.01'].mean())
+	print('cos_sim_hun', df.loc[:, 'cos_sim_hun'].mean())
 	df.to_csv(save_fp, index=False)
 
 
@@ -126,7 +131,7 @@ def get_args():
 	parser.add_argument("--template_fp",type=str,default="config/template.yml")
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_dp",type=str,default="./model_eval")
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--use_cahced_ckpt",type=booltype,default=True)
 	parser.add_argument("--batch_size",type=int,default=32)
 	args = parser.parse_args()
 	return args
@@ -135,14 +140,13 @@ if __name__ == "__main__":
 
 	args = get_args()
  
-
 	os.makedirs(args.save_dp, exist_ok=True)	
 	model_save_dp = "./saved_ckpts/pcdl"
 
 	model_id_configs = [
-		['xtnks2k1','config/pcdl/d3_um_pcdl_pos_cv2.yml'],
-    	#['e36zaqef','config/pcdl/d3_um_pcdl_pos_cv1.yml'],
-      	#['d5tdvw8f','config/pcdl/d3_um_pcdl_pos_cv2.yml'],
+		['0kxgjooa','config/pcdl/d3_um_prec_pcdl_inchikey.yml'],
+		#['kn09eh7l','config/pcdl/d3_um_prec_pcdl_cv2.yml'],
+      	#['agap0bur','config/pcdl/d3_um_prec_pcdl_cv3.yml'],
         #['mb605bjp','config/pcdl/d3_um_pcdl_pos_cv3.yml'],
 		#['0tbh8pee','config/pcdl/d3_um_pcdl_pos_cv4.yml'],
 	]
