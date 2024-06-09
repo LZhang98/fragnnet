@@ -610,13 +610,12 @@ class SpectrumPL(pl.LightningModule):
 			spec_ints,
 			spec_batch_idxs
 		)
+		# normalize to mf1000
+		spec_ints = batched_mf1000_normalize(spec_ints, spec_batch_idxs)
 		# transform
 		spec_ints = self.ints_transform_func(spec_ints)
 		# renormalize
-		spec_ints = self.ints_normalize_func(
-			spec_ints,
-			spec_batch_idxs
-		)
+		spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
 		# log
 		spec_ints = safelog(spec_ints)
 		return spec_mzs, spec_ints, spec_batch_idxs
