@@ -1,4 +1,4 @@
-wandb_name: d3_um_prec_pcdl_inchikey_reverse
+wandb_name: d3_um_prec_pcdl_inchikey_nl
 wandb_tags:
 - um
 - d3
@@ -43,7 +43,8 @@ spec_params:
   prec_types:
     - "[M+H]+"
     - "[M+H]+_NL"
-    #- "[M-H]-"
+    - "[M-H]-"
+    - "[M-H]-_NL"
   inst_type: True
   inst_types:
     - "QTOF"
