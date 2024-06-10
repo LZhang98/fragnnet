@@ -3,7 +3,7 @@ project: frag-gnn
 program: /h/adamo/frag-gnn/scripts/run_wandb_sweep.py
 method: random
 name: neims_sweep
-description: Optimize NEIMS hyperparameters at 0.01 Da
+description: Optimize NEIMS hyperparameters at 0.01 Da (post-untransform bug)
 metric:
   goal: maximize
   name: val_cos_sim_0.01_best/mean
@@ -21,10 +21,14 @@ parameters:
     values: [0., 0.0000001, 0.000001]
   train_batch_size:
     values: [32, 64, 128, 256]
-  # neims-specific
+  ints_transform:
+    values: ["sqrt", "log10t3", "none"]
+  # mlp-specific
   mlp_hidden_size:
     values: [256, 512, 1024]
   mlp_dropout:
-    values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    values: [0.0, 0.1, 0.2, 0.3, 0.4]
   mlp_num_layers:
     values: [1, 2, 3, 4, 5]
+  ff_prec_mz_offset:
+    values: [5, 50, 500]
