@@ -25,6 +25,7 @@ wandb_tags:
 # data stuff
 spec_fp: data/proc/pcdl/spec_df.pkl
 mol_fp: data/proc/pcdl/mol_df.pkl
+
 split_dp: data/split/pcdl_pos/cv_3
 frag_dp: data/frag/pcdl_d3_h4/dags
 frag_params:
