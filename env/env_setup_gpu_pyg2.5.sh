@@ -18,9 +18,6 @@ pip install cysignals
 pip install pandas
 pip install networkx
 pip install wandb
-# pip install tqdm
-# pip install scipy
-# pip install joblib
 pip install matplotlib
 pip install pytest
 pip install CairoSVG
@@ -28,5 +25,6 @@ pip install lightning==2.1.2
 pip install dgl==1.0.4 -f https://data.dgl.ai/wheels/cu118/repo.html
 pip install omegaconf
 pip install pyteomics
+pip install notebook
 
 pip install -I -e .

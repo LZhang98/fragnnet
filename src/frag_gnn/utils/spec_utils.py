@@ -577,7 +577,15 @@ def batched_l1_normalize(ints, batch_idxs):
 	)
 	return ints
 
-def batched_mf100_normalize(ints, batch_idxs):
+def batched_l2_normalize(ints, batch_idxs):
+
+	ints = scatter_l2normalize(
+		ints,
+		batch_idxs
+	)
+	return ints
+
+def batched_mf1000_normalize(ints, batch_idxs):
 
 	max_ints = scatter_reduce(
 		ints,
