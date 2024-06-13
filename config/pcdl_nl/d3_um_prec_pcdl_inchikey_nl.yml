@@ -23,8 +23,8 @@ wandb_tags:
 - prec
 
 # data stuff
-spec_fp: data/proc/pcdl/spec_df.pkl
-mol_fp: data/proc/pcdl/mol_df.pkl
+spec_fp: data/proc/pcdl_nl/spec_df.pkl
+mol_fp: data/proc/pcdl_nl/mol_df.pkl
 split_dp: data/split/pcdl_nl
 frag_dp: data/frag/pcdl_d3_h4/dags
 frag_params:
