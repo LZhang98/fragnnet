@@ -73,7 +73,6 @@ def run_models(ckpt_fp,
 	ds = model_ds_cls(split='test', **config_d)
 	print(ds.idx_to_inst_type)
 	print(ds.idx_to_prec_type)
-	print(config_d[''])
 	dl = init_dataloader(ds, config_d)
  
 	# load models
@@ -163,7 +162,7 @@ def get_args():
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['jlm0qk02'])
+	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['kdh1fc8x'])
  
 	args = parser.parse_args()
 	return args
