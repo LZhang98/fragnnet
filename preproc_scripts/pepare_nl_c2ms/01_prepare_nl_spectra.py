@@ -33,22 +33,31 @@ if __name__ == "__main__":
 	extended_spectra_df = pd.concat([spec_df, nl_spec_df])
 	extended_spectra_df.reset_index(inplace=True,drop=True)
 	extended_spectra_df['spec_id'] = extended_spectra_df.index
-	
-	src_split_dir = "./data/split/pcdl"
-	dst_split_dir = "./data/split/pcdl_nl"
-
-	train_ids_df = pd.read_csv(src_split_dir + "/train_ids.csv")
-	val_ids_df = pd.read_csv(src_split_dir + "/val_ids.csv")
-	test_ids_df = pd.read_csv(src_split_dir + "/test_ids.csv")
-
 	extended_spectra_df.to_pickle('./data/proc/pcdl_nl/spec_df.pkl')
-	
-	ext_train_ids_df = extended_spectra_df[extended_spectra_df['mol_id'].isin(train_ids_df['mol_id'].tolist())][['spec_id','mol_id','group_id']]
-	ext_val_ids_df = extended_spectra_df[extended_spectra_df['mol_id'].isin(val_ids_df['mol_id'].tolist())][['spec_id','mol_id','group_id']]
-	ext_test_ids_df = extended_spectra_df[extended_spectra_df['mol_id'].isin(test_ids_df['mol_id'].tolist())][['spec_id','mol_id','group_id']]
-	
-	ext_train_ids_df.to_csv(dst_split_dir + "/train_ids.csv",index=False)
-	ext_val_ids_df.to_csv(dst_split_dir + "/val_ids.csv",index=False)
-	ext_test_ids_df.to_csv(dst_split_dir + "/test_ids.csv",index=False)
 
-	#print(train_ids)
+	src_dst_list = [
+		["./data/split/pcdl", "./data/split/pcdl_nl"],
+		["./data/split/pcdl/cv0", "./data/split/pcdl_nl/cv0"],
+		["./data/split/pcdl/cv1", "./data/split/pcdl_nl/cv1"],
+		["./data/split/pcdl/cv2", "./data/split/pcdl_nl/cv2"],
+		["./data/split/pcdl/cv3", "./data/split/pcdl_nl/cv3"],
+		["./data/split/pcdl/cv4", "./data/split/pcdl_nl/cv4"],
+	]
+	for src_split_dir, dst_split_dir in src_dst_list:
+		src_split_dir = "./data/split/pcdl"
+		dst_split_dir = "./data/split/pcdl_nl"
+
+		train_ids_df = pd.read_csv(src_split_dir + "/train_ids.csv")
+		val_ids_df = pd.read_csv(src_split_dir + "/val_ids.csv")
+		test_ids_df = pd.read_csv(src_split_dir + "/test_ids.csv")
+
+		
+		ext_train_ids_df = extended_spectra_df[extended_spectra_df['mol_id'].isin(train_ids_df['mol_id'].tolist())][['spec_id','mol_id','group_id']]
+		ext_val_ids_df = extended_spectra_df[extended_spectra_df['mol_id'].isin(val_ids_df['mol_id'].tolist())][['spec_id','mol_id','group_id']]
+		ext_test_ids_df = extended_spectra_df[extended_spectra_df['mol_id'].isin(test_ids_df['mol_id'].tolist())][['spec_id','mol_id','group_id']]
+		
+		ext_train_ids_df.to_csv(dst_split_dir + "/train_ids.csv",index=False)
+		ext_val_ids_df.to_csv(dst_split_dir + "/val_ids.csv",index=False)
+		ext_test_ids_df.to_csv(dst_split_dir + "/test_ids.csv",index=False)
+
+		#print(train_ids)
