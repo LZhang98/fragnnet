@@ -48,7 +48,7 @@ if __name__ == "__main__":
 	ext_test_ids_df = extended_spectra_df[extended_spectra_df['mol_id'].isin(test_ids_df['mol_id'].tolist())][['spec_id','mol_id','group_id']]
 	
 	ext_train_ids_df.to_csv(dst_split_dir + "/train_ids.csv",index=False)
-	ext_train_ids_df.to_csv(dst_split_dir + "/val_ids.csv",index=False)
-	ext_train_ids_df.to_csv(dst_split_dir + "/test_ids.csv",index=False)
+	ext_val_ids_df.to_csv(dst_split_dir + "/val_ids.csv",index=False)
+	ext_test_ids_df.to_csv(dst_split_dir + "/test_ids.csv",index=False)
 
 	#print(train_ids)
