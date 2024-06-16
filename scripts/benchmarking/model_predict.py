@@ -1,5 +1,6 @@
 
 import argparse
+import tempfile
 import torch as th
 from tqdm import tqdm
 
@@ -96,32 +97,32 @@ def run_models(ckpt_fp,
 	config_d['frag_params']['preprocess'] = True
 
 	if model_cls == FragGNNPL:
-			with tempfile.TemporaryDirectory() as frag_dp:
-		frag_compressed = False
-		config_d['frag_dp'] = frag_dp
-		config_d['frag_params']['compressed'] = frag_compressed
-		dag_feat_inputs_l = []
-		save_dag= False
-		for _, row in tqdm(mol_df.iterrows(), total=len(mol_df)):
-			dag_feat_inputs_l.append([
-									row['mol'],
-									row['mol_id'], 
-									config_d['num_depth'] - 1, #args.max_depth,
-									True, # h_prior
-									config_d['num_hs'], #args.max_h_transfer,
-									150, #args.max_time,
-									False, #args.isotopes, 
-									False, #nb_isomorphic,
-									-1,
-									frag_dp,
-									False, #args.allow_cached
-									frag_compressed, #compressed
-									save_dag
-									])
-		print(f"> run frag gen")
-		frag_results = data_utils.par_apply(iter(dag_feat_inputs_l),frag_utils.timed_get_dags,True, return_as_generator=True)
-		for res in tqdm(frag_results, total = len(dag_feat_inputs_l), desc = "Compute Frags"):
-			continue
+		with tempfile.TemporaryDirectory() as frag_dp:
+			frag_compressed = False
+			config_d['frag_dp'] = frag_dp
+			config_d['frag_params']['compressed'] = frag_compressed
+			dag_feat_inputs_l = []
+			save_dag= False
+			for _, row in tqdm(mol_df.iterrows(), total=len(mol_df)):
+				dag_feat_inputs_l.append([
+										row['mol'],
+										row['mol_id'], 
+										config_d['num_depth'] - 1, #args.max_depth,
+										True, # h_prior
+										config_d['num_hs'], #args.max_h_transfer,
+										150, #args.max_time,
+										False, #args.isotopes, 
+										False, #nb_isomorphic,
+										-1,
+										frag_dp,
+										False, #args.allow_cached
+										frag_compressed, #compressed
+										save_dag
+										])
+			print(f"> run frag gen")
+			frag_results = data_utils.par_apply(iter(dag_feat_inputs_l),frag_utils.timed_get_dags,True, return_as_generator=True)
+			for res in tqdm(frag_results, total = len(dag_feat_inputs_l), desc = "Compute Frags"):
+				continue
 
 	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
 	model.eval()

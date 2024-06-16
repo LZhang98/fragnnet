@@ -36,7 +36,6 @@ def run_models(ckpt_fp,
 				 custom_fp = None,
 				 device = None,
 				 batch_size = 32,
-
 				 ):
 
 	# load configs
@@ -68,6 +67,9 @@ def run_models(ckpt_fp,
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 	model_ds_cls = model_type_ds_cls[model_type]
+	print(f"> mol_fp {config_d['mol_fp']}")
+	print(f"> spec_fp {config_d['spec_fp']}")
+	print(f"> frag_dp {config_d['frag_dp']}")
 	print(f"> split_dp {config_d['split_dp']}")
 
 	ds = model_ds_cls(split='test', **config_d)
@@ -162,7 +164,7 @@ def get_args():
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['kdh1fc8x'])
+	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['bzm1mv0p'])
  
 	args = parser.parse_args()
 	return args
