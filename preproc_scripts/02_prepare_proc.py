@@ -202,8 +202,6 @@ if __name__ == "__main__":
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
-		if ann_df is not None:
-			ann_df.to_pickle(ann_df_fp)
 		for k, v in debug_dfs.items():
 			v.to_pickle(os.path.join(flags.proc_dp,f"{k}.pkl"))
 		
