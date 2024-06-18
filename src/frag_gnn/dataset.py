@@ -104,7 +104,6 @@ class BaseDataset(Dataset):
 		# covert ace and nce if there is data
 		spec_df.loc[:,"ace"] = par_apply_df_rows(spec_df, fill_missing_ace)
 		spec_df.loc[:,"nce"] = par_apply_df_rows(spec_df, fill_missing_nce)
-		
 		# reset indices
 		spec_df = spec_df.reset_index(drop=True)
 		mol_df = mol_df.reset_index(drop=True)

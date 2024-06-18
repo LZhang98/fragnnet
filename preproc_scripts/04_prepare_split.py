@@ -21,15 +21,14 @@ def make_splits(args):
 		spec_df,
 		mol_df,
 		dsets=dsets,
-		prec_types=args.prec_types if args.prec_types != 'Any' else None,
+		prec_types=args.prec_types if args.prec_types != 'any' else None,
 		max_peak_mz=args.max_peak_mz,
 		max_prec_mz=args.max_prec_mz,
 		elements=args.elements,
-		frag_modes=args.frag_modes if args.frag_modes != 'Any' else None,
-		ion_modes=args.ion_modes if args.ion_modes != 'Any' else None,
-		inst_types=args.inst_types if args.inst_types != 'Any' else None,
-		require_ace=args.require_ace,
-		require_nce=args.require_nce
+		frag_modes=args.frag_modes if args.frag_modes != 'any' else None,
+		ion_modes=args.ion_modes if args.ion_modes != 'any' else None,
+		inst_types=args.inst_types if args.inst_types != 'any' else None,
+		ces = args.ces
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
 	spec_df = f_spec_df
@@ -268,12 +267,11 @@ if __name__ == "__main__":
 	parser.add_argument("--max_num_dag_edges",type=int,default=250000)
 	parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",nargs="+",default="Any")
-	parser.add_argument("--inst_types",nargs="+",default="Any")
-	parser.add_argument("--frag_modes",nargs="+",default="Any")
-	parser.add_argument("--ion_modes",nargs="+",default="Any")
-	parser.add_argument("--require_nce",type=booltype,default=True)
-	parser.add_argument("--require_ace",type=booltype,default=False)
+	parser.add_argument("--prec_types",nargs="+",default="any")
+	parser.add_argument("--inst_types",nargs="+",default="any")
+	parser.add_argument("--frag_modes",nargs="+",default="any")
+	parser.add_argument("--ion_modes",nargs="+",default="any")
+	parser.add_argument('--ces', nargs='?', default = "any", choices=['nce', 'ace', 'nce_or_ace', "any"])
 
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=420420)

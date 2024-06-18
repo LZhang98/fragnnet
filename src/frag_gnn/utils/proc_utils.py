@@ -29,8 +29,8 @@ def filter_spec_mol(
   		inst_types:list = None,
     	frag_modes:list = None,
      	ion_modes:list = None,
-      	require_ace:bool = False,
-        require_nce:bool = False):
+		ces:str = None):
+	
 	"""
 	The purpose of this filtering is to prevent errors
 	"""
@@ -59,17 +59,23 @@ def filter_spec_mol(
 		masks.append(frag_mode_mask)
   
 	# ce filter
-	if require_ace:
+	assert ces in ["ace", "nce", "ace_or_nce", None], ces
+	if ces == "ace":
 		print(f">> require ace")
 		ace_mask = (~spec_df["ace"].isna())
 		print(f">> ace filter: {ace_mask.mean()}")
 		masks.append(ace_mask)
-	if require_nce:
+	if ces == "nce":
 		print(f">> require nce")
 		nce_mask = (~spec_df["nce"].isna())
 		print(f">> nce filter: {nce_mask.mean()}")
 		masks.append(nce_mask)
- 
+	elif ces == "ace_or_nce":
+		print(f">> require ace or nce")
+		mask = (~spec_df["nce"].isna() or ~spec_df["ace"].isna())
+		print(f">> ace_or_nce filter: {mask.mean()}")
+		masks.append(mask)
+		
 	# ion mode
 	if ion_modes is not None:
 		print(f">> ion mode filter: {ion_modes}")

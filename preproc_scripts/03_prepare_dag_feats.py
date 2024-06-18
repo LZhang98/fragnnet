@@ -65,11 +65,11 @@ def main(args):
 		mol_df,
 		elements=elements,
 		dsets=dsets,
-		prec_types=args.prec_types!= 'Any' else None,
+		prec_types=args.prec_types!= 'any' else None,
 		num_entries=args.num_entries,
-  		frag_modes=args.frag_modes if args.frag_modes != 'Any' else None,
-    	ion_modes=args.ion_modes if args.ion_modes != 'Any' else None,
-		inst_types=args.inst_types if args.inst_types != 'Any' else None,)
+  		frag_modes=args.frag_modes if args.frag_modes != 'any' else None,
+    	ion_modes=args.ion_modes if args.ion_modes != 'any' else None,
+		inst_types=args.inst_types if args.inst_types != 'any' else None,)
  
 	m_spec_df = merge_spec_df(spec_df)
 
@@ -324,10 +324,10 @@ if __name__ == "__main__":
 	parser.add_argument("--wandb_run_name",type=str,required=True)
 	parser.add_argument("--save_dag",type=booltype,default=True)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",nargs="+",default='Any')
-	parser.add_argument("--inst_types",nargs="+",default='Any')
-	parser.add_argument("--frag_modes",nargs="+",default='Any')
-	parser.add_argument("--ion_modes",nargs="+",default='Any')
+	parser.add_argument("--prec_types",nargs="+",default='any')
+	parser.add_argument("--inst_types",nargs="+",default='any')
+	parser.add_argument("--frag_modes",nargs="+",default='any')
+	parser.add_argument("--ion_modes",nargs="+",default='any')
 	parse_formula
 	args = parser.parse_args()
 
