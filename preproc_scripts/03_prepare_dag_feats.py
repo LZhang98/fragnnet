@@ -36,7 +36,7 @@ def main(args):
 
 	assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
 
-	allowed_elements = args.allowed_elements
+	elements = args.elements
 	dsets = args.dsets
 	# init wandb
 	wandb_flag = args.wandb_mode != "off"
@@ -63,13 +63,13 @@ def main(args):
 	spec_df, mol_df = filter_spec_mol(
 		spec_df,
 		mol_df,
-		allowed_elements=allowed_elements,
-		allowed_dsets=dsets,
-		allowed_prec_types=args.allowed_prec_types,
+		elements=elements,
+		dsets=dsets,
+		prec_types=args.prec_types!= 'Any' else None,
 		num_entries=args.num_entries,
-  		allowed_frag_modes=args.allowed_frag_modes if args.allowed_frag_modes != 'Any' else None,
-    	allowed_ion_modes=args.allowed_ion_modes if args.allowed_ion_modes != 'Any' else None,
-		allowed_inst_types=args.allowed_inst_types if args.allowed_inst_types != 'Any' else None,)
+  		frag_modes=args.frag_modes if args.frag_modes != 'Any' else None,
+    	ion_modes=args.ion_modes if args.ion_modes != 'Any' else None,
+		inst_types=args.inst_types if args.inst_types != 'Any' else None,)
  
 	m_spec_df = merge_spec_df(spec_df)
 
@@ -323,11 +323,11 @@ if __name__ == "__main__":
 	parser.add_argument("--compress_dags",type=booltype,default=True)
 	parser.add_argument("--wandb_run_name",type=str,required=True)
 	parser.add_argument("--save_dag",type=booltype,default=True)
-	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--allowed_prec_types",nargs="+",default=["[M+H]+"])
-	parser.add_argument("--allowed_inst_types",nargs="+",default='Any')
-	parser.add_argument("--allowed_frag_modes",nargs="+",default='Any')
-	parser.add_argument("--allowed_ion_modes",nargs="+",default='Any')
+	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
+	parser.add_argument("--prec_types",nargs="+",default='Any')
+	parser.add_argument("--inst_types",nargs="+",default='Any')
+	parser.add_argument("--frag_modes",nargs="+",default='Any')
+	parser.add_argument("--ion_modes",nargs="+",default='Any')
 	parser.add_argument("--require_ce",type=booltype,default=False)
 	parse_formula
 	args = parser.parse_args()

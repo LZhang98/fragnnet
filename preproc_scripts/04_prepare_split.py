@@ -20,14 +20,14 @@ def make_splits(args):
 	f_spec_df, f_mol_df = filter_spec_mol(
 		spec_df,
 		mol_df,
-		allowed_dsets=dsets,
-		allowed_prec_types=args.allowed_prec_types,
+		dsets=dsets,
+		prec_types=args.prec_types if args.prec_types != 'Any' else None,
 		max_peak_mz=args.max_peak_mz,
 		max_prec_mz=args.max_prec_mz,
-		allowed_elements=args.allowed_elements,
-		allowed_frag_modes=args.allowed_frag_modes,
-		allowed_ion_modes=args.allowed_ion_modes,
-		allowed_inst_types=args.allowed_inst_types,
+		elements=args.elements,
+		frag_modes=args.frag_modes if args.frag_modes != 'Any' else None,
+		ion_modes=args.ion_modes if args.ion_modes != 'Any' else None,
+		inst_types=args.inst_types if args.inst_types != 'Any' else None,
 		require_ace=args.require_ace,
 		require_nce=args.require_nce
 	)
@@ -276,11 +276,11 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp",type=str,required=True)
 	parser.add_argument("--frag_dp",type=str,required=True)
 	parser.add_argument("--split_dp",type=str,required=True)
-	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--allowed_prec_types",nargs="+",default=["[M+H]+"])
-	parser.add_argument("--allowed_inst_types",nargs="+",default=None)
-	parser.add_argument("--allowed_frag_modes",nargs="+",default=None)
-	parser.add_argument("--allowed_ion_modes",nargs="+",default=None)
+	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
+	parser.add_argument("--prec_types",nargs="+",default="Any")
+	parser.add_argument("--inst_types",nargs="+",default="Any")
+	parser.add_argument("--frag_modes",nargs="+",default="Any")
+	parser.add_argument("--ion_modes",nargs="+",default="Any")
 	parser.add_argument("--require_nce",type=booltype,default=True)
 	parser.add_argument("--require_ace",type=booltype,default=False)
 	args = parser.parse_args()

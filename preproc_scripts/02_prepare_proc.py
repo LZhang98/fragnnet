@@ -136,10 +136,6 @@ def preprocess_spec(spec_df):
 	spec_df = spec_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner")
 	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
 	spec_df = spec_df.drop(columns=["exact_mw"])
-
-	# covert ace and nce if there is data
-	spec_df.loc[:,"ace"] = par_apply_df_rows(spec_df,data_utils.fill_missing_ace)
-	spec_df.loc[:,"nce"] = par_apply_df_rows(spec_df,data_utils.fill_missing_nce)
  
 	# extract annotation info
 	ann_df = ann_df.merge(spec_df[["dset_spec_id","spec_id","prec_type"]],on="dset_spec_id",how="inner")
@@ -179,7 +175,6 @@ if __name__ == "__main__":
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--ow_spec_mol", type=booltype, default=False)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist20_hr","mona23"])
-	parser.add_argument("--replace_nan_unknown", type=booltype, default=False)
 	flags = parser.parse_args()
 
 	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
@@ -204,8 +199,6 @@ if __name__ == "__main__":
 
 		spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df)
 
-		if flags.replace_nan_unknown:
-			spec_df["inst_type"] = spec_df["inst_type"].fillna('Unknown')
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)

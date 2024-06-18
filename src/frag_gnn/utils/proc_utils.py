@@ -6,31 +6,31 @@ from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
 
 
-def element_filter(formula,allowed_elements):
+def element_filter(formula,elements):
 	try:
 		element_counts = parse_formula(formula)
 	except ValueError as e:
 		return False
 	for k,v in element_counts.items():
-		if v > 0 and k not in allowed_elements:
+		if v > 0 and k not in elements:
 			return False
 	return True
 
 def filter_spec_mol(
 		spec_df,
 		mol_df,
-		allowed_elements=None,
-		allowed_dsets=None,
+		elements=None,
+		dsets=None,
 		max_peak_mz=None,
 		max_prec_mz=None,
 		min_prec_mz=None,
-		allowed_prec_types:list = None,
+		prec_types:list = None,
 		num_entries=-1,
-  		allowed_inst_types:list = None,
-    	allowed_frag_modes:list = None,
-     	allowed_ion_modes:list = None,
+  		inst_types:list = None,
+    	frag_modes:list = None,
+     	ion_modes:list = None,
       	require_ace:bool = False,
-        require_nce:bool = False,):
+        require_nce:bool = False):
 	"""
 	The purpose of this filtering is to prevent errors
 	"""
@@ -38,23 +38,23 @@ def filter_spec_mol(
  
 	## spectrum criteria (TODO remove this)
 	# dataset mask
-	if allowed_dsets is not None:
-		print(f">> dsets filter: {allowed_dsets}")
-		dset_mask = spec_df["dset"].isin(allowed_dsets)
+	if dsets is not None:
+		print(f">> dsets filter: {dsets}")
+		dset_mask = spec_df["dset"].isin(dsets)
 		print(f">> dsets filter mean: {dset_mask.mean()}")
 		masks.append(dset_mask)
 
 	# instrument type
-	if allowed_inst_types is not None:
-		print(f">> inst type: {allowed_inst_types}")
-		inst_type_mask = spec_df["inst_type"].isin(allowed_inst_types)
+	if inst_types is not None:
+		print(f">> inst type: {inst_types}")
+		inst_type_mask = spec_df["inst_type"].isin(inst_types)
 		print(f">> inst type filter mean: {inst_type_mask.mean()}")
 		masks.append(inst_type_mask)
   
 	# frag mode
-	if allowed_frag_modes is not None:
-		print(f">> frag mode filter: {allowed_frag_modes}")
-		frag_mode_mask = spec_df["frag_mode"].isin(allowed_frag_modes)
+	if frag_modes is not None:
+		print(f">> frag mode filter: {frag_modes}")
+		frag_mode_mask = spec_df["frag_mode"].isin(frag_modes)
 		print(f">> frag mode filter mean: {frag_mode_mask.mean()}")
 		masks.append(frag_mode_mask)
   
@@ -71,16 +71,16 @@ def filter_spec_mol(
 		masks.append(nce_mask)
  
 	# ion mode
-	if allowed_ion_modes is not None:
-		print(f">> ion mode filter: {allowed_ion_modes}")
-		ion_mode_mask = spec_df["ion_mode"].isin(allowed_ion_modes)
+	if ion_modes is not None:
+		print(f">> ion mode filter: {ion_modes}")
+		ion_mode_mask = spec_df["ion_mode"].isin(ion_modes)
 		print(f">> ion mode filter mean: {ion_mode_mask.mean()}")
 		masks.append(ion_mode_mask)
   
 	# precursor type
-	if allowed_prec_types is not None:
-		print(f">> prec type filter: {allowed_prec_types}")
-		prec_type_mask = spec_df["prec_type"].isin(allowed_prec_types)
+	if prec_types is not None:
+		print(f">> prec type filter: {prec_types}")
+		prec_type_mask = spec_df["prec_type"].isin(prec_types)
 		print(f">> prec type filter mean: {prec_type_mask.mean()}")
 		masks.append(prec_type_mask)
 
@@ -124,8 +124,8 @@ def filter_spec_mol(
 	print(f">> neutral: {neutral_mask.mean()}")
 	masks.append(neutral_mask)
 	# element composition
-	if allowed_elements is not None:
-		element_ids = mol_df[mol_df["formula"].apply(lambda formula: element_filter(formula,allowed_elements))]["mol_id"]
+	if elements is not None:
+		element_ids = mol_df[mol_df["formula"].apply(lambda formula: element_filter(formula,elements))]["mol_id"]
 		element_mask = spec_df["mol_id"].isin(element_ids)
 		print(f">> element: {element_mask.mean()}")
 		masks.append(element_mask)
