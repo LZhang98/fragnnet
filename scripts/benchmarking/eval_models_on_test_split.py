@@ -164,7 +164,7 @@ def get_args():
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['bzm1mv0p'])
+	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['0kxgjooa'])
  
 	args = parser.parse_args()
 	return args
