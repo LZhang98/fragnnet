@@ -267,7 +267,14 @@ if __name__ == "__main__":
 	parser.add_argument("--max_num_dag_nodes",type=int,default=100000)
 	parser.add_argument("--max_num_dag_edges",type=int,default=250000)
 	parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
- 
+	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
+	parser.add_argument("--prec_types",nargs="+",default="Any")
+	parser.add_argument("--inst_types",nargs="+",default="Any")
+	parser.add_argument("--frag_modes",nargs="+",default="Any")
+	parser.add_argument("--ion_modes",nargs="+",default="Any")
+	parser.add_argument("--require_nce",type=booltype,default=True)
+	parser.add_argument("--require_ace",type=booltype,default=False)
+
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=420420)
 	parser.add_argument("--total_frac",type=float,default=1.0)
@@ -276,13 +283,6 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp",type=str,required=True)
 	parser.add_argument("--frag_dp",type=str,required=True)
 	parser.add_argument("--split_dp",type=str,required=True)
-	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",nargs="+",default="Any")
-	parser.add_argument("--inst_types",nargs="+",default="Any")
-	parser.add_argument("--frag_modes",nargs="+",default="Any")
-	parser.add_argument("--ion_modes",nargs="+",default="Any")
-	parser.add_argument("--require_nce",type=booltype,default=True)
-	parser.add_argument("--require_ace",type=booltype,default=False)
 	args = parser.parse_args()
 
 	make_splits(args)

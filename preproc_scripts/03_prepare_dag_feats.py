@@ -328,7 +328,6 @@ if __name__ == "__main__":
 	parser.add_argument("--inst_types",nargs="+",default='Any')
 	parser.add_argument("--frag_modes",nargs="+",default='Any')
 	parser.add_argument("--ion_modes",nargs="+",default='Any')
-	parser.add_argument("--require_ce",type=booltype,default=False)
 	parse_formula
 	args = parser.parse_args()
 
