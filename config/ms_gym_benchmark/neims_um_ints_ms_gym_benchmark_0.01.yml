@@ -1,0 +1,108 @@
+wandb_name: nemis_um_inst_ms_gym_benchmark_0.01
+wandb_group: ms_gym_benchmark
+wandb_tags:
+- um
+- nemis
+- wr00
+- inchikey
+- new_proc
+- new_metrics
+- nodemlp
+- ce_embed
+- unmerged
+- oos_multiple_1
+- gaussian_renormalize
+- b256x1
+- no_auxiliary_scores
+- vectorized_loss
+- lb16
+- preload
+- preprocess
+- 2y43u8gx
+
+# data stuff
+spec_fp: data/proc/ms_gym/spec_df.pkl
+mol_fp: data/proc/ms_gym/mol_df.pkl
+split_dp: data/split/ms_gym_d3_h4_benchmark
+frag_dp: data/frag/ms_gym_d3_h4/dags
+frag_params:
+  pyg_edge_feats: []
+  pyg_edges: False
+  pyg_bigraph: False
+  preload: True
+  preprocess: True
+spec_params:
+  merge: False
+  nce: True
+  ace: False
+  merge_keep_ces: False
+  preprocess: True
+  prec_type: False
+  prec_types:
+    - "[M+H]+"
+  inst_type: True
+  inst_types:
+    - "FT"
+    - "QTOF"
+mol_params:
+  preprocess: True
+  fingerprint_morgan: True
+  fingerprint_rdkit: True
+  fingerprint_maccs: True
+  fingerprint: True
+  pyg: False
+
+# model stuff
+model_type: neims
+mlp_hidden_size: 1024
+mlp_dropout: 0.0
+mlp_num_layers: 5
+mlp_use_residuals: True
+ff_prec_mz_offset: 5
+ff_bidirectional: True
+ff_output_map_size: 256
+ce_insert_type: embed
+ce_insert_location: mlp
+ce_insert_merge: False
+ce_insert_size: 24
+inst_insert_location: mlp
+inst_insert_size: 8
+mz_max: 1005.0
+mz_bin_res: 0.01
+sum_ints: True
+
+# loss stuff
+loss_type: cosine_distance
+sparse_cosine_similarity: True
+ints_transform: sqrt
+train_sample_weight: none
+eval_sample_weight: none
+
+# optimization stuff
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.0001563
+weight_decay: 0.0000001
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: True
+lr_decay_rate: 0.9866
+lr_warmup_steps: 1000
+lr_decay_steps: 5000
+debug_overfit: False
+upload_checkpoints: True
+checkpoint_metric: val_cos_sim_0.1_epoch/mean
+checkpoint_metric_mode: max
+auxiliary_scores:
+- cos_sim
+eval_mz_bin_res:
+- 0.1
+precision: 32
+use_tensor_float32: True
+automatic_optimization: True
+compile: False
+mp_sharing_strategy: file_system

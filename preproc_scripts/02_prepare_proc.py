@@ -13,7 +13,6 @@ import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_series, seq_apply_df_rows
 from frag_gnn.utils.misc_utils import list_str2float, booltype
 
-
 def load_df(df_dp,dsets,num_entries):
 	
 	dfs = []
@@ -27,8 +26,9 @@ def load_df(df_dp,dsets,num_entries):
 		all_df = pd.concat(dfs,ignore_index=True)
 	else:
 		all_df = dfs[0]
+  
+	all_df = all_df.astype({"prec_mz":float,"exact_mass":float})
 	all_df = all_df.reset_index(drop=True)
-
 	return all_df
 
 def preprocess_spec(spec_df):
@@ -137,6 +137,10 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"prec_mz"] = par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
 	spec_df = spec_df.drop(columns=["exact_mw"])
 
+	# covert ace and nce if there is data
+	spec_df.loc[:,"ace"] = par_apply_df_rows(spec_df,data_utils.fill_missing_ace)
+	spec_df.loc[:,"nce"] = par_apply_df_rows(spec_df,data_utils.fill_missing_nce)
+ 
 	# extract annotation info
 	ann_df = ann_df.merge(spec_df[["dset_spec_id","spec_id","prec_type"]],on="dset_spec_id",how="inner")
 	ann_df = ann_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner")
@@ -149,11 +153,11 @@ def preprocess_spec(spec_df):
 	ann_df = ann_df.dropna(axis=0,how="any")
 	ann_df = ann_df[ann_df["ann_peak_mzs"].apply(len) > 0]
 	ann_df = ann_df.drop(columns=["notes","peaks"])
-
+	ann_df = ann_df.reset_index(drop=True)
+   
 	# reset indices
 	spec_df = spec_df.reset_index(drop=True)
 	mol_df = mol_df.reset_index(drop=True)
-	ann_df = ann_df.reset_index(drop=True)
 
 	debug_dfs = {
 		"no_mol_df": no_mol_df,
@@ -175,6 +179,7 @@ if __name__ == "__main__":
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--ow_spec_mol", type=booltype, default=False)
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist20_hr","mona23"])
+	parser.add_argument("--replace_nan_unknown", type=booltype, default=False)
 	flags = parser.parse_args()
 
 	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
@@ -192,7 +197,6 @@ if __name__ == "__main__":
 		ann_df = pd.read_pickle(ann_df_fp)
 
 	else:
-
 		print("> creating new spec_df, mol_df, ann_df")
 		assert os.path.isdir(flags.df_dp), flags.df_dp
 		os.makedirs(flags.proc_dp,exist_ok=True)
@@ -200,17 +204,19 @@ if __name__ == "__main__":
 
 		spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df)
 
+		if flags.replace_nan_unknown:
+			spec_df["inst_type"] = spec_df["inst_type"].fillna('Unknown')
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
-		ann_df.to_pickle(ann_df_fp)
+		if ann_df is not None:
+			ann_df.to_pickle(ann_df_fp)
 		for k, v in debug_dfs.items():
 			v.to_pickle(os.path.join(flags.proc_dp,f"{k}.pkl"))
-
-	print(spec_df.shape)
-	print(spec_df.isna().sum())
-	print(mol_df.shape)
-	print(mol_df.isna().sum())
-	print(ann_df.shape)
-	print(ann_df.isna().sum())
-
+		
+	print(f">spec_df {spec_df.shape}")
+	print(f">spec_df num nan: {spec_df.isna().sum()}")
+	print(f">mol_df {mol_df.shape}")
+	print(f">mol_df num nan:\n{mol_df.isna().sum()}")
+	print(f">ann_df {ann_df.shape}")
+	print(f">ann_df num nan: {ann_df.isna().sum()}")

@@ -11,10 +11,19 @@ PERIODIC_TABLE = Chem.GetPeriodicTable()
 ELECTRON_MASS = 0.00054858
 
 H_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("H")
+NA_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Na")
+N_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("N")
+O_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("O")
 PREC_TYPE_TO_MASS_DIFF = {
 	"[M+H]+": H_MASS - ELECTRON_MASS,
 	"[M-H]-": -H_MASS + ELECTRON_MASS,
-	"": 0.
+	"[M+Na]+": NA_MASS - ELECTRON_MASS,
+	"[M+NH4]+": N_MASS + 4*H_MASS - ELECTRON_MASS,
+	"[M-H2O+H]+": H_MASS - O_MASS - ELECTRON_MASS,
+	"[M]+": - ELECTRON_MASS,
+	"": 0.,
+	"[M+H]+_NL": -H_MASS + ELECTRON_MASS,
+	"[M-H]-_NL": H_MASS - ELECTRON_MASS,
 }
 NEUTRON_MASS = 1.008665
 

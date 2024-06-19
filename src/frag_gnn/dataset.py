@@ -10,14 +10,15 @@ from torch_geometric.data import Batch
 import sys
 from tqdm import tqdm
 from typing import Iterator, List
+import copy
 
 from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_graph, get_frag_graph
-from frag_gnn.utils.spec_utils import batch_func, prec_type_idx, prec_type_mass_diff
+from frag_gnn.utils.spec_utils import batch_func
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage
-from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 import frag_gnn.massformer.data_utils as mf_data_utils
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
 class BaseDataset(Dataset):
 
@@ -47,6 +48,8 @@ class BaseDataset(Dataset):
 		self.split_df = split_df
 		self.id_key = id_key
 		self._compute_counts()
+		self._setup_prec_type_to_idx()
+		self._setup_inst_type_to_idx()
 
 	@staticmethod
 	def _setup_dfs( 
@@ -71,7 +74,14 @@ class BaseDataset(Dataset):
 		spec_df = spec_df[spec_df["spec_id"].isin(split_df["spec_id"])]
 		# select molecules
 		mol_df = mol_df[mol_df["mol_id"].isin(split_df["mol_id"])]
-		assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
+  
+		mol_df_molid_set = set(mol_df["mol_id"].to_list())
+		spec_df_molid_set = set(spec_df["mol_id"].to_list())
+		mol_id_diff = spec_df_molid_set - mol_df_molid_set
+		#if len(mol_id_diff) > 0:
+		#	print(spec_df[spec_df['mol_id'].isin(list(mol_id_diff))])
+		assert len(mol_id_diff) == 0, len(mol_id_diff) 
+		#assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 		# merge spectra
 		um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
 		if spec_params["merge"]:
@@ -106,7 +116,7 @@ class BaseDataset(Dataset):
 
 		self.group_per_mol = self.spec_df[["mol_id","group_id"]].drop_duplicates().groupby("mol_id").size().to_dict()
 		if self.spec_params["merge"]:
-			self.spec_per_mol = {mol_id: 1 for mol_id in self.spec_df["mol_id"].unique()}
+			self.spec_per_mol = copy.deepcopy(self.group_per_mol)
 			self.spec_per_group = {group_id: 1 for group_id in self.spec_df["group_id"].unique()}
 		else:
 			self.spec_per_mol = self.spec_df[["mol_id","spec_id"]].drop_duplicates().groupby("mol_id").size().to_dict()
@@ -114,25 +124,29 @@ class BaseDataset(Dataset):
 
 	def get_group_mol_stats(self):
 
-		spec_per_group_stats = []
 		group_ids = []
-		spec_per_mol_stats = []
 		mol_ids = []
+		spec_per_group_stats = []
+		spec_per_mol_stats = []
+		group_per_mol_stats = []
 		for row_idx, row in self.spec_df.iterrows():
 			spec_entry = row
 			mol_id = spec_entry["mol_id"]
 			group_id = spec_entry["group_id"]
 			spec_per_group = self.spec_per_group[group_id]
 			spec_per_mol = self.spec_per_mol[mol_id]
+			group_per_mol = self.group_per_mol[mol_id]
 			group_ids.append(group_id)
 			spec_per_group_stats.append(spec_per_group)
 			mol_ids.append(mol_id)
 			spec_per_mol_stats.append(spec_per_mol)
+			group_per_mol_stats.append(group_per_mol)
 		group_ids = th.tensor(group_ids)
-		spec_per_group_stats = th.tensor(spec_per_group_stats)
 		mol_ids = th.tensor(mol_ids)
+		spec_per_group_stats = th.tensor(spec_per_group_stats)
 		spec_per_mol_stats = th.tensor(spec_per_mol_stats)
-		return group_ids, spec_per_group_stats, mol_ids, spec_per_mol_stats
+		group_per_mol_stats = th.tensor(group_per_mol_stats)
+		return group_ids, mol_ids, spec_per_group_stats, spec_per_mol_stats, group_per_mol_stats
 
 	@staticmethod
 	def get_data_dict_types():
@@ -164,6 +178,21 @@ class BaseDataset(Dataset):
 		assert mzs.shape[0] > 0
 		assert ints.shape[0] > 0
 		return mzs, ints
+	
+	def _setup_prec_type_to_idx(self):
+
+		prec_types = sorted(self.spec_params["prec_types"])
+		assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types), prec_types
+		self.prec_type_to_idx = {prec_type: idx for idx, prec_type in enumerate(prec_types)}
+		self.idx_to_prec_type = {idx: prec_type for idx, prec_type in enumerate(prec_types)}
+		self.num_prec_types = len(prec_types)
+
+	def _setup_inst_type_to_idx(self):
+
+		inst_types = sorted(self.spec_params["inst_types"])
+		self.inst_type_to_idx = {inst_type: idx for idx, inst_type in enumerate(inst_types)}
+		self.idx_to_inst_type = {idx: inst_type for idx, inst_type in enumerate(inst_types)}
+		self.num_inst_types = len(inst_types)
 
 	def _process_spec(self,spec_entry):
 
@@ -177,11 +206,15 @@ class BaseDataset(Dataset):
 		# metadata
 		if self.spec_params["prec_type"]:
 			prec_type = spec_entry["prec_type"]
-			prec_type = th.tensor([prec_type_idx(prec_type)],dtype=th.long)
+			prec_type = th.tensor([self.prec_type_to_idx[prec_type]],dtype=th.long)
 			spec_data["spec_prec_type"] = prec_type
+		if self.spec_params["inst_type"]:
+			inst_type = spec_entry["inst_type"]
+			inst_type = th.tensor([self.inst_type_to_idx[inst_type]],dtype=th.long)
+			spec_data["spec_inst_type"] = inst_type
 		if self.spec_params["prec_mass_diff"]:
 			prec_type = spec_entry["prec_type"]
-			mass_diff = th.tensor([prec_type_mass_diff(prec_type)],dtype=th.float)
+			mass_diff = th.tensor([PREC_TYPE_TO_MASS_DIFF[prec_type]],dtype=th.float)
 			spec_data["spec_prec_mass_diff"] = mass_diff
 		if self.spec_params["nce"]:
 			assert (not self.spec_params["merge"]) or self.spec_params["merge_keep_ces"]
@@ -838,14 +871,14 @@ def get_group_sampler(ds: SpecMolFragDataset, sampler_type: str, avg_per_group: 
 	Returns:
 		_type_: _description_
 	"""
-	group_ids, spec_per_group, mol_ids, spec_per_mol = ds.get_group_mol_stats()
+	group_ids, mol_ids, spec_per_group, spec_per_mol, group_per_mol = ds.get_group_mol_stats()
 
 	if sampler_type == "group":
 		sample_weights = 1.0 / spec_per_group
 	elif sampler_type  == "mol":
 		sample_weights = 1.0 / spec_per_mol
 	elif sampler_type  == "group_mol":
-		sample_weights = 1.0 / (spec_per_group * spec_per_mol)
+		sample_weights = 1.0 / (spec_per_group * group_per_mol)
 	else:
 		return None
 	

@@ -1,9 +1,14 @@
+
+import argparse
+
 from frag_gnn.utils.nn_utils import decompile_jit_ckpt
 
 if __name__ == "__main__":
-    
-    #decompile_jit_ckpt('saved_ckpts/icml_inchikey/massformer/massformer_inchikey.ckpt', 'saved_ckpts/icml_inchikey/massformer/massformer_inchikey_nocp.ckpt')
-    #decompile_jit_ckpt('saved_ckpts/icml_inchikey/neims/neims_inchikey.ckpt', 'saved_ckpts/icml_inchikey/neims/neims_inchikey_nocp.ckpt')
-    #decompile_jit_ckpt('saved_ckpts/icml_scaffold/massformer/massformer_scaffold.ckpt', 'saved_ckpts/icml_scaffold/massformer/massformer_scaffold_nocp.ckpt')
-    #decompile_jit_ckpt('saved_ckpts/icml_scaffold/neims/neims_scaffold.ckpt', 'saved_ckpts/icml_scaffold/neims/neims_scaffold_nocp.ckpt')
-    decompile_jit_ckpt('saved_ckpts/retrieval/massformer_v2_inchikey.ckpt', 'saved_ckpts/retrieval/massformer_v2_inchikey_nocp.ckpt')
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--ckpt_fp",type=str, default=None)
+	parser.add_argument("--np_ckpt_fp",type=str, default=None)
+	args = parser.parse_args()
+	
+	print(f"> input ckpt {args.ckpt_fp}")
+	print(f"> output ckpt {args.np_ckpt_fp}")
+	decompile_jit_ckpt(args.ckpt_fp, args.np_ckpt_fp)

@@ -8,6 +8,9 @@ wandb_tags:
 - new_proc
 - massformer
 - new_metrics
+- mz_bin_res_0,01
+- no_auxiliary_scores
+- preprocess
 
 # data stuff
 spec_fp: data/proc/nist20mona23v2/spec_df.pkl
@@ -50,7 +53,7 @@ sum_ints: True
 # loss stuff
 loss_type: cosine_distance
 sparse_cosine_similarity: True
-ints_transform: log10t3
+ints_transform: sqrt
 
 # optimization stuff
 train_batch_size: 128

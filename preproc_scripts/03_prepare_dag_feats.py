@@ -16,7 +16,7 @@ import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
-
+from frag_gnn.utils.frag_utils import timed_get_dags
 
 def print_and_log(name,series,wandb_flag,stats_d):
 
@@ -64,9 +64,13 @@ def main(args):
 		spec_df,
 		mol_df,
 		allowed_elements=allowed_elements,
-		dsets=dsets,
-		prec_types=["[M+H]+"],
-		num_entries=args.num_entries)
+		allowed_dsets=dsets,
+		allowed_prec_types=args.allowed_prec_types,
+		num_entries=args.num_entries,
+  		allowed_frag_modes=args.allowed_frag_modes if args.allowed_frag_modes != 'Any' else None,
+    	allowed_ion_modes=args.allowed_ion_modes if args.allowed_ion_modes != 'Any' else None,
+		allowed_inst_types=args.allowed_inst_types if args.allowed_inst_types != 'Any' else None,)
+ 
 	m_spec_df = merge_spec_df(spec_df)
 
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules") #, {len(m_spec_df)} merged spectra")
@@ -84,78 +88,13 @@ def main(args):
 	group_stats_fp = os.path.join(args.frag_dp,f"group_stats_df.pkl")
 	global_stats_fp = os.path.join(args.frag_dp,f"global_stats.json")
 
-	def timed_get_dags(mol, 
-			mol_id, 
-			max_depth,
-			h_prior,
-			max_h_transfer, 
-			max_time,
-			isotopes: bool,
-			nb_isomorphic: bool,
-			max_iterations: int,
-			output_dir: str, 
-			use_cached = True, 
-			compressed = False,
-			save_dag = True):
-		""" 
-		Args:
-			mol (_type_): _description_
-			mol_id (int): _description_
-
-			output_dir (str): _description_
-			compressed (bool, optional): _description_. Defaults to False.
-
-		Raises:
-			e: _description_
-
-		Returns:
-			_type_: _description_
-		"""
-		# TODO: get this out of the main() scope
-
-		output_file = frag_utils.get_frag_fp(mol_id, output_dir, compressed)
-
-		if os.path.exists(output_file) and use_cached:
-			dag_d = frag_utils.load_frag_d(mol_id, output_dir, compressed)
-		else:
-			dag_d = {}
-			try:
-				mol_d = frag_utils.extract_mol_info(mol)
-				# this maybe dangers in multi processing because of scopes
-				dag_d = frag_utils.compute_dags(
-					mol_d,
-					max_depth,
-					h_prior,
-					max_h_transfer, 
-					max_time, 
-					isotopes,
-					nb_isomorphic,
-					max_iterations
-				)
-			except KeyboardInterrupt as e:
-				# let these through
-				raise e
-			except Exception as e:
-				# don't retry, theres a bug
-				if type(mol) is not str:
-					mol = Chem.MolToSmiles(mol)
-				print(f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}",file=sys.stderr)
-				print("> Traceback",file=sys.stderr)
-				traceback.print_exc(file=sys.stderr)
-				dag_d = {}
-			else:
-				if save_dag:
-					frag_utils.save_frag_d(dag_d, mol_id, output_dir, compressed)
-				del dag_d["dag"]
-		return dag_d
-
-
 	def compute_spectra_stats(
 			peaks,
 			formula_peak_mzs,
 			formula_peak_probs,
 			idx_by_h_delta,
 			prec_mz,
+			prec_type,
 			tolerances:list, 
 			max_h_transfer:int):
 		"""_summary_
@@ -183,10 +122,10 @@ def main(args):
 				]
 				if 'ppm' in tolerance:
 					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
-						 prec_mz,h_transfer,tolerance=float(tolerance[:-3]),prec_type="[M+H]+",is_ppm=True)
+						 prec_mz,h_transfer,tolerance=float(tolerance[:-3]),prec_type=prec_type,is_ppm=True)
 				else:
 					result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
-						 prec_mz,h_transfer,tolerance=float(tolerance),prec_type="[M+H]+")
+						 prec_mz,h_transfer,tolerance=float(tolerance),prec_type=prec_type)
 				cols += keys
 				results.append(result)
 		result_series = pd.concat(results, axis=0)
@@ -213,14 +152,16 @@ def main(args):
 				args.compress_dags
 			]
 		)
-	tqdm_iter = tqdm(mol_input_rows,desc=pformat(timed_get_dags),total=len(mol_input_rows))
-	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
-	print("> Fragments Computed")
+  
+	print(f"> Running frag gen")
+	frag_results_gen = data_utils.par_apply(iter(mol_input_rows),frag_utils.timed_get_dags,True, return_as_generator=True)
+	frag_results = []
+	for fr in tqdm(frag_results_gen, total = len(mol_input_rows), desc = "Compute Frags"):
+		frag_results.append(fr)
 
-	#print(frag_results)
+	print("> Fragments Computed")
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
 	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
-	#frag_stats_df["dag"] = list(map(lambda x: x.pop("dag",np.nan),frag_results))
 	frag_stats_df["formula_peak_mzs"] = list(map(lambda x: x.pop("formula_peak_mzs",np.nan),frag_results))
 	frag_stats_df["formula_peak_probs"] = list(map(lambda x: x.pop("formula_peak_probs",np.nan),frag_results))
 	frag_stats_df["idx_to_formula"] = list(map(lambda x: x.pop("idx_to_formula",np.nan),frag_results))
@@ -235,7 +176,6 @@ def main(args):
 
 	frag_stats_d = {}
 	# count failures, then remove them
-	# print(frag_stats_df)
 	num_failures = frag_stats_df.isna().any(axis=1).sum()
 	frag_stats_d["total_num_failures"] = num_failures
 	print(f"> total num failures: {num_failures}")
@@ -305,7 +245,7 @@ def main(args):
 			mol_stats_fp = os.path.join(args.frag_dp,f"m_mol_stats_df.pkl")
 
 		# compute spectra stats
-		peak_spec_df = _spec_df[[spec_key,"mol_id","peaks","prec_mz"]].merge(frag_stats_df[id_cols+data_cols],on="mol_id",how="inner")
+		peak_spec_df = _spec_df[[spec_key,"mol_id","peaks","prec_mz","prec_type"]].merge(frag_stats_df[id_cols+data_cols],on="mol_id",how="inner")
 		assert peak_spec_df.shape[0] == peak_spec_df.drop_duplicates(subset=[spec_key,"mol_id"]).shape[0]
 
 		spectra_input_rows = []
@@ -313,11 +253,12 @@ def main(args):
 		for _, row in tqdm(peak_spec_df.iterrows(), total=peak_spec_df.shape[0], desc= "prepare spectra stats inputs"):
 			spectra_input_rows.append(
 				[
-					row['peaks'], 
+					row["peaks"], 
 					row["formula_peak_mzs"], 
-					row['formula_peak_probs'], 
-					row['idx_by_h_delta'], 
-					row['prec_mz'],
+					row["formula_peak_probs"], 
+					row["idx_by_h_delta"], 
+					row["prec_mz"],
+					row["prec_type"],
 					tolerances, 
 					args.max_h_transfer
 				]
@@ -368,20 +309,27 @@ if __name__ == "__main__":
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
-	parser.add_argument("--frag_dp",type=str,default="data/frag/d3_h4_isoTrue_v2")
-	parser.add_argument("--proc_dp",type=str,default="data/proc/nist")
+	parser.add_argument("--frag_dp",type=str,required=True)
+	parser.add_argument("--proc_dp",type=str,required=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
+	#parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
+	parser.add_argument("--nb_isomorphic",type=booltype,default=True)
 	parser.add_argument("--max_iterations",type=int,default=3)
-	parser.add_argument("--dsets",type=str,nargs="+",default=["nist"])
+	parser.add_argument("--dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
 	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="online",choices=["online","offline","off"])
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
 	parser.add_argument("--compress_dags",type=booltype,default=True)
-	parser.add_argument("--wandb_run_name",type=str,default="d3_h4_isoTrue_v2")
+	parser.add_argument("--wandb_run_name",type=str,required=True)
 	parser.add_argument("--save_dag",type=booltype,default=True)
+	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
+	parser.add_argument("--allowed_prec_types",nargs="+",default=["[M+H]+"])
+	parser.add_argument("--allowed_inst_types",nargs="+",default='Any')
+	parser.add_argument("--allowed_frag_modes",nargs="+",default='Any')
+	parser.add_argument("--allowed_ion_modes",nargs="+",default='Any')
+	parser.add_argument("--require_ce",type=booltype,default=False)
+	parse_formula
 	args = parser.parse_args()
 
 	tqdm.pandas()

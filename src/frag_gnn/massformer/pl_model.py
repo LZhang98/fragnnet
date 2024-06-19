@@ -29,6 +29,12 @@ class MassFormerPL(BinnedPL):
 			ce_insert_location=self.hparams.ce_insert_location,
 			ce_insert_merge=self.hparams.ce_insert_merge,
 			ce_insert_size=self.hparams.ce_insert_size,
+			prec_insert_location=self.hparams.prec_insert_location,
+			prec_insert_size=self.hparams.prec_insert_size,
+			prec_types=self.hparams.spec_params["prec_types"],
+			inst_insert_location=self.hparams.inst_insert_location,
+			inst_insert_size=self.hparams.inst_insert_size,
+			inst_types=self.hparams.spec_params["inst_types"],
 		)
 
 		assert self.hparams.automatic_optimization
@@ -102,24 +108,24 @@ class MassFormerPL(BinnedPL):
 
 def test_massformer():
 
-	from frag_gnn.runner import load_config
-	from frag_gnn.dataset import SpecMolDataset
+	from frag_gnn.runner import load_config, init_dataset
 	from frag_gnn.utils.misc_utils import print_shapes
 	from frag_gnn.utils.misc_utils import to_device
 
 	template_fp = "config/template.yml"
 	custom_fp_to_model_cls = {
-		"config/debug_m/debug_massformer.yml": MassFormerPL
+		# "config/debug_m/debug_massformer_m.yml": MassFormerPL,
+		"config/debug_m/debug_massformer_prec_m.yml": MassFormerPL,
 	}
 
 	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
 
-		print(custom_fp)
+		print(">>>", custom_fp)
 
 		config_d = load_config(template_fp, custom_fp)
 		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
 
-		ds = SpecMolDataset(split="train", **config_d)
+		ds = init_dataset(config_d, splits=("train",))[0]
 		dl = th.utils.data.DataLoader(
 			ds,
 			batch_size=8,
@@ -149,6 +155,8 @@ def test_massformer():
 		print("> loss")
 		print(mean_loss)
 		mean_loss.backward()
+
+		print()
 
 
 if __name__ == "__main__":

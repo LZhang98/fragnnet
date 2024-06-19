@@ -17,7 +17,7 @@ pip install networkx
 pip install wandb
 pip install tqdm
 pip install scipy
-pip install joblib==1.3.2
+pip install joblib>=1.3.2
 pip install matplotlib
 pip install pytest
 pip install cysignals

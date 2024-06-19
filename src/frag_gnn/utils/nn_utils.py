@@ -177,6 +177,13 @@ class GNN(nn.Module):
 				normalization=self.normalization,
 				is_v2=(self.gnn_type == "GATv2")
 			)
+		elif self.gnn_type == "GGNN":
+			self.gnn = GGNN(
+				node_feats_size=self.node_feats_size,
+				edge_feats_size=self.edge_feats_size,
+				hidden_size=self.hidden_size,
+				num_layers=self.num_layers
+			)
 		else:
 			raise NotImplementedError(self.gnn_type)
 
@@ -396,7 +403,7 @@ class GAT(nn.Module):
 			is_v2 (bool, optional). use v2 GATConv, Defaults to True
 			is_concat (bool, optional). concatenated multihead attetion, Defaults to True
 		"""
-		super(GAT, self).__init__()
+		super().__init__()
 		assert edge_feats_size >= 0, edge_feats_size
 		self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
 		gat_output_size = hidden_size // num_gat_heads if is_concat else hidden_size
@@ -429,7 +436,38 @@ class GAT(nn.Module):
 			layer_out = self.norm_fn(layer_out, batch_index, norm)
 			x = F.relu(dropout(layer_out)) + x
 		return x
-	
+
+class GGNN(nn.Module):
+
+	def __init__(
+		self,
+		node_feats_size: int,
+		edge_feats_size: int,
+		hidden_size: int,
+		num_layers: int,
+		**kwargs
+	):
+		"""
+		"""
+		super().__init__()
+		assert edge_feats_size >= 0, edge_feats_size
+		self.edge_transform = nn.Linear(edge_feats_size, 1)
+		self.model = pyg.nn.conv.GatedGraphConv(
+			out_channels=hidden_size,
+			num_layers=num_layers
+		)
+
+	def forward(self, x, batch_index, edge_index, edge_attr):
+		"""forward.
+		"""
+		edge_weight = self.edge_transform(edge_attr).squeeze(1)
+		x = self.model(
+			x=x, 
+			edge_index=edge_index, 
+			edge_weight=edge_weight
+		)
+		return x
+
 class MLPBlocks(nn.Module):
 	"""Just Good Old Multilayer perceptron with residuals
 		layer->dropout->activation(Relu)
@@ -725,11 +763,12 @@ class LowRankDense(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         return x
-        
+
 def decompile_jit_ckpt(path:str, pacthed_path:str):
 	"""
 	convert compiled ckpt to normal version and save to disk
 	"""
+ 
 	# inspired by
 	# https://github.com/pytorch/pytorch/issues/101107#issuecomment-1801128683
 	print(f"> src: {path}")
@@ -749,7 +788,23 @@ def decompile_jit_ckpt(path:str, pacthed_path:str):
 	for src_key, dest_key in pairings:
 		if src_key != dest_key:
 			print(f"{src_key}  ==>  {dest_key}")
-			out_state_dict[dest_key] = in_state_dict[src_key]
+		out_state_dict[dest_key] = in_state_dict[src_key]
+
 	ckpt["state_dict"] = out_state_dict
 	ckpt['hyper_parameters']['compile'] = False
 	th.save(ckpt, pacthed_path)
+
+def is_ckpt_compiled(path:str) -> bool:
+	ckpt = th.load(path)
+	state_dict = ckpt["state_dict"]
+	for key in state_dict.keys():
+		if '_orig_mod' in key:
+			return True
+	return False
+
+def get_pl_hparams(path:str) -> dict:
+	"""
+ 	"""
+	ckpt = th.load(path)
+	hyper_parameters = ckpt["hyper_parameters"]
+	return hyper_parameters
