@@ -17,7 +17,7 @@ from frag_gnn.utils.spec_utils import batch_func
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage
-from frag_gnn.utils.data_utils import fill_missing_ace, fill_missing_nce, par_apply_df_rows
+from frag_gnn.utils.data_utils import fill_missing_ace, fill_missing_nce, seq_apply_df_rows
 import frag_gnn.massformer.data_utils as mf_data_utils
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
@@ -102,8 +102,8 @@ class BaseDataset(Dataset):
 			um_spec_df = um_spec_df[um_spec_df[id_key].isin(spec_df[id_key])]
 
 		# covert ace and nce if there is data
-		spec_df.loc[:,"ace"] = par_apply_df_rows(spec_df, fill_missing_ace)
-		spec_df.loc[:,"nce"] = par_apply_df_rows(spec_df, fill_missing_nce)
+		spec_df.loc[:,"ace"] = seq_apply_df_rows(spec_df, fill_missing_ace)
+		spec_df.loc[:,"nce"] = seq_apply_df_rows(spec_df, fill_missing_nce)
 		# reset indices
 		spec_df = spec_df.reset_index(drop=True)
 		mol_df = mol_df.reset_index(drop=True)
