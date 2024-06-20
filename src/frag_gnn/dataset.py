@@ -17,6 +17,7 @@ from frag_gnn.utils.spec_utils import batch_func
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage
+from frag_gnn.utils.data_utils import fill_missing_ace, fill_missing_nce, seq_apply_df_rows
 import frag_gnn.massformer.data_utils as mf_data_utils
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
@@ -75,13 +76,7 @@ class BaseDataset(Dataset):
 		# select molecules
 		mol_df = mol_df[mol_df["mol_id"].isin(split_df["mol_id"])]
   
-		mol_df_molid_set = set(mol_df["mol_id"].to_list())
-		spec_df_molid_set = set(spec_df["mol_id"].to_list())
-		mol_id_diff = spec_df_molid_set - mol_df_molid_set
-		#if len(mol_id_diff) > 0:
-		#	print(spec_df[spec_df['mol_id'].isin(list(mol_id_diff))])
-		assert len(mol_id_diff) == 0, len(mol_id_diff) 
-		#assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
+		assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 		# merge spectra
 		um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
 		if spec_params["merge"]:
@@ -105,6 +100,10 @@ class BaseDataset(Dataset):
 				replace=False)
 			mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
 			um_spec_df = um_spec_df[um_spec_df[id_key].isin(spec_df[id_key])]
+
+		# covert ace and nce if there is data
+		spec_df.loc[:,"ace"] = seq_apply_df_rows(spec_df, fill_missing_ace)
+		spec_df.loc[:,"nce"] = seq_apply_df_rows(spec_df, fill_missing_nce)
 		# reset indices
 		spec_df = spec_df.reset_index(drop=True)
 		mol_df = mol_df.reset_index(drop=True)

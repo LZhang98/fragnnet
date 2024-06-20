@@ -463,26 +463,6 @@ def check_pyg_full_compile():
 	pyg_major_version, pyg_minor_version = get_package_version(pyg)[:2]
 	assert th_major_version >= 2, th_major_version
 	return pyg_major_version >= 2 and pyg_minor_version >= 5
-def repair_checkpoint(path):
-    # inspired by
-    # https://github.com/pytorch/pytorch/issues/101107#issuecomment-1801128683
-    
-    print(">Repair checkpoint")
-    ckpt = th.load(path)
-    #print(ckpt.keys())
-    in_state_dict = ckpt["state_dict"]
-    pairings = [
-        (src_key, src_key.replace('._orig_mod',''))
-        for src_key in in_state_dict.keys()
-    ]
-    if all(src_key == dest_key for src_key, dest_key in pairings):
-        return  # Do not write checkpoint if no need to repair!
-    out_state_dict = {}
-    for src_key, dest_key in pairings:
-        print(f"{src_key}  ==>  {dest_key}")
-        out_state_dict[dest_key] = in_state_dict[src_key]
-    ckpt["state_dict"] = out_state_dict
-    th.save(ckpt, path)
 
 def get_ckpt_from_wandb(saved_dp, run_id, 
                         entity='frag-gnn', 

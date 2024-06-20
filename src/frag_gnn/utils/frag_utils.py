@@ -1196,6 +1196,7 @@ def timed_get_dags(mol,
 			output_file = get_frag_fp(mol_id, output_dir, compressed)
 
 		if use_cached and os.path.exists(output_file):
+			assert save_dag
 			dag_d = load_frag_d(mol_id, output_dir, compressed)
 		else:
 			dag_d = {}

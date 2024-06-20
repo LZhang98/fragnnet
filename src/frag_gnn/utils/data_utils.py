@@ -742,7 +742,7 @@ def infer_prec_mz(df):
 	spec_type = df["spec_type"]
 	if none_or_nan(prec_mz) and spec_type == "MS2":
 		dset = df["dset"]
-		#assert dset == "mona23", dset
+		assert "nist" not in dset, dset
 		prec_type = df["prec_type"]
 		exact_mw = df["exact_mw"]
 		if not none_or_nan(prec_type):
