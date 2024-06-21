@@ -36,8 +36,8 @@ class BaseDataset(Dataset):
 		self.subsample_params = subsample_params
 		self.spec_params = spec_params
 		spec_df, mol_df, um_spec_df, split_df, id_key = BaseDataset._setup_dfs(
-			spec_fp=spec_fp,
-			mol_fp=mol_fp,
+			spec_fp_or_df=spec_fp,
+			mol_fp_or_df=mol_fp,
 			split_dp=split_dp,
 			split=split,
 			subsample_params=subsample_params,
@@ -54,15 +54,15 @@ class BaseDataset(Dataset):
 
 	@staticmethod
 	def _setup_dfs( 
-		spec_fp: str,
-		mol_fp: str,
+		spec_fp_or_df: str|pd.DataFrame,
+		mol_fp_or_df: str|pd.DataFrame,
 		split_dp: str,
 		split: str,
 		subsample_params: dict,
 		spec_params: dict):
 		
-		spec_df = pd.read_pickle(spec_fp)
-		mol_df = pd.read_pickle(mol_fp)
+		spec_df = spec_fp_or_df if spec_fp_or_df.isinstance(pd.DataFrame) else pd.read_pickle(spec_fp_or_df)
+		mol_df = mol_fp_or_df if mol_fp_or_df.isinstance(pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
 
 		assert split in ["train","val","test","secondary", "predict_only"], split
   
