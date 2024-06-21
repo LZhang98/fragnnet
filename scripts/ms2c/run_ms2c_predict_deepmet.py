@@ -26,7 +26,10 @@ model_type_ds_cls = {
 	"neims": SpecMolDataset,
 	"frag_gnn": SpecMolFragDataset,
 }
-  
+
+def get_all_frags_name(frag_dp):
+    return set([f.split('.')[0] for f in os.listdir(frag_dp)])
+	
 def run_prediction(ckpt_fp,   
 				 save_fp,
 				 mol_df_fp,
@@ -46,19 +49,33 @@ def run_prediction(ckpt_fp,
 	print(f"> ckpt is compiled: {config_d['compile']}")
  	
 	print(f"> using {device}")
+	# disable metrics
 	config_d['track_datapoint_metrics'] = False 
-	config_d['auxiliary_scores'] = [] #['cos_hun','cos_sim']
+	config_d['auxiliary_scores'] = []  #['cos_hun','cos_sim']
 	#config_d['eval_mz_bin_res'] = [0.01, 0.1]
 	config_d['frag_params']['preload'] = False
-	config_d['frag_params']['preprocess'] = False	
-	config_d['mol_fp'] = mol_df_fp
-	config_d['spec_fp'] = spec_df_fp
-	config_d['frag_dp'] = frag_dp
- 
-	print(f"> mol_fp {config_d['mol_fp']}")
-	print(f"> spec_fp {config_d['spec_fp']}")
+	config_d['frag_params']['preprocess'] = False
+	# disable sampler
+	config_d["dynamic_batch_sampler"] = False
+	config_d["group_sampler"] = False 
+	config_d["simple_group_sampler"] = False
+	
+	# config proc and check if frags are avaibale
+	print(f"> mol_fp {mol_df_fp}")
+	print(f"> spec_fp {spec_df_fp}")
 	print(f"> frag_dp {config_d['frag_dp']}")
-	print(f"> split_dp {config_d['split_dp']}")
+
+	print(">> filtering input without frags")
+	all_frags = get_all_frags_name(frag_dp)
+	mol_df  = pd.read_pickle(mol_df_fp)
+	mol_df = mol_df[mol_df['mol_id'].isin(all_frags)]
+	spec_df = pd.read_pickle(spec_df_fp)
+	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
+	
+	# config mol df, spec df and frag_dp
+	config_d['mol_fp'] = mol_df
+	config_d['spec_fp'] = spec_df
+	config_d['frag_dp'] = frag_dp
  
 	# load datasets
 	print("> Loading datasets")
@@ -69,6 +86,7 @@ def run_prediction(ckpt_fp,
 	ds = model_ds_cls(split='predict_only', **config_d)
 	print(ds.idx_to_inst_type)
 	print(ds.idx_to_prec_type)
+	print("> init dataloader")
 	dl = init_dataloader(ds, config_d)
  
 	# load models
@@ -110,7 +128,7 @@ def run_prediction(ckpt_fp,
 			spec_inst_types = batch_input['spec_inst_type']
 			batch_result = to_device(batch_input, device)
 
-			batch_result = model._common_step(batch_input, split="test")
+			batch_result = model.predict_step(**batch_input)
 			batch_size = batch_input['batch_size'].detach().cpu()
 
 			#print(batch_result)
@@ -119,9 +137,9 @@ def run_prediction(ckpt_fp,
 			#pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
 			#pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
 
-			cos_sim_bin_lr = batch_result['cos_sim_0.1'].cpu()
-			cos_sim_bin_hr = batch_result['cos_sim_0.01'].cpu()
-			cos_sim_hun = batch_result['cos_hun'].cpu()
+			#cos_sim_bin_lr = batch_result['cos_sim_0.1'].cpu()
+			#cos_sim_bin_hr = batch_result['cos_sim_0.01'].cpu()
+			#cos_sim_hun = batch_result['cos_hun'].cpu()
 			#pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 			for b_idx in range(batch_size):
 				#b_peak_mask = pred_batch_idxs == b_idx
@@ -135,8 +153,8 @@ def run_prediction(ckpt_fp,
 
 				b_spec_prec_type = ds.idx_to_prec_type[b_spec_prec_type_idx]
 				b_spec_inst_type = ds.idx_to_inst_type[b_spec_inst_type_idx] 
-				preds_l.append((b_inchikey,b_smi,b_nce, b_spec_prec_type, b_spec_inst_type,
-					cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
+				#preds_l.append((b_inchikey,b_smi,b_nce, b_spec_prec_type, b_spec_inst_type,
+				#	cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
 				#plot_spectra_sparse()
 
 	#df = pd.DataFrame(preds_l, columns=columns)

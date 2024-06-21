@@ -121,6 +121,7 @@ def init_dataloader(ds, config_d):
 
 	split = ds.split
 	assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), "Cannot use both group_sampler and simple_group_sampler"
+	print("> init_dataloader for split {split}")
 	dl_param_d = {
 		"dataset": ds,
 		"num_workers": config_d["num_workers"],
@@ -141,10 +142,11 @@ def init_dataloader(ds, config_d):
 			config_d["simple_group_sampler_type"],
 			config_d["simple_group_sampler_avg_per_group"],
 			generator)
-	elif split in ["val", "test"]:
+	elif split in ["val", "test", "predict_only"]:
 		sampler = SequentialSampler(ds)
 	else:
 		sampler = RandomSampler(ds, False, generator=generator)
+  
 	# for batch sampler 
 	if config_d["dynamic_batch_sampler"]:
 		max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]

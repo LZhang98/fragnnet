@@ -325,8 +325,10 @@ class BaseDataset(Dataset):
 				# cat
 				values = th.cat(values,dim=0)
 				collate_data[key] = values
+			elif key == "mol_id" and isinstance(values[0],str):
+				collate_data[key] = values
 			else:
-				raise TypeError(f"Unsupported type: {type(values[0])}")
+				raise TypeError(f"Unsupported type: {key} {type(values[0])}")
 		# remove everything
 		keys.clear()
 		# add batch size
