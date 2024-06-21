@@ -4,7 +4,8 @@ import pandas as pd
 import argparse
 
 import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.data_utils import par_apply_series
+import numpy as np
+from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows
 
 def process_mol(mol_df):
 
@@ -25,8 +26,39 @@ def process_mol(mol_df):
 
  	# reset indices
 	mol_df = mol_df.reset_index(drop=True)
-
+ 
 	return mol_df
+
+def create_spec_df(mol_df):
+	spec_dfs_l = []
+	for prec_type in ["[M+H]+","[M-H]-"]:
+		for ace in [10,20,40]:
+			spec_df = pd.DataFrame()
+			spec_df["mol_id"] = mol_df["mol_id"]
+			spec_df["exact_mw"] = mol_df["exact_mw"]
+   
+			spec_df['spec_type'] = 'MS2'
+			spec_df['dset'] = "deepmet"
+			spec_df['prec_mz'] = np.nan
+			spec_df['prec_type'] = prec_type
+			spec_df['ace'] = ace
+			spec_df['ion_mode'] = 'N' if prec_type == '[M-H]-' else 'P'
+			spec_df.loc[:,"prec_mz"] =  par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
+			spec_df = spec_df.drop(columns=["exact_mw"])
+
+			spec_dfs_l.append(spec_df)
+	
+	# spec_id', 'mol_id', 'prec_type', 'inst_type', 'frag_mode',
+ 	# 'spec_type','ion_mode', 'dset', 'dset_spec_id', 'col_gas', 'res', 'ace', 'nce',
+	# 'prec_mz', 'peaks', 'ri', 'group_id'
+	spec_df = pd.concat(spec_dfs_l,axis=0)
+	spec_df['frag_mode'] = 'CID'
+	spec_df['inst_type'] = 'QTOF'
+ 
+	spec_df = spec_df.reset_index(drop=True)
+	spec_df['spec_id'] = spec_df.index
+	print(spec_df)
+	return spec_df
 
 def get_args():
 	parser = argparse.ArgumentParser()
@@ -40,6 +72,13 @@ def get_args():
 
 if __name__ == "__main__":
 
+	#sample_spec_df = pd.read_pickle('data/proc/pcdl/spec_df.pkl')
+	#print(sample_spec_df.columns)
+	#for mol_file in os.listdir('data/deepmet/proc/'):
+	#	if mol_file.startswith("mol_df_"):
+	#		spec_df = create_spec_df(mol_df)
+	#		spec_df.to_pickle(os.path.join(f'data/deepmet/proc/{mol_file.replace("mol","spec")}'))
+
 	args = get_args()
 	mol_df = pd.read_csv(args.deepmet_csv)
 	mol_df = mol_df[['SMILES', 'DMID']]
@@ -51,6 +90,8 @@ if __name__ == "__main__":
 		mol_df = process_mol(mol_df)
 		mol_df_fp = os.path.join(args.proc_dp,"mol_df.pkl.gz")
 		mol_df.to_pickle(mol_df_fp)
+		spec_df = create_spec_df(mol_df)
+		spec_df.to_pickle(os.path.join(args.proc_dp,"spec_df.pkl.gz"))
 	else:
 		for i in range(0, len(mol_df), chunk_size):
 			print("> chunk {} to {}".format(i, i+chunk_size))
@@ -60,5 +101,7 @@ if __name__ == "__main__":
 			end = min(i+chunk_size, len(mol_df))
 			mol_df_fp = os.path.join(args.proc_dp,f"mol_df_{i//chunk_size+1}.pkl.gz")
 			mol_df_chunk.to_pickle(mol_df_fp)
+			spec_df_chunk = create_spec_df(mol_df_chunk)
+			spec_df_chunk.to_pickle(os.path.join(args.proc_dp,f"spec_df_{i//chunk_size+1}.pkl.gz"))
 			print(f"Saved {i} to {end} to file {mol_df_fp}")
 			del mol_df_chunk
