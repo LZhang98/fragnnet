@@ -28,7 +28,7 @@ class BaseDataset(Dataset):
 		spec_fp: str,
 		mol_fp: str,
 		split_dp: str,
-		split: List[str],
+		split: str,
 		subsample_params: dict,
 		spec_params: dict):
 
@@ -57,20 +57,26 @@ class BaseDataset(Dataset):
 		spec_fp: str,
 		mol_fp: str,
 		split_dp: str,
-		splits: List[str],
+		split: str,
 		subsample_params: dict,
 		spec_params: dict):
 		
 		spec_df = pd.read_pickle(spec_fp)
 		mol_df = pd.read_pickle(mol_fp)
-		split_dfs = []
-		for split in splits:
-			assert split in ["train","val","test","secondary"], split
+
+		assert split in ["train","val","test","secondary", "predict_all"], split
+  
+		if split == "predict_all":
+			# predict_all split, just include everything, this is used for prediction
+			split_df = pd.DataFrame()
+			# fill these to keep compatible
+			split_df["spec_id"] = spec_df["spec_id"]
+			split_df["mol_id"] = spec_df["mol_id"]
+			split_df["group_id"] = spec_df["spec_id"]
+		else:	
 			split_fp = os.path.join(split_dp,f"{split}_ids.csv")
 			split_df = pd.read_csv(split_fp)
-			split_dfs.append(split_df)
-		split_df = pd.concat(split_dfs)
-		del split_dfs
+   
 		# select spectra
 		spec_df = spec_df[spec_df["spec_id"].isin(split_df["spec_id"])]
 		# select molecules
@@ -84,6 +90,7 @@ class BaseDataset(Dataset):
 			id_key = "group_id"
 		else:
 			id_key = "spec_id"
+   
 		# subsample
 		if subsample_params.get(split,False) and subsample_params["subsample_size"] > 0:
 			if isinstance(subsample_params["subsample_size"],int):
