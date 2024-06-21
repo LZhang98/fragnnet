@@ -61,8 +61,8 @@ class BaseDataset(Dataset):
 		subsample_params: dict,
 		spec_params: dict):
 		
-		spec_df = spec_fp_or_df if spec_fp_or_df.isinstance(pd.DataFrame) else pd.read_pickle(spec_fp_or_df)
-		mol_df = mol_fp_or_df if mol_fp_or_df.isinstance(pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
+		spec_df = spec_fp_or_df if isinstance(spec_fp_or_df, pd.DataFrame) else pd.read_pickle(spec_fp_or_df)
+		mol_df = mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
 
 		assert split in ["train","val","test","secondary", "predict_only"], split
   
