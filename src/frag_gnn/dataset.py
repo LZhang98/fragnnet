@@ -39,7 +39,7 @@ class BaseDataset(Dataset):
 			spec_fp=spec_fp,
 			mol_fp=mol_fp,
 			split_dp=split_dp,
-			splits=[split],
+			split=split,
 			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
