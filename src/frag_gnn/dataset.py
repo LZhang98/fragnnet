@@ -16,7 +16,7 @@ from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_grap
 from frag_gnn.utils.spec_utils import batch_func
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
-from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage
+from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage, none_or_nan
 from frag_gnn.utils.data_utils import fill_missing_ace, fill_missing_nce, seq_apply_df_rows
 import frag_gnn.massformer.data_utils as mf_data_utils
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
@@ -64,9 +64,9 @@ class BaseDataset(Dataset):
 		spec_df = pd.read_pickle(spec_fp)
 		mol_df = pd.read_pickle(mol_fp)
 
-		assert split in ["train","val","test","secondary", "predict_all"], split
+		assert split in ["train","val","test","secondary", "predict_only"], split
   
-		if split == "predict_all":
+		if split == "predict_only":
 			# predict_all split, just include everything, this is used for prediction
 			split_df = pd.DataFrame()
 			# fill these to keep compatible
@@ -172,17 +172,18 @@ class BaseDataset(Dataset):
 
 	@staticmethod
 	def _get_mzs_ints(peaks):
-
+		"""
+  		convert peaks to tensors, it is caller's responsibility to make sure data is valid 
+    	"""
 		mzs, ints = [], []
-		for peak in peaks:
-			p_mz, p_int = peak
-			mzs.append(p_mz)
-			ints.append(p_int)
+		if not none_or_nan(peaks):
+			for peak in peaks:
+				p_mz, p_int = peak
+				mzs.append(p_mz)
+				ints.append(p_int)
 		mzs = th.tensor(mzs,dtype=th.float)
 		ints = th.tensor(ints,dtype=th.float)
 		# mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
-		assert mzs.shape[0] > 0
-		assert ints.shape[0] > 0
 		return mzs, ints
 	
 	def _setup_prec_type_to_idx(self):
@@ -201,7 +202,7 @@ class BaseDataset(Dataset):
 		self.num_inst_types = len(inst_types)
 
 	def _process_spec(self,spec_entry):
-
+		print(spec_entry)
 		spec_data = {}
 		# peak data
 		mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
@@ -242,7 +243,7 @@ class BaseDataset(Dataset):
 			spec_data["spec_prec_mz"] = prec_mz
 		if self.spec_params["unique_id"]:
 			unique_id = spec_entry[self.id_key]
-			unique_id = th.tensor([unique_id],dtype=th.long) 
+			unique_id = th.tensor([unique_id],dtype=th.long)
 			spec_data["spec_unique_id"] = unique_id
 			spec_data['group_id'] =  th.tensor([spec_entry['group_id']],dtype=th.long)
 			spec_data['mol_id'] = th.tensor([spec_entry['mol_id']],dtype=th.long)
@@ -471,6 +472,13 @@ class SpecMolDataset(BaseDataset):
 		SpecMolDataset._standard_collate(batch_size,keys,collate_data)
 		return collate_data
 
+	def training_data_sanity_check(self):
+		"""
+  		basic data sanity check for training time only 
+    	"""
+		assert self.spec_df['peaks'].isna().any() == False
+		assert (self.spec_df['peaks'] == '').any() == False
+  	
 class SpecMolFragDataset(SpecMolDataset):
 
 	def __init__(

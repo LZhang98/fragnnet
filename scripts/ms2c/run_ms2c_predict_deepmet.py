@@ -4,7 +4,7 @@ import torch as th
 from tqdm import tqdm
 
 from frag_gnn.runner import init_dataloader
-from frag_gnn.pl_model import FragGNNPL, NeimsPL, MassFormerPL
+from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
@@ -12,7 +12,6 @@ from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 
 import os
 import multiprocessing
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from rdkit import Chem
@@ -29,9 +28,7 @@ model_type_ds_cls = {
 }
   
 def run_prediction(ckpt_fp,   
-				 save_dp,
-				 model_cls,
-				 model_ds_cls,
+				 save_fp,
 				 mol_df_fp,
 				 spec_df_fp,
 				 frag_dp,
@@ -48,13 +45,28 @@ def run_prediction(ckpt_fp,
 	config_d['eval_batch_size'] = batch_size
 	print(f"> ckpt is compiled: {config_d['compile']}")
  	
+	print(f"> using {device}")
+	config_d['track_datapoint_metrics'] = False 
+	config_d['auxiliary_scores'] = [] #['cos_hun','cos_sim']
+	#config_d['eval_mz_bin_res'] = [0.01, 0.1]
+	config_d['frag_params']['preload'] = False
+	config_d['frag_params']['preprocess'] = False	
+	config_d['mol_fp'] = mol_df_fp
+	config_d['spec_fp'] = spec_df_fp
+	config_d['frag_dp'] = frag_dp
+ 
+	print(f"> mol_fp {config_d['mol_fp']}")
+	print(f"> spec_fp {config_d['spec_fp']}")
+	print(f"> frag_dp {config_d['frag_dp']}")
+	print(f"> split_dp {config_d['split_dp']}")
+ 
 	# load datasets
 	print("> Loading datasets")
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 	model_ds_cls = model_type_ds_cls[model_type]
 
-	ds = model_ds_cls(split='test', **config_d)
+	ds = model_ds_cls(split='predict_only', **config_d)
 	print(ds.idx_to_inst_type)
 	print(ds.idx_to_prec_type)
 	dl = init_dataloader(ds, config_d)
@@ -72,31 +84,12 @@ def run_prediction(ckpt_fp,
 		th.multiprocessing.set_sharing_strategy('file_system')
 		th.use_deterministic_algorithms(True)
 
-	print(f"> using {device}")
-	config_d['track_datapoint_metrics'] = False 
-	config_d['auxiliary_scores'] = [] #['cos_hun','cos_sim']
-	#config_d['eval_mz_bin_res'] = [0.01, 0.1]
-	config_d['frag_params']['preload'] = False
-	config_d['frag_params']['preprocess'] = False	
-	config_d['mol_fp'] = mol_df_fp
-	config_d['spec_fp'] = spec_df_fp
-	config_d['frag_dp'] = frag_dp
- 
-	print(f"> mol_fp {config_d['mol_fp']}")
-	print(f"> spec_fp {config_d['spec_fp']}")
-	print(f"> frag_dp {config_d['frag_dp']}")
-	print(f"> split_dp {config_d['split_dp']}")
-
 	print(f"> Loading models {ckpt_fp}")
 
 	print("> load model")
 	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
 	model.eval()
 
-	split_type = 'predict'
-	ds = model_ds_cls(split=split_type, **config_d)
-
-	dl = init_dataloader(ds, config_d)
 	# load models
 	if device is None:
 		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
@@ -117,7 +110,7 @@ def run_prediction(ckpt_fp,
 			spec_inst_types = batch_input['spec_inst_type']
 			batch_result = to_device(batch_input, device)
 
-			batch_result = model._common_step(batch_input, split="val")
+			batch_result = model._common_step(batch_input, split="test")
 			batch_size = batch_input['batch_size'].detach().cpu()
 
 			#print(batch_result)
@@ -156,9 +149,9 @@ def get_args():
 	
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_dp",type=str,default="./model_eval")
-	parser.add_argument("--mol_df_fp",type=str,default="./model_eval")
-	parser.add_argument("--spec_fp",type=str,default="./model_eval")
-	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/pubchem/frags/d4_h4_isoFalse/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="frag dp only used in fragnnet")
+	parser.add_argument("--mol_df_fp",type=str,default="./data/deepmet/proc/mol_df_1.pkl.gz")
+	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/spec_df_1.pkl.gz")
+	parser.add_argument("--frag_dp", type=str,default="./data/deepmet/frags/mol_df_1")
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
  
@@ -174,17 +167,26 @@ if __name__ == "__main__":
 	#TORCH_LOGS="recompiles"
 	os.makedirs(args.save_dp, exist_ok=True)
 	json.dump(vars(args), open(f"{args.save_dp}/args.json", "w"), indent=2)
-	
 
-	run_prediction(ckpt_fp = args.ckpt_fp,   
-				 save_dp = args.save_dp,
-				 template_fp = args.template_fp,
-				 custom_fp = args.custom_fp,
-				 task_dp = args.task_dp,
-	 			 model_cls = model_type_to_model_cls[args.model_type],
-				 model_ds_cls = model_type_ds_cls[args.model_type],
-				 frag_dp  = args.frag_dp,
-				 device = args.device,
-				 batch_size = args.batch_size,
-				 allow_cached = args.allow_cached,
-	 			 disable_jit = args.disable_jit)
+	os.makedirs(args.save_dp, exist_ok=True)	
+	model_save_dp = args.model_save_dp
+	print(f"> save model to {model_save_dp} from wandb")
+	assert args.wandb_run_ids is not None
+
+	for run_id in args.wandb_run_ids:
+		#for run_id in inchikey_splits_runs:
+		print(f"> wandb run id: {run_id}")
+		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
+
+		#print(f"> {np_ckpt_fp}")
+		save_fp = os.path.join(args.save_dp, run_id+'.csv')
+		#print(f"> {custom_fp}")
+		print(f"> {save_fp}")
+		print(f"> {ckpt_fp}")
+		run_prediction(ckpt_fp = ckpt_fp,   
+					save_fp = save_fp,
+					mol_df_fp = args.mol_df_fp,
+					spec_df_fp = args.spec_df_fp,
+					frag_dp = args.frag_dp,
+					device = args.device,
+					batch_size = args.batch_size)
