@@ -48,16 +48,18 @@ def create_spec_df(mol_df):
 
 			spec_dfs_l.append(spec_df)
 	
-	# spec_id', 'mol_id', 'prec_type', 'inst_type', 'frag_mode',
+	# 'spec_id', 'mol_id', 'prec_type', 'inst_type', 'frag_mode',
  	# 'spec_type','ion_mode', 'dset', 'dset_spec_id', 'col_gas', 'res', 'ace', 'nce',
 	# 'prec_mz', 'peaks', 'ri', 'group_id'
 	spec_df = pd.concat(spec_dfs_l,axis=0)
 	spec_df['frag_mode'] = 'CID'
 	spec_df['inst_type'] = 'QTOF'
- 
 	spec_df = spec_df.reset_index(drop=True)
 	spec_df['spec_id'] = spec_df.index
-	print(spec_df)
+	spec_df['dset_spec_id'] = spec_df['spec_id']
+	spec_df['group_id'] = spec_df['spec_id']
+	spec_df['peaks'] = np.nan
+
 	return spec_df
 
 def get_args():
@@ -72,13 +74,14 @@ def get_args():
 
 if __name__ == "__main__":
 
-	#sample_spec_df = pd.read_pickle('data/proc/pcdl/spec_df.pkl')
-	#print(sample_spec_df.columns)
-	#for mol_file in os.listdir('data/deepmet/proc/'):
-	#	if mol_file.startswith("mol_df_"):
-	#		spec_df = create_spec_df(mol_df)
-	#		spec_df.to_pickle(os.path.join(f'data/deepmet/proc/{mol_file.replace("mol","spec")}'))
 
+	for mol_file in os.listdir('data/deepmet/proc/'):
+		if mol_file.startswith("mol_df_"):
+			mol_df = pd.read_pickle(os.path.join(f'data/deepmet/proc/{mol_file}'))
+			spec_df = create_spec_df(mol_df)
+			spec_df.to_pickle(os.path.join(f'data/deepmet/proc/{mol_file.replace("mol","spec")}'))
+	exit()
+ 
 	args = get_args()
 	mol_df = pd.read_csv(args.deepmet_csv)
 	mol_df = mol_df[['SMILES', 'DMID']]
