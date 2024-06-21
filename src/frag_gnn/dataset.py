@@ -202,7 +202,6 @@ class BaseDataset(Dataset):
 		self.num_inst_types = len(inst_types)
 
 	def _process_spec(self,spec_entry):
-		print(spec_entry)
 		spec_data = {}
 		# peak data
 		mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
@@ -246,7 +245,7 @@ class BaseDataset(Dataset):
 			unique_id = th.tensor([unique_id],dtype=th.long)
 			spec_data["spec_unique_id"] = unique_id
 			spec_data['group_id'] =  th.tensor([spec_entry['group_id']],dtype=th.long)
-			spec_data['mol_id'] = th.tensor([spec_entry['mol_id']],dtype=th.long)
+			spec_data['mol_id'] = spec_entry['mol_id'] # mol id does not need to be an int #th.tensor([spec_entry['mol_id']],dtype=th.long)
 		if self.spec_params["counts"]:
 			spec_per_mol = self.spec_per_mol[spec_entry["mol_id"]]
 			spec_per_mol = th.tensor([spec_per_mol],dtype=th.long)
