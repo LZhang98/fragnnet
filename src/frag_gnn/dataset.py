@@ -350,8 +350,8 @@ class SpecMolDataset(BaseDataset):
 		subsample_params: dict,
 		spec_params: dict,
 		mol_params: dict,
-		spec_pp_sd: dict = dict(),
-		mol_pp_sd: dict = dict(),
+		spec_pp_sd: dict = None,
+		mol_pp_sd: dict = None,
 		**kwargs
 	):
 
@@ -364,6 +364,12 @@ class SpecMolDataset(BaseDataset):
 			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
+  
+		if spec_pp_sd is None:
+			spec_pp_sd = dict()
+		if mol_pp_sd  is None:
+			mol_pp_sd = dict()
+   
 		self.mol_params = mol_params
 		self._preprocess_spec(spec_pp_sd)
 		self._preprocess_mol(mol_pp_sd)
@@ -493,10 +499,10 @@ class SpecMolFragDataset(SpecMolDataset):
 		mol_params: dict,
 		frag_dp: str,
 		frag_params: dict,
-		spec_pp_sd: dict = dict(),
-		mol_pp_sd: dict = dict(),
-		frag_pl_sd: dict = dict(),
-		frag_pp_sd: dict = dict(),
+		spec_pp_sd: dict = None,
+		mol_pp_sd: dict = None,
+		frag_pl_sd: dict = None,
+		frag_pp_sd: dict = None,
 		**kwargs
 	):
 
@@ -512,6 +518,16 @@ class SpecMolFragDataset(SpecMolDataset):
 		self.mol_params = mol_params
 		self.frag_dp = frag_dp
 		self.frag_params = frag_params
+		
+		if spec_pp_sd is None:
+			spec_pp_sd = dict()
+		if mol_pp_sd  is None:
+			mol_pp_sd = dict()
+		if frag_pl_sd is None:
+			frag_pl_sd = dict()
+		if frag_pp_sd is None:
+			frag_pp_sd = dict()
+   
 		self._preprocess_spec(spec_pp_sd)
 		self._preprocess_mol(mol_pp_sd)
 		self._preprocess_frag(frag_pl_sd, frag_pp_sd)
@@ -531,6 +547,7 @@ class SpecMolFragDataset(SpecMolDataset):
 				total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
 				self.frag_entries[mol_id] = frag_entry
 			print(f"> total_frag_entry_size: {total_frag_entry_size/1e6:.2f} MB")
+   
 		# preprocess frag dags
 		if self.frag_params["preprocess"]:
 			assert self.frag_params["preload"]
