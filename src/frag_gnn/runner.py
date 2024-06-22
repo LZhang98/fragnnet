@@ -121,7 +121,7 @@ def init_dataloader(ds, config_d):
 
 	split = ds.split
 	assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), "Cannot use both group_sampler and simple_group_sampler"
-	print("> init_dataloader for split {split}")
+	print(f"> init_dataloader for split {split}")
 	dl_param_d = {
 		"dataset": ds,
 		"num_workers": config_d["num_workers"],
