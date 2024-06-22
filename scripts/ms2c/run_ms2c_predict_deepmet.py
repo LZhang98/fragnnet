@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 import json
+import time
 
 model_type_to_model_cls = {
 	"neims": NeimsPL,
@@ -40,7 +41,7 @@ def run_prediction(ckpt_fp,
 				 ):
 
 	# load configs
-	print("> Loading configs")
+	print(">> Loading configs")
 	ckpt_hparams_d = get_pl_hparams(ckpt_fp)
 	config_d= ckpt_hparams_d
 
@@ -81,18 +82,18 @@ def run_prediction(ckpt_fp,
 	config_d['frag_dp'] = frag_dp
  
 	# load datasets
-	print("> Loading datasets")
+	print(">> Loading datasets")
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 	model_ds_cls = model_type_ds_cls[model_type]
 	ds = model_ds_cls(split='predict_only', **config_d)
 	print(f"> model supported inst type {ds.idx_to_inst_type}")
 	print(f"> model supported prec type {ds.idx_to_prec_type}")
-	print("> init dataloader")
+	print(">> init dataloader")
 	dl = init_dataloader(ds, config_d)
  
 	# load models
-	print("> Loading models")
+	print(">> Loading models")
 
 	if device is None:
 		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
@@ -103,24 +104,14 @@ def run_prediction(ckpt_fp,
 		th.set_num_threads(multiprocessing.cpu_count())
 		th.multiprocessing.set_sharing_strategy('file_system')
 		th.use_deterministic_algorithms(True)
+		config_d['num_workers']= 0
 
-	print(f"> Loading models {ckpt_fp}")
-
-	print("> load model")
 	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
 	model.eval()
 
-	# load models
-	if device is None:
-		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-	
-	if device == "cpu":
-		th.set_num_threads(multiprocessing.cpu_count())
-		th.multiprocessing.set_sharing_strategy('file_system')
-		config_d['num_workers']= 0
 
 	# make predictions on validation data
-	print("> running inference")
+	print(">> Running inference")
 	preds_l = []
 	with th.inference_mode():
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
@@ -160,11 +151,11 @@ def run_prediction(ckpt_fp,
 				b_spec_ints = pred_ints[b_peak_mask]
 
 				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist()))
-				#plot_spectra_sparse()
+
 	columns = ['spec_id','mol_id','mzs','ints']
 	df = pd.DataFrame(preds_l, columns=columns)
 
-	print(f"> save to {save_fp}")
+	print(f">> save to {save_fp}")
 	df.to_pickle(save_fp)
 		
 def get_args():
@@ -176,7 +167,7 @@ def get_args():
 	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/spec_df_1.pkl.gz")
 	parser.add_argument("--frag_dp", type=str,default="./data/deepmet/frags/mol_df_1")
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
-	parser.add_argument("--batch_size",type=int,default=32)
+	parser.add_argument("--batch_size",type=int,default=128)
  
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	parser.add_argument("--wandb_run_id",type=str, default= '0kxgjooa')
@@ -187,17 +178,17 @@ def get_args():
 if __name__ == "__main__":
 
 	args = get_args()
-	#TORCH_LOGS="recompiles"
+	timestr = time.strftime("%Y%m%d-%H%M%S")
 	save_dp = os.path.dirname(args.save_fp)
 	os.makedirs(save_dp, exist_ok=True)
-	json.dump(vars(args), open(f"{save_dp}/args.json", "w"), indent=2)
+	json.dump(vars(args), open(f"{save_dp}/args_{timestr}.json", "w"), indent=2)
 
 	os.makedirs(args.model_save_dp, exist_ok=True)	
 	model_save_dp = args.model_save_dp
-	print(f"> save model to {model_save_dp} from wandb")
+	print(f">> save model to {model_save_dp} from wandb")
 	assert args.wandb_run_id is not None
 
-	print(f"> wandb run id: {args.wandb_run_id}")
+	print(f">> wandb run id: {args.wandb_run_id}")
 	ckpt_fp = get_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
 
 	run_prediction(ckpt_fp = ckpt_fp,   
