@@ -1058,8 +1058,10 @@ def load_frag_d(mol_id:str, frag_dp:str, is_compressed:bool = False):
 		with ZipFile(frag_dp, 'r') as zip_read:
 			with zip_read.open(frag_filename) as f:
 				content = f.read()
-				frag_d = pickle.loads(bz2.decompress(content))
-
+				if frag_filename.endswith("bz2"):
+					frag_d = pickle.loads(bz2.decompress(content))
+				else:
+					frag_d = pickle.loads(content)
 	else:
 		fp = get_frag_fp(mol_id, frag_dp, is_compressed)
 		if not is_compressed:

@@ -32,35 +32,36 @@ def process_mol(mol_df):
 def create_spec_df(mol_df):
 	spec_dfs_l = []
 	for prec_type in ["[M+H]+","[M-H]-"]:
+		spec_df_prec = pd.DataFrame()
+		spec_df_prec["mol_id"] = mol_df["mol_id"]
+		spec_df_prec["exact_mw"] = mol_df["exact_mw"]
+		spec_df_prec['spec_type'] = 'MS2'
+		spec_df_prec['dset'] = "deepmet"
+		spec_df_prec['prec_mz'] = np.nan
+		spec_df_prec['prec_type'] = prec_type
+		spec_df_prec['nce'] = np.nan
+		spec_df_prec['ion_mode'] = 'N' if prec_type == '[M-H]-' else 'P'
+		spec_df_prec.loc[:,"prec_mz"] =  par_apply_df_rows(spec_df_prec,data_utils.infer_prec_mz)
+		spec_df_prec = spec_df_prec.drop(columns=["exact_mw"])
+  
 		for ace in [10,20,40]:
-			spec_df = pd.DataFrame()
-			spec_df["mol_id"] = mol_df["mol_id"]
-			spec_df["exact_mw"] = mol_df["exact_mw"]
-   
-			spec_df['spec_type'] = 'MS2'
-			spec_df['dset'] = "deepmet"
-			spec_df['prec_mz'] = np.nan
-			spec_df['prec_type'] = prec_type
-			spec_df['ace'] = ace
-			spec_df['ion_mode'] = 'N' if prec_type == '[M-H]-' else 'P'
-			spec_df.loc[:,"prec_mz"] =  par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
-			spec_df = spec_df.drop(columns=["exact_mw"])
-
-			spec_dfs_l.append(spec_df)
+			spec_df_ace = spec_df_prec.copy()
+			spec_df_ace['ace'] = ace
+			spec_dfs_l.append(spec_df_ace)
 	
 	# 'spec_id', 'mol_id', 'prec_type', 'inst_type', 'frag_mode',
  	# 'spec_type','ion_mode', 'dset', 'dset_spec_id', 'col_gas', 'res', 'ace', 'nce',
 	# 'prec_mz', 'peaks', 'ri', 'group_id'
-	spec_df = pd.concat(spec_dfs_l,axis=0)
-	spec_df['frag_mode'] = 'CID'
-	spec_df['inst_type'] = 'QTOF'
-	spec_df = spec_df.reset_index(drop=True)
-	spec_df['spec_id'] = spec_df.index
-	spec_df['dset_spec_id'] = spec_df['spec_id']
-	spec_df['group_id'] = spec_df['spec_id']
-	spec_df['peaks'] = np.nan
+	spec_df_prec = pd.concat(spec_dfs_l,axis=0)
+	spec_df_prec['frag_mode'] = 'CID'
+	spec_df_prec['inst_type'] = 'QTOF'
+	spec_df_prec = spec_df_prec.reset_index(drop=True)
+	spec_df_prec['spec_id'] = spec_df_prec.index
+	spec_df_prec['dset_spec_id'] = spec_df_prec['spec_id']
+	spec_df_prec['group_id'] = spec_df_prec['spec_id']
+	spec_df_prec['peaks'] = np.nan
 
-	return spec_df
+	return spec_df_prec
 
 def get_args():
 	parser = argparse.ArgumentParser()
@@ -74,14 +75,15 @@ def get_args():
 
 if __name__ == "__main__":
 
-
-	for mol_file in os.listdir('data/deepmet/proc/'):
+	"""
+ 	for mol_file in os.listdir('data/deepmet/proc/'):
 		if mol_file.startswith("mol_df_"):
 			mol_df = pd.read_pickle(os.path.join(f'data/deepmet/proc/{mol_file}'))
 			spec_df = create_spec_df(mol_df)
 			spec_df.to_pickle(os.path.join(f'data/deepmet/proc/{mol_file.replace("mol","spec")}'))
 	exit()
- 
+	"""
+
 	args = get_args()
 	mol_df = pd.read_csv(args.deepmet_csv)
 	mol_df = mol_df[['SMILES', 'DMID']]
