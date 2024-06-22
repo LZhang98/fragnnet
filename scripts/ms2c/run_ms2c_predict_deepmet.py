@@ -55,8 +55,8 @@ def run_prediction(ckpt_fp,
 	config_d['auxiliary_scores'] = []  #['cos_hun','cos_sim']
 	#config_d['eval_mz_bin_res'] = [0.01, 0.1]
 	# let us see if ram will be an issue
-	config_d['frag_params']['preload'] = True
-	config_d['frag_params']['preprocess'] = True
+	config_d['frag_params']['preload'] = False
+	config_d['frag_params']['preprocess'] = False
 	# disable sampler
 	config_d["dynamic_batch_sampler"] = False
 	config_d["group_sampler"] = False 
