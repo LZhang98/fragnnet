@@ -54,8 +54,9 @@ def run_prediction(ckpt_fp,
 	config_d['track_datapoint_metrics'] = False 
 	config_d['auxiliary_scores'] = []  #['cos_hun','cos_sim']
 	#config_d['eval_mz_bin_res'] = [0.01, 0.1]
-	config_d['frag_params']['preload'] = False
-	config_d['frag_params']['preprocess'] = False
+	# let us see if ram will be an issue
+	config_d['frag_params']['preload'] = True
+	config_d['frag_params']['preprocess'] = True
 	# disable sampler
 	config_d["dynamic_batch_sampler"] = False
 	config_d["group_sampler"] = False 
@@ -92,9 +93,7 @@ def run_prediction(ckpt_fp,
 	print(">> init dataloader")
 	dl = init_dataloader(ds, config_d)
  
-	# load models
-	print(">> Loading models")
-
+	# config cuda and cpus
 	if device is None:
 		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 	elif not th.cuda.is_available() and device != "cpu":
@@ -104,8 +103,10 @@ def run_prediction(ckpt_fp,
 		th.set_num_threads(multiprocessing.cpu_count())
 		th.multiprocessing.set_sharing_strategy('file_system')
 		th.use_deterministic_algorithms(True)
-		config_d['num_workers']= 0
-
+	config_d['num_workers']= multiprocessing.cpu_count()
+	
+ 	# load models
+	print(">> Loading models")
 	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
 	model.eval()
 
