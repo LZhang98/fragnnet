@@ -168,7 +168,7 @@ def get_args():
 	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/spec_df_1.pkl.gz")
 	parser.add_argument("--frag_dp", type=str,default="./data/deepmet/frags/mol_df_1")
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
-	parser.add_argument("--batch_size",type=int,default=128)
+	parser.add_argument("--batch_size",type=int,default=24)
  
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	parser.add_argument("--wandb_run_id",type=str, default= '0kxgjooa')
