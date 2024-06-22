@@ -171,16 +171,16 @@ class BaseDataset(Dataset):
 			print(f"> total_spec_data_size: {total_spec_data_size/1e6:.2f} MB")
 
 	@staticmethod
-	def _get_mzs_ints(peaks):
+	def _get_mzs_ints(peaks:list):
 		"""
   		convert peaks to tensors, it is caller's responsibility to make sure data is valid 
 		"""
 		mzs, ints = [], []
-		if not none_or_nan(peaks):
-			for peak in peaks:
-				p_mz, p_int = peak
-				mzs.append(p_mz)
-				ints.append(p_int)
+		for peak in peaks:
+			p_mz, p_int = peak
+			mzs.append(p_mz)
+			ints.append(p_int)
+
 		mzs = th.tensor(mzs,dtype=th.float)
 		ints = th.tensor(ints,dtype=th.float)
 		# mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
