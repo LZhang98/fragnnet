@@ -174,7 +174,7 @@ class BaseDataset(Dataset):
 	def _get_mzs_ints(peaks):
 		"""
   		convert peaks to tensors, it is caller's responsibility to make sure data is valid 
-    	"""
+		"""
 		mzs, ints = [], []
 		if not none_or_nan(peaks):
 			for peak in peaks:
@@ -325,7 +325,7 @@ class BaseDataset(Dataset):
 				# cat
 				values = th.cat(values,dim=0)
 				collate_data[key] = values
-			elif key == "mol_id" and isinstance(values[0],str):
+			elif key in ["mol_id"]:
 				collate_data[key] = values
 			else:
 				raise TypeError(f"Unsupported type: {key} {type(values[0])}")
@@ -476,7 +476,7 @@ class SpecMolDataset(BaseDataset):
 	def training_data_sanity_check(self):
 		"""
   		basic data sanity check for training time only 
-    	"""
+		"""
 		assert self.spec_df['peaks'].isna().any() == False
 		assert (self.spec_df['peaks'] == '').any() == False
   	

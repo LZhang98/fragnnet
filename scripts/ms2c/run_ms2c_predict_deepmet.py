@@ -28,7 +28,7 @@ model_type_ds_cls = {
 }
 
 def get_all_frags_name(frag_dp):
-    return set([f.split('.')[0] for f in os.listdir(frag_dp)])
+	return set([f.split('.')[0] for f in os.listdir(frag_dp)])
 	
 def run_prediction(ckpt_fp,   
 				 save_fp,
@@ -59,7 +59,10 @@ def run_prediction(ckpt_fp,
 	config_d["dynamic_batch_sampler"] = False
 	config_d["group_sampler"] = False 
 	config_d["simple_group_sampler"] = False
-	
+	# additional spec_params
+	config_d['spec_params']['unique_id'] = True
+	config_d['spec_params']["counts"] = False
+ 
 	# config proc and check if frags are avaibale
 	print(f"> mol_fp {mol_df_fp}")
 	print(f"> spec_fp {spec_df_fp}")
@@ -82,10 +85,9 @@ def run_prediction(ckpt_fp,
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 	model_ds_cls = model_type_ds_cls[model_type]
-
 	ds = model_ds_cls(split='predict_only', **config_d)
-	print(ds.idx_to_inst_type)
-	print(ds.idx_to_prec_type)
+	print(f"> model supported inst type {ds.idx_to_inst_type}")
+	print(f"> model supported prec type {ds.idx_to_prec_type}")
 	print("> init dataloader")
 	dl = init_dataloader(ds, config_d)
  
@@ -118,12 +120,15 @@ def run_prediction(ckpt_fp,
 		config_d['num_workers']= 0
 
 	# make predictions on validation data
+	print("> running inference")
 	preds_l = []
 	with th.inference_mode():
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
 			#print(batch_input)
 			mol_smiles = batch_input['mol_smiles']
 			spec_nces = batch_input['spec_nce']
+			spec_ids = batch_input['spec_unique_id']
+			mol_ids = batch_input['mol_id']
 			spec_prec_types = batch_input['spec_prec_type']
 			spec_inst_types = batch_input['spec_inst_type']
 			batch_result = to_device(batch_input, device)
@@ -131,42 +136,42 @@ def run_prediction(ckpt_fp,
 			batch_result = model.predict_step(**batch_input)
 			batch_size = batch_input['batch_size'].detach().cpu()
 
-			#print(batch_result)
-			#pred_mzs = batch_result["pred_mzs"].detach().cpu()
-			#pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
-			#pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-			#pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
-
-			#cos_sim_bin_lr = batch_result['cos_sim_0.1'].cpu()
-			#cos_sim_bin_hr = batch_result['cos_sim_0.01'].cpu()
-			#cos_sim_hun = batch_result['cos_hun'].cpu()
-			#pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+			pred_mzs = batch_result["pred_mzs"].detach().cpu()
+			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
+			if "pred_oos_logprobs" in batch_result:
+				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
+	
+			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
+			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 			for b_idx in range(batch_size):
-				#b_peak_mask = pred_batch_idxs == b_idx
-				# oos
+				b_peak_mask = pred_batch_idxs == b_idx
 				#b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
+				b_spec_id = spec_ids[b_idx]
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
+				b_mol_id = mol_ids[b_idx]
 				b_spec_prec_type_idx = int(spec_prec_types[b_idx])
 				b_spec_inst_type_idx = int(spec_inst_types[b_idx])
-				b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
+				#b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
 
 				b_spec_prec_type = ds.idx_to_prec_type[b_spec_prec_type_idx]
-				b_spec_inst_type = ds.idx_to_inst_type[b_spec_inst_type_idx] 
-				#preds_l.append((b_inchikey,b_smi,b_nce, b_spec_prec_type, b_spec_inst_type,
-				#	cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
+				b_spec_inst_type = ds.idx_to_inst_type[b_spec_inst_type_idx]
+				b_spec_mzs = pred_mzs[b_peak_mask]
+				b_spec_ints = pred_ints[b_peak_mask]
+
+				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist()))
 				#plot_spectra_sparse()
+	columns = ['spec_id','mol_id','mzs','ints']
+	df = pd.DataFrame(preds_l, columns=columns)
 
-	#df = pd.DataFrame(preds_l, columns=columns)
-
-	#print(df)
-	#df.to_pickle(save_fp)
+	print(f"> save to {save_fp}")
+	df.to_pickle(save_fp)
 		
 def get_args():
 	parser = argparse.ArgumentParser()
 	
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
-	parser.add_argument("--save_dp",type=str,default="./model_eval")
+	parser.add_argument("--save_fp",type=str,default="./data/deepmet/mol_df_predicted.pkl.gz")
 	parser.add_argument("--mol_df_fp",type=str,default="./data/deepmet/proc/mol_df_1.pkl.gz")
 	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/spec_df_1.pkl.gz")
 	parser.add_argument("--frag_dp", type=str,default="./data/deepmet/frags/mol_df_1")
@@ -174,7 +179,7 @@ def get_args():
 	parser.add_argument("--batch_size",type=int,default=32)
  
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['0kxgjooa'])
+	parser.add_argument("--wandb_run_id",type=str, default= '0kxgjooa')
 	args = parser.parse_args()
 	return args
 
@@ -183,28 +188,22 @@ if __name__ == "__main__":
 
 	args = get_args()
 	#TORCH_LOGS="recompiles"
-	os.makedirs(args.save_dp, exist_ok=True)
-	json.dump(vars(args), open(f"{args.save_dp}/args.json", "w"), indent=2)
+	save_dp = os.path.dirname(args.save_fp)
+	os.makedirs(save_dp, exist_ok=True)
+	json.dump(vars(args), open(f"{save_dp}/args.json", "w"), indent=2)
 
-	os.makedirs(args.save_dp, exist_ok=True)	
+	os.makedirs(args.model_save_dp, exist_ok=True)	
 	model_save_dp = args.model_save_dp
 	print(f"> save model to {model_save_dp} from wandb")
-	assert args.wandb_run_ids is not None
+	assert args.wandb_run_id is not None
 
-	for run_id in args.wandb_run_ids:
-		#for run_id in inchikey_splits_runs:
-		print(f"> wandb run id: {run_id}")
-		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
+	print(f"> wandb run id: {args.wandb_run_id}")
+	ckpt_fp = get_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
 
-		#print(f"> {np_ckpt_fp}")
-		save_fp = os.path.join(args.save_dp, run_id+'.csv')
-		#print(f"> {custom_fp}")
-		print(f"> {save_fp}")
-		print(f"> {ckpt_fp}")
-		run_prediction(ckpt_fp = ckpt_fp,   
-					save_fp = save_fp,
-					mol_df_fp = args.mol_df_fp,
-					spec_df_fp = args.spec_df_fp,
-					frag_dp = args.frag_dp,
-					device = args.device,
-					batch_size = args.batch_size)
+	run_prediction(ckpt_fp = ckpt_fp,   
+				save_fp = args.save_fp,
+				mol_df_fp = args.mol_df_fp,
+				spec_df_fp = args.spec_df_fp,
+				frag_dp = args.frag_dp,
+				device = args.device,
+				batch_size = args.batch_size)
