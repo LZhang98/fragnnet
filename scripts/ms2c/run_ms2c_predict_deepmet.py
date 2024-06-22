@@ -55,7 +55,7 @@ def run_prediction(ckpt_fp,
 	config_d['auxiliary_scores'] = []  #['cos_hun','cos_sim']
 	#config_d['eval_mz_bin_res'] = [0.01, 0.1]
 	# let us see if ram will be an issue
-	config_d['frag_params']['preload'] = False
+	config_d['frag_params']['preload'] = True
 	config_d['frag_params']['preprocess'] = False
 	# disable sampler
 	config_d["dynamic_batch_sampler"] = False
@@ -137,7 +137,7 @@ def run_prediction(ckpt_fp,
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 			for b_idx in range(batch_size):
 				b_peak_mask = pred_batch_idxs == b_idx
-				#b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
+				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
 				b_spec_id = spec_ids[b_idx]
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
@@ -151,24 +151,24 @@ def run_prediction(ckpt_fp,
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist()))
+				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob.item()))
 
-	columns = ['spec_id','mol_id','mzs','ints']
+	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos']
 	df = pd.DataFrame(preds_l, columns=columns)
-
 	print(f">> save to {save_fp}")
 	df.to_pickle(save_fp)
+	del df
 		
 def get_args():
 	parser = argparse.ArgumentParser()
 	
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
-	parser.add_argument("--save_fp",type=str,default="./data/deepmet/mol_df_predicted.pkl.gz")
+	parser.add_argument("--save_fp",type=str,default="./data/deepmet/predicted/mol_df_1_predicted.pkl")
 	parser.add_argument("--mol_df_fp",type=str,default="./data/deepmet/proc/mol_df_1.pkl.gz")
 	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/spec_df_1.pkl.gz")
 	parser.add_argument("--frag_dp", type=str,default="./data/deepmet/frags/mol_df_1")
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
-	parser.add_argument("--batch_size",type=int,default=24)
+	parser.add_argument("--batch_size",type=int,default=32)
  
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	parser.add_argument("--wandb_run_id",type=str, default= '0kxgjooa')
