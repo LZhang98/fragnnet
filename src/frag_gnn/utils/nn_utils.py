@@ -763,3 +763,48 @@ class LowRankDense(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         return x
+
+def decompile_jit_ckpt(path:str):
+	"""
+	convert compiled ckpt to normal version and return a patched checkpoint
+	"""
+ 
+	# inspired by
+	# https://github.com/pytorch/pytorch/issues/101107#issuecomment-1801128683
+	print(f"> src: {path}")
+
+	ckpt = th.load(path)
+	if ckpt['hyper_parameters']['compile'] == False:
+		return ckpt
+
+	in_state_dict = ckpt["state_dict"]
+	pairings = [
+		(src_key,  src_key.replace('._orig_mod',''))
+		for src_key in in_state_dict.keys()
+	]
+	#if all(src_key == dest_key for src_key, dest_key in pairings):
+	#	return  # Do not write checkpoint if no need to repair!
+	out_state_dict = {}
+	for src_key, dest_key in pairings:
+		if src_key != dest_key:
+			print(f"{src_key}  ==>  {dest_key}")
+		out_state_dict[dest_key] = in_state_dict[src_key]
+
+	ckpt["state_dict"] = out_state_dict
+	ckpt['hyper_parameters']['compile'] = False
+	return ckpt
+
+def is_ckpt_compiled(path:str) -> bool:
+	ckpt = th.load(path)
+	state_dict = ckpt["state_dict"]
+	for key in state_dict.keys():
+		if '_orig_mod' in key:
+			return True
+	return False
+
+def get_pl_hparams(path:str) -> dict:
+	"""
+ 	"""
+	ckpt = th.load(path)
+	hyper_parameters = ckpt["hyper_parameters"]
+	return hyper_parameters

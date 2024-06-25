@@ -1,5 +1,9 @@
 #from copy import deepcopy
 import pickle
+import sys
+import tarfile
+import traceback
+from zipfile import ZipFile
 import _pickle as cPickle
 import numpy as np
 import pandas as pd
@@ -21,6 +25,8 @@ from frag_gnn.frag.compute_frags import (
 	MAX_NUM_EDGES,
 	MAX_NUM_NODES,
 )
+
+from frag_gnn.utils.data_utils import mol_from_smiles
 
 # full list of common elements
 # NOTE: this maybe a bad idea to not cover all the element
@@ -186,10 +192,11 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 	if isinstance(smiles_or_mol,str):
 		# TODO: change this to be consistent with the approach in data_utils.py
 		# rdkit mol stuff
-		mol = Chem.MolFromSmiles(smiles_or_mol)
-		rdMolStandardize.Cleanup(mol)
-		te = rdMolStandardize.TautomerEnumerator()
-		mol = te.Canonicalize(mol)
+		# mol = Chem.MolFromSmiles(smiles_or_mol)
+		# rdMolStandardize.Cleanup(mol)
+		# te = rdMolStandardize.TautomerEnumerator()
+		# mol = te.Canonicalize(mol)
+		mol = mol_from_smiles(smiles_or_mol)
 	else:
 		assert isinstance(smiles_or_mol,Chem.rdchem.Mol), type(smiles_or_mol)
 		mol = smiles_or_mol
@@ -997,12 +1004,16 @@ def get_edge_feats(edge_feats:th.Tensor,edge_feat_idxs:int,key:str):
 	edge_feats = edge_feats[:,edge_feat_idxs[edge_feat_idx]:edge_feat_idxs[edge_feat_idx+1]]
 	return edge_feats
 
-def get_frag_fp(mol_id:int, frag_dp:str, is_compressed:bool):
-
-	fp = os.path.join(frag_dp,str(mol_id))
-	fp += ".pickle"
+def get_frag_name(mol_id:str, is_compressed:bool):
+	name = f'{mol_id}.pickle'
 	if is_compressed:
-		fp += ".bz2"
+		name += ".bz2"
+	return name
+
+def get_frag_fp(mol_id:str, frag_dp:str, is_compressed:bool):
+
+	fp = os.path.join(frag_dp,get_frag_name(mol_id, is_compressed))
+
 	return fp
 
 def save_frag_d(frag_d:dict, mol_id:int, frag_dp:str, is_compressed:bool = False):
@@ -1021,7 +1032,7 @@ def save_frag_d(frag_d:dict, mol_id:int, frag_dp:str, is_compressed:bool = False
 		with bz2.BZ2File(fp, 'wb') as fileout: 
 			cPickle.dump(frag_d, fileout)
 
-def load_frag_d(mol_id:int, frag_dp:str, is_compressed:bool = False):
+def load_frag_d(mol_id:str, frag_dp:str, is_compressed:bool = False):
 	"""_summary_
 
 	Args:
@@ -1031,13 +1042,34 @@ def load_frag_d(mol_id:int, frag_dp:str, is_compressed:bool = False):
 		_type_: _description_
 	"""
 	frag_d = None
-	fp = get_frag_fp(mol_id, frag_dp, is_compressed)
-	if not is_compressed:
-		with open(fp, 'rb') as filein:
-			frag_d = pickle.load(filein)
+
+	if os.path.isfile(frag_dp) and str(frag_dp).endswith(".tar"):
+		frag_filename = get_frag_name(mol_id, is_compressed)
+		with tarfile.open(frag_dp, "r") as tar_read:
+			for member in tar_read.getmembers():
+				if member.name == frag_filename:
+					f = tar_read.extractfile(member)
+					content = f.read()
+					frag_d = pickle.loads(bz2.decompress(content))
+					break
+
+	elif os.path.isfile(frag_dp) and str(frag_dp).endswith(".zip"):
+		frag_filename = get_frag_name(mol_id, is_compressed)
+		with ZipFile(frag_dp, 'r') as zip_read:
+			with zip_read.open(frag_filename) as f:
+				content = f.read()
+				if frag_filename.endswith("bz2"):
+					frag_d = pickle.loads(bz2.decompress(content))
+				else:
+					frag_d = pickle.loads(content)
 	else:
-		with bz2.BZ2File(fp, 'rb') as filein: 
-			frag_d = cPickle.load(filein)
+		fp = get_frag_fp(mol_id, frag_dp, is_compressed)
+		if not is_compressed:
+			with open(fp, 'rb') as filein:
+				frag_d = pickle.load(filein)
+		else:
+			with bz2.BZ2File(fp, 'rb') as filein: 
+				frag_d = cPickle.load(filein)
 
 	return frag_d
 
@@ -1147,3 +1179,55 @@ def get_subgraph_hashes(
 			max_iterations=max_iterations)
 		subgraph_hashes.append(subgraph_hash)
 	return subgraph_hashes
+
+def timed_get_dags(mol, 
+			mol_id, 
+			max_depth,
+			h_prior,
+			max_h_transfer, 
+			max_time,
+			isotopes: bool,
+			nb_isomorphic: bool,
+			max_iterations: int,
+			output_dir: str, 
+			use_cached = True, 
+			compressed = False,
+			save_dag = True):
+
+		if save_dag:
+			output_file = get_frag_fp(mol_id, output_dir, compressed)
+
+		if use_cached and os.path.exists(output_file):
+			assert save_dag
+			dag_d = load_frag_d(mol_id, output_dir, compressed)
+		else:
+			dag_d = {}
+			try:
+				mol_d = extract_mol_info(mol)
+				# this maybe dangers in multi processing because of scopes
+				dag_d = compute_dags(
+					mol_d,
+					max_depth,
+					h_prior,
+					max_h_transfer, 
+					max_time, 
+					isotopes,
+					nb_isomorphic,
+					max_iterations
+				)
+			except KeyboardInterrupt as e:
+				# let these through
+				raise e
+			except Exception as e:
+				# don't retry, theres a bug
+				if type(mol) is not str:
+					mol = Chem.MolToSmiles(mol)
+				print(f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}",file=sys.stderr)
+				print("> Traceback",file=sys.stderr)
+				traceback.print_exc(file=sys.stderr)
+				dag_d = {}
+			else:
+				if save_dag:
+					save_frag_d(dag_d, mol_id, output_dir, compressed)
+					del dag_d["dag"]
+		return dag_d

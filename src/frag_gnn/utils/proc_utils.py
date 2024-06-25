@@ -6,60 +6,95 @@ from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
 
 
-def element_filter(formula,allowed_elements):
+def element_filter(formula,elements):
 	try:
 		element_counts = parse_formula(formula)
 	except ValueError as e:
 		return False
 	for k,v in element_counts.items():
-		if v > 0 and k not in allowed_elements:
+		if v > 0 and k not in elements:
 			return False
 	return True
 
 def filter_spec_mol(
 		spec_df,
 		mol_df,
-		allowed_elements=None,
+		elements=None,
 		dsets=None,
 		max_peak_mz=None,
-		prec_types=None,
-		num_entries=-1,):
+		max_prec_mz=None,
+		min_prec_mz=None,
+		prec_types:list = None,
+		num_entries=-1,
+  		inst_types:list = None,
+    	frag_modes:list = None,
+     	ion_modes:list = None,
+		ces:str = None):
+	
 	"""
 	The purpose of this filtering is to prevent errors
 	"""
-
 	masks = []
+ 
 	## spectrum criteria (TODO remove this)
 	# dataset mask
 	if dsets is not None:
+		print(f">> dsets filter: {dsets}")
 		dset_mask = spec_df["dset"].isin(dsets)
-		print(f">> dsets: {dset_mask.mean()}")
+		print(f">> dsets filter mean: {dset_mask.mean()}")
 		masks.append(dset_mask)
+
 	# instrument type
-	inst_type_mask = spec_df["inst_type"].isin(["FT"])
-	print(f">> inst type: {inst_type_mask.mean()}")
-	masks.append(inst_type_mask)
+	if inst_types is not None:
+		print(f">> inst type: {inst_types}")
+		inst_type_mask = spec_df["inst_type"].isin(inst_types)
+		print(f">> inst type filter mean: {inst_type_mask.mean()}")
+		masks.append(inst_type_mask)
+  
 	# frag mode
-	frag_mode_mask = spec_df["frag_mode"].isin(["HCD"])
-	print(f">> frag mode: {frag_mode_mask.mean()}")
-	masks.append(frag_mode_mask)
-	# ce
-	ce_mask = (spec_df["inst_type"]=="FT") & (~spec_df["nce"].isna())
-	print(f">> ce: {ce_mask.mean()}")
-	masks.append(ce_mask)
+	if frag_modes is not None:
+		print(f">> frag mode filter: {frag_modes}")
+		frag_mode_mask = spec_df["frag_mode"].isin(frag_modes)
+		print(f">> frag mode filter mean: {frag_mode_mask.mean()}")
+		masks.append(frag_mode_mask)
+  
+	# ce filter
+	assert ces in ["ace", "nce", "ace_or_nce", None], ces
+	if ces == "ace":
+		print(f">> require ace")
+		ace_mask = (~spec_df["ace"].isna())
+		print(f">> ace filter: {ace_mask.mean()}")
+		masks.append(ace_mask)
+	if ces == "nce":
+		print(f">> require nce")
+		nce_mask = (~spec_df["nce"].isna())
+		print(f">> nce filter: {nce_mask.mean()}")
+		masks.append(nce_mask)
+	elif ces == "ace_or_nce":
+		print(f">> require ace or nce")
+		mask = (~spec_df["nce"].isna() or ~spec_df["ace"].isna())
+		print(f">> ace_or_nce filter: {mask.mean()}")
+		masks.append(mask)
+		
 	# ion mode
-	ion_mode_mask = spec_df["ion_mode"] == "P"
-	print(f">> ion mode: {ion_mode_mask.mean()}")
-	masks.append(ion_mode_mask)
+	if ion_modes is not None:
+		print(f">> ion mode filter: {ion_modes}")
+		ion_mode_mask = spec_df["ion_mode"].isin(ion_modes)
+		print(f">> ion mode filter mean: {ion_mode_mask.mean()}")
+		masks.append(ion_mode_mask)
+  
 	# precursor type
 	if prec_types is not None:
+		print(f">> prec type filter: {prec_types}")
 		prec_type_mask = spec_df["prec_type"].isin(prec_types)
-		print(f">> prec type: {prec_type_mask.mean()}")
+		print(f">> prec type filter mean: {prec_type_mask.mean()}")
 		masks.append(prec_type_mask)
-	# resolution (TODO: disable this...)
-	res_mask = spec_df["res"].isin([1,2,3,4,5,6,7])
-	print(f">> res: {res_mask.mean()}")
-	masks.append(res_mask)
+
+	# resolution
+	# res_mask = spec_df["res"].isin([1,2,3,4,5,6,7])
+	# print(f">> res: {res_mask.mean()}")
+	# masks.append(res_mask)
+
 	# spectrum type 
 	spec_type_mask = spec_df["spec_type"] == "MS2"
 	print(f">> spec type: {spec_type_mask.mean()}")
@@ -68,6 +103,13 @@ def filter_spec_mol(
 	prec_mz_mask = ~spec_df["prec_mz"].isna()
 	print(f">> prec mz: {prec_mz_mask.mean()}")
 	masks.append(prec_mz_mask)
+  
+	if max_prec_mz is not None:
+		print(f">> max_prec_mz {max_prec_mz}")
+		max_prec_mz_mask = (spec_df["prec_mz"] <= max_prec_mz)
+		print(f">> max prec mz: {max_prec_mz_mask.mean()}")
+		masks.append(max_prec_mz_mask)
+
 	# max peak mz
 	if max_peak_mz is not None:
 		def get_max_mz(peaks):
@@ -75,6 +117,7 @@ def filter_spec_mol(
 		max_peak_mz_mask = spec_df["peaks"].apply(get_max_mz) <= max_peak_mz
 		print(f">> max peak mz: {max_peak_mz_mask.mean()}")
 		masks.append(max_peak_mz_mask)
+
 	## molecule criteria
 	# single molecule
 	single_mol_ids = mol_df[mol_df["single_mol"]]["mol_id"]
@@ -87,8 +130,8 @@ def filter_spec_mol(
 	print(f">> neutral: {neutral_mask.mean()}")
 	masks.append(neutral_mask)
 	# element composition
-	if allowed_elements is not None:
-		element_ids = mol_df[mol_df["formula"].apply(lambda formula: element_filter(formula,allowed_elements))]["mol_id"]
+	if elements is not None:
+		element_ids = mol_df[mol_df["formula"].apply(lambda formula: element_filter(formula,elements))]["mol_id"]
 		element_mask = spec_df["mol_id"].isin(element_ids)
 		print(f">> element: {element_mask.mean()}")
 		masks.append(element_mask)

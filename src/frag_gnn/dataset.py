@@ -16,7 +16,8 @@ from frag_gnn.utils.feat_utils import batch_mols_frags, get_mol_fp, get_mol_grap
 from frag_gnn.utils.spec_utils import batch_func
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
-from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage
+from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage, none_or_nan
+from frag_gnn.utils.data_utils import fill_missing_ace, fill_missing_nce, seq_apply_df_rows
 import frag_gnn.massformer.data_utils as mf_data_utils
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
@@ -27,7 +28,7 @@ class BaseDataset(Dataset):
 		spec_fp: str,
 		mol_fp: str,
 		split_dp: str,
-		split: List[str],
+		split: str,
 		subsample_params: dict,
 		spec_params: dict):
 
@@ -35,10 +36,10 @@ class BaseDataset(Dataset):
 		self.subsample_params = subsample_params
 		self.spec_params = spec_params
 		spec_df, mol_df, um_spec_df, split_df, id_key = BaseDataset._setup_dfs(
-			spec_fp=spec_fp,
-			mol_fp=mol_fp,
+			spec_fp_or_df=spec_fp,
+			mol_fp_or_df=mol_fp,
 			split_dp=split_dp,
-			splits=[split],
+			split=split,
 			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
@@ -53,27 +54,34 @@ class BaseDataset(Dataset):
 
 	@staticmethod
 	def _setup_dfs( 
-		spec_fp: str,
-		mol_fp: str,
+		spec_fp_or_df: str|pd.DataFrame,
+		mol_fp_or_df: str|pd.DataFrame,
 		split_dp: str,
-		splits: List[str],
+		split: str,
 		subsample_params: dict,
 		spec_params: dict):
 		
-		spec_df = pd.read_pickle(spec_fp)
-		mol_df = pd.read_pickle(mol_fp)
-		split_dfs = []
-		for split in splits:
-			assert split in ["train","val","test","secondary"], split
+		spec_df = spec_fp_or_df if isinstance(spec_fp_or_df, pd.DataFrame) else pd.read_pickle(spec_fp_or_df)
+		mol_df = mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
+
+		assert split in ["train","val","test","secondary", "predict_only"], split
+  
+		if split == "predict_only":
+			# predict_all split, just include everything, this is used for prediction
+			split_df = pd.DataFrame()
+			# fill these to keep compatible
+			split_df["spec_id"] = spec_df["spec_id"]
+			split_df["mol_id"] = spec_df["mol_id"]
+			split_df["group_id"] = spec_df["spec_id"]
+		else:	
 			split_fp = os.path.join(split_dp,f"{split}_ids.csv")
 			split_df = pd.read_csv(split_fp)
-			split_dfs.append(split_df)
-		split_df = pd.concat(split_dfs)
-		del split_dfs
+   
 		# select spectra
 		spec_df = spec_df[spec_df["spec_id"].isin(split_df["spec_id"])]
 		# select molecules
 		mol_df = mol_df[mol_df["mol_id"].isin(split_df["mol_id"])]
+  
 		assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 		# merge spectra
 		um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
@@ -82,6 +90,7 @@ class BaseDataset(Dataset):
 			id_key = "group_id"
 		else:
 			id_key = "spec_id"
+   
 		# subsample
 		if subsample_params.get(split,False) and subsample_params["subsample_size"] > 0:
 			if isinstance(subsample_params["subsample_size"],int):
@@ -98,6 +107,10 @@ class BaseDataset(Dataset):
 				replace=False)
 			mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
 			um_spec_df = um_spec_df[um_spec_df[id_key].isin(spec_df[id_key])]
+
+		# covert ace and nce if there is data
+		spec_df.loc[:,"ace"] = seq_apply_df_rows(spec_df, fill_missing_ace)
+		spec_df.loc[:,"nce"] = seq_apply_df_rows(spec_df, fill_missing_nce)
 		# reset indices
 		spec_df = spec_df.reset_index(drop=True)
 		mol_df = mol_df.reset_index(drop=True)
@@ -158,35 +171,37 @@ class BaseDataset(Dataset):
 			print(f"> total_spec_data_size: {total_spec_data_size/1e6:.2f} MB")
 
 	@staticmethod
-	def _get_mzs_ints(peaks):
-
+	def _get_mzs_ints(peaks:list):
+		"""
+  		convert peaks to tensors, it is caller's responsibility to make sure data is valid 
+		"""
 		mzs, ints = [], []
 		for peak in peaks:
 			p_mz, p_int = peak
 			mzs.append(p_mz)
 			ints.append(p_int)
+
 		mzs = th.tensor(mzs,dtype=th.float)
 		ints = th.tensor(ints,dtype=th.float)
 		# mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
-		assert mzs.shape[0] > 0
-		assert ints.shape[0] > 0
 		return mzs, ints
 	
 	def _setup_prec_type_to_idx(self):
 
 		prec_types = sorted(self.spec_params["prec_types"])
-		assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types)
+		assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types), prec_types
 		self.prec_type_to_idx = {prec_type: idx for idx, prec_type in enumerate(prec_types)}
+		self.idx_to_prec_type = {idx: prec_type for idx, prec_type in enumerate(prec_types)}
 		self.num_prec_types = len(prec_types)
 
 	def _setup_inst_type_to_idx(self):
 
 		inst_types = sorted(self.spec_params["inst_types"])
 		self.inst_type_to_idx = {inst_type: idx for idx, inst_type in enumerate(inst_types)}
+		self.idx_to_inst_type = {idx: inst_type for idx, inst_type in enumerate(inst_types)}
 		self.num_inst_types = len(inst_types)
 
 	def _process_spec(self,spec_entry):
-
 		spec_data = {}
 		# peak data
 		mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
@@ -227,10 +242,10 @@ class BaseDataset(Dataset):
 			spec_data["spec_prec_mz"] = prec_mz
 		if self.spec_params["unique_id"]:
 			unique_id = spec_entry[self.id_key]
-			unique_id = th.tensor([unique_id],dtype=th.long) 
+			unique_id = th.tensor([unique_id],dtype=th.long)
 			spec_data["spec_unique_id"] = unique_id
 			spec_data['group_id'] =  th.tensor([spec_entry['group_id']],dtype=th.long)
-			spec_data['mol_id'] = th.tensor([spec_entry['mol_id']],dtype=th.long)
+			spec_data['mol_id'] = spec_entry['mol_id'] # mol id does not need to be an int #th.tensor([spec_entry['mol_id']],dtype=th.long)
 		if self.spec_params["counts"]:
 			spec_per_mol = self.spec_per_mol[spec_entry["mol_id"]]
 			spec_per_mol = th.tensor([spec_per_mol],dtype=th.long)
@@ -310,8 +325,10 @@ class BaseDataset(Dataset):
 				# cat
 				values = th.cat(values,dim=0)
 				collate_data[key] = values
+			elif key in ["mol_id"]:
+				collate_data[key] = values
 			else:
-				raise TypeError(f"Unsupported type: {type(values[0])}")
+				raise TypeError(f"Unsupported type: {key} {type(values[0])}")
 		# remove everything
 		keys.clear()
 		# add batch size
@@ -333,8 +350,8 @@ class SpecMolDataset(BaseDataset):
 		subsample_params: dict,
 		spec_params: dict,
 		mol_params: dict,
-		spec_pp_sd: dict = dict(),
-		mol_pp_sd: dict = dict(),
+		spec_pp_sd: dict = None,
+		mol_pp_sd: dict = None,
 		**kwargs
 	):
 
@@ -347,6 +364,12 @@ class SpecMolDataset(BaseDataset):
 			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
+  
+		if spec_pp_sd is None:
+			spec_pp_sd = dict()
+		if mol_pp_sd  is None:
+			mol_pp_sd = dict()
+   
 		self.mol_params = mol_params
 		self._preprocess_spec(spec_pp_sd)
 		self._preprocess_mol(mol_pp_sd)
@@ -456,6 +479,13 @@ class SpecMolDataset(BaseDataset):
 		SpecMolDataset._standard_collate(batch_size,keys,collate_data)
 		return collate_data
 
+	def training_data_sanity_check(self):
+		"""
+  		basic data sanity check for training time only 
+		"""
+		assert self.spec_df['peaks'].isna().any() == False
+		assert (self.spec_df['peaks'] == '').any() == False
+  	
 class SpecMolFragDataset(SpecMolDataset):
 
 	def __init__(
@@ -469,10 +499,10 @@ class SpecMolFragDataset(SpecMolDataset):
 		mol_params: dict,
 		frag_dp: str,
 		frag_params: dict,
-		spec_pp_sd: dict = dict(),
-		mol_pp_sd: dict = dict(),
-		frag_pl_sd: dict = dict(),
-		frag_pp_sd: dict = dict(),
+		spec_pp_sd: dict = None,
+		mol_pp_sd: dict = None,
+		frag_pl_sd: dict = None,
+		frag_pp_sd: dict = None,
 		**kwargs
 	):
 
@@ -488,6 +518,16 @@ class SpecMolFragDataset(SpecMolDataset):
 		self.mol_params = mol_params
 		self.frag_dp = frag_dp
 		self.frag_params = frag_params
+		
+		if spec_pp_sd is None:
+			spec_pp_sd = dict()
+		if mol_pp_sd  is None:
+			mol_pp_sd = dict()
+		if frag_pl_sd is None:
+			frag_pl_sd = dict()
+		if frag_pp_sd is None:
+			frag_pp_sd = dict()
+   
 		self._preprocess_spec(spec_pp_sd)
 		self._preprocess_mol(mol_pp_sd)
 		self._preprocess_frag(frag_pl_sd, frag_pp_sd)
@@ -507,6 +547,7 @@ class SpecMolFragDataset(SpecMolDataset):
 				total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
 				self.frag_entries[mol_id] = frag_entry
 			print(f"> total_frag_entry_size: {total_frag_entry_size/1e6:.2f} MB")
+   
 		# preprocess frag dags
 		if self.frag_params["preprocess"]:
 			assert self.frag_params["preload"]

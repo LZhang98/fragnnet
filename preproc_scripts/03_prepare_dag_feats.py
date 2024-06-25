@@ -16,7 +16,7 @@ import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
-
+from frag_gnn.utils.frag_utils import timed_get_dags
 
 def print_and_log(name,series,wandb_flag,stats_d):
 
@@ -36,7 +36,7 @@ def main(args):
 
 	assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
 
-	allowed_elements = args.allowed_elements
+	elements = args.elements
 	dsets = args.dsets
 	# init wandb
 	wandb_flag = args.wandb_mode != "off"
@@ -63,10 +63,14 @@ def main(args):
 	spec_df, mol_df = filter_spec_mol(
 		spec_df,
 		mol_df,
-		allowed_elements=allowed_elements,
+		elements=elements,
 		dsets=dsets,
-		prec_types=args.prec_types,
-		num_entries=args.num_entries)
+		prec_types=args.prec_types!= 'any' else None,
+		num_entries=args.num_entries,
+  		frag_modes=args.frag_modes if args.frag_modes != 'any' else None,
+    	ion_modes=args.ion_modes if args.ion_modes != 'any' else None,
+		inst_types=args.inst_types if args.inst_types != 'any' else None,)
+ 
 	m_spec_df = merge_spec_df(spec_df)
 
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules") #, {len(m_spec_df)} merged spectra")
@@ -83,72 +87,6 @@ def main(args):
 	os.makedirs(dag_dp,exist_ok=True)
 	group_stats_fp = os.path.join(args.frag_dp,f"group_stats_df.pkl")
 	global_stats_fp = os.path.join(args.frag_dp,f"global_stats.json")
-
-	def timed_get_dags(mol, 
-			mol_id, 
-			max_depth,
-			h_prior,
-			max_h_transfer, 
-			max_time,
-			isotopes: bool,
-			nb_isomorphic: bool,
-			max_iterations: int,
-			output_dir: str, 
-			use_cached = True, 
-			compressed = False,
-			save_dag = True):
-		""" 
-		Args:
-			mol (_type_): _description_
-			mol_id (int): _description_
-
-			output_dir (str): _description_
-			compressed (bool, optional): _description_. Defaults to False.
-
-		Raises:
-			e: _description_
-
-		Returns:
-			_type_: _description_
-		"""
-		# TODO: get this out of the main() scope
-
-		output_file = frag_utils.get_frag_fp(mol_id, output_dir, compressed)
-
-		if os.path.exists(output_file) and use_cached:
-			dag_d = frag_utils.load_frag_d(mol_id, output_dir, compressed)
-		else:
-			dag_d = {}
-			try:
-				mol_d = frag_utils.extract_mol_info(mol)
-				# this maybe dangers in multi processing because of scopes
-				dag_d = frag_utils.compute_dags(
-					mol_d,
-					max_depth,
-					h_prior,
-					max_h_transfer, 
-					max_time, 
-					isotopes,
-					nb_isomorphic,
-					max_iterations
-				)
-			except KeyboardInterrupt as e:
-				# let these through
-				raise e
-			except Exception as e:
-				# don't retry, theres a bug
-				if type(mol) is not str:
-					mol = Chem.MolToSmiles(mol)
-				print(f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}",file=sys.stderr)
-				print("> Traceback",file=sys.stderr)
-				traceback.print_exc(file=sys.stderr)
-				dag_d = {}
-			else:
-				if save_dag:
-					frag_utils.save_frag_d(dag_d, mol_id, output_dir, compressed)
-				del dag_d["dag"]
-		return dag_d
-
 
 	def compute_spectra_stats(
 			peaks,
@@ -214,10 +152,14 @@ def main(args):
 				args.compress_dags
 			]
 		)
-	tqdm_iter = tqdm(mol_input_rows,desc=pformat(timed_get_dags),total=len(mol_input_rows))
-	frag_results = data_utils.par_apply(tqdm_iter,timed_get_dags,True)
-	print("> Fragments Computed")
+  
+	print(f"> Running frag gen")
+	frag_results_gen = data_utils.par_apply(iter(mol_input_rows),frag_utils.timed_get_dags,True, return_as_generator=True)
+	frag_results = []
+	for fr in tqdm(frag_results_gen, total = len(mol_input_rows), desc = "Compute Frags"):
+		frag_results.append(fr)
 
+	print("> Fragments Computed")
 	frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
 	frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
 	frag_stats_df["formula_peak_mzs"] = list(map(lambda x: x.pop("formula_peak_mzs",np.nan),frag_results))
@@ -370,8 +312,7 @@ if __name__ == "__main__":
 	parser.add_argument("--frag_dp",type=str,required=True)
 	parser.add_argument("--proc_dp",type=str,required=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
+	#parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
 	parser.add_argument("--nb_isomorphic",type=booltype,default=True)
 	parser.add_argument("--max_iterations",type=int,default=3)
 	parser.add_argument("--dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
@@ -382,6 +323,12 @@ if __name__ == "__main__":
 	parser.add_argument("--compress_dags",type=booltype,default=True)
 	parser.add_argument("--wandb_run_name",type=str,required=True)
 	parser.add_argument("--save_dag",type=booltype,default=True)
+	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
+	parser.add_argument("--prec_types",nargs="+",default='any')
+	parser.add_argument("--inst_types",nargs="+",default='any')
+	parser.add_argument("--frag_modes",nargs="+",default='any')
+	parser.add_argument("--ion_modes",nargs="+",default='any')
+	parse_formula
 	args = parser.parse_args()
 
 	tqdm.pandas()

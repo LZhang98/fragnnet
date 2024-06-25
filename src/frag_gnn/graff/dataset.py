@@ -67,8 +67,8 @@ class SpecMolAnnDataset(SpecMolDataset):
 	def _setup_ann(self, spec_fp, mol_fp, split_dp):
 
 		um_spec_df = BaseDataset._setup_dfs(
-			spec_fp=spec_fp,
-			mol_fp=mol_fp,
+			spec_fp_or_df=spec_fp,
+			mol_fp_or_df=mol_fp,
 			split_dp=split_dp,
 			splits=self.ann_params["library_splits"],
 			subsample_params=self.subsample_params,

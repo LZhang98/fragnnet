@@ -8,8 +8,8 @@ from typing import List, Tuple, Dict, Literal
 from .misc_utils import none_or_nan
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
-
 ELECTRON_MASS = 0.00054858
+
 H_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("H")
 NA_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Na")
 N_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("N")
@@ -20,7 +20,10 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"[M+Na]+": NA_MASS - ELECTRON_MASS,
 	"[M+NH4]+": N_MASS + 4*H_MASS - ELECTRON_MASS,
 	"[M-H2O+H]+": H_MASS - O_MASS - ELECTRON_MASS,
-	"": 0.
+	"[M]+": - ELECTRON_MASS,
+	"": 0.,
+	"[M+H]+_NL": -H_MASS + ELECTRON_MASS,
+	"[M-H]-_NL": H_MASS - ELECTRON_MASS,
 }
 NEUTRON_MASS = 1.008665
 
@@ -312,7 +315,7 @@ def parse_formula(formula:str) -> Dict[str,int]:
 		Dict[str,int]: count per element eg {"C":1, "H":4}
 	"""
 
-	# assert not none_or_nan(formula)
+	assert not none_or_nan(formula)
 	cur_element = None
 	cur_count = 1
 	element_counts = {}
@@ -336,6 +339,11 @@ def parse_formula(formula:str) -> Dict[str,int]:
 		assert cur_element not in element_counts
 		element_counts[cur_element] = cur_count
 	return element_counts
+
+def get_elements_set(formula:str) -> set[str]:
+    """
+    """
+    return set(list(parse_formula(formula).keys()))
 
 #if __name__ == "__main__":
 

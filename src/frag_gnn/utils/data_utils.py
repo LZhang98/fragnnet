@@ -144,7 +144,7 @@ def mol_from_smiles(smiles,standardize:bool=True) -> "rdkit.Chem.rdchem.Mol":
 		mol = Chem.MolFromSmiles(smiles)
 		if standardize:
 			mol = rdkit_standardize(mol)
-	except:
+	except Exception as e:
 		mol = np.nan
 	if none_or_nan(mol):
 		mol = np.nan
@@ -166,7 +166,7 @@ def mol_to_smiles(mol:"rdkit.Chem.rdchem.Mol",canonical:bool=True,isomericSmiles
 	Chem = modules[0]
 	try:
 		smiles = Chem.MolToSmiles(mol,canonical=canonical,isomericSmiles=isomericSmiles,kekuleSmiles=kekuleSmiles)
-	except:
+	except Exception as e:
 		smiles = np.nan
 	if none_or_nan(smiles):
 		smiles = np.nan
@@ -185,7 +185,7 @@ def mol_to_formula(mol:"rdkit.Chem.rdchem.Mol") -> str:
 	AllChem = modules[0]
 	try:
 		formula = AllChem.CalcMolFormula(mol)
-	except:
+	except Exception as e:
 		formula = np.nan
 	return formula
 
@@ -202,7 +202,7 @@ def mol_to_inchikey(mol:"rdkit.Chem.rdchem.Mol") -> str:
 	inchi = modules[0]
 	try:
 		inchikey = inchi.MolToInchiKey(mol)
-	except:
+	except Exception as e:
 		inchikey = np.nan
 	return inchikey
 
@@ -219,7 +219,7 @@ def mol_to_inchikey_s(mol:"rdkit.Chem.rdchem.Mol") -> str:
 	inchi = modules[0]
 	try:
 		inchikey_s = inchi.MolToInchiKey(mol)[:14]
-	except:
+	except Exception as e:
 		inchikey_s = np.nan
 	return inchikey_s
 
@@ -237,19 +237,18 @@ def mol_to_inchi(mol:"rdkit.Chem.rdchem.Mol")  -> str:
 	try:
 		inchikey = inchi.MolToInchiKey(mol)
 		inchikey_s = inchikey[:14]
-	except:
+	except Exception as e:
 		inchikey_s = np.nan
 	return inchikey_s
 
-def mol_to_mol_weight(mol,exact=True)  -> float:
+def mol_to_inchi(mol)  -> str:
 	"""get mol weight from mol object
 
 	Args:
 		mol (_type_): mol object
-		exact (bool, optional): flag to get extact mass. Defaults to True.
-
+		
 	Returns:
-		float: mw
+		str: inchi
 	"""
 	modules = rdkit_import("rdkit.Chem.rdinchi")
 	rdinchi = modules[0]
@@ -260,6 +259,14 @@ def mol_to_mol_weight(mol,exact=True)  -> float:
 	return inchi
 
 def mol_to_mol_weight(mol,exact=True):
+	"""get mol weight from mol object
+	Args:
+		mol (_type_): mol object
+		exact (bool, optional): flag to get extact mass. Defaults to True.
+
+	Returns:
+		float: mw
+	"""
 	modules = rdkit_import("rdkit.Chem.Descriptors")
 	Desc = modules[0]
 	try:
@@ -267,7 +274,7 @@ def mol_to_mol_weight(mol,exact=True):
 			mol_weight = Desc.ExactMolWt(mol)
 		else:
 			mol_weight = Desc.MolWt(mol)
-	except:
+	except Exception as e:
 		mol_weight = np.nan
 	return mol_weight
 
@@ -281,7 +288,7 @@ def mol_to_charge(mol:"rdkit.Chem.rdchem.Mol") -> int:
 	rdmolops = modules[0]
 	try:
 		charge = rdmolops.GetFormalCharge(mol)
-	except:
+	except Exception as e:
 		charge = np.nan
 	return charge
 
@@ -297,7 +304,7 @@ def mol_to_num_atoms(mol:"rdkit.Chem.rdchem.Mol", heavy:bool=True) -> int:
 	"""
 	try:
 		num_atoms = mol.GetNumAtoms(onlyHeavy=heavy)
-	except:
+	except Exception as e:
 		num_atoms = np.nan
 	return num_atoms
 
@@ -358,7 +365,7 @@ def check_single_mol(mol:"rdkit.Chem.rdchem.Mol") -> bool:
 	rdmolops = modules[0]
 	try:
 		num_frags = len(rdmolops.GetMolFrags(mol))
-	except:
+	except Exception as e:
 		num_frags = np.nan
 	valid = num_frags == 1
 	return valid
@@ -375,7 +382,7 @@ def inchi_to_smiles(inchi:str) -> str:
 	try:
 		mol = mol_from_inchi(inchi)
 		smiles = mol_to_smiles(mol)
-	except:
+	except Exception as e:
 		smiles = np.nan
 	return smiles
 
@@ -394,11 +401,24 @@ def smiles_to_selfies(smiles:str) -> str:
 		mol = Chem.MolFromSmiles(smiles)
 		smiles = Chem.MolToSmiles(mol,canonical=False,isomericSmiles=False,kekuleSmiles=True)
 		selfies = sf.encoder(smiles)
-	except:
+	except Exception as e:
 		selfies = np.nan
 	return selfies
 
-def make_morgan_fingerprint(mol:"rdkit.Chem.rdchem.Mol", radius:int=3)  -> np.array:
+def get_tanmimoto(fp, other_fp):
+	"""return tanmimoto distance, does not work with np yet
+
+	Args:
+		fp (_type_): _description_
+		other_fp (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
+	ds = rdkit_import("rdkit.DataStructs")[0]
+	return ds.DiceSimilarity(fp, other_fp)
+
+def make_morgan_fingerprint(mol:"rdkit.Chem.rdchem.Mol", radius:int=3, covert_to_np = True)  -> np.array:
 	"""make morgan fingerpirnt from mol object
 
 	Args:
@@ -411,8 +431,11 @@ def make_morgan_fingerprint(mol:"rdkit.Chem.rdchem.Mol", radius:int=3)  -> np.ar
 	rmd = modules[0]
 	ds = modules[1]
 	fp = rmd.GetHashedMorganFingerprint(mol,radius)
-	fp_arr = np.zeros(1)
-	ds.ConvertToNumpyArray(fp, fp_arr)
+	if covert_to_np:
+		fp_arr = np.zeros(1)
+		ds.ConvertToNumpyArray(fp, fp_arr)
+	else:
+		fp_arr = fp
 	return fp_arr
 
 def make_rdkit_fingerprint(mol:"rdkit.Chem.rdchem.Mol") -> np.array:
@@ -447,6 +470,15 @@ def make_maccs_fingerprint(mol:"rdkit.Chem.rdchem.Mol") -> np.array:
 	ds.ConvertToNumpyArray(fp,fp_arr)
 	return fp_arr
 
+def remove_stereochemistry(mol:"rdkit.Chem.rdchem.Mol"):
+	"""_summary_
+
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): _description_
+	"""
+	chem = rdkit_import("rdkit.Chem")[0]
+	mol = chem.RemoveStereochemistry(mol)
+	
 def split_selfies(selfies_str:str) -> List[str]:
 	"""method to splt selfies strngs to list of tokens
 
@@ -470,13 +502,14 @@ def seq_apply(iterator,func,need_unpack=False):
 			result.append(func(*i))
 	return result
 
-def par_apply(iterator,func,need_unpack=False):
+def par_apply(iterator,func,need_unpack=False, return_as_generator=False):
 
 	par_func = joblib.delayed(func)
 	parallel = joblib.Parallel(
 		backend=JOBLIB_BACKEND,
 		n_jobs=JOBLIB_N_JOBS,
-		timeout=JOBLIB_TIMEOUT
+		timeout=JOBLIB_TIMEOUT,
+		return_as="list" if not return_as_generator else "generator"
 	)
 	if not need_unpack:
 		result = parallel(par_func(i) for i in iterator)
@@ -627,7 +660,10 @@ def parse_inst_info(df):
 			"Unknown (LCMS)": "Other",
 			"Ion Trap (LCMS)": "IT",
 			"Orbitrap (LCMS)": "FT",
-			"FTICR (LCMS)": "FT"
+			"FTICR (LCMS)": "FT",
+			"ITFT": "FT",
+			"Orbitrap": "FT",
+			"QFT": "FT",
 		}
 		if inst_type_str in inst_type_map:
 			inst_type = inst_type_map[inst_type_str]
@@ -698,13 +734,15 @@ def infer_prec_mz(df):
 		"[M-OH]+": -MASS("H")-MASS("O")-ELECTRON_MASS,
 		"[M+H-C12H20O9]+": -19*MASS("H")-12*MASS("C")-9*MASS("O")-ELECTRON_MASS,
 		"[M-H]-": -MASS("H")+ELECTRON_MASS,
+		"[M+H]+": MASS("H")-ELECTRON_MASS,
+		"[M+Na]+": MASS("Na")-ELECTRON_MASS,
 	}
 
 	prec_mz = df["prec_mz"]
 	spec_type = df["spec_type"]
 	if none_or_nan(prec_mz) and spec_type == "MS2":
 		dset = df["dset"]
-		assert dset == "mona23", dset
+		assert "nist" not in dset, dset
 		prec_type = df["prec_type"]
 		exact_mw = df["exact_mw"]
 		if not none_or_nan(prec_type):
@@ -727,46 +765,46 @@ def parse_peaks_str(peaks_str):
 	return peaks
 
 def composition_to_string(x):
-    return ''.join([a+str(x[a]) for a in sorted(x)])
+	return ''.join([a+str(x[a]) for a in sorted(x)])
 
 def parse_product_isotope(annot, precursor):
-    formula = Composition('')
-    precursor = Composition(formula=precursor)
-    adducts = []
-    losses = []
-    isotope = 0
-    charge = 1
-    chunks = [''] + re.split(r'([\+-])',annot)
-    for prefix, chunk in zip(chunks[::2],chunks[1::2]):
-        if len(chunk) == 0:
-            continue
-        elif prefix == '^':
-            charge = int(chunk)
-        else:
-            if chunk[-1] == 'i' and chunk[-2:] != "Si":
-                chunk = chunk[:-1]
-                isotope = int(chunk) if chunk else 1
-                if prefix == '-':
-                    isotope = -isotope
-            else:
-                if chunk[0].isdigit():
-                    n = int(chunk[0])
-                    chunk = chunk[1:]
-                else:
-                    n = 1
-                if chunk == 'p':
-                    chunk = precursor
-                else:
-                    chunk = Composition(formula=chunk) * n
-                if prefix == '':
-                    formula += chunk
-                elif prefix == '+':
-                    adducts.append(chunk)
-                    formula += chunk
-                elif prefix == '-':
-                    losses.append(chunk)
-                    formula -= chunk
-    return formula, adducts, losses, isotope, charge
+	formula = Composition('')
+	precursor = Composition(formula=precursor)
+	adducts = []
+	losses = []
+	isotope = 0
+	charge = 1
+	chunks = [''] + re.split(r'([\+-])',annot)
+	for prefix, chunk in zip(chunks[::2],chunks[1::2]):
+		if len(chunk) == 0:
+			continue
+		elif prefix == '^':
+			charge = int(chunk)
+		else:
+			if chunk[-1] == 'i' and chunk[-2:] != "Si":
+				chunk = chunk[:-1]
+				isotope = int(chunk) if chunk else 1
+				if prefix == '-':
+					isotope = -isotope
+			else:
+				if chunk[0].isdigit():
+					n = int(chunk[0])
+					chunk = chunk[1:]
+				else:
+					n = 1
+				if chunk == 'p':
+					chunk = precursor
+				else:
+					chunk = Composition(formula=chunk) * n
+				if prefix == '':
+					formula += chunk
+				elif prefix == '+':
+					adducts.append(chunk)
+					formula += chunk
+				elif prefix == '-':
+					losses.append(chunk)
+					formula -= chunk
+	return formula, adducts, losses, isotope, charge
 
 def is_pep_annot(annot):
 	pattern = r"(?:a|b|y)\d+|pi"
@@ -783,15 +821,15 @@ def parse_annotations(row):
 	notes = row["notes"]
 	error = None
 	if dset not in ["nist20_hr"]:
-		error = ValueError(f"dataset not supported")
+		error = ValueError("dataset not supported")
 	elif "glycan" in notes.lower():
-		error = ValueError(f"glycans not supported (1)")
+		error = ValueError("glycans not supported (1)")
 	elif "peptide" in notes.lower():
-		error = ValueError(f"peptide not supported (1)")
+		error = ValueError("peptide not supported (1)")
 	elif prec_type not in ["[M+H]+","[M-H]-"]:
-		error = ValueError(f"prec_type not supported")
+		error = ValueError("prec_type not supported")
 	elif none_or_nan(peaks_str):
-		error = ValueError(f"peaks_str is invalid")
+		error = ValueError("peaks_str is invalid")
 	if error is not None:	
 		error = repr(error)
 		return np.nan, np.nan, np.nan, np.nan, np.nan, error
@@ -816,12 +854,12 @@ def parse_annotations(row):
 		annots = " ".join(line[2:]).strip('\"')
 		# glycan parsing not implemented
 		if "|" in annots:
-			error = ValueError(f"glycans not supported (2)")
+			error = ValueError("glycans not supported (2)")
 			all_good = False
 			break
 		# peptide parsing not implemented
 		if is_pep_annot(annots):
-			error = ValueError(f"peptides not supported (2)")
+			error = ValueError("peptides not supported (2)")
 			all_good = False
 			break
 		annots = annots.split(";")
@@ -829,7 +867,7 @@ def parse_annotations(row):
 			# strip the peak count
 			annot = re.sub(r' ?\d+/\d+$','',annot)
 			if len(annot) == 0:
-				error = ValueError(f"empty annotation")
+				error = ValueError("empty annotation")
 				all_good = False
 				break
 			if annot in ('?','more'):
@@ -984,7 +1022,7 @@ def get_charge(prec_type_str):
 		charge_str = "1+"
 	assert len(charge_str) >= 2
 	sign = charge_str[-1]
-	assert sign in ["+","-"]
+	assert sign in ["+","-"], prec_type_str
 	magnitude = int(charge_str[:-1])
 	if sign == "+":
 		charge = magnitude
@@ -1028,3 +1066,42 @@ def ace_to_nce(row):
 	nce = ace_to_nce_helper(ace,charge,prec_mz)
 	return nce
 
+def fill_missing_nce(row):
+	nce = row["nce"]
+	ace = row["ace"]
+	if none_or_nan(nce) and not none_or_nan(ace):
+		return ace_to_nce(row)
+	else:
+		return nce
+
+def fill_missing_ace(row):
+	nce = row["nce"]
+	ace = row["ace"]
+	if none_or_nan(ace) and not none_or_nan(nce):
+		return nce_to_ace(row)
+	else:
+		return ace
+
+def parse_mass_gym_ce_str(ce_str):
+	"""make it comparable to NIST so we can parse it
+
+	Args:
+		ce_str (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
+	if pd.isna(ce_str):
+		return "", False, False
+
+	ce_str = str(ce_str)
+	normalized = "normalized=True" in ce_str
+	ramped = "ramped=True" in ce_str
+
+	ce = ce_str.split(" ")[0]
+	if normalized:
+		ce = f"NCE={ce}%"
+	else:
+		ce = f"{ce} eV"
+
+	return ce, normalized, ramped
