@@ -110,7 +110,6 @@ def run_prediction(ckpt_fp,
 	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
 	model.eval()
 
-
 	# make predictions on validation data
 	print(">> Running inference")
 	preds_l = []
