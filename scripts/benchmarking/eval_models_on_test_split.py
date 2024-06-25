@@ -152,7 +152,7 @@ def run_models(ckpt_fp,
         			b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob.item(), \
            			cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
     
-	columns = ['spec_id','mol_id', 'pred_mzs', 'spec_prec_type','spec_inst_type','pred_ints','pred_oos','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun']
+	columns = ['spec_id','mol_id', 'pred_mzs', 'prec_type','inst_type','pred_ints','pred_oos','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun']
 	df = pd.DataFrame(preds_l, columns=columns)
 	print(f">> save to {save_fp}")
 	df.to_pickle(save_fp)
@@ -193,7 +193,7 @@ if __name__ == "__main__":
 		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
 
 		#print(f"> {np_ckpt_fp}")
-		save_fp = os.path.join(args.save_dp, run_id+'.pkl.gz')
+		save_fp = os.path.join(args.save_dp, run_id+'.pkl')
 		#print(f"> {custom_fp}")
 		print(f"> {save_fp}")
 		print(f"> {ckpt_fp}")
