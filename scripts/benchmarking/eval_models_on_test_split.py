@@ -148,11 +148,11 @@ def run_models(ckpt_fp,
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_prec_type, \
+				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_prec_type, b_spec_inst_type, \
         			b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob.item(), \
            			cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
     
-	columns = ['spec_id','mol_id', 'prec_type', 'pred_mzs', 'pred_ints','pred_oos','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun']
+	columns = ['spec_id','mol_id', 'prec_type', 'inst_type','pred_mzs', 'pred_ints','pred_oos','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun']
 	df = pd.DataFrame(preds_l, columns=columns)
 	print(f">> save to {save_fp}")
 	df.to_pickle(save_fp)
@@ -160,7 +160,7 @@ def run_models(ckpt_fp,
 	for metric in ['cos_sim_0.1','cos_sim_0.01','cos_sim_hun']:
 		print(metric, df.loc[:, metric].mean(),  df.loc[:, metric].std())
 	
-	for agg_key in ['prec_type']:
+	for agg_key in ['prec_type','inst_type']:
 		for metric in ['cos_sim_0.1','cos_sim_0.01','cos_sim_hun']:
 			#print(metric, df.loc[:, metric].mean(),  df.loc[:, metric].std())
 			print(f"Aggregated by {agg_key}, {metric} \n", df.groupby(agg_key)[metric].agg(['mean','std','count']))
