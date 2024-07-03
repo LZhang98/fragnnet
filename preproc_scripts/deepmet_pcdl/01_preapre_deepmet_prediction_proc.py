@@ -59,7 +59,8 @@ def create_spec_df(mol_df):
 	spec_df_prec['spec_id'] = spec_df_prec.index
 	spec_df_prec['dset_spec_id'] = spec_df_prec['spec_id']
 	spec_df_prec['group_id'] = spec_df_prec['spec_id']
-	spec_df_prec['peaks'] = np.nan
+	# avoid dataset crash
+	spec_df_prec['peaks'] = np.empty((len(spec_df_prec),0)).tolist()
 
 	return spec_df_prec
 
@@ -76,14 +77,13 @@ def get_args():
 if __name__ == "__main__":
 
 	"""
- 	for mol_file in os.listdir('data/deepmet/proc/'):
+	for mol_file in os.listdir('data/deepmet/proc/'):
 		if mol_file.startswith("mol_df_"):
 			mol_df = pd.read_pickle(os.path.join(f'data/deepmet/proc/{mol_file}'))
 			spec_df = create_spec_df(mol_df)
 			spec_df.to_pickle(os.path.join(f'data/deepmet/proc/{mol_file.replace("mol","spec")}'))
 	exit()
 	"""
-
 	args = get_args()
 	mol_df = pd.read_csv(args.deepmet_csv)
 	mol_df = mol_df[['SMILES', 'DMID']]

@@ -73,8 +73,8 @@ def run_models(ckpt_fp,
 	print(f"> split_dp {config_d['split_dp']}")
 
 	ds = model_ds_cls(split='test', **config_d)
-	print(ds.idx_to_inst_type)
-	print(ds.idx_to_prec_type)
+	print(f"> model supported inst type {ds.idx_to_inst_type}")
+	print(f"> model supported prec type {ds.idx_to_prec_type}")
 	dl = init_dataloader(ds, config_d)
  
 	# load models
@@ -98,50 +98,64 @@ def run_models(ckpt_fp,
 	config_d['frag_params']['preprocess'] = True
 
 	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
-
 	model.eval()
-	# make predictions on validation data
+ 
+ 	# make predictions on validation data
+	print(">> Running inference")
+
 	preds_l = []
 	with th.inference_mode():
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
+			batch_size = batch_input['batch_size'].detach().cpu()
+   
 			#print(batch_input)
 			mol_smiles = batch_input['mol_smiles']
 			spec_nces = batch_input['spec_nce']
+			spec_ids = batch_input['spec_unique_id']
+			mol_ids = batch_input['mol_id']
 			spec_prec_types = batch_input['spec_prec_type']
 			spec_inst_types = batch_input['spec_inst_type']
 			batch_result = to_device(batch_input, device)
-
+			
+			# use validation step no validation data split
 			batch_result = model._common_step(batch_input, split="val")
 			batch_size = batch_input['batch_size'].detach().cpu()
-
-			#print(batch_result)
-			#pred_mzs = batch_result["pred_mzs"].detach().cpu()
-			#pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
-			#pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-			#pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
 
 			cos_sim_bin_lr = batch_result['cos_sim_0.1'].cpu()
 			cos_sim_bin_hr = batch_result['cos_sim_0.01'].cpu()
 			cos_sim_hun = batch_result['cos_hun'].cpu()
-			#pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+   
+			pred_mzs = batch_result["pred_mzs"].detach().cpu()
+			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
+			if "pred_oos_logprobs" in batch_result:
+				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
+	
+			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
+			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 			for b_idx in range(batch_size):
-				#b_peak_mask = pred_batch_idxs == b_idx
-				# oos
-				#b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
+				b_peak_mask = pred_batch_idxs == b_idx
+				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
+				b_spec_id = spec_ids[b_idx]
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
+				b_mol_id = mol_ids[b_idx]
 				b_spec_prec_type_idx = int(spec_prec_types[b_idx])
 				b_spec_inst_type_idx = int(spec_inst_types[b_idx])
-				b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
+				#b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
 
 				b_spec_prec_type = ds.idx_to_prec_type[b_spec_prec_type_idx]
-				b_spec_inst_type = ds.idx_to_inst_type[b_spec_inst_type_idx] 
-				preds_l.append((b_inchikey,b_smi,b_nce, b_spec_prec_type, b_spec_inst_type,
-					cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
-				#plot_spectra_sparse()
+				b_spec_inst_type = ds.idx_to_inst_type[b_spec_inst_type_idx]
+				b_spec_mzs = pred_mzs[b_peak_mask]
+				b_spec_ints = pred_ints[b_peak_mask]
 
-	df = pd.DataFrame(preds_l, columns=['inchikey','smiles','nce',\
-	 	'prec_type','inst_type','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun'])
+				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_prec_type, b_spec_inst_type, \
+        			b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob.item(), \
+           			cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
+    
+	columns = ['spec_id','mol_id', 'prec_type', 'inst_type','pred_mzs', 'pred_ints','pred_oos','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun']
+	df = pd.DataFrame(preds_l, columns=columns)
+	print(f">> save to {save_fp}")
+	df.to_pickle(save_fp)
  
 	for metric in ['cos_sim_0.1','cos_sim_0.01','cos_sim_hun']:
 		print(metric, df.loc[:, metric].mean(),  df.loc[:, metric].std())
@@ -150,10 +164,6 @@ def run_models(ckpt_fp,
 		for metric in ['cos_sim_0.1','cos_sim_0.01','cos_sim_hun']:
 			#print(metric, df.loc[:, metric].mean(),  df.loc[:, metric].std())
 			print(f"Aggregated by {agg_key}, {metric} \n", df.groupby(agg_key)[metric].agg(['mean','std','count']))
-
-	print(f"> save csv to {save_fp}")
-	df.to_csv(save_fp, index=False)
-
 
 def get_args():
 	parser = argparse.ArgumentParser()
@@ -164,7 +174,7 @@ def get_args():
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['0kxgjooa'])
+	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['t1etochx','4xq01qnl','wz0k2re5','qr15frx6','brr6krjt'])
  
 	args = parser.parse_args()
 	return args
@@ -183,7 +193,7 @@ if __name__ == "__main__":
 		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
 
 		#print(f"> {np_ckpt_fp}")
-		save_fp = os.path.join(args.save_dp, run_id+'.csv')
+		save_fp = os.path.join(args.save_dp, run_id+'.pkl')
 		#print(f"> {custom_fp}")
 		print(f"> {save_fp}")
 		print(f"> {ckpt_fp}")
