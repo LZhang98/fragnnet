@@ -26,8 +26,6 @@ def load_df(df_dp,dsets,num_entries):
 		all_df = pd.concat(dfs,ignore_index=True)
 	else:
 		all_df = dfs[0]
-  
-	all_df = all_df.astype({"prec_mz":float,"exact_mass":float})
 	all_df = all_df.reset_index(drop=True)
 	return all_df
 
@@ -73,6 +71,8 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"peaks"] = par_apply_series(spec_df["peaks"],data_utils.convert_peaks_to_float)
 	# get retention index
 	spec_df.loc[:,"ri"] = par_apply_series(spec_df["ri"],data_utils.parse_ri_str)
+	# convert exact_mass
+	spec_df.loc[:,"exact_mass"] = pd.to_numeric(spec_df["exact_mass"],errors="coerce")
 
 	# remove columns from spec_df
 	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","nce","prec_mz","peaks","ri","formula","inchikey","exact_mass"]]
@@ -123,7 +123,9 @@ def preprocess_spec(spec_df):
 	print("> inchikey_s inconsistencies")
 	print(diff_inchikey_df["mol_id"].nunique(), diff_inchikey_df["spec_id"].nunique())
 	mass_df = spec_df[["dset_spec_id","spec_id","mol_id","exact_mass"]].copy().rename(columns={"exact_mass":"exact_mw"})
-	mass_df = mass_df[mass_df["exact_mw"] > 0.0]
+	# keep only non-trivial exact_mw annotations from the spec_df
+	mass_df = mass_df[~mass_df["exact_mw"].isna() & mass_df["exact_mw"] > 0.0]
+	# compare with reported exact_mw from the mol_df
 	mass_df = mass_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner")
 	diff_mass_df = mass_df[(mass_df["exact_mw_x"] - mass_df["exact_mw_y"]).abs() > 0.1]
 	print("> mass inconsistencies")
@@ -192,6 +194,7 @@ if __name__ == "__main__":
 		ann_df = pd.read_pickle(ann_df_fp)
 
 	else:
+
 		print("> creating new spec_df, mol_df, ann_df")
 		assert os.path.isdir(flags.df_dp), flags.df_dp
 		os.makedirs(flags.proc_dp,exist_ok=True)
@@ -202,12 +205,16 @@ if __name__ == "__main__":
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
+		ann_df.to_pickle(ann_df_fp)
 		for k, v in debug_dfs.items():
 			v.to_pickle(os.path.join(flags.proc_dp,f"{k}.pkl"))
 		
-	print(f">spec_df {spec_df.shape}")
-	print(f">spec_df num nan: {spec_df.isna().sum()}")
-	print(f">mol_df {mol_df.shape}")
-	print(f">mol_df num nan:\n{mol_df.isna().sum()}")
-	print(f">ann_df {ann_df.shape}")
-	print(f">ann_df num nan: {ann_df.isna().sum()}")
+	print(f"> spec_df {spec_df.shape}")
+	print(f"> spec_df num nan:")
+	print(spec_df.isna().sum())
+	print(f"> mol_df {mol_df.shape}")
+	print(f"> mol_df num nan:")
+	print(mol_df.isna().sum())
+	print(f"> ann_df {ann_df.shape}")
+	print(f"> ann_df num nan:")
+	print(ann_df.isna().sum())
