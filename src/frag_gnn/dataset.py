@@ -90,6 +90,7 @@ class BaseDataset(Dataset):
 		# merge spectra
 		um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
 		if spec_params["merge"]:
+			# note ths will merge all the spectra in the same group, be careful if we have mix used ace and nces
 			spec_df = merge_spec_df(spec_df,keep_ces=spec_params["merge_keep_ces"])
 			id_key = "group_id"
 		else:
@@ -225,6 +226,7 @@ class BaseDataset(Dataset):
 			spec_data["spec_prec_mass_diff"] = mass_diff
 		if self.spec_params["nce"]:
 			assert (not self.spec_params["merge"]) or self.spec_params["merge_keep_ces"]
+			assert not self.spec_params["ace"]
 			nce = spec_entry["nce"]
 			if self.spec_params["merge"]:
 				assert self.spec_params["merge_keep_ces"]
@@ -236,7 +238,18 @@ class BaseDataset(Dataset):
 				nce = th.tensor([nce],dtype=th.float)
 				spec_data["spec_nce"] = nce
 		if self.spec_params["ace"]:
-			raise NotImplementedError()
+			assert (not self.spec_params["merge"]) or self.spec_params["merge_keep_ces"]
+			assert not self.spec_params["nce"]
+			ace = spec_entry["ace"]
+			if self.spec_params["merge"]:
+				assert self.spec_params["merge_keep_ces"]
+				assert isinstance(nce,list), type(ace)
+				ace = th.tensor(nce,dtype=th.float)
+				spec_data["spec_ace"] = nce
+			else:
+				assert isinstance(nce,float), type(nce)
+				nce = th.tensor([nce],dtype=th.float)
+				spec_data["spec_ace"] = nce
 		if self.spec_params["prec_mz"]:
 			prec_mz = spec_entry["prec_mz"]
 			prec_mz = th.tensor([float(prec_mz)],dtype=th.float)
@@ -299,18 +312,21 @@ class BaseDataset(Dataset):
 			# remove from list
 			keys.remove("spec_ints")
 			keys.remove("spec_mzs")
+   
 		# handle sparse ces
-		if "spec_nce" in keys:
-			# create batch_idxs
-			nces, _, batch_idxs = batch_func(
-				collate_data["spec_nce"],
-				collate_data["spec_nce"] # duplicate for compatibility
-			)
-			collate_data["spec_nce"] = nces
-			collate_data["spec_nce_batch_idxs"] = batch_idxs
-			# remove from list
-			keys.remove("spec_nce")
-
+		assert "spec_ace" in keys and "spec_nce" in keys
+		for ce_key in ["spec_ace","spec_nce"]:
+			if ce_key in keys:
+				# create batch_idxs
+				ces, _, batch_idxs = batch_func(
+					collate_data['spec_ce'],
+					collate_data['spec_ce'] # duplicate for compatibility
+				)
+				collate_data[ce_key] = ces
+				collate_data["spec_ce_batch_idxs"] = batch_idxs
+				# remove from list
+				keys.remove(ce_key)
+				
 	@staticmethod
 	def _standard_collate(batch_size,keys,collate_data):
 		""" mutates keys and collate_data """

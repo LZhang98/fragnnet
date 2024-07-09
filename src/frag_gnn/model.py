@@ -8,18 +8,22 @@ from frag_gnn.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.form_embedder import get_embedder
 from frag_gnn.utils.misc_utils import safelog, check_pyg_compile, LOG_ZERO, check_pyg_full_compile
-from frag_gnn.utils.spec_utils import transform_nce, NCE_MAX
+from frag_gnn.utils.spec_utils import transform_ce
 
 
 class CEModel:
-
+	""" class for handling collision engery embedding
+	"""
 	def _ce_init(
 		self,
 		int_embedder,
 		ce_insert_location: str,
 		ce_insert_type: str,
 		ce_insert_merge: bool,
-		ce_insert_size: int):
+		ce_insert_size: int,
+		ce_mean: float,
+  		ce_std: float,
+    	ce_max: float,):
 
 		# ce stuff
 		assert ce_insert_type in ["id","lin","embed","bin"]
@@ -29,6 +33,9 @@ class CEModel:
 		self.ce_insert_merge = ce_insert_merge
 		self.ce_insert_size = ce_insert_size
 		self.int_embedder = int_embedder
+		self.ce_max = ce_max
+		self.ce_mean = ce_mean
+		self.ce_std = ce_std
 		self._ce_location_check()
 		self._setup_ce()
 
@@ -41,7 +48,7 @@ class CEModel:
 		# embedding type
 		if self.ce_insert_type == "id":
 			def ce_transform(ce):
-				ce = transform_nce(ce)
+				ce = transform_ce(ce, self.ce_mean, self.ce_std)
 				ce = ce.reshape(-1,1)
 				ce = th.repeat_interleave(ce, self.ce_insert_size, dim=1)
 				return ce
@@ -49,18 +56,18 @@ class CEModel:
 			ce_input_dim = self.ce_insert_size
 		elif self.ce_insert_type == "lin":
 			def ce_transform(ce):
-				ce = transform_nce(ce)
+				ce = transform_ce(ce, self.ce_mean, self.ce_std)
 				ce = ce.reshape(-1,1)
 				return ce
 			ce_embedder = nn.Linear(1,self.ce_insert_size)
 			ce_input_dim = self.ce_insert_size
 		elif self.ce_insert_type == "embed":
 			def ce_transform(ce):
-				ce = th.clamp(ce, min=0, max=int(NCE_MAX)-1)
+				ce = th.clamp(ce, min=0, max=int(self.ce_max)-1)
 				ce = th.round(ce, decimals=0).long()
 				ce = ce.reshape(-1,1)
 				return ce
-			embedder = get_embedder(self.int_embedder, max_count_int=int(NCE_MAX))
+			embedder = get_embedder(self.int_embedder, max_count_int=int(self.ce_max))
 			ce_embedder = nn.Sequential(
 				embedder,
 				nn.Linear(embedder.num_dim,self.ce_insert_size)
@@ -68,11 +75,11 @@ class CEModel:
 			ce_input_dim = self.ce_insert_size
 		elif self.ce_insert_type == "bin":
 			def ce_transform(ce):
-				ce = th.clamp(ce, min=0, max=int(NCE_MAX)-10)
+				ce = th.clamp(ce, min=0, max=int(self.ce_max)-10)
 				ce = th.round(ce, decimals=-1).long() // 10
-				ce = F.one_hot(ce, num_classes=int(NCE_MAX)//10).float()
+				ce = F.one_hot(ce, num_classes=int(self.ce_max)//10).float()
 				return ce
-			ce_embedder = nn.Linear(int(NCE_MAX)//10,self.ce_insert_size)
+			ce_embedder = nn.Linear(int(self.ce_max)//10,self.ce_insert_size)
 			ce_input_dim = self.ce_insert_size
 		# location
 		if self.ce_insert_location == "mol":
@@ -229,6 +236,9 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		ce_insert_type: str,
 		ce_insert_merge: bool,
 		ce_insert_size: int,
+  		ce_max: float,
+		ce_mean: float,
+		ce_std: float,
 		prec_insert_location: str,
 		prec_insert_size: int,
 		prec_types: list[str],
@@ -244,7 +254,10 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			ce_insert_location=ce_insert_location,
 			ce_insert_type=ce_insert_type,
 			ce_insert_merge=ce_insert_merge,
-			ce_insert_size=ce_insert_size
+			ce_insert_size=ce_insert_size,
+			ce_max=ce_max,
+			ce_mean=ce_mean,
+			ce_std=ce_std
 		)
 
 		self._prec_init(
@@ -453,8 +466,8 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		frag_formula_sizes: th.Tensor,
 		frag_formula_cumsizes: th.Tensor,
 		frag_formula_peak_sizes: th.Tensor,
-		spec_nce: th.Tensor = None,
-		spec_nce_batch_idxs: th.Tensor = None,
+		spec_ce: th.Tensor = None,
+		spec_ce_batch_idxs: th.Tensor = None,
 		spec_prec_type: th.Tensor = None,
 		spec_inst_type: th.Tensor = None,
 		**kwargs
@@ -499,8 +512,8 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		batch_size = frag_batch[-1]+1
 		
 		# get ce value
-		ce = spec_nce
-		ce_batch_idxs = spec_nce_batch_idxs
+		ce = spec_ce
+		ce_batch_idxs = spec_ce_batch_idxs
 		ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
 		# get prec value
 		prec_embed = self.embed_prec(spec_prec_type)
@@ -1091,6 +1104,9 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 		ce_insert_location: str,
 		ce_insert_merge: bool,
 		ce_insert_size: int,
+  		ce_max: float,
+		ce_mean: float,
+		ce_std: float,
 		prec_insert_location: str,
 		prec_insert_size: int,
 		prec_types: list[str],
@@ -1115,7 +1131,10 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 			ce_insert_type=ce_insert_type,
 			ce_insert_location=ce_insert_location,
 			ce_insert_merge=ce_insert_merge,
-			ce_insert_size=ce_insert_size)
+			ce_insert_size=ce_insert_size,
+   			ce_max=ce_max,
+			ce_mean=ce_mean,
+			ce_std=ce_std)
 		self.mlp_input_dim += self.ce_mlp_input_dim
 
 		# prec stuff
@@ -1243,6 +1262,9 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		ce_insert_location: str,
 		ce_insert_merge: bool,
 		ce_insert_size: int,
+		ce_max: float,
+		ce_mean: float,
+		ce_std: float,
 		prec_insert_location: str,
 		prec_insert_size: int,
 		prec_types: list[str],
@@ -1258,7 +1280,10 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			ce_insert_location=ce_insert_location,
 			ce_insert_type=ce_insert_type,
 			ce_insert_merge=ce_insert_merge,
-			ce_insert_size=ce_insert_size
+			ce_insert_size=ce_insert_size,
+			ce_max=ce_max,
+			ce_mean=ce_mean,
+			ce_std=ce_std
 		)
 		# precursor
 		self._prec_init(
