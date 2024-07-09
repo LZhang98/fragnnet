@@ -65,7 +65,7 @@ def main(args):
 		mol_df,
 		elements=elements,
 		dsets=dsets,
-		prec_types=args.prec_types!= 'any' else None,
+		prec_types=args.prec_types if args.prec_types != 'any' else None,
 		num_entries=args.num_entries,
   		frag_modes=args.frag_modes if args.frag_modes != 'any' else None,
     	ion_modes=args.ion_modes if args.ion_modes != 'any' else None,
@@ -266,7 +266,7 @@ def main(args):
 		tqdm_iter = tqdm(spectra_input_rows,desc=pformat(compute_spectra_stats),total=len(spectra_input_rows))
 		# run stats
 		stats_results = data_utils.par_apply(tqdm_iter,compute_spectra_stats,True)
-		# Loky and job lib should kep ordering
+		# Loky and joblib should keep ordering
 		stats_results_df = pd.concat(stats_results, axis=0, ignore_index=True)
 		metric_keys = list(stats_results_df.columns)
 
@@ -312,7 +312,6 @@ if __name__ == "__main__":
 	parser.add_argument("--frag_dp",type=str,required=True)
 	parser.add_argument("--proc_dp",type=str,required=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
-	#parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
 	parser.add_argument("--nb_isomorphic",type=booltype,default=True)
 	parser.add_argument("--max_iterations",type=int,default=3)
 	parser.add_argument("--dsets",type=str,nargs="+",default=["nist20_hr","mona23"])

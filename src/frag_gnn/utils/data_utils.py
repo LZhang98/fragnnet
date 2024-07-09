@@ -271,9 +271,9 @@ def mol_to_mol_weight(mol,exact=True):
 	Desc = modules[0]
 	try:
 		if exact:
-			mol_weight = Desc.ExactMolWt(mol)
+			mol_weight = float(Desc.ExactMolWt(mol))
 		else:
-			mol_weight = Desc.MolWt(mol)
+			mol_weight = float(Desc.MolWt(mol))
 	except Exception as e:
 		mol_weight = np.nan
 	return mol_weight
