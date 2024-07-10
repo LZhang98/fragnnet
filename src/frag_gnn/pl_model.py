@@ -1097,9 +1097,13 @@ class SpectrumPL(pl.LightningModule):
 		# check merge params
 		if self.hparams.spec_params["merge"]:
 			assert (not self.hparams.spec_params["nce"]) or self.hparams.spec_params["merge_keep_ces"]
-		else:
+		elif self.hparams.spec_params["nce"]:
+			assert not self.hparams.spec_params["ace"]
 			assert self.hparams.spec_params["nce"] and (not self.hparams.spec_params["merge_keep_ces"])
-
+		elif self.hparams.spec_params["ace"]:
+			assert not self.hparams.spec_params["nce"]
+			assert self.hparams.spec_params["ace"] and (not self.hparams.spec_params["merge_keep_ces"])
+   
 	def _seed_dataloader(self, seed):
 
 		generator = th.Generator()
@@ -1205,6 +1209,9 @@ class FragGNNPL(SpectrumPL):
 			ce_insert_location=self.hparams.ce_insert_location,
 			ce_insert_merge=self.hparams.ce_insert_merge,
 			ce_insert_size=self.hparams.ce_insert_size,
+			ce_mean=self.hparams.ce_mean,
+			ce_std=self.hparams.ce_std,
+			ce_max=self.hparams.ce_max,
 			prec_insert_location=self.hparams.prec_insert_location,
 			prec_insert_size=self.hparams.prec_insert_size,
 			prec_types=self.hparams.spec_params["prec_types"],
@@ -1910,6 +1917,9 @@ class NeimsPL(BinnedPL):
 			ce_insert_location=self.hparams.ce_insert_location,
 			ce_insert_merge=self.hparams.ce_insert_merge,
 			ce_insert_size=self.hparams.ce_insert_size,
+   			ce_mean=self.hparams.ce_mean,
+			ce_std=self.hparams.ce_std,
+			ce_max=self.hparams.ce_max,
 			prec_insert_location=self.hparams.prec_insert_location,
 			prec_insert_size=self.hparams.prec_insert_size,
 			prec_types=self.hparams.spec_params["prec_types"],
@@ -2024,6 +2034,9 @@ class GNNPL(BinnedPL):
 			ce_insert_location=self.hparams.ce_insert_location,
 			ce_insert_merge=self.hparams.ce_insert_merge,
 			ce_insert_size=self.hparams.ce_insert_size,
+      		ce_mean=self.hparams.ce_mean,
+			ce_std=self.hparams.ce_std,
+			ce_max=self.hparams.ce_max,
 			prec_insert_location=self.hparams.prec_insert_location,		# precursor
 			prec_insert_size=self.hparams.prec_insert_size,
 			prec_types=self.hparams.spec_params["prec_types"],
