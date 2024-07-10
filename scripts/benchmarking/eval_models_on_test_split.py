@@ -6,7 +6,7 @@ from tqdm import tqdm
 from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
 from frag_gnn.utils.misc_utils import to_device
-from frag_gnn.utils.nn_utils import get_pl_hparams
+from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 
@@ -50,18 +50,8 @@ def run_models(ckpt_fp,
 
 	# set eval batch size
 	config_d['eval_batch_size'] = batch_size
-	print(f"> ckpt is compiled: {config_d['compile']}")
- 	
-	#config_d['eval_batch_size'] = batch_size
-	# https://discuss.pytorch.org/t/pytorch-cannot-allocate-memory/134754
-	#config_d['num_workers']= 0
-	#config_d["compile"] = is_ckpt_compiled(ckpt_fp)
- 
- 	#config_d['num_workers']= 0
-	#for key in config_d:
-	#	if ckpt_hparams_d[key] != config_d[key]:
-	#		print(key, ckpt_hparams_d[key],config_d[key])
-	
+
+    
 	# load datasets
 	print("> Loading datasets")
 	model_type = config_d['model_type']
@@ -97,7 +87,17 @@ def run_models(ckpt_fp,
 	config_d['frag_params']['preload'] = True
 	config_d['frag_params']['preprocess'] = True
 
-	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
+	#model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
+	print(f"> ckpt was compiled: {config_d['compile']}")
+	if config_d['compile']:
+		config_d['compile'] = False
+		ckpt = decompile_jit_ckpt(ckpt_fp)
+	else:
+		ckpt = th.load(ckpt_fp)
+	
+	model = model_cls(**config_d)
+	model.load_state_dict(ckpt["state_dict"])
+	model.to(device)
 	model.eval()
  
  	# make predictions on validation data
@@ -109,8 +109,6 @@ def run_models(ckpt_fp,
 			batch_size = batch_input['batch_size'].detach().cpu()
    
 			#print(batch_input)
-			mol_smiles = batch_input['mol_smiles']
-			spec_nces = batch_input['spec_nce']
 			spec_ids = batch_input['spec_unique_id']
 			mol_ids = batch_input['mol_id']
 			spec_prec_types = batch_input['spec_prec_type']
@@ -136,8 +134,6 @@ def run_models(ckpt_fp,
 				b_peak_mask = pred_batch_idxs == b_idx
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
 				b_spec_id = spec_ids[b_idx]
-				b_smi = str(mol_smiles[b_idx])
-				b_nce = float(spec_nces[b_idx])
 				b_mol_id = mol_ids[b_idx]
 				b_spec_prec_type_idx = int(spec_prec_types[b_idx])
 				b_spec_inst_type_idx = int(spec_inst_types[b_idx])
@@ -174,7 +170,7 @@ def get_args():
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['t1etochx','4xq01qnl','wz0k2re5','qr15frx6','brr6krjt'])
+	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['0kxgjooa','t1etochx','4xq01qnl','wz0k2re5','qr15frx6','brr6krjt'])
  
 	args = parser.parse_args()
 	return args

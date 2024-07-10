@@ -5,7 +5,7 @@ from tqdm import tqdm
 from frag_gnn.runner import init_dataloader
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.utils.misc_utils import to_device
-from frag_gnn.utils.nn_utils import get_pl_hparams
+from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 
@@ -113,8 +113,20 @@ def run_prediction(ckpt_fp,
 	
  	# load models
 	print(">> Loading models")
-	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
+	print(f"> ckpt was compiled: {config_d['compile']}")
+	if config_d['compile']:
+		config_d['compile'] = False
+		ckpt = decompile_jit_ckpt(ckpt_fp)
+	else:
+		ckpt = th.load(ckpt_fp)
+	
+	model = model_cls(**config_d)
+	model.load_state_dict(ckpt["state_dict"])
+	model.to(device)
 	model.eval()
+ 
+ 	#model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
+	#model.eval()
 
 	# make predictions on validation data
 	print(">> Running inference")
