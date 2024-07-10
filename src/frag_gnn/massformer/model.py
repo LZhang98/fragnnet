@@ -28,6 +28,9 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 		ce_insert_location: str,
 		ce_insert_merge: bool,
 		ce_insert_size: int,
+		ce_max: float,
+		ce_mean: float,
+		ce_std: float,
 		prec_insert_location: str,
 		prec_insert_size: int,
 		prec_types: list[str],
@@ -51,7 +54,10 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 			ce_insert_type=ce_insert_type,
 			ce_insert_location=ce_insert_location,
 			ce_insert_merge=ce_insert_merge,
-			ce_insert_size=ce_insert_size)
+			ce_insert_size=ce_insert_size,
+   			ce_max=ce_max,
+			ce_mean=ce_mean,
+			ce_std=ce_std)
 		self.mlp_input_dim += self.ce_mlp_input_dim
 
 		# prec stuff

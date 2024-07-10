@@ -7,10 +7,14 @@ from typing import Tuple, Union
 
 from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d, safelog, scatter_logsumexp, TOLERANCE_MIN_MZ
 
-# rough approximations from NIST20
-NCE_MEAN = 60.
-NCE_STD = 40.
-NCE_MAX = 200.
+# rough approximations from NIST20 Orbitrap/FT MS
+# NCE_MEAN = 60.
+# NCE_STD = 40.
+# NCE_MAX = 200.
+# rough approximations from NIST20 QToF
+# ACE_MEAN = 20
+# ACE_STD = 10
+# ACE_MAX = 60.
 MZ_MAX = 1500.0
 MZ_BIN_RES = 0.01
 INTS_THRESH = 0.0
@@ -88,8 +92,9 @@ def get_ints_untransform_func(ints_transform):
 		return ints
 	return _func
 
-def transform_nce(nce):
-	return (nce-NCE_MEAN)/NCE_STD	
+def transform_ce(ce, ce_mean, ce_std):
+	return (ce-ce_mean)/ce_std
+
 
 def transform_nce_to_ace(nce:float, mw:float, charge_factor:int = 1) -> float:
 	"""get ace from given nce and mw
