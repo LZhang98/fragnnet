@@ -1,0 +1,104 @@
+wandb_name: nemis_um_prec_pcdl_cv_0
+wandb_group: nemis_um_prec_pcdl_cv
+wandb_tags:
+- um
+- wr00
+- inchikey
+- new_proc
+- new_metrics
+- ce_embed
+- unmerged
+- gaussian_renormalize
+- b512x1
+- no_auxiliary_scores
+- lb16
+- preload
+- preprocess
+
+# data stuff
+spec_fp: data/proc/pcdl/spec_df.pkl
+mol_fp: data/proc/pcdl/mol_df.pkl
+split_dp: data/split/pcdl/cv_0
+frag_dp: data/frag/pcdl_d3_h4/dags
+frag_params:
+  pyg_edge_feats: []
+  pyg_edges: False
+  pyg_bigraph: False
+  preload: True
+  preprocess: True
+spec_params:
+  merge: False
+  nce: True
+  ace: False
+  merge_keep_ces: False
+  preprocess: True
+  prec_type: True
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+  inst_type: True
+  inst_types:
+    - "QTOF"
+    - "Other"
+
+mol_params:
+  preprocess: True
+  fingerprint_morgan: True
+  fingerprint_rdkit: True
+  fingerprint_maccs: True
+  fingerprint: True
+  pyg: False
+
+# model stuff
+model_type: neims
+mlp_hidden_size: 1024
+mlp_dropout: 0.1
+mlp_num_layers: 4
+mlp_use_residuals: True
+ff_prec_mz_offset: 5
+ff_bidirectional: True
+ff_output_map_size: 256
+ce_insert_type: embed
+ce_insert_location: mlp
+ce_insert_merge: True
+ce_insert_size: 24
+#prec_insert_location: mlp
+#prec_insert_size: 8
+#inst_insert_location: mlp
+#inst_insert_size: 8
+mz_max: 1500.0
+mz_bin_res: 0.01
+sum_ints: True
+
+# loss stuff
+loss_type: cosine_distance
+sparse_cosine_similarity: True
+ints_transform: sqrt
+simple_group_sampler: True
+simple_group_sampler_type: group_mol
+train_sample_weight: none
+eval_sample_weight: group_mol
+
+# optimization stuff
+train_batch_size: 512
+eval_batch_size: 512
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.0003033
+weight_decay: 0.01
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+upload_checkpoints: False
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+auxiliary_scores:
+- cos_sim
+eval_mz_bin_res:
+- 0.01
+precision: 32
+use_tensor_float32: True
+automatic_optimization: True
+comiple: False
