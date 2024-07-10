@@ -1025,13 +1025,16 @@ def save_frag_d(frag_d:dict, mol_id:int, frag_dp:str, is_compressed:bool = False
 	"""
 	
 	fp = get_frag_fp(mol_id, frag_dp, is_compressed)
-	if not is_compressed:
-		with open(fp, 'wb') as fileout:
-			pickle.dump(frag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
-	else:
-		with bz2.BZ2File(fp, 'wb') as fileout: 
-			cPickle.dump(frag_d, fileout)
-
+	try:
+		if not is_compressed:
+			with open(fp, 'wb') as fileout:
+				pickle.dump(frag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
+		else:
+			with bz2.BZ2File(fp, 'wb') as fileout: 
+				cPickle.dump(frag_d, fileout)
+	except Exception as e:
+		print(e,fp)
+      
 def load_frag_d(mol_id:str, frag_dp:str, is_compressed:bool = False):
 	"""_summary_
 
@@ -1197,10 +1200,15 @@ def timed_get_dags(mol,
 		if save_dag:
 			output_file = get_frag_fp(mol_id, output_dir, compressed)
 
-		if use_cached and os.path.exists(output_file):
+		need_compute = not use_cached or not os.path.exists(output_file)
+		if not need_compute:
 			assert save_dag
-			dag_d = load_frag_d(mol_id, output_dir, compressed)
-		else:
+			try:
+				dag_d = load_frag_d(mol_id, output_dir, compressed)
+			except Exception as e:
+				print(e, "cache is not usable")
+				need_compute = True
+		if need_compute:
 			dag_d = {}
 			try:
 				mol_d = extract_mol_info(mol)

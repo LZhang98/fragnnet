@@ -21,7 +21,7 @@ def get_args():
 	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
 	parser.add_argument("--max_iterations",type=int,default=-1)
 	parser.add_argument("--isotopes",type=booltype,default=False)
-	parser.add_argument("--allow_cached", type=booltype,default=True, help="")
+	parser.add_argument("--allow_cached", type=booltype,default=False, help="")
 	parser.add_argument("--compressed", type=booltype,default=True, help="")
 	args = parser.parse_args()
 	return args
