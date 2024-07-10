@@ -68,9 +68,13 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag feats configs
-	parser.add_argument("--proc_dp",type=str,default="data/deepmet/proc")
-	parser.add_argument("--deepmet_csv", type=str,default="data/deepmet/DeepMet-DMIDs.zip", help="")
+	parser.add_argument("--proc_dp",type=str,default="data/deepmet/add_carbon_proc")
+	parser.add_argument("--deepmet_csv", type=str,default="data/deepmet/AddCarbon-HMDB4.tsv.gz", help="")
+	parser.add_argument("--smiles_col", type=str,default="mutated_smiles", help="")
+	parser.add_argument("--id_col", type=str,default="mol_id", help="")
 	parser.add_argument("--chunk_size", type=int,default=100000, help="")
+	parser.add_argument("--is_tsv", type=bool, action=argparse.BooleanOptionalAction, default=False)
+	#parser.set_defaults("--is_tsv", type=bool, action=argparse.BooleanOptionalAction)
 	args = parser.parse_args()
 	return args
 
@@ -85,10 +89,16 @@ if __name__ == "__main__":
 			spec_df.to_pickle(os.path.join(f'data/deepmet/proc/{mol_file.replace("mol","spec")}'))
 	exit()
 	"""
+ 
 	args = get_args()
-	mol_df = pd.read_csv(args.deepmet_csv)
-	mol_df = mol_df[['SMILES', 'DMID']]
-	mol_df.rename(columns={"SMILES": "smiles", "DMID": "mol_id"}, inplace=True)
+	mol_df = pd.read_csv(args.deepmet_csv, sep="\t" if args.is_tsv else ",")
+	smile_col = args.smiles_col
+	id_col = args.id_col
+	if id_col not in mol_df.columns:
+		mol_df['mol_id'] = mol_df.index
+
+	mol_df = mol_df[[smile_col, id_col]]
+	mol_df.rename(columns={smile_col: "smiles", id_col: "mol_id"}, inplace=True)
  
 	os.makedirs(args.proc_dp, exist_ok=True)
 	chunk_size = args.chunk_size
