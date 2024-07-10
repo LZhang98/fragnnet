@@ -110,7 +110,7 @@ def run_models(ckpt_fp,
    
 			#print(batch_input)
 			mol_smiles = batch_input['mol_smiles']
-			spec_nces = batch_input['spec_nce']
+			spec_ces = batch_input['spec_ce']
 			spec_ids = batch_input['spec_unique_id']
 			mol_ids = batch_input['mol_id']
 			spec_prec_types = batch_input['spec_prec_type']
@@ -137,7 +137,7 @@ def run_models(ckpt_fp,
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
 				b_spec_id = spec_ids[b_idx]
 				b_smi = str(mol_smiles[b_idx])
-				b_nce = float(spec_nces[b_idx])
+				b_ce = float(spec_ces[b_idx])
 				b_mol_id = mol_ids[b_idx]
 				b_spec_prec_type_idx = int(spec_prec_types[b_idx])
 				b_spec_inst_type_idx = int(spec_inst_types[b_idx])
@@ -149,21 +149,21 @@ def run_models(ckpt_fp,
 				b_spec_ints = pred_ints[b_peak_mask]
 
 				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_prec_type, b_spec_inst_type, \
-        			b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob.item(), \
+        			b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob.item(), b_ce, \
            			cos_sim_bin_lr[b_idx].item(), cos_sim_bin_hr[b_idx].item(),cos_sim_hun[b_idx].item()))
     
-	columns = ['spec_id','mol_id', 'prec_type', 'inst_type','pred_mzs', 'pred_ints','pred_oos','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun']
+	columns = ['spec_id','mol_id', 'prec_type', 'inst_type','pred_mzs', 'pred_ints','pred_oos', 'spec_ce','cos_sim_0.1','cos_sim_0.01', 'cos_sim_hun']
 	df = pd.DataFrame(preds_l, columns=columns)
 	print(f">> save to {save_fp}")
 	df.to_pickle(save_fp)
  
 	for metric in ['cos_sim_0.1','cos_sim_0.01','cos_sim_hun']:
-		print(metric, df.loc[:, metric].mean(),  df.loc[:, metric].std())
+		print(metric, df.loc[:, metric].mean(),  df.loc[:, metric].std(), df.loc[:, metric].count(), df.loc[:, metric].max(),df.loc[:, metric].min())
 	
-	for agg_key in ['prec_type','inst_type']:
-		for metric in ['cos_sim_0.1','cos_sim_0.01','cos_sim_hun']:
-			#print(metric, df.loc[:, metric].mean(),  df.loc[:, metric].std())
-			print(f"Aggregated by {agg_key}, {metric} \n", df.groupby(agg_key)[metric].agg(['mean','std','count']))
+	agg_keys = ['prec_type','inst_type','spec_ce']
+	for metric in ['cos_sim_0.1','cos_sim_0.01','cos_sim_hun']:
+		#print(metric, df.loc[:, metric].mean(),  df.loc[:, metric].std())
+		print(f"Aggregated by {agg_keys}, {metric} \n", df.groupby(agg_keys)[metric].agg(['mean','std','count','max','min']))
 
 def get_args():
 	parser = argparse.ArgumentParser()
@@ -174,7 +174,7 @@ def get_args():
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['t1etochx','4xq01qnl','wz0k2re5','qr15frx6','brr6krjt'])
+	parser.add_argument("--wandb_run_ids",type=str, nargs='+', default= ['rnq1wuuj'])
  
 	args = parser.parse_args()
 	return args
