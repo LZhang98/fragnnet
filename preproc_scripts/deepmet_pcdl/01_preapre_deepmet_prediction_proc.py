@@ -40,6 +40,7 @@ def create_spec_df(mol_df):
 		spec_df_prec['prec_mz'] = np.nan
 		spec_df_prec['prec_type'] = prec_type
 		spec_df_prec['nce'] = np.nan
+		spec_df_prec['ace'] = np.nan
 		spec_df_prec['ion_mode'] = 'N' if prec_type == '[M-H]-' else 'P'
 		spec_df_prec.loc[:,"prec_mz"] =  par_apply_df_rows(spec_df_prec,data_utils.infer_prec_mz)
 		spec_df_prec = spec_df_prec.drop(columns=["exact_mw"])
