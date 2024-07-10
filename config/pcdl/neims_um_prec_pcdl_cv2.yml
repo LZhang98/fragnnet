@@ -1,29 +1,24 @@
-wandb_name: neims_um_pcdl_pos
+wandb_name: nemis_um_prec_pcdl_cv_2
+wandb_group: nemis_um_prec_pcdl_cv
 wandb_tags:
 - um
-- nemis
 - wr00
 - inchikey
 - new_proc
 - new_metrics
-- nodemlp
 - ce_embed
 - unmerged
-- oos_multiple_1
 - gaussian_renormalize
 - b512x1
 - no_auxiliary_scores
-- vectorized_loss
 - lb16
 - preload
 - preprocess
-- xi6bawy4
-- pcdl_pos
 
 # data stuff
 spec_fp: data/proc/pcdl/spec_df.pkl
 mol_fp: data/proc/pcdl/mol_df.pkl
-split_dp: data/split/pcdl_pos
+split_dp: data/split/pcdl/cv_2
 frag_dp: data/frag/pcdl_d3_h4/dags
 frag_params:
   pyg_edge_feats: []
@@ -32,20 +27,19 @@ frag_params:
   preload: True
   preprocess: True
 spec_params:
-  merge: True
+  merge: False
   nce: True
   ace: False
-  merge_keep_ces: True
+  merge_keep_ces: False
   preprocess: True
-  prec_type: False
+  prec_type: True
   prec_types:
     - "[M+H]+"
+    - "[M-H]-"
   inst_type: True
   inst_types:
-    - "FT"
     - "QTOF"
-    - "Orbitrap"
-    - "Unknown"
+    - "Other"
 mol_params:
   preprocess: True
   fingerprint_morgan: True
@@ -69,8 +63,8 @@ ce_insert_merge: True
 ce_insert_size: 24
 #prec_insert_location: mlp
 #prec_insert_size: 8
-inst_insert_location: mlp
-inst_insert_size: 8
+#inst_insert_location: mlp
+#inst_insert_size: 8
 mz_max: 1500.0
 mz_bin_res: 0.01
 sum_ints: True
@@ -106,3 +100,4 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
+comiple: False
