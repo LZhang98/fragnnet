@@ -79,8 +79,8 @@ train_sample_weight: none
 eval_sample_weight: group_mol
 
 # optimization stuff
-train_batch_size: 512
-eval_batch_size: 512
+min_epochs: 20
+max_epochs: 20
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0003033
@@ -100,4 +100,4 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-comiple: False
+compile: False

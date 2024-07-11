@@ -88,8 +88,8 @@ lr: 0.0003033
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 20
+max_epochs: 20
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
@@ -101,4 +101,4 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-comiple: False
+compile: False
