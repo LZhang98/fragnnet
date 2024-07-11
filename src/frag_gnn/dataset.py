@@ -109,6 +109,8 @@ class BaseDataset(Dataset):
 			um_spec_df = um_spec_df[um_spec_df[id_key].isin(spec_df[id_key])]
 
 		# covert ace and nce if there is data
+		print(spec_df.loc[:,"ace"].unique)
+		print(spec_df.loc[:,"nce"].unique)
 		spec_df.loc[:,"ace"] = seq_apply_df_rows(spec_df, fill_missing_ace)
 		spec_df.loc[:,"nce"] = seq_apply_df_rows(spec_df, fill_missing_nce)
 		# reset indices
