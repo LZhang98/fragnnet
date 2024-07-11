@@ -87,8 +87,8 @@ lr: 0.0003033
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 40
+max_epochs: 40
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
