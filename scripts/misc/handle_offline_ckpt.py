@@ -54,6 +54,7 @@ if __name__ == "__main__":
 
 		# check config.yaml
 		if config_fp is None or not os.path.isfile(config_fp):
+			print(f"> skip, config_fp: {config_fp} can not be processed")
 			continue
 		else:
 			with open(config_fp) as f:
@@ -68,9 +69,9 @@ if __name__ == "__main__":
 			print(f"> skip {wandb_id} due to model_type {model_type} not in {args.model_types}")
 			continue
 
-		print(f"> wandb_name {wandb_grp}")
+		print(f"> wandb_grp {wandb_grp}")
 		print(f"> wandb_name {wandb_name}")
-		print(f"> wandb_name {model_type}")
+		print(f"> model_type {model_type}")
 
 		ckpt_files = [f for f in os.listdir(ckpt_dir)]
 		best_ckpt_fp = None

@@ -70,28 +70,17 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag feats configs
-	parser.add_argument("--proc_dp",type=str,default="data/deepmet/add_carbon_proc")
-	parser.add_argument("--deepmet_csv", type=str,default="data/deepmet/AddCarbon-HMDB4.tsv.gz", help="")
-	parser.add_argument("--smiles_col", type=str,default="mutated_smiles", help="")
-	parser.add_argument("--id_col", type=str,default="mol_id", help="")
+	parser.add_argument("--proc_dp",type=str,default="data/deepmet/proc/deepmet_training")
+	parser.add_argument("--deepmet_csv", type=str,default="data/deepmet/deepmet_data/hmdb/test-folds-model1.csv", help="")
+	parser.add_argument("--smiles_col", type=str,default="smiles", help="")
+	parser.add_argument("--id_col", type=str,default="hmdb_id", help="")
 	parser.add_argument("--chunk_size", type=int,default=100000, help="")
 	parser.add_argument("--is_tsv", type=bool, action=argparse.BooleanOptionalAction, default=False)
-	#parser.set_defaults("--is_tsv", type=bool, action=argparse.BooleanOptionalAction)
 	args = parser.parse_args()
 	return args
 
 if __name__ == "__main__":
 
-
-	"""
-	for mol_file in os.listdir('data/deepmet/proc/'):
-		if mol_file.startswith("mol_df_"):
-			mol_df = pd.read_pickle(os.path.join(f'data/deepmet/proc/{mol_file}'))
-			spec_df = create_spec_df(mol_df)
-			spec_df.to_pickle(os.path.join(f'data/deepmet/proc/{mol_file.replace("mol","spec")}'))
-	exit()
-	"""
- 
 	args = get_args()
 	mol_df = pd.read_csv(args.deepmet_csv, sep="\t" if args.is_tsv else ",")
 	smile_col = args.smiles_col
