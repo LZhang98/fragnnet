@@ -47,7 +47,8 @@ if __name__ == "__main__":
 		
 		trainig_args = wandb_metadata['args']
 		config_fp = None
-		for k,v in zip(trainig_args[0::2],trainig_args[1::2]):
+		for arg in trainig_args:
+			k,v = arg.split("=")
 			if k == "-c":
 				config_fp = v
 				break
@@ -108,7 +109,7 @@ if __name__ == "__main__":
 				print(f"copying {src_ckpt_fp}, to {save_fp}")
 				shutil.copy(src_ckpt_fp, save_fp)
 			elif  args.operation == "move":
-				print(f"copying {src_ckpt_fp}, to {save_fp}")
+				print(f"moving {src_ckpt_fp}, to {save_fp}")
 				shutil.move(src_ckpt_fp, save_fp)
 
 		if args.operation != "dryrun":
