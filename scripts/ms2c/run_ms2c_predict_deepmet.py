@@ -187,8 +187,8 @@ def get_args():
 	
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_fp",type=str,default="./data/deepmet/neims_predicted/mol_df_1_predicted.pkl")
-	parser.add_argument("--mol_df_fp",type=str,default="data/deepmet/proc/deepmet_proc/mol_df_1.pkl.gz")
-	parser.add_argument("--spec_df_fp",type=str,default="data/deepmet/proc/deepmet_proc/spec_df_1.pkl.gz")
+	parser.add_argument("--mol_df_fp",type=str,default="./data/deepmet/proc/deepmet_proc/mol_df_1.pkl.gz")
+	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/deepmet_proc/spec_df_1.pkl.gz")
 	parser.add_argument("--frag_dp", type=str,default="./data/deepmet/frags/mol_df_1")
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
@@ -196,7 +196,7 @@ def get_args():
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	parser.add_argument("--wandb_run_id",type=str, default= '0kxgjooa')
 	# dest="model ckpt fp, when used, ignore wandb_run_ids"
-	parser.add_argument("--model_ckpt",type=str, default= 'ckpts/nemis_um_prec_pcdl_7gk0p600/nemis_um_prec_pcdl_best.ckpt')
+	parser.add_argument("--model_ckpt",type=str, default=None)
 	args = parser.parse_args()
 	return args
 
