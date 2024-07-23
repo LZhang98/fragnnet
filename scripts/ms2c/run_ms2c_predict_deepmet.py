@@ -83,12 +83,17 @@ def run_prediction(ckpt_fp,
 		print("> num of frags: ", len(all_frags))
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
 		print("> num of mols after filtering", len(mol_df))
- 
+
 	spec_df = pd.read_pickle(spec_df_fp)
 	print("> num of spec", len(spec_df))
+	if model_cls == NeimsPL:
+		mz_max = config_d['mz_max']
+		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
+		print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
+  
 	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
 	print("> num of spec after filtering", len(spec_df))
-  
+	
 	# config mol df, spec df and frag_dp
 	config_d['mol_fp'] = mol_df
 	config_d['spec_fp'] = spec_df
