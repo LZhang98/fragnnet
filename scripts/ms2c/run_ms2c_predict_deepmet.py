@@ -150,14 +150,17 @@ def run_prediction(ckpt_fp,
 
 			pred_mzs = batch_result["pred_mzs"].detach().cpu()
 			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-			if "pred_oos_logprobs" in batch_result:
+			
+			has_oos_b = "pred_oos_logprobs" in batch_result
+			if has_oos_b:
 				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
 	
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 			for b_idx in range(batch_size):
 				b_peak_mask = pred_batch_idxs == b_idx
-				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
+	
+				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
 				b_spec_id = spec_ids[b_idx]
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
@@ -171,7 +174,7 @@ def run_prediction(ckpt_fp,
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob.item()))
+				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob))
 
 	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos']
 	df = pd.DataFrame(preds_l, columns=columns)
