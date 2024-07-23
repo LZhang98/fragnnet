@@ -68,7 +68,7 @@ def run_prediction(ckpt_fp,
 	print(f"> mol_fp {mol_df_fp}")
 	print(f"> spec_fp {spec_df_fp}")
 	print(f"> frag_dp {config_d['frag_dp']}")
-	
+	print(f"> save to {save_fp}")
 	# check class
 	model_type = config_d['model_type']
 	model_ds_cls = model_type_ds_cls[model_type]
@@ -183,7 +183,6 @@ def run_prediction(ckpt_fp,
 
 	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos']
 	df = pd.DataFrame(preds_l, columns=columns)
-	print(f">> save to {save_fp}")
 	df.to_pickle(save_fp)
 	del df
 		
