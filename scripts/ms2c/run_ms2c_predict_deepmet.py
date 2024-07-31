@@ -1,4 +1,3 @@
-
 import argparse
 import torch as th
 from tqdm import tqdm
@@ -6,7 +5,7 @@ from tqdm import tqdm
 from frag_gnn.runner import init_dataloader
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.utils.misc_utils import to_device
-from frag_gnn.utils.nn_utils import get_pl_hparams
+from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 
@@ -69,13 +68,31 @@ def run_prediction(ckpt_fp,
 	print(f"> mol_fp {mol_df_fp}")
 	print(f"> spec_fp {spec_df_fp}")
 	print(f"> frag_dp {config_d['frag_dp']}")
-
-	print(">> filtering input without frags")
-	all_frags = get_all_frags_name(frag_dp)
+	print(f"> save to {save_fp}")
+	# check class
+	model_type = config_d['model_type']
+	model_ds_cls = model_type_ds_cls[model_type]
+	model_cls = model_type_to_model_cls[model_type]
+  
 	mol_df  = pd.read_pickle(mol_df_fp)
-	mol_df = mol_df[mol_df['mol_id'].isin(all_frags)]
+	print("> num of mols", len(mol_df))
+	# only check for FragGNNet
+	if model_cls == FragGNNPL:
+		print(">> filtering input without frags")
+		all_frags = get_all_frags_name(frag_dp)
+		print("> num of frags: ", len(all_frags))
+		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
+		print("> num of mols after filtering", len(mol_df))
+
 	spec_df = pd.read_pickle(spec_df_fp)
+	print("> num of spec", len(spec_df))
+	if model_cls == NeimsPL:
+		mz_max = config_d['mz_max']
+		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
+		print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
+  
 	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
+	print("> num of spec after filtering", len(spec_df))
 	
 	# config mol df, spec df and frag_dp
 	config_d['mol_fp'] = mol_df
@@ -84,9 +101,6 @@ def run_prediction(ckpt_fp,
  
 	# load datasets
 	print(">> Loading datasets")
-	model_type = config_d['model_type']
-	model_cls = model_type_to_model_cls[model_type]
-	model_ds_cls = model_type_ds_cls[model_type]
 	ds = model_ds_cls(split='predict_only', **config_d)
 	print(f"> model supported inst type {ds.idx_to_inst_type}")
 	print(f"> model supported prec type {ds.idx_to_prec_type}")
@@ -107,8 +121,20 @@ def run_prediction(ckpt_fp,
 	
  	# load models
 	print(">> Loading models")
-	model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
+	print(f"> ckpt was compiled: {config_d['compile']}")
+	if config_d['compile']:
+		config_d['compile'] = False
+		ckpt = decompile_jit_ckpt(ckpt_fp)
+	else:
+		ckpt = th.load(ckpt_fp)
+	
+	model = model_cls(**config_d)
+	model.load_state_dict(ckpt["state_dict"])
+	model.to(device)
 	model.eval()
+ 
+ 	#model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
+	#model.eval()
 
 	# make predictions on validation data
 	print(">> Running inference")
@@ -129,14 +155,17 @@ def run_prediction(ckpt_fp,
 
 			pred_mzs = batch_result["pred_mzs"].detach().cpu()
 			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-			if "pred_oos_logprobs" in batch_result:
+			
+			has_oos_b = "pred_oos_logprobs" in batch_result
+			if has_oos_b:
 				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
 	
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 			for b_idx in range(batch_size):
 				b_peak_mask = pred_batch_idxs == b_idx
-				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy()
+	
+				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
 				b_spec_id = spec_ids[b_idx]
 				b_smi = str(mol_smiles[b_idx])
 				b_nce = float(spec_nces[b_idx])
@@ -150,11 +179,10 @@ def run_prediction(ckpt_fp,
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob.item()))
+				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob))
 
 	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos']
 	df = pd.DataFrame(preds_l, columns=columns)
-	print(f">> save to {save_fp}")
 	df.to_pickle(save_fp)
 	del df
 		
@@ -162,15 +190,17 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
-	parser.add_argument("--save_fp",type=str,default="./data/deepmet/predicted/mol_df_1_predicted.pkl")
-	parser.add_argument("--mol_df_fp",type=str,default="./data/deepmet/proc/mol_df_1.pkl.gz")
-	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/spec_df_1.pkl.gz")
+	parser.add_argument("--save_fp",type=str,default="./data/deepmet/neims_predicted/mol_df_1_predicted.pkl")
+	parser.add_argument("--mol_df_fp",type=str,default="./data/deepmet/proc/deepmet_proc/mol_df_1.pkl.gz")
+	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/deepmet_proc/spec_df_1.pkl.gz")
 	parser.add_argument("--frag_dp", type=str,default="./data/deepmet/frags/mol_df_1")
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
  
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	parser.add_argument("--wandb_run_id",type=str, default= '0kxgjooa')
+	# dest="model ckpt fp, when used, ignore wandb_run_ids"
+	parser.add_argument("--model_ckpt",type=str, default=None)
 	args = parser.parse_args()
 	return args
 
@@ -183,14 +213,16 @@ if __name__ == "__main__":
 	os.makedirs(save_dp, exist_ok=True)
 	json.dump(vars(args), open(f"{save_dp}/args_{timestr}.json", "w"), indent=2)
 
-	os.makedirs(args.model_save_dp, exist_ok=True)	
-	model_save_dp = args.model_save_dp
-	print(f">> save model to {model_save_dp} from wandb")
-	assert args.wandb_run_id is not None
-
-	print(f">> wandb run id: {args.wandb_run_id}")
-	ckpt_fp = get_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
-
+	if args.model_ckpt is None:
+		os.makedirs(args.model_save_dp, exist_ok=True)	
+		model_save_dp = args.model_save_dp
+		print(f">> save model to {model_save_dp} from wandb")
+		#assert args.wandb_run_id is not None
+		print(f">> wandb run id: {args.wandb_run_id}")
+		ckpt_fp = get_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
+	else:
+		ckpt_fp = args.model_ckpt
+  
 	run_prediction(ckpt_fp = ckpt_fp,   
 				save_fp = args.save_fp,
 				mol_df_fp = args.mol_df_fp,

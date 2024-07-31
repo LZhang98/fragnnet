@@ -34,3 +34,4 @@ debug_output
 
 containers/apptainer_images
 model_eval
+ckpts
