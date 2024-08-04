@@ -8,6 +8,7 @@ from frag_gnn.utils.misc_utils import NestedDefaultDict, booltype
 from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference
 
 import torch as th
+import torch._dynamo
 import argparse
 import wandb
 from pprint import pprint
@@ -18,58 +19,58 @@ import gc
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--debug", type=booltype, default=False)
+	parser.add_argument("--split_types", type=str, nargs="+", default=["inchikey","scaffold"])
+	parser.add_argument("--wandb_model_types", type=str, nargs="+", default=["fraggnn_d3","fraggnn_d4","iceberg_inten_100","iceberg_inten_all","neims","massformer"])
+	parser.add_argument("--local_model_types", type=str, nargs="+", default=[])
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
 	parser.add_argument("--num_seeds", type=int, default=5)
 	parser.add_argument("--local_path", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/local_runs")
 	parser.add_argument("--vals_dp", type=str, default="/h/adamo/frag-gnn/inference_outputs")
 	parser.add_argument("--force_overwrite", type=booltype, default=False)
+	parser.add_argument("--auxiliary_scores", type=str, nargs="+", default=["cos_sim","cos_hun"])
+	parser.add_argument("--skip_extra_losses", type=booltype, default=False)
 	args = parser.parse_args()
 
-	debug = args.debug
 	eval_split = args.eval_split
 	num_seeds = args.num_seeds
 	local_path = args.local_path
 	vals_dp = args.vals_dp
 	force_overwrite = args.force_overwrite
 
-	if not debug:
-		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["fraggnn_d3_v2","fraggnn_d4_v2","iceberg_inten_100","iceberg_inten_all"]
-		local_model_types = ["neims_v2","massformer_v2"]
-		batch_cutoff = int(1e6)
-		seed_cutoff = num_seeds
-	else:
-		split_types = ["inchikey","scaffold"]
-		wandb_model_types = []
-		local_model_types = []
-		batch_cutoff = int(1e6)
-		seed_cutoff = num_seeds
+	# this is necessary to avoid a pytorch compile issue...
+	# TODO: replace this with a proper checkpoint decompilation
+	th._dynamo.config.suppress_errors = True
+
+	split_types = args.split_types
+	wandb_model_types = args.wandb_model_types
+	local_model_types = args.local_model_types
+	batch_cutoff = int(1e6)
 	
 	model_type_to_model_cls = {
 		"neims": NeimsPL,
-		"neims_v2": NeimsPL,
 		"massformer": MassFormerPL,
-		"massformer_v2": MassFormerPL,
 		"fraggnn_d3": FragGNNPL,
-		"fraggnn_d3_v2": FragGNNPL,
 		"fraggnn_d4": FragGNNPL,
-		"fraggnn_d4_v2": FragGNNPL,
 		"iceberg_inten_100": IcebergIntenPL,
 		"iceberg_inten_all": IcebergIntenPL,
 	}
 
-	model_type_ds_cls = {
+	model_type_to_ds_cls = {
 		"neims": SpecMolDataset,
-		"neims_v2": SpecMolDataset,
 		"massformer": SpecMolDataset,
-		"massformer_v2": SpecMolDataset,
 		"fraggnn_d3": SpecMolFragDataset,
-		"fraggnn_d3_v2": SpecMolFragDataset,
 		"fraggnn_d4": SpecMolFragDataset,
-		"fraggnn_d4_v2": SpecMolFragDataset,
 		"iceberg_inten_100": SpecMolMagmaIntenDataset,
 		"iceberg_inten_all": SpecMolMagmaIntenDataset,
+	}
+
+	model_type_to_dset = {
+		"neims": "nist20v3",
+		"massformer": "nist20v3",
+		"fraggnn_d3": "nist20v2",
+		"fraggnn_d4": "nist20v2",
+		"iceberg_inten_100": "nist20v2",
+		"iceberg_inten_all": "nist20v2"
 	}
 
 	model_to_run_id = NestedDefaultDict()
@@ -80,11 +81,12 @@ if __name__ == "__main__":
 	api = wandb.Api()
 	for split_type in split_types:
 		for model_type in wandb_model_types:
-			group_name = f"nist20_{split_type}_{model_type}"
+			dset = model_type_to_dset[model_type]
+			group_name = f"{dset}_{split_type}_{model_type}"
 			runs = api.runs(
 				path="frag-gnn/frag-gnn",
 				filters={"group":group_name})
-			model_to_config[split_type][model_type] = f"config/nist20_d4_wr00_{split_type}/{model_type}/s0.yml"
+			model_to_config[split_type][model_type] = f"config/{dset}_d4_wr00_{split_type}/{model_type}/s0.yml"
 			for run in runs:
 				seed = int(run.name.split("_")[-1].removeprefix("s"))
 				if seed < num_seeds:
@@ -97,7 +99,8 @@ if __name__ == "__main__":
 	model_to_ckpt = NestedDefaultDict()
 	for split_type in split_types:
 		for model_type in local_model_types:
-			model_to_config[split_type][model_type] = f"config/nist20_d4_wr00_{split_type}/{model_type}/s0.yml"
+			dset = model_type_to_dset[model_type]
+			model_to_config[split_type][model_type] = f"config/{dset}_d4_wr00_{split_type}/{model_type}/s0.yml"
 			for seed in range(num_seeds):
 				ckpt = glob(os.path.join(local_path,f"{model_type}/{split_type}/ckpts/s{seed}/*.ckpt"))[0]
 				model_to_ckpt[split_type][model_type][seed] = ckpt
@@ -112,13 +115,16 @@ if __name__ == "__main__":
 			custom_fp = model_to_config[split_type][model_type]
 			print(f">>> Loading config {custom_fp}")
 			config_d = load_config(template_fp, custom_fp)
+			# modify config to record relevant metrics
+			config_d["auxiliary_scores"] = args.auxiliary_scores
+			config_d["skip_extra_losses"] = args.skip_extra_losses
 			print(">>> Loading dataset")
-			ds_cls = model_type_ds_cls[model_type]
+			ds_cls = model_type_to_ds_cls[model_type]
 			ds = ds_cls(split=eval_split, **config_d)
 			dl = init_dataloader(ds, config_d)
 			model_cls = model_type_to_model_cls[model_type]
 			device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-			for seed in range(seed_cutoff):
+			for seed in range(num_seeds):
 				print(f">>> Starting seed {seed}")
 				if model_type in wandb_model_types:
 					run_id = model_to_run_id[split_type][model_type][seed]

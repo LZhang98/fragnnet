@@ -28,33 +28,23 @@ def calc_jss(true, pred):
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--debug", type=booltype, default=False)
+	parser.add_argument("--split_types", type=str, nargs="+", default=["inchikey","scaffold"])
+	parser.add_argument("--model_types", type=str, nargs="+", default=["fraggnn_d3","fraggnn_d4","iceberg_inten_100","iceberg_inten_all","neims","massformer"])
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
 	parser.add_argument("--num_seeds", type=int, default=5)
 	parser.add_argument("--vals_dp", type=str, default="/h/adamo/frag-gnn/inference_outputs")
 	parser.add_argument("--output_dp", type=str, default="figs/stats")
 	args = parser.parse_args()
 
-	debug = args.debug
 	eval_split = args.eval_split
 	num_seeds = args.num_seeds
 	vals_dp = args.vals_dp
 	pd.options.display.float_format = '{:.4f}'.format
 
-	if not debug:
-		split_types = ["inchikey","scaffold"]
-		wandb_model_types = ["fraggnn_d3_v2","fraggnn_d4_v2","iceberg_inten_100","iceberg_inten_all"]
-		local_model_types = ["neims_v2","massformer_v2"]
-		seed_cutoff = num_seeds
-	else:
-		split_types = ["inchikey","scaffold"]
-		wandb_model_types = []
-		local_model_types = []
-		seed_cutoff = num_seeds
+	split_types = args.split_types
+	model_types = args.model_types
 
 	stats_df = []
-
-	model_types = wandb_model_types + local_model_types
 
 	for split_type in split_types:
 		for model_type in model_types:
@@ -64,10 +54,11 @@ if __name__ == "__main__":
 			mean_pred_oos = []
 			mean_corr_oos = []
 			mean_tv_oos = []
-			for seed in range(seed_cutoff):
+			for seed in range(num_seeds):
 				seed_vals_fp = os.path.join(args.vals_dp,split_type,model_type,f"s{seed}",f"{eval_split}.pkl")
+				print(f">>> Loading {seed_vals_fp}")
 				if not os.path.isfile(seed_vals_fp):
-					print(f">>> {seed_vals_fp} not found, skipping")
+					print(f">> file not found, skipping")
 					continue
 				seed_vals = th.load(seed_vals_fp,map_location="cpu")
 				sims_binned = seed_vals["cos_sim_0.01"]
@@ -118,14 +109,10 @@ if __name__ == "__main__":
 	}
 	
 	model_type_to_name = {
-		"fraggnn_d3": "FragNet-D3",
-		"fraggnn_d3_v2": "FragNet-D3",
-		"fraggnn_d4": "FragNet-D4",
-		"fraggnn_d4_v2": "FragNet-D4",
+		"fraggnn_d3": "FraGNNet-D3",
+		"fraggnn_d4": "FraGNNet-D4",
 		"neims": "NEIMS",
-		"neims_v2": "NEIMS",
 		"massformer": "MassFormer",
-		"massformer_v2": "MassFormer",
 		"iceberg_inten_100": "Iceberg",
 		"iceberg_inten_all": "Iceberg-ADV",
 	}
