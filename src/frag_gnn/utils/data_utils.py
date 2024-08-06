@@ -517,17 +517,17 @@ def par_apply(iterator,func,need_unpack=False, return_as_generator=False):
 		result = parallel(par_func(*i) for i in iterator)
 	return result
 
-def par_apply_series(series,func):
+def par_apply_series(series,func, tqdm_leave = True):
 
-	series_iter = tqdm(series.items(),desc=pformat(func),total=series.shape[0])
+	series_iter = tqdm(series.items(),desc=pformat(func),total=series.shape[0],leave=tqdm_leave)
 	series_func = lambda tup: func(tup[1])
 	result_list = par_apply(series_iter,series_func)
 	result_series = pd.Series(result_list,index=series.index)
 	return result_series
 
-def seq_apply_series(series,func):
+def seq_apply_series(series,func, tqdm_leave=True):
 
-	series_iter = tqdm(series.iteritems(),desc=pformat(func),total=series.shape[0])
+	series_iter = tqdm(series.iteritems(),desc=pformat(func),total=series.shape[0],leave=tqdm_leave)
 	series_func = lambda tup: func(tup[1])
 	result_list = seq_apply(series_iter,series_func)
 	result_series = pd.Series(result_list,index=series.index)

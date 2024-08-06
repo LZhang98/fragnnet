@@ -9,28 +9,27 @@ import numpy as np
 from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows
 from tqdm import tqdm
 
-def process_mol(mol_df, drop_duplicate = True):
+def process_mol(mol_df, drop_duplicate = True, tqdm_leave=True):
 
 	# get mol df
-	mol_df.loc[:,"mol"] = par_apply_series(mol_df["smiles"],data_utils.mol_from_smiles)
+	mol_df.loc[:,"mol"] = par_apply_series(mol_df["smiles"],data_utils.mol_from_smiles, tqdm_leave)
 	mol_df = mol_df.dropna(subset=["mol"])
-	mol_df.loc[:,"inchikey"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchikey)
+	mol_df.loc[:,"inchikey"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchikey, tqdm_leave)
 	mol_df["inchikey_s"] = mol_df["inchikey"].apply(lambda x: x[:14])
  
 	if drop_duplicate:
 		mol_df = mol_df.drop_duplicates(subset=['inchikey'])
  
-	mol_df.loc[:,"scaffold"] = par_apply_series(mol_df["mol"],data_utils.get_murcko_scaffold)
-	mol_df.loc[:,"formula"] = par_apply_series(mol_df["mol"],data_utils.mol_to_formula)
-	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchi)
-	mol_df.loc[:,"mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=False))
-	mol_df.loc[:,"exact_mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=True))
-	mol_df.loc[:,"num_atoms"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_atoms)
-	mol_df.loc[:,"num_bonds"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_bonds)
-	mol_df.loc[:,"charge"] = par_apply_series(mol_df["mol"],data_utils.mol_to_charge)
-	mol_df.loc[:,"single_mol"] = par_apply_series(mol_df["mol"],data_utils.check_single_mol)
-	mol_df.loc[:,"num_radicals"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_radicals)
-
+	mol_df.loc[:,"scaffold"] = par_apply_series(mol_df["mol"],data_utils.get_murcko_scaffold, tqdm_leave)
+	mol_df.loc[:,"formula"] = par_apply_series(mol_df["mol"],data_utils.mol_to_formula, tqdm_leave)
+	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchi, tqdm_leave)
+	mol_df.loc[:,"mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=False), tqdm_leave)
+	mol_df.loc[:,"exact_mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=True), tqdm_leave)
+	mol_df.loc[:,"num_atoms"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_atoms, tqdm_leave)
+	mol_df.loc[:,"num_bonds"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_bonds, tqdm_leave)
+	mol_df.loc[:,"charge"] = par_apply_series(mol_df["mol"],data_utils.mol_to_charge, tqdm_leave)
+	mol_df.loc[:,"single_mol"] = par_apply_series(mol_df["mol"],data_utils.check_single_mol, tqdm_leave)
+	mol_df.loc[:,"num_radicals"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_radicals, tqdm_leave)
 
  	# reset indices
 	mol_df = mol_df.reset_index(drop=True)
@@ -77,33 +76,42 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag feats configs
+	# msg_candidates_mass_json = './data/raw/msgym/MassSpecGym_retrieval_candidates_mass.json'
+	
 	parser.add_argument("--proc_dp",type=str,default="data/msgym/proc/retrieval_candidates_formula")
 	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_formula.json")
- 
+	parser.add_argument("--tsv_fp",type=str,default="./data/raw/msgym/MassSpecGym.tsv")
 	args = parser.parse_args()
 	return args
 
 if __name__ == "__main__":
 
 	args = get_args()
- 
-	# Opening JSON file
-	# msg_candidates_mass_json = './data/raw/msgym/MassSpecGym_retrieval_candidates_mass.json'
-	print(f"> read {args.json_fp}")
-	msg_dict = json.load(open(args.json_fp))
+	# read tsv first, we only need to do testing
+	print(f"> read {args.tsv_fp}")
+	msg_spectra_df = pd.read_csv(args.tsv_fp, sep="\t")
+	msg_spectra_df = msg_spectra_df[msg_spectra_df["fold"] == "test"]
+	
+	msg_candidates_dict = json.load(open(args.json_fp))
 	os.makedirs(args.proc_dp, exist_ok=True)
 	print(f"> save to {args.proc_dp}")
-	for idx, input_smiles in enumerate(msg_dict):
-		candidates_smiles = msg_dict[input_smiles]
-		mol_df = pd.DataFrame({'smiles': candidates_smiles})
-		mol_df['mol_id'] = mol_df.index
-		mol_df = process_mol(mol_df)
-		#print(len(mol_df))
-		mol_df_fp = os.path.join(args.proc_dp,f"mol_df_{idx}.pkl")
-		mol_df.to_pickle(mol_df_fp)
-		#spec_df = create_spec_df(mol_df)
-		#spec_df.to_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
-		del mol_df
-
-  
-
+	msg_test_candidate_dict = {}
+ 
+	for smiles in msg_spectra_df['smiles'].to_list():
+		if smiles in msg_candidates_dict:
+			msg_test_candidate_dict[smiles] = msg_candidates_dict[smiles]
+	print(len(msg_test_candidate_dict))
+	for idx, input_smiles in tqdm(enumerate(msg_test_candidate_dict), total=len(msg_test_candidate_dict)):
+		try:
+			candidates_smiles = msg_test_candidate_dict[input_smiles]
+			mol_df = pd.DataFrame({'smiles': candidates_smiles})
+			mol_df['mol_id'] = mol_df.index
+			mol_df = process_mol(mol_df, True, None)
+			#print(len(mol_df))
+			mol_df_fp = os.path.join(args.proc_dp,f"mol_df_{idx}.pkl")
+			mol_df.to_pickle(mol_df_fp)
+			#spec_df = create_spec_df(mol_df)
+			#spec_df.to_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
+			del mol_df
+		except Exception as e:
+			print(e)
