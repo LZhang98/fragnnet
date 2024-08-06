@@ -99,10 +99,10 @@ if __name__ == "__main__":
 		mol_df['mol_id'] = mol_df.index
 		mol_df = process_mol(mol_df)
 		#print(len(mol_df))
-		mol_df_fp = os.path.join(args.proc_dp,f"mol_df_{idx}.pkl.gz")
+		mol_df_fp = os.path.join(args.proc_dp,f"mol_df_{idx}.pkl")
 		mol_df.to_pickle(mol_df_fp)
 		#spec_df = create_spec_df(mol_df)
-		#spec_df.to_pickle(os.path.join(args.proc_dp,"spec_df.pkl.gz"))
+		#spec_df.to_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
 		del mol_df
 
   
