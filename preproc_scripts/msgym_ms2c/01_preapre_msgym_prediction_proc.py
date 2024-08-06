@@ -92,7 +92,7 @@ if __name__ == "__main__":
 	print(f"> read {args.json_fp}")
 	msg_dict = json.load(open(args.json_fp))
 	os.makedirs(args.proc_dp, exist_ok=True)
- 
+	print(f"> save to {args.proc_dp}")
 	for idx, input_smiles in enumerate(msg_dict):
 		candidates_smiles = msg_dict[input_smiles]
 		mol_df = pd.DataFrame({'smiles': candidates_smiles})
