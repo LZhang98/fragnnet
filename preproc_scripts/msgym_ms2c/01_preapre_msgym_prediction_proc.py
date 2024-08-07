@@ -74,8 +74,8 @@ def get_args():
 	# msg_candidates_mass_json = './data/raw/msgym/MassSpecGym_retrieval_candidates_mass.json'
 	
 	parser.add_argument("--proc_dp",type=str,default="data/msgym/proc/retrieval_candidates_formula")
-	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_formula.json")
-	parser.add_argument("--tsv_fp",type=str,default="./data/raw/msgym/MassSpecGym.tsv")
+	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_formula_with_test.json")
+	parser.add_argument("--tsv_fp",type=str,default="./data/raw/msgym/MassSpecGym_with_test.tsv")
 	args = parser.parse_args()
 	return args
 
