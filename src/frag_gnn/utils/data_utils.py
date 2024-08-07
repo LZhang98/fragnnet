@@ -608,9 +608,9 @@ def parse_inst_info(df):
 	# TODO: separate FT from Orbitrap
 
 	inst_type_str = df["inst_type"]
-	inst_str = df["inst"]
-	frag_mode_str = df["frag_mode"]
-	col_energy_str = df["col_energy"]
+	inst_str = df["inst"] if "inst" in df else np.nan
+	frag_mode_str = df["frag_mode"] if "frag_mode" in df else np.nan
+	col_energy_str = df["col_energy"] if "col_energy" in df else np.nan
 	# instrument type
 	if inst_type_str == "EI":
 		assert inst_str == "EI"
