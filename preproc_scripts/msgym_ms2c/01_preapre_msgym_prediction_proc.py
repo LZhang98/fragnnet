@@ -140,3 +140,4 @@ if __name__ == "__main__":
 	
 	msg_id_map_df = pd.DataFrame(msg_id_map_l, columns=['identifier','smiles','mol_df','spec_df'])
 	msg_id_map_fp = os.path.join(args.proc_dp, "msg_id_map.csv")
+	msg_id_map_df.to_csv(msg_id_map_fp,index=None)
