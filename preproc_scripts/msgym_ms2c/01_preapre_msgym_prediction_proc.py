@@ -73,7 +73,7 @@ def get_args():
 	# frag feats configs
 	# msg_candidates_mass_json = './data/raw/msgym/MassSpecGym_retrieval_candidates_mass.json'
 	
-	parser.add_argument("--proc_dp",type=str,default="data/msgym/proc/retrieval_candidates_formula")
+	parser.add_argument("--proc_dp",type=str,default="data/ms2c/msgym/proc/retrieval_candidates_formula")
 	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_formula_with_test.json")
 	parser.add_argument("--tsv_fp",type=str,default="./data/raw/msgym/MassSpecGym_with_test.tsv")
 	args = parser.parse_args()
