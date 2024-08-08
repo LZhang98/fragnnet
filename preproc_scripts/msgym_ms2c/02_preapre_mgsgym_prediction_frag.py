@@ -73,7 +73,7 @@ if __name__ == "__main__":
 			for res in tqdm(frag_results, total = len(dag_feat_inputs_l), desc = "Compute Frags", leave=None):
 				continue
 			
-			num_fags_compunted = len([name for name in os.listdir(tmp_dp) if os.path.isfile(os.path.join(tmp_dp, name))])
+			# num_fags_compunted = len([name for name in os.listdir(tmp_dp) if os.path.isfile(os.path.join(tmp_dp, name))])
 			# print(mol_df_fp,len(dag_feat_inputs_l), num_fags_compunted)
 			frag_dest = os.path.join(args.frag_dp, f"mol_df_{mod_df_id}")
 			if args.frag_dp_archive in ["tar", "zip", "bztar", "gztar"]:
