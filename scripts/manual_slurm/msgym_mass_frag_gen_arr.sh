@@ -37,7 +37,7 @@ python preproc_scripts/msgym_ms2c/02_preapre_mgsgym_prediction_frag.py \
 
 cd ${SLURM_TMPDIR}
 tar -cf retrieval_candidates_mass_frags_${SLURM_ARRAY_TASK_ID}.tar retrieval_candidates_mass_frags_${SLURM_ARRAY_TASK_ID}
-cp retrieval_candidates_mass_frags_${SLURM_ARRAY_TASK_ID}.tar /scratch/feiw/frag-gnn-data/ms2c/msgym/retrieval_candidates_mass_d3_h4/
+cp retrieval_candidates_mass_frags_${SLURM_ARRAY_TASK_ID}.tar /scratch/feiw/frag-gnn-data/ms2c/msgym/frags/retrieval_candidates_mass_d3_h4/
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running

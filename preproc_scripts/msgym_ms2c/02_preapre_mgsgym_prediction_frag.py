@@ -41,7 +41,7 @@ if __name__ == "__main__":
 		mol_df_fp = os.path.join(args.msgym_moldf_dp, f"mol_df_{mod_df_id}.pkl")
 		if not os.path.isfile(mol_df_fp):
 			continue
-		mol_df = pd.read_pickle()
+		mol_df = pd.read_pickle(mol_df_fp)
 		dag_feat_inputs_l = []
 		with tempfile.TemporaryDirectory() as tmp_dp:
 
