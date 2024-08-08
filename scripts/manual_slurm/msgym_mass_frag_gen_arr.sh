@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=msgym_frag_gen_arr
+#SBATCH --job-name=msgym_mass_frag_gen_arr
 #SBATCH --mem=80G
 #SBATCH --cpus-per-task=40
 #SBATCH --time=0-3:00
