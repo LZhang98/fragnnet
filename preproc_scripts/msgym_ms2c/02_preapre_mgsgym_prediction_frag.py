@@ -37,18 +37,18 @@ if __name__ == "__main__":
 
 	os.makedirs(args.frag_dp, exist_ok=True)
  
-	for mod_df_id in range(args.star_mol_df_id, args.star_mol_df_id+args.num_ids):
+	for mod_df_id in tqdm(range(args.star_mol_df_id, args.star_mol_df_id+args.num_ids)):
 		mol_df_fp = os.path.join(args.msgym_moldf_dp, f"mol_df_{mod_df_id}.pkl")
 		if not os.path.isfile(mol_df_fp):
+			print(f"{mol_df_fp} is not a file")
 			continue
 		mol_df = pd.read_pickle(mol_df_fp)
 		dag_feat_inputs_l = []
 		with tempfile.TemporaryDirectory() as tmp_dp:
 
-			for _, row in tqdm(mol_df.iterrows(), total=len(mol_df), desc="Prepare Data"):
+			for _, row in tqdm(mol_df.iterrows(), total=len(mol_df), desc="Prepare Data", leave=None):
 				# put here to prevent unnecessary frag computation
 				# we may support this in the future
-				# todo updat mol_df to include this
 				if row['charge'] != 0:
 					continue
 				if row['num_atoms'] > frag_utils.MAX_NUM_NODES:
@@ -70,9 +70,11 @@ if __name__ == "__main__":
 										])
 			
 			frag_results = par_apply(iter(dag_feat_inputs_l), frag_utils.timed_get_dags,True, return_as_generator=True)
-			for res in tqdm(frag_results, total = len(dag_feat_inputs_l), desc = "Compute Frags"):
+			for res in tqdm(frag_results, total = len(dag_feat_inputs_l), desc = "Compute Frags", leave=None):
 				continue
 			
+			num_fags_compunted = len([name for name in os.listdir(tmp_dp) if os.path.isfile(os.path.join(tmp_dp, name))])
+			# print(mol_df_fp,len(dag_feat_inputs_l), num_fags_compunted)
 			frag_dest = os.path.join(args.frag_dp, f"mol_df_{mod_df_id}")
 			if args.frag_dp_archive in ["tar", "zip", "bztar", "gztar"]:
 				shutil.make_archive(base_name = frag_dest, format= args.frag_dp_archive, root_dir=tmp_dp, base_dir="./")
