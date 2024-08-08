@@ -73,8 +73,8 @@ if __name__ == "__main__":
 			for res in tqdm(frag_results, total = len(dag_feat_inputs_l), desc = "Compute Frags"):
 				continue
 			
-			dest_dp = os.path.join(args.frag_dp, mod_df_id)
+			frag_dest = os.path.join(args.frag_dp, f"mol_df_{mod_df_id}")
 			if args.frag_dp_archive in ["tar", "zip", "bztar", "gztar"]:
-				shutil.make_archive(base_name = dest_dp, format= args.frag_dp_archive, root_dir=tmp_dp, base_dir="./")
+				shutil.make_archive(base_name = frag_dest, format= args.frag_dp_archive, root_dir=tmp_dp, base_dir="./")
 			else:
-				shutil.copytree(tmp_dp, dest_dp, dirs_exist_ok = True)
+				shutil.copytree(tmp_dp, frag_dest, dirs_exist_ok = True)
