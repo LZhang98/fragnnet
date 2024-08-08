@@ -10,7 +10,7 @@
 #SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/msgym_formula_frag_gen_arr%j.out
 #SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/msgym_formula_frag_gen_arr%j.err
 #SBATCH --open-mode=append
-#SBATCH --array=0,1000,2000
+#SBATCH --array=0,500,1000,1500,2000
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID} is allocated resources
@@ -31,7 +31,7 @@ python preproc_scripts/msgym_ms2c/02_preapre_mgsgym_prediction_frag.py \
     --frag_dp=${SLURM_TMPDIR}/retrieval_candidates_formula_frags_${SLURM_ARRAY_TASK_ID} \
     --max_depth=3 \
     --star_mol_df_id=${SLURM_ARRAY_TASK_ID} \
-	--num_ids=1000
+	--num_ids=500
 
 cd ${SLURM_TMPDIR}
 tar -cf retrieval_candidates_formula_frags_${SLURM_ARRAY_TASK_ID}.tar retrieval_candidates_formula_frags_${SLURM_ARRAY_TASK_ID}
