@@ -10,7 +10,7 @@
 #SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/msgym_mass_frag_gen_arr%j.out
 #SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/msgym_mass_frag_gen_arr%j.err
 #SBATCH --open-mode=append
-#SBATCH --array=0,500,1000,1500,2000
+#SBATCH --array=0-2000:500
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID} is allocated resources
