@@ -466,7 +466,7 @@ if __name__ == "__main__":
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	
 	# save files
-	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}.{args.output_format}")
+	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}_df.{args.output_format}")
 	if args.output_format == "json":
 		spec_df.to_json(spec_df_fp)
 	else:
