@@ -1,8 +1,7 @@
 wandb_name: msg_fragnnet_0,01
 wandb_tags:
-- msg
-- nist20v2
-- d4
+- msgv2
+- d3
 - wr00
 - inchikey
 - new_proc
@@ -22,10 +21,10 @@ wandb_tags:
 - xi6bawy4
 
 # data stuff
-spec_fp: data/proc/ms_gym/spec_df.pkl
-mol_fp: data/proc/ms_gym/mol_df.pkl
-split_dp: data/split/ms_gym_d3_h4_benchmark
-frag_dp: data/frag/ms_gym_d3_h4/dags
+spec_fp: data/proc/ms_gymv2/spec_df.pkl
+mol_fp: data/proc/ms_gymv2/mol_df.pkl
+split_dp: data/split/ms_gym_d3_h4_benchmarkv2
+frag_dp: data/frag/ms_gym_d3_h4v2/dags
 spec_params:
   merge: False
   nce: True
