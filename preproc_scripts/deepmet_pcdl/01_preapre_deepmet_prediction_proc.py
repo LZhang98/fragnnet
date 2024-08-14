@@ -70,7 +70,7 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag feats configs
-	parser.add_argument("--proc_dp",type=str,default="data/deepmet/proc/deepmet_training")
+	parser.add_argument("--proc_dp",type=str,default="data/deepmet/ms2c/proc/deepmet_training")
 	parser.add_argument("--deepmet_csv", type=str,default="data/deepmet/deepmet_data/hmdb/test-folds-model1.csv", help="")
 	parser.add_argument("--smiles_col", type=str,default="smiles", help="")
 	parser.add_argument("--id_col", type=str,default="hmdb_id", help="")

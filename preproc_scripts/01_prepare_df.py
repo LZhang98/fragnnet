@@ -368,8 +368,9 @@ def read_pcdl(zipped_spectra_dp: str):
 	return ms_df
 
 def process_ms_gym(ms_gym_tsv_fp):
-	""" """
 	ms_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
+	ms_df = ms_df[ms_df["simulation_challenge"]]
+ 
 	ms_df["peaks"] = ms_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
 	ms_df = ms_df.drop(columns=["mzs","intensities"])
 	ms_df.rename(columns={"precursor_mz":"prec_mz", 
@@ -465,7 +466,7 @@ if __name__ == "__main__":
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	
 	# save files
-	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}.{args.output_format}")
+	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}_df.{args.output_format}")
 	if args.output_format == "json":
 		spec_df.to_json(spec_df_fp)
 	else:

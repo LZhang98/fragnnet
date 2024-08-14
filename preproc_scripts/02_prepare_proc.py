@@ -175,10 +175,15 @@ if __name__ == "__main__":
 	parser.add_argument("--df_dp", type=str, default="data/df")
 	parser.add_argument("--proc_dp", type=str, default="data/proc/nist")
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--ow_spec_mol", type=booltype, default=False)
+	parser.add_argument("--ow_spec_mol", type=booltype, default=True, help="overwrite existing spec mol")
 	parser.add_argument("--dsets", type=str, nargs="+", default=["nist20_hr","mona23"])
 	flags = parser.parse_args()
 
+	print(f"> df_dp: {flags.df_dp}")
+	print(f"> proc_dp: {flags.proc_dp}")
+	print(f"> num_entries: {flags.num_entries}")
+	print(f"> ow_spec_mol: {flags.ow_spec_mol}")
+	
 	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
 	mol_df_fp = os.path.join(flags.proc_dp,"mol_df.pkl")
 	ann_df_fp = os.path.join(flags.proc_dp,"ann_df.pkl")
@@ -206,6 +211,9 @@ if __name__ == "__main__":
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
 		ann_df.to_pickle(ann_df_fp)
+		print(f"> saved spec_df to {spec_df_fp}")
+		print(f"> saved mol_df to {mol_df_fp}")
+  
 		for k, v in debug_dfs.items():
 			v.to_pickle(os.path.join(flags.proc_dp,f"{k}.pkl"))
 		
