@@ -1,9 +1,7 @@
 wandb_name: msg_fragnnet_0,01
 wandb_tags:
-- msgv2
 - d3
 - wr00
-- inchikey
 - new_proc
 - fraggnn_d3
 - new_metrics

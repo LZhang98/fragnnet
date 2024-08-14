@@ -1,10 +1,8 @@
 wandb_name: msg_fragnnet_10ppm
 wandb_tags:
 - msg
-- nist20v2
-- d4
+- d3
 - wr00
-- inchikey
 - new_proc
 - fraggnn_d3
 - new_metrics
