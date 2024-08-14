@@ -28,6 +28,7 @@ frag_dp: data/frag/ms_gym_d3_h4v2/dags
 spec_params:
   merge: False
   nce: True
+  ace: False
   merge_keep_ces: False
   preprocess: True
   inst_types:

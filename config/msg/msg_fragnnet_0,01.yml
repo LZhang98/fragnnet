@@ -1,4 +1,4 @@
-wandb_name: msg_fragnnet_10ppm
+wandb_name: msg_fragnnet_0,01_nce
 wandb_tags:
 - msg
 - d3
@@ -28,6 +28,7 @@ frag_dp: data/frag/ms_gym_d3_h4v2/dags
 spec_params:
   merge: False
   nce: True
+  ace: False
   merge_keep_ces: False
   preprocess: True
   inst_types:
@@ -82,8 +83,8 @@ group_sampler: False
 simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
-loss_tolerance_rel: 0.00001 # 10 ppm
-loss_tolerance_abs: 
+loss_tolerance_rel: 
+loss_tolerance_abs: 0.01
 
 # optimization stuff
 train_batch_size: 32

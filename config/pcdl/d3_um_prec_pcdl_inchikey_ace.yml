@@ -51,6 +51,11 @@ spec_params:
 mol_params:
   preprocess: True
 
+# ace stuff
+ce_mean: 20
+ce_std: 10
+ce_max: 60
+
 # model stuff
 frag_gnn_type: NodeMLP
 num_depth: 4
