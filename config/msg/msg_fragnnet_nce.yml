@@ -1,10 +1,8 @@
-wandb_name: msg_fragnnet_0,1
+wandb_name: msg_fragnnet_10ppm
 wandb_tags:
 - msg
-- nist20v2
-- d4
+- d3
 - wr00
-- inchikey
 - new_proc
 - fraggnn_d3
 - new_metrics
@@ -20,12 +18,13 @@ wandb_tags:
 - preload
 - preprocess
 - xi6bawy4
+- ms_gym_v2
 
 # data stuff
-spec_fp: data/proc/ms_gym/spec_df.pkl
-mol_fp: data/proc/ms_gym/mol_df.pkl
-split_dp: data/split/ms_gym_d3_h4_benchmark
-frag_dp: data/frag/ms_gym_d3_h4/dags
+spec_fp: data/proc/ms_gymv2/spec_df.pkl
+mol_fp: data/proc/ms_gymv2/mol_df.pkl
+split_dp: data/split/ms_gym_d3_h4_benchmarkv2
+frag_dp: data/frag/ms_gym_d3_h4v2/dags
 spec_params:
   merge: False
   nce: True
@@ -83,8 +82,8 @@ group_sampler: False
 simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
-loss_tolerance_rel: 
-loss_tolerance_abs: 0.1
+loss_tolerance_rel: 0.00001 # 10 ppm
+loss_tolerance_abs: 
 
 # optimization stuff
 train_batch_size: 32

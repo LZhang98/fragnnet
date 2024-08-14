@@ -1,8 +1,9 @@
 import pandas as pd
 import numpy as np
 #mol_df = pd.read_pickle("data/proc/ms_gym/mol_df.pkl")
-mol_df = pd.read_pickle("data/proc/ms_gym/mol_df.pkl")
-spec_df = pd.read_pickle("data/proc/ms_gym/spec_df.pkl")
+mol_df = pd.read_pickle("data/proc/ms_gymv2/mol_df.pkl")
+spec_df = pd.read_pickle("data/proc/ms_gymv2/spec_df.pkl")
+print(spec_df.head())
 
 for split in ['train','val','test']:
     id_df = pd.read_csv(f"data/split/ms_gym_d3_h4_benchmark/{split}_ids.csv")
