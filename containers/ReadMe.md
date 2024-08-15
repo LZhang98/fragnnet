@@ -2,7 +2,8 @@
 
 ### Build Image from Apptainer def
 ```
-export APPTAINER_TMPDIR=$(pwd)/apptainer_images/tmp &&  apptainer build ./apptainer_images/fragnnet_cpu.sif ./fragnnet_cpu.def
+mkdir apptainer
+export APPTAINER_TMPDIR=$(pwd)/apptainer/tmp &&  apptainer build ./apptainer/fragnnet_cpu.sif ./fragnnet_cpu.def
 ```
 
 ## Useful links
@@ -21,6 +22,6 @@ python
 
 ## Run apptainer shell
 ```
-apptainer exec ./containers/apptainer_images/fragnnet_cpu.sif pip install --user -I -e .
-apptainer exec ./containers/apptainer_images/fragnnet_cpu.sif python
+apptainer exec ./containers/apptainer/fragnnet_cpu.sif pip install --user -I -e .
+apptainer exec ./containers/apptainer/fragnnet_cpu.sif python
 ```
