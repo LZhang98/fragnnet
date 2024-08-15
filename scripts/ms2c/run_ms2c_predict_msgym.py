@@ -31,7 +31,7 @@ model_type_ds_cls = {
 
 def get_all_frags_name(frag_dp):
 	return set([f.split('.')[0] for f in os.listdir(frag_dp)])
-	
+
 def run_prediction(ckpt_fp,   
 				 save_fp,
 				 mol_df_fp,
@@ -228,7 +228,6 @@ if __name__ == "__main__":
 	else:
 		ckpt_fp = args.model_ckpt
   
-  
 	# parser.add_argument("--msg_id_map", type=str,default="data/ms2c/msgym/proc/retrieval_candidates_formula/msg_id_map.csv")
 	msg_id_map_fp = os.path.join(args.proc_dp,"msg_id_map.csv")
 	msg_id_map_df = pd.read_csv(msg_id_map_fp)
@@ -242,8 +241,7 @@ if __name__ == "__main__":
 		spec_df_fp = os.path.join(args.proc_dp,spec_filename)
 		frag_zip_fp = os.path.join(args.frag_dp, mol_df_filename.replace(".pkl",".zip"))
 		save_fp = os.path.join(args.save_dp,spec_filename)
-		print(mol_df_fp)
-		print(spec_df_fp)
+
 		with tempfile.TemporaryDirectory() as tmp_dp, zipfile.ZipFile(frag_zip_fp, 'r') as zip_file:
 			zip_file.extractall(tmp_dp)
 				
