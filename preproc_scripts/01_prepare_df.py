@@ -369,6 +369,7 @@ def read_pcdl(zipped_spectra_dp: str):
 
 def process_ms_gym(ms_gym_tsv_fp):
 	ms_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
+	# only use on in simulation_challenge
 	ms_df = ms_df[ms_df["simulation_challenge"]]
  
 	ms_df["peaks"] = ms_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
@@ -385,7 +386,7 @@ def process_ms_gym(ms_gym_tsv_fp):
 	ms_df["col_energy"], ms_df["normalized"], ms_df["ramped"] = zip(*ms_df["col_energy"].apply(parse_mass_gym_ce_str))
 
 	#ms_df = ms_df.astype({"prec_mz":float,"exact_mass":float})
- 
+
 	# add ion_mode
 	ms_df.loc[:,"ion_mode"] = "P"
 	# add spec_type

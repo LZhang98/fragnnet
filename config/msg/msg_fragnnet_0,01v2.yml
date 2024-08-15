@@ -1,4 +1,4 @@
-wandb_name: msg_fragnnet_0,01_2
+wandb_name: msg_fragnnet_0,01_v2
 wandb_tags:
 - msgv2
 - d3
@@ -27,6 +27,7 @@ frag_dp: data/frag/ms_gym_d3_h4v2/dags
 spec_params:
   merge: False
   nce: True
+  ace: False
   merge_keep_ces: False
   preprocess: True
   inst_types:
