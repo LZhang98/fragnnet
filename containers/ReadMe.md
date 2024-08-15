@@ -12,6 +12,15 @@ export APPTAINER_TMPDIR=$(pwd)/apptainer_images/tmp &&  apptainer build ./apptai
 * https://apptainer.org/docs/user/main/docker_and_oci.html#containers-cached-by-the-docker-daemon
 * https://apptainer.org/docs/user/main/persistent_overlays.html
 
-### Run apptainer
-
+## Run apptainer shell
+```
+apptainer shell ./fragnnet_cpu.def
 pip install --user -I -e .
+python
+```
+
+## Run apptainer shell
+```
+apptainer exec ./containers/apptainer_images/fragnnet_cpu.sif pip install --user -I -e .
+apptainer exec ./containers/apptainer_images/fragnnet_cpu.sif python
+```
