@@ -34,11 +34,26 @@ def get_all_frags_name(frag_dp):
 
 def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	
+ 	# config cuda and cpus
+	if device is None:
+		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
+	elif not th.cuda.is_available() and device != "cpu":
+		device = "cpu"
+   
+	if device == "cpu":
+		th.set_num_threads(multiprocessing.cpu_count())
+		th.multiprocessing.set_sharing_strategy('file_system')
+		th.use_deterministic_algorithms(True)
+	
+	config_d['num_workers']= multiprocessing.cpu_count()
+	
+	# load ckpt
+	ckpt = th.load(ckpt_fp, map_location=device)
+  
 	# load configs
 	print(">> Loading configs")
-	ckpt_hparams_d = get_pl_hparams(ckpt_fp)
-	config_d= ckpt_hparams_d
- 
+	config_d = get_pl_hparams(ckpt)
+
 	# set eval batch size
 	config_d['eval_batch_size'] = batch_size
 	print(f"> ckpt is compiled: {config_d['compile']}")
@@ -62,28 +77,15 @@ def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	# check class
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
- 
-	# config cuda and cpus
-	if device is None:
-		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-	elif not th.cuda.is_available() and device != "cpu":
-		device = "cpu"
-   
-	if device == "cpu":
-		th.set_num_threads(multiprocessing.cpu_count())
-		th.multiprocessing.set_sharing_strategy('file_system')
-		th.use_deterministic_algorithms(True)
-	config_d['num_workers']= multiprocessing.cpu_count()
 	
  	# load models
 	print(">> Loading models")
 	print(f"> ckpt was compiled: {config_d['compile']}")
+
 	if config_d['compile']:
 		config_d['compile'] = False
-		ckpt = decompile_jit_ckpt(ckpt_fp)
-	else:
-		ckpt = th.load(ckpt_fp)
-	
+		ckpt = decompile_jit_ckpt(ckpt_fp, map_location=device)
+
 	model = model_cls(**config_d)
 	model.load_state_dict(ckpt["state_dict"])
 	model.to(device)

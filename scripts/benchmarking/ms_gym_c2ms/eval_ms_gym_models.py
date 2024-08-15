@@ -5,10 +5,7 @@ from tqdm import tqdm
 
 from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
-from frag_gnn.utils.plot_utils import plot_spectra_sparse
 from frag_gnn.utils.misc_utils import to_device
-from frag_gnn.utils.data_utils import mol_to_inchikey
-from frag_gnn.utils.nn_utils import decompile_jit_ckpt, is_ckpt_compiled
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 
@@ -49,7 +46,6 @@ def run_models(ckpt_fp,
 	config_d['eval_batch_size'] = batch_size
 	# https://discuss.pytorch.org/t/pytorch-cannot-allocate-memory/134754
 	config_d['num_workers']= 0
-	config_d["compile"] = is_ckpt_compiled(ckpt_fp)
 	print(f"> ckpt is compiled: {config_d['compile']}")
  
 	model_type = config_d['model_type']
@@ -156,15 +152,6 @@ if __name__ == "__main__":
 		print(f"> wandb run id: {run_id}")
 		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
 		
-		"""
-		if args.decompile:
-			np_ckpt_fp = ckpt_fp.replace(".ckpt","_np.ckpt")
-			if not os.path.exists(np_ckpt_fp) or not args.use_cahced_ckpt:
-				print(f"> decompiling model {run_id}")
-				decompile_jit_ckpt(ckpt_fp, np_ckpt_fp)
-			ckpt_fp = np_ckpt_fp
-		"""
-  
 		#print(f"> {np_ckpt_fp}")
 		save_fp = os.path.join(args.save_dp, run_id+'.csv')
 		print(f"> {custom_fp}")

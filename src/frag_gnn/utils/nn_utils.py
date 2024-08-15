@@ -764,16 +764,16 @@ class LowRankDense(nn.Module):
         x = self.layer2(x)
         return x
 
-def decompile_jit_ckpt(path:str):
+def decompile_jit_ckpt(ckpt):
 	"""
 	convert compiled ckpt to normal version and return a patched checkpoint
 	"""
  
 	# inspired by
 	# https://github.com/pytorch/pytorch/issues/101107#issuecomment-1801128683
-	print(f"> src: {path}")
+	#print(f"> src: {path}")
 
-	ckpt = th.load(path)
+	#ckpt = th.load(path, map_location = map_location)
 	if ckpt['hyper_parameters']['compile'] == False:
 		return ckpt
 
@@ -794,17 +794,13 @@ def decompile_jit_ckpt(path:str):
 	ckpt['hyper_parameters']['compile'] = False
 	return ckpt
 
-def is_ckpt_compiled(path:str) -> bool:
-	ckpt = th.load(path)
+def is_ckpt_compiled(ckpt) -> bool:
 	state_dict = ckpt["state_dict"]
 	for key in state_dict.keys():
 		if '_orig_mod' in key:
 			return True
 	return False
 
-def get_pl_hparams(path:str) -> dict:
-	"""
- 	"""
-	ckpt = th.load(path)
+def get_pl_hparams(ckpt) -> dict:
 	hyper_parameters = ckpt["hyper_parameters"]
 	return hyper_parameters

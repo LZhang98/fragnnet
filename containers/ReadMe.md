@@ -29,5 +29,19 @@ python
 ## Run apptainer shell
 ```
 apptainer exec ./containers/apptainer/fragnnet_cpu.sif pip install --user -I -e .
-apptainer exec ./containers/apptainer/fragnnet_cpu.sif python
+apptainer exec ./containers/apptainer/fragnnet_cpu.sif <command>
 ```
+
+apptainer shell -B ${SLURM_TMPDIR} ./containers/apptainer/fragnnet_cpu.sif 
+
+eg. run for msgym
+
+apptainer exec -B ${SLURM_TMPDIR} \
+    ./containers/apptainer/fragnnet_cpu.sif \
+    python ./scripts/ms2c/run_ms2c_predict_msgym.py \
+    --device=cpu \
+    --save_dp=${SLURM_TMPDIR}/msgym/fragnnet_predicted/retrieval_candidates_mass \
+    --proc_dp=${SLURM_TMPDIR}/proc \
+    --frag_dp=${SLURM_TMPDIR}/frag \
+    --zipped_frag=True \
+    --model_ckpt=./saved_ckpts/msg_fragnnet_0,01_v2_9gnx820u/msg_fragnnet_0,01_v2_9gnx820u.ckpt

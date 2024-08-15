@@ -38,11 +38,24 @@ def run_models(ckpt_fp,
 				 batch_size = 32,
 				 ):
 
+	# config cuda and cpus
+	if device is None:
+		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
+	elif not th.cuda.is_available() and device != "cpu":
+		device = "cpu"
+   
+	if device == "cpu":
+		th.set_num_threads(multiprocessing.cpu_count())
+		th.multiprocessing.set_sharing_strategy('file_system')
+		th.use_deterministic_algorithms(True)
+	print(f"> using {device}")
+	# load ckpt
+	ckpt = th.load(ckpt_fp, map_location=device)
+  
 	# load configs
 	print("> Loading configs")
 	if use_ckpt_config:
-		ckpt_hparams_d = get_pl_hparams(ckpt_fp)
-		config_d= ckpt_hparams_d
+		config_d = get_pl_hparams(ckpt)
 	else:
 		assert template_fp != None
 		assert custom_fp != None
@@ -69,18 +82,6 @@ def run_models(ckpt_fp,
  
 	# load models
 	print("> Loading models")
-
-	if device is None:
-		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-	elif not th.cuda.is_available() and device != "cpu":
-		device = "cpu"
-   
-	if device == "cpu":
-		th.set_num_threads(multiprocessing.cpu_count())
-		th.multiprocessing.set_sharing_strategy('file_system')
-		th.use_deterministic_algorithms(True)
-
-	print(f"> using {device}")
 	config_d['track_datapoint_metrics'] = False 
 	config_d['auxiliary_scores'] = ['cos_hun','cos_sim']
 	config_d['eval_mz_bin_res'] = [0.01, 0.1]
@@ -91,10 +92,8 @@ def run_models(ckpt_fp,
 	print(f"> ckpt was compiled: {config_d['compile']}")
 	if config_d['compile']:
 		config_d['compile'] = False
-		ckpt = decompile_jit_ckpt(ckpt_fp)
-	else:
-		ckpt = th.load(ckpt_fp)
-	
+		ckpt = decompile_jit_ckpt(ckpt)
+
 	model = model_cls(**config_d)
 	model.load_state_dict(ckpt["state_dict"])
 	model.to(device)
