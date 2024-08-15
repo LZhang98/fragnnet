@@ -13,6 +13,12 @@ export APPTAINER_TMPDIR=$(pwd)/apptainer/tmp &&  apptainer build ./apptainer/fra
 * https://apptainer.org/docs/user/main/docker_and_oci.html#containers-cached-by-the-docker-daemon
 * https://apptainer.org/docs/user/main/persistent_overlays.html
 
+
+### Run apptainer on CC
+```
+module load apptainer/1.2.4
+
+```
 ## Run apptainer shell
 ```
 apptainer shell ./fragnnet_cpu.def
