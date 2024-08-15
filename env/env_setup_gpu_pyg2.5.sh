@@ -11,6 +11,7 @@ conda activate FRAG-GNN-GPU5
 conda install python=3.10
 
 pip install torch==2.2.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+pip install numpy==1.26.4
 pip install rdkit-pypi==2022.9.4
 pip install torch_geometric==2.4 torch_scatter -f https://data.pyg.org/whl/torch-2.2.0+cu118.html
 pip install cython

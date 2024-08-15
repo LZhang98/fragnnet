@@ -2,7 +2,7 @@
 
 ### Build Image from Apptainer def
 ```
-export APPTAINER_TMPDIR=$(pwd)/apptainer_images/tmp &&  apptainer  build ./apptainer_images/fragnnet_cpu.sif fragnnet_cpu.def
+export APPTAINER_TMPDIR=$(pwd)/apptainer_images/tmp &&  apptainer build ./apptainer_images/fragnnet_cpu.sif ./fragnnet_cpu.def
 ```
 
 ## Useful links
@@ -13,3 +13,5 @@ export APPTAINER_TMPDIR=$(pwd)/apptainer_images/tmp &&  apptainer  build ./appta
 * https://apptainer.org/docs/user/main/persistent_overlays.html
 
 ### Run apptainer
+
+pip install --user -I -e .
