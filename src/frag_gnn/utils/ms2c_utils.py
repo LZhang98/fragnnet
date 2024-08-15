@@ -2,7 +2,7 @@ import sqlite3
 import pandas as pd
 import torch as th
 import multiprocessing
-import sys
+import os
 from tqdm import tqdm
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
