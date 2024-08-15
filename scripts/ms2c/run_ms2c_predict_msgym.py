@@ -34,22 +34,15 @@ def get_all_frags_name(frag_dp):
 
 def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	
- 	# config cuda and cpus
+	# load ckpt
+	ckpt = th.load(ckpt_fp, map_location=device)
+	
+  	# config cuda and cpus
 	if device is None:
 		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 	elif not th.cuda.is_available() and device != "cpu":
 		device = "cpu"
    
-	if device == "cpu":
-		th.set_num_threads(multiprocessing.cpu_count())
-		th.multiprocessing.set_sharing_strategy('file_system')
-		th.use_deterministic_algorithms(True)
-	
-	config_d['num_workers']= multiprocessing.cpu_count()
-	
-	# load ckpt
-	ckpt = th.load(ckpt_fp, map_location=device)
-  
 	# load configs
 	print(">> Loading configs")
 	config_d = get_pl_hparams(ckpt)
@@ -73,7 +66,13 @@ def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	# additional spec_params
 	config_d['spec_params']['unique_id'] = True
 	config_d['spec_params']["counts"] = False
-	
+	# set num works and cpu stuff
+	config_d['num_workers']= multiprocessing.cpu_count()
+	if device == "cpu":
+		th.set_num_threads(multiprocessing.cpu_count())
+		th.multiprocessing.set_sharing_strategy('file_system')
+		th.use_deterministic_algorithms(True)
+  
 	# check class
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
