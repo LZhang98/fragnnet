@@ -32,20 +32,13 @@ model_type_ds_cls = {
 def get_all_frags_name(frag_dp):
 	return set([f.split('.')[0] for f in os.listdir(frag_dp)])
 
-def run_prediction(ckpt_fp,   
-				 save_fp,
-				 mol_df_fp,
-				 spec_df_fp,
-				 frag_dp,
-				 device = None,
-				 batch_size = 32,
-				 ):
-
+def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
+	
 	# load configs
 	print(">> Loading configs")
 	ckpt_hparams_d = get_pl_hparams(ckpt_fp)
 	config_d= ckpt_hparams_d
-
+ 
 	# set eval batch size
 	config_d['eval_batch_size'] = batch_size
 	print(f"> ckpt is compiled: {config_d['compile']}")
@@ -56,7 +49,7 @@ def run_prediction(ckpt_fp,
 	config_d['auxiliary_scores'] = []  #['cos_hun','cos_sim']
 	#config_d['eval_mz_bin_res'] = [0.01, 0.1]
 	# let us see if ram will be an issue
-	config_d['frag_params']['preload'] = True
+	config_d['frag_params']['preload'] = False
 	config_d['frag_params']['preprocess'] = False
 	# disable sampler
 	config_d["dynamic_batch_sampler"] = False
@@ -65,49 +58,10 @@ def run_prediction(ckpt_fp,
 	# additional spec_params
 	config_d['spec_params']['unique_id'] = True
 	config_d['spec_params']["counts"] = False
- 
-	# config proc and check if frags are avaibale
-	print(f"> mol_fp {mol_df_fp}")
-	print(f"> spec_fp {spec_df_fp}")
-	print(f"> frag_dp {config_d['frag_dp']}")
-	print(f"> save to {save_fp}")
+	
 	# check class
 	model_type = config_d['model_type']
-	model_ds_cls = model_type_ds_cls[model_type]
 	model_cls = model_type_to_model_cls[model_type]
-  
-	mol_df  = pd.read_pickle(mol_df_fp)
-	print("> num of mols", len(mol_df))
-	# only check for FragGNNet
-	if model_cls == FragGNNPL:
-		print(">> filtering input without frags")
-		all_frags = get_all_frags_name(frag_dp)
-		print("> num of frags: ", len(all_frags))
-		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
-		print("> num of mols after filtering", len(mol_df))
-
-	spec_df = pd.read_pickle(spec_df_fp)
-	print("> num of spec", len(spec_df))
-	if model_cls == NeimsPL:
-		mz_max = config_d['mz_max']
-		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
-		print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
-  
-	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
-	print("> num of spec after filtering", len(spec_df))
-	
-	# config mol df, spec df and frag_dp
-	config_d['mol_fp'] = mol_df
-	config_d['spec_fp'] = spec_df
-	config_d['frag_dp'] = frag_dp
- 
-	# load datasets
-	print(">> Loading datasets")
-	ds = model_ds_cls(split='predict_only', **config_d)
-	print(f"> model supported inst type {ds.idx_to_inst_type}")
-	print(f"> model supported prec type {ds.idx_to_prec_type}")
-	print(">> init dataloader")
-	dl = init_dataloader(ds, config_d)
  
 	# config cuda and cpus
 	if device is None:
@@ -133,10 +87,68 @@ def run_prediction(ckpt_fp,
 	model = model_cls(**config_d)
 	model.load_state_dict(ckpt["state_dict"])
 	model.to(device)
-	model.eval()
+	#model.eval()
+	return model, config_d, device
+ 
+def run_prediction(model,
+                 config_d,
+				 mol_df_fp,
+				 spec_df_fp,
+				 frag_dp,
+				 save_fp,
+				 device
+				 ):
+
+
+	# config proc and check if frags are avaibale
+	print(f"> mol_fp {mol_df_fp}")
+	print(f"> spec_fp {spec_df_fp}")
+	print(f"> frag_dp {frag_dp}")
+	print(f"> save to {save_fp}")
+ 
+
+	# check model class and ds class
+	#model_cls = model_type_to_model_cls[model_type]
+	# model_ds_cls = None #model_type_ds_cls[model_type]
+	model_ds_cls = None
+ 
+	mol_df  = pd.read_pickle(mol_df_fp)
+	#print("> num of mols", len(mol_df))
+	# only check for FragGNNet
+	if isinstance(model,FragGNNPL):
+		#print(">> filtering input without frags")
+		all_frags = get_all_frags_name(frag_dp)
+		#print("> num of frags: ", len(all_frags))
+		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
+		#print("> num of mols after filtering", len(mol_df))
+		model_ds_cls = SpecMolFragDataset
+  
+	spec_df = pd.read_pickle(spec_df_fp)
+	#print("> num of spec", len(spec_df))
+	if  isinstance(model,NeimsPL):
+		mz_max = config_d['mz_max']
+		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
+		#print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
+		model_ds_cls = SpecMolDataset
+	
+	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
+	print("> num of spec after filtering", len(spec_df))
+	
+	# config mol df, spec df and frag_dp
+	config_d['mol_fp'] = mol_df
+	config_d['spec_fp'] = spec_df
+	config_d['frag_dp'] = frag_dp
+ 
+	# load datasets
+	print(">> Loading datasets")
+	ds = model_ds_cls(split='predict_only', **config_d)
+	#print(f"> model supported inst type {ds.idx_to_inst_type}")
+	#print(f"> model supported prec type {ds.idx_to_prec_type}")
+	print(">> init dataloader")
+	dl = init_dataloader(ds, config_d)
  
  	#model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
-	#model.eval()
+	model.eval()
 
 	# make predictions on validation data
 	print(">> Running inference")
@@ -233,6 +245,7 @@ if __name__ == "__main__":
 	msg_id_map_df = pd.read_csv(msg_id_map_fp)
 	#print(df.head())
 
+	model, config_d, device = load_model_and_init_config(ckpt_fp = ckpt_fp, device = args.device, batch_size = args.batch_size)
 	for idx,row in tqdm(msg_id_map_df.iterrows(), total=msg_id_map_df.shape[0]):
 		mol_df_filename = row["mol_df"]
 		spec_filename = row["spec_df"]
@@ -245,10 +258,10 @@ if __name__ == "__main__":
 		with tempfile.TemporaryDirectory() as tmp_dp, zipfile.ZipFile(frag_zip_fp, 'r') as zip_file:
 			zip_file.extractall(tmp_dp)
 				
-			run_prediction(ckpt_fp = ckpt_fp,   
-						save_fp = save_fp,
+			run_prediction(model = model,   
+						config_d = config_d,
 						mol_df_fp = mol_df_fp,
 						spec_df_fp = spec_df_fp,
 						frag_dp = tmp_dp,
-						device = args.device,
-						batch_size = args.batch_size)
+						save_fp = save_fp,
+						device = device)
