@@ -37,21 +37,11 @@ def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	# load ckpt
 	ckpt = th.load(ckpt_fp, map_location=device)
 	
-  	# config cuda and cpus
-	if device is None:
-		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-	elif not th.cuda.is_available() and device != "cpu":
-		device = "cpu"
-   
-	# load configs
 	print(">> Loading configs")
 	config_d = get_pl_hparams(ckpt)
 
 	# set eval batch size
 	config_d['eval_batch_size'] = batch_size
-	print(f"> ckpt is compiled: {config_d['compile']}")
- 	
-	print(f"> using {device}")
 	# disable metrics
 	config_d['track_datapoint_metrics'] = False 
 	config_d['auxiliary_scores'] = []  #['cos_hun','cos_sim']
@@ -77,13 +67,20 @@ def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 	
+   	# config cuda and cpus
+	if device is None:
+		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
+	elif not th.cuda.is_available() and device != "cpu":
+		device = "cpu"
+	print(f"> using {device}")
+	# load configs
+ 
  	# load models
 	print(">> Loading models")
 	print(f"> ckpt was compiled: {config_d['compile']}")
-
 	if config_d['compile']:
+		ckpt = decompile_jit_ckpt(ckpt)
 		config_d['compile'] = False
-		ckpt = decompile_jit_ckpt(ckpt_fp, map_location=device)
 
 	model = model_cls(**config_d)
 	model.load_state_dict(ckpt["state_dict"])
@@ -256,7 +253,7 @@ if __name__ == "__main__":
 		if not os.path.isfile(spec_df_fp):
 			continue
 
-		if not args.zipedzipped_frag:
+		if not args.zipped_frag:
 			frag_dp = os.path.join(args.frag_dp, mol_df_filename[:-4])
 			run_prediction(model = model,   
 						config_d = config_d,

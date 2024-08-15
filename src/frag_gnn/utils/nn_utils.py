@@ -4,7 +4,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg
-
+import copy
 from frag_gnn.utils.misc_utils import safelog
 
 
@@ -767,6 +767,7 @@ class LowRankDense(nn.Module):
 def decompile_jit_ckpt(ckpt):
 	"""
 	convert compiled ckpt to normal version and return a patched checkpoint
+	Note this is a in place change
 	"""
  
 	# inspired by
@@ -802,5 +803,13 @@ def is_ckpt_compiled(ckpt) -> bool:
 	return False
 
 def get_pl_hparams(ckpt) -> dict:
-	hyper_parameters = ckpt["hyper_parameters"]
+	"""return a copied version of hyper_parameters
+
+	Args:
+		ckpt (_type_): _description_
+
+	Returns:
+		dict: _description_
+	"""
+	hyper_parameters = copy.deepcopy(ckpt["hyper_parameters"])
 	return hyper_parameters
