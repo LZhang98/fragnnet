@@ -252,16 +252,13 @@ if __name__ == "__main__":
 
 		mol_df_fp = os.path.join(args.proc_dp,mol_df_filename)
 		spec_df_fp = os.path.join(args.proc_dp,spec_filename)
-		frag_zip_fp = os.path.join(args.frag_dp, mol_df_filename.replace(".pkl",".zip"))
+		frag_dp = os.path.join(args.frag_dp, mol_df_filename[:-4])
 		save_fp = os.path.join(args.save_dp,spec_filename)
 
-		with tempfile.TemporaryDirectory() as tmp_dp, zipfile.ZipFile(frag_zip_fp, 'r') as zip_file:
-			zip_file.extractall(tmp_dp)
-				
-			run_prediction(model = model,   
-						config_d = config_d,
-						mol_df_fp = mol_df_fp,
-						spec_df_fp = spec_df_fp,
-						frag_dp = tmp_dp,
-						save_fp = save_fp,
-						device = device)
+		run_prediction(model = model,   
+					config_d = config_d,
+					mol_df_fp = mol_df_fp,
+					spec_df_fp = spec_df_fp,
+					frag_dp = frag_dp,
+					save_fp = save_fp,
+					device = device)
