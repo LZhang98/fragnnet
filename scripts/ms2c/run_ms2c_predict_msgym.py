@@ -199,20 +199,16 @@ def run_prediction(model,
 	del df
 		
 def get_args():
+    
 	parser = argparse.ArgumentParser()
-	
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_dp",type=str,default="./data/msgym/fragnnet_predicted/retrieval_candidates_mass")
-	
 	parser.add_argument("--proc_dp", type=str,default="data/ms2c/msgym/proc/retrieval_candidates_mass")
 
-	#parser.add_argument("--mol_df_fp",type=str,default="./data/msgym/proc/deepmet_proc/mol_df_1.pkl.gz")
-	#parser.add_argument("--spec_df_fp",type=str,default="./data/msgym/proc/deepmet_proc/spec_df_1.pkl.gz")
-	#parser.add_argument("--frag_dp", type=str,default="./data/msgym/frags/mol_df_1")
 	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/msgym/frag/retrieval_candidates_mass_d3_h4")
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
- 
+	parser.add_argument("--zipped_frag",type=booltype,default=True)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	parser.add_argument("--wandb_run_id",type=str, default= '9gnx820u')
 	# dest="model ckpt fp, when used, ignore wandb_run_ids"
@@ -252,13 +248,31 @@ if __name__ == "__main__":
 
 		mol_df_fp = os.path.join(args.proc_dp,mol_df_filename)
 		spec_df_fp = os.path.join(args.proc_dp,spec_filename)
-		frag_dp = os.path.join(args.frag_dp, mol_df_filename[:-4])
 		save_fp = os.path.join(args.save_dp,spec_filename)
+  
+		if not os.path.isfile(mol_df_fp):
+			continue
+		if not os.path.isfile(spec_df_fp):
+			continue
 
-		run_prediction(model = model,   
-					config_d = config_d,
-					mol_df_fp = mol_df_fp,
-					spec_df_fp = spec_df_fp,
-					frag_dp = frag_dp,
-					save_fp = save_fp,
-					device = device)
+		if not args.zipedzipped_frag:
+			frag_dp = os.path.join(args.frag_dp, mol_df_filename[:-4])
+			run_prediction(model = model,   
+						config_d = config_d,
+						mol_df_fp = mol_df_fp,
+						spec_df_fp = spec_df_fp,
+						frag_dp = frag_dp,
+						save_fp = save_fp,
+						device = device)
+		else:
+			frag_zip_fp = os.path.join(args.frag_dp, mol_df_filename.replace(".pkl",".zip"))
+			with tempfile.TemporaryDirectory() as tmp_dp, zipfile.ZipFile(frag_zip_fp, 'r') as zip_file:
+				zip_file.extractall(tmp_dp)
+					
+				run_prediction(model = model,   
+							config_d = config_d,
+							mol_df_fp = mol_df_fp,
+							spec_df_fp = spec_df_fp,
+							frag_dp = tmp_dp,
+							save_fp = save_fp,
+							device = device)
