@@ -1,7 +1,6 @@
 import numpy as np
 import torch as th
 import torch.nn.functional as F
-import math
 from typing import Callable
 
 from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize, TOLERANCE_MIN_MZ
@@ -492,13 +491,25 @@ def sparse_cosine_distance(
 	# dot product
 	pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
 	true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
-	both_bin_logprobs = pred_bin_logprobs[pred_mask] + true_bin_logprobs[true_mask]
-	assert th.all(pred_bin_batch_idxs[pred_mask] == true_bin_batch_idxs[true_mask])
-	log_cos_sim = scatter_logsumexp(
-		both_bin_logprobs,
-		pred_bin_batch_idxs[pred_mask],
-		dim_size=th.max(true_bin_batch_idxs)+1
-	)
+	batch_size = th.max(true_bin_batch_idxs)+1
+	if th.any(pred_mask):
+		both_bin_logprobs = pred_bin_logprobs[pred_mask] + true_bin_logprobs[true_mask]
+		assert th.all(pred_bin_batch_idxs[pred_mask] == true_bin_batch_idxs[true_mask])
+		log_cos_sim = scatter_logsumexp(
+			both_bin_logprobs,
+			pred_bin_batch_idxs[pred_mask],
+			dim_size=batch_size
+		)
+	else:
+		# cosine similarities are all zero
+		log_cos_sim = th.full(
+			size=(batch_size,),
+			fill_value=LOG_ZERO(pred_bin_logprobs.dtype),
+			dtype=pred_bin_logprobs.dtype,
+			device=pred_bin_logprobs.device
+		)
+		# involve pred_logprobs to keep gradient
+		log_cos_sim = log_cos_sim + 0.*th.mean(pred_bin_logprobs,dim=0)
 	if log_distance:
 		cos_dist = th.log1p(-th.exp(log_cos_sim))
 	else:
