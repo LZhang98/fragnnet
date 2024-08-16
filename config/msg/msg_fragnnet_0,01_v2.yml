@@ -17,7 +17,6 @@ wandb_tags:
 - lb16
 - preload
 - preprocess
-- xi6bawy4
 
 # data stuff
 spec_fp: data/proc/ms_gymv2/spec_df.pkl
@@ -99,12 +98,15 @@ max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
-checkpoint_metric: val_cos_sim_0.1_epoch/mean
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
+- jss
+- cos_hun
 eval_mz_bin_res:
 - 0.1
 - 0.01
+eval_bin_sqrt: True
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
