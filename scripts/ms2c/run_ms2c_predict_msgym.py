@@ -16,10 +16,10 @@ def get_args():
     
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
-	parser.add_argument("--save_dp",type=str,default="./data/msgym/fragnnet_predicted/retrieval_candidates_mass")
-	parser.add_argument("--proc_dp", type=str,default="data/ms2c/msgym/proc/retrieval_candidates_mass")
-
-	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/msgym/frag/retrieval_candidates_mass_d3_h4")
+	parser.add_argument("--save_dp",type=str,default="./data/ms2c/msgym/fragnnet_predicted/retrieval_candidates_formula")
+	parser.add_argument("--proc_dp", type=str,default="data/ms2c/msgym/proc/retrieval_candidates_formula")
+	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/msgym/frag/retrieval_candidates_formula_d3_h4")
+ 
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--zipped_frag",type=booltype,default=True)

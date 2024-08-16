@@ -8,7 +8,6 @@ from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config
 from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
 
 import os
