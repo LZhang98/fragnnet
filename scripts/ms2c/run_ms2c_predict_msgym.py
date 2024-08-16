@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
 		mol_df_fp = os.path.join(args.proc_dp,mol_df_filename)
 		spec_df_fp = os.path.join(args.proc_dp,spec_filename)
-		save_fp = os.path.join(args.save_dp,spec_filename+".gz")
+		save_fp = os.path.join(args.save_dp,spec_filename)
   
 		if not os.path.isfile(mol_df_fp):
 			continue
