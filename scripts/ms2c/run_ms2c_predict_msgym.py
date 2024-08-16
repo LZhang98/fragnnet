@@ -17,18 +17,18 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_dp",type=str,default="./data/ms2c/msgym/fragnnet_predicted/retrieval_candidates_formula")
-	parser.add_argument("--proc_dp", type=str,default="data/ms2c/msgym/proc/retrieval_candidates_formula")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/msgym/proc/retrieval_candidates_formula")
 	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/msgym/frag/retrieval_candidates_formula_d3_h4")
  
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
-	parser.add_argument("--zipped_frag",type=booltype,default=True)
+	parser.add_argument("--zipped_frag",type=booltype,default=False)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	parser.add_argument("--wandb_run_id",type=str, default= '9gnx820u')
 	# dest="model ckpt fp, when used, ignore wandb_run_ids"
 	parser.add_argument("--model_ckpt",type=str, default=None)
 	parser.add_argument("--start_row_idx", type=int, default=0)
-	parser.add_argument("--num_row", type=int, default=1)
+	parser.add_argument("--num_row", type=int, default=0)
 	args = parser.parse_args()
 	return args
 
