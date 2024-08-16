@@ -88,7 +88,7 @@ if __name__ == "__main__":
 	# NOTE: only use simulation_challenge
 	msg_spectra_df = msg_spectra_df[msg_spectra_df["simulation_challenge"]]
 	msg_spectra_test_df = msg_spectra_df[msg_spectra_df["fold"] == "test"].copy()
-	msg_spectra_test_df.rename(columns={"instrument_type": "inst_type", "precursor_mz":"prec_mz", "adduct":"prec_type","collision_energy":"nce"}, inplace=True)
+	msg_spectra_test_df.rename(columns={"instrument_type": "inst_type", "precursor_mz":"prec_mz", "adduct":"prec_type","collision_energy":"ace"}, inplace=True)
 	
 	inst_type, frag_mode = seq_apply_df_rows(msg_spectra_test_df,parse_inst_info)
 	msg_spectra_test_df.loc[:,"inst_type"] = inst_type
@@ -122,8 +122,8 @@ if __name__ == "__main__":
 				prec_mz = row['prec_mz']
 				inst_type = row['inst_type']
 				frag_mode = row['frag_mode']
-				nce = row['nce']
-				ace = np.nan
+				ace = row['ace']
+				nce = np.nan
 				spec_df = create_spec_df(mol_df, prec_type, prec_mz, inst_type, frag_mode, nce, ace)
 	
 				identifier = row['identifier']
