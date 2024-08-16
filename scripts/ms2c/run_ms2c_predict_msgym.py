@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
 		if not args.zipped_frag:
 			frag_dp = os.path.join(args.frag_dp, mol_df_filename[:-4])
-			run_prediction(model = model,   
+			df = run_prediction(model = model,   
 						config_d = config_d,
 						mol_df_fp = mol_df_fp,
 						spec_df_fp = spec_df_fp,
