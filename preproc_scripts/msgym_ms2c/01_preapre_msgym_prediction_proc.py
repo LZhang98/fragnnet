@@ -70,8 +70,8 @@ def get_args():
 	
 	# frag feats configs
 	# msg_candidates_mass_json = './data/raw/msgym/MassSpecGym_retrieval_candidates_mass.json'
-	parser.add_argument("--proc_dp",type=str,default="./data/ms2c/msgym/proc/retrieval_candidates_formula")
-	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_formula_with_test.json")
+	parser.add_argument("--proc_dp",type=str,default="./data/ms2c/msgym/proc/retrieval_candidates_mass")
+	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_mass_with_test.json")
 	parser.add_argument("--tsv_fp",type=str,default="./data/raw/msgym/MassSpecGym_with_test.tsv")
 	args = parser.parse_args()
 	return args
@@ -85,21 +85,20 @@ if __name__ == "__main__":
 	# NOTE: only use simulation_challenge
 	msg_spectra_df = msg_spectra_df[msg_spectra_df["simulation_challenge"]]
 	msg_spectra_test_df = msg_spectra_df[msg_spectra_df["fold"] == "test"].copy()
-	msg_spectra_test_df.rename(columns={"instrument_type": "inst_type", "precursor_mz":"prec_mz", "adduct":"prec_type","collision_energy":"ace"}, inplace=True)
+	msg_spectra_test_df.rename(columns={"instrument_type": "inst_type", "precursor_mz":"prec_mz", \
+                                     "adduct":"prec_type","collision_energy":"ace", "mzs":"mz", "intensities":"int"}, inplace=True)
 	
 	inst_type, frag_mode = seq_apply_df_rows(msg_spectra_test_df,parse_inst_info)
 	msg_spectra_test_df.loc[:,"inst_type"] = inst_type
 	msg_spectra_test_df.loc[:,"frag_mode"] = frag_mode
  
-	msg_spectra_test_df["peaks"] = msg_spectra_test_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
-	msg_spectra_test_df = msg_spectra_test_df.drop(columns=["mzs","intensities"])
+	#msg_spectra_test_df["peaks"] = msg_spectra_test_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
+	#msg_spectra_test_df = msg_spectra_test_df.drop(columns=["mzs","intensities"])
 	
-
 	print(f"> read {args.json_fp}")
 	msg_candidates_dict = json.load(open(args.json_fp))
 	os.makedirs(args.proc_dp, exist_ok=True)
 	print(f"> save to {args.proc_dp}")
-
 
 	unique_smiles = msg_spectra_test_df['smiles'].unique().tolist()
 	
