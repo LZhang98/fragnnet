@@ -15,3 +15,9 @@ for split in ['train','val','test']:
     print("split_spec_df max_prec_mz",split_spec_df["prec_mz"].max())
     #split_mol_id_set = set(mol_ids_list)
     #print(split_mol_id_set -total_mol_ids_set )
+
+mol_df = pd.read_pickle("data/ms2c/msgym/proc/retrieval_candidates_formula/mol_df_0.pkl")
+print(mol_df.head())
+
+spec_df = pd.read_pickle("data/ms2c/msgym/proc/retrieval_candidates_formula/spec_df_MassSpecGymID0092448.pkl")
+print(spec_df.head())

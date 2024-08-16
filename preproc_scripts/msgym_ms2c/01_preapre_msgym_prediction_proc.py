@@ -38,8 +38,6 @@ def process_mol(mol_df, drop_duplicate = True, tqdm_leave=True):
 	return mol_df
 
 def create_spec_df(mol_df, prec_type, prec_mz, inst_type, frag_mode, nce, ace):
-	prec_type = "[M+H]+"
-
 	spec_df_prec = pd.DataFrame()
 	spec_df_prec["mol_id"] = mol_df["mol_id"]
 	spec_df_prec["exact_mw"] = mol_df["exact_mw"]
@@ -47,8 +45,8 @@ def create_spec_df(mol_df, prec_type, prec_mz, inst_type, frag_mode, nce, ace):
 	spec_df_prec['dset'] = "msgym"
 	spec_df_prec['prec_mz'] = np.nan
 	spec_df_prec['prec_type'] = prec_type
-	spec_df_prec['nce'] = nce
 	spec_df_prec['ace'] = ace
+	spec_df_prec['nce'] = nce # nce should be NaN
 	spec_df_prec['ion_mode'] = 'N' if prec_type == '[M-H]-' else 'P'
 	spec_df_prec.loc[:,"prec_mz"] =  prec_mz #par_apply_df_rows(spec_df_prec,data_utils.infer_prec_mz)
 	spec_df_prec = spec_df_prec.drop(columns=["exact_mw"])
@@ -73,8 +71,8 @@ def get_args():
 	# frag feats configs
 	# msg_candidates_mass_json = './data/raw/msgym/MassSpecGym_retrieval_candidates_mass.json'
 	
-	parser.add_argument("--proc_dp",type=str,default="data/ms2c/msgym/proc/retrieval_candidates_formula")
-	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_formula_with_test.json")
+	parser.add_argument("--proc_dp",type=str,default="data/ms2c/msgym/proc/retrieval_candidates_mass")
+	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_mass_with_test.json")
 	parser.add_argument("--tsv_fp",type=str,default="./data/raw/msgym/MassSpecGym_with_test.tsv")
 	args = parser.parse_args()
 	return args
@@ -110,11 +108,13 @@ if __name__ == "__main__":
 		#msg_id_df.loc[lambda df: df['smiles'] == input_smiles, 'mol_df'] = mol_df_fname
 		try:
 			candidates_smiles = msg_candidates_dict[input_smiles]
-			#print(candidates_smiles)
+			mol_df_fp = os.path.join(args.proc_dp, mol_df_fname)
+			#if os.path.isfile(mol_df_fp):
+			#	mol_df = pd.read_pickle(mol_df_fp)
+			#else:
 			mol_df = pd.DataFrame({'smiles': candidates_smiles})
 			mol_df['mol_id'] = mol_df.index
 			mol_df = process_mol(mol_df, True, None)
-			mol_df_fp = os.path.join(args.proc_dp, mol_df_fname)
 			mol_df.to_pickle(mol_df_fp)
 			for spectra_idx, row in msg_spectra_test_df[msg_spectra_test_df["smiles"] == input_smiles].iterrows():
 
