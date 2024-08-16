@@ -20,16 +20,14 @@ module load python/3.10
 
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
-# load env
-source ./FRAG-GNN-GPU2/bin/activate
-
+# copy proc
 cp /scratch/feiw/frag-gnn-data/ms2c/msgym/proc/retrieval_candidates_mass.tar ${SLURM_TMPDIR}/retrieval_candidates_mass.tar
 tar -xf ${SLURM_TMPDIR}/retrieval_candidates_mass.tar -C ${SLURM_TMPDIR}
 mv ${SLURM_TMPDIR}/retrieval_candidates_mass ${SLURM_TMPDIR}/proc
-
-cp /scratch/feiw/frag-gnn-data/ms2c/msgym/frags/retrieval_candidates_mass_d3_h4/retrieval_candidates_mass_frags.tar ${SLURM_TMPDIR}
-tar -xf ${SLURM_TMPDIR}/retrieval_candidates_mass_frags.tar -C ${SLURM_TMPDIR}
-mv ${SLURM_TMPDIR}/retrieval_candidates_mass_frags ${SLURM_TMPDIR}/frag
+# copy frags
+cp /scratch/feiw/frag-gnn-data/ms2c/msgym/frags/retrieval_candidates_mass_d3_h4.tar ${SLURM_TMPDIR}
+tar -xf ${SLURM_TMPDIR}/retrieval_candidates_mass_d3_h4.tar -C ${SLURM_TMPDIR}
+mv ${SLURM_TMPDIR}/retrieval_candidates_mass_d3_h4 ${SLURM_TMPDIR}/frag
 
 # copy apptainer container
 module load apptainer/1.2.4
@@ -45,12 +43,12 @@ apptainer exec -B ${SLURM_TMPDIR} \
     --frag_dp=${SLURM_TMPDIR}/frag \
     --zipped_frag=False \
     --model_ckpt=./saved_ckpts/msg_fragnnet_0,01_v2_9gnx820u/msg_fragnnet_0,01_v2_9gnx820u.ckpt \
-    --star_spec_df_id=${SLURM_ARRAY_TASK_ID} \
-	--num_ids=500
+    --start_row_idx=${SLURM_ARRAY_TASK_ID} \
+	--num_row=400
 
 #tar -cf retrieval_candidates_mass_frags_${SLURM_ARRAY_TASK_ID}.tar retrieval_candidates_mass_frags_${SLURM_ARRAY_TASK_ID}
 mkdir -p /scratch/feiw/frag-gnn-data/ms2c/msgym/fragnnet_predicted/retrieval_candidates_mass/
-cp ${SLURM_TMPDIR}/msgym/fragnnet_predicted/retrieval_candidates_mass /scratch/feiw/frag-gnn-data/ms2c/msgym/fragnnet_predicted/retrieval_candidates_mass/
+cp -f ${SLURM_TMPDIR}/msgym/fragnnet_predicted/retrieval_candidates_mass/* /scratch/feiw/frag-gnn-data/ms2c/msgym/fragnnet_predicted/retrieval_candidates_mass/
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
