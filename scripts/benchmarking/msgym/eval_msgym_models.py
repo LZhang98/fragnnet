@@ -84,7 +84,7 @@ def run_models(ckpt_fp,
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
 			#print(batch_input)
 			mol_smiles = batch_input['mol_smiles']
-			spec_nces = batch_input['spec_nce']
+			spec_nces = batch_input['spec_ce']
    
 			batch_result = to_device(batch_input, device)
 
@@ -136,16 +136,18 @@ if __name__ == "__main__":
 	os.makedirs(args.save_dp, exist_ok=True)	
 	model_save_dp = "./saved_ckpts/ms_gym_benchmark"
 
+	#model_id_configs = [
+	#	['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml'],
+	#	['hpnwdaoq','config/msg/msg_fp_0,1.yml'],
+	#	['ajgc9p5x','config/msg/msg_fp_0,01.yml'],
+	#	['9zxgadu4','config/msg/msg_gnn_0,1.yml'],
+	#	['ht1o1wrs','config/msg/msg_gnn_0,01.yml'],
+	#	['zka7gid2','config/msg/msg_fragnnet_0,1.yml'],
+	#	['vclvoh0t ','config/msg/msg_fragnnet_0,01.yml'],
+	#]
 	model_id_configs = [
-		['lvsdbn5y','config/ms_gym_benchmark/d3_um_inst_ms_gym_benchmark_0.01.yml'],
-		['hpnwdaoq','config/msg/msg_fp_0,1.yml'],
-		['ajgc9p5x','config/msg/msg_fp_0,01.yml'],
-		['9zxgadu4','config/msg/msg_gnn_0,1.yml'],
-		['ht1o1wrs','config/msg/msg_gnn_0,01.yml'],
-		['zka7gid2','config/msg/msg_fragnnet_0,1.yml'],
-		['vclvoh0t ','config/msg/msg_fragnnet_0,01.yml'],
+		['9gnx820u','config/msg/msg_fragnnet_0,01v2.yml']
 	]
-	
 	batch_size = 32
 	for run_id,custom_fp in model_id_configs:
 		#for run_id in inchikey_splits_runs:
