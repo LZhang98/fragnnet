@@ -70,9 +70,8 @@ def get_args():
 	
 	# frag feats configs
 	# msg_candidates_mass_json = './data/raw/msgym/MassSpecGym_retrieval_candidates_mass.json'
-	
-	parser.add_argument("--proc_dp",type=str,default="data/ms2c/msgym/proc/retrieval_candidates_mass")
-	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_mass_with_test.json")
+	parser.add_argument("--proc_dp",type=str,default="./data/ms2c/msgym/proc/retrieval_candidates_formula")
+	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_formula_with_test.json")
 	parser.add_argument("--tsv_fp",type=str,default="./data/raw/msgym/MassSpecGym_with_test.tsv")
 	args = parser.parse_args()
 	return args
@@ -92,20 +91,24 @@ if __name__ == "__main__":
 	msg_spectra_test_df.loc[:,"inst_type"] = inst_type
 	msg_spectra_test_df.loc[:,"frag_mode"] = frag_mode
  
+	msg_spectra_test_df["peaks"] = msg_spectra_test_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
+	msg_spectra_test_df = msg_spectra_test_df.drop(columns=["mzs","intensities"])
+	
+
 	print(f"> read {args.json_fp}")
 	msg_candidates_dict = json.load(open(args.json_fp))
 	os.makedirs(args.proc_dp, exist_ok=True)
 	print(f"> save to {args.proc_dp}")
 
-	msg_id_map_l = []
 
 	unique_smiles = msg_spectra_test_df['smiles'].unique().tolist()
- 
-	for mol_idx, input_smiles in tqdm(enumerate(unique_smiles), total=len(unique_smiles)):
-	 
-		mol_df_fname = f"mol_df_{mol_idx}.pkl"
 	
-		#msg_id_df.loc[lambda df: df['smiles'] == input_smiles, 'mol_df'] = mol_df_fname
+	msg_spectra_test_df['mol_df'] = ''
+	msg_spectra_test_df['spec_df'] = ''
+    
+	for mol_idx, input_smiles in tqdm(enumerate(unique_smiles), total=len(unique_smiles)):
+
+		mol_df_fname = f"mol_df_{mol_idx}.pkl"
 		try:
 			candidates_smiles = msg_candidates_dict[input_smiles]
 			mol_df_fp = os.path.join(args.proc_dp, mol_df_fname)
@@ -116,6 +119,7 @@ if __name__ == "__main__":
 			mol_df['mol_id'] = mol_df.index
 			mol_df = process_mol(mol_df, True, None)
 			mol_df.to_pickle(mol_df_fp)
+
 			for spectra_idx, row in msg_spectra_test_df[msg_spectra_test_df["smiles"] == input_smiles].iterrows():
 
 				prec_type = row['prec_type']
@@ -130,14 +134,13 @@ if __name__ == "__main__":
 				spec_df_fname =  f"spec_df_{identifier}.pkl"
 				spec_df_fp = os.path.join(args.proc_dp, spec_df_fname)
 				spec_df.to_pickle(spec_df_fp)
-				#msg_id_df.loc[lambda df: df['mol_id'] == row['mol_id'], 'spec_df'] = spec_df_fp
-				msg_id_map_l.append([identifier,input_smiles, mol_df_fname,spec_df_fname])
+				msg_spectra_test_df.loc[spectra_idx,'mol_df'] = mol_df_fname
+				msg_spectra_test_df.loc[spectra_idx,'spec_df'] = spec_df_fname
+
 				del spec_df
 				
 			del mol_df
 		except Exception as e:
 			print("failed", e)
 	
-	msg_id_map_df = pd.DataFrame(msg_id_map_l, columns=['identifier','smiles','mol_df','spec_df'])
-	msg_id_map_fp = os.path.join(args.proc_dp, "msg_id_map.csv")
-	msg_id_map_df.to_csv(msg_id_map_fp,index=None)
+	msg_spectra_test_df.to_csv(os.path.join(args.proc_dp, "msg_id_map.csv"))

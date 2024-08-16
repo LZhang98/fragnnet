@@ -6,7 +6,7 @@ import multiprocessing
 import os
 from tqdm import tqdm
 
-from frag_gnn.pl_model import FragGNNPL, NeimsPL
+from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
 from frag_gnn.runner import init_dataloader
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
@@ -176,15 +176,28 @@ class MolCandidateDB():
 #
 model_type_to_model_cls = {
 	"neims": NeimsPL,
+	"gnn": GNNPL,
 	"frag_gnn": FragGNNPL,
 }
 
 model_type_ds_cls = {
 	"neims": SpecMolDataset,
+	"gnn": SpecMolDataset,
 	"frag_gnn": SpecMolFragDataset,
 }
+def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 32, auxiliary_scores:str = None, eval_mz_bin_res:str = None):
+	"""load model and reset config for inference
 
-def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
+	Args:
+		ckpt_fp (str): check point path
+		device (str, optional): device eg cpu or cuda:0. Defaults to None.
+		batch_size (int, optional): batch_size. Defaults to 32.
+		auxiliary_scores (str, optional): list of auxiliary_scores. Defaults to None, only used on split evalution
+		eval_mz_bin_res (str, optional): bin size of auxiliary scores. Defaults to None, only used on split evalution
+
+	Returns:
+		_type_: _description_
+	"""
 	
 	# load ckpt
 	ckpt = th.load(ckpt_fp, map_location=device)
@@ -196,8 +209,8 @@ def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	config_d['eval_batch_size'] = batch_size
 	# disable metrics
 	config_d['track_datapoint_metrics'] = False 
-	config_d['auxiliary_scores'] = []  #['cos_hun','cos_sim']
-	#config_d['eval_mz_bin_res'] = [0.01, 0.1]
+	config_d['auxiliary_scores'] = auxiliary_scores if auxiliary_scores is not None else []
+	config_d['eval_mz_bin_res'] = eval_mz_bin_res if eval_mz_bin_res is not None else []
 	# let us see if ram will be an issue
 	config_d['frag_params']['preload'] = False
 	config_d['frag_params']['preprocess'] = False
@@ -210,6 +223,14 @@ def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	config_d['spec_params']["counts"] = False
 	# set num works and cpu stuff
 	config_d['num_workers']= multiprocessing.cpu_count()
+
+    # config cuda and cpus
+	if device is None:
+		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
+	elif not th.cuda.is_available() and device != "cpu":
+		device = "cpu"
+	print(f"> using {device}")
+	# cpu specifc setup
 	if device == "cpu":
 		th.set_num_threads(multiprocessing.cpu_count())
 		th.multiprocessing.set_sharing_strategy('file_system')
@@ -218,15 +239,7 @@ def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	# check class
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
-	
-   	# config cuda and cpus
-	if device is None:
-		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-	elif not th.cuda.is_available() and device != "cpu":
-		device = "cpu"
-	print(f"> using {device}")
-	# load configs
- 
+
  	# load models
 	print(">> Loading models")
 	print(f"> ckpt was compiled: {config_d['compile']}")
@@ -237,16 +250,15 @@ def load_model_and_init_config(ckpt_fp, device = None, batch_size = 32):
 	model = model_cls(**config_d)
 	model.load_state_dict(ckpt["state_dict"])
 	model.to(device)
-	#model.eval()
 	return model, config_d, device
 
 
 def run_prediction(model,
-				 config_d,
-				 mol_df_fp,
-				 spec_df_fp,
-				 frag_dp,
-				 device
+				 config_d:dict,
+				 mol_df_fp:str,
+				 spec_df_fp:str,
+				 frag_dp:str,
+				 device:str
 				 ):
 
 	# config proc and check if frags are avaibale
