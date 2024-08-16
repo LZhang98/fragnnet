@@ -27,6 +27,8 @@ def get_args():
 	parser.add_argument("--wandb_run_id",type=str, default= '9gnx820u')
 	# dest="model ckpt fp, when used, ignore wandb_run_ids"
 	parser.add_argument("--model_ckpt",type=str, default=None)
+	parser.add_argument("--start_row_idx", type=int, default=0)
+	parser.add_argument("--num_row", type=int, default=1)
 	args = parser.parse_args()
 	return args
 
@@ -53,10 +55,18 @@ if __name__ == "__main__":
 	# parser.add_argument("--msg_id_map", type=str,default="data/ms2c/msgym/proc/retrieval_candidates_formula/msg_id_map.csv")
 	msg_id_map_fp = os.path.join(args.proc_dp,"msg_id_map.csv")
 	msg_id_map_df = pd.read_csv(msg_id_map_fp)
-	#print(df.head())
 
+
+	if len(msg_id_map_df) < args.start_row_idx:
+		exit()
+	elif args.num_row > 0:
+		msg_id_map_df = msg_id_map_df.loc[args.start_row_idx:args.start_row_idx+args.num_row]
+	else:
+		msg_id_map_df = msg_id_map_df.loc[args.start_row_idx:]
+  
 	model, config_d, device = load_model_and_init_config(ckpt_fp = ckpt_fp, device = args.device, batch_size = args.batch_size)
 	for idx,row in tqdm(msg_id_map_df.iterrows(), total=msg_id_map_df.shape[0]):
+
 		mol_df_filename = row["mol_df"]
 		spec_filename = row["spec_df"]
 

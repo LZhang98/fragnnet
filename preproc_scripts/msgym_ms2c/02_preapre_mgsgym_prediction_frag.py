@@ -26,7 +26,7 @@ def get_args():
 	parser.add_argument("--allow_cached", type=booltype,default=False, help="")
 	parser.add_argument("--compressed", type=booltype,default=True, help="")
 	parser.add_argument("--frag_dp_archive", type=str,default="zip", choices=["tar", "zip", "bztar", "gztar"],  help="")
-	parser.add_argument("--star_mol_df_id", type=int, default=0)
+	parser.add_argument("--start_mol_df_id", type=int, default=0)
 	parser.add_argument("--num_ids", type=int, default=1)
 	args = parser.parse_args()
 	return args
@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
 	os.makedirs(args.frag_dp, exist_ok=True)
  
-	for mod_df_id in tqdm(range(args.star_mol_df_id, args.star_mol_df_id+args.num_ids)):
+	for mod_df_id in tqdm(range(args.start_mol_df_id, args.star_mol_df_id+args.num_ids)):
 		mol_df_fp = os.path.join(args.msgym_moldf_dp, f"mol_df_{mod_df_id}.pkl")
 		if not os.path.isfile(mol_df_fp):
 			print(f"{mol_df_fp} is not a file")
