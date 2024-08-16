@@ -72,8 +72,8 @@ if __name__ == "__main__":
 																				th.zeros(len(x['pred_mzs']), dtype=th.long))[0].item() ,axis=1)
 		spec_df['rank'] = spec_df['cos_sim_0.01'].rank(ascending = False)
 		
-		ranks = spec_df[spec_df['smiles'] == 'na']['rank'].values
-		rank = ranks[0] if len(ranks) else -1
+		ranks = spec_df[spec_df['smiles'] == true_smiles]['rank'].values
+		rank = ranks[0] if len(ranks) else 257
 		result_l.append((identifier,rank))
   
 	result_df = pd.DataFrame(result_l,columns = ['identifier','rank'])
