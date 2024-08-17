@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from typing import Callable
 
 from frag_gnn.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize, TOLERANCE_MIN_MZ
-from frag_gnn.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func
+from frag_gnn.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func, jss_helper
 
 # LOG_TRUNC_FACTOR = {
 # 	i: float(th.log(th.erf(th.tensor(i)/np.sqrt(2)))) for i in range(0,6)
@@ -580,6 +580,46 @@ def sparse_cosine_distance_hungarian(
 			b_cos_dist_hun = 1.-th.exp(b_log_cos_hun)
 		cos_dist_hun[batch_idx] = b_cos_dist_hun
 	return cos_dist_hun
+
+def sparse_jensen_shannon_divergence(
+		true_mzs: th.Tensor, 
+		true_logprobs: th.Tensor,
+		true_batch_idxs: th.Tensor,
+		pred_mzs: th.Tensor,
+		pred_logprobs: th.Tensor,
+		pred_batch_idxs: th.Tensor,
+		mz_max: float=1500.,
+		mz_bin_res: float=0.01) -> th.Tensor:
+
+	# sparse bin
+	true_bin_idxs, true_bin_logprobs, true_bin_batch_idxs = batched_bin_func(
+		true_mzs,
+		true_logprobs,
+		true_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		agg="lse",
+		sparse=True
+	)
+	pred_bin_idxs, pred_bin_logprobs, pred_bin_batch_idxs = batched_bin_func(
+		pred_mzs,
+		pred_logprobs,
+		pred_batch_idxs,
+		mz_max=mz_max,
+		mz_bin_res=mz_bin_res,
+		agg="lse",
+		sparse=True
+	)
+	# calculate similarity
+	jss = jss_helper(
+        true_bin_idxs,
+        true_bin_logprobs.exp(),
+        true_bin_batch_idxs,
+        pred_bin_idxs,
+        pred_bin_logprobs.exp(),
+        pred_bin_batch_idxs
+    )
+	return 1.-jss
 
 if __name__ == "__main__":
 

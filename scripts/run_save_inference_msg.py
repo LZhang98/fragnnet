@@ -98,6 +98,8 @@ if __name__ == "__main__":
 			dl = init_dataloader(ds, config_d)
 			# define output subset
 			output_subset = [
+				"spec_id",
+				"mol_id",
 				"true_mzs",
 				"true_logprobs",
 				"true_batch_idxs",
