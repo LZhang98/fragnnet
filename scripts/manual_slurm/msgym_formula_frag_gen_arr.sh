@@ -26,7 +26,7 @@ source ./FRAG-GNN-GPU2/bin/activate
 cp /scratch/feiw/frag-gnn-data/ms2c/msgym/proc/retrieval_candidates_formula.tar ${SLURM_TMPDIR}/retrieval_candidates_formula.tar
 tar -xf ${SLURM_TMPDIR}/retrieval_candidates_formula.tar -C ${SLURM_TMPDIR}
 
-python preproc_scripts/msgym_ms2c/02_preapre_mgsgym_prediction_frag.py \
+python preproc_scripts/msgym_ms2c/02_prepare_mgsgym_prediction_frag.py \
     --msgym_moldf_dp=${SLURM_TMPDIR}/retrieval_candidates_formula \
     --frag_dp=${SLURM_TMPDIR}/retrieval_candidates_formula_frags_${SLURM_ARRAY_TASK_ID} \
     --max_depth=3 \

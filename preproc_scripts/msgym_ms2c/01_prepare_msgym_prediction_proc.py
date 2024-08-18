@@ -82,19 +82,22 @@ if __name__ == "__main__":
 	args = get_args()
 	# read tsv first, we only need to do testing
 	print(f"> read {args.tsv_fp}")
-	msg_spectra_df = pd.read_csv(args.tsv_fp, sep="\t")
-	msg_spectra_test_df = msg_spectra_df[msg_spectra_df["fold"] == "test"]
+	msg_spectra_test_df = pd.read_csv(args.tsv_fp, sep="\t")
+	msg_spectra_test_df = msg_spectra_test_df[msg_spectra_test_df["fold"] == "test"].copy()
 	msg_spectra_test_df.rename(columns={"instrument_type": "inst_type", "precursor_mz":"prec_mz", \
-                                     "adduct":"prec_type","collision_energy":"ace", "mzs":"mz", "intensities":"int"}, inplace=True)
+									"adduct":"prec_type","collision_energy":"ace", "mzs":"mz", "intensities":"int"}, inplace=True)
+	inst_type, frag_mode = seq_apply_df_rows(msg_spectra_test_df,parse_inst_info)
  
-	inst_type, frag_mode = seq_apply_df_rows(msg_spectra_df,parse_inst_info)
 	msg_spectra_test_df.loc[:,"inst_type"] = inst_type
 	msg_spectra_test_df.loc[:,"frag_mode"] = frag_mode
 
+
 	# this is over complicated, doing this for backward compatibility
-	sim_msg_spectra_df = msg_spectra_df[msg_spectra_df["simulation_challenge"]].copy()
-	extra_msg_spectra_df = msg_spectra_df[~msg_spectra_df["simulation_challenge"]].copy()
-	msg_spectra_df = pd.concat([sim_msg_spectra_df, msg_spectra_test_df])
+	sim_msg_spectra_df = msg_spectra_test_df[msg_spectra_test_df["simulation_challenge"]].copy()
+	extra_msg_spectra_df = msg_spectra_test_df[~msg_spectra_test_df["simulation_challenge"]].copy()
+	del msg_spectra_test_df
+ 
+	msg_spectra_df = pd.concat([sim_msg_spectra_df, extra_msg_spectra_df])
 
 	print(f"> read {args.json_fp}")
 	msg_candidates_dict = json.load(open(args.json_fp))
