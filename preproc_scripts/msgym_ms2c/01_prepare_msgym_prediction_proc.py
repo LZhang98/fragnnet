@@ -94,10 +94,10 @@ if __name__ == "__main__":
 
 	# this is over complicated, doing this for backward compatibility
 	sim_msg_spectra_df = msg_spectra_test_df[msg_spectra_test_df["simulation_challenge"]].copy()
-	extra_msg_spectra_df = msg_spectra_test_df[~msg_spectra_test_df["simulation_challenge"]].copy()
+	#extra_msg_spectra_df = msg_spectra_test_df[~msg_spectra_test_df["simulation_challenge"]].copy()
 	del msg_spectra_test_df
- 
-	msg_spectra_df = pd.concat([sim_msg_spectra_df, extra_msg_spectra_df])
+	msg_spectra_df = sim_msg_spectra_df
+	#msg_spectra_df = pd.concat([sim_msg_spectra_df, extra_msg_spectra_df])
 
 	print(f"> read {args.json_fp}")
 	msg_candidates_dict = json.load(open(args.json_fp))
