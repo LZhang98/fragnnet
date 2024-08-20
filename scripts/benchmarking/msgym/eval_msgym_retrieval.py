@@ -8,7 +8,7 @@ import numpy as np
 import torch as th
 from tqdm import tqdm
 
-from frag_gnn.utils.spec_utils import calculate_sparse_cosine_similarity
+from frag_gnn.utils.spec_utils import calculate_sparse_cosine_similarity, mf1000_normalize_np
 from frag_gnn.utils.data_utils import par_apply
 
 LAST_RANK = 257
@@ -69,7 +69,7 @@ if __name__ == "__main__":
 		spec_df = spec_df.merge(mol_df, on = 'mol_id', how = 'left')
   
 		true_mzs = [float(x) for x in row['mz'].split(",")]
-		true_ints = [float(x)*1000 for x in row['int'].split(",")]
+		true_ints = mf1000_normalize_np(np.array([float(x) for x in row['int'].split(",")]))
 
 		true_mzs = th.tensor(true_mzs)
 		true_ints = th.tensor(true_ints)
