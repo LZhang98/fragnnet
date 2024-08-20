@@ -182,8 +182,9 @@ if __name__ == "__main__":
 	print(f"> df_dp: {flags.df_dp}")
 	print(f"> proc_dp: {flags.proc_dp}")
 	print(f"> num_entries: {flags.num_entries}")
-	print(f"> ow_spec_mol: {flags.ow_spec_mol}")
-	
+	print(f"> force update spec and mol df: {flags.ow_spec_mol}")
+	print("> dsets", flags.dsets)
+ 
 	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
 	mol_df_fp = os.path.join(flags.proc_dp,"mol_df.pkl")
 	ann_df_fp = os.path.join(flags.proc_dp,"ann_df.pkl")
