@@ -42,7 +42,6 @@ def create_spec_df(mol_df, prec_type, prec_mz, inst_type, frag_mode, nce, ace):
 	spec_df_prec["exact_mw"] = mol_df["exact_mw"]
 	spec_df_prec['spec_type'] = 'MS2'
 	spec_df_prec['dset'] = "msgym"
-	spec_df_prec['prec_mz'] = np.nan
 	spec_df_prec['prec_type'] = prec_type
 	spec_df_prec['ace'] = ace
 	spec_df_prec['nce'] = nce # nce should be NaN
