@@ -148,7 +148,7 @@ def main(args):
 				args.nb_isomorphic,
 				args.max_iterations,
 				dag_dp,
-				args.use_cahced_dag, # use_cached, default to false
+				args.use_cached_dag, # use_cached, default to false
 				args.compress_dags
 			]
 		)
@@ -327,7 +327,7 @@ if __name__ == "__main__":
 	parser.add_argument("--inst_types",nargs="+",default='any')
 	parser.add_argument("--frag_modes",nargs="+",default='any')
 	parser.add_argument("--ion_modes",nargs="+",default='any')
-	parser.add_argument("--use_cahced_dag",type=booltype,default=False)
+	parser.add_argument("--use_cached_dag",type=booltype,default=False)
 	parse_formula
 	args = parser.parse_args()
 
