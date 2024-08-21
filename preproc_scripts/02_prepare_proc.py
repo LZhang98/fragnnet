@@ -43,8 +43,10 @@ def preprocess_spec(spec_df):
 	smiles_set = set(spec_df["smiles"])
 	assert not "" in smiles_set
 	print("> num_smiles", len(smiles_set))
+	print("> sorting by smiles")
 	smiles_to_mid = {smiles:i for i,smiles in enumerate(sorted(smiles_set))}
-	spec_df.loc[:,"mol_id"] = spec_df["smiles"].replace(smiles_to_mid)
+	print("> updating mol_id")
+	spec_df.loc[:,"mol_id"] = spec_df["smiles"].map(smiles_to_mid)#.replace(smiles_to_mid)
 
 	# copy for ann_df
 	ann_df = spec_df[["dset_spec_id","mol_id","notes","peaks","dset"]].copy()
@@ -182,8 +184,9 @@ if __name__ == "__main__":
 	print(f"> df_dp: {flags.df_dp}")
 	print(f"> proc_dp: {flags.proc_dp}")
 	print(f"> num_entries: {flags.num_entries}")
-	print(f"> ow_spec_mol: {flags.ow_spec_mol}")
-	
+	print(f"> force update spec and mol df: {flags.ow_spec_mol}")
+	print("> dsets", flags.dsets)
+ 
 	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
 	mol_df_fp = os.path.join(flags.proc_dp,"mol_df.pkl")
 	ann_df_fp = os.path.join(flags.proc_dp,"ann_df.pkl")

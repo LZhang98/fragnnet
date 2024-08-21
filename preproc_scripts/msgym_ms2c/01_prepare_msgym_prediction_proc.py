@@ -70,10 +70,10 @@ def get_args():
 	
 	# frag feats configs
 	# msg_candidates_mass_json = './data/raw/msgym/MassSpecGym_retrieval_candidates_mass.json'
-	
-	parser.add_argument("--proc_dp",type=str,default="data/ms2c/msgym/proc/retrieval_candidates_mass")
+	parser.add_argument("--proc_dp",type=str,default="./data/ms2c/msgym/proc/retrieval_candidates_mass")
 	parser.add_argument("--json_fp",type=str,default="./data/raw/msgym/MassSpecGym_retrieval_candidates_mass_with_test.json")
 	parser.add_argument("--tsv_fp",type=str,default="./data/raw/msgym/MassSpecGym_with_test.tsv")
+	parser.add_argument("--'set'",type=str,default="simulation_challenge", choices=["all","extra"])
 	args = parser.parse_args()
 	return args
 
@@ -82,41 +82,45 @@ if __name__ == "__main__":
 	args = get_args()
 	# read tsv first, we only need to do testing
 	print(f"> read {args.tsv_fp}")
-	msg_spectra_df = pd.read_csv(args.tsv_fp, sep="\t")
-	# NOTE: only use simulation_challenge
-	msg_spectra_df = msg_spectra_df[msg_spectra_df["simulation_challenge"]]
-	msg_spectra_test_df = msg_spectra_df[msg_spectra_df["fold"] == "test"].copy()
-	msg_spectra_test_df.rename(columns={"instrument_type": "inst_type", "precursor_mz":"prec_mz", "adduct":"prec_type","collision_energy":"ace"}, inplace=True)
-	
+	msg_spectra_test_df = pd.read_csv(args.tsv_fp, sep="\t")
+	msg_spectra_test_df = msg_spectra_test_df[msg_spectra_test_df["fold"] == "test"].copy()
+	msg_spectra_test_df.rename(columns={"instrument_type": "inst_type", "precursor_mz":"prec_mz", \
+									"adduct":"prec_type","collision_energy":"ace", "mzs":"mz", "intensities":"int"}, inplace=True)
 	inst_type, frag_mode = seq_apply_df_rows(msg_spectra_test_df,parse_inst_info)
+ 
 	msg_spectra_test_df.loc[:,"inst_type"] = inst_type
 	msg_spectra_test_df.loc[:,"frag_mode"] = frag_mode
- 
+
+
+	# this is over complicated, doing this for backward compatibility
+	sim_msg_spectra_df = msg_spectra_test_df[msg_spectra_test_df["simulation_challenge"]].copy()
+	#extra_msg_spectra_df = msg_spectra_test_df[~msg_spectra_test_df["simulation_challenge"]].copy()
+	del msg_spectra_test_df
+	msg_spectra_df = sim_msg_spectra_df
+	#msg_spectra_df = pd.concat([sim_msg_spectra_df, extra_msg_spectra_df])
+
 	print(f"> read {args.json_fp}")
 	msg_candidates_dict = json.load(open(args.json_fp))
 	os.makedirs(args.proc_dp, exist_ok=True)
 	print(f"> save to {args.proc_dp}")
 
-	msg_id_map_l = []
-
-	unique_smiles = msg_spectra_test_df['smiles'].unique().tolist()
- 
-	for mol_idx, input_smiles in tqdm(enumerate(unique_smiles), total=len(unique_smiles)):
-	 
-		mol_df_fname = f"mol_df_{mol_idx}.pkl"
+	unique_smiles = msg_spectra_df['smiles'].unique().tolist()
 	
-		#msg_id_df.loc[lambda df: df['smiles'] == input_smiles, 'mol_df'] = mol_df_fname
+	msg_spectra_df['mol_df'] = ''
+	msg_spectra_df['spec_df'] = ''
+    
+	for mol_idx, input_smiles in tqdm(enumerate(unique_smiles), total=len(unique_smiles)):
+
+		mol_df_fname = f"mol_df_{mol_idx}.pkl"
 		try:
 			candidates_smiles = msg_candidates_dict[input_smiles]
 			mol_df_fp = os.path.join(args.proc_dp, mol_df_fname)
-			#if os.path.isfile(mol_df_fp):
-			#	mol_df = pd.read_pickle(mol_df_fp)
-			#else:
 			mol_df = pd.DataFrame({'smiles': candidates_smiles})
 			mol_df['mol_id'] = mol_df.index
 			mol_df = process_mol(mol_df, True, None)
 			mol_df.to_pickle(mol_df_fp)
-			for spectra_idx, row in msg_spectra_test_df[msg_spectra_test_df["smiles"] == input_smiles].iterrows():
+
+			for spectra_idx, row in msg_spectra_df[msg_spectra_df["smiles"] == input_smiles].iterrows():
 
 				prec_type = row['prec_type']
 				prec_mz = row['prec_mz']
@@ -130,14 +134,13 @@ if __name__ == "__main__":
 				spec_df_fname =  f"spec_df_{identifier}.pkl"
 				spec_df_fp = os.path.join(args.proc_dp, spec_df_fname)
 				spec_df.to_pickle(spec_df_fp)
-				#msg_id_df.loc[lambda df: df['mol_id'] == row['mol_id'], 'spec_df'] = spec_df_fp
-				msg_id_map_l.append([identifier,input_smiles, mol_df_fname,spec_df_fname])
+				msg_spectra_df.loc[spectra_idx,'mol_df'] = mol_df_fname
+				msg_spectra_df.loc[spectra_idx,'spec_df'] = spec_df_fname
+
 				del spec_df
 				
 			del mol_df
 		except Exception as e:
 			print("failed", e)
 	
-	msg_id_map_df = pd.DataFrame(msg_id_map_l, columns=['identifier','smiles','mol_df','spec_df'])
-	msg_id_map_fp = os.path.join(args.proc_dp, "msg_id_map.csv")
-	msg_id_map_df.to_csv(msg_id_map_fp,index=None)
+	msg_spectra_df.to_csv(os.path.join(args.proc_dp, "msg_id_map.csv"))

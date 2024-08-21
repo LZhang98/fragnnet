@@ -1,4 +1,4 @@
-wandb_name: msg_fragnnet_0,01_nce
+wandb_name: msg_fragnnet_0,01_all_adducts
 wandb_tags:
 - msg
 - d3
@@ -12,19 +12,18 @@ wandb_tags:
 - oos_multiple_1
 - gaussian_renormalize
 - b32x4
-- no_auxiliary_scores
 - vectorized_loss
 - lb16
 - preload
 - preprocess
 - xi6bawy4
-- ms_gym_v2
+- ms_gym
 
 # data stuff
-spec_fp: data/proc/ms_gymv2/spec_df.pkl
-mol_fp: data/proc/ms_gymv2/mol_df.pkl
-split_dp: data/split/ms_gym_d3_h4_benchmarkv2
-frag_dp: data/frag/ms_gym_d3_h4v2/dags
+spec_fp: data/proc/ms_gym/spec_df.pkl
+mol_fp: data/proc/ms_gym/mol_df.pkl
+split_dp: data/split/ms_gym_d3_h4_benchmark
+frag_dp: data/frag/ms_gym_d3_h4/dags
 spec_params:
   merge: False
   nce: True
@@ -36,6 +35,7 @@ spec_params:
     - "FT"
   prec_types:
     - "[M+H]+"
+    - "[M+Na]+"
 mol_params:
   preprocess: True
 frag_params:
@@ -100,7 +100,7 @@ max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
-checkpoint_metric: val_cos_sim_0.1_epoch/mean
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
 eval_mz_bin_res:

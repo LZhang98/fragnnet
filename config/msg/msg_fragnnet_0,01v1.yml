@@ -1,6 +1,6 @@
-wandb_name: msg_fragnnet_0,01_2
+wandb_name: msg_fragnnet_0,01_v1
 wandb_tags:
-- msgv2
+- msg
 - d3
 - wr00
 - new_proc
@@ -18,15 +18,17 @@ wandb_tags:
 - preload
 - preprocess
 - xi6bawy4
+- ms_gym_v2
 
 # data stuff
-spec_fp: data/proc/ms_gymv2/spec_df.pkl
-mol_fp: data/proc/ms_gymv2/mol_df.pkl
-split_dp: data/split/ms_gym_d3_h4_benchmarkv2
-frag_dp: data/frag/ms_gym_d3_h4v2/dags
+spec_fp: data/proc/ms_gym/spec_df.pkl
+mol_fp: data/proc/ms_gym/mol_df.pkl
+split_dp: data/split/ms_gym_d3_h4_benchmark
+frag_dp: data/frag/ms_gym_d3_h4/dags
 spec_params:
   merge: False
   nce: True
+  ace: False
   merge_keep_ces: False
   preprocess: True
   inst_types:
@@ -98,7 +100,7 @@ max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
-checkpoint_metric: val_cos_sim_0.1_epoch/mean
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
 eval_mz_bin_res:
@@ -111,11 +113,3 @@ dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
 compile: True
 mp_sharing_strategy: file_system
-
-subsample_params:
-  subsample_size: 64
-  subsample_seed: 420
-  train: True
-  val: True
-  test: True
-  secondary: False

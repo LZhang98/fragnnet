@@ -591,6 +591,15 @@ def batched_l2_normalize(ints, batch_idxs):
 	return ints
 
 def batched_mf1000_normalize(ints, batch_idxs):
+	""" mf 1000 normalize implemetion pyin torch, batched
+
+	Args:
+		ints (_type_): _description_
+		batch_idxs (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
 
 	max_ints = scatter_reduce(
 		ints,
@@ -599,6 +608,19 @@ def batched_mf1000_normalize(ints, batch_idxs):
 		dim_size=th.max(batch_idxs)+1
 	)
 	ints = (ints / max_ints[batch_idxs]) * 1000.
+	return ints
+
+def mf1000_normalize_np(ints: np.array) -> np.array:
+	""" mf 1000 normalize implemetion in numpy, not batched
+
+	Args:
+		ints (np.array): peak intensity 
+
+	Returns:
+		np.array: normalized intensities
+	"""
+	int_max = np.max(ints)
+	ints = (ints / int_max) * 1000.
 	return ints
 
 def round_aggregate_peaks(

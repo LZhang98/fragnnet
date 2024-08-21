@@ -178,8 +178,13 @@ def make_splits(args):
 		}
 		split_data_list.append(split_data)
 	elif args.split_type == "predefined_dsetid_csv":
-	 
-		predefined_df = pd.read_csv(args.predefined_dsetid_csv)
+		# support more then one predefined set, useful when combine more then one set
+		predefined_dfs = []
+		for fp in args.predefined_dsetid_csv:
+			case_predefined_df = pd.read_csv(fp)
+			predefined_dfs.append(case_predefined_df)
+		predefined_df = pd.concat(predefined_dfs)
+  
 		train_dest_ids = predefined_df[predefined_df['fold'] == 'train']['dset_spec_id'].to_list()
 		train_df = primary_split_df[primary_split_df['dset_spec_id'].isin(train_dest_ids)][["spec_id","mol_id","group_id"]]
 		val_dest_ids = predefined_df[predefined_df['fold'] == 'val']['dset_spec_id'].to_list()
@@ -249,14 +254,13 @@ if __name__ == "__main__":
 	parser.add_argument("--train_ids",type=int,nargs="+",default=[62611])
 	parser.add_argument("--val_ids",type=int,nargs="+",default=[62611])
 	parser.add_argument("--test_ids",type=int,nargs="+",default=[62611])
-	parser.add_argument("--predefined_dsetid_csv",type=str,default=None)
+	parser.add_argument("--predefined_dsetid_csv", nargs="+", type=str, default=[])
 	parser.add_argument("--num_folds",type=int,default=0)
 	# spec filtering criteria
 	parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
 	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
 	parser.add_argument("--secondary_bias",type=bool,default=False, dest="if true, keep every thing in secondary and drop from train")
 	#parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
-	
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
 	parser.add_argument("--max_prec_mz",type=float,default=1500.)
 	parser.add_argument("--min_prec_mz",type=float,default=0.)
