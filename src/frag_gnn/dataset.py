@@ -90,7 +90,6 @@ class BaseDataset(Dataset):
 		# merge spectra
 		um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
 		if spec_params["merge"]:
-			# note ths will merge all the spectra in the same group, be careful if we have mix used ace and nces
 			spec_df = merge_spec_df(spec_df,keep_ces=spec_params["merge_keep_ces"])
 			id_key = "group_id"
 		else:
