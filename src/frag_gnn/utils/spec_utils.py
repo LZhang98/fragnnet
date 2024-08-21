@@ -591,7 +591,7 @@ def batched_l2_normalize(ints, batch_idxs):
 	return ints
 
 def batched_mf1000_normalize(ints, batch_idxs):
-	""" mf 1000 normalize implemetion pyin torch, batched
+	""" mf 1000 normalize implemention in pytorch, batched
 
 	Args:
 		ints (_type_): _description_
