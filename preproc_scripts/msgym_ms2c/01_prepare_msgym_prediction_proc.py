@@ -24,8 +24,7 @@ def process_mol(mol_df, drop_duplicate = True, tqdm_leave=True):
 	mol_df.loc[:,"formula"] = par_apply_series(mol_df["mol"],data_utils.mol_to_formula, tqdm_leave)
 	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchi, tqdm_leave)
 	mol_df.loc[:,"mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=False), tqdm_leave)
-	mol_df.loc[:,"exact_mw"] = par_apply_series(mol_df["mol"
-													],lambda mol: data_utils.mol_to_mol_weight(mol,exact=True), tqdm_leave)
+	mol_df.loc[:,"exact_mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=True), tqdm_leave)
 	mol_df.loc[:,"num_atoms"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_atoms, tqdm_leave)
 	mol_df.loc[:,"num_bonds"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_bonds, tqdm_leave)
 	mol_df.loc[:,"charge"] = par_apply_series(mol_df["mol"],data_utils.mol_to_charge, tqdm_leave)
