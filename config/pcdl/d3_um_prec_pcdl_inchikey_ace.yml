@@ -1,5 +1,4 @@
-wandb_name: d3_um_pcdl_pos_cv_2
-wandb_group: d3_um_pcdl_pos_cv
+wandb_name: d3_um_prec_pcdl_inchikey_ace
 wandb_tags:
 - um
 - d3
@@ -13,19 +12,21 @@ wandb_tags:
 - unmerged
 - oos_multiple_1
 - gaussian_renormalize
-- b512x1
+- b128x1
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
 - preload
 - preprocess
 - xi6bawy4
-- pcdl_pos
+- pcdl
+- prec
+- ace
 
 # data stuff
 spec_fp: data/proc/pcdl/spec_df.pkl
 mol_fp: data/proc/pcdl/mol_df.pkl
-split_dp: data/split/pcdl_pos/cv_2
+split_dp: data/split/pcdl
 frag_dp: data/frag/pcdl_d3_h4/dags
 frag_params:
   pyg_edge_feats: []
@@ -35,19 +36,25 @@ frag_params:
   preprocess: True
 spec_params:
   merge: False
-  nce: True
-  ace: False
+  nce: False
+  ace: True
   merge_keep_ces: False
   preprocess: True
   prec_type: True
   prec_types:
     - "[M+H]+"
+    - "[M-H]-"
   inst_type: True
   inst_types:
     - "QTOF"
     - "Other"
 mol_params:
   preprocess: True
+
+# ace stuff
+ce_mean: 20
+ce_std: 10
+ce_max: 60
 
 # model stuff
 frag_gnn_type: NodeMLP
@@ -57,7 +64,7 @@ ce_insert_type: embed
 ce_insert_location: mlp
 ce_insert_merge: True
 ce_insert_size: 24
-prec_insert_location: none
+prec_insert_location: mlp
 prec_insert_size: 8
 inst_insert_location: none
 inst_insert_size: 8
@@ -115,4 +122,4 @@ use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
-compile: False
+compile: True

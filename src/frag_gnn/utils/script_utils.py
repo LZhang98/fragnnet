@@ -7,6 +7,7 @@ import os
 
 from frag_gnn.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO
 from frag_gnn.pl_model import FragGNNPL
+from frag_gnn.utils.nn_utils import decompile_jit_ckpt
 
 
 def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
@@ -30,11 +31,17 @@ def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 		assert ckpt_wandb_fp is not None
 		ckpt_file_local = run.file(ckpt_wandb_fp).download(root=temp_dp,replace=False)
 		ckpt_fp = ckpt_file_local.name
+		ckpt = th.load(ckpt_fp, map_location="cpu")
+		# decompile
+		assert not config_d["compile"]
+		ckpt = decompile_jit_ckpt(ckpt)
+		# init
+		model = model_cls(**config_d)
 		try:
-			model = model_cls.load_from_checkpoint(ckpt_fp,strict=True,**config_d)
+			model.load_state_dict(ckpt["state_dict"], strict=True)
 		except RuntimeError as e:
 			print(f"> error when loading from checkpoint id {run_id}, will try with strict=False")
-			model = model_cls.load_from_checkpoint(ckpt_fp,strict=False,**config_d)
+			model.load_state_dict(ckpt["state_dict"], strict=False)
 	return model
 
 

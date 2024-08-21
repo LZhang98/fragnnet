@@ -1,10 +1,6 @@
-wandb_name: d3_um_pcdl_pos_cv_0
-wandb_group: d3_um_pcdl_pos_cv
+wandb_name: msg_fragnnet_10ppm_v2
 wandb_tags:
-- um
-- d3
-- wr00
-- inchikey
+- msgv2
 - new_proc
 - fraggnn_d3
 - new_metrics
@@ -13,40 +9,36 @@ wandb_tags:
 - unmerged
 - oos_multiple_1
 - gaussian_renormalize
-- b512x1
+- b32x4
 - no_auxiliary_scores
 - vectorized_loss
 - lb16
 - preload
 - preprocess
 - xi6bawy4
-- pcdl_pos
 
 # data stuff
-spec_fp: data/proc/pcdl/spec_df.pkl
-mol_fp: data/proc/pcdl/mol_df.pkl
-split_dp: data/split/pcdl_pos/cv_0
-frag_dp: data/frag/pcdl_d3_h4/dags
+spec_fp: data/proc/ms_gymv2/spec_df.pkl
+mol_fp: data/proc/ms_gymv2/mol_df.pkl
+split_dp: data/split/ms_gym_d3_h4_benchmarkv2
+frag_dp: data/frag/ms_gym_d3_h4v2/dags
+spec_params:
+  merge: False
+  nce: True
+  merge_keep_ces: False
+  preprocess: True
+  inst_types:
+    - "QTOF"
+    - "FT"
+  prec_types:
+    - "[M+H]+"
+mol_params:
+  preprocess: True
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
   preload: True
-  preprocess: True
-spec_params:
-  merge: False
-  nce: True
-  ace: False
-  merge_keep_ces: False
-  preprocess: True
-  prec_type: True
-  prec_types:
-    - "[M+H]+"
-  inst_type: True
-  inst_types:
-    - "QTOF"
-    - "Other"
-mol_params:
   preprocess: True
 
 # model stuff
@@ -55,11 +47,9 @@ num_depth: 4
 num_hs: 4
 ce_insert_type: embed
 ce_insert_location: mlp
-ce_insert_merge: True
+ce_insert_merge: False
 ce_insert_size: 24
-prec_insert_location: none
-prec_insert_size: 8
-inst_insert_location: none
+inst_insert_location: mlp
 inst_insert_size: 8
 mol_pool_type: mean
 frag_pool_type: mean
@@ -86,15 +76,16 @@ loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
 group_sampler: False
-simple_group_sampler: True
-simple_group_sampler_type: group_mol
+simple_group_sampler: False
 train_sample_weight: none
-eval_sample_weight: group_mol
+eval_sample_weight: none
+loss_tolerance_rel: 0.00001 # 10 ppm
+loss_tolerance_abs: 
 
 # optimization stuff
-train_batch_size: 256
-eval_batch_size: 256
-accumulate_grad_batches: 1
+train_batch_size: 32
+eval_batch_size: 32
+accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01
@@ -105,14 +96,16 @@ max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
-checkpoint_metric: val_cos_sim_0.01_epoch/mean
+checkpoint_metric: val_cos_sim_0.1_epoch/mean
 auxiliary_scores:
 - cos_sim
 eval_mz_bin_res:
+- 0.1
 - 0.01
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 pl_enable_progress_bar: True
-compile: False
+compile: True
+mp_sharing_strategy: file_system

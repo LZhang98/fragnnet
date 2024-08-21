@@ -276,6 +276,14 @@ ce_insert_type: id # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: none # where ce insert happens ["none","mol","frag","mlp"]
 ce_insert_merge: False # merge ce embedding
 ce_insert_size: 32
+# rough approximations from NIST20 Orbitrap/FT MS
+ce_max: 200
+ce_mean: 60
+ce_std: 40
+# rough approximations from NIST20 QToF
+# ce_mean: 20
+# ce_std: 10
+# ce_max: 60
 prec_insert_location: none
 prec_insert_size: 32
 inst_insert_location: none

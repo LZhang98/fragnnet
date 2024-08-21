@@ -301,7 +301,6 @@ PCDL_KEYS = {
 	"PK$NUM_PEAK:" : "num_peaks",
 }
 
-
 def read_pcdl(zipped_spectra_dp: str):
 	
 	def parse_pcdl(text_list: list[str], id_prefix = None):
@@ -367,9 +366,24 @@ def read_pcdl(zipped_spectra_dp: str):
 	print(f"> {len(ms_df['inchikey'].unique())} unique inchikey")
 	return ms_df
 
-def process_ms_gym(ms_gym_tsv_fp):
-	""" """
+def process_ms_gym(ms_gym_tsv_fp, subset):
 	ms_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
+ 
+	# only use on in simulation_challenge
+	ms_df = ms_df.sort_values(by='simulation_challenge', ascending=False)
+	print(f"> processs ms gym file {ms_gym_tsv_fp}")
+	print(f"> using ms gym subset {subset}")
+	print("> if you are doing simulation challenge make sure use only simulation_challenge subset")
+ 
+	if subset == 'simulation_challenge':
+		ms_df = ms_df[ms_df['simulation_challenge']]
+		print(f"> {len(ms_df)} rows selected for subset {subset}")
+	elif subset == 'extra':
+		ms_df = ms_df[~ms_df['simulation_challenge']]
+		print(f"> {len(ms_df)} rows selected for subset {subset}")
+	elif subset != 'all':
+		print(f">warningm unknown subset [{subset}] to msygm. Every row will be included")
+  
 	ms_df["peaks"] = ms_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
 	ms_df = ms_df.drop(columns=["mzs","intensities"])
 	ms_df.rename(columns={"precursor_mz":"prec_mz", 
@@ -384,7 +398,7 @@ def process_ms_gym(ms_gym_tsv_fp):
 	ms_df["col_energy"], ms_df["normalized"], ms_df["ramped"] = zip(*ms_df["col_energy"].apply(parse_mass_gym_ce_str))
 
 	#ms_df = ms_df.astype({"prec_mz":float,"exact_mass":float})
- 
+
 	# add ion_mode
 	ms_df.loc[:,"ion_mode"] = "P"
 	# add spec_type
@@ -397,7 +411,7 @@ def process_ms_gym(ms_gym_tsv_fp):
 			ms_df.loc[:,value] = np.nan
 	
 	split_df = ms_df[["dset_spec_id","fold"]]
-	#print(split_df)
+
 	return ms_df, split_df
  
 if __name__ == "__main__":
@@ -409,7 +423,7 @@ if __name__ == "__main__":
 	parser.add_argument('--pkl_file', type=str, required=False)
 	parser.add_argument('--ms_dir', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
-	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "pcdl_zip"], required=True)
+	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
@@ -456,7 +470,11 @@ if __name__ == "__main__":
 		assert os.path.isfile(ms_meta_fp), ms_meta_fp
 		spec_df = preproc_ms_files(ms_dp,ms_meta_fp,MSP_KEY_DICT.keys(),args.num_entries)
 	elif args.input_format == "ms_gym":
-		spec_df, split_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv))
+		spec_df, split_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv), 'simulation_challenge')
+		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
+		split_df.to_csv(split_df_fp,index=False)
+	elif args.input_format == "ms_gym_extra":
+		spec_df, split_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv), 'extra')
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "pcdl_zip":
@@ -465,7 +483,7 @@ if __name__ == "__main__":
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	
 	# save files
-	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}.{args.output_format}")
+	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}_df.{args.output_format}")
 	if args.output_format == "json":
 		spec_df.to_json(spec_df_fp)
 	else:

@@ -12,7 +12,7 @@ from frag_gnn.utils.misc_utils import booltype
 
 def get_args():
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--deepmet_moldf_dp", type=str,default="data/deepmet/proc/mol_df_1.pkl.gz", help="")
+	parser.add_argument("--deepmet_moldf_dp", type=str,default="data/ms2c/deepmet/proc/mol_df_1.pkl.gz", help="")
 	parser.add_argument("--frag_dp",type=str,default="data/frag/debug")
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--max_time",type=int,default=150)
@@ -21,7 +21,7 @@ def get_args():
 	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
 	parser.add_argument("--max_iterations",type=int,default=-1)
 	parser.add_argument("--isotopes",type=booltype,default=False)
-	parser.add_argument("--allow_cached", type=booltype,default=True, help="")
+	parser.add_argument("--allow_cached", type=booltype,default=False, help="")
 	parser.add_argument("--compressed", type=booltype,default=True, help="")
 	args = parser.parse_args()
 	return args

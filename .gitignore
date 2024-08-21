@@ -33,4 +33,6 @@ data
 debug_output
 
 containers/apptainer_images
+containers/apptainer
 model_eval
+ckpts

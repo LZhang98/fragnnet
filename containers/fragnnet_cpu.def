@@ -26,7 +26,9 @@ From: ubuntu:22.04
     curl -sS https://bootstrap.pypa.io/get-pip.py | python
 
     # install python packages
+    $PIP_INSTALL setuptools \
     $PIP_INSTALL torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu 
+    $PIP_INSTALL numpy==1.26.4
     $PIP_INSTALL rdkit-pypi==2022.9.4
     $PIP_INSTALL torch_geometric==2.4.0 pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0%2Bcpu.html
     $PIP_INSTALL dgl==2.0.0 -f https://data.dgl.ai/wheels/repo.html
@@ -46,7 +48,8 @@ From: ubuntu:22.04
         omegaconf \
         adjustText \
         scikit-learn \
-        Pyarrow
+        Pyarrow \
+        pyteomics
 
     apt-get clean && \
     apt-get autoremove

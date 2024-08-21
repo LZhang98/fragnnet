@@ -1,6 +1,6 @@
-wandb_name: msg_fragnnet_0,1
+wandb_name: debug_d3_um_ace
 wandb_tags:
-- msg
+- debug
 - nist20v2
 - d4
 - wr00
@@ -10,7 +10,7 @@ wandb_tags:
 - new_metrics
 - nodemlp
 - ce_embed
-- unmerged
+- merged
 - oos_multiple_1
 - gaussian_renormalize
 - b32x4
@@ -20,30 +20,27 @@ wandb_tags:
 - preload
 - preprocess
 - xi6bawy4
+- ace
 
 # data stuff
-spec_fp: data/proc/ms_gym/spec_df.pkl
-mol_fp: data/proc/ms_gym/mol_df.pkl
-split_dp: data/split/ms_gym_d3_h4_benchmark
-frag_dp: data/frag/ms_gym_d3_h4/dags
-spec_params:
-  merge: False
-  nce: True
-  merge_keep_ces: False
-  preprocess: True
-  inst_types:
-    - "QTOF"
-    - "FT"
-  prec_types:
-    - "[M+H]+"
-mol_params:
-  preprocess: True
+spec_fp: data/proc/debug_smallv2/spec_df.pkl
+mol_fp: data/proc/debug_smallv2/mol_df.pkl
+split_dp: data/split/debug_smallv2
+frag_dp: data/frag/nist20mona23v2_d3_h4_isoFalse_nb3/dags
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: True
-  preprocess: True
+  preload: False #True
+  preprocess: False #True
+spec_params:
+  merge: False
+  nce: False
+  ace: True
+  merge_keep_ces: False
+  preprocess: False #True
+mol_params:
+  preprocess: False #True
 
 # model stuff
 frag_gnn_type: NodeMLP
@@ -51,10 +48,7 @@ num_depth: 4
 num_hs: 4
 ce_insert_type: embed
 ce_insert_location: mlp
-ce_insert_merge: False
-ce_insert_size: 24
-inst_insert_location: mlp
-inst_insert_size: 8
+ce_insert_merge: True
 mol_pool_type: mean
 frag_pool_type: mean
 mol_normalization: batch
@@ -83,8 +77,6 @@ group_sampler: False
 simple_group_sampler: False
 train_sample_weight: none
 eval_sample_weight: none
-loss_tolerance_rel: 
-loss_tolerance_abs: 0.1
 
 # optimization stuff
 train_batch_size: 32
@@ -100,16 +92,14 @@ max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: True
-checkpoint_metric: val_cos_sim_0.1_epoch/mean
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
 eval_mz_bin_res:
-- 0.1
 - 0.01
 precision: 32
 use_tensor_float32: True
-automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+automatic_optimization: True
+dynamic_batch_sampler: False
 pl_enable_progress_bar: True
 compile: True
-mp_sharing_strategy: file_system

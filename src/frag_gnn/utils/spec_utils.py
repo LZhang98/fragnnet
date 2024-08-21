@@ -7,10 +7,14 @@ from typing import Tuple, Union
 
 from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_l1normalize, scatter_l2normalize, scatter_reduce, EPS, th_setdiff1d, safelog, scatter_logsumexp, TOLERANCE_MIN_MZ
 
-# rough approximations from NIST20
-NCE_MEAN = 60.
-NCE_STD = 40.
-NCE_MAX = 200.
+# rough approximations from NIST20 Orbitrap/FT MS
+# NCE_MEAN = 60.
+# NCE_STD = 40.
+# NCE_MAX = 200.
+# rough approximations from NIST20 QToF
+# ACE_MEAN = 20
+# ACE_STD = 10
+# ACE_MAX = 60.
 MZ_MAX = 1500.0
 MZ_BIN_RES = 0.01
 INTS_THRESH = 0.0
@@ -88,8 +92,9 @@ def get_ints_untransform_func(ints_transform):
 		return ints
 	return _func
 
-def transform_nce(nce):
-	return (nce-NCE_MEAN)/NCE_STD	
+def transform_ce(ce, ce_mean, ce_std):
+	return (ce-ce_mean)/ce_std
+
 
 def transform_nce_to_ace(nce:float, mw:float, charge_factor:int = 1) -> float:
 	"""get ace from given nce and mw
@@ -586,6 +591,15 @@ def batched_l2_normalize(ints, batch_idxs):
 	return ints
 
 def batched_mf1000_normalize(ints, batch_idxs):
+	""" mf 1000 normalize implemention in pytorch, batched
+
+	Args:
+		ints (_type_): _description_
+		batch_idxs (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
 
 	max_ints = scatter_reduce(
 		ints,
@@ -594,6 +608,19 @@ def batched_mf1000_normalize(ints, batch_idxs):
 		dim_size=th.max(batch_idxs)+1
 	)
 	ints = (ints / max_ints[batch_idxs]) * 1000.
+	return ints
+
+def mf1000_normalize_np(ints: np.array) -> np.array:
+	""" mf 1000 normalize implemetion in numpy, not batched
+
+	Args:
+		ints (np.array): peak intensity 
+
+	Returns:
+		np.array: normalized intensities
+	"""
+	int_max = np.max(ints)
+	ints = (ints / int_max) * 1000.
 	return ints
 
 def round_aggregate_peaks(

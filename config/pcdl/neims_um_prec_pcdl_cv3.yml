@@ -1,29 +1,25 @@
-wandb_name: neims_um_pcdl_pos
+wandb_name: nemis_um_prec_pcdl_cv_3
+wandb_group: nemis_um_prec_pcdl_cv
 wandb_tags:
 - um
-- nemis
 - wr00
 - inchikey
 - new_proc
 - new_metrics
-- nodemlp
 - ce_embed
 - unmerged
-- oos_multiple_1
 - gaussian_renormalize
 - b512x1
 - no_auxiliary_scores
-- vectorized_loss
 - lb16
 - preload
 - preprocess
-- xi6bawy4
-- pcdl_pos
+
 
 # data stuff
 spec_fp: data/proc/pcdl/spec_df.pkl
 mol_fp: data/proc/pcdl/mol_df.pkl
-split_dp: data/split/pcdl_pos
+split_dp: data/split/pcdl/cv_3
 frag_dp: data/frag/pcdl_d3_h4/dags
 frag_params:
   pyg_edge_feats: []
@@ -37,15 +33,14 @@ spec_params:
   ace: False
   merge_keep_ces: False
   preprocess: True
-  prec_type: False
+  prec_type: True
   prec_types:
     - "[M+H]+"
-  inst_type: False
+    - "[M-H]-"
+  inst_type: True
   inst_types:
-    - "FT"
     - "QTOF"
-    - "Orbitrap"
-    - "Unknown"
+    - "Other"
 mol_params:
   preprocess: True
   fingerprint_morgan: True
@@ -93,11 +88,12 @@ lr: 0.0003033
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 40
+max_epochs: 40
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
+delete_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
 - cos_sim
@@ -106,3 +102,4 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
+compile: False

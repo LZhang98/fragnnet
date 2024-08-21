@@ -47,13 +47,15 @@ if __name__ == "__main__":
 		
 		trainig_args = wandb_metadata['args']
 		config_fp = None
-		for k,v in zip(trainig_args[0::2],trainig_args[1::2]):
+		for arg in trainig_args:
+			k,v = arg.split("=")
 			if k == "-c":
 				config_fp = v
 				break
 
 		# check config.yaml
 		if config_fp is None or not os.path.isfile(config_fp):
+			print(f"> skip, config_fp: {config_fp} can not be processed")
 			continue
 		else:
 			with open(config_fp) as f:
@@ -68,9 +70,9 @@ if __name__ == "__main__":
 			print(f"> skip {wandb_id} due to model_type {model_type} not in {args.model_types}")
 			continue
 
-		print(f"> wandb_name {wandb_grp}")
+		print(f"> wandb_grp {wandb_grp}")
 		print(f"> wandb_name {wandb_name}")
-		print(f"> wandb_name {model_type}")
+		print(f"> model_type {model_type}")
 
 		ckpt_files = [f for f in os.listdir(ckpt_dir)]
 		best_ckpt_fp = None
@@ -107,7 +109,7 @@ if __name__ == "__main__":
 				print(f"copying {src_ckpt_fp}, to {save_fp}")
 				shutil.copy(src_ckpt_fp, save_fp)
 			elif  args.operation == "move":
-				print(f"copying {src_ckpt_fp}, to {save_fp}")
+				print(f"moving {src_ckpt_fp}, to {save_fp}")
 				shutil.move(src_ckpt_fp, save_fp)
 
 		if args.operation != "dryrun":

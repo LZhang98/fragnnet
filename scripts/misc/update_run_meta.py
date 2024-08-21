@@ -45,7 +45,8 @@ if __name__ == "__main__":
 		
 		trainig_args = wandb_metadata['args']
 		config_fp = None
-		for k,v in zip(trainig_args[0::2],trainig_args[1::2]):
+		for arg in trainig_args:
+			k,v = arg.split("=")
 			if k == "-c":
 				config_fp = v
 				break
@@ -64,4 +65,3 @@ if __name__ == "__main__":
 			run.name = wandb_name
 			run.tags = wandb_tags
 			run.update()
-   			#run.update()

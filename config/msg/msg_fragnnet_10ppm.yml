@@ -1,10 +1,8 @@
 wandb_name: msg_fragnnet_10ppm
 wandb_tags:
 - msg
-- nist20v2
-- d4
+- d3
 - wr00
-- inchikey
 - new_proc
 - fraggnn_d3
 - new_metrics
@@ -20,15 +18,17 @@ wandb_tags:
 - preload
 - preprocess
 - xi6bawy4
+- ms_gym_v2
 
 # data stuff
-spec_fp: data/proc/ms_gym/spec_df.pkl
-mol_fp: data/proc/ms_gym/mol_df.pkl
-split_dp: data/split/ms_gym_d3_h4_benchmark
-frag_dp: data/frag/ms_gym_d3_h4/dags
+spec_fp: data/proc/ms_gymv2/spec_df.pkl
+mol_fp: data/proc/ms_gymv2/mol_df.pkl
+split_dp: data/split/ms_gym_d3_h4_benchmarkv2
+frag_dp: data/frag/ms_gym_d3_h4v2/dags
 spec_params:
   merge: False
   nce: True
+  ace: False
   merge_keep_ces: False
   preprocess: True
   inst_types:

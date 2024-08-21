@@ -11,6 +11,7 @@ def process_mol(mol_df):
 
 	# get mol df
 	mol_df.loc[:,"mol"] = par_apply_series(mol_df["smiles"],data_utils.mol_from_smiles)
+	mol_df = mol_df.dropna(subset=["mol"])
 	mol_df.loc[:,"inchikey"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchikey)
 	mol_df.loc[:,"scaffold"] = par_apply_series(mol_df["mol"],data_utils.get_murcko_scaffold)
 	mol_df.loc[:,"formula"] = par_apply_series(mol_df["mol"],data_utils.mol_to_formula)
@@ -40,6 +41,7 @@ def create_spec_df(mol_df):
 		spec_df_prec['prec_mz'] = np.nan
 		spec_df_prec['prec_type'] = prec_type
 		spec_df_prec['nce'] = np.nan
+		spec_df_prec['ace'] = np.nan
 		spec_df_prec['ion_mode'] = 'N' if prec_type == '[M-H]-' else 'P'
 		spec_df_prec.loc[:,"prec_mz"] =  par_apply_df_rows(spec_df_prec,data_utils.infer_prec_mz)
 		spec_df_prec = spec_df_prec.drop(columns=["exact_mw"])
@@ -59,7 +61,8 @@ def create_spec_df(mol_df):
 	spec_df_prec['spec_id'] = spec_df_prec.index
 	spec_df_prec['dset_spec_id'] = spec_df_prec['spec_id']
 	spec_df_prec['group_id'] = spec_df_prec['spec_id']
-	spec_df_prec['peaks'] = np.nan
+	# avoid dataset crash
+	spec_df_prec['peaks'] = np.empty((len(spec_df_prec),0)).tolist()
 
 	return spec_df_prec
 
@@ -67,27 +70,26 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag feats configs
-	parser.add_argument("--proc_dp",type=str,default="data/deepmet/proc")
-	parser.add_argument("--deepmet_csv", type=str,default="data/deepmet/DeepMet-DMIDs.zip", help="")
+	parser.add_argument("--proc_dp",type=str,default="data/deepmet/ms2c/proc/deepmet_training")
+	parser.add_argument("--deepmet_csv", type=str,default="data/deepmet/deepmet_data/hmdb/test-folds-model1.csv", help="")
+	parser.add_argument("--smiles_col", type=str,default="smiles", help="")
+	parser.add_argument("--id_col", type=str,default="hmdb_id", help="")
 	parser.add_argument("--chunk_size", type=int,default=100000, help="")
+	parser.add_argument("--is_tsv", type=bool, action=argparse.BooleanOptionalAction, default=False)
 	args = parser.parse_args()
 	return args
 
 if __name__ == "__main__":
 
-	"""
- 	for mol_file in os.listdir('data/deepmet/proc/'):
-		if mol_file.startswith("mol_df_"):
-			mol_df = pd.read_pickle(os.path.join(f'data/deepmet/proc/{mol_file}'))
-			spec_df = create_spec_df(mol_df)
-			spec_df.to_pickle(os.path.join(f'data/deepmet/proc/{mol_file.replace("mol","spec")}'))
-	exit()
-	"""
-
 	args = get_args()
-	mol_df = pd.read_csv(args.deepmet_csv)
-	mol_df = mol_df[['SMILES', 'DMID']]
-	mol_df.rename(columns={"SMILES": "smiles", "DMID": "mol_id"}, inplace=True)
+	mol_df = pd.read_csv(args.deepmet_csv, sep="\t" if args.is_tsv else ",")
+	smile_col = args.smiles_col
+	id_col = args.id_col
+	if id_col not in mol_df.columns:
+		mol_df['mol_id'] = mol_df.index
+
+	mol_df = mol_df[[smile_col, id_col]]
+	mol_df.rename(columns={smile_col: "smiles", id_col: "mol_id"}, inplace=True)
  
 	os.makedirs(args.proc_dp, exist_ok=True)
 	chunk_size = args.chunk_size
