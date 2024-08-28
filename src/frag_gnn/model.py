@@ -1180,8 +1180,8 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 		self,
 		mol_fingerprint: th.Tensor, 
 		spec_prec_mz: th.Tensor,
-		spec_nce: th.Tensor = None,
-		spec_nce_batch_idxs: th.Tensor = None,
+		spec_ce: th.Tensor = None,
+		spec_ce_batch_idxs: th.Tensor = None,
 		spec_prec_type: th.Tensor = None,
 		spec_inst_type: th.Tensor = None,
 		**kwargs
@@ -1190,8 +1190,8 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 		fh = mol_fingerprint.reshape(-1,self.mol_fp_dim)
 		batch_size = fh.shape[0]
 		# get ce
-		ce = spec_nce
-		ce_batch_idxs = spec_nce_batch_idxs
+		ce = spec_ce
+		ce_batch_idxs = spec_ce_batch_idxs
 		ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
 		prec_embed = self.embed_prec(spec_prec_type)
 		inst_embed = self.embed_inst(spec_inst_type)

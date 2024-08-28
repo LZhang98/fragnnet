@@ -117,8 +117,8 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 		mol_mf_edge_input: th.Tensor,
 		mol_mf_y: th.Tensor,
 		spec_prec_mz: th.Tensor,
-		spec_nce: th.Tensor = None,
-		spec_nce_batch_idxs: th.Tensor = None,
+		spec_ce: th.Tensor = None,
+		spec_ce_batch_idxs: th.Tensor = None,
 		spec_prec_type: th.Tensor = None,
 		spec_inst_type: th.Tensor = None,
 		mf_perturb: th.Tensor = None,
@@ -138,8 +138,8 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 		fh = self.gf(gf_d,perturb=mf_perturb)
 		batch_size = fh.shape[0]
 		# get ce
-		ce = spec_nce
-		ce_batch_idxs = spec_nce_batch_idxs
+		ce = spec_ce
+		ce_batch_idxs = spec_ce_batch_idxs
 		ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
 		prec_embed = self.embed_prec(spec_prec_type)
 		inst_embed = self.embed_inst(spec_inst_type)
