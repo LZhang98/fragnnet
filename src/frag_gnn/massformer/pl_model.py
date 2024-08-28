@@ -21,6 +21,7 @@ class MassFormerPL(BinnedPL):
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
 			ff_output_map_size=self.hparams.ff_output_map_size,
+			ff_output_activation=self.hparams.ff_output_activation,
 			mf_fix_num_pt_layers=self.hparams.mf_fix_num_pt_layers,
 			mf_reinit_num_pt_layers=self.hparams.mf_reinit_num_pt_layers,
 			mf_reinit_layernorm=self.hparams.mf_reinit_layernorm,

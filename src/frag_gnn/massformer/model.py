@@ -20,6 +20,7 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 		ff_prec_mz_offset: int,
 		ff_bidirectional: bool,
 		ff_output_map_size: int,
+		ff_output_activation: str,
 		mf_fix_num_pt_layers: int,
 		mf_reinit_num_pt_layers: int,
 		mf_reinit_layernorm: bool,
@@ -84,7 +85,8 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 			prec_mz_offset=ff_prec_mz_offset,
 			bidirectional=ff_bidirectional,
 			use_residuals=mlp_use_residuals,
-			output_map_size=ff_output_map_size
+			output_map_size=ff_output_map_size,
+			output_activation=ff_output_activation
 		)
 
 	def _ce_location_check(self):

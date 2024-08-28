@@ -1099,6 +1099,7 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 		ff_prec_mz_offset: int,
 		ff_bidirectional: bool,
 		ff_output_map_size: int,
+		ff_output_activation: str,
 		int_embedder: str,
 		ce_insert_type: str,
 		ce_insert_location: str,
@@ -1162,6 +1163,7 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 			bidirectional=ff_bidirectional,
 			prec_mz_offset=ff_prec_mz_offset,
 			output_map_size=ff_output_map_size,
+			output_activation=ff_output_activation
 		)
 
 	def _ce_location_check(self):
@@ -1257,6 +1259,7 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		ff_prec_mz_offset: int,
 		ff_bidirectional: bool,
 		ff_output_map_size: int,
+		ff_output_activation: str,
 		int_embedder: str,
 		ce_insert_type: str,
 		ce_insert_location: str,
@@ -1335,6 +1338,7 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			bidirectional=ff_bidirectional,
 			prec_mz_offset=ff_prec_mz_offset,
 			output_map_size=ff_output_map_size,
+			output_activation=ff_output_activation
 		)
 
 	def forward(
