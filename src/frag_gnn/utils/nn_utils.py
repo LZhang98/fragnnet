@@ -580,7 +580,8 @@ class SpecFFN(nn.Module):
 		prec_mz_offset,
 		bidirectional,
 		use_residuals,
-		output_map_size):
+		output_map_size,
+		output_activation):
 
 		super().__init__()
 
@@ -623,7 +624,11 @@ class SpecFFN(nn.Module):
 				self.out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
 				self.out_gate = nn.Sequential(
 					*[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()])
-		self.out_activation = nn.ReLU()
+		assert output_activation in ["relu", "sigmoid"], output_activation
+		if output_activation == "relu":
+			self.out_activation = nn.ReLU()
+		else:
+			self.out_activation = nn.Sigmoid()
 		self.out_normalization = lambda x: F.normalize(x, p=1, dim=1)
 
 	def _compute_output_size(self):
@@ -659,8 +664,6 @@ class SpecFFN(nn.Module):
 				self.prec_mz_offset)
 			fg = self.out_gate(fh)
 			fo = ff * fg + fr * (1. - fg)
-			fo = mask_prediction_by_mass(
-				fo, prec_mz_idxs, self.prec_mz_offset)
 		else:
 			# apply output layer
 			fo = self.out_layer(fh)
@@ -668,6 +671,8 @@ class SpecFFN(nn.Module):
 			fg = self.out_gate(fh)
 			fo = fg * fo
 		fo = self.out_activation(fo)
+		fo = mask_prediction_by_mass(
+			fo, prec_mz_idxs, self.prec_mz_offset)
 		spec = self.out_normalization(fo)
 		# handle all zeroes (set to first bin by default)
 		all_zero_mask = th.max(spec,dim=1)[0]<=0.

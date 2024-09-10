@@ -1912,6 +1912,7 @@ class NeimsPL(BinnedPL):
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
 			ff_output_map_size=self.hparams.ff_output_map_size,
+			ff_output_activation=self.hparams.ff_output_activation,
 			int_embedder=self.hparams.int_embedder,
 			ce_insert_type=self.hparams.ce_insert_type,
 			ce_insert_location=self.hparams.ce_insert_location,
@@ -2029,6 +2030,7 @@ class GNNPL(BinnedPL):
 			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
 			ff_bidirectional=self.hparams.ff_bidirectional,
 			ff_output_map_size=self.hparams.ff_output_map_size,
+			ff_output_activation=self.hparams.ff_output_activation,
 			int_embedder=self.hparams.int_embedder,						# cross entropy
 			ce_insert_type=self.hparams.ce_insert_type,
 			ce_insert_location=self.hparams.ce_insert_location,
