@@ -521,7 +521,8 @@ def par_apply_series(series,func, tqdm_leave = True):
 
 	series_iter = tqdm(series.items(),desc=pformat(func),total=series.shape[0],leave=tqdm_leave)
 	series_func = lambda tup: func(tup[1])
-	result_list = par_apply(series_iter,series_func)
+	result_generator = par_apply(series_iter,series_func,return_as_generator=True)
+	result_list = list(result_generator)
 	result_series = pd.Series(result_list,index=series.index)
 	return result_series
 
@@ -537,7 +538,8 @@ def par_apply_df_rows(df,func):
 
 	df_iter = tqdm(df.iterrows(),desc=pformat(func),total=df.shape[0])
 	df_func = lambda tup: func(tup[1])
-	result_list = par_apply(df_iter,df_func)
+	result_generator = par_apply(df_iter,df_func,return_as_generator=True)
+	result_list = list(result_generator)
 	if isinstance(result_list[0],tuple):
 		result_series = tuple([pd.Series(rl,index=df.index) for rl in zip(*result_list)])
 	else:
