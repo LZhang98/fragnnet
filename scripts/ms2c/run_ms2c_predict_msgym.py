@@ -35,7 +35,6 @@ def get_args():
 
 if __name__ == "__main__":
 
-
 	args = get_args()
 	timestr = time.strftime("%Y%m%d-%H%M%S")
 	#save_dp = os.path.dirname(args.save_fp)
