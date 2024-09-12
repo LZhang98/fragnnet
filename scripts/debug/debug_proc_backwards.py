@@ -84,6 +84,6 @@ if __name__ == "__main__":
 	print(">> Reuse Frags (if any):", joint_df['is_mol_same'].all())
 
 	# compare spec_df
-	new_spec_df = pd.read_pickle(os.path.join(args.new_proc_dp, 'spec_df.pkl'))
-	old_spec_df = pd.read_pickle(os.path.join(args.old_proc_dp, 'spec_df.pkl'))
-	print(old_mol_df.compare(old_spec_df))
+	#new_spec_df = pd.read_pickle(os.path.join(args.new_proc_dp, 'spec_df.pkl'))
+	#old_spec_df = pd.read_pickle(os.path.join(args.old_proc_dp, 'spec_df.pkl'))
+	#print(old_mol_df.compare(old_spec_df))
