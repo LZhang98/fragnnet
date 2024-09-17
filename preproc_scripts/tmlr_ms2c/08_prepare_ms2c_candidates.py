@@ -195,7 +195,7 @@ if __name__ == "__main__":
 	if args.subset_size > 0:
 		sp_mol_df = sp_mol_df[:args.subset_size]
 	for _, row in tqdm(sp_mol_df.iterrows(), total = len(sp_mol_df), desc = "Prepare pubchem database input"):
-		# we can frag them, just ignore	
+		# we can not frag them, just ignore	
 		if Chem.rdMolDescriptors.CalcNumHeavyAtoms(row['mol']) > MAX_NUM_NODES:
 			continue
 
