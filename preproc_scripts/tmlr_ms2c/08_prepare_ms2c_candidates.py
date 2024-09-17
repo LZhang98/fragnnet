@@ -45,21 +45,7 @@ def get_args():
 	parser.add_argument("--fp_type", type=str, default='MORGAN-R2', help="")
 	parser.add_argument("--split_type", type=str,default="test", help="")
 	parser.add_argument("--candidate_dp",type=str,default='./data/ms2c/pubchem/candidates')
-	parser.add_argument("--use_cached_candidate",type=booltype,default=False)
 	
-	# frag feats configs
-	parser.add_argument("--max_depth",type=int,default=4)
-	parser.add_argument("--max_time",type=int,default=150)
-	parser.add_argument("--project_dp",type=str,default=os.getcwd())
-	parser.add_argument("--frag_dp",type=str,default="./data/ms2c/pubchem/frags/")
-	parser.add_argument("--per_candididte",type=booltype,default=False)
-	parser.add_argument("--tar_frag",type=booltype,default=True)
-	parser.add_argument("--max_h_transfer",type=int,default=4)
-	parser.add_argument("--allowed_elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
-	parser.add_argument("--max_iterations",type=int,default=3)
-	parser.add_argument("--isotopes",type=booltype,default=False)
-
 	args = parser.parse_args()
 	return args
 
@@ -140,9 +126,6 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 		#tanimoto  distance
 		case_cdf.at[idx,"tanimoto"] = rd_ds.TanimotoSimilarity(t_fp, mfpgen.GetFingerprint(mol))
 
-	#print(case_cdf)
-	#print(case_cdf.tail)
-	#print(case_cdf[case_cdf["inchikey_s"] == 'DAGPUIPHACXCSU'])
 	case_cdf = case_cdf[case_cdf['tanimoto'] >= 0.0]
 	case_cdf = case_cdf.sort_values('tanimoto',ascending = False)
 	
