@@ -24,10 +24,12 @@ source ./FRAG-GNN-GPU2/bin/activate
 
 python preproc_scripts/tmlr_ms2c/08_prepare_ms2c_candidates.py  \
     --split_dp="./data/split/nist20mona23v3_d4_wr00_inchikey" \
+    --proc_dp="./data/proc/nist20mona23v3" \
     --split_type=test
 
 python preproc_scripts/tmlr_ms2c/08_prepare_ms2c_candidates.py  \
     --split_dp="./data/split/nist20mona23v3_d4_wr00_scaffold" \
+    --proc_dp="./data/proc/nist20mona23v3" \
     --split_type=test
 
 # record ending
