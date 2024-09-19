@@ -59,10 +59,7 @@ if __name__ == "__main__":
 					d['spec_ints'].numpy(),
 					d['mol_smiles'][0],
 					Chem.MolToInchiKey(Chem.MolFromSmiles(d['mol_smiles'][0])).split('-')[0]])
-		#if	d['mol_id'].numpy()[0]  == 20648:
-		#	print(d['spec_mzs'].numpy())
-		#	print(d['spec_ints'].numpy())
-		#	plot_spectra_sparse(d['spec_mzs'].numpy(),d['spec_ints'].numpy(),d['spec_mzs'].numpy(),d['spec_ints'].numpy(),d['mol_smiles'][0], "./not_okay.png")
+
 	target_spec_df = pd.DataFrame(spec_df_rows,columns=target_spec_df_cols)
 
 	candidate_basename = os.path.basename(args.candidate_pkl_fp).split('.')[0]
@@ -77,8 +74,6 @@ if __name__ == "__main__":
 	print("> Process mol and spec df")	
 	print("> Read candidate df")
 	candidates_df =  pd.read_pickle(args.candidate_pkl_fp)
-	#print(candidates_df.columns)
-	#candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
 
 	spec_df = candidates_df.merge(target_spec_df, on = 'target_mol_id', how = 'left')
 	
@@ -99,8 +94,6 @@ if __name__ == "__main__":
 		spec_df_export = spec_df[spec_df_export_cols]
 		spec_df_export.to_pickle(candidate_spec_fp)
 
-		#split_fp = os.path.join(save_dp, f"{args.split_type}_ids.csv")
-		#split_df.to_csv(split_fp, index=False)
 	else:
 		for grp_name, grp_spec_df in spec_df.groupby("target_mol_id"):
 			grp_spec_df_export = grp_spec_df[spec_df_export_cols]
@@ -108,11 +101,6 @@ if __name__ == "__main__":
 			os.makedirs(os.path.join(save_dp, grp_name_str), exist_ok=True)
 			grp_candidate_spec_fp = os.path.join(save_dp, grp_name_str,f"spec_df.pkl.gz")
 			grp_spec_df_export.to_pickle(grp_candidate_spec_fp)
-
-			#grp_split_df = split_df[split_df['spec_id'].isin(grp_spec_df_export['spec_id'])]
-			#grp_split_fp = os.path.join(save_dp, grp_name_str, f"{args.split_type}_ids.csv")
-			
-			#grp_split_df.to_csv(grp_split_fp, index=False)
 
 	print(f"> Save mol df")
 	if not args.output_per_grp:
