@@ -4,7 +4,7 @@ from frag_gnn.dataset import SpecMolDataset
 import pandas as pd
 from rdkit import Chem
 from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.spec_utils import prec_type_mass_diff, PREC_TYPES
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from frag_gnn.utils.data_utils import mol_from_smiles, mol_to_smiles
 from tqdm import tqdm
 import argparse
@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
 	spec_df = candidates_df.merge(target_spec_df, on = 'target_mol_id', how = 'left')
 	
-	spec_df['prec_mz'] = spec_df.apply(lambda x: Chem.Descriptors.ExactMolWt(x['mol']) + prec_type_mass_diff('[M+H]+'), axis=1)
+	spec_df['prec_mz'] = spec_df.apply(lambda x: Chem.Descriptors.ExactMolWt(x['mol']) + PREC_TYPE_TO_MASS_DIFF['[M+H]+'], axis=1)
 	spec_df.reset_index(drop=True, inplace=True)
 	spec_df['spec_id'] = spec_df.index
 	spec_df['group_id'] = spec_df.index
@@ -90,7 +90,6 @@ if __name__ == "__main__":
 	print(f"> Save spec df and split")
 	if not args.output_per_grp:
 		candidate_spec_fp = os.path.join(save_dp, f"spec_df.pkl.gz")
-		print(candidate_spec_fp)
 		spec_df_export = spec_df[spec_df_export_cols]
 		spec_df_export.to_pickle(candidate_spec_fp)
 
