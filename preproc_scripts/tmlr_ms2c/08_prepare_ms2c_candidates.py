@@ -77,16 +77,15 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	allowed_elements = set(frag_utils.ELEMENTS)
 	for idx, case_row in case_cdf.iterrows():
 
-		#mol = chem.MolFromSmiles(case_row["smiles"])
+		mol = chem.MolFromSmiles(case_row["smiles"])
+		if mol is None:
+			continue
+		
+		# this way too slow
 		#mol = data_utils.mol_from_smiles(case_row["smiles"])
-  
 		#if mol is np.nan:
 		#	continue
 		
-		mol = data_utils.mol_from_smiles(case_row["smiles"]) 
-		if mol is np.nan:
-			continue
-
 		#check number of atoms for frag
 		if rd_moldesc.CalcNumHeavyAtoms(mol) > MAX_NUM_NODES:
 			continue
@@ -100,6 +99,17 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 		# remove not allowed element
 		elements_set = set(list(formula_utils.parse_formula(case_row["formula"]).keys()))
 		if len(elements_set - allowed_elements) > 0:
+			continue
+		
+		# remove Stereochemistry
+		# we should  never see case_cdf['inchikey_flag'] == 'N'
+		if case_row['inchikey_a'] != 'UHFFFAOYSA':
+			chem.RemoveStereochemistry(mol)
+
+		# skip ones we can not Kekulize, do this after RemoveStereochemistry
+		try:
+			chem.Kekulize(deepcopy(mol),clearAromaticFlags=True)
+		except:
 			continue
 
 		case_cdf.at[idx,"smiles"] = data_utils.mol_to_smiles(mol)
@@ -210,7 +220,6 @@ if __name__ == "__main__":
 	candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
 	# make sure there is no nan value in df
 	candidates_df = candidates_df.dropna()
- 
 	print(f"> Save to {candidates_fp}")
 	candidates_df.reset_index(drop=True, inplace=True)
 	candidates_df.to_pickle(candidates_fp)
