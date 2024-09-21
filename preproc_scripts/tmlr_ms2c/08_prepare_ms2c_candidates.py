@@ -214,7 +214,6 @@ if __name__ == "__main__":
 
 	candidates_df = pd.concat(candidate_data_df_l)
 	candidates_df['mol_id'] = candidates_df['inchikey_s']
-	# maybe not needed, just be safe
 	candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
 	candidates_df.loc[:,"smiles"] = par_apply_series(candidates_df["mol"],data_utils.mol_to_smiles)
 	candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
