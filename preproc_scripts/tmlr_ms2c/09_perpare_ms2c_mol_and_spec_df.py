@@ -38,6 +38,7 @@ if __name__ == "__main__":
 	print(f"> template fp: {args.template_fp}")
 	print(f"> custom fp: {args.custom_fp}")
 	config_d = load_config(args.template_fp, args.custom_fp)
+	prec_types_d = config_d['spec_params']['prec_types']
 
 	print(f"> Loading data for {args.split_type} split")
 	ds = SpecMolDataset(split=args.split_type, **config_d)
@@ -49,11 +50,12 @@ if __name__ == "__main__":
 	spec_df_export_cols = ['spec_id', 'group_id', 'mol_id','prec_type','nce', 'ace', 'prec_mz', 
 						'target_mol_id','tanimoto', 'spec_mzs','spec_ints']
 
+
 	for d in tqdm(ds):
-		spec_df_rows.append([d['mol_id'].numpy()[0],
-					PREC_TYPES[d['spec_prec_type'].numpy()[0]],
-					d['spec_m_nce'].tolist(),  
-					d['spec_m_nce'].tolist(), # NOTE fake ace value 
+		spec_df_rows.append([d['mol_id'],
+					prec_types_d[d['spec_prec_type'].numpy()[0]],
+					d['spec_ce'].tolist(),  
+					d['spec_ce'].tolist(), # NOTE fake ace value 
 					d['spec_prec_mz'].tolist()[0],
 					d['spec_mzs'].numpy(),
 					d['spec_ints'].numpy(),
@@ -73,8 +75,9 @@ if __name__ == "__main__":
 
 	print("> Process mol and spec df")	
 	print("> Read candidate df")
-	candidates_df =  pd.read_pickle(args.candidate_pkl_fp)
-
+	candidates_df =  pd.read_pickle(args.candidate_pkl_fp)	 
+	candidates_df = candidates_df.dropna()
+ 
 	spec_df = candidates_df.merge(target_spec_df, on = 'target_mol_id', how = 'left')
 	
 	spec_df['prec_mz'] = spec_df.apply(lambda x: Chem.Descriptors.ExactMolWt(x['mol']) + PREC_TYPE_TO_MASS_DIFF['[M+H]+'], axis=1)

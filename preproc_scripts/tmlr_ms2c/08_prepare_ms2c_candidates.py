@@ -77,14 +77,15 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	allowed_elements = set(frag_utils.ELEMENTS)
 	for idx, case_row in case_cdf.iterrows():
 
-		mol = chem.MolFromSmiles(case_row["smiles"])
-
-		if mol is None:
-			continue
-		
-		#mol = data_utils.mol_from_smiles(case_row["smiles"]) 
+		#mol = chem.MolFromSmiles(case_row["smiles"])
+		#mol = data_utils.mol_from_smiles(case_row["smiles"])
+  
 		#if mol is np.nan:
 		#	continue
+		
+		mol = data_utils.mol_from_smiles(case_row["smiles"]) 
+		if mol is np.nan:
+			continue
 
 		#check number of atoms for frag
 		if rd_moldesc.CalcNumHeavyAtoms(mol) > MAX_NUM_NODES:
@@ -101,17 +102,6 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 		if len(elements_set - allowed_elements) > 0:
 			continue
 
-		# remove Stereochemistry
-		# we should  never see case_cdf['inchikey_flag'] == 'N'
-		if case_row['inchikey_a'] != 'UHFFFAOYSA':
-			chem.RemoveStereochemistry(mol)
-
-		# skip ones we can not Kekulize, do this after RemoveStereochemistry
-		try:
-			chem.Kekulize(deepcopy(mol),clearAromaticFlags=True)
-		except:
-			continue
-		
 		case_cdf.at[idx,"smiles"] = data_utils.mol_to_smiles(mol)
 		#tanimoto  distance
 		case_cdf.at[idx,"tanimoto"] = rd_ds.TanimotoSimilarity(t_fp, mfpgen.GetFingerprint(mol))
@@ -121,7 +111,7 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	
 	if top_k is not None:
 		case_cdf = case_cdf[:top_k]
-
+ 
 	return target_mol_id, target_smiles, case_cdf
 
 def fetch_db(db_file, mw, mass_tol ):
@@ -214,9 +204,13 @@ if __name__ == "__main__":
 
 	candidates_df = pd.concat(candidate_data_df_l)
 	candidates_df['mol_id'] = candidates_df['inchikey_s']
+	# maybe not needed, just be safe
 	candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
 	candidates_df.loc[:,"smiles"] = par_apply_series(candidates_df["mol"],data_utils.mol_to_smiles)
 	candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
+	# make sure there is no nan value in df
+	candidates_df = candidates_df.dropna()
+ 
 	print(f"> Save to {candidates_fp}")
 	candidates_df.reset_index(drop=True, inplace=True)
 	candidates_df.to_pickle(candidates_fp)
