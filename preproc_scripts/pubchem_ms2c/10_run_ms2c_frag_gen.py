@@ -23,7 +23,8 @@ def get_args():
 	parser.add_argument("--isotopes",type=booltype,default=False)
 	parser.add_argument("--proc_dp", type=str,default="data/ms2c/pubchem/pred_inputs/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50_sanity", help="")
 	parser.add_argument("--allow_cached", type=booltype,default=True, help="")
-	
+	parser.add_argument("--compressed", type=booltype,default=True, help="")
+
 	args = parser.parse_args()
 	return args
 
@@ -48,7 +49,8 @@ if __name__ == "__main__":
 								args.nb_isomorphic,
 								args.max_iterations,
 								args.frag_dp,
-								args.allow_cached
+								args.allow_cached,
+								args.compressed, # compressed
 								])
 	
 	frag_results = data_utils.par_apply(iter(dag_feat_inputs_l),frag_utils.timed_get_dags,True, return_as_generator=True)
