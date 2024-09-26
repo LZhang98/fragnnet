@@ -22,14 +22,14 @@ cd /home/feiw/feiw/frag-gnn
 # load env
 source ./FRAG-GNN-GPU2/bin/activate
 
-python preproc_scripts/10_run_frag_gen.py \
-    --frag_dp=${SLURM_TMPDIR}/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50  \
-    --proc_dp=data/ms2c/pubchem/pred_inputs/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50 \
+python preproc_scripts/tmlr_ms2c/10_run_frag_gen.py \
+    --frag_dp=${SLURM_TMPDIR}/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50  \
+    --proc_dp=data/ms2c/pubchem/pred_inputs/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50 \
     --max_depth=4
 
 cd ${SLURM_TMPDIR}
-tar -cf pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.tar pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
-cp pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.tar /scratch/feiw/frag-gnn-data/ms2c/pubchem/frags/d4_h4_isoFalse/
+tar -cf pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.tar pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+cp pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.tar /scratch/feiw/frag-gnn-data/ms2c/pubchem/frags/d4_h4_isoFalse/
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
