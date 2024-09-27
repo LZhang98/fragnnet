@@ -5,8 +5,6 @@ import argparse
 import os
 import frag_gnn.utils.data_utils as data_utils
 import frag_gnn.utils.frag_utils as frag_utils
-from frag_gnn.utils.misc_utils import  booltype
-
 
 def get_args():
 	parser = argparse.ArgumentParser()
