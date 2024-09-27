@@ -29,6 +29,8 @@ python preproc_scripts/pubchem_ms2c/10_run_ms2c_frag_gen.py \
 
 cd ${SLURM_TMPDIR}
 tar -cf pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.tar pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50
+
+mkdir -p /scratch/feiw/frag-gnn-data/ms2c/pubchem/frags/d4_h4_isoFalse/
 cp pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.tar /scratch/feiw/frag-gnn-data/ms2c/pubchem/frags/d4_h4_isoFalse/
 
 # record ending
