@@ -99,7 +99,7 @@ def run_prediction(ckpt_fp,
 		config_d['mol_fp'] = mol_df_grp
 		config_d['spec_fp'] = spec_df_grp
 
-		split_type = 'predict'
+		split_type = 'predict_only'
 		ds = model_ds_cls(split=split_type, **config_d)
   
 		dl = init_dataloader(ds, config_d)

@@ -255,15 +255,41 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 
 def run_prediction(model,
 				 config_d:dict,
-				 mol_df_fp:str,
-				 spec_df_fp:str,
+				 mol_data_ptr:str|pd.DataFrame,
+				 spec_data_ptr:str|pd.DataFrame,
 				 frag_dp:str,
-				 device:str
+				 device:str,
 				 ):
+	"""_summary_
 
+	Args:
+		model (_type_): _description_
+		config_d (dict): _description_
+		mol_data_ptr (str | pd.DataFrame): _description_
+		spec_data_ptr (str | pd.DataFrame): _description_
+		frag_dp (str): _description_
+		device (str): _description_
+
+	Returns:
+		_type_: _description_
+	"""
 	# config proc and check if frags are avaibale
-	print(f"> mol_fp {mol_df_fp}")
-	print(f"> spec_fp {spec_df_fp}")
+	if isinstance(mol_data_ptr, str):
+		print(f"> mol_fp {mol_data_ptr}")
+		mol_df = pd.read_pickle(mol_data_ptr)
+	elif isinstance(mol_data_ptr, pd.DataFrame):
+		mol_df = mol_data_ptr
+	else:
+		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
+
+	if isinstance(spec_data_ptr, str):
+		print(f"> spec_fp {spec_data_ptr}")
+		spec_df = pd.read_pickle(spec_data_ptr)
+	elif isinstance(spec_data_ptr, pd.DataFrame):
+		spec_df = spec_data_ptr
+	else:
+		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
+
 	print(f"> frag_dp {frag_dp}")
 
 	# check model class and ds class
@@ -271,7 +297,7 @@ def run_prediction(model,
 	# model_ds_cls = None #model_type_ds_cls[model_type]
 	model_ds_cls = None
  
-	mol_df  = pd.read_pickle(mol_df_fp)
+
 	#print("> num of mols", len(mol_df))
 	# only check for FragGNNet
 	if isinstance(model,FragGNNPL):
@@ -281,8 +307,7 @@ def run_prediction(model,
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
 		#print("> num of mols after filtering", len(mol_df))
 		model_ds_cls = SpecMolFragDataset
-  
-	spec_df = pd.read_pickle(spec_df_fp)
+
 	#print("> num of spec", len(spec_df))
 	if  isinstance(model,NeimsPL):
 		mz_max = config_d['mz_max']
@@ -317,12 +342,9 @@ def run_prediction(model,
 	preds_l = []
 	with th.inference_mode():
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
-			#print(batch_input)
-			mol_smiles = batch_input['mol_smiles']
 			spec_ids = batch_input['spec_unique_id']
 			mol_ids = batch_input['mol_id']
-			spec_prec_types = batch_input['spec_prec_type']
-			spec_inst_types = batch_input['spec_inst_type']
+
 			batch_result = to_device(batch_input, device)
 
 			batch_result = model.predict_step(**batch_input)
@@ -342,14 +364,8 @@ def run_prediction(model,
 	
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
 				b_spec_id = spec_ids[b_idx]
-				b_smi = str(mol_smiles[b_idx])
 				b_mol_id = mol_ids[b_idx]
-				b_spec_prec_type_idx = int(spec_prec_types[b_idx])
-				b_spec_inst_type_idx = int(spec_inst_types[b_idx])
-				#b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
 
-				b_spec_prec_type = ds.idx_to_prec_type[b_spec_prec_type_idx]
-				b_spec_inst_type = ds.idx_to_inst_type[b_spec_inst_type_idx]
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 

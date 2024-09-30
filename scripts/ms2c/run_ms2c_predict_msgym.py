@@ -55,7 +55,6 @@ if __name__ == "__main__":
 	msg_id_map_fp = os.path.join(args.proc_dp,"msg_id_map.csv")
 	msg_id_map_df = pd.read_csv(msg_id_map_fp)
 
-
 	if len(msg_id_map_df) < args.start_row_idx:
 		exit()
 	elif args.num_row > 0:
