@@ -15,18 +15,18 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_dp", type=str,default="./ms2c_debug", help="")
-	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/pred_inputs/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
-	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/pubchem/frags/d4_h4_isoFalse/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="frag dp only used in fragnnet")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/pred_inputs/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
+	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/pubchem/frags/d3_h4_isoFalse/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="frag dp only used in fragnnet")
 
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--wandb_run_id",type=str, default= '9gnx820u')
+	parser.add_argument("--wandb_run_id",type=str, default= 'yylzfd6t')
 	# dest="model ckpt fp, when used, ignore wandb_run_ids"
 	parser.add_argument("--model_ckpt",type=str, default=None)
 	parser.add_argument("--start_row_idx", type=int, default=0)
 	parser.add_argument("--num_row", type=int, default=0)
-	#parser.add_argument("--group_by_target", type=booltype, default=True)
+	parser.add_argument("--allow_cached", type=booltype, default=False)
 	args = parser.parse_args()
 	return args
 
@@ -66,9 +66,9 @@ if __name__ == "__main__":
 	if len(target_ids) < args.start_row_idx:
 		exit()
 	elif args.num_row > 0:
-		msg_id_map_df = target_ids.loc[args.start_row_idx:args.start_row_idx+args.num_row]
+		target_ids = target_ids[args.start_row_idx:args.start_row_idx+args.num_row]
 	else:
-		msg_id_map_df = target_ids.loc[args.start_row_idx:]
+		target_ids = target_ids[args.start_row_idx:]
 
 	for target_id in tqdm(target_ids):
 		save_fp = os.path.join(args.save_dp, f"{target_id}.pkl.gz")
@@ -81,8 +81,8 @@ if __name__ == "__main__":
 		
 		df = run_prediction(model = model,   
 					config_d = config_d,
-					mol_df_fp = mol_df_grp,
-					spec_df_fp = spec_df_grp,
+					mol_data_ptr = mol_df_grp,
+					spec_data_ptr = spec_df_grp,
 					frag_dp = args.frag_dp,
 					device = device)
 

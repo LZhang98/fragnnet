@@ -297,13 +297,14 @@ def run_prediction(model,
 	# model_ds_cls = None #model_type_ds_cls[model_type]
 	model_ds_cls = None
  
-
 	#print("> num of mols", len(mol_df))
 	# only check for FragGNNet
 	if isinstance(model,FragGNNPL):
 		#print(">> filtering input without frags")
 		all_frags = set([f.split('.')[0] for f in os.listdir(frag_dp)])
-		#print("> num of frags: ", len(all_frags))
+		#print(all_frags)
+		print("> num of frags: ", len(all_frags))
+		#print(mol_df.head())
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
 		#print("> num of mols after filtering", len(mol_df))
 		model_ds_cls = SpecMolFragDataset
@@ -314,7 +315,8 @@ def run_prediction(model,
 		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
 		#print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
 		model_ds_cls = SpecMolDataset
-	
+
+	print("> num of spec before more filtering", len(spec_df))
 	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
 	print("> num of spec after filtering", len(spec_df))
 	if len(spec_df) == 0:

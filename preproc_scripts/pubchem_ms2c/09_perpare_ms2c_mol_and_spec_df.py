@@ -20,13 +20,13 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	parser.add_argument("--split_type", type=str,default="test", help="")
-	parser.add_argument("--candidate_pkl_fp",type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz')
+	parser.add_argument("--candidate_pkl_fp",type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz')
 	parser.add_argument("--ms2c_data_dp",type=str, default='./data/ms2c/pubchem/pred_inputs')
 	
 	parser.add_argument("--include_sanity",type=booltype,default=True)
 	parser.add_argument("--output_per_grp",type=booltype,default=False)
 	parser.add_argument("--template_fp",type=str,default="config/template.yml")
-	parser.add_argument("--custom_fp",type=str,default="config/nist20_d4_wr00_inchikey/fraggnn_d4_nodemlp_mnce_nocp.yml")
+	parser.add_argument("--custom_fp",type=str,default="config/nist20v3_d4_wr00_inchikey/fraggnn_d4/s0.yml")
 
 	args = parser.parse_args()
 	return args
@@ -48,19 +48,19 @@ if __name__ == "__main__":
 
 	target_spec_df_cols = ['target_mol_id','prec_type','nce', 'ace', 'prec_mz','spec_mzs','spec_ints', 'target_mol_smiles','target_inchikey_s']
 	spec_df_export_cols = ['spec_id', 'group_id', 'mol_id','prec_type','nce', 'ace', 'prec_mz', 
-						'target_mol_id','tanimoto', 'spec_mzs','spec_ints']
-
+						'target_mol_id','tanimoto', 'spec_mzs','spec_ints','dset','dset_spec_id','peaks', 'inst_type']
 
 	for d in tqdm(ds):
-		spec_df_rows.append([d['mol_id'],
-					prec_types_d[d['spec_prec_type'].numpy()[0]],
-					d['spec_ce'].tolist(),  
-					d['spec_ce'].tolist(), # NOTE fake ace value 
-					d['spec_prec_mz'].tolist()[0],
-					d['spec_mzs'].numpy(),
-					d['spec_ints'].numpy(),
-					d['mol_smiles'][0],
-					Chem.MolToInchiKey(Chem.MolFromSmiles(d['mol_smiles'][0])).split('-')[0]])
+		for spec_ce in d['spec_ce'].tolist():
+			spec_df_rows.append([d['mol_id'],
+						prec_types_d[d['spec_prec_type'].numpy()[0]],
+						spec_ce, #d['spec_ce'].tolist(),  
+						np.nan,	#d['spec_ce'].tolist(), 
+						d['spec_prec_mz'].tolist()[0],
+						d['spec_mzs'].numpy(),
+						d['spec_ints'].numpy(),
+						d['mol_smiles'][0],
+						Chem.MolToInchiKey(Chem.MolFromSmiles(d['mol_smiles'][0])).split('-')[0]])
 
 	target_spec_df = pd.DataFrame(spec_df_rows,columns=target_spec_df_cols)
 
@@ -78,13 +78,19 @@ if __name__ == "__main__":
 	candidates_df =  pd.read_pickle(args.candidate_pkl_fp)	 
 	candidates_df = candidates_df.dropna()
  
-	spec_df = candidates_df.merge(target_spec_df, on = 'target_mol_id', how = 'left')
-	
+	spec_df = candidates_df.merge(target_spec_df, on = 'target_mol_id', how = 'inner')
 	spec_df['prec_mz'] = spec_df.apply(lambda x: Chem.Descriptors.ExactMolWt(x['mol']) + PREC_TYPE_TO_MASS_DIFF['[M+H]+'], axis=1)
 	spec_df.reset_index(drop=True, inplace=True)
 	spec_df['spec_id'] = spec_df.index
-	spec_df['group_id'] = spec_df.index
-
+	spec_df['dset'] = "pubchem"
+	spec_df['dset_spec_id'] = spec_df['spec_id']
+	# note fragnnet in this paper only support one adduct type M+H
+	spec_df['group_id'] = spec_df.groupby(['target_mol_id', 'mol_id']).ngroup()
+	# avoid dataset crash
+	spec_df['peaks'] = np.empty((len(spec_df),0)).tolist()
+	#spec_df['frag_mode'] = frag_mode
+	spec_df['inst_type'] = "FT"
+ 
 	# create sanity check version
 	if args.include_sanity:
 		sanity_spec_df = spec_df.loc[spec_df['mol_id'] == spec_df['target_inchikey_s']]
