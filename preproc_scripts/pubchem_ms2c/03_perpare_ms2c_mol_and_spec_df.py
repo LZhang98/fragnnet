@@ -5,28 +5,23 @@ import pandas as pd
 from rdkit import Chem
 from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.data_utils import mol_from_smiles, mol_to_smiles
 from tqdm import tqdm
 import argparse
 import os
 import numpy as np
-import torch as th
-import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_series, seq_apply_df_rows
-from frag_gnn.utils.misc_utils import list_str2float, booltype
-from frag_gnn.utils.plot_utils import plot_spectra_sparse
+from frag_gnn.utils.misc_utils import booltype
 
 def get_args():
 	parser = argparse.ArgumentParser()
 	
 	parser.add_argument("--split_type", type=str,default="test", help="")
-	parser.add_argument("--candidate_pkl_fp",type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz')
+	parser.add_argument("--candidate_pkl_fp",type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz')
 	parser.add_argument("--ms2c_data_dp",type=str, default='./data/ms2c/pubchem/proc]')
 	
 	parser.add_argument("--include_sanity",type=booltype,default=True)
 	parser.add_argument("--output_per_grp",type=booltype,default=False)
 	parser.add_argument("--template_fp",type=str,default="config/template.yml")
-	parser.add_argument("--custom_fp",type=str,default="config/nist20v3_d4_wr00_inchikey/fraggnn_d4/s0.yml")
+	parser.add_argument("--custom_fp",type=str,default="config/nist20v3_d4_wr00_scaffold/fraggnn_d4/s0.yml")
 
 	args = parser.parse_args()
 	return args
