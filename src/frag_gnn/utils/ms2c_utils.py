@@ -7,6 +7,7 @@ import os
 from tqdm import tqdm
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
+from frag_gnn.massformer.pl_model import MassFormerPL
 from frag_gnn.runner import init_dataloader
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
@@ -178,12 +179,14 @@ model_type_to_model_cls = {
 	"neims": NeimsPL,
 	"gnn": GNNPL,
 	"frag_gnn": FragGNNPL,
+	"massformer": MassFormerPL
 }
 
 model_type_ds_cls = {
 	"neims": SpecMolDataset,
 	"gnn": SpecMolDataset,
 	"frag_gnn": SpecMolFragDataset,
+	"massformer": SpecMolDataset
 }
 def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 32, auxiliary_scores:str = None, eval_mz_bin_res:str = None):
 	"""load model and reset config for inference
@@ -331,8 +334,6 @@ def run_prediction(model,
 	# load datasets
 	print(">> Loading datasets")
 	ds = model_ds_cls(split='predict_only', **config_d)
-	#print(f"> model supported inst type {ds.idx_to_inst_type}")
-	#print(f"> model supported prec type {ds.idx_to_prec_type}")
 	print(">> init dataloader")
 	dl = init_dataloader(ds, config_d)
  
