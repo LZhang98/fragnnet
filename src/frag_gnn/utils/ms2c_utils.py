@@ -182,12 +182,6 @@ model_type_to_model_cls = {
 	"massformer": MassFormerPL
 }
 
-model_type_ds_cls = {
-	"neims": SpecMolDataset,
-	"gnn": SpecMolDataset,
-	"frag_gnn": SpecMolFragDataset,
-	"massformer": SpecMolDataset
-}
 def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 32, auxiliary_scores:str = None, eval_mz_bin_res:str = None):
 	"""load model and reset config for inference
 
@@ -240,6 +234,7 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 		th.use_deterministic_algorithms(True)
   
 	# check class
+	print(config_d['model_type'])
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 
@@ -296,8 +291,6 @@ def run_prediction(model,
 	print(f"> frag_dp {frag_dp}")
 
 	# check model class and ds class
-	#model_cls = model_type_to_model_cls[model_type]
-	# model_ds_cls = None #model_type_ds_cls[model_type]
 	model_ds_cls = None
  
 	#print("> num of mols", len(mol_df))
@@ -311,14 +304,12 @@ def run_prediction(model,
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
 		#print("> num of mols after filtering", len(mol_df))
 		model_ds_cls = SpecMolFragDataset
-
-	#print("> num of spec", len(spec_df))
-	if  isinstance(model,NeimsPL):
+	elif  isinstance(model,NeimsPL) or isinstance(model,MassFormerPL) or isinstance(model, GNNPL):
 		mz_max = config_d['mz_max']
 		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
 		#print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
 		model_ds_cls = SpecMolDataset
-
+	
 	print("> num of spec before more filtering", len(spec_df))
 	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
 	print("> num of spec after filtering", len(spec_df))
