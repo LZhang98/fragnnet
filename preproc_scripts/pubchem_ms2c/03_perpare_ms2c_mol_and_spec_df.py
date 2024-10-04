@@ -16,7 +16,7 @@ def get_args():
 	
 	parser.add_argument("--split_type", type=str,default="test", help="")
 	parser.add_argument("--candidate_pkl_fp",type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz')
-	parser.add_argument("--ms2c_data_dp",type=str, default='./data/ms2c/pubchem/proc]')
+	parser.add_argument("--ms2c_data_dp",type=str, default='./data/ms2c/pubchem/proc')
 	
 	parser.add_argument("--include_sanity",type=booltype,default=True)
 	parser.add_argument("--output_per_grp",type=booltype,default=False)
@@ -45,7 +45,7 @@ if __name__ == "__main__":
 	target_spec_df_cols = ['target_mol_id','prec_type','nce', 'ace', 'prec_mz','spec_mzs','spec_ints', 'target_mol_smiles','target_inchikey_s']
 	candidate_spec_df_cols = ['target_mol_id','prec_type','nce', 'ace', 'prec_mz','target_mol_smiles','target_inchikey_s']
 	spec_df_export_cols = ['spec_id', 'group_id', 'mol_id','prec_type','nce', 'ace', 'prec_mz', 
-						'target_mol_id','tanimoto', 'spec_mzs','spec_ints','dset','dset_spec_id','peaks', 'inst_type']
+						'target_mol_id','tanimoto','dset','dset_spec_id','peaks', 'inst_type']
 
 	for d in tqdm(ds):
 		inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(d['mol_smiles'][0])).split('-')[0]
@@ -59,7 +59,7 @@ if __name__ == "__main__":
 						d['spec_ints'].numpy(),
 						d['mol_smiles'][0],
 						inchikey])
-
+		#print(d['spec_ce'].tolist())
 		for spec_ce in d['spec_ce'].tolist():
 			candidate_spec_df_rows.append([d['mol_id'],
 						prec_types_d[d['spec_prec_type'].numpy()[0]],
@@ -84,34 +84,34 @@ if __name__ == "__main__":
 	print("> Read candidate df")
 	candidates_df =  pd.read_pickle(args.candidate_pkl_fp)	 
 	candidates_df = candidates_df.dropna()
- 
-	spec_df = pd.DataFrame(candidate_spec_df_rows,columns=candidate_spec_df_cols)
-	spec_df = candidates_df.merge(target_spec_df, on = 'target_mol_id', how = 'inner')
-	spec_df['prec_mz'] = spec_df.apply(lambda x: Chem.Descriptors.ExactMolWt(x['mol']) + PREC_TYPE_TO_MASS_DIFF['[M+H]+'], axis=1)
-	spec_df.reset_index(drop=True, inplace=True)
-	spec_df['spec_id'] = spec_df.index
-	spec_df['dset'] = "pubchem"
-	spec_df['dset_spec_id'] = spec_df['spec_id']
+
+	candidate_spec_df = pd.DataFrame(candidate_spec_df_rows,columns=candidate_spec_df_cols)
+	candidate_spec_df = candidate_spec_df.merge(candidates_df, on = 'target_mol_id', how = 'inner')
+	candidate_spec_df['prec_mz'] = candidate_spec_df.apply(lambda x: Chem.Descriptors.ExactMolWt(x['mol']) + PREC_TYPE_TO_MASS_DIFF['[M+H]+'], axis=1)
+	candidate_spec_df.reset_index(drop=True, inplace=True)
+	candidate_spec_df['spec_id'] = candidate_spec_df.index
+	candidate_spec_df['dset'] = "pubchem"
+	candidate_spec_df['dset_spec_id'] = candidate_spec_df['spec_id']
+
 	# note fragnnet in this paper only support one adduct type M+H
-	spec_df['group_id'] = spec_df.groupby(['target_mol_id', 'mol_id']).ngroup()
+	candidate_spec_df['group_id'] = candidate_spec_df.groupby(['target_mol_id', 'mol_id']).ngroup()
 	# avoid dataset crash
-	spec_df['peaks'] = np.empty((len(spec_df),0)).tolist()
+	candidate_spec_df['peaks'] = np.empty((len(candidate_spec_df),0)).tolist()
 	#spec_df['frag_mode'] = frag_mode
-	spec_df['inst_type'] = "FT"
+	candidate_spec_df['inst_type'] = "FT"
  
 	# create sanity check version
 	if args.include_sanity:
-		sanity_spec_df = spec_df.loc[spec_df['mol_id'] == spec_df['target_inchikey_s']]
+		sanity_spec_df = candidate_spec_df.loc[candidate_spec_df['mol_id'] == candidate_spec_df['target_inchikey_s']]
 		sanity_spec_df = sanity_spec_df[spec_df_export_cols]
 
 	print(f"> Save spec df and split")
 	if not args.output_per_grp:
 		candidate_spec_fp = os.path.join(save_dp, f"spec_df.pkl.gz")
-		spec_df_export = spec_df[spec_df_export_cols]
+		spec_df_export = candidate_spec_df[spec_df_export_cols]
 		spec_df_export.to_pickle(candidate_spec_fp)
-
 	else:
-		for grp_name, grp_spec_df in spec_df.groupby("target_mol_id"):
+		for grp_name, grp_spec_df in candidate_spec_df.groupby("target_mol_id"):
 			grp_spec_df_export = grp_spec_df[spec_df_export_cols]
 			grp_name_str = str(grp_name)
 			os.makedirs(os.path.join(save_dp, grp_name_str), exist_ok=True)
