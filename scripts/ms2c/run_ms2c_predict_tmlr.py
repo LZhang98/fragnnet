@@ -14,8 +14,8 @@ def get_args():
     
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
-	parser.add_argument("--save_dp", type=str,default="./data/ms2c/pubchem/results/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50_d3", help="")
-	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/pred_inputs/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
+	parser.add_argument("--save_dp", type=str,default="./data/ms2c/pubchem/results/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50_fragnn_d3", help="")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
 	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/pubchem/frags/d3_h4_isoFalse/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="frag dp only used in fragnnet")
 
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
@@ -62,6 +62,8 @@ if __name__ == "__main__":
 	model, config_d, device = load_model_and_init_config(ckpt_fp = ckpt_fp, device = args.device, batch_size = args.batch_size)
  
 	#if args.group_by_target:
+	# NOTE this only one for version 1, as there is only on Adduct Type
+	# TODO change this for multiple Adduct Type
 	target_ids = spec_df['target_mol_id'].unique()
 	if len(target_ids) < args.start_row_idx:
 		exit()
