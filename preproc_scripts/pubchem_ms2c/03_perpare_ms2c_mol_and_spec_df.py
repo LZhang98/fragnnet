@@ -15,13 +15,13 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	parser.add_argument("--split_type", type=str,default="test", help="")
-	parser.add_argument("--candidate_pkl_fp",type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz')
+	parser.add_argument("--candidate_pkl_fp",type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz')
 	parser.add_argument("--ms2c_data_dp",type=str, default='./data/ms2c/pubchem/proc')
 	
 	parser.add_argument("--include_sanity",type=booltype,default=True)
 	parser.add_argument("--output_per_grp",type=booltype,default=False)
 	parser.add_argument("--template_fp",type=str,default="config/template.yml")
-	parser.add_argument("--custom_fp",type=str,default="config/nist20v3_d4_wr00_scaffold/fraggnn_d4/s0.yml")
+	parser.add_argument("--custom_fp",type=str,default="config/nist20v3_d4_wr00_inchikey/fraggnn_d4/s0.yml")
 
 	args = parser.parse_args()
 	return args
