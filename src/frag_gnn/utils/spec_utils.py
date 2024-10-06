@@ -534,6 +534,101 @@ def calculate_sparse_cosine_similarity(
 	return cos_sims
 
 
+def calculate_sparse_cosine_hungarian(
+	true_mzs:th.Tensor, 
+	true_ints:th.Tensor,
+	true_batch_idxs:th.Tensor,
+	pred_mzs:th.Tensor,
+	pred_ints:th.Tensor,
+	pred_batch_idxs:th.Tensor,
+	tolerance:float=1e-5,
+	relative:bool=True,
+	sum_ints:bool=True,
+	remove_prec_peaks:bool=False,
+	true_prec_mzs:th.Tensor=None,
+	) -> th.Tensor:
+	""" Calculate cosine similarity using the Hungarian algorithm as the matching method.
+
+	Args:
+		true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array 
+		true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
+		true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
+		pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array 
+		pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
+		pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
+		tolerance (float):
+		relative (bool, optional): flag to use relative match else use abs tolerance measured in Da. Defaults to True.
+		sum_ints (bool, optional): flag to get summed intesnities in aggregate, else get max. Defaults to True.
+
+	Returns:
+		th.Tensor: cosine similarity tensor, one per pair 
+	"""
+	# round peaks
+	agg = "sum" if sum_ints else "amax"
+	true_mzs_r, true_ints_r, true_batch_idxs_r = round_aggregate_peaks(
+		true_mzs,
+		true_ints,
+		true_batch_idxs,
+		agg=agg
+	)
+	pred_mzs_r, pred_ints_r, pred_batch_idxs_r = round_aggregate_peaks(
+		pred_mzs,
+		pred_ints,
+		pred_batch_idxs,
+		agg=agg
+	)
+	# calculate
+	batch_size = th.max(true_batch_idxs_r)+1
+	cos_hun = th.zeros([batch_size],device=true_ints.device,dtype=true_ints.dtype)
+	for b_idx in range(batch_size):
+		b_true_mask_r = (true_batch_idxs_r==b_idx)
+		b_pred_mask_r = (pred_batch_idxs_r==b_idx)
+		b_true_mzs_r = true_mzs_r[b_true_mask_r]
+		b_pred_mzs_r = pred_mzs_r[b_pred_mask_r]
+		b_true_ints_r = true_ints_r[b_true_mask_r]
+		b_pred_ints_r = pred_ints_r[b_pred_mask_r]
+		b_true_prec_mask_r = None
+		b_pred_prec_mask_r = None
+		#assert remove_prec_peaks and true_prec_mzs is None, 
+		if remove_prec_peaks:
+			# precursor
+			b_true_prec_mask_r = calculate_match_mzs(
+				b_true_mzs_r,
+				b_true_prec_mz,
+				tolerance=self.tolerance,
+				relative=self.relative,
+				tolerance_min_mz=self.tolerance_min_mz
+			).squeeze(1)
+			b_pred_prec_mask_r = calculate_match_mzs(
+				b_pred_mzs_r,
+				b_true_prec_mz,
+				tolerance=self.tolerance,
+				relative=self.relative,
+				tolerance_min_mz=self.tolerance_min_mz
+			).squeeze(1)
+		# match
+		b_match_mask_r = calculate_match_mzs(
+			b_true_mzs_r,
+			b_pred_mzs_r,
+			tolerance=tolerance,
+			relative=relative,
+			tolerance_min_mz=0.0
+		)
+		b_true_match_mask_r = th.any(b_match_mask_r,dim=1)
+		b_pred_match_mask_r = th.any(b_match_mask_r,dim=0)
+
+		cos_hun[b_idx] =  cos_hun_helper(
+								b_true_ints_r,
+								b_pred_ints_r,
+								b_match_mask_r,
+								b_true_match_mask_r,
+								b_pred_match_mask_r,
+								remove_prec_peaks,
+								b_true_prec_mask_r,
+								b_pred_prec_mask_r
+							)
+	return cos_hun
+
 def binned_cosine_similarity(true_spec,pred_spec):
 
 	true_spec = F.normalize(true_spec,p=2,dim=1)
@@ -543,7 +638,19 @@ def binned_cosine_similarity(true_spec,pred_spec):
 
 
 def cos_sim_helper(true_bin_idxs, true_bin_ints, true_bin_batch_idxs, pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs):
+	"""_summary_
 
+	Args:
+		true_bin_idxs (_type_): _description_
+		true_bin_ints (_type_): _description_
+		true_bin_batch_idxs (_type_): _description_
+		pred_bin_idxs (_type_): _description_
+		pred_bin_ints (_type_): _description_
+		pred_bin_batch_idxs (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
 	# l2 normalize
 	true_bin_ints = scatter_l2normalize(
 		true_bin_ints,
@@ -714,7 +821,7 @@ def cos_hun_helper(
 	remove_prec_peak,
 	b_true_prec_mask,
 	b_pred_prec_mask):
-
+    
 	if remove_prec_peak:
 		import pdb; pdb.set_trace()
 		b_true_ints = b_true_ints*(1-b_true_prec_mask.float())
