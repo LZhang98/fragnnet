@@ -74,7 +74,7 @@ auxiliary_scores: []
 precision: 16-mixed
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler: True
 pl_enable_progress_bar: True
 activation_checkpointing: False
 compile: True
