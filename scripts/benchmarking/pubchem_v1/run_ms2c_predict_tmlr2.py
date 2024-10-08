@@ -14,13 +14,14 @@ def get_args():
     
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
-	parser.add_argument("--save_dp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
+	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
 	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/pubchem/frags/d3_h4_isoFalse/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="frag dp only used in fragnnet")
 
 	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=50)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
+	parser.add_argument("--model_ckpt",type=str, default=None)
 	parser.add_argument("--wandb_run_id",type=str, default= 'wf1zkb7n')
 	args = parser.parse_args()
 	return args
@@ -31,7 +32,7 @@ if __name__ == "__main__":
 	timestr = time.strftime("%Y%m%d-%H%M%S")
 	save_dp = os.path.dirname(args.save_fp)
 	os.makedirs(save_dp, exist_ok=True)
-	json.dump(vars(args), open(f"{args.save_dp}/args_{timestr}.json", "w"), indent=2)
+	json.dump(vars(args), open(f"{save_dp}/args_{timestr}.json", "w"), indent=2)
 
 	if args.model_ckpt is None:
 		os.makedirs(args.model_save_dp, exist_ok=True)	
@@ -72,5 +73,4 @@ if __name__ == "__main__":
 				device = device,
 				validate= True)
  
-	save_fp = os.path.join(args.save_dp, "all_predicted.pkl.gz")
-	df.to_pickle(save_fp)
+	df.to_pickle(args.save_fp)
