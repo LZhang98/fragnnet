@@ -134,8 +134,6 @@ if __name__ == "__main__":
 	RDLogger.DisableLog('rdApp.*') 
 
 	args = get_args()
-
-
 	split_configs_d = {
 		"test":"test_ids.csv",
 		"val":"val_ids.csv",

@@ -182,15 +182,15 @@ model_type_to_model_cls = {
 	"massformer": MassFormerPL
 }
 
-def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 32, auxiliary_scores:str = None, eval_mz_bin_res:str = None):
+def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 32, auxiliary_scores:list = None, eval_mz_bin_res:list[float] = None):
 	"""load model and reset config for inference
 
 	Args:
 		ckpt_fp (str): check point path
 		device (str, optional): device eg cpu or cuda:0. Defaults to None.
 		batch_size (int, optional): batch_size. Defaults to 32.
-		auxiliary_scores (str, optional): list of auxiliary_scores. Defaults to None, only used on split evalution
-		eval_mz_bin_res (str, optional): bin size of auxiliary scores. Defaults to None, only used on split evalution
+		auxiliary_scores (str, optional): list of auxiliary_scores. Defaults to None, only used on split evalution ['cos_sim']
+		eval_mz_bin_res (str, optional): bin size of auxiliary scores. Defaults to None, only used on split evalution, eg [03.01]
 
 	Returns:
 		_type_: _description_
@@ -217,7 +217,7 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 	config_d["simple_group_sampler"] = False
 	# additional spec_params
 	config_d['spec_params']['unique_id'] = True
-	config_d['spec_params']["counts"] = False
+	config_d['spec_params']["counts"] = True
 	# set num works and cpu stuff
 	config_d['num_workers']= multiprocessing.cpu_count()
 
@@ -257,6 +257,7 @@ def run_prediction(model,
 				 spec_data_ptr:str|pd.DataFrame,
 				 frag_dp:str,
 				 device:str,
+				 validate:bool = False
 				 ):
 	"""_summary_
 
@@ -289,22 +290,17 @@ def run_prediction(model,
 		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
 
 	print(f"> frag_dp {frag_dp}")
-
 	# check model class and ds class
 	model_ds_cls = None
  
-	#print("> num of mols", len(mol_df))
 	# only check for FragGNNet
 	if isinstance(model,FragGNNPL):
 		#print(">> filtering input without frags")
 		all_frags = set([f.split('.')[0] for f in os.listdir(frag_dp)])
-		#print(all_frags)
-		print("> num of frags: ", len(all_frags))
-		#print(mol_df.head())
+		#print("> num of frags: ", len(all_frags))
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
-		#print("> num of mols after filtering", len(mol_df))
 		model_ds_cls = SpecMolFragDataset
-	elif  isinstance(model,NeimsPL) or isinstance(model,MassFormerPL) or isinstance(model, GNNPL):
+	elif isinstance(model,NeimsPL) or isinstance(model,MassFormerPL) or isinstance(model, GNNPL):
 		mz_max = config_d['mz_max']
 		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
 		#print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
@@ -321,27 +317,40 @@ def run_prediction(model,
 	config_d['mol_fp'] = mol_df
 	config_d['spec_fp'] = spec_df
 	config_d['frag_dp'] = frag_dp
- 
+	#config_d['frag_dp'] = frag_dp
+  
 	# load datasets
 	print(">> Loading datasets")
+	#if validate:
+	#	ds = model_ds_cls(split='val', **config_d)
+	#else:
 	ds = model_ds_cls(split='predict_only', **config_d)
 	print(">> init dataloader")
 	dl = init_dataloader(ds, config_d)
- 
- 	#model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
-	model.eval()
+	
+	eval_score_types = []
+	for score_type in config_d['auxiliary_scores']:
+		if "_hun" in score_type:
+			eval_score_types.append(score_type)
+		else:
+			for bin_res in config_d['eval_mz_bin_res']:
+				eval_score_types.append(f"{score_type}_{bin_res}")
 
-	# make predictions on validation data
-	print(">> Running inference")
+	model.eval()
+	#print(">> Running inference")
 	preds_l = []
 	with th.inference_mode():
-		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
+		for _, batch_input in tqdm(enumerate(dl),total=len(dl), desc=" Running inference"):
 			spec_ids = batch_input['spec_unique_id']
 			mol_ids = batch_input['mol_id']
-
+			#print(batch_input)
 			batch_result = to_device(batch_input, device)
-
-			batch_result = model.predict_step(**batch_input)
+			# use existing validate to compute cos sim and etc
+			if validate:
+				batch_result = model._common_step(batch_input, split="val", log=False)
+			else:
+				batch_result = model.predict_step(**batch_input)
+    
 			batch_size = batch_input['batch_size'].detach().cpu()
 
 			pred_mzs = batch_result["pred_mzs"].detach().cpu()
@@ -353,6 +362,11 @@ def run_prediction(model,
 	
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+
+			eval_scores_d = {}
+			for eval_score_type in eval_score_types:
+				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
+				#print(eval_score_type, eval_scores_d[eval_score_type])
 			for b_idx in range(batch_size):
 				b_peak_mask = pred_batch_idxs == b_idx
 	
@@ -363,8 +377,11 @@ def run_prediction(model,
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob))
+				data_row = [b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
+				for eval_score_type in eval_score_types:
+					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
+				preds_l.append(data_row)
 
-	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos']
+	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos'] + eval_score_types
 	df = pd.DataFrame(preds_l, columns=columns)
 	return df
