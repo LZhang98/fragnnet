@@ -48,12 +48,12 @@ if __name__ == "__main__":
 	overall_stats_rows = []
 	for gz_file in tqdm(gz_files):
 		basename = os.path.basename(gz_file).replace('.pkl.gz', '')
-		#print(basename)
 		predicted_spec_df = pd.read_pickle(gz_file)
 		#predicted_spec_df['group_id'] =  predicted_spec_df['spec_id']
 		predicted_spec_df = predicted_spec_df.merge(spec_input_df, left_on='spec_id', right_on='group_id')
 		predicted_spec_df['cos_sim_0.01_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_sim_0.01'].rank(ascending=False)
 		predicted_spec_df['cos_hun_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_hun'].rank(ascending=False)
+
 		stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x['target_mol_smiles'] == x['smiles']], include_groups=False)
 
 		for rank_type in ['cos_sim_0.01_rank', 'cos_hun_rank']:
@@ -62,9 +62,8 @@ if __name__ == "__main__":
 				top_stats.append(len(stats_df[stats_df[rank_type] <= k]))
 				top_stats.append(len(stats_df[stats_df[rank_type] <= k])/len(stats_df))
 			overall_stats_rows.append(top_stats)
-		stats_df = stats_df[['group_id','smiles', 'inchikey_s', 'tanimoto','cos_sim_0.01','cos_hun','cos_sim_0.01_rank','cos_hun_rank']]
+		stats_df = stats_df[['group_id','target_mol_id', 'target_mol_smiles', 'target_inchikey_s', 'smiles', 'inchikey_s', 'cos_sim_0.01','cos_hun','cos_sim_0.01_rank','cos_hun_rank']]
 		stats_df.to_csv(os.path.join(args.save_dp, f"{basename}_summary.csv"),index = False)
-
 	overall_stats_df = pd.DataFrame(overall_stats_rows, \
     	columns = ['model','ranking method', 'top-1','top-1 ratio','top-3','top-3 ratio','top-5','top-5 ratio','top-10','top-10 ratio'])
 	overall_stats_df = overall_stats_df[['model','ranking method', 'top-1','top-3','top-5','top-10','top-1 ratio','top-3 ratio','top-5 ratio','top-10 ratio']]
