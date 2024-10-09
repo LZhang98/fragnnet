@@ -1,14 +1,11 @@
 
 import os
 import pandas as pd
-import json
-import time
 import argparse
-import numpy as np
-import torch as th
-from tqdm import tqdm
 
-from frag_gnn.utils.spec_utils import calculate_sparse_cosine_similarity, mf1000_normalize_np, calculate_sparse_cosine_hungarian
+from tqdm import tqdm
+import glob
+
 
 LAST_RANK = 51
 LAST_SCORE = 0.0
@@ -16,9 +13,9 @@ LAST_SCORE = 0.0
 def get_args():
     
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/benchmark/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50_massformer")
-	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
-	parser.add_argument("--predicted_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50_massformer/all_predicted.pkl.gz")
+	parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/benchmark/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
+	parser.add_argument("--predicted_dp", type=str,default="/home/feiw/gitRepo/frag-gnn/data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
  
 	args = parser.parse_args()
 	return args
@@ -28,85 +25,51 @@ if __name__ == "__main__":
 
 
 	args = get_args()
-	predicted_spec_df = pd.read_pickle(args.predicted_fp)
-	print(predicted_spec_df.head())
+	#predicted_spec_df = pd.read_pickle(args.predicted_fp)
+	#print(predicted_spec_df.head())
 	os.makedirs(args.save_dp, exist_ok=True)
 	print(f"> {args.proc_dp}")
 	print(f"> {args.predicted_dp}")
 	print(f"> {args.save_dp}")
 
-	def get_rank(true_mzs, true_ints, true_smiles, predict_spec_mol_df, score_type): #score_type = 'cos_sim_0.01'):
-		# make sure this is the case
-		true_ints = mf1000_normalize_np(true_ints)
-		true_mzs = th.tensor(true_mzs)
-		true_ints = th.tensor(true_ints)
-		#predict_spec_mol_df['cos_sim_hun'] = predict_spec_mol_df.apply(lambda x: calculate_sparse_cosine_hungarian(true_mzs,true_ints,
-        #                                                                      th.zeros(len(true_mzs), dtype=th.long), 
-		#																		th.tensor(x['pred_mzs']), 
-		#																		th.tensor(x['pred_ints']), 
-		#																		th.zeros(len(x['pred_mzs']), dtype=th.long))[0].item() ,axis=1)
-
-		predict_spec_mol_df['cos_sim_0.01'] = predict_spec_mol_df.apply(lambda x: calculate_sparse_cosine_similarity(true_mzs,true_ints,
-                                                                              th.zeros(len(true_mzs), dtype=th.long), 
-																				th.tensor(x['pred_mzs']), 
-																				th.tensor(x['pred_ints']), 
-																				th.zeros(len(x['pred_mzs']), dtype=th.long))[0].item() ,axis=1)
-    
-		#cos_hun_helper()
-		predict_spec_mol_df['rank'] = predict_spec_mol_df[score_type].rank(ascending = False)
-  		
-		ranks = predict_spec_mol_df[predict_spec_mol_df['smiles'] == true_smiles]['rank'].values
-		scores = predict_spec_mol_df[predict_spec_mol_df['smiles'] == true_smiles][score_type].values
-		rank_value = ranks[0] if len(ranks) else LAST_RANK
-		score_value = scores[0] if len(ranks) else LAST_SCORE
-  
-		return rank_value, score_value, predict_spec_mol_df
-
-	print("> load mol_df")
-	mol_df = pd.read_pickle(os.path.join(args.proc_dp,'mol_df.pkl.gz'))
-
 	print("> load target_spec_df")
-	target_spec_df = pd.read_pickle(os.path.join(args.proc_dp,"target_spec_df.pkl.gz"))
+	spec_input_df = pd.read_pickle(os.path.join(args.proc_dp,"spec_df.pkl.gz"))
+	mol_input_df = pd.read_pickle(os.path.join(args.proc_dp,"mol_df.pkl.gz"))
+	mol_input_df = mol_input_df[['mol_id','inchikey_s','smiles']]
+	spec_input_df = spec_input_df.merge(mol_input_df, left_on='mol_id', right_on='mol_id')
+	#print(spec_input_df.columns)
+	spec_input_df = spec_input_df[['group_id', 'target_mol_id', 'target_mol_smiles', 'target_inchikey_s', 'smiles', 'inchikey_s', 'tanimoto']]
+	#print(len(spec_input_df))
+	spec_input_df = spec_input_df.drop_duplicates(subset=['group_id'])
+	# Get a list of all .gz files in the directory
+	gz_files = glob.glob(os.path.join(args.predicted_dp, '*.gz'))
 
-	result_l = []
-	score_type = 'cos_sim_0.01'
-	#score_type = 'cos_sim_hun'
-	for index, row in tqdm(target_spec_df.iterrows(), total=len(target_spec_df)):
-		#print(row)
-		target_id = row["target_mol_id"]
-		true_mzs = row['spec_mzs'] #[float(x) for x in row['spec_mzs'].split(",")]
-		true_ints = row['spec_ints']
-		true_smiles = row['target_mol_smiles']
-		save_fp = os.path.join(args.save_dp, f"{target_id}.pkl.gz")
+	# Extract and print the basenames (without the .gz extension)
+	overall_stats_rows = []
+	for gz_file in tqdm(gz_files):
+		basename = os.path.basename(gz_file).replace('.pkl.gz', '')
+		#print(basename)
+		predicted_spec_df = pd.read_pickle(gz_file)
+		#predicted_spec_df['group_id'] =  predicted_spec_df['spec_id']
+		predicted_spec_df = predicted_spec_df.merge(spec_input_df, left_on='spec_id', right_on='group_id')
+		predicted_spec_df['cos_sim_0.01_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_sim_0.01'].rank(ascending=False)
+		predicted_spec_df['cos_hun_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_hun'].rank(ascending=False)
+		stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x['target_mol_smiles'] == x['smiles']], include_groups=False)
 
-		if os.path.isfile(save_fp) and args.allow_cached:
-			continue
+		for rank_type in ['cos_sim_0.01_rank', 'cos_hun_rank']:
+			top_stats = [basename,rank_type]
+			for k in [1,3,5,10]:
+				top_stats.append(len(stats_df[stats_df[rank_type] <= k]))
+				top_stats.append(len(stats_df[stats_df[rank_type] <= k])/len(stats_df))
+			overall_stats_rows.append(top_stats)
+		stats_df = stats_df[['group_id','smiles', 'inchikey_s', 'tanimoto','cos_sim_0.01','cos_hun','cos_sim_0.01_rank','cos_hun_rank']]
+		stats_df.to_csv(os.path.join(args.save_dp, f"{basename}_summary.csv"),index = False)
 
-		predicted_gz_fp = os.path.join(args.predicted_dp,f"{target_id}.pkl.gz")
-		if os.path.isfile(predicted_gz_fp):
-			predict_spec_mol_df = pd.read_pickle(predicted_gz_fp)
-			#print(predict_spec_mol_df.head())
-			mol_df_grp = mol_df[ mol_df['mol_id'].isin(predict_spec_mol_df['mol_id'])]
-			predict_spec_mol_df = predict_spec_mol_df.merge(mol_df_grp, on = 'mol_id', how = 'left')
-			#print(len(predict_spec_mol_df))
-			#print(predict_spec_mol_df.head())
-			#exit()
+	overall_stats_df = pd.DataFrame(overall_stats_rows, \
+    	columns = ['model','ranking method', 'top-1','top-1 ratio','top-3','top-3 ratio','top-5','top-5 ratio','top-10','top-10 ratio'])
+	overall_stats_df = overall_stats_df[['model','ranking method', 'top-1','top-3','top-5','top-10','top-1 ratio','top-3 ratio','top-5 ratio','top-10 ratio']]
+	overall_stats_df = overall_stats_df.sort_values(by='model', ascending=True)
 
-			#predict_spec_mol_df = predict_spec_mol_df.iloc[:1]
-			redict_spec_mol_df = predict_spec_mol_df[predict_spec_mol_df['smiles'] == true_smiles]
-			#print(redict_spec_mol_df.head())
-			#exit()
-			rank_value, score_value, predict_spec_mol_df = get_rank(true_mzs, true_ints, true_smiles, predict_spec_mol_df, score_type)
-			result_l.append((target_id, rank_value, score_value))
-		else:
-			print(f"> WARNING {target_id}, {predicted_gz_fp} file missing")
-			result_l.append((target_id, LAST_RANK, LAST_SCORE))
-	result_df = pd.DataFrame(result_l,columns = ['target_id','rank', 'score'])
-	result_df.to_csv(os.path.join(args.save_dp, "summary.csv"),index = False)
+ 	#result_df = pd.DataFrame(result_l,columns = ['target_id','rank', 'score'])
+	overall_stats_df.to_csv(os.path.join(args.save_dp, "overall_stats_summary.csv"),index = False)
  
-	for k in [1,3,5,10]:
-		print(k, len(result_df[result_df["rank"] <= k]), len(result_df[result_df["rank"] <= k])/len(result_df))
-	
-	print(result_df['score'].mean())
-	#details_df = pd.concat(details_l)
-	#details_df.to_csv(os.path.join(args.save_dp, "details.csv"),index = False)
