@@ -32,7 +32,7 @@ if __name__ == "__main__":
 	timestr = time.strftime("%Y%m%d-%H%M%S")
 	save_dp = os.path.dirname(args.save_fp)
 	os.makedirs(save_dp, exist_ok=True)
-	json.dump(vars(args), open(f"{save_dp}/args_{timestr}.json", "w"), indent=2)
+	records_dict = vars(args)
 
 	if args.model_ckpt is None:
 		os.makedirs(args.model_save_dp, exist_ok=True)	
@@ -43,7 +43,9 @@ if __name__ == "__main__":
 		ckpt_fp = get_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
 	else:
 		ckpt_fp = args.model_ckpt
-  
+	records_dict['model_ckpt'] = ckpt_fp
+	json.dump(records_dict, open(f"{args.save_fp}_{timestr}.json", "w"), indent=2)
+ 
 	# preprocess load datasets
 	print(f"> Loading datasets {args.proc_dp}")
 
