@@ -176,7 +176,6 @@ if __name__ == "__main__":
 	canidate_results = data_utils.par_apply(iter(filter_candidates_input_l),filter_candidates, True, return_as_generator=True)	
 	for res in tqdm(canidate_results,  total =  len(filter_candidates_input_l), desc = "Filter candidates"):
 		target_mol_id, targert_smiles, case_df = res
-
 		case_df['target_mol_id'] = target_mol_id
 		case_df['targert_smiles'] = targert_smiles
 		case_df = case_df[['target_mol_id','targert_smiles','inchikey_s','smiles','tanimoto']] 

@@ -1,22 +1,16 @@
-
-from frag_gnn.runner import load_config
-from frag_gnn.dataset import SpecMolDataset
 import pandas as pd
-from rdkit import Chem
 from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from tqdm import tqdm
 import argparse
 import os
-import numpy as np
-from frag_gnn.utils.misc_utils import booltype
+
+import frag_gnn.utils.data_utils as data_utils
 
 def get_args():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--proc_dp', type=str, default='./data/proc/nist20mona23v3')
-	parser.add_argument('--split_dp', type=str, default='./data/split/nist20mona23v3_d4_wr00_scaffold')
+	parser.add_argument('--split_dp', type=str, default='./data/split/nist20mona23v3_d4_wr00_inchikey')
 	parser.add_argument('--split_type', type=str,default='test', help='')
-	parser.add_argument('--candidate_pkl_fp',type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz')
+	parser.add_argument('--candidate_pkl_fp',type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz')
 	parser.add_argument('--ms2c_data_dp',type=str, default='./data/ms2c/pubchem/proc')
 	
 	parser.add_argument('--include_sanity',type=booltype,default=True)
@@ -29,12 +23,7 @@ if __name__ == '__main__':
 	
 	args = get_args()
 	print('> Loading configs')
-	#config_d = load_config(args.template_fp, args.custom_fp)
-	#prec_types_d = config_d['spec_params']['prec_types']
 
-	#print(f'> Loading data for {args.split_type} split')
-	#ds = SpecMolDataset(split=args.split_type, **config_d)
- 
 	split_configs_d = {
 		'test':'test_ids.csv',
 		'val':'val_ids.csv',
@@ -78,7 +67,9 @@ if __name__ == '__main__':
 
 	print('> Process mol and spec df')	
 	print('> Read candidate df')
-	candidates_df =  pd.read_pickle(args.candidate_pkl_fp)	 
+	candidates_df =  pd.read_pickle(args.candidate_pkl_fp)
+	candidates_df.loc[:,"mol"] = data_utils.par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
+
 	candidates_df = candidates_df.dropna()
 	candidate_spec_df = target_spec_df_export
 	candidate_spec_df = candidate_spec_df.merge(candidates_df, on = 'target_mol_id', how = 'inner')
