@@ -67,10 +67,10 @@ if __name__ == "__main__":
 	model_type_to_dset = {
 		"neims": "nist20v3",
 		"massformer": "nist20v3",
-		"fraggnn_d3": "nist20v2",
-		"fraggnn_d4": "nist20v2",
-		"iceberg_inten_100": "nist20v2",
-		"iceberg_inten_all": "nist20v2"
+		"fraggnn_d3": "nist20v3",
+		"fraggnn_d4": "nist20v3",
+		"iceberg_inten_100": "nist20v3",
+		"iceberg_inten_all": "nist20v3"
 	}
 
 	model_to_run_id = NestedDefaultDict()
@@ -118,6 +118,7 @@ if __name__ == "__main__":
 			# modify config to record relevant metrics
 			config_d["auxiliary_scores"] = args.auxiliary_scores
 			config_d["skip_extra_losses"] = args.skip_extra_losses
+			config_d["compile"] = False
 			print(">>> Loading dataset")
 			ds_cls = model_type_to_ds_cls[model_type]
 			ds = ds_cls(split=eval_split, **config_d)
