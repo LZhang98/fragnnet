@@ -17,9 +17,6 @@ from frag_gnn.frag.compute_frags import (
 
 from rdkit import RDLogger
 from rdkit import Chem
-from copy import deepcopy
-import yaml
-from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_series, seq_apply_df_rows
 
 def get_args():
 	parser = argparse.ArgumentParser()
@@ -55,7 +52,6 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	t_fp = mfpgen.GetFingerprint(t_mol)
 
 	# make sure target in there
-	#print(targert_smiles)
 	db_results.append((-1, data_utils.mol_to_inchikey(t_mol),
 					target_smiles, 
 					data_utils.mol_to_formula(t_mol),
@@ -64,27 +60,31 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	allowed_elements = set(frag_utils.ELEMENTS)
  
 	case_cdf = pd.DataFrame(db_results,columns=['mol_id','inchikey','smiles','formula','mw'])
-	#print(case_cdf.tail)
+
 	# drop not single mol rows
 	case_cdf = case_cdf[~(case_cdf['smiles'].str.contains('.', regex=False))]
 	case_cdf[["inchikey_s", "inchikey_a", "inchikey_flag"]] = case_cdf["inchikey"].str.split('-', expand=True)
 	# just normal inchkey 
 	case_cdf = case_cdf[case_cdf['inchikey_flag'] == 'N']
-	# drop duplicate by incheky and always keep self
+	# drop duplicate by inchikey and always keep self
 	case_cdf = case_cdf.drop_duplicates(subset="inchikey_s", keep="last")
 	case_cdf['mol'] = case_cdf['smiles'].apply(lambda x: data_utils.mol_from_smiles(x))
+	# drop duplicate no mol rows
 	case_cdf = case_cdf.dropna()
-	case_cdf['smiles'] =  case_cdf['mol'].apply(lambda x:data_utils.mol_from_smiles(x))
+	# drop duplicate by smiles and always keep self
+	case_cdf['smiles'] =  case_cdf['mol'].apply(lambda x:data_utils.mol_to_smiles(x))
 	case_cdf = case_cdf.drop_duplicates(subset="smiles", keep="last")
- 
+	# filter by heavy atom account
 	case_cdf['num_heavy_atoms'] = case_cdf['mol'].apply(lambda x: rd_moldesc.CalcNumHeavyAtoms(x))
 	case_cdf = case_cdf[case_cdf['num_heavy_atoms'] <= MAX_NUM_NODES]
+	# filter by radicals
 	case_cdf['num_radicals'] = case_cdf['mol'].apply(lambda x: sum([atom.GetNumRadicalElectrons() for atom in x.GetAtoms()]))
 	case_cdf = case_cdf[case_cdf['num_radicals'] == 0]
+	# filter by out_set_elements
 	case_cdf['num_out_set_elements'] = case_cdf['formula'].apply(lambda x: len(set(list(formula_utils.parse_formula(x).keys())) - allowed_elements))
 	case_cdf = case_cdf[case_cdf['num_out_set_elements'] == 0]
-	case_cdf.at["tanimoto"] = case_cdf['mol'].apply(lambda x: rd_ds.TanimotoSimilarity(t_fp, mfpgen.GetFingerprint(x)))
-	
+	# filter by tanimoto and sort
+	case_cdf["tanimoto"] = case_cdf['mol'].apply(lambda x: rd_ds.TanimotoSimilarity(t_fp, mfpgen.GetFingerprint(x)))
 	case_cdf = case_cdf[case_cdf['tanimoto'] >= 0.0]
 	case_cdf = case_cdf.sort_values('tanimoto', ascending = False)
 	
@@ -162,7 +162,7 @@ if __name__ == "__main__":
 		else:
 			mass_tol = args.tolerance
 		db_query_input.append([db_file,mw,mass_tol])
-			#db_results = db.get_compounds_by_exact_mass_range(mw -mass_tol, mw + mass_tol)
+		#db_results = db.get_compounds_by_exact_mass_range(mw -mass_tol, mw + mass_tol)
 		filter_candidates_input_l.append([None, row['smiles'],row['mol_id'], args.max_candidates, morgen_radius])
 
 	db_results = data_utils.par_apply(iter(db_query_input),fetch_db, True, return_as_generator=True)	
@@ -181,9 +181,10 @@ if __name__ == "__main__":
 
 	candidates_df = pd.concat(candidate_data_df_l)
 	candidates_df['mol_id'] = candidates_df['inchikey_s']
-	candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
-	candidates_df.loc[:,"smiles"] = par_apply_series(candidates_df["mol"],data_utils.mol_to_smiles)
-	candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
+	#print(len(candidates_df))
+	#candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
+	#candidates_df.loc[:,"smiles"] = par_apply_series(candidates_df["mol"],data_utils.mol_to_smiles)
+	#candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
 	# make sure there is no nan value in df
 	candidates_df = candidates_df.dropna()
 	print(f"> Save to {candidates_fp}")
