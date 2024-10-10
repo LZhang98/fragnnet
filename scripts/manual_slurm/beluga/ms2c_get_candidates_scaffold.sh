@@ -31,6 +31,7 @@ python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
 	--candidate_pkl_fp=./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz \
 	--proc_dp=./data/proc/nist20mona23v3 \
 	--split_dp=./data/split/nist20mona23v3_d4_wr00_scaffold \
+    --split_type=test \
     --ms2c_data_dp=./data/ms2c/pubchem/proc
 
 # record ending
