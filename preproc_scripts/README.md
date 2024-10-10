@@ -38,7 +38,11 @@ For each seed `sN` repeat the following:
 
 `python preproc_scripts/06_predict_magma_dags.py --magma_dp data/magma/inten/nist20mona23v3_d4_wr00_inchikey_100_sN --proc_dp data/proc/nist20mona23v3 --gen_ckpt_fp data/magma/ckpt/nist20v3_d4_wr00_inchikey_sN.ckpt --dsets nist20_hr mona23`
 
-`python scripts/setup_job_vv.py --gpu_type rtx6000 --qos m --env FRAG-GNN-GPU4 --time -1 --python_script_fp preproc_scripts/06_predict_magma_dags.py --script_kwargs magma_dp=data/magma/inten/nist20mona23v3_d4_wr00_inchikey_100_s$i proc_dp=data/proc/nist20mona23v3 gen_ckpt_fp=ata/magma/ckpt/nist20v3_d4_wr00_inchikey_s$i.ckpt dsets="nist20_hr mona23"`
+`python scripts/setup_job_vv.py --gpu_type rtx6000 --qos m --env FRAG-GNN-GPU4 --time -1 --python_script_fp preproc_scripts/06_predict_magma_dags.py --script_kwargs magma_dp=data/magma/inten/nist20mona23v3_d4_wr00_inchikey_100_sN proc_dp=data/proc/nist20mona23v3 gen_ckpt_fp=ata/magma/ckpt/nist20v3_d4_wr00_inchikey_sN.ckpt dsets="nist20_hr mona23"`
+
+Don't forget to symlink the formula directory:
+
+`ln -s $HOME/frag-gnn/data/magma/gen/nist20mona23v3/magma_formula $HOME/frag-gnn/data/magma/inten/nist20mona23v3_d4_wr00_inchikey_100_sN/magma_formula`
 
 ## Step 8: set up a training run
 
