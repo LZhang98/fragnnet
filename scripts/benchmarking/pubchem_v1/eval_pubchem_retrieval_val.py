@@ -54,15 +54,8 @@ if __name__ == "__main__":
 		predicted_spec_df['cos_sim_0.01_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_sim_0.01'].rank(ascending=False, method='max')
 		predicted_spec_df['cos_hun_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_hun'].rank(ascending=False, method='max')
 		total_tasks =  predicted_spec_df['target_mol_id'].nunique()
-		print(total_tasks)
 		stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x['target_inchikey_s'] == x['inchikey_s']], include_groups=False)
-		for idx, grp_df in predicted_spec_df.groupby('target_mol_id'):
-			if len(grp_df[grp_df['target_inchikey_s'] == grp_df['inchikey_s']]) == 0:
-				#print(grp_df[grp_df['target_mol_smiles'] == grp_df['smiles']])
-				#error_df = grp_df[grp_df['target_mol_smiles'] == grp_df['smiles']]
-				print(grp_df[['target_inchikey_s','inchikey_s','tanimoto']])
-		print(len(stats_df))
-		exit()
+
 		for rank_type in ['cos_sim_0.01', 'cos_hun']:
 			top_stats = [basename,rank_type]
 			for k in [1,3,5,10]:
@@ -70,7 +63,7 @@ if __name__ == "__main__":
 				top_stats.append(len(stats_df[stats_df[rank_type+'_rank'] <= k])/len(stats_df))
 			top_stats.append(stats_df[rank_type].mean())
 			top_stats.append(stats_df[rank_type].std())
-			print(basename,rank_type,stats_df[rank_type].mean())
+			#print(basename,rank_type,stats_df[rank_type].mean())
 			overall_stats_rows.append(top_stats)
 		stats_df = stats_df[['group_id','target_mol_smiles', 'target_inchikey_s', 'smiles', 'inchikey_s', 'cos_sim_0.01','cos_hun','cos_sim_0.01_rank','cos_hun_rank']]
 		stats_df.to_csv(os.path.join(args.save_dp, f"{basename}_summary.csv"),index = False)
