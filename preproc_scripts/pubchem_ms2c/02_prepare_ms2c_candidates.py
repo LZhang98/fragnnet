@@ -38,9 +38,8 @@ def get_args():
 
 def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, morgen_radius = 3):
 
-	chem, rd_fpgen, rdmolops, rd_ds, rd_moldesc, rd_logger = data_utils.rdkit_import("rdkit.Chem",
+	chem, rd_fpgen, rd_ds, rd_moldesc, rd_logger = data_utils.rdkit_import("rdkit.Chem",
 																			   "rdkit.Chem.rdFingerprintGenerator", 
-																			   "rdkit.Chem.rdmolops", 
 																			   "rdkit.DataStructs", 
 																			   "rdkit.Chem.rdMolDescriptors",
 																			   "rdkit.RDLogger")
@@ -59,8 +58,9 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	 
 	allowed_elements = set(frag_utils.ELEMENTS)
  
-	case_cdf = pd.DataFrame(db_results,columns=['mol_id','smiles','formula','mw'])
-
+	case_cdf = pd.DataFrame(db_results,columns=['mol_id','inchikey','smiles','formula','mw'])
+	case_cdf = case_cdf[['mol_id','smiles','formula','mw']]
+ 
 	# drop not single mol rows
 	case_cdf = case_cdf[~(case_cdf['smiles'].str.contains('.', regex=False))]
   
@@ -153,6 +153,7 @@ if __name__ == "__main__":
 	filter_candidates_input_l = []
 	if args.subset_size > 0:
 		sp_mol_df = sp_mol_df[:args.subset_size]
+  
 	for _, row in tqdm(sp_mol_df.iterrows(), total = len(sp_mol_df), desc = "Prepare pubchem database input"):
 		# we can not frag them, just ignore	
 		if Chem.rdMolDescriptors.CalcNumHeavyAtoms(row['mol']) > MAX_NUM_NODES:
