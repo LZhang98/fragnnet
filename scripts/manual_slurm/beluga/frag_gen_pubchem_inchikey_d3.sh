@@ -24,7 +24,7 @@ source ./FRAG-GNN-GPU2/bin/activate
 
 python preproc_scripts/pubchem_ms2c/10_run_ms2c_frag_gen.py \
     --frag_dp=${SLURM_TMPDIR}/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50  \
-    --proc_dp=data/ms2c/pubchem/pred_inputs/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50 \
+    --proc_dp=data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50 \
     --max_depth=3
 
 cd ${SLURM_TMPDIR}
