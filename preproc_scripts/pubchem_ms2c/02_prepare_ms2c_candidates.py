@@ -59,21 +59,23 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	 
 	allowed_elements = set(frag_utils.ELEMENTS)
  
-	case_cdf = pd.DataFrame(db_results,columns=['mol_id','inchikey','smiles','formula','mw'])
+	case_cdf = pd.DataFrame(db_results,columns=['mol_id','smiles','formula','mw'])
 
 	# drop not single mol rows
 	case_cdf = case_cdf[~(case_cdf['smiles'].str.contains('.', regex=False))]
-	case_cdf[["inchikey_s", "inchikey_a", "inchikey_flag"]] = case_cdf["inchikey"].str.split('-', expand=True)
-	# just normal inchkey 
-	case_cdf = case_cdf[case_cdf['inchikey_flag'] == 'N']
-	# drop duplicate by inchikey and always keep self
-	case_cdf = case_cdf.drop_duplicates(subset="inchikey_s", keep="last")
+  
 	case_cdf['mol'] = case_cdf['smiles'].apply(lambda x: data_utils.mol_from_smiles(x))
 	# drop duplicate no mol rows
 	case_cdf = case_cdf.dropna()
-	# drop duplicate by smiles and always keep self
-	case_cdf['smiles'] =  case_cdf['mol'].apply(lambda x:data_utils.mol_to_smiles(x))
+	# drop duplicate by canonical smiles and always keep self
+	case_cdf['smiles'] = case_cdf['mol'].apply(lambda x:data_utils.mol_to_smiles(x))
 	case_cdf = case_cdf.drop_duplicates(subset="smiles", keep="last")
+ 
+	# drop duplicate by inchikey_s smiles and always keep self
+	case_cdf['inchikey_s'] = case_cdf['mol'].apply(lambda x:data_utils.mol_to_inchikey_s(x))
+	# drop duplicate by inchikey and always keep self
+	case_cdf = case_cdf.drop_duplicates(subset="inchikey_s", keep="last")
+ 
 	# filter by heavy atom account
 	case_cdf['num_heavy_atoms'] = case_cdf['mol'].apply(lambda x: rd_moldesc.CalcNumHeavyAtoms(x))
 	case_cdf = case_cdf[case_cdf['num_heavy_atoms'] <= MAX_NUM_NODES]
@@ -181,10 +183,6 @@ if __name__ == "__main__":
 
 	candidates_df = pd.concat(candidate_data_df_l)
 	candidates_df['mol_id'] = candidates_df['inchikey_s']
-	#print(len(candidates_df))
-	#candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
-	#candidates_df.loc[:,"smiles"] = par_apply_series(candidates_df["mol"],data_utils.mol_to_smiles)
-	#candidates_df.loc[:,"mol"] = par_apply_series(candidates_df["smiles"],data_utils.mol_from_smiles)
 	# make sure there is no nan value in df
 	candidates_df = candidates_df.dropna()
 	print(f"> Save to {candidates_fp}")
