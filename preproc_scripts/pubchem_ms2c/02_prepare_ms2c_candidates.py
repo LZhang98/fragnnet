@@ -60,7 +60,9 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 					target_smiles, 
 					data_utils.mol_to_formula(t_mol),
 					data_utils.mol_to_mol_weight(t_mol,exact=True)))
-	
+	 
+	allowed_elements = set(frag_utils.ELEMENTS)
+ 
 	case_cdf = pd.DataFrame(db_results,columns=['mol_id','inchikey','smiles','formula','mw'])
 	#print(case_cdf.tail)
 	# drop not single mol rows
@@ -70,54 +72,21 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	case_cdf = case_cdf[case_cdf['inchikey_flag'] == 'N']
 	# drop duplicate by incheky and always keep self
 	case_cdf = case_cdf.drop_duplicates(subset="inchikey_s", keep="last")
-	case_cdf["mol"] = None
-	case_cdf["tanimoto"] = -1.0
-
-	#print(case_cdf)
-	allowed_elements = set(frag_utils.ELEMENTS)
-	for idx, case_row in case_cdf.iterrows():
-
-		mol = chem.MolFromSmiles(case_row["smiles"])
-		if mol is None:
-			continue
-		
-		# this way too slow
-		#mol = data_utils.mol_from_smiles(case_row["smiles"])
-		#if mol is np.nan:
-		#	continue
-		
-		#check number of atoms for frag
-		if rd_moldesc.CalcNumHeavyAtoms(mol) > MAX_NUM_NODES:
-			continue
-
-		# remove charged or has radical
-		num_radicals = sum([atom.GetNumRadicalElectrons() for atom in mol.GetAtoms()])
-		num_charges = rdmolops.GetFormalCharge(mol)
-		if num_charges != 0 or num_radicals != 0:
-			continue
-		
-		# remove not allowed element
-		elements_set = set(list(formula_utils.parse_formula(case_row["formula"]).keys()))
-		if len(elements_set - allowed_elements) > 0:
-			continue
-		
-		# remove Stereochemistry
-		# we should  never see case_cdf['inchikey_flag'] == 'N'
-		if case_row['inchikey_a'] != 'UHFFFAOYSA':
-			chem.RemoveStereochemistry(mol)
-
-		# skip ones we can not Kekulize, do this after RemoveStereochemistry
-		try:
-			chem.Kekulize(deepcopy(mol),clearAromaticFlags=True)
-		except:
-			continue
-
-		case_cdf.at[idx,"smiles"] = data_utils.mol_to_smiles(mol)
-		#tanimoto  distance
-		case_cdf.at[idx,"tanimoto"] = rd_ds.TanimotoSimilarity(t_fp, mfpgen.GetFingerprint(mol))
-
+	case_cdf['mol'] = case_cdf['smiles'].apply(lambda x: data_utils.mol_from_smiles(x))
+	case_cdf = case_cdf.dropna()
+	case_cdf['smiles'] =  case_cdf['mol'].apply(lambda x:data_utils.mol_from_smiles(x))
+	case_cdf = case_cdf.drop_duplicates(subset="smiles", keep="last")
+ 
+	case_cdf['num_heavy_atoms'] = case_cdf['mol'].apply(lambda x: rd_moldesc.CalcNumHeavyAtoms(x))
+	case_cdf = case_cdf[case_cdf['num_heavy_atoms'] <= MAX_NUM_NODES]
+	case_cdf['num_radicals'] = case_cdf['mol'].apply(lambda x: sum([atom.GetNumRadicalElectrons() for atom in x.GetAtoms()]))
+	case_cdf = case_cdf[case_cdf['num_radicals'] == 0]
+	case_cdf['num_out_set_elements'] = case_cdf['formula'].apply(lambda x: len(set(list(formula_utils.parse_formula(x).keys())) - allowed_elements))
+	case_cdf = case_cdf[case_cdf['num_out_set_elements'] == 0]
+	case_cdf.at["tanimoto"] = case_cdf['mol'].apply(lambda x: rd_ds.TanimotoSimilarity(t_fp, mfpgen.GetFingerprint(x)))
+	
 	case_cdf = case_cdf[case_cdf['tanimoto'] >= 0.0]
-	case_cdf = case_cdf.sort_values('tanimoto',ascending = False)
+	case_cdf = case_cdf.sort_values('tanimoto', ascending = False)
 	
 	if top_k is not None:
 		case_cdf = case_cdf[:top_k]
