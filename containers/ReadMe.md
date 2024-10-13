@@ -1,15 +1,31 @@
 ## Build Apptainer Image
 
 ### Build Image from Apptainer def
+CPU Image
 ```
-mkdir -p apptainer/tmp
+mkdir apptainer
 export APPTAINER_TMPDIR=$(pwd)/apptainer/tmp &&  apptainer build ./apptainer/fragnnet_cpu.sif ./fragnnet_cpu.def
 ```
-### Get Prebuild CPU image from google drive
+
+CUDA Image
+```
+mkdir apptainer
+export APPTAINER_TMPDIR=$(pwd)/apptainer/tmp &&  apptainer build ./apptainer/fragnnet_cuda118.sif ./fragnnet_cuda118.def
+```
+
+### Get Prebuild image from google drive
+CPU Image
 ```
 mkdir -p apptainer
 cd apptainer
-rclone copy -P fragnnet:apptainer/fragnnet_cpu.sif ./apptainer/
+rclone copy -P fragnnet:containers/apptainer/fragnnet_cpu.sif ./apptainer/
+```
+
+CUDA Image
+```
+mkdir -p apptainer
+cd apptainer
+rclone copy -P fragnnet:containers/apptainer/fragnnet_cuda118.sif ./apptainer/
 ```
 
 ## Useful links
@@ -26,8 +42,9 @@ module load apptainer/1.2.4
 
 ```
 ## Run apptainer shell
+At Project Root
 ```
-apptainer shell ./fragnnet_cpu.def
+apptainer shell ./containers/apptainer/fragnnet_cpu.sif
 pip install --user -I -e .
 python
 ```

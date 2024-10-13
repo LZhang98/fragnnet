@@ -21,7 +21,8 @@ From: ubuntu:22.04
         libxtst6 \
         libxi6 \
         curl \
-        ca-certificates
+        ca-certificates \
+        libatlas-base-dev
     ln -s /usr/bin/python3.10 /usr/local/bin/python
     curl -sS https://bootstrap.pypa.io/get-pip.py | python
 
