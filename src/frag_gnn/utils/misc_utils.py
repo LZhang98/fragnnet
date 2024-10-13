@@ -1,4 +1,6 @@
+import multiprocessing
 import shutil
+import subprocess
 import tempfile
 import time
 from functools import wraps
@@ -526,3 +528,37 @@ class NestedDefaultDict(defaultdict):
 
 	def __repr__(self):
 		return repr(dict(self))
+
+def get_slurm_job_id():
+	return os.getenv('SLURM_JOB_ID', default=None)
+
+def get_slurm_allocated_cores(job_id):
+    # cpus_on_node = os.getenv('SLURM_CPUS_ON_NODE', default=None)
+	# ComputeCanada does not set this on some systems
+	# use scontrol to get the number of CPUs allocated to the job
+	# int(os.getenv('SLURM_CPUS_PER_TASK', default=1))
+	try:
+		# Construct the command to get allocated CPUs
+		command = f"scontrol show job {job_id} | grep -oP 'NumCPUs=\\K\\d+'"
+		
+		# Run the command using subprocess
+		result = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		
+		# Decode and strip the output to get the number of CPUs
+		cpus_allocated = result.stdout.decode('utf-8').strip()
+		return int(cpus_allocated)
+	except subprocess.CalledProcessError as e:
+		print(f"Error running command: {e}")
+
+def get_core_count():
+	""" 
+		get cpu core count, in case slurm env get one from scontrol
+	Returns:
+		_type_: _description_
+	"""
+	slurm_id = get_slurm_job_id()
+	if slurm_id is not None:
+		num_core = get_slurm_allocated_cores(slurm_id) 
+	else:
+		num_core = multiprocessing.cpu_count()
+	return num_core
