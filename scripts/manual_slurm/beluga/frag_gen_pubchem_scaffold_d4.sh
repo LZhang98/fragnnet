@@ -7,8 +7,8 @@
 #SBATCH --time=0-6:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_pubchem_scaffold_d4%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_pubchem_scaffold_d4%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_pubchem_scaffold_d4_%j.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_pubchem_scaffold_d4_%j.err
 #SBATCH --open-mode=append
 
 # record start
