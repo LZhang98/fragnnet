@@ -36,7 +36,7 @@ echo create local frag_dp: ${SLURM_TMPDIR}/frag/${DATASET_NAME}
 mkdir -p ${SLURM_TMPDIR}/frag/${DATASET_NAME}
 
 # copy file to slrum local dir
-echo copy from ./data/proc/${DATASET_NAME} to ${SLURM_TMPDIR}/proc/${DATASET_NAME}
+echo copy from ./data/proc/${DATASET_NAME} to ${SLURM_TMPDIR}/proc
 cp -r ./data/proc/${DATASET_NAME} ${SLURM_TMPDIR}/proc/${DATASET_NAME}
 echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/proc/${DATASET_NAME})
 

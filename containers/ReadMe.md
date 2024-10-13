@@ -2,8 +2,14 @@
 
 ### Build Image from Apptainer def
 ```
-mkdir apptainer
+mkdir -p apptainer/tmp
 export APPTAINER_TMPDIR=$(pwd)/apptainer/tmp &&  apptainer build ./apptainer/fragnnet_cpu.sif ./fragnnet_cpu.def
+```
+### Get Prebuild CPU image from google drive
+```
+mkdir -p apptainer
+cd apptainer
+rclone copy -P fragnnet:apptainer/fragnnet_cpu.sif ./apptainer/
 ```
 
 ## Useful links
