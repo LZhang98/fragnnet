@@ -24,14 +24,36 @@ Frag configuration: depth 4, nb isomorphism (3 WL iterations)
 
 TODO
 
-## Step 5: prepare the MAGMa DAGs (for the ICEBERG models)
-
-TODO
-
-## Step 6: predict MAGMa DAGs (using an ICEBERG model)
-
-TODO
-
-## Step 7: set up a training run
+## Step 5: set up a training run
 
 `python scripts/setup_job_vv.py --gpu_type rtx6000 --qos m --env FRAG-GNN-GPU4 --time -1 --job_id -1 --python_script_fp scripts/run_pl_model_fit.py --script_kwargs custom_fp=config/nist20v3_d4_wr00_inchikey/neims/s0.yml --job_name debug_v3_neims`
+
+## Step 6: prepare the MAGMa DAGs (for the ICEBERG models)
+
+`python preproc_scripts/05_prepare_magma_feats.py --magma_dp data/magma/gen/nist20mona23v3 --proc_dp data/proc/nist20mona23v3 --dsets nist20_hr mona23`
+
+## Step 7: predict MAGMa DAGs (using a trained ICEBERG model)
+
+For each seed `sN` repeat the following:
+
+`python preproc_scripts/06_predict_magma_dags.py --magma_dp data/magma/inten/nist20mona23v3_d4_wr00_inchikey_100_sN --proc_dp data/proc/nist20mona23v3 --gen_ckpt_fp data/magma/ckpt/nist20v3_d4_wr00_inchikey_sN.ckpt --dsets nist20_hr mona23`
+
+`python scripts/setup_job_vv.py --gpu_type rtx6000 --qos m --env FRAG-GNN-GPU4 --time -1 --python_script_fp preproc_scripts/06_predict_magma_dags.py --script_kwargs magma_dp=data/magma/inten/nist20mona23v3_d4_wr00_inchikey_100_sN proc_dp=data/proc/nist20mona23v3 gen_ckpt_fp=ata/magma/ckpt/nist20v3_d4_wr00_inchikey_sN.ckpt dsets="nist20_hr mona23"`
+
+Don't forget to symlink the formula directory:
+
+`ln -s $HOME/frag-gnn/data/magma/gen/nist20mona23v3/magma_formula $HOME/frag-gnn/data/magma/inten/nist20mona23v3_d4_wr00_inchikey_100_sN/magma_formula`
+
+## Step 8: set up a training run
+
+For example, NEIMS:
+
+`python scripts/setup_job_vv.py --gpu_type rtx6000 --qos m --env FRAG-GNN-GPU4 --time -1 --job_id -1 --python_script_fp scripts/run_pl_model_fit.py --script_kwargs custom_fp=config/nist20v3_d4_wr00_inchikey/neims/s0.yml --job_name debug_v3_neims`
+
+## Seeds
+
+s0 - 397623
+s1 - 634340
+s2 - 444303
+s3 - 103976
+s4 - 132548

@@ -82,10 +82,11 @@ def run_magma_gen(
 	spec_df, mol_df = filter_spec_mol(
 		spec_df,
 		mol_df,
-		allowed_elements=allowed_elements,
+		elements=allowed_elements,
 		dsets=dsets,
 		prec_types=["[M+H]+"],
-		num_entries=num_entries)
+		num_entries=num_entries
+	)
 	m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
 	if len(group_ids) > 0:
 		m_spec_df = m_spec_df[m_spec_df["group_id"].isin(group_ids)].reset_index(drop=True)

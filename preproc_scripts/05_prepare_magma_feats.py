@@ -364,7 +364,11 @@ def magma_augmentation(
 
 	# Step 2: Process spec and get comparison points
 	# Read in file and filter it down
-	spectra = common.process_spec_file(meta, spectras)
+	try:
+		spectra = common.process_spec_file(meta, spectras)
+	except Exception as e:
+		spectra = None
+	
 	if spectra is None:
 		print(f"Error with reading file for spec {spectra_name}")
 		return False
@@ -665,10 +669,11 @@ def run_magma_augmentation(
 	spec_df, mol_df = filter_spec_mol(
 		spec_df,
 		mol_df,
-		allowed_elements=allowed_elements,
+		elements=allowed_elements,
 		dsets=dsets,
 		prec_types=["[M+H]+"],
-		num_entries=num_entries)
+		num_entries=num_entries
+	)
 	m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
 	if len(group_ids) > 0:
 		m_spec_df = m_spec_df[m_spec_df["group_id"].isin(group_ids)].reset_index(drop=True)
