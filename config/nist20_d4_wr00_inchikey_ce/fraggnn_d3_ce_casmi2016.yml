@@ -40,10 +40,10 @@ spec_params:
   nce: True
   merge_keep_ces: False
   preprocess: True
-m_ce_insert_mlp_embed: False
-m_ce_insert_mlp_bin: False
-ce_insert_mlp: True
-ce_insert_mlp_lin: False
+ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
+ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]
+ce_insert_merge: False # merge ce embedding
+ce_insert_size: 32
 mol_params:
   preprocess: True
 
