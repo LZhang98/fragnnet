@@ -23,10 +23,10 @@ wandb_tags:
 - binned_cosine_similarity
 - ce
 
-spec_fp: data/proc/nist20mona23/spec_df.pkl
-mol_fp: data/proc/nist20mona23/mol_df.pkl
-split_dp: data/split/nist20_mona23_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23_d3_h4_isoFalse_nb2/dags
+spec_fp: data/proc/nist20mona23v3/spec_df.pkl
+mol_fp: data/proc/nist20mona23v3/mol_df.pkl
+split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
+frag_dp: data/frag/data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP

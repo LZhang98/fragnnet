@@ -1,5 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d4_ce_lin
-wandb_group: nist20_inchikey_fraggnn_nce_d4
+wandb_name: nist20_inchikey_fraggnn_d3_ce_casmi2016
 wandb_tags:
 - retrieval
 - nist20
@@ -7,7 +6,7 @@ wandb_tags:
 - wr00
 - inchikey
 - new_proc
-- fraggnn_d4
+- fraggnn_d3
 - dynamic_sampler
 - new_metrics
 - nodemlp
@@ -23,11 +22,11 @@ wandb_tags:
 - binned_cosine_similarity
 - ce
 
-spec_fp: data/proc/nist20mona23/spec_df.pkl
-mol_fp: data/proc/nist20mona23/mol_df.pkl
-split_dp: data/split/nist20_mona23_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23_d4_h4_isoFalse_nb2/dags
-num_depth: 5
+spec_fp: data/proc/nist20mona23v3/spec_df.pkl
+mol_fp: data/proc/nist20mona23v3/mol_df.pkl
+split_dp: data/split/nist20mona23v3_d4_wr00_inchikey_casmi2016
+frag_dp: data/frag/data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
+num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
@@ -43,14 +42,14 @@ spec_params:
   preprocess: True
 m_ce_insert_mlp_embed: False
 m_ce_insert_mlp_bin: False
-ce_insert_mlp: False
-ce_insert_mlp_lin: True
+ce_insert_mlp: True
+ce_insert_mlp_lin: False
 mol_params:
   preprocess: True
 
 train_batch_size: 256
 eval_batch_size: 256
-accumulate_grad_batches: 1
+accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
@@ -78,12 +77,10 @@ eval_mz_bin_res:
 
 precision: 32
 use_tensor_float32: True
-automatic_optimization: False
-dynamic_batch_sampler: True
-pl_enable_progress_bar: True
+automatic_optimization: True
 activation_checkpointing: False
 compile: True
 pin_memory: True
 loss_vectorized: True
-loss_batch_size: 16
+loss_batch_size: 32
 skip_extra_losses: True

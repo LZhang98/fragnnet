@@ -8,7 +8,7 @@ def get_args():
 	# frag feats configs
 	parser.add_argument("--proc_dp",type=str,default="data/proc/nist20mona23v3")
 	parser.add_argument("--split_dp",type=str,default="data/split/nist20mona23v3_d4_wr00_inchikey")
-	parser.add_argument("--split_out_dp",type=str,default="data/split/nist20mona23v3_d4_wr00_inchikey_casmi")
+	parser.add_argument("--split_out_dp",type=str,default="data/split/nist20mona23v3_d4_wr00_inchikey_casmi2016")
 	parser.add_argument("--casmi_csv",type=str,default = "data/raw/casmi2016/solutions_casmi2016_cat2and3.csv")
 
 	args = parser.parse_args()
@@ -31,6 +31,8 @@ if __name__ == "__main__":
 
 	in_casmi = mol_df[mol_df['inchikey_s'].isin(inchikey_s_l)]
 	os.makedirs(args.split_out_dp, exist_ok=True)
+	print(f"> from to {args.split_dp}")
+	print(f"> output to {args.split_out_dp}")
  
 	# update train split
 	train_split_df = pd.read_csv(os.path.join(args.split_dp, "train_ids.csv"))
