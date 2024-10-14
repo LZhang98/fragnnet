@@ -46,7 +46,7 @@ echo running dag gen
 # copy apptainer container
 module load apptainer/1.2.4
 cp ./containers/apptainer/fragnnet_cpu.sif ${SLURM_TMPDIR}/fragnnet_cpu.sif
-apptainer exec ${SLURM_TMPDIR}/fragnnet_cpu.sif pip install --user -I -e .
+apptainer exec ${SLURM_TMPDIR}/fragnnet_cpu.sif pip install --user -I .
 
 apptainer exec -B ${SLURM_TMPDIR} \
     ${SLURM_TMPDIR}/fragnnet_cpu.sif \
@@ -55,7 +55,7 @@ apptainer exec -B ${SLURM_TMPDIR} \
         --proc_dp=./data/proc/${DATASET_NAME}  \
         --max_depth=${MAX_DEPTH} \
         --wandb_mode=off \
-        --wandb_run_name=fool \
+        --wandb_run_name=fool
 
 # go to frag directory
 cd ${SLURM_TMPDIR}/frag/

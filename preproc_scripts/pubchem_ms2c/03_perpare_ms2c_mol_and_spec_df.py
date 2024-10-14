@@ -39,9 +39,9 @@ if __name__ == '__main__':
 	
 	split_type = args.split_type
 	split_csv_filename = split_configs_d[split_type]
-	split__fp = os.path.join(args.split_dp, split_csv_filename)
-	print(f'> Processing {split_type} split, read split from {split__fp}')
-	split_df = pd.read_csv(split__fp)
+	split_fp = os.path.join(args.split_dp, split_csv_filename)
+	print(f'> Processing {split_type} split, read split from {split_fp}')
+	split_df = pd.read_csv(split_fp)
  	# select spectra
 	spec_df = spec_df[spec_df['spec_id'].isin(split_df['spec_id'])]
 	# select molecules

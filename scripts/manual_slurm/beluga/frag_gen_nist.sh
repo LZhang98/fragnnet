@@ -47,7 +47,7 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --proc_dp=./data/proc/${DATASET_NAME}  \
     --max_depth=${MAX_DEPTH} \
     --wandb_mode=off \
-    --wandb_run_name=fool \
+    --wandb_run_name=fool
 
 # go to frag directory
 cd ${SLURM_TMPDIR}/frag/
