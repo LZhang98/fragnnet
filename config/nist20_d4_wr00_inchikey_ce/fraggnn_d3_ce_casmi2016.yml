@@ -25,7 +25,7 @@ wandb_tags:
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
 split_dp: data/split/nist20mona23v3_d4_wr00_inchikey_casmi2016
-frag_dp: data/frag/data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
+frag_dp: data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
