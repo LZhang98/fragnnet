@@ -39,14 +39,14 @@ if __name__ == "__main__":
 	updated_train_split_df = train_split_df[~train_split_df['mol_id'].isin(in_casmi['mol_id'].to_list())]
 	train_to_test_split_df = train_split_df[train_split_df['mol_id'].isin(in_casmi['mol_id'].to_list())]
 	print(f"train: {len(train_split_df)} > {len(updated_train_split_df)}" )
-	train_to_test_split_df.to_csv(os.path.join(args.split_out_dp, "train_ids.csv"))
+	updated_train_split_df.to_csv(os.path.join(args.split_out_dp, "train_ids.csv"))
  
 	# update val split
 	val_split_df = pd.read_csv(os.path.join(args.split_dp, "val_ids.csv"))
 	updated_val_split_df = val_split_df[~val_split_df['mol_id'].isin(in_casmi['mol_id'].to_list())]
 	val_to_test_split_df = val_split_df[val_split_df['mol_id'].isin(in_casmi['mol_id'].to_list())]
 	print(f"val: {len(val_split_df)} > {len(updated_val_split_df)}" )
-	val_to_test_split_df.to_csv(os.path.join(args.split_out_dp, "val_ids.csv"))
+	updated_val_split_df.to_csv(os.path.join(args.split_out_dp, "val_ids.csv"))
   
 	# update test split
 	test_split_df = pd.read_csv( os.path.join(args.split_dp, "test_ids.csv"))

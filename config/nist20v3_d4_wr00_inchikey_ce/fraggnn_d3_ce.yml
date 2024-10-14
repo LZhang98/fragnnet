@@ -1,9 +1,8 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ce
-wandb_group: nist20_inchikey_fraggnn_nce_d3
+wandb_name: nist20v3_fraggnn_d3_ce
 wandb_tags:
 - retrieval
 - nist20
-- d4
+- d3
 - wr00
 - inchikey
 - new_proc
