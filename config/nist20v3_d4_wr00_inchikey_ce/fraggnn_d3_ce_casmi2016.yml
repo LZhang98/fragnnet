@@ -2,7 +2,7 @@ wandb_name: nist20v3_fraggnn_d3_ce_casmi2016
 wandb_tags:
 - retrieval
 - nist20
-- d4
+- d3
 - wr00
 - inchikey
 - new_proc
