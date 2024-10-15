@@ -57,3 +57,91 @@ s1 - 634340
 s2 - 444303
 s3 - 103976
 s4 - 132548
+
+# How Prepare MSGym Data
+
+```bash
+# for sim challenege
+python preproc_scripts/01_prepare_df.py --input_format=ms_gym --output_format=csv --output_name=ms_gym  --ms_gym_tsv=msgym/MassSpecGym_with_test.tsv
+
+# for extra data in msgym
+python preproc_scripts/01_prepare_df.py --input_format=ms_gym_extra --output_format=csv --output_name=ms_gym_extra --ms_gym_tsv=msgym/MassSpecGym_with_test.tsv
+	
+# for all data in msgym
+python preproc_scripts/02_prepare_proc.py \
+	--proc_dp=data/proc/ms_gym_all \
+	--dsets ms_gym ms_gym_extra
+	
+# Run DAG Gen
+python preproc_scripts/03_prepare_dag_feats.py \
+	--wandb_mode=off \
+	--max_depth=3 \
+	--wandb_run_name=foo\
+	--frag_dp=data/frag/ms_gym_d3_h4v2 \
+	--proc_dp=data/proc/ms_gym_all \
+	--dsets ms_gym ms_gym_extra \
+	--prec_types [M+H]+ [M+Na]+
+
+# Benchmark split (sim chanllenge)
+python preproc_scripts/04_prepare_split.py \
+  --proc_dp=data/proc/ms_gym_all \
+  --ces ace \
+  --split_dp=./data/split/ms_gym_d3_h4_benchmarkv2 \
+  --frag_dp=./data/frag/ms_gym_d3_h4v2 \
+  --primary_dsets ms_gym \
+  --max_prec_mz=1000.0 \
+  --inst_types FT QTOF \
+  --split_type=predefined_dsetid_csv \
+  --predefined_dsetid_csv=data/df/ms_gym_fold.csv
+  
+# Benchmark split all
+# this is not for the paper
+# just for fun
+python preproc_scripts/04_prepare_split.py \
+  --proc_dp=data/proc/ms_gym_all \
+  --ces ace \
+  --split_dp=./data/split/ms_gym_d3_h4_benchmark_all \
+  --frag_dp=./data/frag/ms_gym_d3_h4v2 \
+  --primary_dsets ms_gym ms_gym_extra \
+  --max_prec_mz=1000.0 \
+  --inst_types FT QTOF \
+  --split_type=predefined_dsetid_csv \
+  --predefined_dsetid_csv data/df/ms_gym_fold.csv data/df/ms_gym_extra_fold.csv
+```
+
+# How Prepare Pubchem MS2C Data
+
+## Create Pubchem MS2C Candidates Set
+```bash
+# inchikey
+python preproc_scripts/pubchem_ms2c/02_prepare_ms2c_candidates.py  \
+	--split_dp="./data/split/nist20mona23v3_d4_wr00_inchikey" \
+	--proc_dp="./data/proc/nist20mona23v3" \
+	--split_type=test
+
+# scaffold
+python preproc_scripts/pubchem_ms2c/02_prepare_ms2c_candidates.py  \
+	--split_dp="./data/split/nist20mona23v3_d4_wr00_scaffold" \
+	--proc_dp="./data/proc/nist20mona23v3" \
+	--split_type=test
+```
+
+## Create Pubchem MS2C Proc
+
+```bash
+# pubchem ms2c for scaffold split
+python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
+	--candidate_pkl_fp=./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz \
+	--proc_dp=./data/proc/nist20mona23v3 \
+	--split_dp=./data/split/nist20mona23v3_d4_wr00_scaffold \
+	--split_type=test \
+	--ms2c_data_dp=./data/ms2c/pubchem/proc
+```
+
+## Create Pubchem MS2C DAGs
+```bash
+python preproc_scripts/pubchem_ms2c/04_run_ms2c_frag_gen.py \
+	--frag_dp=pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50  \
+	--proc_dp=data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50 \
+	--max_depth=3
+```
