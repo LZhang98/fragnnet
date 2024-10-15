@@ -1,4 +1,4 @@
-wandb_name: nist20v3_fraggnn_d3_ce
+wandb_name: nist20v3_inchikey_fraggnn_d3_ce
 wandb_tags:
 - retrieval
 - nist20

@@ -1,4 +1,4 @@
-wandb_name: nist20v3_fraggnn_d4_ce
+wandb_name: nist20v3_inchikey_fraggnn_d4_ce
 wandb_tags:
 - retrieval
 - nist20
@@ -6,7 +6,7 @@ wandb_tags:
 - wr00
 - inchikey
 - new_proc
-- fraggnn_d3
+- fraggnn_d4
 - dynamic_sampler
 - new_metrics
 - nodemlp
