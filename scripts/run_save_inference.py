@@ -19,16 +19,88 @@ import gc
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--split_types", type=str, nargs="+", default=["inchikey","scaffold"])
-	parser.add_argument("--wandb_model_types", type=str, nargs="+", default=["fraggnn_d3","fraggnn_d4","iceberg_inten_100","iceberg_inten_all","neims","massformer"])
-	parser.add_argument("--local_model_types", type=str, nargs="+", default=[])
-	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
-	parser.add_argument("--num_seeds", type=int, default=5)
-	parser.add_argument("--local_path", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/local_runs")
-	parser.add_argument("--vals_dp", type=str, default="/h/adamo/frag-gnn/inference_outputs")
-	parser.add_argument("--force_overwrite", type=booltype, default=False)
-	parser.add_argument("--auxiliary_scores", type=str, nargs="+", default=["cos_sim","cos_hun"])
-	parser.add_argument("--skip_extra_losses", type=booltype, default=False)
+	parser.add_argument(
+		"--split_types", 
+		type=str, 
+		nargs="+", 
+		default=["inchikey","scaffold"]
+	)
+	parser.add_argument(
+		"--wandb_model_types", 
+		type=str, 
+		nargs="+", 
+		default=[
+			"fraggnn_d3",
+			"fraggnn_d4",
+			"iceberg_inten_100",
+			"iceberg_inten_all",
+			"neims",
+			"massformer"
+		]
+	)
+	parser.add_argument(
+		"--local_model_types", 
+		type=str, 
+		nargs="+", 
+		default=[]
+	)
+	parser.add_argument(
+		"--eval_split", 
+		type=str, 
+		default="test", 
+		choices=["train","val","test","secondary"]
+	)
+	parser.add_argument(
+		"--num_seeds", 
+		type=int, 
+		default=5
+	)
+	parser.add_argument(
+		"--local_path", 
+		type=str, 
+		default="/scratch/hdd001/home/adamo/frag-gnn/local_runs"
+	)
+	parser.add_argument(
+		"--vals_dp", 
+		type=str, 
+		default="/h/adamo/frag-gnn/inference_outputs"
+	)
+	parser.add_argument(
+		"--force_overwrite", 
+		type=booltype, 
+		default=False
+	)
+	parser.add_argument(
+		"--auxiliary_scores", 
+		type=str, 
+		nargs="+", 
+		default=["cos_sim","cos_hun"]
+	)
+	parser.add_argument(
+		"--skip_extra_losses", 
+		type=booltype, 
+		default=False
+	)
+	parser.add_argument(
+		"--output_subset", 
+		type=str, 
+		nargs="+", 
+		default=[
+			"true_mzs",
+			"true_logprobs",
+			"true_batch_idxs",
+			"pred_mzs",
+			"pred_logprobs",
+			"pred_batch_idxs",
+			"true_oos_prob",
+			"oos_prob",
+		]
+	)
+	parser.add_argument(
+		"--output_everything",
+		type=booltype,
+		default=False
+	)
 	args = parser.parse_args()
 
 	eval_split = args.eval_split
@@ -36,6 +108,10 @@ if __name__ == "__main__":
 	local_path = args.local_path
 	vals_dp = args.vals_dp
 	force_overwrite = args.force_overwrite
+	if args.output_everything:
+		output_subset = None
+	else:
+		output_subset = set(args.output_subset)
 
 	# this is necessary to avoid a pytorch compile issue...
 	# TODO: replace this with a proper checkpoint decompilation
@@ -141,18 +217,8 @@ if __name__ == "__main__":
 				model.to(device)
 				model.eval()
 				# define output subset
-				output_subset = [
-					"true_mzs",
-					"true_logprobs",
-					"true_batch_idxs",
-					"pred_mzs",
-					"pred_logprobs",
-					"pred_batch_idxs",
-					"true_oos_prob",
-					"oos_prob",
-				]
-				output_subset = set(output_subset).union(model.metric_names)
-				# print(output_subset)
+				if not args.output_everything:
+					output_subset = output_subset.union(model.metric_names)
 				# run inference
 				vals = run_inference(dl, model, device, eval_split, batch_cutoff, config_d["nb_iso"], output_subset=output_subset)
 				model.cpu()
@@ -172,4 +238,4 @@ if __name__ == "__main__":
 				gc.collect()
 				if config_d["accelerator"]=="gpu":
 					with th.no_grad():
-						th.cuda.empty_cache()				
+						th.cuda.empty_cache()
