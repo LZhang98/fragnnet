@@ -1,4 +1,5 @@
 import multiprocessing
+import time
 import torch as th
 import pandas as pd
 
@@ -6,15 +7,18 @@ import os
 import argparse
 import json
 
-from frag_gnn.runner import load_config
-from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
-from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
+#from frag_gnn.runner import load_config
+#from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
+#from frag_gnn.iceberg.pl_model import IcebergGenPL
+#from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
 from frag_gnn.utils.misc_utils import to_device, booltype
 from frag_gnn.utils.data_utils import par_apply, seq_apply
 from rdkit import RDLogger
 from rdkit import Chem
 from tqdm import tqdm
 import tarfile
+from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
+from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
 
 def run_iceberg_intern(
 				 iceberg_intern_ckpt_fp,   
@@ -167,23 +171,29 @@ def run_iceberg_gen(iceberg_gen_inputs,
 def get_args():
     
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--task_dp", type=str,default='data/ms2c/pubchem/pred_inputs/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50', help="")
-	parser.add_argument("--save_dp", type=str,default="iceberg_inten_100", help="")
+	parser.add_argument("--device", type=str,default="cuda:0", help="")
+	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
+
+	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
+	#parser.add_argument("--model_ckpt",type=str, default=None)
 
  	#gen params
-	parser.add_argument("--iceberg_gen_ckpt_fp", type=str,default="saved_ckpts/icml_inchikey/iceberg_gen/iceberg_gen.ckpt", help="")
-	parser.add_argument("--magma_dp", type=str,default="data/ms2c/pubchem/magma/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50_magma", help="")
+	parser.add_argument("--iceberg_gen_wandb_run_id",type=str, default= 'i7k9gc3d')
+	parser.add_argument("--iceberg_gen_ckpt_fp", type=str,default=None, help="")
+	parser.add_argument("--magma_dp", type=str,default="data/ms2c/pubchem/magma/", help="")
 	parser.add_argument("--threshold", type=float, default=0.0)
 	parser.add_argument("--max_nodes", type=int, default=100)
 	parser.add_argument("--iceberg_gen_device", type=str,default="cpu", help="")
 	parser.add_argument("--save_magma",type=booltype,default=True)
-	parser.add_argument("--use_precomputed_magma",type=booltype,default=True)
+	parser.add_argument("--use_precomputed_magma",type=booltype,default=False)
+ 
 	#iceberg_intern params
-	parser.add_argument("--template_fp",type=str,default="config/template.yml")
-	parser.add_argument("--custom_fp",type=str,default="config/nist20_d4_wr00_inchikey/iceberg_inten_100/s0.yml")
-	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default="saved_ckpts/icml_inchikey/iceberg_inten_100_hun/iceberg_inten_100_hun.ckpt", help="")
-	parser.add_argument("--iceberg_intern_device", type=str,default="cpu", help="")
-	parser.add_argument("--batch_size", type=int, default=1, help="")
+	parser.add_argument("--iceberg_intern_wandb_run_id",type=str, default= 'c8iwu7il')
+	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default=None, help="")
+	parser.add_argument("--iceberg_intern_device", type=str,default="cuda:0", help="")
+	parser.add_argument("---iceberg_intern_batch_size", type=int, default=1, help="")
 
 	args = parser.parse_args()
 	return args
@@ -192,20 +202,43 @@ if __name__ == "__main__":
 	
 	RDLogger.DisableLog("rdApp.*")
 	args = get_args()
-	os.makedirs(args.save_dp, exist_ok=True)
-	json.dump(vars(args), open(f"{args.save_dp}/args.json", "w"), indent=2)
+	#os.makedirs(args.save_dp, exist_ok=True)
  
-	if args.save_magma:
-		magma_save_dp = os.path.join(args.save_dp, "magma")
-		os.makedirs(magma_save_dp, exist_ok=True)
-		print(f"> save magma data to {magma_save_dp}")
+	#if args.save_magma:
+	#	magma_save_dp = os.path.join(args.save_dp, "magma")
+	#	os.makedirs(magma_save_dp, exist_ok=True)
+	#	print(f"> save magma data to {magma_save_dp}")
   
 	if not th.cuda.is_available():
 		args.iceberg_gen_device = "cpu"
 		args.iceberg_intern_device = "cpu"
+  
+	timestr = time.strftime("%Y%m%d-%H%M%S")
+	save_dp = os.path.dirname(args.save_fp)
+	os.makedirs(save_dp, exist_ok=True)
+	records_dict = vars(args)
+
+	os.makedirs(args.model_save_dp, exist_ok=True)	
+	if args.iceberg_gen_ckpt_fp is None:
+		model_save_dp = args.model_save_dp
+		print(f">> save model to {args.model_save_dp} from wandb with run id: {args.iceberg_gen_wandb_run_id}")
+		iceberg_gen_ckpt_fp = get_ckpt_from_wandb(args.model_save_dp, args.iceberg_gen_wandb_run_id, use_cached = args.use_cahced_ckpt)
+	else:
+		iceberg_gen_ckpt_fp = args.iceberg_gen_ckpt_fp
+	records_dict['iceberg_gen_ckpt_fp'] = iceberg_gen_ckpt_fp
+ 
+	if args.iceberg_intern_ckpt_fp is None:
+		model_save_dp = args.model_save_dp
+		print(f">> save model to {args.model_save_dp} from wandb with run id: {args.iceberg_intern_wandb_run_id}")
+		iceberg_intern_ckpt_fp = get_ckpt_from_wandb(args.model_save_dp, args.iceberg_intern_wandb_run_id, use_cached = args.use_cahced_ckpt)
+	else:
+		iceberg_intern_ckpt_fp = args.iceberg_intern_ckpt_fp
+	records_dict['iceberg_intern_ckpt_fp'] = iceberg_intern_ckpt_fp
+	json.dump(records_dict, open(f"{args.save_fp}_{timestr}.json", "w"), indent=2)
+
 	print(f"> iceberg_gen_device {args.iceberg_gen_device }")
 	print(f"> iceberg_intern_device {args.iceberg_intern_device }")
- 
+	exit()
 	mol_fp = os.path.join(args.task_dp,'mol_df.pkl.gz')
 	spec_fp = os.path.join(args.task_dp,'spec_df.pkl.gz')
 
