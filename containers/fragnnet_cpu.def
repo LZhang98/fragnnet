@@ -1,19 +1,13 @@
 Bootstrap: docker
-From: ubuntu:22.04
-
-%arguments
-
+From: python:3.10-slim
+#From: ubuntu:22.04
 
 %post
     APT_INSTALL="apt-get install -y --no-install-recommends"
     PIP_INSTALL="python -m pip --no-cache-dir install --upgrade"
-
-    # install python 3.10 and all dependencies
-    apt-get update &&
-    DEBIAN_FRONTEND=noninteractive $APT_INSTALL \
-        python3.10 \
-        python3.10-dev \
-        python3.10-distutils \
+    
+    # Update package lists and install required system packages
+    apt-get update && $APT_INSTALL \
         g++ \
         gcc \
         build-essential \
@@ -22,11 +16,22 @@ From: ubuntu:22.04
         libxi6 \
         curl \
         ca-certificates \
-        libatlas-base-dev
-    ln -s /usr/bin/python3.10 /usr/local/bin/python
-    curl -sS https://bootstrap.pypa.io/get-pip.py | python
+        python3-venv \
+        python3-pip \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*
 
-    # install python packages
+    # Create virtual environment directory and make it writable
+    VENV_DIR=/opt/fragnnet_env
+    mkdir -p $VENV_DIR
+    chmod -R 777 $VENV_DIR
+    python3 -m venv $VENV_DIR
+
+    # Activate virtual environment
+    . $VENV_DIR/bin/activate
+
+    # Upgrade pip and install necessary packages
+    pip install --upgrade pip
     $PIP_INSTALL setuptools 
     $PIP_INSTALL torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu 
     $PIP_INSTALL numpy==1.26.4
@@ -51,7 +56,19 @@ From: ubuntu:22.04
         scikit-learn \
         Pyarrow \
         pyteomics
+        
+    chmod -R 777 $VENV_DIR
+%environment
+    # Activate virtual environment upon container execution
+    export VENV_DIR=/opt/fragnnet_env
+    . $VENV_DIR/bin/activate
+    export PATH=$VENV_DIR/bin:$PATH
 
-    apt-get clean && \
-    apt-get autoremove
-    #rm -rf /var/lib/apt/lists/* /tmp/* ~/*
+%runscript
+    # Default command to run when the container is executed
+    echo "Running inside Apptainer with virtual environment"
+    exec "$@"
+
+%labels
+    Author "fw"
+    Version "1.0"

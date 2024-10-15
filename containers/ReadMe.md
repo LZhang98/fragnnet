@@ -3,14 +3,12 @@
 ### Build Image from Apptainer def
 CPU Image
 ```
-mkdir apptainer
-export APPTAINER_TMPDIR=$(pwd)/apptainer/tmp &&  apptainer build ./apptainer/fragnnet_cpu.sif ./fragnnet_cpu.def
+export APPTAINER_TMPDIR=$(pwd)/tmp &&  apptainer build ./fragnnet_cpu.sif ./fragnnet_cpu.def
 ```
 
 CUDA Image
 ```
-mkdir apptainer
-export APPTAINER_TMPDIR=$(pwd)/apptainer/tmp &&  apptainer build ./apptainer/fragnnet_cuda118.sif ./fragnnet_cuda118.def
+export APPTAINER_TMPDIR=$(pwd)/tmp &&  apptainer build ./fragnnet_cuda118.sif ./fragnnet_cuda118.def
 ```
 
 ### Get Prebuild image from google drive
@@ -44,23 +42,44 @@ module load apptainer/1.2.4
 ## Run apptainer shell
 At Project Root
 ```
-apptainer shell ./containers/apptainer/fragnnet_cpu.sif
+apptainer shell ./containers/fragnnet_cpu.sif
 pip install --user -I -e .
 python
 ```
 
 ## Run apptainer shell
+do this 
 ```
-apptainer exec ./containers/apptainer/fragnnet_cpu.sif pip install --user -I -e .
-apptainer exec ./containers/apptainer/fragnnet_cpu.sif <command>
+apptainer exec ./containers/fragnnet_cpu.sif <command>
+```
+Check install package
+```
+apptainer exec ./containers/fragnnet_cpu.sif python -m pip list
 ```
 
-apptainer shell -B ${SLURM_TMPDIR} ./containers/apptainer/fragnnet_cpu.sif 
+Check install package
+```
+apptainer exec ./containers/fragnnet_cpu.sif python -c "import numpy; print(numpy.__version__)"
+```
+
+install fragnnet from src
+```
+apptainer exec ./containers/fragnnet_cpu.sif pip install -I -e .
+```
+Note: When the Host Home Directory is Bound:
+    By default, Apptainer often binds the host’s home directory to the container’s home directory. In this case: When you run pip install --user inside the container, it will install the Python packages in your host’s home directory under ~/.local/lib/pythonX.X/site-packages, where X.X corresponds to the Python version.
+When the Container’s Home Directory is Isolated:
+    If you prevent Apptainer from binding the host’s home directory by using the --no-home option or setting a custom --home path inside the container:
+    The --user flag will install the packages in the container’s internal user home directory (e.g., /root/.local/lib/pythonX.X/site-packages or /home/user/.local/lib/pythonX.X/site-packages), depending on the user inside the
+
+
+
+apptainer shell -B ${SLURM_TMPDIR} ./containers/fragnnet_cpu.sif 
 
 eg. run for msgym
 
 apptainer exec -B ${SLURM_TMPDIR} \
-    ./containers/apptainer/fragnnet_cpu.sif \
+    ./containers/fragnnet_cpu.sif \
     python ./scripts/ms2c/run_ms2c_predict_msgym.py \
     --device=cpu \
     --save_dp=${SLURM_TMPDIR}/msgym/fragnnet_predicted/retrieval_candidates_mass \
