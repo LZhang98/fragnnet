@@ -254,15 +254,14 @@ if __name__ == "__main__":
 
 	os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
 
-	#spec_df_grp = spec_df[spec_df['target_mol_id'] == target_id].copy()
-	iceberg_gen_df = spec_df.drop_duplicates(subset='group_id')
-	iceberg_gen_df['magma_dp'] = args.magma_dp
-	iceberg_gen_df['iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
-	iceberg_gen_df['max_nodes'] = args.max_nodes
-	iceberg_gen_df['threshold'] = args.threshold
-	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : Chem.MolToInchi(x, options='-SNon'))
+	iceberg_gen_df = spec_df.drop_duplicates(subset='group_id').copy()
+	iceberg_gen_df.loc[:,'magma_dp'] = args.magma_dp
+	iceberg_gen_df.loc[:,'iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
+	iceberg_gen_df.loc[:,'max_nodes'] = args.max_nodes
+	iceberg_gen_df.loc[:,'threshold'] = args.threshold
+	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : Chem.MolToInchi(x))
 	iceberg_gen_df = iceberg_gen_df.merge(mol_df[['mol_id','mol', 'smiles', "inchi"]], on = 'mol_id', how = 'left')
-	
+
 	# run_iceberg_gen 
 	iceberg_gen_inputs = []
 	if not args.use_precomputed_magma:
