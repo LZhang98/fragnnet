@@ -120,9 +120,10 @@ def run_iceberg_gen(iceberg_gen_inputs,
 				 device = None,
 				 ):
 
-	def single_predict_mol(iceberg_gen_model, adduct, inchi, smi, spec_id, magma_dp, threshold, max_nodes):
+	def single_predict_mol(iceberg_gen_ckpt_fp, adduct, inchi, smi, spec_id, magma_dp, threshold, max_nodes):
 		out_file =  f"{magma_dp}/magma_tree/{spec_id}.json"
-	
+		iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
+		iceberg_gen_model.eval()
 		tree_processor = SpecMolMagmaGenDataset.init_tree_processor(
 			pe_embed_k=iceberg_gen_model.hparams.magma_params["pe_embed_k"],
 			root_encode=iceberg_gen_model.hparams.magma_params["root_encode"],
@@ -153,16 +154,16 @@ def run_iceberg_gen(iceberg_gen_inputs,
 
 		return output
 
-	#if device == 'cpu':
-	#	results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True)
-	#	for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
-	#		continue
+	if device == 'cpu':
+		results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True)
+		for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
+			continue
 	#else:
-	th.set_num_threads(16)
-	for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
-		iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
-		iceberg_gen_model.eval()
-		single_predict_mol(*iceberg_gen_input)
+	#th.set_num_threads(16)
+	#for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
+	#	iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
+	#	iceberg_gen_model.eval()
+	#	single_predict_mol(*iceberg_gen_input)
 		#results = seq_apply(iter(iceberg_gen_inputs),single_predict_mol,True)
 		#for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
 		#	continue
@@ -251,26 +252,24 @@ if __name__ == "__main__":
 	print(f"> prepare spec df {spec_fp}")
 	spec_df = pd.read_pickle(spec_fp)
 
-	#pbar.set_description(f"Processing target {target_id}")
-
-	#magma_dp = f"{args.magma_dp}"
 	os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
 
 	#spec_df_grp = spec_df[spec_df['target_mol_id'] == target_id].copy()
-	spec_df['magma_dp'] = args.magma_dp
-	spec_df['iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
-	spec_df['max_nodes'] = args.max_nodes
-	spec_df['threshold'] = args.threshold
+	iceberg_gen_df = spec_df.drop_duplicates(subset='group_id')
+	iceberg_gen_df['magma_dp'] = args.magma_dp
+	iceberg_gen_df['iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
+	iceberg_gen_df['max_nodes'] = args.max_nodes
+	iceberg_gen_df['threshold'] = args.threshold
 	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : Chem.MolToInchi(x, options='-SNon'))
-	spec_df_grp = spec_df.merge(mol_df[['mol_id','mol', 'smiles']], on = 'mol_id', how = 'left')
+	iceberg_gen_df = iceberg_gen_df.merge(mol_df[['mol_id','mol', 'smiles', "inchi"]], on = 'mol_id', how = 'left')
 	
 	# run_iceberg_gen 
 	iceberg_gen_inputs = []
 	if not args.use_precomputed_magma:
-		iceberg_gen_inputs = spec_df_grp[['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','spec_id', 'magma_dp', 'threshold', 'max_nodes']].values.tolist()
+		iceberg_gen_inputs = iceberg_gen_df[['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 	else:
-		cached_spec_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]	
-		iceberg_gen_inputs = spec_df_grp[spec_df_grp['spec_id'].isin(cached_spec_ids)][['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','spec_id', 'magma_dp', 'threshold', 'max_nodes']].values.tolist()
+		cached_group_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]		
+		iceberg_gen_inputs = iceberg_gen_df[iceberg_gen_df['group_id'].isin(cached_group_ids)][['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 	if len(iceberg_gen_inputs):
 		run_iceberg_gen(iceberg_gen_inputs, device = args.iceberg_gen_device)
    
@@ -293,10 +292,10 @@ if __name__ == "__main__":
 		# run_iceberg_gen 
 		iceberg_gen_inputs = []
 		if not args.use_precomputed_magma:
-			iceberg_gen_inputs = spec_df_grp[['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','spec_id', 'magma_dp', 'threshold', 'max_nodes']].values.tolist()
+			iceberg_gen_inputs = spec_df_grp[['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','group_id', 'magma_dp', 'threshold', 'max_nodes']].values.tolist()
 		else:
-			cached_spec_ids = [f.split('.')[0] for f in os.listdir(magma_dp)]	
-			iceberg_gen_inputs = spec_df_grp[spec_df_grp['spec_id'].isin(cached_spec_ids)][['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','spec_id', 'magma_dp', 'threshold', 'max_nodes']].values.tolist()
+			cached_group_ids = [f.split('.')[0] for f in os.listdir(magma_dp)]	
+			iceberg_gen_inputs = spec_df_grp[spec_df_grp['group_id'].isin(cached_group_ids)][['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','group_id', 'magma_dp', 'threshold', 'max_nodes']].values.tolist()
 		if len(iceberg_gen_inputs):
 			run_iceberg_gen(iceberg_gen_inputs, device = args.iceberg_gen_device)
 		
