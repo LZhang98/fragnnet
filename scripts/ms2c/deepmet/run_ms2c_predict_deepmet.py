@@ -7,7 +7,7 @@ from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
-from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
+from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
 from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
 
 import os
@@ -51,7 +51,7 @@ if __name__ == "__main__":
 		print(f">> save model to {model_save_dp} from wandb")
 		#assert args.wandb_run_id is not None
 		print(f">> wandb run id: {args.wandb_run_id}")
-		ckpt_fp = get_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
+		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
 	else:
 		ckpt_fp = args.model_ckpt
 	

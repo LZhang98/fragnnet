@@ -1,4 +1,4 @@
-from frag_gnn.utils.misc_utils import get_ckpt_from_wandb
+from frag_gnn.utils.misc_utils import get_best_ckpt_from_wandb
     
 if __name__ == "__main__":
 
@@ -15,7 +15,7 @@ if __name__ == "__main__":
     
     save_dp = "./saved_ckpts/icml_inchikey"
     for run_id in inchikey_splits_runs:
-        get_ckpt_from_wandb(save_dp, run_id)
+        get_best_ckpt_from_wandb(save_dp, run_id)
 
     scaffold_splits_runs = [
         'lgeo7mjz', #fraggnn_d3_nodemlp_mnce
@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
     save_dp = "./saved_ckpts/icml_scaffold"
     for run_id in scaffold_splits_runs:
-        get_ckpt_from_wandb(save_dp, run_id)
+        get_best_ckpt_from_wandb(save_dp, run_id)
 
     # nist20_inchikey_fraggnn_d4_v2 
     inchikey_splits_runs = [
@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     save_dp = "./saved_ckpts/icml_inchikey_seeds"
     for run_id in inchikey_splits_runs:
-        get_ckpt_from_wandb(save_dp, run_id)
+        get_best_ckpt_from_wandb(save_dp, run_id)
 
     # nist20_inchikey_fraggnn_d3_v2 
     inchikey_splits_runs = [
@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
     save_dp = "./saved_ckpts/icml_inchikey_seeds"
     for run_id in inchikey_splits_runs:
-        get_ckpt_from_wandb(save_dp, run_id)
+        get_best_ckpt_from_wandb(save_dp, run_id)
 
     
     # nist20_inchikey_scaffold_d4_v2 
@@ -68,4 +68,4 @@ if __name__ == "__main__":
 
     save_dp = "./saved_ckpts/icml_scaffold_seeds"
     for run_id in inchikey_splits_runs:
-        get_ckpt_from_wandb(save_dp, run_id)
+        get_best_ckpt_from_wandb(save_dp, run_id)

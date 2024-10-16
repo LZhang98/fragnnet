@@ -7,7 +7,7 @@ from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
-from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
+from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
 
 import os
 import multiprocessing
@@ -152,7 +152,7 @@ if __name__ == "__main__":
 	for run_id,custom_fp in model_id_configs:
 		#for run_id in inchikey_splits_runs:
 		print(f"> wandb run id: {run_id}")
-		ckpt_fp = get_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
+		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
 		
 		#print(f"> {np_ckpt_fp}")
 		save_fp = os.path.join(args.save_dp, run_id+'.csv')

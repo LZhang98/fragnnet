@@ -17,6 +17,7 @@ import torch_geometric as pyg
 import dgl
 from collections import defaultdict
 import sys
+import glob
 
 TQDM_DISABLE = False
 PPM = 1/1000000
@@ -466,19 +467,24 @@ def check_pyg_full_compile():
 	assert th_major_version >= 2, th_major_version
 	return pyg_major_version >= 2 and pyg_minor_version >= 5
 
-def get_ckpt_from_wandb(saved_dp, run_id, 
-                        entity='frag-gnn', 
-                        project='frag-gnn',
-                        #save_use_model_name = True,
-                        use_cached = False):
+def get_best_ckpt_from_wandb(saved_dp, run_id, 
+						entity='frag-gnn', 
+						project='frag-gnn',
+						use_cached = False):
+	# return ckpt
+	cached_ckpts = glob.glob(os.path.join(saved_dp, f'*_{run_id}.ckpt'))
+	if use_cached and len(cached_ckpts) == 1:
+		print(f"> found cached ckpt {cached_ckpts[0]} for {run_id}")
+		return cached_ckpts[0]
+
 	import wandb
 	api = wandb.Api()
 	run = api.run(f"{entity}/{project}/{run_id}")
 	#print(run.id, run.name, run.tags)
 	print(f"> Processing model files for run {run.id} {run.name}")
 	model_tag = f"{run.name}_{run_id}"
-	model_save_dp = f"{saved_dp}/{model_tag}"
-	os.makedirs(model_save_dp, exist_ok=True)
+	#model_save_dp = f"{saved_dp}/{model_tag}"
+	os.makedirs(saved_dp, exist_ok=True)
 	ckpt_file, ckpt_epoch_num = None, None
 	for file in run.files():
 		if file.name.startswith("ckpt/model-epoch="):
@@ -493,7 +499,7 @@ def get_ckpt_from_wandb(saved_dp, run_id,
 	
 	#assert not ckpt_file is None
 	#assert not ckpt_epoch_num is None
-	ckpt_fp = f"{model_save_dp}/{model_tag}.ckpt"
+	ckpt_fp = f"{saved_dp}/{model_tag}.ckpt"
 	if os.path.isfile(ckpt_fp) and use_cached:
 		return ckpt_fp
 
@@ -532,7 +538,7 @@ def get_slurm_job_id():
 	return os.getenv('SLURM_JOB_ID', default=None)
 
 def get_slurm_allocated_cores(job_id):
-    # cpus_on_node = os.getenv('SLURM_CPUS_ON_NODE', default=None)
+	# cpus_on_node = os.getenv('SLURM_CPUS_ON_NODE', default=None)
 	# ComputeCanada does not set this on some systems
 	# use scontrol to get the number of CPUs allocated to the job
 	# int(os.getenv('SLURM_CPUS_PER_TASK', default=1))

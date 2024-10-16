@@ -1,4 +1,4 @@
-from frag_gnn.utils.misc_utils import get_ckpt_from_wandb, get_wandb_runs_by_grp
+from frag_gnn.utils.misc_utils import get_best_ckpt_from_wandb, get_wandb_runs_by_grp
 	
 if __name__ == "__main__":
 
@@ -31,7 +31,7 @@ if __name__ == "__main__":
 	]
 	
 	for run_id in fragnnet_runs:
-		get_ckpt_from_wandb(save_dp, run_id)
+		get_best_ckpt_from_wandb(save_dp, run_id, use_cached=True)
 
 
 	iceberg_runs = [
@@ -52,7 +52,6 @@ if __name__ == "__main__":
 	
 		# nist20v3_scaffold_iceberg_gen
 		'4pweeg45', # nist20v3_scaffold_iceberg_gen_s0
-		'9j26mr4s', # nist20v3_scaffold_iceberg_gen_s1
 		'n27tube2', # nist20v3_scaffold_iceberg_gen_s2
 		'biofdpxl', # nist20v3_scaffold_iceberg_gen_s3
 		'cyot56r3', # nist20v3_scaffold_iceberg_gen_s4
@@ -67,7 +66,7 @@ if __name__ == "__main__":
 	]
 
 	for run_id in iceberg_runs:
-		get_ckpt_from_wandb(save_dp, run_id)
+		get_best_ckpt_from_wandb(save_dp, run_id, use_cached=True)
   
 
 	massformer_runs = [
@@ -86,7 +85,7 @@ if __name__ == "__main__":
 	]
 	
 	for run_id in massformer_runs:
-		get_ckpt_from_wandb(save_dp, run_id)
+		get_best_ckpt_from_wandb(save_dp, run_id)
 
 
 	nemis_runs = [
@@ -104,4 +103,4 @@ if __name__ == "__main__":
 	]
 
 	for run_id in nemis_runs:
-		get_ckpt_from_wandb(save_dp, run_id)
+		get_best_ckpt_from_wandb(save_dp, run_id)

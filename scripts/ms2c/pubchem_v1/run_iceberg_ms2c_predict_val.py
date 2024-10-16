@@ -13,7 +13,7 @@ from frag_gnn.utils.misc_utils import to_device, booltype
 from frag_gnn.utils.data_utils import par_apply, par_apply_series, seq_apply
 from rdkit import Chem
 from tqdm import tqdm
-from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
+from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
 from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
 
 from rdkit import RDLogger
@@ -74,7 +74,7 @@ def get_args():
 	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50/iceberg_inchikey_s0.pkl", help="")
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
 
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--use_cahced_ckpt",type=booltype,default=True)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	#parser.add_argument("--model_ckpt",type=str, default=None)
 
@@ -115,7 +115,7 @@ if __name__ == "__main__":
 	if args.iceberg_gen_ckpt_fp is None:
 		model_save_dp = args.model_save_dp
 		print(f">> save model to {args.model_save_dp} from wandb with run id: {args.iceberg_gen_wandb_run_id}")
-		iceberg_gen_ckpt_fp = get_ckpt_from_wandb(args.model_save_dp, args.iceberg_gen_wandb_run_id, use_cached = args.use_cahced_ckpt)
+		iceberg_gen_ckpt_fp = get_best_ckpt_from_wandb(args.model_save_dp, args.iceberg_gen_wandb_run_id, use_cached = args.use_cahced_ckpt)
 	else:
 		iceberg_gen_ckpt_fp = args.iceberg_gen_ckpt_fp
 	print(f"> iceberg_gen_ckpt_fp: {iceberg_gen_ckpt_fp}")
@@ -124,7 +124,7 @@ if __name__ == "__main__":
 	if args.iceberg_intern_ckpt_fp is None:
 		model_save_dp = args.model_save_dp
 		print(f">> save model to {args.model_save_dp} from wandb with run id: {args.iceberg_intern_wandb_run_id}")
-		iceberg_intern_ckpt_fp = get_ckpt_from_wandb(args.model_save_dp, args.iceberg_intern_wandb_run_id, use_cached = args.use_cahced_ckpt)
+		iceberg_intern_ckpt_fp = get_best_ckpt_from_wandb(args.model_save_dp, args.iceberg_intern_wandb_run_id, use_cached = args.use_cahced_ckpt)
 	else:
 		iceberg_intern_ckpt_fp = args.iceberg_intern_ckpt_fp
 	print(f"> iceberg_intern_ckpt_fp: {iceberg_intern_ckpt_fp}")
