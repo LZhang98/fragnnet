@@ -10,8 +10,7 @@ import json
 from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
 from frag_gnn.utils.misc_utils import to_device, booltype
-from frag_gnn.utils.data_utils import par_apply
-from rdkit import RDLogger
+from frag_gnn.utils.data_utils import par_apply, par_apply_series
 from rdkit import Chem
 from tqdm import tqdm
 import tarfile
@@ -170,7 +169,7 @@ def run_iceberg_gen(iceberg_gen_inputs,
 def get_args():
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--device", type=str,default="cuda:0", help="")
+	parser.add_argument("--device", type=str,default="cpu", help="")
 	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50/iceberg_inchikey_s0.pkl", help="")
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
 
@@ -224,6 +223,7 @@ if __name__ == "__main__":
 		iceberg_gen_ckpt_fp = get_ckpt_from_wandb(args.model_save_dp, args.iceberg_gen_wandb_run_id, use_cached = args.use_cahced_ckpt)
 	else:
 		iceberg_gen_ckpt_fp = args.iceberg_gen_ckpt_fp
+	print(f"> iceberg_gen_ckpt_fp: {iceberg_gen_ckpt_fp}")
 	records_dict['iceberg_gen_ckpt_fp'] = iceberg_gen_ckpt_fp
  
 	if args.iceberg_intern_ckpt_fp is None:
@@ -232,7 +232,10 @@ if __name__ == "__main__":
 		iceberg_intern_ckpt_fp = get_ckpt_from_wandb(args.model_save_dp, args.iceberg_intern_wandb_run_id, use_cached = args.use_cahced_ckpt)
 	else:
 		iceberg_intern_ckpt_fp = args.iceberg_intern_ckpt_fp
+	print(f"> iceberg_intern_ckpt_fp: {iceberg_intern_ckpt_fp}")
 	records_dict['iceberg_intern_ckpt_fp'] = iceberg_intern_ckpt_fp
+
+
 	json.dump(records_dict, open(f"{args.save_fp}_{timestr}.json", "w"), indent=2)
 
 	print(f"> iceberg_gen_device {args.iceberg_gen_device }")
@@ -257,8 +260,9 @@ if __name__ == "__main__":
 	spec_df['iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
 	spec_df['max_nodes'] = args.max_nodes
 	spec_df['threshold'] = args.threshold
+	mol_df.loc[:,"inchi"] = par_apply_series(spec_df["mol"], lambda x : Chem.MolToInchi(x))
 	spec_df_grp = spec_df.merge(mol_df[['mol_id','mol', 'smiles']], on = 'mol_id', how = 'left')
-	spec_df_grp['inchi'] = spec_df_grp['mol'].apply(lambda x : Chem.MolToInchi(x))
+	#spec_df_grp['inchi'] = spec_df_grp['mol'].apply(lambda x : Chem.MolToInchi(x))
 	
 	# run_iceberg_gen 
 	iceberg_gen_inputs = []
