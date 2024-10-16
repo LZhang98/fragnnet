@@ -15,7 +15,6 @@ from rdkit import Chem
 from tqdm import tqdm
 from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
 from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
-
 from rdkit import RDLogger
 
 def run_iceberg_gen(iceberg_gen_inputs,
@@ -23,6 +22,11 @@ def run_iceberg_gen(iceberg_gen_inputs,
 				 ):
 
 	def single_predict_mol(iceberg_gen_ckpt_fp, adduct, inchi, smi, spec_id, magma_dp, threshold, max_nodes):
+     
+		# disbale  UserWarning: TypedStorage is deprecated.warning
+		import warnings
+		warnings.filterwarnings("ignore", category=DeprecationWarning) 
+
 		out_file =  f"{magma_dp}/magma_tree/{spec_id}.json"
 		iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
 		iceberg_gen_model.eval()
@@ -74,9 +78,8 @@ def get_args():
 	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50/iceberg_inchikey_s0.pkl", help="")
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
 
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=True)
+	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	#parser.add_argument("--model_ckpt",type=str, default=None)
 
  	#gen params
 	parser.add_argument("--iceberg_gen_wandb_run_id",type=str, default= 'i7k9gc3d')
@@ -92,14 +95,14 @@ def get_args():
 	parser.add_argument("--iceberg_intern_wandb_run_id",type=str, default= 'c8iwu7il')
 	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default=None, help="")
 	parser.add_argument("--iceberg_intern_device", type=str,default="cpu", help="")
-	parser.add_argument("---iceberg_intern_batch_size", type=int, default=1, help="")
+	parser.add_argument("--iceberg_intern_batch_size", type=int, default=1, help="")
 
 	args = parser.parse_args()
 	return args
 
 if __name__ == "__main__":
 	
-	RDLogger.DisableLog("rdApp.*")
+	RDLogger.DisableLog("rdApp.warning")
 	args = get_args()
 
 	if not th.cuda.is_available():
@@ -130,7 +133,6 @@ if __name__ == "__main__":
 	print(f"> iceberg_intern_ckpt_fp: {iceberg_intern_ckpt_fp}")
 	records_dict['iceberg_intern_ckpt_fp'] = iceberg_intern_ckpt_fp
 
-
 	json.dump(records_dict, open(f"{args.save_fp}_{timestr}.json", "w"), indent=2)
 
 	print(f"> iceberg_gen_device {args.iceberg_gen_device }")
@@ -145,6 +147,11 @@ if __name__ == "__main__":
 	print(f"> prepare spec df {spec_fp}")
 	spec_df = pd.read_pickle(spec_fp)
 
+	unique_group_ids = spec_df['group_id'].unique()
+	print(unique_group_ids)
+	unique_group_ids = unique_group_ids[0:10]
+	spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
+	#exit()
 	print(f"> preapre iceberg gen/ magma")
 	os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
 	iceberg_gen_df = spec_df.drop_duplicates(subset='group_id').copy()
@@ -152,7 +159,7 @@ if __name__ == "__main__":
 	iceberg_gen_df.loc[:,'iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
 	iceberg_gen_df.loc[:,'max_nodes'] = args.max_nodes
 	iceberg_gen_df.loc[:,'threshold'] = args.threshold
-	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : Chem.MolToInchi(x))
+	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : (RDLogger.DisableLog("rdApp.warning"), Chem.MolToInchi(x))[1])
 	iceberg_gen_df = iceberg_gen_df.merge(mol_df[['mol_id','mol', 'smiles', "inchi"]], on = 'mol_id', how = 'left')
 
 	# run_iceberg_gen 
@@ -165,7 +172,7 @@ if __name__ == "__main__":
 	if len(iceberg_gen_inputs):
 		run_iceberg_gen(iceberg_gen_inputs, device = args.iceberg_gen_device)
 	
-	exit()
+	#exit()
 
 	print(f"> Loading Iceberg_Inten models {iceberg_intern_ckpt_fp}")
 	auxiliary_scores = ["cos_sim","cos_hun"]
@@ -177,9 +184,9 @@ if __name__ == "__main__":
                                                       eval_mz_bin_res = eval_mz_bin_res)
 
 	df = run_prediction(model = model,   
-				local_config_d = config_d,
-				mol_df_fp = args.mol_df_fp,
-				spec_df_fp = args.spec_df_fp,
+				config_d = config_d,
+				mol_data_ptr = mol_df,
+				spec_data_ptr = spec_df,
 				magma_dp = args.magma_dp,
 				device = args.device)
 	df.to_pickle(args.save_fp)

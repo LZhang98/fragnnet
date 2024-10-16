@@ -81,8 +81,8 @@ if __name__ == "__main__":
 			frag_dp = os.path.join(args.frag_dp, mol_df_filename[:-4])
 			df = run_prediction(model = model,   
 						config_d = config_d,
-						mol_df_fp = mol_df_fp,
-						spec_df_fp = spec_df_fp,
+						mol_data_ptr = mol_df_fp,
+						spec_data_ptr = spec_df_fp,
 						frag_dp = frag_dp,
 						device = device)
 			df.to_pickle(save_fp)
@@ -94,8 +94,8 @@ if __name__ == "__main__":
 					
 				df = run_prediction(model = model,   
 							config_d = config_d,
-							mol_df_fp = mol_df_fp,
-							spec_df_fp = spec_df_fp,
+							mol_data_ptr = mol_df_fp,
+							spec_data_ptr = spec_df_fp,
 							frag_dp = tmp_dp,
 							device = device)
 				df.to_pickle(save_fp)

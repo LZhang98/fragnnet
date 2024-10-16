@@ -259,7 +259,7 @@ def run_prediction(model,
 				 config_d:dict,
 				 mol_data_ptr:str|pd.DataFrame,
 				 spec_data_ptr:str|pd.DataFrame,
-				 device:str = 'cpu',
+				 device:str,
 				 frag_dp:str = None,
 				 magma_dp:str = None,
 				 validate:bool = False,
@@ -301,7 +301,6 @@ def run_prediction(model,
  
 	# only check for FragGNNet
 	if isinstance(model,FragGNNPL):
-		assert not isinstance(frag_dp, None)
 		assert os.path.isdir(frag_dp)
 		#print(">> filtering input without frags")
 		all_frags = set([f.split('.')[0] for f in os.listdir(frag_dp)])
@@ -315,7 +314,6 @@ def run_prediction(model,
 		#print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
 		model_ds_cls = SpecMolDataset
 	elif isinstance(model,IcebergIntenPL):
-		assert not isinstance(magma_dp, None)
 		assert os.path.isdir(magma_dp)
 		model_ds_cls = SpecMolMagmaIntenDataset
 		local_config_d['magma_dp'] = magma_dp
