@@ -517,6 +517,11 @@ def get_wandb_runs_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
 	runs = api.runs(f"{entity}/{project}", include_sweeps=False, filters = {"group": group_name})
 	return runs
 
+def get_wandb_runids_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
+	runs = get_wandb_runs_by_grp("nist20v3_inchikey_fraggnn_d3")
+	run_ids = [run.id for run in runs]
+	return run_ids
+
 def detele_ckpt_from_wandb(run_id, entity='frag-gnn', project='frag-gnn'):
 	import wandb
 	api = wandb.Api()

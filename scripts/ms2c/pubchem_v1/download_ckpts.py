@@ -81,7 +81,6 @@ if __name__ == "__main__":
 		'fgbtd9us', # nist20v3_inchikey_massformer_s2 
 		'6x3ar9d5', # nist20v3_inchikey_massformer_s3
 		'qtqkl08n', # nist20v3_inchikey_massformer_s4
-		
 	]
 	
 	for run_id in massformer_runs:
