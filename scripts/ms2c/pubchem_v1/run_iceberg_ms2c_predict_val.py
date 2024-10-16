@@ -184,14 +184,14 @@ def get_args():
 	parser.add_argument("--magma_dp", type=str,default="data/ms2c/pubchem/magma/iceberg_gen_inchikey_s0", help="")
 	parser.add_argument("--threshold", type=float, default=0.0)
 	parser.add_argument("--max_nodes", type=int, default=100)
-	parser.add_argument("--iceberg_gen_device", type=str,default="cuda:0", help="")
+	parser.add_argument("--iceberg_gen_device", type=str,default="cpu", help="")
 	parser.add_argument("--save_magma",type=booltype,default=False)
 	parser.add_argument("--use_precomputed_magma",type=booltype,default=False)
  
 	#iceberg_intern params
 	parser.add_argument("--iceberg_intern_wandb_run_id",type=str, default= 'c8iwu7il')
 	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default=None, help="")
-	parser.add_argument("--iceberg_intern_device", type=str,default="cuda:0", help="")
+	parser.add_argument("--iceberg_intern_device", type=str,default="cpu", help="")
 	parser.add_argument("---iceberg_intern_batch_size", type=int, default=1, help="")
 
 	args = parser.parse_args()
@@ -261,9 +261,8 @@ if __name__ == "__main__":
 	spec_df['iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
 	spec_df['max_nodes'] = args.max_nodes
 	spec_df['threshold'] = args.threshold
-	mol_df.loc[:,"inchi"] = par_apply_series(spec_df["mol"], lambda x : Chem.MolToInchi(x))
+	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : Chem.MolToInchi(x))
 	spec_df_grp = spec_df.merge(mol_df[['mol_id','mol', 'smiles']], on = 'mol_id', how = 'left')
-	#spec_df_grp['inchi'] = spec_df_grp['mol'].apply(lambda x : Chem.MolToInchi(x))
 	
 	# run_iceberg_gen 
 	iceberg_gen_inputs = []
