@@ -261,7 +261,7 @@ if __name__ == "__main__":
 	spec_df['iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
 	spec_df['max_nodes'] = args.max_nodes
 	spec_df['threshold'] = args.threshold
-	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : Chem.MolToInchi(x))
+	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : Chem.MolToInchi(x, options='-SNon'))
 	spec_df_grp = spec_df.merge(mol_df[['mol_id','mol', 'smiles']], on = 'mol_id', how = 'left')
 	
 	# run_iceberg_gen 
