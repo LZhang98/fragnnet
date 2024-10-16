@@ -1,6 +1,5 @@
-wandb_name: msg_fp_0,01_v2
+wandb_name: neims_nist20v3_d4_wr00_inchikey_ce
 wandb_tags:
-- msgv2
 - wr00
 - new_proc
 - neims
@@ -10,6 +9,7 @@ wandb_tags:
 - preprocess
 - unmerged
 - 9zdy9u1u
+- nist20v3
 
 # data stuff
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
@@ -22,7 +22,6 @@ spec_params:
   merge_keep_ces: False
   preprocess: True
   inst_types:
-    - "QTOF"
     - "FT"
   prec_types:
     - "[M+H]+"
