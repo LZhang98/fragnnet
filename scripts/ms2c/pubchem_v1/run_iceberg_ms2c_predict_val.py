@@ -17,6 +17,7 @@ import tarfile
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
 from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
+from rdkit import RDLogger
 
 def run_iceberg_intern(
 				 iceberg_intern_ckpt_fp,   
