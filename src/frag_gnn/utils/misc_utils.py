@@ -505,12 +505,11 @@ def get_ckpt_from_wandb(saved_dp, run_id,
 		shutil.copy(f'{tmp_dir}/{ckpt_file}', ckpt_fp)
 	return ckpt_fp
 
-def get_runs_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
+def get_wandb_runs_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
 	import wandb
 	api = wandb.Api()
 	runs = api.runs(f"{entity}/{project}", include_sweeps=False, filters = {"group": group_name})
 	return runs
-
 
 def detele_ckpt_from_wandb(run_id, entity='frag-gnn', project='frag-gnn'):
 	import wandb
