@@ -4,7 +4,7 @@
 #SBATCH --job-name=iceberg_gen_pubchem_inchikey
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
-#SBATCH --time=0-2:00
+#SBATCH --time=0-4:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
 #SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchem_inchikey_%j.out
