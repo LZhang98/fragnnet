@@ -40,6 +40,11 @@ spec_params:
   nce: True
   merge_keep_ces: False
   preprocess: True
+    inst_types:
+    - "FT"
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
 ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]
 ce_insert_merge: False # merge ce embedding
