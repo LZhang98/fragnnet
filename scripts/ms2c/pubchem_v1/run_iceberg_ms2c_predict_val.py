@@ -159,9 +159,6 @@ def run_iceberg_gen(iceberg_gen_inputs,
 		for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
 			continue
 	else:
-		#th.set_num_threads(16)
-		th.set_num_threads(multiprocessing.cpu_count())
-		th.multiprocessing.set_sharing_strategy('file_system')
 		for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
 			single_predict_mol(*iceberg_gen_input)
 			results = seq_apply(iter(iceberg_gen_inputs),single_predict_mol,True)
