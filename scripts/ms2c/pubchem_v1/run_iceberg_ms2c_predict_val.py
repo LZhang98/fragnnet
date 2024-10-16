@@ -10,7 +10,7 @@ import json
 from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
 from frag_gnn.utils.misc_utils import to_device, booltype
-from frag_gnn.utils.data_utils import par_apply, par_apply_series
+from frag_gnn.utils.data_utils import par_apply, par_apply_series, seq_apply
 from rdkit import Chem
 from tqdm import tqdm
 import tarfile
@@ -158,15 +158,15 @@ def run_iceberg_gen(iceberg_gen_inputs,
 		results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True)
 		for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
 			continue
-	#else:
-	#th.set_num_threads(16)
-	#for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
-	#	iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
-	#	iceberg_gen_model.eval()
-	#	single_predict_mol(*iceberg_gen_input)
-		#results = seq_apply(iter(iceberg_gen_inputs),single_predict_mol,True)
-		#for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
-		#	continue
+	else:
+		#th.set_num_threads(16)
+		th.set_num_threads(multiprocessing.cpu_count())
+		th.multiprocessing.set_sharing_strategy('file_system')
+		for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
+			single_predict_mol(*iceberg_gen_input)
+			results = seq_apply(iter(iceberg_gen_inputs),single_predict_mol,True)
+			for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
+				continue
 
 def get_args():
 	
