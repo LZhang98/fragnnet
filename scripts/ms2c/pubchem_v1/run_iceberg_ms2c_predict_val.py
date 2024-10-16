@@ -13,108 +13,10 @@ from frag_gnn.utils.misc_utils import to_device, booltype
 from frag_gnn.utils.data_utils import par_apply, par_apply_series, seq_apply
 from rdkit import Chem
 from tqdm import tqdm
-import tarfile
 from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
 from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
-from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
+
 from rdkit import RDLogger
-
-def run_iceberg_intern(
-				 iceberg_intern_ckpt_fp,   
-				 save_fp,
-				 template_fp,
-				 custom_fp,
-				 task_dp,
-				 magma_dp,
-	 			 mol_df = None,
-				 spec_df = None,
-				 device = None,
-				 batch_size = 1,
-			 ):
-
-	#print("> run_iceberg_intern")
-	config_d = load_config(template_fp, custom_fp)
-	config_d['mol_fp'] =  os.path.join(task_dp,'mol_df.pkl.gz') if mol_df is None else mol_df
-	config_d['spec_fp'] =  os.path.join(task_dp,'spec_df.pkl.gz') if spec_df is None else spec_df
-	config_d['split_dp'] = task_dp
-	config_d['magma_dp'] =  magma_dp
- 
-	config_d['spec_params']['prec_mz'] = True
-	config_d['spec_params']['unique_id'] = False
-	config_d['spec_params']['counts'] = False
-	config_d['eval_batch_size'] = batch_size
-	config_d['split'] = "predict"
-	
-	if device is None:
-		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-		
-	if device == "cpu":
-		th.set_num_threads(multiprocessing.cpu_count())
-		th.multiprocessing.set_sharing_strategy('file_system')
-		config_d['num_workers']= 0    
-	
-	ds = SpecMolMagmaIntenDataset(**config_d)
-	dl = th.utils.data.DataLoader(
-		ds,
-		batch_size=batch_size,
-		shuffle=False,
-		num_workers=config_d['num_workers'],
-		collate_fn=ds.get_collate_fn(),
-	)
-
-	iceberg_intern_model = IcebergIntenPL.load_from_checkpoint(iceberg_intern_ckpt_fp, map_location = device)
-	iceberg_intern_model.eval()
-
-	preds_l = []
-	def wrapper(gen):
-		while True:
-			try:
-				yield next(gen)
-			except StopIteration:
-				break
-			except Exception as e:
-				print(e)
-
-	for _, batch_input in tqdm(enumerate(wrapper(iter(dl))),total=len(dl), desc="Running iceberg intern",leave=False):
-
-		#print(batch_input)
-		spec_unique_ids  = batch_input['spec_unique_id']
-		mol_smiles = batch_input['mol_smiles']
-
-		batch_result = to_device(batch_input, device)
-		#batch_result = iceberg_intern_model.predict_step(**batch_input)
-		# use "val" mode to get predict and similar score
-		batch_result = iceberg_intern_model._common_step(batch_input,  split="val", no_log=True)
-
-		batch_size = batch_input['batch_size'].detach().cpu()
-
-		pred_mzs = batch_result["pred_mzs"].detach().cpu()
-		pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
-		pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-
-		cos_sim_bin = batch_result['cos_sim_0.01'].cpu()
-		cos_sim_hun = batch_result['cos_hun'].cpu()
-		
-		for b_idx in range(batch_size):
-			b_mask = pred_batch_idxs == b_idx
-
-			b_pred_mzs = pred_mzs[b_mask]
-			b_pred_ints = pred_ints[b_mask]
-
-			b_pred_ints = iceberg_intern_model.ints_untransform_func(b_pred_ints)
-
-			b_pred_mzs = b_pred_mzs.numpy()
-			b_pred_ints = b_pred_ints.numpy()
-
-			b_cos_sim_bin = cos_sim_bin[b_idx].numpy()
-			b_cos_sim_hun = cos_sim_hun[b_idx].numpy()
-
-			#print(b_pred_mzs, b_pred_ints)
-			preds_l.append([spec_unique_ids[b_idx].item(), mol_smiles[b_idx], 
-				   b_pred_mzs, b_pred_ints, b_cos_sim_bin, b_cos_sim_hun])
-			
-	df = pd.DataFrame(preds_l, columns=['spec_id','smiles','pred_mzs','pred_ints','cos_sim_bin','cos_sim_hun'] )
-	df.to_pickle(save_fp)
 
 def run_iceberg_gen(iceberg_gen_inputs,
 				 device = None,
@@ -199,13 +101,7 @@ if __name__ == "__main__":
 	
 	RDLogger.DisableLog("rdApp.*")
 	args = get_args()
-	#os.makedirs(args.save_dp, exist_ok=True)
- 
-	#if args.save_magma:
-	#	magma_save_dp = os.path.join(args.save_dp, "magma")
-	#	os.makedirs(magma_save_dp, exist_ok=True)
-	#	print(f"> save magma data to {magma_save_dp}")
-  
+
 	if not th.cuda.is_available():
 		args.iceberg_gen_device = "cpu"
 		args.iceberg_intern_device = "cpu"
@@ -249,8 +145,8 @@ if __name__ == "__main__":
 	print(f"> prepare spec df {spec_fp}")
 	spec_df = pd.read_pickle(spec_fp)
 
+	print(f"> preapre iceberg gen/ magma")
 	os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
-
 	iceberg_gen_df = spec_df.drop_duplicates(subset='group_id').copy()
 	iceberg_gen_df.loc[:,'magma_dp'] = args.magma_dp
 	iceberg_gen_df.loc[:,'iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
@@ -268,48 +164,22 @@ if __name__ == "__main__":
 		iceberg_gen_inputs = iceberg_gen_df[iceberg_gen_df['group_id'].isin(cached_group_ids)][['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 	if len(iceberg_gen_inputs):
 		run_iceberg_gen(iceberg_gen_inputs, device = args.iceberg_gen_device)
-   
+	
 	exit()
-	target_ids = spec_df['target_mol_id'].unique()
-	for target_id in (pbar := tqdm(target_ids)):
-		pbar.set_description(f"Processing target {target_id}")
 
-		magma_dp = f"{args.magma_dp}/{target_id}"
-		os.makedirs(f"{magma_dp}/magma_tree", exist_ok=True)
+	print(f"> Loading Iceberg_Inten models {iceberg_intern_ckpt_fp}")
+	auxiliary_scores = ["cos_sim","cos_hun"]
+	eval_mz_bin_res = [0.01]
+	model, config_d, device = load_model_and_init_config(ckpt_fp = iceberg_intern_ckpt_fp, 
+                                                      device = args.iceberg_intern_device, 
+                                                      batch_size = args.iceberg_intern_batch_size, 
+                                                      auxiliary_scores = auxiliary_scores,
+                                                      eval_mz_bin_res = eval_mz_bin_res)
 
-		spec_df_grp = spec_df[spec_df['target_mol_id'] == target_id].copy()
-		spec_df_grp['magma_dp'] = magma_dp
-		spec_df_grp['iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
-		spec_df_grp['max_nodes'] = args.max_nodes
-		spec_df_grp['threshold'] = args.threshold
-		spec_df_grp = spec_df_grp.merge(mol_df[['mol_id','mol', 'smiles']], on = 'mol_id', how = 'left')
-		spec_df_grp['inchi'] = spec_df_grp['mol'].apply(lambda x : Chem.MolToInchi(x))
-
-		# run_iceberg_gen 
-		iceberg_gen_inputs = []
-		if not args.use_precomputed_magma:
-			iceberg_gen_inputs = spec_df_grp[['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','group_id', 'magma_dp', 'threshold', 'max_nodes']].values.tolist()
-		else:
-			cached_group_ids = [f.split('.')[0] for f in os.listdir(magma_dp)]	
-			iceberg_gen_inputs = spec_df_grp[spec_df_grp['group_id'].isin(cached_group_ids)][['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','group_id', 'magma_dp', 'threshold', 'max_nodes']].values.tolist()
-		if len(iceberg_gen_inputs):
-			run_iceberg_gen(iceberg_gen_inputs, device = args.iceberg_gen_device)
-		
-		#if args.save_magma:
-		#	magma_save_fp = os.path.join(magma_save_dp, f"{target_id}_magma.tar.gz")
-		#	with tarfile.open(magma_save_fp, "w:gz") as tar:
-		#		tar.add(magma_dp, arcname=os.path.basename(magma_dp))
-
-		spec_df_grp.drop(columns = ['mol','smiles','inchi','magma_dp','iceberg_gen_ckpt_fp','threshold','max_nodes'], inplace = True)
-		"""
-		run_iceberg_intern(iceberg_intern_ckpt_fp = args.iceberg_intern_ckpt_fp,
-					save_fp = os.path.join(args.save_dp, f"{target_id}.pkl.gz"),
-					template_fp = args.template_fp,
-					custom_fp = args.custom_fp,
-					task_dp = args.task_dp,
-					magma_dp = magma_dp,
-					mol_df=mol_df,
-					spec_df=spec_df_grp,
-					device = args.iceberg_intern_device,
-					batch_size = args.batch_size)
-		"""
+	df = run_prediction(model = model,   
+				local_config_d = config_d,
+				mol_df_fp = args.mol_df_fp,
+				spec_df_fp = args.spec_df_fp,
+				magma_dp = args.magma_dp,
+				device = args.device)
+	df.to_pickle(args.save_fp)
