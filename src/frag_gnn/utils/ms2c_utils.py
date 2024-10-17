@@ -1,3 +1,4 @@
+import copy
 import sqlite3
 import numpy as np
 import pandas as pd
@@ -8,6 +9,8 @@ from tqdm import tqdm
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
 from frag_gnn.massformer.pl_model import MassFormerPL
+from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
+from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
 from frag_gnn.runner import init_dataloader
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
@@ -179,7 +182,8 @@ model_type_to_model_cls = {
 	"neims": NeimsPL,
 	"gnn": GNNPL,
 	"frag_gnn": FragGNNPL,
-	"massformer": MassFormerPL
+	"massformer": MassFormerPL,
+	"iceberg_inten": IcebergIntenPL
 }
 
 def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 32, auxiliary_scores:list = None, eval_mz_bin_res:list[float] = None):
@@ -251,13 +255,14 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 	return model, config_d, device
 
 
-def run_prediction(model,
+def run_spectra_prediction(model,
 				 config_d:dict,
 				 mol_data_ptr:str|pd.DataFrame,
 				 spec_data_ptr:str|pd.DataFrame,
-				 frag_dp:str,
 				 device:str,
-				 validate:bool = False
+				 frag_dp:str = None,
+				 magma_dp:str = None,
+				 validate:bool = False,
 				 ):
 	"""_summary_
 
@@ -272,6 +277,7 @@ def run_prediction(model,
 	Returns:
 		_type_: _description_
 	"""
+	local_config_d = copy.deepcopy(config_d)
 	# config proc and check if frags are avaibale
 	if isinstance(mol_data_ptr, str):
 		print(f"> mol_fp {mol_data_ptr}")
@@ -295,17 +301,25 @@ def run_prediction(model,
  
 	# only check for FragGNNet
 	if isinstance(model,FragGNNPL):
+		assert os.path.isdir(frag_dp)
 		#print(">> filtering input without frags")
 		all_frags = set([f.split('.')[0] for f in os.listdir(frag_dp)])
 		#print("> num of frags: ", len(all_frags))
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
+		local_config_d['frag_dp'] = frag_dp
 		model_ds_cls = SpecMolFragDataset
 	elif isinstance(model,NeimsPL) or isinstance(model,MassFormerPL) or isinstance(model, GNNPL):
-		mz_max = config_d['mz_max']
+		mz_max = local_config_d['mz_max']
 		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
 		#print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
 		model_ds_cls = SpecMolDataset
-	
+	elif isinstance(model,IcebergIntenPL):
+		assert os.path.isdir(magma_dp)
+		model_ds_cls = SpecMolMagmaIntenDataset
+		local_config_d['magma_dp'] = magma_dp
+	else:
+		print(f"Not supported model: {model}")
+  
 	print("> num of spec before more filtering", len(spec_df))
 	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
 	print("> num of spec after filtering", len(spec_df))
@@ -314,27 +328,27 @@ def run_prediction(model,
 		return pd.DataFrame([], columns=columns)
 	
 	# config mol df, spec df and frag_dp
-	config_d['mol_fp'] = mol_df
-	config_d['spec_fp'] = spec_df
-	config_d['frag_dp'] = frag_dp
-	#config_d['frag_dp'] = frag_dp
-  
+	local_config_d['mol_fp'] = mol_df
+	local_config_d['spec_fp'] = spec_df
+
+
 	# load datasets
 	print(">> Loading datasets")
 	#if validate:
 	#	ds = model_ds_cls(split='val', **config_d)
 	#else:
-	ds = model_ds_cls(split='predict_only', **config_d)
+	ds = model_ds_cls(split='predict_only', **local_config_d)
 	print(">> init dataloader")
-	dl = init_dataloader(ds, config_d)
+	dl = init_dataloader(ds, local_config_d)
 	
 	eval_score_types = []
-	for score_type in config_d['auxiliary_scores']:
-		if "_hun" in score_type:
-			eval_score_types.append(score_type)
-		else:
-			for bin_res in config_d['eval_mz_bin_res']:
-				eval_score_types.append(f"{score_type}_{bin_res}")
+	if validate == True:
+		for score_type in local_config_d['auxiliary_scores']:
+			if "_hun" in score_type:
+				eval_score_types.append(score_type)
+			else:
+				for bin_res in local_config_d['eval_mz_bin_res']:
+					eval_score_types.append(f"{score_type}_{bin_res}")
 
 	model.eval()
 	#print(">> Running inference")

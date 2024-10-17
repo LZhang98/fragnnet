@@ -1,8 +1,8 @@
 import argparse
 from tqdm import tqdm
 
-from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
+from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
+from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 
 import os
 import pandas as pd
@@ -18,7 +18,7 @@ def get_args():
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
 	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/pubchem/frags/d3_h4_isoFalse/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="frag dp only used in fragnnet")
 
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--use_cached_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=50)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	parser.add_argument("--model_ckpt",type=str, default=None)
@@ -40,7 +40,7 @@ if __name__ == "__main__":
 		print(f">> save model to {model_save_dp} from wandb")
 		#assert args.wandb_run_id is not None
 		print(f">> wandb run id: {args.wandb_run_id}")
-		ckpt_fp = get_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
+		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cached_ckpt)
 	else:
 		ckpt_fp = args.model_ckpt
 	records_dict['model_ckpt'] = ckpt_fp
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 	# NOTE this only one for version 1, as there is only on Adduct Type
 	# TODO change this for multiple Adduct Type
 
-	df = run_prediction(model = model,   
+	df = run_spectra_prediction(model = model,   
 				config_d = config_d,
 				mol_data_ptr = mol_df,
 				spec_data_ptr = spec_df,

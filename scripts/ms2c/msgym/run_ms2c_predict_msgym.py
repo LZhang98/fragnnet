@@ -1,8 +1,8 @@
 import argparse
 from tqdm import tqdm
 
-from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
+from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
+from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 
 import os
 import pandas as pd
@@ -20,7 +20,7 @@ def get_args():
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/msgym/proc/retrieval_candidates_formula")
 	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/msgym/frag/retrieval_candidates_formula_d3_h4")
  
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--use_cached_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--zipped_frag",type=booltype,default=False)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
@@ -47,7 +47,7 @@ if __name__ == "__main__":
 		print(f">> save model to {model_save_dp} from wandb")
 		#assert args.wandb_run_id is not None
 		print(f">> wandb run id: {args.wandb_run_id}")
-		ckpt_fp = get_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
+		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cached_ckpt)
 	else:
 		ckpt_fp = args.model_ckpt
   
@@ -79,10 +79,10 @@ if __name__ == "__main__":
 
 		if not args.zipped_frag:
 			frag_dp = os.path.join(args.frag_dp, mol_df_filename[:-4])
-			df = run_prediction(model = model,   
+			df = run_spectra_prediction(model = model,   
 						config_d = config_d,
-						mol_df_fp = mol_df_fp,
-						spec_df_fp = spec_df_fp,
+						mol_data_ptr = mol_df_fp,
+						spec_data_ptr = spec_df_fp,
 						frag_dp = frag_dp,
 						device = device)
 			df.to_pickle(save_fp)
@@ -92,10 +92,10 @@ if __name__ == "__main__":
 			with tempfile.TemporaryDirectory() as tmp_dp, zipfile.ZipFile(frag_zip_fp, 'r') as zip_file:
 				zip_file.extractall(tmp_dp)
 					
-				df = run_prediction(model = model,   
+				df = run_spectra_prediction(model = model,   
 							config_d = config_d,
-							mol_df_fp = mol_df_fp,
-							spec_df_fp = spec_df_fp,
+							mol_data_ptr = mol_df_fp,
+							spec_data_ptr = spec_df_fp,
 							frag_dp = tmp_dp,
 							device = device)
 				df.to_pickle(save_fp)

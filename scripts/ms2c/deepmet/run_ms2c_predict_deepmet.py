@@ -7,8 +7,8 @@ from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
-from frag_gnn.utils.misc_utils import booltype, get_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
+from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
+from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 
 import os
 import multiprocessing
@@ -26,7 +26,7 @@ def get_args():
 	parser.add_argument("--mol_df_fp",type=str,default="./data/deepmet/proc/deepmet_proc/mol_df_1.pkl.gz")
 	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/deepmet_proc/spec_df_1.pkl.gz")
 	parser.add_argument("--frag_dp", type=str,default="./data/deepmet/frags/mol_df_1")
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--use_cached_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
  
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
@@ -51,12 +51,12 @@ if __name__ == "__main__":
 		print(f">> save model to {model_save_dp} from wandb")
 		#assert args.wandb_run_id is not None
 		print(f">> wandb run id: {args.wandb_run_id}")
-		ckpt_fp = get_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
+		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cached_ckpt)
 	else:
 		ckpt_fp = args.model_ckpt
 	
 	model, config_d, device = load_model_and_init_config(ckpt_fp = ckpt_fp, device = args.device, batch_size = args.batch_size)
-	df = run_prediction(model = model,   
+	df = run_spectra_prediction(model = model,   
 				config_d = config_d,
 				mol_df_fp = args.mol_df_fp,
 				spec_df_fp = args.spec_df_fp,
