@@ -2,7 +2,7 @@ import argparse
 from tqdm import tqdm
 
 from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
+from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 
 import os
 import pandas as pd
@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
 		if not args.zipped_frag:
 			frag_dp = os.path.join(args.frag_dp, mol_df_filename[:-4])
-			df = run_prediction(model = model,   
+			df = run_spectra_prediction(model = model,   
 						config_d = config_d,
 						mol_data_ptr = mol_df_fp,
 						spec_data_ptr = spec_df_fp,
@@ -92,7 +92,7 @@ if __name__ == "__main__":
 			with tempfile.TemporaryDirectory() as tmp_dp, zipfile.ZipFile(frag_zip_fp, 'r') as zip_file:
 				zip_file.extractall(tmp_dp)
 					
-				df = run_prediction(model = model,   
+				df = run_spectra_prediction(model = model,   
 							config_d = config_d,
 							mol_data_ptr = mol_df_fp,
 							spec_data_ptr = spec_df_fp,

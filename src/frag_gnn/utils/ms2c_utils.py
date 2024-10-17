@@ -255,7 +255,7 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 	return model, config_d, device
 
 
-def run_prediction(model,
+def run_spectra_prediction(model,
 				 config_d:dict,
 				 mol_data_ptr:str|pd.DataFrame,
 				 spec_data_ptr:str|pd.DataFrame,

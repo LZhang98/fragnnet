@@ -1,4 +1,3 @@
-import multiprocessing
 import time
 import torch as th
 import pandas as pd
@@ -7,14 +6,14 @@ import os
 import argparse
 import json
 
-from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
-from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
-from frag_gnn.utils.misc_utils import to_device, booltype
+from frag_gnn.iceberg.pl_model import IcebergGenPL
+from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset
+from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.data_utils import par_apply, par_apply_series, seq_apply
 from rdkit import Chem
 from tqdm import tqdm
 from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
+from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 from rdkit import RDLogger
 
 def run_iceberg_gen(iceberg_gen_inputs,
@@ -147,11 +146,12 @@ if __name__ == "__main__":
 	print(f"> prepare spec df {spec_fp}")
 	spec_df = pd.read_pickle(spec_fp)
 
-	unique_group_ids = spec_df['group_id'].unique()
-	print(unique_group_ids)
-	unique_group_ids = unique_group_ids[0:10]
-	spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
-	#exit()
+	#this is for debug
+	#unique_group_ids = spec_df['group_id'].unique()
+	#print(unique_group_ids)
+	#unique_group_ids = unique_group_ids[0:10]
+	#spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
+
 	print(f"> preapre iceberg gen/ magma")
 	os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
 	iceberg_gen_df = spec_df.drop_duplicates(subset='group_id').copy()
@@ -172,8 +172,6 @@ if __name__ == "__main__":
 	if len(iceberg_gen_inputs):
 		run_iceberg_gen(iceberg_gen_inputs, device = args.iceberg_gen_device)
 	
-	#exit()
-
 	print(f"> Loading Iceberg_Inten models {iceberg_intern_ckpt_fp}")
 	auxiliary_scores = ["cos_sim","cos_hun"]
 	eval_mz_bin_res = [0.01]
@@ -183,7 +181,7 @@ if __name__ == "__main__":
                                                       auxiliary_scores = auxiliary_scores,
                                                       eval_mz_bin_res = eval_mz_bin_res)
 
-	df = run_prediction(model = model,   
+	df = run_spectra_prediction(model = model,   
 				config_d = config_d,
 				mol_data_ptr = mol_df,
 				spec_data_ptr = spec_df,

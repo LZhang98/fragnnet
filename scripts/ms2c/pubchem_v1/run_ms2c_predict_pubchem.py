@@ -2,7 +2,7 @@ import argparse
 from tqdm import tqdm
 
 from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
+from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 
 import os
 import pandas as pd
@@ -67,7 +67,7 @@ if __name__ == "__main__":
 	# NOTE this only one for version 1, as there is only on Adduct Type
 	# TODO change this for multiple Adduct Type
 
-	df = run_prediction(model = model,   
+	df = run_spectra_prediction(model = model,   
 				config_d = config_d,
 				mol_data_ptr = mol_df,
 				spec_data_ptr = spec_df,

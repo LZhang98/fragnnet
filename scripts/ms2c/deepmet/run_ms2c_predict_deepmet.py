@@ -8,7 +8,7 @@ from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
 from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_prediction
+from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 
 import os
 import multiprocessing
@@ -56,7 +56,7 @@ if __name__ == "__main__":
 		ckpt_fp = args.model_ckpt
 	
 	model, config_d, device = load_model_and_init_config(ckpt_fp = ckpt_fp, device = args.device, batch_size = args.batch_size)
-	df = run_prediction(model = model,   
+	df = run_spectra_prediction(model = model,   
 				config_d = config_d,
 				mol_df_fp = args.mol_df_fp,
 				spec_df_fp = args.spec_df_fp,
