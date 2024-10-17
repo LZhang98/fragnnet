@@ -21,13 +21,13 @@ def make_splits(args):
 		spec_df,
 		mol_df,
 		dsets=dsets,
-		prec_types=args.prec_types if args.prec_types != 'any' else None,
+		prec_types=args.prec_types,
 		max_peak_mz=args.max_peak_mz,
 		max_prec_mz=args.max_prec_mz,
 		elements=args.elements,
-		frag_modes=args.frag_modes if args.frag_modes != 'any' else None,
-		ion_modes=args.ion_modes if args.ion_modes != 'any' else None,
-		inst_types=args.inst_types if args.inst_types != 'any' else None,
+		frag_modes=args.frag_modes,
+		ion_modes=args.ion_modes,
+		inst_types=args.inst_types,
 		ces = args.ces
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
@@ -35,9 +35,6 @@ def make_splits(args):
 	mol_df = f_mol_df
 	primary_spec_df = spec_df[spec_df["dset"].isin(args.primary_dsets)]
 	secondary_spec_df = spec_df[spec_df["dset"].isin(args.secondary_dsets)]
-	# primary_spec_id = primary_spec_df["spec_id"]
-	# primary_group_id = primary_spec_df["group_id"]
-	# primary_mol_id = primary_spec_df["mol_id "]
 
 	if args.dag_filtering:
 		print("> Read DAG stats")
@@ -260,7 +257,6 @@ if __name__ == "__main__":
 	parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
 	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
 	parser.add_argument("--secondary_bias",type=bool,default=False, dest="if true, keep every thing in secondary and drop from train")
-	#parser.add_argument("--prec_types",type=str,nargs="+",default=["[M+H]+"])
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
 	parser.add_argument("--max_prec_mz",type=float,default=1500.)
 	parser.add_argument("--min_prec_mz",type=float,default=0.)
@@ -271,11 +267,11 @@ if __name__ == "__main__":
 	parser.add_argument("--max_num_dag_edges",type=int,default=250000)
 	parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",nargs="+",default="any")
-	parser.add_argument("--inst_types",nargs="+",default="any")
-	parser.add_argument("--frag_modes",nargs="+",default="any")
-	parser.add_argument("--ion_modes",nargs="+",default="any")
-	parser.add_argument('--ces', nargs='?', default = "any", choices=['nce', 'ace', 'nce_or_ace', "any"])
+	parser.add_argument("--prec_types",required=False)
+	parser.add_argument("--inst_types",required=False)
+	parser.add_argument("--frag_modes",required=False)
+	parser.add_argument("--ion_modes",required=False)
+	parser.add_argument('--ces',required=False,choices=['nce', 'ace', 'nce_or_ace'])
 
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=420420)
