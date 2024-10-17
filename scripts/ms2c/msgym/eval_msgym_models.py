@@ -124,7 +124,7 @@ def get_args():
 	parser.add_argument("--template_fp",type=str,default="config/template.yml")
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_dp",type=str,default="./model_eval")
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--use_cached_ckpt",type=booltype,default=False)
 	args = parser.parse_args()
 	return args
 
@@ -152,7 +152,7 @@ if __name__ == "__main__":
 	for run_id,custom_fp in model_id_configs:
 		#for run_id in inchikey_splits_runs:
 		print(f"> wandb run id: {run_id}")
-		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cahced_ckpt)
+		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, run_id, use_cached = args.use_cached_ckpt)
 		
 		#print(f"> {np_ckpt_fp}")
 		save_fp = os.path.join(args.save_dp, run_id+'.csv')

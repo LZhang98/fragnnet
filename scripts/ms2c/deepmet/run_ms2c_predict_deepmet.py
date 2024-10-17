@@ -26,7 +26,7 @@ def get_args():
 	parser.add_argument("--mol_df_fp",type=str,default="./data/deepmet/proc/deepmet_proc/mol_df_1.pkl.gz")
 	parser.add_argument("--spec_df_fp",type=str,default="./data/deepmet/proc/deepmet_proc/spec_df_1.pkl.gz")
 	parser.add_argument("--frag_dp", type=str,default="./data/deepmet/frags/mol_df_1")
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--use_cached_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
  
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
@@ -51,7 +51,7 @@ if __name__ == "__main__":
 		print(f">> save model to {model_save_dp} from wandb")
 		#assert args.wandb_run_id is not None
 		print(f">> wandb run id: {args.wandb_run_id}")
-		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
+		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cached_ckpt)
 	else:
 		ckpt_fp = args.model_ckpt
 	

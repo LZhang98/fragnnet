@@ -77,7 +77,7 @@ def get_args():
 	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50/iceberg_inchikey_s0.pkl", help="")
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
 
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--use_cached_ckpt",type=booltype,default=True)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 
  	#gen params
@@ -117,7 +117,7 @@ if __name__ == "__main__":
 	if args.iceberg_gen_ckpt_fp is None:
 		model_save_dp = args.model_save_dp
 		print(f">> save model to {args.model_save_dp} from wandb with run id: {args.iceberg_gen_wandb_run_id}")
-		iceberg_gen_ckpt_fp = get_best_ckpt_from_wandb(args.model_save_dp, args.iceberg_gen_wandb_run_id, use_cached = args.use_cahced_ckpt)
+		iceberg_gen_ckpt_fp = get_best_ckpt_from_wandb(args.model_save_dp, args.iceberg_gen_wandb_run_id, use_cached = args.use_cached_ckpt)
 	else:
 		iceberg_gen_ckpt_fp = args.iceberg_gen_ckpt_fp
 	print(f"> iceberg_gen_ckpt_fp: {iceberg_gen_ckpt_fp}")
@@ -126,7 +126,7 @@ if __name__ == "__main__":
 	if args.iceberg_intern_ckpt_fp is None:
 		model_save_dp = args.model_save_dp
 		print(f">> save model to {args.model_save_dp} from wandb with run id: {args.iceberg_intern_wandb_run_id}")
-		iceberg_intern_ckpt_fp = get_best_ckpt_from_wandb(args.model_save_dp, args.iceberg_intern_wandb_run_id, use_cached = args.use_cahced_ckpt)
+		iceberg_intern_ckpt_fp = get_best_ckpt_from_wandb(args.model_save_dp, args.iceberg_intern_wandb_run_id, use_cached = args.use_cached_ckpt)
 	else:
 		iceberg_intern_ckpt_fp = args.iceberg_intern_ckpt_fp
 	print(f"> iceberg_intern_ckpt_fp: {iceberg_intern_ckpt_fp}")
@@ -147,10 +147,10 @@ if __name__ == "__main__":
 	spec_df = pd.read_pickle(spec_fp)
 
 	#this is for debug
-	#unique_group_ids = spec_df['group_id'].unique()
-	#print(unique_group_ids)
-	#unique_group_ids = unique_group_ids[0:10]
-	#spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
+	unique_group_ids = spec_df['group_id'].unique()
+	print(unique_group_ids)
+	unique_group_ids = unique_group_ids[0:10]
+	spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
 
 	print(f"> preapre iceberg gen/ magma")
 	os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)

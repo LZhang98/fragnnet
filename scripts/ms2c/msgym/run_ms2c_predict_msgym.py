@@ -20,7 +20,7 @@ def get_args():
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/msgym/proc/retrieval_candidates_formula")
 	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/msgym/frag/retrieval_candidates_formula_d3_h4")
  
-	parser.add_argument("--use_cahced_ckpt",type=booltype,default=False)
+	parser.add_argument("--use_cached_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=32)
 	parser.add_argument("--zipped_frag",type=booltype,default=False)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
@@ -47,7 +47,7 @@ if __name__ == "__main__":
 		print(f">> save model to {model_save_dp} from wandb")
 		#assert args.wandb_run_id is not None
 		print(f">> wandb run id: {args.wandb_run_id}")
-		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cahced_ckpt)
+		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cached_ckpt)
 	else:
 		ckpt_fp = args.model_ckpt
   
