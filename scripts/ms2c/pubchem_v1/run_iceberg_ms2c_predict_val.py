@@ -107,6 +107,7 @@ if __name__ == "__main__":
 	if not th.cuda.is_available():
 		args.iceberg_gen_device = "cpu"
 		args.iceberg_intern_device = "cpu"
+		print("num parallelizing threads operations",th.get_num_threads())
   
 	timestr = time.strftime("%Y%m%d-%H%M%S")
 	save_dp = os.path.dirname(args.save_fp)

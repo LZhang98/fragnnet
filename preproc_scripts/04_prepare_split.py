@@ -28,7 +28,7 @@ def make_splits(args):
 		frag_modes=args.frag_modes if args.frag_modes != 'any' else None,
 		ion_modes=args.ion_modes if args.ion_modes != 'any' else None,
 		inst_types=args.inst_types if args.inst_types != 'any' else None,
-		ces = args.ces
+		ces = args.ces if args.ces != 'any' else None
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
 	spec_df = f_spec_df
