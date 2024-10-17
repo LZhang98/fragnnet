@@ -7,8 +7,8 @@
 #SBATCH --time=0-2:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_frag_gen_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_frag_gen_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_%j.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_%j.err
 #SBATCH --open-mode=append
 
 # record start
@@ -46,6 +46,7 @@ echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/proc/${DATASET_NAME})
 
 # run dag gen
 echo running dag gen
+
 python preproc_scripts/03_prepare_dag_feats.py \
     --frag_dp=${SLURM_TMPDIR}/frag/${SAVE_NAME} \
     --proc_dp=./data/proc/${DATASET_NAME}  \
@@ -55,7 +56,7 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --prec_types [M+H]+ [M-H]-\
     --inst_types QTOF FT \
     --dsets nist20_hr mona23 \
-    --nb_isomorphic ${NB_FLAG}\
+    --nb_isomorphic ${NB_FLAG}
 
 # go to frag directory
 cd ${SLURM_TMPDIR}/frag/
