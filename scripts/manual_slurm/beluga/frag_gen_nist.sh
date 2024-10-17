@@ -23,11 +23,15 @@ cd /home/feiw/feiw/frag-gnn
 # load env
 source ./FRAG-GNN-GPU2/bin/activate
 
-DATASET_NAME=nist20mona23v3
+DATASET_NAME=nist20mona23
 MAX_DEPTH=3
+NB_FLAG=False
+SAVE_NAME=nist20mona23v3_d3_h4_ma_mi
 
 echo DATASET_NAME: ${DATASET_NAME}
 echo MAX_DEPTH: ${MAX_DEPTH}
+echo SAVE_NAME: ${SAVE_NAME}
+echo NB_FLAG: ${NB_FLAG}
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
@@ -43,21 +47,25 @@ echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/proc/${DATASET_NAME})
 # run dag gen
 echo running dag gen
 python preproc_scripts/03_prepare_dag_feats.py \
-    --frag_dp=${SLURM_TMPDIR}/frag/${DATASET_NAME} \
+    --frag_dp=${SLURM_TMPDIR}/frag/${SAVE_NAME} \
     --proc_dp=./data/proc/${DATASET_NAME}  \
     --max_depth=${MAX_DEPTH} \
     --wandb_mode=off \
-    --wandb_run_name=fool
+    --wandb_run_name=fool \
+    --prec_types [M+H]+ [M-H]-\
+    --inst_types QTOF FT \
+    --dsets nist20_hr mona23 \
+    --nb_isomorphic ${NB_FLAG}\
 
 # go to frag directory
 cd ${SLURM_TMPDIR}/frag/
 
-tar -cf ${DATASET_NAME}.tar ${DATASET_NAME}
+tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/d${MAX_DEPTH}_h4_isoFalse
 echo create dir at ${DEST_DP}
 mkdir -p ${DEST_DP}
-echo copy tar: ${DATASET_NAME}.tar to ${DEST_DP}
-cp ${DATASET_NAME}.tar ${DEST_DP}
+echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
+cp ${SAVE_NAME}.tar ${DEST_DP}
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
