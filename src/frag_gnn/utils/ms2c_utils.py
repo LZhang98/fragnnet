@@ -342,12 +342,13 @@ def run_prediction(model,
 	dl = init_dataloader(ds, local_config_d)
 	
 	eval_score_types = []
-	for score_type in local_config_d['auxiliary_scores']:
-		if "_hun" in score_type:
-			eval_score_types.append(score_type)
-		else:
-			for bin_res in local_config_d['eval_mz_bin_res']:
-				eval_score_types.append(f"{score_type}_{bin_res}")
+	if validate == True:
+		for score_type in local_config_d['auxiliary_scores']:
+			if "_hun" in score_type:
+				eval_score_types.append(score_type)
+			else:
+				for bin_res in local_config_d['eval_mz_bin_res']:
+					eval_score_types.append(f"{score_type}_{bin_res}")
 
 	model.eval()
 	#print(">> Running inference")

@@ -188,5 +188,6 @@ if __name__ == "__main__":
 				mol_data_ptr = mol_df,
 				spec_data_ptr = spec_df,
 				magma_dp = args.magma_dp,
-				device = args.device)
+				device = args.device,
+    			validate=True)
 	df.to_pickle(args.save_fp)

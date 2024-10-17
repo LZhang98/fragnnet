@@ -616,16 +616,30 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		self.magma_params = magma_params
 		self._init_magma()
 		tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
-		assert self.spec_df["group_id"].isin(tree_group_ids).all()
-		formula_group_ids = [int(name) for name in self.name_to_formula_file.keys()]
-		assert self.spec_df["group_id"].isin(formula_group_ids).all()
+		
+		if self.split == "predict_only":
+			# drop the one has no tree group file
+			before = len(self.spec_df)
+			self.spec_df = self.spec_df[self.spec_df['group_id'].isin(tree_group_ids)]
+			current = len(self.spec_df)
+			if before < current:
+				print(f"{split} split, dropped {current - before} with out tree file")
+			formula_group_ids = []
+		else:
+			assert self.spec_df["group_id"].isin(tree_group_ids).all()
+			formula_group_ids = [int(name) for name in self.name_to_formula_file.keys()]
+			assert self.spec_df["group_id"].isin(formula_group_ids).all()
+
 		self._preprocess_spec(spec_pp_sd)
 		self._preprocess_mol({})
 		self._preprocess_magma(magma_pp_sd)
-
+  
 	def _init_magma(self):
 
 		super()._init_magma()
+		# nothing to load if we are only predict
+		if self.split == "predict_only":
+			return
 		magma_dir = Path(self.magma_dp)
 		formula_dir = magma_dir / "magma_formula"
 		assert formula_dir.exists(), formula_dir
@@ -659,12 +673,14 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		return tree_processor
 
 	def _load_tree(self, name):
-		
+     
 		tree_json = super()._load_tree(name)
-		formula_json = self._load_formula(name)
-		raw_spec, adduct = self._read_formula(formula_json)
-		tree_json["raw_spec"] = raw_spec
-		tree_json["adduct"] = adduct
+		# this for training only
+		if not self.split == "predict_only":
+			formula_json = self._load_formula(name)
+			raw_spec, adduct = self._read_formula(formula_json)
+			tree_json["raw_spec"] = raw_spec
+			tree_json["adduct"] = adduct
 		return tree_json
 
 	def _read_tree(self, tree_json):
