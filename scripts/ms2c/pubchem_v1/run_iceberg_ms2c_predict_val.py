@@ -150,10 +150,10 @@ if __name__ == "__main__":
 	spec_df = pd.read_pickle(spec_fp)
 
 	#this is for debug
-	unique_group_ids = spec_df['group_id'].unique()
-	print(unique_group_ids)
-	unique_group_ids = unique_group_ids[0:10]
-	spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
+	#unique_group_ids = spec_df['group_id'].unique()
+	#print(unique_group_ids)
+	#unique_group_ids = unique_group_ids[0:10]
+	#spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
 
 	print(f"> preapre iceberg gen/ magma")
 	os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
@@ -167,10 +167,10 @@ if __name__ == "__main__":
 	# run_iceberg_gen 
 	iceberg_gen_inputs = []
 	if not args.use_precomputed_magma:
-		iceberg_gen_inputs = iceberg_gen_df[['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
+		iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 	else:
 		cached_group_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]		
-		iceberg_gen_inputs = iceberg_gen_df[iceberg_gen_df['group_id'].isin(cached_group_ids)][['iceberg_gen_ckpt_fp','prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
+		iceberg_gen_inputs = iceberg_gen_df[iceberg_gen_df['group_id'].isin(cached_group_ids)][['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 	if len(iceberg_gen_inputs):
 		run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp = iceberg_gen_ckpt_fp, device = args.iceberg_gen_device)
 	
