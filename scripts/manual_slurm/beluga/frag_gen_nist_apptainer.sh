@@ -45,8 +45,10 @@ echo running dag gen
 
 # copy apptainer container
 module load apptainer/1.2.4
-cp ./containers/apptainer/fragnnet_cpu.sif ${SLURM_TMPDIR}/fragnnet_cpu.sif
-apptainer exec ${SLURM_TMPDIR}/fragnnet_cpu.sif pip install --user -I .
+#cp ./containers/fragnnet_cpu.sif ${SLURM_TMPDIR}/fragnnet_cpu.sif
+#apptainer exec ${SLURM_TMPDIR}/fragnnet_cpu.sif pip install --user -I .
+cp ./containers/fragnnet_cpu.sif ${SLURM_TMPDIR}/fragnnet_cpu.sif
+apptainer exec -C -B $(pwd):$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif pip install ./ --user
 
 apptainer exec -B ${SLURM_TMPDIR} \
     ${SLURM_TMPDIR}/fragnnet_cpu.sif \

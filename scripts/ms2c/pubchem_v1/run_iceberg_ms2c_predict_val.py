@@ -20,7 +20,7 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 				 device = None,
 				 ):
 
-	def single_predict_mol(iceberg_gen_ckpt_fp, adduct, inchi, smi, spec_id, magma_dp, threshold, max_nodes):
+	def single_predict_mol(adduct, inchi, smi, spec_id, magma_dp, threshold, max_nodes):
      
 		# disbale  UserWarning: TypedStorage is deprecated.warning
 		import warnings
@@ -159,7 +159,6 @@ if __name__ == "__main__":
 	os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
 	iceberg_gen_df = spec_df.drop_duplicates(subset='group_id').copy()
 	iceberg_gen_df.loc[:,'magma_dp'] = args.magma_dp
-	iceberg_gen_df.loc[:,'iceberg_gen_ckpt_fp'] = args.iceberg_gen_ckpt_fp
 	iceberg_gen_df.loc[:,'max_nodes'] = args.max_nodes
 	iceberg_gen_df.loc[:,'threshold'] = args.threshold
 	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : (RDLogger.DisableLog("rdApp.warning"), Chem.MolToInchi(x))[1])
