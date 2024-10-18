@@ -1,4 +1,4 @@
-wandb_name: nist20v3_inchikey_fraggnn_d3_ce_inst
+wandb_name: nist20v3_inchikey_fraggnn_d3_ce_neg
 wandb_tags:
 - retrieval
 - nist20
@@ -24,8 +24,8 @@ wandb_tags:
 
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
+split_dp: data/split/nist20mona23v3_d4_wr00_inchikey_neg
+frag_dp: data/frag/nist20mona23v3_d3_h4_ma_mi/dags
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
@@ -43,7 +43,6 @@ spec_params:
   inst_types:
     - "FT"
   prec_types:
-    - "[M+H]+"
     - "[M-H]-"
 ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]

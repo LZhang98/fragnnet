@@ -1,14 +1,19 @@
-import argparse
+
 import os
 import pandas as pd
+import argparse
+
+import frag_gnn.utils.data_utils as data_utils
+import numpy as np
+from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows
 
 def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag feats configs
 	parser.add_argument("--proc_dp",type=str,default="data/proc/nist20mona23v3")
-	parser.add_argument("--split_dp",type=str,default="data/split/nist20mona23v3_d4_wr00_inchikey")
-	parser.add_argument("--split_out_dp",type=str,default="data/split/nist20mona23v3_d4_wr00_inchikey_casmi2016")
+	parser.add_argument("--split_dp",type=str,default="data/split/nist20mona23v3_d4_wr00_inchikey_ma")
+	parser.add_argument("--split_out_dp",type=str,default="data/split/nist20mona23v3_d4_wr00_inchikey_casmi2016_ma")
 	parser.add_argument("--casmi_csv",type=str,default = "data/raw/casmi2016/solutions_casmi2016_cat2and3.csv")
 
 	args = parser.parse_args()
