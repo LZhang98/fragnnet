@@ -1,4 +1,4 @@
-wandb_name: nist20v3_fraggnn_d3_ce_casmi2016
+wandb_name: nist20v3_fraggnn_d3_ce_casmi2016_pos
 wandb_tags:
 - retrieval
 - nist20
