@@ -5,10 +5,7 @@ import argparse
 from frag_gnn.utils import formula_utils, frag_utils
 import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows
-
-from frag_gnn.frag.compute_frags import (
-	MAX_NUM_NODES
-)
+from frag_gnn.utils.misc_utils import booltype
 
 def process_mol(mol_df, drop_duplicate = False, tqdm_leave=True):
 
@@ -74,11 +71,9 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag feats configs
-	parser.add_argument("--proc_dp",type=str,default="data/proc/nist20mona23v3")
-	parser.add_argument("--split_dp",type=str,default="data/split/nist20mona23v3_d4_wr00_inchikey")
-	parser.add_argument("--split_out_dp",type=str,default="data/split/nist20mona23v3_d4_wr00_inchikey_casmi2016")
+	parser.add_argument("--proc_dp",type=str,default="./data/ms2c/casmi2016_neg/proc/")
 	parser.add_argument("--casmi_csv",type=str,default = "data/raw/casmi2016/solutions_casmi2016_cat2and3.csv")
-
+	parser.add_argument("--is_pos", type=booltype, default=False)
 	args = parser.parse_args()
 	return args
 
@@ -88,9 +83,11 @@ if __name__ == "__main__":
 	print(f'> Read casmi 2016 csv df from {args.casmi_csv}')
 	casmi_df = pd.read_csv(args.casmi_csv)
 	#print(casmi_df)
- 
-	casmi_df = casmi_df[casmi_df['ION_MODE'] == ' POSITIVE']
-	print(len(casmi_df))
+	
+	if args.is_pos:
+		casmi_df = casmi_df[casmi_df['ION_MODE'] == ' POSITIVE']
+	else:
+		casmi_df = casmi_df[casmi_df['ION_MODE'] != ' POSITIVE']
 	casmi_mol_data = []
 	#nce = [20,35,50]
 	casmi_spec_df = []
@@ -142,12 +139,13 @@ if __name__ == "__main__":
 	mol_df = mol_df.reset_index(drop=True)
 	mol_df['mol_id'] = mol_df.index + 1
 
-	mol_df.to_pickle("./data/ms2c/casmi2016/proc/mol_df.pkl.gz")
+	mol_df.to_pickle(f"{args.proc_dp}/mol_df.pkl.gz")
 
-	spec_df = create_spec_df(mol_df, "[M+H]+", 50)
-	#spec_df = create_spec_df(mol_df, "[M+H]+", 35)
+	if args.is_pos:
+		spec_df = create_spec_df(mol_df, "[M+H]+", 50)
+	else:
+		spec_df = create_spec_df(mol_df, '[M-H]-', 50)
 	#spec_df["peaks"]
 	casmi_spec_df = pd.DataFrame(data=casmi_spec_data, columns=['target_group_id','peaks'])
 	spec_df = pd.merge(spec_df,casmi_spec_df,how="inner",on="target_group_id")
-	spec_df.to_pickle("./data/ms2c/casmi2016/proc/spec_df.pkl.gz")
-	#print(spec_df['peaks'].head())
+	spec_df.to_pickle(f"{args.proc_dp}/spec_df.pkl.gz")

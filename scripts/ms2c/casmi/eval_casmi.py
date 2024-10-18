@@ -13,9 +13,8 @@ LAST_SCORE = 0.0
 def get_args():
     
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--predicted_fp", type=str,default="./data/ms2c/casmi2016/predicted/pos.pkl", help="")
-	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/casmi2016/proc/", help="")
-	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/casmi2016/frag", help="frag dp only used in fragnnet")
+	parser.add_argument("--predicted_fp", type=str,default="./data/ms2c/casmi2016_neg/predicted/pred.pkl", help="")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/casmi2016_neg/proc/", help="")
 	args = parser.parse_args()
 	return args
 

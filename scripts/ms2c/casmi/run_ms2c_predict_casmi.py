@@ -14,9 +14,9 @@ def get_args():
     
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
-	parser.add_argument("--save_fp", type=str,default="./data/ms2c/casmi2016/predicted/pos.pkl", help="")
-	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/casmi2016/proc/", help="")
-	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/casmi2016/frag", help="frag dp only used in fragnnet")
+	parser.add_argument("--save_fp", type=str,default="./data/ms2c/casmi2016_neg/predicted/pred.pkl", help="")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/casmi2016_neg/proc/", help="")
+	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/casmi2016_neg/frag", help="frag dp only used in fragnnet")
 
 	#parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
 	#parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
@@ -25,8 +25,8 @@ def get_args():
 	parser.add_argument("--use_cached_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=1)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--model_ckpt",type=str, default=None)
-	parser.add_argument("--wandb_run_id",type=str, default= 'y15874xz')
+	parser.add_argument("--model_ckpt",type=str, default='saved_ckpts/oc8qxlt1_ep47.ckpt')
+	parser.add_argument("--wandb_run_id",type=str, default= 'oc8qxlt1')
 	args = parser.parse_args()
 	return args
 
