@@ -1,17 +1,21 @@
-
-import os
-import pandas as pd
-import argparse
-
-import frag_gnn.utils.data_utils as data_utils
 import numpy as np
+import pandas as pd
+
+import argparse
+from frag_gnn.utils import formula_utils, frag_utils
+import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows
 
-def process_mol(mol_df, drop_duplicate = True, tqdm_leave=True):
+from frag_gnn.frag.compute_frags import (
+	MAX_NUM_NODES
+)
+
+def process_mol(mol_df, drop_duplicate = False, tqdm_leave=True):
 
 	# get mol df
 	mol_df.loc[:,"mol"] = par_apply_series(mol_df["inchi"],data_utils.mol_from_inchi, tqdm_leave)
 	mol_df = mol_df.dropna(subset=["mol"])
+	mol_df.loc[:,"smiles"] = par_apply_series(mol_df["mol"],data_utils.mol_to_smiles, tqdm_leave)
 	mol_df.loc[:,"inchikey"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchikey, tqdm_leave)
 	mol_df["inchikey_s"] = mol_df["inchikey"].apply(lambda x: x[:14])
  
@@ -39,12 +43,14 @@ def create_spec_df(mol_df, prec_type, nce):
 	#for prec_type in ["[M+H]+","[M-H]-"]:
 	spec_df = pd.DataFrame()
 	spec_df["mol_id"] = mol_df["mol_id"]
+	spec_df["target_group_id"] = mol_df["target_group_id"]
+	spec_df["target_inchikey_s"] = mol_df["target_inchikey_s"]
 	spec_df["exact_mw"] = mol_df["exact_mw"]
 	spec_df['spec_type'] = 'MS2'
 	spec_df['dset'] = "casmi2016"
 	spec_df['prec_mz'] = np.nan
 	spec_df['prec_type'] = prec_type
-	spec_df['nce'] = nce
+	spec_df['nce'] = float(nce)
 	spec_df['ace'] = np.nan
 	spec_df['ion_mode'] = 'N' if prec_type == '[M-H]-' else 'P'
 	spec_df.loc[:,"prec_mz"] =  par_apply_df_rows(spec_df,data_utils.infer_prec_mz)
@@ -54,14 +60,14 @@ def create_spec_df(mol_df, prec_type, nce):
  	# 'spec_type','ion_mode', 'dset', 'dset_spec_id', 'col_gas', 'res', 'ace', 'nce',
 	# 'prec_mz', 'peaks', 'ri', 'group_id'
 	spec_df['frag_mode'] = 'HCD'
-	spec_df['inst_type'] = 'TF'
+	spec_df['inst_type'] = 'FT'
 	spec_df = spec_df.reset_index(drop=True)
 	spec_df['spec_id'] = spec_df.index
 	spec_df['dset_spec_id'] = spec_df['spec_id']
 	spec_df['group_id'] = spec_df['spec_id']
  
 	# avoid dataset crash
-	spec_df['peaks'] = np.empty((len(spec_df),0)).tolist()
+	#spec_df['peaks'] = np.empty((len(spec_df),0)).tolist()
 	return spec_df
 
 def get_args():
@@ -84,6 +90,7 @@ if __name__ == "__main__":
 	#print(casmi_df)
  
 	casmi_df = casmi_df[casmi_df['ION_MODE'] == ' POSITIVE']
+	print(len(casmi_df))
 	casmi_mol_data = []
 	#nce = [20,35,50]
 	casmi_spec_df = []
@@ -92,35 +99,55 @@ if __name__ == "__main__":
 	for idx,row in casmi_df.iterrows():
 		#print(row)
 		c_name = row['ChallengeName']
+		c_id = c_name.split('-')[-1]
+		c_id = int(c_id)
+  
+		c_smiles =row['SMILES']
+		c_inchi =row['INCHI']
+		c_inchikey =row['INCHIKEY']
+		c_mol = data_utils.mol_from_inchi(c_inchi)
+		c_inchikey_s = data_utils.mol_to_inchikey_s(c_mol)
 		filename = f"data/raw/casmi2016/cfm4_outputs/id_output_{c_name}.log"
 		with open(filename, 'r') as file_in:
 			for line in file_in:
 				inchi = line.split(' ')[-1]
-				casmi_mol_data.append(inchi)
+				casmi_mol_data.append((c_id,inchi,c_inchikey_s))
    
 		# read specfile
 		spec_filename = f"data/raw/casmi2016/peaklists/{c_name}.txt"
   
-		c_id = c_name.split('-')[-1]
-		c_id = int(c_id)
 		peaks = []
 		with open(spec_filename) as file_in:
 			for line in file_in:
-				peaks.append((float(x) for x in line.rstrip().split("\t")))
+				#peak_data = (float(x) for x in )
+				x,y = line.rstrip().split("\t")
+				peaks.append((float(x),float(y)))
 		casmi_spec_data.append((c_id,peaks))
   
-	mol_df = pd.DataFrame(data={'inchi':casmi_mol_data})
-	mol_df['mol_id'] = mol_df.index + 1
+	mol_df = pd.DataFrame(data=casmi_mol_data, columns=["target_group_id", "inchi","target_inchikey_s"])
+	#print(mol_df)
 	#print(mol_df)
 	mol_df = process_mol(mol_df)
 	mol_df = mol_df[mol_df['single_mol']]
+	mol_df = mol_df[mol_df['charge'] == 0]
+ 	# filter by heavy atom account
+	allowed_elements = set(frag_utils.ELEMENTS)
+	#mol_df = mol_df[mol_df['num_heavy_atoms'] <= MAX_NUM_NODES]
+	# filter by radicals
+	mol_df['num_radicals'] = mol_df['mol'].apply(lambda x: sum([atom.GetNumRadicalElectrons() for atom in x.GetAtoms()]))
+	mol_df = mol_df[mol_df['num_radicals'] == 0]
+	# filter by out_set_elements
+	mol_df['num_out_set_elements'] = mol_df['formula'].apply(lambda x: len(set(list(formula_utils.parse_formula(x).keys())) - allowed_elements))
+	mol_df = mol_df[mol_df['num_out_set_elements'] == 0]
+	mol_df = mol_df.reset_index(drop=True)
+	mol_df['mol_id'] = mol_df.index + 1
+
 	mol_df.to_pickle("./data/ms2c/casmi2016/proc/mol_df.pkl.gz")
-	print(mol_df)
-	#prec_type = '[M+H]+'
-	#prec_type = '[M+H]+'
-	#spec_df = create_spec_df(mol_df, prec_type, prec_mz, inst_type, frag_mode, nce, ace)
-	#casmi_spec_df = pd.DataFrame(data=casmi_spec_data, columns=["target_mol_id","peaks"])
-	#spec_df = create_spec_df(mol_df, "[M+H]+", 20)
-	spec_df = create_spec_df(mol_df, "[M+H]+", 35)
+
+	spec_df = create_spec_df(mol_df, "[M+H]+", 50)
+	#spec_df = create_spec_df(mol_df, "[M+H]+", 35)
+	#spec_df["peaks"]
+	casmi_spec_df = pd.DataFrame(data=casmi_spec_data, columns=['target_group_id','peaks'])
+	spec_df = pd.merge(spec_df,casmi_spec_df,how="inner",on="target_group_id")
 	spec_df.to_pickle("./data/ms2c/casmi2016/proc/spec_df.pkl.gz")
-	print(spec_df.head())
+	#print(spec_df['peaks'].head())

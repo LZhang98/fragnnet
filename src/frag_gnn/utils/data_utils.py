@@ -82,7 +82,7 @@ def split_smiles(smiles_str:str) -> List:
 def list_replace(l,d):
 	return [d[data] for data in l]
 
-def mol_from_inchi(inchi:str) -> "rdkit.Chem.rdchem.Mol":
+def mol_from_inchi(inchi:str, standardize:bool = True) -> "rdkit.Chem.rdchem.Mol":
 	"""return a rdkit mol from inchi str
 
 	Args:
@@ -95,6 +95,8 @@ def mol_from_inchi(inchi:str) -> "rdkit.Chem.rdchem.Mol":
 	Chem = modules[0]
 	try:
 		mol = Chem.MolFromInchi(inchi)
+		if standardize:
+			mol = rdkit_standardize(mol)
 	except:
 		mol = np.nan
 	if none_or_nan(mol):

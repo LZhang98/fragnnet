@@ -82,8 +82,7 @@ def run_models(ckpt_fp,
 	preds_l = []
 	with th.inference_mode():
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
-			print(batch_input)
-			exit()
+
 			mol_smiles = batch_input['mol_smiles']
 			spec_nces = batch_input['spec_ce']
    
@@ -147,7 +146,7 @@ if __name__ == "__main__":
 	#	['vclvoh0t ','config/msg/msg_fragnnet_0,01.yml'],
 	#]
 	model_id_configs = [
-		['dk9n8au8','config/nist20v3_d4_wr00_inchikey_ce/fraggnn_d3_ce.yml']
+		['y15874xz','config/nist20v3_d4_wr00_inchikey_ce/fraggnn_d3_ce.yml']
 	]
 	batch_size = 32
 	for run_id,custom_fp in model_id_configs:

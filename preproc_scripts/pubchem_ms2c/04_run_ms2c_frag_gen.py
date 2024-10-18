@@ -10,7 +10,7 @@ def get_args():
 	parser = argparse.ArgumentParser()
 	
 	# frag feats configs
-	parser.add_argument("--max_depth",type=int,default=4)
+	parser.add_argument("--max_depth",type=int,default=3)
 	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--project_dp",type=str,default=os.getcwd())
 	parser.add_argument("--frag_dp",type=str,default="data/ms2c/casmi2016/frag")
@@ -20,7 +20,7 @@ def get_args():
 	parser.add_argument("--max_iterations",type=int,default=-1)
 	parser.add_argument("--isotopes",type=booltype,default=False)
 	parser.add_argument("--proc_dp", type=str,default="data/ms2c/casmi2016/proc", help="")
-	parser.add_argument("--allow_cached", type=booltype,default=True, help="")
+	parser.add_argument("--allow_cached", type=booltype,default=False, help="")
 	parser.add_argument("--compressed", type=booltype,default=True, help="")
 
 	args = parser.parse_args()
