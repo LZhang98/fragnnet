@@ -89,3 +89,7 @@ pin_memory: True
 loss_vectorized: True
 loss_batch_size: 32
 skip_extra_losses: True
+
+simple_group_sampler: True
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group_mol #[group, group_mol, mol]

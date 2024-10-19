@@ -1,4 +1,4 @@
-wandb_name: nist20v3_inchikey_fraggnn_d3_ce
+wandb_name: nist20v3_inchikey_fraggnn_d3_ce_ms_gs
 wandb_tags:
 - retrieval
 - nist20
@@ -8,6 +8,7 @@ wandb_tags:
 - new_proc
 - fraggnn_d3
 - dynamic_sampler
+- group_sampler
 - new_metrics
 - nodemlp
 - oos_multiple_1
@@ -89,3 +90,11 @@ pin_memory: True
 loss_vectorized: True
 loss_batch_size: 32
 skip_extra_losses: True
+
+dynamic_batch_sampler: False
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 100000
+
+simple_group_sampler: True
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group_mol #[group, group_mol, mol]
