@@ -25,8 +25,8 @@ def get_args():
 	parser.add_argument("--use_cached_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=1)
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
-	parser.add_argument("--model_ckpt",type=str, default='saved_ckpts/oc8qxlt1_ep47.ckpt')
-	parser.add_argument("--wandb_run_id",type=str, default= 'oc8qxlt1')
+	parser.add_argument("--model_ckpt",type=str, default='saved_ckpts/oc8qxlt1_ep65.ckpt')
+	parser.add_argument("--wandb_run_id",type=str, default= 'w1ilgzjk')
 	args = parser.parse_args()
 	return args
 
