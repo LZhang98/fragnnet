@@ -82,7 +82,7 @@ eval_mz_bin_res:
 
 precision: 32
 use_tensor_float32: True
-automatic_optimization: True
+automatic_optimization: False
 activation_checkpointing: False
 compile: True
 pin_memory: True
