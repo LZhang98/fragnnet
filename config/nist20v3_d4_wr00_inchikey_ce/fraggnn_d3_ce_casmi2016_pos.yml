@@ -80,12 +80,16 @@ auxiliary_scores:
 eval_mz_bin_res:
   - 0.01
 
-precision: 32
+recision: 32
 use_tensor_float32: True
-automatic_optimization: True
+automatic_optimization: False
 activation_checkpointing: False
 compile: True
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 32
 skip_extra_losses: True
+
+dynamic_batch_sampler: True
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 100000
