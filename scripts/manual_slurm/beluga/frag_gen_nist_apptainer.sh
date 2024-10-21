@@ -21,7 +21,6 @@ module load python/3.10
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-
 DATASET_NAME=nist20mona23v3
 MAX_DEPTH=3
 NB_FLAG=False
@@ -30,10 +29,14 @@ DSETS='nist20 mona23'
 PREC='M+H+ M-H-'
 INST='QTOF FT'
 
-echo DATASET_NAME: ${DATASET_NAME}
+cho DATASET_NAME: ${DATASET_NAME}
 echo MAX_DEPTH: ${MAX_DEPTH}
 echo SAVE_NAME: ${SAVE_NAME}
 echo NB_FLAG: ${NB_FLAG}
+echo DATASET_NAME: ${DATASET_NAME}
+echo DSETS: ${DSETS}
+echo PREC: ${PREC}
+echo INST: ${INST}
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
@@ -42,9 +45,6 @@ echo create local frag_dp: ${SLURM_TMPDIR}/frag/${DATASET_NAME}
 mkdir -p ${SLURM_TMPDIR}/frag/${DATASET_NAME}
 
 # copy file to slrum local dir
-echo copy from ./data/proc/${DATASET_NAME} to ${SLURM_TMPDIR}/data/proc
-
-# copy data
 rsync -av ./data/proc/${DATASET_NAME} ${SLURM_TMPDIR}/proc 
 echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/proc/${DATASET_NAME})
 
@@ -60,14 +60,13 @@ cp setup.cfg ${SLURM_TMPDIR}/
 cp setup.py ${SLURM_TMPDIR}/
 
 # install frag-gnn
+echo install frag-gnn
 apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif  pip install -I . --user
 
-# run dag gen
 # run dag gen
 echo running dag gen
 
 apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
-    ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python preproc_scripts/03_prepare_dag_feats.py \
         --frag_dp=${SLURM_TMPDIR}/frag/${SAVE_NAME} \
         --proc_dp=./data/proc/${DATASET_NAME}  \

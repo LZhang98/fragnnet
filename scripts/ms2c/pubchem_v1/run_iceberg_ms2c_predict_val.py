@@ -16,7 +16,7 @@ from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
 from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 from rdkit import RDLogger
 
-def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
+def run_iceberg_gen(iceberg_gen_inputs,
 				 device = None,
 				 ):
 
@@ -25,7 +25,9 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 		# disbale  UserWarning: TypedStorage is deprecated.warning
 		import warnings
 		warnings.filterwarnings("ignore", category=DeprecationWarning) 
-
+		iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
+		iceberg_gen_model.eval()
+	
 		out_file =  f"{magma_dp}/magma_tree/{spec_id}.json"
 
 		tree_processor = SpecMolMagmaGenDataset.init_tree_processor(
@@ -58,19 +60,16 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 
 		return output
 
-	#if device == 'cpu':
-	#	results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True)
-	#	for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
-	#		continue
-	#else:
-	iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
-	iceberg_gen_model.eval()
-  
-	for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
-		single_predict_mol(*iceberg_gen_input)
-		results = seq_apply(iter(iceberg_gen_inputs),single_predict_mol,True)
+	if device == 'cpu':
+		results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True)
 		for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
 			continue
+	else:
+		for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
+			single_predict_mol(*iceberg_gen_input)
+			results = seq_apply(iter(iceberg_gen_inputs),single_predict_mol,True)
+			for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
+				continue
 
 def get_args():
 	
@@ -172,7 +171,7 @@ if __name__ == "__main__":
 		cached_group_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]		
 		iceberg_gen_inputs = iceberg_gen_df[iceberg_gen_df['group_id'].isin(cached_group_ids)][['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 	if len(iceberg_gen_inputs):
-		run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp = iceberg_gen_ckpt_fp, device = args.iceberg_gen_device)
+		run_iceberg_gen(iceberg_gen_inputs, device = args.iceberg_gen_device)
 	
 	print(f"> Loading Iceberg_Inten models {iceberg_intern_ckpt_fp}")
 	auxiliary_scores = ["cos_sim","cos_hun"]
