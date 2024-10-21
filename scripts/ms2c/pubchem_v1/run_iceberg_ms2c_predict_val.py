@@ -113,7 +113,8 @@ if __name__ == "__main__":
   
 	timestr = time.strftime("%Y%m%d-%H%M%S")
 	save_dp = os.path.dirname(args.save_fp)
-	os.makedirs(save_dp, exist_ok=True)
+	if save_dp != '':
+		os.makedirs(save_dp, exist_ok=True)
 	records_dict = vars(args)
 
 	os.makedirs(args.model_save_dp, exist_ok=True)	
