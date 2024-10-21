@@ -112,9 +112,8 @@ if __name__ == "__main__":
 		print("num parallelizing threads operations",th.get_num_threads())
   
 	timestr = time.strftime("%Y%m%d-%H%M%S")
-	save_dp = os.path.dirname(args.save_fp)
-	if save_dp != '':
-		os.makedirs(save_dp, exist_ok=True)
+	save_dp = os.path.dirname(args.save_fp) or "."
+	os.makedirs(save_dp, exist_ok=True)
 	records_dict = vars(args)
 
 	os.makedirs(args.model_save_dp, exist_ok=True)	
