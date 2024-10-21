@@ -504,12 +504,12 @@ def seq_apply(iterator,func,need_unpack=False):
 			result.append(func(*i))
 	return result
 
-def par_apply(iterator,func,need_unpack=False, return_as_generator=False):
+def par_apply(iterator,func,need_unpack=False, return_as_generator=False, n_jobs=JOBLIB_N_JOBS):
 
 	par_func = joblib.delayed(func)
 	parallel = joblib.Parallel(
 		backend=JOBLIB_BACKEND,
-		n_jobs=JOBLIB_N_JOBS,
+		n_jobs=n_jobs,
 		timeout=JOBLIB_TIMEOUT,
 		return_as="list" if not return_as_generator else "generator"
 	)
