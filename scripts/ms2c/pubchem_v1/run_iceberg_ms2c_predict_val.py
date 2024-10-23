@@ -60,7 +60,7 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 		return output
 
 	if device == 'cpu':
-		results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True)
+		results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True,n_jobs=4)
 		for _ in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
 			continue
 	else:

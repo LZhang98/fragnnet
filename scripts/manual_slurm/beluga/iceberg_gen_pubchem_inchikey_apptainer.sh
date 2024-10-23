@@ -52,13 +52,13 @@ cp setup.py ${SLURM_TMPDIR}/
 apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif  pip install -I . --user
 
 # run dag gen
-apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
+apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
         --device=cpu \
         --save_fp=${SAVE_FP} \
         --magma_dp=${MAGMA_DP} \
         --iceberg_gen_ckpt_fp=iceberg_gen.ckpt \
-        --iceberg_intern_ckpt_fp=iceberg_gen.ckpt \
+        --iceberg_intern_ckpt_fp=iceberg_inten.ckpt \
         --proc_dp=./proc
 
 cd ${SLURM_TMPDIR}
