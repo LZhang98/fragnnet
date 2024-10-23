@@ -25,7 +25,7 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 		# disbale  UserWarning: TypedStorage is deprecated.warning
 		import warnings
 		warnings.filterwarnings("ignore", category=DeprecationWarning) 
-
+		th.set_num_threads(4)
 		out_file =  f"{magma_dp}/magma_tree/{spec_id}.json"
 		iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
 		iceberg_gen_model.eval()
@@ -60,11 +60,11 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 		return output
 
 	if device == 'cpu':
-		results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True,n_jobs=4)
-		for _ in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
+		results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True,n_jobs=16)
+		for _ in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=True):
 			continue
 	else:
-		for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
+		for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=True):
 			single_predict_mol(*iceberg_gen_input)
 
 
