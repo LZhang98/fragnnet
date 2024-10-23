@@ -23,21 +23,8 @@ module load python/3.10
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-		# nist20v3_scaffold_iceberg_gen
-		'4pweeg45', # nist20v3_scaffold_iceberg_gen_s0
-		'n27tube2', # nist20v3_scaffold_iceberg_gen_s2
-		'biofdpxl', # nist20v3_scaffold_iceberg_gen_s3
-		'cyot56r3', # nist20v3_scaffold_iceberg_gen_s4
-		
-		# nist20v3_scaffold_iceberg_inten_100
-		'riyr41po', # nist20v3_scaffold_iceberg_inten_100_s0
-		'pmaom333', # nist20v3_scaffold_iceberg_inten_100_s4 
-		's37eax0j', # nist20v3_scaffold_iceberg_inten_100_s1
-		'x2l4adze', # nist20v3_scaffold_iceberg_inten_100_s2
-		'6w68jgf6', # nist20v3_scaffold_iceberg_inten_100_s3
-
-ICEBERG_GEN_RUN_IDS=('4pweeg45', 'n27tube2', '9j26mr4s', 'biofdpxl', 'cyot56r3')
-ICEBERG_INETRN_RUN_IDS=('riyr41po', 'pmaom333', 's37eax0j', 'x2l4adze', '6w68jgf6')
+ICEBERG_GEN_RUN_IDS=('4pweeg45' 'n27tube2' '9j26mr4s' 'biofdpxl' 'cyot56r3')
+ICEBERG_INETRN_RUN_IDS=('riyr41po' 'pmaom333' 's37eax0j' 'x2l4adze' '6w68jgf6')
 
 task_id=${SLURM_ARRAY_TASK_ID}
 iceberg_gen_run_id=${ICEBERG_GEN_RUN_IDS[$task_id]}

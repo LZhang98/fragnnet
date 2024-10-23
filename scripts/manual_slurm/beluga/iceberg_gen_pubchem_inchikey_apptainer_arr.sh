@@ -23,8 +23,8 @@ module load python/3.10
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-ICEBERG_GEN_RUN_IDS=('i7k9gc3d', 'mz3s3h62', '6f4nes2g', 'lp60e1nq', '3zjhzrss')
-ICEBERG_INETRN_RUN_IDS=('c8iwu7il', 'rtt8i90g', 'acgyna2a', '683gijym', 'yeatgz7o')
+ICEBERG_GEN_RUN_IDS=('i7k9gc3d' 'mz3s3h62' '6f4nes2g' 'lp60e1nq' '3zjhzrss')
+ICEBERG_INETRN_RUN_IDS=('c8iwu7il' 'rtt8i90g' 'acgyna2a' '683gijym' 'yeatgz7o')
 
 task_id=${SLURM_ARRAY_TASK_ID}
 iceberg_gen_run_id=${ICEBERG_GEN_RUN_IDS[$task_id]}
