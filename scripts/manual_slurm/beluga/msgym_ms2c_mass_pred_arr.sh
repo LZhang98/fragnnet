@@ -7,8 +7,8 @@
 #SBATCH --time=0-3:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/msgym_ms2c_mass_pred_arr%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/msgym_ms2c_mass_pred_arr%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/msgym_ms2c_mass_pred_arr_%A_%a.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/msgym_ms2c_mass_pred_arr_%A_%a.err
 #SBATCH --open-mode=append
 #SBATCH --array=0-10000:400
 

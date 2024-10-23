@@ -1,18 +1,20 @@
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=iceberg_gen_pubchem_inchikey
+#SBATCH --job-name=iceberg_gen_pubchem_scaffold
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
-#SBATCH --time=0-12:00
+#SBATCH --time=0-24:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchem_inchikey_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchem_inchikey_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchemscaffold_%A_%a.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchemscaffold_%A_%a.err
 #SBATCH --open-mode=append
+#SBATCH --array=0-4
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID} is allocated resources
+echo SLURM_ARRAY_TASK_ID: ${SLURM_ARRAY_TASK_ID}
 
 #load modules
 module load StdEnv/2023
@@ -21,11 +23,31 @@ module load python/3.10
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-SAVE_FP=nist20v3_inchikey_iceberg_inten_100_s0.pkl
-MAGMA_DP=pred_magma_nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d
-ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d.ckpt
-ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s0_c8iwu7il.ckpt
-PROC_DP=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+		# nist20v3_scaffold_iceberg_gen
+		'4pweeg45', # nist20v3_scaffold_iceberg_gen_s0
+		'n27tube2', # nist20v3_scaffold_iceberg_gen_s2
+		'biofdpxl', # nist20v3_scaffold_iceberg_gen_s3
+		'cyot56r3', # nist20v3_scaffold_iceberg_gen_s4
+		
+		# nist20v3_scaffold_iceberg_inten_100
+		'riyr41po', # nist20v3_scaffold_iceberg_inten_100_s0
+		'pmaom333', # nist20v3_scaffold_iceberg_inten_100_s4 
+		's37eax0j', # nist20v3_scaffold_iceberg_inten_100_s1
+		'x2l4adze', # nist20v3_scaffold_iceberg_inten_100_s2
+		'6w68jgf6', # nist20v3_scaffold_iceberg_inten_100_s3
+
+ICEBERG_GEN_RUN_IDS=('4pweeg45', 'n27tube2', '9j26mr4s', 'biofdpxl', 'cyot56r3')
+ICEBERG_INETRN_RUN_IDS=('riyr41po', 'pmaom333', 's37eax0j', 'x2l4adze', '6w68jgf6')
+
+task_id=${SLURM_ARRAY_TASK_ID}
+iceberg_gen_run_id=${ICEBERG_GEN_RUN_IDS[$task_id]}
+iceberg_inten_run_id=${ICEBERG_INETRN_RUN_IDS[$task_id]}
+
+SAVE_FP=nist20v3scaffold_iceberg_inten_100_s${task_id}.pkl
+MAGMA_DP=pred_magma_nist20v3scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
+ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
+ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3scaffold_iceberg_inten_100_s${task_id}_${iceberg_inten_run_id}.ckpt
+PROC_DP=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00scaffold_test_10ppm_MORGAN-R2_50
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
