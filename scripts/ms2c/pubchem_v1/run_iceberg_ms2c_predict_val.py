@@ -27,7 +27,8 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 		warnings.filterwarnings("ignore", category=DeprecationWarning) 
 
 		out_file =  f"{magma_dp}/magma_tree/{spec_id}.json"
-
+		iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
+		iceberg_gen_model.eval()
 		tree_processor = SpecMolMagmaGenDataset.init_tree_processor(
 			pe_embed_k=iceberg_gen_model.hparams.magma_params["pe_embed_k"],
 			root_encode=iceberg_gen_model.hparams.magma_params["root_encode"],
@@ -58,19 +59,14 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 
 		return output
 
-	#if device == 'cpu':
-	#	results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True)
-	#	for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
-	#		continue
-	#else:
-	iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
-	iceberg_gen_model.eval()
-  
-	for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
-		single_predict_mol(*iceberg_gen_input)
-		#results = seq_apply(iter(iceberg_gen_inputs),single_predict_mol,True)
-		#for res in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
-		#	continue
+	if device == 'cpu':
+		results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True)
+		for _ in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=False):
+			continue
+	else:
+		for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=False):
+			single_predict_mol(*iceberg_gen_input)
+
 
 def get_args():
 	
