@@ -68,13 +68,27 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --magma_dp=${MAGMA_DP} \
         --iceberg_gen_ckpt_fp=iceberg_gen.ckpt \
         --iceberg_intern_ckpt_fp=iceberg_inten.ckpt \
-        --proc_dp=./proc
+        --proc_dp=./proc \
+        --run_iceberg_gen=True \
+        --run_iceberg_intern=False
 
 cd ${SLURM_TMPDIR}
 mkdir -p /scratch/feiw/frag-gnn-data/ms2c/pubchem/magma/
 tar -cf ${MAGMA_DP}.tar ${MAGMA_DP}
 cp ${MAGMA_DP}.tar /scratch/feiw/frag-gnn-data/ms2c/pubchem/magma/
 
+apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
+    python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
+        --device=cpu \
+        --save_fp=${SAVE_FP} \
+        --magma_dp=${MAGMA_DP} \
+        --iceberg_gen_ckpt_fp=iceberg_gen.ckpt \
+        --iceberg_intern_ckpt_fp=iceberg_inten.ckpt \
+        --proc_dp=./proc \
+        --run_iceberg_gen=False \
+        --run_iceberg_intern=True
+
+cd ${SLURM_TMPDIR}       
 mkdir -p /scratch/feiw/frag-gnn-data/ms2c/pubchem/predicted/
 cp ${SAVE_FP} /scratch/feiw/frag-gnn-data/ms2c/pubchem/predicted/${SAVE_FP}
 

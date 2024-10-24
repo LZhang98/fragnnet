@@ -86,14 +86,14 @@ def get_args():
 	parser.add_argument("--max_nodes", type=int, default=100)
 	parser.add_argument("--iceberg_gen_device", type=str,default="cpu", help="")
 	parser.add_argument("--save_magma",type=booltype,default=False)
-	parser.add_argument("--use_precomputed_magma",type=booltype,default=False)
+	parser.add_argument("--run_iceberg_gen",type=booltype,default=True)
  
 	#iceberg_intern params
 	parser.add_argument("--iceberg_intern_wandb_run_id",type=str, default= 'c8iwu7il')
 	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default=None, help="")
 	parser.add_argument("--iceberg_intern_device", type=str,default="cpu", help="")
 	parser.add_argument("--iceberg_intern_batch_size", type=int, default=1, help="")
-
+	parser.add_argument("--run_iceberg_intern", type=booltype, default=True, help="")
 	args = parser.parse_args()
 	return args
 
@@ -162,7 +162,7 @@ if __name__ == "__main__":
 
 	# run_iceberg_gen 
 	iceberg_gen_inputs = []
-	if not args.use_precomputed_magma:
+	if not args.run_iceberg_gen:
 		iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 	else:
 		cached_group_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]		
@@ -179,11 +179,12 @@ if __name__ == "__main__":
                                                       auxiliary_scores = auxiliary_scores,
                                                       eval_mz_bin_res = eval_mz_bin_res)
 
-	df = run_spectra_prediction(model = model,   
-				config_d = config_d,
-				mol_data_ptr = mol_df,
-				spec_data_ptr = spec_df,
-				magma_dp = args.magma_dp,
-				device = args.device,
-    			validate=True)
-	df.to_pickle(args.save_fp)
+	if args.run_iceberg_intern:
+		df = run_spectra_prediction(model = model,   
+					config_d = config_d,
+					mol_data_ptr = mol_df,
+					spec_data_ptr = spec_df,
+					magma_dp = args.magma_dp,
+					device = args.device,
+					validate=True)
+		df.to_pickle(args.save_fp)
