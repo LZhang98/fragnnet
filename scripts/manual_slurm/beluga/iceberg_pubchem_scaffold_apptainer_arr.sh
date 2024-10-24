@@ -30,10 +30,10 @@ task_id=${SLURM_ARRAY_TASK_ID}
 iceberg_gen_run_id=${ICEBERG_GEN_RUN_IDS[$task_id]}
 iceberg_inten_run_id=${ICEBERG_INETRN_RUN_IDS[$task_id]}
 
-SAVE_FP=nist20v3scaffold_iceberg_inten_100_s${task_id}.pkl
-MAGMA_DP=pred_magma_nist20v3scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
-ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
-ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3scaffold_iceberg_inten_100_s${task_id}_${iceberg_inten_run_id}.ckpt
+SAVE_FP=nist20v3_scaffold_iceberg_inten_100_s${task_id}.pkl
+MAGMA_DP=pred_magma_nist20v3_scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
+ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
+ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_inten_100_s${task_id}_${iceberg_inten_run_id}.ckpt
 PROC_DP=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00scaffold_test_10ppm_MORGAN-R2_50
 
 # create local dir
