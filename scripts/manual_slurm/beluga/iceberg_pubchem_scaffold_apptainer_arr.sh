@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=iceberg_gen_pubchem_scaffold
+#SBATCH --job-name=iceberg_pubchem_scaffold
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
 #SBATCH --time=0-24:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchemscaffold_%A_%a.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchemscaffold_%A_%a.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/iceberg_pubchem_scaffold_%A_%a.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/iceberg_pubchem_scaffold_%A_%a.err
 #SBATCH --open-mode=append
 #SBATCH --array=0-4
 
