@@ -52,7 +52,8 @@ ce_insert_merge: False # merge ce embedding
 ce_insert_size: 32
 mol_params:
   preprocess: True
-
+prec_insert_location: mlp
+prec_insert_size: 4
 train_batch_size: 256
 eval_batch_size: 256
 accumulate_grad_batches: 4
