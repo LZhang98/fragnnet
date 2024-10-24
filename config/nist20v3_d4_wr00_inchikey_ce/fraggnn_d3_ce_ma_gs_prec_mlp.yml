@@ -1,4 +1,4 @@
-wandb_name: nist20v3_inchikey_fraggnn_d3_ce_ms_gs
+wandb_name: nist20v3_inchikey_fraggnn_d3_ce_ma_gs_prec_mlp
 wandb_tags:
 - retrieval
 - nist20
@@ -50,10 +50,11 @@ ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]
 ce_insert_merge: False # merge ce embedding
 ce_insert_size: 32
+prec_insert_location: mlp
+prec_insert_size: 4
 mol_params:
   preprocess: True
-prec_insert_location: mol
-prec_insert_size: 4
+
 train_batch_size: 256
 eval_batch_size: 256
 accumulate_grad_batches: 4
