@@ -162,7 +162,7 @@ if __name__ == "__main__":
 
 	# run_iceberg_gen 
 	iceberg_gen_inputs = []
-	if not args.run_iceberg_gen:
+	if args.run_iceberg_gen:
 		iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 	else:
 		cached_group_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]		
