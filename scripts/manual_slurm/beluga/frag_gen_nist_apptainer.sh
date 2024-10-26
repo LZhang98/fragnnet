@@ -26,8 +26,8 @@ MAX_DEPTH=3
 NB_FLAG=False
 SAVE_NAME=nist20mona23v3_d3_h4_ma_mi
 DSETS='nist20 mona23'
-PREC='M+H+ M-H-'
-INST='QTOF FT'
+PREC='any'
+INST='any'
 
 cho DATASET_NAME: ${DATASET_NAME}
 echo MAX_DEPTH: ${MAX_DEPTH}
