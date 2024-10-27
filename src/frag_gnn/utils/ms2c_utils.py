@@ -302,9 +302,9 @@ def run_spectra_prediction(model,
 	# only check for FragGNNet
 	if isinstance(model,FragGNNPL):
 		assert os.path.isdir(frag_dp)
-		#print(">> filtering input without frags")
+		print(">> filtering input without frags")
 		all_frags = set([f.split('.')[0] for f in os.listdir(frag_dp)])
-		#print("> num of frags: ", len(all_frags))
+		print("> num of frags: ", len(all_frags))
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
 		local_config_d['frag_dp'] = frag_dp
 		model_ds_cls = SpecMolFragDataset
@@ -316,6 +316,11 @@ def run_spectra_prediction(model,
 	elif isinstance(model,IcebergIntenPL):
 		assert os.path.isdir(magma_dp)
 		model_ds_cls = SpecMolMagmaIntenDataset
+		print(">> filtering input without magma")
+		magma_jsons = set([f.split('.')[0] for f in os.listdir(magma_dp)])
+		print("> num of magma jsons: ", len(magma_jsons))
+		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(magma_jsons)]
+		local_config_d['frag_dp'] = frag_dp
 		local_config_d['magma_dp'] = magma_dp
 	else:
 		print(f"Not supported model: {model}")
