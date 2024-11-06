@@ -215,6 +215,7 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 	# let us see if ram will be an issue
 	config_d['frag_params']['preload'] = False
 	config_d['frag_params']['preprocess'] = False
+	config_d['magma_params']['preprocess'] = False
 	# disable sampler
 	config_d["dynamic_batch_sampler"] = False
 	config_d["group_sampler"] = False 
@@ -335,7 +336,6 @@ def run_spectra_prediction(model,
 	# config mol df, spec df and frag_dp
 	local_config_d['mol_fp'] = mol_df
 	local_config_d['spec_fp'] = spec_df
-
 
 	# load datasets
 	print(">> Loading datasets")
