@@ -5,11 +5,10 @@ import pandas as pd
 import os
 import argparse
 import json
-
 from frag_gnn.iceberg.pl_model import IcebergGenPL
 from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset
 from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.data_utils import par_apply, par_apply_series, seq_apply
+from frag_gnn.utils.data_utils import par_apply, par_apply_series
 from rdkit import Chem
 from tqdm import tqdm
 from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
@@ -81,18 +80,17 @@ def get_args():
  	#gen params
 	parser.add_argument("--iceberg_gen_wandb_run_id",type=str, default= 'i7k9gc3d')
 	parser.add_argument("--iceberg_gen_ckpt_fp", type=str,default=None, help="")
-	parser.add_argument("--magma_dp", type=str,default="data/ms2c/pubchem/magma/iceberg_gen_inchikey_s0", help="")
+	parser.add_argument("--magma_dp", type=str,default="data/ms2c/pubchem/magma/pred_magma_nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d", help="")
 	parser.add_argument("--threshold", type=float, default=0.0)
 	parser.add_argument("--max_nodes", type=int, default=100)
 	parser.add_argument("--iceberg_gen_device", type=str,default="cpu", help="")
-	parser.add_argument("--save_magma",type=booltype,default=False)
-	parser.add_argument("--run_iceberg_gen",type=booltype,default=True)
+	parser.add_argument("--run_iceberg_gen",type=booltype,default=False)
  
 	#iceberg_intern params
 	parser.add_argument("--iceberg_intern_wandb_run_id",type=str, default= 'c8iwu7il')
 	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default=None, help="")
-	parser.add_argument("--iceberg_intern_device", type=str,default="cpu", help="")
-	parser.add_argument("--iceberg_intern_batch_size", type=int, default=1, help="")
+	parser.add_argument("--iceberg_intern_device", type=str,default="cuda:0", help="")
+	parser.add_argument("--iceberg_intern_batch_size", type=int, default=16, help="")
 	parser.add_argument("--run_iceberg_intern", type=booltype, default=True, help="")
 	args = parser.parse_args()
 	return args
@@ -151,8 +149,7 @@ if __name__ == "__main__":
 	#unique_group_ids = unique_group_ids[0:10]
 	#spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
 
-	print(f"> preapre iceberg gen/ magma")
-	os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
+	print(f"> preapre iceberg gen/magma")
 	iceberg_gen_df = spec_df.drop_duplicates(subset='group_id').copy()
 	iceberg_gen_df.loc[:,'magma_dp'] = args.magma_dp
 	iceberg_gen_df.loc[:,'max_nodes'] = args.max_nodes
@@ -163,6 +160,7 @@ if __name__ == "__main__":
 	# run_iceberg_gen 
 	iceberg_gen_inputs = []
 	if args.run_iceberg_gen:
+		os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
 		iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 	else:
 		cached_group_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]		

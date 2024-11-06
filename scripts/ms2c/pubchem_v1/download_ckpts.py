@@ -1,4 +1,4 @@
-from frag_gnn.utils.misc_utils import get_best_ckpt_from_wandb, get_wandb_runs_by_grp
+from frag_gnn.utils.misc_utils import get_best_ckpt_from_wandb
 	
 if __name__ == "__main__":
 

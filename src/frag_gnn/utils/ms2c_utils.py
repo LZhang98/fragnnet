@@ -238,7 +238,7 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 		th.use_deterministic_algorithms(True)
   
 	# check class
-	print(config_d['model_type'])
+	print(f">> model type: {config_d['model_type']}")
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 
@@ -316,16 +316,16 @@ def run_spectra_prediction(model,
 	elif isinstance(model,IcebergIntenPL):
 		assert os.path.isdir(magma_dp)
 		model_ds_cls = SpecMolMagmaIntenDataset
-		print(">> filtering input without magma")
-		magma_jsons = set([f.split('.')[0] for f in os.listdir(magma_dp)])
+		print(f">> filtering input without magma. magma_dp: {magma_dp}")
+		magma_jsons = set([f.split('.')[0] for f in os.listdir(os.path.join(magma_dp,'magma_tree')) if f.endswith('.json')])
 		print("> num of magma jsons: ", len(magma_jsons))
-		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(magma_jsons)]
+		spec_df = spec_df[spec_df['group_id'].astype(str).isin(magma_jsons)]
 		local_config_d['frag_dp'] = frag_dp
 		local_config_d['magma_dp'] = magma_dp
 	else:
 		print(f"Not supported model: {model}")
   
-	print("> num of spec before more filtering", len(spec_df))
+	print("> num of spec before filtering", len(spec_df))
 	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
 	print("> num of spec after filtering", len(spec_df))
 	if len(spec_df) == 0:
