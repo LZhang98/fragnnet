@@ -70,7 +70,6 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 def get_args():
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--device", type=str,default="cpu", help="")
 	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50/iceberg_inchikey_s0.pkl", help="")
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
 
@@ -176,13 +175,12 @@ if __name__ == "__main__":
                                                       batch_size = args.iceberg_intern_batch_size, 
                                                       auxiliary_scores = auxiliary_scores,
                                                       eval_mz_bin_res = eval_mz_bin_res)
-
 	if args.run_iceberg_intern:
 		df = run_spectra_prediction(model = model,   
 					config_d = config_d,
 					mol_data_ptr = mol_df,
 					spec_data_ptr = spec_df,
 					magma_dp = args.magma_dp,
-					device = args.device,
+					device = args.iceberg_intern_device,
 					validate=True)
 		df.to_pickle(args.save_fp)

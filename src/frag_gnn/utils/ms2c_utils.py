@@ -362,8 +362,8 @@ def run_spectra_prediction(model,
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl), desc=" Running inference"):
 			spec_ids = batch_input['spec_unique_id']
 			mol_ids = batch_input['mol_id']
-			#print(batch_input)
-			batch_result = to_device(batch_input, device)
+
+			batch_input = to_device(batch_input, device)
 			# use existing validate to compute cos sim and etc
 			if validate:
 				batch_result = model._common_step(batch_input, split="val", log=False)
