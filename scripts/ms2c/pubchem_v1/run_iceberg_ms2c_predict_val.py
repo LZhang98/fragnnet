@@ -20,7 +20,7 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 				 ):
 
 	def single_predict_mol(adduct, inchi, smi, spec_id, magma_dp, threshold, max_nodes):
-     
+	 
 		# disbale  UserWarning: TypedStorage is deprecated.warning
 		import warnings
 		warnings.filterwarnings("ignore", category=DeprecationWarning) 
@@ -84,12 +84,14 @@ def get_args():
 	parser.add_argument("--max_nodes", type=int, default=100)
 	parser.add_argument("--iceberg_gen_device", type=str,default="cpu", help="")
 	parser.add_argument("--run_iceberg_gen",type=booltype,default=False)
- 
+	parser.add_argument("--iceberg_gen_use_cached",type=booltype,default=False)
+  
 	#iceberg_intern params
 	parser.add_argument("--iceberg_intern_wandb_run_id",type=str, default= 'c8iwu7il')
 	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default=None, help="")
 	parser.add_argument("--iceberg_intern_device", type=str,default="cuda:0", help="")
-	parser.add_argument("--iceberg_intern_batch_size", type=int, default=16, help="")
+	parser.add_argument("--iceberg_intern_batch_size", type=int, default=32, help="")
+	parser.add_argument("--run_iceberg_chunk_size", type=int, default=10000, help="runing number of prrediction at a time. useful to prevent ram to brrrr")
 	parser.add_argument("--run_iceberg_intern", type=booltype, default=True, help="")
 	args = parser.parse_args()
 	return args
@@ -145,42 +147,60 @@ if __name__ == "__main__":
 	#this is for debug
 	#unique_group_ids = spec_df['group_id'].unique()
 	#print(unique_group_ids)
-	#unique_group_ids = unique_group_ids[0:10]
+	#unique_group_ids = unique_group_ids[0:100]
 	#spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
 
-	print(f"> preapre iceberg gen/magma")
-	iceberg_gen_df = spec_df.drop_duplicates(subset='group_id').copy()
-	iceberg_gen_df.loc[:,'magma_dp'] = args.magma_dp
-	iceberg_gen_df.loc[:,'max_nodes'] = args.max_nodes
-	iceberg_gen_df.loc[:,'threshold'] = args.threshold
-	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : (RDLogger.DisableLog("rdApp.warning"), Chem.MolToInchi(x))[1])
-	iceberg_gen_df = iceberg_gen_df.merge(mol_df[['mol_id','mol', 'smiles', "inchi"]], on = 'mol_id', how = 'left')
-
-	# run_iceberg_gen 
-	iceberg_gen_inputs = []
 	if args.run_iceberg_gen:
-		os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
-		iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
-	else:
-		cached_group_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]		
-		iceberg_gen_inputs = iceberg_gen_df[iceberg_gen_df['group_id'].isin(cached_group_ids)][['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
-	if len(iceberg_gen_inputs):
-		run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp = iceberg_gen_ckpt_fp, device = args.iceberg_gen_device)
+		print(f"> preapre iceberg gen/magma")
+		iceberg_gen_df = spec_df.drop_duplicates(subset='group_id').copy()
+		iceberg_gen_df.loc[:,'magma_dp'] = args.magma_dp
+		iceberg_gen_df.loc[:,'max_nodes'] = args.max_nodes
+		iceberg_gen_df.loc[:,'threshold'] = args.threshold
+		mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : (RDLogger.DisableLog("rdApp.warning"), Chem.MolToInchi(x))[1])
+		iceberg_gen_df = iceberg_gen_df.merge(mol_df[['mol_id','mol', 'smiles', "inchi"]], on = 'mol_id', how = 'left')
+
+		# run_iceberg_gen 
+		iceberg_gen_inputs = []
+		if not args.iceberg_gen_use_cached:
+			os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
+			iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
+		else:
+			cached_group_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]		
+			iceberg_gen_inputs = iceberg_gen_df[iceberg_gen_df['group_id'].isin(cached_group_ids)][['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
+		if len(iceberg_gen_inputs):
+			run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp = iceberg_gen_ckpt_fp, device = args.iceberg_gen_device)
 	
-	print(f"> Loading Iceberg_Inten models {iceberg_intern_ckpt_fp}")
-	auxiliary_scores = ["cos_sim","cos_hun"]
-	eval_mz_bin_res = [0.01]
-	model, config_d, device = load_model_and_init_config(ckpt_fp = iceberg_intern_ckpt_fp, 
-                                                      device = args.iceberg_intern_device, 
-                                                      batch_size = args.iceberg_intern_batch_size, 
-                                                      auxiliary_scores = auxiliary_scores,
-                                                      eval_mz_bin_res = eval_mz_bin_res)
 	if args.run_iceberg_intern:
-		df = run_spectra_prediction(model = model,   
-					config_d = config_d,
-					mol_data_ptr = mol_df,
-					spec_data_ptr = spec_df,
-					magma_dp = args.magma_dp,
-					device = args.iceberg_intern_device,
-					validate=True)
-		df.to_pickle(args.save_fp)
+		print(f"> Loading Iceberg_Inten models {iceberg_intern_ckpt_fp}")
+		auxiliary_scores = ["cos_sim","cos_hun"]
+		eval_mz_bin_res = [0.01]
+		model, config_d, device = load_model_and_init_config(ckpt_fp = iceberg_intern_ckpt_fp, 
+														device = args.iceberg_intern_device, 
+														batch_size = args.iceberg_intern_batch_size, 
+														auxiliary_scores = auxiliary_scores,
+														eval_mz_bin_res = eval_mz_bin_res)
+
+		if args.run_iceberg_chunk_size > 0:
+
+			unique_group_ids = spec_df['group_id'].unique()
+			for i in range(0, len(unique_group_ids), args.run_iceberg_chunk_size):
+				unique_group_ids_chunk = unique_group_ids[i:i + args.run_iceberg_chunk_size+1]
+				spec_chunk_df = spec_df[spec_df['group_id'].isin(unique_group_ids_chunk)]
+				df = run_spectra_prediction(model = model,   
+							config_d = config_d,
+							mol_data_ptr = mol_df,
+							spec_data_ptr = spec_chunk_df,
+							magma_dp = args.magma_dp,
+							device = args.iceberg_intern_device,
+							validate=True)
+				chunk_save_fp = args.save_fp.replace(".pkl","_chunk_{i}.pkl")
+				df.to_pickle(chunk_save_fp)
+		else:
+			df = run_spectra_prediction(model = model,   
+							config_d = config_d,
+							mol_data_ptr = mol_df,
+							spec_data_ptr = spec_df,
+							magma_dp = args.magma_dp,
+							device = args.iceberg_intern_device,
+							validate=True)
+			df.to_pickle(args.save_fp)

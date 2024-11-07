@@ -296,16 +296,17 @@ def run_spectra_prediction(model,
 	else:
 		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
 
-	print(f"> frag_dp {frag_dp}")
+
 	# check model class and ds class
 	model_ds_cls = None
  
 	# only check for FragGNNet
 	if isinstance(model,FragGNNPL):
 		assert os.path.isdir(frag_dp)
+		print(f">> frag_dp {frag_dp}")
 		print(">> filtering input without frags")
 		all_frags = set([f.split('.')[0] for f in os.listdir(frag_dp)])
-		print("> num of frags: ", len(all_frags))
+		print(">> num of frags: ", len(all_frags))
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
 		local_config_d['frag_dp'] = frag_dp
 		model_ds_cls = SpecMolFragDataset
@@ -319,9 +320,8 @@ def run_spectra_prediction(model,
 		model_ds_cls = SpecMolMagmaIntenDataset
 		print(f">> filtering input without magma. magma_dp: {magma_dp}")
 		magma_jsons = set([f.split('.')[0] for f in os.listdir(os.path.join(magma_dp,'magma_tree')) if f.endswith('.json')])
-		print("> num of magma jsons: ", len(magma_jsons))
+		print(">> num of magma jsons: ", len(magma_jsons))
 		spec_df = spec_df[spec_df['group_id'].astype(str).isin(magma_jsons)]
-		local_config_d['frag_dp'] = frag_dp
 		local_config_d['magma_dp'] = magma_dp
 	else:
 		print(f"Not supported model: {model}")
