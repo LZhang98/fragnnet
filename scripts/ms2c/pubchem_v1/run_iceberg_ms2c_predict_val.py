@@ -147,7 +147,7 @@ if __name__ == "__main__":
 	#this is for debug
 	#unique_group_ids = spec_df['group_id'].unique()
 	#print(unique_group_ids)
-	#unique_group_ids = unique_group_ids[0:100]
+	#unique_group_ids = unique_group_ids[0:1000]
 	#spec_df = spec_df[spec_df['group_id'].isin(unique_group_ids)]
 
 	if args.run_iceberg_gen:
@@ -183,8 +183,9 @@ if __name__ == "__main__":
 		if args.run_iceberg_chunk_size > 0:
 
 			unique_group_ids = spec_df['group_id'].unique()
-			for i in range(0, len(unique_group_ids), args.run_iceberg_chunk_size):
-				unique_group_ids_chunk = unique_group_ids[i:i + args.run_iceberg_chunk_size+1]
+			chunk_save_fps = []
+			for i in tqdm(range(0, len(unique_group_ids), args.run_iceberg_chunk_size)):
+				unique_group_ids_chunk = unique_group_ids[i:i + args.run_iceberg_chunk_size]
 				spec_chunk_df = spec_df[spec_df['group_id'].isin(unique_group_ids_chunk)]
 				df = run_spectra_prediction(model = model,   
 							config_d = config_d,
@@ -193,8 +194,15 @@ if __name__ == "__main__":
 							magma_dp = args.magma_dp,
 							device = args.iceberg_intern_device,
 							validate=True)
-				chunk_save_fp = args.save_fp.replace(".pkl","_chunk_{i}.pkl")
+				chunk_save_fp = args.save_fp.replace(".pkl",f"_chunk_{i}.pkl")
 				df.to_pickle(chunk_save_fp)
+				chunk_save_fps.append(chunk_save_fp)
+			dfs = []
+			for f in chunk_save_fps:
+				print(f"> {f}")
+				dfs.append(pd.read_pickle(f))		
+			df = pd.concat(dfs)
+			df.to_pickle(args.save_fp)
 		else:
 			df = run_spectra_prediction(model = model,   
 							config_d = config_d,
