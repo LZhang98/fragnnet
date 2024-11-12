@@ -21,11 +21,11 @@ module load python/3.10
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-SAVE_FP=nist20v3_scaffold_iceberg_inten_100_s0_sanity.pkl
+SAVE_FP=nist20v3_scaffold_iceberg_inten_100_s0.pkl
 MAGMA_DP=pred_magma_nist20v3_scaffold_iceberg_gen_s0_4pweeg45
 ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_gen_s0_4pweeg45.ckpt
 ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_inten_100_s0_riyr41po.ckpt
-PROC_DP=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50_sanity
+PROC_DP=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
