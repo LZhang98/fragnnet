@@ -92,7 +92,7 @@ def get_args():
 	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default=None, help="")
 	parser.add_argument("--iceberg_intern_device", type=str,default="cuda:0", help="")
 	parser.add_argument("--iceberg_intern_batch_size", type=int, default=32, help="")
-	parser.add_argument("--run_iceberg_chunk_size", type=int, default=-1, help="runing number of prrediction at a time. useful to prevent ram to brrrr")
+	parser.add_argument("--run_iceberg_chunk_size", type=int, default=-1, help="runing number of prediction at a time. useful to prevent ram to brrrr")
 	parser.add_argument("--run_iceberg_intern", type=booltype, default=True, help="")
 	args = parser.parse_args()
 	return args

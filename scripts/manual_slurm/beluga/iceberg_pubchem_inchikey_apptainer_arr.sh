@@ -74,8 +74,8 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
 
 cd ${SLURM_TMPDIR}
 mkdir -p /scratch/feiw/frag-gnn-data/ms2c/pubchem/magma/
-tar -cf ${MAGMA_DP}.tar ${MAGMA_DP}
-cp ${MAGMA_DP}.tar /scratch/feiw/frag-gnn-data/ms2c/pubchem/magma/
+tar -czf ${MAGMA_DP}.tar.gz ${MAGMA_DP}
+cp ${MAGMA_DP}.tar.gz /scratch/feiw/frag-gnn-data/ms2c/pubchem/magma/
 
 apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
@@ -86,11 +86,13 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --iceberg_intern_ckpt_fp=iceberg_inten.ckpt \
         --proc_dp=./proc \
         --run_iceberg_gen=False \
+        --run_iceberg_chunk_size=10000 \
         --run_iceberg_intern=True
 
 cd ${SLURM_TMPDIR}       
 mkdir -p /scratch/feiw/frag-gnn-data/ms2c/pubchem/predicted/
-cp ${SAVE_FP} /scratch/feiw/frag-gnn-data/ms2c/pubchem/predicted/${SAVE_FP}
+gzip ${SAVE_FP} 
+cp ${SAVE_FP}.gz /scratch/feiw/frag-gnn-data/ms2c/pubchem/predicted/${SAVE_FP}.gz
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running

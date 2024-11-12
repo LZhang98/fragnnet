@@ -23,7 +23,6 @@ def get_args():
 
 if __name__ == "__main__":
 
-
 	args = get_args()
 	#predicted_spec_df = pd.read_pickle(args.predicted_fp)
 	#print(predicted_spec_df.head())
