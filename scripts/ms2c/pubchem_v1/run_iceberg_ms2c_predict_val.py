@@ -161,11 +161,12 @@ if __name__ == "__main__":
 
 		# run_iceberg_gen 
 		iceberg_gen_inputs = []
+		magma_tree_dp = (f"{args.magma_dp}/magma_tree")
 		if not args.iceberg_gen_use_cached:
-			os.makedirs(f"{args.magma_dp}/magma_tree", exist_ok=True)
+			os.makedirs(magma_tree_dp, exist_ok=True)
 			iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 		else:
-			cached_group_ids = [f.split('.')[0] for f in os.listdir(args.magma_dp)]		
+			cached_group_ids = [f.split('.')[0] for f in os.listdir(magma_tree_dp)]		
 			iceberg_gen_inputs = iceberg_gen_df[iceberg_gen_df['group_id'].isin(cached_group_ids)][['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 		if len(iceberg_gen_inputs):
 			run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp = iceberg_gen_ckpt_fp, device = args.iceberg_gen_device)
