@@ -164,7 +164,7 @@ if __name__ == "__main__":
 		iceberg_gen_inputs = []
 		print(f"> num of group ids {spec_df['group_id'].nunique()}")
 		magma_tree_dp = f"{args.magma_dp}/magma_tree"
-		if not args.iceberg_gen_use_cached:
+		if not args.iceberg_gen_use_cached or not os.path.exists(magma_tree_dp):
 			os.makedirs(magma_tree_dp, exist_ok=True)
 			iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 		else:
