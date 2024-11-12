@@ -16,7 +16,7 @@ from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_pr
 from rdkit import RDLogger
 
 def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
-				 device = None,
+				 device = None, iceberg_gen_n_jobs = 8
 				 ):
 
 	def single_predict_mol(adduct, inchi, smi, spec_id, magma_dp, threshold, max_nodes):
@@ -58,19 +58,19 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 
 		return output
 
-	if device == 'cpu':
-		results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True,n_jobs=8)
-		for _ in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=True):
-			continue
-	else:
-		for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=True):
-			single_predict_mol(*iceberg_gen_input)
+	#if device == 'cpu':
+	results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True,n_jobs=iceberg_gen_n_jobs)
+	for _ in tqdm(results, total = len(iceberg_gen_inputs), desc="Running iceberg gen", leave=True):
+		continue
+	#else:
+	#	for iceberg_gen_input in tqdm(iceberg_gen_inputs, desc="Running iceberg gen", leave=True):
+	#		single_predict_mol(*iceberg_gen_input)
 
 
 def get_args():
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50/iceberg_inchikey_s0.pkl", help="")
+	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50/iceberg_inchikey_s0_sanity.pkl", help="")
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
 
 	parser.add_argument("--use_cached_ckpt",type=booltype,default=True)
@@ -82,16 +82,17 @@ def get_args():
 	parser.add_argument("--magma_dp", type=str,default="data/ms2c/pubchem/magma/pred_magma_nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d", help="")
 	parser.add_argument("--threshold", type=float, default=0.0)
 	parser.add_argument("--max_nodes", type=int, default=100)
-	parser.add_argument("--iceberg_gen_device", type=str,default="cpu", help="")
-	parser.add_argument("--run_iceberg_gen",type=booltype,default=False)
-	parser.add_argument("--iceberg_gen_use_cached",type=booltype,default=False)
+	parser.add_argument("--iceberg_gen_device", type=str,default="cuda:0", help="")
+	parser.add_argument("--iceberg_gen_n_jobs", type=int,default=8, help="")
+	parser.add_argument("--run_iceberg_gen",type=booltype,default=True)
+	parser.add_argument("--iceberg_gen_use_cached",type=booltype,default=True)
   
 	#iceberg_intern params
 	parser.add_argument("--iceberg_intern_wandb_run_id",type=str, default= 'c8iwu7il')
 	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default=None, help="")
 	parser.add_argument("--iceberg_intern_device", type=str,default="cuda:0", help="")
 	parser.add_argument("--iceberg_intern_batch_size", type=int, default=32, help="")
-	parser.add_argument("--run_iceberg_chunk_size", type=int, default=10000, help="runing number of prrediction at a time. useful to prevent ram to brrrr")
+	parser.add_argument("--run_iceberg_chunk_size", type=int, default=-1, help="runing number of prrediction at a time. useful to prevent ram to brrrr")
 	parser.add_argument("--run_iceberg_intern", type=booltype, default=True, help="")
 	args = parser.parse_args()
 	return args
@@ -134,7 +135,7 @@ if __name__ == "__main__":
 
 	print(f"> iceberg_gen_device {args.iceberg_gen_device }")
 	print(f"> iceberg_intern_device {args.iceberg_intern_device }")
-
+	print(f"> proc_dp {args.proc_dp}")
 	mol_fp = os.path.join(args.proc_dp,'mol_df.pkl.gz')
 	spec_fp = os.path.join(args.proc_dp,'spec_df.pkl.gz')
 
@@ -161,15 +162,17 @@ if __name__ == "__main__":
 
 		# run_iceberg_gen 
 		iceberg_gen_inputs = []
-		magma_tree_dp = (f"{args.magma_dp}/magma_tree")
+		print(f"> num of group ids {spec_df['group_id'].nunique()}")
+		magma_tree_dp = f"{args.magma_dp}/magma_tree"
 		if not args.iceberg_gen_use_cached:
 			os.makedirs(magma_tree_dp, exist_ok=True)
 			iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 		else:
-			cached_group_ids = [f.split('.')[0] for f in os.listdir(magma_tree_dp)]		
-			iceberg_gen_inputs = iceberg_gen_df[iceberg_gen_df['group_id'].isin(cached_group_ids)][['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
+			cached_group_ids = [int(f.split('.')[0]) for f in os.listdir(magma_tree_dp)]
+			print(f"> num of cached group ids {len(cached_group_ids)}")
+			iceberg_gen_inputs = iceberg_gen_df[~iceberg_gen_df['group_id'].isin(cached_group_ids)][['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
 		if len(iceberg_gen_inputs):
-			run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp = iceberg_gen_ckpt_fp, device = args.iceberg_gen_device)
+			run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp = iceberg_gen_ckpt_fp, device = args.iceberg_gen_device, iceberg_gen_n_jobs=args.iceberg_gen_n_jobs)
 	
 	if args.run_iceberg_intern:
 		print(f"> Loading Iceberg_Inten models {iceberg_intern_ckpt_fp}")
@@ -182,7 +185,6 @@ if __name__ == "__main__":
 														eval_mz_bin_res = eval_mz_bin_res)
 
 		if args.run_iceberg_chunk_size > 0:
-
 			unique_group_ids = spec_df['group_id'].unique()
 			chunk_save_fps = []
 			for i in tqdm(range(0, len(unique_group_ids), args.run_iceberg_chunk_size)):

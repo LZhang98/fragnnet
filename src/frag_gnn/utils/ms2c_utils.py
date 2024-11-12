@@ -285,6 +285,7 @@ def run_spectra_prediction(model,
 		mol_df = pd.read_pickle(mol_data_ptr)
 	elif isinstance(mol_data_ptr, pd.DataFrame):
 		mol_df = mol_data_ptr
+		print(f"> mol_df {mol_df.shape}")
 	else:
 		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
 
@@ -293,6 +294,7 @@ def run_spectra_prediction(model,
 		spec_df = pd.read_pickle(spec_data_ptr)
 	elif isinstance(spec_data_ptr, pd.DataFrame):
 		spec_df = spec_data_ptr
+		print(f"> spec_df {spec_df.shape}")
 	else:
 		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
 
@@ -310,6 +312,9 @@ def run_spectra_prediction(model,
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
 		local_config_d['frag_dp'] = frag_dp
 		model_ds_cls = SpecMolFragDataset
+		print("> num of spec before filtering by dag", len(spec_df))
+		spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
+		print("> num of spec after filtering by dag", len(spec_df))
 	elif isinstance(model,NeimsPL) or isinstance(model,MassFormerPL) or isinstance(model, GNNPL):
 		mz_max = local_config_d['mz_max']
 		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
@@ -321,14 +326,14 @@ def run_spectra_prediction(model,
 		print(f">> filtering input without magma. magma_dp: {magma_dp}")
 		magma_jsons = set([f.split('.')[0] for f in os.listdir(os.path.join(magma_dp,'magma_tree')) if f.endswith('.json')])
 		print(">> num of magma jsons: ", len(magma_jsons))
+		print("> num of spec before filtering by magma", len(spec_df))
 		spec_df = spec_df[spec_df['group_id'].astype(str).isin(magma_jsons)]
+		print("> num of spec after filtering by magma", len(spec_df))		
 		local_config_d['magma_dp'] = magma_dp
 	else:
 		print(f"Not supported model: {model}")
   
-	print("> num of spec before filtering", len(spec_df))
-	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
-	print("> num of spec after filtering", len(spec_df))
+
 	if len(spec_df) == 0:
 		columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos']
 		return pd.DataFrame([], columns=columns)

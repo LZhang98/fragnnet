@@ -42,12 +42,14 @@ if __name__ == "__main__":
 	#print(len(spec_input_df))
 	spec_input_df = spec_input_df.drop_duplicates(subset=['group_id'])
 	# Get a list of all .gz files in the directory
-	gz_files = glob.glob(os.path.join(args.predicted_dp, '*.gz'))
-
+	#gz_files = glob.glob(os.path.join(args.predicted_dp, '*.gz'))
+	gz_files = [os.path.join(args.predicted_dp, 'iceberg_inchikey_s0.pkl')]
 	# Extract and print the basenames (without the .gz extension)
 	overall_stats_rows = []
 	for gz_file in tqdm(gz_files):
-		basename = os.path.basename(gz_file).replace('.pkl.gz', '')
+		#basename = os.path.basename(gz_file).replace('.pkl.gz', '')
+		basename = "iceberg_inchikey_s0"
+		print(gz_file)
 		predicted_spec_df = pd.read_pickle(gz_file)
 		#predicted_spec_df['group_id'] =  predicted_spec_df['spec_id']
 		predicted_spec_df = predicted_spec_df.merge(spec_input_df, left_on='spec_id', right_on='group_id')
