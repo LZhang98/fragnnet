@@ -21,11 +21,11 @@ module load python/3.10
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-SAVE_FP=nist20v3_scaffold_iceberg_inten_100_s0.pkl
+SAVE_FP=nist20v3_scaffold_iceberg_inten_100_s0_sanity.pkl
 MAGMA_DP=pred_magma_nist20v3_scaffold_iceberg_gen_s0_4pweeg45
 ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_gen_s0_4pweeg45.ckpt
 ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_inten_100_s0_riyr41po.ckpt
-PROC_DP=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50
+PROC_DP=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50_sanity
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
@@ -54,13 +54,14 @@ apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fr
 # run dag gen
 apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
-        --device=cpu \
+        --iceberg_gen_device=cpu \
         --save_fp=${SAVE_FP} \
         --magma_dp=${MAGMA_DP} \
         --iceberg_gen_ckpt_fp=iceberg_gen.ckpt \
         --iceberg_intern_ckpt_fp=iceberg_inten.ckpt \
         --proc_dp=./proc \
         --run_iceberg_gen=True \
+        --iceberg_gen_use_cached=False \
         --run_iceberg_intern=False
 
 cd ${SLURM_TMPDIR}
@@ -70,7 +71,7 @@ cp ${MAGMA_DP}.tar /scratch/feiw/frag-gnn-data/ms2c/pubchem/magma/
 
 apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
-        --device=cpu \
+        --iceberg_intern_device=cpu \
         --save_fp=${SAVE_FP} \
         --magma_dp=${MAGMA_DP} \
         --iceberg_gen_ckpt_fp=iceberg_gen.ckpt \
