@@ -19,14 +19,16 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 				 device = None, iceberg_gen_n_jobs = 8
 				 ):
 
-	def single_predict_mol(adduct, inchi, smi, spec_id, magma_dp, threshold, max_nodes):
+	def single_predict_mol(adduct, inchi, smi, spec_unique_id, magma_dp, threshold, max_nodes):
 	 
 		# disbale  UserWarning: TypedStorage is deprecated.warning
 		import warnings
 		warnings.filterwarnings("ignore", category=DeprecationWarning) 
 		th.set_num_threads(8)
-		out_file =  f"{magma_dp}/magma_tree/{spec_id}.json"
-		iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
+		out_file =  f"{magma_dp}/magma_tree/{spec_unique_id}.json"
+		"""_summary_
+
+  		iceberg_gen_model = IcebergGenPL.load_from_checkpoint(iceberg_gen_ckpt_fp, map_location = device)
 		iceberg_gen_model.eval()
 		tree_processor = SpecMolMagmaGenDataset.init_tree_processor(
 			pe_embed_k=iceberg_gen_model.hparams.magma_params["pe_embed_k"],
@@ -52,11 +54,12 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 				"frags": pred,
 				"adduct": adduct
 			}
-
-			with open(out_file, "w") as fp:
-				json.dump(output, fp,indent=2)
-
-		return output
+				"""
+		output = f"{inchi}, {smi}, {adduct}, {spec_unique_id}"
+		with open(out_file, "w") as fp:
+			json.dump(output, fp,indent=2)
+		#delete output
+		#return output
 
 	#if device == 'cpu':
 	results = par_apply(iter(iceberg_gen_inputs),single_predict_mol,True, return_as_generator=True,n_jobs=iceberg_gen_n_jobs)
@@ -70,7 +73,7 @@ def run_iceberg_gen(iceberg_gen_inputs, iceberg_gen_ckpt_fp,
 def get_args():
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50/iceberg_inchikey_s0_sanity.pkl", help="")
+	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50/iceberg_inchikey_s0_sanity2.pkl", help="")
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50", help="")
 
 	parser.add_argument("--use_cached_ckpt",type=booltype,default=True)
@@ -79,13 +82,13 @@ def get_args():
  	#gen params
 	parser.add_argument("--iceberg_gen_wandb_run_id",type=str, default= 'i7k9gc3d')
 	parser.add_argument("--iceberg_gen_ckpt_fp", type=str,default=None, help="")
-	parser.add_argument("--magma_dp", type=str,default="data/ms2c/pubchem/magma/pred_magma_nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d", help="")
+	parser.add_argument("--magma_dp", type=str,default="data/ms2c/pubchem/magma/pred_magma_nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d_2", help="")
 	parser.add_argument("--threshold", type=float, default=0.0)
 	parser.add_argument("--max_nodes", type=int, default=100)
 	parser.add_argument("--iceberg_gen_device", type=str,default="cuda:0", help="")
 	parser.add_argument("--iceberg_gen_n_jobs", type=int,default=8, help="")
 	parser.add_argument("--run_iceberg_gen",type=booltype,default=True)
-	parser.add_argument("--iceberg_gen_use_cached",type=booltype,default=True)
+	parser.add_argument("--iceberg_gen_use_cached",type=booltype,default=False)
   
 	#iceberg_intern params
 	parser.add_argument("--iceberg_intern_wandb_run_id",type=str, default= 'c8iwu7il')
@@ -159,11 +162,14 @@ if __name__ == "__main__":
 		iceberg_gen_df.loc[:,'threshold'] = args.threshold
 		mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"], lambda x : (RDLogger.DisableLog("rdApp.warning"), Chem.MolToInchi(x))[1])
 		iceberg_gen_df = iceberg_gen_df.merge(mol_df[['mol_id','mol', 'smiles', "inchi"]], on = 'mol_id', how = 'left')
-
+		#print(iceberg_gen_df[iceberg_gen_df['mol_id']=='WYEPBHZLDUPIOD']['smiles'])
+		#print(iceberg_gen_df[iceberg_gen_df['mol_id']=='WYEPBHZLDUPIOD']['inchi'])
+		#exit()
 		# run_iceberg_gen 
 		iceberg_gen_inputs = []
 		print(f"> num of group ids {spec_df['group_id'].nunique()}")
 		magma_tree_dp = f"{args.magma_dp}/magma_tree"
+		#iceberg_gen_df = iceberg_gen_df[iceberg_gen_df['mol_id']=='WYEPBHZLDUPIOD']
 		if not args.iceberg_gen_use_cached or not os.path.exists(magma_tree_dp):
 			os.makedirs(magma_tree_dp, exist_ok=True)
 			iceberg_gen_inputs = iceberg_gen_df[['prec_type','inchi','smiles','group_id','magma_dp', 'threshold', 'max_nodes']].values.tolist()
