@@ -82,9 +82,15 @@ def filter_candidates(db_results, target_smiles, target_mol_id, top_k = None, mo
 	# filter by radicals
 	case_cdf['num_radicals'] = case_cdf['mol'].apply(lambda x: sum([atom.GetNumRadicalElectrons() for atom in x.GetAtoms()]))
 	case_cdf = case_cdf[case_cdf['num_radicals'] == 0]
+ 
 	# filter by out_set_elements
 	case_cdf['num_out_set_elements'] = case_cdf['formula'].apply(lambda x: len(set(list(formula_utils.parse_formula(x).keys())) - allowed_elements))
 	case_cdf = case_cdf[case_cdf['num_out_set_elements'] == 0]
+ 
+	# filter by charges
+	case_cdf['charge'] = case_cdf["mol"].apply(lambda x: data_utils.mol_to_charge(x))
+	case_cdf = case_cdf[case_cdf['charge'] == 0]
+
 	# filter by tanimoto and sort
 	case_cdf["tanimoto"] = case_cdf['mol'].apply(lambda x: rd_ds.TanimotoSimilarity(t_fp, mfpgen.GetFingerprint(x)))
 	case_cdf = case_cdf[case_cdf['tanimoto'] >= 0.0]
