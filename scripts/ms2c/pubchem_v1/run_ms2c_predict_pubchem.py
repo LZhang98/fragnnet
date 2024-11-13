@@ -54,8 +54,7 @@ if __name__ == "__main__":
 
 	print("> preload spec_fp")
 	spec_df = pd.read_pickle(os.path.join(args.proc_dp,'spec_df.pkl.gz'))
-	print(spec_df['[peaks]'].head())
-	exit()
+
 	print(f"> Loading models {ckpt_fp}")
 	auxiliary_scores = ["cos_sim","cos_hun"]
 	eval_mz_bin_res = [0.01]
