@@ -22,7 +22,7 @@ if __name__ == "__main__":
 	parser.add_argument("--mode", type=str, choices=["baseline","posfn","negfn","mix"], default="baseline")
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test"])
 	parser.add_argument("--split_type", type=str, default="scaffold", choices=["scaffold","inchikey"])
-	parser.add_argument("--output_dp", type=str, default="inference_outputs")
+	parser.add_argument("--output_dp", type=str, default="inference_outputs/entropyv3")
 	parser.add_argument("--overwrite", type=booltype, default=False)
 	args = parser.parse_args()
 
@@ -41,10 +41,14 @@ if __name__ == "__main__":
 	# load configs
 	print(">>> Loading configs")
 	template_fp = "config/template.yml"
-	custom_fp = f"config/entropyv2/{split_type}/{model_type}_script_config.yml"
+	custom_fp = f"config/entropyv3/{split_type}/{model_type}_script_config.yml"
 	config_d = load_config(template_fp, custom_fp)
+	config_d["auxiliary_scores"] = ["cos_sim","cos_hun","true_oos_prob"]
+	config_d["skip_extra_losses"] = False
+	config_d["compile"] = False
 
 	if debug:
+		raise NotImplementedError
 		print(">> debug mode, using small dataset")
 		config_d["spec_fp"] = "data/proc/debug_smallv2/spec_df.pkl"
 		config_d["mol_fp"] = "data/proc/debug_smallv2/mol_df.pkl"
@@ -64,7 +68,7 @@ if __name__ == "__main__":
 		
 			runs = api.runs(
 					path="frag-gnn/frag-gnn",
-					filters={"group":f"entropyv2_{split_type}_{model_type}_{mode}_ens"})
+					filters={"group":f"entropyv3_{split_type}_{model_type}_{mode}_ens"})
 			model_to_run_id = {run.name: run.id for run in runs}
 		
 		else:
@@ -78,7 +82,7 @@ if __name__ == "__main__":
 			for smode, seed_range in mode_to_seed_range.items():
 				runs = api.runs(
 						path="frag-gnn/frag-gnn",
-						filters={"group":f"entropyv2_{split_type}_{model_type}_{smode}_ens"})
+						filters={"group":f"entropyv3_{split_type}_{model_type}_{smode}_ens"})
 				for run in runs:
 					for i in range(seed_range[0],seed_range[1]):
 						if f"s{i:02d}" in run.tags:

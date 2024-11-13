@@ -74,7 +74,12 @@ if __name__ == "__main__":
 		"--auxiliary_scores", 
 		type=str, 
 		nargs="+", 
-		default=["cos_sim","cos_hun"]
+		default=[
+			"cos_sim",
+			"cos_hun",
+			"true_oos_prob",
+			"true_oos_e"
+		]
 	)
 	parser.add_argument(
 		"--skip_extra_losses", 

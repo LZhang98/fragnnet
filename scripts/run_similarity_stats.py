@@ -71,7 +71,7 @@ if __name__ == "__main__":
 				mean_sims_unbinned.append(sims_unbinned.mean())
 				mean_true_oos.append(true_oos_prob.mean())
 				mean_pred_oos.append(pred_oos_prob.mean())
-				mean_corr_oos.append(corr_oos.mean())
+				mean_corr_oos.append(corr_oos)
 				mean_tv_oos.append(tv_oos.mean())
 			mean_sims_binned = th.stack(mean_sims_binned,dim=0)
 			mean_sims_unbinned = th.stack(mean_sims_unbinned,dim=0)
