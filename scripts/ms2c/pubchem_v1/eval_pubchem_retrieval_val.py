@@ -6,26 +6,26 @@ import argparse
 from tqdm import tqdm
 import glob
 
-
 LAST_RANK = 51
 LAST_SCORE = 0.0
 
 def get_args():
     
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/benchmark/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
-	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
-	parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
+	#parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/benchmark/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
+	#parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
+	#parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
+ 
+	parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/benchmark/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
+	parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
  
 	args = parser.parse_args()
 	return args
 
-
 if __name__ == "__main__":
 
 	args = get_args()
-	#predicted_spec_df = pd.read_pickle(args.predicted_fp)
-	#print(predicted_spec_df.head())
 	os.makedirs(args.save_dp, exist_ok=True)
 	print(f"> {args.proc_dp}")
 	print(f"> {args.predicted_dp}")
@@ -36,27 +36,23 @@ if __name__ == "__main__":
 	mol_input_df = pd.read_pickle(os.path.join(args.proc_dp,"mol_df.pkl.gz"))
 	mol_input_df = mol_input_df[['mol_id','inchikey_s','smiles']]
 	spec_input_df = spec_input_df.merge(mol_input_df, left_on='mol_id', right_on='mol_id')
-	#print(spec_input_df.columns)
 	spec_input_df = spec_input_df[['group_id', 'target_mol_id', 'target_mol_smiles', 'target_inchikey_s', 'smiles', 'inchikey_s', 'tanimoto']]
-	#print(len(spec_input_df))
 	spec_input_df = spec_input_df.drop_duplicates(subset=['group_id'])
 	# Get a list of all .gz files in the directory
-	#gz_files = glob.glob(os.path.join(args.predicted_dp, '*.gz'))
-	gz_files = [os.path.join(args.predicted_dp, 'iceberg_inchikey_s0.pkl')]
+	gz_files = glob.glob(os.path.join(args.predicted_dp, '*.gz'))
 	# Extract and print the basenames (without the .gz extension)
 	overall_stats_rows = []
 	for gz_file in tqdm(gz_files):
-		#basename = os.path.basename(gz_file).replace('.pkl.gz', '')
-		basename = "iceberg_inchikey_s0"
-		print(gz_file)
+		basename = os.path.basename(gz_file).replace('.pkl.gz', '')
 		predicted_spec_df = pd.read_pickle(gz_file)
-		#predicted_spec_df['group_id'] =  predicted_spec_df['spec_id']
+		#predicted_spec_df['group_id'] = predicted_spec_df['spec_id']
 		predicted_spec_df = predicted_spec_df.merge(spec_input_df, left_on='spec_id', right_on='group_id')
-		predicted_spec_df['cos_sim_0.01_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_sim_0.01'].rank(ascending=False, method='max')
-		predicted_spec_df['cos_hun_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_hun'].rank(ascending=False, method='max')
+		predicted_spec_df['cos_sim_0.01_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_sim_0.01'].rank(ascending=False)
+		predicted_spec_df['cos_hun_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_hun'].rank(ascending=False)
 		total_tasks =  predicted_spec_df['target_mol_id'].nunique()
-		stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x['target_inchikey_s'] == x['inchikey_s']], include_groups=False)
-
+		#print(f"> total_tasks {total_tasks}")
+		stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x['target_inchikey_s'] == x['mol_id']], include_groups=False)
+		#stats_df = predicted_spec_df.groupby('target_mol_id').tail(1)
 		for rank_type in ['cos_sim_0.01', 'cos_hun']:
 			top_stats = [basename,rank_type]
 			for k in [1,3,5,10]:
@@ -65,17 +61,22 @@ if __name__ == "__main__":
 			top_stats.append(stats_df[rank_type].mean())
 			top_stats.append(stats_df[rank_type].std())
 			#print(basename,rank_type,stats_df[rank_type].mean())
+			top_one_stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x[rank_type+'_rank'] == 1.0], include_groups=False)
+			top_stats.append(top_one_stats_df['tanimoto'].mean())
+			top_stats.append(top_one_stats_df['tanimoto'].std())
 			overall_stats_rows.append(top_stats)
-		stats_df = stats_df[['group_id','target_mol_smiles', 'target_inchikey_s', 'smiles', 'inchikey_s', 'cos_sim_0.01','cos_hun','cos_sim_0.01_rank','cos_hun_rank']]
+		stats_df = stats_df[['group_id','target_mol_smiles', 'target_inchikey_s', 'cos_sim_0.01','cos_hun','cos_sim_0.01_rank','cos_hun_rank']]
 		stats_df.to_csv(os.path.join(args.save_dp, f"{basename}_summary.csv"),index = False)
-
+		#print(top_one_stats_df['tanimoto'].mean())
+		#exit()
 	overall_stats_df = pd.DataFrame(overall_stats_rows, \
-    	columns = ['model','ranking method', 'top-1','top-1 ratio','top-3','top-3 ratio','top-5','top-5 ratio','top-10','top-10 ratio', 'score_mean', 'score_std'])
+    	columns = ['model','ranking method', 'top-1','top-1 ratio','top-3','top-3 ratio','top-5','top-5 ratio','top-10','top-10 ratio', 
+                'ans_score_mean', 'ans_score_std','top_1_tanimoto_mean','top_1_tanimoto_std'])
 	overall_stats_df = overall_stats_df[['model','ranking method', 'top-1','top-3','top-5','top-10',
                                       'top-1 ratio','top-3 ratio','top-5 ratio','top-10 ratio',
-                                      'score_mean', 'score_std']]
-	overall_stats_df = overall_stats_df.sort_values(by='model', ascending=True)
+                                      'ans_score_mean', 'ans_score_std','top_1_tanimoto_mean','top_1_tanimoto_std']]
+	overall_stats_df = overall_stats_df.sort_values(by=['model','ranking method'], ascending=True)
 
  	#result_df = pd.DataFrame(result_l,columns = ['target_id','rank', 'score'])
 	overall_stats_df.to_csv(os.path.join(args.save_dp, "overall_stats_summary.csv"),index = False)
- 
+	print(overall_stats_df)
