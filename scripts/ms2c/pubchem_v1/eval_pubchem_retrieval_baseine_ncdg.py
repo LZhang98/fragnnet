@@ -13,8 +13,8 @@ LAST_SCORE = 0.0
 def get_args():
 	
 	parser = argparse.ArgumentParser()
-	#parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
-	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
+	parser.add_argument("--inchikey_proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
+	parser.add_argument("--scaffold_proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
  
 	args = parser.parse_args()
 	return args
@@ -22,10 +22,8 @@ def get_args():
 if __name__ == "__main__":
 
 	args = get_args()
-	print(f"> proc_dp {args.proc_dp}")
 
-	print("> load target_spec_df")
-	def get_ncdg_worset(proc_dp):
+	def get_ncdg_baseline(proc_dp):
 		spec_input_df = pd.read_pickle(os.path.join(proc_dp,"spec_df.pkl.gz"))
 		mol_input_df = pd.read_pickle(os.path.join(proc_dp,"mol_df.pkl.gz"))
 		mol_input_df = mol_input_df[['mol_id','inchikey_s','smiles']]
@@ -37,13 +35,25 @@ if __name__ == "__main__":
 		keep_target_mol_ids = keep_df[keep_df.iloc[:,1]].iloc[:,0].to_list()
 		spec_input_df = spec_input_df[spec_input_df['target_mol_id'].isin(keep_target_mol_ids)]
 		spec_input_df['tanimoto_distance'] = 1 - spec_input_df['tanimoto'] 
-
-		ndcg_tanimoto = spec_input_df.groupby('target_mol_id').apply(
+		spec_input_df['tanimoto_rand'] = np.random.rand(len(spec_input_df) )
+  
+		ndcg_neg_tanimoto = spec_input_df.groupby('target_mol_id').apply(
 								lambda x: ndcg_score(x['tanimoto'].to_numpy()[np.newaxis, :], \
 											x['tanimoto_distance'].to_numpy()[np.newaxis, :] \
 								), include_groups=False).to_numpy()
-		return ndcg_tanimoto
+  
+		ndcg_rand_tanimoto = spec_input_df.groupby('target_mol_id').apply(
+								lambda x: ndcg_score(x['tanimoto'].to_numpy()[np.newaxis, :], \
+											x['tanimoto_rand'].to_numpy()[np.newaxis, :] \
+								), include_groups=False).to_numpy()
 
-	print(np.mean(get_ncdg_worset(args.proc_dp)))
+		return ndcg_neg_tanimoto, ndcg_rand_tanimoto
 
-
+	print("inchikey ncdg")
+	ndcg_neg_tanimoto, ndcg_rand_tanimoto = get_ncdg_baseline(args.inchikey_proc_dp)
+	print(f"worest: {np.mean(ndcg_neg_tanimoto)}")
+	print(f"random: {np.mean(ndcg_rand_tanimoto)}")
+	print("scaffold ncdg")
+	ndcg_neg_tanimoto, ndcg_rand_tanimoto = get_ncdg_baseline(args.scaffold_proc_dp)
+	print(f"worest: {np.mean(ndcg_neg_tanimoto)}")
+	print(f"random: {np.mean(ndcg_rand_tanimoto)}")
