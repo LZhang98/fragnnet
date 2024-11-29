@@ -349,6 +349,36 @@ def scatter_argmax(src,index,other_index,dim_size=None,return_max=False):
 	else:
 		return amx
 
+def scatter_argtopk(src,index,other_index,k,dim_size=None,return_max=False):
+
+	assert k > 0
+	assert th.is_floating_point(src)
+	src = src.detach().clone()
+	counts = scatter_reduce(
+		src=th.ones_like(src, dtype=th.long),
+		index=index,
+		reduce="sum",
+		dim_size=th.max(index)+1
+	)
+	# print(counts)
+	amxs, mxs = [], []
+	for i in range(k):
+		# print(src, index)
+		amx, mx = scatter_argmax(src,index,other_index,dim_size=dim_size,return_max=True)
+		mask = (th.arange(amx.shape[0], device=index.device)[index] == index) & (amx[index] == other_index)
+		src[mask] = -float("inf") #LOG_ZERO(src.dtype)
+		# don't double count
+		# amx[th.isinf(mx)] = -1
+		amx[counts <= i] = -1
+		amxs.append(amx)
+		mxs.append(mx)
+	amxs = th.stack(amxs,dim=1)
+	mxs = th.stack(mxs,dim=1)
+	if return_max:
+		return amxs, mxs
+	else:
+		return amxs
+
 def scatter_reduce(src,index,reduce,dim=0,dim_size=None,default=0.,include_self=True):
 
 	if reduce == "mean" and include_self:
