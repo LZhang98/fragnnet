@@ -59,8 +59,15 @@ if __name__ == "__main__":
 		batch_cutoff = int(1e6)
 
 	vals_fp = os.path.join(output_dp,"vals.pkl")
+	sims_fp = os.path.join(output_dp,"sims.pkl")
+	entropies_fp = os.path.join(output_dp,"entropies.pkl")
 
-	if not os.path.isfile(vals_fp) or (os.path.isfile(vals_fp) and args.overwrite):
+	if os.path.isfile(sims_fp) and os.path.isfile(entropies_fp) and not args.overwrite:
+
+		# don't load anything here
+		pass
+
+	elif not os.path.isfile(vals_fp) or (os.path.isfile(vals_fp) and args.overwrite):
 
 		api = wandb.Api(timeout=30)
 		
@@ -132,8 +139,6 @@ if __name__ == "__main__":
 
 	# compute ensemble distributions
 	print(">>> Cosine Similarity")
-
-	sims_fp = os.path.join(output_dp,"sims.pkl")
 
 	if not os.path.isfile(sims_fp) or overwrite:
 
@@ -223,16 +228,14 @@ if __name__ == "__main__":
 		ens_cos_hun = sims_d["ens_cos_hun"]
 
 	print(">> average individual")
-	print(f"> cos_sim_0.01: {ind_cos_sim_bin.mean()}")
-	print(f"> cos_hun: {ind_cos_hun.mean()}")
+	print(f"> cos_sim_0.01: {ind_cos_sim_bin.mean()} +/- {ind_cos_sim_bin.mean(dim=1).std()}")
+	print(f"> cos_hun: {ind_cos_hun.mean()} +/- {ind_cos_hun.mean(dim=1).std()}")
 
 	print(">> ensemble")
 	print(f"> cos_sim_0.01: {ens_cos_sim_bin.mean()}")
 	print(f"> cos_hun: {ens_cos_hun.mean()}")
 
 	print(">>> Entropy")
-
-	entropies_fp = os.path.join(output_dp,"entropies.pkl")
 
 	if not os.path.isfile(entropies_fp) or overwrite:
 
@@ -357,13 +360,13 @@ if __name__ == "__main__":
 		ens_nb_formula_node_ne = entropies_d["ens_nb_formula_node_ne"]
 
 	print(">> average individual")
-	print(f"> formula_node_e: {ind_formula_node_e.mean()}")
-	print(f"> formula_node_ne: {ind_formula_node_ne.mean()}")
-	print(f"> nb_formula_node_e: {ind_nb_formula_node_e.mean()}")
-	print(f"> nb_formula_node_ne: {ind_nb_formula_node_ne.mean()}")
+	# print(f"> formula_node_e: {ind_formula_node_e.mean()} +/- {ind_formula_node_e.mean(dim=1).std()}")
+	print(f"> formula_node_ne: {ind_formula_node_ne.mean()} +/- {ind_formula_node_ne.mean(dim=1).std()}")
+	# print(f"> nb_formula_node_e: {ind_nb_formula_node_e.mean()} +/- {ind_nb_formula_node_e.mean(dim=1).std()}")
+	print(f"> nb_formula_node_ne: {ind_nb_formula_node_ne.mean()} +/- {ind_nb_formula_node_ne.mean(dim=1).std()}")
 
 	print(">> ensemble")
-	print(f"> formula_node_e: {ens_formula_node_e.mean()}")
+	# print(f"> formula_node_e: {ens_formula_node_e.mean()}")
 	print(f"> formula_node_ne: {ens_formula_node_ne.mean()}")
-	print(f"> nb_formula_node_e: {ens_nb_formula_node_e.mean()}")
+	# print(f"> nb_formula_node_e: {ens_nb_formula_node_e.mean()}")
 	print(f"> nb_formula_node_ne: {ens_nb_formula_node_ne.mean()}")
