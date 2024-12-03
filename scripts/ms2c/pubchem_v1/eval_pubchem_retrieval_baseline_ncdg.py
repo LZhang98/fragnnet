@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 import glob
 from sklearn.metrics import ndcg_score
+#from sklearn.metrics import ndcg_score
 
 LAST_RANK = 51
 LAST_SCORE = 0.0
@@ -23,7 +24,7 @@ if __name__ == "__main__":
 
 	args = get_args()
 
-	def get_ncdg_baseline(proc_dp):
+	def get_ncdg_baseline(proc_dp, dcg_form="linear", p = None):
 		spec_input_df = pd.read_pickle(os.path.join(proc_dp,"spec_df.pkl.gz"))
 		mol_input_df = pd.read_pickle(os.path.join(proc_dp,"mol_df.pkl.gz"))
 		mol_input_df = mol_input_df[['mol_id','inchikey_s','smiles']]
@@ -36,24 +37,38 @@ if __name__ == "__main__":
 		spec_input_df = spec_input_df[spec_input_df['target_mol_id'].isin(keep_target_mol_ids)]
 		spec_input_df['tanimoto_distance'] = 1 - spec_input_df['tanimoto'] 
 		spec_input_df['tanimoto_rand'] = np.random.rand(len(spec_input_df) )
-  
+
+		if dcg_form == "linear":
+			spec_input_df['rel_score'] = spec_input_df['tanimoto']
+		elif dcg_form == "exp":
+			spec_input_df['rel_score'] = spec_input_df['tanimoto'].apply(lambda x : 2 ** x -1)
+		else:
+			print(f"{dcg_form} is not supported")
+   
 		ndcg_neg_tanimoto = spec_input_df.groupby('target_mol_id').apply(
-								lambda x: ndcg_score(x['tanimoto'].to_numpy()[np.newaxis, :], \
-											x['tanimoto_distance'].to_numpy()[np.newaxis, :] \
+								lambda x: ndcg_score(x['rel_score'].to_numpy()[np.newaxis, :], \
+											x['tanimoto_distance'].to_numpy()[np.newaxis, :], \
+											k = p
 								), include_groups=False).to_numpy()
   
 		ndcg_rand_tanimoto = spec_input_df.groupby('target_mol_id').apply(
-								lambda x: ndcg_score(x['tanimoto'].to_numpy()[np.newaxis, :], \
-											x['tanimoto_rand'].to_numpy()[np.newaxis, :] \
+								lambda x: ndcg_score(x['rel_score'].to_numpy()[np.newaxis, :], \
+											x['tanimoto_rand'].to_numpy()[np.newaxis, :], \
+											k = p
 								), include_groups=False).to_numpy()
 
 		return ndcg_neg_tanimoto, ndcg_rand_tanimoto
 
-	print("inchikey ncdg")
-	ndcg_neg_tanimoto, ndcg_rand_tanimoto = get_ncdg_baseline(args.inchikey_proc_dp)
-	print(f"worest: {np.mean(ndcg_neg_tanimoto)}")
-	print(f"random: {np.mean(ndcg_rand_tanimoto)}")
-	print("scaffold ncdg")
-	ndcg_neg_tanimoto, ndcg_rand_tanimoto = get_ncdg_baseline(args.scaffold_proc_dp)
-	print(f"worest: {np.mean(ndcg_neg_tanimoto)}")
-	print(f"random: {np.mean(ndcg_rand_tanimoto)}")
+	#cdg_form = "linear"
+	p = 50
+	for cdg_form in ["linear","exp"]:
+		#for p in [5,10,50]:
+		print(f"inchikey {cdg_form} ncdg @{p}")
+		ndcg_neg_tanimoto, ndcg_rand_tanimoto = get_ncdg_baseline(args.inchikey_proc_dp, cdg_form, p)
+		print(f"worest: {np.mean(ndcg_neg_tanimoto)}")
+		print(f"random: {np.mean(ndcg_rand_tanimoto)}")
+	
+		print(f"scaffold {cdg_form} ncdg @{p}")
+		ndcg_neg_tanimoto, ndcg_rand_tanimoto = get_ncdg_baseline(args.scaffold_proc_dp, cdg_form, p)
+		print(f"worest: {np.mean(ndcg_neg_tanimoto)}")
+		print(f"random: {np.mean(ndcg_rand_tanimoto)}")
