@@ -13,13 +13,13 @@ LAST_SCORE = 0.0
 def get_args():
 	
 	parser = argparse.ArgumentParser()
-	#parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/run_240925/benchmark/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
-	#parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
-	#parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50_ranking_only")
+	parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/run_240925/benchmark/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
+	parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50_ranking_only")
  
-	parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/run_240925/benchmark/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
-	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
-	parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
+	#parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/run_240925/benchmark/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
+	#parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
+	#parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
  
 	args = parser.parse_args()
 	return args
@@ -97,9 +97,14 @@ if __name__ == "__main__":
 			for k in [1,3,5,10]:
 				top_stats.append(len(stats_df[stats_df[rank_type+'_rank'] <= k]))
 				top_stats.append(len(stats_df[stats_df[rank_type+'_rank'] <= k])/len(stats_df))
-			# ranks
+			# ans_score_mean
 			top_stats.append(stats_df[rank_type].mean())
 			top_stats.append(stats_df[rank_type].std())
+			# avg_ranks and std
+			top_stats.append(stats_df[rank_type+'_rank'].mean())
+			top_stats.append(stats_df[rank_type+'_rank'].std())
+			# median_ranks
+			top_stats.append(stats_df[rank_type+'_rank'].median())
 			# tanimoto
 			top_one_stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x[rank_type+'_rank'] == 1.0], include_groups=False)
 			top_stats.append(top_one_stats_df['tanimoto'].mean())
@@ -113,11 +118,12 @@ if __name__ == "__main__":
 
 	overall_stats_df = pd.DataFrame(overall_stats_rows, \
 		columns = ['model','ranking method', 'top-1','top-1 ratio','top-3','top-3 ratio','top-5','top-5 ratio','top-10','top-10 ratio', 
-				'ans_score_mean', 'ans_score_std','top_1_tanimoto_mean','top_1_tanimoto_std', 
+				'ans_score_mean', 'ans_score_std', 'rank_mean','rank_std','rank_median','top_1_tanimoto_mean','top_1_tanimoto_std', 
     			'ndcg_linear_mean','ndcg_linear_std','ndcg_exp_mean','ndcg_exp_std'])
 	overall_stats_df = overall_stats_df[['model','ranking method', 'top-1','top-3','top-5','top-10',
 									  'top-1 ratio','top-3 ratio','top-5 ratio','top-10 ratio',
-									  'ans_score_mean', 'ans_score_std','top_1_tanimoto_mean','top_1_tanimoto_std', 
+									  'ans_score_mean', 'ans_score_std','rank_mean','rank_std','rank_median',
+           								'top_1_tanimoto_mean','top_1_tanimoto_std', 
            								'ndcg_linear_mean','ndcg_linear_std','ndcg_exp_mean','ndcg_exp_std']]
 	overall_stats_df = overall_stats_df.sort_values(by=['model','ranking method'], ascending=True)
 
