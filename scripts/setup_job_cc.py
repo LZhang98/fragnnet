@@ -65,6 +65,7 @@ def main(args):
 			"#load modules",
 			"module load StdEnv/2023",
 			"module load python/3.10",
+			"moudle load rdkit/2023.09.5"
 		]
 	)
   
