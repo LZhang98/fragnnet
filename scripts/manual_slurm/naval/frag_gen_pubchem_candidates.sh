@@ -16,7 +16,7 @@ echo `date`: Job ${SLURM_JOB_ID} is allocated resources
 #load modules
 module load StdEnv/2023
 module load python/3.10
-moudle load rdkit/2023.09.5
+module load rdkit/2023.09.5
 
 # go to script dir
 cd /lustre06/project/6033476/feiw/frag-gnn
