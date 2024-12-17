@@ -619,7 +619,7 @@ def sparse_jensen_shannon_divergence(
         pred_bin_logprobs.exp(),
         pred_bin_batch_idxs
     )
-	return 1.-jss
+	return np.log(2.)-jss
 
 if __name__ == "__main__":
 

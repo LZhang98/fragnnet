@@ -15,7 +15,7 @@ def js_div(p,q,dim=0):
 	return 0.5*(kl_div(p,m,dim=dim) + kl_div(q,m,dim=dim))
 
 def js_sim(p,q,dim=0):
-	return 1 - js_div(p,q,dim=dim)
+	return np.log(2.) - js_div(p,q,dim=dim)
 
 def calc_jss(true, pred):
 
