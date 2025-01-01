@@ -6,6 +6,7 @@ source ~/.bashrc
 
 module load StdEnv/2023
 module load python/3.10
+module load rdkit/2023.09.5
 
 virtualenv FRAG-GNN
 source FRAG-GNN/bin/activate

@@ -60,7 +60,7 @@ if __name__ == '__main__':
 	save_dp = os.path.join(args.ms2c_data_dp, candidate_basename)
 	os.makedirs(save_dp, exist_ok=True)
 	
-	target_spec_fp = os.path.join(save_dp, f'target_spec_df.pkl.gz')
+	target_spec_fp = os.path.join(save_dp, 'target_spec_df.pkl.gz')
 	print(f'> Save target spec df df {target_spec_fp}')
 	target_spec_df_export = target_spec_df[target_spec_df_cols]
 	target_spec_df_export.to_pickle(target_spec_fp)
@@ -90,9 +90,9 @@ if __name__ == '__main__':
 		sanity_spec_df = candidate_spec_df.loc[candidate_spec_df['mol_id'] == candidate_spec_df['target_inchikey_s']]
 		sanity_spec_df = sanity_spec_df[spec_df_export_cols]
 
-	print(f'> Save spec df and split')
+	print('> Save spec df and split')
 	if not args.output_per_grp:
-		candidate_spec_fp = os.path.join(save_dp, f'spec_df.pkl.gz')
+		candidate_spec_fp = os.path.join(save_dp, 'spec_df.pkl.gz')
 		spec_df_export = candidate_spec_df[spec_df_export_cols]
 		spec_df_export.to_pickle(candidate_spec_fp)
 	else:
@@ -100,15 +100,15 @@ if __name__ == '__main__':
 			grp_spec_df_export = grp_spec_df[spec_df_export_cols]
 			grp_name_str = str(grp_name)
 			os.makedirs(os.path.join(save_dp, grp_name_str), exist_ok=True)
-			grp_candidate_spec_fp = os.path.join(save_dp, grp_name_str,f'spec_df.pkl.gz')
+			grp_candidate_spec_fp = os.path.join(save_dp, grp_name_str,'spec_df.pkl.gz')
 			grp_spec_df_export.to_pickle(grp_candidate_spec_fp)
 
-	print(f'> Save mol df')
+	print('> Save mol df')
 	if not args.output_per_grp:
 		# create mol df
 		candidates_df.drop_duplicates(subset='mol_id', keep='last', inplace=True)
 		candidates_df.reset_index(drop=True, inplace=True)
-		candidate_mol_fp = os.path.join(save_dp, f'mol_df.pkl.gz')
+		candidate_mol_fp = os.path.join(save_dp, 'mol_df.pkl.gz')
 		print(candidate_mol_fp)
 		candidates_df.to_pickle(candidate_mol_fp)
 	else:
@@ -121,7 +121,7 @@ if __name__ == '__main__':
 	if args.include_sanity:
 		sanity_dp = os.path.join(args.ms2c_data_dp, f'{candidate_basename}_sanity')
 		os.makedirs(sanity_dp, exist_ok=True)
-		sanity_spec_fp = os.path.join(sanity_dp, f'spec_df.pkl.gz')
+		sanity_spec_fp = os.path.join(sanity_dp, 'spec_df.pkl.gz')
 		print(f'> Sanity spec {sanity_spec_fp}')
 		sanity_spec_df.to_pickle(sanity_spec_fp)
 		
@@ -130,7 +130,7 @@ if __name__ == '__main__':
 		#sanity_split_df.to_csv(sanity_split_fp, index=False)
 
 		sanity_mol_df = candidates_df[candidates_df['mol_id'].isin(sanity_spec_df['mol_id'])]
-		sanity_mol_fp = os.path.join(sanity_dp, f'mol_df.pkl.gz')
+		sanity_mol_fp = os.path.join(sanity_dp, 'mol_df.pkl.gz')
 		print(f'> Sanity mol {sanity_mol_fp}')
 		sanity_mol_df.to_pickle(sanity_mol_fp)
 		
