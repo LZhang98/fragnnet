@@ -20,6 +20,7 @@ from hashlib import blake2b
 
 import frag_gnn.frag.compute_frags as compute_frags
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
+from frag_gnn.utils.misc_utils import PPM
 from frag_gnn.frag.compute_frags import (
 	MASK_DTYPE,
 	MAX_NUM_EDGES,
@@ -583,14 +584,17 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 	"""_summary_
 
 	Args:
-		row (_type_): _description_
+		peaks (_type_): _description_
+		formula_peak_mzs (_type_): _description_
+		formula_peak_probs (_type_): _description_
+		idx_by_h_delta (_type_): _description_
+		allowed_h_transfer (_type_): _description_
 		tolerance (float, optional): _description_. Defaults to 0.01.
-		prec_type (str, optional): _description_. Defaults to "[M+H]+".
+		is_ppm (bool, optional): _description_. Defaults to False.
 
 	Returns:
 		_type_: _description_
 	"""
-	ppm = 1/1000000
 	true_mzs, true_ints = list(zip(*peaks))
 	theoretical_mzs = formula_peak_mzs
 	theoretical_probs = formula_peak_probs
@@ -621,7 +625,7 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 		if not is_ppm:
 			mz_close = mz_diffs < tolerance 
 		else:
-			mz_close = mz_diffs < (true_mz * tolerance * ppm)
+			mz_close = mz_diffs < (true_mz * tolerance * PPM)
 		if th.any(mz_close):
 			pred_idx = th.nonzero(mz_close,as_tuple=False)
 			num_formula_match = th.sum(th.any(mz_close,dim=1).type(th.int32)).item()
@@ -652,14 +656,13 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 		if not is_ppm:
 			prec_mz_close = prec_mz_diffs < tolerance 
 		else:
-			prec_mz_close = prec_mz_diffs < (prec_mz * tolerance * ppm)
+			prec_mz_close = prec_mz_diffs < (prec_mz * tolerance * PPM)
 		if th.any(prec_mz_close):
 			prec_recalls.append(1.)
 		else:
 			prec_recalls.append(0.)
 	prec_recall, prec_spec_recall = prec_recalls
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula,prec_recall,prec_spec_recall])
-
 
 def th_long_to_mask(long):
 	"""_summary_
