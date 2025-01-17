@@ -352,17 +352,16 @@ def run_spectra_prediction(model,
 	dl = init_dataloader(ds, local_config_d)
 	
 	eval_score_types = []
-	if validate == True:
+	if validate:
 		for score_type in local_config_d['auxiliary_scores']:
 			if "_hun" in score_type:
 				eval_score_types.append(score_type)
 			else:
 				for bin_res in local_config_d['eval_mz_bin_res']:
 					eval_score_types.append(f"{score_type}_{bin_res}")
-
-	model.eval()
-	#print(">> Running inference")
 	preds_l = []
+ 	#print(">> set model to this to eval")
+	model.eval()
 	with th.inference_mode():
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl), desc=" Running inference"):
 			spec_ids = batch_input['spec_unique_id']
