@@ -301,6 +301,7 @@ class SpectrumPL(pl.LightningModule):
 								remove_prec_peaks=remove_prec_peak,
 								prec_mzs=true_prec_mzs
 							)
+							# import pdb; pdb.set_trace()
 							# print(mz_bin_res,sqrt,remove_prec_peak)
 							if "cos_sim" in self.hparams.auxiliary_scores:
 								fname_base = f"cos_sim"

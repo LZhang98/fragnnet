@@ -419,6 +419,39 @@ def batchwise_lse(xs, batch_idxs):
 		lses[b] = th.logsumexp(xs[batch_idxs==b],0)
 	return lses
 
+def dedup_peaks(mzs, logprobs, batch_idxs):
+
+	b_mzs = th.stack([batch_idxs.type(mzs.dtype),mzs],dim=1)
+	dd_b_mzs, dd_logprobs, dd_batch_idxs = dedup(b_mzs, *[("lse", logprobs), ("amax", batch_idxs)])
+	dd_b_mzs = dd_b_mzs[:,1]
+	return dd_b_mzs, dd_logprobs, dd_batch_idxs
+
+def dedup(keys, *agg_vals_tups, dim=0):
+
+	un_keys, inv_keys = th.unique(keys, dim=dim, return_inverse=True)
+	res = [un_keys]
+	for agg_vals_tup in agg_vals_tups:
+		agg, vals = agg_vals_tup
+		assert agg in ["lse", "sum", "min", "mean", "amax"]
+		assert vals.shape[0] == keys.shape[0]
+		if agg == "lse":
+			un_vals = scatter_logsumexp(
+				vals, 
+				inv_keys, 
+				dim_size=un_keys.shape[0]
+			)
+		else:
+			un_vals = scatter_reduce(
+				vals,
+				inv_keys,
+				reduce=agg,
+				dim_size=un_keys.shape[0],
+				include_self=False
+			)
+		res.append(un_vals)
+	res = tuple(res)
+	return res
+
 def to_cpu(data_d, non_blocking=True, detach=False):
 
 	for k in data_d.keys():

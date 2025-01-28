@@ -10,7 +10,7 @@ import torch_scatter as ts
 import frag_gnn.iceberg.common as common
 import frag_gnn.iceberg.nn_utils as nn_utils
 import frag_gnn.iceberg.fragmentation as fragmentation
-
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_logsumexp, scatter_reduce, dedup_peaks, dedup
 
 class IcebergGenModel(nn.Module):
 
@@ -272,6 +272,7 @@ class IcebergIntenModel(nn.Module):
 		mz_bin_res: float = 0.1,
 		mz_max: float = 1500.0,
 		sum_ints: bool = True,
+		output_formulae: bool = False,
 		**kwargs,
 	):
 		super().__init__()
@@ -284,6 +285,7 @@ class IcebergIntenModel(nn.Module):
 		self.binned_targs = binned_targs
 		self.encode_forms = encode_forms
 		self.add_hs = add_hs
+		self.output_formulae = output_formulae
 
 		self.formula_in_dim = 0
 		if self.encode_forms:
@@ -633,13 +635,63 @@ class IcebergIntenModel(nn.Module):
 		flat_batch_idxs = batch_idxs[output_mask]
 		# oos_log_probs = 1e-6*th.ones([batch_size],dtype=flat_log_probs.dtype,device=flat_log_probs.device)
 
+		do_dedup = True
+		if do_dedup:
+			# dedup
+			pred_mzs, pred_logprobs, pred_batch_idxs = dedup_peaks(
+				flat_masses, 
+				flat_log_probs, 
+				flat_batch_idxs
+			)
+			# normalize
+			pred_logprobs = scatter_logsoftmax(
+				pred_logprobs, 
+				pred_batch_idxs
+			)
+		else:
+			pred_mzs, pred_logprobs, pred_batch_idxs = flat_masses, flat_log_probs, flat_batch_idxs
+
+		import pdb; pdb.set_trace()
+
 		out_d = {
-			"pred_mzs": flat_masses,
-			"pred_logprobs": flat_log_probs,
-			"pred_batch_idxs": flat_batch_idxs,
+			"pred_mzs": pred_mzs,
+			"pred_logprobs": pred_logprobs,
+			"pred_batch_idxs": pred_batch_idxs,
 			# "pred_oos_logprobs": oos_log_probs,
 		}
 		if self.binned_targs:
 			out_d["pred_spec"] = output_binned
+
+		if self.output_formulae:
+			
+			# get formula stuff 
+			# note: does not include precursor adduct stuff
+			# note: formula logprobs are not normalized
+			frag_form_counts = th.sum(output_mask.long(), dim=2)
+			# frag_form_idxs = th.repeat_interleave(th.arange(frag_forms.shape[0]*frag_forms.shape[1], device=frag_forms.device), frag_form_counts.flatten(), dim=0)
+			# pred_formula_vecs = frag_forms.reshape(-1,frag_forms.shape[2])[frag_form_idxs]
+			pred_formula_vecs = th.repeat_interleave(frag_forms.reshape(-1,frag_forms.shape[2]), frag_form_counts.flatten(), dim=0)
+			_, pred_h_h_idxs = th.nonzero(output_mask.reshape(-1,output_mask.shape[2]), as_tuple=True)
+			pred_h_deltas = th.arange(output_mask.shape[2], device=output_mask.device) - output_mask.shape[2]//2
+			pred_formula_vecs[:,common.element_to_ind["H"]] += pred_h_deltas[pred_h_h_idxs]
+			assert th.all(pred_formula_vecs >= 0)
+			pred_formula_logprobs = th.log(output_unbinned_alpha[output_mask].flatten())
+			pred_formula_batch_idxs = th.repeat_interleave(th.arange(frag_forms.shape[0], device=frag_forms.device), frag_form_counts.sum(dim=1), dim=0)
+			# dedup
+			pred_b_formula_vecs = th.cat([pred_formula_batch_idxs.unsqueeze(1),pred_formula_vecs],dim=1)
+			pred_b_formula_vecs, pred_formula_logprobs, pred_formula_batch_idxs = dedup(
+				pred_b_formula_vecs, 
+				*[("lse", pred_formula_logprobs), ("amax", pred_formula_batch_idxs)],
+				dim=0
+			)
+			pred_formula_vecs = pred_b_formula_vecs[:,1:]
+			# normalize
+			pred_formula_logprobs = scatter_logsoftmax(
+				pred_formula_logprobs, 
+				pred_formula_batch_idxs
+			)
+			out_d["pred_formula_vecs"] = pred_formula_vecs
+			out_d["pred_formula_logprobs"] = pred_formula_logprobs
+			out_d["pred_formula_batch_idxs"] = pred_formula_batch_idxs
 
 		return out_d

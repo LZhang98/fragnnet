@@ -147,6 +147,7 @@ iceberg_pool_type: avg
 iceberg_inject_early: False
 iceberg_embed_adduct: False
 iceberg_encode_forms: False
+iceberg_output_formulae: False
 # massformer model
 mf_flag: False
 mf_pt_weight_decay: 0.0
