@@ -148,6 +148,7 @@ iceberg_inject_early: False
 iceberg_embed_adduct: False
 iceberg_encode_forms: False
 iceberg_output_formulae: False
+iceberg_fix_batch_bug: False
 # massformer model
 mf_flag: False
 mf_pt_weight_decay: 0.0

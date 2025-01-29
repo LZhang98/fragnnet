@@ -273,6 +273,7 @@ class IcebergIntenModel(nn.Module):
 		mz_max: float = 1500.0,
 		sum_ints: bool = True,
 		output_formulae: bool = False,
+		fix_batch_bug: bool = False,
 		**kwargs,
 	):
 		super().__init__()
@@ -285,7 +286,9 @@ class IcebergIntenModel(nn.Module):
 		self.binned_targs = binned_targs
 		self.encode_forms = encode_forms
 		self.add_hs = add_hs
+		assert not output_formulae
 		self.output_formulae = output_formulae
+		self.fix_batch_bug = fix_batch_bug
 
 		self.formula_in_dim = 0
 		if self.encode_forms:
@@ -629,6 +632,10 @@ class IcebergIntenModel(nn.Module):
 		output_binned = output_binned.squeeze(1)
 		output_unbinned_alpha = output_unbinned_alpha.squeeze(2)
 
+		if self.fix_batch_bug:
+			# note output_unbinned_alpha won't be correct anymore
+			output_binned[:,0] = 0.*output_binned[:,0]
+
 		# do the stupid inverse
 		output_binned_mask = output_binned > 0
 		pred_mzs = (self.inten_buckets.unsqueeze(0).expand_as(output_binned) - self.mz_bin_res/2.)[output_binned_mask]
@@ -639,31 +646,8 @@ class IcebergIntenModel(nn.Module):
 			dim=0
 		)
 
-		# TODO: normalize?
-
-		# # convert
-		# output_mask = output_unbinned_alpha > 0.
-		# batch_idxs = th.arange(th.max(ind_maps)+1, device=output_mask.device).reshape(-1,1,1).expand(output_mask.shape)
-		# flat_masses = masses[output_mask]
-		# flat_log_probs = th.log(output_unbinned_alpha[output_mask])
-		# flat_batch_idxs = batch_idxs[output_mask]
-		# # oos_log_probs = 1e-6*th.ones([batch_size],dtype=flat_log_probs.dtype,device=flat_log_probs.device)
-
-		# do_dedup = False
-		# if do_dedup:
-		# 	# dedup
-		# 	pred_mzs, pred_logprobs, pred_batch_idxs = dedup_peaks(
-		# 		flat_masses, 
-		# 		flat_log_probs, 
-		# 		flat_batch_idxs
-		# 	)
-		# 	# normalize
-		# 	pred_logprobs = scatter_logsoftmax(
-		# 		pred_logprobs, 
-		# 		pred_batch_idxs
-		# 	)
-		# else:
-		# 	pred_mzs, pred_logprobs, pred_batch_idxs = flat_masses, flat_log_probs, flat_batch_idxs
+		# import pdb; pdb.set_trace()
+		assert th.min(pred_mzs) > 1., th.min(pred_mzs)
 
 		out_d = {
 			"pred_mzs": pred_mzs,
@@ -673,37 +657,5 @@ class IcebergIntenModel(nn.Module):
 		}
 		if self.binned_targs:
 			out_d["pred_spec"] = output_binned
-
-		# if self.output_formulae:
-			
-		# 	# get formula stuff 
-		# 	# note: does not include precursor adduct stuff
-		# 	# note: formula logprobs are not normalized
-		# 	frag_form_counts = th.sum(output_mask.long(), dim=2)
-		# 	# frag_form_idxs = th.repeat_interleave(th.arange(frag_forms.shape[0]*frag_forms.shape[1], device=frag_forms.device), frag_form_counts.flatten(), dim=0)
-		# 	# pred_formula_vecs = frag_forms.reshape(-1,frag_forms.shape[2])[frag_form_idxs]
-		# 	pred_formula_vecs = th.repeat_interleave(frag_forms.reshape(-1,frag_forms.shape[2]), frag_form_counts.flatten(), dim=0)
-		# 	_, pred_h_h_idxs = th.nonzero(output_mask.reshape(-1,output_mask.shape[2]), as_tuple=True)
-		# 	pred_h_deltas = th.arange(output_mask.shape[2], device=output_mask.device) - output_mask.shape[2]//2
-		# 	pred_formula_vecs[:,common.element_to_ind["H"]] += pred_h_deltas[pred_h_h_idxs]
-		# 	assert th.all(pred_formula_vecs >= 0)
-		# 	pred_formula_logprobs = th.log(output_unbinned_alpha[output_mask].flatten())
-		# 	pred_formula_batch_idxs = th.repeat_interleave(th.arange(frag_forms.shape[0], device=frag_forms.device), frag_form_counts.sum(dim=1), dim=0)
-		# 	# dedup
-		# 	pred_b_formula_vecs = th.cat([pred_formula_batch_idxs.unsqueeze(1),pred_formula_vecs],dim=1)
-		# 	pred_b_formula_vecs, pred_formula_logprobs, pred_formula_batch_idxs = dedup(
-		# 		pred_b_formula_vecs, 
-		# 		*[("lse", pred_formula_logprobs), ("amax", pred_formula_batch_idxs)],
-		# 		dim=0
-		# 	)
-		# 	pred_formula_vecs = pred_b_formula_vecs[:,1:]
-		# 	# normalize
-		# 	pred_formula_logprobs = scatter_logsoftmax(
-		# 		pred_formula_logprobs, 
-		# 		pred_formula_batch_idxs
-		# 	)
-		# 	out_d["pred_formula_vecs"] = pred_formula_vecs
-		# 	out_d["pred_formula_logprobs"] = pred_formula_logprobs
-		# 	out_d["pred_formula_batch_idxs"] = pred_formula_batch_idxs
 
 		return out_d
