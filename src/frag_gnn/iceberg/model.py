@@ -546,35 +546,22 @@ class IcebergIntenModel(nn.Module):
 		# B x Length x Mass shifts
 		valid_pos = th.logical_and(ub_mask, lb_mask)
 
-		# B x Length x outputs x Mass shift
-		valid_pos = valid_pos[:, :, None, :].expand(
-			batch_size, max_frags, self.num_outputs, self.output_size
-		)
 		# B x L x Output
 		output = self.output_map(hidden)
 		attn_weights = self.isomer_attn_out(hidden)
 
-		# B x L x Out x Mass shifts
-		output = output.reshape(batch_size, max_frags, self.num_outputs, -1)
-		attn_weights = attn_weights.reshape(batch_size, max_frags, self.num_outputs, -1)
-
 		# Mask attn weights
-		attn_weights.masked_fill_(~valid_pos, -99999)
-
-		# B x Out x L x Mass shifts
-		output = output.transpose(1, 2)
-		attn_weights = attn_weights.transpose(1, 2)
-		valid_pos_binned = valid_pos.transpose(1, 2)
+		attn_weights = attn_weights.masked_fill(~valid_pos, -99999)
 
 		# Calc inverse indices => B x Out x L x shift
 		inverse_indices = th.bucketize(masses, self.inten_buckets, right=False)
-		inverse_indices = inverse_indices[:, None, :, :].expand(attn_weights.shape)
+		# inverse_indices = inverse_indices[:, None, :, :].expand(attn_weights.shape)
 
 		# B x Out x (L * Mass shifts)
-		attn_weights = attn_weights.reshape(batch_size, self.num_outputs, -1)
-		output = output.reshape(batch_size, self.num_outputs, -1)
-		inverse_indices = inverse_indices.reshape(batch_size, self.num_outputs, -1)
-		valid_pos_binned = valid_pos.reshape(batch_size, self.num_outputs, -1)
+		attn_weights = attn_weights.reshape(batch_size, -1)
+		output = output.reshape(batch_size, -1)
+		inverse_indices = inverse_indices.reshape(batch_size, -1)
+		valid_pos_binned = valid_pos.reshape(batch_size, -1)
 
 		# B x Outs x ( L * mass shifts )
 		pool_weights = ts.scatter_softmax(attn_weights, index=inverse_indices, dim=-1)
@@ -588,12 +575,12 @@ class IcebergIntenModel(nn.Module):
 			dim_size=self.inten_buckets.shape[-1],
 		)
 
-		output = output.reshape(batch_size, max_frags, self.num_outputs, -1)
-		pool_weights_reshaped = pool_weights.reshape(
-			batch_size, max_frags, self.num_outputs, -1
-		)
+		output = output.reshape(batch_size, max_frags, -1)
+		# pool_weights_reshaped = pool_weights.reshape(
+		# 	batch_size, max_frags, -1
+		# )
 		inverse_indices_reshaped = inverse_indices.reshape(
-			batch_size, max_frags, self.num_outputs, -1
+			batch_size, max_frags, -1
 		)
 
 		# B x Outs x binned
@@ -605,32 +592,22 @@ class IcebergIntenModel(nn.Module):
 		)[0].bool()
 
 		# Activate each dim with its respective output activation
-		# Helpful for hurdle or probabilistic models
-		new_outputs_binned = []
-		for output_ind, act in enumerate(self.output_activations):
-			new_outputs_binned.append(
-				act(output_binned[:, output_ind : output_ind + 1, :])
-			)
-		output_binned = th.cat(new_outputs_binned, -2)
-		output_binned.masked_fill_(~valid_pos_binned, 0)
+		assert len(self.output_activations) == 1
+		output_binned = self.output_activations[0](output_binned)
+		# output_binned = th.sigmoid(output_binned)
+		output_binned = output_binned.masked_fill(~valid_pos_binned, 0)
 
-		# Index into output binned using inverse_indices_reshaped
-		# Revert the binned output back to frags for attribution
-		# B x Out x L x Mass shifts
-		inverse_indices_reshaped_temp = inverse_indices_reshaped.transpose(
-			1, 2
-		).reshape(batch_size, self.num_outputs, -1)
+		# # Index into output binned using inverse_indices_reshaped
+		# # Revert the binned output back to frags for attribution
+		# # B x Out x L x Mass shifts
+		inverse_indices_reshaped_temp = inverse_indices_reshaped.reshape(batch_size, -1)
 		output_unbinned = th.take_along_dim(
 			output_binned, inverse_indices_reshaped_temp, dim=-1
 		)
 		output_unbinned = output_unbinned.reshape(
-			batch_size, self.num_outputs, max_frags, -1
-		).transpose(1, 2)
-		output_unbinned_alpha = output_unbinned * pool_weights_reshaped
-
-		# delete stupid dimension
-		output_binned = output_binned.squeeze(1)
-		output_unbinned_alpha = output_unbinned_alpha.squeeze(2)
+			batch_size, max_frags, -1
+		)
+		# output_unbinned_alpha = output_unbinned * pool_weights_reshaped
 
 		if self.fix_batch_bug:
 			# note output_unbinned_alpha won't be correct anymore
@@ -646,14 +623,13 @@ class IcebergIntenModel(nn.Module):
 			dim=0
 		)
 
-		# import pdb; pdb.set_trace()
-		assert th.min(pred_mzs) > 1., th.min(pred_mzs)
+		if self.fix_batch_bug:
+			assert th.min(pred_mzs) > 1., th.min(pred_mzs)
 
 		out_d = {
 			"pred_mzs": pred_mzs,
 			"pred_logprobs": pred_logprobs,
 			"pred_batch_idxs": pred_batch_idxs,
-			# "pred_oos_logprobs": oos_log_probs,
 		}
 		if self.binned_targs:
 			out_d["pred_spec"] = output_binned
