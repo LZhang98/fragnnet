@@ -286,7 +286,6 @@ class IcebergIntenModel(nn.Module):
 		self.binned_targs = binned_targs
 		self.encode_forms = encode_forms
 		self.add_hs = add_hs
-		assert not output_formulae
 		self.output_formulae = output_formulae
 		self.fix_batch_bug = fix_batch_bug
 
@@ -631,7 +630,44 @@ class IcebergIntenModel(nn.Module):
 			"pred_logprobs": pred_logprobs,
 			"pred_batch_idxs": pred_batch_idxs,
 		}
+
 		if self.binned_targs:
 			out_d["pred_spec"] = output_binned
+
+		if self.output_formulae:
+			
+			# get formula stuff 
+			# note: does not include precursor adduct stuff
+			# import pdb; pdb.set_trace()
+			assert th.all((masses == 0).all(2) == (masses == 0).any(2))
+			valid_nz_pos = valid_pos & (masses > 0)
+			pred_formula_mzs = masses[valid_nz_pos]
+			pred_formula_counts = th.sum(valid_nz_pos.long(), dim=2)
+			pred_formula_vecs = th.repeat_interleave(
+				frag_forms.reshape(-1,frag_forms.shape[2]), 
+				pred_formula_counts.flatten(), 
+				dim=0
+			)
+			_, pred_h_h_idxs = th.nonzero(valid_nz_pos.reshape(-1,valid_nz_pos.shape[2]), as_tuple=True)
+			pred_h_deltas = th.arange(valid_nz_pos.shape[2], device=valid_nz_pos.device) - valid_nz_pos.shape[2]//2
+			pred_formula_vecs[:,common.element_to_ind["H"]] += pred_h_deltas[pred_h_h_idxs]
+			assert th.all(pred_formula_vecs >= 0)
+			assert th.all(pred_formula_vecs.any(1))
+			pred_formula_batch_idxs = th.repeat_interleave(
+				th.arange(frag_forms.shape[0], device=frag_forms.device), 
+				pred_formula_counts.sum(dim=1), 
+				dim=0
+			)
+			# dedup
+			pred_b_formula_vecs = th.cat([pred_formula_batch_idxs.unsqueeze(1),pred_formula_vecs],dim=1)
+			pred_b_formula_vecs, pred_formula_mzs, pred_formula_batch_idxs = dedup(
+				pred_b_formula_vecs, 
+				*[("amax", pred_formula_mzs), ("amax", pred_formula_batch_idxs)],
+				dim=0
+			)
+			pred_formula_vecs = pred_b_formula_vecs[:,1:]
+			out_d["pred_formula_mzs"] = pred_formula_mzs
+			out_d["pred_formula_vecs"] = pred_formula_vecs
+			out_d["pred_formula_batch_idxs"] = pred_formula_batch_idxs
 
 		return out_d
