@@ -134,6 +134,10 @@ if __name__ == "__main__":
 		"fraggnn_d4": FragGNNPL,
 		"iceberg_inten_100": IcebergIntenPL,
 		"iceberg_inten_all": IcebergIntenPL,
+		"iceberg_inten2_100": IcebergIntenPL,
+		"iceberg_inten2_all": IcebergIntenPL,
+		"iceberg_inten3_100": IcebergIntenPL,
+		"iceberg_inten3_all": IcebergIntenPL,
 	}
 
 	model_type_to_ds_cls = {
@@ -143,6 +147,10 @@ if __name__ == "__main__":
 		"fraggnn_d4": SpecMolFragDataset,
 		"iceberg_inten_100": SpecMolMagmaIntenDataset,
 		"iceberg_inten_all": SpecMolMagmaIntenDataset,
+		"iceberg_inten2_100": SpecMolMagmaIntenDataset,
+		"iceberg_inten2_all": SpecMolMagmaIntenDataset,
+		"iceberg_inten3_100": SpecMolMagmaIntenDataset,
+		"iceberg_inten3_all": SpecMolMagmaIntenDataset,
 	}
 
 	model_type_to_dset = {
@@ -151,7 +159,11 @@ if __name__ == "__main__":
 		"fraggnn_d3": "nist20v3",
 		"fraggnn_d4": "nist20v3",
 		"iceberg_inten_100": "nist20v3",
-		"iceberg_inten_all": "nist20v3"
+		"iceberg_inten_all": "nist20v3",
+		"iceberg_inten2_100": "nist20v3",
+		"iceberg_inten2_all": "nist20v3",
+		"iceberg_inten3_100": "nist20v3",
+		"iceberg_inten3_all": "nist20v3",
 	}
 
 	model_to_run_id = NestedDefaultDict()
