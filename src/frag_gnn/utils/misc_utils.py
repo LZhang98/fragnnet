@@ -589,3 +589,21 @@ class NestedDefaultDict(defaultdict):
 
 	def __repr__(self):
 		return repr(dict(self))
+
+def kl_div(x_logprobs, y_logprobs):
+
+	return th.sum(th.exp(x_logprobs)*(x_logprobs-y_logprobs), dim=0)
+
+def js_div(x_ids, x_logprobs, y_ids, y_logprobs):
+
+	assert th.unique(x_ids).shape[0] == x_ids.shape[0]
+	assert th.unique(y_ids).shape[0] == y_ids.shape[0]
+	z_ids, z_inv_idxs = th.unique(th.cat([x_ids, y_ids], dim=0), return_inverse=True)
+	x_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(x_logprobs.dtype), dtype=x_logprobs.dtype)
+	y_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(y_logprobs.dtype), dtype=y_logprobs.dtype)
+	x_logprobs_p[z_inv_idxs[:x_ids.shape[0]]] = x_logprobs
+	y_logprobs_p[z_inv_idxs[x_ids.shape[0]:]] = y_logprobs
+	z_logprobs = th.logsumexp(th.stack([x_logprobs_p,y_logprobs_p], dim=0), dim=0) - LOG_TWO
+	jsd = 0.5*kl_div(x_logprobs_p,z_logprobs) + 0.5*kl_div(y_logprobs_p,z_logprobs)
+	jsd_n = jsd / LOG_TWO
+	return jsd_n
