@@ -29,7 +29,16 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--split_types", type=str, nargs="+", default=["inchikey","scaffold"])
-	parser.add_argument("--model_types", type=str, nargs="+", default=["fraggnn_d3","fraggnn_d4","iceberg_inten_100","iceberg_inten_all","neims","massformer"])
+	parser.add_argument("--model_types", type=str, nargs="+", default=[
+		"fraggnn_d3",
+		"fraggnn_d4",
+		# "iceberg_inten_100",
+		# "iceberg_inten_all",
+		"iceberg_inten3_100",
+		"iceberg_inten3_all",
+		"neims",
+		"massformer"
+	])
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
 	parser.add_argument("--num_seeds", type=int, default=5)
 	parser.add_argument("--vals_dp", type=str, default="/h/adamo/frag-gnn/inference_outputs")
@@ -115,6 +124,8 @@ if __name__ == "__main__":
 		"massformer": "MassFormer",
 		"iceberg_inten_100": "Iceberg",
 		"iceberg_inten_all": "Iceberg-ADV",
+		"iceberg_inten3_100": "Iceberg*",
+		"iceberg_inten3_all": "Iceberg*-ADV",
 	}
 
 	latex_df = stats_df.copy()

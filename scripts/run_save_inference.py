@@ -32,8 +32,8 @@ if __name__ == "__main__":
 		default=[
 			"fraggnn_d3",
 			"fraggnn_d4",
-			"iceberg_inten_100",
-			"iceberg_inten_all",
+			"iceberg_inten3_100",
+			"iceberg_inten3_all",
 			"neims",
 			"massformer"
 		]
