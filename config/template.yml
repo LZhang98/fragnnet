@@ -327,3 +327,4 @@ skip_extra_losses: False
 log_zero_fp16: null
 log_zero_fp32: null
 share_memory: False
+log_min: 0.000000001 # 1e-9

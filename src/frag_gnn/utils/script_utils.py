@@ -46,7 +46,7 @@ def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 	return model
 
 
-def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_subset=None):
+def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_subset=None, untransform_spec=False):
 	
 	# make predictions on validation data
 	print(">>> Iterating over data")
@@ -118,7 +118,7 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 		for b_idx, b_input in tqdm(enumerate(dl),total=min(len(dl),batch_cutoff)):
 			# transfer data, make predictions
 			b_input = to_device(b_input, device,non_blocking=False)
-			b_output = model.inference_step(b_input, split=eval_split)
+			b_output = model.inference_step(b_input, split=eval_split, untransform_spec=untransform_spec)
 			b_output = to_device(b_output, "cpu",non_blocking=False)
 			if output_subset is not None:
 				b_output = {k: b_output[k] for k in b_output if k in output_subset}

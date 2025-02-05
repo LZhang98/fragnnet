@@ -106,6 +106,11 @@ if __name__ == "__main__":
 		type=booltype,
 		default=False
 	)
+	parser.add_argument(
+		"--untransform_spec",
+		type=booltype,
+		default=False
+	)
 	args = parser.parse_args()
 
 	eval_split = args.eval_split
@@ -237,7 +242,16 @@ if __name__ == "__main__":
 				if not args.output_everything:
 					output_subset = output_subset.union(model.metric_names)
 				# run inference
-				vals = run_inference(dl, model, device, eval_split, batch_cutoff, config_d["nb_iso"], output_subset=output_subset)
+				vals = run_inference(
+					dl, 
+					model, 
+					device, 
+					eval_split, 
+					batch_cutoff, 
+					config_d["nb_iso"], 
+					output_subset=output_subset, 
+					untransform_spec=args.untransform_spec
+				)
 				model.cpu()
 				# save vals
 				seed_vals_dp = os.path.join(args.vals_dp,split_type,model_type,f"s{seed}")

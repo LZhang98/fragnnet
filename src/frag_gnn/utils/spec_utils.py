@@ -794,7 +794,8 @@ def jss_hun_helper(
 	b_pred_match_mask,
 	remove_prec_peak,
 	b_true_prec_mask,
-	b_pred_prec_mask):
+	b_pred_prec_mask,
+	log_min):
 
 	if remove_prec_peak:
 		b_true_ints = b_true_ints*(1-b_true_prec_mask.float())
@@ -829,7 +830,7 @@ def jss_hun_helper(
 			b_union_ints[b_pred_range[1]:]
 		],dim=0
 	)
-	b_kl1 = th.sum(b_kl1_true_probs*(safelog(b_kl1_true_probs)-safelog(b_kl1_union_probs)), dim=0)
+	b_kl1 = th.sum(b_kl1_true_probs*(safelog(b_kl1_true_probs,eps=log_min)-safelog(b_kl1_union_probs,eps=log_min)), dim=0)
 	b_kl2_pred_probs = th.cat(
 		[
 			b_pred_ints[~b_pred_match_mask],
@@ -842,7 +843,7 @@ def jss_hun_helper(
 			b_union_ints[b_pred_range[1]:]
 		],dim=0
 	)
-	b_kl2 = th.sum(b_kl2_pred_probs*(safelog(b_kl2_pred_probs)-safelog(b_kl2_union_probs)), dim=0)
+	b_kl2 = th.sum(b_kl2_pred_probs*(safelog(b_kl2_pred_probs,eps=log_min)-safelog(b_kl2_union_probs,eps=log_min)), dim=0)
 	b_jss_hun = np.log(2.)-0.5*(b_kl1+b_kl2)
 	return b_jss_hun
 
@@ -852,7 +853,8 @@ def jss_helper(
 	true_bin_batch_idxs,
 	pred_bin_idxs,
 	pred_bin_ints,
-	pred_bin_batch_idxs):
+	pred_bin_batch_idxs,
+	log_min):
 	
 	batch_size = th.max(true_bin_batch_idxs)+1
 	# l1 normalize
@@ -885,7 +887,7 @@ def jss_helper(
 	# kl1
 	kl1_union_bin_ints = union_bin_ints[union_bin_idxs_rev[:true_bin_idxs.shape[0]]]
 	kl1 = scatter_reduce(
-		true_bin_ints * (safelog(true_bin_ints) - safelog(kl1_union_bin_ints)),
+		true_bin_ints * (safelog(true_bin_ints,eps=log_min) - safelog(kl1_union_bin_ints,eps=log_min)),
 		true_bin_batch_idxs,
 		reduce="sum",
 		dim_size=batch_size
@@ -893,7 +895,7 @@ def jss_helper(
 	# kl2
 	kl2_union_bin_ints = union_bin_ints[union_bin_idxs_rev[true_bin_idxs.shape[0]:]]
 	kl2 = scatter_reduce(
-		pred_bin_ints * (safelog(pred_bin_ints) - safelog(kl2_union_bin_ints)),
+		pred_bin_ints * (safelog(pred_bin_ints,eps=log_min) - safelog(kl2_union_bin_ints,eps=log_min)),
 		pred_bin_batch_idxs,
 		reduce="sum",
 		dim_size=batch_size

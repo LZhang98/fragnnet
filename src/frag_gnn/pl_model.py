@@ -349,12 +349,13 @@ class SpectrumPL(pl.LightningModule):
 									true_bin_batch_idxs,
 									pred_bin_idxs,
 									pred_bin_ints,
-									pred_bin_batch_idxs
+									pred_bin_batch_idxs,
+									log_min=self.hparams.log_min
 								)
 								metric_d[fname] = jss
 
 			if compute_entropies:
-				true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs))
+				true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs), eps=self.hparams.log_min)
 				true_spec_e, true_spec_ne = sparse_entropy_fn(true_log_probs,true_batch_idxs)
 				if "true_spec_e" in self.hparams.auxiliary_scores:
 					metric_d["true_spec_e"] = true_spec_e
@@ -494,7 +495,8 @@ class SpectrumPL(pl.LightningModule):
 								b_pred_match_mask_r,
 								remove_prec_peak,
 								b_true_prec_mask_r,
-								b_pred_prec_mask_r
+								b_pred_prec_mask_r,
+								log_min=self.hparams.log_min
 							)
 							fname_base = f"jss_hun"
 							if sqrt:
@@ -512,7 +514,7 @@ class SpectrumPL(pl.LightningModule):
 				if "true_oos_e" in self.hparams.auxiliary_scores:
 
 					b_true_oos_probs = b_true_ints[~b_true_match_mask] / th.sum(b_true_ints[~b_true_match_mask])
-					b_true_oos_logprobs = safelog(b_true_oos_probs)
+					b_true_oos_logprobs = safelog(b_true_oos_probs, eps=self.hparams.log_min)
 					b_true_oos_e = -th.sum(b_true_oos_probs * b_true_oos_logprobs)
 					metric_d["true_oos_e"][b_idx] = b_true_oos_e
 
@@ -618,7 +620,7 @@ class SpectrumPL(pl.LightningModule):
 		# renormalize
 		spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
 		# log
-		spec_ints = safelog(spec_ints)
+		spec_ints = safelog(spec_ints, eps=self.hparams.log_min)
 		return spec_mzs, spec_ints, spec_batch_idxs
 
 	def predict_step(self,**batch_kwargs):
@@ -760,9 +762,37 @@ class SpectrumPL(pl.LightningModule):
 		# self._update_results(batch_results,"test")
 		return mean_loss
 	
-	def inference_step(self, batch, split):
+	def inference_step(self, batch, split, untransform_spec=False):
 
+		if self.training:
+			print("Warning: model is in training mode")
 		batch_results = self._common_step(batch, split=split, log=False)
+		if untransform_spec:
+			pred_logprobs = batch_results["pred_logprobs"]
+			pred_batch_idxs = batch_results["pred_batch_idxs"]
+			true_logprobs = batch_results["true_logprobs"]
+			true_batch_idxs = batch_results["true_batch_idxs"]
+			pred_ints = self.ints_untransform_func(
+				pred_logprobs.exp(),
+				pred_batch_idxs
+			)
+			pred_ints = self.ints_normalize_func(
+				pred_ints, 
+				pred_batch_idxs
+			)
+			if "pred_oos_logprobs" in batch_results:
+				pred_oos_logprobs = batch_results["pred_oos_logprobs"][pred_batch_idxs]
+				pred_ints = pred_ints * (1.-pred_oos_logprobs.exp())
+			batch_results["pred_logprobs"] = safelog(pred_ints, eps=self.hparams.log_min)
+			true_ints = self.ints_untransform_func(
+				true_logprobs.exp(),
+				true_batch_idxs
+			)
+			true_ints = self.ints_normalize_func(
+				true_ints, 
+				true_batch_idxs
+			)
+			batch_results["true_logprobs"] = safelog(true_ints, eps=self.hparams.log_min)
 		return batch_results
 
 	def configure_optimizers(self):
@@ -1433,8 +1463,8 @@ class FragGNNPL(SpectrumPL):
 			edge_h_transfer_costs = edge_h_transfer_loss_fn(pred_edge_h_diffs)
 			edge_h_transfer_costs = edge_h_transfer_costs.reshape(edge_h_transfer_costs.shape[0],-1)
 			edge_h_logprobs = pred_edge_h_logprobs.reshape(pred_edge_h_logprobs.shape[0],-1)
-			edge_h_range_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_range_costs),dim=1)
-			edge_h_transfer_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_transfer_costs),dim=1)
+			edge_h_range_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_range_costs, eps=self.hparams.log_min),dim=1)
+			edge_h_transfer_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_transfer_costs, eps=self.hparams.log_min),dim=1)
 			h_range_loss = scatter_logsumexp(
 				pred_edge_logprobs + edge_h_range_avg_cost,
 				pred_edge_batch_idxs
@@ -1928,6 +1958,7 @@ class NeimsPL(BinnedPL):
 			inst_insert_location=self.hparams.inst_insert_location,
 			inst_insert_size=self.hparams.inst_insert_size,
 			inst_types=self.hparams.spec_params["inst_types"],
+			log_min=self.hparams.log_min
 		)
 		
 		self._check_ce_params()

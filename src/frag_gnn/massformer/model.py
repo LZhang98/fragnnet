@@ -37,7 +37,8 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 		prec_types: list[str],
 		inst_insert_location: str,
 		inst_insert_size: int,
-		inst_types: list[str]):
+		inst_types: list[str],
+		log_min: float):
 		
 		# nn.Module init
 		super().__init__()
@@ -86,7 +87,8 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
 			bidirectional=ff_bidirectional,
 			use_residuals=mlp_use_residuals,
 			output_map_size=ff_output_map_size,
-			output_activation=ff_output_activation
+			output_activation=ff_output_activation,
+			log_min=log_min
 		)
 
 	def _ce_location_check(self):

@@ -7,7 +7,7 @@ from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, sca
 from frag_gnn.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.form_embedder import get_embedder
-from frag_gnn.utils.misc_utils import safelog, check_pyg_compile, LOG_ZERO, check_pyg_full_compile
+from frag_gnn.utils.misc_utils import check_pyg_compile, LOG_ZERO, check_pyg_full_compile
 from frag_gnn.utils.spec_utils import transform_ce
 
 
@@ -1113,7 +1113,8 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 		prec_types: list[str],
 		inst_insert_location: str,
 		inst_insert_size: int,
-		inst_types: list[str]):
+		inst_types: list[str],
+		log_min: float):
 
 		# nn.Module init
 		super().__init__()
@@ -1163,7 +1164,8 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
 			bidirectional=ff_bidirectional,
 			prec_mz_offset=ff_prec_mz_offset,
 			output_map_size=ff_output_map_size,
-			output_activation=ff_output_activation
+			output_activation=ff_output_activation,
+			log_min=log_min
 		)
 
 	def _ce_location_check(self):
@@ -1273,7 +1275,8 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		prec_types: list[str],
 		inst_insert_location: str,
 		inst_insert_size: int,
-		inst_types: list[str]
+		inst_types: list[str],
+		log_min: float
 	):
 		# nn.Module init
 		super().__init__()
@@ -1338,7 +1341,8 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			bidirectional=ff_bidirectional,
 			prec_mz_offset=ff_prec_mz_offset,
 			output_map_size=ff_output_map_size,
-			output_activation=ff_output_activation
+			output_activation=ff_output_activation,
+			log_min=log_min
 		)
 
 	def forward(

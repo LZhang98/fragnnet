@@ -1,4 +1,3 @@
-from frag_gnn.utils.misc_utils import safelog, booltype
 from frag_gnn.utils.script_utils import pearson_r
 
 import numpy as np
@@ -7,23 +6,6 @@ import pandas as pd
 import argparse
 import os
 
-def kl_div(p,q,dim=0):
-	return th.sum(p * (safelog(p) - safelog(q)),dim=dim)
-
-def js_div(p,q,dim=0):
-	m = 0.5*(p + q)
-	return 0.5*(kl_div(p,m,dim=dim) + kl_div(q,m,dim=dim))
-
-def js_sim(p,q,dim=0):
-	return np.log(2.) - js_div(p,q,dim=dim)
-
-def calc_jss(true, pred):
-
-	true = true.reshape(-1,1)
-	true = th.cat([true,1-true],dim=1)
-	pred = pred.reshape(-1,1)
-	pred = th.cat([pred,1-pred],dim=1)
-	return js_sim(true,pred,dim=1)
 
 if __name__ == "__main__":
 

@@ -39,6 +39,7 @@ class MassFormerPL(BinnedPL):
 			inst_insert_location=self.hparams.inst_insert_location,
 			inst_insert_size=self.hparams.inst_insert_size,
 			inst_types=self.hparams.spec_params["inst_types"],
+			log_min=self.hparams.log_min,
 		)
 
 		assert self.hparams.automatic_optimization
