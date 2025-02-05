@@ -899,5 +899,7 @@ def jss_helper(
 		dim_size=batch_size
 	)
 	# jss
-	jss = np.log(2.)-0.5*(kl1+kl2)
+	jsd_e = 0.5*(kl1+kl2)
+	# (ln(2) - jsd_e) / ln(2) 
+	jss = 1. - jsd_e / np.log(2.)
 	return jss
