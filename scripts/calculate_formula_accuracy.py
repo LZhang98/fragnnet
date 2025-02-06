@@ -43,7 +43,7 @@ parser.add_argument(
 parser.add_argument(
     "--vals_dp", 
     type=str, 
-    default="/h/adamo/frag-gnn/inference_outputs/v3_feb3"
+    default="/h/adamo/frag-gnn/inference_outputs/v3_feb5"
 )
 parser.add_argument(
     "--num_seeds",
@@ -59,7 +59,7 @@ parser.add_argument(
     ]
 )
 parser.add_argument("--num_samples", type=int, default=-1)
-parser.add_argument("--output_dp", type=str, default="figs/formula/v3_feb3")
+parser.add_argument("--output_dp", type=str, default="figs/formula/v3_feb5")
 args = parser.parse_args()
 
 if __name__ == "__main__":
@@ -187,6 +187,7 @@ if __name__ == "__main__":
 
                 jsds, ann_peak_coverages, ann_w_peak_coverages = [], [], []
                 both_formula_coverages, both_peak_coverages, both_w_peak_coverages = [], [], []
+                mode_peak_coverages, mode_w_peak_coverages = [], []
 
                 if args.num_samples > 0:
                     num_samples = min(len(group_ids), args.num_samples)
@@ -209,12 +210,12 @@ if __name__ == "__main__":
                     i_true_mzs = true_mzs[i_true_peak_mask]
                     i_true_logprobs = true_logprobs[i_true_peak_mask]
                     assert th.isclose(th.logsumexp(i_true_logprobs,dim=0),th.tensor(0.),rtol=0.,atol=1e-4), th.logsumexp(i_true_logprobs,dim=0)
-                    # TODO: remove this part, replace with proper renormalization
-                    if not frag_model:
-                        i_true_logprobs = i_true_logprobs.exp()
-                        i_true_logprobs = (i_true_logprobs / i_true_logprobs.max()) * np.sqrt(1000.+1.)
-                        i_true_logprobs = i_true_logprobs**2
-                        i_true_logprobs = safelog(i_true_logprobs / i_true_logprobs.sum())
+                    # # TODO: remove this part, replace with proper renormalization
+                    # if not frag_model:
+                    #     i_true_logprobs = i_true_logprobs.exp()
+                    #     i_true_logprobs = (i_true_logprobs / i_true_logprobs.max()) * np.sqrt(1000.+1.)
+                    #     i_true_logprobs = i_true_logprobs**2
+                    #     i_true_logprobs = safelog(i_true_logprobs / i_true_logprobs.sum())
 
                     i_formula_mask = (pred_formula_batch_idxs == i_batch_idx).flatten()
                     if frag_model:
@@ -231,6 +232,7 @@ if __name__ == "__main__":
                         ]
                         i_pred_formulae = np.array(i_pred_formulae)
                         i_pred_formula_mzs = pred_mzs[i_pred_peak_mask]
+                        assert len(i_pred_formulae) == len(i_pred_formula_mzs) == len(i_pred_formula_logprobs), (len(i_pred_formulae), len(i_pred_formula_mzs), len(i_pred_formula_logprobs))
                     else:
                         i_pred_formula_vecs = pred_formula_vecs[i_formula_mask]
                         # adjust for precursor
@@ -241,6 +243,7 @@ if __name__ == "__main__":
                                 in i_pred_formula_vecs.split(1, dim=0)
                         ]
                         i_pred_formulae = np.array(i_pred_formulae)
+                        assert len(i_pred_formulae) == len(i_pred_formula_mzs), (len(i_pred_formulae), len(i_pred_formula_mzs))
 
                     i_ann_formulae = m_ann_df_cp.loc[i_group_id,"formulae_dedup"]
                     i_ann_formulae = [
@@ -270,8 +273,9 @@ if __name__ == "__main__":
                     i_ann_formula_logprobs = th.logsumexp(i_ann_formula_logprobs, dim=1)
                     
                     # calculate fraction with annotations
-                    i_ann_peak_coverage = i_ann_mz_match_mask.any(dim=0).float().mean()
-                    i_ann_w_peak_coverage = th.exp(th.logsumexp(i_true_logprobs[i_ann_mz_match_mask.any(dim=0)], dim=0))
+                    i_ann_mz_match_any = i_ann_mz_match_mask.any(dim=0)
+                    i_ann_peak_coverage = i_ann_mz_match_any.float().mean()
+                    i_ann_w_peak_coverage = th.exp(th.logsumexp(i_true_logprobs[i_ann_mz_match_any], dim=0))
                     ann_peak_coverages.append(i_ann_peak_coverage.item())
                     ann_w_peak_coverages.append(i_ann_w_peak_coverage.item())
 
@@ -282,8 +286,9 @@ if __name__ == "__main__":
                         relative=True
                     ) # P x T
 
-                    # calculate JSD
                     if frag_model:
+
+                        # calculate JSD
                         assert i_pred_formula_idxs_2.shape[0] == i_pred_formula_logprobs.shape[0], (i_pred_formula_idxs_2.shape[0], i_pred_formula_logprobs.shape[0])
                         assert i_ann_formula_idxs_2.shape[0] == i_ann_formula_logprobs.shape[0], (i_ann_formula_idxs_2.shape[0], i_ann_formula_logprobs.shape[0])
                         i_formula_jsd = js_div(
@@ -294,6 +299,12 @@ if __name__ == "__main__":
                         )
                         jsds.append(i_formula_jsd.item())
 
+                        i_pred_mz_match_argmax = th.argmax(i_pred_mz_match_mask * i_pred_formula_logprobs.exp().unsqueeze(1), dim=0)
+                        i_pred_mz_match_any = th.any(i_pred_mz_match_mask, dim=0)
+                        i_mode_mz_match_mask = th.zeros_like(i_pred_mz_match_mask)
+                        i_mode_mz_match_mask[i_pred_mz_match_argmax[i_pred_mz_match_any],th.arange(i_pred_mz_match_mask.shape[1],device=i_mode_mz_match_mask.device)[i_pred_mz_match_any]] = 1
+
+                    # calculate coverage
                     i_both_formula_coverages, i_both_peak_coverages, i_both_w_peak_coverages = [], [], []
                     for threshold in thresholds:
                         # note: this is not the same shape as the i_formula_mask
@@ -307,12 +318,20 @@ if __name__ == "__main__":
                             i_ann_formulae.reshape(-1,1) == i_pred_formulae[i_pt_formula_mask.numpy()].reshape(1,-1)
                         ) # A x P
                         i_ann_mz_match_mask_2 = (i_both_formula_match_mask.long() @ i_pred_mz_match_mask[i_pt_formula_mask].long()) > 0 # A x T
-                        i_peak_match = th.any(i_ann_mz_match_mask & i_ann_mz_match_mask_2, dim=0)
-                        i_both_peak_coverage = i_peak_match.float().sum() / th.any(i_ann_mz_match_mask, dim=0).sum()
-                        i_both_w_peak_coverage = (i_peak_match.float() * i_true_logprobs.exp()).sum() / i_true_logprobs.exp().sum()
+                        i_both_peak_match = th.any(i_ann_mz_match_mask & i_ann_mz_match_mask_2, dim=0)
+                        i_both_peak_coverage = i_both_peak_match.float().sum() / i_ann_mz_match_any.sum()
+                        i_both_w_peak_coverage = (i_both_peak_match.float() * i_true_logprobs.exp()).sum() / (i_ann_mz_match_any * i_true_logprobs.exp()).sum()
                         i_both_formula_coverages.append(i_both_formula_coverage)
                         i_both_peak_coverages.append(i_both_peak_coverage.item())
                         i_both_w_peak_coverages.append(i_both_w_peak_coverage.item())
+
+                        if threshold == 0. and frag_model:
+                            i_mode_mz_match_mask_2 = (i_both_formula_match_mask.long() @ i_mode_mz_match_mask.long()) > 0
+                            i_mode_peak_match = th.any(i_ann_mz_match_mask & i_mode_mz_match_mask_2, dim=0)
+                            i_mode_peak_coverage = i_mode_peak_match.float().sum() / i_ann_mz_match_any.sum()
+                            i_mode_w_peak_coverage = (i_mode_peak_match.float() * i_true_logprobs.exp()).sum() / (i_ann_mz_match_any * i_true_logprobs.exp()).sum()
+                            mode_peak_coverages.append(i_mode_peak_coverage.item())
+                            mode_w_peak_coverages.append(i_mode_w_peak_coverage.item())
 
                     both_formula_coverages.append(i_both_formula_coverages)
                     both_peak_coverages.append(i_both_peak_coverages)
@@ -324,6 +343,8 @@ if __name__ == "__main__":
                 both_formula_coverages = np.array(both_formula_coverages)
                 both_peak_coverages = np.array(both_peak_coverages)
                 both_w_peak_coverages = np.array(both_w_peak_coverages)
+                mode_peak_coverages = np.array(mode_peak_coverages)
+                mode_w_peak_coverages = np.array(mode_w_peak_coverages)
 
                 stats_df_row = {
                     "split_type": split_type,
@@ -348,6 +369,14 @@ if __name__ == "__main__":
                 stats_df_row["ann_w_peak_coverage_mean"] = np.mean(ann_w_peak_coverages)
                 stats_df_row["ann_w_peak_coverage_std"] = np.std(ann_w_peak_coverages)
 
+                if frag_model:
+                    print(f">> Mode Peak Coverage: {np.mean(mode_peak_coverages):.4f} +/- {np.std(mode_peak_coverages):.4f}")
+                    print(f">> Mode W Peak Coverage: {np.mean(mode_w_peak_coverages):.4f} +/- {np.std(mode_w_peak_coverages):.4f}")
+                    stats_df_row["mode_peak_coverage_mean"] = np.mean(mode_peak_coverages)
+                    stats_df_row["mode_peak_coverage_std"] = np.std(mode_peak_coverages)
+                    stats_df_row["mode_w_peak_coverage_mean"] = np.mean(mode_w_peak_coverages)
+                    stats_df_row["mode_w_peak_coverage_std"] = np.std(mode_w_peak_coverages)
+
                 for i, threshold in enumerate(thresholds):
                     if np.isnan(np.mean(both_peak_coverages[:,i])):
                         import pdb; pdb.set_trace()
@@ -361,16 +390,20 @@ if __name__ == "__main__":
                     stats_df_row[f"both_peak_coverage_{threshold}_std"] = np.std(both_peak_coverages[:,i])
                     stats_df_row[f"both_w_peak_coverage_{threshold}_mean"] = np.mean(both_w_peak_coverages[:,i])
                     stats_df_row[f"both_w_peak_coverage_{threshold}_std"] = np.std(both_w_peak_coverages[:,i])
-                
+
                 stats_df_rows.append(stats_df_row)
     
-                # stats_d[(split_type,model_type,n)] = {
-                #     "jsd": th.as_tensor(jsds),
-                #     "coverages": th.as_tensor(coverages),
-                #     "peak_coverages": th.as_tensor(peak_coverages),
-                #     "w_peak_coverages": th.as_tensor(w_peak_coverages),
-                #     "thresholds": th.tensor(thresholds)
-                # }
+                stats_d[(split_type,model_type,n)] = {
+                    "jsds": th.as_tensor(jsds),
+                    "ann_peak_coverages": th.as_tensor(ann_peak_coverages),
+                    "ann_w_peak_coverages": th.as_tensor(ann_w_peak_coverages),
+                    "mode_peak_coverages": th.as_tensor(mode_peak_coverages),
+                    "mode_w_peak_coverages": th.as_tensor(mode_w_peak_coverages),
+                    "both_formula_coverages": th.as_tensor(both_formula_coverages),
+                    "both_peak_coverages": th.as_tensor(both_peak_coverages),
+                    "both_w_peak_coverages": th.as_tensor(both_w_peak_coverages),
+                    "thresholds": th.tensor(thresholds)
+                }
 
     stats_df = pd.DataFrame(stats_df_rows)
     print(stats_df)
