@@ -120,7 +120,7 @@ class GrAFFModel(nn.Module):
 			if self.signnet is not None:
 				self.signnet = pyg.compile(self.signnet,**kwargs)
 			self.encoder = pyg.compile(self.encoder,**kwargs)
-		self.cov_emd = th.compile(self.cov_emb,**kwargs)
+		self.cov_emb = th.compile(self.cov_emb,**kwargs)
 		self.decoder = th.compile(self.decoder,**kwargs)
 
 	def forward(
