@@ -1,35 +1,38 @@
-wandb_name: graff_auto_um_cemog
+wandb_name: nist20v3_scaffold_graff_isot_s1
+wandb_group: nist20v3_scaffold_graff_isot
 wandb_tags:
-- exp_graff
+- splits
 - nist20
 - d4
 - wr00
-- inchikey
+- scaffold
 - new_proc
 - graff
+- max_isotope_2
 - new_metrics
-- nodemlp
 - ce_embed
-- unmerged
-- oos_multiple_1
+- merged
+- pm_multiple_1
 - gaussian_renormalize
-- b64x2
+- e5o130br
 - no_auxiliary_scores
-- preload
 - preprocess
-- mixture_of_gaussians
+- s1
+
+# seed
+seed: 634340
 
 # data stuff
-spec_fp: data/proc/nist20mona23v2/spec_df.pkl
-mol_fp: data/proc/nist20mona23v2/mol_df.pkl
-split_dp: data/split/nist20_mona23_d4_wr00_inchikey_2 # needs to be _2
-ann_fp: data/proc/nist20mona23v2/ann_df.pkl
+spec_fp: data/proc/nist20mona23v3/spec_df.pkl
+mol_fp: data/proc/nist20mona23v3/mol_df.pkl
+split_dp: data/split/nist20mona23v3_d4_wr00_scaffold
+ann_fp: data/proc/nist20mona23v3/ann_df.pkl
 frag_params:
   pyg: False
 spec_params:
-  merge: False
+  merge: True
   nce: True
-  merge_keep_ces: False
+  merge_keep_ces: True
   preprocess: True
 mol_params:
   pyg: False
@@ -41,17 +44,30 @@ ann_params:
   num_eigs: 8
   filter_peaks: False
   filter_peaks_tol: 0.02
+  library_splits:
+    - train
+    - val
+    - test
   preprocess: True
 
 # model stuff
 model_type: graff
+graff_encoder_dim: 1024
+graff_decoder_dim: 1024
+graff_encoder_depth: 6
+graff_decoder_depth: 2
+graff_eig_dim: 32
+graff_eig_depth: 2
+graff_dropout: 0.0
+graff_min_probability: 0.0
+graff_min_mz: 0.0
 ce_insert_type: embed
 ce_insert_location: mlp
-ce_insert_merge: False
+ce_insert_merge: True
 
 # loss stuff
 loss_type: cross_entropy
-output_distribution: gaussian
+output_distribution: peak_marginal
 sparse_cosine_similarity: True
 oos_loss: False
 skip_extra_losses: True
@@ -63,14 +79,18 @@ pm_tolerance_multiple: 1
 # optimization stuff
 train_batch_size: 128
 eval_batch_size: 128
-accumulate_grad_batches: 4
-gradient_clip_val: 100.0
-lr: 0.0005 # 5e-4
+accumulate_grad_batches: 1
+gradient_clip_val: 5.0
+lr: 0.000254
+weight_decay: 0.000001
 accelerator: gpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
-lr_schedule: False
+lr_schedule: True
+lr_decay_rate: 0.74
+lr_warmup_steps: 1000
+lr_decay_steps: 5000
 debug_overfit: False
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
@@ -82,5 +102,3 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: True
 compile: True
-optimizer: adam
-weight_decay: 0.00001 # 1e-5
