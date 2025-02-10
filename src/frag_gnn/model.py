@@ -845,7 +845,7 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			not_oos_logprobs = F.logsigmoid(-oos_logits)
 		else:
 			# set them to 0
-			oos_logprobs = LOG_ZERO(oos_logits.dtype)*th.ones([batch_size],device=device)
+			oos_logprobs = LOG_ZERO(frag_formula_logprobs.dtype)*th.ones([batch_size],device=device)
 			not_oos_logprobs = th.zeros([batch_size],device=device)
 		
 		# adjust frag_formula_logprobs
