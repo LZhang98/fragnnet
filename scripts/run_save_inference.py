@@ -2,8 +2,10 @@ from frag_gnn.runner import load_config, init_dataloader
 from frag_gnn.pl_model import FragGNNPL, NeimsPL
 from frag_gnn.massformer.pl_model import MassFormerPL
 from frag_gnn.iceberg.pl_model import IcebergIntenPL
+from frag_gnn.graff.pl_model import GrAFFPL
 from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset
 from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset
+from frag_gnn.graff.dataset import SpecMolAnnDataset
 from frag_gnn.utils.misc_utils import NestedDefaultDict, booltype
 from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference
 
@@ -111,6 +113,11 @@ if __name__ == "__main__":
 		type=booltype,
 		default=False
 	)
+	parser.add_argument(
+		"--disable_preproc",
+		type=booltype,
+		default=False
+	)
 	args = parser.parse_args()
 
 	eval_split = args.eval_split
@@ -143,6 +150,7 @@ if __name__ == "__main__":
 		"iceberg_inten2_all": IcebergIntenPL,
 		"iceberg_inten3_100": IcebergIntenPL,
 		"iceberg_inten3_all": IcebergIntenPL,
+		"graff": GrAFFPL
 	}
 
 	model_type_to_ds_cls = {
@@ -156,6 +164,7 @@ if __name__ == "__main__":
 		"iceberg_inten2_all": SpecMolMagmaIntenDataset,
 		"iceberg_inten3_100": SpecMolMagmaIntenDataset,
 		"iceberg_inten3_all": SpecMolMagmaIntenDataset,
+		"graff": SpecMolAnnDataset
 	}
 
 	model_type_to_dset = {
@@ -169,6 +178,7 @@ if __name__ == "__main__":
 		"iceberg_inten2_all": "nist20v3",
 		"iceberg_inten3_100": "nist20v3",
 		"iceberg_inten3_all": "nist20v3",
+		"graff": "nist20v3"
 	}
 
 	model_to_run_id = NestedDefaultDict()
@@ -217,6 +227,12 @@ if __name__ == "__main__":
 			config_d["auxiliary_scores"] = args.auxiliary_scores
 			config_d["skip_extra_losses"] = args.skip_extra_losses
 			config_d["compile"] = False
+			if args.disable_preproc:
+				for k in ["spec", "mol", "magma", "ann"]:
+					key = f"{k}_params"
+					config_d[key]["preprocess"] = False
+					if k == "magma":
+						config_d[key]["preload"] = False
 			print(">>> Loading dataset")
 			ds_cls = model_type_to_ds_cls[model_type]
 			ds = ds_cls(split=eval_split, **config_d)
