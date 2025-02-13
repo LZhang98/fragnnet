@@ -1,21 +1,15 @@
-wandb_name: iceberg_inten_all_inchikey
+wandb_name: exp_iceberg_all_debug
+wandb_group:
 wandb_tags:
-- exp_iceberg
-- nist20v2
-- d4
-- wr00
-- inchikey
-- new_proc
-- iceberg
-- inten_all
-- new_metrics
-- mz_bin_res_0,01
+
+# seed
+seed: 397623
 
 # data stuff
-spec_fp: data/proc/nist20mona23v2/spec_df.pkl
-mol_fp: data/proc/nist20mona23v2/mol_df.pkl
-split_dp: data/split/nist20mona23v2_d4_wr00_inchikey
-magma_dp: data/magma/gen/nist20mona23v2
+spec_fp: data/proc/nist20mona23v3/spec_df.pkl
+mol_fp: data/proc/nist20mona23v3/mol_df.pkl
+split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
+magma_dp: data/magma/gen/nist20mona23v3
 spec_params:
   preprocess: True
 mol_params:
@@ -35,17 +29,19 @@ magma_params:
 
 # model stuff
 model_type: iceberg_inten
-iceberg_hidden_size: 256
-iceberg_num_mlp_layers: 1
-iceberg_num_gnn_layers: 4
+iceberg_hidden_size: 512
+iceberg_num_mlp_layers: 0
+iceberg_num_gnn_layers: 2
 iceberg_num_set_layers: 0
 iceberg_num_frag_set_layers: 3
-iceberg_dropout: 0.1
+iceberg_dropout: 0.3
 iceberg_gnn_type: GGNN
 iceberg_pool_type: avg
 iceberg_inject_early: False
 iceberg_embed_adduct: True
 iceberg_encode_forms: True
+iceberg_fix_batch_bug: True
+iceberg_output_formulae: True
 
 # loss stuff
 loss_type: cosine_distance
@@ -59,14 +55,14 @@ train_batch_size: 32
 eval_batch_size: 32
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.000736
-weight_decay: 0.0000001 # 1e-7
+lr: 0.0003441
+weight_decay: 0.0000001
 accelerator: gpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
 lr_schedule: True
-lr_decay_rate: 0.825
+lr_decay_rate: 0.8048
 lr_warmup_steps: 1000
 lr_decay_steps: 5000
 debug_overfit: False
@@ -80,6 +76,4 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-dynamic_batch_sampler: False
-pl_enable_progress_bar: True
 compile: True

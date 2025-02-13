@@ -553,7 +553,7 @@ class IcebergIntenModel(nn.Module):
 		attn_weights = attn_weights.masked_fill(~valid_pos, -99999)
 
 		# Calc inverse indices => B x Out x L x shift
-		inverse_indices = th.bucketize(masses, self.inten_buckets, right=False)
+		inverse_indices = th.bucketize(masses, self.inten_buckets, right=True)
 		# inverse_indices = inverse_indices[:, None, :, :].expand(attn_weights.shape)
 
 		# B x Out x (L * Mass shifts)
@@ -620,6 +620,11 @@ class IcebergIntenModel(nn.Module):
 			th.arange(output_binned.shape[0], device=output_binned.device),
 			th.sum(output_binned_mask,dim=1),
 			dim=0
+		)
+		# normalize
+		pred_logprobs = scatter_logsoftmax(
+			pred_logprobs,
+			pred_batch_idxs
 		)
 
 		if self.fix_batch_bug:

@@ -140,7 +140,7 @@ def bin_spectrum(mzs,ints,mz_res,mz_max):
 
 	bins = np.arange(0,mz_max+mz_res,mz_res)
 	bin_spec = np.zeros_like(bins,dtype=np.float32)
-	bin_idx = np.digitize(mzs,bins,right=False)
+	bin_idx = np.digitize(mzs,bins,right=True)
 	for i in range(len(bin_idx)):
 		bin_spec[bin_idx[i]] += ints[i]
 	return bin_spec
@@ -149,7 +149,7 @@ def bin_spectrum(mzs,ints,mz_res,mz_max):
 def get_mz_bin_idx(mz,mz_res,mz_max):
 
 	bins = np.arange(0,mz_max+mz_res,mz_res)
-	bin_idx = np.digitize(mz,bins,right=False)
+	bin_idx = np.digitize(mz,bins,right=True)
 	return bin_idx
 
 

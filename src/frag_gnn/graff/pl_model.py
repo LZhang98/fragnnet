@@ -61,9 +61,6 @@ class GrAFFPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
 
-		assert self.hparams.loss_type == "cross_entropy", self.hparams.loss_type
-		# assert self.hparams.output_distribution == "peak_marginal", self.hparams.output_distribution
-
 		# cross entropy
 		sparse_ce_fn = get_sparse_cross_entropy_fn(
 			dist=self.hparams.output_distribution,
@@ -76,6 +73,10 @@ class GrAFFPL(SpectrumPL):
 			pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
 			loss_batch_size=self.hparams.loss_batch_size
 		)
+
+		assert self.hparams.loss_type == "cross_entropy", self.hparams.loss_type
+		# assert self.hparams.output_distribution == "peak_marginal", self.hparams.output_distribution
+		self.binned_loss = False
 
 		self._setup_loss_names()
 

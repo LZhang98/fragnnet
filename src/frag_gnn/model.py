@@ -8,7 +8,7 @@ from frag_gnn.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
 from frag_gnn.utils.nn_utils import *
 from frag_gnn.form_embedder import get_embedder
 from frag_gnn.utils.misc_utils import check_pyg_compile, LOG_ZERO, check_pyg_full_compile
-from frag_gnn.utils.spec_utils import transform_ce
+from frag_gnn.utils.spec_utils import transform_ce, batched_bin_func
 
 
 class CEModel:
@@ -232,6 +232,9 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		skip_edge_loss: bool,
 		mask_null_formula: bool,
 		predict_oos: bool,
+		bin_output: bool,
+		mz_bin_res: float,
+		mz_max: float,
 		ce_insert_location: str,
 		ce_insert_type: str,
 		ce_insert_merge: bool,
@@ -386,6 +389,12 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		self.skip_edge_loss = skip_edge_loss
 		self.mask_null_formula = mask_null_formula
 		self.nb_iso = nb_iso
+		self.bin_output = bin_output
+		self.mz_bin_res = mz_bin_res
+		self.mz_max = mz_max
+
+		if self.bin_output:
+			self.mz_bins = th.arange(mz_bin_res,mz_max+mz_bin_res,mz_bin_res)
 
 		# this is required
 		assert "h_formulae_idx" in self.frag_node_feats
@@ -1029,6 +1038,22 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		assert th.unique(frag_real_formula_formula_idxs).shape[0] == frag_real_formula_formula_idxs.max()+1 == batch_frag_num_formulae
 		if self.nb_iso:
 			assert th.unique(frag_nb_node_node_idxs).shape[0] == frag_nb_node_node_idxs.max()+1 == batch_frag_nb_num_nodes
+
+		if self.bin_output:
+			# import pdb; pdb.set_trace()
+			spec_bin_mzs, spec_bin_logprobs, spec_bin_batch_idxs = batched_bin_func(
+				mzs=spec_mzs,
+				ints=spec_logprobs,
+				batch_idxs=spec_batch_idxs,
+				mz_max=self.mz_max,
+				mz_bin_res=self.mz_bin_res,
+				agg="lse",
+				sparse=True,
+				return_mzs=True
+			)
+			spec_mzs = spec_bin_mzs
+			spec_logprobs = spec_bin_logprobs
+			spec_batch_idxs = spec_bin_batch_idxs
 
 		out_d = {
 			"pred_mzs": spec_mzs,

@@ -168,7 +168,7 @@ def bin_func(mzs:th.Tensor,ints:th.Tensor,mz_max:float,mz_bin_res:float,return_i
 	assert th.max(mzs) < mz_max, (th.max(mzs),mz_max)
 	# bin
 	bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype)
-	bin_idx = th.searchsorted(bins,mzs,side="right")
+	bin_idx = th.searchsorted(bins,mzs,right=True)
 	if return_index:
 		return bin_idx
 	else:
@@ -241,7 +241,8 @@ def batched_bin_func(
 		agg:str,
 		sparse:bool=False,
 		remove_prec_peaks:bool=False,
-		prec_mzs:th.Tensor=None) -> th.Tensor:
+		prec_mzs:th.Tensor=None,
+		return_mzs:bool=False) -> th.Tensor:
 	"""method to get binned spectra for batch
 
 	Args:
@@ -263,13 +264,13 @@ def batched_bin_func(
 	batch_size = th.max(batch_idxs)+1
 	bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype)
 	num_bins = bins.shape[0]
-	bin_idxs = th.searchsorted(bins,mzs,side="right")
+	bin_idxs = th.searchsorted(bins,mzs,right=True)
 	bin_offsets = (th.arange(batch_size,device=mzs.device)*num_bins)[batch_idxs]
 	bin_idxs = bin_idxs + bin_offsets
 	if remove_prec_peaks:
 		assert prec_mzs is not None
 		assert th.max(prec_mzs) <  mz_max, (th.max(prec_mzs),mz_max)
-		prec_mz_bin_idxs = th.searchsorted(bins,prec_mzs,side="right")
+		prec_mz_bin_idxs = th.searchsorted(bins,prec_mzs,right=True)
 		prec_mz_bin_offsets = th.arange(batch_size,device=mzs.device)*num_bins
 		prec_mz_bin_idxs = prec_mz_bin_idxs + prec_mz_bin_offsets
 		prec_ints_mask = th.isin(bin_idxs,prec_mz_bin_idxs)
@@ -292,7 +293,11 @@ def batched_bin_func(
 				dim_size=new_bin_idxs.shape[0]
 			)
 		un_bin_batch_idxs = un_bin_idxs // num_bins
-		return un_bin_idxs, un_bin_ints, un_bin_batch_idxs
+		if return_mzs:
+			un_bin_mzs = (bins[un_bin_idxs % num_bins] - mz_bin_res/2.)
+			return un_bin_mzs, un_bin_ints, un_bin_batch_idxs
+		else:
+			return un_bin_idxs, un_bin_ints, un_bin_batch_idxs
 	else:
 		if agg in ["sum","amax"]:
 			bin_spec = scatter_reduce(
