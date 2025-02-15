@@ -65,6 +65,7 @@ def main(args):
 			"#load modules",
 			"module load StdEnv/2023",
 			"module load python/3.10",
+			"module load rdkit/2023.09.5"
 		]
 	)
   
@@ -134,7 +135,7 @@ if __name__ == "__main__":
 	parser.add_argument("--job_dp",type=str, default="jobs")
 	parser.add_argument("--python_script_fp",type=str,required=True)
 	parser.add_argument("--frag_gnn_dp",type=str, help="location of frag-gnn project", required=True)
-	parser.add_argument("--mem", type=int, default=64)
+	parser.add_argument("--mem", type=int, default=128)
 	parser.add_argument("--cpu", type=int, default=8)
 	parser.add_argument("--gpu", type=int, default=1)
 	parser.add_argument("--time", type=int, default=3)

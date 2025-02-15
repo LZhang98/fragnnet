@@ -1,0 +1,78 @@
+Bootstrap: docker
+From: nvidia/cuda:11.8.0-runtime-ubuntu22.04
+
+%arguments
+
+
+%post
+    # Ensure Apptainer home directory is used
+    export HOME=/home/$USER
+    
+    APT_INSTALL="apt-get install -y --no-install-recommends"
+    PIP_INSTALL="python -m pip --no-cache-dir install --upgrade"
+    
+    # Update package lists and install required system packages
+    # install python 3.10 and all dependencies
+    apt-get update && DEBIAN_FRONTEND=noninteractive $APT_INSTALL \
+        python3.10 \
+        python3.10-dev \
+        python3.10-distutils \
+        g++ \
+        gcc \
+        build-essential \
+        libxrender1 \
+        libxtst6 \
+        libxi6 \
+        curl \
+        ca-certificates
+    ln -s /usr/bin/python3.10 /usr/local/bin/python
+
+    apt-get update && DEBIAN_FRONTEND=noninteractive $APT_INSTALL \
+        python3-venv \
+        python3-pip \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Create virtual environment directory
+    VENV_DIR=$HOME/fragnnet_env
+    python3 -m venv $VENV_DIR
+
+    # Activate virtual environment
+    . $VENV_DIR/bin/activate
+
+    # install python packages
+    $PIP_INSTALL setuptools 
+    $PIP_INSTALL torch==2.1.0 --index-url https://download.pytorch.org/whl/cu118
+    $PIP_INSTALL numpy==1.26.4
+    $PIP_INSTALL rdkit-pypi==2022.9.4
+    $PIP_INSTALL torch_geometric==2.4.0 pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0%2Bcu118.html
+    $PIP_INSTALL dgl==2.0.0 -f https://data.dgl.ai/wheels/repo.html
+    $PIP_INSTALL \
+        cython  \
+        cysignals \
+        pandas \
+        networkx \
+        wandb \
+        tqdm \
+        scipy \
+        joblib \
+        matplotlib \
+        pytest \
+        CairoSVG \
+        lightning==2.1.2 \
+        omegaconf \
+        adjustText \
+        scikit-learn \
+        Pyarrow \
+        pyteomics
+
+%environment
+    # Activate virtual environment upon container execution
+    export VENV_DIR=$HOME/fragnnet_env
+    . $VENV_DIR/bin/activate
+    export PATH=$VENV_DIR/bin:$PATH
+
+%runscript
+    # Default command to run when the container is executed
+    echo "Running inside Apptainer with virtual environment"
+    exec "$@"

@@ -1,3 +1,4 @@
+import copy
 import sqlite3
 import numpy as np
 import pandas as pd
@@ -7,6 +8,9 @@ import os
 from tqdm import tqdm
 
 from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
+from frag_gnn.massformer.pl_model import MassFormerPL
+from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
+from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
 from frag_gnn.runner import init_dataloader
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
@@ -178,22 +182,19 @@ model_type_to_model_cls = {
 	"neims": NeimsPL,
 	"gnn": GNNPL,
 	"frag_gnn": FragGNNPL,
+	"massformer": MassFormerPL,
+	"iceberg_inten": IcebergIntenPL
 }
 
-model_type_ds_cls = {
-	"neims": SpecMolDataset,
-	"gnn": SpecMolDataset,
-	"frag_gnn": SpecMolFragDataset,
-}
-def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 32, auxiliary_scores:str = None, eval_mz_bin_res:str = None):
+def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 32, auxiliary_scores:list = None, eval_mz_bin_res:list[float] = None):
 	"""load model and reset config for inference
 
 	Args:
 		ckpt_fp (str): check point path
 		device (str, optional): device eg cpu or cuda:0. Defaults to None.
 		batch_size (int, optional): batch_size. Defaults to 32.
-		auxiliary_scores (str, optional): list of auxiliary_scores. Defaults to None, only used on split evalution
-		eval_mz_bin_res (str, optional): bin size of auxiliary scores. Defaults to None, only used on split evalution
+		auxiliary_scores (str, optional): list of auxiliary_scores. Defaults to None, only used on split evalution ['cos_sim']
+		eval_mz_bin_res (str, optional): bin size of auxiliary scores. Defaults to None, only used on split evalution, eg [03.01]
 
 	Returns:
 		_type_: _description_
@@ -214,13 +215,14 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 	# let us see if ram will be an issue
 	config_d['frag_params']['preload'] = False
 	config_d['frag_params']['preprocess'] = False
+	config_d['magma_params']['preprocess'] = False
 	# disable sampler
 	config_d["dynamic_batch_sampler"] = False
 	config_d["group_sampler"] = False 
 	config_d["simple_group_sampler"] = False
 	# additional spec_params
 	config_d['spec_params']['unique_id'] = True
-	config_d['spec_params']["counts"] = False
+	config_d['spec_params']["counts"] = True
 	# set num works and cpu stuff
 	config_d['num_workers']= multiprocessing.cpu_count()
 
@@ -237,6 +239,7 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 		th.use_deterministic_algorithms(True)
   
 	# check class
+	print(f">> model type: {config_d['model_type']}")
 	model_type = config_d['model_type']
 	model_cls = model_type_to_model_cls[model_type]
 
@@ -253,79 +256,124 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 	return model, config_d, device
 
 
-def run_prediction(model,
+def run_spectra_prediction(model,
 				 config_d:dict,
-				 mol_df_fp:str,
-				 spec_df_fp:str,
-				 frag_dp:str,
-				 device:str
+				 mol_data_ptr:str|pd.DataFrame,
+				 spec_data_ptr:str|pd.DataFrame,
+				 device:str,
+				 frag_dp:str = None,
+				 magma_dp:str = None,
+				 validate:bool = False,
 				 ):
+	"""_summary_
 
+	Args:
+		model (_type_): _description_
+		config_d (dict): _description_
+		mol_data_ptr (str | pd.DataFrame): _description_
+		spec_data_ptr (str | pd.DataFrame): _description_
+		frag_dp (str): _description_
+		device (str): _description_
+
+	Returns:
+		_type_: _description_
+	"""
+	local_config_d = copy.deepcopy(config_d)
 	# config proc and check if frags are avaibale
-	print(f"> mol_fp {mol_df_fp}")
-	print(f"> spec_fp {spec_df_fp}")
-	print(f"> frag_dp {frag_dp}")
+	if isinstance(mol_data_ptr, str):
+		print(f"> mol_fp {mol_data_ptr}")
+		mol_df = pd.read_pickle(mol_data_ptr)
+	elif isinstance(mol_data_ptr, pd.DataFrame):
+		mol_df = mol_data_ptr
+		print(f"> mol_df {mol_df.shape}")
+	else:
+		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
+
+	if isinstance(spec_data_ptr, str):
+		print(f"> spec_fp {spec_data_ptr}")
+		spec_df = pd.read_pickle(spec_data_ptr)
+	elif isinstance(spec_data_ptr, pd.DataFrame):
+		spec_df = spec_data_ptr
+		print(f"> spec_df {spec_df.shape}")
+	else:
+		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
+
 
 	# check model class and ds class
-	#model_cls = model_type_to_model_cls[model_type]
-	# model_ds_cls = None #model_type_ds_cls[model_type]
 	model_ds_cls = None
  
-	mol_df  = pd.read_pickle(mol_df_fp)
-	#print("> num of mols", len(mol_df))
 	# only check for FragGNNet
 	if isinstance(model,FragGNNPL):
-		#print(">> filtering input without frags")
+		assert os.path.isdir(frag_dp)
+		print(f">> frag_dp {frag_dp}")
+		print(">> filtering input without frags")
 		all_frags = set([f.split('.')[0] for f in os.listdir(frag_dp)])
-		#print("> num of frags: ", len(all_frags))
+		print(">> num of frags: ", len(all_frags))
 		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
-		#print("> num of mols after filtering", len(mol_df))
+		local_config_d['frag_dp'] = frag_dp
 		model_ds_cls = SpecMolFragDataset
-  
-	spec_df = pd.read_pickle(spec_df_fp)
-	#print("> num of spec", len(spec_df))
-	if  isinstance(model,NeimsPL):
-		mz_max = config_d['mz_max']
+		print("> num of spec before filtering by dag", len(spec_df))
+		spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
+		print("> num of spec after filtering by dag", len(spec_df))
+	elif isinstance(model,NeimsPL) or isinstance(model,MassFormerPL) or isinstance(model, GNNPL):
+		mz_max = local_config_d['mz_max']
 		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
 		#print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
 		model_ds_cls = SpecMolDataset
-	
-	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
-	print("> num of spec after filtering", len(spec_df))
+	elif isinstance(model,IcebergIntenPL):
+		assert os.path.isdir(magma_dp)
+		model_ds_cls = SpecMolMagmaIntenDataset
+		print(f">> filtering input without magma. magma_dp: {magma_dp}")
+		magma_jsons = set([f.split('.')[0] for f in os.listdir(os.path.join(magma_dp,'magma_tree')) if f.endswith('.json')])
+		print(">> num of magma jsons: ", len(magma_jsons))
+		print("> num of spec before filtering by magma", len(spec_df))
+		spec_df = spec_df[spec_df['group_id'].astype(str).isin(magma_jsons)]
+		print("> num of spec after filtering by magma", len(spec_df))		
+		local_config_d['magma_dp'] = magma_dp
+	else:
+		print(f"Not supported model: {model}")
+  
+
 	if len(spec_df) == 0:
 		columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos']
 		return pd.DataFrame([], columns=columns)
 	
 	# config mol df, spec df and frag_dp
-	config_d['mol_fp'] = mol_df
-	config_d['spec_fp'] = spec_df
-	config_d['frag_dp'] = frag_dp
- 
+	local_config_d['mol_fp'] = mol_df
+	local_config_d['spec_fp'] = spec_df
+
 	# load datasets
 	print(">> Loading datasets")
-	ds = model_ds_cls(split='predict_only', **config_d)
-	#print(f"> model supported inst type {ds.idx_to_inst_type}")
-	#print(f"> model supported prec type {ds.idx_to_prec_type}")
+	#if validate:
+	#	ds = model_ds_cls(split='val', **config_d)
+	#else:
+	ds = model_ds_cls(split='predict_only', **local_config_d)
 	print(">> init dataloader")
-	dl = init_dataloader(ds, config_d)
- 
- 	#model = model_cls.load_from_checkpoint(ckpt_fp, map_location=device, strict=False, **config_d)
-	model.eval()
-
-	# make predictions on validation data
-	print(">> Running inference")
+	dl = init_dataloader(ds, local_config_d)
+	
+	eval_score_types = []
+	if validate:
+		for score_type in local_config_d['auxiliary_scores']:
+			if "_hun" in score_type:
+				eval_score_types.append(score_type)
+			else:
+				for bin_res in local_config_d['eval_mz_bin_res']:
+					eval_score_types.append(f"{score_type}_{bin_res}")
 	preds_l = []
+ 	#print(">> set model to this to eval")
+	model.eval()
 	with th.inference_mode():
-		for _, batch_input in tqdm(enumerate(dl),total=len(dl)):
-			#print(batch_input)
-			mol_smiles = batch_input['mol_smiles']
+		for _, batch_input in tqdm(enumerate(dl),total=len(dl), desc=" Running inference"):
 			spec_ids = batch_input['spec_unique_id']
 			mol_ids = batch_input['mol_id']
-			spec_prec_types = batch_input['spec_prec_type']
-			spec_inst_types = batch_input['spec_inst_type']
-			batch_result = to_device(batch_input, device)
 
-			batch_result = model.predict_step(**batch_input)
+			batch_input = to_device(batch_input, device)
+			# use existing validate to compute cos sim and etc
+			if validate:
+				batch_result = model._common_step(batch_input, split="val", log=False)
+			else:
+				batch_result = model.predict_step(**batch_input)
+    
 			batch_size = batch_input['batch_size'].detach().cpu()
 
 			pred_mzs = batch_result["pred_mzs"].detach().cpu()
@@ -337,24 +385,26 @@ def run_prediction(model,
 	
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+
+			eval_scores_d = {}
+			for eval_score_type in eval_score_types:
+				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
+				#print(eval_score_type, eval_scores_d[eval_score_type])
 			for b_idx in range(batch_size):
 				b_peak_mask = pred_batch_idxs == b_idx
 	
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
 				b_spec_id = spec_ids[b_idx]
-				b_smi = str(mol_smiles[b_idx])
 				b_mol_id = mol_ids[b_idx]
-				b_spec_prec_type_idx = int(spec_prec_types[b_idx])
-				b_spec_inst_type_idx = int(spec_inst_types[b_idx])
-				#b_inchikey = Chem.MolToInchiKey(Chem.MolFromSmiles(b_smi))
 
-				b_spec_prec_type = ds.idx_to_prec_type[b_spec_prec_type_idx]
-				b_spec_inst_type = ds.idx_to_inst_type[b_spec_inst_type_idx]
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				preds_l.append((b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob))
+				data_row = [b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
+				for eval_score_type in eval_score_types:
+					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
+				preds_l.append(data_row)
 
-	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos']
+	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos'] + eval_score_types
 	df = pd.DataFrame(preds_l, columns=columns)
 	return df

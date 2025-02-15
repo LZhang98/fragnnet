@@ -82,7 +82,7 @@ def split_smiles(smiles_str:str) -> List:
 def list_replace(l,d):
 	return [d[data] for data in l]
 
-def mol_from_inchi(inchi:str) -> "rdkit.Chem.rdchem.Mol":
+def mol_from_inchi(inchi:str, standardize:bool = True) -> "rdkit.Chem.rdchem.Mol":
 	"""return a rdkit mol from inchi str
 
 	Args:
@@ -95,6 +95,8 @@ def mol_from_inchi(inchi:str) -> "rdkit.Chem.rdchem.Mol":
 	Chem = modules[0]
 	try:
 		mol = Chem.MolFromInchi(inchi)
+		if standardize:
+			mol = rdkit_standardize(mol)
 	except:
 		mol = np.nan
 	if none_or_nan(mol):
@@ -502,12 +504,12 @@ def seq_apply(iterator,func,need_unpack=False):
 			result.append(func(*i))
 	return result
 
-def par_apply(iterator,func,need_unpack=False, return_as_generator=False):
+def par_apply(iterator,func,need_unpack=False, return_as_generator=False, n_jobs=JOBLIB_N_JOBS):
 
 	par_func = joblib.delayed(func)
 	parallel = joblib.Parallel(
 		backend=JOBLIB_BACKEND,
-		n_jobs=JOBLIB_N_JOBS,
+		n_jobs=n_jobs,
 		timeout=JOBLIB_TIMEOUT,
 		return_as="list" if not return_as_generator else "generator"
 	)
@@ -527,7 +529,7 @@ def par_apply_series(series,func, tqdm_leave = True):
 
 def seq_apply_series(series,func, tqdm_leave=True):
 
-	series_iter = tqdm(series.iteritems(),desc=pformat(func),total=series.shape[0],leave=tqdm_leave)
+	series_iter = tqdm(series.items(),desc=pformat(func),total=series.shape[0],leave=tqdm_leave)
 	series_func = lambda tup: func(tup[1])
 	result_list = seq_apply(series_iter,series_func)
 	result_series = pd.Series(result_list,index=series.index)

@@ -1,4 +1,6 @@
+import multiprocessing
 import shutil
+import subprocess
 import tempfile
 import time
 from functools import wraps
@@ -15,6 +17,7 @@ import torch_geometric as pyg
 import dgl
 from collections import defaultdict
 import sys
+import glob
 
 TQDM_DISABLE = False
 PPM = 1/1000000
@@ -527,19 +530,24 @@ def check_pyg_full_compile():
 	assert th_major_version >= 2, th_major_version
 	return pyg_major_version >= 2 and pyg_minor_version >= 5
 
-def get_ckpt_from_wandb(saved_dp, run_id, 
-                        entity='frag-gnn', 
-                        project='frag-gnn',
-                        #save_use_model_name = True,
-                        use_cached = False):
+def get_best_ckpt_from_wandb(saved_dp, run_id, 
+						entity='frag-gnn', 
+						project='frag-gnn',
+						use_cached = False):
+	# return ckpt
+	cached_ckpts = glob.glob(os.path.join(saved_dp, f'*_{run_id}.ckpt'))
+	if use_cached and len(cached_ckpts) == 1:
+		print(f"> found cached ckpt {cached_ckpts[0]} for {run_id}")
+		return cached_ckpts[0]
+
 	import wandb
 	api = wandb.Api()
 	run = api.run(f"{entity}/{project}/{run_id}")
 	#print(run.id, run.name, run.tags)
 	print(f"> Processing model files for run {run.id} {run.name}")
 	model_tag = f"{run.name}_{run_id}"
-	model_save_dp = f"{saved_dp}/{model_tag}"
-	os.makedirs(model_save_dp, exist_ok=True)
+	#model_save_dp = f"{saved_dp}/{model_tag}"
+	os.makedirs(saved_dp, exist_ok=True)
 	ckpt_file, ckpt_epoch_num = None, None
 	for file in run.files():
 		if file.name.startswith("ckpt/model-epoch="):
@@ -554,7 +562,7 @@ def get_ckpt_from_wandb(saved_dp, run_id,
 	
 	#assert not ckpt_file is None
 	#assert not ckpt_epoch_num is None
-	ckpt_fp = f"{model_save_dp}/{model_tag}.ckpt"
+	ckpt_fp = f"{saved_dp}/{model_tag}.ckpt"
 	if os.path.isfile(ckpt_fp) and use_cached:
 		return ckpt_fp
 
@@ -566,14 +574,18 @@ def get_ckpt_from_wandb(saved_dp, run_id,
 		shutil.copy(f'{tmp_dir}/{ckpt_file}', ckpt_fp)
 	return ckpt_fp
 
-def get_runs_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
+def get_wandb_runs_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
 	import wandb
 	api = wandb.Api()
 	runs = api.runs(f"{entity}/{project}", include_sweeps=False, filters = {"group": group_name})
 	return runs
 
+def get_wandb_runids_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
+	runs = get_wandb_runs_by_grp("nist20v3_inchikey_fraggnn_d3")
+	run_ids = [run.id for run in runs]
+	return run_ids
 
-def detele_ckpt_from_wandb(run_id, entity='frag-gnn', project='frag-gnn'):
+def delete_ckpt_from_wandb(run_id, entity='frag-gnn', project='frag-gnn'):
 	import wandb
 	api = wandb.Api()
 	run = api.run(f"{entity}/{project}/{run_id}")
@@ -607,3 +619,37 @@ def js_div(x_ids, x_logprobs, y_ids, y_logprobs):
 	jsd = 0.5*kl_div(x_logprobs_p,z_logprobs) + 0.5*kl_div(y_logprobs_p,z_logprobs)
 	jsd_n = jsd / LOG_TWO
 	return jsd_n
+
+def get_slurm_job_id():
+	return os.getenv('SLURM_JOB_ID', default=None)
+
+def get_slurm_allocated_cores(job_id):
+	# cpus_on_node = os.getenv('SLURM_CPUS_ON_NODE', default=None)
+	# ComputeCanada does not set this on some systems
+	# use scontrol to get the number of CPUs allocated to the job
+	# int(os.getenv('SLURM_CPUS_PER_TASK', default=1))
+	try:
+		# Construct the command to get allocated CPUs
+		command = f"scontrol show job {job_id} | grep -oP 'NumCPUs=\\K\\d+'"
+		
+		# Run the command using subprocess
+		result = subprocess.run(command, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		
+		# Decode and strip the output to get the number of CPUs
+		cpus_allocated = result.stdout.decode('utf-8').strip()
+		return int(cpus_allocated)
+	except subprocess.CalledProcessError as e:
+		print(f"Error running command: {e}")
+
+def get_core_count():
+	""" 
+		get cpu core count, in case slurm env get one from scontrol
+	Returns:
+		_type_: _description_
+	"""
+	slurm_id = get_slurm_job_id()
+	if slurm_id is not None:
+		num_core = get_slurm_allocated_cores(slurm_id) 
+	else:
+		num_core = multiprocessing.cpu_count()
+	return num_core

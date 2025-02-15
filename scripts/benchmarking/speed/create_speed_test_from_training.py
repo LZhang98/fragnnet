@@ -7,7 +7,6 @@ import frag_gnn.utils.data_utils as data_utils
 from frag_gnn.utils.data_utils import par_apply_series
 from frag_gnn.utils.formula_utils import get_elements_set, parse_formula
 from frag_gnn.utils.frag_utils import ELEMENTS
-from frag_gnn.utils.spec_utils import prec_type_mass_diff, PREC_TYPES
 
 from frag_gnn.frag.compute_frags import (
 	MAX_NUM_NODES
@@ -59,7 +58,7 @@ if __name__ == "__main__":
 	
 	spec_df['nce'] = [[10,20,30] for _ in range(len(spec_df))]
 	spec_df['ace'] = [[10,20,30] for _ in range(len(spec_df))]
-	spec_df["prec_mz"] = spec_df['exact_mw'] + prec_type_mass_diff('[M+H]+')
+	spec_df["prec_mz"] = spec_df['exact_mw'] + PREC_TYPE_TO_MASS_DIFF['[M+H]+']
 
 	print(f"> selected {len(mol_df)} mol after filter")
 	print("> save mol df")

@@ -64,7 +64,7 @@ checkpoint_metric: val_cos_hun_epoch/mean
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler: True
 dynamic_batch_sampler_mode: frag_edge
 dynamic_batch_sampler_max: 400000
 pl_enable_progress_bar: True

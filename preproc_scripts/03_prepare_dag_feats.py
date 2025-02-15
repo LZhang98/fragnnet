@@ -320,7 +320,7 @@ if __name__ == "__main__":
 	parser.add_argument("--wandb_mode",type=str,default="online",choices=["online","offline","off"])
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
 	parser.add_argument("--compress_dags",type=booltype,default=True)
-	parser.add_argument("--wandb_run_name",type=str,required=True)
+	parser.add_argument("--wandb_run_name",type=str)
 	parser.add_argument("--save_dag",type=booltype,default=True)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 	parser.add_argument("--prec_types",nargs="+",default='any')
@@ -328,8 +328,11 @@ if __name__ == "__main__":
 	parser.add_argument("--frag_modes",nargs="+",default='any')
 	parser.add_argument("--ion_modes",nargs="+",default='any')
 	parser.add_argument("--use_cached_dag",type=booltype,default=False)
-	parse_formula
 	args = parser.parse_args()
+ 
+	# Check if --flag is True and --conditional-arg is missing
+	if args.wandb_mode != 'off' and args.wandb_run_name:
+		parser.error("--wandb_run_name is required when --wandb_mode is not off")
 
 	tqdm.pandas()
 

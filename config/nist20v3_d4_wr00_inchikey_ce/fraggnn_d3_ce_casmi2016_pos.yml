@@ -1,0 +1,95 @@
+wandb_name: nist20v3_fraggnn_d3_ce_casmi2016_pos
+wandb_tags:
+- retrieval
+- nist20
+- d3
+- wr00
+- inchikey
+- new_proc
+- fraggnn_d3
+- dynamic_sampler
+- new_metrics
+- nodemlp
+- oos_multiple_1
+- gaussian_renormalize
+- b256
+- vectorized_loss
+- lb32
+- preload
+- preprocess
+- new_no_edges
+- skip_extra_losses
+- binned_cosine_similarity
+- ce
+
+spec_fp: data/proc/nist20mona23v3/spec_df.pkl
+mol_fp: data/proc/nist20mona23v3/mol_df.pkl
+split_dp: data/split/nist20mona23v3_d4_wr00_inchikey_casmi2016
+frag_dp: data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
+num_depth: 4
+num_hs: 4
+frag_gnn_type: NodeMLP
+frag_params:
+  pyg_edge_feats: []
+  pyg_edges: False
+  pyg_bigraph: False
+  preload: True
+  preprocess: True
+spec_params:
+  merge: False
+  nce: True
+  merge_keep_ces: False
+  preprocess: True
+  inst_types:
+    - "FT"
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"  
+ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
+ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]
+ce_insert_merge: False # merge ce embedding
+ce_insert_size: 32
+mol_params:
+  preprocess: True
+
+train_batch_size: 256
+eval_batch_size: 256
+accumulate_grad_batches: 4
+gradient_clip_val: 5.0
+lr: 0.0004
+accelerator: gpu
+devices: 1
+min_epochs: 100
+max_epochs: 100
+lr_schedule: False
+debug_overfit: False
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
+mz_bin_res: 0.01
+mz_max: 1500.0
+sparse_cosine_similarity: True
+mol_pool_type: mean
+frag_pool_type: mean
+upload_checkpoints: True
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+auxiliary_scores:
+  - cos_sim
+eval_mz_bin_res:
+  - 0.01
+
+recision: 32
+use_tensor_float32: True
+automatic_optimization: False
+activation_checkpointing: False
+compile: True
+pin_memory: True
+loss_vectorized: True
+loss_batch_size: 32
+skip_extra_losses: True
+
+dynamic_batch_sampler: True
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 100000

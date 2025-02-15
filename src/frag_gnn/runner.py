@@ -407,7 +407,9 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			f"Dynamic batch sampler only support frag_node or frag_edge mode (given {config_d['dynamic_batch_sampler_mode']}) "
 		assert config_d['dynamic_batch_sampler_max'] is not None,\
 			"Dynamic batch sampler needs a max num"
-	
+	if  config_d["frag_gnn_type"] == "NodeMLP" and config_d["dynamic_batch_sampler"]:
+		assert config_d["dynamic_batch_sampler_mode"] == "frag_node",\
+      		f"Dynamic batch sampler can only be use with dynamic_batch_sampler_mode frag_node, not {config_d['dynamic_batch_sampler_mode']}"		
 	# setup dataloaders
 	logging.info("setup dataloader")
 	train_dl = init_dataloader(train_ds, config_d)

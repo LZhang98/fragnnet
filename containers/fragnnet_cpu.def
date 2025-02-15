@@ -3,7 +3,6 @@ From: ubuntu:22.04
 
 %arguments
 
-
 %post
     APT_INSTALL="apt-get install -y --no-install-recommends"
     PIP_INSTALL="python -m pip --no-cache-dir install --upgrade"
@@ -26,7 +25,7 @@ From: ubuntu:22.04
     curl -sS https://bootstrap.pypa.io/get-pip.py | python
 
     # install python packages
-    $PIP_INSTALL setuptools \
+    $PIP_INSTALL setuptools
     $PIP_INSTALL torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu 
     $PIP_INSTALL numpy==1.26.4
     $PIP_INSTALL rdkit-pypi==2022.9.4
@@ -54,3 +53,15 @@ From: ubuntu:22.04
     apt-get clean && \
     apt-get autoremove
     #rm -rf /var/lib/apt/lists/* /tmp/* ~/*
+
+%environment
+
+
+%runscript
+    # Default command to run when the container is executed
+    echo "Running inside Apptainer with virtual environment"
+    exec "$@"
+
+%labels
+    Author "fw"
+    Version "1.0"

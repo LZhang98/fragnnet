@@ -724,7 +724,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 							"(got {max_num}).")
 		if limited_by not in ['frag_node', 'frag_edge']:
 			raise ValueError("`limited_by` choice should be either "
-							f"'frag_node' or 'dag_edge' (got '{limited_by}').")
+							f"'frag_node' or 'frag_edge' (got '{limited_by}').")
 
 		if num_samples is None:
 			num_samples = len(data_source)
@@ -747,7 +747,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		assert len(self._data_meta) == 0, len(self._data_meta)
 		expected_total = 0
 		warning_msg = ""
-		for dataset_idx in range(len(self.data_source)):
+		for dataset_idx in tqdm(range(len(self.data_source)), desc="SpecMolFragDynamicBatchSampler:pre_load_batches"):
 			data = self.data_source[dataset_idx]
 			self._data_meta.append((data['frag_pyg'].num_nodes,data['frag_pyg'].num_edges))
 			n = self._data_meta[dataset_idx][0] if self._limited_by == 'frag_node' else self._data_meta[dataset_idx][1]

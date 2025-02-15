@@ -10,7 +10,7 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import pearsonr
-from frag_gnn.utils.misc_utils import get_ckpt_from_wandb
+from frag_gnn.utils.misc_utils import get_best_ckpt_from_wandb
 
 def get_metrics_data(list_ids:list):
     # fiter to get inchikey splits
@@ -35,7 +35,7 @@ def get_metrics_data(list_ids:list):
 
     all_metrics = []
     for run_id in list_ids:
-        ckpt_fp, _  = get_ckpt_from_wandb(saved_dp, run_id)
+        ckpt_fp, _  = get_best_ckpt_from_wandb(saved_dp, run_id)
     
         ckpt = torch.load(ckpt_fp)
         ot_metrics_types = [ 'train_mean_metrics',
