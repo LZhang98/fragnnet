@@ -1,4 +1,4 @@
-wandb_name: exp_fraggnn_d4_debug
+wandb_name: exp_fraggnn_d4_long
 wandb_group:
 wandb_tags:
 # seed
