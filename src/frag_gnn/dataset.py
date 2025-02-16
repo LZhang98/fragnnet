@@ -35,7 +35,7 @@ class BaseDataset(Dataset):
 		self.split = split
 		self.subsample_params = subsample_params
 		self.spec_params = spec_params
-		spec_df, mol_df, um_spec_df, split_df, id_key = BaseDataset._setup_dfs(
+		spec_df, mol_df, um_spec_df, split_df, id_key, ce_key = BaseDataset._setup_dfs(
 			spec_fp_or_df=spec_fp,
 			mol_fp_or_df=mol_fp,
 			split_dp=split_dp,
@@ -48,6 +48,7 @@ class BaseDataset(Dataset):
 		self.um_spec_df = um_spec_df
 		self.split_df = split_df
 		self.id_key = id_key
+		self.ce_key = ce_key
 		self._compute_counts()
 		self._setup_prec_type_to_idx()
 		self._setup_inst_type_to_idx()
@@ -88,9 +89,31 @@ class BaseDataset(Dataset):
 		assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 		
 		# covert ace and nce if there is data
-		spec_df.loc[:,"ace"] = seq_apply_df_rows(spec_df, fill_missing_ace)
-		spec_df.loc[:,"nce"] = seq_apply_df_rows(spec_df, fill_missing_nce)
-		
+		assert not (spec_params["ace"] and spec_params["nce"])
+		if spec_params["ace"]:
+			ce_key = "ace"
+			spec_df.loc[:,"ace"] = seq_apply_df_rows(spec_df, fill_missing_ace)
+		elif spec_params["nce"]:
+			ce_key = "nce"
+			spec_df.loc[:,"nce"] = seq_apply_df_rows(spec_df, fill_missing_nce)
+		else:
+			ce_key = None
+
+		if spec_params["test_ces"] is not None and ce_key is not None and "test" in splits:
+			test_split_fp = os.path.join(split_dp,"test_ids.csv")
+			test_split_df = pd.read_csv(test_split_fp)
+			orig_test_spec_df = spec_df[spec_df["spec_id"].isin(test_split_df["spec_id"])]
+			test_drop_ids = orig_test_spec_df[~(orig_test_spec_df[ce_key].isin(np.array(spec_params["test_ces"])))][["spec_id","group_id"]]
+			spec_df = spec_df[~(spec_df["spec_id"].isin(test_drop_ids["spec_id"]))]
+			new_test_spec_df = spec_df[spec_df["spec_id"].isin(test_split_df["spec_id"])]
+			orig_test_spec_count = orig_test_spec_df["spec_id"].nunique()
+			orig_test_group_count = orig_test_spec_df["group_id"].nunique()
+			new_test_spec_count = new_test_spec_df["spec_id"].nunique()
+			new_test_group_count = new_test_spec_df["group_id"].nunique()
+			print(f">> Dropping spectra unless {ce_key} is one of {spec_params['test_ces']}")
+			print(f"> Before drop: {orig_test_spec_count} spectra, {orig_test_group_count} groups")
+			print(f"> After drop: {new_test_spec_count} spectra, {new_test_group_count} groups")
+
 		# merge spectra
 		um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
 		if spec_params["merge"]:
@@ -121,7 +144,7 @@ class BaseDataset(Dataset):
 		mol_df = mol_df.reset_index(drop=True)
 		# use mol_id as index for speedy access
 		mol_df = mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
-		return spec_df, mol_df, um_spec_df, split_df, id_key
+		return spec_df, mol_df, um_spec_df, split_df, id_key, ce_key
 
 	def _compute_counts(self):
 
@@ -228,10 +251,10 @@ class BaseDataset(Dataset):
 			mass_diff = th.tensor([PREC_TYPE_TO_MASS_DIFF[prec_type]],dtype=th.float)
 			spec_data["spec_prec_mass_diff"] = mass_diff
 		if self.spec_params["nce"] or self.spec_params["ace"]:
+			assert self.ce_key is not None
 			assert (not self.spec_params["merge"]) or self.spec_params["merge_keep_ces"]
 			assert not (self.spec_params["ace"] and self.spec_params["nce"])
-			ce_key = "ace" if self.spec_params["ace"] else "nce"
-			ce = spec_entry[ce_key]
+			ce = spec_entry[self.ce_key]
 			if self.spec_params["merge"]:
 				assert self.spec_params["merge_keep_ces"]
 				assert isinstance(ce,list), type(ce)

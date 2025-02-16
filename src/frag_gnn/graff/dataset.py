@@ -59,7 +59,7 @@ class SpecMolAnnDataset(SpecMolDataset):
 		self._preprocess_spec(spec_pp_sd)
 		self._preprocess_mol(mol_pp_sd)
 		self._preprocess_ann(ann_pp_sd)
-	
+
 	@staticmethod
 	def get_data_dict_types():
 		return ["spec_pp_sd", "mol_pp_sd", "ann_pp_sd"]

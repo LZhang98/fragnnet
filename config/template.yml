@@ -36,6 +36,7 @@ spec_params:
   preprocess: False
   unique_id: True
   counts: True
+  test_ces:
 mol_params:
   smiles: True
   fingerprint: False
@@ -329,3 +330,4 @@ log_zero_fp16: null
 log_zero_fp32: null
 share_memory: False
 log_min: 0.000000001 # 1e-9
+eval_test_split: False
