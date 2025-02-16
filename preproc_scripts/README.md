@@ -26,11 +26,11 @@ python preproc_scripts/03_prepare_dag_feats.py --max_depth 4 --frag_dp data/frag
 
 Inchikey:
 
-`python preproc_scripts/04_prepare_split.py --split_key inchikey_s --primary_dsets nist20_hr --proc_dp data/proc/nist20mona23v3 --frag_dp data/frag/nist20mona23v3_d3_h4_isoFalse_nb3 --split_dp data/split/nist20mona23v3_d4_wr00_inchikey`
+`python preproc_scripts/04_prepare_split.py --split_key inchikey_s --primary_dsets nist20_hr --proc_dp data/proc/nist20mona23v3 --frag_dp data/frag/nist20mona23v3_d4_h4_isoFalse_nb3 --split_dp data/split/nist20mona23v3_d4_wr00_inchikey`
 
 Scaffold:
 
-`python preproc_scripts/04_prepare_split.py --split_key scaffold --primary_dsets nist20_hr --proc_dp data/proc/nist20mona23v3 --frag_dp data/frag/nist20mona23v3_d3_h4_isoFalse_nb3 --split_dp data/split/nist20mona23v3_d4_wr00_scaffold`
+`python preproc_scripts/04_prepare_split.py --split_key scaffold --primary_dsets nist20_hr --proc_dp data/proc/nist20mona23v3 --frag_dp data/frag/nist20mona23v3_d4_h4_isoFalse_nb3 --split_dp data/split/nist20mona23v3_d4_wr00_scaffold`
 
 ## Step 5: set up a training run
 

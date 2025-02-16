@@ -1190,7 +1190,6 @@ class SpectrumPL(pl.LightningModule):
 
 	def on_test_epoch_end(self):
 
-		import pdb; pdb.set_trace()
 		# consolidate results
 		self._consolidate_results("test")
 		# reset

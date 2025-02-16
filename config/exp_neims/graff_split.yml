@@ -8,12 +8,12 @@ seed: 397623
 # data stuff
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
+split_dp: data/split/graff
 spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: False #True
+  preprocess: True
   test_ces:
    - 20
    - 35
@@ -24,7 +24,7 @@ mol_params:
   fingerprint_maccs: True
   fingerprint: True
   pyg: False
-  preprocess: False #True
+  preprocess: True
 frag_params:
   pyg: False
 
@@ -58,8 +58,8 @@ lr: 0.0004006
 weight_decay: 0.0000001
 accelerator: gpu
 devices: 1
-min_epochs: 1 #100
-max_epochs: 1 #100
+min_epochs: 100
+max_epochs: 100
 lr_schedule: True
 lr_decay_rate: 0.7224
 lr_warmup_steps: 1000
@@ -72,6 +72,7 @@ auxiliary_scores:
 - cos_sim
 eval_mz_bin_res:
 - 0.01
+- 0.1
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True

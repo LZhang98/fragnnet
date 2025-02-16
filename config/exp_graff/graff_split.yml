@@ -8,7 +8,7 @@ seed: 397623
 # data stuff
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
+split_dp: data/split/graff
 ann_fp: data/proc/nist20mona23v3/ann_df.pkl
 frag_params:
   pyg: False
@@ -26,7 +26,7 @@ mol_params:
   graff: True
   preprocess: True
 ann_params:
-  max_isotope: 0
+  max_isotope: 2
   library_size: 10000
   num_eigs: 8
   filter_peaks: False
@@ -85,7 +85,9 @@ auxiliary_scores:
 - cos_sim
 eval_mz_bin_res:
 - 0.01
+- 0.1
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
 compile: True
+eval_test_split: True
