@@ -604,7 +604,7 @@ class SpectrumPL(pl.LightningModule):
 			size=[self.hparams.max_epochs+1],
 			generator=train_dl_generator)
 
-	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs,filter_spec=False,bin_spec=False,transform_spec=False):
+	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs,filter_spec=False,bin_spec=False,transform_spec=False,normalize_spec=False):
 		# assumes spec_ints are not logged, or transformed in any way
 		# does not assume any particular kind of normalization
 
@@ -627,8 +627,9 @@ class SpectrumPL(pl.LightningModule):
 			spec_ints = batched_mf1000_normalize(spec_ints, spec_batch_idxs)
 			# transform
 			spec_ints = self.ints_transform_func(spec_ints)
-		# renormalize
-		spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
+		if normalize_spec:
+			# renormalize
+			spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
 		return spec_mzs, spec_ints, spec_batch_idxs
 
 	def preproc_spec(
@@ -644,13 +645,15 @@ class SpectrumPL(pl.LightningModule):
 		if log_in:
 			spec_ints = spec_ints.exp()
 		if train and pred:
+			# if you normalize here, you would mess up some losses (i.e. OOS)
 			spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
 				spec_mzs,
 				spec_ints,
 				spec_batch_idxs,
 				filter_spec=False,
 				bin_spec=self.binned_loss,
-				transform_spec=False
+				transform_spec=False,
+				normalize_spec=False
 			)
 		elif train and (not pred):
 			spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
@@ -659,11 +662,13 @@ class SpectrumPL(pl.LightningModule):
 				spec_batch_idxs,
 				filter_spec=True,
 				bin_spec=self.binned_loss,
-				transform_spec=True
+				transform_spec=True,
+				normalize_spec=True
 			)
 		elif (not train) and pred:
 			# untransform
 			spec_ints = self.ints_untransform_func(spec_ints, spec_batch_idxs)
+			# normalize (note that this messes up OOS stuff, which is fine for eval...)
 			spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
 		elif (not train) and (not pred):
 			spec_mzs, spec_ints, spec_batch_idxs =  self._preproc_spec(
@@ -672,10 +677,11 @@ class SpectrumPL(pl.LightningModule):
 				spec_batch_idxs,
 				filter_spec=True,
 				bin_spec=False,
-				transform_spec=False
+				transform_spec=False,
+				normalize_spec=True
 			)
 		if log_out:
-				spec_ints = safelog(spec_ints, eps=self.hparams.log_min)
+			spec_ints = safelog(spec_ints, eps=self.hparams.log_min)
 		return spec_mzs, spec_ints, spec_batch_idxs
 
 	def predict_step(self,**batch_kwargs):
