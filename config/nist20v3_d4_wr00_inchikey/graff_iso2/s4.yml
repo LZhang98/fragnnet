@@ -1,13 +1,14 @@
-wandb_name: nist20v3-1_inchikey_graff_s1
-wandb_group: nist20v3-1_inchikey_graff
+wandb_name: nist20v3_inchikey_graff_iso2_s4
+wandb_group: nist20v3_inchikey_graff_iso2
 wandb_tags:
 - splits
-- nist20
+- nist20v3
 - d4
 - wr00
 - inchikey
 - new_proc
 - graff
+- max_isotope_2
 - new_metrics
 - ce_embed
 - merged
@@ -15,12 +16,11 @@ wandb_tags:
 - gaussian_renormalize
 - e5o130br
 - no_auxiliary_scores
-- preload
 - preprocess
-- s1
+- s4
 
 # seed
-seed: 634340
+seed: 132548
 
 # data stuff
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
@@ -39,7 +39,7 @@ mol_params:
   graff: True
   preprocess: True
 ann_params:
-  max_isotope: 0
+  max_isotope: 2
   library_size: 10000
   num_eigs: 8
   filter_peaks: False

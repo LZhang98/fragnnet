@@ -2,7 +2,7 @@ wandb_name: nist20v3_scaffold_graff_s0
 wandb_group: nist20v3_scaffold_graff
 wandb_tags:
 - splits
-- nist20
+- nist20v3
 - d4
 - wr00
 - scaffold

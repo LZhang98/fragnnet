@@ -1,8 +1,8 @@
-wandb_name: nist20v3_inchikey_graff_isot_s1
-wandb_group: nist20v3_inchikey_graff_isot
+wandb_name: nist20v3-1_inchikey_graff_iso2_s1
+wandb_group: nist20v3-1_inchikey_graff_iso2
 wandb_tags:
 - splits
-- nist20
+- nist20v3
 - d4
 - wr00
 - inchikey

@@ -102,12 +102,14 @@ if __name__ == "__main__":
 	model_type_to_name = {
 		"fraggnn_d3": "FraGNNet-D3",
 		"fraggnn_d4": "FraGNNet-D4",
+		"fraggnn_d4_long": "FraGNNet-D4-Long",
+		"fraggnn_d3_long": "FraGNNet-D3-Long",
 		"neims": "NEIMS",
 		"massformer": "MassFormer",
 		"iceberg_inten_100": "Iceberg",
 		"iceberg_inten_all": "Iceberg-ADV",
-		"iceberg_inten3_100": "Iceberg*",
-		"iceberg_inten3_all": "Iceberg*-ADV",
+		"iceberg_inten3_100": "Iceberg-Fix",
+		"iceberg_inten3_all": "Iceberg-Fix-ADV",
 	}
 
 	latex_df = stats_df.copy()
