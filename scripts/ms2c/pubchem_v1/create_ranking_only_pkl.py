@@ -2,10 +2,8 @@
 import os
 import pandas as pd
 import argparse
-import numpy as np
 from tqdm import tqdm
 import glob
-from sklearn.metrics import ndcg_score
 
 LAST_RANK = 51
 LAST_SCORE = 0.0

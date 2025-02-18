@@ -17,6 +17,7 @@ import hashlib
 from threading import Event
 from frag_gnn.utils.ms2c_utils import MolCandidateDB
 import numpy as np
+import argparse
 
 def tqdm_hook(t):
 	"""
@@ -144,14 +145,18 @@ def fix_type(pickle_fp):
 
 if __name__ == "__main__":
 
-	data_dir = "./data/ms2c/pubchem"
-	print(f"> Data dir: {data_dir}")
-	os.makedirs(data_dir,exist_ok=True)
-	os.makedirs(f"{data_dir}/raw",exist_ok=True)
-	os.makedirs(f"{data_dir}/pickle",exist_ok=True)
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--data_dp',  type=str, default="./data/ms2c/pubchem_v1")
+	args = parser.parse_args()
+	data_dp = args.data_dp
+ 
+	print("> Data dir: {data_dir}")
+	os.makedirs(data_dp,exist_ok=True)
+	os.makedirs(f"{data_dp}/pubchem_raw",exist_ok=True)
+	os.makedirs(f"{data_dp}/pubchem_pickle",exist_ok=True)
 
 	data_l = []
-	print(f"> Get SDF data from Pubchem")
+	print("> Get SDF data from Pubchem")
 	pubchem_sdf_basurl = "https://ftp.ncbi.nlm.nih.gov/pubchem/Compound/CURRENT-Full/SDF/"
 	fp = urllib.request.urlopen(pubchem_sdf_basurl)
 	mybytes = fp.read()
@@ -179,8 +184,8 @@ if __name__ == "__main__":
 		starmap_arg = []
 		for sdf_filename in sdf_names:
 			sdf_url = f"{pubchem_sdf_basurl}{sdf_filename}.gz" 
-			sdf_fp = f"{data_dir}/raw/{sdf_filename}.gz"
-			pickle_fp = f"{data_dir}/pickle/{sdf_filename}.pickle.gz"
+			sdf_fp = f"{data_dp}/raw/{sdf_filename}.gz"
+			pickle_fp = f"{data_dp}/pickle/{sdf_filename}.pickle.gz"
 			starmap_arg.append((sdf_url, sdf_fp, pickle_fp, force_redownload, force_reprocess))
 
 		list(tqdm(mp_pool.imap(process_sdf_imap,starmap_arg), total = len(starmap_arg), desc="Process Pubchem SDFs", position=0))
@@ -188,12 +193,12 @@ if __name__ == "__main__":
 	signal.signal(signal.SIGINT, og_sigint_handler)
 	signal.signal(signal.SIGTERM, og_sigterm_handler)
 
-	db_file  = f"{data_dir}/pubchem.sqlite"
+	db_file  = f"{data_dp}/pubchem.sqlite"
 	with MolCandidateDB(db_file) as db:
 		db._go_fast_at_all_cost()
 		db.create_tables()
 		for sdf_filename in tqdm(sdf_names, desc = "Build DB"):
-			pickle_fp = f"{data_dir}/pickle/{sdf_filename}.pickle.gz"
+			pickle_fp = f"{data_dp}/pickle/{sdf_filename}.pickle.gz"
 			df = pd.read_pickle(pickle_fp, "gzip")
 			df = df.astype({'cid':int, 'inchikey':'string', 'exact_mass':float, 'formula':'string','smiles':'string'})
 			db.add_compounds_from_df(df)

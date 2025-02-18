@@ -74,7 +74,9 @@ s2 - 444303
 s3 - 103976
 s4 - 132548
 
-# How Prepare MSGym Data
+## How Run MSGym MS2C
+
+### How Prepare MSGym Data
 
 ```bash
 # for sim challenege
@@ -125,9 +127,25 @@ python preproc_scripts/04_prepare_split.py \
   --predefined_dsetid_csv data/df/ms_gym_fold.csv data/df/ms_gym_extra_fold.csv
 ```
 
-# How Prepare Pubchem MS2C Data
+# How Run Pubchem MS2C Tasks
 
-## Create Pubchem MS2C Candidates Set
+PubChem MS2C will use validation functions instead of testing functions. The idea is to supply ground truth spectra to every validation prediction call (with different molecules). This would save some code by running similarity calculations separately. Current setup uses `cos_sim@0.01` and `cos_hun`. * NOTE current setup only works with merged spectrum and single adduct type, it also relies on this assumption to work. Code change is required when we extend this to multiple adduct and engeries * .
+
+## How Prepare Pubchem MS2C Data
+
+This is only required if you does not have all the files before run ms2c prediction.
+
+### Create Pubchem MS2C Pubchem Database
+
+This script will download *latest* sdf from pubchem and process it  into a sqlite, only run this when you don't have an existing pubchem sqlite file.
+
+``` bash
+python preproc_scripts/pubchem_ms2c/01_prepare_pubchem.py  
+```
+
+### Create Pubchem MS2C Candidates Set
+
+This script is used to create ms2c_candidates from a given split. We are using `split_type=test` for all our experiments. Set `include_sanity=True` to have a sanity check set, sanity check set is roughly equal to `split_type` only set. This is useful to check if there are miss-aligenment between data and/or there is an issue with libaray. It is also very useful to debug compute related issues such as numeric issue on  compute canada system libaray.  
 
 ```bash
 # inchikey
@@ -143,9 +161,19 @@ python preproc_scripts/pubchem_ms2c/02_prepare_ms2c_candidates.py  \
  --split_type=test
 ```
 
-## Create Pubchem MS2C Proc
+### Create Pubchem MS2C Proc
+
+From canidates, we will create proc for `c2ms` prediction.
 
 ```bash
+# pubchem ms2c for scaffold split
+python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
+ --candidate_pkl_fp=./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz \
+ --proc_dp=./data/proc/nist20mona23v3 \
+ --split_dp=./data/split/nist20mona23v3_d4_wr00_inchikey \
+ --split_type=test \
+ --ms2c_data_dp=./data/ms2c/pubchem/proc
+
 # pubchem ms2c for scaffold split
 python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
  --candidate_pkl_fp=./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz \
@@ -155,11 +183,95 @@ python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
  --ms2c_data_dp=./data/ms2c/pubchem/proc
 ```
 
-## Create Pubchem MS2C DAGs
+## Run C2MS prediction for MS2C tasks
+
+### Create Pubchem MS2C DAGs for FraGNNet
 
 ```bash
 python preproc_scripts/pubchem_ms2c/04_run_ms2c_frag_gen.py \
  --frag_dp=pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50  \
  --proc_dp=data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50 \
  --max_depth=3
+```
+
+### Run Prediction for Fragnnet and other models
+
+If you wish to run `fragnnet`,`nemis`,`massformer` predict and provide wandb run id, following script will download best checkpoint from given run id and perform prediction. Model type is determined from checkpoint automatically.
+
+```bash
+python scripts/ms2c/pubchem_v1/run_ms2c_predict_pubchem.py \
+     --device=cpu\
+    --save_fp=save_fp \
+    --magma_dp=magma_dp \
+    --iceberg_gen_wandb_run_id=i7k9gc3d \
+    --iceberg_intern_wandb_run_id=c8iwu7il \
+    --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+```
+
+In case that wandb is not accessaible, you can also supply following script wil checkpoint file.
+
+```bash
+python scripts/ms2c/pubchem_v1/run_ms2c_predict_pubchem.py \
+    --device=cpu\
+    --save_fp=save_fp\
+    --magma_dp=magma_dp\
+    --iceberg_gen_ckpt_fp=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d.ckpt\
+    --iceberg_intern_ckpt_fp=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s0_c8iwu7il.ckpt\
+    --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+```
+
+### Run Prediction for Iceberg models
+
+If you wish to run `iceberg gen` and `iceberg predict` and provide wandb run id, following script will download best checkpoint from given run id and perform prediction.  
+
+```bash
+  python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
+    --device=cpu \
+    --save_fp=save_fp \
+    --magma_dp=magma_dp \
+    --iceberg_gen_wandb_run_id=i7k9gc3d \
+    --iceberg_intern_wandb_run_id=c8iwu7il \
+    --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+```
+
+In case that wandb is not accessaible, you can also supply following script wil checkpoint file.
+
+```bash
+  python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
+    --device=cpu\
+    --save_fp=save_fp\
+    --magma_dp=magma_dp\
+    --iceberg_gen_ckpt_fp=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d.ckpt\
+    --iceberg_intern_ckpt_fp=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s0_c8iwu7il.ckpt\
+    --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+```
+
+## Run Evalution
+
+### Create Rank only pkl [Optional]
+
+This is use to reduce size of pkl to read, in case we don't care about predicted ms/ms
+
+```bash
+    python scripts/ms2c/pubchem_v1/create_ranking_only_pkl.py \
+      --save_dp=./data/ms2c/pubchem/run_240925/benchmark/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50_rank_only
+      --predicted_dp="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+```
+
+### Create Ranking Stats
+
+```bash
+    python scripts/ms2c/pubchem_v1/eval_pubchem_retrieval_val.py \
+      --save_dp=./data/ms2c/pubchem/run_240925/benchmark/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+      --proc_dp=./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+      --predicted_dp="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+```
+
+### Create NDCG Stats
+
+```bash
+    python scripts/ms2c/pubchem_v1/eval_ndcg.py \
+      --save_dp=./data/ms2c/pubchem/run_240925/benchmark/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+      --proc_dp=./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+      --predicted_dp="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
 ```

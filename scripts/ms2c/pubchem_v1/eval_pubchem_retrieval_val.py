@@ -17,10 +17,6 @@ def get_args():
 	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50")
 	parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50_ranking_only")
  
-	#parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/run_240925/benchmark/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
-	#parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/run_240925/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
-	#parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
- 
 	args = parser.parse_args()
 	return args
 
@@ -65,24 +61,24 @@ if __name__ == "__main__":
 		stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x['target_inchikey_s'] == x['inchikey_s']], include_groups=False)
 
 		#for ncdg_p in [5,10,50]:
-		stats_df[f'ndcg_linear_cos_sim_0.01'] = predicted_spec_df.groupby('target_mol_id').apply(
+		stats_df['ndcg_linear_cos_sim_0.01'] = predicted_spec_df.groupby('target_mol_id').apply(
 								lambda x: ndcg_score(x['linear_rel_score'].to_numpy()[np.newaxis, :], \
 											x['cos_sim_0.01'].to_numpy()[np.newaxis, :], \
 											k = ncdg_p
 								), include_groups=False).to_numpy()
 
-		stats_df[f'ndcg_exp_cos_sim_0.01'] = predicted_spec_df.groupby('target_mol_id').apply(
+		stats_df['ndcg_exp_cos_sim_0.01'] = predicted_spec_df.groupby('target_mol_id').apply(
 								lambda x: ndcg_score(x['exp_rel_score'].to_numpy()[np.newaxis, :], \
 											x['cos_sim_0.01'].to_numpy()[np.newaxis, :], \
 											k = ncdg_p
 								), include_groups=False).to_numpy()
 	
-		stats_df[f'ndcg_linear_cos_hun'] = predicted_spec_df.groupby('target_mol_id').apply(
+		stats_df['ndcg_linear_cos_hun'] = predicted_spec_df.groupby('target_mol_id').apply(
 								lambda x: ndcg_score(x['linear_rel_score'].to_numpy()[np.newaxis, :], \
 											x['cos_hun'].to_numpy()[np.newaxis, :], \
 											k = ncdg_p
 								), include_groups=False).to_numpy()
-		stats_df[f'ndcg_exp_cos_hun'] = predicted_spec_df.groupby('target_mol_id').apply(
+		stats_df['ndcg_exp_cos_hun'] = predicted_spec_df.groupby('target_mol_id').apply(
 								lambda x: ndcg_score(x['exp_rel_score'].to_numpy()[np.newaxis, :], \
 											x['cos_hun'].to_numpy()[np.newaxis, :], \
 											k = ncdg_p
