@@ -36,7 +36,7 @@ SAVE_FP=nist20v3_inchikey_iceberg_inten_100_s${task_id}.pkl
 MAGMA_DP=pred_magma_nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
 ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
 ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s${task_id}_${iceberg_inten_run_id}.ckpt
-PROC_DP=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+PROC_DP=./data/ms2c/pubchem/${RUN_NAME}/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
 
 MAGMA_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/magma
 PREDICTED_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/predicted
@@ -65,7 +65,7 @@ cp setup.py ${SLURM_TMPDIR}/
 # install frag-gnn
 apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif  pip install -I . --user
 
-# run dag gen
+# run iceberg gen
 apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
         --iceberg_gen_device=cpu \

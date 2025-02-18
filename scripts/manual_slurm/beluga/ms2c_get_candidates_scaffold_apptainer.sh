@@ -24,7 +24,11 @@ cd /home/feiw/feiw/frag-gnn
 
 SPLIT_DP=data/split/nist20mona23v3_d4_wr00_scaffold
 PROC_DP=./data/proc/nist20mona23v3
+DB_FP=./data/ms2c/pubchem/pubchem.sqlite
+
 RUN_NAME=run_250218
+CANDIDATE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/candidates
+PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
@@ -33,8 +37,9 @@ mkdir -p ${SLURM_TMPDIR}/proc
 # copy file to slrum local dir
 rsync -av ${PROC_DP}/ ${SLURM_TMPDIR}/proc 
 echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/proc/)
-rysnc -av ${SPLIT_DP}/ ${SLURM_TMPDIR}/split 
+rsync -av ${SPLIT_DP}/ ${SLURM_TMPDIR}/split 
 echo list file in local split dir: $(ls ${SLURM_TMPDIR}/split/)
+rsync -av ${DB_FP} ${SLURM_TMPDIR}/pubchem.sqlite
 
 # copy apptainer container
 module load apptainer/1.2.4
@@ -56,6 +61,7 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --split_dp=split \
         --proc_dp=proc \
         --split_type=test \
+        --db_file=./pubchem.sqlite \
         --candidate_dp=candidates
 
 # run 03_perpare_ms2c_mol_and_spec_df
@@ -68,11 +74,11 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --ms2c_data_dp=ms2c_data_dp
 
 cd ${SLURM_TMPDIR}
-mkdir -p /scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/candidates
-rsync -av  candidates /scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/candidates
+mkdir -p ${CANDIDATE_DP}$
+rsync -av  ${CANDIDATE_DP}$
 
-mkdir -p /scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc
-rsync -av  proc /scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc
+mkdir -p ${PROC_DP}$
+rsync -av  proc ${PROC_DP}$
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
