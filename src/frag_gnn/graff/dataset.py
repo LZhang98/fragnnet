@@ -81,7 +81,9 @@ class SpecMolAnnDataset(SpecMolDataset):
 			um_spec_df.copy(),
 			ann_df.copy(), 
 			self.ann_params["library_size"],
-			self.ann_params["max_isotope"])
+			self.ann_params["max_isotope"],
+			huge_mz_diff_threshold=self.ann_params["huge_mz_diff_threshold"],
+			big_mz_diff_ppm_threshold=self.ann_params["big_mz_diff_ppm_threshold"])
 		self.library_df = library_df
 		# setup mzs stuff
 		self.library_mzs = th.as_tensor(library_df["mzs"].values, dtype=th.float32)

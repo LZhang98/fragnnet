@@ -1,5 +1,5 @@
-wandb_name: nist20v3-1_scaffold_graff_iso2_s2
-wandb_group: nist20v3-1_scaffold_graff_iso2
+wandb_name: nist20v3-1_scaffold_graff3_long_s0
+wandb_group: nist20v3-1_scaffold_graff3_long
 wandb_tags:
 - splits
 - nist20v3
@@ -17,10 +17,12 @@ wandb_tags:
 - e5o130br
 - no_auxiliary_scores
 - preprocess
-- s2
+- s0
+- long
+- big_mz_10ppm
 
 # seed
-seed: 444303
+seed: 397623
 
 # data stuff
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
@@ -33,11 +35,11 @@ spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: True
+  preprocess: False #True
 mol_params:
   pyg: False
   graff: True
-  preprocess: True
+  preprocess: False #True
 ann_params:
   max_isotope: 2
   library_size: 10000
@@ -48,7 +50,9 @@ ann_params:
     - train
     - val
     - test
-  preprocess: True
+  huge_mz_diff_threshold: 0.1
+  big_mz_diff_ppm_threshold: 0.00001
+  preprocess: False #True
 
 # model stuff
 model_type: graff
@@ -85,8 +89,8 @@ lr: 0.000254
 weight_decay: 0.000001
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 200
+max_epochs: 200
 lr_schedule: True
 lr_decay_rate: 0.74
 lr_warmup_steps: 1000

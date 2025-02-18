@@ -1,5 +1,5 @@
-wandb_name: nist20v3-1_inchikey_graff_iso2_s2
-wandb_group: nist20v3-1_inchikey_graff_iso2
+wandb_name: nist20v3-1_inchikey_graff2_s4
+wandb_group: nist20v3-1_inchikey_graff2
 wandb_tags:
 - splits
 - nist20v3
@@ -17,10 +17,10 @@ wandb_tags:
 - e5o130br
 - no_auxiliary_scores
 - preprocess
-- s2
+- s4
 
 # seed
-seed: 444303
+seed: 132548
 
 # data stuff
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl

@@ -98,6 +98,8 @@ ann_params:
   library_splits:
     - train
   preprocess: False
+  huge_mz_diff_threshold: 0.1
+  big_mz_diff_ppm_threshold:
 # model
 model_type: frag_gnn
 num_depth: 5
