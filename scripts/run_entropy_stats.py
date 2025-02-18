@@ -22,7 +22,7 @@ if __name__ == "__main__":
 	parser.add_argument("--mode", type=str, choices=["baseline","posfn","negfn","mix"], default="baseline")
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test"])
 	parser.add_argument("--split_type", type=str, default="scaffold", choices=["scaffold","inchikey"])
-	parser.add_argument("--output_dp", type=str, default="inference_outputs")
+	parser.add_argument("--output_dp", type=str, default="inference_outputs/entropyv3")
 	parser.add_argument("--overwrite", type=booltype, default=False)
 	args = parser.parse_args()
 
@@ -41,10 +41,14 @@ if __name__ == "__main__":
 	# load configs
 	print(">>> Loading configs")
 	template_fp = "config/template.yml"
-	custom_fp = f"config/entropyv2/{split_type}/{model_type}_script_config.yml"
+	custom_fp = f"config/entropyv3/{split_type}/{model_type}_script_config.yml"
 	config_d = load_config(template_fp, custom_fp)
+	config_d["auxiliary_scores"] = ["cos_sim","cos_hun","true_oos_prob"]
+	config_d["skip_extra_losses"] = False
+	config_d["compile"] = False
 
 	if debug:
+		raise NotImplementedError
 		print(">> debug mode, using small dataset")
 		config_d["spec_fp"] = "data/proc/debug_smallv2/spec_df.pkl"
 		config_d["mol_fp"] = "data/proc/debug_smallv2/mol_df.pkl"
@@ -55,8 +59,15 @@ if __name__ == "__main__":
 		batch_cutoff = int(1e6)
 
 	vals_fp = os.path.join(output_dp,"vals.pkl")
+	sims_fp = os.path.join(output_dp,"sims.pkl")
+	entropies_fp = os.path.join(output_dp,"entropies.pkl")
 
-	if not os.path.isfile(vals_fp) or (os.path.isfile(vals_fp) and args.overwrite):
+	if os.path.isfile(sims_fp) and os.path.isfile(entropies_fp) and not args.overwrite:
+
+		# don't load anything here
+		pass
+
+	elif not os.path.isfile(vals_fp) or (os.path.isfile(vals_fp) and args.overwrite):
 
 		api = wandb.Api(timeout=30)
 		
@@ -64,7 +75,7 @@ if __name__ == "__main__":
 		
 			runs = api.runs(
 					path="frag-gnn/frag-gnn",
-					filters={"group":f"entropyv2_{split_type}_{model_type}_{mode}_ens"})
+					filters={"group":f"entropyv3_{split_type}_{model_type}_{mode}_ens"})
 			model_to_run_id = {run.name: run.id for run in runs}
 		
 		else:
@@ -78,7 +89,7 @@ if __name__ == "__main__":
 			for smode, seed_range in mode_to_seed_range.items():
 				runs = api.runs(
 						path="frag-gnn/frag-gnn",
-						filters={"group":f"entropyv2_{split_type}_{model_type}_{smode}_ens"})
+						filters={"group":f"entropyv3_{split_type}_{model_type}_{smode}_ens"})
 				for run in runs:
 					for i in range(seed_range[0],seed_range[1]):
 						if f"s{i:02d}" in run.tags:
@@ -128,8 +139,6 @@ if __name__ == "__main__":
 
 	# compute ensemble distributions
 	print(">>> Cosine Similarity")
-
-	sims_fp = os.path.join(output_dp,"sims.pkl")
 
 	if not os.path.isfile(sims_fp) or overwrite:
 
@@ -219,16 +228,14 @@ if __name__ == "__main__":
 		ens_cos_hun = sims_d["ens_cos_hun"]
 
 	print(">> average individual")
-	print(f"> cos_sim_0.01: {ind_cos_sim_bin.mean()}")
-	print(f"> cos_hun: {ind_cos_hun.mean()}")
+	print(f"> cos_sim_0.01: {ind_cos_sim_bin.mean()} +/- {ind_cos_sim_bin.mean(dim=1).std()}")
+	print(f"> cos_hun: {ind_cos_hun.mean()} +/- {ind_cos_hun.mean(dim=1).std()}")
 
 	print(">> ensemble")
 	print(f"> cos_sim_0.01: {ens_cos_sim_bin.mean()}")
 	print(f"> cos_hun: {ens_cos_hun.mean()}")
 
 	print(">>> Entropy")
-
-	entropies_fp = os.path.join(output_dp,"entropies.pkl")
 
 	if not os.path.isfile(entropies_fp) or overwrite:
 
@@ -353,13 +360,13 @@ if __name__ == "__main__":
 		ens_nb_formula_node_ne = entropies_d["ens_nb_formula_node_ne"]
 
 	print(">> average individual")
-	print(f"> formula_node_e: {ind_formula_node_e.mean()}")
-	print(f"> formula_node_ne: {ind_formula_node_ne.mean()}")
-	print(f"> nb_formula_node_e: {ind_nb_formula_node_e.mean()}")
-	print(f"> nb_formula_node_ne: {ind_nb_formula_node_ne.mean()}")
+	# print(f"> formula_node_e: {ind_formula_node_e.mean()} +/- {ind_formula_node_e.mean(dim=1).std()}")
+	print(f"> formula_node_ne: {ind_formula_node_ne.mean()} +/- {ind_formula_node_ne.mean(dim=1).std()}")
+	# print(f"> nb_formula_node_e: {ind_nb_formula_node_e.mean()} +/- {ind_nb_formula_node_e.mean(dim=1).std()}")
+	print(f"> nb_formula_node_ne: {ind_nb_formula_node_ne.mean()} +/- {ind_nb_formula_node_ne.mean(dim=1).std()}")
 
 	print(">> ensemble")
-	print(f"> formula_node_e: {ens_formula_node_e.mean()}")
+	# print(f"> formula_node_e: {ens_formula_node_e.mean()}")
 	print(f"> formula_node_ne: {ens_formula_node_ne.mean()}")
-	print(f"> nb_formula_node_e: {ens_nb_formula_node_e.mean()}")
+	# print(f"> nb_formula_node_e: {ens_nb_formula_node_e.mean()}")
 	print(f"> nb_formula_node_ne: {ens_nb_formula_node_ne.mean()}")

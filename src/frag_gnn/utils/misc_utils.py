@@ -352,6 +352,36 @@ def scatter_argmax(src,index,other_index,dim_size=None,return_max=False):
 	else:
 		return amx
 
+def scatter_argtopk(src,index,other_index,k,dim_size=None,return_max=False):
+
+	assert k > 0
+	assert th.is_floating_point(src)
+	src = src.detach().clone()
+	counts = scatter_reduce(
+		src=th.ones_like(src, dtype=th.long),
+		index=index,
+		reduce="sum",
+		dim_size=th.max(index)+1
+	)
+	# print(counts)
+	amxs, mxs = [], []
+	for i in range(k):
+		# print(src, index)
+		amx, mx = scatter_argmax(src,index,other_index,dim_size=dim_size,return_max=True)
+		mask = (th.arange(amx.shape[0], device=index.device)[index] == index) & (amx[index] == other_index)
+		src[mask] = -float("inf") #LOG_ZERO(src.dtype)
+		# don't double count
+		# amx[th.isinf(mx)] = -1
+		amx[counts <= i] = -1
+		amxs.append(amx)
+		mxs.append(mx)
+	amxs = th.stack(amxs,dim=1)
+	mxs = th.stack(mxs,dim=1)
+	if return_max:
+		return amxs, mxs
+	else:
+		return amxs
+
 def scatter_reduce(src,index,reduce,dim=0,dim_size=None,default=0.,include_self=True):
 
 	if reduce == "mean" and include_self:
@@ -391,6 +421,39 @@ def batchwise_lse(xs, batch_idxs):
 	for b in range(batch_size):
 		lses[b] = th.logsumexp(xs[batch_idxs==b],0)
 	return lses
+
+def dedup_peaks(mzs, logprobs, batch_idxs):
+
+	b_mzs = th.stack([batch_idxs.type(mzs.dtype),mzs],dim=1)
+	dd_b_mzs, dd_logprobs, dd_batch_idxs = dedup(b_mzs, *[("lse", logprobs), ("amax", batch_idxs)])
+	dd_b_mzs = dd_b_mzs[:,1]
+	return dd_b_mzs, dd_logprobs, dd_batch_idxs
+
+def dedup(keys, *agg_vals_tups, dim=0):
+
+	un_keys, inv_keys = th.unique(keys, dim=dim, return_inverse=True)
+	res = [un_keys]
+	for agg_vals_tup in agg_vals_tups:
+		agg, vals = agg_vals_tup
+		assert agg in ["lse", "sum", "min", "mean", "amax"]
+		assert vals.shape[0] == keys.shape[0]
+		if agg == "lse":
+			un_vals = scatter_logsumexp(
+				vals, 
+				inv_keys, 
+				dim_size=un_keys.shape[0]
+			)
+		else:
+			un_vals = scatter_reduce(
+				vals,
+				inv_keys,
+				reduce=agg,
+				dim_size=un_keys.shape[0],
+				include_self=False
+			)
+		res.append(un_vals)
+	res = tuple(res)
+	return res
 
 def to_cpu(data_d, non_blocking=True, detach=False):
 
@@ -539,6 +602,25 @@ class NestedDefaultDict(defaultdict):
 	def __repr__(self):
 		return repr(dict(self))
 
+
+def kl_div(x_logprobs, y_logprobs):
+
+	return th.sum(th.exp(x_logprobs)*(x_logprobs-y_logprobs), dim=0)
+
+def js_div(x_ids, x_logprobs, y_ids, y_logprobs):
+
+	assert th.unique(x_ids).shape[0] == x_ids.shape[0]
+	assert th.unique(y_ids).shape[0] == y_ids.shape[0]
+	z_ids, z_inv_idxs = th.unique(th.cat([x_ids, y_ids], dim=0), return_inverse=True)
+	x_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(x_logprobs.dtype), dtype=x_logprobs.dtype)
+	y_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(y_logprobs.dtype), dtype=y_logprobs.dtype)
+	x_logprobs_p[z_inv_idxs[:x_ids.shape[0]]] = x_logprobs
+	y_logprobs_p[z_inv_idxs[x_ids.shape[0]:]] = y_logprobs
+	z_logprobs = th.logsumexp(th.stack([x_logprobs_p,y_logprobs_p], dim=0), dim=0) - LOG_TWO
+	jsd = 0.5*kl_div(x_logprobs_p,z_logprobs) + 0.5*kl_div(y_logprobs_p,z_logprobs)
+	jsd_n = jsd / LOG_TWO
+	return jsd_n
+	
 def get_slurm_job_id():
 	return os.getenv('SLURM_JOB_ID', default=None)
 

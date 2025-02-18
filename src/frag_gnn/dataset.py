@@ -39,7 +39,7 @@ class BaseDataset(Dataset):
 			spec_fp_or_df=spec_fp,
 			mol_fp_or_df=mol_fp,
 			split_dp=split_dp,
-			split=split,
+			splits=[split],
 			subsample_params=subsample_params,
 			spec_params=spec_params
 		)
@@ -57,25 +57,29 @@ class BaseDataset(Dataset):
 		spec_fp_or_df: str|pd.DataFrame,
 		mol_fp_or_df: str|pd.DataFrame,
 		split_dp: str,
-		split: str,
+		splits: List[str],
 		subsample_params: dict,
 		spec_params: dict):
 		
 		spec_df = spec_fp_or_df if isinstance(spec_fp_or_df, pd.DataFrame) else pd.read_pickle(spec_fp_or_df)
 		mol_df = mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
-
-		assert split in ["train","val","test","secondary", "predict_only"], split
   
-		if split == "predict_only":
-			# predict_all split, just include everything, this is used for prediction
-			split_df = pd.DataFrame()
-			# fill these to keep compatible
-			split_df["spec_id"] = spec_df["spec_id"]
-			split_df["mol_id"] = spec_df["mol_id"]
-			split_df["group_id"] = spec_df["spec_id"]
-		else:	
-			split_fp = os.path.join(split_dp,f"{split}_ids.csv")
-			split_df = pd.read_csv(split_fp)
+		split_dfs = []
+		for split in splits:
+			assert split in ["train","val","test","secondary", "predict_only"], split
+			if split == "predict_only":
+				assert len(splits) == 1, splits
+				# predict_all split, just include everything, this is used for prediction
+				split_df = pd.DataFrame()
+				# fill these to keep compatible
+				split_df["spec_id"] = spec_df["spec_id"]
+				split_df["mol_id"] = spec_df["mol_id"]
+				split_df["group_id"] = spec_df["spec_id"]
+			else:	
+				split_fp = os.path.join(split_dp,f"{split}_ids.csv")
+				split_df = pd.read_csv(split_fp)
+			split_dfs.append(split_df)
+		split_df = pd.concat(split_dfs,ignore_index=True).reset_index(drop=True)
    
 		# select spectra
 		spec_df = spec_df[spec_df["spec_id"].isin(split_df["spec_id"])]

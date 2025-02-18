@@ -582,7 +582,8 @@ class SpecFFN(nn.Module):
 		bidirectional,
 		use_residuals,
 		output_map_size,
-		output_activation):
+		output_activation,
+		log_min):
 
 		super().__init__()
 
@@ -631,6 +632,7 @@ class SpecFFN(nn.Module):
 		else:
 			self.out_activation = nn.Sigmoid()
 		self.out_normalization = lambda x: F.normalize(x, p=1, dim=1)
+		self.log_min = log_min
 
 	def _compute_output_size(self):
 
@@ -683,7 +685,7 @@ class SpecFFN(nn.Module):
 		# convert dense spectrum to sparse
 		mask = spec>0.
 		pred_mzs = (self.mzs.unsqueeze(0).expand(spec.shape[0],-1))[mask]
-		pred_logprobs = safelog(spec)[mask]
+		pred_logprobs = safelog(spec, eps=self.log_min)[mask]
 		pred_batch_idxs = th.arange(spec.shape[0],device=spec.device).unsqueeze(1).expand(-1,spec.shape[1])[mask]
 		pred_specs = spec
 		return pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs

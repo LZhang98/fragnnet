@@ -479,6 +479,25 @@ def sparse_cosine_distance(
 		agg="lse",
 		sparse=True
 	)
+	return sparse_cosine_distance_binned(
+		true_bin_idxs,
+		true_bin_logprobs,
+		true_bin_batch_idxs,
+		pred_bin_idxs,
+		pred_bin_logprobs,
+		pred_bin_batch_idxs,
+		log_distance=log_distance
+	)
+
+def sparse_cosine_distance_binned(
+	true_bin_idxs: th.Tensor,
+	true_bin_logprobs: th.Tensor,
+	true_bin_batch_idxs: th.Tensor,
+	pred_bin_idxs: th.Tensor,
+	pred_bin_logprobs: th.Tensor,
+	pred_bin_batch_idxs: th.Tensor,
+	log_distance: bool=False) -> th.Tensor:
+
 	# l2 normalize
 	true_bin_logprobs = scatter_logl2normalize(
 		true_bin_logprobs,
@@ -589,7 +608,8 @@ def sparse_jensen_shannon_divergence(
 		pred_logprobs: th.Tensor,
 		pred_batch_idxs: th.Tensor,
 		mz_max: float=1500.,
-		mz_bin_res: float=0.01) -> th.Tensor:
+		mz_bin_res: float=0.01,
+		log_min: float=EPS) -> th.Tensor:
 
 	# sparse bin
 	true_bin_idxs, true_bin_logprobs, true_bin_batch_idxs = batched_bin_func(
@@ -617,7 +637,8 @@ def sparse_jensen_shannon_divergence(
         true_bin_batch_idxs,
         pred_bin_idxs,
         pred_bin_logprobs.exp(),
-        pred_bin_batch_idxs
+        pred_bin_batch_idxs,
+		log_min=log_min
     )
 	return 1.-jss
 

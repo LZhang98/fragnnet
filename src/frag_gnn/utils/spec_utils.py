@@ -168,7 +168,7 @@ def bin_func(mzs:th.Tensor,ints:th.Tensor,mz_max:float,mz_bin_res:float,return_i
 	assert th.max(mzs) < mz_max, (th.max(mzs),mz_max)
 	# bin
 	bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype)
-	bin_idx = th.searchsorted(bins,mzs,side="right")
+	bin_idx = th.searchsorted(bins,mzs,right=True)
 	if return_index:
 		return bin_idx
 	else:
@@ -241,7 +241,8 @@ def batched_bin_func(
 		agg:str,
 		sparse:bool=False,
 		remove_prec_peaks:bool=False,
-		prec_mzs:th.Tensor=None) -> th.Tensor:
+		prec_mzs:th.Tensor=None,
+		return_mzs:bool=False) -> th.Tensor:
 	"""method to get binned spectra for batch
 
 	Args:
@@ -263,13 +264,13 @@ def batched_bin_func(
 	batch_size = th.max(batch_idxs)+1
 	bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype)
 	num_bins = bins.shape[0]
-	bin_idxs = th.searchsorted(bins,mzs,side="right")
+	bin_idxs = th.searchsorted(bins,mzs,right=True)
 	bin_offsets = (th.arange(batch_size,device=mzs.device)*num_bins)[batch_idxs]
 	bin_idxs = bin_idxs + bin_offsets
 	if remove_prec_peaks:
 		assert prec_mzs is not None
 		assert th.max(prec_mzs) <  mz_max, (th.max(prec_mzs),mz_max)
-		prec_mz_bin_idxs = th.searchsorted(bins,prec_mzs,side="right")
+		prec_mz_bin_idxs = th.searchsorted(bins,prec_mzs,right=True)
 		prec_mz_bin_offsets = th.arange(batch_size,device=mzs.device)*num_bins
 		prec_mz_bin_idxs = prec_mz_bin_idxs + prec_mz_bin_offsets
 		prec_ints_mask = th.isin(bin_idxs,prec_mz_bin_idxs)
@@ -292,7 +293,11 @@ def batched_bin_func(
 				dim_size=new_bin_idxs.shape[0]
 			)
 		un_bin_batch_idxs = un_bin_idxs // num_bins
-		return un_bin_idxs, un_bin_ints, un_bin_batch_idxs
+		if return_mzs:
+			un_bin_mzs = (bins[un_bin_idxs % num_bins] - mz_bin_res/2.)
+			return un_bin_mzs, un_bin_ints, un_bin_batch_idxs
+		else:
+			return un_bin_idxs, un_bin_ints, un_bin_batch_idxs
 	else:
 		if agg in ["sum","amax"]:
 			bin_spec = scatter_reduce(
@@ -901,7 +906,8 @@ def jss_hun_helper(
 	b_pred_match_mask,
 	remove_prec_peak,
 	b_true_prec_mask,
-	b_pred_prec_mask):
+	b_pred_prec_mask,
+	log_min):
 
 	if remove_prec_peak:
 		b_true_ints = b_true_ints*(1-b_true_prec_mask.float())
@@ -936,7 +942,7 @@ def jss_hun_helper(
 			b_union_ints[b_pred_range[1]:]
 		],dim=0
 	)
-	b_kl1 = th.sum(b_kl1_true_probs*(safelog(b_kl1_true_probs)-safelog(b_kl1_union_probs)), dim=0)
+	b_kl1 = th.sum(b_kl1_true_probs*(safelog(b_kl1_true_probs,eps=log_min)-safelog(b_kl1_union_probs,eps=log_min)), dim=0)
 	b_kl2_pred_probs = th.cat(
 		[
 			b_pred_ints[~b_pred_match_mask],
@@ -949,8 +955,8 @@ def jss_hun_helper(
 			b_union_ints[b_pred_range[1]:]
 		],dim=0
 	)
-	b_kl2 = th.sum(b_kl2_pred_probs*(safelog(b_kl2_pred_probs)-safelog(b_kl2_union_probs)), dim=0)
-	b_jss_hun = 1.-0.5*(b_kl1+b_kl2)
+	b_kl2 = th.sum(b_kl2_pred_probs*(safelog(b_kl2_pred_probs,eps=log_min)-safelog(b_kl2_union_probs,eps=log_min)), dim=0)
+	b_jss_hun = np.log(2.)-0.5*(b_kl1+b_kl2)
 	return b_jss_hun
 
 def jss_helper(
@@ -959,7 +965,8 @@ def jss_helper(
 	true_bin_batch_idxs,
 	pred_bin_idxs,
 	pred_bin_ints,
-	pred_bin_batch_idxs):
+	pred_bin_batch_idxs,
+	log_min):
 	
 	batch_size = th.max(true_bin_batch_idxs)+1
 	# l1 normalize
@@ -992,7 +999,7 @@ def jss_helper(
 	# kl1
 	kl1_union_bin_ints = union_bin_ints[union_bin_idxs_rev[:true_bin_idxs.shape[0]]]
 	kl1 = scatter_reduce(
-		true_bin_ints * (safelog(true_bin_ints) - safelog(kl1_union_bin_ints)),
+		true_bin_ints * (safelog(true_bin_ints,eps=log_min) - safelog(kl1_union_bin_ints,eps=log_min)),
 		true_bin_batch_idxs,
 		reduce="sum",
 		dim_size=batch_size
@@ -1000,11 +1007,13 @@ def jss_helper(
 	# kl2
 	kl2_union_bin_ints = union_bin_ints[union_bin_idxs_rev[true_bin_idxs.shape[0]:]]
 	kl2 = scatter_reduce(
-		pred_bin_ints * (safelog(pred_bin_ints) - safelog(kl2_union_bin_ints)),
+		pred_bin_ints * (safelog(pred_bin_ints,eps=log_min) - safelog(kl2_union_bin_ints,eps=log_min)),
 		pred_bin_batch_idxs,
 		reduce="sum",
 		dim_size=batch_size
 	)
 	# jss
-	jss = 1.-0.5*(kl1+kl2)
+	jsd_e = 0.5*(kl1+kl2)
+	# (ln(2) - jsd_e) / ln(2) 
+	jss = 1. - jsd_e / np.log(2.)
 	return jss

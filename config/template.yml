@@ -147,6 +147,8 @@ iceberg_pool_type: avg
 iceberg_inject_early: False
 iceberg_embed_adduct: False
 iceberg_encode_forms: False
+iceberg_output_formulae: False
+iceberg_fix_batch_bug: False
 # massformer model
 mf_flag: False
 mf_pt_weight_decay: 0.0
@@ -183,6 +185,7 @@ loss_tolerance_rel: 0.00001 # 10 ppm
 loss_tolerance_abs: #0.001
 loss_batch_size: 32
 loss_tolerance_min_mz: 200.0
+bin_output: False
 auxiliary_scores:
   - cos_sim
   - recall
@@ -325,3 +328,4 @@ skip_extra_losses: False
 log_zero_fp16: null
 log_zero_fp32: null
 share_memory: False
+log_min: 0.000000001 # 1e-9

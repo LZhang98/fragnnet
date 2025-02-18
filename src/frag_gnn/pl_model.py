@@ -18,7 +18,7 @@ import torch._dynamo as th_dynamo
 
 from frag_gnn.utils.nn_utils import build_lr_scheduler
 from frag_gnn.model import FragGNNModel, NeimsModel, PrecursorModel, GNNModel
-from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance, sparse_cosine_distance_hungarian
+from frag_gnn.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
 from frag_gnn.utils.spec_utils import *
 from frag_gnn.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_logsumexp, to_cpu, scatter_l1normalize, LOG_ZERO
 from frag_gnn.utils.plot_utils import plot_spectra_sparse
@@ -67,7 +67,15 @@ class SpectrumPL(pl.LightningModule):
 		self.filter_func = _filter_func
 		def _bin_func(mzs, ints, batch_idxs):
 			agg = "sum" if self.hparams.sum_ints else "amax"
-			return batched_bin_func(mzs,ints,batch_idxs,self.hparams.mz_max,self.hparams.mz_bin_res,agg)
+			bin_idxs, bin_ints, bin_batch_idxs = batched_bin_func(
+				mzs,
+				ints,
+				batch_idxs,
+				self.hparams.mz_max,
+				self.hparams.mz_bin_res,
+				agg,
+				sparse=True)
+			return bin_idxs, bin_ints, bin_batch_idxs
 		self.bin_func = _bin_func
 		self.ints_transform_func = get_ints_transform_func(self.hparams.ints_transform)
 		self.ints_untransform_func = get_ints_untransform_func(self.hparams.ints_transform)
@@ -238,20 +246,12 @@ class SpectrumPL(pl.LightningModule):
 			true_prec_mzs,
 			**kwargs):
 
+			# assumes both true/pred spectra are already L1-normalized
+
 			batch_size = th.max(true_batch_idxs)+1
 			assert batch_size == th.max(pred_batch_idxs)+1, (batch_size, th.max(pred_batch_idxs)+1)
 
 			metric_d = {k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device) for k in self.auxiliary_metric_names}
-
-			# untransform
-			true_ints = self.ints_untransform_func(
-				true_ints,
-				true_batch_idxs
-			)
-			pred_ints = self.ints_untransform_func(
-				pred_ints,
-				pred_batch_idxs
-			)
 
 			# define aggregation
 			agg = "sum" if self.hparams.sum_ints else "amax"
@@ -279,9 +279,10 @@ class SpectrumPL(pl.LightningModule):
 						else:
 							ints_transform = get_ints_transform_func("none")
 						for mz_bin_res in eval_mz_bin_reses:
+							# bin, transform, normalize
 							true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
 								true_mzs,
-								ints_transform(true_ints),
+								true_ints,
 								true_batch_idxs,
 								mz_max=self.hparams.mz_max,
 								mz_bin_res=mz_bin_res,
@@ -290,9 +291,10 @@ class SpectrumPL(pl.LightningModule):
 								remove_prec_peaks=remove_prec_peak,
 								prec_mzs=true_prec_mzs
 							)
+							true_ints = scatter_l1normalize(ints_transform(true_ints), true_batch_idxs)
 							pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
 								pred_mzs,
-								ints_transform(pred_ints),
+								pred_ints,
 								pred_batch_idxs,
 								mz_max=self.hparams.mz_max,
 								mz_bin_res=mz_bin_res,
@@ -301,7 +303,7 @@ class SpectrumPL(pl.LightningModule):
 								remove_prec_peaks=remove_prec_peak,
 								prec_mzs=true_prec_mzs
 							)
-							# print(mz_bin_res,sqrt,remove_prec_peak)
+							pred_ints = scatter_l1normalize(ints_transform(pred_ints), pred_batch_idxs)
 							if "cos_sim" in self.hparams.auxiliary_scores:
 								fname_base = f"cos_sim"
 								if sqrt:
@@ -348,12 +350,13 @@ class SpectrumPL(pl.LightningModule):
 									true_bin_batch_idxs,
 									pred_bin_idxs,
 									pred_bin_ints,
-									pred_bin_batch_idxs
+									pred_bin_batch_idxs,
+									log_min=self.hparams.log_min
 								)
 								metric_d[fname] = jss
 
 			if compute_entropies:
-				true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs))
+				true_log_probs = safelog(scatter_l1normalize(true_ints,true_batch_idxs), eps=self.hparams.log_min)
 				true_spec_e, true_spec_ne = sparse_entropy_fn(true_log_probs,true_batch_idxs)
 				if "true_spec_e" in self.hparams.auxiliary_scores:
 					metric_d["true_spec_e"] = true_spec_e
@@ -493,7 +496,8 @@ class SpectrumPL(pl.LightningModule):
 								b_pred_match_mask_r,
 								remove_prec_peak,
 								b_true_prec_mask_r,
-								b_pred_prec_mask_r
+								b_pred_prec_mask_r,
+								log_min=self.hparams.log_min
 							)
 							fname_base = f"jss_hun"
 							if sqrt:
@@ -511,7 +515,7 @@ class SpectrumPL(pl.LightningModule):
 				if "true_oos_e" in self.hparams.auxiliary_scores:
 
 					b_true_oos_probs = b_true_ints[~b_true_match_mask] / th.sum(b_true_ints[~b_true_match_mask])
-					b_true_oos_logprobs = safelog(b_true_oos_probs)
+					b_true_oos_logprobs = safelog(b_true_oos_probs, eps=self.hparams.log_min)
 					b_true_oos_e = -th.sum(b_true_oos_probs * b_true_oos_logprobs)
 					metric_d["true_oos_e"][b_idx] = b_true_oos_e
 
@@ -602,22 +606,78 @@ class SpectrumPL(pl.LightningModule):
 			size=[self.hparams.max_epochs+1],
 			generator=train_dl_generator)
 
-	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs):
+	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs,filter_spec=False,bin_spec=False,transform_spec=False):
+		# assumes spec_ints are not logged, or transformed in any way
+		# does not assume any particular kind of normalization
 
-		# filter
-		spec_mzs, spec_ints, spec_batch_idxs = self.filter_func(
-			spec_mzs,
-			spec_ints,
-			spec_batch_idxs
-		)
-		# normalize to mf1000
-		spec_ints = batched_mf1000_normalize(spec_ints, spec_batch_idxs)
-		# transform
-		spec_ints = self.ints_transform_func(spec_ints)
+		if filter_spec:
+			# filter
+			spec_mzs, spec_ints, spec_batch_idxs = self.filter_func(
+				spec_mzs,
+				spec_ints,
+				spec_batch_idxs
+			)
+		if bin_spec:
+			# bin
+			spec_mzs, spec_ints, spec_batch_idxs = self.bin_func(
+				spec_mzs,
+				spec_ints,
+				spec_batch_idxs
+			)
+		if transform_spec:
+			# normalize to mf1000
+			spec_ints = batched_mf1000_normalize(spec_ints, spec_batch_idxs)
+			# transform
+			spec_ints = self.ints_transform_func(spec_ints)
 		# renormalize
 		spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
-		# log
-		spec_ints = safelog(spec_ints)
+		return spec_mzs, spec_ints, spec_batch_idxs
+
+	def preproc_spec(
+		self,
+		spec_mzs,
+		spec_ints,
+		spec_batch_idxs,
+		train: bool,
+		pred: bool,
+		log_in: bool = False,
+		log_out: bool = False
+	):
+		if log_in:
+			spec_ints = spec_ints.exp()
+		if train and pred:
+			spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
+				spec_mzs,
+				spec_ints,
+				spec_batch_idxs,
+				filter_spec=False,
+				bin_spec=self.binned_loss,
+				transform_spec=False
+			)
+		elif train and (not pred):
+			spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
+				spec_mzs,
+				spec_ints,
+				spec_batch_idxs,
+				filter_spec=True,
+				bin_spec=self.binned_loss,
+				transform_spec=True
+			)
+		elif (not train) and pred:
+			# untransform
+			spec_ints = self.ints_untransform_func(spec_ints, spec_batch_idxs)
+			spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
+		elif (not train) and (not pred):
+			spec_mzs, spec_ints, spec_batch_idxs =  self._preproc_spec(
+				spec_mzs,
+				spec_ints,
+				spec_batch_idxs,
+				filter_spec=True,
+				bin_spec=False,
+				transform_spec=False
+			)
+		if log_out:
+				spec_ints = safelog(spec_ints, eps=self.hparams.log_min)
 		return spec_mzs, spec_ints, spec_batch_idxs
 
 	def predict_step(self,**batch_kwargs):
@@ -652,20 +712,41 @@ class SpectrumPL(pl.LightningModule):
 		spec_per_group = batch["spec_per_group"]
 		spec_per_mol = batch["spec_per_mol"]
 		group_per_mol = batch["group_per_mol"]
-		true_mzs, true_logprobs, true_batch_idxs = self._preproc_spec(
+		pred_d = self.forward(**batch)
+		pred_mzs = pred_d.pop("pred_mzs")
+		pred_logprobs = pred_d.pop("pred_logprobs")
+		pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+		pred_oos_logprobs = pred_d.pop("pred_oos_logprobs",None)
+		# prepare training dict (TODO: do preprocessing in log space)
+		train_true_mzs, train_true_logprobs, train_true_batch_idxs = self.preproc_spec(
 			true_mzs,
 			true_ints,
-			true_batch_idxs
+			true_batch_idxs,
+			train=True,
+			pred=False,
+			log_in=False,
+			log_out=True
 		)
-		pred = self.forward(**batch)
-		both = {
-			"true_mzs": true_mzs,
-			"true_logprobs": true_logprobs,
-			"true_batch_idxs": true_batch_idxs,
-			"true_prec_mzs": true_prec_mzs,
-			**pred
+		train_pred_mzs, train_pred_logprobs, train_pred_batch_idxs = self.preproc_spec(
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs,
+			train=True,
+			pred=True,
+			log_in=True,
+			log_out=True
+		)
+		train_d = {
+			"true_mzs": train_true_mzs,
+			"true_logprobs": train_true_logprobs,
+			"true_batch_idxs": train_true_batch_idxs,
+			"pred_mzs": train_pred_mzs,
+			"pred_logprobs": train_pred_logprobs,
+			"pred_batch_idxs": train_pred_batch_idxs,
+			"pred_oos_logprobs": pred_oos_logprobs,
+			**pred_d
 		}
-		loss_d = self.loss_fn(**both)
+		loss_d = self.loss_fn(**train_d)
 		loss = loss_d["loss"]
 		mean_loss = self.batch_metric_reduce_fn(
 			b_metric=loss,
@@ -684,6 +765,37 @@ class SpectrumPL(pl.LightningModule):
 			return_weights=True,
 			split=split
 		)
+		# prepare eval dict
+		eval_true_mzs, eval_true_probs, eval_true_batch_idxs = self.preproc_spec(
+			true_mzs,
+			true_ints,
+			true_batch_idxs,
+			train=False,
+			pred=False,
+			log_in=False,
+			log_out=False
+		)
+		eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
+		eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs,
+			train=False,
+			pred=True,
+			log_in=True,
+			log_out=False
+		)
+		eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
+		both_d = {
+			"true_mzs": eval_true_mzs,
+			"true_logprobs": eval_true_logprobs,
+			"true_batch_idxs": eval_true_batch_idxs,
+			"true_prec_mzs": true_prec_mzs,
+			"pred_mzs": eval_pred_mzs,
+			"pred_logprobs": eval_pred_logprobs,
+			"pred_batch_idxs": eval_pred_batch_idxs,
+			**pred_d
+		}
 		# just log loss
 		if log:
 			self.log(
@@ -701,18 +813,18 @@ class SpectrumPL(pl.LightningModule):
 			"spec_per_group": spec_per_group,
 			"spec_per_mol": spec_per_mol,
 			"group_per_mol": group_per_mol,
-			**both,
+			**both_d,
 			**loss_d
 		}
 		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
 		with th.inference_mode():
 			metric_input_d = {
-				"true_mzs": true_mzs,
-				"true_ints": th.exp(true_logprobs),
-				"true_batch_idxs": true_batch_idxs,
-				"pred_mzs": pred["pred_mzs"],
-				"pred_ints": th.exp(pred["pred_logprobs"]),
-				"pred_batch_idxs": pred["pred_batch_idxs"],
+				"true_mzs": eval_true_mzs,
+				"true_ints": eval_true_probs,
+				"true_batch_idxs": eval_true_batch_idxs,
+				"pred_mzs": eval_pred_mzs,
+				"pred_ints": eval_pred_probs,
+				"pred_batch_idxs": eval_pred_batch_idxs,
 				"true_prec_mzs": true_prec_mzs
 			}
 			metric_output_d = self.metric_fn(**metric_input_d)
@@ -759,9 +871,38 @@ class SpectrumPL(pl.LightningModule):
 		# self._update_results(batch_results,"test")
 		return mean_loss
 	
-	def inference_step(self, batch, split):
+	def inference_step(self, batch, split, untransform_spec=False):
 
+		if self.training:
+			print("Warning: model is in training mode")
 		batch_results = self._common_step(batch, split=split, log=False)
+		if untransform_spec:
+			raise NotImplementedError("untransform_spec not implemented")
+			# pred_logprobs = batch_results["pred_logprobs"]
+			# pred_batch_idxs = batch_results["pred_batch_idxs"]
+			# true_logprobs = batch_results["true_logprobs"]
+			# true_batch_idxs = batch_results["true_batch_idxs"]
+			# pred_ints = self.ints_untransform_func(
+			# 	pred_logprobs.exp(),
+			# 	pred_batch_idxs
+			# )
+			# pred_ints = self.ints_normalize_func(
+			# 	pred_ints, 
+			# 	pred_batch_idxs
+			# )
+			# if "pred_oos_logprobs" in batch_results:
+			# 	pred_oos_logprobs = batch_results["pred_oos_logprobs"][pred_batch_idxs]
+			# 	pred_ints = pred_ints * (1.-pred_oos_logprobs.exp())
+			# batch_results["pred_logprobs"] = safelog(pred_ints, eps=self.hparams.log_min)
+			# true_ints = self.ints_untransform_func(
+			# 	true_logprobs.exp(),
+			# 	true_batch_idxs
+			# )
+			# true_ints = self.ints_normalize_func(
+			# 	true_ints, 
+			# 	true_batch_idxs
+			# )
+			# batch_results["true_logprobs"] = safelog(true_ints, eps=self.hparams.log_min)
 		return batch_results
 
 	def configure_optimizers(self):
@@ -993,24 +1134,11 @@ class SpectrumPL(pl.LightningModule):
 				wrecall = results["wrecall"][unique_idx].item()
 			else:
 				wrecall = np.nan
+			# note: these are already untransformed and normalized (with possibility of oos)
 			true_mzs = results["true_mzs"][true_mask]
 			true_ints = th.exp(results["true_logprobs"][true_mask])
 			pred_mzs = results["pred_mzs"][pred_mask]
 			pred_ints = th.exp(results["pred_logprobs"][pred_mask])
-			# untransform
-			true_ints = self.ints_untransform_func(true_ints)
-			true_ints = self.ints_normalize_func(
-				true_ints,
-				th.zeros_like(true_ints,dtype=th.long)
-			)
-			pred_ints = self.ints_untransform_func(
-				pred_ints,
-				th.zeros_like(pred_ints,dtype=th.long)
-			)
-			pred_ints = self.ints_normalize_func(
-				pred_ints,
-				th.zeros_like(pred_ints,dtype=th.long)
-			)
 			# cast to numpy
 			true_mzs = true_mzs.numpy()
 			true_ints = true_ints.numpy()
@@ -1205,6 +1333,9 @@ class FragGNNPL(SpectrumPL):
 			skip_edge_loss=self.hparams.skip_edge_loss,
 			mask_null_formula=self.hparams.mask_null_formula,
 			predict_oos=self.hparams.predict_oos,
+			bin_output=self.hparams.bin_output,
+			mz_bin_res=self.hparams.mz_bin_res,
+			mz_max=self.hparams.mz_max,
 			ce_insert_type=self.hparams.ce_insert_type,
 			ce_insert_location=self.hparams.ce_insert_location,
 			ce_insert_merge=self.hparams.ce_insert_merge,
@@ -1244,12 +1375,15 @@ class FragGNNPL(SpectrumPL):
 		loss_names = [
 			"loss",
 			"primary_loss",
-			"spec_ce",
-			"oos_ce",
-			"ios_ce",
 			"null_formula_prob",
 			"oos_prob",
 		]
+		if self.hparams.loss_type == "cross_entropy":
+			loss_names.extend([
+				"spec_ce",
+				"oos_ce",
+				"ios_ce",
+			])
 		if not self.hparams.skip_extra_losses:
 			loss_names.extend([
 				"spec_e",
@@ -1378,31 +1512,26 @@ class FragGNNPL(SpectrumPL):
 		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
 		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
 
-		assert self.hparams.sparse_cosine_similarity
-		assert self.hparams.sum_ints
-		if self.hparams.loss_type in ["cosine_distance", "log_cosine_distance"]:
-			log_distance = self.hparams.loss_type == "log_cosine_distance"
-			def cosine_distance_fn(
+		# binned cosine distance
+		def cos_dist_fn(
+			true_mzs,
+			true_logprobs,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs):
+			return sparse_cosine_distance_binned(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
 				pred_mzs,
 				pred_logprobs,
-				pred_batch_idxs):
-				return sparse_cosine_distance(
-					true_mzs,
-					true_logprobs,
-					true_batch_idxs,
-					pred_mzs,
-					pred_logprobs,
-					pred_batch_idxs,
-					mz_bin_res=self.hparams.mz_bin_res,
-					mz_max=self.hparams.mz_max,
-					log_distance=log_distance
-				)
-		if self.hparams.loss_type in ["cosine_distance_hungarian", "log_cosine_distance_hungarian"]:
-			log_distance = self.hparams.loss_type == "log_cosine_distance_hungarian"
-			def cosine_distance_hungarian_fn(
+				pred_batch_idxs,
+				log_distance=(self.hparams.loss_type == "log_cosine_distance")
+			)
+
+		# hungarian cosine distance
+		def cos_hun_fn(
 				true_mzs,
 				true_logprobs,
 				true_batch_idxs,
@@ -1418,8 +1547,25 @@ class FragGNNPL(SpectrumPL):
 					pred_batch_idxs,
 					tolerance=self.tolerance,
 					relative=self.relative,
-					log_distance=log_distance
+					log_distance=(self.hparams.loss_type == "log_cosine_distance_hungarian")
 				)
+
+		assert self.hparams.sparse_cosine_similarity
+		assert self.hparams.sum_ints
+		if self.hparams.loss_type == "cross_entropy":
+			self.binned_loss = False
+		elif self.hparams.loss_type in ["cosine_distance", "log_cosine_distance"]:
+			self.binned_loss = True
+		elif self.hparams.loss_type in ["cosine_distance_hungarian", "log_cosine_distance_hungarian"]:
+			self.binned_loss = False
+		else:
+			raise ValueError(f"Unknown loss type {self.hparams.loss_type}")
+			
+		if self.binned_loss:
+			if self.hparams.ints_transform != "none" and not self.hparams.bin_output:
+				print("> Warning: binned loss with ints transform; output is not binned; inverse transform will be biased for binned metrics")
+		else:
+			assert not self.hparams.bin_output, "cannot train binned model with unbinned loss"
 
 		def edge_loss(
 			pred_edge_logprobs,
@@ -1432,8 +1578,8 @@ class FragGNNPL(SpectrumPL):
 			edge_h_transfer_costs = edge_h_transfer_loss_fn(pred_edge_h_diffs)
 			edge_h_transfer_costs = edge_h_transfer_costs.reshape(edge_h_transfer_costs.shape[0],-1)
 			edge_h_logprobs = pred_edge_h_logprobs.reshape(pred_edge_h_logprobs.shape[0],-1)
-			edge_h_range_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_range_costs),dim=1)
-			edge_h_transfer_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_transfer_costs),dim=1)
+			edge_h_range_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_range_costs, eps=self.hparams.log_min),dim=1)
+			edge_h_transfer_avg_cost = th.logsumexp(edge_h_logprobs + safelog(edge_h_transfer_costs, eps=self.hparams.log_min),dim=1)
 			h_range_loss = scatter_logsumexp(
 				pred_edge_logprobs + edge_h_range_avg_cost,
 				pred_edge_batch_idxs
@@ -1490,27 +1636,27 @@ class FragGNNPL(SpectrumPL):
 			**kwargs):
 			
 			loss_d = {}
-			ios_ce, oos_ce, true_oos_logprob, true_oos_e = sparse_ce_fn(
-				true_mzs,
-				true_logprobs,
-				true_batch_idxs,
-				pred_mzs,
-				pred_logprobs,
-				pred_batch_idxs,
-				pred_oos_logprobs
-			)
-			spec_ce = ios_ce + oos_ce
-			loss_d["spec_ce"] = spec_ce
-			loss_d["ios_ce"] = ios_ce
-			loss_d["oos_ce"] = oos_ce
 			
 			if self.hparams.loss_type == "cross_entropy":
+				ios_ce, oos_ce, _, _ = sparse_ce_fn(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs,
+					pred_oos_logprobs
+				)
+				spec_ce = ios_ce + oos_ce
 				if self.hparams.oos_loss:
 					primary_loss = spec_ce
 				else:
 					primary_loss = ios_ce
-			elif self.hparams.loss_type in ["cosine_distance","log_cosine_distance"]:
-				spec_cd = cosine_distance_fn(
+				loss_d["ios_ce"] = ios_ce
+				loss_d["oos_ce"] = oos_ce
+				loss_d["spec_ce"] = spec_ce
+			elif self.hparams.loss_type in ["cosine_distance", "log_cosine_distance"]:
+				primary_loss = cos_dist_fn(
 					true_mzs,
 					true_logprobs,
 					true_batch_idxs,
@@ -1518,10 +1664,8 @@ class FragGNNPL(SpectrumPL):
 					pred_logprobs,
 					pred_batch_idxs
 				)
-				primary_loss = spec_cd
-			else:
-				assert self.hparams.loss_type in ["cosine_distance_hungarian","log_cosine_distance_hungarian"], self.hparams.loss_type
-				spec_cd_hun = cosine_distance_hungarian_fn(
+			elif self.hparams.loss_type in ["cosine_distance_hungarian", "log_cosine_distance_hungarian"]:
+				primary_loss = cos_hun_fn(
 					true_mzs,
 					true_logprobs,
 					true_batch_idxs,
@@ -1529,9 +1673,9 @@ class FragGNNPL(SpectrumPL):
 					pred_logprobs,
 					pred_batch_idxs
 				)
-				primary_loss = spec_cd_hun
+
 			loss = self.hparams.primary_loss_weight * primary_loss
-			loss_d["primary_loss"] = primary_loss
+			loss_d["primary_loss"] = primary_loss			
 			
 			if self.hparams.null_loss:
 				assert self.hparams.loss_type != "cross_entropy", self.hparams.loss_type
@@ -1849,9 +1993,29 @@ class FragGNNPL(SpectrumPL):
 class BinnedPL(SpectrumPL):
 
 	def _setup_loss_fn(self):
+		
+		# binned cosine distance
+		def cos_dist_fn(
+			true_mzs,
+			true_logprobs,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs):
+			return sparse_cosine_distance_binned(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs,
+				log_distance=(self.hparams.loss_type == "log_cosine_distance")
+			)
+		
+		assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
+		assert self.hparams.sparse_cosine_similarity
+		self.binned_loss = True
 
-		# define loss
-		assert self.hparams.loss_type in ["cosine_distance","cosine_distance_dense"], self.hparams.loss_type
 		def _loss_fn(
 			true_mzs,
 			true_logprobs,
@@ -1859,34 +2023,23 @@ class BinnedPL(SpectrumPL):
 			pred_mzs,
 			pred_logprobs,
 			pred_batch_idxs,
-			pred_specs,
 			**kwargs):
-			if self.hparams.loss_type == "cosine_distance":
-				if self.hparams.sparse_cosine_similarity:
-					cosine_similarity_fn = calculate_sparse_cosine_similarity
-				else:
-					cosine_similarity_fn = calculate_cosine_similarity
-				spec_cd = 1.-cosine_similarity_fn(
-					true_mzs,
-					th.exp(true_logprobs),
-					true_batch_idxs,
-					pred_mzs,
-					th.exp(pred_logprobs),
-					pred_batch_idxs,
-					mz_bin_res=self.hparams.mz_bin_res,
-					mz_max=self.hparams.mz_max,
-					sum_ints=self.hparams.sum_ints
-				)
-			else:
-				# _pred_specs = self.bin_func(pred_mzs,th.exp(pred_logprobs),pred_batch_idxs)
-				true_specs = self.bin_func(true_mzs,th.exp(true_logprobs),true_batch_idxs)
-				spec_cd = 1.-binned_cosine_similarity(true_specs,pred_specs)
+			
+			spec_cd = cos_dist_fn(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs
+			)
 			loss = spec_cd
 			loss_d = {
 				"loss": loss,
 				"spec_cd": spec_cd
 			}
 			return loss_d
+
 		self.loss_fn = _loss_fn
 		# flag metrics for tracking
 		loss_names = [
@@ -1927,6 +2080,7 @@ class NeimsPL(BinnedPL):
 			inst_insert_location=self.hparams.inst_insert_location,
 			inst_insert_size=self.hparams.inst_insert_size,
 			inst_types=self.hparams.spec_params["inst_types"],
+			log_min=self.hparams.log_min
 		)
 		
 		self._check_ce_params()

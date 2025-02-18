@@ -7,6 +7,7 @@ import os
 
 from frag_gnn.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO
 from frag_gnn.pl_model import FragGNNPL
+from frag_gnn.iceberg.pl_model import IcebergIntenPL
 from frag_gnn.utils.nn_utils import decompile_jit_ckpt
 
 
@@ -45,7 +46,7 @@ def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 	return model
 
 
-def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_subset=None):
+def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_subset=None, untransform_spec=False):
 	
 	# make predictions on validation data
 	print(">>> Iterating over data")
@@ -54,13 +55,26 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 	cum_num_formulas = 0
 	cum_num_nb_nodes = 0
 	fraggnn_model = isinstance(model, FragGNNPL)
-	if not fraggnn_model:
+	iceberg_model = isinstance(model, IcebergIntenPL) and model.model.output_formulae
+	if not (fraggnn_model or iceberg_model):
 		assert not nb_iso
 		BATCH_IDX_VARS = [
 			"pred_batch_idxs",
 			"true_batch_idxs"
 		]
-		NODE_IDX_VARS = FORMULA_IDX_VARS = NB_NODE_IDX_VARS = []
+		NODE_IDX_VARS = []
+		FORMULA_IDX_VARS = []
+		NB_NODE_IDX_VARS = []
+	elif iceberg_model:
+		assert not nb_iso
+		BATCH_IDX_VARS = [
+			"pred_batch_idxs",
+			"true_batch_idxs",
+			"pred_formula_batch_idxs"
+		]
+		NODE_IDX_VARS = []
+		FORMULA_IDX_VARS = []
+		NB_NODE_IDX_VARS = []
 	else:
 		BATCH_IDX_VARS = [
 			"pred_batch_idxs",
@@ -98,11 +112,13 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 		FORMULA_IDX_VARS = [k for k in FORMULA_IDX_VARS if k in output_subset]
 		NB_NODE_IDX_VARS = [k for k in NB_NODE_IDX_VARS if k in output_subset]
 	vals = {}
+	if model.training:
+		print(f"> Warning: model {model} is in training mode!")
 	with th.inference_mode(): 
 		for b_idx, b_input in tqdm(enumerate(dl),total=min(len(dl),batch_cutoff)):
 			# transfer data, make predictions
 			b_input = to_device(b_input, device,non_blocking=False)
-			b_output = model.inference_step(b_input, split=eval_split)
+			b_output = model.inference_step(b_input, split=eval_split, untransform_spec=untransform_spec)
 			b_output = to_device(b_output, "cpu",non_blocking=False)
 			if output_subset is not None:
 				b_output = {k: b_output[k] for k in b_output if k in output_subset}

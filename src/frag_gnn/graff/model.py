@@ -120,7 +120,7 @@ class GrAFFModel(nn.Module):
 			if self.signnet is not None:
 				self.signnet = pyg.compile(self.signnet,**kwargs)
 			self.encoder = pyg.compile(self.encoder,**kwargs)
-		self.cov_emd = th.compile(self.cov_emb,**kwargs)
+		self.cov_emb = th.compile(self.cov_emb,**kwargs)
 		self.decoder = th.compile(self.decoder,**kwargs)
 
 	def forward(
@@ -131,8 +131,8 @@ class GrAFFModel(nn.Module):
 			ann_dup_idxs: th.Tensor,
 			ann_library_idxs: th.Tensor,
 			ann_batch_idxs: th.Tensor,
-			spec_nce: th.Tensor = None,
-			spec_nce_batch_idxs: th.Tensor = None,
+			spec_ce: th.Tensor = None,
+			spec_ce_batch_idxs: th.Tensor = None,
 			**kwargs):
 
 		batch_size = len(mol_graff.ptr) - 1
@@ -157,8 +157,8 @@ class GrAFFModel(nn.Module):
 		# condition molecule representation on covariates
 		isotope_mask = ann_isotope_mask.reshape(batch_size,1)
 		ce = scatter_reduce(
-			spec_nce,
-			spec_nce_batch_idxs,
+			spec_ce,
+			spec_ce_batch_idxs,
 			reduce="mean",
 			dim_size=batch_size,
 			include_self=False

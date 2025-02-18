@@ -10,7 +10,7 @@ import torch_scatter as ts
 import frag_gnn.iceberg.common as common
 import frag_gnn.iceberg.nn_utils as nn_utils
 import frag_gnn.iceberg.fragmentation as fragmentation
-
+from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_logsumexp, scatter_reduce, dedup_peaks, dedup
 
 class IcebergGenModel(nn.Module):
 
@@ -272,6 +272,8 @@ class IcebergIntenModel(nn.Module):
 		mz_bin_res: float = 0.1,
 		mz_max: float = 1500.0,
 		sum_ints: bool = True,
+		output_formulae: bool = False,
+		fix_batch_bug: bool = False,
 		**kwargs,
 	):
 		super().__init__()
@@ -284,6 +286,8 @@ class IcebergIntenModel(nn.Module):
 		self.binned_targs = binned_targs
 		self.encode_forms = encode_forms
 		self.add_hs = add_hs
+		self.output_formulae = output_formulae
+		self.fix_batch_bug = fix_batch_bug
 
 		self.formula_in_dim = 0
 		if self.encode_forms:
@@ -391,6 +395,8 @@ class IcebergIntenModel(nn.Module):
 		self.isomer_attn_out = copy.deepcopy(self.output_map)
 
 		# Define buckets
+		self.mz_bin_res = mz_bin_res
+		self.mz_max = mz_max
 		buckets = th.DoubleTensor(np.arange(mz_bin_res,mz_max+mz_bin_res,mz_bin_res))
 		self.inten_buckets = nn.Parameter(buckets)
 		self.inten_buckets.requires_grad = False
@@ -539,35 +545,22 @@ class IcebergIntenModel(nn.Module):
 		# B x Length x Mass shifts
 		valid_pos = th.logical_and(ub_mask, lb_mask)
 
-		# B x Length x outputs x Mass shift
-		valid_pos = valid_pos[:, :, None, :].expand(
-			batch_size, max_frags, self.num_outputs, self.output_size
-		)
 		# B x L x Output
 		output = self.output_map(hidden)
 		attn_weights = self.isomer_attn_out(hidden)
 
-		# B x L x Out x Mass shifts
-		output = output.reshape(batch_size, max_frags, self.num_outputs, -1)
-		attn_weights = attn_weights.reshape(batch_size, max_frags, self.num_outputs, -1)
-
 		# Mask attn weights
-		attn_weights.masked_fill_(~valid_pos, -99999)
-
-		# B x Out x L x Mass shifts
-		output = output.transpose(1, 2)
-		attn_weights = attn_weights.transpose(1, 2)
-		valid_pos_binned = valid_pos.transpose(1, 2)
+		attn_weights = attn_weights.masked_fill(~valid_pos, -99999)
 
 		# Calc inverse indices => B x Out x L x shift
-		inverse_indices = th.bucketize(masses, self.inten_buckets, right=False)
-		inverse_indices = inverse_indices[:, None, :, :].expand(attn_weights.shape)
+		inverse_indices = th.bucketize(masses, self.inten_buckets, right=True)
+		# inverse_indices = inverse_indices[:, None, :, :].expand(attn_weights.shape)
 
 		# B x Out x (L * Mass shifts)
-		attn_weights = attn_weights.reshape(batch_size, self.num_outputs, -1)
-		output = output.reshape(batch_size, self.num_outputs, -1)
-		inverse_indices = inverse_indices.reshape(batch_size, self.num_outputs, -1)
-		valid_pos_binned = valid_pos.reshape(batch_size, self.num_outputs, -1)
+		attn_weights = attn_weights.reshape(batch_size, -1)
+		output = output.reshape(batch_size, -1)
+		inverse_indices = inverse_indices.reshape(batch_size, -1)
+		valid_pos_binned = valid_pos.reshape(batch_size, -1)
 
 		# B x Outs x ( L * mass shifts )
 		pool_weights = ts.scatter_softmax(attn_weights, index=inverse_indices, dim=-1)
@@ -581,12 +574,12 @@ class IcebergIntenModel(nn.Module):
 			dim_size=self.inten_buckets.shape[-1],
 		)
 
-		output = output.reshape(batch_size, max_frags, self.num_outputs, -1)
-		pool_weights_reshaped = pool_weights.reshape(
-			batch_size, max_frags, self.num_outputs, -1
-		)
+		output = output.reshape(batch_size, max_frags, -1)
+		# pool_weights_reshaped = pool_weights.reshape(
+		# 	batch_size, max_frags, -1
+		# )
 		inverse_indices_reshaped = inverse_indices.reshape(
-			batch_size, max_frags, self.num_outputs, -1
+			batch_size, max_frags, -1
 		)
 
 		# B x Outs x binned
@@ -598,48 +591,88 @@ class IcebergIntenModel(nn.Module):
 		)[0].bool()
 
 		# Activate each dim with its respective output activation
-		# Helpful for hurdle or probabilistic models
-		new_outputs_binned = []
-		for output_ind, act in enumerate(self.output_activations):
-			new_outputs_binned.append(
-				act(output_binned[:, output_ind : output_ind + 1, :])
-			)
-		output_binned = th.cat(new_outputs_binned, -2)
-		output_binned.masked_fill_(~valid_pos_binned, 0)
+		assert len(self.output_activations) == 1
+		output_binned = self.output_activations[0](output_binned)
+		# output_binned = th.sigmoid(output_binned)
+		output_binned = output_binned.masked_fill(~valid_pos_binned, 0)
 
-		# Index into output binned using inverse_indices_reshaped
-		# Revert the binned output back to frags for attribution
-		# B x Out x L x Mass shifts
-		inverse_indices_reshaped_temp = inverse_indices_reshaped.transpose(
-			1, 2
-		).reshape(batch_size, self.num_outputs, -1)
+		# # Index into output binned using inverse_indices_reshaped
+		# # Revert the binned output back to frags for attribution
+		# # B x Out x L x Mass shifts
+		inverse_indices_reshaped_temp = inverse_indices_reshaped.reshape(batch_size, -1)
 		output_unbinned = th.take_along_dim(
 			output_binned, inverse_indices_reshaped_temp, dim=-1
 		)
 		output_unbinned = output_unbinned.reshape(
-			batch_size, self.num_outputs, max_frags, -1
-		).transpose(1, 2)
-		output_unbinned_alpha = output_unbinned * pool_weights_reshaped
+			batch_size, max_frags, -1
+		)
+		# output_unbinned_alpha = output_unbinned * pool_weights_reshaped
 
-		# delete stupid dimension
-		output_binned = output_binned.squeeze(1)
-		output_unbinned_alpha = output_unbinned_alpha.squeeze(2)
+		if self.fix_batch_bug:
+			# note output_unbinned_alpha won't be correct anymore
+			output_binned[:,0] = 0.*output_binned[:,0]
 
-		# convert
-		output_mask = output_unbinned_alpha > 0.
-		batch_idxs = th.arange(th.max(ind_maps)+1, device=output_mask.device).reshape(-1,1,1).expand(output_mask.shape)
-		flat_masses = masses[output_mask]
-		flat_log_probs = th.log(output_unbinned_alpha[output_mask])
-		flat_batch_idxs = batch_idxs[output_mask]
-		# oos_log_probs = 1e-6*th.ones([batch_size],dtype=flat_log_probs.dtype,device=flat_log_probs.device)
+		# do the stupid inverse
+		output_binned_mask = output_binned > 0
+		pred_mzs = (self.inten_buckets.unsqueeze(0).expand_as(output_binned) - self.mz_bin_res/2.)[output_binned_mask]
+		pred_logprobs = th.log(output_binned[output_binned_mask])
+		pred_batch_idxs = th.repeat_interleave(
+			th.arange(output_binned.shape[0], device=output_binned.device),
+			th.sum(output_binned_mask,dim=1),
+			dim=0
+		)
+		# normalize
+		pred_logprobs = scatter_logsoftmax(
+			pred_logprobs,
+			pred_batch_idxs
+		)
+
+		if self.fix_batch_bug:
+			assert th.min(pred_mzs) > 1., th.min(pred_mzs)
 
 		out_d = {
-			"pred_mzs": flat_masses,
-			"pred_logprobs": flat_log_probs,
-			"pred_batch_idxs": flat_batch_idxs,
-			# "pred_oos_logprobs": oos_log_probs,
+			"pred_mzs": pred_mzs,
+			"pred_logprobs": pred_logprobs,
+			"pred_batch_idxs": pred_batch_idxs,
 		}
+
 		if self.binned_targs:
 			out_d["pred_spec"] = output_binned
+
+		if self.output_formulae:
+			
+			# get formula stuff 
+			# note: does not include precursor adduct stuff
+			# import pdb; pdb.set_trace()
+			assert th.all((masses == 0).all(2) == (masses == 0).any(2))
+			valid_nz_pos = valid_pos & (masses > 0)
+			pred_formula_mzs = masses[valid_nz_pos]
+			pred_formula_counts = th.sum(valid_nz_pos.long(), dim=2)
+			pred_formula_vecs = th.repeat_interleave(
+				frag_forms.reshape(-1,frag_forms.shape[2]), 
+				pred_formula_counts.flatten(), 
+				dim=0
+			)
+			_, pred_h_h_idxs = th.nonzero(valid_nz_pos.reshape(-1,valid_nz_pos.shape[2]), as_tuple=True)
+			pred_h_deltas = th.arange(valid_nz_pos.shape[2], device=valid_nz_pos.device) - valid_nz_pos.shape[2]//2
+			pred_formula_vecs[:,common.element_to_ind["H"]] += pred_h_deltas[pred_h_h_idxs]
+			assert th.all(pred_formula_vecs >= 0)
+			assert th.all(pred_formula_vecs.any(1))
+			pred_formula_batch_idxs = th.repeat_interleave(
+				th.arange(frag_forms.shape[0], device=frag_forms.device), 
+				pred_formula_counts.sum(dim=1), 
+				dim=0
+			)
+			# dedup
+			pred_b_formula_vecs = th.cat([pred_formula_batch_idxs.unsqueeze(1),pred_formula_vecs],dim=1)
+			pred_b_formula_vecs, pred_formula_mzs, pred_formula_batch_idxs = dedup(
+				pred_b_formula_vecs, 
+				*[("amax", pred_formula_mzs), ("amax", pred_formula_batch_idxs)],
+				dim=0
+			)
+			pred_formula_vecs = pred_b_formula_vecs[:,1:]
+			out_d["pred_formula_mzs"] = pred_formula_mzs
+			out_d["pred_formula_vecs"] = pred_formula_vecs
+			out_d["pred_formula_batch_idxs"] = pred_formula_batch_idxs
 
 		return out_d
