@@ -22,7 +22,8 @@ module load rdkit/2023.09.5
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-SPLIT_DP=data/split/nist20mona23v3_d4_wr00_inchikey
+DATASET_NAME=nist20mona23v3_d4_wr00_inchikey
+SPLIT_DP=data/split/${DATASET_NAME}
 PROC_DP=./data/proc/nist20mona23v3
 DB_FP=./data/ms2c/pubchem/pubchem.sqlite
 
@@ -35,11 +36,11 @@ echo create local proc_dp: ${SLURM_TMPDIR}/proc
 mkdir -p ${SLURM_TMPDIR}/proc
 
 # copy file to slrum local dir
-rsync -av ${PROC_DP}/ ${SLURM_TMPDIR}/proc 
+rsync -av --mkpath ${PROC_DP}/ ${SLURM_TMPDIR}/proc 
 echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/proc/)
-rsync -av ${SPLIT_DP}/ ${SLURM_TMPDIR}/split 
-echo list file in local split dir: $(ls ${SLURM_TMPDIR}/split/)
-rsync -av ${DB_FP} ${SLURM_TMPDIR}/pubchem.sqlite
+rsync -av --mkpath ${SPLIT_DP}/ ${SLURM_TMPDIR}/split/${DATASET_NAME} 
+echo list file in local split dir: $(ls ${SLURM_TMPDIR}/split/${DATASET_NAME} )
+rsync -av --mkpath ${DB_FP} ${SLURM_TMPDIR}/pubchem.sqlite
 
 # copy apptainer container
 module load apptainer/1.2.4
@@ -58,7 +59,7 @@ apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fr
 # run 02_prepare_ms2c_candidates
 apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python preproc_scripts/pubchem_ms2c/02_prepare_ms2c_candidates.py  \
-        --split_dp=split \
+        --split_dp=split/${DATASET_NAME} \
         --proc_dp=proc \
         --split_type=test \
         --db_file=./pubchem.sqlite \
@@ -69,16 +70,17 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
     python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
         --candidate_pkl_fp=candidates/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz \
         --proc_dp=proc \
-        --split_dp=split \
+        --split_dp=split/${DATASET_NAME} \
         --split_type=test \
         --ms2c_data_dp=ms2c_data_dp
 
 cd ${SLURM_TMPDIR}
-mkdir -p ${CANDIDATE_DP}$
-rsync -av candidates ${CANDIDATE_DP}$
+echo create candidate save dir: ${CANDIDATE_DP}
+mkdir -p ${CANDIDATE_DP}
+rsync -av candidates/ ${CANDIDATE_DP}
 
-mkdir -p ${PROC_DP}$
-rsync -av proc ${PROC_DP}$
-
+echo create proc save dir: ${PROC_DP}
+mkdir -p ${PROC_DP}
+rsync -av proc/ ${PROC_DP}
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
