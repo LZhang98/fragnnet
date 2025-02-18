@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=iceberg_gen_pubchem_inchikey
+#SBATCH --job-name=ms2c_get_candidates_inchikey_apptainer
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
 #SBATCH --time=0-4:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchem_inchikey_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchem_inchikey_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/ms2c_get_candidates_inchikey_apptainer_%j.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/ms2c_get_candidates_inchikey_apptainer_%j.err
 #SBATCH --open-mode=append
 
 # record start
@@ -24,7 +24,7 @@ cd /home/feiw/feiw/frag-gnn
 
 SPLIT_DP=data/split/nist20mona23v3_d4_wr00_inchikey
 PROC_DP=./data/proc/nist20mona23v3
-RUN_NAME=run_20241127
+RUN_NAME=run_250218
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
