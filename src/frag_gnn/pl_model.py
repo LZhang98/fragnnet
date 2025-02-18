@@ -564,33 +564,31 @@ class SpectrumPL(pl.LightningModule):
 
 	def _setup_result_trackers(self):
 
-		self.train_results = None
-		self.train_counter = 0
-		self.val_results = None
-		self.val_counter = 0
-		# store epoch mean metric in lightning module, for ease of reloading
-		self.train_mean_metrics = {}
-		self.val_mean_metrics = {}
-		self.train_std_metrics = {}
-		self.val_std_metrics = {}
-		if self.hparams.track_datapoint_metrics:
-			self.train_datapoint_metrics = {}
-			self.val_datapoint_metrics = {}
-			if self.hparams.spec_params["merge"]:
-				max_num_datapoints = 22000
-			else:
-				max_num_datapoints = 270000
-			self.train_num_datapoints = -th.ones([1],dtype=th.int64)
-			self.val_num_datapoints = -th.ones([1],dtype=th.int64)
-		for name in self.metric_names:
-			_name = name.replace(".","-")
-			self.train_mean_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
-			self.val_mean_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
-			self.train_std_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
-			self.val_std_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
+		if self.hparams.spec_params["merge"]:
+			max_num_datapoints = 22000
+		else:
+			max_num_datapoints = 270000
+		for split in ["train","val","test"]:
+			setattr(self,f"{split}_results",None)
+			setattr(self,f"{split}_counter",0)
+			setattr(self,f"{split}_mean_metrics",{})
+			setattr(self,f"{split}_std_metrics",{})
 			if self.hparams.track_datapoint_metrics:
-				self.train_datapoint_metrics[_name] = -th.ones([max_num_datapoints],dtype=th.float32)
-				self.val_datapoint_metrics[_name] = -th.ones([max_num_datapoints],dtype=th.float32)
+				setattr(self,f"{split}_datapoint_metrics",{})
+				setattr(self,f"{split}_num_datapoints",-th.ones([1],dtype=th.int64))
+			for name in self.metric_names:
+				_name = name.replace(".","-")
+				mean_metrics = getattr(self,f"{split}_mean_metrics")
+				std_metrics = getattr(self,f"{split}_std_metrics")
+				if split != "test":
+					mean_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
+					std_metrics[_name] = -th.ones([self.hparams.max_epochs],dtype=th.float32)
+				else:
+					mean_metrics[_name] = -th.ones([1],dtype=th.float32)
+					std_metrics[_name] = -th.ones([1],dtype=th.float32)
+				if self.hparams.track_datapoint_metrics:
+					datapoint_metrics = getattr(self,f"{split}_datapoint_metrics")
+					datapoint_metrics[_name] = -th.ones([max_num_datapoints],dtype=th.float32)
 
 	def _setup_sampler(self):
 
@@ -606,7 +604,7 @@ class SpectrumPL(pl.LightningModule):
 			size=[self.hparams.max_epochs+1],
 			generator=train_dl_generator)
 
-	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs,filter_spec=False,bin_spec=False,transform_spec=False):
+	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs,filter_spec=False,bin_spec=False,transform_spec=False,normalize_spec=False):
 		# assumes spec_ints are not logged, or transformed in any way
 		# does not assume any particular kind of normalization
 
@@ -629,8 +627,9 @@ class SpectrumPL(pl.LightningModule):
 			spec_ints = batched_mf1000_normalize(spec_ints, spec_batch_idxs)
 			# transform
 			spec_ints = self.ints_transform_func(spec_ints)
-		# renormalize
-		spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
+		if normalize_spec:
+			# renormalize
+			spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
 		return spec_mzs, spec_ints, spec_batch_idxs
 
 	def preproc_spec(
@@ -646,13 +645,15 @@ class SpectrumPL(pl.LightningModule):
 		if log_in:
 			spec_ints = spec_ints.exp()
 		if train and pred:
+			# if you normalize here, you would mess up some losses (i.e. OOS)
 			spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
 				spec_mzs,
 				spec_ints,
 				spec_batch_idxs,
 				filter_spec=False,
 				bin_spec=self.binned_loss,
-				transform_spec=False
+				transform_spec=False,
+				normalize_spec=False
 			)
 		elif train and (not pred):
 			spec_mzs, spec_ints, spec_batch_idxs = self._preproc_spec(
@@ -661,11 +662,13 @@ class SpectrumPL(pl.LightningModule):
 				spec_batch_idxs,
 				filter_spec=True,
 				bin_spec=self.binned_loss,
-				transform_spec=True
+				transform_spec=True,
+				normalize_spec=True
 			)
 		elif (not train) and pred:
 			# untransform
 			spec_ints = self.ints_untransform_func(spec_ints, spec_batch_idxs)
+			# normalize (note that this messes up OOS stuff, which is fine for eval...)
 			spec_ints = self.ints_normalize_func(spec_ints, spec_batch_idxs)
 		elif (not train) and (not pred):
 			spec_mzs, spec_ints, spec_batch_idxs =  self._preproc_spec(
@@ -674,10 +677,11 @@ class SpectrumPL(pl.LightningModule):
 				spec_batch_idxs,
 				filter_spec=True,
 				bin_spec=False,
-				transform_spec=False
+				transform_spec=False,
+				normalize_spec=True
 			)
 		if log_out:
-				spec_ints = safelog(spec_ints, eps=self.hparams.log_min)
+			spec_ints = safelog(spec_ints, eps=self.hparams.log_min)
 		return spec_mzs, spec_ints, spec_batch_idxs
 
 	def predict_step(self,**batch_kwargs):
@@ -859,6 +863,7 @@ class SpectrumPL(pl.LightningModule):
 
 	def validation_step(self, batch, batch_idx):
 
+		assert not self.training
 		batch_results = self._common_step(batch, split="val")
 		mean_loss = batch_results["mean_loss"]
 		self._update_results(batch_results,"val")
@@ -866,9 +871,10 @@ class SpectrumPL(pl.LightningModule):
 
 	def test_step(self, batch, batch_idx):
 
+		assert not self.training
 		batch_results = self._common_step(batch, split="test")
 		mean_loss = batch_results["mean_loss"]
-		# self._update_results(batch_results,"test")
+		self._update_results(batch_results,"test")
 		return mean_loss
 	
 	def inference_step(self, batch, split, untransform_spec=False):
@@ -1036,55 +1042,57 @@ class SpectrumPL(pl.LightningModule):
 				f"{split}_{k}_epoch/std",
 				std_metrics[k],
 			)
-		# update epoch stats
-		mean_metrics_epochs = getattr(self,f"{split}_mean_metrics")
-		std_metrics_epochs = getattr(self,f"{split}_std_metrics")
-		for k in mean_metrics.keys():
-			mean_metrics_epochs[k.replace(".","-")][self.current_epoch] = mean_metrics[k]
-			std_metrics_epochs[k.replace(".","-")][self.current_epoch] = std_metrics[k]
-		# log histograms
-		if self.hparams.log_hist_metrics:
-			wandb_logger = self._get_wandb_logger()
-			for k,v in results.items():
-				if k in self.metric_names:
-					log_d = {
-						f"{split}_{k}_hist": wandb.Histogram(v.cpu()),
-						"epoch": self.current_epoch
-					}
-					if wandb_logger is not None:
-						wandb_logger.experiment.log(log_d)
-		# log best metric
-		update_datapoint_metrics = False
-		checkpoint_metric = self.hparams.checkpoint_metric.removeprefix("train_").removeprefix("val_").removesuffix("/mean").removesuffix("/std").removesuffix("_epoch")
-		for k in self.metric_bests:
-			assert k in self.metric_names, (k, self.metric_names)
-			mean_metric_epochs = mean_metrics_epochs[k.replace(".","-")][:self.current_epoch+1]
-			std_metric_epochs = std_metrics_epochs[k.replace(".","-")][:self.current_epoch+1]
-			if self.metric_min_max[k] == "min":
-				argbest_metric = th.argmin(mean_metric_epochs)
-			elif self.metric_min_max[k] == "max":
-				argbest_metric = th.argmax(mean_metric_epochs)
-			else:
-				assert self.metric_min_max[k] is None, self.metric_min_max[k]
-				continue
-			mean_metric_best = mean_metric_epochs[argbest_metric]
-			std_metric_best = std_metric_epochs[argbest_metric]
-			self.log(
-				f"{split}_{k}_best/mean",
-				mean_metric_best
-			)
-			self.log(
-				f"{split}_{k}_best/std",
-				std_metric_best
-			)
-			# if it's the best, update the datapoint metrics
-			if k == checkpoint_metric and argbest_metric == self.current_epoch:
+		if split != "test":
+			# update epoch stats
+			mean_metrics_epochs = getattr(self,f"{split}_mean_metrics")
+			std_metrics_epochs = getattr(self,f"{split}_std_metrics")
+			for k in mean_metrics.keys():
+				mean_metrics_epochs[k.replace(".","-")][self.current_epoch] = mean_metrics[k]
+				std_metrics_epochs[k.replace(".","-")][self.current_epoch] = std_metrics[k]
+			# log histograms
+			if self.hparams.log_hist_metrics:
+				wandb_logger = self._get_wandb_logger()
+				for k,v in results.items():
+					if k in self.metric_names:
+						log_d = {
+							f"{split}_{k}_hist": wandb.Histogram(v.cpu()),
+							"epoch": self.current_epoch
+						}
+						if wandb_logger is not None:
+							wandb_logger.experiment.log(log_d)
+			# log best metric
+			update_datapoint_metrics = False
+			checkpoint_metric = self.hparams.checkpoint_metric.removeprefix("train_").removeprefix("val_").removesuffix("/mean").removesuffix("/std").removesuffix("_epoch")
+			for k in self.metric_bests:
+				assert k in self.metric_names, (k, self.metric_names)
+				mean_metric_epochs = mean_metrics_epochs[k.replace(".","-")][:self.current_epoch+1]
+				std_metric_epochs = std_metrics_epochs[k.replace(".","-")][:self.current_epoch+1]
+				if self.metric_min_max[k] == "min":
+					argbest_metric = th.argmin(mean_metric_epochs)
+				elif self.metric_min_max[k] == "max":
+					argbest_metric = th.argmax(mean_metric_epochs)
+				else:
+					assert self.metric_min_max[k] is None, self.metric_min_max[k]
+					continue
+				mean_metric_best = mean_metric_epochs[argbest_metric]
+				std_metric_best = std_metric_epochs[argbest_metric]
+				self.log(
+					f"{split}_{k}_best/mean",
+					mean_metric_best
+				)
+				self.log(
+					f"{split}_{k}_best/std",
+					std_metric_best
+				)
+				# if it's the best, update the datapoint metrics
+				if k == checkpoint_metric and argbest_metric == self.current_epoch:
+					update_datapoint_metrics = True
+			if checkpoint_metric == "epoch":
+				assert not update_datapoint_metrics
 				update_datapoint_metrics = True
-		if checkpoint_metric == "epoch":
-			assert not update_datapoint_metrics
+		else:
 			update_datapoint_metrics = True
-		# setattr(self,f"{split}_mean_metrics",mean_metrics_epochs)
-		# setattr(self,f"{split}_std_metrics",std_metrics_epochs)
+
 		if self.hparams.track_datapoint_metrics and update_datapoint_metrics:
 			datapoint_metrics = getattr(self,f"{split}_datapoint_metrics")
 			num_datapoints_p = getattr(self,f"{split}_num_datapoints")
@@ -1097,8 +1105,6 @@ class SpectrumPL(pl.LightningModule):
 			for k in mean_metrics.keys():
 				assert len(results[k]) == num_datapoints, (k, len(results[k]), num_datapoints)
 				datapoint_metrics[k.replace(".","-")][:num_datapoints] = results[k]
-			# setattr(self,f"{split}_datapoint_metrics",datapoint_metrics)
-			# setattr(self,f"{split}_num_datapoints",num_datapoints_p)
 
 	def _log_images(self, split):
 
@@ -1187,6 +1193,14 @@ class SpectrumPL(pl.LightningModule):
 		# reset
 		self.val_results = None
 		self.val_counter = 0
+
+	def on_test_epoch_end(self):
+
+		# consolidate results
+		self._consolidate_results("test")
+		# reset
+		self.test_results = None
+		self.test_counter = 0
 
 	def _print_grad_norm(self,prefix=None,total_num_params=5):
 

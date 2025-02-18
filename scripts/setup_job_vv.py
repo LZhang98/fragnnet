@@ -111,7 +111,10 @@ def main(args):
 			f"cd {args.root_dp}"
 		]
 	)
-	python_line = f"python {args.python_script_fp}"
+	python_line = "python"
+	if args.disable_asserts:
+		python_line += " -O"
+	python_line += f" {args.python_script_fp}"
 	script_kwargs = args.script_kwargs
 	for kwarg in script_kwargs:
 		assert "=" in kwarg, kwarg
@@ -171,5 +174,6 @@ if __name__ == "__main__":
 	parser.add_argument("--modules", type=str, nargs="+", default=["cuda-11.8"])
 	parser.add_argument("--home_dp", type=str, default="/fs01/home/adamo")
 	parser.add_argument("--requeue", type=booltype, default=False)
+	parser.add_argument("--disable_asserts", type=booltype, default=False)
 	args = parser.parse_args()
 	main(args)

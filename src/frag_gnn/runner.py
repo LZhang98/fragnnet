@@ -267,6 +267,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		loggers.append(wandb_logger)
 	else:
 		is_resume = False
+		job_id_fp = None
 
 	# CUDA and TF32 setup
 	if config_d['use_tensor_float32'] == True and config_d['accelerator'] == 'gpu':
@@ -395,7 +396,14 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 
 	# setup datasets
 	logging.info("setup dataset")
-	train_ds, val_ds = init_dataset(config_d, splits=("train","val"))
+	splits = ["train", "val"]
+	if config_d["eval_test_split"]:
+		splits.append("test")
+	dses = init_dataset(config_d, splits=splits)
+	train_ds = dses[0]
+	val_ds = dses[1]
+	if config_d["eval_test_split"]:
+		test_ds = dses[2]
 
 	# check config for sampler
 	if config_d["dynamic_batch_sampler"]:
@@ -414,7 +422,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	logging.info("setup dataloader")
 	train_dl = init_dataloader(train_ds, config_d)
 	val_dl = init_dataloader(val_ds, config_d)
-	# test_dl = init_dataloader(test_ds, config_d)
+	if config_d["eval_test_split"]:
+		test_dl = init_dataloader(test_ds, config_d)
 
 	# setup trainer
 	logging.info("setup trainer")
@@ -489,6 +498,14 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			ckpt_path=ckpt_fp
 		)
 	logging.info("callback metrics")
+
+	if not trainer.interrupted and config_d["eval_test_split"]:
+		logging.info("test model")
+		trainer.test(
+			model=model,
+			ckpt_path="best",
+			dataloaders=test_dl
+		)
 
 	if config_d["compile"]:
 		print(model.dynamo_prof.report())

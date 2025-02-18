@@ -14,7 +14,14 @@ from frag_gnn.utils.data_utils import formula_to_mass
 RDLogger.DisableLog('rdApp.*')
 
 
-def fit_ann_library(spec_df,ann_df,library_size,max_isotope,debug=False):
+def fit_ann_library(
+	spec_df,
+	ann_df,
+	library_size,
+	max_isotope,
+	debug=False,
+	huge_mz_diff_threshold=0.1,
+	big_mz_diff_ppm_threshold=1e-5):
 	
 	orig_spec_ids = spec_df[["dset","dset_spec_id","spec_id"]].copy()
 	spec_df = spec_df[spec_df["spec_id"].isin(ann_df["spec_id"])]
@@ -51,14 +58,26 @@ def fit_ann_library(spec_df,ann_df,library_size,max_isotope,debug=False):
 	# verify mz diffs
 	mz_diffs = ann_df[["spec_id","peak_mzs","exact_mzs"]].copy()
 	mz_diffs["mz_diffs"] = (mz_diffs["peak_mzs"] - mz_diffs["exact_mzs"]).abs()
+	mz_diffs["mz_diffs_ppm"] = mz_diffs["mz_diffs"].to_numpy() / np.maximum(mz_diffs["peak_mzs"].to_numpy(), 200.)
 	if debug:
-		print("> distribution of mzs diff:")
+		print("> distribution of mzs diff (abs):")
 		print(mz_diffs["mz_diffs"].describe())
-	big_mz_diffs = mz_diffs[mz_diffs["mz_diffs"]>0.1]
+		print("> distribution of mzs diff (ppm):")
+		print(mz_diffs["mz_diffs_ppm"].describe())
+	if huge_mz_diff_threshold is None:
+		huge_mz_diff_threshold = float("inf")
+	if big_mz_diff_ppm_threshold is None:
+		big_mz_diff_ppm_threshold = float("inf")
+	huge_mz_diffs = mz_diffs[mz_diffs["mz_diffs"] > huge_mz_diff_threshold]
+	big_mz_diffs = mz_diffs[mz_diffs["mz_diffs_ppm"] > big_mz_diff_ppm_threshold]
+	huge_mz_diff_ids = huge_mz_diffs["spec_id"].unique()
 	big_mz_diff_ids = big_mz_diffs["spec_id"].unique()
+	if huge_mz_diff_ids.shape[0] > 0:
+		print(f"> warning: dropping spectra with huge mz diffs: {huge_mz_diffs.shape[0]} annotations, {huge_mz_diff_ids.shape[0]} spectra")
+		ann_df = ann_df[~(ann_df["spec_id"].isin(huge_mz_diff_ids))]
 	if big_mz_diff_ids.shape[0] > 0:
-		print(f"> warning: dropping big mz diffs: {big_mz_diffs.shape[0]} annotations, {big_mz_diff_ids.shape[0]} spectra")
-		ann_df = ann_df[~(ann_df["spec_id"].isin(big_mz_diffs["spec_id"]))]
+		print(f"> warning: dropping annotations with big mz diffs: {big_mz_diffs.shape[0]} annotations, {big_mz_diff_ids.shape[0]} spectra")
+		ann_df = ann_df[~(ann_df.index.isin(big_mz_diffs.index))]
 
 	# verify isotopes
 	if debug:

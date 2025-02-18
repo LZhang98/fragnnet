@@ -118,6 +118,11 @@ if __name__ == "__main__":
 		type=booltype,
 		default=False
 	)
+	parser.add_argument(
+		"--dset",
+		type=str,
+		default="nist20v3"
+	)
 	args = parser.parse_args()
 
 	eval_split = args.eval_split
@@ -146,11 +151,12 @@ if __name__ == "__main__":
 		"fraggnn_d4": FragGNNPL,
 		"iceberg_inten_100": IcebergIntenPL,
 		"iceberg_inten_all": IcebergIntenPL,
-		"iceberg_inten2_100": IcebergIntenPL,
-		"iceberg_inten2_all": IcebergIntenPL,
 		"iceberg_inten3_100": IcebergIntenPL,
 		"iceberg_inten3_all": IcebergIntenPL,
-		"graff": GrAFFPL
+		"graff": GrAFFPL,
+		"fraggnn_d3_long": FragGNNPL,
+		"fraggnn_d4_long": FragGNNPL,
+		"iceberg_inten3_100_long": IcebergIntenPL,
 	}
 
 	model_type_to_ds_cls = {
@@ -160,25 +166,12 @@ if __name__ == "__main__":
 		"fraggnn_d4": SpecMolFragDataset,
 		"iceberg_inten_100": SpecMolMagmaIntenDataset,
 		"iceberg_inten_all": SpecMolMagmaIntenDataset,
-		"iceberg_inten2_100": SpecMolMagmaIntenDataset,
-		"iceberg_inten2_all": SpecMolMagmaIntenDataset,
 		"iceberg_inten3_100": SpecMolMagmaIntenDataset,
 		"iceberg_inten3_all": SpecMolMagmaIntenDataset,
-		"graff": SpecMolAnnDataset
-	}
-
-	model_type_to_dset = {
-		"neims": "nist20v3",
-		"massformer": "nist20v3",
-		"fraggnn_d3": "nist20v3",
-		"fraggnn_d4": "nist20v3",
-		"iceberg_inten_100": "nist20v3",
-		"iceberg_inten_all": "nist20v3",
-		"iceberg_inten2_100": "nist20v3",
-		"iceberg_inten2_all": "nist20v3",
-		"iceberg_inten3_100": "nist20v3",
-		"iceberg_inten3_all": "nist20v3",
-		"graff": "nist20v3"
+		"graff": SpecMolAnnDataset,
+		"fraggnn_d3_long": SpecMolFragDataset,
+		"fraggnn_d4_long": SpecMolFragDataset,
+		"iceberg_inten3_100_long": SpecMolMagmaIntenDataset,
 	}
 
 	model_to_run_id = NestedDefaultDict()
@@ -189,7 +182,7 @@ if __name__ == "__main__":
 	api = wandb.Api()
 	for split_type in split_types:
 		for model_type in wandb_model_types:
-			dset = model_type_to_dset[model_type]
+			dset = args.dset
 			group_name = f"{dset}_{split_type}_{model_type}"
 			runs = api.runs(
 				path="frag-gnn/frag-gnn",
@@ -207,7 +200,7 @@ if __name__ == "__main__":
 	model_to_ckpt = NestedDefaultDict()
 	for split_type in split_types:
 		for model_type in local_model_types:
-			dset = model_type_to_dset[model_type]
+			dset = args.dset
 			model_to_config[split_type][model_type] = f"config/{dset}_d4_wr00_{split_type}/{model_type}/s0.yml"
 			for seed in range(num_seeds):
 				ckpt = glob(os.path.join(local_path,f"{model_type}/{split_type}/ckpts/s{seed}/*.ckpt"))[0]

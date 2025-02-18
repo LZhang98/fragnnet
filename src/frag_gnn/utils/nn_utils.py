@@ -189,7 +189,6 @@ class GNN(nn.Module):
 
 	def forward(self, x, batch_index, edge_index, edge_attr):
 		"""encode batch of molecule graph"""
-		#print(x.shape)
 		z = self.input_project(x)
 		z = self.gnn(z, batch_index, edge_index, edge_attr)
 		return z

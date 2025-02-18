@@ -585,7 +585,7 @@ def get_wandb_runids_by_grp(group_name, entity='frag-gnn', project='frag-gnn'):
 	run_ids = [run.id for run in runs]
 	return run_ids
 
-def detele_ckpt_from_wandb(run_id, entity='frag-gnn', project='frag-gnn'):
+def delete_ckpt_from_wandb(run_id, entity='frag-gnn', project='frag-gnn'):
 	import wandb
 	api = wandb.Api()
 	run = api.run(f"{entity}/{project}/{run_id}")
@@ -601,7 +601,6 @@ class NestedDefaultDict(defaultdict):
 
 	def __repr__(self):
 		return repr(dict(self))
-
 
 def kl_div(x_logprobs, y_logprobs):
 
