@@ -75,10 +75,10 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
 
 cd ${SLURM_TMPDIR}
 mkdir -p ${CANDIDATE_DP}$
-rsync -av  ${CANDIDATE_DP}$
+rsync -av candidates ${CANDIDATE_DP}$
 
 mkdir -p ${PROC_DP}$
-rsync -av  proc ${PROC_DP}$
+rsync -av proc ${PROC_DP}$
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
