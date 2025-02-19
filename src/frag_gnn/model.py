@@ -1061,8 +1061,8 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 				th.ones_like(oos_logprobs),
 				rtol=0.,
 				atol=1e-2
-			), (scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp())
-		)
+			)
+		), (scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp())
 
 		out_d = {
 			"pred_mzs": spec_mzs,
