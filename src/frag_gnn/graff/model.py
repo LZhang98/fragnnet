@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 import torch_geometric as pyg
 
-from frag_gnn.utils.misc_utils import LOG_TWO, check_pyg_compile, check_pyg_full_compile, scatter_reduce
+from frag_gnn.utils.misc_utils import LOG_TWO, check_pyg_compile, check_pyg_full_compile, scatter_reduce, dedup
 from frag_gnn.graff.nn_utils import *
 
 class GrAFFModel(nn.Module):
@@ -188,16 +188,26 @@ class GrAFFModel(nn.Module):
 		pred_mzs = ann_library_mzs
 		pred_logprobs = log_y_pred
 		pred_batch_idxs = ann_batch_idxs
+		pred_formula_idxs = ann_library_idxs
+
+		# aggregate logprobs in the same spectrum based on mz
+		pred_mzs_batch_idxs = th.stack([pred_mzs, pred_batch_idxs.float()], dim=1)
+		pred_mzs_batch_idxs, pred_logprobs, pred_formula_idxs = dedup(
+			pred_mzs_batch_idxs,
+			*[("lse", pred_logprobs), ("amax", pred_formula_idxs)],
+			dim=0
+		)
+		pred_mzs = pred_mzs_batch_idxs[:,0]
+		pred_batch_idxs = pred_mzs_batch_idxs[:,1].long()
 
 		out_d = {
 			"pred_mzs": pred_mzs,
 			"pred_logprobs": pred_logprobs,
-			"pred_batch_idxs": pred_batch_idxs
+			"pred_batch_idxs": pred_batch_idxs,
+			"pred_formula_idxs": pred_formula_idxs
 		}
 
-		# print(pred_logprobs.mean(), pred_logprobs.max())
-		if th.isinf(th.exp(pred_logprobs)).any():
-			import pdb; pdb.set_trace()
+		assert not th.isinf(th.exp(pred_logprobs)).any(), th.isinf(th.exp(pred_logprobs))
 
 		return out_d
 
