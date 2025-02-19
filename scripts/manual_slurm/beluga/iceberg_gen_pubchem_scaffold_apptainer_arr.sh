@@ -38,9 +38,12 @@ echo iceberg_inten_run_id: ${iceberg_inten_run_id}
 MAGMA_DP=pred_magma_nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
 ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s${task_id}_${iceberg_inten_run_id}.ckpt
 PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc/${DATASET_NAME}
-
 MAGMA_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/magma
-PREDICTED_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/predicted
+
+echo MAGMA_DP: ${MAGMA_DP}
+echo ICEBERG_GEN_CKPT_FP: ${ICEBERG_GEN_CKPT_FP}
+echo PROC_DP: ${PROC_DP}
+echo MAGMA_SAVE_DP: ${MAGMA_SAVE_DP}
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc

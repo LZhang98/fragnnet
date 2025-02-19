@@ -45,6 +45,13 @@ PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc/${DATASET_NAME
 MAGMA_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/magma
 PREDICTED_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/predicted
 
+echo MAGMA_DP: ${MAGMA_DP}
+echo ICEBERG_GEN_CKPT_FP: ${ICEBERG_GEN_CKPT_FP}
+echo ICEBERG_INTERN_CKPT_FP: ${ICEBERG_INTERN_CKPT_FP}
+echo PROC_DP: ${PROC_DP}
+echo MAGMA_SAVE_DP: ${MAGMA_SAVE_DP}
+echo PREDICTED_SAVE_DP: ${PREDICTED_SAVE_DP}
+
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
 mkdir -p ${SLURM_TMPDIR}/proc
