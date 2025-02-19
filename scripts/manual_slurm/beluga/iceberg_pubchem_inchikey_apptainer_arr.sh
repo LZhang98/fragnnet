@@ -26,16 +26,21 @@ cd /home/feiw/feiw/frag-gnn
 RUN_NAME=run_250218
 ICEBERG_GEN_RUN_IDS=('i7k9gc3d' 'mz3s3h62' '6f4nes2g' 'lp60e1nq' '3zjhzrss')
 ICEBERG_INETRN_RUN_IDS=('c8iwu7il' 'rtt8i90g' 'acgyna2a' '683gijym' 'yeatgz7o')
+DATASET_NAME=pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
 
 task_id=${SLURM_ARRAY_TASK_ID}
 iceberg_gen_run_id=${ICEBERG_GEN_RUN_IDS[$task_id]}
 iceberg_inten_run_id=${ICEBERG_INETRN_RUN_IDS[$task_id]}
 
+echo task_id: ${task_id}
+echo iceberg_gen_run_id: ${iceberg_gen_run_id}
+echo iceberg_inten_run_id: ${iceberg_inten_run_id}
+
 SAVE_FP=nist20v3_inchikey_iceberg_inten_100_s${task_id}.pkl
 MAGMA_DP=pred_magma_nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
 ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
 ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s${task_id}_${iceberg_inten_run_id}.ckpt
-PROC_DP=./data/ms2c/pubchem/${RUN_NAME}/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc/${DATASET_NAME}
 
 MAGMA_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/magma
 PREDICTED_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/predicted
