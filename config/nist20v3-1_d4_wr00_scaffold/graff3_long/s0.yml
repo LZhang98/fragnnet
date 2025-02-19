@@ -35,11 +35,11 @@ spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: False #True
+  preprocess: True
 mol_params:
   pyg: False
   graff: True
-  preprocess: False #True
+  preprocess: True
 ann_params:
   max_isotope: 2
   library_size: 10000
@@ -52,7 +52,7 @@ ann_params:
     - test
   huge_mz_diff_threshold: 0.1
   big_mz_diff_ppm_threshold: 0.00001
-  preprocess: False #True
+  preprocess: True
 
 # model stuff
 model_type: graff
