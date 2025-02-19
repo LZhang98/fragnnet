@@ -15,9 +15,8 @@
 echo `date`: Job ${SLURM_JOB_ID} is allocated resources
 
 #load modules
+module purge
 module load StdEnv/2023
-module load python/3.10
-module load rdkit/2023.09.5
 
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
@@ -29,7 +28,7 @@ DB_FP=./data/ms2c/pubchem/pubchem.sqlite
 
 RUN_NAME=run_250218
 CANDIDATE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/candidates
-PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc
+CANDIDATE_PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
@@ -65,10 +64,13 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --db_file=./pubchem.sqlite \
         --candidate_dp=candidates
 
+CANDIDATE_FILENAME=$(ls -1 ${SLURM_TMPDIR}/candidates| head -n 1)
+CANDIDATE_FILENAME_NO_EXT="${CANDIDATE_FILENAME%%.*}"
+
 # run 03_perpare_ms2c_mol_and_spec_df
 apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
-        --candidate_pkl_fp=candidates/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz \
+        --candidate_pkl_fp=candidates/${CANDIDATE_FILENAME} \
         --proc_dp=proc \
         --split_dp=split/${DATASET_NAME} \
         --split_type=test \
@@ -79,9 +81,9 @@ echo create candidate save dir: ${CANDIDATE_DP}
 mkdir -p ${CANDIDATE_DP}
 rsync -av candidates/ ${CANDIDATE_DP}
 
-echo create proc save dir: ${PROC_DP}
-mkdir -p ${PROC_DP}
-rsync -av --mkpath proc/ ${PROC_DP}/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+echo create proc save dir: ${CANDIDATE_PROC_DP}
+mkdir -p ${CANDIDATE_PROC_DP}
+rsync -av --mkpath ms2c_data_dp/ ${CANDIDATE_PROC_DP}
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running

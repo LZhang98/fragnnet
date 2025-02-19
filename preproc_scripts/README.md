@@ -166,21 +166,23 @@ python preproc_scripts/pubchem_ms2c/02_prepare_ms2c_candidates.py  \
 From canidates, we will create proc for `c2ms` prediction.
 
 ```bash
+# pubchem ms2c for inchikey split
+python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
+ --candidate_pkl_fp=./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz \
+ --proc_dp=./data/proc/nist20mona23v3 \
+ --split_dp=./data/split/nist20mona23v3_d4_wr00_inchikey \
+ --split_type=test \
+ --ms2c_data_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+
 # pubchem ms2c for scaffold split
 python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
  --candidate_pkl_fp=./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz \
  --proc_dp=./data/proc/nist20mona23v3 \
  --split_dp=./data/split/nist20mona23v3_d4_wr00_inchikey \
  --split_type=test \
- --ms2c_data_dp=./data/ms2c/pubchem/proc
+ --ms2c_data_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50
 
-# pubchem ms2c for scaffold split
-python preproc_scripts/pubchem_ms2c/03_perpare_ms2c_mol_and_spec_df.py \
- --candidate_pkl_fp=./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50.pkl.gz \
- --proc_dp=./data/proc/nist20mona23v3 \
- --split_dp=./data/split/nist20mona23v3_d4_wr00_scaffold \
- --split_type=test \
- --ms2c_data_dp=./data/ms2c/pubchem/proc
+
 ```
 
 ## Run C2MS prediction for MS2C tasks
