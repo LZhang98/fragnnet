@@ -36,7 +36,7 @@ echo iceberg_gen_run_id: ${iceberg_gen_run_id}
 echo iceberg_inten_run_id: ${iceberg_inten_run_id}
 
 MAGMA_DP=pred_magma_nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
-ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s${task_id}_${iceberg_inten_run_id}.ckpt
+ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
 PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc/${DATASET_NAME}
 MAGMA_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/magma
 
