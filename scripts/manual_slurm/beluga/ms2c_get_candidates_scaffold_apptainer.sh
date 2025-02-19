@@ -81,7 +81,7 @@ rsync -av candidates/ ${CANDIDATE_DP}
 
 echo create proc save dir: ${PROC_DP}
 mkdir -p ${PROC_DP}
-rsync -av proc/ ${PROC_DP}
+rsync -av --mkpath proc/ ${PROC_DP}/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
