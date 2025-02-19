@@ -19,7 +19,6 @@ echo SLURM_ARRAY_TASK_ID: ${SLURM_ARRAY_TASK_ID}
 #load modules
 module load StdEnv/2023
 module load python/3.10
-module load rdkit/2023.09.5
 
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
