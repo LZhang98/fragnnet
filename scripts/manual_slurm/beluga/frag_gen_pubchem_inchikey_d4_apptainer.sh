@@ -4,7 +4,7 @@
 #SBATCH --job-name=frag_gen_pubchem_inchikey_d4_apptainer
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
-#SBATCH --time=0-2:00
+#SBATCH --time=0-6:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
 #SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_pubchem_inchikey_d4_apptainer%j.out
