@@ -36,10 +36,10 @@ echo task_id: ${task_id}
 echo iceberg_gen_run_id: ${iceberg_gen_run_id}
 echo iceberg_inten_run_id: ${iceberg_inten_run_id}
 
-SAVE_FP=nist20v3_inchikey_iceberg_inten_100_s${task_id}.pkl
-MAGMA_DP=pred_magma_nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
-ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
-ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s${task_id}_${iceberg_inten_run_id}.ckpt
+SAVE_FP=nist20v3_scaffold_iceberg_inten_100_s${task_id}.pkl
+MAGMA_DP=pred_magma_nist20v3_scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
+ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
+ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_inten_100_s${task_id}_${iceberg_inten_run_id}.ckpt
 PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc/${DATASET_NAME}
 
 MAGMA_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/magma
@@ -86,16 +86,15 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --iceberg_intern_ckpt_fp=iceberg_inten.ckpt \
         --proc_dp=./proc \
         --run_iceberg_gen=True \
-        --iceberg_gen_use_cached=False \
         --run_iceberg_intern=False
 
+cd ${SLURM_TMPDIR}
 echo create predicted save dir: ${MAGMA_SAVE_DP}
 mkdir -p ${MAGMA_SAVE_DP}
 tar -czf ${MAGMA_DP}.tar.gz ${MAGMA_DP}
 echo copy ${MAGMA_DP}.tar.gz to ${MAGMA_SAVE_DP}
 cp ${MAGMA_DP}.tar.gz ${MAGMA_SAVE_DP}
 
-# run iceberg intern  
 apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
         --iceberg_intern_device=cpu \
@@ -109,7 +108,7 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --run_iceberg_intern=True
 
 cd ${SLURM_TMPDIR}
-echo create local predicted save dir: ${PREDICTED_SAVE_DP}
+echo create predicted save dir: ${PREDICTED_SAVE_DP}
 mkdir -p ${PREDICTED_SAVE_DP}
 gzip ${SAVE_FP} 
 echo copy ${SAVE_FP}.gz to ${PREDICTED_SAVE_DP}/${SAVE_FP}.gz
@@ -117,5 +116,3 @@ cp ${SAVE_FP}.gz ${PREDICTED_SAVE_DP}/${SAVE_FP}.gz
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
-
-

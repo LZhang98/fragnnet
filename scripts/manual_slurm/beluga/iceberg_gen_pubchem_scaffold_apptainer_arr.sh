@@ -29,14 +29,13 @@ DATASET_NAME=pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50
 
 task_id=${SLURM_ARRAY_TASK_ID}
 iceberg_gen_run_id=${ICEBERG_GEN_RUN_IDS[$task_id]}
-iceberg_inten_run_id=${ICEBERG_INETRN_RUN_IDS[$task_id]}
 
 echo task_id: ${task_id}
 echo iceberg_gen_run_id: ${iceberg_gen_run_id}
 echo iceberg_inten_run_id: ${iceberg_inten_run_id}
 
-MAGMA_DP=pred_magma_nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
-ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
+MAGMA_DP=pred_magma_nist20v3_scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
+ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
 PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc/${DATASET_NAME}
 MAGMA_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/magma
 
@@ -78,9 +77,9 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --iceberg_intern_ckpt_fp=iceberg_inten.ckpt \
         --proc_dp=./proc \
         --run_iceberg_gen=True \
-        --iceberg_gen_use_cached=False \
         --run_iceberg_intern=False
 
+cd ${SLURM_TMPDIR}
 echo create predicted save dir: ${MAGMA_SAVE_DP}
 mkdir -p ${MAGMA_SAVE_DP}
 tar -czf ${MAGMA_DP}.tar.gz ${MAGMA_DP}
@@ -89,5 +88,3 @@ cp ${MAGMA_DP}.tar.gz ${MAGMA_SAVE_DP}
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
-
-
