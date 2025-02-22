@@ -92,7 +92,6 @@ if __name__ == "__main__":
 	os.makedirs(args.output_dp,exist_ok=True)
 	stats_df.to_csv(os.path.join(args.output_dp,f"{eval_split}_df.csv"),index=False)
 	print(stats_df)
-	import pdb; pdb.set_trace()
 	
 	split_type_to_name = {
 		"inchikey": "InChIKey",
@@ -102,8 +101,6 @@ if __name__ == "__main__":
 	model_type_to_name = {
 		"fraggnn_d3": "FraGNNet-D3",
 		"fraggnn_d4": "FraGNNet-D4",
-		"fraggnn_d4_long": "FraGNNet-D4-Long",
-		"fraggnn_d3_long": "FraGNNet-D3-Long",
 		"neims": "NEIMS",
 		"massformer": "MassFormer",
 		"iceberg_inten_100": "Iceberg",
@@ -111,6 +108,10 @@ if __name__ == "__main__":
 		"iceberg_inten3_100": "Iceberg-Fix",
 		"iceberg_inten3_all": "Iceberg-Fix-ADV",
 	}
+
+	# add long ones
+	for k in list(model_type_to_name.keys()):
+		model_type_to_name[f"{k}_long"] = model_type_to_name[k] + "-Long"
 
 	latex_df = stats_df.copy()
 	latex_df = latex_df.drop(columns=["pred_oos_prob_mean","pred_oos_prob_std","pearson_r_oos_mean","pearson_r_oos_std"])

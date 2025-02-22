@@ -2,8 +2,9 @@ import torch as th
 import torch.nn as nn
 import numpy as np
 import torch_geometric as pyg
+from typing import List
 
-from frag_gnn.utils.misc_utils import LOG_TWO, check_pyg_compile, check_pyg_full_compile, scatter_reduce, dedup
+from frag_gnn.utils.misc_utils import LOG_TWO, check_pyg_compile, check_pyg_full_compile, scatter_reduce, dedup, scatter_logmeanexp, scatter_logsoftmax
 from frag_gnn.graff.nn_utils import *
 
 class GrAFFModel(nn.Module):
@@ -23,6 +24,7 @@ class GrAFFModel(nn.Module):
 		min_mz,
 		node_feats,
 		edge_feats,
+		output_formulae,
 		**kwargs
 	):
 		super().__init__()
@@ -43,6 +45,7 @@ class GrAFFModel(nn.Module):
 		# inference time only
 		self.min_probability = min_probability
 		self.min_mz = min_mz
+		self.output_formulae = output_formulae
 		
 		# embedding layers
 		self.onehot = CanonicalOneHot(
@@ -128,9 +131,11 @@ class GrAFFModel(nn.Module):
 			mol_graff: pyg.data.Data,
 			ann_library_mzs: th.Tensor,
 			ann_isotope_mask: th.Tensor,
-			ann_dup_idxs: th.Tensor,
-			ann_library_idxs: th.Tensor,
+			ann_formula_idxs: th.Tensor,
+			ann_isotope_idxs: th.Tensor,
+			# ann_dup_idxs: th.Tensor,
 			ann_batch_idxs: th.Tensor,
+			ann_library_formulae: np.array = None,
 			spec_ce: th.Tensor = None,
 			spec_ce_batch_idxs: th.Tensor = None,
 			**kwargs):
@@ -176,38 +181,50 @@ class GrAFFModel(nn.Module):
 		isotope_shift = self.isotope_shift(z).view(batch_size, 1, self.num_isotope_types)
 		log_y_pred = log_y_pred + isotope_shift
 		
-		# correct intensities of double-counted formulas
-		log_y_pred = log_y_pred.flatten()
-		log_y_pred[ann_dup_idxs] = log_y_pred[ann_dup_idxs] - LOG_TWO
-		
+		# # don't double count probabilities
+		# log_y_pred = log_y_pred.flatten()
+		# log_y_pred[ann_dup_idxs] = log_y_pred[ann_dup_idxs] - LOG_TWO
+
 		# softmax
-		log_y_pred = log_y_pred.reshape(batch_size,-1)
-		log_y_pred = th.log_softmax(log_y_pred, dim=1)
-		log_y_pred = log_y_pred.flatten()[ann_library_idxs]
+		# log_y_pred = log_y_pred.reshape(batch_size,-1)
+		# log_y_pred = th.log_softmax(log_y_pred, dim=1)
+		log_y_pred = log_y_pred.flatten()
+		# aggregate same formula (and isotope)
+		# import pdb; pdb.set_trace()
+		log_y_pred = scatter_logmeanexp(log_y_pred, ann_formula_idxs)
+		# softmax over peaks in the spectrum
+		log_y_pred = scatter_logsoftmax(log_y_pred, ann_batch_idxs)
 
 		pred_mzs = ann_library_mzs
 		pred_logprobs = log_y_pred
 		pred_batch_idxs = ann_batch_idxs
-		pred_formula_idxs = ann_library_idxs
+		pred_isotope_idxs = ann_isotope_idxs
 
-		# aggregate logprobs in the same spectrum based on mz
-		pred_mzs_batch_idxs = th.stack([pred_mzs, pred_batch_idxs.float()], dim=1)
-		pred_mzs_batch_idxs, pred_logprobs, pred_formula_idxs = dedup(
-			pred_mzs_batch_idxs,
-			*[("lse", pred_logprobs), ("amax", pred_formula_idxs)],
-			dim=0
-		)
-		pred_mzs = pred_mzs_batch_idxs[:,0]
-		pred_batch_idxs = pred_mzs_batch_idxs[:,1].long()
+		assert pred_mzs.shape[0] == pred_logprobs.shape[0] == pred_isotope_idxs.shape[0], (pred_mzs.shape, pred_logprobs.shape, pred_isotope_idxs.shape)
+
+		# # aggregate logprobs in the same spectrum based on mz
+		# pred_mzs_batch_idxs = th.stack([pred_mzs, pred_batch_idxs.float()], dim=1)
+		# pred_mzs_batch_idxs, pred_logprobs, pred_formula_idxs = dedup(
+		# 	pred_mzs_batch_idxs,
+		# 	*[("lse", pred_logprobs), ("amax", pred_formula_idxs)],
+		# 	dim=0
+		# )
+		# pred_mzs = pred_mzs_batch_idxs[:,0]
+		# pred_batch_idxs = pred_mzs_batch_idxs[:,1].long()
+
+		assert not th.isinf(th.exp(pred_logprobs)).any(), th.isinf(th.exp(pred_logprobs))
 
 		out_d = {
 			"pred_mzs": pred_mzs,
 			"pred_logprobs": pred_logprobs,
 			"pred_batch_idxs": pred_batch_idxs,
-			"pred_formula_idxs": pred_formula_idxs
 		}
 
-		assert not th.isinf(th.exp(pred_logprobs)).any(), th.isinf(th.exp(pred_logprobs))
+		if self.output_formulae:
+			# convert idxs to formulae
+			pred_formulae = ann_library_formulae
+			out_d["pred_isotope_idxs"] = pred_isotope_idxs
+			out_d["pred_formulae"] = pred_formulae
 
 		return out_d
 

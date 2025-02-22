@@ -3,13 +3,14 @@ import pandas as pd
 import torch as th
 from pyteomics.mass import Composition
 from tqdm import tqdm
+import os
 
 from frag_gnn.dataset import BaseDataset, SpecMolDataset
 from frag_gnn.graff.data_utils import fit_ann_library, graff_preprocess
 from frag_gnn.utils.formula_utils import NEUTRON_MASS
 from frag_gnn.utils.data_utils import composition_to_string
 from frag_gnn.utils.spec_utils import batch_func
-from frag_gnn.utils.misc_utils import get_tensor_dict_memory_usage
+from frag_gnn.utils.misc_utils import get_tensor_dict_memory_usage, scatter_reduce
 
 def calculate_prec_formula(prec_formula,prec_type):
 
@@ -40,6 +41,7 @@ class SpecMolAnnDataset(SpecMolDataset):
 		**kwargs
 	):
 		
+		assert not ann_params["filter_peaks"]
 		BaseDataset.__init__(self)
 		self._base_init(
 			spec_fp=spec_fp,
@@ -77,13 +79,17 @@ class SpecMolAnnDataset(SpecMolDataset):
 		# only fit it if it's in training mode
 		assert self.ann_params["max_isotope"] >= 0, self.ann_params["max_isotope"]
 		self.num_isotopes = self.ann_params["max_isotope"] + 1
-		library_df = fit_ann_library(
-			um_spec_df.copy(),
-			ann_df.copy(), 
-			self.ann_params["library_size"],
-			self.ann_params["max_isotope"],
-			huge_mz_diff_threshold=self.ann_params["huge_mz_diff_threshold"],
-			big_mz_diff_ppm_threshold=self.ann_params["big_mz_diff_ppm_threshold"])
+		if self.ann_params["library_fp"] is None:
+			library_df = fit_ann_library(
+				um_spec_df.copy(),
+				ann_df.copy(), 
+				self.ann_params["library_size"],
+				self.ann_params["max_isotope"],
+				huge_mz_diff_threshold=self.ann_params["huge_mz_diff_threshold"],
+				big_mz_diff_ppm_threshold=self.ann_params["big_mz_diff_ppm_threshold"])
+		else:
+			assert os.path.isfile(self.ann_params["library_fp"])
+			library_df = pd.read_pickle(self.ann_params["library_fp"])
 		self.library_df = library_df
 		# setup mzs stuff
 		self.library_mzs = th.as_tensor(library_df["mzs"].values, dtype=th.float32)
@@ -134,28 +140,65 @@ class SpecMolAnnDataset(SpecMolDataset):
 		product_formulae_df = self.library_df[self.library_df["kind"] == "product"][["ann_id","formula"]]
 		loss_formulae_df = self.library_df[self.library_df["kind"] == "loss"][["ann_id","formula"]]
 		loss_formulae_df.loc[:,"formula"] = loss_formulae_df["formula"].apply(lambda formula: composition_to_string(prec_formula_c - Composition(formula=formula)))
-		both_formulae_df = product_formulae_df.merge(loss_formulae_df,on="formula",how="inner")
-		assert len(set(both_formulae_df["ann_id_x"])&set(both_formulae_df["ann_id_y"])) == 0
-		dup_mask = th.zeros([self.library_df.shape[0],self.num_isotopes],dtype=th.bool)
-		dup_mask[both_formulae_df["ann_id_x"].values,:] = True
-		dup_mask[both_formulae_df["ann_id_y"].values,:] = True
-		dup_mask = dup_mask.flatten()
+		# invalid_formulae = loss_formulae_df["formula"].str.contains("-")
+		# loss_formulae_df = loss_formulae_df[~invalid_formulae]
+		both_formulae_df = pd.concat([product_formulae_df,loss_formulae_df],axis=0).sort_values("ann_id", ascending=True)
+		dup_formulae_df = product_formulae_df.merge(loss_formulae_df,on="formula",how="inner")
+		assert len(set(dup_formulae_df["ann_id_x"])&set(dup_formulae_df["ann_id_y"])) == 0
+		# dedup duplicate formulae
+		# dup_mask = th.zeros([both_formulae_df.shape[0]],dtype=th.bool)
+		# dup_mask[dup_formulae_df["ann_id_x"]] = True
+		# dup_mask[dup_formulae_df["ann_id_y"]] = True
+		# dup_idxs = th.arange(both_formulae_df.shape[0])[dup_mask]
+		# dup_idxs = th.repeat_interleave(dup_idxs,self.num_isotopes) + th.arange(self.num_isotopes).repeat(dup_idxs.shape[0])
+		# import pdb; pdb.set_trace()
+		library_df_dedup = both_formulae_df.merge(dup_formulae_df[["ann_id_x","ann_id_y"]].rename(columns={"ann_id_y": "ann_id"}), on="ann_id", how="left")
+		library_df_dedup["ann_id"] = library_df_dedup["ann_id_x"].fillna(library_df_dedup["ann_id"]).astype(int)
+		library_df_dedup = library_df_dedup.drop(columns=["ann_id_x"])
+		ann_ids = th.as_tensor(library_df_dedup["ann_id"].to_numpy(), dtype=th.long)
+		ann_ids_un, ann_idxs_inv = th.unique(ann_ids,return_inverse=True)
+		ann_idxs_un = th.arange(ann_ids_un.shape[0])
+		isotope_idxs = th.arange(self.num_isotopes).repeat(ann_idxs_inv.shape[0])
+		ann_iso_idxs = th.repeat_interleave(ann_idxs_inv*self.num_isotopes,self.num_isotopes,dim=0) + isotope_idxs
+		# isotope_idxs_un_ = th.arange(self.num_isotopes).repeat(ann_idxs_un.shape[0])
+		# ann_iso_idxs_un_ = th.repeat_interleave(ann_idxs_un*self.num_isotopes,self.num_isotopes,dim=0) + isotope_idxs_un_
+		# library_mzs_un_ = library_mzs[ann_iso_idxs_un_]
+		# TODO: put this in the model?
+		isotope_idxs_un = scatter_reduce(
+			isotope_idxs,
+			ann_iso_idxs,
+			reduce="amax",
+			dim_size=ann_idxs_un.shape[0]*self.num_isotopes,
+			include_self=False
+		)
+		library_mzs_un = scatter_reduce(
+			library_mzs,
+			ann_iso_idxs,
+			reduce="amax",
+			dim_size=ann_idxs_un.shape[0]*self.num_isotopes,
+			include_self=False
+		)
+		# these are already deduped
 		if self.ann_params["filter_peaks"]:
-			# this could be slow...
-			mzs_diff = th.abs(library_mzs.unsqueeze(1) - mzs.unsqueeze(0))
-			filter_mask = th.any(mzs_diff <= self.ann_params["filter_peaks_tol"], dim=1)
-			filter_idxs = th.nonzero(filter_mask,as_tuple=True)[0]
-			library_mzs = library_mzs[filter_idxs]
-			dup_idxs = th.nonzero(dup_mask & filter_mask,as_tuple=True)[0]
-		else:
-			filter_idxs = th.arange(library_mzs.shape[0],device=library_mzs.device)
-			dup_idxs = th.nonzero(dup_mask,as_tuple=True)[0]
+			raise NotImplementedError
 		ann_data = {
-			"ann_library_mzs": library_mzs,
+			"ann_library_mzs": library_mzs_un,
 			"ann_isotope_mask": isotope_mask,
-			"ann_dup_idxs": dup_idxs,
-			"ann_library_idxs": filter_idxs
+			# "ann_dup_idxs": dup_idxs,
+			"ann_formula_idxs": ann_iso_idxs,
+			"ann_isotope_idxs": isotope_idxs_un,
 		}
+		if self.ann_params["formula_str"]:
+			ann_iso_idxs_un = scatter_reduce(
+				ann_iso_idxs,
+				ann_iso_idxs,
+				reduce="amax",
+				dim_size=ann_idxs_un.shape[0]*self.num_isotopes,
+				include_self=False
+			)
+			library_formula_df_un = library_df_dedup.drop_duplicates(subset="ann_id").sort_values("ann_id", ascending=True)
+			library_formula_un = (library_formula_df_un["formula"].iloc[ann_iso_idxs_un.numpy()//self.num_isotopes]).to_numpy()
+			ann_data["ann_library_formulae"] = library_formula_un
 		return ann_data
 
 	def _process_mol(self, mol_entry):
@@ -196,25 +239,37 @@ class SpecMolAnnDataset(SpecMolDataset):
 	def _special_collate(keys, collate_data):
 
 		assert "ann_library_mzs" in keys
-		assert "ann_dup_idxs" in keys
-		assert "ann_library_idxs" in keys
+		assert "ann_formula_idxs" in keys
+		assert "ann_isotope_idxs" in keys
+		# assert "ann_dup_idxs" in keys
 		# collate ann_library_mzs
 		ann_batched = batch_func(
 			*[
 				collate_data["ann_library_mzs"],
-				collate_data["ann_dup_idxs"],
-				collate_data["ann_library_idxs"]
+				collate_data["ann_isotope_idxs"],
+				collate_data["ann_formula_idxs"]
 			],
-			offset_flags=[False, True, True],
+			offset_flags=[False,False,True],
 		)
+		# # collate ann_formula_idxs
+		# ann_batched_2 = batch_func(
+		# 	*[
+		# 		collate_data["ann_formula_idxs"],
+		# 		collate_data["ann_dup_idxs"]
+		# 	],
+		# 	offset_flags=[False,True],
+		# )
 		collate_data["ann_library_mzs"] = ann_batched[0]
-		collate_data["ann_dup_idxs"] = ann_batched[1]
-		collate_data["ann_library_idxs"] = ann_batched[2]
+		collate_data["ann_isotope_idxs"] = ann_batched[1]
+		collate_data["ann_formula_idxs"] = ann_batched[2]
 		collate_data["ann_batch_idxs"] = ann_batched[3]
+		# collate_data["ann_formula_idxs"] = ann_batched[0]
+		# collate_data["ann_dup_idxs"] = ann_batched_2[1]
 		# remove from list
 		keys.remove("ann_library_mzs")
-		keys.remove("ann_dup_idxs")
-		keys.remove("ann_library_idxs")
+		keys.remove("ann_formula_idxs")
+		keys.remove("ann_isotope_idxs")
+		# keys.remove("ann_dup_idxs")
 		SpecMolDataset._special_collate(keys, collate_data)
 
 	@staticmethod

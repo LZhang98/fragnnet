@@ -154,9 +154,7 @@ if __name__ == "__main__":
 		"iceberg_inten3_100": IcebergIntenPL,
 		"iceberg_inten3_all": IcebergIntenPL,
 		"graff": GrAFFPL,
-		"fraggnn_d3_long": FragGNNPL,
-		"fraggnn_d4_long": FragGNNPL,
-		"iceberg_inten3_100_long": IcebergIntenPL,
+		"graff3": GrAFFPL,
 	}
 
 	model_type_to_ds_cls = {
@@ -169,10 +167,14 @@ if __name__ == "__main__":
 		"iceberg_inten3_100": SpecMolMagmaIntenDataset,
 		"iceberg_inten3_all": SpecMolMagmaIntenDataset,
 		"graff": SpecMolAnnDataset,
-		"fraggnn_d3_long": SpecMolFragDataset,
-		"fraggnn_d4_long": SpecMolFragDataset,
-		"iceberg_inten3_100_long": SpecMolMagmaIntenDataset,
+		"graff3": SpecMolAnnDataset,
 	}
+	
+	# add long runs
+	for k in list(model_type_to_model_cls.keys()):
+		model_type_to_model_cls[f"{k}_long"] = model_type_to_model_cls[k]
+	for k in list(model_type_to_ds_cls.keys()):
+		model_type_to_ds_cls[f"{k}_long"] = model_type_to_ds_cls[k]
 
 	model_to_run_id = NestedDefaultDict()
 	model_to_config = NestedDefaultDict()
@@ -226,6 +228,8 @@ if __name__ == "__main__":
 					config_d[key]["preprocess"] = False
 					if k == "magma":
 						config_d[key]["preload"] = False
+			config_d["graff_output_formulae"] = True
+			config_d["iceberg_output_formulae"] = True
 			print(">>> Loading dataset")
 			ds_cls = model_type_to_ds_cls[model_type]
 			ds = ds_cls(split=eval_split, **config_d)
