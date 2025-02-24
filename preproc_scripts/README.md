@@ -208,7 +208,7 @@ python scripts/ms2c/pubchem_v1/run_ms2c_predict_pubchem.py \
     --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
 ```
 
-In case that wandb is not accessaible, you can also supply following script wil checkpoint file.
+If wandb is not accessible, you can also supply the following script with a checkpoint file.
 
 ```bash
 python scripts/ms2c/pubchem_v1/run_ms2c_predict_pubchem.py \
@@ -234,7 +234,7 @@ If you wish to run `iceberg gen` and `iceberg predict` and provide wandb run id,
     --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
 ```
 
-In case that wandb is not accessaible, you can also supply following script wil checkpoint file.
+If wandb is not accessible, you can also supply the following script with a checkpoint file.
 
 ```bash
   python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
