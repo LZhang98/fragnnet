@@ -6,11 +6,14 @@ import dgl
 import dgl.nn as dgl_nn
 import copy
 import torch_scatter as ts
+from pyteomics.mass import Composition
 
 import frag_gnn.iceberg.common as common
 import frag_gnn.iceberg.nn_utils as nn_utils
 import frag_gnn.iceberg.fragmentation as fragmentation
 from frag_gnn.utils.misc_utils import scatter_logsoftmax, scatter_logsumexp, scatter_reduce, dedup_peaks, dedup
+from frag_gnn.utils.data_utils import composition_to_string
+from frag_gnn.iceberg.common.chem_utils import vec_to_formula
 
 class IcebergGenModel(nn.Module):
 
@@ -418,6 +421,7 @@ class IcebergIntenModel(nn.Module):
 		num_frags,
 		broken,
 		adducts,
+		adduct_form_deltas=None,
 		max_add_hs=None,
 		max_remove_hs=None,
 		masses=None,
@@ -644,6 +648,7 @@ class IcebergIntenModel(nn.Module):
 			# get formula stuff 
 			# note: does not include precursor adduct stuff
 			# import pdb; pdb.set_trace()
+			assert adduct_form_deltas is not None
 			assert th.all((masses == 0).all(2) == (masses == 0).any(2))
 			valid_nz_pos = valid_pos & (masses > 0)
 			pred_formula_mzs = masses[valid_nz_pos]
@@ -671,8 +676,17 @@ class IcebergIntenModel(nn.Module):
 				dim=0
 			)
 			pred_formula_vecs = pred_b_formula_vecs[:,1:]
+			# account for adducts
+			pred_formula_vecs += adduct_form_deltas[pred_formula_batch_idxs]
+			# convert formula vecs to strings (this is slow!)
+			pred_formulae = [
+				composition_to_string(Composition(formula=vec_to_formula(pred_formula_vec.squeeze(0)))) \
+					for pred_formula_vec in pred_formula_vecs.cpu().split(1, dim=0)
+			]
+			pred_formulae = np.array(pred_formulae)
+
 			out_d["pred_formula_mzs"] = pred_formula_mzs
-			out_d["pred_formula_vecs"] = pred_formula_vecs
+			out_d["pred_formulae"] = pred_formulae
 			out_d["pred_formula_batch_idxs"] = pred_formula_batch_idxs
 
 		return out_d

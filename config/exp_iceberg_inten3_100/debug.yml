@@ -26,6 +26,7 @@ magma_params:
   mz_max: 1500.0
   sum_ints: True
   preprocess: True
+  adduct_form_deltas: False
 
 # model stuff
 model_type: iceberg_inten
@@ -41,7 +42,7 @@ iceberg_inject_early: False
 iceberg_embed_adduct: True
 iceberg_encode_forms: True
 iceberg_fix_batch_bug: True
-iceberg_output_formulae: True
+iceberg_output_formulae: False
 
 # loss stuff
 loss_type: cosine_distance

@@ -16,11 +16,11 @@ spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: False #True
+  preprocess: True #False
 mol_params:
   pyg: False
   graff: True
-  preprocess: False #True
+  preprocess: True #False
 ann_params:
   max_isotope: 2
   library_size: 10000
@@ -33,7 +33,9 @@ ann_params:
     - test
   huge_mz_diff_threshold: 0.1
   big_mz_diff_ppm_threshold: 0.00001
-  preprocess: False #True
+  formula_str: True
+  library_fp: #data/proc/nist20mona23v3/debug_library.pkl
+  preprocess: True #False
 
 # model stuff
 model_type: graff
@@ -68,7 +70,7 @@ accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.000254
 weight_decay: 0.000001
-accelerator: gpu
+accelerator: gpu #cpu
 devices: 1
 min_epochs: 200
 max_epochs: 200
@@ -86,4 +88,5 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-compile: True
+compile: True #False
+num_workers: 7 #0
