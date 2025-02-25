@@ -24,7 +24,7 @@ class GrAFFModel(nn.Module):
 		min_mz,
 		node_feats,
 		edge_feats,
-		output_formulae,
+		output_formula_str,
 		**kwargs
 	):
 		super().__init__()
@@ -45,7 +45,7 @@ class GrAFFModel(nn.Module):
 		# inference time only
 		self.min_probability = min_probability
 		self.min_mz = min_mz
-		self.output_formulae = output_formulae
+		self.output_formula_str = output_formula_str
 		
 		# embedding layers
 		self.onehot = CanonicalOneHot(
@@ -220,11 +220,11 @@ class GrAFFModel(nn.Module):
 			"pred_batch_idxs": pred_batch_idxs,
 		}
 
-		if self.output_formulae:
+		if self.output_formula_str:
 			# convert idxs to formulae
-			pred_formulae = ann_library_formulae
+			pred_formula_str = ann_library_formulae
 			out_d["pred_isotope_idxs"] = pred_isotope_idxs
-			out_d["pred_formulae"] = pred_formulae
+			out_d["pred_formula_str"] = pred_formula_str
 
 		return out_d
 

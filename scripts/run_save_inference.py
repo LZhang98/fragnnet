@@ -228,8 +228,7 @@ if __name__ == "__main__":
 					config_d[key]["preprocess"] = False
 					if k == "magma":
 						config_d[key]["preload"] = False
-			config_d["graff_output_formulae"] = True
-			config_d["iceberg_output_formulae"] = True
+			config_d["output_formula_str"] = True
 			print(">>> Loading dataset")
 			ds_cls = model_type_to_ds_cls[model_type]
 			ds = ds_cls(split=eval_split, **config_d)

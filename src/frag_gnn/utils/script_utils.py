@@ -55,7 +55,8 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 	cum_num_formulas = 0
 	cum_num_nb_nodes = 0
 	fraggnn_model = isinstance(model, FragGNNPL)
-	iceberg_model = isinstance(model, IcebergIntenPL) and model.model.output_formulae
+	iceberg_model = isinstance(model, IcebergIntenPL)
+	output_formula_str = model.model.output_formula_str
 	if not (fraggnn_model or iceberg_model):
 		assert not nb_iso
 		BATCH_IDX_VARS = [
@@ -70,8 +71,11 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 		BATCH_IDX_VARS = [
 			"pred_batch_idxs",
 			"true_batch_idxs",
-			"pred_formula_batch_idxs"
 		]
+		if output_formula_str:
+			BATCH_IDX_VARS.extend([
+				"pred_formula_batch_idxs"
+			])
 		NODE_IDX_VARS = []
 		FORMULA_IDX_VARS = []
 		NB_NODE_IDX_VARS = []

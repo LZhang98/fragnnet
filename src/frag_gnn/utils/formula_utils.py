@@ -3,9 +3,10 @@ import itertools
 import numpy as np
 import scipy
 import re
+from pyteomics.mass import Composition
 
 from typing import List, Tuple, Dict, Literal
-from .misc_utils import none_or_nan
+from frag_gnn.utils.misc_utils import none_or_nan
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
 ELECTRON_MASS = 0.00054858
@@ -25,6 +26,18 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"[M+H]+_NL": -H_MASS + ELECTRON_MASS,
 	"[M-H]-_NL": H_MASS - ELECTRON_MASS,
 }
+PREC_TYPE_TO_FORMULA_DIFF = {
+	"[M+H]+": "H1",
+	"[M-H]-": "H-1",
+	"[M+Na]+": "Na1",
+	"[M+NH4]+": "N1H4",
+	"[M-H2O+H]+": "O-1H-1",
+	"[M]+": ""
+}
+PREC_TYPE_TO_COMP_DIFF = {
+	k: Composition(v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()
+}
+
 NEUTRON_MASS = 1.008665
 
 def MASS(element: str | int) -> float:

@@ -24,6 +24,7 @@ spec_params:
   merge_keep_ces: False
   sparse: True
   prec_type: True
+  prec_type_str: False
   prec_types:
     - "[M+H]+"
   inst_type: True
@@ -78,6 +79,7 @@ frag_params:
   num_isotopes: 1
   formula_peak_mzs: True
   formula_peak_probs: True
+  formula_str: False
   compressed: True
   preload: False
   preprocess: False
@@ -110,6 +112,7 @@ num_hs: 4
 num_elements: 12
 int_embedder: abs-sines
 int_embedder_tight: False
+output_formula_str: False
 # mol model
 mol_hidden_size: 256
 mol_num_layers: 4
@@ -153,7 +156,6 @@ iceberg_pool_type: avg
 iceberg_inject_early: False
 iceberg_embed_adduct: False
 iceberg_encode_forms: False
-iceberg_output_formulae: False
 iceberg_fix_batch_bug: False
 # massformer model
 mf_flag: False
@@ -176,7 +178,6 @@ graff_eig_depth: 2
 graff_dropout: 0.1
 graff_min_probability: 0.0
 graff_min_mz: 0.0
-graff_output_formulae: False
 # other
 lr: 0.0001
 lr_schedule: False

@@ -1363,6 +1363,7 @@ class FragGNNPL(SpectrumPL):
 			inst_insert_location=self.hparams.inst_insert_location,
 			inst_insert_size=self.hparams.inst_insert_size,
 			inst_types=self.hparams.spec_params["inst_types"],
+			output_formula_str=self.hparams.output_formula_str
 		)
 		
 		self._check_ce_params()

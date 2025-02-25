@@ -275,7 +275,7 @@ class IcebergIntenModel(nn.Module):
 		mz_bin_res: float = 0.1,
 		mz_max: float = 1500.0,
 		sum_ints: bool = True,
-		output_formulae: bool = False,
+		output_formula_str: bool = False,
 		fix_batch_bug: bool = False,
 		**kwargs,
 	):
@@ -289,7 +289,7 @@ class IcebergIntenModel(nn.Module):
 		self.binned_targs = binned_targs
 		self.encode_forms = encode_forms
 		self.add_hs = add_hs
-		self.output_formulae = output_formulae
+		self.output_formula_str = output_formula_str
 		self.fix_batch_bug = fix_batch_bug
 
 		self.formula_in_dim = 0
@@ -643,7 +643,7 @@ class IcebergIntenModel(nn.Module):
 		if self.binned_targs:
 			out_d["pred_spec"] = output_binned
 
-		if self.output_formulae:
+		if self.output_formula_str:
 			
 			# get formula stuff 
 			# note: does not include precursor adduct stuff
@@ -679,14 +679,14 @@ class IcebergIntenModel(nn.Module):
 			# account for adducts
 			pred_formula_vecs += adduct_form_deltas[pred_formula_batch_idxs]
 			# convert formula vecs to strings (this is slow!)
-			pred_formulae = [
+			pred_formula_str = [
 				composition_to_string(Composition(formula=vec_to_formula(pred_formula_vec.squeeze(0)))) \
 					for pred_formula_vec in pred_formula_vecs.cpu().split(1, dim=0)
 			]
-			pred_formulae = np.array(pred_formulae)
+			pred_formula_str = np.array(pred_formula_str)
 
 			out_d["pred_formula_mzs"] = pred_formula_mzs
-			out_d["pred_formulae"] = pred_formulae
+			out_d["pred_formula_str"] = pred_formula_str
 			out_d["pred_formula_batch_idxs"] = pred_formula_batch_idxs
 
 		return out_d

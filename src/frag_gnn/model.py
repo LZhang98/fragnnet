@@ -1,6 +1,8 @@
 import torch as th
 import torch.nn as nn
+import numpy as np
 from pprint import pprint
+from pyteomics.mass import Composition
 
 from frag_gnn.utils.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
 from frag_gnn.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax, scatter_masked_logsumexp
@@ -9,6 +11,8 @@ from frag_gnn.utils.nn_utils import *
 from frag_gnn.form_embedder import get_embedder
 from frag_gnn.utils.misc_utils import check_pyg_compile, LOG_ZERO, check_pyg_full_compile
 from frag_gnn.utils.spec_utils import transform_ce, batched_bin_func
+from frag_gnn.utils.data_utils import combine_formulae
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
 
 
 class CEModel:
@@ -247,7 +251,8 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		prec_types: list[str],
 		inst_insert_location: str,
 		inst_insert_size: int,
-		inst_types: list[str]):
+		inst_types: list[str],
+		output_formula_str: bool):
 
 		# nn.Module init
 		super().__init__()
@@ -392,6 +397,7 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		self.bin_output = bin_output
 		self.mz_bin_res = mz_bin_res
 		self.mz_max = mz_max
+		self.output_formula_str = output_formula_str
 
 		if self.bin_output:
 			self.mz_bins = th.arange(mz_bin_res,mz_max+mz_bin_res,mz_bin_res)
@@ -475,10 +481,12 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		frag_formula_sizes: th.Tensor,
 		frag_formula_cumsizes: th.Tensor,
 		frag_formula_peak_sizes: th.Tensor,
+		frag_formula_str: np.ndarray = None,
 		spec_ce: th.Tensor = None,
 		spec_ce_batch_idxs: th.Tensor = None,
 		spec_prec_type: th.Tensor = None,
 		spec_inst_type: th.Tensor = None,
+		spec_prec_type_str: np.ndarray = None,
 		**kwargs
 	):
 		"""forward methods for joint predictor
@@ -1105,6 +1113,20 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			"pred_nb_node_node_node_idxs": frag_nb_node_node_node_idxs,
 			"pred_nb_node_node_batch_idxs": frag_nb_node_node_batch_idxs,
 		}
+
+		if self.output_formula_str:
+
+			assert frag_formula_str is not None, "frag_formula_strs must be provided if output_formula_str=True"
+			assert spec_prec_type_str is not None, "spec_prec_type_strs must be provided if output_formula_str=True"			
+			assert frag_formula_str.shape[0] == frag_real_formula_logprobs.shape[0]
+			prec_type_str = spec_prec_type_str
+			prec_type_delta_comp = np.array([PREC_TYPE_TO_FORMULA_DIFF[prec_type_str[i]] for i in range(len(prec_type_str))])
+			prec_type_delta_comp = prec_type_delta_comp[frag_formula_batch_idxs.cpu().numpy()]
+			pred_formula_str = [
+				combine_formulae(frag_formula_str[i], prec_type_delta_comp[i]) for i in range(len(frag_formula_str))
+			]
+			pred_formula_str = np.array(pred_formula_str)
+			out_d["pred_formula_str"] = pred_formula_str
 
 		for k, v in out_d.items():
 			if "logprob" in k and v is not None and v.max() > 0.:

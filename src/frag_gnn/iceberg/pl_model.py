@@ -481,7 +481,7 @@ class IcebergIntenPL(SpectrumPL):
 			mz_bin_res=self.hparams.magma_params["mz_bin_res"],
 			mz_max=self.hparams.magma_params["mz_max"],
 			sum_ints=self.hparams.magma_params["sum_ints"],
-			output_formulae=self.hparams.iceberg_output_formulae,
+			output_formula_str=self.hparams.output_formula_str,
 			fix_batch_bug=self.hparams.iceberg_fix_batch_bug,
 		)
 		if self.hparams.magma_params["binned_targs"]:
