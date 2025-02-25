@@ -256,7 +256,6 @@ if __name__ == "__main__":
 	# spec filtering criteria
 	parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
 	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
-	parser.add_argument("--secondary_bias",type=bool,default=False, dest="if true, keep every thing in secondary and drop from train")
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
 	parser.add_argument("--max_prec_mz",type=float,default=1500.)
 	parser.add_argument("--min_prec_mz",type=float,default=0.)
