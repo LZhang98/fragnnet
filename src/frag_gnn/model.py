@@ -1123,7 +1123,7 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			prec_type_delta_comp = np.array([PREC_TYPE_TO_FORMULA_DIFF[prec_type_str[i]] for i in range(len(prec_type_str))])
 			prec_type_delta_comp = prec_type_delta_comp[frag_formula_batch_idxs.cpu().numpy()]
 			pred_formula_str = [
-				combine_formulae(frag_formula_str[i], prec_type_delta_comp[i]) for i in range(len(frag_formula_str))
+				combine_formulae(frag_formula_str[i], prec_type_delta_comp[i]) if frag_formula_str[i] != "" else "" for i in range(len(frag_formula_str))
 			]
 			pred_formula_str = np.array(pred_formula_str)
 			out_d["pred_formula_str"] = pred_formula_str
