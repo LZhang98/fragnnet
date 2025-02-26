@@ -17,12 +17,13 @@ from pprint import pprint
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--model_type", type=str, default="d3", choices=["d3","d4"])
+	parser.add_argument("--model_type", type=str, default="d4", choices=["d3","d4"])
 	parser.add_argument("--debug", type=booltype, default=False)
 	parser.add_argument("--mode", type=str, choices=["baseline","posfn","negfn","mix"], default="baseline")
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test"])
 	parser.add_argument("--split_type", type=str, default="scaffold", choices=["scaffold","inchikey"])
-	parser.add_argument("--output_dp", type=str, default="inference_outputs/entropyv3")
+	parser.add_argument("--output_dp", type=str, required=True)
+	parser.add_argument("--entropy_exp", type=str, default="entropyv3-1")
 	parser.add_argument("--overwrite", type=booltype, default=False)
 	args = parser.parse_args()
 
@@ -32,6 +33,7 @@ if __name__ == "__main__":
 	eval_split = args.eval_split
 	split_type = args.split_type
 	overwrite = args.overwrite
+	entropy_exp = args.entropy_exp
 	pd.options.display.float_format = '{:.4f}'.format
 
 	output_dir = f"{split_type}_{model_type}_{mode}_{eval_split}_{debug}"
@@ -41,8 +43,10 @@ if __name__ == "__main__":
 	# load configs
 	print(">>> Loading configs")
 	template_fp = "config/template.yml"
-	custom_fp = f"config/entropyv3/{split_type}/{model_type}_script_config.yml"
+	custom_fp = os.path.join("config",entropy_exp,split_type,f"{model_type}_script_config.yml")
+	assert os.path.isfile(custom_fp)
 	config_d = load_config(template_fp, custom_fp)
+	# modify config to record relevant metrics
 	config_d["auxiliary_scores"] = ["cos_sim","cos_hun","true_oos_prob"]
 	config_d["skip_extra_losses"] = False
 	config_d["compile"] = False
@@ -75,7 +79,7 @@ if __name__ == "__main__":
 		
 			runs = api.runs(
 					path="frag-gnn/frag-gnn",
-					filters={"group":f"entropyv3_{split_type}_{model_type}_{mode}_ens"})
+					filters={"group":f"{entropy_exp}_{split_type}_{model_type}_{mode}_ens"})
 			model_to_run_id = {run.name: run.id for run in runs}
 		
 		else:
@@ -89,7 +93,7 @@ if __name__ == "__main__":
 			for smode, seed_range in mode_to_seed_range.items():
 				runs = api.runs(
 						path="frag-gnn/frag-gnn",
-						filters={"group":f"entropyv3_{split_type}_{model_type}_{smode}_ens"})
+						filters={"group":f"{entropy_exp}_{split_type}_{model_type}_{smode}_ens"})
 				for run in runs:
 					for i in range(seed_range[0],seed_range[1]):
 						if f"s{i:02d}" in run.tags:

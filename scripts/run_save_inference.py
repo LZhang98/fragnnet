@@ -223,10 +223,10 @@ if __name__ == "__main__":
 			config_d["skip_extra_losses"] = args.skip_extra_losses
 			config_d["compile"] = False
 			if args.disable_preproc:
-				for k in ["spec", "mol", "magma", "ann"]:
+				for k in ["spec", "mol", "frag", "magma", "ann"]:
 					key = f"{k}_params"
 					config_d[key]["preprocess"] = False
-					if k == "magma":
+					if k in ["frag"]:
 						config_d[key]["preload"] = False
 			# modify config for formula strings
 			config_d["output_formula_str"] = True

@@ -23,8 +23,8 @@ if __name__ == "__main__":
 	])
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
 	parser.add_argument("--num_seeds", type=int, default=5)
-	parser.add_argument("--vals_dp", type=str, default="/h/adamo/frag-gnn/inference_outputs")
-	parser.add_argument("--output_dp", type=str, default="figs/stats")
+	parser.add_argument("--vals_dp", type=str, required=True)
+	parser.add_argument("--output_dp", type=str, required=True)
 	args = parser.parse_args()
 
 	eval_split = args.eval_split

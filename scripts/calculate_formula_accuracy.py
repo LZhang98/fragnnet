@@ -25,10 +25,11 @@ parser.add_argument(
     type=str, 
     nargs="+", 
     default=[
-        "fraggnn_d3",
-        "fraggnn_d4",
-        "iceberg_inten3_100",
-        "iceberg_inten3_all",
+        # "fraggnn_d3_long",
+        "fraggnn_d4_long",
+        "iceberg_inten3_100_long",
+        # "iceberg_inten3_all_long",
+        "graff3_long"
     ]
 )
 parser.add_argument(
@@ -46,7 +47,7 @@ parser.add_argument(
     type=float,
     nargs="+",
     default=[
-        0., 1e-6, 1e-5, 1e-4, 1e-3, 1e-2
+        0. #, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2
     ]
 )
 parser.add_argument("--num_samples", type=int, default=-1)
@@ -97,21 +98,29 @@ if __name__ == "__main__":
     print(m_ann_df["group_id"].nunique())
     print(m_ann_df.columns)
 
+    split_types = args.split_types
+    model_types = args.model_types
+    vals_dp = args.vals_dp
+    num_seeds = args.num_seeds
+    thresholdses = args.thresholds
+    num_samples = args.num_samples
+
     stats_df_rows = []
     stats_d = {}
 
-    for split_type in args.split_types:
+    for split_type in split_types:
 
         print(f">>>>> Split Type = {split_type}")
 
-        for model_type in args.model_types:
+        for model_type in model_types:
             
             print(f">>>> Model Type = {model_type}")
 
-            frag_model = model_type in ["fraggnn_d3", "fraggnn_d4"]
+            frag_model = ("fraggnn_d3" in model_type) or ("fraggnn_d4" in model_type)
+            graff_model = "graff" in model_type
 
             # load vals for s0
-            formula_vals_fp = os.path.join(args.vals_dp,split_type,model_type,"s0","test.pkl")
+            formula_vals_fp = os.path.join(vals_dp,split_type,model_type,"s0","test.pkl")
             formula_vals = th.load(formula_vals_fp)
 
             # get molecule ids
@@ -120,26 +129,14 @@ if __name__ == "__main__":
             id_df = id_df[id_df["group_id"].isin(group_ids)]
             group_mol_df = id_df[["group_id","mol_id"]].drop_duplicates()
             mol_ids = group_mol_df.set_index("group_id").loc[group_ids,"mol_id"].values
-            mol_ids_str = [str(mol_id) for mol_id in mol_ids]
 
-            if frag_model:
-                # use molecule id to load frag_d
-                
-                frag_d_d = {}
-                if model_type == "fraggnn_d3":
-                    frag_dp = "/h/adamo/frag-gnn/data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags"
-                else:
-                    frag_dp = "/h/adamo/frag-gnn/data/frag/nist20mona23v3_d4_h4_isoFalse_nb3/dags"
-                for mol_id_str in tqdm(mol_ids_str):
-                    frag_d_d[int(mol_id_str)] = load_frag_d(mol_id_str, frag_dp, is_compressed=True)
-
-            for n in range(args.num_seeds):
+            for n in range(num_seeds):
 
                 print(f">>> Seed = {n}")
 
                 if n > 0:
                 
-                    formula_vals_fp = os.path.join(args.vals_dp,split_type,model_type,f"s{n}","test.pkl")
+                    formula_vals_fp = os.path.join(vals_dp,split_type,model_type,f"s{n}","test.pkl")
                     formula_vals = th.load(formula_vals_fp)
 
                 print(len(mol_ids))
@@ -155,24 +152,38 @@ if __name__ == "__main__":
                 pred_mzs = formula_vals["pred_mzs"]
                 pred_logprobs = formula_vals["pred_logprobs"]
                 spec_batch_idxs = th.arange(unique_ids.shape[0])
-                pred_formula_batch_idxs = formula_vals["pred_formula_batch_idxs"]
+                
                 if frag_model:
+                    pred_formula_batch_idxs = formula_vals["pred_formula_batch_idxs"]
                     pred_formula_logprobs = formula_vals["pred_formula_logprobs"]
-                    pred_formula_formula_idxs = formula_vals["pred_formula_formula_idxs"]
-                    formula_idx_cumsum = th.cumsum(th.cat(
-                        [
-                            th.zeros([1],dtype=th.long),
-                            th.unique(pred_formula_batch_idxs, return_counts=True)[1]
-                        ], dim=0), dim=0
-                    )
+                    pred_formula_str = formula_vals["pred_formula_str"]
+                    # remove null formula
+                    pred_nonnull_formula_mask = pred_formula_str != ""
+                    pred_formula_str = pred_formula_str[pred_nonnull_formula_mask]
+                    pred_formula_logprobs = pred_formula_logprobs[th.as_tensor(pred_nonnull_formula_mask)]
+                    pred_formula_batch_idxs = pred_formula_batch_idxs[th.as_tensor(pred_nonnull_formula_mask)]
+                    pred_formula_mzs = pred_mzs
+                    assert pred_formula_mzs.shape[0] == pred_formula_logprobs.shape[0] == pred_formula_batch_idxs.shape[0], (pred_formula_mzs.shape[0], pred_formula_logprobs.shape[0], pred_formula_batch_idxs.shape[0])
+
+                elif graff_model:
+                    # remove isotopes that are non-zero
+                    pred_isotope_idxs = formula_vals["pred_isotope_idxs"]
+                    pred_no_isotope_mask = pred_isotope_idxs == 0
+                    pred_formula_batch_idxs = pred_batch_idxs[pred_no_isotope_mask]
+                    pred_formula_logprobs = pred_logprobs[pred_no_isotope_mask]
+                    pred_formula_mzs = pred_mzs[pred_no_isotope_mask]
+                    pred_formula_str = formula_vals["pred_formula_str"][pred_no_isotope_mask.numpy()]
+                
                 else:
+                    # iceberg model - no formula logprobs!
+                    pred_formula_batch_idxs = formula_vals["pred_formula_batch_idxs"]
                     pred_formula_mzs = formula_vals["pred_formula_mzs"]
-                    pred_formula_vecs = formula_vals["pred_formula_vecs"]
+                    pred_formula_str = formula_vals["pred_formula_str"]
 
                 m_ann_df_cp = m_ann_df.copy().set_index("group_id")
 
                 if frag_model:
-                    thresholds = args.thresholds
+                    thresholds = thresholdses
                 else:
                     thresholds = [0.]
 
@@ -180,8 +191,8 @@ if __name__ == "__main__":
                 both_formula_coverages, both_peak_coverages, both_w_peak_coverages = [], [], []
                 mode_peak_coverages, mode_w_peak_coverages = [], []
 
-                if args.num_samples > 0:
-                    num_samples = min(len(group_ids), args.num_samples)
+                if num_samples > 0:
+                    num_samples = min(len(group_ids), num_samples)
                 else:
                     num_samples = len(group_ids)
 
@@ -201,46 +212,18 @@ if __name__ == "__main__":
                     i_true_mzs = true_mzs[i_true_peak_mask]
                     i_true_logprobs = true_logprobs[i_true_peak_mask]
                     assert th.isclose(th.logsumexp(i_true_logprobs,dim=0),th.tensor(0.),rtol=0.,atol=1e-4), th.logsumexp(i_true_logprobs,dim=0)
-                    # # TODO: remove this part, replace with proper renormalization
-                    # if not frag_model:
-                    #     i_true_logprobs = i_true_logprobs.exp()
-                    #     i_true_logprobs = (i_true_logprobs / i_true_logprobs.max()) * np.sqrt(1000.+1.)
-                    #     i_true_logprobs = i_true_logprobs**2
-                    #     i_true_logprobs = safelog(i_true_logprobs / i_true_logprobs.sum())
 
                     i_formula_mask = (pred_formula_batch_idxs == i_batch_idx).flatten()
-                    if frag_model:
-                        i_pred_formula_logprobs = pred_formula_logprobs[i_formula_mask][1:]
-                        assert th.isclose(th.logsumexp(i_pred_formula_logprobs,dim=0),th.tensor(0.),rtol=0.,atol=1e-4), th.logsumexp(i_pred_formula_logprobs,dim=0)
-                        i_pred_formula_idxs = pred_formula_formula_idxs[i_formula_mask] - formula_idx_cumsum[i_batch_idx]
-                        assert i_pred_formula_idxs[0] == 0, i_pred_formula_idxs
-                        i_pred_formula_idxs = i_pred_formula_idxs[1:]
-                        i_frag_d = frag_d_d[i_mol_id]
-                        i_formula_idx_to_str = i_frag_d["idx_to_formula"]
-                        i_pred_formulae = [
-                            composition_to_string(Composition(formula=i_formula_idx_to_str[idx.item()]) + Composition(formula="H")) 
-                            for idx in i_pred_formula_idxs
-                        ]
-                        i_pred_formulae = np.array(i_pred_formulae)
-                        i_pred_formula_mzs = pred_mzs[i_pred_peak_mask]
-                        assert len(i_pred_formulae) == len(i_pred_formula_mzs) == len(i_pred_formula_logprobs), (len(i_pred_formulae), len(i_pred_formula_mzs), len(i_pred_formula_logprobs))
-                    else:
-                        i_pred_formula_vecs = pred_formula_vecs[i_formula_mask]
-                        # adjust for precursor
-                        i_pred_formula_vecs[:,element_to_ind["H"]] += 1
-                        i_pred_formula_mzs = pred_formula_mzs[i_formula_mask]
-                        i_pred_formulae = [
-                            composition_to_string(Composition(formula=vec_to_formula(i_pred_formula_vec.squeeze(0)))) for i_pred_formula_vec \
-                                in i_pred_formula_vecs.split(1, dim=0)
-                        ]
-                        i_pred_formulae = np.array(i_pred_formulae)
-                        assert len(i_pred_formulae) == len(i_pred_formula_mzs), (len(i_pred_formulae), len(i_pred_formula_mzs))
+                    i_pred_formulae = pred_formula_str[i_formula_mask]
+                    i_pred_formula_mzs = pred_formula_mzs[i_formula_mask]
+                    assert len(i_pred_formulae) == len(np.unique(i_pred_formulae)), (len(i_pred_formulae), len(np.unique(i_pred_formulae)))
 
                     i_ann_formulae = m_ann_df_cp.loc[i_group_id,"formulae_dedup"]
                     i_ann_formulae = [
                         composition_to_string(Composition(formula=formula)) for formula in i_ann_formulae
                     ]
                     i_ann_formulae = np.array(i_ann_formulae)
+                    assert len(i_ann_formulae) == len(np.unique(i_ann_formulae)), (len(i_ann_formulae), len(np.unique(i_ann_formulae)))
                     i_ann_mzs = th.tensor(m_ann_df_cp.loc[i_group_id,"mzs_dedup"])
 
                     # get idxs
@@ -277,8 +260,9 @@ if __name__ == "__main__":
                         relative=True
                     ) # P x T
 
-                    if frag_model:
-
+                    if frag_model or graff_model:
+                        # get formula logprobs
+                        i_pred_formula_logprobs = pred_formula_logprobs[i_formula_mask]
                         # calculate JSD
                         assert i_pred_formula_idxs_2.shape[0] == i_pred_formula_logprobs.shape[0], (i_pred_formula_idxs_2.shape[0], i_pred_formula_logprobs.shape[0])
                         assert i_ann_formula_idxs_2.shape[0] == i_ann_formula_logprobs.shape[0], (i_ann_formula_idxs_2.shape[0], i_ann_formula_logprobs.shape[0])
@@ -316,7 +300,7 @@ if __name__ == "__main__":
                         i_both_peak_coverages.append(i_both_peak_coverage.item())
                         i_both_w_peak_coverages.append(i_both_w_peak_coverage.item())
 
-                        if threshold == 0. and frag_model:
+                        if threshold == 0. and (frag_model or graff_model):
                             i_mode_mz_match_mask_2 = (i_both_formula_match_mask.long() @ i_mode_mz_match_mask.long()) > 0
                             i_mode_peak_match = th.any(i_ann_mz_match_mask & i_mode_mz_match_mask_2, dim=0)
                             i_mode_peak_coverage = i_mode_peak_match.float().sum() / i_ann_mz_match_any.sum()
@@ -343,7 +327,7 @@ if __name__ == "__main__":
                     "seed": n
                 }
 
-                if frag_model:
+                if frag_model or graff_model:
                     jsd_mean = np.mean(jsds)
                     jsd_std = np.std(jsds)
                     print(f">> JSD: {jsd_mean:.4f} +/- {jsd_std:.4f}")
@@ -360,7 +344,7 @@ if __name__ == "__main__":
                 stats_df_row["ann_w_peak_coverage_mean"] = np.mean(ann_w_peak_coverages)
                 stats_df_row["ann_w_peak_coverage_std"] = np.std(ann_w_peak_coverages)
 
-                if frag_model:
+                if frag_model or graff_model:
                     print(f">> Mode Peak Coverage: {np.mean(mode_peak_coverages):.4f} +/- {np.std(mode_peak_coverages):.4f}")
                     print(f">> Mode W Peak Coverage: {np.mean(mode_w_peak_coverages):.4f} +/- {np.std(mode_w_peak_coverages):.4f}")
                     stats_df_row["mode_peak_coverage_mean"] = np.mean(mode_peak_coverages)
@@ -383,7 +367,7 @@ if __name__ == "__main__":
                     stats_df_row[f"both_w_peak_coverage_{threshold}_std"] = np.std(both_w_peak_coverages[:,i])
 
                 stats_df_rows.append(stats_df_row)
-    
+
                 stats_d[(split_type,model_type,n)] = {
                     "jsds": th.as_tensor(jsds),
                     "ann_peak_coverages": th.as_tensor(ann_peak_coverages),
