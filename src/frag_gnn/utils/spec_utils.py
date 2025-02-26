@@ -429,7 +429,7 @@ def calculate_cosine_similarity(
 		mz_bin_res:float=0.01,
 		sum_ints:bool=True,
 		remove_prec_peaks:bool=False,
-		true_prec_mzs:th.Tensor=None,
+		true_prec_mzs:th.Tensor=None
 	) -> th.Tensor:
 	"""calculate cosine similarity using binned spectra
 
@@ -485,6 +485,7 @@ def calculate_sparse_cosine_similarity(
 		sum_ints:bool=True,
 		remove_prec_peaks:bool=False,
 		true_prec_mzs:th.Tensor=None,
+		log_ints:bool=False
 	) -> th.Tensor:
 	"""
 	Calculate the cosine similarity using binned spectra and sparse methods,
@@ -505,7 +506,12 @@ def calculate_sparse_cosine_similarity(
 	"""
 
 	# sparse bin
-	agg = "sum" if sum_ints else "amax"
+	if not sum_ints:
+		agg = "amax"
+	elif log_ints:
+		agg = "lse"
+	else:
+		agg = "sum"
 	true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
 		true_mzs,
 		true_ints,
@@ -528,6 +534,9 @@ def calculate_sparse_cosine_similarity(
 		remove_prec_peaks=remove_prec_peaks,
 		prec_mzs=true_prec_mzs
 	)
+	if log_ints:
+		true_bin_ints = true_bin_ints.exp()
+		pred_bin_ints = pred_bin_ints.exp()
 	cos_sims = cos_sim_helper(
 		true_bin_idxs,
 		true_bin_ints,

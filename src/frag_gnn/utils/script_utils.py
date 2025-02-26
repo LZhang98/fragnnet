@@ -56,7 +56,6 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 	cum_num_nb_nodes = 0
 	fraggnn_model = isinstance(model, FragGNNPL)
 	iceberg_model = isinstance(model, IcebergIntenPL)
-	output_formula_str = model.model.output_formula_str
 	if not (fraggnn_model or iceberg_model):
 		assert not nb_iso
 		BATCH_IDX_VARS = [
@@ -72,7 +71,7 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 			"pred_batch_idxs",
 			"true_batch_idxs",
 		]
-		if output_formula_str:
+		if model.model.output_formula_str:
 			BATCH_IDX_VARS.extend([
 				"pred_formula_batch_idxs"
 			])
@@ -179,12 +178,18 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 	for k in vals.keys():
 		if isinstance(vals[k][0], list):
 			vals[k] = flatten_lol(vals[k])
-		else:
-			assert isinstance(vals[k][0], th.Tensor), type(vals[k][0])
+		elif isinstance(vals[k][0], th.Tensor):
 			if vals[k][0].dim() == 0:
 				vals[k] = th.stack(vals[k], dim=0)
 			else:
 				vals[k] = th.cat(vals[k], dim=0)
+		elif isinstance(vals[k][0], np.ndarray):
+			if vals[k][0].ndim == 0:
+				vals[k] = np.stack(vals[k], axis=0)
+			else:
+				vals[k] = np.concatenate(vals[k], axis=0)
+		else:
+			raise ValueError(f"unexpected type {type(vals[k][0])}")
 	return vals
 
 def select_model_vals(model_to_vals, keys, stack_dim=0):

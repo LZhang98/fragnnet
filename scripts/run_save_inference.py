@@ -228,7 +228,15 @@ if __name__ == "__main__":
 					config_d[key]["preprocess"] = False
 					if k == "magma":
 						config_d[key]["preload"] = False
+			# modify config for formula strings
 			config_d["output_formula_str"] = True
+			if "fraggnn" in model_type:
+				config_d["spec_params"]["prec_type_str"] = True
+				config_d["frag_params"]["formula_str"] = True
+			elif "iceberg" in model_type:
+				config_d["magma_params"]["adduct_form_deltas"] = True
+			elif "graff" in model_type:
+				config_d["ann_params"]["formula_str"] = True
 			print(">>> Loading dataset")
 			ds_cls = model_type_to_ds_cls[model_type]
 			ds = ds_cls(split=eval_split, **config_d)
