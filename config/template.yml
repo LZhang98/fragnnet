@@ -92,6 +92,7 @@ magma_params:
   mz_max: 1500.0
   sum_ints: True
   adduct_form_deltas: False
+  preprocess: False
 ann_params:
   max_isotope: 2
   library_size: 1000 #10000
