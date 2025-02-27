@@ -35,7 +35,7 @@ parser.add_argument(
 parser.add_argument(
     "--vals_dp", 
     type=str, 
-    default="/h/adamo/frag-gnn/inference_outputs/v3_feb5"
+    required=True
 )
 parser.add_argument(
     "--num_seeds",
@@ -51,7 +51,7 @@ parser.add_argument(
     ]
 )
 parser.add_argument("--num_samples", type=int, default=-1)
-parser.add_argument("--output_dp", type=str, default="figs/formula/v3_feb5")
+parser.add_argument("--output_dp", type=str, required=True)
 args = parser.parse_args()
 
 if __name__ == "__main__":
@@ -383,11 +383,11 @@ if __name__ == "__main__":
     stats_df = pd.DataFrame(stats_df_rows)
     print(stats_df)
 
-    import pdb; pdb.set_trace()
-
     os.makedirs(args.output_dp, exist_ok=True)
     stats_df.to_csv(os.path.join(args.output_dp,"formula_stats_df.csv"), index=False)
     th.save(stats_d, os.path.join(args.output_dp,"formula_stats_d.pt"))
+
+    import pdb; pdb.set_trace()
 
     # plot_histogram(
     #     w_peak_coverages[:,0], 
