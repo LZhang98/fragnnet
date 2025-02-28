@@ -240,39 +240,54 @@ def calculate_compare(masks, argtopks):
 
 if __name__ == "__main__":
 
-    depth = "d4"
-    k = 1
-    nb = True
-    ens_conds = True
-    entropy_dp = "/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3/"
-    ens_dp = "/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/v3_entropy_ens_feb5/"
-    ens_types = ["baseline", "low", "high", "mix"]
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--depth", type=str, default="d4", choices=["d3","d4"])
+    parser.add_argument("--k", type=int, default=1)
+    parser.add_argument("--nb", type=booltype, default=True)
+    parser.add_argument("--ens_conds", type=booltype, default=True)
+    parser.add_argument("--entropy_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_feb26/")
+    parser.add_argument("--ens_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_ens_feb26/")
+    parser.add_argument("--ens_types", type=str, nargs="+", default=["baseline", "low", "high", "mix"])
+    args = parser.parse_args()
+
+    depth = args.depth
+    k = args.k
+    nb = args.nb
+    ens_conds = args.ens_conds
+    entropy_dp = args.entropy_dp
+    ens_dp = args.ens_dp
+    ens_types = args.ens_types
 
     ens_vals_d = {}
+    ens_type_to_key = {
+        "baseline": "baseline",
+        "low": "posfn",
+        "high": "negfn",
+        "mix": "mix"
+    }
 
     for ens_type in ens_types:
 
-        if ens_type in ["baseline", "mix"]:
-            ens_type_key = ens_type
-        elif ens_type == "low":
-            ens_type_key = "posfn"
-        else:
-            ens_type_key = "negfn"
+        ens_type_key = ens_type_to_key[ens_type]
         entropy_fp = os.path.join(entropy_dp, f"scaffold_{depth}_{ens_type_key}_test_False/vals.pkl")
-        ens_fp = os.path.join(ens_dp, f"scaffold_{depth}_{ens_type}_test_False/nbc_ens_vals.pkl")
+        ens_type_dp = os.path.join(ens_dp, f"scaffold_{depth}_{ens_type}_test_False")
+        ens_type_fp = os.path.join(ens_type_dp, "nbc_ens_vals.pkl")
 
-        if os.path.isfile(ens_fp):
+        if os.path.isfile(ens_type_fp):
 
-            print(f"> loading {ens_type} ensemble values from {ens_fp}")
-            ens_vals = th.load(ens_fp)
+            print(f"> loading \"{ens_type}\" ensemble values from {ens_type_fp}")
+            ens_vals = th.load(ens_type_fp)
 
         else:
 
-            print(f"> loading {ens_type} entropy values from {entropy_fp} to create ensemble")
+            print(f"> loading \"{ens_type}\" entropy values from {entropy_fp} to create ensemble")
             assert os.path.isfile(entropy_fp), f"File not found: {entropy_fp}"
             vals = th.load(entropy_fp)
             ens_vals = ensemble_vals(vals, nb=nb, ens_conds=ens_conds, spec=(ens_type == "mix"))
             del vals
+            os.makedirs(ens_type_dp, exist_ok=True)
+            th.save(ens_vals, ens_type_fp)
 
         ens_vals_d[ens_type] = ens_vals
 

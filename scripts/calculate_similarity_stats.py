@@ -12,14 +12,13 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--split_types", type=str, nargs="+", default=["inchikey","scaffold"])
 	parser.add_argument("--model_types", type=str, nargs="+", default=[
-		"fraggnn_d3",
-		"fraggnn_d4",
-		# "iceberg_inten_100",
-		# "iceberg_inten_all",
-		"iceberg_inten3_100",
-		"iceberg_inten3_all",
-		"neims",
-		"massformer"
+		"fraggnn_d3_long",
+		"fraggnn_d4_long",
+		"iceberg_inten3_100_long",
+		"iceberg_inten3_all_long",
+		"neims_long",
+		"massformer_long",
+		"graff3_long"
 	])
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
 	parser.add_argument("--num_seeds", type=int, default=5)
