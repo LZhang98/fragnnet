@@ -11,7 +11,7 @@ virtualenv FRAG-GNN-GPU
 source FRAG-GNN-GPU/bin/activate
 pip install --no-index --upgrade pip
 
-pip install --no-index torch==2.2.0
+pip install --no-index torch==2.4.1
 pip install --no-index rdkit==2022.3.5
 pip install --no-index torch_geometric==2.4.0 
 pip install --no-index torch_scatter==2.1.2
@@ -31,7 +31,7 @@ pip install --no-index pytest
 pip install --no-index pytorch_lightning==2.1.2
 pip install CairoSVG
 pip install --no-index dgl==2.0.0
-pip install omegaconf
+pip install --no-index omegaconf
 pip install pyteomics
 
 # this is only needed on CC because there is no internet 

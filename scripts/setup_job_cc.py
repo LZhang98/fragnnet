@@ -22,7 +22,7 @@ def main(args):
 				f"#SBATCH --cpus-per-task={args.cpu}",
 				f"#SBATCH --time=0-{args.time}:00",
 				f"#SBATCH --mail-user={args.cc_email}",
-				f"#SBATCH --mail-type=ALL"
+				"#SBATCH --mail-type=ALL"
 			]
 		)
 		# add gpus
@@ -64,8 +64,8 @@ def main(args):
 		[	
 			"#load modules",
 			"module load StdEnv/2023",
-			"module load python/3.10",
-			"module load rdkit/2023.09.5"
+			f"module load python/{args.python_version}",
+			f"module load rdkit/{args.rdkit_version}",
 		]
 	)
   
@@ -144,6 +144,8 @@ if __name__ == "__main__":
 	parser.add_argument('--cc_email', help='email', default='fw4@ualberta.ca')
 	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart','rrg-rgreiner','def-dwishart','def-rgreiner'])
 	parser.add_argument('--python_env', default="./FRAG-GNN-GPU", help="virtualenv location")
+	parser.add_argument('--python_version', default="3.10", choices=['3.10','3.11'], help="python version")
+	parser.add_argument('--rdkit_version', default="2022.3.5", choices=['2022.3.5','2023.9.5','2024.03.5'], help="virtualenv location")
 	parser.add_argument('-i', '--interactive', type = bool, default=False, action=argparse.BooleanOptionalAction, help="set to true to print interative command")
 	parser.add_argument('--no_submit', type=bool, default=False)
 	args = parser.parse_args()

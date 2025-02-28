@@ -4,15 +4,14 @@ set -e
 
 source ~/.bashrc
 
-module load StdEnv/2023
-module load python/3.10
+module load StdEnv/2023 rdkit/2024.03.5 python/3.11
 
 virtualenv FRAG-GNN-CPU
 source FRAG-GNN-CPU/bin/activate
 pip install --no-index --upgrade pip
 
 pip install --no-index torch==2.4.1
-pip install --no-index rdkit==2022.3.5
+#pip install --no-index rdkit==2022.3.5
 pip install --no-index torch_geometric==2.6.1 
 pip install --no-index torch_scatter
 pip install --no-index torch_sparse

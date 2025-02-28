@@ -1,32 +1,48 @@
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=iceberg_gen_pubchem_inchikey
+#SBATCH --job-name=iceberg_gen_pubchem_scaffold
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
 #SBATCH --time=0-24:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchem_inchikey_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchem_inchikey_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchem_scaffold_%A_%a.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/iceberg_gen_pubchem_scaffold_%A_%a.err
 #SBATCH --open-mode=append
+#SBATCH --array=0-4
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID} is allocated resources
+echo SLURM_ARRAY_TASK_ID: ${SLURM_ARRAY_TASK_ID}
 
 #load modules
 module load StdEnv/2023
 module load python/3.10
-module load rdkit/2023.09.5
 
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-SAVE_FP=nist20v3_inchikey_iceberg_inten_100_s0.pkl
-MAGMA_DP=pred_magma_nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d
-ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d.ckpt
-ICEBERG_INTERN_CKPT_FP=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s0_c8iwu7il.ckpt
-PROC_DP=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
+RUN_NAME=run_250218
+ICEBERG_GEN_RUN_IDS=('4pweeg45' '9j26mr4s' 'n27tube2' 'biofdpxl' 'cyot56r3')
+DATASET_NAME=pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50
+
+task_id=${SLURM_ARRAY_TASK_ID}
+iceberg_gen_run_id=${ICEBERG_GEN_RUN_IDS[$task_id]}
+
+echo task_id: ${task_id}
+echo iceberg_gen_run_id: ${iceberg_gen_run_id}
+echo iceberg_inten_run_id: ${iceberg_inten_run_id}
+
+MAGMA_DP=pred_magma_nist20v3_scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}
+ICEBERG_GEN_CKPT_FP=./saved_ckpts/nist20v3_scaffold_iceberg_gen_s${task_id}_${iceberg_gen_run_id}.ckpt
+PROC_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/proc/${DATASET_NAME}
+MAGMA_SAVE_DP=/scratch/feiw/frag-gnn-data/ms2c/pubchem/${RUN_NAME}/magma
+
+echo MAGMA_DP: ${MAGMA_DP}
+echo ICEBERG_GEN_CKPT_FP: ${ICEBERG_GEN_CKPT_FP}
+echo PROC_DP: ${PROC_DP}
+echo MAGMA_SAVE_DP: ${MAGMA_SAVE_DP}
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
@@ -36,7 +52,6 @@ mkdir -p ${SLURM_TMPDIR}/proc
 rsync -av ${PROC_DP}/ ${SLURM_TMPDIR}/proc 
 echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/proc/)
 cp ${ICEBERG_GEN_CKPT_FP} ${SLURM_TMPDIR}/iceberg_gen.ckpt
-cp ${ICEBERG_INTERN_CKPT_FP} ${SLURM_TMPDIR}/iceberg_inten.ckpt
 
 # copy apptainer container
 module load apptainer/1.2.4
@@ -52,7 +67,7 @@ cp setup.py ${SLURM_TMPDIR}/
 # install frag-gnn
 apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif  pip install -I . --user
 
-# run dag gen
+# run iceberg gen
 apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
         --iceberg_gen_device=cpu \
@@ -65,27 +80,11 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --run_iceberg_intern=False
 
 cd ${SLURM_TMPDIR}
-mkdir -p /scratch/feiw/frag-gnn-data/ms2c/pubchem/magma/
+echo create predicted save dir: ${MAGMA_SAVE_DP}
+mkdir -p ${MAGMA_SAVE_DP}
 tar -czf ${MAGMA_DP}.tar.gz ${MAGMA_DP}
-cp ${MAGMA_DP}.tar.gz /scratch/feiw/frag-gnn-data/ms2c/pubchem/magma/
-
-apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
-    python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
-        --iceberg_intern_device=cpu \
-        --save_fp=${SAVE_FP} \
-        --magma_dp=${MAGMA_DP} \
-        --iceberg_gen_ckpt_fp=iceberg_gen.ckpt \
-        --iceberg_intern_ckpt_fp=iceberg_inten.ckpt \
-        --proc_dp=./proc \
-        --run_iceberg_gen=False \
-        --run_iceberg_chunk_size=10000 \
-        --run_iceberg_intern=True
-
-cd ${SLURM_TMPDIR}       
-mkdir -p /scratch/feiw/frag-gnn-data/ms2c/pubchem/predicted/
-cp ${SAVE_FP} /scratch/feiw/frag-gnn-data/ms2c/pubchem/predicted/${SAVE_FP}
+echo copy ${MAGMA_DP}.tar.gz to ${MAGMA_SAVE_DP}
+cp ${MAGMA_DP}.tar.gz ${MAGMA_SAVE_DP}
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
-
-
