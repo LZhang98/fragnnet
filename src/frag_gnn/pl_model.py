@@ -2176,6 +2176,7 @@ class PrecursorPL(SpectrumPL):
 			return loss_d
 
 		self.loss_fn = loss_fn
+		self.binned_loss = False
 
 class GNNPL(BinnedPL):
 	def _setup_model(self):

@@ -328,8 +328,8 @@ if __name__ == "__main__":
                 }
 
                 if frag_model or graff_model:
-                    jsd_mean = np.mean(jsds)
-                    jsd_std = np.std(jsds)
+                    jsd_mean = np.nanmean(jsds)
+                    jsd_std = np.nanstd(jsds)
                     print(f">> JSD: {jsd_mean:.4f} +/- {jsd_std:.4f}")
                     stats_df_row["jsd_mean"] = jsd_mean
                     stats_df_row["jsd_std"] = jsd_std
@@ -337,34 +337,32 @@ if __name__ == "__main__":
                     stats_df_row["jsd_mean"] = np.nan
                     stats_df_row["jsd_std"] = np.nan
 
-                print(f">> Ann Peak Coverage: {np.mean(ann_peak_coverages):.4f} +/- {np.std(ann_peak_coverages):.4f}")
-                print(f">> Ann W Peak Coverage: {np.mean(ann_w_peak_coverages):.4f} +/- {np.std(ann_w_peak_coverages):.4f}")
-                stats_df_row["ann_peak_coverage_mean"] = np.mean(ann_peak_coverages)
-                stats_df_row["ann_peak_coverage_std"] = np.std(ann_peak_coverages)
-                stats_df_row["ann_w_peak_coverage_mean"] = np.mean(ann_w_peak_coverages)
-                stats_df_row["ann_w_peak_coverage_std"] = np.std(ann_w_peak_coverages)
+                print(f">> Ann Peak Coverage: {np.nanmean(ann_peak_coverages):.4f} +/- {np.nanstd(ann_peak_coverages):.4f}")
+                print(f">> Ann W Peak Coverage: {np.nanmean(ann_w_peak_coverages):.4f} +/- {np.nanstd(ann_w_peak_coverages):.4f}")
+                stats_df_row["ann_peak_coverage_mean"] = np.nanmean(ann_peak_coverages)
+                stats_df_row["ann_peak_coverage_std"] = np.nanstd(ann_peak_coverages)
+                stats_df_row["ann_w_peak_coverage_mean"] = np.nanmean(ann_w_peak_coverages)
+                stats_df_row["ann_w_peak_coverage_std"] = np.nanstd(ann_w_peak_coverages)
 
                 if frag_model or graff_model:
-                    print(f">> Mode Peak Coverage: {np.mean(mode_peak_coverages):.4f} +/- {np.std(mode_peak_coverages):.4f}")
-                    print(f">> Mode W Peak Coverage: {np.mean(mode_w_peak_coverages):.4f} +/- {np.std(mode_w_peak_coverages):.4f}")
-                    stats_df_row["mode_peak_coverage_mean"] = np.mean(mode_peak_coverages)
-                    stats_df_row["mode_peak_coverage_std"] = np.std(mode_peak_coverages)
-                    stats_df_row["mode_w_peak_coverage_mean"] = np.mean(mode_w_peak_coverages)
-                    stats_df_row["mode_w_peak_coverage_std"] = np.std(mode_w_peak_coverages)
+                    print(f">> Mode Peak Coverage: {np.nanmean(mode_peak_coverages):.4f} +/- {np.nanstd(mode_peak_coverages):.4f}")
+                    print(f">> Mode W Peak Coverage: {np.nanmean(mode_w_peak_coverages):.4f} +/- {np.nanstd(mode_w_peak_coverages):.4f}")
+                    stats_df_row["mode_peak_coverage_mean"] = np.nanmean(mode_peak_coverages)
+                    stats_df_row["mode_peak_coverage_std"] = np.nanstd(mode_peak_coverages)
+                    stats_df_row["mode_w_peak_coverage_mean"] = np.nanmean(mode_w_peak_coverages)
+                    stats_df_row["mode_w_peak_coverage_std"] = np.nanstd(mode_w_peak_coverages)
 
                 for i, threshold in enumerate(thresholds):
-                    if np.isnan(np.mean(both_peak_coverages[:,i])):
-                        import pdb; pdb.set_trace()
                     print(f">> Threshold = {threshold}")
-                    print(f"> Both Formula Coverage: {np.mean(both_formula_coverages[:,i]):.4f} +/- {np.std(both_formula_coverages[:,i]):.4f}") 
-                    print(f"> Both Peak Coverage: {np.mean(both_peak_coverages[:,i]):.4f} +/- {np.std(both_peak_coverages[:,i]):.4f}")
-                    print(f"> Both W Peak Coverage: {np.mean(both_w_peak_coverages[:,i]):.4f} +/- {np.std(both_w_peak_coverages[:,i]):.4f}")
-                    stats_df_row[f"both_formula_coverage_{threshold}_mean"] = np.mean(both_formula_coverages[:,i])
-                    stats_df_row[f"both_formula_coverage_{threshold}_std"] = np.std(both_formula_coverages[:,i])
-                    stats_df_row[f"both_peak_coverage_{threshold}_mean"] = np.mean(both_peak_coverages[:,i])
-                    stats_df_row[f"both_peak_coverage_{threshold}_std"] = np.std(both_peak_coverages[:,i])
-                    stats_df_row[f"both_w_peak_coverage_{threshold}_mean"] = np.mean(both_w_peak_coverages[:,i])
-                    stats_df_row[f"both_w_peak_coverage_{threshold}_std"] = np.std(both_w_peak_coverages[:,i])
+                    print(f"> Both Formula Coverage: {np.nanmean(both_formula_coverages[:,i]):.4f} +/- {np.nanstd(both_formula_coverages[:,i]):.4f}") 
+                    print(f"> Both Peak Coverage: {np.nanmean(both_peak_coverages[:,i]):.4f} +/- {np.nanstd(both_peak_coverages[:,i]):.4f}")
+                    print(f"> Both W Peak Coverage: {np.nanmean(both_w_peak_coverages[:,i]):.4f} +/- {np.nanstd(both_w_peak_coverages[:,i]):.4f}")
+                    stats_df_row[f"both_formula_coverage_{threshold}_mean"] = np.nanmean(both_formula_coverages[:,i])
+                    stats_df_row[f"both_formula_coverage_{threshold}_std"] = np.nanstd(both_formula_coverages[:,i])
+                    stats_df_row[f"both_peak_coverage_{threshold}_mean"] = np.nanmean(both_peak_coverages[:,i])
+                    stats_df_row[f"both_peak_coverage_{threshold}_std"] = np.nanstd(both_peak_coverages[:,i])
+                    stats_df_row[f"both_w_peak_coverage_{threshold}_mean"] = np.nanmean(both_w_peak_coverages[:,i])
+                    stats_df_row[f"both_w_peak_coverage_{threshold}_std"] = np.nanstd(both_w_peak_coverages[:,i])
 
                 stats_df_rows.append(stats_df_row)
 

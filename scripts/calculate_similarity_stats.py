@@ -18,7 +18,8 @@ if __name__ == "__main__":
 		"iceberg_inten3_all_long",
 		"neims_long",
 		"massformer_long",
-		"graff3_long"
+		"graff3_long",
+		"precursor"
 	])
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
 	parser.add_argument("--num_seeds", type=int, default=5)
@@ -102,10 +103,12 @@ if __name__ == "__main__":
 		"fraggnn_d4": "FraGNNet-D4",
 		"neims": "NEIMS",
 		"massformer": "MassFormer",
-		"iceberg_inten_100": "Iceberg",
-		"iceberg_inten_all": "Iceberg-ADV",
-		"iceberg_inten3_100": "Iceberg-Fix",
-		"iceberg_inten3_all": "Iceberg-Fix-ADV",
+		# "iceberg_inten_100": "Iceberg",
+		# "iceberg_inten_all": "Iceberg-ADV",
+		"iceberg_inten3_100": "Iceberg",
+		"iceberg_inten3_all": "Iceberg-ADV",
+		"graff3": "GrAFF",
+		"precursor": "Precursor-Only",
 	}
 
 	# add long ones
