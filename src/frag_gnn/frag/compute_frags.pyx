@@ -2,7 +2,7 @@
 # cython: linetrace=False
 # cython: language_level=3
 # cython: boundscheck=False
-# cython: wraparound=False, 
+# cython: wraparound=False
 # cython: nonecheck=False
 # cython: cdivision=True
 
@@ -10,12 +10,10 @@ import numpy as np
 from cysignals.signals cimport sig_check
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
-
-MAX_NUM_NODES = 60 # hard cap on 64!!
-MAX_NUM_EDGES = 4*60 # ~4*MAX_NUM_NODES 
-#DTYPE = np.intc
+MAX_NUM_NODES = 128  # hard cap on 64!!
+MAX_NUM_EDGES = 4 * MAX_NUM_NODES  # ~4*MAX_NUM_NODES
 MASK_DTYPE = np.uint8
-MAX_EDGE_PER_NODE = 6 # Sulfur
+MAX_EDGE_PER_NODE = 6  # Sulfur
 
 class TimeoutError(RuntimeError):
 	pass
