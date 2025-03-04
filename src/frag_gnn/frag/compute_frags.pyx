@@ -18,13 +18,13 @@ MAX_EDGE_PER_NODE = 6  # Sulfur
 class TimeoutError(RuntimeError):
 	pass
 
-cdef void np_fill(int [::1] array, int val):
-	cdef int num_elems = array.shape[0]
+cdef void np_fill(int [::1] array, int val) nogil:
+	cdef Py_ssize_t i, num_elems = array.shape[0]
 	for i in range(num_elems):
 		array[i] = val
 
-cdef int np_sum(char [::1] array):
-	cdef int num_elems = array.shape[0]
+cdef int np_sum(char [::1] array) nogil:
+	cdef Py_ssize_t i, num_elems = array.shape[0]
 	cdef int total = 0
 	for i in range(num_elems):
 		total += array[i]
@@ -51,15 +51,14 @@ cdef long get_time():
 def mask_to_binary_hash(char [::1] mask):
 	return np.asarray(mask).tobytes()
 
-
 cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
-
-	cdef int [:,::1] node_to_edge_idx = -np.ones((num_nodes,MAX_EDGE_PER_NODE),dtype=np.intc)
+	# use np fill instead of np.ones to speed up
+	cdef int [:,::1] node_to_edge_idx = np.full((num_nodes, MAX_EDGE_PER_NODE), -1, dtype=np.intc)
 	cdef int src_node, dst_node, j, k
 	for j in range(num_edges):
 		src_node = edges[j,0]
 		dst_node = edges[j,1]
-		assert src_node < num_nodes and dst_node < num_nodes
+		#assert src_node < num_nodes and dst_node < num_nodes
 		for k in range(MAX_EDGE_PER_NODE):
 			if node_to_edge_idx[src_node,k] == -1:
 				node_to_edge_idx[src_node,k] = j
@@ -83,21 +82,20 @@ cdef connected_components(
 	):
 	# print('>connected_components')
 	# return the number of connected components
-	cdef int num_visited = 0
-	cdef int num_nonmask = np_sum(node_mask)
-	cdef int cur_node
-	cdef int num_ccs = 0
-	cdef int start_queue = 0
-	cdef int end_queue = 0
-	cdef int cur_edge
-	cdef int i
-	cdef int j
-	cdef int neighbour
+	cdef Py_ssize_t num_visited = 0
+	cdef Py_ssize_t num_nonmask = np_sum(node_mask)
+	cdef Py_ssize_t cur_node
+	cdef Py_ssize_t num_ccs = 0
+	cdef Py_ssize_t start_queue = 0
+	cdef Py_ssize_t end_queue = 0
+	cdef Py_ssize_t cur_edge
+	cdef Py_ssize_t i
+	cdef Py_ssize_t j
+	cdef Py_ssize_t neighbour
 
 	cdef int [::1] node_visited = np.zeros(num_nodes,dtype=np.intc)
 	cdef int [::1] node_enqueued = np.zeros(num_nodes,dtype=np.intc)
-	cdef int [::1] node_queue = np.zeros(num_nodes,dtype=np.intc)
-	np_fill(node_queue,-1)
+	cdef int [::1] node_queue = np.full(num_nodes, -1, dtype=np.intc)
 
 	cdef char [:,::1] cc_nodes = np.zeros((2,num_nodes),dtype= MASK_DTYPE)
 	cdef char [:,::1] cc_edges = np.zeros((2,num_edges),dtype= MASK_DTYPE)
@@ -131,12 +129,12 @@ cdef connected_components(
 				if edges[cur_edge,0] == cur_node:
 					neighbour = edges[cur_edge,1]
 				else:
-					assert edges[cur_edge,1] == cur_node
+					#assert edges[cur_edge,1] == cur_node
 					neighbour = edges[cur_edge,0]
 
 				# if we have not see node before
 				if node_enqueued[neighbour] == 0:
-					assert node_visited[neighbour] == 0
+					#assert node_visited[neighbour] == 0
 					node_queue[end_queue] = neighbour
 					end_queue = (end_queue + 1) % num_nodes
 					node_enqueued[neighbour] = 1
@@ -152,7 +150,7 @@ cdef connected_components(
 					node_queue[end_queue] = i
 					end_queue = (end_queue + 1) % num_nodes
 					#print(f"new end node {end_queue}")
-					assert node_enqueued[i] == 0
+					#assert node_enqueued[i] == 0
 					node_enqueued[i] = 1
 					num_ccs += 1
 					break
@@ -241,7 +239,8 @@ def compute_ccs(
 			current_node_mask = cc_node_mask_dict[curent_node_mask_key]
 			current_edge_mask = cc_edge_mask_dict[current_edge_mask_key]
 
-			# let us check mask
+			# let us check mask, there is more than one way to get each node
+			# thus, we need to check if we have seen this node mask and edge mask before
 			node_full_mask_str = curent_node_mask_key + b'|' +  current_edge_mask_key
 
 			# check if we have seen has configure before
