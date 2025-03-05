@@ -23,9 +23,10 @@ cd /home/feiw/feiw/frag-gnn
 
 DATASET_NAME=nist20mona23v3
 MAX_DEPTH=3
+MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=False
-SAVE_NAME=nist20mona23v3_d3_h4_ma_mi_isoFalse
+SAVE_NAME=nist20mona23v3_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
 DSETS='nist20_hr'
 PREC='[M+H]+ [M-H]-'
 INST='FT QTOF IT'
