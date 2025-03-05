@@ -31,6 +31,7 @@ DSETS='nist20_hr'
 PREC='[M+H]+ [M-H]-'
 INST='FT QTOF IT'
 FRAG_MODE='CID HCD'
+DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 
 cho DATASET_NAME: ${DATASET_NAME}
 echo MAX_DEPTH: ${MAX_DEPTH}
@@ -42,6 +43,7 @@ echo PREC: ${PREC}
 echo INST: ${INST}
 echo FRAG_MODE: ${FRAG_MODE}
 echo ISO_FALSE: ${ISO_FALSE}
+echo DEST_DP: ${DEST_DP}
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
@@ -90,7 +92,6 @@ cd ${SLURM_TMPDIR}/frag/
 tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
 
 # copy tar to scratch
-DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 echo create dir at ${DEST_DP}
 mkdir -p ${DEST_DP}
 echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
