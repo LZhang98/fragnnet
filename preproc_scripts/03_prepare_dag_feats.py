@@ -69,7 +69,7 @@ def main(args):
 		num_entries=args.num_entries,
   		frag_modes=args.frag_modes if args.frag_modes != 'any' else None,
     	ion_modes=args.ion_modes if args.ion_modes != 'any' else None,
-		inst_types=args.inst_types if args.inst_types != 'any' else None,)
+		inst_types=args.inst_types if args.inst_types != 'any' else None)
  
 	m_spec_df = merge_spec_df(spec_df)
 
