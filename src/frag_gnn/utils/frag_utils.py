@@ -887,8 +887,10 @@ def compute_dags(
 		diff_formula_mask = from_formula_mask - to_formula_mask
 		diff_formula_mask[CANONICAL_H_IDX] = 0 # we don't care Hs for this
 
-		diff_h_floor = compute_cc_h_floor(
-			diff_cc_mask,
+		diff_cc_atom_ids = cc_bit_mask_to_atom_idx(diff_cc_mask)
+
+		diff_h_floor = compute_frags.compute_cc_h_floor(
+			diff_cc_atom_ids,
 			mol_d["ve_arr"],
 			mol_d["sbond_arr"],
 			0,
@@ -897,7 +899,7 @@ def compute_dags(
 			mol_d["bond_mask_arr"]
 		)
 		diff_h_cap = compute_cc_h_cap(
-			diff_cc_mask,
+			diff_cc_atom_ids,
 			mol_d["ve_arr"],
 			mol_d["sbond_arr"],
 			0
