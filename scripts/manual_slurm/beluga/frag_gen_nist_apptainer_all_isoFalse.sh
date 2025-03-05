@@ -4,11 +4,11 @@
 #SBATCH --job-name=frag_gen
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
-#SBATCH --time=0-2:00
+#SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_frag_gen_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_frag_gen_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_all_%j.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_all_%j.err
 #SBATCH --open-mode=append
 
 # record start
@@ -24,12 +24,12 @@ cd /home/feiw/feiw/frag-gnn
 DATASET_NAME=nist20mona23v3
 MAX_DEPTH=3
 NB_FLAG=False
-ISO_FALSE=True
-SAVE_NAME=nist20mona23v3_d{MAX_DEPTH}_h{MAX_H_TRANSFER}_iso${ISO_FALSE}2
+ISO_FALSE=False
+SAVE_NAME=nist20mona23v3_d3_h4_ma_mi_isoFalse
 DSETS='nist20_hr'
-PREC='[M+H]+'
-INST='FT'
-FRAG_MODE='HCD'
+PREC='[M+H]+ [M-H]-'
+INST='FT QTOF IT'
+FRAG_MODE='CID HCD'
 
 cho DATASET_NAME: ${DATASET_NAME}
 echo MAX_DEPTH: ${MAX_DEPTH}
@@ -79,12 +79,11 @@ apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fr
         --wandb_run_name=fool \
         --prec_types ${PREC}\
         --inst_types ${INST} \
-        --dsets ${DSETS} \
-        --nb_isomorphic ${NB_FLAG}
-        --iso_false ${ISO_FALSE} \
+        --nb_isomorphic ${NB_FLAG} \
+        --isotopes ${ISO_FALSE} \
         --frag_mode ${FRAG_MODE} \
         --max_h_transfer ${MAX_H_TRANSFER}
-
+        
 # go to frag directory
 cd ${SLURM_TMPDIR}/frag/
 tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
