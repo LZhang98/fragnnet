@@ -8,6 +8,7 @@ import os
 import pandas as pd
 import json
 import time
+import multiprocessing
 
 
 def get_args():
@@ -23,6 +24,9 @@ def get_args():
 	parser.add_argument("--model_save_dp",type=str, default="./saved_ckpts")
 	parser.add_argument("--model_ckpt",type=str, default=None)
 	parser.add_argument("--wandb_run_id",type=str, default= 'wf1zkb7n')
+	parser.add_argument("--custom_fp",type=str, required=False)
+	parser.add_argument("--template_fp",type=str, default="./config/template.yml")
+	parser.add_argument("--num_workers",type=int, default=multiprocessing.cpu_count())
 	args = parser.parse_args()
 	return args
 
@@ -58,10 +62,16 @@ if __name__ == "__main__":
 	print(f"> Loading models {ckpt_fp}")
 	auxiliary_scores = ["cos_sim","cos_hun"]
 	eval_mz_bin_res = [0.01]
-	model, config_d, device = load_model_and_init_config(ckpt_fp = ckpt_fp, device = args.device, 
-                                                      batch_size = args.batch_size, 
-                                                      auxiliary_scores = auxiliary_scores,
-                                                      eval_mz_bin_res = eval_mz_bin_res)
+	model, config_d, device = load_model_and_init_config(
+		ckpt_fp = ckpt_fp, 
+		device = args.device, 
+        batch_size = args.batch_size, 
+        auxiliary_scores = auxiliary_scores,
+        eval_mz_bin_res = eval_mz_bin_res,
+		custom_fp = args.custom_fp,
+		template_fp = args.template_fp,
+		num_workers = args.num_workers,
+	)
  
 	#if args.group_by_target:
 	# NOTE this only one for version 1, as there is only on Adduct Type
