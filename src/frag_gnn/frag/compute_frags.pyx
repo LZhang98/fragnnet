@@ -7,6 +7,7 @@
 # cython: cdivision=True
 
 import numpy as np
+cimport numpy as cnp
 from cysignals.signals cimport sig_check
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
@@ -358,3 +359,82 @@ def compute_ccs(
 	# both edges_min_depth and node_min_depth should be ordered
 
 	return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+def compute_cc_h_floor(
+		cnp.ndarray[cnp.int32_t, ndim=1] cc_atom_ids,
+		cnp.ndarray[cnp.int32_t, ndim=1] ve_arr,
+		cnp.ndarray[cnp.int32_t, ndim=1] sbond_arr,
+		int num_radicals,
+		cnp.ndarray[cnp.int32_t, ndim=2] bonds,
+		dict atoms_to_bonds,
+		cnp.ndarray[cnp.uint8_t, ndim=1] bond_mask_arr):  # Fix: uint8_t for boolean array
+
+	"""Compute the minimum number of Hs a connected component (cc) can have."""
+
+	assert num_radicals == 0
+
+	# Compute the difference array (initial hydrogen deficit)P
+	cdef cnp.ndarray[cnp.int32_t, ndim=1] diff_arr = np.maximum(ve_arr - sbond_arr, 0)
+	cdef cnp.ndarray[cnp.int32_t, ndim=1] h_arr = diff_arr.copy()
+
+	# Define Cython integer variables
+	cdef Py_ssize_t atom, bond_idx, other
+	cdef list bond_idxs
+	cdef tuple bond
+
+	# Iterate over atoms in the connected component
+	for atom in cc_atom_ids:
+		bond_idxs = atoms_to_bonds[atom]  # List of bond indices for this atom
+
+		for bond_idx in bond_idxs:
+			if h_arr[atom] == 0:
+				break
+			if bond_mask_arr[bond_idx] == 0:  # Use explicit comparison for uint8_t
+				continue
+
+			#bond = bonds[bond_idx]
+			#other = bond[1] if bond[0] == atom else bond[0]
+			other = bonds[bond_idx, 1] if bonds[bond_idx, 0] == atom else bonds[bond_idx, 0]
+
+			# Ensure we don't form more than 3 bonds
+			h_arr[atom] = max(0, h_arr[atom] - min(diff_arr[other], 2))
+
+	# Compute the lower bound of hydrogen count
+	cdef int cc_floor = max(h_arr[cc_atom_ids].sum() - num_radicals, 0)
+
+	return cc_floor
+
+def update_bonds(
+		cnp.ndarray[cnp.int32_t, ndim=1] cc_atom_ids,
+		cnp.ndarray[cnp.int32_t, ndim=1] sbond_arr,
+		cnp.ndarray[cnp.uint8_t, ndim=1] bond_mask_arr,  # Using uint8_t for boolean
+		cnp.ndarray[cnp.int32_t, ndim=2] bonds,
+		dict atoms_to_bonds):
+
+	"""Updates single bond counts and bond masks for a given connected component."""
+
+	# Create new arrays with the same shape as sbond_arr and bond_mask_arr
+	cdef cnp.ndarray[cnp.int32_t, ndim=1] new_sbond_arr = np.zeros_like(sbond_arr, dtype=np.int32)
+	cdef cnp.ndarray[cnp.uint8_t, ndim=1] new_bond_mask_arr = np.zeros_like(bond_mask_arr, dtype=np.uint8)
+
+	# Define Cython integer variables
+	cdef Py_ssize_t  atom, other, bond_idx, i, j
+	cdef list bond_idxs
+
+	# Iterate through each atom in the connected component
+	for i in range(cc_atom_ids.shape[0]):
+		atom = cc_atom_ids[i]
+		bond_idxs = atoms_to_bonds[atom]  # Get bond indices for this atom
+
+		for j in range(len(bond_idxs)):
+			bond_idx = bond_idxs[j]
+
+			# Get bond endpoints
+			other = bonds[bond_idx, 1] if bonds[bond_idx, 0] == atom else bonds[bond_idx, 0]
+
+			# Check if both atoms are in the connected component
+			if other in cc_atom_ids:
+				new_sbond_arr[atom] += 1
+				new_bond_mask_arr[bond_idx] = 1  # Use 1 instead of True for uint8_t
+
+	return new_sbond_arr, new_bond_mask_arr

@@ -128,7 +128,7 @@ def convert_cc_int_to_np_mask(num_nodes:int,cc_int:int,bitmask=True) -> np.ndarr
 	return np_mask
 
 
-def cc_bit_mask_to_atom_idx(cc:list|np.ndarray) -> list[int]:
+def cc_bit_mask_to_atom_idx(cc:list|np.ndarray) -> np.ndarray:
 	"""_summary_
 
 	Args:
@@ -138,7 +138,7 @@ def cc_bit_mask_to_atom_idx(cc:list|np.ndarray) -> list[int]:
 		_type_: _description_
 	"""
 	cc_np = np.array(cc) if isinstance(cc,list) else cc
-	atom_ids = np.where(cc_np == 1)[0].tolist()
+	atom_ids = np.where(cc_np == 1)[0].astype(np.int32)
 	return atom_ids
 
 def get_fraggen_input_arrays(mol_d:dict):
@@ -255,8 +255,9 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 
 	element_counts["H"] = num_hs
 	assert num_radicals == 0, num_radicals
-	sbond_arr = np.array(sbond_arr)
-	ve_arr = np.array(ve_arr)
+	sbond_arr = np.array(sbond_arr, dtype=np.int32)
+	ve_arr = np.array(ve_arr, dtype=np.int32)
+	hs_arr = np.array(hs_arr, dtype=np.int32)
 	# enumerate bonds
 	atoms_to_bonds = {}
 	bonds, bond_type_idxs = [], []
@@ -284,7 +285,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 		else:
 			atoms_to_bonds[to_idx].append(cur_idx)
 		num_bonds += 1
-
+	bonds = np.array(bonds, dtype=np.int32)
 	mol_d = {}
 	mol_d["mol"] = mol
 	mol_d["num_hs"] = num_hs
@@ -301,7 +302,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) ->dict:
 	mol_d["element_counts"] = element_counts
 	return mol_d
 
-def compute_cc_h_cap(cc:list|np.ndarray,ve_arr:list[int],sbond_arr:list[int],num_radicals:int):
+def compute_cc_h_cap(cc_atom_ids: np.ndarray,ve_arr:np.ndarray,sbond_arr:np.ndarray,num_radicals:int):
 	"""compute max amount of Hs a cc can have.  
 		For any ccs the max amount of Hs it can have is the congifcation where all the bond are single
 		And all the atom has max amount of Hs
@@ -316,36 +317,38 @@ def compute_cc_h_cap(cc:list|np.ndarray,ve_arr:list[int],sbond_arr:list[int],num
 	"""
 	
 	assert num_radicals == 0
-	if not isinstance(cc,np.ndarray):
-		cc = np.array(list(cc))
-	cap_sbond_arr = sbond_arr[cc]
-	cap_ve_arr = ve_arr[cc]
+	if not isinstance(cc_atom_ids,np.ndarray):
+		cc_atom_ids = np.array(list(cc_atom_ids))
+	cap_sbond_arr = sbond_arr[cc_atom_ids]
+	cap_ve_arr = ve_arr[cc_atom_ids]
 	cap_ve_mask = cap_ve_arr < cap_sbond_arr
 	cap_ve_arr[cap_ve_mask] = cap_sbond_arr[cap_ve_mask]
 	return np.sum(cap_ve_arr) - np.sum(cap_sbond_arr) - num_radicals
 
-def compute_cc_h_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bond_mask_arr):
+def compute_cc_h_floor(cc_atom_ids: np.ndarray,ve_arr: np.ndarray, sbond_arr: np.ndarray, \
+    	num_radicals:int,bonds:np.ndarray,atoms_to_bonds:dict,bond_mask_arr:np.ndarray):
+	"""compute min amount of Hs a cc can have.
 
-	"""compute lowest amount of Hs a cc can have
-	NOTE: this does not consider if OG mol has a triple bond
 	Args:
-		cc (_type_): _description_
-		ve_arr (_type_): _description_
-		sbond_arr (_type_): _description_
-		num_radicals (_type_): _description_
+		cc_atom_ids (np.ndarray): atom ids in the cc
+		ve_arr (np.ndarray): _description_
+		sbond_arr (np.ndarray): _description_
+		bonds (np.ndarray): _description_
+		atoms_to_bonds (dict): _description_
+		bond_mask_arr (np.ndarray): _description_
 
 	Returns:
 		_type_: _description_
 	"""
-
 	assert num_radicals == 0
 	# if we could use update from single bond to double bond to get an electron pair
 	diff_arr = np.maximum(ve_arr - sbond_arr,0)
-	cc_atoms = list(cc)
+	#cc_atoms = list(cc_atom_ids)
 	# print(diff_arr)
 	# this computes a lower bound
 	h_arr = np.copy(diff_arr)
-	for atom_idx, atom in enumerate(cc_atoms):
+
+	for _, atom in enumerate(cc_atom_ids):
 		bond_idxs = atoms_to_bonds[atom]
 		for bond_idx in bond_idxs:
 			if h_arr[atom] == 0:
@@ -360,7 +363,7 @@ def compute_cc_h_floor(cc,ve_arr,sbond_arr,num_radicals,bonds,atoms_to_bonds,bon
 			# dont't form more than 3 bonds with anything!
 			h_arr[atom] = max(0,h_arr[atom]-min(diff_arr[other],2))
 	# print(h_arr)
-	cc_floor = sum(h_arr[atom] for atom in cc_atoms)
+	cc_floor = sum(h_arr[atom] for atom in cc_atom_ids)
 	cc_floor -= num_radicals
 	cc_floor = max(cc_floor,0) # why can cc_floor be negative?
 	return cc_floor
@@ -382,7 +385,7 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 		_type_: _description_
 	"""
 
-	bonds = mol_d["bonds"] # never mutated
+	bonds = mol_d["bonds"] # bond definition, atom id-atom id, never mutated
 	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
 	ve_arr = np.copy(mol_d["ve_arr"])
 	sbond_arr = np.copy(mol_d["sbond_arr"])
@@ -398,9 +401,9 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 
 	atom_ids = cc_bit_mask_to_atom_idx(cc) if bitmask else cc
 
-	sbond_arr, bond_mask_arr = update_bonds(atom_ids,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
+	sbond_arr, bond_mask_arr = compute_frags.update_bonds(atom_ids,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
 	cap = compute_cc_h_cap(atom_ids,ve_arr,sbond_arr,0)
-	floor = compute_cc_h_floor(atom_ids,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+	floor = compute_frags.compute_cc_h_floor(atom_ids,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
 
 	# check floor and cap
 	assert floor <= cap, (floor,cap,atom_ids)
@@ -442,25 +445,25 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 		delta_h_to_formula[delta_h] = formula
 	return delta_h_to_formula, delta_h_to_h_count
 
-def update_bonds(frag:list[int],sbond_arr,bond_mask_arr,bonds,atoms_to_bonds):
+def update_bonds(cc_atom_ids:np.ndarray,sbond_arr:np.ndarray,bond_mask_arr:np.ndarray,bonds:np.ndarray,atoms_to_bonds:dict):
 	"""_summary_
 
 	Args:
-		frag (_type_): list of atom idx
-		sbond_arr (_type_): _description_
-		bond_mask_arr (_type_): _description_
-		bonds (_type_): _description_
-		atoms_to_bonds (_type_): _description_
+		frag (np.ndarray): _description_
+		sbond_arr (np.ndarray): _description_
+		bond_mask_arr (np.ndarray): _description_
+		bonds (np.ndarray): _description_
+		atoms_to_bonds (dict): _description_
 
 	Returns:
 		_type_: _description_
 	"""
-	sbond_arr = np.zeros_like(sbond_arr,dtype=int)
+	sbond_arr = np.zeros_like(sbond_arr,dtype=sbond_arr.dtype)
 	bond_mask_arr = np.zeros_like(bond_mask_arr,dtype=bool)
-	for atom in frag:
+	for atom in cc_atom_ids:
 		for bond_idx in atoms_to_bonds[atom]:
 			bond = bonds[bond_idx]
-			if bond[0] in frag and bond[1] in frag:
+			if bond[0] in cc_atom_ids and bond[1] in cc_atom_ids:
 				sbond_arr[atom] += 1
 				bond_mask_arr[bond_idx] = True
 	return sbond_arr, bond_mask_arr
@@ -477,9 +480,10 @@ def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSF
 	bond_mask_arr = mol_d["bond_mask_arr"]
 	all_cchs = set()
 	for cc in list(set(ccs)):
-		sbond_arr, bond_mask_arr = update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-		cap = compute_cc_h_cap(cc,ve_arr,sbond_arr,0)
-		floor = compute_cc_h_floor(cc,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+		sbond_arr, bond_mask_arr = compute_frags.update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
+		cc_atom_ids = cc_bit_mask_to_atom_idx(cc)
+		cap = compute_cc_h_cap(cc_atom_ids,ve_arr,sbond_arr,0)
+		floor = compute_frags.compute_cc_h_floor(cc_atom_ids,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
 		assert floor <= cap, (floor,cap,cc)
 		assert floor >= 0, floor
 		if h_prior:
@@ -870,12 +874,13 @@ def compute_dags(
 		formula_peak_mzs.append(peak_mzs)
 		formula_peak_probs.append(peak_probs)
 
-	# save as bf16 or float32 for speed and lower ram usage
+	# save as float32 for speed and lower ram usage
 	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = META_DATA_DTYPE)
 	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = META_DATA_DTYPE)
 
 	# add edges info
 	edge_diff_cc_mask, edge_diff_formula_mask, edge_diff_h_range = [], [], []
+
 	for edge in dag_edges_matrix:
 		from_idx, to_idx = edge
 		from_cc_mask = nodes_mask_matrix[from_idx]
@@ -906,8 +911,8 @@ def compute_dags(
 		)
 		assert diff_h_floor <= diff_h_cap, (diff_h_floor,diff_h_cap)
 		assert diff_h_floor >= 0, diff_h_floor
+		#print(diff_h_floor,diff_h_cap)
 		diff_h_range = [diff_h_floor,diff_h_cap]
-
 		edge_diff_cc_mask.append(diff_cc_mask)
 		edge_diff_formula_mask.append(diff_formula_mask)
 		edge_diff_h_range.append(diff_h_range)
