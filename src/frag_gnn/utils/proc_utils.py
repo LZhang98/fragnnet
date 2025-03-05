@@ -40,35 +40,35 @@ def filter_spec_mol(
 	# dataset mask
 	if dsets is not None:
 		print(f">> dsets filter: {dsets}")
-		print(f">> dsets in data: {spec_df["dset"].unique()}")
+		print(">> dsets in data:", spec_df["dset"].unique())
 		dset_mask = spec_df["dset"].isin(dsets)
 		print(f">> dsets filter mean: {dset_mask.mean()}")
 		masks.append(dset_mask)
 	else:
 		print(">> no dset filter")
-		print(f">> dsets in data: {spec_df["dset"].unique()}")
+		print(">> dsets in data:", spec_df["dset"].unique())
   	
 	# instrument type
 	if inst_types is not None:
 		print(f">> inst type: {inst_types}")
-		print(f">> inst type in data: {spec_df["inst_type"].unique()}")
+		print(">> inst type in data:", spec_df["inst_type"].unique())
 		inst_type_mask = spec_df["inst_type"].isin(inst_types)
 		print(f">> inst type filter mean: {inst_type_mask.mean()}")
 		masks.append(inst_type_mask)
 	else:
 		print(">> no inst type filter")
-		print(f">> inst type in data: {spec_df["inst_type"].unique()}")
+		print(">> inst type in data:", spec_df["inst_type"].unique())
   
 	# frag mode
 	if frag_modes is not None:
 		print(f">> frag mode filter: {frag_modes}")
-		print(f">> frag mode in data: {spec_df["frag_mode"].unique()}")
+		print(">> frag mode in data:", spec_df["frag_mode"].unique())	
 		frag_mode_mask = spec_df["frag_mode"].isin(frag_modes)
 		print(f">> frag mode filter mean: {frag_mode_mask.mean()}")
 		masks.append(frag_mode_mask)
 	else:
 		print(">> no frag mode filter")
-		print(f">> frag mode in data: {spec_df["frag_mode"].unique()}")
+		print(">> frag mode in data:", spec_df["frag_mode"].unique())	
   
 	# ce filter
 	assert ces in ["ace", "nce", "ace_or_nce", None], ces
@@ -91,24 +91,24 @@ def filter_spec_mol(
 	# ion mode
 	if ion_modes is not None:
 		print(f">> ion mode filter: {ion_modes}")
-		print(f">> ion mode in data: {spec_df["ion_mode"].unique()}")
+		print(">> ion mode in data:", spec_df["ion_mode"].unique())
 		ion_mode_mask = spec_df["ion_mode"].isin(ion_modes)
 		print(f">> ion mode filter mean: {ion_mode_mask.mean()}")
 		masks.append(ion_mode_mask)
 	else:
 		print(">> no ion mode filter")
-		print(f">> ion mode in data: {spec_df["ion_mode"].unique()}")
+		print(">> ion mode in data:", spec_df["ion_mode"].unique())
   
 	# precursor type
 	if prec_types is not None:
 		print(f">> prec type filter: {prec_types}")
-		print(f">> prec type in data: {spec_df["prec_type"].unique()}")
+		print(">> prec type in data: ", spec_df["prec_type"].unique())
 		prec_type_mask = spec_df["prec_type"].isin(prec_types)
 		print(f">> prec type filter mean: {prec_type_mask.mean()}")
 		masks.append(prec_type_mask)
 	else:
 		print(">> no prec type filter")
-		print(f">> prec type in data: {spec_df["prec_type"].unique()}")
+		print(">> prec type in data: ", spec_df["prec_type"].unique())
 
 	# resolution
 	# res_mask = spec_df["res"].isin([1,2,3,4,5,6,7])
