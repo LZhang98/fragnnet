@@ -24,12 +24,12 @@ def filter_spec_mol(
 		max_peak_mz=None,
 		max_prec_mz=None,
 		min_prec_mz=None,
-		prec_types:list = None,
+		prec_types:list|None = None,
 		num_entries=-1,
-  		inst_types:list = None,
-    	frag_modes:list = None,
-     	ion_modes:list = None,
-		ces:str = None):
+  		inst_types:list|None  = None,
+    	frag_modes:list|None  = None,
+     	ion_modes:list|None  = None,
+		ces:str|None  = None):
 	
 	"""
 	The purpose of this filtering is to prevent errors
