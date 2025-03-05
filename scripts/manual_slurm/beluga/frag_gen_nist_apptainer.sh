@@ -17,7 +17,6 @@ echo `date`: Job ${SLURM_JOB_ID} is allocated resources
 #load modules
 module load StdEnv/2023
 module load python/3.10
-module load rdkit/2023.09.5
 
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
@@ -25,10 +24,12 @@ cd /home/feiw/feiw/frag-gnn
 DATASET_NAME=nist20mona23v3
 MAX_DEPTH=3
 NB_FLAG=False
-SAVE_NAME=nist20mona23v3_d3_h4_ma_mi
-DSETS='nist20 mona23'
+ISO_FALSE=False
+SAVE_NAME=nist20mona23v3_d3_h4_ma_mi_isoFalse
+DSETS='nist20_hr mona23'
 PREC='any'
 INST='any'
+FRAG_MODE='any'
 
 cho DATASET_NAME: ${DATASET_NAME}
 echo MAX_DEPTH: ${MAX_DEPTH}
@@ -38,6 +39,8 @@ echo DATASET_NAME: ${DATASET_NAME}
 echo DSETS: ${DSETS}
 echo PREC: ${PREC}
 echo INST: ${INST}
+echo FRAG_MODE: ${FRAG_MODE}
+echo ISO_FALSE: ${ISO_FALSE}
 
 # create local dir
 echo create local proc_dp: ${SLURM_TMPDIR}/proc
@@ -69,21 +72,24 @@ echo running dag gen
 
 apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
     python preproc_scripts/03_prepare_dag_feats.py \
-        --frag_dp=${SLURM_TMPDIR}/frag/${SAVE_NAME} \
-        --proc_dp=./data/proc/${DATASET_NAME}  \
+        --frag_dp=./frag/${SAVE_NAME} \
+        --proc_dp=./proc/${DATASET_NAME}  \
         --max_depth=${MAX_DEPTH} \
         --wandb_mode=off \
         --wandb_run_name=fool \
         --prec_types ${PREC}\
         --inst_types ${INST} \
         --dsets ${DSETS} \
-        --nb_isomorphic ${NB_FLAG}
+        --nb_isomorphic ${NB_FLAG} \
+        --iso_false ${ISO_FALSE} \
+        --frag_mode ${FRAG_MODE}
 
 # go to frag directory
 cd ${SLURM_TMPDIR}/frag/
-
 tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
-DEST_DP=/scratch/feiw/frag-gnn-data/frags/d${MAX_DEPTH}_h4_isoFalse
+
+# copy tar to scratch
+DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 echo create dir at ${DEST_DP}
 mkdir -p ${DEST_DP}
 echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}

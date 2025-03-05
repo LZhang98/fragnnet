@@ -155,7 +155,10 @@ def filter_spec_mol(
 		element_mask = spec_df["mol_id"].isin(element_ids)
 		print(f">> element: {element_mask.mean()}")
 		masks.append(element_mask)
+  
 	# atom count
+	print(f">> max num nodes: {MAX_NUM_NODES}")
+	print(f">> max num edges: {MAX_NUM_EDGES}")
 	atom_count_ids = mol_df[mol_df["num_atoms"]<=MAX_NUM_NODES]["mol_id"]
 	atom_count_mask = spec_df["mol_id"].isin(atom_count_ids)
 	print(f">> atom count: {atom_count_mask.mean()}")
