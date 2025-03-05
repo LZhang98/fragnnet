@@ -23,9 +23,10 @@ cd /home/feiw/feiw/frag-gnn
 
 DATASET_NAME=nist20mona23v3
 MAX_DEPTH=3
+MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=True
-SAVE_NAME=nist20mona23v3_d{MAX_DEPTH}_h{MAX_H_TRANSFER}_iso${ISO_FALSE}2
+SAVE_NAME=nist20mona23v3_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}2
 DSETS='nist20_hr'
 PREC='[M+H]+'
 INST='FT'
@@ -99,7 +100,7 @@ cp ${SAVE_NAME}.tar ${DEST_DP}
 
 # reset some variables
 ISO_FALSE=False
-SAVE_NAME=nist20mona23v3_d{MAX_DEPTH}_h{MAX_H_TRANSFER}_iso${ISO_FALSE}2
+SAVE_NAME=nist20mona23v3_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}2
 echo ISO_FALSE: ${ISO_FALSE}
 echo SAVE_NAME: ${SAVE_NAME}
 
