@@ -4,11 +4,11 @@
 #SBATCH --job-name=frag_gen
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
-#SBATCH --time=0-2:00
+#SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_frag_gen_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_frag_gen_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_reproduce_%j.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_reproduce_%j.err
 #SBATCH --open-mode=append
 
 # record start
@@ -23,9 +23,8 @@ cd /home/feiw/feiw/frag-gnn
 
 DATASET_NAME=nist20mona23v3
 MAX_DEPTH=3
-MAX_H_TRANSFER=4
 NB_FLAG=False
-ISO_FALSE=False
+ISO_FALSE=True
 SAVE_NAME=nist20mona23v3_d{MAX_DEPTH}_h{MAX_H_TRANSFER}_iso${ISO_FALSE}2
 DSETS='nist20_hr'
 PREC='[M+H]+'
@@ -81,11 +80,47 @@ apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fr
         --prec_types ${PREC}\
         --inst_types ${INST} \
         --dsets ${DSETS} \
-        --nb_isomorphic ${NB_FLAG}
-        --iso_false ${ISO_FALSE} \
+        --nb_isomorphic ${NB_FLAG} \
+        --isotopes ${ISO_FALSE} \
         --frag_mode ${FRAG_MODE} \
         --max_h_transfer ${MAX_H_TRANSFER}
-        
+
+# go to frag directory
+cd ${SLURM_TMPDIR}/frag/
+tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
+
+# copy tar to scratch
+DEST_DP=/scratch/feiw/frag-gnn-data/frags/
+echo create dir at ${DEST_DP}
+mkdir -p ${DEST_DP}
+echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
+cp ${SAVE_NAME}.tar ${DEST_DP}
+
+
+# reset some variables
+ISO_FALSE=False
+SAVE_NAME=nist20mona23v3_d{MAX_DEPTH}_h{MAX_H_TRANSFER}_iso${ISO_FALSE}2
+echo ISO_FALSE: ${ISO_FALSE}
+echo SAVE_NAME: ${SAVE_NAME}
+
+# run dag gen
+echo running dag gen
+
+apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
+    python preproc_scripts/03_prepare_dag_feats.py \
+        --frag_dp=./frag/${SAVE_NAME} \
+        --proc_dp=./proc/${DATASET_NAME}  \
+        --max_depth=${MAX_DEPTH} \
+        --wandb_mode=off \
+        --wandb_run_name=fool \
+        --prec_types ${PREC}\
+        --inst_types ${INST} \
+        --dsets ${DSETS} \
+        --nb_isomorphic ${NB_FLAG} \
+        --isotopes ${ISO_FALSE} \
+        --frag_mode ${FRAG_MODE} \
+        --max_h_transfer ${MAX_H_TRANSFER}
+
 # go to frag directory
 cd ${SLURM_TMPDIR}/frag/
 tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
