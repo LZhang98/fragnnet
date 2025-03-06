@@ -219,6 +219,6 @@ if __name__ == "__main__":
 				spec_data_ptr = spec_df,
 				magma_dp = args.magma_dp,
 				device = args.iceberg_inten_device,
-				validate=True
+				validate = True
 			)
 			df.to_pickle(args.save_fp)

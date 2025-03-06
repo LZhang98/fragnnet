@@ -389,7 +389,7 @@ def run_spectra_prediction(model,
 			batch_input = to_device(batch_input, device)
 			# use existing validate to compute cos sim and etc
 			if validate:
-				batch_result = model._common_step(batch_input, split="val", log=False)
+				batch_result = model._common_step(batch_input, split="test", log=False)
 			else:
 				batch_result = model.predict_step(**batch_input)
     

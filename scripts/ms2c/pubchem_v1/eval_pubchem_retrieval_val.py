@@ -55,13 +55,16 @@ if __name__ == "__main__":
 
 	for file in tqdm(all_files):
 		basename = os.path.basename(file).replace('.pkl', '').replace('.gz', '')
-		print(f"> starting file = {basename}")
+		print(f">> starting file = {basename}")
 		predicted_spec_df = pd.read_pickle(file)
+		print(f"> predicted_spec_df.shape (pre-merge) = {predicted_spec_df.shape}")
 		predicted_spec_df = predicted_spec_df.merge(spec_input_df, left_on='spec_id', right_on='group_id')
+		print(f"> predicted_spec_df.shape (post-merge) = {predicted_spec_df.shape}")
 		predicted_spec_df['cos_sim_0.01_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_sim_0.01'].rank(ascending=False)
 		predicted_spec_df['cos_hun_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_hun'].rank(ascending=False)
 
 		stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x['target_inchikey_s'] == x['inchikey_s']])
+		print(f"> stats_df.shape = {stats_df.shape}")
 
 		#for ncdg_p in [5,10,50]:
 		stats_df['ndcg_linear_cos_sim_0.01'] = predicted_spec_df.groupby('target_mol_id').apply(

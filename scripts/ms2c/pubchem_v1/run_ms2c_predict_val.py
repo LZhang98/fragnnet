@@ -77,12 +77,14 @@ if __name__ == "__main__":
 	# NOTE this only one for version 1, as there is only on Adduct Type
 	# TODO change this for multiple Adduct Type
 
-	df = run_spectra_prediction(model = model,   
-				config_d = config_d,
-				mol_data_ptr = mol_df,
-				spec_data_ptr = spec_df,
-				frag_dp = args.frag_dp,
-				device = device,
-				validate= True)
+	df = run_spectra_prediction(
+		model = model,   
+		config_d = config_d,
+		mol_data_ptr = mol_df,
+		spec_data_ptr = spec_df,
+		frag_dp = args.frag_dp,
+		device = device,
+		validate = True
+	)
  
 	df.to_pickle(args.save_fp)

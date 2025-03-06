@@ -63,7 +63,7 @@ def main(args):
                         f"iceberg_inten_custom_fp={CUSTOM_FP}",
                         f"save_fp={SAVE_FP}",
                         f"iceberg_inten_batch_size={BATCH_SIZE}",
-                        f"iceberg_num_workers=7"
+                        f"iceberg_inten_num_workers=7"
                     ]
                 else:
                     ID = MODEL_TYPE_TO_ID[MODEL][SEED_IDX]
