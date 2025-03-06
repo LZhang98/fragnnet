@@ -17,7 +17,7 @@ from pprint import pprint
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--model_type", type=str, default="d4", choices=["d3","d4"])
+	parser.add_argument("--depth", type=str, default="d4", choices=["d3","d4"])
 	parser.add_argument("--debug", type=booltype, default=False)
 	parser.add_argument("--mode", type=str, choices=["baseline","posfn","negfn","mix"], default="baseline")
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test"])
@@ -27,7 +27,7 @@ if __name__ == "__main__":
 	parser.add_argument("--overwrite", type=booltype, default=False)
 	args = parser.parse_args()
 
-	model_type = args.model_type
+	depth = args.depth
 	debug = args.debug
 	mode = args.mode
 	eval_split = args.eval_split
@@ -36,14 +36,14 @@ if __name__ == "__main__":
 	entropy_exp = args.entropy_exp
 	pd.options.display.float_format = '{:.4f}'.format
 
-	output_dir = f"{split_type}_{model_type}_{mode}_{eval_split}_{debug}"
+	output_dir = f"{split_type}_{depth}_{mode}_{eval_split}_{debug}"
 	output_dp = os.path.join(args.output_dp,output_dir)
 	os.makedirs(output_dp,exist_ok=True)
 
 	# load configs
 	print(">>> Loading configs")
 	template_fp = "config/template.yml"
-	custom_fp = os.path.join("config",entropy_exp,split_type,f"{model_type}_script_config.yml")
+	custom_fp = os.path.join("config",entropy_exp,split_type,f"{depth}_script_config.yml")
 	assert os.path.isfile(custom_fp)
 	config_d = load_config(template_fp, custom_fp)
 	# modify config to record relevant metrics
@@ -79,7 +79,7 @@ if __name__ == "__main__":
 		
 			runs = api.runs(
 					path="frag-gnn/frag-gnn",
-					filters={"group":f"{entropy_exp}_{split_type}_{model_type}_{mode}_ens"})
+					filters={"group":f"{entropy_exp}_{split_type}_{depth}_{mode}_ens"})
 			model_to_run_id = {run.name: run.id for run in runs}
 		
 		else:
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 			for smode, seed_range in mode_to_seed_range.items():
 				runs = api.runs(
 						path="frag-gnn/frag-gnn",
-						filters={"group":f"{entropy_exp}_{split_type}_{model_type}_{smode}_ens"})
+						filters={"group":f"{entropy_exp}_{split_type}_{depth}_{smode}_ens"})
 				for run in runs:
 					for i in range(seed_range[0],seed_range[1]):
 						if f"s{i:02d}" in run.tags:

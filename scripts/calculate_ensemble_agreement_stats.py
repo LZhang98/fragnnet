@@ -14,6 +14,7 @@ import os
 from pprint import pprint
 import matplotlib.pyplot as plt
 from scipy.stats import linregress
+import json
 
 def scatter_with_fit(
         tensor_x, 
@@ -246,16 +247,17 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, default=1)
     parser.add_argument("--nb", type=booltype, default=True)
     parser.add_argument("--ens_conds", type=booltype, default=True)
-    parser.add_argument("--entropy_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_feb26/")
+    parser.add_argument("--output_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_feb26/")
     parser.add_argument("--ens_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_ens_feb26/")
     parser.add_argument("--ens_types", type=str, nargs="+", default=["baseline", "low", "high", "mix"])
+    parser.add_argument("--stats_dp", type=str, default="figs/ensemble/v3-1_feb26")
     args = parser.parse_args()
 
     depth = args.depth
     k = args.k
     nb = args.nb
     ens_conds = args.ens_conds
-    entropy_dp = args.entropy_dp
+    output_dp = args.output_dp
     ens_dp = args.ens_dp
     ens_types = args.ens_types
 
@@ -267,10 +269,12 @@ if __name__ == "__main__":
         "mix": "mix"
     }
 
+    stats_d = {}
+
     for ens_type in ens_types:
 
         ens_type_key = ens_type_to_key[ens_type]
-        entropy_fp = os.path.join(entropy_dp, f"scaffold_{depth}_{ens_type_key}_test_False/vals.pkl")
+        entropy_fp = os.path.join(output_dp, f"scaffold_{depth}_{ens_type_key}_test_False/vals.pkl")
         ens_type_dp = os.path.join(ens_dp, f"scaffold_{depth}_{ens_type}_test_False")
         ens_type_fp = os.path.join(ens_type_dp, "nbc_ens_vals.pkl")
 
@@ -296,47 +300,53 @@ if __name__ == "__main__":
     high_nbc_ens_vals = ens_vals_d["high"]
     mix_nbc_ens_vals = ens_vals_d["mix"]
 
-    print("> baseline")
+    print(">> baseline")
     baseline_nbc_mask, baseline_nbc_counts, baseline_nbc_argtopk = get_topk_formula_node_idxs(baseline_nbc_ens_vals, k, nb=True)
     print(th.unique(baseline_nbc_counts[baseline_nbc_mask], return_counts=True)[1][:10])
-    print((baseline_nbc_counts[baseline_nbc_mask] < k).float().mean())
-    print((baseline_nbc_argtopk[baseline_nbc_mask] == -1).any(dim=1).float().mean())
+    print((baseline_nbc_counts[baseline_nbc_mask] < k).float().mean().item())
+    print((baseline_nbc_argtopk[baseline_nbc_mask] == -1).any(dim=1).float().mean().item())
 
-    print("> low")
+    print(">> low")
     low_nbc_mask, low_nbc_counts, low_nbc_argtopk = get_topk_formula_node_idxs(low_nbc_ens_vals, k, nb=True)
     print(th.unique(low_nbc_counts[low_nbc_mask], return_counts=True)[1][:10])
-    print((low_nbc_counts[low_nbc_mask] < k).float().mean())
-    print((low_nbc_argtopk[low_nbc_mask] == -1).any(dim=1).float().mean())
+    print((low_nbc_counts[low_nbc_mask] < k).float().mean().item())
+    print((low_nbc_argtopk[low_nbc_mask] == -1).any(dim=1).float().mean().item())
 
-    print("> high")
+    print(">> high")
     high_nbc_mask, high_nbc_counts, high_nbc_argtopk = get_topk_formula_node_idxs(high_nbc_ens_vals, k, nb=True)
     print(th.unique(high_nbc_counts[high_nbc_mask], return_counts=True)[1][:10])
-    print((high_nbc_counts[high_nbc_mask] < k).float().mean())
-    print((high_nbc_argtopk[high_nbc_mask] == -1).any(dim=1).float().mean())
+    print((high_nbc_counts[high_nbc_mask] < k).float().mean().item())
+    print((high_nbc_argtopk[high_nbc_mask] == -1).any(dim=1).float().mean().item())
 
-    print("> mix")
+    print(">> mix")
     mix_nbc_mask, mix_nbc_counts, mix_nbc_argtopk = get_topk_formula_node_idxs(mix_nbc_ens_vals, k, nb=True)
     print(th.unique(mix_nbc_counts[mix_nbc_mask], return_counts=True)[1][:10])
-    print((mix_nbc_counts[mix_nbc_mask] < k).float().mean())
-    print((mix_nbc_argtopk[mix_nbc_mask] == -1).any(dim=1).float().mean())
+    print((mix_nbc_counts[mix_nbc_mask] < k).float().mean().item())
+    print((mix_nbc_argtopk[mix_nbc_mask] == -1).any(dim=1).float().mean().item())
 
     baseline_nbc_c_mask = baseline_nbc_mask & (baseline_nbc_counts > k)
     low_nbc_c_mask = low_nbc_mask & (low_nbc_counts > k)
     high_nbc_c_mask = high_nbc_mask & (high_nbc_counts > k)
     mix_nbc_c_mask = mix_nbc_mask & (mix_nbc_counts > k)
-    print(baseline_nbc_mask.float().mean(), baseline_nbc_c_mask.float().mean())
-    print(low_nbc_mask.float().mean(), low_nbc_c_mask.float().mean())
-    print(high_nbc_mask.float().mean(), high_nbc_c_mask.float().mean())
-    print(mix_nbc_mask.float().mean(), mix_nbc_c_mask.float().mean())    
+    print(baseline_nbc_mask.float().mean(), baseline_nbc_c_mask.float().mean().item())
+    print(low_nbc_mask.float().mean(), low_nbc_c_mask.float().mean().item())
+    print(high_nbc_mask.float().mean(), high_nbc_c_mask.float().mean().item())
+    print(mix_nbc_mask.float().mean(), mix_nbc_c_mask.float().mean().item())    
 
-    print("> compare (excluding singletons)")
+    print(">> compare ensembles (excluding singletons)")
+    print("> compare_mat")
     compare_mat, compare_all, equal_all = calculate_compare(
         [baseline_nbc_c_mask, low_nbc_c_mask, high_nbc_c_mask, mix_nbc_c_mask],
         [baseline_nbc_argtopk, low_nbc_argtopk, high_nbc_argtopk, mix_nbc_argtopk]
     )
     print(compare_mat)
-    print(compare_all)
+    print("> compare_all")
+    print(compare_all.item())
+    # update stats_d
+    stats_d["compare_mat"] = compare_mat
+    stats_d["compare_all"] = compare_all
 
+    print(">> mix ensemble cos_hun")
     mix_nbc_ens_cos_hun = 1. - sparse_cosine_distance_hungarian(
         mix_nbc_ens_vals["ens_true_mzs"],
         mix_nbc_ens_vals["ens_true_logprobs"],
@@ -345,34 +355,32 @@ if __name__ == "__main__":
         mix_nbc_ens_vals["ens_pred_logprobs"],
         mix_nbc_ens_vals["ens_pred_batch_idxs"],
     )
-    print(mix_nbc_ens_cos_hun.mean())
+    print(mix_nbc_ens_cos_hun.mean().item())
 
-    print("> oos")
-
+    print(">> mix ensemble oos")
     ens_pred_oos_prob = mix_nbc_ens_vals["ens_pred_oos_prob"]
     ens_true_oos_prob = mix_nbc_ens_vals["ens_true_oos_prob"]
     ens_cos_hun = mix_nbc_ens_cos_hun.clone()
-
-    print(pearson_r(ens_pred_oos_prob, ens_true_oos_prob))
-    print(pearson_r(ens_pred_oos_prob, ens_cos_hun))
-    print(pearson_r(ens_true_oos_prob, ens_cos_hun))
+    corr_pred_oos_prob_true_oos_prob = pearson_r(ens_pred_oos_prob, ens_true_oos_prob).item()
+    corr_pred_oos_prob_cos_hun = pearson_r(ens_pred_oos_prob, ens_cos_hun).item()
+    corr_true_oos_prob_cos_hun = pearson_r(ens_true_oos_prob, ens_cos_hun).item()
+    print("> corr pred_oos_prob vs true_oos_prob", corr_pred_oos_prob_true_oos_prob)
+    print("> corr pred_oos_prob vs cos_hun", corr_pred_oos_prob_cos_hun)
+    print("> corr true_oos_prob vs cos_hun", corr_true_oos_prob_cos_hun)    
+    print("> corr pred_oos_prob vs cos_hun (thresholds)")
     for i in [0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]:
         print(
             i, 
-            (ens_pred_oos_prob >= i).float().mean(), 
-            ens_cos_hun[ens_pred_oos_prob >= i].mean(), 
-            ens_cos_hun[ens_pred_oos_prob < i].mean()
+            (ens_pred_oos_prob >= i).float().mean().item(), 
+            ens_cos_hun[ens_pred_oos_prob >= i].mean().item(), 
+            ens_cos_hun[ens_pred_oos_prob < i].mean().item()
         )
+    # update stats_d
+    stats_d["corr_pred_oos_prob_true_oos_prob"] = corr_pred_oos_prob_true_oos_prob
+    stats_d["corr_pred_oos_prob_cos_hun"] = corr_pred_oos_prob_cos_hun
+    stats_d["corr_true_oos_prob_cos_hun"] = corr_true_oos_prob_cos_hun
 
-    # scatter_with_fit(
-    #     ens_pred_oos_prob, 
-    #     ens_cos_hun, 
-    #     title="Cosine Distance vs Predicted OOS",
-    #     label_x="Predicted P(OOS)",
-    #     label_y="Cosine Distance"
-    # )
-
-    print("> unequal max")
+    print(">> unequal max")
 
     ens_formula_batch_idxs = mix_nbc_ens_vals["ens_formula_batch_idxs"].clone()
     ens_formula_logprobs = mix_nbc_ens_vals["ens_formula_logprobs"].clone()
@@ -388,25 +396,21 @@ if __name__ == "__main__":
     )
 
     print(unequal_max_logprobs.shape)
-    print(unequal_max_logprobs.exp().mean(), unequal_max_logprobs.exp().min(), unequal_max_logprobs.exp().max())
-    print(pearson_r(unequal_max_logprobs.exp(), ens_cos_hun))
+    print(
+        unequal_max_logprobs.exp().mean().item(), 
+        unequal_max_logprobs.exp().min().item(), 
+        unequal_max_logprobs.exp().max().item()
+    )
+    print(pearson_r(unequal_max_logprobs.exp(), ens_cos_hun).item())
     for i in [0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]:
         print(
             i, 
-            (unequal_max_logprobs.exp() >= i).float().mean(), 
-            ens_cos_hun[unequal_max_logprobs.exp() >= i].mean(), 
-            ens_cos_hun[unequal_max_logprobs.exp() < i].mean()
+            (unequal_max_logprobs.exp() >= i).float().mean().item(), 
+            ens_cos_hun[unequal_max_logprobs.exp() >= i].mean().item(), 
+            ens_cos_hun[unequal_max_logprobs.exp() < i].mean().item()
         )
 
-    # scatter_with_fit(
-    #     unequal_max_logprobs.exp(), 
-    #     ens_cos_hun, 
-    #     title="Cosine Distance vs Unequal Max Logprobs",
-    #     label_x="Disagreement P(f)",
-    #     label_y="Cosine Distance"
-    # )
-
-    print("> unequal mean")
+    print(">> unequal mean")
 
     ens_formula_batch_idxs = mix_nbc_ens_vals["ens_formula_batch_idxs"].clone()
     ens_formula_logprobs = mix_nbc_ens_vals["ens_formula_logprobs"].clone()
@@ -427,20 +431,21 @@ if __name__ == "__main__":
     # unequal_mean_logprobs = unequal_mean_logprobs - safelog(unequal_mean_counts.float())
 
     print(unequal_mean_logprobs.shape)
-    print(unequal_mean_logprobs.exp().mean(), unequal_mean_logprobs.exp().min(), unequal_mean_logprobs.exp().max())
-    print(pearson_r(unequal_mean_logprobs.exp(), ens_cos_hun))
+    print(
+        unequal_mean_logprobs.exp().mean().item(), 
+        unequal_mean_logprobs.exp().min().item(), 
+        unequal_mean_logprobs.exp().max().item()
+    )
+    print(pearson_r(unequal_mean_logprobs.exp(), ens_cos_hun).item())
     for i in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99]:
         print(
             i, 
-            (unequal_mean_logprobs.exp() >= i).float().mean(), 
-            ens_cos_hun[unequal_mean_logprobs.exp() >= i].mean(), 
-            ens_cos_hun[unequal_mean_logprobs.exp() < i].mean(),
+            (unequal_mean_logprobs.exp() >= i).float().mean().item(), 
+            ens_cos_hun[unequal_mean_logprobs.exp() >= i].mean().item(), 
+            ens_cos_hun[unequal_mean_logprobs.exp() < i].mean().item(),
         )
 
-    # scatter_with_fit(
-    #     unequal_mean_logprobs.exp(), 
-    #     ens_cos_hun, 
-    #     title="Cosine Distance vs Unequal Mean Logprobs",
-    #     label_x="Disagreement P(f)",
-    #     label_y="Cosine Distance"
-    # )   
+    os.makedirs(args.stats_dp, exist_ok=True)
+    stats_fp = os.path.join(args.stats_dp, f"ensemble_agreement_stats.pkl")
+    th.save(stats_d, stats_fp)
+    print(f">> saved stats to {stats_fp}")
