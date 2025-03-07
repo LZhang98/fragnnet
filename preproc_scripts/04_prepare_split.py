@@ -15,19 +15,25 @@ def make_splits(args):
 	spec_df = pd.read_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
 
 	print("> Spectrum filters")
-	# filter spectra
+
+	# filter spectra 
+	prec_types = args.prec_types if 'any' not in args.prec_types else None
+	frag_modes = args.frag_modes if 'any' not in args.frag_modes else None
+	ion_modes = args.ion_modes if 'any' not in args.ion_modes else None
+	inst_types = args.inst_types if 'any' not in args.inst_types else None
+
 	dsets = args.primary_dsets + args.secondary_dsets
 	f_spec_df, f_mol_df = filter_spec_mol(
 		spec_df,
 		mol_df,
 		dsets=dsets,
-		prec_types=args.prec_types,
+		prec_types=prec_types,
 		max_peak_mz=args.max_peak_mz,
 		max_prec_mz=args.max_prec_mz,
 		elements=args.elements,
-		frag_modes=args.frag_modes,
-		ion_modes=args.ion_modes,
-		inst_types=args.inst_types,
+		frag_modes=frag_modes,
+		ion_modes=ion_modes,
+		inst_types=inst_types,
 		ces = args.ces
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
@@ -266,10 +272,10 @@ if __name__ == "__main__":
 	parser.add_argument("--max_num_dag_edges",type=int,default=250000)
 	parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",required=False)
-	parser.add_argument("--inst_types",required=False)
-	parser.add_argument("--frag_modes",required=False)
-	parser.add_argument("--ion_modes",required=False)
+	parser.add_argument("--prec_types", type=str,nargs="+", required=False, default='any')
+	parser.add_argument("--inst_types", type=str,nargs="+", required=False, default='any')
+	parser.add_argument("--frag_modes", type=str,nargs="+", required=False, default='any')
+	parser.add_argument("--ion_modes", type=str,nargs="+", required=False, default='any')
 	parser.add_argument('--ces',required=False,choices=['nce', 'ace', 'nce_or_ace'])
 
 	# non-filtering args
