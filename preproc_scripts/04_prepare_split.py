@@ -211,10 +211,16 @@ def make_splits(args):
 	for split_data in split_data_list:
 		os.makedirs(split_data['split_dp'],exist_ok=True)
 		print(f"> Save split to {split_data['split_dp']}")
-		
-		print(f"> Split sizes (spec_id): train = {split_data['train_df'].shape[0]},"
-        	f"val = {split_data['val_df'].shape[0]}, test = {split_data['test_df'].shape[0]} "
-            f"secondary test df = {split_data['secondary_df'].shape[0]}")
+  
+		for split_type in ["train_df","val_df","test_df","secondary_df"]:
+			print(">", split_type)
+			print("> number of unique mols", split_data[split_type]['mol_id'].nunique())
+			print("> number of unique spec", split_data[split_type]['spec_id'].nunique())
+			print("> number of unique groups", split_data[split_type]['group_id'].nunique())
+			print("-" * 16)
+		#print(f"> Split sizes (spec_id): train = {split_data['train_df'].shape[0]},"
+		#	f"val = {split_data['val_df'].shape[0]}, test = {split_data['test_df'].shape[0]} "
+		#	f"secondary test df = {split_data['secondary_df'].shape[0]}")
 		
 		# save ids
 		train_fp = os.path.join(split_data['split_dp'],"train_ids.csv")
