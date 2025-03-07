@@ -8,7 +8,7 @@ seed: 397623
 # data stuff
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/graff
+split_dp: data/split/graff3
 ann_fp: data/proc/nist20mona23v3/ann_df.pkl
 frag_params:
   pyg: False
@@ -17,10 +17,6 @@ spec_params:
   nce: True
   merge_keep_ces: True
   preprocess: True
-  test_ces:
-    - 20
-    - 35
-    - 50
 mol_params:
   pyg: False
   graff: True
@@ -35,6 +31,8 @@ ann_params:
     - train
     - val
     - test
+  huge_mz_diff_threshold: 0.1
+  big_mz_diff_ppm_threshold: 0.00001
   preprocess: True
 
 # model stuff
@@ -72,8 +70,8 @@ lr: 0.000254
 weight_decay: 0.000001
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 200
+max_epochs: 200
 lr_schedule: True
 lr_decay_rate: 0.74
 lr_warmup_steps: 1000

@@ -201,24 +201,22 @@ python preproc_scripts/pubchem_ms2c/04_run_ms2c_frag_gen.py \
 If you wish to run `fragnnet`,`nemis`,`massformer` predict and provide wandb run id, following script will download best checkpoint from given run id and perform prediction. Model type is determined from checkpoint automatically.
 
 ```bash
-python scripts/ms2c/pubchem_v1/run_ms2c_predict_pubchem.py \
+python scripts/ms2c/pubchem_v1/run_ms2c_predict_val.py \
      --device=cpu\
     --save_fp=save_fp \
     --magma_dp=magma_dp \
-    --iceberg_gen_wandb_run_id=i7k9gc3d \
-    --iceberg_intern_wandb_run_id=c8iwu7il \
+    --wandb_id=TODO \
     --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
 ```
 
-In case that wandb is not accessaible, you can also supply following script wil checkpoint file.
+If wandb is not accessible, you can also supply the following script with a checkpoint file.
 
 ```bash
-python scripts/ms2c/pubchem_v1/run_ms2c_predict_pubchem.py \
-    --device=cpu\
-    --save_fp=save_fp\
-    --magma_dp=magma_dp\
-    --iceberg_gen_ckpt_fp=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d.ckpt\
-    --iceberg_intern_ckpt_fp=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s0_c8iwu7il.ckpt\
+python scripts/ms2c/pubchem_v1/run_ms2c_predict_val.py \
+    --device=cpu \
+    --save_fp=save_fp \
+    --magma_dp=magma_dp \
+    --model_ckpt=TODO \
     --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
 ```
 
@@ -232,11 +230,11 @@ If you wish to run `iceberg gen` and `iceberg predict` and provide wandb run id,
     --save_fp=save_fp \
     --magma_dp=magma_dp \
     --iceberg_gen_wandb_run_id=i7k9gc3d \
-    --iceberg_intern_wandb_run_id=c8iwu7il \
+    --iceberg_inten_wandb_run_id=c8iwu7il \
     --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
 ```
 
-In case that wandb is not accessaible, you can also supply following script wil checkpoint file.
+If wandb is not accessible, you can also supply the following script with a checkpoint file.
 
 ```bash
   python scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py \
@@ -244,7 +242,7 @@ In case that wandb is not accessaible, you can also supply following script wil 
     --save_fp=save_fp\
     --magma_dp=magma_dp\
     --iceberg_gen_ckpt_fp=./saved_ckpts/nist20v3_inchikey_iceberg_gen_s0_i7k9gc3d.ckpt\
-    --iceberg_intern_ckpt_fp=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s0_c8iwu7il.ckpt\
+    --iceberg_inten_ckpt_fp=./saved_ckpts/nist20v3_inchikey_iceberg_inten_100_s0_c8iwu7il.ckpt\
     --proc_dp=./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50
 ```
 

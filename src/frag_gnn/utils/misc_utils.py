@@ -243,6 +243,23 @@ def scatter_logsumexp(logits,subset_idxs,eps=EPS,dim_size=None):
 	)
 	return sm + th.log(se + eps)
 
+def scatter_logmeanexp(logits,subset_idxs,eps=EPS,dim_size=None):
+
+	den = scatter_reduce(
+		src=th.ones_like(logits),
+		index=subset_idxs,
+		reduce="sum",
+		dim_size=dim_size,
+		default=0.
+	)
+	log_num = scatter_logsumexp(
+		logits,
+		subset_idxs,
+		eps=eps,
+		dim_size=dim_size
+	)
+	return log_num - safelog(den)
+
 def scatter_logsoftmax(logits,subset_idxs):
 	# calculate normalizing constant
 	c = scatter_logsumexp(logits,subset_idxs)

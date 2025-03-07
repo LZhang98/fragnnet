@@ -8,7 +8,7 @@ seed: 397623
 # data stuff
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/graff
+split_dp: data/split/graff3
 ann_fp: data/proc/nist20mona23v3/ann_df.pkl
 frag_params:
   pyg: False

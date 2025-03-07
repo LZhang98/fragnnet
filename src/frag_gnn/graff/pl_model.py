@@ -40,7 +40,8 @@ class GrAFFPL(SpectrumPL):
 			min_probability=self.hparams.graff_min_probability,
 			min_mz=self.hparams.graff_min_mz,
 			node_feats=node_feats,
-			edge_feats=edge_feats
+			edge_feats=edge_feats,
+			output_formula_str=self.hparams.output_formula_str
 		)
 
 		# compile

@@ -117,7 +117,6 @@ ion2onehot_pos = {
 	"[M+H-2H2O]+": 6,
 }
 
-
 def formula_to_dense(chem_formula: str) -> np.ndarray:
 	"""formula_to_dense.
 
@@ -143,6 +142,18 @@ def formula_to_dense(chem_formula: str) -> np.ndarray:
 
 	return dense_vec
 
+ion2delta_formula = {
+	"[M+H]+": formula_to_dense("H"),
+	"[M+Na]+": formula_to_dense("Na"),
+	"[M+K]+": formula_to_dense("K"),
+	"[M-H2O+H]+": -formula_to_dense("H") - formula_to_dense("O"),
+	"[M+H-H2O]+": -formula_to_dense("H") - formula_to_dense("O"),
+	"[M+H3N+H]+": 4*formula_to_dense("H") + formula_to_dense("N"),
+	"[M+NH4]+": 4*formula_to_dense("H") + formula_to_dense("N"),
+	"[M]+": formula_to_dense(""),
+	"[M-H4O2+H]+": -3*formula_to_dense("H") - 2*formula_to_dense("O"),
+	"[M+H-2H2O]+": -formula_to_dense("H") - 2*formula_to_dense("O"),
+}
 
 def cross_sum(x, y):
 	"""cross_sum."""

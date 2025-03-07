@@ -242,6 +242,9 @@ class BaseDataset(Dataset):
 			prec_type = spec_entry["prec_type"]
 			prec_type = th.tensor([self.prec_type_to_idx[prec_type]],dtype=th.long)
 			spec_data["spec_prec_type"] = prec_type
+		if self.spec_params["prec_type_str"]:
+			prec_type_str = spec_entry["prec_type"]
+			spec_data["spec_prec_type_str"] = np.array([prec_type_str])
 		if self.spec_params["inst_type"]:
 			inst_type = spec_entry["inst_type"]
 			inst_type = th.tensor([self.inst_type_to_idx[inst_type]],dtype=th.long)
@@ -353,6 +356,10 @@ class BaseDataset(Dataset):
 			elif isinstance(values[0],th.Tensor):
 				# cat
 				values = th.cat(values,dim=0)
+				collate_data[key] = values
+			elif isinstance(values[0],np.ndarray):
+				# cat
+				values = np.concatenate(values,axis=0)
 				collate_data[key] = values
 			elif key in ["mol_id"]:
 				collate_data[key] = values
@@ -651,6 +658,12 @@ class SpecMolFragDataset(SpecMolDataset):
 			formula_peak_probs = frag_entry["formula_peak_probs"]
 			formula_peak_probs = F.normalize(formula_peak_probs[:,:self.frag_params["num_isotopes"]],dim=1,p=1)
 			frag_data["frag_formula_peak_probs"] = formula_peak_probs
+		if self.frag_params["formula_str"]:
+			# import pdb; pdb.set_trace()
+			formula_str = list(frag_entry["idx_to_formula"].values())
+			assert formula_str[0] == "", formula_str[0]
+			formula_str = np.array(formula_str)
+			frag_data["frag_formula_str"] = formula_str
 		return frag_data
 
 	@staticmethod

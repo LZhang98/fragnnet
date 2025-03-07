@@ -74,10 +74,10 @@ apptainer exec -C -B /dev:/dev -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLU
         --save_fp=${SAVE_FP} \
         --magma_dp=${MAGMA_DP} \
         --iceberg_gen_ckpt_fp=iceberg_gen.ckpt \
-        --iceberg_intern_ckpt_fp=iceberg_inten.ckpt \
+        --iceberg_inten_ckpt_fp=iceberg_inten.ckpt \
         --proc_dp=./proc \
         --run_iceberg_gen=True \
-        --run_iceberg_intern=False
+        --run_iceberg_inten=False
 
 cd ${SLURM_TMPDIR}
 echo create predicted save dir: ${MAGMA_SAVE_DP}

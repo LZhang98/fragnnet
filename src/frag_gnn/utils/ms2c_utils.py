@@ -11,7 +11,7 @@ from frag_gnn.pl_model import FragGNNPL, NeimsPL, GNNPL
 from frag_gnn.massformer.pl_model import MassFormerPL
 from frag_gnn.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
-from frag_gnn.runner import init_dataloader
+from frag_gnn.runner import init_dataloader, load_config
 from frag_gnn.utils.misc_utils import to_device
 from frag_gnn.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
 from frag_gnn.dataset import SpecMolFragDataset, SpecMolDataset
@@ -186,7 +186,15 @@ model_type_to_model_cls = {
 	"iceberg_inten": IcebergIntenPL
 }
 
-def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 32, auxiliary_scores:list = None, eval_mz_bin_res:list[float] = None):
+def load_model_and_init_config(
+		ckpt_fp:str, 
+		device:str = None, 
+		batch_size:int = 32, 
+		auxiliary_scores:list = None, 
+		eval_mz_bin_res:list[float] = None, 
+		custom_fp:str = None,
+		template_fp:str = None,
+		num_workers:int = None):
 	"""load model and reset config for inference
 
 	Args:
@@ -205,7 +213,17 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 	
 	print(">> Loading configs")
 	config_d = get_pl_hparams(ckpt)
+	if custom_fp is not None:
+		assert template_fp is not None
+		config_d_2 = load_config(template_fp, custom_fp)
+		for k, v in config_d_2.items():
+			if k in config_d and v != config_d[k]:
+				print(f"> overwrite config: {k} -- {config_d[k]} vs {v}")
+			elif k not in config_d:
+				print(f"> add config: {k} -- {v}")
+			config_d[k] = v
 
+	# overwrite config values
 	# set eval batch size
 	config_d['eval_batch_size'] = batch_size
 	# disable metrics
@@ -224,7 +242,8 @@ def load_model_and_init_config(ckpt_fp:str, device:str = None, batch_size:int = 
 	config_d['spec_params']['unique_id'] = True
 	config_d['spec_params']["counts"] = True
 	# set num works and cpu stuff
-	config_d['num_workers']= multiprocessing.cpu_count()
+	if num_workers is not None:
+		config_d['num_workers'] = num_workers
 
     # config cuda and cpus
 	if device is None:
@@ -370,7 +389,7 @@ def run_spectra_prediction(model,
 			batch_input = to_device(batch_input, device)
 			# use existing validate to compute cos sim and etc
 			if validate:
-				batch_result = model._common_step(batch_input, split="val", log=False)
+				batch_result = model._common_step(batch_input, split="test", log=False)
 			else:
 				batch_result = model.predict_step(**batch_input)
     
