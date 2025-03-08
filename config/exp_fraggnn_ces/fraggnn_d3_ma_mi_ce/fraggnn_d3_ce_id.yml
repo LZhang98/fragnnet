@@ -85,12 +85,12 @@ eval_mz_bin_res:
 
 precision: 32
 use_tensor_float32: True
-automatic_optimization: True
+automatic_optimization: False
+dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+pl_enable_progress_bar: True
 activation_checkpointing: False
 compile: True
 pin_memory: True
 loss_vectorized: True
-loss_batch_size: 32
+loss_batch_size: 16
 skip_extra_losses: True
-
-
