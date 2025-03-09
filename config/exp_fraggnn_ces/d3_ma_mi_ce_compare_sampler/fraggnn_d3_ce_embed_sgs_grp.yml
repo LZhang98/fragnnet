@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ce_embed_ma_mi_sgs
+wandb_name: nist20_inchikey_fraggnn_d3_ce_embed_ma_mi_sgs_grp
 wandb_tags:
 - retrieval
 - nist20
@@ -21,6 +21,7 @@ wandb_tags:
 - skip_extra_losses
 - binned_cosine_similarity
 - ce
+- sgs_grp
 
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
