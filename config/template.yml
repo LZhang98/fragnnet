@@ -304,7 +304,6 @@ inst_insert_size: 32
 dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000
-dynamic_batch_sampler_chunk_size: -1
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 3

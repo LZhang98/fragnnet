@@ -92,45 +92,4 @@ if __name__ == "__main__":
 	os.makedirs(args.output_dp,exist_ok=True)
 	stats_df.to_csv(os.path.join(args.output_dp,f"{eval_split}_df.csv"),index=False)
 	print(stats_df)
-	
-	split_type_to_name = {
-		"inchikey": "InChIKey",
-		"scaffold": "Scaffold",
-	}
-	
-	model_type_to_name = {
-		"fraggnn_d3": "FraGNNet-D3",
-		"fraggnn_d4": "FraGNNet-D4",
-		"neims": "NEIMS",
-		"massformer": "MassFormer",
-		# "iceberg_inten_100": "Iceberg",
-		# "iceberg_inten_all": "Iceberg-ADV",
-		"iceberg_inten3_100": "Iceberg",
-		"iceberg_inten3_all": "Iceberg-ADV",
-		"graff3": "GrAFF",
-		"precursor": "Precursor-Only",
-	}
-
-	# add long ones
-	for k in list(model_type_to_name.keys()):
-		model_type_to_name[f"{k}_long"] = model_type_to_name[k] + "-Long"
-
-	latex_df = stats_df.copy()
-	latex_df = latex_df.drop(columns=["pred_oos_prob_mean","pred_oos_prob_std","pearson_r_oos_mean","pearson_r_oos_std"])
-	for metric in ["cos_sim_0.01","cos_hun","true_oos_prob","tv_oos"]:
-		def fmt_func(row):
-			mean_score = row[f"{metric}_mean"]
-			std_score = row[f"{metric}_std"]
-			if np.isnan(mean_score) or np.isnan(std_score):
-				fmt_str = "-"
-			else:
-				fmt_str = f"${mean_score:.3f} \pm {std_score:.3f}$"
-			return fmt_str
-		latex_df[metric] = latex_df.apply(fmt_func, axis=1) 
-		latex_df = latex_df.drop(columns=[f"{metric}_mean",f"{metric}_std"])
-	latex_df.loc[:,"split_type"] = latex_df["split_type"].replace(split_type_to_name)
-	latex_df.loc[:,"model_type"] = latex_df["model_type"].replace(model_type_to_name)
-	latex_table = latex_df.to_latex(index=False, escape=False)
-	with open(os.path.join(args.output_dp,f"{eval_split}_df.tex"), "w") as f:
-		f.write(latex_table)
 	import pdb; pdb.set_trace()

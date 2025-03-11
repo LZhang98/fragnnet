@@ -25,7 +25,7 @@ def main(args):
 
     for model_type in args.model_types:
 
-        BATCH_SIZE = 2 if model_type == "fraggnn_d4_long" else 32
+        BATCH_SIZE = 1 if model_type == "fraggnn_d4_long" else 32
 
         for split_type in args.split_types:
 
