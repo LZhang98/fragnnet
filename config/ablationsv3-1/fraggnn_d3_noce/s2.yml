@@ -10,7 +10,6 @@ wandb_tags:
 - fraggnn_d3
 - new_metrics
 - nodemlp
-- ce_embed
 - merged
 - oos_multiple_1
 - gaussian_renormalize
@@ -107,3 +106,4 @@ automatic_optimization: True
 dynamic_batch_sampler: False
 pl_enable_progress_bar: True
 compile: True
+eval_test_split: True
