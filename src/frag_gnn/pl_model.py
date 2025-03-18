@@ -103,7 +103,11 @@ class SpectrumPL(pl.LightningModule):
 		hun_remove_prec_peak_flags = [False]
 		if self.hparams.eval_hun_remove_prec_peaks:
 			hun_remove_prec_peak_flags.append(True)
-		
+		nb_flags = [False]
+		if self.hparams.nb_iso:
+			nb_flags.append(True)
+		self.extra_metric_args = []
+
 		eval_mz_bin_reses = self.hparams.eval_mz_bin_res
 
 		if len(self.hparams.auxiliary_scores) > 0:
@@ -188,6 +192,11 @@ class SpectrumPL(pl.LightningModule):
 				self.metric_bests.append("precision")
 				self.auxiliary_metric_names.add("precision")
 				compute_match_mzs = True
+			elif metric_name == "wprecision":
+				self.metric_min_max["wprecision"] = "max"
+				self.metric_bests.append("wprecision")
+				self.auxiliary_metric_names.add("wprecision")
+				compute_match_mzs = True
 			# elif metric_name == "dice":
 			# 	self.metric_min_max["dice"] = "max"
 			# 	self.metric_bests.append("dice")
@@ -231,6 +240,26 @@ class SpectrumPL(pl.LightningModule):
 				self.metric_min_max["true_oos_e"] = None
 				self.auxiliary_metric_names.add("true_oos_e")
 				compute_match_mzs = True
+			elif metric_name == "pred_node_count":
+				for nb_flag in nb_flags:
+					if nb_flag:
+						fname = "pred_nb_node_count"
+						self.extra_metric_args.extend(["pred_nb_node_batch_idxs"])
+					else:
+						fname = "pred_node_count"
+						self.extra_metric_args.extend(["pred_node_batch_idxs"])
+					self.metric_min_max[fname] = None
+					self.auxiliary_metric_names.add(fname)
+			elif metric_name == "pred_formula_count":
+				fname = "pred_formula_count"
+				self.extra_metric_args.extend(["pred_formula_batch_idxs"])
+				self.metric_min_max[fname] = None
+				self.auxiliary_metric_names.add(fname)
+			elif metric_name == "pred_edge_count":
+				fname = "pred_edge_count"
+				self.extra_metric_args.extend(["pred_edge_batch_idxs"])
+				self.metric_min_max[fname] = None
+				self.auxiliary_metric_names.add(fname)
 			else:
 				raise ValueError(f"metric_name {metric_name} not recognized")
 
@@ -424,12 +453,16 @@ class SpectrumPL(pl.LightningModule):
 					metric_d["recall"][b_idx] = b_recall
 								
 				if "wrecall" in self.hparams.auxiliary_scores:
-					b_wrecall = th.sum(b_true_ints[b_true_match_mask]) / th.sum(b_true_ints)
+					b_wrecall = th.sum(b_true_ints[b_true_match_mask]) #/ th.sum(b_true_ints)
 					metric_d["wrecall"][b_idx] = b_wrecall
 
 				if "precision" in self.hparams.auxiliary_scores:
 					b_precision = th.sum(b_pred_match_mask.float()) / b_pred_match_mask.shape[0]
 					metric_d["precision"][b_idx] = b_precision
+
+				if "wprecision" in self.hparams.auxiliary_scores:
+					b_wprecision = th.sum(b_pred_ints[b_pred_match_mask])
+					metric_d["wprecision"][b_idx] = b_wprecision
 
 				if "cos_hun" in self.hparams.auxiliary_scores:
 					for remove_prec_peak in hun_remove_prec_peak_flags:
@@ -518,6 +551,45 @@ class SpectrumPL(pl.LightningModule):
 					b_true_oos_logprobs = safelog(b_true_oos_probs, eps=self.hparams.log_min)
 					b_true_oos_e = -th.sum(b_true_oos_probs * b_true_oos_logprobs)
 					metric_d["true_oos_e"][b_idx] = b_true_oos_e
+
+			if "pred_node_count" in self.hparams.auxiliary_scores:
+
+				for nb_flag in nb_flags:
+					if nb_flag:
+						key = "nb_node"
+					else:
+						key = "node"
+					b_pred_node_count = scatter_reduce(
+						th.ones_like(kwargs[f"pred_{key}_batch_idxs"]),
+						kwargs[f"pred_{key}_batch_idxs"],
+						reduce="sum",
+						dim=0
+					)
+					assert th.min(b_pred_node_count) > 0, b_pred_node_count
+					metric_d[f"pred_{key}_count"] = b_pred_node_count
+
+			if "pred_formula_count" in self.hparams.auxiliary_scores:
+
+				b_pred_formula_count = scatter_reduce(
+					th.ones_like(kwargs["pred_formula_batch_idxs"]),
+					kwargs["pred_formula_batch_idxs"],
+					reduce="sum",
+					dim=0
+				)
+				b_pred_formula_count = b_pred_formula_count - 1  # -1 for OOS!
+				assert th.min(b_pred_formula_count) > 0, b_pred_formula_count
+				metric_d["pred_formula_count"] = b_pred_formula_count
+
+			if "pred_edge_count" in self.hparams.auxiliary_scores:
+
+				b_pred_edge_count = scatter_reduce(
+					th.ones_like(kwargs["pred_edge_batch_idxs"]),
+					kwargs["pred_edge_batch_idxs"],
+					reduce="sum",
+					dim=0
+				)
+				assert th.min(b_pred_edge_count) > 0, b_pred_edge_count
+				metric_d["pred_edge_count"] = b_pred_edge_count
 
 			return metric_d
 	
@@ -831,6 +903,8 @@ class SpectrumPL(pl.LightningModule):
 				"pred_batch_idxs": eval_pred_batch_idxs,
 				"true_prec_mzs": true_prec_mzs
 			}
+			for arg in self.extra_metric_args:
+				metric_input_d[arg] = both_d[arg]
 			metric_output_d = self.metric_fn(**metric_input_d)
 			for k,v in metric_output_d.items():
 				assert k not in results, k
