@@ -77,7 +77,7 @@ class IcebergGenPL(SpectrumPL):
 			broken=kwargs["magma_broken_bonds"],
 			adducts=kwargs["magma_adducts"],
 			root_forms=kwargs["magma_root_form_vecs"],
-			frag_forms=kwargs["magma_frag_form_vecs"],
+			frag_forms=kwargs["magma_frag_form_vecs"]
 		)
 		return outputs
 
@@ -481,7 +481,7 @@ class IcebergIntenPL(SpectrumPL):
 			mz_bin_res=self.hparams.magma_params["mz_bin_res"],
 			mz_max=self.hparams.magma_params["mz_max"],
 			sum_ints=self.hparams.magma_params["sum_ints"],
-			output_formulae=self.hparams.iceberg_output_formulae,
+			output_formula_str=self.hparams.output_formula_str,
 			fix_batch_bug=self.hparams.iceberg_fix_batch_bug,
 		)
 		if self.hparams.magma_params["binned_targs"]:
@@ -567,82 +567,9 @@ class IcebergIntenPL(SpectrumPL):
 			masses=kwargs["magma_masses"],
 			root_forms=kwargs["magma_root_form_vecs"],
 			frag_forms=kwargs["magma_frag_form_vecs"],
+			adduct_form_deltas=kwargs.get("magma_adduct_form_deltas",None),
 		)
 		return outputs
-
-	# def _common_step(self, batch, split="train", log=True):
-
-	# 	batch_size = batch["batch_size"]
-	# 	unique_id = batch["spec_unique_id"]
-	# 	smiles = batch["mol_smiles"]
-	# 	true_mzs = batch["spec_mzs"]
-	# 	true_ints = batch["spec_ints"]
-	# 	true_batch_idxs = batch["spec_batch_idxs"]
-	# 	true_prec_mzs = batch["spec_prec_mz"]
-	# 	spec_per_group = batch["spec_per_group"]
-	# 	spec_per_mol = batch["spec_per_mol"]
-	# 	group_per_mol = batch["group_per_mol"]
-	# 	true_mzs, true_logprobs, true_batch_idxs = self._preproc_spec(
-	# 		true_mzs,
-	# 		true_ints,
-	# 		true_batch_idxs
-	# 	)
-	# 	pred = self.forward(**batch)
-	# 	both = {
-	# 		"true_mzs": true_mzs,
-	# 		"true_logprobs": true_logprobs,
-	# 		"true_batch_idxs": true_batch_idxs,
-	# 		**pred
-	# 	}
-	# 	if "magma_inten_targs" in batch:
-	# 		assert self.hparams.magma_params["binned_targs"]
-	# 		both["true_spec"] = batch["magma_inten_targs"]
-	# 	loss_d = self.loss_fn(**both)
-	# 	loss = loss_d["loss"]
-	# 	mean_loss = self.batch_metric_reduce_fn(
-	# 		b_metric=loss,
-	# 		b_spec_per_group=spec_per_group,
-	# 		b_spec_per_mol=spec_per_mol,
-	# 		b_group_per_mol=group_per_mol,
-	# 		reduce="w_mean",
-	# 		split=split
-	# 	)
-	# 	if log:
-	# 		# just log loss
-	# 		self.log(
-	# 			f"{split}_batch_loss",
-	# 			mean_loss,
-	# 			batch_size=batch_size,
-	# 			on_epoch=True
-	# 		)
-	# 	results = {
-	# 		"unique_id": unique_id,
-	# 		"smiles": smiles,
-	# 		"mean_loss": mean_loss,
-	# 		"spec_per_group": spec_per_group,
-	# 		"spec_per_mol": spec_per_mol,
-	# 		"group_per_mol": group_per_mol,
-	# 		**both,
-	# 		**loss_d
-	# 	}
-	# 	assert true_mzs.shape[0] > 0, true_mzs.shape[0]
-	# 	with th.inference_mode():
-	# 		metric_input_d = {
-	# 			"true_mzs": true_mzs,
-	# 			"true_ints": th.exp(true_logprobs),
-	# 			"true_batch_idxs": true_batch_idxs,
-	# 			"pred_mzs": pred["pred_mzs"],
-	# 			"pred_ints": th.exp(pred["pred_logprobs"]),
-	# 			"pred_batch_idxs": pred["pred_batch_idxs"],
-	# 			"true_prec_mzs": true_prec_mzs
-	# 		}
-	# 		metric_output_d = self.metric_fn(**metric_input_d)
-	# 		for k,v in metric_output_d.items():
-	# 			assert k not in results, k
-	# 			results[k] = v
-	# 	for metric_name in self.metric_names:
-	# 		assert metric_name in results, metric_name
-	# 	return results
 
 
 def test_gen():

@@ -36,7 +36,7 @@ if __name__ == "__main__":
 	spec_input_df = spec_input_df[['group_id', 'target_mol_id', 'target_mol_smiles', 'target_inchikey_s', 'mol_id', 'smiles', 'inchikey_s', 'tanimoto']]
 	spec_input_df = spec_input_df.drop_duplicates(subset=['group_id'])
 	#spec_input_df['keep'] = spec_input_df.groupby('target_mol_id').apply(lambda x: True if len(x[x['target_inchikey_s'] == x['mol_id']]) == 1 else False).reset_index(level=0, drop=True)
-	keep_df = spec_input_df.groupby('target_mol_id').apply(lambda x: True if (x['target_inchikey_s'] == x['mol_id']).sum() == 1 else False, include_groups=False).reset_index()
+	keep_df = spec_input_df.groupby('target_mol_id').apply(lambda x: True if (x['target_inchikey_s'] == x['mol_id']).sum() == 1 else False).reset_index()
 	keep_target_mol_ids = keep_df[keep_df.iloc[:,1]].iloc[:,0].to_list()
 	spec_input_df = spec_input_df[spec_input_df['target_mol_id'].isin(keep_target_mol_ids)]
 	total_tasks =  spec_input_df['target_mol_id'].nunique()
@@ -47,42 +47,48 @@ if __name__ == "__main__":
 
 	# Get a list of all .gz files in the directory
 	gz_files = glob.glob(os.path.join(args.predicted_dp, '*.gz'))
+	pkl_files = glob.glob(os.path.join(args.predicted_dp, '*.pkl'))
+	all_files = gz_files + pkl_files
 	# Extract and print the basenames (without the .gz extension)
 	overall_stats_rows = []
 	ncdg_p = 50
 
-	for gz_file in tqdm(gz_files):
-		basename = os.path.basename(gz_file).replace('.pkl.gz', '')
-		predicted_spec_df = pd.read_pickle(gz_file)
+	for file in tqdm(all_files):
+		basename = os.path.basename(file).replace('.pkl', '').replace('.gz', '')
+		print(f">> starting file = {basename}")
+		predicted_spec_df = pd.read_pickle(file)
+		print(f"> predicted_spec_df.shape (pre-merge) = {predicted_spec_df.shape}")
 		predicted_spec_df = predicted_spec_df.merge(spec_input_df, left_on='spec_id', right_on='group_id')
+		print(f"> predicted_spec_df.shape (post-merge) = {predicted_spec_df.shape}")
 		predicted_spec_df['cos_sim_0.01_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_sim_0.01'].rank(ascending=False)
 		predicted_spec_df['cos_hun_rank'] = predicted_spec_df.groupby('target_mol_id')['cos_hun'].rank(ascending=False)
 
-		stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x['target_inchikey_s'] == x['inchikey_s']], include_groups=False)
+		stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x['target_inchikey_s'] == x['inchikey_s']])
+		print(f"> stats_df.shape = {stats_df.shape}")
 
 		#for ncdg_p in [5,10,50]:
 		stats_df['ndcg_linear_cos_sim_0.01'] = predicted_spec_df.groupby('target_mol_id').apply(
 								lambda x: ndcg_score(x['linear_rel_score'].to_numpy()[np.newaxis, :], \
 											x['cos_sim_0.01'].to_numpy()[np.newaxis, :], \
 											k = ncdg_p
-								), include_groups=False).to_numpy()
+								)).to_numpy()
 
 		stats_df['ndcg_exp_cos_sim_0.01'] = predicted_spec_df.groupby('target_mol_id').apply(
 								lambda x: ndcg_score(x['exp_rel_score'].to_numpy()[np.newaxis, :], \
 											x['cos_sim_0.01'].to_numpy()[np.newaxis, :], \
 											k = ncdg_p
-								), include_groups=False).to_numpy()
+								)).to_numpy()
 	
 		stats_df['ndcg_linear_cos_hun'] = predicted_spec_df.groupby('target_mol_id').apply(
 								lambda x: ndcg_score(x['linear_rel_score'].to_numpy()[np.newaxis, :], \
 											x['cos_hun'].to_numpy()[np.newaxis, :], \
 											k = ncdg_p
-								), include_groups=False).to_numpy()
+								)).to_numpy()
 		stats_df['ndcg_exp_cos_hun'] = predicted_spec_df.groupby('target_mol_id').apply(
 								lambda x: ndcg_score(x['exp_rel_score'].to_numpy()[np.newaxis, :], \
 											x['cos_hun'].to_numpy()[np.newaxis, :], \
 											k = ncdg_p
-								), include_groups=False).to_numpy()
+								)).to_numpy()
 
 		stats_df = stats_df[['group_id','target_mol_smiles', 'target_inchikey_s', 'cos_sim_0.01','cos_hun','cos_sim_0.01_rank','cos_hun_rank',
                        'ndcg_linear_cos_sim_0.01','ndcg_exp_cos_sim_0.01','ndcg_linear_cos_hun','ndcg_exp_cos_hun']]
@@ -102,7 +108,7 @@ if __name__ == "__main__":
 			# median_ranks
 			top_stats.append(stats_df[rank_type+'_rank'].median())
 			# tanimoto
-			top_one_stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x[rank_type+'_rank'] == 1.0], include_groups=False)
+			top_one_stats_df = predicted_spec_df.groupby('target_mol_id').apply(lambda x: x[x[rank_type+'_rank'] == 1.0])
 			top_stats.append(top_one_stats_df['tanimoto'].mean())
 			top_stats.append(top_one_stats_df['tanimoto'].std())
 			# ncdg

@@ -769,6 +769,14 @@ def parse_peaks_str(peaks_str):
 def composition_to_string(x):
 	return ''.join([a+str(x[a]) for a in sorted(x)])
 
+def combine_formulae(formula_1, formula_2):
+	if isinstance(formula_1,str):
+		formula_1 = Composition(formula_1)
+	if isinstance(formula_2,str):
+		formula_2 = Composition(formula_2)
+	combine_comp = Composition(formula_1) + Composition(formula_2)
+	return composition_to_string(combine_comp)
+
 def parse_product_isotope(annot, precursor):
 	formula = Composition('')
 	precursor = Composition(formula=precursor)

@@ -15,19 +15,25 @@ def make_splits(args):
 	spec_df = pd.read_pickle(os.path.join(args.proc_dp,"spec_df.pkl"))
 
 	print("> Spectrum filters")
-	# filter spectra
+
+	# filter spectra 
+	prec_types = args.prec_types if 'any' not in args.prec_types else None
+	frag_modes = args.frag_modes if 'any' not in args.frag_modes else None
+	ion_modes = args.ion_modes if 'any' not in args.ion_modes else None
+	inst_types = args.inst_types if 'any' not in args.inst_types else None
+
 	dsets = args.primary_dsets + args.secondary_dsets
 	f_spec_df, f_mol_df = filter_spec_mol(
 		spec_df,
 		mol_df,
 		dsets=dsets,
-		prec_types=args.prec_types,
+		prec_types=prec_types,
 		max_peak_mz=args.max_peak_mz,
 		max_prec_mz=args.max_prec_mz,
 		elements=args.elements,
-		frag_modes=args.frag_modes,
-		ion_modes=args.ion_modes,
-		inst_types=args.inst_types,
+		frag_modes=frag_modes,
+		ion_modes=ion_modes,
+		inst_types=inst_types,
 		ces = args.ces
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
@@ -205,10 +211,16 @@ def make_splits(args):
 	for split_data in split_data_list:
 		os.makedirs(split_data['split_dp'],exist_ok=True)
 		print(f"> Save split to {split_data['split_dp']}")
-		
-		print(f"> Split sizes (spec_id): train = {split_data['train_df'].shape[0]},"
-        	f"val = {split_data['val_df'].shape[0]}, test = {split_data['test_df'].shape[0]} "
-            f"secondary test df = {split_data['secondary_df'].shape[0]}")
+  
+		for split_type in ["train_df","val_df","test_df","secondary_df"]:
+			print(">", split_type)
+			print("> number of unique mols", split_data[split_type]['mol_id'].nunique())
+			print("> number of unique spec", split_data[split_type]['spec_id'].nunique())
+			print("> number of unique groups", split_data[split_type]['group_id'].nunique())
+			print("-" * 16)
+		#print(f"> Split sizes (spec_id): train = {split_data['train_df'].shape[0]},"
+		#	f"val = {split_data['val_df'].shape[0]}, test = {split_data['test_df'].shape[0]} "
+		#	f"secondary test df = {split_data['secondary_df'].shape[0]}")
 		
 		# save ids
 		train_fp = os.path.join(split_data['split_dp'],"train_ids.csv")
@@ -256,7 +268,6 @@ if __name__ == "__main__":
 	# spec filtering criteria
 	parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
 	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
-	parser.add_argument("--secondary_bias",type=bool,default=False, dest="if true, keep every thing in secondary and drop from train")
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
 	parser.add_argument("--max_prec_mz",type=float,default=1500.)
 	parser.add_argument("--min_prec_mz",type=float,default=0.)
@@ -267,10 +278,10 @@ if __name__ == "__main__":
 	parser.add_argument("--max_num_dag_edges",type=int,default=250000)
 	parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",required=False)
-	parser.add_argument("--inst_types",required=False)
-	parser.add_argument("--frag_modes",required=False)
-	parser.add_argument("--ion_modes",required=False)
+	parser.add_argument("--prec_types", type=str,nargs="+", required=False, default='any')
+	parser.add_argument("--inst_types", type=str,nargs="+", required=False, default='any')
+	parser.add_argument("--frag_modes", type=str,nargs="+", required=False, default='any')
+	parser.add_argument("--ion_modes", type=str,nargs="+", required=False, default='any')
 	parser.add_argument('--ces',required=False,choices=['nce', 'ace', 'nce_or_ace'])
 
 	# non-filtering args

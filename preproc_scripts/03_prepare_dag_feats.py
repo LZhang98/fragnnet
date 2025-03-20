@@ -59,17 +59,22 @@ def main(args):
 	spec_df = pd.read_pickle(os.path.join(args.project_dp,args.proc_dp,"spec_df.pkl"))
 	print()
 
-	# perform selection
+	# perform filter selection
+	prec_types = args.prec_types if 'any' not in args.prec_types else None
+	frag_modes = args.frag_modes if 'any' not in args.frag_modes else None
+	ion_modes = args.ion_modes if 'any' not in args.ion_modes else None
+	inst_types = args.inst_types if 'any' not in args.inst_types else None
+	
 	spec_df, mol_df = filter_spec_mol(
 		spec_df,
 		mol_df,
 		elements=elements,
 		dsets=dsets,
-		prec_types=args.prec_types if args.prec_types != 'any' else None,
+		prec_types=prec_types,
 		num_entries=args.num_entries,
-  		frag_modes=args.frag_modes if args.frag_modes != 'any' else None,
-    	ion_modes=args.ion_modes if args.ion_modes != 'any' else None,
-		inst_types=args.inst_types if args.inst_types != 'any' else None,)
+  		frag_modes=frag_modes,
+    	ion_modes=ion_modes,
+		inst_types=inst_types)
  
 	m_spec_df = merge_spec_df(spec_df)
 
@@ -83,10 +88,10 @@ def main(args):
 	print_and_log("num_bonds",num_bonds,wandb_flag,{})
 
 	os.makedirs(args.frag_dp,exist_ok=True)
-	dag_dp = os.path.join(args.frag_dp,f"dags")
+	dag_dp = os.path.join(args.frag_dp, "dags")
 	os.makedirs(dag_dp,exist_ok=True)
-	group_stats_fp = os.path.join(args.frag_dp,f"group_stats_df.pkl")
-	global_stats_fp = os.path.join(args.frag_dp,f"global_stats.json")
+	group_stats_fp = os.path.join(args.frag_dp, "group_stats_df.pkl")
+	global_stats_fp = os.path.join(args.frag_dp, "global_stats.json")
 
 	def compute_spectra_stats(
 			peaks,
@@ -153,7 +158,7 @@ def main(args):
 			]
 		)
   
-	print(f"> Running frag gen")
+	print("> Running frag gen")
 	frag_results_gen = data_utils.par_apply(iter(mol_input_rows),frag_utils.timed_get_dags,True, return_as_generator=True)
 	frag_results = []
 	for fr in tqdm(frag_results_gen, total = len(mol_input_rows), desc = "Compute Frags"):
@@ -234,15 +239,15 @@ def main(args):
 			_spec_df = spec_df
 			spec_prefix = "spec/"
 			mol_prefix = "mol/"
-			spec_stats_fp = os.path.join(args.frag_dp,f"spec_stats_df.pkl")
-			mol_stats_fp = os.path.join(args.frag_dp,f"mol_stats_df.pkl")
+			spec_stats_fp = os.path.join(args.frag_dp, "spec_stats_df.pkl")
+			mol_stats_fp = os.path.join(args.frag_dp, "mol_stats_df.pkl")
 		else:
 			spec_key = "group_id"
 			_spec_df = m_spec_df
 			spec_prefix = "m_spec/"
 			mol_prefix = "m_mol/"
-			spec_stats_fp = os.path.join(args.frag_dp,f"m_spec_stats_df.pkl")
-			mol_stats_fp = os.path.join(args.frag_dp,f"m_mol_stats_df.pkl")
+			spec_stats_fp = os.path.join(args.frag_dp, "m_spec_stats_df.pkl")
+			mol_stats_fp = os.path.join(args.frag_dp, "m_mol_stats_df.pkl")
 
 		# compute spectra stats
 		peak_spec_df = _spec_df[[spec_key,"mol_id","peaks","prec_mz","prec_type"]].merge(frag_stats_df[id_cols+data_cols],on="mol_id",how="inner")

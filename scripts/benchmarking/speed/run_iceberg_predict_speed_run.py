@@ -17,8 +17,8 @@ from rdkit import Chem
 from tqdm import tqdm
 import time
 
-def run_iceberg_intern(
-				 iceberg_intern_ckpt_fp,   
+def run_iceberg_inten(
+				 iceberg_inten_ckpt_fp,   
 				 template_fp,
 				 custom_fp,
 				 magma_dp,
@@ -26,7 +26,7 @@ def run_iceberg_intern(
 				 device = None,
 				 batch_size = 1):
 
-	print("> run_iceberg_intern")
+	print("> run_iceberg_inten")
 	config_d = load_config(template_fp, custom_fp)
 	config_d['mol_fp'] =  os.path.join(proc_dp,'mol_df.pkl.gz')
 	config_d['spec_fp'] =  os.path.join(proc_dp,'spec_df.pkl.gz')
@@ -57,8 +57,8 @@ def run_iceberg_intern(
 		collate_fn=ds.get_collate_fn(),
 	)
 
-	iceberg_intern_model = IcebergIntenPL.load_from_checkpoint(iceberg_intern_ckpt_fp, map_location = device, strict=False, **config_d)
-	iceberg_intern_model.eval()
+	iceberg_inten_model = IcebergIntenPL.load_from_checkpoint(iceberg_inten_ckpt_fp, map_location = device, strict=False, **config_d)
+	iceberg_inten_model.eval()
 
 	def wrapper(gen):
 		while True:
@@ -69,9 +69,9 @@ def run_iceberg_intern(
 			except Exception as e:
 				print(e)
 
-	for _, batch_input in tqdm(enumerate(wrapper(iter(dl))),total=len(dl), desc="Running iceberg intern",leave=False):
+	for _, batch_input in tqdm(enumerate(wrapper(iter(dl))),total=len(dl), desc="Running iceberg inten",leave=False):
 		to_device(batch_input, device)
-		iceberg_intern_model.predict_step(**batch_input)
+		iceberg_inten_model.predict_step(**batch_input)
 
 def run_iceberg_gen(iceberg_gen_inputs,
 				 device = "cpu",
@@ -132,11 +132,11 @@ def get_args():
 	parser.add_argument("--iceberg_gen_device", type=str,default="cpu", help="")
 	parser.add_argument("--proc_dp", type=str,default="data/benchmark/speed_benchmark/1000", help="")
 
-	#iceberg_intern params
+	#iceberg_inten params
 	parser.add_argument("--template_fp",type=str,default="config/template.yml")
 	parser.add_argument("--custom_fp",type=str,default="config/nist20_d4_wr00_inchikey/iceberg_inten_100/s0.yml")
-	parser.add_argument("--iceberg_intern_ckpt_fp", type=str,default="saved_ckpts/icml_inchikey/iceberg_inten_100_hun/iceberg_inten_100_hun.ckpt", help="")
-	parser.add_argument("--iceberg_intern_device", type=str,default="cpu", help="")
+	parser.add_argument("--iceberg_inten_ckpt_fp", type=str,default="saved_ckpts/icml_inchikey/iceberg_inten_100_hun/iceberg_inten_100_hun.ckpt", help="")
+	parser.add_argument("--iceberg_inten_device", type=str,default="cpu", help="")
 	parser.add_argument("--batch_size", type=int, default=32, help="")
 	parser.add_argument("--save_fp", type=str, default="data/benchmark/speed_benchmark/1000/iceberg_noworker.txt", help="")
 
@@ -152,9 +152,9 @@ if __name__ == "__main__":
  
 	if not th.cuda.is_available():
 		args.iceberg_gen_device = "cpu"
-		args.iceberg_intern_device = "cpu"
+		args.iceberg_inten_device = "cpu"
 
-	print(f"> iceberg_intern_device {args.iceberg_intern_device }")
+	print(f"> iceberg_inten_device {args.iceberg_inten_device }")
  
 	mol_fp = os.path.join(args.proc_dp,'mol_df.pkl.gz')
 	spec_fp = os.path.join(args.proc_dp,'spec_df.pkl.gz')
@@ -187,12 +187,12 @@ if __name__ == "__main__":
 
 		#spec_df_grp.drop(columns = ['mol','smiles','inchi','magma_dp','iceberg_gen_ckpt_fp','threshold','max_nodes'], inplace = True)
 		#print(magma_dp)
-		#print(f"> run_iceberg_intern")
+		#print(f"> run_iceberg_inten")
 
 		for device in ['cuda']:
 			for batch_size in [16,32,64,128]:
 				start = time.time()
-				run_iceberg_intern(iceberg_intern_ckpt_fp = args.iceberg_intern_ckpt_fp,
+				run_iceberg_inten(iceberg_inten_ckpt_fp = args.iceberg_inten_ckpt_fp,
 							template_fp = args.template_fp,
 							custom_fp = args.custom_fp,
 							proc_dp = args.proc_dp,
@@ -202,7 +202,7 @@ if __name__ == "__main__":
 				end = time.time()
 				time_cost = end - start
 				print(f"> time used {time_cost}s")
-				speed_d[f'iceberg_intern_{device}_{batch_size}'] = time_cost
+				speed_d[f'iceberg_inten_{device}_{batch_size}'] = time_cost
     
 	with open(args.save_fp, "w+") as f:
 		for item in speed_d:

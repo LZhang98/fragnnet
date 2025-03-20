@@ -24,6 +24,7 @@ spec_params:
   merge_keep_ces: False
   sparse: True
   prec_type: True
+  prec_type_str: False
   prec_types:
     - "[M+H]+"
   inst_type: True
@@ -78,6 +79,7 @@ frag_params:
   num_isotopes: 1
   formula_peak_mzs: True
   formula_peak_probs: True
+  formula_str: False
   compressed: True
   preload: False
   preprocess: False
@@ -89,6 +91,8 @@ magma_params:
   mz_bin_res: 0.1
   mz_max: 1500.0
   sum_ints: True
+  adduct_form_deltas: False
+  preprocess: False
 ann_params:
   max_isotope: 2
   library_size: 1000 #10000
@@ -97,9 +101,11 @@ ann_params:
   filter_peaks_tol: 1.0
   library_splits:
     - train
-  preprocess: False
+  formula_str: False
   huge_mz_diff_threshold: 0.1
   big_mz_diff_ppm_threshold:
+  library_fp:
+  preprocess: False
 # model
 model_type: frag_gnn
 num_depth: 5
@@ -107,6 +113,7 @@ num_hs: 4
 num_elements: 12
 int_embedder: abs-sines
 int_embedder_tight: False
+output_formula_str: False
 # mol model
 mol_hidden_size: 256
 mol_num_layers: 4
@@ -150,7 +157,6 @@ iceberg_pool_type: avg
 iceberg_inject_early: False
 iceberg_embed_adduct: False
 iceberg_encode_forms: False
-iceberg_output_formulae: False
 iceberg_fix_batch_bug: False
 # massformer model
 mf_flag: False
@@ -298,7 +304,6 @@ inst_insert_size: 32
 dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000
-dynamic_batch_sampler_chunk_size: -1
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 3
@@ -322,8 +327,8 @@ debug_val_loop_trigger: False
 debug_bypass_train_val: False
 train_sample_weight: none
 eval_sample_weight: none
-log_hist_metrics: True
-track_datapoint_metrics: True
+log_hist_metrics: False
+track_datapoint_metrics: False
 gaussian_renormalize: False
 pm_tolerance_multiple: 3.0
 activation_checkpointing: False

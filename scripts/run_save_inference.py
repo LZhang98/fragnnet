@@ -1,5 +1,5 @@
 from frag_gnn.runner import load_config, init_dataloader
-from frag_gnn.pl_model import FragGNNPL, NeimsPL
+from frag_gnn.pl_model import FragGNNPL, NeimsPL, PrecursorPL
 from frag_gnn.massformer.pl_model import MassFormerPL
 from frag_gnn.iceberg.pl_model import IcebergIntenPL
 from frag_gnn.graff.pl_model import GrAFFPL
@@ -37,7 +37,9 @@ if __name__ == "__main__":
 			"iceberg_inten3_100",
 			"iceberg_inten3_all",
 			"neims",
-			"massformer"
+			"massformer",
+			"graff3",
+			"precursor"
 		]
 	)
 	parser.add_argument(
@@ -149,14 +151,10 @@ if __name__ == "__main__":
 		"massformer": MassFormerPL,
 		"fraggnn_d3": FragGNNPL,
 		"fraggnn_d4": FragGNNPL,
-		"iceberg_inten_100": IcebergIntenPL,
-		"iceberg_inten_all": IcebergIntenPL,
 		"iceberg_inten3_100": IcebergIntenPL,
 		"iceberg_inten3_all": IcebergIntenPL,
-		"graff": GrAFFPL,
-		"fraggnn_d3_long": FragGNNPL,
-		"fraggnn_d4_long": FragGNNPL,
-		"iceberg_inten3_100_long": IcebergIntenPL,
+		"graff3": GrAFFPL,
+		"precursor": PrecursorPL
 	}
 
 	model_type_to_ds_cls = {
@@ -164,15 +162,17 @@ if __name__ == "__main__":
 		"massformer": SpecMolDataset,
 		"fraggnn_d3": SpecMolFragDataset,
 		"fraggnn_d4": SpecMolFragDataset,
-		"iceberg_inten_100": SpecMolMagmaIntenDataset,
-		"iceberg_inten_all": SpecMolMagmaIntenDataset,
 		"iceberg_inten3_100": SpecMolMagmaIntenDataset,
 		"iceberg_inten3_all": SpecMolMagmaIntenDataset,
-		"graff": SpecMolAnnDataset,
-		"fraggnn_d3_long": SpecMolFragDataset,
-		"fraggnn_d4_long": SpecMolFragDataset,
-		"iceberg_inten3_100_long": SpecMolMagmaIntenDataset,
+		"graff3": SpecMolAnnDataset,
+		"precursor": SpecMolDataset
 	}
+	
+	# add long runs
+	for k in list(model_type_to_model_cls.keys()):
+		model_type_to_model_cls[f"{k}_long"] = model_type_to_model_cls[k]
+	for k in list(model_type_to_ds_cls.keys()):
+		model_type_to_ds_cls[f"{k}_long"] = model_type_to_ds_cls[k]
 
 	model_to_run_id = NestedDefaultDict()
 	model_to_config = NestedDefaultDict()
@@ -183,15 +183,16 @@ if __name__ == "__main__":
 	for split_type in split_types:
 		for model_type in wandb_model_types:
 			dset = args.dset
-			group_name = f"{dset}_{split_type}_{model_type}"
-			runs = api.runs(
-				path="frag-gnn/frag-gnn",
-				filters={"group":group_name})
 			model_to_config[split_type][model_type] = f"config/{dset}_d4_wr00_{split_type}/{model_type}/s0.yml"
-			for run in runs:
-				seed = int(run.name.split("_")[-1].removeprefix("s"))
-				if seed < num_seeds:
-					model_to_run_id[split_type][model_type][seed] = run.id
+			if model_type != "precursor":
+				group_name = f"{dset}_{split_type}_{model_type}"
+				runs = api.runs(
+					path="frag-gnn/frag-gnn",
+					filters={"group":group_name})
+				for run in runs:
+					seed = int(run.name.split("_")[-1].removeprefix("s"))
+					if seed < num_seeds:
+						model_to_run_id[split_type][model_type][seed] = run.id
 	del api
 	pprint(model_to_config)
 	pprint(model_to_run_id)
@@ -202,9 +203,10 @@ if __name__ == "__main__":
 		for model_type in local_model_types:
 			dset = args.dset
 			model_to_config[split_type][model_type] = f"config/{dset}_d4_wr00_{split_type}/{model_type}/s0.yml"
-			for seed in range(num_seeds):
-				ckpt = glob(os.path.join(local_path,f"{model_type}/{split_type}/ckpts/s{seed}/*.ckpt"))[0]
-				model_to_ckpt[split_type][model_type][seed] = ckpt
+			if model_type != "precursor":
+				for seed in range(num_seeds):
+					ckpt = glob(os.path.join(local_path,f"{model_type}/{split_type}/ckpts/s{seed}/*.ckpt"))[0]
+					model_to_ckpt[split_type][model_type][seed] = ckpt
 	pprint(model_to_config)
 	pprint(model_to_ckpt)
 
@@ -221,11 +223,20 @@ if __name__ == "__main__":
 			config_d["skip_extra_losses"] = args.skip_extra_losses
 			config_d["compile"] = False
 			if args.disable_preproc:
-				for k in ["spec", "mol", "magma", "ann"]:
+				for k in ["spec", "mol", "frag", "magma", "ann"]:
 					key = f"{k}_params"
 					config_d[key]["preprocess"] = False
-					if k == "magma":
+					if k in ["frag"]:
 						config_d[key]["preload"] = False
+			# modify config for formula strings
+			config_d["output_formula_str"] = True
+			if "fraggnn" in model_type:
+				config_d["spec_params"]["prec_type_str"] = True
+				config_d["frag_params"]["formula_str"] = True
+			elif "iceberg" in model_type:
+				config_d["magma_params"]["adduct_form_deltas"] = True
+			elif "graff" in model_type:
+				config_d["ann_params"]["formula_str"] = True
 			print(">>> Loading dataset")
 			ds_cls = model_type_to_ds_cls[model_type]
 			ds = ds_cls(split=eval_split, **config_d)
@@ -234,10 +245,11 @@ if __name__ == "__main__":
 			device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 			for seed in range(num_seeds):
 				print(f">>> Starting seed {seed}")
-				if model_type in wandb_model_types:
+				if model_type in model_to_run_id:
+					assert model_type in wandb_model_types, model_type
 					run_id = model_to_run_id[split_type][model_type][seed]
 					model = init_wandb_ckpt(run_id,last_ckpt=False,model_cls=model_cls,config_d=config_d)
-				else:
+				elif model_type in model_to_ckpt:
 					assert model_type in local_model_types, model_type
 					ckpt_fp = model_to_ckpt[split_type][model_type][seed]
 					try:
@@ -245,6 +257,10 @@ if __name__ == "__main__":
 					except RuntimeError as e:
 						print(f"> error when loading from checkpoint file {ckpt_fp}, will try with strict=False")
 						model = model_cls.load_from_checkpoint(ckpt_fp,strict=False,**config_d)
+				else:
+					assert model_type == "precursor", model_type
+					# does not need a checkpoint
+					model = model_cls(**config_d)
 				model.to(device)
 				model.eval()
 				# define output subset

@@ -453,7 +453,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
 	def _get_magma_entry(self, spec_entry):
 		
 		name = str(spec_entry["group_id"])
-		adduct = common.ion2onehot_pos[spec_entry["prec_type"]]
+		adduct = spec_entry["prec_type"]
 		magma_entry = self.tree_fn(name)["dgl_tree"]
 		magma_entry = {
 			"name": name, 
@@ -531,7 +531,7 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 		magma_data["magma_frag_atoms"] = th.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long) ##
 		magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long) ##
 		magma_data["magma_broken_bonds"] = th.tensor(magma_entry["max_broken"], dtype=th.long)
-		magma_data["magma_adducts"] = th.tensor([magma_entry["adduct"]], dtype=th.float)
+		magma_data["magma_adducts"] = th.tensor([common.ion2onehot_pos[magma_entry["adduct"]]], dtype=th.float)
 		magma_data["magma_frag_form_vecs"] = th.tensor(np.array([i for i in magma_entry["form_vecs"]]), dtype=th.long) ##
 		magma_data["magma_root_form_vecs"] = th.tensor(np.array([magma_entry["root_form_vec"]]), dtype=th.long)
 		return magma_data
@@ -737,7 +737,9 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		magma_data["magma_frag_atoms"] = th.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long)
 		magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long)
 		magma_data["magma_broken_bonds"] = th.tensor(magma_entry["max_broken"], dtype=th.long).unsqueeze(0)
-		magma_data["magma_adducts"] = th.tensor([magma_entry["adduct"]], dtype=th.float)
+		magma_data["magma_adducts"] = th.tensor([common.ion2onehot_pos[magma_entry["adduct"]]], dtype=th.float)
+		if self.magma_params["adduct_form_deltas"]:
+			magma_data["magma_adduct_form_deltas"] = th.as_tensor(common.ion2delta_formula[magma_entry["adduct"]], dtype=th.long).unsqueeze(0)
 		magma_data["magma_frag_form_vecs"] = th.tensor(np.array([i for i in magma_entry["form_vecs"]]), dtype=th.long).unsqueeze(0)
 		magma_data["magma_root_form_vecs"] = th.tensor(np.array([magma_entry["root_form_vec"]]), dtype=th.long)
 		###
@@ -779,6 +781,9 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 		keys.remove("magma_broken_bonds")
 		collate_data["magma_adducts"] = th.cat(collate_data["magma_adducts"], dim=0)
 		keys.remove("magma_adducts")
+		if "magma_adduct_form_deltas" in keys:
+			collate_data["magma_adduct_form_deltas"] = th.cat(collate_data["magma_adduct_form_deltas"], dim=0)
+			keys.remove("magma_adduct_form_deltas")
 		collate_data["magma_frag_form_vecs"] = th.nn.utils.rnn.pad_sequence(
 			[i.squeeze(0) for i in collate_data["magma_frag_form_vecs"]], 
 			batch_first=True
