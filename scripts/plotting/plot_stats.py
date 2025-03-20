@@ -1,15 +1,6 @@
-from frag_gnn.runner import load_config
-from frag_gnn.pl_model import FragGNNPL
-
-import wandb
-import tempfile
-import os
-import sys
 import torch
-import pickle
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import pearsonr
 from frag_gnn.utils.misc_utils import get_best_ckpt_from_wandb
 
 def get_metrics_data(list_ids:list):

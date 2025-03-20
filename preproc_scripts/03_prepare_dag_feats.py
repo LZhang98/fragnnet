@@ -3,20 +3,13 @@ import numpy as np
 from tqdm import tqdm
 import argparse
 import os
-from collections import Counter
-import wandb
-import rdkit.Chem as Chem
 from pprint import pformat
 import json
-import traceback
-import sys
 
 import frag_gnn.utils.frag_utils as frag_utils
 import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
-from frag_gnn.utils.frag_utils import timed_get_dags
 
 def print_and_log(name,series,wandb_flag,stats_d):
 
@@ -26,7 +19,9 @@ def print_and_log(name,series,wandb_flag,stats_d):
 	print()
 	for stat in ["mean","std","min","25%","50%","75%","max"]:
 		stats_d[f"{name}/{stat}"] = stats[stat]
+
 	if wandb_flag:
+		import wandb
 		log_d = {"step":0}
 		for stat in ["mean","std","min","25%","50%","75%","max"]:
 			log_d[f"{name}/{stat}"] = stats[stat]
@@ -41,10 +36,11 @@ def main(args):
 	# init wandb
 	wandb_flag = args.wandb_mode != "off"
 	if wandb_flag:
+		import wandb
 		wandb_config = vars(args)
-		wandb_run = wandb.init(
-			project="frag-gnn",
-			entity="frag-gnn",
+		wandb.init(
+			project=args.wandb_project,
+			entity=args.wandb_entity,
 			name=args.wandb_run_name,
 			mode=args.wandb_mode,
 			config=wandb_config,
@@ -322,7 +318,10 @@ if __name__ == "__main__":
 	parser.add_argument("--dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
 	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)
-	parser.add_argument("--wandb_mode",type=str,default="online",choices=["online","offline","off"])
+	parser.add_argument("--wandb_mode",type=str,default="disabled",choices=["online","offline","off"])
+	parser.add_argument("--wandb_project",type=str,default="frag-gnn")
+	parser.add_argument("--wandb_entity",type=str,default="frag-gnn")
+	parser.add_argument("--wandb_mode",type=str,default="disabled",choices=["online","offline","off"]) 
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
 	parser.add_argument("--compress_dags",type=booltype,default=True)
 	parser.add_argument("--wandb_run_name",type=str)

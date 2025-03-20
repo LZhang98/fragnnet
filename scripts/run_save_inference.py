@@ -10,7 +10,6 @@ from frag_gnn.utils.misc_utils import NestedDefaultDict, booltype
 from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference
 
 import torch as th
-import torch._dynamo
 import argparse
 import wandb
 from pprint import pprint

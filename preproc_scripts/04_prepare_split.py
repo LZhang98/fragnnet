@@ -6,7 +6,6 @@ import json
 
 from frag_gnn.utils import frag_utils
 from frag_gnn.utils.misc_utils import booltype, np_temp_seed
-from frag_gnn.utils.frag_utils import ELEMENTS
 from frag_gnn.utils.proc_utils import filter_spec_mol
 
 def make_splits(args):

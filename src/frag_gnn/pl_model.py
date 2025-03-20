@@ -1,8 +1,5 @@
 import torch as th
-import torch.nn as nn
-from torch.utils.data import RandomSampler
 import numpy as np
-import wandb
 import logging
 import inspect
 
@@ -1126,6 +1123,7 @@ class SpectrumPL(pl.LightningModule):
 			# log histograms
 			if self.hparams.log_hist_metrics:
 				wandb_logger = self._get_wandb_logger()
+				import wandb
 				for k,v in results.items():
 					if k in self.metric_names:
 						log_d = {
