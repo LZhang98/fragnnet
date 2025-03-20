@@ -358,9 +358,3 @@ def get_elements_set(formula:str) -> set[str]:
     """
     return set(list(parse_formula(formula).keys()))
 
-#if __name__ == "__main__":
-
-	#isotopes = False
-	#element_counts = {"C": 6, "H": 7, "O": 6, "N": 0}
-	#print(get_peaks_for_formula(element_counts))
-	# isotopes = True
