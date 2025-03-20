@@ -820,6 +820,7 @@ class SpectrumPL(pl.LightningModule):
 			**both_d,
 			**loss_d
 		}
+		# running inference and report metrics
 		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
 		with th.inference_mode():
 			metric_input_d = {

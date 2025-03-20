@@ -1,22 +1,18 @@
+import argparse
+import os
+import json
+from pprint import pformat
+
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-import argparse
-import os
-from collections import Counter
 import wandb
-import rdkit.Chem as Chem
-from pprint import pformat
-import json
-import traceback
-import sys
+import h5py
 
 import frag_gnn.utils.frag_utils as frag_utils
 import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.formula_utils import parse_formula
 from frag_gnn.utils.misc_utils import booltype
 from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
-from frag_gnn.utils.frag_utils import timed_get_dags
 
 def print_and_log(name,series,wandb_flag,stats_d):
 
@@ -31,11 +27,36 @@ def print_and_log(name,series,wandb_flag,stats_d):
 		for stat in ["mean","std","min","25%","50%","75%","max"]:
 			log_d[f"{name}/{stat}"] = stats[stat]
 		wandb.log(log_d)
-		
+
+def append_hdf5_rows(hdf5_fp,new_rows, num_features):
+    
+	with h5py.File(hdf5_fp, "a") as f:
+		dataset = f["data"]
+		current_size = dataset.shape[0]
+		new_size = current_size + len(new_rows)  # Increase row count
+		dataset.resize((new_size, num_features))  # Extend dataset
+		dataset[current_size:new_size, :] = new_rows  # Write new batch
+
+		# Flush changes to disk to ensure data is not lost
+		f.flush()
+
+def create_hdf5_file(hdf5_fp:str,num_features:int,batch_size:int):
+    # Create an HDF5 file with an extendable dataset
+	with h5py.File(hdf5_fp, "w") as f:
+		dataset = f.create_dataset(
+			"dags",
+			shape=(0, num_features),  # Start with zero rows
+			maxshape=(None, num_features),  # Allow unlimited rows
+			dtype="f4",
+			chunks=(batch_size, num_features),  # Write in small batches
+			compression="gzip",  # Optional compression
+			compression_opts=4
+		)
+  
 def main(args):
 
 	assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
-
+ 
 	elements = args.elements
 	dsets = args.dsets
 	# init wandb
@@ -90,7 +111,7 @@ def main(args):
 	os.makedirs(args.frag_dp,exist_ok=True)
 	dag_dp = os.path.join(args.frag_dp, "dags")
 	os.makedirs(dag_dp,exist_ok=True)
-	group_stats_fp = os.path.join(args.frag_dp, "group_stats_df.pkl")
+	#group_stats_fp = os.path.join(args.frag_dp, "group_stats_df.pkl")
 	global_stats_fp = os.path.join(args.frag_dp, "global_stats.json")
 
 	def compute_spectra_stats(
@@ -111,7 +132,6 @@ def main(args):
 		Returns:
 			_type_: _description_
 		"""
-		# TODO: get this out of the main() scope
 		results = []
 		cols = []
 		for tolerance in tolerances:
@@ -333,6 +353,7 @@ if __name__ == "__main__":
 	parser.add_argument("--frag_modes",nargs="+",default='any')
 	parser.add_argument("--ion_modes",nargs="+",default='any')
 	parser.add_argument("--use_cached_dag",type=booltype,default=False)
+	parser.add_argument("--save_as_hdf5",type=booltype,default=False)
 	args = parser.parse_args()
  
 	# Check if --flag is True and --conditional-arg is missing

@@ -945,7 +945,7 @@ def get_group_sampler(ds: SpecMolFragDataset, sampler_type: str, avg_per_group: 
 	Returns:
 		_type_: _description_
 	"""
-	group_ids, mol_ids, spec_per_group, spec_per_mol, group_per_mol = ds.get_group_mol_stats()
+	group_ids, _, spec_per_group, spec_per_mol, group_per_mol = ds.get_group_mol_stats()
 
 	if sampler_type == "group":
 		sample_weights = 1.0 / spec_per_group
@@ -956,9 +956,17 @@ def get_group_sampler(ds: SpecMolFragDataset, sampler_type: str, avg_per_group: 
 	else:
 		return None
 	
-	spec_per_group_2 = th.mean(th.unique(group_ids,return_counts=True)[1].float(),dim=0)
-	num_samples = th.ceil(len(ds) / spec_per_group_2 * avg_per_group).long()
-	num_samples = min(num_samples.item(), len(ds))
+	#spec_per_group_2 = th.mean(th.unique(group_ids,return_counts=True)[1].float(),dim=0)
+	#num_samples = th.ceil(len(ds) / spec_per_group_2 * avg_per_group).long()
+	#num_samples = min(num_samples.item(), len(ds))
+ 
+	# Get unique groups and their counts
+	_, counts = th.unique(group_ids, return_counts=True)
+	# For each group, we only  want to sample up to the number of available samples
+	total_samples = sum(min(count.item(), avg_per_group) for count in counts)
+	# Make sure we don't exceed the total dataset size
+	num_samples = min(total_samples, len(ds))
+ 
 	sampler = WeightedRandomSampler(
 		sample_weights,
 		num_samples=num_samples,
