@@ -32,13 +32,13 @@ if __name__ == "__main__":
 		type=str, 
 		nargs="+", 
 		default=[
-			"fraggnn_d3",
-			"fraggnn_d4",
-			"iceberg_inten3_100",
-			"iceberg_inten3_all",
-			"neims",
-			"massformer",
-			"graff3",
+			"fraggnn_d3_long",
+			"fraggnn_d4_long",
+			"iceberg_inten3_100_long",
+			"iceberg_inten3_all_long",
+			"neims_long",
+			"massformer_long",
+			"graff3_long",
 			"precursor"
 		]
 	)
@@ -245,7 +245,7 @@ if __name__ == "__main__":
 			device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 			for seed in range(num_seeds):
 				print(f">>> Starting seed {seed}")
-				if model_type in model_to_run_id:
+				if model_type in model_to_run_id[split_type]:
 					assert model_type in wandb_model_types, model_type
 					run_id = model_to_run_id[split_type][model_type][seed]
 					model = init_wandb_ckpt(run_id,last_ckpt=False,model_cls=model_cls,config_d=config_d)
