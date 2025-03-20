@@ -67,7 +67,7 @@ class BaseDataset(Dataset):
   
 		split_dfs = []
 		for split in splits:
-			assert split in ["train","val","test","secondary", "predict_only"], split
+			# assert split in ["train","val","test","secondary","predict_only"], split
 			if split == "predict_only":
 				assert len(splits) == 1, splits
 				# predict_all split, just include everything, this is used for prediction
@@ -78,6 +78,7 @@ class BaseDataset(Dataset):
 				split_df["group_id"] = spec_df["spec_id"]
 			else:	
 				split_fp = os.path.join(split_dp,f"{split}_ids.csv")
+				assert os.path.isfile(split_fp), split_fp
 				split_df = pd.read_csv(split_fp)
 			split_dfs.append(split_df)
 		split_df = pd.concat(split_dfs,ignore_index=True).reset_index(drop=True)
