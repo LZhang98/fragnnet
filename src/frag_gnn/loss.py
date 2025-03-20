@@ -641,18 +641,3 @@ def sparse_jensen_shannon_divergence(
 		log_min=log_min
     )
 	return 1.-jss
-
-if __name__ == "__main__":
-
-	th.manual_seed(420)
-
-	# Create a mixture of 1D Gaussians with 2 components
-	means = th.tensor([0.0,1.0])
-	variances = th.tensor([[1.0,0.5]])
-	log_weights = th.log(th.tensor([0.6,0.4]))
-
-	samples = 3*th.rand(10)
-	print(samples)
-
-	log_probs = mog_log_prob(samples,means,variances,log_weights)
-	print(th.exp(log_probs))
