@@ -1,6 +1,8 @@
 [build-system]
-requires = ["setuptools", "wheel", "cython>=3.0.11", "numpy==1.26.4,<2" "cysignals"]
+requires = ["setuptools", "wheel", "cython>=3.0.11", "numpy>=1.24,<2","cysignals"]
 build-backend = "setuptools.build_meta"
+
+
 
 [project]
 name = "frag_gnn"
@@ -8,29 +10,34 @@ version = "2025.0.1"
 description = "Fragmentation prediction for small molecules"
 readme = "README.md"
 license = { text = "BSD-2-Clause" }
+requires-python = ">=3.10"
 dependencies = [
-    "numpy==1.26.4",
-    "cython==3.0.11",
+    "numpy>=1.24,<2",
+    "cython>=3.0.11",
     "cysignals",
     "torch==2.1.2",
     "rdkit>=2023.9.5",
     "torch_geometric==2.4.0",
     "torch_scatter==2.1.2",
-    "torch_sparse==0.6.18",
-    "torch_cluster==1.6.3",
-    "torch_spline_conv==1.2.2",
     "pytorch_lightning==2.1.2",
-    "dgl==1.1.3",
-    "cython",
     "pandas",
     "networkx",
-    "wandb",
     "tqdm",
     "scipy",
-    "joblib==1.3.2",
+    "joblib>=1.3.2",
     "matplotlib",
-    "pytest",
     "pyteomics"
+]
+
+[project.optional-dependencies]
+# development dependency groups
+dev = [
+    "wandb",
+    "pytest"
+]
+
+iceberg = [
+    "dgl==1.1.3"
 ]
 
 [tool.setuptools]
