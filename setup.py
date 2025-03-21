@@ -5,10 +5,10 @@ import numpy as np
 setup(
 	ext_modules=cythonize(
 		[
-            "src/frag_gnn/frag/compute_frags.pyx",
-        	"src/frag_gnn/massformer/algos.pyx",
+			"src/frag_gnn/frag/compute_frags.pyx",
+			"src/frag_gnn/massformer/algos.pyx",
 		],
 		compiler_directives={'language_level':"3"}
 	),
-    include_dirs=[np.get_include()]
+	include_dirs=[np.get_include()]
 )
