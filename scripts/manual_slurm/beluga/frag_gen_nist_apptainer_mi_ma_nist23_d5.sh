@@ -33,7 +33,7 @@ INST='FT QTOF IT'
 FRAG_MODE='CID HCD'
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 
-cho DATASET_NAME: ${DATASET_NAME}
+echo DATASET_NAME: ${DATASET_NAME}
 echo MAX_DEPTH: ${MAX_DEPTH}
 echo SAVE_NAME: ${SAVE_NAME}
 echo NB_FLAG: ${NB_FLAG}
