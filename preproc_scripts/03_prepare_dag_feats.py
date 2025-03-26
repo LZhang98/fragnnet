@@ -7,7 +7,6 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import wandb
-import h5py
 
 import frag_gnn.utils.frag_utils as frag_utils
 import frag_gnn.utils.data_utils as data_utils
@@ -28,6 +27,7 @@ def print_and_log(name,series,wandb_flag,stats_d):
 			log_d[f"{name}/{stat}"] = stats[stat]
 		wandb.log(log_d)
 
+"""
 def append_hdf5_rows(hdf5_fp,new_rows, num_features):
     
 	with h5py.File(hdf5_fp, "a") as f:
@@ -52,7 +52,8 @@ def create_hdf5_file(hdf5_fp:str,num_features:int,batch_size:int):
 			compression="gzip",  # Optional compression
 			compression_opts=4
 		)
-  
+"""
+
 def main(args):
 
 	assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
