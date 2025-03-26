@@ -25,10 +25,10 @@ DATASET_NAME=nist23mona23
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
-ISO_FALSE=False
-SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
-DSETS='nist20_hr'
-PREC='[M+H]+ [M-H]-[M+Na]+ [M+Cl]-'
+ISO_FLAG=False
+SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}
+DSETS='nist23_hr1 nist23_hr2'
+PREC='[M+H]+ [M-H]- [M+Na]+ [M+Cl]-'
 INST='FT QTOF IT'
 FRAG_MODE='CID HCD'
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/
@@ -42,7 +42,7 @@ echo DSETS: ${DSETS}
 echo PREC: ${PREC}
 echo INST: ${INST}
 echo FRAG_MODE: ${FRAG_MODE}
-echo ISO_FALSE: ${ISO_FALSE}
+echo ISO_FLAG: ${ISO_FLAG}
 echo DEST_DP: ${DEST_DP}
 
 # create local dir
@@ -82,8 +82,9 @@ apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fr
         --wandb_run_name=fool \
         --prec_types ${PREC}\
         --inst_types ${INST} \
+        --dsets ${DSETS} \
         --nb_isomorphic ${NB_FLAG} \
-        --isotopes ${ISO_FALSE} \
+        --isotopes ${ISO_FLAG} \
         --frag_mode ${FRAG_MODE} \
         --max_h_transfer ${MAX_H_TRANSFER}
         
@@ -98,9 +99,9 @@ echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
 cp ${SAVE_NAME}.tar ${DEST_DP}
 
 # reset some variables
-ISO_FALSE=False
-SAVE_NAME=nist20mona23v3_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
-echo ISO_FALSE: ${ISO_FALSE}
+ISO_FLAG=False
+SAVE_NAME=nist20mona23v3_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}
+echo ISO_FLAG: ${ISO_FLAG}
 echo SAVE_NAME: ${SAVE_NAME}
 
 # run dag gen
@@ -117,7 +118,7 @@ apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fr
         --inst_types ${INST} \
         --dsets ${DSETS} \
         --nb_isomorphic ${NB_FLAG} \
-        --isotopes ${ISO_FALSE} \
+        --isotopes ${ISO_FLAG} \
         --frag_mode ${FRAG_MODE} \
         --max_h_transfer ${MAX_H_TRANSFER}
 

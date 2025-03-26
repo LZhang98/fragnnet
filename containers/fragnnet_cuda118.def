@@ -63,7 +63,6 @@ From: nvidia/cuda:11.8.0-runtime-ubuntu22.04
         omegaconf \
         adjustText \
         scikit-learn \
-        Pyarrow \
         pyteomics \
         hdf5
 
