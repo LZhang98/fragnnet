@@ -15,9 +15,12 @@ H_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("H")
 NA_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Na")
 N_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("N")
 O_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("O")
+Cl_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Cl")
+
 PREC_TYPE_TO_MASS_DIFF = {
 	"[M+H]+": H_MASS - ELECTRON_MASS,
 	"[M-H]-": -H_MASS + ELECTRON_MASS,
+	"[M+Cl]-": Cl_MASS + ELECTRON_MASS,
 	"[M+Na]+": NA_MASS - ELECTRON_MASS,
 	"[M+NH4]+": N_MASS + 4*H_MASS - ELECTRON_MASS,
 	"[M-H2O+H]+": H_MASS - O_MASS - ELECTRON_MASS,
@@ -26,14 +29,17 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"[M+H]+_NL": -H_MASS + ELECTRON_MASS,
 	"[M-H]-_NL": H_MASS - ELECTRON_MASS,
 }
+
 PREC_TYPE_TO_FORMULA_DIFF = {
 	"[M+H]+": "H1",
 	"[M-H]-": "H-1",
+	"[M+Cl]-": "Cl-1",
 	"[M+Na]+": "Na1",
 	"[M+NH4]+": "N1H4",
 	"[M-H2O+H]+": "O-1H-1",
 	"[M]+": ""
 }
+
 PREC_TYPE_TO_COMP_DIFF = {
 	k: Composition(v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()
 }

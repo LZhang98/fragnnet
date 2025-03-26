@@ -112,7 +112,6 @@ def main(args):
 	os.makedirs(args.frag_dp,exist_ok=True)
 	dag_dp = os.path.join(args.frag_dp, "dags")
 	os.makedirs(dag_dp,exist_ok=True)
-	#group_stats_fp = os.path.join(args.frag_dp, "group_stats_df.pkl")
 	global_stats_fp = os.path.join(args.frag_dp, "global_stats.json")
 
 	def compute_spectra_stats(
@@ -289,6 +288,7 @@ def main(args):
 					args.max_h_transfer
 				]
 			)
+
 		tqdm_iter = tqdm(spectra_input_rows,desc=pformat(compute_spectra_stats),total=len(spectra_input_rows))
 		# run stats
 		stats_results = data_utils.par_apply(tqdm_iter,compute_spectra_stats,True)
