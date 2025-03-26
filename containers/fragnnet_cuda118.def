@@ -44,7 +44,7 @@ From: nvidia/cuda:11.8.0-runtime-ubuntu22.04
     $PIP_INSTALL setuptools 
     $PIP_INSTALL torch==2.1.0 --index-url https://download.pytorch.org/whl/cu118
     $PIP_INSTALL numpy==1.26.4
-    $PIP_INSTALL rdkit-pypi==2022.9.4
+    $PIP_INSTALL rdkit==2023.9.3
     $PIP_INSTALL torch_geometric==2.4.0 pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0%2Bcu118.html
     $PIP_INSTALL dgl==2.0.0 -f https://data.dgl.ai/wheels/repo.html
     $PIP_INSTALL \
@@ -64,7 +64,8 @@ From: nvidia/cuda:11.8.0-runtime-ubuntu22.04
         adjustText \
         scikit-learn \
         Pyarrow \
-        pyteomics
+        pyteomics \
+        hdf5
 
 %environment
     # Activate virtual environment upon container execution
