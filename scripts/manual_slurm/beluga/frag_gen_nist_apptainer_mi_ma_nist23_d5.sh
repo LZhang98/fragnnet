@@ -4,11 +4,11 @@
 #SBATCH --job-name=frag_gen
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
-#SBATCH --time=0-1:00
+#SBATCH --time=0-8:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_isoFalse_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_isoFalse_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_all_%j.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_all_%j.err
 #SBATCH --open-mode=append
 
 # record start
@@ -21,19 +21,19 @@ module load python/3.10
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-DATASET_NAME=nist20mona23v3
-MAX_DEPTH=3
+DATASET_NAME=nist23mona23
+MAX_DEPTH=5
 MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=False
-SAVE_NAME=nist20mona23v3_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}2
+SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
 DSETS='nist20_hr'
-PREC='[M+H]+'
-INST='FT'
-FRAG_MODE='HCD'
+PREC='[M+H]+ [M-H]-[M+Na]+ [M+Cl]-'
+INST='FT QTOF IT'
+FRAG_MODE='CID HCD'
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 
-echo DATASET_NAME: ${DATASET_NAME}
+cho DATASET_NAME: ${DATASET_NAME}
 echo MAX_DEPTH: ${MAX_DEPTH}
 echo SAVE_NAME: ${SAVE_NAME}
 echo NB_FLAG: ${NB_FLAG}
@@ -82,12 +82,45 @@ apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fr
         --wandb_run_name=fool \
         --prec_types ${PREC}\
         --inst_types ${INST} \
-        --dsets ${DSETS} \
         --nb_isomorphic ${NB_FLAG} \
         --isotopes ${ISO_FALSE} \
         --frag_mode ${FRAG_MODE} \
         --max_h_transfer ${MAX_H_TRANSFER}
         
+# go to frag directory
+cd ${SLURM_TMPDIR}/frag/
+tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
+
+# copy tar to scratch
+echo create dir at ${DEST_DP}
+mkdir -p ${DEST_DP}
+echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
+cp ${SAVE_NAME}.tar ${DEST_DP}
+
+# reset some variables
+ISO_FALSE=False
+SAVE_NAME=nist20mona23v3_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
+echo ISO_FALSE: ${ISO_FALSE}
+echo SAVE_NAME: ${SAVE_NAME}
+
+# run dag gen
+echo running dag gen
+
+apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
+    python preproc_scripts/03_prepare_dag_feats.py \
+        --frag_dp=./frag/${SAVE_NAME} \
+        --proc_dp=./proc/${DATASET_NAME}  \
+        --max_depth=${MAX_DEPTH} \
+        --wandb_mode=off \
+        --wandb_run_name=fool \
+        --prec_types ${PREC}\
+        --inst_types ${INST} \
+        --dsets ${DSETS} \
+        --nb_isomorphic ${NB_FLAG} \
+        --isotopes ${ISO_FALSE} \
+        --frag_mode ${FRAG_MODE} \
+        --max_h_transfer ${MAX_H_TRANSFER}
+
 # go to frag directory
 cd ${SLURM_TMPDIR}/frag/
 tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
