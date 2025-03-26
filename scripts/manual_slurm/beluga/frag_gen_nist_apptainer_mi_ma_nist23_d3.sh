@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=frag_gen
+#SBATCH --job-name=frag_gen_nist23_d3
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
-#SBATCH --time=0-2:00
+#SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_all_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_all_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist23_d3_%j.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist23_d3_%j.err
 #SBATCH --open-mode=append
 
 # record start
@@ -88,40 +88,6 @@ apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fr
         --frag_mode ${FRAG_MODE} \
         --max_h_transfer ${MAX_H_TRANSFER}
         
-# go to frag directory
-cd ${SLURM_TMPDIR}/frag/
-tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
-
-# copy tar to scratch
-echo create dir at ${DEST_DP}
-mkdir -p ${DEST_DP}
-echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
-cp ${SAVE_NAME}.tar ${DEST_DP}
-
-# reset some variables
-ISO_FLAG=False
-SAVE_NAME=nist20mona23v3_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}
-echo ISO_FLAG: ${ISO_FLAG}
-echo SAVE_NAME: ${SAVE_NAME}
-
-# run dag gen
-echo running dag gen
-
-apptainer exec -C -B ${SLURM_TMPDIR}:$HOME -W ${SLURM_TMPDIR} ${SLURM_TMPDIR}/fragnnet_cpu.sif \
-    python preproc_scripts/03_prepare_dag_feats.py \
-        --frag_dp=./frag/${SAVE_NAME} \
-        --proc_dp=./proc/${DATASET_NAME}  \
-        --max_depth=${MAX_DEPTH} \
-        --wandb_mode=off \
-        --wandb_run_name=fool \
-        --prec_types ${PREC}\
-        --inst_types ${INST} \
-        --dsets ${DSETS} \
-        --nb_isomorphic ${NB_FLAG} \
-        --isotopes ${ISO_FLAG} \
-        --frag_mode ${FRAG_MODE} \
-        --max_h_transfer ${MAX_H_TRANSFER}
-
 # go to frag directory
 cd ${SLURM_TMPDIR}/frag/
 tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
