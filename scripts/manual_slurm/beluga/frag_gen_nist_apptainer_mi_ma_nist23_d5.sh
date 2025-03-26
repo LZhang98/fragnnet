@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=frag_gen
+#SBATCH --job-name=frag_gen_nist23_d5
 #SBATCH --mem=90G
 #SBATCH --cpus-per-task=40
 #SBATCH --time=0-8:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_all_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_apptainer_all_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist23_d5_%j.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist23_d5_%j.err
 #SBATCH --open-mode=append
 
 # record start
