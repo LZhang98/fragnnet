@@ -16,8 +16,8 @@ cimport numpy as cnp
 interrupted = False
 
 def signal_handler(signum, frame):
-    global interrupted
-    interrupted = True
+	global interrupted
+	interrupted = True
 
 # Register the handler
 signal.signal(signal.SIGINT, signal_handler)
