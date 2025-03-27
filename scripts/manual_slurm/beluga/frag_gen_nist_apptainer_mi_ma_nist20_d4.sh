@@ -22,7 +22,7 @@ module load python/3.10
 cd /home/feiw/feiw/frag-gnn
 
 DATASET_NAME=nist20mona23v3
-MAX_DEPTH=3
+MAX_DEPTH=4
 MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=False
