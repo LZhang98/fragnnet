@@ -7,9 +7,20 @@
 # cython: cdivision=True
 
 import numpy as np
-cimport numpy as cnp
-from cysignals.signals cimport sig_check
+import signal
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
+
+cimport numpy as cnp
+
+# Global interrupt flag
+interrupted = False
+
+def signal_handler(signum, frame):
+    global interrupted
+    interrupted = True
+
+# Register the handler
+signal.signal(signal.SIGINT, signal_handler)
 
 MAX_NUM_NODES = 128  # hard cap on 64!!
 MAX_NUM_EDGES = 4 * MAX_NUM_NODES  # ~4*MAX_NUM_NODES
@@ -229,7 +240,10 @@ def compute_ccs(
 		for node_idx in range(ccs_idx,ccs_end):
 			# let us check time
 			cur_time = get_time()
-			sig_check()
+			#sig_check()
+			if interrupted:
+				raise KeyboardInterrupt("Execution interrupted by user (Ctrl+C)")
+
 			if cur_time - start_time > time_limit:
 				force_stop = True
 				break
