@@ -49,7 +49,6 @@ def main(args):
 			]
 		)
 		
-
 	else:
 		script_lines.append('#allocate job')
 		cmd = f"salloc --account={args.cc_account} --nodes=1 --mem={args.mem}G --cpus-per-task={args.cpu} --time=0-{args.time}:00"
@@ -69,42 +68,164 @@ def main(args):
 		]
 	)
   
-	# for now let us just using existing env
-	# go to working dir
-	# use abs dir
+	# create venv on compute node
 	script_lines.extend(
 		[
-			"",
-			"# go to script dir",
-			f"cd {os.path.abspath(args.frag_gnn_dp)}",
-			"# load env",
-			f"source {args.python_env}/bin/activate",
-			#"# env setup for wandb",
-			#"export WANDB_DIR='./wandb'",
-			#"export WANDB_CACHE_DIR='./wandb/.cache'",
-			#"export WANDB_CONFIG_DIR='./wandb/.config'",
-			""
+			'',
+			#"# go to script dir",
+			#f"cd {os.path.abspath(args.frag_gnn_dp)}",
+			f'FRAGNNET_DP= {os.path.abspath(args.frag_gnn_dp)}',
+			'',
+			'# create local env',
+			# go to slurm and create virtual env
+			'cd  ${SLURM_TMPDIR}',
+			'virtualenv FRAG-GNN',
+			'source FRAG-GNN/bin/activate',
+			'pip install --no-index --upgrade pip',
+			'pip install --no-index torch==2.4.1',
+			'pip install --no-index torch_geometric==2.6.1 ',
+			'pip install --no-index torch_scatter',
+			'pip install --no-index pandas',
+			'pip install --no-index wandb',
+			'pip install --no-index tqdm',
+			'pip install --no-index scipy',
+			'pip install --no-index joblib==1.3.2',
+			'pip install --no-index matplotlib',
+			'pip install --no-index pytorch_lightning==2.4.0',
+			'pip install --no-index dgl==2.4.0',
+			'pip install --no-index omegaconf',
+			'pip install --no-index cython==3.0.12',
+			'',
+			'# intall from whl',
+			'cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${SLURM_TMPDIR}/pyteomics-4.7.5-py3-none-any.whl',
+			'pip install pyteomics-4.7.5-py3-none-any.whl',
+			''
 		]
 	)
  
-	# and not do copy
+	# copy fragnnet sourfce code and install to venv
+	script_lines.extend(
+		[	
+   			''
+			'# go to source location',
+			'cd ${FRAGNNET_DP}',
+			'# copy source code',
+			'rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}',
+			'rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}',
+			'rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}',
+			'cp setup.cfg ${SLURM_TMPDIR}/',
+			'cp setup.py ${SLURM_TMPDIR}/',
+			# instal fragnnet
+			'pip install -I .',
+			''
+		]
+	)
+ 
 	# https://lightning.ai/docs/pytorch/stable/clouds/cluster_advanced.html
 	python_line = f"srun python {args.python_script_fp}"
+
 	#print(args.script_kwargs)
-	if args.script_kwargs not in [None, ""]:
-		script_kwargs = args.script_kwargs.split(",")
-		for kwarg in script_kwargs:
-			assert "=" in kwarg, kwarg
-			key, value = kwarg.split("=")
-			if len(key) == 1:
-				python_line += f" -{key} {value}"
-			elif key.startswith('-'):
-				python_line += f" {key} {value}"
+	custom_config_fp = None
+	# default config template
+	config_template_fp = os.path.join(args.frag_gnn_dp,"config","template.yml")
+
+	for kwarg in args.script_kwargs:
+		assert "=" in kwarg, kwarg
+		key, value = kwarg.split("=")
+		if len(key) == 1:
+			python_line += f" -{key} {value}"
+		elif key.startswith('-'):
+			python_line += f" {key} {value}"
+		else:
+			python_line += f" --{key} {value}"
+
+		if key == "c" or key == "custom_fp":
+			custom_config_fp = value
+		if key == "t" or key == "template_fp":
+			config_template_fp = value
+
+	# parse configs	file
+	config_keywords = ['spec_fp','mol_fp', 'ann_fp', 'config','config_template','split_dp','magma_dp','frag_dp', 'model_type']
+	config_d = {'config_template':config_template_fp}
+	if custom_config_fp is not None:
+		config_d['config'] = custom_config_fp
+  
+	# parse configs
+	for config_fp in [config_template_fp, custom_config_fp]:
+		if config_fp is not None:
+			with open(config_fp,"r") as config_file:
+				config_lines = config_file.readlines()
+				for line in config_lines:
+					for config_keyword in config_keywords:
+						if line.startswith(config_keyword):
+							config_d[config_keyword] = line.split(":")[-1].strip()
+
+	# change keywords based model type
+	data_keyword = [ 'config', 'config_template', 'spec_fp','mol_fp', 'split_dp']
+	if config_d['model_type'] in ['frag_gnn','fragnnet']:
+		data_keyword.append('frag_dp')
+	elif config_d['model_type'] in ['iceberg_gen','iceberg_inten']:
+		data_keyword.append('magma_dp')
+	elif config_d['model_type'] == 'graff':
+		data_keyword.append('ann_fp')
+	print(f"> model type: {config_d['model_type']}")
+ 	# copy data files	
+	script_lines.extend(
+			[
+				'',
+				'#copy files'
+			]
+		)
+
+	for name in data_keyword:
+		if name not in config_d:
+			print(f"missing {name} in config file")
+		if name != 'frag_dp':
+			script_lines.extend(
+       			[f"# copy {name} file from {config_d[name]} to slurm tmp dir",
+				 f"rsync -av ${{FRAGNNET_DP}}/{config_d[name]} ${{SLURM_TMPDIR}}/{config_d[name]}"])
+			print(f"> adding cmd to copy {name} file {config_d[name]}")
+		elif name == 'frag_dp':
+			# check if frag_dp is a file or dir, if it is file, copy it and unpack
+			tar_ext = None
+			dag_dp = config_d[name]
+			frag_dp = dag_dp.rsplit("/",1)[0]
+			for ext in ['.tar','.tar.xz', '.tar.gz', '.tgz']:
+				if os.path.isfile(frag_dp+ext):
+					tar_ext = ext
+					break
+			if tar_ext is not None:
+				print(f"> adding cmd to copy {frag_dp+tar_ext}")
+				script_lines.extend(
+	   				[f"# copy {name} file from {frag_dp}{tar_ext} to slurm tmp dir and unpack",
+					 f"rsync -av ${{FRAGNNET_DP}}/{frag_dp+tar_ext} ${{SLURM_TMPDIR}}/{frag_dp+tar_ext}",
+					f"tar -xf ${{SLURM_TMPDIR}}/{frag_dp+tar_ext} -C  ${{SLURM_TMPDIR}}/{frag_dp}",
+					])
 			else:
-				python_line += f" --{key} {value}"
+				print(f"> adding cmd to copy directory {dag_dp}")
+				script_lines.extend(
+	   				[f"# copy {name} file from {dag_dp} to slurm tmp dir",
+					 f"rsync -av ${{FRAGNNET_DP}}/{dag_dp} ${{SLURM_TMPDIR}}/{dag_dp}"
+					])
 
-	script_lines.append(python_line)
-
+    # soft link back to home directy for wandb
+	script_lines.extend(
+		[
+			'',
+			'# soft link to wandb',
+			'ln -s ${FRAGNNET_DP}/wandb wandb'
+		]
+	)
+ 
+	# add python line
+	script_lines.extend(
+		[
+			'',
+			'cd ${SLURM_TMPDIR}',
+			python_line
+		]
+	)
+   
 	if not args.interactive:
 		script_lines.extend(
 			[
@@ -123,6 +244,7 @@ def main(args):
 		for row in script_lines:
 			print(row)
 
+
 	if not args.no_submit:
 		process = subprocess.Popen(['sbatch', script_fp], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 		out, err = process.communicate()
@@ -139,14 +261,15 @@ if __name__ == "__main__":
 	parser.add_argument("--cpu", type=int, default=8)
 	parser.add_argument("--gpu", type=int, default=1)
 	parser.add_argument("--time", type=int, default=3)
-	parser.add_argument("--script_kwargs", type=str, help='arugments for python script eg."-w=online,-c=config/debug_d4_tiny.yml"', default="")
+	parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
+	#parser.add_argument("--script_kwargs", type=str, help='arugments for python script eg."-w=online,-c=config/debug_d4_tiny.yml"', default="")
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument('--cc_email', help='email', default='fw4@ualberta.ca')
 	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart','rrg-rgreiner','def-dwishart','def-rgreiner'])
 	parser.add_argument('--python_env', default="./FRAG-GNN-GPU", help="virtualenv location")
-	parser.add_argument('--python_version', default="3.10", choices=['3.10','3.11'], help="python version")
-	parser.add_argument('--rdkit_version', default="2022.3.5", choices=['2022.3.5','2023.9.5','2024.03.5'], help="virtualenv location")
+	parser.add_argument('--python_version', default="3.11", choices=['3.10','3.11'], help="python version")
+	parser.add_argument('--rdkit_version', default="2023.9.5", choices=['2022.3.5','2023.9.5','2024.03.5'], help="virtualenv location")
 	parser.add_argument('-i', '--interactive', type = bool, default=False, action=argparse.BooleanOptionalAction, help="set to true to print interative command")
-	parser.add_argument('--no_submit', type=bool, default=False)
+	parser.add_argument('--no_submit', type=bool, default=True)
 	args = parser.parse_args()
 	main(args)

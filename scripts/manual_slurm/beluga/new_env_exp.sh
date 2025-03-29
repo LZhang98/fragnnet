@@ -6,15 +6,6 @@ module load StdEnv/2023
 module load python/3.11
 module load rdkit/2023.09.5
 
-# go to source location
-cd /home/feiw/feiw/frag-gnn
-# copy source code
-rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}
-rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}
-rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}
-cp setup.cfg ${SLURM_TMPDIR}/
-cp setup.py ${SLURM_TMPDIR}/
-
 # go to slurm and create virtual env
 cd  ${SLURM_TMPDIR}
 
@@ -39,6 +30,16 @@ pip install --no-index cython==3.0.12
 # intall from whl
 cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${SLURM_TMPDIR}/pyteomics-4.7.5-py3-none-any.whl 
 pip install pyteomics-4.7.5-py3-none-any.whl 
+
+# go to source location
+cd ${FRAGNNET_DP}
+# copy source code
+rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}
+rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}
+rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}
+cp setup.cfg ${SLURM_TMPDIR}/
+cp setup.py ${SLURM_TMPDIR}/
+
 # instal fragnnet
 pip install -I .
 
