@@ -326,7 +326,7 @@ def compute_cc_h_cap(cc_atom_ids: np.ndarray,ve_arr:np.ndarray,sbond_arr:np.ndar
 	return np.sum(cap_ve_arr) - np.sum(cap_sbond_arr) - num_radicals
 
 def compute_cc_h_floor(cc_atom_ids: np.ndarray,ve_arr: np.ndarray, sbond_arr: np.ndarray, \
-    	num_radicals:int,bonds:np.ndarray,atoms_to_bonds:dict,bond_mask_arr:np.ndarray):
+		num_radicals:int,bonds:np.ndarray,atoms_to_bonds:dict,bond_mask_arr:np.ndarray):
 	"""compute min amount of Hs a cc can have.
 
 	Args:
@@ -668,12 +668,11 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 	prec_recall, prec_spec_recall = prec_recalls
 	return pd.Series([recall,w_recall,prec,ppt_peak,ppt_formula,prec_recall,prec_spec_recall])
 
-def th_long_to_mask(long):
-	"""_summary_
+def th_long_to_mask(long:th.Tensor) -> th.Tensor:
+	""" convert long to mask, this can be more then one 64 bit longs in given row
 
 	Args:
-		long (_type_): _description_
-
+		long (_type_): N x MASK_SIZE//64 th.Tensor of int
 	Returns:
 		_type_: _description_
 	"""
@@ -686,12 +685,40 @@ def th_long_to_mask(long):
 
 
 def th_mask_to_long(mask):
+	""" convert torch binary mask to 64 bits ints, MASK_SIZE//64 number of int are returned per row
+	Args:
+		long (_type_): N x MASK_SIZE//64 th.Tensor of int
+	Returns:
+		_type_: _description_
+	"""
 	# mask is N x MASK_SIZE
 	num_dims = mask.shape[1]//64
 	mask = mask.reshape(mask.shape[0],num_dims,64)
 	long = 2**th.arange(64-1,-1,-1,device=mask.device).expand(1,num_dims,64)
 	return th.sum(long*mask,dim=2).long()
 
+def get_base_formula_node_feat_size() -> int:
+	""" get base_formula size
+	Returns:
+		int: size of base_formula array, each bin is a count of the number of atoms for respective element
+	"""
+	return len(ELEMENT_TO_IDX)
+
+def get_formula_node_feat_size(max_h_transfer) -> int:
+	""" get formula_node_feat_size
+		at max we can have 1 + 2 * max_h_transfer different formula
+	Returns:
+		int: size of formula_node_feat_size given max h transfer count
+	"""
+	# h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
+	return 1+2*max_h_transfer 
+
+def get_cc_node_feat_size() -> int:
+	"""_summary_
+	Returns:
+		_type_: _description_
+	"""
+	return MASK_SIZE//64 # mask
 
 def compute_dags(
 		mol_d:dict,
@@ -770,9 +797,9 @@ def compute_dags(
 	# add node depth information
 	# convert to a one hot encoding
 	depth_node_feat_size = max_depth+1 #depth
-	cc_node_feat_size = MASK_SIZE//64 # mask
-	base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
-	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
+	cc_node_feat_size = get_cc_node_feat_size #MASK_SIZE//64 # mask
+	base_formula_node_feat_size =  get_base_formula_node_feat_size() # base_formula size
+	formula_node_feat_size = get_formula_node_feat_size(max_h_transfer) # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
 	h_count_node_feat_size = formula_node_feat_size
 	nb_iso_node_feat_size = 1 if nb_isomorphic else 0
 	cc_edge_feat_size = cc_node_feat_size
@@ -797,7 +824,7 @@ def compute_dags(
 	# map nodes to formulae
 	formula_d_list, h_count_d_list = [], []
 	formula_counts = {}
-	for idx, cc_mask in enumerate(nodes_mask_matrix):
+	for _, cc_mask in enumerate(nodes_mask_matrix):
 		base_formula = node_base_formula_matrix[idx]
 		base_formula[ELEMENT_TO_IDX["H"]] = 0 # remove Hs
 		delta_h_to_formula, delta_h_to_h_count = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True, base_formula = base_formula)
@@ -807,7 +834,7 @@ def compute_dags(
 		for formula in formulae:
 			formula_counts[formula] = formula_counts.get(formula,0) + 1
    
-	# map nodes to formulae indices
+	# map formulae indices
 	formula_to_idx = {formula:idx for idx,formula in enumerate(sorted(list(formula_counts.keys())))}
 	idx_to_formula = {idx:formula for formula,idx in formula_to_idx.items()}
 	formula_idx_by_h_delta = [set() for _ in range(1 + 2 * max_h_transfer)]
@@ -875,7 +902,9 @@ def compute_dags(
 		formula_peak_probs.append(peak_probs)
 
 	# save as float32 for speed and lower ram usage
+	# forumla and peak mz it can produce
 	formula_peak_mzs = th.as_tensor(np.stack(formula_peak_mzs,axis=0), dtype = META_DATA_DTYPE)
+ 	# forumla and peak intensity it can produce, respect to isotopes labels
 	formula_peak_probs = th.as_tensor(np.stack(formula_peak_probs,axis=0), dtype = META_DATA_DTYPE)
 
 	# add edges info
@@ -938,13 +967,13 @@ def compute_dags(
 	# convert to pyg
 	frag_d = {}
 	frag_d["max_depth"] = max_depth
-	frag_d["reached_depth"] = reached_depth
+	frag_d["reached_depth"] = reached_depth 
 	frag_d["h_prior"] = h_prior
-	frag_d["max_h_transfer"] = max_h_transfer
-	frag_d["formula_peak_mzs"] = formula_peak_mzs
-	frag_d["formula_peak_probs"] = formula_peak_probs
-	frag_d["idx_to_formula"] = idx_to_formula # useful for annotation
-	frag_d["idx_by_h_delta"] = formula_idx_by_h_delta # formula idx for each h_delta
+	frag_d["max_h_transfer"] = max_h_transfer # max number of Hs transfers
+	frag_d["formula_peak_mzs"] = formula_peak_mzs 	# forumla and peak mz it can produce
+	frag_d["formula_peak_probs"] = formula_peak_probs # forumla and peak int it can produce, respect to isotopes labels
+	frag_d["idx_to_formula"] = idx_to_formula # idx to formula str, useful for annotation
+	frag_d["idx_by_h_delta"] = formula_idx_by_h_delta # formula idx for each h_delta value, used in compute_frag_peak_stats
 	frag_d["dag"] = pyg_cc_g
 	
 	frag_d["edges_min_depth"] = edges_min_depth
@@ -1044,7 +1073,7 @@ def save_frag_d(frag_d:dict, mol_id:int, frag_dp:str, is_compressed:bool = False
 				cPickle.dump(frag_d, fileout)
 	except Exception as e:
 		print(e,fp)
-      
+	  
 def load_frag_d(mol_id:str, frag_dp:str, is_compressed:bool = False):
 	"""_summary_
 

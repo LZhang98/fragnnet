@@ -619,24 +619,59 @@ class NestedDefaultDict(defaultdict):
 	def __repr__(self):
 		return repr(dict(self))
 
-def kl_div(x_logprobs, y_logprobs):
+def kl_div(x_logprobs, y_logprobs) -> th.Tensor:
+	""" method to compute Kullback-Leibler divergence
+	https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence
+	Args:
+		x_logprobs (_type_): _description_
+		y_logprobs (_type_): _description_
+
+	Returns:
+		th.Tensor: Kullback-Leibler divergence 
+	"""
 
 	return th.sum(th.exp(x_logprobs)*(x_logprobs-y_logprobs), dim=0)
 
-def js_div(x_ids, x_logprobs, y_ids, y_logprobs):
+def js_div(x_ids, x_logprobs, y_ids, y_logprobs) -> th.Tensor:
+    """ method to compute Jensen-Shannon Divergence 
 
-	assert th.unique(x_ids).shape[0] == x_ids.shape[0]
-	assert th.unique(y_ids).shape[0] == y_ids.shape[0]
-	z_ids, z_inv_idxs = th.unique(th.cat([x_ids, y_ids], dim=0), return_inverse=True)
-	x_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(x_logprobs.dtype), dtype=x_logprobs.dtype)
-	y_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(y_logprobs.dtype), dtype=y_logprobs.dtype)
-	x_logprobs_p[z_inv_idxs[:x_ids.shape[0]]] = x_logprobs
-	y_logprobs_p[z_inv_idxs[x_ids.shape[0]:]] = y_logprobs
-	z_logprobs = th.logsumexp(th.stack([x_logprobs_p,y_logprobs_p], dim=0), dim=0) - LOG_TWO
-	jsd = 0.5*kl_div(x_logprobs_p,z_logprobs) + 0.5*kl_div(y_logprobs_p,z_logprobs)
-	jsd_n = jsd / LOG_TWO
-	return jsd_n
-	
+	Args:
+		x_ids (_type_): _description_
+		x_logprobs (_type_): _description_
+		y_ids (_type_): _description_
+		y_logprobs (_type_): _description_
+
+	Returns:
+		th.Tensor: Jensen-Shannon divergence 
+	"""
+ 
+    # Ensure that each element in x_ids and y_ids is unique (i.e., no duplicates)
+    assert th.unique(x_ids).shape[0] == x_ids.shape[0]
+    assert th.unique(y_ids).shape[0] == y_ids.shape[0]
+    
+    # Combine the ids from x and y, creating a union of the two sets of ids
+    z_ids, z_inv_idxs = th.unique(th.cat([x_ids, y_ids], dim=0), return_inverse=True)
+    
+    # Initialize probability vectors for x and y, filled with a small value to avoid -inf (log(0))
+    # LOG_ZERO is assumed to return the log of a very small value (close to 0)
+    x_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(x_logprobs.dtype), dtype=x_logprobs.dtype)
+    y_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(y_logprobs.dtype), dtype=y_logprobs.dtype)
+    
+    # Fill the initialized vectors with the actual log-probabilities from x and y, respectively
+    x_logprobs_p[z_inv_idxs[:x_ids.shape[0]]] = x_logprobs
+    y_logprobs_p[z_inv_idxs[x_ids.shape[0]:]] = y_logprobs
+    
+    # Compute the combined log-probabilities (z_logprobs) using logsumexp, which handles the sum of logs
+    z_logprobs = th.logsumexp(th.stack([x_logprobs_p, y_logprobs_p], dim=0), dim=0) - LOG_TWO
+    
+    # Compute the Jensen-Shannon Divergence (JSD) as the average of two Kullback-Leibler (KL) divergences
+    jsd = 0.5 * kl_div(x_logprobs_p, z_logprobs) + 0.5 * kl_div(y_logprobs_p, z_logprobs)
+    
+    # Normalize the JSD by dividing by LOG_TWO to ensure it is in a standard scale (between 0 and 1)
+    jsd_n = jsd / LOG_TWO
+    
+    return jsd_n
+
 def get_slurm_job_id():
 	return os.getenv('SLURM_JOB_ID', default=None)
 

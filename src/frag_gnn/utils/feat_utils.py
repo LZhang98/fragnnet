@@ -9,7 +9,6 @@ import numpy as np
 import torch as th
 import networkx as nx
 import torch_geometric as pyg
-from copy import deepcopy
 import scipy
 
 from frag_gnn.utils.frag_utils import (
@@ -227,6 +226,8 @@ class AtomOneHot(FeatBase):
 
 @register_atom_feat
 class AtomDegree(FeatBase):
+	""" Atom Degree features are one-hot encoded. 
+	"""
 	name = "a_degree"
 	allowable_set = list(range(11))
 	feat_size = len(allowable_set) + 1 + 2
@@ -240,7 +241,8 @@ class AtomDegree(FeatBase):
 
 @register_atom_feat
 class AtomHybrid(FeatBase):
-
+	""" Atom HybridizationType Charge features are one-hot encoded. 
+	"""
 	name = "a_hybrid"
 	allowable_set = [
 		Chem.rdchem.HybridizationType.SP,
@@ -259,7 +261,8 @@ class AtomHybrid(FeatBase):
 
 @register_atom_feat
 class AtomFormal(FeatBase):
-
+	""" Atom Formal Charge features are one-hot encoded. 
+	"""
 	name = "a_formal"
 	allowable_set = list(range(-2, 3))
 	feat_size = len(allowable_set) + 1
@@ -272,7 +275,8 @@ class AtomFormal(FeatBase):
 
 @register_atom_feat
 class AtomRadical(FeatBase):
-
+	""" AtomRadical features are one-hot encoded. 
+	"""
 	name = "a_radical"
 	allowable_set = list(range(5))
 	feat_size = len(allowable_set) + 1
@@ -285,7 +289,8 @@ class AtomRadical(FeatBase):
 
 @register_atom_feat
 class AtomRing(FeatBase):
-
+	""" Atom Ring and Atom Aromatic features are one-hot encoded. 
+	"""
 	name = "a_ring"
 	allowable_set = [True, False]
 	feat_size = len(allowable_set) * 2
@@ -299,7 +304,8 @@ class AtomRing(FeatBase):
 
 @register_atom_feat
 class AtomChiral(FeatBase):
-
+	""" Atom Chiral features are one-hot encoded. The last feature is for unspecified chirality.
+	"""
 	name = "a_chiral"
 	allowable_set = [
 		Chem.rdchem.ChiralType.CHI_UNSPECIFIED,
@@ -346,7 +352,7 @@ class BondDegree(FeatBase):
 
 @register_bond_feat
 class BondStereo(FeatBase):
-
+	""" Bond Stereo features are one-hot encoded. The last feature is for unspecified stereochemistry."""
 	name = "b_stereo"
 	allowable_set = [
 		Chem.rdchem.BondStereo.STEREONONE,
@@ -364,8 +370,8 @@ class BondStereo(FeatBase):
 
 
 @register_bond_feat
-class BondConj(FeatBase):
-
+class BondRing(FeatBase):
+	""" Bond Ring features are one-hot encoded. The last feature is for unspecified ring status."""
 	name = "b_ring"
 	feat_size = 2
 
@@ -376,14 +382,13 @@ class BondConj(FeatBase):
 
 @register_bond_feat
 class BondConj(FeatBase):
-
+	""" Bond Conjugation features are one-hot encoded. The last feature is for unspecified conjugation."""
 	name = "b_conj"
 	feat_size = 2
 
 	@classmethod
 	def featurize(cls, x) -> int:
 		return one_hot_encoding(x.GetIsConjugated(), [False, True], False)
-
 
 def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
 	"""One_hot encoding.
@@ -409,55 +414,91 @@ def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
 	return list(map(lambda s: int(x == s), allowable_set))
 
 def batch_mols_frags(mol_pyg_list,frag_pyg_list,formula_peak_mzs_list,formula_peak_probs_list):
+	"""create batch of mol and frag graphs
 
+	Args:
+		mol_pyg_list (_type_): _description_
+		frag_pyg_list (_type_): _description_
+		formula_peak_mzs_list (_type_): _description_
+		formula_peak_probs_list (_type_): _description_
+
+	Returns:
+		_type_: _description_
+	"""
+	# batch size
 	batch_size = len(mol_pyg_list)
+	# Convert the input lists of molecules and fragments into PyTorch Geometric data batches
 	mol_pyg = pyg.data.Batch.from_data_list(mol_pyg_list)
 	frag_pyg = pyg.data.Batch.from_data_list(frag_pyg_list)
+ 
+	# Assert that the number of graphs in both molecule and fragment batches matches the batch size
 	assert mol_pyg.num_graphs == frag_pyg.num_graphs == batch_size
+	 # Assert that the node feature indices and edge feature indices are consistent across all graphs in the fragment batch
 	assert all(th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i]) for i in range(batch_size))
 	assert all(th.all(frag_pyg.edge_feat_idxs[0] == frag_pyg.edge_feat_idxs[i]) for i in range(batch_size))
+ 
+	# Compute the cumulative sum of nodes for molecules and fragments, to track the total number of nodes per graph
 	mol_num_nodes = [g.num_nodes for g in mol_pyg_list]
 	frag_num_nodes = [g.num_nodes for g in frag_pyg_list]
 	mol_num_nodes = th.cumsum(th.tensor([0]+mol_num_nodes),dim=0)
 	frag_num_nodes = th.cumsum(th.tensor([0]+frag_num_nodes),dim=0)
+ 
+    # Initialize lists
 	frag_formula_peak_idxs = []
 	frag_formula_peak_mzs = []
 	frag_formula_peak_probs = []
 	frag_formula_sizes = []
 	frag_formula_peak_sizes = []
+ 
+	# Loop through the provided peak mzs and probabilities, and filter out the zero probabilities
 	for mzs, probs in zip(formula_peak_mzs_list,formula_peak_probs_list):
-		# sparsify
+		# sparsify: retain only non-zero probability peaks
 		idx = th.nonzero(probs)
-		mzs = mzs[idx[:,0],idx[:,1]]
-		probs = probs[idx[:,0],idx[:,1]]
+		# Extract mass-to-charge ratios where probability is non-zero
+		mzs = mzs[idx[:,0],idx[:,1]] 
+		# Extract probabilities where probability is non-zero
+		probs = probs[idx[:,0],idx[:,1]] 
+		# Append the filtered results for each fragment
 		frag_formula_peak_idxs.append(idx[:,0])
 		frag_formula_peak_mzs.append(mzs)
 		frag_formula_peak_probs.append(probs)
+ 
+		# Calculate the number of unique formula peaks and the total peak sizes
+		# In case of isotopes, each formula can have more then one peak
 		frag_formula_sizes.append(th.unique(idx,sorted=True).shape[0])
 		frag_formula_peak_sizes.append(idx.shape[0])
+  
+	# Flatten the lists to single dimension tensor
 	frag_formula_peak_idxs = th.cat(frag_formula_peak_idxs,dim=0)
 	frag_formula_peak_mzs = th.cat(frag_formula_peak_mzs,dim=0)
 	frag_formula_peak_probs = th.cat(frag_formula_peak_probs,dim=0)
 	frag_formula_cumsizes = th.cumsum(th.tensor([0]+frag_formula_sizes),dim=0)
 	frag_formula_sizes = th.tensor(frag_formula_sizes)
-	frag_formula_peak_sizes = th.tensor(frag_formula_peak_sizes)	
+	frag_formula_peak_sizes = th.tensor(frag_formula_peak_sizes)
 	batched_mol_frag = {
-		"mol_pyg": mol_pyg,
-		"frag_pyg": frag_pyg,
-		"mol_num_nodes": mol_num_nodes,
-		"frag_num_nodes": frag_num_nodes,
-		"frag_formula_peak_idxs": frag_formula_peak_idxs,
-		"frag_formula_peak_mzs": frag_formula_peak_mzs,
-		"frag_formula_peak_probs": frag_formula_peak_probs,
-		"frag_formula_sizes": frag_formula_sizes,
-		"frag_formula_cumsizes": frag_formula_cumsizes,
-		"frag_formula_peak_sizes": frag_formula_peak_sizes,
+		"mol_pyg": mol_pyg, # PyG batch for molecules
+		"frag_pyg": frag_pyg, # PyG batch for fragments
+		"mol_num_nodes": mol_num_nodes, # Cumulative node count for molecules
+		"frag_num_nodes": frag_num_nodes, # Cumulative node count for fragments
+		"frag_formula_peak_idxs": frag_formula_peak_idxs,  # Indexes of the formula peaks in fragments
+		"frag_formula_peak_mzs": frag_formula_peak_mzs, # mz for formula peaks
+		"frag_formula_peak_probs": frag_formula_peak_probs, # Probabilities for formula peaks
+		"frag_formula_sizes": frag_formula_sizes, # a list containing the number of unique formula peaks for each fragment.
+		"frag_formula_cumsizes": frag_formula_cumsizes, # the cumulative sum of  frag_formula_sizes with an additional 0 at the beginning
+		"frag_formula_peak_sizes": frag_formula_peak_sizes, # Peak sizes for each fragment formula
 	}
 	return batched_mol_frag
 
-# TODO: make this object oriented?
 def get_mol_fp(mol,morgan,rdkit,maccs):
-
+	"""  function to get the fingerprint of a molecule
+	Args:
+		mol (rdkit.Chem.Mol): molecule
+		morgan (bool): whether to use Morgan fingerprint
+		rdkit (bool): whether to use RDKit fingerprint
+		maccs (bool): whether to use MACCS fingerprint
+	Returns:
+		fp (torch.Tensor): fingerprint of the molecule
+	"""
 	assert morgan or rdkit or maccs
 	fps = []
 	if morgan:
@@ -472,14 +513,32 @@ def get_mol_fp(mol,morgan,rdkit,maccs):
 	fp = th.as_tensor(np.concatenate(fps,axis=0),dtype=th.float)
 	return fp
 
-def get_mol_fp_size(morgan,rdkit,maccs):
-
+def get_mol_fp_size(morgan,rdkit,maccs) -> int:
+	"""Get the size of the fingerprint of a molecule
+	Args:
+		mol (rdkit.Chem.Mol): molecule
+		morgan (bool): whether to use Morgan fingerprint
+		rdkit (bool): whether to use RDKit fingerprint
+		maccs (bool): whether to use MACCS fingerprint
+	Returns:
+		size (int): size of the fingerprint
+	"""
 	mol = Chem.MolFromSmiles("CCO")
 	fp = get_mol_fp(mol,morgan,rdkit,maccs)
 	return fp.shape[0]
 
-def get_mol_graph(mol,atom_feats,bond_feats,pe_embed_k,bigraph):
-
+def get_mol_graph(mol: 'rdkit.Chem.Mol',atom_feats: list,bond_feats:list,pe_embed_k:bool,bigraph:bool) -> 'torch_geometric.data.Data':
+	"""get_mol_graph.
+	Args:
+		mol (rdkit.Chem.Mol): molecule
+		atom_feats (list): list of atom features
+		bond_feats (list): list of bond features
+		pe_embed_k (int): number of random walk steps
+		bigraph (bool): if true, double all edges
+	Returns:
+		mol_pyg (torch_geometric.data.Data): molecule graph
+	"""
+ 
 	mg = MolGraph(
 		atom_feats,
 		bond_feats,
@@ -615,8 +674,8 @@ if __name__ == "__main__":
 	mol = mol_from_smiles(smiles)
 	mg = MolGraph()
 	g = mg.get_networkx_graph(mol)
-	pprint(dict(g.nodes(data=True)))
-	pprint(list(g.edges(data=True)))
+	#pprint(dict(g.nodes(data=True)))
+	#pprint(list(g.edges(data=True)))
 
 	edge_index = th.tensor([[0,1,1],[1,1,0]],dtype=th.long)
 	x = th.tensor([0,1],dtype=th.float)

@@ -625,7 +625,15 @@ class SpecMolFragDataset(SpecMolDataset):
 		data = {**spec_data,**mol_data,**frag_data}
 		return data
 
-	def _load_frag_entry(self,mol_id):
+	def _load_frag_entry(self,mol_id) -> dict:
+		""" load frag entry from precomputed dag on disk
+
+		Args:
+			mol_id (str): mol id
+
+		Returns:
+			dict: dag dictrionary
+		"""
 
 		frag_entry = load_frag_d(
 			mol_id,
@@ -634,9 +642,18 @@ class SpecMolFragDataset(SpecMolDataset):
 		)
 		return frag_entry
 
-	def _process_frag(self,frag_entry,spec_entry):
+	def _process_frag(self,frag_entry:dict,spec_entry):
+		"""
+			process the frag dictionary, and spec data
+		Args:
+			frag_entry (_type_): _description_
+			spec_entry (_type_): _description_
 
+		Returns:
+			_type_: _description_
+		"""
 		frag_data = {}
+		# case use frag dags as second gnn
 		if self.frag_params["pyg"]:
 			frag_pyg = frag_entry["dag"]
 			frag_pyg = get_frag_graph(
