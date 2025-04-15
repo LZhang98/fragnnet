@@ -67,7 +67,8 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--vals_dp", 
 		type=str, 
-		default="/h/adamo/frag-gnn/inference_outputs"
+		required=True
+		# default="/h/adamo/frag-gnn/inference_outputs"
 	)
 	parser.add_argument(
 		"--force_overwrite", 
@@ -118,12 +119,12 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--disable_preproc",
 		type=booltype,
-		default=False
+		default=True
 	)
 	parser.add_argument(
 		"--dset",
 		type=str,
-		default="nist20v3"
+		default="nist20v3-1"
 	)
 	args = parser.parse_args()
 

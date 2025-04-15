@@ -167,10 +167,12 @@ def get_topk_formula_node_idxs(ens_vals, k, nb=True, filter_thresh=0.01):
 
     return ens_formula_mask, ens_counts, ens_nb_formula_node_argtopk
 
-def calculate_compare(masks, argtopks):
+def calculate_compare(masks, argtopks, batch_idxs):
 
     num_ens = len(masks)
-    compare_mat = th.zeros((num_ens,num_ens),dtype=th.float32)
+    compare_mat_formula = th.zeros((num_ens,num_ens),dtype=th.float32)
+    compare_mat_spec = th.zeros((num_ens,num_ens),dtype=th.float32)
+    num_spec = batch_idxs.max() + 1
 
     for i in range(num_ens):
         for j in range(num_ens):
@@ -183,7 +185,21 @@ def calculate_compare(masks, argtopks):
             # compare top-k node assignments for valid formulae
             mask_ij = mask_i & mask_j
             equal_ij = th.all(argtopk_i[mask_ij] == argtopk_j[mask_ij], dim=1)
-            compare_mat[i,j] = equal_ij.float().mean()
+            compare_spec_ij_num = scatter_reduce(
+                equal_ij.float(),
+                batch_idxs[mask_ij],
+                "sum",
+                dim_size=num_spec
+            )
+            compare_spec_ij_den = scatter_reduce(
+                mask_ij.float(),
+                batch_idxs,
+                "sum",
+                dim_size=num_spec
+            )
+            compare_spec_ij = compare_spec_ij_num / compare_spec_ij_den
+            compare_mat_spec[i,j] = compare_spec_ij.nanmean()
+            compare_mat_formula[i,j] = equal_ij.float().mean()
 
     # collect all formula masks, top-k nodes
     mask_all = th.stack(masks, dim=0).all(dim=0)
@@ -193,10 +209,22 @@ def calculate_compare(masks, argtopks):
     equal_all = equal_all.all(2).all(0)
     equal_all[~mask_all] = False
     # calculate the fraction of valid formulae where all models agree
-    compare_all = equal_all.float().sum() / mask_all.float().sum()
+    compare_all_formula = equal_all.float().sum() / mask_all.float().sum()
+    compare_all_spec_num = scatter_reduce(
+        equal_all.float(),
+        batch_idxs,
+        "sum",
+        dim_size=num_spec
+    )
+    compare_all_spec_den = scatter_reduce(
+        mask_all.float(),
+        batch_idxs,
+        "sum",
+        dim_size=num_spec
+    )
+    compare_all_spec = (compare_all_spec_num / compare_all_spec_den).nanmean()
 
-    return compare_mat, compare_all, equal_all
-
+    return compare_mat_formula, compare_mat_spec, compare_all_formula, compare_all_spec, equal_all
 
 
 if __name__ == "__main__":
@@ -207,8 +235,8 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, default=1)
     parser.add_argument("--nb", type=booltype, default=True)
     parser.add_argument("--ens_conds", type=booltype, default=True)
-    parser.add_argument("--output_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_feb26/")
-    parser.add_argument("--ens_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_ens_feb26/")
+    parser.add_argument("--output_dp", type=str, default="inference_outputs/entropyv3-1_feb26/")
+    parser.add_argument("--ens_dp", type=str, default="inference_outputs/entropyv3-1_ens_feb26/")
     parser.add_argument("--ens_types", type=str, nargs="+", default=["baseline", "low", "high", "mix"])
     parser.add_argument("--stats_dp", type=str, default="figs/ensemble/v3-1_feb26")
     args = parser.parse_args()
@@ -297,29 +325,39 @@ if __name__ == "__main__":
 
     print(f">> compare ensembles")
     print(f"> compare_mat")
-    compare_mat, compare_all, equal_all = calculate_compare(
+    compare_mat_formula, compare_mat_spec, compare_all_formula, compare_all_spec, equal_all = calculate_compare(
         [baseline_mask, low_mask, high_mask, mix_mask],
-        [baseline_argtopk, low_argtopk, high_argtopk, mix_argtopk]
+        [baseline_argtopk, low_argtopk, high_argtopk, mix_argtopk],
+        baseline_ens_vals["ens_formula_batch_idxs"]
     )
-    print(compare_mat)
+    print(compare_mat_formula)
+    print(compare_mat_spec)
     print(f"> compare_all")
-    print(compare_all.item())
+    print(compare_all_formula.item())
+    print(compare_all_spec.item())
     # update stats_d
-    stats_d[f"compare_mat"] = compare_mat
-    stats_d[f"compare_all"] = compare_all
+    stats_d["compare_mat_formula"] = compare_mat_formula
+    stats_d["compare_mat_spec"] = compare_mat_spec
+    stats_d["compare_all_formula"] = compare_all_formula
+    stats_d["compare_all_spec"] = compare_all_spec
 
     print(f">> compare ensembles (k > {k})")
     print(f"> compare_mat_{k}")
-    compare_mat_k, compare_all_k, equal_all_k = calculate_compare(
+    compare_mat_formula_k, compare_mat_spec_k, compare_all_formula_k, compare_all_spec_k, equal_all_k = calculate_compare(
         [baseline_k_mask, low_k_mask, high_k_mask, mix_k_mask],
-        [baseline_argtopk, low_argtopk, high_argtopk, mix_argtopk]
+        [baseline_argtopk, low_argtopk, high_argtopk, mix_argtopk],
+        baseline_ens_vals["ens_formula_batch_idxs"]
     )
-    print(compare_mat_k)
+    print(compare_mat_formula_k)
+    print(compare_mat_spec_k)
     print(f"> compare_all_{k}")
-    print(compare_all_k.item())
+    print(compare_all_formula_k.item())
+    print(compare_all_spec_k.item())
     # update stats_d
-    stats_d[f"compare_mat_{k}"] = compare_mat_k
-    stats_d[f"compare_all_{k}"] = compare_all_k
+    stats_d[f"compare_mat_formula_{k}"] = compare_mat_formula_k
+    stats_d[f"compare_mat_spec_{k}"] = compare_mat_spec_k
+    stats_d[f"compare_all_formula_{k}"] = compare_all_formula_k
+    stats_d[f"compare_all_spec_{k}"] = compare_all_spec_k
 
     print(">> mix ensemble cos_hun")
     mix_ens_cos_hun = 1. - sparse_cosine_distance_hungarian(
