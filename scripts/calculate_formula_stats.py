@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
     # load ann_df
     # get formulae from products
-    proc_dp = "/h/adamo/frag-gnn/data/proc/nist20mona23v3"
+    proc_dp = "./data/proc/nist20mona23v3"
     spec_df = pd.read_pickle(f"{proc_dp}/spec_df.pkl")
     mol_df = pd.read_pickle(f"{proc_dp}/mol_df.pkl")
     ann_df = pd.read_pickle(f"{proc_dp}/ann_df.pkl")

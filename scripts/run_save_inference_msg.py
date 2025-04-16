@@ -22,7 +22,7 @@ if __name__ == "__main__":
 	parser.add_argument("--split_types", type=str, nargs="+", default=["benchmark"])
 	parser.add_argument("--wandb_model_types", type=str, nargs="+", default=["fragnnet_msg"])
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
-	parser.add_argument("--vals_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/msg")
+	parser.add_argument("--vals_dp", type=str, default="./inference_outputs/msg")
 	parser.add_argument("--force_overwrite", type=booltype, default=False)
 	parser.add_argument("--auxiliary_scores", type=str, nargs="+", default=["cos_hun","cos_sim","jss","jss_hun"])
 	parser.add_argument("--eval_mz_bin_res", type=float, nargs="+", default=[0.1,0.01])

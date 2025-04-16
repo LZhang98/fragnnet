@@ -62,13 +62,13 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--local_path", 
 		type=str, 
-		default="/scratch/hdd001/home/adamo/frag-gnn/local_runs"
+		default="./local_runs"
 	)
 	parser.add_argument(
 		"--vals_dp", 
 		type=str, 
 		required=True
-		# default="/h/adamo/frag-gnn/inference_outputs"
+		# default="./inference_outputs"
 	)
 	parser.add_argument(
 		"--force_overwrite", 

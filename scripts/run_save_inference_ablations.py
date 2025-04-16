@@ -30,7 +30,7 @@ if __name__ == "__main__":
 		"--vals_dp", 
 		type=str, 
 		required=True
-		# default="/h/adamo/frag-gnn/inference_outputs"
+		# default="./inference_outputs"
 	)
 	parser.add_argument(
 		"--force_overwrite", 
