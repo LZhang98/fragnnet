@@ -13,19 +13,6 @@ This method provides:
 
 ---
 
-## Installation
-
-### Environment Setup
-
-Use the provided script to set up the environment:
-```bash
-bash env/env_setup_gpu_current.sh
-```
-
-### Install FraGNNet Python Package
-```
-bash pip install -I .
-```
 
 ## Project Structure
 
@@ -59,6 +46,21 @@ frag_gnn/
 ├── src # fragnnet source code
 │   ├── frag_gnn
 ```
+## Installation
+
+### Environment Setup
+
+Use the provided script to set up the environment:
+```bash
+bash env/env_setup_gpu_current.sh
+```
+
+### Install FraGNNet Python Package
+```
+bash pip install -I .
+```
+
+## How-To
 
 ## Citation
 ````bibtex
