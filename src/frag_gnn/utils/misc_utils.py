@@ -547,6 +547,14 @@ def check_pyg_full_compile():
 	assert th_major_version >= 2, th_major_version
 	return pyg_major_version >= 2 and pyg_minor_version >= 5
 
+# wandb stuff
+def check_import_wandb():
+	try:
+		import wandb
+	except ImportError:
+		print("wandb is not installed. Please install it using 'pip install wandb' if needed.")
+	return False
+
 def get_best_ckpt_from_wandb(saved_dp, run_id, 
 						entity='frag-gnn', 
 						project='frag-gnn',

@@ -15,13 +15,9 @@ except ModuleNotFoundError:
 	from pytorch_lightning import seed_everything
 
 import logging
-import argparse
 import yaml
 import os
-import numpy as np
-import sys
-from pprint import pprint
-import wandb
+
 import glob
 import shutil
 import tempfile
@@ -202,6 +198,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	loggers.append(console_logger)
 
 	if wandb_mode != "disabled":
+		import wandb
 		wandb_d = dict(
 			project=config_d["wandb_project"],
 			name=config_d["wandb_name"],
@@ -527,7 +524,8 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			for ckpt_fp in ckpt_fps:
 				os.remove(ckpt_fp)
 
-	wandb.finish()
+	if wandb_mode != "disabled":
+		wandb.finish()
 
 	if not trainer.interrupted:
 		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))

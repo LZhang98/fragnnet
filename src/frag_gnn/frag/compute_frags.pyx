@@ -2,31 +2,30 @@
 # cython: linetrace=False
 # cython: language_level=3
 # cython: boundscheck=False
-# cython: wraparound=False, 
+# cython: wraparound=False
 # cython: nonecheck=False
 # cython: cdivision=True
 
 import numpy as np
+cimport numpy as cnp
 from cysignals.signals cimport sig_check
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
-
-MAX_NUM_NODES = 60 # hard cap on 64!!
-MAX_NUM_EDGES = 4*60 # ~4*MAX_NUM_NODES 
-#DTYPE = np.intc
+MAX_NUM_NODES = 128  # hard cap on 64!!
+MAX_NUM_EDGES = 4 * MAX_NUM_NODES  # ~4*MAX_NUM_NODES
 MASK_DTYPE = np.uint8
-MAX_EDGE_PER_NODE = 6 # Sulfur
+MAX_EDGE_PER_NODE = 6  # Sulfur
 
 class TimeoutError(RuntimeError):
 	pass
 
-cdef void np_fill(int [::1] array, int val):
-	cdef int num_elems = array.shape[0]
+cdef void np_fill(int [::1] array, int val) nogil:
+	cdef Py_ssize_t i, num_elems = array.shape[0]
 	for i in range(num_elems):
 		array[i] = val
 
-cdef int np_sum(char [::1] array):
-	cdef int num_elems = array.shape[0]
+cdef int np_sum(char [::1] array) nogil:
+	cdef Py_ssize_t i, num_elems = array.shape[0]
 	cdef int total = 0
 	for i in range(num_elems):
 		total += array[i]
@@ -53,15 +52,14 @@ cdef long get_time():
 def mask_to_binary_hash(char [::1] mask):
 	return np.asarray(mask).tobytes()
 
-
 cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
-
-	cdef int [:,::1] node_to_edge_idx = -np.ones((num_nodes,MAX_EDGE_PER_NODE),dtype=np.intc)
+	# use np fill instead of np.ones to speed up
+	cdef int [:,::1] node_to_edge_idx = np.full((num_nodes, MAX_EDGE_PER_NODE), -1, dtype=np.intc)
 	cdef int src_node, dst_node, j, k
 	for j in range(num_edges):
 		src_node = edges[j,0]
 		dst_node = edges[j,1]
-		assert src_node < num_nodes and dst_node < num_nodes
+		#assert src_node < num_nodes and dst_node < num_nodes
 		for k in range(MAX_EDGE_PER_NODE):
 			if node_to_edge_idx[src_node,k] == -1:
 				node_to_edge_idx[src_node,k] = j
@@ -85,21 +83,20 @@ cdef connected_components(
 	):
 	# print('>connected_components')
 	# return the number of connected components
-	cdef int num_visited = 0
-	cdef int num_nonmask = np_sum(node_mask)
-	cdef int cur_node
-	cdef int num_ccs = 0
-	cdef int start_queue = 0
-	cdef int end_queue = 0
-	cdef int cur_edge
-	cdef int i
-	cdef int j
-	cdef int neighbour
+	cdef Py_ssize_t num_visited = 0
+	cdef Py_ssize_t num_nonmask = np_sum(node_mask)
+	cdef Py_ssize_t cur_node
+	cdef Py_ssize_t num_ccs = 0
+	cdef Py_ssize_t start_queue = 0
+	cdef Py_ssize_t end_queue = 0
+	cdef Py_ssize_t cur_edge
+	cdef Py_ssize_t i
+	cdef Py_ssize_t j
+	cdef Py_ssize_t neighbour
 
 	cdef int [::1] node_visited = np.zeros(num_nodes,dtype=np.intc)
 	cdef int [::1] node_enqueued = np.zeros(num_nodes,dtype=np.intc)
-	cdef int [::1] node_queue = np.zeros(num_nodes,dtype=np.intc)
-	np_fill(node_queue,-1)
+	cdef int [::1] node_queue = np.full(num_nodes, -1, dtype=np.intc)
 
 	cdef char [:,::1] cc_nodes = np.zeros((2,num_nodes),dtype= MASK_DTYPE)
 	cdef char [:,::1] cc_edges = np.zeros((2,num_edges),dtype= MASK_DTYPE)
@@ -133,12 +130,12 @@ cdef connected_components(
 				if edges[cur_edge,0] == cur_node:
 					neighbour = edges[cur_edge,1]
 				else:
-					assert edges[cur_edge,1] == cur_node
+					#assert edges[cur_edge,1] == cur_node
 					neighbour = edges[cur_edge,0]
 
 				# if we have not see node before
 				if node_enqueued[neighbour] == 0:
-					assert node_visited[neighbour] == 0
+					#assert node_visited[neighbour] == 0
 					node_queue[end_queue] = neighbour
 					end_queue = (end_queue + 1) % num_nodes
 					node_enqueued[neighbour] = 1
@@ -154,7 +151,7 @@ cdef connected_components(
 					node_queue[end_queue] = i
 					end_queue = (end_queue + 1) % num_nodes
 					#print(f"new end node {end_queue}")
-					assert node_enqueued[i] == 0
+					#assert node_enqueued[i] == 0
 					node_enqueued[i] = 1
 					num_ccs += 1
 					break
@@ -243,7 +240,8 @@ def compute_ccs(
 			current_node_mask = cc_node_mask_dict[curent_node_mask_key]
 			current_edge_mask = cc_edge_mask_dict[current_edge_mask_key]
 
-			# let us check mask
+			# let us check mask, there is more than one way to get each node
+			# thus, we need to check if we have seen this node mask and edge mask before
 			node_full_mask_str = curent_node_mask_key + b'|' +  current_edge_mask_key
 
 			# check if we have seen has configure before
@@ -361,3 +359,82 @@ def compute_ccs(
 	# both edges_min_depth and node_min_depth should be ordered
 
 	return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+def compute_cc_h_floor(
+		cnp.ndarray[cnp.int32_t, ndim=1] cc_atom_ids,
+		cnp.ndarray[cnp.int32_t, ndim=1] ve_arr,
+		cnp.ndarray[cnp.int32_t, ndim=1] sbond_arr,
+		int num_radicals,
+		cnp.ndarray[cnp.int32_t, ndim=2] bonds,
+		dict atoms_to_bonds,
+		cnp.ndarray[cnp.uint8_t, ndim=1] bond_mask_arr):  # Fix: uint8_t for boolean array
+
+	"""Compute the minimum number of Hs a connected component (cc) can have."""
+
+	assert num_radicals == 0
+
+	# Compute the difference array (initial hydrogen deficit)P
+	cdef cnp.ndarray[cnp.int32_t, ndim=1] diff_arr = np.maximum(ve_arr - sbond_arr, 0)
+	cdef cnp.ndarray[cnp.int32_t, ndim=1] h_arr = diff_arr.copy()
+
+	# Define Cython integer variables
+	cdef Py_ssize_t atom, bond_idx, other
+	cdef list bond_idxs
+	cdef tuple bond
+
+	# Iterate over atoms in the connected component
+	for atom in cc_atom_ids:
+		bond_idxs = atoms_to_bonds[atom]  # List of bond indices for this atom
+
+		for bond_idx in bond_idxs:
+			if h_arr[atom] == 0:
+				break
+			if bond_mask_arr[bond_idx] == 0:  # Use explicit comparison for uint8_t
+				continue
+
+			#bond = bonds[bond_idx]
+			#other = bond[1] if bond[0] == atom else bond[0]
+			other = bonds[bond_idx, 1] if bonds[bond_idx, 0] == atom else bonds[bond_idx, 0]
+
+			# Ensure we don't form more than 3 bonds
+			h_arr[atom] = max(0, h_arr[atom] - min(diff_arr[other], 2))
+
+	# Compute the lower bound of hydrogen count
+	cdef int cc_floor = max(h_arr[cc_atom_ids].sum() - num_radicals, 0)
+
+	return cc_floor
+
+def update_bonds(
+		cnp.ndarray[cnp.int32_t, ndim=1] cc_atom_ids,
+		cnp.ndarray[cnp.int32_t, ndim=1] sbond_arr,
+		cnp.ndarray[cnp.uint8_t, ndim=1] bond_mask_arr,  # Using uint8_t for boolean
+		cnp.ndarray[cnp.int32_t, ndim=2] bonds,
+		dict atoms_to_bonds):
+
+	"""Updates single bond counts and bond masks for a given connected component."""
+
+	# Create new arrays with the same shape as sbond_arr and bond_mask_arr
+	cdef cnp.ndarray[cnp.int32_t, ndim=1] new_sbond_arr = np.zeros_like(sbond_arr, dtype=np.int32)
+	cdef cnp.ndarray[cnp.uint8_t, ndim=1] new_bond_mask_arr = np.zeros_like(bond_mask_arr, dtype=np.uint8)
+
+	# Define Cython integer variables
+	cdef Py_ssize_t  atom, other, bond_idx, i, j
+	cdef list bond_idxs
+
+	# Iterate through each atom in the connected component
+	for i in range(cc_atom_ids.shape[0]):
+		atom = cc_atom_ids[i]
+		bond_idxs = atoms_to_bonds[atom]  # Get bond indices for this atom
+
+		for j in range(len(bond_idxs)):
+			bond_idx = bond_idxs[j]
+
+			# Get bond endpoints
+			other = bonds[bond_idx, 1] if bonds[bond_idx, 0] == atom else bonds[bond_idx, 0]
+
+			# Check if both atoms are in the connected component
+			if other in cc_atom_ids:
+				new_sbond_arr[atom] += 1
+				new_bond_mask_arr[bond_idx] = 1  # Use 1 instead of True for uint8_t
+
+	return new_sbond_arr, new_bond_mask_arr

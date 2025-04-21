@@ -1,11 +1,9 @@
 from frag_gnn.runner import load_config, init_dataset, init_dataloader
 from frag_gnn.pl_model import FragGNNPL
-from frag_gnn.dataset import SpecMolFragDataset
-from frag_gnn.utils.misc_utils import scatter_reduce, scatter_argmax, EPS, booltype, scatter_masked_softmax, scatter_logsumexp
-from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference, select_model_vals, sparse_kl, log_mean, log_std
+from frag_gnn.utils.misc_utils import booltype, scatter_logsumexp
+from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference, select_model_vals, log_mean
 from frag_gnn.loss import sparse_conditional_entropy_fn
 
-import numpy as np
 import torch as th
 import pandas as pd
 import argparse	

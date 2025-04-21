@@ -1,12 +1,10 @@
 import numpy as np
 import argparse
 import torch_geometric as pyg
-import pstats, cProfile
 from pprint import pprint
 
 import frag_gnn.utils.frag_utils as frag_utils
 from frag_gnn.utils.misc_utils import timeit, booltype, get_pyg_memory_usage
-from frag_gnn.utils.feat_utils import get_frag_graph
 
 def run_frag(smiles, **kwargs):
 	
@@ -61,9 +59,9 @@ def run_frag(smiles, **kwargs):
 		"base_formula"
 	]
 	bigraph = False
-	dag_f_pyg = get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges=edges, bigraph=bigraph)
-	nb_iso_idx = frag_utils.get_node_feats(dag_f_pyg.x, dag_f_pyg.node_feat_idxs[0],"nb_iso_idx")
-	import pdb; pdb.set_trace()
+	#dag_f_pyg = get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges=edges, bigraph=bigraph)
+	#nb_iso_idx = frag_utils.get_node_feats(dag_f_pyg.x, dag_f_pyg.node_feat_idxs[0],"nb_iso_idx")
+	#import pdb; pdb.set_trace()
 
 	return dag_d
 
@@ -112,9 +110,10 @@ if __name__ == "__main__":
 		b_isomorphic=args.b_isomorphic,
 		max_iterations=args.max_iterations
 	)
+
 	dag_d = run_frag(smiles, **frag_kw_d)
 	# import pdb; pdb.set_trace()
-
-	# cProfile.runctx("run_frag(max_depth, h_prior, max_h_transfer, frag_max_time, smiles, isotopes)", globals(), locals(), "run_frag_exp.prof")
-	# s = pstats.Stats("run_frag_exp.prof")
+	#import pstats, cProfile
+	#cProfile.runctx("run_frag(smiles, **frag_kw_d)", globals(), locals(), "run_frag_exp.prof")
+	#s = pstats.Stats("run_frag_exp.prof")
 	# s.strip_dirs().sort_stats("time").print_stats()

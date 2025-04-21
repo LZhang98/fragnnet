@@ -1,18 +1,16 @@
 import torch as th
 import numpy as np
 from tqdm import tqdm
-import wandb
 import tempfile
 import os
 
-from frag_gnn.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO
+from frag_gnn.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO, check_wandb
 from frag_gnn.pl_model import FragGNNPL
 from frag_gnn.iceberg.pl_model import IcebergIntenPL
 from frag_gnn.utils.nn_utils import decompile_jit_ckpt
 
-
 def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
-
+	import wandb
 	# load model
 	with tempfile.TemporaryDirectory(dir=os.getcwd()) as temp_dp:
 		api = wandb.Api()
