@@ -67,7 +67,7 @@ class BaseDataset(Dataset):
   
 		split_dfs = []
 		for split in splits:
-			assert split in ["train","val","test","secondary", "predict_only"], split
+			# assert split in ["train","val","test","secondary","predict_only"], split
 			if split == "predict_only":
 				assert len(splits) == 1, splits
 				# predict_all split, just include everything, this is used for prediction
@@ -78,6 +78,7 @@ class BaseDataset(Dataset):
 				split_df["group_id"] = spec_df["spec_id"]
 			else:	
 				split_fp = os.path.join(split_dp,f"{split}_ids.csv")
+				assert os.path.isfile(split_fp), split_fp
 				split_df = pd.read_csv(split_fp)
 			split_dfs.append(split_df)
 		split_df = pd.concat(split_dfs,ignore_index=True).reset_index(drop=True)
@@ -991,44 +992,3 @@ def get_group_sampler(ds: SpecMolFragDataset, sampler_type: str, avg_per_group: 
 		generator=generator)
 	return sampler
 
-def test_dataset():
-
-	from frag_gnn.runner import load_config
-	from frag_gnn.utils.misc_utils import print_shapes
-	from frag_gnn.utils.misc_utils import to_device
-
-	template_fp = "config/template.yml"
-	custom_fps = [
-		"config/debug/debug_d3_nb.yml",
-		# "config/debug/debug_d3_nb_nce.yml",
-		"config/debug/debug_d3_neims.yml"
-	]
-
-	for custom_fp in custom_fps:
-
-		print(custom_fp)
-
-		config_d = load_config(template_fp, custom_fp)
-		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
-
-		ds = SpecMolFragDataset(split="train", **config_d)
-		dl = th.utils.data.DataLoader(
-			ds,
-			batch_size=8,
-			shuffle=False,
-			num_workers=0,
-			collate_fn=ds.get_collate_fn(),
-		)
-		dl_iter = iter(dl)
-		batch = next(dl_iter)
-		print("> batch")
-		print_shapes(batch)
-		batch = to_device(batch,device)
-
-
-if __name__ == "__main__":
-
-	from frag_gnn.utils.misc_utils import th_temp_seed
-
-	with th_temp_seed(420):
-		test_dataset()

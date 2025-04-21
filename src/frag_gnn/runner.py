@@ -131,21 +131,23 @@ def init_dataloader(ds, config_d):
 
 	# note: this generator will get overwritten at the beginning/ending of each training epoch
 	generator = th.Generator() 
-	if config_d["group_sampler"] and split == "train":
-		sampler = GroupSampler(
-			ds,
-			sample_k=config_d['group_sampler_max_per_group'],
-			generator=generator)
-	elif config_d["simple_group_sampler"] and split == "train":
-		sampler = get_group_sampler(
-			ds,
-			config_d["simple_group_sampler_type"],
-			config_d["simple_group_sampler_avg_per_group"],
-			generator)
-	elif split in ["val", "test", "predict_only"]:
-		sampler = SequentialSampler(ds)
+	if split == "train":
+		if config_d["group_sampler"]:
+			sampler = GroupSampler(
+				ds,
+				sample_k=config_d['group_sampler_max_per_group'],
+				generator=generator)
+		elif config_d["simple_group_sampler"]:
+			sampler = get_group_sampler(
+				ds,
+				config_d["simple_group_sampler_type"],
+				config_d["simple_group_sampler_avg_per_group"],
+				generator)
+		else:
+			sampler = RandomSampler(ds, False, generator=generator)
 	else:
-		sampler = RandomSampler(ds, False, generator=generator)
+		# split in ["val", "test", "predict_only"]
+		sampler = SequentialSampler(ds)
   
 	# for batch sampler 
 	if config_d["dynamic_batch_sampler"]:
@@ -503,7 +505,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		logging.info("test model")
 		trainer.test(
 			model=model,
-			ckpt_path="best",
+			ckpt_path="best" if config_d["min_epochs"] > 0 else None,
 			dataloaders=test_dl
 		)
 

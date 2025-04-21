@@ -284,7 +284,9 @@ class NodeMLP(nn.Module):
 		"""
 		super().__init__()
 
-		assert edge_feats_size == 0, edge_feats_size
+		assert edge_feats_size >= 0, edge_feats_size
+		if edge_feats_size > 0:
+			print("> Warning: NodeMLP does not use edge features, but got edge_feats_size > 0")
 
 		self.layers = []
 		for i in range(num_layers):
