@@ -366,17 +366,6 @@ class BondStereo(FeatBase):
 @register_bond_feat
 class BondConj(FeatBase):
 
-	name = "b_ring"
-	feat_size = 2
-
-	@classmethod
-	def featurize(cls, x) -> int:
-		return one_hot_encoding(x.IsInRing(), [False, True], False)
-
-
-@register_bond_feat
-class BondConj(FeatBase):
-
 	name = "b_conj"
 	feat_size = 2
 
@@ -606,21 +595,3 @@ def random_walk_pe(g, k):
 	PE = np.stack(PE, axis=-1)
 	PE = th.as_tensor(PE,dtype=th.float32)
 	return PE
-
-if __name__ == "__main__":
-
-	from frag_gnn.utils.data_utils import mol_from_smiles
-
-	smiles = "CC(=O)OC1=CC=CC=C1C(=O)O" # aspirin
-	mol = mol_from_smiles(smiles)
-	mg = MolGraph()
-	g = mg.get_networkx_graph(mol)
-	pprint(dict(g.nodes(data=True)))
-	pprint(list(g.edges(data=True)))
-
-	edge_index = th.tensor([[0,1,1],[1,1,0]],dtype=th.long)
-	x = th.tensor([0,1],dtype=th.float)
-	g = pyg.data.Data(x=x,edge_index=edge_index)
-	print(g)
-	rw_g = random_walk_pe(g,2)
-	print(rw_g)

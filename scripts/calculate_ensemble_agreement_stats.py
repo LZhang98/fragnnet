@@ -16,46 +16,6 @@ import matplotlib.pyplot as plt
 from scipy.stats import linregress
 import json
 
-def scatter_with_fit(
-        tensor_x, 
-        tensor_y, 
-        title="Scatterplot with Line of Best Fit",
-        label_x="Tensor X",
-        label_y="Tensor Y"
-    ):
-    """
-    Creates a scatterplot for two PyTorch tensors, adds a line of best fit, and displays the Pearson correlation coefficient.
-
-    Args:
-        tensor_x (torch.Tensor): The first tensor (x-axis values).
-        tensor_y (torch.Tensor): The second tensor (y-axis values).
-        title (str): Title of the plot.
-
-    Returns:
-        None: Displays the plot.
-    """
-    # Ensure tensors are flattened and converted to NumPy arrays for plotting
-    x = tensor_x.flatten().numpy()
-    y = tensor_y.flatten().numpy()
-
-    # Calculate Pearson correlation coefficient and line of best fit
-    slope, intercept, r_value, _, _ = linregress(x, y)
-    line = slope * x + intercept
-
-    # Create the scatterplot
-    plt.figure(figsize=(8, 6))
-    plt.scatter(x, y, label="Data Points", alpha=0.7)
-    plt.plot(x, line, color="red", label=f"Best Fit Line (r = {r_value:.2f})")
-    
-    # Add labels, title, and legend
-    plt.xlabel(label_x)
-    plt.ylabel(label_y)
-    plt.title(title)
-    plt.legend()
-    plt.grid(True)
-    
-    # Show the plot
-    plt.show()
 
 def ensemble_vals(vals, nb=True, spec=False, ens_conds=False):
 
@@ -207,10 +167,12 @@ def get_topk_formula_node_idxs(ens_vals, k, nb=True, filter_thresh=0.01):
 
     return ens_formula_mask, ens_counts, ens_nb_formula_node_argtopk
 
-def calculate_compare(masks, argtopks):
+def calculate_compare(masks, argtopks, batch_idxs):
 
     num_ens = len(masks)
-    compare_mat = th.zeros((num_ens,num_ens),dtype=th.float32)
+    compare_mat_formula = th.zeros((num_ens,num_ens),dtype=th.float32)
+    compare_mat_spec = th.zeros((num_ens,num_ens),dtype=th.float32)
+    num_spec = batch_idxs.max() + 1
 
     for i in range(num_ens):
         for j in range(num_ens):
@@ -223,7 +185,21 @@ def calculate_compare(masks, argtopks):
             # compare top-k node assignments for valid formulae
             mask_ij = mask_i & mask_j
             equal_ij = th.all(argtopk_i[mask_ij] == argtopk_j[mask_ij], dim=1)
-            compare_mat[i,j] = equal_ij.float().mean()
+            compare_spec_ij_num = scatter_reduce(
+                equal_ij.float(),
+                batch_idxs[mask_ij],
+                "sum",
+                dim_size=num_spec
+            )
+            compare_spec_ij_den = scatter_reduce(
+                mask_ij.float(),
+                batch_idxs,
+                "sum",
+                dim_size=num_spec
+            )
+            compare_spec_ij = compare_spec_ij_num / compare_spec_ij_den
+            compare_mat_spec[i,j] = compare_spec_ij.nanmean()
+            compare_mat_formula[i,j] = equal_ij.float().mean()
 
     # collect all formula masks, top-k nodes
     mask_all = th.stack(masks, dim=0).all(dim=0)
@@ -233,10 +209,22 @@ def calculate_compare(masks, argtopks):
     equal_all = equal_all.all(2).all(0)
     equal_all[~mask_all] = False
     # calculate the fraction of valid formulae where all models agree
-    compare_all = equal_all.float().sum() / mask_all.float().sum()
+    compare_all_formula = equal_all.float().sum() / mask_all.float().sum()
+    compare_all_spec_num = scatter_reduce(
+        equal_all.float(),
+        batch_idxs,
+        "sum",
+        dim_size=num_spec
+    )
+    compare_all_spec_den = scatter_reduce(
+        mask_all.float(),
+        batch_idxs,
+        "sum",
+        dim_size=num_spec
+    )
+    compare_all_spec = (compare_all_spec_num / compare_all_spec_den).nanmean()
 
-    return compare_mat, compare_all, equal_all
-
+    return compare_mat_formula, compare_mat_spec, compare_all_formula, compare_all_spec, equal_all
 
 
 if __name__ == "__main__":
@@ -247,8 +235,8 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, default=1)
     parser.add_argument("--nb", type=booltype, default=True)
     parser.add_argument("--ens_conds", type=booltype, default=True)
-    parser.add_argument("--output_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_feb26/")
-    parser.add_argument("--ens_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_ens_feb26/")
+    parser.add_argument("--output_dp", type=str, default="inference_outputs/entropyv3-1_feb26/")
+    parser.add_argument("--ens_dp", type=str, default="inference_outputs/entropyv3-1_ens_feb26/")
     parser.add_argument("--ens_types", type=str, nargs="+", default=["baseline", "low", "high", "mix"])
     parser.add_argument("--stats_dp", type=str, default="figs/ensemble/v3-1_feb26")
     args = parser.parse_args()
@@ -260,6 +248,8 @@ if __name__ == "__main__":
     output_dp = args.output_dp
     ens_dp = args.ens_dp
     ens_types = args.ens_types
+    nb_flag = "_nb" if nb else ""
+    conds_flag = "_c" if ens_conds else ""
 
     ens_vals_d = {}
     ens_type_to_key = {
@@ -276,7 +266,7 @@ if __name__ == "__main__":
         ens_type_key = ens_type_to_key[ens_type]
         entropy_fp = os.path.join(output_dp, f"scaffold_{depth}_{ens_type_key}_test_False/vals.pkl")
         ens_type_dp = os.path.join(ens_dp, f"scaffold_{depth}_{ens_type}_test_False")
-        ens_type_fp = os.path.join(ens_type_dp, "nbc_ens_vals.pkl")
+        ens_type_fp = os.path.join(ens_type_dp, "ens_vals" + nb_flag + conds_flag + ".pkl")
 
         if os.path.isfile(ens_type_fp):
 
@@ -295,72 +285,95 @@ if __name__ == "__main__":
 
         ens_vals_d[ens_type] = ens_vals
 
-    baseline_nbc_ens_vals = ens_vals_d["baseline"]
-    low_nbc_ens_vals = ens_vals_d["low"]
-    high_nbc_ens_vals = ens_vals_d["high"]
-    mix_nbc_ens_vals = ens_vals_d["mix"]
+    baseline_ens_vals = ens_vals_d["baseline"]
+    low_ens_vals = ens_vals_d["low"]
+    high_ens_vals = ens_vals_d["high"]
+    mix_ens_vals = ens_vals_d["mix"]
 
     print(">> baseline")
-    baseline_nbc_mask, baseline_nbc_counts, baseline_nbc_argtopk = get_topk_formula_node_idxs(baseline_nbc_ens_vals, k, nb=True)
-    print(th.unique(baseline_nbc_counts[baseline_nbc_mask], return_counts=True)[1][:10])
-    print((baseline_nbc_counts[baseline_nbc_mask] < k).float().mean().item())
-    print((baseline_nbc_argtopk[baseline_nbc_mask] == -1).any(dim=1).float().mean().item())
+    baseline_mask, baseline_counts, baseline_argtopk = get_topk_formula_node_idxs(baseline_ens_vals, k, nb=nb)
+    print(th.unique(baseline_counts[baseline_mask], return_counts=True)[1][:10])
+    print((baseline_counts[baseline_mask] < k).float().mean().item())
+    print((baseline_argtopk[baseline_mask] == -1).any(dim=1).float().mean().item())
 
     print(">> low")
-    low_nbc_mask, low_nbc_counts, low_nbc_argtopk = get_topk_formula_node_idxs(low_nbc_ens_vals, k, nb=True)
-    print(th.unique(low_nbc_counts[low_nbc_mask], return_counts=True)[1][:10])
-    print((low_nbc_counts[low_nbc_mask] < k).float().mean().item())
-    print((low_nbc_argtopk[low_nbc_mask] == -1).any(dim=1).float().mean().item())
+    low_mask, low_counts, low_argtopk = get_topk_formula_node_idxs(low_ens_vals, k, nb=nb)
+    print(th.unique(low_counts[low_mask], return_counts=True)[1][:10])
+    print((low_counts[low_mask] < k).float().mean().item())
+    print((low_argtopk[low_mask] == -1).any(dim=1).float().mean().item())
 
     print(">> high")
-    high_nbc_mask, high_nbc_counts, high_nbc_argtopk = get_topk_formula_node_idxs(high_nbc_ens_vals, k, nb=True)
-    print(th.unique(high_nbc_counts[high_nbc_mask], return_counts=True)[1][:10])
-    print((high_nbc_counts[high_nbc_mask] < k).float().mean().item())
-    print((high_nbc_argtopk[high_nbc_mask] == -1).any(dim=1).float().mean().item())
+    high_mask, high_counts, high_argtopk = get_topk_formula_node_idxs(high_ens_vals, k, nb=nb)
+    print(th.unique(high_counts[high_mask], return_counts=True)[1][:10])
+    print((high_counts[high_mask] < k).float().mean().item())
+    print((high_argtopk[high_mask] == -1).any(dim=1).float().mean().item())
 
     print(">> mix")
-    mix_nbc_mask, mix_nbc_counts, mix_nbc_argtopk = get_topk_formula_node_idxs(mix_nbc_ens_vals, k, nb=True)
-    print(th.unique(mix_nbc_counts[mix_nbc_mask], return_counts=True)[1][:10])
-    print((mix_nbc_counts[mix_nbc_mask] < k).float().mean().item())
-    print((mix_nbc_argtopk[mix_nbc_mask] == -1).any(dim=1).float().mean().item())
+    mix_mask, mix_counts, mix_argtopk = get_topk_formula_node_idxs(mix_ens_vals, k, nb=nb)
+    print(th.unique(mix_counts[mix_mask], return_counts=True)[1][:10])
+    print((mix_counts[mix_mask] < k).float().mean().item())
+    print((mix_argtopk[mix_mask] == -1).any(dim=1).float().mean().item())
 
-    baseline_nbc_c_mask = baseline_nbc_mask & (baseline_nbc_counts > k)
-    low_nbc_c_mask = low_nbc_mask & (low_nbc_counts > k)
-    high_nbc_c_mask = high_nbc_mask & (high_nbc_counts > k)
-    mix_nbc_c_mask = mix_nbc_mask & (mix_nbc_counts > k)
-    print(baseline_nbc_mask.float().mean(), baseline_nbc_c_mask.float().mean().item())
-    print(low_nbc_mask.float().mean(), low_nbc_c_mask.float().mean().item())
-    print(high_nbc_mask.float().mean(), high_nbc_c_mask.float().mean().item())
-    print(mix_nbc_mask.float().mean(), mix_nbc_c_mask.float().mean().item())    
+    baseline_k_mask = baseline_mask & (baseline_counts > k)
+    low_k_mask = low_mask & (low_counts > k)
+    high_k_mask = high_mask & (high_counts > k)
+    mix_k_mask = mix_mask & (mix_counts > k)
+    print(baseline_mask.float().mean(), baseline_k_mask.float().mean().item())
+    print(low_mask.float().mean(), low_k_mask.float().mean().item())
+    print(high_mask.float().mean(), high_k_mask.float().mean().item())
+    print(mix_mask.float().mean(), mix_k_mask.float().mean().item())    
 
-    print(">> compare ensembles (excluding singletons)")
-    print("> compare_mat")
-    compare_mat, compare_all, equal_all = calculate_compare(
-        [baseline_nbc_c_mask, low_nbc_c_mask, high_nbc_c_mask, mix_nbc_c_mask],
-        [baseline_nbc_argtopk, low_nbc_argtopk, high_nbc_argtopk, mix_nbc_argtopk]
+    print(f">> compare ensembles")
+    print(f"> compare_mat")
+    compare_mat_formula, compare_mat_spec, compare_all_formula, compare_all_spec, equal_all = calculate_compare(
+        [baseline_mask, low_mask, high_mask, mix_mask],
+        [baseline_argtopk, low_argtopk, high_argtopk, mix_argtopk],
+        baseline_ens_vals["ens_formula_batch_idxs"]
     )
-    print(compare_mat)
-    print("> compare_all")
-    print(compare_all.item())
+    print(compare_mat_formula)
+    print(compare_mat_spec)
+    print(f"> compare_all")
+    print(compare_all_formula.item())
+    print(compare_all_spec.item())
     # update stats_d
-    stats_d["compare_mat"] = compare_mat
-    stats_d["compare_all"] = compare_all
+    stats_d["compare_mat_formula"] = compare_mat_formula
+    stats_d["compare_mat_spec"] = compare_mat_spec
+    stats_d["compare_all_formula"] = compare_all_formula
+    stats_d["compare_all_spec"] = compare_all_spec
+
+    print(f">> compare ensembles (k > {k})")
+    print(f"> compare_mat_{k}")
+    compare_mat_formula_k, compare_mat_spec_k, compare_all_formula_k, compare_all_spec_k, equal_all_k = calculate_compare(
+        [baseline_k_mask, low_k_mask, high_k_mask, mix_k_mask],
+        [baseline_argtopk, low_argtopk, high_argtopk, mix_argtopk],
+        baseline_ens_vals["ens_formula_batch_idxs"]
+    )
+    print(compare_mat_formula_k)
+    print(compare_mat_spec_k)
+    print(f"> compare_all_{k}")
+    print(compare_all_formula_k.item())
+    print(compare_all_spec_k.item())
+    # update stats_d
+    stats_d[f"compare_mat_formula_{k}"] = compare_mat_formula_k
+    stats_d[f"compare_mat_spec_{k}"] = compare_mat_spec_k
+    stats_d[f"compare_all_formula_{k}"] = compare_all_formula_k
+    stats_d[f"compare_all_spec_{k}"] = compare_all_spec_k
 
     print(">> mix ensemble cos_hun")
-    mix_nbc_ens_cos_hun = 1. - sparse_cosine_distance_hungarian(
-        mix_nbc_ens_vals["ens_true_mzs"],
-        mix_nbc_ens_vals["ens_true_logprobs"],
-        mix_nbc_ens_vals["ens_true_batch_idxs"],
-        mix_nbc_ens_vals["ens_pred_mzs"],
-        mix_nbc_ens_vals["ens_pred_logprobs"],
-        mix_nbc_ens_vals["ens_pred_batch_idxs"],
+    mix_ens_cos_hun = 1. - sparse_cosine_distance_hungarian(
+        mix_ens_vals["ens_true_mzs"],
+        mix_ens_vals["ens_true_logprobs"],
+        mix_ens_vals["ens_true_batch_idxs"],
+        mix_ens_vals["ens_pred_mzs"],
+        mix_ens_vals["ens_pred_logprobs"],
+        mix_ens_vals["ens_pred_batch_idxs"],
     )
-    print(mix_nbc_ens_cos_hun.mean().item())
+    print(mix_ens_cos_hun.mean().item())
 
     print(">> mix ensemble oos")
-    ens_pred_oos_prob = mix_nbc_ens_vals["ens_pred_oos_prob"]
-    ens_true_oos_prob = mix_nbc_ens_vals["ens_true_oos_prob"]
-    ens_cos_hun = mix_nbc_ens_cos_hun.clone()
+    ens_pred_oos_prob = mix_ens_vals["ens_pred_oos_prob"]
+    ens_true_oos_prob = mix_ens_vals["ens_true_oos_prob"]
+    ens_cos_hun = mix_ens_cos_hun.clone()
     corr_pred_oos_prob_true_oos_prob = pearson_r(ens_pred_oos_prob, ens_true_oos_prob).item()
     corr_pred_oos_prob_cos_hun = pearson_r(ens_pred_oos_prob, ens_cos_hun).item()
     corr_true_oos_prob_cos_hun = pearson_r(ens_true_oos_prob, ens_cos_hun).item()
@@ -382,9 +395,9 @@ if __name__ == "__main__":
 
     print(">> unequal max")
 
-    ens_formula_batch_idxs = mix_nbc_ens_vals["ens_formula_batch_idxs"].clone()
-    ens_formula_logprobs = mix_nbc_ens_vals["ens_formula_logprobs"].clone()
-    ens_cos_hun = mix_nbc_ens_cos_hun.clone()
+    ens_formula_batch_idxs = mix_ens_vals["ens_formula_batch_idxs"].clone()
+    ens_formula_logprobs = mix_ens_vals["ens_formula_logprobs"].clone()
+    ens_cos_hun = mix_ens_cos_hun.clone()
     ens_formula_logprobs[equal_all] = LOG_ZERO(th.float32)
 
     unequal_max_logprobs = scatter_reduce(
@@ -412,9 +425,9 @@ if __name__ == "__main__":
 
     print(">> unequal mean")
 
-    ens_formula_batch_idxs = mix_nbc_ens_vals["ens_formula_batch_idxs"].clone()
-    ens_formula_logprobs = mix_nbc_ens_vals["ens_formula_logprobs"].clone()
-    ens_cos_hun = mix_nbc_ens_cos_hun.clone()
+    ens_formula_batch_idxs = mix_ens_vals["ens_formula_batch_idxs"].clone()
+    ens_formula_logprobs = mix_ens_vals["ens_formula_logprobs"].clone()
+    ens_cos_hun = mix_ens_cos_hun.clone()
     ens_formula_logprobs[equal_all] = LOG_ZERO(th.float32)
 
     unequal_mean_logprobs = scatter_logsumexp(
@@ -446,6 +459,6 @@ if __name__ == "__main__":
         )
 
     os.makedirs(args.stats_dp, exist_ok=True)
-    stats_fp = os.path.join(args.stats_dp, f"ensemble_agreement_stats.pkl")
+    stats_fp = os.path.join(args.stats_dp, f"ensemble_agreement_stats" + nb_flag + conds_flag + ".pkl")
     th.save(stats_d, stats_fp)
     print(f">> saved stats to {stats_fp}")

@@ -38,9 +38,10 @@ parser.add_argument(
     required=True
 )
 parser.add_argument(
-    "--num_seeds",
+    "--seeds",
     type=int,
-    default=5
+    nargs="+",
+    default=[0,1,2,3,4]
 )
 parser.add_argument(
     "--thresholds",
@@ -101,7 +102,7 @@ if __name__ == "__main__":
     split_types = args.split_types
     model_types = args.model_types
     vals_dp = args.vals_dp
-    num_seeds = args.num_seeds
+    seeds = args.seeds
     thresholdses = args.thresholds
     num_samples = args.num_samples
 
@@ -120,7 +121,7 @@ if __name__ == "__main__":
             graff_model = "graff" in model_type
 
             # load vals for s0
-            formula_vals_fp = os.path.join(vals_dp,split_type,model_type,"s0","test.pkl")
+            formula_vals_fp = os.path.join(vals_dp,split_type,model_type,f"s{seeds[0]}","test.pkl")
             formula_vals = th.load(formula_vals_fp)
 
             # get molecule ids
@@ -130,11 +131,11 @@ if __name__ == "__main__":
             group_mol_df = id_df[["group_id","mol_id"]].drop_duplicates()
             mol_ids = group_mol_df.set_index("group_id").loc[group_ids,"mol_id"].values
 
-            for n in range(num_seeds):
+            for n in seeds:
 
                 print(f">>> Seed = {n}")
 
-                if n > 0:
+                if n != seeds[0]:
                 
                     formula_vals_fp = os.path.join(vals_dp,split_type,model_type,f"s{n}","test.pkl")
                     formula_vals = th.load(formula_vals_fp)
@@ -242,11 +243,11 @@ if __name__ == "__main__":
 
                     # match formulae within 10 ppm
                     i_ann_mz_match_mask = calculate_match_mzs(
-                        i_ann_mzs, 
-                        i_true_mzs,
+                        true_mzs=i_true_mzs,
+                        pred_mzs=i_ann_mzs, 
                         tolerance=1e-5, # 10 ppm
                         relative=True
-                    ) # A x T
+                    ).T # A x T
                     i_ann_mz_match_any = i_ann_mz_match_mask.any(dim=0) # T
 
                     i_ann_formula_logprobs = (i_true_logprobs.unsqueeze(0) - th.log(th.sum(i_ann_mz_match_mask, dim=1, keepdim=True)))
@@ -260,11 +261,11 @@ if __name__ == "__main__":
                     ann_w_peak_covs.append(i_ann_w_peak_cov.item())
 
                     i_pred_mz_match_mask = calculate_match_mzs(
-                        i_pred_formula_mzs, 
-                        i_true_mzs,
+                        true_mzs=i_true_mzs,
+                        pred_mzs=i_pred_formula_mzs, 
                         tolerance=1e-5, # 10 ppm
                         relative=True
-                    ) # P x T
+                    ).T # P x T
                     i_pred_mz_match_any = i_pred_mz_match_mask.any(dim=0) # T
 
                     if frag_model or graff_model:
@@ -316,22 +317,23 @@ if __name__ == "__main__":
                         # same but weighted (i_true_logprobs sums to 1)
                         i_both_t_w_peak_cov_2 = (i_both_t_peak_match.float() * i_true_logprobs.exp()).sum()
 
+                        # pred spectrum stuff
+                        i_both_p_formula_cov = len(np.intersect1d(i_pt_pred_formulae,i_ann_formulae)) / len(np.unique(i_pt_pred_formulae))
+                        # which peak annotations match which true annotations
+                        i_pred_mz_match_mask_2 = (i_both_formula_match_mask.T[i_pt_formula_mask].long() @ i_ann_mz_match_mask.long()) > 0 # P x T
+                        i_pred_mz_match_mask_3 = (i_pred_mz_match_mask[i_pt_formula_mask].long() @ i_ann_mz_match_mask.T.long()) > 0 # P x A
+                        i_pred_ann_mask = i_pred_mz_match_mask_3.any(dim=1) # P
+                        i_both_p_peak_match = (i_pred_mz_match_mask[i_pt_formula_mask] & i_pred_mz_match_mask_2).any(dim=1) # P
+                        # numerator: number of predicted peaks with a predicted annotation that is matched by a true annotation
+                        # denominator: number of predicted peaks that are matched by a true peak with an annotation
+                        i_both_p_peak_cov = i_both_p_peak_match.float().sum() / i_pred_ann_mask.sum()
+                        # numerator: number of predicted peaks with a predicted annotation that is matched by a true annotation
+                        # denominator: number of predicted peaks
+                        i_both_p_peak_cov_2 = i_both_p_peak_match.float().mean()
+
                         if frag_model or graff_model:
-                            # pred spectrum stuff
-                            i_both_p_formula_cov = len(np.intersect1d(i_pt_pred_formulae,i_ann_formulae)) / len(np.unique(i_pt_pred_formulae))
-                            # which peak annotations match which true annotations
-                            i_pred_mz_match_mask_2 = (i_both_formula_match_mask.T[i_pt_formula_mask].long() @ i_ann_mz_match_mask.long()) > 0 # P x T
-                            i_pred_mz_match_mask_3 = (i_pred_mz_match_mask[i_pt_formula_mask].long() @ i_ann_mz_match_mask.T.long()) > 0 # P x A
-                            i_pred_ann_mask = i_pred_mz_match_mask_3.any(dim=1) # P
-                            i_both_p_peak_match = (i_pred_mz_match_mask[i_pt_formula_mask] & i_pred_mz_match_mask_2).any(dim=1) # P
-                            # numerator: number of predicted peaks with a predicted annotation that is matched by a true annotation
-                            # denominator: number of predicted peaks that are matched by a true peak with an annotation
-                            i_both_p_peak_cov = i_both_p_peak_match.float().sum() / i_pred_ann_mask.sum()
                             # same but weighted
                             i_both_p_w_peak_cov = (i_both_p_peak_match.float() * i_pred_formula_spec_logprobs.exp()).sum() / (i_pred_ann_mask * i_pred_formula_spec_logprobs.exp()).sum()
-                            # numerator: number of predicted peaks with a predicted annotation that is matched by a true annotation
-                            # denominator: number of predicted peaks
-                            i_both_p_peak_cov_2 = i_both_p_peak_match.float().mean()
                             # same but weighted (note that i_pred_formula_spec_logprobs does not necessarily sum to 1, because of OOS)
                             i_both_p_w_peak_cov_2 = (i_both_p_peak_match.float() * i_pred_formula_spec_logprobs.exp()).sum()
 
@@ -341,11 +343,11 @@ if __name__ == "__main__":
                         i_both_t_w_peak_covs.append(i_both_t_w_peak_cov.item())
                         i_both_t_peak_covs_2.append(i_both_t_peak_cov_2.item())
                         i_both_t_w_peak_covs_2.append(i_both_t_w_peak_cov_2.item())
+                        i_both_p_formula_covs.append(i_both_p_formula_cov)
+                        i_both_p_peak_covs.append(i_both_p_peak_cov.item())
+                        i_both_p_peak_covs_2.append(i_both_p_peak_cov_2.item())
                         if frag_model or graff_model:
-                            i_both_p_formula_covs.append(i_both_p_formula_cov)
-                            i_both_p_peak_covs.append(i_both_p_peak_cov.item())
                             i_both_p_w_peak_covs.append(i_both_p_w_peak_cov.item())
-                            i_both_p_peak_covs_2.append(i_both_p_peak_cov_2.item())
                             i_both_p_w_peak_covs_2.append(i_both_p_w_peak_cov_2.item())
 
                         if threshold == 0. and (frag_model or graff_model):
@@ -361,11 +363,11 @@ if __name__ == "__main__":
                     both_t_w_peak_covs.append(i_both_t_w_peak_covs)
                     both_t_peak_covs_2.append(i_both_t_peak_covs_2)
                     both_t_w_peak_covs_2.append(i_both_t_w_peak_covs_2)
+                    both_p_formula_covs.append(i_both_p_formula_covs)
+                    both_p_peak_covs.append(i_both_p_peak_covs)
+                    both_p_peak_covs_2.append(i_both_p_peak_covs_2)
                     if frag_model or graff_model:
-                        both_p_formula_covs.append(i_both_p_formula_covs)
-                        both_p_peak_covs.append(i_both_p_peak_covs)
                         both_p_w_peak_covs.append(i_both_p_w_peak_covs)
-                        both_p_peak_covs_2.append(i_both_p_peak_covs_2)
                         both_p_w_peak_covs_2.append(i_both_p_w_peak_covs_2)
 
                 jsds = np.array(jsds)
@@ -432,20 +434,20 @@ if __name__ == "__main__":
                     stats_df_row[f"both_t_peak_cov_2_{threshold}_std"] = np.nanstd(both_t_peak_covs_2[:,i])
                     stats_df_row[f"both_t_w_peak_cov_2_{threshold}_mean"] = np.nanmean(both_t_w_peak_covs_2[:,i])
                     stats_df_row[f"both_t_w_peak_cov_2_{threshold}_std"] = np.nanstd(both_t_w_peak_covs_2[:,i])
+                    print(f"> Both Pred Formula Coverage: {np.nanmean(both_p_formula_covs[:,i]):.4f} +/- {np.nanstd(both_p_formula_covs[:,i]):.4f}") 
+                    print(f"> Both Pred Peak Coverage: {np.nanmean(both_p_peak_covs[:,i]):.4f} +/- {np.nanstd(both_p_peak_covs[:,i]):.4f}")
+                    print(f"> Both Pred Peak Coverage 2: {np.nanmean(both_p_peak_covs_2[:,i]):.4f} +/- {np.nanstd(both_p_peak_covs_2[:,i]):.4f}")
+                    stats_df_row[f"both_p_formula_cov_{threshold}_mean"] = np.nanmean(both_p_formula_covs[:,i])
+                    stats_df_row[f"both_p_formula_cov_{threshold}_std"] = np.nanstd(both_p_formula_covs[:,i])
+                    stats_df_row[f"both_p_peak_cov_{threshold}_mean"] = np.nanmean(both_p_peak_covs[:,i])
+                    stats_df_row[f"both_p_peak_cov_{threshold}_std"] = np.nanstd(both_p_peak_covs[:,i])
+                    stats_df_row[f"both_p_peak_cov_2_{threshold}_mean"] = np.nanmean(both_p_peak_covs_2[:,i])
+                    stats_df_row[f"both_p_peak_cov_2_{threshold}_std"] = np.nanstd(both_p_peak_covs_2[:,i])
                     if frag_model or graff_model:
-                        print(f"> Both Pred Formula Coverage: {np.nanmean(both_p_formula_covs[:,i]):.4f} +/- {np.nanstd(both_p_formula_covs[:,i]):.4f}") 
-                        print(f"> Both Pred Peak Coverage: {np.nanmean(both_p_peak_covs[:,i]):.4f} +/- {np.nanstd(both_p_peak_covs[:,i]):.4f}")
                         print(f"> Both Pred W Peak Coverage: {np.nanmean(both_p_w_peak_covs[:,i]):.4f} +/- {np.nanstd(both_p_w_peak_covs[:,i]):.4f}")
-                        print(f"> Both Pred Peak Coverage 2: {np.nanmean(both_p_peak_covs_2[:,i]):.4f} +/- {np.nanstd(both_p_peak_covs_2[:,i]):.4f}")
                         print(f"> Both Pred W Peak Coverage 2: {np.nanmean(both_p_w_peak_covs_2[:,i]):.4f} +/- {np.nanstd(both_p_w_peak_covs_2[:,i]):.4f}")
-                        stats_df_row[f"both_p_formula_cov_{threshold}_mean"] = np.nanmean(both_p_formula_covs[:,i])
-                        stats_df_row[f"both_p_formula_cov_{threshold}_std"] = np.nanstd(both_p_formula_covs[:,i])
-                        stats_df_row[f"both_p_peak_cov_{threshold}_mean"] = np.nanmean(both_p_peak_covs[:,i])
-                        stats_df_row[f"both_p_peak_cov_{threshold}_std"] = np.nanstd(both_p_peak_covs[:,i])
                         stats_df_row[f"both_p_w_peak_cov_{threshold}_mean"] = np.nanmean(both_p_w_peak_covs[:,i])
                         stats_df_row[f"both_p_w_peak_cov_{threshold}_std"] = np.nanstd(both_p_w_peak_covs[:,i])
-                        stats_df_row[f"both_p_peak_cov_2_{threshold}_mean"] = np.nanmean(both_p_peak_covs_2[:,i])
-                        stats_df_row[f"both_p_peak_cov_2_{threshold}_std"] = np.nanstd(both_p_peak_covs_2[:,i])
                         stats_df_row[f"both_p_w_peak_cov_2_{threshold}_mean"] = np.nanmean(both_p_w_peak_covs_2[:,i])
                         stats_df_row[f"both_p_w_peak_cov_2_{threshold}_std"] = np.nanstd(both_p_w_peak_covs_2[:,i])
 

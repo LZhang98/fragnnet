@@ -381,7 +381,8 @@ def calculate_match_mzs(
 		pred_mzs:th.Tensor,
 		tolerance:float=1e-5,
 		relative:bool=True,
-		tolerance_min_mz:float=TOLERANCE_MIN_MZ
+		tolerance_min_mz:float=TOLERANCE_MIN_MZ,
+		pred_mz_divisor:bool=False
 	) -> th.Tensor:
 	"""
 	Method to match two spectra based on m/z, return a N x M matrix, where N is number of mz in pred_mzs, M is number of mz in pred_mzs
@@ -394,7 +395,7 @@ def calculate_match_mzs(
 		tolerance (float, optional): Tolerance; Da if not relative, else ratios (NOT PPM). Defaults to 1e-5.
 		relative (bool, optional): Flag to use a relative measure. Defaults to True.
 		tolerance_min_mz (float, optional): Divisor floor used in relative measure. Defaults to 200 Da.
-
+		pred_mz_divisor (bool, optional): If the measure is relative, whether to use the pred_mzs as divisors (instead of the true_mzs). Defaults to False.
 	Returns:
 		th.Tensor: return a N x M matrix of True or False, dim 0 for predicted, dim 1 for ground truth
 	"""
@@ -411,7 +412,10 @@ def calculate_match_mzs(
 	diff_mzs = abs_func(true_mzs.reshape(-1,1)-pred_mzs.reshape(1,-1))
 	min_diff_mzs = tolerance
 	if relative:
-		divisor_mzs = copy_func(true_mzs)
+		if pred_mz_divisor:
+			divisor_mzs = copy_func(pred_mzs)
+		else:
+			divisor_mzs = copy_func(true_mzs)
 		divisor_mzs[divisor_mzs<tolerance_min_mz] = tolerance_min_mz
 		diff_mzs = (diff_mzs / divisor_mzs.reshape(-1,1))
 	match_mzs = diff_mzs < min_diff_mzs
