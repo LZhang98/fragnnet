@@ -31,7 +31,7 @@ frag_gnn/
 │   ├── proc
 │   ├── raw
 │   └── split
-├── env # environment  
+├── env # environment setup bash
 ├── figs # figures
 ├── preproc_scripts # data preprocess scripts
 │   ├── msgym_ms2c
@@ -48,7 +48,7 @@ frag_gnn/
 ```
 ## Installation
 
-### Environment Setup
+### Environment Setup (Optional)
 
 Use the provided script to set up the environment:
 ```bash
