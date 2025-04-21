@@ -75,10 +75,13 @@ def main(args):
 		)
 
 	# read in the molecule data
-	print("read in mol")
-	mol_df = pd.read_pickle(os.path.join(args.project_dp,args.proc_dp,"mol_df.pkl"))
-	print("read in spec")
-	spec_df = pd.read_pickle(os.path.join(args.project_dp,args.proc_dp,"spec_df.pkl"))
+	mol_df_fp = os.path.join(args.project_dp,args.proc_dp,"mol_df.pkl")
+	print(f"read in mol from {mol_df_fp}")
+	mol_df = pd.read_pickle(mol_df_fp)
+
+	sped_df_fp = os.path.join(args.project_dp,args.proc_dp,"spec_df.pkl")
+	print(f"read in spec from {sped_df_fp}")
+	spec_df = pd.read_pickle(sped_df_fp)
 	print()
 
 	# perform filter selection

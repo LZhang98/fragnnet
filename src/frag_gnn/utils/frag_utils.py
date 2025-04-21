@@ -76,6 +76,22 @@ BOND_TYPE_TO_IDX = {
 	Chem.rdchem.BondType.names["SINGLE"]: 1,
 }
 
+NODE_FEAT_TO_IDX = {
+	"depth":0,
+	"cc":1,
+	"base_formula":2,
+	"h_formulae_idx":3,
+	"h_counts":4,
+	"nb_iso_idx":5
+}
+
+EDGE_FEAT_TO_IDX = {
+	"cc":0,
+	"base_formula":1,
+	"h_range":2,
+	"complement":3
+}
+
 def convert_cc_mask_to_int(cc:list|np.ndarray)->int:
 	"""covert a cc mask to an int
 
@@ -797,9 +813,9 @@ def compute_dags(
 	# add node depth information
 	# convert to a one hot encoding
 	depth_node_feat_size = max_depth+1 #depth
-	cc_node_feat_size = get_cc_node_feat_size #MASK_SIZE//64 # mask
-	base_formula_node_feat_size =  get_base_formula_node_feat_size() # base_formula size
-	formula_node_feat_size = get_formula_node_feat_size(max_h_transfer) # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
+	cc_node_feat_size = MASK_SIZE//64 # mask
+	base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
+	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
 	h_count_node_feat_size = formula_node_feat_size
 	nb_iso_node_feat_size = 1 if nb_isomorphic else 0
 	cc_edge_feat_size = cc_node_feat_size
@@ -824,7 +840,7 @@ def compute_dags(
 	# map nodes to formulae
 	formula_d_list, h_count_d_list = [], []
 	formula_counts = {}
-	for _, cc_mask in enumerate(nodes_mask_matrix):
+	for idx, cc_mask in enumerate(nodes_mask_matrix):
 		base_formula = node_base_formula_matrix[idx]
 		base_formula[ELEMENT_TO_IDX["H"]] = 0 # remove Hs
 		delta_h_to_formula, delta_h_to_h_count = compute_approximate_formula(cc_mask,mol_d,max_h_transfer,formula_strs=True, base_formula = base_formula)
@@ -909,7 +925,6 @@ def compute_dags(
 
 	# add edges info
 	edge_diff_cc_mask, edge_diff_formula_mask, edge_diff_h_range = [], [], []
-
 	for edge in dag_edges_matrix:
 		from_idx, to_idx = edge
 		from_cc_mask = nodes_mask_matrix[from_idx]
@@ -921,10 +936,8 @@ def compute_dags(
 		diff_formula_mask = from_formula_mask - to_formula_mask
 		diff_formula_mask[CANONICAL_H_IDX] = 0 # we don't care Hs for this
 
-		diff_cc_atom_ids = cc_bit_mask_to_atom_idx(diff_cc_mask)
-
-		diff_h_floor = compute_frags.compute_cc_h_floor(
-			diff_cc_atom_ids,
+		diff_h_floor = compute_cc_h_floor(
+			diff_cc_mask,
 			mol_d["ve_arr"],
 			mol_d["sbond_arr"],
 			0,
@@ -933,15 +946,15 @@ def compute_dags(
 			mol_d["bond_mask_arr"]
 		)
 		diff_h_cap = compute_cc_h_cap(
-			diff_cc_atom_ids,
+			diff_cc_mask,
 			mol_d["ve_arr"],
 			mol_d["sbond_arr"],
 			0
 		)
 		assert diff_h_floor <= diff_h_cap, (diff_h_floor,diff_h_cap)
 		assert diff_h_floor >= 0, diff_h_floor
-		#print(diff_h_floor,diff_h_cap)
 		diff_h_range = [diff_h_floor,diff_h_cap]
+
 		edge_diff_cc_mask.append(diff_cc_mask)
 		edge_diff_formula_mask.append(diff_formula_mask)
 		edge_diff_h_range.append(diff_h_range)
@@ -993,22 +1006,6 @@ def compute_dags(
 	frag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
 	frag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
 	return frag_d
-
-NODE_FEAT_TO_IDX = {
-	"depth":0,
-	"cc":1,
-	"base_formula":2,
-	"h_formulae_idx":3,
-	"h_counts":4,
-	"nb_iso_idx":5
-}
-
-EDGE_FEAT_TO_IDX = {
-	"cc":0,
-	"base_formula":1,
-	"h_range":2,
-	"complement":3
-}
 
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:th.Tensor,key:str):
 	"""get node features by key used for pyg
