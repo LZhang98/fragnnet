@@ -366,17 +366,6 @@ class BondStereo(FeatBase):
 @register_bond_feat
 class BondConj(FeatBase):
 
-	name = "b_ring"
-	feat_size = 2
-
-	@classmethod
-	def featurize(cls, x) -> int:
-		return one_hot_encoding(x.IsInRing(), [False, True], False)
-
-
-@register_bond_feat
-class BondConj(FeatBase):
-
 	name = "b_conj"
 	feat_size = 2
 
