@@ -1,13 +1,16 @@
 import torch as th
 import torch.nn.functional as F
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.frag_utils import load_frag_d, th_long_to_mask, th_mask_to_long
+from frag_gnn.utils.frag_utils import load_frag_d, th_long_to_mask, th_mask_to_long, get_node_feats
 import pandas as pd
 
 from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset
 from frag_gnn.utils.misc_utils import PPM, TOLERANCE_MIN_MZ
 from frag_gnn.runner import load_config, init_dataloader, init_dataset
 from frag_gnn.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func, jss_helper
+from frag_gnn.utils.data_utils import mol_from_smiles
+
+import warnings
 
 def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
 							 prec_mz, allowed_h_transfer, tolerance=0.01,\
@@ -64,9 +67,10 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 		overlap_pred_idxs = th.zeros((0,2))
 
 if __name__ == "__main__":
-    # load config
+		
+	# load config
 	template_fp = "config/template.yml"
-	custom_fp   = "config/exp_fraggnn_d3/debug.yml"
+	custom_fp   = "config/debug/debug_tiny.yml"
 	config_d  =load_config(template_fp, custom_fp) 
 
 	config_d['train_batch_size'] = 1
@@ -98,7 +102,7 @@ if __name__ == "__main__":
 		frag_pyg = data['frag_pyg']
 		frag_formula_peak_mzs = data['frag_formula_peak_mzs']
 		frag_formula_peak_idxs = data['frag_formula_peak_idxs']
-		print(frag_formula_peak_idxs)
+		#print(frag_formula_peak_idxs)
 		print("frag_formula_peak_sizes",data['frag_formula_peak_sizes'])
 		#print(frag_formula_peak_mzs.shape)
 		#print(frag_formula_peak_mzs.shape)
@@ -107,12 +111,22 @@ if __name__ == "__main__":
 		spec_ce_batch_idxs = data['spec_ce_batch_idxs']
 
 		for b_idx in range(data['batch_size'].item()):
-			b_spec_mask = spec_batch_idxs == b_idx
-			b_frag_formula_peak_mask = frag_formula_peak_idxs == b_idx
-			print("b_spec_mask shape",b_spec_mask.shape)
-			print("spec_mzs shape",spec_mzs.shape)
-			print("frag_formula_peak_mzs shape",frag_formula_peak_mzs.shape)
+			#b_spec_mask = spec_batch_idxs == b_idx
+			#b_frag_formula_peak_mask = frag_formula_peak_idxs == b_idx
+			mol_smiles = data['mol_smiles'][b_idx]
+			#print(mol_smiles)
+			#print("b_spec_mask shape",b_spec_mask.shape)
+			#print("spec_mzs shape",spec_mzs.shape)
+			#print("frag_formula_peak_mzs shape",frag_formula_peak_mzs.shape)
+			b_mol = mol_from_smiles(mol_smiles)
+   
+			frag_pyg = data['frag_pyg'][b_idx]
+			frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
+			frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
+			frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x,frag_node_feat_idxs,"cc"))
+			print(frag_node_mask)
 
+			"""
 			b_spec_prec_type = spec_prec_type[b_idx]
 			b_true_mzs = spec_mzs[b_spec_mask]
 			b_pred_mzs = frag_formula_peak_mzs[b_frag_formula_peak_mask]
@@ -131,6 +145,7 @@ if __name__ == "__main__":
 			print(b_true_match_mask)
 			print(b_pred_match_mask)
 			print(b_pred_mzs[b_pred_match_mask])
+			"""
 		exit()
 		#spec_prec_mass_diff = data['spec_prec_mass_diff']
 		# 
