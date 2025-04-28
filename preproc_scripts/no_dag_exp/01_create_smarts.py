@@ -10,7 +10,12 @@ from frag_gnn.runner import load_config, init_dataloader, init_dataset
 from frag_gnn.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func, jss_helper
 from frag_gnn.utils.data_utils import mol_from_smiles
 
-import warnings
+from rdkit import Chem
+from rdkit.Chem import Draw
+from rdkit.Chem import rdmolops
+from rdkit.Chem import Descriptors
+from rdkit.Chem import AllChem
+from copy import deepcopy
 
 def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
 							 prec_mz, allowed_h_transfer, tolerance=0.01,\
@@ -65,6 +70,101 @@ def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_d
 		overlap_pred_idxs = th.unique(th.cat(overlap_pred_idxs,dim=0),dim=0)
 	else:
 		overlap_pred_idxs = th.zeros((0,2))
+
+def draw_highlighted_atoms(mol, atom_ids):
+    
+    local_mol = deepcopy(mol)  # Create a deep copy of the molecule to avoid modifying the original
+    for i, atom in enumerate(local_mol.GetAtoms()):
+        # For each atom, set the property "molAtomMapNumber" to a custom number, let's say, the index of the atom in the molecule
+        atom.SetProp("molAtomMapNumber", str(atom.GetIdx()))
+    
+    # Create a list of atom indices to highlight
+    highlight_atoms = set(atom_ids)
+
+    # Generate image with highlighted atoms
+    img = Draw.MolToImage(local_mol, highlightAtoms=highlight_atoms, size=(300, 300))
+
+    return img
+
+def atom_ids_to_smarts(mol, atom_ids):
+    # Create an empty molecule and add only the atoms of interest
+    new_mol = Chem.RWMol()
+
+    # Add atoms that are in the atom_ids list to the new molecule
+    atom_map = {}
+    for atom_idx in atom_ids:
+        atom = mol.GetAtomWithIdx(atom_idx)
+        new_atom_idx = new_mol.AddAtom(atom)
+        atom_map[atom_idx] = new_atom_idx
+
+    # Now we add the bonds that correspond to the atoms in atom_ids
+    for bond in mol.GetBonds():
+        idx1 = bond.GetBeginAtomIdx()
+        idx2 = bond.GetEndAtomIdx()
+
+        # Check if both atoms are in the atom_ids list, if so, add the bond
+        if idx1 in atom_ids and idx2 in atom_ids:
+            new_mol.AddBond(atom_map[idx1], atom_map[idx2], bond.GetBondType())
+        elif idx1 in atom_ids or idx2 in atom_ids:
+            dummy_atm = AllChem.Atom(0)
+            if idx1 in atom_ids:
+                new_mol.AddAtom(dummy_atm)
+                new_mol.AddBond(atom_map[idx1], new_mol.GetNumAtoms() - 1, bond.GetBondType())
+                new_mol.GetAtomWithIdx(atom_map[idx1]).GetImplicitValence()
+                new_mol.GetAtomWithIdx(atom_map[idx1]).SetNumExplicitHs(0)
+                new_mol.GetAtomWithIdx(atom_map[idx1]).SetNoImplicit(False)
+            else:
+                new_mol.AddAtom(dummy_atm)
+                new_mol.AddBond(atom_map[idx2], new_mol.GetNumAtoms() - 1, bond.GetBondType())
+                new_mol.GetAtomWithIdx(atom_map[idx2]).GetImplicitValence()
+                new_mol.GetAtomWithIdx(atom_map[idx2]).SetNumExplicitHs(0)
+                new_mol.GetAtomWithIdx(atom_map[idx2]).SetNoImplicit(False)
+
+    # Get the substructure as a SMILES string
+    new_mol.UpdatePropertyCache()
+    mw = Descriptors.ExactMolWt(new_mol)
+    substructure_smiles = Chem.MolToSmiles(new_mol, canonical=True)
+    # this need newer version #ignoreAtomMapNumbers=True)
+    
+    #https://www.rdkit.org/docs/GettingStartedInPython.html#atom-map-indices-in-smarts
+    for i, atom in enumerate(new_mol.GetAtoms()):
+        # For each atom, set the property "molAtomMapNumber" to a custom number, let's say, the index of the atom in the molecule
+        if atom.GetAtomicNum() != 0:
+            atom.SetProp("molAtomMapNumber", str(atom.GetIdx()+1))
+
+    substructure_smart = Chem.MolToSmarts(new_mol)
+    substructure_smart = substructure_smart.replace("#0","!#1")
+    print(f"Substructure SMARTS: {substructure_smart}")
+    print(f"Substructure Canonical SMILES: {substructure_smiles}")
+    print(f"Substructure base mass: {mw}")
+    return substructure_smart,substructure_smiles,mw
+
+def match_smart_substructure(target_smiles, substructure_smiles):
+    print("Target SMILES:", target_smiles)
+    print("Substructure SMARTS:", substructure_smiles)
+    target_mol = Chem.MolFromSmiles(target_smiles)
+    #Chem.SanitizeMol(target_mol)
+    qmol = Chem.MolFromSmarts(substructure_smiles)
+
+
+    ind_map = {}
+    for atom in qmol.GetAtoms() :
+        map_num = atom.GetAtomMapNum()
+        if map_num:
+            ind_map[map_num-1] = atom.GetIdx()
+    
+    for atom in qmol.GetAtoms() :
+        map_num = atom.GetAtomMapNum()
+        if map_num:
+            ind_map[map_num-1] = atom.GetIdx()
+        
+    map_list = [ind_map[x] for x in sorted(ind_map)]
+    matches = []
+    for match in target_mol.GetSubstructMatches( qmol ) :
+        mas = [match[x] for x in map_list]
+        matches.append(mas)
+    
+    return matches
 
 if __name__ == "__main__":
 		
