@@ -210,6 +210,12 @@ if __name__ == "__main__":
 		spec_batch_idxs = data['spec_batch_idxs']
 		spec_ce_batch_idxs = data['spec_ce_batch_idxs']
 
+		print(data['frag_formula_peak_idxs'])
+		print(data['frag_formula_sizes'])
+		print(data['frag_formula_cumsizes'])
+      	#frag_formula_peak_idxs
+		#frag_formula_sizes
+		#frag_formula_cumsizes
 		for b_idx in range(data['batch_size'].item()):
 			#b_spec_mask = spec_batch_idxs == b_idx
 			#b_frag_formula_peak_mask = frag_formula_peak_idxs == b_idx
@@ -224,7 +230,11 @@ if __name__ == "__main__":
 			frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 			frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
 			frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x,frag_node_feat_idxs,"cc"))
-			print(frag_node_mask)
+   
+			#for i in range(frag_node_mask.shape[0]):
+			#	all_atom_ids = th.range(0,frag_node_mask.shape[1]-1).to(th.long)
+			#	frag_atom_ids = all_atom_ids[frag_node_mask[i]].tolist()
+			#	atom_ids_to_smarts(b_mol,frag_atom_ids)
 
 			"""
 			b_spec_prec_type = spec_prec_type[b_idx]
@@ -246,7 +256,7 @@ if __name__ == "__main__":
 			print(b_pred_match_mask)
 			print(b_pred_mzs[b_pred_match_mask])
 			"""
-		exit()
+		#exit()
 		#spec_prec_mass_diff = data['spec_prec_mass_diff']
 		# 
 		#spec_mzs
@@ -276,40 +286,3 @@ if __name__ == "__main__":
 		#spec_batch_idxs
 		#spec_ce_batch_idxs
 		#batch_size
-  
-		#for k,v in data.items():
-		#	print(f"{k}")
-		#print(data.keys())
-		#print(len(data['frag_pyg']))
-		#print(type(data))
-		exit(0)
-
-	exit()
-	# 
-	frag_d = load_frag_d(2, frag_fp, is_compressed=True)
-	# load peaks
-	print(frag_d)
-	#node_depth = frag_d['dag'].x[:,0:4]
-	print(node_depth)
-	frag_cc_longs = frag_d['dag'].x[:,4:6]
-	node_base_formula_matrix = frag_d['dag'].x[:,6:7]
-	node_formulae_matrix = frag_d['dag'].x[:, 7:8]
- 
-	print(node_base_formula_matrix)
-	print(node_formulae_matrix)
-	#print(frag_cc_longs)
- 
-	masks = th_long_to_mask(frag_cc_longs)
-	print(masks)
-	# Get column indices per row
-	# this are index of atoms for each cc
-	row_indices = [th.nonzero(row, as_tuple=True)[0] for row in masks]
-
-	for i, cols in enumerate(row_indices):
-		print(f"Row {i}: {cols}")
-		print(node_base_formula_matrix[i])
-		print(node_formulae_matrix[i])
-	#num_nodes = frag_d['dag_num_nodes']
-	#idx_to_formula = frag_d['idx_to_formula']
-	# compute stats
-	# compute_frag_peak_stats(peaks, formula_peak_mzs, formula_peak_probs, idx_by_h_delta, prec_mz, allowed_h_transfer, tolerance, prec_type, is_ppm)
