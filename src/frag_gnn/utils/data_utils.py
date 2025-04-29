@@ -830,8 +830,9 @@ def parse_annotations(row):
 	formula = row["formula"]
 	notes = row["notes"]
 	error = None
-	if dset not in ["nist20_hr"]:
-		error = ValueError("dataset not supported")
+	current_supported_dsets = ["nist20_hr"]
+	if dset not in current_supported_dsets:
+		error = ValueError(f"dataset not supported, supported {current_supported_dsets}, given {dset}")
 	elif "glycan" in notes.lower():
 		error = ValueError("glycans not supported (1)")
 	elif "peptide" in notes.lower():
@@ -947,8 +948,16 @@ def get_res(peaks):
 	highest_res = max(ress)
 	return highest_res
 
-def get_murcko_scaffold(mol,output_type="smiles",include_chirality=False):
-
+def get_murcko_scaffold(mol,output_type="smiles",include_chirality=False) -> str:
+	"""get murcko scaffold from mol object
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+		output_type (str, optional): output type. Defaults to "smiles".
+		include_chirality (bool, optional): include chirality. Defaults to False.
+	Returns:
+ 		str: murcko scaffold
+	"""
+ 
 	if none_or_nan(mol):
 		return np.nan
 	MurckoScaffold = importlib.import_module("rdkit.Chem.Scaffolds.MurckoScaffold")
@@ -958,8 +967,13 @@ def get_murcko_scaffold(mol,output_type="smiles",include_chirality=False):
 		raise NotImplementedError
 	return scaffold
 
-def analyze_mol(mol):
-
+def analyze_mol(mol:"rdkit.Chem.rdchem.Mol") -> dict:
+	"""get some basic properties of the mol object
+	Args:
+		mol (rdkit.Chem.rdchem.Mol): mol object
+	Returns:
+		dict: dictionary of properties
+	"""
 	import rdkit
 	from rdkit.Chem.Descriptors import MolWt
 	import rdkit.Chem as Chem
@@ -1020,8 +1034,14 @@ CHARGE_FACTOR_MAP = {
 	"large": 0.75
 }
 
-def get_charge(prec_type_str):
-
+def get_charge(prec_type_str:str) -> int:
+	"""
+	Parse the charge from the precursor type string.
+	Args:
+		prec_type_str (str): Precursor type string.
+	Returns:
+		int: Charge of the precursor.
+ 	"""
 	if prec_type_str == "EI":
 		return 1
 	end_brac_idx = prec_type_str.index("]")
@@ -1058,8 +1078,13 @@ def ace_to_nce_helper(ace,charge,prec_mz):
 	nce = (ace * 500.) / (prec_mz * charge_factor)
 	return nce
 
-def nce_to_ace(row):
-
+def nce_to_ace(row) -> float:
+	"""convert nce to ace
+	Args:
+		row (pd.Series): row of the dataframe
+	Returns:
+		float: ace
+	"""
 	prec_mz = row["prec_mz"]
 	nce = row["nce"]
 	prec_type = row["prec_type"]
@@ -1067,8 +1092,13 @@ def nce_to_ace(row):
 	ace = nce_to_ace_helper(nce,charge,prec_mz)
 	return ace
 
-def ace_to_nce(row):
-
+def ace_to_nce(row)	-> float:
+	"""convert ace to nce
+	Args:
+		row (pd.Series): row of the dataframe
+	Returns:
+		float: nce
+	"""
 	prec_mz = row["prec_mz"]
 	ace = row["ace"]
 	prec_type = row["prec_type"]
@@ -1076,7 +1106,13 @@ def ace_to_nce(row):
 	nce = ace_to_nce_helper(ace,charge,prec_mz)
 	return nce
 
-def fill_missing_nce(row):
+def fill_missing_nce(row) -> float:
+	"""fill missing nce with ace
+	Args:
+		row (pd.Series): row of the dataframe
+	Returns:
+		float: nce
+	"""
 	nce = row["nce"]
 	ace = row["ace"]
 	if none_or_nan(nce) and not none_or_nan(ace):
@@ -1084,7 +1120,13 @@ def fill_missing_nce(row):
 	else:
 		return nce
 
-def fill_missing_ace(row):
+def fill_missing_ace(row) -> float:
+	"""fill missing ace with nce
+	Args:
+		row (pd.Series): row of the dataframe
+	Returns:
+		float: ace
+	"""
 	nce = row["nce"]
 	ace = row["ace"]
 	if none_or_nan(ace) and not none_or_nan(nce):
