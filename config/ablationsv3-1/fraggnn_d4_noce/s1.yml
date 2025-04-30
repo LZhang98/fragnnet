@@ -1,28 +1,5 @@
 wandb_name: ablationsv3-1_fraggnn_d4_noce_s1
 wandb_group: ablationsv3-1_fraggnn_d4_noce
-wandb_tags:
-- ablations
-- nist20v3
-- d4
-- wr00
-- inchikey
-- new_proc
-- fraggnn_d4
-- new_metrics
-- nodemlp
-- ce_embed
-- merged
-- oos_multiple_1
-- gaussian_renormalize
-- b128x1
-- no_auxiliary_scores
-- vectorized_loss
-- lb16
-- preload
-- preprocess
-- s1
-- 7m4eybdo
-- long
 
 # seed
 seed: 634340

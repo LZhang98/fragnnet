@@ -1,28 +1,5 @@
 wandb_name: nist20v3-1_inchikey_fraggnn_d3_long_s0
 wandb_group: nist20v3-1_inchikey_fraggnn_d3_long
-wandb_tags:
-- splits
-- nist20v3
-- d4
-- wr00
-- inchikey
-- new_proc
-- fraggnn_d3
-- new_metrics
-- nodemlp
-- ce_embed
-- merged
-- oos_multiple_1
-- gaussian_renormalize
-- b32x4
-- no_auxiliary_scores
-- vectorized_loss
-- lb16
-- preload
-- preprocess
-- s0
-- xi6bawy4
-- long
 
 # seed
 seed: 397623
@@ -32,6 +9,7 @@ spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
 split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
 frag_dp: data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
+
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False

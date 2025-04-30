@@ -1,28 +1,5 @@
 wandb_name: ablationsv3-1_fraggnn_d3_edges_s4
 wandb_group: ablationsv3-1_fraggnn_d3_edges
-wandb_tags:
-- ablations
-- nist20v3
-- d4
-- wr00
-- inchikey
-- new_proc
-- fraggnn_d3
-- new_metrics
-- gine
-- ce_embed
-- edges
-- oos_multiple_1
-- gaussian_renormalize
-- b128x1
-- no_auxiliary_scores
-- vectorized_loss
-- lb16
-- preload
-- preprocess
-- s4
-- xi6bawy4
-- long
 
 # seed
 seed: 132548

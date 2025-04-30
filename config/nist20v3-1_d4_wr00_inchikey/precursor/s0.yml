@@ -1,17 +1,5 @@
 wandb_name: nist20v3-1_inchikey_precursor_s0
 wandb_group: nist20v3-1_inchikey_precursor
-wandb_tags:
-- splits
-- nist20v3
-- d4
-- wr00
-- inchikey
-- new_proc
-- precursor
-- new_metrics
-- no_auxiliary_scores
-- preprocess
-- s0
 
 # seed
 seed: 397623

@@ -1,29 +1,5 @@
 wandb_name: entropyv3-1_scaffold_d4_baseline_ens_s12
 wandb_group: entropyv3-1_scaffold_d4_baseline_ens
-wandb_tags:
-- entropyv3-1
-- baseline_ens
-- nist20v3
-- d4
-- wr00
-- scaffold
-- new_proc
-- fraggnn_d4
-- new_metrics
-- nodemlp
-- ce_embed
-- merged
-- oos_multiple_1
-- gaussian_renormalize
-- b128x1
-- vectorized_loss
-- lb16
-- preload
-- preprocess
-- 7m4eybdo
-- nb_iso
-- long
-- s12
 
 # seed stuff
 seed: 885718

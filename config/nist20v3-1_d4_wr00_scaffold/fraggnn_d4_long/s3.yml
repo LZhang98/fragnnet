@@ -1,28 +1,5 @@
 wandb_name: nist20v3-1_scaffold_fraggnn_d4_long_s3
 wandb_group: nist20v3-1_scaffold_fraggnn_d4_long
-wandb_tags:
-- splits
-- nist20v3
-- d4
-- wr00
-- scaffold
-- new_proc
-- fraggnn_d4
-- new_metrics
-- nodemlp
-- ce_embed
-- merged
-- oos_multiple_1
-- gaussian_renormalize
-- b128x1
-- no_auxiliary_scores
-- vectorized_loss
-- lb16
-- preload
-- preprocess
-- s3
-- 7m4eybdo
-- long
 
 # seed
 seed: 103976

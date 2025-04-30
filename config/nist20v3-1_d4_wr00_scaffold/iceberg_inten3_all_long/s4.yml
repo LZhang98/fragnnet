@@ -1,21 +1,5 @@
 wandb_name: nist20v3-1_scaffold_iceberg_inten3_all_long_s4
 wandb_group: nist20v3-1_scaffold_iceberg_inten3_all_long
-wandb_tags:
-- splits
-- nist20v3
-- d4
-- wr00
-- scaffold
-- new_proc
-- iceberg
-- inten3_all
-- new_metrics
-- mz_bin_res_0,01
-- tcg00veo
-- no_auxiliary_scores
-- preprocess
-- s4
-- long
 
 # seed
 seed: 132548

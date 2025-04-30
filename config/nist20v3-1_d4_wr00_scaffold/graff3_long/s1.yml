@@ -1,25 +1,5 @@
 wandb_name: nist20v3-1_scaffold_graff3_long_s1
 wandb_group: nist20v3-1_scaffold_graff3_long
-wandb_tags:
-- splits
-- nist20v3
-- d4
-- wr00
-- scaffold
-- new_proc
-- graff
-- max_isotope_2
-- new_metrics
-- ce_embed
-- merged
-- pm_multiple_1
-- gaussian_renormalize
-- e5o130br
-- no_auxiliary_scores
-- preprocess
-- s1
-- long
-- big_mz_10ppm
 
 # seed
 seed: 634340

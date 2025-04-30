@@ -1,6 +1,5 @@
 wandb_name: ablationsv3-1_fraggnn_d3_edges_s1
 wandb_group: ablationsv3-1_fraggnn_d3_edges
-wandb_tags:
 - ablations
 - nist20v3
 - d4

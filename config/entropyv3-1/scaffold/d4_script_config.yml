@@ -1,26 +1,4 @@
 wandb_name: d4_script_config
-wandb_tags:
-- entropyv3-1
-- nist20v3
-- d4
-- wr00
-- scaffold
-- new_proc
-- fraggnn_d4
-- new_metrics
-- nodemlp
-- ce_embed
-- merged
-- oos_multiple_1
-- gaussian_renormalize
-- b128x1
-- vectorized_loss
-- lb16
-- preload
-- preprocess
-- 7m4eybdo
-- nb_iso
-- long
 
 # data stuff
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
