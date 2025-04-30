@@ -32,7 +32,7 @@ def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 		assert ckpt_wandb_fp is not None
 		ckpt_file_local = run.file(ckpt_wandb_fp).download(root=temp_dp,replace=False)
 		ckpt_fp = ckpt_file_local.name
-		ckpt = th.load(ckpt_fp, map_location="cpu")
+		ckpt = th.load(ckpt_fp, map_location="cpu", weights_only=False)
 		# decompile
 		assert not config_d["compile"]
 		ckpt = decompile_jit_ckpt(ckpt)

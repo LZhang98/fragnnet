@@ -37,7 +37,7 @@ if __name__ == "__main__":
                 entropies_fp = os.path.join(ens_output_dp,"entropies.pkl")
 
                 assert os.path.isfile(sims_fp), f"sims_fp {sims_fp} not found"
-                sims_d = th.load(sims_fp)
+                sims_d = th.load(sims_fp, weights_only=False)
                 ind_cos_sim_bin = sims_d["ind_cos_sim_bin"]
                 ind_cos_hun = sims_d["ind_cos_hun"]
                 ens_cos_sim_bin = sims_d["ens_cos_sim_bin"]
@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
                 assert os.path.isfile(entropies_fp), f"entropies_fp {entropies_fp} not found"
 
-                entropies_d = th.load(entropies_fp)
+                entropies_d = th.load(entropies_fp, weights_only=False)
                 ind_formula_node_e = entropies_d["ind_formula_node_e"]
                 ind_formula_node_ne = entropies_d["ind_formula_node_ne"]
                 ind_nb_formula_node_e = entropies_d["ind_nb_formula_node_e"]

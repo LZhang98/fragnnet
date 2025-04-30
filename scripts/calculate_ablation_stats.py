@@ -48,7 +48,7 @@ if __name__ == "__main__":
 			if not os.path.isfile(seed_vals_fp):
 				print(f">> file not found, skipping")
 				continue
-			seed_vals = th.load(seed_vals_fp,map_location="cpu")
+			seed_vals = th.load(seed_vals_fp,map_location="cpu", weights_only=False)
 			sims_binned = seed_vals["cos_sim_0.01"]
 			sims_unbinned = seed_vals["cos_hun"]
 			true_oos_prob = seed_vals.get("true_oos_prob",th.tensor(np.nan))

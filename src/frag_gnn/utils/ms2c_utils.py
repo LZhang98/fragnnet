@@ -209,7 +209,7 @@ def load_model_and_init_config(
 	"""
 	
 	# load ckpt
-	ckpt = th.load(ckpt_fp, map_location=device)
+	ckpt = th.load(ckpt_fp, map_location=device, weights_only=False)
 	
 	print(">> Loading configs")
 	config_d = get_pl_hparams(ckpt)

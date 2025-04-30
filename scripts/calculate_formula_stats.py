@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
             # load vals for s0
             formula_vals_fp = os.path.join(vals_dp,split_type,model_type,f"s{seeds[0]}","test.pkl")
-            formula_vals = th.load(formula_vals_fp)
+            formula_vals = th.load(formula_vals_fp, weights_only=False)
 
             # get molecule ids
             group_ids = formula_vals["unique_id"].flatten().numpy()
@@ -138,7 +138,7 @@ if __name__ == "__main__":
                 if n != seeds[0]:
                 
                     formula_vals_fp = os.path.join(vals_dp,split_type,model_type,f"s{n}","test.pkl")
-                    formula_vals = th.load(formula_vals_fp)
+                    formula_vals = th.load(formula_vals_fp, weights_only=False)
 
                 print(len(mol_ids))
 

@@ -321,7 +321,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 		for old_ckpt_fp in old_ckpt_fps:
 			new_ckpt_fp = os.path.join(ckpt_dp,os.path.basename(old_ckpt_fp))
 			# modify checkpoint metadata (hacky)
-			new_ckpt_data = th.load(old_ckpt_fp)
+			new_ckpt_data = th.load(old_ckpt_fp, weights_only=False)
 			ckpt_callback_data = None
 			for k,v in new_ckpt_data["callbacks"].items():
 				if k.startswith("ModelCheckpoint"):

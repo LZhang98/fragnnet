@@ -135,7 +135,7 @@ if __name__ == "__main__":
 	else:
 
 		print(f">>> Loading previous values from {vals_fp}")
-		model_to_vals = th.load(vals_fp)
+		model_to_vals = th.load(vals_fp, weights_only=False)
 		num_models = len(model_to_vals.keys())
 
 	# load model
@@ -225,7 +225,7 @@ if __name__ == "__main__":
 
 	else:
 
-		sims_d = th.load(sims_fp)
+		sims_d = th.load(sims_fp, weights_only=False)
 		ind_cos_sim_bin = sims_d["ind_cos_sim_bin"]
 		ind_cos_hun = sims_d["ind_cos_hun"]
 		ens_cos_sim_bin = sims_d["ens_cos_sim_bin"]
@@ -353,7 +353,7 @@ if __name__ == "__main__":
 
 	else:
 
-		entropies_d = th.load(entropies_fp)
+		entropies_d = th.load(entropies_fp, weights_only=False)
 		ind_formula_node_e = entropies_d["ind_formula_node_e"]
 		ind_formula_node_ne = entropies_d["ind_formula_node_ne"]
 		ind_nb_formula_node_e = entropies_d["ind_nb_formula_node_e"]

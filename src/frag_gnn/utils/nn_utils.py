@@ -783,7 +783,6 @@ def decompile_jit_ckpt(ckpt):
 	# https://github.com/pytorch/pytorch/issues/101107#issuecomment-1801128683
 	#print(f"> src: {path}")
 
-	#ckpt = th.load(path, map_location = map_location)
 	if ckpt['hyper_parameters']['compile'] == False:
 		return ckpt
 

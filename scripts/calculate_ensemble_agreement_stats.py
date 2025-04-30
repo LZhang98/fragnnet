@@ -271,13 +271,13 @@ if __name__ == "__main__":
         if os.path.isfile(ens_type_fp):
 
             print(f"> loading \"{ens_type}\" ensemble values from {ens_type_fp}")
-            ens_vals = th.load(ens_type_fp)
+            ens_vals = th.load(ens_type_fp, weights_only=False)
 
         else:
 
             print(f"> loading \"{ens_type}\" entropy values from {entropy_fp} to create ensemble")
             assert os.path.isfile(entropy_fp), f"File not found: {entropy_fp}"
-            vals = th.load(entropy_fp)
+            vals = th.load(entropy_fp, weights_only=False)
             ens_vals = ensemble_vals(vals, nb=nb, ens_conds=ens_conds, spec=(ens_type == "mix"))
             del vals
             os.makedirs(ens_type_dp, exist_ok=True)
