@@ -17,6 +17,7 @@ from rdkit.Chem import Descriptors
 from rdkit.Chem import AllChem
 from copy import deepcopy
 from tqdm import tqdm
+from joblib import Parallel, delayed
 
 def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
 							 prec_mz, allowed_h_transfer, tolerance=0.01,\
@@ -170,6 +171,50 @@ def match_smart_substructure(target_smiles, substructure_smiles):
 	
 	return matches
 
+def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
+    """Process a single b_idx."""
+    b_spec_mask = spec_batch_idxs == b_idx
+    mol_smiles = data['mol_smiles'][b_idx]
+    b_spec_prec_type_str = spec_prec_type_str[b_idx]
+    b_mol = mol_from_smiles(mol_smiles)
+
+    frag_pyg = data['frag_pyg'][b_idx]
+    frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
+    frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
+    frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x, frag_node_feat_idxs, "cc"))
+
+    b_pred_mzs = []
+    b_frag_node_ids = []
+    b_smarts = []
+
+    for i in range(frag_node_mask.shape[0]):
+        all_atom_ids = th.arange(0, frag_node_mask.shape[1]).to(th.long)
+        frag_atom_ids = all_atom_ids[frag_node_mask[i]].tolist()
+        substructure_smart, substructure_smiles, mw, substructure_formula = atom_ids_to_smarts(b_mol, frag_atom_ids)
+        b_pred_mzs += [mw + H_MASS * j + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str] for j in range(-num_hs, num_hs + 1)]
+        b_frag_node_ids += [i] * (2 * num_hs + 1)
+        b_smarts.append([i, substructure_smart, substructure_smiles, mw, substructure_formula])
+
+    b_true_mzs = data['spec_mzs'][b_spec_mask]
+    b_pred_mzs = th.tensor(b_pred_mzs)
+    b_frag_node_ids = th.tensor(b_frag_node_ids).to(th.long)
+
+    relative = True
+    b_match_mask = calculate_match_mzs(
+        b_true_mzs,
+        b_pred_mzs,
+        tolerance=10 * PPM,
+        relative=relative,
+        tolerance_min_mz=TOLERANCE_MIN_MZ
+    )
+    b_true_match_mask = th.any(b_match_mask, dim=1)
+    b_pred_match_mask = th.any(b_match_mask, dim=0)
+    matched_frag_node_id = th.unique(b_frag_node_ids[b_pred_match_mask])
+    b_smarts_df = pd.DataFrame(b_smarts, columns=["node_id", "smarts", "smiles", "mw", "formula"])
+    b_smarts_df = b_smarts_df[b_smarts_df["node_id"].isin(matched_frag_node_id.tolist())]
+
+    return b_smarts_df
+
 if __name__ == "__main__":
 		
 	# load config
@@ -177,8 +222,8 @@ if __name__ == "__main__":
 	custom_fp   = "config/debug/debug_tiny.yml"
 	config_d  =load_config(template_fp, custom_fp) 
 
-	config_d['train_batch_size'] = 1
-	config_d['eval_batch_size'] = 1
+	config_d['train_batch_size'] = 8
+	config_d['eval_batch_size'] = 8
 	config_d['frag_params']['preload'] = False
 	config_d['frag_params']['preprocess'] = False
 	config_d['spec_params']['prec_type_str'] = True
@@ -205,47 +250,11 @@ if __name__ == "__main__":
 		spec_batch_idxs = data['spec_batch_idxs']
 		spec_ce_batch_idxs = data['spec_ce_batch_idxs']
 
-		for b_idx in range(data['batch_size'].item()):
-			b_spec_mask = spec_batch_idxs == b_idx
-			#b_frag_formula_peak_mask = frag_formula_peak_idxs == b_idx
-			mol_smiles = data['mol_smiles'][b_idx]
-			b_spec_prec_type_str = spec_prec_type_str[b_idx]
-			b_mol = mol_from_smiles(mol_smiles)
-   
-			frag_pyg = data['frag_pyg'][b_idx]
-			frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
-			frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
-			frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x,frag_node_feat_idxs,"cc"))
+		# Parallelize the loop
+		results = Parallel(n_jobs=8)(
+			delayed(process_b_idx)(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs)
+			for b_idx in range(data['batch_size'].item())
+		)
 
-			#print("number of nodes", frag_node_mask.shape[0])
-			b_pred_mzs = []
-			b_frag_node_ids = []
-			b_smarts = []
-			for i in range(frag_node_mask.shape[0]):
-				all_atom_ids = th.arange(0,frag_node_mask.shape[1]).to(th.long)
-				frag_atom_ids = all_atom_ids[frag_node_mask[i]].tolist()
-				substructure_smart,substructure_smiles,mw,substructure_formula = atom_ids_to_smarts(b_mol,frag_atom_ids)
-				b_pred_mzs += [ mw + H_MASS * i + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str]  for i in range(-num_hs,num_hs+1)]
-				b_frag_node_ids += [i] * (2 * num_hs + 1)
-				b_smarts.append([i,substructure_smart,substructure_smiles,mw,substructure_formula])
-			b_true_mzs = spec_mzs[b_spec_mask]
-			b_pred_mzs = th.tensor(b_pred_mzs)
-			b_frag_node_ids = th.tensor(b_frag_node_ids).to(th.long)
-   
-			relative =True
-			b_match_mask = calculate_match_mzs(
-				b_true_mzs,
-				b_pred_mzs,
-				tolerance= 10 * PPM,
-				relative=relative,
-				tolerance_min_mz=TOLERANCE_MIN_MZ
-			)
-			b_true_match_mask = th.any(b_match_mask,dim=1)
-			b_pred_match_mask = th.any(b_match_mask,dim=0)
-			#print(b_true_match_mask)
-			#print(b_pred_match_mask)
-			#print(b_pred_mzs.shape)
-			#print(b_pred_mzs[b_pred_match_mask].shape)
-			matched_frag_node_id = th.unique(b_frag_node_ids[b_pred_match_mask])
-			b_smarts_df = pd.DataFrame(b_smarts,columns=["node_id","smarts","smiles","mw","formula"])
-			b_smarts_df = b_smarts_df[b_smarts_df["node_id"].isin(matched_frag_node_id.tolist())]
+		# Combine results
+		final_results = pd.concat(results, ignore_index=True)
