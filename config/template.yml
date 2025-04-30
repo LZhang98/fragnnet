@@ -8,8 +8,8 @@ wandb_root_dir: checkpoint
 # data
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20_d3_wr75_inchikey
-frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
+split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
+frag_dp: data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
 magma_dp: data/magma
 ann_fp: data/proc/nist20mona23v3/ann_df.pkl
 subsample_params:
