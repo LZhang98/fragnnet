@@ -137,7 +137,7 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
         substructure_smart, substructure_smiles, mw, substructure_formula = atom_ids_to_smarts(b_mol, frag_atom_ids)
         b_pred_mzs += [mw + H_MASS * j + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str] for j in range(-num_hs, num_hs + 1)]
         b_frag_node_ids += [i] * (2 * num_hs + 1)
-        b_smarts.append([i, substructure_smart, substructure_smiles, mw, substructure_formula])
+        b_smarts.append([i, substructure_smart, substructure_smiles, mw, substructure_formula, b_spec_prec_type_str])
 
     b_true_mzs = data['spec_mzs'][b_spec_mask]
     b_pred_mzs = th.tensor(b_pred_mzs)
@@ -154,7 +154,7 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 
     b_pred_match_mask = th.any(b_match_mask, dim=0)
     matched_frag_node_id = th.unique(b_frag_node_ids[b_pred_match_mask])
-    b_smarts_df = pd.DataFrame(b_smarts, columns=["node_id", "smarts", "smiles", "mw", "formula"])
+    b_smarts_df = pd.DataFrame(b_smarts, columns=["node_id", "smarts", "smiles", "mw", "formula", "prec_type"])
     b_smarts_df = b_smarts_df[b_smarts_df["node_id"].isin(matched_frag_node_id.tolist())]
 
     return b_smarts_df
@@ -165,6 +165,7 @@ def get_args():
 	parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml", help="Path to the custom config file")
 	parser.add_argument("--batch_size", type=int, default=256)
 	parser.add_argument("--num_workers", type=int, default=4)
+	parser.add_argument("--output_fp", type=str, default="smarts.csv", help="Path to the output file")
 	return parser.parse_args()
 
 if __name__ == "__main__":
@@ -216,3 +217,7 @@ if __name__ == "__main__":
 
 		# Combine results
 		final_results = pd.concat(results, ignore_index=True)
+		if batch_idx == 0:
+			final_results.to_csv(args.output_fp, index=False, mode='w', header=True)
+		else:
+			final_results.to_csv(args.output_fp, index=False, mode='a', header=0)
