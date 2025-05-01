@@ -18,60 +18,7 @@ from rdkit.Chem import AllChem
 from copy import deepcopy
 from tqdm import tqdm
 from joblib import Parallel, delayed
-
-def compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
-							 prec_mz, allowed_h_transfer, tolerance=0.01,\
-							 prec_type="[M+H]+", is_ppm=False):
-	"""_summary_
-
-	Args:
-		peaks (_type_): _description_
-		formula_peak_mzs (_type_): _description_
-		formula_peak_probs (_type_): _description_
-		idx_by_h_delta (_type_): _description_
-		allowed_h_transfer (_type_): _description_
-		tolerance (float, optional): _description_. Defaults to 0.01.
-		is_ppm (bool, optional): _description_. Defaults to False.
-
-	Returns:
-		_type_: _description_
-	"""
-	true_mzs, true_ints = list(zip(*peaks))
-	theoretical_mzs = formula_peak_mzs
-	theoretical_probs = formula_peak_probs
-
-	allowed_idx = list(idx_by_h_delta[0])
-	for h in range(1, allowed_h_transfer):
-		allowed_idx += list(idx_by_h_delta[2 * h - 1])
-		allowed_idx += list(idx_by_h_delta[2 * h])
-	allowed_idx = list(set(allowed_idx))
-	#print(allowed_idx)
-	indices = th.tensor(allowed_idx)
-	theoretical_mzs = th.index_select(theoretical_mzs,0, indices)
-	theoretical_probs = th.index_select(theoretical_probs,0, indices)
-
-	prec_mask = (theoretical_probs > 0.).type(th.float32)
-	# account for adduct mass
-	theoretical_mzs = theoretical_mzs + prec_mask * PREC_TYPE_TO_MASS_DIFF[prec_type]
-	# compute overlap
-	overlap_pred_idxs = []
-
-	# check true_mzs
-	for true_idx, true_mz in enumerate(true_mzs):
-		mz_diffs = th.abs(theoretical_mzs-true_mz)
-		if not is_ppm:
-			mz_close = mz_diffs < tolerance 
-		else:
-			mz_close = mz_diffs < (true_mz * tolerance * PPM)
-		if th.any(mz_close):
-			pred_idx = th.nonzero(mz_close,as_tuple=False)
-			overlap_pred_idxs.append(pred_idx)
-	  
-	# remove duplicates
-	if len(overlap_pred_idxs) > 0:
-		overlap_pred_idxs = th.unique(th.cat(overlap_pred_idxs,dim=0),dim=0)
-	else:
-		overlap_pred_idxs = th.zeros((0,2))
+import argparse
 
 def draw_highlighted_atoms(mol, atom_ids):
 	
@@ -180,7 +127,6 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 
     frag_pyg = data['frag_pyg'][b_idx]
     frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
-    frag_edge_feat_idxs = frag_pyg.edge_feat_idxs[0]
     frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x, frag_node_feat_idxs, "cc"))
 
     b_pred_mzs = []
@@ -207,7 +153,7 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
         relative=relative,
         tolerance_min_mz=TOLERANCE_MIN_MZ
     )
-    b_true_match_mask = th.any(b_match_mask, dim=1)
+
     b_pred_match_mask = th.any(b_match_mask, dim=0)
     matched_frag_node_id = th.unique(b_frag_node_ids[b_pred_match_mask])
     b_smarts_df = pd.DataFrame(b_smarts, columns=["node_id", "smarts", "smiles", "mw", "formula"])
@@ -215,17 +161,25 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 
     return b_smarts_df
 
+def get_args():
+	parser = argparse.ArgumentParser(description="")
+	parser.add_argument("--template_fp", type=str, default="config/template.yml", help="Path to the config file")
+	parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml", help="Path to the custom config file")
+	return parser.parse_args()
+
 if __name__ == "__main__":
 		
+	args = get_args()
+	template_fp = args.template_fp
+	custom_fp = args.custom_fp
+ 
 	# load config
-	template_fp = "config/template.yml"
-	custom_fp   = "config/debug/debug_tiny.yml"
 	config_d  =load_config(template_fp, custom_fp) 
 
-	config_d['train_batch_size'] = 8
+	config_d['train_batch_size'] = 40
 	config_d['eval_batch_size'] = 8
-	config_d['frag_params']['preload'] = False
-	config_d['frag_params']['preprocess'] = False
+	config_d['frag_params']['preload'] = True
+	config_d['frag_params']['preprocess'] = True
 	config_d['spec_params']['prec_type_str'] = True
 
 	num_hs = config_d['num_hs']
@@ -237,7 +191,7 @@ if __name__ == "__main__":
 	train_dl = init_dataloader(train_ds, config_d)
 	#val_dl = init_dataloader(val_ds, config_d)
  
-	for batch_idx, data in tqdm(enumerate(train_dl)):
+	for batch_idx, data in tqdm(enumerate(train_dl), total=len(train_dl), desc="Processing batches"):
 
 		spec_mzs = data['spec_mzs']
 		spec_prec_type = data['spec_prec_type']
@@ -251,7 +205,7 @@ if __name__ == "__main__":
 		spec_ce_batch_idxs = data['spec_ce_batch_idxs']
 
 		# Parallelize the loop
-		results = Parallel(n_jobs=8)(
+		results = Parallel(n_jobs=-1)(
 			delayed(process_b_idx)(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs)
 			for b_idx in range(data['batch_size'].item())
 		)

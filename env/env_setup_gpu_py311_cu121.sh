@@ -9,7 +9,7 @@ conda activate FRAG-GNN-GPU
 
 conda install python=3.11
 
-pip install torch==2.4.0 --index-url https://download.pytorch.org/whl/cu121
+pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 pip install torch_geometric==2.6.1
 pip install pyg_lib torch_scatter -f https://data.pyg.org/whl/torch-2.4.0+cu121.html
 pip install rdkit==2024.3.5
