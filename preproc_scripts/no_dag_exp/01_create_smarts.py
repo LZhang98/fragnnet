@@ -1,13 +1,11 @@
 import torch as th
-import torch.nn.functional as F
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.frag_utils import load_frag_d, th_long_to_mask, th_mask_to_long, get_node_feats
+from frag_gnn.utils.frag_utils import th_long_to_mask, get_node_feats
 import pandas as pd
 
-from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset
 from frag_gnn.utils.misc_utils import PPM, TOLERANCE_MIN_MZ
 from frag_gnn.runner import load_config, init_dataloader, init_dataset
-from frag_gnn.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func, jss_helper
+from frag_gnn.utils.spec_utils import calculate_match_mzs
 from frag_gnn.utils.data_utils import mol_from_smiles
 from frag_gnn.utils.formula_utils import H_MASS
 
@@ -164,24 +162,31 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 def get_args():
 	parser = argparse.ArgumentParser(description="")
 	parser.add_argument("--template_fp", type=str, default="config/template.yml", help="Path to the config file")
-	parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml", help="Path to the custom config file")
+	parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml", help="Path to the custom config file")
+	parser.add_argument("--batch_size", type=int, default=256)
+	parser.add_argument("--num_workers", type=int, default=4)
 	return parser.parse_args()
 
 if __name__ == "__main__":
 		
 	args = get_args()
-	template_fp = args.template_fp
-	custom_fp = args.custom_fp
- 
+
 	# load config
-	config_d  =load_config(template_fp, custom_fp) 
+	config_d  =load_config(args.template_fp, args.custom_fp) 
 
-	config_d['train_batch_size'] = 40
-	config_d['eval_batch_size'] = 8
-	config_d['frag_params']['preload'] = True
-	config_d['frag_params']['preprocess'] = True
+	config_d['train_batch_size'] = args.batch_size
+	config_d['eval_batch_size'] = args.batch_size
+ 
+	#config_d['spec_fp'] = os.path.join(args.proc_dp,'spec_df.pkl')
+	#config_d['mol_fp'] =  os.path.join(args.proc_dp,'mol_df.pkl')
+	#config_d['split_dp'] = args.split_dp
+	#config_d['frag_dp'] =  args.frag_dp 
+
+	config_d['frag_params']['preload'] = False
+	config_d['frag_params']['preprocess'] = False
 	config_d['spec_params']['prec_type_str'] = True
-
+	config_d['num_workers'] = args.num_workers
+ 
 	num_hs = config_d['num_hs']
  
 	dses = init_dataset(config_d)
@@ -202,7 +207,6 @@ if __name__ == "__main__":
 		frag_formula_peak_idxs = data['frag_formula_peak_idxs']
 
 		spec_batch_idxs = data['spec_batch_idxs']
-		spec_ce_batch_idxs = data['spec_ce_batch_idxs']
 
 		# Parallelize the loop
 		results = Parallel(n_jobs=-1)(
