@@ -33,63 +33,6 @@ def draw_highlighted_atoms(mol, atom_ids):
 
 	return img
 
-def atom_ids_to_smarts(mol, atom_ids, verbose=False):
-	# Create an empty molecule and add only the atoms of interest
-	q_mol = Chem.RWMol()
-
-	# Add atoms that are in the atom_ids list to the new molecule
-	atom_map = {}
-	for atom_idx in atom_ids:
-		atom = mol.GetAtomWithIdx(atom_idx)
-		new_atom_idx = q_mol.AddAtom(atom)
-		atom_map[atom_idx] = new_atom_idx
-
-	# Now we add the bonds that correspond to the atoms in atom_ids
-	for bond in mol.GetBonds():
-		idx1 = bond.GetBeginAtomIdx()
-		idx2 = bond.GetEndAtomIdx()
-
-		# Check if both atoms are in the atom_ids list, if so, add the bond
-		if idx1 in atom_ids and idx2 in atom_ids:
-			q_mol.AddBond(atom_map[idx1], atom_map[idx2], bond.GetBondType())
-		elif idx1 in atom_ids or idx2 in atom_ids:
-			dummy_atm = AllChem.Atom(0)
-			if idx1 in atom_ids:
-				q_mol.AddAtom(dummy_atm)
-				q_mol.AddBond(atom_map[idx1], q_mol.GetNumAtoms() - 1, bond.GetBondType())
-				q_mol.GetAtomWithIdx(atom_map[idx1]).GetImplicitValence()
-				q_mol.GetAtomWithIdx(atom_map[idx1]).SetNumExplicitHs(0)
-				q_mol.GetAtomWithIdx(atom_map[idx1]).SetNoImplicit(False)
-			else:
-				q_mol.AddAtom(dummy_atm)
-				q_mol.AddBond(atom_map[idx2], q_mol.GetNumAtoms() - 1, bond.GetBondType())
-				q_mol.GetAtomWithIdx(atom_map[idx2]).GetImplicitValence()
-				q_mol.GetAtomWithIdx(atom_map[idx2]).SetNumExplicitHs(0)
-				q_mol.GetAtomWithIdx(atom_map[idx2]).SetNoImplicit(False)
-
-	# Get the substructure as a SMILES string
-	q_mol.UpdatePropertyCache()
-	mw = Descriptors.ExactMolWt(q_mol)
-	formula = Chem.rdMolDescriptors.CalcMolFormula(q_mol)
-	substructure_smiles = Chem.MolToSmiles(q_mol, canonical=True)
-	# this need newer version #ignoreAtomMapNumbers=True)
-	
-	#https://www.rdkit.org/docs/GettingStartedInPython.html#atom-map-indices-in-smarts
-	for i, atom in enumerate(q_mol.GetAtoms()):
-		# For each atom, set the property "molAtomMapNumber" to a custom number, let's say, the index of the atom in the molecule
-		if atom.GetAtomicNum() != 0:
-			atom.SetProp("molAtomMapNumber", str(atom.GetIdx()+1))
-
-	substructure_smarts = Chem.MolToSmarts(q_mol)
-	substructure_smarts = substructure_smarts.replace("#0","!#1")
-	if verbose:
-		print(f"Substructure SMARTS: {substructure_smarts}")
-		print(f"Substructure Canonical SMILES: {substructure_smiles}")
-		print(f"Substructure base mass: {mw}")
-		print(f"Substructure formula: {formula}")
-  
-	return substructure_smarts,substructure_smiles,mw,formula
-
 def match_smart_substructure(target_smiles, substructure_smiles):
 	print("Target SMILES:", target_smiles)
 	print("Substructure SMARTS:", substructure_smiles)
