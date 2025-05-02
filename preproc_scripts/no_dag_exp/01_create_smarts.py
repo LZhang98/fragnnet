@@ -81,22 +81,22 @@ def atom_ids_to_smarts(mol, atom_ids, verbose=False):
 		if atom.GetAtomicNum() != 0:
 			atom.SetProp("molAtomMapNumber", str(atom.GetIdx()+1))
 
-	substructure_smart = Chem.MolToSmarts(q_mol)
-	substructure_smart = substructure_smart.replace("#0","!#1")
+	substructure_smarts = Chem.MolToSmarts(q_mol)
+	substructure_smarts = substructure_smarts.replace("#0","!#1")
 	if verbose:
-		print(f"Substructure SMARTS: {substructure_smart}")
+		print(f"Substructure SMARTS: {substructure_smarts}")
 		print(f"Substructure Canonical SMILES: {substructure_smiles}")
 		print(f"Substructure base mass: {mw}")
 		print(f"Substructure formula: {formula}")
   
-	return substructure_smart,substructure_smiles,mw,formula
+	return substructure_smarts,substructure_smiles,mw,formula
 
-def match_smart_substructure(target_smiles, substructure_smiles):
+def match_smart_substructure(target_smiles, substructure_smarts):
 	print("Target SMILES:", target_smiles)
-	print("Substructure SMARTS:", substructure_smiles)
+	print("Substructure SMARTS:", substructure_smarts)
 	target_mol = Chem.MolFromSmiles(target_smiles)
 	#Chem.SanitizeMol(target_mol)
-	qmol = Chem.MolFromSmarts(substructure_smiles)
+	qmol = Chem.MolFromSmarts(substructure_smarts)
 
 	ind_map = {}
 	for atom in qmol.GetAtoms() :
@@ -135,10 +135,10 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	for i in range(frag_node_mask.shape[0]):
 		all_atom_ids = th.arange(0, frag_node_mask.shape[1]).to(th.long)
 		frag_atom_ids = all_atom_ids[frag_node_mask[i]].tolist()
-		substructure_smart, substructure_smiles, mw, substructure_formula = atom_ids_to_smarts(b_mol, frag_atom_ids)
+		substructure_smarts, substructure_smiles, mw, substructure_formula = atom_ids_to_smarts(b_mol, frag_atom_ids)
 		b_pred_mzs += [mw + H_MASS * j + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str] for j in range(-num_hs, num_hs + 1)]
 		b_frag_node_ids += [i] * (2 * num_hs + 1)
-		b_smarts.append([i, substructure_smart, substructure_smiles, mw, substructure_formula, b_spec_prec_type_str])
+		b_smarts.append([i, substructure_smarts, substructure_smiles, mw, substructure_formula, b_spec_prec_type_str])
 
 	b_true_mzs = data['spec_mzs'][b_spec_mask]
 	b_pred_mzs = th.tensor(b_pred_mzs)
@@ -170,6 +170,8 @@ def get_args():
 	parser.add_argument("--batch_size", type=int, default=256)
 	parser.add_argument("--num_workers", type=int, default=4)
 	parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_mi_ma", help="Path to the output file")
+	parser.add_argument("--split_names", type=str, nargs="+", default=['train','val','test'], help="split to process")
+
 	return parser.parse_args()
 
 if __name__ == "__main__":
@@ -190,10 +192,8 @@ if __name__ == "__main__":
 	# Create output directory
 	os.makedirs(args.output_dp, exist_ok=True)	
 	
-	split_names = ['train','val','test']
-	dses = init_dataset(config_d, splits = split_names)
-
-	for split_name,dset in zip(split_names,dses):
+	dses = init_dataset(config_d, splits = args.split_names)
+	for split_name,dset in zip(args.split_names,dses):
 		dl = init_dataloader(dset, config_d)
 		output_fp = os.path.join(args.output_dp, f"smarts_{split_name}.csv")
 		for batch_idx, data in tqdm(enumerate(dl), total=len(dl), desc="Processing batches"):
