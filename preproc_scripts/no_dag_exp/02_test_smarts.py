@@ -11,12 +11,43 @@ from frag_gnn.utils.formula_utils import H_MASS
 
 from rdkit import Chem
 from rdkit.Chem import Draw
-from rdkit.Chem import Descriptors
-from rdkit.Chem import AllChem
 from copy import deepcopy
 from tqdm import tqdm
-from joblib import Parallel, delayed
 import argparse
+
+import numpy as np
+from scipy.sparse.csgraph import connected_components
+from scipy.sparse import csr_matrix
+
+def remove_atoms_and_group_by_connected(adj_matrix, atom_ids_to_remove):
+    """
+    Removes specified atom IDs from the adjacency matrix and groups the remaining atoms by connected components. 
+    Returns original atom IDs of the connected components.
+
+    Parameters:
+        adj_matrix (np.array): The adjacency matrix of the molecule.
+        atom_ids_to_remove (list): List of atom indices to be removed from the matrix.
+
+    Returns:
+        List of connected components: Each component is a list of atom indices.
+    """
+    adj_matrix = adj_matrix.copy()  # Create a copy of the adjacency matrix to avoid modifying the original
+    # Remove rows and columns corresponding to the atoms to be removed
+    for atom_id in atom_ids_to_remove:
+        adj_matrix[:, atom_id] = 0  # Set the column to zero
+        adj_matrix[atom_id, :] = 0 # Set the row to zero
+        
+    # Convert the updated adjacency matrix to a sparse CSR matrix for efficient computation
+    sparse_matrix = csr_matrix(adj_matrix)
+
+    # Use scipy's connected_components to find the connected components in the graph
+    num_components, labels = connected_components(sparse_matrix, directed=False, return_labels=True)
+
+    # Group atom indices by connected components
+    connected_atom_ids = [np.where(labels == i)[0].tolist() for i in range(num_components)]
+    connected_atom_ids = [ tuple(atom_ids) for atom_ids in connected_atom_ids if atom_ids[0] not in set(atom_ids_to_remove)]
+  
+    return connected_atom_ids
 
 def draw_highlighted_atoms(mol, atom_ids):
 	
@@ -33,31 +64,52 @@ def draw_highlighted_atoms(mol, atom_ids):
 
 	return img
 
-def match_smart_substructure(target_smiles, substructure_smiles):
-	print("Target SMILES:", target_smiles)
-	print("Substructure SMARTS:", substructure_smiles)
-	target_mol = Chem.MolFromSmiles(target_smiles)
-	#Chem.SanitizeMol(target_mol)
-	qmol = Chem.MolFromSmarts(substructure_smiles)
+def get_substructure_from_smarts(target_smiles, substructure_smart):
+	"""
+	Matches a SMARTS substructure with atom mapping to a target SMILES molecule,
+	and returns the rest of the atom index sets grouped by disconnected fragments.
 
-	ind_map = {}
-	for atom in qmol.GetAtoms() :
-		map_num = atom.GetAtomMapNum()
-		if map_num:
-			ind_map[map_num-1] = atom.GetIdx()
-	
-	for atom in qmol.GetAtoms() :
-		map_num = atom.GetAtomMapNum()
-		if map_num:
-			ind_map[map_num-1] = atom.GetIdx()
-		
-	map_list = [ind_map[x] for x in sorted(ind_map)]
+	Parameters:
+		target_smiles (str): The SMILES of the molecule to search in.
+		substructure_smiles (str): The SMARTS pattern with atom map numbers.
+
+	Returns:
+		matches (list of lists): Atom indices in target molecule corresponding to SMARTS-mapped atoms.
+		remainders (list of lists of lists): For each match, a list of fragments,
+											 each fragment is a list of atom indices.
+	"""
+
+	target_mol = Chem.MolFromSmiles(target_smiles)
+ 
+	qmol = Chem.MolFromSmarts(substructure_smart)
 	matches = []
-	for match in target_mol.GetSubstructMatches( qmol ) :
-		mas = [match[x] for x in map_list]
-		matches.append(mas)
+
+	ind_map = {} # map atom numbers to indices
+	for atom in qmol.GetAtoms() :
+		map_num = atom.GetAtomMapNum()
+		if map_num:
+			ind_map[map_num-1] = atom.GetIdx()
 	
-	return matches
+	map_list = [ind_map[x] for x in sorted(ind_map)] # qmol atom indices list to match
+
+	for match in target_mol.GetSubstructMatches( qmol ) :
+		mas = tuple([match[x] for x in map_list])
+		matches.append(mas)
+
+	# get remainders
+	remainders = []
+	adj_matrix = Chem.rdmolops.GetAdjacencyMatrix(target_mol)
+	all_atoms = set(range(target_mol.GetNumAtoms()))
+
+	for match in matches:
+		# Compute unmatched atom indices
+		unmatched_atoms = list(all_atoms - set(match))
+
+		if not unmatched_atoms:
+			continue
+		remainders = remove_atoms_and_group_by_connected(adj_matrix, atom_ids_to_remove=match)
+
+	return matches, remainders
 
 def get_args():
 	parser = argparse.ArgumentParser(description="")
@@ -121,9 +173,13 @@ if __name__ == "__main__":
 			
 			smarts_list = smarts_df[smarts_df["prec_type"] == b_spec_prec_type_str]['smarts'].tolist()
 			atom_ids_list = []
-			for smarts in smarts_list:
-				atom_ids_list += match_smart_substructure(mol_smiles, smarts)
+			for smarts in tqdm(smarts_list):
+				matches, remainders = get_substructure_from_smarts(mol_smiles, smarts)
+				atom_ids_list += matches
+				atom_ids_list += remainders
 
+			atom_ids_list = list(set(atom_ids_list))
+			print(len(atom_ids_list))
 			"""
 			b_pred_mzs = []
 			b_frag_node_ids = []
