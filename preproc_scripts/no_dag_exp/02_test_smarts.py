@@ -96,6 +96,9 @@ def get_substructure_from_smarts(target_smiles, substructure_smart):
 		mas = tuple([match[x] for x in map_list])
 		matches.append(mas)
 
+	if len(matches) == 0:
+		return [], []
+
 	# get remainders
 	remainders = []
 	adj_matrix = Chem.rdmolops.GetAdjacencyMatrix(target_mol)
@@ -170,7 +173,7 @@ if __name__ == "__main__":
 			frag_pyg = data['frag_pyg'][b_idx]
 			frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 			frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x, frag_node_feat_idxs, "cc"))
-			
+			print(frag_node_mask.shape)
 			smarts_list = smarts_df[smarts_df["prec_type"] == b_spec_prec_type_str]['smarts'].tolist()
 			atom_ids_list = []
 			for smarts in tqdm(smarts_list):

@@ -104,7 +104,6 @@ def match_smart_substructure(target_smiles, substructure_smarts):
 		if map_num:
 			ind_map[map_num-1] = atom.GetIdx()
 	
-	for atom in qmol.GetAtoms():
 		map_num = atom.GetAtomMapNum()
 		if map_num:
 			ind_map[map_num-1] = atom.GetIdx()
@@ -128,22 +127,29 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 	frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x, frag_node_feat_idxs, "cc"))
 
-	b_pred_mzs = []
-	b_frag_node_ids = []
+	b_num_nodes = frag_node_mask.shape[0]
+	b_num_mw_per_node = 2 * num_hs + 1
+	b_pred_mzs = th.zeros(b_num_nodes * b_num_mw_per_node, dtype=th.float)
+	b_frag_node_ids = th.zeros(b_num_nodes * b_num_mw_per_node, dtype=th.long)
+	b_frag_node_hs = th.zeros(b_num_nodes * b_num_mw_per_node, dtype=th.long)
 	b_smarts = []
-
+ 
+	# create a smart for each fragment mask
 	for i in range(frag_node_mask.shape[0]):
 		all_atom_ids = th.arange(0, frag_node_mask.shape[1]).to(th.long)
 		frag_atom_ids = all_atom_ids[frag_node_mask[i]].tolist()
 		substructure_smarts, substructure_smiles, mw, substructure_formula = atom_ids_to_smarts(b_mol, frag_atom_ids)
-		b_pred_mzs += [mw + H_MASS * j + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str] for j in range(-num_hs, num_hs + 1)]
-		b_frag_node_ids += [i] * (2 * num_hs + 1)
+		# create set of mass for matching
+		#b_pred_mzs += [mw + H_MASS * j + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str] for j in range(-num_hs, num_hs + 1)]
+		#b_frag_node_ids += [i] * (2 * num_hs + 1)
+		#b_frag_node_hs += [j for j in range(-num_hs, num_hs + 1)]
+		b_frag_node_ids[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = i
+		b_frag_node_hs[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = th.arange(-num_hs, num_hs + 1)
+		b_pred_mzs[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = mw + H_MASS * th.arange(-num_hs, num_hs + 1) + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str]
 		b_smarts.append([i, substructure_smarts, substructure_smiles, mw, substructure_formula, b_spec_prec_type_str])
 
+	# match the dag mzs with the true mzs
 	b_true_mzs = data['spec_mzs'][b_spec_mask]
-	b_pred_mzs = th.tensor(b_pred_mzs)
-	b_frag_node_ids = th.tensor(b_frag_node_ids).to(th.long)
-
 	relative = True
 	b_match_mask = calculate_match_mzs(
 		b_true_mzs,
@@ -154,24 +160,44 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	)
 
 	b_pred_match_mask = th.any(b_match_mask, dim=0)
-	matched_frag_node_id = th.unique(b_frag_node_ids[b_pred_match_mask])
+	b_true_match_mask = th.any(b_match_mask, dim=1)
+ 
+	matched_frag_node_id = b_frag_node_ids[b_pred_match_mask]
+	matched_frag_h = b_frag_node_hs[b_pred_match_mask]
+	matched_frag_mz = b_pred_mzs[b_pred_match_mask]
+	#print(f"matched_frag_node_id: {matched_frag_node_id.shape}")
+	#print(f"matched_frag_h: {matched_frag_h.shape}")
+	#print(f"matched_frag_mz: {matched_frag_mz.shape}")
+	
+	fn_matches_d = {}
+	for fn_id, fn_mh, fn_mz in zip(matched_frag_node_id, matched_frag_h, matched_frag_mz):
+		node_id = fn_id.item()
+		if node_id not in fn_matches_d:
+			fn_matches_d[node_id] = []
+		fn_matches_d[node_id].append((fn_mh.item(), fn_mz.item()))
+	
 	b_smarts_df = pd.DataFrame(b_smarts, columns=["node_id", "smarts", "smiles", "mw", "formula", "prec_type",])
 	b_smarts_df["mol_smiles"] = mol_smiles
 	b_smarts_df["mol_inchikey"] = Chem.MolToInchiKey(b_mol)
- 
-	b_smarts_df = b_smarts_df[b_smarts_df["node_id"].isin(matched_frag_node_id.tolist())]
-
+	# only keep the matched fragments
+	unique_matched_frag_node_id = set(th.unique(matched_frag_node_id).tolist())
+	b_smarts_df = b_smarts_df[b_smarts_df["node_id"].isin(unique_matched_frag_node_id)]
+	b_fn_matches_df = pd.DataFrame(fn_matches_d.items(), columns=["node_id", "matches"])
+	b_smarts_df = b_smarts_df.merge(b_fn_matches_df, on="node_id", how="left")
 	return b_smarts_df
 
 def get_args():
 	parser = argparse.ArgumentParser(description="")
 	parser.add_argument("--template_fp", type=str, default="config/template.yml", help="Path to the config file")
-	parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml", help="Path to the custom config file")
-	parser.add_argument("--batch_size", type=int, default=256)
+	parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml", help="Path to the custom config file")
+	parser.add_argument("--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file")
+	#parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml", help="Path to the custom config file")
+	#parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_mi_ma", help="Path to the output file")
+	parser.add_argument("--batch_size", type=int, default=1, help="Batch size for the dataloader")
 	parser.add_argument("--num_workers", type=int, default=4)
-	parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_mi_ma", help="Path to the output file")
 	parser.add_argument("--split_names", type=str, nargs="+", default=['train','val','test'], help="split to process")
-
+	parser.add_argument("--n_jobs", type=int, default=1, help="Number of jobs for parallel processing, -1 for all cores")
+	#parser.add_argument("--debug", action="store_false", help="debug mode")
 	return parser.parse_args()
 
 if __name__ == "__main__":
@@ -208,6 +234,8 @@ if __name__ == "__main__":
 
 			spec_batch_idxs = data['spec_batch_idxs']
 
+			#process_b_idx(0, spec_batch_idxs, spec_prec_type_str, data, num_hs)
+			#exit()
 			# Parallelize the loop
 			results = Parallel(n_jobs=-1)(
 				delayed(process_b_idx)(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs)
