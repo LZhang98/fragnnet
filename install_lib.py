@@ -4,33 +4,65 @@ import re
 import ctypes
 import platform
 import argparse
+import os
 
-def detect_nvcc():
+def detect_libcuda():
+    # List common locations where libcuda.so may be located
+    potential_locations = [
+        "/usr/local/cuda/lib64/libcuda.so",    # Default CUDA installation path
+        "/usr/lib/x86_64-linux-gnu/libcuda.so", # Possible system location
+        "/usr/local/cuda/lib64/stubs/libcuda.so",  # For systems with CUDA toolkit
+    ]
+    
+    for location in potential_locations:
+        if os.path.exists(location):
+            print(f"{location} found: CUDA runtime is available.")
+            return True
+    print("libcuda.so not found: CUDA runtime is not available.")
+    return False
+
+def cuda_version_nvcc():
 	try:
 		output = subprocess.check_output(["nvcc", "--version"], encoding="utf-8")
 		match = re.search(r"release (\d+\.\d+)", output)
+		print(f"nvcc output: {output}".rstrip())
 		if match:
-			return match.group(1).replace(".", "")
-	except Exception:
+			cuda_version = match.group(1).replace(".", "")
+			print(f"NVCC cuda version: {cuda_version}")
+			return cuda_version
+	except Exception as e:
+		print(f"Error detecting CUDA version with nvcc: {e}")
 		return None
 
-def detect_libcuda():
+def cuda_version_libcuda():
 	try:
 		if platform.system() == "Windows":
-			ctypes.windll.LoadLibrary("nvcuda.dll")
+			libcudart = ctypes.windll.LoadLibrary("nvcuda.dll")
 		else:
-			ctypes.cdll.LoadLibrary("libcuda.so")
-		print("libcuda found: assuming CUDA runtime is available")
-		# Default to 118 if we can't detect exact version
-		return "118"
-	except Exception:
+			libcudart = ctypes.cdll.LoadLibrary("libcuda.so")
+
+		version = ctypes.c_int()
+		result = libcudart.cuDriverGetVersion(ctypes.byref(version))
+
+		if result == 0:  # CUDA_SUCCESS
+			version_str = str(version.value)
+			major = version_str[0:2]
+			minor = version_str[2:3]
+   
+			#major = version.value // 1000
+			#minor = (version.value % 1000) // 100
+			print(f"cuDriverGetVersion version value {version.value}, extracted cuda version: {major}.{minor}")
+			return f"{major}{minor}"
+		else:
+			return f"cuDriverGetVersion failed with code {result}"
+	except Exception as e:
+		print(f"Error detecting CUDA version with libcuda: {e}")
 		return None
 
 def detect_cuda_version(force_cuda=None):
 	if force_cuda:
 		return force_cuda
-	return detect_nvcc() or detect_libcuda()
-
+	return cuda_version_nvcc() or cuda_version_libcuda()
 
 def pip_install(packages, index_url=None):
 	cmd = [sys.executable, "-m", "pip", "install"] + packages
