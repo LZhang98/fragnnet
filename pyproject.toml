@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frag_gnn"
-version = "2025.0.1"
-description = "Fragmentation prediction for small molecules"
+version = "2025.05"
+description = "HighRes MS/MS prediction for small molecules"
 readme = "README.md"
 license = { text = "BSD-2-Clause" }
-requires-python = ">=3.10"
+requires-python = ">=3.10, <=3.12"
 dependencies = [
     "numpy>=1.24,<2",
     "cython>=3.0.11",
@@ -26,14 +26,13 @@ dependencies = [
     "pyteomics"
 ]
 
-[project.scripts]
-install-cuda = "install_cuda:main"
+#[project.scripts]
+#install-lib = "install_lib:main"
 
 [project.optional-dependencies]
 # development dependency groups
 dev = [
-    "wandb",
-    "pytest"
+    "wandb"
 ]
 
 [tool.setuptools]

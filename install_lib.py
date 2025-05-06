@@ -1,9 +1,9 @@
 import subprocess
 import sys
 import re
-import os
 import ctypes
 import platform
+import argparse
 
 def detect_nvcc():
 	try:
@@ -97,9 +97,29 @@ def install_all(cuda_version):
 		)		
 
 def main():
-	cuda_version = detect_cuda_version()
+	parser = argparse.ArgumentParser(description="Install PyTorch and related libraries.")
+	parser.add_argument(
+		"--force-cuda",
+		type=str,
+		default=None,
+		choices=["118", "121"],
+		help="Force a specific CUDA version (11.8 or 12.1)."
+	)
+	parser.add_argument(
+		"--force-cpu",
+		action="store_false",
+		help="Force CPU version."
+	)
+	
+	args = parser.parse_args()
+	if args.force_cpu:
+		cuda_version = None
+	elif args.force_cuda:
+		cuda_version = args.force_cuda
+	else:
+		cuda_version = detect_cuda_version()
 	print(f"Detected CUDA version: {cuda_version}" if cuda_version else "CUDA not detected.")
 	install_all(cuda_version)
-
+ 
 if __name__ == "__main__":
 	main()
