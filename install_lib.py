@@ -30,6 +30,9 @@ def cuda_version_nvcc():
 			cuda_version = match.group(1).replace(".", "")
 			print(f"NVCC cuda version: {cuda_version}")
 			return cuda_version
+		else:
+			print("Could not find CUDA version in nvcc output.")
+			return None
 	except Exception as e:
 		print(f"Error detecting CUDA version with nvcc: {e}")
 		return None
@@ -54,7 +57,8 @@ def cuda_version_libcuda():
 			print(f"cuDriverGetVersion version value {version.value}, extracted cuda version: {major}.{minor}")
 			return f"{major}{minor}"
 		else:
-			return f"cuDriverGetVersion failed with code {result}"
+			print(f"cuDriverGetVersion failed with code {result}")
+			return None
 	except Exception as e:
 		print(f"Error detecting CUDA version with libcuda: {e}")
 		return None
@@ -139,11 +143,14 @@ def main():
 	)
 	parser.add_argument(
 		"--force-cpu",
-		action="store_false",
+		action="store_true",
 		help="Force CPU version."
 	)
 	
 	args = parser.parse_args()
+ 
+	assert not (args.force_cuda and args.force_cpu), "Cannot force both CPU and CUDA versions."
+	print(f"Force CPU: {args.force_cpu}, Force CUDA: {args.force_cuda}")
 	if args.force_cpu:
 		cuda_version = None
 	elif args.force_cuda:
