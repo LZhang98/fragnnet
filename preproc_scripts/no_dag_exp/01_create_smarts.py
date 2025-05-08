@@ -1,4 +1,6 @@
 import os
+import argparse
+
 import torch as th
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from frag_gnn.utils.frag_utils import th_long_to_mask, get_node_feats
@@ -17,7 +19,10 @@ from rdkit.Chem import AllChem
 from copy import deepcopy
 from tqdm import tqdm
 from joblib import Parallel, delayed
-import argparse
+import numpy as np
+from scipy.sparse.csgraph import connected_components
+from scipy.sparse import csr_matrix
+
 
 def draw_highlighted_atoms(mol, atom_ids):
 	
@@ -35,6 +40,17 @@ def draw_highlighted_atoms(mol, atom_ids):
 	return img
 
 def atom_ids_to_smarts(mol, atom_ids, verbose=False):
+	"""_summary_
+
+	Args:
+		mol (_type_): _description_
+		atom_ids (_type_): _description_
+		verbose (bool, optional): _description_. Defaults to False.
+
+	Returns:
+		_type_: _description_
+	"""
+ 
 	# Create an empty molecule and add only the atoms of interest
 	q_mol = Chem.RWMol()
 
@@ -91,30 +107,34 @@ def atom_ids_to_smarts(mol, atom_ids, verbose=False):
   
 	return substructure_smarts,substructure_smiles,mw,formula
 
-def match_smart_substructure(target_smiles, substructure_smarts):
-	print("Target SMILES:", target_smiles)
-	print("Substructure SMARTS:", substructure_smarts)
-	target_mol = Chem.MolFromSmiles(target_smiles)
-	#Chem.SanitizeMol(target_mol)
-	qmol = Chem.MolFromSmarts(substructure_smarts)
+def get_remaining_connected_atom_ids(adj_matrix, atom_ids_to_remove):
+    """
+    Removes specified atom IDs from the adjacency matrix and groups the remaining atoms by connected components.
 
-	ind_map = {}
-	for atom in qmol.GetAtoms() :
-		map_num = atom.GetAtomMapNum()
-		if map_num:
-			ind_map[map_num-1] = atom.GetIdx()
-	
-		map_num = atom.GetAtomMapNum()
-		if map_num:
-			ind_map[map_num-1] = atom.GetIdx()
-		
-	map_list = [ind_map[x] for x in sorted(ind_map)]
-	matches = []
-	for match in target_mol.GetSubstructMatches( qmol ) :
-		mas = [match[x] for x in map_list]
-		matches.append(mas)
-	
-	return matches
+    Parameters:
+        adj_matrix (np.array): The adjacency matrix of the molecule.
+        atom_ids_to_remove (list): List of atom indices to be removed from the matrix.
+
+    Returns:
+        List of connected components: Each component is a list of atom indices.
+    """
+    adj_matrix = adj_matrix.copy()  # Create a copy of the adjacency matrix to avoid modifying the original
+    # Remove rows and columns corresponding to the atoms to be removed
+    for atom_id in atom_ids_to_remove:
+        adj_matrix[:, atom_id] = 0  # Set the column to zero
+        adj_matrix[atom_id, :] = 0 # Set the row to zero
+        
+    # Convert the updated adjacency matrix to a sparse CSR matrix for efficient computation
+    sparse_matrix = csr_matrix(adj_matrix)
+
+    # Use scipy's connected_components to find the connected components in the graph
+    num_components, labels = connected_components(sparse_matrix, directed=False, return_labels=True)
+
+    # Group atom indices by connected components
+    connected_atom_ids = [np.where(labels == i)[0].tolist() for i in range(num_components)]
+    connected_atom_ids = [ tuple(atom_ids) for atom_ids in connected_atom_ids if atom_ids[0] not in set(atom_ids_to_remove)]
+  
+    return connected_atom_ids
 
 def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	"""Process a single b_idx."""
@@ -122,7 +142,8 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	mol_smiles = data['mol_smiles'][b_idx]
 	b_spec_prec_type_str = spec_prec_type_str[b_idx]
 	b_mol = mol_from_smiles(mol_smiles)
-
+	b_mol_adj = Chem.rdmolops.GetAdjacencyMatrix(b_mol)
+ 
 	frag_pyg = data['frag_pyg'][b_idx]
 	frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 	frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x, frag_node_feat_idxs, "cc"))
@@ -133,7 +154,7 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	b_frag_node_ids = th.zeros(b_num_nodes * b_num_mw_per_node, dtype=th.long)
 	b_frag_node_hs = th.zeros(b_num_nodes * b_num_mw_per_node, dtype=th.long)
 	b_smarts = []
- 
+	nl_smarts_d = []
 	# create a smart for each fragment mask
 	for i in range(frag_node_mask.shape[0]):
 		all_atom_ids = th.arange(0, frag_node_mask.shape[1]).to(th.long)
@@ -148,6 +169,11 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 		b_pred_mzs[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = mw + H_MASS * th.arange(-num_hs, num_hs + 1) + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str]
 		b_smarts.append([i, substructure_smarts, substructure_smiles, mw, substructure_formula, b_spec_prec_type_str])
 
+		nl_atom_ids_l = get_remaining_connected_atom_ids(b_mol_adj, atom_ids_to_remove= frag_atom_ids)
+		for nl_atom_ids in nl_atom_ids_l:
+			nl_substructure_smart,nl_substructure_smiles,nl_mw,nl_formula= atom_ids_to_smarts(b_mol, nl_atom_ids)
+			nl_smarts_d.append([i, nl_substructure_smart, nl_substructure_smiles, nl_mw, nl_formula, b_spec_prec_type_str])
+   
 	# match the dag mzs with the true mzs
 	b_true_mzs = data['spec_mzs'][b_spec_mask]
 	relative = True
@@ -184,7 +210,10 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	b_smarts_df = b_smarts_df[b_smarts_df["node_id"].isin(unique_matched_frag_node_id)]
 	b_fn_matches_df = pd.DataFrame(fn_matches_d.items(), columns=["node_id", "matches"])
 	b_smarts_df = b_smarts_df.merge(b_fn_matches_df, on="node_id", how="left")
-	return b_smarts_df
+ 
+	# nl dataframe
+	b_nl_smarts_df = pd.DataFrame(nl_smarts_d, columns=["node_id", "smarts", "smiles", "mw", "formula", "prec_type"])
+	return (b_smarts_df, b_nl_smarts_df)
 
 def get_args():
 	parser = argparse.ArgumentParser(description="")
@@ -221,7 +250,8 @@ if __name__ == "__main__":
 	dses = init_dataset(config_d, splits = args.split_names)
 	for split_name,dset in zip(args.split_names,dses):
 		dl = init_dataloader(dset, config_d)
-		output_fp = os.path.join(args.output_dp, f"smarts_{split_name}.csv")
+		smart_output_fp = os.path.join(args.output_dp, f"smarts_{split_name}.csv")
+		nl_output_fp = os.path.join(args.output_dp, f"nl_smarts_{split_name}.csv")
 		for batch_idx, data in tqdm(enumerate(dl), total=len(dl), desc="Processing batches"):
 
 			spec_mzs = data['spec_mzs']
@@ -242,9 +272,13 @@ if __name__ == "__main__":
 				for b_idx in range(data['batch_size'].item())
 			)
 
+			smarts_dfs_l = [result[0] for result in results]
+			nl_smarts_dfs_l = [result[1] for result in results]
+   
 			# Combine results
-			final_results = pd.concat(results, ignore_index=True)
-			if batch_idx == 0:
-				final_results.to_csv(output_fp, index=False, mode='w', header=True)
-			else:
-				final_results.to_csv(output_fp, index=False, mode='a', header=0)
+			for ofp, smarts_df_l in zip([smart_output_fp, nl_output_fp], [smarts_dfs_l, nl_smarts_dfs_l]):
+				smarts_df = pd.concat(smarts_df_l, ignore_index=True)
+				if batch_idx == 0:
+					smarts_df.to_csv(ofp, index=False, mode='w', header=True)
+				else:
+					smarts_df.to_csv(ofp, index=False, mode='a', header=0)
