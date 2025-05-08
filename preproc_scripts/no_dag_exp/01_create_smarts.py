@@ -206,20 +206,16 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	for fn_id, fn_mh, fn_mz, fn_peak_id in zip(matched_frag_node_id, matched_frag_h, matched_frag_mz, matched_peak_id):
 		node_id = fn_id.item()
 		if node_id not in fn_matches_d:
-			fn_matches_d[node_id] = []
-		fn_matches_d[node_id].append((fn_mh.item(), fn_mz.item()))
+			fn_matches_d[node_id] = [] #{'matached_frag':[],'matached_peak':[]}
 
-		#print(b_match_mask[fn_id])
-		#print(b_match_mask.shape)
-		#print(b_match_mask[:, fn_id])
+		# match the true mzs with the predicted frag mzs
 		fn_true_mz = b_true_mzs[b_match_mask[:, fn_peak_id]]
 		fn_true_ints = b_true_ints[b_match_mask[:, fn_peak_id]]
-		#print(th.any(b_match_mask[:, fn_id]))
-		#if len(fn_true_mz) > 0:
-		print(fn_mz)
-		print(fn_true_mz)
-		print(fn_true_ints)
-  	
+		fn_matched_peaks = th.stack([fn_true_mz, fn_true_ints]).T
+		#print(f"fn_matched_peaks: {fn_matched_peaks.tolist()}")
+		#fn_matches_d[node_id]['matached_peak'] = fn_matched_peaks.tolist()
+		fn_matches_d[node_id].append((fn_mh.item(), fn_mz.item(), fn_matched_peaks.tolist()))
+		
 	b_smarts_df = pd.DataFrame(b_smarts, columns=["node_id", "smarts", "smiles", "mw", "formula", "prec_type",])
 	b_smarts_df["mol_smiles"] = mol_smiles
 	b_smarts_df["mol_inchikey"] = Chem.MolToInchiKey(b_mol)
@@ -236,15 +232,14 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 def get_args():
 	parser = argparse.ArgumentParser(description="")
 	parser.add_argument("--template_fp", type=str, default="config/template.yml", help="Path to the config file")
-	parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml", help="Path to the custom config file")
-	parser.add_argument("--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file")
-	#parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml", help="Path to the custom config file")
-	#parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_mi_ma", help="Path to the output file")
+	#parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml", help="Path to the custom config file")
+	#parser.add_argument("--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file")
+	parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml", help="Path to the custom config file")
+	parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_mi_ma", help="Path to the output file")
 	parser.add_argument("--batch_size", type=int, default=1, help="Batch size for the dataloader")
 	parser.add_argument("--num_workers", type=int, default=4)
 	parser.add_argument("--split_names", type=str, nargs="+", default=['train','val','test'], help="split to process")
 	parser.add_argument("--n_jobs", type=int, default=1, help="Number of jobs for parallel processing, -1 for all cores")
-	#parser.add_argument("--debug", action="store_false", help="debug mode")
 	return parser.parse_args()
 
 if __name__ == "__main__":
@@ -282,9 +277,6 @@ if __name__ == "__main__":
 
 			spec_batch_idxs = data['spec_batch_idxs']
 
-			process_b_idx(0, spec_batch_idxs, spec_prec_type_str, data, num_hs)
-			exit()
-			# Parallelize the loop
 			results = Parallel(n_jobs=-1)(
 				delayed(process_b_idx)(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs)
 				for b_idx in range(data['batch_size'].item())
