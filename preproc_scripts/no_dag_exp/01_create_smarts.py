@@ -176,6 +176,8 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
    
 	# match the dag mzs with the true mzs
 	b_true_mzs = data['spec_mzs'][b_spec_mask]
+	b_true_ints = data['spec_ints'][b_spec_mask]
+ 
 	relative = True
 	b_match_mask = calculate_match_mzs(
 		b_true_mzs,
@@ -186,22 +188,38 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	)
 
 	b_pred_match_mask = th.any(b_match_mask, dim=0)
-	b_true_match_mask = th.any(b_match_mask, dim=1)
- 
+	#b_true_match_mask = th.any(b_match_mask, dim=1)
+	#print(f"b_match_mask: {b_match_mask.shape}")
+	#print(f"b_frag_node_ids: {b_frag_node_ids.shape}")
+	#print(f"b_pred_match_mask: {b_pred_match_mask.shape}")
 	matched_frag_node_id = b_frag_node_ids[b_pred_match_mask]
 	matched_frag_h = b_frag_node_hs[b_pred_match_mask]
 	matched_frag_mz = b_pred_mzs[b_pred_match_mask]
+	matched_peak_id = b_pred_match_mask.nonzero().squeeze(1)
+	#print(f"matched_peak_id: {matched_peak_id.shape}")
+ 
 	#print(f"matched_frag_node_id: {matched_frag_node_id.shape}")
 	#print(f"matched_frag_h: {matched_frag_h.shape}")
 	#print(f"matched_frag_mz: {matched_frag_mz.shape}")
-	
+ 
 	fn_matches_d = {}
-	for fn_id, fn_mh, fn_mz in zip(matched_frag_node_id, matched_frag_h, matched_frag_mz):
+	for fn_id, fn_mh, fn_mz, fn_peak_id in zip(matched_frag_node_id, matched_frag_h, matched_frag_mz, matched_peak_id):
 		node_id = fn_id.item()
 		if node_id not in fn_matches_d:
 			fn_matches_d[node_id] = []
 		fn_matches_d[node_id].append((fn_mh.item(), fn_mz.item()))
-	
+
+		#print(b_match_mask[fn_id])
+		#print(b_match_mask.shape)
+		#print(b_match_mask[:, fn_id])
+		fn_true_mz = b_true_mzs[b_match_mask[:, fn_peak_id]]
+		fn_true_ints = b_true_ints[b_match_mask[:, fn_peak_id]]
+		#print(th.any(b_match_mask[:, fn_id]))
+		#if len(fn_true_mz) > 0:
+		print(fn_mz)
+		print(fn_true_mz)
+		print(fn_true_ints)
+  	
 	b_smarts_df = pd.DataFrame(b_smarts, columns=["node_id", "smarts", "smiles", "mw", "formula", "prec_type",])
 	b_smarts_df["mol_smiles"] = mol_smiles
 	b_smarts_df["mol_inchikey"] = Chem.MolToInchiKey(b_mol)
@@ -264,8 +282,8 @@ if __name__ == "__main__":
 
 			spec_batch_idxs = data['spec_batch_idxs']
 
-			#process_b_idx(0, spec_batch_idxs, spec_prec_type_str, data, num_hs)
-			#exit()
+			process_b_idx(0, spec_batch_idxs, spec_prec_type_str, data, num_hs)
+			exit()
 			# Parallelize the loop
 			results = Parallel(n_jobs=-1)(
 				delayed(process_b_idx)(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs)
