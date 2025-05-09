@@ -239,7 +239,7 @@ def get_args():
 	parser.add_argument("--batch_size", type=int, default=1, help="Batch size for the dataloader")
 	parser.add_argument("--num_workers", type=int, default=4)
 	parser.add_argument("--split_names", type=str, nargs="+", default=['train','val','test'], help="split to process")
-	parser.add_argument("--n_jobs", type=int, default=1, help="Number of jobs for parallel processing, -1 for all cores")
+	parser.add_argument("--n_jobs", type=int, default=-1, help="Number of jobs for parallel processing, -1 for all cores")
 	return parser.parse_args()
 
 if __name__ == "__main__":
