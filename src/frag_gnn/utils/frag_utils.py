@@ -382,17 +382,19 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 				,max_h_transfer:int
 				,formula_strs:bool=False
 				,bitmask:bool=True
-				,base_formula = None) ->dict[int,str]|dict[int,np.ndarray]:
+				,base_formula = None) ->dict[int,str]|dict[int,int]:
 	"""given a connected component, comupute all formula within give h shift
 
 	Args:
 		cc (list|np.ndarray): connected component
 		mol_d (dict): mol dictionary
-		max_h_transfer (_type_): max number of h movement allowed
-		formula_strs (bool, optional): _description_. Defaults to False.
+		max_h_transfer (int): max number of h movement allowed
+		formula_strs (bool, optional): Defaults to False.
 
 	Returns:
-		_type_: _description_
+		dict[int,str]|dict[int,np.ndarray]: 
+  		1.Delta_H to Formula String Dict
+		2.Delta_H to Forumla H Count Dict
 	"""
 
 	bonds = mol_d["bonds"] # bond definition, atom id-atom id, never mutated

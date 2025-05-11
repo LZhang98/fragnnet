@@ -236,7 +236,7 @@ def get_args():
 	#parser.add_argument("--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file")
 	parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml", help="Path to the custom config file")
 	parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_mi_ma", help="Path to the output file")
-	parser.add_argument("--batch_size", type=int, default=1, help="Batch size for the dataloader")
+	parser.add_argument("--batch_size", type=int, default=40, help="Batch size for the dataloader")
 	parser.add_argument("--num_workers", type=int, default=4)
 	parser.add_argument("--split_names", type=str, nargs="+", default=['train','val','test'], help="split to process")
 	parser.add_argument("--n_jobs", type=int, default=-1, help="Number of jobs for parallel processing, -1 for all cores")
