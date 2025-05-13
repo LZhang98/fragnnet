@@ -6,21 +6,6 @@ import platform
 import argparse
 import os
 
-def detect_libcuda():
-    # List common locations where libcuda.so may be located
-    potential_locations = [
-        "/usr/local/cuda/lib64/libcuda.so",    # Default CUDA installation path
-        "/usr/lib/x86_64-linux-gnu/libcuda.so", # Possible system location
-        "/usr/local/cuda/lib64/stubs/libcuda.so",  # For systems with CUDA toolkit
-    ]
-    
-    for location in potential_locations:
-        if os.path.exists(location):
-            print(f"{location} found: CUDA runtime is available.")
-            return True
-    print("libcuda.so not found: CUDA runtime is not available.")
-    return False
-
 def cuda_version_nvcc():
 	try:
 		output = subprocess.check_output(["nvcc", "--version"], encoding="utf-8")
@@ -151,6 +136,7 @@ def main():
  
 	assert not (args.force_cuda and args.force_cpu), "Cannot force both CPU and CUDA versions."
 	print(f"Force CPU: {args.force_cpu}, Force CUDA: {args.force_cuda}")
+	print(f"-" * 30 )
 	if args.force_cpu:
 		cuda_version = None
 	elif args.force_cuda:
@@ -158,7 +144,11 @@ def main():
 	else:
 		cuda_version = detect_cuda_version()
 	print(f"Detected CUDA version: {cuda_version}" if cuda_version else "CUDA not detected.")
+	if not cuda_version:
+		print(f"If you are sure cuda 11.7 or 12.8 use --force_cuda <version>")
+	print(f"-" * 30 )
+	input("Press Enter to continue...")
 	install_all(cuda_version)
  
 if __name__ == "__main__":
-	main()
+	main() 
