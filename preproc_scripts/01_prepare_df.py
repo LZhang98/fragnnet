@@ -388,7 +388,7 @@ def process_ms_gym(ms_gym_tsv_fp, subset):
 	ms_df = ms_df.drop(columns=["mzs","intensities"])
 	ms_df.rename(columns={"precursor_mz":"prec_mz", 
 						   "adduct":"prec_type",
-							"precursor_mz" :"prec_mz",
+						   "precursor_mz" :"prec_mz",
 						   "parent_mass":"exact_mass",
 						   "instrument_type":"inst_type",
 						   "collision_energy":"col_energy",

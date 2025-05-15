@@ -232,10 +232,10 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 def get_args():
 	parser = argparse.ArgumentParser(description="")
 	parser.add_argument("--template_fp", type=str, default="config/template.yml", help="Path to the config file")
-	#parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml", help="Path to the custom config file")
-	#parser.add_argument("--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file")
-	parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml", help="Path to the custom config file")
-	parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_mi_ma", help="Path to the output file")
+	parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml", help="Path to the custom config file")
+	parser.add_argument("--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file")
+	#parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml", help="Path to the custom config file")
+	#parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_mi_ma", help="Path to the output file")
 	parser.add_argument("--batch_size", type=int, default=40, help="Batch size for the dataloader")
 	parser.add_argument("--num_workers", type=int, default=4)
 	parser.add_argument("--split_names", type=str, nargs="+", default=['train','val','test'], help="split to process")
@@ -277,6 +277,49 @@ if __name__ == "__main__":
 
 			spec_batch_idxs = data['spec_batch_idxs']
 
+			"""
+			# get output formula aggregation 
+			frag_node_batch_idxs = frag_batch
+			frag_formula_batch_idxs = th.repeat_interleave(th.arange(batch_size,device=device),frag_formula_cumsizes[1:]-frag_formula_cumsizes[:-1])
+			frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
+			frag_joint_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
+			frag_formula_idxs = th.unique(frag_joint_formula_idxs)
+			# remove formulae if necessary
+			frag_joint_formula_idxs = frag_joint_formula_idxs.reshape(batch_frag_num_nodes,-1)
+			num_hs_diff = (frag_joint_formula_idxs.shape[1]-1)//2 - self.num_hs
+			assert num_hs_diff >= 0 and num_hs_diff <= (frag_joint_formula_idxs.shape[1]-1)//2, num_hs_diff
+			if num_hs_diff > 0:
+				# remove formulae
+				frag_joint_formula_idxs = frag_joint_formula_idxs[:,:-2*num_hs_diff].flatten()
+				frag_joint_formula_idxs_un, frag_joint_formula_idxs_inv = th.unique(th.cat([frag_joint_formula_idxs,frag_formula_cumsizes[:-1]],dim=0),return_inverse=True)
+				frag_joint_formula_idxs_inv = frag_joint_formula_idxs_inv[:frag_joint_formula_idxs.shape[0]]
+				batch_frag_num_formulae = frag_joint_formula_idxs_un.shape[0]
+				frag_formula_batch_idxs = frag_formula_batch_idxs[frag_joint_formula_idxs_un]
+				frag_joint_formula_idxs = th.arange(batch_frag_num_formulae,device=device)[frag_joint_formula_idxs_inv]
+				frag_formula_peak_mask = th.isin(frag_formula_idxs[~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])],frag_joint_formula_idxs_un)
+				frag_formula_idxs = th.arange(batch_frag_num_formulae,device=device)
+				frag_formula_sizes = scatter_reduce(
+					th.ones_like(frag_joint_formula_idxs_un),
+					frag_formula_batch_idxs,
+					reduce="sum",
+					dim_size=batch_size
+				)
+				assert not th.any(frag_formula_sizes <= 1), frag_formula_sizes
+				frag_formula_cumsizes = th.cat([th.zeros([1],device=device,dtype=frag_formula_sizes.dtype),frag_formula_sizes],dim=0)
+				frag_formula_cumsizes = th.cumsum(frag_formula_cumsizes,dim=0)
+				frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
+				# peak stuff
+				frag_formula_peak_idxs = frag_formula_idxs[~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])]
+				frag_formula_peak_idxs = frag_formula_peak_idxs-frag_formula_cumsizes[:-1][frag_formula_batch_idxs[~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])]]
+				frag_formula_peak_probs = frag_formula_peak_probs[frag_formula_peak_mask]
+				frag_formula_peak_mzs = frag_formula_peak_mzs[frag_formula_peak_mask]
+				frag_formula_peak_sizes = frag_formula_sizes - 1
+			else:
+				# no removal required
+				frag_joint_formula_idxs = frag_joint_formula_idxs.flatten()
+			"""
+			print(data)
+			exit()
 			results = Parallel(n_jobs=-1)(
 				delayed(process_b_idx)(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs)
 				for b_idx in range(data['batch_size'].item())

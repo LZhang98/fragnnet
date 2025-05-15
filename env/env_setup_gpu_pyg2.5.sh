@@ -2,7 +2,6 @@
 
 set -e
 
-
 source ~/.bashrc
 
 conda create -n FRAG-GNN-GPU5
