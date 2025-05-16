@@ -108,33 +108,52 @@ def atom_ids_to_smarts(mol, atom_ids, verbose=False):
 	return substructure_smarts,substructure_smiles,mw,formula
 
 def get_remaining_connected_atom_ids(adj_matrix, atom_ids_to_remove):
-    """
-    Removes specified atom IDs from the adjacency matrix and groups the remaining atoms by connected components.
+	"""
+	Removes specified atom IDs from the adjacency matrix and groups the remaining atoms by connected components.
 
-    Parameters:
-        adj_matrix (np.array): The adjacency matrix of the molecule.
-        atom_ids_to_remove (list): List of atom indices to be removed from the matrix.
+	Parameters:
+		adj_matrix (np.array): The adjacency matrix of the molecule.
+		atom_ids_to_remove (list): List of atom indices to be removed from the matrix.
 
-    Returns:
-        List of connected components: Each component is a list of atom indices.
-    """
-    adj_matrix = adj_matrix.copy()  # Create a copy of the adjacency matrix to avoid modifying the original
-    # Remove rows and columns corresponding to the atoms to be removed
-    for atom_id in atom_ids_to_remove:
-        adj_matrix[:, atom_id] = 0  # Set the column to zero
-        adj_matrix[atom_id, :] = 0 # Set the row to zero
-        
-    # Convert the updated adjacency matrix to a sparse CSR matrix for efficient computation
-    sparse_matrix = csr_matrix(adj_matrix)
+	Returns:
+		List of connected components: Each component is a list of atom indices.
+	"""
+	adj_matrix = adj_matrix.copy()  # Create a copy of the adjacency matrix to avoid modifying the original
+	# Remove rows and columns corresponding to the atoms to be removed
+	for atom_id in atom_ids_to_remove:
+		adj_matrix[:, atom_id] = 0  # Set the column to zero
+		adj_matrix[atom_id, :] = 0 # Set the row to zero
+		
+	# Convert the updated adjacency matrix to a sparse CSR matrix for efficient computation
+	sparse_matrix = csr_matrix(adj_matrix)
 
-    # Use scipy's connected_components to find the connected components in the graph
-    num_components, labels = connected_components(sparse_matrix, directed=False, return_labels=True)
+	# Use scipy's connected_components to find the connected components in the graph
+	num_components, labels = connected_components(sparse_matrix, directed=False, return_labels=True)
 
-    # Group atom indices by connected components
-    connected_atom_ids = [np.where(labels == i)[0].tolist() for i in range(num_components)]
-    connected_atom_ids = [ tuple(atom_ids) for atom_ids in connected_atom_ids if atom_ids[0] not in set(atom_ids_to_remove)]
+	# Group atom indices by connected components
+	connected_atom_ids = [np.where(labels == i)[0].tolist() for i in range(num_components)]
+	connected_atom_ids = [ tuple(atom_ids) for atom_ids in connected_atom_ids if atom_ids[0] not in set(atom_ids_to_remove)]
   
-    return connected_atom_ids
+	return connected_atom_ids
+
+def convert_mask(input_mask):
+
+	batch_size = input_mask.shape[0]
+	num_h = input_mask.shape[1] // 2
+	output = th.ones((batch_size, 2 * num_h + 1), dtype=input_mask.dtype, device=input_mask.device)
+
+	# Indices for the rules
+	odd_indices = th.arange(1,2*num_h+1,2, dtype=th.long, device=input_mask.device)
+	even_indices = th.arange(2,2*num_h+2,2, dtype=th.long, device=input_mask.device)
+	#print(odd_indices)
+	#print(even_indices)
+	# For output positions 0,1,2,3: set to zero if input at 0,2,4,6 is zero
+	output[:, :num_h] = (input_mask[:, odd_indices] != 0).to(input_mask.dtype)
+
+	# For output positions 4,5,6,7: set to zero if input at 1,3,5,7 is zero
+	output[:, num_h+1:] = (input_mask[:, even_indices] != 0).to(input_mask.dtype)
+
+	return output
 
 def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	"""Process a single b_idx."""
@@ -146,8 +165,13 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
  
 	frag_pyg = data['frag_pyg'][b_idx]
 	frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
-	frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x, frag_node_feat_idxs, "cc"))
 
+	frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
+	frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x, frag_node_feat_idxs, "cc"))
+	frag_joint_formula_idxs = (get_node_feats(frag_pyg.x,frag_node_feat_idxs,"h_formulae_idx"))
+	#print(frag_node_mask.shape)
+	#print(frag_joint_formula_idxs.shape)
+ 
 	b_num_nodes = frag_node_mask.shape[0]
 	b_num_mw_per_node = 2 * num_hs + 1
 	b_pred_mzs = th.zeros(b_num_nodes * b_num_mw_per_node, dtype=th.float)
@@ -155,7 +179,12 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	b_frag_node_hs = th.zeros(b_num_nodes * b_num_mw_per_node, dtype=th.long)
 	b_smarts = []
 	nl_smarts_d = []
+ 
 	# create a smart for each fragment mask
+	# map [0,-1,1,-2,2,-3,3,-4,4] to [-4,-3,-2,-1,0,1,2,3,4]
+	# why I have it designed that way... I hate myself
+	frag_h_mask = convert_mask(frag_joint_formula_idxs)
+	
 	for i in range(frag_node_mask.shape[0]):
 		all_atom_ids = th.arange(0, frag_node_mask.shape[1]).to(th.long)
 		frag_atom_ids = all_atom_ids[frag_node_mask[i]].tolist()
@@ -164,6 +193,12 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 		#b_pred_mzs += [mw + H_MASS * j + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str] for j in range(-num_hs, num_hs + 1)]
 		#b_frag_node_ids += [i] * (2 * num_hs + 1)
 		#b_frag_node_hs += [j for j in range(-num_hs, num_hs + 1)]
+		# [0,-1,1,-2,2,-3,3,-4,4]
+		# cc_frag_joint_formula_idxs = frag_joint_formula_idxs[i].flatten()
+		#print(cc_frag_joint_formula_idxs)
+		#print((cc_frag_joint_formula_idxs == 0).nonzero().flatten())
+		#print(cc_frag_joint_formula_idxs)
+		#print(frag_h_mask[i].flatten())
 		b_frag_node_ids[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = i
 		b_frag_node_hs[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = th.arange(-num_hs, num_hs + 1)
 		b_pred_mzs[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = mw + H_MASS * th.arange(-num_hs, num_hs + 1) + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str]
@@ -173,7 +208,7 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 		for nl_atom_ids in nl_atom_ids_l:
 			nl_substructure_smart,nl_substructure_smiles,nl_mw,nl_formula= atom_ids_to_smarts(b_mol, nl_atom_ids)
 			nl_smarts_d.append([i, nl_substructure_smart, nl_substructure_smiles, nl_mw, nl_formula, b_spec_prec_type_str])
-   
+	b_pred_mzs = b_pred_mzs * frag_h_mask.flatten()
 	# match the dag mzs with the true mzs
 	b_true_mzs = data['spec_mzs'][b_spec_mask]
 	b_true_ints = data['spec_ints'][b_spec_mask]
@@ -266,60 +301,15 @@ if __name__ == "__main__":
 		smart_output_fp = os.path.join(args.output_dp, f"smarts_{split_name}.csv")
 		nl_output_fp = os.path.join(args.output_dp, f"nl_smarts_{split_name}.csv")
 		for batch_idx, data in tqdm(enumerate(dl), total=len(dl), desc="Processing batches"):
-
 			spec_mzs = data['spec_mzs']
 			spec_prec_type = data['spec_prec_type']
 			spec_inst_type = data['spec_inst_type']
 			spec_prec_type_str = data['spec_prec_type_str']
-			frag_pyg = data['frag_pyg']
-			frag_formula_peak_mzs = data['frag_formula_peak_mzs']
-			frag_formula_peak_idxs = data['frag_formula_peak_idxs']
 
 			spec_batch_idxs = data['spec_batch_idxs']
 
-			"""
-			# get output formula aggregation 
-			frag_node_batch_idxs = frag_batch
-			frag_formula_batch_idxs = th.repeat_interleave(th.arange(batch_size,device=device),frag_formula_cumsizes[1:]-frag_formula_cumsizes[:-1])
-			frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
-			frag_joint_formula_idxs = (get_node_feats(frag_x,frag_node_feat_idxs,"h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
-			frag_formula_idxs = th.unique(frag_joint_formula_idxs)
-			# remove formulae if necessary
-			frag_joint_formula_idxs = frag_joint_formula_idxs.reshape(batch_frag_num_nodes,-1)
-			num_hs_diff = (frag_joint_formula_idxs.shape[1]-1)//2 - self.num_hs
-			assert num_hs_diff >= 0 and num_hs_diff <= (frag_joint_formula_idxs.shape[1]-1)//2, num_hs_diff
-			if num_hs_diff > 0:
-				# remove formulae
-				frag_joint_formula_idxs = frag_joint_formula_idxs[:,:-2*num_hs_diff].flatten()
-				frag_joint_formula_idxs_un, frag_joint_formula_idxs_inv = th.unique(th.cat([frag_joint_formula_idxs,frag_formula_cumsizes[:-1]],dim=0),return_inverse=True)
-				frag_joint_formula_idxs_inv = frag_joint_formula_idxs_inv[:frag_joint_formula_idxs.shape[0]]
-				batch_frag_num_formulae = frag_joint_formula_idxs_un.shape[0]
-				frag_formula_batch_idxs = frag_formula_batch_idxs[frag_joint_formula_idxs_un]
-				frag_joint_formula_idxs = th.arange(batch_frag_num_formulae,device=device)[frag_joint_formula_idxs_inv]
-				frag_formula_peak_mask = th.isin(frag_formula_idxs[~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])],frag_joint_formula_idxs_un)
-				frag_formula_idxs = th.arange(batch_frag_num_formulae,device=device)
-				frag_formula_sizes = scatter_reduce(
-					th.ones_like(frag_joint_formula_idxs_un),
-					frag_formula_batch_idxs,
-					reduce="sum",
-					dim_size=batch_size
-				)
-				assert not th.any(frag_formula_sizes <= 1), frag_formula_sizes
-				frag_formula_cumsizes = th.cat([th.zeros([1],device=device,dtype=frag_formula_sizes.dtype),frag_formula_sizes],dim=0)
-				frag_formula_cumsizes = th.cumsum(frag_formula_cumsizes,dim=0)
-				frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
-				# peak stuff
-				frag_formula_peak_idxs = frag_formula_idxs[~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])]
-				frag_formula_peak_idxs = frag_formula_peak_idxs-frag_formula_cumsizes[:-1][frag_formula_batch_idxs[~th.isin(frag_formula_idxs,frag_formula_cumsizes[:-1])]]
-				frag_formula_peak_probs = frag_formula_peak_probs[frag_formula_peak_mask]
-				frag_formula_peak_mzs = frag_formula_peak_mzs[frag_formula_peak_mask]
-				frag_formula_peak_sizes = frag_formula_sizes - 1
-			else:
-				# no removal required
-				frag_joint_formula_idxs = frag_joint_formula_idxs.flatten()
-			"""
-			print(data)
-			exit()
+			#process_b_idx(0, spec_batch_idxs, spec_prec_type_str, data, num_hs)
+			#exit()
 			results = Parallel(n_jobs=-1)(
 				delayed(process_b_idx)(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs)
 				for b_idx in range(data['batch_size'].item())
