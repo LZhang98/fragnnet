@@ -15,11 +15,6 @@ def run_frag(smiles, **kwargs):
 	print(f"> num heavy atoms {num_nodes}")
 	dag_d = {}
 	dag_d = timeit(frag_utils.compute_dags)(mol_d,**kwargs)
-	# try:
-	# 	dag_d = timeit(frag_utils.compute_dags)(mol_d,**kwargs)
-	# except Exception as e:
-	# 	print("> error when computing dag")
-	# 	print(f'{e}')
 
 	dag = dag_d["dag"]
 	
@@ -45,24 +40,6 @@ def run_frag(smiles, **kwargs):
 	print(f"is directed = {dag_d['is_directed']}")
 	print(f"memory = {dag_memory/1e6} MB")
 	print(f"dag_pyg = {dag_pyg}")
-
-	# get features
-	frag_node_feats = [
-		"cc",
-		"base_formula",
-		"depth",
-		"h_formula_idx",
-		"nb_iso_idx"
-	]
-	frag_edge_feats = [
-		"cc",
-		"base_formula"
-	]
-	bigraph = False
-	#dag_f_pyg = get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges=edges, bigraph=bigraph)
-	#nb_iso_idx = frag_utils.get_node_feats(dag_f_pyg.x, dag_f_pyg.node_feat_idxs[0],"nb_iso_idx")
-	#import pdb; pdb.set_trace()
-
 	return dag_d
 
 if __name__ == "__main__":
@@ -81,22 +58,36 @@ if __name__ == "__main__":
 	np.random.seed(420)
 
 	IDX_TO_SMILES = {
-		0: "CCO", # ethanol
-		1: "c1ccccc1", # benzene
-		2: "CC(=O)OC1=CC=CC=C1C(=O)O", # aspirin
-		3: "CC12CCC3C(C1CCC2O)CCC4=CC(=O)CCC34C", # testosterone
-		4: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC(=O)O", # geddic acid
-		5: "CSCCC(C(=O)O)N", # methionine, S=2
-		6: "C1=CC(=CC=C1N)S(=O)(=O)N", # sulfanilamide, S=6
-		7: "COP(C1=CC=CC=C1)C2=CC=CC=C2", # methoxydiphenylphosphine, P=3
-		8: "CC1C(O1)P(=O)(O)O", # phosphomycin, P=5
-		9: 'CC(=O)NC1C(OC2CCC3(C)C(CCC4(C)C3CC=C3C5CC(C)(C)CCC5(C(=O)O)CCC34C)C2(C)C)OC(CO)C(O)C1O', # big one (47 atoms)
-		10: 'CC(=O)NC1C(OC2OC(CC(O)C3OC(n4ccc(=O)[nH]c4=O)C(O)C3O)C(O)C(O)C2NC(=O)C=CCCCCCCCCCCCC(C)C)OC(CO)C(O)C1O', # big one (60 atoms)
-		11: 'C12=C3C4=C5C6=C3C7=C1C8=C9C2=C4C1=C5C2=C6C7=C8C2=C91', #Fullerene-C20
-		12: 'c12c3c4c5c1c1c6c7c2c2c8c3c3c9c4c4c%10c5c5c1c1c6c6c%11c7c2c2c7c8c3c3c8c9c4c4c9c%10c5c5c1c1c6c6c%11c2c2c7c3c3c8c4c4c9c5c1c1c6c2c3c41', #	C60 fullerene
+		# ethanol
+		0: "CCO",
+		# benzene
+		1: "c1ccccc1",
+		# aspirin
+		2: "CC(=O)OC1=CC=CC=C1C(=O)O",
+		# testosterone
+		3: "CC12CCC3C(C1CCC2O)CCC4=CC(=O)CCC34C",
+		# geddic acid
+		4: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC(=O)O",
+		# methionine
+		5: "CSCCC(C(=O)O)N",
+		# sulfanilamide
+		6: "C1=CC(=CC=C1N)S(=O)(=O)N",
+		# methoxydiphenylphosphine
+		7: "COP(C1=CC=CC=C1)C2=CC=CC=C2",
+		# phosphomycin
+		8: "CC1C(O1)P(=O)(O)O",
+		# big one (47 heavy atoms)
+		9: 'CC(=O)NC1C(OC2CCC3(C)C(CCC4(C)C3CC=C3C5CC(C)(C)CCC5(C(=O)O)CCC34C)C2(C)C)OC(CO)C(O)C1O',
+		# big one (60 heavy atoms)
+		10: 'CC(=O)NC1C(OC2OC(CC(O)C3OC(n4ccc(=O)[nH]c4=O)C(O)C3O)C(O)C(O)C2NC(=O)C=CCCCCCCCCCCCC(C)C)OC(CO)C(O)C1O',
+		# C20 fullerene
+		11: 'C12=C3C4=C5C6=C3C7=C1C8=C9C2=C4C1=C5C2=C6C7=C8C2=C91',
+		# C60 fullerene
+		12: 'c12c3c4c5c1c1c6c7c2c2c8c3c3c9c4c4c%10c5c5c1c1c6c6c%11c7c2c2c7c8c3c3c8c9c4c4c9c%10c5c5c1c1c6c6c%11c2c2c7c3c3c8c4c4c9c5c1c1c6c2c3c41',
 		13: 'CC(=O)OC12COC1CC(O)C1(C)C(=O)C(=O)C3C(C)C(OC(=O)C(O)C(NC(=O)c4ccccc4)c4ccccc4)CC(O)(C(OC(=O)c4ccccc4)C21)C3(C)C',
 		14: 'c1ccc2[nH]nnc2c1',
-		15: 'C12=C3C4=C5C6=C7C8=C9C%10=C%11C%12=C%13C%10=C%10C8=C5C1=C%10C1=C%13C5=C8C1=C2C1=C3C2=C3C%10=C%13C%14=C3C1=C8C1=C3C5=C%12C5=C8C%11=C%11C9=C7C7=C9C6=C4C2=C2C%10=C4C(=C29)C2=C6C(=C8C8=C9C6=C4C%13=C9C(=C%141)C3=C85)C%11=C27' # C70 fullerene
+		# C70 fullerene
+		15: 'C12=C3C4=C5C6=C7C8=C9C%10=C%11C%12=C%13C%10=C%10C8=C5C1=C%10C1=C%13C5=C8C1=C2C1=C3C2=C3C%10=C%13C%14=C3C1=C8C1=C3C5=C%12C5=C8C%11=C%11C9=C7C7=C9C6=C4C2=C2C%10=C4C(=C29)C2=C6C(=C8C8=C9C6=C4C%13=C9C(=C%141)C3=C85)C%11=C27'
 	}
 
 	smiles = IDX_TO_SMILES[args.compound_idx]
@@ -112,8 +103,4 @@ if __name__ == "__main__":
 	)
 
 	dag_d = run_frag(smiles, **frag_kw_d)
-	# import pdb; pdb.set_trace()
-	#import pstats, cProfile
-	#cProfile.runctx("run_frag(smiles, **frag_kw_d)", globals(), locals(), "run_frag_exp.prof")
-	#s = pstats.Stats("run_frag_exp.prof")
-	# s.strip_dirs().sort_stats("time").print_stats()
+	
