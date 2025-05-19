@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "frag_gnn"
 version = "2025.05"
-description = "HighRes MS/MS prediction for small molecules"
+description = "MS/MS prediction for small molecules"
 readme = "README.md"
 license = { text = "BSD-2-Clause" }
 requires-python = ">=3.10, <=3.12"
@@ -32,7 +32,8 @@ dependencies = [
 [project.optional-dependencies]
 # development dependency groups
 dev = [
-    "wandb"
+    "wandb",
+    "notebook"
 ]
 
 [tool.setuptools]

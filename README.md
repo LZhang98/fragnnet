@@ -48,19 +48,37 @@ frag_gnn/
 ```
 ## Installation
 
-### Environment Setup (Optional)
+### Set up Conda Environment
 
-Use the provided script to set up the environment:
-```bash
-bash env/env_setup_gpu_current.sh
+Install miniconda from [here](https://docs.conda.io/en/latest/miniconda.html).
+
+Create a new conda environment called `FRAG-GNN-GPU` with python 3.10:
+
+```
+conda create -n FRAG-GNN-GPU python=3.10
 ```
 
 ### Install FraGNNet Python Package
+
 ```
-bash pip install -I .
+pip install -I .
 ```
 
-## How-To
+If you want dev features (wandb logging and jupyter notebook), you can install the package with the dev flag.
+
+```
+pip install -I -e .[dev]
+```
+
+Note that the -e flag is used to install the package in editable mode.
+
+### Install PyTorch-related Dependencies using Script
+
+Use the following script to install PyTorch-related dependencies:
+
+```
+python install_lib.py
+```
 
 ## Citation
 ````bibtex
