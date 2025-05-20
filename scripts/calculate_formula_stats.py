@@ -1,8 +1,8 @@
-from frag_gnn.utils.misc_utils import LOG_ZERO, flatten_lol, js_div
-from frag_gnn.utils.frag_utils import load_frag_d
-from frag_gnn.utils.data_utils import composition_to_string
-from frag_gnn.utils.spec_utils import calculate_match_mzs
-from frag_gnn.iceberg.common.chem_utils import vec_to_formula, element_to_ind
+from fragnnet.utils.misc_utils import LOG_ZERO, flatten_lol, js_div
+from fragnnet.utils.frag_utils import load_frag_d
+from fragnnet.utils.data_utils import composition_to_string
+from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.iceberg.common.chem_utils import vec_to_formula, element_to_ind
 
 import numpy as np
 import torch as th

@@ -3,8 +3,8 @@ import argparse
 import torch_geometric as pyg
 from pprint import pprint
 
-import frag_gnn.utils.frag_utils as frag_utils
-from frag_gnn.utils.misc_utils import timeit, booltype, get_pyg_memory_usage
+import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils.misc_utils import timeit, booltype, get_pyg_memory_usage
 
 def run_frag(smiles, **kwargs):
 	

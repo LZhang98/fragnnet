@@ -1,6 +1,6 @@
 import argparse
 
-from frag_gnn.runner import init_run
+from fragnnet.runner import init_run
 
 
 if __name__ == "__main__":

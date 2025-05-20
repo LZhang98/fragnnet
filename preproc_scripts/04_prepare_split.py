@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 import json
 
-from frag_gnn.utils import frag_utils
-from frag_gnn.utils.misc_utils import booltype, np_temp_seed
-from frag_gnn.utils.proc_utils import filter_spec_mol
+from fragnnet.utils import frag_utils
+from fragnnet.utils.misc_utils import booltype, np_temp_seed
+from fragnnet.utils.proc_utils import filter_spec_mol
 
 def make_splits(args):
 

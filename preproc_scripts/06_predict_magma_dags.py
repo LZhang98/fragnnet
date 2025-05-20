@@ -16,13 +16,13 @@ from rdkit import Chem
 from rdkit import RDLogger
 import shutil
 
-from frag_gnn.iceberg.pl_model import IcebergGenPL
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset
-import frag_gnn.utils.frag_utils as frag_utils
-from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.data_utils import seq_apply, par_apply, rdkit_import
+from fragnnet.iceberg.pl_model import IcebergGenPL
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.iceberg.dataset import SpecMolMagmaGenDataset
+import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.data_utils import seq_apply, par_apply, rdkit_import
 
 def run_magma_gen(
 	num_entries: int,

@@ -4,9 +4,9 @@ import pandas as pd
 import argparse
 from rdkit import RDLogger
 
-import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_df_rows
-from frag_gnn.utils.misc_utils import booltype
+import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_df_rows
+from fragnnet.utils.misc_utils import booltype
 
 def load_df(df_dp,dsets,num_entries):
 	

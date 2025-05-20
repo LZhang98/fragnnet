@@ -1,7 +1,7 @@
 
-from frag_gnn.utils.misc_utils import scatter_reduce, scatter_argtopk,  booltype, scatter_logsumexp, LOG_ZERO
-from frag_gnn.utils.script_utils import select_model_vals, log_mean, pearson_r
-from frag_gnn.loss import  sparse_cosine_distance_hungarian
+from fragnnet.utils.misc_utils import scatter_reduce, scatter_argtopk,  booltype, scatter_logsumexp, LOG_ZERO
+from fragnnet.utils.script_utils import select_model_vals, log_mean, pearson_r
+from fragnnet.loss import  sparse_cosine_distance_hungarian
 
 import numpy as np
 import torch as th

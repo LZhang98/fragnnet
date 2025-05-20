@@ -1,9 +1,9 @@
 [build-system]
-requires = ["setuptools", "wheel", "cython==3.0.11", "numpy>=1.24,<2","cysignals"]
+requires = ["setuptools", "wheel", "cython==3.0.11", "numpy>=1.24,<2", "cysignals"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "frag_gnn"
+name = "fragnnet"
 version = "2025.05"
 description = "MS/MS prediction for small molecules"
 readme = "README.md"
@@ -43,4 +43,4 @@ include-package-data = true
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-frag_gnn = ["*.pyx", "*.pxd", "*.c", "*.h"]
+fragnnet = ["*.pyx", "*.pxd", "*.c", "*.h"]

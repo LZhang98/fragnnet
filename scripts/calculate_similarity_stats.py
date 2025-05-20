@@ -1,4 +1,4 @@
-from frag_gnn.utils.script_utils import pearson_r
+from fragnnet.utils.script_utils import pearson_r
 
 import numpy as np
 import torch as th

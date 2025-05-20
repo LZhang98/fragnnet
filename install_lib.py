@@ -53,10 +53,12 @@ def detect_cuda_version(force_cuda=None):
 		return force_cuda
 	return cuda_version_nvcc() or cuda_version_libcuda()
 
-def pip_install(packages, index_url=None):
+def pip_install(packages, index_url=None, find_links=None):
 	cmd = [sys.executable, "-m", "pip", "install"] + packages
 	if index_url:
 		cmd += ["--extra-index-url", index_url]
+	if find_links:
+		cmd += ["-f", find_links]
 	subprocess.check_call(cmd)
 
 def install_all(cuda_version):
@@ -79,8 +81,8 @@ def install_all(cuda_version):
 		)
   		# pip install  dgl -f https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html
 		pip_install(
-			["dgl==1.0.4"],
-			index_url="https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html"			
+			["dgl==1.0.4+cu121"],
+			find_links="https://data.dgl.ai/wheels/cu121/repo.html"			
 		)
 	elif cuda_version == "118":
 		print("Installing PyTorch 2.1.0 with CUDA 11.8...")
@@ -101,8 +103,8 @@ def install_all(cuda_version):
 		)
 		# pip install  dgl -f https://data.dgl.ai/wheels/torch-2.1/cu118/repo.html
 		pip_install(
-			["dgl==1.0.4"],
-			index_url="https://data.dgl.ai/wheels/torch-2.1/cu118/repo.html"			
+			["dgl==1.0.4+cu118"],
+			find_links="https://data.dgl.ai/wheels/cu118/repo.html"		
 		)
 	else:
 		print("Installing CPU version of PyTorch 2.1.2...")

@@ -5,8 +5,8 @@ import pandas as pd
 from tqdm import tqdm
 import argparse
 import glob
-from frag_gnn.utils.data_utils import rdkit_import, seq_apply, par_apply, parse_mass_gym_ce_str
-from frag_gnn.utils.misc_utils import flatten_lol
+from fragnnet.utils.data_utils import rdkit_import, seq_apply, par_apply, parse_mass_gym_ce_str
+from fragnnet.utils.misc_utils import flatten_lol
 
 MSP_KEY_DICT = {
 	"Precursor_type": "prec_type",

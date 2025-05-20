@@ -1,13 +1,13 @@
-from frag_gnn.runner import load_config, init_dataloader
-from frag_gnn.pl_model import FragGNNPL, NeimsPL, PrecursorPL
-from frag_gnn.massformer.pl_model import MassFormerPL
-from frag_gnn.iceberg.pl_model import IcebergIntenPL
-from frag_gnn.graff.pl_model import GrAFFPL
-from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset
-from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset
-from frag_gnn.graff.dataset import SpecMolAnnDataset
-from frag_gnn.utils.misc_utils import NestedDefaultDict, booltype
-from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference
+from fragnnet.runner import load_config, init_dataloader
+from fragnnet.pl_model import FragGNNPL, NeimsPL, PrecursorPL
+from fragnnet.massformer.pl_model import MassFormerPL
+from fragnnet.iceberg.pl_model import IcebergIntenPL
+from fragnnet.graff.pl_model import GrAFFPL
+from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
+from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset
+from fragnnet.graff.dataset import SpecMolAnnDataset
+from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
+from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference
 
 import torch as th
 import argparse

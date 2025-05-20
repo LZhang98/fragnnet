@@ -6,10 +6,10 @@ import os
 from pprint import pformat
 import json
 
-import frag_gnn.utils.frag_utils as frag_utils
-import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
+import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 def print_and_log(name,series,wandb_flag,stats_d):
 

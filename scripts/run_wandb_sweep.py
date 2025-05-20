@@ -2,7 +2,7 @@ import argparse
 import os
 import wandb
 
-from frag_gnn.runner import load_config, init_run
+from fragnnet.runner import load_config, init_run
 
 
 if __name__ == "__main__":

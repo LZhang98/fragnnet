@@ -5,14 +5,14 @@ import pandas as pd
 import os
 import argparse
 import json
-from frag_gnn.iceberg.pl_model import IcebergGenPL
-from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.data_utils import par_apply, par_apply_series
+from fragnnet.iceberg.pl_model import IcebergGenPL
+from fragnnet.iceberg.dataset import SpecMolMagmaGenDataset
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.data_utils import par_apply, par_apply_series
 from rdkit import Chem
 from tqdm import tqdm
-from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
+from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb
+from fragnnet.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 from rdkit import RDLogger
 import multiprocessing
 

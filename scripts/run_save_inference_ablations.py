@@ -1,8 +1,8 @@
-from frag_gnn.runner import load_config, init_dataloader
-from frag_gnn.pl_model import FragGNNPL
-from frag_gnn.dataset import SpecMolFragDataset
-from frag_gnn.utils.misc_utils import NestedDefaultDict, booltype
-from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference
+from fragnnet.runner import load_config, init_dataloader
+from fragnnet.pl_model import FragGNNPL
+from fragnnet.dataset import SpecMolFragDataset
+from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
+from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference
 
 import torch as th
 import torch._dynamo

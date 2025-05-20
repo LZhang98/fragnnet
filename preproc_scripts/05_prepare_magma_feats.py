@@ -12,12 +12,12 @@ from pprint import pformat
 from rdkit import RDLogger
 
 # Custom import
-import frag_gnn.iceberg.common as common
-import frag_gnn.iceberg.fragmentation as fragmentation
-import frag_gnn.utils.frag_utils as frag_utils
-from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.data_utils import seq_apply, par_apply
+import fragnnet.iceberg.common as common
+import fragnnet.iceberg.fragmentation as fragmentation
+import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.data_utils import seq_apply, par_apply
 
 
 def greedy_prune(

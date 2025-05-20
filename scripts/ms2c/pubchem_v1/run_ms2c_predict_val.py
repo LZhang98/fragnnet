@@ -1,8 +1,8 @@
 import argparse
 from tqdm import tqdm
 
-from frag_gnn.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from frag_gnn.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
+from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb
+from fragnnet.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
 
 import os
 import pandas as pd

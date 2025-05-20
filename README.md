@@ -17,7 +17,7 @@ This method provides:
 ## Project Structure
 
 ```bash
-frag_gnn/
+fragnnet/
 ├── LICENSE
 ├── README.md
 ├── config # config files
@@ -39,12 +39,10 @@ frag_gnn/
 ├── scripts # training and evalution scripts
 │   ├── misc
 │   ├── ms2c
-│   ├── plotting
-│   └── testing
 ├── setup.cfg
 ├── setup.py
 ├── src # fragnnet source code
-│   ├── frag_gnn
+│   ├── fragnnet
 ```
 ## Installation
 
@@ -52,10 +50,10 @@ frag_gnn/
 
 Install miniconda from [here](https://docs.conda.io/en/latest/miniconda.html).
 
-Create a new conda environment called `FRAG-GNN-GPU` with python 3.10:
+Create a new conda environment called `FRAGNNET-GPU` with python 3.10:
 
 ```
-conda create -n FRAG-GNN-GPU python=3.10
+conda create -n FRAGNNET-GPU python=3.10
 ```
 
 ### Install FraGNNet Python Package
@@ -84,7 +82,7 @@ python install_lib.py
 ````bibtex
 @article{fragnnet,
   title={FraGNNet: A Deep Probabilistic Model for Mass Spectrum Prediction},
-  author={Anonymous},
-  year={2025},
+  author={Adamo Young, Fei Wang, David Wishart, Bo Wang, Hannes Röst, Russ Greiner},
+  year={2024},
 }
 ````
