@@ -1,5 +1,5 @@
-wandb_name: nist20v3-1_inchikey_precursor_s0
-wandb_group: nist20v3-1_inchikey_precursor
+wandb_name: nist20_inchikey_precursor_s0
+wandb_group: nist20_inchikey_precursor
 
 # seed
 seed: 397623
