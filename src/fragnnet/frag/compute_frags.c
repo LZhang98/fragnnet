@@ -4,18 +4,18 @@
 {
     "distutils": {
         "depends": [
-            "/tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/cysignals/macros.h",
-            "/tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/cysignals/struct_signals.h"
+            "/tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/cysignals/macros.h",
+            "/tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/cysignals/struct_signals.h"
         ],
         "include_dirs": [
-            "/tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/cysignals"
+            "/tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/cysignals"
         ],
-        "name": "frag_gnn.frag.compute_frags",
+        "name": "fragnnet.frag.compute_frags",
         "sources": [
-            "src/frag_gnn/frag/compute_frags.pyx"
+            "src/fragnnet/frag/compute_frags.pyx"
         ]
     },
-    "module_name": "frag_gnn.frag.compute_frags"
+    "module_name": "fragnnet.frag.compute_frags"
 }
 END: Cython Metadata */
 
@@ -1235,8 +1235,8 @@ static CYTHON_INLINE float __PYX_NAN() {
   #endif
 #endif
 
-#define __PYX_HAVE__frag_gnn__frag__compute_frags
-#define __PYX_HAVE_API__frag_gnn__frag__compute_frags
+#define __PYX_HAVE__fragnnet__frag__compute_frags
+#define __PYX_HAVE_API__fragnnet__frag__compute_frags
 /* Early includes */
 #include <string.h>
 #include <stdio.h>
@@ -1524,7 +1524,7 @@ static const char *__pyx_filename;
 /* #### Code section: filename_table ### */
 
 static const char *__pyx_f[] = {
-  "src/frag_gnn/frag/compute_frags.pyx",
+  "src/fragnnet/frag/compute_frags.pyx",
   "<stringsource>",
   "__init__.cython-30.pxd",
   "type.pxd",
@@ -1673,7 +1673,7 @@ typedef struct {
 
 /* #### Code section: numeric_typedefs ### */
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":730
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":730
  * # in Cython to enable them only on the right systems.
  * 
  * ctypedef npy_int8       int8_t             # <<<<<<<<<<<<<<
@@ -1682,7 +1682,7 @@ typedef struct {
  */
 typedef npy_int8 __pyx_t_5numpy_int8_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":731
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":731
  * 
  * ctypedef npy_int8       int8_t
  * ctypedef npy_int16      int16_t             # <<<<<<<<<<<<<<
@@ -1691,7 +1691,7 @@ typedef npy_int8 __pyx_t_5numpy_int8_t;
  */
 typedef npy_int16 __pyx_t_5numpy_int16_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":732
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":732
  * ctypedef npy_int8       int8_t
  * ctypedef npy_int16      int16_t
  * ctypedef npy_int32      int32_t             # <<<<<<<<<<<<<<
@@ -1700,7 +1700,7 @@ typedef npy_int16 __pyx_t_5numpy_int16_t;
  */
 typedef npy_int32 __pyx_t_5numpy_int32_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":733
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":733
  * ctypedef npy_int16      int16_t
  * ctypedef npy_int32      int32_t
  * ctypedef npy_int64      int64_t             # <<<<<<<<<<<<<<
@@ -1709,7 +1709,7 @@ typedef npy_int32 __pyx_t_5numpy_int32_t;
  */
 typedef npy_int64 __pyx_t_5numpy_int64_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":737
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":737
  * #ctypedef npy_int128     int128_t
  * 
  * ctypedef npy_uint8      uint8_t             # <<<<<<<<<<<<<<
@@ -1718,7 +1718,7 @@ typedef npy_int64 __pyx_t_5numpy_int64_t;
  */
 typedef npy_uint8 __pyx_t_5numpy_uint8_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":738
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":738
  * 
  * ctypedef npy_uint8      uint8_t
  * ctypedef npy_uint16     uint16_t             # <<<<<<<<<<<<<<
@@ -1727,7 +1727,7 @@ typedef npy_uint8 __pyx_t_5numpy_uint8_t;
  */
 typedef npy_uint16 __pyx_t_5numpy_uint16_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":739
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":739
  * ctypedef npy_uint8      uint8_t
  * ctypedef npy_uint16     uint16_t
  * ctypedef npy_uint32     uint32_t             # <<<<<<<<<<<<<<
@@ -1736,7 +1736,7 @@ typedef npy_uint16 __pyx_t_5numpy_uint16_t;
  */
 typedef npy_uint32 __pyx_t_5numpy_uint32_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":740
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":740
  * ctypedef npy_uint16     uint16_t
  * ctypedef npy_uint32     uint32_t
  * ctypedef npy_uint64     uint64_t             # <<<<<<<<<<<<<<
@@ -1745,7 +1745,7 @@ typedef npy_uint32 __pyx_t_5numpy_uint32_t;
  */
 typedef npy_uint64 __pyx_t_5numpy_uint64_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":744
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":744
  * #ctypedef npy_uint128    uint128_t
  * 
  * ctypedef npy_float32    float32_t             # <<<<<<<<<<<<<<
@@ -1754,7 +1754,7 @@ typedef npy_uint64 __pyx_t_5numpy_uint64_t;
  */
 typedef npy_float32 __pyx_t_5numpy_float32_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":745
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":745
  * 
  * ctypedef npy_float32    float32_t
  * ctypedef npy_float64    float64_t             # <<<<<<<<<<<<<<
@@ -1763,7 +1763,7 @@ typedef npy_float32 __pyx_t_5numpy_float32_t;
  */
 typedef npy_float64 __pyx_t_5numpy_float64_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":754
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":754
  * # The int types are mapped a bit surprising --
  * # numpy.int corresponds to 'l' and numpy.long to 'q'
  * ctypedef npy_long       int_t             # <<<<<<<<<<<<<<
@@ -1772,7 +1772,7 @@ typedef npy_float64 __pyx_t_5numpy_float64_t;
  */
 typedef npy_long __pyx_t_5numpy_int_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":755
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":755
  * # numpy.int corresponds to 'l' and numpy.long to 'q'
  * ctypedef npy_long       int_t
  * ctypedef npy_longlong   longlong_t             # <<<<<<<<<<<<<<
@@ -1781,7 +1781,7 @@ typedef npy_long __pyx_t_5numpy_int_t;
  */
 typedef npy_longlong __pyx_t_5numpy_longlong_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":757
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":757
  * ctypedef npy_longlong   longlong_t
  * 
  * ctypedef npy_ulong      uint_t             # <<<<<<<<<<<<<<
@@ -1790,7 +1790,7 @@ typedef npy_longlong __pyx_t_5numpy_longlong_t;
  */
 typedef npy_ulong __pyx_t_5numpy_uint_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":758
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":758
  * 
  * ctypedef npy_ulong      uint_t
  * ctypedef npy_ulonglong  ulonglong_t             # <<<<<<<<<<<<<<
@@ -1799,7 +1799,7 @@ typedef npy_ulong __pyx_t_5numpy_uint_t;
  */
 typedef npy_ulonglong __pyx_t_5numpy_ulonglong_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":760
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":760
  * ctypedef npy_ulonglong  ulonglong_t
  * 
  * ctypedef npy_intp       intp_t             # <<<<<<<<<<<<<<
@@ -1808,7 +1808,7 @@ typedef npy_ulonglong __pyx_t_5numpy_ulonglong_t;
  */
 typedef npy_intp __pyx_t_5numpy_intp_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":761
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":761
  * 
  * ctypedef npy_intp       intp_t
  * ctypedef npy_uintp      uintp_t             # <<<<<<<<<<<<<<
@@ -1817,7 +1817,7 @@ typedef npy_intp __pyx_t_5numpy_intp_t;
  */
 typedef npy_uintp __pyx_t_5numpy_uintp_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":763
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":763
  * ctypedef npy_uintp      uintp_t
  * 
  * ctypedef npy_double     float_t             # <<<<<<<<<<<<<<
@@ -1826,7 +1826,7 @@ typedef npy_uintp __pyx_t_5numpy_uintp_t;
  */
 typedef npy_double __pyx_t_5numpy_float_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":764
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":764
  * 
  * ctypedef npy_double     float_t
  * ctypedef npy_double     double_t             # <<<<<<<<<<<<<<
@@ -1835,7 +1835,7 @@ typedef npy_double __pyx_t_5numpy_float_t;
  */
 typedef npy_double __pyx_t_5numpy_double_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":765
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":765
  * ctypedef npy_double     float_t
  * ctypedef npy_double     double_t
  * ctypedef npy_longdouble longdouble_t             # <<<<<<<<<<<<<<
@@ -1876,7 +1876,7 @@ struct __pyx_MemviewEnum_obj;
 struct __pyx_memoryview_obj;
 struct __pyx_memoryviewslice_obj;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":767
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":767
  * ctypedef npy_longdouble longdouble_t
  * 
  * ctypedef npy_cfloat      cfloat_t             # <<<<<<<<<<<<<<
@@ -1885,7 +1885,7 @@ struct __pyx_memoryviewslice_obj;
  */
 typedef npy_cfloat __pyx_t_5numpy_cfloat_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":768
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":768
  * 
  * ctypedef npy_cfloat      cfloat_t
  * ctypedef npy_cdouble     cdouble_t             # <<<<<<<<<<<<<<
@@ -1894,7 +1894,7 @@ typedef npy_cfloat __pyx_t_5numpy_cfloat_t;
  */
 typedef npy_cdouble __pyx_t_5numpy_cdouble_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":769
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":769
  * ctypedef npy_cfloat      cfloat_t
  * ctypedef npy_cdouble     cdouble_t
  * ctypedef npy_clongdouble clongdouble_t             # <<<<<<<<<<<<<<
@@ -1903,7 +1903,7 @@ typedef npy_cdouble __pyx_t_5numpy_cdouble_t;
  */
 typedef npy_clongdouble __pyx_t_5numpy_clongdouble_t;
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":771
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":771
  * ctypedef npy_clongdouble clongdouble_t
  * 
  * ctypedef npy_cdouble     complex_t             # <<<<<<<<<<<<<<
@@ -3337,7 +3337,7 @@ static void (*print_backtrace)(void); /*proto*/
 
 /* Module declarations from "posix.time" */
 
-/* Module declarations from "frag_gnn.frag.compute_frags" */
+/* Module declarations from "fragnnet.frag.compute_frags" */
 static PyObject *__pyx_collections_abc_Sequence = 0;
 static PyObject *generic = 0;
 static PyObject *strided = 0;
@@ -3346,10 +3346,10 @@ static PyObject *contiguous = 0;
 static PyObject *indirect_contiguous = 0;
 static int __pyx_memoryview_thread_locks_used;
 static PyThread_type_lock __pyx_memoryview_thread_locks[8];
-static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice); /*proto*/
-static long __pyx_f_8frag_gnn_4frag_13compute_frags_get_time(void); /*proto*/
-static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_to_edge_idx(int, int, __Pyx_memviewslice); /*proto*/
-static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(int, int, __Pyx_memviewslice, __Pyx_memviewslice, __Pyx_memviewslice, __Pyx_memviewslice); /*proto*/
+static int __pyx_f_8fragnnet_4frag_13compute_frags_np_sum(__Pyx_memviewslice); /*proto*/
+static long __pyx_f_8fragnnet_4frag_13compute_frags_get_time(void); /*proto*/
+static __Pyx_memviewslice __pyx_f_8fragnnet_4frag_13compute_frags_compute_node_to_edge_idx(int, int, __Pyx_memviewslice); /*proto*/
+static PyObject *__pyx_f_8fragnnet_4frag_13compute_frags_connected_components(int, int, __Pyx_memviewslice, __Pyx_memviewslice, __Pyx_memviewslice, __Pyx_memviewslice); /*proto*/
 static int __pyx_array_allocate_buffer(struct __pyx_array_obj *); /*proto*/
 static struct __pyx_array_obj *__pyx_array_new(PyObject *, Py_ssize_t, char *, char *, char *); /*proto*/
 static PyObject *__pyx_memoryview_new(PyObject *, int, int, __Pyx_TypeInfo *); /*proto*/
@@ -3390,11 +3390,11 @@ static __Pyx_TypeInfo __Pyx_TypeInfo_nn___pyx_t_5numpy_uint8_t = { "uint8_t", NU
 static __Pyx_TypeInfo __Pyx_TypeInfo_char = { "char", NULL, sizeof(char), { 0 }, 0, 'H', __PYX_IS_UNSIGNED(char), 0 };
 static __Pyx_TypeInfo __Pyx_TypeInfo_int = { "int", NULL, sizeof(int), { 0 }, 0, __PYX_IS_UNSIGNED(int) ? 'U' : 'I', __PYX_IS_UNSIGNED(int), 0 };
 /* #### Code section: before_global_var ### */
-#define __Pyx_MODULE_NAME "frag_gnn.frag.compute_frags"
-extern int __pyx_module_is_main_frag_gnn__frag__compute_frags;
-int __pyx_module_is_main_frag_gnn__frag__compute_frags = 0;
+#define __Pyx_MODULE_NAME "fragnnet.frag.compute_frags"
+extern int __pyx_module_is_main_fragnnet__frag__compute_frags;
+int __pyx_module_is_main_fragnnet__frag__compute_frags = 0;
 
-/* Implementation of "frag_gnn.frag.compute_frags" */
+/* Implementation of "fragnnet.frag.compute_frags" */
 /* #### Code section: global_var ### */
 static PyObject *__pyx_builtin_RuntimeError;
 static PyObject *__pyx_builtin_range;
@@ -3634,13 +3634,13 @@ static const char __pyx_k_filtered_css_to_id_dict[] = "filtered_css_to_id_dict";
 static const char __pyx_k_Dimension_d_is_not_direct[] = "Dimension %d is not direct";
 static const char __pyx_k_Index_out_of_bounds_axis_d[] = "Index out of bounds (axis %d)";
 static const char __pyx_k_Step_may_not_be_zero_axis_d[] = "Step may not be zero (axis %d)";
-static const char __pyx_k_frag_gnn_frag_compute_frags[] = "frag_gnn.frag.compute_frags";
+static const char __pyx_k_fragnnet_frag_compute_frags[] = "fragnnet.frag.compute_frags";
 static const char __pyx_k_itemsize_0_for_cython_array[] = "itemsize <= 0 for cython.array";
 static const char __pyx_k_py_compute_node_to_edge_idx[] = "py_compute_node_to_edge_idx";
 static const char __pyx_k_unable_to_allocate_array_data[] = "unable to allocate array data.";
 static const char __pyx_k_strided_and_direct_or_indirect[] = "<strided and direct or indirect>";
 static const char __pyx_k_numpy_core_multiarray_failed_to[] = "numpy.core.multiarray failed to import";
-static const char __pyx_k_src_frag_gnn_frag_compute_frags[] = "src/frag_gnn/frag/compute_frags.pyx";
+static const char __pyx_k_src_fragnnet_frag_compute_frags[] = "src/fragnnet/frag/compute_frags.pyx";
 static const char __pyx_k_All_dimensions_preceding_dimensi[] = "All dimensions preceding dimension %d must be indexed and not sliced";
 static const char __pyx_k_Buffer_view_does_not_expose_stri[] = "Buffer view does not expose strides";
 static const char __pyx_k_Can_only_create_a_buffer_that_is[] = "Can only create a buffer that is contiguous in memory.";
@@ -3699,11 +3699,11 @@ static void __pyx_memoryviewslice___pyx_pf_15View_dot_MemoryView_16_memoryviewsl
 static PyObject *__pyx_pf___pyx_memoryviewslice___reduce_cython__(CYTHON_UNUSED struct __pyx_memoryviewslice_obj *__pyx_v_self); /* proto */
 static PyObject *__pyx_pf___pyx_memoryviewslice_2__setstate_cython__(CYTHON_UNUSED struct __pyx_memoryviewslice_obj *__pyx_v_self, CYTHON_UNUSED PyObject *__pyx_v___pyx_state); /* proto */
 static PyObject *__pyx_pf_15View_dot_MemoryView___pyx_unpickle_Enum(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v___pyx_type, long __pyx_v___pyx_checksum, PyObject *__pyx_v___pyx_state); /* proto */
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_mask_to_binary_hash(CYTHON_UNUSED PyObject *__pyx_self, __Pyx_memviewslice __pyx_v_mask); /* proto */
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_2py_compute_node_to_edge_idx(CYTHON_UNUSED PyObject *__pyx_self, int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_edges); /* proto */
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UNUSED PyObject *__pyx_self, int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_node_mask, __Pyx_memviewslice __pyx_v_edges, __Pyx_memviewslice __pyx_v_edge_mask, __Pyx_memviewslice __pyx_v_node_to_edge_idx, int __pyx_v_max_depth, long __pyx_v_time_limit); /* proto */
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_cc_atom_ids, PyArrayObject *__pyx_v_ve_arr, PyArrayObject *__pyx_v_sbond_arr, int __pyx_v_num_radicals, PyArrayObject *__pyx_v_bonds, PyObject *__pyx_v_atoms_to_bonds, PyArrayObject *__pyx_v_bond_mask_arr); /* proto */
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_cc_atom_ids, PyArrayObject *__pyx_v_sbond_arr, PyArrayObject *__pyx_v_bond_mask_arr, PyArrayObject *__pyx_v_bonds, PyObject *__pyx_v_atoms_to_bonds); /* proto */
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_mask_to_binary_hash(CYTHON_UNUSED PyObject *__pyx_self, __Pyx_memviewslice __pyx_v_mask); /* proto */
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_2py_compute_node_to_edge_idx(CYTHON_UNUSED PyObject *__pyx_self, int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_edges); /* proto */
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_4compute_ccs(CYTHON_UNUSED PyObject *__pyx_self, int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_node_mask, __Pyx_memviewslice __pyx_v_edges, __Pyx_memviewslice __pyx_v_edge_mask, __Pyx_memviewslice __pyx_v_node_to_edge_idx, int __pyx_v_max_depth, long __pyx_v_time_limit); /* proto */
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_6compute_cc_h_floor(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_cc_atom_ids, PyArrayObject *__pyx_v_ve_arr, PyArrayObject *__pyx_v_sbond_arr, int __pyx_v_num_radicals, PyArrayObject *__pyx_v_bonds, PyObject *__pyx_v_atoms_to_bonds, PyArrayObject *__pyx_v_bond_mask_arr); /* proto */
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_8update_bonds(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_cc_atom_ids, PyArrayObject *__pyx_v_sbond_arr, PyArrayObject *__pyx_v_bond_mask_arr, PyArrayObject *__pyx_v_bonds, PyObject *__pyx_v_atoms_to_bonds); /* proto */
 static PyObject *__pyx_tp_new_array(PyTypeObject *t, PyObject *a, PyObject *k); /*proto*/
 static PyObject *__pyx_tp_new_Enum(PyTypeObject *t, PyObject *a, PyObject *k); /*proto*/
 static PyObject *__pyx_tp_new_memoryview(PyTypeObject *t, PyObject *a, PyObject *k); /*proto*/
@@ -3912,7 +3912,7 @@ typedef struct {
   PyObject *__pyx_n_s_format;
   PyObject *__pyx_n_s_fortran;
   PyObject *__pyx_n_u_fortran;
-  PyObject *__pyx_n_s_frag_gnn_frag_compute_frags;
+  PyObject *__pyx_n_s_fragnnet_frag_compute_frags;
   PyObject *__pyx_n_s_full;
   PyObject *__pyx_kp_u_gc;
   PyObject *__pyx_n_s_getstate;
@@ -4012,7 +4012,7 @@ typedef struct {
   PyObject *__pyx_n_s_shape;
   PyObject *__pyx_n_s_size;
   PyObject *__pyx_n_s_spec;
-  PyObject *__pyx_kp_s_src_frag_gnn_frag_compute_frags;
+  PyObject *__pyx_kp_s_src_fragnnet_frag_compute_frags;
   PyObject *__pyx_n_s_stack;
   PyObject *__pyx_n_s_start;
   PyObject *__pyx_kp_u_start_queue;
@@ -4269,7 +4269,7 @@ static int __pyx_m_clear(PyObject *m) {
   Py_CLEAR(clear_module_state->__pyx_n_s_format);
   Py_CLEAR(clear_module_state->__pyx_n_s_fortran);
   Py_CLEAR(clear_module_state->__pyx_n_u_fortran);
-  Py_CLEAR(clear_module_state->__pyx_n_s_frag_gnn_frag_compute_frags);
+  Py_CLEAR(clear_module_state->__pyx_n_s_fragnnet_frag_compute_frags);
   Py_CLEAR(clear_module_state->__pyx_n_s_full);
   Py_CLEAR(clear_module_state->__pyx_kp_u_gc);
   Py_CLEAR(clear_module_state->__pyx_n_s_getstate);
@@ -4369,7 +4369,7 @@ static int __pyx_m_clear(PyObject *m) {
   Py_CLEAR(clear_module_state->__pyx_n_s_shape);
   Py_CLEAR(clear_module_state->__pyx_n_s_size);
   Py_CLEAR(clear_module_state->__pyx_n_s_spec);
-  Py_CLEAR(clear_module_state->__pyx_kp_s_src_frag_gnn_frag_compute_frags);
+  Py_CLEAR(clear_module_state->__pyx_kp_s_src_fragnnet_frag_compute_frags);
   Py_CLEAR(clear_module_state->__pyx_n_s_stack);
   Py_CLEAR(clear_module_state->__pyx_n_s_start);
   Py_CLEAR(clear_module_state->__pyx_kp_u_start_queue);
@@ -4604,7 +4604,7 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
   Py_VISIT(traverse_module_state->__pyx_n_s_format);
   Py_VISIT(traverse_module_state->__pyx_n_s_fortran);
   Py_VISIT(traverse_module_state->__pyx_n_u_fortran);
-  Py_VISIT(traverse_module_state->__pyx_n_s_frag_gnn_frag_compute_frags);
+  Py_VISIT(traverse_module_state->__pyx_n_s_fragnnet_frag_compute_frags);
   Py_VISIT(traverse_module_state->__pyx_n_s_full);
   Py_VISIT(traverse_module_state->__pyx_kp_u_gc);
   Py_VISIT(traverse_module_state->__pyx_n_s_getstate);
@@ -4704,7 +4704,7 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
   Py_VISIT(traverse_module_state->__pyx_n_s_shape);
   Py_VISIT(traverse_module_state->__pyx_n_s_size);
   Py_VISIT(traverse_module_state->__pyx_n_s_spec);
-  Py_VISIT(traverse_module_state->__pyx_kp_s_src_frag_gnn_frag_compute_frags);
+  Py_VISIT(traverse_module_state->__pyx_kp_s_src_fragnnet_frag_compute_frags);
   Py_VISIT(traverse_module_state->__pyx_n_s_stack);
   Py_VISIT(traverse_module_state->__pyx_n_s_start);
   Py_VISIT(traverse_module_state->__pyx_kp_u_start_queue);
@@ -4975,7 +4975,7 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
 #define __pyx_n_s_format __pyx_mstate_global->__pyx_n_s_format
 #define __pyx_n_s_fortran __pyx_mstate_global->__pyx_n_s_fortran
 #define __pyx_n_u_fortran __pyx_mstate_global->__pyx_n_u_fortran
-#define __pyx_n_s_frag_gnn_frag_compute_frags __pyx_mstate_global->__pyx_n_s_frag_gnn_frag_compute_frags
+#define __pyx_n_s_fragnnet_frag_compute_frags __pyx_mstate_global->__pyx_n_s_fragnnet_frag_compute_frags
 #define __pyx_n_s_full __pyx_mstate_global->__pyx_n_s_full
 #define __pyx_kp_u_gc __pyx_mstate_global->__pyx_kp_u_gc
 #define __pyx_n_s_getstate __pyx_mstate_global->__pyx_n_s_getstate
@@ -5075,7 +5075,7 @@ static int __pyx_m_traverse(PyObject *m, visitproc visit, void *arg) {
 #define __pyx_n_s_shape __pyx_mstate_global->__pyx_n_s_shape
 #define __pyx_n_s_size __pyx_mstate_global->__pyx_n_s_size
 #define __pyx_n_s_spec __pyx_mstate_global->__pyx_n_s_spec
-#define __pyx_kp_s_src_frag_gnn_frag_compute_frags __pyx_mstate_global->__pyx_kp_s_src_frag_gnn_frag_compute_frags
+#define __pyx_kp_s_src_fragnnet_frag_compute_frags __pyx_mstate_global->__pyx_kp_s_src_fragnnet_frag_compute_frags
 #define __pyx_n_s_stack __pyx_mstate_global->__pyx_n_s_stack
 #define __pyx_n_s_start __pyx_mstate_global->__pyx_n_s_start
 #define __pyx_kp_u_start_queue __pyx_mstate_global->__pyx_kp_u_start_queue
@@ -18774,7 +18774,7 @@ static PyObject *__pyx_unpickle_Enum__set_state(struct __pyx_MemviewEnum_obj *__
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":245
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":245
  * 
  *         @property
  *         cdef inline PyObject* base(self) nogil:             # <<<<<<<<<<<<<<
@@ -18785,7 +18785,7 @@ static PyObject *__pyx_unpickle_Enum__set_state(struct __pyx_MemviewEnum_obj *__
 static CYTHON_INLINE PyObject *__pyx_f_5numpy_7ndarray_4base_base(PyArrayObject *__pyx_v_self) {
   PyObject *__pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":248
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":248
  *             """Returns a borrowed reference to the object owning the data/memory.
  *             """
  *             return PyArray_BASE(self)             # <<<<<<<<<<<<<<
@@ -18795,7 +18795,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_7ndarray_4base_base(PyArrayObject 
   __pyx_r = PyArray_BASE(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":245
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":245
  * 
  *         @property
  *         cdef inline PyObject* base(self) nogil:             # <<<<<<<<<<<<<<
@@ -18808,7 +18808,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_7ndarray_4base_base(PyArrayObject 
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":251
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":251
  * 
  *         @property
  *         cdef inline dtype descr(self):             # <<<<<<<<<<<<<<
@@ -18822,7 +18822,7 @@ static CYTHON_INLINE PyArray_Descr *__pyx_f_5numpy_7ndarray_5descr_descr(PyArray
   PyArray_Descr *__pyx_t_1;
   __Pyx_RefNannySetupContext("descr", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":254
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":254
  *             """Returns an owned reference to the dtype of the array.
  *             """
  *             return <dtype>PyArray_DESCR(self)             # <<<<<<<<<<<<<<
@@ -18835,7 +18835,7 @@ static CYTHON_INLINE PyArray_Descr *__pyx_f_5numpy_7ndarray_5descr_descr(PyArray
   __pyx_r = ((PyArray_Descr *)__pyx_t_1);
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":251
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":251
  * 
  *         @property
  *         cdef inline dtype descr(self):             # <<<<<<<<<<<<<<
@@ -18850,7 +18850,7 @@ static CYTHON_INLINE PyArray_Descr *__pyx_f_5numpy_7ndarray_5descr_descr(PyArray
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":257
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":257
  * 
  *         @property
  *         cdef inline int ndim(self) nogil:             # <<<<<<<<<<<<<<
@@ -18861,7 +18861,7 @@ static CYTHON_INLINE PyArray_Descr *__pyx_f_5numpy_7ndarray_5descr_descr(PyArray
 static CYTHON_INLINE int __pyx_f_5numpy_7ndarray_4ndim_ndim(PyArrayObject *__pyx_v_self) {
   int __pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":260
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":260
  *             """Returns the number of dimensions in the array.
  *             """
  *             return PyArray_NDIM(self)             # <<<<<<<<<<<<<<
@@ -18871,7 +18871,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_7ndarray_4ndim_ndim(PyArrayObject *__pyx
   __pyx_r = PyArray_NDIM(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":257
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":257
  * 
  *         @property
  *         cdef inline int ndim(self) nogil:             # <<<<<<<<<<<<<<
@@ -18884,7 +18884,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_7ndarray_4ndim_ndim(PyArrayObject *__pyx
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":263
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":263
  * 
  *         @property
  *         cdef inline npy_intp *shape(self) nogil:             # <<<<<<<<<<<<<<
@@ -18895,7 +18895,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_7ndarray_4ndim_ndim(PyArrayObject *__pyx
 static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_5shape_shape(PyArrayObject *__pyx_v_self) {
   npy_intp *__pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":268
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":268
  *             Can return NULL for 0-dimensional arrays.
  *             """
  *             return PyArray_DIMS(self)             # <<<<<<<<<<<<<<
@@ -18905,7 +18905,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_5shape_shape(PyArrayObjec
   __pyx_r = PyArray_DIMS(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":263
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":263
  * 
  *         @property
  *         cdef inline npy_intp *shape(self) nogil:             # <<<<<<<<<<<<<<
@@ -18918,7 +18918,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_5shape_shape(PyArrayObjec
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":271
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":271
  * 
  *         @property
  *         cdef inline npy_intp *strides(self) nogil:             # <<<<<<<<<<<<<<
@@ -18929,7 +18929,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_5shape_shape(PyArrayObjec
 static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_7strides_strides(PyArrayObject *__pyx_v_self) {
   npy_intp *__pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":275
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":275
  *             The number of elements matches the number of dimensions of the array (ndim).
  *             """
  *             return PyArray_STRIDES(self)             # <<<<<<<<<<<<<<
@@ -18939,7 +18939,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_7strides_strides(PyArrayO
   __pyx_r = PyArray_STRIDES(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":271
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":271
  * 
  *         @property
  *         cdef inline npy_intp *strides(self) nogil:             # <<<<<<<<<<<<<<
@@ -18952,7 +18952,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_7strides_strides(PyArrayO
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":278
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":278
  * 
  *         @property
  *         cdef inline npy_intp size(self) nogil:             # <<<<<<<<<<<<<<
@@ -18963,7 +18963,7 @@ static CYTHON_INLINE npy_intp *__pyx_f_5numpy_7ndarray_7strides_strides(PyArrayO
 static CYTHON_INLINE npy_intp __pyx_f_5numpy_7ndarray_4size_size(PyArrayObject *__pyx_v_self) {
   npy_intp __pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":281
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":281
  *             """Returns the total size (in number of elements) of the array.
  *             """
  *             return PyArray_SIZE(self)             # <<<<<<<<<<<<<<
@@ -18973,7 +18973,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_7ndarray_4size_size(PyArrayObject *
   __pyx_r = PyArray_SIZE(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":278
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":278
  * 
  *         @property
  *         cdef inline npy_intp size(self) nogil:             # <<<<<<<<<<<<<<
@@ -18986,7 +18986,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_7ndarray_4size_size(PyArrayObject *
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":284
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":284
  * 
  *         @property
  *         cdef inline char* data(self) nogil:             # <<<<<<<<<<<<<<
@@ -18997,7 +18997,7 @@ static CYTHON_INLINE npy_intp __pyx_f_5numpy_7ndarray_4size_size(PyArrayObject *
 static CYTHON_INLINE char *__pyx_f_5numpy_7ndarray_4data_data(PyArrayObject *__pyx_v_self) {
   char *__pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":290
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":290
  *             of `PyArray_DATA()` instead, which returns a 'void*'.
  *             """
  *             return PyArray_BYTES(self)             # <<<<<<<<<<<<<<
@@ -19007,7 +19007,7 @@ static CYTHON_INLINE char *__pyx_f_5numpy_7ndarray_4data_data(PyArrayObject *__p
   __pyx_r = PyArray_BYTES(__pyx_v_self);
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":284
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":284
  * 
  *         @property
  *         cdef inline char* data(self) nogil:             # <<<<<<<<<<<<<<
@@ -19020,7 +19020,7 @@ static CYTHON_INLINE char *__pyx_f_5numpy_7ndarray_4data_data(PyArrayObject *__p
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":773
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":773
  * ctypedef npy_cdouble     complex_t
  * 
  * cdef inline object PyArray_MultiIterNew1(a):             # <<<<<<<<<<<<<<
@@ -19037,7 +19037,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew1(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew1", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":774
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":774
  * 
  * cdef inline object PyArray_MultiIterNew1(a):
  *     return PyArray_MultiIterNew(1, <void*>a)             # <<<<<<<<<<<<<<
@@ -19051,7 +19051,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew1(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":773
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":773
  * ctypedef npy_cdouble     complex_t
  * 
  * cdef inline object PyArray_MultiIterNew1(a):             # <<<<<<<<<<<<<<
@@ -19070,7 +19070,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew1(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":776
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":776
  *     return PyArray_MultiIterNew(1, <void*>a)
  * 
  * cdef inline object PyArray_MultiIterNew2(a, b):             # <<<<<<<<<<<<<<
@@ -19087,7 +19087,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew2(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew2", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":777
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":777
  * 
  * cdef inline object PyArray_MultiIterNew2(a, b):
  *     return PyArray_MultiIterNew(2, <void*>a, <void*>b)             # <<<<<<<<<<<<<<
@@ -19101,7 +19101,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew2(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":776
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":776
  *     return PyArray_MultiIterNew(1, <void*>a)
  * 
  * cdef inline object PyArray_MultiIterNew2(a, b):             # <<<<<<<<<<<<<<
@@ -19120,7 +19120,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew2(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":779
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":779
  *     return PyArray_MultiIterNew(2, <void*>a, <void*>b)
  * 
  * cdef inline object PyArray_MultiIterNew3(a, b, c):             # <<<<<<<<<<<<<<
@@ -19137,7 +19137,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew3(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew3", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":780
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":780
  * 
  * cdef inline object PyArray_MultiIterNew3(a, b, c):
  *     return PyArray_MultiIterNew(3, <void*>a, <void*>b, <void*> c)             # <<<<<<<<<<<<<<
@@ -19151,7 +19151,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew3(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":779
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":779
  *     return PyArray_MultiIterNew(2, <void*>a, <void*>b)
  * 
  * cdef inline object PyArray_MultiIterNew3(a, b, c):             # <<<<<<<<<<<<<<
@@ -19170,7 +19170,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew3(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":782
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":782
  *     return PyArray_MultiIterNew(3, <void*>a, <void*>b, <void*> c)
  * 
  * cdef inline object PyArray_MultiIterNew4(a, b, c, d):             # <<<<<<<<<<<<<<
@@ -19187,7 +19187,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew4(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew4", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":783
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":783
  * 
  * cdef inline object PyArray_MultiIterNew4(a, b, c, d):
  *     return PyArray_MultiIterNew(4, <void*>a, <void*>b, <void*>c, <void*> d)             # <<<<<<<<<<<<<<
@@ -19201,7 +19201,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew4(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":782
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":782
  *     return PyArray_MultiIterNew(3, <void*>a, <void*>b, <void*> c)
  * 
  * cdef inline object PyArray_MultiIterNew4(a, b, c, d):             # <<<<<<<<<<<<<<
@@ -19220,7 +19220,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew4(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":785
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":785
  *     return PyArray_MultiIterNew(4, <void*>a, <void*>b, <void*>c, <void*> d)
  * 
  * cdef inline object PyArray_MultiIterNew5(a, b, c, d, e):             # <<<<<<<<<<<<<<
@@ -19237,7 +19237,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew5(PyObject *__
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("PyArray_MultiIterNew5", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":786
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":786
  * 
  * cdef inline object PyArray_MultiIterNew5(a, b, c, d, e):
  *     return PyArray_MultiIterNew(5, <void*>a, <void*>b, <void*>c, <void*> d, <void*> e)             # <<<<<<<<<<<<<<
@@ -19251,7 +19251,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew5(PyObject *__
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":785
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":785
  *     return PyArray_MultiIterNew(4, <void*>a, <void*>b, <void*>c, <void*> d)
  * 
  * cdef inline object PyArray_MultiIterNew5(a, b, c, d, e):             # <<<<<<<<<<<<<<
@@ -19270,7 +19270,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyArray_MultiIterNew5(PyObject *__
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":788
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":788
  *     return PyArray_MultiIterNew(5, <void*>a, <void*>b, <void*>c, <void*> d, <void*> e)
  * 
  * cdef inline tuple PyDataType_SHAPE(dtype d):             # <<<<<<<<<<<<<<
@@ -19284,7 +19284,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
   int __pyx_t_1;
   __Pyx_RefNannySetupContext("PyDataType_SHAPE", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":789
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":789
  * 
  * cdef inline tuple PyDataType_SHAPE(dtype d):
  *     if PyDataType_HASSUBARRAY(d):             # <<<<<<<<<<<<<<
@@ -19294,7 +19294,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
   __pyx_t_1 = PyDataType_HASSUBARRAY(__pyx_v_d);
   if (__pyx_t_1) {
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":790
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":790
  * cdef inline tuple PyDataType_SHAPE(dtype d):
  *     if PyDataType_HASSUBARRAY(d):
  *         return <tuple>d.subarray.shape             # <<<<<<<<<<<<<<
@@ -19306,7 +19306,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
     __pyx_r = ((PyObject*)__pyx_v_d->subarray->shape);
     goto __pyx_L0;
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":789
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":789
  * 
  * cdef inline tuple PyDataType_SHAPE(dtype d):
  *     if PyDataType_HASSUBARRAY(d):             # <<<<<<<<<<<<<<
@@ -19315,7 +19315,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
  */
   }
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":792
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":792
  *         return <tuple>d.subarray.shape
  *     else:
  *         return ()             # <<<<<<<<<<<<<<
@@ -19329,7 +19329,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
     goto __pyx_L0;
   }
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":788
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":788
  *     return PyArray_MultiIterNew(5, <void*>a, <void*>b, <void*>c, <void*> d, <void*> e)
  * 
  * cdef inline tuple PyDataType_SHAPE(dtype d):             # <<<<<<<<<<<<<<
@@ -19344,7 +19344,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_PyDataType_SHAPE(PyArray_Descr *__
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":968
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":968
  *     int _import_umath() except -1
  * 
  * cdef inline void set_array_base(ndarray arr, object base):             # <<<<<<<<<<<<<<
@@ -19358,7 +19358,7 @@ static CYTHON_INLINE void __pyx_f_5numpy_set_array_base(PyArrayObject *__pyx_v_a
   const char *__pyx_filename = NULL;
   int __pyx_clineno = 0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":969
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":969
  * 
  * cdef inline void set_array_base(ndarray arr, object base):
  *     Py_INCREF(base) # important to do this before stealing the reference below!             # <<<<<<<<<<<<<<
@@ -19367,7 +19367,7 @@ static CYTHON_INLINE void __pyx_f_5numpy_set_array_base(PyArrayObject *__pyx_v_a
  */
   Py_INCREF(__pyx_v_base);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":970
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":970
  * cdef inline void set_array_base(ndarray arr, object base):
  *     Py_INCREF(base) # important to do this before stealing the reference below!
  *     PyArray_SetBaseObject(arr, base)             # <<<<<<<<<<<<<<
@@ -19376,7 +19376,7 @@ static CYTHON_INLINE void __pyx_f_5numpy_set_array_base(PyArrayObject *__pyx_v_a
  */
   __pyx_t_1 = PyArray_SetBaseObject(__pyx_v_arr, __pyx_v_base); if (unlikely(__pyx_t_1 == ((int)-1))) __PYX_ERR(2, 970, __pyx_L1_error)
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":968
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":968
  *     int _import_umath() except -1
  * 
  * cdef inline void set_array_base(ndarray arr, object base):             # <<<<<<<<<<<<<<
@@ -19391,7 +19391,7 @@ static CYTHON_INLINE void __pyx_f_5numpy_set_array_base(PyArrayObject *__pyx_v_a
   __pyx_L0:;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":972
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":972
  *     PyArray_SetBaseObject(arr, base)
  * 
  * cdef inline object get_array_base(ndarray arr):             # <<<<<<<<<<<<<<
@@ -19406,7 +19406,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
   int __pyx_t_1;
   __Pyx_RefNannySetupContext("get_array_base", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":973
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":973
  * 
  * cdef inline object get_array_base(ndarray arr):
  *     base = PyArray_BASE(arr)             # <<<<<<<<<<<<<<
@@ -19415,7 +19415,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
  */
   __pyx_v_base = PyArray_BASE(__pyx_v_arr);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":974
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":974
  * cdef inline object get_array_base(ndarray arr):
  *     base = PyArray_BASE(arr)
  *     if base is NULL:             # <<<<<<<<<<<<<<
@@ -19425,7 +19425,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
   __pyx_t_1 = (__pyx_v_base == NULL);
   if (__pyx_t_1) {
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":975
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":975
  *     base = PyArray_BASE(arr)
  *     if base is NULL:
  *         return None             # <<<<<<<<<<<<<<
@@ -19436,7 +19436,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
     __pyx_r = Py_None; __Pyx_INCREF(Py_None);
     goto __pyx_L0;
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":974
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":974
  * cdef inline object get_array_base(ndarray arr):
  *     base = PyArray_BASE(arr)
  *     if base is NULL:             # <<<<<<<<<<<<<<
@@ -19445,7 +19445,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
  */
   }
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":976
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":976
  *     if base is NULL:
  *         return None
  *     return <object>base             # <<<<<<<<<<<<<<
@@ -19457,7 +19457,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
   __pyx_r = ((PyObject *)__pyx_v_base);
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":972
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":972
  *     PyArray_SetBaseObject(arr, base)
  * 
  * cdef inline object get_array_base(ndarray arr):             # <<<<<<<<<<<<<<
@@ -19472,7 +19472,7 @@ static CYTHON_INLINE PyObject *__pyx_f_5numpy_get_array_base(PyArrayObject *__py
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":980
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":980
  * # Versions of the import_* functions which are more suitable for
  * # Cython code.
  * cdef inline int import_array() except -1:             # <<<<<<<<<<<<<<
@@ -19496,7 +19496,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("import_array", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":981
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":981
  * # Cython code.
  * cdef inline int import_array() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -19512,7 +19512,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
     __Pyx_XGOTREF(__pyx_t_3);
     /*try:*/ {
 
-      /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":982
+      /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":982
  * cdef inline int import_array() except -1:
  *     try:
  *         __pyx_import_array()             # <<<<<<<<<<<<<<
@@ -19521,7 +19521,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
  */
       __pyx_t_4 = _import_array(); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(2, 982, __pyx_L3_error)
 
-      /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":981
+      /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":981
  * # Cython code.
  * cdef inline int import_array() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -19535,7 +19535,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
     goto __pyx_L8_try_end;
     __pyx_L3_error:;
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":983
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":983
  *     try:
  *         __pyx_import_array()
  *     except Exception:             # <<<<<<<<<<<<<<
@@ -19550,7 +19550,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
       __Pyx_XGOTREF(__pyx_t_6);
       __Pyx_XGOTREF(__pyx_t_7);
 
-      /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":984
+      /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":984
  *         __pyx_import_array()
  *     except Exception:
  *         raise ImportError("numpy.core.multiarray failed to import")             # <<<<<<<<<<<<<<
@@ -19565,7 +19565,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
     }
     goto __pyx_L5_except_error;
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":981
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":981
  * # Cython code.
  * cdef inline int import_array() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -19581,7 +19581,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
     __pyx_L8_try_end:;
   }
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":980
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":980
  * # Versions of the import_* functions which are more suitable for
  * # Cython code.
  * cdef inline int import_array() except -1:             # <<<<<<<<<<<<<<
@@ -19604,7 +19604,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_array(void) {
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":986
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":986
  *         raise ImportError("numpy.core.multiarray failed to import")
  * 
  * cdef inline int import_umath() except -1:             # <<<<<<<<<<<<<<
@@ -19628,7 +19628,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("import_umath", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":987
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":987
  * 
  * cdef inline int import_umath() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -19644,7 +19644,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
     __Pyx_XGOTREF(__pyx_t_3);
     /*try:*/ {
 
-      /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":988
+      /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":988
  * cdef inline int import_umath() except -1:
  *     try:
  *         _import_umath()             # <<<<<<<<<<<<<<
@@ -19653,7 +19653,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
  */
       __pyx_t_4 = _import_umath(); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(2, 988, __pyx_L3_error)
 
-      /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":987
+      /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":987
  * 
  * cdef inline int import_umath() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -19667,7 +19667,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
     goto __pyx_L8_try_end;
     __pyx_L3_error:;
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":989
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":989
  *     try:
  *         _import_umath()
  *     except Exception:             # <<<<<<<<<<<<<<
@@ -19682,7 +19682,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
       __Pyx_XGOTREF(__pyx_t_6);
       __Pyx_XGOTREF(__pyx_t_7);
 
-      /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":990
+      /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":990
  *         _import_umath()
  *     except Exception:
  *         raise ImportError("numpy.core.umath failed to import")             # <<<<<<<<<<<<<<
@@ -19697,7 +19697,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
     }
     goto __pyx_L5_except_error;
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":987
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":987
  * 
  * cdef inline int import_umath() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -19713,7 +19713,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
     __pyx_L8_try_end:;
   }
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":986
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":986
  *         raise ImportError("numpy.core.multiarray failed to import")
  * 
  * cdef inline int import_umath() except -1:             # <<<<<<<<<<<<<<
@@ -19736,7 +19736,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_umath(void) {
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":992
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":992
  *         raise ImportError("numpy.core.umath failed to import")
  * 
  * cdef inline int import_ufunc() except -1:             # <<<<<<<<<<<<<<
@@ -19760,7 +19760,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("import_ufunc", 1);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":993
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":993
  * 
  * cdef inline int import_ufunc() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -19776,7 +19776,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
     __Pyx_XGOTREF(__pyx_t_3);
     /*try:*/ {
 
-      /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":994
+      /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":994
  * cdef inline int import_ufunc() except -1:
  *     try:
  *         _import_umath()             # <<<<<<<<<<<<<<
@@ -19785,7 +19785,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
  */
       __pyx_t_4 = _import_umath(); if (unlikely(__pyx_t_4 == ((int)-1))) __PYX_ERR(2, 994, __pyx_L3_error)
 
-      /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":993
+      /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":993
  * 
  * cdef inline int import_ufunc() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -19799,7 +19799,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
     goto __pyx_L8_try_end;
     __pyx_L3_error:;
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":995
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":995
  *     try:
  *         _import_umath()
  *     except Exception:             # <<<<<<<<<<<<<<
@@ -19814,7 +19814,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
       __Pyx_XGOTREF(__pyx_t_6);
       __Pyx_XGOTREF(__pyx_t_7);
 
-      /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":996
+      /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":996
  *         _import_umath()
  *     except Exception:
  *         raise ImportError("numpy.core.umath failed to import")             # <<<<<<<<<<<<<<
@@ -19829,7 +19829,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
     }
     goto __pyx_L5_except_error;
 
-    /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":993
+    /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":993
  * 
  * cdef inline int import_ufunc() except -1:
  *     try:             # <<<<<<<<<<<<<<
@@ -19845,7 +19845,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
     __pyx_L8_try_end:;
   }
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":992
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":992
  *         raise ImportError("numpy.core.umath failed to import")
  * 
  * cdef inline int import_ufunc() except -1:             # <<<<<<<<<<<<<<
@@ -19868,7 +19868,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":999
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":999
  * 
  * 
  * cdef inline bint is_timedelta64_object(object obj):             # <<<<<<<<<<<<<<
@@ -19879,7 +19879,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_import_ufunc(void) {
 static CYTHON_INLINE int __pyx_f_5numpy_is_timedelta64_object(PyObject *__pyx_v_obj) {
   int __pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1011
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1011
  *     bool
  *     """
  *     return PyObject_TypeCheck(obj, &PyTimedeltaArrType_Type)             # <<<<<<<<<<<<<<
@@ -19889,7 +19889,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_timedelta64_object(PyObject *__pyx_v_
   __pyx_r = PyObject_TypeCheck(__pyx_v_obj, (&PyTimedeltaArrType_Type));
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":999
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":999
  * 
  * 
  * cdef inline bint is_timedelta64_object(object obj):             # <<<<<<<<<<<<<<
@@ -19902,7 +19902,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_timedelta64_object(PyObject *__pyx_v_
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1014
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1014
  * 
  * 
  * cdef inline bint is_datetime64_object(object obj):             # <<<<<<<<<<<<<<
@@ -19913,7 +19913,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_timedelta64_object(PyObject *__pyx_v_
 static CYTHON_INLINE int __pyx_f_5numpy_is_datetime64_object(PyObject *__pyx_v_obj) {
   int __pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1026
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1026
  *     bool
  *     """
  *     return PyObject_TypeCheck(obj, &PyDatetimeArrType_Type)             # <<<<<<<<<<<<<<
@@ -19923,7 +19923,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_datetime64_object(PyObject *__pyx_v_o
   __pyx_r = PyObject_TypeCheck(__pyx_v_obj, (&PyDatetimeArrType_Type));
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1014
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1014
  * 
  * 
  * cdef inline bint is_datetime64_object(object obj):             # <<<<<<<<<<<<<<
@@ -19936,7 +19936,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_datetime64_object(PyObject *__pyx_v_o
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1029
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1029
  * 
  * 
  * cdef inline npy_datetime get_datetime64_value(object obj) nogil:             # <<<<<<<<<<<<<<
@@ -19947,7 +19947,7 @@ static CYTHON_INLINE int __pyx_f_5numpy_is_datetime64_object(PyObject *__pyx_v_o
 static CYTHON_INLINE npy_datetime __pyx_f_5numpy_get_datetime64_value(PyObject *__pyx_v_obj) {
   npy_datetime __pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1036
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1036
  *     also needed.  That can be found using `get_datetime64_unit`.
  *     """
  *     return (<PyDatetimeScalarObject*>obj).obval             # <<<<<<<<<<<<<<
@@ -19957,7 +19957,7 @@ static CYTHON_INLINE npy_datetime __pyx_f_5numpy_get_datetime64_value(PyObject *
   __pyx_r = ((PyDatetimeScalarObject *)__pyx_v_obj)->obval;
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1029
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1029
  * 
  * 
  * cdef inline npy_datetime get_datetime64_value(object obj) nogil:             # <<<<<<<<<<<<<<
@@ -19970,7 +19970,7 @@ static CYTHON_INLINE npy_datetime __pyx_f_5numpy_get_datetime64_value(PyObject *
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1039
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1039
  * 
  * 
  * cdef inline npy_timedelta get_timedelta64_value(object obj) nogil:             # <<<<<<<<<<<<<<
@@ -19981,7 +19981,7 @@ static CYTHON_INLINE npy_datetime __pyx_f_5numpy_get_datetime64_value(PyObject *
 static CYTHON_INLINE npy_timedelta __pyx_f_5numpy_get_timedelta64_value(PyObject *__pyx_v_obj) {
   npy_timedelta __pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1043
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1043
  *     returns the int64 value underlying scalar numpy timedelta64 object
  *     """
  *     return (<PyTimedeltaScalarObject*>obj).obval             # <<<<<<<<<<<<<<
@@ -19991,7 +19991,7 @@ static CYTHON_INLINE npy_timedelta __pyx_f_5numpy_get_timedelta64_value(PyObject
   __pyx_r = ((PyTimedeltaScalarObject *)__pyx_v_obj)->obval;
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1039
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1039
  * 
  * 
  * cdef inline npy_timedelta get_timedelta64_value(object obj) nogil:             # <<<<<<<<<<<<<<
@@ -20004,7 +20004,7 @@ static CYTHON_INLINE npy_timedelta __pyx_f_5numpy_get_timedelta64_value(PyObject
   return __pyx_r;
 }
 
-/* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1046
+/* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1046
  * 
  * 
  * cdef inline NPY_DATETIMEUNIT get_datetime64_unit(object obj) nogil:             # <<<<<<<<<<<<<<
@@ -20015,7 +20015,7 @@ static CYTHON_INLINE npy_timedelta __pyx_f_5numpy_get_timedelta64_value(PyObject
 static CYTHON_INLINE NPY_DATETIMEUNIT __pyx_f_5numpy_get_datetime64_unit(PyObject *__pyx_v_obj) {
   NPY_DATETIMEUNIT __pyx_r;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1050
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1050
  *     returns the unit part of the dtype for a numpy datetime64 object.
  *     """
  *     return <NPY_DATETIMEUNIT>(<PyDatetimeScalarObject*>obj).obmeta.base             # <<<<<<<<<<<<<<
@@ -20023,7 +20023,7 @@ static CYTHON_INLINE NPY_DATETIMEUNIT __pyx_f_5numpy_get_datetime64_unit(PyObjec
   __pyx_r = ((NPY_DATETIMEUNIT)((PyDatetimeScalarObject *)__pyx_v_obj)->obmeta.base);
   goto __pyx_L0;
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1046
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":1046
  * 
  * 
  * cdef inline NPY_DATETIMEUNIT get_datetime64_unit(object obj) nogil:             # <<<<<<<<<<<<<<
@@ -20175,7 +20175,7 @@ static CYTHON_INLINE void __pyx_f_9cysignals_7signals___generate_declarations(vo
   /* function exit code */
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":22
+/* "fragnnet/frag/compute_frags.pyx":22
  * 	pass
  * 
  * cdef void np_fill(int [::1] array, int val) nogil:             # <<<<<<<<<<<<<<
@@ -20183,7 +20183,7 @@ static CYTHON_INLINE void __pyx_f_9cysignals_7signals___generate_declarations(vo
  * 	for i in range(num_elems):
  */
 
-static void __pyx_f_8frag_gnn_4frag_13compute_frags_np_fill(__Pyx_memviewslice __pyx_v_array, int __pyx_v_val) {
+static void __pyx_f_8fragnnet_4frag_13compute_frags_np_fill(__Pyx_memviewslice __pyx_v_array, int __pyx_v_val) {
   Py_ssize_t __pyx_v_i;
   Py_ssize_t __pyx_v_num_elems;
   Py_ssize_t __pyx_t_1;
@@ -20191,7 +20191,7 @@ static void __pyx_f_8frag_gnn_4frag_13compute_frags_np_fill(__Pyx_memviewslice _
   Py_ssize_t __pyx_t_3;
   Py_ssize_t __pyx_t_4;
 
-  /* "frag_gnn/frag/compute_frags.pyx":23
+  /* "fragnnet/frag/compute_frags.pyx":23
  * 
  * cdef void np_fill(int [::1] array, int val) nogil:
  * 	cdef Py_ssize_t i, num_elems = array.shape[0]             # <<<<<<<<<<<<<<
@@ -20200,7 +20200,7 @@ static void __pyx_f_8frag_gnn_4frag_13compute_frags_np_fill(__Pyx_memviewslice _
  */
   __pyx_v_num_elems = (__pyx_v_array.shape[0]);
 
-  /* "frag_gnn/frag/compute_frags.pyx":24
+  /* "fragnnet/frag/compute_frags.pyx":24
  * cdef void np_fill(int [::1] array, int val) nogil:
  * 	cdef Py_ssize_t i, num_elems = array.shape[0]
  * 	for i in range(num_elems):             # <<<<<<<<<<<<<<
@@ -20212,7 +20212,7 @@ static void __pyx_f_8frag_gnn_4frag_13compute_frags_np_fill(__Pyx_memviewslice _
   for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
     __pyx_v_i = __pyx_t_3;
 
-    /* "frag_gnn/frag/compute_frags.pyx":25
+    /* "fragnnet/frag/compute_frags.pyx":25
  * 	cdef Py_ssize_t i, num_elems = array.shape[0]
  * 	for i in range(num_elems):
  * 		array[i] = val             # <<<<<<<<<<<<<<
@@ -20223,7 +20223,7 @@ static void __pyx_f_8frag_gnn_4frag_13compute_frags_np_fill(__Pyx_memviewslice _
     *((int *) ( /* dim=0 */ ((char *) (((int *) __pyx_v_array.data) + __pyx_t_4)) )) = __pyx_v_val;
   }
 
-  /* "frag_gnn/frag/compute_frags.pyx":22
+  /* "fragnnet/frag/compute_frags.pyx":22
  * 	pass
  * 
  * cdef void np_fill(int [::1] array, int val) nogil:             # <<<<<<<<<<<<<<
@@ -20234,7 +20234,7 @@ static void __pyx_f_8frag_gnn_4frag_13compute_frags_np_fill(__Pyx_memviewslice _
   /* function exit code */
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":27
+/* "fragnnet/frag/compute_frags.pyx":27
  * 		array[i] = val
  * 
  * cdef int np_sum(char [::1] array) nogil:             # <<<<<<<<<<<<<<
@@ -20242,7 +20242,7 @@ static void __pyx_f_8frag_gnn_4frag_13compute_frags_np_fill(__Pyx_memviewslice _
  * 	cdef int total = 0
  */
 
-static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice __pyx_v_array) {
+static int __pyx_f_8fragnnet_4frag_13compute_frags_np_sum(__Pyx_memviewslice __pyx_v_array) {
   Py_ssize_t __pyx_v_i;
   Py_ssize_t __pyx_v_num_elems;
   int __pyx_v_total;
@@ -20252,7 +20252,7 @@ static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice __p
   Py_ssize_t __pyx_t_3;
   Py_ssize_t __pyx_t_4;
 
-  /* "frag_gnn/frag/compute_frags.pyx":28
+  /* "fragnnet/frag/compute_frags.pyx":28
  * 
  * cdef int np_sum(char [::1] array) nogil:
  * 	cdef Py_ssize_t i, num_elems = array.shape[0]             # <<<<<<<<<<<<<<
@@ -20261,7 +20261,7 @@ static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice __p
  */
   __pyx_v_num_elems = (__pyx_v_array.shape[0]);
 
-  /* "frag_gnn/frag/compute_frags.pyx":29
+  /* "fragnnet/frag/compute_frags.pyx":29
  * cdef int np_sum(char [::1] array) nogil:
  * 	cdef Py_ssize_t i, num_elems = array.shape[0]
  * 	cdef int total = 0             # <<<<<<<<<<<<<<
@@ -20270,7 +20270,7 @@ static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice __p
  */
   __pyx_v_total = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":30
+  /* "fragnnet/frag/compute_frags.pyx":30
  * 	cdef Py_ssize_t i, num_elems = array.shape[0]
  * 	cdef int total = 0
  * 	for i in range(num_elems):             # <<<<<<<<<<<<<<
@@ -20282,7 +20282,7 @@ static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice __p
   for (__pyx_t_3 = 0; __pyx_t_3 < __pyx_t_2; __pyx_t_3+=1) {
     __pyx_v_i = __pyx_t_3;
 
-    /* "frag_gnn/frag/compute_frags.pyx":31
+    /* "fragnnet/frag/compute_frags.pyx":31
  * 	cdef int total = 0
  * 	for i in range(num_elems):
  * 		total += array[i]             # <<<<<<<<<<<<<<
@@ -20293,7 +20293,7 @@ static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice __p
     __pyx_v_total = (__pyx_v_total + (*((char *) ( /* dim=0 */ ((char *) (((char *) __pyx_v_array.data) + __pyx_t_4)) ))));
   }
 
-  /* "frag_gnn/frag/compute_frags.pyx":32
+  /* "fragnnet/frag/compute_frags.pyx":32
  * 	for i in range(num_elems):
  * 		total += array[i]
  * 	return total             # <<<<<<<<<<<<<<
@@ -20303,7 +20303,7 @@ static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice __p
   __pyx_r = __pyx_v_total;
   goto __pyx_L0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":27
+  /* "fragnnet/frag/compute_frags.pyx":27
  * 		array[i] = val
  * 
  * cdef int np_sum(char [::1] array) nogil:             # <<<<<<<<<<<<<<
@@ -20316,7 +20316,7 @@ static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice __p
   return __pyx_r;
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":34
+/* "fragnnet/frag/compute_frags.pyx":34
  * 	return total
  * 
  * cdef long get_time():             # <<<<<<<<<<<<<<
@@ -20324,13 +20324,13 @@ static int __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__Pyx_memviewslice __p
  * 	cdef long current
  */
 
-static long __pyx_f_8frag_gnn_4frag_13compute_frags_get_time(void) {
+static long __pyx_f_8fragnnet_4frag_13compute_frags_get_time(void) {
   struct timespec __pyx_v_ts;
   long __pyx_v_current;
   long __pyx_r;
   time_t __pyx_t_1;
 
-  /* "frag_gnn/frag/compute_frags.pyx":37
+  /* "fragnnet/frag/compute_frags.pyx":37
  * 	cdef timespec ts
  * 	cdef long current
  * 	clock_gettime(CLOCK_REALTIME, &ts)             # <<<<<<<<<<<<<<
@@ -20339,7 +20339,7 @@ static long __pyx_f_8frag_gnn_4frag_13compute_frags_get_time(void) {
  */
   (void)(clock_gettime(CLOCK_REALTIME, (&__pyx_v_ts)));
 
-  /* "frag_gnn/frag/compute_frags.pyx":38
+  /* "fragnnet/frag/compute_frags.pyx":38
  * 	cdef long current
  * 	clock_gettime(CLOCK_REALTIME, &ts)
  * 	current = ts.tv_sec             # <<<<<<<<<<<<<<
@@ -20349,7 +20349,7 @@ static long __pyx_f_8frag_gnn_4frag_13compute_frags_get_time(void) {
   __pyx_t_1 = __pyx_v_ts.tv_sec;
   __pyx_v_current = __pyx_t_1;
 
-  /* "frag_gnn/frag/compute_frags.pyx":39
+  /* "fragnnet/frag/compute_frags.pyx":39
  * 	clock_gettime(CLOCK_REALTIME, &ts)
  * 	current = ts.tv_sec
  * 	return current             # <<<<<<<<<<<<<<
@@ -20359,7 +20359,7 @@ static long __pyx_f_8frag_gnn_4frag_13compute_frags_get_time(void) {
   __pyx_r = __pyx_v_current;
   goto __pyx_L0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":34
+  /* "fragnnet/frag/compute_frags.pyx":34
  * 	return total
  * 
  * cdef long get_time():             # <<<<<<<<<<<<<<
@@ -20372,7 +20372,7 @@ static long __pyx_f_8frag_gnn_4frag_13compute_frags_get_time(void) {
   return __pyx_r;
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":52
+/* "fragnnet/frag/compute_frags.pyx":52
  * #	return node_mask_int
  * 
  * def mask_to_binary_hash(char [::1] mask):             # <<<<<<<<<<<<<<
@@ -20381,15 +20381,15 @@ static long __pyx_f_8frag_gnn_4frag_13compute_frags_get_time(void) {
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_1mask_to_binary_hash(PyObject *__pyx_self, 
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_1mask_to_binary_hash(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
 PyObject *__pyx_args, PyObject *__pyx_kwds
 #endif
 ); /*proto*/
-static PyMethodDef __pyx_mdef_8frag_gnn_4frag_13compute_frags_1mask_to_binary_hash = {"mask_to_binary_hash", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8frag_gnn_4frag_13compute_frags_1mask_to_binary_hash, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_1mask_to_binary_hash(PyObject *__pyx_self, 
+static PyMethodDef __pyx_mdef_8fragnnet_4frag_13compute_frags_1mask_to_binary_hash = {"mask_to_binary_hash", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8fragnnet_4frag_13compute_frags_1mask_to_binary_hash, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_1mask_to_binary_hash(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -20460,11 +20460,11 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
     }
   }
   __PYX_XCLEAR_MEMVIEW(&__pyx_v_mask, 1);
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.mask_to_binary_hash", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.mask_to_binary_hash", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  __pyx_r = __pyx_pf_8frag_gnn_4frag_13compute_frags_mask_to_binary_hash(__pyx_self, __pyx_v_mask);
+  __pyx_r = __pyx_pf_8fragnnet_4frag_13compute_frags_mask_to_binary_hash(__pyx_self, __pyx_v_mask);
 
   /* function exit code */
   __PYX_XCLEAR_MEMVIEW(&__pyx_v_mask, 1);
@@ -20478,7 +20478,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_mask_to_binary_hash(CYTHON_UNUSED PyObject *__pyx_self, __Pyx_memviewslice __pyx_v_mask) {
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_mask_to_binary_hash(CYTHON_UNUSED PyObject *__pyx_self, __Pyx_memviewslice __pyx_v_mask) {
   PyObject *__pyx_r = NULL;
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
@@ -20492,7 +20492,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_mask_to_binary_hash(CY
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("mask_to_binary_hash", 1);
 
-  /* "frag_gnn/frag/compute_frags.pyx":53
+  /* "fragnnet/frag/compute_frags.pyx":53
  * 
  * def mask_to_binary_hash(char [::1] mask):
  * 	return np.asarray(mask).tobytes()             # <<<<<<<<<<<<<<
@@ -20559,7 +20559,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_mask_to_binary_hash(CY
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":52
+  /* "fragnnet/frag/compute_frags.pyx":52
  * #	return node_mask_int
  * 
  * def mask_to_binary_hash(char [::1] mask):             # <<<<<<<<<<<<<<
@@ -20574,7 +20574,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_mask_to_binary_hash(CY
   __Pyx_XDECREF(__pyx_t_3);
   __Pyx_XDECREF(__pyx_t_4);
   __Pyx_XDECREF(__pyx_t_5);
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.mask_to_binary_hash", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.mask_to_binary_hash", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   __pyx_L0:;
   __Pyx_XGIVEREF(__pyx_r);
@@ -20582,7 +20582,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_mask_to_binary_hash(CY
   return __pyx_r;
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":55
+/* "fragnnet/frag/compute_frags.pyx":55
  * 	return np.asarray(mask).tobytes()
  * 
  * cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):             # <<<<<<<<<<<<<<
@@ -20590,7 +20590,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_mask_to_binary_hash(CY
  * 	cdef int [:,::1] node_to_edge_idx = np.full((num_nodes, MAX_EDGE_PER_NODE), -1, dtype=np.intc)
  */
 
-static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_to_edge_idx(int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_edges) {
+static __Pyx_memviewslice __pyx_f_8fragnnet_4frag_13compute_frags_compute_node_to_edge_idx(int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_edges) {
   __Pyx_memviewslice __pyx_v_node_to_edge_idx = { 0, 0, { 0 }, { 0 }, { 0 } };
   int __pyx_v_src_node;
   int __pyx_v_dst_node;
@@ -20618,7 +20618,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("compute_node_to_edge_idx", 1);
 
-  /* "frag_gnn/frag/compute_frags.pyx":57
+  /* "fragnnet/frag/compute_frags.pyx":57
  * cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
  * 	# use np fill instead of np.ones to speed up
  * 	cdef int [:,::1] node_to_edge_idx = np.full((num_nodes, MAX_EDGE_PER_NODE), -1, dtype=np.intc)             # <<<<<<<<<<<<<<
@@ -20670,7 +20670,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
   __pyx_t_6.memview = NULL;
   __pyx_t_6.data = NULL;
 
-  /* "frag_gnn/frag/compute_frags.pyx":59
+  /* "fragnnet/frag/compute_frags.pyx":59
  * 	cdef int [:,::1] node_to_edge_idx = np.full((num_nodes, MAX_EDGE_PER_NODE), -1, dtype=np.intc)
  * 	cdef int src_node, dst_node, j, k
  * 	for j in range(num_edges):             # <<<<<<<<<<<<<<
@@ -20682,7 +20682,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
   for (__pyx_t_9 = 0; __pyx_t_9 < __pyx_t_8; __pyx_t_9+=1) {
     __pyx_v_j = __pyx_t_9;
 
-    /* "frag_gnn/frag/compute_frags.pyx":60
+    /* "fragnnet/frag/compute_frags.pyx":60
  * 	cdef int src_node, dst_node, j, k
  * 	for j in range(num_edges):
  * 		src_node = edges[j,0]             # <<<<<<<<<<<<<<
@@ -20693,7 +20693,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
     __pyx_t_11 = 0;
     __pyx_v_src_node = (*((int *) ( /* dim=1 */ ((char *) (((int *) ( /* dim=0 */ (__pyx_v_edges.data + __pyx_t_10 * __pyx_v_edges.strides[0]) )) + __pyx_t_11)) )));
 
-    /* "frag_gnn/frag/compute_frags.pyx":61
+    /* "fragnnet/frag/compute_frags.pyx":61
  * 	for j in range(num_edges):
  * 		src_node = edges[j,0]
  * 		dst_node = edges[j,1]             # <<<<<<<<<<<<<<
@@ -20704,7 +20704,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
     __pyx_t_10 = 1;
     __pyx_v_dst_node = (*((int *) ( /* dim=1 */ ((char *) (((int *) ( /* dim=0 */ (__pyx_v_edges.data + __pyx_t_11 * __pyx_v_edges.strides[0]) )) + __pyx_t_10)) )));
 
-    /* "frag_gnn/frag/compute_frags.pyx":63
+    /* "fragnnet/frag/compute_frags.pyx":63
  * 		dst_node = edges[j,1]
  * 		#assert src_node < num_nodes and dst_node < num_nodes
  * 		for k in range(MAX_EDGE_PER_NODE):             # <<<<<<<<<<<<<<
@@ -20719,7 +20719,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
     for (__pyx_t_14 = 0; __pyx_t_14 < __pyx_t_13; __pyx_t_14+=1) {
       __pyx_v_k = __pyx_t_14;
 
-      /* "frag_gnn/frag/compute_frags.pyx":64
+      /* "fragnnet/frag/compute_frags.pyx":64
  * 		#assert src_node < num_nodes and dst_node < num_nodes
  * 		for k in range(MAX_EDGE_PER_NODE):
  * 			if node_to_edge_idx[src_node,k] == -1:             # <<<<<<<<<<<<<<
@@ -20731,7 +20731,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
       __pyx_t_15 = ((*((int *) ( /* dim=1 */ ((char *) (((int *) ( /* dim=0 */ (__pyx_v_node_to_edge_idx.data + __pyx_t_10 * __pyx_v_node_to_edge_idx.strides[0]) )) + __pyx_t_11)) ))) == -1L);
       if (__pyx_t_15) {
 
-        /* "frag_gnn/frag/compute_frags.pyx":65
+        /* "fragnnet/frag/compute_frags.pyx":65
  * 		for k in range(MAX_EDGE_PER_NODE):
  * 			if node_to_edge_idx[src_node,k] == -1:
  * 				node_to_edge_idx[src_node,k] = j             # <<<<<<<<<<<<<<
@@ -20742,7 +20742,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
         __pyx_t_10 = __pyx_v_k;
         *((int *) ( /* dim=1 */ ((char *) (((int *) ( /* dim=0 */ (__pyx_v_node_to_edge_idx.data + __pyx_t_11 * __pyx_v_node_to_edge_idx.strides[0]) )) + __pyx_t_10)) )) = __pyx_v_j;
 
-        /* "frag_gnn/frag/compute_frags.pyx":66
+        /* "fragnnet/frag/compute_frags.pyx":66
  * 			if node_to_edge_idx[src_node,k] == -1:
  * 				node_to_edge_idx[src_node,k] = j
  * 				break             # <<<<<<<<<<<<<<
@@ -20751,7 +20751,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
  */
         goto __pyx_L6_break;
 
-        /* "frag_gnn/frag/compute_frags.pyx":64
+        /* "fragnnet/frag/compute_frags.pyx":64
  * 		#assert src_node < num_nodes and dst_node < num_nodes
  * 		for k in range(MAX_EDGE_PER_NODE):
  * 			if node_to_edge_idx[src_node,k] == -1:             # <<<<<<<<<<<<<<
@@ -20762,7 +20762,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
     }
     __pyx_L6_break:;
 
-    /* "frag_gnn/frag/compute_frags.pyx":67
+    /* "fragnnet/frag/compute_frags.pyx":67
  * 				node_to_edge_idx[src_node,k] = j
  * 				break
  * 		for k in range(MAX_EDGE_PER_NODE):             # <<<<<<<<<<<<<<
@@ -20777,7 +20777,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
     for (__pyx_t_14 = 0; __pyx_t_14 < __pyx_t_13; __pyx_t_14+=1) {
       __pyx_v_k = __pyx_t_14;
 
-      /* "frag_gnn/frag/compute_frags.pyx":68
+      /* "fragnnet/frag/compute_frags.pyx":68
  * 				break
  * 		for k in range(MAX_EDGE_PER_NODE):
  * 			if node_to_edge_idx[dst_node,k] == -1:             # <<<<<<<<<<<<<<
@@ -20789,7 +20789,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
       __pyx_t_15 = ((*((int *) ( /* dim=1 */ ((char *) (((int *) ( /* dim=0 */ (__pyx_v_node_to_edge_idx.data + __pyx_t_10 * __pyx_v_node_to_edge_idx.strides[0]) )) + __pyx_t_11)) ))) == -1L);
       if (__pyx_t_15) {
 
-        /* "frag_gnn/frag/compute_frags.pyx":69
+        /* "fragnnet/frag/compute_frags.pyx":69
  * 		for k in range(MAX_EDGE_PER_NODE):
  * 			if node_to_edge_idx[dst_node,k] == -1:
  * 				node_to_edge_idx[dst_node,k] = j             # <<<<<<<<<<<<<<
@@ -20800,7 +20800,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
         __pyx_t_10 = __pyx_v_k;
         *((int *) ( /* dim=1 */ ((char *) (((int *) ( /* dim=0 */ (__pyx_v_node_to_edge_idx.data + __pyx_t_11 * __pyx_v_node_to_edge_idx.strides[0]) )) + __pyx_t_10)) )) = __pyx_v_j;
 
-        /* "frag_gnn/frag/compute_frags.pyx":70
+        /* "fragnnet/frag/compute_frags.pyx":70
  * 			if node_to_edge_idx[dst_node,k] == -1:
  * 				node_to_edge_idx[dst_node,k] = j
  * 				break             # <<<<<<<<<<<<<<
@@ -20809,7 +20809,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
  */
         goto __pyx_L9_break;
 
-        /* "frag_gnn/frag/compute_frags.pyx":68
+        /* "fragnnet/frag/compute_frags.pyx":68
  * 				break
  * 		for k in range(MAX_EDGE_PER_NODE):
  * 			if node_to_edge_idx[dst_node,k] == -1:             # <<<<<<<<<<<<<<
@@ -20821,7 +20821,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
     __pyx_L9_break:;
   }
 
-  /* "frag_gnn/frag/compute_frags.pyx":71
+  /* "fragnnet/frag/compute_frags.pyx":71
  * 				node_to_edge_idx[dst_node,k] = j
  * 				break
  * 	return node_to_edge_idx             # <<<<<<<<<<<<<<
@@ -20832,7 +20832,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
   __pyx_r = __pyx_v_node_to_edge_idx;
   goto __pyx_L0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":55
+  /* "fragnnet/frag/compute_frags.pyx":55
  * 	return np.asarray(mask).tobytes()
  * 
  * cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):             # <<<<<<<<<<<<<<
@@ -20850,7 +20850,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
   __PYX_XCLEAR_MEMVIEW(&__pyx_t_6, 1);
   __pyx_r.data = NULL;
   __pyx_r.memview = NULL;
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.compute_node_to_edge_idx", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.compute_node_to_edge_idx", __pyx_clineno, __pyx_lineno, __pyx_filename);
   goto __pyx_L2;
   __pyx_L0:;
   if (unlikely(!__pyx_r.memview)) {
@@ -20862,7 +20862,7 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
   return __pyx_r;
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":73
+/* "fragnnet/frag/compute_frags.pyx":73
  * 	return node_to_edge_idx
  * 
  * def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):             # <<<<<<<<<<<<<<
@@ -20871,15 +20871,15 @@ static __Pyx_memviewslice __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_t
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_3py_compute_node_to_edge_idx(PyObject *__pyx_self, 
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_3py_compute_node_to_edge_idx(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
 PyObject *__pyx_args, PyObject *__pyx_kwds
 #endif
 ); /*proto*/
-static PyMethodDef __pyx_mdef_8frag_gnn_4frag_13compute_frags_3py_compute_node_to_edge_idx = {"py_compute_node_to_edge_idx", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8frag_gnn_4frag_13compute_frags_3py_compute_node_to_edge_idx, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_3py_compute_node_to_edge_idx(PyObject *__pyx_self, 
+static PyMethodDef __pyx_mdef_8fragnnet_4frag_13compute_frags_3py_compute_node_to_edge_idx = {"py_compute_node_to_edge_idx", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8fragnnet_4frag_13compute_frags_3py_compute_node_to_edge_idx, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_3py_compute_node_to_edge_idx(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -20980,11 +20980,11 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
     }
   }
   __PYX_XCLEAR_MEMVIEW(&__pyx_v_edges, 1);
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.py_compute_node_to_edge_idx", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.py_compute_node_to_edge_idx", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  __pyx_r = __pyx_pf_8frag_gnn_4frag_13compute_frags_2py_compute_node_to_edge_idx(__pyx_self, __pyx_v_num_nodes, __pyx_v_num_edges, __pyx_v_edges);
+  __pyx_r = __pyx_pf_8fragnnet_4frag_13compute_frags_2py_compute_node_to_edge_idx(__pyx_self, __pyx_v_num_nodes, __pyx_v_num_edges, __pyx_v_edges);
 
   /* function exit code */
   __PYX_XCLEAR_MEMVIEW(&__pyx_v_edges, 1);
@@ -20998,7 +20998,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_2py_compute_node_to_edge_idx(CYTHON_UNUSED PyObject *__pyx_self, int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_edges) {
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_2py_compute_node_to_edge_idx(CYTHON_UNUSED PyObject *__pyx_self, int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_edges) {
   PyObject *__pyx_r = NULL;
   __Pyx_RefNannyDeclarations
   PyObject *__pyx_t_1 = NULL;
@@ -21012,7 +21012,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_2py_compute_node_to_ed
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("py_compute_node_to_edge_idx", 1);
 
-  /* "frag_gnn/frag/compute_frags.pyx":74
+  /* "fragnnet/frag/compute_frags.pyx":74
  * 
  * def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
  * 	return np.asarray(compute_node_to_edge_idx(num_nodes,num_edges,edges),dtype=np.intc)             # <<<<<<<<<<<<<<
@@ -21025,7 +21025,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_2py_compute_node_to_ed
   __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_t_1, __pyx_n_s_asarray); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 74, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-  __pyx_t_3 = __pyx_f_8frag_gnn_4frag_13compute_frags_compute_node_to_edge_idx(__pyx_v_num_nodes, __pyx_v_num_edges, __pyx_v_edges); if (unlikely(!__pyx_t_3.memview)) __PYX_ERR(0, 74, __pyx_L1_error)
+  __pyx_t_3 = __pyx_f_8fragnnet_4frag_13compute_frags_compute_node_to_edge_idx(__pyx_v_num_nodes, __pyx_v_num_edges, __pyx_v_edges); if (unlikely(!__pyx_t_3.memview)) __PYX_ERR(0, 74, __pyx_L1_error)
   __pyx_t_1 = __pyx_memoryview_fromslice(__pyx_t_3, 2, (PyObject *(*)(char *)) __pyx_memview_get_int, (int (*)(char *, PyObject *)) __pyx_memview_set_int, 0);; if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 74, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __PYX_XCLEAR_MEMVIEW(&__pyx_t_3, 1);
@@ -21053,7 +21053,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_2py_compute_node_to_ed
   __pyx_t_6 = 0;
   goto __pyx_L0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":73
+  /* "fragnnet/frag/compute_frags.pyx":73
  * 	return node_to_edge_idx
  * 
  * def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):             # <<<<<<<<<<<<<<
@@ -21069,7 +21069,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_2py_compute_node_to_ed
   __Pyx_XDECREF(__pyx_t_4);
   __Pyx_XDECREF(__pyx_t_5);
   __Pyx_XDECREF(__pyx_t_6);
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.py_compute_node_to_edge_idx", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.py_compute_node_to_edge_idx", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   __pyx_L0:;
   __Pyx_XGIVEREF(__pyx_r);
@@ -21077,7 +21077,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_2py_compute_node_to_ed
   return __pyx_r;
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":76
+/* "fragnnet/frag/compute_frags.pyx":76
  * 	return np.asarray(compute_node_to_edge_idx(num_nodes,num_edges,edges),dtype=np.intc)
  * 
  * cdef connected_components(             # <<<<<<<<<<<<<<
@@ -21085,7 +21085,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_2py_compute_node_to_ed
  * 		int num_edges,
  */
 
-static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_node_mask, __Pyx_memviewslice __pyx_v_edges, __Pyx_memviewslice __pyx_v_edge_mask, __Pyx_memviewslice __pyx_v_node_to_edge_idx) {
+static PyObject *__pyx_f_8fragnnet_4frag_13compute_frags_connected_components(int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_node_mask, __Pyx_memviewslice __pyx_v_edges, __Pyx_memviewslice __pyx_v_edge_mask, __Pyx_memviewslice __pyx_v_node_to_edge_idx) {
   Py_ssize_t __pyx_v_num_visited;
   Py_ssize_t __pyx_v_num_nonmask;
   Py_ssize_t __pyx_v_cur_node;
@@ -21125,7 +21125,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("connected_components", 1);
 
-  /* "frag_gnn/frag/compute_frags.pyx":86
+  /* "fragnnet/frag/compute_frags.pyx":86
  * 	# print('>connected_components')
  * 	# return the number of connected components
  * 	cdef Py_ssize_t num_visited = 0             # <<<<<<<<<<<<<<
@@ -21134,17 +21134,17 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
   __pyx_v_num_visited = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":87
+  /* "fragnnet/frag/compute_frags.pyx":87
  * 	# return the number of connected components
  * 	cdef Py_ssize_t num_visited = 0
  * 	cdef Py_ssize_t num_nonmask = np_sum(node_mask)             # <<<<<<<<<<<<<<
  * 	cdef Py_ssize_t cur_node
  * 	cdef Py_ssize_t num_ccs = 0
  */
-  __pyx_t_1 = __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__pyx_v_node_mask); if (unlikely(__pyx_t_1 == ((int)-1) && PyErr_Occurred())) __PYX_ERR(0, 87, __pyx_L1_error)
+  __pyx_t_1 = __pyx_f_8fragnnet_4frag_13compute_frags_np_sum(__pyx_v_node_mask); if (unlikely(__pyx_t_1 == ((int)-1) && PyErr_Occurred())) __PYX_ERR(0, 87, __pyx_L1_error)
   __pyx_v_num_nonmask = __pyx_t_1;
 
-  /* "frag_gnn/frag/compute_frags.pyx":89
+  /* "fragnnet/frag/compute_frags.pyx":89
  * 	cdef Py_ssize_t num_nonmask = np_sum(node_mask)
  * 	cdef Py_ssize_t cur_node
  * 	cdef Py_ssize_t num_ccs = 0             # <<<<<<<<<<<<<<
@@ -21153,7 +21153,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
   __pyx_v_num_ccs = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":90
+  /* "fragnnet/frag/compute_frags.pyx":90
  * 	cdef Py_ssize_t cur_node
  * 	cdef Py_ssize_t num_ccs = 0
  * 	cdef Py_ssize_t start_queue = 0             # <<<<<<<<<<<<<<
@@ -21162,7 +21162,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
   __pyx_v_start_queue = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":91
+  /* "fragnnet/frag/compute_frags.pyx":91
  * 	cdef Py_ssize_t num_ccs = 0
  * 	cdef Py_ssize_t start_queue = 0
  * 	cdef Py_ssize_t end_queue = 0             # <<<<<<<<<<<<<<
@@ -21171,7 +21171,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
   __pyx_v_end_queue = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":97
+  /* "fragnnet/frag/compute_frags.pyx":97
  * 	cdef Py_ssize_t neighbour
  * 
  * 	cdef int [::1] node_visited = np.zeros(num_nodes,dtype=np.intc)             # <<<<<<<<<<<<<<
@@ -21210,7 +21210,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __pyx_t_7.memview = NULL;
   __pyx_t_7.data = NULL;
 
-  /* "frag_gnn/frag/compute_frags.pyx":98
+  /* "fragnnet/frag/compute_frags.pyx":98
  * 
  * 	cdef int [::1] node_visited = np.zeros(num_nodes,dtype=np.intc)
  * 	cdef int [::1] node_enqueued = np.zeros(num_nodes,dtype=np.intc)             # <<<<<<<<<<<<<<
@@ -21249,7 +21249,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __pyx_t_7.memview = NULL;
   __pyx_t_7.data = NULL;
 
-  /* "frag_gnn/frag/compute_frags.pyx":99
+  /* "fragnnet/frag/compute_frags.pyx":99
  * 	cdef int [::1] node_visited = np.zeros(num_nodes,dtype=np.intc)
  * 	cdef int [::1] node_enqueued = np.zeros(num_nodes,dtype=np.intc)
  * 	cdef int [::1] node_queue = np.full(num_nodes, -1, dtype=np.intc)             # <<<<<<<<<<<<<<
@@ -21291,7 +21291,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __pyx_t_7.memview = NULL;
   __pyx_t_7.data = NULL;
 
-  /* "frag_gnn/frag/compute_frags.pyx":101
+  /* "fragnnet/frag/compute_frags.pyx":101
  * 	cdef int [::1] node_queue = np.full(num_nodes, -1, dtype=np.intc)
  * 
  * 	cdef char [:,::1] cc_nodes = np.zeros((2,num_nodes),dtype= MASK_DTYPE)             # <<<<<<<<<<<<<<
@@ -21335,7 +21335,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __pyx_t_8.memview = NULL;
   __pyx_t_8.data = NULL;
 
-  /* "frag_gnn/frag/compute_frags.pyx":102
+  /* "fragnnet/frag/compute_frags.pyx":102
  * 
  * 	cdef char [:,::1] cc_nodes = np.zeros((2,num_nodes),dtype= MASK_DTYPE)
  * 	cdef char [:,::1] cc_edges = np.zeros((2,num_edges),dtype= MASK_DTYPE)             # <<<<<<<<<<<<<<
@@ -21379,7 +21379,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __pyx_t_8.memview = NULL;
   __pyx_t_8.data = NULL;
 
-  /* "frag_gnn/frag/compute_frags.pyx":105
+  /* "fragnnet/frag/compute_frags.pyx":105
  * 
  * 	# run BFS
  * 	while num_visited < num_nonmask:             # <<<<<<<<<<<<<<
@@ -21390,7 +21390,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
     __pyx_t_9 = (__pyx_v_num_visited < __pyx_v_num_nonmask);
     if (!__pyx_t_9) break;
 
-    /* "frag_gnn/frag/compute_frags.pyx":106
+    /* "fragnnet/frag/compute_frags.pyx":106
  * 	# run BFS
  * 	while num_visited < num_nonmask:
  * 		if start_queue != end_queue:             # <<<<<<<<<<<<<<
@@ -21400,7 +21400,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
     __pyx_t_9 = (__pyx_v_start_queue != __pyx_v_end_queue);
     if (__pyx_t_9) {
 
-      /* "frag_gnn/frag/compute_frags.pyx":108
+      /* "fragnnet/frag/compute_frags.pyx":108
  * 		if start_queue != end_queue:
  * 			# dequeue
  * 			cur_node = node_queue[start_queue]             # <<<<<<<<<<<<<<
@@ -21410,7 +21410,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
       __pyx_t_10 = __pyx_v_start_queue;
       __pyx_v_cur_node = (*((int *) ( /* dim=0 */ ((char *) (((int *) __pyx_v_node_queue.data) + __pyx_t_10)) )));
 
-      /* "frag_gnn/frag/compute_frags.pyx":109
+      /* "fragnnet/frag/compute_frags.pyx":109
  * 			# dequeue
  * 			cur_node = node_queue[start_queue]
  * 			start_queue = (start_queue + 1) % num_nodes             # <<<<<<<<<<<<<<
@@ -21419,7 +21419,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
       __pyx_v_start_queue = ((__pyx_v_start_queue + 1) % __pyx_v_num_nodes);
 
-      /* "frag_gnn/frag/compute_frags.pyx":114
+      /* "fragnnet/frag/compute_frags.pyx":114
  * 			#assert node_visited[cur_node] == 0, cur_node
  * 			#assert node_mask[cur_node] == 1, cur_node
  * 			node_visited[cur_node] = 1             # <<<<<<<<<<<<<<
@@ -21429,7 +21429,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
       __pyx_t_10 = __pyx_v_cur_node;
       *((int *) ( /* dim=0 */ ((char *) (((int *) __pyx_v_node_visited.data) + __pyx_t_10)) )) = 1;
 
-      /* "frag_gnn/frag/compute_frags.pyx":115
+      /* "fragnnet/frag/compute_frags.pyx":115
  * 			#assert node_mask[cur_node] == 1, cur_node
  * 			node_visited[cur_node] = 1
  * 			num_visited += 1             # <<<<<<<<<<<<<<
@@ -21438,7 +21438,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
       __pyx_v_num_visited = (__pyx_v_num_visited + 1);
 
-      /* "frag_gnn/frag/compute_frags.pyx":119
+      /* "fragnnet/frag/compute_frags.pyx":119
  * 			#assert num_ccs > 0 and num_ccs <= 2, num_ccs
  * 			#assert cur_node < MAX_NUM_NODES, cur_node
  * 			cc_nodes[num_ccs-1,cur_node] = 1             # <<<<<<<<<<<<<<
@@ -21449,7 +21449,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
       __pyx_t_11 = __pyx_v_cur_node;
       *((char *) ( /* dim=1 */ ((char *) (((char *) ( /* dim=0 */ (__pyx_v_cc_nodes.data + __pyx_t_10 * __pyx_v_cc_nodes.strides[0]) )) + __pyx_t_11)) )) = 1;
 
-      /* "frag_gnn/frag/compute_frags.pyx":121
+      /* "fragnnet/frag/compute_frags.pyx":121
  * 			cc_nodes[num_ccs-1,cur_node] = 1
  * 			# add neighbours
  * 			for j in range(MAX_EDGE_PER_NODE):             # <<<<<<<<<<<<<<
@@ -21464,7 +21464,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
       for (__pyx_t_14 = 0; __pyx_t_14 < __pyx_t_13; __pyx_t_14+=1) {
         __pyx_v_j = __pyx_t_14;
 
-        /* "frag_gnn/frag/compute_frags.pyx":122
+        /* "fragnnet/frag/compute_frags.pyx":122
  * 			# add neighbours
  * 			for j in range(MAX_EDGE_PER_NODE):
  * 				cur_edge = node_to_edge_idx[cur_node,j]             # <<<<<<<<<<<<<<
@@ -21475,7 +21475,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
         __pyx_t_10 = __pyx_v_j;
         __pyx_v_cur_edge = (*((int *) ( /* dim=1 */ ((char *) (((int *) ( /* dim=0 */ (__pyx_v_node_to_edge_idx.data + __pyx_t_11 * __pyx_v_node_to_edge_idx.strides[0]) )) + __pyx_t_10)) )));
 
-        /* "frag_gnn/frag/compute_frags.pyx":124
+        /* "fragnnet/frag/compute_frags.pyx":124
  * 				cur_edge = node_to_edge_idx[cur_node,j]
  * 				# check if null
  * 				if cur_edge == -1:             # <<<<<<<<<<<<<<
@@ -21485,7 +21485,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
         __pyx_t_9 = (__pyx_v_cur_edge == -1L);
         if (__pyx_t_9) {
 
-          /* "frag_gnn/frag/compute_frags.pyx":125
+          /* "fragnnet/frag/compute_frags.pyx":125
  * 				# check if null
  * 				if cur_edge == -1:
  * 					break             # <<<<<<<<<<<<<<
@@ -21494,7 +21494,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
           goto __pyx_L7_break;
 
-          /* "frag_gnn/frag/compute_frags.pyx":124
+          /* "fragnnet/frag/compute_frags.pyx":124
  * 				cur_edge = node_to_edge_idx[cur_node,j]
  * 				# check if null
  * 				if cur_edge == -1:             # <<<<<<<<<<<<<<
@@ -21503,7 +21503,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
         }
 
-        /* "frag_gnn/frag/compute_frags.pyx":127
+        /* "fragnnet/frag/compute_frags.pyx":127
  * 					break
  * 				# check if edge is masked
  * 				if edge_mask[cur_edge] == 0:             # <<<<<<<<<<<<<<
@@ -21514,7 +21514,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
         __pyx_t_9 = ((*((char *) ( /* dim=0 */ ((char *) (((char *) __pyx_v_edge_mask.data) + __pyx_t_10)) ))) == 0);
         if (__pyx_t_9) {
 
-          /* "frag_gnn/frag/compute_frags.pyx":128
+          /* "fragnnet/frag/compute_frags.pyx":128
  * 				# check if edge is masked
  * 				if edge_mask[cur_edge] == 0:
  * 					continue             # <<<<<<<<<<<<<<
@@ -21523,7 +21523,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
           goto __pyx_L6_continue;
 
-          /* "frag_gnn/frag/compute_frags.pyx":127
+          /* "fragnnet/frag/compute_frags.pyx":127
  * 					break
  * 				# check if edge is masked
  * 				if edge_mask[cur_edge] == 0:             # <<<<<<<<<<<<<<
@@ -21532,7 +21532,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
         }
 
-        /* "frag_gnn/frag/compute_frags.pyx":130
+        /* "fragnnet/frag/compute_frags.pyx":130
  * 					continue
  * 				# add unvisited neighbours
  * 				if edges[cur_edge,0] == cur_node:             # <<<<<<<<<<<<<<
@@ -21544,7 +21544,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
         __pyx_t_9 = ((*((int *) ( /* dim=1 */ ((char *) (((int *) ( /* dim=0 */ (__pyx_v_edges.data + __pyx_t_10 * __pyx_v_edges.strides[0]) )) + __pyx_t_11)) ))) == __pyx_v_cur_node);
         if (__pyx_t_9) {
 
-          /* "frag_gnn/frag/compute_frags.pyx":131
+          /* "fragnnet/frag/compute_frags.pyx":131
  * 				# add unvisited neighbours
  * 				if edges[cur_edge,0] == cur_node:
  * 					neighbour = edges[cur_edge,1]             # <<<<<<<<<<<<<<
@@ -21555,7 +21555,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
           __pyx_t_10 = 1;
           __pyx_v_neighbour = (*((int *) ( /* dim=1 */ ((char *) (((int *) ( /* dim=0 */ (__pyx_v_edges.data + __pyx_t_11 * __pyx_v_edges.strides[0]) )) + __pyx_t_10)) )));
 
-          /* "frag_gnn/frag/compute_frags.pyx":130
+          /* "fragnnet/frag/compute_frags.pyx":130
  * 					continue
  * 				# add unvisited neighbours
  * 				if edges[cur_edge,0] == cur_node:             # <<<<<<<<<<<<<<
@@ -21565,7 +21565,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
           goto __pyx_L10;
         }
 
-        /* "frag_gnn/frag/compute_frags.pyx":134
+        /* "fragnnet/frag/compute_frags.pyx":134
  * 				else:
  * 					#assert edges[cur_edge,1] == cur_node
  * 					neighbour = edges[cur_edge,0]             # <<<<<<<<<<<<<<
@@ -21579,7 +21579,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
         }
         __pyx_L10:;
 
-        /* "frag_gnn/frag/compute_frags.pyx":137
+        /* "fragnnet/frag/compute_frags.pyx":137
  * 
  * 				# if we have not see node before
  * 				if node_enqueued[neighbour] == 0:             # <<<<<<<<<<<<<<
@@ -21590,7 +21590,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
         __pyx_t_9 = ((*((int *) ( /* dim=0 */ ((char *) (((int *) __pyx_v_node_enqueued.data) + __pyx_t_11)) ))) == 0);
         if (__pyx_t_9) {
 
-          /* "frag_gnn/frag/compute_frags.pyx":139
+          /* "fragnnet/frag/compute_frags.pyx":139
  * 				if node_enqueued[neighbour] == 0:
  * 					#assert node_visited[neighbour] == 0
  * 					node_queue[end_queue] = neighbour             # <<<<<<<<<<<<<<
@@ -21600,7 +21600,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
           __pyx_t_11 = __pyx_v_end_queue;
           *((int *) ( /* dim=0 */ ((char *) (((int *) __pyx_v_node_queue.data) + __pyx_t_11)) )) = __pyx_v_neighbour;
 
-          /* "frag_gnn/frag/compute_frags.pyx":140
+          /* "fragnnet/frag/compute_frags.pyx":140
  * 					#assert node_visited[neighbour] == 0
  * 					node_queue[end_queue] = neighbour
  * 					end_queue = (end_queue + 1) % num_nodes             # <<<<<<<<<<<<<<
@@ -21609,7 +21609,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
           __pyx_v_end_queue = ((__pyx_v_end_queue + 1) % __pyx_v_num_nodes);
 
-          /* "frag_gnn/frag/compute_frags.pyx":141
+          /* "fragnnet/frag/compute_frags.pyx":141
  * 					node_queue[end_queue] = neighbour
  * 					end_queue = (end_queue + 1) % num_nodes
  * 					node_enqueued[neighbour] = 1             # <<<<<<<<<<<<<<
@@ -21619,7 +21619,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
           __pyx_t_11 = __pyx_v_neighbour;
           *((int *) ( /* dim=0 */ ((char *) (((int *) __pyx_v_node_enqueued.data) + __pyx_t_11)) )) = 1;
 
-          /* "frag_gnn/frag/compute_frags.pyx":137
+          /* "fragnnet/frag/compute_frags.pyx":137
  * 
  * 				# if we have not see node before
  * 				if node_enqueued[neighbour] == 0:             # <<<<<<<<<<<<<<
@@ -21628,7 +21628,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
         }
 
-        /* "frag_gnn/frag/compute_frags.pyx":144
+        /* "fragnnet/frag/compute_frags.pyx":144
  * 
  * 				# add edge to cc
  * 				cc_edges[num_ccs-1,cur_edge] = 1             # <<<<<<<<<<<<<<
@@ -21642,7 +21642,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
       }
       __pyx_L7_break:;
 
-      /* "frag_gnn/frag/compute_frags.pyx":106
+      /* "fragnnet/frag/compute_frags.pyx":106
  * 	# run BFS
  * 	while num_visited < num_nonmask:
  * 		if start_queue != end_queue:             # <<<<<<<<<<<<<<
@@ -21652,7 +21652,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
       goto __pyx_L5;
     }
 
-    /* "frag_gnn/frag/compute_frags.pyx":148
+    /* "fragnnet/frag/compute_frags.pyx":148
  * 		else:
  * 			# check for new nodes to seed BFS
  * 			for i in range(num_nodes):             # <<<<<<<<<<<<<<
@@ -21665,7 +21665,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
       for (__pyx_t_14 = 0; __pyx_t_14 < __pyx_t_15; __pyx_t_14+=1) {
         __pyx_v_i = __pyx_t_14;
 
-        /* "frag_gnn/frag/compute_frags.pyx":149
+        /* "fragnnet/frag/compute_frags.pyx":149
  * 			# check for new nodes to seed BFS
  * 			for i in range(num_nodes):
  * 				if node_mask[i] == 1 and node_visited[i] == 0:             # <<<<<<<<<<<<<<
@@ -21685,7 +21685,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
         __pyx_L15_bool_binop_done:;
         if (__pyx_t_9) {
 
-          /* "frag_gnn/frag/compute_frags.pyx":151
+          /* "fragnnet/frag/compute_frags.pyx":151
  * 				if node_mask[i] == 1 and node_visited[i] == 0:
  * 					# enqueue
  * 					node_queue[end_queue] = i             # <<<<<<<<<<<<<<
@@ -21695,7 +21695,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
           __pyx_t_10 = __pyx_v_end_queue;
           *((int *) ( /* dim=0 */ ((char *) (((int *) __pyx_v_node_queue.data) + __pyx_t_10)) )) = __pyx_v_i;
 
-          /* "frag_gnn/frag/compute_frags.pyx":152
+          /* "fragnnet/frag/compute_frags.pyx":152
  * 					# enqueue
  * 					node_queue[end_queue] = i
  * 					end_queue = (end_queue + 1) % num_nodes             # <<<<<<<<<<<<<<
@@ -21704,7 +21704,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
           __pyx_v_end_queue = ((__pyx_v_end_queue + 1) % __pyx_v_num_nodes);
 
-          /* "frag_gnn/frag/compute_frags.pyx":155
+          /* "fragnnet/frag/compute_frags.pyx":155
  * 					#print(f"new end node {end_queue}")
  * 					#assert node_enqueued[i] == 0
  * 					node_enqueued[i] = 1             # <<<<<<<<<<<<<<
@@ -21714,7 +21714,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
           __pyx_t_10 = __pyx_v_i;
           *((int *) ( /* dim=0 */ ((char *) (((int *) __pyx_v_node_enqueued.data) + __pyx_t_10)) )) = 1;
 
-          /* "frag_gnn/frag/compute_frags.pyx":156
+          /* "fragnnet/frag/compute_frags.pyx":156
  * 					#assert node_enqueued[i] == 0
  * 					node_enqueued[i] = 1
  * 					num_ccs += 1             # <<<<<<<<<<<<<<
@@ -21723,7 +21723,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
           __pyx_v_num_ccs = (__pyx_v_num_ccs + 1);
 
-          /* "frag_gnn/frag/compute_frags.pyx":157
+          /* "fragnnet/frag/compute_frags.pyx":157
  * 					node_enqueued[i] = 1
  * 					num_ccs += 1
  * 					break             # <<<<<<<<<<<<<<
@@ -21732,7 +21732,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
           goto __pyx_L13_break;
 
-          /* "frag_gnn/frag/compute_frags.pyx":149
+          /* "fragnnet/frag/compute_frags.pyx":149
  * 			# check for new nodes to seed BFS
  * 			for i in range(num_nodes):
  * 				if node_mask[i] == 1 and node_visited[i] == 0:             # <<<<<<<<<<<<<<
@@ -21746,7 +21746,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
     __pyx_L5:;
   }
 
-  /* "frag_gnn/frag/compute_frags.pyx":159
+  /* "fragnnet/frag/compute_frags.pyx":159
  * 					break
  * 
  * 	if num_visited != num_nonmask:             # <<<<<<<<<<<<<<
@@ -21756,7 +21756,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __pyx_t_9 = (__pyx_v_num_visited != __pyx_v_num_nonmask);
   if (unlikely(__pyx_t_9)) {
 
-    /* "frag_gnn/frag/compute_frags.pyx":160
+    /* "fragnnet/frag/compute_frags.pyx":160
  * 
  * 	if num_visited != num_nonmask:
  * 		raise ValueError(f'num_visited ({num_visited}) != num_nonmask ({num_nonmask})')             # <<<<<<<<<<<<<<
@@ -21801,7 +21801,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
     __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
     __PYX_ERR(0, 160, __pyx_L1_error)
 
-    /* "frag_gnn/frag/compute_frags.pyx":159
+    /* "fragnnet/frag/compute_frags.pyx":159
  * 					break
  * 
  * 	if num_visited != num_nonmask:             # <<<<<<<<<<<<<<
@@ -21810,7 +21810,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
   }
 
-  /* "frag_gnn/frag/compute_frags.pyx":162
+  /* "fragnnet/frag/compute_frags.pyx":162
  * 		raise ValueError(f'num_visited ({num_visited}) != num_nonmask ({num_nonmask})')
  * 
  * 	if start_queue != end_queue:             # <<<<<<<<<<<<<<
@@ -21820,7 +21820,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __pyx_t_9 = (__pyx_v_start_queue != __pyx_v_end_queue);
   if (unlikely(__pyx_t_9)) {
 
-    /* "frag_gnn/frag/compute_frags.pyx":163
+    /* "fragnnet/frag/compute_frags.pyx":163
  * 
  * 	if start_queue != end_queue:
  * 		raise ValueError(f'start_queue ({start_queue}) != end_queue ({end_queue}), num_ccs {num_ccs}')             # <<<<<<<<<<<<<<
@@ -21871,7 +21871,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
     __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
     __PYX_ERR(0, 163, __pyx_L1_error)
 
-    /* "frag_gnn/frag/compute_frags.pyx":162
+    /* "fragnnet/frag/compute_frags.pyx":162
  * 		raise ValueError(f'num_visited ({num_visited}) != num_nonmask ({num_nonmask})')
  * 
  * 	if start_queue != end_queue:             # <<<<<<<<<<<<<<
@@ -21880,7 +21880,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
   }
 
-  /* "frag_gnn/frag/compute_frags.pyx":165
+  /* "fragnnet/frag/compute_frags.pyx":165
  * 		raise ValueError(f'start_queue ({start_queue}) != end_queue ({end_queue}), num_ccs {num_ccs}')
  * 
  * 	if num_ccs < 0 or num_ccs > 2:             # <<<<<<<<<<<<<<
@@ -21898,7 +21898,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __pyx_L20_bool_binop_done:;
   if (unlikely(__pyx_t_9)) {
 
-    /* "frag_gnn/frag/compute_frags.pyx":166
+    /* "fragnnet/frag/compute_frags.pyx":166
  * 
  * 	if num_ccs < 0 or num_ccs > 2:
  * 		raise ValueError(f'{num_ccs} num_ccs <0 or num_ccs > 2')             # <<<<<<<<<<<<<<
@@ -21917,7 +21917,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
     __Pyx_DECREF(__pyx_t_5); __pyx_t_5 = 0;
     __PYX_ERR(0, 166, __pyx_L1_error)
 
-    /* "frag_gnn/frag/compute_frags.pyx":165
+    /* "fragnnet/frag/compute_frags.pyx":165
  * 		raise ValueError(f'start_queue ({start_queue}) != end_queue ({end_queue}), num_ccs {num_ccs}')
  * 
  * 	if num_ccs < 0 or num_ccs > 2:             # <<<<<<<<<<<<<<
@@ -21926,7 +21926,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
   }
 
-  /* "frag_gnn/frag/compute_frags.pyx":168
+  /* "fragnnet/frag/compute_frags.pyx":168
  * 		raise ValueError(f'{num_ccs} num_ccs <0 or num_ccs > 2')
  * 
  * 	return cc_nodes, cc_edges, num_ccs             # <<<<<<<<<<<<<<
@@ -21955,7 +21955,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __pyx_t_4 = 0;
   goto __pyx_L0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":76
+  /* "fragnnet/frag/compute_frags.pyx":76
  * 	return np.asarray(compute_node_to_edge_idx(num_nodes,num_edges,edges),dtype=np.intc)
  * 
  * cdef connected_components(             # <<<<<<<<<<<<<<
@@ -21972,7 +21972,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   __Pyx_XDECREF(__pyx_t_6);
   __PYX_XCLEAR_MEMVIEW(&__pyx_t_7, 1);
   __PYX_XCLEAR_MEMVIEW(&__pyx_t_8, 1);
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.connected_components", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.connected_components", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = 0;
   __pyx_L0:;
   __PYX_XCLEAR_MEMVIEW(&__pyx_v_node_visited, 1);
@@ -21985,7 +21985,7 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
   return __pyx_r;
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":170
+/* "fragnnet/frag/compute_frags.pyx":170
  * 	return cc_nodes, cc_edges, num_ccs
  * 
  * def compute_ccs(             # <<<<<<<<<<<<<<
@@ -21994,15 +21994,15 @@ static PyObject *__pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(in
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_5compute_ccs(PyObject *__pyx_self, 
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_5compute_ccs(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
 PyObject *__pyx_args, PyObject *__pyx_kwds
 #endif
 ); /*proto*/
-static PyMethodDef __pyx_mdef_8frag_gnn_4frag_13compute_frags_5compute_ccs = {"compute_ccs", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8frag_gnn_4frag_13compute_frags_5compute_ccs, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_5compute_ccs(PyObject *__pyx_self, 
+static PyMethodDef __pyx_mdef_8fragnnet_4frag_13compute_frags_5compute_ccs = {"compute_ccs", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8fragnnet_4frag_13compute_frags_5compute_ccs, __Pyx_METH_FASTCALL|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_5compute_ccs(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -22181,11 +22181,11 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   __PYX_XCLEAR_MEMVIEW(&__pyx_v_edges, 1);
   __PYX_XCLEAR_MEMVIEW(&__pyx_v_edge_mask, 1);
   __PYX_XCLEAR_MEMVIEW(&__pyx_v_node_to_edge_idx, 1);
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.compute_ccs", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.compute_ccs", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  __pyx_r = __pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(__pyx_self, __pyx_v_num_nodes, __pyx_v_num_edges, __pyx_v_node_mask, __pyx_v_edges, __pyx_v_edge_mask, __pyx_v_node_to_edge_idx, __pyx_v_max_depth, __pyx_v_time_limit);
+  __pyx_r = __pyx_pf_8fragnnet_4frag_13compute_frags_4compute_ccs(__pyx_self, __pyx_v_num_nodes, __pyx_v_num_edges, __pyx_v_node_mask, __pyx_v_edges, __pyx_v_edge_mask, __pyx_v_node_to_edge_idx, __pyx_v_max_depth, __pyx_v_time_limit);
 
   /* function exit code */
   __PYX_XCLEAR_MEMVIEW(&__pyx_v_node_mask, 1);
@@ -22202,7 +22202,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UNUSED PyObject *__pyx_self, int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_node_mask, __Pyx_memviewslice __pyx_v_edges, __Pyx_memviewslice __pyx_v_edge_mask, __Pyx_memviewslice __pyx_v_node_to_edge_idx, int __pyx_v_max_depth, long __pyx_v_time_limit) {
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_4compute_ccs(CYTHON_UNUSED PyObject *__pyx_self, int __pyx_v_num_nodes, int __pyx_v_num_edges, __Pyx_memviewslice __pyx_v_node_mask, __Pyx_memviewslice __pyx_v_edges, __Pyx_memviewslice __pyx_v_edge_mask, __Pyx_memviewslice __pyx_v_node_to_edge_idx, int __pyx_v_max_depth, long __pyx_v_time_limit) {
   long __pyx_v_start_time;
   long __pyx_v_cur_time;
   CYTHON_UNUSED PyObject *__pyx_v_child_node_mask_list = 0;
@@ -22298,7 +22298,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   int __pyx_clineno = 0;
   __Pyx_RefNannySetupContext("compute_ccs", 1);
 
-  /* "frag_gnn/frag/compute_frags.pyx":182
+  /* "fragnnet/frag/compute_frags.pyx":182
  * 
  * 	# and a time check
  * 	assert num_nodes <= MAX_NUM_NODES, num_nodes             # <<<<<<<<<<<<<<
@@ -22331,7 +22331,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   if ((1)); else __PYX_ERR(0, 182, __pyx_L1_error)
   #endif
 
-  /* "frag_gnn/frag/compute_frags.pyx":183
+  /* "fragnnet/frag/compute_frags.pyx":183
  * 	# and a time check
  * 	assert num_nodes <= MAX_NUM_NODES, num_nodes
  * 	assert num_edges <= MAX_NUM_EDGES, num_edges             # <<<<<<<<<<<<<<
@@ -22364,17 +22364,17 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   if ((1)); else __PYX_ERR(0, 183, __pyx_L1_error)
   #endif
 
-  /* "frag_gnn/frag/compute_frags.pyx":184
+  /* "fragnnet/frag/compute_frags.pyx":184
  * 	assert num_nodes <= MAX_NUM_NODES, num_nodes
  * 	assert num_edges <= MAX_NUM_EDGES, num_edges
  * 	cdef long start_time = get_time()             # <<<<<<<<<<<<<<
  * 
  * 	# this need happen within loop
  */
-  __pyx_t_5 = __pyx_f_8frag_gnn_4frag_13compute_frags_get_time(); if (unlikely(__pyx_t_5 == ((long)-1) && PyErr_Occurred())) __PYX_ERR(0, 184, __pyx_L1_error)
+  __pyx_t_5 = __pyx_f_8fragnnet_4frag_13compute_frags_get_time(); if (unlikely(__pyx_t_5 == ((long)-1) && PyErr_Occurred())) __PYX_ERR(0, 184, __pyx_L1_error)
   __pyx_v_start_time = __pyx_t_5;
 
-  /* "frag_gnn/frag/compute_frags.pyx":187
+  /* "fragnnet/frag/compute_frags.pyx":187
  * 
  * 	# this need happen within loop
  * 	cdef long cur_time = 0             # <<<<<<<<<<<<<<
@@ -22383,7 +22383,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_cur_time = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":190
+  /* "fragnnet/frag/compute_frags.pyx":190
  * 
  * 	# define a load of things
  * 	cdef list child_node_mask_list = []             # <<<<<<<<<<<<<<
@@ -22395,7 +22395,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_child_node_mask_list = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":191
+  /* "fragnnet/frag/compute_frags.pyx":191
  * 	# define a load of things
  * 	cdef list child_node_mask_list = []
  * 	cdef list child_edge_mask_list = []             # <<<<<<<<<<<<<<
@@ -22407,7 +22407,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_child_edge_mask_list = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":193
+  /* "fragnnet/frag/compute_frags.pyx":193
  * 	cdef list child_edge_mask_list = []
  * 	cdef int node_idx
  * 	cdef int num_edges_nomask = 0             # <<<<<<<<<<<<<<
@@ -22416,7 +22416,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_num_edges_nomask = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":195
+  /* "fragnnet/frag/compute_frags.pyx":195
  * 	cdef int num_edges_nomask = 0
  * 
  * 	cdef int ccs_idx = 0             # <<<<<<<<<<<<<<
@@ -22425,7 +22425,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_ccs_idx = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":196
+  /* "fragnnet/frag/compute_frags.pyx":196
  * 
  * 	cdef int ccs_idx = 0
  * 	cdef int ccs_end = 0             # <<<<<<<<<<<<<<
@@ -22434,7 +22434,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_ccs_end = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":197
+  /* "fragnnet/frag/compute_frags.pyx":197
  * 	cdef int ccs_idx = 0
  * 	cdef int ccs_end = 0
  * 	cdef int c = 0             # <<<<<<<<<<<<<<
@@ -22443,7 +22443,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_c = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":198
+  /* "fragnnet/frag/compute_frags.pyx":198
  * 	cdef int ccs_end = 0
  * 	cdef int c = 0
  * 	cdef int i = 0             # <<<<<<<<<<<<<<
@@ -22452,7 +22452,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_i = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":199
+  /* "fragnnet/frag/compute_frags.pyx":199
  * 	cdef int c = 0
  * 	cdef int i = 0
  * 	cdef int current_depth = 0             # <<<<<<<<<<<<<<
@@ -22461,7 +22461,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_current_depth = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":202
+  /* "fragnnet/frag/compute_frags.pyx":202
  * 
  * 	# start with return_parents
  * 	node_mask_key = mask_to_binary_hash(node_mask)             # <<<<<<<<<<<<<<
@@ -22498,7 +22498,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_node_mask_key = __pyx_t_3;
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":203
+  /* "fragnnet/frag/compute_frags.pyx":203
  * 	# start with return_parents
  * 	node_mask_key = mask_to_binary_hash(node_mask)
  * 	edge_mask_key = mask_to_binary_hash(edge_mask)             # <<<<<<<<<<<<<<
@@ -22535,7 +22535,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_edge_mask_key = __pyx_t_3;
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":205
+  /* "fragnnet/frag/compute_frags.pyx":205
  * 	edge_mask_key = mask_to_binary_hash(edge_mask)
  * 
  * 	cdef list ccs = [node_mask_key]             # <<<<<<<<<<<<<<
@@ -22550,7 +22550,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_ccs = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":206
+  /* "fragnnet/frag/compute_frags.pyx":206
  * 
  * 	cdef list ccs = [node_mask_key]
  * 	cdef list cc_edges = [edge_mask_key]             # <<<<<<<<<<<<<<
@@ -22565,7 +22565,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_cc_edges = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":207
+  /* "fragnnet/frag/compute_frags.pyx":207
  * 	cdef list ccs = [node_mask_key]
  * 	cdef list cc_edges = [edge_mask_key]
  * 	cdef list ccs_depths = [0]             # <<<<<<<<<<<<<<
@@ -22580,7 +22580,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_ccs_depths = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":208
+  /* "fragnnet/frag/compute_frags.pyx":208
  * 	cdef list cc_edges = [edge_mask_key]
  * 	cdef list ccs_depths = [0]
  * 	cdef dict cc_node_mask_dict = {node_mask_key:node_mask}             # <<<<<<<<<<<<<<
@@ -22596,7 +22596,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_cc_node_mask_dict = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":209
+  /* "fragnnet/frag/compute_frags.pyx":209
  * 	cdef list ccs_depths = [0]
  * 	cdef dict cc_node_mask_dict = {node_mask_key:node_mask}
  * 	cdef dict cc_edge_mask_dict = {edge_mask_key:edge_mask}             # <<<<<<<<<<<<<<
@@ -22612,7 +22612,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_cc_edge_mask_dict = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":210
+  /* "fragnnet/frag/compute_frags.pyx":210
  * 	cdef dict cc_node_mask_dict = {node_mask_key:node_mask}
  * 	cdef dict cc_edge_mask_dict = {edge_mask_key:edge_mask}
  * 	cdef dict has_seen_dict = {}             # <<<<<<<<<<<<<<
@@ -22624,7 +22624,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_has_seen_dict = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":211
+  /* "fragnnet/frag/compute_frags.pyx":211
  * 	cdef dict cc_edge_mask_dict = {edge_mask_key:edge_mask}
  * 	cdef dict has_seen_dict = {}
  * 	cdef dict ccs_depth_dict = {node_mask_key:set({0})}             # <<<<<<<<<<<<<<
@@ -22644,7 +22644,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_ccs_depth_dict = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":212
+  /* "fragnnet/frag/compute_frags.pyx":212
  * 	cdef dict has_seen_dict = {}
  * 	cdef dict ccs_depth_dict = {node_mask_key:set({0})}
  * 	cdef int num_ccs = 0             # <<<<<<<<<<<<<<
@@ -22653,7 +22653,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_num_ccs = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":215
+  /* "fragnnet/frag/compute_frags.pyx":215
  * 
  * 	# data for gaphs
  * 	cdef dict css_to_id_dict = {node_mask_key:0}             # <<<<<<<<<<<<<<
@@ -22666,7 +22666,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_css_to_id_dict = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":218
+  /* "fragnnet/frag/compute_frags.pyx":218
  * 	# needed by pyg
  * 	# dag_edge_dict, used to keep track dag edges and min depth
  * 	dag_edge_dict = {} #set({})             # <<<<<<<<<<<<<<
@@ -22678,7 +22678,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_dag_edge_dict = ((PyObject*)__pyx_t_3);
   __pyx_t_3 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":221
+  /* "fragnnet/frag/compute_frags.pyx":221
  * 
  * 	#print("test_list", test_list[0])
  * 	force_stop = False             # <<<<<<<<<<<<<<
@@ -22687,7 +22687,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_force_stop = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":222
+  /* "fragnnet/frag/compute_frags.pyx":222
  * 	#print("test_list", test_list[0])
  * 	force_stop = False
  * 	reached_depth = 0             # <<<<<<<<<<<<<<
@@ -22696,7 +22696,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
   __pyx_v_reached_depth = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":224
+  /* "fragnnet/frag/compute_frags.pyx":224
  * 	reached_depth = 0
  * 	# for each depth
  * 	for current_depth in range(max_depth):             # <<<<<<<<<<<<<<
@@ -22708,7 +22708,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   for (__pyx_t_10 = 0; __pyx_t_10 < __pyx_t_9; __pyx_t_10+=1) {
     __pyx_v_current_depth = __pyx_t_10;
 
-    /* "frag_gnn/frag/compute_frags.pyx":226
+    /* "fragnnet/frag/compute_frags.pyx":226
  * 	for current_depth in range(max_depth):
  * 		# keep all the ccs mask for next round
  * 		child_edge_mask_list = []             # <<<<<<<<<<<<<<
@@ -22720,7 +22720,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
     __Pyx_DECREF_SET(__pyx_v_child_edge_mask_list, ((PyObject*)__pyx_t_3));
     __pyx_t_3 = 0;
 
-    /* "frag_gnn/frag/compute_frags.pyx":227
+    /* "fragnnet/frag/compute_frags.pyx":227
  * 		# keep all the ccs mask for next round
  * 		child_edge_mask_list = []
  * 		ccs_end = len(ccs)             # <<<<<<<<<<<<<<
@@ -22730,7 +22730,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
     __pyx_t_11 = __Pyx_PyList_GET_SIZE(__pyx_v_ccs); if (unlikely(__pyx_t_11 == ((Py_ssize_t)-1))) __PYX_ERR(0, 227, __pyx_L1_error)
     __pyx_v_ccs_end = __pyx_t_11;
 
-    /* "frag_gnn/frag/compute_frags.pyx":229
+    /* "fragnnet/frag/compute_frags.pyx":229
  * 		ccs_end = len(ccs)
  * 
  * 		for node_idx in range(ccs_idx,ccs_end):             # <<<<<<<<<<<<<<
@@ -22742,17 +22742,17 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
     for (__pyx_t_14 = __pyx_v_ccs_idx; __pyx_t_14 < __pyx_t_13; __pyx_t_14+=1) {
       __pyx_v_node_idx = __pyx_t_14;
 
-      /* "frag_gnn/frag/compute_frags.pyx":231
+      /* "fragnnet/frag/compute_frags.pyx":231
  * 		for node_idx in range(ccs_idx,ccs_end):
  * 			# let us check time
  * 			cur_time = get_time()             # <<<<<<<<<<<<<<
  * 			sig_check()
  * 			if cur_time - start_time > time_limit:
  */
-      __pyx_t_5 = __pyx_f_8frag_gnn_4frag_13compute_frags_get_time(); if (unlikely(__pyx_t_5 == ((long)-1) && PyErr_Occurred())) __PYX_ERR(0, 231, __pyx_L1_error)
+      __pyx_t_5 = __pyx_f_8fragnnet_4frag_13compute_frags_get_time(); if (unlikely(__pyx_t_5 == ((long)-1) && PyErr_Occurred())) __PYX_ERR(0, 231, __pyx_L1_error)
       __pyx_v_cur_time = __pyx_t_5;
 
-      /* "frag_gnn/frag/compute_frags.pyx":232
+      /* "fragnnet/frag/compute_frags.pyx":232
  * 			# let us check time
  * 			cur_time = get_time()
  * 			sig_check()             # <<<<<<<<<<<<<<
@@ -22761,7 +22761,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
       __pyx_t_15 = sig_check(); if (unlikely(__pyx_t_15 == ((int)0))) __PYX_ERR(0, 232, __pyx_L1_error)
 
-      /* "frag_gnn/frag/compute_frags.pyx":233
+      /* "fragnnet/frag/compute_frags.pyx":233
  * 			cur_time = get_time()
  * 			sig_check()
  * 			if cur_time - start_time > time_limit:             # <<<<<<<<<<<<<<
@@ -22771,7 +22771,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __pyx_t_4 = ((__pyx_v_cur_time - __pyx_v_start_time) > __pyx_v_time_limit);
       if (__pyx_t_4) {
 
-        /* "frag_gnn/frag/compute_frags.pyx":234
+        /* "fragnnet/frag/compute_frags.pyx":234
  * 			sig_check()
  * 			if cur_time - start_time > time_limit:
  * 				force_stop = True             # <<<<<<<<<<<<<<
@@ -22780,7 +22780,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
         __pyx_v_force_stop = 1;
 
-        /* "frag_gnn/frag/compute_frags.pyx":235
+        /* "fragnnet/frag/compute_frags.pyx":235
  * 			if cur_time - start_time > time_limit:
  * 				force_stop = True
  * 				break             # <<<<<<<<<<<<<<
@@ -22789,7 +22789,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
         goto __pyx_L6_break;
 
-        /* "frag_gnn/frag/compute_frags.pyx":233
+        /* "fragnnet/frag/compute_frags.pyx":233
  * 			cur_time = get_time()
  * 			sig_check()
  * 			if cur_time - start_time > time_limit:             # <<<<<<<<<<<<<<
@@ -22798,7 +22798,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
       }
 
-      /* "frag_gnn/frag/compute_frags.pyx":238
+      /* "fragnnet/frag/compute_frags.pyx":238
  * 
  * 			# get mask hash and mask
  * 			curent_node_mask_key = ccs[node_idx]             # <<<<<<<<<<<<<<
@@ -22810,7 +22810,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_XDECREF_SET(__pyx_v_curent_node_mask_key, __pyx_t_3);
       __pyx_t_3 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":239
+      /* "fragnnet/frag/compute_frags.pyx":239
  * 			# get mask hash and mask
  * 			curent_node_mask_key = ccs[node_idx]
  * 			current_edge_mask_key = cc_edges[node_idx]             # <<<<<<<<<<<<<<
@@ -22822,7 +22822,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_XDECREF_SET(__pyx_v_current_edge_mask_key, __pyx_t_3);
       __pyx_t_3 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":240
+      /* "fragnnet/frag/compute_frags.pyx":240
  * 			curent_node_mask_key = ccs[node_idx]
  * 			current_edge_mask_key = cc_edges[node_idx]
  * 			current_node_mask = cc_node_mask_dict[curent_node_mask_key]             # <<<<<<<<<<<<<<
@@ -22834,7 +22834,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_XDECREF_SET(__pyx_v_current_node_mask, __pyx_t_3);
       __pyx_t_3 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":241
+      /* "fragnnet/frag/compute_frags.pyx":241
  * 			current_edge_mask_key = cc_edges[node_idx]
  * 			current_node_mask = cc_node_mask_dict[curent_node_mask_key]
  * 			current_edge_mask = cc_edge_mask_dict[current_edge_mask_key]             # <<<<<<<<<<<<<<
@@ -22846,7 +22846,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_XDECREF_SET(__pyx_v_current_edge_mask, __pyx_t_3);
       __pyx_t_3 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":245
+      /* "fragnnet/frag/compute_frags.pyx":245
  * 			# let us check mask, there is more than one way to get each node
  * 			# thus, we need to check if we have seen this node mask and edge mask before
  * 			node_full_mask_str = curent_node_mask_key + b'|' +  current_edge_mask_key             # <<<<<<<<<<<<<<
@@ -22861,7 +22861,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_XDECREF_SET(__pyx_v_node_full_mask_str, __pyx_t_2);
       __pyx_t_2 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":248
+      /* "fragnnet/frag/compute_frags.pyx":248
  * 
  * 			# check if we have seen has configure before
  * 			need_skip = False             # <<<<<<<<<<<<<<
@@ -22870,7 +22870,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
       __pyx_v_need_skip = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":249
+      /* "fragnnet/frag/compute_frags.pyx":249
  * 			# check if we have seen has configure before
  * 			need_skip = False
  * 			if node_full_mask_str not in has_seen_dict:             # <<<<<<<<<<<<<<
@@ -22880,7 +22880,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __pyx_t_4 = (__Pyx_PyDict_ContainsTF(__pyx_v_node_full_mask_str, __pyx_v_has_seen_dict, Py_NE)); if (unlikely((__pyx_t_4 < 0))) __PYX_ERR(0, 249, __pyx_L1_error)
       if (__pyx_t_4) {
 
-        /* "frag_gnn/frag/compute_frags.pyx":250
+        /* "fragnnet/frag/compute_frags.pyx":250
  * 			need_skip = False
  * 			if node_full_mask_str not in has_seen_dict:
  * 				has_seen_dict[node_full_mask_str] = current_depth             # <<<<<<<<<<<<<<
@@ -22892,7 +22892,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
         if (unlikely((PyDict_SetItem(__pyx_v_has_seen_dict, __pyx_v_node_full_mask_str, __pyx_t_2) < 0))) __PYX_ERR(0, 250, __pyx_L1_error)
         __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-        /* "frag_gnn/frag/compute_frags.pyx":249
+        /* "fragnnet/frag/compute_frags.pyx":249
  * 			# check if we have seen has configure before
  * 			need_skip = False
  * 			if node_full_mask_str not in has_seen_dict:             # <<<<<<<<<<<<<<
@@ -22902,7 +22902,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
         goto __pyx_L8;
       }
 
-      /* "frag_gnn/frag/compute_frags.pyx":251
+      /* "fragnnet/frag/compute_frags.pyx":251
  * 			if node_full_mask_str not in has_seen_dict:
  * 				has_seen_dict[node_full_mask_str] = current_depth
  * 			elif has_seen_dict[node_full_mask_str] > current_depth:             # <<<<<<<<<<<<<<
@@ -22920,7 +22920,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
       if (__pyx_t_4) {
 
-        /* "frag_gnn/frag/compute_frags.pyx":252
+        /* "fragnnet/frag/compute_frags.pyx":252
  * 				has_seen_dict[node_full_mask_str] = current_depth
  * 			elif has_seen_dict[node_full_mask_str] > current_depth:
  * 				has_seen_dict[node_full_mask_str] = current_depth             # <<<<<<<<<<<<<<
@@ -22932,7 +22932,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
         if (unlikely((PyDict_SetItem(__pyx_v_has_seen_dict, __pyx_v_node_full_mask_str, __pyx_t_1) < 0))) __PYX_ERR(0, 252, __pyx_L1_error)
         __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-        /* "frag_gnn/frag/compute_frags.pyx":251
+        /* "fragnnet/frag/compute_frags.pyx":251
  * 			if node_full_mask_str not in has_seen_dict:
  * 				has_seen_dict[node_full_mask_str] = current_depth
  * 			elif has_seen_dict[node_full_mask_str] > current_depth:             # <<<<<<<<<<<<<<
@@ -22942,7 +22942,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
         goto __pyx_L8;
       }
 
-      /* "frag_gnn/frag/compute_frags.pyx":254
+      /* "fragnnet/frag/compute_frags.pyx":254
  * 				has_seen_dict[node_full_mask_str] = current_depth
  * 			else:
  * 				need_skip = True             # <<<<<<<<<<<<<<
@@ -22954,7 +22954,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       }
       __pyx_L8:;
 
-      /* "frag_gnn/frag/compute_frags.pyx":257
+      /* "fragnnet/frag/compute_frags.pyx":257
  * 
  * 			# check if there any bond left to kill
  * 			num_edges_nomask = np_sum(current_edge_mask)             # <<<<<<<<<<<<<<
@@ -22962,12 +22962,12 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  * 				continue
  */
       __pyx_t_16 = __Pyx_PyObject_to_MemoryviewSlice_dc_char(__pyx_v_current_edge_mask, PyBUF_WRITABLE); if (unlikely(!__pyx_t_16.memview)) __PYX_ERR(0, 257, __pyx_L1_error)
-      __pyx_t_15 = __pyx_f_8frag_gnn_4frag_13compute_frags_np_sum(__pyx_t_16); if (unlikely(__pyx_t_15 == ((int)-1) && PyErr_Occurred())) __PYX_ERR(0, 257, __pyx_L1_error)
+      __pyx_t_15 = __pyx_f_8fragnnet_4frag_13compute_frags_np_sum(__pyx_t_16); if (unlikely(__pyx_t_15 == ((int)-1) && PyErr_Occurred())) __PYX_ERR(0, 257, __pyx_L1_error)
       __PYX_XCLEAR_MEMVIEW(&__pyx_t_16, 1);
       __pyx_t_16.memview = NULL; __pyx_t_16.data = NULL;
       __pyx_v_num_edges_nomask = __pyx_t_15;
 
-      /* "frag_gnn/frag/compute_frags.pyx":258
+      /* "fragnnet/frag/compute_frags.pyx":258
  * 			# check if there any bond left to kill
  * 			num_edges_nomask = np_sum(current_edge_mask)
  * 			if need_skip or num_edges_nomask == 0:             # <<<<<<<<<<<<<<
@@ -22984,7 +22984,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __pyx_L10_bool_binop_done:;
       if (__pyx_t_4) {
 
-        /* "frag_gnn/frag/compute_frags.pyx":259
+        /* "fragnnet/frag/compute_frags.pyx":259
  * 			num_edges_nomask = np_sum(current_edge_mask)
  * 			if need_skip or num_edges_nomask == 0:
  * 				continue             # <<<<<<<<<<<<<<
@@ -22993,7 +22993,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
         goto __pyx_L5_continue;
 
-        /* "frag_gnn/frag/compute_frags.pyx":258
+        /* "fragnnet/frag/compute_frags.pyx":258
  * 			# check if there any bond left to kill
  * 			num_edges_nomask = np_sum(current_edge_mask)
  * 			if need_skip or num_edges_nomask == 0:             # <<<<<<<<<<<<<<
@@ -23002,7 +23002,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
       }
 
-      /* "frag_gnn/frag/compute_frags.pyx":263
+      /* "fragnnet/frag/compute_frags.pyx":263
  * 			# now we need to break more bond
  * 			#i = 0
  * 			for i in range(num_edges):             # <<<<<<<<<<<<<<
@@ -23014,7 +23014,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       for (__pyx_t_19 = 0; __pyx_t_19 < __pyx_t_18; __pyx_t_19+=1) {
         __pyx_v_i = __pyx_t_19;
 
-        /* "frag_gnn/frag/compute_frags.pyx":266
+        /* "fragnnet/frag/compute_frags.pyx":266
  * 				# check if edge is already masked
  * 				# sorry Mr Bond, you already dead
  * 				if current_edge_mask[i] == 0:             # <<<<<<<<<<<<<<
@@ -23027,7 +23027,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
         __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
         if (__pyx_t_4) {
 
-          /* "frag_gnn/frag/compute_frags.pyx":267
+          /* "fragnnet/frag/compute_frags.pyx":267
  * 				# sorry Mr Bond, you already dead
  * 				if current_edge_mask[i] == 0:
  * 					continue             # <<<<<<<<<<<<<<
@@ -23036,7 +23036,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
           goto __pyx_L12_continue;
 
-          /* "frag_gnn/frag/compute_frags.pyx":266
+          /* "fragnnet/frag/compute_frags.pyx":266
  * 				# check if edge is already masked
  * 				# sorry Mr Bond, you already dead
  * 				if current_edge_mask[i] == 0:             # <<<<<<<<<<<<<<
@@ -23045,7 +23045,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
         }
 
-        /* "frag_gnn/frag/compute_frags.pyx":269
+        /* "fragnnet/frag/compute_frags.pyx":269
  * 					continue
  * 				# mask edge, kill bond
  * 				current_edge_mask[i] = 0             # <<<<<<<<<<<<<<
@@ -23054,7 +23054,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
         if (unlikely((__Pyx_SetItemInt(__pyx_v_current_edge_mask, __pyx_v_i, __pyx_int_0, int, 1, __Pyx_PyInt_From_int, 0, 0, 0) < 0))) __PYX_ERR(0, 269, __pyx_L1_error)
 
-        /* "frag_gnn/frag/compute_frags.pyx":274
+        /* "fragnnet/frag/compute_frags.pyx":274
  * 					num_nodes,
  * 					num_edges,
  * 					current_node_mask,             # <<<<<<<<<<<<<<
@@ -23063,7 +23063,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
         __pyx_t_16 = __Pyx_PyObject_to_MemoryviewSlice_dc_char(__pyx_v_current_node_mask, PyBUF_WRITABLE); if (unlikely(!__pyx_t_16.memview)) __PYX_ERR(0, 274, __pyx_L1_error)
 
-        /* "frag_gnn/frag/compute_frags.pyx":276
+        /* "fragnnet/frag/compute_frags.pyx":276
  * 					current_node_mask,
  * 					edges,
  * 					current_edge_mask,             # <<<<<<<<<<<<<<
@@ -23072,14 +23072,14 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
         __pyx_t_20 = __Pyx_PyObject_to_MemoryviewSlice_dc_char(__pyx_v_current_edge_mask, PyBUF_WRITABLE); if (unlikely(!__pyx_t_20.memview)) __PYX_ERR(0, 276, __pyx_L1_error)
 
-        /* "frag_gnn/frag/compute_frags.pyx":271
+        /* "fragnnet/frag/compute_frags.pyx":271
  * 				current_edge_mask[i] = 0
  * 				# compute ccs
  * 				new_cc_nodes, new_cc_edges, new_num_ccs = connected_components(             # <<<<<<<<<<<<<<
  * 					num_nodes,
  * 					num_edges,
  */
-        __pyx_t_1 = __pyx_f_8frag_gnn_4frag_13compute_frags_connected_components(__pyx_v_num_nodes, __pyx_v_num_edges, __pyx_t_16, __pyx_v_edges, __pyx_t_20, __pyx_v_node_to_edge_idx); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 271, __pyx_L1_error)
+        __pyx_t_1 = __pyx_f_8fragnnet_4frag_13compute_frags_connected_components(__pyx_v_num_nodes, __pyx_v_num_edges, __pyx_t_16, __pyx_v_edges, __pyx_t_20, __pyx_v_node_to_edge_idx); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 271, __pyx_L1_error)
         __Pyx_GOTREF(__pyx_t_1);
         __PYX_XCLEAR_MEMVIEW(&__pyx_t_16, 1);
         __pyx_t_16.memview = NULL; __pyx_t_16.data = NULL;
@@ -23145,7 +23145,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
         __Pyx_XDECREF_SET(__pyx_v_new_num_ccs, __pyx_t_6);
         __pyx_t_6 = 0;
 
-        /* "frag_gnn/frag/compute_frags.pyx":281
+        /* "fragnnet/frag/compute_frags.pyx":281
  * 
  * 				# restore edge
  * 				current_edge_mask[i] = 1             # <<<<<<<<<<<<<<
@@ -23154,7 +23154,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
         if (unlikely((__Pyx_SetItemInt(__pyx_v_current_edge_mask, __pyx_v_i, __pyx_int_1, int, 1, __Pyx_PyInt_From_int, 0, 0, 0) < 0))) __PYX_ERR(0, 281, __pyx_L1_error)
 
-        /* "frag_gnn/frag/compute_frags.pyx":283
+        /* "fragnnet/frag/compute_frags.pyx":283
  * 				current_edge_mask[i] = 1
  * 				# save data and save edge and node configure
  * 				for c in range(new_num_ccs):             # <<<<<<<<<<<<<<
@@ -23166,7 +23166,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
         for (__pyx_t_24 = 0; __pyx_t_24 < __pyx_t_23; __pyx_t_24+=1) {
           __pyx_v_c = __pyx_t_24;
 
-          /* "frag_gnn/frag/compute_frags.pyx":285
+          /* "fragnnet/frag/compute_frags.pyx":285
  * 				for c in range(new_num_ccs):
  * 					# save cc_nodes
  * 					child_node_mask_key = mask_to_binary_hash(new_cc_nodes[c,:])             # <<<<<<<<<<<<<<
@@ -23214,7 +23214,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
           __Pyx_XDECREF_SET(__pyx_v_child_node_mask_key, __pyx_t_1);
           __pyx_t_1 = 0;
 
-          /* "frag_gnn/frag/compute_frags.pyx":286
+          /* "fragnnet/frag/compute_frags.pyx":286
  * 					# save cc_nodes
  * 					child_node_mask_key = mask_to_binary_hash(new_cc_nodes[c,:])
  * 					child_edge_mask_key = mask_to_binary_hash(new_cc_edges[c,:])             # <<<<<<<<<<<<<<
@@ -23262,7 +23262,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
           __Pyx_XDECREF_SET(__pyx_v_child_edge_mask_key, __pyx_t_1);
           __pyx_t_1 = 0;
 
-          /* "frag_gnn/frag/compute_frags.pyx":289
+          /* "fragnnet/frag/compute_frags.pyx":289
  * 
  * 					# add to dict to track node and edges
  * 					if child_node_mask_key not in cc_node_mask_dict:             # <<<<<<<<<<<<<<
@@ -23272,7 +23272,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
           __pyx_t_4 = (__Pyx_PyDict_ContainsTF(__pyx_v_child_node_mask_key, __pyx_v_cc_node_mask_dict, Py_NE)); if (unlikely((__pyx_t_4 < 0))) __PYX_ERR(0, 289, __pyx_L1_error)
           if (__pyx_t_4) {
 
-            /* "frag_gnn/frag/compute_frags.pyx":290
+            /* "fragnnet/frag/compute_frags.pyx":290
  * 					# add to dict to track node and edges
  * 					if child_node_mask_key not in cc_node_mask_dict:
  * 						cc_node_mask_dict[child_node_mask_key] = new_cc_nodes[c,:]             # <<<<<<<<<<<<<<
@@ -23295,7 +23295,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
             if (unlikely((PyDict_SetItem(__pyx_v_cc_node_mask_dict, __pyx_v_child_node_mask_key, __pyx_t_1) < 0))) __PYX_ERR(0, 290, __pyx_L1_error)
             __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-            /* "frag_gnn/frag/compute_frags.pyx":292
+            /* "fragnnet/frag/compute_frags.pyx":292
  * 						cc_node_mask_dict[child_node_mask_key] = new_cc_nodes[c,:]
  * 						# track ccs to idx
  * 						css_to_id_dict[child_node_mask_key] = len(css_to_id_dict)             # <<<<<<<<<<<<<<
@@ -23308,7 +23308,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
             if (unlikely((PyDict_SetItem(__pyx_v_css_to_id_dict, __pyx_v_child_node_mask_key, __pyx_t_1) < 0))) __PYX_ERR(0, 292, __pyx_L1_error)
             __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-            /* "frag_gnn/frag/compute_frags.pyx":289
+            /* "fragnnet/frag/compute_frags.pyx":289
  * 
  * 					# add to dict to track node and edges
  * 					if child_node_mask_key not in cc_node_mask_dict:             # <<<<<<<<<<<<<<
@@ -23317,7 +23317,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
           }
 
-          /* "frag_gnn/frag/compute_frags.pyx":294
+          /* "fragnnet/frag/compute_frags.pyx":294
  * 						css_to_id_dict[child_node_mask_key] = len(css_to_id_dict)
  * 
  * 					if child_edge_mask_key not in cc_edge_mask_dict:             # <<<<<<<<<<<<<<
@@ -23327,7 +23327,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
           __pyx_t_4 = (__Pyx_PyDict_ContainsTF(__pyx_v_child_edge_mask_key, __pyx_v_cc_edge_mask_dict, Py_NE)); if (unlikely((__pyx_t_4 < 0))) __PYX_ERR(0, 294, __pyx_L1_error)
           if (__pyx_t_4) {
 
-            /* "frag_gnn/frag/compute_frags.pyx":295
+            /* "fragnnet/frag/compute_frags.pyx":295
  * 
  * 					if child_edge_mask_key not in cc_edge_mask_dict:
  * 						cc_edge_mask_dict[child_edge_mask_key] = new_cc_edges[c,:]             # <<<<<<<<<<<<<<
@@ -23350,7 +23350,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
             if (unlikely((PyDict_SetItem(__pyx_v_cc_edge_mask_dict, __pyx_v_child_edge_mask_key, __pyx_t_1) < 0))) __PYX_ERR(0, 295, __pyx_L1_error)
             __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-            /* "frag_gnn/frag/compute_frags.pyx":294
+            /* "fragnnet/frag/compute_frags.pyx":294
  * 						css_to_id_dict[child_node_mask_key] = len(css_to_id_dict)
  * 
  * 					if child_edge_mask_key not in cc_edge_mask_dict:             # <<<<<<<<<<<<<<
@@ -23359,7 +23359,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
           }
 
-          /* "frag_gnn/frag/compute_frags.pyx":298
+          /* "fragnnet/frag/compute_frags.pyx":298
  * 
  * 					# track depth for each cc node
  * 					if child_node_mask_key not in ccs_depth_dict:             # <<<<<<<<<<<<<<
@@ -23369,7 +23369,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
           __pyx_t_4 = (__Pyx_PyDict_ContainsTF(__pyx_v_child_node_mask_key, __pyx_v_ccs_depth_dict, Py_NE)); if (unlikely((__pyx_t_4 < 0))) __PYX_ERR(0, 298, __pyx_L1_error)
           if (__pyx_t_4) {
 
-            /* "frag_gnn/frag/compute_frags.pyx":299
+            /* "fragnnet/frag/compute_frags.pyx":299
  * 					# track depth for each cc node
  * 					if child_node_mask_key not in ccs_depth_dict:
  * 						ccs_depth_dict[child_node_mask_key] = set([current_depth + 1 ])             # <<<<<<<<<<<<<<
@@ -23385,7 +23385,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
             if (unlikely((PyDict_SetItem(__pyx_v_ccs_depth_dict, __pyx_v_child_node_mask_key, __pyx_t_6) < 0))) __PYX_ERR(0, 299, __pyx_L1_error)
             __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
 
-            /* "frag_gnn/frag/compute_frags.pyx":298
+            /* "fragnnet/frag/compute_frags.pyx":298
  * 
  * 					# track depth for each cc node
  * 					if child_node_mask_key not in ccs_depth_dict:             # <<<<<<<<<<<<<<
@@ -23395,7 +23395,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
             goto __pyx_L21;
           }
 
-          /* "frag_gnn/frag/compute_frags.pyx":301
+          /* "fragnnet/frag/compute_frags.pyx":301
  * 						ccs_depth_dict[child_node_mask_key] = set([current_depth + 1 ])
  * 					else:
  * 						ccs_depth_dict[child_node_mask_key].add(current_depth + 1)             # <<<<<<<<<<<<<<
@@ -23437,7 +23437,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
           }
           __pyx_L21:;
 
-          /* "frag_gnn/frag/compute_frags.pyx":303
+          /* "fragnnet/frag/compute_frags.pyx":303
  * 						ccs_depth_dict[child_node_mask_key].add(current_depth + 1)
  * 
  * 					ccs.append(child_node_mask_key)             # <<<<<<<<<<<<<<
@@ -23446,7 +23446,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
           __pyx_t_25 = __Pyx_PyList_Append(__pyx_v_ccs, __pyx_v_child_node_mask_key); if (unlikely(__pyx_t_25 == ((int)-1))) __PYX_ERR(0, 303, __pyx_L1_error)
 
-          /* "frag_gnn/frag/compute_frags.pyx":304
+          /* "fragnnet/frag/compute_frags.pyx":304
  * 
  * 					ccs.append(child_node_mask_key)
  * 					cc_edges.append(child_edge_mask_key)             # <<<<<<<<<<<<<<
@@ -23455,7 +23455,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
           __pyx_t_25 = __Pyx_PyList_Append(__pyx_v_cc_edges, __pyx_v_child_edge_mask_key); if (unlikely(__pyx_t_25 == ((int)-1))) __PYX_ERR(0, 304, __pyx_L1_error)
 
-          /* "frag_gnn/frag/compute_frags.pyx":309
+          /* "fragnnet/frag/compute_frags.pyx":309
  * 					# NOTE: it is possiable we have parent and child with the same mask
  * 					# eg. first bond break on a ring
  * 					if curent_node_mask_key != child_node_mask_key:             # <<<<<<<<<<<<<<
@@ -23467,7 +23467,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
           __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
           if (__pyx_t_4) {
 
-            /* "frag_gnn/frag/compute_frags.pyx":311
+            /* "fragnnet/frag/compute_frags.pyx":311
  * 					if curent_node_mask_key != child_node_mask_key:
  * 
  * 						edge_pair = (css_to_id_dict[curent_node_mask_key],css_to_id_dict[child_node_mask_key])             # <<<<<<<<<<<<<<
@@ -23489,7 +23489,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
             __Pyx_XDECREF_SET(__pyx_v_edge_pair, ((PyObject*)__pyx_t_1));
             __pyx_t_1 = 0;
 
-            /* "frag_gnn/frag/compute_frags.pyx":313
+            /* "fragnnet/frag/compute_frags.pyx":313
  * 						edge_pair = (css_to_id_dict[curent_node_mask_key],css_to_id_dict[child_node_mask_key])
  * 						#if edge_pair_ids not in
  * 						if edge_pair not in  dag_edge_dict:             # <<<<<<<<<<<<<<
@@ -23499,7 +23499,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
             __pyx_t_4 = (__Pyx_PyDict_ContainsTF(__pyx_v_edge_pair, __pyx_v_dag_edge_dict, Py_NE)); if (unlikely((__pyx_t_4 < 0))) __PYX_ERR(0, 313, __pyx_L1_error)
             if (__pyx_t_4) {
 
-              /* "frag_gnn/frag/compute_frags.pyx":314
+              /* "fragnnet/frag/compute_frags.pyx":314
  * 						#if edge_pair_ids not in
  * 						if edge_pair not in  dag_edge_dict:
  * 							dag_edge_dict[edge_pair] = current_depth + 1             # <<<<<<<<<<<<<<
@@ -23511,7 +23511,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
               if (unlikely((PyDict_SetItem(__pyx_v_dag_edge_dict, __pyx_v_edge_pair, __pyx_t_1) < 0))) __PYX_ERR(0, 314, __pyx_L1_error)
               __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-              /* "frag_gnn/frag/compute_frags.pyx":313
+              /* "fragnnet/frag/compute_frags.pyx":313
  * 						edge_pair = (css_to_id_dict[curent_node_mask_key],css_to_id_dict[child_node_mask_key])
  * 						#if edge_pair_ids not in
  * 						if edge_pair not in  dag_edge_dict:             # <<<<<<<<<<<<<<
@@ -23520,7 +23520,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
             }
 
-            /* "frag_gnn/frag/compute_frags.pyx":309
+            /* "fragnnet/frag/compute_frags.pyx":309
  * 					# NOTE: it is possiable we have parent and child with the same mask
  * 					# eg. first bond break on a ring
  * 					if curent_node_mask_key != child_node_mask_key:             # <<<<<<<<<<<<<<
@@ -23530,7 +23530,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
           }
         }
 
-        /* "frag_gnn/frag/compute_frags.pyx":316
+        /* "fragnnet/frag/compute_frags.pyx":316
  * 							dag_edge_dict[edge_pair] = current_depth + 1
  * 
  * 				num_ccs += new_num_ccs             # <<<<<<<<<<<<<<
@@ -23546,7 +23546,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
         __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
         __pyx_v_num_ccs = __pyx_t_24;
 
-        /* "frag_gnn/frag/compute_frags.pyx":317
+        /* "fragnnet/frag/compute_frags.pyx":317
  * 
  * 				num_ccs += new_num_ccs
  * 				reached_depth = current_depth + 1             # <<<<<<<<<<<<<<
@@ -23560,7 +23560,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
     }
     __pyx_L6_break:;
 
-    /* "frag_gnn/frag/compute_frags.pyx":319
+    /* "fragnnet/frag/compute_frags.pyx":319
  * 				reached_depth = current_depth + 1
  * 		# break outer loop
  * 		if force_stop:             # <<<<<<<<<<<<<<
@@ -23569,7 +23569,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
     if (__pyx_v_force_stop) {
 
-      /* "frag_gnn/frag/compute_frags.pyx":322
+      /* "fragnnet/frag/compute_frags.pyx":322
  * 			# comupute what can be used
  * 			# NOTE this has not been tested yet
  * 			filtered_dag_edge_dict = {k: v for k, v in dag_edge_dict.items() if v <= reached_depth}             # <<<<<<<<<<<<<<
@@ -23618,7 +23618,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __pyx_v_filtered_dag_edge_dict = ((PyObject*)__pyx_t_2);
       __pyx_t_2 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":323
+      /* "fragnnet/frag/compute_frags.pyx":323
  * 			# NOTE this has not been tested yet
  * 			filtered_dag_edge_dict = {k: v for k, v in dag_edge_dict.items() if v <= reached_depth}
  * 			dag_edge_dict = filtered_dag_edge_dict             # <<<<<<<<<<<<<<
@@ -23628,7 +23628,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_INCREF(__pyx_v_filtered_dag_edge_dict);
       __Pyx_DECREF_SET(__pyx_v_dag_edge_dict, __pyx_v_filtered_dag_edge_dict);
 
-      /* "frag_gnn/frag/compute_frags.pyx":325
+      /* "fragnnet/frag/compute_frags.pyx":325
  * 			dag_edge_dict = filtered_dag_edge_dict
  * 
  * 			filtered_ccs_depth_dict = {k: set([i for i in v if i <= reached_depth]) for k,v in ccs_depth_dict.items() if min(v) <= reached_depth}             # <<<<<<<<<<<<<<
@@ -23752,7 +23752,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __pyx_v_filtered_ccs_depth_dict = ((PyObject*)__pyx_t_2);
       __pyx_t_2 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":326
+      /* "fragnnet/frag/compute_frags.pyx":326
  * 
  * 			filtered_ccs_depth_dict = {k: set([i for i in v if i <= reached_depth]) for k,v in ccs_depth_dict.items() if min(v) <= reached_depth}
  * 			ccs_depth_dict = filtered_ccs_depth_dict             # <<<<<<<<<<<<<<
@@ -23762,7 +23762,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_INCREF(__pyx_v_filtered_ccs_depth_dict);
       __Pyx_DECREF_SET(__pyx_v_ccs_depth_dict, __pyx_v_filtered_ccs_depth_dict);
 
-      /* "frag_gnn/frag/compute_frags.pyx":328
+      /* "fragnnet/frag/compute_frags.pyx":328
  * 			ccs_depth_dict = filtered_ccs_depth_dict
  * 
  * 			filtered_css_to_id_dict = {cc: css_to_id_dict[cc] for cc in filtered_ccs_depth_dict}             # <<<<<<<<<<<<<<
@@ -23801,7 +23801,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __pyx_v_filtered_css_to_id_dict = ((PyObject*)__pyx_t_2);
       __pyx_t_2 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":329
+      /* "fragnnet/frag/compute_frags.pyx":329
  * 
  * 			filtered_css_to_id_dict = {cc: css_to_id_dict[cc] for cc in filtered_ccs_depth_dict}
  * 			css_to_id_dict =  filtered_css_to_id_dict             # <<<<<<<<<<<<<<
@@ -23811,7 +23811,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_INCREF(__pyx_v_filtered_css_to_id_dict);
       __Pyx_DECREF_SET(__pyx_v_css_to_id_dict, __pyx_v_filtered_css_to_id_dict);
 
-      /* "frag_gnn/frag/compute_frags.pyx":331
+      /* "fragnnet/frag/compute_frags.pyx":331
  * 			css_to_id_dict =  filtered_css_to_id_dict
  * 			#original.update(filtered)
  * 			break             # <<<<<<<<<<<<<<
@@ -23820,7 +23820,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
       goto __pyx_L4_break;
 
-      /* "frag_gnn/frag/compute_frags.pyx":319
+      /* "fragnnet/frag/compute_frags.pyx":319
  * 				reached_depth = current_depth + 1
  * 		# break outer loop
  * 		if force_stop:             # <<<<<<<<<<<<<<
@@ -23829,7 +23829,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
     }
 
-    /* "frag_gnn/frag/compute_frags.pyx":333
+    /* "fragnnet/frag/compute_frags.pyx":333
  * 			break
  * 		# finishing current depth, move to next
  * 		ccs_idx = ccs_end             # <<<<<<<<<<<<<<
@@ -23840,7 +23840,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   }
   __pyx_L4_break:;
 
-  /* "frag_gnn/frag/compute_frags.pyx":336
+  /* "fragnnet/frag/compute_frags.pyx":336
  * 
  * 	# build graph
  * 	num_un_ccs = len(css_to_id_dict)             # <<<<<<<<<<<<<<
@@ -23850,7 +23850,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_t_26 = PyDict_Size(__pyx_v_css_to_id_dict); if (unlikely(__pyx_t_26 == ((Py_ssize_t)-1))) __PYX_ERR(0, 336, __pyx_L1_error)
   __pyx_v_num_un_ccs = __pyx_t_26;
 
-  /* "frag_gnn/frag/compute_frags.pyx":338
+  /* "fragnnet/frag/compute_frags.pyx":338
  * 	num_un_ccs = len(css_to_id_dict)
  * 	# create sorted node matirx with masks
  * 	cdef list ordered_ccs = [0] * num_un_ccs             # <<<<<<<<<<<<<<
@@ -23869,7 +23869,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_ordered_ccs = ((PyObject*)__pyx_t_2);
   __pyx_t_2 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":339
+  /* "fragnnet/frag/compute_frags.pyx":339
  * 	# create sorted node matirx with masks
  * 	cdef list ordered_ccs = [0] * num_un_ccs
  * 	for cc in css_to_id_dict:             # <<<<<<<<<<<<<<
@@ -23890,7 +23890,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
     __Pyx_XDECREF_SET(__pyx_v_cc, __pyx_t_1);
     __pyx_t_1 = 0;
 
-    /* "frag_gnn/frag/compute_frags.pyx":340
+    /* "fragnnet/frag/compute_frags.pyx":340
  * 	cdef list ordered_ccs = [0] * num_un_ccs
  * 	for cc in css_to_id_dict:
  * 		ordered_ccs[css_to_id_dict[cc]] = cc             # <<<<<<<<<<<<<<
@@ -23904,7 +23904,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   }
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":343
+  /* "fragnnet/frag/compute_frags.pyx":343
  * 
  * 	# create node masks
  * 	nodes_mask_matrix = np.stack([np.asarray(cc_node_mask_dict[cc]) for cc in ordered_ccs], dtype = MASK_DTYPE)             # <<<<<<<<<<<<<<
@@ -23997,7 +23997,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_nodes_mask_matrix = __pyx_t_21;
   __pyx_t_21 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":346
+  /* "fragnnet/frag/compute_frags.pyx":346
  * 
  * 	# create node depth matrix
  * 	nodes_depth_matrix = np.zeros((num_un_ccs, max_depth + 1),dtype = MASK_DTYPE)             # <<<<<<<<<<<<<<
@@ -24040,7 +24040,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_nodes_depth_matrix = __pyx_t_21;
   __pyx_t_21 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":347
+  /* "fragnnet/frag/compute_frags.pyx":347
  * 	# create node depth matrix
  * 	nodes_depth_matrix = np.zeros((num_un_ccs, max_depth + 1),dtype = MASK_DTYPE)
  * 	nodes_min_depth = np.zeros((num_un_ccs),dtype = MASK_DTYPE)             # <<<<<<<<<<<<<<
@@ -24073,7 +24073,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_nodes_min_depth = __pyx_t_2;
   __pyx_t_2 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":349
+  /* "fragnnet/frag/compute_frags.pyx":349
  * 	nodes_min_depth = np.zeros((num_un_ccs),dtype = MASK_DTYPE)
  * 
  * 	for idx,cc in enumerate(ordered_ccs):             # <<<<<<<<<<<<<<
@@ -24102,7 +24102,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
     __pyx_v_idx = __pyx_t_11;
     __pyx_t_11 = (__pyx_t_11 + 1);
 
-    /* "frag_gnn/frag/compute_frags.pyx":350
+    /* "fragnnet/frag/compute_frags.pyx":350
  * 
  * 	for idx,cc in enumerate(ordered_ccs):
  * 		for d_id in ccs_depth_dict[cc]:             # <<<<<<<<<<<<<<
@@ -24167,7 +24167,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       __Pyx_XDECREF_SET(__pyx_v_d_id, __pyx_t_21);
       __pyx_t_21 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":351
+      /* "fragnnet/frag/compute_frags.pyx":351
  * 	for idx,cc in enumerate(ordered_ccs):
  * 		for d_id in ccs_depth_dict[cc]:
  * 			nodes_depth_matrix[idx,d_id] = 1             # <<<<<<<<<<<<<<
@@ -24187,7 +24187,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
       if (unlikely((PyObject_SetItem(__pyx_v_nodes_depth_matrix, __pyx_t_1, __pyx_int_1) < 0))) __PYX_ERR(0, 351, __pyx_L1_error)
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-      /* "frag_gnn/frag/compute_frags.pyx":350
+      /* "fragnnet/frag/compute_frags.pyx":350
  * 
  * 	for idx,cc in enumerate(ordered_ccs):
  * 		for d_id in ccs_depth_dict[cc]:             # <<<<<<<<<<<<<<
@@ -24197,7 +24197,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
     }
     __Pyx_DECREF(__pyx_t_6); __pyx_t_6 = 0;
 
-    /* "frag_gnn/frag/compute_frags.pyx":353
+    /* "fragnnet/frag/compute_frags.pyx":353
  * 			nodes_depth_matrix[idx,d_id] = 1
  * 		# set lowest depth on the dag for each node
  * 		nodes_min_depth[idx] = min(ccs_depth_dict[cc])             # <<<<<<<<<<<<<<
@@ -24212,7 +24212,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
     if (unlikely((__Pyx_SetItemInt(__pyx_v_nodes_min_depth, __pyx_v_idx, __pyx_t_1, Py_ssize_t, 1, PyInt_FromSsize_t, 0, 0, 0) < 0))) __PYX_ERR(0, 353, __pyx_L1_error)
     __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-    /* "frag_gnn/frag/compute_frags.pyx":349
+    /* "fragnnet/frag/compute_frags.pyx":349
  * 	nodes_min_depth = np.zeros((num_un_ccs),dtype = MASK_DTYPE)
  * 
  * 	for idx,cc in enumerate(ordered_ccs):             # <<<<<<<<<<<<<<
@@ -24222,7 +24222,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   }
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":356
+  /* "fragnnet/frag/compute_frags.pyx":356
  * 
  * 	# create edge set:
  * 	dag_edges_matrix = np.asarray(list(dag_edge_dict.keys()), dtype = np.int64)             # <<<<<<<<<<<<<<
@@ -24261,7 +24261,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_dag_edges_matrix = __pyx_t_29;
   __pyx_t_29 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":357
+  /* "fragnnet/frag/compute_frags.pyx":357
  * 	# create edge set:
  * 	dag_edges_matrix = np.asarray(list(dag_edge_dict.keys()), dtype = np.int64)
  * 	edges_min_depth = np.asarray(list(dag_edge_dict.values()), dtype = MASK_DTYPE)             # <<<<<<<<<<<<<<
@@ -24297,7 +24297,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_edges_min_depth = __pyx_t_1;
   __pyx_t_1 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":358
+  /* "fragnnet/frag/compute_frags.pyx":358
  * 	dag_edges_matrix = np.asarray(list(dag_edge_dict.keys()), dtype = np.int64)
  * 	edges_min_depth = np.asarray(list(dag_edge_dict.values()), dtype = MASK_DTYPE)
  * 	dag_frag_meta = {"reached_depth": reached_depth, "edges_min_depth": edges_min_depth, "nodes_min_depth": nodes_min_depth }             # <<<<<<<<<<<<<<
@@ -24315,7 +24315,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_v_dag_frag_meta = ((PyObject*)__pyx_t_1);
   __pyx_t_1 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":361
+  /* "fragnnet/frag/compute_frags.pyx":361
  * 	# both edges_min_depth and node_min_depth should be ordered
  * 
  * 	return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta             # <<<<<<<<<<<<<<
@@ -24341,7 +24341,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":170
+  /* "fragnnet/frag/compute_frags.pyx":170
  * 	return cc_nodes, cc_edges, num_ccs
  * 
  * def compute_ccs(             # <<<<<<<<<<<<<<
@@ -24360,7 +24360,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   __Pyx_XDECREF(__pyx_t_21);
   __Pyx_XDECREF(__pyx_t_29);
   __Pyx_XDECREF(__pyx_t_30);
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.compute_ccs", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.compute_ccs", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   __pyx_L0:;
   __Pyx_XDECREF(__pyx_v_child_node_mask_list);
@@ -24410,7 +24410,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
   return __pyx_r;
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":363
+/* "fragnnet/frag/compute_frags.pyx":363
  * 	return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
  * 
  * def compute_cc_h_floor(             # <<<<<<<<<<<<<<
@@ -24419,16 +24419,16 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_4compute_ccs(CYTHON_UN
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_7compute_cc_h_floor(PyObject *__pyx_self, 
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_7compute_cc_h_floor(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
 PyObject *__pyx_args, PyObject *__pyx_kwds
 #endif
 ); /*proto*/
-PyDoc_STRVAR(__pyx_doc_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor, "Compute the minimum number of Hs a connected component (cc) can have.");
-static PyMethodDef __pyx_mdef_8frag_gnn_4frag_13compute_frags_7compute_cc_h_floor = {"compute_cc_h_floor", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8frag_gnn_4frag_13compute_frags_7compute_cc_h_floor, __Pyx_METH_FASTCALL|METH_KEYWORDS, __pyx_doc_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor};
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_7compute_cc_h_floor(PyObject *__pyx_self, 
+PyDoc_STRVAR(__pyx_doc_8fragnnet_4frag_13compute_frags_6compute_cc_h_floor, "Compute the minimum number of Hs a connected component (cc) can have.");
+static PyMethodDef __pyx_mdef_8fragnnet_4frag_13compute_frags_7compute_cc_h_floor = {"compute_cc_h_floor", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8fragnnet_4frag_13compute_frags_7compute_cc_h_floor, __Pyx_METH_FASTCALL|METH_KEYWORDS, __pyx_doc_8fragnnet_4frag_13compute_frags_6compute_cc_h_floor};
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_7compute_cc_h_floor(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -24588,7 +24588,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
       __Pyx_Arg_XDECREF_FASTCALL(values[__pyx_temp]);
     }
   }
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.compute_cc_h_floor", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.compute_cc_h_floor", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
@@ -24598,7 +24598,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_bonds), __pyx_ptype_5numpy_ndarray, 1, "bonds", 0))) __PYX_ERR(0, 368, __pyx_L1_error)
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_atoms_to_bonds), (&PyDict_Type), 1, "atoms_to_bonds", 1))) __PYX_ERR(0, 369, __pyx_L1_error)
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_bond_mask_arr), __pyx_ptype_5numpy_ndarray, 1, "bond_mask_arr", 0))) __PYX_ERR(0, 370, __pyx_L1_error)
-  __pyx_r = __pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(__pyx_self, __pyx_v_cc_atom_ids, __pyx_v_ve_arr, __pyx_v_sbond_arr, __pyx_v_num_radicals, __pyx_v_bonds, __pyx_v_atoms_to_bonds, __pyx_v_bond_mask_arr);
+  __pyx_r = __pyx_pf_8fragnnet_4frag_13compute_frags_6compute_cc_h_floor(__pyx_self, __pyx_v_cc_atom_ids, __pyx_v_ve_arr, __pyx_v_sbond_arr, __pyx_v_num_radicals, __pyx_v_bonds, __pyx_v_atoms_to_bonds, __pyx_v_bond_mask_arr);
 
   /* function exit code */
   goto __pyx_L0;
@@ -24615,7 +24615,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_cc_atom_ids, PyArrayObject *__pyx_v_ve_arr, PyArrayObject *__pyx_v_sbond_arr, int __pyx_v_num_radicals, PyArrayObject *__pyx_v_bonds, PyObject *__pyx_v_atoms_to_bonds, PyArrayObject *__pyx_v_bond_mask_arr) {
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_6compute_cc_h_floor(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_cc_atom_ids, PyArrayObject *__pyx_v_ve_arr, PyArrayObject *__pyx_v_sbond_arr, int __pyx_v_num_radicals, PyArrayObject *__pyx_v_bonds, PyObject *__pyx_v_atoms_to_bonds, PyArrayObject *__pyx_v_bond_mask_arr) {
   PyArrayObject *__pyx_v_diff_arr = 0;
   PyArrayObject *__pyx_v_h_arr = 0;
   Py_ssize_t __pyx_v_atom;
@@ -24716,7 +24716,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
   }
   __pyx_pybuffernd_bond_mask_arr.diminfo[0].strides = __pyx_pybuffernd_bond_mask_arr.rcbuffer->pybuffer.strides[0]; __pyx_pybuffernd_bond_mask_arr.diminfo[0].shape = __pyx_pybuffernd_bond_mask_arr.rcbuffer->pybuffer.shape[0];
 
-  /* "frag_gnn/frag/compute_frags.pyx":374
+  /* "fragnnet/frag/compute_frags.pyx":374
  * 	"""Compute the minimum number of Hs a connected component (cc) can have."""
  * 
  * 	assert num_radicals == 0             # <<<<<<<<<<<<<<
@@ -24735,7 +24735,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
   if ((1)); else __PYX_ERR(0, 374, __pyx_L1_error)
   #endif
 
-  /* "frag_gnn/frag/compute_frags.pyx":377
+  /* "fragnnet/frag/compute_frags.pyx":377
  * 
  * 	# Compute the difference array (initial hydrogen deficit)P
  * 	cdef cnp.ndarray[cnp.int32_t, ndim=1] diff_arr = np.maximum(ve_arr - sbond_arr, 0)             # <<<<<<<<<<<<<<
@@ -24786,7 +24786,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
   __pyx_v_diff_arr = ((PyArrayObject *)__pyx_t_2);
   __pyx_t_2 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":378
+  /* "fragnnet/frag/compute_frags.pyx":378
  * 	# Compute the difference array (initial hydrogen deficit)P
  * 	cdef cnp.ndarray[cnp.int32_t, ndim=1] diff_arr = np.maximum(ve_arr - sbond_arr, 0)
  * 	cdef cnp.ndarray[cnp.int32_t, ndim=1] h_arr = diff_arr.copy()             # <<<<<<<<<<<<<<
@@ -24831,7 +24831,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
   __pyx_v_h_arr = ((PyArrayObject *)__pyx_t_2);
   __pyx_t_2 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":386
+  /* "fragnnet/frag/compute_frags.pyx":386
  * 
  * 	# Iterate over atoms in the connected component
  * 	for atom in cc_atom_ids:             # <<<<<<<<<<<<<<
@@ -24894,7 +24894,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
     __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
     __pyx_v_atom = __pyx_t_11;
 
-    /* "frag_gnn/frag/compute_frags.pyx":387
+    /* "fragnnet/frag/compute_frags.pyx":387
  * 	# Iterate over atoms in the connected component
  * 	for atom in cc_atom_ids:
  * 		bond_idxs = atoms_to_bonds[atom]  # List of bond indices for this atom             # <<<<<<<<<<<<<<
@@ -24914,7 +24914,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
     __Pyx_XDECREF_SET(__pyx_v_bond_idxs, ((PyObject*)__pyx_t_3));
     __pyx_t_3 = 0;
 
-    /* "frag_gnn/frag/compute_frags.pyx":389
+    /* "fragnnet/frag/compute_frags.pyx":389
  * 		bond_idxs = atoms_to_bonds[atom]  # List of bond indices for this atom
  * 
  * 		for bond_idx in bond_idxs:             # <<<<<<<<<<<<<<
@@ -24945,7 +24945,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
       __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
       __pyx_v_bond_idx = __pyx_t_12;
 
-      /* "frag_gnn/frag/compute_frags.pyx":390
+      /* "fragnnet/frag/compute_frags.pyx":390
  * 
  * 		for bond_idx in bond_idxs:
  * 			if h_arr[atom] == 0:             # <<<<<<<<<<<<<<
@@ -24956,7 +24956,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
       __pyx_t_1 = ((*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_int32_t *, __pyx_pybuffernd_h_arr.rcbuffer->pybuffer.buf, __pyx_t_13, __pyx_pybuffernd_h_arr.diminfo[0].strides)) == 0);
       if (__pyx_t_1) {
 
-        /* "frag_gnn/frag/compute_frags.pyx":391
+        /* "fragnnet/frag/compute_frags.pyx":391
  * 		for bond_idx in bond_idxs:
  * 			if h_arr[atom] == 0:
  * 				break             # <<<<<<<<<<<<<<
@@ -24965,7 +24965,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
  */
         goto __pyx_L6_break;
 
-        /* "frag_gnn/frag/compute_frags.pyx":390
+        /* "fragnnet/frag/compute_frags.pyx":390
  * 
  * 		for bond_idx in bond_idxs:
  * 			if h_arr[atom] == 0:             # <<<<<<<<<<<<<<
@@ -24974,7 +24974,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
  */
       }
 
-      /* "frag_gnn/frag/compute_frags.pyx":392
+      /* "fragnnet/frag/compute_frags.pyx":392
  * 			if h_arr[atom] == 0:
  * 				break
  * 			if bond_mask_arr[bond_idx] == 0:  # Use explicit comparison for uint8_t             # <<<<<<<<<<<<<<
@@ -24985,7 +24985,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
       __pyx_t_1 = ((*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_uint8_t *, __pyx_pybuffernd_bond_mask_arr.rcbuffer->pybuffer.buf, __pyx_t_13, __pyx_pybuffernd_bond_mask_arr.diminfo[0].strides)) == 0);
       if (__pyx_t_1) {
 
-        /* "frag_gnn/frag/compute_frags.pyx":393
+        /* "fragnnet/frag/compute_frags.pyx":393
  * 				break
  * 			if bond_mask_arr[bond_idx] == 0:  # Use explicit comparison for uint8_t
  * 				continue             # <<<<<<<<<<<<<<
@@ -24994,7 +24994,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
  */
         goto __pyx_L5_continue;
 
-        /* "frag_gnn/frag/compute_frags.pyx":392
+        /* "fragnnet/frag/compute_frags.pyx":392
  * 			if h_arr[atom] == 0:
  * 				break
  * 			if bond_mask_arr[bond_idx] == 0:  # Use explicit comparison for uint8_t             # <<<<<<<<<<<<<<
@@ -25003,7 +25003,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
  */
       }
 
-      /* "frag_gnn/frag/compute_frags.pyx":397
+      /* "fragnnet/frag/compute_frags.pyx":397
  * 			#bond = bonds[bond_idx]
  * 			#other = bond[1] if bond[0] == atom else bond[0]
  * 			other = bonds[bond_idx, 1] if bonds[bond_idx, 0] == atom else bonds[bond_idx, 0]             # <<<<<<<<<<<<<<
@@ -25024,7 +25024,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
       }
       __pyx_v_other = __pyx_t_14;
 
-      /* "frag_gnn/frag/compute_frags.pyx":400
+      /* "fragnnet/frag/compute_frags.pyx":400
  * 
  * 			# Ensure we don't form more than 3 bonds
  * 			h_arr[atom] = max(0, h_arr[atom] - min(diff_arr[other], 2))             # <<<<<<<<<<<<<<
@@ -25052,7 +25052,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
       __pyx_t_15 = __pyx_v_atom;
       *__Pyx_BufPtrStrided1d(__pyx_t_5numpy_int32_t *, __pyx_pybuffernd_h_arr.rcbuffer->pybuffer.buf, __pyx_t_15, __pyx_pybuffernd_h_arr.diminfo[0].strides) = __pyx_t_18;
 
-      /* "frag_gnn/frag/compute_frags.pyx":389
+      /* "fragnnet/frag/compute_frags.pyx":389
  * 		bond_idxs = atoms_to_bonds[atom]  # List of bond indices for this atom
  * 
  * 		for bond_idx in bond_idxs:             # <<<<<<<<<<<<<<
@@ -25068,7 +25068,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
     goto __pyx_L9_for_end;
     __pyx_L9_for_end:;
 
-    /* "frag_gnn/frag/compute_frags.pyx":386
+    /* "fragnnet/frag/compute_frags.pyx":386
  * 
  * 	# Iterate over atoms in the connected component
  * 	for atom in cc_atom_ids:             # <<<<<<<<<<<<<<
@@ -25078,7 +25078,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
   }
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":403
+  /* "fragnnet/frag/compute_frags.pyx":403
  * 
  * 	# Compute the lower bound of hydrogen count
  * 	cdef int cc_floor = max(h_arr[cc_atom_ids].sum() - num_radicals, 0)             # <<<<<<<<<<<<<<
@@ -25139,7 +25139,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __pyx_v_cc_floor = __pyx_t_19;
 
-  /* "frag_gnn/frag/compute_frags.pyx":405
+  /* "fragnnet/frag/compute_frags.pyx":405
  * 	cdef int cc_floor = max(h_arr[cc_atom_ids].sum() - num_radicals, 0)
  * 
  * 	return cc_floor             # <<<<<<<<<<<<<<
@@ -25153,7 +25153,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
   __pyx_t_4 = 0;
   goto __pyx_L0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":363
+  /* "fragnnet/frag/compute_frags.pyx":363
  * 	return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
  * 
  * def compute_cc_h_floor(             # <<<<<<<<<<<<<<
@@ -25179,7 +25179,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
     __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_sbond_arr.rcbuffer->pybuffer);
     __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_ve_arr.rcbuffer->pybuffer);
   __Pyx_ErrRestore(__pyx_type, __pyx_value, __pyx_tb);}
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.compute_cc_h_floor", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.compute_cc_h_floor", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   goto __pyx_L2;
   __pyx_L0:;
@@ -25199,7 +25199,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
   return __pyx_r;
 }
 
-/* "frag_gnn/frag/compute_frags.pyx":407
+/* "fragnnet/frag/compute_frags.pyx":407
  * 	return cc_floor
  * 
  * def update_bonds(             # <<<<<<<<<<<<<<
@@ -25208,16 +25208,16 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_6compute_cc_h_floor(CY
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_9update_bonds(PyObject *__pyx_self, 
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_9update_bonds(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
 PyObject *__pyx_args, PyObject *__pyx_kwds
 #endif
 ); /*proto*/
-PyDoc_STRVAR(__pyx_doc_8frag_gnn_4frag_13compute_frags_8update_bonds, "Updates single bond counts and bond masks for a given connected component.");
-static PyMethodDef __pyx_mdef_8frag_gnn_4frag_13compute_frags_9update_bonds = {"update_bonds", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8frag_gnn_4frag_13compute_frags_9update_bonds, __Pyx_METH_FASTCALL|METH_KEYWORDS, __pyx_doc_8frag_gnn_4frag_13compute_frags_8update_bonds};
-static PyObject *__pyx_pw_8frag_gnn_4frag_13compute_frags_9update_bonds(PyObject *__pyx_self, 
+PyDoc_STRVAR(__pyx_doc_8fragnnet_4frag_13compute_frags_8update_bonds, "Updates single bond counts and bond masks for a given connected component.");
+static PyMethodDef __pyx_mdef_8fragnnet_4frag_13compute_frags_9update_bonds = {"update_bonds", (PyCFunction)(void*)(__Pyx_PyCFunction_FastCallWithKeywords)__pyx_pw_8fragnnet_4frag_13compute_frags_9update_bonds, __Pyx_METH_FASTCALL|METH_KEYWORDS, __pyx_doc_8fragnnet_4frag_13compute_frags_8update_bonds};
+static PyObject *__pyx_pw_8fragnnet_4frag_13compute_frags_9update_bonds(PyObject *__pyx_self, 
 #if CYTHON_METH_FASTCALL
 PyObject *const *__pyx_args, Py_ssize_t __pyx_nargs, PyObject *__pyx_kwds
 #else
@@ -25347,7 +25347,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
       __Pyx_Arg_XDECREF_FASTCALL(values[__pyx_temp]);
     }
   }
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.update_bonds", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.update_bonds", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
@@ -25356,7 +25356,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_bond_mask_arr), __pyx_ptype_5numpy_ndarray, 1, "bond_mask_arr", 0))) __PYX_ERR(0, 410, __pyx_L1_error)
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_bonds), __pyx_ptype_5numpy_ndarray, 1, "bonds", 0))) __PYX_ERR(0, 411, __pyx_L1_error)
   if (unlikely(!__Pyx_ArgTypeTest(((PyObject *)__pyx_v_atoms_to_bonds), (&PyDict_Type), 1, "atoms_to_bonds", 1))) __PYX_ERR(0, 412, __pyx_L1_error)
-  __pyx_r = __pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(__pyx_self, __pyx_v_cc_atom_ids, __pyx_v_sbond_arr, __pyx_v_bond_mask_arr, __pyx_v_bonds, __pyx_v_atoms_to_bonds);
+  __pyx_r = __pyx_pf_8fragnnet_4frag_13compute_frags_8update_bonds(__pyx_self, __pyx_v_cc_atom_ids, __pyx_v_sbond_arr, __pyx_v_bond_mask_arr, __pyx_v_bonds, __pyx_v_atoms_to_bonds);
 
   /* function exit code */
   goto __pyx_L0;
@@ -25373,7 +25373,7 @@ PyObject *__pyx_args, PyObject *__pyx_kwds
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_cc_atom_ids, PyArrayObject *__pyx_v_sbond_arr, PyArrayObject *__pyx_v_bond_mask_arr, PyArrayObject *__pyx_v_bonds, PyObject *__pyx_v_atoms_to_bonds) {
+static PyObject *__pyx_pf_8fragnnet_4frag_13compute_frags_8update_bonds(CYTHON_UNUSED PyObject *__pyx_self, PyArrayObject *__pyx_v_cc_atom_ids, PyArrayObject *__pyx_v_sbond_arr, PyArrayObject *__pyx_v_bond_mask_arr, PyArrayObject *__pyx_v_bonds, PyObject *__pyx_v_atoms_to_bonds) {
   PyArrayObject *__pyx_v_new_sbond_arr = 0;
   PyArrayObject *__pyx_v_new_bond_mask_arr = 0;
   Py_ssize_t __pyx_v_atom;
@@ -25464,7 +25464,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
   }
   __pyx_pybuffernd_bonds.diminfo[0].strides = __pyx_pybuffernd_bonds.rcbuffer->pybuffer.strides[0]; __pyx_pybuffernd_bonds.diminfo[0].shape = __pyx_pybuffernd_bonds.rcbuffer->pybuffer.shape[0]; __pyx_pybuffernd_bonds.diminfo[1].strides = __pyx_pybuffernd_bonds.rcbuffer->pybuffer.strides[1]; __pyx_pybuffernd_bonds.diminfo[1].shape = __pyx_pybuffernd_bonds.rcbuffer->pybuffer.shape[1];
 
-  /* "frag_gnn/frag/compute_frags.pyx":417
+  /* "fragnnet/frag/compute_frags.pyx":417
  * 
  * 	# Create new arrays with the same shape as sbond_arr and bond_mask_arr
  * 	cdef cnp.ndarray[cnp.int32_t, ndim=1] new_sbond_arr = np.zeros_like(sbond_arr, dtype=np.int32)             # <<<<<<<<<<<<<<
@@ -25509,7 +25509,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
   __pyx_v_new_sbond_arr = ((PyArrayObject *)__pyx_t_5);
   __pyx_t_5 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":418
+  /* "fragnnet/frag/compute_frags.pyx":418
  * 	# Create new arrays with the same shape as sbond_arr and bond_mask_arr
  * 	cdef cnp.ndarray[cnp.int32_t, ndim=1] new_sbond_arr = np.zeros_like(sbond_arr, dtype=np.int32)
  * 	cdef cnp.ndarray[cnp.uint8_t, ndim=1] new_bond_mask_arr = np.zeros_like(bond_mask_arr, dtype=np.uint8)             # <<<<<<<<<<<<<<
@@ -25554,7 +25554,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
   __pyx_v_new_bond_mask_arr = ((PyArrayObject *)__pyx_t_4);
   __pyx_t_4 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":425
+  /* "fragnnet/frag/compute_frags.pyx":425
  * 
  * 	# Iterate through each atom in the connected component
  * 	for i in range(cc_atom_ids.shape[0]):             # <<<<<<<<<<<<<<
@@ -25567,7 +25567,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
   for (__pyx_t_11 = 0; __pyx_t_11 < __pyx_t_10; __pyx_t_11+=1) {
     __pyx_v_i = __pyx_t_11;
 
-    /* "frag_gnn/frag/compute_frags.pyx":426
+    /* "fragnnet/frag/compute_frags.pyx":426
  * 	# Iterate through each atom in the connected component
  * 	for i in range(cc_atom_ids.shape[0]):
  * 		atom = cc_atom_ids[i]             # <<<<<<<<<<<<<<
@@ -25577,7 +25577,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
     __pyx_t_12 = __pyx_v_i;
     __pyx_v_atom = (*__Pyx_BufPtrStrided1d(__pyx_t_5numpy_int32_t *, __pyx_pybuffernd_cc_atom_ids.rcbuffer->pybuffer.buf, __pyx_t_12, __pyx_pybuffernd_cc_atom_ids.diminfo[0].strides));
 
-    /* "frag_gnn/frag/compute_frags.pyx":427
+    /* "fragnnet/frag/compute_frags.pyx":427
  * 	for i in range(cc_atom_ids.shape[0]):
  * 		atom = cc_atom_ids[i]
  * 		bond_idxs = atoms_to_bonds[atom]  # Get bond indices for this atom             # <<<<<<<<<<<<<<
@@ -25597,7 +25597,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
     __Pyx_XDECREF_SET(__pyx_v_bond_idxs, ((PyObject*)__pyx_t_1));
     __pyx_t_1 = 0;
 
-    /* "frag_gnn/frag/compute_frags.pyx":429
+    /* "fragnnet/frag/compute_frags.pyx":429
  * 		bond_idxs = atoms_to_bonds[atom]  # Get bond indices for this atom
  * 
  * 		for j in range(len(bond_idxs)):             # <<<<<<<<<<<<<<
@@ -25613,7 +25613,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
     for (__pyx_t_15 = 0; __pyx_t_15 < __pyx_t_14; __pyx_t_15+=1) {
       __pyx_v_j = __pyx_t_15;
 
-      /* "frag_gnn/frag/compute_frags.pyx":430
+      /* "fragnnet/frag/compute_frags.pyx":430
  * 
  * 		for j in range(len(bond_idxs)):
  * 			bond_idx = bond_idxs[j]             # <<<<<<<<<<<<<<
@@ -25627,7 +25627,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
       __pyx_t_16 = __Pyx_PyIndex_AsSsize_t(PyList_GET_ITEM(__pyx_v_bond_idxs, __pyx_v_j)); if (unlikely((__pyx_t_16 == (Py_ssize_t)-1) && PyErr_Occurred())) __PYX_ERR(0, 430, __pyx_L1_error)
       __pyx_v_bond_idx = __pyx_t_16;
 
-      /* "frag_gnn/frag/compute_frags.pyx":433
+      /* "fragnnet/frag/compute_frags.pyx":433
  * 
  * 			# Get bond endpoints
  * 			other = bonds[bond_idx, 1] if bonds[bond_idx, 0] == atom else bonds[bond_idx, 0]             # <<<<<<<<<<<<<<
@@ -25648,7 +25648,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
       }
       __pyx_v_other = __pyx_t_17;
 
-      /* "frag_gnn/frag/compute_frags.pyx":436
+      /* "fragnnet/frag/compute_frags.pyx":436
  * 
  * 			# Check if both atoms are in the connected component
  * 			if other in cc_atom_ids:             # <<<<<<<<<<<<<<
@@ -25661,7 +25661,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
       __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
       if (__pyx_t_19) {
 
-        /* "frag_gnn/frag/compute_frags.pyx":437
+        /* "fragnnet/frag/compute_frags.pyx":437
  * 			# Check if both atoms are in the connected component
  * 			if other in cc_atom_ids:
  * 				new_sbond_arr[atom] += 1             # <<<<<<<<<<<<<<
@@ -25671,7 +25671,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
         __pyx_t_18 = __pyx_v_atom;
         *__Pyx_BufPtrStrided1d(__pyx_t_5numpy_int32_t *, __pyx_pybuffernd_new_sbond_arr.rcbuffer->pybuffer.buf, __pyx_t_18, __pyx_pybuffernd_new_sbond_arr.diminfo[0].strides) += 1;
 
-        /* "frag_gnn/frag/compute_frags.pyx":438
+        /* "fragnnet/frag/compute_frags.pyx":438
  * 			if other in cc_atom_ids:
  * 				new_sbond_arr[atom] += 1
  * 				new_bond_mask_arr[bond_idx] = 1  # Use 1 instead of True for uint8_t             # <<<<<<<<<<<<<<
@@ -25681,7 +25681,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
         __pyx_t_18 = __pyx_v_bond_idx;
         *__Pyx_BufPtrStrided1d(__pyx_t_5numpy_uint8_t *, __pyx_pybuffernd_new_bond_mask_arr.rcbuffer->pybuffer.buf, __pyx_t_18, __pyx_pybuffernd_new_bond_mask_arr.diminfo[0].strides) = 1;
 
-        /* "frag_gnn/frag/compute_frags.pyx":436
+        /* "fragnnet/frag/compute_frags.pyx":436
  * 
  * 			# Check if both atoms are in the connected component
  * 			if other in cc_atom_ids:             # <<<<<<<<<<<<<<
@@ -25692,7 +25692,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
     }
   }
 
-  /* "frag_gnn/frag/compute_frags.pyx":440
+  /* "fragnnet/frag/compute_frags.pyx":440
  * 				new_bond_mask_arr[bond_idx] = 1  # Use 1 instead of True for uint8_t
  * 
  * 	return new_sbond_arr, new_bond_mask_arr             # <<<<<<<<<<<<<<
@@ -25710,7 +25710,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
   __pyx_t_1 = 0;
   goto __pyx_L0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":407
+  /* "fragnnet/frag/compute_frags.pyx":407
  * 	return cc_floor
  * 
  * def update_bonds(             # <<<<<<<<<<<<<<
@@ -25736,7 +25736,7 @@ static PyObject *__pyx_pf_8frag_gnn_4frag_13compute_frags_8update_bonds(CYTHON_U
     __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_new_sbond_arr.rcbuffer->pybuffer);
     __Pyx_SafeReleaseBuffer(&__pyx_pybuffernd_sbond_arr.rcbuffer->pybuffer);
   __Pyx_ErrRestore(__pyx_type, __pyx_value, __pyx_tb);}
-  __Pyx_AddTraceback("frag_gnn.frag.compute_frags.update_bonds", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("fragnnet.frag.compute_frags.update_bonds", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   goto __pyx_L2;
   __pyx_L0:;
@@ -25892,7 +25892,7 @@ static PyType_Slot __pyx_type___pyx_array_slots[] = {
   {0, 0},
 };
 static PyType_Spec __pyx_type___pyx_array_spec = {
-  "frag_gnn.frag.compute_frags.array",
+  "fragnnet.frag.compute_frags.array",
   sizeof(struct __pyx_array_obj),
   0,
   Py_TPFLAGS_DEFAULT|Py_TPFLAGS_HAVE_VERSION_TAG|Py_TPFLAGS_CHECKTYPES|Py_TPFLAGS_HAVE_NEWBUFFER|Py_TPFLAGS_BASETYPE|Py_TPFLAGS_SEQUENCE,
@@ -25938,7 +25938,7 @@ static PyBufferProcs __pyx_tp_as_buffer_array = {
 
 static PyTypeObject __pyx_type___pyx_array = {
   PyVarObject_HEAD_INIT(0, 0)
-  "frag_gnn.frag.compute_frags.""array", /*tp_name*/
+  "fragnnet.frag.compute_frags.""array", /*tp_name*/
   sizeof(struct __pyx_array_obj), /*tp_basicsize*/
   0, /*tp_itemsize*/
   __pyx_tp_dealloc_array, /*tp_dealloc*/
@@ -26101,7 +26101,7 @@ static PyType_Slot __pyx_type___pyx_MemviewEnum_slots[] = {
   {0, 0},
 };
 static PyType_Spec __pyx_type___pyx_MemviewEnum_spec = {
-  "frag_gnn.frag.compute_frags.Enum",
+  "fragnnet.frag.compute_frags.Enum",
   sizeof(struct __pyx_MemviewEnum_obj),
   0,
   Py_TPFLAGS_DEFAULT|Py_TPFLAGS_HAVE_VERSION_TAG|Py_TPFLAGS_CHECKTYPES|Py_TPFLAGS_HAVE_NEWBUFFER|Py_TPFLAGS_BASETYPE|Py_TPFLAGS_HAVE_GC,
@@ -26111,7 +26111,7 @@ static PyType_Spec __pyx_type___pyx_MemviewEnum_spec = {
 
 static PyTypeObject __pyx_type___pyx_MemviewEnum = {
   PyVarObject_HEAD_INIT(0, 0)
-  "frag_gnn.frag.compute_frags.""Enum", /*tp_name*/
+  "fragnnet.frag.compute_frags.""Enum", /*tp_name*/
   sizeof(struct __pyx_MemviewEnum_obj), /*tp_basicsize*/
   0, /*tp_itemsize*/
   __pyx_tp_dealloc_Enum, /*tp_dealloc*/
@@ -26411,7 +26411,7 @@ static PyType_Slot __pyx_type___pyx_memoryview_slots[] = {
   {0, 0},
 };
 static PyType_Spec __pyx_type___pyx_memoryview_spec = {
-  "frag_gnn.frag.compute_frags.memoryview",
+  "fragnnet.frag.compute_frags.memoryview",
   sizeof(struct __pyx_memoryview_obj),
   0,
   Py_TPFLAGS_DEFAULT|Py_TPFLAGS_HAVE_VERSION_TAG|Py_TPFLAGS_CHECKTYPES|Py_TPFLAGS_HAVE_NEWBUFFER|Py_TPFLAGS_BASETYPE|Py_TPFLAGS_HAVE_GC,
@@ -26457,7 +26457,7 @@ static PyBufferProcs __pyx_tp_as_buffer_memoryview = {
 
 static PyTypeObject __pyx_type___pyx_memoryview = {
   PyVarObject_HEAD_INIT(0, 0)
-  "frag_gnn.frag.compute_frags.""memoryview", /*tp_name*/
+  "fragnnet.frag.compute_frags.""memoryview", /*tp_name*/
   sizeof(struct __pyx_memoryview_obj), /*tp_basicsize*/
   0, /*tp_itemsize*/
   __pyx_tp_dealloc_memoryview, /*tp_dealloc*/
@@ -26612,7 +26612,7 @@ static PyType_Slot __pyx_type___pyx_memoryviewslice_slots[] = {
   {0, 0},
 };
 static PyType_Spec __pyx_type___pyx_memoryviewslice_spec = {
-  "frag_gnn.frag.compute_frags._memoryviewslice",
+  "fragnnet.frag.compute_frags._memoryviewslice",
   sizeof(struct __pyx_memoryviewslice_obj),
   0,
   Py_TPFLAGS_DEFAULT|Py_TPFLAGS_HAVE_VERSION_TAG|Py_TPFLAGS_CHECKTYPES|Py_TPFLAGS_HAVE_NEWBUFFER|Py_TPFLAGS_BASETYPE|Py_TPFLAGS_HAVE_GC|Py_TPFLAGS_SEQUENCE,
@@ -26622,7 +26622,7 @@ static PyType_Spec __pyx_type___pyx_memoryviewslice_spec = {
 
 static PyTypeObject __pyx_type___pyx_memoryviewslice = {
   PyVarObject_HEAD_INIT(0, 0)
-  "frag_gnn.frag.compute_frags.""_memoryviewslice", /*tp_name*/
+  "fragnnet.frag.compute_frags.""_memoryviewslice", /*tp_name*/
   sizeof(struct __pyx_memoryviewslice_obj), /*tp_basicsize*/
   0, /*tp_itemsize*/
   __pyx_tp_dealloc__memoryviewslice, /*tp_dealloc*/
@@ -26851,7 +26851,7 @@ static int __Pyx_CreateStringTabAndInitStrings(void) {
     {&__pyx_n_s_format, __pyx_k_format, sizeof(__pyx_k_format), 0, 0, 1, 1},
     {&__pyx_n_s_fortran, __pyx_k_fortran, sizeof(__pyx_k_fortran), 0, 0, 1, 1},
     {&__pyx_n_u_fortran, __pyx_k_fortran, sizeof(__pyx_k_fortran), 0, 1, 0, 1},
-    {&__pyx_n_s_frag_gnn_frag_compute_frags, __pyx_k_frag_gnn_frag_compute_frags, sizeof(__pyx_k_frag_gnn_frag_compute_frags), 0, 0, 1, 1},
+    {&__pyx_n_s_fragnnet_frag_compute_frags, __pyx_k_fragnnet_frag_compute_frags, sizeof(__pyx_k_fragnnet_frag_compute_frags), 0, 0, 1, 1},
     {&__pyx_n_s_full, __pyx_k_full, sizeof(__pyx_k_full), 0, 0, 1, 1},
     {&__pyx_kp_u_gc, __pyx_k_gc, sizeof(__pyx_k_gc), 0, 1, 0, 0},
     {&__pyx_n_s_getstate, __pyx_k_getstate, sizeof(__pyx_k_getstate), 0, 0, 1, 1},
@@ -26951,7 +26951,7 @@ static int __Pyx_CreateStringTabAndInitStrings(void) {
     {&__pyx_n_s_shape, __pyx_k_shape, sizeof(__pyx_k_shape), 0, 0, 1, 1},
     {&__pyx_n_s_size, __pyx_k_size, sizeof(__pyx_k_size), 0, 0, 1, 1},
     {&__pyx_n_s_spec, __pyx_k_spec, sizeof(__pyx_k_spec), 0, 0, 1, 1},
-    {&__pyx_kp_s_src_frag_gnn_frag_compute_frags, __pyx_k_src_frag_gnn_frag_compute_frags, sizeof(__pyx_k_src_frag_gnn_frag_compute_frags), 0, 0, 1, 0},
+    {&__pyx_kp_s_src_fragnnet_frag_compute_frags, __pyx_k_src_fragnnet_frag_compute_frags, sizeof(__pyx_k_src_fragnnet_frag_compute_frags), 0, 0, 1, 0},
     {&__pyx_n_s_stack, __pyx_k_stack, sizeof(__pyx_k_stack), 0, 0, 1, 1},
     {&__pyx_n_s_start, __pyx_k_start, sizeof(__pyx_k_start), 0, 0, 1, 1},
     {&__pyx_kp_u_start_queue, __pyx_k_start_queue, sizeof(__pyx_k_start_queue), 0, 1, 0, 0},
@@ -27046,7 +27046,7 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __Pyx_GOTREF(__pyx_tuple__8);
   __Pyx_GIVEREF(__pyx_tuple__8);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":984
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":984
  *         __pyx_import_array()
  *     except Exception:
  *         raise ImportError("numpy.core.multiarray failed to import")             # <<<<<<<<<<<<<<
@@ -27057,7 +27057,7 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __Pyx_GOTREF(__pyx_tuple__9);
   __Pyx_GIVEREF(__pyx_tuple__9);
 
-  /* "../../../../tmp/pip-build-env-k7sr89ox/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":990
+  /* "../../../../tmp/pip-build-env-1a31_bm9/overlay/lib/python3.10/site-packages/numpy/__init__.cython-30.pxd":990
  *         _import_umath()
  *     except Exception:
  *         raise ImportError("numpy.core.umath failed to import")             # <<<<<<<<<<<<<<
@@ -27169,7 +27169,7 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __Pyx_GIVEREF(__pyx_tuple__21);
   __pyx_codeobj__22 = (PyObject*)__Pyx_PyCode_New(3, 0, 0, 5, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__21, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_stringsource, __pyx_n_s_pyx_unpickle_Enum, 1, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__22)) __PYX_ERR(1, 1, __pyx_L1_error)
 
-  /* "frag_gnn/frag/compute_frags.pyx":19
+  /* "fragnnet/frag/compute_frags.pyx":19
  * MAX_EDGE_PER_NODE = 6  # Sulfur
  * 
  * class TimeoutError(RuntimeError):             # <<<<<<<<<<<<<<
@@ -27183,7 +27183,7 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __Pyx_GOTREF(__pyx_tuple__24);
   __Pyx_GIVEREF(__pyx_tuple__24);
 
-  /* "frag_gnn/frag/compute_frags.pyx":52
+  /* "fragnnet/frag/compute_frags.pyx":52
  * #	return node_mask_int
  * 
  * def mask_to_binary_hash(char [::1] mask):             # <<<<<<<<<<<<<<
@@ -27193,9 +27193,9 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __pyx_tuple__25 = PyTuple_Pack(1, __pyx_n_s_mask); if (unlikely(!__pyx_tuple__25)) __PYX_ERR(0, 52, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple__25);
   __Pyx_GIVEREF(__pyx_tuple__25);
-  __pyx_codeobj__26 = (PyObject*)__Pyx_PyCode_New(1, 0, 0, 1, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__25, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_frag_gnn_frag_compute_frags, __pyx_n_s_mask_to_binary_hash, 52, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__26)) __PYX_ERR(0, 52, __pyx_L1_error)
+  __pyx_codeobj__26 = (PyObject*)__Pyx_PyCode_New(1, 0, 0, 1, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__25, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_fragnnet_frag_compute_frags, __pyx_n_s_mask_to_binary_hash, 52, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__26)) __PYX_ERR(0, 52, __pyx_L1_error)
 
-  /* "frag_gnn/frag/compute_frags.pyx":73
+  /* "fragnnet/frag/compute_frags.pyx":73
  * 	return node_to_edge_idx
  * 
  * def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):             # <<<<<<<<<<<<<<
@@ -27205,9 +27205,9 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __pyx_tuple__27 = PyTuple_Pack(3, __pyx_n_s_num_nodes, __pyx_n_s_num_edges, __pyx_n_s_edges); if (unlikely(!__pyx_tuple__27)) __PYX_ERR(0, 73, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple__27);
   __Pyx_GIVEREF(__pyx_tuple__27);
-  __pyx_codeobj__28 = (PyObject*)__Pyx_PyCode_New(3, 0, 0, 3, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__27, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_frag_gnn_frag_compute_frags, __pyx_n_s_py_compute_node_to_edge_idx, 73, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__28)) __PYX_ERR(0, 73, __pyx_L1_error)
+  __pyx_codeobj__28 = (PyObject*)__Pyx_PyCode_New(3, 0, 0, 3, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__27, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_fragnnet_frag_compute_frags, __pyx_n_s_py_compute_node_to_edge_idx, 73, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__28)) __PYX_ERR(0, 73, __pyx_L1_error)
 
-  /* "frag_gnn/frag/compute_frags.pyx":170
+  /* "fragnnet/frag/compute_frags.pyx":170
  * 	return cc_nodes, cc_edges, num_ccs
  * 
  * def compute_ccs(             # <<<<<<<<<<<<<<
@@ -27217,9 +27217,9 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __pyx_tuple__29 = PyTuple_Pack(66, __pyx_n_s_num_nodes, __pyx_n_s_num_edges, __pyx_n_s_node_mask, __pyx_n_s_edges, __pyx_n_s_edge_mask, __pyx_n_s_node_to_edge_idx, __pyx_n_s_max_depth, __pyx_n_s_time_limit, __pyx_n_s_start_time, __pyx_n_s_cur_time, __pyx_n_s_child_node_mask_list, __pyx_n_s_child_edge_mask_list, __pyx_n_s_node_idx, __pyx_n_s_num_edges_nomask, __pyx_n_s_ccs_idx, __pyx_n_s_ccs_end, __pyx_n_s_c, __pyx_n_s_i, __pyx_n_s_current_depth, __pyx_n_s_node_mask_key, __pyx_n_s_edge_mask_key, __pyx_n_s_ccs, __pyx_n_s_cc_edges, __pyx_n_s_ccs_depths, __pyx_n_s_cc_node_mask_dict, __pyx_n_s_cc_edge_mask_dict, __pyx_n_s_has_seen_dict, __pyx_n_s_ccs_depth_dict, __pyx_n_s_num_ccs_2, __pyx_n_s_css_to_id_dict, __pyx_n_s_dag_edge_dict, __pyx_n_s_force_stop, __pyx_n_s_reached_depth, __pyx_n_s_curent_node_mask_key, __pyx_n_s_current_edge_mask_key, __pyx_n_s_current_node_mask, __pyx_n_s_current_edge_mask, __pyx_n_s_node_full_mask_str, __pyx_n_s_need_skip, __pyx_n_s_new_cc_nodes, __pyx_n_s_new_cc_edges, __pyx_n_s_new_num_ccs, __pyx_n_s_child_node_mask_key, __pyx_n_s_child_edge_mask_key, __pyx_n_s_edge_pair, __pyx_n_s_filtered_dag_edge_dict, __pyx_n_s_filtered_ccs_depth_dict, __pyx_n_s_filtered_css_to_id_dict, __pyx_n_s_num_un_ccs, __pyx_n_s_ordered_ccs, __pyx_n_s_cc, __pyx_n_s_nodes_mask_matrix, __pyx_n_s_nodes_depth_matrix, __pyx_n_s_nodes_min_depth, __pyx_n_s_idx, __pyx_n_s_d_id, __pyx_n_s_dag_edges_matrix, __pyx_n_s_edges_min_depth, __pyx_n_s_dag_frag_meta, __pyx_n_s_k, __pyx_n_s_v, __pyx_n_s_k, __pyx_n_s_v, __pyx_n_s_i, __pyx_n_s_cc, __pyx_n_s_cc); if (unlikely(!__pyx_tuple__29)) __PYX_ERR(0, 170, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple__29);
   __Pyx_GIVEREF(__pyx_tuple__29);
-  __pyx_codeobj__30 = (PyObject*)__Pyx_PyCode_New(8, 0, 0, 66, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__29, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_frag_gnn_frag_compute_frags, __pyx_n_s_compute_ccs, 170, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__30)) __PYX_ERR(0, 170, __pyx_L1_error)
+  __pyx_codeobj__30 = (PyObject*)__Pyx_PyCode_New(8, 0, 0, 66, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__29, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_fragnnet_frag_compute_frags, __pyx_n_s_compute_ccs, 170, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__30)) __PYX_ERR(0, 170, __pyx_L1_error)
 
-  /* "frag_gnn/frag/compute_frags.pyx":363
+  /* "fragnnet/frag/compute_frags.pyx":363
  * 	return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
  * 
  * def compute_cc_h_floor(             # <<<<<<<<<<<<<<
@@ -27229,9 +27229,9 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __pyx_tuple__31 = PyTuple_Pack(15, __pyx_n_s_cc_atom_ids, __pyx_n_s_ve_arr, __pyx_n_s_sbond_arr, __pyx_n_s_num_radicals, __pyx_n_s_bonds, __pyx_n_s_atoms_to_bonds, __pyx_n_s_bond_mask_arr, __pyx_n_s_diff_arr, __pyx_n_s_h_arr, __pyx_n_s_atom, __pyx_n_s_bond_idx, __pyx_n_s_other, __pyx_n_s_bond_idxs, __pyx_n_s_bond, __pyx_n_s_cc_floor); if (unlikely(!__pyx_tuple__31)) __PYX_ERR(0, 363, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple__31);
   __Pyx_GIVEREF(__pyx_tuple__31);
-  __pyx_codeobj__32 = (PyObject*)__Pyx_PyCode_New(7, 0, 0, 15, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__31, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_frag_gnn_frag_compute_frags, __pyx_n_s_compute_cc_h_floor, 363, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__32)) __PYX_ERR(0, 363, __pyx_L1_error)
+  __pyx_codeobj__32 = (PyObject*)__Pyx_PyCode_New(7, 0, 0, 15, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__31, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_fragnnet_frag_compute_frags, __pyx_n_s_compute_cc_h_floor, 363, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__32)) __PYX_ERR(0, 363, __pyx_L1_error)
 
-  /* "frag_gnn/frag/compute_frags.pyx":407
+  /* "fragnnet/frag/compute_frags.pyx":407
  * 	return cc_floor
  * 
  * def update_bonds(             # <<<<<<<<<<<<<<
@@ -27241,7 +27241,7 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
   __pyx_tuple__33 = PyTuple_Pack(13, __pyx_n_s_cc_atom_ids, __pyx_n_s_sbond_arr, __pyx_n_s_bond_mask_arr, __pyx_n_s_bonds, __pyx_n_s_atoms_to_bonds, __pyx_n_s_new_sbond_arr, __pyx_n_s_new_bond_mask_arr, __pyx_n_s_atom, __pyx_n_s_other, __pyx_n_s_bond_idx, __pyx_n_s_i, __pyx_n_s_j, __pyx_n_s_bond_idxs); if (unlikely(!__pyx_tuple__33)) __PYX_ERR(0, 407, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple__33);
   __Pyx_GIVEREF(__pyx_tuple__33);
-  __pyx_codeobj__34 = (PyObject*)__Pyx_PyCode_New(5, 0, 0, 13, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__33, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_frag_gnn_frag_compute_frags, __pyx_n_s_update_bonds, 407, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__34)) __PYX_ERR(0, 407, __pyx_L1_error)
+  __pyx_codeobj__34 = (PyObject*)__Pyx_PyCode_New(5, 0, 0, 13, 0, CO_OPTIMIZED|CO_NEWLOCALS, __pyx_empty_bytes, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_tuple__33, __pyx_empty_tuple, __pyx_empty_tuple, __pyx_kp_s_src_fragnnet_frag_compute_frags, __pyx_n_s_update_bonds, 407, __pyx_empty_bytes); if (unlikely(!__pyx_codeobj__34)) __PYX_ERR(0, 407, __pyx_L1_error)
   __Pyx_RefNannyFinishContext();
   return 0;
   __pyx_L1_error:;
@@ -27845,14 +27845,14 @@ if (!__Pyx_RefNanny) {
   #if PY_MAJOR_VERSION < 3 && (__PYX_DEFAULT_STRING_ENCODING_IS_ASCII || __PYX_DEFAULT_STRING_ENCODING_IS_DEFAULT)
   if (__Pyx_init_sys_getdefaultencoding_params() < 0) __PYX_ERR(0, 1, __pyx_L1_error)
   #endif
-  if (__pyx_module_is_main_frag_gnn__frag__compute_frags) {
+  if (__pyx_module_is_main_fragnnet__frag__compute_frags) {
     if (PyObject_SetAttr(__pyx_m, __pyx_n_s_name_2, __pyx_n_s_main) < 0) __PYX_ERR(0, 1, __pyx_L1_error)
   }
   #if PY_MAJOR_VERSION >= 3
   {
     PyObject *modules = PyImport_GetModuleDict(); if (unlikely(!modules)) __PYX_ERR(0, 1, __pyx_L1_error)
-    if (!PyDict_GetItemString(modules, "frag_gnn.frag.compute_frags")) {
-      if (unlikely((PyDict_SetItemString(modules, "frag_gnn.frag.compute_frags", __pyx_m) < 0))) __PYX_ERR(0, 1, __pyx_L1_error)
+    if (!PyDict_GetItemString(modules, "fragnnet.frag.compute_frags")) {
+      if (unlikely((PyDict_SetItemString(modules, "fragnnet.frag.compute_frags", __pyx_m) < 0))) __PYX_ERR(0, 1, __pyx_L1_error)
     }
   }
   #endif
@@ -28386,7 +28386,7 @@ if (!__Pyx_RefNanny) {
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_pyx_unpickle_Enum, __pyx_t_7) < 0) __PYX_ERR(1, 1, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":9
+  /* "fragnnet/frag/compute_frags.pyx":9
  * # cython: cdivision=True
  * 
  * import numpy as np             # <<<<<<<<<<<<<<
@@ -28398,7 +28398,7 @@ if (!__Pyx_RefNanny) {
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_np, __pyx_t_7) < 0) __PYX_ERR(0, 9, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":14
+  /* "fragnnet/frag/compute_frags.pyx":14
  * from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
  * 
  * MAX_NUM_NODES = 128  # hard cap on 64!!             # <<<<<<<<<<<<<<
@@ -28407,7 +28407,7 @@ if (!__Pyx_RefNanny) {
  */
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_MAX_NUM_NODES, __pyx_int_128) < 0) __PYX_ERR(0, 14, __pyx_L1_error)
 
-  /* "frag_gnn/frag/compute_frags.pyx":15
+  /* "fragnnet/frag/compute_frags.pyx":15
  * 
  * MAX_NUM_NODES = 128  # hard cap on 64!!
  * MAX_NUM_EDGES = 4 * MAX_NUM_NODES  # ~4*MAX_NUM_NODES             # <<<<<<<<<<<<<<
@@ -28422,7 +28422,7 @@ if (!__Pyx_RefNanny) {
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_MAX_NUM_EDGES, __pyx_t_4) < 0) __PYX_ERR(0, 15, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":16
+  /* "fragnnet/frag/compute_frags.pyx":16
  * MAX_NUM_NODES = 128  # hard cap on 64!!
  * MAX_NUM_EDGES = 4 * MAX_NUM_NODES  # ~4*MAX_NUM_NODES
  * MASK_DTYPE = np.uint8             # <<<<<<<<<<<<<<
@@ -28437,7 +28437,7 @@ if (!__Pyx_RefNanny) {
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_MASK_DTYPE, __pyx_t_7) < 0) __PYX_ERR(0, 16, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":17
+  /* "fragnnet/frag/compute_frags.pyx":17
  * MAX_NUM_EDGES = 4 * MAX_NUM_NODES  # ~4*MAX_NUM_NODES
  * MASK_DTYPE = np.uint8
  * MAX_EDGE_PER_NODE = 6  # Sulfur             # <<<<<<<<<<<<<<
@@ -28446,7 +28446,7 @@ if (!__Pyx_RefNanny) {
  */
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_MAX_EDGE_PER_NODE, __pyx_int_6) < 0) __PYX_ERR(0, 17, __pyx_L1_error)
 
-  /* "frag_gnn/frag/compute_frags.pyx":19
+  /* "fragnnet/frag/compute_frags.pyx":19
  * MAX_EDGE_PER_NODE = 6  # Sulfur
  * 
  * class TimeoutError(RuntimeError):             # <<<<<<<<<<<<<<
@@ -28457,7 +28457,7 @@ if (!__Pyx_RefNanny) {
   __Pyx_GOTREF(__pyx_t_7);
   __pyx_t_4 = __Pyx_CalculateMetaclass(NULL, __pyx_t_7); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 19, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_5 = __Pyx_Py3MetaclassPrepare(__pyx_t_4, __pyx_t_7, __pyx_n_s_TimeoutError, __pyx_n_s_TimeoutError, (PyObject *) NULL, __pyx_n_s_frag_gnn_frag_compute_frags, (PyObject *) NULL); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 19, __pyx_L1_error)
+  __pyx_t_5 = __Pyx_Py3MetaclassPrepare(__pyx_t_4, __pyx_t_7, __pyx_n_s_TimeoutError, __pyx_n_s_TimeoutError, (PyObject *) NULL, __pyx_n_s_fragnnet_frag_compute_frags, (PyObject *) NULL); if (unlikely(!__pyx_t_5)) __PYX_ERR(0, 19, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_5);
   if (__pyx_t_7 != __pyx_tuple__24) {
     if (unlikely((PyDict_SetItemString(__pyx_t_5, "__orig_bases__", __pyx_tuple__24) < 0))) __PYX_ERR(0, 19, __pyx_L1_error)
@@ -28470,67 +28470,67 @@ if (!__Pyx_RefNanny) {
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":52
+  /* "fragnnet/frag/compute_frags.pyx":52
  * #	return node_mask_int
  * 
  * def mask_to_binary_hash(char [::1] mask):             # <<<<<<<<<<<<<<
  * 	return np.asarray(mask).tobytes()
  * 
  */
-  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8frag_gnn_4frag_13compute_frags_1mask_to_binary_hash, 0, __pyx_n_s_mask_to_binary_hash, NULL, __pyx_n_s_frag_gnn_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__26)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 52, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8fragnnet_4frag_13compute_frags_1mask_to_binary_hash, 0, __pyx_n_s_mask_to_binary_hash, NULL, __pyx_n_s_fragnnet_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__26)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 52, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_7);
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_mask_to_binary_hash, __pyx_t_7) < 0) __PYX_ERR(0, 52, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":73
+  /* "fragnnet/frag/compute_frags.pyx":73
  * 	return node_to_edge_idx
  * 
  * def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):             # <<<<<<<<<<<<<<
  * 	return np.asarray(compute_node_to_edge_idx(num_nodes,num_edges,edges),dtype=np.intc)
  * 
  */
-  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8frag_gnn_4frag_13compute_frags_3py_compute_node_to_edge_idx, 0, __pyx_n_s_py_compute_node_to_edge_idx, NULL, __pyx_n_s_frag_gnn_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__28)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 73, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8fragnnet_4frag_13compute_frags_3py_compute_node_to_edge_idx, 0, __pyx_n_s_py_compute_node_to_edge_idx, NULL, __pyx_n_s_fragnnet_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__28)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 73, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_7);
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_py_compute_node_to_edge_idx, __pyx_t_7) < 0) __PYX_ERR(0, 73, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":170
+  /* "fragnnet/frag/compute_frags.pyx":170
  * 	return cc_nodes, cc_edges, num_ccs
  * 
  * def compute_ccs(             # <<<<<<<<<<<<<<
  * 		int num_nodes,
  * 		int num_edges,
  */
-  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8frag_gnn_4frag_13compute_frags_5compute_ccs, 0, __pyx_n_s_compute_ccs, NULL, __pyx_n_s_frag_gnn_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__30)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 170, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8fragnnet_4frag_13compute_frags_5compute_ccs, 0, __pyx_n_s_compute_ccs, NULL, __pyx_n_s_fragnnet_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__30)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 170, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_7);
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_compute_ccs, __pyx_t_7) < 0) __PYX_ERR(0, 170, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":363
+  /* "fragnnet/frag/compute_frags.pyx":363
  * 	return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
  * 
  * def compute_cc_h_floor(             # <<<<<<<<<<<<<<
  * 		cnp.ndarray[cnp.int32_t, ndim=1] cc_atom_ids,
  * 		cnp.ndarray[cnp.int32_t, ndim=1] ve_arr,
  */
-  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8frag_gnn_4frag_13compute_frags_7compute_cc_h_floor, 0, __pyx_n_s_compute_cc_h_floor, NULL, __pyx_n_s_frag_gnn_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__32)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 363, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8fragnnet_4frag_13compute_frags_7compute_cc_h_floor, 0, __pyx_n_s_compute_cc_h_floor, NULL, __pyx_n_s_fragnnet_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__32)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 363, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_7);
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_compute_cc_h_floor, __pyx_t_7) < 0) __PYX_ERR(0, 363, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":407
+  /* "fragnnet/frag/compute_frags.pyx":407
  * 	return cc_floor
  * 
  * def update_bonds(             # <<<<<<<<<<<<<<
  * 		cnp.ndarray[cnp.int32_t, ndim=1] cc_atom_ids,
  * 		cnp.ndarray[cnp.int32_t, ndim=1] sbond_arr,
  */
-  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8frag_gnn_4frag_13compute_frags_9update_bonds, 0, __pyx_n_s_update_bonds, NULL, __pyx_n_s_frag_gnn_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__34)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 407, __pyx_L1_error)
+  __pyx_t_7 = __Pyx_CyFunction_New(&__pyx_mdef_8fragnnet_4frag_13compute_frags_9update_bonds, 0, __pyx_n_s_update_bonds, NULL, __pyx_n_s_fragnnet_frag_compute_frags, __pyx_d, ((PyObject *)__pyx_codeobj__34)); if (unlikely(!__pyx_t_7)) __PYX_ERR(0, 407, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_7);
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_update_bonds, __pyx_t_7) < 0) __PYX_ERR(0, 407, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_7); __pyx_t_7 = 0;
 
-  /* "frag_gnn/frag/compute_frags.pyx":1
+  /* "fragnnet/frag/compute_frags.pyx":1
  * # cython: profile=False             # <<<<<<<<<<<<<<
  * # cython: linetrace=False
  * # cython: language_level=3
@@ -28550,7 +28550,7 @@ if (!__Pyx_RefNanny) {
   __Pyx_XDECREF(__pyx_t_9);
   if (__pyx_m) {
     if (__pyx_d && stringtab_initialized) {
-      __Pyx_AddTraceback("init frag_gnn.frag.compute_frags", __pyx_clineno, __pyx_lineno, __pyx_filename);
+      __Pyx_AddTraceback("init fragnnet.frag.compute_frags", __pyx_clineno, __pyx_lineno, __pyx_filename);
     }
     #if !CYTHON_USE_MODULE_STATE
     Py_CLEAR(__pyx_m);
@@ -28564,7 +28564,7 @@ if (!__Pyx_RefNanny) {
     }
     #endif
   } else if (!PyErr_Occurred()) {
-    PyErr_SetString(PyExc_ImportError, "init frag_gnn.frag.compute_frags");
+    PyErr_SetString(PyExc_ImportError, "init fragnnet.frag.compute_frags");
   }
   __pyx_L0:;
   __Pyx_RefNannyFinishContext();
