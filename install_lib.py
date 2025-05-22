@@ -74,10 +74,10 @@ def install_all(cuda_version):
 		pip_install(
 			["torch_geometric==2.4.0"],
 		)
-  		# pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.2+cu121.html
+  		# pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.0+cu121.html
 		pip_install(
 			["torch_scatter==2.1.2"],
-			index_url="https://data.pyg.org/whl/torch-2.1.2+cu121.html"
+			find_links="https://data.pyg.org/whl/torch-2.1.0+cu121.html"
 		)
   		# pip install  dgl -f https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html
 		pip_install(
@@ -96,12 +96,12 @@ def install_all(cuda_version):
 		pip_install(
 			["torch_geometric==2.4.0"],
 		)
-		# pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.2+cu118.html
+		# pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.0+cu118.html
 		pip_install(
 			["torch_scatter==2.1.2"],
-			index_url="https://data.pyg.org/whl/torch-2.1.2+cu118.html"
+			find_links="https://data.pyg.org/whl/torch-2.1.0+cu118.html"
 		)
-		# pip install  dgl -f https://data.dgl.ai/wheels/torch-2.1/cu118/repo.html
+		# pip install dgl -f https://data.dgl.ai/wheels/torch-2.1/cu118/repo.html
 		pip_install(
 			["dgl==1.0.4+cu118"],
 			find_links="https://data.dgl.ai/wheels/cu118/repo.html"		
