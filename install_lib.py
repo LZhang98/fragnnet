@@ -81,7 +81,7 @@ def install_all(cuda_version):
 		)
   		# pip install  dgl -f https://data.dgl.ai/wheels/torch-2.1/cu121/repo.html
 		pip_install(
-			["dgl==1.0.4+cu121"],
+			["dgl==1.1.3+cu121"],
 			find_links="https://data.dgl.ai/wheels/cu121/repo.html"			
 		)
 	elif cuda_version == "118":
