@@ -5,9 +5,9 @@ wandb_group: nist20_scaffold_iceberg_gen
 seed: 397623
 
 # data stuff
-spec_fp: data/proc/nist20mona23v3/spec_df.pkl
-mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20mona23v3_d4_wr00_scaffold
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_scaffold
 magma_dp: data/magma/gen/nist20mona23v3
 spec_params:
   preprocess: True

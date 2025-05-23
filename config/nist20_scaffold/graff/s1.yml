@@ -5,10 +5,10 @@ wandb_group: nist20_scaffold_graff
 seed: 634340
 
 # data stuff
-spec_fp: data/proc/nist20mona23v3/spec_df.pkl
-mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20mona23v3_d4_wr00_scaffold
-ann_fp: data/proc/nist20mona23v3/ann_df.pkl
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_scaffold
+ann_fp: data/proc/nist20/ann_df.pkl
 frag_params:
   pyg: False
 spec_params:

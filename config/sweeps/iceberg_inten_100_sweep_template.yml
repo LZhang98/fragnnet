@@ -1,9 +1,9 @@
 wandb_name: iceberg_inten_100_sweep_template
 
 # data stuff
-spec_fp: data/proc/nist20mona23v3/spec_df.pkl
-mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
 magma_dp: data/magma/inten/nist20mona23v3_d4_wr00_inchikey_100_s0
 spec_params:
   preprocess: True

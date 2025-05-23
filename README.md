@@ -13,8 +13,9 @@ This method provides:
 
 ---
 
-
 ## Project Structure
+
+### Outline
 
 ```bash
 fragnnet/
@@ -44,6 +45,17 @@ fragnnet/
 ├── src # fragnnet source code
 │   ├── fragnnet
 ```
+
+**Experiment configs**: see [config/README.md](config/README.md)
+
+**Data preprocessing**: see [preproc_scripts/README.md](preproc_scripts/README.md)
+
+**Analysis scripts**: see [scripts/README.md](scripts/README.md)
+
+**Analysis notebooks**: see [notebooks/README.md](notebooks/README.md)
+
+If you are having trouble preprocessing the data or reproducing the results, please send an email to ayoung [AT] cs [DOT] toronto [DOT] edu.
+
 ## Installation
 
 ### Set up Conda Environment

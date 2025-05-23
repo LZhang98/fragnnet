@@ -1,14 +1,14 @@
-wandb_name: ablationsv3-1_fraggnn_d3_noce_s4
-wandb_group: ablationsv3-1_fraggnn_d3_noce
+wandb_name: ablations_fragnnet_d3_noce_s4
+wandb_group: ablations_fragnnet_d3_noce
 
 # seed
 seed: 132548
 
 # data stuff
-spec_fp: data/proc/nist20mona23v3/spec_df.pkl
-mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+frag_dp: data/frag/nist20_d3/dags
 frag_params:
   pyg_edge_feats: []
   pyg_edges: False

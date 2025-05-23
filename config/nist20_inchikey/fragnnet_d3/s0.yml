@@ -5,10 +5,10 @@ wandb_group: nist20_inchikey_fragnnet_d3
 seed: 397623
 
 # data stuff
-spec_fp: data/proc/nist20mona23v3/spec_df.pkl
-mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20mona23v3_d4_wr00_inchikey
-frag_dp: data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+frag_dp: data/frag/nist20_d3/dags
 
 frag_params:
   pyg_edge_feats: []
