@@ -318,10 +318,9 @@ if __name__ == "__main__":
 	parser.add_argument("--dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
 	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)
-	parser.add_argument("--wandb_mode",type=str,default="disabled",choices=["online","offline","off"])
+	parser.add_argument("--wandb_mode",type=str,default="disabled",choices=["online","offline","disabled"])
 	parser.add_argument("--wandb_project",type=str,default="frag-gnn")
 	parser.add_argument("--wandb_entity",type=str,default="frag-gnn")
-	parser.add_argument("--wandb_mode",type=str,default="disabled",choices=["online","offline","off"]) 
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
 	parser.add_argument("--compress_dags",type=booltype,default=True)
 	parser.add_argument("--wandb_run_name",type=str)
@@ -335,8 +334,8 @@ if __name__ == "__main__":
 	args = parser.parse_args()
  
 	# Check if --flag is True and --conditional-arg is missing
-	if args.wandb_mode != 'off' and args.wandb_run_name:
-		parser.error("--wandb_run_name is required when --wandb_mode is not off")
+	if args.wandb_mode != 'disabled' and args.wandb_run_name:
+		parser.error("--wandb_run_name is required when --wandb_mode is not disabled")
 
 	tqdm.pandas()
 
