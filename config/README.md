@@ -1,3 +1,5 @@
+# Experiment Configs
+
 ## Setting up a Training Run
 
 To train a model, you can use the following command:

@@ -1,5 +1,5 @@
-wandb_name: entropy_d4_negfn_ens_s13
-wandb_group: entropy_d4_negfn_ens
+wandb_name: entropyv3-1_scaffold_d4_negfn_ens_s13
+wandb_group: entropyv3-1_scaffold_d4_negfn_ens
 
 # seed stuff
 seed: 263526
