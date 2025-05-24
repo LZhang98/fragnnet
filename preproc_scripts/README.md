@@ -30,7 +30,7 @@ python preproc_scripts/02_prepare_proc.py --df_dp data/df --dsets nist20_hr --pr
 
 ## Step 3: Generating Fragmentation DAGs
 
-This step generates fragmentation DAGs that are used for the FraGNNet models.
+This step generates fragmentation DAGs that are used for the FraGNNet models. Since fragmentation can be slow, we recommend using a compute with many cores (by default, the script will use all available cores). 
 
 Frag configuration: depth 3 (used for FraGNNet-D3), isomorphism check with no bond information (nb, 3 WL iterations)
 
