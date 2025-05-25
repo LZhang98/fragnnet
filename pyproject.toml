@@ -7,7 +7,7 @@ name = "fragnnet"
 version = "2025.05"
 description = "MS/MS prediction for small molecules"
 readme = "README.md"
-license = { text = "BSD-2-Clause" }
+license = { text = "MIT" }
 requires-python = ">=3.10, <=3.12"
 dependencies = [
     "numpy>=1.24,<2",
