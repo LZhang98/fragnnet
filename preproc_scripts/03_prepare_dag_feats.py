@@ -104,6 +104,9 @@ def main(args):
 	m_spec_df = merge_spec_df(spec_df)
 
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules") #, {len(m_spec_df)} merged spectra")
+	print(spec_df['prec_type'].value_counts())
+	print(spec_df['inst_type'].value_counts())
+
 	print()
 
 	num_atoms = mol_df["num_atoms"]
