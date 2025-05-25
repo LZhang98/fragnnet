@@ -47,11 +47,11 @@ pip install pyteomics-4.7.5-py3-none-any.whl
 # go to source location
 cd ${FRAGNNET_DP}
 # copy source code
-rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}
-rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}
-rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}
-cp setup.cfg ${SLURM_TMPDIR}/
-cp setup.py ${SLURM_TMPDIR}/
+#rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}
+#rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}
+#rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}
+#cp setup.cfg ${SLURM_TMPDIR}/
+#cp setup.py ${SLURM_TMPDIR}/
 
 # instal fragnnet
 pip install -I .
@@ -59,10 +59,10 @@ pip install -I .
 # Copy files
 # create local dir
 DATASET_NAME=nist20mona23v3
-FRAG_TAR=nist20mona23v3_ma_mi_d3_h4_isoFalse.tar`
+FRAG_TAR=nist20mona23v3_ma_mi_d3_h4_isoFalse.tar
 SPLIT=nist20_d3_ma_mi_inchikey
-CONFIG=./config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml 
-OUTPUT_DP=./data/smarts/fraggnn_d3_mi_ma
+CONFIG=config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml 
+OUTPUT_DP=data/smarts/fraggnn_d3_mi_ma
 
 echo create local proc_dp: ${SLURM_TMPDIR}/data/proc
 mkdir -p ${SLURM_TMPDIR}/data/proc
@@ -85,20 +85,21 @@ echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/data/split/${SPLIT})
 
 # copy config files
 cp ${FRAGNNET_DP}/config/template.yml  ${SLURM_TMPDIR}/config/template.yml  
+rsync --relative ${FRAGNNET_DP}/${CONFIG} ${SLURM_TMPDIR}
 
 # copy frag file
-cp ${FRAGNNET_DP}/data/frags/${FRAG_TAR}  ${SLURM_TMPDIR}/data/frag/
+cp ${FRAGNNET_DP}/data/frag/${FRAG_TAR}  ${SLURM_TMPDIR}/data/frag/
 cd ${SLURM_TMPDIR}/data/frag
 tar xf ${FRAG_TAR}
 
-#echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/proc/${DATASET_NAME})
+# go to slurm temp dir
 cd ${SLURM_TMPDIR}
-python ./preproc_scripts/no_dag_exp/01_create_smarts.py \
-	--output_dp= ${OUTPUT_DP} \
-	--custom_fp= ${CONFIG} \
-    --batch_size=320 \
-	--num_workers= 8 \
-    --n_jobs = 40
-
 # soft link back to home directy for wandb
 ln -s ${FRAGNNET_DP}/wandb wandb
+
+python ./preproc_scripts/no_dag_exp/01_create_smarts.py \
+	--output_dp=${OUTPUT_DP} \
+	--custom_fp=${CONFIG} \
+	--batch_size=320 \
+	--num_workers=8 \
+	--n_jobs=40

@@ -109,12 +109,12 @@ def main(args):
    			''
 			'# go to source location',
 			'cd ${FRAGNNET_DP}',
-			'# copy source code',
-			'rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}',
-			'rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}',
-			'rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}',
-			'cp setup.cfg ${SLURM_TMPDIR}/',
-			'cp setup.py ${SLURM_TMPDIR}/',
+			#'# copy source code',
+			#'rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}',
+			#'rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}',
+			#'rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}',
+			#'cp setup.cfg ${SLURM_TMPDIR}/',
+			#'cp setup.py ${SLURM_TMPDIR}/',
 			# instal fragnnet
 			'pip install -I .',
 			''
