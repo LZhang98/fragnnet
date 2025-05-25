@@ -71,13 +71,13 @@ conda create -n FRAGNNET-GPU python=3.10
 ### Install FraGNNet Python Package
 
 ```
-pip install -I .
+pip install .
 ```
 
 If you want dev features (wandb logging and jupyter notebook), you can install the package with the dev flag.
 
 ```
-pip install -I -e .[dev]
+pip install -e .[dev]
 ```
 
 Note that the -e flag is used to install the package in editable mode.
