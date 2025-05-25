@@ -64,8 +64,6 @@ def parse_mgf_text_list(mgf_text_list):
 					# convert to correct type
 					if col in ["exact_mass",'prec_mz']:
 						value = float(value)
-					elif col == 'col_energy':
-						value = f"{value} eV"
 					elif col  == "ion_mode" and value == "POSITIVE":
 						value = "P"
 					elif col  == "ion_mode" and value == "NEGATIVE":
@@ -78,7 +76,10 @@ def parse_mgf_text_list(mgf_text_list):
 	return spectra_list
 
 if __name__ == "__main__":
-	mgf_fp = "data/raw/msverse/metadata-can-rem-lowres-prec-matchms-dotcheck-noiserem-fold-metadata.mgf"
+	mgf_fp = "data/raw/spectraverse/metadata-can-rem-lowres-prec-matchms-dotcheck-noiserem-fold-metadata.mgf"
 	spectra_list = read_mgfs_fp(mgf_fp)
 	spectra_df = pd.DataFrame(spectra_list)
-	spectra_df.to_pickle("data/raw/msverse//metadata-can-rem-lowres-prec-matchms-dotcheck-noiserem-fold-metadata.pkl")
+ 
+	spectra_df[:,'ramped'] = spectra_df.apply(lambda x: True if not x['col_energy_1'].isna() and not x['col_energy_2'].isna() and x['col_energy_3'].isna() else False, axis=1)
+	spectra_df[:,'stepped'] = spectra_df.apply(lambda x: True if not x['col_energy_1'].isna() and not x['col_energy_2'].isna() and not x['col_energy_3'].isna() else False, axis=1)
+	spectra_df.to_pickle("data/raw/spectraverse//metadata-can-rem-lowres-prec-matchms-dotcheck-noiserem-fold-metadata.pkl")
