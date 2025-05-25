@@ -4,7 +4,7 @@
 #SBATCH --job-name=frag_gen_nist23_d4
 #SBATCH --mem=180G
 #SBATCH --cpus-per-task=40
-#SBATCH --time=0-4:00
+#SBATCH --time=0-8:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
 #SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist23_d4_%j.out
