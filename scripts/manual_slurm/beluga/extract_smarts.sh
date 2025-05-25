@@ -60,9 +60,9 @@ pip install -I .
 # create local dir
 DATASET_NAME=nist20mona23v3
 FRAG_TAR=nist20mona23v3_ma_mi_d3_h4_isoFalse.tar
-SPLIT=nist20_d3_ma_mi_inchikey
-CONFIG=config/exp_fraggnn_mi_ma/fraggnn_d3_mi_ma.yml 
-OUTPUT_DP=data/smarts/fraggnn_d3_mi_ma
+SPLIT=nist20v3_ma_mi_inchikey
+CONFIG=config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml
+OUTPUT_DP=data/smarts/fraggnn_d3_ma_mi
 
 echo create local proc_dp: ${SLURM_TMPDIR}/data/proc
 mkdir -p ${SLURM_TMPDIR}/data/proc
