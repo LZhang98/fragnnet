@@ -265,7 +265,7 @@ if __name__ == "__main__":
 	#parser.add_argument("--script_kwargs", type=str, help='arugments for python script eg."-w=online,-c=config/debug_d4_tiny.yml"', default="")
 	parser.add_argument("--job_name", type=str, required=True)
 	parser.add_argument('--cc_email', help='email', default='fw4@ualberta.ca')
-	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart','rrg-rgreiner','def-dwishart','def-rgreiner'])
+	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart','rrg-rgreiner','def-dwishart','def-rgreiner','aip-rgreiner'])
 	parser.add_argument('--python_env', default="./FRAG-GNN-GPU", help="virtualenv location")
 	parser.add_argument('--python_version', default="3.11", choices=['3.10','3.11'], help="python version")
 	parser.add_argument('--rdkit_version', default="2023.9.5", choices=['2022.3.5','2023.9.5','2024.03.5'], help="virtualenv location")
