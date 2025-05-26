@@ -47,8 +47,8 @@ pip install pyteomics-4.7.5-py3-none-any.whl
 # go to source location
 cd ${FRAGNNET_DP}
 # copy source code
-#rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}
-#rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}
+rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}
+rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}
 #rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}
 #cp setup.cfg ${SLURM_TMPDIR}/
 #cp setup.py ${SLURM_TMPDIR}/
@@ -75,12 +75,11 @@ echo create local config_dp: ${SLURM_TMPDIR}/config/
 mkdir -p ${SLURM_TMPDIR}/config/
 
 # copy proc file
-cd ${FRAGNNET_DP}
-rsync -av ./data/proc/${DATASET_NAME} ${SLURM_TMPDIR}/data/proc 
+rsync -av ${FRAGNNET_DP}/data/proc/${DATASET_NAME} ${SLURM_TMPDIR}/data/proc 
 echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/data/proc/${DATASET_NAME})
 
 # copy split file
-rsync -av ./data/split/${SPLIT} ${SLURM_TMPDIR}/data/split 
+rsync -av ${FRAGNNET_DP}/data/split/${SPLIT} ${SLURM_TMPDIR}/data/split 
 echo list file in local proc dir: $(ls ${SLURM_TMPDIR}/data/split/${SPLIT})
 
 # copy config files
