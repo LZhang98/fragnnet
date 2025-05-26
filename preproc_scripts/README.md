@@ -10,7 +10,7 @@ The raw NIST data can be exported using the instructions [here](https://github.c
 
 This assumes that the NIST20 data is in a folder `data/raw/nist_20`, containing two files: `hr_nist_msms.MSP` (the MSP file with the spectrum information) and `hr_nist_msms.MOL` (the MOL file with the molecule structures).
 
-This will create a new directory `data/dfv2`
+This will create a new directory `data/df`
 
 ```bash
 python preproc_scripts/01_prepare_df.py --msp_file nist_20/hr_nist_msms.MSP --mol_dir nist_20/hr_nist_msms.MOL --input_format msp+mol --output_format csv --output_dp data/df --output_name nist20_hr
