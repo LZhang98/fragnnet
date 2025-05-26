@@ -71,20 +71,20 @@ def filter_spec_mol(
 		print(">> frag mode in data:", spec_df["frag_mode"].unique())	
   
 	# ce filter
-	assert ces in ["ace", "nce", "ace_or_nce", None], ces
+	assert ces in ["ace", "nce", "any", None], ces
 	if ces == "ace":
 		print(">> require ace")
 		ace_mask = (~spec_df["ace"].isna())
 		print(f">> ace filter: {ace_mask.mean()}")
 		masks.append(ace_mask)
-	if ces == "nce":
+	elif ces == "nce":
 		print(">> require nce")
 		nce_mask = (~spec_df["nce"].isna())
 		print(f">> nce filter: {nce_mask.mean()}")
 		masks.append(nce_mask)
-	elif ces == "ace_or_nce":
+	elif ces == "any":
 		print(">> require ace or nce")
-		mask = (~spec_df["nce"].isna() or ~spec_df["ace"].isna())
+		mask = (~spec_df["nce"].isna() | ~spec_df["ace"].isna())
 		print(f">> ace_or_nce filter: {mask.mean()}")
 		masks.append(mask)
 		
@@ -124,11 +124,19 @@ def filter_spec_mol(
 	print(f">> prec mz: {prec_mz_mask.mean()}")
 	masks.append(prec_mz_mask)
   
+	# max prec mz
 	if max_prec_mz is not None:
 		print(f">> max_prec_mz {max_prec_mz}")
 		max_prec_mz_mask = (spec_df["prec_mz"] <= max_prec_mz)
 		print(f">> max prec mz: {max_prec_mz_mask.mean()}")
 		masks.append(max_prec_mz_mask)
+
+	# min prec mz
+	if min_prec_mz is not None:
+		print(f">> min_prec_mz {min_prec_mz}")
+		min_prec_mz_mask = (spec_df["prec_mz"] >= min_prec_mz)
+		print(f">> min prec mz: {min_prec_mz_mask.mean()}")
+		masks.append(min_prec_mz_mask)
 
 	# max peak mz
 	if max_peak_mz is not None:

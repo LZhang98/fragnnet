@@ -51,13 +51,13 @@ This step splits the data into training, validation, and test sets.
 Inchikey split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_key inchikey_s --primary_dsets nist20_hr --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_inchikey
+python preproc_scripts/04_prepare_split.py --split_key inchikey_s --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --ces any --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_inchikey
 ```
 
 Scaffold split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_key scaffold --primary_dsets nist20_hr --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
+python preproc_scripts/04_prepare_split.py --split_key scaffold --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --ces any --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
 ```
 
 ## Step 5: Preparing Optimal MAGMa DAGs (ICEBERG)

@@ -14,9 +14,9 @@ from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 def print_and_log(name,series,wandb_flag,stats_d):
 
 	stats = series.describe()
-	print(f"> {name}")
-	print(stats)
-	print()
+	# print(f"> {name}")
+	# print(stats)
+	# print()
 	for stat in ["mean","std","min","25%","50%","75%","max"]:
 		stats_d[f"{name}/{stat}"] = stats[stat]
 
@@ -280,15 +280,15 @@ def main(args):
 		peak_spec_df.to_pickle(spec_stats_fp)
 
 		# update the frag stats d
-		# for key in metric_keys+stats_cols:
-		# 	print_and_log(spec_prefix+key,peak_spec_df[key],wandb_flag,frag_stats_d)
+		for key in metric_keys+stats_cols:
+			print_and_log(spec_prefix+key,peak_spec_df[key],wandb_flag,frag_stats_d)
 
 		print("> Compute Molecule Stats")	
 
 		# collect across molecules and report summary statistics
 		peak_mol_df = peak_spec_df.drop(columns=[spec_key]).groupby("mol_id").agg(np.nanmean).reset_index()
-		# for key in metric_keys+stats_cols:
-		# 	print_and_log(mol_prefix+key,peak_mol_df[key],wandb_flag,frag_stats_d)
+		for key in metric_keys+stats_cols:
+			print_and_log(mol_prefix+key,peak_mol_df[key],wandb_flag,frag_stats_d)
 
 		# save molecule-level stats
 		peak_mol_df.to_pickle(mol_stats_fp)
