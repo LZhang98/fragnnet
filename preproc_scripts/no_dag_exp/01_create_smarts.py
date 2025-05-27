@@ -2,6 +2,7 @@ import os
 import argparse
 
 import torch as th
+import torch.nn.functional as F
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from frag_gnn.utils.frag_utils import th_long_to_mask, get_node_feats
 import pandas as pd
@@ -169,8 +170,7 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 	frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 	frag_node_mask = th_long_to_mask(get_node_feats(frag_pyg.x, frag_node_feat_idxs, "cc"))
 	frag_joint_formula_idxs = (get_node_feats(frag_pyg.x,frag_node_feat_idxs,"h_formulae_idx"))
-	#print(frag_node_mask.shape)
-	#print(frag_joint_formula_idxs.shape)
+
  
 	b_num_nodes = frag_node_mask.shape[0]
 	b_num_mw_per_node = 2 * num_hs + 1
@@ -189,16 +189,7 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 		all_atom_ids = th.arange(0, frag_node_mask.shape[1]).to(th.long)
 		frag_atom_ids = all_atom_ids[frag_node_mask[i]].tolist()
 		substructure_smarts, substructure_smiles, mw, substructure_formula = atom_ids_to_smarts(b_mol, frag_atom_ids)
-		# create set of mass for matching
-		#b_pred_mzs += [mw + H_MASS * j + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str] for j in range(-num_hs, num_hs + 1)]
-		#b_frag_node_ids += [i] * (2 * num_hs + 1)
-		#b_frag_node_hs += [j for j in range(-num_hs, num_hs + 1)]
-		# [0,-1,1,-2,2,-3,3,-4,4]
-		# cc_frag_joint_formula_idxs = frag_joint_formula_idxs[i].flatten()
-		#print(cc_frag_joint_formula_idxs)
-		#print((cc_frag_joint_formula_idxs == 0).nonzero().flatten())
-		#print(cc_frag_joint_formula_idxs)
-		#print(frag_h_mask[i].flatten())
+
 		b_frag_node_ids[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = i
 		b_frag_node_hs[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = th.arange(-num_hs, num_hs + 1)
 		b_pred_mzs[i * b_num_mw_per_node:(i + 1) * b_num_mw_per_node] = mw + H_MASS * th.arange(-num_hs, num_hs + 1) + PREC_TYPE_TO_MASS_DIFF[b_spec_prec_type_str]
@@ -210,9 +201,12 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 			nl_smarts_d.append([i, nl_substructure_smart, nl_substructure_smiles, nl_mw, nl_formula, b_spec_prec_type_str])
 	b_pred_mzs = b_pred_mzs * frag_h_mask.flatten()
 	# match the dag mzs with the true mzs
+	#b_true_mzs_raw = data['spec_mzs'][b_spec_mask]
+ 
 	b_true_mzs = data['spec_mzs'][b_spec_mask]
 	b_true_ints = data['spec_ints'][b_spec_mask]
- 
+	b_true_log_ints = th.log(F.normalize(b_true_ints, p=1, dim=0))
+
 	relative = True
 	b_match_mask = calculate_match_mzs(
 		b_true_mzs,
@@ -224,19 +218,12 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 
 	b_pred_match_mask = th.any(b_match_mask, dim=0)
 	#b_true_match_mask = th.any(b_match_mask, dim=1)
-	#print(f"b_match_mask: {b_match_mask.shape}")
-	#print(f"b_frag_node_ids: {b_frag_node_ids.shape}")
-	#print(f"b_pred_match_mask: {b_pred_match_mask.shape}")
+
 	matched_frag_node_id = b_frag_node_ids[b_pred_match_mask]
 	matched_frag_h = b_frag_node_hs[b_pred_match_mask]
 	matched_frag_mz = b_pred_mzs[b_pred_match_mask]
 	matched_peak_id = b_pred_match_mask.nonzero().squeeze(1)
-	#print(f"matched_peak_id: {matched_peak_id.shape}")
- 
-	#print(f"matched_frag_node_id: {matched_frag_node_id.shape}")
-	#print(f"matched_frag_h: {matched_frag_h.shape}")
-	#print(f"matched_frag_mz: {matched_frag_mz.shape}")
- 
+
 	fn_matches_d = {}
 	for fn_id, fn_mh, fn_mz, fn_peak_id in zip(matched_frag_node_id, matched_frag_h, matched_frag_mz, matched_peak_id):
 		node_id = fn_id.item()
@@ -245,11 +232,11 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 
 		# match the true mzs with the predicted frag mzs
 		fn_true_mz = b_true_mzs[b_match_mask[:, fn_peak_id]]
-		fn_true_ints = b_true_ints[b_match_mask[:, fn_peak_id]]
+		fn_true_ints = b_true_log_ints[b_match_mask[:, fn_peak_id]]
 		fn_matched_peaks = th.stack([fn_true_mz, fn_true_ints]).T
 		#print(f"fn_matched_peaks: {fn_matched_peaks.tolist()}")
 		#fn_matches_d[node_id]['matached_peak'] = fn_matched_peaks.tolist()
-		fn_matches_d[node_id].append((fn_mh.item(), fn_mz.item(), fn_matched_peaks.tolist()))
+		fn_matches_d[node_id].append((fn_mh.item(), fn_matched_peaks.tolist()))
 		
 	b_smarts_df = pd.DataFrame(b_smarts, columns=["node_id", "smarts", "smiles", "mw", "formula", "prec_type",])
 	b_smarts_df["mol_smiles"] = mol_smiles
@@ -267,10 +254,10 @@ def process_b_idx(b_idx, spec_batch_idxs, spec_prec_type_str, data, num_hs):
 def get_args():
 	parser = argparse.ArgumentParser(description="")
 	parser.add_argument("--template_fp", type=str, default="config/template.yml", help="Path to the config file")
-	#parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml", help="Path to the custom config file")
-	#parser.add_argument("--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file")
-	parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml", help="Path to the custom config file")
-	parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_ma_mi", help="Path to the output file")
+	parser.add_argument("--custom_fp", type=str, default="config/debug/debug_tiny.yml", help="Path to the custom config file")
+	parser.add_argument("--output_dp", type=str, default="./data/smarts/debug_tiny", help="Path to the output file")
+	#parser.add_argument("--custom_fp", type=str, default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml", help="Path to the custom config file")
+	#parser.add_argument("--output_dp", type=str, default="./data/smarts/fraggnn_d3_ma_mi", help="Path to the output file")
 	parser.add_argument("--batch_size", type=int, default=40, help="Batch size for the dataloader")
 	parser.add_argument("--num_workers", type=int, default=4)
 	parser.add_argument("--split_names", type=str, nargs="+", default=['train','val','test'], help="split to process")
@@ -290,6 +277,9 @@ if __name__ == "__main__":
 	config_d['frag_params']['preprocess'] = False
 	config_d['spec_params']['prec_type_str'] = True
 	config_d['num_workers'] = args.num_workers 
+	config_d['dynamic_batch_sampler'] = None
+	config_d['dynamic_batch_sampler'] = False
+
 	num_hs = config_d['num_hs']
  
 	# Create output directory
