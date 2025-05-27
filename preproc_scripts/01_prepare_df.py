@@ -277,88 +277,6 @@ def preproc_ms_files(ms_dp,ms_meta_fp,keys,num_entries):
 	ms_df = ms_df.reset_index(drop=True)
 	return ms_df
 
-PCDL_KEYS = {
-	"ACCESSION:" : "dset_spec_id",
-	"CH$SMILES:" : "smiles",
-	"CH$IUPAC: InChI" : "inchi",
-	"CH$NAME:" : "name",
-	"CH$FORMULA:" : "formula",
-	"CH$LINK: INCHIKEY" : "inchikey",
-	"CH$EXACT_MASS:" : "exact_mass",
-	"AC$MASS_SPECTROMETRY: ION_MODE" : "ion_mode",
-	"AC$MASS_SPECTROMETRY: COLLISION_ENERGY" : "col_energy",
-	"AC$INSTRUMENT_TYPE: " : "inst_type",
-	"AC$MASS_SPECTROMETRY: MS_TYPE" : "spec_type",
-	"MS$FOCUSED_ION: PRECURSOR_M/Z" : "prec_mz",
-	"MS$FOCUSED_ION: PRECURSOR_TYPE" : "prec_type",
-	"PK$NUM_PEAK:" : "num_peaks",
-}
-
-def read_pcdl(zipped_spectra_dp: str):
-	
-	def parse_pcdl(text_list: list[str], id_prefix = None):
-		data_dict = {}
-		for row in text_list:
-			str_row = row.decode("utf-8")
-			if str_row.startswith(" "):
-				mz, rel_int, _ = [float(i) for i in str_row.split()]
-				if "peaks" not in data_dict:
-					data_dict["peaks"] = ""
-				data_dict["peaks"] += f"{mz} {rel_int}\n"
-			else:
-				for key, col in PCDL_KEYS.items():
-					if str_row.startswith(key):
-						value = str_row.removeprefix(key).strip()
-						if col in ["exact_mass",'prec_mz']:
-							value = float(value)
-						elif col == 'col_energy':
-							value = f"{value} eV"
-						elif col  == "ion_mode" and value == "POSITIVE":
-							value = "P"
-						elif col  == "ion_mode" and value == "NEGATIVE":
-							value = "N"
-						elif col == "num_peaks":
-							value = int(value)
-						elif col == "smiles": #in case of chemaxon smiles eg.CC1C[C@H](C)C[C@H](OC) |t:46|
-							value = value.split()[0]
-						data_dict[col] = value
-		data_dict["dset_spec_id"] = f"{id_prefix}_{data_dict['dset_spec_id']}"
-		return data_dict
-
-	spectrum_list = []
-	print(zipped_spectra_dp)
-	zipped_spectra_filenames = [f for f in os.listdir(zipped_spectra_dp) if f.endswith(".zip")]
-	for zipped_spectra_filename in zipped_spectra_filenames:
-		zipped_spectra_fp = f"{zipped_spectra_dp}/{zipped_spectra_filename}"
-		spectra_libname = zipped_spectra_filename.removesuffix(".zip")
-		print(f"> parse zip file {zipped_spectra_fp}")
-		archive = zipfile.ZipFile(zipped_spectra_fp, 'r')
-		for file in archive.namelist():
-			with archive.open(file) as f:
-				text_list = f.readlines()
-				spectrum_list.append(parse_pcdl(text_list, spectra_libname))
-	
-	print(f"> {len(spectrum_list)} spectra parsed")
-	ms_df = pd.DataFrame(spectrum_list)
-	# this is one off, we need fix this
-	ms_df = ms_df.drop(ms_df[~ms_df["prec_type"].isin(["[M+H]+","[M-H]-"])].index)
-	# fill some extrat meta data
-	ms_df.loc[:,"frag_mode"] = "CID"
-	ms_df.loc[:,"notes"] = ""
-	selected_idx = ms_df.groupby(["inchikey","prec_type","col_energy"])['num_peaks'].idxmax()
-	ms_df = ms_df.loc[selected_idx]
-	ms_df.loc[:,"spec_id"] = np.arange(ms_df.shape[0])
-
-	# add ion_type
-	ms_df.loc[:,"ion_type"] = "ESI"
-	# add extra columns for compatibility
-	for value in MSP_KEY_DICT.values():
-		if value not in ms_df.columns:
-			ms_df.loc[:,value] = np.nan
-   
-	print(f"> {len(ms_df['inchikey'].unique())} unique inchikey")
-	return ms_df
-
 def process_ms_gym(ms_gym_tsv_fp, subset):
 	ms_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
  
@@ -416,7 +334,7 @@ if __name__ == "__main__":
 	parser.add_argument('--pkl_file', type=str, required=False)
 	parser.add_argument('--ms_dir', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
-	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip"], required=True)
+	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
@@ -424,7 +342,6 @@ if __name__ == "__main__":
 	parser.add_argument('--output_format', type=str, default="json", choices=["json","csv"])
 	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#","ID"])
 	parser.add_argument('--ms_gym_tsv', type=str, required=False)
-	parser.add_argument('--pcdl_dir', type=str, required=False)
 	args = parser.parse_args()
 
 	os.makedirs(args.output_dp,exist_ok=True)
@@ -470,8 +387,6 @@ if __name__ == "__main__":
 		spec_df, split_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv), 'extra')
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
-	elif args.input_format == "pcdl_zip":
-		spec_df = read_pcdl(os.path.join(args.raw_data_dp,args.pcdl_dir))
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	
