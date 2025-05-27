@@ -4,7 +4,7 @@
 
 This repository contains the code and models for the paper **FraGNNet: A Deep Probabilistic Model for Mass Spectrum Prediction**. FraGNNet is a deep probabilistic graph neural network (GNN) model for predicting tandem mass spectra (MS/MS) from molecular structures. FraGNNet predicts MS/MS spectra from molecular structures using a combination of:
 - A **recursive bond-breaking algorithm** for fragment generation.
-- A **hierarchical graph neural network (GNN)** for probabilistic mass spectrum prediction.
+- A **graph neural network (GNN)** for predicting the spectrum from fragments.
 
 This method provides:
 - High mass accuracy.
@@ -90,7 +90,13 @@ Use the following script to install PyTorch-related dependencies:
 python install_lib.py
 ```
 
+## Contributors
+
+- Adamo Young ([adamoyoung](https://github.com/adamoyoung))
+- Fei Wang ([7FeiW](https://github.com/7FeiW))
+
 ## Citation
+
 ````bibtex
 @article{fragnnet,
   title={FraGNNet: A Deep Probabilistic Model for Mass Spectrum Prediction},
