@@ -74,7 +74,7 @@ def main(args):
 			'',
 			#"# go to script dir",
 			#f"cd {os.path.abspath(args.frag_gnn_dp)}",
-			f'FRAGNNET_DP= {os.path.abspath(args.frag_gnn_dp)}',
+			f'FRAGNNET_DP={os.path.abspath(args.frag_gnn_dp)}',
 			'',
 			'# create local env',
 			# go to slurm and create virtual env
@@ -107,17 +107,28 @@ def main(args):
 	script_lines.extend(
 		[	
    			''
-			'# go to source location',
+			'# go to source location and install',
 			'cd ${FRAGNNET_DP}',
-			#'# copy source code',
+			'pip install -I .',
+			'',
+   			'# copy script code',
 			'rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}',
 			'rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}',
 			#'rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}',
 			#'cp setup.cfg ${SLURM_TMPDIR}/',
 			#'cp setup.py ${SLURM_TMPDIR}/',
 			# instal fragnnet
-			'pip install -I .',
-			''
+			'',
+   			#'# create local data dir',
+			#'echo create local proc_dp: ${SLURM_TMPDIR}/data/proc',
+			#'mkdir -p ${SLURM_TMPDIR}/data/proc',
+			#'echo create local frag_dp: ${SLURM_TMPDIR}/data/frag/',
+			#'mkdir -p ${SLURM_TMPDIR}/data/frag/',
+			#'echo create local split_dp: ${SLURM_TMPDIR}/data/split/',
+			#'mkdir -p ${SLURM_TMPDIR}/data/split/',
+			#'# create local config dir',
+			#'echo create local config_dp: ${SLURM_TMPDIR}/config/',
+			#'mkdir -p ${SLURM_TMPDIR}/config/'
 		]
 	)
  
@@ -177,17 +188,20 @@ def main(args):
 		)
 
 	for name in data_keyword:
+		path_value  = config_d[name]
+		if path_value.startswith('./'):
+			path_value = path_value[2:]
 		if name not in config_d:
 			print(f"missing {name} in config file")
 		if name != 'frag_dp':
-			script_lines.extend(
-       			[f"# copy {name} file from {config_d[name]} to slurm tmp dir",
-				 f"rsync -av ${{FRAGNNET_DP}}/{config_d[name]} ${{SLURM_TMPDIR}}/{config_d[name]}"])
-			print(f"> adding cmd to copy {name} file {config_d[name]}")
+				print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
+				script_lines.extend(
+					[f"# copy {name} file from {path_value} to slurm tmp dir",
+					f"rsync -av --relative ${{FRAGNNET_DP}}/./{path_value} ${{SLURM_TMPDIR}}"])
 		elif name == 'frag_dp':
 			# check if frag_dp is a file or dir, if it is file, copy it and unpack
 			tar_ext = None
-			dag_dp = config_d[name]
+			dag_dp = path_value
 			frag_dp = dag_dp.rsplit("/",1)[0]
 			for ext in ['.tar','.tar.xz', '.tar.gz', '.tgz']:
 				if os.path.isfile(frag_dp+ext):
@@ -197,14 +211,14 @@ def main(args):
 				print(f"> adding cmd to copy {frag_dp+tar_ext}")
 				script_lines.extend(
 	   				[f"# copy {name} file from {frag_dp}{tar_ext} to slurm tmp dir and unpack",
-					 f"rsync -av ${{FRAGNNET_DP}}/{frag_dp+tar_ext} ${{SLURM_TMPDIR}}/{frag_dp+tar_ext}",
-					f"tar -xf ${{SLURM_TMPDIR}}/{frag_dp+tar_ext} -C  ${{SLURM_TMPDIR}}/{frag_dp}",
+					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{frag_dp+tar_ext} ${{SLURM_TMPDIR}}",
+					f"tar -xf ${{SLURM_TMPDIR}}/{frag_dp+tar_ext} -C ${{SLURM_TMPDIR}}/{frag_dp.rsplit('/',1)[0]}",
 					])
 			else:
 				print(f"> adding cmd to copy directory {dag_dp}")
 				script_lines.extend(
 	   				[f"# copy {name} file from {dag_dp} to slurm tmp dir",
-					 f"rsync -av ${{FRAGNNET_DP}}/{dag_dp} ${{SLURM_TMPDIR}}/{dag_dp}"
+					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{dag_dp} ${{SLURM_TMPDIR}}"
 					])
 
     # soft link back to home directy for wandb
