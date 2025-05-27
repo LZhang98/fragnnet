@@ -124,7 +124,6 @@ def main(args):
 	# https://lightning.ai/docs/pytorch/stable/clouds/cluster_advanced.html
 	python_line = f"srun python {args.python_script_fp}"
 
-	#print(args.script_kwargs)
 	custom_config_fp = None
 	# default config template
 	config_template_fp = os.path.join(args.frag_gnn_dp,"config","template.yml")
@@ -268,7 +267,7 @@ if __name__ == "__main__":
 	parser.add_argument('--cc_account', default='rrg-dwishart', choices=['rrg-dwishart','rrg-rgreiner','def-dwishart','def-rgreiner','aip-rgreiner'])
 	parser.add_argument('--python_env', default="./FRAG-GNN-GPU", help="virtualenv location")
 	parser.add_argument('--python_version', default="3.11", choices=['3.10','3.11'], help="python version")
-	parser.add_argument('--rdkit_version', default="2023.9.5", choices=['2022.3.5','2023.9.5','2024.03.5'], help="virtualenv location")
+	parser.add_argument('--rdkit_version', default="2023.09.5", choices=['2022.03.5','2023.09.5','2024.03.5'], help="virtualenv location")
 	parser.add_argument('-i', '--interactive', type = bool, default=False, action=argparse.BooleanOptionalAction, help="set to true to print interative command")
 	parser.add_argument('--no_submit', type=bool, default=True)
 	args = parser.parse_args()
