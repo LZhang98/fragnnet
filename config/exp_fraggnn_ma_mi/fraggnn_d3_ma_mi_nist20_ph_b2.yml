@@ -1,6 +1,5 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ce_lin
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_ph_b2
 wandb_tags:
-- retrieval
 - nist20
 - d4
 - wr00
@@ -20,12 +19,12 @@ wandb_tags:
 - new_no_edges
 - skip_extra_losses
 - binned_cosine_similarity
-- ce
+- m+h
 
-spec_fp: data/proc/nist20mona23/spec_df.pkl
-mol_fp: data/proc/nist20mona23/mol_df.pkl
-split_dp: data/split/nist20_mona23_d4_wr00_inchikey_casmi16
-frag_dp: data/frag/nist20mona23_d3_h4_isoFalse_nb2/dags
+spec_fp: data/proc/nist20mona23v3/spec_df.pkl
+mol_fp: data/proc/nist20mona23v3/mol_df.pkl
+split_dp: data/split/nist20mona23v3_ma_mi_inchikey_[M+H]+
+frag_dp: data/frag/nist20mona23v3_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
@@ -36,14 +35,17 @@ frag_params:
   preload: True
   preprocess: True
 spec_params:
-  merge: False
-  nce: True
-  merge_keep_ces: False
+  merge: True
+  nce: False
+  merge_keep_ces: True
   preprocess: True
-m_ce_insert_mlp_embed: False
-m_ce_insert_mlp_bin: False
-ce_insert_mlp: False
-ce_insert_mlp_lin: True
+  prec_type_str: False
+  prec_types:
+    - "[M+H]+"
+  inst_type: True
+  inst_types:
+    - "FT"
+    - "QTOF"
 mol_params:
   preprocess: True
 
@@ -77,10 +79,20 @@ eval_mz_bin_res:
 
 precision: 32
 use_tensor_float32: True
-automatic_optimization: True
+automatic_optimization: False
+dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+
+group_sampler: False
+group_sampler_type: group #[group, group_mol, mol]
+group_sampler_max_per_group: 5
+simple_group_sampler: True
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group #[group, group_mol, mol]
+
+pl_enable_progress_bar: True
 activation_checkpointing: False
 compile: True
 pin_memory: True
 loss_vectorized: True
-loss_batch_size: 32
+loss_batch_size: 16
 skip_extra_losses: True

@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ce_lin_ma_mi
+wandb_name: nist20_inchikey_fraggnn_d3_ce_embed_sgs_grp_20
 wandb_tags:
 - retrieval
 - nist20
@@ -21,10 +21,12 @@ wandb_tags:
 - skip_extra_losses
 - binned_cosine_similarity
 - ce
+- sgs_grp
+- m+h
 
 spec_fp: data/proc/nist20mona23v3/spec_df.pkl
 mol_fp: data/proc/nist20mona23v3/mol_df.pkl
-split_dp: data/split/nist20v3_ma_mi_inchikey
+split_dp: data/split/nist20mona23v3_ma_mi_inchikey_[M+H]+
 frag_dp: data/frag/nist20mona23v3_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
@@ -36,22 +38,17 @@ frag_params:
   preload: True
   preprocess: True
 spec_params:
-  merge: False
-  nce: True
-  merge_keep_ces: False
+  merge: True
+  nce: False
+  merge_keep_ces: True
   preprocess: True
   prec_type_str: False
   prec_types:
     - "[M+H]+"
-    - "[M-H]-"
   inst_type: True
   inst_types:
     - "FT"
     - "QTOF"
-ce_insert_type: lin # ce insert type ["id","lin","embed","bin"]
-ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]
-ce_insert_merge: False # merge ce embedding
-ce_insert_size: 32
 mol_params:
   preprocess: True
 
@@ -90,9 +87,9 @@ dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
-group_sampler_max_per_group: 3
-simple_group_sampler: False
-simple_group_sampler_avg_per_group: 5
+group_sampler_max_per_group: 5
+simple_group_sampler: True
+simple_group_sampler_avg_per_group: 20
 simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: True

@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ce_id_ma_mi
+wandb_name: nist20_inchikey_fraggnn_d3_ce_lin_ma_mi
 wandb_tags:
 - retrieval
 - nist20
@@ -57,7 +57,7 @@ mol_params:
 
 train_batch_size: 256
 eval_batch_size: 256
-accumulate_grad_batches: 4
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
@@ -87,6 +87,29 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+
+group_sampler: False
+group_sampler_type: group #[group, group_mol, mol]
+group_sampler_max_per_group: 3
+simple_group_sampler: False
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group #[group, group_mol, mol]
+
+pl_enable_progress_bar: True
+activation_checkpointing: False
+compile: True
+pin_memory: True
+loss_vectorized: True
+loss_batch_size: 16
+skip_extra_losses: True
+
+group_sampler: False
+group_sampler_type: group #[group, group_mol, mol]
+group_sampler_max_per_group: 5
+simple_group_sampler: True
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group #[group, group_mol, mol]
+
 pl_enable_progress_bar: True
 activation_checkpointing: False
 compile: True
