@@ -23,7 +23,6 @@ fragnnet/
 ├── README.md
 ├── config # config files
 │   └── template.yml # config file template
-├── containers # apptainer file
 ├── data # data directory
 │   ├── benchmark
 │   ├── df
@@ -35,13 +34,10 @@ fragnnet/
 ├── env # environment setup bash
 ├── figs # figures
 ├── preproc_scripts # data preprocess scripts
-│   ├── msgym_ms2c
-│   └── pubchem_ms2c
 ├── scripts # training and evalution scripts
-│   ├── misc
-│   ├── ms2c
 ├── setup.cfg
 ├── setup.py
+├── install_lib.py # install pytorch related dependencies
 ├── src # fragnnet source code
 │   ├── fragnnet
 ```
