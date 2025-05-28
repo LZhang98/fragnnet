@@ -118,7 +118,9 @@ def main(args):
 	)
  
 	# https://lightning.ai/docs/pytorch/stable/clouds/cluster_advanced.html
-	python_line = f"srun python {args.python_script_fp}"
+	# lightning seems have issues with srun
+	# disable DDP in the trainer
+	python_line = f"python {args.python_script_fp}"
 
 	custom_config_fp = None
 	# default config template
