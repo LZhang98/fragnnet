@@ -55,6 +55,7 @@ if __name__ == "__main__":
 	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
 	parser.add_argument("--b_isomorphic",type=booltype,default=False)
 	parser.add_argument("--max_iterations",type=int,default=2)
+	parser.add_argument("--max_time",type=int,default=150)
 	args = parser.parse_args()
 
 	np.random.seed(420)
@@ -101,11 +102,12 @@ if __name__ == "__main__":
 	else:
 		smiles = args.compound_smiles
 
+	import pdb; pdb.set_trace()
 	frag_kw_d = dict(
 		max_depth=args.max_depth,
 		h_prior=args.h_prior,
 		max_h_transfer=args.max_h_transfer,
-		frag_max_time=None,
+		frag_max_time=args.max_time,
 		isotopes=args.isotopes,
 		nb_isomorphic=args.nb_isomorphic,
 		b_isomorphic=args.b_isomorphic,
