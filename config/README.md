@@ -79,7 +79,10 @@ The following seeds are used:
 - SEED=13: 263526
 - SEED=14: 623677
 
-Baseline Ensemble [configs](./entropy/d4_baseline_ens/)
-Low Entropy Ensemble [configs](./entropy/d4_low_ens/)
-High Entropy Ensemble [configs](./entropy/d4_high_ens/)
+
+Baseline Ensemble: [configs](./entropy/d4_baseline_ens/)
+
+Low Entropy Ensemble: [configs](./entropy/d4_low_ens/)
+
+High Entropy Ensemble: [configs](./entropy/d4_high_ens/)
 
