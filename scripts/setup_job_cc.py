@@ -106,7 +106,6 @@ def main(args):
 	# copy fragnnet sourfce code and install to venv
 	script_lines.extend(
 		[	
-   			''
 			'# go to source location and install',
 			'cd ${FRAGNNET_DP}',
 			'pip install -I .',
@@ -114,21 +113,7 @@ def main(args):
    			'# copy script code',
 			'rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}',
 			'rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}',
-			#'rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" src ${SLURM_TMPDIR}',
-			#'cp setup.cfg ${SLURM_TMPDIR}/',
-			#'cp setup.py ${SLURM_TMPDIR}/',
-			# instal fragnnet
 			'',
-   			#'# create local data dir',
-			#'echo create local proc_dp: ${SLURM_TMPDIR}/data/proc',
-			#'mkdir -p ${SLURM_TMPDIR}/data/proc',
-			#'echo create local frag_dp: ${SLURM_TMPDIR}/data/frag/',
-			#'mkdir -p ${SLURM_TMPDIR}/data/frag/',
-			#'echo create local split_dp: ${SLURM_TMPDIR}/data/split/',
-			#'mkdir -p ${SLURM_TMPDIR}/data/split/',
-			#'# create local config dir',
-			#'echo create local config_dp: ${SLURM_TMPDIR}/config/',
-			#'mkdir -p ${SLURM_TMPDIR}/config/'
 		]
 	)
  
@@ -182,7 +167,6 @@ def main(args):
  	# copy data files	
 	script_lines.extend(
 			[
-				'',
 				'#copy files'
 			]
 		)
@@ -224,8 +208,8 @@ def main(args):
     # soft link back to home directy for wandb
 	script_lines.extend(
 		[
-			'',
 			'# soft link to wandb',
+   			'cd ${SLURM_TMPDIR}',
 			'ln -s ${FRAGNNET_DP}/wandb wandb'
 		]
 	)
@@ -233,8 +217,8 @@ def main(args):
 	# add python line
 	script_lines.extend(
 		[
-			'',
-			'cd ${SLURM_TMPDIR}',
+			'# run python script',
+   			'cd ${SLURM_TMPDIR}',
 			python_line
 		]
 	)
