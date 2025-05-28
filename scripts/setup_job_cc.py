@@ -75,10 +75,13 @@ def main(args):
 			#"# go to script dir",
 			#f"cd {os.path.abspath(args.frag_gnn_dp)}",
 			f'FRAGNNET_DP={os.path.abspath(args.frag_gnn_dp)}',
-			'',
+			'WORKING_DIR=${SLURM_TMPDIR}/${SLURM_JOB_ID}',
+			'# create work dir',
+			'mkdir -p ${WORKING_DIR}',
+			''
 			'# create local env',
 			# go to slurm and create virtual env
-			'cd  ${SLURM_TMPDIR}',
+			'cd  ${WORKING_DIR}',
 			'virtualenv FRAG-GNN',
 			'source FRAG-GNN/bin/activate',
 			'pip install --no-index --upgrade pip',
@@ -97,7 +100,7 @@ def main(args):
 			'pip install --no-index cython==3.0.12',
 			'',
 			'# intall from whl',
-			'cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${SLURM_TMPDIR}/pyteomics-4.7.5-py3-none-any.whl',
+			'cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl',
 			'pip install pyteomics-4.7.5-py3-none-any.whl',
 			''
 		]
@@ -111,8 +114,8 @@ def main(args):
 			'pip install -I .',
 			'',
    			'# copy script code',
-			'rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${SLURM_TMPDIR}',
-			'rsync -av --exclude=".*" --exclude="__pycache__" scripts ${SLURM_TMPDIR}',
+			'rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${WORKING_DIR}',
+			'rsync -av --exclude=".*" --exclude="__pycache__" scripts ${WORKING_DIR}',
 			'',
 		]
 	)
@@ -183,7 +186,7 @@ def main(args):
 				print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
 				script_lines.extend(
 					[f"# copy {name} file from {path_value} to slurm tmp dir",
-					f"rsync -av --relative ${{FRAGNNET_DP}}/./{path_value} ${{SLURM_TMPDIR}}"])
+					f"rsync -av --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}"])
 		elif name == 'frag_dp':
 			# check if frag_dp is a file or dir, if it is file, copy it and unpack
 			tar_ext = None
@@ -197,14 +200,14 @@ def main(args):
 				print(f"> adding cmd to copy {frag_dp+tar_ext}")
 				script_lines.extend(
 	   				[f"# copy {name} file from {frag_dp}{tar_ext} to slurm tmp dir and unpack",
-					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{frag_dp+tar_ext} ${{SLURM_TMPDIR}}",
-					f"tar -xf ${{SLURM_TMPDIR}}/{frag_dp+tar_ext} -C ${{SLURM_TMPDIR}}/{frag_dp.rsplit('/',1)[0]}",
+					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{frag_dp+tar_ext} ${{WORKING_DIR}}",
+					f"tar -xf ${{WORKING_DIR}}/{frag_dp+tar_ext} -C ${{WORKING_DIR}}/{frag_dp.rsplit('/',1)[0]}",
 					])
 			else:
 				print(f"> adding cmd to copy directory {dag_dp}")
 				script_lines.extend(
 	   				[f"# copy {name} file from {dag_dp} to slurm tmp dir",
-					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{dag_dp} ${{SLURM_TMPDIR}}"
+					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{dag_dp} ${{WORKING_DIR}}"
 					])
 
     # soft link back to home directy for wandb
@@ -215,7 +218,7 @@ def main(args):
 			'	mkdir ${FRAGNNET_DP}/wandb',
 			'fi',
 			'# soft link to wandb',
-   			'cd ${SLURM_TMPDIR}',
+   			'cd ${WORKING_DIR}',
 			'if [ ! -e wandb ]; then',
 			'	ln -s ${FRAGNNET_DP}/wandb wandb',
 			'fi',
@@ -226,7 +229,7 @@ def main(args):
 	script_lines.extend(
 		[
 			'# run python script',
-   			'cd ${SLURM_TMPDIR}',
+   			'cd ${WORKING_DIR}',
 			python_line
 		]
 	)
