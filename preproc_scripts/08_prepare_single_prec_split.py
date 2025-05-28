@@ -2,8 +2,6 @@ import argparse
 import os
 import pandas as pd
 
-from frag_gnn.utils.frag_utils import ELEMENTS
-
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
@@ -28,4 +26,4 @@ if __name__ == "__main__":
 			o_split_dp = f"{args.split_dp}_{prec_type}"
 			print(f"Processing split: {split}, prec_type: {prec_type}, output dir: {o_split_dp}")
 			os.makedirs(o_split_dp, exist_ok=True)
-			split_df[split_df['prec_type'] == prec_type][['spec_id','mol_id','group_id']].to_csv(os.path.join(o_split_dp, f"{split}_id.csv"), index=False)
+			split_df[split_df['prec_type'] == prec_type][['spec_id','mol_id','group_id']].to_csv(os.path.join(o_split_dp, f"{split}_ids.csv"), index=False)
