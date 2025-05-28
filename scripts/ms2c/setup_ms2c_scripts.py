@@ -54,7 +54,7 @@ def main(args):
                     GEN_ID = MODEL_TYPE_TO_ID["iceberg_gen"][SEED_IDX]
                     INTEN_ID = MODEL_TYPE_TO_ID["iceberg_inten3_100_long"][SEED_IDX]
                     MAGMA_DP=f"{DIR}/magma/pred_magma_nist20v3_{SPLIT}_iceberg_gen_s{SEED_IDX}_{GEN_ID}"
-                    PY_FP = "scripts/ms2c/pubchem_v1/run_iceberg_ms2c_predict_val.py"
+                    PY_FP = "scripts/ms2c/run_iceberg_ms2c_predict_val.py"
                     PY_ARGS = [
                         "run_iceberg_gen=False",
                         f"proc_dp={PROC_DP}",
@@ -67,7 +67,7 @@ def main(args):
                     ]
                 else:
                     ID = MODEL_TYPE_TO_ID[MODEL][SEED_IDX]
-                    PY_FP = "scripts/ms2c/pubchem_v1/run_ms2c_predict_val.py"
+                    PY_FP = "scripts/ms2c/run_ms2c_predict_val.py"
                     PY_ARGS = [
                         f"proc_dp={PROC_DP}",
                         f"frag_dp={FRAG_DP}",
@@ -113,7 +113,7 @@ if __name__ == "__main__":
         type=str,
         nargs="+",
         default=[
-            # "fraggnn_d3_long",
+            "fraggnn_d3_long",
             "fraggnn_d4_long",
             "iceberg_inten3_100_long",
             "neims_long",
