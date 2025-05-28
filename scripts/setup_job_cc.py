@@ -109,13 +109,14 @@ def main(args):
 	# copy fragnnet sourfce code and install to venv
 	script_lines.extend(
 		[	
-			'# go to source location and install',
-			'cd ${FRAGNNET_DP}',
-			'pip install -I .',
-			'',
    			'# copy script code',
-			'rsync -av --exclude=".*" --exclude="__pycache__" preproc_scripts ${WORKING_DIR}',
-			'rsync -av --exclude=".*" --exclude="__pycache__" scripts ${WORKING_DIR}',
+			'rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/preproc_scripts ${WORKING_DIR}',
+			'rsync -av --exclude=".*" --exclude="__pycache__" ${FRAGNNET_DP}/scripts ${WORKING_DIR}',
+			'# copy src code - this is needed to avoid issues with multiple install read the same src code',
+			'rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" ${FRAGNNET_DP}/src ${WORKING_DIR}',
+			'cp ${FRAGNNET_DP}/setup.cfg ${WORKING_DIR}/',
+			'cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/',
+			'pip install -I ${WORKING_DIR}',
 			'',
 		]
 	)
