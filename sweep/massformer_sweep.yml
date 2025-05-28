@@ -1,6 +1,6 @@
-entity: frag-gnn
-project: frag-gnn
-program: /h/adamo/frag-gnn/scripts/run_wandb_sweep.py
+entity: fragnnet
+project: fragnnet
+program: ~/fragnnet/scripts/run_wandb_sweep.py
 method: random
 name: massformer_sweep
 description: Optimize MassFormer hyperparameters for binned cosine similarity (0.01 Da)

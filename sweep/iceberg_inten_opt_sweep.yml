@@ -1,9 +1,9 @@
-entity: frag-gnn
-project: frag-gnn
-program: /h/adamo/frag-gnn/scripts/run_wandb_sweep.py
+entity: fragnnet
+project: fragnnet
+program: ~/fragnnet/scripts/run_wandb_sweep.py
 method: random
-name: iceberg_inten_100_sweep
-description: Optimize ICEBERG INTEN-100 hyperparameters for binned cosine similarity (0.01 Da)
+name: iceberg_inten_opt_sweep
+description: Optimize ICEBERG INTEN (+OPT) hyperparameters for binned cosine similarity (0.01 Da)
 metric:
   goal: maximize
   name: val_cos_sim_0.01_best/mean

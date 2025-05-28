@@ -1,9 +1,9 @@
-entity: frag-gnn
-project: frag-gnn
-program: /h/adamo/frag-gnn/scripts/run_wandb_sweep.py
+entity: fragnnet
+project: fragnnet
+program: ~/fragnnet/scripts/run_wandb_sweep.py
 method: random
-name: d3_sweep
-description: Optimize FRAG-GNN-D3 hyperparameters for binned cosine similarity (0.01 Da)
+name: d4_sweep
+description: Optimize fragnnet-D4 hyperparameters for binned cosine similarity (0.01 Da)
 metric:
   goal: maximize
   name: val_cos_sim_0.01_best/mean
