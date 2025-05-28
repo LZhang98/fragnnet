@@ -1,9 +1,9 @@
 echo 'make sure run this at top level project dir'
 echo 'this will require wandb, python3.11 and stdenv/2023 module loaded'
-if [ ! -d " ./wandb_venv" ]; then
+if [ ! -d " wandb_venv" ]; then
     echo "Virtual environment wand_venv does not exists"
     echo "Creating virtual environment..."
-    python venv wand_venv
+    virtualenv wand_venv
     source wandb_venv/bin/activate
     pip install --no-index --upgrade pip
     pip install --no-index wandb
