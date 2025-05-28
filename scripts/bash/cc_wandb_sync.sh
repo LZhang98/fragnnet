@@ -1,16 +1,16 @@
 echo 'make sure run this at top level project dir'
-source ~/.bashrc
+echo 'this will require wandb, python3.11 and stdenv/2023 module loaded'
+if [ ! -d " ./wandb_venv" ]; then
+    echo "Virtual environment wand_venv does not exists"
+    echo "Creating virtual environment..."
+    python venv wand_venv
 
-module load StdEnv/2020
-module load python/3.10
-module load cuda/11.7
-module load rust/1.70.0
-
-source FRAG-GNN-GPU2/bin/activate
-
-#export WANDB_DIR='./wandb'
-#export WANDB_CACHE_DIR='./wandb/.cache'
-#export WANDB_CONFIG_DIR='./wandb/.config'
+    pip install --no-index --upgrade pip
+    pip install --no-index wandb
+else
+    echo "Virtual environment wand_venv already exists"
+    source wandb_venv/bin/activate
+fi
 
 # https://github.com/wandb/wandb/issues/2423
 wandb sync --sync-all --append
