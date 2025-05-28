@@ -210,9 +210,15 @@ def main(args):
     # soft link back to home directy for wandb
 	script_lines.extend(
 		[
+			'# create wandb directory if not exists',
+   			'if [ ! -d ${FRAGNNET_DP}/wandb ]; then',
+			'	mkdir ${FRAGNNET_DP}/wandb',
+			'fi',
 			'# soft link to wandb',
    			'cd ${SLURM_TMPDIR}',
-			'ln -s ${FRAGNNET_DP}/wandb wandb'
+			'if [ ! -e wandb ]; then',
+			'	ln -s ${FRAGNNET_DP}/wandb wandb',
+			'fi',
 		]
 	)
  
