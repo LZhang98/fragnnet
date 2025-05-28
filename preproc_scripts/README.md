@@ -10,7 +10,7 @@ The raw NIST data can be exported using the instructions [here](https://github.c
 
 This assumes that the NIST20 data is in a folder `data/raw/nist_20`, containing two files: `hr_nist_msms.MSP` (the MSP file with the spectrum information) and `hr_nist_msms.MOL` (the MOL file with the molecule structures).
 
-This will create a new directory `data/dfv2`
+This will create a new directory `data/df`
 
 ```bash
 python preproc_scripts/01_prepare_df.py --msp_file nist_20/hr_nist_msms.MSP --mol_dir nist_20/hr_nist_msms.MOL --input_format msp+mol --output_format csv --output_dp data/df --output_name nist20_hr
@@ -30,7 +30,7 @@ python preproc_scripts/02_prepare_proc.py --df_dp data/df --dsets nist20_hr --pr
 
 ## Step 3: Generating Fragmentation DAGs
 
-This step generates fragmentation DAGs that are used for the FraGNNet models.
+This step generates fragmentation DAGs that are used for the FraGNNet models. Since fragmentation can be slow, we recommend using a compute with many cores (by default, the script will use all available cores). 
 
 Frag configuration: depth 3 (used for FraGNNet-D3), isomorphism check with no bond information (nb, 3 WL iterations)
 
@@ -51,13 +51,13 @@ This step splits the data into training, validation, and test sets.
 Inchikey split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_key inchikey_s --primary_dsets nist20_hr --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_inchikey
+python preproc_scripts/04_prepare_split.py --split_key inchikey_s --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --ces any --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_inchikey
 ```
 
 Scaffold split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_key scaffold --primary_dsets nist20_hr --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
+python preproc_scripts/04_prepare_split.py --split_key scaffold --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --ces any --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
 ```
 
 ## Step 5: Preparing Optimal MAGMa DAGs (ICEBERG)

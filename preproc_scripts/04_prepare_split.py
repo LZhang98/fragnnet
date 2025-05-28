@@ -29,6 +29,7 @@ def make_splits(args):
 		prec_types=prec_types,
 		max_peak_mz=args.max_peak_mz,
 		max_prec_mz=args.max_prec_mz,
+		min_prec_mz=args.min_prec_mz,
 		elements=args.elements,
 		frag_modes=frag_modes,
 		ion_modes=ion_modes,
@@ -236,20 +237,6 @@ def make_splits(args):
 		meta_fp = os.path.join(split_data['split_dp'],"meta.json")
 		with open(meta_fp,"w") as f:
 			json.dump(meta_d,f,indent=4)
-   
-	"""
-	os.makedirs(args.split_dp,exist_ok=True)
-	# save ids
-	print(f"> Split sizes (spec_id): train = {train_df.shape[0]}, val = {val_df.shape[0]}, test = {test_df.shape[0]}")
-	train_fp = os.path.join(args.split_dp,"train_ids.csv")
-	val_fp = os.path.join(args.split_dp,"val_ids.csv")
-	test_fp = os.path.join(args.split_dp,"test_ids.csv")
-	secondary_fp = os.path.join(args.split_dp,"secondary_ids.csv")
-	train_df.to_csv(train_fp,index=False)
-	val_df.to_csv(val_fp,index=False)
-	test_df.to_csv(test_fp,index=False)
-	secondary_df.to_csv(secondary_fp,index=False)
-	"""
 	
 	return
 
@@ -278,10 +265,10 @@ if __name__ == "__main__":
 	parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 	parser.add_argument("--prec_types", type=str,nargs="+", required=False, default='any')
-	parser.add_argument("--inst_types", type=str,nargs="+", required=False, default='any')
-	parser.add_argument("--frag_modes", type=str,nargs="+", required=False, default='any')
-	parser.add_argument("--ion_modes", type=str,nargs="+", required=False, default='any')
-	parser.add_argument('--ces',required=False,choices=['nce', 'ace', 'nce_or_ace'])
+	parser.add_argument("--inst_types", type=str, nargs="+", required=False, default='any')
+	parser.add_argument("--frag_modes", type=str, nargs="+", required=False, default='any')
+	parser.add_argument("--ion_modes", type=str, nargs="+", required=False, default='any')
+	parser.add_argument('--ces',required=False, choices=['nce', 'ace', 'any'], default='any')
 
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=420420)

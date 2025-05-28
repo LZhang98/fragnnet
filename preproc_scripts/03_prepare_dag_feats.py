@@ -14,9 +14,9 @@ from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 def print_and_log(name,series,wandb_flag,stats_d):
 
 	stats = series.describe()
-	print(f"> {name}")
-	print(stats)
-	print()
+	# print(f"> {name}")
+	# print(stats)
+	# print()
 	for stat in ["mean","std","min","25%","50%","75%","max"]:
 		stats_d[f"{name}/{stat}"] = stats[stat]
 

@@ -7,13 +7,13 @@ name = "fragnnet"
 version = "2025.05"
 description = "MS/MS prediction for small molecules"
 readme = "README.md"
-license = { text = "BSD-2-Clause" }
+license = { text = "MIT" }
 requires-python = ">=3.10, <=3.12"
 dependencies = [
     "numpy>=1.24,<2",
     "cython==3.0.11",
     "cysignals",
-    "rdkit>=2023.9.5",
+    "rdkit==2022.09.4",
     "pandas",
     "networkx",
     "tqdm",
