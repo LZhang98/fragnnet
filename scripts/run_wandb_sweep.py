@@ -20,7 +20,7 @@ if __name__ == "__main__":
 		"-c",
 		"--custom_fp",
 		type=str,
-		default="config/sweep/d3_sweep.yml"
+		default="config/sweep/fragnnet_d3_sweep.yml"
 	)
 	parser.add_argument(
 		"-w",
