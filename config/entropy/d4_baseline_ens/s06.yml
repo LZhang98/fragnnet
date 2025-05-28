@@ -1,5 +1,5 @@
-wandb_name: entropyv3-1_scaffold_d4_baseline_ens_s06
-wandb_group: entropyv3-1_scaffold_d4_baseline_ens
+wandb_name: entropy_d4_baseline_ens_s06
+wandb_group: entropy_d4_baseline_ens
 
 # seed stuff
 seed: 499158
