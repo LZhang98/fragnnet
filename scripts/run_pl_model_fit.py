@@ -24,7 +24,7 @@ if __name__ == "__main__":
 		"-w",
 		"--wandb_mode",
 		type=str, 
-		default="online",
+		default="disabled",
 		choices=["online","offline","disabled"]
 	)
 	parser.add_argument(
