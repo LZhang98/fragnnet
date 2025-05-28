@@ -1,3 +1,4 @@
+import re
 import zipfile
 import numpy as np
 import os
@@ -50,6 +51,34 @@ MS_KEY_DICT = {
 META_KEYS = list(MS_KEY_DICT.keys())
 SPEC_KEYS = [">ms1peaks",">ms1merged",">ms2peaks",">ms2merged",">collision"]
 
+SPECTRAVERSE_MGF_KEY_DICT = {
+	'FORMULA': 'formula',
+	'SMILES': 'smiles',
+	'INCHI': 'inchi',
+	'INCHIKEY': 'inchi_key',
+	'IONMODE': 'ion_mode',
+	'ADDUCT': 'prec_type',
+	'COMPOUND_NAME': 'compound_name',
+	'NUM_PEAKS': 'num_peaks',
+	'PRECURSOR_MZ': 'prec_mz',
+	#'PEPMASS': 'precursor_mz',
+	'PARENT_MASS': 'exact_mass',
+	'MS_LEVEL': 'spec_type',
+	'CHARGE': 'charge',
+	'INSTRUMENT_TYPE': 'inst_type',
+	'COLLISION_ENERGY_1': 'col_energy_1',
+	'COLLISION_ENERGY_2': 'col_energy_2',
+	'COLLISION_ENERGY_3': 'col_energy_3',
+	'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy_1',
+	'NORMALIZED_COLLISION_ENERGY_2': 'normalized_col_energy_2',
+	'NORMALIZED_COLLISION_ENERGY_3': 'normalized_col_energy_3',
+	'FOLD': 'fold',
+	'INDEX': 'spec_id',
+	'SOURCE': 'source',
+	'TITLE': 'title',
+	'NUM_PEAKS': 'num_peaks',
+}
+ 
 
 def extract_info_from_comments(comments,key):
 
@@ -407,7 +436,51 @@ def process_ms_gym(ms_gym_tsv_fp, subset):
 	split_df = ms_df[["dset_spec_id","fold"]]
 
 	return ms_df, split_df
- 
+
+def process_specverse(mgf_fp):
+	spectra_list = []
+	with open(mgf_fp) as mgf_in:
+		data_dict = None
+		for row in tqdm(mgf_in):
+			row = row.strip()
+			if len(row) == 0:
+				continue
+			elif row == "BEGIN IONS":
+				data_dict = {}
+			elif row == "END IONS":
+				spectra_list.append(data_dict)
+				data_dict = None
+			elif re.match(r"^(\d+(?:\.\d+)?)\s(\d+(?:\.\d+)?)", row):
+				mz, rel_int = [float(i) for i in row.split()]
+				if "peaks" not in data_dict:
+					data_dict["peaks"] = ""
+				data_dict["peaks"] += f"{mz} {rel_int}\n"
+			else:
+				for key, col in SPECTRAVERSE_MGF_KEY_DICT.items():
+					if row.startswith(key):
+						value = row.split('=',1)[1].strip()
+						# in case of empty values
+						if value in ['nan','N/A','None','null','']:
+							value = np.nan
+						# convert to correct type
+						if col in ["exact_mass",'prec_mz']:
+							value = float(value)
+						elif col  == "ion_mode" and value == "POSITIVE":
+							value = "P"
+						elif col  == "ion_mode" and value == "NEGATIVE":
+							value = "N"
+						elif col == "num_peaks":
+							value = int(value)
+						elif col == "smiles": #in case of chemaxon smiles eg.CC1C[C@H](C)C[C@H](OC) |t:46|
+							value = value.split()[0]
+						data_dict[col] = value
+      
+	spectra_df = pd.DataFrame(spectra_list)
+	#spectra_df[:,'ramped'] = spectra_df.apply(lambda x: True if not x['col_energy_1'].isna() and not x['col_energy_2'].isna() and x['col_energy_3'].isna() else False, axis=1)
+	#spectra_df[:,'stepped'] = spectra_df.apply(lambda x: True if not x['col_energy_1'].isna() and not x['col_energy_2'].isna() and not x['col_energy_3'].isna() else False, axis=1)
+
+	return spectra_df
+
 if __name__ == "__main__":
 
 	## TODO: add support for NPLLIB
@@ -417,7 +490,8 @@ if __name__ == "__main__":
 	parser.add_argument('--pkl_file', type=str, required=False)
 	parser.add_argument('--ms_dir', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
-	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip"], required=True)
+	parser.add_argument('--mgf_file', type=str, required=False)
+	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip", "spectraverse"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
@@ -473,6 +547,8 @@ if __name__ == "__main__":
 		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "pcdl_zip":
 		spec_df = read_pcdl(os.path.join(args.raw_data_dp,args.pcdl_dir))
+	elif args.input_format == "spectraverse":
+		spec_df = process_specverse(os.path.join(args.raw_data_dp,args.mgf_file))
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	
