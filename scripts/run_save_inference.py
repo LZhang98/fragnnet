@@ -31,13 +31,13 @@ if __name__ == "__main__":
 		type=str, 
 		nargs="+", 
 		default=[
-			"fraggnn_d3_long",
-			"fraggnn_d4_long",
-			"iceberg_inten3_100_long",
-			"iceberg_inten3_all_long",
-			"neims_long",
-			"massformer_long",
-			"graff3_long",
+			"fragnnet_d3",
+			"fragnnet_d4",
+			"iceberg_inten",
+			"iceberg_inten_opt",
+			"neims",
+			"massformer",
+			"graff",
 			"precursor"
 		]
 	)
@@ -149,10 +149,10 @@ if __name__ == "__main__":
 	model_type_to_model_cls = {
 		"neims": NeimsPL,
 		"massformer": MassFormerPL,
-		"fraggnn_d3": FragGNNPL,
-		"fraggnn_d4": FragGNNPL,
-		"iceberg_inten3_100": IcebergIntenPL,
-		"iceberg_inten3_all": IcebergIntenPL,
+		"fragnnet_d3": FragGNNPL,
+		"fragnnet_d4": FragGNNPL,
+		"iceberg_inten": IcebergIntenPL,
+		"iceberg_inten_opt": IcebergIntenPL,
 		"graff3": GrAFFPL,
 		"precursor": PrecursorPL
 	}
@@ -160,19 +160,13 @@ if __name__ == "__main__":
 	model_type_to_ds_cls = {
 		"neims": SpecMolDataset,
 		"massformer": SpecMolDataset,
-		"fraggnn_d3": SpecMolFragDataset,
-		"fraggnn_d4": SpecMolFragDataset,
-		"iceberg_inten3_100": SpecMolMagmaIntenDataset,
-		"iceberg_inten3_all": SpecMolMagmaIntenDataset,
+		"fragnnet_d3": SpecMolFragDataset,
+		"fragnnet_d4": SpecMolFragDataset,
+		"iceberg_inten": SpecMolMagmaIntenDataset,
+		"iceberg_inten_opt": SpecMolMagmaIntenDataset,
 		"graff3": SpecMolAnnDataset,
 		"precursor": SpecMolDataset
 	}
-	
-	# add long runs
-	for k in list(model_type_to_model_cls.keys()):
-		model_type_to_model_cls[f"{k}_long"] = model_type_to_model_cls[k]
-	for k in list(model_type_to_ds_cls.keys()):
-		model_type_to_ds_cls[f"{k}_long"] = model_type_to_ds_cls[k]
 
 	model_to_run_id = NestedDefaultDict()
 	model_to_config = NestedDefaultDict()

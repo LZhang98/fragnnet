@@ -93,10 +93,10 @@ if __name__ == "__main__":
 		type=str,
 		nargs="+",
 		default=[
-			"fraggnn_d3_edges",
-			"fraggnn_d3_noce",
-			# "fraggnn_d4_edges",
-			"fraggnn_d4_noce",
+			"fragnnet_d3_edges",
+			"fragnnet_d3_noce",
+			# "fragnnet_d4_edges",
+			"fragnnet_d4_noce",
 		]
 	)
 	args = parser.parse_args()

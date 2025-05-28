@@ -25,11 +25,9 @@ parser.add_argument(
     type=str, 
     nargs="+", 
     default=[
-        # "fraggnn_d3_long",
-        "fraggnn_d4_long",
-        "iceberg_inten3_100_long",
-        # "iceberg_inten3_all_long",
-        "graff3_long"
+        "fragnnet_d4",
+        "iceberg_inten",
+        "graff"
     ]
 )
 parser.add_argument(
@@ -59,7 +57,7 @@ if __name__ == "__main__":
 
     # load ann_df
     # get formulae from products
-    proc_dp = "./data/proc/nist20mona23v3"
+    proc_dp = "./data/proc/nist20"
     spec_df = pd.read_pickle(f"{proc_dp}/spec_df.pkl")
     mol_df = pd.read_pickle(f"{proc_dp}/mol_df.pkl")
     ann_df = pd.read_pickle(f"{proc_dp}/ann_df.pkl")
@@ -117,7 +115,7 @@ if __name__ == "__main__":
             
             print(f">>>> Model Type = {model_type}")
 
-            frag_model = ("fraggnn_d3" in model_type) or ("fraggnn_d4" in model_type)
+            frag_model = ("fragnnet_d3" in model_type) or ("fragnnet_d4" in model_type)
             graff_model = "graff" in model_type
 
             # load vals for s0

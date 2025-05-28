@@ -12,13 +12,13 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--split_types", type=str, nargs="+", default=["inchikey","scaffold"])
 	parser.add_argument("--model_types", type=str, nargs="+", default=[
-		"fraggnn_d3_long",
-		"fraggnn_d4_long",
-		"iceberg_inten3_100_long",
-		"iceberg_inten3_all_long",
-		"neims_long",
-		"massformer_long",
-		"graff3_long",
+		"fragnnet_d3",
+		"fragnnet_d4",
+		"iceberg_inten",
+		"iceberg_inten_opt",
+		"neims",
+		"massformer",
+		"graff",
 		"precursor"
 	])
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
@@ -92,4 +92,3 @@ if __name__ == "__main__":
 	os.makedirs(args.output_dp,exist_ok=True)
 	stats_df.to_csv(os.path.join(args.output_dp,f"{eval_split}_df.csv"),index=False)
 	print(stats_df)
-	import pdb; pdb.set_trace()

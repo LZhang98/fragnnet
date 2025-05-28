@@ -14,6 +14,12 @@ For example, to train a model on the NIST 2020 dataset using the InChIKey split 
 python scripts/run_pl_model_fit.py -c config/nist20_inchikey/neims/s0.yml
 ```
 
+If you installed the package with Weights and Biases (i.e. using the `dev` option), you can enable logging with a flag:
+
+```bash
+python scripts/run_pl_model_fit.py -c config/nist20_inchikey/neims/s0.yml -w online
+```
+
 ## Available Configs
 
 All provided configs use the NIST 2020 dataset.

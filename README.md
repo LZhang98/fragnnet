@@ -70,13 +70,13 @@ conda create -n FRAGNNET-GPU python=3.10
 
 ### Install FraGNNet Python Package
 
-```
+```bash
 pip install .
 ```
 
 If you want dev features (wandb logging and jupyter notebook), you can install the package with the dev flag.
 
-```
+```bash
 pip install -e .[dev]
 ```
 
@@ -86,9 +86,11 @@ Note that the -e flag is used to install the package in editable mode.
 
 Use the following script to install PyTorch-related dependencies:
 
-```
+```bash
 python install_lib.py
 ```
+
+You can choose from two supported CUDA versions (11.8 and 12.1) or perform a CPU-only installation. Other CUDA versions (i.e. CUDA 12.x) may also work but were not tested. All experiments in the paper were run using CUDA 11.8.
 
 ## Contributors
 

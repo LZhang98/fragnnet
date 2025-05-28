@@ -229,10 +229,10 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, default=1)
     parser.add_argument("--nb", type=booltype, default=True)
     parser.add_argument("--ens_conds", type=booltype, default=True)
-    parser.add_argument("--output_dp", type=str, default="inference_outputs/entropyv3-1_feb26/")
-    parser.add_argument("--ens_dp", type=str, default="inference_outputs/entropyv3-1_ens_feb26/")
+    parser.add_argument("--output_dp", type=str, default="inference_outputs/entropy/")
+    parser.add_argument("--ens_dp", type=str, default="inference_outputs/entropy_ens/")
     parser.add_argument("--ens_types", type=str, nargs="+", default=["baseline", "low", "high", "mix"])
-    parser.add_argument("--stats_dp", type=str, default="figs/ensemble/v3-1_feb26")
+    parser.add_argument("--stats_dp", type=str, default="figs/ensemble/")
     args = parser.parse_args()
 
     depth = args.depth

@@ -6,8 +6,8 @@ import os
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_dp", type=str, default="./inference_outputs/entropyv3-1_feb26/")
-    parser.add_argument("--stats_dp", type=str, default="figs/ensemble/v3-1_feb26")
+    parser.add_argument("--output_dp", type=str, default="inference_outputs/entropy/")
+    parser.add_argument("--stats_dp", type=str, default="figs/ensemble/")
     parser.add_argument("--split_types", type=str, nargs="+", default=["scaffold"])
     parser.add_argument("--depths", type=str, nargs="+", default=["d4"], choices=["d3","d4"])
     parser.add_argument("--ens_types", type=str, nargs="+", default=["baseline", "low", "high", "mix"])
