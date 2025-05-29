@@ -33,7 +33,7 @@ PREC_TYPE_TO_MASS_DIFF = {
 PREC_TYPE_TO_FORMULA_DIFF = {
 	"[M+H]+": "H1",
 	"[M-H]-": "H-1",
-	"[M+Cl]-": "Cl-1",
+	"[M+Cl]-": "Cl1",
 	"[M+Na]+": "Na1",
 	"[M+NH4]+": "N1H4",
 	"[M-H2O+H]+": "O-1H-1",
