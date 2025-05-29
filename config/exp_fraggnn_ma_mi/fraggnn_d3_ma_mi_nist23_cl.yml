@@ -1,4 +1,4 @@
-wandb_name: nist23_inchikey_fraggnn_d3_ma_mi_nh
+wandb_name: nist23_inchikey_fraggnn_d3_ma_mi_cl
 wandb_tags:
 - retrieval
 - nist20
@@ -20,7 +20,7 @@ wandb_tags:
 - new_no_edges
 - skip_extra_losses
 - binned_cosine_similarity
-- m-h
+- m+cl
 
 spec_fp: data/proc/nist23mona23/spec_df.pkl
 mol_fp: data/proc/nist23mona23/mol_df.pkl

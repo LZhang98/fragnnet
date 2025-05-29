@@ -23,7 +23,8 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"[M+Cl]-": Cl_MASS + ELECTRON_MASS,
 	"[M+Na]+": NA_MASS - ELECTRON_MASS,
 	"[M+NH4]+": N_MASS + 4*H_MASS - ELECTRON_MASS,
-	"[M-H2O+H]+": H_MASS - O_MASS - ELECTRON_MASS,
+	#"[M-H2O+H]+": H_MASS - O_MASS - ELECTRON_MASS,
+	"[M-H2O+H]+": H_MASS - ELECTRON_MASS, # [M-H2O+H]+ adduct, -H2O is done by DAG. thus is the same as M+H
 	"[M]+": - ELECTRON_MASS,
 	"": 0.,
 	"[M+H]+_NL": -H_MASS + ELECTRON_MASS,
@@ -36,7 +37,8 @@ PREC_TYPE_TO_FORMULA_DIFF = {
 	"[M+Cl]-": "Cl1",
 	"[M+Na]+": "Na1",
 	"[M+NH4]+": "N1H4",
-	"[M-H2O+H]+": "O-1H-1",
+	#"[M-H2O+H]+": "O-1H-1",
+	"[M-H2O+H]+": "H1", # [M-H2O+H]+ adduct, -H2O is done by DAG. thus is the same as M+H
 	"[M]+": ""
 }
 
