@@ -29,6 +29,7 @@ split_dp: data/split/nist20mona23v3_ma_mi_inchikey_mix1
 frag_dp: data/frag/nist20mona23v3_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
+
 frag_gnn_type: NodeMLP
 frag_params:
   pyg_edge_feats: []
@@ -37,14 +38,16 @@ frag_params:
   preload: True
   preprocess: True
 spec_params:
-  merge: True
-  nce: False
-  merge_keep_ces: True
+  merge: False
+  nce: True
+  merge_keep_ces: False
   preprocess: True
   prec_type_str: False
   prec_types:
     - "[M+H]+"
     - "[M-H]-"
+    - "[M+Na]+"
+    - "[M+Cl]-"
   inst_type: True
   inst_types:
     - "FT"
