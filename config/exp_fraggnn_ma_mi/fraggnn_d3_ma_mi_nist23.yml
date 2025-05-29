@@ -1,7 +1,6 @@
-wandb_name: nist23_inchikey_fraggnn_d3_ma_mi
+wandb_name: nist23_inchikey_fraggnn_d3_ma_mi_all_mlp_conditon
 wandb_tags:
-- retrieval
-- nist20
+- nist23
 - d4
 - wr00
 - inchikey
