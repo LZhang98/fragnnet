@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_nh
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_cenh
 wandb_tags:
 - retrieval
 - nist23
