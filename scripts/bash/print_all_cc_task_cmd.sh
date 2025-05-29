@@ -22,6 +22,6 @@ for fullfile in "$config_dir"/*.yml; do
         --python_script_fp=./scripts/run_pl_model_fit.py \
         --job_name=${filename} \
         --frag_gnn_dp=./ \
-        --script_kwargs=\"w=offline,c=${config_dir}/${filename}.yml,-j=${filename}\" \
+        --script_kwargs \"w=offline c=${config_dir}/${filename}.yml -j=${filename}\" \
         --time=12"
 done
