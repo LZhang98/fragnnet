@@ -73,8 +73,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 20
+max_epochs: 20
 lr_schedule: False
 debug_overfit: False
 mask_null_formula: False
