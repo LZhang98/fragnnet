@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_cemix2
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_ce_mix2
 wandb_tags:
 - retrieval
 - nist20
