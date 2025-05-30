@@ -36,7 +36,12 @@ MSP_KEY_DICT = {
 	# "DB#": "dset_spec_id_2",
 	"Notes": "notes", # NIST only
 	"Formula": "formula",
-	"InChIKey": "inchikey"
+	"InChIKey": "inchikey",
+	# these are place holders for compatibility
+	'Ramped': 'ramped',
+	'Stepped': 'stepped',
+	'Collision_energy_2':'col_energy_extra_1', # for ramped
+	'Collision_energy_3':'col_energy_extra_2', # for stepped
 }
 
 MS_KEY_DICT = {
@@ -50,35 +55,6 @@ MS_KEY_DICT = {
 }
 META_KEYS = list(MS_KEY_DICT.keys())
 SPEC_KEYS = [">ms1peaks",">ms1merged",">ms2peaks",">ms2merged",">collision"]
-
-SPECTRAVERSE_MGF_KEY_DICT = {
-	'FORMULA': 'formula',
-	'SMILES': 'smiles',
-	'INCHI': 'inchi',
-	'INCHIKEY': 'inchi_key',
-	'IONMODE': 'ion_mode',
-	'ADDUCT': 'prec_type',
-	'COMPOUND_NAME': 'compound_name',
-	'NUM_PEAKS': 'num_peaks',
-	'PRECURSOR_MZ': 'prec_mz',
-	#'PEPMASS': 'precursor_mz',
-	'PARENT_MASS': 'exact_mass',
-	'MS_LEVEL': 'spec_type',
-	'CHARGE': 'charge',
-	'INSTRUMENT_TYPE': 'inst_type',
-	'COLLISION_ENERGY_1': 'col_energy_1',
-	'COLLISION_ENERGY_2': 'col_energy_2',
-	'COLLISION_ENERGY_3': 'col_energy_3',
-	'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy_1',
-	'NORMALIZED_COLLISION_ENERGY_2': 'normalized_col_energy_2',
-	'NORMALIZED_COLLISION_ENERGY_3': 'normalized_col_energy_3',
-	'FOLD': 'fold',
-	'INDEX': 'spec_id',
-	'SOURCE': 'source',
-	'TITLE': 'title',
-	'NUM_PEAKS': 'num_peaks',
-}
- 
 
 def extract_info_from_comments(comments,key):
 
@@ -165,6 +141,7 @@ def preproc_msp(msp_fp,keys,num_entries):
 	msp_df = pd.DataFrame(raw_data_list)
 	# drop all-NaN rows
 	msp_df = msp_df.dropna(axis=0,how="all")
+ 
 	return msp_df
 
 def preproc_nist_mol(mol_dp):
@@ -210,7 +187,7 @@ def merge_and_check(msp_df,mol_df,rename_dict):
 		spec_df = pd.merge(msp_df,mol_df,how="inner",on="spec_id")
 	if "dset_spec_id" not in spec_df.columns:
 		spec_df.loc[:,"dset_spec_id"] = spec_df["spec_id"]
-	print(spec_df.isna().sum())
+	print("> num spec: ", spec_df.isna().sum())
 	spec_df = spec_df.reset_index(drop=True)
 	return spec_df
 
@@ -285,27 +262,28 @@ def preproc_ms_files(ms_dp,ms_meta_fp,keys,num_entries):
 		assert len(ms_entries) > 0, (ms_fp, ms_lines)
 		return ms_entries
 	ms_fp_iter = tqdm(ms_fp_list,desc="> proc_ms_files",total=len(ms_fp_list))
-	ms_df_entries = seq_apply(ms_fp_iter,proc_ms_file)
-	ms_df_entries = flatten_lol(ms_df_entries)
-	ms_df = pd.DataFrame(ms_df_entries)
+	spec_df_entries = seq_apply(ms_fp_iter,proc_ms_file)
+	spec_df_entries = flatten_lol(spec_df_entries)
+	spec_df = pd.DataFrame(spec_df_entries)
 	# drop all-NaN rows
-	ms_df = ms_df.dropna(axis=0,how="all")
+	spec_df = spec_df.dropna(axis=0,how="all")
 	# add metadata
-	ms_df = ms_df.merge(ms_meta_df[["dset_spec_id_base","prec_type","formula","smiles"]],on=["dset_spec_id_base"],how="inner")
+	spec_df = spec_df.merge(ms_meta_df[["dset_spec_id_base","prec_type","formula","smiles"]],on=["dset_spec_id_base"],how="inner")
 	# add ion_mode
-	ms_df.loc[:,"ion_mode"] = "P"
+	spec_df.loc[:,"ion_mode"] = "P"
 	# add spec_type
-	ms_df.loc[:,"spec_type"] = "MS2"
+	spec_df.loc[:,"spec_type"] = "MS2"
 	# add spec_id (this will be relabeled later)
-	ms_df.loc[:,"spec_id"] = np.arange(len(ms_df))
+	spec_df.loc[:,"spec_id"] = np.arange(len(spec_df))
 	# add extra columns for compatibility
 	for value in MSP_KEY_DICT.values():
-		if value not in ms_df.columns:
-			ms_df.loc[:,value] = np.nan
+		if value not in spec_df.columns:
+			spec_df.loc[:,value] = np.nan
+   
 	# drop unnecessary columns
-	ms_df = ms_df.drop(columns=["dset_spec_id_base"])
-	ms_df = ms_df.reset_index(drop=True)
-	return ms_df
+	spec_df = spec_df.drop(columns=["dset_spec_id_base"])
+	spec_df = spec_df.reset_index(drop=True)
+	return spec_df
 
 PCDL_KEYS = {
 	"ACCESSION:" : "dset_spec_id",
@@ -369,47 +347,47 @@ def read_pcdl(zipped_spectra_dp: str):
 				spectrum_list.append(parse_pcdl(text_list, spectra_libname))
 	
 	print(f"> {len(spectrum_list)} spectra parsed")
-	ms_df = pd.DataFrame(spectrum_list)
+	spec_df = pd.DataFrame(spectrum_list)
 	# this is one off, we need fix this
-	ms_df = ms_df.drop(ms_df[~ms_df["prec_type"].isin(["[M+H]+","[M-H]-"])].index)
+	spec_df = spec_df.drop(spec_df[~spec_df["prec_type"].isin(["[M+H]+","[M-H]-"])].index)
 	# fill some extrat meta data
-	ms_df.loc[:,"frag_mode"] = "CID"
-	ms_df.loc[:,"notes"] = ""
-	selected_idx = ms_df.groupby(["inchikey","prec_type","col_energy"])['num_peaks'].idxmax()
-	ms_df = ms_df.loc[selected_idx]
-	ms_df.loc[:,"spec_id"] = np.arange(ms_df.shape[0])
+	spec_df.loc[:,"frag_mode"] = "CID"
+	spec_df.loc[:,"notes"] = ""
+	selected_idx = spec_df.groupby(["inchikey","prec_type","col_energy"])['num_peaks'].idxmax()
+	spec_df = spec_df.loc[selected_idx]
+	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
 
 	# add ion_type
-	ms_df.loc[:,"ion_type"] = "ESI"
+	spec_df.loc[:,"ion_type"] = "ESI"
 	# add extra columns for compatibility
 	for value in MSP_KEY_DICT.values():
-		if value not in ms_df.columns:
-			ms_df.loc[:,value] = np.nan
+		if value not in spec_df.columns:
+			spec_df.loc[:,value] = np.nan
    
-	print(f"> {len(ms_df['inchikey'].unique())} unique inchikey")
-	return ms_df
+	print(f"> {len(spec_df['inchikey'].unique())} unique inchikey")
+	return spec_df
 
 def process_ms_gym(ms_gym_tsv_fp, subset):
-	ms_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
+	spec_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
  
 	# only use on in simulation_challenge
-	ms_df = ms_df.sort_values(by='simulation_challenge', ascending=False)
+	spec_df = spec_df.sort_values(by='simulation_challenge', ascending=False)
 	print(f"> processs ms gym file {ms_gym_tsv_fp}")
 	print(f"> using ms gym subset {subset}")
 	print("> if you are doing simulation challenge make sure use only simulation_challenge subset")
  
 	if subset == 'simulation_challenge':
-		ms_df = ms_df[ms_df['simulation_challenge']]
-		print(f"> {len(ms_df)} rows selected for subset {subset}")
+		spec_df = spec_df[spec_df['simulation_challenge']]
+		print(f"> {len(spec_df)} rows selected for subset {subset}")
 	elif subset == 'extra':
-		ms_df = ms_df[~ms_df['simulation_challenge']]
-		print(f"> {len(ms_df)} rows selected for subset {subset}")
+		spec_df = spec_df[~spec_df['simulation_challenge']]
+		print(f"> {len(spec_df)} rows selected for subset {subset}")
 	elif subset != 'all':
 		print(f">warningm unknown subset [{subset}] to msygm. Every row will be included")
   
-	ms_df["peaks"] = ms_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
-	ms_df = ms_df.drop(columns=["mzs","intensities"])
-	ms_df.rename(columns={"precursor_mz":"prec_mz", 
+	spec_df["peaks"] = spec_df.apply(lambda x: "\n".join([f"{m} {i}" for m,i in zip(x["mzs"].split(","),x["intensities"].split(","))]),axis=1)
+	spec_df = spec_df.drop(columns=["mzs","intensities"])
+	spec_df.rename(columns={"precursor_mz":"prec_mz", 
 						   "adduct":"prec_type",
 						   "precursor_mz" :"prec_mz",
 						   "parent_mass":"exact_mass",
@@ -417,25 +395,54 @@ def process_ms_gym(ms_gym_tsv_fp, subset):
 						   "collision_energy":"col_energy",
 						   "identifier":"dset_spec_id"},
 				  	inplace=True)
-	
-	ms_df["col_energy"], ms_df["normalized"], ms_df["ramped"] = zip(*ms_df["col_energy"].apply(parse_mass_gym_ce_str))
+ 
+	# NOTE: MSGYM discaled all ramped and stepped spectra
+	# thus this does not matter
+	spec_df["col_energy"], spec_df["normalized"], spec_df["ramped"] = zip(*spec_df["col_energy"].apply(parse_mass_gym_ce_str))
 
-	#ms_df = ms_df.astype({"prec_mz":float,"exact_mass":float})
+	#spec_df = spec_df.astype({"prec_mz":float,"exact_mass":float})
 
 	# add ion_mode
-	ms_df.loc[:,"ion_mode"] = "P"
+	spec_df.loc[:,"ion_mode"] = "P"
 	# add spec_type
-	ms_df.loc[:,"spec_type"] = "MS2"
+	spec_df.loc[:,"spec_type"] = "MS2"
 	# add ion_type
-	ms_df.loc[:,"ion_type"] = "ESI"
+	spec_df.loc[:,"ion_type"] = "ESI"
 	# add extra columns for compatibility
 	for value in MSP_KEY_DICT.values():
-		if value not in ms_df.columns:
-			ms_df.loc[:,value] = np.nan
-	
-	split_df = ms_df[["dset_spec_id","fold"]]
+		if value not in spec_df.columns:
+			spec_df.loc[:,value] = np.nan
+	split_df = spec_df[["dset_spec_id","fold"]]
 
-	return ms_df, split_df
+	return spec_df, split_df
+
+SPECTRAVERSE_MGF_KEY_DICT = {
+	'FORMULA': 'formula',
+	'SMILES': 'smiles',
+	'INCHI': 'inchi',
+	'INCHIKEY': 'inchi_key',
+	'IONMODE': 'ion_mode',
+	'ADDUCT': 'prec_type',
+	'COMPOUND_NAME': 'compound_name',
+	'NUM_PEAKS': 'num_peaks',
+	'PRECURSOR_MZ': 'prec_mz',
+	#'PEPMASS': 'precursor_mz',
+	'PARENT_MASS': 'exact_mass',
+	'MS_LEVEL': 'spec_type',
+	'CHARGE': 'charge',
+	'INSTRUMENT_TYPE': 'inst_type',
+	'COLLISION_ENERGY_1': 'col_energy',
+	'COLLISION_ENERGY_2': 'col_energy_extra_1',
+	'COLLISION_ENERGY_3': 'col_energy_extra_2',
+	#'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy_1',
+	#'NORMALIZED_COLLISION_ENERGY_2': 'normalized_col_energy_2',
+	#'NORMALIZED_COLLISION_ENERGY_3': 'normalized_col_energy_3',
+	'FOLD': 'fold',
+	'INDEX': 'spec_id',
+	'SOURCE': 'source',
+	'TITLE': 'title',
+	'NUM_PEAKS': 'num_peaks',
+}
 
 def process_specverse(mgf_fp):
 	spectra_list = []
@@ -473,13 +480,27 @@ def process_specverse(mgf_fp):
 							value = int(value)
 						elif col == "smiles": #in case of chemaxon smiles eg.CC1C[C@H](C)C[C@H](OC) |t:46|
 							value = value.split()[0]
+						elif col.startswith("col_energy"):
+							if not value is np.nan:
+								value = float(value.split()[0]) 
 						data_dict[col] = value
       
-	spectra_df = pd.DataFrame(spectra_list)
-	#spectra_df[:,'ramped'] = spectra_df.apply(lambda x: True if not x['col_energy_1'].isna() and not x['col_energy_2'].isna() and x['col_energy_3'].isna() else False, axis=1)
-	#spectra_df[:,'stepped'] = spectra_df.apply(lambda x: True if not x['col_energy_1'].isna() and not x['col_energy_2'].isna() and not x['col_energy_3'].isna() else False, axis=1)
-
-	return spectra_df
+	spec_df = pd.DataFrame(spectra_list)
+	spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
+	spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
+	spec_df.loc[:, 'stepped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (~spec_df['col_energy_extra_2'].isna())
+	# setup dset
+	spec_df.loc[:,"dset"] = "spectraverse"
+	spec_df.loc[:,"dset_spec_id"] = spec_df["spec_id"]
+	
+	split_df = spec_df[["spec_id","fold"]]
+ 
+ 	# add extra columns for compatibility
+	for value in MSP_KEY_DICT.values():
+		if value not in spec_df.columns:
+			spec_df.loc[:,value] = np.nan
+   
+	return spec_df, split_df
 
 if __name__ == "__main__":
 
@@ -548,7 +569,9 @@ if __name__ == "__main__":
 	elif args.input_format == "pcdl_zip":
 		spec_df = read_pcdl(os.path.join(args.raw_data_dp,args.pcdl_dir))
 	elif args.input_format == "spectraverse":
-		spec_df = process_specverse(os.path.join(args.raw_data_dp,args.mgf_file))
+		spec_df, split_df  = process_specverse(os.path.join(args.raw_data_dp,args.mgf_file))
+		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
+		split_df.to_csv(split_df_fp,index=False)
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	
