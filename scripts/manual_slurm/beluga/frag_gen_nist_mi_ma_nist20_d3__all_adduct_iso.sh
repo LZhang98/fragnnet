@@ -55,8 +55,7 @@ cp ${FRAGNNET_DP}/setup.cfg ${WORKING_DIR}/
 cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/
 pip install -I ${WORKING_DIR}
 
-# Copy files
-# create local dir
+# setup jobs
 DATASET_NAME=nist20mona23v3
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
