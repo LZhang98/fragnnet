@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=frag_gen_nist_mi_ma_nist20_d3_iso
+#SBATCH --job-name=frag_gen_nist_mi_ma_nist20_d3_all_adduct_iso
 #SBATCH --mem=180G
 #SBATCH --cpus-per-task=40
 #SBATCH --time=0-4:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_mi_ma_nist20_d3_iso_%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_mi_ma_nist20_d3_iso_%j.err
+#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_mi_ma_nist20_d3_all_adduct_iso_%j.out
+#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/frag_gen_nist_mi_ma_nist20_d3_all_adduct_iso_%j.err
 #SBATCH --open-mode=append
 
 
@@ -63,7 +63,7 @@ NB_FLAG=False
 ISO_FALSE=True
 SAVE_NAME=nist20mona23v3_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
 DSETS='nist20_hr'
-PREC='Any'
+PREC='any'
 INST='FT QTOF IT'
 FRAG_MODE='CID HCD'
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/
