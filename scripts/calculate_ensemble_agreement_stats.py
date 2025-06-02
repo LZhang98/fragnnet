@@ -229,18 +229,18 @@ if __name__ == "__main__":
     parser.add_argument("--k", type=int, default=1)
     parser.add_argument("--nb", type=booltype, default=True)
     parser.add_argument("--ens_conds", type=booltype, default=True)
-    parser.add_argument("--output_dp", type=str, default="inference_outputs/entropy/")
-    parser.add_argument("--ens_dp", type=str, default="inference_outputs/entropy_ens/")
+    parser.add_argument("--entropy_save_dp", type=str, default="inference_outputs/entropy/")
+    parser.add_argument("--entropy_ens_save_dp", type=str, default="inference_outputs/entropy_ens/")
     parser.add_argument("--ens_types", type=str, nargs="+", default=["baseline", "low", "high", "mix"])
-    parser.add_argument("--stats_dp", type=str, default="figs/ensemble/")
+    parser.add_argument("--stats_save_dp", type=str, default="figs/frag_ann_exp/")
     args = parser.parse_args()
 
     depth = args.depth
     k = args.k
     nb = args.nb
     ens_conds = args.ens_conds
-    output_dp = args.output_dp
-    ens_dp = args.ens_dp
+    entropy_save_dp = args.entropy_save_dp
+    entropy_ens_save_dp = args.entropy_ens_save_dp
     ens_types = args.ens_types
     nb_flag = "_nb" if nb else ""
     conds_flag = "_c" if ens_conds else ""
@@ -258,8 +258,8 @@ if __name__ == "__main__":
     for ens_type in ens_types:
 
         ens_type_key = ens_type_to_key[ens_type]
-        entropy_fp = os.path.join(output_dp, f"scaffold_{depth}_{ens_type_key}_test_False/vals.pkl")
-        ens_type_dp = os.path.join(ens_dp, f"scaffold_{depth}_{ens_type}_test_False")
+        entropy_fp = os.path.join(entropy_save_dp, f"scaffold_{depth}_{ens_type_key}_test_False/vals.pkl")
+        ens_type_dp = os.path.join(entropy_ens_save_dp, f"scaffold_{depth}_{ens_type}_test_False")
         ens_type_fp = os.path.join(ens_type_dp, "ens_vals" + nb_flag + conds_flag + ".pkl")
 
         if os.path.isfile(ens_type_fp):
@@ -452,7 +452,7 @@ if __name__ == "__main__":
             ens_cos_hun[unequal_mean_logprobs.exp() < i].mean().item(),
         )
 
-    os.makedirs(args.stats_dp, exist_ok=True)
-    stats_fp = os.path.join(args.stats_dp, f"ensemble_agreement_stats" + nb_flag + conds_flag + ".pkl")
+    os.makedirs(args.stats_save_dp, exist_ok=True)
+    stats_fp = os.path.join(args.stats_save_dp, f"ensemble_agreement_stats" + nb_flag + conds_flag + ".pkl")
     th.save(stats_d, stats_fp)
     print(f">> saved stats to {stats_fp}")

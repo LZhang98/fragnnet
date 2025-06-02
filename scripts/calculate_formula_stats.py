@@ -31,7 +31,7 @@ parser.add_argument(
     ]
 )
 parser.add_argument(
-    "--vals_dp", 
+    "--save_dp", 
     type=str, 
     required=True
 )
@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     # load ann_df
     # get formulae from products
-    proc_dp = "./data/proc/nist20"
+    proc_dp = "data/proc/nist20"
     spec_df = pd.read_pickle(f"{proc_dp}/spec_df.pkl")
     mol_df = pd.read_pickle(f"{proc_dp}/mol_df.pkl")
     ann_df = pd.read_pickle(f"{proc_dp}/ann_df.pkl")
@@ -99,7 +99,7 @@ if __name__ == "__main__":
 
     split_types = args.split_types
     model_types = args.model_types
-    vals_dp = args.vals_dp
+    save_dp = args.save_dp
     seeds = args.seeds
     thresholdses = args.thresholds
     num_samples = args.num_samples
@@ -119,7 +119,7 @@ if __name__ == "__main__":
             graff_model = "graff" in model_type
 
             # load vals for s0
-            formula_vals_fp = os.path.join(vals_dp,split_type,model_type,f"s{seeds[0]}","test.pkl")
+            formula_vals_fp = os.path.join(save_dp,split_type,model_type,f"s{seeds[0]}","test.pkl")
             formula_vals = th.load(formula_vals_fp)
 
             # get molecule ids
@@ -135,7 +135,7 @@ if __name__ == "__main__":
 
                 if n != seeds[0]:
                 
-                    formula_vals_fp = os.path.join(vals_dp,split_type,model_type,f"s{n}","test.pkl")
+                    formula_vals_fp = os.path.join(save_dp,split_type,model_type,f"s{n}","test.pkl")
                     formula_vals = th.load(formula_vals_fp)
 
                 print(len(mol_ids))

@@ -15,5 +15,5 @@ These scripts are not runnable, but are useful for understanding the analysis pr
 - [calculate_formula_stats.py](./calculate_formula_stats.py): script for calculating the formula annotation statistics from saved inference outputs (used for formula_ann_exp)
 - [calculate_ensemble_stats.py](./calculate_ensemble_stats.py): script for calculating ensemble similarities and entropies from saved inference outputs (used for frag_ann_exp)
 - [calculate_ensemble_agreement_stats.py](./calculate_ensemble_agreement_stats.py): script for calculating the ensemble fragment annotation statistics from saved inference outputs (used for frag_ann_exp)
-- [calculate_ablation_stats.py](./calculate_ablation_stats.py): similar to calculate_similarity_stats.py (used for ablation_exp)
+- [calculate_similarity_stats_ablations.py](./calculate_similarity_stats_ablations.py): similar to calculate_similarity_stats.py (used for ablation_exp)
 - [ms2c/*.py](./ms2c/): various scripts for preparing and running MS2C retrieval experiments (used in ms2c_retrieval_exp)

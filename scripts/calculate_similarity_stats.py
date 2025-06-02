@@ -23,13 +23,13 @@ if __name__ == "__main__":
 	])
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test","secondary"])
 	parser.add_argument("--num_seeds", type=int, default=5)
-	parser.add_argument("--vals_dp", type=str, required=True)
-	parser.add_argument("--output_dp", type=str, required=True)
+	parser.add_argument("--inference_save_dp", type=str, default="inference_outputs/main/")
+	parser.add_argument("--stats_save_dp", type=str, default="figs/c2ms_sim_exp/")
 	args = parser.parse_args()
 
 	eval_split = args.eval_split
 	num_seeds = args.num_seeds
-	vals_dp = args.vals_dp
+	inference_save_dp = args.inference_save_dp
 	pd.options.display.float_format = '{:.4f}'.format
 
 	split_types = args.split_types
@@ -46,7 +46,7 @@ if __name__ == "__main__":
 			mean_corr_oos = []
 			mean_tv_oos = []
 			for seed in range(num_seeds):
-				seed_vals_fp = os.path.join(args.vals_dp,split_type,model_type,f"s{seed}",f"{eval_split}.pkl")
+				seed_vals_fp = os.path.join(args.inference_save_dp,split_type,model_type,f"s{seed}",f"{eval_split}.pkl")
 				print(f">>> Loading {seed_vals_fp}")
 				if not os.path.isfile(seed_vals_fp):
 					print(f">> file not found, skipping")
@@ -89,6 +89,6 @@ if __name__ == "__main__":
 			stats_df.append(stats_df_entry)
 	
 	stats_df = pd.DataFrame(stats_df)
-	os.makedirs(args.output_dp,exist_ok=True)
-	stats_df.to_csv(os.path.join(args.output_dp,f"{eval_split}_df.csv"),index=False)
+	os.makedirs(args.stats_save_dp,exist_ok=True)
+	stats_df.to_csv(os.path.join(args.stats_save_dp,f"{eval_split}_df.csv"),index=False)
 	print(stats_df)
