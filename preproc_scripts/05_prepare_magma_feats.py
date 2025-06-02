@@ -713,10 +713,10 @@ def get_args():
 	"""get args"""
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--magma_dp", type=str, default="data/magma/gen_2")
-	parser.add_argument("--proc_dp", type=str, default="data/proc/nist")
+	parser.add_argument("--magma_dp", type=str, required=True)
+	parser.add_argument("--proc_dp", type=str, required=True)
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
-	parser.add_argument("--dsets", type=str, nargs="+", default=["nist"])
+	parser.add_argument("--dsets", type=str, nargs="+", required=True)
 	parser.add_argument("--group_ids", type=int, nargs="+", default=[])
 	# iceberg magma params
 	parser.add_argument(

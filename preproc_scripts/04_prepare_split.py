@@ -252,7 +252,7 @@ if __name__ == "__main__":
 	parser.add_argument("--predefined_dsetid_csv", nargs="+", type=str, default=[])
 	parser.add_argument("--num_folds",type=int,default=0)
 	# spec filtering criteria
-	parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
+	parser.add_argument("--primary_dsets",type=str,nargs="+",required=True)
 	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
 	parser.add_argument("--max_prec_mz",type=float,default=1500.)

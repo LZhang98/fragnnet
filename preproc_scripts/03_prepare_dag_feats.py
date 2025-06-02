@@ -315,7 +315,7 @@ if __name__ == "__main__":
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--nb_isomorphic",type=booltype,default=True)
 	parser.add_argument("--max_iterations",type=int,default=3)
-	parser.add_argument("--dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
+	parser.add_argument("--dsets",type=str,nargs="+",required=True)
 	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--wandb_mode",type=str,default="disabled",choices=["online","offline","disabled"])
