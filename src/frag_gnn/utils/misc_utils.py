@@ -26,6 +26,7 @@ LOG_HALF = float(np.log(0.5))
 LOG_TWO = float(np.log(2.0))
 LOG_ZERO_FP32 = float(th.finfo(th.float32).min)
 LOG_ZERO_FP16 = float(th.finfo(th.float16).min)
+LOG_ZERO_BP16 = float(th.finfo(th.bfloat16).min)
 MAX_CROSS_ENTROPY = 1e19
 TOLERANCE_MIN_MZ = 200.0
 
@@ -34,6 +35,8 @@ def LOG_ZERO(dtype):
 		return LOG_ZERO_FP32
 	elif dtype == th.float16:
 		return LOG_ZERO_FP16
+	elif dtype == th.bfloat16:
+		return LOG_ZERO_BP16
 	else:
 		raise ValueError(dtype)
 
