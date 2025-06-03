@@ -36,9 +36,24 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"[M+Cl]-": CL_MASS + ELECTRON_MASS,
 	"[M-H-H2O]-": -3 * H_MASS - O_MASS + ELECTRON_MASS,
 	"[M-H+2i]-": -H_MASS + 2 * I_MASS + ELECTRON_MASS,
-	# some NL adducts
-	"[M+H]+_NL": -H_MASS + ELECTRON_MASS,
-	"[M-H]-_NL": H_MASS - ELECTRON_MASS,
+}
+
+# charge transfer
+PREC_TYPE_TO_CMF_MASS_DIFF = {
+	"[M+H]+": H_MASS - ELECTRON_MASS,
+	"[M+Na]+": H_MASS - ELECTRON_MASS,
+	"[M+H+2i]+": H_MASS - ELECTRON_MASS,
+	"[M+K]+": H_MASS - ELECTRON_MASS,
+	"[M+NH4]+": H_MASS - ELECTRON_MASS,
+	"[M-H2O+H]+": H_MASS - ELECTRON_MASS,
+ 	"[M-2H2O+H]+": H_MASS - ELECTRON_MASS,
+	"[M+H-NH3]+": H_MASS - ELECTRON_MASS,
+	# negative stuff
+	"[M-H]-": -H_MASS + ELECTRON_MASS,
+	"[M-H-CO2]-": -H_MASS + ELECTRON_MASS,
+	"[M+Cl]-":  H_MASS + ELECTRON_MASS,
+	"[M-H-H2O]-": -H_MASS + ELECTRON_MASS,
+	"[M-H+2i]-": -H_MASS + ELECTRON_MASS,
 }
 
 PREC_TYPE_TO_FORMULA_DIFF = {

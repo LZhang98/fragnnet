@@ -19,7 +19,7 @@ from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage, none_or_nan
 from frag_gnn.utils.data_utils import fill_missing_ace, fill_missing_nce, seq_apply_df_rows
 import frag_gnn.massformer.data_utils as mf_data_utils
-from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PREC_TYPE_TO_CMF_MASS_DIFF
 
 class BaseDataset(Dataset):
 
@@ -616,7 +616,12 @@ class SpecMolFragDataset(SpecMolDataset):
 			frag_data = self.frag_data[mol_id].copy()
 			# update prec_mass_diff
 			prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
-			frag_data["frag_formula_peak_mzs"] = frag_data["frag_formula_peak_mzs"] + prec_type_mass_diff
+			crf_peaks = frag_data["frag_formula_peak_mzs"] + prec_type_mass_diff
+			# update prec_mass for CMF
+			if self.frag_params["include_cmf"] and spec_entry["prec_type"] not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
+				cmf_type_mass_diff = PREC_TYPE_TO_CMF_MASS_DIFF[spec_entry["prec_type"]]
+				cmf_peaks = frag_data["frag_formula_peak_mzs"] + cmf_type_mass_diff
+				frag_data["frag_formula_peak_mzs"] = th.cat([crf_peaks, cmf_peaks], dim=0)
 		elif self.frag_params["preload"]:
 			frag_entry = self.frag_entries[mol_id].copy()
 			frag_data = self._process_frag(frag_entry,spec_entry)
@@ -668,10 +673,16 @@ class SpecMolFragDataset(SpecMolDataset):
 		if self.frag_params["formula_peak_mzs"]:
 			formula_peak_mzs = frag_entry["formula_peak_mzs"]
 			formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]
-			if spec_entry is not None:
-				prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
-				formula_peak_mzs = formula_peak_mzs + prec_type_mass_diff
-			frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
+			#if spec_entry is not None:
+			prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
+			crf_peaks = frag_data["frag_formula_peak_mzs"] + prec_type_mass_diff
+			if self.frag_params["include_cmf"] and spec_entry["prec_type"] not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
+				cmf_type_mass_diff = PREC_TYPE_TO_CMF_MASS_DIFF[spec_entry["prec_type"]]
+				cmf_peaks = frag_data["frag_formula_peak_mzs"] + cmf_type_mass_diff
+				frag_data["frag_formula_peak_mzs"] = th.cat([crf_peaks, cmf_peaks], dim=0)
+			else:
+				frag_data["frag_formula_peak_mzs"] = crf_peaks
+			#frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
 		if self.frag_params["formula_peak_probs"]:	
 			formula_peak_probs = frag_entry["formula_peak_probs"]
 			formula_peak_probs = F.normalize(formula_peak_probs[:,:self.frag_params["num_isotopes"]],dim=1,p=1)
