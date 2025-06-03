@@ -14,8 +14,8 @@ pip install --no-index --upgrade pip
 
 pip install --no-index torch==2.4.1
 pip install --no-index torch_geometric==2.6.1 
-pip install --no-index torch_scatter
-pip install --no-index pandas
+pip install --no-index torch_scatter=2.1.2
+pip install --no-index pandas==2.2.3
 pip install --no-index wandb
 pip install --no-index tqdm
 pip install --no-index scipy
