@@ -21,7 +21,7 @@ pip install --no-index pytorch_lightning==2.1.2
 pip install --no-index dgl==2.0
 
 pip install --no-index cython==3.0.12
-pip install --no-index pandas==2.2.3
+pip install --no-index pandas==2.2.3 numpy==1.26.4
 pip install --no-index networkx
 pip install --no-index wandb
 pip install --no-index tqdm
