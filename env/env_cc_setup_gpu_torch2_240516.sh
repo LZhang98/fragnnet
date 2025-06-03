@@ -12,7 +12,6 @@ source FRAG-GNN/bin/activate
 pip install --no-index --upgrade pip
 
 pip install --no-index torch==2.1.2
-pip install --no-index rdkit==2022.3.5
 pip install --no-index torch_geometric==2.4.0 
 pip install --no-index torch_scatter==2.1.2
 pip install --no-index torch_sparse==0.6.18
