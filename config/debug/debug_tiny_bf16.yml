@@ -91,7 +91,7 @@ checkpoint_metric: val_cos_sim_0.01_epoch/mean
 # - cos_sim
 # eval_mz_bin_res:
 # - 0.01
-precision: bf16-mixed
+precision: bf16
 use_tensor_float32: False
 automatic_optimization: True
 dynamic_batch_sampler: False
