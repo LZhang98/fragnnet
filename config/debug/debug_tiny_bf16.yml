@@ -6,7 +6,7 @@ wandb_tags:
 spec_fp: data/proc/debug_tinyv4/spec_df.pkl
 mol_fp: data/proc/debug_tinyv4/mol_df.pkl
 split_dp: data/split/debug_tinyv4
-frag_dp: data/frag/debug_tinyv4_d4h4/dags
+frag_dp: data/frag/debug_tinyv4_d3h4/dags
 
 subsample_params:
   subsample_size: 40
@@ -37,7 +37,7 @@ nb_iso: False
 
 # model stuff
 frag_gnn_type: NodeMLP
-num_depth: 5
+num_depth: 4
 num_hs: 4
 ce_insert_type: embed
 ce_insert_location: mlp
