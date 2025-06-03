@@ -17,7 +17,6 @@ except ModuleNotFoundError:
 import logging
 import yaml
 import os
-
 import glob
 import shutil
 import tempfile
@@ -512,11 +511,16 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 	if not trainer.interrupted:
 		# find checkpoints
 		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
+		upload_ckpt_flag = config_d["upload_checkpoints"] and \
+			not config_d["disable_checkpoints"]
 		delete_before_ckpt_flag = not config_d["upload_checkpoints"] and \
 			not config_d["disable_checkpoints"]
 		transfer_ckpt_flag = not config_d["delete_checkpoints"] and \
 			delete_before_ckpt_flag
-		if transfer_ckpt_flag:
+		if upload_ckpt_flag:
+			for ckpt_fp in ckpt_fps:
+				wandb.save(ckpt_fp, base_path=os.path.dirname(ckpt_dp))
+		elif transfer_ckpt_flag:
 			temp_ckpt_dir = tempfile.TemporaryDirectory()
 			for ckpt_fp in ckpt_fps:
 				shutil.move(ckpt_fp,os.path.join(temp_ckpt_dir.name,os.path.basename(ckpt_fp)))

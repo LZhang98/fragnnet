@@ -26,9 +26,9 @@ def filter_spec_mol(
 		min_prec_mz=None,
 		prec_types:list|None = None,
 		num_entries=-1,
-  		inst_types:list|None  = None,
-    	frag_modes:list|None  = None,
-     	ion_modes:list|None  = None,
+		inst_types:list|None  = None,
+		frag_modes:list|None  = None,
+		ion_modes:list|None  = None,
 		ces:str|None  = None):
 	
 	"""

@@ -56,10 +56,10 @@ def main(args):
 	print()
 
 	# perform filter selection
-	prec_types = args.prec_types if 'any' not in args.prec_types else None
-	frag_modes = args.frag_modes if 'any' not in args.frag_modes else None
-	ion_modes = args.ion_modes if 'any' not in args.ion_modes else None
-	inst_types = args.inst_types if 'any' not in args.inst_types else None
+	prec_types = args.prec_types
+	frag_modes = args.frag_modes
+	ion_modes = args.ion_modes
+	inst_types = args.inst_types
 	
 	spec_df, mol_df = filter_spec_mol(
 		spec_df,
@@ -326,10 +326,10 @@ if __name__ == "__main__":
 	parser.add_argument("--wandb_run_name",type=str)
 	parser.add_argument("--save_dag",type=booltype,default=True)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",nargs="+",default='any')
-	parser.add_argument("--inst_types",nargs="+",default='any')
-	parser.add_argument("--frag_modes",nargs="+",default='any')
-	parser.add_argument("--ion_modes",nargs="+",default='any')
+	parser.add_argument("--prec_types",nargs="+",required=False)
+	parser.add_argument("--inst_types",nargs="+",required=False)
+	parser.add_argument("--frag_modes",nargs="+",required=False)
+	parser.add_argument("--ion_modes",nargs="+",required=False)
 	parser.add_argument("--use_cached_dag",type=booltype,default=False)
 	args = parser.parse_args()
  

@@ -16,10 +16,10 @@ def make_splits(args):
 	print("> Spectrum filters")
 
 	# filter spectra 
-	prec_types = args.prec_types if 'any' not in args.prec_types else None
-	frag_modes = args.frag_modes if 'any' not in args.frag_modes else None
-	ion_modes = args.ion_modes if 'any' not in args.ion_modes else None
-	inst_types = args.inst_types if 'any' not in args.inst_types else None
+	prec_types = args.prec_types
+	frag_modes = args.frag_modes
+	ion_modes = args.ion_modes
+	inst_types = args.inst_types
 
 	dsets = args.primary_dsets + args.secondary_dsets
 	f_spec_df, f_mol_df = filter_spec_mol(
@@ -218,9 +218,6 @@ def make_splits(args):
 			print("> number of unique spec", split_data[split_type]['spec_id'].nunique())
 			print("> number of unique groups", split_data[split_type]['group_id'].nunique())
 			print("-" * 16)
-		#print(f"> Split sizes (spec_id): train = {split_data['train_df'].shape[0]},"
-		#	f"val = {split_data['val_df'].shape[0]}, test = {split_data['test_df'].shape[0]} "
-		#	f"secondary test df = {split_data['secondary_df'].shape[0]}")
 		
 		# save ids
 		train_fp = os.path.join(split_data['split_dp'],"train_ids.csv")
@@ -264,11 +261,11 @@ if __name__ == "__main__":
 	parser.add_argument("--max_num_dag_edges",type=int,default=250000)
 	parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types", type=str,nargs="+", required=False, default='any')
-	parser.add_argument("--inst_types", type=str, nargs="+", required=False, default='any')
-	parser.add_argument("--frag_modes", type=str, nargs="+", required=False, default='any')
-	parser.add_argument("--ion_modes", type=str, nargs="+", required=False, default='any')
-	parser.add_argument('--ces',required=False, choices=['nce', 'ace', 'any'], default='any')
+	parser.add_argument("--prec_types", type=str,nargs="+", required=False)
+	parser.add_argument("--inst_types", type=str, nargs="+", required=False)
+	parser.add_argument("--frag_modes", type=str, nargs="+", required=False)
+	parser.add_argument("--ion_modes", type=str, nargs="+", required=False)
+	parser.add_argument('--ces',required=False, choices=['nce', 'ace'], required=False)
 
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=420420)
