@@ -1,4 +1,4 @@
-wandb_name: cc_cpu_test
+wandb_name: debug_tinyv4
 wandb_tags:
 - cc_test_run
 
@@ -72,16 +72,16 @@ train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 32
-eval_batch_size: 32
+train_batch_size: 4
+eval_batch_size: 4
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01
-accelerator: cpu
+accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 5
+max_epochs: 5
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
