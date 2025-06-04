@@ -201,22 +201,51 @@ def sparse_cross_entropy_vec(
 		oos_tolerance_multiple: int,
 		gaussian_renormalize: bool,
 		loss_batch_size: int) -> th.Tensor:
-	
-	# print(pred_logprobs.shape[0]*true_logprobs.shape[0]*4 / 1e6)
+	"""
+	Vectorized computation of sparse cross-entropy loss for batched spectra.
+
+	Args:
+		true_mzs: Ground truth m/z values.
+		true_logprobs: Ground truth log-probabilities (intensities).
+		true_batch_idxs: Batch indices for ground truth peaks.
+		pred_mzs: Predicted m/z values.
+		pred_logprobs: Predicted log-probabilities (intensities).
+		pred_batch_idxs: Batch indices for predicted peaks.
+		pred_oos_logprobs: Predicted log-probabilities for out-of-sample (OOS) peaks.
+		tolerance: m/z matching tolerance.
+		relative: Whether tolerance is relative to m/z.
+		tolerance_min_mz: Minimum m/z for relative tolerance.
+		oos_tolerance_multiple: Multiplier for OOS tolerance.
+		gaussian_renormalize: Whether to renormalize Gaussian.
+		loss_batch_size: Batch size for loss computation.
+
+	Returns:
+		ios_ce: In-sample cross-entropy per batch.
+		oos_ce: Out-of-sample cross-entropy per batch.
+		0., 1.: Placeholders for compatibility.
+	"""
+
+	# Set up types and constants
 	float_dtype = true_logprobs.dtype
 	int_type = true_batch_idxs.dtype
 	device = true_logprobs.device
 	mask_value = LOG_ZERO(float_dtype)
 	batch_size = th.max(true_batch_idxs)+1
+
+	# Calculate number of loss batches for memory efficiency
 	loss_num_batches = (batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0)
+
+	# Compute cumulative sum of counts for batch slicing
 	true_batch_cumsum = th.cumsum(F.pad(th.unique(true_batch_idxs,return_counts=True)[1],(1,0),"constant",0),dim=0)
 	pred_batch_cumsum = th.cumsum(F.pad(th.unique(pred_batch_idxs,return_counts=True)[1],(1,0),"constant",0),dim=0)
 
+	# Initialize output tensors for in-sample and out-of-sample cross-entropy
 	ios_ce = th.zeros([batch_size],dtype=float_dtype,device=device)
 	oos_ce = th.zeros([batch_size],dtype=float_dtype,device=device)
 
+	# Loop over loss batches for memory efficiency
 	for bl in range(loss_num_batches):
-
+		# Compute batch slice indices
 		bl_lower = bl*loss_batch_size
 		bl_upper = min((bl+1)*loss_batch_size,batch_size)
 		bl_true_lower = true_batch_cumsum[bl_lower]
@@ -224,8 +253,8 @@ def sparse_cross_entropy_vec(
 		bl_pred_lower = pred_batch_cumsum[bl_lower]
 		bl_pred_upper = pred_batch_cumsum[bl_upper]
 		bl_batch_size = bl_upper-bl_lower
-		# print((bl_true_upper-bl_true_lower)*(bl_pred_upper-bl_pred_lower)*4)
 
+		# Slice batch data and adjust indices to local batch
 		bl_true_batch_idxs = true_batch_idxs[bl_true_lower:bl_true_upper] - bl_lower
 		bl_pred_batch_idxs = pred_batch_idxs[bl_pred_lower:bl_pred_upper] - bl_lower
 		bl_true_logprobs = true_logprobs[bl_true_lower:bl_true_upper]
@@ -234,8 +263,9 @@ def sparse_cross_entropy_vec(
 		bl_pred_mzs = pred_mzs[bl_pred_lower:bl_pred_upper]
 		bl_pred_oos_logprobs = pred_oos_logprobs[bl_lower:bl_upper]
 
-		# this should be optimized
+		# Create mask for matching batch indices
 		bl_batch_mask = bl_true_batch_idxs.reshape(-1,1) == bl_pred_batch_idxs.reshape(1,-1)
+		# Create mask for matching m/z values within tolerance
 		bl_match_mask = calculate_match_mzs(
 			bl_true_mzs,
 			bl_pred_mzs,
@@ -243,12 +273,14 @@ def sparse_cross_entropy_vec(
 			relative=relative,
 			tolerance_min_mz=tolerance_min_mz
 		)
+		# Combine masks: only consider matches within same batch and within m/z tolerance
 		bl_both_mask = bl_batch_mask & bl_match_mask
 		del bl_batch_mask, bl_match_mask
 
+		# Mask for true peaks that have any matching prediction
 		bl_true_both_mask = th.any(bl_both_mask,dim=1)
 
-		# TODO: move this before the loop?
+		# Compute Gaussian stds and log truncation factors for predictions
 		if relative:
 			bl_stds = th.clamp(bl_pred_mzs,min=tolerance_min_mz)*tolerance
 		else:
@@ -261,15 +293,20 @@ def sparse_cross_entropy_vec(
 		else:
 			bl_log_trunc_factors = th.zeros_like(bl_pred_mzs)
 		
+		# Compute log-probabilities for in-sample peaks (vectorized Gaussian mixture)
 		bl_ios_log_probs = -0.5*(bl_true_mzs.reshape(-1,1)-bl_pred_mzs.reshape(1,-1))**2/bl_vars.reshape(1,-1) - 0.5*th.log(2*th.pi*bl_vars.reshape(1,-1))
 		bl_ios_log_probs = bl_ios_log_probs + bl_pred_logprobs.reshape(1,-1) - bl_log_trunc_factors.reshape(1,-1)
+		# Mask out non-matching pairs with mask_value (large negative)
 		bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).float()*mask_value
+		# Log-sum-exp over predictions for each true peak
 		bl_ios_log_probs = th.logsumexp(bl_ios_log_probs,dim=1)
 
+		# Compute in-sample cross-entropy for this batch
 		if not th.any(bl_true_both_mask):
-			# all zeros
+			# If no matches, fill with LOG_ZERO
 			bl_ios_ce = th.full([bl_batch_size],LOG_ZERO(float_dtype),dtype=float_dtype,device=device)
 		else:
+			# Sum over matched true peaks, reduce by batch index
 			bl_ios_ce = scatter_reduce(
 				(-th.exp(bl_true_logprobs)*bl_ios_log_probs)[bl_true_both_mask],
 				bl_true_batch_idxs[bl_true_both_mask],
@@ -279,6 +316,7 @@ def sparse_cross_entropy_vec(
 				default=0.)
 			ios_ce[bl_lower:bl_upper] = bl_ios_ce
 
+		# Compute out-of-sample logprobs for true peaks with no match
 		if not th.all(bl_true_both_mask):
 			bl_true_oos_logprobs = scatter_logsumexp(
 				bl_true_logprobs[~bl_true_both_mask],
@@ -286,8 +324,9 @@ def sparse_cross_entropy_vec(
 				dim_size=bl_batch_size
 			)
 		else:
-			# all zeros
+			# If all matched, fill with LOG_ZERO
 			bl_true_oos_logprobs = th.full([bl_batch_size],LOG_ZERO(float_dtype),dtype=float_dtype,device=device)
+		# Compute out-of-sample cross-entropy
 		bl_oos_ce = -th.exp(bl_true_oos_logprobs)*bl_pred_oos_logprobs
 		oos_ce[bl_lower:bl_upper] = bl_oos_ce
 		
@@ -610,17 +649,35 @@ def sparse_jensen_shannon_divergence(
 		mz_max: float=1500.,
 		mz_bin_res: float=0.01,
 		log_min: float=EPS) -> th.Tensor:
+	"""
+	Compute the sparse Jensen-Shannon divergence between two sets of spectra.
 
-	# sparse bin
+	Args:
+		true_mzs: Ground truth m/z values.
+		true_logprobs: Ground truth log-probabilities (intensities).
+		true_batch_idxs: Batch indices for ground truth peaks.
+		pred_mzs: Predicted m/z values.
+		pred_logprobs: Predicted log-probabilities (intensities).
+		pred_batch_idxs: Batch indices for predicted peaks.
+		mz_max: Maximum m/z value for binning.
+		mz_bin_res: Resolution of m/z bins.
+		log_min: Minimum log value to avoid log(0).
+
+	Returns:
+		Jensen-Shannon divergence (distance) between the binned spectra, per batch.
+	"""
+
+	# Bin the ground truth peaks into sparse bins using batched_bin_func
 	true_bin_idxs, true_bin_logprobs, true_bin_batch_idxs = batched_bin_func(
 		true_mzs,
 		true_logprobs,
 		true_batch_idxs,
 		mz_max=mz_max,
 		mz_bin_res=mz_bin_res,
-		agg="lse",
-		sparse=True
+		agg="lse",      # Use log-sum-exp aggregation for intensities
+		sparse=True     # Use sparse representation for efficiency
 	)
+	# Bin the predicted peaks into sparse bins
 	pred_bin_idxs, pred_bin_logprobs, pred_bin_batch_idxs = batched_bin_func(
 		pred_mzs,
 		pred_logprobs,
@@ -630,14 +687,15 @@ def sparse_jensen_shannon_divergence(
 		agg="lse",
 		sparse=True
 	)
-	# calculate similarity
+	# Calculate Jensen-Shannon similarity using the helper function
 	jss = jss_helper(
-        true_bin_idxs,
-        true_bin_logprobs.exp(),
-        true_bin_batch_idxs,
-        pred_bin_idxs,
-        pred_bin_logprobs.exp(),
-        pred_bin_batch_idxs,
+		true_bin_idxs,
+		true_bin_logprobs.exp(),   # Convert log-probabilities to probabilities
+		true_bin_batch_idxs,
+		pred_bin_idxs,
+		pred_bin_logprobs.exp(),
+		pred_bin_batch_idxs,
 		log_min=log_min
-    )
+	)
+	# Return 1 - similarity to get the divergence (distance)
 	return 1.-jss
