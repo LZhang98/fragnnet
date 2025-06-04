@@ -2047,16 +2047,17 @@ class FragGNNPL(SpectrumPL):
 				if self.hparams.debug_zero_loss:
 					mean_loss = 0. * mean_loss
 
- 			# Scale and backward
-			#self.scaler.scale(mean_loss).backward()
-			self.manual_backward(mean_loss)
-			# accumulate gradients of N samples
-			self._cur_batch_size += batch_size
-			self._cur_batch_weight += total_weight
-			if self._cur_batch_size >= self._max_batch_size:
-				self._manual_opt()
-			self._update_results(batch_results,"train")
-			return mean_loss
+				# Scale and backward
+				#self.scaler.scale(mean_loss).backward()
+				self.manual_backward(mean_loss)
+
+				# accumulate gradients of N samples
+				self._cur_batch_size += batch_size
+				self._cur_batch_weight += total_weight
+				if self._cur_batch_size >= self._max_batch_size:
+					self._manual_opt()
+				self._update_results(batch_results,"train")
+				return mean_loss
 		
 		else:
 			with self.trainer.precision_plugin.forward_context():
@@ -2066,15 +2067,15 @@ class FragGNNPL(SpectrumPL):
 				if self.hparams.debug_zero_loss:
 					mean_loss = 0. * mean_loss
 					self.print(mean_loss)
-			# Scale loss and backward
-			#self.scaler.scale(mean_loss).backward()
-			self.manual_backward(mean_loss)
-			# accumulate gradients of N samples
-			self._cur_batch_size += self.hparams.train_batch_size
-			self._cur_batch_weight += total_weight
-			if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
-				self._manual_opt()
-			self._update_results(batch_results,"train")
+				# Scale loss and backward
+				#self.scaler.scale(mean_loss).backward()
+				self.manual_backward(mean_loss)
+				# accumulate gradients of N samples
+				self._cur_batch_size += self.hparams.train_batch_size
+				self._cur_batch_weight += total_weight
+				if (batch_idx + 1) % self.hparams.accumulate_grad_batches == 0:
+					self._manual_opt()
+				self._update_results(batch_results,"train")
 			return mean_loss
 		
 	def optimizer_step(self, *args, **kwargs):
