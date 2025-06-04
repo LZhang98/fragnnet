@@ -585,8 +585,26 @@ def sparse_cosine_distance_hungarian(
 		relative: bool=True,
 		tolerance_min_mz: float=TOLERANCE_MIN_MZ,
 		log_distance: bool=False) -> th.Tensor:
+	"""
+	Compute the sparse cosine distance between spectra using the Hungarian algorithm for optimal matching.
 
-	# round peaks
+	Args:
+		true_mzs: Ground truth m/z values.
+		true_logprobs: Ground truth log-probabilities (intensities).
+		true_batch_idxs: Batch indices for ground truth peaks.
+		pred_mzs: Predicted m/z values.
+		pred_logprobs: Predicted log-probabilities (intensities).
+		pred_batch_idxs: Batch indices for predicted peaks.
+		tolerance: m/z matching tolerance.
+		relative: Whether tolerance is relative to m/z.
+		tolerance_min_mz: Minimum m/z for relative tolerance.
+		log_distance: If True, return log(1-cosine); else return 1-cosine.
+
+	Returns:
+		Tensor of cosine distances per batch.
+	"""
+
+	# Aggregate and round peaks for both true and predicted spectra
 	true_mzs, true_logprobs, true_batch_idxs = round_aggregate_peaks(
 		true_mzs,
 		true_logprobs,
@@ -599,19 +617,21 @@ def sparse_cosine_distance_hungarian(
 		pred_batch_idxs,
 		agg="lse"
 	)
-	# calculate
+	# Get number of batches
 	batch_size = th.max(true_batch_idxs)+1
 	cos_dist_hun = th.zeros([batch_size],device=true_logprobs.device,dtype=true_logprobs.dtype)
 	for batch_idx in range(batch_size):
+		# Select peaks for current batch
 		b_true_mask = (true_batch_idxs==batch_idx)
 		b_pred_mask = (pred_batch_idxs==batch_idx)
 		b_true_mzs = true_mzs[b_true_mask]
 		b_pred_mzs = pred_mzs[b_pred_mask]
 		b_true_logprobs = true_logprobs[b_true_mask]
 		b_pred_logprobs = pred_logprobs[b_pred_mask]
-		# l2 normalize
+		# L2 normalize log-probabilities for cosine similarity
 		b_true_logprobs = b_true_logprobs - 0.5*th.logsumexp(2*b_true_logprobs,dim=0)
 		b_pred_logprobs = b_pred_logprobs - 0.5*th.logsumexp(2*b_pred_logprobs,dim=0)
+		# Compute m/z matching mask within tolerance
 		b_match_mzs = calculate_match_mzs(
 			b_true_mzs,
 			b_pred_mzs,
@@ -619,19 +639,25 @@ def sparse_cosine_distance_hungarian(
 			relative=relative,
 			tolerance_min_mz=tolerance_min_mz
 		)
+		# Identify which true and predicted peaks have matches
 		b_true_match_mzs = th.any(b_match_mzs,dim=1)
 		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+		# Compute score matrix for matched peaks (outer sum of logprobs, exponentiated)
 		b_score = th.exp(
 			b_true_logprobs[b_true_match_mzs].detach().unsqueeze(1) + \
 			b_pred_logprobs[b_pred_match_mzs].detach().unsqueeze(0)
 		)
+		# Mask out unmatched pairs with LOG_ZERO
 		b_score[~b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs]] = LOG_ZERO(b_score.dtype)
+		# Hungarian algorithm for optimal matching (maximizing score)
 		b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+		# Compute log-cosine similarity for matched pairs
 		b_log_cos_hun = th.logsumexp(
 			b_true_logprobs[b_true_match_mzs][b_true_idxs] + \
 			b_pred_logprobs[b_pred_match_mzs][b_pred_idxs],
 			dim=0
 		)
+		# Convert to cosine distance
 		if log_distance:
 			b_cos_dist_hun = th.log1p(-th.exp(b_log_cos_hun))
 		else:
