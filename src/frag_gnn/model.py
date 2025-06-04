@@ -1065,8 +1065,8 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 
 		assert th.all(
 			th.isclose(
-				scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp().to(th.float32) + oos_logprobs.exp().to(th.float32) + (not_oos_logprobs+frag_null_formula_logprob).exp().to(th.float32),
-				th.ones_like(oos_logprobs).to(th.float32),
+				scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp().to(spec_logprobs.dtype) + oos_logprobs.exp().to(spec_logprobs.dtype) + (not_oos_logprobs+frag_null_formula_logprob).exp().to(spec_logprobs.dtype),
+				th.ones_like(oos_logprobs).to(spec_logprobs.dtype),
 				rtol=0.,
 				atol=1e-2
 			)
