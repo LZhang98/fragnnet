@@ -1,0 +1,114 @@
+wandb_name: debug_tinyv4
+wandb_tags:
+- cc_test_run
+
+# data stuff
+spec_fp: data/proc/debug_tinyv4/spec_df.pkl
+mol_fp: data/proc/debug_tinyv4/mol_df.pkl
+split_dp: data/split/debug_tinyv4
+frag_dp: data/frag/debug_tinyv4_d3h4/dags
+
+subsample_params:
+  subsample_size: 40
+  subsample_seed: 42
+  train: True
+  val: True
+  test: True
+  secondary: True
+
+frag_params:
+  pyg: True
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    # - h_counts
+    # - nb_iso_idx
+  pyg_edges: True
+  pyg_bigraph: True
+  num_isotopes: 1
+  formula_peak_mzs: True
+  formula_peak_probs: True
+  formula_str: False
+  compressed: True
+  preload: False
+  preprocess: False
+  include_cmf: True
+spec_params:
+  merge: True
+  nce: True
+  merge_keep_ces: True
+  preprocess: False #True
+  prec_types:
+    - "[M+H]+"
+    - "[M-H]-"
+    - "[M+Na]+"
+mol_params:
+  preprocess: False #True
+nb_iso: False
+
+# model stuff
+frag_gnn_type: NodeMLP
+num_depth: 4
+num_hs: 4
+ce_insert_type: embed
+ce_insert_location: mlp
+ce_insert_merge: True
+mol_pool_type: mean
+frag_pool_type: mean
+mol_normalization: batch
+mol_hidden_size: 64
+mol_num_layers: 1
+mol_dropout: 0.2
+frag_hidden_size: 64
+frag_num_layers: 1
+frag_normalization: graph
+frag_embed_combine: avg
+frag_pool_combine: subtract
+frag_dropout: 0.1
+mlp_normalization: layer
+mlp_hidden_size: 64
+mlp_dropout: 0.2
+
+# loss stuff
+mask_null_formula: False
+predict_oos: True
+oos_tolerance_multiple: 1
+oos_loss: True
+gaussian_renormalize: True
+sparse_cosine_similarity: True
+loss_vectorized: True
+loss_batch_size: 16
+skip_extra_losses: False #True
+group_sampler: False
+simple_group_sampler: False
+train_sample_weight: none
+eval_sample_weight: none
+
+# optimization stuff
+train_batch_size: 1
+eval_batch_size: 1
+accumulate_grad_batches: 4
+gradient_clip_val: 5.0
+lr: 0.0003033
+weight_decay: 0.01
+accelerator: gpu
+devices: 1
+min_epochs: 5
+max_epochs: 5
+lr_schedule: False
+debug_overfit: False
+upload_checkpoints: False
+delete_checkpoints: True
+checkpoint_metric: val_cos_sim_0.01_epoch/mean
+# auxiliary_scores:
+# - cos_sim
+# eval_mz_bin_res:
+# - 0.01
+precision: 32
+use_tensor_float32: True
+automatic_optimization: True
+dynamic_batch_sampler: False
+pl_enable_progress_bar: True
+compile: True
