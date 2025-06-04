@@ -84,7 +84,7 @@ def filter_spec_mol(
 		masks.append(nce_mask)
 	elif ces == "ace_or_nce":
 		print(">> require ace or nce")
-		mask = (~spec_df["nce"].isna() or ~spec_df["ace"].isna())
+		mask = ((~spec_df["nce"].isna()) | (~spec_df["ace"].isna()))
 		print(f">> ace_or_nce filter: {mask.mean()}")
 		masks.append(mask)
 		
