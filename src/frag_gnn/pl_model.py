@@ -1,6 +1,6 @@
 import torch as th
-from torch.amp import autocast, GradScaler
-
+import torch.nn as nn
+from torch.utils.data import RandomSampler
 import numpy as np
 import wandb
 import logging
@@ -1384,8 +1384,7 @@ class SpectrumPL(pl.LightningModule):
 class FragGNNPL(SpectrumPL):
 
 	def _setup_model(self):
-		# for AMP and manual optimization
-		self.scaler = GradScaler()
+
 		# frag GNN
 		self.model = FragGNNModel(
 			num_depth=self.hparams.num_depth,
@@ -2043,17 +2042,14 @@ class FragGNNPL(SpectrumPL):
 		elif self.hparams.dynamic_batch_sampler:
 			batch_size = batch['batch_size'].item()
 			assert batch_size > 0, batch_size
-			with autocast():
-				batch_results = self._common_step(batch, split="train")
-				total_loss = batch_results["total_loss"]
-				total_weight = batch_results["total_weight"]
-				mean_loss = total_loss / self._max_batch_size
-				if self.hparams.debug_zero_loss:
-					mean_loss = 0. * mean_loss
-
- 			# Scale and backward
-			self.scaler.scale(mean_loss).backward()
-			#self.manual_backward(mean_loss)
+			batch_results = self._common_step(batch, split="train")
+			total_loss = batch_results["total_loss"]
+			total_weight = batch_results["total_weight"]
+			mean_loss = total_loss / self._max_batch_size
+			if self.hparams.debug_zero_loss:
+				mean_loss = 0. * mean_loss
+				self.print(mean_loss)
+			self.manual_backward(mean_loss)
 			# accumulate gradients of N samples
 			self._cur_batch_size += batch_size
 			self._cur_batch_weight += total_weight
@@ -2063,16 +2059,13 @@ class FragGNNPL(SpectrumPL):
 			return mean_loss
 		
 		else:
-			with autocast():
-				batch_results = self._common_step(batch, split="train")
-				mean_loss = batch_results["mean_loss"] / self.hparams.accumulate_grad_batches
-				total_weight = batch_results["total_weight"]
-				if self.hparams.debug_zero_loss:
-					mean_loss = 0. * mean_loss
-					self.print(mean_loss)
-			# Scale loss and backward
-			self.scaler.scale(mean_loss).backward()
-			#self.manual_backward(mean_loss)
+			batch_results = self._common_step(batch, split="train")
+			mean_loss = batch_results["mean_loss"] / self.hparams.accumulate_grad_batches
+			total_weight = batch_results["total_weight"]
+			if self.hparams.debug_zero_loss:
+				mean_loss = 0. * mean_loss
+				self.print(mean_loss)
+			self.manual_backward(mean_loss)
 			# accumulate gradients of N samples
 			self._cur_batch_size += self.hparams.train_batch_size
 			self._cur_batch_weight += total_weight
