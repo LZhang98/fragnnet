@@ -72,8 +72,8 @@ train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 4
-eval_batch_size: 4
+train_batch_size: 1
+eval_batch_size: 1
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0003033
@@ -96,4 +96,6 @@ use_tensor_float32: True
 automatic_optimization: True
 dynamic_batch_sampler: False
 pl_enable_progress_bar: True
-compile: True
+compile: False
+num_workers: 0
+detect_anomaly: True
