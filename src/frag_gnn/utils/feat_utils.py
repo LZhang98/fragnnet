@@ -35,7 +35,6 @@ def register_bond_feat(cls):
 	bond_feat_registry[cls.name] = {"fn": cls.featurize, "feat_size": cls.feat_size}
 	return cls
 
-
 def register_atom_feat(cls):
 	"""register_atom_feat."""
 	atom_feat_registry[cls.name] = {"fn": cls.featurize, "feat_size": cls.feat_size}
@@ -419,8 +418,8 @@ def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula
 	Args:
 		mol_pyg_list (list[pyg.data.Data]): List of PyG molecule graphs.
 		frag_pyg_list (list[pyg.data.Data]): List of PyG fragment graphs.
-		formula_peak_mzs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of m/z values for each fragment.
-		formula_peak_probs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of probabilities for each fragment.
+		formula_peak_mzs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of m/z values for each mol.
+		formula_peak_probs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of probabilities for each mol.
 
 	Returns:
 		dict: {
@@ -435,10 +434,6 @@ def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula
 			"frag_formula_cumsizes": 1D tensor, cumulative sum of frag_formula_sizes (for indexing),
 			"frag_formula_peak_sizes": 1D tensor, number of nonzero peaks per fragment,
 		}
-	Notes:
-	- Each formula for a fragment is mapped by its index in the fragment's formula list.
-	- Only peaks with nonzero probability are kept.
-	- The mapping from peak to formula is given by frag_formula_peak_idxs, and the mapping from fragment to its formula indices is given by frag_formula_cumsizes.
 	"""
 	# batch size
 	batch_size = len(mol_pyg_list)
@@ -459,14 +454,15 @@ def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula
 	frag_num_nodes = th.cumsum(th.tensor([0]+frag_num_nodes),dim=0)
  
 	# Initialize lists
-	frag_formula_peak_idxs = [] # 1D tensor, indices of the formula created peak_i in fragments, concatenated across all fragments.
+	frag_formula_peak_idxs = [] # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
 	frag_formula_peak_mzs = []
 	frag_formula_peak_probs = []
 	frag_formula_sizes = [] # 1D tensor, offset for each fragment's formula indices in the concatenated batch.
 	frag_formula_peak_sizes = [] # 1D tensor, number of nonzero peaks per fragment. in case of isotopes, each formula can have more than one peak.
  
-	# Loop through the provided peak mzs and probabilities, and filter out the zero probabilities
+	# Loop through the mz and probs for each sample
 	for mzs, probs in zip(formula_peak_mzs_list,formula_peak_probs_list):
+
 		# sparsify: retain only non-zero probability peaks
 		idx = th.nonzero(probs)
 		# Extract mass-to-charge ratios where probability is non-zero
@@ -503,7 +499,7 @@ def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula
 		"frag_formula_peak_sizes": frag_formula_peak_sizes, # Peak sizes for each fragment formula
 	}
 	return batched_mol_frag
-
+    
 def get_mol_fp(mol,morgan,rdkit,maccs):
 	"""  function to get the fingerprint of a molecule
 	Args:

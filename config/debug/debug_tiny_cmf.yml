@@ -6,8 +6,9 @@ wandb_tags:
 spec_fp: data/proc/debug_tinyv4/spec_df.pkl
 mol_fp: data/proc/debug_tinyv4/mol_df.pkl
 split_dp: data/split/debug_tinyv4
-frag_dp: data/frag/debug_tinyv4_d3h4/dags
+frag_dp: data/frag/debug_tinyv4_d3h4_cmf/dags
 
+num_workers: 1
 subsample_params:
   subsample_size: 40
   subsample_seed: 42
@@ -23,6 +24,7 @@ frag_params:
     - base_formula
     - depth
     - h_formulae_idx
+    - cmf_h_formulae_idx
     # - h_counts
     # - nb_iso_idx
   pyg_edges: True
