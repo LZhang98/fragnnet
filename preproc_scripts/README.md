@@ -4,7 +4,7 @@
 
 All of the data used in the paper is based on the NIST 2020 MS/MS library. Since this library is not publicly available, we are unfortunately unable to provide access to it.
 
-The raw NIST data can be exported using the instructions [here](https://github.com/Roestlab/massformer). It can then be processed using the scripts in the [preroc_scripts directory](preproc_scripts/) (see [this README](preproc_scripts/README.md) for more details).
+The raw NIST data can be exported using the instructions [here](https://github.com/Roestlab/massformer).
 
 ## Step 1: Processing raw data into CSV
 
@@ -41,23 +41,37 @@ python preproc_scripts/03_prepare_dag_feats.py --max_depth 3 --frag_dp data/frag
 Frag configuration: depth 4 (used for FraGNNet-D4), isomorphism check with no bond information (nb, 3 WL iterations)
 
 ```bash
-python preproc_scripts/03_prepare_dag_feats.py --max_depth 4 --frag_dp data/frag/nist20_d4 --proc_dp data/proc/nist20 --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --wandb_mode disabled
+python preproc_scripts/03_prepare_dag_feats.py --max_depth 4 --frag_dp data/frag/nist20_d4 --proc_dp data/proc/nist20 --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --dsets nist20_hr--wandb_mode disabled
 ```
 
 ## Step 4: Preparing Splits
 
-This step splits the data into training, validation, and test sets.
+This step splits the data into training, validation, and test sets. To exactly reproduce the splits used in the paper, download the split id files ([inchikey](), [scaffold]()) and place them in `data/split/nist20_inchikey/` and `data/split/nist20_scaffold/` respectively. Then, run the following scripts to remap the ids to work with the processed dataset from the previous step:
 
 Inchikey split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_key inchikey_s --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_inchikey
+python preproc_scripts/04_prepare_split.py --split_type predefined --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --dag_filtering False --proc_dp data/proc/nist20 --predefined_id_type dset_spec_id --predefined_train_id_fp data/split/nist20_inchikey/train_dset_ids.csv --predefined_val_id_fp data/split/nist20_inchikey/val_dset_ids.csv --predefined_test_id_fp data/split/nist20_inchikey/test_dset_ids.csv --split_dp data/split/nist20_inchikey
 ```
 
 Scaffold split:
 
 ```bash
-python preproc_scripts/04_prepare_split.py --split_key scaffold --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
+python preproc_scripts/04_prepare_split.py --split_type predefined --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --dag_filtering False --proc_dp data/proc/nist20 --predefined_id_type dset_spec_id --predefined_train_id_fp data/split/nist20_scaffold/train_dset_ids.csv --predefined_val_id_fp data/split/nist20_scaffold/val_dset_ids.csv --predefined_test_id_fp data/split/nist20_scaffold/test_dset_ids.csv --split_dp data/split/nist20_scaffold
+```
+
+If you don't want to use the exact splits that we used (just ones with similar statistics), you can use the same script to generate random splits:
+
+Inchikey split:
+
+```bash
+python preproc_scripts/04_prepare_split.py --split_type random --split_key inchikey_s --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_inchikey
+```
+
+Scaffold split:
+
+```bash
+python preproc_scripts/04_prepare_split.py --split_type random --split_key scaffold --primary_dsets nist20_hr --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --proc_dp data/proc/nist20 --frag_dp data/frag/nist20_d4 --split_dp data/split/nist20_scaffold
 ```
 
 ## Step 5: Preparing Optimal MAGMa DAGs (ICEBERG)
@@ -65,7 +79,7 @@ python preproc_scripts/04_prepare_split.py --split_key scaffold --primary_dsets 
 This step generates optimal MAGMa DAGs for training/evaluating the ICEBERG generator model optimal ICEBERG intensity model.
 
 ```bash
-python preproc_scripts/05_prepare_magma_feats.py --magma_dp data/magma/gen/nist20mona23v3 --proc_dp data/proc/nist20mona23v3 --dsets nist20_hr mona23
+python preproc_scripts/05_prepare_magma_feats.py --magma_dp data/magma/gen/nist20 --proc_dp data/proc/nist20 --dsets nist20_hr
 ```
 
 ## Step 6: Preparing Approximate MAGMa DAGs (ICEBERG)
