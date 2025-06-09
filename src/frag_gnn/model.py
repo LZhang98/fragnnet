@@ -647,7 +647,7 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
   
 		h_formulae_idx_feat = get_node_feats(frag_x, frag_node_feat_idxs, "h_formulae_idx")
-		frag_joint_formula_idxs = (h_formulae_idx_feat + frag_node_offsets.unsqueeze(-1)).flatten()
+		frag_joint_formula_idxs = (h_formulae_idx_feat + frag_node_offsets.unsqueeze(-1))
 		assert h_formulae_idx_feat.shape[1] == 2 * self.num_hs + 1, (
 			f"h_formulae_idx feature size {h_formulae_idx_feat.shape[1]} does not match expected {2 * self.num_hs + 1} (2*num_hs+1)"
 		)
@@ -656,11 +656,12 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			frag_joint_formula_idxs = th.cat(
 				[
 					frag_joint_formula_idxs,
-					(get_node_feats(frag_x,frag_node_feat_idxs,"cmf_h_formulae_idx")+frag_node_offsets.unsqueeze(-1)).flatten()
-				],
-				dim=0
+					get_node_feats(frag_x,frag_node_feat_idxs,"cmf_h_formulae_idx")+frag_node_offsets.unsqueeze(-1)],
+				dim=1
 			)
 		
+		frag_joint_formula_idxs = frag_joint_formula_idxs.flatten()
+
 		# TODO check if num_h match h_formulae_idx featuresize
 
 		#assert frag_joint_formula_idxs.shape[0] == batch_frag_num_nodes * (self.mlp_output_dim), (
@@ -812,7 +813,9 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 
 		frag_embed = th.cat(frag_embed_parts, dim=1)
 		frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs, self.mlp_output_dim)
+		# create mask for null forumla, for each sample #0 forumla is null
 		frag_joint_mask = (~th.isin(frag_joint_formula_idxs,frag_formula_cumsizes[:-1])).float()
+		# h count stuff
 		h_counts = th.zeros([2*self.num_hs+1],device=device,dtype=frag_joint_batch_idxs.dtype)
 		h_counts[1+2*th.arange(self.num_hs,device=device)] = -th.arange(1,self.num_hs+1,device=device)
 		h_counts[2+2*th.arange(self.num_hs,device=device)] = th.arange(1,self.num_hs+1,device=device)
@@ -1145,8 +1148,8 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 				rtol=0.,
 				atol=1e-2
 			)
-		), (scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp())
-
+		), (scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp(),scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp() + oos_logprobs.exp() + (not_oos_logprobs+frag_null_formula_logprob).exp())
+		# print(scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp(),scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp() + oos_logprobs.exp() + (not_oos_logprobs+frag_null_formula_logprob).exp())
 		out_d = {
 			"pred_mzs": spec_mzs,
 			"pred_logprobs": spec_logprobs,
@@ -1210,7 +1213,7 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 				if v.numel() == 0:
 					raise ValueError(f"Empty batch index: {k}")
 				elif th.unique(v).shape[0] != batch_size:
-					raise ValueError(f"Missing items in batch: {k}")
+					raise ValueError(f"Missing items in {k} of batch: {th.unique(v).shape[0]} expeacting {batch_size}")
 
 		return out_d
 
