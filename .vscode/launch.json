@@ -5,12 +5,25 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "scripts/run_pl_model_fit",
+      "name": "run_pl_model_fit",
       "type": "python",
       "request": "launch",
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
-      "args": ["-w","disabled","-c","config/d3_base_debug_fw.yml"]
+      "args": ["-w","disabled","-c","config/debug/debug_tiny_cmf.yml"],
+      "env": {
+        "TORCH_LOGS": "+dynamo",
+        "TORCHDYNAMO_VERBOSE": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
+      }
+    },
+    {
+      "name": "run_compute_frags",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_compute_frags.py",
+      "console": "integratedTerminal",
+      "args": []
     }
   ]
 }
