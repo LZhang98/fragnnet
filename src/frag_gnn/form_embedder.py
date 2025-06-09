@@ -42,6 +42,12 @@ class IntFeaturizer(nn.Module):
 		extra_embed_mask = (tensor >= self.max_count_int).float()
 
 		tensor = tensor.long()
+  
+		#print("Tensor min:", tensor.min().item(), "max:", tensor.max().item(), "shape:", tensor.shape)
+		#print("int_to_feat_matrix shape:", self.int_to_feat_matrix.shape)
+		#assert tensor.min() >= 0 and tensor.max() < self.int_to_feat_matrix.shape[0], \
+    	#	f"Index out of bounds: min={tensor.min().item()}, max={tensor.max().item()}, allowed=[0, {self.int_to_feat_matrix.shape[0]-1}]"
+
 		norm_embeds = self.int_to_feat_matrix[tensor]
 		extra_embeds = self._extra_embeddings[th.maximum(tensor,self.max_count_int*th.ones_like(tensor))-self.max_count_int]
 		out_tensor = (1.-extra_embed_mask).unsqueeze(-1)*norm_embeds + extra_embed_mask.unsqueeze(-1)*extra_embeds
