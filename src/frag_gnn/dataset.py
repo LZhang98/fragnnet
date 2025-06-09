@@ -99,7 +99,7 @@ class BaseDataset(Dataset):
 			spec_df.loc[:,"nce"] = seq_apply_df_rows(spec_df, fill_missing_nce)
 		else:
 			ce_key = None
-
+  
 		if spec_params["test_ces"] is not None and ce_key is not None and "test" in splits:
 			test_split_fp = os.path.join(split_dp,"test_ids.csv")
 			test_split_df = pd.read_csv(test_split_fp)

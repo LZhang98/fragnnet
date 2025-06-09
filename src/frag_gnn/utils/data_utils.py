@@ -1,5 +1,6 @@
 import importlib
 import re
+import warnings
 import pandas as pd
 import numpy as np
 import joblib
@@ -1117,7 +1118,10 @@ def fill_missing_nce(row) -> float:
 	ace = row["ace"]
 	if none_or_nan(nce) and not none_or_nan(ace):
 		return ace_to_nce(row)
+	elif not none_or_nan(nce):
+		return nce
 	else:
+		warnings.warn(f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace}")
 		return nce
 
 def fill_missing_ace(row) -> float:
@@ -1131,7 +1135,10 @@ def fill_missing_ace(row) -> float:
 	ace = row["ace"]
 	if none_or_nan(ace) and not none_or_nan(nce):
 		return nce_to_ace(row)
+	elif not none_or_nan(ace):
+		return ace
 	else:
+		warnings.warn(f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce}")
 		return ace
 
 def parse_mass_gym_ce_str(ce_str):
