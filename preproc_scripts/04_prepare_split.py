@@ -282,7 +282,7 @@ if __name__ == "__main__":
 	parser.add_argument("--inst_types", type=str,nargs="+", required=False, default='any')
 	parser.add_argument("--frag_modes", type=str,nargs="+", required=False, default='any')
 	parser.add_argument("--ion_modes", type=str,nargs="+", required=False, default='any')
-	parser.add_argument('--ces',required=False,choices=['nce', 'ace', 'ace_or_nce'])
+	parser.add_argument('--ces',required=False,choices=[None, 'nce', 'ace', 'ace_or_nce'], default='ace_or_nce')
 
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=420420)
