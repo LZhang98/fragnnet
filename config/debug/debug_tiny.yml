@@ -8,9 +8,11 @@ mol_fp: data/proc/debug_tinyv4/mol_df.pkl
 split_dp: data/split/debug_tinyv4
 frag_dp: data/frag/debug_tinyv4_d3h4/dags
 
+seed: 42
+
 subsample_params:
-  subsample_size: 40
-  subsample_seed: 420
+  subsample_size: 1
+  subsample_seed: 42
   train: True
   val: True
   test: True
@@ -72,25 +74,25 @@ train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 4
-eval_batch_size: 4
-accumulate_grad_batches: 4
+train_batch_size: 1
+eval_batch_size: 1
+accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
-min_epochs: 5
-max_epochs: 5
+min_epochs: 100
+max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
 delete_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
-# auxiliary_scores:
-# - cos_sim
-# eval_mz_bin_res:
-# - 0.01
+auxiliary_scores:
+ - cos_sim
+eval_mz_bin_res:
+ - 0.01
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
