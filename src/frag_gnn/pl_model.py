@@ -2299,7 +2299,7 @@ class GNNPL(BinnedPL):
 			th_dynamo.reset()
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
-
+    
 def test_models():
 
 	from frag_gnn.runner import load_config, init_dataset
@@ -2358,8 +2358,7 @@ def test_models():
 		mean_loss.backward()
 
 		print()
-
-
+    
 if __name__ == "__main__":
 
 	from frag_gnn.utils.misc_utils import th_temp_seed

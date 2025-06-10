@@ -17,7 +17,7 @@ from frag_gnn.utils.spec_utils import batch_func
 from frag_gnn.utils.proc_utils import merge_spec_df
 from frag_gnn.utils.frag_utils import load_frag_d
 from frag_gnn.utils.misc_utils import flatten_lol, get_pyg_memory_usage, get_tensor_dict_memory_usage, none_or_nan
-from frag_gnn.utils.data_utils import fill_missing_ace, fill_missing_nce, seq_apply_df_rows
+from frag_gnn.utils.data_utils import fill_missing_ace, fill_missing_nce, seq_apply_df_rows, mol_from_smiles
 import frag_gnn.massformer.data_utils as mf_data_utils
 from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 
@@ -992,3 +992,37 @@ def get_group_sampler(ds: SpecMolFragDataset, sampler_type: str, avg_per_group: 
 		generator=generator)
 	return sampler
 
+class McesDataset(Dataset):
+	def __init__(self, npz_fp):
+		self.data = np.load(npz_fp, mmap_mode='r')
+		self.smiles = self.data['smiles']
+		self.mces = self.data['mces']
+		self.num_samples = len(self.mces)
+		self.mols = [mol_from_smiles(x) for x in self.smiles]
+		self.mol_pygs = [get_mol_graph(x) for x in self.mols]
+
+	def _upper_triangular_index_to_pair(self, idx):
+		# Inverse mapping: flat idx -> (i, j)
+		# See https://stackoverflow.com/a/27086195
+		N = self.num_samples
+		i = N - 2 - int(np.floor(np.sqrt(-8*idx + 4*N*(N-1)-7)/2.0 - 0.5))
+		j = idx + i + 1 - N*(N-1)//2 + (N-i)*((N-i)-1)//2
+		return i, j
+	
+	def __getitem__(self, idx):
+		i, j = self._upper_triangular_index_to_pair(idx)
+		smiles_i = self.smiles[i]
+		smiles_j = self.smiles[j]
+		mces = self.data['mces'][idx]
+		mol_pyg_i = self.mol_pygs[i]
+		mol_pyg_j = self.mol_pygs[j]
+		return {
+			'smiles_i': smiles_i,
+			'smiles_j': smiles_j,
+			'mces': mces,
+			'mol_pyg_i': mol_pyg_i,
+			'mol_pyg_j': mol_pyg_j,
+		}
+
+	def __len__(self):
+		return self.num_samples

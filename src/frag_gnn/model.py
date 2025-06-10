@@ -27,7 +27,7 @@ class CEModel:
 		ce_insert_size: int,
 		ce_mean: float,
   		ce_std: float,
-    	ce_max: float,):
+		ce_max: float,):
 
 		# ce stuff
 		assert ce_insert_type in ["id","lin","embed","bin"]
@@ -1294,9 +1294,11 @@ class PrecursorModel(nn.Module):
 			"pred_batch_idxs": pred_batch_idxs
 		}
 		return out_d
-
+  
 class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
-
+	"""
+ 	A GNN-based model for molecular graph embeddings and spectrum prediction.
+  	"""
 	def __init__(
 		self,
 		mol_node_feats: list[str],
@@ -1490,3 +1492,159 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 	def _inst_location_check(self):
 
 		assert self.inst_insert_location in ["mlp","mol","none"], f"prec_insert_location={self.inst_insert_location} not supported"
+  
+class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
+	"""
+ 	Simaese GNN model for molecular graph embedding
+  	"""
+	def __init__(
+		self,
+		mol_node_feats: list[str],
+		mol_edge_feats: list[str],
+		mol_pe_embed_k: int,
+		mol_hidden_size: int,
+		mol_num_layers: int,
+		mol_gnn_type: str,
+		mol_normalization: str,
+		mol_dropout: float,
+		mol_pool_type: str,
+		mlp_hidden_size: int,
+		mlp_dropout: float,
+		mlp_num_layers: int,
+		mlp_use_residuals: bool,
+		mz_max: int,
+		mz_bin_res: float,
+		ff_prec_mz_offset: int,
+		ff_bidirectional: bool,
+		ff_output_map_size: int,
+		ff_output_activation: str,
+		int_embedder: str,
+		ce_insert_type: str,
+		ce_insert_location: str,
+		ce_insert_merge: bool,
+		ce_insert_size: int,
+		ce_max: float,
+		ce_mean: float,
+		ce_std: float,
+		prec_insert_location: str,
+		prec_insert_size: int,
+		prec_types: list[str],
+		inst_insert_location: str,
+		inst_insert_size: int,
+		inst_types: list[str],
+		log_min: float
+	):
+		# nn.Module init
+		super().__init__()
+		# collision energy
+		self._ce_init(
+			int_embedder=int_embedder,
+			ce_insert_location=ce_insert_location,
+			ce_insert_type=ce_insert_type,
+			ce_insert_merge=ce_insert_merge,
+			ce_insert_size=ce_insert_size,
+			ce_max=ce_max,
+			ce_mean=ce_mean,
+			ce_std=ce_std
+		)
+		# precursor
+		self._prec_init(
+			prec_insert_location=prec_insert_location,
+			prec_insert_size=prec_insert_size,
+			prec_num_types=len(prec_types)
+		)
+		# instrument
+		self._inst_init(
+			inst_insert_location=inst_insert_location,
+			inst_insert_size=inst_insert_size,
+			inst_num_types=len(inst_types))
+
+		# calculate node/edge feats sizes
+		self.mol_node_feats = mol_node_feats
+		self.mol_edge_feats = mol_edge_feats
+		self.mol_pe_embed_k = mol_pe_embed_k
+		self._compute_mol_feats_sizes()
+
+		# setup mol gnn
+		self.mol_node_feats_size += self.ce_mol_input_dim + self.prec_mol_input_dim + self.inst_mol_input_dim
+		mol_kwargs = {
+			"node_feats_size": self.mol_node_feats_size,
+			"edge_feats_size": self.mol_edge_feats_size,
+			"hidden_size": mol_hidden_size,
+			"num_layers": mol_num_layers,
+			"gnn_type": mol_gnn_type,
+			"dropout": mol_dropout,
+			"normalization": mol_normalization,
+		}
+		# Mol GNN
+		self.mol_embedder = GNN(**mol_kwargs)
+		self.mol_pool_type = mol_pool_type
+		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
+
+		# MLP input = GNN output
+		self.mlp_input_dim = mol_hidden_size
+		# metadata
+		self.mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
+  
+		self.regressor = MLPBlocks(
+			input_size=self.mlp_input_dim,
+			output_size=1,
+			hidden_size=mlp_hidden_size,
+			num_layers=mlp_num_layers,
+			dropout=mlp_dropout,
+			use_residuals=mlp_use_residuals,
+			normalization="bacth"
+		)
+		
+	#def forward(
+	#	self, 
+	#	mol_pyg: pyg.data.Data,
+	#	spec_prec_mz: th.Tensor,
+	#	spec_nce: th.Tensor = None,
+	#	spec_nce_batch_idxs: th.Tensor = None,
+	#	spec_prec_type: th.Tensor = None,
+	#	spec_inst_type: th.Tensor = None,
+	#		**kwargs
+	#):
+	 
+	def forward(self, mol_pyg_i: pyg.data.Data, mol_pyg_j: pyg.data.Data, **kwargs):
+		"""
+			
+  		"""
+		# Encode both molecules using the same GNN
+		emb_i = self.mol_embedder(
+			mol_pyg_i.x, mol_pyg_i.batch, mol_pyg_i.edge_index, mol_pyg_i.edge_attr
+		)
+		emb_j = self.mol_embedder(
+			mol_pyg_j.x, mol_pyg_j.batch, mol_pyg_j.edge_index, mol_pyg_j.edge_attr
+		)
+		pooled_i = self.mol_pool(emb_i, mol_pyg_i.batch)
+		pooled_j = self.mol_pool(emb_j, mol_pyg_j.batch)
+		combined = th.abs(pooled_i - pooled_j)
+		pred_mces = self.regressor(combined)
+		return pred_mces.squeeze(-1)
+		
+	def _compute_mol_feats_sizes(self):
+		""" method compute mol feature size
+			these features don't rely on any model parameters
+		"""
+		self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
+			self.mol_node_feats, 
+			self.mol_edge_feats, 
+			self.mol_pe_embed_k
+		)
+		
+	def _ce_location_check(self):
+		# input not used
+		# just here to keep the shape consistent		
+		pass
+
+	def _prec_location_check(self):
+		# input not used
+		# just here to keep the shape consistent
+		pass
+
+	def _inst_location_check(self):
+		# input not used
+		# just here to keep the shape consistent
+		pass
