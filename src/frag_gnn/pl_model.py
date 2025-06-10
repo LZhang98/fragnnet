@@ -1873,9 +1873,9 @@ class FragGNNPL(SpectrumPL):
 					pred_h_logprobs,
 					pred_h_batch_idxs
 				)
-				loss_d["h_mean"] = h_mean
-				loss_d["h_e"] = h_e
-				loss_d["h_ne"] = h_ne
+				loss_d["h_mean"] = h_mean # The mean predicted hydrogen count.
+				loss_d["h_e"] = h_e # Shannon entropy of the predicted hydrogen count distribution
+				loss_d["h_ne"] = h_ne # The normalized entropy
 			
 			if not self.hparams.skip_edge_loss:
 				if "edge_h_range_loss" in self.loss_names or "edge_h_transfer_loss" in self.loss_names:
