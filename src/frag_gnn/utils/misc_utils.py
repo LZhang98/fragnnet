@@ -217,13 +217,27 @@ def scatter_masked_logsumexp(logits,mask,subset_idxs,mask_value=None):
 	masked_logsumexp = scatter_logsumexp(masked_logits,subset_idxs)
 	return masked_logsumexp
 
-def scatter_logsumexp(logits,subset_idxs,eps=EPS,dim_size=None):
+def scatter_logsumexp(logits, subset_idxs, eps=EPS, dim_size=None):
+	"""
+	Computes a numerically stable logsumexp over groups defined by subset_idxs.
 
+	Args:
+		logits (Tensor): Input tensor of values (e.g., log-probabilities), shape [N].
+		subset_idxs (Tensor): 1D tensor of group indices for each element in logits, shape [N].
+		eps (float, optional): Small value to avoid log(0). Defaults to EPS.
+		dim_size (int, optional): Number of groups. If None, inferred from subset_idxs.
+
+	Returns:
+		Tensor: logsumexp for each group, shape [num_groups]. If used as c[subset_idxs], broadcasts to [N].
+	"""
+	# Determine the number of groups (k)
 	if dim_size is None:
-		k = th.max(subset_idxs)+1
+		k = th.max(subset_idxs) + 1
 	else:
-		assert dim_size >= th.max(subset_idxs)+1
+		assert dim_size >= th.max(subset_idxs) + 1
 		k = dim_size
+
+	# Step 1: For each group, find the maximum logit (for numerical stability)
 	sm = scatter_reduce(
 		src=logits,
 		index=subset_idxs,
@@ -231,12 +245,18 @@ def scatter_logsumexp(logits,subset_idxs,eps=EPS,dim_size=None):
 		dim_size=k,
 		default=LOG_ZERO(logits.dtype)
 	)
+
+	# Step 2: Gather the group max for each element
 	lm = th.gather(
 		input=sm,
 		index=subset_idxs,
 		dim=0
 	)
+
+	# Step 3: Subtract the group max from each logit (for stability)
 	logits = logits - lm
+
+	# Step 4: For each group, sum the exponentiated shifted logits
 	se = scatter_reduce(
 		src=th.exp(logits),
 		index=subset_idxs,
@@ -244,10 +264,24 @@ def scatter_logsumexp(logits,subset_idxs,eps=EPS,dim_size=None):
 		dim_size=k,
 		default=0.
 	)
+
+	# Step 5: Compute logsumexp for each group: max + log(sum(exp(x - max)))
 	return sm + th.log(se + eps)
 
-def scatter_logmeanexp(logits,subset_idxs,eps=EPS,dim_size=None):
+def scatter_logmeanexp(logits, subset_idxs, eps=EPS, dim_size=None):
+	"""
+	Computes a numerically stable log-mean-exp over groups defined by subset_idxs.
 
+	Args:
+		logits (Tensor): Input tensor of values (e.g., log-probabilities), shape [N].
+		subset_idxs (Tensor): 1D tensor of group indices for each element in logits, shape [N].
+		eps (float, optional): Small value to avoid log(0). Defaults to EPS.
+		dim_size (int, optional): Number of groups. If None, inferred from subset_idxs.
+
+	Returns:
+		Tensor: log-mean-exp for each group, shape [num_groups].
+	"""
+	# Compute the denominator: number of elements in each group
 	den = scatter_reduce(
 		src=th.ones_like(logits),
 		index=subset_idxs,
@@ -255,18 +289,33 @@ def scatter_logmeanexp(logits,subset_idxs,eps=EPS,dim_size=None):
 		dim_size=dim_size,
 		default=0.
 	)
+	# Compute the numerator: logsumexp for each group
 	log_num = scatter_logsumexp(
 		logits,
 		subset_idxs,
 		eps=eps,
 		dim_size=dim_size
 	)
+	# log-mean-exp = logsumexp - log(denominator)
 	return log_num - safelog(den)
 
-def scatter_logsoftmax(logits,subset_idxs):
-	# calculate normalizing constant
-	c = scatter_logsumexp(logits,subset_idxs)
-	# apply normalizing constant
+def scatter_logsoftmax(logits, subset_idxs):
+	"""
+	Computes a log-softmax over groups defined by subset_idxs.
+
+	For each group (as defined by subset_idxs), this function normalizes the logits
+	so that the exponentiated values sum to 1 within each group, but returns the result in log-space.
+
+	Args:
+		logits (Tensor): Input tensor of values (e.g., logits or log-probabilities), shape [N].
+		subset_idxs (Tensor): 1D tensor of group indices for each element in logits, shape [N].
+
+	Returns:
+		Tensor: Log-softmax-normalized values for each element, shape [N].
+	"""
+	# Calculate the logsumexp for each group (normalizing constant)
+	c = scatter_logsumexp(logits, subset_idxs)
+	# Subtract the group logsumexp from each element's logit to get log-softmax
 	logits = logits - c[subset_idxs]
 	return logits
 
@@ -636,7 +685,7 @@ def kl_div(x_logprobs, y_logprobs) -> th.Tensor:
 	return th.sum(th.exp(x_logprobs)*(x_logprobs-y_logprobs), dim=0)
 
 def js_div(x_ids, x_logprobs, y_ids, y_logprobs) -> th.Tensor:
-    """ method to compute Jensen-Shannon Divergence 
+	""" method to compute Jensen-Shannon Divergence 
 
 	Args:
 		x_ids (_type_): _description_
@@ -648,32 +697,32 @@ def js_div(x_ids, x_logprobs, y_ids, y_logprobs) -> th.Tensor:
 		th.Tensor: Jensen-Shannon divergence 
 	"""
  
-    # Ensure that each element in x_ids and y_ids is unique (i.e., no duplicates)
-    assert th.unique(x_ids).shape[0] == x_ids.shape[0]
-    assert th.unique(y_ids).shape[0] == y_ids.shape[0]
-    
-    # Combine the ids from x and y, creating a union of the two sets of ids
-    z_ids, z_inv_idxs = th.unique(th.cat([x_ids, y_ids], dim=0), return_inverse=True)
-    
-    # Initialize probability vectors for x and y, filled with a small value to avoid -inf (log(0))
-    # LOG_ZERO is assumed to return the log of a very small value (close to 0)
-    x_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(x_logprobs.dtype), dtype=x_logprobs.dtype)
-    y_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(y_logprobs.dtype), dtype=y_logprobs.dtype)
-    
-    # Fill the initialized vectors with the actual log-probabilities from x and y, respectively
-    x_logprobs_p[z_inv_idxs[:x_ids.shape[0]]] = x_logprobs
-    y_logprobs_p[z_inv_idxs[x_ids.shape[0]:]] = y_logprobs
-    
-    # Compute the combined log-probabilities (z_logprobs) using logsumexp, which handles the sum of logs
-    z_logprobs = th.logsumexp(th.stack([x_logprobs_p, y_logprobs_p], dim=0), dim=0) - LOG_TWO
-    
-    # Compute the Jensen-Shannon Divergence (JSD) as the average of two Kullback-Leibler (KL) divergences
-    jsd = 0.5 * kl_div(x_logprobs_p, z_logprobs) + 0.5 * kl_div(y_logprobs_p, z_logprobs)
-    
-    # Normalize the JSD by dividing by LOG_TWO to ensure it is in a standard scale (between 0 and 1)
-    jsd_n = jsd / LOG_TWO
-    
-    return jsd_n
+	# Ensure that each element in x_ids and y_ids is unique (i.e., no duplicates)
+	assert th.unique(x_ids).shape[0] == x_ids.shape[0]
+	assert th.unique(y_ids).shape[0] == y_ids.shape[0]
+	
+	# Combine the ids from x and y, creating a union of the two sets of ids
+	z_ids, z_inv_idxs = th.unique(th.cat([x_ids, y_ids], dim=0), return_inverse=True)
+	
+	# Initialize probability vectors for x and y, filled with a small value to avoid -inf (log(0))
+	# LOG_ZERO is assumed to return the log of a very small value (close to 0)
+	x_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(x_logprobs.dtype), dtype=x_logprobs.dtype)
+	y_logprobs_p = th.full_like(z_ids, fill_value=LOG_ZERO(y_logprobs.dtype), dtype=y_logprobs.dtype)
+	
+	# Fill the initialized vectors with the actual log-probabilities from x and y, respectively
+	x_logprobs_p[z_inv_idxs[:x_ids.shape[0]]] = x_logprobs
+	y_logprobs_p[z_inv_idxs[x_ids.shape[0]:]] = y_logprobs
+	
+	# Compute the combined log-probabilities (z_logprobs) using logsumexp, which handles the sum of logs
+	z_logprobs = th.logsumexp(th.stack([x_logprobs_p, y_logprobs_p], dim=0), dim=0) - LOG_TWO
+	
+	# Compute the Jensen-Shannon Divergence (JSD) as the average of two Kullback-Leibler (KL) divergences
+	jsd = 0.5 * kl_div(x_logprobs_p, z_logprobs) + 0.5 * kl_div(y_logprobs_p, z_logprobs)
+	
+	# Normalize the JSD by dividing by LOG_TWO to ensure it is in a standard scale (between 0 and 1)
+	jsd_n = jsd / LOG_TWO
+	
+	return jsd_n
 
 def get_slurm_job_id():
 	return os.getenv('SLURM_JOB_ID', default=None)
