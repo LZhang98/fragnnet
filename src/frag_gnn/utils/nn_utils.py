@@ -471,11 +471,10 @@ class GGNN(nn.Module):
 		return x
 
 class MLPBlocks(nn.Module):
-	"""Just Good Old Multilayer perceptron with residuals
+	"""
+ 		Just Good Old Multilayer perceptron with residuals
 		layer->dropout->activation(Relu)
 		if residuals is True, add a skip connection between block
-	Args:
-		nn (_type_): _description_
 	"""
 	def __init__(
 		self,
@@ -487,16 +486,18 @@ class MLPBlocks(nn.Module):
 		output_size: int = None,
 		use_residuals: bool = False,
 	):
-		"""_summary_
+		""" MLP with optional residual connections.
 
 		Args:
-			input_size (int): input dimensions
-			hidden_size (int): hidden_size layer dimensions
-			dropout (float): dropout ratio
-			num_layers (int): num of hidden layers + 1
-			output_size (int, optional): output dimensions. Defaults to None.
-			use_residuals (bool, optional): if residuals is True, add a skip connection between locks. Defaults to False.
+			input_size (int): Input feature dimension.
+			hidden_size (int): Hidden layer dimension.
+			normalization (str): Type of normalization ('batch', 'layer', or 'none').
+			dropout (float): Dropout probability.
+			num_layers (int): Number of hidden layers (excluding input/output).
+			output_size (int, optional): Output feature dimension. If None, no output layer is used. If not None, use a linear layer to project to output_size.
+			use_residuals (bool, optional): If True, adds skip connections between hidden layers.
 		"""
+  
 		super().__init__()
 		self.activation = nn.ReLU()
 		self.dropout_layer = nn.Dropout(p=dropout)
