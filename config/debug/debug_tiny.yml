@@ -11,7 +11,7 @@ frag_dp: data/frag/debug_tinyv4_d3h4/dags
 seed: 42
 
 subsample_params:
-  subsample_size: 1
+  subsample_size: 40
   subsample_seed: 42
   train: True
   val: True
@@ -47,9 +47,9 @@ ce_insert_merge: True
 mol_pool_type: mean
 frag_pool_type: mean
 mol_normalization: batch
-mol_hidden_size: 256
+mol_hidden_size: 128
 mol_dropout: 0.2
-frag_hidden_size: 256
+frag_hidden_size: 128
 frag_normalization: graph
 frag_embed_combine: avg
 frag_pool_combine: subtract

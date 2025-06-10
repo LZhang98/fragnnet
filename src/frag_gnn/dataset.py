@@ -629,6 +629,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			# CMF stuff
 			# TODO check if cmf_h_formulae_idx is in features
 			if self.frag_params["include_cmf"] and spec_entry["prec_type"] not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
+				#print(f'> Adding CMF data {spec_entry["prec_type"]}')
 				cmf_type_mass_diff = PREC_TYPE_TO_CMF_MASS_DIFF[spec_entry["prec_type"]]
 				num_formulae = formula_peak_mzs.shape[0]
 				cmf_peaks = frag_data["frag_formula_peak_mzs"][1:] + cmf_type_mass_diff # first peak is for NULL

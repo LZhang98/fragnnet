@@ -819,16 +819,26 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		h_counts = th.zeros([2*self.num_hs+1],device=device,dtype=frag_joint_batch_idxs.dtype)
 		h_counts[1+2*th.arange(self.num_hs,device=device)] = -th.arange(1,self.num_hs+1,device=device)
 		h_counts[2+2*th.arange(self.num_hs,device=device)] = th.arange(1,self.num_hs+1,device=device)
-		# in case of in clude cmf
+		# in case of include cmf
 		if include_cmf:
 			h_counts = th.cat([h_counts, h_counts], dim=0)
+			#cmf_mask = th.cat([th.ones(2 * self.num_hs + 1, device=device, dtype=float_dtype), th.zeros(2 * self.num_hs + 1, device=device, dtype=float_dtype)])
+		#else:
+			#cmf_mask = th.ones(2 * self.num_hs + 1, device=device, dtype=float_dtype)
+   
 		frag_joint_h_counts = h_counts.repeat(frag_node_batch_idxs.shape[0])
+	
+		#frag_joint_cmf_mask = cmf_mask.repeat(frag_node_batch_idxs.shape[0], 1)
 
 		if self.mlp_output_format == "formula":
 			#  predicts joint logits for each (node, formula) pair:
 			# log p(f,n)
 			frag_joint_logits = self.formula_module(frag_embed)
+			#frag_joint_logits = frag_joint_logits
+			#if include_cmf:
+			#	frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)
 			assert frag_joint_logits.shape[1] == self.mlp_output_dim, (frag_joint_logits.shape[1],2*self.num_hs+1)
+			#print("> frag_joint_logits shape:", frag_joint_logits.shape)
 			frag_joint_logits = frag_joint_logits.flatten()
 
 			# compute all joint log probabilits
@@ -905,17 +915,16 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		else:
 			raise ValueError(f"Unknown mlp_output_format: {self.mlp_output_format}")
 
+
 		# aggregate by formula
 		# log p(f) = logsumexp_n log p(f,n)
 		frag_formula_mask = th.ones_like(frag_formula_batch_idxs,dtype=float_dtype)
-		frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.
-		
+		frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.		
 		# aggregate by formula
 		frag_formula_logprobs = scatter_logsumexp(
 			frag_joint_logprobs.flatten(),
 			frag_joint_formula_idxs
 		)
-
 		# softmax over formulae
 		if self.mask_null_formula:
 			frag_formula_logprobs = scatter_masked_softmax(
@@ -932,6 +941,8 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 				log=True
 			)
 
+
+		# OOS Stuff
 		if self.predict_oos:
 			# get OOS logits and logprobs
 			oos_logits = self.oos_module(th.cat([mol_embed_gnn_pool,frag_embed_gnn_pool],dim=1))
@@ -1037,15 +1048,21 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			frag_real_joint_formula_idxs
 		)
 		# hydrogens
-		frag_real_joint_h_idxs = (frag_real_joint_h_counts + self.num_hs) + frag_real_joint_batch_idxs * (2*self.num_hs+1)
+		# frag_real_joint_h_idxs = (frag_real_joint_h_counts + self.num_hs) + frag_real_joint_batch_idxs * (2*self.num_hs+1)
+		frag_real_joint_h_idxs = (frag_real_joint_h_counts + self.num_hs) + frag_real_joint_batch_idxs * self.mlp_output_dim
+		
 		frag_real_h_logprobs = scatter_logsumexp(
 			frag_real_joint_logprobs,
 			frag_real_joint_h_idxs,
-			dim_size=batch_size*(2*self.num_hs+1)
+			dim_size=batch_size * self.mlp_output_dim #(2 * self.num_hs + 1)
 		)
+  
 		frag_real_h_logprobs = th.clamp(frag_real_h_logprobs, max=0.)
-		frag_real_h_counts = th.arange(-self.num_hs,self.num_hs+1,device=device).repeat(batch_size)
-		frag_real_h_batch_idxs = th.repeat_interleave(th.arange(batch_size,device=device),2*self.num_hs+1)
+		frag_real_h_counts = th.arange(-self.num_hs,self.num_hs+1,device=device)
+		if include_cmf:
+			frag_real_h_counts = th.cat([frag_real_h_counts,frag_real_h_counts])
+		frag_real_h_counts = frag_real_h_counts.repeat(batch_size)
+		frag_real_h_batch_idxs = th.repeat_interleave(th.arange(batch_size,device=device), self.mlp_output_dim)
 
 		# calculate isomorphic distributions
 		if self.nb_iso:
@@ -1149,7 +1166,12 @@ class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 				atol=1e-2
 			)
 		), (scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp(),scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp() + oos_logprobs.exp() + (not_oos_logprobs+frag_null_formula_logprob).exp())
-		# print(scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp(),scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp() + oos_logprobs.exp() + (not_oos_logprobs+frag_null_formula_logprob).exp())
+		
+  		#print("spec probs", scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp())
+		#print("oos probs", oos_logprobs.exp())
+		#print("not_oos_prob * null_formula_prob", (not_oos_logprobs+frag_null_formula_logprob).exp()),
+		#print("sum probs", scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp() + oos_logprobs.exp() + (not_oos_logprobs+frag_null_formula_logprob).exp())
+		
 		out_d = {
 			"pred_mzs": spec_mzs,
 			"pred_logprobs": spec_logprobs,
