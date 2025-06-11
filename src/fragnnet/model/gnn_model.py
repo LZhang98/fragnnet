@@ -1,3 +1,13 @@
+"""
+Graph Neural Network model for spectrum prediction.
+
+This class implements a graph neural network (GNN) model for MS/MS spectrum prediction.
+It supports flexible node/edge features, positional encoding, and modular metadata embedding
+for collision energy (CE), precursor type, and instrument type. The model uses a GNN for
+molecular graph encoding, followed by pooling and a feedforward network for spectrum prediction.
+
+"""
+
 import torch as th
 import torch.nn as nn
 import torch_geometric as pyg
@@ -6,6 +16,13 @@ from fragnnet.utils.nn_utils import build_pool_module, GNN, SpecFFN
 from fragnnet.model.model_base import CEModel, PrecModel, InstModel
 
 class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
+	"""
+	Graph Neural Network model for spectrum prediction.
+
+	- Supports configurable node/edge features and positional encoding.
+	- Modular metadata embedding for CE, precursor, and instrument type.
+	- Uses a GNN for molecular graph encoding, pooling, and a feedforward network for prediction.
+	"""
 
 	def __init__(
 		self,
@@ -44,9 +61,9 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		inst_types: list[str],
 		log_min: float
 	):
-		# nn.Module init
+		
 		super().__init__()
-		# collision energy
+		# collision energy embedding
 		self._ce_init(
 			int_embedder=int_embedder,
 			ce_insert_location=ce_insert_location,
@@ -57,13 +74,13 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 			ce_mean=ce_mean,
 			ce_std=ce_std
 		)
-		# precursor
+		# precursor embedding
 		self._prec_init(
 			prec_insert_location=prec_insert_location,
 			prec_insert_size=prec_insert_size,
 			prec_num_types=len(prec_types)
 		)
-		# instrument
+		# instrument embedding
 		self._inst_init(
 			inst_insert_location=inst_insert_location,
 			inst_insert_size=inst_insert_size,
@@ -89,13 +106,13 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		# Mol GNN
 		self.mol_embedder = GNN(**mol_kwargs)
 		self.mol_pool_type = mol_pool_type
-		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
+		self.mol_pool = build_pool_module(mol_pool_type, mol_hidden_size)
 
-		# MLP input = GNN output
+		# MLP input = GNN output + metadata
 		self.mlp_input_dim = mol_hidden_size
-		# metadata
 		self.mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
 
+		# Feedforward network for spectrum prediction
 		self.ffn = SpecFFN(
 			input_size=self.mlp_input_dim,
 			hidden_size=mlp_hidden_size,
@@ -115,62 +132,74 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		self, 
 		mol_pyg: pyg.data.Data,
 		spec_prec_mz: th.Tensor,
-		spec_nce: th.Tensor = None,
-		spec_nce_batch_idxs: th.Tensor = None,
+		spec_ce: th.Tensor = None,
+		spec_ce_batch_idxs: th.Tensor = None,
 		spec_prec_type: th.Tensor = None,
 		spec_inst_type: th.Tensor = None,
 		**kwargs
 	):
-		# mol features
-		# mol_x: mol level node feature matrix
-		# mol_edge_index: mol graph connectivity in COO format with shape [2, num_edges]
-		# edge_attr: mol graph edge feature matrix with shape [num_edges, num_edge_features]
-		# batch: sample idx repsect to current batch
+		"""
+		Forward pass for GNNModel.
+
+		Args:
+			mol_pyg: PyG Data object with molecular graph (x, edge_index, edge_attr, batch).
+			spec_prec_mz: Precursor m/z tensor.
+			spec_ce: Collision energy tensor (optional).
+			spec_ce_batch_idxs: Batch indices for CE (optional).
+			spec_prec_type: Precursor type tensor (optional).
+			spec_inst_type: Instrument type tensor (optional).
+
+		Returns:
+			Dictionary with predicted m/z, log-probabilities, batch indices, and spectra.
+		"""
+		# Extract molecular graph features
+		# mol_x: node feature matrix
+		# mol_edge_index: graph connectivity (COO format)
+		# mol_edge_attr: edge feature matrix
+		# mol_batch: sample index for each node
 		mol_x, mol_edge_index, mol_edge_attr, mol_batch = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr, mol_pyg.batch
 
-		# int_dtype = mol_edge_index.dtype
-		batch_size = mol_batch[-1]+1
+		batch_size = mol_batch[-1] + 1
 
-		# metadata embedders
-		# get ce value
-		ce = spec_nce
-		ce_batch_idxs = spec_nce_batch_idxs
+		# Metadata embedders
+		ce = spec_ce
+		ce_batch_idxs = spec_ce_batch_idxs
 		ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
-		# get prec value
 		prec_embed = self.embed_prec(spec_prec_type)
-		# get inst value
 		inst_embed = self.embed_inst(spec_inst_type)		
 
-		# metadata embeddings at the node feature level
+		# Metadata embeddings at the node feature level
 		if self.ce_insert_location == "mol":
-			mol_ce_embed = th.repeat_interleave(ce_embed,th.unique(mol_batch,return_counts=True)[1],dim=0)
-			mol_x = th.cat([mol_x,mol_ce_embed],dim=1)
+			mol_ce_embed = th.repeat_interleave(ce_embed, th.unique(mol_batch, return_counts=True)[1], dim=0)
+			mol_x = th.cat([mol_x, mol_ce_embed], dim=1)
 		if self.prec_insert_location == "mol":
-			mol_prec_embed = th.repeat_interleave(prec_embed,th.unique(mol_batch,return_counts=True)[1],dim=0)
-			mol_x = th.cat([mol_x,mol_prec_embed],dim=1)
+			mol_prec_embed = th.repeat_interleave(prec_embed, th.unique(mol_batch, return_counts=True)[1], dim=0)
+			mol_x = th.cat([mol_x, mol_prec_embed], dim=1)
 		if self.inst_insert_location == "mol":
-			mol_inst_embed = th.repeat_interleave(inst_embed,th.unique(mol_batch,return_counts=True)[1],dim=0)
-			mol_x = th.cat([mol_x,mol_inst_embed],dim=1)
+			mol_inst_embed = th.repeat_interleave(inst_embed, th.unique(mol_batch, return_counts=True)[1], dim=0)
+			mol_x = th.cat([mol_x, mol_inst_embed], dim=1)
 		
-		# get per-atom embeddings
+		# GNN encoding
 		mol_embed_gnn = self.mol_embedder(
 			mol_x,
 			mol_batch,
 			mol_edge_index,
 			mol_edge_attr
 		)
-		mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn,mol_batch)
+		# Pooling to get graph-level embedding
+		mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn, mol_batch)
 		ffn_input = mol_embed_gnn_pool
 
+		# Metadata embeddings at the MLP level
 		if self.ce_insert_location == "mlp":
-			ffn_input = th.cat([ffn_input,ce_embed],dim=1)
+			ffn_input = th.cat([ffn_input, ce_embed], dim=1)
 		if self.prec_insert_location == "mlp":
-			ffn_input = th.cat([ffn_input,prec_embed],dim=1)
+			ffn_input = th.cat([ffn_input, prec_embed], dim=1)
 		if self.inst_insert_location == "mlp":
-			ffn_input = th.cat([ffn_input,inst_embed],dim=1)
+			ffn_input = th.cat([ffn_input, inst_embed], dim=1)
 
-		# apply ffn
-		pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(ffn_input,spec_prec_mz)
+		# Spectrum prediction
+		pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(ffn_input, spec_prec_mz)
 		out_d = {
 			"pred_mzs": pred_mzs,
 			"pred_logprobs": pred_logprobs,
@@ -180,8 +209,8 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		return out_d
 		
 	def _compute_mol_feats_sizes(self):
-		""" method compute mol feature size
-			these features don't rely on any model parameters
+		"""
+		Compute molecular node and edge feature sizes.
 		"""
 		self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
 			self.mol_node_feats, 
@@ -190,13 +219,10 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		)
 
 	def _ce_location_check(self):
-
-		assert self.ce_insert_location in ["mlp","mol","none"], f"ce_insert_location={self.ce_insert_location} not supported"
+		assert self.ce_insert_location in ["mlp", "mol", "none"], f"ce_insert_location={self.ce_insert_location} not supported"
 
 	def _prec_location_check(self):
-		
-		assert self.prec_insert_location in ["mlp","mol","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+		assert self.prec_insert_location in ["mlp", "mol", "none"], f"prec_insert_location={self.prec_insert_location} not supported"
 
 	def _inst_location_check(self):
-
-		assert self.inst_insert_location in ["mlp","mol","none"], f"prec_insert_location={self.inst_insert_location} not supported"
+		assert self.inst_insert_location in ["mlp", "mol", "none"], f"prec_insert_location={self.inst_insert_location} not supported"

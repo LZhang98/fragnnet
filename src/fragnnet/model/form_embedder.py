@@ -1,3 +1,7 @@
+"""
+land of feature embedders
+"""
+
 import torch as th
 import torch.nn as nn
 import numpy as np
