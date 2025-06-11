@@ -38,3 +38,4 @@ containers/apptainer
 model_eval
 ckpts
 wandb_venv
+containers
