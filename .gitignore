@@ -17,7 +17,7 @@ extra/
 jobs/
 slurm_scripts/
 # default virtualenv on CC
-FRAG-GNN-GPU2/
+FRAGGNET-GPU*/
 FRAG-GNN-GPU*/
 python_env/
 tmp_ckpt/
