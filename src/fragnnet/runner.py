@@ -6,7 +6,7 @@ try:
 	from lightning.pytorch.callbacks import DeviceStatsMonitor
 	from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 	from lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
-	from lightning.fabric.utilities.seed import seed_everything
+	from lightning import seed_everything
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
 	from pytorch_lightning.callbacks import DeviceStatsMonitor

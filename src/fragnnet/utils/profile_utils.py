@@ -56,7 +56,7 @@ class MyPyTorchProfiler(PyTorchProfiler):
                 self._schedule = None
                 self.profiler.schedule = torch.profiler.profiler._default_schedule_fn
 
-            def on_trace_ready(profiler: _PROFILER) -> None:
+            def on_trace_ready(profiler) -> None:
                 if self.dirpath is not None:
                     if self._export_to_chrome:
                         handler = tensorboard_trace_handler(

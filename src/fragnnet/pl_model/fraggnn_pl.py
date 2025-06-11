@@ -1,24 +1,11 @@
 import torch as th
-import numpy as np
 import logging
-import inspect
-
-# make cc happy
-try:
-	import lightning.pytorch as pl
-	from lightning.utilities.seed import _collect_rng_states, _set_rng_states
-except ModuleNotFoundError:
-	import pytorch_lightning as pl
-	from pytorch_lightning.utilities.seed import _collect_rng_states, _set_rng_states
-	
 import torch._dynamo as th_dynamo
 
-from fragnnet.utils.nn_utils import build_lr_scheduler
-from fragnnet.model import FragGNNModel, NeimsModel, PrecursorModel, GNNModel
+from fragnnet.model import FragGNNModel
 from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
 from fragnnet.utils.spec_utils import *
-from fragnnet.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_logsumexp, to_cpu, scatter_l1normalize, LOG_ZERO
-from fragnnet.utils.plot_utils import plot_spectra_sparse
+from fragnnet.utils.misc_utils import safelog, th_temp_seed, scatter_logsumexp
 from fragnnet.pl_model import SpectrumPL
 
 class FragGNNPL(SpectrumPL):
@@ -719,70 +706,4 @@ class FragGNNPL(SpectrumPL):
 		super().optimizer_step(*args, **kwargs)
 		opt = self.optimizers()
 		self.on_after_optimizer_step(opt)
-
-def test_models():
-
-	from fragnnet.runner import load_config, init_dataset
-	from fragnnet.utils.misc_utils import print_shapes
-	from fragnnet.utils.misc_utils import to_device
-
-	template_fp = "config/template.yml"
-	custom_fp_to_model_cls = {
-		# "config/debug_m/debug_d3_m.yml": FragGNNPL,
-		# "config/debug_m/debug_d3_prec_m.yml": FragGNNPL,
-		# "config/debug_m/debug_neims_prec_m.yml": NeimsPL,
-		# "config/debug_um/debug_d3_prec_um.yml": FragGNNPL,
-		'config/debug_m/debug_gnn.yml': GNNPL
-	}
-
-	for custom_fp, pl_model_cls in custom_fp_to_model_cls.items():
-
-		print(">>>", custom_fp)
-
-		config_d = load_config(template_fp, custom_fp)
-		for k in ["spec_params","mol_params","frag_params"]:
-			config_d[k]["preprocess"] = False
-			if "preload" in config_d[k]:
-				config_d[k]["preload"] = False
-		device = "cuda:0" if config_d["accelerator"] == "gpu" else "cpu"
-
-		ds = init_dataset(config_d, splits=("train",))[0]
-		dl = th.utils.data.DataLoader(
-			ds,
-			batch_size=8,
-			shuffle=False,
-			num_workers=0,
-			collate_fn=ds.get_collate_fn(),
-		)
-		dl_iter = iter(dl)
-		batch = next(dl_iter)
-		print("> batch")
-		print_shapes(batch)
-		batch = to_device(batch,device)
-
-		pl_model = pl_model_cls(**config_d)
-		pl_model.train()
-		pl_model.to(device)
-
-		outputs = pl_model.forward(**batch)
-		print("> train outputs")
-		print_shapes(outputs)
-		print(th.exp(outputs["pred_logprobs"]).sum())
-
-		results = pl_model._common_step(batch, split="train", log=False)
-		print_shapes(results)
-
-		mean_loss = results["mean_loss"]
-		print("> loss")
-		print(mean_loss)
-		mean_loss.backward()
-
-		print()
-
-
-if __name__ == "__main__":
-
-	from fragnnet.utils.misc_utils import th_temp_seed
-
-	with th_temp_seed(42):
-		test_models()
+  
