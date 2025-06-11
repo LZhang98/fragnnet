@@ -1,64 +1,157 @@
+import os
+import glob
 import bz2
 import pickle
-import tarfile
 import h5py
 import numpy as np
-import frag_gnn.utils.frag_utils as frag_utils
+import argparse
+import torch
+from torch_geometric.data import Data as PyGData
 
+def dag_to_feature_vector(dag_dict, hdf5_keys):
+	"""
+	Convert a DAG dictionary to a fixed-length feature vector using the provided keys.
+	For each key, tries to extract a scalar value:
+	  - If int/float: use as is
+	  - If list/array: use mean (or 0 if empty)
+	  - If torch.Tensor: use mean (or 0 if empty)
+	  - If dict: use length
+	  - If torch_geometric.data.Data: use number of nodes (len(v)), or 0 if not available
+	  - If None: 0
+	  - Otherwise: use length if possible, else 0
+	"""
 
-def append_hdf5_rows(hdf5_fp,new_rows, num_features):
-    
+	features_d = {}
+	for k in dag_dict.keys():
+		print(k)
+		v = dag_dict.get(k)
+		if isinstance(v, (int, float, np.number)):
+			features_d[k] = v
+		elif isinstance(v, list):
+			print(k,v)
+			features_d[k] = np.ndarray(v)
+		elif isinstance(v, np.ndarray):
+			features_d[k] = v
+		elif isinstance(v, torch.Tensor):
+			# Convert tensor to numpy and handle empty tensors
+			if v.numel() == 0:
+				features_d[k] = np.zeros(1, dtype=np.float32)
+			else:
+				features_d[k] = v.detach().cpu().numpy()
+		elif v is None:
+			features_d[k] = np.nan
+		elif isinstance(v, PyGData):
+			print(v)
+			# Use number of nodes if possible, else 0.0
+			#try:
+			#	features.append(float(v.num_nodes))
+			#except Exception:
+			#	try:
+			#		features.append(float(len(v)))
+			#	except Exception:
+			#		features.append(np.nan)
+		else:
+			print(f"Warning: Unhandled type for key '{k}': {type(v)}")
+			#try:
+			#	features.append(float(len(v)))
+			#except Exception:
+			#	features.append(0.0)
+	exit()
+	return np.array(features, dtype=np.float32)
+
+def append_hdf5_rows(hdf5_fp, new_rows):
+	"""
+	Append a batch of rows (new_rows) to the HDF5 dataset 'dags'.
+	Opens the file in append mode, resizes the dataset, and writes the new data.
+	"""
 	with h5py.File(hdf5_fp, "a") as f:
-		dataset = f["data"]
+		dataset = f["dags"]
 		current_size = dataset.shape[0]
-		new_size = current_size + len(new_rows)  # Increase row count
-		dataset.resize((new_size, num_features))  # Extend dataset
-		dataset[current_size:new_size, :] = new_rows  # Write new batch
-
-		# Flush changes to disk to ensure data is not lost
+		new_size = current_size + new_rows.shape[0]
+		dataset.resize((new_size, new_rows.shape[1]))
+		dataset[current_size:new_size, :] = new_rows
 		f.flush()
 
-def create_hdf5_file(hdf5_fp:str,num_features:int,batch_size:int):
-    # Create an HDF5 file with an extendable dataset
-    
-	keys = ['max_depth', 'reached_depth', 'h_prior', 'max_h_transfer', 'formula_peak_mzs', 'formula_peak_probs', 'idx_to_formula', 'idx_by_h_delta', 'dag', 'edges_min_depth', 'nodes_min_depth', 'dag_num_edges', 'dag_num_nodes', 'dag_num_nodes_nb', 'dag_sparsity', 'formula_redundancy', 'node_feature_size', 'edge_feature_size', 'is_directed', 'dag_num_edges_by_depth', 'dag_num_nodes_by_depth']
-    
+def create_hdf5_file(hdf5_fp, num_features, batch_size):
+	"""
+	Create a new HDF5 file with an extendable dataset 'dags'.
+	The dataset is compressed and chunked for efficient I/O.
+	"""
 	with h5py.File(hdf5_fp, "w") as f:
-		dataset = f.create_dataset(
+		f.create_dataset(
 			"dags",
-			shape=(0, num_features),  # Start with zero rows
-			maxshape=(None, num_features),  # Allow unlimited rows
+			shape=(0, num_features),
+			maxshape=(None, num_features),
 			dtype="f4",
-			chunks=(batch_size, num_features),  # Write in small batches
-			compression="gzip",  # Optional compression
+			chunks=(batch_size, num_features),
+			compression="gzip",
 			compression_opts=4
 		)
+
 if __name__ == "__main__":
-	# Define dataset parameters
-	num_features = 1  # Number of columns (features)
-	batch_size = 1  # Number of rows to write in one batch
+	# Parse command-line arguments for input directory, output file, and batch size
+	parser = argparse.ArgumentParser(description="Convert DAG pickle.bz2 files to a single HDF5 file.")
+	parser.add_argument("--dags_dp", type=str, default="data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags", help="Directory containing .pickle.bz2 DAG files")
+	parser.add_argument("--hdf5_fp", type=str, default="data/frag/nist20mona23v3_d3_h4_isoFalse_nb3.hdf5", help="Output HDF5 file path")
+	parser.add_argument("--batch_size", type=int, default=128, help="Batch size for HDF5 chunking and writing")
+	args = parser.parse_args()
 
-	#frag_d = pickle.loads(bz2.decompress(content))
-	frag_l = []
-	#frag_tar = 'data/frag/nist20mona23v3_d3_h4_isoTrue2.tar'
-	fp = 'data/frag/nist20mona23v2_d3_h4_isoFalse_nb3/dags/1.pickle.bz2'
-	with bz2.BZ2File(fp, 'rb') as filein: 
-		frag_d = pickle.load(filein)
+	dags_dp = args.dags_dp
+	hdf5_fp = args.hdf5_fp
+	batch_size = args.batch_size
 
-	print(frag_d)
-	frag_l.append(frag_d)
-	for k,v in frag_d.items():
-		print(k,type(v))
-	# Create an HDF5 file with an extendable dataset
-	create_hdf5_file("incremental_data.h5", num_features, batch_size)
+	# List of keys for hdf5 dataset
+	hdf5_keys = [
+		"max_depth",
+		"reached_depth",
+		"h_prior",
+		"max_h_transfer",
+		"formula_peak_mzs",
+		"formula_peak_probs",
+		"idx_to_formula",
+		"idx_by_h_delta",
+		"dag_data_x",
+  		"dag_data_y",
+		"dag_data_edge_index",
+		"dag_data_edge_attr",	
+		"dag_data_featuer_size"
+		"edges_min_depth",
+		"nodes_min_depth",
+		"dag_num_edges",
+		"dag_num_nodes",
+		"dag_num_nodes_nb",
+		"dag_sparsity",
+		"formula_redundancy",
+		"node_feature_size",
+		"edge_feature_size",
+		"is_directed",
+		"dag_num_edges_by_depth",
+		"dag_num_nodes_by_depth"
+	]
+	num_features = len(hdf5_keys)
 
-	# Simulate real-time data streaming (incremental writing)
-	for i in range(5):  # Simulating 5 batches of incoming data
-		new_batch = np.random.rand(batch_size, num_features)  # Generate a batch
-		append_hdf5_rows(new_batch)  # Append to HDF5 file
-		print(f"Batch {i+1} written to disk.")
+	# Create the HDF5 file and dataset
+	create_hdf5_file(hdf5_fp, num_features, batch_size)
 
-	# Verify stored data
-	#with h5py.File("incremental_data.h5", "r") as f:
-	#    dataset = f["data"]
-	#    print("Final dataset shape:", dataset.shape)  # Should be (50, 100)
+	# Find all .pickle.bz2 files in the input directory
+	dag_files = sorted(glob.glob(os.path.join(dags_dp, "*.pickle.bz2")))
+	print(f"Found {len(dag_files)} DAG files.")
+
+	# Process files in batches and write to HDF5
+	batch = []
+	for i, fp in enumerate(dag_files):
+		with bz2.BZ2File(fp, 'rb') as filein:
+			dag_dict = pickle.load(filein)
+		feat = dag_to_feature_vector(dag_dict, hdf5_keys)
+		batch.append(feat)
+		# Write batch to HDF5 when full or at the end
+		if len(batch) == batch_size or i == len(dag_files) - 1:
+			batch_np = np.stack(batch, axis=0)
+			append_hdf5_rows(hdf5_fp, batch_np)
+			print(f"Wrote batch {i // batch_size + 1} to HDF5.")
+			batch = []
+
+	# Print final dataset shape for verification
+	with h5py.File(hdf5_fp, "r") as f:
+		dataset = f["dags"]
+		print("Final dataset shape:", dataset.shape)
