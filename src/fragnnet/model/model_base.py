@@ -1,22 +1,25 @@
+"""
+model_base.py
+
+Base classes for embedding collision energy (CE), precursor type(Prec), and instrument type (Inst)
+for FragGNN models. Intended to be used as base classes for more complex model architectures.
+
+- CEModel: Handles collision energy embedding and transformation.
+- PrecModel: Handles precursor type embedding.
+- InstModel: Handles instrument type embedding.
+"""
+
 import torch as th
 import torch.nn as nn
-import numpy as np
-from pprint import pprint
-from pyteomics.mass import Composition
 
-from fragnnet.utils.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
-from fragnnet.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax, scatter_masked_logsumexp
-from fragnnet.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
+from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.utils.nn_utils import *
 from fragnnet.model.form_embedder import get_embedder
-from fragnnet.utils.misc_utils import check_pyg_compile, LOG_ZERO, check_pyg_full_compile
-from fragnnet.utils.spec_utils import transform_ce, batched_bin_func
-from fragnnet.utils.data_utils import combine_formulae
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
+from fragnnet.utils.spec_utils import transform_ce
 
 class CEModel:
-	""" class for handling collision engery embedding
-	"""
+	"""Class for handling collision energy (CE) embedding."""
+
 	def _ce_init(
 		self,
 		int_embedder,
@@ -25,10 +28,22 @@ class CEModel:
 		ce_insert_merge: bool,
 		ce_insert_size: int,
 		ce_mean: float,
-  		ce_std: float,
-    	ce_max: float,):
+		  ce_std: float,
+		ce_max: float,
+	):
+		"""
+		Initialize CE embedding configuration and embedding layers.
 
-		# ce stuff
+		Args:
+			int_embedder: Embedder for integer features.
+			ce_insert_location: Where to insert CE embedding ("none", "mol", "frag", "mlp").
+			ce_insert_type: Type of CE embedding ("id", "lin", "embed", "bin").
+			ce_insert_merge: Whether to merge CE embeddings across batch.
+			ce_insert_size: Output embedding size.
+			ce_mean: Mean for CE normalization.
+			ce_std: Std for CE normalization.
+			ce_max: Max value for CE binning/embedding.
+		"""
 		assert ce_insert_type in ["id","lin","embed","bin"]
 		assert ce_insert_location in ["none","mol","frag","mlp"]
 		self.ce_insert_type = ce_insert_type
@@ -43,12 +58,11 @@ class CEModel:
 		self._setup_ce()
 
 	def _ce_location_check(self):
-
 		raise NotImplementedError
 
 	def _setup_ce(self):
-
-		# embedding type
+		"""Setup CE embedding and transformation logic based on type and location."""
+		# Setup embedding type
 		if self.ce_insert_type == "id":
 			def ce_transform(ce):
 				ce = transform_ce(ce, self.ce_mean, self.ce_std)
@@ -84,7 +98,8 @@ class CEModel:
 				return ce
 			ce_embedder = nn.Linear(int(self.ce_max)//10,self.ce_insert_size)
 			ce_input_dim = self.ce_insert_size
-		# location
+
+		# Setup location
 		if self.ce_insert_location == "mol":
 			ce_mol_input_dim = ce_input_dim
 			ce_mlp_input_dim = 0
@@ -101,7 +116,17 @@ class CEModel:
 		self.ce_mlp_input_dim = ce_mlp_input_dim
 
 	def embed_ce(self, ce, ce_batch_idxs, batch_size):
+		"""
+		Embed the collision energy values.
 
+		Args:
+			ce: Tensor of collision energies.
+			ce_batch_idxs: Batch indices for each CE value.
+			batch_size: Total batch size.
+
+		Returns:
+			Embedded CE tensor or None.
+		"""
 		if self.ce_insert_location != "none":
 			ce_embed = self.ce_transform(ce)
 			ce_embed = self.ce_embedder(ce_embed)
@@ -119,13 +144,22 @@ class CEModel:
 		return ce_embed
 
 class PrecModel:
+	"""Class for handling precursor type embedding."""
 
 	def _prec_init(
 		self,
 		prec_insert_location: str,
 		prec_insert_size: int,
-		prec_num_types: int):
+		prec_num_types: int
+	):
+		"""
+		Initialize precursor embedding configuration and embedding layers.
 
+		Args:
+			prec_insert_location: Where to insert precursor embedding ("none", "mol", "mlp").
+			prec_insert_size: Output embedding size.
+			prec_num_types: Number of precursor types.
+		"""
 		self.prec_insert_location = prec_insert_location
 		self.prec_embedder = nn.Embedding(prec_num_types+1, prec_insert_size)	
 		prec_dim = prec_insert_size
@@ -146,11 +180,18 @@ class PrecModel:
 		self.prec_mlp_input_dim = prec_mlp_input_dim
 
 	def _prec_location_check(self):
-
 		raise NotImplementedError
 
 	def embed_prec(self, prec_type):
+		"""
+		Embed the precursor type.
 
+		Args:
+			prec_type: Tensor of precursor type indices.
+
+		Returns:
+			Embedded precursor tensor or None.
+		"""
 		if self.prec_insert_location != "none":
 			prec_embed = self.prec_embedder(prec_type)
 		else:
@@ -158,13 +199,22 @@ class PrecModel:
 		return prec_embed
 
 class InstModel:
+	"""Class for handling instrument type embedding."""
 
 	def _inst_init(
 		self,
 		inst_insert_location: str,
 		inst_insert_size: int,
-		inst_num_types: int):
+		inst_num_types: int
+	):
+		"""
+		Initialize instrument embedding configuration and embedding layers.
 
+		Args:
+			inst_insert_location: Where to insert instrument embedding ("none", "mol", "mlp").
+			inst_insert_size: Output embedding size.
+			inst_num_types: Number of instrument types.
+		"""
 		self.inst_insert_location = inst_insert_location
 		self.inst_embedder = nn.Embedding(inst_num_types+1, inst_insert_size)	
 		inst_dim = inst_insert_size
@@ -185,11 +235,18 @@ class InstModel:
 		self.inst_mlp_input_dim = inst_mlp_input_dim
 
 	def _inst_location_check(self):
-
-		raise NotImplementedError
+		raise NotImplementedError(".")
 
 	def embed_inst(self, inst_type):
+		"""
+		Embed the instrument type.
 
+		Args:
+			inst_type: Tensor of instrument type indices.
+
+		Returns:
+			Embedded instrument tensor or None.
+		"""
 		if self.inst_insert_location != "none":
 			inst_embed = self.inst_embedder(inst_type)
 		else:

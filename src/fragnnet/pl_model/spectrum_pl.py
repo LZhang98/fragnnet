@@ -1,9 +1,16 @@
+"""
+Base PyTorch Lightning model for spectrum prediction in FragGNN.
+
+This class includs model setup, loss, metrics, optimizer configuration, and training/validation/test logic.
+It is intended to be subclassed for specific model architectures and tasks.
+
+"""
+
 import torch as th
 import numpy as np
-import logging
 import inspect
 
-# make cc happy
+# Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
 try:
 	import lightning.pytorch as pl
 	from lightning.utilities.seed import _collect_rng_states, _set_rng_states
@@ -14,19 +21,22 @@ except ModuleNotFoundError:
 import torch._dynamo as th_dynamo
 
 from fragnnet.utils.nn_utils import build_lr_scheduler
-from fragnnet.model import FragGNNModel, NeimsModel, PrecursorModel, GNNModel
-from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
+from fragnnet.model.loss import sparse_entropy_fn
 from fragnnet.utils.spec_utils import *
-from fragnnet.utils.misc_utils import safelog, flatten_lol, th_temp_seed, scatter_logsumexp, to_cpu, scatter_l1normalize, LOG_ZERO
+from fragnnet.utils.misc_utils import safelog, flatten_lol, th_temp_seed, to_cpu, scatter_l1normalize
 from fragnnet.utils.plot_utils import plot_spectra_sparse
 
 class SpectrumPL(pl.LightningModule):
+	"""
+	Base PyTorch LightningModule for spectrum prediction.
+	Provides modular setup and hooks for spectrum modeling in FragGNN.
+	Subclasses should override _setup_model and _setup_loss_fn.
+	"""
 
 	def __init__(self,**kwargs):
-
 		super().__init__()
 		self.save_hyperparameters()
-		# setup functions
+		# setup functions and state
 		self.metric_names = set()
 		self._setup_model()
 		self._setup_tolerance()
@@ -38,11 +48,15 @@ class SpectrumPL(pl.LightningModule):
 		self._setup_sampler()
 
 	def _setup_model(self):
+		"""
+		Override in subclass to set up the model.
+		"""
 		raise NotImplementedError
 
 	def _setup_tolerance(self):
-
-		# set tolerance
+		"""
+		Setup m/z tolerance for matching peaks, using either relative or absolute tolerance.
+		"""
 		if self.hparams.loss_tolerance_rel is not None:
 			self.tolerance = self.hparams.loss_tolerance_rel
 			self.relative = True
@@ -54,10 +68,15 @@ class SpectrumPL(pl.LightningModule):
 			self.tolerance_min_mz = None
 
 	def _setup_loss_fn(self):
+		"""
+		Override in subclass to set up the loss function.
+		"""
 		raise NotImplementedError
 
 	def _setup_spec_fns(self):
-
+		"""
+		Setup spectrum preprocessing functions: filtering, binning, intensity transforms, and normalization.
+		"""
 		def _filter_func(mzs, ints, batch_idxs):
 			return batched_filter_func(mzs,ints,batch_idxs,self.hparams.ints_thresh,self.hparams.mz_max)
 		self.filter_func = _filter_func
@@ -78,6 +97,9 @@ class SpectrumPL(pl.LightningModule):
 		self.ints_normalize_func = batched_l1_normalize
 
 	def _setup_metric_fns(self):
+		"""
+		Setup all auxiliary and main metric functions, including configuration for different evaluation modes.
+		"""
 
 		# setup metrics
 		self.metric_min_max = {"loss": "min"}
@@ -673,6 +695,9 @@ class SpectrumPL(pl.LightningModule):
 			generator=train_dl_generator)
 
 	def _preproc_spec(self,spec_mzs,spec_ints,spec_batch_idxs,filter_spec=False,bin_spec=False,transform_spec=False,normalize_spec=False):
+		"""
+		Preprocess a spectrum: filter, bin, transform, and normalize intensities as needed.
+		"""
 		# assumes spec_ints are not logged, or transformed in any way
 		# does not assume any particular kind of normalization
 
@@ -710,6 +735,9 @@ class SpectrumPL(pl.LightningModule):
 		log_in: bool = False,
 		log_out: bool = False
 	):
+		"""
+		Convenience wrapper for spectrum preprocessing, handling different modes for train/pred.
+		"""
 		if log_in:
 			spec_ints = spec_ints.exp()
 		if train and pred:
@@ -753,11 +781,15 @@ class SpectrumPL(pl.LightningModule):
 		return spec_mzs, spec_ints, spec_batch_idxs
 
 	def predict_step(self,**batch_kwargs):
-		
+		"""
+		PyTorch Lightning predict_step override.
+		"""
 		return self.forward(**batch_kwargs)
 
 	def forward(self,**batch_kwargs):
-
+		"""
+		Forward pass through the model, with optional activation checkpointing.
+		"""
 		# get predictions
 		if self.hparams.activation_checkpointing:
 			forward_keys = list(inspect.signature(self.model.forward).parameters.keys())
@@ -772,7 +804,9 @@ class SpectrumPL(pl.LightningModule):
 		return pred
 
 	def _common_step(self, batch, split="train", log=True):
-
+		"""
+		Common logic for train/val/test/inference steps: preprocess, forward, loss, metrics.
+		"""
 		# preprocess spec
 		batch_size = batch["batch_size"]
 		unique_id = batch["spec_unique_id"]
@@ -911,19 +945,10 @@ class SpectrumPL(pl.LightningModule):
 		return results
 
 	def training_step(self, batch, batch_idx):
-		""" training loop
-
-		Args:
-			batch (_type_): _description_
-			batch_idx (_type_): _description_
-
-		Raises:
-			NotImplementedError: _description_
-
-		Returns:
-			_type_: _description_
 		"""
-
+		PyTorch Lightning training_step override.
+		Handles automatic optimization only.
+		"""
 		if self.hparams.automatic_optimization:
 			batch_results = self._common_step(batch, split="train")
 			mean_loss = batch_results["mean_loss"]
@@ -933,7 +958,9 @@ class SpectrumPL(pl.LightningModule):
 			raise NotImplementedError("Manual optimization not implemented")
 
 	def validation_step(self, batch, batch_idx):
-
+		"""
+		PyTorch Lightning validation_step override.
+		"""
 		assert not self.training
 		batch_results = self._common_step(batch, split="val")
 		mean_loss = batch_results["mean_loss"]
@@ -941,7 +968,9 @@ class SpectrumPL(pl.LightningModule):
 		return mean_loss
 
 	def test_step(self, batch, batch_idx):
-
+		"""
+		PyTorch Lightning test_step override.
+		"""
 		assert not self.training
 		batch_results = self._common_step(batch, split="test")
 		mean_loss = batch_results["mean_loss"]
@@ -949,41 +978,20 @@ class SpectrumPL(pl.LightningModule):
 		return mean_loss
 	
 	def inference_step(self, batch, split, untransform_spec=False):
-
+		"""
+		Custom inference step for evaluation outside of Lightning's test/val loop.
+		"""
 		if self.training:
 			print("Warning: model is in training mode")
 		batch_results = self._common_step(batch, split=split, log=False)
 		if untransform_spec:
 			raise NotImplementedError("untransform_spec not implemented")
-			# pred_logprobs = batch_results["pred_logprobs"]
-			# pred_batch_idxs = batch_results["pred_batch_idxs"]
-			# true_logprobs = batch_results["true_logprobs"]
-			# true_batch_idxs = batch_results["true_batch_idxs"]
-			# pred_ints = self.ints_untransform_func(
-			# 	pred_logprobs.exp(),
-			# 	pred_batch_idxs
-			# )
-			# pred_ints = self.ints_normalize_func(
-			# 	pred_ints, 
-			# 	pred_batch_idxs
-			# )
-			# if "pred_oos_logprobs" in batch_results:
-			# 	pred_oos_logprobs = batch_results["pred_oos_logprobs"][pred_batch_idxs]
-			# 	pred_ints = pred_ints * (1.-pred_oos_logprobs.exp())
-			# batch_results["pred_logprobs"] = safelog(pred_ints, eps=self.hparams.log_min)
-			# true_ints = self.ints_untransform_func(
-			# 	true_logprobs.exp(),
-			# 	true_batch_idxs
-			# )
-			# true_ints = self.ints_normalize_func(
-			# 	true_ints, 
-			# 	true_batch_idxs
-			# )
-			# batch_results["true_logprobs"] = safelog(true_ints, eps=self.hparams.log_min)
 		return batch_results
 
 	def configure_optimizers(self):
-
+		"""
+		Configure optimizer and learning rate scheduler for Lightning.
+		"""
 		if self.hparams.optimizer == "adam":
 			optimizer_cls = th.optim.Adam
 		elif self.hparams.optimizer == "adamw":
@@ -1015,7 +1023,9 @@ class SpectrumPL(pl.LightningModule):
 		return ret
 
 	def _get_wandb_logger(self):
-
+		"""
+		Helper to get the WandbLogger from the list of loggers.
+		"""
 		wandb_logger = None
 		for logger in self.loggers:
 			if isinstance(logger, pl.loggers.WandbLogger):
@@ -1023,7 +1033,9 @@ class SpectrumPL(pl.LightningModule):
 		return wandb_logger
 
 	def _update_results(self, batch_results, split):
-
+		"""
+		Update the results tracker with new batch results for the given split.
+		"""
 		results_attr = f"{split}_results"
 		counter_attr = f"{split}_counter"
 		# filter keys (filtering first to save time/memory)
@@ -1091,7 +1103,9 @@ class SpectrumPL(pl.LightningModule):
 		return mean_metrics, std_metrics
 
 	def _consolidate_results(self, split):
-		
+		"""
+		Consolidate all batch results for a split, log metrics, and update best metrics.
+		"""
 		results = getattr(self,f"{split}_results")
 		if results is None:
 			return
@@ -1179,7 +1193,9 @@ class SpectrumPL(pl.LightningModule):
 				datapoint_metrics[k.replace(".","-")][:num_datapoints] = results[k]
 
 	def _log_images(self, split):
-
+		"""
+		Log example spectra as images to WandB for the given split.
+		"""
 		results = getattr(self,f"{split}_results")
 		num_log_images = getattr(self.hparams,f"num_log_{split}_images")
 		counter = getattr(self,f"{split}_counter")

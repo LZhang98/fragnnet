@@ -1,19 +1,9 @@
 import torch as th
 import torch.nn as nn
-import numpy as np
-from pprint import pprint
-from pyteomics.mass import Composition
 
-from fragnnet.utils.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
-from fragnnet.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax, scatter_masked_logsumexp
-from fragnnet.utils.feat_utils import get_mol_feats_sizes, get_mol_fp_size
+from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.nn_utils import *
-from fragnnet.utils.misc_utils import check_pyg_compile, LOG_ZERO, check_pyg_full_compile
-from fragnnet.utils.spec_utils import transform_ce, batched_bin_func
-from fragnnet.utils.data_utils import combine_formulae
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
-from fragnnet.model import get_embedder
-from fragnnet.model import CEModel, PrecModel, InstModel
+from fragnnet.model.model_base import CEModel, PrecModel, InstModel
 
 class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 
