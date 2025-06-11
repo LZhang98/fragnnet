@@ -1,8 +1,8 @@
 from fragnnet.runner import load_config, init_dataset, init_dataloader
-from fragnnet.pl_model import FragGNNPL
+from fragnnet.pl_model.pl_model import FragGNNPL
 from fragnnet.utils.misc_utils import booltype, scatter_logsumexp
 from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference, select_model_vals, log_mean
-from fragnnet.loss import sparse_conditional_entropy_fn
+from fragnnet.model.loss import sparse_conditional_entropy_fn
 
 import torch as th
 import pandas as pd

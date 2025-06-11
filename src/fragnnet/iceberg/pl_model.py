@@ -6,7 +6,7 @@ import dgl
 
 from fragnnet.pl_model import SpectrumPL
 from fragnnet.utils.misc_utils import to_cpu, scatter_reduce, LOG_ZERO
-from fragnnet.loss import sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
+from fragnnet.model.loss import sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
 import fragnnet.iceberg.common as common
 from fragnnet.iceberg.model import IcebergGenModel, IcebergIntenModel
 from fragnnet.iceberg.dataset import TreeProcessor

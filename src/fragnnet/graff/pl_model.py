@@ -5,7 +5,7 @@ from fragnnet.graff.model import GrAFFModel
 from fragnnet.pl_model import SpectrumPL
 from fragnnet.graff.data_utils import x_map, e_map
 from fragnnet.utils.misc_utils import LOG_ZERO, MAX_CROSS_ENTROPY
-from fragnnet.loss import get_sparse_cross_entropy_fn
+from fragnnet.model.loss import get_sparse_cross_entropy_fn
 
 
 class GrAFFPL(SpectrumPL):

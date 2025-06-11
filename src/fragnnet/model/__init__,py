@@ -1,0 +1,5 @@
+# this is where all the torch models goes
+# this controls model architecture and forward pass
+from .fraggnn_model import FragGNNModel
+from .model_base import CEModel, PrecModel, InstModel
+from .gnn_model import GNNModel
