@@ -8,7 +8,7 @@ seed: 103976
 # data stuff
 spec_fp: data/proc/massspecgym/spec_df.pkl
 mol_fp: data/proc/massspecgym/mol_df.pkl
-split_dp: data/split/massspecgym
+split_dp: data/split/massspecgym_f
 spec_params:
   merge: True
   nce: False
