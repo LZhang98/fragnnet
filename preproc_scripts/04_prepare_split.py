@@ -4,10 +4,9 @@ import pandas as pd
 import numpy as np
 import json
 
-from frag_gnn.utils import frag_utils
-from frag_gnn.utils.misc_utils import booltype, np_temp_seed
-from frag_gnn.utils.frag_utils import ELEMENTS
-from frag_gnn.utils.proc_utils import filter_spec_mol
+from fragnnet.utils import frag_utils
+from fragnnet.utils.misc_utils import booltype, np_temp_seed
+from fragnnet.utils.proc_utils import filter_spec_mol
 
 def make_splits(args):
 
@@ -17,10 +16,10 @@ def make_splits(args):
 	print("> Spectrum filters")
 
 	# filter spectra 
-	prec_types = args.prec_types if 'any' not in args.prec_types else None
-	frag_modes = args.frag_modes if 'any' not in args.frag_modes else None
-	ion_modes = args.ion_modes if 'any' not in args.ion_modes else None
-	inst_types = args.inst_types if 'any' not in args.inst_types else None
+	prec_types = args.prec_types
+	frag_modes = args.frag_modes
+	ion_modes = args.ion_modes
+	inst_types = args.inst_types
 
 	dsets = args.primary_dsets + args.secondary_dsets
 	f_spec_df, f_mol_df = filter_spec_mol(
@@ -30,6 +29,7 @@ def make_splits(args):
 		prec_types=prec_types,
 		max_peak_mz=args.max_peak_mz,
 		max_prec_mz=args.max_prec_mz,
+		min_prec_mz=args.min_prec_mz,
 		elements=args.elements,
 		frag_modes=frag_modes,
 		ion_modes=ion_modes,
@@ -43,6 +43,7 @@ def make_splits(args):
 	secondary_spec_df = spec_df[spec_df["dset"].isin(args.secondary_dsets)]
 
 	if args.dag_filtering:
+		assert args.frag_dp is not None, "DAG filtering requires a fragment directory"
 		print("> Read DAG stats")
 		dag_stats_df = pd.read_pickle(
 			os.path.join(args.frag_dp,f"{args.dag_filter_grouping}_stats_df.pkl")
@@ -159,42 +160,35 @@ def make_splits(args):
 						"secondary_df": secondary_df
 					}
 					split_data_list.append(split_data)
+	
 	elif args.split_type == "predefined":
-		#assert args.split_type == "predefined"
-		assert len(args.secondary_dsets) == 0, len(args.secondary_dsets)
-		assert len(args.train_ids) > 1 and len(args.val_ids) > 1 and len(args.test_ids) > 1
-		train_ids = np.array(args.train_ids)
-		val_ids = np.array(args.val_ids)
-		test_ids = np.array(args.test_ids)
+			
+		id_dtype = str if args.predefined_id_type == "dset_spec_id" else int
 
-		train_df = primary_split_df[primary_split_df[args.id_type].isin(train_ids)][["spec_id","mol_id","group_id"]]
-		val_df = primary_split_df[primary_split_df[args.id_type].isin(val_ids)][["spec_id","mol_id","group_id"]]
-		test_df = primary_split_df[primary_split_df[args.id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
-		secondary_df = primary_split_df[np.zeros(primary_split_df.shape[0],dtype=bool)][["spec_id","mol_id","group_id"]]
+		if args.predefined_train_id_fp is not None:
+			train_ids = pd.read_csv(args.predefined_train_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
+		else:
+			train_ids = args.predefined_train_ids if args.predefined_train_ids is not None else []
 
-		split_data = { 
-				"split_dp": args.split_dp,
-				"train_df": train_df,
-				"val_df": val_df,
-				"test_df": test_df,
-				"secondary_df": secondary_df
-		}
-		split_data_list.append(split_data)
-	elif args.split_type == "predefined_dsetid_csv":
-		# support more then one predefined set, useful when combine more then one set
-		predefined_dfs = []
-		for fp in args.predefined_dsetid_csv:
-			case_predefined_df = pd.read_csv(fp)
-			predefined_dfs.append(case_predefined_df)
-		predefined_df = pd.concat(predefined_dfs)
-  
-		train_dest_ids = predefined_df[predefined_df['fold'] == 'train']['dset_spec_id'].to_list()
-		train_df = primary_split_df[primary_split_df['dset_spec_id'].isin(train_dest_ids)][["spec_id","mol_id","group_id"]]
-		val_dest_ids = predefined_df[predefined_df['fold'] == 'val']['dset_spec_id'].to_list()
-		val_df = primary_split_df[primary_split_df['dset_spec_id'].isin(val_dest_ids)][["spec_id","mol_id","group_id"]]
-		test_dest_ids = predefined_df[predefined_df['fold'] == 'test']['dset_spec_id'].to_list()
-		test_df = primary_split_df[primary_split_df['dset_spec_id'].isin(test_dest_ids)][["spec_id","mol_id","group_id"]]
-		secondary_df = primary_split_df[np.zeros(primary_split_df.shape[0],dtype=bool)][["spec_id","mol_id","group_id"]]
+		if args.predefined_val_id_fp is not None:
+			val_ids = pd.read_csv(args.predefined_val_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
+		else:
+			val_ids = args.predefined_val_ids if args.predefined_val_ids is not None else []
+		
+		if args.predefined_test_id_fp is not None:
+			test_ids = pd.read_csv(args.predefined_test_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
+		else:
+			test_ids = args.predefined_test_ids if args.predefined_test_ids is not None else []
+
+		if args.predefined_secondary_id_fp is not None:
+			secondary_ids = pd.read_csv(args.predefined_secondary_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
+		else:
+			secondary_ids = args.predefined_secondary_ids if args.predefined_secondary_ids is not None else []
+
+		train_df = primary_split_df[primary_split_df[args.predefined_id_type].isin(train_ids)][["spec_id","mol_id","group_id"]]
+		val_df = primary_split_df[primary_split_df[args.predefined_id_type].isin(val_ids)][["spec_id","mol_id","group_id"]]
+		test_df = primary_split_df[primary_split_df[args.predefined_id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
+		secondary_df = secondary_split_df[secondary_split_df[args.predefined_id_type].isin(secondary_ids)][["spec_id","mol_id","group_id"]]
 
 		split_data = { 
 				"split_dp": args.split_dp,
@@ -204,7 +198,9 @@ def make_splits(args):
 				"secondary_df": secondary_df
 		}
 		split_data_list.append(split_data)
+	
 	else:
+
 		raise ValueError(f"{args.split_type} is not supported")
   
 	# create split directory
@@ -212,15 +208,13 @@ def make_splits(args):
 		os.makedirs(split_data['split_dp'],exist_ok=True)
 		print(f"> Save split to {split_data['split_dp']}")
   
+		print("-" * 16)
 		for split_type in ["train_df","val_df","test_df","secondary_df"]:
 			print(">", split_type)
 			print("> number of unique mols", split_data[split_type]['mol_id'].nunique())
 			print("> number of unique spec", split_data[split_type]['spec_id'].nunique())
 			print("> number of unique groups", split_data[split_type]['group_id'].nunique())
 			print("-" * 16)
-		#print(f"> Split sizes (spec_id): train = {split_data['train_df'].shape[0]},"
-		#	f"val = {split_data['val_df'].shape[0]}, test = {split_data['test_df'].shape[0]} "
-		#	f"secondary test df = {split_data['secondary_df'].shape[0]}")
 		
 		# save ids
 		train_fp = os.path.join(split_data['split_dp'],"train_ids.csv")
@@ -237,36 +231,26 @@ def make_splits(args):
 		meta_fp = os.path.join(split_data['split_dp'],"meta.json")
 		with open(meta_fp,"w") as f:
 			json.dump(meta_d,f,indent=4)
-   
-	"""
-	os.makedirs(args.split_dp,exist_ok=True)
-	# save ids
-	print(f"> Split sizes (spec_id): train = {train_df.shape[0]}, val = {val_df.shape[0]}, test = {test_df.shape[0]}")
-	train_fp = os.path.join(args.split_dp,"train_ids.csv")
-	val_fp = os.path.join(args.split_dp,"val_ids.csv")
-	test_fp = os.path.join(args.split_dp,"test_ids.csv")
-	secondary_fp = os.path.join(args.split_dp,"secondary_ids.csv")
-	train_df.to_csv(train_fp,index=False)
-	val_df.to_csv(val_fp,index=False)
-	test_df.to_csv(test_fp,index=False)
-	secondary_df.to_csv(secondary_fp,index=False)
-	"""
 	
 	return
 
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--split_type",type=str,choices=["random","predefined","predefined_dsetid_csv","random_folds"],default="random")
+	parser.add_argument("--split_type",type=str,choices=["random","predefined","random_folds"],default="random")
 	parser.add_argument("--split_key",type=str,choices=["inchikey_s","scaffold"],default="inchikey_s")
-	parser.add_argument("--id_type",type=str,choices=["spec_id","mol_id","group_id"],default="group_id")
-	parser.add_argument("--train_ids",type=int,nargs="+",default=[62611])
-	parser.add_argument("--val_ids",type=int,nargs="+",default=[62611])
-	parser.add_argument("--test_ids",type=int,nargs="+",default=[62611])
-	parser.add_argument("--predefined_dsetid_csv", nargs="+", type=str, default=[])
+	parser.add_argument("--predefined_id_type",type=str,choices=["spec_id","mol_id","group_id","dset_spec_id"],default="group_id")
+	parser.add_argument("--predefined_train_ids",type=str,nargs="+",required=False)
+	parser.add_argument("--predefined_val_ids",type=str,nargs="+",required=False)
+	parser.add_argument("--predefined_test_ids",type=str,nargs="+",required=False)
+	parser.add_argument("--predefined_secondary_ids",type=str,nargs="+",required=False)
+	parser.add_argument("--predefined_train_id_fp",type=str,required=False)
+	parser.add_argument("--predefined_val_id_fp",type=str,required=False)
+	parser.add_argument("--predefined_test_id_fp",type=str,required=False)
+	parser.add_argument("--predefined_secondary_id_fp",type=str,required=False)
 	parser.add_argument("--num_folds",type=int,default=0)
 	# spec filtering criteria
-	parser.add_argument("--primary_dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
+	parser.add_argument("--primary_dsets",type=str,nargs="+",required=True)
 	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
 	parser.add_argument("--max_prec_mz",type=float,default=1500.)
@@ -278,11 +262,11 @@ if __name__ == "__main__":
 	parser.add_argument("--max_num_dag_edges",type=int,default=250000)
 	parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types", type=str,nargs="+", required=False, default='any')
-	parser.add_argument("--inst_types", type=str,nargs="+", required=False, default='any')
-	parser.add_argument("--frag_modes", type=str,nargs="+", required=False, default='any')
-	parser.add_argument("--ion_modes", type=str,nargs="+", required=False, default='any')
-	parser.add_argument('--ces',required=False,choices=[None, 'nce', 'ace', 'ace_or_nce'], default='ace_or_nce')
+	parser.add_argument("--prec_types",type=str,nargs="+",required=False)
+	parser.add_argument("--inst_types",type=str,nargs="+",required=False)
+	parser.add_argument("--frag_modes",type=str,nargs="+",required=False)
+	parser.add_argument("--ion_modes",type=str,nargs="+",required=False)
+	parser.add_argument('--ces',type=str,choices=['nce', 'ace'],required=False)
 
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=420420)
@@ -290,7 +274,7 @@ if __name__ == "__main__":
 	parser.add_argument("--test_frac",type=float,default=0.2)
 	parser.add_argument("--val_frac",type=float,default=0.2)
 	parser.add_argument("--proc_dp",type=str,required=True)
-	parser.add_argument("--frag_dp",type=str,required=True)
+	parser.add_argument("--frag_dp",type=str,required=False)
 	parser.add_argument("--split_dp",type=str,required=True)
 	args = parser.parse_args()
 

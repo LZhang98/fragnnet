@@ -1,6 +1,6 @@
-entity: frag-gnn
-project: frag-gnn
-program: /h/adamo/frag-gnn/scripts/run_wandb_sweep.py
+entity: fragnnet
+project: fragnnet
+program: ~/fragnnet/scripts/run_wandb_sweep.py
 method: random
 name: iceberg_gen_sweep
 description: Optimize ICEBERG GEN hyperparameters for loss

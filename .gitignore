@@ -5,6 +5,7 @@ __pycache__/
 *$py.class
 *.so
 *.egg
+*.c
 .pytest_cache
 # don't track cython generated c file
 src/frag_gnn/frag/compute_frags.c

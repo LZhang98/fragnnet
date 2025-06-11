@@ -15,7 +15,7 @@ import concurrent.futures
 import signal
 import hashlib
 from threading import Event
-from frag_gnn.utils.ms2c_utils import MolCandidateDB
+from fragnnet.utils.ms2c_utils import MolCandidateDB
 import numpy as np
 import argparse
 

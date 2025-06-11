@@ -16,13 +16,13 @@ from rdkit import Chem
 from rdkit import RDLogger
 import shutil
 
-from frag_gnn.iceberg.pl_model import IcebergGenPL
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.iceberg.dataset import SpecMolMagmaGenDataset
-import frag_gnn.utils.frag_utils as frag_utils
-from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.data_utils import seq_apply, par_apply, rdkit_import
+from fragnnet.iceberg.pl_model import IcebergGenPL
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.iceberg.dataset import SpecMolMagmaGenDataset
+import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.data_utils import seq_apply, par_apply, rdkit_import
 
 def run_magma_gen(
 	num_entries: int,
@@ -143,11 +143,11 @@ def get_args():
 	"""get args"""
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--magma_dp", type=str, default="data/magma/inten/nist_2")
-	parser.add_argument("--proc_dp", type=str, default="data/proc/nist")
-	parser.add_argument("--gen_ckpt_fp", type=str, default="data/magma/ckpt/nist_2.ckpt")
+	parser.add_argument("--magma_dp", type=str, required=True)
+	parser.add_argument("--proc_dp", type=str, required=True)
+	parser.add_argument("--gen_ckpt_fp", type=str, required=True)
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
-	parser.add_argument("--dsets", type=str, nargs="+", default=["nist"])
+	parser.add_argument("--dsets", type=str, nargs="+", required=True)
 	parser.add_argument("--parallel", type=booltype, default=False)
 	parser.add_argument("--gpu", type=booltype, default=True)
 	parser.add_argument("--rseed", type=int, default=420)
