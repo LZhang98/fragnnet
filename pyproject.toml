@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fragnnet"
-version = "0.0.0.dev"
+version = "2025.06.0.dev"
 description = "MS/MS prediction for small molecules"
 readme = "README.md"
 license = { text = "MIT" }
@@ -40,5 +40,5 @@ package-dir = {"" = "src"}
 [tool.setuptools.package-data]
 fragnnet = ["*.pyx", "*.pxd", "*.c", "*.h"]
 
-[tool.hatch.version]
-path = "src/fragnnet/version.py"
+#[tool.hatch.version]
+#path = "src/fragnnet/__init__.py"
