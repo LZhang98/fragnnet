@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel", "cython==3.0.11", "numpy>=1.24,<2", "cysignals"]
+requires = ["setuptools", "wheel", "cython==3.0.11", "numpy>=1.24,<2"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -23,16 +23,14 @@ dependencies = [
     "matplotlib",
     "pyteomics",
     "omegaconf",
-    "wandb",
-    "notebook"
 ]
 
 [project.optional-dependencies]
 # development dependency groups
-# dev = [
-#    "wandb",
-#    "notebook"
-# ]
+dev = [
+    "wandb",
+    "notebook"
+]
 
 [tool.setuptools]
 packages = { find = { where = ["src"] } }

@@ -1,5 +1,5 @@
 """
-model_base.py
+base_model.py
 
 Base classes for embedding collision energy (CE), precursor type(Prec), and instrument type (Inst)
 for FragGNN models. Intended to be used as base classes for more complex model architectures.
