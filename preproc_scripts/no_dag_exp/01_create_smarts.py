@@ -3,15 +3,15 @@ import argparse
 
 import torch as th
 import torch.nn.functional as F
-from frag_gnn.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
-from frag_gnn.utils.frag_utils import th_long_to_mask, get_node_feats
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.frag_utils import th_long_to_mask, get_node_feats
 import pandas as pd
 
-from frag_gnn.utils.misc_utils import PPM, TOLERANCE_MIN_MZ
-from frag_gnn.runner import load_config, init_dataloader, init_dataset
-from frag_gnn.utils.spec_utils import calculate_match_mzs
-from frag_gnn.utils.data_utils import mol_from_smiles
-from frag_gnn.utils.formula_utils import H_MASS
+from fragnnet.utils.misc_utils import PPM, TOLERANCE_MIN_MZ
+from fragnnet.runner import load_config, init_dataloader, init_dataset
+from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.utils.data_utils import mol_from_smiles
+from fragnnet.utils.formula_utils import H_MASS
 
 from rdkit import Chem
 from rdkit.Chem import Draw
