@@ -1,11 +1,9 @@
-from frag_gnn.runner import load_config, init_dataset, init_dataloader
-from frag_gnn.pl_model import FragGNNPL
-from frag_gnn.dataset import SpecMolFragDataset
-from frag_gnn.utils.misc_utils import scatter_reduce, scatter_argmax, EPS, booltype, scatter_masked_softmax, scatter_logsumexp
-from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference, select_model_vals, sparse_kl, log_mean, log_std
-from frag_gnn.loss import sparse_conditional_entropy_fn
+from fragnnet.runner import load_config, init_dataset, init_dataloader
+from fragnnet.pl_model import FragGNNPL
+from fragnnet.utils.misc_utils import booltype, scatter_logsumexp
+from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference, select_model_vals, log_mean
+from fragnnet.model.loss import sparse_conditional_entropy_fn
 
-import numpy as np
 import torch as th
 import pandas as pd
 import argparse	
@@ -13,22 +11,19 @@ import wandb
 import os
 from pprint import pprint
 
-
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--depth", type=str, default="d4", choices=["d3","d4"])
-	parser.add_argument("--debug", type=booltype, default=False)
-	parser.add_argument("--mode", type=str, choices=["baseline","posfn","negfn","mix"], default="baseline")
+	parser.add_argument("--mode", type=str, choices=["baseline","high","low","mix"], default="baseline")
 	parser.add_argument("--eval_split", type=str, default="test", choices=["train","val","test"])
 	parser.add_argument("--split_type", type=str, default="scaffold", choices=["scaffold","inchikey"])
-	parser.add_argument("--output_dp", type=str, required=True)
-	parser.add_argument("--entropy_exp", type=str, default="entropyv3-1")
+	parser.add_argument("--save_dp", type=str, default="inference_outputs/entropy/")
+	parser.add_argument("--entropy_exp", type=str, default="entropy")
 	parser.add_argument("--overwrite", type=booltype, default=False)
 	args = parser.parse_args()
 
 	depth = args.depth
-	debug = args.debug
 	mode = args.mode
 	eval_split = args.eval_split
 	split_type = args.split_type
@@ -36,9 +31,14 @@ if __name__ == "__main__":
 	entropy_exp = args.entropy_exp
 	pd.options.display.float_format = '{:.4f}'.format
 
-	output_dir = f"{split_type}_{depth}_{mode}_{eval_split}_{debug}"
-	output_dp = os.path.join(args.output_dp,output_dir)
-	os.makedirs(output_dp,exist_ok=True)
+	exp_name_to_wandb_prefix = {
+		"entropy": "entropyv3-1"
+	}
+	wandb_prefix = exp_name_to_wandb_prefix[entropy_exp]
+
+	save_dir = f"{split_type}_{depth}_{mode}_{eval_split}_False"
+	save_dp = os.path.join(args.save_dp,save_dir)
+	os.makedirs(save_dp,exist_ok=True)
 
 	# load configs
 	print(">>> Loading configs")
@@ -51,20 +51,11 @@ if __name__ == "__main__":
 	config_d["skip_extra_losses"] = False
 	config_d["compile"] = False
 
-	if debug:
-		raise NotImplementedError
-		print(">> debug mode, using small dataset")
-		config_d["spec_fp"] = "data/proc/debug_smallv2/spec_df.pkl"
-		config_d["mol_fp"] = "data/proc/debug_smallv2/mol_df.pkl"
-		config_d["split_dp"] = "data/split/debug_smallv2"
-		config_d["ann_fp"] = "data/proc/debug_smallv2/ann_df.pkl"
-		batch_cutoff = 3
-	else:
-		batch_cutoff = int(1e6)
+	batch_cutoff = int(1e6)
 
-	vals_fp = os.path.join(output_dp,"vals.pkl")
-	sims_fp = os.path.join(output_dp,"sims.pkl")
-	entropies_fp = os.path.join(output_dp,"entropies.pkl")
+	vals_fp = os.path.join(save_dp,"vals.pkl")
+	sims_fp = os.path.join(save_dp,"sims.pkl")
+	entropies_fp = os.path.join(save_dp,"entropies.pkl")
 
 	if os.path.isfile(sims_fp) and os.path.isfile(entropies_fp) and not args.overwrite:
 
@@ -79,7 +70,7 @@ if __name__ == "__main__":
 		
 			runs = api.runs(
 					path="frag-gnn/frag-gnn",
-					filters={"group":f"{entropy_exp}_{split_type}_{depth}_{mode}_ens"})
+					filters={"group":f"{wandb_prefix}_{split_type}_{depth}_{mode}_ens"})
 			model_to_run_id = {run.name: run.id for run in runs}
 		
 		else:
@@ -93,16 +84,12 @@ if __name__ == "__main__":
 			for smode, seed_range in mode_to_seed_range.items():
 				runs = api.runs(
 						path="frag-gnn/frag-gnn",
-						filters={"group":f"{entropy_exp}_{split_type}_{depth}_{smode}_ens"})
+						filters={"group":f"{wandb_prefix}_{split_type}_{depth}_{smode}_ens"})
 				for run in runs:
 					for i in range(seed_range[0],seed_range[1]):
 						if f"s{i:02d}" in run.tags:
 							model_to_run_id[run.name] = run.id
 							break
-
-		if debug:
-			keys = sorted(list(model_to_run_id.keys()))
-			model_to_run_id = {k: model_to_run_id[k] for k in keys[:2]}
 	
 		pprint(model_to_run_id)
 

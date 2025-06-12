@@ -1,16 +1,15 @@
-from frag_gnn.runner import load_config, init_dataloader
-from frag_gnn.pl_model import FragGNNPL, NeimsPL, PrecursorPL
-from frag_gnn.massformer.pl_model import MassFormerPL
-from frag_gnn.iceberg.pl_model import IcebergIntenPL
-from frag_gnn.graff.pl_model import GrAFFPL
-from frag_gnn.dataset import SpecMolDataset, SpecMolFragDataset
-from frag_gnn.iceberg.dataset import SpecMolMagmaIntenDataset
-from frag_gnn.graff.dataset import SpecMolAnnDataset
-from frag_gnn.utils.misc_utils import NestedDefaultDict, booltype
-from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference
+from fragnnet.runner import load_config, init_dataloader
+from fragnnet.pl_model import FragGNNPL, NeimsPL, PrecursorPL
+from fragnnet.massformer.pl_model import MassFormerPL
+from fragnnet.iceberg.pl_model import IcebergIntenPL
+from fragnnet.graff.pl_model import GrAFFPL
+from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
+from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset
+from fragnnet.graff.dataset import SpecMolAnnDataset
+from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
+from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference
 
 import torch as th
-import torch._dynamo
 import argparse
 import wandb
 from pprint import pprint
@@ -32,13 +31,13 @@ if __name__ == "__main__":
 		type=str, 
 		nargs="+", 
 		default=[
-			"fraggnn_d3_long",
-			"fraggnn_d4_long",
-			"iceberg_inten3_100_long",
-			"iceberg_inten3_all_long",
-			"neims_long",
-			"massformer_long",
-			"graff3_long",
+			"fragnnet_d3",
+			"fragnnet_d4",
+			"iceberg_inten",
+			"iceberg_inten_opt",
+			"neims",
+			"massformer",
+			"graff",
 			"precursor"
 		]
 	)
@@ -60,15 +59,9 @@ if __name__ == "__main__":
 		default=5
 	)
 	parser.add_argument(
-		"--local_path", 
-		type=str, 
-		default="/scratch/hdd001/home/adamo/frag-gnn/local_runs"
-	)
-	parser.add_argument(
-		"--vals_dp", 
+		"--save_dp", 
 		type=str, 
 		required=True
-		# default="/h/adamo/frag-gnn/inference_outputs"
 	)
 	parser.add_argument(
 		"--force_overwrite", 
@@ -130,13 +123,18 @@ if __name__ == "__main__":
 
 	eval_split = args.eval_split
 	num_seeds = args.num_seeds
-	local_path = args.local_path
-	vals_dp = args.vals_dp
+	save_dp = args.save_dp
 	force_overwrite = args.force_overwrite
-	if args.output_everything:
+	dset = args.dset
+	auxiliary_scores = args.auxiliary_scores
+	skip_extra_losses = args.skip_extra_losses
+	disable_preproc = args.disable_preproc
+	output_everything = args.output_everything
+	if output_everything:
 		output_subset = None
 	else:
 		output_subset = set(args.output_subset)
+	untransform_spec = args.untransform_spec
 
 	# this is necessary to avoid a pytorch compile issue...
 	# TODO: replace this with a proper checkpoint decompilation
@@ -150,30 +148,39 @@ if __name__ == "__main__":
 	model_type_to_model_cls = {
 		"neims": NeimsPL,
 		"massformer": MassFormerPL,
-		"fraggnn_d3": FragGNNPL,
-		"fraggnn_d4": FragGNNPL,
-		"iceberg_inten3_100": IcebergIntenPL,
-		"iceberg_inten3_all": IcebergIntenPL,
-		"graff3": GrAFFPL,
+		"fragnnet_d3": FragGNNPL,
+		"fragnnet_d4": FragGNNPL,
+		"iceberg_inten": IcebergIntenPL,
+		"iceberg_inten_opt": IcebergIntenPL,
+		"graff": GrAFFPL,
 		"precursor": PrecursorPL
 	}
 
 	model_type_to_ds_cls = {
 		"neims": SpecMolDataset,
 		"massformer": SpecMolDataset,
-		"fraggnn_d3": SpecMolFragDataset,
-		"fraggnn_d4": SpecMolFragDataset,
-		"iceberg_inten3_100": SpecMolMagmaIntenDataset,
-		"iceberg_inten3_all": SpecMolMagmaIntenDataset,
-		"graff3": SpecMolAnnDataset,
+		"fragnnet_d3": SpecMolFragDataset,
+		"fragnnet_d4": SpecMolFragDataset,
+		"iceberg_inten": SpecMolMagmaIntenDataset,
+		"iceberg_inten_opt": SpecMolMagmaIntenDataset,
+		"graff": SpecMolAnnDataset,
 		"precursor": SpecMolDataset
 	}
-	
-	# add long runs
-	for k in list(model_type_to_model_cls.keys()):
-		model_type_to_model_cls[f"{k}_long"] = model_type_to_model_cls[k]
-	for k in list(model_type_to_ds_cls.keys()):
-		model_type_to_ds_cls[f"{k}_long"] = model_type_to_ds_cls[k]
+
+	model_type_to_wandb_prefix = {
+		"neims": "neims_long",
+		"massformer": "massformer_long",
+		"fragnnet_d3": "fraggnn_d3_long",
+		"fragnnet_d4": "fraggnn_d4_long",
+		"iceberg_inten": "iceberg_inten3_100_long",
+		"iceberg_inten_opt": "iceberg_inten3_all_long",
+		"graff": "graff3_long",
+		"precursor": "precursor"
+	}
+
+	dset_to_wandb_prefix = {
+		"nist20": "nist20v3-1",
+	}
 
 	model_to_run_id = NestedDefaultDict()
 	model_to_config = NestedDefaultDict()
@@ -183,10 +190,11 @@ if __name__ == "__main__":
 	api = wandb.Api()
 	for split_type in split_types:
 		for model_type in wandb_model_types:
-			dset = args.dset
-			model_to_config[split_type][model_type] = f"config/{dset}_d4_wr00_{split_type}/{model_type}/s0.yml"
+			model_type_wandb_prefix = model_type_to_wandb_prefix[model_type]
+			dset_wandb_group_prefix = dset_to_wandb_prefix[dset]
+			model_to_config[split_type][model_type] = f"config/{dset}_{split_type}/{model_type}/s0.yml"
 			if model_type != "precursor":
-				group_name = f"{dset}_{split_type}_{model_type}"
+				group_name = f"{dset_wandb_group_prefix}_{split_type}_{model_type_wandb_prefix}"
 				runs = api.runs(
 					path="frag-gnn/frag-gnn",
 					filters={"group":group_name})
@@ -198,20 +206,7 @@ if __name__ == "__main__":
 	pprint(model_to_config)
 	pprint(model_to_run_id)
 
-	# find local checkpoints
-	model_to_ckpt = NestedDefaultDict()
-	for split_type in split_types:
-		for model_type in local_model_types:
-			dset = args.dset
-			model_to_config[split_type][model_type] = f"config/{dset}_d4_wr00_{split_type}/{model_type}/s0.yml"
-			if model_type != "precursor":
-				for seed in range(num_seeds):
-					ckpt = glob(os.path.join(local_path,f"{model_type}/{split_type}/ckpts/s{seed}/*.ckpt"))[0]
-					model_to_ckpt[split_type][model_type][seed] = ckpt
-	pprint(model_to_config)
-	pprint(model_to_ckpt)
-
-	model_types = wandb_model_types + local_model_types
+	model_types = wandb_model_types
 
 	for split_type in split_types:
 		for model_type in model_types:
@@ -220,10 +215,10 @@ if __name__ == "__main__":
 			print(f">>> Loading config {custom_fp}")
 			config_d = load_config(template_fp, custom_fp)
 			# modify config to record relevant metrics
-			config_d["auxiliary_scores"] = args.auxiliary_scores
-			config_d["skip_extra_losses"] = args.skip_extra_losses
+			config_d["auxiliary_scores"] = auxiliary_scores
+			config_d["skip_extra_losses"] = skip_extra_losses
 			config_d["compile"] = False
-			if args.disable_preproc:
+			if disable_preproc:
 				for k in ["spec", "mol", "frag", "magma", "ann"]:
 					key = f"{k}_params"
 					config_d[key]["preprocess"] = False
@@ -250,14 +245,6 @@ if __name__ == "__main__":
 					assert model_type in wandb_model_types, model_type
 					run_id = model_to_run_id[split_type][model_type][seed]
 					model = init_wandb_ckpt(run_id,last_ckpt=False,model_cls=model_cls,config_d=config_d)
-				elif model_type in model_to_ckpt:
-					assert model_type in local_model_types, model_type
-					ckpt_fp = model_to_ckpt[split_type][model_type][seed]
-					try:
-						model = model_cls.load_from_checkpoint(ckpt_fp,strict=True,**config_d)
-					except RuntimeError as e:
-						print(f"> error when loading from checkpoint file {ckpt_fp}, will try with strict=False")
-						model = model_cls.load_from_checkpoint(ckpt_fp,strict=False,**config_d)
 				else:
 					assert model_type == "precursor", model_type
 					# does not need a checkpoint
@@ -265,7 +252,7 @@ if __name__ == "__main__":
 				model.to(device)
 				model.eval()
 				# define output subset
-				if not args.output_everything:
+				if not output_everything:
 					output_subset = output_subset.union(model.metric_names)
 				# run inference
 				vals = run_inference(
@@ -276,13 +263,13 @@ if __name__ == "__main__":
 					batch_cutoff, 
 					config_d["nb_iso"], 
 					output_subset=output_subset, 
-					untransform_spec=args.untransform_spec
+					untransform_spec=untransform_spec
 				)
 				model.cpu()
 				# save vals
-				seed_vals_dp = os.path.join(args.vals_dp,split_type,model_type,f"s{seed}")
-				os.makedirs(seed_vals_dp,exist_ok=True)
-				seed_vals_fp = os.path.join(seed_vals_dp,f"{eval_split}.pkl")
+				seed_save_dp = os.path.join(save_dp,split_type,model_type,f"s{seed}")
+				os.makedirs(seed_save_dp,exist_ok=True)
+				seed_vals_fp = os.path.join(seed_save_dp,f"{eval_split}.pkl")
 				if os.path.isfile(seed_vals_fp):
 					print(f"> Info: {seed_vals_fp} exists already")
 					if force_overwrite:

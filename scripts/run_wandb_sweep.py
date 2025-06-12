@@ -2,7 +2,7 @@ import argparse
 import os
 import wandb
 
-from frag_gnn.runner import load_config, init_run
+from fragnnet.runner import load_config, init_run
 
 
 if __name__ == "__main__":
@@ -20,7 +20,7 @@ if __name__ == "__main__":
 		"-c",
 		"--custom_fp",
 		type=str,
-		default="config/sweep/d3_sweep.yml"
+		default="config/sweep/fragnnet_d3_sweep.yml"
 	)
 	parser.add_argument(
 		"-w",

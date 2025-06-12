@@ -1,21 +1,9 @@
 wandb_name: neims_sweep_template
-wandb_tags:
-- sweep
-- nist20v2
-- d4
-- wr00
-- inchikey
-- new_proc
-- neims
-- new_metrics
-- mz_bin_res_0,01
-- no_auxiliary_scores
-- preprocess
 
 # data stuff
-spec_fp: data/proc/nist20mona23v2/spec_df.pkl
-mol_fp: data/proc/nist20mona23v2/mol_df.pkl
-split_dp: data/split/nist20mona23v2_d4_wr00_inchikey
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
 spec_params:
   merge: True
   nce: True

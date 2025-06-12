@@ -1,9 +1,9 @@
-entity: frag-gnn
-project: frag-gnn
-program: /h/adamo/frag-gnn/scripts/run_wandb_sweep.py
+entity: fragnnet
+project: fragnnet
+program: ~/fragnnet/scripts/run_wandb_sweep.py
 method: random
 name: massformer_sweep
-description: Optimize MassFormer hyperparameters at 0.01 Da (post-untransform bug)
+description: Optimize MassFormer hyperparameters for binned cosine similarity (0.01 Da)
 metric:
   goal: maximize
   name: val_cos_sim_0.01_best/mean
