@@ -3,9 +3,9 @@ import pickle
 import torch as th
 from tqdm import tqdm
 
-from frag_gnn.utils.frag_utils import load_frag_d, th_long_to_mask
-from frag_gnn.utils.plot_utils import plot_spectra_sparse, get_mol_im
-from frag_gnn.utils.spec_utils import *
+from fragnnet.utils.frag_utils import load_frag_d, th_long_to_mask
+from fragnnet.utils.plot_utils import plot_spectra_sparse, get_mol_im
+from fragnnet.utils.spec_utils import *
 
 import numpy as np
 from rdkit import Chem
@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.collections as mc
 from matplotlib.text import Text
-from frag_gnn.utils.plot_utils import get_mol_im, get_highlighted_bonds
+from fragnnet.utils.plot_utils import get_mol_im, get_highlighted_bonds
 from PIL import Image
 
 predicted_fp='data/predicted/nist20_d4_wr00_inchikey/kme8fry7_fraggnn_d4_nodemlp_mnce_nocp.pkl.gz'
