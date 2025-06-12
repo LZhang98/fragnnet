@@ -7,8 +7,8 @@ source ~/.bashrc
 module load StdEnv/2023
 module load python/3.10
 
-virtualenv FRAG-GNN
-source FRAG-GNN/bin/activate
+virtualenv FRAGNNET
+source FRAGNNET/bin/activate
 pip install --no-index --upgrade pip
 
 pip install --no-index torch==2.1.2

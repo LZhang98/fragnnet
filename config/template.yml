@@ -1,17 +1,17 @@
 # wandb
-wandb_entity: frag-gnn
-wandb_project: frag-gnn
+wandb_entity: fragnnet # TODO: change to your wandb entity
+wandb_project: fragnnet # TODO: change to your wandb project
 wandb_name: template
 wandb_group:
-wandb_tags: 
+wandb_tags:
 wandb_root_dir: checkpoint
 # data
-spec_fp: data/proc/nist20mona23/spec_df.pkl
-mol_fp: data/proc/nist20mona23/mol_df.pkl
-split_dp: data/split/nist20_d3_wr75_inchikey
-frag_dp: data/frag/nist20_d3_h4_isoFalse/dags
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_inchikey
+frag_dp: data/frag/nist20_d3/dags
 magma_dp: data/magma
-ann_fp: data/proc/nist20mona23/ann_df.pkl
+ann_fp: data/proc/nist20/ann_df.pkl
 subsample_params:
   subsample_size: 0
   subsample_seed: 420

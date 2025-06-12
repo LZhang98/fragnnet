@@ -1,6 +1,6 @@
 import argparse
 
-from frag_gnn.runner import init_run
+from fragnnet.runner import init_run
 
 
 if __name__ == "__main__":
@@ -24,7 +24,7 @@ if __name__ == "__main__":
 		"-w",
 		"--wandb_mode",
 		type=str, 
-		default="online",
+		default="disabled",
 		choices=["online","offline","disabled"]
 	)
 	parser.add_argument(

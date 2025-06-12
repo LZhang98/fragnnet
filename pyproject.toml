@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools", "wheel", "cython==3.0.11", "numpy>=1.24,<2", "cysignals"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fragnnet"
+version = "0.0.0.dev"
+description = "MS/MS prediction for small molecules"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10, <=3.12"
+
+dependencies = [
+    "numpy>=1.24,<2",
+    "cython",
+    "rdkit",
+    "pandas",
+    "networkx",
+    "tqdm",
+    "scipy",
+    "scikit-learn",
+    "joblib>=1.3.2",
+    "matplotlib",
+    "pyteomics",
+    "omegaconf",
+    "wandb",
+    "notebook"
+]
+
+[project.optional-dependencies]
+# development dependency groups
+# dev = [
+#    "wandb",
+#    "notebook"
+# ]
+
+[tool.setuptools]
+packages = { find = { where = ["src"] } }
+include-package-data = true
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+fragnnet = ["*.pyx", "*.pxd", "*.c", "*.h"]
+
+[tool.hatch.version]
+path = "src/fragnnet/version.py"

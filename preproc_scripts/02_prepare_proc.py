@@ -4,9 +4,9 @@ import pandas as pd
 import argparse
 from rdkit import RDLogger
 
-import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_df_rows
-from frag_gnn.utils.misc_utils import booltype
+import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_df_rows
+from fragnnet.utils.misc_utils import booltype
 
 def load_df(df_dp,dsets,num_entries):
 	
@@ -174,10 +174,10 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--df_dp", type=str, default="data/df")
-	parser.add_argument("--proc_dp", type=str, default="data/proc/nist")
+	parser.add_argument("--proc_dp", type=str, required=True)
 	parser.add_argument("--num_entries", type=int, default=-1)
 	parser.add_argument("--ow_spec_mol", type=booltype, default=True, help="overwrite existing spec mol")
-	parser.add_argument("--dsets", type=str, nargs="+", default=["nist20_hr","mona23"])
+	parser.add_argument("--dsets", type=str, nargs="+", required=True)
 	flags = parser.parse_args()
 
 	print(f"> df_dp: {flags.df_dp}")

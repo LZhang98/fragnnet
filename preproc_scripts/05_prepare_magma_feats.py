@@ -12,12 +12,12 @@ from pprint import pformat
 from rdkit import RDLogger
 
 # Custom import
-import frag_gnn.iceberg.common as common
-import frag_gnn.iceberg.fragmentation as fragmentation
-import frag_gnn.utils.frag_utils as frag_utils
-from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.data_utils import seq_apply, par_apply
+import fragnnet.iceberg.common as common
+import fragnnet.iceberg.fragmentation as fragmentation
+import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.data_utils import seq_apply, par_apply
 
 
 def greedy_prune(
@@ -713,10 +713,10 @@ def get_args():
 	"""get args"""
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--magma_dp", type=str, default="data/magma/gen_2")
-	parser.add_argument("--proc_dp", type=str, default="data/proc/nist")
+	parser.add_argument("--magma_dp", type=str, required=True)
+	parser.add_argument("--proc_dp", type=str, required=True)
 	parser.add_argument("--allowed_elements", type=str, nargs="+", default=frag_utils.ELEMENTS)
-	parser.add_argument("--dsets", type=str, nargs="+", default=["nist"])
+	parser.add_argument("--dsets", type=str, nargs="+", required=True)
 	parser.add_argument("--group_ids", type=int, nargs="+", default=[])
 	# iceberg magma params
 	parser.add_argument(

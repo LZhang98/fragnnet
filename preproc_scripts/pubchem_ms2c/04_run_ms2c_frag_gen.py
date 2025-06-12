@@ -1,10 +1,10 @@
 import pandas as pd
-from frag_gnn.utils.misc_utils import booltype
+from fragnnet.utils.misc_utils import booltype
 from tqdm import tqdm
 import argparse
 import os
-import frag_gnn.utils.data_utils as data_utils
-import frag_gnn.utils.frag_utils as frag_utils
+import fragnnet.utils.data_utils as data_utils
+import fragnnet.utils.frag_utils as frag_utils
 
 def get_args():
 	parser = argparse.ArgumentParser()

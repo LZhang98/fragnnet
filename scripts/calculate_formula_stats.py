@@ -1,8 +1,8 @@
-from frag_gnn.utils.misc_utils import LOG_ZERO, flatten_lol, js_div
-from frag_gnn.utils.frag_utils import load_frag_d
-from frag_gnn.utils.data_utils import composition_to_string
-from frag_gnn.utils.spec_utils import calculate_match_mzs
-from frag_gnn.iceberg.common.chem_utils import vec_to_formula, element_to_ind
+from fragnnet.utils.misc_utils import LOG_ZERO, flatten_lol, js_div
+from fragnnet.utils.frag_utils import load_frag_d
+from fragnnet.utils.data_utils import composition_to_string
+from fragnnet.utils.spec_utils import calculate_match_mzs
+from fragnnet.iceberg.common.chem_utils import vec_to_formula, element_to_ind
 
 import numpy as np
 import torch as th
@@ -25,15 +25,13 @@ parser.add_argument(
     type=str, 
     nargs="+", 
     default=[
-        # "fraggnn_d3_long",
-        "fraggnn_d4_long",
-        "iceberg_inten3_100_long",
-        # "iceberg_inten3_all_long",
-        "graff3_long"
+        "fragnnet_d4",
+        "iceberg_inten",
+        "graff"
     ]
 )
 parser.add_argument(
-    "--vals_dp", 
+    "--save_dp", 
     type=str, 
     required=True
 )
@@ -59,7 +57,7 @@ if __name__ == "__main__":
 
     # load ann_df
     # get formulae from products
-    proc_dp = "/h/adamo/frag-gnn/data/proc/nist20mona23v3"
+    proc_dp = "data/proc/nist20"
     spec_df = pd.read_pickle(f"{proc_dp}/spec_df.pkl")
     mol_df = pd.read_pickle(f"{proc_dp}/mol_df.pkl")
     ann_df = pd.read_pickle(f"{proc_dp}/ann_df.pkl")
@@ -101,7 +99,7 @@ if __name__ == "__main__":
 
     split_types = args.split_types
     model_types = args.model_types
-    vals_dp = args.vals_dp
+    save_dp = args.save_dp
     seeds = args.seeds
     thresholdses = args.thresholds
     num_samples = args.num_samples
@@ -117,11 +115,11 @@ if __name__ == "__main__":
             
             print(f">>>> Model Type = {model_type}")
 
-            frag_model = ("fraggnn_d3" in model_type) or ("fraggnn_d4" in model_type)
+            frag_model = ("fragnnet_d3" in model_type) or ("fragnnet_d4" in model_type)
             graff_model = "graff" in model_type
 
             # load vals for s0
-            formula_vals_fp = os.path.join(vals_dp,split_type,model_type,f"s{seeds[0]}","test.pkl")
+            formula_vals_fp = os.path.join(save_dp,split_type,model_type,f"s{seeds[0]}","test.pkl")
             formula_vals = th.load(formula_vals_fp, weights_only=False)
 
             # get molecule ids
@@ -137,7 +135,7 @@ if __name__ == "__main__":
 
                 if n != seeds[0]:
                 
-                    formula_vals_fp = os.path.join(vals_dp,split_type,model_type,f"s{n}","test.pkl")
+                    formula_vals_fp = os.path.join(save_dp,split_type,model_type,f"s{n}","test.pkl")
                     formula_vals = th.load(formula_vals_fp, weights_only=False)
 
                 print(len(mol_ids))

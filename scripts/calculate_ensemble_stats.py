@@ -6,22 +6,16 @@ import os
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_dp", type=str, default="/scratch/hdd001/home/adamo/frag-gnn/inference_outputs/entropyv3-1_feb26/")
-    parser.add_argument("--stats_dp", type=str, default="figs/ensemble/v3-1_feb26")
+    parser.add_argument("--entropy_ens_save_dp", type=str, default="inference_outputs/entropy_ens/")
+    parser.add_argument("--stats_save_dp", type=str, default="figs/frag_ann_exp/")
     parser.add_argument("--split_types", type=str, nargs="+", default=["scaffold"])
     parser.add_argument("--depths", type=str, nargs="+", default=["d4"], choices=["d3","d4"])
     parser.add_argument("--ens_types", type=str, nargs="+", default=["baseline", "low", "high", "mix"])
     args = parser.parse_args()
 
     stats_d = {}
-    ens_type_to_key = {
-        "baseline": "baseline",
-        "low": "posfn",
-        "high": "negfn",
-        "mix": "mix"
-    }
 
-    assert os.path.isdir(args.output_dp), f"ensemble output_dp {args.output_dp} not found"
+    assert os.path.isdir(args.entropy_ens_save_dp), f"ensemble entropy_ens_save_dp {args.entropy_ens_save_dp} not found"
     
     for split_type in args.split_types:
         
@@ -29,12 +23,11 @@ if __name__ == "__main__":
     
             for ens_type in args.ens_types:
                 
-                ens_type_key = ens_type_to_key[ens_type]
-                ens_output_dp = os.path.join(args.output_dp,f"{split_type}_{depth}_{ens_type_key}_test_False")
+                ens_entropy_ens_save_dp = os.path.join(args.entropy_ens_save_dp,f"{split_type}_{depth}_{ens_type}_test_False")
                 ens_stats_d = {}
 
-                sims_fp = os.path.join(ens_output_dp,"sims.pkl")
-                entropies_fp = os.path.join(ens_output_dp,"entropies.pkl")
+                sims_fp = os.path.join(ens_entropy_ens_save_dp,"sims.pkl")
+                entropies_fp = os.path.join(ens_entropy_ens_save_dp,"entropies.pkl")
 
                 assert os.path.isfile(sims_fp), f"sims_fp {sims_fp} not found"
                 sims_d = th.load(sims_fp, weights_only=False)
@@ -107,7 +100,7 @@ if __name__ == "__main__":
 
                 stats_d[f"{split_type}_{depth}_{ens_type}"] = ens_stats_d
 
-    os.makedirs(args.stats_dp,exist_ok=True)
-    stats_fp = os.path.join(args.stats_dp,"ensemble_stats.pkl")
+    os.makedirs(args.stats_save_dp,exist_ok=True)
+    stats_fp = os.path.join(args.stats_save_dp,"ensemble_stats.pkl")
     th.save(stats_d,stats_fp)
     print(f">> saved stats to {stats_fp}")

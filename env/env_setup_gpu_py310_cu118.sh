@@ -5,8 +5,8 @@ set -e
 
 source ~/.bashrc
 
-conda create -n FRAG-GNN-GPU
-conda activate FRAG-GNN-GPU
+conda create -n FRAGGNET-GPU
+conda activate FRAGGNET-GPU
 
 conda install python=3.10
 

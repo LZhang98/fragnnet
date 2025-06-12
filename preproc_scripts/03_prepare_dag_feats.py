@@ -6,22 +6,23 @@ from pprint import pformat
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-import wandb
 
-import frag_gnn.utils.frag_utils as frag_utils
-import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.utils.proc_utils import filter_spec_mol, merge_spec_df
+import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 def print_and_log(name,series,wandb_flag,stats_d):
 
 	stats = series.describe()
-	print(f"> {name}")
-	print(stats)
-	print()
+	# print(f"> {name}")
+	# print(stats)
+	# print()
 	for stat in ["mean","std","min","25%","50%","75%","max"]:
 		stats_d[f"{name}/{stat}"] = stats[stat]
+
 	if wandb_flag:
+		import wandb
 		log_d = {"step":0}
 		for stat in ["mean","std","min","25%","50%","75%","max"]:
 			log_d[f"{name}/{stat}"] = stats[stat]
@@ -63,10 +64,11 @@ def main(args):
 	# init wandb
 	wandb_flag = args.wandb_mode != "off"
 	if wandb_flag:
+		import wandb
 		wandb_config = vars(args)
-		wandb_run = wandb.init(
-			project="frag-gnn",
-			entity="frag-gnn",
+		wandb.init(
+			project=args.wandb_project,
+			entity=args.wandb_entity,
 			name=args.wandb_run_name,
 			mode=args.wandb_mode,
 			config=wandb_config,
@@ -85,10 +87,10 @@ def main(args):
 	print()
 
 	# perform filter selection
-	prec_types = args.prec_types if 'any' not in args.prec_types else None
-	frag_modes = args.frag_modes if 'any' not in args.frag_modes else None
-	ion_modes = args.ion_modes if 'any' not in args.ion_modes else None
-	inst_types = args.inst_types if 'any' not in args.inst_types else None
+	prec_types = args.prec_types
+	frag_modes = args.frag_modes
+	ion_modes = args.ion_modes
+	inst_types = args.inst_types
 	
 	spec_df, mol_df = filter_spec_mol(
 		spec_df,
@@ -346,26 +348,28 @@ if __name__ == "__main__":
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
 	parser.add_argument("--max_iterations",type=int,default=3)
-	parser.add_argument("--dsets",type=str,nargs="+",default=["nist20_hr","mona23"])
+	parser.add_argument("--dsets",type=str,nargs="+",required=True)
 	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)
-	parser.add_argument("--wandb_mode",type=str,default="online",choices=["online","offline","off"])
+	parser.add_argument("--wandb_mode",type=str,default="disabled",choices=["online","offline","disabled"])
+	parser.add_argument("--wandb_project",type=str,default="frag-gnn")
+	parser.add_argument("--wandb_entity",type=str,default="frag-gnn")
 	parser.add_argument("--wandb_dp",type=str,default="wandb")
 	parser.add_argument("--compress_dags",type=booltype,default=True)
 	parser.add_argument("--wandb_run_name",type=str)
 	parser.add_argument("--save_dag",type=booltype,default=True)
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",nargs="+",default='any')
-	parser.add_argument("--inst_types",nargs="+",default='any')
-	parser.add_argument("--frag_modes",nargs="+",default='any')
-	parser.add_argument("--ion_modes",nargs="+",default='any')
+	parser.add_argument("--prec_types",nargs="+",required=False)
+	parser.add_argument("--inst_types",nargs="+",required=False)
+	parser.add_argument("--frag_modes",nargs="+",required=False)
+	parser.add_argument("--ion_modes",nargs="+",required=False)
 	parser.add_argument("--use_cached_dag",type=booltype,default=False)
 	parser.add_argument("--save_as_hdf5",type=booltype,default=False)
 	args = parser.parse_args()
  
 	# Check if --flag is True and --conditional-arg is missing
-	if args.wandb_mode != 'off' and args.wandb_run_name:
-		parser.error("--wandb_run_name is required when --wandb_mode is not off")
+	if args.wandb_mode != 'disabled' and args.wandb_run_name:
+		parser.error("--wandb_run_name is required when --wandb_mode is not disabled")
 
 	tqdm.pandas()
 

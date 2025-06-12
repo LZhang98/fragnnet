@@ -5,13 +5,13 @@ import numpy as np
 
 from tqdm import tqdm
 import pandas as pd
-from frag_gnn.utils.ms2c_utils import MolCandidateDB
-from frag_gnn.utils.misc_utils import booltype, PPM
-import frag_gnn.utils.formula_utils as formula_utils
-import frag_gnn.utils.frag_utils as frag_utils
-import frag_gnn.utils.data_utils as data_utils
-from frag_gnn.utils.misc_utils import booltype
-from frag_gnn.frag.compute_frags import (
+from fragnnet.utils.ms2c_utils import MolCandidateDB
+from fragnnet.utils.misc_utils import booltype, PPM
+import fragnnet.utils.formula_utils as formula_utils
+import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.frag.compute_frags import (
 	MAX_NUM_NODES
 )
 

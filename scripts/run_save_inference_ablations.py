@@ -1,8 +1,8 @@
-from frag_gnn.runner import load_config, init_dataloader
-from frag_gnn.pl_model import FragGNNPL
-from frag_gnn.dataset import SpecMolFragDataset
-from frag_gnn.utils.misc_utils import NestedDefaultDict, booltype
-from frag_gnn.utils.script_utils import init_wandb_ckpt, run_inference
+from fragnnet.runner import load_config, init_dataloader
+from fragnnet.pl_model import FragGNNPL
+from fragnnet.dataset import SpecMolFragDataset
+from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
+from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference
 
 import torch as th
 import torch._dynamo
@@ -27,10 +27,9 @@ if __name__ == "__main__":
 		default=5
 	)
 	parser.add_argument(
-		"--vals_dp", 
+		"--save_dp", 
 		type=str, 
 		required=True
-		# default="/h/adamo/frag-gnn/inference_outputs"
 	)
 	parser.add_argument(
 		"--force_overwrite", 
@@ -86,31 +85,40 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--ablation_dset",
 		type=str,
-		default="ablationsv3-1"
+		default="ablations"
 	)
 	parser.add_argument(
-		"--ablation_models",
+		"--ablation_model_types",
 		type=str,
 		nargs="+",
 		default=[
-			"fraggnn_d3_edges",
-			"fraggnn_d3_noce",
-			# "fraggnn_d4_edges",
-			"fraggnn_d4_noce",
+			"fragnnet_d3_edges",
+			"fragnnet_d3_noce",
+			"fragnnet_d4_noce",
 		]
 	)
 	args = parser.parse_args()
 
 	eval_split = args.eval_split
 	num_seeds = args.num_seeds
-	vals_dp = args.vals_dp
+	save_dp = args.save_dp
 	force_overwrite = args.force_overwrite
-	ablation_models = args.ablation_models
+	ablation_model_types = args.ablation_model_types
 	ablation_dset = args.ablation_dset
 	if args.output_everything:
 		output_subset = None
 	else:
 		output_subset = set(args.output_subset)
+
+	model_type_to_wandb_prefix = {
+		"fragnnet_d3_noce": "fraggnn_d3_noce",
+		"fragnnet_d3_edges": "fraggnn_d3_edges",
+		"fragnnet_d4_noce": "fraggnn_d4_noce",
+	}
+
+	dset_to_wandb_prefix = {
+		"ablations": "ablationsv3-1"
+	}
 
 	# this is necessary to avoid a pytorch compile issue...
 	# TODO: replace this with a proper checkpoint decompilation
@@ -124,23 +132,25 @@ if __name__ == "__main__":
 	# find wandb checkpoints
 	template_fp = "config/template.yml"
 	api = wandb.Api()
-	for ablation_model in ablation_models:
-		model_to_config[ablation_model] = f"config/{ablation_dset}/{ablation_model}/s0.yml"
-		group_name = f"{ablation_dset}_{ablation_model}"
+	for ablation_model_type in ablation_model_types:
+		model_to_config[ablation_model_type] = f"config/{ablation_dset}/{ablation_model_type}/s0.yml"
+		model_type_wandb_prefix = model_type_to_wandb_prefix[ablation_model_type]
+		dset_wandb_group_prefix = dset_to_wandb_prefix[ablation_dset]
+		group_name = f"{dset_wandb_group_prefix}_{model_type_wandb_prefix}"
 		runs = api.runs(
 			path="frag-gnn/frag-gnn",
 			filters={"group":group_name})
 		for run in runs:
 			seed = int(run.name.split("_")[-1].removeprefix("s"))
 			if seed < num_seeds:
-				model_to_run_id[ablation_model][seed] = run.id
+				model_to_run_id[ablation_model_type][seed] = run.id
 	del api
 	pprint(model_to_config)
 	pprint(model_to_run_id)
 
-	for ablation_model in ablation_models:
-		print(f">>> Starting model_type {ablation_model}")
-		custom_fp = model_to_config[ablation_model]
+	for ablation_model_type in ablation_model_types:
+		print(f">>> Starting model_type {ablation_model_type}")
+		custom_fp = model_to_config[ablation_model_type]
 		print(f">>> Loading config {custom_fp}")
 		config_d = load_config(template_fp, custom_fp)
 		# modify config to record relevant metrics
@@ -165,7 +175,7 @@ if __name__ == "__main__":
 		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 		for seed in range(num_seeds):
 			print(f">>> Starting seed {seed}")
-			run_id = model_to_run_id[ablation_model][seed]
+			run_id = model_to_run_id[ablation_model_type][seed]
 			model = init_wandb_ckpt(run_id,last_ckpt=False,model_cls=model_cls,config_d=config_d)
 			model.to(device)
 			model.eval()
@@ -185,9 +195,9 @@ if __name__ == "__main__":
 			)
 			model.cpu()
 			# save vals
-			seed_vals_dp = os.path.join(args.vals_dp,ablation_model,f"s{seed}")
-			os.makedirs(seed_vals_dp,exist_ok=True)
-			seed_vals_fp = os.path.join(seed_vals_dp,f"{eval_split}.pkl")
+			seed_save_dp = os.path.join(args.save_dp,ablation_model_type,f"s{seed}")
+			os.makedirs(seed_save_dp,exist_ok=True)
+			seed_vals_fp = os.path.join(seed_save_dp,f"{eval_split}.pkl")
 			if os.path.isfile(seed_vals_fp):
 				print(f"> Info: {seed_vals_fp} exists already")
 				if force_overwrite:

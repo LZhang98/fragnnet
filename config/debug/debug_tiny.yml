@@ -98,4 +98,6 @@ use_tensor_float32: True
 automatic_optimization: True
 dynamic_batch_sampler: False
 pl_enable_progress_bar: True
-compile: True
+compile: False
+num_workers: 0
+detect_anomaly: True
