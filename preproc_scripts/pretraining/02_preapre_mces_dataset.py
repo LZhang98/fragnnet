@@ -41,45 +41,23 @@ def process_mol_df(data_fp, mol_df_fp):
 		mol_df = mol_df.reset_index(drop=True)
 		mol_df.to_pickle(mol_df_fp)
   
-def process_mces(data_fp, out_fp, mol_df_fp):
+def process_mces(data_fp, mces_out_fp):
 	
-
 	with np.load(data_fp, allow_pickle=True) as mces_data:
-		mces = mces_data['mces']
-		print(len(mces))
-		num_mces = len(mces)
+		mces_values = mces_data['mces'].copy()
 		num_smiles = len(mces_data['smiles'])
-		get_np_memory_usage(mces)
-		#get_np_memory_usage(mces_data['smiles'])
-		#smiles = mces_data['smiles']
+	
+	#get_np_memory_usage(mces_values)
+	with open(mces_out_fp, 'a+') as file_out:
+		mces_idx = 0
+		for i in tqdm(range(0, num_smiles)):
 
-		# Remove all pairs where mces == -1
-		#valid_mask = mces != -1
-		#valid_indices = np.where(valid_mask)[0]
-
-		#N = len(smiles)
-
-		def _upper_triangular_index_to_pair(idx, N):
-			"""
-			Inverse mapping: flat index -> (i, j) for upper-triangular matrix storage.
-			Used to recover the original molecule pair from a flat MCES index.
-			See: https://stackoverflow.com/a/27086195
-			"""
-			#N = self.num_samples
-			i = N - 2 - int(np.floor(np.sqrt(-8*idx + 4*N*(N-1)-7)/2.0 - 0.5))
-			j = idx + i + 1 - N*(N-1)//2 + (N-i)*((N-i)-1)//2
-			return i, j
-
-		#for i in range(num_smiles + 1):
-		#	print(_upper_triangular_index_to_pair(i, num_mces))
-		# Prepare output array: (smiles_idx1, smiles_idx2, mces)
-		#filtered_mces_data = np.empty((len(valid_indices), 3), dtype=np.int64)
-		#for k, idx in enumerate(tqdm(valid_indices, desc="Processing valid pairs")):
-		#	i, j = unravel_indices(idx, N)
-		#	filtered_mces_data[k, 0] = i
-		#	filtered_mces_data[k, 1] = j
-		#	filtered_mces_data[k, 2] = mces[idx]
-
+			for j in tqdm(range(i+1, num_smiles), leave=False):
+				#MCES(smiles_values[i], smiles_values[j])
+				if  mces_values[mces_idx] > 0:
+					#mces_list.append((i, j,mces_values[mces_idx]))
+					file_out.write(f"{i},{j},{mces_values[mces_idx]}\n")
+				mces_idx += 1
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Filter MCES data, save index pairs and mol_df with properties.")
@@ -90,10 +68,10 @@ if __name__ == "__main__":
 		help="Path to the MCES .npz file"
 	)
 	parser.add_argument(
-		"--out_fp",
+		"--mces_out_fp",
 		type=str,
-		default="./data/mces-data/mces_pairs_idx.npy",
-		help="Output .npy file for filtered MCES index pairs"
+		default="./data/mces-data/mces_pairs.csv",
+		help="Output .csv file for filtered MCES index pairs"
 	)
 	parser.add_argument(
 		"--mol_df_fp",
@@ -102,4 +80,4 @@ if __name__ == "__main__":
 		help="Output .pkl file for mol_df"
 	)
 	args = parser.parse_args()
-	process_mces(args.data_fp, args.out_fp, args.mol_df_fp)
+	process_mces(args.data_fp, args.mces_out_fp)
