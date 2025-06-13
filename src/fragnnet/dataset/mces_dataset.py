@@ -1,4 +1,9 @@
 
+import numpy as np
+from fragnnet.utils.data_utils import mol_from_smiles
+from fragnnet.utils.feat_utils import get_mol_graph
+from torch.utils.data import Dataset
+
 class McesDataset(Dataset):
 	"""Dataset for MCES (Maximum Common Edge Substructure) pairs.
 
