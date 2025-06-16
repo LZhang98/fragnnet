@@ -16,7 +16,7 @@ from fragnnet.utils.spec_utils import batched_bin_func
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
 from fragnnet.model.form_embedder import get_embedder
-from fragnnet.model.model_base import CEModel, PrecModel, InstModel
+from fragnnet.model.base_model import CEModel, PrecModel, InstModel
 
 class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 

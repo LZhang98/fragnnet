@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch_geometric as pyg
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.nn_utils import build_pool_module, GNN, SpecFFN
-from fragnnet.model.model_base import CEModel, PrecModel, InstModel
+from fragnnet.model.base_model import CEModel, PrecModel, InstModel
 
 class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
 	"""

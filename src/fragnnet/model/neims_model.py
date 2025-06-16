@@ -9,7 +9,7 @@ precursor type, and instrument type, and predicts spectra using a feedforward ne
 import torch as th
 import torch.nn as nn
 
-from fragnnet.model.model_base import CEModel, PrecModel, InstModel
+from fragnnet.model.base_model import CEModel, PrecModel, InstModel
 from fragnnet.utils.nn_utils import SpecFFN
 from fragnnet.utils.feat_utils import get_mol_fp_size
 
