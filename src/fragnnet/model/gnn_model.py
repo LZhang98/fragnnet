@@ -11,8 +11,9 @@ molecular graph encoding, followed by pooling and a feedforward network for spec
 import torch as th
 import torch.nn as nn
 import torch_geometric as pyg
+from fragnnet.model.nn_blocks import GNN, SpecFFN
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.nn_utils import build_pool_module, GNN, SpecFFN
+from fragnnet.utils.nn_utils import build_pool_module
 from fragnnet.model.base_model import CEModel, PrecModel, InstModel
 
 class GNNModel(nn.Module, CEModel, PrecModel, InstModel):

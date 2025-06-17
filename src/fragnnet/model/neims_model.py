@@ -10,7 +10,7 @@ import torch as th
 import torch.nn as nn
 
 from fragnnet.model.base_model import CEModel, PrecModel, InstModel
-from fragnnet.utils.nn_utils import SpecFFN
+from fragnnet.model.nn_blocks import SpecFFN
 from fragnnet.utils.feat_utils import get_mol_fp_size
 
 class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
