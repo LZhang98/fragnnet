@@ -13,7 +13,6 @@ import torch as th
 import torch.nn as nn
 
 from fragnnet.utils.misc_utils import scatter_reduce
-from fragnnet.utils.nn_utils import *
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.utils.spec_utils import transform_ce
 
@@ -28,7 +27,7 @@ class CEModel:
 		ce_insert_merge: bool,
 		ce_insert_size: int,
 		ce_mean: float,
-		  ce_std: float,
+		ce_std: float,
 		ce_max: float,
 	):
 		"""
