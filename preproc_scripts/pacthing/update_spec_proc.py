@@ -4,7 +4,7 @@ import argparse
 import os
 from tqdm import tqdm
 
-def add_missing_columns(df):
+def spec_df_add_missing_columns(spec_df):
 	"""
 	Add missing columns to a DataFrame with default values using .loc for better performance:
 	- 'ramped' and 'stepped': False if missing
@@ -17,22 +17,28 @@ def add_missing_columns(df):
 		pd.DataFrame: DataFrame with added columns if they were missing
 	"""
 	# Add 'ramped' column if it doesn't exist
-	if 'ramped' not in df.columns:
-		df.loc[:, 'ramped'] = False
+	if 'ramped' not in spec_df.columns:
+		spec_df.loc[:, 'ramped'] = False
 	
 	# Add 'stepped' column if it doesn't exist
-	if 'stepped' not in df.columns:
-		df.loc[:, 'stepped'] = False
+	if 'stepped' not in spec_df.columns:
+		spec_df.loc[:, 'stepped'] = False
 	
 	# Add 'col_energy_extra_1' column if it doesn't exist
-	if 'col_energy_extra_1' not in df.columns:
-		df.loc[:, 'col_energy_extra_1'] = np.nan
+	if 'col_energy_extra_1' not in spec_df.columns:
+		spec_df.loc[:, 'col_energy_extra_1'] = np.nan
 	
 	# Add 'col_energy_extra_2' column if it doesn't exist
-	if 'col_energy_extra_2' not in df.columns:
-		df.loc[:, 'col_energy_extra_2'] = np.nan
+	if 'col_energy_extra_2' not in spec_df.columns:
+		spec_df.loc[:, 'col_energy_extra_2'] = np.nan
 	
-	return df
+	if 'has_ace' not in spec_df.columns:
+		spec_df.loc[:,'has_ace'] = ~spec_df["ace"].isna()
+	
+ 	if 'has_nce' not in spec_df.columns:
+		spec_df.loc[:,'has_nce'] = ~spec_df["nce"].isna()
+
+	return spec_df
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Add missing columns to a Pickle file.")
@@ -65,7 +71,7 @@ if __name__ == "__main__":
 	df = pd.read_pickle(input_fp)
 	
 	# Add missing columns
-	df = add_missing_columns(df)
+	df = spec_df_add_missing_columns(df)
 	
 	# Determine output path
 	if args.output_fp:

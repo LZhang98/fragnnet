@@ -63,7 +63,9 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"ace_extra_2"] = par_apply_series(spec_df["col_energy_extra_2"],data_utils.parse_ace_str)
 	spec_df.loc[:,"nce_extra_2"] = par_apply_series(spec_df["col_energy_extra_2"],data_utils.parse_nce_str)
 	spec_df = spec_df.drop(columns=["col_energy", "col_energy_extra_1", "col_energy_extra_2"])
- 
+	spec_df.loc[:,'has_ace'] = ~spec_df["ace"].isna()
+	spec_df.loc[:,'has_nce'] = ~spec_df["nce"].isna()
+
 	# standardise prec_type
 	spec_df.loc[:,"prec_type"] = par_apply_series(spec_df["prec_type"],data_utils.parse_prec_type_str)
 	# convert prec_mz
