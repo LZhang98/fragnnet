@@ -55,13 +55,15 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"inst_type"] = inst_type
 	spec_df.loc[:,"frag_mode"] = frag_mode
 	# standardize ce
+	# NOTE: this assume ace will ends with eV and NCE will ends with %
 	spec_df.loc[:,"ace"] = par_apply_series(spec_df["col_energy"],data_utils.parse_ace_str)
 	spec_df.loc[:,"nce"] = par_apply_series(spec_df["col_energy"],data_utils.parse_nce_str)
 	spec_df.loc[:,"ace_extra_1"] = par_apply_series(spec_df["col_energy_extra_1"],data_utils.parse_ace_str)
 	spec_df.loc[:,"nce_extra_1"] = par_apply_series(spec_df["col_energy_extra_1"],data_utils.parse_nce_str)
 	spec_df.loc[:,"ace_extra_2"] = par_apply_series(spec_df["col_energy_extra_2"],data_utils.parse_ace_str)
 	spec_df.loc[:,"nce_extra_2"] = par_apply_series(spec_df["col_energy_extra_2"],data_utils.parse_nce_str)
-	spec_df = spec_df.drop(columns=["col_energy"])
+	spec_df = spec_df.drop(columns=["col_energy", "col_energy_extra_1", "col_energy_extra_2"])
+ 
 	# standardise prec_type
 	spec_df.loc[:,"prec_type"] = par_apply_series(spec_df["prec_type"],data_utils.parse_prec_type_str)
 	# convert prec_mz
