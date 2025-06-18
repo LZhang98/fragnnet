@@ -229,7 +229,7 @@ class InstModel:
 			inst_num_types: Number of instrument types.
 		"""
 		self.inst_insert_location = inst_insert_location
-		self.inst_embedder = nn.Embedding(inst_num_types+1, inst_insert_size)	
+		self.inst_embedder = nn.Embedding(inst_num_types + 1, inst_insert_size)	
 		inst_dim = inst_insert_size
 
 		self._inst_location_check()
