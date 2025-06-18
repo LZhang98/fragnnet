@@ -1,26 +1,26 @@
 """
 This module implements various neural network building blocks for graph-based and feed-forward models.
 It includes implementations of Graph Neural Networks (GNNs), Multilayer Perceptrons (MLPs), and other
-specialized layers for molecular and spectral data processing.
+specialized layers for molecular and spectra.
 
 - ZerosAggregation: Dummy aggregation module that outputs zero tensors.
 - GNN: Generic wrapper for different types of Graph Neural Networks (e.g., GINE, MPNN, GAT, GGNN).
 - GINE: Graph Isomorphism Network with Edge Features.
-- NodeMLP: Multilayer Perceptron for node-level processing.
 - MPNN: Neural Message Passing for Quantum Chemistry.
 - GAT: Graph Attention Networks (v1 and v2).
 - GGNN: Gated Graph Neural Networks.
+- NodeMLP: Multilayer Perceptron for node-level ms/ms prediction.
 - MLPBlocks: Multilayer Perceptron with optional residual connections.
 - NeimsBlock: Specialized block from the NEIMS paper.
 - LowRankDense: Low-rank approximation of dense layers.
 - SpecFFN: Feed-forward network for spectrum prediction.
 """
 
+import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg 
-from fragnnet.utils.nn_utils import get_clones, get_norm
-
+from fragnnet.utils.nn_utils import get_clones
 
 class ZerosAggregation(nn.Module):
 	"""
@@ -153,6 +153,25 @@ class GNN(nn.Module):
 		z = self.input_project(x)
 		z = self.gnn(z, batch_index, edge_index, edge_attr)
 		return z
+
+
+def get_norm(normalization,hidden_size):
+
+	# norm_fn may or may not depend on the batch index
+	if normalization == "batch":
+		norm_mod = nn.BatchNorm1d(hidden_size)
+		norm_fn = lambda x, b, n: n(x)
+	elif normalization == "layer":
+		norm_mod = nn.LayerNorm(hidden_size)
+		norm_fn = lambda x, b, n: n(x)
+	elif normalization == "graph":
+		norm_mod = pyg.nn.GraphNorm(hidden_size)
+		norm_fn = lambda x, b, n: n(x,b)
+	else:
+		assert normalization == "none", normalization
+		norm_mod = nn.Identity()
+		norm_fn = lambda x, b, n: n(x)
+	return norm_mod, norm_fn
 
 
 class GINE(nn.Module):
@@ -640,3 +659,88 @@ class SpecFFN(nn.Module):
 		# Apply the output layer
 		x = self.output_layer(x)
 		return x
+
+
+def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
+	# adapted from NEIMS
+	# raw_prediction is [B,D], prec_mass_idx is [B]
+
+	batch_size = raw_prediction.shape[0]
+	max_idx = raw_prediction.shape[1]
+	assert th.all(prec_mass_idx < max_idx)
+	rev_prediction = th.flip(raw_prediction, dims=(1,))
+	# convention is to shift right, so we express as negative to go left
+	offset_idx = th.minimum(
+		max_idx * th.ones_like(prec_mass_idx),
+		prec_mass_idx + prec_mass_offset + 1)
+	shifts = - (max_idx - offset_idx)
+	gather_idx = th.arange(
+		max_idx,
+		device=raw_prediction.device).unsqueeze(0).expand(
+		batch_size,
+		max_idx)
+	gather_idx = (gather_idx - shifts.unsqueeze(1)) % max_idx
+	offset_rev_prediction = th.gather(rev_prediction, 1, gather_idx)
+	# you could mask_prediction_by_mass here but it's unnecessary
+	return offset_rev_prediction
+
+
+def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
+	"""medthos build pooling layer for given pool_type and dim
+		node dim is required for attention layer. 
+		if pool type is not one of 'sum','mean','max','attention', return ZerosAggregation
+	Args:
+		pool_type (str): pooling type in ['sum','mean','max','attention']
+		node_dim (int): node_dim, used for attention
+
+	Returns:
+		_type_: _description_
+	"""
+
+	if pool_type == "sum":
+		pool_module = pyg.nn.SumAggregation()
+	elif pool_type == "mean":
+		pool_module = pyg.nn.MeanAggregation()
+	elif pool_type == "max":
+		pool_module = pyg.nn.MaxAggregation()
+	elif pool_type == "attention":
+		pool_module = pyg.nn.AttentionalAggregation(
+			gate_nn = nn.Sequential(
+				nn.Linear(node_dim, node_dim),
+				nn.ReLU(),
+				nn.Linear(node_dim, 1)
+			)
+		)
+	elif pool_type == "set2set":
+		"With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets) https://arxiv.org/abs/1511.06391"
+		pool_module = nn.Sequential(
+			pyg.nn.Set2Set(node_dim,processing_steps=num_step_set2set),
+			nn.Linear(2 * node_dim, node_dim),
+		)
+	elif pool_type == "softmax":
+		pool_module = pyg.nn.SoftmaxAggregation(learn=True)
+	elif pool_type == "powermean":
+		pool_module = pyg.nn.PowerMeanAggregation(learn=True)
+	elif pool_type == "mean_std_softmax":
+		raise NotImplementedError
+		# TODO: this need hook up in the way that size of input need change respect this
+		#pool_module = pyg.nn.MultiAggregation(['mean', 'std',  pyg.nn.SoftmaxAggregation(learn=True)])
+	else:
+		assert pool_type == "none", pool_type
+		# just return 0s
+		pool_module = ZerosAggregation()
+	return pool_module
+
+
+def mask_prediction_by_mass(raw_prediction, prec_mass_idx, prec_mass_offset):
+	# adapted from NEIMS
+	# raw_prediction is [B,D], prec_mass_idx is [B]
+
+	max_idx = raw_prediction.shape[1]
+	assert th.all(prec_mass_idx < max_idx)
+	idx = th.arange(max_idx, device=prec_mass_idx.device)
+	mask = (
+		idx.unsqueeze(0) <= (
+			prec_mass_idx.unsqueeze(1) +
+			prec_mass_offset)).float()
+	return mask * raw_prediction
