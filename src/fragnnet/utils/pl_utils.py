@@ -77,3 +77,16 @@ class PrintGradCallback(Callback):
 		logging.info(p_grads[:10])
 		logging.info("grad_norm",np.mean(p_grads))
 
+
+def get_pl_hparams(ckpt) -> dict:
+	"""return a copied version of hyper_parameters
+
+	Args:
+		ckpt (_type_): _description_
+
+	Returns:
+		dict: _description_
+	"""
+	hyper_parameters = copy.deepcopy(ckpt["hyper_parameters"])
+	return hyper_parameters
+

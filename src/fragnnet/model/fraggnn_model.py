@@ -7,16 +7,17 @@ import torch.nn.functional as F
 import torch_geometric as pyg
 
 import numpy as np
+from fragnnet.model.nn_blocks import GNN, MLPBlocks
 from fragnnet.utils.frag_utils import get_node_feats, get_edge_feats, th_long_to_mask
 from fragnnet.utils.misc_utils import scatter_logsumexp, scatter_logsoftmax, scatter_reduce, scatter_masked_softmax
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.utils.nn_utils import GNN, MLPBlocks, build_pool_module
+from fragnnet.model.nn_blocks import build_pool_module
 from fragnnet.utils.misc_utils import check_pyg_compile, LOG_ZERO, check_pyg_full_compile
 from fragnnet.utils.spec_utils import batched_bin_func
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
 from fragnnet.model.form_embedder import get_embedder
-from fragnnet.model.model_base import CEModel, PrecModel, InstModel
+from fragnnet.model.base_model import CEModel, PrecModel, InstModel
 
 class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 
