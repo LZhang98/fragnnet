@@ -50,6 +50,7 @@ class IntFeaturizer(nn.Module):
 		orig_shape = tensor.shape
 
 		# all negative values and values >= max_count_int will be treated as "extra" tokens.
+		# TODO: may be we should default to negtive values being missing tokens?
 		norm_mask = (tensor >= 0) & (tensor < self.max_count_int)
 		
 		if self.missing_token is None:

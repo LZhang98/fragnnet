@@ -11,6 +11,7 @@ for FragGNN models. Intended to be used as base classes for more complex model a
 
 import torch as th
 import torch.nn as nn
+import torch.nn.functional as F
 
 from fragnnet.utils.misc_utils import scatter_reduce
 from fragnnet.model.form_embedder import get_embedder
@@ -79,6 +80,19 @@ class CEModel:
 			ce_input_dim = self.ce_insert_size
 		elif self.ce_insert_type == "embed":
 			def ce_transform(ce):
+				# let embedder handle clamping and missing data
+				ce = th.clamp(ce, min=-1)
+				ce = th.round(ce, decimals=0).long()
+				ce = ce.reshape(-1,1)
+				return ce
+			embedder = get_embedder(self.int_embedder, max_count_int=int(self.ce_max))
+			ce_embedder = nn.Sequential(
+				embedder,
+				nn.Linear(embedder.num_dim,self.ce_insert_size)
+			)	
+			ce_input_dim = self.ce_insert_size
+		elif self.ce_insert_type == "embed_clamped":
+			def ce_transform(ce):
 				ce = th.clamp(ce, min=0, max=int(self.ce_max)-1)
 				ce = th.round(ce, decimals=0).long()
 				ce = ce.reshape(-1,1)
@@ -91,7 +105,7 @@ class CEModel:
 			ce_input_dim = self.ce_insert_size
 		elif self.ce_insert_type == "bin":
 			def ce_transform(ce):
-				ce = th.clamp(ce, min=0, max=int(self.ce_max)-10)
+				ce = th.clamp(ce, min=-1, max=int(self.ce_max)-10)
 				ce = th.round(ce, decimals=-1).long() // 10
 				ce = F.one_hot(ce, num_classes=int(self.ce_max)//10).float()
 				return ce
