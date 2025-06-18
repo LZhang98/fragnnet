@@ -1,10 +1,25 @@
-import torch as th
+"""
+This module implements various neural network building blocks for graph-based and feed-forward models.
+It includes implementations of Graph Neural Networks (GNNs), Multilayer Perceptrons (MLPs), and other
+specialized layers for molecular and spectral data processing.
+
+- ZerosAggregation: Dummy aggregation module that outputs zero tensors.
+- GNN: Generic wrapper for different types of Graph Neural Networks (e.g., GINE, MPNN, GAT, GGNN).
+- GINE: Graph Isomorphism Network with Edge Features.
+- NodeMLP: Multilayer Perceptron for node-level processing.
+- MPNN: Neural Message Passing for Quantum Chemistry.
+- GAT: Graph Attention Networks (v1 and v2).
+- GGNN: Gated Graph Neural Networks.
+- MLPBlocks: Multilayer Perceptron with optional residual connections.
+- NeimsBlock: Specialized block from the NEIMS paper.
+- LowRankDense: Low-rank approximation of dense layers.
+- SpecFFN: Feed-forward network for spectrum prediction.
+"""
+
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_geometric as pyg
-
-from fragnnet.utils.misc_utils import safelog
-from fragnnet.utils.nn_utils import get_clones, get_norm, mask_prediction_by_mass, reverse_prediction
+import torch_geometric as pyg 
+from fragnnet.utils.nn_utils import get_clones, get_norm
 
 
 class ZerosAggregation(nn.Module):
@@ -214,65 +229,6 @@ class GINE(nn.Module):
 		return x
 
 
-class NodeMLP(nn.Module):
-
-	def __init__(
-		self,
-		hidden_size: int,
-		node_feats_size: int,
-		edge_feats_size: int,
-		num_layers: int,
-		dropout: float,
-		normalization: str,
-		**kwargs
-	):
-		"""NodeMLP
-		"""
-		super().__init__()
-
-		assert edge_feats_size >= 0, edge_feats_size
-		if edge_feats_size > 0:
-			print("> Warning: NodeMLP does not use edge features, but got edge_feats_size > 0")
-
-		self.layers = []
-		for i in range(num_layers):
-			apply_fn = nn.Sequential(
-				nn.Linear(hidden_size, hidden_size),
-				nn.ReLU(),
-				nn.Linear(hidden_size, hidden_size),
-			)
-			temp_layer = apply_fn
-			self.layers.append(temp_layer)
-
-		self.layers = nn.ModuleList(self.layers)
-		# setup norm and norm_fn
-		# norm_fn may or may not depend on the batch index
-		if normalization == "batch":
-			norm_mod = nn.BatchNorm1d(hidden_size)
-			self.norm_fn = lambda x, b, n: n(x)
-		elif normalization == "layer":
-			norm_mod = nn.LayerNorm(hidden_size)
-			self.norm_fn = lambda x, b, n: n(x)
-		elif normalization == "graph":
-			norm_mod = pyg.nn.GraphNorm(hidden_size)
-			self.norm_fn = lambda x, b, n: n(x,b)
-		else:
-			assert normalization == "none", normalization
-			norm_mod = nn.Identity()
-			self.norm_fn = lambda x, b, n: n(x)
-		self.norms = get_clones(norm_mod, num_layers)
-		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
-
-	def forward(self, x, batch_index, edge_index, edge_attr):
-		"""forward.
-		"""
-		for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
-			layer_out = layer(x)
-			layer_out = self.norm_fn(layer_out, batch_index, norm)
-			x = F.relu(dropout(layer_out)) + x
-		return x
-
-
 class MPNN(nn.Module):
 	def __init__(
 		self,
@@ -417,6 +373,64 @@ class GGNN(nn.Module):
 			edge_index=edge_index,
 			edge_weight=edge_weight
 		)
+		return x
+
+class NodeMLP(nn.Module):
+
+	def __init__(
+		self,
+		hidden_size: int,
+		node_feats_size: int,
+		edge_feats_size: int,
+		num_layers: int,
+		dropout: float,
+		normalization: str,
+		**kwargs
+	):
+		"""NodeMLP
+		"""
+		super().__init__()
+
+		assert edge_feats_size >= 0, edge_feats_size
+		if edge_feats_size > 0:
+			print("> Warning: NodeMLP does not use edge features, but got edge_feats_size > 0")
+
+		self.layers = []
+		for i in range(num_layers):
+			apply_fn = nn.Sequential(
+				nn.Linear(hidden_size, hidden_size),
+				nn.ReLU(),
+				nn.Linear(hidden_size, hidden_size),
+			)
+			temp_layer = apply_fn
+			self.layers.append(temp_layer)
+
+		self.layers = nn.ModuleList(self.layers)
+		# setup norm and norm_fn
+		# norm_fn may or may not depend on the batch index
+		if normalization == "batch":
+			norm_mod = nn.BatchNorm1d(hidden_size)
+			self.norm_fn = lambda x, b, n: n(x)
+		elif normalization == "layer":
+			norm_mod = nn.LayerNorm(hidden_size)
+			self.norm_fn = lambda x, b, n: n(x)
+		elif normalization == "graph":
+			norm_mod = pyg.nn.GraphNorm(hidden_size)
+			self.norm_fn = lambda x, b, n: n(x,b)
+		else:
+			assert normalization == "none", normalization
+			norm_mod = nn.Identity()
+			self.norm_fn = lambda x, b, n: n(x)
+		self.norms = get_clones(norm_mod, num_layers)
+		self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
+
+	def forward(self, x, batch_index, edge_index, edge_attr):
+		"""forward.
+		"""
+		for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
+			layer_out = layer(x)
+			layer_out = self.norm_fn(layer_out, batch_index, norm)
+			x = F.relu(dropout(layer_out)) + x
 		return x
 
 class MLPBlocks(nn.Module):

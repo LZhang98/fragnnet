@@ -35,7 +35,7 @@ def spec_df_add_missing_columns(spec_df):
 	if 'has_ace' not in spec_df.columns:
 		spec_df.loc[:,'has_ace'] = ~spec_df["ace"].isna()
 	
- 	if 'has_nce' not in spec_df.columns:
+	if 'has_nce' not in spec_df.columns:
 		spec_df.loc[:,'has_nce'] = ~spec_df["nce"].isna()
 
 	return spec_df
