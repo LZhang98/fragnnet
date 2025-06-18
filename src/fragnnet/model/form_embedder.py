@@ -6,6 +6,9 @@ import torch as th
 import torch.nn as nn
 import numpy as np
 
+# the maximum number of integers that we are going to see as a "count", i.e. 0 to MAX_COUNT_INT-1
+# Number of extra embeddings to learn -- one for the "to be confirmed" embedding.
+
 DEFAULT_MAX_COUNT_INT = 255
 DEFAULT_NUM_EXTRA_EMBEDDINGS = 1
 
@@ -17,64 +20,86 @@ class IntFeaturizer(nn.Module):
 	Subclasses should define `self.int_to_feat_matrix`, a matrix where each row is the vector representation for that
 	integer, i.e. to get a vector representation for `5`, one could call `self.int_to_feat_matrix[5]`.
 
-	Note that this class takes care of creating a fixed number (`self.NUM_EXTRA_EMBEDDINGS` to be precise) of extra
-	"learned" embeddings these will be concatenated after the integer embeddings in the forward pass,
-	be learned, and be used for extra  non-integer tokens such as the "to be confirmed token" (i.e., pad) token.
-	They are indexed starting from `self.max_count_int`.
+	This base class also handles a fixed number of "extra" learned embeddings. The first one is reserved for missing data,
+	and the others can represent other out-of-range or special tokens.
+	NOTE: All Classes inheriting from this class with treat Negative values and values >= max_count_int as "extra" tokens.
 	"""
 
-	# MAX_COUNT_INT = 255  # the maximum number of integers that we are going to see as a "count", i.e. 0 to MAX_COUNT_INT-1
-	# NUM_EXTRA_EMBEDDINGS = 1  # Number of extra embeddings to learn -- one for the "to be confirmed" embedding.
-
-	def __init__(self, embedding_dim, max_count_int=DEFAULT_MAX_COUNT_INT, num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS):
+	def __init__(self, embedding_dim, max_count_int=DEFAULT_MAX_COUNT_INT, 
+              num_extra_embeddings = DEFAULT_NUM_EXTRA_EMBEDDINGS, missing_token=None):
 		super().__init__()
 		self.max_count_int = max_count_int
 		self.num_extra_embeddings = num_extra_embeddings
+		self.missing_token = missing_token
+		self.embedding_dim = embedding_dim
+
 		weights = th.zeros(self.num_extra_embeddings, embedding_dim)
 		self._extra_embeddings = nn.Parameter(weights, requires_grad=True)
 		nn.init.normal_(self._extra_embeddings, 0.0, 1.0)
-		self.embedding_dim = embedding_dim
-
+		Warning(
+			"IntFeaturizer: Negative values and values >= max_count_int will be treated as 'extra' tokens.")
+  
 	def forward(self, tensor):
 		"""
-		Convert the integer `tensor` into its new representation -- note that it gets stacked along final dimension.
+		Convert the integer `tensor` into its new representation.
+		- Use `int_to_feat_matrix` if 0 <= x < max_count_int
+		- Use _extra_embeddings[0] if x == missing_token
+		- Use _extra_embeddings[i+1] if x >= max_count_int and x != missing_token
 		"""
-		orig_shape = tensor.shape
-		# out_tensor = th.empty(
-		# 	(*orig_shape, self.embedding_dim), device=tensor.device
-		# )
-		extra_embed_mask = (tensor >= self.max_count_int).float()
-
 		tensor = tensor.long()
-		norm_embeds = self.int_to_feat_matrix[tensor]
-		extra_embeds = self._extra_embeddings[th.maximum(tensor,self.max_count_int*th.ones_like(tensor))-self.max_count_int]
-		out_tensor = (1.-extra_embed_mask).unsqueeze(-1)*norm_embeds + extra_embed_mask.unsqueeze(-1)*extra_embeds
+		orig_shape = tensor.shape
 
-		temp_out = out_tensor.reshape(*orig_shape[:-1], -1)
-		return temp_out
+		# all negative values and values >= max_count_int will be treated as "extra" tokens.
+		norm_mask = (tensor >= 0) & (tensor < self.max_count_int)
+		
+		if self.missing_token is None:
+			missing_mask = th.zeros_like(tensor, dtype=th.bool)
+		else:
+			missing_mask = (tensor == self.missing_token)
+			
+		extra_mask = (~norm_mask) & (~missing_mask)
+
+		# Normal features
+		norm_indices = tensor.clone()
+		norm_indices[~norm_mask] = 0  # Dummy index to avoid OOB
+		norm_embeds = self.int_to_feat_matrix[norm_indices]
+
+		# Missing features(e.g., 999 → index 0)
+		missing_embeds = self._extra_embeddings[0].expand_as(norm_embeds)
+
+		# Other special extra embeddings (e.g., 998 → index 1, etc.)
+		extra_token_indices = th.clamp(tensor - self.max_count_int, min=0)
+		extra_token_indices = th.clamp(extra_token_indices, max=self.num_extra_embeddings - 2) + 1
+		extra_embeds = self._extra_embeddings[extra_token_indices]
+		extra_embeds[~extra_mask] = 0  # Mask-out invalid positions
+
+		# Combine
+		out_tensor = (
+			norm_mask.unsqueeze(-1) * norm_embeds +
+			missing_mask.unsqueeze(-1) * missing_embeds +
+			extra_mask.unsqueeze(-1) * extra_embeds
+		)
+
+		return out_tensor.reshape(*orig_shape[:-1], -1)
 
 	@property
 	def num_dim(self):
 		return self.int_to_feat_matrix.shape[1]
 
-	# @property
-	# def full_dim(self):
-	#	 return self.num_dim * common.NORM_VEC.shape[0]
-
-
 class FourierFeaturizer(IntFeaturizer):
 	"""
 	Inspired by:
 	Tancik, M., Srinivasan, P.P., Mildenhall, B., Fridovich-Keil, S., Raghavan, N., Singhal, U., Ramamoorthi, R.,
-	Barron, J.T. and Ng, R. (2020) ‘Fourier Features Let Networks Learn High Frequency Functions in Low Dimensional
-	 Domains’, arXiv [cs.CV]. Available at: http://arxiv.org/abs/2006.10739.
+	Barron, J.T. and Ng, R. (2020) 'Fourier Features Let Networks Learn High Frequency Functions in Low Dimensional
+	 Domains', arXiv [cs.CV]. Available at: http://arxiv.org/abs/2006.10739.
 
 	Some notes:
 	* we'll put the frequencies at powers of 1/2 rather than random Gaussian samples; this means it will match the
 		Binarizer quite closely but be a bit smoother.
 	"""
 
-	def __init__(self, max_count_int=DEFAULT_MAX_COUNT_INT, num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS):
+	def __init__(self, max_count_int=DEFAULT_MAX_COUNT_INT, 
+              num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS, missing_token=None):
 
 		num_freqs = int(np.ceil(np.log2(max_count_int))) + 2
 		# ^ need at least this many to ensure that the whole input range can be represented on the half circle.
@@ -86,6 +111,7 @@ class FourierFeaturizer(IntFeaturizer):
 			embedding_dim=2 * freqs_time_2pi.shape[0],
 			max_count_int=max_count_int,
 			num_extra_embeddings=num_extra_embeddings,
+			missing_token=missing_token
 		)  # 2 for cosine and sine
 
 		# we will define the features at this frequency up front (as we only will ever see a fixed number of counts):
@@ -109,15 +135,16 @@ class FourierFeaturizerSines(IntFeaturizer):
 
 	Inspired by:
 	Tancik, M., Srinivasan, P.P., Mildenhall, B., Fridovich-Keil, S., Raghavan, N., Singhal, U., Ramamoorthi, R.,
-	Barron, J.T. and Ng, R. (2020) ‘Fourier Features Let Networks Learn High Frequency Functions in Low Dimensional
-	 Domains’, arXiv [cs.CV]. Available at: http://arxiv.org/abs/2006.10739.
+	Barron, J.T. and Ng, R. (2020) Fourier Features Let Networks Learn High Frequency Functions in Low Dimensional
+	 Domains, arXiv [cs.CV]. Available at: http://arxiv.org/abs/2006.10739.
 
 	Some notes:
 	* we'll put the frequencies at powers of 1/2 rather than random Gaussian samples; this means it will match the
 		Binarizer quite closely but be a bit smoother.
 	"""
 
-	def __init__(self, max_count_int=DEFAULT_MAX_COUNT_INT, num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS):
+	def __init__(self, max_count_int=DEFAULT_MAX_COUNT_INT, 
+              num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS, missing_token=None):
 
 		num_freqs = int(np.ceil(np.log2(max_count_int))) + 2
 		# ^ need at least this many to ensure that the whole input range can be represented on the half circle.
@@ -128,7 +155,8 @@ class FourierFeaturizerSines(IntFeaturizer):
 		super().__init__(
 			embedding_dim=freqs_time_2pi.shape[0],
 			max_count_int=max_count_int,
-			num_extra_embeddings=num_extra_embeddings	
+			num_extra_embeddings=num_extra_embeddings,
+			missing_token=missing_token
 		)
 
 		# we will define the features at this frequency up front (as we only will ever see a fixed number of counts):
@@ -149,15 +177,16 @@ class FourierFeaturizerAbsoluteSines(IntFeaturizer):
 
 	Inspired by:
 	Tancik, M., Srinivasan, P.P., Mildenhall, B., Fridovich-Keil, S., Raghavan, N., Singhal, U., Ramamoorthi, R.,
-	Barron, J.T. and Ng, R. (2020) ‘Fourier Features Let Networks Learn High Frequency Functions in Low Dimensional
-	 Domains’, arXiv [cs.CV]. Available at: http://arxiv.org/abs/2006.10739.
+	Barron, J.T. and Ng, R. (2020) Fourier Features Let Networks Learn High Frequency Functions in Low Dimensional
+	 Domains, arXiv [cs.CV]. Available at: http://arxiv.org/abs/2006.10739.
 
 	Some notes:
 	* we'll put the frequencies at powers of 1/2 rather than random Gaussian samples; this means it will match the
 		Binarizer quite closely but be a bit smoother.
 	"""
 
-	def __init__(self, max_count_int=DEFAULT_MAX_COUNT_INT, num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS):
+	def __init__(self, max_count_int=DEFAULT_MAX_COUNT_INT, 
+              num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS, missing_token=None):
 
 		num_freqs = int(np.ceil(np.log2(max_count_int))) + 2
 
@@ -167,7 +196,8 @@ class FourierFeaturizerAbsoluteSines(IntFeaturizer):
 		super().__init__(
 			embedding_dim=freqs_time_2pi.shape[0],
 			max_count_int=max_count_int,
-			num_extra_embeddings=num_extra_embeddings
+			num_extra_embeddings=num_extra_embeddings,
+			missing_token=missing_token
 		)
 
 		# we will define the features at this frequency up front (as we only will ever see a fixed number of counts):
@@ -181,7 +211,6 @@ class FourierFeaturizerAbsoluteSines(IntFeaturizer):
 		)
 		self.int_to_feat_matrix.requires_grad = False
 
-
 class RBFFeaturizer(IntFeaturizer):
 	"""
 	A featurizer that puts radial basis functions evenly between 0 and max_count-1. These will have a width of
@@ -189,7 +218,8 @@ class RBFFeaturizer(IntFeaturizer):
 
 	"""
 
-	def __init__(self, num_funcs=32, max_count_int=DEFAULT_MAX_COUNT_INT, num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS):
+	def __init__(self, num_funcs=32, max_count_int=DEFAULT_MAX_COUNT_INT, 
+              num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS, missing_token=None):
 		"""
 		:param num_funcs: number of radial basis functions to use: their width will automatically be chosen -- see class
 							docstring.
@@ -197,7 +227,8 @@ class RBFFeaturizer(IntFeaturizer):
 		super().__init__(
 			embedding_dim=num_funcs,
 			max_count_int=max_count_int,
-			num_extra_embeddings=num_extra_embeddings
+			num_extra_embeddings=num_extra_embeddings,
+			missing_token=missing_token
 		)
 		width = (self.max_count_int - 1) / num_funcs
 		centers = th.linspace(0, self.max_count_int- 1, num_funcs)
@@ -225,11 +256,14 @@ class OneHotFeaturizer(IntFeaturizer):
 	 and so on.
 	"""
 
-	def __init__(self, max_count_int=DEFAULT_MAX_COUNT_INT, num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS):
+	def __init__(self, max_count_int=DEFAULT_MAX_COUNT_INT, 
+              num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS, 
+              missing_token=None):
 		super().__init__(
 			embedding_dim=max_count_int,
 			max_count_int=max_count_int,
-			num_extra_embeddings=num_extra_embeddings
+			num_extra_embeddings=num_extra_embeddings,
+			missing_token=missing_token
 		)
 		feats = th.eye(self.max_count_int)
 		self.int_to_feat_matrix = nn.Parameter(feats.float())
@@ -243,11 +277,12 @@ class LearnedFeaturizer(IntFeaturizer):
 	Pretty much `nn.Embedding` but we get to use the forward of the superclass which behaves a bit differently.
 	"""
 
-	def __init__(self, feature_dim=32, max_count_int=DEFAULT_MAX_COUNT_INT, num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS):
+	def __init__(self, feature_dim=32, max_count_int=DEFAULT_MAX_COUNT_INT, num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS, missing_token=None):
 		super().__init__(
 			embedding_dim=feature_dim,
 			max_count_int=max_count_int,
-			num_extra_embeddings=num_extra_embeddings
+			num_extra_embeddings=num_extra_embeddings,
+			missing_token=missing_token
 		)
 		weights = th.zeros(self.max_count_int, feature_dim)
 		self.int_to_feat_matrix = nn.Parameter(weights, requires_grad=True)
