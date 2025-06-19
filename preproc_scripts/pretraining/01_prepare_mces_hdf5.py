@@ -20,7 +20,8 @@ def npz_to_hdf5(npz_fp, hdf5_fp, batch_size):
 				for i in tqdm(range(0, arr.shape[0], batch_size), desc=f"Writing {key}"):
 					dset[i:i+batch_size] = arr[i:i+batch_size]
 			print(f"Converted {npz_fp} to {hdf5_fp} in batches of {batch_size}")
-   
+
+
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Filter MCES data and remove all -1 pairs.")
 	parser.add_argument(
@@ -42,4 +43,17 @@ if __name__ == "__main__":
 		help="Batch size for processing valid pairs"
 	)
 	args = parser.parse_args()
-	npz_to_hdf5(args.mces_npz_fp, args.mces_hdf5_fp, args.hdf5_batch_size)
+	#npz_to_hdf5(args.mces_npz_fp, args.mces_hdf5_fp, args.hdf5_batch_size)
+ 
+	with h5py.File(args.mces_hdf5_fp, "r") as f:
+		# List all datasets (keys)
+		print("Keys:", list(f.keys()))
+		
+		# Read the 'mces' dataset (as a numpy array)
+		# mces = f["mces"][:]
+		# print("mces shape:", mces.shape)
+		
+		# Read the 'smiles' dataset (as bytes, decode if needed)
+		smiles_bytes = f["smiles"][:]
+		smiles = [s.decode() for s in smiles_bytes]
+		print("First 5 SMILES:", smiles[:5])
