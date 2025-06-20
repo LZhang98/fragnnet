@@ -628,7 +628,7 @@ def parse_inst_info(df):
 			"Orbitrap": "FT"
 		}
 		if none_or_nan(inst_str):
-			inst_type = "Unknown"
+			inst_type = np.nan
 		elif inst_str in inst_map:
 			inst_type = inst_map[inst_str]
 		else:
@@ -660,7 +660,7 @@ def parse_inst_info(df):
 			# NPLLIB stuff
 			# "Q-ToF (LCMS)": "QTOF",
 			# "Bruker Q-ToF (LCMS)": "QTOF",
-			"Unknown (LCMS)": "Unknown",
+			"Unknown (LCMS)": "Other",
 			"Ion Trap (LCMS)": "IT",
 			"Orbitrap (LCMS)": "FT",
 			"FTICR (LCMS)": "FT",
