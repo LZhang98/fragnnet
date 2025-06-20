@@ -89,7 +89,7 @@ def mol_from_inchi(inchi:str, ml_standardize:bool = True) -> "rdkit.Chem.rdchem.
 	Args:
 		inchi (str): inchi string, np.nan if fails
 		ml_standardize (bool, optional): Whether to apply ML-specific standardization
-			that includes cleanup, parent fragment extraction, charge neutralization,
+			that includes cleanup, parent fragment extraction,
 			and tautomer canonicalization. Defaults to True.
 	Returns:
 		rdkit.Chem.rdchem.Mol: rdkit mol object
@@ -113,8 +113,7 @@ def rdkit_ml_standardize(mol:"rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol"
 	This function performs several important standardization steps:
 	1. Cleans up the molecule (removing Hs, disconnecting metals, etc.)
 	2. Extracts the parent fragment (largest/most relevant piece)
-	3. Neutralizes charges where possible
-	4. Canonicalizes tautomers to a standard form
+	3. Canonicalizes tautomers to a standard form
 	Adapted from https://bitsilla.com/blog/2021/06/standardizing-a-molecule-using-rdkit/
 	
 	Args:
@@ -144,13 +143,11 @@ def rdkit_ml_standardize(mol:"rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol"
 	# - Attempts to remove or neutralize charges where chemically reasonable
 	# - Important for consistent representation across different sources
 	# - Helps with similarity calculations and model predictions
-	# note that no attempt is made at reionization at this step
-	# nor at ionization at some pH (rdkit has no pKa caculator)
-	# the main aim to to represent all molecules from different sources
-	# in a (single) standard way, for use in ML, catalogue, etc.
-
-	uncharger = rdMolStandardize.Uncharger() # Create uncharger object (no convenience method available)
-	mol = uncharger.uncharge(mol)
+	# note that no attempt is made at reionization at this step  nor at ionization at some pH (rdkit has no pKa caculator)
+	# the main aim to to represent all molecules from different sources  in a (single) standard way, for use in ML, catalogue, etc.
+	# NOTE: This is NOT a very safe operation for MS/MS prediction
+	# uncharger = rdMolStandardize.Uncharger() # Create uncharger object (no convenience method available)
+	# mol = uncharger.uncharge(mol)
 	
 	# Step 4: Canonicalize tautomers
 	# - Converts between different tautomeric forms to ensure consistent representation
