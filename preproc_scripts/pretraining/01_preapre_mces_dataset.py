@@ -36,10 +36,10 @@ def process_mol_df(data_fp, mol_df_fp):
 		mol_df.loc[:,"single_mol"] = par_apply_series(mol_df["mol"],data_utils.check_single_mol)
 		mol_df.loc[:,"num_radicals"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_radicals)
 		mol_df.drop(columns=["mol"], inplace=True)
-		mol_df = mol_df.dropna(subset=["smiles", "smiles_org", "inchikey_s", "scaffold", "formula", "inchi"])
+		mol_df.dropna(subset=["smiles", "smiles_org", "inchikey_s", "scaffold", "formula", "inchi"])
 		mol_df = mol_df.reset_index(drop=True)
 		mol_df.to_pickle(mol_df_fp)
-  
+
 def process_mces(data_fp, mces_out_fp):
 	"""
 	Process MCES data and save as HDF5 file with dataset of shape [N, 3] where
@@ -127,4 +127,8 @@ if __name__ == "__main__":
 		help="Output .pkl file for mol_df"
 	)
 	args = parser.parse_args()
-	process_mces(args.data_fp, args.mces_out_fp)
+	# process_mces(args.data_fp, args.mces_out_fp)
+
+	# process_mol_df(args.data_fp, args.mol_df_fp)
+	# mol_df = pd.read_pickle(args.mol_df_fp)
+	# print(mol_df.head())
