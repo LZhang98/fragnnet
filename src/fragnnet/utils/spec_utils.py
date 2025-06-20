@@ -564,6 +564,7 @@ def calculate_sparse_cosine_hungarian(
 	sum_ints:bool=True,
 	remove_prec_peaks:bool=False,
 	true_prec_mzs:th.Tensor=None,
+	tolerance_min_mz:float=TOLERANCE_MIN_MZ
 	) -> th.Tensor:
 	""" Calculate cosine similarity using the Hungarian algorithm as the matching method.
 
@@ -607,22 +608,24 @@ def calculate_sparse_cosine_hungarian(
 		b_pred_ints_r = pred_ints_r[b_pred_mask_r]
 		b_true_prec_mask_r = None
 		b_pred_prec_mask_r = None
+	
 		#assert remove_prec_peaks and true_prec_mzs is None, 
 		if remove_prec_peaks:
+			b_true_prec_mz = true_prec_mzs[b_true_mask_r]
 			# precursor
 			b_true_prec_mask_r = calculate_match_mzs(
 				b_true_mzs_r,
 				b_true_prec_mz,
-				tolerance=self.tolerance,
-				relative=self.relative,
-				tolerance_min_mz=self.tolerance_min_mz
+				tolerance=tolerance,
+				relative=relative,
+				tolerance_min_mz=tolerance_min_mz
 			).squeeze(1)
 			b_pred_prec_mask_r = calculate_match_mzs(
 				b_pred_mzs_r,
 				b_true_prec_mz,
-				tolerance=self.tolerance,
-				relative=self.relative,
-				tolerance_min_mz=self.tolerance_min_mz
+				tolerance=tolerance,
+				relative=relative,
+				tolerance_min_mz=tolerance_min_mz
 			).squeeze(1)
 		# match
 		b_match_mask_r = calculate_match_mzs(
@@ -630,7 +633,7 @@ def calculate_sparse_cosine_hungarian(
 			b_pred_mzs_r,
 			tolerance=tolerance,
 			relative=relative,
-			tolerance_min_mz=0.0
+			tolerance_min_mz=tolerance_min_mz
 		)
 		b_true_match_mask_r = th.any(b_match_mask_r,dim=1)
 		b_pred_match_mask_r = th.any(b_match_mask_r,dim=0)

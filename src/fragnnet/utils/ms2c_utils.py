@@ -13,8 +13,9 @@ from fragnnet.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
 from fragnnet.runner import init_dataloader, load_config
 from fragnnet.utils.misc_utils import to_device
-from fragnnet.utils.nn_utils import get_pl_hparams, decompile_jit_ckpt
+from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.dataset import SpecMolFragDataset, SpecMolDataset
+from fragnnet.utils.pl_utils import get_pl_hparams
 
 class MolCandidateDB():
 
