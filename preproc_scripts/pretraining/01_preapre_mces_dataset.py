@@ -22,8 +22,8 @@ def process_mol_df(data_fp, mol_df_fp):
 		mol_df = pd.DataFrame({'smiles_org': smiles})
 		mol_df.loc[:,"idx"] = range(len(mol_df))
 
-		mol_df.loc[:,"mol"] = par_apply_series(mol_df["smiles_org"],data_utils.mol_from_smiles)
-		mol_df.loc[:,"smiles"] = par_apply_series(mol_df["smiles_org"],data_utils.mol_to_smiles)
+		mol_df.loc[:,"mol"] = par_apply_series(mol_df["smiles_org"], lambda s: data_utils.mol_from_smiles(s, ml_standardize=False))
+		mol_df.loc[:,"smiles"] = par_apply_series(mol_df["mol"], data_utils.mol_to_smiles)
 		mol_df.loc[:,"inchikey_s"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchikey_s)
 		mol_df.loc[:,"scaffold"] = par_apply_series(mol_df["mol"],data_utils.get_murcko_scaffold)
 		mol_df.loc[:,"formula"] = par_apply_series(mol_df["mol"],data_utils.mol_to_formula)
@@ -129,6 +129,6 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	# process_mces(args.data_fp, args.mces_out_fp)
 
-	# process_mol_df(args.data_fp, args.mol_df_fp)
-	# mol_df = pd.read_pickle(args.mol_df_fp)
-	# print(mol_df.head())
+	process_mol_df(args.data_fp, args.mol_df_fp)
+	mol_df = pd.read_pickle(args.mol_df_fp)
+	print(mol_df.head())
