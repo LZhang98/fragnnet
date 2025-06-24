@@ -5,7 +5,9 @@ import pandas as pd
 import h5py
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import par_apply_series
-from scipy.spatial.distance import squareform
+from fragnnet.utils.formula_utils import parse_formula
+from fragnnet.utils.frag_utils import ELEMENTS
+#from scipy.spatial.distance import squareform
 
 def get_np_memory_usage(array):
 	memory_usage = array.nbytes
@@ -13,7 +15,7 @@ def get_np_memory_usage(array):
 	memory_usage_mb = memory_usage / (1024 ** 2)
 	print(f"Memory usage: {memory_usage} bytes ({memory_usage_mb:.2f} MB)")
 
-def process_mol_df(data_fp, mol_df_fp):
+def process_mol_df(data_fp):
 	# Existing function unchanged
 	with np.load(data_fp, allow_pickle=True) as mces_data:
 		smiles = mces_data['smiles']
@@ -35,11 +37,26 @@ def process_mol_df(data_fp, mol_df_fp):
 		mol_df.loc[:,"charge"] = par_apply_series(mol_df["mol"],data_utils.mol_to_charge)
 		mol_df.loc[:,"single_mol"] = par_apply_series(mol_df["mol"],data_utils.check_single_mol)
 		mol_df.loc[:,"num_radicals"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_radicals)
+		mol_df.loc[:,'num_out_set_elements'] = par_apply_series(mol_df['formula'], (lambda x: len(set(list(parse_formula(x).keys())) - set(ELEMENTS))))
+
 		mol_df.drop(columns=["mol"], inplace=True)
 		mol_df.dropna(subset=["smiles", "smiles_org", "inchikey_s", "scaffold", "formula", "inchi"])
-		mol_df = mol_df.reset_index(drop=True)
-		mol_df.to_pickle(mol_df_fp)
 
+		mol_df = mol_df[mol_df['single_mol'] == True]
+		print(f"> Filtered mol_df shape after single mol: {mol_df.shape}")
+		mol_df = mol_df[mol_df['num_radicals'] == False]
+		print(f"> Filtered mol_df shape after num_radicals = 1: {mol_df.shape}")
+		mol_df = mol_df[mol_df['charge'] == 0]
+		print(f"> Filtered mol_df shape after charge = 0: {mol_df.shape}")
+		mol_df = mol_df[mol_df['num_out_set_elements'] == 0]
+		print(f"> Filtered mol_df shape after num_out_set_elements = 0: {mol_df.shape}")
+		mol_df = mol_df[mol_df['exact_mw'] <= 1600]
+		print(f"> Filtered mol_df shape after exact_mw <= 1600 Da: {mol_df.shape}")
+		mol_df = mol_df[(mol_df['num_atoms'] > 1 ) & (mol_df['num_atoms'] < 100)]
+		print(f"> Filtered mol_df shape after 1 < num_atom < 100: {mol_df.shape}")
+		mol_df = mol_df.reset_index(drop=True)
+		return mol_df
+  
 def process_mces(data_fp, mces_out_fp):
 	"""
 	Process MCES data and save as HDF5 file with dataset of shape [N, 3] where
@@ -127,8 +144,10 @@ if __name__ == "__main__":
 		help="Output .pkl file for mol_df"
 	)
 	args = parser.parse_args()
-	# process_mces(args.data_fp, args.mces_out_fp)
-
-	process_mol_df(args.data_fp, args.mol_df_fp)
+	
+	mol_df = process_mol_df(args.data_fp)
+	#mol_df.to_pickle(args.mol_df_fp)
 	mol_df = pd.read_pickle(args.mol_df_fp)
 	print(mol_df.head())
+
+	#process_mces(args.data_fp, args.mces_out_fp)
