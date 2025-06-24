@@ -57,7 +57,7 @@ def process_mol_df(data_fp):
 		mol_df = mol_df.reset_index(drop=True)
 		return mol_df
   
-def process_mces(data_fp, mces_out_fp):
+def process_mces(data_fp, mces_out_fp, mce_min=0, mce_max=None):
 	"""
 	Process MCES data and save as HDF5 file with dataset of shape [N, 3] where
 	each row is [mol_idx_1, mol_idx_2, mces_value] with mces_value as float16.
@@ -90,7 +90,7 @@ def process_mces(data_fp, mces_out_fp):
 		
 		for i in tqdm(range(0, num_smiles)):
 			for j in tqdm(range(i+1, num_smiles), leave=False):
-				if mces_values[mces_idx] > 0:
+				if mces_values[mces_idx] >= mce_min and (mce_max is None or mces_values[mces_idx] <= mce_max):
 					# Add to batch
 					batch_data.append((i, j, np.float16(mces_values[mces_idx])))
 					
@@ -132,9 +132,21 @@ if __name__ == "__main__":
 		help="Path to the MCES .npz file"
 	)
 	parser.add_argument(
+		"--mce_min",
+		type=int,
+		default=-1,  # Changed to h5 extension
+		help="maximum value of MCES pairs to process (default: None, process all pairs)"
+	)
+	parser.add_argument(
+		"--mce_max",
+		type=int,
+		default=25,  # 
+		help="maximum value of MCES pairs to process (default: None, process all pairs)"
+	)
+	parser.add_argument(
 		"--mces_out_fp",
 		type=str,
-		default="./data/mces-data/mces_pairs.h5",  # Changed to h5 extension
+		default="./data/mces-data/mces_pairs_max25.h5",  # Changed to h5 extension
 		help="Output .h5 file for filtered MCES index pairs"
 	)
 	parser.add_argument(
@@ -150,4 +162,4 @@ if __name__ == "__main__":
 	mol_df = pd.read_pickle(args.mol_df_fp)
 	print(mol_df.head())
 
-	#process_mces(args.data_fp, args.mces_out_fp)
+	process_mces(args.data_fp, args.mces_out_fp, args.mce_min, args.mce_max)
