@@ -120,7 +120,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--num_pairs",
 		type=int,
-		default=10_000_000,
+		default=100_000_000,
 		help="Number of unique pairs to sample"
 	)
 	args = parser.parse_args()
