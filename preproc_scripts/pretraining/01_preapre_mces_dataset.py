@@ -140,13 +140,13 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--mce_max",
 		type=int,
-		default=25,  # 
+		default=10,  # 
 		help="maximum value of MCES pairs to process (default: None, process all pairs)"
 	)
 	parser.add_argument(
 		"--mces_out_fp",
 		type=str,
-		default="./data/mces-data/mces_pairs_max25.h5",  # Changed to h5 extension
+		default="./data/mces-data/mces_pairs_max10.h5",  # Changed to h5 extension
 		help="Output .h5 file for filtered MCES index pairs"
 	)
 	parser.add_argument(

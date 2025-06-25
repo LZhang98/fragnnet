@@ -47,7 +47,7 @@ def process_mol_df(data_fp):
  
 	return mol_df
 
-def sample_and_deduplicate_pairs(mol_df, num_pairs, include_idx = True):
+def sample_pairs(mol_df, num_pairs):
 	"""
 	Randomly sample pairs of row indices from mol_df and deduplicate them.
 
@@ -66,16 +66,32 @@ def sample_and_deduplicate_pairs(mol_df, num_pairs, include_idx = True):
 	while len(sampled_pairs) < num_pairs:
 		# Randomly sample two distinct indices
 		idx1, idx2 = random.sample(range(num_rows), 2)
+		# ignore pairs are too different in terms of number of atoms and bonds
+		# we are not interested in pairs that are too different
+		if abs(mol_df.iloc[idx1]['num_atoms'] - mol_df.iloc[idx2]['num_atoms']) >= 10:
+			continue
+		if abs(mol_df.iloc[idx1]['num_bonds'] - mol_df.iloc[idx2]['num_bonds']) >= 10:
+			continue
 		# Add the pair in a sorted order to avoid duplicates like (1, 2) and (2, 1)
 		sampled_pairs.add(tuple(sorted((idx1, idx2))))
   
 	rev_list = []
-	if include_idx:
-		for idx,pair in enumerate(sampled_pairs):
-			rev_list.append([idx, pair[0], pair[1]])
-	else:
-		rev_list = list(sampled_pairs)
+	
+	return rev_list
 
+def add_computation_indices(sampled_pairs):
+	"""
+	Add indices to the sampled pairs.
+	Args:
+		sampled_pairs (_type_): _description_
+
+	Returns:
+		list: _description_
+	"""
+ 
+	rev_list = []
+	for idx,pair in enumerate(sampled_pairs):
+		rev_list.append([idx, pair[0], pair[1]])
 	return rev_list
 
 def create_hdf5_dataset(output_fp, smiles, computation_indices):
@@ -120,21 +136,33 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--num_pairs",
 		type=int,
-		default=100_000_000,
+		default=1_000_000,
+		help="Number of unique pairs to sample"
+	)
+	parser.add_argument(
+		"--pair_per_file",
+		type=int,
+		default=1_000_000,
 		help="Number of unique pairs to sample"
 	)
 	args = parser.parse_args()
 	
 	mol_df = process_mol_df(args.input_csv_fp)
-	#mol_df.to_pickle(args.mol_df_fp)
-	#print(mol_df.head())
 
 	# Randomly sample and deduplicate pairs
-	sampled_pairs = sample_and_deduplicate_pairs(mol_df, args.num_pairs, include_idx=True)
+	sampled_pairs = sample_pairs(mol_df, args.num_pairs)
 	print(f"Sampled {len(sampled_pairs)} unique pairs of indices.")
-	print(sampled_pairs[:10])  # Print the first 10 pairs as a preview
- 
-	create_hdf5_dataset(args.hdf5_output_fp, 
-		mol_df['smiles'].tolist(), 
-		sampled_pairs
-	)
+	#print(sampled_pairs[:10])  # Print the first 10 pairs as a preview
+	output_fp = args.hdf5_output_fp
+	output_fp, ext = output_fp.rsplit('.', 1)
+	for i in range(0, len(sampled_pairs), args.pair_per_file):
+		print(f"Processing pairs {i} to {min(i + args.pair_per_file, len(sampled_pairs))}")
+		sampled_pairs_batch = sampled_pairs[i:i + args.pair_per_file]
+		sampled_pairs_batch = add_computation_indices(sampled_pairs_batch)
+		#print(f"Batch size: {len(sampled_pairs_batch)}")
+		
+		# Create HDF5 dataset for the current batch
+		create_hdf5_dataset( output_fp + f"_{i // args.pair_per_file + 1}.{ext}",
+			mol_df['smiles'].tolist(), 
+			sampled_pairs
+		)
