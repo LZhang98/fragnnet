@@ -6,6 +6,7 @@ from fragnnet.utils.formula_utils import parse_formula
 from fragnnet.utils.frag_utils import ELEMENTS
 import h5py
 import random
+from tqdm import tqdm
 
 def process_mol_df(data_fp):
 	mol_df = pd.read_csv(data_fp)
@@ -47,37 +48,44 @@ def process_mol_df(data_fp):
  
 	return mol_df
 
-def sample_pairs(mol_df, num_pairs):
-	"""
-	Randomly sample pairs of row indices from mol_df and deduplicate them.
+def sample_pairs(mol_df, num_pairs, max_attempts=None):
+    """
+    Randomly sample pairs of row indices from mol_df and deduplicate them.
 
-	Args:
-		mol_df (pd.DataFrame): The DataFrame containing molecular data.
-		num_pairs (int): The number of unique pairs to sample.
+    Args:
+        mol_df (pd.DataFrame): The DataFrame containing molecular data.
+        num_pairs (int): The number of unique pairs to sample.
+        max_attempts (int, optional): Maximum number of attempts to sample pairs.
 
-	Returns:
-		list: A list of unique (row_idx1, row_idx2) pairs.
-	"""
-	num_rows = len(mol_df)
-	if num_rows < 2:
-		raise ValueError("Not enough rows in mol_df to create pairs.")
+    Returns:
+        list: A list of unique (row_idx1, row_idx2) pairs.
+    """
+    num_rows = len(mol_df)
+    if num_rows < 2:
+        raise ValueError("Not enough rows in mol_df to create pairs.")
 
-	sampled_pairs = set()  # Use a set to ensure uniqueness
-	while len(sampled_pairs) < num_pairs:
-		# Randomly sample two distinct indices
-		idx1, idx2 = random.sample(range(num_rows), 2)
-		# ignore pairs are too different in terms of number of atoms and bonds
-		# we are not interested in pairs that are too different
-		if abs(mol_df.iloc[idx1]['num_atoms'] - mol_df.iloc[idx2]['num_atoms']) >= 10:
-			continue
-		if abs(mol_df.iloc[idx1]['num_bonds'] - mol_df.iloc[idx2]['num_bonds']) >= 10:
-			continue
-		# Add the pair in a sorted order to avoid duplicates like (1, 2) and (2, 1)
-		sampled_pairs.add(tuple(sorted((idx1, idx2))))
-  
-	rev_list = []
-	
-	return rev_list
+    sampled_pairs = set()  # Use a set to ensure uniqueness
+    attempts = 0  # Track the number of attempts
+
+    # Use tqdm to show progress
+    with tqdm(total=num_pairs, desc="Sampling pairs") as pbar:
+        while len(sampled_pairs) < num_pairs and (max_attempts is None or attempts < max_attempts):
+            # Randomly sample two distinct indices
+            idx1, idx2 = random.sample(range(num_rows), 2)
+            attempts += 1
+
+            # Ignore pairs that are too different in terms of number of atoms and bonds
+            if abs(mol_df.iloc[idx1]['num_atoms'] - mol_df.iloc[idx2]['num_atoms']) >= 10:
+                continue
+            if abs(mol_df.iloc[idx1]['num_bonds'] - mol_df.iloc[idx2]['num_bonds']) >= 10:
+                continue
+
+            # Add the pair in a sorted order to avoid duplicates like (1, 2) and (2, 1)
+            if tuple(sorted((idx1, idx2))) not in sampled_pairs:
+                sampled_pairs.add(tuple(sorted((idx1, idx2))))
+                pbar.update(1)  # Update the progress bar
+
+    return list(sampled_pairs)
 
 def add_computation_indices(sampled_pairs):
 	"""
@@ -121,28 +129,22 @@ if __name__ == "__main__":
 		default="./data/mces-data/biostructures.csv",
 		help="Output .pkl file for mol_df"
 	)
-	#parser.add_argument(
-	#	"--mol_df_fp",
-	#	type=str,
-	#	default="./data/mces-data/biostructures_mol_df.pkl",
-	#	help="Output .pkl file for mol_df"
-	#)
 	parser.add_argument(
 		"--hdf5_output_fp",
 		type=str,
-		default="./data/mces-data/biostructures_sampled.hdf5",
+		default="./data/mces-data/biostructures_sampled.h5",
 		help="Output .pkl file for mol_df"
 	)
 	parser.add_argument(
 		"--num_pairs",
 		type=int,
-		default=1_000_000,
+		default=10_000_000,
 		help="Number of unique pairs to sample"
 	)
 	parser.add_argument(
 		"--pair_per_file",
 		type=int,
-		default=1_000_000,
+		default=10_000_000,
 		help="Number of unique pairs to sample"
 	)
 	args = parser.parse_args()
@@ -150,7 +152,7 @@ if __name__ == "__main__":
 	mol_df = process_mol_df(args.input_csv_fp)
 
 	# Randomly sample and deduplicate pairs
-	sampled_pairs = sample_pairs(mol_df, args.num_pairs)
+	sampled_pairs = sample_pairs(mol_df, args.num_pairs, max_attempts=args.num_pairs * 3)
 	print(f"Sampled {len(sampled_pairs)} unique pairs of indices.")
 	#print(sampled_pairs[:10])  # Print the first 10 pairs as a preview
 	output_fp = args.hdf5_output_fp
