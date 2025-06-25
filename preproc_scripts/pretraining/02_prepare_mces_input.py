@@ -116,7 +116,6 @@ def create_hdf5_dataset(output_fp, smiles, computation_indices):
 		# Create a dataset for SMILES strings
 		h5f.create_dataset('smiles', data=[s.encode('utf-8') for s in smiles], dtype=h5py.string_dtype())
 		
-		computation_indices_matrix = np.array(computation_indices, dtype='int32')
   		# Create a dataset for computation indices
 		h5f.create_dataset('computation_indices', data=computation_indices, dtype='int32')
 	
