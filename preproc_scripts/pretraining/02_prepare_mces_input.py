@@ -116,7 +116,8 @@ def create_hdf5_dataset(output_fp, smiles, computation_indices):
 		# Create a dataset for SMILES strings
 		h5f.create_dataset('smiles', data=[s.encode('utf-8') for s in smiles], dtype=h5py.string_dtype())
 		
-		# Create a dataset for computation indices
+		computation_indices_matrix = np.array(computation_indices, dtype='int32')
+  		# Create a dataset for computation indices
 		h5f.create_dataset('computation_indices', data=computation_indices, dtype='int32')
 	
 	print(f"HDF5 dataset created at {output_fp}")
@@ -130,6 +131,12 @@ if __name__ == "__main__":
 		help="Output .pkl file for mol_df"
 	)
 	parser.add_argument(
+		"--mol_df_cache_fp",
+		type=str,
+		default="./data/mces-data/biostructures_mol_df.pkl",
+		help="preprocessed mol_df file"
+	)
+	parser.add_argument(
 		"--hdf5_output_fp",
 		type=str,
 		default="./data/mces-data/biostructures_sampled.h5",
@@ -138,33 +145,36 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--num_pairs",
 		type=int,
-		default=10_000_000,
+		default=10,
 		help="Number of unique pairs to sample"
 	)
 	parser.add_argument(
 		"--pair_per_file",
 		type=int,
-		default=10_000_000,
+		default=10,
 		help="Number of unique pairs to sample"
 	)
 	args = parser.parse_args()
 	
-	mol_df = process_mol_df(args.input_csv_fp)
-
+	if args.mol_df_cache_fp is None:
+		mol_df = process_mol_df(args.input_csv_fp)
+	else:
+		mol_df = pd.read_pickle(args.mol_df_cache_fp)
+  
 	# Randomly sample and deduplicate pairs
-	sampled_pairs = sample_pairs(mol_df, args.num_pairs, max_attempts=args.num_pairs * 3)
+	sampled_pairs = sample_pairs(mol_df, args.num_pairs, max_attempts=args.num_pairs * 5)
 	print(f"Sampled {len(sampled_pairs)} unique pairs of indices.")
-	#print(sampled_pairs[:10])  # Print the first 10 pairs as a preview
 	output_fp = args.hdf5_output_fp
 	output_fp, ext = output_fp.rsplit('.', 1)
+ 
+	print(f"num of smiles: {len(mol_df['smiles'])}")
 	for i in range(0, len(sampled_pairs), args.pair_per_file):
 		print(f"Processing pairs {i} to {min(i + args.pair_per_file, len(sampled_pairs))}")
 		sampled_pairs_batch = sampled_pairs[i:i + args.pair_per_file]
 		sampled_pairs_batch = add_computation_indices(sampled_pairs_batch)
-		#print(f"Batch size: {len(sampled_pairs_batch)}")
 		
 		# Create HDF5 dataset for the current batch
 		create_hdf5_dataset( output_fp + f"_{i // args.pair_per_file + 1}.{ext}",
 			mol_df['smiles'].tolist(), 
-			sampled_pairs
+			sampled_pairs_batch
 		)
