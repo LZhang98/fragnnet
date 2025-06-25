@@ -144,13 +144,13 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--num_pairs",
 		type=int,
-		default=10,
+		default=10_000_000,
 		help="Number of unique pairs to sample"
 	)
 	parser.add_argument(
 		"--pair_per_file",
 		type=int,
-		default=10,
+		default=10_000_000,
 		help="Number of unique pairs to sample"
 	)
 	args = parser.parse_args()
