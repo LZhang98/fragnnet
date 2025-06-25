@@ -22,6 +22,7 @@ dependencies = [
     "matplotlib",
     "pyteomics",
     "omegaconf"
+    "h5py",
 ]
 
 [project.optional-dependencies]
