@@ -94,7 +94,7 @@ def preproc_msp(msp_fp,keys,num_entries):
 	raw_data_list = []
 	raw_data_item = {key: None for key in keys}
 	read_ms = False
-	for raw_l in tqdm(raw_data_lines,desc=f"> processing {msp_fp}",total=len(raw_data_lines)):
+	for raw_l in tqdm(raw_data_lines, desc=f"> processing {msp_fp}",total=len(raw_data_lines)):
 		if num_entries > -1 and len(raw_data_list) == num_entries:
 			break
 		raw_l = raw_l.replace('\n', '')
@@ -162,8 +162,8 @@ def preproc_nist_mol(mol_dp):
 			smiles=smiles
 		)
 		return entry
-	mol_fp_iter = tqdm(mol_fp_list,desc="> proc_mol_files",total=len(mol_fp_list))
-	mol_df_entries = par_apply(mol_fp_iter,proc_mol_file)
+	mol_fp_iter = tqdm(mol_fp_list, desc="> proc_mol_files", total=len(mol_fp_list))
+	mol_df_entries = par_apply(mol_fp_iter, proc_mol_file)
 	mol_df = pd.DataFrame(mol_df_entries)
 	return mol_df
 
@@ -447,7 +447,7 @@ def process_specverse(mgf_fp):
 	spectra_list = []
 	with open(mgf_fp) as mgf_in:
 		data_dict = None
-		for row in tqdm(mgf_in):
+		for row in tqdm(mgf_in, desc=f"> process {mgf_fp}"):
 			row = row.strip()
 			if len(row) == 0:
 				continue
@@ -579,6 +579,7 @@ if __name__ == "__main__":
 	
 	# save files
 	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}_df.{args.output_format}")
+	print(f"> saving spec df to {spec_df_fp}")
 	if args.output_format == "json":
 		spec_df.to_json(spec_df_fp)
 	else:
