@@ -506,20 +506,19 @@ if __name__ == "__main__":
 	## TODO: add support for NPLLIB
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--msp_file', type=str, required=False)
-	parser.add_argument('--mol_dir', type=str, required=False)
+	parser.add_argument('--mol_dp', type=str, required=False)
 	parser.add_argument('--pkl_file', type=str, required=False)
-	parser.add_argument('--ms_dir', type=str, required=False)
+	parser.add_argument('--ms_dp', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
-	parser.add_argument('--mgf_file', type=str, required=False)
+	parser.add_argument('--mgf_fp', type=str, required=False)
 	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip", "spectraverse"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
-	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
 	parser.add_argument('--num_entries', type=int, default=-1)
 	parser.add_argument('--output_format', type=str, default="json", choices=["json","csv"])
 	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#","ID"])
 	parser.add_argument('--ms_gym_tsv', type=str, required=False)
-	parser.add_argument('--pcdl_dir', type=str, required=False)
+	parser.add_argument('--pcdl_dp', type=str, required=False)
 	args = parser.parse_args()
 
 	os.makedirs(args.output_dp,exist_ok=True)
@@ -531,15 +530,15 @@ if __name__ == "__main__":
 		else:
 			assert "dset_spec_id" not in MSP_KEY_DICT.values()
 		# nist or mona
-		msp_fp = os.path.join(args.raw_data_dp,args.msp_file)
+		msp_fp = args.msp_file
 		assert os.path.isfile(msp_fp), msp_fp
 		msp_df = preproc_msp(msp_fp,MSP_KEY_DICT.keys(),args.num_entries)
 		if args.input_format == "msp+mol":
-			mol_dp = os.path.join(args.raw_data_dp,args.mol_dir)
+			mol_dp = args.mol_dp
 			assert os.path.isdir(mol_dp), mol_dp
 			mol_df = preproc_nist_mol(mol_dp)
 		elif args.input_format == "msp+pkl":
-			pkl_fp = os.path.join(args.raw_data_dp,args.pkl_file)
+			pkl_fp = args.pkl_file
 			assert os.path.isfile(pkl_fp), pkl_fp
 			nist_id_map = pd.read_pickle(pkl_fp)
 			nist_id_map	= nist_id_map.rename(columns={"nist_id":args.msp_dset_spec_id,"smiles":"SMILES"})
@@ -552,23 +551,27 @@ if __name__ == "__main__":
 		# npllib
 		# just use NISTNO as default
 		MSP_KEY_DICT["NISTNO"] = "dset_spec_id"
-		ms_dp = os.path.join(args.raw_data_dp,args.ms_dir)
+		ms_dp = args.ms_dp
 		assert os.path.isdir(ms_dp), ms_dp
-		ms_meta_fp = os.path.join(args.raw_data_dp,args.ms_meta_file)
+		ms_meta_fp = args.ms_meta_file
 		assert os.path.isfile(ms_meta_fp), ms_meta_fp
 		spec_df = preproc_ms_files(ms_dp,ms_meta_fp,MSP_KEY_DICT.keys(),args.num_entries)
 	elif args.input_format == "ms_gym":
-		spec_df, split_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv), 'simulation_challenge')
+		assert os.path.isfile(args.ms_gym_tsv), args.ms_gym_tsv
+		spec_df, split_df = process_ms_gym(args.ms_gym_tsv, 'simulation_challenge')
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "ms_gym_extra":
-		spec_df, split_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv), 'extra')
+		assert os.path.isfile(args.ms_gym_tsv), args.ms_gym_tsv
+		spec_df, split_df = process_ms_gym(args.ms_gym_tsv, 'extra')
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "pcdl_zip":
-		spec_df = read_pcdl(os.path.join(args.raw_data_dp,args.pcdl_dir))
+		assert os.path.isdir(args.pcdl_dp), args.pcdl_dp
+		spec_df = read_pcdl(args.pcdl_dp)
 	elif args.input_format == "spectraverse":
-		spec_df, split_df  = process_specverse(os.path.join(args.raw_data_dp,args.mgf_file))
+		assert os.path.isfile(args.mgf_fp), args.mgf_fp
+		spec_df, split_df  = process_specverse(args.mgf_fp)
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	else:

@@ -137,7 +137,7 @@ def rdkit_ml_standardize(mol:"rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol"
 	# - If the molecule contains multiple fragments (e.g., salt forms)
 	# - Identifies and returns only the "parent" fragment 
 	# - Removes counterions, solvents, and other small fragments
-	mol = rdMolStandardize.FragmentParent(mol)
+	# mol = rdMolStandardize.FragmentParent(mol)
 	
 	# Step 3: Neutralize the molecule
 	# - Attempts to remove or neutralize charges where chemically reasonable
