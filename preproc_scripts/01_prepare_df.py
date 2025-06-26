@@ -447,7 +447,7 @@ def process_specverse(mgf_fp):
 	spectra_list = []
 	with open(mgf_fp) as mgf_in:
 		data_dict = None
-		for row in tqdm(mgf_in, desc=f"> process {mgf_fp}"):
+		for row in tqdm(mgf_in, desc=f"> processing {mgf_fp}"):
 			row = row.strip()
 			if len(row) == 0:
 				continue
@@ -483,7 +483,7 @@ def process_specverse(mgf_fp):
 							if not value is np.nan:
 								value = float(value.split()[0]) 
 						data_dict[col] = value
-      
+	  
 	spec_df = pd.DataFrame(spectra_list)
 	spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
 	spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
@@ -506,19 +506,20 @@ if __name__ == "__main__":
 	## TODO: add support for NPLLIB
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--msp_file', type=str, required=False)
-	parser.add_argument('--mol_dp', type=str, required=False)
+	parser.add_argument('--mol_dir', type=str, required=False)
 	parser.add_argument('--pkl_file', type=str, required=False)
-	parser.add_argument('--ms_dp', type=str, required=False)
+	parser.add_argument('--ms_dir', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
-	parser.add_argument('--mgf_fp', type=str, required=False)
+	parser.add_argument('--mgf_file', type=str, required=False)
 	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip", "spectraverse"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
+	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
 	parser.add_argument('--num_entries', type=int, default=-1)
 	parser.add_argument('--output_format', type=str, default="json", choices=["json","csv"])
 	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#","ID"])
 	parser.add_argument('--ms_gym_tsv', type=str, required=False)
-	parser.add_argument('--pcdl_dp', type=str, required=False)
+	parser.add_argument('--pcdl_dir', type=str, required=False)
 	args = parser.parse_args()
 
 	os.makedirs(args.output_dp,exist_ok=True)
@@ -530,15 +531,15 @@ if __name__ == "__main__":
 		else:
 			assert "dset_spec_id" not in MSP_KEY_DICT.values()
 		# nist or mona
-		msp_fp = args.msp_file
+		msp_fp = os.path.join(args.raw_data_dp,args.msp_file)
 		assert os.path.isfile(msp_fp), msp_fp
 		msp_df = preproc_msp(msp_fp,MSP_KEY_DICT.keys(),args.num_entries)
 		if args.input_format == "msp+mol":
-			mol_dp = args.mol_dp
+			mol_dp = os.path.join(args.raw_data_dp,args.mol_dir)
 			assert os.path.isdir(mol_dp), mol_dp
 			mol_df = preproc_nist_mol(mol_dp)
 		elif args.input_format == "msp+pkl":
-			pkl_fp = args.pkl_file
+			pkl_fp = os.path.join(args.raw_data_dp,args.pkl_file)
 			assert os.path.isfile(pkl_fp), pkl_fp
 			nist_id_map = pd.read_pickle(pkl_fp)
 			nist_id_map	= nist_id_map.rename(columns={"nist_id":args.msp_dset_spec_id,"smiles":"SMILES"})
@@ -551,27 +552,31 @@ if __name__ == "__main__":
 		# npllib
 		# just use NISTNO as default
 		MSP_KEY_DICT["NISTNO"] = "dset_spec_id"
-		ms_dp = args.ms_dp
+		ms_dp = os.path.join(args.raw_data_dp,args.ms_dir)
 		assert os.path.isdir(ms_dp), ms_dp
-		ms_meta_fp = args.ms_meta_file
+		ms_meta_fp = os.path.join(args.raw_data_dp,args.ms_meta_file)
 		assert os.path.isfile(ms_meta_fp), ms_meta_fp
 		spec_df = preproc_ms_files(ms_dp,ms_meta_fp,MSP_KEY_DICT.keys(),args.num_entries)
 	elif args.input_format == "ms_gym":
-		assert os.path.isfile(args.ms_gym_tsv), args.ms_gym_tsv
-		spec_df, split_df = process_ms_gym(args.ms_gym_tsv, 'simulation_challenge')
+		ms_gym_tsv_fp = os.path.join(args.raw_data_dp,args.ms_gym_tsv)
+		assert os.path.isfile(ms_gym_tsv_fp), ms_gym_tsv_fp
+		spec_df, split_df = process_ms_gym(ms_gym_tsv_fp, 'simulation_challenge')
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "ms_gym_extra":
-		assert os.path.isfile(args.ms_gym_tsv), args.ms_gym_tsv
-		spec_df, split_df = process_ms_gym(args.ms_gym_tsv, 'extra')
+		ms_gym_tsv_fp = os.path.join(args.raw_data_dp,args.ms_gym_tsv)
+		assert os.path.isfile(ms_gym_tsv_fp), ms_gym_tsv_fp
+		spec_df, split_df = process_ms_gym(ms_gym_tsv_fp, 'extra')
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "pcdl_zip":
-		assert os.path.isdir(args.pcdl_dp), args.pcdl_dp
-		spec_df = read_pcdl(args.pcdl_dp)
+		pcdl_dp = os.path.join(args.raw_data_dp,args.pcdl_dir)
+		assert os.path.isdir(pcdl_dp), pcdl_dp
+		spec_df = read_pcdl(pcdl_dp)
 	elif args.input_format == "spectraverse":
-		assert os.path.isfile(args.mgf_fp), args.mgf_fp
-		spec_df, split_df  = process_specverse(args.mgf_fp)
+		mgf_fp = os.path.join(args.raw_data_dp,args.mgf_file)
+		assert os.path.isfile(mgf_fp), mgf_fp
+		spec_df, split_df  = process_specverse(mgf_fp)
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	else:
@@ -579,7 +584,7 @@ if __name__ == "__main__":
 	
 	# save files
 	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}_df.{args.output_format}")
-	print(f"> saving spec df to {spec_df_fp}")
+	print(f"> saving spec_df to {spec_df_fp}")
 	if args.output_format == "json":
 		spec_df.to_json(spec_df_fp)
 	else:

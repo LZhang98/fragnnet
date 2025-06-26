@@ -6,7 +6,6 @@ from rdkit import RDLogger
 
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_df_rows
-from fragnnet.utils.misc_utils import booltype
 
 def load_df(df_dp,dsets,num_entries):
 	
@@ -177,27 +176,27 @@ if __name__ == "__main__":
 	RDLogger.DisableLog("rdApp.*")
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--df_dp", type=str, default="data/df")
+	parser.add_argument("--df_dp", type=str, default="data/df", help = "this script assumes the df_dp contains the dataset csv files, as <dset_name>_df.csv) e.g. nist20_hr_df.csv, ms_gym_df.csv, etc.")
 	parser.add_argument("--proc_dp", type=str, required=True)
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--ow_spec_mol", type=booltype, default=True, help="overwrite existing spec mol")
-	parser.add_argument("--dsets", type=str, nargs="+", required=True)
-	flags = parser.parse_args()
+	parser.add_argument("--ow_spec_mol", type=bool, default=True, help = "overwrite existing spec mol")
+	parser.add_argument("--dsets", type=str, nargs="+", required=True, help = "dataset names to process, e.g. nist20_hr, ms_gym, ms_gym_extra.")
+	args = parser.parse_args()
 
-	print(f"> df_dp: {flags.df_dp}")
-	print(f"> proc_dp: {flags.proc_dp}")
-	print(f"> num_entries: {flags.num_entries}")
-	print(f"> force update spec and mol df: {flags.ow_spec_mol}")
-	print("> dsets", flags.dsets)
+	print(f"> df_dp: {args.df_dp}")
+	print(f"> proc_dp: {args.proc_dp}")
+	print(f"> num_entries: {args.num_entries}")
+	print(f"> force update spec and mol df: {args.ow_spec_mol}")
+	print("> dsets", args.dsets)
  
-	spec_df_fp = os.path.join(flags.proc_dp,"spec_df.pkl")
-	mol_df_fp = os.path.join(flags.proc_dp,"mol_df.pkl")
-	ann_df_fp = os.path.join(flags.proc_dp,"ann_df.pkl")
+	spec_df_fp = os.path.join(args.proc_dp,"spec_df.pkl")
+	mol_df_fp = os.path.join(args.proc_dp,"mol_df.pkl")
+	ann_df_fp = os.path.join(args.proc_dp,"ann_df.pkl")
 
-	if not flags.ow_spec_mol and os.path.isfile(spec_df_fp) and os.path.isfile(mol_df_fp):
+	if not args.ow_spec_mol and os.path.isfile(spec_df_fp) and os.path.isfile(mol_df_fp):
 
 		print("> loading previous spec_df, mol_df, ann_df")
-		assert os.path.isdir(flags.proc_dp), flags.proc_dp
+		assert os.path.isdir(args.proc_dp), args.proc_dp
 		assert os.path.isfile(spec_df_fp), spec_df_fp
 		assert os.path.isfile(mol_df_fp), mol_df_fp
 		spec_df = pd.read_pickle(spec_df_fp)
@@ -207,9 +206,9 @@ if __name__ == "__main__":
 	else:
 
 		print("> creating new spec_df, mol_df, ann_df")
-		assert os.path.isdir(flags.df_dp), flags.df_dp
-		os.makedirs(flags.proc_dp,exist_ok=True)
-		all_df = load_df(flags.df_dp,flags.dsets,flags.num_entries)
+		assert os.path.isdir(args.df_dp), args.df_dp
+		os.makedirs(args.proc_dp,exist_ok=True)
+		all_df = load_df(args.df_dp,args.dsets,args.num_entries)
 
 		spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df)
 
@@ -221,7 +220,7 @@ if __name__ == "__main__":
 		print(f"> saved mol_df to {mol_df_fp}")
   
 		for k, v in debug_dfs.items():
-			v.to_pickle(os.path.join(flags.proc_dp,f"{k}.pkl"))
+			v.to_pickle(os.path.join(args.proc_dp,f"{k}.pkl"))
 		
 	print(f"> spec_df {spec_df.shape}")
 	print(f"> spec_df num nan:")
