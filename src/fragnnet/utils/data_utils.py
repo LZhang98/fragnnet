@@ -83,12 +83,14 @@ def split_smiles(smiles_str:str) -> List:
 def list_replace(l,d):
 	return [d[data] for data in l]
 
-def mol_from_inchi(inchi:str, standardize:bool = True) -> "rdkit.Chem.rdchem.Mol":
+def mol_from_inchi(inchi:str, ml_standardize:bool = True) -> "rdkit.Chem.rdchem.Mol":
 	"""return a rdkit mol from inchi str
 
 	Args:
 		inchi (str): inchi string, np.nan if fails
-
+		ml_standardize (bool, optional): Whether to apply ML-specific standardization
+			that includes cleanup, parent fragment extraction,
+			and tautomer canonicalization. Defaults to True.
 	Returns:
 		rdkit.Chem.rdchem.Mol: rdkit mol object
 	"""
@@ -96,57 +98,87 @@ def mol_from_inchi(inchi:str, standardize:bool = True) -> "rdkit.Chem.rdchem.Mol
 	Chem = modules[0]
 	try:
 		mol = Chem.MolFromInchi(inchi)
-		if standardize:
-			mol = rdkit_standardize(mol)
+		if ml_standardize:
+			mol = rdkit_ml_standardize(mol)
 	except:
 		mol = np.nan
 	if none_or_nan(mol):
 		mol = np.nan
 	return mol
 
-def rdkit_standardize(mol:"rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol":
-	"""standardize given mol
-
+def rdkit_ml_standardize(mol:"rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol":
+	"""Standardize a molecule for consistent representation for spectra machine learning tasks.
+	Do not directly copy this to other chemical machine leanring code base, check list of operations
+	you want to perform first.
+	This function performs several important standardization steps:
+	1. Cleans up the molecule (removing Hs, disconnecting metals, etc.)
+	2. Extracts the parent fragment (largest/most relevant piece)
+	3. Canonicalizes tautomers to a standard form
+	Adapted from https://bitsilla.com/blog/2021/06/standardizing-a-molecule-using-rdkit/
+	
 	Args:
-		mol (rdkit.Chem.rdchem.Mol): mol object
+		mol (rdkit.Chem.rdchem.Mol): Input molecule object
 
 	Returns:
-		rdkit.Chem.rdchem.Mol: rdkit mol object after standardize
+		rdkit.Chem.rdchem.Mol: Standardized molecule
 	"""
-	# adapted from https://bitsilla.com/blog/2021/06/standardizing-a-molecule-using-rdkit/
+	# Import necessary RDKit modules
 	modules = rdkit_import("rdkit.Chem","rdkit.Chem.MolStandardize","rdkit.Chem.MolStandardize.rdMolStandardize")
 	rdMolStandardize = modules[-1]
-	# removeHs, disconnect metal atoms, normalize the molecule, reionize the molecule
+	
+	# Step 1: Clean up the molecule
+	# - Removes hydrogen atoms
+	# - Disconnects metal atoms
+	# - Normalizes functional groups to canonical forms
+	# - Reionizes certain groups to their preferred states
 	mol = rdMolStandardize.Cleanup(mol) 
-	# if many fragments, get the "parent" (the actual mol we are interested in) 
-	mol = rdMolStandardize.FragmentParent(mol)
-	# try to neutralize molecule
-	uncharger = rdMolStandardize.Uncharger() # annoying, but necessary as no convenience method exists
-	mol = uncharger.uncharge(mol)
-	# note that no attempt is made at reionization at this step
-	# nor at ionization at some pH (rdkit has no pKa caculator)
-	# the main aim to to represent all molecules from different sources
-	# in a (single) standard way, for use in ML, catalogue, etc.
-	te = rdMolStandardize.TautomerEnumerator() # idem
+	
+	# Step 2: Get the parent fragment
+	# - If the molecule contains multiple fragments (e.g., salt forms)
+	# - Identifies and returns only the "parent" fragment 
+	# - Removes counterions, solvents, and other small fragments
+	# mol = rdMolStandardize.FragmentParent(mol)
+	
+	# Step 3: Neutralize the molecule
+	# - Attempts to remove or neutralize charges where chemically reasonable
+	# - Important for consistent representation across different sources
+	# - Helps with similarity calculations and model predictions
+	# note that no attempt is made at reionization at this step  nor at ionization at some pH (rdkit has no pKa caculator)
+	# the main aim to to represent all molecules from different sources  in a (single) standard way, for use in ML, catalogue, etc.
+	# NOTE: This is NOT a very safe operation for MS/MS prediction
+	# uncharger = rdMolStandardize.Uncharger() # Create uncharger object (no convenience method available)
+	# mol = uncharger.uncharge(mol)
+	
+	# Step 4: Canonicalize tautomers
+	# - Converts between different tautomeric forms to ensure consistent representation
+	# - Selects a single canonical tautomer when multiple forms are possible
+	# - Critical for ensuring the same compound is always represented identically
+	te = rdMolStandardize.TautomerEnumerator()
 	mol = te.Canonicalize(mol)
+	
 	return mol
 
-def mol_from_smiles(smiles,standardize:bool=True) -> "rdkit.Chem.rdchem.Mol":
-	"""return a rdkit mol from smiles str
-
+def mol_from_smiles(smiles, ml_standardize:bool=True) -> "rdkit.Chem.rdchem.Mol":
+	"""Convert a SMILES string to an RDKit molecule object
+	
+	This function creates an RDKit molecule from a SMILES string and optionally
+	standardizes it using machine learning-specific standardization steps.
+	
 	Args:
-		smiles (_type_): smiles str
-		standardize (bool, optional): flag to apply standardize. Defaults to True.
-
+		smiles (str): SMILES string representing the molecule
+		ml_standardize (bool, optional): Whether to apply ML-specific standardization
+			that includes cleanup, parent fragment extraction, charge neutralization,
+			and tautomer canonicalization. Defaults to True.
+	
 	Returns:
-		rdkit.Chem.rdchem.Mol: mol object, np.nan if fails
+		rdkit.Chem.rdchem.Mol: RDKit molecule object, or np.nan if conversion fails
 	"""
 	modules = rdkit_import("rdkit.Chem")
 	Chem = modules[0]
 	try:
 		mol = Chem.MolFromSmiles(smiles)
-		if standardize:
-			mol = rdkit_standardize(mol)
+		if ml_standardize:
+			mol = rdkit_ml_standardize(mol)
 	except Exception as e:
 		mol = np.nan
 	if none_or_nan(mol):
@@ -628,7 +660,7 @@ def parse_inst_info(df):
 			"Orbitrap": "FT"
 		}
 		if none_or_nan(inst_str):
-			inst_type = "Unknown"
+			inst_type = np.nan
 		elif inst_str in inst_map:
 			inst_type = inst_map[inst_str]
 		else:
@@ -660,7 +692,7 @@ def parse_inst_info(df):
 			# NPLLIB stuff
 			# "Q-ToF (LCMS)": "QTOF",
 			# "Bruker Q-ToF (LCMS)": "QTOF",
-			"Unknown (LCMS)": "Unknown",
+			"Unknown (LCMS)": "Other",
 			"Ion Trap (LCMS)": "IT",
 			"Orbitrap (LCMS)": "FT",
 			"FTICR (LCMS)": "FT",

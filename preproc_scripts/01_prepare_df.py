@@ -94,7 +94,7 @@ def preproc_msp(msp_fp,keys,num_entries):
 	raw_data_list = []
 	raw_data_item = {key: None for key in keys}
 	read_ms = False
-	for raw_l in tqdm(raw_data_lines,desc=f"> processing {msp_fp}",total=len(raw_data_lines)):
+	for raw_l in tqdm(raw_data_lines, desc=f"> processing {msp_fp}",total=len(raw_data_lines)):
 		if num_entries > -1 and len(raw_data_list) == num_entries:
 			break
 		raw_l = raw_l.replace('\n', '')
@@ -162,8 +162,8 @@ def preproc_nist_mol(mol_dp):
 			smiles=smiles
 		)
 		return entry
-	mol_fp_iter = tqdm(mol_fp_list,desc="> proc_mol_files",total=len(mol_fp_list))
-	mol_df_entries = par_apply(mol_fp_iter,proc_mol_file)
+	mol_fp_iter = tqdm(mol_fp_list, desc="> proc_mol_files", total=len(mol_fp_list))
+	mol_df_entries = par_apply(mol_fp_iter, proc_mol_file)
 	mol_df = pd.DataFrame(mol_df_entries)
 	return mol_df
 
@@ -447,7 +447,7 @@ def process_specverse(mgf_fp):
 	spectra_list = []
 	with open(mgf_fp) as mgf_in:
 		data_dict = None
-		for row in tqdm(mgf_in):
+		for row in tqdm(mgf_in, desc=f"> processing {mgf_fp}"):
 			row = row.strip()
 			if len(row) == 0:
 				continue
@@ -483,7 +483,7 @@ def process_specverse(mgf_fp):
 							if not value is np.nan:
 								value = float(value.split()[0]) 
 						data_dict[col] = value
-      
+	  
 	spec_df = pd.DataFrame(spectra_list)
 	spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
 	spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
@@ -558,17 +558,25 @@ if __name__ == "__main__":
 		assert os.path.isfile(ms_meta_fp), ms_meta_fp
 		spec_df = preproc_ms_files(ms_dp,ms_meta_fp,MSP_KEY_DICT.keys(),args.num_entries)
 	elif args.input_format == "ms_gym":
-		spec_df, split_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv), 'simulation_challenge')
+		ms_gym_tsv_fp = os.path.join(args.raw_data_dp,args.ms_gym_tsv)
+		assert os.path.isfile(ms_gym_tsv_fp), ms_gym_tsv_fp
+		spec_df, split_df = process_ms_gym(ms_gym_tsv_fp, 'simulation_challenge')
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "ms_gym_extra":
-		spec_df, split_df = process_ms_gym(os.path.join(args.raw_data_dp,args.ms_gym_tsv), 'extra')
+		ms_gym_tsv_fp = os.path.join(args.raw_data_dp,args.ms_gym_tsv)
+		assert os.path.isfile(ms_gym_tsv_fp), ms_gym_tsv_fp
+		spec_df, split_df = process_ms_gym(ms_gym_tsv_fp, 'extra')
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	elif args.input_format == "pcdl_zip":
-		spec_df = read_pcdl(os.path.join(args.raw_data_dp,args.pcdl_dir))
+		pcdl_dp = os.path.join(args.raw_data_dp,args.pcdl_dir)
+		assert os.path.isdir(pcdl_dp), pcdl_dp
+		spec_df = read_pcdl(pcdl_dp)
 	elif args.input_format == "spectraverse":
-		spec_df, split_df  = process_specverse(os.path.join(args.raw_data_dp,args.mgf_file))
+		mgf_fp = os.path.join(args.raw_data_dp,args.mgf_file)
+		assert os.path.isfile(mgf_fp), mgf_fp
+		spec_df, split_df  = process_specverse(mgf_fp)
 		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
 		split_df.to_csv(split_df_fp,index=False)
 	else:
@@ -576,6 +584,7 @@ if __name__ == "__main__":
 	
 	# save files
 	spec_df_fp = os.path.join(args.output_dp,f"{args.output_name}_df.{args.output_format}")
+	print(f"> saving spec_df to {spec_df_fp}")
 	if args.output_format == "json":
 		spec_df.to_json(spec_df_fp)
 	else:

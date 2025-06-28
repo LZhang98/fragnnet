@@ -8,12 +8,35 @@ The raw NIST data can be exported using the instructions [here](https://github.c
 
 ## Step 1: Processing raw data into CSV
 
+### NIST 20
 This assumes that the NIST20 data is in a folder `data/raw/nist_20`, containing two files: `hr_nist_msms.MSP` (the MSP file with the spectrum information) and `hr_nist_msms.MOL` (the MOL file with the molecule structures).
 
 This will create a new directory `data/df`
 
 ```bash
 python preproc_scripts/01_prepare_df.py --msp_file nist_20/hr_nist_msms.MSP --mol_dir nist_20/hr_nist_msms.MOL --input_format msp+mol --output_format csv --output_dp data/df --output_name nist20_hr
+```
+
+### MassSpecGym
+This assumes that the Spectraverse data is in `data/raw/msgym/MassSpecGym_with_test.tsv`, this will use `ms_gym`,`ms_gym_extra` as dataset name for each part of MassSpecGym
+
+```bash
+# for sim challenege
+python preproc_scripts/01_prepare_df.py --input_format=ms_gym --output_format=csv --output_name=ms_gym  --ms_gym_tsv=msgym/MassSpecGym_with_test.tsv
+
+# for extra data in msgym
+python preproc_scripts/01_prepare_df.py --input_format=ms_gym_extra --output_format=csv --output_name=ms_gym_extra --ms_gym_tsv=msgym/MassSpecGym_with_test.tsv
+```
+
+### Spectraverse
+This assumes that the Spectraverse data is in `data/raw/spectraverse/spectraverse-0.0.1.mgf`
+
+```bash
+python preproc_scripts/01_prepare_df.py \
+	--input_format=spectraverse \
+    --output_format=csv \
+    --output_name=spectraverse \
+    --mgf_file=spectraverse/spectraverse-0.0.1.mgf
 ```
 
 ## Step 2: Processing CSV into Pickle Files
@@ -24,12 +47,30 @@ This step converts the data into binary format (pickle) for training and evaluat
 `mol_df.pkl` contains molecule information.
 `ann_df.pkl` contains annotation information.
 
+### NIST 20
 ```bash
-python preproc_scripts/02_prepare_proc.py --df_dp data/df --dsets nist20_hr --proc_dp data/proc/nist20
+python preproc_scripts/02_prepare_proc.py \
+    --df_dp data/df \
+    --dsets nist20_hr \
+    --proc_dp data/proc/nist20
 ```
 
+### MSGYM
+```bash
+# for all data in msgym
+python preproc_scripts/02_prepare_proc.py \
+    --proc_dp=data/proc/ms_gym_all \
+    --dsets ms_gym ms_gym_extra
+```
+### Spectraverse
+```bash
+python preproc_scripts/02_prepare_proc.py \
+	--proc_dp=data/proc/spectraverse \
+    --dsets spectraverse
+```
 ## Step 3: Generating Fragmentation DAGs
 
+### NIST 20
 This step generates fragmentation DAGs that are used for the FraGNNet models. Since fragmentation can be slow, we recommend using a compute with many cores (by default, the script will use all available cores). 
 
 Frag configuration: depth 3 (used for FraGNNet-D3), isomorphism check with no bond information (nb, 3 WL iterations)
@@ -42,6 +83,35 @@ Frag configuration: depth 4 (used for FraGNNet-D4), isomorphism check with no bo
 
 ```bash
 python preproc_scripts/03_prepare_dag_feats.py --max_depth 4 --frag_dp data/frag/nist20_d4 --proc_dp data/proc/nist20 --prec_types "[M+H]+" --inst_types FT --frag_modes HCD --ion_modes P --dsets nist20_hr--wandb_mode disabled
+```
+
+### MassSpecGym
+
+```bash
+# Benchmark split (sim chanllenge)
+python preproc_scripts/04_prepare_split.py \
+  --proc_dp=data/proc/ms_gym_all \
+  --ces ace \
+  --split_dp=./data/split/ms_gym_d3_h4_benchmarkv2 \
+  --frag_dp=./data/frag/ms_gym_d3_h4v2 \
+  --primary_dsets ms_gym \
+  --max_prec_mz=1000.0 \
+  --inst_types FT QTOF \
+  --split_type=predefined_dsetid_csv \
+  --predefined_dsetid_csv=data/df/ms_gym_fold.csv
+```
+
+### Spectraverse
+
+```bash
+# Benchmark split (sim chanllenge)
+python preproc_scripts/04_prepare_split.py \
+  --proc_dp=data/proc/ms_gym_all \
+  --split_dp=./data/split/spectraverse \
+  --frag_dp=./data/frag/spectraverse_d3_h4 \
+  --primary_dsets spectraverse \
+  --split_type=predefined_dsetid_csv \
+  --predefined_dsetid_csv=data/df/spectraverse_fold.csv
 ```
 
 ## Step 4: Preparing Splits
