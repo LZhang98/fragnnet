@@ -147,6 +147,14 @@ class SpecMolFragDataset(SpecMolDataset):
 				# cmf formula matrix is shifted by num_formulae-1
 				frag_pyg.x[:,frag_node_feat_idxs[cmf_node_feat_idx]:frag_node_feat_idxs[cmf_node_feat_idx+1]] = \
 					th.where(crf_formula_matrix != 0, crf_formula_matrix + num_formulae-1, crf_formula_matrix)
+		elif self.frag_params["preload"]:
+			frag_entry = self.frag_entries[mol_id].copy()
+			frag_data = self._process_frag(frag_entry,spec_entry)
+		else:
+			frag_entry = self._load_frag_entry(mol_id)
+			frag_data = self._process_frag(frag_entry,spec_entry)
+		data = {**spec_data,**mol_data,**frag_data}
+		return data
 
 	def _load_frag_entry(self,mol_id) -> dict:
 		""" load frag entry from precomputed dag on disk
