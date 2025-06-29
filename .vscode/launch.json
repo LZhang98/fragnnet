@@ -10,6 +10,18 @@
       "request": "launch",
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_tiny.yml"],
+      "env": {
+        "TORCHDYNAMO_VERBOSE": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
+      }
+    },
+    {
+      "name": "run_pl_model_fit_cmf",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
       "args": ["-w","disabled","-c","config/debug/debug_tiny_cmf.yml"],
       "env": {
         "TORCHDYNAMO_VERBOSE": "1",

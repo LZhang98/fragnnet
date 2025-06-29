@@ -36,14 +36,14 @@ frag_params:
   formula_peak_probs: True
   formula_str: False
   compressed: True
-  preload: False
-  preprocess: False
+  preload: True
+  preprocess: True
   include_cmf: True
 spec_params:
   merge: True
   nce: True
   merge_keep_ces: True
-  preprocess: False #True
+  preprocess: True #True
   prec_types:
     - "[M+H]+"
     - "[M-H]-"
