@@ -12,7 +12,7 @@ from typing import Iterator, List
 from fragnnet.utils.feat_utils import batch_mols_frags,get_frag_graph
 from fragnnet.utils.frag_utils import load_frag_d, NODE_FEAT_TO_IDX
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PREC_TYPE_TO_CMF_MASS_DIFF
 from fragnnet.dataset import BaseDataset, SpecMolDataset
 
 class SpecMolFragDataset(SpecMolDataset):
@@ -112,7 +112,7 @@ class SpecMolFragDataset(SpecMolDataset):
 		if self.frag_params["preprocess"]:
 			frag_data = self.frag_data[mol_id].copy()
 			# update prec_mass_diff
-			formula_peak_mzs = frag_entry["formula_peak_mzs"]
+			formula_peak_mzs = frag_data["formula_peak_mzs"]
 			formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]
 			prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
 			crf_peaks = formula_peak_mzs + prec_type_mass_diff
