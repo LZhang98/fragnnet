@@ -118,14 +118,15 @@ def preprocess_spec(spec_df):
 	formula_df = formula_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner")
 	diff_formula_df = formula_df[formula_df["formula_x"] != formula_df["formula_y"]]
 	print("> formula inconsistencies")
-	print(diff_formula_df["mol_id"].nunique(), diff_formula_df["spec_id"].nunique())
+	print(f"> diff mol: {diff_formula_df['mol_id'].nunique()}, diff spec: {diff_formula_df['spec_id'].nunique()}")
 	inchikey_df = spec_df[["dset_spec_id","spec_id","mol_id","inchikey"]].copy().dropna()
 	inchikey_df["inchikey_s"] = inchikey_df["inchikey"].str[:14]
 	inchikey_df = inchikey_df.drop(columns=["inchikey"])
 	inchikey_df = inchikey_df.merge(mol_df[["mol_id","inchikey_s"]],on="mol_id",how="inner")
 	diff_inchikey_df = inchikey_df[inchikey_df["inchikey_s_x"] != inchikey_df["inchikey_s_y"]]
 	print("> inchikey_s inconsistencies")
-	print(diff_inchikey_df["mol_id"].nunique(), diff_inchikey_df["spec_id"].nunique())
+	print(f"> diff mol: {diff_inchikey_df['mol_id'].nunique()}, diff spec: {diff_inchikey_df['spec_id'].nunique()}")
+
 	mass_df = spec_df[["dset_spec_id","spec_id","mol_id","exact_mass"]].copy().rename(columns={"exact_mass":"exact_mw"})
 	# keep only non-trivial exact_mw annotations from the spec_df
 	mass_df = mass_df[~mass_df["exact_mw"].isna() & mass_df["exact_mw"] > 0.0]
@@ -133,7 +134,7 @@ def preprocess_spec(spec_df):
 	mass_df = mass_df.merge(mol_df[["mol_id","exact_mw"]],on="mol_id",how="inner")
 	diff_mass_df = mass_df[(mass_df["exact_mw_x"] - mass_df["exact_mw_y"]).abs() > 0.1]
 	print("> mass inconsistencies")
-	print(diff_mass_df["mol_id"].nunique(), diff_mass_df["spec_id"].nunique())
+	print(f"> diff mol: {diff_mass_df['mol_id'].nunique()}, diff spec: {diff_mass_df['spec_id'].nunique()}")
 	spec_df = spec_df.drop(columns=["formula","inchikey","exact_mass"])
 
 	# fill in missing prec_mz by inferring them
