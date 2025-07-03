@@ -1,17 +1,17 @@
-wandb_name: debug_tinyv4_bf16
+wandb_name: debug_tinyv4
 wandb_tags:
 - cc_test_run
 
 # data stuff
 spec_fp: data/proc/debug_tinyv4/spec_df.pkl
 mol_fp: data/proc/debug_tinyv4/mol_df.pkl
-split_dp: data/split/debug_tinyv4
+split_dp: data/split/debug_tinyv5
 frag_dp: data/frag/debug_tinyv4_d3h4/dags
 
 subsample_params:
   subsample_size: 40
   subsample_seed: 420
-  train: True
+  train: False
   val: True
   test: True
   secondary: True
@@ -20,12 +20,12 @@ frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: False #True
-  preprocess: False #True
+  preload: True
+  preprocess: True
 spec_params:
-  merge: True
+  merge: False
   nce: True
-  merge_keep_ces: True
+  merge_keep_ces: False
   preprocess: False #True
   prec_types:
     - "[M+H]+"
@@ -72,16 +72,16 @@ train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 32
-eval_batch_size: 32
+train_batch_size: 2
+eval_batch_size: 1
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0003033
 weight_decay: 0.01
-accelerator: cpu
+accelerator: gpu
 devices: 1
-min_epochs: 10
-max_epochs: 10
+min_epochs: 5
+max_epochs: 5
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
@@ -91,9 +91,11 @@ checkpoint_metric: val_cos_sim_0.01_epoch/mean
 # - cos_sim
 # eval_mz_bin_res:
 # - 0.01
-precision: bf16
-use_tensor_float32: False
+precision: 32
+use_tensor_float32: True
 automatic_optimization: True
 dynamic_batch_sampler: False
 pl_enable_progress_bar: True
-compile: True
+compile: False
+num_workers: 0
+detect_anomaly: True

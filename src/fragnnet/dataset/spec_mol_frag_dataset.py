@@ -28,10 +28,10 @@ class SpecMolFragDataset(SpecMolDataset):
 		mol_params: dict,
 		frag_dp: str,
 		frag_params: dict,
-		spec_pp_sd: dict = None,
-		mol_pp_sd: dict = None,
-		frag_pl_sd: dict = None,
-		frag_pp_sd: dict = None,
+		spec_pp_sd: dict = None, # preprocessed spec data
+		mol_pp_sd: dict = None, # preprocessed mol data
+		frag_pl_sd: dict = None, # preloaded frag data
+		frag_pp_sd: dict = None, # preprocessed frag data
 		**kwargs
 	):
 
@@ -91,7 +91,6 @@ class SpecMolFragDataset(SpecMolDataset):
 			self.frag_entries = {}
 
 	def __getitem__(self, idx):
-
 		spec_entry = self.spec_df.iloc[idx]
 		mol_id = spec_entry["mol_id"]
 		mol_entry = self.mol_df.loc[mol_id]
@@ -108,6 +107,8 @@ class SpecMolFragDataset(SpecMolDataset):
 			frag_data = self.frag_data[mol_id].copy()
 			# update prec_mass_diff
 			prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
+			# this works because tensor addition return a new tensor
+			# this no deep copy required
 			frag_data["frag_formula_peak_mzs"] = frag_data["frag_formula_peak_mzs"] + prec_type_mass_diff
 		elif self.frag_params["preload"]:
 			frag_entry = self.frag_entries[mol_id].copy()
