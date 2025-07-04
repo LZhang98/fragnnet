@@ -136,23 +136,29 @@ class SpecMolFragDataset(SpecMolDataset):
 						[frag_data["frag_formula_str"], frag_data["frag_formula_str"][1:]], axis=0
 					)
 				# update pyg
-				frag_pyg = frag_data["frag_pyg"]
+    			# create a clone of frag_pyg to avoid modifying the original one
+				# this is required because we preloaded frag data in the first place
+				frag_pyg = frag_data["frag_pyg"].clone()
 				frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 				crf_node_feat_idx = NODE_FEAT_TO_IDX['h_formulae_idx']
 				cmf_node_feat_idx = NODE_FEAT_TO_IDX['cmf_h_formulae_idx']
 				crf_formula_matrix = frag_pyg.x[:,frag_node_feat_idxs[crf_node_feat_idx]:frag_node_feat_idxs[crf_node_feat_idx+1]]
 				num_formulae = th.max(crf_formula_matrix) - th.min(crf_formula_matrix) + 1
     			# update cmf formula matrix if crf_formula_matrix value is not zero
-				# if crf_formula_matrix is zero, that means h_trasnfer is not possible, then cmf formula matrix should beb  zero
+				# if crf_formula_matrix is zero, that means h_transfer is not possible, then cmf formula matrix should beb  zero
 				# cmf formula matrix is shifted by num_formulae-1
 				frag_pyg.x[:,frag_node_feat_idxs[cmf_node_feat_idx]:frag_node_feat_idxs[cmf_node_feat_idx+1]] = \
-					th.where(crf_formula_matrix != 0, crf_formula_matrix + num_formulae-1, crf_formula_matrix)	
+					th.where(crf_formula_matrix != 0, crf_formula_matrix + num_formulae-1, crf_formula_matrix)
+				frag_data["frag_pyg"] = frag_pyg
+    
 		elif self.frag_params["preload"]:
 			frag_entry = self.frag_entries[mol_id].copy()
+			#frag_entry['frag_pyg'] = frag_entry['frag_pyg'].clone() # clone to avoid modifying the original one
 			frag_data = self._process_frag(frag_entry, spec_entry)
 		else:
 			frag_entry = self._load_frag_entry(mol_id)
 			frag_data = self._process_frag(frag_entry, spec_entry)
+   
 		data = {**spec_data,**mol_data,**frag_data}
 		return data
 
@@ -181,7 +187,6 @@ class SpecMolFragDataset(SpecMolDataset):
 		such as formula peak probabilities, formula strings, and m/z values. It also
 		handles precursor type adjustments and CMF (Charge-Mass Fragmentation) data
 		if specified in the parameters.
-
 		Args:
 			frag_entry (dict): Fragmentation entry containing the DAG and related data.
 			spec_entry (dict | None): Spectral entry containing precursor type and other
@@ -243,7 +248,7 @@ class SpecMolFragDataset(SpecMolDataset):
 							[frag_data["frag_formula_str"], frag_data["frag_formula_str"][1:]], axis=0
 						)
 					# update pyg
-					frag_pyg = frag_data["frag_pyg"]
+					frag_pyg = frag_data["frag_pyg"].clone() # clone to avoid modifying the original one
 					frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 					crf_node_feat_idx = NODE_FEAT_TO_IDX['h_formulae_idx']
 					cmf_node_feat_idx = NODE_FEAT_TO_IDX['cmf_h_formulae_idx']
@@ -253,6 +258,7 @@ class SpecMolFragDataset(SpecMolDataset):
 					# cmf formula matrix is shifted by num_formulae-1
 					frag_pyg.x[:,frag_node_feat_idxs[cmf_node_feat_idx]:frag_node_feat_idxs[cmf_node_feat_idx+1]] = \
 						th.where(crf_formula_matrix != 0, crf_formula_matrix + num_formulae-1, crf_formula_matrix)
+					frag_data["frag_pyg"] = frag_pyg	
 			else:
 				frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
 		return frag_data
