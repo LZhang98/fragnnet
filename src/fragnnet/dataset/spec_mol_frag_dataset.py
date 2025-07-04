@@ -13,6 +13,7 @@ from fragnnet.utils.feat_utils import batch_mols_frags,get_frag_graph
 from fragnnet.utils.frag_utils import load_frag_d
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.data_utils import deep_copy_data_dict
 from fragnnet.dataset import BaseDataset, SpecMolDataset
 
 class SpecMolFragDataset(SpecMolDataset):
@@ -95,23 +96,23 @@ class SpecMolFragDataset(SpecMolDataset):
 		mol_id = spec_entry["mol_id"]
 		mol_entry = self.mol_df.loc[mol_id]
 		if self.spec_params["preprocess"]:
-			spec_data = self.spec_datas[idx].copy()
+			spec_data = deep_copy_data_dict(self.spec_datas[idx])
 		else:
 			spec_data = self._process_spec(spec_entry)
 		if self.mol_params["preprocess"]:
-			mol_data = self.mol_datas[mol_id].copy()
+			mol_data = deep_copy_data_dict(self.mol_datas[mol_id])
 		else:
 			mol_data = self._process_mol(mol_entry)
 		# frag stuff
 		if self.frag_params["preprocess"]:
-			frag_data = self.frag_data[mol_id].copy()
+			frag_data = deep_copy_data_dict(self.frag_data[mol_id])
 			# update prec_mass_diff
 			prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
 			# this works because tensor addition return a new tensor
 			# this no deep copy required
 			frag_data["frag_formula_peak_mzs"] = frag_data["frag_formula_peak_mzs"] + prec_type_mass_diff
 		elif self.frag_params["preload"]:
-			frag_entry = self.frag_entries[mol_id].copy()
+			frag_entry = deep_copy_data_dict(self.frag_entries[mol_id])
 			frag_data = self._process_frag(frag_entry,spec_entry)
 		else:
 			frag_entry = self._load_frag_entry(mol_id)
