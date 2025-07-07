@@ -15,7 +15,7 @@
 # load CPLEX
 CPLEX_HOME=/home/feiw/ibm/ILOG/CPLEX_Studio2211/cplex/
 PATH=$CPLEX_HOME/bin/x86-64_linux/:$PATH
-INPUT_FILE=/home/feiw/feiw/frag-gnn/data/mces-data/biostrcutures/biostructures_sampled_1.hdf5
+INPUT_FILE=/home/feiw/feiw/frag-gnn/data/mces-data/biostructures/biostructures_sampled_1.hdf5
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID} is allocated resources

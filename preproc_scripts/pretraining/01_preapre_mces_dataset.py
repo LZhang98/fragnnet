@@ -15,7 +15,7 @@ def get_np_memory_usage(array):
 	memory_usage_mb = memory_usage / (1024 ** 2)
 	print(f"Memory usage: {memory_usage} bytes ({memory_usage_mb:.2f} MB)")
 
-def process_mol_df(data_fp):
+def get_mol_df(data_fp):
 	# Existing function unchanged
 	with np.load(data_fp, allow_pickle=True) as mces_data:
 		smiles = mces_data['smiles']
@@ -39,10 +39,10 @@ def process_mol_df(data_fp):
 		mol_df.loc[:,"num_radicals"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_radicals)
 		mol_df.loc[:,'num_out_set_elements'] = par_apply_series(mol_df['formula'], (lambda x: len(set(list(parse_formula(x).keys())) - set(ELEMENTS))))
 
+		mol_df.loc[:,"og_idx"] = mol_df.index
 		mol_df.drop(columns=["mol"], inplace=True)
 		mol_df.dropna(subset=["smiles", "smiles_org", "inchikey_s", "scaffold", "formula", "inchi"])
 
-		mol_df = mol_df[mol_df['single_mol'] == True]
 		print(f"> Filtered mol_df shape after single mol: {mol_df.shape}")
 		mol_df = mol_df[mol_df['num_radicals'] == False]
 		print(f"> Filtered mol_df shape after num_radicals = 1: {mol_df.shape}")
@@ -52,34 +52,38 @@ def process_mol_df(data_fp):
 		print(f"> Filtered mol_df shape after num_out_set_elements = 0: {mol_df.shape}")
 		mol_df = mol_df[mol_df['exact_mw'] <= 1600]
 		print(f"> Filtered mol_df shape after exact_mw <= 1600 Da: {mol_df.shape}")
-		mol_df = mol_df[(mol_df['num_atoms'] > 1 ) & (mol_df['num_atoms'] < 100)]
-		print(f"> Filtered mol_df shape after 1 < num_atom < 100: {mol_df.shape}")
+		mol_df = mol_df[(mol_df['num_atoms'] > 3 ) & (mol_df['num_atoms'] < 100)]
+		print(f"> Filtered mol_df shape after 3 < num_atom < 100: {mol_df.shape}")
 		mol_df = mol_df.reset_index(drop=True)
 		return mol_df
   
-def process_mces(data_fp, mces_out_fp, mce_min=0, mce_max=None):
+def process_mces(data_fp, mces_out_fp, mol_df, mce_min=0, mce_max=None):
 	"""
 	Process MCES data and save as HDF5 file with dataset of shape [N, 3] where
 	each row is [mol_idx_1, mol_idx_2, mces_value] with mces_value as float16.
 	"""
-	with np.load(data_fp, allow_pickle=True) as mces_data, h5py.File(mces_out_fp, 'a') as h5f:
+ 
+	org_idx = mol_df['og_idx'].values.tolist()
+	new_idx = mol_df.index.values.tolist()
+	smiles_idx_mapping = dict(zip(org_idx, new_idx))
+	smiles = mol_df['smiles'].values.tolist()
+ 
+	with np.load(data_fp, allow_pickle=True) as mces_data, h5py.File(mces_out_fp, 'w+') as h5f:
 		mces_values = mces_data['mces']
 		num_smiles = len(mces_data['smiles'])
 	
-	# Create or open HDF5 file with append mode
-	#with h5py.File(mces_out_fp, 'a+') as h5f:
-		# Check if dataset exists, create if not
-		if 'mces_pairs' not in h5f:
-			# Create dataset with unlimited first dimension (can grow)
-			# and 3 columns for [mol_idx_1, mol_idx_2, mces_value]
-			dt = np.dtype([('mol_idx_1', np.int32), ('mol_idx_2', np.int32), ('mces_value', np.float16)])
-			dataset = h5f.create_dataset('mces_pairs', 
-										 compression='gzip',
-										 shape=(0,), 
-										 maxshape=(None,),
-										 dtype=dt)
-		else:
-			dataset = h5f['mces_pairs']
+		# create smiles dataset
+		h5f.create_dataset('smiles', data=[s.encode('utf-8') for s in smiles], dtype=h5py.string_dtype())
+		# create mces dataset
+		# 3 columns for [mol_idx_1, mol_idx_2, mces_value]
+		mces_dtype = np.dtype([('mol_idx_1', np.int32), ('mol_idx_2', np.int32), ('mces_value', np.float16)])
+		dataset = h5f.create_dataset('mces_pairs', 
+										compression='gzip',
+										shape=(0,), 
+										maxshape=(None,),
+										dtype=mces_dtype)
+		#else:
+		#	dataset = h5f['mces_pairs']
 		
 		# Process MCES values and append to dataset in batches
 		batch_size = 1000  # Adjust based on memory constraints
@@ -91,8 +95,16 @@ def process_mces(data_fp, mces_out_fp, mce_min=0, mce_max=None):
 		for i in tqdm(range(0, num_smiles)):
 			for j in tqdm(range(i+1, num_smiles), leave=False):
 				if mces_values[mces_idx] >= mce_min and (mce_max is None or mces_values[mces_idx] <= mce_max):
+					# check if i and j in smiles_idx_mapping
+					if i not in smiles_idx_mapping or j not in smiles_idx_mapping:
+						continue
+
+					# Map original indices to new indices
+					mapped_i = smiles_idx_mapping[i]
+					mapped_j = smiles_idx_mapping[j]
+
 					# Add to batch
-					batch_data.append((i, j, np.float16(mces_values[mces_idx])))
+					batch_data.append((mapped_i, mapped_j, np.float16(mces_values[mces_idx])))
 					
 					# If batch is full, append to HDF5
 					if len(batch_data) >= batch_size:
@@ -114,7 +126,7 @@ def process_mces(data_fp, mces_out_fp, mce_min=0, mce_max=None):
 		
 		# Save any remaining data in the last batch
 		if batch_data:
-			batch_array = np.array(batch_data, dtype=dt)
+			batch_array = np.array(batch_data, dtype=mces_dtype)
 			current_size = dataset.shape[0]
 			new_size = current_size + len(batch_array)
 			dataset.resize((new_size,))
@@ -134,7 +146,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--mce_min",
 		type=int,
-		default=-1,  # Changed to h5 extension
+		default=0,  # Changed to h5 extension
 		help="maximum value of MCES pairs to process (default: None, process all pairs)"
 	)
 	parser.add_argument(
@@ -157,9 +169,7 @@ if __name__ == "__main__":
 	)
 	args = parser.parse_args()
 	
-	mol_df = process_mol_df(args.data_fp)
+	mol_df = get_mol_df(args.data_fp)
 	#mol_df.to_pickle(args.mol_df_fp)
 	mol_df = pd.read_pickle(args.mol_df_fp)
-	print(mol_df.head())
-
-	process_mces(args.data_fp, args.mces_out_fp, args.mce_min, args.mce_max)
+	process_mces(args.data_fp, args.mces_out_fp, mol_df, args.mce_min, args.mce_max)
