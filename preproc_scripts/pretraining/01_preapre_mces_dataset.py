@@ -43,9 +43,10 @@ def get_mol_df(data_fp):
 		mol_df.drop(columns=["mol"], inplace=True)
 		mol_df.dropna(subset=["smiles", "smiles_org", "inchikey_s", "scaffold", "formula", "inchi"])
 
+		mol_df = mol_df[(mol_df['single_mol'] == True )]
 		print(f"> Filtered mol_df shape after single mol: {mol_df.shape}")
-		mol_df = mol_df[mol_df['num_radicals'] == False]
-		print(f"> Filtered mol_df shape after num_radicals = 1: {mol_df.shape}")
+		mol_df = mol_df[(mol_df['num_radicals'] == 0 )]
+		print(f"> Filtered mol_df shape after num_radicals = 0: {mol_df.shape}")
 		mol_df = mol_df[mol_df['charge'] == 0]
 		print(f"> Filtered mol_df shape after charge = 0: {mol_df.shape}")
 		mol_df = mol_df[mol_df['num_out_set_elements'] == 0]
@@ -55,6 +56,7 @@ def get_mol_df(data_fp):
 		mol_df = mol_df[(mol_df['num_atoms'] > 3 ) & (mol_df['num_atoms'] < 100)]
 		print(f"> Filtered mol_df shape after 3 < num_atom < 100: {mol_df.shape}")
 		mol_df = mol_df.reset_index(drop=True)
+		#print(f"> Final mol_df shape: {mol_df.head()}")
 		return mol_df
   
 def process_mces(data_fp, mces_out_fp, mol_df, mce_min=0, mce_max=None):
@@ -62,13 +64,13 @@ def process_mces(data_fp, mces_out_fp, mol_df, mce_min=0, mce_max=None):
 	Process MCES data and save as HDF5 file with dataset of shape [N, 3] where
 	each row is [mol_idx_1, mol_idx_2, mces_value] with mces_value as float16.
 	"""
- 
+	#print(mol_df.head())
 	org_idx = mol_df['og_idx'].values.tolist()
 	new_idx = mol_df.index.values.tolist()
 	smiles_idx_mapping = dict(zip(org_idx, new_idx))
 	smiles = mol_df['smiles'].values.tolist()
  
-	with np.load(data_fp, allow_pickle=True) as mces_data, h5py.File(mces_out_fp, 'w+') as h5f:
+	with np.load(data_fp, allow_pickle=True) as mces_data, h5py.File(mces_out_fp, 'w') as h5f:
 		mces_values = mces_data['mces']
 		num_smiles = len(mces_data['smiles'])
 	
@@ -109,7 +111,7 @@ def process_mces(data_fp, mces_out_fp, mol_df, mce_min=0, mce_max=None):
 					# If batch is full, append to HDF5
 					if len(batch_data) >= batch_size:
 						# Convert to structured array
-						batch_array = np.array(batch_data, dtype=dt)
+						batch_array = np.array(batch_data, dtype=mces_dtype)
 						
 						# Resize dataset to accommodate new data
 						current_size = dataset.shape[0]
@@ -170,6 +172,6 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	
 	mol_df = get_mol_df(args.data_fp)
-	#mol_df.to_pickle(args.mol_df_fp)
-	mol_df = pd.read_pickle(args.mol_df_fp)
+	mol_df.to_pickle(args.mol_df_fp)
+	#mol_df = pd.read_pickle(args.mol_df_fp)
 	process_mces(args.data_fp, args.mces_out_fp, mol_df, args.mce_min, args.mce_max)
