@@ -1,5 +1,5 @@
 import torch as th
-import torch_geometric as pyg
+
 
 try:
 	import lightning.pytorch as pl	
@@ -21,22 +21,21 @@ import glob
 import shutil
 import tempfile
 from multiprocessing import Manager
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SequentialSampler, RandomSampler
 
-from fragnnet.pl_model import FragGNNPL, NeimsPL, PrecursorPL, GNNPL
+from fragnnet.pl_model import FragGNNPL, NeimsPL, PrecursorPL, GNNPL, McesPL
 from fragnnet.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.graff.pl_model import GrAFFPL
 from fragnnet.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from fragnnet.utils.pl_utils import ConsoleLogger
-from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset, GroupSampler, get_group_sampler, SpecMolFragDynamicBatchSampler
+from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset, GroupSampler, get_group_sampler, SpecMolFragDynamicBatchSampler,McesDataset
 from fragnnet.iceberg.dataset import SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset
 from fragnnet.graff.dataset import SpecMolAnnDataset
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.utils.misc_utils import deep_update
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
-
 
 def load_config(template_fp, custom_fp):
 
@@ -81,8 +80,25 @@ def load_wandb_config(wandb_config_dp) -> dict:
 	return config_d
 
 
-def init_dataset(config_d, splits=("train","val")):
+def init_dataset(config_d: dict, splits=("train","val")) -> tuple:
+	"""
+	Initialize dataset objects for the specified splits based on the model type in config.
 
+	This function selects the appropriate dataset class according to config_d["model_type"],
+	prepares shared or local data dicts for multiprocessing if needed, and instantiates
+	the dataset for each split (e.g., "train", "val", "test").
+
+	Args:
+		config_d (dict): Configuration dictionary containing at least "model_type" and other dataset args.
+		splits (tuple): Tuple of split names to load (default: ("train", "val")).
+
+	Returns:
+		tuple: Tuple of dataset objects, one for each split in the order provided.
+
+	Raises:
+		ValueError: If an unknown model_type is provided in config_d.
+	"""
+	# Select dataset class based on model type
 	if config_d["model_type"] == "frag_gnn":
 		dataset_cls = SpecMolFragDataset
 	elif config_d["model_type"] == "iceberg_gen":
@@ -91,19 +107,25 @@ def init_dataset(config_d, splits=("train","val")):
 		dataset_cls = SpecMolMagmaIntenDataset
 	elif config_d["model_type"] == "graff":
 		dataset_cls = SpecMolAnnDataset
-	else:
-		assert config_d["model_type"] in ["neims","massformer","precursor", "gnn"], config_d["model_type"]
+	elif config_d["model_type"] in ["neims","massformer","precursor", "gnn"]:
 		dataset_cls = SpecMolDataset
-	
+	elif config_d["model_type"] == "mces_pretraining":
+		dataset_cls = McesDataset
+	else:
+		raise ValueError(f"Unknown model type: {config_d['model_type']}")
+
+	# Get the expected data dict types for this dataset
 	data_dict_types = dataset_cls.get_data_dict_types()
 	
 	dses = []
 	for split in splits:
+		# Use multiprocessing manager dicts if requested, else regular dicts
 		if config_d["num_workers"] > 0 and config_d["share_memory"]:
 			manager = Manager()
 			data_sds = {k: manager.dict() for k in data_dict_types}
 		else:
 			data_sds = {k: dict() for k in data_dict_types}
+		# Instantiate the dataset for this split
 		ds = dataset_cls(
 			split=split,
 			**{**data_sds,**config_d})
@@ -112,10 +134,23 @@ def init_dataset(config_d, splits=("train","val")):
 	return tuple(dses)
 
 
-def init_dataloader(ds, config_d):
+def init_dataloader(ds:Dataset, config_d:dict) -> DataLoader:
+	"""
+	Initialize a PyTorch DataLoader for a given dataset and configuration.
 
+	This function sets up the appropriate sampler and batching strategy for the dataset,
+	depending on the split (train/val/test), group sampling options, and dynamic batch sampler settings.
+
+	Args:
+		ds (Dataset): The dataset object (must have a .split attribute).
+		config_d (dict): Configuration dictionary with dataloader and sampler options.
+
+	Returns:
+		DataLoader: Configured PyTorch DataLoader for the dataset.
+	"""
 	split = ds.split
-	assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), "Cannot use both group_sampler and simple_group_sampler"
+	assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), \
+		"Cannot use both group_sampler and simple_group_sampler"
 	print(f"> init_dataloader for split {split}")
 	dl_param_d = {
 		"dataset": ds,
@@ -124,9 +159,10 @@ def init_dataloader(ds, config_d):
 		"pin_memory": config_d["pin_memory"] and (config_d["accelerator"] != "cpu")
 	}
 
-	# note: this generator will get overwritten at the beginning/ending of each training epoch
-	generator = th.Generator() 
+	# Set up a generator for reproducible sampling (will be overwritten each epoch)
+	generator = th.Generator()
 	if split == "train":
+		# Choose sampler for training
 		if config_d["group_sampler"]:
 			sampler = GroupSampler(
 				ds,
@@ -141,10 +177,10 @@ def init_dataloader(ds, config_d):
 		else:
 			sampler = RandomSampler(ds, False, generator=generator)
 	else:
-		# split in ["val", "test", "predict_only"]
+		# Use sequential sampler for validation/test/predict_only
 		sampler = SequentialSampler(ds)
   
-	# for batch sampler 
+	# Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
 	if config_d["dynamic_batch_sampler"]:
 		max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
 		if split == "train":
@@ -152,14 +188,15 @@ def init_dataloader(ds, config_d):
 		else:
 			return_batch_at = 0
 		batch_sampler = SpecMolFragDynamicBatchSampler(
-							ds, 
-							max_num = config_d["dynamic_batch_sampler_max"], 
-							limited_by = config_d["dynamic_batch_sampler_mode"], 
-							skip_too_big = True,
-							return_batch_at = return_batch_at,
-							sampler = sampler)
+			ds, 
+			max_num = config_d["dynamic_batch_sampler_max"], 
+			limited_by = config_d["dynamic_batch_sampler_mode"], 
+			skip_too_big = True,
+			return_batch_at = return_batch_at,
+			sampler = sampler)
 		dl_param_d["batch_sampler"] = batch_sampler
 	else:
+		# Standard batching
 		dl_param_d["sampler"] = sampler
 		if split == "train":
 			dl_param_d["batch_size"] = config_d["train_batch_size"]	
@@ -167,13 +204,23 @@ def init_dataloader(ds, config_d):
 		else:
 			dl_param_d["batch_size"] = config_d["eval_batch_size"]
 			dl_param_d["drop_last"] = False
-	dl = DataLoader(**dl_param_d)
 
+	dl = DataLoader(**dl_param_d)
 	return dl
 
 
-def init_run(template_fp, custom_fp, wandb_mode, job_id):
+def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
+	"""
+	Main entry point for initializing and running a training/validation/testing job.
+	Args:
+		template_fp (str): Path to the template YAML config file.
+		custom_fp (str): Path to the custom YAML config file (can be None).
+		wandb_mode (str): Wandb mode ["online", "offline", "disabled"].
+		job_id (str): Unique job identifier for checkpointing and wandb.
 
+	Returns:
+		model: The trained model (LightningModule).
+	"""
 	# setup logger
 	logging.basicConfig(
 		level=logging.INFO,
@@ -415,7 +462,7 @@ def init_run(template_fp, custom_fp, wandb_mode, job_id):
 			"Dynamic batch sampler needs a max num"
 	if  config_d["frag_gnn_type"] == "NodeMLP" and config_d["dynamic_batch_sampler"]:
 		assert config_d["dynamic_batch_sampler_mode"] == "frag_node",\
-      		f"Dynamic batch sampler can only be use with dynamic_batch_sampler_mode frag_node, not {config_d['dynamic_batch_sampler_mode']}"		
+	  		f"Dynamic batch sampler can only be use with dynamic_batch_sampler_mode frag_node, not {config_d['dynamic_batch_sampler_mode']}"		
 	# setup dataloaders
 	logging.info("setup dataloader")
 	train_dl = init_dataloader(train_ds, config_d)
