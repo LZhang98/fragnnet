@@ -15,9 +15,9 @@ def get_args():
     
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
-	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
-	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
-	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/pubchem/frags/d3_h4_isoFalse/pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="frag dp only used in fragnnet")
+	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
+	parser.add_argument("--proc_dp", type=str,default="./data/ms2c/pubchem/proc/pubchem_nist20_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
+	parser.add_argument("--frag_dp", type=str,default="./data/ms2c/pubchem/frags/d3_h4_isoFalse/pubchem_nist20_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="frag dp only used in fragnnet")
 
 	parser.add_argument("--use_cached_ckpt",type=booltype,default=False)
 	parser.add_argument("--batch_size",type=int,default=50)

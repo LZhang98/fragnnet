@@ -56,12 +56,12 @@ cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/
 pip install -I ${WORKING_DIR}
 
 # setup jobs
-DATASET_NAME=nist20mona23v3
+DATASET_NAME=nist20
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=True
-SAVE_NAME=nist20mona23v3_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
+SAVE_NAME=nist20_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
 DSETS='nist20_hr'
 PREC='any'
 INST='FT QTOF IT'

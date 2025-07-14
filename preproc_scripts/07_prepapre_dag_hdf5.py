@@ -91,8 +91,8 @@ def create_hdf5_file(hdf5_fp, num_features, batch_size):
 if __name__ == "__main__":
 	# Parse command-line arguments for input directory, output file, and batch size
 	parser = argparse.ArgumentParser(description="Convert DAG pickle.bz2 files to a single HDF5 file.")
-	parser.add_argument("--dags_dp", type=str, default="data/frag/nist20mona23v3_d3_h4_isoFalse_nb3/dags", help="Directory containing .pickle.bz2 DAG files")
-	parser.add_argument("--hdf5_fp", type=str, default="data/frag/nist20mona23v3_d3_h4_isoFalse_nb3.hdf5", help="Output HDF5 file path")
+	parser.add_argument("--dags_dp", type=str, default="data/frag/nist20_d3_h4_isoFalse_nb3/dags", help="Directory containing .pickle.bz2 DAG files")
+	parser.add_argument("--hdf5_fp", type=str, default="data/frag/nist20_d3_h4_isoFalse_nb3.hdf5", help="Output HDF5 file path")
 	parser.add_argument("--batch_size", type=int, default=128, help="Batch size for HDF5 chunking and writing")
 	args = parser.parse_args()
 

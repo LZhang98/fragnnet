@@ -58,8 +58,8 @@ pip install -I .
 
 # Copy files
 # create local dir
-DATASET_NAME=nist20mona23v3
-FRAG_TAR=nist20mona23v3_ma_mi_d3_h4_isoFalse.tar
+DATASET_NAME=nist20
+FRAG_TAR=nist20_ma_mi_d3_h4_isoFalse.tar
 SPLIT=nist20v3_ma_mi_inchikey
 CONFIG=config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi.yml
 OUTPUT_DP=data/smarts/fraggnn_d3_ma_mi

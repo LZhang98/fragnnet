@@ -32,14 +32,14 @@ def main(args):
             SPLIT = split_type
             DIR = args.ms2c_dp
             MODEL = model_type
-            BASENAME = f"ms2pubchem_nist20mona23v3_d4_wr00_{SPLIT}_test_10ppm_MORGAN-R2_50"
-            PROC_DP = f"{DIR}/proc/pubchem_nist20mona23v3_d4_wr00_{SPLIT}_test_10ppm_MORGAN-R2_50"
+            BASENAME = f"ms2pubchem_nist20_d4_wr00_{SPLIT}_test_10ppm_MORGAN-R2_50"
+            PROC_DP = f"{DIR}/proc/pubchem_nist20_d4_wr00_{SPLIT}_test_10ppm_MORGAN-R2_50"
             SAVE_DP = f"{DIR}/predicted/{BASENAME}"
             
             # Create the directory if it doesn't exist
             os.makedirs(SAVE_DP, exist_ok=True)
             
-            FRAG_DP = f"{DIR}/frags/d4_h4_isoFalse/pubchem_nist20mona23v3_d4_wr00_{SPLIT}_test_10ppm_MORGAN-R2_50"
+            FRAG_DP = f"{DIR}/frags/d4_h4_isoFalse/pubchem_nist20_d4_wr00_{SPLIT}_test_10ppm_MORGAN-R2_50"
             
             if SPLIT == "scaffold":
                 MODEL_TYPE_TO_ID = SCAFFOLD_MODEL_TYPE_TO_IDS

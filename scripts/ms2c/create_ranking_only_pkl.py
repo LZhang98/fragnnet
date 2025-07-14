@@ -11,8 +11,8 @@ LAST_SCORE = 0.0
 def get_args():
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50_ranking_only")
-	parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20mona23v3_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
+	parser.add_argument("--save_dp",type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50_ranking_only")
+	parser.add_argument("--predicted_dp", type=str,default="./data/ms2c/pubchem/run_240925/predicted/ms2pubchem_nist20_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50")
  
 	args = parser.parse_args()
 	return args

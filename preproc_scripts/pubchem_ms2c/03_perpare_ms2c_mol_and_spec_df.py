@@ -7,10 +7,10 @@ import fragnnet.utils.data_utils as data_utils
 
 def get_args():
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--proc_dp', type=str, default='./data/proc/nist20mona23v3')
-	parser.add_argument('--split_dp', type=str, default='./data/split/nist20mona23v3_d4_wr00_inchikey')
+	parser.add_argument('--proc_dp', type=str, default='./data/proc/nist20')
+	parser.add_argument('--split_dp', type=str, default='./data/split/nist20_d4_wr00_inchikey')
 	parser.add_argument('--split_type', type=str,default='test', help='')
-	parser.add_argument('--candidate_pkl_fp',type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20mona23v3_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz')
+	parser.add_argument('--candidate_pkl_fp',type=str,default='./data/ms2c/pubchem/candidates/pubchem_nist20_d4_wr00_inchikey_test_10ppm_MORGAN-R2_50.pkl.gz')
 	parser.add_argument('--ms2c_data_dp',type=str, default='./data/ms2c/pubchem/proc')
 	
 	parser.add_argument('--include_sanity',type=booltype,default=True)
