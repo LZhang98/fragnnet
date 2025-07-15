@@ -16,7 +16,7 @@ from fragnnet.utils.misc_utils import to_device
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.dataset import SpecMolFragDataset, SpecMolDataset
 from fragnnet.utils.pl_utils import get_pl_hparams
-
+from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 class MolCandidateDB():
 
 	def __init__(self, db_config: str):
@@ -178,14 +178,6 @@ class MolCandidateDB():
 			compound_insert_data = df[i:i+chunk_size].values.tolist()
 			self.execute_many_query(compound_query, compound_insert_data)
 
-#
-model_type_to_model_cls = {
-	"neims": NeimsPL,
-	"gnn": GNNPL,
-	"frag_gnn": FragGNNPL,
-	"massformer": MassFormerPL,
-	"iceberg_inten": IcebergIntenPL
-}
 
 def load_model_and_init_config(
 		ckpt_fp:str, 
@@ -261,7 +253,7 @@ def load_model_and_init_config(
 	# check class
 	print(f">> model type: {config_d['model_type']}")
 	model_type = config_d['model_type']
-	model_cls = model_type_to_model_cls[model_type]
+	model_cls = get_model_cls(model_type)
 
  	# load models
 	print(">> Loading models")

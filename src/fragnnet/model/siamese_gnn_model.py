@@ -6,11 +6,10 @@ precursor type, and instrument type, and predicts spectra using a feedforward ne
 
 import torch as th
 import torch.nn as nn
-
-from fragnnet.model.model_base import CEModel, PrecModel, InstModel
-from fragnnet.utils.nn_utils import SpecFFN
-from fragnnet.utils.feat_utils import get_mol_fp_size
-
+import torch_geometric as pyg
+from fragnnet.model.base_model import CEModel, PrecModel, InstModel
+from fragnnet.utils.feat_utils import get_mol_feats_sizes
+from fragnnet.model.nn_blocks import MLPBlocks, GNN, build_pool_module
 class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 	"""
 	Siamese GNN model for molecular graph embedding and MCES regression.

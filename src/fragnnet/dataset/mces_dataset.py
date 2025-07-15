@@ -5,7 +5,7 @@ from fragnnet.utils.data_utils import mol_from_smiles
 from fragnnet.utils.feat_utils import get_mol_graph
 from torch.utils.data import Dataset
 
-class McesDataset(Dataset):
+class MCESDataset(Dataset):
 	"""Dataset for MCES (Maximum Common Edge Substructure) pairs.
 
 	Each item is a pair of molecules (i, j) with their SMILES, MCES value, and PyG graphs.

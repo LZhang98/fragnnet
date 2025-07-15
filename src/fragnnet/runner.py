@@ -3,13 +3,11 @@ import torch as th
 
 try:
 	import lightning.pytorch as pl	
-	from lightning.pytorch.callbacks import DeviceStatsMonitor
 	from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 	from lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
 	from lightning import seed_everything
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
-	from pytorch_lightning.callbacks import DeviceStatsMonitor
 	from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 	from pytorch_lightning.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
 	from pytorch_lightning import seed_everything
@@ -23,19 +21,15 @@ import tempfile
 from multiprocessing import Manager
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SequentialSampler, RandomSampler
-
-from fragnnet.pl_model import FragGNNPL, NeimsPL, PrecursorPL, GNNPL, McesPL
-from fragnnet.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
-from fragnnet.massformer.pl_model import MassFormerPL
-from fragnnet.graff.pl_model import GrAFFPL
 from fragnnet.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from fragnnet.utils.pl_utils import ConsoleLogger
-from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset, GroupSampler, get_group_sampler, SpecMolFragDynamicBatchSampler,McesDataset
+from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset, GroupSampler, get_group_sampler, SpecMolFragDynamicBatchSampler,MCESDataset
 from fragnnet.iceberg.dataset import SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset
 from fragnnet.graff.dataset import SpecMolAnnDataset
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.utils.misc_utils import deep_update
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
+from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 
 def load_config(template_fp, custom_fp):
 
@@ -99,21 +93,8 @@ def init_dataset(config_d: dict, splits=("train","val")) -> tuple:
 		ValueError: If an unknown model_type is provided in config_d.
 	"""
 	# Select dataset class based on model type
-	if config_d["model_type"] == "frag_gnn":
-		dataset_cls = SpecMolFragDataset
-	elif config_d["model_type"] == "iceberg_gen":
-		dataset_cls = SpecMolMagmaGenDataset
-	elif config_d["model_type"] == "iceberg_inten":
-		dataset_cls = SpecMolMagmaIntenDataset
-	elif config_d["model_type"] == "graff":
-		dataset_cls = SpecMolAnnDataset
-	elif config_d["model_type"] in ["neims","massformer","precursor", "gnn"]:
-		dataset_cls = SpecMolDataset
-	elif config_d["model_type"] == "mces_pretraining":
-		dataset_cls = McesDataset
-	else:
-		raise ValueError(f"Unknown model type: {config_d['model_type']}")
-
+	dataset_cls = get_dataset_cls(config_d["model_type"])
+ 
 	# Get the expected data dict types for this dataset
 	data_dict_types = dataset_cls.get_data_dict_types()
 	
@@ -329,24 +310,8 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 
 	# setup model
 	logging.info("setup model")
-	if config_d["model_type"] == "frag_gnn":
-		model_cls = FragGNNPL
-	elif config_d["model_type"] == "neims":
-		model_cls = NeimsPL
-	elif config_d["model_type"] == "iceberg_gen":
-		model_cls = IcebergGenPL
-	elif config_d["model_type"] == "iceberg_inten":
-		model_cls = IcebergIntenPL
-	elif config_d["model_type"] == "massformer":
-		model_cls = MassFormerPL
-	elif config_d["model_type"] == "graff":
-		model_cls = GrAFFPL
-	elif config_d["model_type"] == "precursor":
-		model_cls = PrecursorPL
-	elif config_d["model_type"] == "gnn":
-		model_cls = GNNPL
-	else:
-		raise ValueError(config_d["model_type"])
+
+	model_cls = get_model_cls(config_d["model_type"])
 	model = model_cls(**config_d)
 	model.train()
 

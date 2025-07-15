@@ -7,3 +7,4 @@ from .fraggnn_pl import FragGNNPL
 from .neims_pl import NeimsPL
 from .precursor_pl import PrecursorPL
 from .gnn_pl import GNNPL
+from .mces_pl import MCESPL

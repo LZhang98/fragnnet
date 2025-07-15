@@ -8,11 +8,9 @@ try:
 	import lightning.pytorch as pl
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
-
-
-class McesPL(pl.LightningModule):
+class MCESPL(pl.LightningModule):
     """
-    PyTorch Lightning module for MCES regression using SiameseGNNModel and McesDataset.
+    PyTorch Lightning module for MCES regression using SiameseGNNModel and MCESDataset.
     """
 
     def __init__(
