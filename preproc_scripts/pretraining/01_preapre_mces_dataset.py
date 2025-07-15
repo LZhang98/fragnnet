@@ -78,18 +78,26 @@ def process_mces(data_fp, mces_out_fp, mol_df, mce_min=0, mce_max=None):
 		h5f.create_dataset('smiles', data=[s.encode('utf-8') for s in smiles], dtype=h5py.string_dtype())
 		# create mces dataset
 		# 3 columns for [mol_idx_1, mol_idx_2, mces_value]
-		mces_dtype = np.dtype([('mol_idx_1', np.int32), ('mol_idx_2', np.int32), ('mces_value', np.float16)])
-		dataset = h5f.create_dataset('mces_pairs', 
+		# computation_indices_dtype = np.dtype([('mol_idx_1', np.int32), ('mol_idx_2', np.int32)])
+		#mces_dtype = np.dtype([('mol_idx_1', np.int32), ('mol_idx_2', np.int32)'mces_value', np.float16)])
+		computation_indices_dataset = h5f.create_dataset('computation_indices', 
 										compression='gzip',
 										shape=(0,), 
 										maxshape=(None,),
-										dtype=mces_dtype)
+										dtype=np.int32)
+  
+		mces_dataset = h5f.create_dataset('mces', 
+										compression='gzip',
+										shape=(0,), 
+										maxshape=(None,),
+										dtype=np.float16)
 		#else:
 		#	dataset = h5f['mces_pairs']
 		
 		# Process MCES values and append to dataset in batches
 		batch_size = 1000  # Adjust based on memory constraints
-		batch_data = []
+		computation_indices_batch = []
+		mces_batch_data = []
 		
 		mces_idx = 0
 		total_saved = 0
@@ -106,34 +114,41 @@ def process_mces(data_fp, mces_out_fp, mol_df, mce_min=0, mce_max=None):
 					mapped_j = smiles_idx_mapping[j]
 
 					# Add to batch
-					batch_data.append((mapped_i, mapped_j, np.float16(mces_values[mces_idx])))
-					
+					mces_batch_data.append(mces_values[mces_idx])
+					computation_indices_batch.append((mapped_i, mapped_j))
 					# If batch is full, append to HDF5
-					if len(batch_data) >= batch_size:
+					if len(mces_batch_data) >= batch_size:
 						# Convert to structured array
-						batch_array = np.array(batch_data, dtype=mces_dtype)
-						
+						computation_indices_batch_array = np.array(computation_indices_batch, dtype=np.int32)
+						mces_batch_array = np.array(mces_batch_data, dtype=np.float16)
+      
 						# Resize dataset to accommodate new data
-						current_size = dataset.shape[0]
-						new_size = current_size + len(batch_array)
-						dataset.resize((new_size,))
-						
+						# note mces and computation_indices should have the same size
+						current_size = mces_dataset.shape[0]
+						new_size = current_size + len(mces_batch_array)
+						computation_indices_dataset.resize((new_size, 2))
+						mces_dataset.resize((new_size, 1))
+
 						# Write batch to dataset
-						dataset[current_size:new_size] = batch_array
-						
-						total_saved += len(batch_data)
-						batch_data = []
-				
+						computation_indices_dataset[current_size:new_size] = computation_indices_batch_array
+						mces_dataset[current_size:new_size] = mces_batch_array
+
+						total_saved += len(mces_batch_data)
+						mces_batch_data = []
+
 				mces_idx += 1
 		
 		# Save any remaining data in the last batch
-		if batch_data:
-			batch_array = np.array(batch_data, dtype=mces_dtype)
-			current_size = dataset.shape[0]
-			new_size = current_size + len(batch_array)
-			dataset.resize((new_size,))
-			dataset[current_size:new_size] = batch_array
-			total_saved += len(batch_data)
+		if mces_batch_data:
+			mces_batch_array = np.array(mces_batch_data, dtype=np.float16)
+			current_size = mces_dataset.shape[0]
+			new_size = current_size + len(mces_batch_array)
+			computation_indices_dataset.resize((new_size, 2))
+			mces_dataset.resize((new_size, 1))
+
+			mces_dataset[current_size:new_size] = mces_batch_array
+			computation_indices_dataset[current_size:new_size] = computation_indices_batch_array
+			total_saved += len(mces_batch_data)
 		
 		print(f"Total MCES pairs saved: {total_saved}")
 
@@ -160,7 +175,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--mces_out_fp",
 		type=str,
-		default="./data/mces-data/mces_pairs_max10.h5",  # Changed to h5 extension
+		default="./data/mces-data/mces_pairs_max10_1.h5",  # Changed to h5 extension
 		help="Output .h5 file for filtered MCES index pairs"
 	)
 	parser.add_argument(

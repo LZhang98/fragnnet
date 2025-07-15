@@ -16,7 +16,6 @@ class MCESDataset(Dataset):
 		# Load data from .npz file (memory-mapped for efficiency)
 		self.data = h5py.File(mces_fp, 'r')
 		self.smiles = self.data['smiles'][:]  # Array of SMILES strings
-		self.mces = self.data['mces'][:]   # Array of MCES values (pairwise)
 		self.num_samples = len(self.mces)  # Number of MCES pairs
 		# TODO test this, we may need to do this on the fly
   		# Precompute RDKit molecule objects and PyG graphs for each SMILES
@@ -24,9 +23,9 @@ class MCESDataset(Dataset):
 		self.mol_pygs = [get_mol_graph(x) for x in self.mols]
 	
 	def __getitem__(self, idx):
-
-		mces = self.data['mces'][idx,0]
-		i,j = self.data['computation_indices'][idx,:-2]
+		# TODO Fix this,
+		mces = self.data['mces'][idx,-1]
+		i,j = self.data['computation_indices'][idx]
 		smiles_i = self.smiles[i]
 		smiles_j = self.smiles[j]
 		mol_pyg_i = self.mol_pygs[i]
