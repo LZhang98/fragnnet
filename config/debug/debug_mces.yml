@@ -3,6 +3,8 @@ wandb_tags:
 - pretraining
 
 # data stuff
+mces_fp: data/proc/mces/mces_pairs_max10.h5
+
 subsample_params:
   subsample_size: 40
   subsample_seed: 420

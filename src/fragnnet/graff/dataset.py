@@ -64,6 +64,10 @@ class SpecMolAnnDataset(SpecMolDataset):
 
 	@staticmethod
 	def get_data_dict_types():
+		# return list of data dict used for caching
+		# Spectral Preprocessed Shared Dictionary: spec_pp_sd
+  		# Molecular Preprocessed Shared Dictionary: mol_pp_sd
+		# Annotation Preprocessed Shared Dictionary: ann_pp_sd
 		return ["spec_pp_sd", "mol_pp_sd", "ann_pp_sd"]
 
 	def _setup_ann(self, spec_fp, mol_fp, split_dp):

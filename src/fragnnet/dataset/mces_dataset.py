@@ -12,9 +12,9 @@ class MCESDataset(Dataset):
 	The dataset is constructed from a .npz file containing arrays for 'smiles' and 'mces'.
 	"""
 
-	def __init__(self, hdf5_fp):
+	def __init__(self, split, mces_fp, **kwargs):
 		# Load data from .npz file (memory-mapped for efficiency)
-		self.data = h5py.File(hdf5_fp, 'r')
+		self.data = h5py.File(mces_fp, 'r')
 		self.smiles = self.data['smiles'][:]  # Array of SMILES strings
 		self.mces = self.data['mces'][:]   # Array of MCES values (pairwise)
 		self.num_samples = len(self.mces)  # Number of MCES pairs
@@ -42,3 +42,8 @@ class MCESDataset(Dataset):
 	def __len__(self):
 		# Return the number of MCES pairs in the dataset
 		return self.num_samples
+
+	@staticmethod
+	def get_data_dict_types():
+		# Return list of data dict type used for caching
+		return []

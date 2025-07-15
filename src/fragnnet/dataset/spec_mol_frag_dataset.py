@@ -64,6 +64,11 @@ class SpecMolFragDataset(SpecMolDataset):
 	
 	@staticmethod
 	def get_data_dict_types():
+		# return list of data dict used for caching
+		# Spectral Preprocessed Shared Dictionary: spec_pp_sd
+		# Molecular Preprocessed Shared Dictionary: mol_pp_sd
+		# Fragment Preloaded Shared Dictionary: frag_pl_sd
+		# Fragment Preprocessed Shared Dictionary: frag_pp_sd
 		return ["spec_pp_sd", "mol_pp_sd", "frag_pl_sd", "frag_pp_sd"]
 
 	def _preprocess_frag(self, frag_pl_sd: dict, frag_pp_sd: dict):

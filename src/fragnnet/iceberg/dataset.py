@@ -495,6 +495,9 @@ class SpecMolMagmaDataset(SpecMolDataset):
 
 	@staticmethod
 	def get_data_dict_types():
+		# return list of data dict used for caching
+		# Spectral Preprocessed Shared Dictionary: spec_pp_sd
+		# MAGMA Preprocessed Shared Dictionary: magma_pp_sd
 		return ["spec_pp_sd", "magma_pp_sd"]
 
 class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
