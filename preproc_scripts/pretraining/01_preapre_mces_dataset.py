@@ -174,13 +174,13 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--mces_out_fp",
 		type=str,
-		default="./data/mces-data/mces_pairs_max10.h5",  # Changed to h5 extension
+		default="./data/proc/mces-data/mces_pairs_max10.h5",  # Changed to h5 extension
 		help="Output .h5 file for filtered MCES index pairs"
 	)
 	parser.add_argument(
 		"--mol_df_fp",
 		type=str,
-		default="./data/mces-data/mol_df.pkl",
+		default="./data/proc/data/mces-data/mol_df.pkl",
 		help="Output .pkl file for mol_df"
 	)
 	args = parser.parse_args()

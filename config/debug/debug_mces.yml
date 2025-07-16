@@ -4,6 +4,7 @@ wandb_tags:
 
 # data stuff
 mces_fp: data/proc/mces/mces_pairs_max10.h5
+mol_fp: data/proc/mces/mol_df.pkl
 
 subsample_params:
   subsample_size: 40

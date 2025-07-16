@@ -1,7 +1,7 @@
 
-import numpy as np
 import h5py
-from fragnnet.utils.data_utils import mol_from_smiles
+import pandas as pd
+from fragnnet.utils.data_utils import mol_from_smiles, par_apply
 from fragnnet.utils.feat_utils import get_mol_graph
 from torch.utils.data import Dataset
 
@@ -12,16 +12,22 @@ class MCESDataset(Dataset):
 	The dataset is constructed from a .npz file containing arrays for 'smiles' and 'mces'.
 	"""
 
-	def __init__(self, split, mces_fp, **kwargs):
+	def __init__(self, split, mces_fp, mol_params: dict, **kwargs):
 		# Load data from .npz file (memory-mapped for efficiency)
 		self.data = h5py.File(mces_fp, 'r')
 		self.smiles = self.data['smiles'][:]  # Array of SMILES strings
-		self.num_samples = len(self.mces)  # Number of MCES pairs
-		# TODO test this, we may need to do this on the fly
-  		# Precompute RDKit molecule objects and PyG graphs for each SMILES
-		self.mols = [mol_from_smiles(x) for x in self.smiles]
-		self.mol_pygs = [get_mol_graph(x) for x in self.mols]
-	
+		self.num_samples = len(self.data['mces'])  # Number of MCES pairs
+
+		#self.mol_df = mol_from_smiles(self.smiles, mol_fp=mol_fp)
+		self.mol_params = mol_params
+		self.mol_df = pd.DataFrame({'smiles': self.smiles})
+		self.mol_df.loc[:, "mol"] = par_apply(self.mol_df["smiles"], lambda s: mol_from_smiles(s, ml_standardize=True))
+		self.mol_pygs = [get_mol_graph(mol, self.mol_params["pyg_node_feats"],
+				self.mol_params["pyg_edge_feats"],
+				self.mol_params["pyg_pe_embed_k"],
+				self.mol_params["pyg_bigraph"]) 
+        for mol in self.mol_df["mol"]]
+  
 	def __getitem__(self, idx):
 		# TODO Fix this,
 		mces = self.data['mces'][idx,-1]
