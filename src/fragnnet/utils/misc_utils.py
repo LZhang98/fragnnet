@@ -56,15 +56,58 @@ def booltype(x):
 	return bool(strtobool(x))
 
 def none_or_nan(thing):
+	"""
+	Check if a value is None, NaN, or empty, handling various data types safely.
+	
+	Args:
+		thing: Value to check for None, NaN, or emptiness
+		
+	Returns:
+		bool: True if the value is None, NaN, empty, or invalid, False otherwise
+	"""
+	# Check for None first
 	if thing is None:
 		return True
-	elif isinstance(thing,float) and np.isnan(thing):
+	
+	# Check for empty string
+	if isinstance(thing, str) and thing == "":
 		return True
-	elif pd.isnull(thing):
+	
+	# Check for NaN in floats
+	if isinstance(thing, float) and np.isnan(thing):
 		return True
-	elif isinstance(thing,str) and thing == "":
-		return True
-	else:
+	
+	# Handle different data types safely
+	try:
+		# For scalar values, use pd.isnull which handles NaN properly
+		if np.isscalar(thing):
+			return pd.isnull(thing)
+		
+		# For empty containers (lists, tuples, arrays)
+		if hasattr(thing, '__len__') and len(thing) == 0:
+			return True
+		
+		# For pandas Series/DataFrame
+		if isinstance(thing, (pd.Series, pd.DataFrame)):
+			return thing.isnull().all().all() if isinstance(thing, pd.DataFrame) else thing.isnull().all()
+		
+		# For numpy arrays
+		if isinstance(thing, np.ndarray):
+			return thing.size == 0 or (thing.dtype.kind in 'fc' and np.isnan(thing).all())
+		
+		# For other iterables, check if they're effectively empty
+		if hasattr(thing, '__iter__') and not isinstance(thing, str):
+			try:
+				return len(thing) == 0
+			except TypeError:
+				# Some iterables don't support len()
+				return False
+		
+		# Try pd.isnull as fallback for other types
+		return pd.isnull(thing)
+		
+	except (TypeError, ValueError, AttributeError):
+		# If all checks fail, assume it's not null/nan
 		return False
 
 @contextmanager
