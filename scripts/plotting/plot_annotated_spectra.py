@@ -4,31 +4,23 @@ import torch as th
 from tqdm import tqdm
 
 from fragnnet.utils.frag_utils import load_frag_d, th_long_to_mask
-from fragnnet.utils.plot_utils import plot_spectra_sparse, get_mol_im
+from fragnnet.utils.plot_utils import plot_spectra_sparse, get_mol_im, get_highlighted_bonds
 from fragnnet.utils.spec_utils import *
 
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem.Draw import rdMolDraw2D
-from rdkit.Chem import AllChem as Chem
+from rdkit.Chem import AllChem, Draw
 
 from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
-from rdkit.Chem import Draw, AllChem
-
-from io import BytesIO
-from math import ceil
-import re
-from matplotlib import pyplot as plt
-from matplotlib.gridspec import GridSpec
-from rdkit.Chem import Draw, AllChem
-import matplotlib as mpl
-import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.collections as mc
 from matplotlib.text import Text
-from fragnnet.utils.plot_utils import get_mol_im, get_highlighted_bonds
 from PIL import Image
+from io import BytesIO
+from math import ceil
+import re
 
 predicted_fp='data/predicted/nist20_d4_wr00_inchikey/kme8fry7_fraggnn_d4_nodemlp_mnce_nocp.pkl.gz'
 frag_dp = 'data/frag/nist20_d4_h4_isoFalse/dags'
@@ -250,9 +242,7 @@ def plot_spectra_axes(ax,
 	ax.spines['bottom'].set_position('zero')
 	ax.spines['top'].set_color('none')
 	
-	# note we will allow overlap between lines and annotations
-	adjust_text(bottom_annotations,bottom_annotations_x, time_lim=0.5, 
-				only_move="xy-")
+	# Note: Text overlaps may occur without adjust_text
 		
 	leg_font_size = 0.9*font_size
 	leg_kws = {'ncol': 1, 'fontsize': leg_font_size, "loc": "upper left"}
@@ -324,8 +314,8 @@ if __name__ == "__main__":
 	cc_bit_mask = th_long_to_mask(frag_cc_longs)
 
 	#print(frag_d)
-	num_forumla = 5
-	num_frags_per_forumla = 3
+	num_formula = 5
+	num_frags_per_formula = 3
 
 	display_data = []
 	peak_labels = {}
@@ -333,7 +323,7 @@ if __name__ == "__main__":
 
 	display_row = 0
 	peak_id = 1
-	for i,pf_idx in enumerate(pred_formula_prob_idx[0:num_forumla]):
+	for i,pf_idx in enumerate(pred_formula_prob_idx[0:num_formula]):
 
 		# get formula idx
 		f_idx = pred_formula_formula_idxs[pf_idx]
@@ -370,24 +360,24 @@ if __name__ == "__main__":
 		bf_pred_formula_node_logprobs = pred_formula_node_logprobs[bf_pred_formula_node_mask]
 		bf_pred_formula_node_probs = th.exp(bf_pred_formula_node_logprobs)
 		
-		for pfn_idx in th.argsort(bf_pred_formula_node_probs, descending = True)[0:num_frags_per_forumla]:
+		for pfn_idx in th.argsort(bf_pred_formula_node_probs, descending = True)[0:num_frags_per_formula]:
 			
 			node_idx = pred_joint_node_idxs[bf_pred_formula_node_mask][pfn_idx]
 			if bf_pred_formula_node_probs[pfn_idx] < 0.001:
 				continue
 			
 			node_idx = node_idx.item()
-			nodoe_cc_bit_mask = cc_bit_mask[node_idx]
+			node_cc_bit_mask = cc_bit_mask[node_idx]
 
 			
-			node_atom_indices = nodoe_cc_bit_mask.nonzero(as_tuple=True)[0].tolist()
+			node_atom_indices = node_cc_bit_mask.nonzero(as_tuple=True)[0].tolist()
 			node_bond_indices = get_highlighted_bonds(mol, node_atom_indices)
 			nf_pred_prob = bf_pred_formula_node_probs[pfn_idx].item()
 			formula_data["frag"].append(
 				{
 					"node_atom_indices": node_atom_indices,
 					"node_bond_indices": node_bond_indices,
-					"forumla_node_prob": nf_pred_prob
+					"formula_node_prob": nf_pred_prob
 				}
 			)
 		display_data.append(formula_data)
@@ -442,6 +432,6 @@ if __name__ == "__main__":
 			h_bond_list = frag['node_bond_indices']
 			#metrics = frag['metrics']
 			# = []
-			plot_mol_frag_axes(ax, mol, h_atom_list, h_bond_list,frag['forumla_node_prob'])
+			plot_mol_frag_axes(ax, mol, h_atom_list, h_bond_list, frag['formula_node_prob'])
 	
 	fig.savefig("./figs/annotation_test.png")
