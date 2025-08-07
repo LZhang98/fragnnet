@@ -21,12 +21,12 @@ module load python/3.10
 # go to script dir
 cd /home/feiw/feiw/frag-gnn
 
-DATASET_NAME=nist20mona23v3
+DATASET_NAME=nist20
 MAX_DEPTH=4
 MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=False
-SAVE_NAME=nist20mona23v3_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
+SAVE_NAME=nist20_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
 DSETS='nist20_hr'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+Cl]-'
 INST='FT QTOF IT'

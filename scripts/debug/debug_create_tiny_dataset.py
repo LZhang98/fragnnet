@@ -5,7 +5,7 @@ import pandas as pd
 if __name__ == "__main__":
     
 	#project_dp = os.path.join("data","debug")
-	src_proc_dp = "data/proc/nist20mona23v3"
+	src_proc_dp = "data/proc/nist20"
 	mol_df_fp = os.path.join(src_proc_dp,"mol_df.pkl")
 	#print(f"read in mol from {mol_df_fp}")
 	mol_df = pd.read_pickle(mol_df_fp)

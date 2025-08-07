@@ -12,6 +12,8 @@ split_dp: data/split/nist20_inchikey
 frag_dp: data/frag/nist20_d3/dags
 magma_dp: data/magma
 ann_fp: data/proc/nist20/ann_df.pkl
+mces_fp: data/proc/mces/mces_pairs_max10.h5
+
 subsample_params:
   subsample_size: 0
   subsample_seed: 420

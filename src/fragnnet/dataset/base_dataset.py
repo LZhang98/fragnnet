@@ -177,6 +177,8 @@ class BaseDataset(Dataset):
 
 	@staticmethod
 	def get_data_dict_types():
+		# return list of data dict type used for caching
+		# Spectral Preprocessed Shared Dictionary: spec_pp_sd
 		return ["spec_pp_sd"]
 
 	def _preprocess_spec(self,spec_pp_sd: dict):

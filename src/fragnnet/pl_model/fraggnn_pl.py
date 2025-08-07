@@ -5,7 +5,7 @@ import torch._dynamo as th_dynamo
 from fragnnet.model import FragGNNModel
 from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
 from fragnnet.utils.spec_utils import *
-from fragnnet.utils.misc_utils import safelog, th_temp_seed, scatter_logsumexp
+from fragnnet.utils.misc_utils import safelog,scatter_logsumexp
 from fragnnet.pl_model import SpectrumPL
 
 class FragGNNPL(SpectrumPL):

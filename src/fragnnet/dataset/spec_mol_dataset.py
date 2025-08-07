@@ -45,6 +45,9 @@ class SpecMolDataset(BaseDataset):
 	
 	@staticmethod
 	def get_data_dict_types():
+		# return list of data dict type used for caching
+		# Spectral Preprocessed Shared Dictionary: spec_pp_sd
+  		# Molecular Preprocessed Shared Dictionary: mol_pp_sd
 		return ["spec_pp_sd", "mol_pp_sd"]
 
 	def _get_mol_graph_size(self, mol_data):

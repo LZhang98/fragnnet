@@ -17,6 +17,14 @@
       }
     },
     {
+      "name": "mces_pretraining",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_mces.yml"]
+    },
+    {
       "name": "scripts/debug_tiny_um_prec",
       "type": "python",
       "request": "launch",

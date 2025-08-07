@@ -12,6 +12,7 @@ from fragnnet.utils.feat_utils import batch_mols_frags,get_frag_graph
 from fragnnet.utils.frag_utils import load_frag_d, NODE_FEAT_TO_IDX
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PREC_TYPE_TO_CMF_MASS_DIFF
+from fragnnet.utils.data_utils import deep_copy_data_dict
 from fragnnet.dataset import BaseDataset, SpecMolDataset
 
 class SpecMolFragDataset(SpecMolDataset):
@@ -62,6 +63,11 @@ class SpecMolFragDataset(SpecMolDataset):
 	
 	@staticmethod
 	def get_data_dict_types():
+		# return list of data dict used for caching
+		# Spectral Preprocessed Shared Dictionary: spec_pp_sd
+		# Molecular Preprocessed Shared Dictionary: mol_pp_sd
+		# Fragment Preloaded Shared Dictionary: frag_pl_sd
+		# Fragment Preprocessed Shared Dictionary: frag_pp_sd
 		return ["spec_pp_sd", "mol_pp_sd", "frag_pl_sd", "frag_pp_sd"]
 
 	def _preprocess_frag(self, frag_pl_sd: dict, frag_pp_sd: dict):
@@ -96,19 +102,19 @@ class SpecMolFragDataset(SpecMolDataset):
   
 		# spectra data
 		if self.spec_params["preprocess"]:
-			spec_data = self.spec_datas[idx].copy()
+			spec_data = deep_copy_data_dict(self.spec_datas[idx])
 		else:
 			spec_data = self._process_spec(spec_entry)
    
 		# molecule data
 		if self.mol_params["preprocess"]:
-			mol_data = self.mol_datas[mol_id].copy()
+			mol_data = deep_copy_data_dict(self.mol_datas[mol_id])
 		else:
 			mol_data = self._process_mol(mol_entry)
    
 		# frag data
 		if self.frag_params["preprocess"]:
-			frag_data = self.frag_data[mol_id].copy()
+			frag_data = deep_copy_data_dict(self.frag_data[mol_id])
    
 			#formula_peak_mzs = frag_entry["formula_peak_mzs"]
 			#formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]		
@@ -152,7 +158,7 @@ class SpecMolFragDataset(SpecMolDataset):
 				frag_data["frag_pyg"] = frag_pyg
     
 		elif self.frag_params["preload"]:
-			frag_entry = self.frag_entries[mol_id].copy()
+			frag_entry = deep_copy_data_dict(self.frag_entries[mol_id])
 			#frag_entry['frag_pyg'] = frag_entry['frag_pyg'].clone() # clone to avoid modifying the original one
 			frag_data = self._process_frag(frag_entry, spec_entry)
 		else:

@@ -57,12 +57,12 @@ pip install -I ${WORKING_DIR}
 
 # Copy files
 # create local dir
-DATASET_NAME=nist20mona23v3
+DATASET_NAME=nist20
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=False
-SAVE_NAME=nist20mona23v3_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
+SAVE_NAME=nist20_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
 DSETS='nist20_hr'
 PREC='[M+H]+ [M-H]- [M+H-H2O]- [M+Na]+ [M+K]+ [M+H-NH3]+ [M+H-2H2O]+ [M-H-CO2]- [M+NH4]+ [M-H-H2O]-'
 INST='FT QTOF IT'

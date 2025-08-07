@@ -6,14 +6,15 @@ import numpy as np
 import joblib
 from tqdm import tqdm
 from pprint import pformat, pprint
-from typing import Tuple, Union, List, TYPE_CHECKING
+from typing import Tuple, List, TYPE_CHECKING
 import pyteomics
 from pyteomics.mass import Composition
-import rdkit.RDLogger as RDLogger
 
 from fragnnet.utils.misc_utils import np_temp_seed, none_or_nan
-from fragnnet.utils.formula_utils import MASS, ELECTRON_MASS, parse_formula, NEUTRON_MASS
-
+from fragnnet.utils.formula_utils import MASS, ELECTRON_MASS, NEUTRON_MASS
+import copy
+import torch as th
+    
 # don't do expesive import in runtime
 if TYPE_CHECKING:
 	import rdkit
@@ -1196,3 +1197,26 @@ def parse_mass_gym_ce_str(ce_str):
 		ce = f"{ce} eV"
 
 	return ce, normalized, ramped
+
+def deep_copy_data_dict(data_dict):
+    """Deep copy data dict, used to avoid modifying the original dict.
+    
+    Handles key-tensor pairs and key-ROMol pairs specifically.
+
+    Args:
+        data_dict (dict): Data dict to copy.
+
+    Returns:
+        dict: Deep copied dict.
+    """
+    copied_dict = {}
+    for key, value in data_dict.items():
+        if isinstance(value, th.Tensor):
+            # Use .clone() for tensors to create a deep copy
+			# make sure tensors are detached to from computation graph
+            copied_dict[key] = value.detach().clone()
+        else:
+            # Use deepcopy for other types
+            copied_dict[key] = copy.deepcopy(value)
+    
+    return copied_dict

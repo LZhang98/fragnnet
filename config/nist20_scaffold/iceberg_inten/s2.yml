@@ -8,7 +8,7 @@ seed: 444303
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_scaffold
-magma_dp: data/magma/inten/nist20mona23v3_d4_wr00_scaffold_100_s2
+magma_dp: data/magma/inten/nist20_d4_wr00_scaffold_100_s2
 spec_params:
   preprocess: True
 mol_params:
