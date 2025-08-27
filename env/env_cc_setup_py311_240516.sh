@@ -25,6 +25,7 @@ pip install --no-index pytorch_lightning==2.4.0
 pip install --no-index dgl==2.4.0
 pip install --no-index omegaconf
 pip install --no-index cython==3.0.12
+pip install --no-index h5py
 
 #pip install CairoSVG
 

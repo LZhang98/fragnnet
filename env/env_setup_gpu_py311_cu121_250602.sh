@@ -28,5 +28,7 @@ pip install cython==3.0.12
 pip install omegaconf
 pip install pyteomics
 pip install notebook
+pip install scikit-learn
+pip install h5py
 
 pip install --no-deps -I -e .
