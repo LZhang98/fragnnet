@@ -118,7 +118,7 @@ def main(args):
 			'cp ${FRAGNNET_DP}/setup.cfg ${WORKING_DIR}/',
 			'cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/',
 			'# install with out dependencies, assume all dependencies are installed manually'
-			'pip install -I  --no-deps ${WORKING_DIR}',
+			'pip install -I --no-deps ${WORKING_DIR}',
 			'',
 		]
 	)

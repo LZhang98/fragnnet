@@ -34,4 +34,4 @@ pip install cysignals
 
 #pip install CairoSVG
 
-pip install -I -e .
+pip install --no-deps -I -e .

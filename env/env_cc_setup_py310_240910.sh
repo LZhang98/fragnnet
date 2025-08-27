@@ -35,4 +35,4 @@ pip install pyteomics
 
 # this is only needed on CC because there is no internet 
 # pip install wandb[sweeps]
-pip install -I -e .
+pip install --no-deps -I -e .

@@ -29,4 +29,4 @@ pip install omegaconf
 pip install pyteomics
 pip install notebook
 
-pip install -I -e .
+pip install --no-deps -I -e .

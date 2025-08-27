@@ -28,4 +28,4 @@ pip install --no-index cython==3.0.12
 
 #pip install CairoSVG
 
-pip install -I -e .
+pip install --no-deps -I -e .
