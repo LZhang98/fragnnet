@@ -40,7 +40,7 @@ python -m pip install --no-deps ${MYOPIC_SRC}
 python -m myopic_mces.myopic_mces \
     --threshold 10 --solver CPLEX_CMD \
     --solver_onethreaded --solver_no_msg \
-    --hdf5_mode $INPUT_FILE
+    --hdf5_mode $INPUT_FILE tmpout
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID} finished running
