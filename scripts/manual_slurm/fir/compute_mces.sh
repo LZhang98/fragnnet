@@ -5,7 +5,6 @@
 #SBATCH --job-name=compute_mces
 #SBATCH --mem=192G
 #SBATCH --cpus-per-task=192
-#SBATCH --time=0-12:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
 #SBATCH --output=./jobs/compute_mces_array_job_%A_%a.out
