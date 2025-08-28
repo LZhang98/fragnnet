@@ -117,6 +117,7 @@ def main(args):
 			'rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" ${FRAGNNET_DP}/src ${WORKING_DIR}',
 			'cp ${FRAGNNET_DP}/setup.cfg ${WORKING_DIR}/',
 			'cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/',
+			'cp ${FRAGNNET_DP}/pyproject.toml ${WORKING_DIR}/',
 			'# install with out dependencies, assume all dependencies are installed manually',
 			'pip install -I --no-deps ${WORKING_DIR}',
 			'',
