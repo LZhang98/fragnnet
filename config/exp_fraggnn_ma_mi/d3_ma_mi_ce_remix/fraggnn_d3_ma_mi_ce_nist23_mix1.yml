@@ -25,10 +25,10 @@ wandb_tags:
 - m+na
 - m+cl
 
-spec_fp: data/proc/nist23mona23/spec_df.pkl
-mol_fp: data/proc/nist23mona23/mol_df.pkl
-split_dp: data/split/nist23mona23_ma_mi_inchikey_mix1
-frag_dp: data/frag/nist23mona23_ma_mi_d3_h4_isoFalse/dags
+spec_fp: data/proc/nist23/spec_df.pkl
+mol_fp: data/proc/nist23/mol_df.pkl
+split_dp: data/split/nist23_ma_mi_inchikey_mix1
+frag_dp: data/frag/nist23_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 
