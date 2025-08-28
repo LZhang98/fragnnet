@@ -20,7 +20,7 @@ def main(args):
 				f"#SBATCH --job-name={args.job_name}",
 				f"#SBATCH --mem={args.mem}G",
 				f"#SBATCH --cpus-per-task={args.cpu}",
-				f"#SBATCH --time=0-{args.time}:00",
+				f"#SBATCH --time=0-{args.time}:00:00",
 				f"#SBATCH --mail-user={args.cc_email}",
 				"#SBATCH --mail-type=ALL"
 			]
