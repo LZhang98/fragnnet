@@ -26,14 +26,14 @@ MYOPIC_SRC=./wheels/myopic_mces-1.0.1.tar.gz
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID} is allocated resources
-echo "SLURM_ARRAY_TASK_ID: ${SLURM_ARRAY_TASK_ID}"
 
 # create local env
 virtualenv ${SLURM_TMPDIR}/MCES
 source ${SLURM_TMPDIR}/MCES/bin/activate
 pip install --no-index --upgrade pip
-pip install --no-index networkx==3.0 scipy==1.10.1 pulp==2.7.0 joblib==1.2.0 h5py
-python -m pip install --no-deps ${MYOPIC_SRC}
+pip install --no-index networkx==3.0 pulp==2.7.0 scipy==1.15.2 joblib==1.2.0 h5py
+cp ${MYOPIC_SRC} ${SLURM_TMPDIR}/myopic_mces-1.0.1.tar.gz
+pip install --no-deps ${SLURM_TMPDIR}/myopic_mces-1.0.1.tar.gz
 
 # run python script
 #cd ${SLURM_TMPDIR}

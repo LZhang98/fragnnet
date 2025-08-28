@@ -20,7 +20,7 @@ module load rdkit/2023.09.5
 CPLEX_HOME=/home/feiw/ibm/ILOG/CPLEX_Studio2211/cplex/
 PATH=$CPLEX_HOME/bin/x86-64_linux/:$PATH
 INPUT_FILE=./nist_23_inputs/mces_input_1.h5
-MYOPIC_SRC=./wheels/myopic_mces-1.0.1-py3-none-any.whl
+MYOPIC_SRC=./wheels/myopic_mces-1.0.1.tar.gz
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID} is allocated resources
@@ -29,9 +29,9 @@ echo `date`: Job ${SLURM_JOB_ID} is allocated resources
 virtualenv ${SLURM_TMPDIR}/MCES
 source ${SLURM_TMPDIR}/MCES/bin/activate
 pip install --no-index --upgrade pip
-pip install --no-index networkx==3.0 pulp==2.7.0 scipy==1.10.1 joblib==1.2.0 h5py
-cp ${MYOPIC_SRC} ${SLURM_TMPDIR}/myopic_mces.whl
-python -m pip install --no-deps ${SLURM_TMPDIR}/myopic_mces.whl
+pip install --no-index networkx==3.0 pulp==2.7.0 scipy==1.15.2 joblib==1.2.0 h5py
+cp ${MYOPIC_SRC} ${SLURM_TMPDIR}/myopic_mces-1.0.1.tar.gz
+pip install --no-deps ${SLURM_TMPDIR}/myopic_mces-1.0.1.tar.gz
 
 # run python script
 #cd ${SLURM_TMPDIR}
