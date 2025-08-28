@@ -182,6 +182,8 @@ def main(args):
 
 	for name in data_keyword:
 		path_value  = config_d[name]
+		if not os.path.exists(path_value):
+			raise FileNotFoundError(f"File not found: {path_value}")
 		if path_value.startswith('./'):
 			path_value = path_value[2:]
 		if name not in config_d:
