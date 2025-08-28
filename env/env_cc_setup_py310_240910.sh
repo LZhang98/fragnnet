@@ -31,8 +31,9 @@ pip install --no-index pytorch_lightning==2.1.2
 pip install CairoSVG
 pip install --no-index dgl==2.0.0
 pip install --no-index omegaconf
+pip install --no-index h5py
 pip install pyteomics
 
 # this is only needed on CC because there is no internet 
 # pip install wandb[sweeps]
-pip install -I -e .
+pip install --no-deps -I -e .

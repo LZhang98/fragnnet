@@ -25,8 +25,9 @@ pip install pytorch_lightning==2.4.0
 pip install dgl==1.0.4 -f https://data.dgl.ai/wheels/repo.html
 pip install omegaconf
 pip install cython==3.0.12
-pip install omegaconf
 pip install pyteomics
 pip install notebook
+pip install scikit-learn
+pip install h5py
 
-pip install -I -e .
+pip install --no-deps -I -e .
