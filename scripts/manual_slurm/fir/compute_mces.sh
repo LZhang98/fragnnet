@@ -1,4 +1,3 @@
-
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
@@ -7,9 +6,8 @@
 #SBATCH --cpus-per-task=192
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=./jobs/compute_mces_array_job_%A_%a.out
-#SBATCH --error=./jobs/compute_mces_array_job_%A_%a.err
-#SBATCH --array=1-106
+#SBATCH --output=./jobs/compute_mces_array_job_%j.out
+#SBATCH --error=./jobs/compute_mces_array_job_%j.err
 #SBATCH --time=01:00:00
 
 # load modules
@@ -21,12 +19,11 @@ module load rdkit/2023.09.5
 # load CPLEX
 CPLEX_HOME=/home/feiw/ibm/ILOG/CPLEX_Studio2211/cplex/
 PATH=$CPLEX_HOME/bin/x86-64_linux/:$PATH
-INPUT_FILE=./nist_23_inputs/mces_input_${SLURM_ARRAY_TASK_ID}.h5
+INPUT_FILE=./nist_23_inputs/mces_input_1.h5
 MYOPIC_SRC=./wheels/myopic_mces-1.0.1-py3-none-any.whl
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID} is allocated resources
-echo "SLURM_ARRAY_TASK_ID: ${SLURM_ARRAY_TASK_ID}"
 
 # create local env
 virtualenv ${SLURM_TMPDIR}/MCES
