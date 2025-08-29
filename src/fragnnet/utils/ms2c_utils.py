@@ -273,8 +273,8 @@ def run_spectra_prediction(model,
 				 mol_data_ptr:str|pd.DataFrame,
 				 spec_data_ptr:str|pd.DataFrame,
 				 device:str,
-				 frag_dp:str = None,
-				 magma_dp:str = None,
+				 frag_dp:str|None= None,
+				 magma_dp:str|None = None,
 				 validate:bool = False,
 				 ):
 	"""_summary_

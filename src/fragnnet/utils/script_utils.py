@@ -4,7 +4,7 @@ from tqdm import tqdm
 import tempfile
 import os
 
-from fragnnet.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO, check_wandb
+from fragnnet.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO
 from fragnnet.pl_model import FragGNNPL
 from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
