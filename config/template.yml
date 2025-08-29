@@ -1,6 +1,6 @@
 # wandb
-wandb_entity: fragnnet # TODO: change to your wandb entity
-wandb_project: fragnnet # TODO: change to your wandb project
+wandb_entity: frag-gnn # TODO: change to your wandb entity
+wandb_project: frag-gnn # TODO: change to your wandb project
 wandb_name: template
 wandb_group:
 wandb_tags:
