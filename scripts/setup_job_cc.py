@@ -182,13 +182,13 @@ def main(args):
 
 	for name in data_keyword:
 		path_value  = config_d[name]
-		if not os.path.exists(path_value):
-			raise FileNotFoundError(f"File not found: {path_value}")
 		if path_value.startswith('./'):
 			path_value = path_value[2:]
 		if name not in config_d:
 			print(f"missing {name} in config file")
 		if name != 'frag_dp':
+				if not os.path.exists(path_value):
+					raise FileNotFoundError(f"File not found: {path_value}")
 				print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
 				script_lines.extend(
 					[f"# copy {name} file from {path_value} to slurm tmp dir",
@@ -209,12 +209,14 @@ def main(args):
 					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{frag_dp+tar_ext} ${{WORKING_DIR}}",
 					f"tar -xf ${{WORKING_DIR}}/{frag_dp+tar_ext} -C ${{WORKING_DIR}}/{frag_dp.rsplit('/',1)[0]}",
 					])
-			else:
+			elif os.path.isdir(dag_dp):
 				print(f"> adding cmd to copy directory {dag_dp}")
 				script_lines.extend(
 	   				[f"# copy {name} file from {dag_dp} to slurm tmp dir",
 					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{dag_dp} ${{WORKING_DIR}}"
 					])
+			else:
+				raise FileNotFoundError(f"File not found: {frag_dp} or {frag_dp+ext}")
 
     # soft link back to home directy for wandb
 	script_lines.extend(
