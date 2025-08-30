@@ -36,7 +36,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--model_ckpt",
 		type=str,
-		default=None
+		default='saved_ckpts/nist20_inchikey_fraggnn_d3_ma_mi_all_mol_conditon_v2_ikohsc16.ckpt'
 	)
 	parser.add_argument(
 		"--eval_split", 
@@ -143,7 +143,7 @@ if __name__ == "__main__":
 	dl = init_dataloader(ds, config_d)
 	model_cls = FragGNNPL
 	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-	batch_cutoff = 16
+
 
 	ckpt = th.load(ckpt_fp, map_location="cpu", weights_only=False)
 	# decompile
@@ -160,6 +160,7 @@ if __name__ == "__main__":
 	model.eval()
  
 	# run inference
+	batch_cutoff = 16
 	vals = run_inference(
 		dl, 
 		model, 
