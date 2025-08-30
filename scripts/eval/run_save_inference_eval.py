@@ -1,7 +1,7 @@
 from fragnnet.runner import load_config, init_dataloader
 from fragnnet.pl_model import FragGNNPL
 from fragnnet.dataset import SpecMolFragDataset
-from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference
+from fragnnet.utils.script_utils import run_inference
 from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 import torch as th
@@ -160,14 +160,15 @@ if __name__ == "__main__":
 	model.eval()
  
 	# run inference
-	batch_cutoff = 16
+	batch_cutoff = int(1e6) # this is effectively inf
+	nb_iso = False
 	vals = run_inference(
 		dl, 
 		model, 
 		device, 
 		eval_split, 
 		batch_cutoff, 
-		config_d["nb_iso"], 
+		nb_iso, 
 		output_subset=output_subset, 
 		untransform_spec=args.untransform_spec
 	)
