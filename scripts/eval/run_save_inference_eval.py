@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from fragnnet.runner import load_config, init_dataloader
@@ -199,7 +200,7 @@ if __name__ == "__main__":
 	
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
-
+			print(batch_result)
 			eval_scores_d = {}
 			for eval_score_type in eval_score_types:
 				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
@@ -218,7 +219,8 @@ if __name__ == "__main__":
 				for eval_score_type in eval_score_types:
 					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
 				preds_l.append(data_row)
-
+			# this is for debug
+			break # only one batch for testing
 	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos'] + eval_score_types
 	df = pd.DataFrame(preds_l, columns=columns)
 
