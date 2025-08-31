@@ -141,6 +141,10 @@ if __name__ == "__main__":
 	config_d["dynamic_batch_sampler"] = False
 	config_d["group_sampler"] = False 
 	config_d["simple_group_sampler"] = False
+	# override batch size
+	config_d["train_batch_size"] = 8
+	config_d["eval_batch_size"] = 8 
+
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
 	ds = ds_cls(split=eval_split, **config_d)
