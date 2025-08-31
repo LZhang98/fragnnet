@@ -144,7 +144,6 @@ if __name__ == "__main__":
 	model_cls = FragGNNPL
 	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 
-
 	ckpt = th.load(ckpt_fp, map_location="cpu", weights_only=False)
 	# decompile
 	assert not config_d["compile"]
@@ -170,18 +169,18 @@ if __name__ == "__main__":
 		batch_cutoff, 
 		nb_iso, 
 		output_subset=output_subset, 
-		untransform_spec=args.untransform_spec
+		untransform_spec=True
 	)
 	model.cpu()
 	# save vals
 	model_save_dp = os.path.join(args.save_dp,args.wandb_run_id)
 	os.makedirs(model_save_dp,exist_ok=True)
-	seed_vals_fp = os.path.join(model_save_dp,f"{eval_split}.pkl")
-	if os.path.isfile(seed_vals_fp):
-		print(f"> Info: {seed_vals_fp} exists already")
+	vals_fp = os.path.join(model_save_dp,f"{eval_split}.pkl")
+	if os.path.isfile(vals_fp):
+		print(f"> Info: {vals_fp} exists already")
 		if force_overwrite:
-			print(f"> Warning: overwriting {seed_vals_fp}")
-			th.save(vals, seed_vals_fp)
+			print(f"> Warning: overwriting {vals_fp}")
+			th.save(vals, vals_fp)
 	else:
-		th.save(vals, seed_vals_fp)
+		th.save(vals, vals_fp)
 
