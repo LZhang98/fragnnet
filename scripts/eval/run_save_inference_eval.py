@@ -137,6 +137,10 @@ if __name__ == "__main__":
 	config_d["output_formula_str"] = False
 	config_d["spec_params"]["prec_type_str"] = False
 	config_d["frag_params"]["formula_str"] = False
+ 	# disable sampler
+	config_d["dynamic_batch_sampler"] = False
+	config_d["group_sampler"] = False 
+	config_d["simple_group_sampler"] = False
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
 	ds = ds_cls(split=eval_split, **config_d)
