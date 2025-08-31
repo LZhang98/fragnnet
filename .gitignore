@@ -39,3 +39,4 @@ model_eval
 ckpts
 wandb_venv
 containers
+output/inference_eval/ikohsc16/predictions_test.pkl
