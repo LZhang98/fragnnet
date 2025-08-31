@@ -28,6 +28,7 @@ pip install --no-index joblib==1.3.2
 pip install --no-index matplotlib
 pip install --no-index pytest
 pip install --no-index pytorch_lightning==2.1.2
+pip install --no-index numpy==1.26.4
 pip install CairoSVG
 pip install --no-index dgl==2.0.0
 pip install --no-index omegaconf

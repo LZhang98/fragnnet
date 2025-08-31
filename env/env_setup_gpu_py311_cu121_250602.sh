@@ -29,5 +29,6 @@ pip install pyteomics
 pip install notebook
 pip install scikit-learn
 pip install h5py
+pip install --no-index numpy==1.26.4
 
 pip install --no-deps -I -e .
