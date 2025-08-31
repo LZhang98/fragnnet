@@ -322,7 +322,7 @@ checkpoint_metric_mode: max
 checkpoint_save_last: True
 upload_checkpoints: False
 disable_checkpoints: False
-delete_checkpoints: True
+delete_checkpoints: False
 pl_enable_progress_bar: True
 sparse_cosine_similarity: False
 debug_val_loop_trigger: False
