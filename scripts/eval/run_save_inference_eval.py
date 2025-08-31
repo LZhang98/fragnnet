@@ -1,8 +1,10 @@
+import pandas as pd
+from tqdm import tqdm
 from fragnnet.runner import load_config, init_dataloader
 from fragnnet.pl_model import FragGNNPL
 from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.utils.script_utils import run_inference
-from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb
+from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb, to_device
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 import torch as th
 import argparse
@@ -166,7 +168,62 @@ if __name__ == "__main__":
 	model.to(device)
 	model.eval()
  
+
+	eval_score_types = []
+
+	for score_type in config_d['auxiliary_scores']:
+		if "_hun" in score_type:
+			eval_score_types.append(score_type)
+		else:
+			for bin_res in config_d['eval_mz_bin_res']:
+				eval_score_types.append(f"{score_type}_{bin_res}")
+	
+	preds_l = []
+	with th.inference_mode():
+		for _, batch_input in tqdm(enumerate(dl),total=len(dl), desc=" Running inference"):
+			spec_ids = batch_input['spec_unique_id']
+			mol_ids = batch_input['mol_id']
+
+			batch_input = to_device(batch_input, device)
+			# use existing validate to compute cos sim and etc
+			batch_result = model._common_step(batch_input, split="test", log=False)
+			
+			batch_size = batch_input['batch_size'].detach().cpu()
+
+			pred_mzs = batch_result["pred_mzs"].detach().cpu()
+			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
+			
+			has_oos_b = "pred_oos_logprobs" in batch_result
+			if has_oos_b:
+				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
+	
+			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
+			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+
+			eval_scores_d = {}
+			for eval_score_type in eval_score_types:
+				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
+				#print(eval_score_type, eval_scores_d[eval_score_type])
+			for b_idx in range(batch_size):
+				b_peak_mask = pred_batch_idxs == b_idx
+	
+				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
+				b_spec_id = spec_ids[b_idx]
+				b_mol_id = mol_ids[b_idx]
+
+				b_spec_mzs = pred_mzs[b_peak_mask]
+				b_spec_ints = pred_ints[b_peak_mask]
+
+				data_row = [b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
+				for eval_score_type in eval_score_types:
+					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
+				preds_l.append(data_row)
+
+	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos'] + eval_score_types
+	df = pd.DataFrame(preds_l, columns=columns)
+
 	# run inference
+	"""
 	batch_cutoff = int(1e6) # this is effectively inf
 	nb_iso = False
 	vals = run_inference(
@@ -191,4 +248,4 @@ if __name__ == "__main__":
 			th.save(vals, vals_fp)
 	else:
 		th.save(vals, vals_fp)
-
+	"""
