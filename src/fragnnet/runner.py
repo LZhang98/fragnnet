@@ -520,44 +520,41 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 	if config_d["compile"]:
 		print(model.dynamo_prof.report())
 
-	if not trainer.interrupted:
-		# find checkpoints
+	# Handle checkpoint cleanup/saving after training
+	if not trainer.interrupted and not config_d["disable_checkpoints"]:
 		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
-		upload_ckpt_flag = config_d["upload_checkpoints"] and \
-			not config_d["disable_checkpoints"]
-		delete_before_ckpt_flag = not config_d["upload_checkpoints"] and \
-			not config_d["disable_checkpoints"]
-		transfer_ckpt_flag = not config_d["delete_checkpoints"] and \
-			delete_before_ckpt_flag
-		if upload_ckpt_flag:
+		
+		if config_d["upload_checkpoints"]:
+			# Upload checkpoints to wandb
 			for ckpt_fp in ckpt_fps:
 				wandb.save(ckpt_fp, base_path=os.path.dirname(ckpt_dp))
-		elif transfer_ckpt_flag:
+		
+		# Temporarily move checkpoints out of the way before wandb.finish()
+		# to prevent wandb from syncing them if we don't want to keep them
+		temp_ckpt_dir = None
+		if not config_d["upload_checkpoints"] and not config_d["delete_checkpoints"]:
 			temp_ckpt_dir = tempfile.TemporaryDirectory()
 			for ckpt_fp in ckpt_fps:
-				shutil.move(ckpt_fp,os.path.join(temp_ckpt_dir.name,os.path.basename(ckpt_fp)))
-		elif delete_before_ckpt_flag:
-			for ckpt_fp in ckpt_fps:
-				os.remove(ckpt_fp)
+				shutil.move(ckpt_fp, os.path.join(temp_ckpt_dir.name, os.path.basename(ckpt_fp)))
 
 	if wandb_mode != "disabled":
 		wandb.finish()
 
-	if not trainer.interrupted:
-		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
-		delete_after_ckpt_flag = config_d["delete_checkpoints"] and \
-			not config_d["disable_checkpoints"]
-		assert not (delete_after_ckpt_flag and transfer_ckpt_flag)
-		if transfer_ckpt_flag:
-			# transfer checkpoints
-			for ckpt_fp in glob.glob(os.path.join(temp_ckpt_dir.name,"*.ckpt")):
-				shutil.move(ckpt_fp,os.path.join(ckpt_dp,os.path.basename(ckpt_fp)))
-			temp_ckpt_dir.cleanup()
-		elif delete_after_ckpt_flag:
+	# Final checkpoint cleanup after wandb is finished
+	if not trainer.interrupted and not config_d["disable_checkpoints"]:
+		if config_d["delete_checkpoints"]:
+			# Delete all checkpoints
+			ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
 			for ckpt_fp in ckpt_fps:
 				os.remove(ckpt_fp)
-		# cleanup (post-wandb)
-		if job_id_fp:
-			os.remove(job_id_fp)
+		elif temp_ckpt_dir is not None:
+			# Restore checkpoints that were temporarily moved
+			for ckpt_fp in glob.glob(os.path.join(temp_ckpt_dir.name,"*.ckpt")):
+				shutil.move(ckpt_fp, os.path.join(ckpt_dp, os.path.basename(ckpt_fp)))
+			temp_ckpt_dir.cleanup()
+	
+	# cleanup job tracking file
+	if job_id_fp:
+		os.remove(job_id_fp)
 
 	return model
