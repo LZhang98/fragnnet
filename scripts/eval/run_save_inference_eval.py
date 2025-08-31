@@ -222,13 +222,16 @@ if __name__ == "__main__":
 					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
 				preds_l.append(data_row)
 			# this is for debug
-			break # only one batch for testing
+			# break # only one batch for testing
 
 	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos'] + eval_score_types
 	df = pd.DataFrame(preds_l, columns=columns)
 	model_save_dp = os.path.join(args.save_dp,args.wandb_run_id)
 	os.makedirs(model_save_dp,exist_ok=True)
-	#print(df.head())
+	for eval_score_type in eval_score_types:
+		print(df[eval_score_type].mean(), df[eval_score_type].std())
+		#print(df['spec_id'])
+		#print(df.head())
 	df.to_pickle(os.path.join(model_save_dp,f"predictions_{eval_split}.pkl"))
 	# run inference
 	"""
