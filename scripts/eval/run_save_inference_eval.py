@@ -65,8 +65,8 @@ if __name__ == "__main__":
 		default=[
 			"cos_sim",
 			"cos_hun",
-			"true_oos_prob",
-			"true_oos_e"
+			#"true_oos_prob",
+			#"true_oos_e"
 		]
 	)
 	parser.add_argument(
@@ -145,8 +145,8 @@ if __name__ == "__main__":
 	config_d["group_sampler"] = False 
 	config_d["simple_group_sampler"] = False
 	# override batch size
-	config_d["train_batch_size"] = 8
-	config_d["eval_batch_size"] = 8 
+	config_d["train_batch_size"] = 4
+	config_d["eval_batch_size"] = 4
 
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
@@ -186,9 +186,9 @@ if __name__ == "__main__":
 			mol_ids = batch_input['mol_id']
 
 			batch_input = to_device(batch_input, device)
+			# print(batch_input)
 			# use existing validate to compute cos sim and etc
-			batch_result = model._common_step(batch_input, split="test", log=False)
-			
+			batch_result = model._common_step(batch_input, split=config_d, log=False)
 			batch_size = batch_input['batch_size'].detach().cpu()
 
 			pred_mzs = batch_result["pred_mzs"].detach().cpu()
@@ -200,7 +200,7 @@ if __name__ == "__main__":
 	
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
-			print(batch_result)
+			
 			eval_scores_d = {}
 			for eval_score_type in eval_score_types:
 				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
@@ -211,19 +211,25 @@ if __name__ == "__main__":
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
 				b_spec_id = spec_ids[b_idx]
 				b_mol_id = mol_ids[b_idx]
-
+				b_spec_ce = batch_input['spec_ce'][b_idx].item()
+				b_spec_prec_type = batch_input['spec_prec_type'][b_idx].item()
+				spec_inst_type = batch_input['spec_inst_type'][b_idx].item()
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				data_row = [b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
+				data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, spec_inst_type, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
 				for eval_score_type in eval_score_types:
 					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
 				preds_l.append(data_row)
 			# this is for debug
 			break # only one batch for testing
-	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos'] + eval_score_types
-	df = pd.DataFrame(preds_l, columns=columns)
 
+	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos'] + eval_score_types
+	df = pd.DataFrame(preds_l, columns=columns)
+	model_save_dp = os.path.join(args.save_dp,args.wandb_run_id)
+	os.makedirs(model_save_dp,exist_ok=True)
+	#print(df.head())
+	df.to_pickle(os.path.join(model_save_dp,f"predictions_{eval_split}.pkl"))
 	# run inference
 	"""
 	batch_cutoff = int(1e6) # this is effectively inf
