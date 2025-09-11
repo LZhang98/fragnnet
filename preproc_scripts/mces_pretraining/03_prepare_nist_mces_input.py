@@ -86,6 +86,12 @@ if __name__ == "__main__":
 		default="./data/mces-data/nist23_inputs",
 		help="Output directory for HDF5 files"
 	)
+	parser.add_argument(
+		"--batch_size",
+		type=int,
+		default=10000,
+		help="Batch size for processing query SMILES (default: 10000)"
+	)
 
 	args = parser.parse_args()
 	print(f"Loading bio_20k CSV file {args.bio_20k_csv_fp}")
@@ -103,7 +109,7 @@ if __name__ == "__main__":
 	print(f"Loaded {len(query_smiles)} query SMILES from {args.mol_df_fp}")
  
 	os.makedirs(args.hdf5_output_dp, exist_ok=True)
-	batch_size = 500
+	batch_size = args.batch_size
 	for i in tqdm(range(0, len(query_smiles), batch_size), desc=f"Processing batches (size {batch_size})"):
 
 		compute_indices = create_input_data(query_smiles[i:i + batch_size], base_smiles)

@@ -12,6 +12,7 @@ from fragnnet.utils.nn_utils import decompile_jit_ckpt
 import torch as th
 import argparse
 import os
+import tempfile
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
@@ -71,7 +72,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--task_dp",
 		type=str,
-		default="data/proc",
+		default="output/mimedb",
 		help="Directory containing mol_df.pkl.gz and spec_df.pkl.gz files"
 	)
 
@@ -86,14 +87,11 @@ if __name__ == "__main__":
 	else:
 		ckpt_fp = args.model_ckpt
   
-	eval_split = args.eval_split
 	save_dp = args.save_dp
-	force_overwrite = args.force_overwrite
-	if args.output_everything:
-		output_subset = None
-	else:
-		output_subset = set(args.output_subset)
-
+	#if args.output_everything:
+	output_subset = None
+	#else:
+	#	output_subset = set(args.output_subset)
 
 	# find wandb checkpoints
 	template_fp = args.template_fp
@@ -125,12 +123,23 @@ if __name__ == "__main__":
 
 	print("> preload mol_df")
 	mol_df = pd.read_pickle(os.path.join(args.task_dp,'mol_df.pkl.gz'))
+	print(f"  num mol: {len(mol_df)}")
 	print("> preload spec_fp")
 	spec_df = pd.read_pickle(os.path.join(args.task_dp,'spec_df.pkl.gz'))
- 
+	print(f"  num spec: {len(spec_df)}")
+
+	print(mol_df.head(5))
+	print(spec_df.head(5))
 	# Precompute fragment graphs for FragGNN models (this is time-intensive)
 	# this is for frag_gnn only
+	# Create temporary directory for fragment generation
+
+	temp_frag_dir = tempfile.TemporaryDirectory() if config_d["model_type"] in ["frag_gnn","fragnnet"] else None
 	if config_d["model_type"] in ["frag_gnn","fragnnet"]:
+		print(f"> Using temporary fragment directory: {temp_frag_dir.name}")
+		# Override fragment directory in config to use temporary directory
+		config_d['frag_dp'] = temp_frag_dir.name		
+
 		# Prepare inputs for parallel fragment graph generation
 		dag_feat_inputs_l = []
 		for _, row in tqdm(mol_df.iterrows(), total=len(mol_df)):
@@ -144,7 +153,7 @@ if __name__ == "__main__":
 									False, #args.isotopes, # Include isotopes
 									False, #nb_isomorphic, # Number of isomorphic fragments
 									-1,                   # Random seed (-1 for no seed)
-									config_d['frag_dp'],  # Fragment directory
+									config_d['frag_dp'],  # Fragment directory (now temporary)
 									False, #args.allow_cached  # Don't use cached fragments
 									config_d['frag_params']['compressed'] # Not compressed
 									])
@@ -160,7 +169,7 @@ if __name__ == "__main__":
 		end = time.time()
 		time_cost = end-start
 		print(f" frag gen time cost {time_cost}s")
-  
+
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
 	ds = ds_cls(split=eval_split, **config_d)
@@ -221,9 +230,14 @@ if __name__ == "__main__":
 			# this is for debug
 			# break # only one batch for testing
 
-	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos'] + eval_score_types
+	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos']
 	df = pd.DataFrame(preds_l, columns=columns)
 	model_save_dp = os.path.join(args.save_dp,args.wandb_run_id)
 	os.makedirs(model_save_dp,exist_ok=True)
 
 	df.to_pickle(os.path.join(model_save_dp,f"predictions_{eval_split}.pkl"))
+ 
+	# clean up temporary fragment directory
+	if temp_frag_dir is not None:
+		print(f"> Cleaning up temporary fragment directory: {temp_frag_dir.name}")
+		temp_frag_dir.cleanup()

@@ -85,10 +85,7 @@ def create_mol_df(smiles_list, ids_list):
 	# Reset mol_id after filtering
 	mol_df = mol_df.reset_index(drop=True)
 	mol_df.loc[:, "mol_id"] = list(range(len(mol_df)))
-	
-	# Set mol_df index to mol_id for easier lookup
-	mol_df = mol_df.set_index('mol_id')
-	
+		
 	logger.info(f"Created mol_df with {len(mol_df)} molecules")
 	return mol_df
 
@@ -115,7 +112,7 @@ def create_spec_df(mol_df, config_d):
 	spec_id = 0
 	group_id = 0
 	
-	for mol_id in mol_df.index:
+	for mol_id in mol_df['mol_id']:
 		for config_combo in config_d["combinations"]:
 			prec_type = config_combo["prec_type"]
 			inst_type = config_combo["inst_type"]
@@ -454,7 +451,7 @@ Examples:
 	
 	# Print first few entries for verification
 	logger.info("\nFirst 5 molecules in mol_df:")
-	print(mol_df[['smiles', 'formula', 'exact_mw']].head(5))
+	print(mol_df.head(5))
 	
 	logger.info("\nFirst 5 spectra in spec_df:")
-	print(spec_df[['spec_id', 'mol_id', 'prec_type', 'nce', "ace", 'inst_type', 'prec_mz']].head(5))
+	print(spec_df.head(5))
