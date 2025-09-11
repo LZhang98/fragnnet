@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Prepare mol_df and spec_df for FragGNN inference from input lists.
 
@@ -10,6 +9,7 @@ Usage:
 """
 
 import argparse
+from sys import prefix
 import pandas as pd
 import numpy as np
 import os
@@ -77,20 +77,22 @@ def create_mol_df(smiles_list):
 	logger.info(f"Created mol_df with {len(mol_df)} molecules")
 	return mol_df
 
-def create_spec_df(mol_df, prec_types, ces, inst_types):
+def create_spec_df(mol_df, config_d):
 	"""
-	Create spec_df from mol_df and experimental conditions.
+	Create spec_df from mol_df and configuration dictionary.
 	
 	Args:
 		mol_df (pd.DataFrame): Molecule dataframe
-		prec_types (list): List of precursor types (e.g., "[M+H]+", "[M-H]-")
-		ces (list): List of collision energies (floats)
-		inst_types (list): List of instrument types (e.g., "FT", "QTOF")
+		config_d (dict): Configuration dictionary containing combinations of experimental conditions
 		
 	Returns:
 		pd.DataFrame: spec_df with required columns
 	"""
-	logger.info(f"Creating spec_df for {len(mol_df)} molecules with {len(prec_types)} prec_types, {len(ces)} CEs, {len(inst_types)} inst_types...")
+	combinations = config_d["combinations"]
+	num_molecules = len(mol_df)
+	num_combinations = len(combinations)
+	
+	logger.info(f"Creating spec_df for {num_molecules} molecules with {num_combinations} experimental combinations...")
 	
 	# Create all combinations of molecules and experimental conditions
 	spec_entries = []
@@ -98,41 +100,36 @@ def create_spec_df(mol_df, prec_types, ces, inst_types):
 	group_id = 0
 	
 	for mol_id in mol_df.index:
-		for prec_type, ce, inst_type in product(prec_types, ces, inst_types):
-			# Determine CE unit based on instrument type
-			ce_unit = get_ce_unit(inst_type)
-			
-			# Set NCE or ACE based on instrument type
-			if ce_unit == "NCE":
-				nce_value = float(ce)
+		for config_combo in config_d["combinations"]:
+			prec_type = config_combo["prec_type"]
+			inst_type = config_combo["inst_type"]
+			# Choose appropriate collision energy based on instrument type
+			if config_combo["ce_unit"] == "NCE":
+				nce_value = config_combo["ce"]
 				ace_value = np.nan
-			else:  # eV
+			else:
 				nce_value = np.nan
-				ace_value = float(ce)
-			
+				ace_value = config_combo["ce"]
+
 			spec_entries.append({
 				'spec_id': spec_id,
 				'mol_id': mol_id,
 				'prec_type': prec_type,
-				'nce': nce_value,
-				'ace': ace_value,
-				'inst_type': inst_type,
-				'group_id': group_id,
-				'dset': 'inference',
-				'dset_spec_id': spec_id,
-				'prec_mz': np.nan,  # Will be computed from molecular mass and precursor type
-				'peaks': [],        # Empty peaks list for prediction
-				'ri': np.nan,       # Retention index not applicable
-				'frag_mode': 'CID', # Default fragmentation mode
-				'spec_type': 'MS2', # Default spectrum type
-				'ion_mode': 'P',    # Positive mode default
-				'col_gas': np.nan,  # Collision gas not specified
-				'res': np.nan,      # Resolution not specified
-				'notes': '',        # Empty notes
-				'formula': mol_df.loc[mol_id, 'formula'],
-				'inchikey': mol_df.loc[mol_id, 'inchikey_s'],
-				'exact_mass': mol_df.loc[mol_id, 'exact_mw']
-			})
+					'nce': nce_value,
+					'ace': ace_value,
+					'inst_type': inst_type,
+					'group_id': group_id,
+					'dset': 'inference',
+					'dset_spec_id': spec_id,
+					'prec_mz': np.nan,  # Will be computed from molecular mass and precursor type
+					'peaks': [],        # Empty peaks list for prediction
+					'frag_mode': 'CID', # Default fragmentation mode
+					'spec_type': 'MS2', # Default spectrum type
+					'ion_mode': 'P',    # Positive mode default
+					'formula': mol_df.loc[mol_id, 'formula'],
+					'inchikey': mol_df.loc[mol_id, 'inchikey_s'],
+					'exact_mass': mol_df.loc[mol_id, 'exact_mw']
+				})
 			spec_id += 1
 			group_id += 1
 	
@@ -149,14 +146,15 @@ def create_spec_df(mol_df, prec_types, ces, inst_types):
 	logger.info(f"Created spec_df with {len(spec_df)} spectra")
 	return spec_df
 
-def validate_inputs(smiles_list, prec_types, ces, inst_types):
+def validate_inputs(smiles_list, prec_types, ces, nces, inst_types):
 	"""
 	Validate input parameters.
 	
 	Args:
 		smiles_list (list): List of SMILES strings
 		prec_types (list): List of precursor types
-		ces (list): List of collision energies
+		ces (list): List of collision energies (eV)
+		nces (list): List of normalized collision energies (%)
 		inst_types (list): List of instrument types
 	"""
 	if not smiles_list:
@@ -166,7 +164,10 @@ def validate_inputs(smiles_list, prec_types, ces, inst_types):
 		raise ValueError("Precursor types list cannot be empty")
 	
 	if not ces:
-		raise ValueError("Collision energies list cannot be empty")
+		raise ValueError("Collision energies (eV) list cannot be empty")
+		
+	if not nces:
+		raise ValueError("Normalized collision energies (NCE) list cannot be empty")
 	
 	if not inst_types:
 		raise ValueError("Instrument types list cannot be empty")
@@ -177,59 +178,29 @@ def validate_inputs(smiles_list, prec_types, ces, inst_types):
 			float(ce)
 		except (ValueError, TypeError):
 			raise ValueError(f"Invalid collision energy: {ce}. Must be numeric.")
+			
+	for nce in nces:
+		try:
+			float(nce)
+		except (ValueError, TypeError):
+			raise ValueError(f"Invalid NCE value: {nce}. Must be numeric.")
 	
-	# Common precursor types
-	common_prec_types = ["[M+H]+", "[M-H]-", "[M+Na]+", "[M+K]+", "[M+NH4]+", "[M-H2O+H]+"]
-	for prec_type in prec_types:
-		if prec_type not in common_prec_types:
-			logger.warning(f"Uncommon precursor type: {prec_type}. Common types: {common_prec_types}")
-	
-	# Common instrument types and their CE units
-	inst_type_ce_units = {
-		"FT": "NCE",      # Orbitrap uses NCE (%)
-		"QTOF": "eV",     # QTOF uses eV
-		"IT": "NCE",      # Ion Trap typically uses NCE (%)
-		"Q": "eV",        # Single quadrupole uses eV
-		"TOF": "eV",      # TOF uses eV
-		"QQQ": "eV"       # Triple quadrupole uses eV
-	}
-	
-	common_inst_types = list(inst_type_ce_units.keys())
+	# Log CE unit expectations for each instrument type
 	for inst_type in inst_types:
-		if inst_type not in common_inst_types:
-			logger.warning(f"Uncommon instrument type: {inst_type}. Common types: {common_inst_types}")
+		if inst_type == "FT":
+			logger.info(f"Instrument type '{inst_type}' will use NCE (%) values: {nces}")
 		else:
-			expected_unit = inst_type_ce_units[inst_type]
-			logger.info(f"Instrument type '{inst_type}' expects collision energy in {expected_unit}")
+			logger.info(f"Instrument type '{inst_type}' will use ACE (eV) values: {ces}")
 
-def get_ce_unit(inst_type):
-	"""
-	Get the expected collision energy unit for an instrument type.
-	
-	Args:
-		inst_type (str): Instrument type
-		
-	Returns:
-		str: CE unit ("NCE" or "eV")
-	"""
-	inst_type_ce_units = {
-		"FT": "NCE",      # Orbitrap uses NCE (%)
-		"QTOF": "eV",     # QTOF uses eV
-		"IT": "NCE",      # Ion Trap typically uses NCE (%)
-		"Q": "eV",        # Single quadrupole uses eV
-		"TOF": "eV",      # TOF uses eV
-		"QQQ": "eV"       # Triple quadrupole uses eV
-	}
-	return inst_type_ce_units.get(inst_type, "NCE")
-
-def save_config(smiles_list, prec_types, ces, inst_types, output_dir, prefix="", smiles_file=None):
+def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smiles_file=None):
 	"""
 	Save the configuration parameters to a JSON file.
 	
 	Args:
 		smiles_list (list): List of SMILES strings
 		prec_types (list): List of precursor types
-		ces (list): List of collision energies
+		ces (list): List of collision energies (eV)
+		nces (list): List of normalized collision energies (%)
 		inst_types (list): List of instrument types
 		output_dir (str): Output directory
 		prefix (str): File prefix
@@ -239,19 +210,26 @@ def save_config(smiles_list, prec_types, ces, inst_types, output_dir, prefix="",
 	combinations_list = []
 	combo_id = 0
 	
-	for mol_idx, smiles in enumerate(smiles_list):
-		for prec_type in prec_types:
-			for ce in ces:
-				for inst_type in inst_types:
-					ce_unit = get_ce_unit(inst_type)
-					combinations_list.append({
-						"combination_id": combo_id,
-						"precursor_type": prec_type,
-						"collision_energy": ce,
-						"collision_energy_unit": ce_unit,
-						"instrument_type": inst_type
-					})
-					combo_id += 1
+
+	for prec_type in prec_types:
+		for inst_type in inst_types:
+			# Choose appropriate collision energy values based on instrument type
+			if inst_type == "FT":  # Orbitrap uses NCE
+				energy_values = nces
+				ce_unit = "NCE"
+			else:  # Other instruments use ACE (eV)
+				energy_values = ces
+				ce_unit = "eV"
+			
+			for energy in energy_values:
+				combinations_list.append({
+					"id": combo_id,
+					"prec_type": prec_type,
+					"ce": energy,
+					"ce_unit": ce_unit,
+					"inst_type": inst_type
+				})
+				combo_id += 1
 	
 	config = {
 		"timestamp": datetime.now().isoformat(),
@@ -260,35 +238,21 @@ def save_config(smiles_list, prec_types, ces, inst_types, output_dir, prefix="",
 			"smiles_list": smiles_list,
 			"smiles_file": smiles_file,
 			"precursor_types": prec_types,
-			"collision_energies": ces,
+			"collision_energies_eV": ces,
+			"normalized_collision_energies_pct": nces,
 			"instrument_types": inst_types,
 			"output_directory": output_dir,
 			"file_prefix": prefix
 		},
-		"combinations_summary": {
-			"total_molecules": len(smiles_list),
-			"total_precursor_types": len(prec_types),
-			"total_collision_energies": len(ces),
-			"total_instrument_types": len(inst_types),
-			"total_combinations": len(combinations_list)
-		},
 		"combinations": combinations_list,
 		"output_files": {
-			"mol_df": f"{prefix + '_' if prefix else ''}mol_df.pkl.gz",
-			"spec_df": f"{prefix + '_' if prefix else ''}spec_df.pkl.gz",
-			"config": f"{prefix + '_' if prefix else ''}config.json"
+			"mol_df": f"{output_dir}/mol_df.pkl.gz",
+			"spec_df": f"{output_dir}/spec_df.pkl.gz",
+			"config": f"{output_dir}/config.json"
 		}
 	}
-	
-	# Save config file
-	config_prefix = prefix + "_" if prefix else ""
-	config_path = os.path.join(output_dir, f"{config_prefix}config.json")
-	
-	with open(config_path, 'w') as f:
-		json.dump(config, f, indent=2, ensure_ascii=False)
-	
-	logger.info(f"Configuration saved to {config_path}")
-	return config_path
+
+	return config
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(
@@ -324,6 +288,7 @@ Examples:
 		"--prec_types", 
 		nargs="+", 
 		required=True,
+		choices=["[M+H]+", "[M-H]-"], # to do update this list if needed
 		help="List of precursor types (e.g., [M+H]+ [M-H]-)"
 	)
 	parser.add_argument(
@@ -331,27 +296,28 @@ Examples:
 		nargs="+", 
 		type=float,
 		required=True,
-		help="List of collision energies. Units depend on instrument type: NCE (%%) for FT/IT, eV for QTOF/Q/TOF/QQQ"
+		help="List of collision energies (eVs) without eVs, used by QToF"
+	)
+	parser.add_argument(
+		"--nces", 
+		nargs="+", 
+		type=float,
+		required=True,
+		help="List of NCE values without % (e.g., 10.0 20.0 30.0), used by Orbitrap and Ion Trap"
 	)
 	parser.add_argument(
 		"--inst_types", 
 		nargs="+", 
 		required=True,
-		help="List of instrument types (FT=NCE%%, QTOF=eV, IT=NCE%%, Q=eV, TOF=eV, QQQ=eV)"
+		choices=["FT", "QTOF", "IT", "Q", "TOF", "QQQ"], # to do update this list if needed
+		help="List of instrument types (e.g., FT QTOF IT)"
 	)
 	parser.add_argument(
 		"--output_dir", 
 		type=str, 
 		required=True,
 		help="Output directory for mol_df.pkl.gz and spec_df.pkl.gz"
-	)
-	parser.add_argument(
-		"--prefix", 
-		type=str, 
-		default="",
-		help="Prefix for output files (default: mol_df.pkl.gz, spec_df.pkl.gz)"
-	)
-	
+	)	
 	args = parser.parse_args()
 	
 	# Read SMILES
@@ -363,7 +329,7 @@ Examples:
 			smiles_list = [line.strip() for line in f if line.strip()]
 	
 	# Validate inputs
-	validate_inputs(smiles_list, args.prec_types, args.ces, args.inst_types)
+	validate_inputs(smiles_list, args.prec_types, args.ces, args.nces, args.inst_types)
 	
 	logger.info(f"Input summary:")
 	logger.info(f"  - {len(smiles_list)} SMILES")
@@ -374,35 +340,43 @@ Examples:
 	
 	# Create output directory
 	os.makedirs(args.output_dir, exist_ok=True)
+		
+	# Save configuration
+	config_d = get_config(
+		smiles_list=smiles_list,
+		prec_types=args.prec_types,
+		ces=args.ces,
+		nces=args.nces,
+		inst_types=args.inst_types,
+		output_dir=args.output_dir,
+		smiles_file=args.smiles_file if hasattr(args, 'smiles_file') and args.smiles_file else None
+	)
 	
+ 	# Save config file
+	config_path = os.path.join(args.output_dir, "config.json")
+
+	with open(config_path, 'w') as f:
+		json.dump(config_d, f, indent=2, ensure_ascii=False)
+	
+	logger.info(f"Configuration saved to {config_path}")
+
+
 	# Create mol_df
 	mol_df = create_mol_df(smiles_list)
-	
 	# Create spec_df
-	spec_df = create_spec_df(mol_df, args.prec_types, args.ces, args.inst_types)
-	
+	spec_df = create_spec_df(mol_df, config_d)
+ 
 	# Save files
-	prefix = args.prefix + "_" if args.prefix else ""
-	mol_df_path = os.path.join(args.output_dir, f"{prefix}mol_df.pkl.gz")
-	spec_df_path = os.path.join(args.output_dir, f"{prefix}spec_df.pkl.gz")
-	
+	mol_df_path = os.path.join(args.output_dir, f"mol_df.pkl.gz")
+	spec_df_path = os.path.join(args.output_dir, f"spec_df.pkl.gz")
+
 	logger.info(f"Saving mol_df to {mol_df_path}")
 	mol_df.to_pickle(mol_df_path)
 	
 	logger.info(f"Saving spec_df to {spec_df_path}")
 	spec_df.to_pickle(spec_df_path)
-	
-	# Save configuration
-	config_path = save_config(
-		smiles_list=smiles_list,
-		prec_types=args.prec_types,
-		ces=args.ces,
-		inst_types=args.inst_types,
-		output_dir=args.output_dir,
-		prefix=args.prefix,
-		smiles_file=args.smiles_file if hasattr(args, 'smiles_file') and args.smiles_file else None
-	)
-	
+
+ 
 	# Print summary
 	logger.info("Summary:")
 	logger.info(f"  - mol_df: {len(mol_df)} molecules")
