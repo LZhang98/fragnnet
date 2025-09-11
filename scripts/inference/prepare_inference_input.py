@@ -15,16 +15,16 @@ import numpy as np
 import os
 import json
 from datetime import datetime
-from itertools import product
 from fragnnet.utils import data_utils
 from fragnnet.utils.data_utils import par_apply_series
+from fragnnet.utils.misc_utils import booltype
 import logging
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def create_mol_df(smiles_list):
+def create_mol_df(smiles_list, ids_list):
 	"""
 	Create mol_df from a list of SMILES strings.
 	
@@ -39,9 +39,10 @@ def create_mol_df(smiles_list):
 	# Create initial DataFrame
 	mol_df = pd.DataFrame({
 		'smiles': smiles_list,
-		'mol_id': range(len(smiles_list))
+		'mol_id': range(len(smiles_list)),
+		'input_mol_id': np.array([str(i) for i in range(len(smiles_list))]) if ids_list is None else np.where(pd.isna(ids_list), np.nan, [str(x) for x in ids_list])
 	})
-	
+
 	# Convert SMILES to RDKit molecules
 	logger.info("Converting SMILES to RDKit molecules...")
 	mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
@@ -56,9 +57,7 @@ def create_mol_df(smiles_list):
 	# Generate molecular properties
 	logger.info("Computing molecular properties...")
 	mol_df.loc[:, "inchikey_s"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchikey_s)
-	mol_df.loc[:, "scaffold"] = par_apply_series(mol_df["mol"], data_utils.get_murcko_scaffold)
 	mol_df.loc[:, "formula"] = par_apply_series(mol_df["mol"], data_utils.mol_to_formula)
-	mol_df.loc[:, "inchi"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchi)
 	mol_df.loc[:, "mw"] = par_apply_series(mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=False))
 	mol_df.loc[:, "exact_mw"] = par_apply_series(mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=True))
 	mol_df.loc[:, "num_atoms"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_atoms)
@@ -66,6 +65,22 @@ def create_mol_df(smiles_list):
 	mol_df.loc[:, "charge"] = par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
 	mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
 	mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
+	
+	# Filter out molecules based on quality criteria
+	logger.info("Filtering molecules based on quality criteria...")
+	initial_count_filter = len(mol_df)
+	
+	# Drop molecules that are not single molecules, have radicals, or have charges
+	mol_df = mol_df[
+		(mol_df["single_mol"] == True) & 
+		(mol_df["num_radicals"] == 0) & 
+		(mol_df["charge"] == 0)
+	]
+	
+	filtered_count = len(mol_df)
+	if initial_count_filter != filtered_count:
+		logger.warning(f"Filtered out {initial_count_filter - filtered_count} molecules due to quality criteria")
+		logger.info(f"  - Kept only single molecules with no radicals and no charge")
 	
 	# Reset mol_id after filtering
 	mol_df = mol_df.reset_index(drop=True)
@@ -91,7 +106,8 @@ def create_spec_df(mol_df, config_d):
 	combinations = config_d["combinations"]
 	num_molecules = len(mol_df)
 	num_combinations = len(combinations)
-	
+	merged_spectra = config_d['input_parameters']['merged_spectra']
+
 	logger.info(f"Creating spec_df for {num_molecules} molecules with {num_combinations} experimental combinations...")
 	
 	# Create all combinations of molecules and experimental conditions
@@ -134,6 +150,28 @@ def create_spec_df(mol_df, config_d):
 			group_id += 1
 	
 	spec_df = pd.DataFrame(spec_entries)
+	
+	if merged_spectra:
+		# Reset group_id based on prec_type, inst_type, and mol groups
+		logger.info("Adjusting group_ids for merged spectra based on prec_type, inst_type, and molecule groups...")
+		
+		# Create a mapping for group assignment
+		group_mapping = {}
+		current_group_id = 0
+		
+		# Group by prec_type and inst_type combinations
+		for (prec_type, inst_type), group_data in spec_df.groupby(['prec_type', 'inst_type']):
+			group_key = (prec_type, inst_type)
+			if group_key not in group_mapping:
+				group_mapping[group_key] = current_group_id
+				current_group_id += 1
+		
+		# Assign new group_ids
+		spec_df.loc[:, 'group_id'] = spec_df.apply(
+			lambda row: group_mapping[(row['prec_type'], row['inst_type'])], axis=1
+		)
+		
+		logger.info(f"Created {len(group_mapping)} unique groups based on prec_type and inst_type combinations")
 	
 	# Compute precursor m/z from molecular mass and precursor type
 	logger.info("Computing precursor m/z values...")
@@ -192,7 +230,7 @@ def validate_inputs(smiles_list, prec_types, ces, nces, inst_types):
 		else:
 			logger.info(f"Instrument type '{inst_type}' will use ACE (eV) values: {ces}")
 
-def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smiles_file=None):
+def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smiles_file=None, merged_spectra=False):
 	"""
 	Save the configuration parameters to a JSON file.
 	
@@ -203,8 +241,8 @@ def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smile
 		nces (list): List of normalized collision energies (%)
 		inst_types (list): List of instrument types
 		output_dir (str): Output directory
-		prefix (str): File prefix
 		smiles_file (str, optional): Path to SMILES file if used
+		merged_spectra (bool): Whether to generate merged spectra
 	"""
 	# Create list of all combinations
 	combinations_list = []
@@ -242,7 +280,7 @@ def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smile
 			"normalized_collision_energies_pct": nces,
 			"instrument_types": inst_types,
 			"output_directory": output_dir,
-			"file_prefix": prefix
+			"merged_spectra": merged_spectra
 		},
 		"combinations": combinations_list,
 		"output_files": {
@@ -261,13 +299,16 @@ if __name__ == "__main__":
 		epilog="""
 Examples:
 	# Single molecule, single condition
-	python prepare_inference_input.py --smiles_list "CCO" --prec_types "[M+H]+" --ces 20.0 --inst_types "FT" --output_dir output/
+	python prepare_inference_input.py --smiles_list "CCO" --prec_types "[M+H]+" --ces 20.0 --nces 25.0 --inst_types "FT" --output_dir output/
 	
 	# Multiple molecules, multiple conditions
-	python prepare_inference_input.py --smiles_list "CCO" "CC(=O)O" "CCN" --prec_types "[M+H]+" "[M-H]-" --ces 10.0 20.0 30.0 --inst_types "FT" "QTOF" --output_dir output/
+	python prepare_inference_input.py --smiles_list "CCO" "CC(=O)O" "CCN" --prec_types "[M+H]+" "[M-H]-" --ces 10.0 20.0 30.0 --nces 15.0 25.0 35.0 --inst_types "FT" "QTOF" --output_dir output/
+	
+	# Merged spectra (one entry per molecule)
+	python prepare_inference_input.py --smiles_list "CCO" "CC(=O)O" --prec_types "[M+H]+" --ces 20.0 --nces 25.0 --inst_types "QTOF" "FT" --merged_spectra true --output_dir output/
 	
 	# From file
-	python prepare_inference_input.py --smiles_file smiles.txt --prec_types "[M+H]+" --ces 20.0 --inst_types "FT" --output_dir output/
+	python prepare_inference_input.py --smiles_file smiles.txt --prec_types "[M+H]+" --ces 20.0 --nces 25.0 --inst_types "FT" --output_dir output/
 		"""
 	)
 	
@@ -283,7 +324,16 @@ Examples:
 		type=str, 
 		help="File containing SMILES strings (one per line)"
 	)
-	
+	parser.add_argument(
+		"--smiles_colname", 
+		type=str, 
+		help="Column name containing SMILES strings"
+	)
+	parser.add_argument(
+		"--id_colname", 
+		type=str, 
+		help="Column name containing mol IDs"
+	)
 	parser.add_argument(
 		"--prec_types", 
 		nargs="+", 
@@ -317,17 +367,35 @@ Examples:
 		type=str, 
 		required=True,
 		help="Output directory for mol_df.pkl.gz and spec_df.pkl.gz"
+	)
+	parser.add_argument(
+		"--merged_spectra", 
+		type=booltype,
+		default=False,
+		help="Generate merged spectra entries (one per molecule) instead of individual condition entries. Use true/false, yes/no, 1/0."
 	)	
 	args = parser.parse_args()
 	
 	# Read SMILES
+	ids_list = None
 	if args.smiles_list:
 		smiles_list = args.smiles_list
 	else:
 		logger.info(f"Reading SMILES from {args.smiles_file}")
-		with open(args.smiles_file, 'r') as f:
-			smiles_list = [line.strip() for line in f if line.strip()]
-	
+		if args.smiles_file.endswith('.smi') or args.smiles_file.endswith('.smiles') or args.smiles_file.endswith('.txt'):
+			with open(args.smiles_file, 'r') as f:
+				smiles_list = [line.strip() for line in f if line.strip()]
+		elif args.smiles_file.endswith('.csv') or args.smiles_file.endswith('.tsv'):
+			sep = ',' if args.smiles_file.endswith('.csv') else '\t'
+			smiles_df = pd.read_csv(args.smiles_file, sep=sep)
+			if not args.smiles_colname or args.smiles_colname not in smiles_df.columns:
+				raise ValueError(f"Column name for SMILES not specified or not found in CSV columns: {smiles_df.columns.tolist()}")
+			smiles_list = smiles_df[args.smiles_colname].astype(str).tolist()
+			if args.id_colname and args.id_colname in smiles_df.columns:
+				ids_list = smiles_df[args.id_colname].astype(str).tolist()
+				if len(ids_list) != len(smiles_list):
+					raise ValueError(f"Length of IDs list ({len(ids_list)}) does not match length of SMILES list ({len(smiles_list)})")
+
 	# Validate inputs
 	validate_inputs(smiles_list, args.prec_types, args.ces, args.nces, args.inst_types)
 	
@@ -349,7 +417,8 @@ Examples:
 		nces=args.nces,
 		inst_types=args.inst_types,
 		output_dir=args.output_dir,
-		smiles_file=args.smiles_file if hasattr(args, 'smiles_file') and args.smiles_file else None
+		smiles_file=args.smiles_file if hasattr(args, 'smiles_file') and args.smiles_file else None,
+		merged_spectra=args.merged_spectra
 	)
 	
  	# Save config file
@@ -360,9 +429,8 @@ Examples:
 	
 	logger.info(f"Configuration saved to {config_path}")
 
-
 	# Create mol_df
-	mol_df = create_mol_df(smiles_list)
+	mol_df = create_mol_df(smiles_list, ids_list)
 	# Create spec_df
 	spec_df = create_spec_df(mol_df, config_d)
  
@@ -385,8 +453,8 @@ Examples:
 	logger.info(f"  - Configuration saved: {config_path}")
 	
 	# Print first few entries for verification
-	logger.info("\nFirst 3 molecules in mol_df:")
-	print(mol_df[['smiles', 'formula', 'exact_mw']].head(3))
+	logger.info("\nFirst 5 molecules in mol_df:")
+	print(mol_df[['smiles', 'formula', 'exact_mw']].head(5))
 	
-	logger.info("\nFirst 3 spectra in spec_df:")
-	print(spec_df[['spec_id', 'mol_id', 'prec_type', 'nce', 'inst_type', 'prec_mz']].head(3))
+	logger.info("\nFirst 5 spectra in spec_df:")
+	print(spec_df[['spec_id', 'mol_id', 'prec_type', 'nce', "ace", 'inst_type', 'prec_mz']].head(5))
