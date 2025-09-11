@@ -402,9 +402,9 @@ Examples:
 	logger.info(f"Input summary:")
 	logger.info(f"  - {len(smiles_list)} SMILES")
 	logger.info(f"  - {len(args.prec_types)} precursor types: {args.prec_types}")
-	logger.info(f"  - {len(args.ces)} collision energies: {args.ces}")
+	logger.info(f"  - {len(args.ces)} collision energies (eVs) for QToF: {args.ces}")
+	logger.info(f"  - {len(args.nces)} collision energies (NCE) for Orbitrap (FT): {args.nces}")
 	logger.info(f"  - {len(args.inst_types)} instrument types: {args.inst_types}")
-	logger.info(f"  - Total combinations: {len(smiles_list) * len(args.prec_types) * len(args.ces) * len(args.inst_types)}")
 	
 	# Create output directory
 	os.makedirs(args.output_dir, exist_ok=True)
@@ -420,6 +420,7 @@ Examples:
 		smiles_file=args.smiles_file if hasattr(args, 'smiles_file') and args.smiles_file else None,
 		merged_spectra=args.merged_spectra
 	)
+	logger.info(f"  - Meta combinations for each input molecule: {len(config_d['combinations'])}")
 	
  	# Save config file
 	config_path = os.path.join(args.output_dir, "config.json")
