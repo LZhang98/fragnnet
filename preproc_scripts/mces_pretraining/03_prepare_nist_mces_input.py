@@ -89,8 +89,8 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--batch_size",
 		type=int,
-		default=10000,
-		help="Batch size for processing query SMILES (default: 10000)"
+		default=2000,
+		help="Batch size for processing query SMILES (default: 2000)"
 	)
 
 	args = parser.parse_args()
