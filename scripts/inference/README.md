@@ -12,11 +12,17 @@ Prepares molecular and spectral dataframes for FraGNNet inference from lists of 
 - Converts SMILES to RDKit molecules with computed properties
 - Creates all combinations of molecules × experimental conditions
 - Handles instrument-specific collision energy units (NCE for Orbitrap, eV for others)
+- Supports multiple input formats: command-line lists, text files, CSV/TSV files
+- Flexible molecule ID handling with custom column mapping
+- Quality filtering: removes non-single molecules, charged molecules, and radicals
+- Merged spectra mode for simplified predictions (one entry per molecule)
+- Comprehensive molecular property computation and validation
 - Generates `mol_df.pkl.gz`, `spec_df.pkl.gz`, and `config.json` files
-- Validates input parameters and provides detailed logging
+- Detailed logging and error handling
 
 #### Usage
 
+From command line SMILES list:
 ```bash
 python scripts/inference/prepare_inference_input.py \
   --smiles_list <SMILES> [<SMILES> ...] \
@@ -24,10 +30,11 @@ python scripts/inference/prepare_inference_input.py \
   --ces <CE_EV> [<CE_EV> ...] \
   --nces <NCE_PCT> [<NCE_PCT> ...] \
   --inst_types <INST_TYPE> [<INST_TYPE> ...] \
-  --output_dir <OUTPUT_DIR>
+  --output_dir <OUTPUT_DIR> \
+  [--merged_spectra true|false]
 ```
 
-Or from a file:
+From a text file:
 ```bash
 python scripts/inference/prepare_inference_input.py \
   --smiles_file <SMILES_FILE> \
@@ -38,15 +45,38 @@ python scripts/inference/prepare_inference_input.py \
   --output_dir <OUTPUT_DIR>
 ```
 
+From a CSV/TSV file with custom columns:
+```bash
+python scripts/inference/prepare_inference_input.py \
+  --smiles_file <CSV_FILE> \
+  --smiles_colname <SMILES_COLUMN> \
+  --id_colname <ID_COLUMN> \
+  --prec_types <PREC_TYPE> [<PREC_TYPE> ...] \
+  --ces <CE_EV> [<CE_EV> ...] \
+  --nces <NCE_PCT> [<NCE_PCT> ...] \
+  --inst_types <INST_TYPE> [<INST_TYPE> ...] \
+  --output_dir <OUTPUT_DIR>
+```
+
 #### Arguments
 
-- `--smiles_list`: List of SMILES strings (mutually exclusive with `--smiles_file`)
-- `--smiles_file`: File containing SMILES strings (one per line)
+**Input Options** (mutually exclusive):
+- `--smiles_list`: List of SMILES strings
+- `--smiles_file`: File containing SMILES (supports .txt, .smi, .smiles, .csv, .tsv)
+
+**File Parsing Options** (for CSV/TSV files):
+- `--smiles_colname`: Column name containing SMILES strings
+- `--id_colname`: Column name containing molecule IDs (optional)
+
+**Experimental Conditions** (all required):
 - `--prec_types`: Precursor types. Choices: `[M+H]+`, `[M-H]-`
 - `--ces`: Collision energies in eV (used by QTOF, Q, TOF, QQQ instruments)
 - `--nces`: Normalized collision energies in % (used by FT, IT instruments)
 - `--inst_types`: Instrument types. Choices: `FT`, `QTOF`, `IT`, `Q`, `TOF`, `QQQ`
+
+**Output Options**:
 - `--output_dir`: Output directory for generated files
+- `--merged_spectra`: Generate merged spectra (one per adduct+mol+inst_type). Choices: `true`, `false`
 
 #### Collision Energy Units
 
@@ -72,6 +102,31 @@ python scripts/inference/prepare_inference_input.py \
   --nces 20.0 30.0 \
   --inst_types "QTOF" "FT" \
   --output_dir output/single_molecule
+```
+
+##### Merged Spectra Example (One Prediction Per Molecule)
+```bash
+python scripts/inference/prepare_inference_input.py \
+  --smiles_list "CCO" "CC(=O)O" "CCN" \
+  --prec_types "[M+H]+" "[M-H]-" \
+  --ces 20.0 30.0 \
+  --nces 25.0 35.0 \
+  --inst_types "QTOF" "FT" \
+  --merged_spectra true \
+  --output_dir output/merged_spectra
+```
+
+##### From CSV File with Custom Columns
+```bash
+python scripts/inference/prepare_inference_input.py \
+  --smiles_file data/metabolites.csv \
+  --smiles_colname smiles \
+  --id_colname compound_id \
+  --prec_types "[M+H]+" "[M-H]-" \
+  --ces 10.0 20.0 40.0 \
+  --nces 20.0 40.0 60.0 \
+  --inst_types "QTOF" "FT" \
+  --output_dir output/metabolites
 ```
 
 ##### Multiple Molecules with Multiple Conditions
@@ -141,13 +196,34 @@ python scripts/inference/prepare_inference_input.py \
 Each run generates three files in the specified output directory:
 
 1. **`mol_df.pkl.gz`**: Molecule dataframe with computed properties
-   - Columns: `smiles`, `mol`, `inchikey_s`, `scaffold`, `formula`, `inchi`, `mw`, `exact_mw`, `num_atoms`, `num_bonds`, `charge`, `single_mol`, `num_radicals`
+   - Columns: `smiles`, `mol_id`, `input_mol_id`, `mol`, `inchikey_s`, `formula`, `mw`, `exact_mw`, `num_atoms`, `num_bonds`, `charge`, `single_mol`, `num_radicals`
+   - Only includes molecules that pass quality filtering (single molecules, no charge, no radicals)
 
 2. **`spec_df.pkl.gz`**: Spectrum dataframe with experimental conditions
    - Columns: `spec_id`, `mol_id`, `prec_type`, `nce`, `ace`, `inst_type`, `group_id`, `dset`, `dset_spec_id`, `prec_mz`, `peaks`, `frag_mode`, `spec_type`, `ion_mode`, `formula`, `inchikey`, `exact_mass`
+   - In merged spectra mode: one entry per molecule with averaged collision energies
+   - In standard mode: one entry per molecule × condition combination
 
 3. **`config.json`**: Configuration file with all parameters and combinations
-   - Input parameters, combination summary, and detailed combination list
+   - Input parameters, combination summary, detailed combination list, and file paths
+
+#### Quality Filtering
+
+The script automatically filters out molecules that don't meet quality standards:
+- **Non-single molecules**: Removes molecules that contain multiple disconnected components
+- **Charged molecules**: Removes molecules with formal charges (charge ≠ 0)
+- **Radical molecules**: Removes molecules with unpaired electrons (num_radicals ≠ 0)
+
+Filtered molecules are logged with detailed counts and reasons for removal.
+
+#### Merged Spectra Mode
+
+When `--merged_spectra true` is specified:
+- Generates one spectrum entry per molecule instead of per condition
+- Groups spectra by precursor type and instrument type combinations
+- Averages collision energies across similar conditions
+- Simplifies downstream analysis for molecule-level predictions
+- Reduces total number of predictions while preserving experimental diversity
 
 #### Configuration Example
 
@@ -157,10 +233,13 @@ Each run generates three files in the specified output directory:
   "input_parameters": {
     "num_smiles": 2,
     "smiles_list": ["CCO", "CC(=O)O"],
+    "smiles_file": null,
     "precursor_types": ["[M+H]+", "[M-H]-"],
     "collision_energies_eV": [15.0, 25.0],
     "normalized_collision_energies_pct": [20.0, 30.0],
-    "instrument_types": ["QTOF", "FT"]
+    "instrument_types": ["QTOF", "FT"],
+    "output_directory": "output/example",
+    "merged_spectra": false
   },
   "combinations": [
     {
@@ -179,9 +258,9 @@ Each run generates three files in the specified output directory:
     }
   ],
   "output_files": {
-    "mol_df": "output/mol_df.pkl.gz",
-    "spec_df": "output/spec_df.pkl.gz",
-    "config": "output/config.json"
+    "mol_df": "output/example/mol_df.pkl.gz",
+    "spec_df": "output/example/spec_df.pkl.gz",
+    "config": "output/example/config.json"
   }
 }
 ```
@@ -211,6 +290,12 @@ Where `<DATA_DIRECTORY>` contains the `mol_df.pkl.gz` and `spec_df.pkl.gz` files
 
 - Both `--ces` and `--nces` arguments are required, even if you're only using one instrument type
 - The script automatically selects the appropriate collision energy values based on instrument type
+- Input files support multiple formats: .txt/.smi/.smiles (one SMILES per line) and .csv/.tsv (with column headers)
+- For CSV/TSV files, `--smiles_colname` is required; `--id_colname` is optional for custom molecule IDs
 - Invalid SMILES strings are automatically filtered out with warnings
+- Quality filtering removes non-single molecules, charged molecules, and molecules with radicals
 - All molecular properties are computed using RDKit
 - Precursor m/z values are automatically calculated from molecular mass and precursor type
+- The `--merged_spectra` option accepts various boolean formats: true/false, yes/no, 1/0
+- Merged spectra mode reduces the number of predictions while maintaining experimental diversity
+- Configuration JSON files provide complete reproducibility and traceability of all parameters
