@@ -1,16 +1,17 @@
+import time
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from fragnnet.runner import load_config, init_dataloader
 from fragnnet.pl_model import FragGNNPL
 from fragnnet.dataset import SpecMolFragDataset
+from fragnnet.utils import data_utils, frag_utils
 from fragnnet.utils.script_utils import run_inference
 from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb, to_device
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 import torch as th
 import argparse
 import os
-
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
@@ -42,32 +43,10 @@ if __name__ == "__main__":
 		default='saved_ckpts/nist20_inchikey_fraggnn_d3_ma_mi_all_mol_conditon_v2_ikohsc16.ckpt'
 	)
 	parser.add_argument(
-		"--eval_split", 
-		type=str, 
-		default="test", 
-		choices=["train","val","test","secondary"]
-	)
-	parser.add_argument(
 		"--save_dp", 
 		type=str, 
-		default="output/inference_eval",
+		default="output/inference_outputs",
 		help="Directory to save inference evaluation results"
-	)
-	parser.add_argument(
-		"--force_overwrite", 
-		type=booltype, 
-		default=False
-	)
-	parser.add_argument(
-		"--auxiliary_scores", 
-		type=str, 
-		nargs="+", 
-		default=[
-			"cos_sim",
-			"cos_hun",
-			#"true_oos_prob",
-			#"true_oos_e"
-		]
 	)
 	parser.add_argument(
 		"--skip_extra_losses", 
@@ -79,25 +58,21 @@ if __name__ == "__main__":
 		type=str, 
 		nargs="+", 
 		default=[
-			"true_mzs",
-			"true_logprobs",
-			"true_batch_idxs",
 			"pred_mzs",
 			"pred_logprobs",
-			"pred_batch_idxs",
-			"true_oos_prob",
 			"oos_prob",
 		]
-	)
-	parser.add_argument(
-		"--output_everything",
-		type=booltype,
-		default=False
 	)
 	parser.add_argument(
 		"--disable_preproc",
 		type=booltype,
 		default=True
+	)
+	parser.add_argument(
+		"--task_dp",
+		type=str,
+		default="data/proc",
+		help="Directory containing mol_df.pkl.gz and spec_df.pkl.gz files"
 	)
 
 	args = parser.parse_args()
@@ -127,7 +102,7 @@ if __name__ == "__main__":
 	print(f">>> Loading config {custom_fp}")
 	config_d = load_config(template_fp, custom_fp)
 	# modify config to record relevant metrics
-	config_d["auxiliary_scores"] = args.auxiliary_scores
+	config_d["auxiliary_scores"] = [] # disable auxiliary scores
 	config_d["skip_extra_losses"] = args.skip_extra_losses
 	config_d["compile"] = False
 	if args.disable_preproc:
@@ -148,6 +123,44 @@ if __name__ == "__main__":
 	config_d["train_batch_size"] = 4
 	config_d["eval_batch_size"] = 4
 
+	print("> preload mol_df")
+	mol_df = pd.read_pickle(os.path.join(args.task_dp,'mol_df.pkl.gz'))
+	print("> preload spec_fp")
+	spec_df = pd.read_pickle(os.path.join(args.task_dp,'spec_df.pkl.gz'))
+ 
+	# Precompute fragment graphs for FragGNN models (this is time-intensive)
+	# this is for frag_gnn only
+	if config_d["model_type"] in ["frag_gnn","fragnnet"]:
+		# Prepare inputs for parallel fragment graph generation
+		dag_feat_inputs_l = []
+		for _, row in tqdm(mol_df.iterrows(), total=len(mol_df)):
+			dag_feat_inputs_l.append([
+									row['mol'],           # RDKit molecule object
+									row['mol_id'],        # Molecule identifier
+									config_d['num_depth'] - 1, #args.max_depth,  # Maximum fragmentation depth
+									True, # h_prior        # Use hydrogen prior
+									config_d['num_hs'], #args.max_h_transfer,  # Maximum hydrogen transfers
+									150, #args.max_time,   # Maximum time for fragmentation (seconds)
+									False, #args.isotopes, # Include isotopes
+									False, #nb_isomorphic, # Number of isomorphic fragments
+									-1,                   # Random seed (-1 for no seed)
+									config_d['frag_dp'],  # Fragment directory
+									False, #args.allow_cached  # Don't use cached fragments
+									config_d['frag_params']['compressed'] # Not compressed
+									])
+		
+		# Time the fragment generation process
+		start = time.time()
+		print(f"> run frag gen")
+		# Generate fragment graphs in parallel
+		frag_results = data_utils.par_apply(iter(dag_feat_inputs_l),frag_utils.timed_get_dags,True, return_as_generator=True)
+		# Consume the generator to complete all fragment computations
+		for res in tqdm(frag_results, total = len(dag_feat_inputs_l), desc = "Compute Frags"):
+			continue
+		end = time.time()
+		time_cost = end-start
+		print(f" frag gen time cost {time_cost}s")
+  
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
 	ds = ds_cls(split=eval_split, **config_d)
@@ -169,16 +182,6 @@ if __name__ == "__main__":
 	model.to(device)
 	model.eval()
  
-
-	eval_score_types = []
-
-	for score_type in config_d['auxiliary_scores']:
-		if "_hun" in score_type:
-			eval_score_types.append(score_type)
-		else:
-			for bin_res in config_d['eval_mz_bin_res']:
-				eval_score_types.append(f"{score_type}_{bin_res}")
-	
 	preds_l = []
 	with th.inference_mode():
 		for _, batch_input in tqdm(enumerate(dl),total=len(dl), desc=" Running inference"):
@@ -201,10 +204,6 @@ if __name__ == "__main__":
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 			
-			eval_scores_d = {}
-			for eval_score_type in eval_score_types:
-				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
-				#print(eval_score_type, eval_scores_d[eval_score_type])
 			for b_idx in range(batch_size):
 				b_peak_mask = pred_batch_idxs == b_idx
 	
@@ -218,8 +217,6 @@ if __name__ == "__main__":
 				b_spec_ints = pred_ints[b_peak_mask]
 
 				data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, spec_inst_type, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
-				for eval_score_type in eval_score_types:
-					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
 				preds_l.append(data_row)
 			# this is for debug
 			# break # only one batch for testing
@@ -228,35 +225,5 @@ if __name__ == "__main__":
 	df = pd.DataFrame(preds_l, columns=columns)
 	model_save_dp = os.path.join(args.save_dp,args.wandb_run_id)
 	os.makedirs(model_save_dp,exist_ok=True)
-	for eval_score_type in eval_score_types:
-		print(df[eval_score_type].mean(), df[eval_score_type].std())
-		#print(df['spec_id'])
-		#print(df.head())
+
 	df.to_pickle(os.path.join(model_save_dp,f"predictions_{eval_split}.pkl"))
-	# run inference
-	"""
-	batch_cutoff = int(1e6) # this is effectively inf
-	nb_iso = False
-	vals = run_inference(
-		dl, 
-		model, 
-		device, 
-		eval_split, 
-		batch_cutoff, 
-		nb_iso, 
-		output_subset=output_subset, 
-		untransform_spec=True
-	)
-	model.cpu()
-	# save vals
-	model_save_dp = os.path.join(args.save_dp,args.wandb_run_id)
-	os.makedirs(model_save_dp,exist_ok=True)
-	vals_fp = os.path.join(model_save_dp,f"{eval_split}.pkl")
-	if os.path.isfile(vals_fp):
-		print(f"> Info: {vals_fp} exists already")
-		if force_overwrite:
-			print(f"> Warning: overwriting {vals_fp}")
-			th.save(vals, vals_fp)
-	else:
-		th.save(vals, vals_fp)
-	"""
