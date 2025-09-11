@@ -273,7 +273,6 @@ def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smile
 		"timestamp": datetime.now().isoformat(),
 		"input_parameters": {
 			"num_smiles": len(smiles_list),
-			"smiles_list": smiles_list,
 			"smiles_file": smiles_file,
 			"precursor_types": prec_types,
 			"collision_energies_eV": ces,
