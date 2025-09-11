@@ -22,7 +22,6 @@ def create_input_data(query_smiles, base_smiles):
 	for i in range(num_query_smiles):
 		for j in range(num_base_smiles):
 			indices.append((i + num_base_smiles, j))
-		#indices.extend([(i + num_base_smiles, j) for j in range(num_base_smiles)])
 
 	return indices
 
