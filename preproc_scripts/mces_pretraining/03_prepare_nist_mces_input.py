@@ -4,7 +4,7 @@ import pandas as pd
 import h5py
 from tqdm import tqdm
 
-def create_input_data(query_smiles, bio_20k_df):
+def create_input_data(query_smiles, base_smiles):
 	"""
 	Create input data for the model by sampling pairs from mol_df based on bio_20k_df.
 
@@ -16,9 +16,9 @@ def create_input_data(query_smiles, bio_20k_df):
 		list: A list of unique (row_idx1, row_idx2) pairs.
 	"""
 	indices = []
-	num_base_smiles = len(bio_20k_df)
+	num_base_smiles = len(base_smiles)
 	num_query_smiles = len(query_smiles)
-	
+	#print(f"Number of base SMILES: {num_base_smiles}, Number of query SMILES: {num_query_smiles}")
 	for i in range(num_query_smiles):
 		for j in range(num_base_smiles):
 			indices.append((i + num_base_smiles, j))
@@ -51,6 +51,7 @@ def create_hdf5_dataset(output_fp, smiles, computation_indices):
 		computation_indices (list of lists): List of computation indices, where each sublist
 											 represents [row_idx1, row_idx2, computation_idx].
 	"""
+	print(f"Creating HDF5 dataset at {output_fp} with {len(smiles)} SMILES and {len(computation_indices)} computation indices.")
 	with h5py.File(output_fp, 'w') as h5f:
 		# Create a dataset for SMILES strings
 		h5f.create_dataset('smiles', data=[s.encode('utf-8') for s in smiles], dtype=h5py.string_dtype())
@@ -105,11 +106,15 @@ if __name__ == "__main__":
 	batch_size = 500
 	for i in tqdm(range(0, len(query_smiles), batch_size), desc=f"Processing batches (size {batch_size})"):
 
-		compute_indices = create_input_data(query_smiles[i:i + batch_size], bio_20k_df)
+		compute_indices = create_input_data(query_smiles[i:i + batch_size], base_smiles)
 		sampled_pairs_batch = add_computation_indices(compute_indices)
 		output_fp = os.path.join(args.hdf5_output_dp, f"mces_input_{i // batch_size + 1}.h5")
+		#print(len(sampled_pairs_batch), len(base_smiles), len(query_smiles[i:i + batch_size]))
 		# Create HDF5 dataset for the current batch
+		dataset_smiles = base_smiles + query_smiles[i:i + batch_size]
+		#print(query_smiles[i:i + batch_size])
+		#print(f"Creating dataset with {len(dataset_smiles)} SMILES")
 		create_hdf5_dataset( output_fp,
-			base_smiles + query_smiles[i:i + batch_size],
+			dataset_smiles,
 			sampled_pairs_batch
 		)
