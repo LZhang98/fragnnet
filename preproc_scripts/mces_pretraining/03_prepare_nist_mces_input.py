@@ -77,13 +77,13 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--mol_df_fp",
 		type=str,
-		default="./data/proc/nist20/mol_df.pkl",
+		default="./data/proc/nist23/mol_df.pkl",
 		help="preprocessed fragnnet mol_df file"
 	)
 	parser.add_argument(
 		"--hdf5_output_dp",
 		type=str,
-		default="./data/mces-data/nist20_inputs",
+		default="./data/mces-data/nist23_inputs",
 		help="Output directory for HDF5 files"
 	)
 
