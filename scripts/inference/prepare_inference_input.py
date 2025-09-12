@@ -70,7 +70,10 @@ def create_mol_df(smiles_list, ids_list):
 	mol_df.loc[:, "charge"] = par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
 	mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
 	mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
-	
+	# Heavy atoms = non-hydrogen atoms
+	mol_df.loc[:, "num_heavy_atoms"] = par_apply_series(mol_df["mol"], lambda m: int(m.GetNumHeavyAtoms()) if m is not None else np.nan)
+	mol_df.loc[:, "num_bonds"] = par_apply_series(mol_df["mol"], lambda m: int(m.GetNumBonds()) if m is not None else np.nan)
+
  	# filter by out_set_elements
 	allowed_elements = set(frag_utils.ELEMENTS)
 	mol_df.loc[:, 'num_out_set_elements'] = mol_df['formula'].apply(lambda x: len(set(list(formula_utils.parse_formula(x).keys())) - allowed_elements))
@@ -84,7 +87,7 @@ def create_mol_df(smiles_list, ids_list):
 		(mol_df["single_mol"] == True) & 
 		(mol_df["num_radicals"] == 0) & 
 		(mol_df["charge"] == 0) & 
-		(mol_df["num_atoms"] <= MAX_NUM_NODES) & 
+		(mol_df["num_atoms"] <= 128) & 
 		(mol_df["num_out_set_elements"] == 0)
 	]
 	
@@ -463,6 +466,32 @@ Examples:
 	# Print first few entries for verification
 	logger.info("\nFirst 5 molecules in mol_df:")
 	print(mol_df.head(5))
+
+	# Heavy atom statistics
+	if "num_heavy_atoms" in mol_df.columns and len(mol_df) > 0:
+		stats = mol_df["num_heavy_atoms"].describe()
+		logger.info("\nHeavy atom count stats (num_heavy_atoms):")
+		logger.info(f"  count: {int(stats['count'])}")
+		logger.info(f"  mean:  {stats['mean']:.2f}")
+		logger.info(f"  std:   {stats['std']:.2f}")
+		logger.info(f"  min:   {int(stats['min'])}")
+		logger.info(f"  25%:   {stats['25%']:.2f}")
+		logger.info(f"  50%:   {stats['50%']:.2f}")
+		logger.info(f"  75%:   {stats['75%']:.2f}")
+		logger.info(f"  max:   {int(stats['max'])}")
+
+	# num_bonds statistics
+	if "num_bonds" in mol_df.columns and len(mol_df) > 0:
+		stats_bonds = mol_df["num_bonds"].describe()
+		logger.info("\nBond count stats (num_bonds):")
+		logger.info(f"  count: {int(stats_bonds['count'])}")
+		logger.info(f"  mean:  {stats_bonds['mean']:.2f}")
+		logger.info(f"  std:   {stats_bonds['std']:.2f}")
+		logger.info(f"  min:   {int(stats_bonds['min'])}")
+		logger.info(f"  25%:   {stats_bonds['25%']:.2f}")
+		logger.info(f"  50%:   {stats_bonds['50%']:.2f}")
+		logger.info(f"  75%:   {stats_bonds['75%']:.2f}")
+		logger.info(f"  max:   {int(stats_bonds['max'])}")
 	
 	logger.info("\nFirst 5 spectra in spec_df:")
 	print(spec_df.head(5))

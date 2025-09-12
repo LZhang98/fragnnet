@@ -22,7 +22,7 @@ def signal_handler(signum, frame):
 # Register the handler
 signal.signal(signal.SIGINT, signal_handler)
 
-MAX_NUM_NODES = 80  # hard cap on 80!!
+MAX_NUM_NODES = 128  # hard cap on 80!!
 MAX_NUM_EDGES = 4 * MAX_NUM_NODES
 MASK_DTYPE = np.uint8
 MAX_EDGE_PER_NODE = 6  # Sulfur
