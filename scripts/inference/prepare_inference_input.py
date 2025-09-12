@@ -18,7 +18,12 @@ from datetime import datetime
 from fragnnet.utils import data_utils
 from fragnnet.utils.data_utils import par_apply_series
 from fragnnet.utils.misc_utils import booltype
+import fragnnet.utils.formula_utils as formula_utils
+import fragnnet.utils.frag_utils as frag_utils
 import logging
+from fragnnet.frag.compute_frags import (
+	MAX_NUM_NODES
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -66,6 +71,10 @@ def create_mol_df(smiles_list, ids_list):
 	mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
 	mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
 	
+ 	# filter by out_set_elements
+	allowed_elements = set(frag_utils.ELEMENTS)
+	mol_df.loc[:, 'num_out_set_elements'] = mol_df['formula'].apply(lambda x: len(set(list(formula_utils.parse_formula(x).keys())) - allowed_elements))
+
 	# Filter out molecules based on quality criteria
 	logger.info("Filtering molecules based on quality criteria...")
 	initial_count_filter = len(mol_df)
@@ -74,7 +83,9 @@ def create_mol_df(smiles_list, ids_list):
 	mol_df = mol_df[
 		(mol_df["single_mol"] == True) & 
 		(mol_df["num_radicals"] == 0) & 
-		(mol_df["charge"] == 0)
+		(mol_df["charge"] == 0) & 
+		(mol_df["num_atoms"] <= MAX_NUM_NODES) & 
+		(mol_df["num_out_set_elements"] == 0)
 	]
 	
 	filtered_count = len(mol_df)

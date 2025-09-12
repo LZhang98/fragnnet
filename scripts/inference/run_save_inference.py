@@ -235,7 +235,7 @@ if __name__ == "__main__":
 	model_save_dp = os.path.join(args.save_dp,args.wandb_run_id)
 	os.makedirs(model_save_dp,exist_ok=True)
 
-	df.to_pickle(os.path.join(model_save_dp,f"predictions_{eval_split}.pkl"))
+	df.to_pickle(os.path.join(model_save_dp,f"predictions.pkl"))
  
 	# clean up temporary fragment directory
 	if temp_frag_dir is not None:
