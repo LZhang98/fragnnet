@@ -75,7 +75,17 @@ if __name__ == "__main__":
 		default="output/mimedb",
 		help="Directory containing mol_df.pkl.gz and spec_df.pkl.gz files"
 	)
-
+	parser.add_argument(
+		"--frag_dp",
+		type=str,
+		default=None,
+	)
+	parser.add_argument(
+		"--num_predictions",
+		type=int,
+		default=8,
+		help="Number of predictions to output"
+	)
 	args = parser.parse_args()
 	if args.model_ckpt is None:
 		os.makedirs(args.model_save_dp, exist_ok=True)	
@@ -172,7 +182,7 @@ if __name__ == "__main__":
 
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
-	ds = ds_cls(split=eval_split, **config_d)
+	ds = ds_cls(split="predict_only", **config_d)
 	dl = init_dataloader(ds, config_d)
 	model_cls = FragGNNPL
 	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")

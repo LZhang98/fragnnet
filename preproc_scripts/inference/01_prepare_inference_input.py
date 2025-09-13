@@ -29,7 +29,7 @@ from fragnnet.frag.compute_frags import (
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def create_mol_df(smiles_list, ids_list):
+def create_mol_df(smiles_list, ids_list, max_heavy_atoms):
 	"""
 	Create mol_df from a list of SMILES strings.
 	
@@ -87,7 +87,7 @@ def create_mol_df(smiles_list, ids_list):
 		(mol_df["single_mol"] == True) & 
 		(mol_df["num_radicals"] == 0) & 
 		(mol_df["charge"] == 0) & 
-		(mol_df["num_atoms"] <= 128) & 
+		(mol_df["num_atoms"] <= max_heavy_atoms) & 
 		(mol_df["num_out_set_elements"] == 0)
 	]
 	
@@ -195,7 +195,7 @@ def create_spec_df(mol_df, config_d):
 	logger.info(f"Created spec_df with {len(spec_df)} spectra")
 	return spec_df
 
-def validate_inputs(smiles_list, prec_types, ces, nces, inst_types):
+def validate_inputs(smiles_list, prec_types, ces, nces, inst_types, max_heavy_atoms):
 	"""
 	Validate input parameters.
 	
@@ -240,6 +240,9 @@ def validate_inputs(smiles_list, prec_types, ces, nces, inst_types):
 			logger.info(f"Instrument type '{inst_type}' will use NCE (%) values: {nces}")
 		else:
 			logger.info(f"Instrument type '{inst_type}' will use ACE (eV) values: {ces}")
+
+	if max_heavy_atoms < 1 or max_heavy_atoms > MAX_NUM_NODES:
+		raise ValueError(f"max_heavy_atoms must be between 1 and {MAX_NUM_NODES}")
 
 def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smiles_file=None, merged_spectra=False):
 	"""
@@ -383,7 +386,13 @@ Examples:
 		type=booltype,
 		default=False,
 		help="Generate merged spectra entries (one per molecule) instead of individual condition entries. Use true/false, yes/no, 1/0."
-	)	
+	)
+	parser.add_argument(
+		"--max_heavy_atoms", 
+		type=int, 
+		default=MAX_NUM_NODES,
+		help="Maximum number of heavy atoms in a molecule"
+	)
 	args = parser.parse_args()
 	
 	# Read SMILES
@@ -407,7 +416,7 @@ Examples:
 					raise ValueError(f"Length of IDs list ({len(ids_list)}) does not match length of SMILES list ({len(smiles_list)})")
 
 	# Validate inputs
-	validate_inputs(smiles_list, args.prec_types, args.ces, args.nces, args.inst_types)
+	validate_inputs(smiles_list, args.prec_types, args.ces, args.nces, args.inst_types, args.max_heavy_atoms)
 	
 	logger.info(f"Input summary:")
 	logger.info(f"  - {len(smiles_list)} SMILES")
@@ -415,7 +424,9 @@ Examples:
 	logger.info(f"  - {len(args.ces)} collision energies (eVs) for QToF: {args.ces}")
 	logger.info(f"  - {len(args.nces)} collision energies (NCE) for Orbitrap (FT): {args.nces}")
 	logger.info(f"  - {len(args.inst_types)} instrument types: {args.inst_types}")
-	
+	logger.info(f"  - Merged spectra: {args.merged_spectra}")
+	logger.info(f"  - Max heavy atoms: {args.max_heavy_atoms}")
+ 
 	# Create output directory
 	os.makedirs(args.output_dir, exist_ok=True)
 		
@@ -441,7 +452,7 @@ Examples:
 	logger.info(f"Configuration saved to {config_path}")
 
 	# Create mol_df
-	mol_df = create_mol_df(smiles_list, ids_list)
+	mol_df = create_mol_df(smiles_list, ids_list, args.max_heavy_atoms)
 	# Create spec_df
 	spec_df = create_spec_df(mol_df, config_d)
  
