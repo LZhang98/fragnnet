@@ -13,7 +13,7 @@
 #SBATCH --array=1-3
 
 # record start
-echo `date`: Job ${SLURM_JOB_ID} is allocated resources
+echo `date`: Job ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID} is allocated resources
 #load modules
 module load StdEnv/2023
 module load python/3.11
@@ -95,4 +95,4 @@ echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
 cp ${SAVE_NAME}.tar ${DEST_DP}
 
 # record ending
-echo `date`: Job ${SLURM_JOB_ID} finished running
+echo `date`: Job ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID} finished running
