@@ -22,6 +22,7 @@ def get_args():
 	parser.add_argument("--proc_dp", type=str,default="data/ms2c/casmi2016_neg/proc", help="")
 	parser.add_argument("--allow_cached", type=booltype,default=False, help="")
 	parser.add_argument("--compressed", type=booltype,default=True, help="")
+	parser.add_argument("--no_tqdm", action="store_true", help="Disable tqdm progress bar")
 	args = parser.parse_args()
 	return args
 
@@ -70,8 +71,14 @@ if __name__ == "__main__":
 	logger.info(f"Starting fragment generation for {len(dag_feat_inputs_l)} molecules...")
 	frag_results = data_utils.par_apply(iter(dag_feat_inputs_l), frag_utils.timed_get_dags, True, return_as_generator=True)
 	n_done = 0
-	for res in tqdm(frag_results, total=len(dag_feat_inputs_l), desc="Compute Frags"):
-		n_done += 1
-		if n_done % 100 == 0:
-			logger.info(f"Processed {n_done} molecules...")
+	if args.no_tqdm:
+		for res in frag_results:
+			n_done += 1
+			if n_done % 100 == 0:
+				logger.info(f"Processed {n_done} molecules...")
+	else:
+		for res in tqdm(frag_results, total=len(dag_feat_inputs_l), desc="Compute Frags"):
+			n_done += 1
+			if n_done % 100 == 0:
+				logger.info(f"Processed {n_done} molecules...")
 	logger.info(f"Fragment generation complete. Processed {n_done} molecules.")
