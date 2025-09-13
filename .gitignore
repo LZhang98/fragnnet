@@ -39,7 +39,7 @@ model_eval
 ckpts
 wandb_venv
 containers
-output/inference_eval/ikohsc16/predictions_test.pkl
+output/*
 
 /wheels/cysignals-1.12.3.tar.gz
 /wheels/pyteomics-4.7.5-py3-none-any.whl

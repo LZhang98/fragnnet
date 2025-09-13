@@ -740,7 +740,7 @@ def compute_dags(
 		frag_max_time:int,
 		isotopes:bool = False,
 		nb_isomorphic:bool = False,
-		b_isomorphic:bool = False,
+		#b_isomorphic:bool = False, # not used
 		max_iterations:int = -1) -> dict:
 	"""_summary_
 
@@ -1253,6 +1253,7 @@ def timed_get_dags(mol,
 					max_time, 
 					isotopes,
 					nb_isomorphic,
+					#False, b_isomorphic, this not used
 					max_iterations
 				)
 			except KeyboardInterrupt as e:
