@@ -2,7 +2,7 @@
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
 #SBATCH --job-name=frag_gen_mimedb_d3
-#SBATCH --mem=180G
+#SBATCH --mem=384G
 #SBATCH --cpus-per-task=192
 #SBATCH --time=0-6:00
 #SBATCH --mail-user=fw4@ualberta.ca
