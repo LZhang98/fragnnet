@@ -75,8 +75,7 @@ python preproc_scripts/inference/02_run_ms2c_frag_gen.py \
     --max_h_transfer ${MAX_H_TRANSFER} \
  	--max_depth=${MAX_DEPTH} \
     --proc_dp=./data/proc  \
-    --frag_dp=./data/frag/${SAVE_NAME} \
-    --no_tqdm
+    --frag_dp=./data/frag/${SAVE_NAME} 
          
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/

@@ -9,6 +9,8 @@ import fragnnet.utils.frag_utils as frag_utils
 
 def get_args():
 	parser = argparse.ArgumentParser()
+	parser.add_argument("--start_row", type=int, default=0, help="Start row index (inclusive) for chunked processing")
+	parser.add_argument("--end_row", type=int, default=None, help="End row index (exclusive) for chunked processing")
 	# frag feats configs
 	parser.add_argument("--max_depth",type=int,default=3)
 	parser.add_argument("--max_time",type=int,default=150)
@@ -20,14 +22,14 @@ def get_args():
 	parser.add_argument("--max_iterations",type=int,default=-1)
 	parser.add_argument("--isotopes",type=booltype,default=False)
 	parser.add_argument("--proc_dp", type=str,default="data/ms2c/casmi2016_neg/proc", help="")
-	parser.add_argument("--allow_cached", type=booltype,default=False, help="")
+	parser.add_argument("--allow_cached", type=booltype,default=True, help="")
 	parser.add_argument("--compressed", type=booltype,default=True, help="")
-	parser.add_argument("--no_tqdm", action="store_true", help="Disable tqdm progress bar")
+	parser.add_argument("--show_tqdm", type=booltype, default=False, help="Disable tqdm progress bar")
 	args = parser.parse_args()
 	return args
 
 if __name__ == "__main__":
-	logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+	logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%H:%M:%S')
 	logger = logging.getLogger("frag_gen")
 
 	args = get_args()
@@ -50,9 +52,25 @@ if __name__ == "__main__":
 	logger.info(f"Loaded mol_df with {len(mol_df)} molecules")
 	logger.info(f"Creating output directory {args.frag_dp}")
 	os.makedirs(args.frag_dp, exist_ok=True)
+
+	# Select chunk
+	start_row = args.start_row
+	end_row = args.end_row if args.end_row is not None else len(mol_df)
+	if start_row < 0 or start_row >= len(mol_df):
+		logger.error(f"start_row {start_row} is out of bounds for mol_df of length {len(mol_df)}")
+		raise ValueError(f"start_row {start_row} is out of bounds for mol_df of length {len(mol_df)}")
+	if end_row > len(mol_df):
+		logger.warning(f"end_row {end_row} is greater than mol_df length {len(mol_df)}, setting to {len(mol_df)}")
+		end_row = len(mol_df)
+	if end_row <= start_row:
+		logger.error(f"end_row {end_row} must be greater than start_row {start_row}")
+		raise ValueError(f"end_row {end_row} must be greater than start_row {start_row}")
+	mol_df_chunk = mol_df.iloc[start_row:end_row]
+	logger.info(f"Processing rows {start_row} to {end_row} (total {len(mol_df_chunk)})")
+
 	dag_feat_inputs_l = []
 	logger.info("Preparing DAG feature input list...")
-	for _, row in mol_df.iterrows():
+	for _, row in mol_df_chunk.iterrows():
 		dag_feat_inputs_l.append([
 			row['mol'],
 			row['mol_id'],
@@ -71,7 +89,7 @@ if __name__ == "__main__":
 	logger.info(f"Starting fragment generation for {len(dag_feat_inputs_l)} molecules...")
 	frag_results = data_utils.par_apply(iter(dag_feat_inputs_l), frag_utils.timed_get_dags, True, return_as_generator=True)
 	n_done = 0
-	if args.no_tqdm:
+	if not args.show_tqdm:
 		for res in frag_results:
 			n_done += 1
 			if n_done % 100 == 0:
