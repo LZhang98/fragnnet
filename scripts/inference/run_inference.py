@@ -256,14 +256,14 @@ if __name__ == "__main__":
 				rows_to_append.append(data_row)
 
 			# Append to pkl file after each batch
-			batch_df = pd.DataFrame(rows_to_append, columns=columns)
-			if os.path.exists(pkl_fp):
+			#batch_df = pd.DataFrame(rows_to_append, columns=columns)
+			#if os.path.exists(pkl_fp):
 				# Append to existing file
-				prev_df = pd.read_pickle(pkl_fp)
-				new_df = pd.concat([prev_df, batch_df], ignore_index=True)
-				new_df.to_pickle(pkl_fp)
-			else:
-				batch_df.to_pickle(pkl_fp)
+			#	prev_df = pd.read_pickle(pkl_fp)
+			#	new_df = pd.concat([prev_df, batch_df], ignore_index=True)
+			#	new_df.to_pickle(pkl_fp)
+			#else:
+			#	batch_df.to_pickle(pkl_fp)
 
 	# clean up temporary fragment directory
 	if temp_frag_dir is not None:
