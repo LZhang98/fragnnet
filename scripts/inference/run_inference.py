@@ -60,15 +60,15 @@ if __name__ == "__main__":
 		default=True
 	)
 	parser.add_argument(
-		"--task_dp",
+		"--proc_dp",
 		type=str,
-		default="output/mimedb",
+		default="./data/other/mimedb/proc",
 		help="Directory containing mol_df.pkl.gz and spec_df.pkl.gz files"
 	)
 	parser.add_argument(
 		"--frag_dp",
 		type=str,
-		default=None,
+		default="./data/other/mimedb/frag",
 	)
 	parser.add_argument(
 		"--num_predictions",
@@ -123,14 +123,15 @@ if __name__ == "__main__":
 	config_d["eval_batch_size"] = 4
 
 	print("> preload mol_df")
-	mol_df = pd.read_pickle(os.path.join(args.task_dp,'mol_df.pkl.gz'))
+	mol_df = pd.read_pickle(os.path.join(args.proc_dp,'mol_df.pkl.gz'))
 	print(f"  num mol: {len(mol_df)}")
-	print("> preload spec_fp")
-	spec_df = pd.read_pickle(os.path.join(args.task_dp,'spec_df.pkl.gz'))
+	print("> preload spec_df")
+	spec_df = pd.read_pickle(os.path.join(args.proc_dp,'spec_df.pkl.gz'))
 	print(f"  num spec: {len(spec_df)}")
 
 	print(mol_df.head(5))
 	print(spec_df.head(5))
+
 	# Precompute fragment graphs for FragGNN models (this is time-intensive)
 	# this is for frag_gnn only
 	# Create temporary directory for fragment generation
@@ -174,6 +175,18 @@ if __name__ == "__main__":
 			end = time.time()
 			time_cost = end-start
 			print(f" frag gen time cost {time_cost}s")
+	
+	# filter input data to only those with fragments
+	print(">> filtering input without frags")
+	all_frags = set([f.split('.')[0] for f in os.listdir(config_d['frag_dp'])])
+	print(">> num of frags: ", len(all_frags))
+	mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
+	print("> num of spec before filtering by dag", len(spec_df))
+	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
+	print("> num of spec after filtering by dag", len(spec_df))
+
+	config_d['mol_fp'] = mol_df
+	config_d['spec_fp'] = spec_df
 
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
@@ -207,7 +220,7 @@ if __name__ == "__main__":
 			mol_ids = batch_input['mol_id']
 
 			batch_input = to_device(batch_input, device)
-			batch_result = model._common_step(batch_input, split=config_d, log=False)
+			batch_result = model.inference_step(batch_input)
 			batch_size = batch_input['batch_size'].detach().cpu()
 
 			pred_mzs = batch_result["pred_mzs"].detach().cpu()
@@ -217,7 +230,7 @@ if __name__ == "__main__":
 			if has_oos_b:
 				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
 
-			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
+			pred_ints = batch_result["pred_ints"].detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 
 			rows_to_append = []

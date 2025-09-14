@@ -818,12 +818,7 @@ class SpectrumPL(pl.LightningModule):
 		spec_per_group = batch["spec_per_group"]
 		spec_per_mol = batch["spec_per_mol"]
 		group_per_mol = batch["group_per_mol"]
-		pred_d = self.forward(**batch)
-		pred_mzs = pred_d.pop("pred_mzs")
-		pred_logprobs = pred_d.pop("pred_logprobs")
-		pred_batch_idxs = pred_d.pop("pred_batch_idxs")
-		pred_oos_logprobs = pred_d.pop("pred_oos_logprobs",None)
-		# prepare training dict (TODO: do preprocessing in log space)
+		# prepare ground truth
 		train_true_mzs, train_true_logprobs, train_true_batch_idxs = self.preproc_spec(
 			true_mzs,
 			true_ints,
@@ -833,6 +828,12 @@ class SpectrumPL(pl.LightningModule):
 			log_in=False,
 			log_out=True
 		)
+		# forward pass and get predictions
+		pred_d = self.forward(**batch)
+		pred_mzs = pred_d.pop("pred_mzs")
+		pred_logprobs = pred_d.pop("pred_logprobs")
+		pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+		pred_oos_logprobs = pred_d.pop("pred_oos_logprobs",None)
 		train_pred_mzs, train_pred_logprobs, train_pred_batch_idxs = self.preproc_spec(
 			pred_mzs,
 			pred_logprobs,
@@ -842,6 +843,8 @@ class SpectrumPL(pl.LightningModule):
 			log_in=True,
 			log_out=True
 		)
+  
+		# prepare training dict and compute loss
 		train_d = {
 			"true_mzs": train_true_mzs,
 			"true_logprobs": train_true_logprobs,
@@ -852,6 +855,7 @@ class SpectrumPL(pl.LightningModule):
 			"pred_oos_logprobs": pred_oos_logprobs,
 			**pred_d
 		}
+  
 		loss_d = self.loss_fn(**train_d)
 		loss = loss_d["loss"]
 		mean_loss = self.batch_metric_reduce_fn(
@@ -871,7 +875,9 @@ class SpectrumPL(pl.LightningModule):
 			return_weights=True,
 			split=split
 		)
+  
 		# prepare eval dict
+		# Note we need to compare spectra in normal space, so no log here
 		eval_true_mzs, eval_true_probs, eval_true_batch_idxs = self.preproc_spec(
 			true_mzs,
 			true_ints,
@@ -924,6 +930,7 @@ class SpectrumPL(pl.LightningModule):
 		}
 		# running inference and report metrics
 		assert true_mzs.shape[0] > 0, true_mzs.shape[0]
+		# this is not needed, but to be safe
 		with th.inference_mode():
 			metric_input_d = {
 				"true_mzs": eval_true_mzs,
@@ -977,16 +984,52 @@ class SpectrumPL(pl.LightningModule):
 		self._update_results(batch_results,"test")
 		return mean_loss
 	
-	def inference_step(self, batch, split, untransform_spec=False):
+	def inference_with_ground_truth_step(self, batch, split, untransform_spec=False):
 		"""
 		Custom inference step for evaluation outside of Lightning's test/val loop.
+		This will assume that the model is in eval mode, but will not switch modes.
+		This will assume that the batch contains ground truth spectra.
 		"""
 		if self.training:
-			print("Warning: model is in training mode")
+			Warning("Model is in training mode")
 		batch_results = self._common_step(batch, split=split, log=False)
 		if untransform_spec:
 			raise NotImplementedError("untransform_spec not implemented")
 		return batch_results
+
+	def inference_step(self, batch):
+		"""
+		Custom inference step for evaluation outside of Lightning's test/val loop.
+		This will assume that the model is in eval mode, but will not switch modes.
+		This will assume that the batch contains ground truth spectra.
+		"""
+		if self.training:
+			Warning("Model is in training mode")
+   
+		# forward pass and get predictions
+		pred_d = self.forward(**batch)
+		pred_mzs = pred_d.pop("pred_mzs")
+		pred_logprobs = pred_d.pop("pred_logprobs")
+		pred_batch_idxs = pred_d.pop("pred_batch_idxs")
+		pred_oos_logprobs = pred_d.pop("pred_oos_logprobs",None)
+		eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs,
+			train=False,
+			pred=True,
+			log_in=True,
+			log_out=False
+		)
+
+		results = {
+			"pred_mzs": eval_pred_mzs,
+			"pred_ints": eval_pred_probs,
+			"pred_batch_idxs": eval_pred_batch_idxs,
+			"pred_oos_logprobs": pred_oos_logprobs,
+		}
+		return results
+
 
 	def configure_optimizers(self):
 		"""
