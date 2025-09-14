@@ -51,6 +51,6 @@ if __name__ == "__main__":
 
 	save_dp = "./saved_ckpts/"
 	os.makedirs(save_dp, exist_ok=True)
-	run_ids = ["ikohsc16", "k7ul32v1"]
+	run_ids = ["ikohsc16"]
 	for run_id in run_ids:
 		get_best_ckpt_from_wandb(save_dp, run_id)
