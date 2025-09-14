@@ -220,50 +220,59 @@ if __name__ == "__main__":
 	pkl_fp = os.path.join(model_save_dp, f"predictions.pkl")
 
 	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos']
+
 	with th.inference_mode():
-		for _, batch_input in tqdm(enumerate(dl), total=len(dl), desc=" Running inference"):
-			spec_ids = batch_input['spec_unique_id']
-			mol_ids = batch_input['mol_id']
+		for batch_idx, batch_input in tqdm(enumerate(dl), total=len(dl), desc=" Running inference"):
+			try:
+				spec_ids = batch_input['spec_unique_id']
+				mol_ids = batch_input['mol_id']
 
-			batch_input = to_device(batch_input, device)
-			batch_result = model.inference_step(batch_input)
-			batch_size = batch_input['batch_size'].detach().cpu()
+				batch_input = to_device(batch_input, device)
+				batch_result = model.inference_step(batch_input)
+				batch_size = batch_input['batch_size'].detach().cpu()
 
-			pred_mzs = batch_result["pred_mzs"].detach().cpu()
-			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
+				pred_mzs = batch_result["pred_mzs"].detach().cpu()
+				pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
 
-			has_oos_b = "pred_oos_logprobs" in batch_result
-			if has_oos_b:
-				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
+				has_oos_b = "pred_oos_logprobs" in batch_result
+				if has_oos_b:
+					pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
 
-			pred_ints = batch_result["pred_ints"].detach().cpu()
-			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+				pred_ints = batch_result["pred_ints"].detach().cpu()
+				pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 
-			rows_to_append = []
-			for b_idx in range(batch_size):
-				b_peak_mask = pred_batch_idxs == b_idx
+				rows_to_append = []
+				for b_idx in range(batch_size):
+					b_peak_mask = pred_batch_idxs == b_idx
 
-				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
-				b_spec_id = spec_ids[b_idx]
-				b_mol_id = mol_ids[b_idx]
-				b_spec_ce = batch_input['spec_ce'][b_idx].item()
-				b_spec_prec_type = batch_input['spec_prec_type'][b_idx].item()
-				spec_inst_type = batch_input['spec_inst_type'][b_idx].item()
-				b_spec_mzs = pred_mzs[b_peak_mask]
-				b_spec_ints = pred_ints[b_peak_mask]
+					b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
+					b_spec_id = spec_ids[b_idx]
+					b_mol_id = mol_ids[b_idx]
+					b_spec_ce = batch_input['spec_ce'][b_idx].item()
+					b_spec_prec_type = batch_input['spec_prec_type'][b_idx].item()
+					spec_inst_type = batch_input['spec_inst_type'][b_idx].item()
+					b_spec_mzs = pred_mzs[b_peak_mask]
+					b_spec_ints = pred_ints[b_peak_mask]
 
-				data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, spec_inst_type, b_spec_mzs.tolist(), b_spec_ints.tolist(), b_pred_oos_logprob]
-				rows_to_append.append(data_row)
+					data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, spec_inst_type, b_spec_mzs.tolist(), b_spec_ints.tolist(), b_pred_oos_logprob]
+					rows_to_append.append(data_row)
 
-			# Append to pkl file after each batch
-			#batch_df = pd.DataFrame(rows_to_append, columns=columns)
-			#if os.path.exists(pkl_fp):
-				# Append to existing file
-			#	prev_df = pd.read_pickle(pkl_fp)
-			#	new_df = pd.concat([prev_df, batch_df], ignore_index=True)
-			#	new_df.to_pickle(pkl_fp)
-			#else:
-			#	batch_df.to_pickle(pkl_fp)
+				# Append to pkl file after each batch
+				batch_df = pd.DataFrame(rows_to_append, columns=columns)
+				if os.path.exists(pkl_fp):
+					# Append to existing file
+					prev_df = pd.read_pickle(pkl_fp)
+					new_df = pd.concat([prev_df, batch_df], ignore_index=True)
+					new_df.to_pickle(pkl_fp)
+				else:
+					batch_df.to_pickle(pkl_fp)
+			except RuntimeError as e:
+				if "out of memory" in str(e):
+					print(f"CUDA OOM at batch {batch_idx}, skipping batch.")
+					th.cuda.empty_cache()
+					continue
+				else:
+					raise
 
 	# clean up temporary fragment directory
 	if temp_frag_dir is not None:
