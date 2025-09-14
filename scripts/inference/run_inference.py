@@ -89,9 +89,15 @@ if __name__ == "__main__":
 		help="Batch size for evaluation/inference"
 	)
 	parser.add_argument(
+		"--save_chunk_size",
+		type=int,
+		default=10000,
+		help="Number of predictions saved to a single chunk file"
+	)
+	parser.add_argument(
 		"--save_interval",
 		type=int,
-		default=5000,
+		default=1000,
 		help="Number of predictions to save before writing to disk"
 	)
 	args = parser.parse_args()
@@ -197,9 +203,40 @@ if __name__ == "__main__":
 	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
 	print("> num of spec after filtering by dag", len(spec_df))
 
+	# Remove rows where 'id' is in remove_list
+	# don't crash....
+	remove_list = [808, 890, 909, 1252, 1257, 1350, 1810, 2288, 1871, 2177, 2307, 3910, 3944, 5354]
+	mol_df = mol_df[~mol_df['mol_id'].isin(remove_list)]
+	spec_df = spec_df[~spec_df['mol_id'].isin(remove_list)]
+  
+	model_save_dp = os.path.join(args.save_dp, args.wandb_run_id)
+	os.makedirs(model_save_dp, exist_ok=True)	
+	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos']
+
+	pkl_chunk_dp = os.path.join(model_save_dp, "chunks")
+	os.makedirs(pkl_chunk_dp, exist_ok=True)
+
+	num_done = 0
+	for file in os.listdir(pkl_chunk_dp):
+		if file.endswith(".pkl"):
+			chunk_fp = os.path.join(pkl_chunk_dp, file)
+			print(f"Loading existing chunk predictions from {chunk_fp} to skip already predicted spec_id...")
+			existing_df = pd.read_pickle(chunk_fp)
+			existing_spec_ids = set(existing_df['spec_id'])
+			num_done += len(existing_spec_ids)
+			spec_df = spec_df[~spec_df['spec_id'].isin(existing_spec_ids)]
+	print(f">> num spec to predict: {len(spec_df)} (skipped {num_done} already done)")
+	current_chunk_idx = num_done // args.save_chunk_size
+	print(f">> starting from chunk index: {current_chunk_idx}")
+
 	config_d['mol_fp'] = mol_df
 	config_d['spec_fp'] = spec_df
 
+	"""DEBUGGING
+	"""
+	spec_df_debug = spec_df.merge(mol_df, on='mol_id', how='left')
+	#print(spec_df_debug.iloc[9660])
+ 
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
 	ds = ds_cls(split="predict_only", **config_d)
@@ -220,19 +257,21 @@ if __name__ == "__main__":
 		model.load_state_dict(ckpt["state_dict"], strict=False)
 	model.to(device)
 	model.eval()
- 
-	model_save_dp = os.path.join(args.save_dp, args.wandb_run_id)
-	os.makedirs(model_save_dp, exist_ok=True)
-	pkl_fp = os.path.join(model_save_dp, f"predictions.pkl")
 
-	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos']
 
 	all_rows = []
 	total_preds = 0
-
+	pkl_fp = os.path.join(model_save_dp, "chunks", f"chunk_{current_chunk_idx}.pkl")
+ 
 	with th.inference_mode():
 		for batch_idx, batch_input in tqdm(enumerate(dl), total=len(dl), desc=" Running inference"):
+			#if batch_idx < 10631:
+				#num_atoms = spec_df_debug.iloc[batch_idx]['num_atoms']
+				#if num_atoms > 64:
+				#	print(spec_df_debug.iloc[batch_idx][['num_atoms','inchikey','mol_id','spec_id']])
+			#	continue
 			try:
+				print(spec_df_debug.iloc[batch_idx][['num_atoms','inchikey','mol_id','spec_id']])
 				spec_ids = batch_input['spec_unique_id']
 				mol_ids = batch_input['mol_id']
 
@@ -267,23 +306,34 @@ if __name__ == "__main__":
 					total_preds += 1
 
 				# Save by interval
-				if total_preds %  args.save_interval  == 0:
+				if total_preds % args.save_interval == 0:
 					batch_df = pd.DataFrame(all_rows, columns=columns)
-					batch_df.to_pickle(pkl_fp)
-					print(f"Saved {total_preds} predictions to {pkl_fp}")
+					if os.path.exists(pkl_fp):
+						existing_df = pd.read_pickle(pkl_fp)
+						combined_df = pd.concat([existing_df, batch_df], ignore_index=True)
+						combined_df = combined_df.drop_duplicates(subset=["spec_id"])
+					else:
+						combined_df = batch_df
+					combined_df.to_pickle(pkl_fp)
+					print(f"Saved {len(combined_df)} predictions to {pkl_fp}")
 			except RuntimeError as e:
+				print(batch_input)
 				#if "out of memory" in str(e):
 				print(f"error {e} at {batch_idx}, skipping batch.")
 				th.cuda.empty_cache()
 				continue
-				#else:
-				#	raise
 
 	# Final save for any remaining predictions
 	if all_rows:
 		batch_df = pd.DataFrame(all_rows, columns=columns)
-		batch_df.to_pickle(pkl_fp)
-		print(f"Final save: {total_preds} predictions to {pkl_fp}")
+		if os.path.exists(pkl_fp):
+			existing_df = pd.read_pickle(pkl_fp)
+			combined_df = pd.concat([existing_df, batch_df], ignore_index=True)
+			combined_df = combined_df.drop_duplicates(subset=["spec_id"])
+		else:
+			combined_df = batch_df
+		combined_df.to_pickle(pkl_fp)
+		print(f"Final save: {len(combined_df)} predictions to {pkl_fp}")
 
 	# clean up temporary fragment directory
 	if temp_frag_dir is not None:
