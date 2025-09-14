@@ -88,6 +88,12 @@ if __name__ == "__main__":
 		default=1,
 		help="Batch size for evaluation/inference"
 	)
+	parser.add_argument(
+		"--save_interval",
+		type=int,
+		default=5000,
+		help="Number of predictions to save before writing to disk"
+	)
 	args = parser.parse_args()
 	if args.model_ckpt is None:
 		os.makedirs(args.model_save_dp, exist_ok=True)	
@@ -221,6 +227,9 @@ if __name__ == "__main__":
 
 	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos']
 
+	all_rows = []
+	total_preds = 0
+
 	with th.inference_mode():
 		for batch_idx, batch_input in tqdm(enumerate(dl), total=len(dl), desc=" Running inference"):
 			try:
@@ -241,7 +250,6 @@ if __name__ == "__main__":
 				pred_ints = batch_result["pred_ints"].detach().cpu()
 				pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 
-				rows_to_append = []
 				for b_idx in range(batch_size):
 					b_peak_mask = pred_batch_idxs == b_idx
 
@@ -255,17 +263,14 @@ if __name__ == "__main__":
 					b_spec_ints = pred_ints[b_peak_mask]
 
 					data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, spec_inst_type, b_spec_mzs.tolist(), b_spec_ints.tolist(), b_pred_oos_logprob]
-					rows_to_append.append(data_row)
+					all_rows.append(data_row)
+					total_preds += 1
 
-				# Append to pkl file after each batch
-				batch_df = pd.DataFrame(rows_to_append, columns=columns)
-				if os.path.exists(pkl_fp):
-					# Append to existing file
-					prev_df = pd.read_pickle(pkl_fp)
-					new_df = pd.concat([prev_df, batch_df], ignore_index=True)
-					new_df.to_pickle(pkl_fp)
-				else:
+				# Save by interval
+				if total_preds %  args.save_interval  == 0:
+					batch_df = pd.DataFrame(all_rows, columns=columns)
 					batch_df.to_pickle(pkl_fp)
+					print(f"Saved {total_preds} predictions to {pkl_fp}")
 			except RuntimeError as e:
 				if "out of memory" in str(e):
 					print(f"CUDA OOM at batch {batch_idx}, skipping batch.")
@@ -273,6 +278,12 @@ if __name__ == "__main__":
 					continue
 				else:
 					raise
+
+	# Final save for any remaining predictions
+	if all_rows:
+		batch_df = pd.DataFrame(all_rows, columns=columns)
+		batch_df.to_pickle(pkl_fp)
+		print(f"Final save: {total_preds} predictions to {pkl_fp}")
 
 	# clean up temporary fragment directory
 	if temp_frag_dir is not None:
