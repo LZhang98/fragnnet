@@ -196,7 +196,7 @@ if __name__ == "__main__":
 
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
-	ds = ds_cls(split="inference", **config_d)
+	ds = ds_cls(split="predict_only", **config_d)
 	dl = init_dataloader(ds, config_d)
 	model_cls = FragGNNPL
 	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
