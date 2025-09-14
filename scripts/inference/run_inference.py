@@ -119,8 +119,8 @@ if __name__ == "__main__":
 	config_d["group_sampler"] = False 
 	config_d["simple_group_sampler"] = False
 	# override batch size
-	config_d["train_batch_size"] = 4
-	config_d["eval_batch_size"] = 4
+	config_d["train_batch_size"] = 1
+	config_d["eval_batch_size"] = 1
 
 	print("> preload mol_df")
 	mol_df = pd.read_pickle(os.path.join(args.proc_dp,'mol_df.pkl.gz'))
