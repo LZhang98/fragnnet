@@ -82,6 +82,12 @@ if __name__ == "__main__":
 		default=1.0,
 		help="Minimum intensity for predictions n/1000"
 	)
+	parser.add_argument(
+		"--eval_batch_size",
+		type=int,
+		default=1,
+		help="Batch size for evaluation/inference"
+	)
 	args = parser.parse_args()
 	if args.model_ckpt is None:
 		os.makedirs(args.model_save_dp, exist_ok=True)	
@@ -120,7 +126,7 @@ if __name__ == "__main__":
 	config_d["simple_group_sampler"] = False
 	# override batch size
 	config_d["train_batch_size"] = 1
-	config_d["eval_batch_size"] = 1
+	config_d["eval_batch_size"] = args.eval_batch_size
 
 	print("> preload mol_df")
 	mol_df = pd.read_pickle(os.path.join(args.proc_dp,'mol_df.pkl.gz'))
@@ -190,7 +196,7 @@ if __name__ == "__main__":
 
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
-	ds = ds_cls(split="predict_only", **config_d)
+	ds = ds_cls(split="inference", **config_d)
 	dl = init_dataloader(ds, config_d)
 	model_cls = FragGNNPL
 	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
