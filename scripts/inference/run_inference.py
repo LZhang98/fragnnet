@@ -91,13 +91,13 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--save_chunk_size",
 		type=int,
-		default=10000,
+		default=10_000,
 		help="Number of predictions saved to a single chunk file"
 	)
 	parser.add_argument(
 		"--save_interval",
 		type=int,
-		default=1000,
+		default=1_000,
 		help="Number of predictions to save before writing to disk"
 	)
 	args = parser.parse_args()
@@ -153,7 +153,7 @@ if __name__ == "__main__":
 	# Precompute fragment graphs for FragGNN models (this is time-intensive)
 	# this is for frag_gnn only
 	# Create temporary directory for fragment generation
-
+	temp_frag_dir = None
 	if args.frag_dp is not None:
 		config_d['frag_dp'] = args.frag_dp
 		print(f"> Using provided fragment directory: {config_d['frag_dp']}")
@@ -205,9 +205,9 @@ if __name__ == "__main__":
 
 	# Remove rows where 'id' is in remove_list
 	# don't crash....
-	remove_list = [808, 890, 909, 1252, 1257, 1350, 1810, 2288, 1871, 2177, 2307, 3910, 3944, 5354]
-	mol_df = mol_df[~mol_df['mol_id'].isin(remove_list)]
-	spec_df = spec_df[~spec_df['mol_id'].isin(remove_list)]
+	#remove_list = [808, 890, 909, 1252, 1257, 1350, 1810, 2288, 1871, 2177, 2307, 3910, 3944, 5354]
+	#mol_df = mol_df[~mol_df['mol_id'].isin(remove_list)]
+	#spec_df = spec_df[~spec_df['mol_id'].isin(remove_list)]
   
 	model_save_dp = os.path.join(args.save_dp, args.wandb_run_id)
 	os.makedirs(model_save_dp, exist_ok=True)	
@@ -271,7 +271,7 @@ if __name__ == "__main__":
 				#	print(spec_df_debug.iloc[batch_idx][['num_atoms','inchikey','mol_id','spec_id']])
 			#	continue
 			try:
-				print(spec_df_debug.iloc[batch_idx][['num_atoms','inchikey','mol_id','spec_id']])
+				# print(spec_df_debug.iloc[batch_idx][['num_atoms','inchikey','mol_id','spec_id']])
 				spec_ids = batch_input['spec_unique_id']
 				mol_ids = batch_input['mol_id']
 
@@ -308,7 +308,8 @@ if __name__ == "__main__":
 				# Save by interval
 				if total_preds % args.save_interval == 0:
 					batch_df = pd.DataFrame(all_rows, columns=columns)
-					if total_preds // args.save_chunk_size > current_chunk_idx:
+					all_rows = []
+					if (total_preds  + num_done) // args.save_chunk_size > current_chunk_idx:
 						# move to next chunk
 						current_chunk_idx += 1
 						pkl_fp = os.path.join(model_save_dp, "chunks", f"chunk_{current_chunk_idx}.pkl")
@@ -331,7 +332,7 @@ if __name__ == "__main__":
 	# Final save for any remaining predictions
 	if all_rows:
 		batch_df = pd.DataFrame(all_rows, columns=columns)
-		if total_preds // args.save_chunk_size > current_chunk_idx:
+		if (total_preds + num_done) // args.save_chunk_size > current_chunk_idx:
 			# move to next chunk
 			current_chunk_idx += 1
 			pkl_fp = os.path.join(model_save_dp, "chunks", f"chunk_{current_chunk_idx}.pkl")
