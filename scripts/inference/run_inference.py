@@ -308,6 +308,11 @@ if __name__ == "__main__":
 				# Save by interval
 				if total_preds % args.save_interval == 0:
 					batch_df = pd.DataFrame(all_rows, columns=columns)
+					if total_preds // args.save_chunk_size > current_chunk_idx:
+						# move to next chunk
+						current_chunk_idx += 1
+						pkl_fp = os.path.join(model_save_dp, "chunks", f"chunk_{current_chunk_idx}.pkl")
+						print(f"> moving to next chunk: {current_chunk_idx}, {pkl_fp}")
 					if os.path.exists(pkl_fp):
 						existing_df = pd.read_pickle(pkl_fp)
 						combined_df = pd.concat([existing_df, batch_df], ignore_index=True)
@@ -326,6 +331,11 @@ if __name__ == "__main__":
 	# Final save for any remaining predictions
 	if all_rows:
 		batch_df = pd.DataFrame(all_rows, columns=columns)
+		if total_preds // args.save_chunk_size > current_chunk_idx:
+			# move to next chunk
+			current_chunk_idx += 1
+			pkl_fp = os.path.join(model_save_dp, "chunks", f"chunk_{current_chunk_idx}.pkl")
+			print(f"> moving to next chunk: {current_chunk_idx}, {pkl_fp}")
 		if os.path.exists(pkl_fp):
 			existing_df = pd.read_pickle(pkl_fp)
 			combined_df = pd.concat([existing_df, batch_df], ignore_index=True)
