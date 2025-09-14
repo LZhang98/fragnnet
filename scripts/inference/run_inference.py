@@ -272,12 +272,12 @@ if __name__ == "__main__":
 					batch_df.to_pickle(pkl_fp)
 					print(f"Saved {total_preds} predictions to {pkl_fp}")
 			except RuntimeError as e:
-				if "out of memory" in str(e):
-					print(f"CUDA OOM at batch {batch_idx}, skipping batch.")
-					th.cuda.empty_cache()
-					continue
-				else:
-					raise
+				#if "out of memory" in str(e):
+				print(f"error {e} at {batch_idx}, skipping batch.")
+				th.cuda.empty_cache()
+				continue
+				#else:
+				#	raise
 
 	# Final save for any remaining predictions
 	if all_rows:
