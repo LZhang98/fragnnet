@@ -55,16 +55,6 @@ if __name__ == "__main__":
 		default=False
 	)
 	parser.add_argument(
-		"--output_subset", 
-		type=str, 
-		nargs="+", 
-		default=[
-			"pred_mzs",
-			"pred_logprobs",
-			"oos_prob",
-		]
-	)
-	parser.add_argument(
 		"--disable_preproc",
 		type=booltype,
 		default=True
@@ -86,6 +76,12 @@ if __name__ == "__main__":
 		default=8,
 		help="Number of predictions to output"
 	)
+	parser.add_argument(
+		"--min_intensity",
+		type=float,
+		default=1.0,
+		help="Minimum intensity for predictions n/1000"
+	)
 	args = parser.parse_args()
 	if args.model_ckpt is None:
 		os.makedirs(args.model_save_dp, exist_ok=True)	
@@ -98,11 +94,6 @@ if __name__ == "__main__":
 		ckpt_fp = args.model_ckpt
   
 	save_dp = args.save_dp
-	#if args.output_everything:
-	output_subset = None
-	#else:
-	#	output_subset = set(args.output_subset)
-
 	# find wandb checkpoints
 	template_fp = args.template_fp
 	custom_fp = args.custom_fp
@@ -144,41 +135,45 @@ if __name__ == "__main__":
 	# this is for frag_gnn only
 	# Create temporary directory for fragment generation
 
-	temp_frag_dir = tempfile.TemporaryDirectory() if config_d["model_type"] in ["frag_gnn","fragnnet"] else None
-	if config_d["model_type"] in ["frag_gnn","fragnnet"]:
-		print(f"> Using temporary fragment directory: {temp_frag_dir.name}")
-		# Override fragment directory in config to use temporary directory
-		config_d['frag_dp'] = temp_frag_dir.name		
+	if args.frag_dp is not None:
+		config_d['frag_dp'] = args.frag_dp
+		print(f"> Using provided fragment directory: {config_d['frag_dp']}")
+	else:
+		temp_frag_dir = tempfile.TemporaryDirectory() if config_d["model_type"] in ["frag_gnn","fragnnet"] else None
+		if config_d["model_type"] in ["frag_gnn","fragnnet"]:
+			print(f"> Using temporary fragment directory: {temp_frag_dir.name}")
+			# Override fragment directory in config to use temporary directory
+			config_d['frag_dp'] = temp_frag_dir.name		
 
-		# Prepare inputs for parallel fragment graph generation
-		dag_feat_inputs_l = []
-		for _, row in tqdm(mol_df.iterrows(), total=len(mol_df)):
-			dag_feat_inputs_l.append([
-									row['mol'],           # RDKit molecule object
-									row['mol_id'],        # Molecule identifier
-									config_d['num_depth'] - 1, #args.max_depth,  # Maximum fragmentation depth
-									True, # h_prior        # Use hydrogen prior
-									config_d['num_hs'], #args.max_h_transfer,  # Maximum hydrogen transfers
-									150, #args.max_time,   # Maximum time for fragmentation (seconds)
-									False, #args.isotopes, # Include isotopes
-									False, #nb_isomorphic, # Number of isomorphic fragments
-									-1,                   # Random seed (-1 for no seed)
-									config_d['frag_dp'],  # Fragment directory (now temporary)
-									False, #args.allow_cached  # Don't use cached fragments
-									config_d['frag_params']['compressed'] # Not compressed
-									])
-		
-		# Time the fragment generation process
-		start = time.time()
-		print(f"> run frag gen")
-		# Generate fragment graphs in parallel
-		frag_results = data_utils.par_apply(iter(dag_feat_inputs_l),frag_utils.timed_get_dags,True, return_as_generator=True)
-		# Consume the generator to complete all fragment computations
-		for res in tqdm(frag_results, total = len(dag_feat_inputs_l), desc = "Compute Frags"):
-			continue
-		end = time.time()
-		time_cost = end-start
-		print(f" frag gen time cost {time_cost}s")
+			# Prepare inputs for parallel fragment graph generation
+			dag_feat_inputs_l = []
+			for _, row in tqdm(mol_df.iterrows(), total=len(mol_df)):
+				dag_feat_inputs_l.append([
+										row['mol'],           # RDKit molecule object
+										row['mol_id'],        # Molecule identifier
+										config_d['num_depth'] - 1, #args.max_depth,  # Maximum fragmentation depth
+										True, # h_prior        # Use hydrogen prior
+										config_d['num_hs'], #args.max_h_transfer,  # Maximum hydrogen transfers
+										150, #args.max_time,   # Maximum time for fragmentation (seconds)
+										False, #args.isotopes, # Include isotopes
+										False, #nb_isomorphic, # Number of isomorphic fragments
+										-1,                   # Random seed (-1 for no seed)
+										config_d['frag_dp'],  # Fragment directory (now temporary)
+										False, #args.allow_cached  # Don't use cached fragments
+										config_d['frag_params']['compressed'] # Not compressed
+										])
+			
+			# Time the fragment generation process
+			start = time.time()
+			print(f"> run frag gen")
+			# Generate fragment graphs in parallel
+			frag_results = data_utils.par_apply(iter(dag_feat_inputs_l),frag_utils.timed_get_dags,True, return_as_generator=True)
+			# Consume the generator to complete all fragment computations
+			for res in tqdm(frag_results, total = len(dag_feat_inputs_l), desc = "Compute Frags"):
+				continue
+			end = time.time()
+			time_cost = end-start
+			print(f" frag gen time cost {time_cost}s")
 
 	print(">>> Loading dataset")
 	ds_cls = SpecMolFragDataset
@@ -201,31 +196,34 @@ if __name__ == "__main__":
 	model.to(device)
 	model.eval()
  
-	preds_l = []
+	model_save_dp = os.path.join(args.save_dp, args.wandb_run_id)
+	os.makedirs(model_save_dp, exist_ok=True)
+	pkl_fp = os.path.join(model_save_dp, f"predictions.pkl")
+
+	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos']
 	with th.inference_mode():
-		for _, batch_input in tqdm(enumerate(dl),total=len(dl), desc=" Running inference"):
+		for _, batch_input in tqdm(enumerate(dl), total=len(dl), desc=" Running inference"):
 			spec_ids = batch_input['spec_unique_id']
 			mol_ids = batch_input['mol_id']
 
 			batch_input = to_device(batch_input, device)
-			# print(batch_input)
-			# use existing validate to compute cos sim and etc
 			batch_result = model._common_step(batch_input, split=config_d, log=False)
 			batch_size = batch_input['batch_size'].detach().cpu()
 
 			pred_mzs = batch_result["pred_mzs"].detach().cpu()
 			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-			
+
 			has_oos_b = "pred_oos_logprobs" in batch_result
 			if has_oos_b:
 				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
-	
+
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
-			
+
+			rows_to_append = []
 			for b_idx in range(batch_size):
 				b_peak_mask = pred_batch_idxs == b_idx
-	
+
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
 				b_spec_id = spec_ids[b_idx]
 				b_mol_id = mol_ids[b_idx]
@@ -235,18 +233,19 @@ if __name__ == "__main__":
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, spec_inst_type, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
-				preds_l.append(data_row)
-			# this is for debug
-			# break # only one batch for testing
+				data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, spec_inst_type, b_spec_mzs.tolist(), b_spec_ints.tolist(), b_pred_oos_logprob]
+				rows_to_append.append(data_row)
 
-	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos']
-	df = pd.DataFrame(preds_l, columns=columns)
-	model_save_dp = os.path.join(args.save_dp,args.wandb_run_id)
-	os.makedirs(model_save_dp,exist_ok=True)
+			# Append to pkl file after each batch
+			batch_df = pd.DataFrame(rows_to_append, columns=columns)
+			if os.path.exists(pkl_fp):
+				# Append to existing file
+				prev_df = pd.read_pickle(pkl_fp)
+				new_df = pd.concat([prev_df, batch_df], ignore_index=True)
+				new_df.to_pickle(pkl_fp)
+			else:
+				batch_df.to_pickle(pkl_fp)
 
-	df.to_pickle(os.path.join(model_save_dp,f"predictions.pkl"))
- 
 	# clean up temporary fragment directory
 	if temp_frag_dir is not None:
 		print(f"> Cleaning up temporary fragment directory: {temp_frag_dir.name}")
