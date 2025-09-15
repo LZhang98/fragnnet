@@ -66,7 +66,7 @@ if __name__ == "__main__":
 	else:
 		raise FileNotFoundError(f"Could not find spec_df file in {proc_dp}. Looked for both spec_df.pkl.gz and spec_df.pkl")
 	
-	spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s']], on='mol_id', how='left')
+	spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'input_mol_id']], on='mol_id', how='left')
 	spec_df = spec_df.drop(columns=['peaks'])
 
 	# Get list of files to process
@@ -110,8 +110,8 @@ if __name__ == "__main__":
 						mgf_file.write('BEGIN IONS\n')
 						mgf_file.write(f"TITLE={row['spec_id']}\n")
 
-						if 'mol_id' in row and not_nan_none(row['mol_id']):
-							mgf_file.write(f"MOL_ID={row['mol_id']}\n")
+						if 'input_mol_id' in row and not_nan_none(row['input_mol_id']):
+							mgf_file.write(f"ID={row['input_mol_id']}\n")
 						if 'smiles' in row and not_nan_none(row['smiles']):
 							mgf_file.write(f"SMILES={row['smiles']}\n")
 						if 'inchikey_s' in row and not_nan_none(row['inchikey_s']):
