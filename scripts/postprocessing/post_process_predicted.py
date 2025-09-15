@@ -66,7 +66,8 @@ if __name__ == "__main__":
 	else:
 		raise FileNotFoundError(f"Could not find spec_df file in {proc_dp}. Looked for both spec_df.pkl.gz and spec_df.pkl")
 	
-	if 'input_mol_id' in mol_df.columns:
+	has_input_mol_id = 'input_mol_id' in mol_df.columns
+	if has_input_mol_id:
 		print("mol_df contains 'input_mol_id' column")
 		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'input_mol_id']], on='mol_id', how='left')
 	else:
@@ -116,6 +117,8 @@ if __name__ == "__main__":
 
 						if 'input_mol_id' in row and not_nan_none(row['input_mol_id']):
 							mgf_file.write(f"ID={row['input_mol_id']}\n")
+						if 'mol_id' in row and not_nan_none(row['mol_id']) and not has_input_mol_id:
+							mgf_file.write(f"MOL_ID={row['mol_id']}\n")
 						if 'smiles' in row and not_nan_none(row['smiles']):
 							mgf_file.write(f"SMILES={row['smiles']}\n")
 						if 'inchikey_s' in row and not_nan_none(row['inchikey_s']):
