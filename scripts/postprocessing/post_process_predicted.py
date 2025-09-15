@@ -66,7 +66,11 @@ if __name__ == "__main__":
 	else:
 		raise FileNotFoundError(f"Could not find spec_df file in {proc_dp}. Looked for both spec_df.pkl.gz and spec_df.pkl")
 	
-	spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'input_mol_id']], on='mol_id', how='left')
+	if 'input_mol_id' in mol_df.columns:
+		print("mol_df contains 'input_mol_id' column")
+		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'input_mol_id']], on='mol_id', how='left')
+	else:
+		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s']], on='mol_id', how='left')
 	spec_df = spec_df.drop(columns=['peaks'])
 
 	# Get list of files to process
