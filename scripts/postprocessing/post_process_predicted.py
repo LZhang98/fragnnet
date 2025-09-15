@@ -128,6 +128,9 @@ if __name__ == "__main__":
 		
 						# Write peaks, filter out intensity < 1
 						peaks = row['pred_peaks']
+						for mz, intensity in peaks:
+							if intensity >= 1.0:
+								mgf_file.write(f"{mz:.6f} {intensity:.1f}\n")
 						mgf_file.write('END IONS\n\n')
 				print(f"Saved MGF to {mgf_fp}")
 			
