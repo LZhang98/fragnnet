@@ -212,15 +212,29 @@ def validate_inputs(smiles_list, prec_types, ces, nces, inst_types, max_heavy_at
 	if not prec_types:
 		raise ValueError("Precursor types list cannot be empty")
 	
-	if not ces:
-		raise ValueError("Collision energies (eV) list cannot be empty")
+	#if not ces:
+	#	raise ValueError("Collision energies (eV) list cannot be empty")
 		
-	if not nces:
-		raise ValueError("Normalized collision energies (NCE) list cannot be empty")
+	#if not nces:
+	#	raise ValueError("Normalized collision energies (NCE) list cannot be empty")
 	
 	if not inst_types:
 		raise ValueError("Instrument types list cannot be empty")
-	
+		
+	# Log CE unit expectations for each instrument type
+	for inst_type in inst_types:
+		if inst_type == "FT":
+			logger.info(f"Instrument type '{inst_type}' will use NCE (%) values: {nces}")
+			if len(nces) == 0:
+				raise ValueError(f"Instrument type '{inst_type}' requires NCE values, but none were provided.")
+		elif inst_type in ["QTOF"]:
+			logger.info(f"Instrument type '{inst_type}' will use ACE (eV) values: {ces}")
+			if len(ces) == 0:
+				raise ValueError(f"Instrument type '{inst_type}' requires ACE values, but none were provided.")
+		else:
+			# TODO: update this later
+			logger.info(f"Instrument type '{inst_type}', please ensure appropriate CE values are provided.")
+
 	# Validate collision energies are numeric
 	for ce in ces:
 		try:
@@ -233,14 +247,6 @@ def validate_inputs(smiles_list, prec_types, ces, nces, inst_types, max_heavy_at
 			float(nce)
 		except (ValueError, TypeError):
 			raise ValueError(f"Invalid NCE value: {nce}. Must be numeric.")
-	
-	# Log CE unit expectations for each instrument type
-	for inst_type in inst_types:
-		if inst_type == "FT":
-			logger.info(f"Instrument type '{inst_type}' will use NCE (%) values: {nces}")
-		else:
-			logger.info(f"Instrument type '{inst_type}' will use ACE (eV) values: {ces}")
-
 	if max_heavy_atoms < 1 or max_heavy_atoms > MAX_NUM_NODES:
 		raise ValueError(f"max_heavy_atoms must be between 1 and {MAX_NUM_NODES}")
 
@@ -358,14 +364,16 @@ Examples:
 		"--ces", 
 		nargs="+", 
 		type=float,
-		required=True,
+		required=False,
+		default=[],
 		help="List of collision energies (eVs) without eVs, used by QToF"
 	)
 	parser.add_argument(
 		"--nces", 
 		nargs="+", 
 		type=float,
-		required=True,
+		required=False,
+		default=[],
 		help="List of NCE values without % (e.g., 10.0 20.0 30.0), used by Orbitrap and Ion Trap"
 	)
 	parser.add_argument(
