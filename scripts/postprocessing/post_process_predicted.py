@@ -120,7 +120,7 @@ if __name__ == "__main__":
 						if 'nce' in row and not_nan_none(row['nce']):
 							mgf_file.write(f"COLLISIONENERGY={row['nce']}% NCE\n")
 						if 'ace' in row and not_nan_none(row['ace']):
-							mgf_file.write(f"ALT_COLLISIONENERGY={row['ace']}eV\n")
+							mgf_file.write(f"COLLISIONENERGY={row['ace']}eV\n")
 						if 'formula' in row:
 							mgf_file.write(f"FORMULA={row['formula']}\n")
 						if 'exact_mass' in row:
