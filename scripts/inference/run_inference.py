@@ -62,19 +62,14 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--proc_dp",
 		type=str,
-		default="./data/other/mimedb/proc",
+		required=True,
 		help="Directory containing mol_df.pkl.gz and spec_df.pkl.gz files"
 	)
 	parser.add_argument(
 		"--frag_dp",
 		type=str,
-		default="./data/other/mimedb/frag",
-	)
-	parser.add_argument(
-		"--num_predictions",
-		type=int,
-		default=8,
-		help="Number of predictions to output"
+		required=True,
+		help="Directory containing precomputed fragment graphs, if None provided, will create a temporary directory"
 	)
 	parser.add_argument(
 		"--min_intensity",
