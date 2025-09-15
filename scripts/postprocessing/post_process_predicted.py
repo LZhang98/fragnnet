@@ -116,7 +116,7 @@ if __name__ == "__main__":
 						mgf_file.write(f"TITLE={row['spec_id']}\n")
 
 						if 'input_mol_id' in row and not_nan_none(row['input_mol_id']):
-							mgf_file.write(f"ID={row['input_mol_id']}\n")
+							mgf_file.write(f"MOL_ID={row['input_mol_id']}\n")
 						if 'mol_id' in row and not_nan_none(row['mol_id']) and not has_input_mol_id:
 							mgf_file.write(f"MOL_ID={row['mol_id']}\n")
 						if 'smiles' in row and not_nan_none(row['smiles']):

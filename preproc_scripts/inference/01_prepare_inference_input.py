@@ -422,6 +422,8 @@ Examples:
 				ids_list = smiles_df[args.id_colname].astype(str).tolist()
 				if len(ids_list) != len(smiles_list):
 					raise ValueError(f"Length of IDs list ({len(ids_list)}) does not match length of SMILES list ({len(smiles_list)})")
+			elif args.id_colname not in smiles_df.columns:
+				raise ValueError(f"ID column name '{args.id_colname}' not found in CSV columns: {smiles_df.columns.tolist()}")
 
 	# Validate inputs
 	validate_inputs(smiles_list, args.prec_types, args.ces, args.nces, args.inst_types, args.max_heavy_atoms)
