@@ -91,10 +91,19 @@ if __name__ == "__main__":
 			print(f"Merged pred_df now has {len(pred_df)} rows")
 
 			pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
-			
+			if intensity_threshold > 0:
+				# Apply intensity threshold filtering
+				pred_df.loc[:, "pred_peaks"] = pred_df["pred_peaks"].apply(lambda peaks: peaks[peaks[:, 1] >= intensity_threshold])
+     
 			if args.export_mgf:
 				# Convert predictions to MGF format
-				mgf_fp = src_fp.replace('.pkl', '.mgf').replace('.gz', '')
+    			# Save processed predictions to PKL format
+				basename = os.path.basename(src_fp)
+				mgf_fp = os.path.join(args.output_dp, f"processed_{basename}.mgf")
+
+				# Ensure output directories exist
+				os.makedirs(os.path.dirname(mgf_fp), exist_ok=True)
+    
 				with open(mgf_fp, 'w') as mgf_file:
 					for idx, row in pred_df.iterrows():
 						mgf_file.write('BEGIN IONS\n')
@@ -119,26 +128,15 @@ if __name__ == "__main__":
 		
 						# Write peaks, filter out intensity < 1
 						peaks = row['pred_peaks']
-						for mz, intensity in peaks:
-							if intensity >= intensity_threshold:
-								mgf_file.write(f"{mz:.6f} {intensity:.6f}\n")
 						mgf_file.write('END IONS\n\n')
 				print(f"Saved MGF to {mgf_fp}")
 			
 			if args.export_pkl:
 				# Save processed predictions to PKL format
-				if args.output_fp:
-					pkl_fp = args.output_fp
-				elif args.output_dp:
-					basename = os.path.basename(src_fp)
-					pkl_fp = os.path.join(args.output_dp, f"processed_{basename}")
-				else:
-					# Default: save in same directory with 'processed_' prefix
-					dirname = os.path.dirname(src_fp)
-					basename = os.path.basename(src_fp)
-					pkl_fp = os.path.join(dirname, f"processed_{basename}")
-				
-				# Ensure output directory exists
+				basename = os.path.basename(src_fp)
+				pkl_fp = os.path.join(args.output_dp, f"processed_{basename}")
+
+				# Ensure output directories exist
 				os.makedirs(os.path.dirname(pkl_fp), exist_ok=True)
 				
 				# Save the processed dataframe
