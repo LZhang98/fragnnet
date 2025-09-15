@@ -93,17 +93,18 @@ if __name__ == "__main__":
 			pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
 			if intensity_threshold > 0:
 				# Apply intensity threshold filtering
+				print(f"Applied intensity threshold of {intensity_threshold}, now pred_df has peaks with intensities >= {intensity_threshold}")
 				pred_df.loc[:, "pred_peaks"] = pred_df["pred_peaks"].apply(lambda peaks: peaks[peaks[:, 1] >= intensity_threshold])
-     
+			
+			pred_df.drop(columns=['pred_mzs', 'pred_ints'], inplace=True)
 			if args.export_mgf:
 				# Convert predictions to MGF format
-    			# Save processed predictions to PKL format
 				basename = os.path.basename(src_fp)
 				mgf_fp = os.path.join(args.output_dp, f"processed_{basename}.mgf")
 
 				# Ensure output directories exist
 				os.makedirs(os.path.dirname(mgf_fp), exist_ok=True)
-    
+	
 				with open(mgf_fp, 'w') as mgf_file:
 					for idx, row in pred_df.iterrows():
 						mgf_file.write('BEGIN IONS\n')
