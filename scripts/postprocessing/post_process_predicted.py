@@ -100,7 +100,7 @@ if __name__ == "__main__":
 			if args.export_mgf:
 				# Convert predictions to MGF format
 				basename = os.path.basename(src_fp)
-				mgf_fp = os.path.join(args.output_dp, f"processed_{basename}.mgf")
+				mgf_fp = os.path.join(args.output_dp, f"processed_{basename}".replace('.pkl.gz', '.mgf').replace('.pkl', '.mgf'))
 
 				# Ensure output directories exist
 				os.makedirs(os.path.dirname(mgf_fp), exist_ok=True)
