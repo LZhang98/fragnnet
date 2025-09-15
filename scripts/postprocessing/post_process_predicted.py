@@ -41,11 +41,30 @@ if __name__ == "__main__":
 	intensity_threshold = args.intensity_threshold
 	proc_dp = args.proc_dp
 	
-	# Load reference data once
-	mol_df = pd.read_pickle(os.path.join(proc_dp, "mol_df.pkl.gz"))
-	print(f"Loaded mol_df with {len(mol_df)} molecules")
-	spec_df = pd.read_pickle(os.path.join(proc_dp, "spec_df.pkl.gz"))
-	print(f"Loaded spec_df with {len(spec_df)} spectra")
+	# Load reference data once - try .pkl.gz first, then .pkl, then error
+	mol_df_path_gz = os.path.join(proc_dp, "mol_df.pkl.gz")
+	mol_df_path_pkl = os.path.join(proc_dp, "mol_df.pkl")
+	
+	if os.path.exists(mol_df_path_gz):
+		mol_df = pd.read_pickle(mol_df_path_gz)
+		print(f"Loaded mol_df with {len(mol_df)} molecules from {mol_df_path_gz}")
+	elif os.path.exists(mol_df_path_pkl):
+		mol_df = pd.read_pickle(mol_df_path_pkl)
+		print(f"Loaded mol_df with {len(mol_df)} molecules from {mol_df_path_pkl}")
+	else:
+		raise FileNotFoundError(f"Could not find mol_df file in {proc_dp}. Looked for both mol_df.pkl.gz and mol_df.pkl")
+	
+	spec_df_path_gz = os.path.join(proc_dp, "spec_df.pkl.gz")
+	spec_df_path_pkl = os.path.join(proc_dp, "spec_df.pkl")
+	
+	if os.path.exists(spec_df_path_gz):
+		spec_df = pd.read_pickle(spec_df_path_gz)
+		print(f"Loaded spec_df with {len(spec_df)} spectra from {spec_df_path_gz}")
+	elif os.path.exists(spec_df_path_pkl):
+		spec_df = pd.read_pickle(spec_df_path_pkl)
+		print(f"Loaded spec_df with {len(spec_df)} spectra from {spec_df_path_pkl}")
+	else:
+		raise FileNotFoundError(f"Could not find spec_df file in {proc_dp}. Looked for both spec_df.pkl.gz and spec_df.pkl")
 	
 	spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s']], on='mol_id', how='left')
 	spec_df = spec_df.drop(columns=['peaks'])
