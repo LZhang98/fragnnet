@@ -12,7 +12,7 @@ def not_nan_none(val):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--intensity_threshold", type=float, default=1.0, help="Minimum intensity threshold for peaks")
-	parser.add_argument("--proc_dp", type=str, default="./data/other/mas_2064277/proc", help="Processed data directory")
+	parser.add_argument("--proc_dp", type=str, required=True, help="Processed data directory")
 	# Add a mutually exclusive group
 	src_group = parser.add_mutually_exclusive_group()
 	src_group.add_argument("--src_fp", type=str, help="Source pickle file path")
@@ -34,6 +34,9 @@ if __name__ == "__main__":
 
 	if not args.output_fp and not args.output_dp:
 		parser.error("Either --output_fp or --output_dp must be provided")
+
+	if not args.export_pkl and not args.export_mgf:
+		parser.error("Either --export_pkl or --export_mgf must be provided or both can be set to true")
 
 	intensity_threshold = args.intensity_threshold
 	proc_dp = args.proc_dp
