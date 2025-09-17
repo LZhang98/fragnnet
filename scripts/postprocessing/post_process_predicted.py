@@ -1,10 +1,8 @@
-# Example: stack pred_mz and pred_int as pred_peaks
-# pred_peaks = np.stack([pred_mz, pred_int], axis=1)
+# post process predicted spectra
 import pandas as pd
 import os
 import numpy as np
 import argparse
-
 
 def not_nan_none(val):
 	return val is not None and not (isinstance(val, float) and np.isnan(val))
