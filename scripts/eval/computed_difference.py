@@ -35,16 +35,23 @@ def get_miss_matched(ground_truth_peaks, predicted_peaks, match_tolerance=1e-5):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--intensity_threshold", type=float, default=1.0, help="Minimum intensity threshold for peaks")
-	#parser.add_argument("--proc_dp", type=str, required=True, help="Processed data directory")
-	parser.add_argument("--src_fp", type=str, default="output/inference_eval/ikohsc16/predictions_test_with_gt.pkl", help="Predicted pickle file path")
+	parser.add_argument("--proc_dp", type=str, default="data/proc/nist20", help="Processed data directory")
+	parser.add_argument("--src_fp", type=str, default="output/inference_eval/ikohsc16/predictions_test.pkl", help="Predicted pickle file path")
 	#parser.add_argument("--output_fp", type=str, help="Destination pickle file path")
 	args = parser.parse_args()
+	mol_df = pd.read_pickle(f"{args.proc_dp}/mol_df.pkl")
+	mol_df = mol_df[['mol_id', 'smiles']]
+	spec_df = pd.read_pickle(f"{args.proc_dp}/spec_df.pkl")
+	spec_mol_df = spec_df.merge(mol_df, on='mol_id', how='left')
+	spec_mol_df.drop(columns=['mol_id'], inplace=True)
 	intensity_threshold = args.intensity_threshold
  
 	# Process each file
 	pred_df = pd.read_pickle(args.src_fp)
+	pred_df = pred_df.merge(spec_mol_df, on='spec_id', how='left')
 	print(f"Loaded pred_df with {len(pred_df)} predictions")
-
+	print(f"Columns in pred_df: {pred_df.columns.tolist()}")
+	exit()
 	#pred_df = pred_df.merge(spec_df, on='spec_id', how='left')
 	print(f"assemble predicted peaks {len(pred_df)} rows")
 	pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
@@ -278,7 +285,7 @@ if __name__ == "__main__":
 									example_data[col] = example_row[col]
 								
 								# Add other relevant columns if available
-								for col in ['mol_id_x', 'mol_id_y', 'prec_mz', 'cos_sim_0.01', 'cos_hun']:
+								for col in ['mol_id', 'smiles', 'prec_mz', 'cos_sim_0.01', 'cos_hun']:
 									if col in example_row:
 										example_data[col] = example_row[col]
 								
