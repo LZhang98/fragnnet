@@ -51,7 +51,7 @@ if __name__ == "__main__":
 	pred_df = pred_df.merge(spec_mol_df, on='spec_id', how='left')
 	print(f"Loaded pred_df with {len(pred_df)} predictions")
 	print(f"Columns in pred_df: {pred_df.columns.tolist()}")
-	exit()
+
 	#pred_df = pred_df.merge(spec_df, on='spec_id', how='left')
 	print(f"assemble predicted peaks {len(pred_df)} rows")
 	pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
