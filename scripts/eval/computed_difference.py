@@ -159,13 +159,11 @@ if __name__ == "__main__":
 				examples_data = []
 				
 				for rank, target_mz in enumerate(top_100_mzs[:10], 1):
-					examples_found = 0
 					print(f"\nExamples for m/z {target_mz:.3f} (rank {rank}):")
 					
+					# Collect all candidates for this m/z first
+					candidates = []
 					for idx, (spec_id, false_pos_peaks) in enumerate(zip(group_df['spec_id'], group_df['false_pos'])):
-						if examples_found >= 10:  # Limit to 10 examples per m/z
-							break
-							
 						if len(false_pos_peaks) > 0:
 							# Check if this target m/z is in the false positive peaks for this spectrum
 							false_pos_mzs = false_pos_peaks[:, 0]
@@ -174,30 +172,56 @@ if __name__ == "__main__":
 								mz_idx = np.where(false_pos_mzs == target_mz)[0][0]
 								intensity = false_pos_peaks[mz_idx, 1]
 								
-								examples_found += 1
 								example_row = group_df.iloc[idx]
+								mol_id = example_row.get('mol_id', None)
 								
-								print(f"  {examples_found}. spec_id: {spec_id}, intensity: {intensity:.3f}")
-								
-								# Collect data for CSV
-								example_data = {
-									'false_pos_mz': target_mz,
-									'rank': rank,
-									'example_num': examples_found,
+								candidates.append({
+									'idx': idx,
 									'spec_id': spec_id,
-									'intensity': intensity
-								}
-								
-								# Add grouping columns
-								for col in grouping_columns:
-									example_data[col] = example_row[col]
-								
-								# Add other relevant columns if available
-								for col in ['mol_id_x', 'mol_id_y', 'prec_mz', 'cos_sim_0.01', 'cos_hun']:
-									if col in example_row:
-										example_data[col] = example_row[col]
-								
-								examples_data.append(example_data)
+									'mol_id': mol_id,
+									'intensity': intensity,
+									'example_row': example_row
+								})
+					
+					# Sort candidates by intensity (descending) and select top 10 with unique mol_ids
+					candidates.sort(key=lambda x: x['intensity'], reverse=True)
+					
+					examples_found = 0
+					used_mol_ids = set()
+					
+					for candidate in candidates:
+						if examples_found >= 10:  # Limit to 10 examples per m/z
+							break
+						
+						mol_id = candidate['mol_id']
+						# Skip if we've already used this mol_id
+						if mol_id in used_mol_ids:
+							continue
+						
+						examples_found += 1
+						used_mol_ids.add(mol_id)
+						
+						print(f"  {examples_found}. spec_id: {candidate['spec_id']}, mol_id: {mol_id}, intensity: {candidate['intensity']:.3f}")
+						
+						# Collect data for CSV
+						example_data = {
+							'false_pos_mz': target_mz,
+							'rank': rank,
+							'example_num': examples_found,
+							'spec_id': candidate['spec_id'],
+							'intensity': candidate['intensity']
+						}
+						
+						# Add grouping columns
+						for col in grouping_columns:
+							example_data[col] = candidate['example_row'][col]
+						
+						# Add other relevant columns if available
+						for col in ['mol_id', 'smiles', 'prec_mz', 'cos_sim_0.01', 'cos_hun']:
+							if col in candidate['example_row']:
+								example_data[col] = candidate['example_row'][col]
+						
+						examples_data.append(example_data)
 				
 				# Save examples to separate file
 				if examples_data:
@@ -251,13 +275,11 @@ if __name__ == "__main__":
 				neg_examples_data = []
 				
 				for rank, target_mz in enumerate(top_100_neg_mzs[:10], 1):
-					examples_found = 0
 					print(f"\nExamples for m/z {target_mz:.3f} (rank {rank}):")
 					
+					# Collect all candidates for this m/z first
+					candidates = []
 					for idx, (spec_id, false_neg_peaks) in enumerate(zip(group_df['spec_id'], group_df['false_neg'])):
-						if examples_found >= 10:  # Limit to 10 examples per m/z
-							break
-							
 						if len(false_neg_peaks) > 0:
 							# Check if this target m/z is in the false negative peaks for this spectrum
 							false_neg_mzs = false_neg_peaks[:, 0]
@@ -266,30 +288,56 @@ if __name__ == "__main__":
 								mz_idx = np.where(false_neg_mzs == target_mz)[0][0]
 								intensity = false_neg_peaks[mz_idx, 1]
 								
-								examples_found += 1
 								example_row = group_df.iloc[idx]
+								mol_id = example_row.get('mol_id', None)
 								
-								print(f"  {examples_found}. spec_id: {spec_id}, intensity: {intensity:.3f}")
-								
-								# Collect data for CSV
-								example_data = {
-									'false_neg_mz': target_mz,
-									'rank': rank,
-									'example_num': examples_found,
+								candidates.append({
+									'idx': idx,
 									'spec_id': spec_id,
-									'intensity': intensity
-								}
-								
-								# Add grouping columns
-								for col in grouping_columns:
-									example_data[col] = example_row[col]
-								
-								# Add other relevant columns if available
-								for col in ['mol_id', 'smiles', 'prec_mz', 'cos_sim_0.01', 'cos_hun']:
-									if col in example_row:
-										example_data[col] = example_row[col]
-								
-								neg_examples_data.append(example_data)
+									'mol_id': mol_id,
+									'intensity': intensity,
+									'example_row': example_row
+								})
+					
+					# Sort candidates by intensity (descending) and select top 10 with unique mol_ids
+					candidates.sort(key=lambda x: x['intensity'], reverse=True)
+					
+					examples_found = 0
+					used_mol_ids = set()
+					
+					for candidate in candidates:
+						if examples_found >= 10:  # Limit to 10 examples per m/z
+							break
+						
+						mol_id = candidate['mol_id']
+						# Skip if we've already used this mol_id
+						if mol_id in used_mol_ids:
+							continue
+						
+						examples_found += 1
+						used_mol_ids.add(mol_id)
+						
+						print(f"  {examples_found}. spec_id: {candidate['spec_id']}, mol_id: {mol_id}, intensity: {candidate['intensity']:.3f}")
+						
+						# Collect data for CSV
+						example_data = {
+							'false_neg_mz': target_mz,
+							'rank': rank,
+							'example_num': examples_found,
+							'spec_id': candidate['spec_id'],
+							'intensity': candidate['intensity']
+						}
+						
+						# Add grouping columns
+						for col in grouping_columns:
+							example_data[col] = candidate['example_row'][col]
+						
+						# Add other relevant columns if available
+						for col in ['mol_id', 'smiles', 'prec_mz', 'cos_sim_0.01', 'cos_hun']:
+							if col in candidate['example_row']:
+								example_data[col] = candidate['example_row'][col]
+						
+						neg_examples_data.append(example_data)
 				
 				# Save false negative examples to separate file
 				if neg_examples_data:
