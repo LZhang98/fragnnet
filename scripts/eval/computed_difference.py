@@ -69,7 +69,7 @@ if __name__ == "__main__":
 	print("Calculating unmatched peaks...")
 	results = pred_df.apply(lambda row: get_miss_matched(row['peaks'], row['pred_peaks']), axis=1)
 	pred_df.loc[:, 'false_pos'] = results.apply(lambda x: x[0])  # unmatched predicted peaks
-	pred_df.loc[:, 'true_neg'] = results.apply(lambda x: x[1])   # unmatched ground truth peaks
+	pred_df.loc[:, 'false_neg'] = results.apply(lambda x: x[1])   # unmatched ground truth peaks
 
 	# Find top 100 false positive m/z values by occurrence frequency
 	print("\nAnalyzing false positive m/z frequencies...")
@@ -120,6 +120,14 @@ if __name__ == "__main__":
 					false_pos_mzs = false_pos_peaks[:, 0]
 					all_false_pos_mzs.extend(false_pos_mzs)
 			
+			# Collect all false negative m/z values for this group
+			all_false_neg_mzs = []
+			for false_neg_peaks in group_df['false_neg']:  # true_neg contains unmatched ground truth peaks (false negatives)
+				if len(false_neg_peaks) > 0:
+					# Extract m/z values (first column) from false negative peaks
+					false_neg_mzs = false_neg_peaks[:, 0]
+					all_false_neg_mzs.extend(false_neg_mzs)
+			
 			# Count occurrences of each m/z value
 			if len(all_false_pos_mzs) > 0:
 				all_false_pos_mzs = np.array(all_false_pos_mzs)
@@ -139,6 +147,58 @@ if __name__ == "__main__":
 				for i, (mz, count) in enumerate(zip(top_100_mzs[:20], top_100_counts[:20]), 1):
 					print(f"{i}\t{mz:.3f}\t{count}")
 				
+				# Find examples for each top false positive m/z
+				print(f"\nFinding examples for top 10 false positive peaks...")
+				examples_data = []
+				
+				for rank, target_mz in enumerate(top_100_mzs[:10], 1):
+					examples_found = 0
+					print(f"\nExamples for m/z {target_mz:.3f} (rank {rank}):")
+					
+					for idx, (spec_id, false_pos_peaks) in enumerate(zip(group_df['spec_id'], group_df['false_pos'])):
+						if examples_found >= 10:  # Limit to 10 examples per m/z
+							break
+							
+						if len(false_pos_peaks) > 0:
+							# Check if this target m/z is in the false positive peaks for this spectrum
+							false_pos_mzs = false_pos_peaks[:, 0]
+							if target_mz in false_pos_mzs:
+								# Find the intensity for this m/z
+								mz_idx = np.where(false_pos_mzs == target_mz)[0][0]
+								intensity = false_pos_peaks[mz_idx, 1]
+								
+								examples_found += 1
+								example_row = group_df.iloc[idx]
+								
+								print(f"  {examples_found}. spec_id: {spec_id}, intensity: {intensity:.3f}")
+								
+								# Collect data for CSV
+								example_data = {
+									'false_pos_mz': target_mz,
+									'rank': rank,
+									'example_num': examples_found,
+									'spec_id': spec_id,
+									'intensity': intensity
+								}
+								
+								# Add grouping columns
+								for col in grouping_columns:
+									example_data[col] = example_row[col]
+								
+								# Add other relevant columns if available
+								for col in ['mol_id_x', 'mol_id_y', 'prec_mz', 'cos_sim_0.01', 'cos_hun']:
+									if col in example_row:
+										example_data[col] = example_row[col]
+								
+								examples_data.append(example_data)
+				
+				# Save examples to separate file
+				if examples_data:
+					examples_df = pd.DataFrame(examples_data)
+					examples_file = args.src_fp.replace('.pkl', f'_false_pos_examples{file_suffix}.csv')
+					examples_df.to_csv(examples_file, index=False)
+					print(f"\nSaved examples to: {examples_file}")
+				
 				# Save results to file
 				results_data = {
 					'rank': range(1, len(top_100_mzs) + 1),
@@ -156,6 +216,98 @@ if __name__ == "__main__":
 				print(f"Saved results to: {output_file}")
 			else:
 				print(f"No false positive peaks found for {group_label}")
+			
+			# === FALSE NEGATIVE ANALYSIS ===
+			print(f"\n--- False Negative Analysis for {group_label} ---")
+			
+			# Count occurrences of each false negative m/z value
+			if len(all_false_neg_mzs) > 0:
+				all_false_neg_mzs = np.array(all_false_neg_mzs)
+				unique_neg_mzs, neg_counts = np.unique(all_false_neg_mzs, return_counts=True)
+				
+				# Sort by frequency (descending)
+				sorted_neg_indices = np.argsort(neg_counts)[::-1]
+				top_100_neg_mzs = unique_neg_mzs[sorted_neg_indices][:100]
+				top_100_neg_counts = neg_counts[sorted_neg_indices][:100]
+				
+				print(f"Found {len(unique_neg_mzs)} unique false negative m/z values")
+				print(f"Total false negative occurrences: {len(all_false_neg_mzs)}")
+				print(f"Number of spectra: {len(group_df)}")
+				print(f"\nTop 20 false negative m/z values for {group_label}:")
+				print("Rank\tm/z\tCount")
+				print("-" * 25)
+				for i, (mz, count) in enumerate(zip(top_100_neg_mzs[:20], top_100_neg_counts[:20]), 1):
+					print(f"{i}\t{mz:.3f}\t{count}")
+				
+				# Find examples for each top false negative m/z
+				print(f"\nFinding examples for top 10 false negative peaks...")
+				neg_examples_data = []
+				
+				for rank, target_mz in enumerate(top_100_neg_mzs[:10], 1):
+					examples_found = 0
+					print(f"\nExamples for m/z {target_mz:.3f} (rank {rank}):")
+					
+					for idx, (spec_id, false_neg_peaks) in enumerate(zip(group_df['spec_id'], group_df['false_neg'])):
+						if examples_found >= 10:  # Limit to 10 examples per m/z
+							break
+							
+						if len(false_neg_peaks) > 0:
+							# Check if this target m/z is in the false negative peaks for this spectrum
+							false_neg_mzs = false_neg_peaks[:, 0]
+							if target_mz in false_neg_mzs:
+								# Find the intensity for this m/z
+								mz_idx = np.where(false_neg_mzs == target_mz)[0][0]
+								intensity = false_neg_peaks[mz_idx, 1]
+								
+								examples_found += 1
+								example_row = group_df.iloc[idx]
+								
+								print(f"  {examples_found}. spec_id: {spec_id}, intensity: {intensity:.3f}")
+								
+								# Collect data for CSV
+								example_data = {
+									'false_neg_mz': target_mz,
+									'rank': rank,
+									'example_num': examples_found,
+									'spec_id': spec_id,
+									'intensity': intensity
+								}
+								
+								# Add grouping columns
+								for col in grouping_columns:
+									example_data[col] = example_row[col]
+								
+								# Add other relevant columns if available
+								for col in ['mol_id_x', 'mol_id_y', 'prec_mz', 'cos_sim_0.01', 'cos_hun']:
+									if col in example_row:
+										example_data[col] = example_row[col]
+								
+								neg_examples_data.append(example_data)
+				
+				# Save false negative examples to separate file
+				if neg_examples_data:
+					neg_examples_df = pd.DataFrame(neg_examples_data)
+					neg_examples_file = args.src_fp.replace('.pkl', f'_false_neg_examples{file_suffix}.csv')
+					neg_examples_df.to_csv(neg_examples_file, index=False)
+					print(f"\nSaved false negative examples to: {neg_examples_file}")
+				
+				# Save false negative results to file
+				neg_results_data = {
+					'rank': range(1, len(top_100_neg_mzs) + 1),
+					'mz': top_100_neg_mzs,
+					'count': top_100_neg_counts
+				}
+				
+				# Add grouping columns to results
+				for i, col in enumerate(grouping_columns):
+					neg_results_data[col] = group_vals[i]
+				
+				neg_results_df = pd.DataFrame(neg_results_data)
+				neg_output_file = args.src_fp.replace('.pkl', f'_top100_false_neg_mzs{file_suffix}.csv')
+				neg_results_df.to_csv(neg_output_file, index=False)
+				print(f"Saved false negative results to: {neg_output_file}")
+			else:
+				print(f"No false negative peaks found for {group_label}")
 	else:
 		print("No grouping columns found (prec_type, inst_type), performing overall analysis...")
 		# Collect all false positive m/z values
