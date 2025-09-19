@@ -314,4 +314,4 @@ if __name__ == "__main__":
 				if batch_idx == 0:
 					smarts_df.to_csv(ofp, index=False, mode='w', header=True)
 				else:
-					smarts_df.to_csv(ofp, index=False, mode='a', header=0)
+					smarts_df.to_csv(ofp, index=False, mode='a', header=False)
