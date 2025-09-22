@@ -406,7 +406,7 @@ Examples:
 		help="Maximum number of heavy atoms in a molecule"
 	)
 	args = parser.parse_args()
-	
+
 	# Read SMILES
 	ids_list = None
 	if args.smiles_list:
@@ -418,17 +418,17 @@ Examples:
 				smiles_list = [line.strip() for line in f if line.strip()]
 		elif args.smiles_file.endswith('.csv') or args.smiles_file.endswith('.tsv') \
       		or args.smiles_file.endswith('.csv.gz') or args.smiles_file.endswith('.tsv.gz'):
-			sep = ',' if args.smiles_file.endswith('.csv') else '\t'
+			sep = ',' if args.smiles_file.endswith('.csv') or args.smiles_file.endswith('.csv.gz') else '\t'
 			smiles_df = pd.read_csv(args.smiles_file, sep=sep)
 			if not args.smiles_colname or args.smiles_colname not in smiles_df.columns:
-				raise ValueError(f"Column name for SMILES not specified or not found in CSV columns: {smiles_df.columns.tolist()}")
+				raise ValueError(f"Column name {args.smiles_colname} for SMILES not specified or not found in CSV columns: {smiles_df.columns.tolist()}")
 			smiles_list = smiles_df[args.smiles_colname].astype(str).tolist()
 			if args.id_colname and args.id_colname in smiles_df.columns:
 				ids_list = smiles_df[args.id_colname].astype(str).tolist()
 				if len(ids_list) != len(smiles_list):
 					raise ValueError(f"Length of IDs list ({len(ids_list)}) does not match length of SMILES list ({len(smiles_list)})")
 			elif args.id_colname not in smiles_df.columns:
-				raise ValueError(f"ID column name '{args.id_colname}' not found in CSV columns: {smiles_df.columns.tolist()}")
+				Warning(f"ID column name '{args.id_colname}' not found in CSV columns: {smiles_df.columns.tolist()}")
 
 	# Validate inputs
 	validate_inputs(smiles_list, args.prec_types, args.qtof_ces, args.ft_ces, args.inst_types, args.max_heavy_atoms)
