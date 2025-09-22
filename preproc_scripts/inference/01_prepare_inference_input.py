@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+import re
 from sys import prefix
 import pandas as pd
 import numpy as np
@@ -211,13 +212,7 @@ def validate_inputs(smiles_list, prec_types, ces, nces, inst_types, max_heavy_at
 	
 	if not prec_types:
 		raise ValueError("Precursor types list cannot be empty")
-	
-	#if not ces:
-	#	raise ValueError("Collision energies (eV) list cannot be empty")
 		
-	#if not nces:
-	#	raise ValueError("Normalized collision energies (NCE) list cannot be empty")
-	
 	if not inst_types:
 		raise ValueError("Instrument types list cannot be empty")
 		
@@ -235,30 +230,18 @@ def validate_inputs(smiles_list, prec_types, ces, nces, inst_types, max_heavy_at
 			# TODO: update this later
 			logger.info(f"Instrument type '{inst_type}', please ensure appropriate CE values are provided.")
 
-	# Validate collision energies are numeric
-	for ce in ces:
-		try:
-			float(ce)
-		except (ValueError, TypeError):
-			raise ValueError(f"Invalid collision energy: {ce}. Must be numeric.")
-			
-	for nce in nces:
-		try:
-			float(nce)
-		except (ValueError, TypeError):
-			raise ValueError(f"Invalid NCE value: {nce}. Must be numeric.")
 	if max_heavy_atoms < 1 or max_heavy_atoms > MAX_NUM_NODES:
 		raise ValueError(f"max_heavy_atoms must be between 1 and {MAX_NUM_NODES}")
 
-def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smiles_file=None, merged_spectra=False):
+def get_config(smiles_list, prec_types, qtof_ces, ft_ces, inst_types, output_dir, smiles_file=None, merged_spectra=False):
 	"""
 	Save the configuration parameters to a JSON file.
 	
 	Args:
 		smiles_list (list): List of SMILES strings
 		prec_types (list): List of precursor types
-		ces (list): List of collision energies (eV)
-		nces (list): List of normalized collision energies (%)
+		qtof_ces (list): List of collision energies (eV)
+		ft_ces (list): List of normalized collision energies (%)
 		inst_types (list): List of instrument types
 		output_dir (str): Output directory
 		smiles_file (str, optional): Path to SMILES file if used
@@ -267,24 +250,45 @@ def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smile
 	# Create list of all combinations
 	combinations_list = []
 	combo_id = 0
-	
+ 
+	# Parse and validate collision energy strings
+	ft_ces_values = []
+	qt_ces_values = []
+	for ce_str in qtof_ces:
+		match = re.match(r'(\d+(\.\d+)?)(\s*)?(eV)', ce_str, re.IGNORECASE)
+		if match:
+			number = match.group(1)
+			unit = match.group(4)
+			qt_ces_values.append((float(number), unit))
+		else:
+			raise ValueError(f"Invalid QToF collision energy format: {ce_str}. Expected format like '10.0eV'")
+	for ce_str in ft_ces:
+		match = re.match(r'(\d+(\.\d+)?)(\s*)?(eV|%|%NCE|NCE)', ce_str, re.IGNORECASE)
+		if match:
+			number = match.group(1)
+			unit = match.group(4)
+			if unit in ['%', '%NCE', 'NCE']:
+				unit = 'NCE'
+			else:
+				unit = 'eV'
+			ft_ces_values.append((float(number), unit))
+		else:
+			raise ValueError(f"Invalid FT collision energy format: {ce_str}. Expected format like '10.0NCE' or '20.0%' or '30.0eV'")
 
 	for prec_type in prec_types:
 		for inst_type in inst_types:
 			# Choose appropriate collision energy values based on instrument type
-			if inst_type == "FT":  # Orbitrap uses NCE
-				energy_values = nces
-				ce_unit = "NCE"
-			else:  # Other instruments use ACE (eV)
-				energy_values = ces
-				ce_unit = "eV"
-			
-			for energy in energy_values:
+			if inst_type == "FT":
+				energy_values = ft_ces_values
+			elif inst_type == "QTOF":
+				energy_values = qt_ces_values
+    
+			for energy_config in energy_values:
 				combinations_list.append({
 					"id": combo_id,
 					"prec_type": prec_type,
-					"ce": energy,
-					"ce_unit": ce_unit,
+					"ce": energy_config[0],
+					"ce_unit": energy_config[1],
 					"inst_type": inst_type
 				})
 				combo_id += 1
@@ -295,8 +299,8 @@ def get_config(smiles_list, prec_types, ces, nces, inst_types, output_dir, smile
 			"num_smiles": len(smiles_list),
 			"smiles_file": smiles_file,
 			"precursor_types": prec_types,
-			"collision_energies_eV": ces,
-			"normalized_collision_energies_pct": nces,
+			"collision_energies_eV": qtof_ces,
+			"normalized_collision_energies_pct": ft_ces,
 			"instrument_types": inst_types,
 			"output_directory": output_dir,
 			"merged_spectra": merged_spectra
@@ -361,20 +365,20 @@ Examples:
 		help="List of precursor types (e.g., [M+H]+ [M-H]-)"
 	)
 	parser.add_argument(
-		"--ces", 
+		"--qtof_ces", 
 		nargs="+", 
-		type=float,
+		type=str,
 		required=False,
 		default=[],
-		help="List of collision energies (eVs) without eVs, used by QToF"
+		help="List of collision energies eVs, (e.g 10.0eV) used by QToF"
 	)
 	parser.add_argument(
-		"--nces", 
+		"--ft_ces", 
 		nargs="+", 
-		type=float,
+		type=str,
 		required=False,
 		default=[],
-		help="List of NCE values without % (e.g., 10.0 20.0 30.0), used by Orbitrap and Ion Trap"
+		help="List of Orbitrap values in EVs (e.g., 10.0NCE 20.0% 30.0eV)"
 	)
 	parser.add_argument(
 		"--inst_types", 
@@ -412,7 +416,8 @@ Examples:
 		if args.smiles_file.endswith('.smi') or args.smiles_file.endswith('.smiles') or args.smiles_file.endswith('.txt'):
 			with open(args.smiles_file, 'r') as f:
 				smiles_list = [line.strip() for line in f if line.strip()]
-		elif args.smiles_file.endswith('.csv') or args.smiles_file.endswith('.tsv'):
+		elif args.smiles_file.endswith('.csv') or args.smiles_file.endswith('.tsv') \
+      		or args.smiles_file.endswith('.csv.gz') or args.smiles_file.endswith('.tsv.gz'):
 			sep = ',' if args.smiles_file.endswith('.csv') else '\t'
 			smiles_df = pd.read_csv(args.smiles_file, sep=sep)
 			if not args.smiles_colname or args.smiles_colname not in smiles_df.columns:
@@ -426,13 +431,13 @@ Examples:
 				raise ValueError(f"ID column name '{args.id_colname}' not found in CSV columns: {smiles_df.columns.tolist()}")
 
 	# Validate inputs
-	validate_inputs(smiles_list, args.prec_types, args.ces, args.nces, args.inst_types, args.max_heavy_atoms)
+	validate_inputs(smiles_list, args.prec_types, args.qtof_ces, args.ft_ces, args.inst_types, args.max_heavy_atoms)
 	
 	logger.info(f"Input summary:")
 	logger.info(f"  - {len(smiles_list)} SMILES")
 	logger.info(f"  - {len(args.prec_types)} precursor types: {args.prec_types}")
-	logger.info(f"  - {len(args.ces)} collision energies (eVs) for QToF: {args.ces}")
-	logger.info(f"  - {len(args.nces)} collision energies (NCE) for Orbitrap (FT): {args.nces}")
+	logger.info(f"  - {len(args.qtof_ces)} collision energies (eVs) for QToF: {args.qtof_ces}")
+	logger.info(f"  - {len(args.ft_ces)} collision energies for Orbitrap (FT): {args.ft_ces}")
 	logger.info(f"  - {len(args.inst_types)} instrument types: {args.inst_types}")
 	logger.info(f"  - Merged spectra: {args.merged_spectra}")
 	logger.info(f"  - Max heavy atoms: {args.max_heavy_atoms}")
@@ -444,8 +449,8 @@ Examples:
 	config_d = get_config(
 		smiles_list=smiles_list,
 		prec_types=args.prec_types,
-		ces=args.ces,
-		nces=args.nces,
+		qtof_ces=args.qtof_ces,
+		ft_ces=args.ft_ces,
 		inst_types=args.inst_types,
 		output_dir=args.output_dir,
 		smiles_file=args.smiles_file if hasattr(args, 'smiles_file') and args.smiles_file else None,
