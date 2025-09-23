@@ -21,7 +21,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg 
 from fragnnet.utils.nn_utils import get_clones
-
+from fragnnet.utils.misc_utils import safelog
 class ZerosAggregation(nn.Module):
 	"""
 	Zero Aggregation module.
@@ -596,70 +596,130 @@ class LowRankDense(nn.Module):
 
 		return x
 
-
 class SpecFFN(nn.Module):
-	"""
-	Spectrum Feed-Forward Network (SpecFFN).
-	This class implements a feed-forward neural network for predicting spectra
-	from molecular or fragment-level features. It supports flexible input sizes,
-	dropout, and optional residual connections.
+	"""Spectral Feed-Forward Network.
 
 	Args:
-		input_size (int): Size of the input features.
-		hidden_size (int): Size of the hidden layers.
-		output_size (int): Size of the output layer (e.g., number of spectrum bins).
-		num_layers (int): Number of layers in the feed-forward network.
-		dropout (float): Dropout rate applied after each layer.
-		residual (bool): Whether to use residual connections between layers.
+		nn (_type_): _description_
 	"""
-	def __init__(self, input_size, hidden_size, output_size, num_layers, dropout=0.0, residual=False):
+	def __init__(self, 
+		input_size, 
+		hidden_size,
+		mz_max,
+		mz_bin_res,
+		num_layers,
+		dropout, 
+		prec_mz_offset,
+		bidirectional,
+		use_residuals,
+		output_map_size,
+		output_activation,
+		log_min):
+
 		super().__init__()
+
 		self.input_size = input_size
-		self.hidden_size = hidden_size
-		self.output_size = output_size
-		self.num_layers = num_layers
-		self.dropout = dropout
-		self.residual = residual
+		self.mz_max = mz_max
+		self.mz_bin_res = mz_bin_res
+		self.prec_mz_offset = prec_mz_offset
+		self.bidirectional = bidirectional
+		self.use_residuals = use_residuals
+		self._compute_output_size()
 
-		# Input layer: Maps input features to the hidden size
-		self.input_layer = nn.Linear(input_size, hidden_size)
-
-		# Hidden layers: A sequence of fully connected layers
-		self.hidden_layers = nn.ModuleList([
-			nn.Linear(hidden_size, hidden_size) for _ in range(num_layers)
-		])
-
-		# Output layer: Maps hidden features to the output size
-		self.output_layer = nn.Linear(hidden_size, output_size)
-
-		# Dropout layer
-		self.dropout_layer = nn.Dropout(dropout)
-
-	def forward(self, x):
-		"""
-		Forward pass for the SpecFFN.
-
-		Args:
-			x (torch.Tensor): Input tensor of shape [batch_size, input_size].
-
-		Returns:
-			torch.Tensor: Output tensor of shape [batch_size, output_size].
-		"""
-		# Apply the input layer
-		x = F.relu(self.input_layer(x))
-
-		# Apply hidden layers with optional residual connections
-		for layer in self.hidden_layers:
-			if self.residual:
-				x = x + F.relu(layer(x))  # Residual connection
+		self.in_layer = nn.Linear(input_size, hidden_size)
+		self.ff_layers = nn.ModuleList([])
+		# self.ff_layers.append(nn.Linear(mlp_hidden_size, mlp_hidden_size))
+		for i in range(num_layers):
+			self.ff_layers.append(
+				NeimsBlock(
+					hidden_size,
+					hidden_size,
+					dropout))
+		if output_map_size == -1:
+			if self.bidirectional:
+				# assumes gating, mass masking
+				self.forw_out_layer = nn.Linear(hidden_size, self.output_size)
+				self.rev_out_layer = nn.Linear(hidden_size, self.output_size)
+				self.out_gate = nn.Sequential(
+					*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
 			else:
-				x = F.relu(layer(x))
-			x = self.dropout_layer(x)  # Apply dropout
+				self.out_layer = nn.Linear(hidden_size, self.output_size)
+				self.out_gate = nn.Sequential(
+					*[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+		else:
+			if self.bidirectional:
+				# assumes gating, mass masking
+				self.forw_out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
+				self.rev_out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
+				self.out_gate = nn.Sequential(
+					*[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()])
+			else:
+				self.out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
+				self.out_gate = nn.Sequential(
+					*[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()])
+		assert output_activation in ["relu", "sigmoid"], output_activation
+		if output_activation == "relu":
+			self.out_activation = nn.ReLU()
+		else:
+			self.out_activation = nn.Sigmoid()
+		self.out_normalization = lambda x: F.normalize(x, p=1, dim=1)
+		self.log_min = log_min
 
-		# Apply the output layer
-		x = self.output_layer(x)
-		return x
+	def _compute_output_size(self):
 
+		self.mz_bins = nn.Parameter(th.arange(self.mz_bin_res,self.mz_max+self.mz_bin_res,self.mz_bin_res))
+		self.mzs = nn.Parameter(self.mz_bins-0.5*self.mz_bin_res)
+		self.output_size = self.mzs.shape[0]
+
+	def _prec_mz_to_idx(self,prec_mz):
+
+		prec_mz_idx = th.bucketize(prec_mz,self.mz_bins.to(prec_mz.device),right=True)
+		assert th.max(prec_mz_idx) < self.output_size, (prec_mz_idx,self.output_size)
+		return prec_mz_idx
+
+	def forward(self, input_h, prec_mz):
+
+		# get prec_mz_idxs
+		prec_mz_idxs = self._prec_mz_to_idx(prec_mz)
+		# process inputs
+		fh = self.in_layer(input_h)
+		# big MLP
+		for layer in self.ff_layers:
+			if self.use_residuals:
+				fh = fh + layer(fh)
+			else:
+				fh = layer(fh)
+		# bidirectional prediction
+		if self.bidirectional:
+			ff = self.forw_out_layer(fh)
+			fr = reverse_prediction(
+				self.rev_out_layer(fh),
+				prec_mz_idxs,
+				self.prec_mz_offset)
+			fg = self.out_gate(fh)
+			fo = ff * fg + fr * (1. - fg)
+		else:
+			# apply output layer
+			fo = self.out_layer(fh)
+			# apply gating
+			fg = self.out_gate(fh)
+			fo = fg * fo
+		fo = self.out_activation(fo)
+		fo = mask_prediction_by_mass(
+			fo, prec_mz_idxs, self.prec_mz_offset)
+		spec = self.out_normalization(fo)
+		# handle all zeroes (set to first bin by default)
+		all_zero_mask = th.max(spec,dim=1)[0]<=0.
+		all_zero_bonus = th.zeros_like(spec)
+		all_zero_bonus[all_zero_mask,0] = 1.
+		spec = spec + all_zero_bonus
+		# convert dense spectrum to sparse
+		mask = spec>0.
+		pred_mzs = (self.mzs.unsqueeze(0).expand(spec.shape[0],-1))[mask]
+		pred_logprobs = safelog(spec, eps=self.log_min)[mask]
+		pred_batch_idxs = th.arange(spec.shape[0],device=spec.device).unsqueeze(1).expand(-1,spec.shape[1])[mask]
+		pred_specs = spec
+		return pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs
 
 def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
 	# adapted from NEIMS
