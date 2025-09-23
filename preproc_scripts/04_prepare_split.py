@@ -77,11 +77,13 @@ def make_splits(args):
 		print("> Intersection")
 		# get intersection
 		if args.dag_filter_grouping in ["m_spec","m_mol"]:
+			# Filters the spectrum dataframe to keep only spectra whose group_id has a corresponding DAG computation
 			primary_both_group_id = np.intersect1d(primary_spec_df["group_id"],dag_group_id)
 			primary_split_df = primary_spec_df[primary_spec_df["group_id"].isin(primary_both_group_id)]
 			secondary_both_group_id = np.intersect1d(secondary_spec_df["group_id"],dag_group_id)
 			secondary_split_df = secondary_spec_df[secondary_spec_df["group_id"].isin(secondary_both_group_id)]
 		else:
+      		# Filters the spectrum dataframe to keep only spectra whose spec_id has a corresponding DAG computation
 			primary_both_spec_id = np.intersect1d(primary_spec_df["spec_id"],dag_spec_id)
 			primary_split_df = primary_spec_df[primary_spec_df["spec_id"].isin(primary_both_spec_id)]
 			secondary_both_spec_id = np.intersect1d(secondary_spec_df["spec_id"],dag_spec_id)
