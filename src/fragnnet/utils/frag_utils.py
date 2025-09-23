@@ -1048,12 +1048,13 @@ def get_frag_fp(mol_id:str, frag_dp:str, is_compressed:bool):
 
 	return fp
 
-def save_frag_d(frag_d:dict, mol_id:int, frag_dp:str, is_compressed:bool = False):
+def save_frag_d(frag_d:dict, mol_id: str, frag_dp:str, is_compressed:bool = False):
 	"""save frag_d use pickle if is_compressed save as .pbz
-
 	Args:
-		frag_d (dict): _description_
-		filepath (str): _description_
+		frag_d (dict): frag_d to save
+		mol_id (str): mol_id to save as
+		frag_dp (str): directory to save to
+		is_compressed (bool, optional): whether to compress the file. Defaults to False.
 	"""
 	
 	fp = get_frag_fp(mol_id, frag_dp, is_compressed)
