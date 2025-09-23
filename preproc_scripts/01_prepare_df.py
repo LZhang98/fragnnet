@@ -436,7 +436,10 @@ SPECTRAVERSE_MGF_KEY_DICT = {
 	#'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy_1',
 	#'NORMALIZED_COLLISION_ENERGY_2': 'normalized_col_energy_2',
 	#'NORMALIZED_COLLISION_ENERGY_3': 'normalized_col_energy_3',
-	'FOLD': 'fold',
+	'FOLD_INCHI': 'fold_inchi',
+	'FOLD_FORM': 'fold_form',
+	'FOLD_MCES': 'fold_mces',
+	'FOLD_MCESFORM': 'fold_mcesform',
 	'INDEX': 'spec_id',
 	'SOURCE': 'source',
 	'TITLE': 'title',
@@ -485,14 +488,16 @@ def process_specverse(mgf_fp):
 						data_dict[col] = value
 	  
 	spec_df = pd.DataFrame(spectra_list)
-	spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
+	for col in ['fold_inchi','fold_form','fold_mces','fold_mcesform']:
+		spec_df.loc[:,col] = spec_df.loc[:,col].astype(int)
+	#spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
 	spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
 	spec_df.loc[:, 'stepped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (~spec_df['col_energy_extra_2'].isna())
 	# setup dset
 	spec_df.loc[:,"dset"] = "spectraverse"
 	spec_df.loc[:,"dset_spec_id"] = spec_df["spec_id"]
 	
-	split_df = spec_df[["spec_id","fold"]]
+	split_df = spec_df[["spec_id",'fold_inchi','fold_form','fold_mces','fold_mcesform']]
  
  	# add extra columns for compatibility
 	for value in MSP_KEY_DICT.values():
@@ -577,8 +582,11 @@ if __name__ == "__main__":
 		mgf_fp = os.path.join(args.raw_data_dp,args.mgf_file)
 		assert os.path.isfile(mgf_fp), mgf_fp
 		spec_df, split_df  = process_specverse(mgf_fp)
-		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
-		split_df.to_csv(split_df_fp,index=False)
+		for fold_type in ["fold_inchi","fold_form","fold_mces","fold_mcesform"]:
+			for fold, fold_grp in split_df.groupby(fold_type):
+				print(f"> {fold_type} fold {fold} has {len(fold_grp)} spectra")
+				fold_grp_fp = os.path.join(args.output_dp,f"{args.output_name}_{fold_type}_{fold}.csv")
+				fold_grp.to_csv(fold_grp_fp,index=False)
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	
