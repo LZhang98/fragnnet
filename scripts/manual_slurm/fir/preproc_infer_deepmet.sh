@@ -4,7 +4,7 @@
 #SBATCH --job-name=preproc_infer_deepmet
 #SBATCH --mem=180G
 #SBATCH --cpus-per-task=96
-#SBATCH --time=0-2:00
+#SBATCH --time=0-4:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
 #SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/preproc_infer_deepmet_%j.out
