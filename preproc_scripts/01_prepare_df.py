@@ -496,7 +496,7 @@ def process_specverse(mgf_fp):
 	# setup dset
 	spec_df.loc[:,"dset"] = "spectraverse"
 	spec_df.loc[:,"dset_spec_id"] = spec_df["spec_id"]
-	
+	spec_df.loc[:, "ion_mode"] = spec_df["prec_type"].apply(lambda x: "P" if "+" in str(x) else ("N" if "-" in str(x) else np.nan))
 	split_df = spec_df[["spec_id",'fold_inchi','fold_form','fold_mces','fold_mcesform']]
  
  	# add extra columns for compatibility
