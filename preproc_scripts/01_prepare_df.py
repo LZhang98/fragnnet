@@ -586,6 +586,7 @@ if __name__ == "__main__":
 			for fold, fold_grp in split_df.groupby(fold_type):
 				print(f"> {fold_type} fold {fold} has {len(fold_grp)} spectra")
 				fold_grp_fp = os.path.join(args.output_dp,f"{args.output_name}_{fold_type}_{fold}.csv")
+				ids_df = fold_grp[["spec_id"]]
 				fold_grp.to_csv(fold_grp_fp,index=False)
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
