@@ -700,6 +700,8 @@ def parse_inst_info(df):
 			"ITFT": "FT",
 			"Orbitrap": "FT",
 			"QFT": "FT",
+			"orbitrap": "FT",
+			"qtof": "QTOF",
 		}
 		if inst_type_str in inst_type_map:
 			inst_type = inst_type_map[inst_type_str]

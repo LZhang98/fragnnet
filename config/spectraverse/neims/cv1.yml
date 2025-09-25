@@ -17,14 +17,13 @@ spec_params:
   prec_types:
     - "[M+H]+"
     - "[M-H]-"
-    - "[M+Na]+"
-    - "[M+Cl]-"
   inst_type: True
   inst_types:
     - "FT"
     - "QTOF"
     - 'IT'
     - "Other"
+    - "NA"
 mol_params:
   fingerprint_morgan: True
   fingerprint_rdkit: True
