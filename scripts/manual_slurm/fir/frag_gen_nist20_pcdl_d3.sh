@@ -3,7 +3,7 @@
 #SBATCH --nodes=1
 #SBATCH --job-name=frag_gen_nist20_pcdl_d3
 #SBATCH --mem=180G
-#SBATCH --cpus-per-task=96
+#SBATCH --cpus-per-task=48
 #SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
