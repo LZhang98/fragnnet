@@ -506,6 +506,36 @@ def process_specverse(mgf_fp):
    
 	return spec_df, split_df
 
+def process_nist_ei_csv(csv_fp):
+	spec_df = pd.read_csv(csv_fp)
+	print(f"> processing nist csv file {csv_fp}")
+	print(f"> {len(spec_df)} rows read from {csv_fp}")
+	print("> num spec: ", spec_df.isna().sum())
+	# rename some columns
+	#spec_df = spec_df.rename(columns={"NISTNO":"dset_spec_id","Precursor":"prec_mz","IonMode":"ion_mode","InstrumentType":"inst_type","SpectrumType":"spec_type","Ionization":"prec_type","ExactMass":"exact_mass","MW":"mw","CASNO":"cas_num","NumPeaks":"num_peaks","SMILES":"smiles","InChIKey":"inchikey","Name":"name"})
+	# add extra columns for compatibility
+	spec_df.loc[:,"frag_mode"] = "EI"
+	spec_df.loc[:,"ion_type"] = "EI"
+	spec_df.loc[:,"col_energy"] = "70.0 ev"
+	spec_df.loc[:,"prec_type"] = "EI"
+	spec_df.loc[:,"spec_type"] = "MS1"
+	spec_df.loc[:,"inst_type"] = "GC-MS"
+	spec_df.loc[:, "ion_mode"] = "P"
+	spec_df.loc[:,"dset"] = "nist_ei"
+	spec_df.loc[:,"dset_spec_id"] = np.arange(spec_df.shape[0])
+	#print(spec_df["peaks"].head())
+	spec_df = spec_df.rename(columns={"ExactMass":"exact_mass","NumPeaks":"num_peaks","SMILES":"smiles","InChIKey":"inchikey","Name":"name", "Formula":"formula"})
+	spec_df["peaks"] = spec_df["peaks"].apply(lambda x: "\n".join([f"{mz_int.strip()}" for mz_int in x.split(";") if mz_int.strip()]))
+	#spec_df.loc[:,"exact_mass"] = spec_df["ExactMass"]
+	for value in MSP_KEY_DICT.values():
+		if value not in spec_df.columns:
+			spec_df.loc[:,value] = np.nan
+	# add spec_id
+	#spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
+	#print(spec_df["peaks"].head())
+
+	return spec_df
+
 if __name__ == "__main__":
 
 	## TODO: add support for NPLLIB
@@ -516,12 +546,14 @@ if __name__ == "__main__":
 	parser.add_argument('--ms_dir', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
 	parser.add_argument('--mgf_file', type=str, required=False)
-	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip", "spectraverse"], required=True)
+	parser.add_argument('--csv_file', type=str, required=False)
+
+	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip", "spectraverse", "nist_csv"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
 	parser.add_argument('--num_entries', type=int, default=-1)
-	parser.add_argument('--output_format', type=str, default="json", choices=["json","csv"])
+	parser.add_argument('--output_format', type=str, default="csv", choices=["json","csv"])
 	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#","ID"])
 	parser.add_argument('--ms_gym_tsv', type=str, required=False)
 	parser.add_argument('--pcdl_dir', type=str, required=False)
@@ -543,13 +575,6 @@ if __name__ == "__main__":
 			mol_dp = os.path.join(args.raw_data_dp,args.mol_dir)
 			assert os.path.isdir(mol_dp), mol_dp
 			mol_df = preproc_nist_mol(mol_dp)
-		elif args.input_format == "msp+pkl":
-			pkl_fp = os.path.join(args.raw_data_dp,args.pkl_file)
-			assert os.path.isfile(pkl_fp), pkl_fp
-			nist_id_map = pd.read_pickle(pkl_fp)
-			nist_id_map	= nist_id_map.rename(columns={"nist_id":args.msp_dset_spec_id,"smiles":"SMILES"})
-			msp_df = msp_df.drop(columns=["SMILES"]).merge(nist_id_map,on=[args.msp_dset_spec_id],how="left")
-			mol_df = None
 		else:
 			mol_df = None
 		spec_df = merge_and_check(msp_df,mol_df,MSP_KEY_DICT)
@@ -588,6 +613,10 @@ if __name__ == "__main__":
 				fold_grp_fp = os.path.join(args.output_dp,f"{args.output_name}_{fold_type}_{fold}.csv")
 				ids_df = fold_grp[["spec_id"]]
 				fold_grp.to_csv(fold_grp_fp,index=False)
+	elif args.input_format == "nist_csv":
+		csv_fp = os.path.join(args.raw_data_dp,args.csv_file)
+		assert os.path.isfile(csv_fp), csv_fp
+		spec_df = process_nist_ei_csv(csv_fp)
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	
