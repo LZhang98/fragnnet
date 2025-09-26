@@ -526,8 +526,10 @@ def process_nist_ei_csv(csv_fp):
 	#print(spec_df["peaks"].head())
 	spec_df = spec_df.rename(columns={"ExactMass":"exact_mass","NumPeaks":"num_peaks","SMILES":"smiles","InChIKey":"inchikey","Name":"name", "Formula":"formula"})
 	#spec_df["peaks"] = spec_df["peaks"].apply(lambda x: " ".join([f"{mz_int.strip()}\n" for mz_int in x.split(";") if mz_int.strip()]))
-	spec_df["peaks"] = spec_df["peaks"].apply(lambda x: x.replace("\n", " ").replace(" ;", " ").replace("  ", " ") if isinstance(x, str) else x)
-	spec_df["peaks"] = spec_df["peaks"].apply(lambda x: "\n".join([f"{mz_int.strip()}" for mz_int in x.split(";") if mz_int.strip()]))
+	#print(spec_df["peaks"].head())
+	spec_df["peaks"] = spec_df["peaks"].apply(lambda x: x.replace("\n","").replace("; ", ";").replace("  ", " ").replace(";","\n") if isinstance(x, str) else x)
+	#print(spec_df["peaks"].head())
+	#spec_df["peaks"] = spec_df["peaks"].apply(lambda x: " ".join([f"{mz_int.strip()}\n" for mz_int in x.split(";") if mz_int.strip()]))
 	
  	#spec_df.loc[:,"exact_mass"] = spec_df["ExactMass"]
 	for value in MSP_KEY_DICT.values():
@@ -535,7 +537,7 @@ def process_nist_ei_csv(csv_fp):
 			spec_df.loc[:,value] = np.nan
 	# add spec_id
 	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
-
+	#print(spec_df["peaks"].head())
 	return spec_df
 
 if __name__ == "__main__":
