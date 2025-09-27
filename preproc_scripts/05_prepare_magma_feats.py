@@ -673,7 +673,7 @@ def run_magma_augmentation(
 		dsets=dsets,
 		prec_types=["[M+H]+"],
 		num_entries=num_entries,
-		spec_type="MS2"
+c
 	)
 	m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
 	if len(group_ids) > 0:
