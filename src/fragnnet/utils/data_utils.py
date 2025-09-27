@@ -6,7 +6,7 @@ import numpy as np
 import joblib
 from tqdm import tqdm
 from pprint import pformat, pprint
-from typing import Tuple, List, TYPE_CHECKING
+from typing import Tuple, List, TYPE_CHECKING, Union
 import pyteomics
 from pyteomics.mass import Composition
 
@@ -984,7 +984,7 @@ def get_res(peaks):
 	highest_res = max(ress)
 	return highest_res
 
-def get_murcko_scaffold(mol,output_type="smiles",include_chirality=False) -> str:
+def get_murcko_scaffold(mol,output_type="smiles",include_chirality=False) -> Union[str, np.nan]:
 	"""get murcko scaffold from mol object
 	Args:
 		mol (rdkit.Chem.rdchem.Mol): mol object
@@ -998,7 +998,11 @@ def get_murcko_scaffold(mol,output_type="smiles",include_chirality=False) -> str
 		return np.nan
 	MurckoScaffold = importlib.import_module("rdkit.Chem.Scaffolds.MurckoScaffold")
 	if output_type == "smiles":
-		scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol,includeChirality=include_chirality)
+		try:
+			scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol,includeChirality=include_chirality)
+		except Exception as e:
+			warnings.warn(f"failed to get murcko scaffold: {e}")
+			scaffold = np.nan
 	else:
 		raise NotImplementedError
 	return scaffold
