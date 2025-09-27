@@ -519,7 +519,7 @@ def process_nist_ei_csv(csv_fp):
 	spec_df.loc[:,"frag_mode"] = "EI"
 	spec_df.loc[:,"ion_type"] = "EI"
 	spec_df.loc[:,"col_energy"] = "70.0 ev"
-	spec_df.loc[:,"prec_type"] = "EI"
+	spec_df.loc[:,"prec_type"] = "[M]+"
 	spec_df.loc[:,"spec_type"] = "MS1"
 	spec_df.loc[:,"inst_type"] = "GC-MS"
 	spec_df.loc[:, "ion_mode"] = "P"

@@ -666,8 +666,7 @@ class SpecFFN(nn.Module):
 		self.log_min = log_min
 
 	def _compute_output_size(self):
-
-		self.mz_bins = nn.Parameter(th.arange(self.mz_bin_res,self.mz_max+self.mz_bin_res,self.mz_bin_res))
+		self.mz_bins = nn.Parameter(th.arange(self.mz_bin_res,self.mz_max+self.mz_bin_res,self.mz_bin_res, dtype=th.float32))
 		self.mzs = nn.Parameter(self.mz_bins-0.5*self.mz_bin_res)
 		self.output_size = self.mzs.shape[0]
 
