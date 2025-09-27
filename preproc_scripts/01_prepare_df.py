@@ -515,7 +515,7 @@ def process_nist_ei_csv(csv_fp):
 	# rename some columns
 	#spec_df = spec_df.rename(columns={"NISTNO":"dset_spec_id","Precursor":"prec_mz","IonMode":"ion_mode","InstrumentType":"inst_type","SpectrumType":"spec_type","Ionization":"prec_type","ExactMass":"exact_mass","MW":"mw","CASNO":"cas_num","NumPeaks":"num_peaks","SMILES":"smiles","InChIKey":"inchikey","Name":"name"})
 	# add extra columns for compatibility
-	spec_df = spec_df.rename(columns={"ExactMass":"exact_mass","NumPeaks":"num_peaks","SMILES":"smiles","Inchikey":"inchikey","Name":"name", "Formula":"formula"})
+	#spec_df = spec_df.rename(columns={"ExactMass":"exact_mass","NumPeaks":"num_peaks","SMILES":"smiles","Inchikey":"inchikey","Name":"name", "Formula":"formula"})
 	spec_df.loc[:,"frag_mode"] = "EI"
 	spec_df.loc[:,"ion_type"] = "EI"
 	spec_df.loc[:,"col_energy"] = "70.0 ev"
