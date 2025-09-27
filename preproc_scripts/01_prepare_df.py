@@ -8,6 +8,7 @@ import argparse
 import glob
 from fragnnet.utils.data_utils import rdkit_import, seq_apply, par_apply, parse_mass_gym_ce_str
 from fragnnet.utils.misc_utils import flatten_lol
+import re
 
 MSP_KEY_DICT = {
 	"Precursor_type": "prec_type",
@@ -523,15 +524,22 @@ def process_nist_ei_csv(csv_fp):
 	spec_df.loc[:, "ion_mode"] = "P"
 	spec_df.loc[:,"dset"] = "nist_ei"
 	spec_df.loc[:,"dset_spec_id"] = np.arange(spec_df.shape[0])
-	#print(spec_df["peaks"].head())
+	print(spec_df["peaks"].head())
 	spec_df = spec_df.rename(columns={"ExactMass":"exact_mass","NumPeaks":"num_peaks","SMILES":"smiles","InChIKey":"inchikey","Name":"name", "Formula":"formula"})
-	#spec_df["peaks"] = spec_df["peaks"].apply(lambda x: " ".join([f"{mz_int.strip()}\n" for mz_int in x.split(";") if mz_int.strip()]))
-	#print(spec_df["peaks"].head())
-	spec_df["peaks"] = spec_df["peaks"].apply(lambda x: x.replace("\n","").replace("; ", ";").replace("  ", " ").replace(";","\n") if isinstance(x, str) else x)
-	#print(spec_df["peaks"].head())
-	#spec_df["peaks"] = spec_df["peaks"].apply(lambda x: " ".join([f"{mz_int.strip()}\n" for mz_int in x.split(";") if mz_int.strip()]))
 	
- 	#spec_df.loc[:,"exact_mass"] = spec_df["ExactMass"]
+	def parse_nist_ei_peaks(peaks_str):
+		if pd.isna(peaks_str) or peaks_str is None:
+			return peaks_str
+		# Use regex to extract mz intensity pairs
+
+		pattern = r'([0-9]+\s[0-9]+)'
+		peak_pairs = re.findall(pattern, peaks_str)
+		# Join with newlines
+		return "\n".join(peak_pairs)
+	
+	spec_df["peaks"] = spec_df["peaks"].apply(parse_nist_ei_peaks)
+	print(spec_df["peaks"].head())
+	#spec_df.loc[:,"exact_mass"] = spec_df["ExactMass"]
 	for value in MSP_KEY_DICT.values():
 		if value not in spec_df.columns:
 			spec_df.loc[:,value] = np.nan
