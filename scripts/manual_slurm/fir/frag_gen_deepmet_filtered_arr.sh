@@ -90,15 +90,23 @@ echo list file in local proc dir: $(ls ${WORKING_DIR}/data/proc/)
 # set chunk size
 CHUNK_SIZE=110000
 
-cd ${WORKING_DIR}
-python preproc_scripts/inference/02_run_ms2c_frag_gen.py \
-    --max_h_transfer ${MAX_H_TRANSFER} \
-    --max_depth=${MAX_DEPTH} \
-    --proc_dp=./data/proc  \
-    --frag_dp=./data/frag/${SAVE_NAME} \
-    --start_row=$(( (SLURM_ARRAY_TASK_ID - 1) * ${CHUNK_SIZE} )) \
-    --end_row=$(( SLURM_ARRAY_TASK_ID * ${CHUNK_SIZE} ))
+# Validate SLURM_ARRAY_TASK_ID and set default if needed
+if [ -z "${SLURM_ARRAY_TASK_ID}" ]; then
+    echo "Warning: SLURM_ARRAY_TASK_ID not set, using default value 1"
+    SLURM_ARRAY_TASK_ID=1
+fi
 
+echo "Array Task ID: ${SLURM_ARRAY_TASK_ID}"
+echo "Chunk Size: ${CHUNK_SIZE}"
+
+# Calculate start and end rows
+START_ROW=$(( (SLURM_ARRAY_TASK_ID - 1) * CHUNK_SIZE ))
+END_ROW=$(( SLURM_ARRAY_TASK_ID * CHUNK_SIZE ))
+
+echo "Processing rows ${START_ROW} to ${END_ROW}"
+
+cd ${WORKING_DIR}
+c
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/
 tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}

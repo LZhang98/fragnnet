@@ -91,7 +91,7 @@ echo list file in local proc dir: $(ls ${WORKING_DIR}/data/proc/)
 CHUNK_SIZE=8000
 
 cd ${WORKING_DIR}
-python preproc_scripts/inference/02_run_ms2c_frag_gen.py \
+python preproc_scripts/inference/02_02_run_inference_frag_gen.py \
     --max_h_transfer ${MAX_H_TRANSFER} \
     --max_depth=${MAX_DEPTH} \
     --proc_dp=./data/proc  \

@@ -7,8 +7,8 @@
 #SBATCH --time=0-4:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/preproc_infer_deepmet_%j.out
-#SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/preproc_infer_deepmet_%j.err
+#SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/preproc_infer_deepmet_filtered_%j.out
+#SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/preproc_infer_deepmet_filtered_%j.err
 #SBATCH --open-mode=append
 
 # record start
