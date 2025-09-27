@@ -44,7 +44,7 @@ def get_args():
 	
 	# Fragment generation algorithm parameters
 	parser.add_argument("--max_depth",type=int,default=3, help="Maximum fragmentation depth for DAG generation")
-	parser.add_argument("--max_time",type=int,default=150, help="Maximum time (seconds) allowed for fragment generation per molecule")
+	parser.add_argument("--max_time",type=int,default=150, help="Maximum time (seconds) allowed for fragment generation per molecule, -1 for unlimited")
 	parser.add_argument("--max_h_transfer",type=int,default=4, help="Maximum hydrogen transfers allowed during fragmentation")
 	parser.add_argument("--max_iterations",type=int,default=-1, help="Maximum iterations for fragmentation (-1 for unlimited)")
 	

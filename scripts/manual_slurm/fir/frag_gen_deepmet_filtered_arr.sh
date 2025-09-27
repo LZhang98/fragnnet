@@ -10,7 +10,7 @@
 #SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_deepmet_filtered_arr_%A_%a.out
 #SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_deepmet_filtered_arr_%A_%a.out
 #SBATCH --open-mode=append
-#SBATCH --array=1-3
+#SBATCH --array=1-8
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID} is allocated resources
@@ -88,7 +88,7 @@ cp -R ${PROC_DP}/* ${WORKING_DIR}/data/proc/
 echo list file in local proc dir: $(ls ${WORKING_DIR}/data/proc/)
 
 # set chunk size
-CHUNK_SIZE=110000
+CHUNK_SIZE=40000
 
 # Validate SLURM_ARRAY_TASK_ID and set default if needed
 if [ -z "${SLURM_ARRAY_TASK_ID}" ]; then
@@ -106,7 +106,15 @@ END_ROW=$(( SLURM_ARRAY_TASK_ID * CHUNK_SIZE ))
 echo "Processing rows ${START_ROW} to ${END_ROW}"
 
 cd ${WORKING_DIR}
-c
+python preproc_scripts/inference/02_run_inference_frag_gen.py \
+    --max_h_transfer ${MAX_H_TRANSFER} \
+    --max_depth=${MAX_DEPTH} \
+    --proc_dp=./data/proc  \
+    --frag_dp=./data/frag/${SAVE_NAME} \
+    --start_row=${START_ROW} \
+    --end_row=${END_ROW} \
+    --max_time=-1
+
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/
 tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
