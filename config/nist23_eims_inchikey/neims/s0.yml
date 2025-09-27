@@ -36,9 +36,12 @@ mlp_use_residuals: True
 ff_prec_mz_offset: 50
 ff_bidirectional: True
 ff_output_map_size: 256
-ce_insert_type: embed
-ce_insert_location: mlp
-ce_insert_merge: True
+ce_insert_location: none
+ce_insert_merge: False
+prec_insert_location: none
+prec_insert_size: 32
+inst_insert_location: none
+inst_insert_size: 32
 mz_max: 1500.0
 mz_bin_res: 1
 sum_ints: True
@@ -65,7 +68,7 @@ lr_warmup_steps: 1000
 lr_decay_steps: 5000
 debug_overfit: False
 upload_checkpoints: True
-checkpoint_metric: val_cos_sim_1.0_epoch/mean
+checkpoint_metric: val_cos_sim_1_epoch/mean
 checkpoint_metric_mode: max
 auxiliary_scores:
 - cos_sim
