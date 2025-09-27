@@ -91,7 +91,8 @@ def main(args):
 	frag_modes = args.frag_modes
 	ion_modes = args.ion_modes
 	inst_types = args.inst_types
-	
+	spec_type = args.spec_type
+ 
 	spec_df, mol_df = filter_spec_mol(
 		spec_df,
 		mol_df,
@@ -101,8 +102,10 @@ def main(args):
 		num_entries=args.num_entries,
   		frag_modes=frag_modes,
     	ion_modes=ion_modes,
-		inst_types=inst_types)
- 
+		inst_types=inst_types,
+		spec_type=spec_type
+	)
+
 	m_spec_df = merge_spec_df(spec_df)
 
 	print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules") #, {len(m_spec_df)} merged spectra")
@@ -363,6 +366,7 @@ if __name__ == "__main__":
 	parser.add_argument("--inst_types",nargs="+",required=False)
 	parser.add_argument("--frag_modes",nargs="+",required=False)
 	parser.add_argument("--ion_modes",nargs="+",required=False)
+	parser.add_argument("--spec_type",type=str,default="MS2")
 	parser.add_argument("--use_cached_dag",type=booltype,default=False)
 	parser.add_argument("--save_as_hdf5",type=booltype,default=False)
 	args = parser.parse_args()

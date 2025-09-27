@@ -34,7 +34,8 @@ def make_splits(args):
 		frag_modes=frag_modes,
 		ion_modes=ion_modes,
 		inst_types=inst_types,
-		ces = args.ces
+		ces = args.ces,
+		spec_type = args.spec_type
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
 	spec_df = f_spec_df
@@ -269,6 +270,8 @@ if __name__ == "__main__":
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
 	parser.add_argument("--max_prec_mz",type=float,default=1500.)
 	parser.add_argument("--min_prec_mz",type=float,default=0.)
+	parser.add_argument("--spec_type",type=str,default="MS2")
+
 	# dag filtering criteria
 	parser.add_argument("--dag_filtering",type=booltype,default=True)
 	parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec")

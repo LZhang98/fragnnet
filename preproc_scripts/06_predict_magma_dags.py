@@ -85,7 +85,8 @@ def run_magma_gen(
 		elements=allowed_elements,
 		dsets=dsets,
 		prec_types=["[M+H]+"],
-		num_entries=num_entries
+		num_entries=num_entries,
+  		spec_type="MS2"
 	)
 	m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
 	if len(group_ids) > 0:

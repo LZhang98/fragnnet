@@ -29,7 +29,8 @@ def filter_spec_mol(
 		inst_types:list|None  = None,
 		frag_modes:list|None  = None,
 		ion_modes:list|None  = None,
-		ces:str|None  = None):
+		ces:str|None = None,
+  		spec_type:str|None  = None):
 	
 	"""
 	The purpose of this filtering is to prevent errors
@@ -116,9 +117,16 @@ def filter_spec_mol(
 	# masks.append(res_mask)
 
 	# spectrum type 
-	spec_type_mask = spec_df["spec_type"] == "MS2"
-	print(f">> spec type: {spec_type_mask.mean()}")
-	masks.append(spec_type_mask)
+	if spec_type is not None:
+		print(f">> spec type filter: {spec_type}")
+		print(">> spec type in data: ", spec_df["spec_type"].unique())
+		spec_type_mask = spec_df["spec_type"] == spec_type
+		print(f">> spec type: {spec_type_mask.mean()}")
+		masks.append(spec_type_mask)
+	else:
+		print(">> no spec type filter")
+		print(">> spec type in data: ", spec_df["spec_type"].unique())
+
 	# precursor mz
 	prec_mz_mask = ~spec_df["prec_mz"].isna()
 	print(f">> prec mz: {prec_mz_mask.mean()}")
