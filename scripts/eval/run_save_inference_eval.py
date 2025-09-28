@@ -289,14 +289,15 @@ if __name__ == "__main__":
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
 				b_spec_id = spec_ids[b_idx]
 				b_mol_id = mol_ids[b_idx]
-				b_spec_ce = batch_input['spec_ce'][b_idx].item()
-				b_spec_prec_type = batch_input['spec_prec_type'][b_idx].item()
-				spec_inst_type = batch_input['spec_inst_type'][b_idx].item()
+
+				b_spec_ce = batch_input['spec_ce'][b_idx].item() if 'spec_ce' in batch_input else np.nan
+				b_spec_prec_type = batch_input['spec_prec_type'][b_idx].item() if 'spec_prec_type' in batch_input else np.nan
+				b_spec_inst_type = batch_input['spec_inst_type'][b_idx].item() if 'spec_inst_type' in batch_input else np.nan
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
 				# Create data row with basic prediction info
-				data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, spec_inst_type, 
+				data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, b_spec_inst_type, 
 						   b_spec_mzs.tolist(), b_spec_ints.tolist(), b_pred_oos_logprob]
 				
 				# Add evaluation scores to the row
