@@ -12,7 +12,7 @@ from fragnnet.utils.data_utils import par_apply, par_apply_series
 from rdkit import Chem
 from tqdm import tqdm
 from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from fragnnet.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
+from fragnnet.utils.script_utils import load_model_and_init_config, run_spectra_prediction
 from rdkit import RDLogger
 import multiprocessing
 

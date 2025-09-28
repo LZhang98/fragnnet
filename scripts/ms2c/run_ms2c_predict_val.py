@@ -2,7 +2,7 @@ import argparse
 from tqdm import tqdm
 
 from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from fragnnet.utils.ms2c_utils import load_model_and_init_config, run_spectra_prediction
+from fragnnet.utils.script_utils import load_model_and_init_config, run_spectra_prediction
 
 import os
 import pandas as pd
@@ -12,7 +12,7 @@ import multiprocessing
 
 
 def get_args():
-    
+	
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--device", type=str,default="cuda:0", help="")
 	parser.add_argument("--save_fp", type=str,default="./data/ms2c/pubchem/predicted/ms2pubchem_nist20_d4_wr00_scaffold_test_10ppm_MORGAN-R2_50", help="")
@@ -65,9 +65,9 @@ if __name__ == "__main__":
 	model, config_d, device = load_model_and_init_config(
 		ckpt_fp = ckpt_fp, 
 		device = args.device, 
-        batch_size = args.batch_size, 
-        auxiliary_scores = auxiliary_scores,
-        eval_mz_bin_res = eval_mz_bin_res,
+		batch_size = args.batch_size, 
+		auxiliary_scores = auxiliary_scores,
+		eval_mz_bin_res = eval_mz_bin_res,
 		custom_fp = args.custom_fp,
 		template_fp = args.template_fp,
 		num_workers = args.num_workers,

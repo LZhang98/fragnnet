@@ -16,6 +16,7 @@ from fragnnet.runner import load_config, init_dataloader
 from fragnnet.pl_model import FragGNNPL
 from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.utils.script_utils import run_inference
+from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb, to_device
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 import torch as th
@@ -129,6 +130,20 @@ if __name__ == "__main__":
 		default=True,
 		help="Disable preprocessing to speed up evaluation"
 	)
+	
+	# Batch size arguments
+	parser.add_argument(
+		"--train_batch_size",
+		type=int,
+		default=4,
+		help="Training batch size for evaluation"
+	)
+	parser.add_argument(
+		"--eval_batch_size",
+		type=int,
+		default=4,
+		help="Evaluation batch size"
+	)
 
 	args = parser.parse_args()
 	
@@ -186,18 +201,18 @@ if __name__ == "__main__":
 	config_d["group_sampler"] = False 
 	config_d["simple_group_sampler"] = False
 	
-	# Set small batch sizes for evaluation
-	config_d["train_batch_size"] = 4
-	config_d["eval_batch_size"] = 4
+	# Set batch sizes from command line arguments
+	config_d["train_batch_size"] = args.train_batch_size
+	config_d["eval_batch_size"] = args.eval_batch_size
 
 	# Initialize dataset and dataloader
 	print(">>> Loading dataset")
-	ds_cls = SpecMolFragDataset
+	ds_cls = get_dataset_cls(config_d['model_type'])
 	ds = ds_cls(split=eval_split, **config_d)
 	dl = init_dataloader(ds, config_d)
 	
 	# Initialize model and device
-	model_cls = FragGNNPL
+	model_cls = get_model_cls(config_d['model_type']) #FragGNNPL
 	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 
 	# Load model checkpoint
