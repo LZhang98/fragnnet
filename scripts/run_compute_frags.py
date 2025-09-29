@@ -1,9 +1,12 @@
 import numpy as np
 import argparse
+import os
 import torch_geometric as pyg
+from torch_geometric.utils import degree
 from pprint import pprint
 
 import fragnnet.utils.frag_utils as frag_utils
+import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.misc_utils import timeit, booltype, get_pyg_memory_usage
 
 def run_frag(smiles, **kwargs):
@@ -14,8 +17,20 @@ def run_frag(smiles, **kwargs):
 	mol_d = frag_utils.extract_mol_info(smiles)
 	num_nodes = mol_d["atom_mask_arr"].shape[0]
 	print(f"> num heavy atoms {num_nodes}")
-	dag_d = {}
-	dag_d = timeit(frag_utils.compute_dags)(mol_d,**kwargs)
+	
+	dag_d = frag_utils.timed_get_dags(
+		mol =mol_d["mol"],
+		mol_id = 0,
+		max_depth = kwargs.get("max_depth", 3),
+		h_prior = kwargs.get("h_prior", True),
+		max_h_transfer = kwargs.get("max_h_transfer"),
+		max_time = kwargs.get("max_time"),
+		isotopes = kwargs.get("isotopes", False),
+		nb_isomorphic = kwargs.get("nb_isomorphic", False),
+		wl_max_iterations = kwargs.get("max_iterations", 3),
+		output_dir = None,
+		save_dag = False,
+	)
 
 	dag = dag_d["dag"]
 	
@@ -25,8 +40,8 @@ def run_frag(smiles, **kwargs):
 	dag_ne = dag_d["dag_num_edges"]
 	dag_nn_nb = dag_d["dag_num_nodes_nb"]
 	
-	dag_indeg = pyg.utils.degree(dag.edge_index[1]).numpy()
-	dag_outdeg = pyg.utils.degree(dag.edge_index[0]).numpy()
+	dag_indeg = degree(dag.edge_index[1]).numpy()
+	dag_outdeg = degree(dag.edge_index[0]).numpy()
 	dag_memory = get_pyg_memory_usage(dag)
 
 	print(f"reached_depth = {dag_d['reached_depth']}")
@@ -51,11 +66,10 @@ if __name__ == "__main__":
 	parser.add_argument("--max_depth",type=int,default=4)
 	parser.add_argument("--h_prior",type=booltype,default=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
+	parser.add_argument("--max_time",type=int,default=150)
 	parser.add_argument("--isotopes",type=booltype,default=True)
 	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
-	parser.add_argument("--b_isomorphic",type=booltype,default=False)
-	parser.add_argument("--max_iterations",type=int,default=2)
-	parser.add_argument("--max_time",type=int,default=150)
+	parser.add_argument("--wl_max_iterations",type=int,default=3)
 	args = parser.parse_args()
 
 	#np.random.seed(420)
@@ -92,8 +106,9 @@ if __name__ == "__main__":
 		# C60 fullerene
 		14: 'c12c3c4c5c1c1c6c7c2c2c8c3c3c9c4c4c%10c5c5c1c1c6c6c%11c7c2c2c7c8c3c3c8c9c4c4c9c%10c5c5c1c1c6c6c%11c2c2c7c3c3c8c4c4c9c5c1c1c6c2c3c41',
 		# C70 fullerene
-		15: 'C12=C3C4=C5C6=C7C8=C9C%10=C%11C%12=C%13C%10=C%10C8=C5C1=C%10C1=C%13C5=C8C1=C2C1=C3C2=C3C%10=C%13C%14=C3C1=C8C1=C3C5=C%12C5=C8C%11=C%11C9=C7C7=C9C6=C4C2=C2C%10=C4C(=C29)C2=C6C(=C8C8=C9C6=C4C%13=C9C(=C%141)C3=C85)C%11=C27'
- 	}
+		15: 'C12=C3C4=C5C6=C7C8=C9C%10=C%11C%12=C%13C%10=C%10C8=C5C1=C%10C1=C%13C5=C8C1=C2C1=C3C2=C3C%10=C%13C%14=C3C1=C8C1=C3C5=C%12C5=C8C%11=C%11C9=C7C7=C9C6=C4C2=C2C%10=C4C(=C29)C2=C6C(=C8C8=C9C6=C4C%13=C9C(=C%141)C3=C85)C%11=C27',
+		16: 'OCCCCCC=CC1=CC2=C(C=C1)OCO2'
+  	}
 
 	assert not (args.compound_idx is None and args.compound_smiles is None), "must provide either --compound_idx or --compound_smiles"
 	assert not (args.compound_idx is not None and args.compound_smiles is not None), "must provide only one of --compound_idx or --compound_smiles"
@@ -102,17 +117,19 @@ if __name__ == "__main__":
 	else:
 		smiles = args.compound_smiles
 
-	import pdb; pdb.set_trace()
+	# import pdb; pdb.set_trace()
 	frag_kw_d = dict(
 		max_depth=args.max_depth,
 		h_prior=args.h_prior,
 		max_h_transfer=args.max_h_transfer,
-		frag_max_time=args.max_time,
+		max_time=args.max_time,
 		isotopes=args.isotopes,
 		nb_isomorphic=args.nb_isomorphic,
-		b_isomorphic=args.b_isomorphic,
-		max_iterations=args.max_iterations
+		wl_max_iterations=args.wl_max_iterations
 	)
 
-	dag_d = run_frag(smiles, **frag_kw_d)
+	dag_d = run_frag(
+		smiles, 
+		**frag_kw_d
+	)
 	

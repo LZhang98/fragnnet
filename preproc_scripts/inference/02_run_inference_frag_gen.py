@@ -46,7 +46,7 @@ def get_args():
 	parser.add_argument("--max_depth",type=int,default=3, help="Maximum fragmentation depth for DAG generation")
 	parser.add_argument("--max_time",type=int,default=150, help="Maximum time (seconds) allowed for fragment generation per molecule, -1 for unlimited")
 	parser.add_argument("--max_h_transfer",type=int,default=4, help="Maximum hydrogen transfers allowed during fragmentation")
-	parser.add_argument("--max_iterations",type=int,default=-1, help="Maximum iterations for fragmentation (-1 for unlimited)")
+	parser.add_argument("--wl_max_iterations",type=int,default=-1, help="Maximum iterations for wl hash (-1 for unlimited)")
 	
 	# Directory and file paths
 	parser.add_argument("--project_dp",type=str,default=os.getcwd(), help="Project root directory path")
@@ -180,7 +180,7 @@ if __name__ == "__main__":
 	logger.info(f"  Max depth: {args.max_depth}")
 	logger.info(f"  Max time per molecule: {args.max_time} seconds")
 	logger.info(f"  Max H transfers: {args.max_h_transfer}")
-	logger.info(f"  Max iterations: {args.max_iterations}")
+	logger.info(f"  Max WL iterations: {args.wl_max_iterations}")
 	logger.info(f"  Include isotopes: {args.isotopes}")
 	logger.info(f"  Non-bonded isomorphic: {args.nb_isomorphic}")
 	logger.info(f"  Use caching: {args.allow_cached}")
@@ -196,7 +196,7 @@ if __name__ == "__main__":
 			args.max_time,           # Time limit per molecule (seconds)
 			args.isotopes,           # Consider isotopic variations
 			args.nb_isomorphic,      # Consider non-bonded isomorphic structures
-			args.max_iterations,     # Maximum fragmentation iterations
+			args.wl_max_iterations,     # Maximum fragmentation iterations
 			args.frag_dp,            # Output directory for fragment data
 			args.allow_cached,       # Use cached results if available
 			args.compressed,         # Use compression for output files

@@ -1224,16 +1224,19 @@ def timed_get_dags(mol,
 			max_time,
 			isotopes: bool,
 			nb_isomorphic: bool,
-			max_iterations: int,
-			output_dir: str, 
+			wl_max_iterations: int,
+			output_dir: str | None, 
 			use_cached = True, 
 			compressed = False,
-			save_dag = True):
+			save_dag = True) -> dict:
 
-		if save_dag:
+		need_compute = True
+		if save_dag and output_dir is None:
+			raise ValueError("If save_dag is True, output_dir must be specified")
+		elif save_dag:
 			output_file = get_frag_fp(mol_id, output_dir, compressed)
+			need_compute = not os.path.exists(output_file) or not use_cached 
 
-		need_compute = not use_cached or not os.path.exists(output_file)
 		if not need_compute:
 			assert save_dag
 			try:
@@ -1255,7 +1258,7 @@ def timed_get_dags(mol,
 					isotopes,
 					nb_isomorphic,
 					#False, b_isomorphic, this not used
-					max_iterations
+					wl_max_iterations
 				)
 			except KeyboardInterrupt as e:
 				# let these through

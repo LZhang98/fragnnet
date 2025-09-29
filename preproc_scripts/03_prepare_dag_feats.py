@@ -182,7 +182,7 @@ def main(args):
 				args.max_time,
 				args.isotopes, 
 				args.nb_isomorphic,
-				args.max_iterations,
+				args.wl_max_iterations,
 				dag_dp,
 				args.use_cached_dag, # use_cached, default to false
 				args.compress_dags
@@ -350,7 +350,7 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp",type=str,required=True)
 	parser.add_argument("--max_h_transfer",type=int,default=4)
 	parser.add_argument("--nb_isomorphic",type=booltype,default=False)
-	parser.add_argument("--max_iterations",type=int,default=3)
+	parser.add_argument("--wl_max_iterations",type=int,default=3)
 	parser.add_argument("--dsets",type=str,nargs="+",required=True)
 	parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"])
 	parser.add_argument("--isotopes",type=booltype,default=True)
