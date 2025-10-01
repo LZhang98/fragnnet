@@ -489,7 +489,8 @@ def process_specverse(mgf_fp):
 						data_dict[col] = value
 	  
 	spec_df = pd.DataFrame(spectra_list)
-	for col in ['fold_inchi','fold_form','fold_mces','fold_mcesform']:
+	spec_verse_folds_keys = ['fold_inchi','fold_form','fold_mces','fold_mcesform']
+	for col in spec_verse_folds_keys:
 		spec_df.loc[:,col] = spec_df.loc[:,col].astype(int)
 	#spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
 	spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
@@ -498,8 +499,8 @@ def process_specverse(mgf_fp):
 	spec_df.loc[:,"dset"] = "spectraverse"
 	spec_df.loc[:,"dset_spec_id"] = spec_df["spec_id"]
 	spec_df.loc[:, "ion_mode"] = spec_df["prec_type"].apply(lambda x: "P" if "+" in str(x) else ("N" if "-" in str(x) else np.nan))
-	split_df = spec_df[["spec_id",'fold_inchi','fold_form','fold_mces','fold_mcesform']]
- 
+	split_df = spec_df[["spec_id"] + spec_verse_folds_keys]
+	spec_df.drop(columns=spec_verse_folds_keys,inplace=True)
  	# add extra columns for compatibility
 	for value in MSP_KEY_DICT.values():
 		if value not in spec_df.columns:
