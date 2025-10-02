@@ -215,6 +215,13 @@ if __name__ == "__main__":
 
 		spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df)
 
+		if args.na_str_for_missing:
+			str_cols = ["inst_type","frag_mode","spec_type","ion_mode","col_gas","prec_type"]
+			for col in str_cols:
+				if col in spec_df:
+					spec_df.loc[spec_df[col].isna(),col] = "NA"
+			print("> converted missing str labels to NA")
+
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
@@ -233,12 +240,4 @@ if __name__ == "__main__":
 	print(mol_df.isna().sum())
 	print(f"> ann_df {ann_df.shape}")
 	print(f"> ann_df num nan:")
-	print(ann_df.isna().sum())
- 
-	if args.na_str_for_missing:
-		str_cols = ["inst_type","frag_mode","spec_type","ion_mode","col_gas","prec_type"]
-		for col in str_cols:
-			if col in spec_df:
-				spec_df.loc[spec_df[col].isna(),col] = "NA"
-		print("> converted missing str labels to NA")
-  
+	print(ann_df.isna().sum()) 
