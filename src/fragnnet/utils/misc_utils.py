@@ -227,6 +227,24 @@ def get_tensor_dict_memory_usage(**tensor_dict):
 def get_pyg_memory_usage(pyg_graph):
 	return pyg.profile.get_data_size(pyg_graph)
 
+def get_mol_graph_size(mol_data, mol_params):
+	"""
+	Calculate the memory usage of molecular graph data.
+	
+	Args:
+		mol_data: Dictionary containing molecular data
+		mol_params: Dictionary containing molecular parameters
+		
+	Returns:
+		Memory usage in bytes
+	"""
+	if mol_params["pyg"]:
+		mol_pyg = mol_data["mol_pyg"]
+		mol_graph_size = get_pyg_memory_usage(mol_pyg)
+	else:
+		mol_graph_size = 0
+	return mol_graph_size
+
 def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=None,log=True):
 	
 	if mask_logprob is None:
