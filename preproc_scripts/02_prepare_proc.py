@@ -80,11 +80,11 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"exact_mass"] = pd.to_numeric(spec_df["exact_mass"],errors="coerce")
 
 	# remove columns from spec_df
-	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","nce","prec_mz","peaks","ri","formula","inchikey","exact_mass"]]
+	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","ace_extra_1","ace_extra_2","nce","nce_extra_1","nce_extra_2","prec_mz","peaks","ri","formula","inchikey","exact_mass"]]
 	# relabel spec_id (this is to make it unique across datasets)
 	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
 	# set group_id (same compound and precursor)
-	group_df = spec_df.drop(columns=["spec_id","dset_spec_id","peaks","nce","ace","res","prec_mz","ri","col_gas","formula","inchikey","exact_mass"]).drop_duplicates()
+	group_df = spec_df.drop(columns=["spec_id","dset_spec_id","peaks","ace","ace_extra_1","ace_extra_2","nce","nce_extra_1","nce_extra_2","res","prec_mz","ri","col_gas","formula","inchikey","exact_mass"]).drop_duplicates()
 	group_df.loc[:,"group_id"] = np.arange(group_df.shape[0])
 	spec_df = spec_df.merge(group_df,how="inner")
 

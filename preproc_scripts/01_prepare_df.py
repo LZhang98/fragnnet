@@ -497,7 +497,7 @@ def process_specverse(mgf_fp):
 	spec_df.loc[:, 'stepped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (~spec_df['col_energy_extra_2'].isna())
 	# setup dset
 	spec_df.loc[:,"dset"] = "spectraverse"
-	spec_df.loc[:,"dset_spec_id"] = spec_df["spec_id"]
+	spec_df.loc[:,"dset_spec_id"] = spec_df["title"].apply(lambda x: int(x[len("SPECTRAVERSE"):]))
 	spec_df.loc[:, "ion_mode"] = spec_df["prec_type"].apply(lambda x: "P" if "+" in str(x) else ("N" if "-" in str(x) else np.nan))
 	split_df = spec_df[["spec_id"] + spec_verse_folds_keys]
 	spec_df.drop(columns=spec_verse_folds_keys,inplace=True)
