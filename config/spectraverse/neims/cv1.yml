@@ -15,8 +15,15 @@ spec_params:
   preprocess: True
   prec_type_str: False
   prec_types:
-    - "[M+H]+"
-    - "[M-H]-"
+    - '[M-H]-' 
+    - '[M+H]+' 
+    - '[M+CH2O2-H]-' 
+    - '[M]+' 
+    - '[M+Na]+' 
+    - '[M+K]+' 
+    - '[M+NH4]+'
+    - '[M+CH3COO]-' 
+    - '[M+Cl]-'
   inst_type: True
   inst_types:
     - "FT"
