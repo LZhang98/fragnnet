@@ -92,9 +92,28 @@ def get_ints_untransform_func(ints_transform):
 		return ints
 	return _func
 
-def transform_ce(ce, ce_mean, ce_std):
-	return (ce-ce_mean)/ce_std
+def transform_ce(ce: th.Tensor|float, ce_mean: float, ce_std: float) -> th.Tensor:
+	"""Transform collision energy (CE) values.
+		if ce < -1, it is considered missing/unknown and returned as is.
+	Args:
+		ce (torch.Tensor): The CE values to transform.
+		ce_mean (float): The mean CE value.
+		ce_std (float): The standard deviation of CE values.
 
+	Returns:
+		torch.Tensor: The transformed CE values.
+	"""
+	if isinstance(ce, th.Tensor):
+		# Handle tensor input
+		mask = ce >= 0
+		transformed_ce = th.where(mask, (ce - ce_mean) / ce_std, ce)
+		return transformed_ce
+	else:
+		# Handle scalar input
+		if ce >= 0:
+			return th.tensor((ce - ce_mean) / ce_std)
+		else:
+			return th.tensor(ce)
 
 def transform_nce_to_ace(nce:float, mw:float, charge_factor:int = 1) -> float:
 	"""get ace from given nce and mw
@@ -843,7 +862,7 @@ def cos_hun_helper(
 	remove_prec_peak,
 	b_true_prec_mask,
 	b_pred_prec_mask):
-    
+	
 	if remove_prec_peak:
 		import pdb; pdb.set_trace()
 		b_true_ints = b_true_ints*(1-b_true_prec_mask.float())

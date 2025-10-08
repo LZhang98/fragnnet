@@ -5,7 +5,7 @@ import argparse
 from rdkit import RDLogger
 
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_df_rows
+from fragnnet.utils.data_utils import par_apply_df_rows_t, par_apply_series, par_apply_df_rows, seq_apply_df_rows, seq_apply_df_rows_t
 from fragnnet.utils.misc_utils import booltype
 
 def load_df(df_dp,dsets,num_entries):
@@ -51,7 +51,7 @@ def preprocess_spec(spec_df):
 	# get mz resolution
 	spec_df.loc[:,"res"] = par_apply_series(spec_df["peaks"],data_utils.get_res)
 	# standardize the instrument type and frag_mode
-	inst_type, frag_mode = seq_apply_df_rows(spec_df,data_utils.parse_inst_info)
+	inst_type, frag_mode = seq_apply_df_rows_t(spec_df,data_utils.parse_inst_info)
 	spec_df.loc[:,"inst_type"] = inst_type
 	spec_df.loc[:,"frag_mode"] = frag_mode
 	# standardize ce
@@ -148,7 +148,7 @@ def preprocess_spec(spec_df):
 	# extract annotation info
 	ann_df = ann_df.merge(spec_df[["dset_spec_id","spec_id","prec_type"]],on="dset_spec_id",how="inner")
 	ann_df = ann_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner")
-	ann_results = par_apply_df_rows(ann_df,data_utils.parse_annotations)
+	ann_results = par_apply_df_rows_t(ann_df,data_utils.parse_annotations)
 	ann_df.loc[:,"ann_peak_mzs"] = ann_results[0]
 	ann_df.loc[:,"ann_products"] = ann_results[1]
 	ann_df.loc[:,"ann_losses"] = ann_results[2]

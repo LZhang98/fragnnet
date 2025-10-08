@@ -23,7 +23,7 @@ JOBLIB_BACKEND = "loky"
 JOBLIB_N_JOBS = joblib.cpu_count()
 JOBLIB_TIMEOUT = 10800 # default is 300 seconds for "loky"
 
-def rdkit_import(*module_strs:List[str]) -> Tuple:
+def rdkit_import(*module_strs:str) -> Tuple:
 	""" until function for import rdkit modules
 
 	Returns:
@@ -75,7 +75,7 @@ def split_smiles(smiles_str:str) -> List:
 		List: tokens
 	"""
 	token_list = []
-	pattern =  "(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
+	pattern =  r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
 	regex = re.compile(pattern)
 	token_list = [token for token in regex.findall(smiles_str)]
 	assert smiles_str == ''.join(token_list)
@@ -101,7 +101,7 @@ def mol_from_inchi(inchi:str, ml_standardize:bool = True) -> "rdkit.Chem.rdchem.
 		mol = Chem.MolFromInchi(inchi)
 		if ml_standardize:
 			mol = rdkit_ml_standardize(mol)
-	except:
+	except Exception:
 		mol = np.nan
 	if none_or_nan(mol):
 		mol = np.nan
@@ -281,7 +281,7 @@ def mol_to_inchi(mol)  -> str:
 	"""get mol weight from mol object
 
 	Args:
-		mol (_type_): mol object
+		mol (rdkit.Chem.rdchem.Mol): mol object
 		
 	Returns:
 		str: inchi
@@ -294,7 +294,7 @@ def mol_to_inchi(mol)  -> str:
 		inchi = np.nan
 	return inchi
 
-def mol_to_mol_weight(mol,exact=True):
+def mol_to_mol_weight(mol,exact=True) -> float:
 	"""get mol weight from mol object
 	Args:
 		mol (_type_): mol object
@@ -328,7 +328,7 @@ def mol_to_charge(mol:"rdkit.Chem.rdchem.Mol") -> int:
 		charge = np.nan
 	return charge
 
-def mol_to_num_atoms(mol:"rdkit.Chem.rdchem.Mol", heavy:bool=True) -> int:
+def mol_to_num_atoms(mol:"rdkit.Chem.rdchem.Mol", heavy:bool=True) -> Union[int, float]:
 	""" get total number of atoms in get mol object
 
 	Args:
@@ -344,7 +344,7 @@ def mol_to_num_atoms(mol:"rdkit.Chem.rdchem.Mol", heavy:bool=True) -> int:
 		num_atoms = np.nan
 	return num_atoms
 
-def mol_to_num_bonds(mol:"rdkit.Chem.rdchem.Mol",heavy:bool=True) -> int:
+def mol_to_num_bonds(mol:"rdkit.Chem.rdchem.Mol",heavy:bool=True) -> Union[int, float]:
 	""" get total number of bondss in get mol object
 
 	Args:
@@ -360,7 +360,7 @@ def mol_to_num_bonds(mol:"rdkit.Chem.rdchem.Mol",heavy:bool=True) -> int:
 		num_bonds = np.nan
 	return num_bonds
 
-def mol_to_num_radicals(mol:"rdkit.Chem.rdchem.Mol") -> int:
+def mol_to_num_radicals(mol:"rdkit.Chem.rdchem.Mol") -> Union[int, float]:
 	"""get total number of radicals in the mol object
 
 	Args:
@@ -406,7 +406,7 @@ def check_single_mol(mol:"rdkit.Chem.rdchem.Mol") -> bool:
 	valid = num_frags == 1
 	return valid
 
-def inchi_to_smiles(inchi:str) -> str:
+def inchi_to_smiles(inchi:str) -> Union[str, float]:
 	"""convert between inchi and smiles
 
 	Args:
@@ -490,7 +490,7 @@ def make_rdkit_fingerprint(mol:"rdkit.Chem.rdchem.Mol") -> np.array:
 	ds.ConvertToNumpyArray(fp,fp_arr)
 	return fp_arr
 
-def make_maccs_fingerprint(mol:"rdkit.Chem.rdchem.Mol") -> np.array:
+def make_maccs_fingerprint(mol:"rdkit.Chem.rdchem.Mol") -> np.ndarray:
 	"""make maccs fingerpirnt from mol object
 
 	Args:
@@ -539,7 +539,18 @@ def seq_apply(iterator,func,need_unpack=False):
 	return result
 
 def par_apply(iterator,func,need_unpack=False, return_as_generator=False, n_jobs=JOBLIB_N_JOBS):
+	"""Apply a function to each item in an iterator in parallel.
 
+	Args:
+		iterator (_type_): _description_
+		func (_type_): _description_
+		need_unpack (bool, optional): _description_. Defaults to False.
+		return_as_generator (bool, optional): _description_. Defaults to False.
+		n_jobs (_type_, optional): _description_. Defaults to JOBLIB_N_JOBS.
+
+	Returns:
+		_type_: _description_
+	"""
 	par_func = joblib.delayed(func)
 	parallel = joblib.Parallel(
 		backend=JOBLIB_BACKEND,
@@ -554,15 +565,33 @@ def par_apply(iterator,func,need_unpack=False, return_as_generator=False, n_jobs
 	return result
 
 def par_apply_series(series,func, tqdm_leave = True):
+	"""Apply a function to each item in a pandas Series in parallel.
 
+	Args:
+		series (pd.Series): The Series to process.
+		func (callable): The function to apply to each item.
+		tqdm_leave (bool, optional): Whether to leave the tqdm progress bar after completion. Defaults to True.
+
+	Returns:
+		_type_: _description_
+	"""
 	series_iter = tqdm(series.items(),desc=pformat(func),total=series.shape[0],leave=tqdm_leave)
 	series_func = lambda tup: func(tup[1])
 	result_list = par_apply(series_iter,series_func)
 	result_series = pd.Series(result_list,index=series.index)
 	return result_series
 
-def seq_apply_series(series,func, tqdm_leave=True):
+def seq_apply_series(series,func, tqdm_leave=True) -> pd.Series:
+	"""Apply a function to each item in a pandas Series in sequence.
 
+	Args:
+		series (pd.Series): The Series to process.
+		func (callable): The function to apply to each item.
+		tqdm_leave (bool, optional): Whether to leave the tqdm progress bar after completion. Defaults to True.
+
+	Returns:
+		pd.Series: The results of applying the function to each item.
+	"""
 	series_iter = tqdm(series.items(),desc=pformat(func),total=series.shape[0],leave=tqdm_leave)
 	series_func = lambda tup: func(tup[1])
 	result_list = seq_apply(series_iter,series_func)
@@ -570,25 +599,66 @@ def seq_apply_series(series,func, tqdm_leave=True):
 	return result_series
 
 def par_apply_df_rows(df,func):
+	"""Apply a function to each row of a DataFrame in parallel.
 
+	Args:
+		df (pd.DataFrame): The DataFrame to process.
+		func (callable): The function to apply to each row.
+
+	Returns:
+		pd.Series: The results of applying the function to each row.
+	"""
+ 
 	df_iter = tqdm(df.iterrows(),desc=pformat(func),total=df.shape[0])
 	df_func = lambda tup: func(tup[1])
 	result_list = par_apply(df_iter,df_func)
-	if isinstance(result_list[0],tuple):
-		result_series = tuple([pd.Series(rl,index=df.index) for rl in zip(*result_list)])
-	else:
-		result_series = pd.Series(result_list,index=df.index)
+	if isinstance(result_list[0], tuple):
+		raise NotImplementedError("Use par_apply_df_rows_t for multiple return values")
+	result_series = pd.Series(result_list,index=df.index)
+ 
+	return result_series
+
+def par_apply_df_rows_t(df,func) -> tuple[pd.Series, ...]:
+	"""Apply a function to each row of a DataFrame in parallel.
+
+	Args:
+		df (pd.DataFrame): The DataFrame to process.
+		func (callable): The function to apply to each row.
+
+	Returns:
+		pd.Series: The results of applying the function to each row.
+	"""
+	df_iter = tqdm(df.iterrows(),desc=pformat(func),total=df.shape[0])
+	df_func = lambda tup: func(tup[1])
+	result_list = par_apply(df_iter,df_func)
+	result_series = tuple([pd.Series(rl,index=df.index) for rl in zip(*result_list)])
 	return result_series
 
 def seq_apply_df_rows(df,func):
+	"""Apply a function to each row of a DataFrame in sequence, returning multiple Series.
 
+	Args:
+		df (pd.DataFrame): The DataFrame to process.
+		func (callable): The function to apply to each row.
+
+	Returns:
+		tuple[pd.Series, ...]: The results of applying the function to each row.
+	"""
 	df_iter = tqdm(df.iterrows(),desc=pformat(func),total=df.shape[0])
 	df_func = lambda tup: func(tup[1])
 	result_list = seq_apply(df_iter,df_func)
 	if isinstance(result_list[0],tuple):
-		result_series = tuple([pd.Series(rl,index=df.index) for rl in zip(*result_list)])
-	else:
-		result_series = pd.Series(result_list,index=df.index)
+		raise NotImplementedError("Use seq_apply_df_rows_t for multiple return values")
+	result_series = pd.Series(result_list,index=df.index)
+	return result_series
+
+def seq_apply_df_rows_t(df,func) -> tuple[pd.Series, ...]:
+	"""Apply a function to each row of a DataFrame in sequence, returning multiple Series."""
+	df_iter = tqdm(df.iterrows(),desc=pformat(func),total=df.shape[0])
+	df_func = lambda tup: func(tup[1])
+	result_list = seq_apply(df_iter,df_func)
+	result_series = tuple([pd.Series(rl,index=df.index) for rl in zip(*result_list)])
+	
 	return result_series
 
 def parse_ace_str(ce_str):
@@ -622,7 +692,7 @@ def parse_nce_str(ce_str):
 		r"^NCE=[\d]+[.]?[\d]*%$": lambda x: float(x.lstrip("NCE=").rstrip("%")),
 		r"^[\d]+% resonant relative/normalized$": lambda x: float(x.split("%")[0]),
 		# other ones
-		r"^[\d]+[.]?[\d]*$": lambda x: 100.*float(x) if float(x) < 2. else np.nan, # this case is ambiguous
+		# r"^[\d]+[.]?[\d]*$": lambda x: 100.*float(x) if float(x) < 2. else np.nan, # this case is ambiguous
 		r"^[\d]+[.]?[\d]*[ ]?[%]? \(nominal\)$": lambda x: float(x.rstrip(" %(nominal)")),
 		r"^HCD [\d]+[.]?[\d]*%$": lambda x: float(x.lstrip("HCD ").rstrip("%")),
 		r"^[\d]+[.]?[\d]* NCE$": lambda x: float(x.rstrip("NCE")),
@@ -1100,8 +1170,17 @@ def get_charge(prec_type_str:str) -> int:
 		charge = -magnitude
 	return charge
 
-def nce_to_ace_helper(nce,charge,prec_mz):
+def nce_to_ace_helper(nce: float, charge: int, prec_mz: float) -> float:
+	"""Convert NCE to ACE.
 
+	Args:
+		nce (float): The normalized collision energy.
+		charge (int): The charge state of the ion.
+		prec_mz (float): The precursor mass-to-charge ratio.
+
+	Returns:
+		float: The calculated absolute collision energy.
+	"""
 	if charge in CHARGE_FACTOR_MAP:
 		charge_factor = CHARGE_FACTOR_MAP[charge]
 	else:
@@ -1109,71 +1188,84 @@ def nce_to_ace_helper(nce,charge,prec_mz):
 	ace = (nce * prec_mz * charge_factor) / 500.
 	return ace
 
-def ace_to_nce_helper(ace,charge,prec_mz):
+def ace_to_nce_helper(ace: float, charge: int, prec_mz: float) -> float:
+	"""Convert ACE to NCE.
 
+	Args:
+		ace (float): The absolute collision energy.
+		charge (int): The charge state of the ion.
+		prec_mz (float): The precursor mass-to-charge ratio.
+
+	Returns:
+		float: The normalized collision energy.
+	"""
 	if charge in CHARGE_FACTOR_MAP:
 		charge_factor = CHARGE_FACTOR_MAP[charge]
 	else:
 		charge_factor = CHARGE_FACTOR_MAP["large"]
 	nce = (ace * 500.) / (prec_mz * charge_factor)
+ 
 	return nce
 
-def nce_to_ace(row) -> float:
+def nce_to_ace(row, nce_colname:str) -> float:
 	"""convert nce to ace
 	Args:
 		row (pd.Series): row of the dataframe
+		nce_colname (str): column name of nce
 	Returns:
 		float: ace
 	"""
 	prec_mz = row["prec_mz"]
-	nce = row["nce"]
+	nce = row[nce_colname]
 	prec_type = row["prec_type"]
 	charge = np.abs(get_charge(prec_type))
 	ace = nce_to_ace_helper(nce,charge,prec_mz)
 	return ace
 
-def ace_to_nce(row)	-> float:
+def ace_to_nce(row, ace_colname:str) -> float:
 	"""convert ace to nce
 	Args:
 		row (pd.Series): row of the dataframe
+		ace_colname (str): column name of ace
 	Returns:
 		float: nce
 	"""
 	prec_mz = row["prec_mz"]
-	ace = row["ace"]
+	ace = row[ace_colname]
 	prec_type = row["prec_type"]
 	charge = np.abs(get_charge(prec_type))
 	nce = ace_to_nce_helper(ace,charge,prec_mz)
 	return nce
 
-def fill_missing_nce(row) -> float:
+def fill_missing_nce(row, ace_colname:str, nce_colname:str) -> float:
 	"""fill missing nce with ace
 	Args:
 		row (pd.Series): row of the dataframe
 	Returns:
 		float: nce
 	"""
-	nce = row["nce"]
-	ace = row["ace"]
+	nce = row[nce_colname]
+	ace = row[ace_colname]
 	if none_or_nan(nce) and not none_or_nan(ace):
-		return ace_to_nce(row)
+		nce = ace_to_nce(row, ace_colname)
+		return nce
 	elif not none_or_nan(nce):
 		return nce
 	else:
 		warnings.warn(f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace}")
 		return nce
 
-def fill_missing_ace(row) -> float:
+def fill_missing_ace(row, ace_colname:str, nce_colname:str) -> float:
 	"""fill missing ace with nce
 	Args:
 		row (pd.Series): row of the dataframe
 	Returns:
 		float: ace
 	"""
-	nce = row["nce"]
-	ace = row["ace"]
+	nce = row[nce_colname]
+	ace = row[ace_colname]
 	if none_or_nan(ace) and not none_or_nan(nce):
-		return nce_to_ace(row)
+		return nce_to_ace(row, nce_colname)
 	elif not none_or_nan(ace):
 		return ace
 	else:

@@ -434,7 +434,7 @@ SPECTRAVERSE_MGF_KEY_DICT = {
 	'COLLISION_ENERGY_1': 'col_energy',
 	'COLLISION_ENERGY_2': 'col_energy_extra_1',
 	'COLLISION_ENERGY_3': 'col_energy_extra_2',
-	#'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy_1',
+	#'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy',
 	#'NORMALIZED_COLLISION_ENERGY_2': 'normalized_col_energy_2',
 	#'NORMALIZED_COLLISION_ENERGY_3': 'normalized_col_energy_3',
 	'FOLD_INCHI': 'fold_inchi',
@@ -485,7 +485,8 @@ def process_specverse(mgf_fp):
 							value = value.split()[0]
 						elif col.startswith("col_energy"):
 							if not value is np.nan:
-								value = float(value.split()[0]) 
+								# force eV unit
+								value = str(value) + " eV" 
 						data_dict[col] = value
 	  
 	spec_df = pd.DataFrame(spectra_list)
