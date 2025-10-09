@@ -97,8 +97,8 @@ class BaseDataset(Dataset):
 			ce_key = None
 
 		if ce_key is not None:
-			print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_1"]])
-			print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_2"]])
+			#print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_1"]])
+			#print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_2"]])
 			print(f">> replace missing {ce_key} with -1, and fill ramped/stepped ces accordingly")
 			# First fill extra columns with -1 (these stay as floats)
 			spec_df.loc[:,f"{ce_key}_extra_1"] = spec_df.loc[:,f"{ce_key}_extra_1"].fillna(-1)
