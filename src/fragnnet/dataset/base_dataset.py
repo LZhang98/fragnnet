@@ -130,7 +130,8 @@ class BaseDataset(Dataset):
 					return [ce]
 			
 			# Apply the function to create lists - this will set the correct dtype
-			spec_df.loc[:, ce_key] = seq_apply_df_rows(spec_df, lambda row: _fill_ce_list(row, ce_key))
+			result_series = seq_apply_df_rows(spec_df, lambda row: _fill_ce_list(row, ce_key))
+			spec_df.loc[:, ce_key] = result_series.astype(object)
 
 		if spec_params["test_ces"] is not None and ce_key is not None and "test" in splits:
 			test_split_fp = os.path.join(split_dp,"test_ids.csv")
