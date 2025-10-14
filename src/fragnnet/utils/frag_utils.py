@@ -806,6 +806,7 @@ def compute_dags(
 	reached_depth = dag_frag_meta["reached_depth"]
 	edges_min_depth = dag_frag_meta["edges_min_depth"]
 	nodes_min_depth = dag_frag_meta["nodes_min_depth"]
+	force_stop = dag_frag_meta["force_stopped"]
 
 	# add node depth information
 	# convert to a one hot encoding
@@ -922,6 +923,7 @@ def compute_dags(
 
 	# add edges info
 	edge_diff_cc_mask, edge_diff_formula_mask, edge_diff_h_range = [], [], []
+
 	for edge in dag_edges_matrix:
 		from_idx, to_idx = edge
 		from_cc_mask = nodes_mask_matrix[from_idx]
@@ -957,14 +959,23 @@ def compute_dags(
 		edge_diff_h_range.append(diff_h_range)
 
 	assert len(edge_diff_cc_mask) == len(edge_diff_formula_mask)
-	assert len(edge_diff_cc_mask) > 0, "DAG has no edges"
+	assert len(edge_diff_cc_mask) > 0 or pyg_node_feats.shape[0] == 1, f"DAG has no edges, with {pyg_node_feats.shape[0]} nodes"
 
-	edge_diff_cc_mask = th.as_tensor(np.stack(edge_diff_cc_mask,axis=0), dtype=th.bool)
-	edge_diff_cc_mask = F.pad(edge_diff_cc_mask, (0, MASK_SIZE-edge_diff_cc_mask.shape[1]), "constant", 0)
-	edge_diff_cc_long = th_mask_to_long(edge_diff_cc_mask).type(EDGE_FEAT_DTYPE)
-	edge_diff_formula_mask = th.as_tensor(np.stack(edge_diff_formula_mask,axis=0), dtype=EDGE_FEAT_DTYPE)
-	edge_diff_h_range = th.as_tensor(np.stack(edge_diff_h_range,axis=0), dtype=EDGE_FEAT_DTYPE)
-	pyg_edge_feats = th.cat([edge_diff_cc_long,edge_diff_formula_mask,edge_diff_h_range],dim=1)
+	# Handle case when there are no edges
+	if len(edge_diff_cc_mask) == 0:
+		# Create empty edge feature tensor with correct shape
+		cc_edge_feat_size = MASK_SIZE // 64
+		base_formula_edge_feat_size = len(ELEMENT_TO_IDX)
+		h_range_edge_feat_size = 2
+		total_edge_feat_size = cc_edge_feat_size + base_formula_edge_feat_size + h_range_edge_feat_size
+		pyg_edge_feats = th.zeros((0, total_edge_feat_size), dtype=EDGE_FEAT_DTYPE)
+	else:
+		edge_diff_cc_mask = th.as_tensor(np.stack(edge_diff_cc_mask,axis=0), dtype=th.bool)
+		edge_diff_cc_mask = F.pad(edge_diff_cc_mask, (0, MASK_SIZE-edge_diff_cc_mask.shape[1]), "constant", 0)
+		edge_diff_cc_long = th_mask_to_long(edge_diff_cc_mask).type(EDGE_FEAT_DTYPE)
+		edge_diff_formula_mask = th.as_tensor(np.stack(edge_diff_formula_mask,axis=0), dtype=EDGE_FEAT_DTYPE)
+		edge_diff_h_range = th.as_tensor(np.stack(edge_diff_h_range,axis=0), dtype=EDGE_FEAT_DTYPE)
+		pyg_edge_feats = th.cat([edge_diff_cc_long,edge_diff_formula_mask,edge_diff_h_range],dim=1)
 
 	# edge index need to be int64 or it will throw error where compute degree
 	pyg_edge_index = th.tensor(dag_edges_matrix.T, dtype=th.int64)
@@ -995,13 +1006,15 @@ def compute_dags(
 	frag_d["dag_num_edges"] = pyg_cc_g.num_edges
 	frag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
 	frag_d["dag_num_nodes_nb"] = dag_num_nodes_nb
-	frag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
+	frag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1)) if pyg_cc_g.num_nodes > 1 else 0.
 	frag_d["formula_redundancy"] = sum([v for k,v in formula_counts.items() if k != ""])/len([k for k in formula_counts.keys() if k != ""])
 	frag_d["node_feature_size"] = pyg_cc_g.num_features
 	frag_d["edge_feature_size"] = pyg_cc_g.num_edge_features
-	frag_d["is_directed"] = pyg_cc_g.is_directed()
+	frag_d["is_directed"] = pyg_cc_g.is_directed() if pyg_cc_g.num_edges > 0 else False
 	frag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
-	frag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
+	frag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)}
+	frag_d["force_stopped"] = force_stop
+ 
 	return frag_d
 
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:th.Tensor,key:str):

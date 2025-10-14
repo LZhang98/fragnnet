@@ -40,12 +40,16 @@ def run_frag(smiles, **kwargs):
 	dag_ne = dag_d["dag_num_edges"]
 	dag_nn_nb = dag_d["dag_num_nodes_nb"]
 	
-	dag_indeg = degree(dag.edge_index[1]).numpy()
-	dag_outdeg = degree(dag.edge_index[0]).numpy()
+	if dag_ne > 0:
+		dag_indeg = degree(dag.edge_index[1]).numpy()
+		dag_outdeg = degree(dag.edge_index[0]).numpy()
+	else:
+		dag_indeg = np.array([])
+		dag_outdeg = np.array([])
 	dag_memory = get_pyg_memory_usage(dag)
 
 	print(f"reached_depth = {dag_d['reached_depth']}")
-	print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {2*dag_ne/(dag_nn*(dag_nn-1))}")
+	print(f"num_nodes = {dag_nn}, num_edges = {dag_ne}, edge_frac = {2*dag_ne/(dag_nn*(dag_nn-1)) if dag_nn > 1 else 0.}")
 	print(f"num_nodes_nb = {dag_nn_nb}")
 	print(f"avg_indeg = {np.mean(dag_indeg)}, std_indeg = {np.std(dag_indeg)}")
 	print(f"avg_outdeg = {np.mean(dag_outdeg)}, std_outdeg = {np.std(dag_outdeg)}")
@@ -56,6 +60,7 @@ def run_frag(smiles, **kwargs):
 	print(f"is directed = {dag_d['is_directed']}")
 	print(f"memory = {dag_memory/1e6} MB")
 	print(f"dag_pyg = {dag_pyg}")
+	print(f"force_stopped = {dag_d['force_stopped']}")
 	return dag_d
 
 if __name__ == "__main__":
