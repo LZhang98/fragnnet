@@ -6,8 +6,8 @@ from .binned_pl import BinnedPL
 
 class GNNPL(BinnedPL):
 	def _setup_model(self):
-
-		self.model = GNNModel( 	# TODO: initialize model based on params. finalize params
+		# TODO: initialize model based on params. finalize params
+		self.model = GNNModel( 
 			mol_node_feats=self.hparams.mol_params["pyg_node_feats"],	# mol feats
 			mol_edge_feats=self.hparams.mol_params["pyg_edge_feats"],
 			mol_pe_embed_k=self.hparams.mol_params["pyg_pe_embed_k"],
@@ -41,6 +41,7 @@ class GNNPL(BinnedPL):
 			inst_insert_location=self.hparams.inst_insert_location,		# instrument
 			inst_insert_size=self.hparams.inst_insert_size,
 			inst_types=self.hparams.spec_params["inst_types"],
+			log_min=self.hparams.log_min
 		)
 
 		self._check_ce_params()
