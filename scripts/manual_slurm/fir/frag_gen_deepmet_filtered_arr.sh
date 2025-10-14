@@ -28,6 +28,7 @@ mkdir -p ${WORKING_DIR}
 cd  ${WORKING_DIR}
 virtualenv FRAG-GNN
 source FRAG-GNN/bin/activate
+
 pip install --no-index --upgrade pip
 pip install --no-index  \
  torch==2.4.1 \
@@ -65,7 +66,9 @@ MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=False
-SAVE_NAME=mas_250905_filtered_d${MAX_DEPTH}_h${MAX_H_TRANSFER}${ISO_FALSE}_${SLURM_ARRAY_TASK_ID}
+## Ensure SAVE_NAME contains a usable array task id even if SLURM didn't set it.
+## Use parameter expansion to default to '1' when SLURM_ARRAY_TASK_ID is empty.
+SAVE_NAME=mas_250905_filtered_d${MAX_DEPTH}_h${MAX_H_TRANSFER}${ISO_FALSE}_${SLURM_ARRAY_TASK_ID:-1}
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 PROC_DP=${FRAGNNET_DP}/data/other/mas_250905_filtered/proc/
 
@@ -83,7 +86,6 @@ mkdir -p ${WORKING_DIR}/data/proc
 echo create local frag_dp: ${WORKING_DIR}/data/frag/
 mkdir -p ${WORKING_DIR}/data/frag/
 
-
 # copy proc file
 cp -R ${PROC_DP}/* ${WORKING_DIR}/data/proc/
 echo list file in local proc dir: $(ls ${WORKING_DIR}/data/proc/)
@@ -99,11 +101,21 @@ fi
 
 #Setup Exit, this will collect results to another location
 function OnExit {
-# copy tar to scratch
-    echo create dir at ${DEST_DP}
-    mkdir -p ${DEST_DP}
-    echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
-    cp ${SAVE_NAME}.tar ${DEST_DP}
+    # Archive the frag output directory (create a compressed tarball) and copy it
+    # to ${DEST_DP} so results are preserved after the job finishes.
+    set -o errexit
+    cd ${WORKING_DIR}/data/frag/ || { echo "frag dir missing"; return 0; }
+    if [ -d "${SAVE_NAME}" ]; then
+        echo "Creating archive ${SAVE_NAME}.tar"
+        # create an uncompressed tar (per request)
+        tar -cf ${SAVE_NAME}.tar "${SAVE_NAME}"
+        echo create dir at ${DEST_DP}
+        mkdir -p "${DEST_DP}"
+        echo copy archive to ${DEST_DP}
+        cp -v ${SAVE_NAME}.tar "${DEST_DP}/"
+    else
+        echo "Warning: ${SAVE_NAME} directory not present in ${WORKING_DIR}/data/frag/. Nothing to archive."
+    fi
 }
 trap OnExit EXIT
 
@@ -137,10 +149,6 @@ python preproc_scripts/inference/02_run_inference_frag_gen.py \
     --max_time=-1 &
 PID=$!
 wait $PID
-
-# go to frag directory
-#cd ${WORKING_DIR}/data/frag/
-#tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID} finished running
