@@ -191,10 +191,10 @@ if __name__ == "__main__":
 	logger.info(f"Completed input preparation for {len(dag_feat_inputs_l)} molecules")
 	logger.info("-"*40)
 
-	# Execute parallel fragment generation using FragGNN algorithm
+	# Execute parallel fragment generation using FraGNNet algorithm
 	logger.info("Step 5: Executing fragment generation")
 	logger.info(f"Starting parallel fragment generation for {len(dag_feat_inputs_l)} molecules")
-	logger.info(f"Using FragGNN timed_get_dags function with parallel processing")
+	logger.info(f"Using FraGNNet timed_get_dags function with parallel processing")
 	
 	import time
 	start_time = time.time()

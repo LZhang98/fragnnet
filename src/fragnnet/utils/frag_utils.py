@@ -741,7 +741,7 @@ def compute_dags(
 		isotopes:bool = False,
 		nb_isomorphic:bool = False,
 		#b_isomorphic:bool = False, # not used
-		max_iterations:int = -1) -> dict:
+		wl_max_iterations:int = -1) -> dict:
 	"""_summary_
 
 	Args:
@@ -762,7 +762,8 @@ def compute_dags(
 	assert h_prior in [True,False], h_prior
 	num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx = get_fraggen_input_arrays(mol_d)
 	# time the recursive part
-	if frag_max_time is None:
+	# effectively this is infinite amount of time if None or <= 0
+	if frag_max_time is None or frag_max_time <= 0:
 		frag_max_time = int(1e6)
 	
 	node_mask = node_mask.astype(MASK_DTYPE)
@@ -786,7 +787,7 @@ def compute_dags(
 			edges=edges[:num_edges], 
 			node_to_edge_idx=node_to_edge_idx[:num_nodes], 
 			include_bond_type=False,
-			max_iterations=max_iterations)
+			max_iterations=wl_max_iterations)
 	else:
 		node_nb_hashes = None
 

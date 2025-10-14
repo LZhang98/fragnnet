@@ -15,6 +15,13 @@
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID} is allocated resources
+
+# Validate SLURM_ARRAY_TASK_ID and set default if needed
+if [ -z "${SLURM_ARRAY_TASK_ID}" ]; then
+    echo "Warning: SLURM_ARRAY_TASK_ID not set, using default value 1"
+    SLURM_ARRAY_TASK_ID=1
+fi
+
 #load modules
 module load StdEnv/2023
 module load python/3.11
@@ -92,12 +99,6 @@ echo list file in local proc dir: $(ls ${WORKING_DIR}/data/proc/)
 
 # set chunk size
 CHUNK_SIZE=40000
-
-# Validate SLURM_ARRAY_TASK_ID and set default if needed
-if [ -z "${SLURM_ARRAY_TASK_ID}" ]; then
-    echo "Warning: SLURM_ARRAY_TASK_ID not set, using default value 1"
-    SLURM_ARRAY_TASK_ID=1
-fi
 
 #Setup Exit, this will collect results to another location
 function OnExit {
