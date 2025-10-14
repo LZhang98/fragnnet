@@ -19,7 +19,7 @@ from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.base_model import CEModel, PrecModel, InstModel
 
-class FragGNNModel(nn.Module, CEModel, PrecModel, InstModel):
+class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
 	def __init__(
 		self,

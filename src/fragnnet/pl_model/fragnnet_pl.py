@@ -2,18 +2,18 @@ import torch as th
 import logging
 import torch._dynamo as th_dynamo
 
-from fragnnet.model import FragGNNModel
+from fragnnet.model import FraGNNetModel
 from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog,scatter_logsumexp
 from fragnnet.pl_model import SpectrumPL
 
-class FragGNNPL(SpectrumPL):
+class FraGNNetPL(SpectrumPL):
 
 	def _setup_model(self):
 
 		# frag GNN
-		self.model = FragGNNModel(
+		self.model = FraGNNetModel(
 			num_depth=self.hparams.num_depth,
 			num_hs=self.hparams.num_hs,
 			num_elements=self.hparams.num_elements,

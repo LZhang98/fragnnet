@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from fragnnet.runner import load_config, init_dataloader
-from fragnnet.pl_model import FragGNNPL
+from fragnnet.pl_model import FraGNNetPL
 from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.utils.script_utils import run_inference
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls

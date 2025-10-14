@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from fragnnet.runner import load_config, init_dataloader
-from fragnnet.pl_model import FragGNNPL
+from fragnnet.pl_model import FraGNNetPL
 from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.utils import data_utils, frag_utils
 from fragnnet.utils.script_utils import run_inference
@@ -236,7 +236,7 @@ if __name__ == "__main__":
 	ds_cls = SpecMolFragDataset
 	ds = ds_cls(split="predict_only", **config_d)
 	dl = init_dataloader(ds, config_d)
-	model_cls = FragGNNPL
+	model_cls = FraGNNetPL
 	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 
 	ckpt = th.load(ckpt_fp, map_location="cpu", weights_only=False)

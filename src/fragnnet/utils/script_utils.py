@@ -8,10 +8,10 @@ import os
 
 from fragnnet.runner import init_dataloader
 from fragnnet.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO
-from fragnnet.pl_model import FragGNNPL
+from fragnnet.pl_model import FraGNNetPL
 from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
-from fragnnet.pl_model import FragGNNPL, NeimsPL, GNNPL
+from fragnnet.pl_model import FraGNNetPL, NeimsPL, GNNPL
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset,SpecMolMagmaGenDataset
@@ -65,7 +65,7 @@ def run_inference(dl, model, device, eval_split, batch_cutoff, nb_iso, output_su
 	cum_num_nodes = 0
 	cum_num_formulas = 0
 	cum_num_nb_nodes = 0
-	fraggnn_model = isinstance(model, FragGNNPL)
+	fraggnn_model = isinstance(model, FraGNNetPL)
 	iceberg_model = isinstance(model, IcebergIntenPL)
 	if not (fraggnn_model or iceberg_model):
 		assert not nb_iso
@@ -377,7 +377,7 @@ def run_spectra_prediction(model,
 	model_ds_cls = None
  
 	# only check for FragGNNet
-	if isinstance(model,FragGNNPL):
+	if isinstance(model,FraGNNetPL):
 		assert os.path.isdir(frag_dp)
 		print(f">> frag_dp {frag_dp}")
 		print(">> filtering input without frags")

@@ -1,5 +1,5 @@
 from fragnnet.runner import load_config, init_dataloader
-from fragnnet.pl_model import FragGNNPL
+from fragnnet.pl_model import FraGNNetPL
 from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
 from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference
@@ -171,7 +171,7 @@ if __name__ == "__main__":
 		ds_cls = SpecMolFragDataset
 		ds = ds_cls(split=eval_split, **config_d)
 		dl = init_dataloader(ds, config_d)
-		model_cls = FragGNNPL
+		model_cls = FraGNNetPL
 		device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
 		for seed in range(num_seeds):
 			print(f">>> Starting seed {seed}")

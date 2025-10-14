@@ -3,7 +3,7 @@
 # they are used by the trainer to run the training and evaluation loops
 from .spectrum_pl import SpectrumPL
 from .binned_pl import BinnedPL
-from .fraggnn_pl import FragGNNPL
+from .fragnnet_pl import FraGNNetPL
 from .neims_pl import NeimsPL
 from .precursor_pl import PrecursorPL
 from .gnn_pl import GNNPL

@@ -1,5 +1,5 @@
 from fragnnet.runner import load_config, init_dataloader
-from fragnnet.pl_model import FragGNNPL, NeimsPL, PrecursorPL
+from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.graff.pl_model import GrAFFPL
@@ -148,8 +148,8 @@ if __name__ == "__main__":
 	model_type_to_model_cls = {
 		"neims": NeimsPL,
 		"massformer": MassFormerPL,
-		"fragnnet_d3": FragGNNPL,
-		"fragnnet_d4": FragGNNPL,
+		"fragnnet_d3": FraGNNetPL,
+		"fragnnet_d4": FraGNNetPL,
 		"iceberg_inten": IcebergIntenPL,
 		"iceberg_inten_opt": IcebergIntenPL,
 		"graff": GrAFFPL,
