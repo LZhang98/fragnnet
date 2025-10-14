@@ -139,8 +139,8 @@ PID=$!
 wait $PID
 
 # go to frag directory
-cd ${WORKING_DIR}/data/frag/
-tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
+#cd ${WORKING_DIR}/data/frag/
+#tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID} finished running
