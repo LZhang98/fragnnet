@@ -1,21 +1,3 @@
-"""
-Fragment generation script for MS2C (Mass Spectrometry to Chemical structure) inference pipeline.
-
-This script processes molecular data from a preprocessed dataset and generates fragment graphs
-using the FragGNN algorithm. It supports chunked processing for large datasets and includes
-comprehensive logging for monitoring progress.
-
-Main functionality:
-- Loads molecular data (mol_df) from preprocessed pickle files
-- Generates fragment DAGs (Directed Acyclic Graphs) for each molecule
-- Supports parallel processing with configurable parameters
-- Provides chunked processing capability for memory management
-- Outputs fragment data to specified directory for downstream inference
-
-Usage:
-    python 02_run_inference_frag_gen.py --proc_dp ./data/proc --frag_dp ./data/frag 
-                                        --start_row 0 --end_row 1000
-"""
 
 import pandas as pd
 from fragnnet.utils.misc_utils import booltype

@@ -4,13 +4,14 @@
 #SBATCH --job-name=frag_gen_deepmet_filtered_arr
 #SBATCH --mem=384G
 #SBATCH --cpus-per-task=192
-#SBATCH --time=0-12:00
+#SBATCH --time=0-24:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
 #SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_deepmet_filtered_arr_%A_%a.out
 #SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_deepmet_filtered_arr_%A_%a.out
 #SBATCH --open-mode=append
 #SBATCH --array=1-8
+#SBATCH --signal=B:USR1@120 #This will send signal 120s before wall time to this bash
 
 # record start
 echo `date`: Job ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID} is allocated resources
@@ -96,6 +97,26 @@ if [ -z "${SLURM_ARRAY_TASK_ID}" ]; then
     SLURM_ARRAY_TASK_ID=1
 fi
 
+#Setup Exit, this will collect results to another location
+function OnExit {
+# copy tar to scratch
+    echo create dir at ${DEST_DP}
+    mkdir -p ${DEST_DP}
+    echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
+    cp ${SAVE_NAME}.tar ${DEST_DP}
+}
+trap OnExit EXIT
+
+#Gracefully exit predictions
+function EndTask {
+   echo "USR1 or TERM received, send TERM to $PID"
+   kill $PID 2>/dev/null
+   wait $PID
+}
+trap EndTask USR1
+trap EndTask TERM
+trap EndTask SIGINT
+
 echo "Array Task ID: ${SLURM_ARRAY_TASK_ID}"
 echo "Chunk Size: ${CHUNK_SIZE}"
 
@@ -113,17 +134,13 @@ python preproc_scripts/inference/02_run_inference_frag_gen.py \
     --frag_dp=./data/frag/${SAVE_NAME} \
     --start_row=${START_ROW} \
     --end_row=${END_ROW} \
-    --max_time=-1
+    --max_time=-1 &
+PID=$!
+wait $PID
 
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/
 tar -cf ${SAVE_NAME}.tar ${SAVE_NAME}
-
-# copy tar to scratch
-echo create dir at ${DEST_DP}
-mkdir -p ${DEST_DP}
-echo copy tar: ${SAVE_NAME}.tar to ${DEST_DP}
-cp ${SAVE_NAME}.tar ${DEST_DP}
 
 # record ending
 echo `date`: Job ${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID} finished running
