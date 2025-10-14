@@ -73,6 +73,7 @@ MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=False
+MAX_TIME=150
 ## Ensure SAVE_NAME contains a usable array task id even if SLURM didn't set it.
 ## Use parameter expansion to default to '1' when SLURM_ARRAY_TASK_ID is empty.
 SAVE_NAME=mas_250905_filtered_d${MAX_DEPTH}_h${MAX_H_TRANSFER}${ISO_FALSE}_${SLURM_ARRAY_TASK_ID:-1}
@@ -84,6 +85,7 @@ echo SAVE_NAME: ${SAVE_NAME}
 echo NB_FLAG: ${NB_FLAG}
 echo ISO_FALSE: ${ISO_FALSE}
 echo MAX_H_TRANSFER: ${MAX_H_TRANSFER}
+echo MAX_TIME: ${MAX_TIME}
 echo PROC_DP: ${PROC_DP}
 echo DEST_DP: ${DEST_DP}
 
@@ -147,7 +149,7 @@ python preproc_scripts/inference/02_run_inference_frag_gen.py \
     --frag_dp=./data/frag/${SAVE_NAME} \
     --start_row=${START_ROW} \
     --end_row=${END_ROW} \
-    --max_time=-1 &
+    --max_time=${MAX_TIME} &
 PID=$!
 wait $PID
 
