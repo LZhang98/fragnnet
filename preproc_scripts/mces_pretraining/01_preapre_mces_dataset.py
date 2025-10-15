@@ -2,7 +2,6 @@ import numpy as np
 import argparse
 from tqdm import tqdm
 import pandas as pd
-import h5py
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import par_apply_series
 from fragnnet.utils.formula_utils import parse_formula
@@ -16,7 +15,7 @@ def get_np_memory_usage(array):
 	print(f"Memory usage: {memory_usage} bytes ({memory_usage_mb:.2f} MB)")
 
 def get_mol_df(data_fp):
-	# Existing function unchanged
+
 	with np.load(data_fp, allow_pickle=True) as mces_data:
 		smiles = mces_data['smiles']
   
@@ -59,97 +58,63 @@ def get_mol_df(data_fp):
 		#print(f"> Final mol_df shape: {mol_df.head()}")
 		return mol_df
   
-def process_mces(data_fp, mces_out_fp, mol_df, mce_min=0, mce_max=None):
-    """
-    Process MCES data and save as HDF5 file with dataset of shape [N, 3] where
-    each row is [mol_idx_1, mol_idx_2, mces_value] with mces_value as float16.
-    """
-    #print(mol_df.head())
-    org_idx = mol_df['og_idx'].values.tolist()
-    new_idx = mol_df.index.values.tolist()
-    smiles_idx_mapping = dict(zip(org_idx, new_idx))
-    smiles = mol_df['smiles'].values.tolist()
+def get_mces_df(data_fp, mol_df, mce_min=0, mce_max=None):
+	"""
+	Process MCES data and return a DataFrame with columns:
+	- 'mol_id_1': first molecule index
+	- 'mol_id_2': second molecule index  
+	- 'mces': MCES value as float16
+	"""
+	org_idx = mol_df['og_idx'].values.tolist()
+	new_idx = mol_df.index.values.tolist()
+	smiles_idx_mapping = dict(zip(org_idx, new_idx))
  
-    with np.load(data_fp, allow_pickle=True) as mces_data, h5py.File(mces_out_fp, 'w') as h5f:
-        mces_values = mces_data['mces']
-        num_smiles = len(mces_data['smiles'])
-    
-        # create smiles dataset
-        h5f.create_dataset('smiles', data=[s.encode('utf-8') for s in smiles], dtype=h5py.string_dtype())
-        
-        # create mces dataset - Fix: Create as 2D dataset from the start
-        computation_indices_dataset = h5f.create_dataset('computation_indices', 
-                                        compression='gzip',
-                                        shape=(0, 2),  # Changed: specify 2D shape
-                                        maxshape=(None, 2),  # Changed: specify 2D maxshape
-                                        dtype=np.int32)
-  
-        mces_dataset = h5f.create_dataset('mces', 
-                                        compression='gzip',
-                                        shape=(0,),  # Keep as 1D
-                                        maxshape=(None,),  # Keep as 1D
-                                        dtype=np.float16)
-        
-        # Process MCES values and append to dataset in batches
-        batch_size = 1000  # Adjust based on memory constraints
-        computation_indices_batch = []
-        mces_batch_data = []
-        
-        mces_idx = 0
-        total_saved = 0
-        
-        for i in tqdm(range(0, num_smiles)):
-            for j in tqdm(range(i+1, num_smiles), leave=False):
-                if mces_values[mces_idx] >= mce_min and (mce_max is None or mces_values[mces_idx] <= mce_max):
-                    # check if i and j in smiles_idx_mapping
-                    if i not in smiles_idx_mapping or j not in smiles_idx_mapping:
-                        mces_idx += 1  # Don't forget to increment!
-                        continue
+	with np.load(data_fp, allow_pickle=True) as mces_data:
+		mces_values = mces_data['mces']
+		num_smiles = len(mces_data['smiles'])
+	
+		# Collect all filtered data in lists
+		mol_id_1_list = []
+		mol_id_2_list = []
+		mces_list = []
+		
+		mces_idx = 0
+		
+		print("Processing MCES pairs...")
+		for i in tqdm(range(0, num_smiles)):
+			for j in tqdm(range(i+1, num_smiles), leave=False):
+				if mces_values[mces_idx] >= mce_min and (mce_max is None or mces_values[mces_idx] <= mce_max):
+					# Check if i and j in smiles_idx_mapping
+					if i not in smiles_idx_mapping or j not in smiles_idx_mapping:
+						mces_idx += 1
+						continue
 
-                    # Map original indices to new indices
-                    mapped_i = smiles_idx_mapping[i]
-                    mapped_j = smiles_idx_mapping[j]
+					# Map original indices to new indices
+					mapped_i = smiles_idx_mapping[i]
+					mapped_j = smiles_idx_mapping[j]
 
-                    # Add to batch
-                    mces_batch_data.append(mces_values[mces_idx])
-                    computation_indices_batch.append([mapped_i, mapped_j])  # Changed: use list instead of tuple
-                    
-                    # If batch is full, append to HDF5
-                    if len(mces_batch_data) >= batch_size:
-                        # Convert to arrays
-                        computation_indices_batch_array = np.array(computation_indices_batch, dtype=np.int32)
-                        mces_batch_array = np.array(mces_batch_data, dtype=np.float16)
-      
-                        # Resize dataset to accommodate new data
-                        current_size = mces_dataset.shape[0]
-                        new_size = current_size + len(mces_batch_array)
-                        computation_indices_dataset.resize((new_size, 2))  # Fix: This now works with 2D dataset
-                        mces_dataset.resize((new_size,))  # Keep as 1D resize
+					# Add to lists
+					mol_id_1_list.append(mapped_i)
+					mol_id_2_list.append(mapped_j)
+					mces_list.append(mces_values[mces_idx])
 
-                        # Write batch to dataset
-                        computation_indices_dataset[current_size:new_size] = computation_indices_batch_array
-                        mces_dataset[current_size:new_size] = mces_batch_array
-
-                        total_saved += len(mces_batch_data)
-                        mces_batch_data = []
-                        computation_indices_batch = []  # Clear this too
-
-                mces_idx += 1
-        
-        # Save any remaining data in the last batch
-        if mces_batch_data:
-            computation_indices_batch_array = np.array(computation_indices_batch, dtype=np.int32)  # Added this line
-            mces_batch_array = np.array(mces_batch_data, dtype=np.float16)
-            current_size = mces_dataset.shape[0]
-            new_size = current_size + len(mces_batch_array)
-            computation_indices_dataset.resize((new_size, 2))
-            mces_dataset.resize((new_size,))
-
-            computation_indices_dataset[current_size:new_size] = computation_indices_batch_array
-            mces_dataset[current_size:new_size] = mces_batch_array
-            total_saved += len(mces_batch_data)
-        
-        print(f"Total MCES pairs saved: {total_saved}")
+				mces_idx += 1
+		
+		# Create DataFrame
+		print("Creating DataFrame...")
+		mces_df = pd.DataFrame({
+			'mol_id_1': mol_id_1_list,
+			'mol_id_2': mol_id_2_list,
+			'mces': mces_list
+		})
+		
+		# Convert mces to float16 for memory efficiency
+		mces_df['mces'] = mces_df['mces'].astype(np.float16)
+				
+		print(f"Total MCES pairs saved: {len(mces_df)}")
+		print(f"DataFrame shape: {mces_df.shape}")
+		print(f"DataFrame memory usage: {mces_df.memory_usage(deep=True).sum() / (1024**2):.2f} MB")
+		return mces_df
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Filter MCES data, save index pairs and mol_df with properties.")
@@ -174,13 +139,13 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--mces_out_fp",
 		type=str,
-		default="./data/proc/mces-data/mces_pairs_max10.h5",  # Changed to h5 extension
-		help="Output .h5 file for filtered MCES index pairs"
+		default="./data/proc/mces/mces_pairs.pkl",  # Changed to pkl extension
+		help="Output .pkl file for filtered MCES index pairs"
 	)
 	parser.add_argument(
 		"--mol_df_fp",
 		type=str,
-		default="./data/proc/data/mces-data/mol_df.pkl",
+		default="./data/proc/mces/mol_df.pkl",
 		help="Output .pkl file for mol_df"
 	)
 	args = parser.parse_args()
@@ -188,4 +153,8 @@ if __name__ == "__main__":
 	mol_df = get_mol_df(args.data_fp)
 	mol_df.to_pickle(args.mol_df_fp)
 	#mol_df = pd.read_pickle(args.mol_df_fp)
-	process_mces(args.data_fp, args.mces_out_fp, mol_df, args.mce_min, args.mce_max)
+	mces_df = get_mces_df(args.data_fp, mol_df, args.mce_min, args.mce_max)
+ 
+	# Save as pickle
+	print(f"Saving {len(mces_df)} MCES pairs to {args.mces_out_fp}...")
+	mces_df.to_pickle(args.mces_out_fp)
