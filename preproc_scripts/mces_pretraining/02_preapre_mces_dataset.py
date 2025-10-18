@@ -21,7 +21,7 @@ def get_mol_df(data_fp):
   
 		# Create mol_df from smiles using data_utils functions
 		mol_df = pd.DataFrame({'smiles_org': smiles})
-		mol_df.loc[:,"idx"] = range(len(mol_df))
+		mol_df.loc[:,"mol_id"] = range(len(mol_df))
 
 		mol_df.loc[:,"mol"] = par_apply_series(mol_df["smiles_org"], lambda s: data_utils.mol_from_smiles(s, ml_standardize=False))
 		mol_df.loc[:,"smiles"] = par_apply_series(mol_df["mol"], data_utils.mol_to_smiles)
@@ -38,7 +38,6 @@ def get_mol_df(data_fp):
 		mol_df.loc[:,"num_radicals"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_radicals)
 		mol_df.loc[:,'num_out_set_elements'] = par_apply_series(mol_df['formula'], (lambda x: len(set(list(parse_formula(x).keys())) - set(ELEMENTS))))
 
-		mol_df.loc[:,"og_idx"] = mol_df.index
 		mol_df.drop(columns=["mol"], inplace=True)
 		mol_df.dropna(subset=["smiles", "smiles_org", "inchikey_s", "scaffold", "formula", "inchi"])
 
@@ -55,19 +54,19 @@ def get_mol_df(data_fp):
 		mol_df = mol_df[(mol_df['num_atoms'] > 3 ) & (mol_df['num_atoms'] < 100)]
 		print(f"> Filtered mol_df shape after 3 < num_atom < 100: {mol_df.shape}")
 		mol_df = mol_df.reset_index(drop=True)
-		#print(f"> Final mol_df shape: {mol_df.head()}")
+
 		return mol_df
   
 def get_mces_df(data_fp, mol_df, mce_min=0, mce_max=None):
 	"""
 	Process MCES data and return a DataFrame with columns:
-	- 'mol_id_1': first molecule index
-	- 'mol_id_2': second molecule index  
+	- 'mol_id_1': first molecule mol_id
+	- 'mol_id_2': second molecule mol_id  
 	- 'mces': MCES value as float16
 	"""
-	org_idx = mol_df['og_idx'].values.tolist()
-	new_idx = mol_df.index.values.tolist()
-	smiles_idx_mapping = dict(zip(org_idx, new_idx))
+
+	mol_ids = mol_df['mol_id'].values.tolist()
+	smiles_idx_mapping = dict(zip(org_idx, mol_ids))
  
 	with np.load(data_fp, allow_pickle=True) as mces_data:
 		mces_values = mces_data['mces']

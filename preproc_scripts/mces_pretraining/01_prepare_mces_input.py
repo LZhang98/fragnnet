@@ -45,7 +45,7 @@ def process_mol_df(data_fp):
 	mol_df = mol_df[(mol_df['num_atoms'] > 1 ) & (mol_df['num_atoms'] < 100)]
 	print(f"> Filtered mol_df shape after 1 < num_atom < 100: {mol_df.shape}")
 	mol_df = mol_df.reset_index(drop=True)
- 
+	mol_df['mol_id'] = mol_df.index
 	return mol_df
 
 def sample_pairs(mol_df, num_pairs, max_attempts=None):
@@ -144,7 +144,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--num_pairs",
 		type=int,
-		default=10_000_000,
+		default=100_000_000,
 		help="Number of unique pairs to sample"
 	)
 	parser.add_argument(
