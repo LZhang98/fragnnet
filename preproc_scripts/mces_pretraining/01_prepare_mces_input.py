@@ -1,4 +1,5 @@
 import argparse
+import os
 import pandas as pd
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import par_apply_series
@@ -7,6 +8,8 @@ from fragnnet.utils.frag_utils import ELEMENTS
 import h5py
 import random
 from tqdm import tqdm
+from joblib import Parallel, delayed
+import numpy as np
 
 def process_mol_df(data_fp):
 	mol_df = pd.read_csv(data_fp)
@@ -48,14 +51,57 @@ def process_mol_df(data_fp):
 	mol_df['mol_id'] = mol_df.index
 	return mol_df
 
-def sample_pairs(mol_df, num_pairs, max_attempts=None):
+def sample_pairs_chunk(all_indices, num_atoms_arr, num_bonds_arr, num_pairs_target, seed):
     """
-    Randomly sample pairs of row indices from mol_df and deduplicate them.
+    Sample pairs in a single worker process.
+    
+    Args:
+        all_indices: List of all molecule indices to sample from
+        num_atoms_arr: Array of num_atoms for quick lookup
+        num_bonds_arr: Array of num_bonds for quick lookup
+        num_pairs_target: Target number of pairs for this chunk
+        seed: Random seed for reproducibility (ensures different workers sample different pairs)
+        
+    Returns:
+        set: Set of sampled pairs (as tuples)
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    
+    num_rows = len(all_indices)
+    if num_rows < 2:
+        return set()
+    
+    sampled_pairs = set()
+    attempts = 0
+    max_attempts = num_pairs_target * 10  # Limit attempts per chunk
+    
+    while len(sampled_pairs) < num_pairs_target and attempts < max_attempts:
+        # Randomly sample two distinct indices
+        idx1, idx2 = random.sample(all_indices, 2)
+        attempts += 1
+        
+        # Filter by atom and bond differences
+        if abs(num_atoms_arr[idx1] - num_atoms_arr[idx2]) >= 10:
+            continue
+        if abs(num_bonds_arr[idx1] - num_bonds_arr[idx2]) >= 10:
+            continue
+        
+        # Add the pair in sorted order
+        pair = tuple(sorted((idx1, idx2)))
+        sampled_pairs.add(pair)
+    
+    return sampled_pairs
+
+def sample_pairs(mol_df, num_pairs, n_jobs=-1, max_attempts=None):
+    """
+    Randomly sample pairs of row indices from mol_df in parallel and deduplicate them.
 
     Args:
         mol_df (pd.DataFrame): The DataFrame containing molecular data.
         num_pairs (int): The number of unique pairs to sample.
-        max_attempts (int, optional): Maximum number of attempts to sample pairs.
+        n_jobs (int): Number of parallel jobs (-1 uses all cores).
+        max_attempts (int, optional): Maximum number of attempts to sample pairs (deprecated, use multiplier internally).
 
     Returns:
         list: A list of unique (row_idx1, row_idx2) pairs.
@@ -64,27 +110,39 @@ def sample_pairs(mol_df, num_pairs, max_attempts=None):
     if num_rows < 2:
         raise ValueError("Not enough rows in mol_df to create pairs.")
 
-    sampled_pairs = set()  # Use a set to ensure uniqueness
-    attempts = 0  # Track the number of attempts
-
-    # Use tqdm to show progress
-    with tqdm(total=num_pairs, desc="Sampling pairs") as pbar:
-        while len(sampled_pairs) < num_pairs and (max_attempts is None or attempts < max_attempts):
-            # Randomly sample two distinct indices
-            idx1, idx2 = random.sample(range(num_rows), 2)
-            attempts += 1
-
-            # Ignore pairs that are too different in terms of number of atoms and bonds
-            if abs(mol_df.iloc[idx1]['num_atoms'] - mol_df.iloc[idx2]['num_atoms']) >= 10:
-                continue
-            if abs(mol_df.iloc[idx1]['num_bonds'] - mol_df.iloc[idx2]['num_bonds']) >= 10:
-                continue
-
-            # Add the pair in a sorted order to avoid duplicates like (1, 2) and (2, 1)
-            if tuple(sorted((idx1, idx2))) not in sampled_pairs:
-                sampled_pairs.add(tuple(sorted((idx1, idx2))))
-                pbar.update(1)  # Update the progress bar
-
+    print(f"Sampling {num_pairs} pairs from {num_rows} molecules using {n_jobs} jobs...")
+    
+    # Precompute arrays for fast lookup
+    num_atoms_arr = mol_df['num_atoms'].values
+    num_bonds_arr = mol_df['num_bonds'].values
+    all_indices = list(range(num_rows))
+    
+    # Determine number of chunks
+    n_cores = n_jobs if n_jobs > 0 else -1
+    n_chunks = abs(n_cores) * 4  # 4 chunks per core for load balancing
+    pairs_per_chunk = num_pairs // n_chunks
+    
+    print(f"Splitting work into {n_chunks} chunks ({pairs_per_chunk} pairs per chunk)...")
+    
+    # Run parallel sampling
+    results = Parallel(n_jobs=n_jobs, backend='loky', verbose=5)(
+        delayed(sample_pairs_chunk)(
+            all_indices,
+            num_atoms_arr,
+            num_bonds_arr,
+            pairs_per_chunk,
+            seed=42 + i  # Different seed per chunk
+        )
+        for i in range(n_chunks)
+    )
+    
+    # Merge all sampled pairs and deduplicate
+    print("Merging and deduplicating results from all chunks...")
+    sampled_pairs = set()
+    for chunk_pairs in tqdm(results, desc="Merging chunks"):
+        sampled_pairs.update(chunk_pairs)
+    
+    print(f"Final: {len(sampled_pairs)} unique pairs sampled.")
     return list(sampled_pairs)
 
 def add_computation_indices(sampled_pairs):
@@ -136,6 +194,12 @@ if __name__ == "__main__":
 		help="preprocessed mol_df file"
 	)
 	parser.add_argument(
+		"--update_cache",
+		action='store_true',
+		default=False,
+		help="Whether to update the mol_df cache"
+	)
+	parser.add_argument(
 		"--hdf5_output_fp",
 		type=str,
 		default="./data/mces-data/biostructures_sampled.h5",
@@ -153,15 +217,28 @@ if __name__ == "__main__":
 		default=10_000_000,
 		help="Number of unique pairs to sample"
 	)
+	parser.add_argument(
+		"--n_jobs",
+		type=int,
+		default=-1,
+		help="Number of parallel jobs for sampling (-1 uses all cores)"
+	)
 	args = parser.parse_args()
 	
-	if args.mol_df_cache_fp is None:
+	# Validate input file exists if we need to process it
+	if not os.path.exists(args.mol_df_cache_fp) or args.update_cache:
+		if not os.path.exists(args.input_csv_fp):
+			raise FileNotFoundError(f"Input CSV file not found: {args.input_csv_fp}")
+		print(f"Processing molecules from {args.input_csv_fp}...")
 		mol_df = process_mol_df(args.input_csv_fp)
+		print(f"Saving mol_df cache to {args.mol_df_cache_fp}...")
+		mol_df.to_pickle(args.mol_df_cache_fp)
 	else:
+		print(f"Loading mol_df from cache: {args.mol_df_cache_fp}...")
 		mol_df = pd.read_pickle(args.mol_df_cache_fp)
   
 	# Randomly sample and deduplicate pairs
-	sampled_pairs = sample_pairs(mol_df, args.num_pairs, max_attempts=args.num_pairs * 5)
+	sampled_pairs = sample_pairs(mol_df, args.num_pairs, n_jobs=args.n_jobs, max_attempts=args.num_pairs * 5)
 	print(f"Sampled {len(sampled_pairs)} unique pairs of indices.")
 	output_fp = args.hdf5_output_fp
 	output_fp, ext = output_fp.rsplit('.', 1)

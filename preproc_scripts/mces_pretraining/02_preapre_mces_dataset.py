@@ -2,6 +2,7 @@ import numpy as np
 import argparse
 from tqdm import tqdm
 import pandas as pd
+from joblib import Parallel, delayed
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import par_apply_series
 from fragnnet.utils.formula_utils import parse_formula
@@ -54,19 +55,49 @@ def get_mol_df(data_fp):
 		mol_df = mol_df[(mol_df['num_atoms'] > 3 ) & (mol_df['num_atoms'] < 100)]
 		print(f"> Filtered mol_df shape after 3 < num_atom < 100: {mol_df.shape}")
 		mol_df = mol_df.reset_index(drop=True)
+		mol_df['mol_id'] = mol_df.index
 
 		return mol_df
-  
-def get_mces_df(data_fp, mol_df, mce_min=0, mce_max=None):
+
+def process_chunk(i_start, i_end, num_smiles, mces_values, smiles_idx_mapping, mce_min, mce_max):
 	"""
-	Process MCES data and return a DataFrame with columns:
+	Process a chunk of molecule pairs (i from i_start to i_end).
+	Returns lists of (mol_id_1, mol_id_2, mces) tuples.
+	"""
+	mol_id_1_list = []
+	mol_id_2_list = []
+	mces_list = []
+	
+	for i in range(i_start, i_end):
+		# Calculate the starting index for this row i in the flattened mces_values array
+		# For upper triangular matrix: index = i*(2*n - i - 1)/2
+		start_idx = i * (2 * num_smiles - i - 1) // 2
+		
+		for j in range(i + 1, num_smiles):
+			mces_idx = start_idx + (j - i - 1)
+			mces_val = mces_values[mces_idx]
+			
+			if mces_val >= mce_min and (mce_max is None or mces_val <= mce_max):
+				# Check if both i and j are in the mapping
+				if i in smiles_idx_mapping and j in smiles_idx_mapping:
+					mol_id_1_list.append(smiles_idx_mapping[i])
+					mol_id_2_list.append(smiles_idx_mapping[j])
+					mces_list.append(mces_val)
+	
+	return mol_id_1_list, mol_id_2_list, mces_list
+  
+def get_mces_df(data_fp, mol_df, mce_min=0, mce_max=None, n_jobs=-1):
+	"""
+	Process MCES data in parallel and return a DataFrame with columns:
 	- 'mol_id_1': first molecule mol_id
 	- 'mol_id_2': second molecule mol_id  
 	- 'mces': MCES value as float16
+	
+	Uses parallel processing to speed up pair extraction.
 	"""
-
+	og_idx = mol_df['og_idx'].values.tolist()
 	mol_ids = mol_df['mol_id'].values.tolist()
-	smiles_idx_mapping = dict(zip(org_idx, mol_ids))
+	smiles_idx_mapping = dict(zip(og_idx, mol_ids))
  
 	with np.load(data_fp, allow_pickle=True) as mces_data:
 		mces_values = mces_data['mces']
