@@ -8,9 +8,7 @@ from fragnnet.utils.frag_utils import ELEMENTS
 import h5py
 import random
 from tqdm import tqdm
-from joblib import Parallel, delayed
 import numpy as np
-import multiprocessing
 
 def process_mol_df(data_fp):
 	mol_df = pd.read_csv(data_fp)
@@ -52,61 +50,18 @@ def process_mol_df(data_fp):
 	mol_df['mol_id'] = mol_df.index
 	return mol_df
 
-def sample_pairs_chunk(all_indices, num_atoms_arr, num_bonds_arr, num_pairs_target, seed):
+def sample_pairs(mol_df, num_pairs, random_seed=42, batch_size=100000, max_atom_diff=10, max_bond_diff=10):
 	"""
-	Sample pairs in a single worker process.
-	
-	Args:
-		all_indices: List of all molecule indices to sample from
-		num_atoms_arr: Array of num_atoms for quick lookup
-		num_bonds_arr: Array of num_bonds for quick lookup
-		num_pairs_target: Target number of pairs for this chunk
-		seed: Random seed for reproducibility (ensures different workers sample different pairs)
-		
-	Returns:
-		set: Set of sampled pairs (as tuples)
-	"""
-	random.seed(seed)
-	np.random.seed(seed)
-	
-	num_rows = len(all_indices)
-	if num_rows < 2:
-		return set()
-	
-	sampled_pairs = set()
-	attempts = 0
-	max_attempts = num_pairs_target * 5  # Limit attempts per chunk
-	
-	while len(sampled_pairs) < num_pairs_target and attempts < max_attempts:
-		# Randomly sample two distinct indices
-		idx1, idx2 = random.sample(all_indices, 2)
-		attempts += 1
-		
-		# Filter by atom and bond differences
-		if abs(num_atoms_arr[idx1] - num_atoms_arr[idx2]) >= 10:
-			continue
-		if abs(num_bonds_arr[idx1] - num_bonds_arr[idx2]) >= 10:
-			continue
-		
-		# Add the pair in sorted order
-		# make sure idx 1 < idx 2
-		if idx1 < idx2:
-			pair = (idx1, idx2)
-		else:
-			pair = (idx2, idx1)
-		sampled_pairs.add(pair)
-	#print(f"Sampled pairs: {attempts} / {max_attempts}", end='\r')
-	return sampled_pairs
-
-def sample_pairs(mol_df, num_pairs, n_jobs=-1):
-	"""
-	Randomly sample pairs of row indices from mol_df in parallel and deduplicate them.
+	Randomly sample pairs of row indices from mol_df and deduplicate them.
+	Uses batch sampling for much better performance.
 
 	Args:
 		mol_df (pd.DataFrame): The DataFrame containing molecular data.
 		num_pairs (int): The number of unique pairs to sample.
-		n_jobs (int): Number of parallel jobs (-1 uses all cores).
-		max_attempts (int, optional): Maximum number of attempts to sample pairs (deprecated, use multiplier internally).
+		random_seed (int): Random seed for reproducibility.
+		batch_size (int): Number of candidate pairs to generate per batch.
+		max_atom_diff (int): Maximum allowed difference in number of atoms between paired molecules.
+		max_bond_diff (int): Maximum allowed difference in number of bonds between paired molecules.
 
 	Returns:
 		list: A list of unique (row_idx1, row_idx2) pairs.
@@ -115,43 +70,68 @@ def sample_pairs(mol_df, num_pairs, n_jobs=-1):
 	if num_rows < 2:
 		raise ValueError("Not enough rows in mol_df to create pairs.")
 
-	# Determine number of chunks
-	n_jobs = n_jobs if n_jobs > 0 else multiprocessing.cpu_count()
-	pairs_per_chunk = num_pairs // n_jobs
- 
-	print(f"Sampling {num_pairs} pairs from {num_rows} molecules using {n_jobs} jobs...")
+	print(f"Sampling {num_pairs} pairs from {num_rows} molecules with seed={random_seed}")
+	print(f"Filter constraints: max_atom_diff={max_atom_diff}, max_bond_diff={max_bond_diff}")
+	
+	# Set random seed for reproducibility
+	np.random.seed(random_seed)
 	
 	# Precompute arrays for fast lookup
 	num_atoms_arr = mol_df['num_atoms'].values
 	num_bonds_arr = mol_df['num_bonds'].values
-	all_indices = list(range(num_rows))
 	
-	print(f"Splitting work into {n_jobs} chunks ({pairs_per_chunk} pairs per chunk)...")
-	# Run parallel sampling
-	results = Parallel(n_jobs=n_jobs, backend='loky', verbose=51)(
-		delayed(sample_pairs_chunk)(
-			all_indices,
-			num_atoms_arr,
-			num_bonds_arr,
-			pairs_per_chunk,
-			seed = 42 * i  # Different seed per chunk
-		)
-		for i in range(n_jobs)
-	)
-	
-	# Merge all sampled pairs and deduplicate
-	print("Merging and deduplicating results from all chunks...")
 	sampled_pairs = set()
-	total_pairs_before_dedup = 0
-	for chunk_pairs in tqdm(results, desc="Merging chunks"):
-		total_pairs_before_dedup += len(chunk_pairs)
-		sampled_pairs.update(chunk_pairs)
+	total_attempts = 0
 	
-	num_duplicates = total_pairs_before_dedup - len(sampled_pairs)
-	print(f"Total pairs from all chunks: {total_pairs_before_dedup}")
-	print(f"Unique pairs after deduplication: {len(sampled_pairs)}")
-	print(f"Duplicates removed: {num_duplicates} ({100 * num_duplicates / total_pairs_before_dedup:.2f}%)")
-	return list(sampled_pairs)
+	# Use tqdm for progress bar
+	with tqdm(total=num_pairs, desc="Sampling pairs", unit="pairs") as pbar:
+		while len(sampled_pairs) < num_pairs:
+			# Generate a batch of candidate pairs all at once (MUCH faster)
+			idx1_batch = np.random.randint(0, num_rows, size=batch_size)
+			idx2_batch = np.random.randint(0, num_rows, size=batch_size)
+			
+			# Filter out pairs where idx1 == idx2
+			valid_mask = idx1_batch != idx2_batch
+			idx1_batch = idx1_batch[valid_mask]
+			idx2_batch = idx2_batch[valid_mask]
+			
+			# Apply atom and bond filters using vectorized operations (MUCH faster)
+			atom_diff = np.abs(num_atoms_arr[idx1_batch] - num_atoms_arr[idx2_batch])
+			bond_diff = np.abs(num_bonds_arr[idx1_batch] - num_bonds_arr[idx2_batch])
+			filter_mask = (atom_diff < max_atom_diff) & (bond_diff < max_bond_diff)
+			
+			idx1_filtered = idx1_batch[filter_mask]
+			idx2_filtered = idx2_batch[filter_mask]
+			
+			# Ensure idx1 < idx2 for consistent ordering (vectorized)
+			min_idx = np.minimum(idx1_filtered, idx2_filtered)
+			max_idx = np.maximum(idx1_filtered, idx2_filtered)
+			
+			# Add pairs to set (this deduplicates automatically)
+			new_pairs = set(zip(min_idx, max_idx))
+			before_count = len(sampled_pairs)
+			sampled_pairs.update(new_pairs)
+			new_count = len(sampled_pairs) - before_count
+			
+			total_attempts += batch_size
+			pbar.update(new_count)
+			
+			# Update stats
+			if len(sampled_pairs) >= num_pairs:
+				break
+			
+			if total_attempts > 10 * num_pairs:
+				print("Warning: High rejection rate, consider adjusting filters or increasing dataset size.")
+				break
+
+			rejection_rate = (total_attempts - len(sampled_pairs)) / total_attempts * 100
+			pbar.set_postfix({"attempts": f"{total_attempts:,}", "reject%": f"{rejection_rate:.1f}"})
+	
+	rejection_rate = (total_attempts - len(sampled_pairs)) / total_attempts * 100
+	print(f"Sampled {len(sampled_pairs)} unique pairs after {total_attempts:,} attempts (rejection rate: {rejection_rate:.1f}%)")
+	
+	# Return exactly num_pairs (trim if we overshot)
+	return list(sampled_pairs)[:num_pairs]
 
 def add_computation_indices(sampled_pairs):
 	"""
@@ -226,10 +206,22 @@ if __name__ == "__main__":
 		help="Number of unique pairs to sample"
 	)
 	parser.add_argument(
-		"--n_jobs",
+		"--random_seed",
 		type=int,
-		default=-1,
-		help="Number of parallel jobs for sampling (-1 uses all cores)"
+		default=42,
+		help="Random seed for reproducibility"
+	)
+	parser.add_argument(
+		"--max_atom_diff",
+		type=int,
+		default=10,
+		help="Maximum allowed difference in number of atoms between paired molecules"
+	)
+	parser.add_argument(
+		"--max_bond_diff",
+		type=int,
+		default=10,
+		help="Maximum allowed difference in number of bonds between paired molecules"
 	)
 	args = parser.parse_args()
 	
@@ -246,7 +238,13 @@ if __name__ == "__main__":
 		mol_df = pd.read_pickle(args.mol_df_cache_fp)
   
 	# Randomly sample and deduplicate pairs
-	sampled_pairs = sample_pairs(mol_df, args.num_pairs, n_jobs=args.n_jobs)
+	sampled_pairs = sample_pairs(
+		mol_df, 
+		args.num_pairs, 
+		random_seed=args.random_seed,
+		max_atom_diff=args.max_atom_diff,
+		max_bond_diff=args.max_bond_diff
+	)
 	print(f"Sampled {len(sampled_pairs)} unique pairs of indices.")
 	output_fp = args.hdf5_output_fp
 	output_fp, ext = output_fp.rsplit('.', 1)
