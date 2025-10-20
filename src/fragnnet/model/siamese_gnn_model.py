@@ -1,5 +1,5 @@
 """
-Siamese  Model for MS/MS Spectrum Pre-Training
+Siamese  Model for MCES regression pretraining
 The model uses GNN  and optional embeddings for collision energy (CE),
 precursor type, and instrument type, and predicts spectra using a feedforward neural network.
 """

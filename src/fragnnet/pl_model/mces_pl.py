@@ -1,6 +1,7 @@
 
 import torch as th
 import torch.nn as nn
+import torch.nn.functional as F
 from fragnnet.model import SiameseGNNModel
 
 # Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
@@ -69,14 +70,29 @@ class MCESPL(pl.LightningModule):
         pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
         target = batch['mces'].float().to(pred.device)
         loss = self.loss_fn(pred, target)
+        
+        # Log loss
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        
+        # Log additional metrics
+        with th.no_grad():
+            mae = F.l1_loss(pred.squeeze(), target)
+            self.log("train_mae", mae, on_step=False, on_epoch=True, prog_bar=False)
+        
         return loss
 
     def validation_step(self, batch, batch_idx):
         pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
         target = batch['mces'].float().to(pred.device)
         loss = self.loss_fn(pred, target)
+        
+        # Log loss
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        
+        # Log additional metrics
+        mae = F.l1_loss(pred.squeeze(), target)
+        self.log("val_mae", mae, on_step=False, on_epoch=True, prog_bar=True)
+        
         return loss
 
     def test_step(self, batch, batch_idx):
