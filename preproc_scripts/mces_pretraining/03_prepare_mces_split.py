@@ -2,7 +2,7 @@ import argparse
 import os
 import pandas as pd
 import json
-
+import random
 from fragnnet.utils import frag_utils
 
 def make_splits(args):
@@ -17,6 +17,14 @@ def make_splits(args):
 	mol_df = pd.read_pickle(os.path.join(args.proc_dp,"mol_df.pkl"))
 	mces_data = pd.read_pickle(os.path.join(args.proc_dp,"mces_pairs.pkl"))
 
+	# Filter MCES pairs by distance range
+	print(f"\nTotal MCES pairs before filtering: {len(mces_data)}")
+	print(f"Filtering MCES pairs with {args.mce_min} <= mces <= {args.mce_max}")
+	mces_data = mces_data[mces_data['mces'] >= args.mce_min]
+	if args.mce_max != -1:
+		mces_data = mces_data[mces_data['mces'] <= args.mce_max]
+	print(f"MCES pairs after filtering: {len(mces_data)}")
+
 	# Create MCES splits based on MS splits
 	# Ensure molecules in MS train split are also in MCES train split
 	split_d = {}
@@ -28,17 +36,55 @@ def make_splits(args):
 		split_d[split_type] = split_mol_ids
 		print(f"{split_type}: {len(split_mol_ids)} molecules")
 	
- 
-	print(mol_df.head())
 	total_mols = mol_df['inchikey_s'].nunique()
+	assert args.test_frac + args.val_frac  < 1.0
 	print(f"\nTotal unique molecules in mol_df: {total_mols}")
 	expected_train_mol_count = total_mols - int(total_mols * (args.test_frac + args.val_frac))
-	print(f"Expected train molecules (approx): {expected_train_mol_count}")
+	print(f"Expected train molecules: {expected_train_mol_count}")
 	expected_val_mol_count = int(total_mols * args.val_frac)
-	print(f"Expected val molecules (approx): {expected_val_mol_count}")
+	print(f"Expected val molecules: {expected_val_mol_count}")
 	expected_test_mol_count = int(total_mols * args.test_frac)
-	print(f"Expected test molecules (approx): {expected_test_mol_count}")
-   
+	print(f"Expected test molecules: {expected_test_mol_count}")
+	expected_count_d = { "train": expected_train_mol_count, "val": expected_val_mol_count, "test": expected_test_mol_count }
+
+	# Get inchikey_s that are already assigned to splits
+	assigned_inchikey_s = set()
+	for split_type in ["train", "val", "test"]:
+		assigned_inchikey_s.update(mol_df[mol_df.index.isin(split_d[split_type])]['inchikey_s'].unique())
+	
+	# Available molecules are those not yet assigned to any split
+	available_mol_inchikey_s = set(mol_df['inchikey_s'].unique()) - assigned_inchikey_s
+	print(f"\nAvailable unassigned molecules: {len(available_mol_inchikey_s)}")
+	
+	# Randomly sample from available molecules to fill each split
+
+	random.seed(args.meta_rseed)
+	available_list = list(available_mol_inchikey_s)
+	random.shuffle(available_list)
+	
+	for split_type in ["train", "val", "test"]:
+		actual_count = len(split_d[split_type])
+		expected_count = expected_count_d[split_type]
+		print(f"\n{split_type} molecules: {actual_count} (expected {expected_count})")
+		remaining_count = expected_count - actual_count
+		
+		if remaining_count > 0 and len(available_list) > 0:
+			# Sample min(remaining_count, available) molecules
+			n_to_sample = min(remaining_count, len(available_list))
+			sampled_inchikey_s = available_list[:n_to_sample]
+			available_list = available_list[n_to_sample:]  # Remove sampled from available
+			
+			# Get mol_ids corresponding to sampled inchikey_s
+			additional_mol_ids = mol_df[mol_df['inchikey_s'].isin(sampled_inchikey_s)].index.tolist()
+			split_d[split_type].extend(additional_mol_ids)
+			
+			print(f"  Added {len(additional_mol_ids)} molecules from unassigned pool")
+			print(f"  New total: {len(split_d[split_type])} molecules")
+		elif remaining_count > 0:
+			print(f"  Warning: Need {remaining_count} more molecules but none available!")
+		else:
+			print(f"  Split already has sufficient molecules")
+
 	# Verify no overlap between test and train/val
 	train_set = set(split_d['train'])
 	val_set = set(split_d['val'])
@@ -48,7 +94,7 @@ def make_splits(args):
 	print(f"Train ∩ Test: {len(train_set & test_set)} molecules (should be 0)")
 	print(f"Val ∩ Test: {len(val_set & test_set)} molecules (should be 0)")
 	print(f"Train ∩ Val: {len(train_set & val_set)} molecules")
-	exit()
+	
 	# Filter MCES pairs to ensure both molecules in a pair belong to the same split
 	# Remove any pairs that cross splits
 	mces_split_d = {}
@@ -80,7 +126,7 @@ def make_splits(args):
 	
 	total_pairs_after = sum(len(mces_split_d[s]) for s in ["train", "val", "test"])
 	removed_pairs = len(mces_data) - total_pairs_after
-	print(f"\nRemoved {removed_pairs} cross-split pairs ({removed_pairs/len(mces_data)*100:.2f}%)")
+	print(f"Removed {removed_pairs} cross-split pairs ({removed_pairs/len(mces_data)*100:.2f}%)")
 	
 	# Save splits
 	os.makedirs(args.split_dp, exist_ok=True)
@@ -90,13 +136,7 @@ def make_splits(args):
 		split_fp = os.path.join(args.split_dp, f"{split_type}_ids.csv")
 		split_df = pd.DataFrame({'mol_id': split_d[split_type]})
 		split_df.to_csv(split_fp, index=False)
-		print(f"\nSaved {split_type} mol_ids to {split_fp}")
-	
-	# Save MCES pairs
-	for split_type in ["train", "val", "test"]:
-		mces_split_fp = os.path.join(args.split_dp, f"{split_type}_mces_pairs.pkl")
-		mces_split_d[split_type].to_pickle(mces_split_fp)
-		print(f"Saved {split_type} MCES pairs to {mces_split_fp}")
+		print(f"Saved {split_type} mol_ids to {split_fp}")
 	
 	# Save split metadata
 	metadata = {
@@ -126,22 +166,19 @@ if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--split_type",type=str,choices=["random"],default="random")
-	parser.add_argument("--split_key",type=str,choices=["inchikey_s","scaffold"],default="inchikey_s")
+	parser.add_argument("--split_key",type=str,choices=["inchikey_s"],default="inchikey_s")
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=420420)
-	parser.add_argument("--total_frac",type=float,default=1.0)
 	parser.add_argument("--test_frac",type=float,default=0.2)
 	parser.add_argument("--val_frac",type=float,default=0.2)
 	parser.add_argument("--proc_dp",type=str, default="data/proc/mces")
 	parser.add_argument("--split_dp",type=str, default="data/split/mces_nist23_ma_mi_inchikey")
 	parser.add_argument("--ms_proc_dp",type=str, default="data/proc/nist23")
 	parser.add_argument("--ms_split_dp",type=str, default="data/split/nist23_ma_mi_inchikey")
-	#parser.add_argument("--proc_dp",type=str,required=True)
-	#parser.add_argument("--split_dp",type=str,required=True)
-	#parser.add_argument("--ms_proc_dp",type=str,required=True)
-	#parser.add_argument("--ms_split_dp",type=str,required=True)
+	parser.add_argument("--mce_min",type=int,default=0, help="minimum value of MCES pairs to process (default: 0s)")
+	parser.add_argument("--mce_max",type=int,default=20, help="maximum value of MCES pairs to process (default: 10, -1 to process all pairs)")
 	args = parser.parse_args()
 
 	make_splits(args)

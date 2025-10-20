@@ -1,3 +1,5 @@
+import os
+import h5py
 import numpy as np
 import argparse
 from tqdm import tqdm
@@ -9,182 +11,111 @@ from fragnnet.utils.formula_utils import parse_formula
 from fragnnet.utils.frag_utils import ELEMENTS
 #from scipy.spatial.distance import squareform
 
-def get_np_memory_usage(array):
-	memory_usage = array.nbytes
-	# Convert to megabytes
-	memory_usage_mb = memory_usage / (1024 ** 2)
-	print(f"Memory usage: {memory_usage} bytes ({memory_usage_mb:.2f} MB)")
 
-def get_mol_df(data_fp):
+def create_mol_df(smiles_to_mol_id):
 
-	with np.load(data_fp, allow_pickle=True) as mces_data:
-		smiles = mces_data['smiles']
-  
-		# Create mol_df from smiles using data_utils functions
-		mol_df = pd.DataFrame({'smiles_org': smiles})
-		mol_df.loc[:,"mol_id"] = range(len(mol_df))
+	mol_df = pd.DataFrame()
+	mol_df["smiles_org"] = smiles_to_mol_id.keys()
+	mol_df["mol_id"] = smiles_to_mol_id.values()
 
-		mol_df.loc[:,"mol"] = par_apply_series(mol_df["smiles_org"], lambda s: data_utils.mol_from_smiles(s, ml_standardize=False))
-		mol_df.loc[:,"smiles"] = par_apply_series(mol_df["mol"], data_utils.mol_to_smiles)
-		mol_df.loc[:,"inchikey_s"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchikey_s)
-		mol_df.loc[:,"scaffold"] = par_apply_series(mol_df["mol"],data_utils.get_murcko_scaffold)
-		mol_df.loc[:,"formula"] = par_apply_series(mol_df["mol"],data_utils.mol_to_formula)
-		mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchi)
-		mol_df.loc[:,"mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=False))
-		mol_df.loc[:,"exact_mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=True))
-		mol_df.loc[:,"num_atoms"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_atoms)
-		mol_df.loc[:,"num_bonds"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_bonds)
-		mol_df.loc[:,"charge"] = par_apply_series(mol_df["mol"],data_utils.mol_to_charge)
-		mol_df.loc[:,"single_mol"] = par_apply_series(mol_df["mol"],data_utils.check_single_mol)
-		mol_df.loc[:,"num_radicals"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_radicals)
-		mol_df.loc[:,'num_out_set_elements'] = par_apply_series(mol_df['formula'], (lambda x: len(set(list(parse_formula(x).keys())) - set(ELEMENTS))))
+	mol_df.loc[:,"mol"] = par_apply_series(mol_df["smiles_org"], lambda s: data_utils.mol_from_smiles(s, ml_standardize=False))
+	mol_df.loc[:,"smiles"] = par_apply_series(mol_df["mol"], data_utils.mol_to_smiles)
+	mol_df.loc[:,"inchikey_s"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchikey_s)
+	mol_df.loc[:,"scaffold"] = par_apply_series(mol_df["mol"],data_utils.get_murcko_scaffold)
+	mol_df.loc[:,"formula"] = par_apply_series(mol_df["mol"],data_utils.mol_to_formula)
+	mol_df.loc[:,"inchi"] = par_apply_series(mol_df["mol"],data_utils.mol_to_inchi)
+	mol_df.loc[:,"mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=False))
+	mol_df.loc[:,"exact_mw"] = par_apply_series(mol_df["mol"],lambda mol: data_utils.mol_to_mol_weight(mol,exact=True))
+	mol_df.loc[:,"num_atoms"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_atoms)
+	mol_df.loc[:,"num_bonds"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_bonds)
+	mol_df.loc[:,"charge"] = par_apply_series(mol_df["mol"],data_utils.mol_to_charge)
+	mol_df.loc[:,"single_mol"] = par_apply_series(mol_df["mol"],data_utils.check_single_mol)
+	mol_df.loc[:,"num_radicals"] = par_apply_series(mol_df["mol"],data_utils.mol_to_num_radicals)
+	mol_df.loc[:,'num_out_set_elements'] = par_apply_series(mol_df['formula'], (lambda x: len(set(list(parse_formula(x).keys())) - set(ELEMENTS))))
 
-		mol_df.drop(columns=["mol"], inplace=True)
-		mol_df.dropna(subset=["smiles", "smiles_org", "inchikey_s", "scaffold", "formula", "inchi"])
-
-		mol_df = mol_df[(mol_df['single_mol'] == True )]
-		print(f"> Filtered mol_df shape after single mol: {mol_df.shape}")
-		mol_df = mol_df[(mol_df['num_radicals'] == 0 )]
-		print(f"> Filtered mol_df shape after num_radicals = 0: {mol_df.shape}")
-		mol_df = mol_df[mol_df['charge'] == 0]
-		print(f"> Filtered mol_df shape after charge = 0: {mol_df.shape}")
-		mol_df = mol_df[mol_df['num_out_set_elements'] == 0]
-		print(f"> Filtered mol_df shape after num_out_set_elements = 0: {mol_df.shape}")
-		mol_df = mol_df[mol_df['exact_mw'] <= 1600]
-		print(f"> Filtered mol_df shape after exact_mw <= 1600 Da: {mol_df.shape}")
-		mol_df = mol_df[(mol_df['num_atoms'] > 3 ) & (mol_df['num_atoms'] < 100)]
-		print(f"> Filtered mol_df shape after 3 < num_atom < 100: {mol_df.shape}")
-		mol_df = mol_df.reset_index(drop=True)
-		mol_df['mol_id'] = mol_df.index
-
-		return mol_df
-
-def process_chunk(i_start, i_end, num_smiles, mces_values, smiles_idx_mapping, mce_min, mce_max):
-	"""
-	Process a chunk of molecule pairs (i from i_start to i_end).
-	Returns lists of (mol_id_1, mol_id_2, mces) tuples.
-	"""
-	mol_id_1_list = []
-	mol_id_2_list = []
-	mces_list = []
+	mol_df.dropna(subset=["smiles", "inchikey_s", "scaffold", "formula", "inchi"])
 	
-	for i in range(i_start, i_end):
-		# Calculate the starting index for this row i in the flattened mces_values array
-		# For upper triangular matrix: index = i*(2*n - i - 1)/2
-		start_idx = i * (2 * num_smiles - i - 1) // 2
-		
-		for j in range(i + 1, num_smiles):
-			mces_idx = start_idx + (j - i - 1)
-			mces_val = mces_values[mces_idx]
-			
-			if mces_val >= mce_min and (mce_max is None or mces_val <= mce_max):
-				# Check if both i and j are in the mapping
-				if i in smiles_idx_mapping and j in smiles_idx_mapping:
-					mol_id_1_list.append(smiles_idx_mapping[i])
-					mol_id_2_list.append(smiles_idx_mapping[j])
-					mces_list.append(mces_val)
-	
-	return mol_id_1_list, mol_id_2_list, mces_list
-  
-def get_mces_df(data_fp, mol_df, mce_min=0, mce_max=None, n_jobs=-1):
-	"""
-	Process MCES data in parallel and return a DataFrame with columns:
-	- 'mol_id_1': first molecule mol_id
-	- 'mol_id_2': second molecule mol_id  
-	- 'mces': MCES value as float16
-	
-	Uses parallel processing to speed up pair extraction.
-	"""
-	og_idx = mol_df['og_idx'].values.tolist()
-	mol_ids = mol_df['mol_id'].values.tolist()
-	smiles_idx_mapping = dict(zip(og_idx, mol_ids))
- 
-	with np.load(data_fp, allow_pickle=True) as mces_data:
-		mces_values = mces_data['mces']
-		num_smiles = len(mces_data['smiles'])
-	
-		# Collect all filtered data in lists
-		mol_id_1_list = []
-		mol_id_2_list = []
-		mces_list = []
-		
-		mces_idx = 0
-		
-		print("Processing MCES pairs...")
-		for i in tqdm(range(0, num_smiles)):
-			for j in tqdm(range(i+1, num_smiles), leave=False):
-				if mces_values[mces_idx] >= mce_min and (mce_max is None or mces_values[mces_idx] <= mce_max):
-					# Check if i and j in smiles_idx_mapping
-					if i not in smiles_idx_mapping or j not in smiles_idx_mapping:
-						mces_idx += 1
-						continue
+	return mol_df
 
-					# Map original indices to new indices
-					mapped_i = smiles_idx_mapping[i]
-					mapped_j = smiles_idx_mapping[j]
+def process_single_h5_file(data_fp):
+	"""Process a single h5 file and return UMAP projection data or error info"""
 
-					# Add to lists
-					mol_id_1_list.append(mapped_i)
-					mol_id_2_list.append(mapped_j)
-					mces_list.append(mces_values[mces_idx])
+	print(f"Starting to process {data_fp}")
 
-				mces_idx += 1
+	# Read the h5 file and convert to MCES format
+	with h5py.File(data_fp, 'r') as f:
+		# Check if required datasets exist
+		if 'mces' not in f:
+			raise FileNotFoundError(f"Missing 'mces' dataset in {data_fp}")
+
+		if 'smiles' not in f:
+			raise FileNotFoundError(f"Missing 'smiles' dataset in {data_fp}")
+
+		if 'computation_indices' not in f:
+			raise FileNotFoundError(f"Missing 'computation_indices' dataset in {data_fp}")
+
+		# Check dataset shapes to avoid memory issues
+
+		smiles_shape = f['smiles'].shape
+		mces_shape = f['mces'].shape
+		comp_shape = f['computation_indices'].shape
+		print(f"Dataset shapes for {data_fp}: smiles={smiles_shape}, mces={mces_shape}, comp_indices={comp_shape}")
+
+		# Extract data from h5 file with memory-efficient approach
+		smiles_data = f['smiles'][:]
+		mces_data = f['mces'][:]
+		computation_indices = f['computation_indices'][:]
+
+		smiles_list_left = []
+		smiles_list_right = []
+		mces_values = []
 		
-		# Create DataFrame
-		print("Creating DataFrame...")
-		mces_df = pd.DataFrame({
-			'mol_id_1': mol_id_1_list,
-			'mol_id_2': mol_id_2_list,
-			'mces': mces_list
+		for compute_setup, mces in zip(computation_indices, mces_data):
+			smiles_list_left.append(smiles_data[compute_setup[1]].decode())
+			smiles_list_right.append(smiles_data[compute_setup[2]].decode())
+			mces_values.append(mces)
+	
+		# Create DataFrame with the extracted data
+		h5_distances_df = pd.DataFrame({
+			'smiles1': smiles_list_left,
+			'smiles2': smiles_list_right,
+			'mces': mces_values
 		})
-		
-		# Convert mces to float16 for memory efficiency
-		mces_df['mces'] = mces_df['mces'].astype(np.float16)
-				
-		print(f"Total MCES pairs saved: {len(mces_df)}")
-		print(f"DataFrame shape: {mces_df.shape}")
-		print(f"DataFrame memory usage: {mces_df.memory_usage(deep=True).sum() / (1024**2):.2f} MB")
-		return mces_df
+	return h5_distances_df
+
+def get_mces_dfs(data_dp):
+	
+	h5_files = [ os.path.join(data_dp, f) for f in os.listdir(data_dp) if f.endswith('.h5') ]
+	h5_distances_df = pd.concat([process_single_h5_file(f) for f in h5_files], ignore_index=True)
+	smiles = h5_distances_df['smiles1'].tolist() + h5_distances_df['smiles2'].tolist()
+	unique_smiles = list(set(smiles))
+	smiles_to_mol_id = {smiles: idx for idx, smiles in enumerate(unique_smiles)}
+	h5_distances_df['mol_id_1'] = h5_distances_df['smiles1'].map(smiles_to_mol_id)
+	h5_distances_df['mol_id_2'] = h5_distances_df['smiles2'].map(smiles_to_mol_id)
+	mol_df = create_mol_df(smiles_to_mol_id)
+	
+	return h5_distances_df, mol_df
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Filter MCES data, save index pairs and mol_df with properties.")
 	parser.add_argument(
-		"--data_fp",
+		"--data_dp",
 		type=str,
-		default="./data/mces-data/mces_distances.npz",
-		help="Path to the MCES .npz file"
+		default="./data/mces-data/biostructures_sampled_mces",
+		help="Path to the MCES .h5 file"
 	)
 	parser.add_argument(
-		"--mce_min",
-		type=int,
-		default=0,  # Changed to h5 extension
-		help="maximum value of MCES pairs to process (default: None, process all pairs)"
-	)
-	parser.add_argument(
-		"--mce_max",
-		type=int,
-		default=10,  # 
-		help="maximum value of MCES pairs to process (default: None, process all pairs)"
-	)
-	parser.add_argument(
-		"--mces_out_fp",
+		"--mces_proc",
 		type=str,
-		default="./data/proc/mces/mces_pairs.pkl",  # Changed to pkl extension
+		default="./data/proc/mces",  # Changed to pkl extension
 		help="Output .pkl file for filtered MCES index pairs"
 	)
-	parser.add_argument(
-		"--mol_df_fp",
-		type=str,
-		default="./data/proc/mces/mol_df.pkl",
-		help="Output .pkl file for mol_df"
-	)
+
 	args = parser.parse_args()
 	
-	mol_df = get_mol_df(args.data_fp)
-	mol_df.to_pickle(args.mol_df_fp)
 	#mol_df = pd.read_pickle(args.mol_df_fp)
-	mces_df = get_mces_df(args.data_fp, mol_df, args.mce_min, args.mce_max)
- 
-	# Save as pickle
-	print(f"Saving {len(mces_df)} MCES pairs to {args.mces_out_fp}...")
-	mces_df.to_pickle(args.mces_out_fp)
+	h5_distances_df, mol_df = get_mces_dfs(args.data_dp)
+	print(f"Total MCES pairs before filtering: {len(h5_distances_df)}")
+	h5_distances_df.to_pickle(os.path.join(args.mces_proc, "mces_pairs.pkl"))
+	print(f"Saving mol_df to {os.path.join(args.mces_proc, 'mol_df.pkl')}")
+	mol_df.to_pickle(os.path.join(args.mces_proc, "mol_df.pkl"))
