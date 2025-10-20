@@ -131,12 +131,14 @@ def make_splits(args):
 	# Save splits
 	os.makedirs(args.split_dp, exist_ok=True)
 	
-	# Save molecule IDs
+	# Save MCES pairs (with both molecule IDs)
 	for split_type in ["train", "val", "test"]:
 		split_fp = os.path.join(args.split_dp, f"{split_type}_ids.csv")
-		split_df = pd.DataFrame({'mol_id': split_d[split_type]})
+		split_df = mces_split_d[split_type][['mol_id_1', 'mol_id_2', 'mces']].copy()
+		split_df.reset_index(drop=False, inplace=True)
+		split_df.rename(columns={'index': 'mces_id'}, inplace=True)
 		split_df.to_csv(split_fp, index=False)
-		print(f"Saved {split_type} mol_ids to {split_fp}")
+		print(f"Saved {split_type} MCES pairs to {split_fp}")
 	
 	# Save split metadata
 	metadata = {
@@ -158,7 +160,7 @@ def make_splits(args):
 	metadata_fp = os.path.join(args.split_dp, "split_metadata.json")
 	with open(metadata_fp, 'w') as f:
 		json.dump(metadata, f, indent=2)
-	print(f"\nSaved metadata to {metadata_fp}")
+	print(f"Saved metadata to {metadata_fp}")
 
 	return
 
@@ -178,7 +180,7 @@ if __name__ == "__main__":
 	parser.add_argument("--ms_proc_dp",type=str, default="data/proc/nist23")
 	parser.add_argument("--ms_split_dp",type=str, default="data/split/nist23_ma_mi_inchikey")
 	parser.add_argument("--mce_min",type=int,default=0, help="minimum value of MCES pairs to process (default: 0s)")
-	parser.add_argument("--mce_max",type=int,default=20, help="maximum value of MCES pairs to process (default: 10, -1 to process all pairs)")
+	parser.add_argument("--mce_max",type=int,default=15, help="maximum value of MCES pairs to process (default: 10, -1 to process all pairs)")
 	args = parser.parse_args()
 
 	make_splits(args)
