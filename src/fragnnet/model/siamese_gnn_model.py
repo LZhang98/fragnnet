@@ -13,7 +13,8 @@ from fragnnet.model.nn_blocks import MLPBlocks, GNN, build_pool_module
 class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 	"""
 	Siamese GNN model for molecular graph embedding and MCES regression.
-	Uses real CE, Prec, and Inst embedders (like FragGNNModel), but allows default values in forward.
+	Uses real CE, Prec, and Inst embedders (like FragGNNModel), but use default values in forward.
+	This is done to maintain compatibility and without changing the data pipeline.
 	"""
 	def __init__(
 		self,

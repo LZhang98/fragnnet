@@ -60,27 +60,27 @@ class MCESPL(pl.LightningModule):
         self.lr = self.hparams.lr
         self.weight_decay = self.hparams.weight_decay
 
-    def forward(self, mol_pyg_i, mol_pyg_j, **kwargs):
+    def forward(self, mol_pyg_1, mol_pyg_2, **kwargs):
         # Forward pass through SiameseGNNModel
-        return self.model(mol_pyg_i, mol_pyg_j, **kwargs)
+        return self.model(mol_pyg_1, mol_pyg_2, **kwargs)
 
     def training_step(self, batch, batch_idx):
-        # batch: dict with keys 'mol_pyg_i', 'mol_pyg_j', 'mces'
-        pred = self.forward(batch['mol_pyg_i'], batch['mol_pyg_j'])
+        # batch: dict with keys 'mol_1_mol_pyg', 'mol_2_mol_pyg', 'mces'
+        pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
         target = batch['mces'].float().to(pred.device)
         loss = self.loss_fn(pred, target)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        pred = self.forward(batch['mol_pyg_i'], batch['mol_pyg_j'])
+        pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
         target = batch['mces'].float().to(pred.device)
         loss = self.loss_fn(pred, target)
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def test_step(self, batch, batch_idx):
-        pred = self.forward(batch['mol_pyg_i'], batch['mol_pyg_j'])
+        pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
         target = batch['mces'].float().to(pred.device)
         loss = self.loss_fn(pred, target)
         self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
