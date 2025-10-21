@@ -86,10 +86,17 @@ class MCESPL(pl.LightningModule):
 			return normalized_value * (self.hparams.mces_std + 1e-8) + self.hparams.mces_mean
 		return normalized_value
 
-	def _log_score_original_scale(self, pred, target, score_type, split_name):
+	def _log_score(self, pred, target, score_type, split_name, original_scale=False):
 		"""Helper to compute and log scores in original scale."""
-		pred_denorm = self.denormalize_mces(pred.squeeze())
-		target_denorm = self.denormalize_mces(target)
+		if original_scale:
+			score_name = f"{split_name}_{score_type}_original"
+			pred_denorm = self.denormalize_mces(pred.squeeze())
+			target_denorm = self.denormalize_mces(target)
+		else:
+			score_name = f"{split_name}_{score_type}"
+			pred_denorm = pred.squeeze()
+			target_denorm = target
+   
 		with th.no_grad():
 			if score_type == "mae":
 				score = F.l1_loss(pred_denorm, target_denorm)
@@ -98,7 +105,7 @@ class MCESPL(pl.LightningModule):
 			else:
 				raise ValueError(f"Unsupported score_type {score_type} for logging original scale.")
 		
-		self.log(f"{split_name}_{score_type}_original", score, on_step=False, on_epoch=True, prog_bar=False)
+		self.log(score_name, score, on_step=False, on_epoch=True, prog_bar=False)
 
 	def forward(self, mol_pyg_1, mol_pyg_2, **kwargs):
 		# Forward pass through SiameseGNNModel
@@ -115,8 +122,9 @@ class MCESPL(pl.LightningModule):
 		
 		# Log auxiliary scores in both normalized and original scales
 		for score_type in self.auxiliary_scores:
-			self._log_score_original_scale(pred, target, score_type, "train")
-		
+			self._log_score(pred, target, score_type, "train", original_scale=False)
+			self._log_score(pred, target, score_type, "train", original_scale=True)
+
 		return loss
 
 	def validation_step(self, batch, batch_idx):
@@ -129,7 +137,8 @@ class MCESPL(pl.LightningModule):
 		
 		# Log MAE in both normalized and original scales
 		for score_type in self.auxiliary_scores:
-			self._log_score_original_scale(pred, target, score_type, "val")
+			self._log_score(pred, target, score_type, "val", original_scale=False)
+			self._log_score(pred, target, score_type, "val", original_scale=True)
 		return loss
 
 	def test_step(self, batch, batch_idx):
@@ -142,7 +151,8 @@ class MCESPL(pl.LightningModule):
 		
 		# Log MAE in both normalized and original scales
 		for score_type in self.auxiliary_scores:
-			self._log_score_original_scale(pred, target, score_type, "test")
+			self._log_score(pred, target, score_type, "test", original_scale=False)
+			self._log_score(pred, target, score_type, "test", original_scale=True)
 
 		return loss
 
