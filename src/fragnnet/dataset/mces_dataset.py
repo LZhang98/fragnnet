@@ -118,7 +118,7 @@ class MCESDataset(Dataset):
 
 	def __getitem__(self, idx: int):
 		mces_row = self.mces_df.iloc[idx]
-		mces_value = mces_row["mces"]
+		mces_value = mces_row["mces"]		
 		mol_id_1 = mces_row["mol_id_1"]
 		mol_id_2 = mces_row["mol_id_2"]
 		if self.mol_params["preprocess"]:

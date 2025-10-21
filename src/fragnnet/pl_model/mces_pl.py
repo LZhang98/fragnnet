@@ -69,6 +69,22 @@ class MCESPL(pl.LightningModule):
 		self.lr = self.hparams.lr
 		self.weight_decay = self.hparams.weight_decay
 
+	def normalize_mces(self, mces_value):
+		"""Normalize MCES value (if needed for inference)."""
+		if self.hparams.get("mces_normalization") == "minmax":
+			return (mces_value - self.hparams.mces_min) / (self.hparams.mces_max - self.hparams.mces_min + 1e-8)
+		elif self.hparams.get("mces_normalization") == "zscore":
+			return (mces_value - self.hparams.mces_mean) / (self.hparams.mces_std + 1e-8)
+		return mces_value
+
+	def denormalize_mces(self, normalized_value):
+		"""Denormalize MCES predictions back to original scale."""
+		if self.hparams.get("mces_normalization") == "minmax":
+			return normalized_value * (self.hparams.mces_max - self.hparams.mces_min + 1e-8) + self.hparams.mces_min
+		elif self.hparams.get("mces_normalization") == "zscore":
+			return normalized_value * (self.hparams.mces_std + 1e-8) + self.hparams.mces_mean
+		return normalized_value
+
 	def forward(self, mol_pyg_1, mol_pyg_2, **kwargs):
 		# Forward pass through SiameseGNNModel
 		return self.model(mol_pyg_1, mol_pyg_2, **kwargs)
@@ -77,37 +93,62 @@ class MCESPL(pl.LightningModule):
 		# batch: dict with keys 'mol_1_mol_pyg', 'mol_2_mol_pyg', 'mces'
 		pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
 		target = batch['mces'].float().to(pred.device)
-		loss = self.loss_fn(pred, target)
+		loss = self.loss_fn(pred, target)  # Loss on normalized scale
 		
-		# Log loss
+		# Log loss on normalized scale
 		self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
 		
-		# Log additional metrics
+		# Log MAE in both normalized and original scales
 		with th.no_grad():
-			mae = F.l1_loss(pred.squeeze(), target)
-			self.log("train_mae", mae, on_step=False, on_epoch=True, prog_bar=False)
+			mae_normalized = F.l1_loss(pred.squeeze(), target)
+			self.log("train_mae", mae_normalized, on_step=False, on_epoch=True, prog_bar=False)
+			
+			# Log MAE in original scale for interpretability
+			pred_denorm = self.denormalize_mces(pred.squeeze())
+			target_denorm = self.denormalize_mces(target)
+			mae_original = F.l1_loss(pred_denorm, target_denorm)
+			self.log("train_mae_original", mae_original, on_step=False, on_epoch=True, prog_bar=False)
 		
 		return loss
 
 	def validation_step(self, batch, batch_idx):
 		pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
 		target = batch['mces'].float().to(pred.device)
-		loss = self.loss_fn(pred, target)
+		loss = self.loss_fn(pred, target)  # Loss on normalized scale
 		
-		# Log loss
+		# Log loss on normalized scale
 		self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 		
-		# Log additional metrics
-		mae = F.l1_loss(pred.squeeze(), target)
-		self.log("val_mae", mae, on_step=False, on_epoch=True, prog_bar=True)
+		# Log MAE in both normalized and original scales
+		mae_normalized = F.l1_loss(pred.squeeze(), target)
+		self.log("val_mae", mae_normalized, on_step=False, on_epoch=True, prog_bar=True)
+		
+		# Log MAE in original scale for interpretability
+		pred_denorm = self.denormalize_mces(pred.squeeze())
+		target_denorm = self.denormalize_mces(target)
+		mae_original = F.l1_loss(pred_denorm, target_denorm)
+		self.log("val_mae_original", mae_original, on_step=False, on_epoch=True, prog_bar=True)
 		
 		return loss
 
 	def test_step(self, batch, batch_idx):
 		pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
 		target = batch['mces'].float().to(pred.device)
-		loss = self.loss_fn(pred, target)
+		loss = self.loss_fn(pred, target)  # Loss on normalized scale
+		
+		# Log loss on normalized scale
 		self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+		
+		# Log MAE in both normalized and original scales
+		mae_normalized = F.l1_loss(pred.squeeze(), target)
+		self.log("test_mae", mae_normalized, on_step=False, on_epoch=True, prog_bar=True)
+		
+		# Log MAE in original scale for interpretability
+		pred_denorm = self.denormalize_mces(pred.squeeze())
+		target_denorm = self.denormalize_mces(target)
+		mae_original = F.l1_loss(pred_denorm, target_denorm)
+		self.log("test_mae_original", mae_original, on_step=False, on_epoch=True, prog_bar=True)
+		
 		return loss
 
 	def configure_optimizers(self):
