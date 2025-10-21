@@ -10,9 +10,9 @@ split_dp: data/split/mces_nist23_ma_mi_inchikey
 subsample_params:
   subsample_size: 10000
   subsample_seed: 42
-  train: True
-  val: True
-  test: True
+  train: False
+  val: False
+  test: False
   secondary: False
 mol_params:
   smiles: True
