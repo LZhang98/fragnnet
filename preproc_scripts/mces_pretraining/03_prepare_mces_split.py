@@ -140,11 +140,32 @@ def make_splits(args):
 		split_df.to_csv(split_fp, index=False)
 		print(f"Saved {split_type} MCES pairs to {split_fp}")
 	
+	# Compute MCES statistics for each split
+	print(f"\nComputing MCES statistics for each split...")
+	mces_stats = {}
+	for split_type in ["train", "val", "test"]:
+		mces_values = mces_split_d[split_type]['mces']
+		stats = {
+			'count': int(len(mces_values)),
+			'min': float(mces_values.min()),
+			'max': float(mces_values.max()),
+			'mean': float(mces_values.mean()),
+			'std': float(mces_values.std()),
+			'median': float(mces_values.median()),
+			'q25': float(mces_values.quantile(0.25)),
+			'q75': float(mces_values.quantile(0.75))
+		}
+		mces_stats[split_type] = stats
+		print(f"{split_type}: min={stats['min']:.1f}, max={stats['max']:.1f}, "
+		      f"mean={stats['mean']:.2f}, std={stats['std']:.2f}, median={stats['median']:.1f}")
+	
 	# Save split metadata
 	metadata = {
 		'split_type': args.split_type,
 		'split_key': args.split_key,
 		'ms_split_dp': args.ms_split_dp,
+		'mce_min': args.mce_min,
+		'mce_max': args.mce_max,
 		'total_molecules': len(mol_df),
 		'train_mol_size': len(split_d['train']),
 		'val_mol_size': len(split_d['val']),
@@ -154,7 +175,8 @@ def make_splits(args):
 		'val_pairs_size': len(mces_split_d['val']),
 		'test_pairs_size': len(mces_split_d['test']),
 		'removed_cross_split_pairs': removed_pairs,
-		'cross_split_removal_rate': f"{removed_pairs/len(mces_data)*100:.2f}%"
+		'cross_split_removal_rate': f"{removed_pairs/len(mces_data)*100:.2f}%",
+		'mces_statistics': mces_stats
 	}
 	
 	metadata_fp = os.path.join(args.split_dp, "split_metadata.json")
