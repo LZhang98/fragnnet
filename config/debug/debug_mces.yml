@@ -8,7 +8,7 @@ mol_fp: data/proc/mces/mol_df.pkl
 split_dp: data/split/mces_nist23_ma_mi_inchikey
 
 subsample_params:
-  subsample_size: 100
+  subsample_size: 1000
   subsample_seed: 420
   train: True
   val: True
@@ -54,12 +54,7 @@ mlp_hidden_size: 64
 mlp_dropout: 0.2
 
 # loss stuff
-mask_null_formula: False
-predict_oos: True
-oos_tolerance_multiple: 1
-oos_loss: True
-gaussian_renormalize: True
-sparse_cosine_similarity: True
+loss_type: mse
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: False #True
@@ -90,7 +85,6 @@ auxiliary_scores:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: True
-dynamic_batch_sampler: False
 pl_enable_progress_bar: True
 compile: False
 num_workers: 0
