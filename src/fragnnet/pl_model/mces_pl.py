@@ -68,6 +68,7 @@ class MCESPL(pl.LightningModule):
    
 		self.lr = self.hparams.lr
 		self.weight_decay = self.hparams.weight_decay
+		self.auxiliary_scores = self.hparams.get("auxiliary_scores", [])
 
 	def normalize_mces(self, mces_value):
 		"""Normalize MCES value (if needed for inference)."""
@@ -85,6 +86,20 @@ class MCESPL(pl.LightningModule):
 			return normalized_value * (self.hparams.mces_std + 1e-8) + self.hparams.mces_mean
 		return normalized_value
 
+	def _log_score_original_scale(self, pred, target, score_type, split_name):
+		"""Helper to compute and log scores in original scale."""
+		pred_denorm = self.denormalize_mces(pred.squeeze())
+		target_denorm = self.denormalize_mces(target)
+		with th.no_grad():
+			if score_type == "mae":
+				score = F.l1_loss(pred_denorm, target_denorm)
+			elif score_type == "mse":
+				score = F.mse_loss(pred_denorm, target_denorm)
+			else:
+				raise ValueError(f"Unsupported score_type {score_type} for logging original scale.")
+		
+		self.log(f"{split_name}_{score_type}_original", score, on_step=False, on_epoch=True, prog_bar=False)
+
 	def forward(self, mol_pyg_1, mol_pyg_2, **kwargs):
 		# Forward pass through SiameseGNNModel
 		return self.model(mol_pyg_1, mol_pyg_2, **kwargs)
@@ -98,16 +113,9 @@ class MCESPL(pl.LightningModule):
 		# Log loss on normalized scale
 		self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
 		
-		# Log MAE in both normalized and original scales
-		with th.no_grad():
-			mae_normalized = F.l1_loss(pred.squeeze(), target)
-			self.log("train_mae", mae_normalized, on_step=False, on_epoch=True, prog_bar=False)
-			
-			# Log MAE in original scale for interpretability
-			pred_denorm = self.denormalize_mces(pred.squeeze())
-			target_denorm = self.denormalize_mces(target)
-			mae_original = F.l1_loss(pred_denorm, target_denorm)
-			self.log("train_mae_original", mae_original, on_step=False, on_epoch=True, prog_bar=False)
+		# Log auxiliary scores in both normalized and original scales
+		for score_type in self.auxiliary_scores:
+			self._log_score_original_scale(pred, target, score_type, "train")
 		
 		return loss
 
@@ -120,15 +128,8 @@ class MCESPL(pl.LightningModule):
 		self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 		
 		# Log MAE in both normalized and original scales
-		mae_normalized = F.l1_loss(pred.squeeze(), target)
-		self.log("val_mae", mae_normalized, on_step=False, on_epoch=True, prog_bar=True)
-		
-		# Log MAE in original scale for interpretability
-		pred_denorm = self.denormalize_mces(pred.squeeze())
-		target_denorm = self.denormalize_mces(target)
-		mae_original = F.l1_loss(pred_denorm, target_denorm)
-		self.log("val_mae_original", mae_original, on_step=False, on_epoch=True, prog_bar=True)
-		
+		for score_type in self.auxiliary_scores:
+			self._log_score_original_scale(pred, target, score_type, "val")
 		return loss
 
 	def test_step(self, batch, batch_idx):
@@ -140,15 +141,9 @@ class MCESPL(pl.LightningModule):
 		self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 		
 		# Log MAE in both normalized and original scales
-		mae_normalized = F.l1_loss(pred.squeeze(), target)
-		self.log("test_mae", mae_normalized, on_step=False, on_epoch=True, prog_bar=True)
-		
-		# Log MAE in original scale for interpretability
-		pred_denorm = self.denormalize_mces(pred.squeeze())
-		target_denorm = self.denormalize_mces(target)
-		mae_original = F.l1_loss(pred_denorm, target_denorm)
-		self.log("test_mae_original", mae_original, on_step=False, on_epoch=True, prog_bar=True)
-		
+		for score_type in self.auxiliary_scores:
+			self._log_score_original_scale(pred, target, score_type, "test")
+
 		return loss
 
 	def configure_optimizers(self):
