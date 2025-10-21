@@ -141,7 +141,9 @@ def make_splits(args):
 		print(f"Saved {split_type} MCES pairs to {split_fp}")
 	
 	# Compute MCES statistics for each split
-	print(f"\nComputing MCES statistics for each split...")
+	print(f"\n{'='*70}")
+	print(f"MCES Statistics for Each Split")
+	print(f"{'='*70}")
 	mces_stats = {}
 	for split_type in ["train", "val", "test"]:
 		mces_values = mces_split_d[split_type]['mces']
@@ -156,8 +158,19 @@ def make_splits(args):
 			'q75': float(mces_values.quantile(0.75))
 		}
 		mces_stats[split_type] = stats
-		print(f"{split_type}: min={stats['min']:.1f}, max={stats['max']:.1f}, "
-		      f"mean={stats['mean']:.2f}, std={stats['std']:.2f}, median={stats['median']:.1f}")
+		
+		# Print detailed statistics for this split
+		print(f"\n{split_type.upper()} Split:")
+		print(f"  Count:    {stats['count']:,} pairs")
+		print(f"  Min:      {stats['min']:.1f}")
+		print(f"  Q25:      {stats['q25']:.1f}")
+		print(f"  Median:   {stats['median']:.1f}")
+		print(f"  Mean:     {stats['mean']:.2f}")
+		print(f"  Q75:      {stats['q75']:.1f}")
+		print(f"  Max:      {stats['max']:.1f}")
+		print(f"  Std Dev:  {stats['std']:.2f}")
+	
+	print(f"{'='*70}\n")
 	
 	# Save split metadata
 	metadata = {
