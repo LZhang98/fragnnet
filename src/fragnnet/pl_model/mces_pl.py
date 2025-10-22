@@ -72,25 +72,33 @@ class MCESPL(pl.LightningModule):
 		self.auxiliary_scores = self.hparams.get("auxiliary_scores", [])
 
 	def _log_score(self, pred, target, score_type, split_name, original_scale=False):
-		"""Helper to compute and log scores in original scale."""
+		"""Helper to compute and log scores (mean and std) in normalized or original scale."""
 		if original_scale is False:
-			score_name = f"{split_name}_normalized_{score_type}"
+			score_prefix = f"{split_name}_normalized_{score_type}"
 			pred_denorm = pred.squeeze()
 			target_denorm = target
 		else:
 			pred_denorm = self.denormalize_mces(pred.squeeze())
 			target_denorm = self.denormalize_mces(target)
-			score_name = f"{split_name}_original_{score_type}"
+			score_prefix = f"{split_name}_original_{score_type}"
 			
-		with th.no_grad():
-			if score_type == "mae":
-				score = F.l1_loss(pred_denorm, target_denorm)
-			elif score_type == "mse":
-				score = F.mse_loss(pred_denorm, target_denorm)
-			else:
-				raise ValueError(f"Unsupported score_type {score_type} for logging original scale.")
+		if score_type == "mae":
+			# Compute per-sample absolute errors
+			errors = th.abs(pred_denorm - target_denorm)
+		elif score_type == "mse":
+			# Compute per-sample squared errors
+			errors = (pred_denorm - target_denorm) ** 2
+		else:
+			raise ValueError(f"Unsupported score_type {score_type} for logging.")
 		
-		self.log(score_name, score, on_step=False, on_epoch=True, prog_bar=False)
+		# Log mean (MAE or MSE)
+		score_mean = errors.mean()
+		self.log(score_prefix, score_mean, on_step=False, on_epoch=True, prog_bar=False)
+		
+		# Log standard deviation
+		score_std = errors.std()
+		self.log(f"{score_prefix}_std", score_std, on_step=False, on_epoch=True, prog_bar=False)
+
 
 	def forward(self, mol_pyg_1, mol_pyg_2, **kwargs):
 		# Forward pass through SiameseGNNModel
