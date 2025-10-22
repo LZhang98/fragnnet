@@ -7,7 +7,7 @@ from torch_geometric.data import Batch
 from torch.utils.data import Dataset		
 from fragnnet.utils.feat_utils import get_mol_graph
 from fragnnet.utils.misc_utils import get_mol_graph_size
-
+from fragnnet.utils.data_utils import min_max_normalize, zscore_normalize
 class MCESDataset(Dataset):
 	"""Dataset for MCES (Maximum Common Edge Substructure) pairs.
 
@@ -44,7 +44,6 @@ class MCESDataset(Dataset):
 			self.mces_df["mol_id_2"].isin(split_df["mol_id_2"]) &
 			self.mces_df.index.isin(split_df["mces_id"])
 		].reset_index(drop=True)
-
   
 		# Subsample if needed
 		if subsample_params.get(split,False) and subsample_params["subsample_size"] > 0:
@@ -65,6 +64,24 @@ class MCESDataset(Dataset):
 				self.mol_df["mol_id"].isin(self.mces_df["mol_id_2"])]
 		# use mol_id as index for speedy access
 		self.mol_df = self.mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
+  
+		# Setup MCES normalization parameters from kwargs
+		self.mces_normalization = kwargs.get("mces_normalization", "none")
+		self.mces_min = kwargs.get("mces_min", 0.0)
+		self.mces_max = kwargs.get("mces_max", 0.0)
+		self.mces_mean = kwargs.get("mces_mean", 0.0)
+		self.mces_std = kwargs.get("mces_std", 1.0)
+		
+		# Set normalization flag
+		if self.mces_normalization == "minmax" and self.mces_max > self.mces_min:
+			self.normalize_type = "minmax"
+			print(f"> MCES normalization: min-max scaling [{self.mces_min}, {self.mces_max}] -> [0, 1]")
+		elif self.mces_normalization == "zscore" and self.mces_std > 0:
+			self.normalize_type = "zscore"
+			print(f"> MCES normalization: z-score (mean={self.mces_mean:.4f}, std={self.mces_std:.4f})")
+		else:
+			self.normalize_type = None
+			print("> MCES normalization: disabled")
   
 		# Initialize shared dict for preprocessing
 		if mol_pp_sd is None:
@@ -118,7 +135,18 @@ class MCESDataset(Dataset):
 
 	def __getitem__(self, idx: int):
 		mces_row = self.mces_df.iloc[idx]
-		mces_value = mces_row["mces"]		
+		mces_value = mces_row["mces"]
+		
+		# Normalize MCES value if enabled
+		if self.normalize_type == "minmax":
+			# Min-max normalization: [min, max] -> [0, 1]
+			mces_value = min_max_normalize(
+				mces_value, self.mces_min, self.mces_max)
+		elif self.normalize_type == "zscore":
+			# Z-score normalization: (x - mean) / std
+			mces_value = zscore_normalize(
+				mces_value, self.mces_mean, self.mces_std)
+
 		mol_id_1 = mces_row["mol_id_1"]
 		mol_id_2 = mces_row["mol_id_2"]
 		if self.mol_params["preprocess"]:
@@ -129,7 +157,6 @@ class MCESDataset(Dataset):
 			mol_entry_1 = self._process_mol(self.mol_df.loc[mol_id_1])
 			mol_entry_2 = self._process_mol(self.mol_df.loc[mol_id_2])
 
-		# Rename keys with mol_1_* and mol_2_* prefixes
 		result = {"mces": mces_value}
 		
 		# Add mol_entry_1 keys with mol_1_* prefix

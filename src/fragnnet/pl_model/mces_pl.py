@@ -3,6 +3,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from fragnnet.model import SiameseGNNModel
+from fragnnet.utils.data_utils import min_max_denormalize, zscore_denormalize
 
 # Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
 try:
@@ -70,33 +71,17 @@ class MCESPL(pl.LightningModule):
 		self.weight_decay = self.hparams.weight_decay
 		self.auxiliary_scores = self.hparams.get("auxiliary_scores", [])
 
-	def normalize_mces(self, mces_value):
-		"""Normalize MCES value (if needed for inference)."""
-		if self.hparams.get("mces_normalization") == "minmax":
-			return (mces_value - self.hparams.mces_min) / (self.hparams.mces_max - self.hparams.mces_min + 1e-8)
-		elif self.hparams.get("mces_normalization") == "zscore":
-			return (mces_value - self.hparams.mces_mean) / (self.hparams.mces_std + 1e-8)
-		return mces_value
-
-	def denormalize_mces(self, normalized_value):
-		"""Denormalize MCES predictions back to original scale."""
-		if self.hparams.get("mces_normalization") == "minmax":
-			return normalized_value * (self.hparams.mces_max - self.hparams.mces_min + 1e-8) + self.hparams.mces_min
-		elif self.hparams.get("mces_normalization") == "zscore":
-			return normalized_value * (self.hparams.mces_std + 1e-8) + self.hparams.mces_mean
-		return normalized_value
-
 	def _log_score(self, pred, target, score_type, split_name, original_scale=False):
 		"""Helper to compute and log scores in original scale."""
-		if original_scale:
-			score_name = f"{split_name}_{score_type}_original"
-			pred_denorm = self.denormalize_mces(pred.squeeze())
-			target_denorm = self.denormalize_mces(target)
-		else:
-			score_name = f"{split_name}_{score_type}"
+		if original_scale is False:
+			score_name = f"{split_name}_normalized"
 			pred_denorm = pred.squeeze()
 			target_denorm = target
-   
+		else:
+			pred_denorm = self.denormalize_mces(pred.squeeze())
+			target_denorm = self.denormalize_mces(target)
+			score_name = f"{split_name}_original"
+			
 		with th.no_grad():
 			if score_type == "mae":
 				score = F.l1_loss(pred_denorm, target_denorm)
@@ -113,6 +98,7 @@ class MCESPL(pl.LightningModule):
 
 	def training_step(self, batch, batch_idx):
 		# batch: dict with keys 'mol_1_mol_pyg', 'mol_2_mol_pyg', 'mces'
+		# Note: 'mces' is already normalized by the dataset
 		pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
 		target = batch['mces'].float().to(pred.device)
 		loss = self.loss_fn(pred, target)  # Loss on normalized scale
@@ -123,8 +109,8 @@ class MCESPL(pl.LightningModule):
 		# Log auxiliary scores in both normalized and original scales
 		for score_type in self.auxiliary_scores:
 			self._log_score(pred, target, score_type, "train", original_scale=False)
-			self._log_score(pred, target, score_type, "train", original_scale=True)
-
+			if self.hparams.mces_normalization not in ["none", None]:
+				self._log_score(pred, target, score_type, "train", original_scale=True)
 		return loss
 
 	def validation_step(self, batch, batch_idx):
@@ -138,7 +124,8 @@ class MCESPL(pl.LightningModule):
 		# Log MAE in both normalized and original scales
 		for score_type in self.auxiliary_scores:
 			self._log_score(pred, target, score_type, "val", original_scale=False)
-			self._log_score(pred, target, score_type, "val", original_scale=True)
+			if self.hparams.mces_normalization not in ["none", None]:
+				self._log_score(pred, target, score_type, "val", original_scale=True)
 		return loss
 
 	def test_step(self, batch, batch_idx):
@@ -152,9 +139,29 @@ class MCESPL(pl.LightningModule):
 		# Log MAE in both normalized and original scales
 		for score_type in self.auxiliary_scores:
 			self._log_score(pred, target, score_type, "test", original_scale=False)
-			self._log_score(pred, target, score_type, "test", original_scale=True)
+			if self.hparams.mces_normalization not in ["none", None]:
+				self._log_score(pred, target, score_type, "test", original_scale=True)
 
 		return loss
+
+	def predict_step(self, batch, batch_idx):
+		"""Prediction step that returns denormalized MCES values."""
+		pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
+		# Denormalize predictions to return in original scale
+		pred_original = self.denormalize_mces(pred.squeeze())
+		return pred_original
+
+	def denormalize_mces(self, normalized_mces):
+		"""Denormalize MCES values based on the normalization type."""
+		if self.hparams.mces_normalization == "zscore":
+			denorm_mces = zscore_denormalize(normalized_mces, self.hparams.mces_mean, self.hparams.mces_std)
+		elif self.hparams.mces_normalization == "minmax":
+			denorm_mces = min_max_denormalize(normalized_mces, self.hparams.mces_min, self.hparams.mces_max)
+		elif self.hparams.mces_normalization == "none" or self.hparams.mces_normalization is None:
+			denorm_mces = normalized_mces
+		else:
+			raise ValueError(f"Unsupported mces_normalization {self.hparams.mces_normalization} for denormalization.")
+		return denorm_mces
 
 	def configure_optimizers(self):
 		

@@ -286,7 +286,7 @@ if __name__ == "__main__":
 	parser.add_argument('--ces',type=str,choices=['nce', 'ace'],required=False)
 
 	# non-filtering args
-	parser.add_argument("--meta_rseed",type=int,default=420420)
+	parser.add_argument("--meta_rseed",type=int,default=42)
 	parser.add_argument("--total_frac",type=float,default=1.0)
 	parser.add_argument("--test_frac",type=float,default=0.2)
 	parser.add_argument("--val_frac",type=float,default=0.2)

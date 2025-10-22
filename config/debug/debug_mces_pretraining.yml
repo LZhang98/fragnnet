@@ -7,7 +7,7 @@ wandb_tags:
 # data stuff
 mces_fp: data/proc/mces/mces_pairs.pkl
 mol_fp: data/proc/mces/mol_df.pkl
-split_dp: data/split/mces_nist23_ma_mi_inchikey
+split_dp: data/split/mces_nist23_ma_mi_inchikey_2
 
 subsample_params:
   subsample_size: 10000
@@ -54,10 +54,11 @@ mlp_hidden_size: 256
 mlp_dropout: 0.2
 
 # mces stuff
+# mces stuff
 mces_min: 1
-mces_max: 15
-mces_mean: 12
-mces_std: 2
+mces_max: 30
+mces_mean: 20
+mces_std: 5
 mces_normalization: zscore  # options: none, zscore, minmax
 
 # loss stuff
@@ -70,12 +71,12 @@ train_batch_size: 1024
 eval_batch_size: 1024
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0003033
+lr: 0.001
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
 min_epochs: 5
-max_epochs: 10
+max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False

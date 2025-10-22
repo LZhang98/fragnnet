@@ -207,15 +207,15 @@ if __name__ == "__main__":
 	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
 
 	# non-filtering args
-	parser.add_argument("--meta_rseed",type=int,default=420420)
+	parser.add_argument("--meta_rseed",type=int,default=42)
 	parser.add_argument("--test_frac",type=float,default=0.2)
 	parser.add_argument("--val_frac",type=float,default=0.2)
 	parser.add_argument("--proc_dp",type=str, default="data/proc/mces")
-	parser.add_argument("--split_dp",type=str, default="data/split/mces_nist23_ma_mi_inchikey")
+	parser.add_argument("--split_dp",type=str, default="data/split/mces_nist23_ma_mi_inchikey_2")
 	parser.add_argument("--ms_proc_dp",type=str, default="data/proc/nist23")
 	parser.add_argument("--ms_split_dp",type=str, default="data/split/nist23_ma_mi_inchikey")
 	parser.add_argument("--mce_min",type=int,default=0, help="minimum value of MCES pairs to process (default: 0s)")
-	parser.add_argument("--mce_max",type=int,default=15, help="maximum value of MCES pairs to process (default: 10, -1 to process all pairs)")
+	parser.add_argument("--mce_max",type=int,default=30, help="maximum value of MCES pairs to process (default: 10, -1 to process all pairs)")
 	args = parser.parse_args()
 
 	make_splits(args)
