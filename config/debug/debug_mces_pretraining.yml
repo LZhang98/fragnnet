@@ -1,4 +1,4 @@
-wandb_name: debug_mces_pretraining
+wandb_name: debug_mces
 wandb_tags:
 - pretraining
 - mse
@@ -10,12 +10,12 @@ mol_fp: data/proc/mces/mol_df.pkl
 split_dp: data/split/mces_nist23_ma_mi_inchikey
 
 subsample_params:
-  subsample_size: 8192
+  subsample_size: 10000
   subsample_seed: 42
   train: True
   val: True
   test: True
-  secondary: True
+  secondary: False
 mol_params:
   smiles: True
   fingerprint: False
@@ -81,6 +81,7 @@ debug_overfit: False
 upload_checkpoints: False
 delete_checkpoints: False
 checkpoint_metric: val_loss
+checkpoint_metric_mode: min
 auxiliary_scores:
 - mse
 - mae

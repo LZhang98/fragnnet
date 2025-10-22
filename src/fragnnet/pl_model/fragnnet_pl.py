@@ -1,12 +1,14 @@
 import torch as th
 import logging
 import torch._dynamo as th_dynamo
+import os
 
 from fragnnet.model import FraGNNetModel
 from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog,scatter_logsumexp
 from fragnnet.pl_model import SpectrumPL
+from fragnnet.pl_model.mces_pl import MCESPL
 
 class FraGNNetPL(SpectrumPL):
 
@@ -80,11 +82,109 @@ class FraGNNetPL(SpectrumPL):
 			if "h_range" in self.hparams.frag_params["pyg_edge_feats"]:
 				logging.warning("h_range in frag pyg_edge_feats but edge_loss is disabled!")
 
+		# Load pre-trained MCES weights if specified
+		if self.hparams.mces_pretrain:
+			self._load_mces_pretrained_weights(self.hparams.mces_pretrain_ckpt)
+
 		# compile
 		if self.hparams.compile:
 			th_dynamo.reset()
 			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
 			self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+
+	def _load_mces_pretrained_weights(self, mces_ckpt_path: str):
+		"""
+		Load pre-trained weights from MCES model into FraGNNet model.
+		This transfers the molecular GNN encoder and embedding layers that are shared.
+		
+		Args:
+			mces_ckpt_path (str): Path to the pre-trained MCES checkpoint file
+		"""
+		if not os.path.exists(mces_ckpt_path):
+			raise FileNotFoundError(f"MCES checkpoint not found: {mces_ckpt_path}")
+		
+		logging.info(f"Loading pre-trained MCES weights from: {mces_ckpt_path}")
+		
+		# Load the MCES checkpoint
+		# Note: weights_only=False is required for Lightning checkpoints which contain
+		# optimizer state and other non-tensor objects
+		mces_checkpoint = th.load(mces_ckpt_path, map_location=self.device, weights_only=False)
+		
+		# Extract state dict - handle both direct state_dict and Lightning checkpoint format
+		if 'state_dict' in mces_checkpoint:
+			mces_state_dict = mces_checkpoint['state_dict']
+		else:
+			mces_state_dict = mces_checkpoint
+		
+		# Map MCES model weights to FraGNNet model weights
+		# Both models share: mol_embedder, mol_pool
+		# NOTE: CE/Prec/Inst embedders are NOT transferred because they are never trained
+		# in MCES (they only see zero inputs during pre-training)
+		shared_components = [
+			'mol_embedder',  # Molecular GNN encoder - actually trained on MCES similarity
+			'mol_pool',      # Molecular pooling layer - actually trained on MCES pooling
+		]
+		
+		# Build mapping from MCES to FraGNNet
+		fragnnet_state_dict = self.model.state_dict()
+		loaded_weights = {}
+		
+		for key, value in mces_state_dict.items():
+			# Remove 'model.' prefix if present (from Lightning wrapper)
+			if key.startswith('model.'):
+				clean_key = key[6:]  # Remove 'model.' prefix
+			else:
+				clean_key = key
+			
+			# Check if this weight belongs to a shared component
+			is_shared = any(clean_key.startswith(comp) for comp in shared_components)
+			
+			if is_shared and clean_key in fragnnet_state_dict:
+				# Check shape compatibility
+				if value.shape == fragnnet_state_dict[clean_key].shape:
+					loaded_weights[clean_key] = value
+					logging.debug(f"Loaded weight: {clean_key} with shape {value.shape}")
+				else:
+					logging.warning(
+						f"Shape mismatch for {clean_key}: "
+						f"MCES {value.shape} vs FraGNNet {fragnnet_state_dict[clean_key].shape}. "
+						f"This likely means FraGNNet uses ce_insert_location='mol' while MCES doesn't. or versa. "
+						f"Consider using ce_insert_location='mlp' in FraGNNet for full compatibility."
+					)
+		
+		# Load the compatible weights into FraGNNet
+		if loaded_weights:
+			# Use strict=False to allow partial loading
+			missing_keys, unexpected_keys = self.model.load_state_dict(loaded_weights, strict=False)
+			
+			logging.info(f"Successfully loaded {len(loaded_weights)} pre-trained weight tensors from MCES model")
+			logging.info(f"Shared components initialized: {list(set(k.split('.')[0] for k in loaded_weights.keys()))}")
+			
+			if missing_keys:
+				logging.info(f"Missing keys (will be randomly initialized): {len(missing_keys)} keys")
+				logging.debug(f"Missing keys: {missing_keys[:10]}...")  # Show first 10
+			
+			# Freeze pre-trained weights if specified
+			if self.hparams.freeze_mces_weights:
+				self._freeze_pretrained_weights(loaded_weights.keys())
+		else:
+			logging.warning("No compatible weights found to transfer from MCES model")
+	
+	def _freeze_pretrained_weights(self, weight_keys):
+		"""
+		Freeze the weights that were loaded from pre-trained MCES model.
+		
+		Args:
+			weight_keys: List of parameter names to freeze
+		"""
+		frozen_params = []
+		for name, param in self.model.named_parameters():
+			if name in weight_keys:
+				param.requires_grad = False
+				frozen_params.append(name)
+		
+		logging.info(f"Froze {len(frozen_params)} pre-trained parameters")
+		logging.debug(f"Frozen parameters: {list(set(p.split('.')[0] for p in frozen_params))}")
 
 	def _setup_loss_names(self):
 

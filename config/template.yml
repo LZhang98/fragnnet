@@ -1,19 +1,28 @@
-# wandb
+# ============================================================================
+# Wandb
+# ============================================================================
 wandb_entity: frag-gnn # TODO: change to your wandb entity
 wandb_project: frag-gnn # TODO: change to your wandb project
 wandb_name: template
 wandb_group:
 wandb_tags:
 wandb_root_dir: checkpoint
-# data
+
+# ============================================================================
+# Data File Paths
+# ============================================================================
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_inchikey  # Train/val/test split directory
 frag_dp: data/frag/nist20_d3/dags  # Fragment DAG data directory
 magma_dp: data/magma  # MAGMA annotation data directory
 ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe file
-mces_fp: data/proc/mces/mces_pairs_max10.h5  # MCES (Maximum Common Edge Substructure) pairs for pre-training
+mces_fp: data/proc/mces/mces_pairs.pkl  # MCES (Maximum Common Edge Substructure) pairs for pre-training
+#mces_pretrain_ckpt: none # Path to MCES pre-training checkpoint (if using)
 
+# ============================================================================
+# Data Processing Parameters
+# ============================================================================
 subsample_params:
   subsample_size: 0
   subsample_seed: 42
@@ -342,13 +351,20 @@ inst_insert_size: 32  # Dimension of instrument type embedding (must match MCES 
 
 # ============================================================================
 # MCES Configuration
-# ==============================================================================
+# ============================================================================
 # mces stuff
 mces_min: 1
 mces_max: 15
 mces_mean: 12
 mces_std: 2
 mces_normalization: zscore  # options: none, zscore, minmax
+
+# ============================================================================
+# MCES Pre-training Configuration
+# ============================================================================
+mces_pretrain_ckpt: none
+freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
+mces_pretrain: False # use mces pretraining weights for mol gnn
 
 # ============================================================================
 # Additional Training Options
