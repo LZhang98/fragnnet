@@ -74,13 +74,13 @@ class MCESPL(pl.LightningModule):
 	def _log_score(self, pred, target, score_type, split_name, original_scale=False):
 		"""Helper to compute and log scores in original scale."""
 		if original_scale is False:
-			score_name = f"{split_name}_normalized"
+			score_name = f"{split_name}_normalized_{score_type}"
 			pred_denorm = pred.squeeze()
 			target_denorm = target
 		else:
 			pred_denorm = self.denormalize_mces(pred.squeeze())
 			target_denorm = self.denormalize_mces(target)
-			score_name = f"{split_name}_original"
+			score_name = f"{split_name}_original_{score_type}"
 			
 		with th.no_grad():
 			if score_type == "mae":
