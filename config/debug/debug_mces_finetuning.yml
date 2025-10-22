@@ -12,7 +12,7 @@ frag_dp: data/frag/debug_tinyv4_d3h4/dags
 # MCES Pre-training Configuration
 # ============================================================================
 freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
-mces_pretrain: False # use mces pretraining weights for mol gnn
+mces_pretrain: True # use mces pretraining weights for mol gnn
 mces_pretrain_ckpt: tmp_ckpt/mces/last.ckpt
 
 subsample_params:
