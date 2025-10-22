@@ -39,12 +39,13 @@ def make_splits(args):
 	total_mols = mol_df['inchikey_s'].nunique()
 	assert args.test_frac + args.val_frac  < 1.0
 	print(f"\nTotal unique molecules in mol_df: {total_mols}")
-	expected_train_mol_count = total_mols - int(total_mols * (args.test_frac + args.val_frac))
-	print(f"Expected train molecules: {expected_train_mol_count}")
 	expected_val_mol_count = int(total_mols * args.val_frac)
 	print(f"Expected val molecules: {expected_val_mol_count}")
 	expected_test_mol_count = int(total_mols * args.test_frac)
 	print(f"Expected test molecules: {expected_test_mol_count}")
+	expected_train_mol_count = total_mols - expected_val_mol_count - expected_test_mol_count
+	print(f"Expected train molecules: {expected_train_mol_count}")
+
 	expected_count_d = { "train": expected_train_mol_count, "val": expected_val_mol_count, "test": expected_test_mol_count }
 
 	# Get inchikey_s that are already assigned to splits
@@ -208,14 +209,14 @@ if __name__ == "__main__":
 
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=42)
-	parser.add_argument("--test_frac",type=float,default=0.2)
-	parser.add_argument("--val_frac",type=float,default=0.2)
+	parser.add_argument("--test_frac",type=float,default=0.1)
+	parser.add_argument("--val_frac",type=float,default=0.1)
 	parser.add_argument("--proc_dp",type=str, default="data/proc/mces")
-	parser.add_argument("--split_dp",type=str, default="data/split/mces_nist23_ma_mi_inchikey_2")
+	parser.add_argument("--split_dp",type=str, default="data/split/mces_nist23_ma_mi_inchikey_m15")
 	parser.add_argument("--ms_proc_dp",type=str, default="data/proc/nist23")
 	parser.add_argument("--ms_split_dp",type=str, default="data/split/nist23_ma_mi_inchikey")
 	parser.add_argument("--mce_min",type=int,default=0, help="minimum value of MCES pairs to process (default: 0s)")
-	parser.add_argument("--mce_max",type=int,default=30, help="maximum value of MCES pairs to process (default: 10, -1 to process all pairs)")
+	parser.add_argument("--mce_max",type=int,default=15, help="maximum value of MCES pairs to process (default: 10, -1 to process all pairs)")
 	args = parser.parse_args()
 
 	make_splits(args)
