@@ -1,16 +1,16 @@
 wandb_name: debug_mces
 wandb_tags:
 - pretraining
-- mse
+- mae
 - mces
 
 # data stuff
 mces_fp: data/proc/mces/mces_pairs.pkl
 mol_fp: data/proc/mces/mol_df.pkl
-split_dp: data/split/mces_nist23_ma_mi_inchikey_m15
+split_dp: data/split/mces_nist23_ma_mi_inchikey_m30
 
 subsample_params:
-  subsample_size: 10000
+  subsample_size: 30000
   subsample_seed: 42
   train: True
   val: True
@@ -48,10 +48,10 @@ ce_insert_merge: True
 mol_pool_type: mean
 mol_normalization: batch
 mol_hidden_size: 256
-mol_dropout: 0.2
+mol_dropout: 0.9
 mlp_normalization: layer
 mlp_hidden_size: 256
-mlp_dropout: 0.2
+mlp_dropout: 0.9
 
 # mces stuff
 # mces stuff
@@ -62,7 +62,7 @@ mces_std: 5
 mces_normalization: zscore  # options: none, zscore, minmax
 
 # loss stuff
-loss_type: mse
+loss_type: mae
 train_sample_weight: none
 eval_sample_weight: none
 
@@ -71,7 +71,7 @@ train_batch_size: 1024
 eval_batch_size: 1024
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.01
+lr: 0.001
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
