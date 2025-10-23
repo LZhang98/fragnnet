@@ -48,10 +48,10 @@ ce_insert_merge: True
 mol_pool_type: mean
 mol_normalization: batch
 mol_hidden_size: 256
-mol_dropout: 0.9
+mol_dropout: 0.2
 mlp_normalization: layer
 mlp_hidden_size: 256
-mlp_dropout: 0.9
+mlp_dropout: 0.5
 
 # mces stuff
 # mces stuff
