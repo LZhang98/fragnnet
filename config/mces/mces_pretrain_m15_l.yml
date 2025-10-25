@@ -48,10 +48,10 @@ ce_insert_merge: True
 mol_pool_type: mean
 mol_normalization: batch
 mol_hidden_size: 512
-mol_dropout: 0.2
+mol_dropout: 0.1
 mlp_normalization: layer
 mlp_hidden_size: 256
-mlp_dropout: 0.5
+mlp_dropout: 0.1
 
 # mces stuff
 mces_min: 1
@@ -70,12 +70,12 @@ train_batch_size: 10240
 eval_batch_size: 10240
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.01
+lr: 0.001s
 weight_decay: 0.01
 accelerator: gpu
 devices: 1
 min_epochs: 1
-max_epochs: 5
+max_epochs: 50
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
