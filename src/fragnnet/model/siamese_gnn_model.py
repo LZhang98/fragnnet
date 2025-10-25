@@ -45,8 +45,15 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		inst_insert_location: str,
 		inst_insert_size: int,
 		inst_types: list[str],
+
+		# how to combine two mol embeddings before regression. Supported:
+		#  - 'abs_diff' (default): absolute element-wise difference |xi - xj| (order-invariant)
+		#  - 'signed_diff': signed element-wise difference xi - xj (order-sensitive)
+		#  - 'concat_avg': concatenate [xi, xj] and average predictions for both orders
+		combination_mode: str = "concat_avg",
 	):
 		super().__init__()
+		self.combination_mode = combination_mode
 		# Real CE, Prec, Inst embedders (same as FragGNNModel)
 		self._ce_init(
 			int_embedder=int_embedder,
@@ -95,8 +102,17 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		self.mlp_input_dim = mol_hidden_size
 		self.mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
 
+		# Determine regressor input size based on combination mode.
+		# For concat modes we need double the input dimension.
+		if self.combination_mode in ("concat_avg", "concat"):
+			reg_input_size = 2 * self.mlp_input_dim
+		elif self.combination_mode in ("abs_diff", "signed_diff"):
+			reg_input_size = self.mlp_input_dim
+		else:
+			raise ValueError(f"Unsupported combination_mode: {self.combination_mode}")
+
 		self.regressor = MLPBlocks(
-			input_size=self.mlp_input_dim,
+			input_size=reg_input_size,
 			output_size=1,
 			hidden_size=mlp_hidden_size,
 			num_layers=mlp_num_layers,
@@ -197,9 +213,33 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		mlp_input_i = th.cat(mlp_parts_i, dim=1)
 		mlp_input_j = th.cat(mlp_parts_j, dim=1)
 
-		combined = th.abs(mlp_input_i - mlp_input_j)
-		pred_mces = self.regressor(combined)
-		return pred_mces.squeeze(-1)
+		# Combine the two MLP inputs according to the requested mode.
+		# - 'abs_diff': order-invariant absolute element-wise difference (default)
+		# - 'signed_diff': order-sensitive signed difference (xi - xj)
+		# - 'concat_avg': symmetric concat: avg( reg([xi,xj]), reg([xj,xi]) )
+		# - 'concat': simple concat [xi, xj] (order-sensitive)
+		if self.combination_mode == "abs_diff":
+			combined = th.abs(mlp_input_i - mlp_input_j)
+			pred_mces = self.regressor(combined)
+			return pred_mces.squeeze(-1)
+		elif self.combination_mode == "signed_diff":
+			combined = mlp_input_i - mlp_input_j
+			pred_mces = self.regressor(combined)
+			return pred_mces.squeeze(-1)
+		elif self.combination_mode == "concat_avg":
+			# Build concatenated inputs for both orders, run regressor and average.
+			cat_ij = th.cat([mlp_input_i, mlp_input_j], dim=1)
+			cat_ji = th.cat([mlp_input_j, mlp_input_i], dim=1)
+			pred1 = self.regressor(cat_ij)
+			pred2 = self.regressor(cat_ji)
+			pred = 0.5 * (pred1 + pred2)
+			return pred.squeeze(-1)
+		elif self.combination_mode == "concat":
+			cat = th.cat([mlp_input_i, mlp_input_j], dim=1)
+			pred = self.regressor(cat)
+			return pred.squeeze(-1)
+		else:
+			raise ValueError(f"Unsupported combination_mode: {self.combination_mode}")
 
 	def _compute_mol_feats_sizes(self):
 		"""Compute molecular feature sizes (does not rely on model parameters)."""
