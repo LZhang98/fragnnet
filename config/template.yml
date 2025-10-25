@@ -358,6 +358,7 @@ mces_max: 15
 mces_mean: 12
 mces_std: 2
 mces_normalization: zscore  # options: none, zscore, minmax
+mces_embed_combine: concat_avg #  options: abs_diff cross_attn
 
 # ============================================================================
 # MCES Pre-training Configuration

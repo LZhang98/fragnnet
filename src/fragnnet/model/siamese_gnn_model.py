@@ -47,7 +47,7 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		inst_types: list[str],
 
 		# how to combine two mol embeddings before regression. Supported:
-		#  - 'abs_diff' (default): absolute element-wise difference |xi - xj| (order-invariant)
+		#  - 'c' (default): absolute element-wise difference |xi - xj| (order-invariant)
 		#  - 'signed_diff': signed element-wise difference xi - xj (order-sensitive)
 		#  - 'concat_avg': concatenate [xi, xj] and average predictions for both orders
 		#  - 'cross_attn': cross-attention between the two embeddings (symmetric by averaging both directions)

@@ -56,6 +56,7 @@ class MCESPL(pl.LightningModule):
 			inst_insert_location=self.hparams.inst_insert_location,
 			inst_insert_size=self.hparams.inst_insert_size,
 			inst_types=self.hparams.spec_params["inst_types"],
+			combination_mode=self.hparams.mces_embed_combine,
 			#log_min=0.0
 		)
 
