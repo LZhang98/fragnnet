@@ -63,7 +63,7 @@ mces_normalization: zscore  # options: none, zscore, minmax
 # loss stuff
 loss_type: mse
 train_sample_weight: none
-eval_sample_weight: none
+eval_sample_weight: nsone
 
 # optimization stuff
 train_batch_size: 10240

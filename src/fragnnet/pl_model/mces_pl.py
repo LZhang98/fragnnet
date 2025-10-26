@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from fragnnet.model import SiameseGNNModel
 from fragnnet.utils.data_utils import min_max_denormalize, zscore_denormalize
+from fragnnet.utils.nn_utils import build_lr_scheduler
 
 # Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
 try:
@@ -173,7 +174,9 @@ class MCESPL(pl.LightningModule):
 		return denorm_mces
 
 	def configure_optimizers(self):
-		
+		"""
+		Configure optimizer and learning rate scheduler for Lightning.
+		"""
 		if self.hparams.optimizer == "adam":
 			optimizer_cls = th.optim.Adam
 		elif self.hparams.optimizer == "adamw":
@@ -182,10 +185,25 @@ class MCESPL(pl.LightningModule):
 			optimizer_cls = th.optim.SGD
 		else:
 			raise ValueError(f"Unknown optimizer {self.optimizer}")
-		
+
 		optimizer = optimizer_cls(
-			self.parameters(),
-			lr=self.lr,
-			weight_decay=self.weight_decay
+			self.parameters(), 
+			lr=self.hparams.lr, 
+			weight_decay=self.hparams.weight_decay
 		)
-		return optimizer
+		ret = {
+			"optimizer": optimizer,
+		}
+		if self.hparams.lr_schedule:
+			scheduler = build_lr_scheduler(
+				optimizer=optimizer, 
+				decay_rate=self.hparams.lr_decay_rate, 
+				warmup_steps=self.hparams.lr_warmup_steps,
+				decay_steps=self.hparams.lr_decay_steps,
+			)
+			ret["lr_scheduler"] = {
+				"scheduler": scheduler,
+				"frequency": 1,
+				"interval": "step",
+			}
+		return ret
