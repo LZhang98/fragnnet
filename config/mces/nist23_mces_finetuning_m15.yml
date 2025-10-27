@@ -1,19 +1,44 @@
-wandb_name: debug_mces_finetuning
+wandb_name: nist23_mces_finetuning_m15
 wandb_tags:
-- finetuning 
+- finetuning
+- mces15
+- freeze_false
+- nist23
+- d4
+- wr00
+- inchikey
+- new_proc
+- fraggnn_d3
+- dynamic_sampler
+- new_metrics
+- nodemlp
+- oos_multiple_1
+- gaussian_renormalize
+- b256
+- vectorized_loss
+- lb32
+- preload
+- preprocess
+- new_no_edges
+- skip_extra_losses
+- binned_cosine_similarity
+- m+h
+- m-h
+- m+na
+- m+cl
 
 # data stuff
-spec_fp: data/proc/debug_tinyv4/spec_df.pkl
-mol_fp: data/proc/debug_tinyv4/mol_df.pkl
-split_dp: data/split/debug_tinyv5
-frag_dp: data/frag/debug_tinyv4_d3h4/dags
+spec_fp: data/proc/nist23/spec_df.pkl
+mol_fp: data/proc/nist23/mol_df.pkl
+split_dp: data/split/nist23_ma_mi_inchikey
+frag_dp: data/frag/nist23_ma_mi_d3_h4_isoFalse/dags
 
 # ============================================================================
 # MCES Pre-training Configuration
 # ============================================================================
 freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
 mces_pretrain: False # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt: tmp_ckpt/mces/last.ckpt
+mces_pretrain_ckpt: saved_ckpts/mces_nist23_ma_mi_inchikey_m15_fvtiyfrk.ckpt
 
 subsample_params:
   subsample_size: 100

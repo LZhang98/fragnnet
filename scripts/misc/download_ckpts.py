@@ -51,13 +51,21 @@ if __name__ == "__main__":
 
 	save_dp = "./saved_ckpts/"
 	os.makedirs(save_dp, exist_ok=True)
-	# deepmet check out
+	# deepmet ckpt
 	run_ids = [#"",
             "dq50hzdv", #cv1
             "764tpm7g",	#cv2
             "nkfzye72",	#cv3
-            "77hbb6fys", #cv4
-            "yp1ntozus" #cv_all
+            "77hbb6fy", #cv4
+            "yp1ntozu" #cv_all
+            ]
+	for run_id in run_ids:
+		get_best_ckpt_from_wandb(save_dp, run_id)
+  
+	# pretraining ckpt
+	run_ids = [#"",
+            "qniu4q7f", #m30
+            "fvtiyfrk", #m15
             ]
 	for run_id in run_ids:
 		get_best_ckpt_from_wandb(save_dp, run_id)
