@@ -162,7 +162,7 @@ def main(args):
 				for line in config_lines:
 					for config_keyword in config_keywords:
 						if line.startswith(config_keyword):
-							config_d[config_keyword] = line.split(":")[-1].strip()
+							config_d[config_keyword] = line.split(":")[-1].split(" #")[0].strip()
 
 	# change keywords based model type
 	data_keyword = [ 'config', 'config_template', 'spec_fp','mol_fp', 'split_dp']
