@@ -173,6 +173,7 @@ def main(args):
 	elif config_d['model_type'] == 'graff':
 		data_keyword.append('ann_fp')
 	# copy mces fp if pretraining
+	print(config_d['mces_pretrain'])
 	if config_d['mces_pretrain'].lower() == 'true':
 		data_keyword.append('mces_fp')
 	print(f"> model type: {config_d['model_type']}")
