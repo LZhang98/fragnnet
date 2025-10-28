@@ -5,6 +5,7 @@ import os
 
 from fragnnet.model import FraGNNetModel
 from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
+from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog,scatter_logsumexp
 from fragnnet.pl_model import SpectrumPL
@@ -71,7 +72,7 @@ class FraGNNetPL(SpectrumPL):
 		)
 		
 		self._check_ce_params()
-
+		self.pretrained_param_names  = []
 		# check edge loss params
 		if not self.hparams.skip_edge_loss:
 			assert "h_counts" in self.hparams.frag_params["pyg_node_feats"]
@@ -102,20 +103,18 @@ class FraGNNetPL(SpectrumPL):
 		"""
 		if not os.path.exists(mces_ckpt_path):
 			raise FileNotFoundError(f"MCES checkpoint not found: {mces_ckpt_path}")
-		
+
 		logging.info(f"Loading pre-trained MCES weights from: {mces_ckpt_path}")
-		
+
 		# Load the MCES checkpoint
-		# Note: weights_only=False is required for Lightning checkpoints which contain
-		# optimizer state and other non-tensor objects
 		mces_checkpoint = th.load(mces_ckpt_path, map_location=self.device, weights_only=False)
-		
+
 		# Extract state dict - handle both direct state_dict and Lightning checkpoint format
 		if 'state_dict' in mces_checkpoint:
 			mces_state_dict = mces_checkpoint['state_dict']
 		else:
 			mces_state_dict = mces_checkpoint
-		
+
 		# Map MCES model weights to FraGNNet model weights
 		# Both models share: mol_embedder, mol_pool
 		# NOTE: CE/Prec/Inst embedders are NOT transferred because they are never trained
@@ -124,21 +123,18 @@ class FraGNNetPL(SpectrumPL):
 			'mol_embedder',  # Molecular GNN encoder - actually trained on MCES similarity
 			'mol_pool',      # Molecular pooling layer - actually trained on MCES pooling
 		]
-		
+
 		# Build mapping from MCES to FraGNNet
 		fragnnet_state_dict = self.model.state_dict()
 		loaded_weights = {}
-		
+
 		for key, value in mces_state_dict.items():
 			# Remove 'model.' prefix if present (from Lightning wrapper)
-			if key.startswith('model.'):
-				clean_key = key[6:]  # Remove 'model.' prefix
-			else:
-				clean_key = key
-			
+			clean_key = key[6:] if key.startswith('model.') else key
+
 			# Check if this weight belongs to a shared component
 			is_shared = any(clean_key.startswith(comp) for comp in shared_components)
-			
+
 			if is_shared and clean_key in fragnnet_state_dict:
 				# Check shape compatibility
 				if value.shape == fragnnet_state_dict[clean_key].shape:
@@ -148,28 +144,23 @@ class FraGNNetPL(SpectrumPL):
 					logging.warning(
 						f"Shape mismatch for {clean_key}: "
 						f"MCES {value.shape} vs FraGNNet {fragnnet_state_dict[clean_key].shape}. "
-						f"This likely means FraGNNet uses ce_insert_location='mol' while MCES doesn't. or versa. "
-						f"Consider using ce_insert_location='mlp' in FraGNNet for full compatibility."
+						f"Consider using compatible configurations."
 					)
-		
+
 		# Load the compatible weights into FraGNNet
 		if loaded_weights:
-			# Use strict=False to allow partial loading
-			missing_keys, unexpected_keys = self.model.load_state_dict(loaded_weights, strict=False)
-			
+			self.model.load_state_dict(loaded_weights, strict=False)
 			logging.info(f"Successfully loaded {len(loaded_weights)} pre-trained weight tensors from MCES model")
-			logging.info(f"Shared components initialized: {list(set(k.split('.')[0] for k in loaded_weights.keys()))}")
-			
-			if missing_keys:
-				logging.info(f"Missing keys (will be randomly initialized): {len(missing_keys)} keys")
-				logging.debug(f"Missing keys: {missing_keys[:10]}...")  # Show first 10
-			
+
+			# get names for pre-trained weights
+			self.pretrained_param_names = [name for name in loaded_weights.keys()]
+   
 			# Freeze pre-trained weights if specified
 			if self.hparams.freeze_mces_weights:
 				self._freeze_pretrained_weights(loaded_weights.keys())
 		else:
 			logging.warning("No compatible weights found to transfer from MCES model")
-	
+
 	def _freeze_pretrained_weights(self, weight_keys):
 		"""
 		Freeze the weights that were loaded from pre-trained MCES model.
@@ -801,9 +792,43 @@ class FraGNNetPL(SpectrumPL):
 			self._update_results(batch_results,"train")
 			return mean_loss
 		
+	def configure_optimizers(self):
+		"""
+		Configure optimizers with different learning rates for pre-trained and other parameters.
+		"""
+		# Separate parameters into pre-trained and others
+		pretrained_params = [p for n, p in self.model.named_parameters() if n in self.pretrained_param_names]
+		other_params = [p for n, p in self.model.named_parameters() if n not in self.pretrained_param_names]
+		optimizer_cls = get_optimizer_class(self.hparams.optimizer)
+
+		# Define optimizer with parameter groups
+		optimizer = optimizer_cls([
+			{"params": pretrained_params, "lr": self.hparams.lr * self.hparams.pretrained_weights_lr_ratio},
+			{"params": other_params, "lr": self.hparams.lr}
+		], weight_decay=self.hparams.weight_decay)
+
+		ret = {
+			"optimizer": optimizer,
+		}
+
+		# Optionally add a learning rate scheduler
+		if self.hparams.lr_schedule:
+			scheduler = build_lr_scheduler(
+				optimizer=optimizer, 
+				decay_rate=self.hparams.lr_decay_rate, 
+				warmup_steps=self.hparams.lr_warmup_steps,
+				decay_steps=self.hparams.lr_decay_steps,
+			)
+			ret["lr_scheduler"] = {
+				"scheduler": scheduler,
+				"frequency": 1,
+				"interval": "step",
+			}
+
+		return ret
+
 	def optimizer_step(self, *args, **kwargs):
 		
 		super().optimizer_step(*args, **kwargs)
 		opt = self.optimizers()
 		self.on_after_optimizer_step(opt)
-  

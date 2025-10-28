@@ -20,7 +20,7 @@ except ModuleNotFoundError:
 	
 import torch._dynamo as th_dynamo
 
-from fragnnet.utils.nn_utils import build_lr_scheduler
+from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
 from fragnnet.model.loss import sparse_entropy_fn
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog, flatten_lol, th_temp_seed, to_cpu, scatter_l1normalize
@@ -1035,14 +1035,7 @@ class SpectrumPL(pl.LightningModule):
 		"""
 		Configure optimizer and learning rate scheduler for Lightning.
 		"""
-		if self.hparams.optimizer == "adam":
-			optimizer_cls = th.optim.Adam
-		elif self.hparams.optimizer == "adamw":
-			optimizer_cls = th.optim.AdamW
-		elif self.hparams.optimizer == "sgd":
-			optimizer_cls = th.optim.SGD
-		else:
-			raise ValueError(f"Unknown optimizer {self.optimizer}")
+		optimizer_cls = get_optimizer_class(self.hparams.optimizer)
 		optimizer = optimizer_cls(
 			self.parameters(), 
 			lr=self.hparams.lr, 

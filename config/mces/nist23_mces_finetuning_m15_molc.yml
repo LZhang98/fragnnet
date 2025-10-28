@@ -1,7 +1,7 @@
-wandb_name: nist23_mces_finetuning_m30
+wandb_name: nist23_mces_finetuning_m15_molc
 wandb_tags:
 - finetuning
-- mces30
+- mces15
 - freeze_false
 - nist23
 - d4
@@ -39,7 +39,7 @@ mces_fp: data/proc/mces/mces_pairs.pkl
 # ============================================================================
 freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
 mces_pretrain: True # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt_fp: saved_ckpts/mces_nist23_ma_mi_inchikey_m30_qniu4q7f.ckpt
+mces_pretrain_ckpt_fp: saved_ckpts/mces_nist23_ma_mi_inchikey_m15_fvtiyfrk.ckpt
 
 subsample_params:
   subsample_size: 100

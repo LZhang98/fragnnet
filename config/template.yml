@@ -364,6 +364,7 @@ mces_embed_combine: concat_avg #  options: abs_diff cross_attn
 # ============================================================================
 mces_pretrain_ckpt_fp: none
 freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
+pretrained_weights_lr_ratio: 0.1 # Learning rate ratio for pretrained MCES weights during fine-tuning
 mces_pretrain: False # use mces pretraining weights for mol gnn
 
 # ============================================================================
