@@ -149,7 +149,7 @@ def main(args):
 			config_template_fp = value
 
 	# parse configs	file
-	config_keywords = ['spec_fp','mol_fp', 'ann_fp', 'config','config_template','split_dp','magma_dp','frag_dp', 'model_type', 'mces_fp', 'mces_pretrain_ckpt_fp']
+	config_keywords = ['spec_fp','mol_fp', 'ann_fp', 'config','config_template','split_dp','magma_dp','frag_dp', 'model_type', 'mces_pretrain_ckpt_fp', 'mces_pretrain']
 	config_d = {'config_template':config_template_fp}
 	if custom_config_fp is not None:
 		config_d['config'] = custom_config_fp
