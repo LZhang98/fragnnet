@@ -143,7 +143,7 @@ class FraGNNetPL(SpectrumPL):
 				# Check shape compatibility
 				if value.shape == fragnnet_state_dict[clean_key].shape:
 					loaded_weights[clean_key] = value
-					logging.debug(f"Loaded weight: {clean_key} with shape {value.shape}")
+					logging.info(f"Loaded weight: {clean_key} with shape {value.shape}")
 				else:
 					logging.warning(
 						f"Shape mismatch for {clean_key}: "
