@@ -161,7 +161,7 @@ def main(args):
 				config_lines = config_file.readlines()
 				for line in config_lines:
 					for config_keyword in config_keywords:
-						if line.startswith(config_keyword):
+						if line.startswith(config_keyword + ':'):
 							config_d[config_keyword] = line.split(" #")[0].strip().split(":")[-1].strip()
 
 	# change keywords based model type
@@ -173,7 +173,6 @@ def main(args):
 	elif config_d['model_type'] == 'graff':
 		data_keyword.append('ann_fp')
 	# copy mces fp if pretraining
-	print(config_d['mces_pretrain'])
 	if config_d['mces_pretrain'].lower() == 'true':
 		data_keyword.append('mces_pretrain_ckpt_fp')
 	print(f"> model type: {config_d['model_type']}")
