@@ -16,9 +16,7 @@ mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_inchikey  # Train/val/test split directory
 frag_dp: data/frag/nist20_d3/dags  # Fragment DAG data directory
 magma_dp: data/magma  # MAGMA annotation data directory
-ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe file
-mces_fp: data/proc/mces/mces_pairs.pkl  # MCES (Maximum Common Edge Substructure) pairs for pre-training
-#mces_pretrain_ckpt: none # Path to MCES pre-training checkpoint (if using)
+ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe files
 
 # ============================================================================
 # Data Processing Parameters
@@ -363,7 +361,7 @@ mces_embed_combine: concat_avg #  options: abs_diff cross_attn
 # ============================================================================
 # MCES Pre-training Configuration
 # ============================================================================
-mces_pretrain_ckpt: none
+mces_pretrain_ckpt_fp: none
 freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
 mces_pretrain: False # use mces pretraining weights for mol gnn
 

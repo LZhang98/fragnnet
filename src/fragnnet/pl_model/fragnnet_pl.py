@@ -84,7 +84,7 @@ class FraGNNetPL(SpectrumPL):
 
 		# Load pre-trained MCES weights if specified
 		if self.hparams.mces_pretrain:
-			self._load_mces_pretrained_weights(self.hparams.mces_pretrain_ckpt)
+			self._load_mces_pretrained_weights(self.hparams.mces_pretrain_ckpt_fp)
 
 		# compile
 		if self.hparams.compile:

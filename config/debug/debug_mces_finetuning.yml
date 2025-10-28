@@ -13,7 +13,7 @@ frag_dp: data/frag/debug_tinyv4_d3h4/dags
 # ============================================================================
 freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
 mces_pretrain: True # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt: saved_ckpts/mces_nist23_ma_mi_inchikey_m15_fvtiyfrk.ckpt
+mces_pretrain_ckpt_fp: saved_ckpts/mces_nist23_ma_mi_inchikey_m15_fvtiyfrk.ckpt
 
 subsample_params:
   subsample_size: 100
