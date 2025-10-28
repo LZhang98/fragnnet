@@ -32,6 +32,7 @@ spec_fp: data/proc/nist23/spec_df.pkl
 mol_fp: data/proc/nist23/mol_df.pkl
 split_dp: data/split/nist23_ma_mi_inchikey
 frag_dp: data/frag/nist23_ma_mi_d3_h4_isoFalse/dags
+mces_fp: data/proc/mces/mces_pairs.pkl
 
 # ============================================================================
 # MCES Pre-training Configuration

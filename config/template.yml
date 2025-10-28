@@ -17,6 +17,7 @@ split_dp: data/split/nist20_inchikey  # Train/val/test split directory
 frag_dp: data/frag/nist20_d3/dags  # Fragment DAG data directory
 magma_dp: data/magma  # MAGMA annotation data directory
 ann_fp: data/proc/nist20/ann_df.pkl  # Annotation dataframe files
+mces_fp: data/proc/mces/mces_pairs.pkl # MCES pairs file
 
 # ============================================================================
 # Data Processing Parameters
