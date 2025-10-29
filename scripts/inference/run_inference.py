@@ -74,11 +74,18 @@ if __name__ == "__main__":
 	
 	# Data paths
 	parser.add_argument(
-		"--proc_dp",
+		"--mol_fp",
 		type=str,
 		required=True,
-		help="Directory containing mol_df.pkl.gz and spec_df.pkl.gz files"
+		help="file path to mol_df.pkl.gz"
 	)
+	parser.add_argument(
+		"--spec_fp",
+		type=str,
+		required=True,
+		help="file path to spec_df.pkl.gz"
+	)
+
 	parser.add_argument(
 		"--frag_dp",
 		type=str,
@@ -170,10 +177,10 @@ if __name__ == "__main__":
 	# Load Input Data (molecules and spectra)
 
 	print("> Loading mol_df")
-	mol_df = pd.read_pickle(os.path.join(args.proc_dp,'mol_df.pkl.gz'))
+	mol_df = pd.read_pickle(args.mol_fp)
 	print(f"  num mol: {len(mol_df)}")
 	print("> Loading spec_df")
-	spec_df = pd.read_pickle(os.path.join(args.proc_dp,'spec_df.pkl.gz'))
+	spec_df = pd.read_pickle(args.spec_fp)
 	print(f"  num spec: {len(spec_df)}")
 
 	print(mol_df.head(5))
