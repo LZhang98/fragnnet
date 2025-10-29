@@ -134,18 +134,23 @@ def main(args):
 	config_template_fp = os.path.join(args.frag_gnn_dp,"config","template.yml")
 	config_d = dict()
 	# parse script kwargs
-	for kwarg in args.script_kwargs:
+	for idx, kwarg in enumerate(args.script_kwargs):
 		assert "=" in kwarg, kwarg
 		key, value = kwarg.split("=")
 		# this useful for inference setup where some config are overridden via command line
 		config_d[key] = value
+		if idx == 0:
+			python_line += " \\ \n"  # first arg
 		if len(key) == 1:
 			python_line += f" -{key} {value}"
 		elif key.startswith('-'):
 			python_line += f" {key} {value}"
 		else:
 			python_line += f" --{key} {value}"
-
+		# add line break
+		if idx != len(args.script_kwargs) - 1:
+			python_line += " \\ \n"
+   
 		if key == "c" or key == "custom_fp":
 			custom_config_fp = value
 		if key == "t" or key == "template_fp":
