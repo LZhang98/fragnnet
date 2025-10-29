@@ -1,4 +1,4 @@
-wandb_name: mces_nist23_ma_mi_inchikey_m15_l
+wandb_name: mces_nist23_ma_mi_inchikey_m15_mlpc
 wandb_tags:
 - pretraining
 - mse
@@ -43,16 +43,17 @@ mol_params:
 # model stuff
 model_type: mces_pretraining
 ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
-ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
+ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]
 ce_insert_merge: False # merge ce embedding
 ce_insert_size: 32
-prec_insert_location: mol
+prec_insert_location: mlp
 prec_insert_size: 32
-inst_insert_location: mol
+inst_insert_location: mlp
 inst_insert_size: 32
+
 mol_pool_type: mean
 mol_normalization: batch
-mol_hidden_size: 512
+mol_hidden_size: 256
 mol_dropout: 0.1
 mlp_normalization: layer
 mlp_hidden_size: 256
@@ -68,7 +69,7 @@ mces_normalization: zscore  # options: none, zscore, minmax
 # loss stuff
 loss_type: mse
 train_sample_weight: none
-eval_sample_weight: none
+eval_sample_weight: nsone
 
 # optimization stuff
 train_batch_size: 10240
@@ -87,6 +88,8 @@ upload_checkpoints: False
 delete_checkpoints: False
 checkpoint_metric: val_loss
 checkpoint_metric_mode: min
+checkpoint_every_n_epochs: 5
+checkpoint_save_top_k: -1
 auxiliary_scores:
 - mse
 - mae

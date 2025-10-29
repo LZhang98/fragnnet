@@ -11,9 +11,10 @@ frag_dp: data/frag/debug_tinyv4_d3h4/dags
 # ============================================================================
 # MCES Pre-training Configuration
 # ============================================================================
-freeze_mces_weights: True # Whether to freeze MCES pre-trained weights during fine-tuning
-mces_pretrain: True # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt_fp: saved_ckpts/mces_nist23_ma_mi_inchikey_m15_fvtiyfrk.ckpt
+freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
+mces_pretrain: False # use mces pretraining weights for mol gnn
+mces_pretrain_ckpt_fp: saved_ckpts/mces_nist23_ma_mi_inchikey_m30_qniu4q7f.ckpt
+pretrained_weights_lr_ratio: 0.1
 
 subsample_params:
   subsample_size: 40
@@ -93,11 +94,11 @@ weight_decay: 0.01
 accelerator: gpu
 devices: 1
 min_epochs: 5
-max_epochs: 5
+max_epochs: 10
 lr_schedule: False
 debug_overfit: False
 upload_checkpoints: False
-delete_checkpoints: True
+delete_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
  - cos_sim

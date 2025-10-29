@@ -357,6 +357,8 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 			monitor=config_d["checkpoint_metric"],
 			mode=config_d["checkpoint_metric_mode"],
 			save_last=config_d["checkpoint_save_last"],
+			every_n_epochs=config_d["checkpoint_every_n_epochs"],
+			save_top_k=config_d["checkpoint_save_top_k"],
 		)
 		callbacks.append(checkpoint_callback)
 

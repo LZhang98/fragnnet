@@ -1,4 +1,4 @@
-wandb_name: mces_nist23_ma_mi_inchikey_m30_l
+wandb_name: mces_nist23_ma_mi_inchikey_m30_l_mlpc
 wandb_tags:
 - pretraining
 - mse

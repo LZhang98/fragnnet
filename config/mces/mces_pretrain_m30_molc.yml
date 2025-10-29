@@ -1,4 +1,4 @@
-wandb_name: mces_nist23_ma_mi_inchikey_m30
+wandb_name: mces_nist23_ma_mi_inchikey_m30_molc
 wandb_tags:
 - pretraining
 - mse
@@ -88,6 +88,8 @@ upload_checkpoints: False
 delete_checkpoints: False
 checkpoint_metric: val_loss
 checkpoint_metric_mode: min
+checkpoint_every_n_epochs: 5
+checkpoint_save_top_k: -1
 auxiliary_scores:
 - mse
 - mae

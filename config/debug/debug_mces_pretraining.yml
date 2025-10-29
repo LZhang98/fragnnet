@@ -10,7 +10,7 @@ mol_fp: data/proc/mces/mol_df.pkl
 split_dp: data/split/mces_nist23_ma_mi_inchikey_m30
 
 subsample_params:
-  subsample_size: 30000
+  subsample_size: 3000
   subsample_seed: 42
   train: True
   val: True
@@ -86,6 +86,8 @@ lr_schedule: True
 debug_overfit: False
 upload_checkpoints: False
 delete_checkpoints: False
+checkpoint_every_n_epochs: 5
+checkpoint_save_top_k: -1
 checkpoint_metric: val_loss
 checkpoint_metric_mode: min
 auxiliary_scores:

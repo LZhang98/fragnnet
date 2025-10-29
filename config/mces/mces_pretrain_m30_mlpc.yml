@@ -1,13 +1,13 @@
-wandb_name: mces_nist23_ma_mi_inchikey_m15
+wandb_name: mces_nist23_ma_mi_inchikey_m30_mlpc
 wandb_tags:
 - pretraining
 - mse
-- mces15
+- mces30
 
 # data stuff
 mces_fp: data/proc/mces/mces_pairs.pkl
 mol_fp: data/proc/mces/mol_df.pkl
-split_dp: data/split/mces_nist23_ma_mi_inchikey_m15
+split_dp: data/split/mces_nist23_ma_mi_inchikey_m30
 
 subsample_params:
   subsample_size: 10000
@@ -43,14 +43,13 @@ mol_params:
 # model stuff
 model_type: mces_pretraining
 ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
-ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
+ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]
 ce_insert_merge: False # merge ce embedding
 ce_insert_size: 32
-prec_insert_location: mol
+prec_insert_location: mlp
 prec_insert_size: 32
-inst_insert_location: mol
+inst_insert_location: mlp
 inst_insert_size: 32
-
 mol_pool_type: mean
 mol_normalization: batch
 mol_hidden_size: 256
@@ -61,16 +60,17 @@ mlp_dropout: 0.1
 
 # mces stuff
 mces_min: 1
-mces_max: 15
-mces_mean: 12
-mces_std: 2
+mces_max: 30
+mces_mean: 20
+mces_std: 5
 mces_normalization: zscore  # options: none, zscore, minmax
 
 # loss stuff
 loss_type: mse
 train_sample_weight: none
-eval_sample_weight: nsone
+eval_sample_weight: none
 
+# optimization stuff
 # optimization stuff
 train_batch_size: 10240
 eval_batch_size: 10240
@@ -88,6 +88,8 @@ upload_checkpoints: False
 delete_checkpoints: False
 checkpoint_metric: val_loss
 checkpoint_metric_mode: min
+checkpoint_every_n_epochs: 5
+checkpoint_save_top_k: -1
 auxiliary_scores:
 - mse
 - mae
