@@ -149,7 +149,7 @@ def main(args):
 			python_line += f" --{key} {value}"
 		# add line breaks
 		if idx != len(args.script_kwargs) - 1:
-			python_line += " \\ \n"
+			python_line += " \\\n"
    
 		if key == "c" or key == "custom_fp":
 			custom_config_fp = value
