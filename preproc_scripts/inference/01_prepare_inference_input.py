@@ -145,10 +145,10 @@ def create_spec_df(mol_df, config_d):
 				'prec_type': prec_type,
 				'nce': nce_value,
 				'ace': ace_value,
-				'nce_extra_1': np.nan, # TODO update this later
-				'ace_extra_1': np.nan, # TODO update this later
-				'nce_extra_2': np.nan, # TODO update this later
-				'ace_extra_2': np.nan, # TODO update this later
+				'nce_extra_1': np.nan, # TODO update this
+				'ace_extra_1': np.nan, # TODO update this
+				'nce_extra_2': np.nan, # TODO update this
+				'ace_extra_2': np.nan, # TODO update this
 				'inst_type': inst_type,
 				'group_id': group_id,
 				'dset': 'inference',

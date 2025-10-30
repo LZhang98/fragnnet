@@ -13,7 +13,6 @@ if __name__ == "__main__":
 	spec_df = pd.read_pickle(args.spec_df_fp)
 	print(f"> Loaded spec_df with shape: {spec_df.shape}")
 	print(f"> Original columns: {list(spec_df.columns)}")
-
 	print(f"> Checking for missing collision energy columns...")
 	for name in ['ace_extra_1', 'nce_extra_1', 'ace_extra_2', 'nce_extra_2']:
 		if name not in spec_df.columns:
