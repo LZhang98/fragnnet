@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from fragnnet.model import SiameseGNNModel
 from fragnnet.utils.data_utils import min_max_denormalize, zscore_denormalize
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
+import torch._dynamo as th_dynamo
 
 # Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
 try:
@@ -22,6 +23,21 @@ class MCESPL(pl.LightningModule):
 	):
 		super().__init__()
 		self.save_hyperparameters()
+		self._setup_model()
+
+		# setup loss function
+		if self.hparams.loss_type == "mse":
+			self.loss_fn = nn.MSELoss()
+		elif self.hparams.loss_type == "mae":
+			self.loss_fn = nn.L1Loss()
+		else:
+			raise ValueError(f"Not Supported loss_type {self.hparams.loss_type}")
+   
+		self.lr = self.hparams.lr
+		self.weight_decay = self.hparams.weight_decay
+		self.auxiliary_scores = self.hparams.get("auxiliary_scores", [])
+
+	def _setup_model(self):
 		self.model = SiameseGNNModel(
 			mol_node_feats=self.hparams.mol_params["pyg_node_feats"],	# mol feats
 			mol_edge_feats=self.hparams.mol_params["pyg_edge_feats"],
@@ -61,18 +77,11 @@ class MCESPL(pl.LightningModule):
 			#log_min=0.0
 		)
 
-		# setup loss function
-		if self.hparams.loss_type == "mse":
-			self.loss_fn = nn.MSELoss()
-		elif self.hparams.loss_type == "mae":
-			self.loss_fn = nn.L1Loss()
-		else:
-			raise ValueError(f"Not Supported loss_type {self.hparams.loss_type}")
+		if self.hparams.compile:
+			th_dynamo.reset()
+			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
+			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
    
-		self.lr = self.hparams.lr
-		self.weight_decay = self.hparams.weight_decay
-		self.auxiliary_scores = self.hparams.get("auxiliary_scores", [])
-
 	def _log_score(self, pred, target, score_type, split_name, original_scale=False):
 		"""Helper to compute and log scores (mean and std) in normalized or original scale."""
 		if original_scale is False:

@@ -147,7 +147,7 @@ def main(args):
 			python_line += f" {key} {value}"
 		else:
 			python_line += f" --{key} {value}"
-		# add line break
+		# add line breaks
 		if idx != len(args.script_kwargs) - 1:
 			python_line += " \\ \n"
    
