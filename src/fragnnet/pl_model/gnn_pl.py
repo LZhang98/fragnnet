@@ -2,7 +2,7 @@ import torch as th
 import torch._dynamo as th_dynamo
 
 from fragnnet.model import GNNModel
-from .binned_pl import BinnedPL
+from fragnnet.pl_model import BinnedPL
 
 class GNNPL(BinnedPL):
 	def _setup_model(self):
