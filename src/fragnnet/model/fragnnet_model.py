@@ -18,7 +18,7 @@ from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.base_model import CEModel, PrecModel, InstModel
-
+from fragnnet.model.nn_blocks import SetTransformer
 class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
 	def __init__(
@@ -142,10 +142,48 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		self._compute_frag_feats_sizes()
 
 		# define interstage
-		assert cc_interstage_type in ["add","sub","linear","direct"]
+		assert cc_interstage_type in ["add","sub","linear","direct","gated","attention","mlp","bilinear","set_transformer"]
 		self.cc_interstage_type = cc_interstage_type
 		if self.cc_interstage_type == "linear":
 			self.cc_interstage = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
+		elif self.cc_interstage_type == "gated":
+			# Gated fusion: learns to mix frag and mol embeddings
+			self.cc_interstage = nn.Sequential(
+				nn.Linear(mol_hidden_size * 2, mol_hidden_size),
+				nn.Sigmoid()
+			)
+		elif self.cc_interstage_type == "attention":
+			# Multi-head attention fusion: fragment attends to molecule context
+			self.cc_interstage_attn = nn.MultiheadAttention(
+				embed_dim=mol_hidden_size,
+				num_heads=4,
+				dropout=0.1,
+				batch_first=True
+			)
+			self.cc_interstage_proj = nn.Linear(mol_hidden_size, mol_hidden_size)
+		elif self.cc_interstage_type == "mlp":
+			# Deep fusion with residual
+			self.cc_interstage = nn.Sequential(
+				nn.Linear(mol_hidden_size * 2, mol_hidden_size * 2),
+				nn.ReLU(),
+				nn.Dropout(0.1),
+				nn.Linear(mol_hidden_size * 2, mol_hidden_size)
+			)
+		elif self.cc_interstage_type == "bilinear":
+			# Bilinear interaction
+			self.cc_interstage_bilinear = nn.Bilinear(mol_hidden_size, mol_hidden_size, mol_hidden_size)
+			self.cc_interstage_proj = nn.Linear(mol_hidden_size, mol_hidden_size)
+		elif self.cc_interstage_type == "set_transformer":
+			# SetTransformer: process each molecule's fragment nodes as a set with molecular context
+			self.cc_interstage_transformer = SetTransformer(
+				input_dim=mol_hidden_size * 2,  # concat of frag_node + mol_pool
+				hidden_dim=mol_hidden_size * 2,
+				output_dim=mol_hidden_size,
+				num_heads=4,
+				num_inds=16,  # inducing points for attention
+				num_blocks=2,
+				dropout=0.1
+			)
 
 		frag_kwargs = {
 			"node_feats_size": self.frag_node_feats_size,
@@ -393,19 +431,55 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 				reduce="sum",
 				dim_size=batch_frag_num_nodes
 			)
-			# frag_node_mask_embed can be one of following
-			# 1. frag_node_mask_embed plus mol_embed_gnn_pool
-			# 2. frag_node_mask_embed only, with out pooled embed for entire mol
-			# 3. a linear layer between masked embed and pooled embed
+			# frag_node_mask_embed can be one of following:
+			# 1. add/sub: Simple arithmetic operations
+			# 2. linear: Linear projection of concatenation
+			# 3. gated: Learnable gate to mix embeddings
+			# 4. attention: Query-key-value attention
+			# 5. mlp: Deep nonlinear fusion
+			# 6. bilinear: Bilinear interaction
+			# 7. set_transformer: Process fragment nodes as a set with molecular context
+			# 8. direct: No fusion, use fragment embedding only
+			
+			mol_pool_embed = mol_embed_gnn_pool[frag_batch]
+			
 			if self.cc_interstage_type == "add":
-				frag_node_mask_embed = frag_node_mask_embed + mol_embed_gnn_pool[frag_batch]
+				frag_node_mask_embed = frag_node_mask_embed + mol_pool_embed
 			elif self.cc_interstage_type == "sub":
-				frag_node_mask_embed = frag_node_mask_embed - mol_embed_gnn_pool[frag_batch]
+				frag_node_mask_embed = frag_node_mask_embed - mol_pool_embed
 			elif self.cc_interstage_type == "linear":
-				frag_node_mask_embed = self.cc_interstage(th.cat([frag_node_mask_embed,mol_embed_gnn_pool[frag_batch]], dim = 1))
+				frag_node_mask_embed = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
+			elif self.cc_interstage_type == "gated":
+				# Gate controls mixing: g * frag + (1-g) * mol
+				gate = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
+				frag_node_mask_embed = gate * frag_node_mask_embed + (1 - gate) * mol_pool_embed
+			elif self.cc_interstage_type == "attention":
+				# Multi-head attention: fragment (query) attends to molecule (key/value)
+				# Reshape to (batch, seq_len, embed_dim) format for MultiheadAttention
+				# Each fragment node attends to its molecule context
+				query = frag_node_mask_embed.unsqueeze(1)  # (num_nodes, 1, dim)
+				key_value = mol_pool_embed.unsqueeze(1)    # (num_nodes, 1, dim)
+				attn_out, _ = self.cc_interstage_attn(query, key_value, key_value)
+				attn_out = attn_out.squeeze(1)  # (num_nodes, dim)
+				frag_node_mask_embed = frag_node_mask_embed + self.cc_interstage_proj(attn_out)
+			elif self.cc_interstage_type == "mlp":
+				# Deep MLP fusion with residual
+				fused = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
+				frag_node_mask_embed = frag_node_mask_embed + fused  # Residual connection
+			elif self.cc_interstage_type == "bilinear":
+				# Bilinear interaction: captures pairwise interactions
+				interaction = self.cc_interstage_bilinear(frag_node_mask_embed, mol_pool_embed)
+				frag_node_mask_embed = frag_node_mask_embed + self.cc_interstage_proj(interaction)
+			elif self.cc_interstage_type == "set_transformer":
+				# SetTransformer: process fragment nodes per molecule as a set
+				# Concatenate fragment node embedding with molecule-level context
+				frag_node_input = th.cat([frag_node_mask_embed, mol_pool_embed], dim=1)
+				# Use SetTransformer with batch_idx to handle variable-sized sets
+				frag_node_mask_embed = self.cc_interstage_transformer(frag_node_input, batch_idx=frag_batch)
 			else:
 				assert self.cc_interstage_type == "direct", self.cc_interstage_type
 				frag_node_mask_embed = frag_node_mask_embed
+			
 			frag_ndata.append(frag_node_mask_embed)
 		# edge atom embeddings
 		if "cc" in self.frag_edge_feats:
