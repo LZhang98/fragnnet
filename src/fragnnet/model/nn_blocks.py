@@ -758,24 +758,55 @@ class SetTransformer(nn.Module):
 			nn.Linear(hidden_dim, output_dim)
 		)
 
-	def forward(self, x):
+	def forward(self, x, batch_idx=None):
 		"""
 		Forward pass for the Set Transformer.
-
 		Args:
-			x (Tensor): Input tensor of shape (batch_size, set_size, input_dim).
+			x (Tensor): Input tensor. 
+				- If batch_idx is None: shape (batch_size, set_size, input_dim) - fixed size sets
+				- If batch_idx is provided: shape (total_elements, input_dim) - variable size sets
+			# Input: (total_elements=85, input_dim=128)
+			# batch_idx: [0,0,0,...,1,1,1,...,2,2,...,3,3,3,...]  (85 elements total)
+			# Set 0: 25 elements, Set 1: 20 elements, Set 2: 15 elements, Set 3: 25 elementss
+			batch_idx (Tensor, optional): Batch indices for variable-sized sets, shape (total_elements,).
+				Each element indicates which set/graph the element belongs to.
 
 		Returns:
 			Tensor: Encoded set representation of shape (batch_size, output_dim).
 		"""
-		batch_size, _ , _ = x.size()
-		inducing_points = self.inducing_points.unsqueeze(0).expand(batch_size, -1, -1)
+		if batch_idx is None:
+			# Fixed-size sets: (batch_size, set_size, input_dim)
+			batch_size, _ , _ = x.size()
+			inducing_points = self.inducing_points.unsqueeze(0).expand(batch_size, -1, -1)
 
-		for attention in self.attention_blocks:
-			x, _ = attention(x, inducing_points, inducing_points)
+			for attention in self.attention_blocks:
+				x, _ = attention(x, inducing_points, inducing_points)
 
-		x = x.mean(dim=1)  # Aggregate over the set dimension
-		return self.fc(x)
+			x = x.mean(dim=1)  # Aggregate over the set dimension
+			return self.fc(x)
+		else:
+			# Variable-size sets: (total_elements, input_dim) with batch_idx
+			num_batches = int(batch_idx.max().item()) + 1
+			output_list = []
+			
+			for batch_id in range(num_batches):
+				# Extract elements for this batch
+				mask = (batch_idx == batch_id)
+				x_batch = x[mask].unsqueeze(0)  # (1, set_size_i, input_dim)
+				
+				# Apply attention with inducing points
+				inducing_points = self.inducing_points.unsqueeze(0)  # (1, num_inds, input_dim)
+				x_batch_out = x_batch
+				for attention in self.attention_blocks:
+					x_batch_out, _ = attention(x_batch_out, inducing_points, inducing_points)
+				
+				# Aggregate over set dimension
+				x_agg = x_batch_out.mean(dim=1)  # (1, input_dim)
+				output_list.append(x_agg)
+			
+			# Stack all batch outputs
+			x = th.cat(output_list, dim=0)  # (num_batches, input_dim)
+			return self.fc(x)
 
 def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
 	# adapted from NEIMS
