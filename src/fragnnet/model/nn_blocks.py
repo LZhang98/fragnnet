@@ -720,6 +720,63 @@ class SpecFFN(nn.Module):
 		pred_specs = spec
 		return pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs
 
+class SetTransformer(nn.Module):
+	"""
+	Set Transformer implementation for processing sets of elements.
+	
+
+	Args:
+		input_dim (int): Dimension of the input features.
+		hidden_dim (int): Dimension of the hidden layers.
+		output_dim (int): Dimension of the output embedding.
+		num_heads (int): Number of attention heads.
+		num_inds (int): Number of inducing points.
+		num_blocks (int): Number of Set Transformer blocks.
+		dropout (float): Dropout rate for regularization.
+	"""
+	def __init__(
+		self,
+		input_dim,
+		hidden_dim,
+		output_dim,
+		num_heads=4,
+		num_inds=32,
+		num_blocks=2,
+		dropout=0.1,
+	):
+		super(SetTransformer, self).__init__()
+
+		self.inducing_points = nn.Parameter(th.randn(num_inds, input_dim))
+		self.attention_blocks = nn.ModuleList([
+			nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout)
+			for _ in range(num_blocks)
+		])
+		self.fc = nn.Sequential(
+			nn.Linear(input_dim, hidden_dim),
+			nn.ReLU(),
+			nn.Dropout(dropout),
+			nn.Linear(hidden_dim, output_dim)
+		)
+
+	def forward(self, x):
+		"""
+		Forward pass for the Set Transformer.
+
+		Args:
+			x (Tensor): Input tensor of shape (batch_size, set_size, input_dim).
+
+		Returns:
+			Tensor: Encoded set representation of shape (batch_size, output_dim).
+		"""
+		batch_size, _ , _ = x.size()
+		inducing_points = self.inducing_points.unsqueeze(0).expand(batch_size, -1, -1)
+
+		for attention in self.attention_blocks:
+			x, _ = attention(x, inducing_points, inducing_points)
+
+		x = x.mean(dim=1)  # Aggregate over the set dimension
+		return self.fc(x)
+
 def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
 	# adapted from NEIMS
 	# raw_prediction is [B,D], prec_mass_idx is [B]
@@ -803,3 +860,4 @@ def mask_prediction_by_mass(raw_prediction, prec_mass_idx, prec_mass_offset):
 			prec_mass_idx.unsqueeze(1) +
 			prec_mass_offset)).float()
 	return mask * raw_prediction
+
