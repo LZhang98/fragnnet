@@ -6,3 +6,4 @@ from .gnn_model import GNNModel
 from .fragnnet_model import FraGNNetModel
 from .precursor_model import PrecursorModel
 from .siamese_gnn_model import SiameseGNNModel
+from .spectrum_encoder import SpectrumEncoder
