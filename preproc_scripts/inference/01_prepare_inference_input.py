@@ -143,20 +143,24 @@ def create_spec_df(mol_df, config_d):
 				'spec_id': spec_id,
 				'mol_id': mol_id,
 				'prec_type': prec_type,
-					'nce': nce_value,
-					'ace': ace_value,
-					'inst_type': inst_type,
-					'group_id': group_id,
-					'dset': 'inference',
-					'dset_spec_id': spec_id,
-					'prec_mz': np.nan,  # Will be computed from molecular mass and precursor type
-					'peaks': [],        # Empty peaks list for prediction
-					'frag_mode': 'CID', # Default fragmentation mode
-					'spec_type': 'MS2', # Default spectrum type
-					'ion_mode': 'P',    # Positive mode default
-					'formula': mol_df.loc[mol_id, 'formula'],
-					'inchikey': mol_df.loc[mol_id, 'inchikey_s'],
-					'exact_mass': mol_df.loc[mol_id, 'exact_mw']
+				'nce': nce_value,
+				'ace': ace_value,
+				'nce_extra_1': np.nan, # TODO update this later
+				'ace_extra_1': np.nan, # TODO update this later
+				'nce_extra_2': np.nan, # TODO update this later
+				'ace_extra_2': np.nan, # TODO update this later
+				'inst_type': inst_type,
+				'group_id': group_id,
+				'dset': 'inference',
+				'dset_spec_id': spec_id,
+				'prec_mz': np.nan,  # Will be computed from molecular mass and precursor type
+				'peaks': [],        # Empty peaks list for prediction
+				'frag_mode': 'CID', # Default fragmentation mode
+				'spec_type': 'MS2', # Default spectrum type
+				'ion_mode': 'P',    # Positive mode default
+				'formula': mol_df.loc[mol_id, 'formula'],
+				'inchikey': mol_df.loc[mol_id, 'inchikey_s'],
+				'exact_mass': mol_df.loc[mol_id, 'exact_mw']
 				})
 			spec_id += 1
 			group_id += 1
