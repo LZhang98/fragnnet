@@ -729,3 +729,35 @@ def sparse_jensen_shannon_divergence(
 	)
 	# Return 1 - similarity to get the divergence (distance)
 	return 1.-jss
+
+def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
+	"""
+	Compute the CLIP contrastive loss between spectrum and molecule embeddings.
+	
+	Args:
+		spectrum_embeddings: torch.Tensor of shape [batch_size, embedding_dim]
+		mol_embeddings: torch.Tensor of shape [batch_size, embedding_dim]
+		temperature: scalar, temsperature parameter for scaling logits
+
+	Returns:
+		loss: scalar, the symmetric contrastive loss
+	"""
+
+	# Normalize embeddings to unit length
+	spectrum_embeddings = spectrum_embeddings / spectrum_embeddings.norm(dim=1, keepdim=True)
+	mol_embeddings = mol_embeddings / mol_embeddings.norm(dim=1, keepdim=True)
+
+	# Compute cosine similarity matrix (logits)
+	# this is equivalent to computing the cosine similarity for each pair. 
+	logits_per_specturm = spectrum_embeddings @ mol_embeddings.t() / temperature  # [batch_size, batch_size]
+	logits_per_mol = logits_per_specturm.t()  # [batch_size, batch_size]
+	
+	# Target labels are the indices of the diagonal
+	batch_size = spectrum_embeddings.size(0)
+	labels = th.arange(batch_size).to(spectrum_embeddings.device)
+	
+	# Compute cross-entropy loss in both directions
+	loss_i2t = F.cross_entropy(logits_per_specturm, labels)
+	loss_t2i = F.cross_entropy(logits_per_mol, labels)
+	loss = (loss_i2t + loss_t2i) / 2
+	return loss
