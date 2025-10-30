@@ -140,7 +140,7 @@ def main(args):
 		# this useful for inference setup where some config are overridden via command line
 		config_d[key] = value
 		if idx == 0:
-			python_line += " \\ \n"  # first arg
+			python_line += " \\\n"  # first arg
 		if len(key) == 1:
 			python_line += f" -{key} {value}"
 		elif key.startswith('-'):
