@@ -187,17 +187,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			self.cc_interstage_proj = nn.Linear(mol_hidden_size, mol_hidden_size)
 		elif self.cc_interstage_type == "set_transformer":
 			# SetTransformer + Gated fusion: Two-stage architecture
-			# Stage 1: SetTransformer refines fragment nodes based on their relationships
+			# Stage 1: SetTransformer processes individual fragment atoms and aggregates to fragment-level
+			#          atoms within each fragment attend to each other, then aggregated automatically
 			# Stage 2: Gate controls fusion with molecular context
 			self.cc_interstage_transformer = SetTransformer(
-				input_dim=mol_hidden_size,      # Process fragment nodes only
+				input_dim=mol_hidden_size,      # Process individual fragment atoms
 				hidden_dim=mol_hidden_size,
 				output_dim=mol_hidden_size,
-				num_heads=2,  # Reduced from 4 to 2
-				num_inds=16,   # Reduced from 16 
-				num_blocks=2,  # Reduced from 2 to 1 (single attention block)
+				num_heads=2,
+				num_inds=16,
+				num_blocks=2,
 				dropout=0.1,
-				return_nodes=True  # Return per-node outputs, not per-set aggregation
+				return_nodes=False  # Return per-fragment aggregated outputs
 			)
 			# Gated fusion to combine refined fragments with molecular context
 			self.cc_interstage_gate = nn.Sequential(
@@ -445,12 +446,22 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			frag_node_mask_idxs = th.nonzero(frag_node_mask).long()
 			frag_node_offsets = mol_num_nodes[th.bucketize(frag_node_mask_idxs[:,0],frag_num_nodes,right=True)-1]
 			frag_node_mask_idxs[:,1] = frag_node_mask_idxs[:,1] + frag_node_offsets
-			frag_node_mask_embed = scatter_reduce(
-				src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
-				index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
-				reduce="sum",
-				dim_size=batch_frag_num_nodes
-			)
+			
+			# For set_transformer: keep individual atom embeddings without aggregation
+			if self.cc_interstage_type == "set_transformer":
+				# Get all fragment atom embeddings (num_frag_atoms, hidden_dim)
+				frag_atom_embeds = mol_embed_gnn[frag_node_mask_idxs[:,1]]
+				# Get fragment indices for each atom (which fragment does this atom belong to)
+				frag_atom_frag_idxs = frag_node_mask_idxs[:,0]
+			else:
+				# For other modes: aggregate (sum) atom embeddings per fragment
+				frag_node_mask_embed = scatter_reduce(
+					src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
+					index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
+					reduce="sum",
+					dim_size=batch_frag_num_nodes
+				)
+
 			# frag_node_mask_embed can be one of following:
 			# 1. add/sub: Simple arithmetic operations
 			# 2. linear: Linear projection of concatenation
@@ -482,72 +493,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 				attn_out, _ = self.cc_interstage_attn(query, key_value, key_value)
 				attn_out = attn_out.squeeze(1)  # (num_nodes, dim)
 				frag_node_mask_embed = frag_node_mask_embed + attn_out  # Residual connection
-			elif self.cc_interstage_type == "cross_attention":
-				# True cross-attention: fragments attend to "rest" atoms (not in the fragment)
-				# More expressive than "attention" mode - can focus on specific context atoms
-				
-				# Process each molecule separately (different number of fragments and atoms)
-				frag_node_mask_embed_list = []
-				
-				# Get offset to convert local fragment atom indices to global atom indices
-				mol_num_nodes_cumsum = th.cat([th.tensor([0], device=device), mol_num_nodes.cumsum(0)[:-1]])
-				
-				for mol_idx in range(batch_size):
-					# Get fragments for this molecule
-					frag_mask = frag_batch == mol_idx
-					frag_queries = frag_node_mask_embed[frag_mask]  # (num_frags_in_mol, dim)
-					frag_indices = th.where(frag_mask)[0]  # Global fragment indices
-					
-					# Get all atoms for this molecule
-					mol_mask = mol_batch == mol_idx
-					mol_atom_indices = th.where(mol_mask)[0]  # Global atom indices in mol_embed_gnn
-					
-					# For each fragment, get atoms that are NOT in the fragment
-					if frag_queries.shape[0] > 0 and mol_atom_indices.shape[0] > 0:
-						# Get atom offset for this molecule
-						atom_offset = mol_num_nodes_cumsum[mol_idx]
-						
-						frag_updated_list = []
-						for frag_local_idx, frag_global_idx in enumerate(frag_indices):
-							# Get atoms in this fragment
-							frag_atoms_mask = frag_node_mask_idxs[:,0] == frag_global_idx
-							frag_atom_global_indices = frag_node_mask_idxs[frag_atoms_mask, 1]  # Global atom indices
-							
-							# Get "rest" atoms: all mol atoms except fragment atoms
-							# Convert global atom indices to local (within molecule) indices for comparison
-							rest_mask = th.ones(mol_atom_indices.shape[0], dtype=th.bool, device=device)
-							for frag_atom_idx in frag_atom_global_indices:
-								# Find position of this atom in mol_atom_indices
-								local_pos = (mol_atom_indices == frag_atom_idx).nonzero(as_tuple=True)[0]
-								if local_pos.shape[0] > 0:
-									rest_mask[local_pos[0]] = False
-							
-							rest_atom_indices = mol_atom_indices[rest_mask]
-							
-							# Cross-attention: fragment attends to "rest" atoms
-							if rest_atom_indices.shape[0] > 0:
-								frag_q = frag_queries[frag_local_idx:frag_local_idx+1].unsqueeze(0)  # (1, 1, dim)
-								rest_kv = mol_embed_gnn[rest_atom_indices].unsqueeze(0)  # (1, num_rest_atoms, dim)
-								
-								attn_out, _ = self.cc_interstage_cross_attn(frag_q, rest_kv, rest_kv)
-								attn_out = attn_out.squeeze(0).squeeze(0)  # (dim,)
-								
-								# Residual connection
-								frag_updated = frag_queries[frag_local_idx] + attn_out
-							else:
-								# No rest atoms (fragment = whole molecule), keep as is
-								frag_updated = frag_queries[frag_local_idx]
-							
-							frag_updated_list.append(frag_updated)
-						
-						frag_updated = th.stack(frag_updated_list, dim=0)
-					else:
-						frag_updated = frag_queries
-					
-					frag_node_mask_embed_list.append(frag_updated)
-				
-				# Concatenate results
-				frag_node_mask_embed = th.cat(frag_node_mask_embed_list, dim=0)
 			elif self.cc_interstage_type == "mlp":
 				# MLPBlocks fusion (handles residuals internally if use_residuals=True)
 				frag_node_mask_embed = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
@@ -556,12 +501,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 				interaction = self.cc_interstage_bilinear(frag_node_mask_embed, mol_pool_embed)
 				frag_node_mask_embed = frag_node_mask_embed + self.cc_interstage_proj(interaction)
 			elif self.cc_interstage_type == "set_transformer":
-				# Two-stage architecture: SetTransformer + Gated fusion
-				# Stage 1: SetTransformer refines fragment nodes (learns fragment-fragment relationships)
-				frag_refined = self.cc_interstage_transformer(frag_node_mask_embed, batch_idx=frag_batch)
+				# SetTransformer processes all fragment atoms as a set and aggregates automatically
+				# Stage 1: Apply SetTransformer to fragment atoms
+				#          - frag_atom_embeds: (num_frag_atoms, hidden_dim)
+				#          - frag_atom_frag_idxs: (num_frag_atoms,) - which fragment each atom belongs to
+				#          - returns: (num_fragments, hidden_dim) - aggregated per fragment
+				frag_node_mask_embed = self.cc_interstage_transformer(frag_atom_embeds, batch_idx=frag_atom_frag_idxs)
+				
 				# Stage 2: Gated fusion combines refined fragments with molecular context
-				gate = self.cc_interstage_gate(th.cat([frag_refined, mol_pool_embed], dim=1))
-				frag_node_mask_embed = gate * frag_refined + (1 - gate) * mol_pool_embed
+				gate = self.cc_interstage_gate(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
+				frag_node_mask_embed = gate * frag_node_mask_embed + (1 - gate) * mol_pool_embed
 			else:
 				assert self.cc_interstage_type == "direct", self.cc_interstage_type
 				frag_node_mask_embed = frag_node_mask_embed
