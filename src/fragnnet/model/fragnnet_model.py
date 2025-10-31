@@ -177,17 +177,23 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			self.cc_interstage_bilinear = nn.Bilinear(mol_hidden_size, mol_hidden_size, mol_hidden_size)
 			self.cc_interstage_proj = nn.Linear(mol_hidden_size, mol_hidden_size)
 		elif self.cc_interstage_type == "set_transformer":
-			# SetTransformer: process each molecule's fragment nodes as a set with molecular context
-			# Reduced parameters: num_heads=2 (was 4), num_inds=8 (was 16), num_blocks=1 (was 2)
+			# SetTransformer + Gated fusion: Two-stage architecture
+			# Stage 1: SetTransformer refines fragment nodes based on their relationships
+			# Stage 2: Gate controls fusion with molecular context
 			self.cc_interstage_transformer = SetTransformer(
-				input_dim=mol_hidden_size * 2,  # concat of frag_node + mol_pool
-				hidden_dim=mol_hidden_size * 2,
+				input_dim=mol_hidden_size,      # Process fragment nodes only
+				hidden_dim=mol_hidden_size,
 				output_dim=mol_hidden_size,
 				num_heads=2,  # Reduced from 4 to 2
-				num_inds=8,   # Reduced from 16 to 8 (fewer inducing points)
-				num_blocks=1, # Reduced from 2 to 1 (single attention block)
+				num_inds=16,   # Reduced from 16 
+				num_blocks=2,  # Reduced from 2 to 1 (single attention block)
 				dropout=0.1,
 				return_nodes=True  # Return per-node outputs, not per-set aggregation
+			)
+			# Gated fusion to combine refined fragments with molecular context
+			self.cc_interstage_gate = nn.Sequential(
+				nn.Linear(mol_hidden_size * 2, mol_hidden_size),
+				nn.Sigmoid()
 			)
 
 		frag_kwargs = {
@@ -475,11 +481,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 				interaction = self.cc_interstage_bilinear(frag_node_mask_embed, mol_pool_embed)
 				frag_node_mask_embed = frag_node_mask_embed + self.cc_interstage_proj(interaction)
 			elif self.cc_interstage_type == "set_transformer":
-				# SetTransformer: process fragment nodes per molecule as a set
-				# Concatenate fragment node embedding with molecule-level context
-				frag_node_input = th.cat([frag_node_mask_embed, mol_pool_embed], dim=1)
-				# Use SetTransformer with batch_idx to handle variable-sized sets
-				frag_node_mask_embed = self.cc_interstage_transformer(frag_node_input, batch_idx=frag_batch)
+				# Two-stage architecture: SetTransformer + Gated fusion
+				# Stage 1: SetTransformer refines fragment nodes (learns fragment-fragment relationships)
+				frag_refined = self.cc_interstage_transformer(frag_node_mask_embed, batch_idx=frag_batch)
+				# Stage 2: Gated fusion combines refined fragments with molecular context
+				gate = self.cc_interstage_gate(th.cat([frag_refined, mol_pool_embed], dim=1))
+				frag_node_mask_embed = gate * frag_refined + (1 - gate) * mol_pool_embed
 			else:
 				assert self.cc_interstage_type == "direct", self.cc_interstage_type
 				frag_node_mask_embed = frag_node_mask_embed
