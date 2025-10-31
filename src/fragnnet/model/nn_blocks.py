@@ -872,6 +872,20 @@ def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
 	return offset_rev_prediction
 
 
+class Set2SetPooling(nn.Module):
+	"""Wrapper for Set2Set that handles batch argument correctly."""
+	def __init__(self, node_dim: int, processing_steps: int = 3):
+		super().__init__()
+		self.set2set = pyg.nn.Set2Set(node_dim, processing_steps=processing_steps)
+		self.linear = nn.Linear(2 * node_dim, node_dim)
+	
+	def forward(self, x, batch):
+		"""Forward pass that accepts batch argument like other PyG aggregations."""
+		x = self.set2set(x, batch)
+		x = self.linear(x)
+		return x
+
+
 def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
 	"""medthos build pooling layer for given pool_type and dim
 		node dim is required for attention layer. 
@@ -900,10 +914,7 @@ def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
 		)
 	elif pool_type == "set2set":
 		"With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets) https://arxiv.org/abs/1511.06391"
-		pool_module = nn.Sequential(
-			pyg.nn.Set2Set(node_dim,processing_steps=num_step_set2set),
-			nn.Linear(2 * node_dim, node_dim),
-		)
+		pool_module = Set2SetPooling(node_dim, processing_steps=num_step_set2set)
 	elif pool_type == "softmax":
 		pool_module = pyg.nn.SoftmaxAggregation(learn=True)
 	elif pool_type == "powermean":
