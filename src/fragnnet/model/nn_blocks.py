@@ -887,15 +887,16 @@ class Set2SetPooling(nn.Module):
 
 
 def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
-	"""medthos build pooling layer for given pool_type and dim
+	"""Method to build pooling layer for given pool_type and dim
 		node dim is required for attention layer. 
-		if pool type is not one of 'sum','mean','max','attention', return ZerosAggregation
+		if pool type is not one of 'sum','mean','max','attention','set2set','set_transformer', return ZerosAggregation
 	Args:
-		pool_type (str): pooling type in ['sum','mean','max','attention']
-		node_dim (int): node_dim, used for attention
+		pool_type (str): pooling type in ['sum','mean','max','attention','set2set','set_transformer','softmax','powermean','none']
+		node_dim (int): node_dim, used for attention and set_transformer
+		num_step_set2set (int): number of processing steps for set2set pooling
 
 	Returns:
-		_type_: _description_
+		nn.Module: pooling module
 	"""
 
 	if pool_type == "sum":
@@ -915,6 +916,18 @@ def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
 	elif pool_type == "set2set":
 		"With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets) https://arxiv.org/abs/1511.06391"
 		pool_module = Set2SetPooling(node_dim, processing_steps=num_step_set2set)
+	elif pool_type == "set_transformer":
+		"With SetTransformer for graph level prediction https://arxiv.org/abs/1810.00825"
+		pool_module = SetTransformer(
+			input_dim=node_dim,
+			hidden_dim=node_dim,
+			output_dim=node_dim,
+			num_heads=4,
+			num_inds=16,  # 16 inducing points for pooling
+			num_blocks=1,  # Single attention block for pooling
+			dropout=0.1,
+			return_nodes=False  # Return set-level output for pooling
+		)
 	elif pool_type == "softmax":
 		pool_module = pyg.nn.SoftmaxAggregation(learn=True)
 	elif pool_type == "powermean":
