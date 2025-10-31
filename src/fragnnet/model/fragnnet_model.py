@@ -142,7 +142,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		self._compute_frag_feats_sizes()
 
 		# define interstage
-		assert cc_interstage_type in ["add","sub","linear","direct","gated","attention","mlp","bilinear","set_transformer"]
+		assert cc_interstage_type in ["add","sub","linear","direct","gated","attention","mlp","bilinear","set_transformer","cross_attention"]
 		self.cc_interstage_type = cc_interstage_type
 		if self.cc_interstage_type == "linear":
 			self.cc_interstage = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
@@ -158,6 +158,15 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			self.cc_interstage_attn = nn.MultiheadAttention(
 				embed_dim=mol_hidden_size,
 				num_heads=4,  # Reduced from 4 to 2
+				dropout=0.1,
+				batch_first=True
+			)
+		elif self.cc_interstage_type == "cross_attention":
+			# True cross-attention: fragments (queries) attend to atoms (keys/values)
+			# More expressive than "attention" mode which only uses pooled molecule embedding
+			self.cc_interstage_cross_attn = nn.MultiheadAttention(
+				embed_dim=mol_hidden_size,
+				num_heads=4,
 				dropout=0.1,
 				batch_first=True
 			)
@@ -473,6 +482,72 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 				attn_out, _ = self.cc_interstage_attn(query, key_value, key_value)
 				attn_out = attn_out.squeeze(1)  # (num_nodes, dim)
 				frag_node_mask_embed = frag_node_mask_embed + attn_out  # Residual connection
+			elif self.cc_interstage_type == "cross_attention":
+				# True cross-attention: fragments attend to "rest" atoms (not in the fragment)
+				# More expressive than "attention" mode - can focus on specific context atoms
+				
+				# Process each molecule separately (different number of fragments and atoms)
+				frag_node_mask_embed_list = []
+				
+				# Get offset to convert local fragment atom indices to global atom indices
+				mol_num_nodes_cumsum = th.cat([th.tensor([0], device=device), mol_num_nodes.cumsum(0)[:-1]])
+				
+				for mol_idx in range(batch_size):
+					# Get fragments for this molecule
+					frag_mask = frag_batch == mol_idx
+					frag_queries = frag_node_mask_embed[frag_mask]  # (num_frags_in_mol, dim)
+					frag_indices = th.where(frag_mask)[0]  # Global fragment indices
+					
+					# Get all atoms for this molecule
+					mol_mask = mol_batch == mol_idx
+					mol_atom_indices = th.where(mol_mask)[0]  # Global atom indices in mol_embed_gnn
+					
+					# For each fragment, get atoms that are NOT in the fragment
+					if frag_queries.shape[0] > 0 and mol_atom_indices.shape[0] > 0:
+						# Get atom offset for this molecule
+						atom_offset = mol_num_nodes_cumsum[mol_idx]
+						
+						frag_updated_list = []
+						for frag_local_idx, frag_global_idx in enumerate(frag_indices):
+							# Get atoms in this fragment
+							frag_atoms_mask = frag_node_mask_idxs[:,0] == frag_global_idx
+							frag_atom_global_indices = frag_node_mask_idxs[frag_atoms_mask, 1]  # Global atom indices
+							
+							# Get "rest" atoms: all mol atoms except fragment atoms
+							# Convert global atom indices to local (within molecule) indices for comparison
+							rest_mask = th.ones(mol_atom_indices.shape[0], dtype=th.bool, device=device)
+							for frag_atom_idx in frag_atom_global_indices:
+								# Find position of this atom in mol_atom_indices
+								local_pos = (mol_atom_indices == frag_atom_idx).nonzero(as_tuple=True)[0]
+								if local_pos.shape[0] > 0:
+									rest_mask[local_pos[0]] = False
+							
+							rest_atom_indices = mol_atom_indices[rest_mask]
+							
+							# Cross-attention: fragment attends to "rest" atoms
+							if rest_atom_indices.shape[0] > 0:
+								frag_q = frag_queries[frag_local_idx:frag_local_idx+1].unsqueeze(0)  # (1, 1, dim)
+								rest_kv = mol_embed_gnn[rest_atom_indices].unsqueeze(0)  # (1, num_rest_atoms, dim)
+								
+								attn_out, _ = self.cc_interstage_cross_attn(frag_q, rest_kv, rest_kv)
+								attn_out = attn_out.squeeze(0).squeeze(0)  # (dim,)
+								
+								# Residual connection
+								frag_updated = frag_queries[frag_local_idx] + attn_out
+							else:
+								# No rest atoms (fragment = whole molecule), keep as is
+								frag_updated = frag_queries[frag_local_idx]
+							
+							frag_updated_list.append(frag_updated)
+						
+						frag_updated = th.stack(frag_updated_list, dim=0)
+					else:
+						frag_updated = frag_queries
+					
+					frag_node_mask_embed_list.append(frag_updated)
+				
+				# Concatenate results
+				frag_node_mask_embed = th.cat(frag_node_mask_embed_list, dim=0)
 			elif self.cc_interstage_type == "mlp":
 				# MLPBlocks fusion (handles residuals internally if use_residuals=True)
 				frag_node_mask_embed = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
