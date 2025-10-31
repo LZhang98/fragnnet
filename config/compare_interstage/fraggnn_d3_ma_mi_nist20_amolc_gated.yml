@@ -64,7 +64,7 @@ ce_insert_size: 32
 prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
-inst_insert_size: 32s
+inst_insert_size: 32
 cc_interstage_type: gated
 
 mol_params:
