@@ -743,20 +743,33 @@ class SetTransformer(nn.Module):
 		num_inds=32,
 		num_blocks=2,
 		dropout=0.1,
+		return_nodes=False,  # If True, return per-node outputs; if False, return per-set outputs
 	):
 		super(SetTransformer, self).__init__()
 
+		self.return_nodes = return_nodes
 		self.inducing_points = nn.Parameter(th.randn(num_inds, input_dim))
 		self.attention_blocks = nn.ModuleList([
-			nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout)
+			nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
 			for _ in range(num_blocks)
 		])
-		self.fc = nn.Sequential(
-			nn.Linear(input_dim, hidden_dim),
-			nn.ReLU(),
-			nn.Dropout(dropout),
-			nn.Linear(hidden_dim, output_dim)
-		)
+		
+		# Decoder: maps inducing points back to nodes (only used if return_nodes=True)
+		if return_nodes:
+			self.decoder_attn = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+			self.decoder_fc = nn.Sequential(
+				nn.Linear(input_dim, hidden_dim),
+				nn.ReLU(),
+				nn.Dropout(dropout),
+				nn.Linear(hidden_dim, output_dim)
+			)
+		else:
+			self.fc = nn.Sequential(
+				nn.Linear(input_dim, hidden_dim),
+				nn.ReLU(),
+				nn.Dropout(dropout),
+				nn.Linear(hidden_dim, output_dim)
+			)
 
 	def forward(self, x, batch_idx=None):
 		"""
@@ -776,14 +789,26 @@ class SetTransformer(nn.Module):
 		"""
 		if batch_idx is None:
 			# Fixed-size sets: (batch_size, set_size, input_dim)
-			batch_size, _ , _ = x.size()
-			inducing_points = self.inducing_points.unsqueeze(0).expand(batch_size, -1, -1)
+			batch_size, set_size, _ = x.size()
+			inducing_points = self.inducing_points.unsqueeze(0).expand(batch_size, -1, -1)  # (B, num_inds, input_dim)
 
-			for attention in self.attention_blocks:
-				x, _ = attention(x, inducing_points, inducing_points)
-
-			x = x.mean(dim=1)  # Aggregate over the set dimension
-			return self.fc(x)
+			# SetTransformer architecture:
+			# 1. Encoder: inputs attend to inducing points
+			h, _ = self.attention_blocks[0](inducing_points, x, x)  # (B, num_inds, input_dim)
+			
+			# 2. Additional layers: inducing points attend to themselves
+			for i in range(1, len(self.attention_blocks)):
+				h, _ = self.attention_blocks[i](h, h, h)
+			
+			if self.return_nodes:
+				# 3. Decoder: map inducing points back to per-node outputs
+				x_decoded, _ = self.decoder_attn(x, h, h)  # (B, set_size, input_dim)
+				x_out = self.decoder_fc(x_decoded)  # (B, set_size, output_dim)
+				return x_out
+			else:
+				# 3. Aggregate: mean over inducing points for set-level output
+				x = h.mean(dim=1)  # (B, input_dim)
+				return self.fc(x)
 		else:
 			# Variable-size sets: (total_elements, input_dim) with batch_idx
 			num_batches = int(batch_idx.max().item()) + 1
@@ -794,19 +819,34 @@ class SetTransformer(nn.Module):
 				mask = (batch_idx == batch_id)
 				x_batch = x[mask].unsqueeze(0)  # (1, set_size_i, input_dim)
 				
-				# Apply attention with inducing points
+				# Apply SetTransformer: first attend from inputs to inducing points
 				inducing_points = self.inducing_points.unsqueeze(0)  # (1, num_inds, input_dim)
-				x_batch_out = x_batch
-				for attention in self.attention_blocks:
-					x_batch_out, _ = attention(x_batch_out, inducing_points, inducing_points)
 				
-				# Aggregate over set dimension
-				x_agg = x_batch_out.mean(dim=1)  # (1, input_dim)
-				output_list.append(x_agg)
+				# Encoder: inputs attend to inducing points (queries=inducing_points, keys/values=inputs)
+				h, _ = self.attention_blocks[0](inducing_points, x_batch, x_batch)  # (1, num_inds, input_dim)
+				
+				# Additional encoding layers: inducing points attend to themselves
+				for i in range(1, len(self.attention_blocks)):
+					h, _ = self.attention_blocks[i](h, h, h)
+				
+				if self.return_nodes:
+					# Decoder: map inducing points back to per-node outputs
+					# queries=original inputs, keys/values=encoded inducing points
+					x_decoded, _ = self.decoder_attn(x_batch, h, h)  # (1, set_size_i, input_dim)
+					x_out = self.decoder_fc(x_decoded.squeeze(0))  # (set_size_i, output_dim)
+					output_list.append(x_out)
+				else:
+					# Aggregate: take mean of inducing points for set-level output
+					x_agg = h.mean(dim=1)  # (1, input_dim)
+					output_list.append(x_agg.squeeze(0))
 			
 			# Stack all batch outputs
-			x = th.cat(output_list, dim=0)  # (num_batches, input_dim)
-			return self.fc(x)
+			if self.return_nodes:
+				x = th.cat(output_list, dim=0)  # (total_elements, output_dim)
+			else:
+				x = th.stack(output_list, dim=0)  # (num_batches, input_dim)
+				x = self.fc(x)
+			return x
 
 def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
 	# adapted from NEIMS

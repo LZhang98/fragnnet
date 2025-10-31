@@ -154,12 +154,20 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			)
 		elif self.cc_interstage_type == "attention":
 			# Multi-head attention fusion: fragment attends to molecule context
-			self.cc_interstage_attn = nn.MultiheadAttention(
+			# Use 2 layers for richer interaction modeling (consistent with set_transformer)
+			self.cc_interstage_attn1 = nn.MultiheadAttention(
 				embed_dim=mol_hidden_size,
 				num_heads=4,
 				dropout=0.1,
 				batch_first=True
 			)
+			self.cc_interstage_attn2 = nn.MultiheadAttention(
+				embed_dim=mol_hidden_size,
+				num_heads=4,
+				dropout=0.1,
+				batch_first=True
+			)
+			self.cc_interstage_norm = nn.LayerNorm(mol_hidden_size)
 			self.cc_interstage_proj = nn.Linear(mol_hidden_size, mol_hidden_size)
 		elif self.cc_interstage_type == "mlp":
 			# Deep fusion with residual
@@ -180,9 +188,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 				hidden_dim=mol_hidden_size * 2,
 				output_dim=mol_hidden_size,
 				num_heads=4,
-				num_inds=16,  # inducing points for attention
+				num_inds=32,  # inducing points for attention
 				num_blocks=2,
-				dropout=0.1
+				dropout=0.1,
+				return_nodes=True  # Return per-node outputs, not per-set aggregation
 			)
 
 		frag_kwargs = {
@@ -455,13 +464,21 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 				frag_node_mask_embed = gate * frag_node_mask_embed + (1 - gate) * mol_pool_embed
 			elif self.cc_interstage_type == "attention":
 				# Multi-head attention: fragment (query) attends to molecule (key/value)
-				# Reshape to (batch, seq_len, embed_dim) format for MultiheadAttention
-				# Each fragment node attends to its molecule context
+				# Two-layer attention for richer interaction modeling
 				query = frag_node_mask_embed.unsqueeze(1)  # (num_nodes, 1, dim)
 				key_value = mol_pool_embed.unsqueeze(1)    # (num_nodes, 1, dim)
-				attn_out, _ = self.cc_interstage_attn(query, key_value, key_value)
-				attn_out = attn_out.squeeze(1)  # (num_nodes, dim)
-				frag_node_mask_embed = frag_node_mask_embed + self.cc_interstage_proj(attn_out)
+				
+				# Layer 1: Initial attention to molecule context
+				attn_out1, _ = self.cc_interstage_attn1(query, key_value, key_value)
+				attn_out1 = attn_out1.squeeze(1)  # (num_nodes, dim)
+				h = frag_node_mask_embed + attn_out1  # Residual connection
+				h = self.cc_interstage_norm(h)  # Layer normalization
+				
+				# Layer 2: Refine with second attention pass
+				query2 = h.unsqueeze(1)
+				attn_out2, _ = self.cc_interstage_attn2(query2, key_value, key_value)
+				attn_out2 = attn_out2.squeeze(1)
+				frag_node_mask_embed = h + self.cc_interstage_proj(attn_out2)  # Residual + projection
 			elif self.cc_interstage_type == "mlp":
 				# Deep MLP fusion with residual
 				fused = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
