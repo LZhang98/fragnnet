@@ -136,11 +136,11 @@ mol_num_layers: 4  # Number of GNN layers for molecular encoding
 mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GCN", "GAT", "PNA"]
 mol_dropout: 0.0  # Dropout rate for molecular GNN
 mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
-mol_pool_type: none  # Pooling method: ["global_mean_pool", "global_add_pool", "global_max_pool", "set2set", "none"]
+mol_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "set2set", "set_transformer", "softmax", "powermean", "none"]
 # ============================================================================
 # Inter-stage Configuration (Mol → Frag connection)
 # ============================================================================
-cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct"]
+cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct", "gated", "attention", "mlp", "bilinear", "set_transformer"]
 
 # ============================================================================
 # Fragment GNN Configuration
@@ -150,7 +150,7 @@ frag_num_layers: 4  # Number of GNN layers for fragment encoding
 frag_gnn_type: GINE  # GNN architecture for fragments: ["GIN", "GINE", "GCN", "GAT", "PNA"]
 frag_dropout: 0.0  # Dropout rate for fragment GNN
 frag_normalization: batch  # Normalization: ["batch", "layer", "none"]
-frag_pool_type: none  # Pooling method for fragments
+frag_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "set2set", "set_transformer", "softmax", "powermean", "none"]
 frag_embed_combine: cat  # How to combine fragment embeddings: ["add", "cat"]
 frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "cat"]
 

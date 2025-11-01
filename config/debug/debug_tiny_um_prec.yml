@@ -99,4 +99,5 @@ pl_enable_progress_bar: True
 compile: False
 num_workers: 0
 detect_anomaly: True
-cc_interstage_type: set_transformer #set_transformers, attention, mlp, gated
+cc_interstage_type: gated #cross_attention, set_transformers, attention, mlp, gated, dual_set_transformer
+# mol_pool_type: none # attention
