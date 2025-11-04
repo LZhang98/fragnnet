@@ -100,4 +100,5 @@ compile: False
 num_workers: 0
 detect_anomaly: True
 cc_interstage_type: gated #cross_attention, set_transformers, attention, mlp, gated, dual_set_transformer
-# mol_pool_type: none # attention
+cc_interstage_use_rest: True
+mol_pool_type: mean_max_sum

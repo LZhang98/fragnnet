@@ -929,11 +929,9 @@ def build_pool_module(pool_type: str, node_dim: int):
 		pool_module = aggr.PowerMeanAggregation(learn=True)
 	elif pool_type == "mean_max_sum":
 		# raise NotImplementedError
-		# TODO: this need hook up in the way that size of input need change respect this
 		pool_module = aggr.MultiAggregation(['mean', 'max', 'sum'])
 	elif pool_type == "mean_std_softmax":
 		#raise NotImplementedError
-		# TODO: this need hook up in the way that size of input need change respect this
 		pool_module = aggr.MultiAggregation(['mean', 'std', aggr.SoftmaxAggregation(learn=True)])
 	else:
 		assert pool_type == "none", pool_type
