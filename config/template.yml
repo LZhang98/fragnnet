@@ -141,6 +141,7 @@ mol_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "set2
 # Inter-stage Configuration (Mol → Frag connection)
 # ============================================================================
 cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct", "gated", "attention", "mlp", "bilinear", "set_transformer"]
+cc_interstage_use_rest: False  # Whether to use rest of molecule embedding
 
 # ============================================================================
 # Fragment GNN Configuration

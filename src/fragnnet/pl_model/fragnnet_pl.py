@@ -48,6 +48,7 @@ class FraGNNetPL(SpectrumPL):
 			mlp_num_layers=self.hparams.mlp_num_layers,
 			mlp_use_residuals=self.hparams.mlp_use_residuals,
 			cc_interstage_type=self.hparams.cc_interstage_type,
+			cc_interstage_use_rest=self.hparams.cc_interstage_use_rest,
 			nb_iso=self.hparams.nb_iso,
 			skip_edge_loss=self.hparams.skip_edge_loss,
 			mask_null_formula=self.hparams.mask_null_formula,

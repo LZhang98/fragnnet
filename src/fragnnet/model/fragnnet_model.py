@@ -54,6 +54,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		mlp_num_layers: int,
 		mlp_use_residuals: bool,
 		cc_interstage_type: str,
+		cc_interstage_use_rest: bool,
 		nb_iso: bool,
 		skip_edge_loss: bool,
 		mask_null_formula: bool,
@@ -241,10 +242,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		self.mz_bin_res = mz_bin_res
 		self.mz_max = mz_max
 		self.output_formula_str = output_formula_str
+		self.cc_interstage_use_rest = cc_interstage_use_rest
 
 		if self.bin_output:
 			self.mz_bins = th.arange(mz_bin_res,mz_max+mz_bin_res,mz_bin_res)
-
+   
 		# this is required
 		assert "h_formulae_idx" in self.frag_node_feats
 
@@ -324,12 +326,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		frag_formula_sizes: th.Tensor,
 		frag_formula_cumsizes: th.Tensor,
 		frag_formula_peak_sizes: th.Tensor,
-		frag_formula_str: np.ndarray = None,
-		spec_ce: th.Tensor = None,
-		spec_ce_batch_idxs: th.Tensor = None,
-		spec_prec_type: th.Tensor = None,
-		spec_inst_type: th.Tensor = None,
-		spec_prec_type_str: np.ndarray = None,
+		frag_formula_str: np.ndarray | None = None,
+		spec_ce: th.Tensor | None = None,
+		spec_ce_batch_idxs: th.Tensor | None = None,
+		spec_prec_type: th.Tensor | None = None,
+		spec_inst_type: th.Tensor | None = None,
+		spec_prec_type_str: np.ndarray | None = None,
 		**kwargs
 	):
 		"""forward methods for joint predictor
@@ -397,6 +399,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			mol_edge_index,
 			mol_edge_attr
 		)
+  
+		# pool mol embeddings
 		mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn,mol_batch)
 
 		# process dag
@@ -406,9 +410,25 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		if "cc" in self.frag_node_feats:
 			frag_node_mask = th_long_to_mask(get_node_feats(frag_x,frag_node_feat_idxs,"cc").to(device))
 			frag_node_mask_idxs = th.nonzero(frag_node_mask).long()
+			# Compute offset to convert local atom indices to global batch indices
 			frag_node_offsets = mol_num_nodes[th.bucketize(frag_node_mask_idxs[:,0],frag_num_nodes,right=True)-1]
 			frag_node_mask_idxs[:,1] = frag_node_mask_idxs[:,1] + frag_node_offsets
+			
+			# Validate frag_node_mask_idxs are within bounds
+			valid_frag_mask = frag_node_mask_idxs[:,1] < mol_embed_gnn.shape[0]
+			if not th.all(valid_frag_mask):
+				print(f"Warning: Filtered {(~valid_frag_mask).sum()} invalid frag node indices out of {len(frag_node_mask_idxs)}")
+				frag_node_mask_idxs = frag_node_mask_idxs[valid_frag_mask]
 
+			# compute rest node idxs
+			rest_node_mask_idx = th.nonzero(~frag_node_mask).long()
+			rest_node_offsets = mol_num_nodes[th.bucketize(rest_node_mask_idx[:,0],frag_num_nodes,right=True)-1]
+			rest_node_mask_idx[:,1] = rest_node_mask_idx[:,1] + rest_node_offsets
+			
+			# Validate rest_node_mask_idx are within bounds (after adding offsets)
+			valid_rest_mask = rest_node_mask_idx[:,1] < mol_embed_gnn.shape[0]
+			rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
+			
 			# aggregate (sum) atom embeddings per fragment
 			frag_node_mask_embed = scatter_reduce(
 				src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
@@ -417,6 +437,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 				dim_size=batch_frag_num_nodes
 			)
 
+			# aggregate (sum) atom embeddings per fragment
+			rest_node_mask_embed = scatter_reduce(
+				src=mol_embed_gnn[rest_node_mask_idx[:,1]],
+				index=rest_node_mask_idx[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
+				reduce="sum",
+				dim_size=batch_frag_num_nodes
+			)
+   
 			# frag_node_mask_embed can be one of following:
 			# 1. add/sub: Simple arithmetic operations
 			# 2. linear: Linear projection of concatenation
@@ -425,8 +453,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			# 5. bilinear: Bilinear interaction
 			# 6. direct: No fusion, use fragment embedding only
 			
-			mol_pool_embed = mol_embed_gnn_pool[frag_batch]
-			
+			if self.cc_interstage_use_rest:
+				mol_pool_embed = rest_node_mask_embed #mol_embed_gnn_pool[frag_batch]
+			else:
+				mol_pool_embed = mol_embed_gnn_pool[frag_batch]
+
 			if self.cc_interstage_type == "add":
 				frag_node_mask_embed = frag_node_mask_embed + mol_pool_embed
 			elif self.cc_interstage_type == "sub":
