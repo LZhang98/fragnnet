@@ -128,7 +128,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		# Mol GNN
 		self.mol_embedder = GNN(**mol_kwargs)
 		self.mol_pool_type = mol_pool_type
-		self.mol_pool = build_pool_module(mol_pool_type,mol_hidden_size)
+		self.mol_pool = build_pool_module(mol_pool_type, mol_hidden_size)
+		if mol_pool_type in ["mean_max_sum", "mean_std_softmax"]:
+			mol_pool_out_size = mol_hidden_size * 3
+		else:
+			mol_pool_out_size = mol_hidden_size
+   
 		if int_embedder_tight:
 			formula_d = {"max_count_int": 255}
 			depth_d = {"max_count_int": num_depth+1}
@@ -146,18 +151,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		assert cc_interstage_type in ["add","sub","linear","direct","gated","mlp","bilinear"]
 		self.cc_interstage_type = cc_interstage_type
 		if self.cc_interstage_type == "linear":
-			self.cc_interstage = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
+			self.cc_interstage = nn.Linear(mol_pool_out_size * 2, mol_pool_out_size)
 		elif self.cc_interstage_type == "gated":
 			# Gated fusion: learns to mix frag and mol embeddings
 			self.cc_interstage = nn.Sequential(
-				nn.Linear(mol_hidden_size * 2, mol_hidden_size),
+				nn.Linear(mol_pool_out_size * 2, mol_pool_out_size),
 				nn.Sigmoid()
 			)
 		elif self.cc_interstage_type == "mlp":
 			# Deep fusion using MLPBlocks (more flexible, parameter-efficient with residuals)
 			self.cc_interstage = MLPBlocks(
-				input_size=mol_hidden_size * 2,
-				output_size=mol_hidden_size,
+				input_size=mol_pool_out_size * 2,
+				output_size=mol_pool_out_size,
 				hidden_size=mlp_hidden_size,
 				num_layers=2,
 				dropout=mlp_dropout,
@@ -166,8 +171,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			)
 		elif self.cc_interstage_type == "bilinear":
 			# Bilinear interaction
-			self.cc_interstage_bilinear = nn.Bilinear(mol_hidden_size, mol_hidden_size, mol_hidden_size)
-			self.cc_interstage_proj = nn.Linear(mol_hidden_size, mol_hidden_size)
+			self.cc_interstage_bilinear = nn.Bilinear(mol_pool_out_size, mol_pool_out_size, mol_pool_out_size)
+			self.cc_interstage_proj = nn.Linear(mol_pool_out_size, mol_pool_out_size)
 	
 		frag_kwargs = {
 			"node_feats_size": self.frag_node_feats_size,
@@ -222,8 +227,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		
 		self.predict_oos = predict_oos
 		if self.predict_oos:
+			# Account for pooling output sizes
+			if self.frag_pool_type in ["mean_max_sum", "mean_std_softmax"]:
+				frag_pool_out_size = self.frag_embedder.hidden_size * 3
+			else:
+				frag_pool_out_size = self.frag_embedder.hidden_size
+			
 			oos_mlp_kwargs = {
-				"input_size": self.mol_embedder.hidden_size+self.frag_embedder.hidden_size,
+				"input_size": mol_pool_out_size + frag_pool_out_size,
 				"output_size": 1,
 				"hidden_size": mlp_hidden_size,
 				"num_layers": mlp_num_layers,
@@ -276,10 +287,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		""" method compute frag-graph feature size
 			these features do depend on model parameters
 		"""
+		# Determine the actual output size after pooling
+		if self.mol_pool_type in ["mean_max_sum", "mean_std_softmax"]:
+			mol_pool_out_size = self.mol_embedder.hidden_size * 3
+		else:
+			mol_pool_out_size = self.mol_embedder.hidden_size
+		
 		# nodes
 		self.frag_node_feats_size = 0
 		if "cc" in self.frag_node_feats:
-			self.frag_node_feats_size += self.mol_embedder.hidden_size
+			self.frag_node_feats_size += mol_pool_out_size
 		if "base_formula" in self.frag_node_feats:
 			self.frag_node_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "depth" in self.frag_node_feats:
@@ -287,7 +304,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		# edges
 		self.frag_edge_feats_size = 0
 		if "cc" in self.frag_edge_feats:
-			self.frag_edge_feats_size += self.mol_embedder.hidden_size
+			self.frag_edge_feats_size += mol_pool_out_size
 		if "base_formula" in self.frag_edge_feats:
 			self.frag_edge_feats_size += self.num_elements*self.formula_embedder.num_dim
 		if "complement" in self.frag_edge_feats:
@@ -424,62 +441,74 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			rest_node_mask_idx = th.nonzero(~frag_node_mask).long()
 			rest_node_offsets = mol_num_nodes[th.bucketize(rest_node_mask_idx[:,0],frag_num_nodes,right=True)-1]
 			rest_node_mask_idx[:,1] = rest_node_mask_idx[:,1] + rest_node_offsets
-			
-			# Validate rest_node_mask_idx are within bounds (after adding offsets)
-			valid_rest_mask = rest_node_mask_idx[:,1] < mol_embed_gnn.shape[0]
-			rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
-			
-			# aggregate (sum) atom embeddings per fragment
-			frag_node_mask_embed = scatter_reduce(
-				src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
-				index=frag_node_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
-				reduce="sum",
-				dim_size=batch_frag_num_nodes
-			)
+		
+		# Validate rest_node_mask_idx are within bounds (after adding offsets)
+		valid_rest_mask = rest_node_mask_idx[:,1] < mol_embed_gnn.shape[0]
+		rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
+		
+		# Aggregate atom embeddings per fragment using pooling
+		frag_node_mask_embed = self.mol_pool(
+			mol_embed_gnn[frag_node_mask_idxs[:,1]],
+			frag_node_mask_idxs[:,0]
+		)
+		# # Original scatter_reduce implementation (commented out):
+		# frag_node_mask_embed = scatter_reduce(
+		# 	src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
+		# 	index=frag_node_mask_idxs[:,0],  # 1D index, not 2D!
+		# 	reduce="sum",
+		# 	dim=0,
+		# 	dim_size=batch_frag_num_nodes
+		# )
 
-			# aggregate (sum) atom embeddings per fragment
-			rest_node_mask_embed = scatter_reduce(
-				src=mol_embed_gnn[rest_node_mask_idx[:,1]],
-				index=rest_node_mask_idx[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
-				reduce="sum",
-				dim_size=batch_frag_num_nodes
-			)
-   
-			# frag_node_mask_embed can be one of following:
-			# 1. add/sub: Simple arithmetic operations
-			# 2. linear: Linear projection of concatenation
-			# 3. gated: Learnable gate to mix embeddings
-			# 4. mlp: Deep nonlinear fusion
-			# 5. bilinear: Bilinear interaction
-			# 6. direct: No fusion, use fragment embedding only
-			
-			if self.cc_interstage_use_rest:
-				mol_pool_embed = rest_node_mask_embed #mol_embed_gnn_pool[frag_batch]
-			else:
-				mol_pool_embed = mol_embed_gnn_pool[frag_batch]
+		# Aggregate rest node embeddings per fragment using pooling
+		rest_node_mask_embed = self.mol_pool(
+			mol_embed_gnn[rest_node_mask_idx[:,1]],
+			rest_node_mask_idx[:,0]
+		)
+		# # Original scatter_reduce implementation (commented out):
+		# rest_node_mask_embed = scatter_reduce(
+		# 	src=mol_embed_gnn[rest_node_mask_idx[:,1]],
+		# 	index=rest_node_mask_idx[:,0],  # 1D index, not 2D!
+		# 	reduce="sum",
+		# 	dim=0,
+		# 	dim_size=batch_frag_num_nodes
+		# )
+		
+		# frag_node_mask_embed can be one of following:
+		# 1. add/sub: Simple arithmetic operations
+		# 2. linear: Linear projection of concatenation
+		# 3. gated: Learnable gate to mix embeddings
+		# 4. mlp: Deep nonlinear fusion
+		# 5. bilinear: Bilinear interaction
+		# 6. direct: No fusion, use fragment embedding only
+		
+		if self.cc_interstage_use_rest:
+			mol_pool_embed = rest_node_mask_embed #mol_embed_gnn_pool[frag_batch]
+		else:
+			mol_pool_embed = mol_embed_gnn_pool[frag_batch]
 
-			if self.cc_interstage_type == "add":
-				frag_node_mask_embed = frag_node_mask_embed + mol_pool_embed
-			elif self.cc_interstage_type == "sub":
-				frag_node_mask_embed = frag_node_mask_embed - mol_pool_embed
-			elif self.cc_interstage_type == "linear":
-				frag_node_mask_embed = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
-			elif self.cc_interstage_type == "gated":
-				# Gate controls mixing: g * frag + (1-g) * mol
-				gate = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
-				frag_node_mask_embed = gate * frag_node_mask_embed + (1 - gate) * mol_pool_embed
-			elif self.cc_interstage_type == "mlp":
-				# MLPBlocks fusion (handles residuals internally if use_residuals=True)
-				frag_node_mask_embed = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
-			elif self.cc_interstage_type == "bilinear":
-				# Bilinear interaction: captures pairwise interactions
-				interaction = self.cc_interstage_bilinear(frag_node_mask_embed, mol_pool_embed)
-				frag_node_mask_embed = frag_node_mask_embed + self.cc_interstage_proj(interaction)
-			else:
-				assert self.cc_interstage_type == "direct", self.cc_interstage_type
-				frag_node_mask_embed = frag_node_mask_embed
-			
-			frag_ndata.append(frag_node_mask_embed)
+		if self.cc_interstage_type == "add":
+			frag_node_mask_embed = frag_node_mask_embed + mol_pool_embed
+		elif self.cc_interstage_type == "sub":
+			frag_node_mask_embed = frag_node_mask_embed - mol_pool_embed
+		elif self.cc_interstage_type == "linear":
+			frag_node_mask_embed = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
+		elif self.cc_interstage_type == "gated":
+			# Gate controls mixing: g * frag + (1-g) * mol
+			gate = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
+			frag_node_mask_embed = gate * frag_node_mask_embed + (1 - gate) * mol_pool_embed
+		elif self.cc_interstage_type == "mlp":
+			# MLPBlocks fusion (handles residuals internally if use_residuals=True)
+			frag_node_mask_embed = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
+		elif self.cc_interstage_type == "bilinear":
+			# Bilinear interaction: captures pairwise interactions
+			interaction = self.cc_interstage_bilinear(frag_node_mask_embed, mol_pool_embed)
+			frag_node_mask_embed = frag_node_mask_embed + self.cc_interstage_proj(interaction)
+		else:
+			assert self.cc_interstage_type == "direct", self.cc_interstage_type
+			frag_node_mask_embed = frag_node_mask_embed
+		
+		frag_ndata.append(frag_node_mask_embed)
 		# edge atom embeddings
 		if "cc" in self.frag_edge_feats:
 			# connected competents

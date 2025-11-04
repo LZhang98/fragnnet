@@ -20,6 +20,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg 
+from torch_geometric.nn import aggr
 from fragnnet.utils.nn_utils import get_clones
 from fragnnet.utils.misc_utils import safelog
 class ZerosAggregation(nn.Module):
@@ -34,7 +35,7 @@ class ZerosAggregation(nn.Module):
 	"""
 	def __init__(self):
 		super().__init__()
-		self.dummy_agg = pyg.nn.SumAggregation()
+		self.dummy_agg = aggr.SumAggregation()
 
 	def forward(self, x, batch):
 		"""
@@ -886,36 +887,30 @@ class Set2SetPooling(nn.Module):
 		return x
 
 
-def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
+def build_pool_module(pool_type: str, node_dim: int):
 	"""Method to build pooling layer for given pool_type and dim
 		node dim is required for attention layer. 
-		if pool type is not one of 'sum','mean','max','attention','set2set','set_transformer', return ZerosAggregation
 	Args:
 		pool_type (str): pooling type in ['sum','mean','max','attention','set2set','set_transformer','softmax','powermean','none']
 		node_dim (int): node_dim, used for attention and set_transformer
-		num_step_set2set (int): number of processing steps for set2set pooling
-
 	Returns:
 		nn.Module: pooling module
 	"""
 
 	if pool_type == "sum":
-		pool_module = pyg.nn.SumAggregation()
+		pool_module = aggr.SumAggregation()
 	elif pool_type == "mean":
-		pool_module = pyg.nn.MeanAggregation()
+		pool_module = aggr.MeanAggregation()
 	elif pool_type == "max":
-		pool_module = pyg.nn.MaxAggregation()
+		pool_module = aggr.MaxAggregation()
 	elif pool_type == "attention":
-		pool_module = pyg.nn.AttentionalAggregation(
+		pool_module = aggr.AttentionalAggregation(
 			gate_nn = nn.Sequential(
 				nn.Linear(node_dim, node_dim),
 				nn.ReLU(),
 				nn.Linear(node_dim, 1)
 			)
 		)
-	elif pool_type == "set2set":
-		"With Set2Set for graph level prediction  (Order Matters: Sequence to sequence for sets) https://arxiv.org/abs/1511.06391"
-		pool_module = Set2SetPooling(node_dim, processing_steps=num_step_set2set)
 	elif pool_type == "set_transformer":
 		"With SetTransformer for graph level prediction https://arxiv.org/abs/1810.00825"
 		pool_module = SetTransformer(
@@ -929,13 +924,17 @@ def build_pool_module(pool_type: str, node_dim: int, num_step_set2set:int=3):
 			return_nodes=False  # Return set-level output for pooling
 		)
 	elif pool_type == "softmax":
-		pool_module = pyg.nn.SoftmaxAggregation(learn=True)
+		pool_module = aggr.SoftmaxAggregation(learn=True)
 	elif pool_type == "powermean":
-		pool_module = pyg.nn.PowerMeanAggregation(learn=True)
-	elif pool_type == "mean_std_softmax":
-		raise NotImplementedError
+		pool_module = aggr.PowerMeanAggregation(learn=True)
+	elif pool_type == "mean_max_sum":
+		# raise NotImplementedError
 		# TODO: this need hook up in the way that size of input need change respect this
-		#pool_module = pyg.nn.MultiAggregation(['mean', 'std',  pyg.nn.SoftmaxAggregation(learn=True)])
+		pool_module = aggr.MultiAggregation(['mean', 'max', 'sum'])
+	elif pool_type == "mean_std_softmax":
+		#raise NotImplementedError
+		# TODO: this need hook up in the way that size of input need change respect this
+		pool_module = aggr.MultiAggregation(['mean', 'std', aggr.SoftmaxAggregation(learn=True)])
 	else:
 		assert pool_type == "none", pool_type
 		# just return 0s
