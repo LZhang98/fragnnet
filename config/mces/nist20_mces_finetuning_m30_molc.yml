@@ -39,7 +39,7 @@ mces_fp: data/proc/mces/mces_pairs.pkl
 # ============================================================================
 freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
 mces_pretrain: True # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt_fp: saved_ckpts/mces_nist20_pretrain_m30_molc_6wrmthk2_epoch=4.ckpt
+mces_pretrain_ckpt_fp: saved_ckpts/mces_nist20_pretrain_m30_molc_6wrmthk2_epoch=49.ckpt
 
 subsample_params:
   subsample_size: 100
