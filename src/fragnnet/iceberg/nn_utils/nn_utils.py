@@ -9,9 +9,14 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
-import dgl
-from dgl.backend import pytorch as dgl_F
+from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
 import fragnnet.iceberg.nn_utils.dgl_modules as dgl_mods
+
+# Import dgl_F if available
+if dgl is not None:
+	from dgl.backend import pytorch as dgl_F
+else:
+	dgl_F = None
 
 
 def get_clones(module, N):

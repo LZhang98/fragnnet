@@ -8,8 +8,9 @@ from typing import List
 import json
 import numpy as np
 import torch as th
-import dgl
 from tqdm import tqdm
+
+from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
 
 import fragnnet.iceberg.common as common
 import fragnnet.iceberg.nn_utils as nn_utils

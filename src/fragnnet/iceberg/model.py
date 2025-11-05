@@ -2,11 +2,11 @@ import numpy as np
 import torch as th
 import pytorch_lightning as pl
 import torch.nn as nn
-import dgl
-import dgl.nn as dgl_nn
 import copy
 import torch_scatter as ts
 from pyteomics.mass import Composition
+
+from fragnnet.utils.dgl_compat_utils import dgl, dgl_nn, DGL_AVAILABLE
 
 import fragnnet.iceberg.common as common
 import fragnnet.iceberg.nn_utils as nn_utils

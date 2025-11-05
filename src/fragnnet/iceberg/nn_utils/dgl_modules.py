@@ -9,10 +9,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
-import dgl.function as fn
-
-
-from dgl.nn import expand_as_pair
+from fragnnet.utils.dgl_compat_utils import dgl, dgl_function as fn, expand_as_pair
 
 
 class GatedGraphConv(nn.Module):
