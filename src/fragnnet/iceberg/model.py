@@ -3,7 +3,7 @@ import torch as th
 import pytorch_lightning as pl
 import torch.nn as nn
 import copy
-import torch_scatter as ts
+# Removed: import torch_scatter as ts  # Now using scatter functions from misc_utils instead
 from pyteomics.mass import Composition
 
 from fragnnet.utils.dgl_compat_utils import dgl, dgl_nn, DGL_AVAILABLE
@@ -11,7 +11,7 @@ from fragnnet.utils.dgl_compat_utils import dgl, dgl_nn, DGL_AVAILABLE
 import fragnnet.iceberg.common as common
 import fragnnet.iceberg.nn_utils as nn_utils
 import fragnnet.iceberg.fragmentation as fragmentation
-from fragnnet.utils.misc_utils import scatter_logsoftmax, scatter_logsumexp, scatter_reduce, dedup_peaks, dedup
+from fragnnet.utils.misc_utils import scatter_logsoftmax, scatter_reduce, scatter_softmax, dedup
 from fragnnet.utils.data_utils import composition_to_string
 from fragnnet.iceberg.common.chem_utils import vec_to_formula
 
@@ -582,15 +582,21 @@ class IcebergIntenModel(nn.Module):
 		valid_pos_binned = valid_pos.reshape(batch_size, -1)
 
 		# B x Outs x ( L * mass shifts )
-		pool_weights = ts.scatter_softmax(attn_weights, index=inverse_indices, dim=-1)
+		# Use scatter_softmax from misc_utils instead of torch_scatter
+		# Old: pool_weights = ts.scatter_softmax(attn_weights, index=inverse_indices, dim=-1)
+		pool_weights = scatter_softmax(attn_weights, inverse_indices)
 		weighted_out = pool_weights * output
 
 		# B x Outs x (UNIQUE(L * mass shifts))
-		output_binned = ts.scatter_add(
-			weighted_out,
+		# Use scatter_reduce with "sum" instead of ts.scatter_add
+		# Old: output_binned = ts.scatter_add(weighted_out, index=inverse_indices, dim=-1, dim_size=self.inten_buckets.shape[-1])
+		output_binned = scatter_reduce(
+			src=weighted_out,
 			index=inverse_indices,
+			reduce="sum",
 			dim=-1,
 			dim_size=self.inten_buckets.shape[-1],
+			include_self=False,
 		)
 
 		output = output.reshape(batch_size, max_frags, -1)
@@ -602,12 +608,16 @@ class IcebergIntenModel(nn.Module):
 		)
 
 		# B x Outs x binned
-		valid_pos_binned = ts.scatter_max(
-			(valid_pos_binned).long(),
+		# Use scatter_reduce with "amax" instead of ts.scatter_max
+		# Old: valid_pos_binned = ts.scatter_max((valid_pos_binned).long(), index=inverse_indices, dim_size=self.inten_buckets.shape[-1], dim=-1)[0].bool()
+		valid_pos_binned = scatter_reduce(
+			src=(valid_pos_binned).long(),
 			index=inverse_indices,
-			dim_size=self.inten_buckets.shape[-1],
+			reduce="amax",
 			dim=-1,
-		)[0].bool()
+			dim_size=self.inten_buckets.shape[-1],
+			include_self=False,
+		).bool()
 
 		# Activate each dim with its respective output activation
 		assert len(self.output_activations) == 1

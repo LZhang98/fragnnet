@@ -9,9 +9,9 @@ conda activate FRAGNNET-GPU2
 
 conda install python=3.12
 
-pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121 \
+pip install  \
  torch_geometric==2.6.1 \
- pyg_lib torch_scatter -f https://data.pyg.org/whl/torch-2.4.0+cu121.html \
+ torch_scatter -f https://data.pyg.org/whl/torch-2.6.0+cu121.html \
  rdkit==2022.9.5 \
  pandas==2.2.3 \
  numpy==1.26.4 \
