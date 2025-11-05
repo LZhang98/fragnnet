@@ -912,17 +912,26 @@ def build_pool_module(pool_type: str, node_dim: int):
 			)
 		)
 	elif pool_type == "set_transformer":
-		"With SetTransformer for graph level prediction https://arxiv.org/abs/1810.00825"
-		pool_module = SetTransformer(
-			input_dim=node_dim,
-			hidden_dim=node_dim,
-			output_dim=node_dim,
-			num_heads=4,
-			num_inds=16,  # 16 inducing points for pooling
-			num_blocks=1,  # Single attention block for pooling
-			dropout=0.1,
-			return_nodes=False  # Return set-level output for pooling
-		)
+		# use SetTransformerAggregation from pyg
+		# TODO pass channels, num_seed_points, num_encoder_blocks, num_decoder_blocks, heads, concat, layer_norm, dropout
+		raise NotImplementedError
+		#pool_module = aggr.SetTransformerAggregation(
+		#	channels=node_dim,
+		#	num_seed_points=16,
+		#	num_encoder_blocks=1,
+		#	num_decoder_blocks=1,
+		#	heads=4,
+		#	concat=True,
+		#	layer_norm=False,
+		#	dropout= 0.1
+		#)
+	elif pool_type == "equilibrium":
+		raise NotImplementedError
+		# TODO pass in_channels and out_channels
+		#pool_module = aggr.EquilibriumAggregation(
+		#	in_channels=node_dim,
+		#	out_channels=node_dim
+		#)
 	elif pool_type == "softmax":
 		pool_module = aggr.SoftmaxAggregation(learn=True)
 	elif pool_type == "powermean":
