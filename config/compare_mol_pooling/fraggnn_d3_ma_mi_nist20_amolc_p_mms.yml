@@ -1,4 +1,4 @@
-wandb_name: fraggnn_d3_ma_mi_nist20_amolc_p_s2s
+wandb_name: fraggnn_d3_ma_mi_nist20_amolc_p_mms
 wandb_tags:
 - retrieval
 - nist20
@@ -66,6 +66,7 @@ prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
 cc_interstage_type: gated
+cc_interstage_use_rest: False
 
 mol_params:
   preprocess: True
@@ -89,8 +90,8 @@ gaussian_renormalize: True
 mz_bin_res: 0.01
 mz_max: 1500.0
 sparse_cosine_similarity: True
-mol_pool_type: set2set
-frag_pool_type: set2set
+mol_pool_type: mean_max_sum
+frag_pool_type: none
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
