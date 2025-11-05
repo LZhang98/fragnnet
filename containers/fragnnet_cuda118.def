@@ -3,7 +3,6 @@ From: nvidia/cuda:11.8.0-runtime-ubuntu22.04
 
 %arguments
 
-
 %post
     # Ensure Apptainer home directory is used
     export HOME=/home/$USER
@@ -41,13 +40,13 @@ From: nvidia/cuda:11.8.0-runtime-ubuntu22.04
     . $VENV_DIR/bin/activate
 
     # install python packages
-    $PIP_INSTALL setuptools 
-    $PIP_INSTALL torch==2.1.0 --index-url https://download.pytorch.org/whl/cu118
-    $PIP_INSTALL numpy==1.26.4
-    $PIP_INSTALL rdkit==2023.9.3
-    $PIP_INSTALL torch_geometric==2.4.0 pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0%2Bcu118.html
-    $PIP_INSTALL dgl==2.0.0 -f https://data.dgl.ai/wheels/repo.html
-    $PIP_INSTALL \
+    $PIP_INSTALL setuptools \
+        torch==2.1.0 --index-url https://download.pytorch.org/whl/cu118 \
+        numpy==1.26.4 \
+        rdkit==2023.9.3 \
+        lightning==2.1.2 \
+        torch_geometric==2.4.0 pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.1.0%2Bcu118.html \
+        dgl==2.0.0 -f https://data.dgl.ai/wheels/repo.html \
         cython  \
         cysignals \
         pandas \
@@ -59,7 +58,6 @@ From: nvidia/cuda:11.8.0-runtime-ubuntu22.04
         matplotlib \
         pytest \
         CairoSVG \
-        lightning==2.1.2 \
         omegaconf \
         adjustText \
         scikit-learn \
@@ -67,10 +65,8 @@ From: nvidia/cuda:11.8.0-runtime-ubuntu22.04
         hdf5
 
 %environment
-    # Activate virtual environment upon container execution
-    export VENV_DIR=$HOME/fragnnet_env
-    . $VENV_DIR/bin/activate
-    export PATH=$VENV_DIR/bin:$PATH
+    # Prevent Python from using user site-packages from /home/<user>/.local
+    # export PYTHONNOUSERSITE=1
 
 %runscript
     # Default command to run when the container is executed
