@@ -12,7 +12,7 @@ wandb_tags:
 - nodemlp
 - oos_multiple_1
 - gaussian_renormalize
-- b256
+- b128
 - vectorized_loss
 - lb32
 - preload
