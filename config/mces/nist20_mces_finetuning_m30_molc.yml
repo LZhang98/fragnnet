@@ -39,7 +39,7 @@ mces_fp: data/proc/mces/mces_pairs.pkl
 # ============================================================================
 freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
 mces_pretrain: True # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt_fp: saved_ckpts/mces_nist23_ma_mi_inchikey_m30_molc_zpz5zl0p_epoch=49.ckpt
+mces_pretrain_ckpt_fp: saved_ckpts/mces_nist20_pretrain_m30_molc_6wrmthk2_epoch=4.ckpt
 
 subsample_params:
   subsample_size: 100
@@ -93,8 +93,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 50
+max_epochs: 50
 lr_schedule: False
 debug_overfit: False
 mask_null_formula: False
