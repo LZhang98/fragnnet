@@ -35,6 +35,13 @@ class IcebergGenModel(nn.Module):
 	):
 
 		super().__init__()
+		
+		# Check DGL is available
+		if not DGL_AVAILABLE:
+			raise ImportError(
+				"DGL (Deep Graph Library) is required to use Iceberg models. "
+				"Please install it with: pip install dgl"
+			)
 		self.hidden_size = hidden_size
 		self.root_encode = root_encode
 		self.pe_embed_k = pe_embed_k
@@ -280,6 +287,14 @@ class IcebergIntenModel(nn.Module):
 		**kwargs,
 	):
 		super().__init__()
+		
+		# Check DGL is available
+		if not DGL_AVAILABLE:
+			raise ImportError(
+				"DGL (Deep Graph Library) is required to use Iceberg models. "
+				"Please install it with: pip install dgl"
+			)
+		
 		self.hidden_size = hidden_size
 		self.pe_embed_k = pe_embed_k
 		self.root_encode = root_encode

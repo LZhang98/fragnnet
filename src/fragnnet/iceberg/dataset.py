@@ -37,6 +37,13 @@ class TreeProcessor:
 		sum_ints: bool = True,
 	):
 		""" """
+		# Check DGL is available
+		if not DGL_AVAILABLE:
+			raise ImportError(
+				"DGL (Deep Graph Library) is required to use Iceberg dataset. "
+				"Please install it with: pip install dgl"
+			)
+		
 		self.pe_embed_k = pe_embed_k
 		self.root_encode = root_encode
 		self.binned_targs = binned_targs
