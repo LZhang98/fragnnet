@@ -104,7 +104,7 @@ use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 50000
+dynamic_batch_sampler_max: 25000
 
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
