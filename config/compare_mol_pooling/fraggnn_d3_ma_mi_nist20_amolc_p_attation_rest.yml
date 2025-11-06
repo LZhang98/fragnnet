@@ -12,7 +12,7 @@ wandb_tags:
 - nodemlp
 - oos_multiple_1
 - gaussian_renormalize
-- b128
+- b64x4
 - vectorized_loss
 - lb32
 - preload
@@ -71,9 +71,9 @@ cc_interstage_use_rest: True
 mol_params:
   preprocess: True
 
-train_batch_size: 128
-eval_batch_size: 128
-accumulate_grad_batches: 2
+train_batch_size: 64
+eval_batch_size: 64
+accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
