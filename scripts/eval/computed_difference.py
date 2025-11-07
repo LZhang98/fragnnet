@@ -37,7 +37,8 @@ def get_miss_matched(ground_truth_peaks, predicted_peaks, match_tolerance=1e-5):
 	return unmatched_predicted_peaks, unmatched_groundtruth_peaks
 
 def plot_spectrum_comparison(ground_truth_peaks, predicted_peaks, spec_id, smiles, 
-							  false_pos_mz=None, false_neg_mz=None, save_path=None):
+							  false_pos_mz=None, false_neg_mz=None, inst_type=None, ce=None, 
+							  ce_type=None, prec_type=None, prec_mz=None, save_path=None):
 	"""Plot mirror spectrum comparing ground truth and predictions, highlighting missed peaks.
 	
 	Args:
@@ -47,6 +48,11 @@ def plot_spectrum_comparison(ground_truth_peaks, predicted_peaks, spec_id, smile
 		smiles: SMILES string for title
 		false_pos_mz: m/z value to highlight as false positive (optional)
 		false_neg_mz: m/z value to highlight as false negative (optional)
+		inst_type: Instrument type (optional)
+		ce: Collision energy value (optional)
+		ce_type: Collision energy type - 'ACE', 'NCE', or 'CE' (optional)
+		prec_type: Precursor type (optional)
+		prec_mz: Precursor m/z (optional)
 		save_path: Path to save the figure (optional)
 	"""
 	fig = plt.figure(figsize=(16, 6))
@@ -80,6 +86,25 @@ def plot_spectrum_comparison(ground_truth_peaks, predicted_peaks, spec_id, smile
 				ax_spec.vlines(gt_mzs[false_neg_mask], 0, gt_ints[false_neg_mask], 
 						   colors='red', alpha=0.9, linewidths=3, 
 						   label=f'False Negative: {false_neg_mz:.3f}')
+				
+				# Label the false negative peak with its m/z value
+				for fn_mz, fn_int in zip(gt_mzs[false_neg_mask], gt_ints[false_neg_mask]):
+					ax_spec.text(fn_mz, fn_int + 5, f'{fn_mz:.3f}', 
+							   ha='center', va='bottom', fontsize=9, fontweight='bold',
+							   color='red', rotation=0,
+							   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='red', alpha=0.8))
+		
+		# Label top 5 most intense ground truth peaks with their m/z values
+		top_n_peaks = min(5, len(gt_mzs))
+		if top_n_peaks > 0:
+			top_indices = np.argsort(gt_ints)[-top_n_peaks:]
+			for idx in top_indices:
+				# Skip if this is the highlighted false negative (already labeled)
+				if false_neg_mz is not None and np.abs(gt_mzs[idx] - false_neg_mz) < 0.001:
+					continue
+				ax_spec.text(gt_mzs[idx], gt_ints[idx] + 5, f'{gt_mzs[idx]:.3f}', 
+						   ha='center', va='bottom', fontsize=8, 
+						   color='gray', alpha=0.7, rotation=0)
 	
 	# Plot predictions (negative intensities, blue - mirror effect)
 	if len(predicted_peaks) > 0:
@@ -99,6 +124,25 @@ def plot_spectrum_comparison(ground_truth_peaks, predicted_peaks, spec_id, smile
 				ax_spec.vlines(pred_mzs[false_pos_mask], 0, -pred_ints[false_pos_mask], 
 						   colors='orange', alpha=0.9, linewidths=3,
 						   label=f'False Positive: {false_pos_mz:.3f}')
+				
+				# Label the false positive peak with its m/z value
+				for fp_mz, fp_int in zip(pred_mzs[false_pos_mask], pred_ints[false_pos_mask]):
+					ax_spec.text(fp_mz, -fp_int - 5, f'{fp_mz:.3f}', 
+							   ha='center', va='top', fontsize=9, fontweight='bold',
+							   color='orange', rotation=0,
+							   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='orange', alpha=0.8))
+		
+		# Label top 5 most intense predicted peaks with their m/z values
+		top_n_peaks = min(5, len(pred_mzs))
+		if top_n_peaks > 0:
+			top_indices = np.argsort(pred_ints)[-top_n_peaks:]
+			for idx in top_indices:
+				# Skip if this is the highlighted false positive (already labeled)
+				if false_pos_mz is not None and np.abs(pred_mzs[idx] - false_pos_mz) < 0.001:
+					continue
+				ax_spec.text(pred_mzs[idx], -pred_ints[idx] - 5, f'{pred_mzs[idx]:.3f}', 
+						   ha='center', va='top', fontsize=8, 
+						   color='blue', alpha=0.7, rotation=0)
 	
 	# Add horizontal line at y=0
 	ax_spec.axhline(y=0, color='black', linewidth=0.8, linestyle='-')
@@ -106,9 +150,27 @@ def plot_spectrum_comparison(ground_truth_peaks, predicted_peaks, spec_id, smile
 	# Configure spectrum axis
 	ax_spec.set_xlabel('m/z', fontsize=12)
 	ax_spec.set_ylabel('Relative Intensity (%)', fontsize=12)
-	ax_spec.set_title(f'Mirror Spectrum Comparison\nSpec ID: {spec_id}', fontsize=11, fontweight='bold')
+	
+	# Build title with available metadata
+	title_parts = ['Mirror Spectrum Comparison', f'Spec ID: {spec_id}']
+	metadata_parts = []
+	if inst_type is not None:
+		metadata_parts.append(f'Inst: {inst_type}')
+	if ce is not None:
+		# Display with type label if available (ACE, NCE, or just CE)
+		ce_label = ce_type if ce_type else 'CE'
+		metadata_parts.append(f'{ce_label}: {ce}')
+	if prec_type is not None:
+		metadata_parts.append(f'Prec: {prec_type}')
+	if prec_mz is not None:
+		metadata_parts.append(f'Prec m/z: {prec_mz:.2f}')
+	
+	if metadata_parts:
+		title_parts.append(' | '.join(metadata_parts))
+	
+	ax_spec.set_title('\n'.join(title_parts), fontsize=11, fontweight='bold')
 	ax_spec.set_xlim(0, max_mz + 20)
-	ax_spec.set_ylim(-105, 105)
+	ax_spec.set_ylim(-130, 130)
 	ax_spec.legend(loc='upper right', fontsize=9)
 	ax_spec.grid(True, alpha=0.3, axis='both')
 	
@@ -135,7 +197,7 @@ def plot_spectrum_comparison(ground_truth_peaks, predicted_peaks, spec_id, smile
 				   wrap=True,
 				   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 		ax_mol.set_title('Molecular Structure\n(Rendering Failed)', fontsize=11, fontweight='bold', pad=10)
-		print(f"Warning: Failed to render molecule for spec_id {spec_id}: {e}")
+		print(f"Warning: Failed to render molecule {smiles} for spec_id {spec_id}: {e}")
 	
 	plt.tight_layout()
 	
@@ -189,6 +251,25 @@ def plot_missed_examples(examples_df, pred_df, output_dir, peak_type='false_pos'
 			predicted_peaks = spec_row['pred_peaks']
 			smiles = spec_row.get('smiles', 'N/A')
 			
+			# Get metadata
+			inst_type = spec_row.get('inst_type', None)
+			
+			# Try to get collision energy - check for ACE, NCE, or ce
+			ce = None
+			ce_type = None
+			if 'ace' in spec_row and spec_row['ace'] is not None:
+				ce = spec_row['ace']
+				ce_type = 'ACE'
+			elif 'nce' in spec_row and spec_row['nce'] is not None:
+				ce = spec_row['nce']
+				ce_type = 'NCE'
+			elif 'ce' in spec_row and spec_row['ce'] is not None:
+				ce = spec_row['ce']
+				ce_type = 'CE'
+			
+			prec_type = spec_row.get('prec_type', None)
+			prec_mz = spec_row.get('prec_mz', None)
+			
 			# Determine which m/z to highlight
 			highlight_false_pos = mz_val if peak_type == 'false_pos' else None
 			highlight_false_neg = mz_val if peak_type == 'false_neg' else None
@@ -206,6 +287,11 @@ def plot_missed_examples(examples_df, pred_df, output_dir, peak_type='false_pos'
 				smiles=smiles,
 				false_pos_mz=highlight_false_pos,
 				false_neg_mz=highlight_false_neg,
+				inst_type=inst_type,
+				ce=ce,
+				ce_type=ce_type,
+				prec_type=prec_type,
+				prec_mz=prec_mz,
 				save_path=save_path
 			)
 			
