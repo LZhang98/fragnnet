@@ -332,10 +332,10 @@ if __name__ == "__main__":
 		pred_df.loc[:, "pred_peaks"] = pred_df["pred_peaks"].apply(lambda peaks: peaks[peaks[:, 1] >= intensity_threshold])
 
 	# Round m/z values to 0.001 for pred_peaks
-	print("Rounding m/z values to nearest 0.01 for predicted peaks")
+	print("Rounding m/z values to nearest 0.001 for predicted peaks")
 	pred_df.loc[:, "pred_peaks"] = pred_df["pred_peaks"].apply(lambda peaks: np.column_stack([
-		np.ceil(peaks[:, 0] / 0.01) * 0.01,  # Round up m/z values to nearest 0.01
-		np.ceil(peaks[:, 1] / 0.01) * 0.01,  # Round up intensity values to nearest 0.01
+		np.ceil(peaks[:, 0] / 0.001) * 0.001,  # Round up m/z values to nearest 0.001
+		np.ceil(peaks[:, 1] / 0.001) * 0.001,  # Round up intensity values to nearest 0.001
 	]))
  
 	# Convert peaks column to numpy arrays
