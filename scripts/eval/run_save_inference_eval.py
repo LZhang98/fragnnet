@@ -12,13 +12,17 @@ Usage:
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from fragnnet.runner import load_config, init_dataloader
-from fragnnet.pl_model import FraGNNetPL
-from fragnnet.dataset import SpecMolFragDataset
-from fragnnet.utils.script_utils import run_inference
+from fragnnet.runner import load_config
+from fragnnet.utils.script_utils import (
+	get_ckpt_path,
+	get_config_from_ckpt,
+	setup_device,
+	apply_inference_config,
+	init_model_from_ckpt,
+	run_inference,
+)
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
-from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb, to_device
-from fragnnet.utils.nn_utils import decompile_jit_ckpt
+from fragnnet.utils.misc_utils import booltype, to_device
 import torch as th
 import argparse
 import os
@@ -147,92 +151,46 @@ if __name__ == "__main__":
 
 	args = parser.parse_args()
 	
-	# Model checkpoint loading logic
-	if args.model_ckpt is None:
-		# Download model from Weights & Biases if no local checkpoint provided
-		os.makedirs(args.model_save_dp, exist_ok=True)	
-		model_save_dp = args.model_save_dp
-		print(f">> save model to {model_save_dp} from wandb")
-		print(f">> wandb run id: {args.wandb_run_id}")
-		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = True)
-	else:
-		# Use provided local checkpoint
-		ckpt_fp = args.model_ckpt
+	# Get checkpoint path (download from W&B or use local)
+	ckpt_fp = get_ckpt_path(
+		wandb_run_id=args.wandb_run_id,
+		model_ckpt=args.model_ckpt,
+		model_save_dp=args.model_save_dp,
+		use_cached=True
+	)
   
 	# Extract evaluation parameters
 	eval_split = args.eval_split
 	save_dp = args.save_dp
 	force_overwrite = args.force_overwrite
-	
-	# Determine output subset for results
-	if args.output_everything:
-		output_subset = None  # Include everything
-	else:
-		output_subset = set(args.output_subset)  # Use specified subset
-
 
 	# Load and configure the model configuration
 	template_fp = args.template_fp
 	custom_fp = args.custom_fp
 
-	print(f">>> Loading config {custom_fp}")
 	config_d = load_config(template_fp, custom_fp)
-	
-	# Modify config to record relevant metrics and optimize for evaluation
-	config_d["auxiliary_scores"] = args.auxiliary_scores  # Set evaluation metrics
-	config_d["skip_extra_losses"] = args.skip_extra_losses
-	config_d["compile"] = False  # Disable compilation for evaluation
-	
-	# Disable preprocessing if requested (speeds up evaluation)
-	if args.disable_preproc:
-		for k in ["spec", "mol", "frag", "magma", "ann"]:
-			key = f"{k}_params"
-			config_d[key]["preprocess"] = False
-			if k in ["frag"]:
-				config_d[key]["preload"] = False
-	
-	# Disable string outputs for efficiency
-	config_d["output_formula_str"] = False
-	config_d["spec_params"]["prec_type_str"] = False
-	config_d["frag_params"]["formula_str"] = False
-	
-	# Disable various samplers for deterministic evaluation
-	config_d["dynamic_batch_sampler"] = False
-	config_d["group_sampler"] = False 
-	config_d["simple_group_sampler"] = False
-	
-	# Set batch sizes from command line arguments
-	config_d["train_batch_size"] = args.train_batch_size
-	config_d["eval_batch_size"] = args.eval_batch_size
+	config_d = apply_inference_config(
+		config_d,
+		auxiliary_scores=args.auxiliary_scores,
+		skip_extra_losses=args.skip_extra_losses,
+		disable_preproc=args.disable_preproc,
+		output_formula_str=False,
+		train_batch_size=args.train_batch_size,
+		eval_batch_size=args.eval_batch_size,
+	)
 
-	# Initialize dataset and dataloader
-	print(">>> Loading dataset")
+	# Initialize dataset, dataloader, and model
+	print(">>> Initializing components...")
 	ds_cls = get_dataset_cls(config_d['model_type'])
-	ds = ds_cls(split=eval_split, **config_d)
-	dl = init_dataloader(ds, config_d)
+	model_cls = get_model_cls(config_d['model_type'])
 	
-	# Initialize model and device
-	model_cls = get_model_cls(config_d['model_type']) #FragGNNPL
-	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-
-	# Load model checkpoint
-	ckpt = th.load(ckpt_fp, map_location="cpu", weights_only=False)
-	
-	# Decompile JIT checkpoint if needed
-	assert not config_d["compile"]
-	ckpt = decompile_jit_ckpt(ckpt)
-	
-	# Initialize and load model state
-	model = model_cls(**config_d)
-	try:
-		model.load_state_dict(ckpt["state_dict"], strict=True)
-	except RuntimeError as e:
-		print(f"> error when loading from checkpoint, will try with strict=False")
-		model.load_state_dict(ckpt["state_dict"], strict=False)
-	
-	# Move model to device and set to evaluation mode
-	model.to(device)
-	model.eval()
+	ds, dl, model, device = init_inference_components(
+		config_d=config_d,
+		eval_split=eval_split,
+		ds_cls=ds_cls,
+		model_cls=model_cls,
+		ckpt_fp=ckpt_fp,
+	)
  
 
 	# Prepare evaluation score types based on configuration

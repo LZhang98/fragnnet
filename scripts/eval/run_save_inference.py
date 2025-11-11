@@ -1,4 +1,3 @@
-from fragnnet.runner import load_config, init_dataloader
 from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.iceberg.pl_model import IcebergIntenPL
@@ -6,8 +5,17 @@ from fragnnet.graff.pl_model import GrAFFPL
 from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
 from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset
 from fragnnet.graff.dataset import SpecMolAnnDataset
+from fragnnet.runner import load_config
+from fragnnet.runner import sinit_dataloader
 from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
-from fragnnet.utils.script_utils import init_wandb_ckpt, run_inference
+from fragnnet.utils.script_utils import (
+    init_wandb_ckpt,
+    run_inference,
+    apply_inference_config,
+    save_inference_results,
+    cleanup_model,
+    prepare_output_subset,
+)
 
 import torch as th
 import argparse
@@ -130,11 +138,13 @@ if __name__ == "__main__":
 	skip_extra_losses = args.skip_extra_losses
 	disable_preproc = args.disable_preproc
 	output_everything = args.output_everything
-	if output_everything:
-		output_subset = None
-	else:
-		output_subset = set(args.output_subset)
 	untransform_spec = args.untransform_spec
+	
+	# Prepare output subset
+	output_subset = prepare_output_subset(
+		output_everything=output_everything,
+		output_subset=set(args.output_subset) if not output_everything else None,
+	)
 
 	# this is necessary to avoid a pytorch compile issue...
 	# TODO: replace this with a proper checkpoint decompilation
@@ -212,27 +222,18 @@ if __name__ == "__main__":
 		for model_type in model_types:
 			print(f">>> Starting model_type {model_type}")
 			custom_fp = model_to_config[split_type][model_type]
-			print(f">>> Loading config {custom_fp}")
+			
+			# Setup configuration
 			config_d = load_config(template_fp, custom_fp)
-			# modify config to record relevant metrics
-			config_d["auxiliary_scores"] = auxiliary_scores
-			config_d["skip_extra_losses"] = skip_extra_losses
-			config_d["compile"] = False
-			if disable_preproc:
-				for k in ["spec", "mol", "frag", "magma", "ann"]:
-					key = f"{k}_params"
-					config_d[key]["preprocess"] = False
-					if k in ["frag"]:
-						config_d[key]["preload"] = False
-			# modify config for formula strings
-			config_d["output_formula_str"] = True
-			if "fraggnn" in model_type:
-				config_d["spec_params"]["prec_type_str"] = True
-				config_d["frag_params"]["formula_str"] = True
-			elif "iceberg" in model_type:
-				config_d["magma_params"]["adduct_form_deltas"] = True
-			elif "graff" in model_type:
-				config_d["ann_params"]["formula_str"] = True
+			config_d = apply_inference_config(
+				config_d,
+				auxiliary_scores=auxiliary_scores,
+				skip_extra_losses=skip_extra_losses,
+				disable_preproc=disable_preproc,
+				output_formula_str=True,
+				model_type=model_type,
+			)
+			
 			print(">>> Loading dataset")
 			ds_cls = model_type_to_ds_cls[model_type]
 			ds = ds_cls(split=eval_split, **config_d)
@@ -249,37 +250,38 @@ if __name__ == "__main__":
 					assert model_type == "precursor", model_type
 					# does not need a checkpoint
 					model = model_cls(**config_d)
-				model.to(device)
-				model.eval()
-				# define output subset
-				if not output_everything:
-					output_subset = output_subset.union(model.metric_names)
-				# run inference
-				vals = run_inference(
-					dl, 
-					model, 
-					device, 
-					eval_split, 
-					batch_cutoff, 
-					config_d["nb_iso"], 
-					output_subset=output_subset, 
-					untransform_spec=untransform_spec
-				)
-				model.cpu()
-				# save vals
-				seed_save_dp = os.path.join(save_dp,split_type,model_type,f"s{seed}")
-				os.makedirs(seed_save_dp,exist_ok=True)
-				seed_vals_fp = os.path.join(seed_save_dp,f"{eval_split}.pkl")
-				if os.path.isfile(seed_vals_fp):
-					print(f"> Info: {seed_vals_fp} exists already")
-					if force_overwrite:
-						print(f"> Warning: overwriting {seed_vals_fp}")
-						th.save(vals, seed_vals_fp)
-				else:
-					th.save(vals, seed_vals_fp)
-				del model
-				del vals
-				gc.collect()
-				if config_d["accelerator"]=="gpu":
-					with th.no_grad():
-						th.cuda.empty_cache()
+			model.to(device)
+			model.eval()
+			
+			# Prepare output subset with model-specific metrics
+			output_subset = prepare_output_subset(
+				output_everything=output_everything,
+				output_subset=set(args.output_subset) if not output_everything else None,
+				model_metric_names=model.metric_names,
+			)
+			
+			# run inference
+			vals = run_inference(
+				dl, 
+				model, 
+				device, 
+				eval_split, 
+				batch_cutoff, 
+				config_d["nb_iso"], 
+				output_subset=output_subset, 
+				untransform_spec=untransform_spec
+			)
+			
+			# Save results
+			save_inference_results(
+				vals=vals,
+				save_dp=save_dp,
+				model_type=model_type,
+				seed=seed,
+				eval_split=eval_split,
+				force_overwrite=force_overwrite,
+				split_type=split_type,
+			)
+			
+			# Cleanup
+			cleanup_model(model, use_gpu=(config_d["accelerator"]=="gpu"))

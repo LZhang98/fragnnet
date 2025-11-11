@@ -984,7 +984,7 @@ class SpectrumPL(pl.LightningModule):
 		self._update_results(batch_results,"test")
 		return mean_loss
 	
-	def inference_with_ground_truth_step(self, batch, split, untransform_spec=False):
+	def inference_with_ground_truth_step(self, batch, split):
 		"""
 		Custom inference step for evaluation outside of Lightning's test/val loop.
 		This will assume that the model is in eval mode, but will not switch modes.
@@ -993,15 +993,13 @@ class SpectrumPL(pl.LightningModule):
 		if self.training:
 			Warning("Model is in training mode")
 		batch_results = self._common_step(batch, split=split, log=False)
-		if untransform_spec:
-			raise NotImplementedError("untransform_spec not implemented")
+
 		return batch_results
 
 	def inference_step(self, batch):
 		"""
 		Custom inference step for evaluation outside of Lightning's test/val loop.
 		This will assume that the model is in eval mode, but will not switch modes.
-		This will assume that the batch contains ground truth spectra.
 		"""
 		if self.training:
 			Warning("Model is in training mode")

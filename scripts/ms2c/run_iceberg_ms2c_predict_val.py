@@ -11,8 +11,12 @@ from fragnnet.utils.misc_utils import booltype
 from fragnnet.utils.data_utils import par_apply, par_apply_series
 from rdkit import Chem
 from tqdm import tqdm
-from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from fragnnet.utils.script_utils import load_model_and_init_config, run_spectra_prediction
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.script_utils import (
+    load_model_and_init_config,
+    run_spectra_prediction,
+    get_ckpt_path,
+)
 from rdkit import RDLogger
 import multiprocessing
 
@@ -112,21 +116,24 @@ if __name__ == "__main__":
 	records_dict = vars(args)
 
 	os.makedirs(args.model_save_dp, exist_ok=True)	
-	if args.iceberg_gen_ckpt_fp is None:
-		model_save_dp = args.model_save_dp
-		print(f">> save model to {args.model_save_dp} from wandb with run id: {args.iceberg_gen_wandb_run_id}")
-		iceberg_gen_ckpt_fp = get_best_ckpt_from_wandb(args.model_save_dp, args.iceberg_gen_wandb_run_id, use_cached = args.use_cached_ckpt)
-	else:
-		iceberg_gen_ckpt_fp = args.iceberg_gen_ckpt_fp
+	
+	# Get iceberg_gen checkpoint path
+	iceberg_gen_ckpt_fp = get_ckpt_path(
+		wandb_run_id=args.iceberg_gen_wandb_run_id,
+		model_ckpt=args.iceberg_gen_ckpt_fp,
+		model_save_dp=args.model_save_dp,
+		use_cached=args.use_cached_ckpt,
+	)
 	print(f"> iceberg_gen_ckpt_fp: {iceberg_gen_ckpt_fp}")
 	records_dict['iceberg_gen_ckpt_fp'] = iceberg_gen_ckpt_fp
  
-	if args.iceberg_inten_ckpt_fp is None:
-		model_save_dp = args.model_save_dp
-		print(f">> save model to {args.model_save_dp} from wandb with run id: {args.iceberg_inten_wandb_run_id}")
-		iceberg_inten_ckpt_fp = get_best_ckpt_from_wandb(args.model_save_dp, args.iceberg_inten_wandb_run_id, use_cached = args.use_cached_ckpt)
-	else:
-		iceberg_inten_ckpt_fp = args.iceberg_inten_ckpt_fp
+	# Get iceberg_inten checkpoint path
+	iceberg_inten_ckpt_fp = get_ckpt_path(
+		wandb_run_id=args.iceberg_inten_wandb_run_id,
+		model_ckpt=args.iceberg_inten_ckpt_fp,
+		model_save_dp=args.model_save_dp,
+		use_cached=args.use_cached_ckpt,
+	)
 	print(f"> iceberg_inten_ckpt_fp: {iceberg_inten_ckpt_fp}")
 	records_dict['iceberg_inten_ckpt_fp'] = iceberg_inten_ckpt_fp
 

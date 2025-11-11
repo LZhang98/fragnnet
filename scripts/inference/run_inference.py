@@ -1,14 +1,18 @@
 import time
-import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from fragnnet.runner import load_config, init_dataloader
-from fragnnet.pl_model import FraGNNetPL
+from fragnnet.runner import init_dataloader
 from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.utils import data_utils, frag_utils
-from fragnnet.utils.script_utils import run_inference
-from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb, to_device
-from fragnnet.utils.nn_utils import decompile_jit_ckpt
+from fragnnet.utils.script_utils import (
+	get_ckpt_path,
+	get_config_from_ckpt,
+	setup_device,
+	apply_inference_config,
+	init_model_from_ckpt,
+	run_inference,
+)
+from fragnnet.utils.misc_utils import booltype
 import torch as th
 import argparse
 import os
@@ -123,59 +127,31 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	
 
-	# Load Model Checkpoint
+	# Load Model Checkpoint and Configuration
 
-	# Download from W&B if local checkpoint not provided
-	if args.model_ckpt is None:
-		os.makedirs(args.model_save_dp, exist_ok=True)	
-		model_save_dp = args.model_save_dp
-		print(f">> Downloading model to {model_save_dp} from W&B")
-		print(f">> W&B run id: {args.wandb_run_id}")
-		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = True)
-	else:
-		ckpt_fp = args.model_ckpt
-		print(f">> Using local checkpoint: {ckpt_fp}")
+	# Get checkpoint path (download from W&B or use local)
+	ckpt_fp = get_ckpt_path(
+		wandb_run_id=args.wandb_run_id,
+		model_ckpt=args.model_ckpt,
+		model_save_dp=args.model_save_dp,
+		use_cached=True,
+	)
   
 	save_dp = args.save_dp
 	template_fp = args.template_fp
 	custom_fp = args.custom_fp
 
-
-	# Load and Modify Configuration
-
-	print(f">>> Loading config from {custom_fp}")
-	config_d = load_config(template_fp, custom_fp)
+	# Load model and config from checkpoint
+	# This extracts config from checkpoint hparams and applies common inference settings
+	print(">>> Loading model and configuration from checkpoint")	
+	config_d = get_config_from_ckpt(
+		ckpt_fp=ckpt_fp,
+		custom_fp=custom_fp,
+		template_fp=template_fp,
+	)
 	
-	# Modify config for inference mode (disable training-specific features)
-	config_d["auxiliary_scores"] = []  # Disable auxiliary score computation for speed
-	config_d["skip_extra_losses"] = args.skip_extra_losses
-	config_d["compile"] = False  # Disable JIT compilation (not needed for inference)
 	
-	# Disable preprocessing to save memory (data already preprocessed)
-	if args.disable_preproc:
-		for k in ["spec", "mol", "frag", "magma", "ann"]:
-			key = f"{k}_params"
-			config_d[key]["preprocess"] = False
-			if k in ["frag"]:
-				config_d[key]["preload"] = False  # Don't preload all fragments into memory
-	
-	# Disable string outputs (save memory)
-	config_d["output_formula_str"] = False
-	config_d["spec_params"]["prec_type_str"] = False
-	config_d["frag_params"]["formula_str"] = False
-	
- 	# Disable samplers (use sequential sampling for inference)
-	config_d["dynamic_batch_sampler"] = False
-	config_d["group_sampler"] = False 
-	config_d["simple_group_sampler"] = False
-	
-	# Override batch size
-	config_d["train_batch_size"] = 1
-	config_d["eval_batch_size"] = args.eval_batch_size
-
-
 	# Load Input Data (molecules and spectra)
-
 	print("> Loading mol_df")
 	mol_df = pd.read_pickle(args.mol_fp)
 	print(f"  num mol: {len(mol_df)}")
@@ -187,8 +163,12 @@ if __name__ == "__main__":
 	print(spec_df.head(5))
 
 
-	# Precompute/Load Fragment Graphs (required for FraGNNet models)
-
+	apply_inference_config(
+		config_d,
+		skip_extra_losses=args.skip_extra_losses,
+		disable_preproc=args.disable_preproc,
+		eval_batch_size=args.eval_batch_size,
+	)
 	# Fragment graphs (DAGs) are computationally expensive to generate
 	# Options: 1) Use pre-computed fragments, 2) Generate in temporary directory
 	temp_frag_dir = None
@@ -242,188 +222,34 @@ if __name__ == "__main__":
 	spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
 	print(f"> Spectra after filtering: {len(spec_df)}")
   
-
-	# Setup Output Directory and Resume from Existing Predictions
-
-	model_save_dp = os.path.join(args.save_dp, args.wandb_run_id)
-	os.makedirs(model_save_dp, exist_ok=True)	
-	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type','pred_mzs','pred_ints','pred_oos']
-
-	pkl_chunk_dp = os.path.join(model_save_dp, "chunks")
-	os.makedirs(pkl_chunk_dp, exist_ok=True)
-
-	# Check for existing chunk files and skip already-processed spectra (resumable inference)
-	num_done = 0
-	for file in os.listdir(pkl_chunk_dp):
-		if file.endswith(".pkl"):
-			chunk_fp = os.path.join(pkl_chunk_dp, file)
-			print(f"Loading existing chunk: {chunk_fp}")
-			existing_df = pd.read_pickle(chunk_fp)
-			existing_spec_ids = set(existing_df['spec_id'])
-			num_done += len(existing_spec_ids)
-			spec_df = spec_df[~spec_df['spec_id'].isin(existing_spec_ids)]
-	print(f">> Spectra to predict: {len(spec_df)} (skipped {num_done} already completed)")
-	current_chunk_idx = num_done // args.save_chunk_size
-	print(f">> Starting from chunk index: {current_chunk_idx}")
-
 	# Set dataframes in config for dataset initialization
 	config_d['mol_fp'] = mol_df
 	config_d['spec_fp'] = spec_df
  
-
 	# Initialize Dataset and DataLoader
-
 	print(">>> Initializing dataset...")
 	ds_cls = SpecMolFragDataset
 	ds = ds_cls(split="predict_only", **config_d)
 	dl = init_dataloader(ds, config_d)
 	print(f">>> Dataset size: {len(ds)} spectra")
-	
 
-	# Load Model and Checkpoint
-
-	model_cls = FraGNNetPL
-	device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
-	print(f">>> Using device: {device}")
-
-	print(">>> Loading checkpoint...")
-	ckpt = th.load(ckpt_fp, map_location="cpu", weights_only=False)
-	
-	# Decompile JIT checkpoint if needed
-	assert not config_d["compile"], "Compilation should be disabled for inference"
-	ckpt = decompile_jit_ckpt(ckpt)
-	
-	# Initialize model and load weights
-	model = model_cls(**config_d)
-	try:
-		model.load_state_dict(ckpt["state_dict"], strict=True)
-		print(">>> Model loaded successfully (strict=True)")
-	except RuntimeError as e:
-		print(f"> Error loading checkpoint with strict=True, retrying with strict=False...")
-		model.load_state_dict(ckpt["state_dict"], strict=False)
-		print(">>> Model loaded with strict=False (some weights may be missing/extra)")
-	
-	model.to(device)
-	model.eval()  # Set to evaluation mode
-
-
-	# Run Inference Loop
-	all_rows = []
-	total_preds = 0
-	pkl_fp = os.path.join(model_save_dp, "chunks", f"chunk_{current_chunk_idx}.pkl")
-	print(f"\n>>> Starting inference on {len(dl)} batches...")
-	print(f">>> Saving predictions every {args.save_interval} spectra")
-	print(f">>> Chunk size: {args.save_chunk_size} spectra per file")
-	print(f">>> Min intensity threshold: {args.min_intensity}\n")
+	device = setup_device(config_d)
+	model = init_model_from_ckpt(ckpt_fp, config_d, device)
+	print(f">>> Model loaded and ready on device: {device}")
+	print(f">>> Model in eval mode: {not model.training}")
+	# Run Inference with Chunked Savings
+	total_preds = run_inference(
+		model=model,
+		dataloader=dl,
+		device=device,
+		output_dp=os.path.join(args.save_dp, args.wandb_run_id),
+		save_chunk_size=args.save_chunk_size,
+		save_interval=args.save_interval,
+		min_intensity=args.min_intensity,
+		resume=True,  # Resume from existing chunks
+	)
  
-	with th.inference_mode():
-		for batch_idx, batch_input in tqdm(enumerate(dl), total=len(dl), desc="Running inference"):
-			try:
-				# Extract batch metadata
-				spec_ids = batch_input['spec_unique_id']
-				mol_ids = batch_input['mol_id']
-
-				# Move batch to device and run inference
-				batch_input = to_device(batch_input, device)
-				batch_result = model.inference_step(batch_input)
-				batch_size = batch_input['batch_size'].detach().cpu()
-
-				# Extract predictions
-				pred_mzs = batch_result["pred_mzs"].detach().cpu()
-				pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-
-				# Extract out-of-spectrum probability if available
-				has_oos_b = "pred_oos_logprobs" in batch_result
-				if has_oos_b:
-					pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
-
-				# Untransform intensities (e.g., from log space back to linear)
-				pred_ints = batch_result["pred_ints"].detach().cpu()
-				pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
-
-				# Process each spectrum in the batch
-				for b_idx in range(batch_size):
-					# Get peaks for this spectrum
-					b_peak_mask = pred_batch_idxs == b_idx
-
-					# Extract metadata
-					b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
-					b_spec_id = spec_ids[b_idx]
-					b_mol_id = mol_ids[b_idx]
-					b_spec_ce = batch_input['spec_ce'][b_idx].item()
-					b_spec_prec_type = batch_input['spec_prec_type'][b_idx].item()
-					spec_inst_type = batch_input['spec_inst_type'][b_idx].item()
-					b_spec_mzs = pred_mzs[b_peak_mask]
-					b_spec_ints = pred_ints[b_peak_mask]
-
-					# Apply intensity threshold filtering (remove low-intensity peaks)
-					if args.min_intensity > 0:
-						intensity_mask = b_spec_ints >= args.min_intensity
-						b_spec_mzs = b_spec_mzs[intensity_mask]
-						b_spec_ints = b_spec_ints[intensity_mask]
-
-					# Store prediction
-					data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, spec_inst_type, b_spec_mzs.tolist(), b_spec_ints.tolist(), b_pred_oos_logprob]
-					all_rows.append(data_row)
-					total_preds += 1
-
-				# Periodically save predictions to disk (every save_interval spectra)
-				if total_preds % args.save_interval == 0:
-					batch_df = pd.DataFrame(all_rows, columns=columns)
-					all_rows = []
-					
-					# Check if we need to move to next chunk file
-					if (total_preds + num_done) // args.save_chunk_size > current_chunk_idx:
-						current_chunk_idx += 1
-						pkl_fp = os.path.join(model_save_dp, "chunks", f"chunk_{current_chunk_idx}.pkl")
-						print(f"> Moving to chunk {current_chunk_idx}: {pkl_fp}")
-					
-					# Append to existing chunk or create new one
-					if os.path.exists(pkl_fp):
-						existing_df = pd.read_pickle(pkl_fp)
-						combined_df = pd.concat([existing_df, batch_df], ignore_index=True)
-						combined_df = combined_df.drop_duplicates(subset=["spec_id"])
-					else:
-						combined_df = batch_df
-					combined_df.to_pickle(pkl_fp)
-					print(f"Saved {len(combined_df)} predictions to {pkl_fp}")
-					
-			except RuntimeError as e:
-				# Handle runtime errors (e.g., CUDA out of memory)
-				print(f"Error at batch {batch_idx}: {e}")
-				print("Skipping batch and clearing CUDA cache...")
-				th.cuda.empty_cache()
-				continue
-
-
-	# Final Save and Cleanup
-
-	# Save any remaining predictions not yet written
-	if all_rows:
-		print(f"\n>>> Saving final batch of {len(all_rows)} predictions...")
-		batch_df = pd.DataFrame(all_rows, columns=columns)
-		
-		# Check if we need to move to next chunk
-		if (total_preds + num_done) // args.save_chunk_size > current_chunk_idx:
-			current_chunk_idx += 1
-			pkl_fp = os.path.join(model_save_dp, "chunks", f"chunk_{current_chunk_idx}.pkl")
-			print(f"> Moving to chunk {current_chunk_idx}: {pkl_fp}")
-		
-		# Append to existing or create new
-		if os.path.exists(pkl_fp):
-			existing_df = pd.read_pickle(pkl_fp)
-			combined_df = pd.concat([existing_df, batch_df], ignore_index=True)
-			combined_df = combined_df.drop_duplicates(subset=["spec_id"])
-		else:
-			combined_df = batch_df
-		combined_df.to_pickle(pkl_fp)
-		print(f"Final save: {len(combined_df)} predictions to {pkl_fp}")
-
 	# Clean up temporary fragment directory if it was created
 	if temp_frag_dir is not None:
 		print(f"\n>>> Cleaning up temporary fragment directory: {temp_frag_dir.name}")
 		temp_frag_dir.cleanup()
-	
-	print(f"\n>>> Inference complete!")
-	print(f">>> Total predictions: {total_preds + num_done}")
-	print(f">>> Output directory: {model_save_dp}")
