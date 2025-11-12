@@ -4,7 +4,7 @@ from fragnnet.runner import load_config
 from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
 from fragnnet.utils.script_utils import (
     init_wandb_ckpt,
-    run_inference,
+    run_inference_eval,
     apply_inference_config,
     save_inference_results,
     cleanup_model,
@@ -191,7 +191,7 @@ if __name__ == "__main__":
 			)
 			
 			# run inference
-			vals = run_inference(
+			vals = run_inference_eval(
 				dl, 
 				model, 
 				device, 
@@ -199,7 +199,6 @@ if __name__ == "__main__":
 				batch_cutoff, 
 				config_d["nb_iso"], 
 				output_subset=output_subset, 
-				untransform_spec=args.untransform_spec
 			)
 			
 			# Save results

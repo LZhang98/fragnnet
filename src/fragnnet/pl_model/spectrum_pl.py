@@ -1026,6 +1026,9 @@ class SpectrumPL(pl.LightningModule):
 			"pred_batch_idxs": eval_pred_batch_idxs,
 			"pred_oos_logprobs": pred_oos_logprobs,
 		}
+		# get rest of pred_d
+		for k,v in pred_d.items():
+			results[k] = v
 		return results
 
 

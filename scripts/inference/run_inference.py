@@ -10,7 +10,7 @@ from fragnnet.utils.script_utils import (
 	setup_device,
 	apply_inference_config,
 	init_model_from_ckpt,
-	run_inference,
+	run_inference_df,
 )
 from fragnnet.utils.misc_utils import booltype
 import torch as th

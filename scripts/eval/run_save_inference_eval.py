@@ -12,14 +12,14 @@ Usage:
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from fragnnet.runner import load_config
+from fragnnet.runner import load_config, init_dataloader
 from fragnnet.utils.script_utils import (
 	get_ckpt_path,
 	get_config_from_ckpt,
 	setup_device,
 	apply_inference_config,
 	init_model_from_ckpt,
-	run_inference,
+	run_inference_df,
 )
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 from fragnnet.utils.misc_utils import booltype, to_device
@@ -179,20 +179,19 @@ if __name__ == "__main__":
 		eval_batch_size=args.eval_batch_size,
 	)
 
-	# Initialize dataset, dataloader, and model
+	# Initialize dataset, dataloader, and model (inline)
 	print(">>> Initializing components...")
 	ds_cls = get_dataset_cls(config_d['model_type'])
 	model_cls = get_model_cls(config_d['model_type'])
-	
-	ds, dl, model, device = init_inference_components(
-		config_d=config_d,
-		eval_split=eval_split,
-		ds_cls=ds_cls,
-		model_cls=model_cls,
-		ckpt_fp=ckpt_fp,
-	)
- 
 
+	# Initialize dataset and dataloader
+	ds = ds_cls(split=eval_split, **config_d)
+	dl = init_dataloader(ds, config_d)
+
+	# Prepare device and load model from checkpoint
+	device = setup_device(config_d)
+	model = init_model_from_ckpt(ckpt_fp, config_d, device)
+ 
 	# Prepare evaluation score types based on configuration
 	eval_score_types = []
 
@@ -205,86 +204,27 @@ if __name__ == "__main__":
 			for bin_res in config_d['eval_mz_bin_res']:
 				eval_score_types.append(f"{score_type}_{bin_res}")
 	
-	# Run inference and collect predictions
-	preds_l = []
-	with th.inference_mode():
-		for _, batch_input in tqdm(enumerate(dl), total=len(dl), desc=" Running inference"):
-			# Extract batch metadata
-			spec_ids = batch_input['spec_unique_id']
-			mol_ids = batch_input['mol_id']
-
-			# Move batch to device
-			batch_input = to_device(batch_input, device)
-			
-			# Run model forward pass with evaluation metrics
-			batch_result = model.inference_with_ground_truth_step(batch_input, split=config_d)
-			batch_size = batch_input['batch_size'].detach().cpu()
-
-			# Extract predictions
-			pred_mzs = batch_result["pred_mzs"].detach().cpu()
-			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-			
-			# Check for out-of-scope predictions
-			has_oos_b = "pred_oos_logprobs" in batch_result
-			if has_oos_b:
-				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
-	
-			# Convert log probabilities to intensities
-			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
-			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
-			
-			# Extract evaluation scores
-			eval_scores_d = {}
-			for eval_score_type in eval_score_types:
-				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
-			
-			# Process each spectrum in the batch
-			for b_idx in range(batch_size):
-				# Get peaks for this spectrum
-				b_peak_mask = pred_batch_idxs == b_idx
-	
-				# Extract prediction data for this spectrum
-				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
-				b_spec_id = spec_ids[b_idx]
-				b_mol_id = mol_ids[b_idx]
-
-				b_spec_ce = batch_input['spec_ce'][b_idx].item() if 'spec_ce' in batch_input else np.nan
-				b_spec_prec_type = batch_input['spec_prec_type'][b_idx].item() if 'spec_prec_type' in batch_input else np.nan
-				b_spec_inst_type = batch_input['spec_inst_type'][b_idx].item() if 'spec_inst_type' in batch_input else np.nan
-				b_spec_mzs = pred_mzs[b_peak_mask]
-				b_spec_ints = pred_ints[b_peak_mask]
-
-				# Create data row with basic prediction info
-				data_row = [b_spec_id.item(), b_mol_id, b_spec_ce, b_spec_prec_type, b_spec_inst_type, 
-						   b_spec_mzs.tolist(), b_spec_ints.tolist(), b_pred_oos_logprob]
-				
-				# Add evaluation scores to the row
-				for eval_score_type in eval_score_types:
-					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
-				preds_l.append(data_row)
-			
-			# Uncomment for debugging (process only one batch)
-			# break
-
-	# Create results DataFrame
-	columns = ['spec_id','mol_id','spec_ce','spec_prec_type','spec_inst_type',
-			   'pred_mzs','pred_ints','pred_oos'] + eval_score_types
-	df = pd.DataFrame(preds_l, columns=columns)
+	predicted_outputs = run_inference_df(
+		model,
+		dl,
+		device,
+		return_dict=True
+	)	
 	
 	# Save results
 	model_save_dp = os.path.join(args.save_dp, args.wandb_run_id)
 	os.makedirs(model_save_dp, exist_ok=True)
 	
 	# Print evaluation score statistics
-	print("\n>>> Evaluation Score Statistics:")
-	for eval_score_type in eval_score_types:
-		mean_score = df[eval_score_type].mean()
-		std_score = df[eval_score_type].std()
-		print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
+	#print("\n>>> Evaluation Score Statistics:")
+	#for eval_score_type in eval_score_types:
+	#	mean_score = df[eval_score_type].mean()
+	#	std_score = df[eval_score_type].std()
+	#	print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
 	
 	# Save predictions with evaluation scores
-	output_path = os.path.join(model_save_dp, f"predictions_{eval_split}.pkl")
-	df.to_pickle(output_path)
-	print(f"\n>>> Saved predictions to: {output_path}")
-	print(f">>> Total predictions: {len(df)}")
-	print(f">>> Evaluation complete!")
+	#output_path = os.path.join(model_save_dp, f"predictions_{eval_split}.pkl")
+	#df.to_pickle(output_path)
+	#print(f"\n>>> Saved predictions to: {output_path}")
+	#print(f">>> Total predictions: {len(df)}")
+	#print(f">>> Evaluation complete!")

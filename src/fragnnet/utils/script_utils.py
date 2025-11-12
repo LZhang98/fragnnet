@@ -93,26 +93,6 @@ def pearson_r(x,y,dim=0):
 	r = th.mean((x-x_mean)*(y-y_mean),dim=dim) / (x_std * y_std)
 	return r
 
-
-# ============================================================================
-# Model Loading and Inference Configuration Utilities
-# ============================================================================
-# 
-# Modular utilities for loading models and configuring inference settings.
-# These functions can be composed together based on your use case:
-#
-# High-level convenience functions:
-# - load_model_from_checkpoint(): Load model with config from checkpoint hparams
-# - load_model_from_config(): Load model with config from YAML files
-#
-# Low-level building blocks:
-# - setup_inference_config(): Configure settings for inference
-# - init_model_from_checkpoint(): Initialize model from checkpoint file
-# - prepare_device(): Auto-detect and configure device
-# - apply_ms2c_config(): Apply MS2C-specific configuration
-#
-# ============================================================================
-
 def setup_device(
 	config_d: Dict[str, Any],
 	device: Optional[str] = None,
@@ -251,13 +231,6 @@ def get_config_from_ckpt(
 		
 	Returns:
 		Configuration dictionary
-		
-	Example:
-		>>> config = load_model_config_from_ckpt(
-		...     "path/to/checkpoint.ckpt",
-		...     custom_fp="path/to/custom.yaml",
-		...     template_fp="path/to/template.yaml"
-		... )
 	"""
 	# Load checkpoint to extract config
 	print(">> Loading checkpoint to extract config")
@@ -279,160 +252,6 @@ def get_config_from_ckpt(
 			config_d[k] = v
 	
 	return config_d
-
-def run_spectra_prediction(model,
-				 config_d:dict,
-				 mol_data_ptr:str|pd.DataFrame,
-				 spec_data_ptr:str|pd.DataFrame,
-				 device:str,
-				 frag_dp:str|None= None,
-				 magma_dp:str|None = None,
-				 validate:bool = False,
-				 ):
-	"""_summary_
-
-	Args:
-		model (_type_): _description_
-		config_d (dict): _description_
-		mol_data_ptr (str | pd.DataFrame): _description_
-		spec_data_ptr (str | pd.DataFrame): _description_
-		frag_dp (str): _description_
-		device (str): _description_
-
-	Returns:
-		_type_: _description_
-	"""
-	local_config_d = copy.deepcopy(config_d)
-	# config proc and check if frags are avaibale
-	if isinstance(mol_data_ptr, str):
-		print(f"> mol_fp {mol_data_ptr}")
-		mol_df = pd.read_pickle(mol_data_ptr)
-	elif isinstance(mol_data_ptr, pd.DataFrame):
-		mol_df = mol_data_ptr
-		print(f"> mol_df {mol_df.shape}")
-	else:
-		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
-
-	if isinstance(spec_data_ptr, str):
-		print(f"> spec_fp {spec_data_ptr}")
-		spec_df = pd.read_pickle(spec_data_ptr)
-	elif isinstance(spec_data_ptr, pd.DataFrame):
-		spec_df = spec_data_ptr
-		print(f"> spec_df {spec_df.shape}")
-	else:
-		raise ValueError("mol_data_ptr should be str or pd.DataFrame")
-
-
-	# check model class and ds class
-	model_ds_cls = None
- 
-	# only check for FragGNNet
-	if isinstance(model,FraGNNetPL):
-		assert os.path.isdir(frag_dp)
-		print(f">> frag_dp {frag_dp}")
-		print(">> filtering input without frags")
-		all_frags = set([f.split('.')[0] for f in os.listdir(frag_dp)])
-		print(">> num of frags: ", len(all_frags))
-		mol_df = mol_df[mol_df['mol_id'].astype(str).isin(all_frags)]
-		local_config_d['frag_dp'] = frag_dp
-		model_ds_cls = SpecMolFragDataset
-		print("> num of spec before filtering by dag", len(spec_df))
-		spec_df = spec_df[spec_df['mol_id'].isin(mol_df['mol_id'].to_list())]
-		print("> num of spec after filtering by dag", len(spec_df))
-	elif isinstance(model,NeimsPL) or isinstance(model,MassFormerPL) or isinstance(model, GNNPL):
-		mz_max = local_config_d['mz_max']
-		spec_df = spec_df[spec_df['prec_mz'] <= mz_max]
-		#print("> [NeimsPL] num of spec after prec_mz filtering", len(spec_df))
-		model_ds_cls = SpecMolDataset
-	elif isinstance(model,IcebergIntenPL):
-		assert os.path.isdir(magma_dp)
-		model_ds_cls = SpecMolMagmaIntenDataset
-		print(f">> filtering input without magma. magma_dp: {magma_dp}")
-		magma_jsons = set([f.split('.')[0] for f in os.listdir(os.path.join(magma_dp,'magma_tree')) if f.endswith('.json')])
-		print(">> num of magma jsons: ", len(magma_jsons))
-		print("> num of spec before filtering by magma", len(spec_df))
-		spec_df = spec_df[spec_df['group_id'].astype(str).isin(magma_jsons)]
-		print("> num of spec after filtering by magma", len(spec_df))		
-		local_config_d['magma_dp'] = magma_dp
-	else:
-		print(f"Not supported model: {model}")
-  
-
-	if len(spec_df) == 0:
-		columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos']
-		return pd.DataFrame([], columns=columns)
-	
-	# config mol df, spec df and frag_dp
-	local_config_d['mol_fp'] = mol_df
-	local_config_d['spec_fp'] = spec_df
-
-	# load datasets
-	print(">> Loading datasets")
-	#if validate:
-	#	ds = model_ds_cls(split='val', **config_d)
-	#else:
-	ds = model_ds_cls(split='predict_only', **local_config_d)
-	print(">> init dataloader")
-	dl = init_dataloader(ds, local_config_d)
-	
-	eval_score_types = []
-	if validate:
-		for score_type in local_config_d['auxiliary_scores']:
-			if "_hun" in score_type:
-				eval_score_types.append(score_type)
-			else:
-				for bin_res in local_config_d['eval_mz_bin_res']:
-					eval_score_types.append(f"{score_type}_{bin_res}")
-	preds_l = []
- 	#print(">> set model to this to eval")
-	model.eval()
-	with th.inference_mode():
-		for _, batch_input in tqdm(enumerate(dl),total=len(dl), desc=" Running inference"):
-			spec_ids = batch_input['spec_unique_id']
-			mol_ids = batch_input['mol_id']
-
-			batch_input = to_device(batch_input, device)
-			# use existing validate to compute cos sim and etc
-			if validate:
-				batch_result = model._common_step(batch_input, split="test", log=False)
-			else:
-				batch_result = model.predict_step(**batch_input)
-	
-			batch_size = batch_input['batch_size'].detach().cpu()
-
-			pred_mzs = batch_result["pred_mzs"].detach().cpu()
-			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-			
-			has_oos_b = "pred_oos_logprobs" in batch_result
-			if has_oos_b:
-				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
-	
-			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
-			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
-
-			eval_scores_d = {}
-			for eval_score_type in eval_score_types:
-				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
-				#print(eval_score_type, eval_scores_d[eval_score_type])
-			for b_idx in range(batch_size):
-				b_peak_mask = pred_batch_idxs == b_idx
-	
-				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
-				b_spec_id = spec_ids[b_idx]
-				b_mol_id = mol_ids[b_idx]
-
-				b_spec_mzs = pred_mzs[b_peak_mask]
-				b_spec_ints = pred_ints[b_peak_mask]
-
-				data_row = [b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
-				for eval_score_type in eval_score_types:
-					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
-				preds_l.append(data_row)
-
-	columns = ['spec_id','mol_id','pred_mzs','pred_ints','pred_oos'] + eval_score_types
-	df = pd.DataFrame(preds_l, columns=columns)
-	return df
-
 
 # ============================================================================
 # Inference Configuration and Setup Utilities
@@ -517,7 +336,7 @@ def apply_inference_config(
 	if eval_mz_bin_res is not None:
 		config_d['eval_mz_bin_res'] = eval_mz_bin_res
 
-    # Apply common inference settings
+	# Apply common inference settings
 	config_d['track_datapoint_metrics'] = False
 		
 	# Disable preprocessing to save memory
@@ -629,67 +448,25 @@ def prepare_output_subset(
 	return output_subset
 
 
-def run_inference(
+def get_idx_vars(
+	output_subset: Optional[Set[str]],
 	model,
-	dataloader,
-	device: th.device,
-	output_dp: Optional[str] = None,
-	eval_split: str = "test",
-	batch_cutoff: int = int(1e6),
 	nb_iso: bool = False,
-	output_subset: Optional[Set[str]] = None,
-	save_chunk_size: int = 10000,
-	save_interval: int = 1000,
-	min_intensity: float = 0.0,
-	resume: bool = True,
-	return_dict: bool = False,
-	save_by_chunk: bool = False,
-) -> int | Dict[str, Any]:
+) -> Set[str]:
 	"""
-	Run inference with optional chunked saving for resumable predictions.
-	
-	This unified function supports two modes:
-	1. Evaluation mode (return_dict=True): Returns dict with all predictions and metrics
-	2. Prediction mode (output_dp provided): Saves chunked predictions to disk
+	Get final output keys based on subset selection.
 	
 	Args:
-		model: Model with inference_step() or inference_with_ground_truth_step() method
-		dataloader: DataLoader to process
-		device: Device to run inference on
-		output_dp: Output directory path for saving chunks (required if return_dict=False)
-		eval_split: Dataset split name for evaluation mode (default: "test")
-		batch_cutoff: Maximum number of batches to process (default: 1e6)
-		nb_iso: Whether to process isotope neighbors (default: False)
-		output_subset: Set of output keys to include (None = all) (default: None)
-		untransform_spec: Whether to untransform spectra (default: False)
-		save_chunk_size: Number of predictions per chunk file (default: 10000)
-		save_interval: Write predictions to disk every N predictions (default: 1000)
-		min_intensity: Minimum intensity threshold for peaks (default: 0.0)
-		resume: Whether to resume from existing chunks (default: True)
-		return_dict: If True, return dict of results instead of saving (default: False)
+		output_subset: Subset of output keys to include (None = all)
+		default_output_keys: Default set of output keys
 	
 	Returns:
-		int: Total number of predictions made (if return_dict=False)
-		Dict[str, Any]: Dictionary of all results (if return_dict=True)
+		Final set of output keys
 	"""
- 
-	# Validate inputs
-	if not return_dict and output_dp is None:
-		raise ValueError("output_dp must be provided when return_dict=False")
-	
-	# Determine inference mode based on return_dict flag
-	prediction_mode = not return_dict  # Save chunks to disk
-	evaluation_mode = return_dict      # Return dict of results
-	
-	# setup accumulators and index vars
-	cum_num_datapoints = 0
-	cum_num_nodes = 0
-	cum_num_formulas = 0
-	cum_num_nb_nodes = 0
+	# Determine which index variables to track
 	fraggnn_model = isinstance(model, FraGNNetPL)
 	iceberg_model = isinstance(model, IcebergIntenPL)
-	
-	# Determine which index variables to track
+ 
 	if not (fraggnn_model or iceberg_model):
 		assert not nb_iso
 		BATCH_IDX_VARS = ["pred_batch_idxs", "true_batch_idxs"]
@@ -728,200 +505,216 @@ def run_inference(
 		NODE_IDX_VARS = [k for k in NODE_IDX_VARS if k in output_subset]
 		FORMULA_IDX_VARS = [k for k in FORMULA_IDX_VARS if k in output_subset]
 		NB_NODE_IDX_VARS = [k for k in NB_NODE_IDX_VARS if k in output_subset]
+  
+	return BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS
 
-	# Setup for prediction mode (chunked saving)
-	if prediction_mode:
-		if output_dp is None:
-			raise ValueError("output_dp must be provided in prediction mode")
+def run_inference_eval(
+	model,
+	dataloader,
+	device: th.device,
+	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
+	nb_iso: bool = False,
+	output_subset: Optional[Set[str]] = None,
+	evaluate: bool = True
+) -> Dict[str, Any]:
+	"""
+	Run inference with optional chunked saving for resumable predictions.
+	"""
+	# setup accumulators and index vars
+	cum_num_datapoints = 0
+	cum_num_nodes = 0
+	cum_num_formulas = 0
+	cum_num_nb_nodes = 0
 
-		os.makedirs(output_dp, exist_ok=True)
-		columns = ['spec_id', 'mol_id', 'spec_ce', 'spec_prec_type', 'spec_inst_type',
-				   'pred_mzs', 'pred_ints', 'pred_oos']
-		
-		pkl_chunk_dp = os.path.join(output_dp, "chunks")
-		os.makedirs(pkl_chunk_dp, exist_ok=True)
-		
-		# Resume from existing chunks if requested
-		num_done = 0
-		processed_spec_ids = set()
-		if resume:
-			for file in os.listdir(pkl_chunk_dp):
-				if file.endswith(".pkl"):
-					chunk_fp = os.path.join(pkl_chunk_dp, file)
-					print(f"Loading existing chunk: {chunk_fp}")
-					existing_df = pd.read_pickle(chunk_fp)
-					processed_spec_ids.update(existing_df['spec_id'].tolist())
-					num_done += len(existing_df)
-			print(f">> Resuming: {num_done} predictions already completed")
-		
-		current_chunk_idx = num_done // save_chunk_size
-		print(f">> Starting from chunk index: {current_chunk_idx}")
-		
-		all_rows = []
-		total_preds = 0
-		pkl_fp = os.path.join(pkl_chunk_dp, f"chunk_{current_chunk_idx}.pkl")
-		print(f">>> Saving predictions every {save_interval} spectra")
-		print(f">>> Chunk size: {save_chunk_size} spectra per file")
-		print(f">>> Min intensity threshold: {min_intensity}\n")
-	elif evaluation_mode:
-		# Setup for evaluation mode (return dict)
-		vals = {}
-	
+	is_fragnnet_model = isinstance(model, FraGNNetPL)
+	BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS = get_idx_vars(
+		output_subset,
+		model,
+		nb_iso,
+	)
+
+
+	# Setup for evaluation mode (return dict)
+	vals = {}
 	# Common setup
 	print(f"\n>>> Starting inference on {len(dataloader)} batches...")
 	if model.training:
-		print(f"> Warning: model {model} is in training mode!")
+		raise RuntimeError(f"> Warning: model {model} is in training mode!")
 	
-	# Run inference loop
+	# Run inference loops
 	with th.inference_mode():
 		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), 
 										  desc="Running inference"):
-			try:
-				# Early exit for batch cutoff
-				if batch_idx >= batch_cutoff:
-					break
-				
-				# Skip already processed spectra if resuming in prediction mode
-				if prediction_mode and resume:
-					spec_ids = batch_input.get('spec_unique_id', None)
-					if spec_ids is not None and all(sid.item() in processed_spec_ids for sid in spec_ids):
-						continue
-				
-				# Move batch to device
-				batch_input = to_device(batch_input, device, non_blocking=False)
-				
-				# Run inference (choose method based on mode)
-				if evaluation_mode:
-					# Use ground truth evaluation method
-					b_output = model.inference_with_ground_truth_step(batch_input, split=eval_split)
-				else:
-					# Use prediction-only method
-					b_output = model.inference_step(batch_input)
-				
-				b_output = to_device(b_output, "cpu", non_blocking=False)
-				if output_subset is not None:
-					b_output = {k: b_output[k] for k in b_output if k in output_subset}
-     
-				# ============================================================
-				# EVALUATION MODE: Collect all outputs with index rebatching
-				# ============================================================
-				output_keys = b_output.keys()
-				
-				# Calculate batch counts for index rebatching
-				if "pred_batch_idxs" in output_keys:
-					b_num_datapoints = b_output["pred_batch_idxs"].max()+1
-				elif "true_batch_idxs" in output_keys:
-					b_num_datapoints = b_output["true_batch_idxs"].max()+1
-				else:
-					b_num_datapoints = 0
-				
-				if fraggnn_model and "pred_node_node_idxs" in output_keys:
-					b_num_nodes = b_output["pred_node_node_idxs"].max()+1
-				else:
-					b_num_nodes = 0
-				
-				if fraggnn_model and "pred_formula_formula_idxs" in output_keys:
-					b_num_formulas = b_output["pred_formula_formula_idxs"].max()+1
-				else:
-					b_num_formulas = 0
-				
-				if fraggnn_model and nb_iso and "pred_nb_node_node_idxs" in output_keys:
-					b_num_nb_nodes = b_output["pred_nb_node_node_idxs"].max()+1
-				else:
-					b_num_nb_nodes = 0
-				
-				# Rebatch indices
-				for k in BATCH_IDX_VARS:
-					if k in b_output:
-						b_output[k] = b_output[k] + cum_num_datapoints
-				for k in NODE_IDX_VARS:
-					if k in b_output:
-						b_output[k] = b_output[k] + cum_num_nodes
-				for k in FORMULA_IDX_VARS:
-					if k in b_output:
-						b_output[k] = b_output[k] + cum_num_formulas
-				for k in NB_NODE_IDX_VARS:
-					if k in b_output:
-						b_output[k] = b_output[k] + cum_num_nb_nodes
-				
-				# Update cumulative counts
-				cum_num_datapoints += b_num_datapoints
-				cum_num_nodes += b_num_nodes
-				cum_num_formulas += b_num_formulas
-				cum_num_nb_nodes += b_num_nb_nodes
-				
-				# Collect outputs
-				for k in b_output.keys():
-					if b_output[k] is None:
-						continue
-					if k not in vals.keys():
-						assert batch_idx == 0
-						vals[k] = [b_output[k]]
-					else:
-						assert batch_idx > 0
-						vals[k].append(b_output[k])
-					
-			except RuntimeError as e:
-				# Handle runtime errors (e.g., CUDA out of memory)
-				print(f"Error at batch {batch_idx}: {e}")
-				print("Skipping batch and clearing CUDA cache...")
-				th.cuda.empty_cache()
-				continue
-	
-	# ============================================================
-	# RETURN RESULTS BASED ON MODE
-	# ============================================================
-	
-	if prediction_mode:
-		# Save any remaining predictions not yet written
-		if all_rows:
-			print(f"\n>>> Saving final batch of {len(all_rows)} predictions...")
-			batch_df = pd.DataFrame(all_rows, columns=columns)
+	  
+			# Early exit for batch cutoff
+			if batch_idx >= batch_cutoff and batch_cutoff > 0:
+				break
 			
-			# Check if we need to move to next chunk
-			if (total_preds + num_done) // save_chunk_size > current_chunk_idx:
-				current_chunk_idx += 1
-				pkl_fp = os.path.join(pkl_chunk_dp, f"chunk_{current_chunk_idx}.pkl")
-				print(f"> Moving to chunk {current_chunk_idx}: {pkl_fp}")
+			# Move batch to device
+			batch_input = to_device(batch_input, device, non_blocking=False)
 			
-			# Append to existing or create new
-			if os.path.exists(pkl_fp):
-				existing_df = pd.read_pickle(pkl_fp)
-				combined_df = pd.concat([existing_df, batch_df], ignore_index=True)
-				combined_df = combined_df.drop_duplicates(subset=["spec_id"])
+			# Run inference (choose method based on mode)
+			if evaluate:
+				# Use ground truth evaluation method
+				b_output = model.inference_with_ground_truth_step(batch_input, split="test")
 			else:
-				combined_df = batch_df
-			combined_df.to_pickle(pkl_fp)
-			print(f"Final save: {len(combined_df)} predictions to {pkl_fp}")
-		
-		total_count = total_preds + num_done
-		print(f"\n>>> Inference complete!")
-		print(f">>> Total predictions: {total_count}")
-		print(f">>> Output directory: {output_dp}")
-		
-		return total_count
+				# Use prediction-only method
+				b_output = model.inference_step(batch_input)
+			
+			b_output = to_device(b_output, "cpu", non_blocking=False)
+			if output_subset is not None:
+				b_output = {k: b_output[k] for k in b_output if k in output_subset}
 	
-	else:  # evaluation_mode
-		# Consolidate collected outputs
-		print(f"> num_datapoints = {cum_num_datapoints}")
-		print(f"> num_nodes = {cum_num_nodes}")
-		print(f"> num_formulas = {cum_num_formulas}")
-		print(f"> num_nb_nodes = {cum_num_nb_nodes}")
-		
-		for k in vals.keys():
-			if isinstance(vals[k][0], list):
-				vals[k] = flatten_lol(vals[k])
-			elif isinstance(vals[k][0], th.Tensor):
-				if vals[k][0].dim() == 0:
-					vals[k] = th.stack(vals[k], dim=0)
-				else:
-					vals[k] = th.cat(vals[k], dim=0)
-			elif isinstance(vals[k][0], np.ndarray):
-				if vals[k][0].ndim == 0:
-					vals[k] = np.stack(vals[k], axis=0)
-				else:
-					vals[k] = np.concatenate(vals[k], axis=0)
+			# ============================================================
+			# EVALUATION MODE: Collect all outputs with index rebatching
+			# ============================================================
+			output_keys = b_output.keys()
+			
+			# Calculate batch counts for index rebatching
+			if "pred_batch_idxs" in output_keys:
+				b_num_datapoints = b_output["pred_batch_idxs"].max()+1
+			elif "true_batch_idxs" in output_keys:
+				b_num_datapoints = b_output["true_batch_idxs"].max()+1
 			else:
-				raise ValueError(f"unexpected type {type(vals[k][0])}")
-		
-		return vals
+				b_num_datapoints = 0
+			
+			if is_fragnnet_model and "pred_node_node_idxs" in output_keys:
+				b_num_nodes = b_output["pred_node_node_idxs"].max()+1
+			else:
+				b_num_nodes = 0
+			
+			if is_fragnnet_model and "pred_formula_formula_idxs" in output_keys:
+				b_num_formulas = b_output["pred_formula_formula_idxs"].max()+1
+			else:
+				b_num_formulas = 0
+			
+			if is_fragnnet_model and nb_iso and "pred_nb_node_node_idxs" in output_keys:
+				b_num_nb_nodes = b_output["pred_nb_node_node_idxs"].max()+1
+			else:
+				b_num_nb_nodes = 0
+			
+			# Rebatch indices
+			for k in BATCH_IDX_VARS:
+				if k in b_output:
+					b_output[k] = b_output[k] + cum_num_datapoints
+			for k in NODE_IDX_VARS:
+				if k in b_output:
+					b_output[k] = b_output[k] + cum_num_nodes
+			for k in FORMULA_IDX_VARS:
+				if k in b_output:
+					b_output[k] = b_output[k] + cum_num_formulas
+			for k in NB_NODE_IDX_VARS:
+				if k in b_output:
+					b_output[k] = b_output[k] + cum_num_nb_nodes
+			
+			# Update cumulative counts
+			cum_num_datapoints += b_num_datapoints
+			cum_num_nodes += b_num_nodes
+			cum_num_formulas += b_num_formulas
+			cum_num_nb_nodes += b_num_nb_nodes
+			
+			# Collect outputs
+			for k in b_output.keys():
+				if b_output[k] is None:
+					continue
+				if k not in vals.keys():
+					assert batch_idx == 0
+					vals[k] = [b_output[k]]
+				else:
+					assert batch_idx > 0
+					vals[k].append(b_output[k])
+				
+	# Consolidate collected outputs
+	print(f"> num_datapoints = {cum_num_datapoints}")
+	print(f"> num_nodes = {cum_num_nodes}")
+	print(f"> num_formulas = {cum_num_formulas}")
+	print(f"> num_nb_nodes = {cum_num_nb_nodes}")
+	
+	for k in vals.keys():
+		if isinstance(vals[k][0], list):
+			vals[k] = flatten_lol(vals[k])
+		elif isinstance(vals[k][0], th.Tensor):
+			if vals[k][0].dim() == 0:
+				vals[k] = th.stack(vals[k], dim=0)
+			else:
+				vals[k] = th.cat(vals[k], dim=0)
+		elif isinstance(vals[k][0], np.ndarray):
+			if vals[k][0].ndim == 0:
+				vals[k] = np.stack(vals[k], axis=0)
+			else:
+				vals[k] = np.concatenate(vals[k], axis=0)
+		else:
+			raise ValueError(f"unexpected type {type(vals[k][0])}")
+	
+	return vals
+
+def run_inference_df(
+	model,
+	dataloader,
+	device: th.device,
+	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
+	evaluate: bool = False,
+) -> pd.DataFrame:
+	"""
+	Run inference with optional chunked saving for resumable predictions.
+	"""
+	# Common setup
+	print(f"\n>>> Starting inference on {len(dataloader)} batches...")
+	if model.training:
+		raise RuntimeError(f"> Warning: model {model} is in training mode!")
+
+	preds_l = []
+ 	#print(">> set model to this to eval")
+	model.eval()
+	with th.inference_mode():
+		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), desc="Running inference"):
+	  
+			if batch_idx >= batch_cutoff and batch_cutoff > 0:
+				print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
+				break
+
+			spec_ids = batch_input['spec_unique_id']
+			mol_ids = batch_input['mol_id']
+
+			batch_input = to_device(batch_input, device)
+			# use existing evaluate to compute cos sim and etc
+			if evaluate:
+				batch_result = model._common_step(batch_input, split="test", log=False)
+			else:
+				batch_result = model.predict_step(**batch_input)
+	
+			batch_size = batch_input['batch_size'].detach().cpu()
+
+			pred_mzs = batch_result["pred_mzs"].detach().cpu()
+			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
+			
+			has_oos_b = "pred_oos_logprobs" in batch_result
+			if has_oos_b:
+				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
+	
+			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
+			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+
+			eval_scores_d = {}
+			#for eval_score_type in eval_score_types:
+			#	eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
+			#	#print(eval_score_type, eval_scores_d[eval_score_type])
+	
+			for b_idx in range(batch_size):
+				b_peak_mask = pred_batch_idxs == b_idx
+	
+				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
+				b_spec_id = spec_ids[b_idx]
+				b_mol_id = mol_ids[b_idx]
+
+				b_spec_mzs = pred_mzs[b_peak_mask]
+				b_spec_ints = pred_ints[b_peak_mask]
+
+				data_row = [b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
+				#for eval_score_type in eval_score_types:
+				#	data_row.append(eval_scores_d[eval_score_type][b_idx].item())
+				
+				preds_l.append(data_row)
+				pred_df = pd.DataFrame(preds_l, columns=["spec_id","mol_id","pred_mzs","pred_ints","pred_oos_logprob"])
+		return pred_df
+	## build dataframe
