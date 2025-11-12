@@ -242,6 +242,8 @@ def get_config_from_ckpt(
 	# Override with custom config if provided
 	if custom_fp is not None:
 		assert template_fp is not None, "template_fp required when custom_fp is provided"
+	# Load and merge template and custom config
+	if template_fp is not None:
 		print(f">> Loading custom config from {custom_fp}")
 		config_d_2 = load_config(template_fp, custom_fp)
 		for k, v in config_d_2.items():

@@ -9,7 +9,6 @@ from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog,scatter_logsumexp
 from fragnnet.pl_model import SpectrumPL
-from fragnnet.pl_model.mces_pl import MCESPL
 
 class FraGNNetPL(SpectrumPL):
 
@@ -822,7 +821,7 @@ class FraGNNetPL(SpectrumPL):
 			)
 			ret["lr_scheduler"] = {
 				"scheduler": scheduler,
-				"frequency": 1,
+				"frequency": 1
 				"interval": "step",
 			}
 
