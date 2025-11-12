@@ -5,7 +5,8 @@ import argparse
 from rdkit import RDLogger
 
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils.data_utils import par_apply_series, par_apply_df_rows, seq_apply_df_rows
+from fragnnet.utils.data_utils import par_apply_df_rows_t, par_apply_series, par_apply_df_rows, seq_apply_df_rows, seq_apply_df_rows_t
+from fragnnet.utils.misc_utils import booltype
 
 def load_df(df_dp,dsets,num_entries):
 	
@@ -50,7 +51,7 @@ def preprocess_spec(spec_df):
 	# get mz resolution
 	spec_df.loc[:,"res"] = par_apply_series(spec_df["peaks"],data_utils.get_res)
 	# standardize the instrument type and frag_mode
-	inst_type, frag_mode = seq_apply_df_rows(spec_df,data_utils.parse_inst_info)
+	inst_type, frag_mode = seq_apply_df_rows_t(spec_df,data_utils.parse_inst_info)
 	spec_df.loc[:,"inst_type"] = inst_type
 	spec_df.loc[:,"frag_mode"] = frag_mode
 	# standardize ce
@@ -79,11 +80,11 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"exact_mass"] = pd.to_numeric(spec_df["exact_mass"],errors="coerce")
 
 	# remove columns from spec_df
-	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","nce","prec_mz","peaks","ri","formula","inchikey","exact_mass"]]
+	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","ace_extra_1","ace_extra_2","nce","nce_extra_1","nce_extra_2","prec_mz","peaks","ri","formula","inchikey","exact_mass"]]
 	# relabel spec_id (this is to make it unique across datasets)
 	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
 	# set group_id (same compound and precursor)
-	group_df = spec_df.drop(columns=["spec_id","dset_spec_id","peaks","nce","ace","res","prec_mz","ri","col_gas","formula","inchikey","exact_mass"]).drop_duplicates()
+	group_df = spec_df.drop(columns=["spec_id","dset_spec_id","peaks","ace","ace_extra_1","ace_extra_2","nce","nce_extra_1","nce_extra_2","res","prec_mz","ri","col_gas","formula","inchikey","exact_mass"]).drop_duplicates()
 	group_df.loc[:,"group_id"] = np.arange(group_df.shape[0])
 	spec_df = spec_df.merge(group_df,how="inner")
 
@@ -147,7 +148,7 @@ def preprocess_spec(spec_df):
 	# extract annotation info
 	ann_df = ann_df.merge(spec_df[["dset_spec_id","spec_id","prec_type"]],on="dset_spec_id",how="inner")
 	ann_df = ann_df.merge(mol_df[["mol_id","formula"]],on="mol_id",how="inner")
-	ann_results = par_apply_df_rows(ann_df,data_utils.parse_annotations)
+	ann_results = par_apply_df_rows_t(ann_df,data_utils.parse_annotations)
 	ann_df.loc[:,"ann_peak_mzs"] = ann_results[0]
 	ann_df.loc[:,"ann_products"] = ann_results[1]
 	ann_df.loc[:,"ann_losses"] = ann_results[2]
@@ -180,8 +181,9 @@ if __name__ == "__main__":
 	parser.add_argument("--df_dp", type=str, default="data/df", help = "this script assumes the df_dp contains the dataset csv files, as <dset_name>_df.csv) e.g. nist20_hr_df.csv, ms_gym_df.csv, etc.")
 	parser.add_argument("--proc_dp", type=str, required=True)
 	parser.add_argument("--num_entries", type=int, default=-1)
-	parser.add_argument("--ow_spec_mol", type=bool, default=True, help = "overwrite existing spec mol")
+	parser.add_argument("--ow_spec_mol", type=booltype, default=True, help = "overwrite existing spec mol")
 	parser.add_argument("--dsets", type=str, nargs="+", required=True, help = "dataset names to process, e.g. nist20_hr, ms_gym, ms_gym_extra.")
+	parser.add_argument("--na_str_for_missing", type=booltype, default=True, help="whether use NA for missing str labels (such as inst_type, frag_mode, etc.) or use np.nan")
 	args = parser.parse_args()
 
 	print(f"> df_dp: {args.df_dp}")
@@ -213,6 +215,13 @@ if __name__ == "__main__":
 
 		spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df)
 
+		if args.na_str_for_missing:
+			str_cols = ["inst_type","frag_mode","spec_type","ion_mode","col_gas","prec_type"]
+			for col in str_cols:
+				if col in spec_df:
+					spec_df.loc[spec_df[col].isna(),col] = "NA"
+			print("> converted missing str labels to NA")
+
 		# save everything to file
 		spec_df.to_pickle(spec_df_fp)
 		mol_df.to_pickle(mol_df_fp)
@@ -231,4 +240,4 @@ if __name__ == "__main__":
 	print(mol_df.isna().sum())
 	print(f"> ann_df {ann_df.shape}")
 	print(f"> ann_df num nan:")
-	print(ann_df.isna().sum())
+	print(ann_df.isna().sum()) 

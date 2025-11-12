@@ -20,7 +20,7 @@ def main(args):
 				f"#SBATCH --job-name={args.job_name}",
 				f"#SBATCH --mem={args.mem}G",
 				f"#SBATCH --cpus-per-task={args.cpu}",
-				f"#SBATCH --time=0-{args.time}:00",
+				f"#SBATCH --time=0-{args.time}:00:00",
 				f"#SBATCH --mail-user={args.cc_email}",
 				"#SBATCH --mail-type=ALL"
 			]
@@ -85,20 +85,20 @@ def main(args):
 			'virtualenv FRAG-GNN',
 			'source FRAG-GNN/bin/activate',
 			'pip install --no-index --upgrade pip',
-			'pip install --no-index torch==2.4.1',
-			'pip install --no-index torch_geometric==2.6.1 ',
-			'pip install --no-index torch_scatter',
-			'pip install --no-index pandas',
-			'pip install --no-index wandb',
-			'pip install --no-index tqdm',
-			'pip install --no-index scipy',
-			'pip install --no-index joblib==1.3.2',
-			'pip install --no-index matplotlib',
-			'pip install --no-index pytorch_lightning==2.4.0',
-			'pip install --no-index dgl==2.4.0',
-			'pip install --no-index omegaconf',
-			'pip install --no-index cython==3.0.12',
-			'pip install --no-index h5py',
+			'pip install --no-index torch==2.4.1 \\',
+			'    torch_geometric==2.6.1 \\',
+			'    torch_scatter \\',
+			'    pandas \\',
+			'    wandb \\',
+			'    tqdm \\',
+			'    scipy==1.15.2 \\',
+			'    joblib==1.3.2 \\',
+			'    matplotlib \\',
+			'    pytorch_lightning==2.4.0 \\',
+			'    dgl==2.4.0 \\',
+			'    omegaconf \\',
+			'    cython==3.0.12 \\',
+			'    h5py',
 			"",
 			'# intall from whl',
 			'cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl',
@@ -117,12 +117,13 @@ def main(args):
 			'rsync -av --exclude=".*" --exclude="__pycache__" --exclude="*.so" ${FRAGNNET_DP}/src ${WORKING_DIR}',
 			'cp ${FRAGNNET_DP}/setup.cfg ${WORKING_DIR}/',
 			'cp ${FRAGNNET_DP}/setup.py ${WORKING_DIR}/',
-			'# install with out dependencies, assume all dependencies are installed manually'
-			'pip install -I  --no-deps ${WORKING_DIR}',
+			'cp ${FRAGNNET_DP}/pyproject.toml ${WORKING_DIR}/',
+			'# install with out dependencies, assume all dependencies are installed manually',
+			'pip install -I --no-deps ${WORKING_DIR}',
 			'',
 		]
 	)
- 
+
 	# https://lightning.ai/docs/pytorch/stable/clouds/cluster_advanced.html
 	# lightning seems have issues with srun
 	# disable DDP in the trainer
@@ -131,46 +132,62 @@ def main(args):
 	custom_config_fp = None
 	# default config template
 	config_template_fp = os.path.join(args.frag_gnn_dp,"config","template.yml")
-
-	for kwarg in args.script_kwargs:
+	config_d = dict()
+	# parse script kwargs
+	for idx, kwarg in enumerate(args.script_kwargs):
 		assert "=" in kwarg, kwarg
 		key, value = kwarg.split("=")
+		# this useful for inference setup where some config are overridden via command line
+		config_d[key] = value
+		if idx == 0:
+			python_line += " \\\n"  # first arg
 		if len(key) == 1:
 			python_line += f" -{key} {value}"
 		elif key.startswith('-'):
 			python_line += f" {key} {value}"
 		else:
 			python_line += f" --{key} {value}"
-
+		# add line breaks
+		if idx != len(args.script_kwargs) - 1:
+			python_line += " \\\n"
+   
 		if key == "c" or key == "custom_fp":
 			custom_config_fp = value
 		if key == "t" or key == "template_fp":
 			config_template_fp = value
 
 	# parse configs	file
-	config_keywords = ['spec_fp','mol_fp', 'ann_fp', 'config','config_template','split_dp','magma_dp','frag_dp', 'model_type']
-	config_d = {'config_template':config_template_fp}
+	config_keywords = ['spec_fp','mol_fp', 'ann_fp', 'mces_fp', 'config','config_template',
+                    'split_dp','magma_dp','frag_dp', 'model_type', 'mces_pretrain_ckpt_fp', 'mces_pretrain']
+	config_d['config_template'] = config_template_fp
 	if custom_config_fp is not None:
 		config_d['config'] = custom_config_fp
-  
+
 	# parse configs
-	for config_fp in [config_template_fp, custom_config_fp]:
+ 	# read from template first, then custom config,
+	for config_fp in [custom_config_fp, config_template_fp]:
 		if config_fp is not None:
 			with open(config_fp,"r") as config_file:
 				config_lines = config_file.readlines()
 				for line in config_lines:
 					for config_keyword in config_keywords:
-						if line.startswith(config_keyword):
-							config_d[config_keyword] = line.split(":")[-1].strip()
+      					#this useful for inference setup where some paths are overridden via command line
+						if line.startswith(config_keyword + ':') and config_keyword not in config_d:
+							config_d[config_keyword] = line.split(" #")[0].strip().split(":")[-1].strip()
 
 	# change keywords based model type
-	data_keyword = [ 'config', 'config_template', 'spec_fp','mol_fp', 'split_dp']
+	data_keyword = ['config', 'config_template', 'spec_fp','mol_fp', 'split_dp']
 	if config_d['model_type'] in ['frag_gnn','fragnnet']:
 		data_keyword.append('frag_dp')
 	elif config_d['model_type'] in ['iceberg_gen','iceberg_inten']:
 		data_keyword.append('magma_dp')
 	elif config_d['model_type'] == 'graff':
 		data_keyword.append('ann_fp')
+	elif config_d['model_type'] == 'mces_pretraining':
+		data_keyword.append('mces_fp')
+	# copy mces fp if pretraining
+	if config_d['mces_pretrain'].lower() == 'true':
+		data_keyword.append('mces_pretrain_ckpt_fp')
 	print(f"> model type: {config_d['model_type']}")
  	# copy data files	
 	script_lines.extend(
@@ -184,17 +201,17 @@ def main(args):
 		if path_value.startswith('./'):
 			path_value = path_value[2:]
 		if name not in config_d:
-			print(f"missing {name} in config file")
-		if name != 'frag_dp':
-				print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
-				script_lines.extend(
-					[f"# copy {name} file from {path_value} to slurm tmp dir",
-					f"rsync -av --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}"])
-		elif name == 'frag_dp':
+			raise ValueError(f"missing {name} in config file")
+
+		if name == 'frag_dp':
 			# check if frag_dp is a file or dir, if it is file, copy it and unpack
 			tar_ext = None
-			dag_dp = path_value
-			frag_dp = dag_dp.rsplit("/",1)[0]
+			print(path_value)
+			if args.python_script_fp.rsplit("/", 1)[-1] == "run_pl_model_fit.py":
+				frag_dp = path_value.rsplit("/", 1)[0]  # this is for training setup
+			else:
+				frag_dp = path_value
+			# use tarball and then unpacks
 			for ext in ['.tar','.tar.xz', '.tar.gz', '.tgz']:
 				if os.path.isfile(frag_dp+ext):
 					tar_ext = ext
@@ -206,13 +223,21 @@ def main(args):
 					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{frag_dp+tar_ext} ${{WORKING_DIR}}",
 					f"tar -xf ${{WORKING_DIR}}/{frag_dp+tar_ext} -C ${{WORKING_DIR}}/{frag_dp.rsplit('/',1)[0]}",
 					])
-			else:
-				print(f"> adding cmd to copy directory {dag_dp}")
+			elif os.path.isdir(frag_dp):
+				print(f"> adding cmd to copy directory {frag_dp}")
 				script_lines.extend(
-	   				[f"# copy {name} file from {dag_dp} to slurm tmp dir",
-					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{dag_dp} ${{WORKING_DIR}}"
+	   				[f"# copy {name} file from {frag_dp} to slurm tmp dir",
+					 f"rsync -av --relative ${{FRAGNNET_DP}}/./{frag_dp} ${{WORKING_DIR}}"
 					])
-
+			else:
+				raise FileNotFoundError(f"File not found: {frag_dp} or {frag_dp+ext}")
+		elif not os.path.exists(path_value):
+				raise FileNotFoundError(f"File not found: {path_value}")
+		else:
+			print(f"> adding cmd to copy {name} file from {path_value} to slurm tmp dir")
+			script_lines.extend(
+				[f"# copy {name} file from {path_value} to slurm tmp dir",
+				f"rsync -av --relative ${{FRAGNNET_DP}}/./{path_value} ${{WORKING_DIR}}"])
     # soft link back to home directy for wandb
 	script_lines.extend(
 		[

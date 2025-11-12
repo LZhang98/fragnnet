@@ -8,6 +8,7 @@ import argparse
 import glob
 from fragnnet.utils.data_utils import rdkit_import, seq_apply, par_apply, parse_mass_gym_ce_str
 from fragnnet.utils.misc_utils import flatten_lol
+import re
 
 MSP_KEY_DICT = {
 	"Precursor_type": "prec_type",
@@ -433,10 +434,13 @@ SPECTRAVERSE_MGF_KEY_DICT = {
 	'COLLISION_ENERGY_1': 'col_energy',
 	'COLLISION_ENERGY_2': 'col_energy_extra_1',
 	'COLLISION_ENERGY_3': 'col_energy_extra_2',
-	#'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy_1',
+	#'NORMALIZED_COLLISION_ENERGY_1': 'normalized_col_energy',
 	#'NORMALIZED_COLLISION_ENERGY_2': 'normalized_col_energy_2',
 	#'NORMALIZED_COLLISION_ENERGY_3': 'normalized_col_energy_3',
-	'FOLD': 'fold',
+	'FOLD_INCHI': 'fold_inchi',
+	'FOLD_FORM': 'fold_form',
+	'FOLD_MCES': 'fold_mces',
+	'FOLD_MCESFORM': 'fold_mcesform',
 	'INDEX': 'spec_id',
 	'SOURCE': 'source',
 	'TITLE': 'title',
@@ -481,25 +485,69 @@ def process_specverse(mgf_fp):
 							value = value.split()[0]
 						elif col.startswith("col_energy"):
 							if not value is np.nan:
-								value = float(value.split()[0]) 
+								# force eV unit
+								value = str(value) + " eV" 
 						data_dict[col] = value
 	  
 	spec_df = pd.DataFrame(spectra_list)
-	spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
+	spec_verse_folds_keys = ['fold_inchi','fold_form','fold_mces','fold_mcesform']
+	for col in spec_verse_folds_keys:
+		spec_df.loc[:,col] = spec_df.loc[:,col].astype(int)
+	#spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
 	spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
 	spec_df.loc[:, 'stepped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (~spec_df['col_energy_extra_2'].isna())
 	# setup dset
 	spec_df.loc[:,"dset"] = "spectraverse"
-	spec_df.loc[:,"dset_spec_id"] = spec_df["spec_id"]
-	
-	split_df = spec_df[["spec_id","fold"]]
- 
+	spec_df.loc[:,"dset_spec_id"] = spec_df["title"].apply(lambda x: int(x[len("SPECTRAVERSE"):]))
+	spec_df.loc[:, "ion_mode"] = spec_df["prec_type"].apply(lambda x: "P" if "+" in str(x) else ("N" if "-" in str(x) else np.nan))
+	split_df = spec_df[["spec_id"] + spec_verse_folds_keys]
+	spec_df.drop(columns=spec_verse_folds_keys,inplace=True)
  	# add extra columns for compatibility
 	for value in MSP_KEY_DICT.values():
 		if value not in spec_df.columns:
 			spec_df.loc[:,value] = np.nan
    
 	return spec_df, split_df
+
+def process_nist_ei_csv(csv_fp):
+	spec_df = pd.read_csv(csv_fp)
+	print(f"> processing nist csv file {csv_fp}")
+	print(f"> {len(spec_df)} rows read from {csv_fp}")
+	print("> num spec: ", spec_df.isna().sum())
+	# rename some columns
+	#spec_df = spec_df.rename(columns={"NISTNO":"dset_spec_id","Precursor":"prec_mz","IonMode":"ion_mode","InstrumentType":"inst_type","SpectrumType":"spec_type","Ionization":"prec_type","ExactMass":"exact_mass","MW":"mw","CASNO":"cas_num","NumPeaks":"num_peaks","SMILES":"smiles","InChIKey":"inchikey","Name":"name"})
+	# add extra columns for compatibility
+	#spec_df = spec_df.rename(columns={"ExactMass":"exact_mass","NumPeaks":"num_peaks","SMILES":"smiles","Inchikey":"inchikey","Name":"name", "Formula":"formula"})
+	spec_df.loc[:,"frag_mode"] = "EI"
+	spec_df.loc[:,"ion_type"] = "EI"
+	spec_df.loc[:,"col_energy"] = "70.0 ev"
+	spec_df.loc[:,"prec_type"] = "[M]+"
+	spec_df.loc[:,"spec_type"] = "MS1"
+	spec_df.loc[:,"inst_type"] = "GC-MS"
+	spec_df.loc[:, "ion_mode"] = "P"
+	spec_df.loc[:,"dset"] = "nist_ei"
+	spec_df.loc[:,"dset_spec_id"] = np.arange(spec_df.shape[0])
+	spec_df.loc[:,"prec_mz"] = spec_df["exact_mass"] #.apply(lambda x: int(x) if not pd.isna(x) else x)
+	def parse_nist_ei_peaks(peaks_str):
+		if pd.isna(peaks_str) or peaks_str is None:
+			return peaks_str
+		# Use regex to extract mz intensity pairs
+
+		pattern = r'([0-9]+\s[0-9]+)'
+		peak_pairs = re.findall(pattern, peaks_str)
+		# Join with newlines
+		return "\n".join(peak_pairs)
+	
+	spec_df["peaks"] = spec_df["peaks"].apply(parse_nist_ei_peaks)
+	print(spec_df["peaks"].head())
+	#spec_df.loc[:,"exact_mass"] = spec_df["ExactMass"]
+	for value in MSP_KEY_DICT.values():
+		if value not in spec_df.columns:
+			spec_df.loc[:,value] = np.nan
+	# add spec_id
+	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
+	#print(spec_df["peaks"].head())
+	return spec_df
 
 if __name__ == "__main__":
 
@@ -511,12 +559,14 @@ if __name__ == "__main__":
 	parser.add_argument('--ms_dir', type=str, required=False)
 	parser.add_argument('--ms_meta_file', type=str, required=False)
 	parser.add_argument('--mgf_file', type=str, required=False)
-	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip", "spectraverse"], required=True)
+	parser.add_argument('--csv_file', type=str, required=False)
+
+	parser.add_argument('--input_format', type=str, choices=["msp","msp+mol","ms+meta", "msp+pkl", "ms_gym", "ms_gym_extra", "pcdl_zip", "spectraverse", "nist_csv"], required=True)
 	parser.add_argument('--output_name', type=str, required=True)
 	parser.add_argument('--raw_data_dp', type=str, default='data/raw')
 	parser.add_argument('--output_dp', type=str, default='data/df')
 	parser.add_argument('--num_entries', type=int, default=-1)
-	parser.add_argument('--output_format', type=str, default="json", choices=["json","csv"])
+	parser.add_argument('--output_format', type=str, default="csv", choices=["json","csv"])
 	parser.add_argument('--msp_dset_spec_id', type=str, default="NISTNO", choices=["NISTNO","DB#","NIST#","ID"])
 	parser.add_argument('--ms_gym_tsv', type=str, required=False)
 	parser.add_argument('--pcdl_dir', type=str, required=False)
@@ -538,13 +588,6 @@ if __name__ == "__main__":
 			mol_dp = os.path.join(args.raw_data_dp,args.mol_dir)
 			assert os.path.isdir(mol_dp), mol_dp
 			mol_df = preproc_nist_mol(mol_dp)
-		elif args.input_format == "msp+pkl":
-			pkl_fp = os.path.join(args.raw_data_dp,args.pkl_file)
-			assert os.path.isfile(pkl_fp), pkl_fp
-			nist_id_map = pd.read_pickle(pkl_fp)
-			nist_id_map	= nist_id_map.rename(columns={"nist_id":args.msp_dset_spec_id,"smiles":"SMILES"})
-			msp_df = msp_df.drop(columns=["SMILES"]).merge(nist_id_map,on=[args.msp_dset_spec_id],how="left")
-			mol_df = None
 		else:
 			mol_df = None
 		spec_df = merge_and_check(msp_df,mol_df,MSP_KEY_DICT)
@@ -577,8 +620,16 @@ if __name__ == "__main__":
 		mgf_fp = os.path.join(args.raw_data_dp,args.mgf_file)
 		assert os.path.isfile(mgf_fp), mgf_fp
 		spec_df, split_df  = process_specverse(mgf_fp)
-		split_df_fp = os.path.join(args.output_dp,f"{args.output_name}_fold.csv")
-		split_df.to_csv(split_df_fp,index=False)
+		for fold_type in ["fold_inchi","fold_form","fold_mces","fold_mcesform"]:
+			for fold, fold_grp in split_df.groupby(fold_type):
+				print(f"> {fold_type} fold {fold} has {len(fold_grp)} spectra")
+				fold_grp_fp = os.path.join(args.output_dp,f"{args.output_name}_{fold_type}_{fold}.csv")
+				ids_df = fold_grp[["spec_id"]]
+				fold_grp.to_csv(fold_grp_fp,index=False)
+	elif args.input_format == "nist_csv":
+		csv_fp = os.path.join(args.raw_data_dp,args.csv_file)
+		assert os.path.isfile(csv_fp), csv_fp
+		spec_df = process_nist_ei_csv(csv_fp)
 	else:
 		raise ValueError(f"Invalid input format: {args.input_format}")
 	

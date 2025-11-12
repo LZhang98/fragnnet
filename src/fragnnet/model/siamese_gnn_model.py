@@ -1,5 +1,5 @@
 """
-Siamese  Model for MS/MS Spectrum Pre-Training
+Siamese  Model for MCES regression pretraining
 The model uses GNN  and optional embeddings for collision energy (CE),
 precursor type, and instrument type, and predicts spectra using a feedforward neural network.
 """
@@ -13,7 +13,8 @@ from fragnnet.model.nn_blocks import MLPBlocks, GNN, build_pool_module
 class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 	"""
 	Siamese GNN model for molecular graph embedding and MCES regression.
-	Uses real CE, Prec, and Inst embedders (like FragGNNModel), but allows default values in forward.
+	Uses real CE, Prec, and Inst embedders (like FragGNNModel), but use default values in forward.
+	This is done to maintain compatibility and without changing the data pipeline.
 	"""
 	def __init__(
 		self,
@@ -44,8 +45,21 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		inst_insert_location: str,
 		inst_insert_size: int,
 		inst_types: list[str],
+
+		# how to combine two mol embeddings before regression. Supported:
+		#  - 'c' (default): absolute element-wise difference |xi - xj| (order-invariant)
+		#  - 'signed_diff': signed element-wise difference xi - xj (order-sensitive)
+		#  - 'concat_avg': concatenate [xi, xj] and average predictions for both orders
+		#  - 'cross_attn': cross-attention between the two embeddings (symmetric by averaging both directions)
+		combination_mode: str = "cross_attn",
+		# cross-attention hyperparameters (only used when combination_mode=='cross_attn')
+		cross_attn_dim: int | None = None,
+		cross_attn_heads: int = 4,
 	):
 		super().__init__()
+		self.combination_mode = combination_mode
+		self.cross_attn_dim = cross_attn_dim
+		self.cross_attn_heads = cross_attn_heads
 		# Real CE, Prec, Inst embedders (same as FragGNNModel)
 		self._ce_init(
 			int_embedder=int_embedder,
@@ -94,8 +108,32 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		self.mlp_input_dim = mol_hidden_size
 		self.mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
 
+		# Determine regressor input size based on combination mode.
+		# For concat modes we need double the input dimension.
+		if self.combination_mode in ("concat_avg", "concat"):
+			reg_input_size = 2 * self.mlp_input_dim
+		elif self.combination_mode in ("abs_diff", "signed_diff"):
+			reg_input_size = self.mlp_input_dim
+		elif self.combination_mode == "cross_attn":
+			# determine cross attention projection dimension
+			if self.cross_attn_dim is None:
+				# default to mlp input dim
+				self.cross_attn_dim = self.mlp_input_dim
+			# ensure number of heads divides embed dim
+			heads = min(self.cross_attn_heads, max(1, self.cross_attn_dim))
+			while heads > 1 and (self.cross_attn_dim % heads) != 0:
+				heads -= 1
+			self._cross_attn_heads = heads
+			# register small projection + multihead attention for cross interaction
+			self.cross_proj = nn.Linear(self.mlp_input_dim, self.cross_attn_dim)
+			self.cross_mha = nn.MultiheadAttention(embed_dim=self.cross_attn_dim, num_heads=self._cross_attn_heads, batch_first=True)
+			# combined vector will contain [xi, attn_ij, xj, attn_ji]
+			reg_input_size = 2 * self.mlp_input_dim + 2 * self.cross_attn_dim
+		else:
+			raise ValueError(f"Unsupported combination_mode: {self.combination_mode}")
+
 		self.regressor = MLPBlocks(
-			input_size=self.mlp_input_dim,
+			input_size=reg_input_size,
 			output_size=1,
 			hidden_size=mlp_hidden_size,
 			num_layers=mlp_num_layers,
@@ -196,9 +234,59 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 		mlp_input_i = th.cat(mlp_parts_i, dim=1)
 		mlp_input_j = th.cat(mlp_parts_j, dim=1)
 
-		combined = th.abs(mlp_input_i - mlp_input_j)
-		pred_mces = self.regressor(combined)
-		return pred_mces.squeeze(-1)
+		# Combine the two MLP inputs according to the requested mode.
+		# - 'abs_diff': order-invariant absolute element-wise difference (default)
+		# - 'signed_diff': order-sensitive signed difference (xi - xj)
+		# - 'concat_avg': symmetric concat: avg( reg([xi,xj]), reg([xj,xi]) )
+		# - 'concat': simple concat [xi, xj] (order-sensitive)
+		if self.combination_mode == "abs_diff":
+			combined = th.abs(mlp_input_i - mlp_input_j)
+			pred_mces = self.regressor(combined)
+			return pred_mces.squeeze(-1)
+		elif self.combination_mode == "signed_diff":
+			combined = mlp_input_i - mlp_input_j
+			pred_mces = self.regressor(combined)
+			return pred_mces.squeeze(-1)
+		elif self.combination_mode == "concat_avg":
+			# Build concatenated inputs for both orders, run regressor and average.
+			cat_ij = th.cat([mlp_input_i, mlp_input_j], dim=1)
+			cat_ji = th.cat([mlp_input_j, mlp_input_i], dim=1)
+			pred1 = self.regressor(cat_ij)
+			pred2 = self.regressor(cat_ji)
+			pred = 0.5 * (pred1 + pred2)
+			return pred.squeeze(-1)
+		elif self.combination_mode == "concat":
+			cat = th.cat([mlp_input_i, mlp_input_j], dim=1)
+			pred = self.regressor(cat)
+			return pred.squeeze(-1)
+		elif self.combination_mode == "cross_attn":
+			# cross-attention between the two pooled embeddings.
+			# We compute attention of i->j and j->i separately and include both
+			# attended vectors alongside the original embeddings, producing
+			# a combined vector [xi, attn_ij, xj, attn_ji]. This is expressive
+			# and we keep symmetry by computing attention in both directions.
+			# If batch sizes differ we fall back to simple concat (safe fallback).
+			if batch_size_i != batch_size_j:
+				# fallback: concatenate (note: typically batches for pair datasets are aligned)
+				print(f"Warning: cross_attn requested but batch sizes differ ({batch_size_i}!={batch_size_j}), falling back to concat")
+				cat = th.cat([mlp_input_i, mlp_input_j], dim=1)
+				pred = self.regressor(cat)
+				return pred.squeeze(-1)
+
+			# project into attention embedding space and run MHA (seq_len=1)
+			proj_i = self.cross_proj(mlp_input_i)
+			proj_j = self.cross_proj(mlp_input_j)
+			proj_i_seq = proj_i.unsqueeze(1)  # (B, 1, D)
+			proj_j_seq = proj_j.unsqueeze(1)
+			attn_ij, _ = self.cross_mha(query=proj_i_seq, key=proj_j_seq, value=proj_j_seq)
+			attn_ji, _ = self.cross_mha(query=proj_j_seq, key=proj_i_seq, value=proj_i_seq)
+			attn_ij = attn_ij.squeeze(1)
+			attn_ji = attn_ji.squeeze(1)
+			combined = th.cat([mlp_input_i, attn_ij, mlp_input_j, attn_ji], dim=1)
+			pred = self.regressor(combined)
+			return pred.squeeze(-1)
+		else:
+			raise ValueError(f"Unsupported combination_mode: {self.combination_mode}")
 
 	def _compute_mol_feats_sizes(self):
 		"""Compute molecular feature sizes (does not rely on model parameters)."""

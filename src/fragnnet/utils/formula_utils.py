@@ -18,6 +18,7 @@ O_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("O")
 CL_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("Cl")
 K_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("K")
 I_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("I")
+C_MASS = PERIODIC_TABLE.GetMostCommonIsotopeMass("C")
 
 PREC_TYPE_TO_MASS_DIFF = {
 	"[M+H]+": H_MASS - ELECTRON_MASS,
@@ -36,8 +37,12 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"[M+Cl]-": CL_MASS + ELECTRON_MASS,
 	"[M-H-H2O]-": -3 * H_MASS - O_MASS + ELECTRON_MASS,
 	"[M-H+2i]-": -H_MASS + 2 * I_MASS + ELECTRON_MASS,
+	"[M+CH2O2-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
+	"[M+CH3COO]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
+	# some NL adducts
+	"[M+H]+_NL": -H_MASS + ELECTRON_MASS,
+	"[M-H]-_NL": H_MASS - ELECTRON_MASS,
 }
-
 # charge transfer
 PREC_TYPE_TO_CMF_MASS_DIFF = {
 	"[M+H]+": H_MASS - ELECTRON_MASS,

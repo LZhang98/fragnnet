@@ -44,7 +44,7 @@ class CEModel:
 			ce_std: Std for CE normalization.
 			ce_max: Max value for CE binning/embedding.
 		"""
-		assert ce_insert_type in ["id","lin","embed","bin"]
+		assert ce_insert_type in ["id","lin","embed","embed_clamped","bin"]
 		assert ce_insert_location in ["none","mol","frag","mlp"]
 		self.ce_insert_type = ce_insert_type
 		self.ce_insert_location = ce_insert_location
@@ -80,12 +80,11 @@ class CEModel:
 			ce_input_dim = self.ce_insert_size
 		elif self.ce_insert_type == "embed":
 			def ce_transform(ce):
-				# let embedder handle clamping and missing data
 				ce = th.clamp(ce, min=-1)
 				ce = th.round(ce, decimals=0).long()
 				ce = ce.reshape(-1,1)
 				return ce
-			embedder = get_embedder(self.int_embedder, max_count_int=int(self.ce_max))
+			embedder = get_embedder(self.int_embedder, max_count_int=int(self.ce_max)+1)  # +1 for the shifted range
 			ce_embedder = nn.Sequential(
 				embedder,
 				nn.Linear(embedder.num_dim,self.ce_insert_size)
@@ -93,7 +92,7 @@ class CEModel:
 			ce_input_dim = self.ce_insert_size
 		elif self.ce_insert_type == "embed_clamped":
 			def ce_transform(ce):
-				ce = th.clamp(ce, min=0, max=int(self.ce_max)-1)
+				ce = th.clamp(ce, min=-1, max=int(self.ce_max)-1)
 				ce = th.round(ce, decimals=0).long()
 				ce = ce.reshape(-1,1)
 				return ce
@@ -105,11 +104,18 @@ class CEModel:
 			ce_input_dim = self.ce_insert_size
 		elif self.ce_insert_type == "bin":
 			def ce_transform(ce):
-				ce = th.clamp(ce, min=-1, max=int(self.ce_max)-10)
-				ce = th.round(ce, decimals=-1).long() // 10
-				ce = F.one_hot(ce, num_classes=int(self.ce_max)//10).float()
+				# Handle -1 (missing/unknown) by giving it its own bin (index 0)
+				# Other values are binned normally then shifted up by 1
+				ce = th.clamp(ce, min=-1, max=int(self.ce_max)-10)				
+				# Create mask for -1 values
+				missing_mask = (ce == -1)
+				# For non-missing values: bin them and shift up by 1
+				ce_binned = th.round(ce, decimals=-1).long() // 10
+				ce_binned = th.where(missing_mask, th.tensor(0, device=ce.device, dtype=ce_binned.dtype), ce_binned + 1)
+				# One-hot encode with -1 getting bin 0, others getting bins 1+
+				ce = F.one_hot(ce_binned, num_classes=(int(self.ce_max)//10)+1).float()  # +1 for the -1 bin
 				return ce
-			ce_embedder = nn.Linear(int(self.ce_max)//10,self.ce_insert_size)
+			ce_embedder = nn.Linear((int(self.ce_max)//10)+1,self.ce_insert_size)  # +1 for the -1 bin
 			ce_input_dim = self.ce_insert_size
 
 		# Setup location

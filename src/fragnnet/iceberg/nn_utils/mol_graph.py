@@ -7,7 +7,8 @@ and bonds. Inspired by the dgllife library.
 from rdkit import Chem
 import numpy as np
 import torch as th
-import dgl
+
+from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
 import fragnnet.iceberg.nn_utils.nn_utils as nn_utils
 
 atom_feat_registry = {}

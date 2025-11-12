@@ -1,4 +1,4 @@
-from fragnnet.pl_model import FragGNNPL, NeimsPL, PrecursorPL, GNNPL, MCESPL
+from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL, GNNPL, MCESPL
 from fragnnet.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.graff.pl_model import GrAFFPL
@@ -20,7 +20,7 @@ def get_model_cls(model_type: str) -> type:
 		type: The model class corresponding to the model type.
 	"""
 	if model_type in ["frag_gnn", "fraggnet"]:
-		model_cls = FragGNNPL
+		model_cls = FraGNNetPL
 	elif model_type== "neims":
 		model_cls = NeimsPL
 	elif model_type== "iceberg_gen":

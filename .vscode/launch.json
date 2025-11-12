@@ -17,12 +17,20 @@
       }
     },
     {
-      "name": "mces_pretraining",
+      "name": "scripts/mces_pretraining",
       "type": "python",
       "request": "launch",
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
-      "args": ["-w","disabled","-c","config/debug/debug_mces.yml"]
+      "args": ["-w","disabled","-c","config/debug/debug_mces_pretraining.yml"]
+    },
+    {
+      "name": "scripts/mces_finetuning",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_mces_finetuning.yml"]
     },
     {
       "name": "scripts/debug_tiny_um_prec",

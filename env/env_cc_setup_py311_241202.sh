@@ -28,10 +28,11 @@ pip install --no-index tqdm
 pip install --no-index scipy==1.15.1
 pip install --no-index joblib==1.3.2
 pip install --no-index matplotlib
+pip install --no-index h5py
 
 pip install pyteomics
 pip install cysignals
 
 #pip install CairoSVG
 
-pip install -I -e .
+pip install --no-deps -I -e .

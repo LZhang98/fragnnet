@@ -14,10 +14,10 @@ import tqdm
 import pandas as pd
 import threading
 import torch_geometric as pyg
-import dgl
 from collections import defaultdict
 import sys
 import glob
+from fragnnet.utils.dgl_compat_utils import DGLGraph
 
 TQDM_DISABLE = False
 PPM = 1/1000000
@@ -226,6 +226,24 @@ def get_tensor_dict_memory_usage(**tensor_dict):
 
 def get_pyg_memory_usage(pyg_graph):
 	return pyg.profile.get_data_size(pyg_graph)
+
+def get_mol_graph_size(mol_data, mol_params):
+	"""
+	Calculate the memory usage of molecular graph data.
+	
+	Args:
+		mol_data: Dictionary containing molecular data
+		mol_params: Dictionary containing molecular parameters
+		
+	Returns:
+		Memory usage in bytes
+	"""
+	if mol_params["pyg"]:
+		mol_pyg = mol_data["mol_pyg"]
+		mol_graph_size = get_pyg_memory_usage(mol_pyg)
+	else:
+		mol_graph_size = 0
+	return mol_graph_size
 
 def scatter_masked_softmax(logits,mask,subset_idxs,mask_logprob=None,log=True):
 	
@@ -582,7 +600,8 @@ def to_device(data_d, device, non_blocking=True):
 
 	for k in data_d.keys():
 		v = data_d[k]
-		if isinstance(v, th.Tensor) or isinstance(v, dgl.DGLGraph) or isinstance(v, pyg.data.Data):
+		# Support optional DGL: use DGLGraph placeholder for isinstance checks
+		if isinstance(v, th.Tensor) or isinstance(v, DGLGraph) or isinstance(v, pyg.data.Data):
 			v = v.to(device,non_blocking=non_blocking)
 			data_d[k] = v
 	return data_d
@@ -610,7 +629,7 @@ def print_shapes(input_dict):
 			print(k,"/",len(v),"/",type(v))
 		elif isinstance(v,pyg.data.Data):
 			print(k,"/",(v.num_nodes,v.num_edges),"/",type(v))
-		elif isinstance(v,dgl.DGLGraph):
+		elif isinstance(v, DGLGraph):
 			print(k,"/",(v.number_of_nodes(),v.number_of_edges()),"/",type(v))
 		else:
 			print(k,"/",None,"/",type(v))

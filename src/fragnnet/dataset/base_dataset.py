@@ -85,13 +85,56 @@ class BaseDataset(Dataset):
 		assert not (spec_params["ace"] and spec_params["nce"])
 		if spec_params["ace"]:
 			ce_key = "ace"
-			spec_df.loc[:,"ace"] = seq_apply_df_rows(spec_df, fill_missing_ace)
+			spec_df.loc[:,ce_key] = seq_apply_df_rows(spec_df, lambda row: fill_missing_ace(row, ace_colname="ace", nce_colname="nce"))
+			spec_df.loc[:,f"{ce_key}_extra_1"] = seq_apply_df_rows(spec_df, lambda row: fill_missing_ace(row, ace_colname="ace_extra_1", nce_colname="nce_extra_1"))
+			spec_df.loc[:,f"{ce_key}_extra_2"] = seq_apply_df_rows(spec_df, lambda row: fill_missing_ace(row, ace_colname="ace_extra_2", nce_colname="nce_extra_2"))
 		elif spec_params["nce"]:
 			ce_key = "nce"
-			spec_df.loc[:,"nce"] = seq_apply_df_rows(spec_df, fill_missing_nce)
+			spec_df.loc[:,ce_key] = seq_apply_df_rows(spec_df, lambda row: fill_missing_nce(row, ace_colname="ace", nce_colname="nce"))
+			spec_df.loc[:,f"{ce_key}_extra_1"] = seq_apply_df_rows(spec_df, lambda row: fill_missing_nce(row, ace_colname="ace_extra_1", nce_colname="nce_extra_1"))
+			spec_df.loc[:,f"{ce_key}_extra_2"] = seq_apply_df_rows(spec_df, lambda row: fill_missing_nce(row, ace_colname="ace_extra_2", nce_colname="nce_extra_2"))
 		else:
 			ce_key = None
-  
+
+		if ce_key is not None:
+			#print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_1"]])
+			#print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_2"]])
+			print(f">> replace missing {ce_key} with -1, and fill ramped/stepped ces accordingly")
+			# First fill extra columns with -1 (these stay as floats)
+			spec_df.loc[:,f"{ce_key}_extra_1"] = spec_df.loc[:,f"{ce_key}_extra_1"].fillna(-1)
+			spec_df.loc[:,f"{ce_key}_extra_2"] = spec_df.loc[:,f"{ce_key}_extra_2"].fillna(-1)
+			
+			def _fill_ce_list(row, ce_key):
+				ce = row[ce_key]
+				ce_extra_1 = row[f"{ce_key}_extra_1"]
+				ce_extra_2 = row[f"{ce_key}_extra_2"]
+				
+				# Handle missing main CE value
+				if pd.isna(ce):
+					ce = -1
+					
+				if ce != -1 and ce_extra_1 != -1 and ce_extra_2 != -1:
+					# for stepped ce
+					# ce is the lower bound, ce_extra_1 is the middle, ce_extra_2 is the upper bound
+					assert ce < ce_extra_1 < ce_extra_2, row
+					return [ce, ce_extra_1, ce_extra_2]
+				elif ce != -1 and ce_extra_1 != -1:
+					# for ramped ce
+					ramped_step_size = 1.0
+					# assert ce_extra_1 > ce, (ce, ce_extra_1)
+					# assert (ce_extra_1 - ce) > ramped_step_size, (ce, ce_extra_1, ramped_step_size)
+					ces = np.arange(ce, ce_extra_1 + 0.1, ramped_step_size).tolist()
+					return ces
+				else:
+					# for single ce
+					return [ce]
+			
+			# Apply the function to create lists - this will set the correct dtype
+			result_series = seq_apply_df_rows(spec_df, lambda row: _fill_ce_list(row, ce_key))
+			# Convert column to object dtype before assignment to avoid dtype warning
+			spec_df[ce_key] = spec_df[ce_key].astype(object)
+			spec_df.loc[:, ce_key] = result_series
+
 		if spec_params["test_ces"] is not None and ce_key is not None and "test" in splits:
 			test_split_fp = os.path.join(split_dp,"test_ids.csv")
 			test_split_df = pd.read_csv(test_split_fp)
@@ -253,15 +296,12 @@ class BaseDataset(Dataset):
 			assert (not self.spec_params["merge"]) or self.spec_params["merge_keep_ces"]
 			assert not (self.spec_params["ace"] and self.spec_params["nce"])
 			ce = spec_entry[self.ce_key]
-			if self.spec_params["merge"]:
-				assert self.spec_params["merge_keep_ces"]
-				assert isinstance(ce,list), type(ce)
-				ce = th.tensor(ce,dtype=th.float)
-				spec_data["spec_ce"] = ce
-			else:
-				assert isinstance(ce,float), type(ce)
-				ce = th.tensor([ce],dtype=th.float)
-				spec_data["spec_ce"] = ce
+			# both merged and unmerged spectra are stored as list of ces
+			# for merged spectra, it is list of ces used to merge
+			# for unmerged spectra, it is list of ces available include both ramped/stepped ces
+			assert isinstance(ce,list), type(ce)
+			ce = th.tensor(ce,dtype=th.float)
+			spec_data["spec_ce"] = ce
 		if self.spec_params["prec_mz"]:
 			prec_mz = spec_entry["prec_mz"]
 			prec_mz = th.tensor([float(prec_mz)],dtype=th.float)

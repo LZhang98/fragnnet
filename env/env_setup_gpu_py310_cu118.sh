@@ -28,5 +28,6 @@ pip install dgl==1.0.4 -f https://data.dgl.ai/wheels/cu118/repo.html
 pip install omegaconf
 pip install pyteomics
 pip install notebook
+pip install h5py
 
-pip install -I -e .
+pip install --no-deps -I -e .

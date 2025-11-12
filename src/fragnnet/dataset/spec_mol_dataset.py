@@ -3,7 +3,7 @@ from torch_geometric.data import Batch
 from tqdm import tqdm
 
 from fragnnet.utils.feat_utils import get_mol_fp, get_mol_graph
-from fragnnet.utils.misc_utils import get_pyg_memory_usage
+from fragnnet.utils.misc_utils import get_mol_graph_size, get_pyg_memory_usage
 from fragnnet.dataset import BaseDataset
 # TODO move this another Class
 import fragnnet.massformer.data_utils as mf_data_utils
@@ -52,11 +52,12 @@ class SpecMolDataset(BaseDataset):
 
 	def _get_mol_graph_size(self, mol_data):
 
-		if self.mol_params["pyg"]:
-			mol_pyg = mol_data["mol_pyg"]
-			mol_graph_size = get_pyg_memory_usage(mol_pyg)
-		else:
-			mol_graph_size = 0
+		#if self.mol_params["pyg"]:
+		#	mol_pyg = mol_data["mol_pyg"]
+		#	mol_graph_size = get_pyg_memory_usage(mol_pyg)
+		#else:
+		#	mol_graph_size = 0
+		mol_graph_size = get_mol_graph_size(mol_data, self.mol_params)
 		return mol_graph_size
 
 	def _preprocess_mol(self, mol_pp_sd: dict):

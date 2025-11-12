@@ -22,11 +22,6 @@ from io import BytesIO
 from math import ceil
 import re
 
-predicted_fp='data/predicted/nist20_d4_wr00_inchikey/kme8fry7_fraggnn_d4_nodemlp_mnce_nocp.pkl.gz'
-frag_dp = 'data/frag/nist20_d4_h4_isoFalse/dags'
-save_fp = 'data/predicted/icml_figure2.pkl'
-
-
 def plot_formula_axes(ax,
 					  formula:str,
 					  peak_id:str|int,
@@ -254,12 +249,16 @@ def plot_spectra_axes(ax,
 
 if __name__ == "__main__":
 	
-	all_pred_data  = []
-
-	with (open(save_fp, "rb")) as file_in:
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--predicted_fp", type=str, required=False, help="Predicted data pickle file path", default='data/predicted/nist20_d4_wr00_inchikey/kme8fry7_fraggnn_d4_nodemlp_mnce_nocp.pkl.gz')
+	parser.add_argument("--frag_dp", type=str, required=False, help="Fragment data directory path", default='data/frag/nist20_d4_h4_isoFalse/dags')
+	
+	args = parser.parse_args()
+	all_pred_data  = [] 
+	with (open(args.predicted_fp, "rb")) as file_in:
 		all_pred_data = pickle.load(file_in)
-	spec_unique_ids = [10731,12205,12946,12955]
-	mol_ids = [13437,19132,12946,28186]
+	#spec_unique_ids = [10731,12205,12946,12955]
+	#mol_ids = [13437,19132,12946,28186]
 
 	#print(all_pred_data[0])
 	pred_data = all_pred_data[0]

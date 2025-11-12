@@ -92,9 +92,28 @@ def get_ints_untransform_func(ints_transform):
 		return ints
 	return _func
 
-def transform_ce(ce, ce_mean, ce_std):
-	return (ce-ce_mean)/ce_std
+def transform_ce(ce: th.Tensor|float, ce_mean: float, ce_std: float) -> th.Tensor:
+	"""Transform collision energy (CE) values.
+		if ce < -1, it is considered missing/unknown and returned as is.
+	Args:
+		ce (torch.Tensor): The CE values to transform.
+		ce_mean (float): The mean CE value.
+		ce_std (float): The standard deviation of CE values.
 
+	Returns:
+		torch.Tensor: The transformed CE values.
+	"""
+	if isinstance(ce, th.Tensor):
+		# Handle tensor input
+		mask = ce >= 0
+		transformed_ce = th.where(mask, (ce - ce_mean) / ce_std, ce)
+		return transformed_ce
+	else:
+		# Handle scalar input
+		if ce >= 0:
+			return th.tensor((ce - ce_mean) / ce_std)
+		else:
+			return th.tensor(ce)
 
 def transform_nce_to_ace(nce:float, mw:float, charge_factor:int = 1) -> float:
 	"""get ace from given nce and mw
@@ -377,16 +396,16 @@ def calculate_spectrum_entropy(log_ints:th.Tensor,batch_idxs:th.Tensor) -> th.Te
 	return entropy
 
 def calculate_match_mzs(
-		true_mzs:th.Tensor,
-		pred_mzs:th.Tensor,
+		true_mzs:th.Tensor | np.ndarray,
+		pred_mzs:th.Tensor | np.ndarray,
 		tolerance:float=1e-5,
 		relative:bool=True,
 		tolerance_min_mz:float=TOLERANCE_MIN_MZ,
 		pred_mz_divisor:bool=False
-	) -> th.Tensor:
+	) -> th.Tensor | np.ndarray:
 	"""
-	Method to match two spectra based on m/z, return a N x M matrix, where N is number of mz in pred_mzs, M is number of mz in pred_mzs
-	Each cellm i,j means if pred_mzs[i] matches true_mzs[j]
+	Method to match two spectra based on m/z, return a N x M matrix, where N is number of mz in true_mzs, M is number of mz in pred_mzs
+	Each cell i,j means if true_mzs[i] matches pred_mzs[j]
 	works with numpy arrays or torch tensors inspired by the function in ms-pred
 	NOT BATCHED
 	Args:
@@ -397,19 +416,20 @@ def calculate_match_mzs(
 		tolerance_min_mz (float, optional): Divisor floor used in relative measure. Defaults to 200 Da.
 		pred_mz_divisor (bool, optional): If the measure is relative, whether to use the pred_mzs as divisors (instead of the true_mzs). Defaults to False.
 	Returns:
-		th.Tensor: return a N x M matrix of True or False, dim 0 for predicted, dim 1 for ground truth
+		th.Tensor: return a N x M matrix of True or False, dim 0 for ground truth, dim 1 for predicted
 	"""
 
-	if isinstance(true_mzs,th.Tensor):
-		assert isinstance(pred_mzs,th.Tensor)
+	if isinstance(true_mzs,th.Tensor) and isinstance(pred_mzs,th.Tensor):
 		abs_func = th.abs
 		copy_func = th.clone
-	else:
-		assert isinstance(true_mzs,np.ndarray)
-		assert isinstance(pred_mzs,np.ndarray)
+	elif isinstance(true_mzs,np.ndarray) and isinstance(pred_mzs,np.ndarray):
+
 		abs_func = np.abs
 		copy_func = np.copy
-	diff_mzs = abs_func(true_mzs.reshape(-1,1)-pred_mzs.reshape(1,-1))
+	else:
+		raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
+
+	diff_mzs = abs_func(true_mzs.reshape(-1,1) - pred_mzs.reshape(1,-1))
 	min_diff_mzs = tolerance
 	if relative:
 		if pred_mz_divisor:
@@ -842,7 +862,7 @@ def cos_hun_helper(
 	remove_prec_peak,
 	b_true_prec_mask,
 	b_pred_prec_mask):
-    
+	
 	if remove_prec_peak:
 		import pdb; pdb.set_trace()
 		b_true_ints = b_true_ints*(1-b_true_prec_mask.float())

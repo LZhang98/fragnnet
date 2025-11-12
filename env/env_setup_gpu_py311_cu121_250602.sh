@@ -25,8 +25,10 @@ pip install pytorch_lightning==2.4.0
 pip install dgl==1.1.3+cu121 -f https://data.dgl.ai/wheels/cu121/repo.html
 pip install omegaconf
 pip install cython==3.0.12
-pip install omegaconf
 pip install pyteomics
 pip install notebook
+pip install scikit-learn
+pip install h5py
+pip install --no-index numpy==1.26.4
 
-pip install -I -e .
+pip install --no-deps -I -e .

@@ -719,8 +719,8 @@ def compute_dags(
 		frag_max_time:int,
 		isotopes:bool = False,
 		nb_isomorphic:bool = False,
-		b_isomorphic:bool = False,
-		max_iterations:int = -1) -> dict:
+		#b_isomorphic:bool = False, # not used
+		wl_max_iterations:int = -1) -> dict:
 	"""_summary_
 
 	Args:
@@ -741,7 +741,8 @@ def compute_dags(
 	assert h_prior in [True,False], h_prior
 	num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx = get_fraggen_input_arrays(mol_d)
 	# time the recursive part
-	if frag_max_time is None:
+	# effectively this is infinite amount of time if None or <= 0
+	if frag_max_time is None or frag_max_time <= 0:
 		frag_max_time = int(1e6)
 	
 	node_mask = node_mask.astype(MASK_DTYPE)
@@ -765,7 +766,7 @@ def compute_dags(
 			edges=edges[:num_edges], 
 			node_to_edge_idx=node_to_edge_idx[:num_nodes], 
 			include_bond_type=False,
-			max_iterations=max_iterations)
+			max_iterations=wl_max_iterations)
 	else:
 		node_nb_hashes = None
 
@@ -784,6 +785,7 @@ def compute_dags(
 	reached_depth = dag_frag_meta["reached_depth"]
 	edges_min_depth = dag_frag_meta["edges_min_depth"]
 	nodes_min_depth = dag_frag_meta["nodes_min_depth"]
+	force_stop = dag_frag_meta["force_stopped"]
 
 	# add node depth information
 	# convert to a one hot encoding
@@ -910,6 +912,7 @@ def compute_dags(
 
 	# add edges info
 	edge_diff_cc_mask, edge_diff_formula_mask, edge_diff_h_range = [], [], []
+
 	for edge in dag_edges_matrix:
 		from_idx, to_idx = edge
 		from_cc_mask = nodes_mask_matrix[from_idx]
@@ -945,14 +948,23 @@ def compute_dags(
 		edge_diff_h_range.append(diff_h_range)
 
 	assert len(edge_diff_cc_mask) == len(edge_diff_formula_mask)
-	assert len(edge_diff_cc_mask) > 0, "DAG has no edges"
+	assert len(edge_diff_cc_mask) > 0 or pyg_node_feats.shape[0] == 1, f"DAG has no edges, with {pyg_node_feats.shape[0]} nodes"
 
-	edge_diff_cc_mask = th.as_tensor(np.stack(edge_diff_cc_mask,axis=0), dtype=th.bool)
-	edge_diff_cc_mask = F.pad(edge_diff_cc_mask, (0, MASK_SIZE-edge_diff_cc_mask.shape[1]), "constant", 0)
-	edge_diff_cc_long = th_mask_to_long(edge_diff_cc_mask).type(EDGE_FEAT_DTYPE)
-	edge_diff_formula_mask = th.as_tensor(np.stack(edge_diff_formula_mask,axis=0), dtype=EDGE_FEAT_DTYPE)
-	edge_diff_h_range = th.as_tensor(np.stack(edge_diff_h_range,axis=0), dtype=EDGE_FEAT_DTYPE)
-	pyg_edge_feats = th.cat([edge_diff_cc_long,edge_diff_formula_mask,edge_diff_h_range],dim=1)
+	# Handle case when there are no edges
+	if len(edge_diff_cc_mask) == 0:
+		# Create empty edge feature tensor with correct shape
+		cc_edge_feat_size = MASK_SIZE // 64
+		base_formula_edge_feat_size = len(ELEMENT_TO_IDX)
+		h_range_edge_feat_size = 2
+		total_edge_feat_size = cc_edge_feat_size + base_formula_edge_feat_size + h_range_edge_feat_size
+		pyg_edge_feats = th.zeros((0, total_edge_feat_size), dtype=EDGE_FEAT_DTYPE)
+	else:
+		edge_diff_cc_mask = th.as_tensor(np.stack(edge_diff_cc_mask,axis=0), dtype=th.bool)
+		edge_diff_cc_mask = F.pad(edge_diff_cc_mask, (0, MASK_SIZE-edge_diff_cc_mask.shape[1]), "constant", 0)
+		edge_diff_cc_long = th_mask_to_long(edge_diff_cc_mask).type(EDGE_FEAT_DTYPE)
+		edge_diff_formula_mask = th.as_tensor(np.stack(edge_diff_formula_mask,axis=0), dtype=EDGE_FEAT_DTYPE)
+		edge_diff_h_range = th.as_tensor(np.stack(edge_diff_h_range,axis=0), dtype=EDGE_FEAT_DTYPE)
+		pyg_edge_feats = th.cat([edge_diff_cc_long,edge_diff_formula_mask,edge_diff_h_range],dim=1)
 
 	# edge index need to be int64 or it will throw error where compute degree
 	pyg_edge_index = th.tensor(dag_edges_matrix.T, dtype=th.int64)
@@ -983,13 +995,15 @@ def compute_dags(
 	frag_d["dag_num_edges"] = pyg_cc_g.num_edges
 	frag_d["dag_num_nodes"] = pyg_cc_g.num_nodes
 	frag_d["dag_num_nodes_nb"] = dag_num_nodes_nb
-	frag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1))
+	frag_d["dag_sparsity"] = 2*pyg_cc_g.num_edges/(pyg_cc_g.num_nodes *(pyg_cc_g.num_nodes - 1)) if pyg_cc_g.num_nodes > 1 else 0.
 	frag_d["formula_redundancy"] = sum([v for k,v in formula_counts.items() if k != ""])/len([k for k in formula_counts.keys() if k != ""])
 	frag_d["node_feature_size"] = pyg_cc_g.num_features
 	frag_d["edge_feature_size"] = pyg_cc_g.num_edge_features
-	frag_d["is_directed"] = pyg_cc_g.is_directed()
+	frag_d["is_directed"] = pyg_cc_g.is_directed() if pyg_cc_g.num_edges > 0 else False
 	frag_d["dag_num_edges_by_depth"] = { k:np.count_nonzero(edges_min_depth == k) for k in range(reached_depth+1)}
-	frag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)} 
+	frag_d["dag_num_nodes_by_depth"] = { k:np.count_nonzero(nodes_min_depth == k) for k in range(reached_depth+1)}
+	frag_d["force_stopped"] = force_stop
+ 
 	return frag_d
 
 def get_node_feats(node_feats:th.Tensor,node_feat_idxs:th.Tensor,key:str):
@@ -1037,12 +1051,13 @@ def get_frag_fp(mol_id:str, frag_dp:str, is_compressed:bool):
 
 	return fp
 
-def save_frag_d(frag_d:dict, mol_id:int, frag_dp:str, is_compressed:bool = False):
+def save_frag_d(frag_d:dict, mol_id: str, frag_dp:str, is_compressed:bool = False):
 	"""save frag_d use pickle if is_compressed save as .pbz
-
 	Args:
-		frag_d (dict): _description_
-		filepath (str): _description_
+		frag_d (dict): frag_d to save
+		mol_id (str): mol_id to save as
+		frag_dp (str): directory to save to
+		is_compressed (bool, optional): whether to compress the file. Defaults to False.
 	"""
 	
 	fp = get_frag_fp(mol_id, frag_dp, is_compressed)
@@ -1212,16 +1227,19 @@ def timed_get_dags(mol,
 			max_time,
 			isotopes: bool,
 			nb_isomorphic: bool,
-			max_iterations: int,
-			output_dir: str, 
+			wl_max_iterations: int,
+			output_dir: str | None, 
 			use_cached = True, 
 			compressed = False,
-			save_dag = True):
+			save_dag = True) -> dict:
 
-		if save_dag:
+		need_compute = True
+		if save_dag and output_dir is None:
+			raise ValueError("If save_dag is True, output_dir must be specified")
+		elif save_dag:
 			output_file = get_frag_fp(mol_id, output_dir, compressed)
+			need_compute = not os.path.exists(output_file) or not use_cached 
 
-		need_compute = not use_cached or not os.path.exists(output_file)
 		if not need_compute:
 			assert save_dag
 			try:
@@ -1242,7 +1260,8 @@ def timed_get_dags(mol,
 					max_time, 
 					isotopes,
 					nb_isomorphic,
-					max_iterations
+					#False, b_isomorphic, this not used
+					wl_max_iterations
 				)
 			except KeyboardInterrupt as e:
 				# let these through

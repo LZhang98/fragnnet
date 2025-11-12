@@ -97,3 +97,14 @@ def is_ckpt_compiled(ckpt) -> bool:
 		if '_orig_mod' in key:
 			return True
 	return False
+
+def get_optimizer_class(optimizer_name):
+	if optimizer_name == "adam":
+		optimizer_cls = th.optim.Adam
+	elif optimizer_name == "adamw":
+		optimizer_cls = th.optim.AdamW
+	elif optimizer_name == "sgd":
+		optimizer_cls = th.optim.SGD
+	else:
+		raise ValueError(f"Unknown optimizer {optimizer_name}")
+	return optimizer_cls

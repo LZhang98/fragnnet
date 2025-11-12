@@ -2,8 +2,8 @@ import torch as th
 import torch.nn as nn
 import torch._dynamo as th_dynamo
 import numpy as np
-import dgl
 
+from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
 from fragnnet.pl_model import SpectrumPL
 from fragnnet.utils.misc_utils import to_cpu, scatter_reduce, LOG_ZERO
 from fragnnet.model.loss import sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
@@ -17,6 +17,13 @@ from fragnnet.utils.spec_utils import calculate_cosine_similarity, binned_cosine
 class IcebergGenPL(SpectrumPL):
 
 	def _setup_model(self):
+		
+		# Check DGL is available
+		if not DGL_AVAILABLE:
+			raise ImportError(
+				"DGL (Deep Graph Library) is required to use Iceberg models. "
+				"Please install it with: pip install dgl"
+			)
 
 		self.model = IcebergGenModel(
 			hidden_size=self.hparams.iceberg_hidden_size,
@@ -461,6 +468,13 @@ class IcebergGenPL(SpectrumPL):
 class IcebergIntenPL(SpectrumPL):
 
 	def _setup_model(self):
+		
+		# Check DGL is available
+		if not DGL_AVAILABLE:
+			raise ImportError(
+				"DGL (Deep Graph Library) is required to use Iceberg models. "
+				"Please install it with: pip install dgl"
+			)
 
 		self.model = IcebergIntenModel(
 			hidden_size=self.hparams.iceberg_hidden_size,

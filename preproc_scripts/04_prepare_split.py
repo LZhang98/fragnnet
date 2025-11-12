@@ -34,7 +34,8 @@ def make_splits(args):
 		frag_modes=frag_modes,
 		ion_modes=ion_modes,
 		inst_types=inst_types,
-		ces = args.ces
+		ces = args.ces,
+		spec_type = args.spec_type
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
 	spec_df = f_spec_df
@@ -77,11 +78,13 @@ def make_splits(args):
 		print("> Intersection")
 		# get intersection
 		if args.dag_filter_grouping in ["m_spec","m_mol"]:
+			# Filters the spectrum dataframe to keep only spectra whose group_id has a corresponding DAG computation
 			primary_both_group_id = np.intersect1d(primary_spec_df["group_id"],dag_group_id)
 			primary_split_df = primary_spec_df[primary_spec_df["group_id"].isin(primary_both_group_id)]
 			secondary_both_group_id = np.intersect1d(secondary_spec_df["group_id"],dag_group_id)
 			secondary_split_df = secondary_spec_df[secondary_spec_df["group_id"].isin(secondary_both_group_id)]
 		else:
+      		# Filters the spectrum dataframe to keep only spectra whose spec_id has a corresponding DAG computation
 			primary_both_spec_id = np.intersect1d(primary_spec_df["spec_id"],dag_spec_id)
 			primary_split_df = primary_spec_df[primary_spec_df["spec_id"].isin(primary_both_spec_id)]
 			secondary_both_spec_id = np.intersect1d(secondary_spec_df["spec_id"],dag_spec_id)
@@ -164,31 +167,43 @@ def make_splits(args):
 	elif args.split_type == "predefined":
 			
 		id_dtype = str if args.predefined_id_type == "dset_spec_id" else int
-
 		if args.predefined_train_id_fp is not None:
-			train_ids = pd.read_csv(args.predefined_train_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
+			train_keys = pd.read_csv(args.predefined_train_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
 		else:
-			train_ids = args.predefined_train_ids if args.predefined_train_ids is not None else []
+			train_keys = args.predefined_train_ids if args.predefined_train_ids is not None else []
 
 		if args.predefined_val_id_fp is not None:
-			val_ids = pd.read_csv(args.predefined_val_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
+			val_keys = pd.read_csv(args.predefined_val_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
 		else:
-			val_ids = args.predefined_val_ids if args.predefined_val_ids is not None else []
+			val_keys = args.predefined_val_ids if args.predefined_val_ids is not None else []
 		
 		if args.predefined_test_id_fp is not None:
-			test_ids = pd.read_csv(args.predefined_test_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
+			test_keys = pd.read_csv(args.predefined_test_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
 		else:
-			test_ids = args.predefined_test_ids if args.predefined_test_ids is not None else []
+			test_keys = args.predefined_test_ids if args.predefined_test_ids is not None else []
 
 		if args.predefined_secondary_id_fp is not None:
-			secondary_ids = pd.read_csv(args.predefined_secondary_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
+			secondary_keys = pd.read_csv(args.predefined_secondary_id_fp)[args.predefined_id_type].astype(id_dtype).tolist()
 		else:
-			secondary_ids = args.predefined_secondary_ids if args.predefined_secondary_ids is not None else []
+			secondary_keys = args.predefined_secondary_ids if args.predefined_secondary_ids is not None else []
 
-		train_df = primary_split_df[primary_split_df[args.predefined_id_type].isin(train_ids)][["spec_id","mol_id","group_id"]]
-		val_df = primary_split_df[primary_split_df[args.predefined_id_type].isin(val_ids)][["spec_id","mol_id","group_id"]]
-		test_df = primary_split_df[primary_split_df[args.predefined_id_type].isin(test_ids)][["spec_id","mol_id","group_id"]]
-		secondary_df = secondary_split_df[secondary_split_df[args.predefined_id_type].isin(secondary_ids)][["spec_id","mol_id","group_id"]]
+		if len(train_keys) == 0 and len(val_keys) == 0:
+			print(f"> No predefined train/val ids, will randomly split train/val ( val = {args.val_frac} * <total>) from remaining primary data")
+			primary_split_mol_id = np.unique(primary_split_df["mol_id"])
+			split_keys = primary_split_df[primary_split_df["mol_id"].isin(primary_split_mol_id)][args.predefined_id_type]
+			split_keys = np.unique(split_keys)
+			total_num = split_keys.shape[0]
+			val_num = int(np.ceil(total_num * args.val_frac))
+			with np_temp_seed(args.meta_rseed):
+				train_val_keys = np.setdiff1d(split_keys,test_keys)
+				val_keys = np.random.choice(train_val_keys,size=val_num,replace=False)
+				train_keys = np.setdiff1d(train_val_keys,val_keys)
+			print(f"> created {len(train_keys)} train and {len(val_keys)} val keys from {total_num} total keys")
+    
+		train_df = primary_split_df[primary_split_df[args.predefined_id_type].isin(train_keys)][["spec_id","mol_id","group_id"]]
+		val_df = primary_split_df[primary_split_df[args.predefined_id_type].isin(val_keys)][["spec_id","mol_id","group_id"]]
+		test_df = primary_split_df[primary_split_df[args.predefined_id_type].isin(test_keys)][["spec_id","mol_id","group_id"]]
+		secondary_df = secondary_split_df[secondary_split_df[args.predefined_id_type].isin(secondary_keys)][["spec_id","mol_id","group_id"]]
 
 		split_data = { 
 				"split_dp": args.split_dp,
@@ -255,6 +270,8 @@ if __name__ == "__main__":
 	parser.add_argument("--max_peak_mz",type=float,default=1500.)
 	parser.add_argument("--max_prec_mz",type=float,default=1500.)
 	parser.add_argument("--min_prec_mz",type=float,default=0.)
+	parser.add_argument("--spec_type",type=str,default="MS2")
+
 	# dag filtering criteria
 	parser.add_argument("--dag_filtering",type=booltype,default=True)
 	parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec")
@@ -269,7 +286,7 @@ if __name__ == "__main__":
 	parser.add_argument('--ces',type=str,choices=['nce', 'ace'],required=False)
 
 	# non-filtering args
-	parser.add_argument("--meta_rseed",type=int,default=420420)
+	parser.add_argument("--meta_rseed",type=int,default=42)
 	parser.add_argument("--total_frac",type=float,default=1.0)
 	parser.add_argument("--test_frac",type=float,default=0.2)
 	parser.add_argument("--val_frac",type=float,default=0.2)

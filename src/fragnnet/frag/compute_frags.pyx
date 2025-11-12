@@ -22,7 +22,7 @@ def signal_handler(signum, frame):
 # Register the handler
 signal.signal(signal.SIGINT, signal_handler)
 
-MAX_NUM_NODES = 64  # hard cap on 64!!
+MAX_NUM_NODES = 128  # hard cap on 80!!
 MAX_NUM_EDGES = 4 * MAX_NUM_NODES
 MASK_DTYPE = np.uint8
 MAX_EDGE_PER_NODE = 6  # Sulfur
@@ -237,7 +237,7 @@ def compute_ccs(
 		child_edge_mask_list = []		
 		ccs_end = len(ccs)
 		
-		for node_idx in range(ccs_idx,ccs_end):
+		for node_idx in range(ccs_idx, ccs_end):
 			# let us check time
 			cur_time = get_time()
 			#sig_check()
@@ -246,6 +246,7 @@ def compute_ccs(
 
 			if cur_time - start_time > time_limit:
 				force_stop = True
+				#print(f"Timeout reached, {time_limit} seconds. Stopping at depth {current_depth}.")
 				break
 			
 			# get mask hash and mask
@@ -317,7 +318,7 @@ def compute_ccs(
 					ccs.append(child_node_mask_key)
 					cc_edges.append(child_edge_mask_key)
 					
-					# add edge from node to node if mask are differen
+					# add edge from node to node if mask are different
 					# NOTE: it is possiable we have parent and child with the same mask
 					# eg. first bond break on a ring
 					if curent_node_mask_key != child_node_mask_key:
@@ -329,19 +330,39 @@ def compute_ccs(
 					
 				num_ccs += new_num_ccs
 				reached_depth = current_depth + 1
+		# print(dag_edge_dict)
 		# break outer loop
 		if force_stop:
-			# comupute what can be used
-			# NOTE this has not been tested yet
-			filtered_dag_edge_dict = {k: v for k, v in dag_edge_dict.items() if v <= reached_depth}
-			dag_edge_dict = filtered_dag_edge_dict
-
-			filtered_ccs_depth_dict = {k: set([i for i in v if i <= reached_depth]) for k,v in ccs_depth_dict.items() if min(v) <= reached_depth}
+			# Timeout occurred during current_depth processing
+			# Discard all incomplete work from current_depth and keep only fully completed depths
+			# The last fully completed depth is (current_depth - 1)
+			reached_depth = current_depth - 1 if current_depth > 0 else 0
+			
+			# Filter ccs_depth_dict: keep only nodes with at least one depth <= reached_depth
+			filtered_ccs_depth_dict = {}
+			for k, v in ccs_depth_dict.items():
+				filtered_depths = set([i for i in v if i <= reached_depth])
+				if filtered_depths:  # Only include if non-empty
+					filtered_ccs_depth_dict[k] = filtered_depths
 			ccs_depth_dict = filtered_ccs_depth_dict
-
+			
+			# Filter css_to_id_dict: keep only nodes that are in filtered_ccs_depth_dict
 			filtered_css_to_id_dict = {cc: css_to_id_dict[cc] for cc in filtered_ccs_depth_dict}
-			css_to_id_dict =  filtered_css_to_id_dict
-			#original.update(filtered)
+			
+			# Build reverse mapping (id -> cc) to validate edge endpoints
+			id_to_css = {v: k for k, v in filtered_css_to_id_dict.items()}
+			
+			# Filter dag_edge_dict: keep only edges where BOTH endpoints exist in filtered nodes
+			# AND the edge depth is <= reached_depth
+			filtered_dag_edge_dict = {}
+			# print(dag_edge_dict)
+			for (src_id, dst_id), depth in dag_edge_dict.items():
+				if depth <= reached_depth and src_id in id_to_css and dst_id in id_to_css:
+					filtered_dag_edge_dict[(src_id, dst_id)] = depth
+			#print(filtered_dag_edge_dict)
+			dag_edge_dict = filtered_dag_edge_dict
+			css_to_id_dict = filtered_css_to_id_dict
+			# print(f"Timeout reached. Stopping at depth {reached_depth}.")
 			break
 		# finishing current depth, move to next
 		ccs_idx = ccs_end
@@ -369,7 +390,7 @@ def compute_ccs(
 	# create edge set:
 	dag_edges_matrix = np.asarray(list(dag_edge_dict.keys()), dtype = np.int64)
 	edges_min_depth = np.asarray(list(dag_edge_dict.values()), dtype = MASK_DTYPE)
-	dag_frag_meta = {"reached_depth": reached_depth, "edges_min_depth": edges_min_depth, "nodes_min_depth": nodes_min_depth }
+	dag_frag_meta = {"reached_depth": reached_depth, "edges_min_depth": edges_min_depth, "nodes_min_depth": nodes_min_depth, "force_stopped": force_stop}
 	# both edges_min_depth and node_min_depth should be ordered
 
 	return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta

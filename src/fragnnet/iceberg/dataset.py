@@ -8,8 +8,9 @@ from typing import List
 import json
 import numpy as np
 import torch as th
-import dgl
 from tqdm import tqdm
+
+from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
 
 import fragnnet.iceberg.common as common
 import fragnnet.iceberg.nn_utils as nn_utils
@@ -36,6 +37,13 @@ class TreeProcessor:
 		sum_ints: bool = True,
 	):
 		""" """
+		# Check DGL is available
+		if not DGL_AVAILABLE:
+			raise ImportError(
+				"DGL (Deep Graph Library) is required to use Iceberg dataset. "
+				"Please install it with: pip install dgl"
+			)
+		
 		self.pe_embed_k = pe_embed_k
 		self.root_encode = root_encode
 		self.binned_targs = binned_targs

@@ -10,7 +10,7 @@ frag_dp: data/frag/debug_tinyv4_d3h4/dags
 
 subsample_params:
   subsample_size: 40
-  subsample_seed: 420
+  subsample_seed: 42
   train: False
   val: True
   test: True
@@ -99,3 +99,6 @@ pl_enable_progress_bar: True
 compile: False
 num_workers: 0
 detect_anomaly: True
+cc_interstage_type: gated #cross_attention, set_transformers, attention, mlp, gated, dual_set_transformer
+cc_interstage_use_rest: True
+mol_pool_type: attention # mean_max_sum
