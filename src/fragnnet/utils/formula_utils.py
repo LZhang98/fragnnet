@@ -381,7 +381,17 @@ def parse_formula(formula:str) -> Dict[str,int]:
 		formula = formula[:formula.index("-")]
 	if "+" in formula:
 		formula = formula[:formula.index("+")]
-	for token in re.findall('[A-Z][a-z]?|\d+|.', formula):
+	# Use finditer to strictly parse tokens and detect unexpected characters
+	pattern = re.finditer(r'[A-Z][a-z]?|\d+', formula)
+	pos = 0
+	for m in pattern:
+		# if there's any gap between last position and this match, it's invalid
+		if m.start() != pos:
+			offending = formula[pos:m.start()]
+			raise ValueError(
+				f"Invalid substring '{offending}' at position {pos} in formula '{formula}'"
+			)
+		token = m.group(0)
 		if token.isalpha():
 			if cur_element is not None:
 				assert cur_element not in element_counts
@@ -390,9 +400,13 @@ def parse_formula(formula:str) -> Dict[str,int]:
 			cur_count = 1
 		elif token.isdigit():
 			cur_count = int(token)
-		else:
-			print(formula)
-			raise ValueError(f"Invalid token {token}")
+		pos = m.end()
+	# any trailing characters after last token are invalid
+	if pos != len(formula):
+		offending = formula[pos:]
+		raise ValueError(
+			f"Invalid trailing substring '{offending}' at position {pos} in formula '{formula}'"
+		)
 	if cur_element is not None:
 		assert cur_element not in element_counts
 		element_counts[cur_element] = cur_count
