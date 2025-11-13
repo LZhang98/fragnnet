@@ -414,6 +414,9 @@ def parse_formula(formula:str) -> Dict[str,int]:
 
 def get_elements_set(formula:str) -> set[str]:
     """
+    method to get set of elements in a formula
+	Args:
+		formula (str): chemical formula eg.CH4 or chemical formula with adducts eg. CH4+H
     """
     return set(list(parse_formula(formula).keys()))
 

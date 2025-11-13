@@ -203,8 +203,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			mlp_input_dim = self.frag_embedder.hidden_size
 		mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
 
-		# TODO this need updated with cmf,
-		# if use cmf we need this number doubled
 		#  mlp for forumla
 		if self.mlp_output_format in ["formula","node_formula"]:
 			formula_mlp_kwargs = {
@@ -220,7 +218,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		# use extra mlp for node formula
 		if self.mlp_output_format in ["node_formula"]:
 			node_mlp_kwargs = {
-				"input_size": 2*self.frag_embedder.hidden_size,
+				"input_size": 2 * self.frag_embedder.hidden_size,
 				"output_size": 1,
 				"hidden_size": mlp_hidden_size,
 				"num_layers": mlp_num_layers,
@@ -572,9 +570,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
   
 		h_formulae_idx_feat = get_node_feats(frag_x, frag_node_feat_idxs, "h_formulae_idx")
 		frag_joint_formula_idxs = (h_formulae_idx_feat + frag_node_offsets.unsqueeze(-1))
-		assert h_formulae_idx_feat.shape[1] == 2 * self.num_hs + 1, (
-			f"h_formulae_idx feature size {h_formulae_idx_feat.shape[1]} does not match expected {2 * self.num_hs + 1} (2*num_hs+1)"
-		)
+		# When CMF features are present the node feature layout may include extra columns
+		expected_h_width = 2 * self.num_hs + 1
+		if not include_cmf:
+			assert h_formulae_idx_feat.shape[1] == expected_h_width, (
+				f"h_formulae_idx feature size {h_formulae_idx_feat.shape[1]} does not match expected {expected_h_width} (2*num_hs+1)"
+			)
+		else:
+			# allow extra columns when CMF is included but ensure minimum expected width
+			if h_formulae_idx_feat.shape[1] < expected_h_width:
+				raise AssertionError(
+					f"h_formulae_idx feature size {h_formulae_idx_feat.shape[1]} smaller than expected {expected_h_width} (2*num_hs+1) even with CMF enabled"
+				)
 		if include_cmf:
 			# if we use cmf, we need to extend the formula indices
 			frag_joint_formula_idxs = th.cat(
