@@ -38,7 +38,7 @@ frag_params:
   compressed: True
   preload: True
   preprocess: False
-  include_cmf: True
+  include_cmf: False
 spec_params:
   merge: True
   nce: True
@@ -112,4 +112,4 @@ use_tensor_float32: True
 automatic_optimization: True
 dynamic_batch_sampler: False
 pl_enable_progress_bar: True
-compile: True
+compile: False
