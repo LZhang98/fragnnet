@@ -821,7 +821,7 @@ class FraGNNetPL(SpectrumPL):
 			)
 			ret["lr_scheduler"] = {
 				"scheduler": scheduler,
-				"frequency": 1
+				"frequency": 1,
 				"interval": "step",
 			}
 
