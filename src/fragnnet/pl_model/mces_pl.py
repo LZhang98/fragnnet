@@ -6,6 +6,11 @@ from fragnnet.model import SiameseGNNModel
 from fragnnet.utils.data_utils import min_max_denormalize, zscore_denormalize
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
 import torch._dynamo as th_dynamo
+try:
+    from torch._dynamo.utils import CompileProfiler
+    profiler_available = True
+except ImportError:
+    profiler_available = False
 
 # Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
 try:
@@ -77,10 +82,14 @@ class MCESPL(pl.LightningModule):
 			#log_min=0.0
 		)
 
+		# compile
 		if self.hparams.compile:
 			th_dynamo.reset()
-			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
+			if profiler_available:
+				self.dynamo_prof = CompileProfiler()
+				self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+			else:
+				self.model = th.compile(self.model,dynamic=True)
    
 	def _log_score(self, pred, target, score_type, split_name, original_scale=False):
 		"""Helper to compute and log scores (mean and std) in normalized or original scale."""

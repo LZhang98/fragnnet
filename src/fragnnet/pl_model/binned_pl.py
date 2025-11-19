@@ -1,6 +1,3 @@
-
-import torch._dynamo as th_dynamo
-
 from fragnnet.model.loss import sparse_cosine_distance_binned
 from fragnnet.pl_model import SpectrumPL
 

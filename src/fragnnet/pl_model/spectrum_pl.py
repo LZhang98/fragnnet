@@ -17,8 +17,6 @@ try:
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
 	from pytorch_lightning.utilities.seed import _collect_rng_states, _set_rng_states
-	
-import torch._dynamo as th_dynamo
 
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
 from fragnnet.model.loss import sparse_entropy_fn
