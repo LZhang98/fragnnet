@@ -278,8 +278,6 @@ if __name__ == "__main__":
 	#cos_sim_hun = pred_data['cos_hun'].cpu()
 	smiles = pred_data['smiles'][0]
 
-	smiles = pred_data['smiles'][0]
-
 	# check forumla logprobs
 	pred_formula_logprobs = pred_data['pred_formula_logprobs']
 	pred_formula_probs = th.exp(pred_formula_logprobs)
@@ -322,6 +320,7 @@ if __name__ == "__main__":
 
 	display_row = 0
 	peak_id = 1
+	# for each formula
 	for i,pf_idx in enumerate(pred_formula_prob_idx[0:num_formula]):
 
 		# get formula idx

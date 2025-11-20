@@ -510,6 +510,27 @@ def get_idx_vars(
   
 	return BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS
 
+def get_score_type(config_d):
+	"""
+	Generate a list of evaluation score types based on the configuration dictionary.
+	
+	Args:
+		config_d: Configuration dictionary containing 'auxiliary_scores' and 'eval_mz_bin_res'
+	
+	Returns:
+		List of evaluation score types
+	"""
+	eval_score_types = []
+	for score_type in config_d['auxiliary_scores']:
+		if "_hun" in score_type:
+			# Hungarian algorithm scores don't need binning
+			eval_score_types.append(score_type)
+		else:
+			# Other scores need binning by m/z resolution
+			for bin_res in config_d['eval_mz_bin_res']:
+				eval_score_types.append(f"{score_type}_{bin_res}")
+	return eval_score_types
+
 def run_inference_eval(
 	model,
 	dataloader,
@@ -656,6 +677,10 @@ def run_inference_df(
 	device: th.device,
 	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
 	evaluate: bool = False,
+	output_subset: Optional[set[str]] = None,
+	nb_iso: bool = False,
+	min_peak_int: float = 0.0,
+	min_frag_prob: float = 0.001,
 ) -> pd.DataFrame:
 	"""
 	Run inference with optional chunked saving for resumable predictions.
@@ -664,6 +689,12 @@ def run_inference_df(
 	print(f"\n>>> Starting inference on {len(dataloader)} batches...")
 	if model.training:
 		raise RuntimeError(f"> Warning: model {model} is in training mode!")
+	
+	BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS = get_idx_vars(
+		output_subset,
+		model,
+		nb_iso,
+	)
 
 	preds_l = []
  	#print(">> set model to this to eval")
@@ -685,7 +716,8 @@ def run_inference_df(
 			else:
 				batch_result = model.predict_step(**batch_input)
 	
-			batch_size = batch_input['batch_size'].detach().cpu()
+			# batch_input['batch_size'] is a tensor -> convert to Python int
+			batch_size = int(batch_input['batch_size'].detach().cpu().item())
 
 			pred_mzs = batch_result["pred_mzs"].detach().cpu()
 			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
@@ -697,26 +729,130 @@ def run_inference_df(
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 
-			eval_scores_d = {}
+			# eval_scores_d = {}
 			#for eval_score_type in eval_score_types:
 			#	eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
-			#	#print(eval_score_type, eval_scores_d[eval_score_type])
+			#print(eval_score_type, eval_scores_d[eval_score_type])
+
+			# check forumla logprobs
+			pred_formula_logprobs = batch_result['pred_formula_logprobs']
+			pred_formula_probs = th.exp(pred_formula_logprobs)
+			pred_formula_prob_idx = th.argsort(pred_formula_probs, descending = True)
+
+			# node forumla p(n|f)
+			pred_formula_node_logprobs = batch_result['pred_formula_node_logprobs'] 
+
+			# node prob index to node index mapping
+			# node prob at i of pred_formula_node_logprobs belongs to node pred_joint_node_idxs[i] 
+			pred_joint_node_idxs = batch_result['pred_joint_node_idxs']
+
+			# node prob index to formula index mapping
+			# node prob at i of pred_formula_node_logprobs belongs to forumla pred_joint_formula_idxs[i] 
+			pred_joint_formula_idxs = batch_result['pred_joint_formula_idxs']
+
+			# forumla prob index -> forumla index, forumla f[i] forumla i
+			# forumla prob at i of pred_formula_logprobs is for formula pred_formusla_formula_idxs[i]
+			pred_formula_formula_idxs  = batch_result['pred_formula_formula_idxs']
+
+			# forumla index -> peak index,  eg, forumla f[i] has peak i
+			pred_frag_formula_peak_idxs = batch_result['frag_formula_peak_idxs']
+			# forumla index -> mz index , forumla at index i is mz j
+			pred_frag_formula_peak_mzs  = batch_result['frag_formula_peak_mzs'] 
 	
+			joint_batch_idxs = batch_result['pred_joint_batch_idxs']
+			pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs']
+   
 			for b_idx in range(batch_size):
+				# per-spectrum masks and basic fields
 				b_peak_mask = pred_batch_idxs == b_idx
-	
 				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
 				b_spec_id = spec_ids[b_idx]
 				b_mol_id = mol_ids[b_idx]
-
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				data_row = [b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(),b_spec_ints.tolist(), b_pred_oos_logprob]
-				#for eval_score_type in eval_score_types:
-				#	data_row.append(eval_scores_d[eval_score_type][b_idx].item())
-				
+				b_pred_formula_node_mask = (joint_batch_idxs == b_idx)
+				b_pred_formula_node_logprobs = pred_formula_node_logprobs[b_pred_formula_node_mask]
+				b_pred_joint_formula_idxs = pred_joint_formula_idxs[b_pred_formula_node_mask]
+				b_pred_joint_node_idxs = pred_joint_node_idxs[b_pred_formula_node_mask]
+
+				b_pred_formula_mask = (pred_formula_batch_idxs == b_idx)
+				b_pred_formula_logprobs = pred_formula_logprobs[b_pred_formula_mask]
+				b_pred_formula_formula_idxs = pred_formula_formula_idxs[b_pred_formula_mask]
+				b_pred_formula_prob_idx = th.argsort(pred_formula_probs[b_pred_formula_mask], descending = True)
+    
+				pred_formulas = []
+				pred_peak_positions = []
+				peak_labels = {}
+				peak_id = 1
+				for pf_idx in b_pred_formula_prob_idx:
+					# get formula idx
+					f_idx = b_pred_formula_formula_idxs[pf_idx]
+					
+					# find peak index for this formula
+					peak_matches = th.nonzero(pred_frag_formula_peak_idxs == f_idx)
+					if len(peak_matches) == 0:
+						continue
+					peak_idx = peak_matches[0].item()
+
+					# in case peak is created by more then one forumla
+					if peak_idx not in peak_labels:
+						peak_labels[peak_idx] = peak_id
+						peak_id += 1
+						# store peak metadata (mz, int)
+						pred_peak_positions.append({
+							"mz": pred_mzs[peak_idx].item(),
+							"int": pred_ints[peak_idx].item(),
+							"peak_id": peak_labels[peak_idx]
+						})
+
+					# skip low intensity peaks
+					if pred_ints[peak_idx] < min_peak_int:
+						continue
+  
+					bf_pred_formula_mask = (b_pred_formula_formula_idxs == f_idx)
+					f_mz = pred_frag_formula_peak_mzs[pred_frag_formula_peak_idxs == f_idx].item()
+					# formula = idx_to_formula[f_idx.item()]
+					f_pred_prob = pred_formula_probs[b_pred_formula_mask][bf_pred_formula_mask].item()
+								
+					formula_data = {
+						"formula_idx": f_idx.item(), 
+						#"formula": formula,
+						"formula_prob": f_pred_prob,
+						"formula_mass": f_mz,
+						"peak_idx": peak_idx,
+						"peak_id": peak_labels[peak_idx],
+						"frag": []
+					}
+						
+					bf_pred_formula_node_mask = (b_pred_joint_formula_idxs == f_idx)
+					bf_pred_formula_node_logprobs = b_pred_formula_node_logprobs[bf_pred_formula_node_mask]
+					bf_pred_formula_node_probs = th.exp(bf_pred_formula_node_logprobs)
+					
+					for pfn_idx in th.argsort(bf_pred_formula_node_probs, descending = True):
+						
+						node_idx = b_pred_joint_node_idxs[bf_pred_formula_node_mask][pfn_idx]
+						if bf_pred_formula_node_probs[pfn_idx] < min_frag_prob:
+							continue
+						
+						node_idx = node_idx.item()
+						#node_cc_bit_mask = cc_bit_mask[node_idx]
+						
+						#node_atom_indices = node_cc_bit_mask.nonzero(as_tuple=True)[0].tolist()
+						# fragment formula node probability, p(n|f)
+						nf_pred_prob = bf_pred_formula_node_probs[pfn_idx].item()
+						formula_data["frag"].append(
+							{
+								"node_atom_indices": node_idx,
+								"formula_node_prob": nf_pred_prob
+							}
+						)
+					pred_formulas.append(formula_data)
+
+				# assemble row and append
+				data_row = [b_spec_id.item(), b_mol_id, b_spec_mzs.tolist(), b_spec_ints.tolist(), b_pred_oos_logprob, pred_peak_positions, pred_formulas]
 				preds_l.append(data_row)
-				pred_df = pd.DataFrame(preds_l, columns=["spec_id","mol_id","pred_mzs","pred_ints","pred_oos_logprob"])
+   
+		# build dataframe with new columns (after processing all batches)
+		pred_df = pd.DataFrame(preds_l, columns=["spec_id","mol_id","pred_mzs","pred_ints","pred_oos_logprob","pred_peak_positions","pred_formulas"])
 		return pred_df
-	## build dataframe
