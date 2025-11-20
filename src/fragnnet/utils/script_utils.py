@@ -735,32 +735,59 @@ def run_inference_df(
 			#print(eval_score_type, eval_scores_d[eval_score_type])
 
 			# check forumla logprobs
-			pred_formula_logprobs = batch_result['pred_formula_logprobs']
-			pred_formula_probs = th.exp(pred_formula_logprobs)
-			pred_formula_prob_idx = th.argsort(pred_formula_probs, descending = True)
+			if "pred_formula_logprobs" in batch_result:
+				pred_formula_logprobs = batch_result['pred_formula_logprobs']
+				pred_formula_probs = th.exp(pred_formula_logprobs)
+			else:
+				pred_formula_probs = None
 
 			# node forumla p(n|f)
-			pred_formula_node_logprobs = batch_result['pred_formula_node_logprobs'] 
+			if "pred_formula_node_logprobs" in batch_result:
+				pred_formula_node_logprobs = batch_result['pred_formula_node_logprobs']
+			else:
+				pred_formula_node_logprobs = None
 
 			# node prob index to node index mapping
 			# node prob at i of pred_formula_node_logprobs belongs to node pred_joint_node_idxs[i] 
-			pred_joint_node_idxs = batch_result['pred_joint_node_idxs']
+			if "pred_joint_node_idxs" in NODE_IDX_VARS:
+				pred_joint_node_idxs = batch_result['pred_joint_node_idxs']
+			else:
+				pred_joint_node_idxs = None
 
 			# node prob index to formula index mapping
 			# node prob at i of pred_formula_node_logprobs belongs to forumla pred_joint_formula_idxs[i] 
-			pred_joint_formula_idxs = batch_result['pred_joint_formula_idxs']
+			if "pred_joint_formula_idxs" in FORMULA_IDX_VARS:
+				pred_joint_formula_idxs = batch_result['pred_joint_formula_idxs']
+			else:
+				pred_joint_formula_idxs = None
 
 			# forumla prob index -> forumla index, forumla f[i] forumla i
 			# forumla prob at i of pred_formula_logprobs is for formula pred_formusla_formula_idxs[i]
-			pred_formula_formula_idxs  = batch_result['pred_formula_formula_idxs']
+			if "pred_formula_formula_idxs" in FORMULA_IDX_VARS:
+				pred_formula_formula_idxs  = batch_result['pred_formula_formula_idxs']
+			else:
+				pred_formula_formula_idxs = None
 
 			# forumla index -> peak index,  eg, forumla f[i] has peak i
-			pred_frag_formula_peak_idxs = batch_result['frag_formula_peak_idxs']
-			# forumla index -> mz index , forumla at index i is mz j
-			pred_frag_formula_peak_mzs  = batch_result['frag_formula_peak_mzs'] 
+			if "frag_formula_peak_idxs" in batch_result:
+				pred_frag_formula_peak_idxs = batch_result['frag_formula_peak_idxs']
+				pred_frag_formula_peak_mzs  = batch_result['frag_formula_peak_mzs'] 
+			else:
+				pred_frag_formula_peak_idxs = None
+				pred_frag_formula_peak_mzs = None
 	
-			joint_batch_idxs = batch_result['pred_joint_batch_idxs']
-			pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs']
+			if "pred_joint_batch_idxs" in BATCH_IDX_VARS:
+				# joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
+				# to its corresponding batch index (i.e., which spectrum/molecule in the batch it belongs to).
+				# This is crucial for filtering predictions per sample in the batch loop below.
+				joint_batch_idxs = batch_result['pred_joint_batch_idxs']
+			else:
+				joint_batch_idxs = None
+			
+			if "pred_formula_batch_idxs" in BATCH_IDX_VARS:
+				pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs']
+			else:
+				pred_formula_batch_idxs = None
    
 			for b_idx in range(batch_size):
 				# per-spectrum masks and basic fields
@@ -771,15 +798,18 @@ def run_inference_df(
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				b_pred_formula_node_mask = (joint_batch_idxs == b_idx)
-				b_pred_formula_node_logprobs = pred_formula_node_logprobs[b_pred_formula_node_mask]
-				b_pred_joint_formula_idxs = pred_joint_formula_idxs[b_pred_formula_node_mask]
-				b_pred_joint_node_idxs = pred_joint_node_idxs[b_pred_formula_node_mask]
+				if joint_batch_idxs is not None:
+					b_pred_formula_node_mask = (joint_batch_idxs == b_idx)
+					b_pred_formula_node_logprobs = pred_formula_node_logprobs[b_pred_formula_node_mask]
+					b_pred_joint_formula_idxs = pred_joint_formula_idxs[b_pred_formula_node_mask]
+					b_pred_joint_node_idxs = pred_joint_node_idxs[b_pred_formula_node_mask]
 
-				b_pred_formula_mask = (pred_formula_batch_idxs == b_idx)
-				b_pred_formula_logprobs = pred_formula_logprobs[b_pred_formula_mask]
-				b_pred_formula_formula_idxs = pred_formula_formula_idxs[b_pred_formula_mask]
-				b_pred_formula_prob_idx = th.argsort(pred_formula_probs[b_pred_formula_mask], descending = True)
+				if pred_formula_batch_idxs is not None:
+					b_pred_formula_mask = (pred_formula_batch_idxs == b_idx)
+					b_pred_formula_formula_idxs = pred_formula_formula_idxs[b_pred_formula_mask]
+					b_pred_formula_prob_idx = th.argsort(pred_formula_probs[b_pred_formula_mask], descending = True)
+				else:
+					b_pred_formula_prob_idx = []
     
 				pred_formulas = []
 				pred_peak_positions = []
@@ -825,28 +855,29 @@ def run_inference_df(
 						"frag": []
 					}
 						
-					bf_pred_formula_node_mask = (b_pred_joint_formula_idxs == f_idx)
-					bf_pred_formula_node_logprobs = b_pred_formula_node_logprobs[bf_pred_formula_node_mask]
-					bf_pred_formula_node_probs = th.exp(bf_pred_formula_node_logprobs)
-					
-					for pfn_idx in th.argsort(bf_pred_formula_node_probs, descending = True):
+					if joint_batch_idxs is not None:
+						bf_pred_formula_node_mask = (b_pred_joint_formula_idxs == f_idx)
+						bf_pred_formula_node_logprobs = b_pred_formula_node_logprobs[bf_pred_formula_node_mask]
+						bf_pred_formula_node_probs = th.exp(bf_pred_formula_node_logprobs)
 						
-						node_idx = b_pred_joint_node_idxs[bf_pred_formula_node_mask][pfn_idx]
-						if bf_pred_formula_node_probs[pfn_idx] < min_frag_prob:
-							continue
-						
-						node_idx = node_idx.item()
-						#node_cc_bit_mask = cc_bit_mask[node_idx]
-						
-						#node_atom_indices = node_cc_bit_mask.nonzero(as_tuple=True)[0].tolist()
-						# fragment formula node probability, p(n|f)
-						nf_pred_prob = bf_pred_formula_node_probs[pfn_idx].item()
-						formula_data["frag"].append(
-							{
-								"node_atom_indices": node_idx,
-								"formula_node_prob": nf_pred_prob
-							}
-						)
+						for pfn_idx in th.argsort(bf_pred_formula_node_probs, descending = True):
+							
+							node_idx = b_pred_joint_node_idxs[bf_pred_formula_node_mask][pfn_idx]
+							if bf_pred_formula_node_probs[pfn_idx] < min_frag_prob:
+								continue
+							
+							node_idx = node_idx.item()
+							#node_cc_bit_mask = cc_bit_mask[node_idx]
+							
+							#node_atom_indices = node_cc_bit_mask.nonzero(as_tuple=True)[0].tolist()
+							# fragment formula node probability, p(n|f)
+							nf_pred_prob = bf_pred_formula_node_probs[pfn_idx].item()
+							formula_data["frag"].append(
+								{
+									"node_atom_indices": node_idx,
+									"formula_node_prob": nf_pred_prob
+								}
+							)
 					pred_formulas.append(formula_data)
 
 				# assemble row and append
