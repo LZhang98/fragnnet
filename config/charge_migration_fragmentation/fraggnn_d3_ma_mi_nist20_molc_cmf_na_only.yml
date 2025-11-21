@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mlc_cmf
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mlc_cmf_na_pnly
 wandb_tags:
 - retrieval
 - nist20
@@ -20,14 +20,11 @@ wandb_tags:
 - new_no_edges
 - skip_extra_losses
 - binned_cosine_similarity
-- m+h
-- m-h
 - m+na
-- m+cl
 
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
-split_dp: data/split/nist20_ma_mi_inchikey
+split_dp: data/split/nist20_ma_mi_inchikey_[M+Na]+
 frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_cmf/dags
 num_depth: 4
 num_hs: 4
