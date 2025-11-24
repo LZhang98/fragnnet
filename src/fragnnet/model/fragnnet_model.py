@@ -997,45 +997,45 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 		), (scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp())
 
 		out_d = {
-			"pred_mzs": spec_mzs,
-			"pred_logprobs": spec_logprobs,
-			"pred_batch_idxs": spec_batch_idxs,
-			"pred_formula_logprobs": frag_real_formula_logprobs,
-			"pred_formula_formula_idxs": frag_real_formula_formula_idxs,
-			"pred_formula_batch_idxs": frag_formula_batch_idxs,
-			"pred_node_logprobs": frag_real_node_logprobs,
-			"pred_node_node_idxs": frag_real_node_node_idxs,
-			"pred_node_batch_idxs": frag_node_batch_idxs,
-			"pred_node_formula_logprobs": frag_real_node_formula_logprobs,
-			"pred_formula_node_logprobs": frag_real_formula_node_logprobs,
-			"pred_joint_logprobs": frag_real_joint_logprobs,
-			"pred_joint_node_idxs": frag_real_joint_node_idxs,
-			"pred_joint_formula_idxs": frag_real_joint_formula_idxs,
-			"pred_joint_batch_idxs": frag_real_joint_batch_idxs,
-			"pred_joint_h_counts": frag_real_joint_h_counts,
-			"pred_joint_h_idxs": frag_real_joint_h_idxs,
-			"pred_null_formula_logprob": frag_null_formula_logprob,
-			"pred_edge_logprobs": frag_edge_logprobs,
-			"pred_edge_h_diffs": frag_edge_h_diffs,
-			"pred_edge_h_range_masks": frag_edge_h_range_masks,
-			"pred_edge_h_logprobs": frag_edge_h_logprobs,
-			"pred_edge_batch_idxs": frag_edge_batch_idxs,
-			"pred_oos_logprobs": oos_logprobs,
-			"pred_h_counts": frag_real_h_counts,
-			"pred_h_batch_idxs": frag_real_h_batch_idxs,
-			"pred_h_logprobs": frag_real_h_logprobs,
-			"pred_nb_node_logprobs": frag_nb_node_logprobs,
-			"pred_nb_node_formula_logprobs": frag_nb_node_formula_logprobs,
-			"pred_nb_formula_node_logprobs": frag_nb_formula_node_logprobs,
-			"pred_nb_node_node_logprobs": frag_nb_node_node_logprobs,
-			"pred_nb_node_node_idxs": frag_nb_node_node_idxs,
-			"pred_nb_node_batch_idxs": frag_nb_node_batch_idxs,
-			"pred_nb_joint_logprobs": frag_nb_joint_logprobs,
-			"pred_nb_joint_node_idxs": frag_nb_joint_node_idxs,
-			"pred_nb_joint_formula_idxs": frag_nb_joint_formula_idxs,
-			"pred_nb_joint_batch_idxs": frag_nb_joint_batch_idxs,
-			"pred_nb_node_node_node_idxs": frag_nb_node_node_node_idxs,
-			"pred_nb_node_node_batch_idxs": frag_nb_node_node_batch_idxs,
+			"pred_mzs": spec_mzs, # Predicted m/z values for the spectrum peaks
+			"pred_logprobs": spec_logprobs, # Predicted log probabilities (intensities) for the spectrum peaks
+			"pred_batch_idxs": spec_batch_idxs, # Batch indices mapping each peak to a spectrum in the batch
+			"pred_formula_logprobs": frag_real_formula_logprobs, # Log probabilities of formulas P(f)
+			"pred_formula_formula_idxs": frag_real_formula_formula_idxs, # Indices of the formulas corresponding to pred_formula_logprobs
+			"pred_formula_batch_idxs": frag_formula_batch_idxs, # Batch indices for the formulas
+			"pred_node_logprobs": frag_real_node_logprobs, # Log probabilities of nodes (fragments) P(n)
+			"pred_node_node_idxs": frag_real_node_node_idxs, # Indices of the nodes corresponding to pred_node_logprobs
+			"pred_node_batch_idxs": frag_node_batch_idxs, # Batch indices for the nodes
+			"pred_node_formula_logprobs": frag_real_node_formula_logprobs, # Conditional log probabilities P(f|n)
+			"pred_formula_node_logprobs": frag_real_formula_node_logprobs, # Conditional log probabilities P(n|f)
+			"pred_joint_logprobs": frag_real_joint_logprobs, # Joint log probabilities P(f,n)
+			"pred_joint_node_idxs": frag_real_joint_node_idxs, # Node indices for the joint distribution entries
+			"pred_joint_formula_idxs": frag_real_joint_formula_idxs, # Formula indices for the joint distribution entries
+			"pred_joint_batch_idxs": frag_real_joint_batch_idxs, # Batch indices for the joint distribution entries
+			"pred_joint_h_counts": frag_real_joint_h_counts, # Hydrogen counts for the joint distribution entries
+			"pred_joint_h_idxs": frag_real_joint_h_idxs, # Indices for hydrogen counts in joint distribution
+			"pred_null_formula_logprob": frag_null_formula_logprob, # Log probability of the NULL formula (unexplained intensity)
+			"pred_edge_logprobs": frag_edge_logprobs, # Log probabilities for edges (if edge loss is used)
+			"pred_edge_h_diffs": frag_edge_h_diffs, # Hydrogen count differences across edges
+			"pred_edge_h_range_masks": frag_edge_h_range_masks, # Masks for valid hydrogen ranges on edges
+			"pred_edge_h_logprobs": frag_edge_h_logprobs, # Log probabilities for hydrogen transfers on edges
+			"pred_edge_batch_idxs": frag_edge_batch_idxs, # Batch indices for edges
+			"pred_oos_logprobs": oos_logprobs, # Log probability of Out-Of-Scope (OOS) intensity
+			"pred_h_counts": frag_real_h_counts, # Hydrogen counts for the hydrogen distribution
+			"pred_h_batch_idxs": frag_real_h_batch_idxs, # Batch indices for the hydrogen distribution
+			"pred_h_logprobs": frag_real_h_logprobs, # Log probabilities of hydrogen counts
+			"pred_nb_node_logprobs": frag_nb_node_logprobs, # (Isomorphism) Log probabilities of neighborhood nodes P(n')
+			"pred_nb_node_formula_logprobs": frag_nb_node_formula_logprobs, # (Isomorphism) Conditional log probabilities P(f|n')
+			"pred_nb_formula_node_logprobs": frag_nb_formula_node_logprobs, # (Isomorphism) Conditional log probabilities P(n'|f)
+			"pred_nb_node_node_logprobs": frag_nb_node_node_logprobs, # (Isomorphism) Conditional log probabilities P(n|n')
+			"pred_nb_node_node_idxs": frag_nb_node_node_idxs, # (Isomorphism) Indices for node-node mapping
+			"pred_nb_node_batch_idxs": frag_nb_node_batch_idxs, # (Isomorphism) Batch indices for neighborhood nodes
+			"pred_nb_joint_logprobs": frag_nb_joint_logprobs, # (Isomorphism) Joint log probabilities P(f,n')
+			"pred_nb_joint_node_idxs": frag_nb_joint_node_idxs, # (Isomorphism) Node indices for joint distribution
+			"pred_nb_joint_formula_idxs": frag_nb_joint_formula_idxs, # (Isomorphism) Formula indices for joint distribution
+			"pred_nb_joint_batch_idxs": frag_nb_joint_batch_idxs, # (Isomorphism) Batch indices for joint distribution
+			"pred_nb_node_node_node_idxs": frag_nb_node_node_node_idxs, # (Isomorphism) Node indices for node-node mapping
+			"pred_nb_node_node_batch_idxs": frag_nb_node_node_batch_idxs, # (Isomorphism) Batch indices for node-node mapping
 		}
 
 		if self.output_formula_str:
