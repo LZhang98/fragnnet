@@ -8,22 +8,18 @@ The script saves predictions along with evaluation scores for analysis.
 Usage:
     python run_save_inference_eval.py --wandb_run_id <run_id> --eval_split test
 """
-
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
 from fragnnet.runner import load_config, init_dataloader
 from fragnnet.utils.script_utils import (
 	get_ckpt_path,
-	get_config_from_ckpt,
+	get_score_types,
 	setup_device,
 	apply_inference_config,
 	init_model_from_ckpt,
 	run_inference_df,
+ 	prepare_output_subset
 )
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
-from fragnnet.utils.misc_utils import booltype, to_device
-import torch as th
+from fragnnet.utils.misc_utils import booltype
 import argparse
 import os
 
@@ -42,7 +38,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--custom_fp",
 		type=str,
-		default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20v2_amolc.yml",
+		default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc.yml",
 		help="Path to custom config file"
 	)
 	
@@ -125,7 +121,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--output_everything",
 		type=booltype,
-		default=False,
+		default=True,
 		help="Output all available metrics and predictions"
 	)
 	parser.add_argument(
@@ -148,7 +144,12 @@ if __name__ == "__main__":
 		default=4,
 		help="Evaluation batch size"
 	)
-
+	parser.add_argument(
+		"--batch_cutoff",
+		type=int,
+		default=10,
+		help="Number of batches to evaluate (-1 for all)"
+	)
 	args = parser.parse_args()
 	
 	# Get checkpoint path (download from W&B or use local)
@@ -193,22 +194,23 @@ if __name__ == "__main__":
 	model = init_model_from_ckpt(ckpt_fp, config_d, device)
  
 	# Prepare evaluation score types based on configuration
-	eval_score_types = []
-
-	for score_type in config_d['auxiliary_scores']:
-		if "_hun" in score_type:
-			# Hungarian algorithm scores don't need binning
-			eval_score_types.append(score_type)
-		else:
-			# Other scores need binning by m/z resolution
-			for bin_res in config_d['eval_mz_bin_res']:
-				eval_score_types.append(f"{score_type}_{bin_res}")
-	
+	# eval_score_types = get_score_types(config_d=config_d)
+ 
+	# Run inference and collect predictions with evaluation scores
+	print(">>> Running inference and evaluation...")
+	output_set = prepare_output_subset(
+		output_subset=args.output_subset,
+		output_everything=args.output_everything
+	)
+	print(f">>> Output set: {output_set}")
 	predicted_outputs = run_inference_df(
 		model,
 		dl,
 		device,
-		return_dict=True
+		evaluate=True,
+		output_set=output_set,
+		batch_cutoff=args.batch_cutoff,
+		# eval_score_types = eval_score_types,
 	)	
 	
 	# Save results

@@ -9,14 +9,12 @@ import gc
 import copy
 from typing import Dict, Any, Optional, Set, Type
 
-from fragnnet.runner import init_dataloader, load_config
+from fragnnet.runner import load_config
 from fragnnet.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO, get_best_ckpt_from_wandb
 from fragnnet.pl_model import FraGNNetPL, NeimsPL, GNNPL
 from fragnnet.iceberg.pl_model import IcebergIntenPL, IcebergGenPL
 from fragnnet.massformer.pl_model import MassFormerPL
-from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset, SpecMolMagmaGenDataset
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
-from fragnnet.dataset import SpecMolFragDataset, SpecMolDataset
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 
@@ -510,7 +508,7 @@ def get_idx_vars(
   
 	return BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS
 
-def get_score_type(config_d):
+def get_score_types(config_d):
 	"""
 	Generate a list of evaluation score types based on the configuration dictionary.
 	
@@ -531,13 +529,13 @@ def get_score_type(config_d):
 				eval_score_types.append(f"{score_type}_{bin_res}")
 	return eval_score_types
 
-def run_inference_eval(
+def run_inference_pkl(
 	model,
 	dataloader,
 	device: th.device,
 	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
 	nb_iso: bool = False,
-	output_subset: Optional[Set[str]] = None,
+	output_set: Optional[Set[str]] = None,
 	evaluate: bool = True
 ) -> Dict[str, Any]:
 	"""
@@ -551,7 +549,7 @@ def run_inference_eval(
 
 	is_fragnnet_model = isinstance(model, FraGNNetPL)
 	BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS = get_idx_vars(
-		output_subset,
+		output_set,
 		model,
 		nb_iso,
 	)
@@ -585,8 +583,8 @@ def run_inference_eval(
 				b_output = model.inference_step(batch_input)
 			
 			b_output = to_device(b_output, "cpu", non_blocking=False)
-			if output_subset is not None:
-				b_output = {k: b_output[k] for k in b_output if k in output_subset}
+			if output_set is not None:
+				b_output = {k: b_output[k] for k in b_output if k in output_set}
 	
 			# ============================================================
 			# EVALUATION MODE: Collect all outputs with index rebatching
@@ -677,7 +675,7 @@ def run_inference_df(
 	device: th.device,
 	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
 	evaluate: bool = False,
-	output_subset: Optional[set[str]] = None,
+	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
 	min_frag_prob: float = 0.001,
@@ -686,12 +684,12 @@ def run_inference_df(
 	Run inference with optional chunked saving for resumable predictions.
 	"""
 	# Common setup
-	print(f"\n>>> Starting inference on {len(dataloader)} batches...")
+	print(f"\n>>> Starting inference on {min(len(dataloader),batch_cutoff if batch_cutoff > 0 else len(dataloader))} batches...")
 	if model.training:
 		raise RuntimeError(f"> Warning: model {model} is in training mode!")
 	
 	BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS = get_idx_vars(
-		output_subset,
+		output_set,
 		model,
 		nb_iso,
 	)
@@ -699,9 +697,10 @@ def run_inference_df(
 	preds_l = []
  	#print(">> set model to this to eval")
 	model.eval()
+
 	with th.inference_mode():
 		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), desc="Running inference"):
-	  
+			# Early exit for batch cutoff
 			if batch_idx >= batch_cutoff and batch_cutoff > 0:
 				print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
 				break
@@ -788,7 +787,7 @@ def run_inference_df(
 				pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs']
 			else:
 				pred_formula_batch_idxs = None
-   
+
 			for b_idx in range(batch_size):
 				# per-spectrum masks and basic fields
 				b_peak_mask = pred_batch_idxs == b_idx
@@ -798,13 +797,13 @@ def run_inference_df(
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 
-				if joint_batch_idxs is not None:
+				if joint_batch_idxs is not None and pred_formula_node_logprobs is not None and pred_joint_formula_idxs is not None and pred_joint_node_idxs is not None:
 					b_pred_formula_node_mask = (joint_batch_idxs == b_idx)
 					b_pred_formula_node_logprobs = pred_formula_node_logprobs[b_pred_formula_node_mask]
 					b_pred_joint_formula_idxs = pred_joint_formula_idxs[b_pred_formula_node_mask]
 					b_pred_joint_node_idxs = pred_joint_node_idxs[b_pred_formula_node_mask]
 
-				if pred_formula_batch_idxs is not None:
+				if pred_formula_batch_idxs is not None and pred_formula_formula_idxs is not None and pred_formula_probs is not None:
 					b_pred_formula_mask = (pred_formula_batch_idxs == b_idx)
 					b_pred_formula_formula_idxs = pred_formula_formula_idxs[b_pred_formula_mask]
 					b_pred_formula_prob_idx = th.argsort(pred_formula_probs[b_pred_formula_mask], descending = True)
@@ -886,4 +885,5 @@ def run_inference_df(
    
 		# build dataframe with new columns (after processing all batches)
 		pred_df = pd.DataFrame(preds_l, columns=["spec_id","mol_id","pred_mzs","pred_ints","pred_oos_logprob","pred_peak_positions","pred_formulas"])
+		print(pred_df.head())
 		return pred_df

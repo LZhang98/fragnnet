@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
 	# this is necessary to avoid a pytorch compile issue...
 	# TODO: replace this with a proper checkpoint decompilation
-	th._dynamo.config.suppress_errors = True
+	# th._dynamo.config.suppress_errors = True
 
 	split_types = args.split_types
 	wandb_model_types = args.wandb_model_types
@@ -268,7 +268,7 @@ if __name__ == "__main__":
 				eval_split, 
 				batch_cutoff, 
 				config_d["nb_iso"], 
-				output_subset=output_subset, 
+				output_set=output_subset, 
 				untransform_spec=untransform_spec
 			)
 			

@@ -4,7 +4,7 @@ from fragnnet.runner import load_config
 from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
 from fragnnet.utils.script_utils import (
     init_wandb_ckpt,
-    run_inference_eval,
+    run_inference_pkl,
     apply_inference_config,
     save_inference_results,
     cleanup_model,
@@ -128,7 +128,7 @@ if __name__ == "__main__":
 
 	# this is necessary to avoid a pytorch compile issue...
 	# TODO: replace this with a proper checkpoint decompilation
-	th._dynamo.config.suppress_errors = True
+	# th._dynamo.config.suppress_errors = True
 
 	batch_cutoff = int(1e6)
 
@@ -184,21 +184,21 @@ if __name__ == "__main__":
 			model.eval()
 			
 			# Prepare output subset with model-specific metrics
-			output_subset = prepare_output_subset(
-				output_everything=args.output_everything,
-				output_subset=set(args.output_subset) if not args.output_everything else None,
-				model_metric_names=model.metric_names,
-			)
+			#output_subset = prepare_output_subset(
+			#	output_everything=args.output_everything,
+			#	output_subset=set(args.output_subset) if not args.output_everything else None,
+			#	model_metric_names=model.metric_names,
+			#)
 			
 			# run inference
-			vals = run_inference_eval(
+			vals = run_inference_pkl(
 				dl, 
 				model, 
 				device, 
 				eval_split, 
 				batch_cutoff, 
 				config_d["nb_iso"], 
-				output_subset=output_subset, 
+				output_set=output_subset, 
 			)
 			
 			# Save results
