@@ -27,9 +27,7 @@ out_d = {
     "pred_node_formula_logprobs": frag_real_node_formula_logprobs, # Conditional log probabilities P(f|n) [J]
     "pred_formula_node_logprobs": frag_real_formula_node_logprobs, # Conditional log probabilities P(n|f) [J]
     "pred_joint_logprobs": frag_real_joint_logprobs, # Joint log probabilities P(f,n) [J]
-    "pred_joint_node_idxs": frag_real_joint_node_idxs, #
-    
-     Node indices for the joint distribution entries [J]
+    "pred_joint_node_idxs": frag_real_joint_node_idxs, # Node indices for the joint distribution entries [J]
     "pred_joint_formula_idxs": frag_real_joint_formula_idxs, # Formula indices for the joint distribution entries [J]
     "pred_joint_batch_idxs": frag_real_joint_batch_idxs, # Batch indices for the joint distribution entries [J]
     "pred_joint_h_counts": frag_real_joint_h_counts, # Hydrogen counts for the joint distribution entries [J]
