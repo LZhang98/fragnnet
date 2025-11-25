@@ -833,6 +833,7 @@ def run_inference_df(
 				
 				# Apply intensity filtering
 				(
+					b_spec_ints, b_spec_mzs,
 					b_pred_formula_formula_idxs, b_pred_formula_probs,
 					b_pred_joint_formula_idxs, b_pred_formula_node_logprobs, 
 					b_pred_joint_node_idxs, b_pred_node_formula_logprobs,
@@ -841,6 +842,7 @@ def run_inference_df(
 					min_peak_int,
 					min_frag_prob,
 					b_spec_ints,
+					b_spec_mzs,
 					b_frag_formula_peak_idxs,
 					b_pred_formula_formula_idxs,
 					b_pred_formula_probs,
@@ -886,6 +888,7 @@ def filter_by_peak_intensity(
 	min_peak_int: float,
 	min_frag_prob: float,
 	pred_ints: th.Tensor,
+	pred_mzs: th.Tensor,
 	frag_formula_peak_idxs: Optional[th.Tensor],
 	b_pred_formula_formula_idxs: Optional[th.Tensor],
 	b_pred_formula_probs: Optional[th.Tensor],
@@ -902,19 +905,33 @@ def filter_by_peak_intensity(
 	"""
 	if min_peak_int <= 0 and min_frag_prob <= 0:
 		return (
+			pred_ints, pred_mzs,
 			b_pred_formula_formula_idxs, b_pred_formula_probs,
 			b_pred_joint_formula_idxs, b_pred_formula_node_logprobs, 
 			b_pred_joint_node_idxs, b_pred_node_formula_logprobs,
 			b_pred_node_logprobs, b_pred_node_node_idxs
 		)
 
-	valid_f_idxs = None
+	# Track initial sizes for stats
+	#init_n_formulas = b_pred_formula_formula_idxs.shape[0] if b_pred_formula_formula_idxs is not None else 0
+	#init_n_nodes = b_pred_node_node_idxs.shape[0] if b_pred_node_node_idxs is not None else 0
+	#init_n_peaks = pred_ints.shape[0] if pred_ints is not None else 0
+	#final_n_peaks = init_n_peaks
 
+	valid_f_idxs = None
+	# print("frag_formula_peak_idxs", frag_formula_peak_idxs)
 	# 1. Filter by peak intensity
+	# print(min_peak_int)
+	#print(pred_ints)
 	if min_peak_int > 0 and frag_formula_peak_idxs is not None:
 		valid_peak_mask = pred_ints > min_peak_int
+		final_n_peaks = valid_peak_mask.sum().item()
 		valid_local_f_idxs = frag_formula_peak_idxs[valid_peak_mask]
 		
+		# Filter peaks
+		pred_ints = pred_ints[valid_peak_mask]
+		pred_mzs = pred_mzs[valid_peak_mask]
+
 		# Map local formula indices to global formula indices
 		if b_pred_formula_formula_idxs is not None:
 			# Ensure indices are valid (should be within bounds if data is consistent)
@@ -934,6 +951,7 @@ def filter_by_peak_intensity(
 
 	if valid_f_idxs is None:
 		return (
+			pred_ints, pred_mzs,
 			b_pred_formula_formula_idxs, b_pred_formula_probs,
 			b_pred_joint_formula_idxs, b_pred_formula_node_logprobs, 
 			b_pred_joint_node_idxs, b_pred_node_formula_logprobs,
@@ -965,7 +983,15 @@ def filter_by_peak_intensity(
 			b_pred_node_logprobs = b_pred_node_logprobs[keep_mask_n]
 			b_pred_node_node_idxs = b_pred_node_node_idxs[keep_mask_n]
 
+	# Track final sizes and print stats
+	#final_n_formulas = b_pred_formula_formula_idxs.shape[0] if b_pred_formula_formula_idxs is not None else 0
+	#final_n_nodes = b_pred_node_node_idxs.shape[0] if b_pred_node_node_idxs is not None else 0
+	
+	#if init_n_formulas != final_n_formulas or init_n_nodes != final_n_nodes or init_n_peaks != final_n_peaks:
+	#	print(f"  > Filtered stats: Peaks {init_n_peaks}->{final_n_peaks}, Formulas {init_n_formulas}->{final_n_formulas}, Nodes {init_n_nodes}->{final_n_nodes}")
+
 	return (
+		pred_ints, pred_mzs,
 		b_pred_formula_formula_idxs, b_pred_formula_probs,
 		b_pred_joint_formula_idxs, b_pred_formula_node_logprobs, 
 		b_pred_joint_node_idxs, b_pred_node_formula_logprobs,
