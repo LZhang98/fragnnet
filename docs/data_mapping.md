@@ -1,5 +1,24 @@
 # Data Mapping Definitions
 
+## Input Batch Dictionary Reference
+
+```python
+batched_mol_frag = {
+    "mol_pyg": mol_pyg, # PyG batch for molecules
+    "frag_pyg": frag_pyg, # PyG batch for fragments
+    "mol_num_nodes": mol_num_nodes, # Cumulative node count for molecules
+    "frag_num_nodes": frag_num_nodes, # Cumulative node count for fragments
+    "frag_formula_peak_idxs": frag_formula_peak_idxs,  # Flattened tensor mapping each peak to its local formula index (0-based per molecule)
+    "frag_formula_peak_mzs": frag_formula_peak_mzs, # Flattened tensor of m/z values for each peak
+    "frag_formula_peak_probs": frag_formula_peak_probs, # Flattened tensor of theoretical isotopic probabilities for each peak
+    "frag_formula_sizes": frag_formula_sizes, # Tensor containing the number of unique formulas (fragments) with peaks for each molecule
+    "frag_formula_cumsizes": frag_formula_cumsizes, # Cumulative sum of frag_formula_sizes (offsets for formula indices in batch)
+    "frag_formula_peak_sizes": frag_formula_peak_sizes, # Tensor containing the total number of peaks (isotopes) for each molecule
+}
+```
+
+## Output Dictionary Reference
+
 Definitions:
 *   $N$: Total number of nodes in batch
 *   $F$: Total number of formulae in batch
@@ -10,8 +29,6 @@ Definitions:
 *   $H$: Number of hydrogen counts considered ($2 \times \text{num\_hs} + 1$)
 *   $N'$: Total number of unique neighborhoods (if `nb_iso` is True)
 *   $J'$: Total number of valid joint (neighborhood, formula) pairs (if `nb_iso` is True)
-
-## Output Dictionary Reference
 
 ```python
 out_d = {
