@@ -736,98 +736,46 @@ def run_inference_df(
 			# ============================
 			# land of input mappings
 			# ============================
-   
-			# forumla index -> peak index
-			if "frag_formula_peak_idxs" in batch_input:
-				pred_frag_formula_peak_idxs = batch_input['frag_formula_peak_idxs'].detach().cpu()
-			else:
-				pred_frag_formula_peak_idxs = None
+			# mapping each peak to its local formula index, peak index -> formula index 
+			frag_formula_peak_idxs = batch_input['frag_formula_peak_idxs'].detach().cpu() if "frag_formula_peak_idxs" in batch_input else None
 
 			# ============================
-			# land of results mappings
+			# land of results
 			# ============================
-			# check forumla logprobs
-			if "pred_formula_logprobs" in batch_result:
-				pred_formula_logprobs = batch_result['pred_formula_logprobs'].detach().cpu()
-				pred_formula_probs = th.exp(pred_formula_logprobs)
-			else:
-				pred_formula_probs = None
-
-			# node forumla p(n|f)
-			if "pred_formula_node_logprobs" in batch_result:
-				pred_formula_node_logprobs = batch_result['pred_formula_node_logprobs'].detach().cpu()
-			else:
-				pred_formula_node_logprobs = None
-
-			# node forumla p(f|n)
-			if "pred_node_formula_logprobs" in batch_result:
-				pred_node_formula_logprobs = batch_result['pred_node_formula_logprobs'].detach().cpu()
-			else:
-				pred_node_formula_logprobs = None
-    
- 			# node log probs
-			if "pred_node_logprobs" in batch_result:
-				pred_node_logprobs = batch_result['pred_node_logprobs'].detach().cpu()
-			else:
-				pred_node_logprobs = None
+			# forumla log probs p(f)
+			pred_formula_probs = th.exp(batch_result['pred_formula_logprobs'].detach().cpu()) if "pred_formula_logprobs" in batch_result else None
+			# log prob p(n|f), node conditioned on formula
+			pred_formula_node_logprobs = batch_result['pred_formula_node_logprobs'].detach().cpu() if "pred_formula_node_logprobs" in batch_result else None
+			# log prob p(f|n), formula conditioned on node
+			pred_node_formula_logprobs = batch_result['pred_node_formula_logprobs'].detach().cpu() if "pred_node_formula_logprobs" in batch_result else None
+ 			# node log probs p(n)
+			pred_node_logprobs = batch_result['pred_node_logprobs'].detach().cpu() if "pred_node_logprobs" in batch_result else None
 
 			# ============================
 			# node idx mappings
 			# ============================
-			# node prob index to node index mapping
-			# node prob at i of pred_formula_node_logprobs belongs to node pred_joint_node_idxs[i] 
-			if "pred_joint_node_idxs" in NODE_IDX_VARS:
-				pred_joint_node_idxs = batch_result['pred_joint_node_idxs'].detach().cpu()
-			else:
-				pred_joint_node_idxs = None
-
-			if "pred_node_node_idxs" in NODE_IDX_VARS:
-				pred_node_node_idxs = batch_result['pred_node_node_idxs'].detach().cpu()
-			else:		
-				pred_node_node_idxs = None
+			# joint node idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
+			pred_joint_node_idxs = batch_result['pred_joint_node_idxs'].detach().cpu() if "pred_joint_node_idxs" in NODE_IDX_VARS else None
+			# node idxs maps each entry in pred_node_logprobs to its node idx
+			pred_node_node_idxs = batch_result['pred_node_node_idxs'].detach().cpu() if "pred_node_node_idxs" in NODE_IDX_VARS else None
 
 			# ============================
 			# land of formula idx mappings
 			# ============================
-			# node prob index to formula index mapping
-			# node prob at i of pred_formula_node_logprobs belongs to forumla pred_joint_formula_idxs[i] 
-			if "pred_joint_formula_idxs" in FORMULA_IDX_VARS:
-				pred_joint_formula_idxs = batch_result['pred_joint_formula_idxs'].detach().cpu()
-			else:
-				pred_joint_formula_idxs = None
-
-			# forumla prob index -> forumla index, forumla f[i] forumla i
-			# forumla prob at i of pred_formula_logprobs is for formula pred_formusla_formula_idxs[i]
-			if "pred_formula_formula_idxs" in FORMULA_IDX_VARS:
-				pred_formula_formula_idxs  = batch_result['pred_formula_formula_idxs'].detach().cpu()
-			else:
-				pred_formula_formula_idxs = None
+			# joint formula idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
+			pred_joint_formula_idxs = batch_result['pred_joint_formula_idxs'].detach().cpu() if "pred_joint_formula_idxs" in FORMULA_IDX_VARS else None
+			# formula idxs maps each entry in pred_formula_logprobs to its formula idx
+			pred_formula_formula_idxs = batch_result['pred_formula_formula_idxs'].detach().cpu() if "pred_formula_formula_idxs" in FORMULA_IDX_VARS else None
 	
 			# ============================
-			# :and of batch idx mappings
+			#  batch idx mappings
 			# ============================
-			if "pred_joint_batch_idxs" in BATCH_IDX_VARS:
-				# joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
-				# to its corresponding batch index (i.e., which spectrum/molecule in the batch it belongs to).
-				# This is crucial for filtering predictions per sample in the batch loop below.
-				joint_batch_idxs = batch_result['pred_joint_batch_idxs'].detach().cpu()
-			else:
-				joint_batch_idxs = None
-			
-			if "pred_formula_batch_idxs" in BATCH_IDX_VARS:
-				# forumla prob batch idxs, maps each entry in pred_formula_logprobs to its batch idx
-				# used to filter formula probs per spectrum/molecule in the batch loop below
-				pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs'].detach().cpu()
-			else:
-				pred_formula_batch_idxs = None
-
-			if "pred_node_batch_idxs" in BATCH_IDX_VARS:
-				# node prob batch idxs, maps each entry in pred_formula_node_logprobs to its batch idx
-				# used to filter node conditional probs per spectrum/molecule in the batch loop below
-				# used to filter  Log probabilities of nodes in the batch loop below
-				pred_node_batch_idxs = batch_result['pred_node_batch_idxs'].detach().cpu()	
-			else:
-				pred_node_batch_idxs = None
+			# joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
+			joint_batch_idxs = batch_result['pred_joint_batch_idxs'].detach().cpu() if "pred_joint_batch_idxs" in BATCH_IDX_VARS else None			
+			# forumla prob batch idxs, maps each entry in pred_formula_logprobs to its batch idx
+			pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs'].detach().cpu() if "pred_formula_batch_idxs" in BATCH_IDX_VARS else None
+			# node prob batch idxs, maps each entry in pred_formula_node_logprobs to its batch idx
+			pred_node_batch_idxs = batch_result['pred_node_batch_idxs'].detach().cpu() if "pred_node_batch_idxs" in BATCH_IDX_VARS else None
     
 			# ============================
 			# per-spectrum processing
@@ -872,7 +820,7 @@ def run_inference_df(
 					min_peak_int,
 					min_frag_prob,
 					pred_ints,
-					pred_frag_formula_peak_idxs,
+					frag_formula_peak_idxs,
 					b_pred_formula_formula_idxs,
 					b_pred_formula_probs,
 					b_pred_joint_formula_idxs,
@@ -931,10 +879,7 @@ def filter_by_peak_intensity(
 		prob_mask = b_pred_formula_probs > min_frag_prob
 		valid_f_idxs_prob = b_pred_formula_formula_idxs[prob_mask]
 		
-		if valid_f_idxs is not None:
-			valid_f_idxs = valid_f_idxs[th.isin(valid_f_idxs, valid_f_idxs_prob)]
-		else:
-			valid_f_idxs = valid_f_idxs_prob
+		valid_f_idxs = valid_f_idxs[th.isin(valid_f_idxs, valid_f_idxs_prob)] if valid_f_idxs is not None else valid_f_idxs_prob
 
 	if valid_f_idxs is None:
 		return (
