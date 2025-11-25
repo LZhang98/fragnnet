@@ -995,7 +995,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 				atol=1e-2
 			)
 		), (scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp())
-
 		# size definitions:
 		# B: batch size
 		# P: total number of predicted spectrum peaks across the batch
