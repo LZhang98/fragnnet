@@ -881,9 +881,8 @@ def run_inference_df(
 			"pred_joint_node_idxs", "pred_node_formula_probs",
 			"pred_node_probs", "pred_node_node_idxs"
 		] + eval_score_types
-
 		pred_df = pd.DataFrame(preds_l, columns=columns)
-		print(pred_df.head())
+
 		return pred_df
 
 def filter_by_peak_intensity(

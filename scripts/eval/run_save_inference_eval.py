@@ -11,7 +11,6 @@ Usage:
 from fragnnet.runner import load_config, init_dataloader
 from fragnnet.utils.script_utils import (
 	get_ckpt_path,
-	get_score_types,
 	setup_device,
 	apply_inference_config,
 	init_model_from_ckpt,
@@ -22,7 +21,6 @@ from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 from fragnnet.utils.misc_utils import booltype
 import argparse
 import os
-
 
 if __name__ == "__main__":
 	# Set up command line argument parser
@@ -114,7 +112,7 @@ if __name__ == "__main__":
 			"pred_logprobs",     # Predicted log probabilities
 			"pred_batch_idxs",   # Predicted batch indices
 			"true_oos_prob",     # True out-of-scope probability
-			"oos_prob",          # Predicted out-of-scope probability
+			"pred_oos_prob",          # Predicted out-of-scope probability
 		],
 		help="Subset of outputs to include in results"
 	)
@@ -147,7 +145,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--batch_cutoff",
 		type=int,
-		default=10,
+		default=1,
 		help="Number of batches to evaluate (-1 for all)"
 	)
 	args = parser.parse_args()
@@ -203,20 +201,20 @@ if __name__ == "__main__":
 		output_everything=args.output_everything
 	)
 	print(f">>> Output set: {output_set}")
-	predicted_outputs = run_inference_df(
+	predicted_df = run_inference_df(
 		model,
 		dl,
 		device,
 		evaluate=True,
 		output_set=output_set,
 		batch_cutoff=args.batch_cutoff,
-		# eval_score_types = eval_score_types,
+		min_peak_int=1.0,
+		min_formula_prob=1e-5,
+		min_frag_prob=1e-5,
 	)	
 	
-	# Save results
-	model_save_dp = os.path.join(args.save_dp, args.wandb_run_id)
-	os.makedirs(model_save_dp, exist_ok=True)
-	
+	# predicted_df.to_csv("inference_eval_results.csv", index=False)
+	predicted_df.to_pickle("inference_eval_results.pkl")	
 	# Print evaluation score statistics
 	#print("\n>>> Evaluation Score Statistics:")
 	#for eval_score_type in eval_score_types:
