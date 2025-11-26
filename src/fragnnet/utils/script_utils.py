@@ -695,10 +695,11 @@ def run_inference_df(
 		nb_iso,
 	)
 
+	eval_score_types = get_score_types(model.hparams)
+ 
 	preds_l = []
  	#print(">> set model to this to eval")
 	model.eval()
-
 	with th.inference_mode():
 		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), desc="Running inference"):
 			# Early exit for batch cutoff
@@ -729,10 +730,9 @@ def run_inference_df(
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 
-			# eval_scores_d = {}
-			#for eval_score_type in eval_score_types:
-			#	eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
-			#print(eval_score_type, eval_scores_d[eval_score_type])
+			eval_scores_d = {}
+			for eval_score_type in eval_score_types:
+				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
 
 			# ============================
 			# land of input mappings
@@ -872,6 +872,8 @@ def run_inference_df(
 					b_pred_node_probs.tolist() if b_pred_node_probs is not None else None,
 					b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else None
 				]
+				for eval_score_type in eval_score_types:
+					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
 				preds_l.append(data_row)
    
 		# build dataframe with new columns (after processing all batches)
@@ -881,7 +883,8 @@ def run_inference_df(
 			"pred_joint_formula_idxs", "pred_formula_node_probs",
 			"pred_joint_node_idxs", "pred_node_formula_probs",
 			"pred_node_probs", "pred_node_node_idxs"
-		]
+		] + eval_score_types
+
 		pred_df = pd.DataFrame(preds_l, columns=columns)
 		print(pred_df.head())
 		return pred_df
