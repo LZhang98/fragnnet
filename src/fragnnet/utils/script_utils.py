@@ -721,19 +721,16 @@ def run_inference_df(
 			batch_size = int(batch_input['batch_size'].detach().cpu().item())
 
 			pred_mzs = batch_result["pred_mzs"].detach().cpu()
-			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-			
-			has_oos_b = "pred_oos_logprobs" in batch_result
-			if has_oos_b:
-				pred_oos_logprobs = batch_result["pred_oos_logprobs"].detach().cpu()
-	
+			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()	
 			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
 			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+			pred_oos_probs = batch_result["oos_prob"].detach().cpu() if "oos_prob" in batch_result else None
 
 			eval_scores_d = {}
 			for eval_score_type in eval_score_types:
 				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
-
+   			
+   
 			# ============================
 			# land of input mappings
 			# ============================
@@ -789,7 +786,7 @@ def run_inference_df(
 			for b_idx in range(batch_size):
 				# per-spectrum masks and basic fields
 				b_peak_mask = pred_batch_idxs == b_idx
-				b_pred_oos_logprob = pred_oos_logprobs[b_idx].numpy().item() if has_oos_b else np.nan
+				b_pred_oos_prob = pred_oos_probs[b_idx].numpy().item() if pred_oos_probs is not None else np.nan
 				b_spec_id = spec_ids[b_idx]
 				b_mol_id = mol_ids[b_idx]
 				b_spec_mzs = pred_mzs[b_peak_mask]
@@ -862,15 +859,15 @@ def run_inference_df(
 					b_mol_id, 
 					b_spec_mzs.tolist(), 
 					b_spec_ints.tolist(), 
-					b_pred_oos_logprob,
-					b_pred_formula_formula_idxs.tolist() if b_pred_formula_formula_idxs is not None else None,
-					b_pred_formula_probs.tolist() if b_pred_formula_probs is not None else None,
-					b_pred_joint_formula_idxs.tolist() if b_pred_joint_formula_idxs is not None else None,
-					b_pred_formula_node_probs.tolist() if b_pred_formula_node_probs is not None else None,
-					b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else None,
-					b_pred_node_formula_probs.tolist() if b_pred_node_formula_probs is not None else None,
-					b_pred_node_probs.tolist() if b_pred_node_probs is not None else None,
-					b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else None
+					b_pred_oos_prob,
+					b_pred_formula_formula_idxs.tolist() if b_pred_formula_formula_idxs is not None else np.nan,
+					b_pred_formula_probs.tolist() if b_pred_formula_probs is not None else np.nan,
+					b_pred_joint_formula_idxs.tolist() if b_pred_joint_formula_idxs is not None else np.nan,
+					b_pred_formula_node_probs.tolist() if b_pred_formula_node_probs is not None else np.nan,
+					b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else np.nan,
+					b_pred_node_formula_probs.tolist() if b_pred_node_formula_probs is not None else np.nan,
+					b_pred_node_probs.tolist() if b_pred_node_probs is not None else np.nan,
+					b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else np.nan
 				]
 				for eval_score_type in eval_score_types:
 					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
@@ -878,7 +875,7 @@ def run_inference_df(
    
 		# build dataframe with new columns (after processing all batches)
 		columns = [
-			"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_logprob",
+			"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
 			"pred_formula_formula_idxs", "pred_formula_probs",
 			"pred_joint_formula_idxs", "pred_formula_node_probs",
 			"pred_joint_node_idxs", "pred_node_formula_probs",
