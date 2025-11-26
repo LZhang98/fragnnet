@@ -17,6 +17,7 @@ from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
+from fragnnet.utils.frag_utils import get_node_feats
 
 def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 	import wandb
@@ -273,7 +274,6 @@ def apply_inference_config(
 	output_formula_str: bool = False,
 	train_batch_size: Optional[int] = None,
 	eval_batch_size: Optional[int] = None,
-	model_type: Optional[str] = None,
  	# Set dataframes in config for dataset initialization
 	mol_src: Optional[pd.DataFrame | str] = None,
 	spec_src: Optional[pd.DataFrame | str] = None,
@@ -291,7 +291,6 @@ def apply_inference_config(
 		output_formula_str (bool, optional): _description_. Defaults to False.
 		train_batch_size (Optional[int], optional): _description_. Defaults to None.
 		eval_batch_size (Optional[int], optional): _description_. Defaults to None.
-		model_type (Optional[str], optional): _description_. Defaults to None.
 		mol_df (Optional[pd.DataFrame], optional): _description_. Defaults to None.
 		spec_df (Optional[pd.DataFrame], optional): _description_. Defaults to None.
 
@@ -317,14 +316,13 @@ def apply_inference_config(
 	config_d["output_formula_str"] = output_formula_str
 	
 	# Model-specific configurations
-	if model_type and "fraggnn" in model_type:
-		config_d["spec_params"]["prec_type_str"] = output_formula_str
-		config_d["frag_params"]["formula_str"] = output_formula_str
-	elif model_type and "iceberg" in model_type:
-		if output_formula_str:
-			config_d["magma_params"]["adduct_form_deltas"] = True
-	elif model_type and "graff" in model_type:
-		config_d["ann_params"]["formula_str"] = output_formula_str
+	# for fragnnet
+	config_d["spec_params"]["prec_type_str"] = True
+	config_d["frag_params"]["formula_str"] = True
+	# for iceberg
+	config_d["magma_params"]["adduct_form_deltas"] = True
+	# for graff
+	config_d["ann_params"]["formula_str"] = output_formula_str
 	
 	# Set batch sizes if provided
 	if train_batch_size is not None:
@@ -706,7 +704,8 @@ def run_inference_df(
 			if batch_idx >= batch_cutoff and batch_cutoff > 0:
 				print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
 				break
-
+			print(batch_input)
+			exit()
 			spec_ids = batch_input['spec_unique_id']
 			mol_ids = batch_input['mol_id']
 
@@ -1025,3 +1024,74 @@ def filter_by_peak_intensity(
 		b_pred_joint_node_idxs, b_pred_node_formula_probs,
 		b_pred_node_probs, b_pred_node_node_idxs
 	)
+
+def get_realdata_from_idx(
+	frag_formula_peak_idxs: Optional[th.Tensor],
+	b_pred_formula_formula_idxs: Optional[th.Tensor],
+	b_pred_joint_formula_idxs: Optional[th.Tensor] = None,
+	b_pred_joint_node_idxs: Optional[th.Tensor] = None,
+	b_pred_node_node_idxs: Optional[th.Tensor] = None,
+	mol_pyg: Optional[Any] = None,
+	idx_to_formula: Optional[Dict[int, str]] = None,
+	verbose: bool = False
+):
+	"""
+	Retrieve real data (formulas and node CCs) from indices using the fragment graph and formula mapping.
+	"""
+	if mol_pyg is None:
+		return None, None, None, None, None
+
+	# Helper to get formula string from index
+	def get_formulas(idxs):
+		if idxs is None or idx_to_formula is None: return None
+		# idxs is a tensor, convert to list of ints
+		return [idx_to_formula[i.item()] for i in idxs]
+
+	# Helper to get node CC from index
+	node_feats = mol_pyg.x
+	# node_feat_idxs is stored in dag
+	node_feat_idxs = mol_pyg.node_feat_idxs.view(-1)
+	
+	# Use helper function to get CC features
+	all_node_ccs = get_node_feats(node_feats, node_feat_idxs, "cc")
+	
+	def get_nodes(idxs):
+		if idxs is None: return None
+		return all_node_ccs[idxs]
+
+	# Retrieve data
+	real_frag_formulas = get_formulas(frag_formula_peak_idxs) if frag_formula_peak_idxs is not None else None
+	real_pred_formulas = get_formulas(b_pred_formula_formula_idxs)
+	real_joint_formulas = get_formulas(b_pred_joint_formula_idxs)
+	
+	real_joint_nodes = get_nodes(b_pred_joint_node_idxs)
+	real_pred_nodes = get_nodes(b_pred_node_node_idxs)
+
+	return (
+		real_frag_formulas,
+		real_pred_formulas,
+		real_joint_formulas,
+		real_joint_nodes,
+		real_pred_nodes
+	)
+
+def get_idx_to_formula(
+	batch_input: Dict[str, Any],
+	b_idx: int,
+	frag_formula_cumsizes: th.Tensor
+) -> Optional[Dict[int, str]]:
+	"""
+	Extract idx_to_formula dictionary for a specific molecule in the batch.
+	Requires 'frag_formula_str' to be present in batch_input (set output_formula_str=True).
+	"""
+	if "frag_formula_str" not in batch_input:
+		return None
+		
+	f_start = frag_formula_cumsizes[b_idx]
+	f_end = frag_formula_cumsizes[b_idx+1]
+	
+	# Extract formulas for this molecule
+	b_formulas = batch_input["frag_formula_str"][f_start:f_end]
+	
+	# Create dictionary mapping local index to formula string
+	return {i: s for i, s in enumerate(b_formulas)}
