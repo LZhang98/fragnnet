@@ -924,19 +924,23 @@ def filter_by_peak_intensity(
   
 	valid_f_idxs = None
 	# 1. Filter by peak intensity
+	# This step identifies which formulas are associated with peaks that have intensity > min_peak_int.
+	# It uses frag_formula_peak_idxs which maps peaks to local formula indices.
 	if min_peak_int > 0 and frag_formula_peak_idxs is not None:
 		valid_peak_mask = pred_ints > min_peak_int
 		final_n_peaks = valid_peak_mask.sum().item()
 		valid_local_f_idxs = frag_formula_peak_idxs[valid_peak_mask]
 		
-		# Filter peaks
+		# Filter peaks themselves
 		pred_ints = pred_ints[valid_peak_mask]
 		pred_mzs = pred_mzs[valid_peak_mask]
 
-		# Map local formula indices to global formula indices
+		# Map local formula indices (0..N_formulas_in_mol) to global formula indices (if available)
+		# b_pred_formula_formula_idxs contains the global indices for the formulas in this molecule
 		if b_pred_formula_formula_idxs is not None:
 			# Ensure indices are valid (should be within bounds if data is consistent)
 			# We use .long() to ensure they are treated as indices
+			# Note: valid_local_f_idxs are indices into the formula array for this molecule
 			valid_f_idxs = b_pred_formula_formula_idxs[valid_local_f_idxs.long()]
 			valid_f_idxs = th.unique(valid_f_idxs)
 		else:
@@ -944,6 +948,7 @@ def filter_by_peak_intensity(
 			valid_f_idxs = th.unique(valid_local_f_idxs)
 
 	# 2. Filter by formula probability
+	# This step identifies formulas that have a predicted probability > min_formula_prob.
 	if min_formula_prob > 0 and b_pred_formula_probs is not None \
      	and b_pred_formula_formula_idxs is not None:
 		# b_pred_formula_probs is already exp(log_probs) so it is in probability space [0,1]
@@ -954,11 +959,15 @@ def filter_by_peak_intensity(
 			print(f"  > valid_f_idxs (peaks): {valid_f_idxs}")
 			print(f"  > valid_f_idxs_prob: {valid_f_idxs_prob}")
 
+		# Intersect with valid formulas from peak intensity filter (if any)
+		# If valid_f_idxs is None (no peak filtering or no peaks passed), use probability filter only
+		# If valid_f_idxs exists, keep only formulas that satisfy BOTH conditions
 		valid_f_idxs = valid_f_idxs[th.isin(valid_f_idxs, valid_f_idxs_prob)] if valid_f_idxs is not None else valid_f_idxs_prob
 		
 		if verbose:
 			print(f"  > valid_f_idxs (merged): {valid_f_idxs}")
 
+	# If no filtering was applied (valid_f_idxs is None), return original tensors
 	if valid_f_idxs is None:
 		return (
 			pred_ints, pred_mzs,
@@ -968,14 +977,17 @@ def filter_by_peak_intensity(
 			b_pred_node_probs, b_pred_node_node_idxs
 		)
 
-	# Filter formula predictions
+	# 3. Apply filtering to all formula-related tensors
+	
+	# Filter formula predictions (P(f))
 	if b_pred_formula_formula_idxs is not None:
 		keep_mask_f = th.isin(b_pred_formula_formula_idxs, valid_f_idxs)
 		b_pred_formula_formula_idxs = b_pred_formula_formula_idxs[keep_mask_f]
 		if b_pred_formula_probs is not None:
 			b_pred_formula_probs = b_pred_formula_probs[keep_mask_f]
 			
-	# Filter joint predictions
+	# Filter joint predictions (P(f,n), P(n|f), P(f|n))
+	# These are indexed by formula, so we filter based on whether the formula is in valid_f_idxs
 	if b_pred_joint_formula_idxs is not None:
 		keep_mask_j = th.isin(b_pred_joint_formula_idxs, valid_f_idxs)
 		b_pred_joint_formula_idxs = b_pred_joint_formula_idxs[keep_mask_j]
@@ -986,7 +998,9 @@ def filter_by_peak_intensity(
 		if b_pred_node_formula_probs is not None:
 			b_pred_node_formula_probs = b_pred_node_formula_probs[keep_mask_j]
    
-		# Filter node predictions based on valid nodes in joint distribution
+		# Filter node predictions (P(n))
+		# We keep nodes that appear in the filtered joint distribution (i.e., connected to valid formulas)
+		# AND optionally filter by node probability (min_frag_prob)
 		if b_pred_node_probs is not None and b_pred_node_node_idxs is not None:
 			keep_mask_n = th.ones(b_pred_node_probs.shape[0], dtype=th.bool, device=b_pred_node_probs.device)
 
