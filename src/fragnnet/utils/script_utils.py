@@ -678,8 +678,8 @@ def run_inference_df(
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
-	min_formula_prob: float = 0.001,
-	min_frag_prob: float = 0.001,
+	min_formula_prob: float = 0.0,
+	min_frag_prob: float = 0.0,
 ) -> pd.DataFrame:
 	"""
 	Run inference with optional chunked saving for resumable predictions.
@@ -746,11 +746,11 @@ def run_inference_df(
 			# forumla log probs p(f)
 			pred_formula_probs = th.exp(batch_result['pred_formula_logprobs'].detach().cpu()) if "pred_formula_logprobs" in batch_result else None
 			# log prob p(n|f), node conditioned on formula
-			pred_formula_node_logprobs = batch_result['pred_formula_node_logprobs'].detach().cpu() if "pred_formula_node_logprobs" in batch_result else None
+			pred_formula_node_probs = th.exp(batch_result['pred_formula_node_logprobs'].detach().cpu()) if "pred_formula_node_logprobs" in batch_result else None
 			# log prob p(f|n), formula conditioned on node
-			pred_node_formula_logprobs = batch_result['pred_node_formula_logprobs'].detach().cpu() if "pred_node_formula_logprobs" in batch_result else None
+			pred_node_formula_probs = th.exp(batch_result['pred_node_formula_logprobs'].detach().cpu()) if "pred_node_formula_logprobs" in batch_result else None
  			# node log probs p(n)
-			pred_node_logprobs = batch_result['pred_node_logprobs'].detach().cpu() if "pred_node_logprobs" in batch_result else None
+			pred_node_probs = th.exp(batch_result['pred_node_logprobs'].detach().cpu()) if "pred_node_logprobs" in batch_result else None
 
 			# ============================
 			# node idx mappings
@@ -799,9 +799,9 @@ def run_inference_df(
 				# Filter joint distribution data (P(f,n)), p(n|f) and p(f|n) for the current spectrum/molecule (b_idx)
 				b_joint_mask = (joint_batch_idxs == b_idx) if joint_batch_idxs is not None else None
 				# Conditional log probabilities P(n|f)
-				b_pred_formula_node_logprobs = pred_formula_node_logprobs[b_joint_mask] if pred_formula_node_logprobs is not None and b_joint_mask is not None else None
+				b_pred_formula_node_probs = pred_formula_node_probs[b_joint_mask] if pred_formula_node_probs is not None and b_joint_mask is not None else None
 				# Conditional log probabilities P(f|n)
-				b_pred_node_formula_logprobs = pred_node_formula_logprobs[b_joint_mask] if pred_node_formula_logprobs is not None and b_joint_mask is not None else None
+				b_pred_node_formula_probs = pred_node_formula_probs[b_joint_mask] if pred_node_formula_probs is not None and b_joint_mask is not None else None
 				b_pred_joint_formula_idxs = pred_joint_formula_idxs[b_joint_mask] if pred_joint_formula_idxs is not None and b_joint_mask is not None else None
 				b_pred_joint_node_idxs = pred_joint_node_idxs[b_joint_mask] if pred_joint_node_idxs is not None and b_joint_mask is not None else None
 			
@@ -814,7 +814,7 @@ def run_inference_df(
 				# node probabilities P(n) for the current spectrum/molecule (b_idx)
 				b_pred_node_mask = (pred_node_batch_idxs == b_idx) if pred_node_batch_idxs is not None else None
 				#b_pred_node_idxs = pred_joint_node_idxs[b_pred_node_mask]
-				b_pred_node_logprobs = pred_node_logprobs[b_pred_node_mask] if pred_node_logprobs is not None and b_pred_node_mask is not None else None
+				b_pred_node_probs = pred_node_probs[b_pred_node_mask] if pred_node_probs is not None and b_pred_node_mask is not None else None
 				b_pred_node_node_idxs = pred_node_node_idxs[b_pred_node_mask] if pred_node_node_idxs is not None and b_pred_node_mask is not None else None
 
 				# Rebase indices to 0-based per molecule
@@ -836,22 +836,23 @@ def run_inference_df(
 				(
 					b_spec_ints, b_spec_mzs,
 					b_pred_formula_formula_idxs, b_pred_formula_probs,
-					b_pred_joint_formula_idxs, b_pred_formula_node_logprobs, 
-					b_pred_joint_node_idxs, b_pred_node_formula_logprobs,
-					b_pred_node_logprobs, b_pred_node_node_idxs
+					b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
+					b_pred_joint_node_idxs, b_pred_node_formula_probs,
+					b_pred_node_probs, b_pred_node_node_idxs
 				) = filter_by_peak_intensity(
 					min_peak_int,
 					min_formula_prob,
+					min_frag_prob,
 					b_spec_ints,
 					b_spec_mzs,
 					b_frag_formula_peak_idxs,
 					b_pred_formula_formula_idxs,
 					b_pred_formula_probs,
 					b_pred_joint_formula_idxs,
-					b_pred_formula_node_logprobs,
+					b_pred_formula_node_probs,
 					b_pred_joint_node_idxs,
-					b_pred_node_formula_logprobs,
-					b_pred_node_logprobs,
+					b_pred_node_formula_probs,
+					b_pred_node_probs,
 					b_pred_node_node_idxs
 				)
 
@@ -865,10 +866,10 @@ def run_inference_df(
 					b_pred_formula_formula_idxs.tolist() if b_pred_formula_formula_idxs is not None else None,
 					b_pred_formula_probs.tolist() if b_pred_formula_probs is not None else None,
 					b_pred_joint_formula_idxs.tolist() if b_pred_joint_formula_idxs is not None else None,
-					b_pred_formula_node_logprobs.tolist() if b_pred_formula_node_logprobs is not None else None,
+					b_pred_formula_node_probs.tolist() if b_pred_formula_node_probs is not None else None,
 					b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else None,
-					b_pred_node_formula_logprobs.tolist() if b_pred_node_formula_logprobs is not None else None,
-					b_pred_node_logprobs.tolist() if b_pred_node_logprobs is not None else None,
+					b_pred_node_formula_probs.tolist() if b_pred_node_formula_probs is not None else None,
+					b_pred_node_probs.tolist() if b_pred_node_probs is not None else None,
 					b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else None
 				]
 				preds_l.append(data_row)
@@ -877,9 +878,9 @@ def run_inference_df(
 		columns = [
 			"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_logprob",
 			"pred_formula_formula_idxs", "pred_formula_probs",
-			"pred_joint_formula_idxs", "pred_formula_node_logprobs",
-			"pred_joint_node_idxs", "pred_node_formula_logprobs",
-			"pred_node_logprobs", "pred_node_node_idxs"
+			"pred_joint_formula_idxs", "pred_formula_node_probs",
+			"pred_joint_node_idxs", "pred_node_formula_probs",
+			"pred_node_probs", "pred_node_node_idxs"
 		]
 		pred_df = pd.DataFrame(preds_l, columns=columns)
 		print(pred_df.head())
@@ -888,30 +889,31 @@ def run_inference_df(
 def filter_by_peak_intensity(
 	min_peak_int: float,
 	min_formula_prob: float,
+	min_frag_prob: float,
 	pred_ints: th.Tensor,
 	pred_mzs: th.Tensor,
 	frag_formula_peak_idxs: Optional[th.Tensor],
 	b_pred_formula_formula_idxs: Optional[th.Tensor],
 	b_pred_formula_probs: Optional[th.Tensor],
 	b_pred_joint_formula_idxs: Optional[th.Tensor] = None,
-	b_pred_formula_node_logprobs: Optional[th.Tensor] = None,
+	b_pred_formula_node_probs: Optional[th.Tensor] = None,
 	b_pred_joint_node_idxs: Optional[th.Tensor] = None,
-	b_pred_node_formula_logprobs: Optional[th.Tensor] = None,
-	b_pred_node_logprobs: Optional[th.Tensor] = None,
+	b_pred_node_formula_probs: Optional[th.Tensor] = None,
+	b_pred_node_probs: Optional[th.Tensor] = None,
 	b_pred_node_node_idxs: Optional[th.Tensor] = None,
-	verbose: bool = False,
+	verbose: bool = False
 ):
 	"""
 	Filter formulas and nodes based on the intensity of the associated peak and formula probability.
 	Keeps original formula and node indices.
 	"""
-	if min_peak_int <= 0 and min_formula_prob <= 0:
+	if min_peak_int <= 0 and min_formula_prob <= 0 and min_frag_prob <= 0:
 		return (
 			pred_ints, pred_mzs,
 			b_pred_formula_formula_idxs, b_pred_formula_probs,
-			b_pred_joint_formula_idxs, b_pred_formula_node_logprobs, 
-			b_pred_joint_node_idxs, b_pred_node_formula_logprobs,
-			b_pred_node_logprobs, b_pred_node_node_idxs
+			b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
+			b_pred_joint_node_idxs, b_pred_node_formula_probs,
+			b_pred_node_probs, b_pred_node_node_idxs
 		)
 
 	# Track initial sizes for stats
@@ -949,15 +951,22 @@ def filter_by_peak_intensity(
 		prob_mask = b_pred_formula_probs > min_formula_prob
 		valid_f_idxs_prob = b_pred_formula_formula_idxs[prob_mask]
 		
+		if verbose:
+			print(f"  > valid_f_idxs (peaks): {valid_f_idxs}")
+			print(f"  > valid_f_idxs_prob: {valid_f_idxs_prob}")
+
 		valid_f_idxs = valid_f_idxs[th.isin(valid_f_idxs, valid_f_idxs_prob)] if valid_f_idxs is not None else valid_f_idxs_prob
+		
+		if verbose:
+			print(f"  > valid_f_idxs (merged): {valid_f_idxs}")
 
 	if valid_f_idxs is None:
 		return (
 			pred_ints, pred_mzs,
 			b_pred_formula_formula_idxs, b_pred_formula_probs,
-			b_pred_joint_formula_idxs, b_pred_formula_node_logprobs, 
-			b_pred_joint_node_idxs, b_pred_node_formula_logprobs,
-			b_pred_node_logprobs, b_pred_node_node_idxs
+			b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
+			b_pred_joint_node_idxs, b_pred_node_formula_probs,
+			b_pred_node_probs, b_pred_node_node_idxs
 		)
 
 	# Filter formula predictions
@@ -971,20 +980,23 @@ def filter_by_peak_intensity(
 	if b_pred_joint_formula_idxs is not None:
 		keep_mask_j = th.isin(b_pred_joint_formula_idxs, valid_f_idxs)
 		b_pred_joint_formula_idxs = b_pred_joint_formula_idxs[keep_mask_j]
-		if b_pred_formula_node_logprobs is not None:
-			b_pred_formula_node_logprobs = b_pred_formula_node_logprobs[keep_mask_j]
+		if b_pred_formula_node_probs is not None:
+			b_pred_formula_node_probs = b_pred_formula_node_probs[keep_mask_j]
 		if b_pred_joint_node_idxs is not None:
 			b_pred_joint_node_idxs = b_pred_joint_node_idxs[keep_mask_j]
-		if b_pred_node_formula_logprobs is not None:
-			b_pred_node_formula_logprobs = b_pred_node_formula_logprobs[keep_mask_j]
+		if b_pred_node_formula_probs is not None:
+			b_pred_node_formula_probs = b_pred_node_formula_probs[keep_mask_j]
    
 		# Filter node predictions based on valid nodes in joint distribution
-		if b_pred_node_logprobs is not None \
-      		and b_pred_node_node_idxs is not None \
-            and b_pred_joint_node_idxs is not None:
-			valid_n_idxs = th.unique(b_pred_joint_node_idxs)
-			keep_mask_n = th.isin(b_pred_node_node_idxs, valid_n_idxs)
-			b_pred_node_logprobs = b_pred_node_logprobs[keep_mask_n]
+		if b_pred_node_probs is not None and b_pred_node_node_idxs is not None:
+			keep_mask_n = th.ones(b_pred_node_probs.shape[0], dtype=th.bool, device=b_pred_node_probs.device)
+
+			if b_pred_joint_node_idxs is not None:
+				valid_n_idxs = th.unique(b_pred_joint_node_idxs)
+				keep_mask_n = keep_mask_n & th.isin(b_pred_node_node_idxs, valid_n_idxs)
+			if min_frag_prob > 0:
+				keep_mask_n = keep_mask_n & (b_pred_node_probs > min_frag_prob)
+			b_pred_node_probs = b_pred_node_probs[keep_mask_n]
 			b_pred_node_node_idxs = b_pred_node_node_idxs[keep_mask_n]
 
 	# Track final sizes and print stats
@@ -996,7 +1008,7 @@ def filter_by_peak_intensity(
 	return (
 		pred_ints, pred_mzs,
 		b_pred_formula_formula_idxs, b_pred_formula_probs,
-		b_pred_joint_formula_idxs, b_pred_formula_node_logprobs, 
-		b_pred_joint_node_idxs, b_pred_node_formula_logprobs,
-		b_pred_node_logprobs, b_pred_node_node_idxs
+		b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
+		b_pred_joint_node_idxs, b_pred_node_formula_probs,
+		b_pred_node_probs, b_pred_node_node_idxs
 	)
