@@ -16,8 +16,8 @@ from fragnnet.iceberg.pl_model import IcebergIntenPL, IcebergGenPL
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.pl_utils import get_pl_hparams
-from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
-from fragnnet.utils.frag_utils import get_node_feats, NODE_FEAT_TO_IDX
+from fragnnet.utils.setup_utils import get_model_cls
+from fragnnet.utils.frag_utils import get_node_feats
 
 def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 	import wandb
