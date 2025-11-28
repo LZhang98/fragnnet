@@ -17,7 +17,7 @@ from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
-from fragnnet.utils.frag_utils import get_node_feats
+from fragnnet.utils.frag_utils import get_node_feats, NODE_FEAT_TO_IDX
 
 def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 	import wandb
@@ -668,17 +668,18 @@ def run_inference_pkl(
 	return vals
 
 def run_inference_df(
-	model,
-	dataloader,
+	model: th.nn.Module,
+	dataloader: th.utils.data.DataLoader,
 	device: th.device,
-	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
+ 	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
 	evaluate: bool = False,
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
 	min_formula_prob: float = 0.0,
 	min_frag_prob: float = 0.0,
-) -> pd.DataFrame:
+	return_str: bool = False
+):
 	"""
 	Run inference with optional chunked saving for resumable predictions.
 	"""
@@ -704,10 +705,14 @@ def run_inference_df(
 			if batch_idx >= batch_cutoff and batch_cutoff > 0:
 				print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
 				break
-			print(batch_input)
-			exit()
+			#print(batch_input)
+			#exit()
 			spec_ids = batch_input['spec_unique_id']
 			mol_ids = batch_input['mol_id']
+
+			# Extract string/graph data before moving to device (if they are not tensors)
+			frag_formula_str = batch_input.get("frag_formula_str", None)
+			frag_pyg = batch_input.get("frag_pyg", None)
 
 			batch_input = to_device(batch_input, device)
 			# use existing evaluate to compute cos sim and etc
@@ -773,7 +778,7 @@ def run_inference_df(
 			pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs'].detach().cpu() if "pred_formula_batch_idxs" in BATCH_IDX_VARS else None
 			# node prob batch idxs, maps each entry in pred_node_logprobs to its batch idx
 			pred_node_batch_idxs = batch_result['pred_node_batch_idxs'].detach().cpu() if "pred_node_batch_idxs" in BATCH_IDX_VARS else None
-    
+	
 			# ============================
 			# per-spectrum processing
 			# ============================	
@@ -781,6 +786,10 @@ def run_inference_df(
 			# These are tensors of shape (batch_size + 1) containing offsets
 			frag_formula_cumsizes = batch_input["frag_formula_cumsizes"].detach().cpu()
 			frag_num_nodes = batch_input["frag_num_nodes"].detach().cpu()
+
+			# Extract formula strings and PyG object if needed
+			frag_formula_str = batch_input.get("frag_formula_str", None)
+			frag_pyg = batch_input.get("frag_pyg", None)
 
 			for b_idx in range(batch_size):
 				# per-spectrum masks and basic fields
@@ -868,6 +877,26 @@ def run_inference_df(
 					b_pred_node_probs.tolist() if b_pred_node_probs is not None else np.nan,
 					b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else np.nan
 				]
+
+				if return_str:
+					# Get formula strings
+					b_pred_formula_strs = np.nan
+					if b_pred_formula_formula_idxs is not None and frag_formula_str is not None:
+						f_offset = frag_formula_cumsizes[b_idx].item()
+						global_f_idxs = b_pred_formula_formula_idxs + f_offset
+						b_pred_formula_strs = frag_formula_str[global_f_idxs.numpy()].tolist()
+						#print(f"b_idx {b_idx} formula strs: {b_pred_formula_strs}")
+					data_row.append(b_pred_formula_strs)
+
+					# Get node CCs
+					b_pred_node_ccs = np.nan
+					if b_pred_node_node_idxs is not None and frag_pyg is not None:
+						i_frag_pyg = frag_pyg[b_idx]
+						node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
+						all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
+						b_pred_node_ccs = all_node_ccs[b_pred_node_node_idxs.long()].detach().cpu().numpy().tolist()
+					data_row.append(b_pred_node_ccs)
+
 				for eval_score_type in eval_score_types:
 					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
 				preds_l.append(data_row)
@@ -879,9 +908,12 @@ def run_inference_df(
 			"pred_joint_formula_idxs", "pred_formula_node_probs",
 			"pred_joint_node_idxs", "pred_node_formula_probs",
 			"pred_node_probs", "pred_node_node_idxs"
-		] + eval_score_types
+		] 
+		if return_str:
+			columns.extend(["pred_formula_strs", "pred_node_ccs"])
+		columns.extend(eval_score_types)
 		pred_df = pd.DataFrame(preds_l, columns=columns)
-
+		print(pred_df.head())
 		return pred_df
 
 def filter_by_peak_intensity(
@@ -949,7 +981,7 @@ def filter_by_peak_intensity(
 	# 2. Filter by formula probability
 	# This step identifies formulas that have a predicted probability > min_formula_prob.
 	if min_formula_prob > 0 and b_pred_formula_probs is not None \
-     	and b_pred_formula_formula_idxs is not None:
+	 	and b_pred_formula_formula_idxs is not None:
 		# b_pred_formula_probs is already exp(log_probs) so it is in probability space [0,1]
 		prob_mask = b_pred_formula_probs > min_formula_prob
 		valid_f_idxs_prob = b_pred_formula_formula_idxs[prob_mask]

@@ -145,7 +145,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--batch_cutoff",
 		type=int,
-		default=1,
+		default=20,
 		help="Number of batches to evaluate (-1 for all)"
 	)
 	args = parser.parse_args()
@@ -211,6 +211,7 @@ if __name__ == "__main__":
 		min_peak_int=1.0,
 		min_formula_prob=1e-5,
 		min_frag_prob=1e-5,
+		return_str=True
 	)	
 	
 	# predicted_df.to_csv("inference_eval_results.csv", index=False)
