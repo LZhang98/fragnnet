@@ -15,7 +15,8 @@ from fragnnet.utils.script_utils import (
 	apply_inference_config,
 	init_model_from_ckpt,
 	run_inference_df,
- 	prepare_output_subset
+ 	prepare_output_subset,
+ 	get_score_types,
 )
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 from fragnnet.utils.misc_utils import booltype
@@ -44,7 +45,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--wandb_run_id",
 		type=str,
-		default="ikohsc16",
+		default="tad3pbbc",
 		help="Weights & Biases run ID for model retrieval"
 	)
 	parser.add_argument(
@@ -56,7 +57,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--model_ckpt",
 		type=str,
-		default='saved_ckpts/nist20_inchikey_fraggnn_d3_ma_mi_all_mol_conditon_v2_ikohsc16.ckpt',
+		default=None,
 		help="Path to model checkpoint file (if not downloading from wandb)"
 	)
 	# Evaluation and output arguments
@@ -145,7 +146,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--batch_cutoff",
 		type=int,
-		default=100,
+		default=1000,
 		help="Number of batches to evaluate (-1 for all)"
 	)
 	args = parser.parse_args()
@@ -192,7 +193,7 @@ if __name__ == "__main__":
 	model = init_model_from_ckpt(ckpt_fp, config_d, device)
  
 	# Prepare evaluation score types based on configuration
-	# eval_score_types = get_score_types(config_d=config_d)
+
  
 	# Run inference and collect predictions with evaluation scores
 	print(">>> Running inference and evaluation...")
@@ -215,17 +216,20 @@ if __name__ == "__main__":
 	)	
 	
 	# predicted_df.to_csv("inference_eval_results.csv", index=False)
-	predicted_df.to_pickle("inference_eval_results.pkl")	
+
 	# Print evaluation score statistics
-	#print("\n>>> Evaluation Score Statistics:")
-	#for eval_score_type in eval_score_types:
-	#	mean_score = df[eval_score_type].mean()
-	#	std_score = df[eval_score_type].std()
-	#	print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
+	print("\n>>> Evaluation Score Statistics:")
+	eval_score_types = get_score_types(config_d=config_d)
+	for eval_score_type in eval_score_types:
+		mean_score = predicted_df[eval_score_type].mean()
+		std_score = predicted_df[eval_score_type].std()
+		print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
 	
 	# Save predictions with evaluation scores
-	#output_path = os.path.join(model_save_dp, f"predictions_{eval_split}.pkl")
-	#df.to_pickle(output_path)
-	#print(f"\n>>> Saved predictions to: {output_path}")
-	#print(f">>> Total predictions: {len(df)}")
-	#print(f">>> Evaluation complete!")
+	model_save_dp = os.path.join(save_dp, args.wandb_run_id)
+	os.makedirs(model_save_dp, exist_ok=True)
+	output_path = os.path.join(model_save_dp, f"predictions_{eval_split}.pkl")
+	predicted_df.to_pickle(output_path)
+	print(f"\n>>> Saved predictions to: {output_path}")
+	print(f">>> Total predictions: {len(predicted_df)}")
+	print(f">>> Evaluation complete!")

@@ -146,7 +146,7 @@ def get_ckpt_path(
 	Returns:
 		Path to checkpoint file
 	"""
-	if model_ckpt is None:
+	if model_ckpt is None or not os.path.isfile(model_ckpt):
 		# Download from W&B
 		os.makedirs(model_save_dp, exist_ok=True)
 		print(f">> Downloading model to {model_save_dp} from W&B")
@@ -184,10 +184,11 @@ def init_model_from_ckpt(
 	ckpt = th.load(ckpt_fp, map_location=map_location, weights_only=False)
 	
 	# Handle compiled checkpoints
-	if config_d.get('compile', False):
-		print("> Checkpoint was compiled, decompiling...")
-		ckpt = decompile_jit_ckpt(ckpt)
-		config_d['compile'] = False
+	#print(">> Checking for compiled checkpoint...")
+	# if config_d.get('compile', False):
+	print("> Checkpoint was compiled, decompiling...")
+	ckpt = decompile_jit_ckpt(ckpt)
+	config_d['compile'] = False
 	
 	# Get model class and initialize
 	model_type = config_d['model_type']

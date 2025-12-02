@@ -1,23 +1,12 @@
 import argparse
-import pickle
 import pandas as pd
-import torch as th
 from tqdm import tqdm
 
-from fragnnet.utils.frag_utils import load_frag_d, th_long_to_mask
-from fragnnet.utils.plot_utils import plot_spectra_sparse, get_mol_im, get_highlighted_bonds
-from fragnnet.utils.spec_utils import *
-
 import numpy as np
-from rdkit import Chem
-from rdkit.Chem.Draw import rdMolDraw2D
-from rdkit.Chem import AllChem, Draw
-
 from matplotlib import pyplot as plt
-from matplotlib.gridspec import GridSpec
 import matplotlib.patches as patches
 import matplotlib.collections as mc
-from matplotlib.text import Text
+
 import os
  
 def plot_spectra_axes(ax, 
