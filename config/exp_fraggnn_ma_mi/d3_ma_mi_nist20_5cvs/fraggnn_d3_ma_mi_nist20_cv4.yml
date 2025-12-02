@@ -1,5 +1,5 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_conditon_cv4
-wandb_group: fraggnn_d3_ma_mi_nist20_5cvs
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_amolc_cv4
+wandb_group: c
 wandb_tags:
 - retrieval
 - nist20
