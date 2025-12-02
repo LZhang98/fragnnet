@@ -150,7 +150,7 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp", type=str, required=False, help="Processed data directory",  default="data/proc/nist20")
 	parser.add_argument("--save_dp", type=str, required=False, help="Directory to save plots", default="output/spectra_plots_test")
 	parser.add_argument("--has_truth", type=str, required=False, help="True data pickle file path")
-	parser.add_argument("--num_plots", type=int, required=False, help="Number of plots to generate", default=100)
+	parser.add_argument("--num_plots", type=int, required=False, help="Number of plots to generate", default=400)
 	
 	args = parser.parse_args()
   	# Load reference data once - try .pkl.gz first, then .pkl, then error
@@ -209,7 +209,7 @@ if __name__ == "__main__":
 		# Extract predicted spectrum data
 		pred_spec_mzs = np.array(pred_data['pred_mzs'])
 		pred_spec_ints = np.array(pred_data['pred_ints'])
-		pred_spec_mzs = pred_spec_mzs - 0.5  # Adjust for plotting
+		pred_spec_mzs = pred_spec_mzs # Adjust for plotting
   
 		# Parse true peaks from string format
 		if 'peaks' not in pred_data or pred_data['peaks'] is None:
