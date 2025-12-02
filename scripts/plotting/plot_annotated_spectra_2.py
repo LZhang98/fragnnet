@@ -150,7 +150,7 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp", type=str, required=False, help="Processed data directory",  default="data/proc/nist20")
 	parser.add_argument("--save_dp", type=str, required=False, help="Directory to save plots", default="output/spectra_plots_test")
 	parser.add_argument("--has_truth", type=str, required=False, help="True data pickle file path")
-	parser.add_argument("--num_plots", type=int, required=False, help="Number of plots to generate", default=10)
+	parser.add_argument("--num_plots", type=int, required=False, help="Number of plots to generate", default=100)
 	
 	args = parser.parse_args()
   	# Load reference data once - try .pkl.gz first, then .pkl, then error
@@ -188,19 +188,21 @@ if __name__ == "__main__":
 		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'input_mol_id']], on='mol_id', how='left')
 	else:
 		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s']], on='mol_id', how='left')
-	spec_df = spec_df.drop(columns=['peaks'])
- 
-
+	
 	pred_df = pd.read_pickle(args.predicted_fp)
 	print(f"Loaded pred_df with {len(pred_df)} predictions")
-	pred_df = pred_df.merge(spec_df, on='spec_id', how='left')
+	if 'mol_id' not in pred_df.columns:
+		pred_df = pred_df.merge(spec_df, on='spec_id', how='left')
+	else:
+		pred_df = pred_df.merge(spec_df, on=['spec_id','mol_id'], how='left')
 	print(f"Merged pred_df now has {len(pred_df)} rows")
-	# pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
+	pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
    
 	# Limit to first few examples for testing
-	num_plots = min(10, len(pred_df))
+	num_plots = min(args.num_plots, len(pred_df))
 	
 	for idx, pred_data in tqdm(pred_df.head(num_plots).iterrows(), total=num_plots):
+		# print(pred_data)
 		spec_id = pred_data['spec_id']
 		mol_id = pred_data['mol_id']
 		
@@ -208,17 +210,21 @@ if __name__ == "__main__":
 		pred_spec_mzs = np.array(pred_data['pred_mzs'])
 		pred_spec_ints = np.array(pred_data['pred_ints'])
 		pred_spec_mzs = pred_spec_mzs - 0.5  # Adjust for plotting
+  
 		# Parse true peaks from string format
-		peaks_data = pred_data['peaks']
+		if 'peaks' not in pred_data or pred_data['peaks'] is None:
+			peaks_data = None
+		else:
+			peaks_data = pred_data['peaks']
 		
 		# Handle different data types for peaks
 		try:
 			# Check if data is NaN/None (handle both scalar and array cases)
-			is_na = peaks_data is None or (isinstance(peaks_data, (float, np.floating)) and np.isnan(peaks_data))
+			is_true_peak_na = peaks_data is None or (isinstance(peaks_data, (float, np.floating)) and np.isnan(peaks_data))
 		except:
-			is_na = False
+			is_true_peak_na = False
 		
-		if is_na:
+		if is_true_peak_na:
 			# No true peaks available
 			true_spec_mzs = np.array([])
 			true_spec_ints = np.array([])
