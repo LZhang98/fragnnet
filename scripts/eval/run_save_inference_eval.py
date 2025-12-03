@@ -45,7 +45,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--wandb_run_id",
 		type=str,
-		default="tad3pbbc",
+		default="2mi8bygf",
 		help="Weights & Biases run ID for model retrieval"
 	)
 	parser.add_argument(
