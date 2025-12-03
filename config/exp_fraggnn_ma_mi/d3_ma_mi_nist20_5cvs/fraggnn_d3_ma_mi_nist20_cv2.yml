@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_conditon_cv2
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_amolc_cv2
 wandb_group: fraggnn_d3_ma_mi_nist20_5cvs
 wandb_tags:
 - retrieval
@@ -112,7 +112,7 @@ simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: True
+compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16

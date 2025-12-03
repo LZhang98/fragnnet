@@ -491,12 +491,12 @@ def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula
 		"frag_pyg": frag_pyg, # PyG batch for fragments
 		"mol_num_nodes": mol_num_nodes, # Cumulative node count for molecules
 		"frag_num_nodes": frag_num_nodes, # Cumulative node count for fragments
-		"frag_formula_peak_idxs": frag_formula_peak_idxs,  # Indexes of the formula peaks in fragments
-		"frag_formula_peak_mzs": frag_formula_peak_mzs, # mz for formula peaks
-		"frag_formula_peak_probs": frag_formula_peak_probs, # Probabilities for formula peaks
-		"frag_formula_sizes": frag_formula_sizes, # a list containing the number of unique formula peaks for each fragment.
-		"frag_formula_cumsizes": frag_formula_cumsizes, # the cumulative sum of frag_formula_sizes with an additional 0 at the beginning
-		"frag_formula_peak_sizes": frag_formula_peak_sizes, # Peak sizes for each fragment formula
+		"frag_formula_peak_idxs": frag_formula_peak_idxs,  # Flattened tensor mapping each peak to its local formula index (0-based per molecule)
+		"frag_formula_peak_mzs": frag_formula_peak_mzs, # Flattened tensor of m/z values for each peak
+		"frag_formula_peak_probs": frag_formula_peak_probs, # Flattened tensor of theoretical isotopic probabilities for each peak
+		"frag_formula_sizes": frag_formula_sizes, # Tensor containing the number of unique formulas (fragments) with peaks for each molecule
+		"frag_formula_cumsizes": frag_formula_cumsizes, # Cumulative sum of frag_formula_sizes (offsets for formula indices in batch)
+		"frag_formula_peak_sizes": frag_formula_peak_sizes, # Tensor containing the total number of peaks (isotopes) for each molecule
 	}
 	return batched_mol_frag
     

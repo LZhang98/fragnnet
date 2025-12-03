@@ -1,6 +1,11 @@
 import torch as th
 import logging
 import torch._dynamo as th_dynamo
+try:
+    from torch._dynamo.utils import CompileProfiler
+    profiler_available = True
+except ImportError:
+    profiler_available = False
 import os
 
 from fragnnet.model import FraGNNetModel
@@ -9,7 +14,6 @@ from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog,scatter_logsumexp
 from fragnnet.pl_model import SpectrumPL
-from fragnnet.pl_model.mces_pl import MCESPL
 
 class FraGNNetPL(SpectrumPL):
 
@@ -91,9 +95,12 @@ class FraGNNetPL(SpectrumPL):
 		# compile
 		if self.hparams.compile:
 			th_dynamo.reset()
-			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-			self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
-
+			if profiler_available:
+				self.dynamo_prof = CompileProfiler()
+				self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+			else:
+				self.model = th.compile(self.model,dynamic=True)
+    
 	def _load_mces_pretrained_weights(self, mces_ckpt_path: str):
 		"""
 		Load pre-trained weights from MCES model into FraGNNet model.

@@ -1,8 +1,13 @@
 import torch as th
 import torch.nn as nn
 import torch._dynamo as th_dynamo
-import numpy as np
+try:
+    from torch._dynamo.utils import CompileProfiler
+    profiler_available = True
+except ImportError:
+    profiler_available = False
 
+import numpy as np
 from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
 from fragnnet.pl_model import SpectrumPL
 from fragnnet.utils.misc_utils import to_cpu, scatter_reduce, LOG_ZERO
@@ -44,7 +49,27 @@ class IcebergGenPL(SpectrumPL):
 		# compile
 		if self.hparams.compile:
 			th_dynamo.reset()
-			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
+			# Create a CompileProfiler if available, but be robust to ImportError/AttributeError
+			self.dynamo_prof = None
+			if profiler_available:
+				try:
+					self.dynamo_prof = CompileProfiler()
+				except Exception:
+					self.dynamo_prof = None
+			# Attempt to compile the model; fallback to unprofilered compile if needed,
+			# and finally leave the model uncompiled if compile fails entirely.
+			try:
+				if self.dynamo_prof is not None:
+					try:
+						self.model = th.compile(self.model, backend=self.dynamo_prof, dynamic=True)
+					except Exception:
+						# Fallback to plain compile without profiler
+						self.model = th.compile(self.model, dynamic=True)
+				else:
+					self.model = th.compile(self.model, dynamic=True)
+			except Exception:
+				# If compile isn't available or fails for other reasons, keep the model as-is.
+				pass
 
 	def _setup_loss_fn(self):
 
@@ -507,8 +532,12 @@ class IcebergIntenPL(SpectrumPL):
 		# compile
 		if self.hparams.compile:
 			th_dynamo.reset()
-			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-
+			if profiler_available:
+				self.dynamo_prof = CompileProfiler()
+				self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+			else:
+				self.model = th.compile(self.model,dynamic=True)
+    
 	def _setup_loss_fn(self):
 
 		# binned cosine distance

@@ -1252,7 +1252,7 @@ def fill_missing_nce(row, ace_colname:str, nce_colname:str) -> float:
 	elif not none_or_nan(nce):
 		return nce
 	else:
-		warnings.warn(f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace}")
+		warnings.warn(f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace} from columns {nce_colname}, {ace_colname}")
 		return nce
 
 def fill_missing_ace(row, ace_colname:str, nce_colname:str) -> float:
@@ -1269,7 +1269,8 @@ def fill_missing_ace(row, ace_colname:str, nce_colname:str) -> float:
 	elif not none_or_nan(ace):
 		return ace
 	else:
-		warnings.warn(f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce}")
+		warnings.warn(f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce} from columns {ace_colname}, {nce_colname}")
+		return nce
 		return ace
 
 def parse_mass_gym_ce_str(ce_str):

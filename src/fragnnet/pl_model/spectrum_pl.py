@@ -17,8 +17,6 @@ try:
 except ModuleNotFoundError:
 	import pytorch_lightning as pl
 	from pytorch_lightning.utilities.seed import _collect_rng_states, _set_rng_states
-	
-import torch._dynamo as th_dynamo
 
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
 from fragnnet.model.loss import sparse_entropy_fn
@@ -984,7 +982,7 @@ class SpectrumPL(pl.LightningModule):
 		self._update_results(batch_results,"test")
 		return mean_loss
 	
-	def inference_with_ground_truth_step(self, batch, split, untransform_spec=False):
+	def inference_with_ground_truth_step(self, batch, split):
 		"""
 		Custom inference step for evaluation outside of Lightning's test/val loop.
 		This will assume that the model is in eval mode, but will not switch modes.
@@ -993,15 +991,13 @@ class SpectrumPL(pl.LightningModule):
 		if self.training:
 			Warning("Model is in training mode")
 		batch_results = self._common_step(batch, split=split, log=False)
-		if untransform_spec:
-			raise NotImplementedError("untransform_spec not implemented")
+
 		return batch_results
 
 	def inference_step(self, batch):
 		"""
 		Custom inference step for evaluation outside of Lightning's test/val loop.
 		This will assume that the model is in eval mode, but will not switch modes.
-		This will assume that the batch contains ground truth spectra.
 		"""
 		if self.training:
 			Warning("Model is in training mode")
@@ -1028,6 +1024,9 @@ class SpectrumPL(pl.LightningModule):
 			"pred_batch_idxs": eval_pred_batch_idxs,
 			"pred_oos_logprobs": pred_oos_logprobs,
 		}
+		# get rest of pred_d
+		for k,v in pred_d.items():
+			results[k] = v
 		return results
 
 
