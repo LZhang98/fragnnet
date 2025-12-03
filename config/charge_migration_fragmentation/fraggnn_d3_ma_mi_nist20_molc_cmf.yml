@@ -33,6 +33,12 @@ num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - cmf_h_formulae_idx
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
