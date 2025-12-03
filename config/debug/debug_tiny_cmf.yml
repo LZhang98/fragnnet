@@ -3,11 +3,11 @@ wandb_tags:
 - cc_test_run
 
 # data stuff
-spec_fp: data/proc/debug_tinyv4/spec_df.pkl
-mol_fp: data/proc/debug_tinyv4/mol_df.pkl
-split_dp: data/split/debug_tinyv4
-frag_dp: data/frag/debug_tinyv4_d3h4_cmf/dags
-
+# data stuff
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_cmf/dags
 seed: 42
 
 num_workers: 1
@@ -27,8 +27,6 @@ frag_params:
     - depth
     - h_formulae_idx
     - cmf_h_formulae_idx
-    # - h_counts
-    # - nb_iso_idx
   pyg_edges: True
   pyg_bigraph: True
   num_isotopes: 1
@@ -48,6 +46,11 @@ spec_params:
     - "[M+H]+"
     - "[M-H]-"
     - "[M+Na]+"
+  inst_type: True
+  inst_types:
+    - "FT"
+    - "QTOF"
+    - 'IT'
 mol_params:
   preprocess: False #True
 nb_iso: False

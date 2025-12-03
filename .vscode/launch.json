@@ -41,24 +41,24 @@
       "args": ["-w","disabled","-c","config/debug/debug_tiny_um_prec.yml"]
     },
     {
-      "name": "run_pl_model_fit_cmf",
+      "name": "run_pl_model_fit_cmf_na",
       "type": "python",
       "request": "launch",
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
-      "args": ["-w","disabled","-c","config/debug/debug_tiny_cmf.yml"],
+      "args": ["-w","disabled","-c","config/debug/debug_tiny_cmf_na.yml"],
       "env": {
         "TORCHDYNAMO_VERBOSE": "1",
         "CUDA_LAUNCH_BLOCKING": "1"
       }
     },
     {
-      "name": "run_pl_model_fit_cmf2",
+      "name": "run_pl_model_fit_cmf",
       "type": "python",
       "request": "launch",
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
-      "args": ["-w","disabled","-c","config/debug/debug_tiny_cmf2.yml"],
+      "args": ["-w","disabled","-c","config/debug/debug_tiny_cmf.yml"],
       "env": {
         "TORCHDYNAMO_VERBOSE": "1",
         "CUDA_LAUNCH_BLOCKING": "1"
