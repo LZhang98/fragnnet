@@ -227,6 +227,8 @@ class SpecMolFragDataset(SpecMolDataset):
 		
 		# CMF stuff
 		if self.frag_params["include_cmf"] and spec_entry["prec_type"] not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
+			# Check if cmf_h_formulae_idx exists in pyg node features:
+			assert "cmf_h_formulae_idx" in self.frag_params["pyg_node_feats"], "cmf_h_formulae_idx not in pyg_node_feats"
 			cmf_type_mass_diff = PREC_TYPE_TO_CMF_MASS_DIFF[spec_entry["prec_type"]]
 			num_formulae = neutral_peaks.shape[0]
 			cmf_peaks = neutral_peaks[1:] + cmf_type_mass_diff # first peak is for NULL

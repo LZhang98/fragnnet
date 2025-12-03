@@ -436,6 +436,12 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 	if  config_d["frag_gnn_type"] == "NodeMLP" and config_d["dynamic_batch_sampler"]:
 		assert config_d["dynamic_batch_sampler_mode"] == "frag_node",\
 	  		f"Dynamic batch sampler can only be use with dynamic_batch_sampler_mode frag_node, not {config_d['dynamic_batch_sampler_mode']}"		
+
+	# check config for CMF
+	if config_d["frag_params"].get("include_cmf", False):
+		if "cmf_h_formulae_idx" not in config_d["frag_params"].get("pyg_node_feats", []):
+			raise ValueError("include_cmf is True but 'cmf_h_formulae_idx' is missing from pyg_node_feats")
+
 	# setup dataloaders
 	logging.info("setup dataloader")
 	train_dl = init_dataloader(train_ds, config_d)
