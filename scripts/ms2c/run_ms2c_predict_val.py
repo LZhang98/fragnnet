@@ -1,8 +1,12 @@
 import argparse
 from tqdm import tqdm
 
-from fragnnet.utils.misc_utils import booltype, get_best_ckpt_from_wandb
-from fragnnet.utils.script_utils import load_model_and_init_config, run_spectra_prediction
+from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.script_utils import (
+    load_model_and_init_config,
+    run_spectra_prediction,
+    get_ckpt_path,
+)
 
 import os
 import pandas as pd
@@ -38,15 +42,13 @@ if __name__ == "__main__":
 	os.makedirs(save_dp, exist_ok=True)
 	records_dict = vars(args)
 
-	if args.model_ckpt is None:
-		os.makedirs(args.model_save_dp, exist_ok=True)	
-		model_save_dp = args.model_save_dp
-		print(f">> save model to {model_save_dp} from wandb")
-		#assert args.wandb_run_id is not None
-		print(f">> wandb run id: {args.wandb_run_id}")
-		ckpt_fp = get_best_ckpt_from_wandb(model_save_dp, args.wandb_run_id, use_cached = args.use_cached_ckpt)
-	else:
-		ckpt_fp = args.model_ckpt
+	# Get checkpoint path (download from W&B or use local)
+	ckpt_fp = get_ckpt_path(
+		wandb_run_id=args.wandb_run_id,
+		model_ckpt=args.model_ckpt,
+		model_save_dp=args.model_save_dp,
+		use_cached=args.use_cached_ckpt,
+	)
 	records_dict['model_ckpt'] = ckpt_fp
 	json.dump(records_dict, open(f"{args.save_fp}_{timestr}.json", "w"), indent=2)
  
@@ -83,7 +85,7 @@ if __name__ == "__main__":
 		mol_data_ptr = mol_df,
 		spec_data_ptr = spec_df,
 		frag_dp = args.frag_dp,
-		device = device,
+		device = args.device,
 		validate = True
 	)
  

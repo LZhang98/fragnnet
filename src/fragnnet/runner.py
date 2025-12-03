@@ -29,15 +29,23 @@ from fragnnet.utils.misc_utils import deep_update
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 
-def load_config(template_fp, custom_fp):
+def load_config(template_fp: str, custom_fp: str | None) -> dict:
+	""" load config from template and custom yaml files
+		if custom_fp is given, overwrite template config with custom config
+	Args:
+		template_fp (str): Path to the template YAML file.
+		custom_fp (str | None): Path to the custom YAML file.
+
+	Returns:
+		dict: configuration dictionary.
+	"""
 
 	assert os.path.isfile(template_fp), template_fp
-	if custom_fp:
-		assert os.path.isfile(custom_fp), custom_fp
 	with open(template_fp, "r") as template_file:
 		config_d = yaml.load(template_file, Loader=yaml.FullLoader)
 	# overwrite parts of the config
-	if custom_fp:
+	if custom_fp is not None:
+		assert os.path.isfile(custom_fp), custom_fp
 		with open(custom_fp, "r") as custom_file:
 			custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
 		assert all([k in config_d for k in custom_d]), set(custom_d.keys()) - set(config_d.keys())

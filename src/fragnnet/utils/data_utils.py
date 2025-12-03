@@ -14,7 +14,7 @@ from fragnnet.utils.misc_utils import np_temp_seed, none_or_nan
 from fragnnet.utils.formula_utils import MASS, ELECTRON_MASS, NEUTRON_MASS
 import copy
 import torch as th
-    
+	
 # don't do expesive import in runtime
 if TYPE_CHECKING:
 	import rdkit
@@ -1252,7 +1252,7 @@ def fill_missing_nce(row, ace_colname:str, nce_colname:str) -> float:
 	elif not none_or_nan(nce):
 		return nce
 	else:
-		warnings.warn(f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace}")
+		warnings.warn(f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace} from columns {nce_colname}, {ace_colname}")
 		return nce
 
 def fill_missing_ace(row, ace_colname:str, nce_colname:str) -> float:
@@ -1269,7 +1269,8 @@ def fill_missing_ace(row, ace_colname:str, nce_colname:str) -> float:
 	elif not none_or_nan(ace):
 		return ace
 	else:
-		warnings.warn(f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce}")
+		warnings.warn(f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce} from columns {ace_colname}, {nce_colname}")
+		return nce
 		return ace
 
 def parse_mass_gym_ce_str(ce_str):
@@ -1297,27 +1298,29 @@ def parse_mass_gym_ce_str(ce_str):
 	return ce, normalized, ramped
 
 def deep_copy_data_dict(data_dict):
-    """Deep copy data dict, used to avoid modifying the original dict.
-    
-    Handles key-tensor pairs and key-ROMol pairs specifically.
+	"""Deep copy data dict, used to avoid modifying the original dict.
+	
+	Handles key-tensor pairs and key-ROMol pairs specifically.
 
-    Args:
-        data_dict (dict): Data dict to copy.
+	Args:
+		data_dict (dict): Data dict to copy.
 
-    Returns:
-        dict: Deep copied dict.
-    """
-    copied_dict = {}
-    for key, value in data_dict.items():
-        if isinstance(value, th.Tensor):
-            # Use .clone() for tensors to create a deep copy
+	Returns:
+		dict: Deep copied dict.
+	"""
+	copied_dict = {}
+	for key, value in data_dict.items():
+		if isinstance(value, th.Tensor):
+			# Use .clone() for tensors to create a deep copy
 			# make sure tensors are detached to from computation graph
-            copied_dict[key] = value.detach().clone()
-        else:
-            # Use deepcopy for other types
-            copied_dict[key] = copy.deepcopy(value)
-    
-    return copied_dict
+			copied_dict[key] = value.detach().clone()
+		elif isinstance(value, dict):
+			copied_dict[key] = deep_copy_data_dict(value)
+		else:
+			# Use deepcopy for other types
+			copied_dict[key] = copy.deepcopy(value)
+	
+	return copied_dict
 
 def min_max_normalize(value, min, max):
 	"""Normalize float values to [0, 1] range."""

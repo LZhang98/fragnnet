@@ -75,7 +75,8 @@ if __name__ == "__main__":
 	run_ids = [#"",
             "edd2j4yy", #m30
             "zpz5zl0p", #m30
-            "6wrmthk2", #m30
+            "6wrmthk2", #
+            "4968bah0", #m30_sc
             ]
 	for run_id in run_ids:
-		get_ckpt_from_wandb(save_dp, run_id, best_only=False)
+		get_ckpt_from_wandb(save_dp, run_id, best_only=True)

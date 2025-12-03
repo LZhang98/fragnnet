@@ -9,7 +9,7 @@ def not_nan_none(val):
 			
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--intensity_threshold", type=float, default=1.0, help="Minimum intensity threshold for peaks")
+	parser.add_argument("--min_peak_int", type=float, default=1.0, help="Minimum intensity threshold for peaks")
 	parser.add_argument("--proc_dp", type=str, required=True, help="Processed data directory")
 	# Add a mutually exclusive group
 	src_group = parser.add_mutually_exclusive_group()
@@ -36,7 +36,7 @@ if __name__ == "__main__":
 	if not args.export_pkl and not args.export_mgf:
 		parser.error("Either --export_pkl or --export_mgf must be provided or both can be set to true")
 
-	intensity_threshold = args.intensity_threshold
+	min_peak_int = args.min_peak_int
 	proc_dp = args.proc_dp
 	
 	# Load reference data once - try .pkl.gz first, then .pkl, then error
@@ -94,10 +94,10 @@ if __name__ == "__main__":
 			print(f"Merged pred_df now has {len(pred_df)} rows")
 
 			pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
-			if intensity_threshold > 0:
+			if min_peak_int > 0:
 				# Apply intensity threshold filtering
-				print(f"Applied intensity threshold of {intensity_threshold}, now pred_df has peaks with intensities >= {intensity_threshold}")
-				pred_df.loc[:, "pred_peaks"] = pred_df["pred_peaks"].apply(lambda peaks: peaks[peaks[:, 1] >= intensity_threshold])
+				print(f"Applied intensity threshold of {min_peak_int}, now pred_df has peaks with intensities >= {min_peak_int}")
+				pred_df.loc[:, "pred_peaks"] = pred_df["pred_peaks"].apply(lambda peaks: peaks[peaks[:, 1] >= min_peak_int])
 			
 			pred_df.drop(columns=['pred_mzs', 'pred_ints'], inplace=True)
 			if args.export_mgf:

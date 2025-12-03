@@ -1,5 +1,10 @@
 import torch as th
 import torch._dynamo as th_dynamo
+try:
+    from torch._dynamo.utils import CompileProfiler
+    profiler_available = True
+except ImportError:
+    profiler_available = False
 
 from fragnnet.pl_model import BinnedPL
 from fragnnet.utils.nn_utils import build_lr_scheduler
@@ -49,8 +54,11 @@ class MassFormerPL(BinnedPL):
 		# compile
 		if self.hparams.compile:
 			th_dynamo.reset()
-			self.dynamo_prof = th_dynamo.utils.CompileProfiler()
-			self.model = th.compile(self.model,backend=self.dynamo_prof,dynamic=True)
+			if profiler_available:
+				self.dynamo_prof = CompileProfiler()
+				self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+			else:
+				self.model = th.compile(self.model,dynamic=True)
 
 		self.mf_flag = self.hparams.mf_flag
 		if self.mf_flag:

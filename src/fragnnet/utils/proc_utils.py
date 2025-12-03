@@ -5,7 +5,6 @@ from fragnnet.utils.spec_utils import merge_sparse_specs
 from fragnnet.utils.formula_utils import parse_formula
 from fragnnet.frag.compute_frags import MAX_NUM_NODES, MAX_NUM_EDGES
 
-
 def element_filter(formula,elements):
 	try:
 		element_counts = parse_formula(formula)
