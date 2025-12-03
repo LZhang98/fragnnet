@@ -102,13 +102,15 @@ class SpecMolFragDataset(SpecMolDataset):
   
 		# spectra data
 		if self.spec_params["preprocess"]:
-			spec_data = deep_copy_data_dict(self.spec_datas[idx])
+			# we don't need to deep copy here because spec data won't be modified
+			spec_data = self.spec_datas[idx]
 		else:
 			spec_data = self._process_spec(spec_entry)
    
 		# molecule data
 		if self.mol_params["preprocess"]:
-			mol_data = deep_copy_data_dict(self.mol_datas[mol_id])
+      		# we don't need to deep copy here because mol data won't be modified
+			mol_data = self.mol_datas[mol_id]
 		else:
 			mol_data = self._process_mol(mol_entry)
    
@@ -120,7 +122,6 @@ class SpecMolFragDataset(SpecMolDataset):
 			#formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]		
 			prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
 			crf_peaks = frag_data["frag_formula_peak_mzs"] + prec_type_mass_diff
-			# this works because tensor addition return a new tensor
 			# this no deep copy required
 			frag_data["frag_formula_peak_mzs"] = crf_peaks
 
@@ -128,7 +129,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			# TODO check if cmf_h_formulae_idx is in features
 			if self.frag_params["include_cmf"] and spec_entry["prec_type"] not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
 				cmf_type_mass_diff = PREC_TYPE_TO_CMF_MASS_DIFF[spec_entry["prec_type"]]
-				#num_formulae = formula_peak_mzs.shape[0]
+				# num_formulae = frag_data["frag_formula_peak_mzs"].shape[0]
 				cmf_peaks = frag_data["frag_formula_peak_mzs"][1:] + cmf_type_mass_diff # first peak is for NULL
 
 				# Double all formula-related arrays
@@ -141,6 +142,7 @@ class SpecMolFragDataset(SpecMolDataset):
 					frag_data["frag_formula_str"] = np.concatenate(
 						[frag_data["frag_formula_str"], frag_data["frag_formula_str"][1:]], axis=0
 					)
+     
 				# update pyg
     			# create a clone of frag_pyg to avoid modifying the original one
 				# this is required because we preloaded frag data in the first place
@@ -149,8 +151,8 @@ class SpecMolFragDataset(SpecMolDataset):
 				crf_node_feat_idx = NODE_FEAT_TO_IDX['h_formulae_idx']
 				cmf_node_feat_idx = NODE_FEAT_TO_IDX['cmf_h_formulae_idx']
 				crf_formula_matrix = frag_pyg.x[:,frag_node_feat_idxs[crf_node_feat_idx]:frag_node_feat_idxs[crf_node_feat_idx+1]]
-				num_formulae = th.max(crf_formula_matrix) - th.min(crf_formula_matrix) + 1
-    			# update cmf formula matrix if crf_formula_matrix value is not zero
+    			
+				# update cmf formula matrix if crf_formula_matrix value is not zero
 				# if crf_formula_matrix is zero, that means h_transfer is not possible, then cmf formula matrix should beb  zero
 				# cmf formula matrix is shifted by num_formulae-1
 				frag_pyg.x[:,frag_node_feat_idxs[cmf_node_feat_idx]:frag_node_feat_idxs[cmf_node_feat_idx+1]] = \
@@ -218,6 +220,7 @@ class SpecMolFragDataset(SpecMolDataset):
 				self.frag_params["pyg_bigraph"]
 			)
 			frag_data["frag_pyg"] = frag_pyg
+
 		if self.frag_params["formula_peak_probs"]:	
 			formula_peak_probs = frag_entry["formula_peak_probs"]
 			formula_peak_probs = F.normalize(formula_peak_probs[:,:self.frag_params["num_isotopes"]],dim=1,p=1)
@@ -236,11 +239,11 @@ class SpecMolFragDataset(SpecMolDataset):
 				crf_peaks = formula_peak_mzs + prec_type_mass_diff
 				frag_data["frag_formula_peak_mzs"] = crf_peaks
 
-				# CMF stuff
+				# charge migration fragmentation stuff
 				# TODO check if cmf_h_formulae_idx is in features
 				if self.frag_params["include_cmf"] and spec_entry["prec_type"] not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
 					cmf_type_mass_diff = PREC_TYPE_TO_CMF_MASS_DIFF[spec_entry["prec_type"]]
-					num_formulae = formula_peak_mzs.shape[0]
+					#num_formulae = formula_peak_mzs.shape[0]
 					cmf_peaks = frag_data["frag_formula_peak_mzs"][1:] + cmf_type_mass_diff # first peak is for NULL
 
 					# Double all formula-related arrays
@@ -254,14 +257,15 @@ class SpecMolFragDataset(SpecMolDataset):
 							[frag_data["frag_formula_str"], frag_data["frag_formula_str"][1:]], axis=0
 						)
 					# update pyg
-					frag_pyg = frag_data["frag_pyg"].clone() # clone to avoid modifying the original one
+					frag_pyg = frag_data["frag_pyg"] # clone to avoid modifying the original one
 					frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 					crf_node_feat_idx = NODE_FEAT_TO_IDX['h_formulae_idx']
 					cmf_node_feat_idx = NODE_FEAT_TO_IDX['cmf_h_formulae_idx']
 					crf_formula_matrix = frag_pyg.x[:,frag_node_feat_idxs[crf_node_feat_idx]:frag_node_feat_idxs[crf_node_feat_idx+1]]
 					# update cmf formula matrix if crf_formula_matrix value is not zero
-					# if crf_formula_matrix is zero, that means h_trasnfer is not possible, then cmf formula matrix should beb  zero
+					# if crf_formula_matrix is zero, that means h_transfer is not possible, then cmf formula matrix should be zero
 					# cmf formula matrix is shifted by num_formulae-1
+					num_formulae = th.max(crf_formula_matrix) - th.min(crf_formula_matrix) + 1
 					frag_pyg.x[:,frag_node_feat_idxs[cmf_node_feat_idx]:frag_node_feat_idxs[cmf_node_feat_idx+1]] = \
 						th.where(crf_formula_matrix != 0, crf_formula_matrix + num_formulae-1, crf_formula_matrix)
 					frag_data["frag_pyg"] = frag_pyg	
