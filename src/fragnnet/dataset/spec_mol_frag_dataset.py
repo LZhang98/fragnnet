@@ -102,34 +102,32 @@ class SpecMolFragDataset(SpecMolDataset):
   
 		# spectra data
 		if self.spec_params["preprocess"]:
-			spec_data = deep_copy_data_dict(self.spec_datas[idx])
+			spec_data = self.spec_datas[idx]
 		else:
 			spec_data = self._process_spec(spec_entry)
    
 		# molecule data
 		if self.mol_params["preprocess"]:
-			mol_data = deep_copy_data_dict(self.mol_datas[mol_id])
+			mol_data = self.mol_datas[mol_id]
 		else:
 			mol_data = self._process_mol(mol_entry)
    
 		# frag data
 		if self.frag_params["preprocess"]:
-			frag_data = deep_copy_data_dict(self.frag_data[mol_id])
+			frag_data = self.frag_data[mol_id].copy()
    
 			#formula_peak_mzs = frag_entry["formula_peak_mzs"]
 			#formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]		
 			prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
-			crf_peaks = frag_data["frag_formula_peak_mzs"] + prec_type_mass_diff
-			# this works because tensor addition return a new tensor
-			# this no deep copy required
-			frag_data["frag_formula_peak_mzs"] = crf_peaks
-
+			neutral_peaks = frag_data["frag_formula_peak_mzs"]
+			crf_peaks = neutral_peaks + prec_type_mass_diff
+		
 			# CMF stuff
 			# TODO check if cmf_h_formulae_idx is in features
 			if self.frag_params["include_cmf"] and spec_entry["prec_type"] not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
 				cmf_type_mass_diff = PREC_TYPE_TO_CMF_MASS_DIFF[spec_entry["prec_type"]]
-				#num_formulae = formula_peak_mzs.shape[0]
-				cmf_peaks = frag_data["frag_formula_peak_mzs"][1:] + cmf_type_mass_diff # first peak is for NULL
+				num_formulae = neutral_peaks.shape[0]
+				cmf_peaks = neutral_peaks[1:] + cmf_type_mass_diff # first peak is for NULL
 
 				# Double all formula-related arrays
 				if self.frag_params["formula_peak_mzs"]:
@@ -149,13 +147,15 @@ class SpecMolFragDataset(SpecMolDataset):
 				crf_node_feat_idx = NODE_FEAT_TO_IDX['h_formulae_idx']
 				cmf_node_feat_idx = NODE_FEAT_TO_IDX['cmf_h_formulae_idx']
 				crf_formula_matrix = frag_pyg.x[:,frag_node_feat_idxs[crf_node_feat_idx]:frag_node_feat_idxs[crf_node_feat_idx+1]]
-				num_formulae = th.max(crf_formula_matrix) - th.min(crf_formula_matrix) + 1
+				
     			# update cmf formula matrix if crf_formula_matrix value is not zero
 				# if crf_formula_matrix is zero, that means h_transfer is not possible, then cmf formula matrix should beb  zero
 				# cmf formula matrix is shifted by num_formulae-1
 				frag_pyg.x[:,frag_node_feat_idxs[cmf_node_feat_idx]:frag_node_feat_idxs[cmf_node_feat_idx+1]] = \
 					th.where(crf_formula_matrix != 0, crf_formula_matrix + num_formulae-1, crf_formula_matrix)
 				frag_data["frag_pyg"] = frag_pyg
+			else:
+				frag_data["frag_formula_peak_mzs"] = crf_peaks
     
 		elif self.frag_params["preload"]:
 			frag_entry = deep_copy_data_dict(self.frag_entries[mol_id])
