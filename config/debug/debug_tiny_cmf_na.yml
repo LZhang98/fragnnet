@@ -27,8 +27,9 @@ frag_params:
     - depth
     - h_formulae_idx
     - cmf_h_formulae_idx
-  pyg_edges: True
-  pyg_bigraph: True
+  pyg_edges: False
+  pyg_edge_feats: []
+  pyg_bigraph: False
   num_isotopes: 1
   formula_peak_mzs: True
   formula_peak_probs: True

@@ -413,7 +413,7 @@ class NodeMLP(nn.Module):
 
 		assert edge_feats_size >= 0, edge_feats_size
 		if edge_feats_size > 0:
-			print("> Warning: NodeMLP does not use edge features, but got edge_feats_size > 0")
+			Warning("> NodeMLP does not use edge features, but got edge_feats_size > 0, this most likely indicates a misconfiguration and wasted VRAM.")
 
 		self.layers = []
 		for i in range(num_layers):
