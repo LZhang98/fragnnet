@@ -155,6 +155,7 @@ class SpecMolFragDataset(SpecMolDataset):
 				# update cmf formula matrix if crf_formula_matrix value is not zero
 				# if crf_formula_matrix is zero, that means h_transfer is not possible, then cmf formula matrix should beb  zero
 				# cmf formula matrix is shifted by num_formulae-1
+				num_formulae = th.max(crf_formula_matrix) - th.min(crf_formula_matrix) + 1
 				frag_pyg.x[:,frag_node_feat_idxs[cmf_node_feat_idx]:frag_node_feat_idxs[cmf_node_feat_idx+1]] = \
 					th.where(crf_formula_matrix != 0, crf_formula_matrix + num_formulae-1, crf_formula_matrix)
 				frag_data["frag_pyg"] = frag_pyg
@@ -257,14 +258,14 @@ class SpecMolFragDataset(SpecMolDataset):
 							[frag_data["frag_formula_str"], frag_data["frag_formula_str"][1:]], axis=0
 						)
 					# update pyg
-					frag_pyg = frag_data["frag_pyg"] # clone to avoid modifying the original one
+					frag_pyg = frag_data["frag_pyg"]
 					frag_node_feat_idxs = frag_pyg.node_feat_idxs[0]
 					crf_node_feat_idx = NODE_FEAT_TO_IDX['h_formulae_idx']
 					cmf_node_feat_idx = NODE_FEAT_TO_IDX['cmf_h_formulae_idx']
 					crf_formula_matrix = frag_pyg.x[:,frag_node_feat_idxs[crf_node_feat_idx]:frag_node_feat_idxs[crf_node_feat_idx+1]]
 					# update cmf formula matrix if crf_formula_matrix value is not zero
 					# if crf_formula_matrix is zero, that means h_transfer is not possible, then cmf formula matrix should be zero
-					# cmf formula matrix is shifted by num_formulae-1
+					# cmf formula matrix is shifted by num_formulae-1, as forumlea[0] is null formula
 					num_formulae = th.max(crf_formula_matrix) - th.min(crf_formula_matrix) + 1
 					frag_pyg.x[:,frag_node_feat_idxs[cmf_node_feat_idx]:frag_node_feat_idxs[cmf_node_feat_idx+1]] = \
 						th.where(crf_formula_matrix != 0, crf_formula_matrix + num_formulae-1, crf_formula_matrix)
