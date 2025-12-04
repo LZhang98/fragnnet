@@ -12,7 +12,6 @@ from fragnnet.utils.feat_utils import batch_mols_frags,get_frag_graph
 from fragnnet.utils.frag_utils import load_frag_d, NODE_FEAT_TO_IDX
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, PREC_TYPE_TO_CMF_MASS_DIFF
-from fragnnet.utils.data_utils import deep_copy_data_dict
 from fragnnet.dataset import BaseDataset, SpecMolDataset
 
 class SpecMolFragDataset(SpecMolDataset):
@@ -28,10 +27,10 @@ class SpecMolFragDataset(SpecMolDataset):
 		mol_params: dict,
 		frag_dp: str,
 		frag_params: dict,
-		spec_pp_sd: dict = None, # preprocessed spec data
-		mol_pp_sd: dict = None, # preprocessed mol data
-		frag_pl_sd: dict = None, # preloaded frag data
-		frag_pp_sd: dict = None, # preprocessed frag data
+		spec_pp_sd: dict|None = None, # preprocessed spec data
+		mol_pp_sd: dict|None = None, # preprocessed mol data
+		frag_pl_sd: dict|None = None, # preloaded frag data
+		frag_pp_sd: dict|None = None, # preprocessed frag data
 		**kwargs
 	):
 
@@ -47,7 +46,7 @@ class SpecMolFragDataset(SpecMolDataset):
 		self.mol_params = mol_params
 		self.frag_dp = frag_dp
 		self.frag_params = frag_params
-		
+
 		if spec_pp_sd is None:
 			spec_pp_sd = dict()
 		if mol_pp_sd  is None:
@@ -88,7 +87,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			self.frag_data = frag_pp_sd
 			total_frag_data_size = 0
 			for k in tqdm(list(self.frag_entries.keys()),desc="> preprocess frag",total=len(self.frag_entries)):
-				frag_data = self._process_frag(self.frag_entries.pop(k), None)
+				frag_data = self._process_neutral_frag(self.frag_entries.pop(k))
 				total_frag_data_size += get_pyg_memory_usage(frag_data["frag_pyg"])
 				self.frag_data[k] = frag_data
 			print(f"> total_frag_data_size: {total_frag_data_size/1e6:.2f} MB")
@@ -109,7 +108,7 @@ class SpecMolFragDataset(SpecMolDataset):
    
 		# molecule data
 		if self.mol_params["preprocess"]:
-      		# we don't need to deep copy here because mol data won't be modified
+	  		# we don't need to deep copy here because mol data won't be modified
 			mol_data = self.mol_datas[mol_id]
 		else:
 			mol_data = self._process_mol(mol_entry)
@@ -123,15 +122,17 @@ class SpecMolFragDataset(SpecMolDataset):
 			# in this case we have not applied precursor type changes yet
 			# frag_formula_peak_mzs  is in neutral form
 			neutral_peaks = frag_data["frag_formula_peak_mzs"]
-			frag_data = self._apply_fragment_mz_change(frag_data, spec_entry, neutral_peaks, clone_pyg=True)
-    
+			frag_data = self._apply_fragment_mz_change(frag_data, spec_entry['prec_type'], neutral_peaks, clone_pyg=True)
+	
 		elif self.frag_params["preload"]:
 			frag_entry = self.frag_entries[mol_id]
 			#frag_entry['frag_pyg'] = frag_entry['frag_pyg'].clone() # clone to avoid modifying the original one
-			frag_data = self._process_frag(frag_entry, spec_entry)
+			frag_data = self._process_neutral_frag(frag_entry)
+			frag_data = self._apply_fragment_mz_change(frag_data, spec_entry['prec_type'], frag_data["frag_formula_peak_mzs"], clone_pyg=True)
 		else:
 			frag_entry = self._load_frag_entry(mol_id)
-			frag_data = self._process_frag(frag_entry, spec_entry)
+			frag_data = self._process_neutral_frag(frag_entry)
+			frag_data = self._apply_fragment_mz_change(frag_data, spec_entry['prec_type'], frag_data["frag_formula_peak_mzs"], clone_pyg=False)
    
 		data = {**spec_data,**mol_data,**frag_data}
 		return data
@@ -153,19 +154,15 @@ class SpecMolFragDataset(SpecMolDataset):
 		)
 		return frag_entry
 
-	def _process_frag(self, frag_entry: dict, spec_entry: dict | None) -> dict:
+
+	def _process_neutral_frag(self, frag_entry: dict) -> dict:
 		"""
-		Process the fragmentation dictionary and spectral data.
+		Process the fragmentation dictionary to generate neutral fragment data.
 
 		This method processes the fragmentation graph (frag DAG) and associated data,
-		such as formula peak probabilities, formula strings, and m/z values. It also
-		handles precursor type adjustments and CMF (Charge-Mass Fragmentation) data
-		if specified in the parameters.
+		such as formula peak probabilities, formula strings, and m/z values.
 		Args:
 			frag_entry (dict): Fragmentation entry containing the DAG and related data.
-			spec_entry (dict | None): Spectral entry containing precursor type and other
-									  spectral information. If None, precursor adjustments
-									  are skipped.
 
 		Returns:
 			dict: A dictionary containing processed fragmentation data, including:
@@ -197,13 +194,11 @@ class SpecMolFragDataset(SpecMolDataset):
 			assert formula_str[0] == "", formula_str[0]
 			formula_str = np.array(formula_str)
 			frag_data["frag_formula_str"] = formula_str
+   
 		if self.frag_params["formula_peak_mzs"]:
 			formula_peak_mzs = frag_entry["formula_peak_mzs"]
 			formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]
-   			# if dataset is preprocessing spec_entry is None
 			frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
-			if spec_entry is not None: 
-				self._apply_fragment_mz_change(frag_data, spec_entry['prec_type'], formula_peak_mzs, clone_pyg=False)
 
 		return frag_data
 
@@ -228,7 +223,7 @@ class SpecMolFragDataset(SpecMolDataset):
 		prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
 		crf_peaks = neutral_peaks + prec_type_mass_diff
 		
-		# CMF stuff
+		# Charge Migration Fragmentation stuff
 		if self.frag_params["include_cmf"] and prec_type not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
 			# Check if cmf_h_formulae_idx exists in pyg node features:
 			assert "cmf_h_formulae_idx" in self.frag_params["pyg_node_feats"], "cmf_h_formulae_idx not in pyg_node_feats"
@@ -239,6 +234,7 @@ class SpecMolFragDataset(SpecMolDataset):
 			# Double all formula-related arrays
 			if self.frag_params["formula_peak_mzs"]:
 				frag_data["frag_formula_peak_mzs"] = th.cat([crf_peaks, cmf_peaks], dim=0)
+			if self.frag_params["formula_peak_probs"]:
 				frag_data["frag_formula_peak_probs"] = th.cat(
 					[frag_data["frag_formula_peak_probs"], frag_data["frag_formula_peak_probs"][1:]], dim=0
 				)
