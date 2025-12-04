@@ -119,12 +119,14 @@ class SpecMolFragDataset(SpecMolDataset):
 			frag_data = self.frag_data[mol_id].copy()
    
 			#formula_peak_mzs = frag_entry["formula_peak_mzs"]
-			#formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]		
+			#formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]
+			# in this case we have not applied precursor type changes yet
+			# frag_formula_peak_mzs  is in neutral form
 			neutral_peaks = frag_data["frag_formula_peak_mzs"]
 			frag_data = self._apply_fragment_mz_change(frag_data, spec_entry, neutral_peaks, clone_pyg=True)
     
 		elif self.frag_params["preload"]:
-			frag_entry = deep_copy_data_dict(self.frag_entries[mol_id])
+			frag_entry = self.frag_entries[mol_id]
 			#frag_entry['frag_pyg'] = frag_entry['frag_pyg'].clone() # clone to avoid modifying the original one
 			frag_data = self._process_frag(frag_entry, spec_entry)
 		else:
@@ -198,13 +200,14 @@ class SpecMolFragDataset(SpecMolDataset):
 		if self.frag_params["formula_peak_mzs"]:
 			formula_peak_mzs = frag_entry["formula_peak_mzs"]
 			formula_peak_mzs = formula_peak_mzs[:,:self.frag_params["num_isotopes"]]
-			if spec_entry is not None:
-				self._apply_fragment_mz_change(frag_data, spec_entry, formula_peak_mzs, clone_pyg=False)
-			else:
-				frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
+   			# if dataset is preprocessing spec_entry is None
+			frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
+			if spec_entry is not None: 
+				self._apply_fragment_mz_change(frag_data, spec_entry['prec_type'], formula_peak_mzs, clone_pyg=False)
+
 		return frag_data
 
-	def _apply_fragment_mz_change(self, frag_data: dict, spec_entry: dict, neutral_peaks: th.Tensor, clone_pyg: bool = False) -> dict:
+	def _apply_fragment_mz_change(self, frag_data: dict, prec_type: str, neutral_peaks: th.Tensor, clone_pyg: bool = False) -> dict:
 		"""
 		Apply precursor mass difference for Charge Remote Fragmentation (CRF) and 
 		Charge Migration Fragmentation (CMF) to frag_data.
@@ -214,7 +217,7 @@ class SpecMolFragDataset(SpecMolDataset):
 
 		Args:
 			frag_data (dict): The dictionary containing fragmentation data.
-			spec_entry (dict): The spectral entry containing precursor type.
+			prec_type (str): The precursor type string.
 			neutral_peaks (th.Tensor): The neutral formula peak m/z values.
 			clone_pyg (bool): Whether to clone the PyG object before modification. 
 							  Set to True if frag_data['frag_pyg'] is a reference to cached data.
@@ -222,14 +225,14 @@ class SpecMolFragDataset(SpecMolDataset):
 		Returns:
 			dict: The updated frag_data dictionary.
 		"""
-		prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[spec_entry["prec_type"]]
+		prec_type_mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
 		crf_peaks = neutral_peaks + prec_type_mass_diff
 		
 		# CMF stuff
-		if self.frag_params["include_cmf"] and spec_entry["prec_type"] not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
+		if self.frag_params["include_cmf"] and prec_type not in ["[M+H]+","[M-H]-", "[M]+", "M-"]:
 			# Check if cmf_h_formulae_idx exists in pyg node features:
 			assert "cmf_h_formulae_idx" in self.frag_params["pyg_node_feats"], "cmf_h_formulae_idx not in pyg_node_feats"
-			cmf_type_mass_diff = PREC_TYPE_TO_CMF_MASS_DIFF[spec_entry["prec_type"]]
+			cmf_type_mass_diff = PREC_TYPE_TO_CMF_MASS_DIFF[prec_type]
 			num_formulae = neutral_peaks.shape[0]
 			cmf_peaks = neutral_peaks[1:] + cmf_type_mass_diff # first peak is for NULL
 
