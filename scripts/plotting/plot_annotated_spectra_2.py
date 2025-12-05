@@ -9,6 +9,109 @@ import matplotlib.collections as mc
 
 import os
  
+ 
+def plot_formula_axes(ax,
+					  formula:str,
+					  peak_id:str|int,
+					  formula_prob = None,
+					  font_size = None,
+					  font ='DejaVu Sans Mono',
+					  circle_pad = 0.1):
+	
+	fig = plt.gcf()
+
+	bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+	ax_width, ax_height = bbox.width, bbox.height
+	#print(ax_width, ax_height)
+	ax_width *= fig.dpi
+	ax_height *= fig.dpi
+
+	ax.set_xlim(0, ax_width)
+	ax.set_ylim(ax_height, 0)
+		
+	ax.axis('off')
+	if font_size == None:
+		font_size = int(bbox.height * 72 / 4)
+	font_size_pixel = int(font_size * fig.dpi / 72)
+	text_loc = font_size_pixel/3 * 2
+	#ax.text(0, text_loc, f"Peak {peak_id}", size=font_size, horizontalalignment='left', verticalalignment = 'center')
+	
+	#circle = matplotlib.patches.Circle((0, 0), radius=1, color='rea')
+	#ax.add_patch(circle)
+
+	ax.text(10,text_loc, r"$f_{"+str(peak_id)+"}$", size=font_size, horizontalalignment='left', verticalalignment = 'center',
+			bbox=dict(boxstyle="circle",
+				   ec=(1., 0.5, 0.5),
+				   fc=(1., 0.8, 0.8),
+				   pad = circle_pad,
+				   ))
+	
+	#text_loc += font_size * 4
+	#font_size = int((bbox.height / 4 + circle_pad * 2 ) * 72)
+	
+	formula_display_str = "$" + formula + "$"
+	numbers = re.compile(r'(\d+)')
+	formula_display_str = numbers.sub(r'_{\1}',formula_display_str)
+	ax.text(1.25 * font_size_pixel,text_loc ,formula_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
+	
+	#if formula_prob is not None:
+	text_loc += 1.25 * font_size_pixel
+	formula_prob_display_str =  "$P(f_{"+ str(peak_id) +"})=" + "{:.3f}".format(formula_prob) + "$"
+	ax.text(1.25 * font_size_pixel,text_loc ,formula_prob_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
+	
+	text_loc = 0.85 * ax_height
+	formula_node_display_str =  "$P(n|f_{"+ str(peak_id) +"})=$"
+	ax.text(1.25 * font_size_pixel,text_loc,formula_node_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
+		
+def plot_mol_frag_axes(ax, 
+						mol: str, 
+						atom_highlight_idx:list,
+						bond_highlight_idx:list,
+						frag_formula_prob:float,
+						font_size = None,
+						font = 'DejaVu Sans Mono'):
+
+
+	fig = plt.gcf()
+
+	bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+	ax_width, ax_height = bbox.width, bbox.height
+	#print(ax_width, ax_height)
+	ax_width *= fig.dpi
+	ax_height *= fig.dpi
+
+	ax.set_xlim(0, ax_width)
+	ax.set_ylim(ax_height, 0)
+
+	image_width = int(ax_width * 0.9)
+	image_height = int(ax_height * 0.65)
+	image_x_offset = int(0.5*(ax_width - image_width))
+	image_y_offset = 0.0
+	#print(image_width, image_height)
+	d2d = Draw.MolDraw2DCairo(image_width, image_height)
+	options = d2d.drawOptions()
+	rgba_color = (0.529, 0.808, 0.98)# transparent blue
+	options.fillHighlights=True
+	options.setHighlightColour((rgba_color))
+	options.highlightBondWidthMultiplier=20
+	options.clearBackground = False
+	d2d.DrawMolecule(mol,highlightAtoms=atom_highlight_idx, highlightBonds =  bond_highlight_idx)
+	d2d.FinishDrawing()
+	bio = BytesIO(d2d.GetDrawingText())
+	mol_image = Image.open(bio)
+
+	# (left, right, bottom, top)
+	extent = (0 + image_x_offset, image_width + image_x_offset, image_height + image_y_offset, image_y_offset)
+	ax.imshow(mol_image, extent = extent, interpolation = 'lanczos')
+	
+	if font_size == None:
+		font_size = int(bbox.height * 72 / 4)
+		
+	text_loc = 0.85 * ax_height
+	#formula_node_display_str =  "$P(n|f_{"+ str(peak_id) +"})=$"
+	ax.text(ax_width/2,text_loc, "{:.3f}".format(frag_formula_prob), size=font_size, horizontalalignment='center', verticalalignment = 'center', fontfamily = font)
+	ax.axis('off')
+
 def plot_spectra_axes(ax, 
 					  true_mzs,
 					  true_ints,
