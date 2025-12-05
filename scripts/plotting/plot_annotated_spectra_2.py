@@ -135,7 +135,7 @@ def plot_spectra_axes(ax,
 if __name__ == "__main__":
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--predicted_fp", type=str, required=False, help="Predicted data pickle file path", default='inference_eval_results.pkl')
+	parser.add_argument("--predicted_fp", type=str, required=False, help="Predicted data pickle file path", default='output/inference_eval/32n55f2m/predictions_test.pkl')
 	parser.add_argument("--proc_dp", type=str, required=False, help="Processed data directory",  default="data/proc/nist20")
 	parser.add_argument("--save_dp", type=str, required=False, help="Directory to save plots", default="output/spectra_plots_test")
 	parser.add_argument("--has_truth", type=str, required=False, help="True data pickle file path")

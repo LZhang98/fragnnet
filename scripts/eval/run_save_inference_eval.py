@@ -45,7 +45,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--wandb_run_id",
 		type=str,
-		default="2mi8bygf",
+		default="32n55f2m",
 		help="Weights & Biases run ID for model retrieval"
 	)
 	parser.add_argument(
@@ -226,9 +226,9 @@ if __name__ == "__main__":
 		print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
 	
 	# Save predictions with evaluation scores
-	model_save_dp = os.path.join(save_dp, args.wandb_run_id)
-	os.makedirs(model_save_dp, exist_ok=True)
-	output_path = os.path.join(model_save_dp, f"predictions_{eval_split}.pkl")
+	output_save_dp = os.path.join(save_dp, args.wandb_run_id)
+	os.makedirs(output_save_dp, exist_ok=True)
+	output_path = os.path.join(output_save_dp, f"predictions_{eval_split}.pkl")
 	predicted_df.to_pickle(output_path)
 	print(f"\n>>> Saved predictions to: {output_path}")
 	print(f">>> Total predictions: {len(predicted_df)}")
