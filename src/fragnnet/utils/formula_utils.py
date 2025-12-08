@@ -364,7 +364,7 @@ def parse_formula(formula:str) -> Dict[str,int]:
 		formula = formula[:formula.index("-")]
 	if "+" in formula:
 		formula = formula[:formula.index("+")]
-	for token in re.findall('[A-Z][a-z]?|\d+|.', formula):
+	for token in re.findall(r'[A-Z][a-z]?|\d+|.', formula):
 		if token.isalpha():
 			if cur_element is not None:
 				assert cur_element not in element_counts
