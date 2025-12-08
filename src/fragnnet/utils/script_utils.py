@@ -895,7 +895,7 @@ def run_inference_df(
 						i_frag_pyg = frag_pyg[b_idx]
 						node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
 						all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
-						b_pred_node_ccs = all_node_ccs[b_pred_node_node_idxs.long()].detach().cpu().numpy().tolist()
+						b_pred_node_ccs = all_node_ccs[b_pred_node_node_idxs.long()].detach().cpu() #save as tensor
 					data_row.append(b_pred_node_ccs)
 
 				for eval_score_type in eval_score_types:

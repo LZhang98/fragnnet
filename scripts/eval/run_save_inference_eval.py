@@ -146,7 +146,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--batch_cutoff",
 		type=int,
-		default=1000,
+		default=100,
 		help="Number of batches to evaluate (-1 for all)"
 	)
 	args = parser.parse_args()
@@ -210,7 +210,7 @@ if __name__ == "__main__":
 		output_set=output_set,
 		batch_cutoff=args.batch_cutoff,
 		min_peak_int=1.0,
-		min_formula_prob=1e-5,
+		min_formula_prob=1e-3,
 		min_frag_prob=1e-5,
 		return_str=True
 	)	

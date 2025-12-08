@@ -1,15 +1,26 @@
 import argparse
+from math import ceil
+import re
+import os
+from io import BytesIO
+
+
 import pandas as pd
 from tqdm import tqdm
-
 import numpy as np
+import torch as th
 from matplotlib import pyplot as plt
+from matplotlib.gridspec import GridSpec
 import matplotlib.patches as patches
 import matplotlib.collections as mc
+from matplotlib.text import Text
+from PIL import Image
 
-import os
- 
- 
+from rdkit.Chem import Draw
+
+from fragnnet.utils.frag_utils import th_long_to_mask, get_node_feats
+from fragnnet.utils.plot_utils import get_mol_im
+
 def plot_formula_axes(ax,
 					  formula:str,
 					  peak_id:str|int,
@@ -277,9 +288,9 @@ if __name__ == "__main__":
 	has_input_mol_id = 'input_mol_id' in mol_df.columns
 	if has_input_mol_id:
 		print("mol_df contains 'input_mol_id' column")
-		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'input_mol_id']], on='mol_id', how='left')
+		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'input_mol_id', 'mol']], on='mol_id', how='left')
 	else:
-		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s']], on='mol_id', how='left')
+		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'mol']], on='mol_id', how='left')
 	
 	pred_df = pd.read_pickle(args.predicted_fp)
 	print(f"Loaded pred_df with {len(pred_df)} predictions")
@@ -294,7 +305,74 @@ if __name__ == "__main__":
 	num_plots = min(args.num_plots, len(pred_df))
 	
 	for idx, pred_data in tqdm(pred_df.head(num_plots).iterrows(), total=num_plots):
-		# print(pred_data)
+		smiles = pred_data['smiles']
+		mol = pred_data['mol']
+
+		# get formula dict
+		formula_dict = {i:[s,p] for i,s,p in zip(pred_data['pred_formula_formula_idxs'],
+			pred_data['pred_formula_strs'],
+   			pred_data['pred_formula_probs'])}
+
+		# sort by prob
+		formula_dict = dict(sorted(formula_dict.items(), key=lambda item: item[1][1], reverse=True))
+
+		# map formula to nodes
+		formula_node_map = {i:[] for i in set(pred_data['pred_joint_formula_idxs'])}
+		for f_id, n_id in zip(pred_data['pred_joint_formula_idxs'], pred_data['pred_joint_node_idxs']):
+			formula_node_map[f_id].append(n_id)
+
+  
+		# get node masks
+		frag_node_masks = th_long_to_mask(pred_data['pred_node_ccs'])
+		all_atom_ids = th.arange(0, frag_node_masks.shape[1]).to(th.long) #.repeat(frag_node_masks.shape[0],1)
+		node_dict = {i:{"pred_node_probs":p,"pred_node_ccs": all_atom_ids[c].tolist()} for i,p,c in zip(pred_data['pred_node_node_idxs'],
+			pred_data['pred_node_probs'],
+   			frag_node_masks)}
+
+
+		display_data = []
+		peak_labels = []
+		for f_id in formula_dict.keys():
+
+			# get formula idx
+			f_value = formula_dict[f_id]
+			formula, f_pred_prob = f_value[0], f_value[1]
+						
+			# in case peak is created by more then one forumla
+			#if peak_idx not in peak_labels:
+			#	peak_labels[peak_idx] = peak_id
+			#	peak_id += 1
+			f_mz = 0.0
+			formula_data = {
+				"formula_idx": f_id, 
+				"formula": formula,
+				"formula_prob": f_pred_prob,
+				"formula_mass": f_mz,
+				"peak_idx": f_id,
+				"peak_id": f_id,
+				"frag": []
+			}
+			
+			for n_id in formula_node_map[f_id]:
+				if n_id not in node_dict:
+					continue
+				#formula_node_prob = node_dict[n_id][1]
+				#if formula_node_prob < 1e-3:
+				#	continue
+				# get node idxs
+				#, pred_data['mol_num_nodes'])
+				# print(node_dict[n_id][0])
+				frag_atom_ids = node_dict[n_id]["pred_node_ccs"]
+				formula_data["frag"].append(
+					{
+						"node_atom_indices": frag_atom_ids,
+						"node_bond_indices": [],
+						"node_prob": 0.0,
+						"formula_node_prob": 0.0 #formula_node_prob
+					}
+				)
+			display_data.append(formula_data)
+
 		spec_id = pred_data['spec_id']
 		mol_id = pred_data['mol_id']
 		
@@ -366,32 +444,60 @@ if __name__ == "__main__":
 		if len(pred_spec_mzs) == 0 and len(true_spec_mzs) == 0:
 			continue
 		
-		# Create mirror plot
-		fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-		
-		# Plot spectra with mirror layout
-		plot_spectra_axes(
-			ax=ax,
-			true_mzs=true_spec_mzs,
-			true_ints=true_spec_ints,
-			pred_mzs=pred_spec_mzs,
-			pred_ints=pred_spec_ints,
-			bar_width=2,
-			font_size=12,
-			true_ints_thresh=0,  # Filter low intensity peaks
-			pred_ints_thresh=0,
-			colors=['green', 'red'],
-			circle_pad=0.1
-		)
-		
-		# Add title with metadata
-		cos_sim = pred_data.get('cos_sim_1.0', 'N/A')
-		title = f"Spec ID: {spec_id}, Mol ID: {mol_id}\nCosine Similarity: {cos_sim:.3f}" if cos_sim != 'N/A' else f"Spec ID: {spec_id}, Mol ID: {mol_id}"
-		ax.set_title(title, fontsize=14, pad=20)
-		
-		# Set axis labels
-		ax.set_xlabel("m/z", fontsize=12)
-		ax.set_ylabel("Relative Intensity", fontsize=12)
+		img = get_mol_im(smiles)
+		w, h = img.size
+		print(w,h)
+		ratio = w/h
+		print(w,h, ratio)
+
+		right_ncols = 3 + 1
+		right_rows = 5
+
+		figsize = (30,10)
+		frag_col_w = figsize[1] / right_rows * 0.67 * ratio  * right_ncols
+		frag_col_w = int(ceil(frag_col_w)) + 2
+		print(frag_col_w)
+
+		fig = fig = plt.figure(figsize=figsize, dpi=300)
+		grand_gs = GridSpec(ncols= figsize[0], nrows=1, figure=fig)
+		left_gs = grand_gs[0:figsize[0]-frag_col_w].subgridspec(ncols = 1, nrows = 1)
+		right_gs = grand_gs[figsize[0]-frag_col_w:].subgridspec(ncols = right_ncols, nrows = right_rows)
+
+		# spectrum ax
+		ax = fig.add_subplot(left_gs[0], facecolor="white")
+		plot_spectra_axes(ax, 
+							true_spec_mzs,
+						true_spec_ints,
+						pred_spec_mzs, 
+						pred_spec_ints, 
+						bar_width=1, 
+						font_size = 24,  
+						true_ints_thresh = 0,
+						pred_ints_thresh = 0,
+						colors = ['green', 'red'], 
+						peak_labels = peak_labels)
+		# right side
+		grid = [right_ncols, right_rows]
+		for f_idx, formula_data in enumerate(display_data):
+			#print(formula_data)
+			#mol = formula_data['base_mol']
+			if f_idx >= right_rows:
+				break
+			formula = formula_data['formula']
+			formula_id = formula_data['formula']
+			peak_id = formula_data['peak_id']
+			ax = fig.add_subplot(right_gs[f_idx, 0])
+			#formula_metrics = {"Formula Prob": formula_data['formula_prob'], "Mass" : formula_data['formula_mass']}
+			plot_formula_axes(ax, formula, peak_id, formula_data['formula_prob']) 
+			for frag_idx, frag in  enumerate(formula_data['frag']):
+				if frag_idx + 1 >= right_ncols:
+					break
+				ax = fig.add_subplot(right_gs[f_idx, frag_idx + 1])
+				h_atom_list = frag['node_atom_indices']
+				h_bond_list = frag['node_bond_indices']
+				#metrics = frag['metrics']
+				# = []
+				plot_mol_frag_axes(ax, mol, h_atom_list, h_bond_list, frag['formula_node_prob'])
 		
 		# Save plot
 		plot_filename = f"mirror_plot_spec_{spec_id}_mol_{mol_id}.png"
@@ -402,7 +508,7 @@ if __name__ == "__main__":
 		
 		print(f"Saved mirror plot: {plot_path}")
 		print(f"  True peaks: {len(true_spec_mzs)}, Predicted peaks: {len(pred_spec_mzs)}")
-		if cos_sim != 'N/A':
-			print(f"  Cosine similarity: {cos_sim:.3f}")
+		#if cos_sim != 'N/A':
+		#	print(f"  Cosine similarity: {cos_sim:.3f}")
 	
 	print(f"\nCompleted generating {num_plots} mirror plots in {output_dir}")
