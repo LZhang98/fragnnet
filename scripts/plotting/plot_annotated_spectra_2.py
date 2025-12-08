@@ -19,7 +19,7 @@ from PIL import Image
 from rdkit.Chem import Draw
 
 from fragnnet.utils.frag_utils import th_long_to_mask, get_node_feats
-from fragnnet.utils.plot_utils import get_mol_im
+from fragnnet.utils.plot_utils import get_highlighted_bonds, get_mol_im
 
 def plot_formula_axes(ax,
 					  formula:str,
@@ -321,7 +321,20 @@ if __name__ == "__main__":
 		for f_id, n_id in zip(pred_data['pred_joint_formula_idxs'], pred_data['pred_joint_node_idxs']):
 			formula_node_map[f_id].append(n_id)
 
-  
+		pred_formula_node_probs = pred_data['pred_formula_node_probs']
+		pred_node_formula_probs = pred_data['pred_node_formula_probs']
+		pred_joint_formula_idxs = pred_data['pred_joint_formula_idxs']
+		pred_joint_node_idxs = pred_data['pred_joint_node_idxs']
+
+		node_formula_prob_dict = {}
+		formula_node_prob_dict ={}
+		for f_id, n_id, f_n_prob, n_f_prob in zip(pred_joint_formula_idxs,
+												pred_joint_node_idxs,
+												pred_formula_node_probs,
+												pred_node_formula_probs):
+			node_formula_prob_dict[(f_id, n_id)] =  n_f_prob
+			formula_node_prob_dict[(f_id, n_id)] =  f_n_prob
+            
 		# get node masks
 		frag_node_masks = th_long_to_mask(pred_data['pred_node_ccs'])
 		all_atom_ids = th.arange(0, frag_node_masks.shape[1]).to(th.long) #.repeat(frag_node_masks.shape[0],1)
@@ -329,33 +342,35 @@ if __name__ == "__main__":
 			pred_data['pred_node_probs'],
    			frag_node_masks)}
 
-
 		display_data = []
 		peak_labels = []
-		for f_id in formula_dict.keys():
+  
+		
+		for f_idx, f_id in enumerate(formula_dict.keys()):
 
 			# get formula idx
 			f_value = formula_dict[f_id]
 			formula, f_pred_prob = f_value[0], f_value[1]
 						
 			# in case peak is created by more then one forumla
-			#if peak_idx not in peak_labels:
+			#. if peak_idx not in peak_labels:
 			#	peak_labels[peak_idx] = peak_id
 			#	peak_id += 1
 			f_mz = 0.0
 			formula_data = {
-				"formula_idx": f_id, 
+				"formula_idx": f_idx, 
 				"formula": formula,
 				"formula_prob": f_pred_prob,
 				"formula_mass": f_mz,
-				"peak_idx": f_id,
-				"peak_id": f_id,
+				"peak_idx": f_idx,
+				"peak_id": f_idx,
 				"frag": []
 			}
 			
 			for n_id in formula_node_map[f_id]:
 				if n_id not in node_dict:
 					continue
+				pred_node_prob = node_dict[n_id]["pred_node_probs"]
 				#formula_node_prob = node_dict[n_id][1]
 				#if formula_node_prob < 1e-3:
 				#	continue
@@ -366,9 +381,9 @@ if __name__ == "__main__":
 				formula_data["frag"].append(
 					{
 						"node_atom_indices": frag_atom_ids,
-						"node_bond_indices": [],
-						"node_prob": 0.0,
-						"formula_node_prob": 0.0 #formula_node_prob
+						"node_bond_indices": get_highlighted_bonds(mol, frag_atom_ids),
+						"node_prob": pred_node_prob,
+						"formula_node_prob": formula_node_prob_dict.get((f_id, n_id), 0.0)
 					}
 				)
 			display_data.append(formula_data)
@@ -450,11 +465,11 @@ if __name__ == "__main__":
 		ratio = w/h
 		print(w,h, ratio)
 
-		right_ncols = 3 + 1
-		right_rows = 5
+		right_ncols = 5 + 1
+		right_rows = 8
 
-		figsize = (30,10)
-		frag_col_w = figsize[1] / right_rows * 0.67 * ratio  * right_ncols
+		figsize = (24,16)
+		frag_col_w = figsize[1] / right_rows * 0.5 * ratio  * right_ncols
 		frag_col_w = int(ceil(frag_col_w)) + 2
 		print(frag_col_w)
 
@@ -479,8 +494,6 @@ if __name__ == "__main__":
 		# right side
 		grid = [right_ncols, right_rows]
 		for f_idx, formula_data in enumerate(display_data):
-			#print(formula_data)
-			#mol = formula_data['base_mol']
 			if f_idx >= right_rows:
 				break
 			formula = formula_data['formula']
