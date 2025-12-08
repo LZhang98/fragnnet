@@ -59,18 +59,37 @@ def trim_img_by_white(img, padding=0):
 	return ImageOps.expand(img, border=padding, fill=(255, 255, 255, 0))
 
 
-def get_mol_im(smiles):
-	import cairosvg
-	width = 1000
-	height = 1000
-	mols = [mol_from_smiles(smiles)]
-	d = rdMolDraw2D.MolDraw2DSVG(width,height)
-	d.DrawMolecules(mols)
-	d.FinishDrawing()
-	svg_buf = d.GetDrawingText()
-	png_buf = cairosvg.svg2png(svg_buf)
-	im = Image.open(io.BytesIO(png_buf))
-	im = trim_img_by_white(im,padding=15)
+def get_mol_im(smiles, 	width = 1000, height = 1000):
+	""" metho to get a PIL image of a molecule from its SMILES string
+
+	Args:
+		smiles (string): _description_
+		width (int, optional): _description_. Defaults to 1000.
+		height (int, optional): _description_. Defaults to 1000.
+
+	Returns:
+		_type_: _description_
+	"""
+
+	mol = mol_from_smiles(smiles)
+	
+	try:
+		import cairosvg
+		d = rdMolDraw2D.MolDraw2DSVG(width, height)
+		d.DrawMolecule(mol)
+		d.FinishDrawing()
+		svg_buf = d.GetDrawingText()
+		png_buf = cairosvg.svg2png(svg_buf)
+		im = Image.open(io.BytesIO(png_buf))
+	except ImportError:
+		# Fallback to PNG drawer if cairosvg is not available
+		d = rdMolDraw2D.MolDraw2DCairo(width, height)
+		d.DrawMolecule(mol)
+		d.FinishDrawing()
+		png_buf = d.GetDrawingText()
+		im = Image.open(io.BytesIO(png_buf))
+	
+	im = trim_img_by_white(im, padding=15)
 	return im
 
 
