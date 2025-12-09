@@ -511,7 +511,7 @@ if __name__ == "__main__":
 	parser.add_argument("--proc_dp", type=str, required=False, help="Processed data directory",  default="data/proc/nist20")
 	parser.add_argument("--save_dp", type=str, required=False, help="Directory to save plots", default="output/spectra_plots_test")
 	parser.add_argument("--has_truth", type=str, required=False, help="True data pickle file path")
-	parser.add_argument("--num_plots", type=int, required=False, help="Number of plots to generate", default=400)
+	parser.add_argument("--num_plots", type=int, required=False, help="Number of plots to generate", default=20)
 	
 	args = parser.parse_args()
 	

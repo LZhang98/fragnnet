@@ -213,7 +213,7 @@ if __name__ == "__main__":
 		min_formula_prob=1e-3,
 		min_frag_prob=1e-5,
 		return_formula_str=True,
-		rebase_indices=True
+		rebase_indices=False,
 	)	
 	
 	# predicted_df.to_csv("inference_eval_results.csv", index=False)

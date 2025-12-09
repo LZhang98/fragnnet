@@ -748,6 +748,8 @@ def run_inference_df(
 			# ============================
 			# forumla log probs p(f)
 			pred_formula_probs = th.exp(batch_result['pred_formula_logprobs'].detach().cpu()) if "pred_formula_logprobs" in batch_result else None
+			# formula m/z values
+			pred_formula_mzs = batch_result['pred_formula_mzs'].detach().cpu() if "pred_formula_mzs" in batch_result else None
 			# log prob p(n|f), node conditioned on formula
 			pred_formula_node_probs = th.exp(batch_result['pred_formula_node_logprobs'].detach().cpu()) if "pred_formula_node_logprobs" in batch_result else None
 			# log prob p(f|n), formula conditioned on node
@@ -817,6 +819,7 @@ def run_inference_df(
 				b_pred_formula_mask = (pred_formula_batch_idxs == b_idx) if pred_formula_batch_idxs is not None else None
 				b_pred_formula_formula_idxs = pred_formula_formula_idxs[b_pred_formula_mask] if pred_formula_formula_idxs is not None and b_pred_formula_mask is not None else None
 				b_pred_formula_probs = pred_formula_probs[b_pred_formula_mask] if pred_formula_probs is not None and b_pred_formula_mask is not None else None
+				b_pred_formula_mzs = pred_formula_mzs[b_pred_formula_mask] if pred_formula_mzs is not None and b_pred_formula_mask is not None else None
 				
 				# node probabilities P(n) for the current spectrum/molecule (b_idx)
 				b_pred_node_mask = (pred_node_batch_idxs == b_idx) if pred_node_batch_idxs is not None else None
@@ -874,6 +877,7 @@ def run_inference_df(
 					b_pred_oos_prob,
 					b_pred_formula_formula_idxs.tolist() if b_pred_formula_formula_idxs is not None else np.nan,
 					b_pred_formula_probs.tolist() if b_pred_formula_probs is not None else np.nan,
+					b_pred_formula_mzs.tolist() if b_pred_formula_mzs is not None else np.nan,
 					b_pred_joint_formula_idxs.tolist() if b_pred_joint_formula_idxs is not None else np.nan,
 					b_pred_formula_node_probs.tolist() if b_pred_formula_node_probs is not None else np.nan,
 					b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else np.nan,
@@ -908,7 +912,7 @@ def run_inference_df(
 		# build dataframe with new columns (after processing all batches)
 		columns = [
 			"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
-			"pred_formula_formula_idxs", "pred_formula_probs",
+			"pred_formula_formula_idxs", "pred_formula_probs", "pred_formula_mzs",
 			"pred_joint_formula_idxs", "pred_formula_node_probs",
 			"pred_joint_node_idxs", "pred_node_formula_probs",
 			"pred_node_probs", "pred_node_node_idxs"
