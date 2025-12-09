@@ -7,13 +7,12 @@ import tempfile
 import os
 import gc
 import copy
-from typing import Dict, Any, Optional, Set, Type, List, Tuple
+from typing import Dict, Any, Optional, Set, List, Tuple
 
 from fragnnet.runner import load_config
 from fragnnet.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO, get_best_ckpt_from_wandb
-from fragnnet.pl_model import FraGNNetPL, NeimsPL, GNNPL
-from fragnnet.iceberg.pl_model import IcebergIntenPL, IcebergGenPL
-from fragnnet.massformer.pl_model import MassFormerPL
+from fragnnet.pl_model import FraGNNetPL
+from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls
@@ -983,10 +982,22 @@ def filter_by_peak_intensity(
 	"""
 	Filter formulas and nodes based on the intensity of the associated peak and formula probability.
 	Keeps original formula and node indices.
-	
 	Args:
-		rebase_indices: If True, rebases formula and node indices to 0-based after filtering
-			(e.g., if formulas [2, 5, 7] are kept, they become [0, 1, 2])
+		min_peak_int: Minimum peak intensity threshold
+		min_formula_prob: Minimum formula probability threshold
+		min_frag_prob: Minimum fragment (node) probability threshold
+		pred_ints: Predicted intensities for peaks
+		pred_mzs: Predicted m/z values for peaks
+		frag_formula_peak_idxs: Mapping from peaks to local formula indices
+		b_pred_formula_formula_idxs: Global formula indices for predicted formulas
+		b_pred_formula_probs: Predicted formula probabilities
+		b_pred_joint_formula_idxs: Joint formula indices for P(f,n), P(n|f), P(f|n)
+		b_pred_formula_node_probs: Predicted P(n|f) probabilities
+		b_pred_joint_node_idxs: Joint node indices for P(f,n), P(n|f), P(f|n)
+		b_pred_node_formula_probs: Predicted P(f|n) probabilities
+		b_pred_node_probs: Predicted node probabilities
+		b_pred_node_node_idxs: Node indices for predicted nodes
+		verbose: Whether to print verbose output
 	"""
 	if min_peak_int <= 0 and min_formula_prob <= 0 and min_frag_prob <= 0:
 		return (
@@ -1116,74 +1127,3 @@ def filter_by_peak_intensity(
 		b_pred_joint_node_idxs, b_pred_node_formula_probs,
 		b_pred_node_probs, b_pred_node_node_idxs
 	)
-
-def get_realdata_from_idx(
-	frag_formula_peak_idxs: Optional[th.Tensor],
-	b_pred_formula_formula_idxs: Optional[th.Tensor],
-	b_pred_joint_formula_idxs: Optional[th.Tensor] = None,
-	b_pred_joint_node_idxs: Optional[th.Tensor] = None,
-	b_pred_node_node_idxs: Optional[th.Tensor] = None,
-	mol_pyg: Optional[Any] = None,
-	idx_to_formula: Optional[Dict[int, str]] = None,
-	verbose: bool = False
-):
-	"""
-	Retrieve real data (formulas and node CCs) from indices using the fragment graph and formula mapping.
-	"""
-	if mol_pyg is None:
-		return None, None, None, None, None
-
-	# Helper to get formula string from index
-	def get_formulas(idxs):
-		if idxs is None or idx_to_formula is None: return None
-		# idxs is a tensor, convert to list of ints
-		return [idx_to_formula[i.item()] for i in idxs]
-
-	# Helper to get node CC from index
-	node_feats = mol_pyg.x
-	# node_feat_idxs is stored in dag
-	node_feat_idxs = mol_pyg.node_feat_idxs.view(-1)
-	
-	# Use helper function to get CC features
-	all_node_ccs = get_node_feats(node_feats, node_feat_idxs, "cc")
-	
-	def get_nodes(idxs):
-		if idxs is None: return None
-		return all_node_ccs[idxs]
-
-	# Retrieve data
-	real_frag_formulas = get_formulas(frag_formula_peak_idxs) if frag_formula_peak_idxs is not None else None
-	real_pred_formulas = get_formulas(b_pred_formula_formula_idxs)
-	real_joint_formulas = get_formulas(b_pred_joint_formula_idxs)
-	
-	real_joint_nodes = get_nodes(b_pred_joint_node_idxs)
-	real_pred_nodes = get_nodes(b_pred_node_node_idxs)
-
-	return (
-		real_frag_formulas,
-		real_pred_formulas,
-		real_joint_formulas,
-		real_joint_nodes,
-		real_pred_nodes
-	)
-
-def get_idx_to_formula(
-	batch_input: Dict[str, Any],
-	b_idx: int,
-	frag_formula_cumsizes: th.Tensor
-) -> Optional[Dict[int, str]]:
-	"""
-	Extract idx_to_formula dictionary for a specific molecule in the batch.
-	Requires 'frag_formula_str' to be present in batch_input (set output_formula_str=True).
-	"""
-	if "frag_formula_str" not in batch_input:
-		return None
-		
-	f_start = frag_formula_cumsizes[b_idx]
-	f_end = frag_formula_cumsizes[b_idx+1]
-	
-	# Extract formulas for this molecule
-	b_formulas = batch_input["frag_formula_str"][f_start:f_end]
-	
-	# Create dictionary mapping local index to formula string
-	return {i: s for i, s in enumerate(b_formulas)}
