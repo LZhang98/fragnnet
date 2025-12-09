@@ -18,7 +18,7 @@ from PIL import Image
 
 from rdkit.Chem import Draw
 
-from fragnnet.utils.frag_utils import th_long_to_mask, get_node_feats
+from fragnnet.utils.frag_utils import th_long_to_mask
 from fragnnet.utils.plot_utils import get_highlighted_bonds, get_mol_im
 
 def plot_formula_axes(ax,
@@ -411,8 +411,10 @@ def build_display_data(formula_dict, formula_node_map, node_dict, formula_node_p
 					"formula_node_prob": formula_node_prob_dict.get((f_id, n_id), 0.0)
 				}
 			)
+		# sort fragments by formula_node_prob
+		formula_data["frag"] = sorted(formula_data["frag"], key=lambda x: x['formula_node_prob'], reverse=True)
 		display_data.append(formula_data)
-	
+
 	return display_data
 
 def plot_mirror_spectra(pred_data, display_data, output_dir):
@@ -470,8 +472,12 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 		if f_idx >= right_rows:
 			break
 		formula = formula_data['formula']
+		# null formula check (this should not happen)
+		if formula is None or formula == "":
+			continue
 		peak_id = formula_data['peak_id']
 		ax = fig.add_subplot(right_gs[f_idx, 0])
+		#print(f"Plotting formula {f_idx}: {formula} for peak {peak_id}")
 		plot_formula_axes(ax, formula, peak_id, formula_data['formula_prob'])
 		
 		for frag_idx, frag in enumerate(formula_data['frag']):
@@ -485,12 +491,16 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 	# Save plot
 	plot_filename = f"mirror_plot_spec_{spec_id}_mol_{mol_id}.png"
 	plot_path = os.path.join(output_dir, plot_filename)
-	plt.tight_layout()
+	try:
+		plt.tight_layout()
+	except ValueError as e:
+		# tight_layout may fail if there are math parsing errors in text
+		print(f"Warning: tight_layout failed with error: {e}")
 	plt.savefig(plot_path, dpi=150, bbox_inches='tight')
 	plt.close()
 	
-	print(f"Saved mirror plot: {plot_path}")
-	print(f"  True peaks: {len(true_spec_mzs)}, Predicted peaks: {len(pred_spec_mzs)}")
+	#print(f"Saved mirror plot: {plot_path}")
+	#print(f"  True peaks: {len(true_spec_mzs)}, Predicted peaks: {len(pred_spec_mzs)}")
 	
 	return True
 
