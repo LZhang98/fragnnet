@@ -210,8 +210,6 @@ if __name__ == "__main__":
 		output_set=output_set,
 		batch_cutoff=args.batch_cutoff,
 		min_peak_int=1.0,
-		min_formula_prob=1e-3,
-		min_frag_prob=1e-5,
 		return_formula_and_cc=True,
 		rebase_indices=True,
 	)	

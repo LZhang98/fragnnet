@@ -676,8 +676,6 @@ def run_inference_df(
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
-	min_formula_prob: float = 0.0,
-	min_frag_prob: float = 0.0,
 	return_formula_and_cc: bool = False,
 	rebase_indices: bool = True,
 ):
@@ -840,7 +838,7 @@ def run_inference_df(
 					b_pred_node_node_idxs = b_pred_node_node_idxs - n_offset
 				if b_pred_joint_node_idxs is not None:
 					b_pred_joint_node_idxs = b_pred_joint_node_idxs - n_offset
-				
+					
 				# Apply intensity filtering
 				(
 					b_spec_ints, b_spec_mzs,
@@ -850,8 +848,6 @@ def run_inference_df(
 					b_pred_node_probs, b_pred_node_node_idxs,
 				) = filter_by_peak_intensity(
 					min_peak_int,
-					min_formula_prob,
-					min_frag_prob,
 					b_spec_ints,
 					b_spec_mzs,
 					b_frag_formula_peak_idxs,
@@ -869,6 +865,7 @@ def run_inference_df(
 				# Store original indices before rebasing (for lookups)
 				orig_formula_idxs_for_lookup = b_pred_formula_formula_idxs.clone() if b_pred_formula_formula_idxs is not None else None
 				orig_node_idxs_for_lookup = b_pred_node_node_idxs.clone() if b_pred_node_node_idxs is not None else None
+				
 				
 				if rebase_indices:
 					# Rebase formula indices to 0-based contiguous
@@ -906,7 +903,7 @@ def run_inference_df(
 								dtype=b_pred_joint_node_idxs.dtype,
 								device=b_pred_joint_node_idxs.device
 							)
-      
+				
 				# assemble row and append
 				data_row = [
 					b_spec_id.item(), 
@@ -928,7 +925,7 @@ def run_inference_df(
 				if return_formula_and_cc:
 					# Get formula strings using original (pre-rebase) indices
 					b_pred_formula_strs = np.nan
-					if orig_formula_idxs_for_lookup is not None and frag_formula_str is not None:
+					if orig_formula_idxs_for_lookup is not None and frag_formula_str is not None and rebase_indices:
 						f_offset = frag_formula_cumsizes[b_idx].item()
 						global_f_idxs = orig_formula_idxs_for_lookup + f_offset
 						b_pred_formula_strs = frag_formula_str[global_f_idxs.cpu().numpy()].tolist()
@@ -936,7 +933,7 @@ def run_inference_df(
 
 					# Get node CCs using original (pre-rebase) indices
 					b_pred_node_ccs = np.nan
-					if orig_node_idxs_for_lookup is not None and frag_pyg is not None:
+					if orig_node_idxs_for_lookup is not None and frag_pyg is not None and rebase_indices:
 						i_frag_pyg = frag_pyg[b_idx]
 						node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
 						all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
@@ -945,27 +942,25 @@ def run_inference_df(
 
 				for eval_score_type in eval_score_types:
 					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
-				preds_l.append(data_row)
-   
-		# build dataframe with new columns (after processing all batches)
-		columns = [
-			"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
-			"pred_formula_formula_idxs", "pred_formula_probs", "pred_formula_mzs",
-			"pred_joint_formula_idxs", "pred_formula_node_probs",
-			"pred_joint_node_idxs", "pred_node_formula_probs",
-			"pred_node_probs", "pred_node_node_idxs"
-		] 
-		if return_formula_and_cc:
-			columns.extend(["pred_formula_strs", "pred_node_ccs"])
-		columns.extend(eval_score_types)
-		pred_df = pd.DataFrame(preds_l, columns=columns)
-		print(pred_df.head())
-		return pred_df
+				preds_l.append(data_row)	# build dataframe with new columns (after processing all batches)
+    
+	# build dataframe
+	columns = [
+		"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
+		"pred_formula_formula_idxs", "pred_formula_probs", "pred_formula_mzs",
+		"pred_joint_formula_idxs", "pred_formula_node_probs",
+		"pred_joint_node_idxs", "pred_node_formula_probs",
+		"pred_node_probs", "pred_node_node_idxs"
+	] 
+	if return_formula_and_cc:
+		columns.extend(["pred_formula_strs", "pred_node_ccs"])
+	columns.extend(eval_score_types)
+	pred_df = pd.DataFrame(preds_l, columns=columns)
+	print(pred_df.head())
+	return pred_df
 
 def filter_by_peak_intensity(
 	min_peak_int: float,
-	min_formula_prob: float,
-	min_frag_prob: float,
 	pred_ints: th.Tensor,
 	pred_mzs: th.Tensor,
 	frag_formula_peak_idxs: Optional[th.Tensor],
@@ -980,12 +975,10 @@ def filter_by_peak_intensity(
 	verbose: bool = False,
 ):
 	"""
-	Filter formulas and nodes based on the intensity of the associated peak and formula probability.
+	Filter predictions based on peak intensity threshold.
 	Keeps original formula and node indices.
 	Args:
 		min_peak_int: Minimum peak intensity threshold
-		min_formula_prob: Minimum formula probability threshold
-		min_frag_prob: Minimum fragment (node) probability threshold
 		pred_ints: Predicted intensities for peaks
 		pred_mzs: Predicted m/z values for peaks
 		frag_formula_peak_idxs: Mapping from peaks to local formula indices
@@ -999,7 +992,7 @@ def filter_by_peak_intensity(
 		b_pred_node_node_idxs: Node indices for predicted nodes
 		verbose: Whether to print verbose output
 	"""
-	if min_peak_int <= 0 and min_formula_prob <= 0 and min_frag_prob <= 0:
+	if min_peak_int <= 0:
 		return (
 			pred_ints, pred_mzs,
 			b_pred_formula_formula_idxs, b_pred_formula_probs,
@@ -1042,26 +1035,6 @@ def filter_by_peak_intensity(
 			# Fallback if formula indices are missing (unlikely to be useful but prevents crash)
 			valid_f_idxs = th.unique(valid_local_f_idxs)
 
-	# 2. Filter by formula probability
-	# This step identifies formulas that have a predicted probability > min_formula_prob.
-	if min_formula_prob > 0 and b_pred_formula_probs is not None \
-	 	and b_pred_formula_formula_idxs is not None:
-		# b_pred_formula_probs is already exp(log_probs) so it is in probability space [0,1]
-		prob_mask = b_pred_formula_probs > min_formula_prob
-		valid_f_idxs_prob = b_pred_formula_formula_idxs[prob_mask]
-		
-		if verbose:
-			print(f"  > valid_f_idxs (peaks): {valid_f_idxs}")
-			print(f"  > valid_f_idxs_prob: {valid_f_idxs_prob}")
-
-		# Intersect with valid formulas from peak intensity filter (if any)
-		# If valid_f_idxs is None (no peak filtering or no peaks passed), use probability filter only
-		# If valid_f_idxs exists, keep only formulas that satisfy BOTH conditions
-		valid_f_idxs = valid_f_idxs[th.isin(valid_f_idxs, valid_f_idxs_prob)] if valid_f_idxs is not None else valid_f_idxs_prob
-		
-		if verbose:
-			print(f"  > valid_f_idxs (merged): {valid_f_idxs}")
-
 	# If no filtering was applied (valid_f_idxs is None), return original tensors
 	if valid_f_idxs is None:
 		return (
@@ -1082,16 +1055,8 @@ def filter_by_peak_intensity(
 			b_pred_formula_probs = b_pred_formula_probs[keep_mask_f]
 		
 	# Filter node predictions (P(n)) first
-	# We keep nodes that:
-	# 1. Pass the min_frag_prob threshold (if set)
-	# 2. Will be used to filter the joint distribution
+	# We keep nodes that appear in the filtered joint distribution
 	if b_pred_node_probs is not None and b_pred_node_node_idxs is not None:
-		keep_mask_n = th.ones(b_pred_node_probs.shape[0], dtype=th.bool, device=b_pred_node_probs.device)
-		if min_frag_prob > 0:
-			keep_mask_n = keep_mask_n & (b_pred_node_probs > min_frag_prob)
-		b_pred_node_probs = b_pred_node_probs[keep_mask_n]
-		b_pred_node_node_idxs = b_pred_node_node_idxs[keep_mask_n]
-		
 		# Get valid node indices after filtering
 		valid_n_idxs = b_pred_node_node_idxs
 	else:
