@@ -680,6 +680,7 @@ def run_inference_df(
 	min_formula_prob: float = 0.0,
 	min_frag_prob: float = 0.0,
 	return_formula_str: bool = False,
+	return_ccs: bool = False,
 	rebase_indices: bool = True,
 ):
 	"""
@@ -848,7 +849,7 @@ def run_inference_df(
 					b_pred_formula_formula_idxs, b_pred_formula_probs,
 					b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
 					b_pred_joint_node_idxs, b_pred_node_formula_probs,
-					b_pred_node_probs, b_pred_node_node_idxs
+					b_pred_node_probs, b_pred_node_node_idxs,
 				) = filter_by_peak_intensity(
 					min_peak_int,
 					min_formula_prob,
@@ -865,9 +866,12 @@ def run_inference_df(
 					b_pred_node_probs,
 					b_pred_node_node_idxs,
 					verbose=False,
-					rebase_indices=rebase_indices
 				)
 
+				if rebase_indices:
+					# Rebase formula indices to 0-based
+					pass
+      
 				# assemble row and append
 				data_row = [
 					b_spec_id.item(), 
@@ -890,19 +894,36 @@ def run_inference_df(
 					# Get formula strings
 					b_pred_formula_strs = np.nan
 					if b_pred_formula_formula_idxs is not None and frag_formula_str is not None:
+						if rebase_indices and formula_idx_inv_map:
+							orig_local_f_idxs = th.tensor(
+								[formula_idx_inv_map[int(i)] for i in b_pred_formula_formula_idxs],
+								dtype=b_pred_formula_formula_idxs.dtype,
+								device=b_pred_formula_formula_idxs.device,
+							)
+						else:
+							orig_local_f_idxs = b_pred_formula_formula_idxs
+
 						f_offset = frag_formula_cumsizes[b_idx].item()
-						global_f_idxs = b_pred_formula_formula_idxs + f_offset
-						b_pred_formula_strs = frag_formula_str[global_f_idxs.numpy()].tolist()
-						#print(f"b_idx {b_idx} formula strs: {b_pred_formula_strs}")
+						global_f_idxs = orig_local_f_idxs + f_offset
+						b_pred_formula_strs = frag_formula_str[global_f_idxs.cpu().numpy()].tolist()
 					data_row.append(b_pred_formula_strs)
 
+				if return_ccs:
 					# Get node CCs
 					b_pred_node_ccs = np.nan
 					if b_pred_node_node_idxs is not None and frag_pyg is not None:
 						i_frag_pyg = frag_pyg[b_idx]
 						node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
 						all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
-						b_pred_node_ccs = all_node_ccs[b_pred_node_node_idxs.long()].detach().cpu() #save as tensor
+						if rebase_indices and node_idx_inv_map:
+							orig_local_n_idxs = th.tensor(
+								[node_idx_inv_map[int(i)] for i in b_pred_node_node_idxs],
+								dtype=b_pred_node_node_idxs.dtype,
+								device=b_pred_node_node_idxs.device,
+							)
+						else:
+							orig_local_n_idxs = b_pred_node_node_idxs
+						b_pred_node_ccs = all_node_ccs[orig_local_n_idxs.long()].detach().cpu() #save as tensor
 					data_row.append(b_pred_node_ccs)
 
 				for eval_score_type in eval_score_types:
@@ -940,7 +961,6 @@ def filter_by_peak_intensity(
 	b_pred_node_probs: Optional[th.Tensor] = None,
 	b_pred_node_node_idxs: Optional[th.Tensor] = None,
 	verbose: bool = False,
-	rebase_indices: bool = False
 ):
 	"""
 	Filter formulas and nodes based on the intensity of the associated peak and formula probability.
@@ -968,11 +988,7 @@ def filter_by_peak_intensity(
   
 	valid_f_idxs = None
 	valid_n_idxs = None
-	
-	# Mapping dictionaries for rebasing (if enabled)
-	formula_idx_map = {}
-	node_idx_map = {}
-	
+		
 	# 1. Filter by peak intensity
 	# This step identifies which formulas are associated with peaks that have intensity > min_peak_int.
 	# It uses frag_formula_peak_idxs which maps peaks to local formula indices.
@@ -1027,12 +1043,6 @@ def filter_by_peak_intensity(
 			b_pred_node_probs, b_pred_node_node_idxs
 		)
 
-	# Build formula index mapping if rebasing is enabled
-	if rebase_indices:
-		valid_f_idxs_sorted = th.sort(valid_f_idxs)[0]
-		for new_idx, old_idx in enumerate(valid_f_idxs_sorted.tolist()):
-			formula_idx_map[old_idx] = new_idx
-
 	# 3. Apply filtering to all formula-related tensors
 	
 	# Filter formula predictions (P(f))
@@ -1042,14 +1052,6 @@ def filter_by_peak_intensity(
 		if b_pred_formula_probs is not None:
 			b_pred_formula_probs = b_pred_formula_probs[keep_mask_f]
 		
-		# Rebase formula indices if enabled
-		if rebase_indices and len(formula_idx_map) > 0:
-			b_pred_formula_formula_idxs = th.tensor(
-				[formula_idx_map[idx.item()] for idx in b_pred_formula_formula_idxs],
-				dtype=b_pred_formula_formula_idxs.dtype,
-				device=b_pred_formula_formula_idxs.device
-			)
-			
 	# Filter joint predictions (P(f,n), P(n|f), P(f|n))
 	# These are indexed by formula, so we filter based on whether the formula is in valid_f_idxs
 	if b_pred_joint_formula_idxs is not None:
@@ -1061,15 +1063,7 @@ def filter_by_peak_intensity(
 			b_pred_joint_node_idxs = b_pred_joint_node_idxs[keep_mask_j]
 		if b_pred_node_formula_probs is not None:
 			b_pred_node_formula_probs = b_pred_node_formula_probs[keep_mask_j]
-		
-		# Rebase joint formula indices if enabled
-		if rebase_indices and len(formula_idx_map) > 0:
-			b_pred_joint_formula_idxs = th.tensor(
-				[formula_idx_map[idx.item()] for idx in b_pred_joint_formula_idxs],
-				dtype=b_pred_joint_formula_idxs.dtype,
-				device=b_pred_joint_formula_idxs.device
-			)
-   
+		   
 		# Filter node predictions (P(n))
 		# We keep nodes that appear in the filtered joint distribution (i.e., connected to valid formulas)
 		# AND optionally filter by node probability (min_frag_prob)
@@ -1084,32 +1078,11 @@ def filter_by_peak_intensity(
 			b_pred_node_probs = b_pred_node_probs[keep_mask_n]
 			b_pred_node_node_idxs = b_pred_node_node_idxs[keep_mask_n]
 			
-			# Build node index mapping if rebasing is enabled
-			if rebase_indices and valid_n_idxs is not None:
-				valid_n_idxs_sorted = th.sort(valid_n_idxs)[0]
-				for new_idx, old_idx in enumerate(valid_n_idxs_sorted.tolist()):
-					node_idx_map[old_idx] = new_idx
-				
-				# Rebase node indices
-				b_pred_joint_node_idxs = th.tensor(
-					[node_idx_map[idx.item()] for idx in b_pred_joint_node_idxs],
-					dtype=b_pred_joint_node_idxs.dtype,
-					device=b_pred_joint_node_idxs.device
-				)
-				b_pred_node_node_idxs = th.tensor(
-					[node_idx_map[idx.item()] for idx in b_pred_node_node_idxs],
-					dtype=b_pred_node_node_idxs.dtype,
-					device=b_pred_node_node_idxs.device
-				)
-
 	# Track final sizes and print stats
 	if verbose:
 		final_n_formulas = b_pred_formula_formula_idxs.shape[0] if b_pred_formula_formula_idxs is not None else 0
 		final_n_nodes = b_pred_node_node_idxs.shape[0] if b_pred_node_node_idxs is not None else 0
 		print(f"  > Filtered stats: Peaks {init_n_peaks}->{final_n_peaks}, Formulas {init_n_formulas}->{final_n_formulas}, Nodes {init_n_nodes}->{final_n_nodes}")
-		if rebase_indices:
-			print(f"  > Formula index mapping: {formula_idx_map}")
-			print(f"  > Node index mapping: {node_idx_map}")
 
 	return (
 		pred_ints, pred_mzs,

@@ -353,8 +353,8 @@ def process_prediction_data(pred_data):
 	
 	# Map formula to nodes
 	formula_node_map = {i:[] for i in set(pred_data['pred_joint_formula_idxs'])}
-	for f_id, n_id in zip(pred_data['pred_joint_formula_idxs'], pred_data['pred_joint_node_idxs']):
-		formula_node_map[f_id].append(n_id)
+	#for f_id, n_id in zip(pred_data['pred_joint_formula_idxs'], pred_data['pred_joint_node_idxs']):
+	#	formula_node_map[f_id].append(n_id)
 	
 	pred_formula_node_probs = pred_data['pred_formula_node_probs']
 	pred_node_formula_probs = pred_data['pred_node_formula_probs']
@@ -369,6 +369,7 @@ def process_prediction_data(pred_data):
 											pred_node_formula_probs):
 		node_formula_prob_dict[(f_id, n_id)] = n_f_prob
 		formula_node_prob_dict[(f_id, n_id)] = f_n_prob
+		formula_node_map[f_id].append(n_id)
 	
 	# Get node masks
 	frag_node_masks = th_long_to_mask(pred_data['pred_node_ccs'])
@@ -389,7 +390,7 @@ def build_display_data(formula_dict, formula_node_map, node_dict, formula_node_p
 		
 		f_mz = 0.0
 		formula_data = {
-			"formula_idx": f_idx,
+			"formula_idx": f_id,
 			"formula": formula,
 			"formula_prob": f_pred_prob,
 			"formula_mass": f_mz,
@@ -499,7 +500,7 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 	plt.savefig(plot_path, dpi=150, bbox_inches='tight')
 	plt.close()
 	
-	#print(f"Saved mirror plot: {plot_path}")
+	print(f"Saved mirror plot: {plot_path}")
 	#print(f"  True peaks: {len(true_spec_mzs)}, Predicted peaks: {len(pred_spec_mzs)}")
 	
 	return True
@@ -525,6 +526,9 @@ if __name__ == "__main__":
 	num_plots = min(args.num_plots, len(pred_df))
 	
 	for idx, pred_data in tqdm(pred_df.head(num_plots).iterrows(), total=num_plots):
+     
+		print(pred_data)
+		#exit()
 		# Process prediction data
 		formula_dict, formula_node_map, node_dict, formula_node_prob_dict = process_prediction_data(pred_data)
 		
