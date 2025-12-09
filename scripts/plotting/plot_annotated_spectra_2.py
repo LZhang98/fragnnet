@@ -246,6 +246,254 @@ def plot_spectra_axes(ax,
 	]
 	ax.legend(handles=handles,**leg_kws)
 
+def load_dataframe(file_path_gz, file_path_pkl, description):
+	"""Load dataframe from .pkl.gz or .pkl file"""
+	if os.path.exists(file_path_gz):
+		df = pd.read_pickle(file_path_gz)
+		print(f"Loaded {description} with {len(df)} entries from {file_path_gz}")
+	elif os.path.exists(file_path_pkl):
+		df = pd.read_pickle(file_path_pkl)
+		print(f"Loaded {description} with {len(df)} entries from {file_path_pkl}")
+	else:
+		raise FileNotFoundError(f"Could not find {description} file. Looked for both {file_path_gz} and {file_path_pkl}")
+	return df
+
+def load_and_prepare_data(args):
+	"""Load and merge all reference data"""
+	proc_dp = args.proc_dp
+	
+	# Load mol_df
+	mol_df_path_gz = os.path.join(proc_dp, "mol_df.pkl.gz")
+	mol_df_path_pkl = os.path.join(proc_dp, "mol_df.pkl")
+	mol_df = load_dataframe(mol_df_path_gz, mol_df_path_pkl, "mol_df")
+	
+	# Load spec_df
+	spec_df_path_gz = os.path.join(proc_dp, "spec_df.pkl.gz")
+	spec_df_path_pkl = os.path.join(proc_dp, "spec_df.pkl")
+	spec_df = load_dataframe(spec_df_path_gz, spec_df_path_pkl, "spec_df")
+	
+	# Merge with mol_df
+	has_input_mol_id = 'input_mol_id' in mol_df.columns
+	if has_input_mol_id:
+		print("mol_df contains 'input_mol_id' column")
+		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'input_mol_id', 'mol']], on='mol_id', how='left')
+	else:
+		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'mol']], on='mol_id', how='left')
+	
+	# Load pred_df
+	pred_df = pd.read_pickle(args.predicted_fp)
+	print(f"Loaded pred_df with {len(pred_df)} predictions")
+	if 'mol_id' not in pred_df.columns:
+		pred_df = pred_df.merge(spec_df, on='spec_id', how='left')
+	else:
+		pred_df = pred_df.merge(spec_df, on=['spec_id','mol_id'], how='left')
+	print(f"Merged pred_df now has {len(pred_df)} rows")
+	
+	# Add pred_peaks column
+	pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
+	
+	return pred_df
+
+def parse_peaks_from_string(peaks_data):
+	"""Parse true peaks from various data formats"""
+	# Check if data is NaN/None (handle both scalar and array cases)
+	try:
+		is_true_peak_na = peaks_data is None or (isinstance(peaks_data, (float, np.floating)) and np.isnan(peaks_data))
+	except:
+		is_true_peak_na = False
+	
+	if is_true_peak_na:
+		# No true peaks available
+		return np.array([]), np.array([])
+	elif isinstance(peaks_data, str):
+		# String format: "mz1 int1\nmz2 int2\n..."
+		if peaks_data.strip():
+			peak_lines = peaks_data.strip().split('\n')
+			true_mzs, true_ints = [], []
+			for line in peak_lines:
+				if line.strip():
+					parts = line.strip().split()
+					if len(parts) >= 2:
+						try:
+							mz = float(parts[0])
+							intensity = float(parts[1])
+							true_mzs.append(mz)
+							true_ints.append(intensity)
+						except ValueError:
+							continue
+			return np.array(true_mzs), np.array(true_ints)
+		else:
+			return np.array([]), np.array([])
+	elif isinstance(peaks_data, (list, np.ndarray)):
+		# Array format: assume it's already parsed peaks data
+		try:
+			if len(peaks_data) > 0 and isinstance(peaks_data[0], (list, tuple)):
+				# Format: [(mz1, int1), (mz2, int2), ...]
+				true_mzs = [peak[0] for peak in peaks_data]
+				true_ints = [peak[1] for peak in peaks_data]
+				return np.array(true_mzs), np.array(true_ints)
+			else:
+				# Unknown format
+				return np.array([]), np.array([])
+		except:
+			return np.array([]), np.array([])
+	else:
+		# Unknown data type
+		return np.array([]), np.array([])
+
+def process_prediction_data(pred_data):
+	"""Process prediction data to extract formulas, nodes, and probabilities"""
+	# Get formula dict
+	formula_dict = {i:[s,p] for i,s,p in zip(pred_data['pred_formula_formula_idxs'],
+		pred_data['pred_formula_strs'],
+		pred_data['pred_formula_probs'])}
+	
+	# Sort by prob
+	formula_dict = dict(sorted(formula_dict.items(), key=lambda item: item[1][1], reverse=True))
+	
+	# Map formula to nodes
+	formula_node_map = {i:[] for i in set(pred_data['pred_joint_formula_idxs'])}
+	for f_id, n_id in zip(pred_data['pred_joint_formula_idxs'], pred_data['pred_joint_node_idxs']):
+		formula_node_map[f_id].append(n_id)
+	
+	pred_formula_node_probs = pred_data['pred_formula_node_probs']
+	pred_node_formula_probs = pred_data['pred_node_formula_probs']
+	pred_joint_formula_idxs = pred_data['pred_joint_formula_idxs']
+	pred_joint_node_idxs = pred_data['pred_joint_node_idxs']
+	
+	node_formula_prob_dict = {}
+	formula_node_prob_dict = {}
+	for f_id, n_id, f_n_prob, n_f_prob in zip(pred_joint_formula_idxs,
+											pred_joint_node_idxs,
+											pred_formula_node_probs,
+											pred_node_formula_probs):
+		node_formula_prob_dict[(f_id, n_id)] = n_f_prob
+		formula_node_prob_dict[(f_id, n_id)] = f_n_prob
+	
+	# Get node masks
+	frag_node_masks = th_long_to_mask(pred_data['pred_node_ccs'])
+	all_atom_ids = th.arange(0, frag_node_masks.shape[1]).to(th.long)
+	node_dict = {i:{"pred_node_probs":p,"pred_node_ccs": all_atom_ids[c].tolist()} for i,p,c in zip(pred_data['pred_node_node_idxs'],
+		pred_data['pred_node_probs'],
+		frag_node_masks)}
+	
+	return formula_dict, formula_node_map, node_dict, formula_node_prob_dict
+
+def build_display_data(formula_dict, formula_node_map, node_dict, formula_node_prob_dict, mol):
+	"""Build display data structure for plotting"""
+	display_data = []
+	
+	for f_idx, f_id in enumerate(formula_dict.keys()):
+		f_value = formula_dict[f_id]
+		formula, f_pred_prob = f_value[0], f_value[1]
+		
+		f_mz = 0.0
+		formula_data = {
+			"formula_idx": f_idx,
+			"formula": formula,
+			"formula_prob": f_pred_prob,
+			"formula_mass": f_mz,
+			"peak_idx": f_idx,
+			"peak_id": f_idx,
+			"frag": []
+		}
+		
+		for n_id in formula_node_map[f_id]:
+			if n_id not in node_dict:
+				continue
+			pred_node_prob = node_dict[n_id]["pred_node_probs"]
+			frag_atom_ids = node_dict[n_id]["pred_node_ccs"]
+			formula_data["frag"].append(
+				{
+					"node_atom_indices": frag_atom_ids,
+					"node_bond_indices": get_highlighted_bonds(mol, frag_atom_ids),
+					"node_prob": pred_node_prob,
+					"formula_node_prob": formula_node_prob_dict.get((f_id, n_id), 0.0)
+				}
+			)
+		display_data.append(formula_data)
+	
+	return display_data
+
+def plot_mirror_spectra(pred_data, display_data, output_dir):
+	"""Generate and save mirror plot for a single spectrum"""
+	smiles = pred_data['smiles']
+	mol = pred_data['mol']
+	spec_id = pred_data['spec_id']
+	mol_id = pred_data['mol_id']
+	
+	# Extract predicted spectrum data
+	pred_spec_mzs = np.array(pred_data['pred_mzs'])
+	pred_spec_ints = np.array(pred_data['pred_ints'])
+	
+	# Parse true peaks
+	peaks_data = pred_data.get('peaks', None)
+	true_spec_mzs, true_spec_ints = parse_peaks_from_string(peaks_data)
+	
+	# Skip if no data available
+	if len(pred_spec_mzs) == 0 and len(true_spec_mzs) == 0:
+		return False
+	
+	# Get molecule image
+	img = get_mol_im(smiles)
+	w, h = img.size
+	ratio = w / h
+	
+	# Setup plot layout
+	right_ncols = 3 + 1
+	right_rows = 8
+	figsize = (24, 16)
+	frag_col_w = figsize[1] / right_rows * 0.5 * ratio * right_ncols
+	frag_col_w = int(ceil(frag_col_w)) + 2
+	
+	fig = plt.figure(figsize=figsize, dpi=300)
+	grand_gs = GridSpec(ncols=figsize[0], nrows=1, figure=fig)
+	left_gs = grand_gs[0:figsize[0]-frag_col_w].subgridspec(ncols=1, nrows=1)
+	right_gs = grand_gs[figsize[0]-frag_col_w:].subgridspec(ncols=right_ncols, nrows=right_rows)
+	
+	# Plot spectrum
+	ax = fig.add_subplot(left_gs[0], facecolor="white")
+	plot_spectra_axes(ax,
+					true_spec_mzs,
+					true_spec_ints,
+					pred_spec_mzs,
+					pred_spec_ints,
+					bar_width=1,
+					font_size=24,
+					true_ints_thresh=0,
+					pred_ints_thresh=0,
+					colors=['green', 'red'],
+					peak_labels=[])
+	
+	# Plot formulas and fragments
+	for f_idx, formula_data in enumerate(display_data):
+		if f_idx >= right_rows:
+			break
+		formula = formula_data['formula']
+		peak_id = formula_data['peak_id']
+		ax = fig.add_subplot(right_gs[f_idx, 0])
+		plot_formula_axes(ax, formula, peak_id, formula_data['formula_prob'])
+		
+		for frag_idx, frag in enumerate(formula_data['frag']):
+			if frag_idx + 1 >= right_ncols:
+				break
+			ax = fig.add_subplot(right_gs[f_idx, frag_idx + 1])
+			h_atom_list = frag['node_atom_indices']
+			h_bond_list = frag['node_bond_indices']
+			plot_mol_frag_axes(ax, mol, h_atom_list, h_bond_list, frag['formula_node_prob'])
+	
+	# Save plot
+	plot_filename = f"mirror_plot_spec_{spec_id}_mol_{mol_id}.png"
+	plot_path = os.path.join(output_dir, plot_filename)
+	plt.tight_layout()
+	plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+	plt.close()
+	
+	print(f"Saved mirror plot: {plot_path}")
+	print(f"  True peaks: {len(true_spec_mzs)}, Predicted peaks: {len(pred_spec_mzs)}")
+	
+	return True
+
 if __name__ == "__main__":
 	
 	parser = argparse.ArgumentParser()
@@ -256,272 +504,24 @@ if __name__ == "__main__":
 	parser.add_argument("--num_plots", type=int, required=False, help="Number of plots to generate", default=400)
 	
 	args = parser.parse_args()
-  	# Load reference data once - try .pkl.gz first, then .pkl, then error
-	proc_dp = args.proc_dp
-	mol_df_path_gz = os.path.join(proc_dp, "mol_df.pkl.gz")
-	mol_df_path_pkl = os.path.join(proc_dp, "mol_df.pkl")
 	
-	if os.path.exists(mol_df_path_gz):
-		mol_df = pd.read_pickle(mol_df_path_gz)
-		print(f"Loaded mol_df with {len(mol_df)} molecules from {mol_df_path_gz}")
-	elif os.path.exists(mol_df_path_pkl):
-		mol_df = pd.read_pickle(mol_df_path_pkl)
-		print(f"Loaded mol_df with {len(mol_df)} molecules from {mol_df_path_pkl}")
-	else:
-		raise FileNotFoundError(f"Could not find mol_df file in {proc_dp}. Looked for both mol_df.pkl.gz and mol_df.pkl")
+	# Load and prepare data
+	pred_df = load_and_prepare_data(args)
 	
-	spec_df_path_gz = os.path.join(proc_dp, "spec_df.pkl.gz")
-	spec_df_path_pkl = os.path.join(proc_dp, "spec_df.pkl")
-	
-	if os.path.exists(spec_df_path_gz):
-		spec_df = pd.read_pickle(spec_df_path_gz)
-		print(f"Loaded spec_df with {len(spec_df)} spectra from {spec_df_path_gz}")
-	elif os.path.exists(spec_df_path_pkl):
-		spec_df = pd.read_pickle(spec_df_path_pkl)
-		print(f"Loaded spec_df with {len(spec_df)} spectra from {spec_df_path_pkl}")
-	else:
-		raise FileNotFoundError(f"Could not find spec_df file in {proc_dp}. Looked for both spec_df.pkl.gz and spec_df.pkl")
-
-	output_dir = "output/spectra_plots"
+	output_dir = args.save_dp
 	os.makedirs(output_dir, exist_ok=True)
- 
-	has_input_mol_id = 'input_mol_id' in mol_df.columns
-	if has_input_mol_id:
-		print("mol_df contains 'input_mol_id' column")
-		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'input_mol_id', 'mol']], on='mol_id', how='left')
-	else:
-		spec_df = spec_df.merge(mol_df[['mol_id', 'smiles', 'inchikey_s', 'mol']], on='mol_id', how='left')
-	
-	pred_df = pd.read_pickle(args.predicted_fp)
-	print(f"Loaded pred_df with {len(pred_df)} predictions")
-	if 'mol_id' not in pred_df.columns:
-		pred_df = pred_df.merge(spec_df, on='spec_id', how='left')
-	else:
-		pred_df = pred_df.merge(spec_df, on=['spec_id','mol_id'], how='left')
-	print(f"Merged pred_df now has {len(pred_df)} rows")
-	pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
    
 	# Limit to first few examples for testing
 	num_plots = min(args.num_plots, len(pred_df))
 	
 	for idx, pred_data in tqdm(pred_df.head(num_plots).iterrows(), total=num_plots):
-		smiles = pred_data['smiles']
-		mol = pred_data['mol']
-
-		# get formula dict
-		formula_dict = {i:[s,p] for i,s,p in zip(pred_data['pred_formula_formula_idxs'],
-			pred_data['pred_formula_strs'],
-   			pred_data['pred_formula_probs'])}
-
-		# sort by prob
-		formula_dict = dict(sorted(formula_dict.items(), key=lambda item: item[1][1], reverse=True))
-
-		# map formula to nodes
-		formula_node_map = {i:[] for i in set(pred_data['pred_joint_formula_idxs'])}
-		for f_id, n_id in zip(pred_data['pred_joint_formula_idxs'], pred_data['pred_joint_node_idxs']):
-			formula_node_map[f_id].append(n_id)
-
-		pred_formula_node_probs = pred_data['pred_formula_node_probs']
-		pred_node_formula_probs = pred_data['pred_node_formula_probs']
-		pred_joint_formula_idxs = pred_data['pred_joint_formula_idxs']
-		pred_joint_node_idxs = pred_data['pred_joint_node_idxs']
-
-		node_formula_prob_dict = {}
-		formula_node_prob_dict ={}
-		for f_id, n_id, f_n_prob, n_f_prob in zip(pred_joint_formula_idxs,
-												pred_joint_node_idxs,
-												pred_formula_node_probs,
-												pred_node_formula_probs):
-			node_formula_prob_dict[(f_id, n_id)] =  n_f_prob
-			formula_node_prob_dict[(f_id, n_id)] =  f_n_prob
-            
-		# get node masks
-		frag_node_masks = th_long_to_mask(pred_data['pred_node_ccs'])
-		all_atom_ids = th.arange(0, frag_node_masks.shape[1]).to(th.long) #.repeat(frag_node_masks.shape[0],1)
-		node_dict = {i:{"pred_node_probs":p,"pred_node_ccs": all_atom_ids[c].tolist()} for i,p,c in zip(pred_data['pred_node_node_idxs'],
-			pred_data['pred_node_probs'],
-   			frag_node_masks)}
-
-		display_data = []
-		peak_labels = []
-  
+		# Process prediction data
+		formula_dict, formula_node_map, node_dict, formula_node_prob_dict = process_prediction_data(pred_data)
 		
-		for f_idx, f_id in enumerate(formula_dict.keys()):
-
-			# get formula idx
-			f_value = formula_dict[f_id]
-			formula, f_pred_prob = f_value[0], f_value[1]
-						
-			# in case peak is created by more then one forumla
-			#. if peak_idx not in peak_labels:
-			#	peak_labels[peak_idx] = peak_id
-			#	peak_id += 1
-			f_mz = 0.0
-			formula_data = {
-				"formula_idx": f_idx, 
-				"formula": formula,
-				"formula_prob": f_pred_prob,
-				"formula_mass": f_mz,
-				"peak_idx": f_idx,
-				"peak_id": f_idx,
-				"frag": []
-			}
-			
-			for n_id in formula_node_map[f_id]:
-				if n_id not in node_dict:
-					continue
-				pred_node_prob = node_dict[n_id]["pred_node_probs"]
-				#formula_node_prob = node_dict[n_id][1]
-				#if formula_node_prob < 1e-3:
-				#	continue
-				# get node idxs
-				#, pred_data['mol_num_nodes'])
-				# print(node_dict[n_id][0])
-				frag_atom_ids = node_dict[n_id]["pred_node_ccs"]
-				formula_data["frag"].append(
-					{
-						"node_atom_indices": frag_atom_ids,
-						"node_bond_indices": get_highlighted_bonds(mol, frag_atom_ids),
-						"node_prob": pred_node_prob,
-						"formula_node_prob": formula_node_prob_dict.get((f_id, n_id), 0.0)
-					}
-				)
-			display_data.append(formula_data)
-
-		spec_id = pred_data['spec_id']
-		mol_id = pred_data['mol_id']
+		# Build display data
+		display_data = build_display_data(formula_dict, formula_node_map, node_dict, formula_node_prob_dict, pred_data['mol'])
 		
-		# Extract predicted spectrum data
-		pred_spec_mzs = np.array(pred_data['pred_mzs'])
-		pred_spec_ints = np.array(pred_data['pred_ints'])
-		pred_spec_mzs = pred_spec_mzs # Adjust for plotting
-  
-		# Parse true peaks from string format
-		if 'peaks' not in pred_data or pred_data['peaks'] is None:
-			peaks_data = None
-		else:
-			peaks_data = pred_data['peaks']
-		
-		# Handle different data types for peaks
-		try:
-			# Check if data is NaN/None (handle both scalar and array cases)
-			is_true_peak_na = peaks_data is None or (isinstance(peaks_data, (float, np.floating)) and np.isnan(peaks_data))
-		except:
-			is_true_peak_na = False
-		
-		if is_true_peak_na:
-			# No true peaks available
-			true_spec_mzs = np.array([])
-			true_spec_ints = np.array([])
-		elif isinstance(peaks_data, str):
-			# String format: "mz1 int1\nmz2 int2\n..."
-			if peaks_data.strip():
-				peak_lines = peaks_data.strip().split('\n')
-				true_mzs, true_ints = [], []
-				for line in peak_lines:
-					if line.strip():
-						parts = line.strip().split()
-						if len(parts) >= 2:
-							try:
-								mz = float(parts[0])
-								intensity = float(parts[1])
-								true_mzs.append(mz)
-								true_ints.append(intensity)
-							except ValueError:
-								continue
-				true_spec_mzs = np.array(true_mzs)
-				true_spec_ints = np.array(true_ints)
-			else:
-				true_spec_mzs = np.array([])
-				true_spec_ints = np.array([])
-		elif isinstance(peaks_data, (list, np.ndarray)):
-			# Array format: assume it's already parsed peaks data
-			try:
-				if len(peaks_data) > 0 and isinstance(peaks_data[0], (list, tuple)):
-					# Format: [(mz1, int1), (mz2, int2), ...]
-					true_mzs = [peak[0] for peak in peaks_data]
-					true_ints = [peak[1] for peak in peaks_data]
-					true_spec_mzs = np.array(true_mzs)
-					true_spec_ints = np.array(true_ints)
-				else:
-					# Unknown format
-					true_spec_mzs = np.array([])
-					true_spec_ints = np.array([])
-			except:
-				true_spec_mzs = np.array([])
-				true_spec_ints = np.array([])
-		else:
-			# Unknown data type
-			true_spec_mzs = np.array([])
-			true_spec_ints = np.array([])
-		
-		# Skip if no data available
-		if len(pred_spec_mzs) == 0 and len(true_spec_mzs) == 0:
-			continue
-		
-		img = get_mol_im(smiles)
-		w, h = img.size
-		print(w,h)
-		ratio = w/h
-		print(w,h, ratio)
-
-		right_ncols = 5 + 1
-		right_rows = 8
-
-		figsize = (24,16)
-		frag_col_w = figsize[1] / right_rows * 0.5 * ratio  * right_ncols
-		frag_col_w = int(ceil(frag_col_w)) + 2
-		print(frag_col_w)
-
-		fig = fig = plt.figure(figsize=figsize, dpi=300)
-		grand_gs = GridSpec(ncols= figsize[0], nrows=1, figure=fig)
-		left_gs = grand_gs[0:figsize[0]-frag_col_w].subgridspec(ncols = 1, nrows = 1)
-		right_gs = grand_gs[figsize[0]-frag_col_w:].subgridspec(ncols = right_ncols, nrows = right_rows)
-
-		# spectrum ax
-		ax = fig.add_subplot(left_gs[0], facecolor="white")
-		plot_spectra_axes(ax, 
-							true_spec_mzs,
-						true_spec_ints,
-						pred_spec_mzs, 
-						pred_spec_ints, 
-						bar_width=1, 
-						font_size = 24,  
-						true_ints_thresh = 0,
-						pred_ints_thresh = 0,
-						colors = ['green', 'red'], 
-						peak_labels = peak_labels)
-		# right side
-		grid = [right_ncols, right_rows]
-		for f_idx, formula_data in enumerate(display_data):
-			if f_idx >= right_rows:
-				break
-			formula = formula_data['formula']
-			formula_id = formula_data['formula']
-			peak_id = formula_data['peak_id']
-			ax = fig.add_subplot(right_gs[f_idx, 0])
-			#formula_metrics = {"Formula Prob": formula_data['formula_prob'], "Mass" : formula_data['formula_mass']}
-			plot_formula_axes(ax, formula, peak_id, formula_data['formula_prob']) 
-			for frag_idx, frag in  enumerate(formula_data['frag']):
-				if frag_idx + 1 >= right_ncols:
-					break
-				ax = fig.add_subplot(right_gs[f_idx, frag_idx + 1])
-				h_atom_list = frag['node_atom_indices']
-				h_bond_list = frag['node_bond_indices']
-				#metrics = frag['metrics']
-				# = []
-				plot_mol_frag_axes(ax, mol, h_atom_list, h_bond_list, frag['formula_node_prob'])
-		
-		# Save plot
-		plot_filename = f"mirror_plot_spec_{spec_id}_mol_{mol_id}.png"
-		plot_path = os.path.join(output_dir, plot_filename)
-		plt.tight_layout()
-		plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-		plt.close()
-		
-		print(f"Saved mirror plot: {plot_path}")
-		print(f"  True peaks: {len(true_spec_mzs)}, Predicted peaks: {len(pred_spec_mzs)}")
-		#if cos_sim != 'N/A':
-		#	print(f"  Cosine similarity: {cos_sim:.3f}")
+		# Generate and save plot
+		plot_mirror_spectra(pred_data, display_data, output_dir)
 	
 	print(f"\nCompleted generating {num_plots} mirror plots in {output_dir}")
