@@ -914,6 +914,8 @@ def run_inference_df(
 							)
 				
 				# assemble row and append
+				# Add rebase flag: True if indices were rebased, False otherwise
+				rebased = bool(rebase_indices)
 				data_row = [
 					b_spec_id.item(), 
 					b_mol_id, 
@@ -929,7 +931,8 @@ def run_inference_df(
 					b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else np.nan,
 					b_pred_node_formula_probs.tolist() if b_pred_node_formula_probs is not None else np.nan,
 					b_pred_node_probs.tolist() if b_pred_node_probs is not None else np.nan,
-					b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else np.nan
+					b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else np.nan,
+					rebased
 				]
 
 				if return_formula_and_cc:
@@ -961,7 +964,8 @@ def run_inference_df(
 		"pred_formula_formula_idxs", "pred_formula_probs",
 		"pred_joint_formula_idxs", "pred_formula_node_probs",
 		"pred_joint_node_idxs", "pred_node_formula_probs",
-		"pred_node_probs", "pred_node_node_idxs"
+		"pred_node_probs", "pred_node_node_idxs",
+		"index_rebased"
 	] 
 	if return_formula_and_cc:
 		columns.extend(["pred_formula_strs", "pred_node_ccs"])
