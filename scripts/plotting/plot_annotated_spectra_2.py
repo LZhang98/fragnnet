@@ -449,7 +449,28 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 	frag_col_w = figsize[1] / right_rows * 0.5 * ratio * right_ncols
 	frag_col_w = int(ceil(frag_col_w)) + 2
 	
+	# Build title with additional metadata
+	title_parts = [f'Spec ID: {spec_id}', f'Mol ID: {mol_id}']
+	
+	# Add collision energy if available
+	col_energy = pred_data.get('col_energy', None)
+	if col_energy is not None and pd.notna(col_energy) and str(col_energy).strip():
+		title_parts.append(f'CE: {col_energy}')
+	
+	# Add adduct/precursor type if available
+	prec_type = pred_data.get('prec_type', None)
+	if prec_type is not None and pd.notna(prec_type) and str(prec_type).strip():
+		title_parts.append(f'Adduct: {prec_type}')
+	
+	# Add instrument type if available
+	inst_type = pred_data.get('inst_type', None)
+	if inst_type is not None and pd.notna(inst_type) and str(inst_type).strip():
+		title_parts.append(f'Inst: {inst_type}')
+	
+	title = ' | '.join(title_parts)
+	
 	fig = plt.figure(figsize=figsize, dpi=300)
+	fig.suptitle(title, fontsize=28, fontweight='bold')
 	grand_gs = GridSpec(ncols=figsize[0], nrows=1, figure=fig)
 	left_gs = grand_gs[0:figsize[0]-frag_col_w].subgridspec(ncols=1, nrows=1)
 	right_gs = grand_gs[figsize[0]-frag_col_w:].subgridspec(ncols=right_ncols, nrows=right_rows)
@@ -492,11 +513,11 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 	# Save plot
 	plot_filename = f"mirror_plot_spec_{spec_id}_mol_{mol_id}.png"
 	plot_path = os.path.join(output_dir, plot_filename)
-	try:
-		plt.tight_layout()
-	except ValueError as e:
+	#try:
+	#	plt.tight_layout()
+	#except ValueError as e:
 		# tight_layout may fail if there are math parsing errors in text
-		print(f"Warning: tight_layout failed with error: {e}")
+	#	print(f"Warning: tight_layout failed with error: {e}")
 	plt.savefig(plot_path, dpi=150, bbox_inches='tight')
 	plt.close()
 	

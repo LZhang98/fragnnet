@@ -146,7 +146,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--batch_cutoff",
 		type=int,
-		default=5,
+		default=50,
 		help="Number of batches to evaluate (-1 for all)"
 	)
 	args = parser.parse_args()
