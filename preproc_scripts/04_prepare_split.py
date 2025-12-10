@@ -305,4 +305,3 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 
 	make_splits(args)
-
