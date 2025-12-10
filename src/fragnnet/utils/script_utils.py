@@ -784,7 +784,7 @@ def run_inference_df(
 			# Extract formula strings and PyG object if needed
 			frag_formula_str = batch_input.get("frag_formula_str", None)
 			frag_pyg = batch_input.get("frag_pyg", None)
-			frag_formula_peak_mzs = batch_input.get("frag_formula_peak_mzs", None)s
+			frag_formula_peak_mzs = batch_input.get("frag_formula_peak_mzs", None)
 
 			# ============================s
 			# per-spectrum processing
