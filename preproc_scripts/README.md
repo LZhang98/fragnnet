@@ -8,6 +8,28 @@ The raw NIST data can be exported using the instructions [here](https://github.c
 
 ## Step 1: Processing raw data into CSV
 
+This step Writes `<output_name>_df.csv` (or `.json`) in `data/df/` by default. Each row is one spectrum. Columns are defined here:
+- `spec_id`: integer id within this exported file.
+- `dset`: dataset/source name.
+- `dset_spec_id`: source-specific spectrum identifier.
+- `peaks`: multiline string, one line per peak as `mz intensity`.
+- `prec_mz`: precursor m/z (float).
+- `prec_type`: precursor/adduct string (e.g., `[M+H]+`).
+- `spec_type`: spectrum type/level (e.g., `MS2`).
+- `ion_mode`: `P`/`N` when known.
+- `ion_type`: ionization type (e.g., `ESI`, `EI`) when known.
+- `inst_type` / `inst`: instrument metadata when present.
+- `col_energy`, `col_energy_extra_1`, `col_energy_extra_2`: collision energies (strings with units).
+- `frag_mode`: fragmentation mode (e.g., `CID`, `HCD`, `EI`) when present.
+- `num_peaks`: peak count if provided by source.
+- `exact_mass` / `mw`: exact or molecular weight when available.
+- `formula` / `smiles` / `inchi` / `inchikey`: structure metadata if present.
+- `name` / `title`: compound name or title when present.
+- `ramped` / `stepped` / `normalized`: flags parsed from collision energy fields when applicable.
+- Misc placeholders: `notes`, `rating`, `cas_num`, `pressure`, `ri`, `ionization` extras, etc., kept for upstream completeness.
+
+Some input formats also emit helper split files (e.g., `*_fold.csv` for MS-Gym or Spectraverse) containing only ids needed for downstream splitting.
+
 ### NIST 20
 This assumes that the NIST20 data is in a folder `data/raw/nist_20`, containing two files: `hr_nist_msms.MSP` (the MSP file with the spectrum information) and `hr_nist_msms.MOL` (the MOL file with the molecule structures).
 
@@ -41,11 +63,50 @@ python preproc_scripts/01_prepare_df.py \
 
 ## Step 2: Processing CSV into Pickle Files
 
-This step converts the data into binary format (pickle) for training and evaluation.
+This step  reads the stage-1 CSVs, converts the data into binary format (pickle), writes pickles to `proc_dp` for training and evaluation.
 
-`spec_df.pkl` contains spectrum information.
-`mol_df.pkl` contains molecule information.
-`ann_df.pkl` contains annotation information.
+- `spec_df.pkl` — contains spectrum information, one row per spectrum:
+	- `spec_id`: integer id unique within the processed set.
+	- `mol_id`: integer id linking to `mol_df`.
+	- `prec_type`: standardized precursor/adduct string.
+	- `inst_type`: standardized instrument type.
+	- `frag_mode`: standardized fragmentation mode.
+	- `spec_type`: spectrum type (e.g., `MS2`).
+	- `ion_mode`: `P`/`N`.
+	- `dset`: dataset name.
+	- `dset_spec_id`: source-specific spectrum id.
+	- `col_gas`: collision gas (may be NaN).
+	- `res`: inferred m/z resolution (currently informational).
+	- `ace`, `ace_extra_1`, `ace_extra_2`: parsed absolute collision energies (first/second/third for ramped or stepped).
+	- `nce`, `nce_extra_1`, `nce_extra_2`: parsed normalized collision energies (first/second/third for ramped or stepped).
+	- `has_ace`, `has_nce`: booleans for CE presence.
+	- `prec_mz`: precursor m/z (float; inferred when missing using molecular mass).
+	- `peaks`: list of `(mz, intensity)` float pairs.
+	- `ri`: retention index if present.
+	- `formula`: molecular formula from source (dropped before saving when inconsistent with molecule formula).
+	- `inchikey`: full InChIKey from source (dropped before saving when inconsistent).
+	- `exact_mass`: exact mass from source (dropped before saving when inconsistent).
+	- `group_id`: grouping id for spectra sharing compound/precursor context.
+
+- `mol_df.pkl` — contains molecule information, one row per unique canonical SMILES:
+	- `smiles`, `mol_id`, `mol` (RDKit Mol object).
+	- `inchikey_s`: first 14 chars of InChIKey.
+	- `scaffold`: Murcko scaffold SMILES.
+	- `formula`, `inchi`.
+	- `mw`, `exact_mw`: average and exact molecular weights.
+	- `num_atoms`, `num_bonds`, `num_radicals`.
+	- `charge`, `single_mol` (connected component flag).
+
+- `ann_df.pkl` — contains annotation information, one row per annotated spectrum (only when annotations parsed):
+	- `dset_spec_id`, `spec_id`, `mol_id`, `prec_type`, `formula`.
+	- `ann_peak_mzs`: list of annotated peak m/z values.
+	- `ann_products`: product formula strings.
+	- `ann_losses`: neutral loss formula strings.
+	- `ann_isotopes`: isotope annotations.
+	- `ann_exact_mzs`: exact m/z values for annotations.
+
+- Debug pickles: `no_mol_df.pkl`, `diff_formula_df.pkl`, `diff_inchikey_df.pkl`, `diff_mass_df.pkl` record rows dropped or with inconsistencies.
+
 
 ### NIST 20
 ```bash
