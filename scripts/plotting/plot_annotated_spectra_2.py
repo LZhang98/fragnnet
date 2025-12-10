@@ -344,12 +344,13 @@ def parse_peaks_from_string(peaks_data):
 def process_prediction_data(pred_data):
 	"""Process prediction data to extract formulas, nodes, and probabilities"""
 	# Get formula dict
-	formula_dict = {i:[s,p] for i,s,p in zip(pred_data['pred_formula_formula_idxs'],
+	formula_dict = {i:{"formula":s,"mz":m,"prob":p} for i,s,m,p in zip(pred_data['pred_formula_formula_idxs'],
 		pred_data['pred_formula_strs'],
+		pred_data['frag_formula_peak_mzs'],
 		pred_data['pred_formula_probs'])}
 	
 	# Sort by prob
-	formula_dict = dict(sorted(formula_dict.items(), key=lambda item: item[1][1], reverse=True))
+	formula_dict = dict(sorted(formula_dict.items(), key=lambda item: item[1]["prob"], reverse=True))
 	
 	# Map formula to nodes
 	formula_node_map = {i:[] for i in set(pred_data['pred_joint_formula_idxs'])}
@@ -360,7 +361,7 @@ def process_prediction_data(pred_data):
 	pred_node_formula_probs = pred_data['pred_node_formula_probs']
 	pred_joint_formula_idxs = pred_data['pred_joint_formula_idxs']
 	pred_joint_node_idxs = pred_data['pred_joint_node_idxs']
-	
+ 
 	node_formula_prob_dict = {}
 	formula_node_prob_dict = {}
 	for f_id, n_id, f_n_prob, n_f_prob in zip(pred_joint_formula_idxs,
@@ -385,10 +386,9 @@ def build_display_data(formula_dict, formula_node_map, node_dict, formula_node_p
 	display_data = []
 	
 	for f_idx, f_id in enumerate(formula_dict.keys()):
-		f_value = formula_dict[f_id]
-		formula, f_pred_prob = f_value[0], f_value[1]
+		formula, f_pred_prob = formula_dict[f_id]["formula"], formula_dict[f_id]["prob"]
 		
-		f_mz = 0.0
+		f_mz = formula_dict[f_id]["mz"]
 		formula_data = {
 			"formula_idx": f_id,
 			"formula": formula,

@@ -745,8 +745,6 @@ def run_inference_df(
 			# ============================
 			# forumla log probs p(f)
 			pred_formula_probs = th.exp(batch_result['pred_formula_logprobs'].detach().cpu()) if "pred_formula_logprobs" in batch_result else None
-			# formula m/z values
-			pred_formula_mzs = batch_result['pred_formula_mzs'].detach().cpu() if "pred_formula_mzs" in batch_result else None
 			# log prob p(n|f), node conditioned on formula
 			pred_formula_node_probs = th.exp(batch_result['pred_formula_node_logprobs'].detach().cpu()) if "pred_formula_node_logprobs" in batch_result else None
 			# log prob p(f|n), formula conditioned on node
@@ -779,18 +777,22 @@ def run_inference_df(
 			pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs'].detach().cpu() if "pred_formula_batch_idxs" in BATCH_IDX_VARS else None
 			# node prob batch idxs, maps each entry in pred_node_logprobs to its batch idx
 			pred_node_batch_idxs = batch_result['pred_node_batch_idxs'].detach().cpu() if "pred_node_batch_idxs" in BATCH_IDX_VARS else None
-	
-			# ============================
+
+			# =============================
+			# extract formula strings and PyG object if needed
+			# =============================
+			# Extract formula strings and PyG object if needed
+			frag_formula_str = batch_input.get("frag_formula_str", None)
+			frag_pyg = batch_input.get("frag_pyg", None)
+			frag_formula_peak_mzs = batch_input.get("frag_formula_peak_mzs", None)s
+
+			# ============================s
 			# per-spectrum processing
 			# ============================	
 			# Get cumulative counts for rebasing from batch_input
 			# These are tensors of shape (batch_size + 1) containing offsets
 			frag_formula_cumsizes = batch_input["frag_formula_cumsizes"].detach().cpu()
 			frag_num_nodes = batch_input["frag_num_nodes"].detach().cpu()
-
-			# Extract formula strings and PyG object if needed
-			frag_formula_str = batch_input.get("frag_formula_str", None)
-			frag_pyg = batch_input.get("frag_pyg", None)
 
 			for b_idx in range(batch_size):
 				# per-spectrum masks and basic fields
@@ -801,6 +803,7 @@ def run_inference_df(
 				b_spec_mzs = pred_mzs[b_peak_mask]
 				b_spec_ints = pred_ints[b_peak_mask]
 				b_frag_formula_peak_idxs = frag_formula_peak_idxs[b_peak_mask] if frag_formula_peak_idxs is not None else None
+				b_frag_formula_peak_mzs = frag_formula_peak_mzs[b_peak_mask] if frag_formula_peak_mzs is not None else None
 
 				# Filter joint distribution data (P(f,n)), p(n|f) and p(f|n) for the current spectrum/molecule (b_idx)
 				b_joint_mask = (joint_batch_idxs == b_idx) if joint_batch_idxs is not None else None
@@ -816,7 +819,6 @@ def run_inference_df(
 				b_pred_formula_mask = (pred_formula_batch_idxs == b_idx) if pred_formula_batch_idxs is not None else None
 				b_pred_formula_formula_idxs = pred_formula_formula_idxs[b_pred_formula_mask] if pred_formula_formula_idxs is not None and b_pred_formula_mask is not None else None
 				b_pred_formula_probs = pred_formula_probs[b_pred_formula_mask] if pred_formula_probs is not None and b_pred_formula_mask is not None else None
-				b_pred_formula_mzs = pred_formula_mzs[b_pred_formula_mask] if pred_formula_mzs is not None and b_pred_formula_mask is not None else None
 				
 				# node probabilities P(n) for the current spectrum/molecule (b_idx)
 				b_pred_node_mask = (pred_node_batch_idxs == b_idx) if pred_node_batch_idxs is not None else None
@@ -841,7 +843,7 @@ def run_inference_df(
 					
 				# Apply intensity filtering
 				(
-					b_spec_ints, b_spec_mzs,
+					b_spec_ints, b_spec_mzs, b_frag_formula_peak_mzs, b_frag_formula_peak_idxs,
 					b_pred_formula_formula_idxs, b_pred_formula_probs,
 					b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
 					b_pred_joint_node_idxs, b_pred_node_formula_probs,
@@ -850,6 +852,7 @@ def run_inference_df(
 					min_peak_int,
 					b_spec_ints,
 					b_spec_mzs,
+					b_frag_formula_peak_mzs,
 					b_frag_formula_peak_idxs,
 					b_pred_formula_formula_idxs,
 					b_pred_formula_probs,
@@ -866,13 +869,12 @@ def run_inference_df(
 				orig_formula_idxs_for_lookup = b_pred_formula_formula_idxs.clone() if b_pred_formula_formula_idxs is not None else None
 				orig_node_idxs_for_lookup = b_pred_node_node_idxs.clone() if b_pred_node_node_idxs is not None else None
 				
-				
 				if rebase_indices:
 					# Rebase formula indices to 0-based contiguous
 					if b_pred_formula_formula_idxs is not None and len(b_pred_formula_formula_idxs) > 0:
 						unique_f_idxs = th.unique(b_pred_formula_formula_idxs, sorted=True)
 						formula_idx_map = {old_idx.item(): new_idx for new_idx, old_idx in enumerate(unique_f_idxs)}
-						
+				
 						# Apply rebasing to formula arrays
 						b_pred_formula_formula_idxs = th.tensor(
 							[formula_idx_map[idx.item()] for idx in b_pred_formula_formula_idxs],
@@ -884,6 +886,13 @@ def run_inference_df(
 								[formula_idx_map[idx.item()] for idx in b_pred_joint_formula_idxs],
 								dtype=b_pred_joint_formula_idxs.dtype,
 								device=b_pred_joint_formula_idxs.device
+							)
+						# Rebase peak->formula mapping to the new contiguous formula ids
+						if b_frag_formula_peak_idxs is not None:
+							b_frag_formula_peak_idxs = th.tensor(
+								[formula_idx_map[idx.item()] for idx in b_frag_formula_peak_idxs],
+								dtype=b_frag_formula_peak_idxs.dtype if isinstance(b_frag_formula_peak_idxs, th.Tensor) else th.long,
+								device=b_pred_formula_formula_idxs.device
 							)
 					
 					# Rebase node indices to 0-based contiguous
@@ -911,9 +920,10 @@ def run_inference_df(
 					b_spec_mzs.tolist(), 
 					b_spec_ints.tolist(), 
 					b_pred_oos_prob,
+					b_frag_formula_peak_idxs.tolist() if b_frag_formula_peak_idxs is not None else np.nan,
+					b_frag_formula_peak_mzs.tolist() if b_frag_formula_peak_mzs is not None else np.nan,
 					b_pred_formula_formula_idxs.tolist() if b_pred_formula_formula_idxs is not None else np.nan,
 					b_pred_formula_probs.tolist() if b_pred_formula_probs is not None else np.nan,
-					b_pred_formula_mzs.tolist() if b_pred_formula_mzs is not None else np.nan,
 					b_pred_joint_formula_idxs.tolist() if b_pred_joint_formula_idxs is not None else np.nan,
 					b_pred_formula_node_probs.tolist() if b_pred_formula_node_probs is not None else np.nan,
 					b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else np.nan,
@@ -947,7 +957,8 @@ def run_inference_df(
 	# build dataframe
 	columns = [
 		"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
-		"pred_formula_formula_idxs", "pred_formula_probs", "pred_formula_mzs",
+		"frag_formula_peak_idxs", "frag_formula_peak_mzs",
+		"pred_formula_formula_idxs", "pred_formula_probs",
 		"pred_joint_formula_idxs", "pred_formula_node_probs",
 		"pred_joint_node_idxs", "pred_node_formula_probs",
 		"pred_node_probs", "pred_node_node_idxs"
@@ -963,6 +974,7 @@ def filter_by_peak_intensity(
 	min_peak_int: float,
 	pred_ints: th.Tensor,
 	pred_mzs: th.Tensor,
+	frag_formula_peak_mzs: Optional[th.Tensor],
 	frag_formula_peak_idxs: Optional[th.Tensor],
 	b_pred_formula_formula_idxs: Optional[th.Tensor],
 	b_pred_formula_probs: Optional[th.Tensor],
@@ -981,6 +993,7 @@ def filter_by_peak_intensity(
 		min_peak_int: Minimum peak intensity threshold
 		pred_ints: Predicted intensities for peaks
 		pred_mzs: Predicted m/z values for peaks
+		frag_formula_peak_mzs: m/z values per peak aligned with frag_formula_peak_idxs
 		frag_formula_peak_idxs: Mapping from peaks to local formula indices
 		b_pred_formula_formula_idxs: Global formula indices for predicted formulas
 		b_pred_formula_probs: Predicted formula probabilities
@@ -994,7 +1007,7 @@ def filter_by_peak_intensity(
 	"""
 	if min_peak_int <= 0:
 		return (
-			pred_ints, pred_mzs,
+			pred_ints, pred_mzs, frag_formula_peak_mzs, frag_formula_peak_idxs,
 			b_pred_formula_formula_idxs, b_pred_formula_probs,
 			b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
 			b_pred_joint_node_idxs, b_pred_node_formula_probs,
@@ -1022,6 +1035,9 @@ def filter_by_peak_intensity(
 		# Filter peaks themselves
 		pred_ints = pred_ints[valid_peak_mask]
 		pred_mzs = pred_mzs[valid_peak_mask]
+		frag_formula_peak_idxs = frag_formula_peak_idxs[valid_peak_mask]
+		if frag_formula_peak_mzs is not None: # Only if frag_formula_peak_mzs is available
+			frag_formula_peak_mzs = frag_formula_peak_mzs[valid_peak_mask]
 
 		# Map local formula indices (0..N_formulas_in_mol) to global formula indices (if available)
 		# b_pred_formula_formula_idxs contains the global indices for the formulas in this molecule
@@ -1038,7 +1054,7 @@ def filter_by_peak_intensity(
 	# If no filtering was applied (valid_f_idxs is None), return original tensors
 	if valid_f_idxs is None:
 		return (
-			pred_ints, pred_mzs,
+			pred_ints, pred_mzs, frag_formula_peak_mzs, frag_formula_peak_idxs,
 			b_pred_formula_formula_idxs, b_pred_formula_probs,
 			b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
 			b_pred_joint_node_idxs, b_pred_node_formula_probs,
@@ -1086,7 +1102,7 @@ def filter_by_peak_intensity(
 		print(f"  > Filtered stats: Peaks {init_n_peaks}->{final_n_peaks}, Formulas {init_n_formulas}->{final_n_formulas}, Nodes {init_n_nodes}->{final_n_nodes}")
 
 	return (
-		pred_ints, pred_mzs,
+		pred_ints, pred_mzs, frag_formula_peak_mzs, frag_formula_peak_idxs,
 		b_pred_formula_formula_idxs, b_pred_formula_probs,
 		b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
 		b_pred_joint_node_idxs, b_pred_node_formula_probs,
