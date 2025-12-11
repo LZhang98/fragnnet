@@ -6,7 +6,6 @@ from tqdm import tqdm
 import tempfile
 import os
 import gc
-import copy
 from typing import Dict, Any, Optional, Set, List, Tuple
 
 from fragnnet.runner import load_config

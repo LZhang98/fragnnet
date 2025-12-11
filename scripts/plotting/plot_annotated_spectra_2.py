@@ -14,6 +14,7 @@ from matplotlib.gridspec import GridSpec
 import matplotlib.patches as patches
 import matplotlib.collections as mc
 from matplotlib.text import Text
+from matplotlib.ticker import FuncFormatter
 from PIL import Image
 
 from rdkit.Chem import Draw
@@ -246,6 +247,13 @@ def plot_spectra_axes(ax,
 	]
 	ax.legend(handles=handles,**leg_kws)
 
+	# Remove 0 from x-axis ticks
+	xticks = ax.get_xticks()
+	ax.set_xticks([t for t in xticks if t != 0])
+
+	# Show absolute values on y-axis (mirror plot)
+	ax.yaxis.set_major_formatter(FuncFormatter(lambda y, pos: f"{abs(y):.0f}"))
+
 def load_dataframe(file_path_gz, file_path_pkl, description):
 	"""Load dataframe from .pkl.gz or .pkl file"""
 	if os.path.exists(file_path_gz):
@@ -456,6 +464,14 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 	col_energy = pred_data.get('col_energy', None)
 	if col_energy is not None and pd.notna(col_energy) and str(col_energy).strip():
 		title_parts.append(f'CE: {col_energy}')
+
+	# Prefer normalized CE (NCE) or absolute CE (ACE) if present
+	nce = pred_data.get('nce', None)
+	ace = pred_data.get('ace', None)
+	if nce is not None and pd.notna(nce) and str(nce).strip():
+		title_parts.append(f'NCE: {nce}')
+	elif ace is not None and pd.notna(ace) and str(ace).strip():
+		title_parts.append(f'ACE: {ace}')
 	
 	# Add adduct/precursor type if available
 	prec_type = pred_data.get('prec_type', None)
@@ -488,6 +504,17 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 					pred_ints_thresh=0,
 					colors=['green', 'red'],
 					peak_labels=[])
+
+	# Overlay NCE/ACE on the spectrum axes if available
+	ann_text = None
+	if nce is not None and pd.notna(nce) and str(nce).strip():
+		ann_text = f'NCE: {nce}'
+	elif ace is not None and pd.notna(ace) and str(ace).strip():
+		ann_text = f'ACE: {ace}'
+	if ann_text is not None:
+		ax.text(0.99, 0.02, ann_text, transform=ax.transAxes,
+				ha='right', va='bottom', fontsize=16,
+				bbox=dict(boxstyle='round', facecolor='white', alpha=0.7, edgecolor='none'))
 	
 	# Plot formulas and fragments
 	for f_idx, formula_data in enumerate(display_data):
