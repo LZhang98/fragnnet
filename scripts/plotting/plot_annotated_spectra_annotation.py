@@ -22,17 +22,27 @@ from rdkit.Chem import Draw
 from fragnnet.utils.frag_utils import th_long_to_mask
 from fragnnet.utils.plot_utils import get_highlighted_bonds
 
+def font_size_from_ax_height(ax, fraction=6):
+	fig = plt.gcf()
+	bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+	ax_height = bbox.height
+	font_size = int((ax_height / fraction) * 72)
+	return font_size
+
 def plot_formula_axes(ax,
-					  formula:str,
+					  formula: str,
 					  formula_label: str,
-					  formula_prob = None,
-					  font_size = None,
-					  font ='DejaVu Sans Mono',
-					  circle_pad = 0.1):
+					  formula_prob=None,
+					  formula_mz=None,
+					  font_size=None,
+					  font='DejaVu Sans Mono'):
 	
 	fig = plt.gcf()
 
 	bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+	if font_size == None:
+		font_size = font_size_from_ax_height(ax, fraction=6)
+  
 	ax_width, ax_height = bbox.width, bbox.height
 	#print(ax_width, ax_height)
 	ax_width *= fig.dpi
@@ -42,8 +52,6 @@ def plot_formula_axes(ax,
 	ax.set_ylim(ax_height, 0)
 		
 	ax.axis('off')
-	if font_size == None:
-		font_size = int(bbox.height * 72 / 4)
 	font_size_pixel = int(font_size * fig.dpi / 72)
 	text_loc = font_size_pixel/3 * 2
 	#ax.text(0, text_loc, f"Peak {peak_id}", size=font_size, horizontalalignment='left', verticalalignment = 'center')
@@ -52,28 +60,35 @@ def plot_formula_axes(ax,
 	#ax.add_patch(circle)
 
 	ax.text(10,text_loc, "$f_{"+ formula_label +"}$", size=font_size, horizontalalignment='left', verticalalignment = 'center',
-			#bbox=dict(boxstyle="circle",
-			#	   ec=(1., 0.5, 0.5),
-			#	   fc=(1., 0.8, 0.8),
-			#	   pad = circle_pad,)
+			bbox=dict(boxstyle="round",
+				   ec="black",
+				   fc="none",
+				   pad = 0.15)
  	)
 	
 	#text_loc += font_size * 4
 	#font_size = int((bbox.height / 4 + circle_pad * 2 ) * 72)
 	
+	main_text_x = 2.0 * font_size_pixel
+	main_text_y_gap = 1.5 * font_size_pixel
 	formula_display_str = "$" + formula + "$"
 	numbers = re.compile(r'(\d+)')
 	formula_display_str = numbers.sub(r'_{\1}',formula_display_str)
-	ax.text(1.25 * font_size_pixel,text_loc ,formula_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
+	ax.text(main_text_x,text_loc ,formula_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
 	
 	#if formula_prob is not None:
-	text_loc += 1.25 * font_size_pixel
-	formula_prob_display_str =  "$P(f_{"+ formula_label +"})=" + "{:.3f}".format(formula_prob) + "$"
-	ax.text(1.25 * font_size_pixel,text_loc ,formula_prob_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
-	
+	text_loc += main_text_y_gap
+	if formula_mz is not None and pd.notna(formula_mz):
+		mz_display_str = f"$m/z={formula_mz:.4f}$"
+		ax.text(main_text_x, text_loc, mz_display_str, size=font_size, horizontalalignment='left', verticalalignment='center', fontfamily=font)
+		text_loc += main_text_y_gap
+	if formula_prob is not None:
+		formula_prob_display_str =  "$P(f_{"+ formula_label +"})=" + "{:.3f}".format(formula_prob) + "$"
+		ax.text(main_text_x,text_loc ,formula_prob_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
+		
 	text_loc = 0.85 * ax_height
 	formula_node_display_str =  "$P(n|f_{"+ formula_label +"})=$"
-	ax.text(1.25 * font_size_pixel,text_loc,formula_node_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
+	ax.text(main_text_x,text_loc,formula_node_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
 		
 def plot_mol_frag_axes(ax, 
 						mol: str, 
@@ -87,6 +102,7 @@ def plot_mol_frag_axes(ax,
 	fig = plt.gcf()
 
 	bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+   
 	ax_width, ax_height = bbox.width, bbox.height
 	#print(ax_width, ax_height)
 	ax_width *= fig.dpi
@@ -99,13 +115,14 @@ def plot_mol_frag_axes(ax,
 	image_height = int(ax_height * 0.65)
 	image_x_offset = int(0.5*(ax_width - image_width))
 	image_y_offset = 0.0
+ 
 	#print(image_width, image_height)
 	d2d = Draw.MolDraw2DCairo(image_width, image_height)
 	options = d2d.drawOptions()
 	rgba_color = (0.529, 0.808, 0.98)# transparent blue
 	options.fillHighlights=True
 	options.setHighlightColour((rgba_color))
-	options.highlightBondWidthMultiplier=20
+	options.highlightBondWidthMultiplier=2
 	options.clearBackground = False
 	d2d.DrawMolecule(mol,highlightAtoms=atom_highlight_idx, highlightBonds =  bond_highlight_idx)
 	d2d.FinishDrawing()
@@ -117,8 +134,7 @@ def plot_mol_frag_axes(ax,
 	ax.imshow(mol_image, extent = extent, interpolation = 'lanczos')
 	
 	if font_size == None:
-		font_size = int(bbox.height * 72 / 4)
-		
+		font_size = int(bbox.height * 72 / 6)
 	text_loc = 0.85 * ax_height
 	#formula_node_display_str =  "$P(n|f_{"+ str(peak_id) +"})=$"
 	ax.text(ax_width/2,text_loc, "{:.3f}".format(frag_formula_prob), size=font_size, horizontalalignment='center', verticalalignment = 'center', fontfamily = font)
@@ -134,8 +150,8 @@ def plot_spectra_axes(ax,
 					  true_ints_thresh = 0,
 					  pred_ints_thresh = 0,
 					  colors = ['green', 'red'], 
-					  circle_pad = 0.1,
-					  peak_label_dict = None):
+					  peak_label_dict = None,
+       				  ann_text = None):
 
 
 	mz_max = 1500
@@ -222,12 +238,12 @@ def plot_spectra_axes(ax,
 					label,
 					size=font_size,
 					ha='left', va='top',
-					#bbox=dict(
-					#	boxstyle="circle",
-					#	ec=(1., 0.5, 0.5),
-					#	fc=(1., 0.8, 0.8),
-					#	pad=circle_pad,
-					#)
+					bbox=dict(
+						boxstyle="round",
+						ec="black",
+						fc="none",
+						pad=0.15,
+					)
 				)
 			)
 			bottom_annotations_x.append(mz)
@@ -248,18 +264,28 @@ def plot_spectra_axes(ax,
 	ax.spines['top'].set_color('none')
 	
 	# Note: Text overlaps may occur without adjust_text
-		
 	leg_font_size = 0.9*font_size
 	leg_kws = {'ncol': 1, 'fontsize': leg_font_size, "loc": "upper left"}
 	handles = [
 		patches.Patch(facecolor=colors[0],label="Ground Truth",alpha=1.0),
 		patches.Patch(facecolor=colors[1],label="Predicted",alpha=1.0),
 	]
+ 
+ 	# Overlay NCE/ACE on the spectrum axes if available
+	#ann_text = None
+	#if nce is not None and pd.notna(nce) and str(nce).strip():
+	#	ann_text = f'NCE: {nce}'
+	#elif ace is not None and pd.notna(ace) and str(ace).strip():
+	#	ann_text = f'ACE: {ace}'
+	if ann_text is not None:
+		ax.text(0.99, 0.02, ann_text, transform=ax.transAxes,
+				ha='right', va='bottom', fontsize=16,
+				bbox=dict(boxstyle='round', facecolor='white', alpha=0.7, edgecolor='none'))
+  
 	ax.legend(handles=handles,**leg_kws)
-
 	# Remove 0 from x-axis ticks
 	xticks = ax.get_xticks()
-	ax.set_xticks([t for t in xticks if t != 0])
+	ax.set_xticks(xticks[1:-1])
 
 	# Show absolute values on y-axis (mirror plot)
 	ax.yaxis.set_major_formatter(FuncFormatter(lambda y, pos: f"{abs(y):.0f}"))
@@ -509,33 +535,8 @@ def plot_mirror_spectra(pred_data, display_data, output_dir,
 		if p_idx is not None and f_idx is not None and str(f_idx).strip():
 			peak_label_dict[int(p_idx)] =  r"$f_{"+str(f_idx)+r"}$"
 
-	# print(peak_label_dict)
-	# Plot spectrum
-	ax = fig.add_subplot(left_gs[0], facecolor="white")
-	plot_spectra_axes(ax,
-					true_spec_mzs,
-					true_spec_ints,
-					pred_spec_mzs,
-					pred_spec_ints,
-					bar_width=1,
-					font_size=24,
-					true_ints_thresh=0,
-					pred_ints_thresh=0,
-					colors=['green', 'red'],
-					peak_label_dict=peak_label_dict)
-
-	# Overlay NCE/ACE on the spectrum axes if available
-	ann_text = None
-	if nce is not None and pd.notna(nce) and str(nce).strip():
-		ann_text = f'NCE: {nce}'
-	elif ace is not None and pd.notna(ace) and str(ace).strip():
-		ann_text = f'ACE: {ace}'
-	if ann_text is not None:
-		ax.text(0.99, 0.02, ann_text, transform=ax.transAxes,
-				ha='right', va='bottom', fontsize=16,
-				bbox=dict(boxstyle='round', facecolor='white', alpha=0.7, edgecolor='none'))
-	
 	# Plot formulas and fragments
+	auto_font_size = 16
 	for f_idx, formula_data in enumerate(display_data):
 		if f_idx >= n_formula_frag_rows:
 			break
@@ -545,8 +546,14 @@ def plot_mirror_spectra(pred_data, display_data, output_dir,
 			continue
 
 		ax = fig.add_subplot(right_gs[f_idx, 0])
+		auto_font_size = font_size_from_ax_height(ax, fraction=6) if auto_font_size is None else auto_font_size
 		#print(f"Plotting formula {f_idx}: {formula} for peak {peak_id}")
-		plot_formula_axes(ax, formula, str(formula_data['formula_idx']), formula_data['formula_prob'])
+		plot_formula_axes(ax, 
+						formula,
+						str(formula_data['formula_idx']),
+						formula_data['formula_prob'],
+						formula_data.get('formula_mass'),
+      					font_size=auto_font_size)
 		
 		for frag_idx, frag in enumerate(formula_data['frag']):
 			if frag_idx + 1 >= n_formula_frag_cols:
@@ -554,8 +561,23 @@ def plot_mirror_spectra(pred_data, display_data, output_dir,
 			ax = fig.add_subplot(right_gs[f_idx, frag_idx + 1])
 			h_atom_list = frag['node_atom_indices']
 			h_bond_list = frag['node_bond_indices']
-			plot_mol_frag_axes(ax, mol, h_atom_list, h_bond_list, frag['formula_node_prob'])
+			plot_mol_frag_axes(ax, mol, h_atom_list, h_bond_list, frag['formula_node_prob'], font_size=auto_font_size)
 	
+ 	# Plot spectrum
+	ax = fig.add_subplot(left_gs[0], facecolor="white")
+	plot_spectra_axes(ax,
+					true_spec_mzs,
+					true_spec_ints,
+					pred_spec_mzs,
+					pred_spec_ints,
+					bar_width=1,
+					font_size=auto_font_size,
+					true_ints_thresh=0,
+					pred_ints_thresh=0,
+					colors=['blue', 'red'],
+					peak_label_dict=peak_label_dict,
+     				ann_text =None)
+
 	# Save plot
 	plot_filename = f"mirror_plot_spec_{spec_id}_mol_{mol_id}.png"
 	plot_path = os.path.join(output_dir, plot_filename)
