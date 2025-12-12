@@ -24,7 +24,7 @@ from fragnnet.utils.plot_utils import get_highlighted_bonds, get_mol_im
 
 def plot_formula_axes(ax,
 					  formula:str,
-					  peak_id:str|int,
+					  formula_label: str,
 					  formula_prob = None,
 					  font_size = None,
 					  font ='DejaVu Sans Mono',
@@ -51,7 +51,7 @@ def plot_formula_axes(ax,
 	#circle = matplotlib.patches.Circle((0, 0), radius=1, color='rea')
 	#ax.add_patch(circle)
 
-	ax.text(10,text_loc, r"$f_{"+str(peak_id)+"}$", size=font_size, horizontalalignment='left', verticalalignment = 'center',
+	ax.text(10,text_loc, "$f_{"+ formula_label +"}$", size=font_size, horizontalalignment='left', verticalalignment = 'center',
 			bbox=dict(boxstyle="circle",
 				   ec=(1., 0.5, 0.5),
 				   fc=(1., 0.8, 0.8),
@@ -68,11 +68,11 @@ def plot_formula_axes(ax,
 	
 	#if formula_prob is not None:
 	text_loc += 1.25 * font_size_pixel
-	formula_prob_display_str =  "$P(f_{"+ str(peak_id) +"})=" + "{:.3f}".format(formula_prob) + "$"
+	formula_prob_display_str =  "$P(f_{"+ formula_label +"})=" + "{:.3f}".format(formula_prob) + "$"
 	ax.text(1.25 * font_size_pixel,text_loc ,formula_prob_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
 	
 	text_loc = 0.85 * ax_height
-	formula_node_display_str =  "$P(n|f_{"+ str(peak_id) +"})=$"
+	formula_node_display_str =  "$P(n|f_{"+ formula_label +"})=$"
 	ax.text(1.25 * font_size_pixel,text_loc,formula_node_display_str, size=font_size, horizontalalignment='left', verticalalignment = 'center', fontfamily = font)
 		
 def plot_mol_frag_axes(ax, 
@@ -135,7 +135,7 @@ def plot_spectra_axes(ax,
 					  pred_ints_thresh = 0,
 					  colors = ['green', 'red'], 
 					  circle_pad = 0.1,
-					  peak_labels = None):
+					  peak_label_dict = None):
 
 
 	mz_max = 1500
@@ -198,8 +198,9 @@ def plot_spectra_axes(ax,
 	bottom_annotations_x = []
 	bottom_annotations_y = []
 	
-	if peak_labels is None:
-		peak_labels = []
+	# peak_label_dict can be a dict {pred_peak_index: label_str}
+	if peak_label_dict is None:
+		peak_label_dict = {}
 	
 	# we maye need change this to bars
 	for i in range(len(pred_mzs)):
@@ -208,18 +209,26 @@ def plot_spectra_axes(ax,
 		line_start = (mz,0)
 		line_end = (mz,-ints)
 		lines_bottom.append((line_start,line_end))
-		
-		if i in peak_labels:
-			bottom_annotations.append(ax.text(mz, -ints - ints_max * 0.02, 
-											  "$f_{" + str(peak_labels[i]) + "}$", 
-											  size=font_size,
-											  ha='left', va='top',
-											  bbox=dict(boxstyle="circle",
-												ec=(1., 0.5, 0.5),
-												fc=(1., 0.8, 0.8),
-												pad = circle_pad
-												)
-									  ))
+
+		# annotate with provided formula label if available
+		if i in peak_label_dict:
+			label = str(peak_label_dict[i])
+			# print(label)
+			bottom_annotations.append(
+				ax.text(
+					mz,
+					-ints - ints_max * 0.02,
+					label,
+					size=font_size,
+					ha='left', va='top',
+					bbox=dict(
+						boxstyle="circle",
+						ec=(1., 0.5, 0.5),
+						fc=(1., 0.8, 0.8),
+						pad=circle_pad,
+					)
+				)
+			)
 			bottom_annotations_x.append(mz)
 			bottom_annotations_y.append(-ints)
 
@@ -350,11 +359,14 @@ def parse_peaks_from_string(peaks_data):
 		return np.array([]), np.array([])
 
 def process_prediction_data(pred_data):
+
 	"""Process prediction data to extract formulas, nodes, and probabilities"""
 	# Get formula dict
-	formula_dict = {i:{"formula":s,"mz":m,"prob":p} for i,s,m,p in zip(pred_data['pred_formula_formula_idxs'],
+	# TODO double check isotope handling
+	formula_dict = {i:{"formula":s,"mz":m, "peak_idx":pi,"prob":p} for i,s,m,pi,p in zip(pred_data['pred_formula_formula_idxs'],
 		pred_data['pred_formula_strs'],
-		pred_data['frag_formula_peak_mzs'],
+		pred_data['frag_formula_peak_mzs'], # not sure what will heappen if isotope is enabled
+		pred_data['frag_formula_peak_idxs'], # not sure what will heappen if isotope is enabled
 		pred_data['pred_formula_probs'])}
 	
 	# Sort by prob
@@ -393,17 +405,14 @@ def build_display_data(formula_dict, formula_node_map, node_dict, formula_node_p
 	"""Build display data structure for plotting"""
 	display_data = []
 	
-	for f_idx, f_id in enumerate(formula_dict.keys()):
-		formula, f_pred_prob = formula_dict[f_id]["formula"], formula_dict[f_id]["prob"]
+	for _, f_id in enumerate(formula_dict.keys()):
 		
-		f_mz = formula_dict[f_id]["mz"]
 		formula_data = {
 			"formula_idx": f_id,
-			"formula": formula,
-			"formula_prob": f_pred_prob,
-			"formula_mass": f_mz,
-			"peak_idx": f_idx,
-			"peak_id": f_idx,
+			"formula":  formula_dict[f_id]["formula"],
+			"formula_prob": formula_dict[f_id]["prob"],
+			"formula_mass": formula_dict[f_id]["mz"],
+			"peak_idx": formula_dict[f_id]["peak_idx"],
 			"frag": []
 		}
 		
@@ -491,6 +500,15 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 	left_gs = grand_gs[0:figsize[0]-frag_col_w].subgridspec(ncols=1, nrows=1)
 	right_gs = grand_gs[figsize[0]-frag_col_w:].subgridspec(ncols=right_ncols, nrows=right_rows)
 	
+	# Build peak label map from display_data: {peak_idx: formula}
+	peak_label_dict = {}
+	for fd in display_data:		
+		p_idx = fd.get('peak_idx', None)
+		f_idx = fd.get('formula_idx', None) 
+		if p_idx is not None and f_idx is not None and str(f_idx).strip():
+			peak_label_dict[int(p_idx)] =  r"$f_{"+str(f_idx)+r"}$"
+
+	# print(peak_label_dict)
 	# Plot spectrum
 	ax = fig.add_subplot(left_gs[0], facecolor="white")
 	plot_spectra_axes(ax,
@@ -503,7 +521,7 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 					true_ints_thresh=0,
 					pred_ints_thresh=0,
 					colors=['green', 'red'],
-					peak_labels=[])
+					peak_label_dict=peak_label_dict)
 
 	# Overlay NCE/ACE on the spectrum axes if available
 	ann_text = None
@@ -524,10 +542,10 @@ def plot_mirror_spectra(pred_data, display_data, output_dir):
 		# null formula check (this should not happen)
 		if formula is None or formula == "":
 			continue
-		peak_id = formula_data['peak_id']
+
 		ax = fig.add_subplot(right_gs[f_idx, 0])
 		#print(f"Plotting formula {f_idx}: {formula} for peak {peak_id}")
-		plot_formula_axes(ax, formula, peak_id, formula_data['formula_prob'])
+		plot_formula_axes(ax, formula, str(formula_data['formula_idx']), formula_data['formula_prob'])
 		
 		for frag_idx, frag in enumerate(formula_data['frag']):
 			if frag_idx + 1 >= right_ncols:
