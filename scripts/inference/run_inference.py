@@ -9,7 +9,9 @@ from fragnnet.utils.script_utils import (
 	setup_device,
 	apply_inference_config,
 	init_model_from_ckpt,
-	run_inference_tabular,
+	run_inference_tabular_iter,
+	get_config_from_ckpt,
+	get_tabular_columns,
  	prepare_output_subset,
 )
 from fragnnet.utils.misc_utils import booltype
@@ -238,56 +240,51 @@ if __name__ == "__main__":
 	print(f">>> Model loaded and ready on device: {device}")
 	print(f">>> Model in eval mode: {not model.training}")
  
- 	# Resume from saved predictions if requested
-	if args.save_dp is not None:
-		os.makedirs(args.save_dp, exist_ok=True)
+ 	# Create output directory for predictions
+	os.makedirs(args.save_dp, exist_ok=True)
 
-	# check for existing prediction files to resume from
-	predicted_files = [os.path.join(args.save_dp, f) for f in os.listdir(args.save_dp) if f.endswith('.pkl')]
-	for pred_file in predicted_files:
-		ckpt_data = pd.read_pickle(output_path)
-		if isinstance(ckpt_data, dict):
-			preds_l = ckpt_data.get('preds_l', [])
-			start_batch = ckpt_data.get('last_batch_idx', 0) + 1
-		else:
-			# Old format: just the dataframe, can't resume
-			print(">> Warning: saved file format doesn't support resume, starting from scratch")
-			start_batch = 0
-		print(f">> Loaded {len(preds_l)} predictions, resuming from batch {start_batch}")
-
-	print(">>> Initializing components...")
-	ds_cls = get_dataset_cls(config_d['model_type'])
-	model_cls = get_model_cls(config_d['model_type'])
-
-	# Initialize dataset and dataloader
-	ds = ds_cls(split=eval_split, **config_d)
-	dl = init_dataloader(ds, config_d)
-
-	# Prepare device and load model from checkpoint
-	device = setup_device(config_d)
-	model = init_model_from_ckpt(ckpt_fp, config_d, device)
- 
-	# Run inference and collect predictions with evaluation scores
-	print(">>> Running inference and evaluation...")
-	output_set = prepare_output_subset(
-		output_subset=args.output_subset,
-		output_everything=args.output_everything
-	)
- 
-	print(f">>> Output set: {output_set}")
-	predicted_df = run_inference_tabular(
+	# Run inference with periodic saving
+	print(">>> Running inference and saving predictions...")
+	columns_name = get_tabular_columns(config_d, return_formula_and_cc=True)
+	
+	# Iterate through batches and save periodically
+	preds_l = []
+	chunk_idx = 0
+	total_preds = 0
+	
+	for batch_idx, batch_rows in enumerate(run_inference_tabular_iter(
 		model,
 		dl,
 		device,
 		evaluate=False,
-		output_set=output_set,
-		batch_cutoff=args.batch_cutoff,
+		batch_cutoff=-1,
 		min_peak_int=args.min_intensity,
 		return_formula_and_cc=True,
 		rebase_indices=True,
-	)
+	)):
+		preds_l.extend(batch_rows)
+		total_preds += len(batch_rows)
+		
+		# Save periodically every save_interval batches
+		if (batch_idx + 1) % args.save_interval == 0:
+			pred_df = pd.DataFrame(preds_l, columns=columns_name)
+			chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.pkl")
+			pred_df.to_pickle(chunk_fp)
+			print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
+			preds_l = []
+			chunk_idx += 1
+	
+	# Save remaining predictions
+	if len(preds_l) > 0:
+		pred_df = pd.DataFrame(preds_l, columns=columns_name)
+		chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.pkl")
+		pred_df.to_pickle(chunk_fp)
+		print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
+	
+	print(f"\n>>> Inference complete! Total predictions: {total_preds}")
+	print(f">>> Predictions saved to: {args.save_dp}")
  
 	# Clean up temporary fragment directory if it was created
 	if temp_frag_dir is not None:
-		print(f"\n>>> Cleaning up temporary fragment directory: {temp_frag_dir.name}")
+		print(f">>> Cleaning up temporary fragment directory: {temp_frag_dir.name}")
 		temp_frag_dir.cleanup()

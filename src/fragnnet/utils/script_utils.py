@@ -526,6 +526,32 @@ def get_score_types(config_d):
 				eval_score_types.append(f"{score_type}_{bin_res}")
 	return eval_score_types
 
+def get_tabular_columns(config_d: Dict[str, Any], return_formula_and_cc: bool = False) -> List[str]:
+	"""
+	Get column names for tabular inference output.
+	
+	Args:
+		config_d: Configuration dictionary
+		return_formula_and_cc: Whether output includes formula strings and node CCs
+	
+	Returns:
+		List of column names for DataFrame
+	"""
+	eval_score_types = get_score_types(config_d)
+	columns_name = [
+		"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
+		"frag_formula_peak_idxs", "frag_formula_peak_mzs",
+		"pred_formula_formula_idxs", "pred_formula_probs",
+		"pred_joint_formula_idxs", "pred_formula_node_probs",
+		"pred_joint_node_idxs", "pred_node_formula_probs",
+		"pred_node_probs", "pred_node_node_idxs",
+		"index_rebased"
+	]
+	if return_formula_and_cc:
+		columns_name.extend(["pred_formula_strs", "pred_node_ccs"])
+	columns_name.extend(eval_score_types)
+	return columns_name
+
 def run_inference_pkl(
 	model,
 	dataloader,
@@ -699,20 +725,8 @@ def run_inference_tabular(
 	Returns:
 		DataFrame with all inference results
 	"""
-	# Prepare column names
-	eval_score_types = get_score_types(model.hparams)
-	columns_name = [
-		"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
-		"frag_formula_peak_idxs", "frag_formula_peak_mzs",
-		"pred_formula_formula_idxs", "pred_formula_probs",
-		"pred_joint_formula_idxs", "pred_formula_node_probs",
-		"pred_joint_node_idxs", "pred_node_formula_probs",
-		"pred_node_probs", "pred_node_node_idxs",
-		"index_rebased"
-	]
-	if return_formula_and_cc:
-		columns_name.extend(["pred_formula_strs", "pred_node_ccs"])
-	columns_name.extend(eval_score_types)
+	# Get column names from config
+	columns_name = get_tabular_columns(model.hparams, return_formula_and_cc)
 	
 	# Accumulate all batch results
 	preds_l = []
@@ -793,7 +807,7 @@ def run_inference_tabular_iter(
 				break
 
 			# Process batch and get data rows
-			batch_rows = _process_batch_to_tabular_row(
+			batch_rows = process_batch_to_tabular_row(
 				batch_input=batch_input,
 				model=model,
 				device=device,
@@ -808,7 +822,7 @@ def run_inference_tabular_iter(
 			)
 			yield batch_rows
 
-def _process_batch_to_tabular_row(
+def process_batch_to_tabular_row(
 	batch_input: dict,
 	model: th.nn.Module,
 	device: th.device,
