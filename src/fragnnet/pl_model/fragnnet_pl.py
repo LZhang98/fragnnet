@@ -117,7 +117,7 @@ class FraGNNetPL(SpectrumPL):
 			else:
 				self.model = th.compile(self.model,dynamic=True)
     
-	def _load_pretrained_weights(self, ckpt_path: str, strict: bool = False, shared_components: List[str] = None):
+	def _load_pretrained_weights(self, ckpt_path: str, strict: bool = False, shared_components: list[str] | None = None):
 		"""
 		Load pre-trained weights from a checkpoint file.
 		Supports both MCES pre-training (partial load) and generic fine-tuning.
@@ -192,7 +192,7 @@ class FraGNNetPL(SpectrumPL):
 			else:
 				logging.warning(f"Load failed with error: {e}")
 
-	def _freeze_components(self, components: List[str], exact_match: bool = False):
+	def _freeze_components(self, components: list[str], exact_match: bool = False):
 		"""
 		Freeze parameters based on component names or prefixes.
 		
