@@ -15,7 +15,6 @@ from fragnnet.utils.script_utils import (
  	prepare_output_subset,
 )
 from fragnnet.utils.misc_utils import booltype
-import torch as th
 import argparse
 import os
 import tempfile
@@ -70,6 +69,19 @@ if __name__ == "__main__":
 		default="parquet",
 		choices=["pkl", "pkl.gz", "parquet"],
 		help="File format for saving predictions (pkl or parquet)"
+	)
+	parser.add_argument(
+		"--output_subset",
+		type=str,
+		nargs="+",
+		default=None,
+		help="Subset of columns to output (if None, output all)"
+	)
+	parser.add_argument(
+		"--output_everything",
+		type=booltype,
+		default=False,
+		help="Whether to output all columns (overrides output_subset)"
 	)
 	# Inference configuration
 	parser.add_argument(
@@ -169,13 +181,67 @@ if __name__ == "__main__":
 	print(mol_df.head(5))
 	print(spec_df.head(5))
 
+	#=========================================
+	# Resume logic
+	#=========================================
+	start_chunk_idx = 0
+	
+	print(f"> Checking for existing predictions in {args.save_dp}...")
+	existing_files = [f for f in os.listdir(args.save_dp) if f.startswith("predictions_chunk_") and f.endswith(args.save_format)]
+	
+	finished_spec_ids = set()
+	max_chunk_idx = -1
+	
+	for f in tqdm(existing_files, desc="Reading existing predictions"):
+		# Parse chunk index
+		try:
+			c_idx = int(f.split('_')[-1].split('.')[0])
+			max_chunk_idx = max(max_chunk_idx, c_idx)
+		except:
+			pass
 
+		fp = os.path.join(args.save_dp, f)
+		try:
+			if args.save_format == "parquet":
+				# Only read spec_id column for speed
+				df = pd.read_parquet(fp, columns=['spec_id'])
+			else:
+				df = pd.read_pickle(fp)
+			
+			if 'spec_id' in df.columns:
+				finished_spec_ids.update(df['spec_id'].unique())
+		except Exception as e:
+			print(f"Warning: Could not read {fp}: {e}")
+		
+		print(f"> Found {len(finished_spec_ids)} finished spectra.")
+		start_chunk_idx = max_chunk_idx + 1
+		
+		# Filter spec_df
+		original_len = len(spec_df)
+		spec_df = spec_df[~spec_df['spec_id'].isin(finished_spec_ids)]
+		print(f"> Resuming inference on {len(spec_df)} spectra (skipped {original_len - len(spec_df)})")
+		
+		# Sync mol_df
+		valid_mol_ids = spec_df['mol_id'].unique()
+		mol_df = mol_df[mol_df['mol_id'].isin(valid_mol_ids)]
+		print(f"> Filtered mol_df to {len(mol_df)} molecules based on remaining spectra")
+		
+		if len(spec_df) == 0:
+			print("All spectra processed. Exiting.")
+			exit(0)
+
+	#=========================================
+	# Repare for Inference
+	#=========================================
+	
+	# Apply inference-specific configuration adjustments
 	apply_inference_config(
 		config_d,
 		skip_extra_losses=args.skip_extra_losses,
 		disable_preproc=args.disable_preproc,
 		eval_batch_size=args.eval_batch_size,
 	)
+ 
 	# Fragment graphs (DAGs) are computationally expensive to generate
 	# Options: 1) Use pre-computed fragments, 2) Generate in temporary directory
 	temp_frag_dir = None
@@ -250,14 +316,26 @@ if __name__ == "__main__":
 
 	# Run inference with periodic saving
 	print(">>> Running inference and saving predictions...")
+	output_set = prepare_output_subset(
+		output_subset=args.output_subset,
+		output_everything=args.output_everything
+	)
 	columns_name = get_tabular_columns(config_d, return_formula_and_cc=True)
-	
+
+	#=========================================
+	# Inferencing
+	#=========================================
+ 
 	# Iterate through batches and save periodically
 	preds_l = []
-	chunk_idx = 0
+	chunk_idx = start_chunk_idx
 	total_preds = 0
 	file_ext = args.save_format
 	
+	# Calculate save interval in batches based on chunk size
+	save_interval_batches = max(1, args.save_chunk_size // args.eval_batch_size)
+	print(f"> Saving every {save_interval_batches} batches (approx {save_interval_batches * args.eval_batch_size} predictions per chunk)")
+
 	for batch_idx, batch_rows in enumerate(run_inference_tabular_iter(
 		model,
 		dl,
@@ -267,12 +345,13 @@ if __name__ == "__main__":
 		min_peak_int=args.min_intensity,
 		return_formula_and_cc=True,
 		rebase_indices=True,
+		output_set=output_set,
 	)):
 		preds_l.extend(batch_rows)
 		total_preds += len(batch_rows)
 		
 		# Save periodically every save_interval batches
-		if (batch_idx + 1) % args.save_interval == 0:
+		if (batch_idx + 1) % save_interval_batches == 0:
 			pred_df = pd.DataFrame(preds_l, columns=columns_name)
 			chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
 			if args.save_format == "parquet":
@@ -296,7 +375,10 @@ if __name__ == "__main__":
 	print(f"\n>>> Inference complete! Total predictions: {total_preds}")
 	print(f">>> Predictions saved to: {args.save_dp}")
  
-	# Clean up temporary fragment directory if it was created
+ 
+ 	#=========================================
+	# Clean up temporary fragment directory
+	#=========================================
 	if temp_frag_dir is not None:
 		print(f">>> Cleaning up temporary fragment directory: {temp_frag_dir.name}")
 		temp_frag_dir.cleanup()

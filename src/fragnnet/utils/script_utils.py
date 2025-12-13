@@ -875,11 +875,13 @@ def process_batch_to_tabular_row(
 	pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 	pred_oos_probs = batch_result["oos_prob"].detach().cpu() if "oos_prob" in batch_result else None
 
+	# values for eval scores
+	# this will be np.nan if not evaluating
 	eval_scores_d = {}
-	for eval_score_type in eval_score_types:
-		eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
-			
-	
+	if evaluate:
+		for eval_score_type in eval_score_types:
+			eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
+
 	# ============================
 	# land of input mappings
 	# ============================
@@ -1100,8 +1102,14 @@ def process_batch_to_tabular_row(
 				b_pred_node_ccs = all_node_ccs[orig_node_idxs_for_lookup.long()].detach().cpu() #save as tensor
 			data_row.append(b_pred_node_ccs)
 
+		# Append evaluation scores
 		for eval_score_type in eval_score_types:
-			data_row.append(eval_scores_d[eval_score_type][b_idx].item())
+			if evaluate:
+				data_row.append(eval_scores_d[eval_score_type][b_idx].item())
+			else:
+				data_row.append(np.nan)
+    
+		# Append the completed data row for this spectrum/molecule
 		batch_rows.append(data_row)
 	
 	return batch_rows

@@ -119,8 +119,8 @@ if __name__ == "__main__":
 	)
 	parser.add_argument(
 		"--output_everything",
-		type=booltype,
-		default=True,
+		type=bool,
+		default=False,
 		help="Output all available metrics and predictions"
 	)
 	parser.add_argument(
@@ -211,8 +211,6 @@ if __name__ == "__main__":
 		rebase_indices=True,
 	)
 	
-	# predicted_df.to_csv("inference_eval_results.csv", index=False)
-
 	# Print evaluation score statistics
 	print("\n>>> Evaluation Score Statistics:")
 	eval_score_types = get_score_types(config_d=config_d)
