@@ -389,8 +389,8 @@ debug_zero_loss: False
 checkpoint_metric: epoch
 checkpoint_metric_mode: max
 checkpoint_save_last: True
-checkpoint_every_n_epochs: 0
-checkpoint_save_top_k: 1
+checkpoint_every_n_epochs: 1 # Save checkpoint every n epochs
+checkpoint_save_top_k: 1 # Number of top checkpoints keep based on metric
 upload_checkpoints: False
 disable_checkpoints: False
 delete_checkpoints: False

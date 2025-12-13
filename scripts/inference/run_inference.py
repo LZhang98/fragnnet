@@ -6,11 +6,13 @@ from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.utils import data_utils, frag_utils
 from fragnnet.utils.script_utils import (
 	get_ckpt_path,
-	get_config_from_ckpt,
 	setup_device,
 	apply_inference_config,
 	init_model_from_ckpt,
-	run_inference_df,
+	run_inference_tabular_iter,
+	get_config_from_ckpt,
+	get_tabular_columns,
+ 	prepare_output_subset,
 )
 from fragnnet.utils.misc_utils import booltype
 import torch as th
@@ -61,6 +63,13 @@ if __name__ == "__main__":
 		type=str, 
 		default="output/inference_outputs",
 		help="Directory to save inference evaluation results"
+	)
+	parser.add_argument(
+		"--save_format",
+		type=str,
+		default="parquet",
+		choices=["pkl", "pkl.gz", "parquet"],
+		help="File format for saving predictions (pkl or parquet)"
 	)
 	# Inference configuration
 	parser.add_argument(
@@ -136,7 +145,6 @@ if __name__ == "__main__":
 		model_save_dp=args.model_save_dp,
 		use_cached=True,
 	)
-  
 	save_dp = args.save_dp
 	template_fp = args.template_fp
 	custom_fp = args.custom_fp
@@ -149,8 +157,7 @@ if __name__ == "__main__":
 		custom_fp=custom_fp,
 		template_fp=template_fp,
 	)
-	
-	
+
 	# Load Input Data (molecules and spectra)
 	print("> Loading mol_df")
 	mol_df = pd.read_pickle(args.mol_fp)
@@ -237,19 +244,59 @@ if __name__ == "__main__":
 	model = init_model_from_ckpt(ckpt_fp, config_d, device)
 	print(f">>> Model loaded and ready on device: {device}")
 	print(f">>> Model in eval mode: {not model.training}")
-	# Run Inference with Chunked Savings
-	total_preds = run_inference(
-		model=model,
-		dataloader=dl,
-		device=device,
-		output_dp=os.path.join(args.save_dp, args.wandb_run_id),
-		save_chunk_size=args.save_chunk_size,
-		save_interval=args.save_interval,
-		min_intensity=args.min_intensity,
-		resume=True,  # Resume from existing chunks
-	)
+ 
+ 	# Create output directory for predictions
+	os.makedirs(args.save_dp, exist_ok=True)
+
+	# Run inference with periodic saving
+	print(">>> Running inference and saving predictions...")
+	columns_name = get_tabular_columns(config_d, return_formula_and_cc=True)
+	
+	# Iterate through batches and save periodically
+	preds_l = []
+	chunk_idx = 0
+	total_preds = 0
+	file_ext = args.save_format
+	
+	for batch_idx, batch_rows in enumerate(run_inference_tabular_iter(
+		model,
+		dl,
+		device,
+		evaluate=False,
+		batch_cutoff=-1,
+		min_peak_int=args.min_intensity,
+		return_formula_and_cc=True,
+		rebase_indices=True,
+	)):
+		preds_l.extend(batch_rows)
+		total_preds += len(batch_rows)
+		
+		# Save periodically every save_interval batches
+		if (batch_idx + 1) % args.save_interval == 0:
+			pred_df = pd.DataFrame(preds_l, columns=columns_name)
+			chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
+			if args.save_format == "parquet":
+				pred_df.to_parquet(chunk_fp, index=False)
+			else:
+				pred_df.to_pickle(chunk_fp)
+			print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
+			preds_l = []
+			chunk_idx += 1
+	
+	# Save remaining predictions
+	if len(preds_l) > 0:
+		pred_df = pd.DataFrame(preds_l, columns=columns_name)
+		chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
+		if args.save_format == "parquet":
+			pred_df.to_parquet(chunk_fp, index=False)
+		else:
+			pred_df.to_pickle(chunk_fp)
+		print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
+	
+	print(f"\n>>> Inference complete! Total predictions: {total_preds}")
+	print(f">>> Predictions saved to: {args.save_dp}")
  
 	# Clean up temporary fragment directory if it was created
 	if temp_frag_dir is not None:
-		print(f"\n>>> Cleaning up temporary fragment directory: {temp_frag_dir.name}")
+		print(f">>> Cleaning up temporary fragment directory: {temp_frag_dir.name}")
 		temp_frag_dir.cleanup()

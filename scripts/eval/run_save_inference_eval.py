@@ -14,7 +14,7 @@ from fragnnet.utils.script_utils import (
 	setup_device,
 	apply_inference_config,
 	init_model_from_ckpt,
-	run_inference_df,
+	run_inference_tabular,
  	prepare_output_subset,
  	get_score_types,
 )
@@ -45,7 +45,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--wandb_run_id",
 		type=str,
-		default="tad3pbbc",
+		default="32n55f2m",
 		help="Weights & Biases run ID for model retrieval"
 	)
 	parser.add_argument(
@@ -146,7 +146,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--batch_cutoff",
 		type=int,
-		default=1000,
+		default=50,
 		help="Number of batches to evaluate (-1 for all)"
 	)
 	args = parser.parse_args()
@@ -192,9 +192,6 @@ if __name__ == "__main__":
 	device = setup_device(config_d)
 	model = init_model_from_ckpt(ckpt_fp, config_d, device)
  
-	# Prepare evaluation score types based on configuration
-
- 
 	# Run inference and collect predictions with evaluation scores
 	print(">>> Running inference and evaluation...")
 	output_set = prepare_output_subset(
@@ -202,7 +199,7 @@ if __name__ == "__main__":
 		output_everything=args.output_everything
 	)
 	print(f">>> Output set: {output_set}")
-	predicted_df = run_inference_df(
+	predicted_df = run_inference_tabular(
 		model,
 		dl,
 		device,
@@ -210,10 +207,9 @@ if __name__ == "__main__":
 		output_set=output_set,
 		batch_cutoff=args.batch_cutoff,
 		min_peak_int=1.0,
-		min_formula_prob=1e-5,
-		min_frag_prob=1e-5,
-		return_str=True
-	)	
+		return_formula_and_cc=True,
+		rebase_indices=True,
+	)
 	
 	# predicted_df.to_csv("inference_eval_results.csv", index=False)
 
@@ -226,9 +222,9 @@ if __name__ == "__main__":
 		print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
 	
 	# Save predictions with evaluation scores
-	model_save_dp = os.path.join(save_dp, args.wandb_run_id)
-	os.makedirs(model_save_dp, exist_ok=True)
-	output_path = os.path.join(model_save_dp, f"predictions_{eval_split}.pkl")
+	output_save_dp = os.path.join(save_dp, args.wandb_run_id)
+	os.makedirs(output_save_dp, exist_ok=True)
+	output_path = os.path.join(output_save_dp, f"predictions_{eval_split}.pkl")
 	predicted_df.to_pickle(output_path)
 	print(f"\n>>> Saved predictions to: {output_path}")
 	print(f">>> Total predictions: {len(predicted_df)}")

@@ -8,6 +8,63 @@ import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import par_apply_df_rows_t, par_apply_series, par_apply_df_rows, seq_apply_df_rows, seq_apply_df_rows_t
 from fragnnet.utils.misc_utils import booltype
 
+"""Prepare processed spectral, molecule, and annotation tables.
+
+Outputs written to `proc_dp`:
+- spec_df.pkl: one row per spectrum with columns
+	- spec_id: integer id unique within processed set
+	- mol_id: integer id linking to mol_df
+	- prec_type: standardized precursor/adduct string
+	- inst_type: standardized instrument type
+	- frag_mode: standardized fragmentation mode
+	- spec_type: spectrum type (e.g., MS2)
+	- ion_mode: P/N 
+	- dset: dataset name (eg. nist20hr)
+	- dset_spec_id: source-specific spectrum id
+	- col_gas: collision gas (may be NaN)
+	- res: inferred m/z resolution # this is not used
+	- ace/nce:
+		- ace/nce: parsed collision energies (absolute and normalized)
+ 		- ace_extra_1: parsed collision energies (absolute and normalized) for additional collision energies
+		- ace_extra_2: parsed collision energies (absolute and normalized) for additional collision energies
+		for ramped: ace/nce and ace_extra_1/ace_extra_1 are set to the first and second collision energies
+		for stepped: ace/nce,ace_extra_1/ace_extra_1, ace_extra_2/ace_extra_2 are set to the 3 collision energies
+	- has_ace/has_nce: boolean flags for collision energy presence
+	- prec_mz: precursor m/z (float; inferred when missing)
+	- peaks: list of (mz, intensity) pairs as floats
+	- ri: retention index if present
+	- formula: molecular formula from source
+	- inchikey: full InChIKey from source when available
+	- exact_mass: exact mass from source when available
+	- group_id: grouping id for spectra sharing compound/precursor
+
+- mol_df.pkl: one row per unique SMILES with columns
+	- smiles: canonicalized SMILES
+	- mol_id: integer id
+	- mol: RDKit Mol object
+	- inchikey_s: first 14 chars of InChIKey
+	- scaffold: Murcko scaffold SMILES
+	- formula: molecular formula
+	- inchi: InChI string
+	- mw/exact_mw: molecular weights (average/exact)
+	- num_atoms/num_bonds/num_radicals: structural counts
+	- charge: formal charge
+	- single_mol: flag for single connected component
+
+- ann_df.pkl: one row per annotated spectrum with columns
+	- dset_spec_id/spec_id/mol_id
+	- prec_type: standardized precursor/adduct
+	- formula: molecular formula from mol_df
+	- ann_peak_mzs: list of annotated peak m/z values
+	- ann_products: list of product formula strings
+	- ann_losses: list of neutral loss formula strings
+	- ann_isotopes: list of isotope annotations
+	- ann_exact_mzs: list of exact m/z values for annotations
+
+Additional debug pickles (no_mol_df, diff_formula_df, diff_inchikey_df, diff_mass_df)
+capture entries dropped or with inconsistencies.
+"""
+
 def load_df(df_dp,dsets,num_entries):
 	
 	dfs = []

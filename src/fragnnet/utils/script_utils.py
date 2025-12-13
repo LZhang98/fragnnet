@@ -6,14 +6,12 @@ from tqdm import tqdm
 import tempfile
 import os
 import gc
-import copy
-from typing import Dict, Any, Optional, Set, Type, List, Tuple
+from typing import Dict, Any, Optional, Set, List, Tuple
 
 from fragnnet.runner import load_config
 from fragnnet.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO, get_best_ckpt_from_wandb
-from fragnnet.pl_model import FraGNNetPL, NeimsPL, GNNPL
-from fragnnet.iceberg.pl_model import IcebergIntenPL, IcebergGenPL
-from fragnnet.massformer.pl_model import MassFormerPL
+from fragnnet.pl_model import FraGNNetPL
+from fragnnet.iceberg.pl_model import IcebergIntenPL
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls
@@ -528,6 +526,32 @@ def get_score_types(config_d):
 				eval_score_types.append(f"{score_type}_{bin_res}")
 	return eval_score_types
 
+def get_tabular_columns(config_d: Dict[str, Any], return_formula_and_cc: bool = False) -> List[str]:
+	"""
+	Get column names for tabular inference output.
+	
+	Args:
+		config_d: Configuration dictionary
+		return_formula_and_cc: Whether output includes formula strings and node CCs
+	
+	Returns:
+		List of column names for DataFrame
+	"""
+	eval_score_types = get_score_types(config_d)
+	columns_name = [
+		"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
+		"frag_formula_peak_idxs", "frag_formula_peak_mzs",
+		"pred_formula_formula_idxs", "pred_formula_probs",
+		"pred_joint_formula_idxs", "pred_formula_node_probs",
+		"pred_joint_node_idxs", "pred_node_formula_probs",
+		"pred_node_probs", "pred_node_node_idxs",
+		"index_rebased"
+	]
+	if return_formula_and_cc:
+		columns_name.extend(["pred_formula_strs", "pred_node_ccs"])
+	columns_name.extend(eval_score_types)
+	return columns_name
+
 def run_inference_pkl(
 	model,
 	dataloader,
@@ -668,24 +692,101 @@ def run_inference_pkl(
 	
 	return vals
 
-def run_inference_df(
+def run_inference_tabular(
 	model: th.nn.Module,
 	dataloader: th.utils.data.DataLoader,
 	device: th.device,
- 	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
+	batch_cutoff: int = -1,
 	evaluate: bool = False,
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
-	min_formula_prob: float = 0.0,
-	min_frag_prob: float = 0.0,
-	return_str: bool = False
+	return_formula_and_cc: bool = False,
+	rebase_indices: bool = True,
+) -> pd.DataFrame:
+	"""
+	Run inference and return all results as a single DataFrame.
+	
+	This is a convenience wrapper around run_inference_tabular_iter that accumulates
+	all batch results into a single DataFrame.
+	
+	Args:
+		model: Model instance
+		dataloader: DataLoader with batches
+		device: Device to run inference on
+		batch_cutoff: Max batches to process (-1 = all)
+		evaluate: Whether to run evaluation step
+		output_set: Subset of outputs to include
+		nb_iso: Whether model uses neighbor isotope prediction
+		min_peak_int: Minimum peak intensity threshold
+		return_formula_and_cc: Whether to return formula strings and CCs
+		rebase_indices: Whether to rebase indices
+	
+	Returns:
+		DataFrame with all inference results
+	"""
+	# Get column names from config
+	columns_name = get_tabular_columns(model.hparams, return_formula_and_cc)
+	
+	# Accumulate all batch results
+	preds_l = []
+	for batch_rows in run_inference_tabular_iter(
+		model=model,
+		dataloader=dataloader,
+		device=device,
+		batch_cutoff=batch_cutoff,
+		evaluate=evaluate,
+		output_set=output_set,
+		nb_iso=nb_iso,
+		min_peak_int=min_peak_int,
+		return_formula_and_cc=return_formula_and_cc,
+		rebase_indices=rebase_indices,
+	):
+		preds_l.extend(batch_rows)
+	
+	pred_df = pd.DataFrame(preds_l, columns=columns_name)
+	return pred_df
+
+def run_inference_tabular_iter(
+	model: th.nn.Module,
+	dataloader: th.utils.data.DataLoader,
+	device: th.device,
+	batch_cutoff: int = -1,
+	evaluate: bool = False,
+	output_set: Optional[set[str]] = None,
+	nb_iso: bool = False,
+	min_peak_int: float = 0.0,
+	return_formula_and_cc: bool = False,
+	rebase_indices: bool = True,
 ):
 	"""
-	Run inference with optional chunked saving for resumable predictions.
+	Generator that yields batch results for streaming inference processing.
+	
+	Yields batch_rows (list of data rows) for each batch processed. Caller is responsible
+	for accumulating, saving, or processing results as needed.
+	
+	Args:
+		model: Model instance
+		dataloader: DataLoader with batches
+		device: Device to run inference on
+		batch_cutoff: Max batches to process (-1 = all)
+		evaluate: Whether to run evaluation step
+		output_set: Subset of outputs to include
+		nb_iso: Whether model uses neighbor isotope prediction
+		min_peak_int: Minimum peak intensity threshold
+		return_formula_and_cc: Whether to return formula strings and CCs
+		rebase_indices: Whether to rebase indices
+	
+	Yields:
+		List of data rows for each batch
+	
+	Example:
+		columns_name = [...]  # Define column names once
+		for batch_rows in run_inference_tabular_iter(model, dataloader, device):
+			df = pd.DataFrame(batch_rows, columns=columns_name)
+			df.to_parquet(f"batch_{batch_num}.parquet")
 	"""
-	# Common setup
-	print(f"\n>>> Starting inference on {min(len(dataloader),batch_cutoff if batch_cutoff > 0 else len(dataloader))} batches...")
+	print(f"\n>>> Starting inference on {min(len(dataloader), batch_cutoff if batch_cutoff > 0 else len(dataloader))} batches...")
 	if model.training:
 		raise RuntimeError(f"> Warning: model {model} is in training mode!")
 	
@@ -696,9 +797,7 @@ def run_inference_df(
 	)
 
 	eval_score_types = get_score_types(model.hparams)
- 
-	preds_l = []
- 	#print(">> set model to this to eval")
+	
 	model.eval()
 	with th.inference_mode():
 		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), desc="Running inference"):
@@ -706,223 +805,313 @@ def run_inference_df(
 			if batch_idx >= batch_cutoff and batch_cutoff > 0:
 				print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
 				break
-			#print(batch_input)
-			#exit()
-			spec_ids = batch_input['spec_unique_id']
-			mol_ids = batch_input['mol_id']
 
-			# Extract string/graph data before moving to device (if they are not tensors)
-			frag_formula_str = batch_input.get("frag_formula_str", None)
-			frag_pyg = batch_input.get("frag_pyg", None)
+			# Process batch and get data rows
+			batch_rows = process_batch_to_tabular_row(
+				batch_input=batch_input,
+				model=model,
+				device=device,
+				evaluate=evaluate,
+				eval_score_types=eval_score_types,
+				BATCH_IDX_VARS=BATCH_IDX_VARS,
+				NODE_IDX_VARS=NODE_IDX_VARS,
+				FORMULA_IDX_VARS=FORMULA_IDX_VARS,
+				min_peak_int=min_peak_int,
+				rebase_indices=rebase_indices,
+				return_formula_and_cc=return_formula_and_cc,
+			)
+			yield batch_rows
 
-			batch_input = to_device(batch_input, device)
-			# use existing evaluate to compute cos sim and etc
-			if evaluate:
-				batch_result = model._common_step(batch_input, split="test", log=False)
-			else:
-				batch_result = model.predict_step(**batch_input)
+def process_batch_to_tabular_row(
+	batch_input: dict,
+	model: th.nn.Module,
+	device: th.device,
+	evaluate: bool,
+	eval_score_types: list,
+	BATCH_IDX_VARS: list,
+	NODE_IDX_VARS: list,
+	FORMULA_IDX_VARS: list,
+	min_peak_int: float,
+	rebase_indices: bool,
+	return_formula_and_cc: bool,
+) -> list:
+	"""
+	Process a single batch and return list of data rows.
 	
-			# batch_input['batch_size'] is a tensor -> convert to Python int
-			batch_size = int(batch_input['batch_size'].detach().cpu().item())
-
-			pred_mzs = batch_result["pred_mzs"].detach().cpu()
-			pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()	
-			pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
-			pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
-			pred_oos_probs = batch_result["oos_prob"].detach().cpu() if "oos_prob" in batch_result else None
-
-			eval_scores_d = {}
-			for eval_score_type in eval_score_types:
-				eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
-   			
-   
-			# ============================
-			# land of input mappings
-			# ============================
-			# mapping each peak to its local formula index, peak index -> formula index 
-			frag_formula_peak_idxs = batch_input['frag_formula_peak_idxs'].detach().cpu() if "frag_formula_peak_idxs" in batch_input else None
-
-			# ============================
-			# land of results
-			# ============================
-			# forumla log probs p(f)
-			pred_formula_probs = th.exp(batch_result['pred_formula_logprobs'].detach().cpu()) if "pred_formula_logprobs" in batch_result else None
-			# log prob p(n|f), node conditioned on formula
-			pred_formula_node_probs = th.exp(batch_result['pred_formula_node_logprobs'].detach().cpu()) if "pred_formula_node_logprobs" in batch_result else None
-			# log prob p(f|n), formula conditioned on node
-			pred_node_formula_probs = th.exp(batch_result['pred_node_formula_logprobs'].detach().cpu()) if "pred_node_formula_logprobs" in batch_result else None
- 			# node log probs p(n)
-			pred_node_probs = th.exp(batch_result['pred_node_logprobs'].detach().cpu()) if "pred_node_logprobs" in batch_result else None
-
-			# ============================
-			# node idx mappings
-			# ============================
-			# joint node idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
-			pred_joint_node_idxs = batch_result['pred_joint_node_idxs'].detach().cpu() if "pred_joint_node_idxs" in NODE_IDX_VARS else None
-			# node idxs maps each entry in pred_node_logprobs to its node idx
-			pred_node_node_idxs = batch_result['pred_node_node_idxs'].detach().cpu() if "pred_node_node_idxs" in NODE_IDX_VARS else None
-
-			# ============================
-			# land of formula idx mappings
-			# ============================
-			# joint formula idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
-			pred_joint_formula_idxs = batch_result['pred_joint_formula_idxs'].detach().cpu() if "pred_joint_formula_idxs" in FORMULA_IDX_VARS else None
-			# formula idxs maps each entry in pred_formula_logprobs to its formula idx
-			pred_formula_formula_idxs = batch_result['pred_formula_formula_idxs'].detach().cpu() if "pred_formula_formula_idxs" in FORMULA_IDX_VARS else None
+	Args:
+		batch_input: Input batch data
+		model: Model instance
+		device: Device to run on
+		evaluate: Whether to run evaluation step
+		eval_score_types: List of evaluation score types
+		BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS: Index variable names
+		min_peak_int: Minimum peak intensity threshold
+		rebase_indices: Whether to rebase indices
+		return_formula_and_cc: Whether to return formula strings and CCs
 	
-			# ============================
-			#  batch idx mappings
-			# ============================
-			# joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
-			joint_batch_idxs = batch_result['pred_joint_batch_idxs'].detach().cpu() if "pred_joint_batch_idxs" in BATCH_IDX_VARS else None			
-			# formula prob batch idxs, maps each entry in pred_formula_logprobs to its batch idx
-			pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs'].detach().cpu() if "pred_formula_batch_idxs" in BATCH_IDX_VARS else None
-			# node prob batch idxs, maps each entry in pred_node_logprobs to its batch idx
-			pred_node_batch_idxs = batch_result['pred_node_batch_idxs'].detach().cpu() if "pred_node_batch_idxs" in BATCH_IDX_VARS else None
-	
-			# ============================
-			# per-spectrum processing
-			# ============================	
-			# Get cumulative counts for rebasing from batch_input
-			# These are tensors of shape (batch_size + 1) containing offsets
-			frag_formula_cumsizes = batch_input["frag_formula_cumsizes"].detach().cpu()
-			frag_num_nodes = batch_input["frag_num_nodes"].detach().cpu()
+	Returns:
+		List of data rows for this batch
+	"""
+	spec_ids = batch_input['spec_unique_id']
+	mol_ids = batch_input['mol_id']
 
-			# Extract formula strings and PyG object if needed
-			frag_formula_str = batch_input.get("frag_formula_str", None)
-			frag_pyg = batch_input.get("frag_pyg", None)
+	# Extract string/graph data before moving to device (if they are not tensors)
+	frag_formula_str = batch_input.get("frag_formula_str", None)
+	frag_pyg = batch_input.get("frag_pyg", None)
 
-			for b_idx in range(batch_size):
-				# per-spectrum masks and basic fields
-				b_peak_mask = pred_batch_idxs == b_idx
-				b_pred_oos_prob = pred_oos_probs[b_idx].numpy().item() if pred_oos_probs is not None else np.nan
-				b_spec_id = spec_ids[b_idx]
-				b_mol_id = mol_ids[b_idx]
-				b_spec_mzs = pred_mzs[b_peak_mask]
-				b_spec_ints = pred_ints[b_peak_mask]
-				b_frag_formula_peak_idxs = frag_formula_peak_idxs[b_peak_mask] if frag_formula_peak_idxs is not None else None
+	batch_input = to_device(batch_input, device)
+	# use existing evaluate to compute cos sim and etc
+	if evaluate:
+		batch_result = model._common_step(batch_input, split="test", log=False)
+	else:
+		batch_result = model.predict_step(**batch_input)
 
-				# Filter joint distribution data (P(f,n)), p(n|f) and p(f|n) for the current spectrum/molecule (b_idx)
-				b_joint_mask = (joint_batch_idxs == b_idx) if joint_batch_idxs is not None else None
-				# Conditional log probabilities P(n|f)
-				b_pred_formula_node_probs = pred_formula_node_probs[b_joint_mask] if pred_formula_node_probs is not None and b_joint_mask is not None else None
-				# Conditional log probabilities P(f|n)
-				b_pred_node_formula_probs = pred_node_formula_probs[b_joint_mask] if pred_node_formula_probs is not None and b_joint_mask is not None else None
-				b_pred_joint_formula_idxs = pred_joint_formula_idxs[b_joint_mask] if pred_joint_formula_idxs is not None and b_joint_mask is not None else None
-				b_pred_joint_node_idxs = pred_joint_node_idxs[b_joint_mask] if pred_joint_node_idxs is not None and b_joint_mask is not None else None
+	# batch_input['batch_size'] is a tensor -> convert to Python int
+	batch_size = int(batch_input['batch_size'].detach().cpu().item())
+
+	pred_mzs = batch_result["pred_mzs"].detach().cpu()
+	pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()	
+	pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
+	pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+	pred_oos_probs = batch_result["oos_prob"].detach().cpu() if "oos_prob" in batch_result else None
+
+	eval_scores_d = {}
+	for eval_score_type in eval_score_types:
+		eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
 			
-				# Filter formula probability data (P(f)) for the current spectrum/molecule (b_idx)
-				# and sort formulas by probability descending
-				b_pred_formula_mask = (pred_formula_batch_idxs == b_idx) if pred_formula_batch_idxs is not None else None
-				b_pred_formula_formula_idxs = pred_formula_formula_idxs[b_pred_formula_mask] if pred_formula_formula_idxs is not None and b_pred_formula_mask is not None else None
-				b_pred_formula_probs = pred_formula_probs[b_pred_formula_mask] if pred_formula_probs is not None and b_pred_formula_mask is not None else None
-				
-				# node probabilities P(n) for the current spectrum/molecule (b_idx)
-				b_pred_node_mask = (pred_node_batch_idxs == b_idx) if pred_node_batch_idxs is not None else None
-				#b_pred_node_idxs = pred_joint_node_idxs[b_pred_node_mask]
-				b_pred_node_probs = pred_node_probs[b_pred_node_mask] if pred_node_probs is not None and b_pred_node_mask is not None else None
-				b_pred_node_node_idxs = pred_node_node_idxs[b_pred_node_mask] if pred_node_node_idxs is not None and b_pred_node_mask is not None else None
+	
+	# ============================
+	# land of input mappings
+	# ============================
+	# mapping each peak to its local formula index, peak index -> formula index 
+	frag_formula_peak_idxs = batch_input['frag_formula_peak_idxs'].detach().cpu() if "frag_formula_peak_idxs" in batch_input else None
 
-				# Rebase indices to 0-based per molecule
-				f_offset = frag_formula_cumsizes[b_idx]
-				n_offset = frag_num_nodes[b_idx]
+	# ============================
+	# land of results
+	# ============================
+	# forumla log probs p(f)
+	pred_formula_probs = th.exp(batch_result['pred_formula_logprobs'].detach().cpu()) if "pred_formula_logprobs" in batch_result else None
+	# log prob p(n|f), node conditioned on formula
+	pred_formula_node_probs = th.exp(batch_result['pred_formula_node_logprobs'].detach().cpu()) if "pred_formula_node_logprobs" in batch_result else None
+	# log prob p(f|n), formula conditioned on node
+	pred_node_formula_probs = th.exp(batch_result['pred_node_formula_logprobs'].detach().cpu()) if "pred_node_formula_logprobs" in batch_result else None
+	# node log probs p(n)
+	pred_node_probs = th.exp(batch_result['pred_node_logprobs'].detach().cpu()) if "pred_node_logprobs" in batch_result else None
 
-				if b_pred_formula_formula_idxs is not None:
-					b_pred_formula_formula_idxs = b_pred_formula_formula_idxs - f_offset
-				if b_pred_joint_formula_idxs is not None:
-					b_pred_joint_formula_idxs = b_pred_joint_formula_idxs - f_offset
-					# Note: b_frag_formula_peak_idxs are already local (0-based per molecule), so no offset needed
+	# ============================
+	# node idx mappings
+	# ============================
+	# joint node idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
+	pred_joint_node_idxs = batch_result['pred_joint_node_idxs'].detach().cpu() if "pred_joint_node_idxs" in NODE_IDX_VARS else None
+	# node idxs maps each entry in pred_node_logprobs to its node idx
+	pred_node_node_idxs = batch_result['pred_node_node_idxs'].detach().cpu() if "pred_node_node_idxs" in NODE_IDX_VARS else None
 
-				if b_pred_node_node_idxs is not None:
-					b_pred_node_node_idxs = b_pred_node_node_idxs - n_offset
-				if b_pred_joint_node_idxs is not None:
-					b_pred_joint_node_idxs = b_pred_joint_node_idxs - n_offset
-				
-				# Apply intensity filtering
-				(
-					b_spec_ints, b_spec_mzs,
-					b_pred_formula_formula_idxs, b_pred_formula_probs,
-					b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
-					b_pred_joint_node_idxs, b_pred_node_formula_probs,
-					b_pred_node_probs, b_pred_node_node_idxs
-				) = filter_by_peak_intensity(
-					min_peak_int,
-					min_formula_prob,
-					min_frag_prob,
-					b_spec_ints,
-					b_spec_mzs,
-					b_frag_formula_peak_idxs,
-					b_pred_formula_formula_idxs,
-					b_pred_formula_probs,
-					b_pred_joint_formula_idxs,
-					b_pred_formula_node_probs,
-					b_pred_joint_node_idxs,
-					b_pred_node_formula_probs,
-					b_pred_node_probs,
-					b_pred_node_node_idxs
+	# ============================
+	# land of formula idx mappings
+	# ============================
+	# joint formula idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
+	pred_joint_formula_idxs = batch_result['pred_joint_formula_idxs'].detach().cpu() if "pred_joint_formula_idxs" in FORMULA_IDX_VARS else None
+	# formula idxs maps each entry in pred_formula_logprobs to its formula idx
+	pred_formula_formula_idxs = batch_result['pred_formula_formula_idxs'].detach().cpu() if "pred_formula_formula_idxs" in FORMULA_IDX_VARS else None
+
+	# ============================
+	#  batch idx mappings
+	# ============================
+	# joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
+	joint_batch_idxs = batch_result['pred_joint_batch_idxs'].detach().cpu() if "pred_joint_batch_idxs" in BATCH_IDX_VARS else None			
+	# formula prob batch idxs, maps each entry in pred_formula_logprobs to its batch idx
+	pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs'].detach().cpu() if "pred_formula_batch_idxs" in BATCH_IDX_VARS else None
+	# node prob batch idxs, maps each entry in pred_node_logprobs to its batch idx
+	pred_node_batch_idxs = batch_result['pred_node_batch_idxs'].detach().cpu() if "pred_node_batch_idxs" in BATCH_IDX_VARS else None
+
+	# =============================
+	# extract formula strings and PyG object if needed
+	# =============================
+	# Extract formula strings and PyG object if needed
+	frag_formula_str = batch_input.get("frag_formula_str", None)
+	frag_pyg = batch_input.get("frag_pyg", None)
+	frag_formula_peak_mzs = batch_input.get("frag_formula_peak_mzs", None)
+
+	# ============================s
+	# per-spectrum processing
+	# ============================	
+	# Get cumulative counts for rebasing from batch_input
+	# These are tensors of shape (batch_size + 1) containing offsets
+	frag_formula_cumsizes = batch_input["frag_formula_cumsizes"].detach().cpu()
+	frag_num_nodes = batch_input["frag_num_nodes"].detach().cpu()
+
+	batch_rows = []
+	for b_idx in range(batch_size):
+		# per-spectrum masks and basic fields
+		b_peak_mask = pred_batch_idxs == b_idx
+		b_pred_oos_prob = pred_oos_probs[b_idx].numpy().item() if pred_oos_probs is not None else np.nan
+		b_spec_id = spec_ids[b_idx]
+		b_mol_id = mol_ids[b_idx]
+		b_spec_mzs = pred_mzs[b_peak_mask]
+		b_spec_ints = pred_ints[b_peak_mask]
+		b_frag_formula_peak_idxs = frag_formula_peak_idxs[b_peak_mask] if frag_formula_peak_idxs is not None else None
+		b_frag_formula_peak_mzs = frag_formula_peak_mzs[b_peak_mask] if frag_formula_peak_mzs is not None else None
+
+		# Filter joint distribution data (P(f,n)), p(n|f) and p(f|n) for the current spectrum/molecule (b_idx)
+		b_joint_mask = (joint_batch_idxs == b_idx) if joint_batch_idxs is not None else None
+		# Conditional log probabilities P(n|f)
+		b_pred_formula_node_probs = pred_formula_node_probs[b_joint_mask] if pred_formula_node_probs is not None and b_joint_mask is not None else None
+		# Conditional log probabilities P(f|n)
+		b_pred_node_formula_probs = pred_node_formula_probs[b_joint_mask] if pred_node_formula_probs is not None and b_joint_mask is not None else None
+		b_pred_joint_formula_idxs = pred_joint_formula_idxs[b_joint_mask] if pred_joint_formula_idxs is not None and b_joint_mask is not None else None
+		b_pred_joint_node_idxs = pred_joint_node_idxs[b_joint_mask] if pred_joint_node_idxs is not None and b_joint_mask is not None else None
+	
+		# Filter formula probability data (P(f)) for the current spectrum/molecule (b_idx)
+		# and sort formulas by probability descending
+		b_pred_formula_mask = (pred_formula_batch_idxs == b_idx) if pred_formula_batch_idxs is not None else None
+		b_pred_formula_formula_idxs = pred_formula_formula_idxs[b_pred_formula_mask] if pred_formula_formula_idxs is not None and b_pred_formula_mask is not None else None
+		b_pred_formula_probs = pred_formula_probs[b_pred_formula_mask] if pred_formula_probs is not None and b_pred_formula_mask is not None else None
+		
+		# node probabilities P(n) for the current spectrum/molecule (b_idx)
+		b_pred_node_mask = (pred_node_batch_idxs == b_idx) if pred_node_batch_idxs is not None else None
+		#b_pred_node_idxs = pred_joint_node_idxs[b_pred_node_mask]
+		b_pred_node_probs = pred_node_probs[b_pred_node_mask] if pred_node_probs is not None and b_pred_node_mask is not None else None
+		b_pred_node_node_idxs = pred_node_node_idxs[b_pred_node_mask] if pred_node_node_idxs is not None and b_pred_node_mask is not None else None
+
+		# Rebase indices to 0-based per molecule
+		f_offset = frag_formula_cumsizes[b_idx]
+		n_offset = frag_num_nodes[b_idx]
+
+		if b_pred_formula_formula_idxs is not None:
+			b_pred_formula_formula_idxs = b_pred_formula_formula_idxs - f_offset
+		if b_pred_joint_formula_idxs is not None:
+			b_pred_joint_formula_idxs = b_pred_joint_formula_idxs - f_offset
+			# Note: b_frag_formula_peak_idxs are already local (0-based per molecule), so no offset needed
+
+		if b_pred_node_node_idxs is not None:
+			b_pred_node_node_idxs = b_pred_node_node_idxs - n_offset
+		if b_pred_joint_node_idxs is not None:
+			b_pred_joint_node_idxs = b_pred_joint_node_idxs - n_offset
+			
+		# Apply intensity filtering
+		(
+			b_spec_ints, b_spec_mzs, b_frag_formula_peak_mzs, b_frag_formula_peak_idxs,
+			b_pred_formula_formula_idxs, b_pred_formula_probs,
+			b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
+			b_pred_joint_node_idxs, b_pred_node_formula_probs,
+			b_pred_node_probs, b_pred_node_node_idxs,
+		) = filter_by_peak_intensity(
+			min_peak_int,
+			b_spec_ints,
+			b_spec_mzs,
+			b_frag_formula_peak_mzs,
+			b_frag_formula_peak_idxs,
+			b_pred_formula_formula_idxs,
+			b_pred_formula_probs,
+			b_pred_joint_formula_idxs,
+			b_pred_formula_node_probs,
+			b_pred_joint_node_idxs,
+			b_pred_node_formula_probs,
+			b_pred_node_probs,
+			b_pred_node_node_idxs,
+			verbose=False,
+		)
+
+		# Store original indices before rebasing (for lookups)
+		orig_formula_idxs_for_lookup = b_pred_formula_formula_idxs.clone() if b_pred_formula_formula_idxs is not None else None
+		orig_node_idxs_for_lookup = b_pred_node_node_idxs.clone() if b_pred_node_node_idxs is not None else None
+		
+		if rebase_indices:
+			# Rebase formula indices to 0-based contiguous
+			if b_pred_formula_formula_idxs is not None and len(b_pred_formula_formula_idxs) > 0:
+				unique_f_idxs = th.unique(b_pred_formula_formula_idxs, sorted=True)
+				formula_idx_map = {old_idx.item(): new_idx for new_idx, old_idx in enumerate(unique_f_idxs)}
+		
+				# Apply rebasing to formula arrays
+				b_pred_formula_formula_idxs = th.tensor(
+					[formula_idx_map[idx.item()] for idx in b_pred_formula_formula_idxs],
+					dtype=b_pred_formula_formula_idxs.dtype,
+					device=b_pred_formula_formula_idxs.device
 				)
+				if b_pred_joint_formula_idxs is not None:
+					b_pred_joint_formula_idxs = th.tensor(
+						[formula_idx_map[idx.item()] for idx in b_pred_joint_formula_idxs],
+						dtype=b_pred_joint_formula_idxs.dtype,
+						device=b_pred_joint_formula_idxs.device
+					)
+				# Rebase peak->formula mapping to the new contiguous formula ids
+				if b_frag_formula_peak_idxs is not None:
+					b_frag_formula_peak_idxs = th.tensor(
+						[formula_idx_map[idx.item()] for idx in b_frag_formula_peak_idxs],
+						dtype=b_frag_formula_peak_idxs.dtype if isinstance(b_frag_formula_peak_idxs, th.Tensor) else th.long,
+						device=b_pred_formula_formula_idxs.device
+					)
+			
+			# Rebase node indices to 0-based contiguous
+			if b_pred_node_node_idxs is not None and len(b_pred_node_node_idxs) > 0:
+				unique_n_idxs = th.unique(b_pred_node_node_idxs, sorted=True)
+				node_idx_map = {old_idx.item(): new_idx for new_idx, old_idx in enumerate(unique_n_idxs)}
+				
+				# Apply rebasing to node arrays
+				b_pred_node_node_idxs = th.tensor(
+					[node_idx_map[idx.item()] for idx in b_pred_node_node_idxs],
+					dtype=b_pred_node_node_idxs.dtype,
+					device=b_pred_node_node_idxs.device
+				)
+				if b_pred_joint_node_idxs is not None:
+					b_pred_joint_node_idxs = th.tensor(
+						[node_idx_map[idx.item()] for idx in b_pred_joint_node_idxs],
+						dtype=b_pred_joint_node_idxs.dtype,
+						device=b_pred_joint_node_idxs.device
+					)
+		
+		# assemble row and append
+		# Add rebase flag: True if indices were rebased, False otherwise
+		rebased = bool(rebase_indices)
+		data_row = [
+			b_spec_id.item(), 
+			b_mol_id, 
+			b_spec_mzs.tolist(), 
+			b_spec_ints.tolist(), 
+			b_pred_oos_prob,
+			b_frag_formula_peak_idxs.tolist() if b_frag_formula_peak_idxs is not None else np.nan,
+			b_frag_formula_peak_mzs.tolist() if b_frag_formula_peak_mzs is not None else np.nan,
+			b_pred_formula_formula_idxs.tolist() if b_pred_formula_formula_idxs is not None else np.nan,
+			b_pred_formula_probs.tolist() if b_pred_formula_probs is not None else np.nan,
+			b_pred_joint_formula_idxs.tolist() if b_pred_joint_formula_idxs is not None else np.nan,
+			b_pred_formula_node_probs.tolist() if b_pred_formula_node_probs is not None else np.nan,
+			b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else np.nan,
+			b_pred_node_formula_probs.tolist() if b_pred_node_formula_probs is not None else np.nan,
+			b_pred_node_probs.tolist() if b_pred_node_probs is not None else np.nan,
+			b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else np.nan,
+			rebased
+		]
 
-				# assemble row and append
-				data_row = [
-					b_spec_id.item(), 
-					b_mol_id, 
-					b_spec_mzs.tolist(), 
-					b_spec_ints.tolist(), 
-					b_pred_oos_prob,
-					b_pred_formula_formula_idxs.tolist() if b_pred_formula_formula_idxs is not None else np.nan,
-					b_pred_formula_probs.tolist() if b_pred_formula_probs is not None else np.nan,
-					b_pred_joint_formula_idxs.tolist() if b_pred_joint_formula_idxs is not None else np.nan,
-					b_pred_formula_node_probs.tolist() if b_pred_formula_node_probs is not None else np.nan,
-					b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else np.nan,
-					b_pred_node_formula_probs.tolist() if b_pred_node_formula_probs is not None else np.nan,
-					b_pred_node_probs.tolist() if b_pred_node_probs is not None else np.nan,
-					b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else np.nan
-				]
+		if return_formula_and_cc:
+			# Get formula strings using original (pre-rebase) indices
+			b_pred_formula_strs = np.nan
+			if orig_formula_idxs_for_lookup is not None and frag_formula_str is not None and rebase_indices:
+				f_offset = frag_formula_cumsizes[b_idx].item()
+				global_f_idxs = orig_formula_idxs_for_lookup + f_offset
+				b_pred_formula_strs = frag_formula_str[global_f_idxs.cpu().numpy()].tolist()
+			data_row.append(b_pred_formula_strs)
 
-				if return_str:
-					# Get formula strings
-					b_pred_formula_strs = np.nan
-					if b_pred_formula_formula_idxs is not None and frag_formula_str is not None:
-						f_offset = frag_formula_cumsizes[b_idx].item()
-						global_f_idxs = b_pred_formula_formula_idxs + f_offset
-						b_pred_formula_strs = frag_formula_str[global_f_idxs.numpy()].tolist()
-						#print(f"b_idx {b_idx} formula strs: {b_pred_formula_strs}")
-					data_row.append(b_pred_formula_strs)
+			# Get node CCs using original (pre-rebase) indices
+			b_pred_node_ccs = np.nan
+			if orig_node_idxs_for_lookup is not None and frag_pyg is not None and rebase_indices:
+				i_frag_pyg = frag_pyg[b_idx]
+				node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
+				all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
+				b_pred_node_ccs = all_node_ccs[orig_node_idxs_for_lookup.long()].detach().cpu() #save as tensor
+			data_row.append(b_pred_node_ccs)
 
-					# Get node CCs
-					b_pred_node_ccs = np.nan
-					if b_pred_node_node_idxs is not None and frag_pyg is not None:
-						i_frag_pyg = frag_pyg[b_idx]
-						node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
-						all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
-						b_pred_node_ccs = all_node_ccs[b_pred_node_node_idxs.long()].detach().cpu().numpy().tolist()
-					data_row.append(b_pred_node_ccs)
+		for eval_score_type in eval_score_types:
+			data_row.append(eval_scores_d[eval_score_type][b_idx].item())
+		batch_rows.append(data_row)
+	
+	return batch_rows
 
-				for eval_score_type in eval_score_types:
-					data_row.append(eval_scores_d[eval_score_type][b_idx].item())
-				preds_l.append(data_row)
-   
-		# build dataframe with new columns (after processing all batches)
-		columns = [
-			"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
-			"pred_formula_formula_idxs", "pred_formula_probs",
-			"pred_joint_formula_idxs", "pred_formula_node_probs",
-			"pred_joint_node_idxs", "pred_node_formula_probs",
-			"pred_node_probs", "pred_node_node_idxs"
-		] 
-		if return_str:
-			columns.extend(["pred_formula_strs", "pred_node_ccs"])
-		columns.extend(eval_score_types)
-		pred_df = pd.DataFrame(preds_l, columns=columns)
-		print(pred_df.head())
-		return pred_df
 
 def filter_by_peak_intensity(
 	min_peak_int: float,
-	min_formula_prob: float,
-	min_frag_prob: float,
 	pred_ints: th.Tensor,
 	pred_mzs: th.Tensor,
+	frag_formula_peak_mzs: Optional[th.Tensor],
 	frag_formula_peak_idxs: Optional[th.Tensor],
 	b_pred_formula_formula_idxs: Optional[th.Tensor],
 	b_pred_formula_probs: Optional[th.Tensor],
@@ -932,15 +1121,30 @@ def filter_by_peak_intensity(
 	b_pred_node_formula_probs: Optional[th.Tensor] = None,
 	b_pred_node_probs: Optional[th.Tensor] = None,
 	b_pred_node_node_idxs: Optional[th.Tensor] = None,
-	verbose: bool = False
+	verbose: bool = False,
 ):
 	"""
-	Filter formulas and nodes based on the intensity of the associated peak and formula probability.
+	Filter predictions based on peak intensity threshold.
 	Keeps original formula and node indices.
+	Args:
+		min_peak_int: Minimum peak intensity threshold
+		pred_ints: Predicted intensities for peaks
+		pred_mzs: Predicted m/z values for peaks
+		frag_formula_peak_mzs: m/z values per peak aligned with frag_formula_peak_idxs
+		frag_formula_peak_idxs: Mapping from peaks to local formula indices
+		b_pred_formula_formula_idxs: Global formula indices for predicted formulas
+		b_pred_formula_probs: Predicted formula probabilities
+		b_pred_joint_formula_idxs: Joint formula indices for P(f,n), P(n|f), P(f|n)
+		b_pred_formula_node_probs: Predicted P(n|f) probabilities
+		b_pred_joint_node_idxs: Joint node indices for P(f,n), P(n|f), P(f|n)
+		b_pred_node_formula_probs: Predicted P(f|n) probabilities
+		b_pred_node_probs: Predicted node probabilities
+		b_pred_node_node_idxs: Node indices for predicted nodes
+		verbose: Whether to print verbose output
 	"""
-	if min_peak_int <= 0 and min_formula_prob <= 0 and min_frag_prob <= 0:
+	if min_peak_int <= 0:
 		return (
-			pred_ints, pred_mzs,
+			pred_ints, pred_mzs, frag_formula_peak_mzs, frag_formula_peak_idxs,
 			b_pred_formula_formula_idxs, b_pred_formula_probs,
 			b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
 			b_pred_joint_node_idxs, b_pred_node_formula_probs,
@@ -955,6 +1159,8 @@ def filter_by_peak_intensity(
 		final_n_peaks = init_n_peaks
   
 	valid_f_idxs = None
+	valid_n_idxs = None
+		
 	# 1. Filter by peak intensity
 	# This step identifies which formulas are associated with peaks that have intensity > min_peak_int.
 	# It uses frag_formula_peak_idxs which maps peaks to local formula indices.
@@ -966,6 +1172,9 @@ def filter_by_peak_intensity(
 		# Filter peaks themselves
 		pred_ints = pred_ints[valid_peak_mask]
 		pred_mzs = pred_mzs[valid_peak_mask]
+		frag_formula_peak_idxs = frag_formula_peak_idxs[valid_peak_mask]
+		if frag_formula_peak_mzs is not None: # Only if frag_formula_peak_mzs is available
+			frag_formula_peak_mzs = frag_formula_peak_mzs[valid_peak_mask]
 
 		# Map local formula indices (0..N_formulas_in_mol) to global formula indices (if available)
 		# b_pred_formula_formula_idxs contains the global indices for the formulas in this molecule
@@ -979,30 +1188,10 @@ def filter_by_peak_intensity(
 			# Fallback if formula indices are missing (unlikely to be useful but prevents crash)
 			valid_f_idxs = th.unique(valid_local_f_idxs)
 
-	# 2. Filter by formula probability
-	# This step identifies formulas that have a predicted probability > min_formula_prob.
-	if min_formula_prob > 0 and b_pred_formula_probs is not None \
-	 	and b_pred_formula_formula_idxs is not None:
-		# b_pred_formula_probs is already exp(log_probs) so it is in probability space [0,1]
-		prob_mask = b_pred_formula_probs > min_formula_prob
-		valid_f_idxs_prob = b_pred_formula_formula_idxs[prob_mask]
-		
-		if verbose:
-			print(f"  > valid_f_idxs (peaks): {valid_f_idxs}")
-			print(f"  > valid_f_idxs_prob: {valid_f_idxs_prob}")
-
-		# Intersect with valid formulas from peak intensity filter (if any)
-		# If valid_f_idxs is None (no peak filtering or no peaks passed), use probability filter only
-		# If valid_f_idxs exists, keep only formulas that satisfy BOTH conditions
-		valid_f_idxs = valid_f_idxs[th.isin(valid_f_idxs, valid_f_idxs_prob)] if valid_f_idxs is not None else valid_f_idxs_prob
-		
-		if verbose:
-			print(f"  > valid_f_idxs (merged): {valid_f_idxs}")
-
 	# If no filtering was applied (valid_f_idxs is None), return original tensors
 	if valid_f_idxs is None:
 		return (
-			pred_ints, pred_mzs,
+			pred_ints, pred_mzs, frag_formula_peak_mzs, frag_formula_peak_idxs,
 			b_pred_formula_formula_idxs, b_pred_formula_probs,
 			b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
 			b_pred_joint_node_idxs, b_pred_node_formula_probs,
@@ -1017,11 +1206,24 @@ def filter_by_peak_intensity(
 		b_pred_formula_formula_idxs = b_pred_formula_formula_idxs[keep_mask_f]
 		if b_pred_formula_probs is not None:
 			b_pred_formula_probs = b_pred_formula_probs[keep_mask_f]
-			
+		
+	# Filter node predictions (P(n)) first
+	# We keep nodes that appear in the filtered joint distribution
+	if b_pred_node_probs is not None and b_pred_node_node_idxs is not None:
+		# Get valid node indices after filtering
+		valid_n_idxs = b_pred_node_node_idxs
+	else:
+		valid_n_idxs = None
+	
 	# Filter joint predictions (P(f,n), P(n|f), P(f|n))
-	# These are indexed by formula, so we filter based on whether the formula is in valid_f_idxs
+	# Filter by BOTH formula (must be in valid_f_idxs) AND node (must be in valid_n_idxs if available)
 	if b_pred_joint_formula_idxs is not None:
 		keep_mask_j = th.isin(b_pred_joint_formula_idxs, valid_f_idxs)
+		
+		# Also filter by node if we have valid node indices
+		if valid_n_idxs is not None and b_pred_joint_node_idxs is not None:
+			keep_mask_j = keep_mask_j & th.isin(b_pred_joint_node_idxs, valid_n_idxs)
+		
 		b_pred_joint_formula_idxs = b_pred_joint_formula_idxs[keep_mask_j]
 		if b_pred_formula_node_probs is not None:
 			b_pred_formula_node_probs = b_pred_formula_node_probs[keep_mask_j]
@@ -1029,21 +1231,7 @@ def filter_by_peak_intensity(
 			b_pred_joint_node_idxs = b_pred_joint_node_idxs[keep_mask_j]
 		if b_pred_node_formula_probs is not None:
 			b_pred_node_formula_probs = b_pred_node_formula_probs[keep_mask_j]
-   
-		# Filter node predictions (P(n))
-		# We keep nodes that appear in the filtered joint distribution (i.e., connected to valid formulas)
-		# AND optionally filter by node probability (min_frag_prob)
-		if b_pred_node_probs is not None and b_pred_node_node_idxs is not None:
-			keep_mask_n = th.ones(b_pred_node_probs.shape[0], dtype=th.bool, device=b_pred_node_probs.device)
-
-			if b_pred_joint_node_idxs is not None:
-				valid_n_idxs = th.unique(b_pred_joint_node_idxs)
-				keep_mask_n = keep_mask_n & th.isin(b_pred_node_node_idxs, valid_n_idxs)
-			if min_frag_prob > 0:
-				keep_mask_n = keep_mask_n & (b_pred_node_probs > min_frag_prob)
-			b_pred_node_probs = b_pred_node_probs[keep_mask_n]
-			b_pred_node_node_idxs = b_pred_node_node_idxs[keep_mask_n]
-
+			
 	# Track final sizes and print stats
 	if verbose:
 		final_n_formulas = b_pred_formula_formula_idxs.shape[0] if b_pred_formula_formula_idxs is not None else 0
@@ -1051,80 +1239,9 @@ def filter_by_peak_intensity(
 		print(f"  > Filtered stats: Peaks {init_n_peaks}->{final_n_peaks}, Formulas {init_n_formulas}->{final_n_formulas}, Nodes {init_n_nodes}->{final_n_nodes}")
 
 	return (
-		pred_ints, pred_mzs,
+		pred_ints, pred_mzs, frag_formula_peak_mzs, frag_formula_peak_idxs,
 		b_pred_formula_formula_idxs, b_pred_formula_probs,
 		b_pred_joint_formula_idxs, b_pred_formula_node_probs, 
 		b_pred_joint_node_idxs, b_pred_node_formula_probs,
 		b_pred_node_probs, b_pred_node_node_idxs
 	)
-
-def get_realdata_from_idx(
-	frag_formula_peak_idxs: Optional[th.Tensor],
-	b_pred_formula_formula_idxs: Optional[th.Tensor],
-	b_pred_joint_formula_idxs: Optional[th.Tensor] = None,
-	b_pred_joint_node_idxs: Optional[th.Tensor] = None,
-	b_pred_node_node_idxs: Optional[th.Tensor] = None,
-	mol_pyg: Optional[Any] = None,
-	idx_to_formula: Optional[Dict[int, str]] = None,
-	verbose: bool = False
-):
-	"""
-	Retrieve real data (formulas and node CCs) from indices using the fragment graph and formula mapping.
-	"""
-	if mol_pyg is None:
-		return None, None, None, None, None
-
-	# Helper to get formula string from index
-	def get_formulas(idxs):
-		if idxs is None or idx_to_formula is None: return None
-		# idxs is a tensor, convert to list of ints
-		return [idx_to_formula[i.item()] for i in idxs]
-
-	# Helper to get node CC from index
-	node_feats = mol_pyg.x
-	# node_feat_idxs is stored in dag
-	node_feat_idxs = mol_pyg.node_feat_idxs.view(-1)
-	
-	# Use helper function to get CC features
-	all_node_ccs = get_node_feats(node_feats, node_feat_idxs, "cc")
-	
-	def get_nodes(idxs):
-		if idxs is None: return None
-		return all_node_ccs[idxs]
-
-	# Retrieve data
-	real_frag_formulas = get_formulas(frag_formula_peak_idxs) if frag_formula_peak_idxs is not None else None
-	real_pred_formulas = get_formulas(b_pred_formula_formula_idxs)
-	real_joint_formulas = get_formulas(b_pred_joint_formula_idxs)
-	
-	real_joint_nodes = get_nodes(b_pred_joint_node_idxs)
-	real_pred_nodes = get_nodes(b_pred_node_node_idxs)
-
-	return (
-		real_frag_formulas,
-		real_pred_formulas,
-		real_joint_formulas,
-		real_joint_nodes,
-		real_pred_nodes
-	)
-
-def get_idx_to_formula(
-	batch_input: Dict[str, Any],
-	b_idx: int,
-	frag_formula_cumsizes: th.Tensor
-) -> Optional[Dict[int, str]]:
-	"""
-	Extract idx_to_formula dictionary for a specific molecule in the batch.
-	Requires 'frag_formula_str' to be present in batch_input (set output_formula_str=True).
-	"""
-	if "frag_formula_str" not in batch_input:
-		return None
-		
-	f_start = frag_formula_cumsizes[b_idx]
-	f_end = frag_formula_cumsizes[b_idx+1]
-	
-	# Extract formulas for this molecule
-	b_formulas = batch_input["frag_formula_str"][f_start:f_end]
-	
-	# Create dictionary mapping local index to formula string
-	return {i: s for i, s in enumerate(b_formulas)}

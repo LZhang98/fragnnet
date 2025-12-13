@@ -10,6 +10,33 @@ from fragnnet.utils.data_utils import rdkit_import, seq_apply, par_apply, parse_
 from fragnnet.utils.misc_utils import flatten_lol
 import re
 
+"""Preprocess raw spectral sources into a unified tabular format.
+
+Output files (`<output_name>_df.<json|csv>`) contain one row per spectrum with the
+following standard columns (filled when available from the source):
+- spec_id: integer id within the exported file
+- dset: dataset/source name
+- dset_spec_id: source-specific spectrum identifier
+- peaks: multiline string of "mz intensity" pairs (one per line)
+- prec_mz: precursor m/z (float)
+- prec_type: precursor/adduct string (e.g., [M+H]+)
+- spec_type: spectrum level/type (e.g., MS2)
+- ion_mode: P/N when known
+- ion_type: ionization type (e.g., ESI, EI) when known
+- inst_type / inst: instrument metadata when present
+- col_energy, col_energy_extra_1, col_energy_extra_2: collision energies (strings with units)
+- frag_mode: fragmentation mode when present (e.g., CID, HCD, EI)
+- num_peaks: integer peak count if provided by source
+- exact_mass / mw: exact or molecular weight when available
+- formula / smiles / inchi / inchikey: structure metadata if present
+- name / title: compound name or title when present
+- ramped / stepped / normalized: boolean or parsed collision-energy flags where applicable
+- misc placeholders (e.g., notes, rating, cas_num, pressure, ri, ionization extras) to retain upstream metadata
+
+Additional split helper files (written by some input formats) keep only ids needed
+for downstream splitting (e.g., *_fold.csv for MS-Gym, Spectraverse folds).
+"""
+
 MSP_KEY_DICT = {
 	"Precursor_type": "prec_type",
 	"Spectrum_type": "spec_type",

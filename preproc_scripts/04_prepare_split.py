@@ -123,8 +123,12 @@ def make_splits(args):
 			val_df = primary_split_df[primary_split_df[args.split_key].isin(val_keys)][["spec_id","mol_id","group_id"]]
 			test_df = primary_split_df[primary_split_df[args.split_key].isin(test_keys)][["spec_id","mol_id","group_id"]]
    
-			# secondary split
-			secondary_df = secondary_split_df[~secondary_split_df[args.split_key].isin(train_val_keys)][["spec_id","mol_id","group_id"]]
+			# secondary split: optionally exclude any keys used in train/val/test to avoid leakage
+			if args.block_secondary_overlap:
+				blocked_keys = np.concatenate([train_val_keys, test_keys])
+				secondary_df = secondary_split_df[~secondary_split_df[args.split_key].isin(blocked_keys)][["spec_id","mol_id","group_id"]]
+			else:
+				secondary_df = secondary_split_df[~secondary_split_df[args.split_key].isin(train_val_keys)][["spec_id","mol_id","group_id"]]
 			split_data = { 
 				"split_dp": args.split_dp,
 				"train_df": train_df,
@@ -153,8 +157,12 @@ def make_splits(args):
 					train_df = primary_split_df[primary_split_df[args.split_key].isin(train_keys)][["spec_id","mol_id","group_id"]]
 					val_df = primary_split_df[primary_split_df[args.split_key].isin(val_keys)][["spec_id","mol_id","group_id"]]
 					test_df = primary_split_df[primary_split_df[args.split_key].isin(test_keys)][["spec_id","mol_id","group_id"]]
-					# secondary split
-					secondary_df = secondary_split_df[~secondary_split_df[args.split_key].isin(train_val_keys)][["spec_id","mol_id","group_id"]]
+					# secondary split: optionally exclude any keys used in train/val/test to avoid leakage
+					if args.block_secondary_overlap:
+						blocked_keys = np.concatenate([train_val_keys, test_keys])
+						secondary_df = secondary_split_df[~secondary_split_df[args.split_key].isin(blocked_keys)][["spec_id","mol_id","group_id"]]
+					else:
+						secondary_df = secondary_split_df[~secondary_split_df[args.split_key].isin(train_val_keys)][["spec_id","mol_id","group_id"]]
 					split_data = { 
 						"split_dp": os.path.join(args.split_dp, f"cv_{i}"),
 						"train_df": train_df,
@@ -252,48 +260,48 @@ def make_splits(args):
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--split_type",type=str,choices=["random","predefined","random_folds"],default="random")
-	parser.add_argument("--split_key",type=str,choices=["inchikey_s","scaffold"],default="inchikey_s")
-	parser.add_argument("--predefined_id_type",type=str,choices=["spec_id","mol_id","group_id","dset_spec_id"],default="group_id")
-	parser.add_argument("--predefined_train_ids",type=str,nargs="+",required=False)
-	parser.add_argument("--predefined_val_ids",type=str,nargs="+",required=False)
-	parser.add_argument("--predefined_test_ids",type=str,nargs="+",required=False)
-	parser.add_argument("--predefined_secondary_ids",type=str,nargs="+",required=False)
-	parser.add_argument("--predefined_train_id_fp",type=str,required=False)
-	parser.add_argument("--predefined_val_id_fp",type=str,required=False)
-	parser.add_argument("--predefined_test_id_fp",type=str,required=False)
-	parser.add_argument("--predefined_secondary_id_fp",type=str,required=False)
-	parser.add_argument("--num_folds",type=int,default=0)
+	parser.add_argument("--split_type",type=str,choices=["random","predefined","random_folds"],default="random",help="How to construct splits: random, predefined lists, or cross-validation folds")
+	parser.add_argument("--split_key",type=str,choices=["inchikey_s","scaffold"],default="inchikey_s",help="Grouping key used for splitting (prevents leakage across this key)")
+	parser.add_argument("--predefined_id_type",type=str,choices=["spec_id","mol_id","group_id","dset_spec_id"],default="group_id",help="Column name used when reading predefined id CSVs")
+	parser.add_argument("--predefined_train_ids",type=str,nargs="+",required=False,help="Inline list of train ids when using predefined split")
+	parser.add_argument("--predefined_val_ids",type=str,nargs="+",required=False,help="Inline list of validation ids when using predefined split")
+	parser.add_argument("--predefined_test_ids",type=str,nargs="+",required=False,help="Inline list of test ids when using predefined split")
+	parser.add_argument("--predefined_secondary_ids",type=str,nargs="+",required=False,help="Inline list of secondary ids when using predefined split")
+	parser.add_argument("--predefined_train_id_fp",type=str,required=False,help="CSV path containing train ids (column name = predefined_id_type)")
+	parser.add_argument("--predefined_val_id_fp",type=str,required=False,help="CSV path containing validation ids")
+	parser.add_argument("--predefined_test_id_fp",type=str,required=False,help="CSV path containing test ids")
+	parser.add_argument("--predefined_secondary_id_fp",type=str,required=False,help="CSV path containing secondary ids")
+	parser.add_argument("--num_folds",type=int,default=0,help="Unused placeholder; CV folds inferred from test_frac when split_type=random_folds")
 	# spec filtering criteria
-	parser.add_argument("--primary_dsets",type=str,nargs="+",required=True)
-	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[])
-	parser.add_argument("--max_peak_mz",type=float,default=1500.)
-	parser.add_argument("--max_prec_mz",type=float,default=1500.)
-	parser.add_argument("--min_prec_mz",type=float,default=0.)
-	parser.add_argument("--spec_type",type=str,default="MS2")
+	parser.add_argument("--primary_dsets",type=str,nargs="+",required=True,help="Dataset names considered primary (used for train/val/test)")
+	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[],help="Dataset names considered secondary (optional extra data)")
+	parser.add_argument("--max_peak_mz",type=float,default=1500.,help="Maximum fragment peak m/z allowed")
+	parser.add_argument("--max_prec_mz",type=float,default=1500.,help="Maximum precursor m/z allowed")
+	parser.add_argument("--min_prec_mz",type=float,default=0.,help="Minimum precursor m/z allowed")
+	parser.add_argument("--spec_type",type=str,default="MS2",help="Spectrum type to keep (e.g., MS2)")
 
 	# dag filtering criteria
-	parser.add_argument("--dag_filtering",type=booltype,default=True)
-	parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec")
-	parser.add_argument("--max_num_dag_nodes",type=int,default=100000)
-	parser.add_argument("--max_num_dag_edges",type=int,default=250000)
-	parser.add_argument("--min_dag_wrecall",type=float,default=0.00)
-	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS)
-	parser.add_argument("--prec_types",type=str,nargs="+",required=False)
-	parser.add_argument("--inst_types",type=str,nargs="+",required=False)
-	parser.add_argument("--frag_modes",type=str,nargs="+",required=False)
-	parser.add_argument("--ion_modes",type=str,nargs="+",required=False)
-	parser.add_argument('--ces',type=str,choices=['nce', 'ace'],required=False)
+	parser.add_argument("--dag_filtering",type=booltype,default=True,help="Whether to filter to spectra with available DAG stats")
+	parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec",help="Grouping used when joining DAG stats back to spectra")
+	parser.add_argument("--max_num_dag_nodes",type=int,default=100000,help="Maximum DAG node count; -1 disables the filter")
+	parser.add_argument("--max_num_dag_edges",type=int,default=250000,help="Maximum DAG edge count; -1 disables the filter")
+	parser.add_argument("--min_dag_wrecall",type=float,default=0.00,help="Minimum weighted recall threshold for DAGs")
+	parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS,help="Allowed elements for spectra/molecules")
+	parser.add_argument("--prec_types",type=str,nargs="+",required=False,help="Allowed precursor types filter (optional)")
+	parser.add_argument("--inst_types",type=str,nargs="+",required=False,help="Allowed instrument types filter (optional)")
+	parser.add_argument("--frag_modes",type=str,nargs="+",required=False,help="Allowed fragmentation modes filter (optional)")
+	parser.add_argument("--ion_modes",type=str,nargs="+",required=False,help="Allowed ionization modes filter (optional)")
+	parser.add_argument('--ces',type=str,choices=['nce', 'ace'],required=False,help="Collision energy scale used (nce or ace)")
 
 	# non-filtering args
-	parser.add_argument("--meta_rseed",type=int,default=42)
-	parser.add_argument("--total_frac",type=float,default=1.0)
-	parser.add_argument("--test_frac",type=float,default=0.2)
-	parser.add_argument("--val_frac",type=float,default=0.2)
-	parser.add_argument("--proc_dp",type=str,required=True)
-	parser.add_argument("--frag_dp",type=str,required=False)
-	parser.add_argument("--split_dp",type=str,required=True)
+	parser.add_argument("--meta_rseed",type=int,default=42,help="Random seed for split reproducibility")
+	parser.add_argument("--total_frac",type=float,default=1.0,help="Fraction of available primary keys to use before splitting")
+	parser.add_argument("--test_frac",type=float,default=0.2,help="Fraction of total keys allocated to test when random splitting")
+	parser.add_argument("--val_frac",type=float,default=0.2,help="Fraction of total keys allocated to validation when random splitting")
+	parser.add_argument("--block_secondary_overlap",stype=booltype,default=True,help="If True, drop secondary spectra whose split_key overlaps train/val/test to prevent leakage")
+	parser.add_argument("--proc_dp",type=str,required=True,help="Directory containing processed mol_df.pkl and spec_df.pkl")
+	parser.add_argument("--frag_dp",type=str,required=False,help="Directory containing DAG stats (required if dag_filtering)")
+	parser.add_argument("--split_dp",type=str,required=True,help="Output directory where splits and metadata are written")
 	args = parser.parse_args()
 
 	make_splits(args)
-
