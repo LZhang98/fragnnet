@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_amolc_cmf_cl_only
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_amolc_cl_only
 wandb_tags:
 - retrieval
 - nist20
