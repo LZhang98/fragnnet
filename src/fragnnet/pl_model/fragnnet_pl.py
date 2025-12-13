@@ -88,9 +88,25 @@ class FraGNNetPL(SpectrumPL):
 			if "h_range" in self.hparams.frag_params["pyg_edge_feats"]:
 				logging.warning("h_range in frag pyg_edge_feats but edge_loss is disabled!")
 
-		# Load pre-trained MCES weights if specified
-		if self.hparams.mces_pretrain:
-			self._load_mces_pretrained_weights(self.hparams.mces_pretrain_ckpt_fp)
+		# Load pre-trained weights if specified for finetuning
+		if hasattr(self.hparams, "finetune") and self.hparams.finetune and self.hparams.finetune.get("use_finetune", False):
+			ft_cfg = self.hparams.finetune
+			if "pretrained_ckpt" in ft_cfg and ft_cfg["pretrained_ckpt"]:
+				self._load_pretrained_weights(
+					ft_cfg["pretrained_ckpt"],
+					strict=ft_cfg.get("strict_load", False),
+					shared_components=ft_cfg.get("shared_components", None) if not ft_cfg.get("shared_all", False) else None
+				)
+				
+				# Handle freezing
+				freeze_components = ft_cfg.get("freeze_components", [])
+				if ft_cfg.get("freeze_all_shared", False):
+					# If freeze_all_shared is True, we freeze whatever we loaded
+					if self.pretrained_param_names:
+						self._freeze_components(self.pretrained_param_names, exact_match=True)
+				elif freeze_components:
+					# Otherwise freeze specific components by prefix
+					self._freeze_components(freeze_components, exact_match=False)
 
 		# compile
 		if self.hparams.compile:
@@ -101,89 +117,106 @@ class FraGNNetPL(SpectrumPL):
 			else:
 				self.model = th.compile(self.model,dynamic=True)
     
-	def _load_mces_pretrained_weights(self, mces_ckpt_path: str):
+	def _load_pretrained_weights(self, ckpt_path: str, strict: bool = False, shared_components: List[str] = None):
 		"""
-		Load pre-trained weights from MCES model into FraGNNet model.
-		This transfers the molecular GNN encoder and embedding layers that are shared.
+		Load pre-trained weights from a checkpoint file.
+		Supports both MCES pre-training (partial load) and generic fine-tuning.
 		
 		Args:
-			mces_ckpt_path (str): Path to the pre-trained MCES checkpoint file
+			ckpt_path: Path to checkpoint file
+			strict: Whether to enforce strict state dict matching
+			shared_components: List of component prefixes to load (if None, load all matching)
 		"""
-		if not os.path.exists(mces_ckpt_path):
-			raise FileNotFoundError(f"MCES checkpoint not found: {mces_ckpt_path}")
+		if not os.path.exists(ckpt_path):
+			raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-		logging.info(f"Loading pre-trained MCES weights from: {mces_ckpt_path}")
+		logging.info(f"Loading pre-trained weights from: {ckpt_path}")
+		ckpt = th.load(ckpt_path, map_location=self.device, weights_only=False)
+		
+		# 1. Load ckpt
+		state_dict = ckpt['state_dict'] if 'state_dict' in ckpt else ckpt
 
-		# Load the MCES checkpoint
-		mces_checkpoint = th.load(mces_ckpt_path, map_location=self.device, weights_only=False)
-
-		# Extract state dict - handle both direct state_dict and Lightning checkpoint format
-		if 'state_dict' in mces_checkpoint:
-			mces_state_dict = mces_checkpoint['state_dict']
+		# Determine target components
+		if shared_components is not None:
+			target_components = shared_components
 		else:
-			mces_state_dict = mces_checkpoint
+			target_components = None
 
-		# Map MCES model weights to FraGNNet model weights
-		# Both models share: mol_embedder, mol_pool
-		# NOTE: CE/Prec/Inst embedders are NOT transferred because they are never trained
-		# in MCES (they only see zero inputs during pre-training)
-		shared_components = [
-			'mol_embedder',  # Molecular GNN encoder - actually trained on MCES similarity
-			'mol_pool',      # Molecular pooling layer - actually trained on MCES pooling
-		]
+		# 2. Check if shared_components are in the target and source
+		target_keys = set(self.model.state_dict().keys())
+		
+		# Normalize source keys (remove 'model.' prefix if present)
+		source_keys = list(state_dict.keys())
+		source_starts_with_model = any(k.startswith('model.') for k in source_keys)
+		normalized_source_dict = {}
+		for k, v in state_dict.items():
+			norm_k = k[6:] if (source_starts_with_model and k.startswith('model.')) else k
+			normalized_source_dict[norm_k] = v
+		
+		if target_components:
+			for comp in target_components:
+				# Check target
+				if not any(k.startswith(comp) for k in target_keys):
+					logging.warning(f"Component '{comp}' not found in current model (target).")
+				# Check source
+				if not any(k.startswith(comp) for k in normalized_source_dict.keys()):
+					logging.warning(f"Component '{comp}' not found in checkpoint (source).")
 
-		# Build mapping from MCES to FraGNNet
-		fragnnet_state_dict = self.model.state_dict()
-		loaded_weights = {}
+		# 3. Load model weight into target components
+		weights_to_load = {}
+		for key in target_keys:
+			# Filter by component
+			if target_components is not None:
+				if not any(key.startswith(comp) for comp in target_components):
+					continue
+			
+			# Check if key exists in source
+			if key in normalized_source_dict:
+				weights_to_load[key] = normalized_source_dict[key]
+		
+		if not weights_to_load:
+			logging.warning("No compatible weights found to transfer")
+			return
 
-		for key, value in mces_state_dict.items():
-			# Remove 'model.' prefix if present (from Lightning wrapper)
-			clean_key = key[6:] if key.startswith('model.') else key
+		# Load into self.model
+		try:
+			self.model.load_state_dict(weights_to_load, strict=False)
+			logging.info(f"Successfully loaded {len(weights_to_load)} parameters.")
+			
+			# 4. Update dictionary for tracking
+			self.pretrained_param_names = list(weights_to_load.keys())
+			
+		except RuntimeError as e:
+			if strict:
+				raise e
+			else:
+				logging.warning(f"Load failed with error: {e}")
 
-			# Check if this weight belongs to a shared component
-			is_shared = any(clean_key.startswith(comp) for comp in shared_components)
-
-			if is_shared and clean_key in fragnnet_state_dict:
-				# Check shape compatibility
-				if value.shape == fragnnet_state_dict[clean_key].shape:
-					loaded_weights[clean_key] = value
-					logging.info(f"Loaded weight: {clean_key} with shape {value.shape}")
-				else:
-					logging.warning(
-						f"Shape mismatch for {clean_key}: "
-						f"MCES {value.shape} vs FraGNNet {fragnnet_state_dict[clean_key].shape}. "
-						f"Consider using compatible configurations."
-					)
-
-		# Load the compatible weights into FraGNNet
-		if loaded_weights:
-			self.model.load_state_dict(loaded_weights, strict=False)
-			logging.info(f"Successfully loaded {len(loaded_weights)} pre-trained weight tensors from MCES model")
-
-			# get names for pre-trained weights
-			self.pretrained_param_names = [name for name in loaded_weights.keys()]
-   
-			# Freeze pre-trained weights if specified
-			if self.hparams.freeze_mces_weights:
-				self._freeze_pretrained_weights(loaded_weights.keys())
-		else:
-			logging.warning("No compatible weights found to transfer from MCES model")
-
-	def _freeze_pretrained_weights(self, weight_keys):
+	def _freeze_components(self, components: List[str], exact_match: bool = False):
 		"""
-		Freeze the weights that were loaded from pre-trained MCES model.
+		Freeze parameters based on component names or prefixes.
 		
 		Args:
-			weight_keys: List of parameter names to freeze
+			components: List of component names (exact or prefixes)
+			exact_match: If True, requires exact name match (for specific weights). 
+						 If False, matches as prefix (for whole submodules).
 		"""
-		frozen_params = []
+		frozen_count = 0
+		# Iterate over model parameters directly
 		for name, param in self.model.named_parameters():
-			if name in weight_keys:
+			should_freeze = False
+			if exact_match:
+				if name in components:
+					should_freeze = True
+			else:
+				if any(name.startswith(c) for c in components):
+					should_freeze = True
+			
+			if should_freeze:
 				param.requires_grad = False
-				frozen_params.append(name)
-		
-		logging.info(f"Froze {len(frozen_params)} pre-trained parameters")
-		logging.debug(f"Frozen parameters: {list(set(p.split('.')[0] for p in frozen_params))}")
+				frozen_count += 1
+				
+		logging.info(f"Froze {frozen_count} parameters (exact_match={exact_match})")
 
 	def _setup_loss_names(self):
 
@@ -804,6 +837,9 @@ class FraGNNetPL(SpectrumPL):
 		"""
 		Configure optimizers with different learning rates for pre-trained and other parameters.
 		"""
+		# Get LR ratio from finetune config
+		lr_ratio = self.hparams.finetune["pretrained_weights_lr_ratio"]
+		
 		# Separate parameters into pre-trained and others
 		pretrained_params = [p for n, p in self.model.named_parameters() if n in self.pretrained_param_names]
 		other_params = [p for n, p in self.model.named_parameters() if n not in self.pretrained_param_names]
@@ -811,7 +847,7 @@ class FraGNNetPL(SpectrumPL):
 
 		# Define optimizer with parameter groups
 		optimizer = optimizer_cls([
-			{"params": pretrained_params, "lr": self.hparams.lr * self.hparams.pretrained_weights_lr_ratio},
+			{"params": pretrained_params, "lr": self.hparams.lr * lr_ratio},
 			{"params": other_params, "lr": self.hparams.lr}
 		], weight_decay=self.hparams.weight_decay)
 

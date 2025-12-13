@@ -35,11 +35,16 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
 mces_fp: data/proc/mces/mces_pairs.pkl
 
 # ============================================================================
-# MCES Pre-training Configuration
+# Finetuning Configuration
 # ============================================================================
-freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
-mces_pretrain: True # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt_fp: saved_ckpts/nist20_sc_mces_pretrain_m30_molc_4968bah0.ckpt
+finetune:
+  use_finetune: true
+  pretrained_weights_lr_ratio: 0.1
+  pretrained_ckpt: saved_ckpts/nist20_sc_mces_pretrain_m30_molc_4968bah0.ckpt
+  shared_components:
+    - mol_embedder
+    - mol_pool
+  freeze_components: []
 
 subsample_params:
   subsample_size: 100

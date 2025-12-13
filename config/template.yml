@@ -116,6 +116,7 @@ ann_params:
   big_mz_diff_ppm_threshold:
   library_fp:
   preprocess: False
+
 # ============================================================================
 # Model Architecture
 # ============================================================================
@@ -137,6 +138,7 @@ mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GCN", "GAT", "PNA"]
 mol_dropout: 0.0  # Dropout rate for molecular GNN
 mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
 mol_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "set2set", "set_transformer", "softmax", "powermean", "none"]
+
 # ============================================================================
 # Inter-stage Configuration (Mol → Frag connection)
 # ============================================================================
@@ -350,7 +352,7 @@ inst_insert_location: none  # Where instrument type is inserted: ["none","mol_in
 inst_insert_size: 32  # Dimension of instrument type embedding (must match MCES config if using pre-training)
 
 # ============================================================================
-# MCES Configuration
+# MCES Pre-training Configuration
 # ============================================================================
 # mces stuff
 mces_min: 1
@@ -361,12 +363,17 @@ mces_normalization: zscore  # options: none, zscore, minmax
 mces_embed_combine: concat_avg #  options: abs_diff cross_attn
 
 # ============================================================================
-# MCES Pre-training Configuration
+# Finetune Configuration
 # ============================================================================
-mces_pretrain_ckpt_fp: none
-freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
-pretrained_weights_lr_ratio: 0.1 # Learning rate ratio for pretrained MCES weights during fine-tuning
-mces_pretrain: False # use mces pretraining weights for mol gnn
+finetune:
+  use_finetune: False
+  pretrained_ckpt: none
+  strict_load: True
+  freeze_all_shared: False  # Whether to freeze all shared components, if False, specify below
+  freeze_components: ["mol_embedder", "mol_pool"] # Optional
+  shared_all: False  # Whether to share all components, if False, specify below
+  shared_components: ['mol_embedder', 'mol_pool'] # Optional 
+  pretrained_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights during fine-tuning
 
 # ============================================================================
 # Additional Training Options
