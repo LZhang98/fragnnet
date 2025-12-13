@@ -64,6 +64,13 @@ if __name__ == "__main__":
 		default="output/inference_outputs",
 		help="Directory to save inference evaluation results"
 	)
+	parser.add_argument(
+		"--save_format",
+		type=str,
+		default="parquet",
+		choices=["pkl", "pkl.gz", "parquet"],
+		help="File format for saving predictions (pkl or parquet)"
+	)
 	# Inference configuration
 	parser.add_argument(
 		"--skip_extra_losses", 
@@ -138,7 +145,6 @@ if __name__ == "__main__":
 		model_save_dp=args.model_save_dp,
 		use_cached=True,
 	)
-  
 	save_dp = args.save_dp
 	template_fp = args.template_fp
 	custom_fp = args.custom_fp
@@ -151,8 +157,7 @@ if __name__ == "__main__":
 		custom_fp=custom_fp,
 		template_fp=template_fp,
 	)
-	
-	
+
 	# Load Input Data (molecules and spectra)
 	print("> Loading mol_df")
 	mol_df = pd.read_pickle(args.mol_fp)
@@ -251,6 +256,7 @@ if __name__ == "__main__":
 	preds_l = []
 	chunk_idx = 0
 	total_preds = 0
+	file_ext = args.save_format
 	
 	for batch_idx, batch_rows in enumerate(run_inference_tabular_iter(
 		model,
@@ -268,8 +274,11 @@ if __name__ == "__main__":
 		# Save periodically every save_interval batches
 		if (batch_idx + 1) % args.save_interval == 0:
 			pred_df = pd.DataFrame(preds_l, columns=columns_name)
-			chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.pkl")
-			pred_df.to_pickle(chunk_fp)
+			chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
+			if args.save_format == "parquet":
+				pred_df.to_parquet(chunk_fp, index=False)
+			else:
+				pred_df.to_pickle(chunk_fp)
 			print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
 			preds_l = []
 			chunk_idx += 1
@@ -277,8 +286,11 @@ if __name__ == "__main__":
 	# Save remaining predictions
 	if len(preds_l) > 0:
 		pred_df = pd.DataFrame(preds_l, columns=columns_name)
-		chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.pkl")
-		pred_df.to_pickle(chunk_fp)
+		chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
+		if args.save_format == "parquet":
+			pred_df.to_parquet(chunk_fp, index=False)
+		else:
+			pred_df.to_pickle(chunk_fp)
 		print(f">> Saved {len(preds_l)} predictions to {chunk_fp} (total: {total_preds})")
 	
 	print(f"\n>>> Inference complete! Total predictions: {total_preds}")
