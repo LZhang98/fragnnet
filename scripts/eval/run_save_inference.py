@@ -10,7 +10,7 @@ from fragnnet.runner import init_dataloader
 from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
 from fragnnet.utils.script_utils import (
     init_wandb_ckpt,
-    run_inference_df,
+    run_inference_tabular,
     apply_inference_config,
     save_inference_results,
     cleanup_model,
@@ -261,7 +261,7 @@ if __name__ == "__main__":
 			)
 			
 			# run inference
-			vals = run_inference_df(
+			vals = run_inference_tabular(
 				dl, 
 				model, 
 				device, 

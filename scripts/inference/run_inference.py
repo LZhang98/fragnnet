@@ -6,11 +6,11 @@ from fragnnet.dataset import SpecMolFragDataset
 from fragnnet.utils import data_utils, frag_utils
 from fragnnet.utils.script_utils import (
 	get_ckpt_path,
-	get_config_from_ckpt,
 	setup_device,
 	apply_inference_config,
 	init_model_from_ckpt,
-	run_inference_df,
+	run_inference_tabular,
+ 	prepare_output_subset,
 )
 from fragnnet.utils.misc_utils import booltype
 import torch as th
@@ -237,16 +237,54 @@ if __name__ == "__main__":
 	model = init_model_from_ckpt(ckpt_fp, config_d, device)
 	print(f">>> Model loaded and ready on device: {device}")
 	print(f">>> Model in eval mode: {not model.training}")
-	# Run Inference with Chunked Savings
-	total_preds = run_inference(
-		model=model,
-		dataloader=dl,
-		device=device,
-		output_dp=os.path.join(args.save_dp, args.wandb_run_id),
-		save_chunk_size=args.save_chunk_size,
-		save_interval=args.save_interval,
-		min_intensity=args.min_intensity,
-		resume=True,  # Resume from existing chunks
+ 
+ 	# Resume from saved predictions if requested
+	if args.save_dp is not None:
+		os.makedirs(args.save_dp, exist_ok=True)
+
+	# check for existing prediction files to resume from
+	predicted_files = [os.path.join(args.save_dp, f) for f in os.listdir(args.save_dp) if f.endswith('.pkl')]
+	for pred_file in predicted_files:
+		ckpt_data = pd.read_pickle(output_path)
+		if isinstance(ckpt_data, dict):
+			preds_l = ckpt_data.get('preds_l', [])
+			start_batch = ckpt_data.get('last_batch_idx', 0) + 1
+		else:
+			# Old format: just the dataframe, can't resume
+			print(">> Warning: saved file format doesn't support resume, starting from scratch")
+			start_batch = 0
+		print(f">> Loaded {len(preds_l)} predictions, resuming from batch {start_batch}")
+
+	print(">>> Initializing components...")
+	ds_cls = get_dataset_cls(config_d['model_type'])
+	model_cls = get_model_cls(config_d['model_type'])
+
+	# Initialize dataset and dataloader
+	ds = ds_cls(split=eval_split, **config_d)
+	dl = init_dataloader(ds, config_d)
+
+	# Prepare device and load model from checkpoint
+	device = setup_device(config_d)
+	model = init_model_from_ckpt(ckpt_fp, config_d, device)
+ 
+	# Run inference and collect predictions with evaluation scores
+	print(">>> Running inference and evaluation...")
+	output_set = prepare_output_subset(
+		output_subset=args.output_subset,
+		output_everything=args.output_everything
+	)
+ 
+	print(f">>> Output set: {output_set}")
+	predicted_df = run_inference_tabular(
+		model,
+		dl,
+		device,
+		evaluate=False,
+		output_set=output_set,
+		batch_cutoff=args.batch_cutoff,
+		min_peak_int=args.min_intensity,
+		return_formula_and_cc=True,
+		rebase_indices=True,
 	)
  
 	# Clean up temporary fragment directory if it was created

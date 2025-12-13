@@ -14,7 +14,7 @@ from fragnnet.utils.script_utils import (
 	setup_device,
 	apply_inference_config,
 	init_model_from_ckpt,
-	run_inference_df,
+	run_inference_tabular,
  	prepare_output_subset,
  	get_score_types,
 )
@@ -192,9 +192,6 @@ if __name__ == "__main__":
 	device = setup_device(config_d)
 	model = init_model_from_ckpt(ckpt_fp, config_d, device)
  
-	# Prepare evaluation score types based on configuration
-
- 
 	# Run inference and collect predictions with evaluation scores
 	print(">>> Running inference and evaluation...")
 	output_set = prepare_output_subset(
@@ -202,7 +199,7 @@ if __name__ == "__main__":
 		output_everything=args.output_everything
 	)
 	print(f">>> Output set: {output_set}")
-	predicted_df = run_inference_df(
+	predicted_df = run_inference_tabular(
 		model,
 		dl,
 		device,
@@ -212,7 +209,7 @@ if __name__ == "__main__":
 		min_peak_int=1.0,
 		return_formula_and_cc=True,
 		rebase_indices=True,
-	)	
+	)
 	
 	# predicted_df.to_csv("inference_eval_results.csv", index=False)
 
