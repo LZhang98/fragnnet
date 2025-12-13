@@ -83,6 +83,12 @@ if __name__ == "__main__":
 		default=False,
 		help="Whether to output all columns (overrides output_subset)"
 	)
+	parser.add_argument(
+		"--return_formula_and_cc",
+		type=booltype,
+		default=True,
+		help="Whether to return formula strings and node CCs"
+	)
 	# Inference configuration
 	parser.add_argument(
 		"--skip_extra_losses", 
@@ -320,7 +326,7 @@ if __name__ == "__main__":
 		output_subset=args.output_subset,
 		output_everything=args.output_everything
 	)
-	columns_name = get_tabular_columns(config_d, return_formula_and_cc=True)
+	columns_name = get_tabular_columns(config_d, return_formula_and_cc=args.return_formula_and_cc, output_subset=output_set)
 
 	#=========================================
 	# Inferencing
@@ -343,7 +349,7 @@ if __name__ == "__main__":
 		evaluate=False,
 		batch_cutoff=-1,
 		min_peak_int=args.min_intensity,
-		return_formula_and_cc=True,
+		return_formula_and_cc=args.return_formula_and_cc,
 		rebase_indices=True,
 		output_set=output_set,
 	)):

@@ -526,13 +526,17 @@ def get_score_types(config_d):
 				eval_score_types.append(f"{score_type}_{bin_res}")
 	return eval_score_types
 
-def get_tabular_columns(config_d: Dict[str, Any], return_formula_and_cc: bool = False) -> List[str]:
+def get_tabular_columns(
+	config_d: Dict[str, Any],
+	return_formula_and_cc: bool = False,
+) -> List[str]:
 	"""
 	Get column names for tabular inference output.
 	
 	Args:
 		config_d: Configuration dictionary
 		return_formula_and_cc: Whether output includes formula strings and node CCs
+		output_subset: Optional subset of output keys to include
 	
 	Returns:
 		List of column names for DataFrame
@@ -550,6 +554,7 @@ def get_tabular_columns(config_d: Dict[str, Any], return_formula_and_cc: bool = 
 	if return_formula_and_cc:
 		columns_name.extend(["pred_formula_strs", "pred_node_ccs"])
 	columns_name.extend(eval_score_types)
+
 	return columns_name
 
 def run_inference_pkl(

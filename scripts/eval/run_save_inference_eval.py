@@ -124,6 +124,12 @@ if __name__ == "__main__":
 		help="Output all available metrics and predictions"
 	)
 	parser.add_argument(
+		"--return_formula_and_cc",
+		type=booltype,
+		default=True,
+		help="Whether to return formula strings and node CCs"
+	)
+	parser.add_argument(
 		"--disable_preproc",
 		type=booltype,
 		default=True,
@@ -207,7 +213,7 @@ if __name__ == "__main__":
 		output_set=output_set,
 		batch_cutoff=args.batch_cutoff,
 		min_peak_int=1.0,
-		return_formula_and_cc=True,
+		return_formula_and_cc=args.return_formula_and_cc,
 		rebase_indices=True,
 	)
 	
@@ -219,6 +225,7 @@ if __name__ == "__main__":
 		std_score = predicted_df[eval_score_type].std()
 		print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
 	
+	print(predicted_df.head())
 	# Save predictions with evaluation scores
 	output_save_dp = os.path.join(save_dp, args.wandb_run_id)
 	os.makedirs(output_save_dp, exist_ok=True)
