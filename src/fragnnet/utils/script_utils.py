@@ -670,38 +670,37 @@ def run_inference_tabular(
 	model: th.nn.Module,
 	dataloader: th.utils.data.DataLoader,
 	device: th.device,
- 	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
+	batch_cutoff: int = -1,
 	evaluate: bool = False,
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
 	return_formula_and_cc: bool = False,
 	rebase_indices: bool = True,
-):
+) -> pd.DataFrame:
 	"""
-	Run inference with optional chunked saving for resumable predictions.
+	Run inference and return all results as a single DataFrame.
+	
+	This is a convenience wrapper around run_inference_tabular_iter that accumulates
+	all batch results into a single DataFrame.
 	
 	Args:
-		checkpoint_path: Path to save checkpoint file (pkl or h5). If None, no checkpointing.
-		checkpoint_interval: Save checkpoint every N batches
-		resume_from_checkpoint: If True and checkpoint exists, resume from last saved batch
-	"""
-	# Common setup
-	print(f"\n>>> Starting inference on {min(len(dataloader),batch_cutoff if batch_cutoff > 0 else len(dataloader))} batches...")
-	if model.training:
-		raise RuntimeError(f"> Warning: model {model} is in training mode!")
+		model: Model instance
+		dataloader: DataLoader with batches
+		device: Device to run inference on
+		batch_cutoff: Max batches to process (-1 = all)
+		evaluate: Whether to run evaluation step
+		output_set: Subset of outputs to include
+		nb_iso: Whether model uses neighbor isotope prediction
+		min_peak_int: Minimum peak intensity threshold
+		return_formula_and_cc: Whether to return formula strings and CCs
+		rebase_indices: Whether to rebase indices
 	
-	BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, _ = get_idx_vars(
-		output_set,
-		model,
-		nb_iso,
-	)
-
-	eval_score_types = get_score_types(model.hparams)
- 
-	preds_l = []
-		
+	Returns:
+		DataFrame with all inference results
+	"""
 	# Prepare column names
+	eval_score_types = get_score_types(model.hparams)
 	columns_name = [
 		"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
 		"frag_formula_peak_idxs", "frag_formula_peak_mzs",
@@ -715,43 +714,30 @@ def run_inference_tabular(
 		columns_name.extend(["pred_formula_strs", "pred_node_ccs"])
 	columns_name.extend(eval_score_types)
 	
- 	#print(">> set model to this to eval")
-	model.eval()
-	with th.inference_mode():
-		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), desc="Running inference"):
-				
-			# Early exit for batch cutoff
-			if batch_idx >= batch_cutoff and batch_cutoff > 0:
-				print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
-				break
-
-			# Process batch and get data rows
-			batch_rows = _process_batch_to_tabular_row(
-				batch_input=batch_input,
-				model=model,
-				device=device,
-				evaluate=evaluate,
-				eval_score_types=eval_score_types,
-				BATCH_IDX_VARS=BATCH_IDX_VARS,
-				NODE_IDX_VARS=NODE_IDX_VARS,
-				FORMULA_IDX_VARS=FORMULA_IDX_VARS,
-				min_peak_int=min_peak_int,
-				rebase_indices=rebase_indices,
-				return_formula_and_cc=return_formula_and_cc,
-			)
-			preds_l.extend(batch_rows)
-		
+	# Accumulate all batch results
+	preds_l = []
+	for batch_rows in run_inference_tabular_iter(
+		model=model,
+		dataloader=dataloader,
+		device=device,
+		batch_cutoff=batch_cutoff,
+		evaluate=evaluate,
+		output_set=output_set,
+		nb_iso=nb_iso,
+		min_peak_int=min_peak_int,
+		return_formula_and_cc=return_formula_and_cc,
+		rebase_indices=rebase_indices,
+	):
+		preds_l.extend(batch_rows)
+	
 	pred_df = pd.DataFrame(preds_l, columns=columns_name)
 	return pred_df
 
-def run_inference_tabular_chunked_save(
+def run_inference_tabular_iter(
 	model: th.nn.Module,
 	dataloader: th.utils.data.DataLoader,
 	device: th.device,
- 	output_name_no_ext: str, # output file path without extension
-	output_ext: str = "pkl", # "hdf5","pkl" or "pkl.gz"
-	save_interval: int = 100,
- 	batch_cutoff: int = -1, # max number of batches to eval (-1 = all)
+	batch_cutoff: int = -1,
 	evaluate: bool = False,
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
@@ -760,15 +746,33 @@ def run_inference_tabular_chunked_save(
 	rebase_indices: bool = True,
 ):
 	"""
-	Run inference with optional chunked saving for resumable predictions.
+	Generator that yields batch results for streaming inference processing.
+	
+	Yields batch_rows (list of data rows) for each batch processed. Caller is responsible
+	for accumulating, saving, or processing results as needed.
 	
 	Args:
-		checkpoint_path: Path to save checkpoint file (pkl or h5). If None, no checkpointing.
-		checkpoint_interval: Save checkpoint every N batches
-		resume_from_checkpoint: If True and checkpoint exists, resume from last saved batch
+		model: Model instance
+		dataloader: DataLoader with batches
+		device: Device to run inference on
+		batch_cutoff: Max batches to process (-1 = all)
+		evaluate: Whether to run evaluation step
+		output_set: Subset of outputs to include
+		nb_iso: Whether model uses neighbor isotope prediction
+		min_peak_int: Minimum peak intensity threshold
+		return_formula_and_cc: Whether to return formula strings and CCs
+		rebase_indices: Whether to rebase indices
+	
+	Yields:
+		List of data rows for each batch
+	
+	Example:
+		columns_name = [...]  # Define column names once
+		for batch_rows in run_inference_tabular_iter(model, dataloader, device):
+			df = pd.DataFrame(batch_rows, columns=columns_name)
+			df.to_parquet(f"batch_{batch_num}.parquet")
 	"""
-	# Common setup
-	print(f"\n>>> Starting inference on {min(len(dataloader),batch_cutoff if batch_cutoff > 0 else len(dataloader))} batches...")
+	print(f"\n>>> Starting inference on {min(len(dataloader), batch_cutoff if batch_cutoff > 0 else len(dataloader))} batches...")
 	if model.training:
 		raise RuntimeError(f"> Warning: model {model} is in training mode!")
 	
@@ -779,27 +783,10 @@ def run_inference_tabular_chunked_save(
 	)
 
 	eval_score_types = get_score_types(model.hparams)
- 
-	preds_l = []
-	# Prepare column names
-	columns_name = [
-		"spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
-		"frag_formula_peak_idxs", "frag_formula_peak_mzs",
-		"pred_formula_formula_idxs", "pred_formula_probs",
-		"pred_joint_formula_idxs", "pred_formula_node_probs",
-		"pred_joint_node_idxs", "pred_node_formula_probs",
-		"pred_node_probs", "pred_node_node_idxs",
-		"index_rebased"
-	]
-	if return_formula_and_cc:
-		columns_name.extend(["pred_formula_strs", "pred_node_ccs"])
-	columns_name.extend(eval_score_types)
 	
- 	#print(">> set model to this to eval")
 	model.eval()
 	with th.inference_mode():
 		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), desc="Running inference"):
-      
 			# Early exit for batch cutoff
 			if batch_idx >= batch_cutoff and batch_cutoff > 0:
 				print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
@@ -819,23 +806,7 @@ def run_inference_tabular_chunked_save(
 				rebase_indices=rebase_indices,
 				return_formula_and_cc=return_formula_and_cc,
 			)
-			preds_l.extend(batch_rows)
-		
-		if batch_idx % save_interval == 0 and batch_idx > 0:
-			# Save intermediate results
-			pred_df = pd.DataFrame(preds_l, columns=columns_name)
-			chunk_save_fp = f"{output_src}_chunk_{batch_idx}.pkl"
-			pred_df.to_parquet(chunk_save_fp, index=False)
-			# Clear preds_l for next chunk
-			preds_l = []
-   
-	# Final save after all batches
-	if len(preds_l) > 0:
-		pred_df = pd.DataFrame(preds_l, columns=columns_name)
-		pred_df.to_parquet(output_src, index=False)
-		print(f"> Saved final results to {output_src}")
-  
-	return pred_df
+			yield batch_rows
 
 def _process_batch_to_tabular_row(
 	batch_input: dict,
