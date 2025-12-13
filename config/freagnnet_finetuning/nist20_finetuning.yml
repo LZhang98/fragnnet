@@ -1,6 +1,8 @@
-wandb_name: nist20_finetuning_freeze
+wandb_name: nist20_mces_finetuning_m30_mlpc
 wandb_tags:
 - finetuning
+- mces30
+- freeze_false
 - nist20
 - d4
 - wr00
@@ -33,11 +35,14 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
 mces_fp: data/proc/mces/mces_pairs.pkl
 
 # ============================================================================
-# MCES Pre-training Configuration
+# Finetuning Configuration
 # ============================================================================
-freeze_mces_weights: True # Whether to freeze MCES pre-trained weights during fine-tuning
-mces_pretrain: True # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt_fp: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
+finetune:
+  use_finetune: true
+  pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
+  shared_all: true
+  freeze_components: []
+  pretrained_weights_lr_ratio: 0.1
 
 subsample_params:
   subsample_size: 100
