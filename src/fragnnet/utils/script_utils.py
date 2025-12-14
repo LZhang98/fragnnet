@@ -529,6 +529,7 @@ def get_score_types(config_d):
 def get_tabular_columns(
 	config_d: Dict[str, Any],
 	return_formula_and_cc: bool = False,
+	output_subset: Optional[Set[str]] = None
 ) -> List[str]:
 	"""
 	Get column names for tabular inference output.
@@ -554,6 +555,12 @@ def get_tabular_columns(
 	if return_formula_and_cc:
 		columns_name.extend(["pred_formula_strs", "pred_node_ccs"])
 	columns_name.extend(eval_score_types)
+
+	if output_subset is not None:
+		missing_cols = [c for c in output_subset if c not in columns_name]
+		if len(missing_cols) > 0:
+			print(f"Warning: {len(missing_cols)} columns in output_subset are not in available columns: {missing_cols}")
+		# columns_name = [c for c in columns_name if c in output_subset]
 
 	return columns_name
 
@@ -731,7 +738,7 @@ def run_inference_tabular(
 		DataFrame with all inference results
 	"""
 	# Get column names from config
-	columns_name = get_tabular_columns(model.hparams, return_formula_and_cc)
+	columns_name = get_tabular_columns(model.hparams, return_formula_and_cc, output_subset=output_set)
 	
 	# Accumulate all batch results
 	preds_l = []

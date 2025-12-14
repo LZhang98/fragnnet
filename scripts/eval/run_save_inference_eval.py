@@ -106,14 +106,12 @@ if __name__ == "__main__":
 		type=str, 
 		nargs="+", 
 		default=[
-			"true_mzs",          # True m/z values from ground truth
-			"true_logprobs",     # True log probabilities
-			"true_batch_idxs",   # True batch indices
+			#"true_mzs",          # True m/z values from ground truth
+			#"true_logprobs",     # True log probabilities
 			"pred_mzs",          # Predicted m/z values
-			"pred_logprobs",     # Predicted log probabilities
-			"pred_batch_idxs",   # Predicted batch indices
-			"true_oos_prob",     # True out-of-scope probability
-			"pred_oos_prob",          # Predicted out-of-scope probability
+			"pred_ints",     # Predicted intensities
+			#"true_oos_prob",     # True out-of-scope probability
+			"pred_oos_prob",     # Predicted out-of-scope probability
 		],
 		help="Subset of outputs to include in results"
 	)
@@ -152,7 +150,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--batch_cutoff",
 		type=int,
-		default=50,
+		default=1000,
 		help="Number of batches to evaluate (-1 for all)"
 	)
 	args = parser.parse_args()
