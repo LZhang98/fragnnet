@@ -1,10 +1,6 @@
-# FraGNNet Inference Scripts
+# FraGNNet Inference
 
-This directory contains scripts for preparing data and running inference with FraGNNet models.
-
-## Scripts
-
-### 1. `prepare_inference_input.py`
+### 1. `01_prepare_inference_input.py`
 
 Prepares molecular and spectral dataframes for FraGNNet inference from lists of SMILES, precursor types, collision energies, and instrument types.
 
@@ -24,7 +20,7 @@ Prepares molecular and spectral dataframes for FraGNNet inference from lists of 
 
 From command line SMILES list:
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list <SMILES> [<SMILES> ...] \
   --prec_types <PREC_TYPE> [<PREC_TYPE> ...] \
   --ces <CE_EV> [<CE_EV> ...] \
@@ -36,7 +32,7 @@ python scripts/inference/prepare_inference_input.py \
 
 From a text file:
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_file <SMILES_FILE> \
   --prec_types <PREC_TYPE> [<PREC_TYPE> ...] \
   --ces <CE_EV> [<CE_EV> ...] \
@@ -47,7 +43,7 @@ python scripts/inference/prepare_inference_input.py \
 
 From a CSV/TSV file with custom columns:
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_file <CSV_FILE> \
   --smiles_colname <SMILES_COLUMN> \
   --id_colname <ID_COLUMN> \
@@ -95,7 +91,7 @@ Different instrument types use different collision energy units:
 
 ##### Basic Single Molecule Example
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" \
   --prec_types "[M+H]+" \
   --ces 15.0 25.0 \
@@ -106,7 +102,7 @@ python scripts/inference/prepare_inference_input.py \
 
 ##### Merged Spectra Example (One Prediction Per Molecule)
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" "CC(=O)O" "CCN" \
   --prec_types "[M+H]+" "[M-H]-" \
   --ces 20.0 30.0 \
@@ -118,7 +114,7 @@ python scripts/inference/prepare_inference_input.py \
 
 ##### From CSV File with Custom Columns
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_file data/metabolites.csv \
   --smiles_colname smiles \
   --id_colname compound_id \
@@ -131,7 +127,7 @@ python scripts/inference/prepare_inference_input.py \
 
 ##### Multiple Molecules with Multiple Conditions
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" "CC(=O)O" "CCN" "CC(C)O" \
   --prec_types "[M+H]+" "[M-H]-" \
   --ces 10.0 20.0 30.0 \
@@ -146,7 +142,7 @@ python scripts/inference/prepare_inference_input.py \
 echo -e "CCO\nCC(=O)O\nCCN\nCC(C)O\nCCC" > my_molecules.txt
 
 # Then run the script
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_file my_molecules.txt \
   --prec_types "[M+H]+" \
   --ces 15.0 25.0 \
@@ -157,7 +153,7 @@ python scripts/inference/prepare_inference_input.py \
 
 ##### Drug Molecules Example
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list \
     "CC1=CC=C(C=C1)C2=CC(=NN2C3=CC=C(C=C3)S(=O)(=O)N)C(F)(F)F" \
     "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O" \
@@ -171,7 +167,7 @@ python scripts/inference/prepare_inference_input.py \
 
 ##### Orbitrap Only (NCE values)
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" "CC(=O)O" \
   --prec_types "[M+H]+" \
   --ces 20.0 \
@@ -182,7 +178,7 @@ python scripts/inference/prepare_inference_input.py \
 
 ##### QTOF Only (eV values)
 ```bash
-python scripts/inference/prepare_inference_input.py \
+python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" "CC(=O)O" \
   --prec_types "[M+H]+" "[M-H]-" \
   --ces 10.0 20.0 30.0 \
