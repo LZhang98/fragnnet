@@ -1,6 +1,6 @@
 import torch as th
 import torch.nn as nn
-from fragnnet.model.nn_blocks import MLPBlocks, SetTransformer, LowRankDense
+from fragnnet.model.nn_blocks import MLPBlocks, SetTransformer, LowRankDense, GNN, build_pool_module
 from fragnnet.model.base_model import CEModel, PrecModel, InstModel
 
 class SpectrumEncoder(nn.Module, CEModel, PrecModel, InstModel):
@@ -59,8 +59,13 @@ class SpectrumEncoder(nn.Module, CEModel, PrecModel, InstModel):
 		inst_insert_location="none",
 		inst_insert_size=32,
 		inst_num_types=10,
+		# GNN parameters
+		gnn_type="GINE",
+		edge_feats_size=0,
+		pool_type="mean",
 	):
 		super(SpectrumEncoder, self).__init__()
+		self.spectrum_encoder_type = spectrum_encoder_type
 
 		# Initialize CE, Prec, Inst embeddings
 		self._ce_init(
@@ -121,6 +126,18 @@ class SpectrumEncoder(nn.Module, CEModel, PrecModel, InstModel):
 					layers.append(nn.ReLU())
 					layers.append(nn.Dropout(dropout))
 			self.model = nn.Sequential(*layers)
+		elif spectrum_encoder_type == "gnn":
+			self.model = GNN(
+				hidden_size=hidden_dim,
+				num_layers=num_blocks,
+				node_feats_size=input_dim,
+				edge_feats_size=edge_feats_size,
+				gnn_type=gnn_type,
+				dropout=dropout,
+				normalization=normalization
+			)
+			self.pool = build_pool_module(pool_type, hidden_dim)
+			self.gnn_proj = nn.Linear(hidden_dim, output_dim)
 		else:
 			raise ValueError(f"Unsupported spectrum_encoder_type: {spectrum_encoder_type}")
 		# Final projection if we're combining embeddings
@@ -159,9 +176,17 @@ class SpectrumEncoder(nn.Module, CEModel, PrecModel, InstModel):
 		Returns:
 			Tensor: Encoded spectrum of shape (batch_size, output_dim).
 		"""
-		# Get spectrum embedding from SetTransformer
-		spec_embed = self.model(x, batch_idx=batch_idx)
-		batch_size = spec_embed.shape[0]
+		if self.spectrum_encoder_type == "gnn":
+			# x is expected to be a pyg Batch object
+			batch = x
+			spec_embed = self.model(batch.x, batch.batch, batch.edge_index, batch.edge_attr)
+			spec_embed = self.pool(spec_embed, batch.batch)
+			spec_embed = self.gnn_proj(spec_embed)
+			batch_size = spec_embed.shape[0]
+		else:
+			# Get spectrum embedding from SetTransformer
+			spec_embed = self.model(x, batch_idx=batch_idx)
+			batch_size = spec_embed.shape[0]
 
 		# Collect embeddings to combine
 		embeddings = [spec_embed]
