@@ -1,4 +1,4 @@
-from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL, GNNPL, MCESPL, SpectrumClipPL
+from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL, GNNPL, MCESPL, SpectrumMolClipPL
 from fragnnet.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.graff.pl_model import GrAFFPL
