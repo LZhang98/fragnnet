@@ -8,3 +8,4 @@ from .neims_pl import NeimsPL
 from .precursor_pl import PrecursorPL
 from .gnn_pl import GNNPL
 from .mces_pl import MCESPL
+from .spectrum_mol_clip_pl import SpectrumMolClipPL

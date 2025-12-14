@@ -1,10 +1,11 @@
-from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL, GNNPL, MCESPL
+from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL, GNNPL, MCESPL, SpectrumClipPL
 from fragnnet.iceberg.pl_model import IcebergGenPL, IcebergIntenPL
 from fragnnet.massformer.pl_model import MassFormerPL
 from fragnnet.graff.pl_model import GrAFFPL
 from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset,MCESDataset
 from fragnnet.iceberg.dataset import SpecMolMagmaGenDataset, SpecMolMagmaIntenDataset
 from fragnnet.graff.dataset import SpecMolAnnDataset
+from fragnnet.pl_model.spectrum_mol_clip_pl import SpectrumMolClipPL
 
 
 def get_model_cls(model_type: str) -> type:
@@ -37,6 +38,8 @@ def get_model_cls(model_type: str) -> type:
 		model_cls = GNNPL
 	elif model_type== "mces_pretraining":
 		model_cls = MCESPL
+	elif model_type== "spec_mol_clip_pretraining":
+		model_cls = SpectrumMolClipPL
 	else:
 		raise ValueError(f"Unknown model type: {model_type}")
 	return model_cls
@@ -61,7 +64,7 @@ def get_dataset_cls(model_type: str) -> type:
 		dataset_cls = SpecMolMagmaIntenDataset
 	elif model_type== "graff":
 		dataset_cls = SpecMolAnnDataset
-	elif model_type in ["neims","massformer","precursor", "gnn"]:
+	elif model_type in ["neims","massformer","precursor", "gnn", "clip"]:
 		dataset_cls = SpecMolDataset
 	elif model_type== "mces_pretraining":
 		dataset_cls = MCESDataset
