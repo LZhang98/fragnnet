@@ -4,7 +4,6 @@ import re
 import os
 from io import BytesIO
 
-
 import pandas as pd
 from tqdm import tqdm
 import numpy as np
@@ -157,28 +156,52 @@ def plot_spectra_axes(ax,
 	mz_max = 1500
 	bar_width = 1
 
-	true_mask = true_ints > true_ints_thresh
-	true_mzs = true_mzs[true_mask]
-	true_ints = true_ints[true_mask]
+	has_true = False
+	if true_mzs is not None and len(true_mzs) > 0:
+		true_mask = true_ints > true_ints_thresh
+		true_mzs = true_mzs[true_mask]
+		true_ints = true_ints[true_mask]
+		if len(true_mzs) > 0:
+			has_true = True
+
 	pred_mask = pred_ints > pred_ints_thresh
 	pred_mzs = pred_mzs[pred_mask]
 	pred_ints = pred_ints[pred_mask]
-	true_mz_max = max(np.max(true_mzs),np.max(pred_mzs))
+	
+	max_mz_vals = []
+	if has_true:
+		max_mz_vals.append(np.max(true_mzs))
+	if len(pred_mzs) > 0:
+		max_mz_vals.append(np.max(pred_mzs))
+	
+	if len(max_mz_vals) > 0:
+		true_mz_max = max(max_mz_vals)
+		mz_max = int(np.floor(1.05*min(mz_max,true_mz_max)))
 
-	mz_max = int(np.floor(1.05*min(mz_max,true_mz_max)))
-	true_mask = true_mzs < mz_max
+	if has_true:
+		true_mask = true_mzs < mz_max
+		true_mzs = true_mzs[true_mask]
+		true_ints = true_ints[true_mask]
+
 	pred_mask = pred_mzs < mz_max
-	true_mzs = true_mzs[true_mask]
-	true_ints = true_ints[true_mask]
 	pred_mzs = pred_mzs[pred_mask]
 	pred_ints = pred_ints[pred_mask]
 
-	ints_max = np.max(true_ints)
+	max_int_vals = []
+	if has_true:
+		max_int_vals.append(np.max(true_ints))
+	if len(pred_ints) > 0:
+		max_int_vals.append(np.max(pred_ints))
+	
+	ints_max = np.max(max_int_vals) if len(max_int_vals) > 0 else 100
 	y_max = 1.05 * ints_max
 
 
 	# Set larger axes ranges
-	ax.set_ylim(-y_max, y_max)
+	if has_true:
+		ax.set_ylim(-y_max, y_max)
+	else:
+		ax.set_ylim(0, y_max)
 	ax.set_xlim(0, mz_max)
 
 	# Hide y-axis labels beyond ±1000
@@ -187,32 +210,31 @@ def plot_spectra_axes(ax,
 	# get peaks
 	lines_top, styles_top = [], []
 
-	mz_mask = np.ones_like(true_mzs,dtype=bool)
-	for i in range(len(true_mzs)):
-		mz = true_mzs[i]
-		ints = true_ints[i]
-		line_start = (mz,0)
-		line_end = (mz,ints)
-		lines_top.append((line_start,line_end))
-		if mz_mask[i]:
-			styles_top.append("solid")
-		else:
-			styles_top.append((0,(1,1)))
-			
-	# print(lines_top[:10])
-	lc_top = mc.LineCollection(
-		lines_top, 
-		colors=colors[0], 
-		linewidths=bar_width, 
-		linestyles=styles_top
-	)
-	ax.add_collection(lc_top)
+	if has_true:
+		mz_mask = np.ones_like(true_mzs,dtype=bool)
+		for i in range(len(true_mzs)):
+			mz = true_mzs[i]
+			ints = true_ints[i]
+			line_start = (mz,0)
+			line_end = (mz,ints)
+			lines_top.append((line_start,line_end))
+			if mz_mask[i]:
+				styles_top.append("solid")
+			else:
+				styles_top.append((0,(1,1)))
+				
+		# print(lines_top[:10])
+		lc_top = mc.LineCollection(
+			lines_top, 
+			colors=colors[0], 
+			linewidths=bar_width, 
+			linestyles=styles_top
+		)
+		ax.add_collection(lc_top)
 
 	# add botton peaks and peak ids
-	lines_bottom = []
-	bottom_annotations = []
-	bottom_annotations_x = []
-	bottom_annotations_y = []
+	lines_pred = []
+	pred_annotations = []
 	
 	# peak_label_dict can be a dict {pred_peak_index: label_str}
 	if peak_label_dict is None:
@@ -223,21 +245,32 @@ def plot_spectra_axes(ax,
 		mz = pred_mzs[i]
 		ints = pred_ints[i]
 		line_start = (mz,0)
-		line_end = (mz,-ints)
-		lines_bottom.append((line_start,line_end))
+		if has_true:
+			line_end = (mz,-ints)
+		else:
+			line_end = (mz,ints)
+		lines_pred.append((line_start,line_end))
 
 		# annotate with provided formula label if available
 		if i in peak_label_dict:
 			label = str(peak_label_dict[i])
 			# print(label)
 			y_offset = (ints_max * 0.02) if ints > 50 else 50
-			bottom_annotations.append(
+			
+			if has_true:
+				text_y = -ints - y_offset
+				va = 'top'
+			else:
+				text_y = ints + y_offset
+				va = 'bottom'
+
+			pred_annotations.append(
 				ax.text(
 					mz,
-					-ints - y_offset,
+					text_y,
 					label,
 					size=font_size,
-					ha='left', va='top',
+					ha='left', va=va,
 					bbox=dict(
 						boxstyle="round",
 						ec="black",
@@ -246,11 +279,9 @@ def plot_spectra_axes(ax,
 					)
 				)
 			)
-			bottom_annotations_x.append(mz)
-			bottom_annotations_y.append(-ints)
 
-	lc_bottom = mc.LineCollection(lines_bottom, colors=colors[1], linewidths=bar_width)
-	lc_bottom = ax.add_collection(lc_bottom)
+	lc_pred = mc.LineCollection(lines_pred, colors=colors[1], linewidths=bar_width)
+	ax.add_collection(lc_pred)
 	
 	#bars = ax.bar(pred_mzs, -pred_ints, width=bar_width/2, color=colors[1])
 			
@@ -260,16 +291,19 @@ def plot_spectra_axes(ax,
 	ax.tick_params(axis='y', labelsize=font_size)
 	#ax.tick_params(axis='both', which='both', labelsize='small')
 	ax.spines['right'].set_color('none')
-	ax.spines['bottom'].set_position('zero')
+	if has_true:
+		ax.spines['bottom'].set_position('zero')
+	else:
+		ax.spines['bottom'].set_position(('data', 0))
 	ax.spines['top'].set_color('none')
 	
 	# Note: Text overlaps may occur without adjust_text
 	leg_font_size = 0.9*font_size
 	leg_kws = {'ncol': 1, 'fontsize': leg_font_size, "loc": "upper left"}
-	handles = [
-		patches.Patch(facecolor=colors[0],label="Ground Truth",alpha=1.0),
-		patches.Patch(facecolor=colors[1],label="Predicted",alpha=1.0),
-	]
+	handles = []
+	if has_true:
+		handles.append(patches.Patch(facecolor=colors[0],label="Ground Truth",alpha=1.0))
+	handles.append(patches.Patch(facecolor=colors[1],label="Predicted",alpha=1.0))
  
  	# Overlay NCE/ACE on the spectrum axes if available
 	#ann_text = None
@@ -334,7 +368,16 @@ def load_and_prepare_data(args):
 	print(f"Merged pred_df now has {len(pred_df)} rows")
 	
 	# Add pred_peaks column
-	pred_df.loc[:, "pred_peaks"] = pred_df.apply(lambda x: np.stack([np.array(x['pred_mzs']), np.array(x['pred_ints'])], axis=1), axis=1)
+	def get_pred_peaks(x):
+		mzs = x.get('pred_mzs')
+		ints = x.get('pred_ints')
+		if isinstance(mzs, (float, np.floating)) and np.isnan(mzs):
+			return np.array([])
+		if isinstance(ints, (float, np.floating)) and np.isnan(ints):
+			return np.array([])
+		return np.stack([np.array(mzs), np.array(ints)], axis=1)
+
+	pred_df.loc[:, "pred_peaks"] = pred_df.apply(get_pred_peaks, axis=1)
 	
 	return pred_df
 
@@ -388,6 +431,22 @@ def parse_peaks_from_string(peaks_data):
 def process_prediction_data(pred_data):
 
 	"""Process prediction data to extract formulas, nodes, and probabilities"""
+	
+	# Check if required data is available (not NaN)
+	required_keys = [
+		'pred_formula_formula_idxs', 'pred_formula_strs', 
+		'frag_formula_peak_mzs', 'frag_formula_peak_idxs', 
+		'pred_formula_probs', 'pred_joint_formula_idxs',
+		'pred_joint_node_idxs', 'pred_formula_node_probs',
+		'pred_node_formula_probs', 'pred_node_ccs',
+		'pred_node_node_idxs', 'pred_node_probs'
+	]
+	
+	for key in required_keys:
+		val = pred_data.get(key)
+		if val is None or (isinstance(val, float) and np.isnan(val)):
+			return {}, {}, {}, {}
+
 	# Get formula dict
 	# TODO double check isotope handling
 	formula_dict = {i:{"formula":s,"mz":m, "peak_idx":pi,"prob":p} for i,s,m,pi,p in zip(pred_data['pred_formula_formula_idxs'],
@@ -480,8 +539,18 @@ def plot_mirror_spectra(pred_data, display_data, output_dir,
 	mol_id = pred_data['mol_id']
 	
 	# Extract predicted spectrum data
-	pred_spec_mzs = np.array(pred_data['pred_mzs'])
-	pred_spec_ints = np.array(pred_data['pred_ints'])
+	pred_mzs_raw = pred_data.get('pred_mzs')
+	pred_ints_raw = pred_data.get('pred_ints')
+	
+	if isinstance(pred_mzs_raw, (float, np.floating)) and np.isnan(pred_mzs_raw):
+		pred_spec_mzs = np.array([])
+	else:
+		pred_spec_mzs = np.array(pred_mzs_raw)
+		
+	if isinstance(pred_ints_raw, (float, np.floating)) and np.isnan(pred_ints_raw):
+		pred_spec_ints = np.array([])
+	else:
+		pred_spec_ints = np.array(pred_ints_raw)
 	
 	# Parse true peaks
 	peaks_data = pred_data.get('peaks', None)
