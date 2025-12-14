@@ -366,7 +366,7 @@ The script automatically checks the output directory (`--save_dp`) for existing 
 
 ## Workflow
 
-1. **Prepare Data**: Use `prepare_inference_input.py` to create molecule and spectrum dataframes
+1. **Prepare Data**: Use `01_prepare_inference_input.py` to create molecule and spectrum dataframes
 2. **Generate Fragments**: Use `02_run_inference_frag_gen.py` to generate fragmentation trees
 3. **Run Inference**: Use `run_inference.py` to generate predictions
 4. **Analyze Results**: Process the prediction outputs for your analysis
