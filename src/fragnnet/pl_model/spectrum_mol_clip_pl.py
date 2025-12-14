@@ -84,23 +84,6 @@ class SpectrumMolClipPL(SpectrumPL):
 			num_blocks=self.hparams.spec_params["num_layers"],
 			dropout=self.hparams.spec_params["dropout"],
 			normalization=self.hparams.spec_params.get("normalization", "batch"),
-			# CE parameters
-			int_embedder=self.hparams.int_embedder,
-			ce_insert_location=self.hparams.ce_insert_location,
-			ce_insert_type=self.hparams.ce_insert_type,
-			ce_insert_merge=self.hparams.ce_insert_merge,
-			ce_insert_size=self.hparams.ce_insert_size,
-			ce_mean=self.hparams.ce_mean,
-			ce_std=self.hparams.ce_std,
-			ce_max=self.hparams.ce_max,
-			# Prec parameters
-			prec_insert_location=self.hparams.prec_insert_location,
-			prec_insert_size=self.hparams.prec_insert_size,
-			prec_num_types=len(self.hparams.spec_params["prec_types"]),
-			# Inst parameters
-			inst_insert_location=self.hparams.inst_insert_location,
-			inst_insert_size=self.hparams.inst_insert_size,
-			inst_num_types=len(self.hparams.spec_params["inst_types"]),
 		)
 
 		# compile
