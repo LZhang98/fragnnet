@@ -130,7 +130,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--output_everything",
 		type=bool,
-		default=False,
+		default=True,
 		help="Output all available metrics and predictions"
 	)
 	parser.add_argument(

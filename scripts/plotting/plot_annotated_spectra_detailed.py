@@ -150,10 +150,11 @@ def plot_spectra_axes(ax,
 					  pred_ints_thresh = 0,
 					  colors = ['green', 'red'], 
 					  peak_label_dict = None,
-       				  ann_text = None):
+       				  ann_text = None,
+					  annotate_min_int = 5.0):
 
 
-	mz_max = 1500
+	mz_max = 2000
 	bar_width = 1
 
 	has_true = False
@@ -252,7 +253,7 @@ def plot_spectra_axes(ax,
 		lines_pred.append((line_start,line_end))
 
 		# annotate with provided formula label if available
-		if i in peak_label_dict:
+		if i in peak_label_dict and ints >= annotate_min_int:
 			label = str(peak_label_dict[i])
 			# print(label)
 			y_offset = (ints_max * 0.02) if ints > 50 else 50
