@@ -112,7 +112,19 @@ if __name__ == "__main__":
 			"pred_ints",     # Predicted intensities
 			#"true_oos_prob",     # True out-of-scope probability
 			"pred_oos_prob",     # Predicted out-of-scope probability
+			"pred_formula_probs", # Predicted formula probabilities
+			"frag_formula_peak_mzs", # Fragment formula peak m/z values
 		],
+
+		#"pred_mzs", 
+		#"pred_ints", 
+		#"pred_oos_prob",
+		#"frag_formula_peak_mzs",
+		#"pred_formula_probs",
+		#"pred_formula_node_probs",
+		#"pred_node_formula_probs",
+		#"pred_node_probs"
+  
 		help="Subset of outputs to include in results"
 	)
 	parser.add_argument(
