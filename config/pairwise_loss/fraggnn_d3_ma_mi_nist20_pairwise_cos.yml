@@ -102,16 +102,13 @@ use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
 
-group_sampler: False
-group_sampler_type: group #[group, group_mol, mol]
-group_sampler_max_per_group: 5
 simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: True
+compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
