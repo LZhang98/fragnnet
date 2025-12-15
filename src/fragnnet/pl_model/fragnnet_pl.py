@@ -1,4 +1,5 @@
 import torch as th
+import torch.nn.functional as F
 import logging
 import torch._dynamo as th_dynamo
 try:
@@ -9,10 +10,10 @@ except ImportError:
 import os
 
 from fragnnet.model import FraGNNetModel
-from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
+from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_binned_cossin_sim, get_pairwise_binned_jss_sim
 from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler
 from fragnnet.utils.spec_utils import *
-from fragnnet.utils.misc_utils import safelog,scatter_logsumexp
+from fragnnet.utils.misc_utils import safelog,scatter_logsumexp, scatter_logl2normalize
 from fragnnet.pl_model import SpectrumPL
 
 class FraGNNetPL(SpectrumPL):
@@ -227,6 +228,7 @@ class FraGNNetPL(SpectrumPL):
 			"null_formula_prob",
 			"oos_prob",
 		]
+
 		if self.hparams.loss_type == "cross_entropy":
 			loss_names.extend([
 				"spec_ce",
@@ -276,7 +278,10 @@ class FraGNNetPL(SpectrumPL):
 					"nb_formula_node_mi",
 					"nb_node_node_mi"
 				])
-
+			if not self.hparams.pairwise_cosine_binned_loss_weight == 0:
+				loss_names.append(f"pairwise_cossim_{self.hparams.mz_bin_res}")
+			if not self.hparams.pairwise_jss_binned_loss_weight == 0:
+				loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
 		else:
 			if not (self.hparams.formula_entropy_weight == self.hparams.formula_normalized_entropy_weight == 0.):
 				loss_names.extend([
@@ -340,6 +345,12 @@ class FraGNNetPL(SpectrumPL):
 						"nb_node_node_e",
 						"nb_node_node_ne",
 					])
+
+				if not self.hparams.pairwise_cosine_binned_loss_weight == 0:
+					loss_names.append(f"pairwise_cossim_{self.hparams.mz_bin_res}")
+				if not self.hparams.pairwise_jss_binned_loss_weight == 0:
+					loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
+     
 		self.loss_names = loss_names
 		self.metric_names.update(loss_names)
 
@@ -740,6 +751,26 @@ class FraGNNetPL(SpectrumPL):
 				assert self.hparams.nb_formula_node_entropy_weight == 0.0
 				assert self.hparams.nb_formula_node_normalized_entropy_weight == 0.0
 			
+			# Pairwise similarity MSE loss
+			if f"pairwise_cossim_{self.hparams.mz_bin_res}" in self.loss_names:
+				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs)+1)
+				true_sim = get_pairwise_binned_cossin_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res)
+				pred_sim = get_pairwise_binned_cossin_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res)
+				
+				pairwise_sim_mse = F.mse_loss(pred_sim, true_sim)
+				loss = loss + self.hparams.pairwise_cosine_binned_loss_weight * pairwise_sim_mse
+				loss_d[f"pairwise_cossim_{self.hparams.mz_bin_res}"] = pairwise_sim_mse.expand(batch_size)
+
+			# Pairwise JSS MSE loss
+			if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
+				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs)+1)
+				true_sim = get_pairwise_binned_jss_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res)
+				pred_sim = get_pairwise_binned_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res)
+				
+				pairwise_jss_mse = F.mse_loss(pred_sim, true_sim)
+				loss = loss + self.hparams.pairwise_jss_binned_loss_weight * pairwise_jss_mse
+				loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = pairwise_jss_mse.expand(batch_size)
+
 			# finally, update the loss
 			loss_d["loss"] = loss
 			

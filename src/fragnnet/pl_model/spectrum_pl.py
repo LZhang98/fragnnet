@@ -851,6 +851,7 @@ class SpectrumPL(pl.LightningModule):
 			"pred_logprobs": train_pred_logprobs,
 			"pred_batch_idxs": train_pred_batch_idxs,
 			"pred_oos_logprobs": pred_oos_logprobs,
+			"batch_size": batch_size,
 			**pred_d
 		}
   

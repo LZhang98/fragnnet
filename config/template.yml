@@ -247,8 +247,8 @@ auxiliary_scores:
   - true_oos_prob
   - true_oos_e
 ints_thresh: 0.0
-mz_max: 1500.0
-mz_bin_res: 0.01
+mz_max: 1500.0  # this is also used for bin-specific seondary loss
+mz_bin_res: 0.01 # this is also used for bin-specific seondary loss
 eval_mz_bin_res:
   - 0.1
   - 0.01
@@ -276,6 +276,9 @@ precision: 32 # 64, 16-mixed, bf16-mixed
 debug_overfit: False
 debug_overfit_batches: 10
 log_every_n_steps: 0
+# ============================================================================
+# Loss Weights Configuration
+# ============================================================================
 primary_loss_weight: 1.0
 formula_entropy_weight: 0.0
 node_entropy_weight: 0.0
@@ -287,6 +290,10 @@ node_normalized_entropy_weight: 0.0
 node_formula_normalized_entropy_weight: 0.0
 formula_node_normalized_entropy_weight: 0.0
 joint_normalized_entropy_weight: 0.0
+# pairwise losses
+pairwise_cosine_binned_loss_weight: 0.0 
+pairwise_jss_binned_loss_weight: 0.0
+# nb stuff, set all to 0 to disable
 nb_iso: False
 nb_node_entropy_weight: 0.0
 nb_node_formula_entropy_weight: 0.0
@@ -299,6 +306,7 @@ nb_formula_node_normalized_entropy_weight: 0.0
 nb_joint_normalized_entropy_weight: 0.0
 nb_node_node_entropy_weight: 0.0
 nb_node_node_normalized_entropy_weight: 0.0
+# edge losses
 skip_edge_loss: True
 edge_h_range_loss_weight: 0.0
 edge_h_transfer_loss_weight: 0.0
@@ -306,23 +314,25 @@ edge_h_range_loss_fn: linear # do not make exponential!
 edge_h_transfer_loss_fn: linear
 edge_entropy_weight: 0.0
 edge_normalized_entropy_weight: 0.0
-seed: 42
-detect_anomaly: False
-automatic_optimization: True
-profiler: none
-compile: True
-num_log_train_images: 0
-num_log_val_images: 0
-deterministic: False
-drop_last: False
-num_sanity_val_steps: 2
 mask_null_formula: True
 predict_oos: False
 oos_tolerance_multiple: -1
 oos_loss: False
 null_loss: False
 null_loss_weight: 1.0
-
+# ============================================================================
+# PyTorch Lightning Configuration
+# ============================================================================
+seed: 42
+detect_anomaly: False
+automatic_optimization: True
+profiler: none
+compile: False
+num_log_train_images: 0
+num_log_val_images: 0
+deterministic: False
+drop_last: False
+num_sanity_val_steps: 2
 # ============================================================================
 # Collision Energy (CE) Configuration
 # ============================================================================

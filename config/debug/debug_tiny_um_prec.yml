@@ -102,3 +102,6 @@ detect_anomaly: True
 cc_interstage_type: gated #cross_attention, set_transformers, attention, mlp, gated, dual_set_transformer
 cc_interstage_use_rest: True
 mol_pool_type: attention # mean_max_sum
+
+#extra loss weights
+pairwise_jss_binned_loss_weight: 0.5

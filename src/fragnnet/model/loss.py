@@ -7,7 +7,7 @@ import torch as th
 import torch.nn.functional as F
 from typing import Callable
 
-from fragnnet.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize, TOLERANCE_MIN_MZ
+from fragnnet.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize, scatter_logsoftmax, TOLERANCE_MIN_MZ
 from fragnnet.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func, jss_helper
 
 # LOG_TRUNC_FACTOR = {
@@ -729,6 +729,129 @@ def sparse_jensen_shannon_divergence(
 	)
 	# Return 1 - similarity to get the divergence (distance)
 	return 1.-jss
+
+def get_pairwise_binned_cossin_sim(
+		mzs: th.Tensor,
+		logprobs: th.Tensor,
+		batch_idxs: th.Tensor,
+		batch_size: int,
+		mz_max: float,
+		mz_bin_res: float) -> th.Tensor:
+	"""
+	Compute pairwise cosine similarity matrix for a batch of spectra.
+
+	Args:
+		mzs: m/z values.
+		logprobs: log-probabilities (intensities).
+		batch_idxs: Batch indices.
+		batch_size: Number of spectra in the batch.
+		mz_max: Maximum m/z value.
+		mz_bin_res: m/z bin resolution.
+
+	Returns:
+		Pairwise similarity matrix of shape [batch_size, batch_size].
+	"""
+	
+	if mzs.numel() == 0:
+		return th.zeros((batch_size, batch_size), device=mzs.device)
+
+	# Binning
+	bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
+		mzs, logprobs, batch_idxs, 
+		mz_max=mz_max, 
+		mz_bin_res=mz_bin_res, 
+		agg="lse", 
+		sparse=True
+	)
+ 
+	# Normalize (L2 on probabilities)
+	norm_logprobs = scatter_logl2normalize(bin_logprobs, bin_batch_idxs)
+	norm_probs = norm_logprobs.exp()
+	
+	# Construct sparse tensor then dense
+	# We need to recover local bin indices from global bin indices returned by batched_bin_func
+	# batched_bin_func uses global_idx = batch_idx * num_bins + local_idx
+	# So local_idx = global_idx % num_bins
+	# We must ensure num_bins matches exactly what batched_bin_func used.
+	num_bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype).shape[0]
+	
+	indices = th.stack([bin_batch_idxs, bin_idxs % num_bins])
+	
+	V = th.sparse_coo_tensor(indices, norm_probs, (batch_size, num_bins), device=mzs.device)
+	V_dense = V.to_dense()
+	
+	# Compute pairwise similarity
+	S = th.mm(V_dense, V_dense.t())
+	return S
+
+def get_pairwise_binned_jss_sim(
+		mzs: th.Tensor,
+		logprobs: th.Tensor,
+		batch_idxs: th.Tensor,
+		batch_size: int,
+		mz_max: float,
+		mz_bin_res: float) -> th.Tensor:
+	"""
+	Compute pairwise Jensen-Shannon similarity matrix for a batch of spectra.
+
+	Args:
+		mzs: m/z values.
+		logprobs: log-probabilities (intensities).
+		batch_idxs: Batch indices.
+		batch_size: Number of spectra in the batch.
+		mz_max: Maximum m/z value.
+		mz_bin_res: m/z bin resolution.
+
+	Returns:
+		Pairwise similarity matrix of shape [batch_size, batch_size].
+	"""
+	
+	if mzs.numel() == 0:
+		return th.zeros((batch_size, batch_size), device=mzs.device)
+
+	# Binning
+	bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
+		mzs, logprobs, batch_idxs, 
+		mz_max=mz_max, 
+		mz_bin_res=mz_bin_res, 
+		agg="lse", 
+		sparse=True
+	)
+ 
+	# Normalize (L1 on probabilities)
+	# log_softmax to get log probabilities
+	log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
+	probs = log_probs.exp()
+	
+	# Construct sparse tensor then dense
+	num_bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype).shape[0]
+	
+	indices = th.stack([bin_batch_idxs, bin_idxs % num_bins])
+	
+	V = th.sparse_coo_tensor(indices, probs, (batch_size, num_bins), device=mzs.device)
+	V_dense = V.to_dense() # (B, D)
+	
+	# Compute JSS
+	# JSD(P, Q) = H(M) - 0.5 H(P) - 0.5 H(Q)
+	# M = 0.5 (P + Q)
+	
+	# H(P)
+	# Add eps to probs for log
+	P = V_dense
+	H_P = -th.sum(P * th.log(P + EPS), dim=1) # (B,)
+	
+	# M
+	P_exp = P.unsqueeze(1) # (B, 1, D)
+	P_exp_T = P.unsqueeze(0) # (1, B, D)
+	M = 0.5 * (P_exp + P_exp_T) # (B, B, D)
+	
+	# H(M)
+	H_M = -th.sum(M * th.log(M + EPS), dim=2) # (B, B)
+	
+	JSD = H_M - 0.5 * H_P.unsqueeze(1) - 0.5 * H_P.unsqueeze(0)
+	JSS = 1.0 - JSD / th.log(th.tensor(2.0))
+	
+	return JSS
 
 def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
 	"""
