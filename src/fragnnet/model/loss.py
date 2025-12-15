@@ -97,7 +97,7 @@ def pm_ce_fn(
 		tolerance_min_mz=tolerance_min_mz
 	)
 	b_logprobs = th.logsumexp(
-		b_pred_logprobs.reshape(1,-1)*b_match_mask.float() + LOG_ZERO(b_pred_logprobs.dtype)*(~b_match_mask).float(),
+		b_pred_logprobs.reshape(1,-1)*b_match_mask.to(b_pred_logprobs.dtype) + LOG_ZERO(b_pred_logprobs.dtype)*(~b_match_mask).to(b_pred_logprobs.dtype),
 		dim=1)
 	return b_logprobs
 
@@ -178,9 +178,9 @@ def sparse_cross_entropy_seq(
 			tolerance_min_mz=tolerance_min_mz,
 			tolerance_multiple=tolerance_multiple,
 			gaussian_renormalize=gaussian_renormalize)
-		b_ios_ce = th.sum(b_true_match_mask.float() * -th.exp(b_true_logprobs) * b_ios_logprobs)
+		b_ios_ce = th.sum(b_true_match_mask.to(b_true_logprobs.dtype) * -th.exp(b_true_logprobs) * b_ios_logprobs)
 		# calculate oos logprobs
-		b_true_oos_logprobs = th.logsumexp( mask_value*b_true_match_mask.float() + b_true_logprobs*(~b_true_match_mask).float(), dim=0)
+		b_true_oos_logprobs = th.logsumexp( mask_value*b_true_match_mask.to(b_true_logprobs.dtype) + b_true_logprobs*(~b_true_match_mask).to(b_true_logprobs.dtype), dim=0)
 		b_true_oos_entropy = - th.sum( th.exp(b_true_logprobs[~b_true_match_mask]-b_true_oos_logprobs) * (b_true_logprobs[~b_true_match_mask]-b_true_oos_logprobs), dim=0)
 		b_pred_oos_logprobs = pred_oos_logprobs[batch_idx]
 		b_oos_ce = -th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs
@@ -301,7 +301,7 @@ def sparse_cross_entropy_vec(
 		bl_ios_log_probs = -0.5*(bl_true_mzs.reshape(-1,1)-bl_pred_mzs.reshape(1,-1))**2/bl_vars.reshape(1,-1) - 0.5*th.log(2*th.pi*bl_vars.reshape(1,-1))
 		bl_ios_log_probs = bl_ios_log_probs + bl_pred_logprobs.reshape(1,-1) - bl_log_trunc_factors.reshape(1,-1)
 		# Mask out non-matching pairs with mask_value (large negative)
-		bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).float()*mask_value
+		bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).to(float_dtype)*mask_value
 		# Log-sum-exp over predictions for each true peak
 		bl_ios_log_probs = th.logsumexp(bl_ios_log_probs,dim=1)
 
