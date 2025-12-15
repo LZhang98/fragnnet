@@ -185,9 +185,10 @@ def main(args):
 		data_keyword.append('ann_fp')
 	elif config_d['model_type'] == 'mces_pretraining':
 		data_keyword.append('mces_fp')
-	# copy mces fp if pretraining
-	if config_d['mces_pretrain'].lower() == 'true':
-		data_keyword.append('mces_pretrain_ckpt_fp')
+	# copy fp if pretraining
+
+	if config_d['finetune']['use_finetune'].lower() == 'true':
+		data_keyword.append(config_d['finetune']['pretrained_ckpt'])
 	print(f"> model type: {config_d['model_type']}")
  	# copy data files	
 	script_lines.extend(
