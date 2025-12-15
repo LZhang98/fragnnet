@@ -32,6 +32,14 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 
+subsample_params:
+  subsample_size: 4000
+  subsample_seed: 42
+  train: False
+  val: True
+  test: True
+  secondary: True
+
 frag_gnn_type: NodeMLP
 frag_params:
   pyg_edge_feats: []
