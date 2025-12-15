@@ -218,6 +218,11 @@ class FraGNNetPL(SpectrumPL):
 		logging.info(f"Froze {frozen_count} parameters (exact_match={exact_match})")
 
 	def _setup_loss_names(self):
+		"""
+		Setup the list of loss names to be tracked during training/validation.
+		This includes primary losses, entropy terms, and other auxiliary losses
+		depending on the configuration.
+		"""
 
 		# flag losses for tracking
 		loss_names = [
@@ -227,12 +232,15 @@ class FraGNNetPL(SpectrumPL):
 			"oos_prob",
 		]
 
+		# Add cross-entropy specific losses if applicable
 		if self.hparams.loss_type == "cross_entropy":
 			loss_names.extend([
 				"spec_ce",
 				"oos_ce",
 				"ios_ce",
 			])
+		
+		# Add extra losses (entropy, mutual information, etc.) if not skipped
 		if not self.hparams.skip_extra_losses:
 			loss_names.extend([
 				"spec_e",
@@ -253,6 +261,7 @@ class FraGNNetPL(SpectrumPL):
 				"h_e",
 				"h_ne"
 			])
+			# Add edge losses if enabled
 			if not self.hparams.skip_edge_loss:
 				loss_names.extend([
 					"edge_h_range_loss",
@@ -260,6 +269,7 @@ class FraGNNetPL(SpectrumPL):
 					"edge_e",
 					"edge_ne"
 				])
+			# Add neighbor isolation losses if enabled
 			if self.hparams.nb_iso:
 				loss_names.extend([
 					"nb_node_e",
@@ -276,11 +286,13 @@ class FraGNNetPL(SpectrumPL):
 					"nb_formula_node_mi",
 					"nb_node_node_mi"
 				])
+			# Add pairwise losses if weights are positive
 			if self.hparams.pairwise_cosine_binned_loss_weight > 0:
 				loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
 			if self.hparams.pairwise_jss_binned_loss_weight > 0:
 				loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
 		else:
+			# If extra losses are skipped, add specific ones if their weights are non-zero
 			if not (self.hparams.formula_entropy_weight == self.hparams.formula_normalized_entropy_weight == 0.):
 				loss_names.extend([
 					"formula_e",
