@@ -451,6 +451,16 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 		overfit_batches = 0
 	log_every_n_steps = min(len(train_dl),config_d["log_every_n_steps"])
 
+	# check precision support
+	if str(config_d["precision"]) in ["bf16-mixed", "bf16"]:
+		if not (th.cuda.is_available() and th.cuda.is_bf16_supported()):
+			logging.warning("BF16 not supported on this device, falling back to 32 bit precision")
+			config_d["precision"] = 32
+	elif str(config_d["precision"]) in ["16-mixed", "16"]:
+		if not th.cuda.is_available():
+			logging.warning("FP16 mixed precision requires CUDA, falling back to 32 bit precision")
+			config_d["precision"] = 32
+
 	trainer_param_d  = {
 		'logger': loggers,
 		'callbacks': callbacks,
