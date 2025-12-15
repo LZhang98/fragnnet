@@ -3,6 +3,8 @@ import tempfile
 import glob
 import os
 import wandb
+import argparse
+import json
 
 def get_ckpt_from_wandb(saved_dp, run_id, 
 						entity='frag-gnn', 
@@ -57,27 +59,24 @@ def get_ckpt_from_wandb(saved_dp, run_id,
 			shutil.copy(f'{tmp_dir}/{ckpt_file}', ckpt_fp)
 
 if __name__ == "__main__":
+	parser = argparse.ArgumentParser(description="Download checkpoints from WandB")
+	parser.add_argument("--input_file", type=str, default=os.path.join(os.path.dirname(__file__), "../../data/wandb_downloads/deepmet_runs.json"), help="Path to JSON file containing run IDs")
+	parser.add_argument("--save_dir", type=str, default="./saved_ckpts/", help="Directory to save checkpoints")
+	parser.add_argument("--use_cached", action="store_true", help="Use cached checkpoints if available")
+	args = parser.parse_args()
 
-	save_dp = "./saved_ckpts/"
+	save_dp = args.save_dir
 	os.makedirs(save_dp, exist_ok=True)
-	# deepmet ckpt
-	run_ids = [#"",
-            "lfs2hjsy", #cv0
-            "764tpm7g",	#cv1
-            "p4knx0d8",	#cv2
-            "b32l8li1", #cv3
-			"wiswh3d6", #cv4
-            "gj654szd" #cv_all
-        ]
-	for run_id in run_ids:
-		get_ckpt_from_wandb(save_dp, run_id, best_only=True)
-  
-	# pretraining ckpt
-	#run_ids = [#"",
-    #        "edd2j4yy", #m30
-    #        "zpz5zl0p", #m30
-    #        "6wrmthk2", #
-    #        "4968bah0", #m30_sc
-    #        ]
-	#for run_id in run_ids:
-	#	get_ckpt_from_wandb(save_dp, run_id, best_only=True)
+
+	if os.path.exists(args.input_file):
+		print(f"> Reading run IDs from {args.input_file}")
+		with open(args.input_file, 'r') as f:
+			runs = json.load(f)
+			for row in runs:
+				run_id = row['run_id']
+				description = row.get('description', '')
+				best_only = row.get('best_only', True)
+				print(f"> Processing {run_id} ({description})")
+				get_ckpt_from_wandb(save_dp, run_id, best_only=best_only, use_cached=args.use_cached)
+	else:
+		print(f"> Input file {args.input_file} not found.")
