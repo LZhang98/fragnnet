@@ -278,9 +278,9 @@ class FraGNNetPL(SpectrumPL):
 					"nb_formula_node_mi",
 					"nb_node_node_mi"
 				])
-			if not self.hparams.pairwise_cosine_binned_loss_weight == 0:
+			if self.hparams.pairwise_cosine_binned_loss_weight > 0:
 				loss_names.append(f"pairwise_cossim_{self.hparams.mz_bin_res}")
-			if not self.hparams.pairwise_jss_binned_loss_weight == 0:
+			if self.hparams.pairwise_jss_binned_loss_weight > 0:
 				loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
 		else:
 			if not (self.hparams.formula_entropy_weight == self.hparams.formula_normalized_entropy_weight == 0.):
@@ -346,9 +346,9 @@ class FraGNNetPL(SpectrumPL):
 						"nb_node_node_ne",
 					])
 
-				if not self.hparams.pairwise_cosine_binned_loss_weight == 0:
+				if self.hparams.pairwise_cosine_binned_loss_weight > 0:
 					loss_names.append(f"pairwise_cossim_{self.hparams.mz_bin_res}")
-				if not self.hparams.pairwise_jss_binned_loss_weight == 0:
+				if self.hparams.pairwise_jss_binned_loss_weight > 0:
 					loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
      
 		self.loss_names = loss_names
