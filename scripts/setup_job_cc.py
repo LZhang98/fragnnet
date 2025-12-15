@@ -158,7 +158,7 @@ def main(args):
 
 	# parse configs	file
 	config_keywords = ['spec_fp','mol_fp', 'ann_fp', 'mces_fp', 'config','config_template',
-                    'split_dp','magma_dp','frag_dp', 'model_type', 'mces_pretrain_ckpt_fp', 'mces_pretrain']
+                    'split_dp','magma_dp','frag_dp', 'model_type', 'finetune', 'finetune_pretrained_ckpt']
 	config_d['config_template'] = config_template_fp
 	if custom_config_fp is not None:
 		config_d['config'] = custom_config_fp
@@ -187,8 +187,8 @@ def main(args):
 		data_keyword.append('mces_fp')
 	# copy fp if pretraining
 
-	if config_d['finetune']['use_finetune'].lower() == 'true':
-		data_keyword.append(config_d['finetune']['pretrained_ckpt'])
+	if config_d['finetune'] == 'true':
+		data_keyword.append(config_d['finetune_pretrained_ckpt'])
 	print(f"> model type: {config_d['model_type']}")
  	# copy data files	
 	script_lines.extend(

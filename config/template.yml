@@ -375,15 +375,14 @@ mces_embed_combine: concat_avg #  options: abs_diff cross_attn
 # ============================================================================
 # Finetune Configuration
 # ============================================================================
-finetune:
-  use_finetune: False
-  pretrained_ckpt: none
-  strict_load: True
-  freeze_all_shared: False  # Whether to freeze all shared components, if False, specify below
-  freeze_components: ["mol_embedder", "mol_pool"] # Optional
-  shared_all: False  # Whether to share all components, if False, specify below
-  shared_components: ['mol_embedder', 'mol_pool'] # Optional 
-  pretrained_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights during fine-tuning
+finetune: False
+finetune_pretrained_ckpt: none
+finetune_strict_load: True
+finetune_freeze_all_shared: False  # Whether to freeze all shared components, if False, specify below
+finetune_freeze_components: ["mol_embedder", "mol_pool"] # Optional
+finetune_shared_all: False  # Whether to share all components, if False, specify below
+finetune_shared_components: ['mol_embedder', 'mol_pool'] # Optional 
+finetune_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights during fine-tuning
 
 # ============================================================================
 # Additional Training Options

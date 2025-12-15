@@ -90,24 +90,22 @@ class FraGNNetPL(SpectrumPL):
 				logging.warning("h_range in frag pyg_edge_feats but edge_loss is disabled!")
 
 		# Load pre-trained weights if specified for finetuning
-		if hasattr(self.hparams, "finetune") and self.hparams.finetune and self.hparams.finetune.get("use_finetune", False):
-			ft_cfg = self.hparams.finetune
-			if "pretrained_ckpt" in ft_cfg and ft_cfg["pretrained_ckpt"]:
-				self._load_pretrained_weights(
-					ft_cfg["pretrained_ckpt"],
-					strict=ft_cfg.get("strict_load", False),
-					shared_components=ft_cfg.get("shared_components", None) if not ft_cfg.get("shared_all", False) else None
-				)
-				
-				# Handle freezing
-				freeze_components = ft_cfg.get("freeze_components", [])
-				if ft_cfg.get("freeze_all_shared", False):
-					# If freeze_all_shared is True, we freeze whatever we loaded
-					if self.pretrained_param_names:
-						self._freeze_components(self.pretrained_param_names, exact_match=True)
-				elif freeze_components:
-					# Otherwise freeze specific components by prefix
-					self._freeze_components(freeze_components, exact_match=False)
+		if self.hparams.finetune:
+			self._load_pretrained_weights(
+				self.hparams.finetune_pretrained_ckpt,
+				strict=self.hparams.finetune_strict_load,
+				shared_components=self.hparams.finetune_shared_components if not self.hparams.finetune_shared_all else None
+			)
+			
+			# Handle freezing
+			freeze_components = self.hparams.finetune_freeze_components
+			if self.hparams.finetune_freeze_all_shared:
+				# If freeze_all_shared is True, we freeze whatever we loaded
+				if self.pretrained_param_names:
+					self._freeze_components(self.pretrained_param_names, exact_match=True)
+			elif freeze_components:
+				# Otherwise freeze specific components by prefix
+				self._freeze_components(freeze_components, exact_match=False)
 
 		# compile
 		if self.hparams.compile:
@@ -869,7 +867,7 @@ class FraGNNetPL(SpectrumPL):
 		Configure optimizers with different learning rates for pre-trained and other parameters.
 		"""
 		# Get LR ratio from finetune config
-		lr_ratio = self.hparams.finetune["pretrained_weights_lr_ratio"]
+		lr_ratio = self.hparams.finetune_weights_lr_ratio
 		
 		# Separate parameters into pre-trained and others
 		pretrained_params = [p for n, p in self.model.named_parameters() if n in self.pretrained_param_names]
