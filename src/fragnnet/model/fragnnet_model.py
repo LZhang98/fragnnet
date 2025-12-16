@@ -369,6 +369,15 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			_type_: _description_
 		"""
 
+		# Fix: Explicitly cast PyG batch tensors for autocast compatibility
+		if th.is_autocast_enabled():
+			mol_pyg.x = mol_pyg.x.to(th.bfloat16)
+			if mol_pyg.edge_attr is not None:
+				mol_pyg.edge_attr = mol_pyg.edge_attr.to(th.bfloat16)
+			frag_pyg.x = frag_pyg.x.to(th.bfloat16)
+			if frag_pyg.edge_attr is not None:
+				frag_pyg.edge_attr = frag_pyg.edge_attr.to(th.bfloat16)
+
 		# mol_x: mol level node feature matrix
 		# mol_edge_index: mol graph connectivity in COO format with shape [2, num_edges]
 		# edge_attr: mol graph edge feature matrix with shape [num_edges, num_edge_features]
