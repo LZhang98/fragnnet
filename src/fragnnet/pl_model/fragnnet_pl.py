@@ -794,8 +794,8 @@ class FraGNNetPL(SpectrumPL):
 			# Pairwise similarity MSE loss
 			if f"pairwise_cossine_{self.hparams.mz_bin_res}" in self.loss_names:
 				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs)+1)
-				true_sim = get_pairwise_binned_cossin_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res)
-				pred_sim = get_pairwise_binned_cossin_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res)
+				true_sim = get_pairwise_binned_cossin_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				pred_sim = get_pairwise_binned_cossin_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
 				
 				pairwise_sim_mse = F.mse_loss(pred_sim, true_sim)
 				loss = loss + self.hparams.pairwise_cosine_binned_loss_weight * pairwise_sim_mse
@@ -804,8 +804,8 @@ class FraGNNetPL(SpectrumPL):
 			# Pairwise JSS MSE loss
 			if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
 				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs)+1)
-				true_sim = get_pairwise_binned_jss_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res)
-				pred_sim = get_pairwise_binned_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res)
+				true_sim = get_pairwise_binned_jss_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				pred_sim = get_pairwise_binned_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
 				
 				pairwise_jss_mse = F.mse_loss(pred_sim, true_sim)
 				loss = loss + self.hparams.pairwise_jss_binned_loss_weight * pairwise_jss_mse
