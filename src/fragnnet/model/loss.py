@@ -772,7 +772,7 @@ def sparse_jensen_shannon_divergence_hungarian(
 		
 		# Hungarian algorithm
 		if b_score.numel() == 0:
-			total_gain = 0.
+			total_gain = th.tensor(0., device=b_score.device, dtype=b_score.dtype)
 		else:
 			# We detach b_score for the assignment step because the Hungarian algorithm 
 			# is non-differentiable (calculates indices). 
