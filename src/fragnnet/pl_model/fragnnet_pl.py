@@ -448,7 +448,7 @@ class FraGNNetPL(SpectrumPL):
 		elif self.hparams.loss_type in ["cosine_distance_hungarian", "log_cosine_distance_hungarian"]:
 			self.binned_loss = False
 		elif self.hparams.loss_type == "jss_distance":
-			self.binned_loss = True
+			self.binned_loss = False
 		else:
 			raise ValueError(f"Unknown loss type {self.hparams.loss_type}")
 			
