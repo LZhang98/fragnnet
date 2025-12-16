@@ -774,7 +774,10 @@ def sparse_jensen_shannon_divergence_hungarian(
 		if b_score.numel() == 0:
 			total_gain = 0.
 		else:
-			b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+			# We detach b_score for the assignment step because the Hungarian algorithm 
+			# is non-differentiable (calculates indices). 
+			# Gradients will flow through the values selected from the original b_score below.
+			b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score.detach(), maximize=True)
 			
 			# Filter invalid matches (where score is -1e9)
 			matched_gains = b_score[b_true_idxs, b_pred_idxs]

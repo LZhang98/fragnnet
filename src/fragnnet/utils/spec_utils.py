@@ -819,6 +819,18 @@ def round_aggregate_peaks(
 	return round_mzs, round_ints, round_batch_idxs
 
 def scipy_linear_sum_assignment(matrix, maximize=False):
+	"""
+	Solve the linear sum assignment problem using Scipy's implementation (Hungarian algorithm).
+	This is a wrapper to handle PyTorch tensors, 
+ 	It is caller's response to to detaching from the graph.
+
+	Args:
+		matrix (th.Tensor): The cost matrix (or score matrix if maximize=True).
+		maximize (bool, optional): Calculates a maximum weight matching if true. Defaults to False.
+
+	Returns:
+		Tuple[th.Tensor, th.Tensor]: Row indices and column indices of the optimal assignment.
+	"""
 
 	device = matrix.device
 	matrix = matrix.cpu().numpy()
