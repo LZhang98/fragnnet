@@ -669,6 +669,127 @@ def sparse_cosine_distance_hungarian(
 		cos_dist_hun[batch_idx] = b_cos_dist_hun
 	return cos_dist_hun
 
+def sparse_jensen_shannon_divergence_hungarian(
+		true_mzs: th.Tensor, 
+		true_logprobs: th.Tensor,
+		true_batch_idxs: th.Tensor,
+		pred_mzs: th.Tensor,
+		pred_logprobs: th.Tensor,
+		pred_batch_idxs: th.Tensor,
+		tolerance: float=1e-5,
+		relative: bool=True,
+		tolerance_min_mz: float=TOLERANCE_MIN_MZ,
+		log_min: float=EPS) -> th.Tensor:
+	"""
+	Compute the sparse Jensen-Shannon divergence between spectra using the Hungarian algorithm for optimal matching.
+
+	Args:
+		true_mzs: Ground truth m/z values.
+		true_logprobs: Ground truth log-probabilities (intensities).
+		true_batch_idxs: Batch indices for ground truth peaks.
+		pred_mzs: Predicted m/z values.
+		pred_logprobs: Predicted log-probabilities (intensities).
+		pred_batch_idxs: Batch indices for predicted peaks.
+		tolerance: m/z matching tolerance.
+		relative: Whether tolerance is relative to m/z.
+		tolerance_min_mz: Minimum m/z for relative tolerance.
+		log_min: Minimum log value to avoid log(0).
+
+	Returns:
+		Tensor of Jensen-Shannon divergences per batch (normalized to [0,1]).
+	"""
+
+	# Aggregate and round peaks for both true and predicted spectra
+	true_mzs, true_logprobs, true_batch_idxs = round_aggregate_peaks(
+		true_mzs,
+		true_logprobs,
+		true_batch_idxs,
+		agg="lse"
+	)
+	pred_mzs, pred_logprobs, pred_batch_idxs = round_aggregate_peaks(
+		pred_mzs,
+		pred_logprobs,
+		pred_batch_idxs,
+		agg="lse"
+	)
+	# Get number of batches
+	batch_size = th.max(true_batch_idxs)+1
+	jsd_hun = th.zeros([batch_size],device=true_logprobs.device,dtype=true_logprobs.dtype)
+	
+	for batch_idx in range(batch_size):
+		# Select peaks for current batch
+		b_true_mask = (true_batch_idxs==batch_idx)
+		b_pred_mask = (pred_batch_idxs==batch_idx)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_logprobs = true_logprobs[b_true_mask]
+		b_pred_logprobs = pred_logprobs[b_pred_mask]
+		
+		# Normalize probabilities (sum to 1)
+		b_true_probs = th.exp(b_true_logprobs)
+		b_true_sum = th.sum(b_true_probs)
+		if b_true_sum > 0:
+			b_true_probs = b_true_probs / b_true_sum
+		
+		b_pred_probs = th.exp(b_pred_logprobs)
+		b_pred_sum = th.sum(b_pred_probs)
+		if b_pred_sum > 0:
+			b_pred_probs = b_pred_probs / b_pred_sum
+
+		# Compute m/z matching mask within tolerance
+		b_match_mzs = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative,
+			tolerance_min_mz=tolerance_min_mz
+		)
+		
+		# Identify which true and predicted peaks have matches
+		b_true_match_mzs = th.any(b_match_mzs,dim=1)
+		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+		
+		# Filter to only matched peaks to reduce matrix size
+		b_true_probs_m = b_true_probs[b_true_match_mzs]
+		b_pred_probs_m = b_pred_probs[b_pred_match_mzs]
+		
+		# Compute score matrix (Gain)
+		# Gain = 0.5 * [ (p+q) log(p+q) - p log p - q log q ]
+		p_expand = b_true_probs_m.unsqueeze(1)
+		q_expand = b_pred_probs_m.unsqueeze(0)
+		sum_pq = p_expand + q_expand
+		
+		term1 = sum_pq * th.log(sum_pq + EPS)
+		term2 = p_expand * th.log(p_expand + EPS)
+		term3 = q_expand * th.log(q_expand + EPS)
+		
+		b_score = 0.5 * (term1 - term2 - term3)
+		
+		# Mask invalid matches
+		valid_matches = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs]
+		# Set invalid matches to a large negative number
+		b_score[~valid_matches] = -1e9
+		
+		# Hungarian algorithm
+		b_score_np = b_score.detach().cpu().numpy()
+		
+		if b_score_np.size == 0:
+			total_gain = 0.
+		else:
+			b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score_np, maximize=True)
+			
+			# Filter invalid matches (where score is -1e9)
+			matched_gains = b_score[b_true_idxs, b_pred_idxs]
+			valid_mask = matched_gains > -1e8
+			total_gain = th.sum(matched_gains[valid_mask])
+			
+		# Normalized JSD = 1 - Total Gain / log 2
+		b_jsd = 1. - total_gain / np.log(2)
+		b_jsd = th.clamp(b_jsd, min=0., max=1.)
+		jsd_hun[batch_idx] = b_jsd
+		
+	return jsd_hun
+
 def sparse_jensen_shannon_divergence(
 		true_mzs: th.Tensor, 
 		true_logprobs: th.Tensor,

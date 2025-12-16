@@ -10,7 +10,7 @@ except ImportError:
 import os
 
 from fragnnet.model import FraGNNetModel
-from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_binned_cossin_sim, get_pairwise_binned_jss_sim, sparse_jensen_shannon_divergence
+from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_binned_cossin_sim, get_pairwise_binned_jss_sim, sparse_jensen_shannon_divergence, sparse_jensen_shannon_divergence_hungarian
 from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog,scatter_logsumexp, scatter_logl2normalize
@@ -439,6 +439,25 @@ class FraGNNetPL(SpectrumPL):
 				mz_bin_res=self.hparams.mz_bin_res
 			)
 
+		# jensen-shannon distance hungarian
+		def jss_dist_hun_fn(
+			true_mzs,
+			true_logprobs,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs):
+			return sparse_jensen_shannon_divergence_hungarian(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs,
+				tolerance=self.tolerance,
+				relative=self.relative
+			)
+
 		assert self.hparams.sparse_cosine_similarity
 		assert self.hparams.sum_ints
 		if self.hparams.loss_type == "cross_entropy":
@@ -447,7 +466,7 @@ class FraGNNetPL(SpectrumPL):
 			self.binned_loss = True
 		elif self.hparams.loss_type in ["cosine_distance_hungarian", "log_cosine_distance_hungarian"]:
 			self.binned_loss = False
-		elif self.hparams.loss_type == "jss_distance":
+		elif self.hparams.loss_type in ["jss_distance", "jss_distance_hungarian"]:
 			self.binned_loss = False
 		else:
 			raise ValueError(f"Unknown loss type {self.hparams.loss_type}")
@@ -573,13 +592,22 @@ class FraGNNetPL(SpectrumPL):
 					pred_logprobs,
 					pred_batch_idxs
 				)
+			elif self.hparams.loss_type == "jss_distance_hungarian":
+				primary_loss = jss_dist_hun_fn(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs
+				)
 
 			loss = self.hparams.primary_loss_weight * primary_loss
 			loss_d["primary_loss"] = primary_loss			
 			
 			if self.hparams.null_loss:
 				assert self.hparams.loss_type != "cross_entropy", self.hparams.loss_type
-				if self.hparams.loss_type in ["cosine_distance","cosine_distance_hungarian", "jss_distance"]:
+				if self.hparams.loss_type in ["cosine_distance","cosine_distance_hungarian", "jss_distance", "jss_distance_hungarian"]:
 					loss = loss + self.hparams.null_loss_weight * th.exp(pred_null_formula_logprob)
 				elif self.hparams.loss_type in ["log_cosine_distance","log_cosine_distance_hungarian"]:
 					loss = loss + self.hparams.null_loss_weight * pred_null_formula_logprob
