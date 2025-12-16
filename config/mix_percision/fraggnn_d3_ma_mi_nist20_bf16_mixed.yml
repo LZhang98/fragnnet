@@ -35,7 +35,7 @@ num_hs: 4
 subsample_params:
   subsample_size: 4000
   subsample_seed: 42
-  train: False
+  train: True
   val: True
   test: True
   secondary: True
@@ -122,6 +122,6 @@ pl_enable_progress_bar: True
 activation_checkpointing: False
 compile: False
 pin_memory: True
-loss_vectorized: True
+loss_vectorized: False
 loss_batch_size: 16
 skip_extra_losses: True
