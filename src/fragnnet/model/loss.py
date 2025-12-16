@@ -771,12 +771,10 @@ def sparse_jensen_shannon_divergence_hungarian(
 		b_score[~valid_matches] = -1e9
 		
 		# Hungarian algorithm
-		b_score_np = b_score.detach().cpu().numpy()
-		
-		if b_score_np.size == 0:
+		if b_score.numel() == 0:
 			total_gain = 0.
 		else:
-			b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score_np, maximize=True)
+			b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
 			
 			# Filter invalid matches (where score is -1e9)
 			matched_gains = b_score[b_true_idxs, b_pred_idxs]
