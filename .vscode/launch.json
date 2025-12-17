@@ -29,20 +29,20 @@
       "args": ["-w","disabled","-c","config/debug/debug_mces_finetuning.yml"]
     },
     {
-      "name": "scripts/clip_pretraining",
-      "type": "python",
-      "request": "launch",
-      "program": "scripts/run_pl_model_fit.py",
-      "console": "integratedTerminal",
-      "args": ["-w","disabled","-c","config/debug/debug_clip_pretraining.yml"]
-    },
-    {
       "name": "scripts/debug_tiny_um_prec",
       "type": "python",
       "request": "launch",
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
       "args": ["-w","disabled","-c","config/debug/debug_tiny_um_prec.yml"]
+    },
+    {
+      "name": "scripts/debug_tiny_nps",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_tiny_nps.yml"]
     },
   ]
 }
