@@ -3,6 +3,7 @@ Land of loss functions
 """
 
 import numpy as np
+import math
 import torch as th
 import torch.nn.functional as F
 from typing import Callable
@@ -892,7 +893,7 @@ def get_pairwise_binned_cossin_sim(
 	"""
 	
 	if mzs.numel() == 0:
-		return th.zeros((batch_size, batch_size), device=mzs.device)
+		return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
 	# Binning
 	bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
@@ -917,23 +918,19 @@ def get_pairwise_binned_cossin_sim(
 	indices = th.stack([bin_batch_idxs, bin_idxs % num_bins])
 	
 	V = th.sparse_coo_tensor(indices, norm_probs, (batch_size, num_bins), device=mzs.device)
+	V_dense = V.to_dense()
 	
 	if chunk_size is None or chunk_size >= batch_size:
-		V_dense = V.to_dense()
 		# Compute pairwise similarity
 		S = th.mm(V_dense, V_dense.t())
 	else:
-		S = th.zeros((batch_size, batch_size), device=mzs.device, dtype=mzs.dtype)
+		S = th.zeros((batch_size, batch_size), device=mzs.device, dtype=V_dense.dtype)
 		for i in range(0, batch_size, chunk_size):
 			i_end = min(i + chunk_size, batch_size)
-			i_idxs = th.arange(i, i_end, device=mzs.device)
-			V_i = th.index_select(V, 0, i_idxs).to_dense()
-			
+			V_i = V_dense[i:i_end]
 			for j in range(0, batch_size, chunk_size):
 				j_end = min(j + chunk_size, batch_size)
-				j_idxs = th.arange(j, j_end, device=mzs.device)
-				V_j = th.index_select(V, 0, j_idxs).to_dense()
-				
+				V_j = V_dense[j:j_end]
 				S[i:i_end, j:j_end] = th.mm(V_i, V_j.t())
 
 	return S
@@ -963,7 +960,7 @@ def get_pairwise_binned_jss_sim(
 	"""
 	
 	if mzs.numel() == 0:
-		return th.zeros((batch_size, batch_size), device=mzs.device)
+		return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
 	# Binning
 	bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
@@ -985,52 +982,34 @@ def get_pairwise_binned_jss_sim(
 	indices = th.stack([bin_batch_idxs, bin_idxs % num_bins])
 	
 	V = th.sparse_coo_tensor(indices, probs, (batch_size, num_bins), device=mzs.device)
+	V_dense = V.to_dense()  # (B, D)
 	
+	# Compute JSS
+	# JSD(P, Q) = H(M) - 0.5 H(P) - 0.5 H(Q)
+	# M = 0.5 (P + Q)
+	P = V_dense
+	
+	# H(P)
+	H_P = -th.sum(P * th.log(P + EPS), dim=1)  # (B,)
+	
+	# H(M)
+	H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=P.dtype)
 	if chunk_size is None or chunk_size >= batch_size:
-		V_dense = V.to_dense() # (B, D)
-		
-		# Compute JSS
-		# JSD(P, Q) = H(M) - 0.5 H(P) - 0.5 H(Q)
-		# M = 0.5 (P + Q)
-		
-		# H(P)
-		# Add eps to probs for log
-		P = V_dense
-		H_P = -th.sum(P * th.log(P + EPS), dim=1) # (B,)
-		
-		# M
-		# Compute H(M) row-wise to save memory
-		H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=mzs.dtype)
 		for i in range(batch_size):
-			# P[i] is (D,)
-			# M_i = 0.5 * (P[i] + P) # (B, D)
 			M_i = 0.5 * (P[i].unsqueeze(0) + P)
 			H_M[i] = -th.sum(M_i * th.log(M_i + EPS), dim=1)
 	else:
-		# Chunked computation
-		H_P = th.zeros(batch_size, device=mzs.device, dtype=mzs.dtype)
 		for i in range(0, batch_size, chunk_size):
 			i_end = min(i + chunk_size, batch_size)
-			i_idxs = th.arange(i, i_end, device=mzs.device)
-			P_chunk = th.index_select(V, 0, i_idxs).to_dense()
-			H_P[i:i_end] = -th.sum(P_chunk * th.log(P_chunk + EPS), dim=1)
-			
-		H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=mzs.dtype)
-		for i in range(0, batch_size, chunk_size):
-			i_end = min(i + chunk_size, batch_size)
-			i_idxs = th.arange(i, i_end, device=mzs.device)
-			P_i = th.index_select(V, 0, i_idxs).to_dense() # (chunk_i, D)
-			
+			P_i = P[i:i_end]  # (chunk_i, D)
 			for j in range(0, batch_size, chunk_size):
 				j_end = min(j + chunk_size, batch_size)
-				j_idxs = th.arange(j, j_end, device=mzs.device)
-				P_j = th.index_select(V, 0, j_idxs).to_dense() # (chunk_j, D)
-				
+				P_j = P[j:j_end]  # (chunk_j, D)
 				M_ij = 0.5 * (P_i.unsqueeze(1) + P_j.unsqueeze(0))
 				H_M[i:i_end, j:j_end] = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
 	
 	JSD = H_M - 0.5 * H_P.unsqueeze(1) - 0.5 * H_P.unsqueeze(0)
-	JSS = 1.0 - JSD / th.log(th.tensor(2.0))
+	JSS = 1.0 - JSD / math.log(2.0)
 	
 	return JSS
 

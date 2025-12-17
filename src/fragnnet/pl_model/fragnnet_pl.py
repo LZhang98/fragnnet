@@ -904,6 +904,20 @@ class FraGNNetPL(SpectrumPL):
 			total_loss = batch_results["total_loss"]
 			total_weight = batch_results["total_weight"]
 			mean_loss = total_loss / self._max_batch_size
+			if not isinstance(mean_loss, th.Tensor):
+				raise TypeError(f"Expected mean_loss to be a torch.Tensor, got {type(mean_loss)}")
+			if mean_loss.ndim != 0:
+				raise RuntimeError(f"Expected scalar mean_loss for backward(), got shape={tuple(mean_loss.shape)}")
+			if not mean_loss.requires_grad:
+				raise RuntimeError(
+					"mean_loss does not require grad (detached). "
+					f"total_loss.requires_grad={getattr(total_loss, 'requires_grad', None)}"
+				)
+			if not th.isfinite(mean_loss):
+				raise RuntimeError(
+					f"Non-finite mean_loss detected: {mean_loss.detach().float().cpu().item()} "
+					f"(batch_idx={batch_idx}, batch_size={batch_size}, total_weight={float(total_weight) if not isinstance(total_weight, th.Tensor) else total_weight.detach().float().cpu().item()})"
+				)
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
@@ -920,6 +934,17 @@ class FraGNNetPL(SpectrumPL):
 			batch_results = self._common_step(batch, split="train")
 			mean_loss = batch_results["mean_loss"] / self.hparams.accumulate_grad_batches
 			total_weight = batch_results["total_weight"]
+			if not isinstance(mean_loss, th.Tensor):
+				raise TypeError(f"Expected mean_loss to be a torch.Tensor, got {type(mean_loss)}")
+			if mean_loss.ndim != 0:
+				raise RuntimeError(f"Expected scalar mean_loss for backward(), got shape={tuple(mean_loss.shape)}")
+			if not mean_loss.requires_grad:
+				raise RuntimeError("mean_loss does not require grad (detached).")
+			if not th.isfinite(mean_loss):
+				raise RuntimeError(
+					f"Non-finite mean_loss detected: {mean_loss.detach().float().cpu().item()} "
+					f"(batch_idx={batch_idx}, total_weight={float(total_weight) if not isinstance(total_weight, th.Tensor) else total_weight.detach().float().cpu().item()})"
+				)
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
