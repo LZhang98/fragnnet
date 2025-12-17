@@ -774,7 +774,15 @@ def sparse_jensen_shannon_divergence_hungarian(
 		
 		# Hungarian algorithm
 		if b_score.numel() == 0:
-			total_gain = th.tensor(0., device=b_score.device, dtype=b_score.dtype)
+			# No matched peaks => assignment matrix is empty.
+			# Keep `total_gain` connected to the computation graph so downstream
+			# loss still has `requires_grad=True` (manual backward would otherwise crash).
+			if b_pred_probs.numel() > 0:
+				total_gain = b_pred_probs.sum() * 0.0
+			elif b_true_probs.numel() > 0:
+				total_gain = b_true_probs.sum() * 0.0
+			else:
+				total_gain = th.tensor(0.0, device=b_score.device, dtype=b_score.dtype)
 		else:
 			# We detach b_score for the assignment step because the Hungarian algorithm 
 			# is non-differentiable (calculates indices). 
@@ -784,7 +792,11 @@ def sparse_jensen_shannon_divergence_hungarian(
 			# Filter invalid matches (where score is -1e9)
 			matched_gains = b_score[b_true_idxs, b_pred_idxs]
 			valid_mask = matched_gains > -1e8
-			total_gain = th.sum(matched_gains[valid_mask])
+			if th.any(valid_mask):
+				total_gain = th.sum(matched_gains[valid_mask])
+			else:
+				# All matches invalid; return a graph-connected zero.
+				total_gain = b_score.sum() * 0.0
 			
 		# Normalized JSD = 1 - Total Gain / log 2
 		LOG2 = th.log(th.tensor(2.0, device=total_gain.device, dtype=total_gain.dtype))
