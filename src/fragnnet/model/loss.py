@@ -65,7 +65,8 @@ def mog_ce_fn(
 		assert tolerance_multiple > 0, tolerance_multiple
 		# log_trunc_factor = LOG_TRUNC_FACTOR.get(tolerance_multiple,1.)
 		# b_log_trunc_factors = log_trunc_factor*th.ones_like(b_pred_mzs)
-		trunc_factor = th.erf(th.tensor(tolerance_multiple,device=b_pred_mzs.device)/float(np.sqrt(2)))
+		sigma = th.tensor(float(np.sqrt(2)), device=b_pred_mzs.device)
+		trunc_factor = th.erf(th.tensor(tolerance_multiple,device=b_pred_mzs.device)/ sigma)
 		b_log_trunc_factors = th.log(trunc_factor*th.ones_like(b_pred_mzs))
 	else:
 		b_log_trunc_factors = th.zeros_like(b_pred_mzs)
@@ -292,7 +293,8 @@ def sparse_cross_entropy_vec(
 		bl_vars = bl_stds**2
 		if gaussian_renormalize:
 			assert oos_tolerance_multiple > 0, oos_tolerance_multiple
-			bl_trunc_factor = th.erf(th.tensor(oos_tolerance_multiple,device=device)/float(np.sqrt(2)))
+			sigma = th.tensor(float(np.sqrt(2)), device=device)
+			bl_trunc_factor = th.erf(th.tensor(oos_tolerance_multiple, device=device) / sigma)
 			bl_log_trunc_factors = th.log(bl_trunc_factor*th.ones_like(bl_pred_mzs))
 		else:
 			bl_log_trunc_factors = th.zeros_like(bl_pred_mzs)
@@ -785,7 +787,8 @@ def sparse_jensen_shannon_divergence_hungarian(
 			total_gain = th.sum(matched_gains[valid_mask])
 			
 		# Normalized JSD = 1 - Total Gain / log 2
-		b_jsd = 1. - total_gain / np.log(2)
+		LOG2 = th.log(th.tensor(2.0, device=total_gain.device, dtype=total_gain.dtype))
+		b_jsd = 1. - total_gain / LOG2
 		b_jsd = th.clamp(b_jsd, min=0., max=1.)
 		jsd_hun[batch_idx] = b_jsd
 		
