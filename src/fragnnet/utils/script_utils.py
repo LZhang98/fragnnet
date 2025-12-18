@@ -924,10 +924,10 @@ def run_inference_tabular_iter(
 	)
 
 	eval_score_types = get_score_types(model.hparams)
-	
+	total_batches = len(dataloader) if batch_cutoff < 0 else min(len(dataloader), batch_cutoff)
 	model.eval()
 	with th.inference_mode():
-		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), desc="Running inference"):
+		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=total_batches, desc="Running inference"):
 			# Early exit for batch cutoff
 			if batch_idx >= batch_cutoff and batch_cutoff > 0:
 				print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
