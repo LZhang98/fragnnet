@@ -17,13 +17,23 @@ from fragnnet.utils.script_utils import (
 	run_inference_tabular,
  	prepare_output_subset,
  	get_score_types,
+	list_output_subset_options,
+	get_required_config_indices,
 )
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 from fragnnet.utils.misc_utils import booltype
 import argparse
 import os
+import sys
 
 if __name__ == "__main__":
+	# Early check for --list_output_options to avoid required argument validation
+	if "--list_output_options" in sys.argv:
+		print("Available output_subset options:")
+		for opt in list_output_subset_options():
+			print(f"  - {opt}")
+		sys.exit(0)
+	
 	# Set up command line argument parser
 	parser = argparse.ArgumentParser(description="Run FragGNN inference evaluation with metrics")
 	
@@ -79,6 +89,11 @@ if __name__ == "__main__":
 		type=booltype, 
 		default=False,
 		help="Force overwrite existing results"
+	)
+	parser.add_argument(
+		"--list_output_options",
+		action="store_true",
+		help="List all valid tokens for --output_subset and exit"
 	)
 	
 	# Evaluation metrics configuration
@@ -214,6 +229,19 @@ if __name__ == "__main__":
 		output_subset=args.output_subset,
 		output_everything=args.output_everything
 	)
+	# Show which index variables will be required for the chosen output_subset
+	if output_set is not None:
+		req_batch, req_node, req_formula, req_nb_node = get_required_config_indices(
+			output_set, model, nb_iso=False
+		)
+		print(f"> Required index variables for output_subset:")
+		if req_batch:
+			print(f"  Batch indices: {req_batch}")
+		if req_node:
+			print(f"  Node indices: {req_node}")
+		if req_formula:
+			print(f"  Formula indices: {req_formula}")
+   
 	print(f">>> Output set: {output_set}")
 	predicted_df = run_inference_tabular(
 		model,

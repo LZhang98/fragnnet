@@ -13,13 +13,23 @@ from fragnnet.utils.script_utils import (
 	get_config_from_ckpt,
 	get_tabular_columns,
  	prepare_output_subset,
+	list_output_subset_options,
+	get_required_config_indices,
 )
 from fragnnet.utils.misc_utils import booltype
 import argparse
 import os
+import sys
 import tempfile
 
 if __name__ == "__main__":
+	# Early check for --list_output_options to avoid required argument validation
+	if "--list_output_options" in sys.argv:
+		print("Available output_subset options:")
+		for opt in list_output_subset_options():
+			print(f"  - {opt}")
+		sys.exit(0)
+	
 	# Parse command line arguments
 	parser = argparse.ArgumentParser()
 	
@@ -70,12 +80,31 @@ if __name__ == "__main__":
 		choices=["pkl", "pkl.gz", "parquet"],
 		help="File format for saving predictions (pkl or parquet)"
 	)
+	# Output control arguments
 	parser.add_argument(
-		"--output_subset",
-		type=str,
-		nargs="+",
-		default=None,
-		help="Subset of columns to output (if None, output all)"
+		"--list_output_options",
+		action="store_true",
+		help="List all valid tokens for --output_subset and exit"
+	)
+	parser.add_argument(
+		"--output_subset", 
+		type=str, 
+		nargs="+", 
+		default=[
+			"pred_mzs",      # Predicted m/z values
+			"pred_ints",     # Predicted intensities
+		],
+
+		#"pred_mzs", 
+		#"pred_ints", 
+		#"pred_oos_prob",
+		#"frag_formula_peak_mzs",
+		#"pred_formula_probs",
+		#"pred_formula_node_probs",
+		#"pred_node_formula_probs",
+		#"pred_node_probs"
+  
+		help="Subset of outputs to include in results"
 	)
 	parser.add_argument(
 		"--output_everything",
@@ -152,9 +181,6 @@ if __name__ == "__main__":
 		help="Write predictions to disk every N predictions (lower = more disk I/O but safer)"
 	)
 	args = parser.parse_args()
-	
-
-	# Load Model Checkpoint and Configuration
 
 	# Get checkpoint path (download from W&B or use local)
 	ckpt_fp = get_ckpt_path(
@@ -326,7 +352,20 @@ if __name__ == "__main__":
 		output_subset=args.output_subset,
 		output_everything=args.output_everything
 	)
-	columns_name = get_tabular_columns(config_d, return_formula_and_cc=args.return_formula_and_cc, output_subset=output_set)
+	# Show which index variables will be required for the chosen output_subset
+	if output_set is not None:
+		req_batch, req_node, req_formula, req_nb_node = get_required_config_indices(
+			output_set, model, nb_iso=False
+		)
+		print(f"> Required index variables for output_subset:")
+		if req_batch:
+			print(f"  Batch indices: {req_batch}")
+		if req_node:
+			print(f"  Node indices: {req_node}")
+		if req_formula:
+			print(f"  Formula indices: {req_formula}")
+	
+columns_name = get_tabular_columns(config_d, return_formula_and_cc=args.return_formula_and_cc, output_subset=output_set)
 
 	#=========================================
 	# Inferencing

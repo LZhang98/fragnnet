@@ -17,6 +17,7 @@ from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls
 from fragnnet.utils.frag_utils import get_node_feats
 
+
 def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 	import wandb
 	# load model
@@ -415,6 +416,25 @@ def cleanup_model(model: th.nn.Module, use_gpu: bool = True) -> None:
 		with th.no_grad():
 			th.cuda.empty_cache()
 
+# -----------------------------------------------------------------------------
+# Output subset tokens and index requirements
+# -----------------------------------------------------------------------------
+# Valid tokens a user can request in `output_subset` for inference outputs.
+OUTPUT_SUBSET_OPTIONS = [
+	"pred_mzs",
+	"pred_ints",
+	"pred_oos_prob",
+	"frag_formula_peak_mzs",
+	"pred_formula_probs",
+	"pred_formula_node_probs",
+	"pred_node_formula_probs",
+	"pred_node_probs",
+]
+
+def list_output_subset_options() -> list[str]:
+	"""Return all valid `output_subset` option tokens."""
+	return OUTPUT_SUBSET_OPTIONS
+
 def prepare_output_subset(
 	output_everything: bool,
 	output_subset: Optional[Set[str]],
@@ -443,6 +463,93 @@ def prepare_output_subset(
 		output_subset = output_subset.union(model_metric_names)
 	
 	return output_subset
+
+
+def required_index_vars_for_outputs(
+	output_subset: Optional[Set[str]],
+	model,
+	nb_iso: bool = False,
+) -> Tuple[Set[str], Set[str], Set[str], Set[str]]:
+	"""
+	Given desired `output_subset` tokens, determine which index variable arrays are
+	required to be present in batch/model outputs.
+
+	Returns sets of required names for: batch, node, formula, nb_node indices.
+	"""
+	# If no subset specified, assume all indices may be needed
+	if output_subset is None:
+		output_subset = set(OUTPUT_SUBSET_OPTIONS)
+
+	# Base mapping from output tokens -> required index vars
+	# Note: These names correspond to keys produced by model steps and consumed
+	# in `process_batch_to_tabular_row`.
+	token_to_idx = {
+		"pred_mzs": {"batch": {"pred_batch_idxs"}},
+		"pred_ints": {"batch": {"pred_batch_idxs"}},
+		"pred_oos_prob": {},
+		"frag_formula_peak_mzs": {"batch": {"pred_batch_idxs"}},
+		# P(f)
+		"pred_formula_probs": {
+			"batch": {"pred_formula_batch_idxs"},
+			"formula": {"pred_formula_formula_idxs"},
+		},
+		# P(n|f) on joint grid, requires joint idxs and joint batch
+		"pred_formula_node_probs": {
+			"batch": {"pred_joint_batch_idxs"},
+			"formula": {"pred_joint_formula_idxs"},
+			"node": {"pred_joint_node_idxs"},
+		},
+		# P(f|n) on joint grid
+		"pred_node_formula_probs": {
+			"batch": {"pred_joint_batch_idxs"},
+			"formula": {"pred_joint_formula_idxs"},
+			"node": {"pred_joint_node_idxs"},
+		},
+		# P(n)
+		"pred_node_probs": {
+			"batch": {"pred_node_batch_idxs"},
+			"node": {"pred_node_node_idxs"},
+		},
+	}
+
+	# Aggregate required idx names across tokens
+	req_batch, req_node, req_formula, req_nb_node = set(), set(), set(), set()
+	for tok in output_subset:
+		m = token_to_idx.get(tok, {})
+		req_batch |= m.get("batch", set())
+		req_node |= m.get("node", set())
+		req_formula |= m.get("formula", set())
+		req_nb_node |= m.get("nb_node", set())
+
+	# Model-specific adjustments
+	is_fragnnet = isinstance(model, FraGNNetPL)
+	is_iceberg = isinstance(model, IcebergIntenPL)
+
+	if is_iceberg:
+		# Iceberg does not use node/formula idxs in inference outputs
+		req_node.clear()
+		req_formula.clear()
+		req_nb_node.clear()
+
+	if is_fragnnet and nb_iso:
+		# If neighbor isotope predictions are enabled, include NB index vars
+		req_batch |= {"pred_nb_node_batch_idxs", "pred_nb_joint_batch_idxs", "pred_nb_node_node_batch_idxs"}
+		req_formula |= {"pred_nb_joint_formula_idxs"}
+		req_nb_node |= {"pred_nb_node_node_idxs", "pred_nb_joint_node_idxs", "pred_nb_node_node_node_idxs"}
+
+	return req_batch, req_node, req_formula, req_nb_node
+
+def get_required_config_indices(
+	output_subset: Optional[Set[str]],
+	model,
+	nb_iso: bool = False,
+) -> Tuple[Set[str], Set[str], Set[str], Set[str]]:
+	"""
+	Public API: Given `output_subset` tokens, return required index variable names
+	grouped by category (batch, node, formula, nb_node). Useful for configuring
+	dataset/model outputs to ensure all needed indices are present.
+	"""
+	return required_index_vars_for_outputs(output_subset, model, nb_iso)
 
 
 def get_idx_vars(
@@ -498,10 +605,11 @@ def get_idx_vars(
 			])
 	
 	if output_subset is not None:
-		BATCH_IDX_VARS = [k for k in BATCH_IDX_VARS if k in output_subset]
-		NODE_IDX_VARS = [k for k in NODE_IDX_VARS if k in output_subset]
-		FORMULA_IDX_VARS = [k for k in FORMULA_IDX_VARS if k in output_subset]
-		NB_NODE_IDX_VARS = [k for k in NB_NODE_IDX_VARS if k in output_subset]
+		req_batch, req_node, req_formula, req_nb_node = required_index_vars_for_outputs(output_subset, model, nb_iso)
+		BATCH_IDX_VARS = [k for k in BATCH_IDX_VARS if k in req_batch]
+		NODE_IDX_VARS = [k for k in NODE_IDX_VARS if k in req_node]
+		FORMULA_IDX_VARS = [k for k in FORMULA_IDX_VARS if k in req_formula]
+		NB_NODE_IDX_VARS = [k for k in NB_NODE_IDX_VARS if k in req_nb_node]
   
 	return BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS
 
