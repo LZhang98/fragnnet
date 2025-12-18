@@ -43,14 +43,14 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--custom_fp",
 		type=str,
-		default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20v2_amolc.yml",
+		default=None,
 		help="Path to custom config file"
 	)
 	# Model checkpoint loading
 	parser.add_argument(
 		"--wandb_run_id",
 		type=str,
-		default="ikohsc16",
+		default=None,
 		help="W&B run ID to download checkpoint from (if model_ckpt not provided)"
 	)
 	parser.add_argument(
@@ -62,7 +62,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--model_ckpt",
 		type=str,
-		default='saved_ckpts/nist20_inchikey_fraggnn_d3_ma_mi_all_mol_conditon_v2_ikohsc16.ckpt',
+		default=None,
 		help="Path to local model checkpoint (if None, will download from W&B using wandb_run_id)"
 	)
 	
@@ -169,7 +169,7 @@ if __name__ == "__main__":
 	
 	# Performance tuning
 	parser.add_argument(
-		"--eval_batch_size",
+		"--batch_size",
 		type=int,
 		default=1,
 		help="Batch size for evaluation/inference (use 1 for variable-size molecules)"
@@ -283,7 +283,7 @@ if __name__ == "__main__":
 		config_d,
 		skip_extra_losses=args.skip_extra_losses,
 		disable_preproc=args.disable_preproc,
-		eval_batch_size=args.eval_batch_size,
+		eval_batch_size=args.batch_size,
 		auxiliary_scores = []
 	)
  
