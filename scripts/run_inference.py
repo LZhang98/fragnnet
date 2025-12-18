@@ -392,8 +392,8 @@ if __name__ == "__main__":
 	file_ext = args.save_format
 	
 	# Calculate save interval in batches based on chunk size
-	save_interval_batches = max(1, args.save_chunk_size // args.eval_batch_size)
-	print(f"> Saving every {save_interval_batches} batches (approx {save_interval_batches * args.eval_batch_size} predictions per chunk)")
+	save_interval_batches = max(1, args.save_chunk_size // args.batch_size)
+	print(f"> Saving every {save_interval_batches} batches (approx {save_interval_batches * args.batch_size} predictions per chunk)")
 
 	for batch_idx, batch_rows in enumerate(run_inference_tabular_iter(
 		model,
