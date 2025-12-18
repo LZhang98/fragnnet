@@ -37,12 +37,20 @@
       "args": ["-w","disabled","-c","config/debug/debug_tiny_um_prec.yml"]
     },
     {
-      "name": "scripts/debug_tiny_nps",
+      "name": "scripts/debug_nps",
       "type": "python",
       "request": "launch",
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
-      "args": ["-w","disabled","-c","config/debug/debug_tiny_nps.yml"]
+      "args": ["-w","disabled","-c","config/debug/debug_nps.yml"]
+    },
+    {
+      "name": "scripts/debug_nps_ft",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_nps_ft.yml"]
     },
   ]
 }

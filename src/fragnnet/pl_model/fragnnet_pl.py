@@ -11,7 +11,7 @@ import os
 
 from fragnnet.model import FraGNNetModel
 from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_binned_cossin_sim, get_pairwise_binned_jss_sim, sparse_jensen_shannon_divergence, sparse_jensen_shannon_divergence_hungarian
-from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler
+from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler,decompile_jit_ckpt
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog,scatter_logsumexp, scatter_logl2normalize
 from fragnnet.pl_model import SpectrumPL
@@ -131,7 +131,8 @@ class FraGNNetPL(SpectrumPL):
 
 		logging.info(f"Loading pre-trained weights from: {ckpt_path}")
 		ckpt = th.load(ckpt_path, map_location=self.device, weights_only=False)
-		
+		# fix compiled ckpt state dict prefix
+		ckpt = decompile_jit_ckpt(ckpt)
 		# 1. Load ckpt
 		state_dict = ckpt['state_dict'] if 'state_dict' in ckpt else ckpt
 
@@ -160,7 +161,9 @@ class FraGNNetPL(SpectrumPL):
 				# Check source
 				if not any(k.startswith(comp) for k in normalized_source_dict.keys()):
 					logging.warning(f"Component '{comp}' not found in checkpoint (source).")
-
+		else:
+			logging.info("No specific shared_components provided; attempting to load all compatible weights.")
+   
 		# 3. Load model weight into target components
 		weights_to_load = {}
 		for key in target_keys:
