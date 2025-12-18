@@ -23,8 +23,8 @@ From command line SMILES list:
 python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list <SMILES> [<SMILES> ...] \
   --prec_types <PREC_TYPE> [<PREC_TYPE> ...] \
-  --ces <CE_EV> [<CE_EV> ...] \
-  --nces <NCE_PCT> [<NCE_PCT> ...] \
+  --qtof_ces <CE_EV> [<CE_EV> ...] \
+  --ft_ces <NCE_EV> [<NCE_EV> ...] \
   --inst_types <INST_TYPE> [<INST_TYPE> ...] \
   --output_dir <OUTPUT_DIR> \
   [--merged_spectra true|false]
