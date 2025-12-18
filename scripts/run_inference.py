@@ -124,6 +124,12 @@ if __name__ == "__main__":
 		default=True,
 		help="Whether to return node CC hashes"
 	)
+	parser.add_argument(
+		"--drop_none_cols",
+		type=booltype,
+		default=True,
+		help="Drop columns that are entirely None/NaN before saving outputs"
+	)
 	# Inference configuration
 	parser.add_argument(
 		"--skip_extra_losses", 
@@ -211,12 +217,6 @@ if __name__ == "__main__":
 	# Load Input Data (molecules and spectra)
 	print("> Loading mol_df")
 	mol_df = pd.read_pickle(args.mol_fp)
-	parser.add_argument(
-		"--drop_none_cols",
-		type=booltype,
-		default=True,
-		help="Drop columns that are entirely None/NaN before saving outputs"
-	)
 	print(f"  num mol: {len(mol_df)}")
 	print("> Loading spec_df")
 	spec_df = pd.read_pickle(args.spec_fp)
