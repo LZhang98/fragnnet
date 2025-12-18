@@ -1,9 +1,9 @@
-wandb_name: nist23_mces_finetuning_m15_mlpc
+wandb_name: nist20_mces_finetuning_m30_mlpc_freeze
 wandb_tags:
 - finetuning
-- mces15
-- freeze_false
-- nist23
+- mces30
+- freeze_true
+- nist20
 - d4
 - wr00
 - inchikey
@@ -28,18 +28,25 @@ wandb_tags:
 - m+cl
 
 # data stuff
-spec_fp: data/proc/nist23/spec_df.pkl
-mol_fp: data/proc/nist23/mol_df.pkl
-split_dp: data/split/nist23_ma_mi_inchikey
-frag_dp: data/frag/nist23_ma_mi_d3_h4_isoFalse/dags
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
 mces_fp: data/proc/mces/mces_pairs.pkl
 
 # ============================================================================
-# MCES Pre-training Configuration
+# Finetuning Configuration
 # ============================================================================
-freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
-mces_pretrain: True # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt_fp: saved_ckpts/mces_nist23_ma_mi_inchikey_m15_fvtiyfrk.ckpt
+finetune:
+  use_finetune: true
+  pretrained_weights_lr_ratio: 0.1
+  pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
+  shared_components:
+    - mol_embedder
+    - mol_pool
+  freeze_components:
+    - mol_embedder
+    - mol_pool
 
 subsample_params:
   subsample_size: 100

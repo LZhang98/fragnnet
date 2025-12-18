@@ -212,6 +212,8 @@ class PrecModel:
 			Embedded precursor tensor or None.
 		"""
 		if self.prec_insert_location != "none":
+			if prec_type is None:
+				raise ValueError(f"prec_type is None but prec_insert_location is {self.prec_insert_location}")
 			prec_embed = self.prec_embedder(prec_type)
 		else:
 			prec_embed = None
@@ -267,6 +269,8 @@ class InstModel:
 			Embedded instrument tensor or None.
 		"""
 		if self.inst_insert_location != "none":
+			if inst_type is None:
+				raise ValueError(f"inst_type is None but inst_insert_location is {self.inst_insert_location}")
 			inst_embed = self.inst_embedder(inst_type)
 		else:
 			inst_embed = None

@@ -21,7 +21,7 @@ from fragnnet.utils.dgl_compat_utils import DGLGraph
 
 TQDM_DISABLE = False
 PPM = 1/1000000
-EPS = 1e-9
+EPS = 1e-7
 LOG_HALF = float(np.log(0.5))
 LOG_TWO = float(np.log(2.0))
 LOG_ZERO_FP32 = float(th.finfo(th.float32).min)

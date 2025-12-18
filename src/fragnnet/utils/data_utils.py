@@ -14,15 +14,19 @@ from fragnnet.utils.misc_utils import np_temp_seed, none_or_nan
 from fragnnet.utils.formula_utils import MASS, ELECTRON_MASS, NEUTRON_MASS
 import copy
 import torch as th
-	
+import os
+
 # don't do expesive import in runtime
 if TYPE_CHECKING:
 	import rdkit
 
 JOBLIB_BACKEND = "loky"
-JOBLIB_N_JOBS = joblib.cpu_count()
+FRAGNNET_JOBLIB_N_JOBS = os.environ.get("FRAGNNET_JOBLIB_N_JOBS", None)
+JOBLIB_N_JOBS = joblib.cpu_count() if FRAGNNET_JOBLIB_N_JOBS is None else int(FRAGNNET_JOBLIB_N_JOBS)
 JOBLIB_TIMEOUT = 10800 # default is 300 seconds for "loky"
-
+if FRAGNNET_JOBLIB_N_JOBS is not None:
+	print(f"Using FRAGNNET_JOBLIB_N_JOBS={FRAGNNET_JOBLIB_N_JOBS} for joblib n_jobs")
+ 
 def rdkit_import(*module_strs:str) -> Tuple:
 	""" until function for import rdkit modules
 

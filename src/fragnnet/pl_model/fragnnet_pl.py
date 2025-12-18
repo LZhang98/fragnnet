@@ -1,4 +1,5 @@
 import torch as th
+import torch.nn.functional as F
 import logging
 import torch._dynamo as th_dynamo
 try:
@@ -9,10 +10,10 @@ except ImportError:
 import os
 
 from fragnnet.model import FraGNNetModel
-from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
-from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler
+from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_binned_cossin_sim, get_pairwise_binned_jss_sim, sparse_jensen_shannon_divergence, sparse_jensen_shannon_divergence_hungarian
+from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler,decompile_jit_ckpt
 from fragnnet.utils.spec_utils import *
-from fragnnet.utils.misc_utils import safelog,scatter_logsumexp
+from fragnnet.utils.misc_utils import safelog,scatter_logsumexp, scatter_logl2normalize
 from fragnnet.pl_model import SpectrumPL
 
 class FraGNNetPL(SpectrumPL):
@@ -88,9 +89,23 @@ class FraGNNetPL(SpectrumPL):
 			if "h_range" in self.hparams.frag_params["pyg_edge_feats"]:
 				logging.warning("h_range in frag pyg_edge_feats but edge_loss is disabled!")
 
-		# Load pre-trained MCES weights if specified
-		if self.hparams.mces_pretrain:
-			self._load_mces_pretrained_weights(self.hparams.mces_pretrain_ckpt_fp)
+		# Load pre-trained weights if specified for finetuning
+		if self.hparams.finetune:
+			self._load_pretrained_weights(
+				self.hparams.finetune_pretrained_ckpt,
+				strict=self.hparams.finetune_strict_load,
+				shared_components=self.hparams.finetune_shared_components if not self.hparams.finetune_shared_all else None
+			)
+			
+			# Handle freezing
+			freeze_components = self.hparams.finetune_freeze_components
+			if self.hparams.finetune_freeze_all_shared:
+				# If freeze_all_shared is True, we freeze whatever we loaded
+				if self.pretrained_param_names:
+					self._freeze_components(self.pretrained_param_names, exact_match=True)
+			elif freeze_components:
+				# Otherwise freeze specific components by prefix
+				self._freeze_components(freeze_components, exact_match=False)
 
 		# compile
 		if self.hparams.compile:
@@ -101,91 +116,116 @@ class FraGNNetPL(SpectrumPL):
 			else:
 				self.model = th.compile(self.model,dynamic=True)
     
-	def _load_mces_pretrained_weights(self, mces_ckpt_path: str):
+	def _load_pretrained_weights(self, ckpt_path: str, strict: bool = False, shared_components: list[str] | None = None):
 		"""
-		Load pre-trained weights from MCES model into FraGNNet model.
-		This transfers the molecular GNN encoder and embedding layers that are shared.
+		Load pre-trained weights from a checkpoint file.
+		Supports both MCES pre-training (partial load) and generic fine-tuning.
 		
 		Args:
-			mces_ckpt_path (str): Path to the pre-trained MCES checkpoint file
+			ckpt_path: Path to checkpoint file
+			strict: Whether to enforce strict state dict matching
+			shared_components: List of component prefixes to load (if None, load all matching)
 		"""
-		if not os.path.exists(mces_ckpt_path):
-			raise FileNotFoundError(f"MCES checkpoint not found: {mces_ckpt_path}")
+		if not os.path.exists(ckpt_path):
+			raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-		logging.info(f"Loading pre-trained MCES weights from: {mces_ckpt_path}")
+		logging.info(f"Loading pre-trained weights from: {ckpt_path}")
+		ckpt = th.load(ckpt_path, map_location=self.device, weights_only=False)
+		# fix compiled ckpt state dict prefix
+		ckpt = decompile_jit_ckpt(ckpt)
+		# 1. Load ckpt
+		state_dict = ckpt['state_dict'] if 'state_dict' in ckpt else ckpt
 
-		# Load the MCES checkpoint
-		mces_checkpoint = th.load(mces_ckpt_path, map_location=self.device, weights_only=False)
-
-		# Extract state dict - handle both direct state_dict and Lightning checkpoint format
-		if 'state_dict' in mces_checkpoint:
-			mces_state_dict = mces_checkpoint['state_dict']
+		# Determine target components
+		if shared_components is not None:
+			target_components = shared_components
 		else:
-			mces_state_dict = mces_checkpoint
+			target_components = None
 
-		# Map MCES model weights to FraGNNet model weights
-		# Both models share: mol_embedder, mol_pool
-		# NOTE: CE/Prec/Inst embedders are NOT transferred because they are never trained
-		# in MCES (they only see zero inputs during pre-training)
-		shared_components = [
-			'mol_embedder',  # Molecular GNN encoder - actually trained on MCES similarity
-			'mol_pool',      # Molecular pooling layer - actually trained on MCES pooling
-		]
-
-		# Build mapping from MCES to FraGNNet
-		fragnnet_state_dict = self.model.state_dict()
-		loaded_weights = {}
-
-		for key, value in mces_state_dict.items():
-			# Remove 'model.' prefix if present (from Lightning wrapper)
-			clean_key = key[6:] if key.startswith('model.') else key
-
-			# Check if this weight belongs to a shared component
-			is_shared = any(clean_key.startswith(comp) for comp in shared_components)
-
-			if is_shared and clean_key in fragnnet_state_dict:
-				# Check shape compatibility
-				if value.shape == fragnnet_state_dict[clean_key].shape:
-					loaded_weights[clean_key] = value
-					logging.info(f"Loaded weight: {clean_key} with shape {value.shape}")
-				else:
-					logging.warning(
-						f"Shape mismatch for {clean_key}: "
-						f"MCES {value.shape} vs FraGNNet {fragnnet_state_dict[clean_key].shape}. "
-						f"Consider using compatible configurations."
-					)
-
-		# Load the compatible weights into FraGNNet
-		if loaded_weights:
-			self.model.load_state_dict(loaded_weights, strict=False)
-			logging.info(f"Successfully loaded {len(loaded_weights)} pre-trained weight tensors from MCES model")
-
-			# get names for pre-trained weights
-			self.pretrained_param_names = [name for name in loaded_weights.keys()]
+		# 2. Check if shared_components are in the target and source
+		target_keys = set(self.model.state_dict().keys())
+		
+		# Normalize source keys (remove 'model.' prefix if present)
+		source_keys = list(state_dict.keys())
+		source_starts_with_model = any(k.startswith('model.') for k in source_keys)
+		normalized_source_dict = {}
+		for k, v in state_dict.items():
+			norm_k = k[6:] if (source_starts_with_model and k.startswith('model.')) else k
+			normalized_source_dict[norm_k] = v
+		
+		if target_components:
+			for comp in target_components:
+				# Check target
+				if not any(k.startswith(comp) for k in target_keys):
+					logging.warning(f"Component '{comp}' not found in current model (target).")
+				# Check source
+				if not any(k.startswith(comp) for k in normalized_source_dict.keys()):
+					logging.warning(f"Component '{comp}' not found in checkpoint (source).")
+		else:
+			logging.info("No specific shared_components provided; attempting to load all compatible weights.")
    
-			# Freeze pre-trained weights if specified
-			if self.hparams.freeze_mces_weights:
-				self._freeze_pretrained_weights(loaded_weights.keys())
-		else:
-			logging.warning("No compatible weights found to transfer from MCES model")
+		# 3. Load model weight into target components
+		weights_to_load = {}
+		for key in target_keys:
+			# Filter by component
+			if target_components is not None:
+				if not any(key.startswith(comp) for comp in target_components):
+					continue
+			
+			# Check if key exists in source
+			if key in normalized_source_dict:
+				weights_to_load[key] = normalized_source_dict[key]
+		
+		if not weights_to_load:
+			logging.warning("No compatible weights found to transfer")
+			return
 
-	def _freeze_pretrained_weights(self, weight_keys):
+		# Load into self.model
+		try:
+			self.model.load_state_dict(weights_to_load, strict=False)
+			logging.info(f"Successfully loaded {len(weights_to_load)} parameters.")
+			
+			# 4. Update dictionary for tracking
+			self.pretrained_param_names = list(weights_to_load.keys())
+			
+		except RuntimeError as e:
+			if strict:
+				raise e
+			else:
+				logging.warning(f"Load failed with error: {e}")
+
+	def _freeze_components(self, components: list[str], exact_match: bool = False):
 		"""
-		Freeze the weights that were loaded from pre-trained MCES model.
+		Freeze parameters based on component names or prefixes.
 		
 		Args:
-			weight_keys: List of parameter names to freeze
+			components: List of component names (exact or prefixes)
+			exact_match: If True, requires exact name match (for specific weights). 
+						 If False, matches as prefix (for whole submodules).
 		"""
-		frozen_params = []
+		frozen_count = 0
+		# Iterate over model parameters directly
 		for name, param in self.model.named_parameters():
-			if name in weight_keys:
+			should_freeze = False
+			if exact_match:
+				if name in components:
+					should_freeze = True
+			else:
+				if any(name.startswith(c) for c in components):
+					should_freeze = True
+			
+			if should_freeze:
 				param.requires_grad = False
-				frozen_params.append(name)
-		
-		logging.info(f"Froze {len(frozen_params)} pre-trained parameters")
-		logging.debug(f"Frozen parameters: {list(set(p.split('.')[0] for p in frozen_params))}")
+				frozen_count += 1
+				
+		logging.info(f"Froze {frozen_count} parameters (exact_match={exact_match})")
 
 	def _setup_loss_names(self):
+		"""
+		Setup the list of loss names to be tracked during training/validation.
+		This includes primary losses, entropy terms, and other auxiliary losses
+		depending on the configuration.
+		"""
 
 		# flag losses for tracking
 		loss_names = [
@@ -194,12 +234,16 @@ class FraGNNetPL(SpectrumPL):
 			"null_formula_prob",
 			"oos_prob",
 		]
+
+		# Add cross-entropy specific losses if applicable
 		if self.hparams.loss_type == "cross_entropy":
 			loss_names.extend([
 				"spec_ce",
 				"oos_ce",
 				"ios_ce",
 			])
+		
+		# Add extra losses (entropy, mutual information, etc.) if not skipped
 		if not self.hparams.skip_extra_losses:
 			loss_names.extend([
 				"spec_e",
@@ -220,6 +264,7 @@ class FraGNNetPL(SpectrumPL):
 				"h_e",
 				"h_ne"
 			])
+			# Add edge losses if enabled
 			if not self.hparams.skip_edge_loss:
 				loss_names.extend([
 					"edge_h_range_loss",
@@ -227,6 +272,7 @@ class FraGNNetPL(SpectrumPL):
 					"edge_e",
 					"edge_ne"
 				])
+			# Add neighbor isolation losses if enabled
 			if self.hparams.nb_iso:
 				loss_names.extend([
 					"nb_node_e",
@@ -243,8 +289,13 @@ class FraGNNetPL(SpectrumPL):
 					"nb_formula_node_mi",
 					"nb_node_node_mi"
 				])
-
+			# Add pairwise losses if weights are positive
+			if self.hparams.pairwise_cosine_binned_loss_weight > 0:
+				loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
+			if self.hparams.pairwise_jss_binned_loss_weight > 0:
+				loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
 		else:
+			# If extra losses are skipped, add specific ones if their weights are non-zero
 			if not (self.hparams.formula_entropy_weight == self.hparams.formula_normalized_entropy_weight == 0.):
 				loss_names.extend([
 					"formula_e",
@@ -307,6 +358,12 @@ class FraGNNetPL(SpectrumPL):
 						"nb_node_node_e",
 						"nb_node_node_ne",
 					])
+
+			if self.hparams.pairwise_cosine_binned_loss_weight > 0:
+				loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
+			if self.hparams.pairwise_jss_binned_loss_weight > 0:
+				loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
+     
 		self.loss_names = loss_names
 		self.metric_names.update(loss_names)
 
@@ -366,6 +423,44 @@ class FraGNNetPL(SpectrumPL):
 					log_distance=(self.hparams.loss_type == "log_cosine_distance_hungarian")
 				)
 
+		# jensen-shannon distance
+		def jss_dist_fn(
+			true_mzs,
+			true_logprobs,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs):
+			return sparse_jensen_shannon_divergence(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs,
+				mz_max=self.hparams.mz_max,
+				mz_bin_res=self.hparams.mz_bin_res
+			)
+
+		# jensen-shannon distance hungarian
+		def jss_dist_hun_fn(
+			true_mzs,
+			true_logprobs,
+			true_batch_idxs,
+			pred_mzs,
+			pred_logprobs,
+			pred_batch_idxs):
+			return sparse_jensen_shannon_divergence_hungarian(
+				true_mzs,
+				true_logprobs,
+				true_batch_idxs,
+				pred_mzs,
+				pred_logprobs,
+				pred_batch_idxs,
+				tolerance=self.tolerance,
+				relative=self.relative
+			)
+
 		assert self.hparams.sparse_cosine_similarity
 		assert self.hparams.sum_ints
 		if self.hparams.loss_type == "cross_entropy":
@@ -373,6 +468,8 @@ class FraGNNetPL(SpectrumPL):
 		elif self.hparams.loss_type in ["cosine_distance", "log_cosine_distance"]:
 			self.binned_loss = True
 		elif self.hparams.loss_type in ["cosine_distance_hungarian", "log_cosine_distance_hungarian"]:
+			self.binned_loss = False
+		elif self.hparams.loss_type in ["jss_distance", "jss_distance_hungarian"]:
 			self.binned_loss = False
 		else:
 			raise ValueError(f"Unknown loss type {self.hparams.loss_type}")
@@ -489,13 +586,31 @@ class FraGNNetPL(SpectrumPL):
 					pred_logprobs,
 					pred_batch_idxs
 				)
+			elif self.hparams.loss_type == "jss_distance":
+				primary_loss = jss_dist_fn(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs
+				)
+			elif self.hparams.loss_type == "jss_distance_hungarian":
+				primary_loss = jss_dist_hun_fn(
+					true_mzs,
+					true_logprobs,
+					true_batch_idxs,
+					pred_mzs,
+					pred_logprobs,
+					pred_batch_idxs
+				)
 
 			loss = self.hparams.primary_loss_weight * primary_loss
 			loss_d["primary_loss"] = primary_loss			
 			
 			if self.hparams.null_loss:
 				assert self.hparams.loss_type != "cross_entropy", self.hparams.loss_type
-				if self.hparams.loss_type in ["cosine_distance","cosine_distance_hungarian"]:
+				if self.hparams.loss_type in ["cosine_distance","cosine_distance_hungarian", "jss_distance", "jss_distance_hungarian"]:
 					loss = loss + self.hparams.null_loss_weight * th.exp(pred_null_formula_logprob)
 				elif self.hparams.loss_type in ["log_cosine_distance","log_cosine_distance_hungarian"]:
 					loss = loss + self.hparams.null_loss_weight * pred_null_formula_logprob
@@ -707,6 +822,26 @@ class FraGNNetPL(SpectrumPL):
 				assert self.hparams.nb_formula_node_entropy_weight == 0.0
 				assert self.hparams.nb_formula_node_normalized_entropy_weight == 0.0
 			
+			# Pairwise similarity MSE loss
+			if f"pairwise_cossine_{self.hparams.mz_bin_res}" in self.loss_names:
+				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs)+1)
+				true_sim = get_pairwise_binned_cossin_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				pred_sim = get_pairwise_binned_cossin_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				
+				pairwise_sim_mse = F.mse_loss(pred_sim, true_sim)
+				loss = loss + self.hparams.pairwise_cosine_binned_loss_weight * pairwise_sim_mse
+				loss_d[f"pairwise_cossine_{self.hparams.mz_bin_res}"] = pairwise_sim_mse.expand(batch_size)
+
+			# Pairwise JSS MSE loss
+			if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
+				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs)+1)
+				true_sim = get_pairwise_binned_jss_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				pred_sim = get_pairwise_binned_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				
+				pairwise_jss_mse = F.mse_loss(pred_sim, true_sim)
+				loss = loss + self.hparams.pairwise_jss_binned_loss_weight * pairwise_jss_mse
+				loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = pairwise_jss_mse.expand(batch_size)
+
 			# finally, update the loss
 			loss_d["loss"] = loss
 			
@@ -772,6 +907,20 @@ class FraGNNetPL(SpectrumPL):
 			total_loss = batch_results["total_loss"]
 			total_weight = batch_results["total_weight"]
 			mean_loss = total_loss / self._max_batch_size
+			if not isinstance(mean_loss, th.Tensor):
+				raise TypeError(f"Expected mean_loss to be a torch.Tensor, got {type(mean_loss)}")
+			if mean_loss.ndim != 0:
+				raise RuntimeError(f"Expected scalar mean_loss for backward(), got shape={tuple(mean_loss.shape)}")
+			if not mean_loss.requires_grad:
+				raise RuntimeError(
+					"mean_loss does not require grad (detached). "
+					f"total_loss.requires_grad={getattr(total_loss, 'requires_grad', None)}"
+				)
+			if not th.isfinite(mean_loss):
+				raise RuntimeError(
+					f"Non-finite mean_loss detected: {mean_loss.detach().float().cpu().item()} "
+					f"(batch_idx={batch_idx}, batch_size={batch_size}, total_weight={float(total_weight) if not isinstance(total_weight, th.Tensor) else total_weight.detach().float().cpu().item()})"
+				)
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
@@ -788,6 +937,17 @@ class FraGNNetPL(SpectrumPL):
 			batch_results = self._common_step(batch, split="train")
 			mean_loss = batch_results["mean_loss"] / self.hparams.accumulate_grad_batches
 			total_weight = batch_results["total_weight"]
+			if not isinstance(mean_loss, th.Tensor):
+				raise TypeError(f"Expected mean_loss to be a torch.Tensor, got {type(mean_loss)}")
+			if mean_loss.ndim != 0:
+				raise RuntimeError(f"Expected scalar mean_loss for backward(), got shape={tuple(mean_loss.shape)}")
+			if not mean_loss.requires_grad:
+				raise RuntimeError("mean_loss does not require grad (detached).")
+			if not th.isfinite(mean_loss):
+				raise RuntimeError(
+					f"Non-finite mean_loss detected: {mean_loss.detach().float().cpu().item()} "
+					f"(batch_idx={batch_idx}, total_weight={float(total_weight) if not isinstance(total_weight, th.Tensor) else total_weight.detach().float().cpu().item()})"
+				)
 			if self.hparams.debug_zero_loss:
 				mean_loss = 0. * mean_loss
 				self.print(mean_loss)
@@ -804,6 +964,9 @@ class FraGNNetPL(SpectrumPL):
 		"""
 		Configure optimizers with different learning rates for pre-trained and other parameters.
 		"""
+		# Get LR ratio from finetune config
+		lr_ratio = self.hparams.finetune_weights_lr_ratio
+		
 		# Separate parameters into pre-trained and others
 		pretrained_params = [p for n, p in self.model.named_parameters() if n in self.pretrained_param_names]
 		other_params = [p for n, p in self.model.named_parameters() if n not in self.pretrained_param_names]
@@ -811,7 +974,7 @@ class FraGNNetPL(SpectrumPL):
 
 		# Define optimizer with parameter groups
 		optimizer = optimizer_cls([
-			{"params": pretrained_params, "lr": self.hparams.lr * self.hparams.pretrained_weights_lr_ratio},
+			{"params": pretrained_params, "lr": self.hparams.lr * lr_ratio},
 			{"params": other_params, "lr": self.hparams.lr}
 		], weight_decay=self.hparams.weight_decay)
 

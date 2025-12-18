@@ -13,14 +13,23 @@ from fragnnet.utils.script_utils import (
 	get_config_from_ckpt,
 	get_tabular_columns,
  	prepare_output_subset,
+	list_output_subset_options,
+	get_required_config_indices,
 )
 from fragnnet.utils.misc_utils import booltype
-import torch as th
 import argparse
 import os
+import sys
 import tempfile
 
 if __name__ == "__main__":
+	# Early check for --list_output_options to avoid required argument validation
+	if "--list_output_options" in sys.argv:
+		print("Available output_subset options:")
+		for opt in list_output_subset_options():
+			print(f"  - {opt}")
+		sys.exit(0)
+	
 	# Parse command line arguments
 	parser = argparse.ArgumentParser()
 	
@@ -34,14 +43,14 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--custom_fp",
 		type=str,
-		default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20v2_amolc.yml",
+		default=None,
 		help="Path to custom config file"
 	)
 	# Model checkpoint loading
 	parser.add_argument(
 		"--wandb_run_id",
 		type=str,
-		default="ikohsc16",
+		default=None,
 		help="W&B run ID to download checkpoint from (if model_ckpt not provided)"
 	)
 	parser.add_argument(
@@ -53,7 +62,7 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"--model_ckpt",
 		type=str,
-		default='saved_ckpts/nist20_inchikey_fraggnn_d3_ma_mi_all_mol_conditon_v2_ikohsc16.ckpt',
+		default=None,
 		help="Path to local model checkpoint (if None, will download from W&B using wandb_run_id)"
 	)
 	
@@ -70,6 +79,56 @@ if __name__ == "__main__":
 		default="parquet",
 		choices=["pkl", "pkl.gz", "parquet"],
 		help="File format for saving predictions (pkl or parquet)"
+	)
+	# Output control arguments
+	parser.add_argument(
+		"--list_output_options",
+		action="store_true",
+		help="List all valid tokens for --output_subset and exit"
+	)
+	parser.add_argument(
+		"--output_subset", 
+		type=str, 
+		nargs="+", 
+		default=[
+			"pred_mzs",      # Predicted m/z values
+			"pred_ints",     # Predicted intensities
+		],
+
+		#"pred_mzs", 
+		#"pred_ints", 
+		#"pred_oos_prob",
+		#"frag_formula_peak_mzs",
+		#"pred_formula_probs",
+		#"pred_formula_node_probs",
+		#"pred_node_formula_probs",
+		#"pred_node_probs"
+  
+		help="Subset of outputs to include in results"
+	)
+	parser.add_argument(
+		"--output_everything",
+		type=booltype,
+		default=False,
+		help="Whether to output all columns (overrides output_subset)"
+	)
+	parser.add_argument(
+		"--return_formula_str",
+		type=booltype,
+		default=True,
+		help="Whether to return formula strings"
+	)
+	parser.add_argument(
+		"--return_cc_hash",
+		type=booltype,
+		default=True,
+		help="Whether to return node CC hashes"
+	)
+	parser.add_argument(
+		"--drop_none_cols",
+		type=booltype,
+		default=True,
+		help="Drop columns that are entirely None/NaN before saving outputs"
 	)
 	# Inference configuration
 	parser.add_argument(
@@ -116,7 +175,7 @@ if __name__ == "__main__":
 	
 	# Performance tuning
 	parser.add_argument(
-		"--eval_batch_size",
+		"--batch_size",
 		type=int,
 		default=1,
 		help="Batch size for evaluation/inference (use 1 for variable-size molecules)"
@@ -134,9 +193,6 @@ if __name__ == "__main__":
 		help="Write predictions to disk every N predictions (lower = more disk I/O but safer)"
 	)
 	args = parser.parse_args()
-	
-
-	# Load Model Checkpoint and Configuration
 
 	# Get checkpoint path (download from W&B or use local)
 	ckpt_fp = get_ckpt_path(
@@ -169,13 +225,68 @@ if __name__ == "__main__":
 	print(mol_df.head(5))
 	print(spec_df.head(5))
 
+	#=========================================
+	# Resume logic
+	#=========================================
+	start_chunk_idx = 0
+	
+	print(f"> Checking for existing predictions in {args.save_dp}...")
+	existing_files = [f for f in os.listdir(args.save_dp) if f.startswith("predictions_chunk_") and f.endswith(args.save_format)]
+	
+	finished_spec_ids = set()
+	max_chunk_idx = -1
+	
+	for f in tqdm(existing_files, desc="Reading existing predictions"):
+		# Parse chunk index
+		try:
+			c_idx = int(f.split('_')[-1].split('.')[0])
+			max_chunk_idx = max(max_chunk_idx, c_idx)
+		except:
+			pass
 
+		fp = os.path.join(args.save_dp, f)
+		try:
+			if args.save_format == "parquet":
+				# Only read spec_id column for speed
+				df = pd.read_parquet(fp, columns=['spec_id'])
+			else:
+				df = pd.read_pickle(fp)
+			
+			if 'spec_id' in df.columns:
+				finished_spec_ids.update(df['spec_id'].unique())
+		except Exception as e:
+			print(f"Warning: Could not read {fp}: {e}")
+		
+		print(f"> Found {len(finished_spec_ids)} finished spectra.")
+		start_chunk_idx = max_chunk_idx + 1
+		
+		# Filter spec_df
+		original_len = len(spec_df)
+		spec_df = spec_df[~spec_df['spec_id'].isin(finished_spec_ids)]
+		print(f"> Resuming inference on {len(spec_df)} spectra (skipped {original_len - len(spec_df)})")
+		
+		# Sync mol_df
+		valid_mol_ids = spec_df['mol_id'].unique()
+		mol_df = mol_df[mol_df['mol_id'].isin(valid_mol_ids)]
+		print(f"> Filtered mol_df to {len(mol_df)} molecules based on remaining spectra")
+		
+		if len(spec_df) == 0:
+			print("All spectra processed. Exiting.")
+			exit(0)
+
+	#=========================================
+	# Repare for Inference
+	#=========================================
+	
+	# Apply inference-specific configuration adjustments
 	apply_inference_config(
 		config_d,
 		skip_extra_losses=args.skip_extra_losses,
 		disable_preproc=args.disable_preproc,
-		eval_batch_size=args.eval_batch_size,
+		eval_batch_size=args.batch_size,
+		auxiliary_scores = []
 	)
+ 
 	# Fragment graphs (DAGs) are computationally expensive to generate
 	# Options: 1) Use pre-computed fragments, 2) Generate in temporary directory
 	temp_frag_dir = None
@@ -250,14 +361,40 @@ if __name__ == "__main__":
 
 	# Run inference with periodic saving
 	print(">>> Running inference and saving predictions...")
-	columns_name = get_tabular_columns(config_d, return_formula_and_cc=True)
+	output_set = prepare_output_subset(
+		output_subset=args.output_subset,
+		output_everything=args.output_everything
+	)
+	# Show which index variables will be required for the chosen output_subset
+	if output_set is not None:
+		req_batch, req_node, req_formula, req_nb_node = get_required_config_indices(
+			output_set, model, nb_iso=False
+		)
+		print(f"> Required index variables for output_subset:")
+		if req_batch:
+			print(f"  Batch indices: {req_batch}")
+		if req_node:
+			print(f"  Node indices: {req_node}")
+		if req_formula:
+			print(f"  Formula indices: {req_formula}")
 	
+	columns_name = get_tabular_columns(config_d, return_formula_str=args.return_formula_str or args.output_everything, 
+                                    return_cc_hash=args.return_cc_hash or args.output_everything, output_subset=output_set)
+
+	#=========================================
+	# Inferencing
+	#=========================================
+ 
 	# Iterate through batches and save periodically
 	preds_l = []
-	chunk_idx = 0
+	chunk_idx = start_chunk_idx
 	total_preds = 0
 	file_ext = args.save_format
 	
+	# Calculate save interval in batches based on chunk size
+	save_interval_batches = max(1, args.save_chunk_size // args.batch_size)
+	print(f"> Saving every {save_interval_batches} batches (approx {save_interval_batches * args.batch_size} predictions per chunk)")
+
 	for batch_idx, batch_rows in enumerate(run_inference_tabular_iter(
 		model,
 		dl,
@@ -265,15 +402,23 @@ if __name__ == "__main__":
 		evaluate=False,
 		batch_cutoff=-1,
 		min_peak_int=args.min_intensity,
-		return_formula_and_cc=True,
+		return_formula_str=args.return_formula_str or args.output_everything,
+		return_cc_hash=args.return_cc_hash or args.output_everything,
 		rebase_indices=True,
+		output_set=output_set,
 	)):
 		preds_l.extend(batch_rows)
 		total_preds += len(batch_rows)
 		
 		# Save periodically every save_interval batches
-		if (batch_idx + 1) % args.save_interval == 0:
+		if (batch_idx + 1) % save_interval_batches == 0:
 			pred_df = pd.DataFrame(preds_l, columns=columns_name)
+			if args.drop_none_cols:
+				before_cols = set(pred_df.columns)
+				pred_df = pred_df.dropna(axis=1, how="all")
+				dropped = sorted(before_cols - set(pred_df.columns))
+				if dropped:
+					print(f"> Dropped all-NaN columns: {dropped}")
 			chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
 			if args.save_format == "parquet":
 				pred_df.to_parquet(chunk_fp, index=False)
@@ -286,6 +431,12 @@ if __name__ == "__main__":
 	# Save remaining predictions
 	if len(preds_l) > 0:
 		pred_df = pd.DataFrame(preds_l, columns=columns_name)
+		if args.drop_none_cols:
+			before_cols = set(pred_df.columns)
+			pred_df = pred_df.dropna(axis=1, how="all")
+			dropped = sorted(before_cols - set(pred_df.columns))
+			if dropped:
+				print(f"> Dropped all-NaN columns: {dropped}")
 		chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
 		if args.save_format == "parquet":
 			pred_df.to_parquet(chunk_fp, index=False)
@@ -296,7 +447,10 @@ if __name__ == "__main__":
 	print(f"\n>>> Inference complete! Total predictions: {total_preds}")
 	print(f">>> Predictions saved to: {args.save_dp}")
  
-	# Clean up temporary fragment directory if it was created
+ 
+ 	#=========================================
+	# Clean up temporary fragment directory
+	#=========================================
 	if temp_frag_dir is not None:
 		print(f">>> Cleaning up temporary fragment directory: {temp_frag_dir.name}")
 		temp_frag_dir.cleanup()

@@ -3,11 +3,12 @@ Land of loss functions
 """
 
 import numpy as np
+import math
 import torch as th
 import torch.nn.functional as F
 from typing import Callable
 
-from fragnnet.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize, TOLERANCE_MIN_MZ
+from fragnnet.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, scatter_logsumexp, scatter_logl2normalize, scatter_logsoftmax, TOLERANCE_MIN_MZ
 from fragnnet.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func, jss_helper
 
 # LOG_TRUNC_FACTOR = {
@@ -65,7 +66,8 @@ def mog_ce_fn(
 		assert tolerance_multiple > 0, tolerance_multiple
 		# log_trunc_factor = LOG_TRUNC_FACTOR.get(tolerance_multiple,1.)
 		# b_log_trunc_factors = log_trunc_factor*th.ones_like(b_pred_mzs)
-		trunc_factor = th.erf(th.tensor(tolerance_multiple,device=b_pred_mzs.device)/float(np.sqrt(2)))
+		sigma = th.tensor(float(np.sqrt(2)), device=b_pred_mzs.device)
+		trunc_factor = th.erf(th.tensor(tolerance_multiple,device=b_pred_mzs.device)/ sigma)
 		b_log_trunc_factors = th.log(trunc_factor*th.ones_like(b_pred_mzs))
 	else:
 		b_log_trunc_factors = th.zeros_like(b_pred_mzs)
@@ -97,7 +99,7 @@ def pm_ce_fn(
 		tolerance_min_mz=tolerance_min_mz
 	)
 	b_logprobs = th.logsumexp(
-		b_pred_logprobs.reshape(1,-1)*b_match_mask.float() + LOG_ZERO(b_pred_logprobs.dtype)*(~b_match_mask).float(),
+		b_pred_logprobs.reshape(1,-1)*b_match_mask.to(b_pred_logprobs.dtype) + LOG_ZERO(b_pred_logprobs.dtype)*(~b_match_mask).to(b_pred_logprobs.dtype),
 		dim=1)
 	return b_logprobs
 
@@ -178,9 +180,9 @@ def sparse_cross_entropy_seq(
 			tolerance_min_mz=tolerance_min_mz,
 			tolerance_multiple=tolerance_multiple,
 			gaussian_renormalize=gaussian_renormalize)
-		b_ios_ce = th.sum(b_true_match_mask.float() * -th.exp(b_true_logprobs) * b_ios_logprobs)
+		b_ios_ce = th.sum(b_true_match_mask.to(b_true_logprobs.dtype) * -th.exp(b_true_logprobs) * b_ios_logprobs)
 		# calculate oos logprobs
-		b_true_oos_logprobs = th.logsumexp( mask_value*b_true_match_mask.float() + b_true_logprobs*(~b_true_match_mask).float(), dim=0)
+		b_true_oos_logprobs = th.logsumexp( mask_value*b_true_match_mask.to(b_true_logprobs.dtype) + b_true_logprobs*(~b_true_match_mask).to(b_true_logprobs.dtype), dim=0)
 		b_true_oos_entropy = - th.sum( th.exp(b_true_logprobs[~b_true_match_mask]-b_true_oos_logprobs) * (b_true_logprobs[~b_true_match_mask]-b_true_oos_logprobs), dim=0)
 		b_pred_oos_logprobs = pred_oos_logprobs[batch_idx]
 		b_oos_ce = -th.exp(b_true_oos_logprobs) * b_pred_oos_logprobs
@@ -292,7 +294,8 @@ def sparse_cross_entropy_vec(
 		bl_vars = bl_stds**2
 		if gaussian_renormalize:
 			assert oos_tolerance_multiple > 0, oos_tolerance_multiple
-			bl_trunc_factor = th.erf(th.tensor(oos_tolerance_multiple,device=device)/float(np.sqrt(2)))
+			sigma = th.tensor(float(np.sqrt(2)), device=device)
+			bl_trunc_factor = th.erf(th.tensor(oos_tolerance_multiple, device=device) / sigma)
 			bl_log_trunc_factors = th.log(bl_trunc_factor*th.ones_like(bl_pred_mzs))
 		else:
 			bl_log_trunc_factors = th.zeros_like(bl_pred_mzs)
@@ -301,7 +304,7 @@ def sparse_cross_entropy_vec(
 		bl_ios_log_probs = -0.5*(bl_true_mzs.reshape(-1,1)-bl_pred_mzs.reshape(1,-1))**2/bl_vars.reshape(1,-1) - 0.5*th.log(2*th.pi*bl_vars.reshape(1,-1))
 		bl_ios_log_probs = bl_ios_log_probs + bl_pred_logprobs.reshape(1,-1) - bl_log_trunc_factors.reshape(1,-1)
 		# Mask out non-matching pairs with mask_value (large negative)
-		bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).float()*mask_value
+		bl_ios_log_probs = bl_ios_log_probs + (~bl_both_mask).to(float_dtype)*mask_value
 		# Log-sum-exp over predictions for each true peak
 		bl_ios_log_probs = th.logsumexp(bl_ios_log_probs,dim=1)
 
@@ -669,6 +672,141 @@ def sparse_cosine_distance_hungarian(
 		cos_dist_hun[batch_idx] = b_cos_dist_hun
 	return cos_dist_hun
 
+def sparse_jensen_shannon_divergence_hungarian(
+		true_mzs: th.Tensor, 
+		true_logprobs: th.Tensor,
+		true_batch_idxs: th.Tensor,
+		pred_mzs: th.Tensor,
+		pred_logprobs: th.Tensor,
+		pred_batch_idxs: th.Tensor,
+		tolerance: float=1e-5,
+		relative: bool=True,
+		tolerance_min_mz: float=TOLERANCE_MIN_MZ,
+		log_min: float=EPS) -> th.Tensor:
+	"""
+	Compute the sparse Jensen-Shannon divergence between spectra using the Hungarian algorithm for optimal matching.
+
+	Args:
+		true_mzs: Ground truth m/z values.
+		true_logprobs: Ground truth log-probabilities (intensities).
+		true_batch_idxs: Batch indices for ground truth peaks.
+		pred_mzs: Predicted m/z values.
+		pred_logprobs: Predicted log-probabilities (intensities).
+		pred_batch_idxs: Batch indices for predicted peaks.
+		tolerance: m/z matching tolerance.
+		relative: Whether tolerance is relative to m/z.
+		tolerance_min_mz: Minimum m/z for relative tolerance.
+		log_min: Minimum log value to avoid log(0).
+
+	Returns:
+		Tensor of Jensen-Shannon divergences per batch (normalized to [0,1]).
+	"""
+
+	# Aggregate and round peaks for both true and predicted spectra
+	true_mzs, true_logprobs, true_batch_idxs = round_aggregate_peaks(
+		true_mzs,
+		true_logprobs,
+		true_batch_idxs,
+		agg="lse"
+	)
+	pred_mzs, pred_logprobs, pred_batch_idxs = round_aggregate_peaks(
+		pred_mzs,
+		pred_logprobs,
+		pred_batch_idxs,
+		agg="lse"
+	)
+	# Get number of batches
+	batch_size = th.max(true_batch_idxs)+1
+	jsd_hun = th.zeros([batch_size],device=true_logprobs.device,dtype=true_logprobs.dtype)
+	
+	for batch_idx in range(batch_size):
+		# Select peaks for current batch
+		b_true_mask = (true_batch_idxs==batch_idx)
+		b_pred_mask = (pred_batch_idxs==batch_idx)
+		b_true_mzs = true_mzs[b_true_mask]
+		b_pred_mzs = pred_mzs[b_pred_mask]
+		b_true_logprobs = true_logprobs[b_true_mask]
+		b_pred_logprobs = pred_logprobs[b_pred_mask]
+		
+		# Normalize probabilities (sum to 1)
+		b_true_probs = th.exp(b_true_logprobs)
+		b_true_sum = th.sum(b_true_probs)
+		if b_true_sum > 0:
+			b_true_probs = b_true_probs / b_true_sum
+		
+		b_pred_probs = th.exp(b_pred_logprobs)
+		b_pred_sum = th.sum(b_pred_probs)
+		if b_pred_sum > 0:
+			b_pred_probs = b_pred_probs / b_pred_sum
+
+		# Compute m/z matching mask within tolerance
+		b_match_mzs = calculate_match_mzs(
+			b_true_mzs,
+			b_pred_mzs,
+			tolerance=tolerance,
+			relative=relative,
+			tolerance_min_mz=tolerance_min_mz
+		)
+		
+		# Identify which true and predicted peaks have matches
+		b_true_match_mzs = th.any(b_match_mzs,dim=1)
+		b_pred_match_mzs = th.any(b_match_mzs,dim=0)
+		
+		# Filter to only matched peaks to reduce matrix size
+		b_true_probs_m = b_true_probs[b_true_match_mzs]
+		b_pred_probs_m = b_pred_probs[b_pred_match_mzs]
+		
+		# Compute score matrix (Gain)
+		# Gain = 0.5 * [ (p+q) log(p+q) - p log p - q log q ]
+		p_expand = b_true_probs_m.unsqueeze(1)
+		q_expand = b_pred_probs_m.unsqueeze(0)
+		sum_pq = p_expand + q_expand
+		
+		term1 = sum_pq * th.log(sum_pq + EPS)
+		term2 = p_expand * th.log(p_expand + EPS)
+		term3 = q_expand * th.log(q_expand + EPS)
+		
+		b_score = 0.5 * (term1 - term2 - term3)
+		
+		# Mask invalid matches
+		valid_matches = b_match_mzs[b_true_match_mzs][:,b_pred_match_mzs]
+		# Set invalid matches to a large negative number
+		b_score[~valid_matches] = -1e9
+		
+		# Hungarian algorithm
+		if b_score.numel() == 0:
+			# No matched peaks => assignment matrix is empty.
+			# Keep `total_gain` connected to the computation graph so downstream
+			# loss still has `requires_grad=True` (manual backward would otherwise crash).
+			if b_pred_probs.numel() > 0:
+				total_gain = b_pred_probs.sum() * 0.0
+			elif b_true_probs.numel() > 0:
+				total_gain = b_true_probs.sum() * 0.0
+			else:
+				total_gain = th.tensor(0.0, device=b_score.device, dtype=b_score.dtype)
+		else:
+			# We detach b_score for the assignment step because the Hungarian algorithm 
+			# is non-differentiable (calculates indices). 
+			# Gradients will flow through the values selected from the original b_score below.
+			b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score.detach(), maximize=True)
+			
+			# Filter invalid matches (where score is -1e9)
+			matched_gains = b_score[b_true_idxs, b_pred_idxs]
+			valid_mask = matched_gains > -1e8
+			if th.any(valid_mask):
+				total_gain = th.sum(matched_gains[valid_mask])
+			else:
+				# All matches invalid; return a graph-connected zero.
+				total_gain = b_score.sum() * 0.0
+			
+		# Normalized JSD = 1 - Total Gain / log 2
+		LOG2 = th.log(th.tensor(2.0, device=total_gain.device, dtype=total_gain.dtype))
+		b_jsd = 1. - total_gain / LOG2
+		b_jsd = th.clamp(b_jsd, min=0., max=1.)
+		jsd_hun[batch_idx] = b_jsd
+		
+	return jsd_hun
+
 def sparse_jensen_shannon_divergence(
 		true_mzs: th.Tensor, 
 		true_logprobs: th.Tensor,
@@ -729,6 +867,151 @@ def sparse_jensen_shannon_divergence(
 	)
 	# Return 1 - similarity to get the divergence (distance)
 	return 1.-jss
+
+def get_pairwise_binned_cossin_sim(
+		mzs: th.Tensor,
+		logprobs: th.Tensor,
+		batch_idxs: th.Tensor,
+		batch_size: int,
+		mz_max: float,
+		mz_bin_res: float,
+		chunk_size: int = 32) -> th.Tensor:
+	"""
+	Compute pairwise cosine similarity matrix for a batch of spectra.
+
+	Args:
+		mzs: m/z values.
+		logprobs: log-probabilities (intensities).
+		batch_idxs: Batch indices.
+		batch_size: Number of spectra in the batch.
+		mz_max: Maximum m/z value.
+		mz_bin_res: m/z bin resolution.
+		chunk_size: Batch size for chunked computation to save memory.
+
+	Returns:
+		Pairwise similarity matrix of shape [batch_size, batch_size].
+	"""
+	
+	if mzs.numel() == 0:
+		return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
+
+	# Binning
+	bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
+		mzs, logprobs, batch_idxs, 
+		mz_max=mz_max, 
+		mz_bin_res=mz_bin_res, 
+		agg="lse", 
+		sparse=True
+	)
+ 
+	# Normalize (L2 on probabilities)
+	norm_logprobs = scatter_logl2normalize(bin_logprobs, bin_batch_idxs)
+	norm_probs = norm_logprobs.exp()
+	
+	# Construct sparse tensor then dense
+	# We need to recover local bin indices from global bin indices returned by batched_bin_func
+	# batched_bin_func uses global_idx = batch_idx * num_bins + local_idx
+	# So local_idx = global_idx % num_bins
+	# We must ensure num_bins matches exactly what batched_bin_func used.
+	num_bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype).shape[0]
+	
+	indices = th.stack([bin_batch_idxs, bin_idxs % num_bins])
+	
+	V = th.sparse_coo_tensor(indices, norm_probs, (batch_size, num_bins), device=mzs.device)
+	V_dense = V.to_dense()
+	
+	if chunk_size is None or chunk_size >= batch_size:
+		# Compute pairwise similarity
+		S = th.mm(V_dense, V_dense.t())
+	else:
+		S = th.zeros((batch_size, batch_size), device=mzs.device, dtype=V_dense.dtype)
+		for i in range(0, batch_size, chunk_size):
+			i_end = min(i + chunk_size, batch_size)
+			V_i = V_dense[i:i_end]
+			for j in range(0, batch_size, chunk_size):
+				j_end = min(j + chunk_size, batch_size)
+				V_j = V_dense[j:j_end]
+				S[i:i_end, j:j_end] = th.mm(V_i, V_j.t())
+
+	return S
+
+def get_pairwise_binned_jss_sim(
+		mzs: th.Tensor,
+		logprobs: th.Tensor,
+		batch_idxs: th.Tensor,
+		batch_size: int,
+		mz_max: float,
+		mz_bin_res: float,
+		chunk_size: int = 32) -> th.Tensor:
+	"""
+	Compute pairwise Jensen-Shannon similarity matrix for a batch of spectra.
+
+	Args:
+		mzs: m/z values.
+		logprobs: log-probabilities (intensities).
+		batch_idxs: Batch indices.
+		batch_size: Number of spectra in the batch.
+		mz_max: Maximum m/z value.
+		mz_bin_res: m/z bin resolution.
+		chunk_size: Batch size for chunked computation to save memory.
+
+	Returns:
+		Pairwise similarity matrix of shape [batch_size, batch_size].
+	"""
+	
+	if mzs.numel() == 0:
+		return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
+
+	# Binning
+	bin_idxs, bin_logprobs, bin_batch_idxs = batched_bin_func(
+		mzs, logprobs, batch_idxs, 
+		mz_max=mz_max, 
+		mz_bin_res=mz_bin_res, 
+		agg="lse", 
+		sparse=True
+	)
+ 
+	# Normalize (L1 on probabilities)
+	# log_softmax to get log probabilities
+	log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
+	probs = log_probs.exp()
+	
+	# Construct sparse tensor then dense
+	num_bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype).shape[0]
+	
+	indices = th.stack([bin_batch_idxs, bin_idxs % num_bins])
+	
+	V = th.sparse_coo_tensor(indices, probs, (batch_size, num_bins), device=mzs.device)
+	V_dense = V.to_dense()  # (B, D)
+	
+	# Compute JSS
+	# JSD(P, Q) = H(M) - 0.5 H(P) - 0.5 H(Q)
+	# M = 0.5 (P + Q)
+	P = V_dense
+	
+	# H(P)
+	H_P = -th.sum(P * th.log(P + EPS), dim=1)  # (B,)
+	
+	# H(M)
+	H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=P.dtype)
+	if chunk_size is None or chunk_size >= batch_size:
+		for i in range(batch_size):
+			M_i = 0.5 * (P[i].unsqueeze(0) + P)
+			H_M[i] = -th.sum(M_i * th.log(M_i + EPS), dim=1)
+	else:
+		for i in range(0, batch_size, chunk_size):
+			i_end = min(i + chunk_size, batch_size)
+			P_i = P[i:i_end]  # (chunk_i, D)
+			for j in range(0, batch_size, chunk_size):
+				j_end = min(j + chunk_size, batch_size)
+				P_j = P[j:j_end]  # (chunk_j, D)
+				M_ij = 0.5 * (P_i.unsqueeze(1) + P_j.unsqueeze(0))
+				H_M[i:i_end, j:j_end] = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
+	
+	JSD = H_M - 0.5 * H_P.unsqueeze(1) - 0.5 * H_P.unsqueeze(0)
+	JSS = 1.0 - JSD / math.log(2.0)
+	
+	return JSS
 
 def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
 	"""

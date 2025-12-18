@@ -1,8 +1,6 @@
-wandb_name: nist20_mces_finetuning_m30_molc_49_freeze
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_nist20_pairwise_jss
 wandb_tags:
-- finetuning
-- mces30
-- freeze_true
+- retrieval
 - nist20
 - d4
 - wr00
@@ -27,28 +25,10 @@ wandb_tags:
 - m+na
 - m+cl
 
-# data stuff
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey
 frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
-mces_fp: data/proc/mces/mces_pairs.pkl
-
-# ============================================================================
-# MCES Pre-training Configuration
-# ============================================================================
-freeze_mces_weights: False # Whether to freeze MCES pre-trained weights during fine-tuning
-mces_pretrain: True # use mces pretraining weights for mol gnn
-mces_pretrain_ckpt_fp: saved_ckpts/mces_nist20_pretrain_m30_molc_6wrmthk2_epoch=49.ckpt
-
-subsample_params:
-  subsample_size: 100
-  subsample_seed: 42
-  train: False
-  val: False
-  test: False
-  secondary: False
-
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
@@ -86,6 +66,9 @@ prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
 
+mol_params:
+  preprocess: True
+
 train_batch_size: 256
 eval_batch_size: 256
 accumulate_grad_batches: 1
@@ -93,8 +76,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 50
-max_epochs: 50
+min_epochs: 100
+max_epochs: 100
 lr_schedule: False
 debug_overfit: False
 mask_null_formula: False
@@ -118,6 +101,8 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 80000
 
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
@@ -128,8 +113,10 @@ simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: True
+compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
+
+pairwise_jss_binned_loss_weight: 0.5

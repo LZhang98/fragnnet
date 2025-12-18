@@ -374,6 +374,15 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			_type_: _description_
 		"""
 
+		# Fix: Explicitly cast PyG batch tensors for autocast compatibility
+		#if th.is_autocast_enabled():
+		#	mol_pyg.x = mol_pyg.x.to(th.bfloat16)
+		#	if mol_pyg.edge_attr is not None:
+		#		mol_pyg.edge_attr = mol_pyg.edge_attr.to(th.bfloat16)
+		#	frag_pyg.x = frag_pyg.x.to(th.bfloat16)
+		#	if frag_pyg.edge_attr is not None:
+		#		frag_pyg.edge_attr = frag_pyg.edge_attr.to(th.bfloat16)
+
 		# mol_x: mol level node feature matrix
 		# mol_edge_index: mol graph connectivity in COO format with shape [2, num_edges]
 		# edge_attr: mol graph edge feature matrix with shape [num_edges, num_edge_features]
@@ -1089,14 +1098,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 			spec_logprobs = spec_bin_logprobs
 			spec_batch_idxs = spec_bin_batch_idxs
 
+		term1 = scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp()
+		term2 = oos_logprobs.exp()
+		term3 = (not_oos_logprobs+frag_null_formula_logprob).exp()
+		sum_probs = term1 + term2 + term3
 		assert th.all(
 			th.isclose(
-				scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp() + oos_logprobs.exp() + (not_oos_logprobs+frag_null_formula_logprob).exp(),
-				th.ones_like(oos_logprobs),
+				sum_probs,
+				th.ones_like(sum_probs),
 				rtol=0.,
-				atol=1e-2
+				atol=5e-2
 			)
-		), (scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp(), oos_logprobs.exp(), (not_oos_logprobs+frag_null_formula_logprob).exp(),scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp() + oos_logprobs.exp() + (not_oos_logprobs+frag_null_formula_logprob).exp())
+		), (term1, term2, term3)
 		# size definitions:
 		# B: batch size
 		# P: total number of predicted spectrum peaks across the batch

@@ -17,6 +17,7 @@ from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls
 from fragnnet.utils.frag_utils import get_node_feats
 
+
 def init_wandb_ckpt(run_id,last_ckpt,model_cls,config_d):
 	import wandb
 	# load model
@@ -241,7 +242,7 @@ def get_config_from_ckpt(
 	if custom_fp is not None:
 		assert template_fp is not None, "template_fp required when custom_fp is provided"
 	# Load and merge template and custom config
-	if template_fp is not None:
+	if template_fp is not None and custom_fp is not None:
 		print(f">> Loading custom config from {custom_fp}")
 		config_d_2 = load_config(template_fp, custom_fp)
 		for k, v in config_d_2.items():
@@ -415,6 +416,25 @@ def cleanup_model(model: th.nn.Module, use_gpu: bool = True) -> None:
 		with th.no_grad():
 			th.cuda.empty_cache()
 
+# -----------------------------------------------------------------------------
+# Output subset tokens and index requirements
+# -----------------------------------------------------------------------------
+# Valid tokens a user can request in `output_subset` for inference outputs.
+OUTPUT_SUBSET_OPTIONS = [
+	"pred_mzs",
+	"pred_ints",
+	"pred_oos_prob",
+	"frag_formula_peak_mzs",
+	"pred_formula_probs",
+	"pred_formula_node_probs",
+	"pred_node_formula_probs",
+	"pred_node_probs",
+]
+
+def list_output_subset_options() -> list[str]:
+	"""Return all valid `output_subset` option tokens."""
+	return OUTPUT_SUBSET_OPTIONS
+
 def prepare_output_subset(
 	output_everything: bool,
 	output_subset: Optional[Set[str]],
@@ -443,6 +463,93 @@ def prepare_output_subset(
 		output_subset = output_subset.union(model_metric_names)
 	
 	return output_subset
+
+
+def required_index_vars_for_outputs(
+	output_subset: Optional[Set[str]],
+	model,
+	nb_iso: bool = False,
+) -> Tuple[Set[str], Set[str], Set[str], Set[str]]:
+	"""
+	Given desired `output_subset` tokens, determine which index variable arrays are
+	required to be present in batch/model outputs.
+
+	Returns sets of required names for: batch, node, formula, nb_node indices.
+	"""
+	# If no subset specified, assume all indices may be needed
+	if output_subset is None:
+		output_subset = set(OUTPUT_SUBSET_OPTIONS)
+
+	# Base mapping from output tokens -> required index vars
+	# Note: These names correspond to keys produced by model steps and consumed
+	# in `process_batch_to_tabular_row`.
+	token_to_idx = {
+		"pred_mzs": {"batch": {"pred_batch_idxs"}},
+		"pred_ints": {"batch": {"pred_batch_idxs"}},
+		"pred_oos_prob": {},
+		"frag_formula_peak_mzs": {"batch": {"pred_batch_idxs"}},
+		# P(f)
+		"pred_formula_probs": {
+			"batch": {"pred_formula_batch_idxs"},
+			"formula": {"pred_formula_formula_idxs"},
+		},
+		# P(n|f) on joint grid, requires joint idxs and joint batch
+		"pred_formula_node_probs": {
+			"batch": {"pred_joint_batch_idxs"},
+			"formula": {"pred_joint_formula_idxs"},
+			"node": {"pred_joint_node_idxs"},
+		},
+		# P(f|n) on joint grid
+		"pred_node_formula_probs": {
+			"batch": {"pred_joint_batch_idxs"},
+			"formula": {"pred_joint_formula_idxs"},
+			"node": {"pred_joint_node_idxs"},
+		},
+		# P(n)
+		"pred_node_probs": {
+			"batch": {"pred_node_batch_idxs"},
+			"node": {"pred_node_node_idxs"},
+		},
+	}
+
+	# Aggregate required idx names across tokens
+	req_batch, req_node, req_formula, req_nb_node = set(), set(), set(), set()
+	for tok in output_subset:
+		m = token_to_idx.get(tok, {})
+		req_batch |= m.get("batch", set())
+		req_node |= m.get("node", set())
+		req_formula |= m.get("formula", set())
+		req_nb_node |= m.get("nb_node", set())
+
+	# Model-specific adjustments
+	is_fragnnet = isinstance(model, FraGNNetPL)
+	is_iceberg = isinstance(model, IcebergIntenPL)
+
+	if is_iceberg:
+		# Iceberg does not use node/formula idxs in inference outputs
+		req_node.clear()
+		req_formula.clear()
+		req_nb_node.clear()
+
+	if is_fragnnet and nb_iso:
+		# If neighbor isotope predictions are enabled, include NB index vars
+		req_batch |= {"pred_nb_node_batch_idxs", "pred_nb_joint_batch_idxs", "pred_nb_node_node_batch_idxs"}
+		req_formula |= {"pred_nb_joint_formula_idxs"}
+		req_nb_node |= {"pred_nb_node_node_idxs", "pred_nb_joint_node_idxs", "pred_nb_node_node_node_idxs"}
+
+	return req_batch, req_node, req_formula, req_nb_node
+
+def get_required_config_indices(
+	output_subset: Optional[Set[str]],
+	model,
+	nb_iso: bool = False,
+) -> Tuple[Set[str], Set[str], Set[str], Set[str]]:
+	"""
+	Public API: Given `output_subset` tokens, return required index variable names
+	grouped by category (batch, node, formula, nb_node). Useful for configuring
+	dataset/model outputs to ensure all needed indices are present.
+	"""
+	return required_index_vars_for_outputs(output_subset, model, nb_iso)
 
 
 def get_idx_vars(
@@ -498,10 +605,11 @@ def get_idx_vars(
 			])
 	
 	if output_subset is not None:
-		BATCH_IDX_VARS = [k for k in BATCH_IDX_VARS if k in output_subset]
-		NODE_IDX_VARS = [k for k in NODE_IDX_VARS if k in output_subset]
-		FORMULA_IDX_VARS = [k for k in FORMULA_IDX_VARS if k in output_subset]
-		NB_NODE_IDX_VARS = [k for k in NB_NODE_IDX_VARS if k in output_subset]
+		req_batch, req_node, req_formula, req_nb_node = required_index_vars_for_outputs(output_subset, model, nb_iso)
+		BATCH_IDX_VARS = [k for k in BATCH_IDX_VARS if k in req_batch]
+		NODE_IDX_VARS = [k for k in NODE_IDX_VARS if k in req_node]
+		FORMULA_IDX_VARS = [k for k in FORMULA_IDX_VARS if k in req_formula]
+		NB_NODE_IDX_VARS = [k for k in NB_NODE_IDX_VARS if k in req_nb_node]
   
 	return BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS
 
@@ -526,13 +634,19 @@ def get_score_types(config_d):
 				eval_score_types.append(f"{score_type}_{bin_res}")
 	return eval_score_types
 
-def get_tabular_columns(config_d: Dict[str, Any], return_formula_and_cc: bool = False) -> List[str]:
+def get_tabular_columns(
+	config_d: Dict[str, Any],
+	return_formula_str: bool = False,
+	return_cc_hash: bool = False,
+	output_subset: Optional[Set[str]] = None
+) -> List[str]:
 	"""
 	Get column names for tabular inference output.
 	
 	Args:
 		config_d: Configuration dictionary
 		return_formula_and_cc: Whether output includes formula strings and node CCs
+		output_subset: Optional subset of output keys to include
 	
 	Returns:
 		List of column names for DataFrame
@@ -547,9 +661,18 @@ def get_tabular_columns(config_d: Dict[str, Any], return_formula_and_cc: bool = 
 		"pred_node_probs", "pred_node_node_idxs",
 		"index_rebased"
 	]
-	if return_formula_and_cc:
-		columns_name.extend(["pred_formula_strs", "pred_node_ccs"])
+	if return_formula_str:
+		columns_name.extend(["pred_formula_strs"])
+	if return_cc_hash:
+		columns_name.extend(["pred_node_ccs"])
 	columns_name.extend(eval_score_types)
+
+	if output_subset is not None:
+		missing_cols = [c for c in output_subset if c not in columns_name]
+		if len(missing_cols) > 0:
+			print(f"Warning: {len(missing_cols)} columns in output_subset are not in available columns: {missing_cols}")
+		# columns_name = [c for c in columns_name if c in output_subset]
+
 	return columns_name
 
 def run_inference_pkl(
@@ -561,6 +684,7 @@ def run_inference_pkl(
 	output_set: Optional[Set[str]] = None,
 	evaluate: bool = True
 ) -> Dict[str, Any]:
+    
 	"""
 	Run inference with optional chunked saving for resumable predictions.
 	"""
@@ -577,7 +701,6 @@ def run_inference_pkl(
 		nb_iso,
 	)
 
-
 	# Setup for evaluation mode (return dict)
 	vals = {}
 	# Common setup
@@ -586,12 +709,13 @@ def run_inference_pkl(
 		raise RuntimeError(f"> Warning: model {model} is in training mode!")
 	
 	# Run inference loops
+	total_batches = len(dataloader) if batch_cutoff < 0 else min(len(dataloader), batch_cutoff)
 	with th.inference_mode():
-		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), 
+		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=total_batches, 
 										  desc="Running inference"):
 	  
 			# Early exit for batch cutoff
-			if batch_idx >= batch_cutoff and batch_cutoff > 0:
+			if batch_idx >= total_batches:
 				break
 			
 			# Move batch to device
@@ -701,7 +825,8 @@ def run_inference_tabular(
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
-	return_formula_and_cc: bool = False,
+	return_formula_str: bool = False,
+	return_cc_hash: bool = False,
 	rebase_indices: bool = True,
 ) -> pd.DataFrame:
 	"""
@@ -726,7 +851,7 @@ def run_inference_tabular(
 		DataFrame with all inference results
 	"""
 	# Get column names from config
-	columns_name = get_tabular_columns(model.hparams, return_formula_and_cc)
+	columns_name = get_tabular_columns(model.hparams, return_formula_str, return_cc_hash, output_subset=output_set)
 	
 	# Accumulate all batch results
 	preds_l = []
@@ -739,7 +864,8 @@ def run_inference_tabular(
 		output_set=output_set,
 		nb_iso=nb_iso,
 		min_peak_int=min_peak_int,
-		return_formula_and_cc=return_formula_and_cc,
+		return_formula_str=return_formula_str,
+		return_cc_hash=return_cc_hash,
 		rebase_indices=rebase_indices,
 	):
 		preds_l.extend(batch_rows)
@@ -756,7 +882,8 @@ def run_inference_tabular_iter(
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
-	return_formula_and_cc: bool = False,
+	return_formula_str: bool = False,
+	return_cc_hash: bool = False,
 	rebase_indices: bool = True,
 ):
 	"""
@@ -797,10 +924,10 @@ def run_inference_tabular_iter(
 	)
 
 	eval_score_types = get_score_types(model.hparams)
-	
+	total_batches = len(dataloader) if batch_cutoff < 0 else min(len(dataloader), batch_cutoff)
 	model.eval()
 	with th.inference_mode():
-		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), desc="Running inference"):
+		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=total_batches, desc="Running inference"):
 			# Early exit for batch cutoff
 			if batch_idx >= batch_cutoff and batch_cutoff > 0:
 				print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
@@ -818,7 +945,8 @@ def run_inference_tabular_iter(
 				FORMULA_IDX_VARS=FORMULA_IDX_VARS,
 				min_peak_int=min_peak_int,
 				rebase_indices=rebase_indices,
-				return_formula_and_cc=return_formula_and_cc,
+				return_formula_str=return_formula_str,
+				return_cc_hash=return_cc_hash,
 			)
 			yield batch_rows
 
@@ -833,7 +961,8 @@ def process_batch_to_tabular_row(
 	FORMULA_IDX_VARS: list,
 	min_peak_int: float,
 	rebase_indices: bool,
-	return_formula_and_cc: bool,
+	return_formula_str: bool,
+	return_cc_hash: bool,
 ) -> list:
 	"""
 	Process a single batch and return list of data rows.
@@ -875,11 +1004,13 @@ def process_batch_to_tabular_row(
 	pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
 	pred_oos_probs = batch_result["oos_prob"].detach().cpu() if "oos_prob" in batch_result else None
 
+	# values for eval scores
+	# this will be np.nan if not evaluating
 	eval_scores_d = {}
-	for eval_score_type in eval_score_types:
-		eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
-			
-	
+	if evaluate:
+		for eval_score_type in eval_score_types:
+			eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
+
 	# ============================
 	# land of input mappings
 	# ============================
@@ -1082,26 +1213,45 @@ def process_batch_to_tabular_row(
 			rebased
 		]
 
-		if return_formula_and_cc:
-			# Get formula strings using original (pre-rebase) indices
+		if return_formula_str:
 			b_pred_formula_strs = np.nan
-			if orig_formula_idxs_for_lookup is not None and frag_formula_str is not None and rebase_indices:
+			if frag_formula_str is not None:
 				f_offset = frag_formula_cumsizes[b_idx].item()
-				global_f_idxs = orig_formula_idxs_for_lookup + f_offset
-				b_pred_formula_strs = frag_formula_str[global_f_idxs.cpu().numpy()].tolist()
+				if rebase_indices and orig_formula_idxs_for_lookup is not None:
+					# Use original (pre-rebase) indices
+					global_f_idxs = orig_formula_idxs_for_lookup + f_offset
+				elif not rebase_indices and b_pred_formula_formula_idxs is not None:
+					# Use current indices
+					global_f_idxs = b_pred_formula_formula_idxs + f_offset
+				else:
+					global_f_idxs = None
+				
+				if global_f_idxs is not None:
+					b_pred_formula_strs = frag_formula_str[global_f_idxs.cpu().numpy()].tolist()
 			data_row.append(b_pred_formula_strs)
-
-			# Get node CCs using original (pre-rebase) indices
+		
+		if return_cc_hash:
 			b_pred_node_ccs = np.nan
-			if orig_node_idxs_for_lookup is not None and frag_pyg is not None and rebase_indices:
+			if frag_pyg is not None:
 				i_frag_pyg = frag_pyg[b_idx]
 				node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
 				all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
-				b_pred_node_ccs = all_node_ccs[orig_node_idxs_for_lookup.long()].detach().cpu() #save as tensor
+				if rebase_indices and orig_node_idxs_for_lookup is not None:
+					# Use original (pre-rebase) indices
+					b_pred_node_ccs = all_node_ccs[orig_node_idxs_for_lookup.long()].detach().cpu()
+				elif not rebase_indices and b_pred_node_node_idxs is not None:
+					# Use current indices
+					b_pred_node_ccs = all_node_ccs[b_pred_node_node_idxs.long()].detach().cpu()
 			data_row.append(b_pred_node_ccs)
 
+		# Append evaluation scores
 		for eval_score_type in eval_score_types:
-			data_row.append(eval_scores_d[eval_score_type][b_idx].item())
+			if evaluate:
+				data_row.append(eval_scores_d[eval_score_type][b_idx].item())
+			else:
+				data_row.append(np.nan)
+    
+		# Append the completed data row for this spectrum/molecule
 		batch_rows.append(data_row)
 	
 	return batch_rows
