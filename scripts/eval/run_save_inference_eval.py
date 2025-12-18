@@ -26,15 +26,10 @@ import argparse
 import os
 import sys
 
-if __name__ == "__main__":
-	# Early check for --list_output_options to avoid required argument validation
-	if "--list_output_options" in sys.argv:
-		print("Available output_subset options:")
-		for opt in list_output_subset_options():
-			print(f"  - {opt}")
-		sys.exit(0)
-	
-	# Set up command line argument parser
+
+def get_args():
+    
+    # Set up command line argument parser
 	parser = argparse.ArgumentParser(description="Run FragGNN inference evaluation with metrics")
 	
 	# Configuration file arguments
@@ -85,12 +80,6 @@ if __name__ == "__main__":
 		help="Directory to save inference evaluation results"
 	)
 	parser.add_argument(
-		"--force_overwrite", 
-		type=booltype, 
-		default=False,
-		help="Force overwrite existing results"
-	)
-	parser.add_argument(
 		"--list_output_options",
 		action="store_true",
 		help="List all valid tokens for --output_subset and exit"
@@ -126,39 +115,31 @@ if __name__ == "__main__":
 			"pred_mzs",          # Predicted m/z values
 			"pred_ints",     # Predicted intensities
 			#"true_oos_prob",     # True out-of-scope probability
-			"pred_oos_prob",     # Predicted out-of-scope probability
-			"pred_formula_probs", # Predicted formula probabilities
-			"frag_formula_peak_mzs", # Fragment formula peak m/z values
+			#"pred_oos_prob",     # Predicted out-of-scope probability
+			#"pred_formula_probs", # Predicted formula probabilities
+			#"frag_formula_peak_mzs", # Fragment formula peak m/z values
+			#"formula_scores",    # Formula scoring metrics
 		],
 
-		#"pred_mzs", 
-		#"pred_ints", 
-		#"pred_oos_prob",
-		#"frag_formula_peak_mzs",
-		#"pred_formula_probs",
-		#"pred_formula_node_probs",
-		#"pred_node_formula_probs",
-		#"pred_node_probs"
-  
 		help="Subset of outputs to include in results"
 	)
 	parser.add_argument(
 		"--output_everything",
 		type=bool,
-		default=True,
+		default=False,
 		help="Output all available metrics and predictions"
 	)
 	parser.add_argument(
-		"--return_formula_and_cc",
+		"--return_formula_str",
 		type=booltype,
 		default=True,
-		help="Whether to return formula strings and node CCs"
+		help="Whether to return formula strings"
 	)
 	parser.add_argument(
-		"--disable_preproc",
+		"--return_cc_hash",
 		type=booltype,
 		default=True,
-		help="Disable preprocessing to speed up evaluation"
+		help="Whether to return node CC hashes"
 	)
 	
 	# Batch size arguments
@@ -180,7 +161,23 @@ if __name__ == "__main__":
 		default=1000,
 		help="Number of batches to evaluate (-1 for all)"
 	)
-	args = parser.parse_args()
+	parser.add_argument(
+		"--drop_none_cols",
+		type=booltype,
+		default=True,
+		help="Whether to drop columns with None values in the output"
+	)
+	return parser.parse_args()
+
+if __name__ == "__main__":
+	# Early check for --list_output_options to avoid required argument validation
+	if "--list_output_options" in sys.argv:
+		print("Available output_subset options:")
+		for opt in list_output_subset_options():
+			print(f"  - {opt}")
+		sys.exit(0)
+	
+	args = get_args()
 	
 	# Get checkpoint path (download from W&B or use local)
 	ckpt_fp = get_ckpt_path(
@@ -193,7 +190,6 @@ if __name__ == "__main__":
 	# Extract evaluation parameters
 	eval_split = args.eval_split
 	save_dp = args.save_dp
-	force_overwrite = args.force_overwrite
 
 	# Load and configure the model configuration
 	template_fp = args.template_fp
@@ -204,7 +200,7 @@ if __name__ == "__main__":
 		config_d,
 		auxiliary_scores=args.auxiliary_scores,
 		skip_extra_losses=args.skip_extra_losses,
-		disable_preproc=args.disable_preproc,
+		disable_preproc=True,
 		output_formula_str=False,
 		train_batch_size=args.train_batch_size,
 		eval_batch_size=args.eval_batch_size,
@@ -251,10 +247,19 @@ if __name__ == "__main__":
 		output_set=output_set,
 		batch_cutoff=args.batch_cutoff,
 		min_peak_int=1.0,
-		return_formula_and_cc=args.return_formula_and_cc,
+		return_formula_str=args.return_formula_str or args.output_everything,
+		return_cc_hash=args.return_cc_hash or args.output_everything,
 		rebase_indices=True,
 	)
-	
+
+	# Optionally drop columns that are entirely None/NaN to declutter output
+	if args.drop_none_cols:
+		before_cols = set(predicted_df.columns)
+		predicted_df = predicted_df.dropna(axis=1, how="all")
+		dropped = sorted(before_cols - set(predicted_df.columns))
+		if dropped:
+			print(f"> Dropped all-NaN columns: {dropped}")
+
 	# Print evaluation score statistics
 	print("\n>>> Evaluation Score Statistics:")
 	eval_score_types = get_score_types(config_d=config_d)

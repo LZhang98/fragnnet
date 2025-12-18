@@ -113,10 +113,16 @@ if __name__ == "__main__":
 		help="Whether to output all columns (overrides output_subset)"
 	)
 	parser.add_argument(
-		"--return_formula_and_cc",
+		"--return_formula_str",
 		type=booltype,
 		default=True,
-		help="Whether to return formula strings and node CCs"
+		help="Whether to return formula strings"
+	)
+	parser.add_argument(
+		"--return_cc_hash",
+		type=booltype,
+		default=True,
+		help="Whether to return node CC hashes"
 	)
 	# Inference configuration
 	parser.add_argument(
@@ -205,6 +211,12 @@ if __name__ == "__main__":
 	# Load Input Data (molecules and spectra)
 	print("> Loading mol_df")
 	mol_df = pd.read_pickle(args.mol_fp)
+	parser.add_argument(
+		"--drop_none_cols",
+		type=booltype,
+		default=True,
+		help="Drop columns that are entirely None/NaN before saving outputs"
+	)
 	print(f"  num mol: {len(mol_df)}")
 	print("> Loading spec_df")
 	spec_df = pd.read_pickle(args.spec_fp)
@@ -272,6 +284,7 @@ if __name__ == "__main__":
 		skip_extra_losses=args.skip_extra_losses,
 		disable_preproc=args.disable_preproc,
 		eval_batch_size=args.eval_batch_size,
+		auxiliary_scores = []
 	)
  
 	# Fragment graphs (DAGs) are computationally expensive to generate
@@ -365,7 +378,8 @@ if __name__ == "__main__":
 		if req_formula:
 			print(f"  Formula indices: {req_formula}")
 	
-columns_name = get_tabular_columns(config_d, return_formula_and_cc=args.return_formula_and_cc, output_subset=output_set)
+	columns_name = get_tabular_columns(config_d, return_formula_str=args.return_formula_str or args.output_everything, 
+                                    return_cc_hash=args.return_cc_hash or args.output_everything, output_subset=output_set)
 
 	#=========================================
 	# Inferencing
@@ -388,7 +402,8 @@ columns_name = get_tabular_columns(config_d, return_formula_and_cc=args.return_f
 		evaluate=False,
 		batch_cutoff=-1,
 		min_peak_int=args.min_intensity,
-		return_formula_and_cc=args.return_formula_and_cc,
+		return_formula_str=args.return_formula_str or args.output_everything,
+		return_cc_hash=args.return_cc_hash or args.output_everything,
 		rebase_indices=True,
 		output_set=output_set,
 	)):
@@ -398,6 +413,12 @@ columns_name = get_tabular_columns(config_d, return_formula_and_cc=args.return_f
 		# Save periodically every save_interval batches
 		if (batch_idx + 1) % save_interval_batches == 0:
 			pred_df = pd.DataFrame(preds_l, columns=columns_name)
+			if args.drop_none_cols:
+				before_cols = set(pred_df.columns)
+				pred_df = pred_df.dropna(axis=1, how="all")
+				dropped = sorted(before_cols - set(pred_df.columns))
+				if dropped:
+					print(f"> Dropped all-NaN columns: {dropped}")
 			chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
 			if args.save_format == "parquet":
 				pred_df.to_parquet(chunk_fp, index=False)
@@ -410,6 +431,12 @@ columns_name = get_tabular_columns(config_d, return_formula_and_cc=args.return_f
 	# Save remaining predictions
 	if len(preds_l) > 0:
 		pred_df = pd.DataFrame(preds_l, columns=columns_name)
+		if args.drop_none_cols:
+			before_cols = set(pred_df.columns)
+			pred_df = pred_df.dropna(axis=1, how="all")
+			dropped = sorted(before_cols - set(pred_df.columns))
+			if dropped:
+				print(f"> Dropped all-NaN columns: {dropped}")
 		chunk_fp = os.path.join(args.save_dp, f"predictions_chunk_{chunk_idx}.{file_ext}")
 		if args.save_format == "parquet":
 			pred_df.to_parquet(chunk_fp, index=False)

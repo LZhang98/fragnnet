@@ -636,7 +636,8 @@ def get_score_types(config_d):
 
 def get_tabular_columns(
 	config_d: Dict[str, Any],
-	return_formula_and_cc: bool = False,
+	return_formula_str: bool = False,
+	return_cc_hash: bool = False,
 	output_subset: Optional[Set[str]] = None
 ) -> List[str]:
 	"""
@@ -660,8 +661,10 @@ def get_tabular_columns(
 		"pred_node_probs", "pred_node_node_idxs",
 		"index_rebased"
 	]
-	if return_formula_and_cc:
-		columns_name.extend(["pred_formula_strs", "pred_node_ccs"])
+	if return_formula_str:
+		columns_name.extend(["pred_formula_strs"])
+	if return_cc_hash:
+		columns_name.extend(["pred_node_ccs"])
 	columns_name.extend(eval_score_types)
 
 	if output_subset is not None:
@@ -681,6 +684,7 @@ def run_inference_pkl(
 	output_set: Optional[Set[str]] = None,
 	evaluate: bool = True
 ) -> Dict[str, Any]:
+    
 	"""
 	Run inference with optional chunked saving for resumable predictions.
 	"""
@@ -697,7 +701,6 @@ def run_inference_pkl(
 		nb_iso,
 	)
 
-
 	# Setup for evaluation mode (return dict)
 	vals = {}
 	# Common setup
@@ -706,12 +709,13 @@ def run_inference_pkl(
 		raise RuntimeError(f"> Warning: model {model} is in training mode!")
 	
 	# Run inference loops
+	total_batches = len(dataloader) if batch_cutoff < 0 else min(len(dataloader), batch_cutoff)
 	with th.inference_mode():
-		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=min(len(dataloader), batch_cutoff), 
+		for batch_idx, batch_input in tqdm(enumerate(dataloader), total=total_batches, 
 										  desc="Running inference"):
 	  
 			# Early exit for batch cutoff
-			if batch_idx >= batch_cutoff and batch_cutoff > 0:
+			if batch_idx >= total_batches:
 				break
 			
 			# Move batch to device
@@ -821,7 +825,8 @@ def run_inference_tabular(
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
-	return_formula_and_cc: bool = False,
+	return_formula_str: bool = False,
+	return_cc_hash: bool = False,
 	rebase_indices: bool = True,
 ) -> pd.DataFrame:
 	"""
@@ -846,7 +851,7 @@ def run_inference_tabular(
 		DataFrame with all inference results
 	"""
 	# Get column names from config
-	columns_name = get_tabular_columns(model.hparams, return_formula_and_cc, output_subset=output_set)
+	columns_name = get_tabular_columns(model.hparams, return_formula_str, return_cc_hash, output_subset=output_set)
 	
 	# Accumulate all batch results
 	preds_l = []
@@ -859,7 +864,8 @@ def run_inference_tabular(
 		output_set=output_set,
 		nb_iso=nb_iso,
 		min_peak_int=min_peak_int,
-		return_formula_and_cc=return_formula_and_cc,
+		return_formula_str=return_formula_str,
+		return_cc_hash=return_cc_hash,
 		rebase_indices=rebase_indices,
 	):
 		preds_l.extend(batch_rows)
@@ -876,7 +882,8 @@ def run_inference_tabular_iter(
 	output_set: Optional[set[str]] = None,
 	nb_iso: bool = False,
 	min_peak_int: float = 0.0,
-	return_formula_and_cc: bool = False,
+	return_formula_str: bool = False,
+	return_cc_hash: bool = False,
 	rebase_indices: bool = True,
 ):
 	"""
@@ -938,7 +945,8 @@ def run_inference_tabular_iter(
 				FORMULA_IDX_VARS=FORMULA_IDX_VARS,
 				min_peak_int=min_peak_int,
 				rebase_indices=rebase_indices,
-				return_formula_and_cc=return_formula_and_cc,
+				return_formula_str=return_formula_str,
+				return_cc_hash=return_cc_hash,
 			)
 			yield batch_rows
 
@@ -953,7 +961,8 @@ def process_batch_to_tabular_row(
 	FORMULA_IDX_VARS: list,
 	min_peak_int: float,
 	rebase_indices: bool,
-	return_formula_and_cc: bool,
+	return_formula_str: bool,
+	return_cc_hash: bool,
 ) -> list:
 	"""
 	Process a single batch and return list of data rows.
@@ -1204,22 +1213,35 @@ def process_batch_to_tabular_row(
 			rebased
 		]
 
-		if return_formula_and_cc:
-			# Get formula strings using original (pre-rebase) indices
+		if return_formula_str:
 			b_pred_formula_strs = np.nan
-			if orig_formula_idxs_for_lookup is not None and frag_formula_str is not None and rebase_indices:
+			if frag_formula_str is not None:
 				f_offset = frag_formula_cumsizes[b_idx].item()
-				global_f_idxs = orig_formula_idxs_for_lookup + f_offset
-				b_pred_formula_strs = frag_formula_str[global_f_idxs.cpu().numpy()].tolist()
+				if rebase_indices and orig_formula_idxs_for_lookup is not None:
+					# Use original (pre-rebase) indices
+					global_f_idxs = orig_formula_idxs_for_lookup + f_offset
+				elif not rebase_indices and b_pred_formula_formula_idxs is not None:
+					# Use current indices
+					global_f_idxs = b_pred_formula_formula_idxs + f_offset
+				else:
+					global_f_idxs = None
+				
+				if global_f_idxs is not None:
+					b_pred_formula_strs = frag_formula_str[global_f_idxs.cpu().numpy()].tolist()
 			data_row.append(b_pred_formula_strs)
-
-			# Get node CCs using original (pre-rebase) indices
+		
+		if return_cc_hash:
 			b_pred_node_ccs = np.nan
-			if orig_node_idxs_for_lookup is not None and frag_pyg is not None and rebase_indices:
+			if frag_pyg is not None:
 				i_frag_pyg = frag_pyg[b_idx]
 				node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
 				all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
-				b_pred_node_ccs = all_node_ccs[orig_node_idxs_for_lookup.long()].detach().cpu() #save as tensor
+				if rebase_indices and orig_node_idxs_for_lookup is not None:
+					# Use original (pre-rebase) indices
+					b_pred_node_ccs = all_node_ccs[orig_node_idxs_for_lookup.long()].detach().cpu()
+				elif not rebase_indices and b_pred_node_node_idxs is not None:
+					# Use current indices
+					b_pred_node_ccs = all_node_ccs[b_pred_node_node_idxs.long()].detach().cpu()
 			data_row.append(b_pred_node_ccs)
 
 		# Append evaluation scores
