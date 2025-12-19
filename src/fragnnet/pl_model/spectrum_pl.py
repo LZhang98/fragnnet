@@ -1305,7 +1305,7 @@ class SpectrumPL(pl.LightningModule):
 		self.train_results = None
 		self.train_counter = 0
 		# seed dataloader
-		self._seed_dataloader(self.current_epoch+1)
+		#self._seed_dataloader(self.current_epoch+1)
 
 	def on_validation_epoch_end(self):
 		
@@ -1377,7 +1377,14 @@ class SpectrumPL(pl.LightningModule):
 		train_dataloader = self.trainer.train_dataloader
 		batch_sampler = train_dataloader.batch_sampler
 		sampler = train_dataloader.sampler
-		if self.hparams.dynamic_batch_sampler:
+		
+		# Handle FormulaHardNegativeDynamicBatchSampler (uses set_epoch for both sampling and batching)
+		if self.hparams.formula_hard_negative_dynamic_sampler:
+			if hasattr(batch_sampler, "set_epoch"):
+				# print("p6")
+				batch_sampler.set_epoch(seed)
+		# Handle SpecMolFragDynamicBatchSampler (has nested sampler)
+		elif self.hparams.dynamic_batch_sampler:
 			if hasattr(batch_sampler.sampler, "generator"):
 				# print("p3")
 				batch_sampler.sampler.generator = generator
