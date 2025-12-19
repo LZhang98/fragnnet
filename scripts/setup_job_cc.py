@@ -281,12 +281,14 @@ def main(args):
 		for row in script_lines:
 			print(row)
 
-
 	if not args.no_submit:
 		process = subprocess.Popen(['sbatch', script_fp], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 		out, err = process.communicate()
 		print(out.strip(), err.strip())
-
+	else:
+		print("\nJob script creation complete. Not submitting job as --no_submit is set.\n")
+		print(f"To submit job:\nsbatch {script_fp}\n")
+  
 if __name__ == "__main__":
 
 	parser = argparse.ArgumentParser()
