@@ -85,7 +85,9 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler:  True
+#dynamic_batch_sampler:  False
+#formula_hard_negative_dynamic_sampler: True
+#formula_hard_negative_min_specs_per_formula: 2
 
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
@@ -101,3 +103,4 @@ pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
+

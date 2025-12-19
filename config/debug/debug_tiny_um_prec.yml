@@ -11,7 +11,7 @@ frag_dp: data/frag/debug_tinyv4_d3h4/dags
 subsample_params:
   subsample_size: 40
   subsample_seed: 42
-  train: False
+  train: True
   val: True
   test: True
   secondary: True
@@ -93,7 +93,7 @@ checkpoint_metric: val_cos_sim_0.01_epoch/mean
 # - 0.01
 precision: 32
 use_tensor_float32: True
-automatic_optimization: True
+automatic_optimization: False
 dynamic_batch_sampler: False
 pl_enable_progress_bar: True
 compile: False
@@ -104,4 +104,6 @@ cc_interstage_use_rest: True
 mol_pool_type: attention # mean_max_sum
 
 #extra loss weights
-pairwise_jss_binned_loss_weight: 0.5
+#dynamic_batch_sampler: True
+formula_hard_negative_dynamic_sampler: True
+formula_hard_negative_min_specs_per_formula: 2
