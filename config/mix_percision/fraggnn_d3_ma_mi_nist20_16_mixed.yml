@@ -101,7 +101,7 @@ eval_mz_bin_res:
 precision: 16-mixed # bf16-mixed, 16-mixed, 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler:  True
 
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]

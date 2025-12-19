@@ -100,7 +100,7 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler: True
 
 simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5
