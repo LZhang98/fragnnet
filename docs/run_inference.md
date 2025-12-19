@@ -35,8 +35,8 @@ From a text file:
 python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_file <SMILES_FILE> \
   --prec_types <PREC_TYPE> [<PREC_TYPE> ...] \
-  --ces <CE_EV> [<CE_EV> ...] \
-  --nces <NCE_PCT> [<NCE_PCT> ...] \
+  --qtof_ces <CE_EV> [<CE_EV> ...] \
+  --ft_ces <NCE_PCT> [<NCE_PCT> ...] \
   --inst_types <INST_TYPE> [<INST_TYPE> ...] \
   --output_dir <OUTPUT_DIR>
 ```
@@ -48,8 +48,8 @@ python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_colname <SMILES_COLUMN> \
   --id_colname <ID_COLUMN> \
   --prec_types <PREC_TYPE> [<PREC_TYPE> ...] \
-  --ces <CE_EV> [<CE_EV> ...] \
-  --nces <NCE_PCT> [<NCE_PCT> ...] \
+  --qtof_ces <CE_EV> [<CE_EV> ...] \
+  --ft_ces <NCE_PCT> [<NCE_PCT> ...] \
   --inst_types <INST_TYPE> [<INST_TYPE> ...] \
   --output_dir <OUTPUT_DIR>
 ```
@@ -66,8 +66,8 @@ python preproc_scripts/inference/01_prepare_inference_input.py \
 
 **Experimental Conditions** (all required):
 - `--prec_types`: Precursor types. Choices: `[M+H]+`, `[M-H]-`
-- `--ces`: Collision energies in eV (used by QTOF, Q, TOF, QQQ instruments)
-- `--nces`: Normalized collision energies in % (used by FT, IT instruments)
+- `--qtof_ces`: Collision energies in eV (used by QTOF, Q, TOF, QQQ instruments)
+- `--ft_ces`: Normalized collision energies in % (used by FT, IT instruments)
 - `--inst_types`: Instrument types. Choices: `FT`, `QTOF`, `IT`, `Q`, `TOF`, `QQQ`
 
 **Output Options**:
@@ -94,8 +94,8 @@ Different instrument types use different collision energy units:
 python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" \
   --prec_types "[M+H]+" \
-  --ces 15.0 25.0 \
-  --nces 20.0 30.0 \
+  --qtof_ces 20.0eV 30.0eV \
+  --ft_ces 25.0% 35.0% \
   --inst_types "QTOF" "FT" \
   --output_dir output/single_molecule
 ```
@@ -105,8 +105,8 @@ python preproc_scripts/inference/01_prepare_inference_input.py \
 python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" "CC(=O)O" "CCN" \
   --prec_types "[M+H]+" "[M-H]-" \
-  --ces 20.0 30.0 \
-  --nces 25.0 35.0 \
+  --qtof_ces 20.0eV 30.0eV \
+  --ft_ces 25.0% 35.0% \
   --inst_types "QTOF" "FT" \
   --merged_spectra true \
   --output_dir output/merged_spectra
@@ -119,8 +119,8 @@ python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_colname smiles \
   --id_colname compound_id \
   --prec_types "[M+H]+" "[M-H]-" \
-  --ces 10.0 20.0 40.0 \
-  --nces 20.0 40.0 60.0 \
+  --qtof_ces 10.0eV 20.0eV 40.0eV \
+  --ft_ces 20.0% 40.0% 60.0% \
   --inst_types "QTOF" "FT" \
   --output_dir output/metabolites
 ```
@@ -130,8 +130,8 @@ python preproc_scripts/inference/01_prepare_inference_input.py \
 python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" "CC(=O)O" "CCN" "CC(C)O" \
   --prec_types "[M+H]+" "[M-H]-" \
-  --ces 10.0 20.0 30.0 \
-  --nces 15.0 25.0 35.0 \
+  --qtof_ces 10.0eV 20.0eV 30.0eV \
+  --ft_ces 15.0% 25.0% 35.0% \
   --inst_types "QTOF" "FT" "IT" \
   --output_dir output/multi_molecule
 ```
@@ -145,8 +145,8 @@ echo -e "CCO\nCC(=O)O\nCCN\nCC(C)O\nCCC" > my_molecules.txt
 python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_file my_molecules.txt \
   --prec_types "[M+H]+" \
-  --ces 15.0 25.0 \
-  --nces 20.0 30.0 \
+  --qtof_ces 15.0eV 25.0eV \
+  --ft_ces 20.0% 30.0% \
   --inst_types "QTOF" "FT" \
   --output_dir output/from_file
 ```
@@ -159,8 +159,8 @@ python preproc_scripts/inference/01_prepare_inference_input.py \
     "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O" \
     "CC(=O)OC1=CC=CC=C1C(=O)O" \
   --prec_types "[M+H]+" "[M-H]-" \
-  --ces 20.0 30.0 \
-  --nces 25.0 35.0 \
+  --qtof_ces 20.0eV 30.0eV \
+  --ft_ces 25.0% 35.0% \
   --inst_types "QTOF" "FT" \
   --output_dir output/drugs
 ```
@@ -170,8 +170,7 @@ python preproc_scripts/inference/01_prepare_inference_input.py \
 python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" "CC(=O)O" \
   --prec_types "[M+H]+" \
-  --ces 20.0 \
-  --nces 15.0 25.0 35.0 \
+  --ft_ces 15.0% 25.0% 35.0% \
   --inst_types "FT" \
   --output_dir output/orbitrap_only
 ```
@@ -181,8 +180,7 @@ python preproc_scripts/inference/01_prepare_inference_input.py \
 python preproc_scripts/inference/01_prepare_inference_input.py \
   --smiles_list "CCO" "CC(=O)O" \
   --prec_types "[M+H]+" "[M-H]-" \
-  --ces 10.0 20.0 30.0 \
-  --nces 25.0 \
+  --qtof_ces 10.0eV 20.0eV 30.0eV \
   --inst_types "QTOF" \
   --output_dir output/qtof_only
 ```
@@ -313,13 +311,6 @@ python preproc_scripts/inference/02_run_inference_frag_gen.py \
   --proc_dp output/example \
   --frag_dp output/example/frags \
   --max_depth 3
-
-# Process a chunk (e.g., molecules 0-100)
-python preproc_scripts/inference/02_run_inference_frag_gen.py \
-  --proc_dp output/example \
-  --frag_dp output/example/frags \
-  --start_row 0 \
-  --end_row 100
 ```
 
 ### 3. `run_inference.py`
@@ -373,7 +364,7 @@ The script automatically checks the output directory (`--save_dp`) for existing 
 
 ## Notes
 
-- Both `--ces` and `--nces` arguments are required, even if you're only using one instrument type
+- Both `--qtof_ces` and `--ft_ces` arguments are required, even if you're only using one instrument type
 - The script automatically selects the appropriate collision energy values based on instrument type
 - Input files support multiple formats: .txt/.smi/.smiles (one SMILES per line) and .csv/.tsv (with column headers)
 - For CSV/TSV files, `--smiles_colname` is required; `--id_colname` is optional for custom molecule IDs
