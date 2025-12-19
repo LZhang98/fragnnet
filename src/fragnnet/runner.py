@@ -24,6 +24,7 @@ from torch.utils.data.sampler import SequentialSampler, RandomSampler
 from fragnnet.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from fragnnet.utils.pl_utils import ConsoleLogger
 from fragnnet.dataset import GroupSampler, get_group_sampler, SpecMolFragDynamicBatchSampler
+from fragnnet.dataset.data_sampler import FormulaHardNegativeDynamicBatchSampler
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.utils.misc_utils import deep_update
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
@@ -168,7 +169,22 @@ def init_dataloader(ds:Dataset, config_d:dict) -> DataLoader:
 		sampler = SequentialSampler(ds)
   
 	# Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
-	if config_d["dynamic_batch_sampler"]:
+	# Prefer formula-based hard negative dynamic sampler when enabled (train only)
+	if split == "train" and config_d.get("formula_hard_negative_dynamic_sampler", False):
+		print("> Using FormulaHardNegativeDynamicBatchSampler for training")
+		batch_sampler = FormulaHardNegativeDynamicBatchSampler(
+			data_source=ds,
+			spec_df=ds.spec_df,
+			mol_df=ds.mol_df,
+			max_num=config_d["dynamic_batch_sampler_max"],
+			limited_by=config_d["dynamic_batch_sampler_mode"],
+			skip_too_big=True,
+			min_specs_per_formula=config_d.get("formula_hard_negative_min_specs_per_formula", 2),
+			shuffle=True,
+			seed=config_d["seed"],
+		)
+		dl_param_d["batch_sampler"] = batch_sampler
+	elif config_d["dynamic_batch_sampler"]:
 		max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
 		if split == "train":
 			return_batch_at = max_batch_size
