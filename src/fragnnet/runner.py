@@ -170,7 +170,7 @@ def init_dataloader(ds:Dataset, config_d:dict) -> DataLoader:
   
 	# Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
 	# Prefer formula-based hard negative dynamic sampler when enabled (train only)
-	if split == "train" and config_d.get("formula_hard_negative_dynamic_sampler", False):
+	if split == "train" and config_d["formula_hard_negative_dynamic_sampler"]:
 		print("> Using FormulaHardNegativeDynamicBatchSampler for training")
 		batch_sampler = FormulaHardNegativeDynamicBatchSampler(
 			data_source=ds,
@@ -179,7 +179,7 @@ def init_dataloader(ds:Dataset, config_d:dict) -> DataLoader:
 			max_num=config_d["dynamic_batch_sampler_max"],
 			limited_by=config_d["dynamic_batch_sampler_mode"],
 			skip_too_big=True,
-			min_specs_per_formula=config_d.get("formula_hard_negative_min_specs_per_formula", 2),
+			min_specs_per_formula=config_d["formula_hard_negative_min_specs_per_formula"],
 			shuffle=True,
 			seed=config_d["seed"],
 		)

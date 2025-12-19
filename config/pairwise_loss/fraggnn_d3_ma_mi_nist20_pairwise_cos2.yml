@@ -102,7 +102,10 @@ use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: False
 
-simple_group_sampler: True
+formula_hard_negative_dynamic_sampler: False
+formula_hard_negative_min_specs_per_formula: 5
+
+simple_group_sampler: False
 simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group #[group, group_mol, mol]
 
