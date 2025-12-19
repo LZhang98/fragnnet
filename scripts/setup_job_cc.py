@@ -286,8 +286,10 @@ def main(args):
 		out, err = process.communicate()
 		print(out.strip(), err.strip())
 	else:
+		print("=" * 80)
 		print("\nJob script creation complete. Not submitting job as --no_submit is set.\n")
 		print(f"To submit job:\nsbatch {script_fp}\n")
+		print("=" * 80)
   
 if __name__ == "__main__":
 
