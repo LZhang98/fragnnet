@@ -428,11 +428,17 @@ def main(args):
 	with open(script_fp,"w") as script_file:
 		print(script_str,file=script_file)
 
-
+	print("="*60)
 	if not args.no_submit:
+		print(f"submitting job script {script_fp} to slurm")
 		process = subprocess.Popen(['sbatch', script_fp], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 		out, err = process.communicate()
 		print(out.strip(), err.strip())
+	else:
+		print(f"script saved to {script_fp}. Not submitted due to --no_submit=True\n")
+		print("To submit, run: \n")
+		print(f"  sbatch {script_fp}")
+	print("="*60)
 
 if __name__ == "__main__":
 
