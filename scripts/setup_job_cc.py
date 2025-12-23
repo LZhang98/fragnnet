@@ -184,8 +184,9 @@ def main(args):
 		script_lines.append(f"#SBATCH --gpus-per-node={args.gpus_per_node}")
 	elif args.gpu > 0:
 		# eg. --gpus-per-node=v100:1 or --gpus-per-node=1
-		if args.gpu_type is not None:
-			script_lines.append(f"#SBATCH --gpus-per-node={args.gpu_type}:{args.gpu}")
+		gpu_type = getattr(args, "gpu_type", None)
+		if gpu_type is not None:
+			script_lines.append(f"#SBATCH --gpus-per-node={gpu_type}:{args.gpu}")
 		else:
 			script_lines.append(f"#SBATCH --gpus-per-node={args.gpu}")
 
