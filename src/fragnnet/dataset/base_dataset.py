@@ -167,13 +167,20 @@ class BaseDataset(Dataset):
 				assert isinstance(subsample_params["subsample_size"],float)
 				n = None
 				frac = subsample_params["subsample_size"]
-			spec_df = spec_df.sample(
-				n=n,
-				frac=frac,
-				random_state=subsample_params["subsample_seed"],
-				replace=False)
-			mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
-			um_spec_df = um_spec_df[um_spec_df[id_key].isin(spec_df[id_key])]
+		
+		# Safety check: ensure n doesn't exceed population
+		pop_size = len(spec_df)
+		if n is not None and n > pop_size:
+			print(f">> WARNING: subsample n={n} exceeds population {pop_size}, using population size")
+			n = pop_size
+		
+		spec_df = spec_df.sample(
+			n=n,
+			frac=frac,
+			random_state=subsample_params["subsample_seed"],
+			replace=False)
+		mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
+		um_spec_df = um_spec_df[um_spec_df[id_key].isin(spec_df[id_key])]
 
 		# reset indices
 		spec_df = spec_df.reset_index(drop=True)

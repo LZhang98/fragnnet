@@ -112,6 +112,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			epoch (int): Current epoch number
 		"""
 		self._epoch = epoch
+		# Let the underlying sampler manage its own randomness per epoch
 		if self.sampler is not None and hasattr(self.sampler, 'set_epoch'):
 			self.sampler.set_epoch(epoch)
 		self._pre_compute_batches()
@@ -236,9 +237,7 @@ class GroupSampler(Sampler):
 	def _pre_compute_batches(self):
 		"""Pre-compute sampled indices (one sample per group) with epoch-aware randomization."""
 		if self.generator is None:
-			seed = int(th.empty((), dtype=th.int64).random_().item())
 			generator = th.Generator()
-			generator.manual_seed(seed + self._epoch)
 		else:
 			generator = self.generator
 
@@ -525,17 +524,17 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 	Alternative sampler that returns batches organized by formula.
 	All spectra with the same formula are grouped together, facilitating
 	all-pairs hard negative comparisons within a formula group.
-	
+
 	Useful for pairwise loss functions (e.g., pairwise sparse_cross_entropy_vec).
-	
+
 	Args:
 		spec_df: Spectrum DataFrame
 		mol_df: Molecule DataFrame
 		min_specs_per_formula: Minimum spectra per formula to include (default: 2)
 		shuffle: Whether to shuffle groups (default: True)
-		seed: Random seed (default: 42)
+		generator: Optional[th.Generator] for reproducibility
 	"""
-	
+
 	def __init__(
 		self,
 		spec_df: pd.DataFrame,
@@ -543,7 +542,7 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 		data_source=None,
 		min_specs_per_formula: int = 2,
 		shuffle: bool = True,
-		seed: int = 42,
+		generator: Optional[th.Generator] = None,
 	):
 		self.data_source = data_source
 		self.spec_df = spec_df.reset_index(drop=True)
@@ -551,10 +550,9 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 		self.mol_df = mol_df.copy()
 		self.min_specs_per_formula = min_specs_per_formula
 		self.shuffle = shuffle
-		self.seed = seed
-		self.rng = np.random.RandomState(seed)
+		self.generator = generator
 		self._epoch = 0
-		
+
 		# Build formula index
 		self._build_formula_index()
 		# Create batches grouped by formula
@@ -562,12 +560,14 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 
 	def set_epoch(self, epoch: int) -> None:
 		"""Set epoch to trigger re-grouping.
-		
+
 		Args:
 			epoch (int): Current epoch number
 		"""
 		self._epoch = epoch
-		self.rng = np.random.RandomState(self.seed + epoch)
+		# If a generator is provided, reseed it for deterministic shuffling
+		if self.generator is not None:
+			self.generator.manual_seed(self.generator.initial_seed() + epoch)
 		self._create_formula_grouped_batches()
 	
 	def _build_formula_index(self):
@@ -617,14 +617,19 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 	def _create_formula_grouped_batches(self):
 		"""Create batches where all specs in a batch share the same formula."""
 		self.formula_batches = []
-		
+
 		for formula, spec_indices in self.formula_to_spec_ids.items():
 			# Only include formulas with enough spectra for hard negatives
 			if len(spec_indices) >= self.min_specs_per_formula:
 				self.formula_batches.append(spec_indices)
-		
+
 		if self.shuffle:
-			self.rng.shuffle(self.formula_batches)
+			if self.generator is not None:
+				idx = th.randperm(len(self.formula_batches), generator=self.generator)
+				self.formula_batches = [self.formula_batches[i] for i in idx.tolist()]
+			else:
+				import random
+				random.shuffle(self.formula_batches)
 	
 	def __iter__(self):
 		"""Yield formula-grouped batch indices."""
@@ -910,7 +915,7 @@ class FormulaHardNegativeDynamicBatchSampler(BatchSampler):
 		skip_too_big: bool = False,
 		min_specs_per_formula: int = 2,
 		shuffle: bool = True,
-		seed: int = 42,
+		generator: Optional[th.Generator] = None,
 	):
 		if not isinstance(max_num, int) or max_num <= 0:
 			raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
@@ -925,7 +930,7 @@ class FormulaHardNegativeDynamicBatchSampler(BatchSampler):
 		self._skip_too_big = skip_too_big
 		self.min_specs_per_formula = min_specs_per_formula
 		self.shuffle = shuffle
-		self.seed = seed
+		self.generator = generator
 		
 		self._batches = []
 		self._data_meta = []
@@ -938,7 +943,7 @@ class FormulaHardNegativeDynamicBatchSampler(BatchSampler):
 			mol_df=mol_df,
 			min_specs_per_formula=min_specs_per_formula,
 			shuffle=shuffle,
-			seed=seed,
+			generator=generator,
 		)
 		
 		# Pre-load metadata
@@ -1060,7 +1065,7 @@ def create_formula_hard_negative_dynamic_loader(
 	skip_too_big: bool = False,
 	min_specs_per_formula: int = 2,
 	shuffle: bool = True,
-	seed: int = 42,
+	generator: Optional[th.Generator] = None,
 	num_workers: int = 0,
 ):
 	"""
@@ -1111,7 +1116,7 @@ def create_formula_hard_negative_dynamic_loader(
 		skip_too_big=skip_too_big,
 		min_specs_per_formula=min_specs_per_formula,
 		shuffle=shuffle,
-		seed=seed,
+		generator=generator,
 	)
 	
 	loader = DataLoader(

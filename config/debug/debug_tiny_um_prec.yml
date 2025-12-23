@@ -102,8 +102,3 @@ detect_anomaly: True
 cc_interstage_type: gated #cross_attention, set_transformers, attention, mlp, gated, dual_set_transformer
 cc_interstage_use_rest: True
 mol_pool_type: attention # mean_max_sum
-
-#extra loss weights
-#dynamic_batch_sampler: True
-formula_hard_negative_dynamic_sampler: True
-formula_hard_negative_min_specs_per_formula: 2
