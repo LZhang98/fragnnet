@@ -35,7 +35,9 @@ def make_splits(args):
 		ion_modes=ion_modes,
 		inst_types=inst_types,
 		ces = args.ces,
-		spec_type = args.spec_type
+		spec_type = args.spec_type,
+		max_heavy_atom = args.max_heavy_atom,
+		max_bond = args.max_bond
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
 	spec_df = f_spec_df
@@ -272,7 +274,8 @@ if __name__ == "__main__":
 	parser.add_argument("--predefined_test_id_fp",type=str,required=False,help="CSV path containing test ids")
 	parser.add_argument("--predefined_secondary_id_fp",type=str,required=False,help="CSV path containing secondary ids")
 	parser.add_argument("--num_folds",type=int,default=0,help="Unused placeholder; CV folds inferred from test_frac when split_type=random_folds")
-	# spec filtering criteria
+	
+ 	# spec filtering criteria
 	parser.add_argument("--primary_dsets",type=str,nargs="+",required=True,help="Dataset names considered primary (used for train/val/test)")
 	parser.add_argument("--secondary_dsets",type=str,nargs="+",default=[],help="Dataset names considered secondary (optional extra data)")
 	parser.add_argument("--max_peak_mz",type=float,default=1500.,help="Maximum fragment peak m/z allowed")
@@ -280,6 +283,10 @@ if __name__ == "__main__":
 	parser.add_argument("--min_prec_mz",type=float,default=0.,help="Minimum precursor m/z allowed")
 	parser.add_argument("--spec_type",type=str,default="MS2",help="Spectrum type to keep (e.g., MS2)")
 
+	# mol filtering criteria
+	parser.add_argument("--max_heavy_atom",type=int,default=None,help="Maximum heavy atom count; use default filter")
+	parser.add_argument("--max_bond",type=int,default=None,help="Maximum bond count; None use default filter")
+ 
 	# dag filtering criteria
 	parser.add_argument("--dag_filtering",type=booltype,default=True,help="Whether to filter to spectra with available DAG stats")
 	parser.add_argument("--dag_filter_grouping",type=str,choices=["mol","spec","m_mol","m_spec"],default="m_spec",help="Grouping used when joining DAG stats back to spectra")
