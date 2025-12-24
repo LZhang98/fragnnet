@@ -305,7 +305,7 @@ if __name__ == "__main__":
 	parser.add_argument("--total_frac",type=float,default=1.0,help="Fraction of available primary keys to use before splitting")
 	parser.add_argument("--test_frac",type=float,default=0.2,help="Fraction of total keys allocated to test when random splitting")
 	parser.add_argument("--val_frac",type=float,default=0.2,help="Fraction of total keys allocated to validation when random splitting")
-	parser.add_argument("--block_secondary_overlap",stype=booltype,default=True,help="If True, drop secondary spectra whose split_key overlaps train/val/test to prevent leakage")
+	parser.add_argument("--block_secondary_overlap",type=booltype,default=True,help="If True, drop secondary spectra whose split_key overlaps train/val/test to prevent leakage")
 	parser.add_argument("--proc_dp",type=str,required=True,help="Directory containing processed mol_df.pkl and spec_df.pkl")
 	parser.add_argument("--frag_dp",type=str,required=False,help="Directory containing DAG stats (required if dag_filtering)")
 	parser.add_argument("--split_dp",type=str,required=True,help="Output directory where splits and metadata are written")
