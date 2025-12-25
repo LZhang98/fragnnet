@@ -863,11 +863,31 @@ def compute_dags(
 			formula_idx = formula_to_idx[formula]
 			# h_delta [0,-1,1,-2,2,-3,3,-4,4]
 			h_delta_idx = h_delta * 2 if h_delta >= 0 else (-h_delta * 2) - 1
+			# sanity checks: indices/counts must be non-negative and fit uint16
+			if h_delta_idx < 0 or h_delta_idx >= formula_node_feat_size:
+				raise ValueError(f"h_delta_idx out of bounds: {h_delta_idx}, size={formula_node_feat_size}")
+			if formula_idx < 0 or formula_idx > np.iinfo(np.uint16).max:
+				raise ValueError(f"formula_idx out of uint16 range: {formula_idx}")
+			if h_count < 0 or h_count > np.iinfo(np.uint16).max:
+				raise ValueError(f"h_count out of uint16 range: {h_count}")
 			formulae_idxs[h_delta_idx] = formula_idx
 			h_counts[h_delta_idx] = h_count
 			formula_idx_by_h_delta[h_delta_idx].add(formula_idx)
 		formula_idx_list.append(formulae_idxs)
 		h_count_list.append(h_counts)
+
+	# before stacking, ensure no negative or out-of-range values exist
+	max_uint16 = np.iinfo(np.uint16).max
+	for arr in formula_idx_list:
+		if np.any(np.asarray(arr) < 0):
+			raise ValueError("Negative value found in formula index list before stacking")
+		if np.any(np.asarray(arr) > max_uint16):
+			raise ValueError("Value exceeds uint16 max in formula index list before stacking")
+	for arr in h_count_list:
+		if np.any(np.asarray(arr) < 0):
+			raise ValueError("Negative value found in h_count list before stacking")
+		if np.any(np.asarray(arr) > max_uint16):
+			raise ValueError("Value exceeds uint16 max in h_count list before stacking")
 
 	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.uint16)
 	node_h_count_matrix = np.stack(h_count_list, dtype=np.uint16)
@@ -876,6 +896,10 @@ def compute_dags(
 	if nb_isomorphic:
 		nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
 		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=np.uint16).reshape(-1,1)
+		# validate nb iso indices
+		if node_nb_iso_idx.size > 0:
+			if np.any(node_nb_iso_idx < 0) or np.any(node_nb_iso_idx > np.iinfo(np.uint16).max):
+				raise ValueError("node_nb_iso_idx contains invalid values outside uint16 range")
 		dag_num_nodes_nb = len(set(node_nb_hashes))
 	else:
 		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=np.uint16)
