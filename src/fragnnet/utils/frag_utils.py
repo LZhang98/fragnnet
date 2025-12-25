@@ -855,8 +855,8 @@ def compute_dags(
 
 	formula_idx_list, h_count_list = [], []
 	for formulae_dict, h_count_dict in zip(formula_d_list,h_count_d_list):
-		formulae_idxs = np.zeros(formula_node_feat_size, dtype=np.int16)
-		h_counts = np.zeros(h_count_node_feat_size, dtype=np.int16)
+		formulae_idxs = np.zeros(formula_node_feat_size, dtype=np.uint16)
+		h_counts = np.zeros(h_count_node_feat_size, dtype=np.uint16)
 		for h_delta in formulae_dict:
 			formula = formulae_dict[h_delta]
 			h_count = h_count_dict[h_delta]
@@ -869,16 +869,16 @@ def compute_dags(
 		formula_idx_list.append(formulae_idxs)
 		h_count_list.append(h_counts)
 
-	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.int16)
-	node_h_count_matrix = np.stack(h_count_list, dtype=np.int16)
+	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.uint16)
+	node_h_count_matrix = np.stack(h_count_list, dtype=np.uint16)
 
 	# map nodes to nb_isomorphism indices
 	if nb_isomorphic:
 		nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
-		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=np.int16).reshape(-1,1)
+		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=np.uint16).reshape(-1,1)
 		dag_num_nodes_nb = len(set(node_nb_hashes))
 	else:
-		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=np.int16)
+		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=np.uint16)
 		dag_num_nodes_nb = -1
 
 	assert nodes_mask_matrix.shape[1] <= MASK_SIZE
