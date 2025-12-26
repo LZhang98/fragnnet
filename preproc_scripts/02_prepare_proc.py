@@ -5,7 +5,7 @@ import argparse
 from rdkit import RDLogger
 
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils.data_utils import par_apply_df_rows_t, par_apply_series, par_apply_df_rows, seq_apply_df_rows, seq_apply_df_rows_t
+from fragnnet.utils.data_utils import par_apply_df_rows_t, par_apply_series, par_apply_df_rows, seq_apply_df_rows_t
 from fragnnet.utils.misc_utils import booltype
 
 """Prepare processed spectral, molecule, and annotation tables.

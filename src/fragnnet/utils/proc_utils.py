@@ -29,7 +29,9 @@ def filter_spec_mol(
 		frag_modes:list|None  = None,
 		ion_modes:list|None  = None,
 		ces:str|None = None,
-  		spec_type:str|None  = None):
+  		spec_type:str|None  = None,
+		max_heavy_atom:int|None = None,
+		max_bond:int|None = None):
 	
 	"""
 	The purpose of this filtering is to prevent errors
@@ -172,17 +174,21 @@ def filter_spec_mol(
 		masks.append(element_mask)
   
 	# atom count
-	print(f">> max num nodes: {MAX_NUM_NODES}")
-	print(f">> max num edges: {MAX_NUM_EDGES}")
-	atom_count_ids = mol_df[mol_df["num_atoms"]<=MAX_NUM_NODES]["mol_id"]
+	max_heavy_atom = max_heavy_atom if max_heavy_atom is not None else MAX_NUM_NODES
+	print(f">> max atoms allowed: {max_heavy_atom}")
+	atom_count_ids = mol_df[mol_df["num_atoms"]<=max_heavy_atom]["mol_id"]
 	atom_count_mask = spec_df["mol_id"].isin(atom_count_ids)
 	print(f">> atom count: {atom_count_mask.mean()}")
 	masks.append(atom_count_mask)
+
+	max_bond = max_bond if max_bond is not None else MAX_NUM_EDGES
+	print(f">> max bonds allowed: {max_bond}")
 	# bond count
-	bond_count_ids = mol_df[mol_df["num_bonds"]<=MAX_NUM_EDGES]["mol_id"]
+	bond_count_ids = mol_df[mol_df["num_bonds"]<=max_bond]["mol_id"]
 	bond_count_mask = spec_df["mol_id"].isin(bond_count_ids)
 	print(f">> bond count: {bond_count_mask.mean()}")
 	masks.append(bond_count_mask)
+
 	# radical stats
 	non_radical_ids = mol_df[mol_df["num_radicals"]==0]["mol_id"]
 	non_radical_mask = spec_df["mol_id"].isin(non_radical_ids)

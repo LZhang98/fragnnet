@@ -91,6 +91,32 @@ def pm_ce_fn(
 		tolerance_min_mz: float,
 		**kwargs) -> th.Tensor:
 
+	"""
+	Compute per-true-peak log-probability via peak-marginal aggregation.
+
+	For each true peak in `b_true_mzs`, this function aggregates the
+	log-probability mass assigned by the predicted peaks `b_pred_mzs`
+	within an m/z tolerance window. Concretely, it performs a
+	log-sum-exp over the predicted log-probabilities `b_pred_logprobs`
+	that match each true peak, yielding a length-`T` tensor (one value
+	per true peak).
+
+	Args:
+		b_pred_mzs: [P] Predicted m/z values for the current spectrum.
+		b_true_mzs: [T] Ground-truth m/z values for the current spectrum.
+		b_pred_logprobs: [P] Predicted log-probabilities (intensities) per predicted peak.
+		relative: If True, the tolerance is relative to m/z; otherwise, absolute.
+		tolerance: Base tolerance value (absolute or the factor used for relative).
+		tolerance_multiple: Multiplicative factor applied to `tolerance` when matching.
+		tolerance_min_mz: Minimum m/z used when applying relative tolerance.
+
+	Returns:
+		[T] Log-probabilities per true peak obtained by aggregating matching
+		predicted peak log-probabilities via log-sum-exp.
+	"""
+
+	# Compute boolean match mask [T, P] indicating which predicted peaks
+	# fall within the m/z tolerance window of each true peak.
 	b_match_mask = calculate_match_mzs(
 		b_true_mzs,
 		b_pred_mzs,
@@ -98,6 +124,9 @@ def pm_ce_fn(
 		relative=relative,
 		tolerance_min_mz=tolerance_min_mz
 	)
+	# Aggregate matched predicted log-probs for each true peak via log-sum-exp.
+	# Unmatched (false mask) entries are suppressed by adding a large negative
+	# value (`LOG_ZERO`) so they do not contribute to the sum.
 	b_logprobs = th.logsumexp(
 		b_pred_logprobs.reshape(1,-1)*b_match_mask.to(b_pred_logprobs.dtype) + LOG_ZERO(b_pred_logprobs.dtype)*(~b_match_mask).to(b_pred_logprobs.dtype),
 		dim=1)
