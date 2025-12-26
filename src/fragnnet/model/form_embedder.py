@@ -52,6 +52,10 @@ class IntFeaturizer(nn.Module):
 		# all negative values and values >= max_count_int will be treated as "extra" tokens.
 		# TODO: may be we should default to negtive values being missing tokens?
 		norm_mask = (tensor >= 0) & (tensor < self.max_count_int)
+		#print("int_to_feat_matrix shape:", self.int_to_feat_matrix.shape)
+		#assert tensor.min() >= 0 and tensor.max() < self.int_to_feat_matrix.shape[0], \
+    	#	f"Index out of bounds: min={tensor.min().item()}, max={tensor.max().item()}, allowed=[0, {self.int_to_feat_matrix.shape[0]-1}]"
+
 		
 		if self.missing_token is None:
 			missing_mask = th.zeros_like(tensor, dtype=th.bool)

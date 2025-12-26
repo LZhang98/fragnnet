@@ -82,7 +82,8 @@ NODE_FEAT_TO_IDX = {
 	"base_formula":2,
 	"h_formulae_idx":3,
 	"h_counts":4,
-	"nb_iso_idx":5
+	"nb_iso_idx":5,
+	"cmf_h_formulae_idx":6,
 }
 
 EDGE_FEAT_TO_IDX = {
@@ -709,28 +710,6 @@ def th_mask_to_long(mask):
 	long = 2**th.arange(64-1,-1,-1,device=mask.device).expand(1,num_dims,64)
 	return th.sum(long*mask,dim=2).long()
 
-def get_base_formula_node_feat_size() -> int:
-	""" get base_formula size
-	Returns:
-		int: size of base_formula array, each bin is a count of the number of atoms for respective element
-	"""
-	return len(ELEMENT_TO_IDX)
-
-def get_formula_node_feat_size(max_h_transfer) -> int:
-	""" get formula_node_feat_size
-		at max we can have 1 + 2 * max_h_transfer different formula
-	Returns:
-		int: size of formula_node_feat_size given max h transfer count
-	"""
-	# h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
-	return 1+2*max_h_transfer 
-
-def get_cc_node_feat_size() -> int:
-	"""_summary_
-	Returns:
-		_type_: _description_
-	"""
-	return MASK_SIZE//64 # mask
 
 def compute_dags(
 		mol_d:dict,
@@ -810,18 +789,26 @@ def compute_dags(
 
 	# add node depth information
 	# convert to a one hot encoding
+	# node feature size
 	depth_node_feat_size = max_depth+1 #depth
 	cc_node_feat_size = MASK_SIZE//64 # mask
 	base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
 	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
 	h_count_node_feat_size = formula_node_feat_size
 	nb_iso_node_feat_size = 1 if nb_isomorphic else 0
+	cmf_formula_node_feat_size = formula_node_feat_size #1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
+	# edge feature sizes
 	cc_edge_feat_size = cc_node_feat_size
 	base_formula_edge_feat_size = base_formula_node_feat_size
 	h_range_edge_feat_size = 2
-	node_feat_shapes = [depth_node_feat_size,cc_node_feat_size,base_formula_node_feat_size,formula_node_feat_size,h_count_node_feat_size,nb_iso_node_feat_size]
+	node_feat_shapes = [depth_node_feat_size, 
+                     cc_node_feat_size,
+                     base_formula_node_feat_size,
+                     formula_node_feat_size,                     
+                     h_count_node_feat_size,
+                     nb_iso_node_feat_size,
+                     cmf_formula_node_feat_size]
 	edge_feat_shapes = [cc_edge_feat_size,base_formula_edge_feat_size,h_range_edge_feat_size]
-	# total_node_feat_size = sum(node_feat_shapes)
 
 	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
@@ -917,7 +904,9 @@ def compute_dags(
 			th.as_tensor(node_base_formula_matrix,dtype=NODE_FEAT_DTYPE), 
 			th.as_tensor(node_formulae_matrix,dtype=NODE_FEAT_DTYPE),
 			th.as_tensor(node_h_count_matrix,dtype=NODE_FEAT_DTYPE),
-			th.as_tensor(node_nb_iso_idx,dtype=NODE_FEAT_DTYPE)
+			th.as_tensor(node_nb_iso_idx,dtype=NODE_FEAT_DTYPE),
+			# cmf features bit, not set here, this should set in dataloader, use 0 for NULL forumla
+			th.zeros((node_cc_mask.shape[0], cmf_formula_node_feat_size), dtype=NODE_FEAT_DTYPE) 
 		], dim=1
 	)
 

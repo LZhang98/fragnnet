@@ -166,13 +166,14 @@ python preproc_scripts/04_prepare_split.py \
 
 ```bash
 # Benchmark split (sim chanllenge)
-python preproc_scripts/04_prepare_split.py \
-  --proc_dp=data/proc/ms_gym_all \
-  --split_dp=./data/split/spectraverse \
-  --frag_dp=./data/frag/spectraverse_d3_h4 \
-  --primary_dsets spectraverse \
-  --split_type=predefined_dsetid_csv \
-  --predefined_dsetid_csv=data/df/spectraverse_fold.csv
+python ./preproc_scripts/04_prepare_split.py \
+  	--split_type predefined \
+    --predefined_id_type spec_id \
+    --predefined_test_id_fp data/df/spectraverse_fold_inchi_1.csv \
+    --primary_dsets spectraverse \
+    --split_dp data/split/spectraverse_nemis_inchikey_cv1 \
+    --proc_dp data/proc/spectraverse \
+    --dag_filtering False 
 ```
 
 ## Step 4: Preparing Splits
