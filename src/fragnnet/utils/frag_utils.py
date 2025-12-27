@@ -941,18 +941,17 @@ def compute_dags(
 
 	# map nodes to nb_isomorphism indices
 	if nb_isomorphic:
-		nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
-	if node_nb_hashes is not None:
-		nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
-		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=FRAG_INDEX_DTYPE).reshape(-1,1)
-		# validate nb iso indices
-		if node_nb_iso_idx.size > 0:
-			if np.any(node_nb_iso_idx < 0) or np.any(node_nb_iso_idx > np.iinfo(FRAG_INDEX_DTYPE).max):
-				raise ValueError(f"node_nb_iso_idx contains invalid values outside {FRAG_INDEX_DTYPE} range")
-		dag_num_nodes_nb = len(set(node_nb_hashes))
-	else:
-		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=FRAG_INDEX_DTYPE)
-		dag_num_nodes_nb = -1
+		if node_nb_hashes is not None:
+			nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
+			node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=FRAG_INDEX_DTYPE).reshape(-1,1)
+			# validate nb iso indices
+			if node_nb_iso_idx.size > 0:
+				if np.any(node_nb_iso_idx < 0) or np.any(node_nb_iso_idx > np.iinfo(FRAG_INDEX_DTYPE).max):
+					raise ValueError(f"node_nb_iso_idx contains invalid values outside {FRAG_INDEX_DTYPE} range")
+			dag_num_nodes_nb = len(set(node_nb_hashes))
+		else:
+			node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=FRAG_INDEX_DTYPE)
+			dag_num_nodes_nb = -1
 
 	assert nodes_mask_matrix.shape[1] <= MASK_SIZE
 	node_cc_mask = th.as_tensor(nodes_mask_matrix,dtype=th.bool)
