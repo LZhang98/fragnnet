@@ -18,6 +18,9 @@ import torch_geometric as pyg
 from collections import Counter
 from hashlib import blake2b
 
+# Fragment index dtype (change here to update everywhere)
+FRAG_INDEX_DTYPE = np.uint16
+
 import fragnnet.frag.compute_frags as compute_frags
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from fragnnet.utils.misc_utils import PPM
@@ -857,12 +860,12 @@ def compute_dags(
 	base_formula_edge_feat_size = base_formula_node_feat_size
 	h_range_edge_feat_size = 2
 	node_feat_shapes = [depth_node_feat_size, 
-                     cc_node_feat_size,
-                     base_formula_node_feat_size,
-                     formula_node_feat_size,                     
-                     h_count_node_feat_size,
-                     nb_iso_node_feat_size,
-                     cmf_formula_node_feat_size]
+					 cc_node_feat_size,
+					 base_formula_node_feat_size,
+					 formula_node_feat_size,                     
+					 h_count_node_feat_size,
+					 nb_iso_node_feat_size,
+					 cmf_formula_node_feat_size]
 	edge_feat_shapes = [cc_edge_feat_size,base_formula_edge_feat_size,h_range_edge_feat_size]
 
 	# add node h count and element information
@@ -898,7 +901,7 @@ def compute_dags(
 	formula_idx_list, h_count_list = [], []
 	for formulae_dict, h_count_dict in zip(formula_d_list,h_count_d_list):
 		# idxs have value range 0 - uint16 max
-		formulae_idxs = np.zeros(formula_node_feat_size, dtype=np.uint16)
+		formulae_idxs = np.zeros(formula_node_feat_size, dtype=FRAG_INDEX_DTYPE)
 		# h_counts have value range -1 - int16 max, we use int16 here, -1 is for invalid
 		# we are not expecting h_counts to be that high anyway
 		h_counts = np.zeros(h_count_node_feat_size, dtype=np.int16)
@@ -911,8 +914,8 @@ def compute_dags(
 			# sanity checks: indices/counts must be non-negative and fit uint16
 			if h_delta_idx < 0 or h_delta_idx >= formula_node_feat_size:
 				raise ValueError(f"h_delta_idx out of bounds: {h_delta_idx}, size={formula_node_feat_size}")
-			if formula_idx < 0 or formula_idx > np.iinfo(np.uint16).max:
-				raise ValueError(f"formula_idx out of uint16 range: {formula_idx}")
+			if formula_idx < 0 or formula_idx > np.iinfo(FRAG_INDEX_DTYPE).max:
+				raise ValueError(f"formula_idx out of {FRAG_INDEX_DTYPE} range: {formula_idx}")
 			formulae_idxs[h_delta_idx] = formula_idx
 			h_counts[h_delta_idx] = h_count
 			formula_idx_by_h_delta[h_delta_idx].add(formula_idx)
@@ -920,12 +923,12 @@ def compute_dags(
 		h_count_list.append(h_counts)
 
 	# before stacking, ensure no negative or out-of-range values exist
-	max_uint16 = np.iinfo(np.uint16).max
+	max_frag_index = np.iinfo(FRAG_INDEX_DTYPE).max
 	for arr in formula_idx_list:
 		if np.any(np.asarray(arr) < 0):
 			raise ValueError("Negative value found in formula index list before stacking")
-		if np.any(np.asarray(arr) > max_uint16):
-			raise ValueError("Value exceeds uint16 max in formula index list before stacking")
+		if np.any(np.asarray(arr) > max_frag_index):
+			raise ValueError(f"Value exceeds {FRAG_INDEX_DTYPE} max in formula index list before stacking")
 	
  	#for arr in h_count_list:
 	#	if np.any(np.asarray(arr) < 0):
@@ -933,20 +936,22 @@ def compute_dags(
 	#	if np.any(np.asarray(arr) > max_uint16):
 	#		raise ValueError("Value exceeds uint16 max in h_count list before stacking")
 
-	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.uint16)
+	node_formulae_matrix = np.stack(formula_idx_list, dtype=FRAG_INDEX_DTYPE)
 	node_h_count_matrix = np.stack(h_count_list, dtype=np.int16)
 
 	# map nodes to nb_isomorphism indices
 	if nb_isomorphic:
 		nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
-		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=np.uint16).reshape(-1,1)
+	if node_nb_hashes is not None:
+		nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
+		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=FRAG_INDEX_DTYPE).reshape(-1,1)
 		# validate nb iso indices
 		if node_nb_iso_idx.size > 0:
-			if np.any(node_nb_iso_idx < 0) or np.any(node_nb_iso_idx > np.iinfo(np.uint16).max):
-				raise ValueError("node_nb_iso_idx contains invalid values outside uint16 range")
+			if np.any(node_nb_iso_idx < 0) or np.any(node_nb_iso_idx > np.iinfo(FRAG_INDEX_DTYPE).max):
+				raise ValueError(f"node_nb_iso_idx contains invalid values outside {FRAG_INDEX_DTYPE} range")
 		dag_num_nodes_nb = len(set(node_nb_hashes))
 	else:
-		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=np.uint16)
+		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=FRAG_INDEX_DTYPE)
 		dag_num_nodes_nb = -1
 
 	assert nodes_mask_matrix.shape[1] <= MASK_SIZE
