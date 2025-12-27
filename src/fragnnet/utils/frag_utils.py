@@ -926,14 +926,15 @@ def compute_dags(
 			raise ValueError("Negative value found in formula index list before stacking")
 		if np.any(np.asarray(arr) > max_uint16):
 			raise ValueError("Value exceeds uint16 max in formula index list before stacking")
-	for arr in h_count_list:
-		if np.any(np.asarray(arr) < 0):
-			raise ValueError("Negative value found in h_count list before stacking")
-		if np.any(np.asarray(arr) > max_uint16):
-			raise ValueError("Value exceeds uint16 max in h_count list before stacking")
+	
+ 	#for arr in h_count_list:
+	#	if np.any(np.asarray(arr) < 0):
+	#		raise ValueError("Negative value found in h_count list before stacking")
+	#	if np.any(np.asarray(arr) > max_uint16):
+	#		raise ValueError("Value exceeds uint16 max in h_count list before stacking")
 
 	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.uint16)
-	node_h_count_matrix = np.stack(h_count_list, dtype=np.uint16)
+	node_h_count_matrix = np.stack(h_count_list, dtype=np.int16)
 
 	# map nodes to nb_isomorphism indices
 	if nb_isomorphic:
