@@ -25,7 +25,7 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey_[M+Cl]-
-frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_cmf/dags
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
