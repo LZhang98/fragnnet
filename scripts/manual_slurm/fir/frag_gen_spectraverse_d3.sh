@@ -59,7 +59,7 @@ pip install --no-deps -I ${WORKING_DIR}
 
 # Copy files
 # create local dir
-DATASET_NAME=nist20_pcdl
+DATASET_NAME=spectraverse
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
