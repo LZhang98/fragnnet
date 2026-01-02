@@ -520,10 +520,12 @@ def process_specverse(mgf_fp):
 	spec_verse_folds_keys = ['fold_inchi','fold_form','fold_mces','fold_mcesform']
 	for col in spec_verse_folds_keys:
 		spec_df.loc[:,col] = spec_df.loc[:,col].astype(int)
+
 	#spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
-	spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
-	spec_df.loc[:, 'stepped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (~spec_df['col_energy_extra_2'].isna())
-	# setup dset
+	#spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
+	#spec_df.loc[:, 'stepped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (~spec_df['col_energy_extra_2'].isna())
+ 	
+  	# setup dset
 	spec_df.loc[:,"dset"] = "spectraverse"
 	spec_df.loc[:,"dset_spec_id"] = spec_df["title"].apply(lambda x: int(x[len("SPECTRAVERSE"):]))
 	spec_df.loc[:, "ion_mode"] = spec_df["prec_type"].apply(lambda x: "P" if "+" in str(x) else ("N" if "-" in str(x) else np.nan))

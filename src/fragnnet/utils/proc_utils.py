@@ -31,8 +31,8 @@ def filter_spec_mol(
 		ces:str|None = None,
   		spec_type:str|None  = None,
 		max_heavy_atom:int|None = None,
-		max_bond:int|None = None):
-	
+		max_bond:int|None = None,
+		ce_types:list|None = None):
 	"""
 	The purpose of this filtering is to prevent errors
 	"""
@@ -89,7 +89,23 @@ def filter_spec_mol(
 		mask = (~spec_df["nce"].isna() | ~spec_df["ace"].isna())
 		print(f">> ace_or_nce filter: {mask.mean()}")
 		masks.append(mask)
-		
+	else:
+		print(">> no ce filter")
+
+	# ce_types
+	ce_types = ce_types if ce_types is not None else []
+	if ce_types:
+		print(f">> ce_types filter: {ce_types}")
+		allowed = {"stepped", "ramped", "single", "none"}
+		unknown = set(ce_types) - allowed
+		if unknown:
+			raise ValueError(f"unknown ce_types requested: {sorted(unknown)}")
+		ce_mask = spec_df["ce_type"].isin(ce_types)
+		print(f">> ce_type filter mean: {ce_mask.mean()}")
+		masks.append(ce_mask)
+	else:
+		print(">> no ce_type filter")
+  
 	# ion mode
 	if ion_modes is not None:
 		print(f">> ion mode filter: {ion_modes}")

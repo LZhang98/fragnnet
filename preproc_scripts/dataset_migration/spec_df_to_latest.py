@@ -29,11 +29,27 @@ if __name__ == "__main__":
 		else:
 			print(f"> column {name} already exists")
 
-	if 'has_ace' not in spec_df.columns:
-		spec_df.loc[:,'has_ace'] = ~spec_df["ace"].isna()
-	
-	if 'has_nce' not in spec_df.columns:
-		spec_df.loc[:,'has_nce'] = ~spec_df["nce"].isna()
+	print(f"> Adding ce_type column if missing...")
+	if 'ce_type' not in spec_df.columns:
+		print(f"> computing ce_type")
+		has_any_ce = spec_df[["ace","nce","ace_extra_1","nce_extra_1","ace_extra_2","nce_extra_2"]].notna().any(axis=1)
+		has_extra_1 = spec_df[["ace_extra_1","nce_extra_1"]].notna().any(axis=1)
+		has_extra_2 = spec_df[["ace_extra_2","nce_extra_2"]].notna().any(axis=1)
+		spec_df.loc[:, "ce_type"] = np.select(
+			[~has_any_ce, has_extra_2, has_extra_1],
+			["none", "stepped", "ramped"],
+			default="single"
+		)
+	else:
+		print(f"> ce_type already exists")
+
+	print(f"> Dropping deprecated has_ace/has_nce if present...")
+	for name in ['has_ace','has_nce']:
+		if name in spec_df.columns:
+			print(f"> dropping column {name}")
+			spec_df = spec_df.drop(columns=[name])
+		else:
+			print(f"> column {name} not present; nothing to drop")
   
 	print(f"> Updated spec_df shape: {spec_df.shape}")
 	print(f"> Updated columns: {list(spec_df.columns)}")
