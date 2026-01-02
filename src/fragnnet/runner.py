@@ -215,7 +215,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     return dl
 
 
-def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str):
+def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list):
     """
     Main entry point for initializing and running a training/validation/testing job.
     Args:
@@ -235,7 +235,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str):
     )
 
     # load config
-    config_d = load_config(template_fp, custom_fp)
+    config_d = load_config(template_fp, custom_fp, override)
 
     # set random seeds
     seed_everything(config_d["seed"], workers=True)
