@@ -78,6 +78,7 @@ frag_params:
     - base_formula
     - depth
     - h_formulae_idx
+    # - cmf_h_formulae_idx
     # - h_counts
     # - nb_iso_idx
   pyg_edge_feats:
