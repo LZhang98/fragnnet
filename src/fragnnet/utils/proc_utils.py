@@ -73,7 +73,7 @@ def filter_spec_mol(
 		print(">> frag mode in data:", spec_df["frag_mode"].unique())	
   
 	# ce filter
-	assert ces in ["ace", "nce", "any", None], ces
+	assert ces in ["ace", "nce", "nce_or_ace", None], ces
 	if ces == "ace":
 		print(">> require ace")
 		ace_mask = (~spec_df["ace"].isna())
@@ -84,19 +84,20 @@ def filter_spec_mol(
 		nce_mask = (~spec_df["nce"].isna())
 		print(f">> nce filter: {nce_mask.mean()}")
 		masks.append(nce_mask)
-	elif ces == "any":
+	elif ces == "nce_or_ace":
 		print(">> require ace or nce")
 		mask = (~spec_df["nce"].isna() | ~spec_df["ace"].isna())
 		print(f">> ace_or_nce filter: {mask.mean()}")
 		masks.append(mask)
 	else:
-		print(">> no ce filter")
+		print(f">> ces filter set to {ces},  no ce filter applied")
 
 	# ce_types
+	#print(ce_types)
 	ce_types = ce_types if ce_types is not None else []
 	if ce_types:
 		print(f">> ce_types filter: {ce_types}")
-		allowed = {"stepped", "ramped", "single", "none"}
+		allowed = {"stepped", "ramped", "single", 'none'}
 		unknown = set(ce_types) - allowed
 		if unknown:
 			raise ValueError(f"unknown ce_types requested: {sorted(unknown)}")

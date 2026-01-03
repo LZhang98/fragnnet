@@ -38,7 +38,7 @@ def make_splits(args):
 		spec_type = args.spec_type,
 		max_heavy_atom = args.max_heavy_atom,
 		max_bond = args.max_bond,
-		ce_types = args.allowed_ce_types
+		ce_types = args.ce_types
 	)
 	print(f"> Selected {f_spec_df.shape[0]}/{spec_df.shape[0]} spectra ({(f_spec_df.shape[0]/spec_df.shape[0]) * 100} % total spectrum)")
 	spec_df = f_spec_df
@@ -283,8 +283,9 @@ if __name__ == "__main__":
 	parser.add_argument("--max_prec_mz",type=float,default=1500.,help="Maximum precursor m/z allowed")
 	parser.add_argument("--min_prec_mz",type=float,default=0.,help="Minimum precursor m/z allowed")
 	parser.add_argument("--spec_type",type=str,default="MS2",help="Spectrum type to keep (e.g., MS2)")
-	parser.add_argument("--allowed_ce_types",type=str,nargs="+",default=["any","ramped","stepped"],help="Allowed collision energy type strings")
- 
+	parser.add_argument('--ces',type=str,choices=['nce', 'ace', 'nce_or_ace', None], default='nce_or_ace', required=False,help="Collision energy scale used (nce or ace)")
+	parser.add_argument('--ce_types',type=str,nargs="+", default=['ramped', 'stepped', 'single', 'none'], choices=['ramped', 'stepped', 'single', 'none'], required=False, help="allow ramped, stepped, or single collision energy spectra")
+
 	# mol filtering criteria
 	parser.add_argument("--max_heavy_atom",type=int,default=None,help="Maximum heavy atom count; use default filter")
 	parser.add_argument("--max_bond",type=int,default=None,help="Maximum bond count; None use default filter")
@@ -300,9 +301,7 @@ if __name__ == "__main__":
 	parser.add_argument("--inst_types",type=str,nargs="+",required=False,help="Allowed instrument types filter (optional)")
 	parser.add_argument("--frag_modes",type=str,nargs="+",required=False,help="Allowed fragmentation modes filter (optional)")
 	parser.add_argument("--ion_modes",type=str,nargs="+",required=False,help="Allowed ionization modes filter (optional)")
-	parser.add_argument('--ces',type=str,choices=['nce', 'ace', 'any', None],required=False,help="Collision energy scale used (nce or ace)")
-	parser.add_argument('--ce_types ',type=str,nargs="+", default=['ramped', 'stepped', 'single', 'none'], choices=['ramped', 'stepped', 'single', 'none'], required=False, help="allow ramped, stepped, or single collision energy spectra")
-
+	
 	# non-filtering args
 	parser.add_argument("--meta_rseed",type=int,default=42,help="Random seed for split reproducibility")
 	parser.add_argument("--total_frac",type=float,default=1.0,help="Fraction of available primary keys to use before splitting")
