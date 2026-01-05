@@ -112,12 +112,20 @@ def none_or_nan(thing):
 
 @contextmanager
 def np_temp_seed(seed):
-	state = np.random.get_state()
-	np.random.seed(seed)
+	"""Provide a local, non-global NumPy RNG for deterministic operations.
+
+	This context manager does NOT modify the global NumPy RNG state; instead
+	it yields a `numpy.random.Generator` instance seeded with `seed`. Callers
+	should use the yielded generator for random operations (e.g. ``rng.shuffle``
+	or ``rng.permutation``) to avoid global side-effects.
+	"""
+	# Use the modern NumPy Generator API to avoid touching global RNG state
+	rng = np.random.default_rng(seed)
 	try:
-		yield
+		yield rng
 	finally:
-		np.random.set_state(state)
+		# nothing to restore because we didn't touch global state
+		return
 
 @contextmanager
 def th_temp_seed(seed):
@@ -127,6 +135,22 @@ def th_temp_seed(seed):
 		yield
 	finally:
 		th.set_rng_state(state)
+
+
+@contextmanager
+def th_temp_generator(seed: int):
+	"""Yield a fresh `torch.Generator` seeded with `seed`.
+
+	This does not modify global torch RNG state; callers should pass the
+	yielded generator to functions that accept a `generator=` kwarg (e.g.,
+	``th.randperm``) for deterministic behaviour without global side-effects.
+	"""
+	gen = th.Generator()
+	gen.manual_seed(int(seed))
+	try:
+		yield gen
+	finally:
+		return
 
 def flatten_lol(lol):
 	return [item for sublist in lol for item in sublist]

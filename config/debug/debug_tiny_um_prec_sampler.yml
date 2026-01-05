@@ -77,8 +77,8 @@ train_sample_weight: none
 eval_sample_weight: none
 
 # optimization stuff
-train_batch_size: 1
-eval_batch_size: 1
+train_batch_size: 2
+eval_batch_size: 2
 accumulate_grad_batches: 4
 gradient_clip_val: 5.0
 lr: 0.0003033
@@ -108,6 +108,6 @@ cc_interstage_use_rest: True
 mol_pool_type: attention # mean_max_sum
 
 #extra loss weights
-dynamic_batch_sampler: True
-#formula_hard_negative_dynamic_sampler: True
-#formula_hard_negative_min_specs_per_formula: 2
+#dynamic_batch_sampler: True
+formula_hard_negative_dynamic_sampler: True
+formula_hard_negative_min_specs_per_formula: 2

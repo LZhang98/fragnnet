@@ -21,7 +21,7 @@ except ModuleNotFoundError:
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
 from fragnnet.model.loss import sparse_entropy_fn
 from fragnnet.utils.spec_utils import *
-from fragnnet.utils.misc_utils import safelog, flatten_lol, th_temp_seed, to_cpu, scatter_l1normalize
+from fragnnet.utils.misc_utils import safelog, flatten_lol, th_temp_seed, th_temp_generator, to_cpu, scatter_l1normalize
 from fragnnet.utils.plot_utils import plot_spectra_sparse
 
 class SpectrumPL(pl.LightningModule):
@@ -1245,8 +1245,9 @@ class SpectrumPL(pl.LightningModule):
 			sample_idxs = th.arange(num_log_images)
 			sample_unique_ids = unique_ids
 		else:
-			with th_temp_seed(420):
-				sample_idxs = th.randperm(unique_ids.shape[0])[:num_log_images]
+				# use a non-global torch Generator for deterministic selection
+				with th_temp_generator(420) as gen:
+					sample_idxs = th.randperm(unique_ids.shape[0], generator=gen)[:num_log_images]
 				sample_unique_ids = unique_ids[sample_idxs]
 		# plot images
 		for i in range(num_log_images):

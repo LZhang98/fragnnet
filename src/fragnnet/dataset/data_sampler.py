@@ -14,6 +14,7 @@ from torch.utils.data import Sampler, BatchSampler, WeightedRandomSampler
 from tqdm import tqdm
 
 import numpy as np
+import random
 import pandas as pd
 import torch as th
 from typing import Dict, List, Optional, Tuple, Iterator
@@ -365,6 +366,7 @@ class FormulaHardNegativeSampler(Sampler):
 		shuffle_groups: bool = True,
 		seed: int = 42,
 		min_specs_per_formula: int = 2,
+		generator: Optional[th.Generator] = None,
 	):
 		self.spec_df = spec_df.reset_index(drop=True)
 		# Preserve mol_df indexing and columns (do NOT drop mol_id)
@@ -374,7 +376,14 @@ class FormulaHardNegativeSampler(Sampler):
 		self.shuffle_groups = shuffle_groups
 		self.seed = seed
 		self.min_specs_per_formula = min_specs_per_formula
-		self.rng = np.random.RandomState(seed)
+		self.shuffle_groups = shuffle_groups
+		# Prefer torch Generator when provided for deterministic behavior
+		self.generator = generator
+		# Python-level RNG for deterministic fallback when `generator` is not provided
+		if self.generator is None:
+			self._py_random = random.Random(self.seed)
+		else:
+			self._py_random = None
 		
 		# Build formula -> [spec_ids] index
 		self._build_formula_index()
@@ -475,25 +484,44 @@ class FormulaHardNegativeSampler(Sampler):
 				# Sample hard negatives
 				if len(hard_negative_candidates) > 0:
 					num_to_sample = min(self.num_hard_negatives, len(hard_negative_candidates))
-					hard_negatives = list(
-						self.rng.choice(hard_negative_candidates, size=num_to_sample, replace=False)
-					)
+					if self.generator is not None:
+						perm = th.randperm(len(hard_negative_candidates), generator=self.generator)[:num_to_sample].tolist()
+						hard_negatives = [hard_negative_candidates[i] for i in perm]
+					else:
+						# use local Python RNG if available for deterministic fallback
+						if self._py_random is not None:
+							hard_negatives = self._py_random.sample(hard_negative_candidates, num_to_sample)
+						else:
+							hard_negatives = random.sample(hard_negative_candidates, num_to_sample)
 					
 					# Sample random negatives from entire dataset
 					all_other_indices = [
 						idx for idx in range(len(self.spec_df)) if idx != anchor_idx
 					]
 					num_random = min(self.num_random_negatives, len(all_other_indices))
-					random_negatives = list(
-						self.rng.choice(all_other_indices, size=num_random, replace=False)
-					)
+					if self.generator is not None:
+						perm = th.randperm(len(all_other_indices), generator=self.generator)[:num_random].tolist()
+						random_negatives = [all_other_indices[i] for i in perm]
+					else:
+						# use local Python RNG if available for deterministic fallback
+						if self._py_random is not None:
+							random_negatives = self._py_random.sample(all_other_indices, num_random)
+						else:
+							random_negatives = random.sample(all_other_indices, num_random)
 					
 					# Create triplet: [anchor, hard_neg_1, ..., random_neg_1, ...]
 					batch = [anchor_idx] + hard_negatives + random_negatives
 					self.triplet_batches.append(batch)
 		
 		if self.shuffle_groups:
-			self.rng.shuffle(self.triplet_batches)
+			if self.generator is not None:
+				idx = th.randperm(len(self.triplet_batches), generator=self.generator).tolist()
+				self.triplet_batches = [self.triplet_batches[i] for i in idx]
+			else:
+				if self._py_random is not None:
+					self._py_random.shuffle(self.triplet_batches)
+				else:
+					random.shuffle(self.triplet_batches)
 	
 	def _is_hard_negative(
 		self, candidate_idx: int, anchor_mol_id, anchor_inchikey: Optional[str]
@@ -542,6 +570,7 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 		data_source=None,
 		min_specs_per_formula: int = 2,
 		shuffle: bool = True,
+		seed: int = 42,
 		generator: Optional[th.Generator] = None,
 	):
 		self.data_source = data_source
@@ -551,6 +580,13 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 		self.min_specs_per_formula = min_specs_per_formula
 		self.shuffle = shuffle
 		self.generator = generator
+		self.seed = seed
+		# Use `generator` (torch.Generator) when provided for deterministic sampling.
+		# If None, fall back to a local Python `random.Random` instance.
+		if self.generator is None:
+			self._py_random = random.Random(self.seed)
+		else:
+			self._py_random = None
 		self._epoch = 0
 
 		# Build formula index
@@ -567,7 +603,8 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 		self._epoch = epoch
 		# If a generator is provided, reseed it for deterministic shuffling
 		if self.generator is not None:
-			self.generator.manual_seed(self.generator.initial_seed() + epoch)
+			base_seed = int(self.generator.initial_seed())
+			self.generator.manual_seed(base_seed + epoch)
 		self._create_formula_grouped_batches()
 	
 	def _build_formula_index(self):
@@ -628,8 +665,10 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 				idx = th.randperm(len(self.formula_batches), generator=self.generator)
 				self.formula_batches = [self.formula_batches[i] for i in idx.tolist()]
 			else:
-				import random
-				random.shuffle(self.formula_batches)
+				if self._py_random is not None:
+					self._py_random.shuffle(self.formula_batches)
+				else:
+					random.shuffle(self.formula_batches)
 	
 	def __iter__(self):
 		"""Yield formula-grouped batch indices."""
@@ -637,7 +676,14 @@ class FormulaHardNegativeGroupedSampler(Sampler):
 			# Optionally shuffle within each batch
 			batch = list(batch_indices)
 			if self.shuffle:
-				self.rng.shuffle(batch)
+				if self.generator is not None:
+					perm = th.randperm(len(batch), generator=self.generator).tolist()
+					batch = [batch[i] for i in perm]
+				else:
+					if self._py_random is not None:
+						self._py_random.shuffle(batch)
+					else:
+						random.shuffle(batch)
 			yield batch
 	
 	def __len__(self):

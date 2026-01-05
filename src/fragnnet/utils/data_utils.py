@@ -67,8 +67,10 @@ def randomize_smiles(smiles, rseed, isomeric=False, kekule=False):
 	m = Chem.MolFromSmiles(smiles)
 	assert not (m is None)
 	ans = list(range(m.GetNumAtoms()))
-	with np_temp_seed(rseed):
-		np.random.shuffle(ans)
+	# np_temp_seed now yields a local RNG (numpy.random.Generator)
+	with np_temp_seed(rseed) as rng:
+		# use the generator's in-place shuffle to avoid touching global state
+		rng.shuffle(ans)
 	nm = Chem.RenumberAtoms(m, ans)
 	smiles = Chem.MolToSmiles(
 		nm, canonical=False, isomericSmiles=isomeric, kekuleSmiles=kekule)
