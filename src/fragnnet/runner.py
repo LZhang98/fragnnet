@@ -167,6 +167,10 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
 	# Set up a generator for reproducible sampling (will be overwritten each epoch)
 	generator = th.Generator()
+
+	# Compute maximum effective batch size (accounts for gradient accumulation)
+	# used by dynamic batch samplers to decide return thresholds.
+	max_batch_size = config_d.get("train_batch_size", 1) * config_d.get("accumulate_grad_batches", 1)
 	if split == "train":
 		# Choose sampler for training
 		if config_d["group_sampler"]:
