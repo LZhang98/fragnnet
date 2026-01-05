@@ -33,6 +33,11 @@ spec_params:
     - "[M+H]+"
     - "[M-H]-"
     - "[M+Na]+"
+  inst_type: False
+  inst_types:
+    - "FT"
+    - "QTOF"
+    - 'IT'
 mol_params:
   preprocess: False #True
 nb_iso: False
