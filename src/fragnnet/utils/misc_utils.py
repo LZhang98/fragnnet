@@ -836,3 +836,34 @@ def get_core_count():
 	else:
 		num_core = multiprocessing.cpu_count()
 	return num_core
+
+
+def progress_wrapper(iterable, total=None, desc=None, disable_tqdm=False):
+	"""Wrapper that uses tqdm or logging based on disable_tqdm flag
+	
+	Args:
+		iterable: The iterable to wrap
+		total: Total number of items (optional)
+		desc: Description for progress display
+		disable_tqdm: If True, use logging instead of tqdm progress bars
+		
+	Yields:
+		Items from the iterable
+	"""
+	import logging
+	
+	if disable_tqdm:
+		# Use logging instead of tqdm
+		log_interval = max(1, total // 20) if total else 100  # Log ~20 times
+		for idx, item in enumerate(iterable):
+			if idx % log_interval == 0:
+				progress = f"{idx}/{total}" if total else f"{idx}"
+				logging.info(f"{desc}: {progress}")
+			yield item
+		if total:
+			logging.info(f"{desc}: {total}/{total} - Complete")
+	else:
+		# Use tqdm as normal
+		from tqdm import tqdm
+		for item in tqdm(iterable, total=total, desc=desc):
+			yield item

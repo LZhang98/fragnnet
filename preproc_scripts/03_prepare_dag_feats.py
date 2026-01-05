@@ -2,6 +2,7 @@ import argparse
 import os
 import json
 from pprint import pformat
+import logging
 
 import pandas as pd
 import numpy as np
@@ -9,7 +10,7 @@ from tqdm import tqdm
 
 import fragnnet.utils.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 def print_and_log(name,series,wandb_flag,stats_d):
@@ -58,6 +59,12 @@ def create_hdf5_file(hdf5_fp:str,num_features:int,batch_size:int):
 def main(args):
 
 	assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
+ 
+	# Setup logging
+	logging.basicConfig(
+		level=logging.INFO,
+		format='%(asctime)s - %(levelname)s - %(message)s'
+	)
  
 	elements = args.elements
 	dsets = args.dsets
@@ -171,7 +178,7 @@ def main(args):
 	
 	print("> Compute Fragments")
 	mol_input_rows = []
-	for _, row in tqdm(mol_df.iterrows(), total=mol_df.shape[0], desc= "prepare inputs"):
+	for _, row in progress_wrapper(mol_df.iterrows(), total=mol_df.shape[0], desc="prepare inputs", disable_tqdm=args.disable_tqdm):
 		mol_input_rows.append(
 			[
 				row['mol'],
@@ -192,7 +199,7 @@ def main(args):
 	print("> Running frag gen")
 	frag_results_gen = data_utils.par_apply(iter(mol_input_rows),frag_utils.timed_get_dags,True, return_as_generator=True)
 	frag_results = []
-	for fr in tqdm(frag_results_gen, total = len(mol_input_rows), desc = "Compute Frags"):
+	for fr in progress_wrapper(frag_results_gen, total=len(mol_input_rows), desc="Compute Frags", disable_tqdm=args.disable_tqdm):
 		frag_results.append(fr)
 
 	print("> Fragments Computed")
@@ -286,7 +293,7 @@ def main(args):
 
 		spectra_input_rows = []
 		tolerances = args.tolerances
-		for _, row in tqdm(peak_spec_df.iterrows(), total=peak_spec_df.shape[0], desc= "prepare spectra stats inputs"):
+		for _, row in progress_wrapper(peak_spec_df.iterrows(), total=peak_spec_df.shape[0], desc="prepare spectra stats inputs", disable_tqdm=args.disable_tqdm):
 			spectra_input_rows.append(
 				[
 					row["peaks"], 
@@ -300,9 +307,13 @@ def main(args):
 				]
 			)
 
-		tqdm_iter = tqdm(spectra_input_rows,desc=pformat(compute_spectra_stats),total=len(spectra_input_rows))
+		if args.disable_tqdm:
+			stats_iter = spectra_input_rows
+			logging.info(f"Computing spectra stats for {len(spectra_input_rows)} inputs")
+		else:
+			stats_iter = tqdm(spectra_input_rows, desc=pformat(compute_spectra_stats), total=len(spectra_input_rows))
 		# run stats
-		stats_results = data_utils.par_apply(tqdm_iter,compute_spectra_stats,True)
+		stats_results = data_utils.par_apply(stats_iter, compute_spectra_stats, True)
 		# Loky and joblib should keep ordering
 		stats_results_df = pd.concat(stats_results, axis=0, ignore_index=True)
 		metric_keys = list(stats_results_df.columns)
@@ -369,12 +380,14 @@ if __name__ == "__main__":
 	parser.add_argument("--spec_type",type=str,default="MS2",help="Spectrum type to keep (e.g., MS2)")
 	parser.add_argument("--use_cached_dag",type=booltype,default=False,help="Whether to reuse cached DAG files if available")
 	parser.add_argument("--save_as_hdf5",type=booltype,default=False,help="Whether to save outputs in HDF5 format (currently unused)")
+	parser.add_argument("--disable_tqdm",type=booltype,default=False,help="Disable tqdm progress bars and use logging instead")
 	args = parser.parse_args()
  
 	# Check if --flag is True and --conditional-arg is missing
 	if args.wandb_mode != 'disabled' and args.wandb_run_name:
 		parser.error("--wandb_run_name is required when --wandb_mode is not disabled")
 
-	tqdm.pandas()
+	if not args.disable_tqdm:
+		tqdm.pandas()
 
 	main(args)
