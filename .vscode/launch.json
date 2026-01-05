@@ -100,6 +100,15 @@
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
       "args": ["-w","disabled","-c","config/debug/debug_nps_ft.yml"]
+    },
+    {
+      "name": "scripts/debug_spectravese_ramped",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_spectravese_ramped.yml"]
     }
+    
   ]
 }
