@@ -18,6 +18,9 @@ import torch_geometric as pyg
 from collections import Counter
 from hashlib import blake2b
 
+# Fragment index dtype (change here to update everywhere)
+FRAG_INDEX_DTYPE = np.uint16
+
 import fragnnet.frag.compute_frags as compute_frags
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from fragnnet.utils.misc_utils import PPM
@@ -82,7 +85,8 @@ NODE_FEAT_TO_IDX = {
 	"base_formula":2,
 	"h_formulae_idx":3,
 	"h_counts":4,
-	"nb_iso_idx":5
+	"nb_iso_idx":5,
+	"cmf_h_formulae_idx":6,
 }
 
 EDGE_FEAT_TO_IDX = {
@@ -378,72 +382,88 @@ def compute_cc_h_floor(cc_atom_ids: np.ndarray,ve_arr: np.ndarray, sbond_arr: np
 	cc_floor = max(cc_floor,0) # why can cc_floor be negative?
 	return cc_floor
 
-def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
-				,max_h_transfer:int
-				,formula_strs:bool=False
-				,bitmask:bool=True
-				,base_formula = None) ->dict[int,str]|dict[int,int]:
-	"""given a connected component, comupute all formula within give h shift
+def compute_approximate_formula(
+	cc: list | np.ndarray,
+	mol_d: dict,
+	max_h_transfer: int,
+	formula_strs: bool = False,
+	bitmask: bool = True,
+	base_formula=None
+) -> dict[int, str] | dict[int, int]:
+	"""
+	Given a connected component (fragment) of a molecule, compute all possible formulas
+	within a specified hydrogen transfer range (delta H), and return either formula strings
+	or hydrogen counts for each possible transfer.
 
 	Args:
-		cc (list|np.ndarray): connected component
-		mol_d (dict): mol dictionary
-		max_h_transfer (int): max number of h movement allowed
-		formula_strs (bool, optional): Defaults to False.
+		cc (list | np.ndarray): Connected component, either as a bitmask or atom indices.
+		mol_d (dict): Molecule dictionary containing atom/bond info and arrays.
+		max_h_transfer (int): Maximum allowed hydrogen transfer (delta H) for enumeration.
+		formula_strs (bool, optional): If True, return formula strings; if False, return arrays/counts. Defaults to False.
+		bitmask (bool, optional): If True, interpret cc as bitmask; if False, as atom indices. Defaults to True.
+		base_formula (optional): Precomputed base formula array for the fragment. If None, computed internally.
 
 	Returns:
-		dict[int,str]|dict[int,np.ndarray]: 
-  		1.Delta_H to Formula String Dict
-		2.Delta_H to Forumla H Count Dict
+		tuple:
+			- delta_h_to_formula (dict[int, str] | dict[int, np.ndarray]):
+				Maps delta H (hydrogen transfer) to formula string or array for each possible configuration.
+			- delta_h_to_h_count (dict[int, int]):
+				Maps delta H to the corresponding hydrogen count, or -1 for invalid configurations.
 	"""
 
-	bonds = mol_d["bonds"] # bond definition, atom id-atom id, never mutated
-	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
+	# Extract molecule arrays and info
+	bonds = mol_d["bonds"]  # Bond definitions (atom id pairs)
+	atoms_to_bonds = mol_d["atoms_to_bonds"]  # Atom to bond mapping
 	ve_arr = np.copy(mol_d["ve_arr"])
 	sbond_arr = np.copy(mol_d["sbond_arr"])
-	num_hs = mol_d["num_hs"]
-	hs_arr = mol_d["hs_arr"]
-	elem_idxs = mol_d["elem_idxs"]
+	num_hs = mol_d["num_hs"]  # Total number of hydrogens in molecule
+	hs_arr = mol_d["hs_arr"]  # Hydrogens per atom
+	elem_idxs = mol_d["elem_idxs"]  # Element indices per atom
 	bond_mask_arr = mol_d["bond_mask_arr"]
-	
-	if base_formula is None and bitmask:
-		base_formula = cc_bitmask_to_formula_arr(cc,elem_idxs)
-	elif base_formula is None and not bitmask:
-		base_formula = cc_to_formula_arr(cc,elem_idxs, bitmask = False)
 
+	# Compute base formula for fragment if not provided
+	if base_formula is None and bitmask:
+		base_formula = cc_bitmask_to_formula_arr(cc, elem_idxs)
+	elif base_formula is None and not bitmask:
+		base_formula = cc_to_formula_arr(cc, elem_idxs, bitmask=False)
+
+	# Get atom indices for fragment
 	atom_ids = cc_bit_mask_to_atom_idx(cc) if bitmask else cc
 
-	sbond_arr, bond_mask_arr = compute_frags.update_bonds(atom_ids,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
-	cap = compute_cc_h_cap(atom_ids,ve_arr,sbond_arr,0)
-	floor = compute_frags.compute_cc_h_floor(atom_ids,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
+	# Update single bond and bond mask arrays for fragment
+	sbond_arr, bond_mask_arr = compute_frags.update_bonds(atom_ids, sbond_arr, bond_mask_arr, bonds, atoms_to_bonds)
+	# Compute hydrogen cap and floor for fragment
+	cap = compute_cc_h_cap(atom_ids, ve_arr, sbond_arr, 0)
+	floor = compute_frags.compute_cc_h_floor(atom_ids, ve_arr, sbond_arr, 0, bonds, atoms_to_bonds, bond_mask_arr)
 
-	# check floor and cap
-	assert floor <= cap, (floor,cap,atom_ids)
+	# Defensive checks on hydrogen bounds
+	assert floor <= cap, (floor, cap, atom_ids)
 	assert floor >= 0, floor
 
-	# check how many Hs each atom have on the mol
-	num_hs_prior = 0
-	for atom in atom_ids:
-		num_hs_prior += hs_arr[atom]
+	# Count hydrogens present in fragment before transfer
+	num_hs_prior = sum(hs_arr[atom] for atom in atom_ids)
 
-	# update min and max
-	floor = max(floor,num_hs_prior-max_h_transfer)
-	cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
+	# Restrict hydrogen range to allowed transfer window
+	floor = max(floor, num_hs_prior - max_h_transfer)
+	cap = min(cap, num_hs_prior + max_h_transfer, num_hs)
 
-	delta_h_to_formula, delta_h_to_h_count = {}, {}
+	delta_h_to_formula = {}  # Maps delta H to formula string/array
+	delta_h_to_h_count = {}  # Maps delta H to hydrogen count (or -1 if invalid)
 
+	# Prepare formula string templates if requested
 	if formula_strs:
 		formula_template, formual_no_h = formula_arr_to_str(base_formula, get_h_template=True)
 
-	for delta_h in range(-max_h_transfer,max_h_transfer+1):
-		h = num_hs_prior + delta_h
-		# delta_h_to_h_count[delta_h] = h
+	# Enumerate all possible hydrogen transfers
+	for delta_h in range(-max_h_transfer, max_h_transfer + 1):
+		h = num_hs_prior + delta_h  # Proposed hydrogen count for fragment
 		if h < floor or h > cap:
-			# special invalid formula
+			# Invalid configuration: assign zero formula and -1 count
 			formula = np.zeros_like(base_formula)
 			formula_str = ""
 			delta_h_to_h_count[delta_h] = -1
 		else:
+			# Valid configuration: update formula with new hydrogen count
 			formula = np.copy(base_formula)
 			formula[ELEMENT_TO_IDX["H"]] = h
 			formula = tuple(formula)
@@ -452,26 +472,39 @@ def compute_approximate_formula(cc:list|np.ndarray,mol_d:dict
 			else:
 				formula_str = formula_template.format(h)
 			delta_h_to_h_count[delta_h] = h
+		# Store formula string if requested, else array/tuple
 		if formula_strs:
 			formula = formula_str
 		delta_h_to_formula[delta_h] = formula
 	return delta_h_to_formula, delta_h_to_h_count
 
-def update_bonds(cc_atom_ids:np.ndarray,sbond_arr:np.ndarray,bond_mask_arr:np.ndarray,bonds:np.ndarray,atoms_to_bonds:dict):
-	"""_summary_
+def update_bonds(
+	cc_atom_ids: np.ndarray,
+	sbond_arr: np.ndarray,
+	bond_mask_arr: np.ndarray,
+	bonds: np.ndarray,
+	atoms_to_bonds: dict
+) -> tuple[np.ndarray, np.ndarray]:
+	"""
+	Update the single bond array and bond mask array for a given fragment (connected component).
+	Only bonds where both atoms are in the fragment are considered.
 
 	Args:
-		frag (np.ndarray): _description_
-		sbond_arr (np.ndarray): _description_
-		bond_mask_arr (np.ndarray): _description_
-		bonds (np.ndarray): _description_
-		atoms_to_bonds (dict): _description_
+		cc_atom_ids (np.ndarray): Atom indices in the fragment.
+		sbond_arr (np.ndarray): Array of single bond counts per atom (will be overwritten).
+		bond_mask_arr (np.ndarray): Boolean mask for bonds (will be overwritten).
+		bonds (np.ndarray): Array of bond pairs (atom indices).
+		atoms_to_bonds (dict): Mapping from atom index to list of bond indices.
 
 	Returns:
-		_type_: _description_
+		tuple:
+			- sbond_arr (np.ndarray): Updated single bond counts for fragment atoms.
+			- bond_mask_arr (np.ndarray): Updated mask indicating which bonds are within the fragment.
 	"""
-	sbond_arr = np.zeros_like(sbond_arr,dtype=sbond_arr.dtype)
-	bond_mask_arr = np.zeros_like(bond_mask_arr,dtype=bool)
+	# Reset arrays for fragment
+	sbond_arr = np.zeros_like(sbond_arr, dtype=sbond_arr.dtype)
+	bond_mask_arr = np.zeros_like(bond_mask_arr, dtype=bool)
+	# For each atom, count bonds to other atoms in fragment
 	for atom in cc_atom_ids:
 		for bond_idx in atoms_to_bonds[atom]:
 			bond = bonds[bond_idx]
@@ -480,45 +513,64 @@ def update_bonds(cc_atom_ids:np.ndarray,sbond_arr:np.ndarray,bond_mask_arr:np.nd
 				bond_mask_arr[bond_idx] = True
 	return sbond_arr, bond_mask_arr
 
-def compute_approximate_cchs(ccs,mol_d,h_prior=False,max_h_transfer=MAX_H_TRANSFER):
+def compute_approximate_cchs(
+	ccs,
+	mol_d,
+	h_prior=False,
+	max_h_transfer=MAX_H_TRANSFER
+):
+	"""
+	Enumerate all valid (fragment, hydrogen count) pairs for a set of fragments (connected components).
+	For each fragment, compute the allowed hydrogen count range and return all valid combinations.
 
-	bonds = mol_d["bonds"] # never mutated
-	atoms_to_bonds = mol_d["atoms_to_bonds"] # never mutated
+	Args:
+		ccs (iterable): List or set of fragments (bitmask or atom indices).
+		mol_d (dict): Molecule dictionary with atom/bond info and arrays.
+		h_prior (bool, optional): If True, restrict hydrogen range based on prior hydrogens. Defaults to False.
+		max_h_transfer (int, optional): Maximum allowed hydrogen transfer. Defaults to MAX_H_TRANSFER.
+
+	Returns:
+		set: Set of (fragment, hydrogen count) tuples for all valid configurations.
+	"""
+	bonds = mol_d["bonds"]  # Bond definitions
+	atoms_to_bonds = mol_d["atoms_to_bonds"]
 	ve_arr = np.copy(mol_d["ve_arr"])
 	sbond_arr = np.copy(mol_d["sbond_arr"])
 	num_hs = mol_d["num_hs"]
 	hs_arr = mol_d["hs_arr"]
-	mol_d["elems"]
 	bond_mask_arr = mol_d["bond_mask_arr"]
 	all_cchs = set()
+	# For each fragment, enumerate valid hydrogen counts
 	for cc in list(set(ccs)):
-		sbond_arr, bond_mask_arr = compute_frags.update_bonds(cc,sbond_arr,bond_mask_arr,bonds,atoms_to_bonds)
+		sbond_arr, bond_mask_arr = compute_frags.update_bonds(cc, sbond_arr, bond_mask_arr, bonds, atoms_to_bonds)
 		cc_atom_ids = cc_bit_mask_to_atom_idx(cc)
-		cap = compute_cc_h_cap(cc_atom_ids,ve_arr,sbond_arr,0)
-		floor = compute_frags.compute_cc_h_floor(cc_atom_ids,ve_arr,sbond_arr,0,bonds,atoms_to_bonds,bond_mask_arr)
-		assert floor <= cap, (floor,cap,cc)
+		cap = compute_cc_h_cap(cc_atom_ids, ve_arr, sbond_arr, 0)
+		floor = compute_frags.compute_cc_h_floor(cc_atom_ids, ve_arr, sbond_arr, 0, bonds, atoms_to_bonds, bond_mask_arr)
+		assert floor <= cap, (floor, cap, cc)
 		assert floor >= 0, floor
 		if h_prior:
-			num_hs_prior = 0
-			for atom in cc:
-				num_hs_prior += hs_arr[atom]
-			floor = max(floor,num_hs_prior-max_h_transfer)
-			cap = min(cap,num_hs_prior+max_h_transfer,num_hs)
-			# cap = max(cap,floor)
+			num_hs_prior = sum(hs_arr[atom] for atom in cc)
+			floor = max(floor, num_hs_prior - max_h_transfer)
+			cap = min(cap, num_hs_prior + max_h_transfer, num_hs)
 		else:
-			cap = min(cap,num_hs)
-		# cc_cchs = []
-		for h in range(floor,cap+1):
-			# cc_cchs.append((cc,h))
-			all_cchs.add((cc,h))
-		# cchs.append(cc_cchs)
-		# assert floor <= cap, (floor,cap,cc)
-		# assert floor >= 0, floor
+			cap = min(cap, num_hs)
+		for h in range(floor, cap + 1):
+			all_cchs.add((cc, h))
 	return all_cchs
 
-def cc_to_formula_arr(cc,elems,bitmask=False):
-	# does not include h count
-	formula_arr = np.zeros([len(ELEMENT_TO_IDX)],dtype=int)
+def cc_to_formula_arr(cc, elems, bitmask=False):
+	"""
+	Convert a fragment (connected component) to a formula array (element counts, excluding hydrogens).
+
+	Args:
+		cc (list | np.ndarray): Fragment as bitmask or atom indices.
+		elems (list): List of element symbols for each atom in molecule.
+		bitmask (bool, optional): If True, interpret cc as bitmask; else as atom indices. Defaults to False.
+
+	Returns:
+		np.ndarray: Array of element counts (excluding hydrogens).
+	"""
+	formula_arr = np.zeros([len(ELEMENT_TO_IDX)], dtype=int)
 	if bitmask:
 		for i in range(len(cc)):
 			if cc[i]:
@@ -528,40 +580,47 @@ def cc_to_formula_arr(cc,elems,bitmask=False):
 		for atom in cc:
 			elem = elems[atom]
 			formula_arr[ELEMENT_TO_IDX[elem]] += 1
-	#print(">cc_to_formula_arr", formula_arr)
 	return formula_arr
 
 
-def cc_bitmask_to_formula_arr(cc,elem_idxs) -> np.ndarray:
-	""" fast cc bit mask to formula arr
+def cc_bitmask_to_formula_arr(cc, elem_idxs) -> np.ndarray:
+	"""
+	Fast conversion of a fragment bitmask to a formula array (element counts, excluding hydrogens).
+	Uses element indices for efficient counting.
 
 	Args:
-		cc (_type_): _description_
-		elem_idxs (_type_): _description_
+		cc (list | np.ndarray): Fragment bitmask (0/1 per atom).
+		elem_idxs (list | np.ndarray): Element indices for each atom in molecule.
 
 	Returns:
-		np.ndarray: _description_
+		np.ndarray: Array of element counts (excluding hydrogens).
 	"""
-	# does not include h count
-	formula_arr = np.zeros([len(ELEMENT_TO_IDX)],dtype=MASK_DTYPE)
-	elem_idxs_np = np.array(elem_idxs) + 1
-	#print(cc, elem_idxs_np)
+	formula_arr = np.zeros([len(ELEMENT_TO_IDX)], dtype=MASK_DTYPE)
+	elem_idxs_np = np.array(elem_idxs) + 1  # Offset by 1 for masking
 	elem_idx_np = np.multiply(cc, elem_idxs_np)
 	unique, counts = np.unique(elem_idx_np, return_counts=True)
 	for elem_idx, count in zip(unique, counts):
-		#print(unique, counts)
 		if elem_idx == 0:
 			continue
 		else:
-			formula_arr[elem_idx-1] = count
-	#print(">cc_bitmask_to_formula_arr", formula_arr)
+			formula_arr[elem_idx - 1] = count
 	return formula_arr
 
-def formula_arr_to_str(formula_arr, get_h_template = False):
-	""" use canonical order """
-  
-	elem_d = {}
+def formula_arr_to_str(formula_arr, get_h_template=False):
+	"""
+	Convert a formula array (element counts) to a string in canonical element order.
+	Optionally returns a template for hydrogen count substitution.
 
+	Args:
+		formula_arr (np.ndarray): Array of element counts (including hydrogen).
+		get_h_template (bool, optional): If True, return template string for hydrogen count. Defaults to False.
+
+	Returns:
+		str or tuple:
+			- If get_h_template is False: formula string (e.g., 'C6H12O6').
+			- If get_h_template is True: (template string with 'H{:d}', string without hydrogen).
+	"""
+	elem_d = {}
 	for idx, count in enumerate(formula_arr):
 		elem = IDX_TO_ELEMENT[idx]
 		elem_d[elem] = count
@@ -709,28 +768,6 @@ def th_mask_to_long(mask):
 	long = 2**th.arange(64-1,-1,-1,device=mask.device).expand(1,num_dims,64)
 	return th.sum(long*mask,dim=2).long()
 
-def get_base_formula_node_feat_size() -> int:
-	""" get base_formula size
-	Returns:
-		int: size of base_formula array, each bin is a count of the number of atoms for respective element
-	"""
-	return len(ELEMENT_TO_IDX)
-
-def get_formula_node_feat_size(max_h_transfer) -> int:
-	""" get formula_node_feat_size
-		at max we can have 1 + 2 * max_h_transfer different formula
-	Returns:
-		int: size of formula_node_feat_size given max h transfer count
-	"""
-	# h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
-	return 1+2*max_h_transfer 
-
-def get_cc_node_feat_size() -> int:
-	"""_summary_
-	Returns:
-		_type_: _description_
-	"""
-	return MASK_SIZE//64 # mask
 
 def compute_dags(
 		mol_d:dict,
@@ -810,18 +847,26 @@ def compute_dags(
 
 	# add node depth information
 	# convert to a one hot encoding
+	# node feature size
 	depth_node_feat_size = max_depth+1 #depth
 	cc_node_feat_size = MASK_SIZE//64 # mask
 	base_formula_node_feat_size = len(ELEMENT_TO_IDX) # base_formula
 	formula_node_feat_size = 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
 	h_count_node_feat_size = formula_node_feat_size
 	nb_iso_node_feat_size = 1 if nb_isomorphic else 0
+	cmf_formula_node_feat_size = formula_node_feat_size #1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
+	# edge feature sizes
 	cc_edge_feat_size = cc_node_feat_size
 	base_formula_edge_feat_size = base_formula_node_feat_size
 	h_range_edge_feat_size = 2
-	node_feat_shapes = [depth_node_feat_size,cc_node_feat_size,base_formula_node_feat_size,formula_node_feat_size,h_count_node_feat_size,nb_iso_node_feat_size]
+	node_feat_shapes = [depth_node_feat_size, 
+					 cc_node_feat_size,
+					 base_formula_node_feat_size,
+					 formula_node_feat_size,                     
+					 h_count_node_feat_size,
+					 nb_iso_node_feat_size,
+					 cmf_formula_node_feat_size]
 	edge_feat_shapes = [cc_edge_feat_size,base_formula_edge_feat_size,h_range_edge_feat_size]
-	# total_node_feat_size = sum(node_feat_shapes)
 
 	# add node h count and element information
 	hs_arr = mol_d["hs_arr"]
@@ -855,7 +900,10 @@ def compute_dags(
 
 	formula_idx_list, h_count_list = [], []
 	for formulae_dict, h_count_dict in zip(formula_d_list,h_count_d_list):
-		formulae_idxs = np.zeros(formula_node_feat_size, dtype=np.int16)
+		# idxs have value range 0 - uint16 max
+		formulae_idxs = np.zeros(formula_node_feat_size, dtype=FRAG_INDEX_DTYPE)
+		# h_counts have value range -1 - int16 max, we use int16 here, -1 is for invalid
+		# we are not expecting h_counts to be that high anyway
 		h_counts = np.zeros(h_count_node_feat_size, dtype=np.int16)
 		for h_delta in formulae_dict:
 			formula = formulae_dict[h_delta]
@@ -863,22 +911,45 @@ def compute_dags(
 			formula_idx = formula_to_idx[formula]
 			# h_delta [0,-1,1,-2,2,-3,3,-4,4]
 			h_delta_idx = h_delta * 2 if h_delta >= 0 else (-h_delta * 2) - 1
+			# sanity checks: indices/counts must be non-negative and fit uint16
+			if h_delta_idx < 0 or h_delta_idx >= formula_node_feat_size:
+				raise ValueError(f"h_delta_idx out of bounds: {h_delta_idx}, size={formula_node_feat_size}")
+			if formula_idx < 0 or formula_idx > np.iinfo(FRAG_INDEX_DTYPE).max:
+				raise ValueError(f"formula_idx out of {FRAG_INDEX_DTYPE} range: {formula_idx}")
 			formulae_idxs[h_delta_idx] = formula_idx
 			h_counts[h_delta_idx] = h_count
 			formula_idx_by_h_delta[h_delta_idx].add(formula_idx)
 		formula_idx_list.append(formulae_idxs)
 		h_count_list.append(h_counts)
 
-	node_formulae_matrix = np.stack(formula_idx_list, dtype=np.int16)
+	# before stacking, ensure no negative or out-of-range values exist
+	max_frag_index = np.iinfo(FRAG_INDEX_DTYPE).max
+	for arr in formula_idx_list:
+		if np.any(np.asarray(arr) < 0):
+			raise ValueError("Negative value found in formula index list before stacking")
+		if np.any(np.asarray(arr) > max_frag_index):
+			raise ValueError(f"Value exceeds {FRAG_INDEX_DTYPE} max in formula index list before stacking")
+	
+ 	#for arr in h_count_list:
+	#	if np.any(np.asarray(arr) < 0):
+	#		raise ValueError("Negative value found in h_count list before stacking")
+	#	if np.any(np.asarray(arr) > max_uint16):
+	#		raise ValueError("Value exceeds uint16 max in h_count list before stacking")
+
+	node_formulae_matrix = np.stack(formula_idx_list, dtype=FRAG_INDEX_DTYPE)
 	node_h_count_matrix = np.stack(h_count_list, dtype=np.int16)
 
 	# map nodes to nb_isomorphism indices
-	if nb_isomorphic:
+	if nb_isomorphic and node_nb_hashes is not None:
 		nb_iso_map = {hash:idx for idx,hash in enumerate(sorted(list(set(node_nb_hashes))))}
-		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=np.int16).reshape(-1,1)
+		node_nb_iso_idx = np.array([nb_iso_map[hash] for hash in node_nb_hashes],dtype=FRAG_INDEX_DTYPE).reshape(-1,1)
+		# validate nb iso indices
+		if node_nb_iso_idx.size > 0:
+			if np.any(node_nb_iso_idx < 0) or np.any(node_nb_iso_idx > np.iinfo(FRAG_INDEX_DTYPE).max):
+				raise ValueError(f"node_nb_iso_idx contains invalid values outside {FRAG_INDEX_DTYPE} range")
 		dag_num_nodes_nb = len(set(node_nb_hashes))
 	else:
-		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=np.int16)
+		node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0],0),dtype=FRAG_INDEX_DTYPE)
 		dag_num_nodes_nb = -1
 
 	assert nodes_mask_matrix.shape[1] <= MASK_SIZE
@@ -893,7 +964,9 @@ def compute_dags(
 			th.as_tensor(node_base_formula_matrix,dtype=NODE_FEAT_DTYPE), 
 			th.as_tensor(node_formulae_matrix,dtype=NODE_FEAT_DTYPE),
 			th.as_tensor(node_h_count_matrix,dtype=NODE_FEAT_DTYPE),
-			th.as_tensor(node_nb_iso_idx,dtype=NODE_FEAT_DTYPE)
+			th.as_tensor(node_nb_iso_idx,dtype=NODE_FEAT_DTYPE),
+			# cmf features bit, not set here, this should set in dataloader, use 0 for NULL forumla
+			th.zeros((node_cc_mask.shape[0], cmf_formula_node_feat_size), dtype=NODE_FEAT_DTYPE) 
 		], dim=1
 	)
 

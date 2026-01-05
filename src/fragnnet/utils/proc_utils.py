@@ -29,8 +29,10 @@ def filter_spec_mol(
 		frag_modes:list|None  = None,
 		ion_modes:list|None  = None,
 		ces:str|None = None,
-  		spec_type:str|None  = None):
-	
+  		spec_type:str|None  = None,
+		max_heavy_atom:int|None = None,
+		max_bond:int|None = None,
+		ce_types:list|None = None):
 	"""
 	The purpose of this filtering is to prevent errors
 	"""
@@ -71,7 +73,7 @@ def filter_spec_mol(
 		print(">> frag mode in data:", spec_df["frag_mode"].unique())	
   
 	# ce filter
-	assert ces in ["ace", "nce", "any", None], ces
+	assert ces in ["ace", "nce", "nce_or_ace", None], ces
 	if ces == "ace":
 		print(">> require ace")
 		ace_mask = (~spec_df["ace"].isna())
@@ -82,12 +84,29 @@ def filter_spec_mol(
 		nce_mask = (~spec_df["nce"].isna())
 		print(f">> nce filter: {nce_mask.mean()}")
 		masks.append(nce_mask)
-	elif ces == "any":
+	elif ces == "nce_or_ace":
 		print(">> require ace or nce")
 		mask = (~spec_df["nce"].isna() | ~spec_df["ace"].isna())
 		print(f">> ace_or_nce filter: {mask.mean()}")
 		masks.append(mask)
-		
+	else:
+		print(f">> ces filter set to {ces},  no ce filter applied")
+
+	# ce_types
+	#print(ce_types)
+	ce_types = ce_types if ce_types is not None else []
+	if ce_types:
+		print(f">> ce_types filter: {ce_types}")
+		allowed = {"stepped", "ramped", "single", 'none'}
+		unknown = set(ce_types) - allowed
+		if unknown:
+			raise ValueError(f"unknown ce_types requested: {sorted(unknown)}")
+		ce_mask = spec_df["ce_type"].isin(ce_types)
+		print(f">> ce_type filter mean: {ce_mask.mean()}")
+		masks.append(ce_mask)
+	else:
+		print(">> no ce_type filter")
+  
 	# ion mode
 	if ion_modes is not None:
 		print(f">> ion mode filter: {ion_modes}")
@@ -172,17 +191,21 @@ def filter_spec_mol(
 		masks.append(element_mask)
   
 	# atom count
-	print(f">> max num nodes: {MAX_NUM_NODES}")
-	print(f">> max num edges: {MAX_NUM_EDGES}")
-	atom_count_ids = mol_df[mol_df["num_atoms"]<=MAX_NUM_NODES]["mol_id"]
+	max_heavy_atom = max_heavy_atom if max_heavy_atom is not None else MAX_NUM_NODES
+	print(f">> max atoms allowed: {max_heavy_atom}")
+	atom_count_ids = mol_df[mol_df["num_atoms"]<=max_heavy_atom]["mol_id"]
 	atom_count_mask = spec_df["mol_id"].isin(atom_count_ids)
 	print(f">> atom count: {atom_count_mask.mean()}")
 	masks.append(atom_count_mask)
+
+	max_bond = max_bond if max_bond is not None else MAX_NUM_EDGES
+	print(f">> max bonds allowed: {max_bond}")
 	# bond count
-	bond_count_ids = mol_df[mol_df["num_bonds"]<=MAX_NUM_EDGES]["mol_id"]
+	bond_count_ids = mol_df[mol_df["num_bonds"]<=max_bond]["mol_id"]
 	bond_count_mask = spec_df["mol_id"].isin(bond_count_ids)
 	print(f">> bond count: {bond_count_mask.mean()}")
 	masks.append(bond_count_mask)
+
 	# radical stats
 	non_radical_ids = mol_df[mol_df["num_radicals"]==0]["mol_id"]
 	non_radical_mask = spec_df["mol_id"].isin(non_radical_ids)

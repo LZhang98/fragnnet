@@ -6,7 +6,7 @@ on various metrics including cosine similarity and Hungarian algorithm matching.
 The script saves predictions along with evaluation scores for analysis.
 
 Usage:
-    python run_save_inference_eval.py --wandb_run_id <run_id> --eval_split test
+	python run_save_inference_eval.py --wandb_run_id <run_id> --eval_split test
 """
 from fragnnet.runner import load_config, init_dataloader
 from fragnnet.utils.script_utils import (
@@ -15,8 +15,8 @@ from fragnnet.utils.script_utils import (
 	apply_inference_config,
 	init_model_from_ckpt,
 	run_inference_tabular,
- 	prepare_output_subset,
- 	get_score_types,
+	prepare_output_subset,
+	get_score_types,
 	list_output_subset_options,
 	get_required_config_indices,
 )
@@ -28,10 +28,11 @@ import sys
 
 
 def get_args():
-    
-    # Set up command line argument parser
-	parser = argparse.ArgumentParser(description="Run FragGNN inference evaluation with metrics")
-	
+
+	# Set up command line argument parser
+	parser = argparse.ArgumentParser(
+		description="Run FragGNN inference evaluation with metrics")
+
 	# Configuration file arguments
 	parser.add_argument(
 		"--template_fp",
@@ -45,7 +46,7 @@ def get_args():
 		default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc.yml",
 		help="Path to custom config file"
 	)
-	
+
 	# Model loading arguments
 	parser.add_argument(
 		"--wandb_run_id",
@@ -67,15 +68,15 @@ def get_args():
 	)
 	# Evaluation and output arguments
 	parser.add_argument(
-		"--eval_split", 
-		type=str, 
-		default="test", 
-		choices=["train","val","test","secondary"],
+		"--eval_split",
+		type=str,
+		default="test",
+		choices=["train", "val", "test", "secondary"],
 		help="Dataset split to evaluate on"
 	)
 	parser.add_argument(
-		"--save_dp", 
-		type=str, 
+		"--save_dp",
+		type=str,
 		default="output/inference_eval",
 		help="Directory to save inference evaluation results"
 	)
@@ -84,41 +85,41 @@ def get_args():
 		action="store_true",
 		help="List all valid tokens for --output_subset and exit"
 	)
-	
+
 	# Evaluation metrics configuration
 	parser.add_argument(
-		"--auxiliary_scores", 
-		type=str, 
-		nargs="+", 
+		"--auxiliary_scores",
+		type=str,
+		nargs="+",
 		default=[
 			"cos_sim",      # Cosine similarity between predicted and true spectra
 			"cos_hun",      # Hungarian algorithm cosine similarity
-			#"true_oos_prob",  # True out-of-scope probability
-			#"true_oos_e"      # True out-of-scope energy
+			# "true_oos_prob",  # True out-of-scope probability
+			# "true_oos_e"      # True out-of-scope energy
 		],
 		help="List of auxiliary evaluation scores to compute"
 	)
 	parser.add_argument(
-		"--skip_extra_losses", 
-		type=booltype, 
+		"--skip_extra_losses",
+		type=booltype,
 		default=False,
 		help="Skip computation of extra loss terms"
 	)
 	# Output control arguments
 	parser.add_argument(
-		"--output_subset", 
-		type=str, 
-		nargs="+", 
+		"--output_subset",
+		type=str,
+		nargs="+",
 		default=[
-			#"true_mzs",          # True m/z values from ground truth
-			#"true_logprobs",     # True log probabilities
+			# "true_mzs",          # True m/z values from ground truth
+			# "true_logprobs",     # True log probabilities
 			"pred_mzs",          # Predicted m/z values
 			"pred_ints",     # Predicted intensities
-			#"true_oos_prob",     # True out-of-scope probability
-			#"pred_oos_prob",     # Predicted out-of-scope probability
-			#"pred_formula_probs", # Predicted formula probabilities
-			#"frag_formula_peak_mzs", # Fragment formula peak m/z values
-			#"formula_scores",    # Formula scoring metrics
+			# "true_oos_prob",     # True out-of-scope probability
+			# "pred_oos_prob",     # Predicted out-of-scope probability
+			# "pred_formula_probs", # Predicted formula probabilities
+			# "frag_formula_peak_mzs", # Fragment formula peak m/z values
+			# "formula_scores",    # Formula scoring metrics
 		],
 
 		help="Subset of outputs to include in results"
@@ -141,7 +142,7 @@ def get_args():
 		default=True,
 		help="Whether to return node CC hashes"
 	)
-	
+
 	# Batch size arguments
 	parser.add_argument(
 		"--train_batch_size",
@@ -167,7 +168,13 @@ def get_args():
 		default=True,
 		help="Whether to drop columns with None values in the output"
 	)
+	parser.add_argument(
+		"--override",
+		nargs="*",
+		default=[],
+		help="Override config values, e.g. model.lr=1e-4 train.batch_size=64")
 	return parser.parse_args()
+
 
 if __name__ == "__main__":
 	# Early check for --list_output_options to avoid required argument validation
@@ -176,9 +183,9 @@ if __name__ == "__main__":
 		for opt in list_output_subset_options():
 			print(f"  - {opt}")
 		sys.exit(0)
-	
+
 	args = get_args()
-	
+
 	# Get checkpoint path (download from W&B or use local)
 	ckpt_fp = get_ckpt_path(
 		wandb_run_id=args.wandb_run_id,
@@ -186,7 +193,7 @@ if __name__ == "__main__":
 		model_save_dp=args.model_save_dp,
 		use_cached=True
 	)
-  
+
 	# Extract evaluation parameters
 	eval_split = args.eval_split
 	save_dp = args.save_dp
@@ -195,7 +202,7 @@ if __name__ == "__main__":
 	template_fp = args.template_fp
 	custom_fp = args.custom_fp
 
-	config_d = load_config(template_fp, custom_fp)
+	config_d = load_config(template_fp, custom_fp, args.override)
 	config_d = apply_inference_config(
 		config_d,
 		auxiliary_scores=args.auxiliary_scores,
@@ -218,7 +225,7 @@ if __name__ == "__main__":
 	# Prepare device and load model from checkpoint
 	device = setup_device(config_d)
 	model = init_model_from_ckpt(ckpt_fp, config_d, device)
- 
+
 	# Run inference and collect predictions with evaluation scores
 	print(">>> Running inference and evaluation...")
 	output_set = prepare_output_subset(
@@ -237,7 +244,7 @@ if __name__ == "__main__":
 			print(f"  Node indices: {req_node}")
 		if req_formula:
 			print(f"  Formula indices: {req_formula}")
-   
+
 	print(f">>> Output set: {output_set}")
 	predicted_df = run_inference_tabular(
 		model,
@@ -267,7 +274,7 @@ if __name__ == "__main__":
 		mean_score = predicted_df[eval_score_type].mean()
 		std_score = predicted_df[eval_score_type].std()
 		print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
-	
+
 	print(predicted_df.head())
 	# Save predictions with evaluation scores
 	output_save_dp = os.path.join(save_dp, args.wandb_run_id)

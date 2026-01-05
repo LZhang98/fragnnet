@@ -1,8 +1,7 @@
 import torch as th
 
-
 try:
-	import lightning.pytorch as pl	
+	import lightning.pytorch as pl
 	from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
 	from lightning.pytorch.profilers import SimpleProfiler, AdvancedProfiler, PyTorchProfiler
 	from lightning import seed_everything
@@ -18,6 +17,7 @@ import os
 import glob
 import shutil
 import tempfile
+
 from multiprocessing import Manager
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SequentialSampler, RandomSampler
@@ -30,15 +30,16 @@ from fragnnet.utils.misc_utils import deep_update
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_model_cls, get_dataset_cls
 
-def load_config(template_fp: str, custom_fp: str | None) -> dict:
+
+def load_config(template_fp: str, custom_fp: str | None, override: list) -> dict:
 	""" load config from template and custom yaml files
-		if custom_fp is given, overwrite template config with custom config
+			if custom_fp is given, overwrite template config with custom config
 	Args:
-		template_fp (str): Path to the template YAML file.
-		custom_fp (str | None): Path to the custom YAML file.
+			template_fp (str): Path to the template YAML file.
+			custom_fp (str | None): Path to the custom YAML file.
 
 	Returns:
-		dict: configuration dictionary.
+			dict: configuration dictionary.
 	"""
 
 	assert os.path.isfile(template_fp), template_fp
@@ -49,8 +50,25 @@ def load_config(template_fp: str, custom_fp: str | None) -> dict:
 		assert os.path.isfile(custom_fp), custom_fp
 		with open(custom_fp, "r") as custom_file:
 			custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
-		assert all([k in config_d for k in custom_d]), set(custom_d.keys()) - set(config_d.keys())
+		assert all([k in config_d for k in custom_d]), set(
+			custom_d.keys()) - set(config_d.keys())
 		config_d = deep_update(config_d, custom_d)
+	# override
+	for item in override:
+		key, value = item.split("=", 1)
+		keys = key.split(".")
+		cur = config_d
+		for k in keys[:-1]:
+			if k in cur:
+				cur = cur[k]
+			else:
+				print(f"{k} not in config")
+				assert False
+
+		print(
+			f"Updating {keys[-1]} from {cur[keys[-1]]} to {value}", flush=True)
+		# here is not safe way to load, but I'll skip this issue now
+		cur[keys[-1]] = yaml.safe_load(value)
 	return config_d
 
 
@@ -58,15 +76,15 @@ def load_wandb_config(wandb_config_dp) -> dict:
 	"""Load wandb config file if exists, else return empty dict
 
 	Args:
-		wandb_config_dp (str): Path to the wandb config directory.
+			wandb_config_dp (str): Path to the wandb config directory.
 
 	Returns:
-		dict: wandb config
+			dict: wandb config
 	"""
-	wandb_config_dp = os.path.join(wandb_config_dp,"config.yaml")
+	wandb_config_dp = os.path.join(wandb_config_dp, "config.yaml")
 
 	if os.path.isfile(wandb_config_dp):
-		with open(wandb_config_dp,"r") as wandb_config_file:	
+		with open(wandb_config_dp, "r") as wandb_config_file:
 			_config_d = yaml.load(
 				wandb_config_file,
 				Loader=yaml.FullLoader
@@ -81,7 +99,7 @@ def load_wandb_config(wandb_config_dp) -> dict:
 	return config_d
 
 
-def init_dataset(config_d: dict, splits=("train","val")) -> tuple:
+def init_dataset(config_d: dict, splits=("train", "val")) -> tuple:
 	"""
 	Initialize dataset objects for the specified splits based on the model type in config.
 
@@ -90,21 +108,21 @@ def init_dataset(config_d: dict, splits=("train","val")) -> tuple:
 	the dataset for each split (e.g., "train", "val", "test").
 
 	Args:
-		config_d (dict): Configuration dictionary containing at least "model_type" and other dataset args.
-		splits (tuple): Tuple of split names to load (default: ("train", "val")).
+			config_d (dict): Configuration dictionary containing at least "model_type" and other dataset args.
+			splits (tuple): Tuple of split names to load (default: ("train", "val")).
 
 	Returns:
-		tuple: Tuple of dataset objects, one for each split in the order provided.
+			tuple: Tuple of dataset objects, one for each split in the order provided.
 
 	Raises:
-		ValueError: If an unknown model_type is provided in config_d.
+			ValueError: If an unknown model_type is provided in config_d.
 	"""
 	# Select dataset class based on model type
 	dataset_cls = get_dataset_cls(config_d["model_type"])
- 
+
 	# Get the expected data dict types for this dataset
 	data_dict_types = dataset_cls.get_data_dict_types()
-	
+
 	dses = []
 	for split in splits:
 		# Use multiprocessing manager dicts if requested, else regular dicts
@@ -116,13 +134,13 @@ def init_dataset(config_d: dict, splits=("train","val")) -> tuple:
 		# Instantiate the dataset for this split
 		ds = dataset_cls(
 			split=split,
-			**{**data_sds,**config_d})
+			**{**data_sds, **config_d})
 		dses.append(ds)
 
 	return tuple(dses)
 
 
-def init_dataloader(ds:Dataset, config_d:dict) -> DataLoader:
+def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 	"""
 	Initialize a PyTorch DataLoader for a given dataset and configuration.
 
@@ -130,11 +148,11 @@ def init_dataloader(ds:Dataset, config_d:dict) -> DataLoader:
 	depending on the split (train/val/test), group sampling options, and dynamic batch sampler settings.
 
 	Args:
-		ds (Dataset): The dataset object (must have a .split attribute).
-		config_d (dict): Configuration dictionary with dataloader and sampler options.
+			ds (Dataset): The dataset object (must have a .split attribute).
+			config_d (dict): Configuration dictionary with dataloader and sampler options.
 
 	Returns:
-		DataLoader: Configured PyTorch DataLoader for the dataset.
+			DataLoader: Configured PyTorch DataLoader for the dataset.
 	"""
 	split = ds.split
 	assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), \
@@ -167,7 +185,7 @@ def init_dataloader(ds:Dataset, config_d:dict) -> DataLoader:
 	else:
 		# Use sequential sampler for validation/test/predict_only
 		sampler = SequentialSampler(ds)
-  
+
 	# Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
 	# Prefer formula-based hard negative dynamic sampler when enabled (train only)
 	use_formula_sampler = False
@@ -195,24 +213,23 @@ def init_dataloader(ds:Dataset, config_d:dict) -> DataLoader:
 			use_formula_sampler = True
 	
 	if not use_formula_sampler and config_d["dynamic_batch_sampler"]:
-		max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
 		if split == "train":
 			return_batch_at = max_batch_size
 		else:
 			return_batch_at = 0
 		batch_sampler = SpecMolFragDynamicBatchSampler(
-			ds, 
-			max_num = config_d["dynamic_batch_sampler_max"], 
-			limited_by = config_d["dynamic_batch_sampler_mode"], 
-			skip_too_big = True,
-			return_batch_at = return_batch_at,
-			sampler = sampler)
+			ds,
+			max_num=config_d["dynamic_batch_sampler_max"],
+			limited_by=config_d["dynamic_batch_sampler_mode"],
+			skip_too_big=True,
+			return_batch_at=return_batch_at,
+			sampler=sampler)
 		dl_param_d["batch_sampler"] = batch_sampler
 	else:
 		# Standard batching
 		dl_param_d["sampler"] = sampler
 		if split == "train":
-			dl_param_d["batch_size"] = config_d["train_batch_size"]	
+			dl_param_d["batch_size"] = config_d["train_batch_size"]
 			dl_param_d["drop_last"] = config_d["drop_last"]
 		else:
 			dl_param_d["batch_size"] = config_d["eval_batch_size"]
@@ -222,17 +239,17 @@ def init_dataloader(ds:Dataset, config_d:dict) -> DataLoader:
 	return dl
 
 
-def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
+def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list):
 	"""
 	Main entry point for initializing and running a training/validation/testing job.
 	Args:
-		template_fp (str): Path to the template YAML config file.
-		custom_fp (str): Path to the custom YAML config file (can be None).
-		wandb_mode (str): Wandb mode ["online", "offline", "disabled"].
-		job_id (str): Unique job identifier for checkpointing and wandb.
+			template_fp (str): Path to the template YAML config file.
+			custom_fp (str): Path to the custom YAML config file (can be None).
+			wandb_mode (str): Wandb mode ["online", "offline", "disabled"].
+			job_id (str): Unique job identifier for checkpointing and wandb.
 
 	Returns:
-		model: The trained model (LightningModule).
+			model: The trained model (LightningModule).
 	"""
 	# setup logger
 	logging.basicConfig(
@@ -242,10 +259,10 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 	)
 
 	# load config
-	config_d = load_config(template_fp, custom_fp)
+	config_d = load_config(template_fp, custom_fp, override)
 
 	# set random seeds
-	seed_everything(config_d["seed"],workers=True)
+	seed_everything(config_d["seed"], workers=True)
 
 	# set torch multiprocessing strategy
 	th.multiprocessing.set_sharing_strategy(config_d["mp_sharing_strategy"])
@@ -269,14 +286,14 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 		)
 
 		if job_id and not config_d["disable_checkpoints"]:
-			job_id_fp = os.path.join("job_id",f"{job_id}.id")
+			job_id_fp = os.path.join("job_id", f"{job_id}.id")
 			if os.path.isfile(job_id_fp):
 				is_resume = True
-				with open(job_id_fp,"r") as job_id_file:
+				with open(job_id_fp, "r") as job_id_file:
 					text = job_id_file.read().strip()
 				run_id, old_wandb_dp = text.split(";")
 				wandb_config = load_wandb_config(old_wandb_dp)
-				
+
 				# for offline mode, if there is no configure file, just skip it
 				# wandb config only exists after wandb sync
 				if len(wandb_config) == 0:
@@ -288,11 +305,13 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 			wandb_d["id"] = run_id
 			wandb_d["config"] = wandb_config
 			if config_d["wandb_root_dir"] is not None:
-				wandb_dir = os.path.join(config_d["wandb_root_dir"],str(job_id))
+				wandb_dir = os.path.join(
+					config_d["wandb_root_dir"], str(job_id))
 				if os.path.isdir(wandb_dir):
 					wandb_d["dir"] = wandb_dir
 				else:
-					print(f"> wandb dir does not exist: {wandb_dir}, using default instead")
+					print(
+						f"> wandb dir does not exist: {wandb_dir}, using default instead")
 		else:
 			is_resume = False
 			job_id_fp = None
@@ -303,24 +322,26 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 		wandb_logger = pl.loggers.WandbLogger(**wandb_d)
 		if job_id_fp:
 			os.makedirs("job_id", exist_ok=True)
-			with open(job_id_fp,"w+") as job_id_file:
+			with open(job_id_fp, "w+") as job_id_file:
 				text = f"{wandb.run.id};{os.path.abspath(wandb.run.dir)}"
 				job_id_file.write(text)
 		# update config results (primarily for wandb)
 		# configs can be nested up to 2 levels
 		for k in list(config_d.keys()):
 			if k in wandb.config:
-				if isinstance(config_d[k],dict):
+				if isinstance(config_d[k], dict):
 					# nested
-					assert isinstance(wandb.config[k],dict)
+					assert isinstance(wandb.config[k], dict)
 					for kk in list(config_d[k].keys()):
 						if kk in wandb.config[k]:
 							if config_d[k][kk] != wandb.config[k][kk]:
-								print(f"> config diff -- {k}->{kk}: {config_d[k][kk]} vs {wandb.config[k][kk]}")
+								print(
+									f"> config diff -- {k}->{kk}: {config_d[k][kk]} vs {wandb.config[k][kk]}")
 							config_d[k][kk] = wandb.config[k][kk]
 				else:
 					if config_d[k] != wandb.config[k]:
-						print(f"> config diff -- {k}: {config_d[k]} vs {wandb.config[k]}")
+						print(
+							f"> config diff -- {k}: {config_d[k]} vs {wandb.config[k]}")
 					config_d[k] = wandb.config[k]
 		loggers.append(wandb_logger)
 	else:
@@ -350,25 +371,26 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 	# setup callbacks
 	callbacks = []
 	if wandb_mode != "disabled":
-		ckpt_dp = os.path.join(wandb.run.dir,"ckpt")
+		ckpt_dp = os.path.join(wandb.run.dir, "ckpt")
 	else:
 		ckpt_dp = "tmp_ckpt"
 	os.makedirs(ckpt_dp, exist_ok=True)
 	if is_resume:
 		assert not config_d["disable_checkpoints"]
 		# copy the checkpoint files
-		old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp,"ckpt","*.ckpt"))
+		old_ckpt_fps = glob.glob(os.path.join(old_wandb_dp, "ckpt", "*.ckpt"))
 		for old_ckpt_fp in old_ckpt_fps:
-			new_ckpt_fp = os.path.join(ckpt_dp,os.path.basename(old_ckpt_fp))
+			new_ckpt_fp = os.path.join(ckpt_dp, os.path.basename(old_ckpt_fp))
 			# modify checkpoint metadata (hacky)
 			new_ckpt_data = th.load(old_ckpt_fp, weights_only=False)
 			ckpt_callback_data = None
-			for k,v in new_ckpt_data["callbacks"].items():
+			for k, v in new_ckpt_data["callbacks"].items():
 				if k.startswith("ModelCheckpoint"):
 					ckpt_callback_data = v
 					break
 			assert ckpt_callback_data is not None
-			ckpt_keys = ["best_model_path","last_model_path","dirpath","kth_best_model_path"]
+			ckpt_keys = ["best_model_path", "last_model_path",
+						 "dirpath", "kth_best_model_path"]
 			for k in ckpt_keys:
 				if k in ckpt_callback_data:
 					ckpt_callback_data[k] = ckpt_callback_data[k].replace(
@@ -381,9 +403,10 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 						os.path.abspath(old_wandb_dp),
 						os.path.abspath(wandb.run.dir)
 					)
-					ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data["best_k_models"].pop(k)
+					ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data["best_k_models"].pop(
+						k)
 			# save modified checkpoint in new wandb dir
-			th.save(new_ckpt_data,new_ckpt_fp)
+			th.save(new_ckpt_data, new_ckpt_fp)
 	if not config_d["disable_checkpoints"]:
 		checkpoint_callback = ModelCheckpoint(
 			dirpath=ckpt_dp,
@@ -399,7 +422,7 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 	# setup profiler
 	logging.info("setup profiler")
 	if wandb_mode != "disabled":
-		profile_dp = os.path.join(wandb.run.dir,"profile")
+		profile_dp = os.path.join(wandb.run.dir, "profile")
 	else:
 		profile_dp = "tmp_profile"
 	os.makedirs(profile_dp, exist_ok=True)
@@ -424,14 +447,16 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 			],
 			# on_trace_ready=th.profiler.tensorboard_trace_handler(profile_dp),
 			profile_memory=True,
-			record_shapes=False, #True,
-			with_flops=False, #True,
+			record_shapes=False,  # True,
+			with_flops=False,  # True,
 			with_stack=True,
 			with_modules=False,
 			export_to_chrome=False,
 			export_to_flame_graph=True,
-			experimental_config=th._C._profiler._ExperimentalConfig(verbose=True),
-			schedule=th.profiler.schedule(wait=1, warmup=1, active=6, repeat=0, skip_first=0)
+			experimental_config=th._C._profiler._ExperimentalConfig(
+				verbose=True),
+			schedule=th.profiler.schedule(
+				wait=1, warmup=1, active=6, repeat=0, skip_first=0)
 		)
 	else:
 		assert config_d["profiler"] == "none", config_d["profiler"]
@@ -451,17 +476,24 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 
 	# check config for sampler
 	if config_d["dynamic_batch_sampler"]:
-		assert config_d["model_type"] == "frag_gnn",\
+		assert config_d["model_type"] == "frag_gnn", \
 			f"Dynamic batch sampler can only be use with frag_gnn model"
-		assert config_d['automatic_optimization'] == False,\
+		assert config_d['automatic_optimization'] == False, \
 			f"Dynamic batch sampler can not use in junction of automatic optimization {config_d['automatic_optimization']}"
-		assert config_d['dynamic_batch_sampler_mode'] in ['frag_node','frag_edge'],\
+		assert config_d['dynamic_batch_sampler_mode'] in ['frag_node', 'frag_edge'], \
 			f"Dynamic batch sampler only support frag_node or frag_edge mode (given {config_d['dynamic_batch_sampler_mode']}) "
-		assert config_d['dynamic_batch_sampler_max'] is not None,\
+		assert config_d['dynamic_batch_sampler_max'] is not None, \
 			"Dynamic batch sampler needs a max num"
-	if  config_d["frag_gnn_type"] == "NodeMLP" and config_d["dynamic_batch_sampler"]:
-		assert config_d["dynamic_batch_sampler_mode"] == "frag_node",\
-	  		f"Dynamic batch sampler can only be use with dynamic_batch_sampler_mode frag_node, not {config_d['dynamic_batch_sampler_mode']}"		
+	if config_d["frag_gnn_type"] == "NodeMLP" and config_d["dynamic_batch_sampler"]:
+		assert config_d["dynamic_batch_sampler_mode"] == "frag_node", \
+			f"Dynamic batch sampler can only be use with dynamic_batch_sampler_mode frag_node, not {config_d['dynamic_batch_sampler_mode']}"
+
+	# check config for CMF
+	if config_d["frag_params"].get("include_cmf", False):
+		if "cmf_h_formulae_idx" not in config_d["frag_params"].get("pyg_node_feats", []):
+			raise ValueError(
+				"include_cmf is True but 'cmf_h_formulae_idx' is missing from pyg_node_feats")
+
 	# setup dataloaders
 	logging.info("setup dataloader")
 	train_dl = init_dataloader(train_ds, config_d)
@@ -475,19 +507,21 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 		overfit_batches = config_d["debug_overfit_batches"]
 	else:
 		overfit_batches = 0
-	log_every_n_steps = min(len(train_dl),config_d["log_every_n_steps"])
+	log_every_n_steps = min(len(train_dl), config_d["log_every_n_steps"])
 
 	# check precision support
 	if str(config_d["precision"]) in ["bf16-mixed", "bf16"]:
 		if not (th.cuda.is_available() and th.cuda.is_bf16_supported()):
-			logging.warning("BF16 not supported on this device, falling back to 32 bit precision")
+			logging.warning(
+				"BF16 not supported on this device, falling back to 32 bit precision")
 			config_d["precision"] = 32
 	elif str(config_d["precision"]) in ["16-mixed", "16"]:
 		if not th.cuda.is_available():
-			logging.warning("FP16 mixed precision requires CUDA, falling back to 32 bit precision")
+			logging.warning(
+				"FP16 mixed precision requires CUDA, falling back to 32 bit precision")
 			config_d["precision"] = 32
 
-	trainer_param_d  = {
+	trainer_param_d = {
 		'logger': loggers,
 		'callbacks': callbacks,
 		'accelerator': config_d["accelerator"],
@@ -504,7 +538,7 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 		'enable_checkpointing': not config_d["disable_checkpoints"],
 	}
 
-	# this things can only set if automatic_optimization 
+	# this things can only set if automatic_optimization
 	if config_d['automatic_optimization']:
 		trainer_param_d['accumulate_grad_batches'] = config_d["accumulate_grad_batches"]
 		trainer_param_d['gradient_clip_val'] = config_d["gradient_clip_val"]
@@ -517,19 +551,20 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 	elif config_d['dynamic_batch_sampler']:
 		# with out this progress will not track dataset length change
 		# this will call train_dataloader and val_dataloader before every epoch
-		# not sure why this fixed our problem but it works 
+		# not sure why this fixed our problem but it works
 		trainer_param_d['reload_dataloaders_every_n_epochs'] = 1
 
 	trainer = pl.Trainer(**trainer_param_d)
 
 	# set determinism
-	th.use_deterministic_algorithms(config_d["deterministic"],warn_only=True)
+	th.use_deterministic_algorithms(config_d["deterministic"], warn_only=True)
 
 	# register nan hook
 	if config_d["nan_module_hook"]:
 		th.nn.modules.module.register_module_forward_hook(nan_forward_hook)
-		th.nn.modules.module.register_module_full_backward_hook(nan_backward_hook)
-	
+		th.nn.modules.module.register_module_full_backward_hook(
+			nan_backward_hook)
+
 	# fit
 	if config_d["debug_overfit"]:
 		assert not is_resume
@@ -538,7 +573,7 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 	else:
 		logging.info("fit model")
 		if is_resume:
-			ckpt_fp = os.path.join(ckpt_dp,"last.ckpt")
+			ckpt_fp = os.path.join(ckpt_dp, "last.ckpt")
 			if os.path.isfile(ckpt_fp):
 				logging.info(f"resuming from checkpoint: {ckpt_fp}")
 			else:
@@ -546,8 +581,8 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 		else:
 			ckpt_fp = None
 		trainer.fit(
-			model, 
-			train_dl, 
+			model,
+			train_dl,
 			val_dl,
 			ckpt_path=ckpt_fp
 		)
@@ -566,20 +601,21 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 
 	# Handle checkpoint cleanup/saving after training
 	if not trainer.interrupted and not config_d["disable_checkpoints"]:
-		ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
-		
+		ckpt_fps = glob.glob(os.path.join(ckpt_dp, "*.ckpt"))
+
 		if config_d["upload_checkpoints"]:
 			# Upload checkpoints to wandb
 			for ckpt_fp in ckpt_fps:
 				wandb.save(ckpt_fp, base_path=os.path.dirname(ckpt_dp))
-		
+
 		# Temporarily move checkpoints out of the way before wandb.finish()
 		# to prevent wandb from syncing them if we don't want to keep them
 		temp_ckpt_dir = None
 		if not config_d["upload_checkpoints"] and not config_d["delete_checkpoints"]:
 			temp_ckpt_dir = tempfile.TemporaryDirectory()
 			for ckpt_fp in ckpt_fps:
-				shutil.move(ckpt_fp, os.path.join(temp_ckpt_dir.name, os.path.basename(ckpt_fp)))
+				shutil.move(ckpt_fp, os.path.join(
+					temp_ckpt_dir.name, os.path.basename(ckpt_fp)))
 
 	if wandb_mode != "disabled":
 		wandb.finish()
@@ -588,15 +624,16 @@ def init_run(template_fp: str, custom_fp:str, wandb_mode:str, job_id:str):
 	if not trainer.interrupted and not config_d["disable_checkpoints"]:
 		if config_d["delete_checkpoints"]:
 			# Delete all checkpoints
-			ckpt_fps = glob.glob(os.path.join(ckpt_dp,"*.ckpt"))
+			ckpt_fps = glob.glob(os.path.join(ckpt_dp, "*.ckpt"))
 			for ckpt_fp in ckpt_fps:
 				os.remove(ckpt_fp)
 		elif temp_ckpt_dir is not None:
 			# Restore checkpoints that were temporarily moved
-			for ckpt_fp in glob.glob(os.path.join(temp_ckpt_dir.name,"*.ckpt")):
-				shutil.move(ckpt_fp, os.path.join(ckpt_dp, os.path.basename(ckpt_fp)))
+			for ckpt_fp in glob.glob(os.path.join(temp_ckpt_dir.name, "*.ckpt")):
+				shutil.move(ckpt_fp, os.path.join(
+					ckpt_dp, os.path.basename(ckpt_fp)))
 			temp_ckpt_dir.cleanup()
-	
+
 	# cleanup job tracking file
 	if job_id_fp:
 		os.remove(job_id_fp)

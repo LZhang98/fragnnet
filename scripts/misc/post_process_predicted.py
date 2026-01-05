@@ -131,12 +131,13 @@ if __name__ == "__main__":
 							mgf_file.write(f"FORMULA={row['formula']}\n")
 						if 'exact_mass' in row:
 							mgf_file.write(f"EXACTMASS={row['exact_mass']}\n")
+						if 'prec_mz' in row and not_nan_none(row['prec_mz']):
+							mgf_file.write(f"PEPMASS={row['prec_mz']}\n")
 		
 						# Write peaks, filter out intensity < 1
 						peaks = row['pred_peaks']
 						for mz, intensity in peaks:
-							if intensity >= 1.0:
-								mgf_file.write(f"{mz:.6f} {intensity:.1f}\n")
+							mgf_file.write(f"{mz:.6f} {intensity:.1f}\n")
 						mgf_file.write('END IONS\n\n')
 				print(f"Saved MGF to {mgf_fp}")
 			

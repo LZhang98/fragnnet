@@ -5,7 +5,7 @@ import argparse
 from rdkit import RDLogger
 
 import fragnnet.utils.data_utils as data_utils
-from fragnnet.utils.data_utils import par_apply_df_rows_t, par_apply_series, par_apply_df_rows, seq_apply_df_rows, seq_apply_df_rows_t
+from fragnnet.utils.data_utils import par_apply_df_rows_t, par_apply_series, par_apply_df_rows, seq_apply_df_rows_t
 from fragnnet.utils.misc_utils import booltype
 
 """Prepare processed spectral, molecule, and annotation tables.
@@ -29,7 +29,7 @@ Outputs written to `proc_dp`:
 		- ace_extra_2: parsed collision energies (absolute and normalized) for additional collision energies
 		for ramped: ace/nce and ace_extra_1/ace_extra_1 are set to the first and second collision energies
 		for stepped: ace/nce,ace_extra_1/ace_extra_1, ace_extra_2/ace_extra_2 are set to the 3 collision energies
-	- has_ace/has_nce: boolean flags for collision energy presence
+	- ce_type: collision energy pattern {none,single,ramped,stepped}
 	- prec_mz: precursor m/z (float; inferred when missing)
 	- peaks: list of (mz, intensity) pairs as floats
 	- ri: retention index if present
@@ -120,9 +120,18 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"ace_extra_2"] = par_apply_series(spec_df["col_energy_extra_2"],data_utils.parse_ace_str)
 	spec_df.loc[:,"nce_extra_2"] = par_apply_series(spec_df["col_energy_extra_2"],data_utils.parse_nce_str)
 	spec_df = spec_df.drop(columns=["col_energy", "col_energy_extra_1", "col_energy_extra_2"])
-	spec_df.loc[:,'has_ace'] = ~spec_df["ace"].isna()
-	spec_df.loc[:,'has_nce'] = ~spec_df["nce"].isna()
-
+	
+	# summarize collision energy pattern
+	has_any_ce = spec_df[["ace","nce","ace_extra_1","nce_extra_1","ace_extra_2","nce_extra_2"]].notna().any(axis=1)
+	has_extra_1 = spec_df[["ace_extra_1","nce_extra_1"]].notna().any(axis=1)
+	has_extra_2 = spec_df[["ace_extra_2","nce_extra_2"]].notna().any(axis=1)
+	spec_df.loc[:, "ce_type"] = np.select(
+		[~has_any_ce, has_extra_2, has_extra_1],
+		["none", "stepped", "ramped"],
+		default="single"
+	)
+	#spec_df.loc[:,'has_ace_extra_1'] = ~spec_df["ace_extra_1"].isna()
+ 
 	# standardise prec_type
 	spec_df.loc[:,"prec_type"] = par_apply_series(spec_df["prec_type"],data_utils.parse_prec_type_str)
 	# convert prec_mz
@@ -137,7 +146,7 @@ def preprocess_spec(spec_df):
 	spec_df.loc[:,"exact_mass"] = pd.to_numeric(spec_df["exact_mass"],errors="coerce")
 
 	# remove columns from spec_df
-	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","ace_extra_1","ace_extra_2","nce","nce_extra_1","nce_extra_2","prec_mz","peaks","ri","formula","inchikey","exact_mass"]]
+	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","ace_extra_1","ace_extra_2","nce","nce_extra_1","nce_extra_2","ce_type","prec_mz","peaks","ri","formula","inchikey","exact_mass"]]
 	# relabel spec_id (this is to make it unique across datasets)
 	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
 	# set group_id (same compound and precursor)

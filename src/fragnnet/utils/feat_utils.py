@@ -12,16 +12,16 @@ import torch_geometric as pyg
 import scipy
 
 from fragnnet.utils.frag_utils import (
-    CANONICAL_ELEMENT_ORDER,
-    NODE_FEAT_TO_IDX,
-    EDGE_FEAT_TO_IDX,
-    get_node_feats,
-    get_edge_feats,
+	CANONICAL_ELEMENT_ORDER,
+	NODE_FEAT_TO_IDX,
+	EDGE_FEAT_TO_IDX,
+	get_node_feats,
+	get_edge_feats,
 )
 from fragnnet.utils.data_utils import (
-    make_morgan_fingerprint,
-    make_rdkit_fingerprint,
-    make_maccs_fingerprint,
+	make_morgan_fingerprint,
+	make_rdkit_fingerprint,
+	make_maccs_fingerprint,
 )
 
 # TODO: remove this registry
@@ -34,7 +34,6 @@ def register_bond_feat(cls):
 	"""register_bond_feat."""
 	bond_feat_registry[cls.name] = {"fn": cls.featurize, "feat_size": cls.feat_size}
 	return cls
-
 
 def register_atom_feat(cls):
 	"""register_atom_feat."""
@@ -413,17 +412,28 @@ def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
 
 	return list(map(lambda s: int(x == s), allowable_set))
 
-def batch_mols_frags(mol_pyg_list,frag_pyg_list,formula_peak_mzs_list,formula_peak_probs_list):
-	"""create batch of mol and frag graphs
+def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula_peak_probs_list):
+	"""Create a batch of molecule and fragment graphs, and collate formula peak information.
 
 	Args:
-		mol_pyg_list (_type_): _description_
-		frag_pyg_list (_type_): _description_
-		formula_peak_mzs_list (_type_): _description_
-		formula_peak_probs_list (_type_): _description_
+		mol_pyg_list (list[pyg.data.Data]): List of PyG molecule graphs.
+		frag_pyg_list (list[pyg.data.Data]): List of PyG fragment graphs.
+		formula_peak_mzs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of m/z values for each mol.
+		formula_peak_probs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of probabilities for each mol.
 
 	Returns:
-		_type_: _description_
+		dict: {
+			"mol_pyg": PyG batch of molecules,
+			"frag_pyg": PyG batch of fragments,
+			"mol_num_nodes": Cumulative node counts for molecules,
+			"frag_num_nodes": Cumulative node counts for fragments,
+			"frag_formula_peak_idxs": 1D tensor of formula indices (per peak, per fragment, concatenated),
+			"frag_formula_peak_mzs": 1D tensor of m/z values for nonzero-probability peaks,
+			"frag_formula_peak_probs": 1D tensor of probabilities for nonzero-probability peaks,
+			"frag_formula_sizes": 1D tensor, number of unique formulae per fragment,
+			"frag_formula_cumsizes": 1D tensor, cumulative sum of frag_formula_sizes (for indexing),
+			"frag_formula_peak_sizes": 1D tensor, number of nonzero peaks per fragment,
+		}
 	"""
 	# batch size
 	batch_size = len(mol_pyg_list)
@@ -443,15 +453,16 @@ def batch_mols_frags(mol_pyg_list,frag_pyg_list,formula_peak_mzs_list,formula_pe
 	mol_num_nodes = th.cumsum(th.tensor([0]+mol_num_nodes),dim=0)
 	frag_num_nodes = th.cumsum(th.tensor([0]+frag_num_nodes),dim=0)
  
-    # Initialize lists
-	frag_formula_peak_idxs = []
+	# Initialize lists
+	frag_formula_peak_idxs = [] # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
 	frag_formula_peak_mzs = []
 	frag_formula_peak_probs = []
-	frag_formula_sizes = []
-	frag_formula_peak_sizes = []
+	frag_formula_sizes = [] # 1D tensor, offset for each fragment's formula indices in the concatenated batch.
+	frag_formula_peak_sizes = [] # 1D tensor, number of nonzero peaks per fragment. in case of isotopes, each formula can have more than one peak.
  
-	# Loop through the provided peak mzs and probabilities, and filter out the zero probabilities
+	# Loop through the mz and probs for each sample
 	for mzs, probs in zip(formula_peak_mzs_list,formula_peak_probs_list):
+
 		# sparsify: retain only non-zero probability peaks
 		idx = th.nonzero(probs)
 		# Extract mass-to-charge ratios where probability is non-zero
@@ -488,7 +499,7 @@ def batch_mols_frags(mol_pyg_list,frag_pyg_list,formula_peak_mzs_list,formula_pe
 		"frag_formula_peak_sizes": frag_formula_peak_sizes, # Tensor containing the total number of peaks (isotopes) for each molecule
 	}
 	return batched_mol_frag
-
+    
 def get_mol_fp(mol,morgan,rdkit,maccs):
 	"""  function to get the fingerprint of a molecule
 	Args:

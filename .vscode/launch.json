@@ -5,12 +5,16 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "scripts/run_pl_model_fit",
+      "name": "run_pl_model_fit",
       "type": "python",
       "request": "launch",
       "program": "scripts/run_pl_model_fit.py",
       "console": "integratedTerminal",
-      "args": ["-w","disabled","-c","config/debug/debug_tiny.yml"]
+      "args": ["-w","disabled","-c","config/debug/debug_tiny.yml"],
+      "env": {
+        "TORCHDYNAMO_VERBOSE": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
+      }
     },
     {
       "name": "scripts/mces_pretraining",
@@ -37,6 +41,51 @@
       "args": ["-w","disabled","-c","config/debug/debug_tiny_um_prec.yml"]
     },
     {
+      "name": "run_pl_model_fit_cmf_na",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_tiny_cmf_na.yml"],
+      "env": {
+        "TORCHDYNAMO_VERBOSE": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
+      }
+    },
+    {
+      "name": "run_pl_model_fit_cmf",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_tiny_cmf.yml"],
+      "env": {
+        "TORCHDYNAMO_VERBOSE": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
+      }
+    },
+    {
+      "name": "run_pl_model_fit_cuda_dsa",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_tiny_cmf.yml"],
+      "env": {
+        "TORCH_LOGS": "+dynamo",
+        "TORCHDYNAMO_VERBOSE": "1",
+        "CUDA_LAUNCH_BLOCKING": "1"
+      }
+    },
+    {
+      "name": "run_compute_frags",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_compute_frags.py",
+      "console": "integratedTerminal",
+      "args": []
+    },
+    {
       "name": "scripts/debug_nps",
       "type": "python",
       "request": "launch",
@@ -53,6 +102,14 @@
       "args": ["-w","disabled","-c","config/debug/debug_nps_ft.yml"]
     },
     {
+      "name": "scripts/debug_spectravese_ramped",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/run_pl_model_fit.py",
+      "console": "integratedTerminal",
+      "args": ["-w","disabled","-c","config/debug/debug_spectravese_ramped.yml"]
+    },
+    {
       "name": "scripts/debug_tiny_um_prec_sampler",
       "type": "python",
       "request": "launch",
@@ -60,5 +117,6 @@
       "console": "integratedTerminal",
       "args": ["-w","disabled","-c","config/debug/debug_tiny_um_prec_sampler.yml"]
     },
+    
   ]
 }

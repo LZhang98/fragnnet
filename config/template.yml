@@ -78,6 +78,7 @@ frag_params:
     - base_formula
     - depth
     - h_formulae_idx
+    # - cmf_h_formulae_idx
     # - h_counts
     # - nb_iso_idx
   pyg_edge_feats:
@@ -93,6 +94,7 @@ frag_params:
   compressed: True
   preload: False
   preprocess: False
+  include_cmf: False
 magma_params:
   pe_embed_k: 0
   root_encode: gnn

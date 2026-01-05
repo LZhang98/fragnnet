@@ -37,11 +37,34 @@ PREC_TYPE_TO_MASS_DIFF = {
 	"[M+Cl]-": CL_MASS + ELECTRON_MASS,
 	"[M-H-H2O]-": -3 * H_MASS - O_MASS + ELECTRON_MASS,
 	"[M-H+2i]-": -H_MASS + 2 * I_MASS + ELECTRON_MASS,
-	"[M+CH2O2-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
-	"[M+CH3COO]-": 2 * C_MASS + 3 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
+	"[M+CH2O2-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,           
+	"[M+CH3COOH-H]-": 2 * C_MASS + 4 * H_MASS + 2 * O_MASS + ELECTRON_MASS, #  M+CH3COO and [M+CH3COOH-H]- are the same, earlier spectraverse used different notation   
+	"[M+HCOOH-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,  # alias for formic acid adduct
+	"[M+CH3COO]-": 2 * C_MASS + 4 * H_MASS + 2 * O_MASS + ELECTRON_MASS,  # acetate adduct alias
 	# some NL adducts
 	"[M+H]+_NL": -H_MASS + ELECTRON_MASS,
 	"[M-H]-_NL": H_MASS - ELECTRON_MASS,
+}
+# charge transfer
+PREC_TYPE_TO_CMF_MASS_DIFF = {
+	"[M+H]+": H_MASS - ELECTRON_MASS,
+	"[M+Na]+": H_MASS - ELECTRON_MASS,
+	"[M+H+2i]+": H_MASS - ELECTRON_MASS,
+	"[M+K]+": H_MASS - ELECTRON_MASS,
+	"[M+NH4]+": H_MASS - ELECTRON_MASS,                                                                 
+	"[M-H2O+H]+": H_MASS - ELECTRON_MASS,
+ 	"[M-2H2O+H]+": H_MASS - ELECTRON_MASS,
+	"[M+H-NH3]+": H_MASS - ELECTRON_MASS,
+	# negative stuff
+	"[M-H]-": -H_MASS + ELECTRON_MASS,
+	"[M-H-CO2]-": -H_MASS + ELECTRON_MASS,
+	"[M+Cl]-":  H_MASS + ELECTRON_MASS,
+	"[M-H-H2O]-": -H_MASS + ELECTRON_MASS,
+	"[M-H+2i]-": -H_MASS + ELECTRON_MASS,
+	"[M+CH3COOH-H]-": -H_MASS + ELECTRON_MASS,
+ 	"[M+CH3COO]-": -H_MASS + ELECTRON_MASS,
+	"[M+CH2O2-H]-": -H_MASS + ELECTRON_MASS,
+	"[M+HCOOH-H]-": -H_MASS + ELECTRON_MASS,
 }
 
 PREC_TYPE_TO_FORMULA_DIFF = {
@@ -60,6 +83,10 @@ PREC_TYPE_TO_FORMULA_DIFF = {
 	"[M+Cl]-": "Cl1",
 	"[M-H-H2O]-": "H-2O-2",
 	"[M-H+2i]-": "H-1I2",
+	"[M+CH3COOH-H]-": "C2H3O2",
+	"[M+CH2O2-H]-": "CH2O2",
+	"[M+HCOOH-H]-": "CH2O2",
+	"[M+CH3COO]-": "C2H3O2",
 }
 
 PREC_TYPE_TO_COMP_DIFF = {
@@ -364,7 +391,17 @@ def parse_formula(formula:str) -> Dict[str,int]:
 		formula = formula[:formula.index("-")]
 	if "+" in formula:
 		formula = formula[:formula.index("+")]
-	for token in re.findall(r'[A-Z][a-z]?|\d+|.', formula):
+	# Use finditer to strictly parse tokens and detect unexpected characters
+	pattern = re.finditer(r'[A-Z][a-z]?|\d+', formula)
+	pos = 0
+	for m in pattern:
+		# if there's any gap between last position and this match, it's invalid
+		if m.start() != pos:
+			offending = formula[pos:m.start()]
+			raise ValueError(
+				f"Invalid substring '{offending}' at position {pos} in formula '{formula}'"
+			)
+		token = m.group(0)
 		if token.isalpha():
 			if cur_element is not None:
 				assert cur_element not in element_counts
@@ -373,9 +410,13 @@ def parse_formula(formula:str) -> Dict[str,int]:
 			cur_count = 1
 		elif token.isdigit():
 			cur_count = int(token)
-		else:
-			print(formula)
-			raise ValueError(f"Invalid token {token}")
+		pos = m.end()
+	# any trailing characters after last token are invalid
+	if pos != len(formula):
+		offending = formula[pos:]
+		raise ValueError(
+			f"Invalid trailing substring '{offending}' at position {pos} in formula '{formula}'"
+		)
 	if cur_element is not None:
 		assert cur_element not in element_counts
 		element_counts[cur_element] = cur_count
@@ -383,6 +424,9 @@ def parse_formula(formula:str) -> Dict[str,int]:
 
 def get_elements_set(formula:str) -> set[str]:
     """
+    method to get set of elements in a formula
+	Args:
+		formula (str): chemical formula eg.CH4 or chemical formula with adducts eg. CH4+H
     """
     return set(list(parse_formula(formula).keys()))
 

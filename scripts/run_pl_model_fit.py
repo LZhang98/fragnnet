@@ -23,9 +23,9 @@ if __name__ == "__main__":
 	parser.add_argument(
 		"-w",
 		"--wandb_mode",
-		type=str, 
+		type=str,
 		default="disabled",
-		choices=["online","offline","disabled"]
+		choices=["online", "offline", "disabled"]
 	)
 	parser.add_argument(
 		"-j",
@@ -33,7 +33,13 @@ if __name__ == "__main__":
 		type=str,
 		required=False
 	)
+	parser.add_argument(
+		"--override",
+		nargs="*",
+		default=[],
+		help="Override config values, e.g. model.lr=1e-4 train.batch_size=64")
+
 	args = parser.parse_args()
 
-	model = init_run(args.template_fp,args.custom_fp,args.wandb_mode,args.job_id)
-
+	model = init_run(args.template_fp, args.custom_fp,
+					 args.wandb_mode, args.job_id, args.override)
