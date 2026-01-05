@@ -11,7 +11,7 @@ frag_dp: data/frag/debug_tinyv4_d3h4/dags
 subsample_params:
   subsample_size: 40
   subsample_seed: 42
-  train: False
+  train: True
   val: True
   test: True
   secondary: True
