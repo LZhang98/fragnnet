@@ -95,12 +95,6 @@ def check_seed(seed):
     return True
 
 
-if __name__ == '__main__':
+def test_sampler_deterministic_sweep():
     seeds = [0, 1, 42, 123, 999, 2026]
-    all_ok = True
-    for s in seeds:
-        ok = check_seed(s)
-        all_ok = all_ok and ok
-    if not all_ok:
-        raise SystemExit(1)
-    print("Sweep passed for all seeds")
+    assert all(check_seed(s) for s in seeds)

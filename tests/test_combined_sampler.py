@@ -138,7 +138,6 @@ def test_combined_sampler():
 		skip_too_big=False,
 		min_specs_per_formula=2,
 		shuffle=False,  # Disable shuffle for predictable testing
-		seed=42,
 	)
 	
 	print(f"\nSampler created with {len(sampler)} batches")
@@ -256,10 +255,4 @@ def test_combined_sampler():
 	print("\n" + "=" * 80)
 	print("Test Complete!")
 	print("=" * 80)
-	
-	return sampler, batches
 
-
-if __name__ == "__main__":
-	sampler, batches = test_combined_sampler()
-	print("\n✓ All tests passed successfully!")

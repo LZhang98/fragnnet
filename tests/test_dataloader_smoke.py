@@ -69,7 +69,5 @@ def test_formula_grouped_sampler():
     print("Formula grouped sampler iteration OK")
 
 
-if __name__ == '__main__':
+# Tests are collected by pytest; no direct execution block required.
     test_dynamic_batch_sampler()
-    test_formula_grouped_sampler()
-    print("Dataloader smoke tests passed")

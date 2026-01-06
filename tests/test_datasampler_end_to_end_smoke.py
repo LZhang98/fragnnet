@@ -47,7 +47,7 @@ class TinyModel(pl.LightningModule):
         return th.optim.SGD([self.w], lr=0.1)
 
 
-def main():
+def test_datasampler_end_to_end_smoke():
     sizes = [(1, 2), (3, 4), (2, 1), (8, 2), (5, 6), (2, 2), (4, 1), (6, 6)]
     ds = FakeDataset(sizes)
     sampler = SpecMolFragDynamicBatchSampler(data_source=ds, max_num=10, limited_by='frag_node')
@@ -64,5 +64,4 @@ def main():
     trainer.fit(model, train_dataloaders=dl)
 
 
-if __name__ == '__main__':
-    main()
+# Tests are collected by pytest; no direct execution block required.

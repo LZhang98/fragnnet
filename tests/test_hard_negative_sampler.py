@@ -111,7 +111,7 @@ def test_samplers_with_demo_data():
 	print("=" * 60)
 
 
-def test_with_real_dataset(spec_df_path: str, mol_df_path: str):
+def with_real_dataset(spec_df_path: str, mol_df_path: str):
 	"""Test samplers with real dataset files."""
 	
 	print("\n" + "=" * 60)
@@ -171,16 +171,4 @@ def test_with_real_dataset(spec_df_path: str, mol_df_path: str):
 		print(f"  Group {i} (size {len(group)}): {group[:5]}{'...' if len(group) > 5 else ''}")
 
 
-if __name__ == "__main__":
-	import sys
-	
-	# Test with demo data
-	test_samplers_with_demo_data()
-	
-	# Optionally test with real data
-	if len(sys.argv) > 2:
-		spec_df_path = sys.argv[1]
-		mol_df_path = sys.argv[2]
-		test_with_real_dataset(spec_df_path, mol_df_path)
-	else:
-		print("\n(To test with real data, run: python test_hard_negative_sampler.py <spec_df_path> <mol_df_path>)")
+# Note: `with_real_dataset` remains as a callable helper (not a pytest test).
