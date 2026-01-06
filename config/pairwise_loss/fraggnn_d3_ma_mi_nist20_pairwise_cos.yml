@@ -115,3 +115,7 @@ loss_batch_size: 16
 skip_extra_losses: True
 
 pairwise_cosine_binned_loss_weight: 0.5
+#extra loss weights
+#dynamic_batch_sampler: True
+formula_hard_negative_dynamic_sampler: True
+formula_hard_negative_min_specs_per_formula: 2
