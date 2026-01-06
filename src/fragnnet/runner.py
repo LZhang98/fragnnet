@@ -167,6 +167,10 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
 	# Set up a generator for reproducible sampling (will be overwritten each epoch)
 	generator = th.Generator()
+
+	# Compute maximum effective batch size (accounts for gradient accumulation)
+	# used by dynamic batch samplers to decide return thresholds.
+	max_batch_size = config_d.get("train_batch_size", 1) * config_d.get("accumulate_grad_batches", 1)
 	if split == "train":
 		# Choose sampler for training
 		if config_d["group_sampler"]:
@@ -188,7 +192,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
 	# Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
 	# Prefer formula-based hard negative dynamic sampler when enabled (train only)
-	use_formula_sampler = False
+
 	if split == "train" and config_d["formula_hard_negative_dynamic_sampler"]:
 		print("> Attempting FormulaHardNegativeDynamicBatchSampler for training")
 		batch_sampler = FormulaHardNegativeDynamicBatchSampler(
@@ -200,7 +204,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 			skip_too_big=True,
 			min_specs_per_formula=config_d["formula_hard_negative_min_specs_per_formula"],
 			shuffle=True,
-			seed=config_d["seed"],
+			generator=generator,
 		)
 		
 		# Check if sampler has any batches
@@ -210,30 +214,32 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 		else:
 			print(f"  Using FormulaHardNegativeDynamicBatchSampler with {len(batch_sampler)} batches")
 			dl_param_d["batch_sampler"] = batch_sampler
-			use_formula_sampler = True
 	
-	if not use_formula_sampler and config_d["dynamic_batch_sampler"]:
-		if split == "train":
-			return_batch_at = max_batch_size
+	# If a batch_sampler was already configured (e.g. formula-based sampler),
+	# do not set `sampler`/`batch_size`/`drop_last` to avoid DataLoader arg conflicts.
+	if "batch_sampler" not in dl_param_d:
+		if config_d["dynamic_batch_sampler"]:
+			if split == "train":
+				return_batch_at = max_batch_size
+			else:
+				return_batch_at = 0
+			batch_sampler = SpecMolFragDynamicBatchSampler(
+				ds,
+				max_num=config_d["dynamic_batch_sampler_max"],
+				limited_by=config_d["dynamic_batch_sampler_mode"],
+				skip_too_big=True,
+				return_batch_at=return_batch_at,
+				sampler=sampler)
+			dl_param_d["batch_sampler"] = batch_sampler
 		else:
-			return_batch_at = 0
-		batch_sampler = SpecMolFragDynamicBatchSampler(
-			ds,
-			max_num=config_d["dynamic_batch_sampler_max"],
-			limited_by=config_d["dynamic_batch_sampler_mode"],
-			skip_too_big=True,
-			return_batch_at=return_batch_at,
-			sampler=sampler)
-		dl_param_d["batch_sampler"] = batch_sampler
-	else:
-		# Standard batching
-		dl_param_d["sampler"] = sampler
-		if split == "train":
-			dl_param_d["batch_size"] = config_d["train_batch_size"]
-			dl_param_d["drop_last"] = config_d["drop_last"]
-		else:
-			dl_param_d["batch_size"] = config_d["eval_batch_size"]
-			dl_param_d["drop_last"] = False
+			# Standard batching
+			dl_param_d["sampler"] = sampler
+			if split == "train":
+				dl_param_d["batch_size"] = config_d["train_batch_size"]
+				dl_param_d["drop_last"] = config_d["drop_last"]
+			else:
+				dl_param_d["batch_size"] = config_d["eval_batch_size"]
+				dl_param_d["drop_last"] = False
 
 	dl = DataLoader(**dl_param_d)
 	return dl
