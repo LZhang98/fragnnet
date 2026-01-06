@@ -293,8 +293,9 @@ node_formula_normalized_entropy_weight: 0.0
 formula_node_normalized_entropy_weight: 0.0
 joint_normalized_entropy_weight: 0.0
 # pairwise losses
-pairwise_cosine_binned_loss_weight: 0.0 
-pairwise_jss_binned_loss_weight: 0.0
+pairwise_cosine_loss_weight: 0.0 
+pairwise_jss_loss_weight: 0.0
+pairwise_cross_entropy_loss_weight: 0.0
 # nb stuff, set all to 0 to disable
 nb_iso: False
 nb_node_entropy_weight: 0.0

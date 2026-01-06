@@ -100,11 +100,6 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
-
-simple_group_sampler: True
-simple_group_sampler_avg_per_group: 5
-simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
@@ -115,3 +110,9 @@ loss_batch_size: 16
 skip_extra_losses: True
 
 pairwise_cosine_binned_loss_weight: 0.5
+#extra loss weights
+#dynamic_batch_sampler: True
+formula_hard_negative_dynamic_sampler: True
+dynamic_batch_sampler: False
+simple_group_sampler: False
+formula_hard_negative_min_specs_per_formula: 2
