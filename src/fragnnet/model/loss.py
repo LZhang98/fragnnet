@@ -977,16 +977,21 @@ def get_pairwise_cossim(
 	norm_logprobs = scatter_logl2normalize(bin_logprobs, bin_batch_idxs)
 	norm_probs = norm_logprobs.exp()
 	
-	# Construct sparse tensor then dense
-	# We need to recover local bin indices from global bin indices returned by batched_bin_func
-	# batched_bin_func uses global_idx = batch_idx * num_bins + local_idx
-	# So local_idx = global_idx % num_bins
-	# We must ensure num_bins matches exactly what batched_bin_func used.
-	num_bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype).shape[0]
+	# Optimization: only use bins that are actually present in data
+	# This avoids allocating a massive 150k-dim dense matrix
+	unique_bins = th.unique(bin_idxs)
+	num_unique_bins = unique_bins.numel()
 	
-	indices = th.stack([bin_batch_idxs, bin_idxs % num_bins])
+	# Create a mapping from old bin indices to new compact indices
+	bin_idx_map = th.full((bin_idxs.max() + 1,), -1, device=mzs.device, dtype=th.long)
+	bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
 	
-	V = th.sparse_coo_tensor(indices, norm_probs, (batch_size, num_bins), device=mzs.device)
+	# Remap indices to compact space
+	compact_bin_idxs = bin_idx_map[bin_idxs]
+	
+	indices = th.stack([bin_batch_idxs, compact_bin_idxs])
+	
+	V = th.sparse_coo_tensor(indices, norm_probs, (batch_size, num_unique_bins), device=mzs.device)
 	V_dense = V.to_dense()
 	
 	if chunk_size is None or chunk_size >= batch_size:
@@ -1045,12 +1050,20 @@ def get_pairwise_jss_sim(
 	log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
 	probs = log_probs.exp()
 	
-	# Construct sparse tensor then dense
-	num_bins = th.arange(mz_bin_res,mz_max+mz_bin_res,step=mz_bin_res,device=mzs.device,dtype=mzs.dtype).shape[0]
+	# Optimization: only use bins that are actually present in data
+	unique_bins = th.unique(bin_idxs)
+	num_unique_bins = unique_bins.numel()
 	
-	indices = th.stack([bin_batch_idxs, bin_idxs % num_bins])
+	# Create a mapping from old bin indices to new compact indices
+	bin_idx_map = th.full((bin_idxs.max() + 1,), -1, device=mzs.device, dtype=th.long)
+	bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
 	
-	V = th.sparse_coo_tensor(indices, probs, (batch_size, num_bins), device=mzs.device)
+	# Remap indices to compact space
+	compact_bin_idxs = bin_idx_map[bin_idxs]
+	
+	indices = th.stack([bin_batch_idxs, compact_bin_idxs])
+	
+	V = th.sparse_coo_tensor(indices, probs, (batch_size, num_unique_bins), device=mzs.device)
 	V_dense = V.to_dense()  # (B, D)
 	
 	# Compute JSS
@@ -1124,13 +1137,21 @@ def get_pairwise_cross_entropy(
 	log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
 	probs = log_probs.exp()
 	
-	# Construct sparse tensor then dense
-	num_bins = th.arange(mz_bin_res, mz_max+mz_bin_res, step=mz_bin_res, device=mzs.device, dtype=mzs.dtype).shape[0]
+	# Optimization: only use bins that are actually present in data
+	unique_bins = th.unique(bin_idxs)
+	num_unique_bins = unique_bins.numel()
 	
-	indices = th.stack([bin_batch_idxs, bin_idxs % num_bins])
+	# Create a mapping from old bin indices to new compact indices
+	bin_idx_map = th.full((bin_idxs.max() + 1,), -1, device=mzs.device, dtype=th.long)
+	bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
+	
+	# Remap indices to compact space
+	compact_bin_idxs = bin_idx_map[bin_idxs]
+	
+	indices = th.stack([bin_batch_idxs, compact_bin_idxs])
 	
 	# Create sparse tensor for Probs
-	P = th.sparse_coo_tensor(indices, probs, (batch_size, num_bins), device=mzs.device)
+	P = th.sparse_coo_tensor(indices, probs, (batch_size, num_unique_bins), device=mzs.device)
 	
 	# We also need LogProbs for the Q part: log(Q)
 	# We use a small epsilon for stability when Q is 0, effective log(Q+eps)
@@ -1156,7 +1177,7 @@ def get_pairwise_cross_entropy(
 		# Note: P.to_dense() fills missing values with 0. 
 		# For Log Probabilities, missing values should be LOG_ZERO or log(eps).
 		# We can reconstruct Q_log_dense from the same indices but using log_probs values.
-		Q_log_sparse = th.sparse_coo_tensor(indices, log_probs, (batch_size, num_bins), device=mzs.device)
+		Q_log_sparse = th.sparse_coo_tensor(indices, log_probs, (batch_size, num_unique_bins), device=mzs.device)
 		Q_log_dense = Q_log_sparse.to_dense()
 		
 		# Now, the zeros in Q_log_dense are actually "missing" values which should be LOG_ZERO.
