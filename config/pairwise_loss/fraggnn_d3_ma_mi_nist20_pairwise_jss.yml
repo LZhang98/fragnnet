@@ -117,7 +117,10 @@ loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
 
-pairwise_jss_binned_loss_weight: 0.5
+# pairwise losses
+pairwise_cosine_loss_weight: 0.0 
+pairwise_jss_loss_weight: 0.5
+pairwise_cross_entropy_loss_weight: 0.0
 #extra loss weights
 #dynamic_batch_sampler: True
 formula_hard_negative_dynamic_sampler: True
