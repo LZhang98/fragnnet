@@ -102,6 +102,4 @@ def test_chunk_size():
     assert ce_matrix.shape == (batch_size, batch_size)
     print("Chunk size test passed.")
 
-if __name__ == "__main__":
-    test_pairwise_ce_hun_basic()
-    test_chunk_size()
+# Tests are collected by pytest; no direct execution block required.

@@ -12,7 +12,7 @@ compute_frags_mock.MASK_DTYPE = np.int64
 compute_frags_mock.MAX_NUM_EDGES = 100
 compute_frags_mock.MAX_NUM_NODES = 100
 
-from fragnnet.model.loss import get_pairwise_sparse_jss_sim_hun
+from fragnnet.model.loss import get_pairwise_jss_sim
 from fragnnet.utils.misc_utils import EPS
 
 def test_pairwise_jss_hun_basic():
@@ -33,11 +33,10 @@ def test_pairwise_jss_hun_basic():
     logprobs = th.tensor([0.0, 0.0, 0.0]) # exp(0)=1
     batch_idxs = th.tensor([0, 1, 2])
     
-    sim_matrix = get_pairwise_sparse_jss_sim_hun(
+    sim_matrix = get_pairwise_jss_sim(
         mzs, logprobs, batch_idxs,
         batch_size=batch_size,
-        tolerance=0.1,
-        relative=False
+        mz_max=100.0, mz_bin_res=1.0, chunk_size=None
     )
     
     print("Sim Matrix:\n", sim_matrix)
@@ -86,10 +85,10 @@ def test_pairwise_jss_hun_partial_overlap():
     logprobs = th.full((4,), th.log(th.tensor(0.5)))
     batch_idxs = th.tensor([0, 0, 1, 1])
     
-    sim_matrix = get_pairwise_sparse_jss_sim_hun(
+    sim_matrix = get_pairwise_jss_sim(
         mzs, logprobs, batch_idxs,
         batch_size=2,
-        tolerance=0.1
+        mz_max=100.0, mz_bin_res=1.0, chunk_size=None
     )
     
     print("Partial Sim Matrix:\n", sim_matrix)
@@ -111,7 +110,4 @@ def test_pairwise_jss_hun_partial_overlap():
     
     assert th.isclose(sim_matrix[0, 1], th.tensor(0.5), atol=1e-5)
 
-if __name__ == "__main__":
-    test_pairwise_jss_hun_basic()
-    test_pairwise_jss_hun_partial_overlap()
-    print("All tests passed!")
+# Tests are collected by pytest; no direct execution block required.

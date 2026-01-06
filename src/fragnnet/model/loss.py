@@ -897,6 +897,46 @@ def sparse_jensen_shannon_divergence(
 	# Return 1 - similarity to get the divergence (distance)
 	return 1.-jss
 
+###########################################
+# clip loss function
+###########################################
+
+def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
+	"""
+	Compute the CLIP contrastive loss between spectrum and molecule embeddings.
+	
+	Args:
+		spectrum_embeddings: torch.Tensor of shape [batch_size, embedding_dim]
+		mol_embeddings: torch.Tensor of shape [batch_size, embedding_dim]
+		temperature: scalar, temsperature parameter for scaling logits
+
+	Returns:
+		loss: scalar, the symmetric contrastive loss
+	"""
+
+	# Normalize embeddings to unit length
+	spectrum_embeddings = spectrum_embeddings / spectrum_embeddings.norm(dim=1, keepdim=True)
+	mol_embeddings = mol_embeddings / mol_embeddings.norm(dim=1, keepdim=True)
+
+	# Compute cosine similarity matrix (logits)
+	# this is equivalent to computing the cosine similarity for each pair. 
+	logits_per_specturm = spectrum_embeddings @ mol_embeddings.t() / temperature  # [batch_size, batch_size]
+	logits_per_mol = logits_per_specturm.t()  # [batch_size, batch_size]
+	
+	# Target labels are the indices of the diagonal
+	batch_size = spectrum_embeddings.size(0)
+	labels = th.arange(batch_size).to(spectrum_embeddings.device)
+	
+	# Compute cross-entropy loss in both directions
+	loss_i2t = F.cross_entropy(logits_per_specturm, labels)
+	loss_t2i = F.cross_entropy(logits_per_mol, labels)
+	loss = (loss_i2t + loss_t2i) / 2
+	return loss
+
+###########################################
+# Pairwise loss functions
+###########################################
+
 def get_pairwise_cossim(
 		mzs: th.Tensor,
 		logprobs: th.Tensor,
@@ -1042,39 +1082,7 @@ def get_pairwise_jss_sim(
 	
 	return JSS
 
-def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
-	"""
-	Compute the CLIP contrastive loss between spectrum and molecule embeddings.
-	
-	Args:
-		spectrum_embeddings: torch.Tensor of shape [batch_size, embedding_dim]
-		mol_embeddings: torch.Tensor of shape [batch_size, embedding_dim]
-		temperature: scalar, temsperature parameter for scaling logits
-
-	Returns:
-		loss: scalar, the symmetric contrastive loss
-	"""
-
-	# Normalize embeddings to unit length
-	spectrum_embeddings = spectrum_embeddings / spectrum_embeddings.norm(dim=1, keepdim=True)
-	mol_embeddings = mol_embeddings / mol_embeddings.norm(dim=1, keepdim=True)
-
-	# Compute cosine similarity matrix (logits)
-	# this is equivalent to computing the cosine similarity for each pair. 
-	logits_per_specturm = spectrum_embeddings @ mol_embeddings.t() / temperature  # [batch_size, batch_size]
-	logits_per_mol = logits_per_specturm.t()  # [batch_size, batch_size]
-	
-	# Target labels are the indices of the diagonal
-	batch_size = spectrum_embeddings.size(0)
-	labels = th.arange(batch_size).to(spectrum_embeddings.device)
-	
-	# Compute cross-entropy loss in both directions
-	loss_i2t = F.cross_entropy(logits_per_specturm, labels)
-	loss_t2i = F.cross_entropy(logits_per_mol, labels)
-	loss = (loss_i2t + loss_t2i) / 2
-	return loss
-
-def get_pairwise_binned_cross_entropy(
+def get_pairwise_cross_entropy(
 		mzs: th.Tensor,
 		logprobs: th.Tensor,
 		batch_idxs: th.Tensor,
@@ -1198,7 +1206,11 @@ def get_pairwise_binned_cross_entropy(
 
 	return CE
 
-def get_pairwise_sparse_jss_sim_hun(
+############################################
+# Pairwise with with Hungarian matching
+############################################
+
+def get_pairwise_jss_sim_hun(
 		mzs: th.Tensor,
 		logprobs: th.Tensor,
 		batch_idxs: th.Tensor,
@@ -1257,6 +1269,64 @@ def get_pairwise_sparse_jss_sim_hun(
 			
 	return sim_matrix
 
+def get_pairwise_cross_entropy_hun(
+		mzs: th.Tensor,
+		logprobs: th.Tensor,
+		batch_idxs: th.Tensor,
+		batch_size: int,
+		tolerance: float=1e-5,
+		relative: bool=True,
+		tolerance_min_mz: float=TOLERANCE_MIN_MZ,
+		chunk_size: int=32) -> th.Tensor:
+	"""
+	Compute pairwise Cross Entropy matrix for a batch of spectra using Hungarian matching.
+	CE(P, Q) = - sum P_i log Q_matching_i.
+
+	Args:
+		mzs: m/z values.
+		logprobs: log-probabilities (intensities).
+		batch_idxs: Batch indices.
+		batch_size: Number of spectra.
+		tolerance: m/z matching tolerance.
+		relative: Whether tolerance is relative.
+		tolerance_min_mz: Minimum m/z for relative tolerance.
+		chunk_size: Ignored in this iterative implementation, but kept for API compatibility.
+		
+	Returns:
+		Matrix of shape [batch_size, batch_size] containing pairwise cross entropies.
+	"""
+	
+	# Pre-aggregate peaks to save work in loop
+	mzs, logprobs, batch_idxs = round_aggregate_peaks(
+		mzs,
+		logprobs,
+		batch_idxs,
+		agg="lse"
+	)
+	
+	ce_matrix = th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
+	
+	# Separate spectra
+	spectra_mzs = []
+	spectra_logprobs = []
+	for i in range(batch_size):
+		mask = (batch_idxs == i)
+		spectra_mzs.append(mzs[mask])
+		spectra_logprobs.append(logprobs[mask])
+		
+	# Fill matrix
+	# CE is NOT symmetric. Loop over all pairs.
+	# Iterate over all i, j.
+	for i in range(batch_size):
+		for j in range(batch_size):
+			ce_matrix[i, j] = _compute_pair_ce_hun(
+				spectra_mzs[i], spectra_logprobs[i],
+				spectra_mzs[j], spectra_logprobs[j],
+				tolerance, relative, tolerance_min_mz
+			)
+			# Optimization: could skip self-check if needed, but good for validation.
+			
+	return ce_matrix
 
 def _compute_pair_ce_hun(
 	b_true_mzs: th.Tensor,
@@ -1357,451 +1427,3 @@ def _compute_pair_ce_hun(
 	# CE = - Total Score
 	ce = -total_score
 	return ce
-
-
-def get_pairwise_cross_entropy_hun(
-		mzs: th.Tensor,
-		logprobs: th.Tensor,
-		batch_idxs: th.Tensor,
-		batch_size: int,
-		tolerance: float=1e-5,
-		relative: bool=True,
-		tolerance_min_mz: float=TOLERANCE_MIN_MZ,
-		chunk_size: int=32) -> th.Tensor:
-	"""
-	Compute pairwise Cross Entropy matrix for a batch of spectra using Hungarian matching.
-	CE(P, Q) = - sum P_i log Q_matching_i.
-
-	Args:
-		mzs: m/z values.
-		logprobs: log-probabilities (intensities).
-		batch_idxs: Batch indices.
-		batch_size: Number of spectra.
-		tolerance: m/z matching tolerance.
-		relative: Whether tolerance is relative.
-		tolerance_min_mz: Minimum m/z for relative tolerance.
-		chunk_size: Ignored in this iterative implementation, but kept for API compatibility.
-		
-	Returns:
-		Matrix of shape [batch_size, batch_size] containing pairwise cross entropies.
-	"""
-	
-	# Pre-aggregate peaks to save work in loop
-	mzs, logprobs, batch_idxs = round_aggregate_peaks(
-		mzs,
-		logprobs,
-		batch_idxs,
-		agg="lse"
-	)
-	
-	ce_matrix = th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
-	
-	# Separate spectra
-	spectra_mzs = []
-	spectra_logprobs = []
-	for i in range(batch_size):
-		mask = (batch_idxs == i)
-		spectra_mzs.append(mzs[mask])
-		spectra_logprobs.append(logprobs[mask])
-		
-	# Fill matrix
-	# CE is NOT symmetric. Loop over all pairs.
-	# Iterate over all i, j.
-	for i in range(batch_size):
-		for j in range(batch_size):
-			ce_matrix[i, j] = _compute_pair_ce_hun(
-				spectra_mzs[i], spectra_logprobs[i],
-				spectra_mzs[j], spectra_logprobs[j],
-				tolerance, relative, tolerance_min_mz
-			)
-			# Optimization: could skip self-check if needed, but good for validation.
-			
-	return ce_matrix
-
-def get_pairwise_cross_entropy_vec(
-		mzs: th.Tensor,
-		logprobs: th.Tensor,
-		batch_idxs: th.Tensor,
-		batch_size: int,
-		dist: str="gaussian",
-		tolerance: float=1e-5,
-		relative: bool=True,
-		tolerance_min_mz: float=TOLERANCE_MIN_MZ,
-		chunk_size: int=32) -> th.Tensor:
-	"""
-	Compute pairwise Cross Entropy matrix for a batch of spectra using vectorized "soft" matching.
-	CE(P, Q) = - sum P_i log Q_soft(m_i)
-	
-	Args:
-		mzs: m/z values.
-		logprobs: log-probabilities (intensities).
-		batch_idxs: Batch indices.
-		batch_size: Number of spectra.
-		dist: "gaussian" or "peak_marginal".
-		tolerance: m/z matching tolerance.
-		relative: Whether tolerance is relative.
-		tolerance_min_mz: Minimum m/z for relative tolerance.
-		chunk_size: Processing chunk size.
-		
-	Returns:
-		Matrix of shape [batch_size, batch_size] containing pairwise cross entropies.
-	"""
-	
-	# Pre-aggregate peaks
-	mzs, logprobs, batch_idxs = round_aggregate_peaks(
-		mzs,
-		logprobs,
-		batch_idxs,
-		agg="lse"
-	)
-	
-	if dist == "gaussian":
-		ce_fn = mog_ce_fn
-		tolerance_multiple = 3.0 # Standard Gaussian truncation
-		gaussian_renormalize = True
-	elif dist == "peak_marginal":
-		ce_fn = pm_ce_fn
-		tolerance_multiple = 1.0
-		gaussian_renormalize = False
-	else:
-		raise ValueError(f"Unknown dist: {dist}")
-		
-	ce_matrix = th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
-	
-	spectra_mzs = []
-	spectra_logprobs = []
-	for i in range(batch_size):
-		mask = (batch_idxs == i)
-		spectra_mzs.append(mzs[mask])
-		spectra_logprobs.append(logprobs[mask])
-
-	# Normalize probabilities
-	spectra_probs = []
-	for i in range(batch_size):
-		p = th.exp(spectra_logprobs[i])
-		p_sum = p.sum()
-		if p_sum > 0:
-			spectra_probs.append(p / p_sum)
-		else:
-			spectra_probs.append(p)
-
-	# Iterative computation
-	for i in range(batch_size):
-		p_mzs = spectra_mzs[i]
-		p_probs = spectra_probs[i]
-		
-		# Skip empty spectra
-		if p_probs.numel() == 0:
-			continue
-			
-		for j in range(batch_size):
-			q_mzs = spectra_mzs[j]
-			q_logprobs = spectra_logprobs[j]
-			
-			if q_logprobs.numel() == 0:
-				# Q is empty. CE = - sum P log(eps) = - log(eps)
-				ce_matrix[i, j] = -th.log(th.tensor(EPS, device=mzs.device, dtype=logprobs.dtype))
-				continue
-				
-			# Compute Q_soft(m_p) -> logprobs of P_mzs under Q distribution
-			# ce_fn(b_true_mzs=P, b_pred_mzs=Q, b_pred_logprobs=Q ...)
-			# Note: we pass unnormalized q_logprobs because ce_fn usually expects raw weights,
-			# but strictly speaking for proper probability density, Q should also be normalized.
-			# Let's normalize Q logprobs for consistency with probabilistic interpretation.
-			q_probs_unnorm = th.exp(q_logprobs)
-			q_sum = q_probs_unnorm.sum()
-			if q_sum > 0:
-				current_q_logprobs = q_logprobs - th.log(q_sum)
-			else:
-				current_q_logprobs = q_logprobs
-
-			q_soft_logprobs = ce_fn(
-				b_true_mzs=p_mzs,
-				b_pred_mzs=q_mzs,
-				b_pred_logprobs=current_q_logprobs,
-				relative=relative,
-				tolerance=tolerance,
-				tolerance_min_mz=tolerance_min_mz,
-				tolerance_multiple=tolerance_multiple,
-				gaussian_renormalize=gaussian_renormalize
-			)
-			
-			# Q_soft_logprobs contains log probability of observing p_mzs given distribution Q.
-			# However, ce_fn (esp. mog_ce_fn) calculates a density (if renormalized) or just a weighted sum.
-			# If it's density, values can be > 0 (log > 0).
-			# For discrete cross-entropy, P are probabilities summing to 1.
-			# CE = - sum P_k * log(Likelihood_k)
-			
-			ce = -th.sum(p_probs * q_soft_logprobs)
-			ce_matrix[i, j] = ce
-			
-	return ce_matrix
-
-def get_pairwise_jss_vec(
-		mzs: th.Tensor,
-		logprobs: th.Tensor,
-		batch_idxs: th.Tensor,
-		batch_size: int,
-		dist: str="gaussian",
-		tolerance: float=1e-5,
-		relative: bool=True,
-		tolerance_min_mz: float=TOLERANCE_MIN_MZ,
-		chunk_size: int=32) -> th.Tensor:
-	"""
-	Compute pairwise Jensen-Shannon Similarity matrix using vectorized soft matching.
-	JSS = 1 - JSD / log(2)
-	JSD(P, Q) = 0.5 * KL(P || M) + 0.5 * KL(Q || M)
-	M = 0.5 * (P + Q)
-	
-	Args: same as get_pairwise_cross_entropy_vec
-	"""
-	
-	# Pre-aggregate peaks
-	mzs, logprobs, batch_idxs = round_aggregate_peaks(
-		mzs,
-		logprobs,
-		batch_idxs,
-		agg="lse"
-	)
-	
-	if dist == "gaussian":
-		ce_fn = mog_ce_fn
-		tolerance_multiple = 3.0
-		gaussian_renormalize = True
-	elif dist == "peak_marginal":
-		ce_fn = pm_ce_fn
-		tolerance_multiple = 1.0
-		gaussian_renormalize = False
-	else:
-		raise ValueError(f"Unknown dist: {dist}")
-	
-	sim_matrix = th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
-	
-	spectra_mzs = []
-	spectra_logprobs = []
-	spectra_probs = []
-	
-	for i in range(batch_size):
-		mask = (batch_idxs == i)
-		s_mzs = mzs[mask]
-		s_logprobs = logprobs[mask]
-		spectra_mzs.append(s_mzs)
-		spectra_logprobs.append(s_logprobs)
-		
-		# Normalize
-		p = th.exp(s_logprobs)
-		p_sum = p.sum()
-		if p_sum > 0:
-			spectra_probs.append(p / p_sum)
-		else:
-			spectra_probs.append(p)
-			
-	LOG2 = th.log(th.tensor(2.0, device=mzs.device, dtype=logprobs.dtype))
-	
-	for i in range(batch_size):
-		# Self-similarity
-		sim_matrix[i, i] = 1.0
-		
-		p_mzs = spectra_mzs[i]
-		p_probs = spectra_probs[i]
-		
-		for j in range(i + 1, batch_size):
-			q_mzs = spectra_mzs[j]
-			q_probs = spectra_probs[j]
-			
-			if p_probs.numel() == 0 or q_probs.numel() == 0:
-				# If one is empty, JSS=0 (max distance)
-				sim_matrix[i, j] = 0.0
-				sim_matrix[j, i] = 0.0
-				continue
-				
-			# Prepare normalized logprobs for ce_fn
-			p_logprobs_norm = th.log(p_probs + 1e-30) # Avoid log(0) issues if any
-			q_logprobs_norm = th.log(q_probs + 1e-30)
-			
-			# We need M = 0.5(P+Q).
-			# But P and Q are continuous distributions defined by (mzs, probs).
-			# Evaluating KL(P || M) requires evaluating P and M at locations of P.
-			# P(x) is discrete spikes at p_mzs.
-			# M(x) = 0.5 P(x) + 0.5 Q(x).
-			# At location x \in p_mzs:
-			# P(x) = p_probs
-			# Q(x) = q_soft(x) (estimated via ce_fn)
-			
-			# Q at P locations
-			q_at_p_log = ce_fn(
-				b_true_mzs=p_mzs,
-				b_pred_mzs=q_mzs,
-				b_pred_logprobs=q_logprobs_norm,
-				relative=relative,
-				tolerance=tolerance,
-				tolerance_min_mz=tolerance_min_mz,
-				tolerance_multiple=tolerance_multiple,
-				gaussian_renormalize=gaussian_renormalize
-			)
-			q_at_p = th.exp(q_at_p_log)
-			
-			# P at Q locations
-			p_at_q_log = ce_fn(
-				b_true_mzs=q_mzs,
-				b_pred_mzs=p_mzs,
-				b_pred_logprobs=p_logprobs_norm,
-				relative=relative,
-				tolerance=tolerance,
-				tolerance_min_mz=tolerance_min_mz,
-				tolerance_multiple=tolerance_multiple,
-				gaussian_renormalize=gaussian_renormalize
-			)
-			p_at_q = th.exp(p_at_q_log)
-			
-			# M at P locations = 0.5 * P + 0.5 * Q_at_P
-			# Note: P here is probability mass. Q_at_P is density or mass depending on dist.
-			# If dist=gaussian, Q_at_P is density. P is mass.
-			# This is a known issue with discrete-continuous mixture.
-			# However, for similarity metric, we treat them as compatible.
-			# Generally peak_marginal is better for this as it is mass-like (box kernel).
-			m_at_p = 0.5 * p_probs + 0.5 * q_at_p
-			
-			# M at Q locations
-			m_at_q = 0.5 * p_at_q + 0.5 * q_probs
-			
-			# KL(P || M) = sum P * log(P / M_at_P)
-			kl_p_m = th.sum(p_probs * (th.log(p_probs + EPS) - th.log(m_at_p + EPS)))
-			
-			# KL(Q || M) = sum Q * log(Q / M_at_q)
-			kl_q_m = th.sum(q_probs * (th.log(q_probs + EPS) - th.log(m_at_q + EPS)))
-			
-			jsd = 0.5 * kl_p_m + 0.5 * kl_q_m
-			
-			sim = 1.0 - jsd / LOG2
-			
-			# Clamp for numerical stability
-			sim = th.clamp(sim, 0.0, 1.0)
-			
-			sim_matrix[i, j] = sim
-			sim_matrix[j, i] = sim
-			
-	return sim_matrix
-
-def get_pairwise_cossim_vec(
-		mzs: th.Tensor,
-		logprobs: th.Tensor,
-		batch_idxs: th.Tensor,
-		batch_size: int,
-		dist: str="gaussian",
-		tolerance: float=1e-5,
-		relative: bool=True,
-		tolerance_min_mz: float=TOLERANCE_MIN_MZ,
-		chunk_size: int=32) -> th.Tensor:
-	"""
-	Compute pairwise Cosine Similarity matrix using vectorized soft matching.
-	Sim(P, Q) = 0.5 * ( P . Q_soft + Q . P_soft )
-	Inputs are assumed to be unnormalized logprobs, will be L2 normalized internally.
-	"""
-	
-	# Pre-aggregate peaks
-	mzs, logprobs, batch_idxs = round_aggregate_peaks(
-		mzs,
-		logprobs,
-		batch_idxs,
-		agg="lse"
-	)
-	
-	if dist == "gaussian":
-		ce_fn = mog_ce_fn
-		tolerance_multiple = 3.0
-		gaussian_renormalize = True
-	elif dist == "peak_marginal":
-		ce_fn = pm_ce_fn
-		tolerance_multiple = 1.0
-		gaussian_renormalize = False
-	else:
-		raise ValueError(f"Unknown dist: {dist}")
-		
-	sim_matrix = th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
-	
-	spectra_mzs = []
-	spectra_l2probs = [] # L2 normalized probability-like vectors
-	
-	for i in range(batch_size):
-		mask = (batch_idxs == i)
-		s_mzs = mzs[mask]
-		s_logprobs = logprobs[mask]
-		spectra_mzs.append(s_mzs)
-		
-		# L2 Normalize: x / ||x||_2.
-		# Operations in log space for stability?
-		# log(x / ||x||) = log(x) - log(||x||)
-		# ||x|| = sqrt(sum x^2) = sqrt(sum exp(2*logx))
-		# log_norm = 0.5 * logsumexp(2 * logx)
-		log_norm = 0.5 * th.logsumexp(2 * s_logprobs, dim=0)
-		s_logprobs_l2 = s_logprobs - log_norm
-		spectra_l2probs.append(th.exp(s_logprobs_l2))
-
-	for i in range(batch_size):
-		sim_matrix[i, i] = 1.0
-		
-		p_mzs = spectra_mzs[i]
-		p_vec = spectra_l2probs[i]
-		p_logvec = th.log(p_vec + 1e-30) # For passing to ce_fn
-		
-		for j in range(i + 1, batch_size):
-			q_mzs = spectra_mzs[j]
-			q_vec = spectra_l2probs[j]
-			q_logvec = th.log(q_vec + 1e-30)
-			
-			if p_vec.numel() == 0 or q_vec.numel() == 0:
-				sim_matrix[i, j] = 0.0
-				sim_matrix[j, i] = 0.0
-				continue
-				
-			# Q at P locations (soft projection of Q onto P's basis)
-			# Result is weighted sum of Q's vec at P's locations.
-			# But ce_fn returns log-prob.
-			# Here we interpret q_logvec as "weights" in the MOG.
-			# ce_fn calculates: logsumexp( -dist + log_weight )
-			# Exponentiated: sum( weight * kernel )
-			# This is exactly the convolution / soft projection.
-			
-			q_at_p_log = ce_fn(
-				b_true_mzs=p_mzs,
-				b_pred_mzs=q_mzs,
-				b_pred_logprobs=q_logvec,
-				relative=relative,
-				tolerance=tolerance,
-				tolerance_min_mz=tolerance_min_mz,
-				tolerance_multiple=tolerance_multiple,
-				gaussian_renormalize=gaussian_renormalize
-			)
-			q_at_p = th.exp(q_at_p_log)
-			
-			# P at Q locations
-			p_at_q_log = ce_fn(
-				b_true_mzs=q_mzs,
-				b_pred_mzs=p_mzs,
-				b_pred_logprobs=p_logvec,
-				relative=relative,
-				tolerance=tolerance,
-				tolerance_min_mz=tolerance_min_mz,
-				tolerance_multiple=tolerance_multiple,
-				gaussian_renormalize=gaussian_renormalize
-			)
-			p_at_q = th.exp(p_at_q_log)
-			
-			# Dot product
-			# P . Q_soft = sum(p_vec * q_at_p)
-			dot_pq = th.sum(p_vec * q_at_p)
-			
-			# Q . P_soft = sum(q_vec * p_at_q)
-			dot_qp = th.sum(q_vec * p_at_q)
-			
-			# Symmetric sim
-			sim = 0.5 * (dot_pq + dot_qp)
-			
-			# Clamp
-			sim = th.clamp(sim, 0.0, 1.0)
-			
-			sim_matrix[i, j] = sim
-			sim_matrix[j, i] = sim
-			
-	return sim_matrix

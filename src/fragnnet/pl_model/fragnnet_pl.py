@@ -10,7 +10,7 @@ except ImportError:
 import os
 
 from fragnnet.model import FraGNNetModel
-from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_binned_cossin_sim, get_pairwise_binned_jss_sim, sparse_jensen_shannon_divergence, sparse_jensen_shannon_divergence_hungarian
+from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_cossim, get_pairwise_jss_sim, sparse_jensen_shannon_divergence, sparse_jensen_shannon_divergence_hungarian
 from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler,decompile_jit_ckpt
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog,scatter_logsumexp, scatter_logl2normalize
@@ -825,8 +825,8 @@ class FraGNNetPL(SpectrumPL):
 			# Pairwise similarity MSE loss
 			if f"pairwise_cossine_{self.hparams.mz_bin_res}" in self.loss_names:
 				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs)+1)
-				true_sim = get_pairwise_binned_cossin_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
-				pred_sim = get_pairwise_binned_cossin_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				true_sim = get_pairwise_cossim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				pred_sim = get_pairwise_cossim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
 				
 				pairwise_sim_mse = F.mse_loss(pred_sim, true_sim)
 				loss = loss + self.hparams.pairwise_cosine_binned_loss_weight * pairwise_sim_mse
@@ -835,8 +835,8 @@ class FraGNNetPL(SpectrumPL):
 			# Pairwise JSS MSE loss
 			if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
 				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs)+1)
-				true_sim = get_pairwise_binned_jss_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
-				pred_sim = get_pairwise_binned_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				true_sim = get_pairwise_jss_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				pred_sim = get_pairwise_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
 				
 				pairwise_jss_mse = F.mse_loss(pred_sim, true_sim)
 				loss = loss + self.hparams.pairwise_jss_binned_loss_weight * pairwise_jss_mse

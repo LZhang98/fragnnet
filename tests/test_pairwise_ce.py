@@ -13,7 +13,7 @@ compute_frags_mock.MAX_NUM_EDGES = 100
 compute_frags_mock.MAX_NUM_NODES = 100
 
 import torch as th
-from fragnnet.model.loss import get_pairwise_binned_cross_entropy
+from fragnnet.model.loss import get_pairwise_cross_entropy
 from fragnnet.utils.misc_utils import EPS
 
 def test_pairwise_binned_cross_entropy():
@@ -56,7 +56,7 @@ def test_pairwise_binned_cross_entropy():
     batch_idxs = th.cat(batch_idxs_list)
     
     # Run the function
-    ce_matrix = get_pairwise_binned_cross_entropy(
+    ce_matrix = get_pairwise_cross_entropy(
         mzs, logprobs, batch_idxs,
         batch_size=batch_size,
         mz_max=mz_max,
@@ -95,7 +95,7 @@ def test_pairwise_binned_cross_entropy():
     assert th.isclose(loss_0_1, expected_ce_0_1, atol=1e-5)
     
     # Verify chunked computation
-    ce_matrix_chunked = get_pairwise_binned_cross_entropy(
+    ce_matrix_chunked = get_pairwise_cross_entropy(
         mzs, logprobs, batch_idxs,
         batch_size=batch_size,
         mz_max=mz_max,
@@ -106,5 +106,4 @@ def test_pairwise_binned_cross_entropy():
     assert th.allclose(ce_matrix, ce_matrix_chunked, atol=1e-5)
     print("Chunked computation matches.")
 
-if __name__ == "__main__":
-    test_pairwise_binned_cross_entropy()
+# Tests are collected by pytest; no direct execution block required.

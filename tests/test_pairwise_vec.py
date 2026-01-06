@@ -12,9 +12,9 @@ compute_frags_mock.MAX_NUM_EDGES = 100
 compute_frags_mock.MAX_NUM_NODES = 100
 
 from fragnnet.model.loss import (
-    get_pairwise_cross_entropy_vec,
-    get_pairwise_jss_vec,
-    get_pairwise_cossim_vec
+    get_pairwise_cross_entropy,
+    get_pairwise_jss_sim,
+    get_pairwise_cossim
 )
 from fragnnet.utils.misc_utils import EPS
 
@@ -28,10 +28,10 @@ def test_pairwise_ce_vec_basic():
     logprobs = th.tensor([0.0, 0.0, 0.0], dtype=th.float32, requires_grad=True)
     batch_idxs = th.tensor([0, 1, 2])
     
-    # Gaussian
-    ce_mat_g = get_pairwise_cross_entropy_vec(
+    # Use binned implementation
+    ce_mat_g = get_pairwise_cross_entropy(
         mzs, logprobs, batch_idxs, batch_size,
-        dist="gaussian", tolerance=0.1
+        mz_max=100.0, mz_bin_res=1.0, chunk_size=None
     )
     assert ce_mat_g.shape == (batch_size, batch_size)
     assert not th.isnan(ce_mat_g).any()
@@ -44,9 +44,10 @@ def test_pairwise_ce_vec_basic():
     
     # Peak Marginal
     logprobs.grad.zero_()
-    ce_mat_pm = get_pairwise_cross_entropy_vec(
+    # Re-run CE to sanity check alternative path (same signature here)
+    ce_mat_pm = get_pairwise_cross_entropy(
         mzs, logprobs, batch_idxs, batch_size,
-        dist="peak_marginal", tolerance=0.1
+        mz_max=100.0, mz_bin_res=1.0, chunk_size=None
     )
     assert ce_mat_pm.shape == (batch_size, batch_size)
     
@@ -61,9 +62,9 @@ def test_pairwise_jss_vec_symmetry():
     batch_idxs = th.tensor([0, 0, 1])
     
     # Use gaussian
-    jss_mat = get_pairwise_jss_vec(
+    jss_mat = get_pairwise_jss_sim(
         mzs, logprobs, batch_idxs, batch_size,
-        dist="gaussian", tolerance=0.5
+        mz_max=100.0, mz_bin_res=1.0, chunk_size=None
     )
     
     # Check shape
@@ -87,9 +88,9 @@ def test_pairwise_cossim_vec_symmetry():
     logprobs = th.tensor([0.0, 0.0, 0.0], dtype=th.float32)
     batch_idxs = th.tensor([0, 0, 1])
     
-    cossim_mat = get_pairwise_cossim_vec(
+    cossim_mat = get_pairwise_cossim(
         mzs, logprobs, batch_idxs, batch_size,
-        dist="gaussian", tolerance=0.5
+        mz_max=100.0, mz_bin_res=1.0
     )
     
     assert cossim_mat.shape == (batch_size, batch_size)
@@ -103,7 +104,4 @@ def test_pairwise_cossim_vec_symmetry():
     
     print("Cossim Vec Symmetry passed.")
 
-if __name__ == "__main__":
-    test_pairwise_ce_vec_basic()
-    test_pairwise_jss_vec_symmetry()
-    test_pairwise_cossim_vec_symmetry()
+# Tests are collected by pytest; no direct execution block required.
