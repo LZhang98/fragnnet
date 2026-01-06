@@ -10,7 +10,7 @@ except ImportError:
 import os
 
 from fragnnet.model import FraGNNetModel
-from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_cossim, get_pairwise_jss_sim, sparse_jensen_shannon_divergence, sparse_jensen_shannon_divergence_hungarian
+from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_cossim, get_pairwise_jss_sim, get_pairwise_cross_entropy, sparse_jensen_shannon_divergence, sparse_jensen_shannon_divergence_hungarian
 from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler,decompile_jit_ckpt
 from fragnnet.utils.spec_utils import *
 from fragnnet.utils.misc_utils import safelog,scatter_logsumexp, scatter_logl2normalize
@@ -290,10 +290,12 @@ class FraGNNetPL(SpectrumPL):
 					"nb_node_node_mi"
 				])
 			# Add pairwise losses if weights are positive
-			if self.hparams.pairwise_cosine_binned_loss_weight > 0:
+			if self.hparams.pairwise_cosine_loss_weight > 0:
 				loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
-			if self.hparams.pairwise_jss_binned_loss_weight > 0:
+			if self.hparams.pairwise_jss_loss_weight > 0:
 				loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
+			if self.hparams.pairwise_cross_entropy_loss_weight > 0:
+				loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
 		else:
 			# If extra losses are skipped, add specific ones if their weights are non-zero
 			if not (self.hparams.formula_entropy_weight == self.hparams.formula_normalized_entropy_weight == 0.):
@@ -359,11 +361,12 @@ class FraGNNetPL(SpectrumPL):
 						"nb_node_node_ne",
 					])
 
-			if self.hparams.pairwise_cosine_binned_loss_weight > 0:
+			if self.hparams.pairwise_cosine_loss_weight > 0:
 				loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
-			if self.hparams.pairwise_jss_binned_loss_weight > 0:
+			if self.hparams.pairwise_jss_loss_weight > 0:
 				loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
-     
+			if self.hparams.pairwise_cross_entropy_loss_weight > 0:
+				loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
 		self.loss_names = loss_names
 		self.metric_names.update(loss_names)
 
@@ -822,15 +825,15 @@ class FraGNNetPL(SpectrumPL):
 				assert self.hparams.nb_formula_node_entropy_weight == 0.0
 				assert self.hparams.nb_formula_node_normalized_entropy_weight == 0.0
 			
-			# Pairwise similarity MSE loss
+			# Pairwise cosine similarity MSE loss
 			if f"pairwise_cossine_{self.hparams.mz_bin_res}" in self.loss_names:
 				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs)+1)
 				true_sim = get_pairwise_cossim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
 				pred_sim = get_pairwise_cossim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
 				
 				pairwise_sim_mse = F.mse_loss(pred_sim, true_sim)
-				loss = loss + self.hparams.pairwise_cosine_binned_loss_weight * pairwise_sim_mse
-				loss_d[f"pairwise_cossine_{self.hparams.mz_bin_res}"] = pairwise_sim_mse.expand(batch_size)
+				loss = loss + self.hparams.pairwise_cosine_loss_weight * pairwise_sim_mse
+				loss_d[f"pairwise_cossine_{self.hparams.mz_bin_res}"] = pairwise_sim_mse
 
 			# Pairwise JSS MSE loss
 			if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
@@ -839,9 +842,18 @@ class FraGNNetPL(SpectrumPL):
 				pred_sim = get_pairwise_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
 				
 				pairwise_jss_mse = F.mse_loss(pred_sim, true_sim)
-				loss = loss + self.hparams.pairwise_jss_binned_loss_weight * pairwise_jss_mse
-				loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = pairwise_jss_mse.expand(batch_size)
+				loss = loss + self.hparams.pairwise_jss_loss_weight * pairwise_jss_mse
+				loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = pairwise_jss_mse
 
+			# Pairwise cross-entropy MSE loss
+			if f"pairwise_cross_entropy_{self.hparams.mz_bin_res}" in self.loss_names:
+				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
+				true_sim = get_pairwise_cross_entropy(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+				pred_sim = get_pairwise_cross_entropy(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+
+				pairwise_ce_mse = F.mse_loss(pred_sim, true_sim)
+				loss = loss + self.hparams.pairwise_cross_entropy_loss_weight * pairwise_ce_mse
+				loss_d[f"pairwise_cross_entropy_{self.hparams.mz_bin_res}"] = pairwise_ce_mse
 			# finally, update the loss
 			loss_d["loss"] = loss
 			
