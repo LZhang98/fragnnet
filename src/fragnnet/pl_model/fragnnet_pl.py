@@ -833,7 +833,8 @@ class FraGNNetPL(SpectrumPL):
 				
 				pairwise_sim_mse = F.mse_loss(pred_sim, true_sim)
 				loss = loss + self.hparams.pairwise_cosine_loss_weight * pairwise_sim_mse
-				loss_d[f"pairwise_cossine_{self.hparams.mz_bin_res}"] = pairwise_sim_mse
+				# expand batch-level scalar to per-sample tensor for metric tracking
+				loss_d[f"pairwise_cossine_{self.hparams.mz_bin_res}"] = pairwise_sim_mse * th.ones([batch_size], device=pairwise_sim_mse.device, dtype=pairwise_sim_mse.dtype)
 
 			# Pairwise JSS MSE loss
 			if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
@@ -843,7 +844,8 @@ class FraGNNetPL(SpectrumPL):
 				
 				pairwise_jss_mse = F.mse_loss(pred_sim, true_sim)
 				loss = loss + self.hparams.pairwise_jss_loss_weight * pairwise_jss_mse
-				loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = pairwise_jss_mse
+				# expand batch-level scalar to per-sample tensor for metric tracking
+				loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = pairwise_jss_mse * th.ones([batch_size], device=pairwise_jss_mse.device, dtype=pairwise_jss_mse.dtype)
 
 			# Pairwise cross-entropy MSE loss
 			if f"pairwise_cross_entropy_{self.hparams.mz_bin_res}" in self.loss_names:
@@ -853,7 +855,8 @@ class FraGNNetPL(SpectrumPL):
 
 				pairwise_ce_mse = F.mse_loss(pred_sim, true_sim)
 				loss = loss + self.hparams.pairwise_cross_entropy_loss_weight * pairwise_ce_mse
-				loss_d[f"pairwise_cross_entropy_{self.hparams.mz_bin_res}"] = pairwise_ce_mse
+				# expand batch-level scalar to per-sample tensor for metric tracking
+				loss_d[f"pairwise_cross_entropy_{self.hparams.mz_bin_res}"] = pairwise_ce_mse * th.ones([batch_size], device=pairwise_ce_mse.device, dtype=pairwise_ce_mse.dtype)
 			# finally, update the loss
 			loss_d["loss"] = loss
 			

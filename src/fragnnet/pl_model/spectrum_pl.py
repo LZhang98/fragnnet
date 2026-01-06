@@ -1147,12 +1147,41 @@ class SpectrumPL(pl.LightningModule):
 			return
 		keys = results.keys()
 		for k in keys:
-			if isinstance(results[k][0],th.Tensor):
-				results[k] = th.cat(results[k],dim=0)
+			elems = results[k]
+			# If elements are tensors, make sure they're all at least 1-d before concat
+			if all(isinstance(x, th.Tensor) for x in elems):
+				norm = []
+				for x in elems:
+					if x.dim() == 0:
+						# convert scalar tensor to 1-d so it can be concatenated
+						norm.append(x.unsqueeze(0))
+					else:
+						norm.append(x)
+				# concatenate along first dimension
+				results[k] = th.cat(norm, dim=0)
 			else:
-				assert isinstance(results[k][0],list)
-				results[k] = flatten_lol(results[k])
+				# expected lists-of-lists for non-tensor entries
+				assert isinstance(elems[0], list)
+				results[k] = flatten_lol(elems)
 		# log all the metrics
+		# sanity-check shapes before reducing metrics to get clearer errors
+		def _len(x):
+			if isinstance(x, th.Tensor):
+				return x.shape[0]
+			elif isinstance(x, list):
+				return len(x)
+			else:
+				return None
+		base_len = _len(results.get("spec_per_group"))
+		for k in self.metric_names:
+			mlen = _len(results.get(k))
+			if mlen is None or base_len is None:
+				continue
+			if mlen != base_len:
+				raise RuntimeError(
+					f"Metric/weight length mismatch for key '{k}': metric len={mlen}, spec_per_group len={base_len}"
+				)
+    
 		mean_metrics, std_metrics = self._reduce_metrics(results, split)
 		for k in mean_metrics.keys():
 			self.log(
