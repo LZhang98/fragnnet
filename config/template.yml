@@ -393,8 +393,9 @@ finetune_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights duri
 dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000
-formula_hard_negative_dynamic_sampler: False
-formula_hard_negative_min_specs_per_formula: 2
+dual_group_dynamic_batch_sampler: False
+dual_group_dynamic_batch_sampler_mode: frag_node
+dual_group_dynamic_batch_sampler_max: 100000
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 3

@@ -3,4 +3,4 @@ from .spec_mol_dataset import SpecMolDataset
 from .spec_mol_frag_dataset import SpecMolFragDataset
 from .mces_dataset import MCESDataset
 from .data_sampler import GroupSampler, SpecMolFragDynamicBatchSampler, get_group_sampler
-from .data_sampler import FormulaHardNegativeDynamicBatchSampler
+from .data_sampler import DualGroupDynamicBatchSampler

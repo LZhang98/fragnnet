@@ -1408,13 +1408,8 @@ class SpectrumPL(pl.LightningModule):
 		batch_sampler = train_dataloader.batch_sampler
 		sampler = train_dataloader.sampler
 		
-		# Handle FormulaHardNegativeDynamicBatchSampler (uses set_epoch for both sampling and batching)
-		if self.hparams.formula_hard_negative_dynamic_sampler:
-			if hasattr(batch_sampler, "set_epoch"):
-				# print("p6")
-				batch_sampler.set_epoch(seed)
 		# Handle SpecMolFragDynamicBatchSampler (has nested sampler)
-		elif self.hparams.dynamic_batch_sampler:
+		if self.hparams.dynamic_batch_sampler:
 			if hasattr(batch_sampler.sampler, "generator"):
 				# print("p3")
 				batch_sampler.sampler.generator = generator
