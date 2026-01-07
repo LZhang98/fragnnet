@@ -6,6 +6,7 @@ sys.path.insert(0, repo_root)
 import pandas as pd
 import torch as th
 import random
+import pytest
 
 from src.fragnnet.dataset.data_sampler import (
     FormulaHardNegativeSampler,
@@ -56,10 +57,7 @@ def check_seed(seed):
 
     out1 = list(s1)
     out2 = list(s2)
-
-    if out1 != out2:
-        print(f"Seed {seed}: FormulaHardNegativeSampler mismatch")
-        return False
+    assert out1 == out2, f"Seed {seed}: FormulaHardNegativeSampler mismatch"
 
     # grouped sampler
     gg1 = th.Generator()
@@ -86,15 +84,9 @@ def check_seed(seed):
 
     outg1 = list(gs1)
     outg2 = list(gs2)
-
-    if outg1 != outg2:
-        print(f"Seed {seed}: FormulaHardNegativeGroupedSampler mismatch")
-        return False
-
-    print(f"Seed {seed}: OK")
-    return True
+    assert outg1 == outg2, f"Seed {seed}: FormulaHardNegativeGroupedSampler mismatch"
 
 
-def test_sampler_deterministic_sweep():
-    seeds = [0, 1, 42, 123, 999, 2026]
-    assert all(check_seed(s) for s in seeds)
+@pytest.mark.parametrize("seed", [0, 1, 42, 123, 999, 2026])
+def test_sampler_deterministic_sweep(seed):
+    check_seed(seed)

@@ -65,6 +65,18 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 		self._batches = []
 		self._data_meta = []
 		self.sampler = sampler
+		# If underlying sampler exposes a torch.Generator, capture its initial seed
+		# so we can reseed it in set_epoch() for deterministic epoch-aware behavior.
+		self._base_sampler_generator = None
+		self._base_sampler_seed = None
+		if self.sampler is not None and hasattr(self.sampler, 'generator'):
+			gen = getattr(self.sampler, 'generator')
+			if isinstance(gen, th.Generator):
+				self._base_sampler_generator = gen
+				try:
+					self._base_sampler_seed = int(self._base_sampler_generator.initial_seed())
+				except Exception:
+					self._base_sampler_seed = 0
 		self._epoch = 0
 		self._pre_load_batches()
 		self._pre_compute_batches()
@@ -113,9 +125,15 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 			epoch (int): Current epoch number
 		"""
 		self._epoch = epoch
-		# Let the underlying sampler manage its own randomness per epoch
+		# If underlying sampler supports set_epoch, delegate to it
 		if self.sampler is not None and hasattr(self.sampler, 'set_epoch'):
 			self.sampler.set_epoch(epoch)
+		# If underlying sampler exposes a torch.Generator but lacks set_epoch,
+		# reseed it deterministically based on the captured base seed.
+		elif self._base_sampler_generator is not None:
+			seed = self._base_sampler_seed if self._base_sampler_seed is not None else 0
+			self._base_sampler_generator.manual_seed(seed + int(epoch))
+		# Recompute batches after epoch change
 		self._pre_compute_batches()
 
 	def _pre_compute_batches(self):

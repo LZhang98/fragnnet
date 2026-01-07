@@ -9,6 +9,7 @@ Validates:
 """
 
 import torch as th
+import pytest
 
 
 def create_mock_dataset_for_dynamic_sampler():
@@ -49,17 +50,43 @@ def create_mock_dataset_for_dynamic_sampler():
 	return MockDataset(data_list)
 
 
-def test_dynamic_batch_sampler_basic():
+@pytest.fixture
+def mock_dataset():
+	return create_mock_dataset_for_dynamic_sampler()
+
+
+@pytest.fixture
+def large_dataset():
+	# Create dataset with one large sample used in skip_too_big test
+	class MockFragPyG:
+		def __init__(self, num_nodes, num_edges):
+			self.num_nodes = num_nodes
+			self.num_edges = num_edges
+
+	class MockDataset:
+		def __init__(self, data_list):
+			self.data_list = data_list
+
+		def __len__(self):
+			return len(self.data_list)
+
+		def __getitem__(self, idx):
+			return self.data_list[idx]
+
+	data_list = [
+		{"idx": 0, "frag_pyg": MockFragPyG(100, 10000)},
+		{"idx": 1, "frag_pyg": MockFragPyG(200, 60000)},    # TOO LARGE (> 50k)
+		{"idx": 2, "frag_pyg": MockFragPyG(100, 10000)},
+	]
+	return MockDataset(data_list)
+
+
+def test_dynamic_batch_sampler_basic(mock_dataset):
 	"""Test basic SpecMolFragDynamicBatchSampler functionality."""
 	from fragnnet.dataset.data_sampler import SpecMolFragDynamicBatchSampler
-	
-	print("\n" + "="*80)
-	print("Test 1: Basic SpecMolFragDynamicBatchSampler Functionality")
-	print("="*80)
-	
-	dataset = create_mock_dataset_for_dynamic_sampler()
-	
-	# Create sampler with 50k edge limit
+
+	dataset = mock_dataset
+
 	sampler = SpecMolFragDynamicBatchSampler(
 		data_source=dataset,
 		max_num=50000,
@@ -67,46 +94,30 @@ def test_dynamic_batch_sampler_basic():
 		skip_too_big=False,
 		sampler=None,
 	)
-	
-	# Collect batches
+
 	batches = list(sampler)
-	print(f"\n✓ Sampler created with {len(batches)} batches")
-	
+
 	# Verify batches respect max_num constraint
-	batch_edges = []
-	for batch_idx, batch in enumerate(batches):
-		total_edges = sum(dataset[idx]['frag_pyg'].num_edges for idx in batch)
-		batch_edges.append(total_edges)
-		status = "✓" if total_edges <= 50000 else "✗"
-		print(f"  {status} Batch {batch_idx}: {batch} ({total_edges:,} edges)")
-	
-	all_within_limit = all(e <= 50000 for e in batch_edges)
-	assert all_within_limit, "Some batches exceed max_num limit"
-	print(f"\n✓ All batches respect 50k edge constraint")
-	
+	batch_edges = [sum(dataset[idx]['frag_pyg'].num_edges for idx in batch) for batch in batches]
+	assert all(e <= 50000 for e in batch_edges), "Some batches exceed max_num limit"
+
 	# Verify no samples are duplicated or missing
 	all_indices = [idx for batch in batches for idx in batch]
 	expected_indices = set(range(len(dataset)))
 	actual_indices = set(all_indices)
 	assert actual_indices == expected_indices, f"Missing or extra indices: {actual_indices ^ expected_indices}"
-	print(f"✓ All {len(dataset)} samples included, no duplicates")
 
 
-def test_dynamic_batch_sampler_epoch_aware():
+def test_dynamic_batch_sampler_epoch_aware(mock_dataset):
 	"""Test epoch-aware reset functionality."""
 	from fragnnet.dataset.data_sampler import SpecMolFragDynamicBatchSampler
 	from torch.utils.data import RandomSampler
-	
-	print("\n" + "="*80)
-	print("Test 2: Epoch-Aware Reset (set_epoch)")
-	print("="*80)
-	
-	dataset = create_mock_dataset_for_dynamic_sampler()
-	
-	# Create sampler with RandomSampler base (introduces randomness per epoch)
+
+	dataset = mock_dataset
+
 	generator = th.Generator()
 	base_sampler = RandomSampler(dataset, generator=generator)
-	
+
 	sampler = SpecMolFragDynamicBatchSampler(
 		data_source=dataset,
 		max_num=50000,
@@ -114,58 +125,26 @@ def test_dynamic_batch_sampler_epoch_aware():
 		skip_too_big=False,
 		sampler=base_sampler,
 	)
-	
-	# Epoch 0: collect batches
-	print("\nEpoch 0:")
+
 	epoch0_batches = list(sampler)
-	print(f"  Batches: {len(epoch0_batches)}")
-	for i, b in enumerate(epoch0_batches):
-		print(f"    {i}: {b}")
-	
-	# Epoch 1: set_epoch and collect batches
-	print("\nEpoch 1 (after set_epoch(1)):")
 	sampler.set_epoch(1)
 	epoch1_batches = list(sampler)
-	print(f"  Batches: {len(epoch1_batches)}")
-	for i, b in enumerate(epoch1_batches):
-		print(f"    {i}: {b}")
-	
-	# Verify both epochs have valid batches
-	assert len(epoch0_batches) > 0, "Epoch 0 should have batches"
-	assert len(epoch1_batches) > 0, "Epoch 1 should have batches"
-	print(f"\n✓ Both epochs produced valid batches")
-	
-	# Note: batches may differ due to RandomSampler shuffling
-	if epoch0_batches != epoch1_batches:
-		print("✓ Batches differ between epochs (expected with RandomSampler)")
-	else:
-		print("⚠ Batches are same (may happen if random order is coincidentally identical)")
-	
-	# Epoch 0 again: verify determinism
-	print("\nEpoch 0 again (after set_epoch(0)):")
+
+	assert len(epoch0_batches) > 0
+	assert len(epoch1_batches) > 0
+
+	# Setting same epoch should be deterministic
 	sampler.set_epoch(0)
 	epoch0_again = list(sampler)
-	print(f"  Batches: {len(epoch0_again)}")
-	for i, b in enumerate(epoch0_again):
-		print(f"    {i}: {b}")
-	
-	if epoch0_batches == epoch0_again:
-		print(f"\n✓ Setting same epoch twice yields identical batches (deterministic)")
-	else:
-		print(f"\n✗ Setting same epoch twice yields different batches")
+	assert epoch0_batches == epoch0_again
 
 
-def test_dynamic_batch_sampler_no_base_sampler():
+def test_dynamic_batch_sampler_no_base_sampler(mock_dataset):
 	"""Test SpecMolFragDynamicBatchSampler without base sampler (sequential)."""
 	from fragnnet.dataset.data_sampler import SpecMolFragDynamicBatchSampler
-	
-	print("\n" + "="*80)
-	print("Test 3: Sequential Sampling (no base sampler)")
-	print("="*80)
-	
-	dataset = create_mock_dataset_for_dynamic_sampler()
-	
-	# Create sampler without base sampler (sequential by default)
+
+	dataset = mock_dataset
+
 	sampler = SpecMolFragDynamicBatchSampler(
 		data_source=dataset,
 		max_num=50000,
@@ -173,94 +152,37 @@ def test_dynamic_batch_sampler_no_base_sampler():
 		skip_too_big=False,
 		sampler=None,
 	)
-	
-	# Collect batches multiple times
-	print("\nIteration 1:")
+
 	batches1 = list(sampler)
-	print(f"  {len(batches1)} batches: {batches1}")
-	
-	print("\nIteration 2 (without set_epoch):")
 	batches2 = list(sampler)
-	print(f"  {len(batches2)} batches: {batches2}")
-	
-	# Sequential ordering should be consistent
-	if batches1 == batches2:
-		print(f"\n✓ Sequential batches are consistent across iterations")
-	else:
-		print(f"\n✗ Sequential batches differ (unexpected)")
+	assert batches1 == batches2
 
 
-def test_dynamic_batch_sampler_skip_too_big():
+def test_dynamic_batch_sampler_skip_too_big(large_dataset):
 	"""Test skip_too_big flag behavior."""
 	from fragnnet.dataset.data_sampler import SpecMolFragDynamicBatchSampler
-	
-	print("\n" + "="*80)
-	print("Test 4: skip_too_big Flag")
-	print("="*80)
-	
-	# Create dataset with one large sample
-	class MockFragPyG:
-		def __init__(self, num_nodes, num_edges):
-			self.num_nodes = num_nodes
-			self.num_edges = num_edges
-	
-	class MockDataset:
-		def __init__(self, data_list):
-			self.data_list = data_list
-		
-		def __len__(self):
-			return len(self.data_list)
-		
-		def __getitem__(self, idx):
-			return self.data_list[idx]
-	
-	data_list = [
-		{"idx": 0, "frag_pyg": MockFragPyG(100, 10000)},
-		{"idx": 1, "frag_pyg": MockFragPyG(200, 60000)},    # TOO LARGE (> 50k)
-		{"idx": 2, "frag_pyg": MockFragPyG(100, 10000)},
-	]
-	
-	dataset = MockDataset(data_list)
-	
-	# Test with skip_too_big=True
-	print("\nWith skip_too_big=True:")
+
+	dataset = large_dataset
+
 	sampler = SpecMolFragDynamicBatchSampler(
 		data_source=dataset,
 		max_num=50000,
 		limited_by='frag_edge',
 		skip_too_big=True,
 	)
-	
 	batches = list(sampler)
 	all_indices = [idx for batch in batches for idx in batch]
-	if 1 not in all_indices:
-		print(f"  ✓ Sample 1 (60k edges) correctly skipped")
-	else:
-		print(f"  ✗ Sample 1 should have been skipped")
-	
-	# Test with skip_too_big=False
-	print("\nWith skip_too_big=False:")
+	assert 1 not in all_indices
+
 	sampler = SpecMolFragDynamicBatchSampler(
 		data_source=dataset,
 		max_num=50000,
 		limited_by='frag_edge',
 		skip_too_big=False,
 	)
-	
 	batches = list(sampler)
 	all_indices = [idx for batch in batches for idx in batch]
-	if 1 in all_indices:
-		print(f"  ✓ Sample 1 (60k edges) included despite exceeding limit")
-	else:
-		print(f"  ✗ Sample 1 should have been included")
+	assert 1 in all_indices
 
 
-if __name__ == "__main__":
-	test_dynamic_batch_sampler_basic()
-	test_dynamic_batch_sampler_epoch_aware()
-	test_dynamic_batch_sampler_no_base_sampler()
-	test_dynamic_batch_sampler_skip_too_big()
-	
-	print("\n" + "="*80)
-	print("✓ All SpecMolFragDynamicBatchSampler tests passed!")
-	print("="*80)
+# Pytest will discover and run the test_* functions above.
