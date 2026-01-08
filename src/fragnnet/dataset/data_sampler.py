@@ -263,11 +263,29 @@ class GroupSampler(Sampler):
 		sampled_indices = []
 		for group_id in self._data_meta_d:
 			group_indices = self._data_meta_d[group_id]
-			sampled_group_indices = group_indices[th.randperm(min(len(group_indices), self.sample_k), generator=generator)]
+			# shuffle group indices and take up to sample_k
+			if len(group_indices) == 0:
+				continue
+			take = min(len(group_indices), self.sample_k)
+			if len(group_indices) == 1:
+				sampled_group_indices = group_indices[:take]
+			else:
+				perm = th.randperm(len(group_indices), generator=generator)
+				sampled_group_indices = group_indices[perm[:take]]
 			sampled_indices.append(sampled_group_indices)
-		sampled_indices = th.cat(sampled_indices)
-		self.sampled_indices = th.randperm(len(sampled_indices), generator=generator)
-		self.num_samples = len(sampled_indices)
+
+		if sampled_indices:
+			sampled_indices = th.cat(sampled_indices)
+			# shuffle across groups for variety: permute actual dataset indices
+			if len(sampled_indices) > 1:
+				perm_all = th.randperm(len(sampled_indices), generator=generator)
+				self.sampled_indices = sampled_indices[perm_all]
+			else:
+				self.sampled_indices = sampled_indices
+			self.num_samples = len(sampled_indices)
+		else:
+			self.sampled_indices = th.tensor([], dtype=th.long)
+			self.num_samples = 0
 
 	def set_epoch(self, epoch: int) -> None:
 		"""Set epoch number to trigger re-sampling.
@@ -299,6 +317,121 @@ class GroupSampler(Sampler):
 		"""
 		assert self.num_samples is not None
 		return self.num_samples 
+
+
+class FormulaAdductGroupSampler(Sampler):
+	"""Sample indices grouped by composite key `adduct::formula`.
+
+	This sampler yields up to `sample_k` indices per formula+adduct
+	cluster each epoch. It is compatible with `SpecMolFragDynamicBatchSampler`
+	via the `sampler` argument and exposes an optional `generator` for
+	deterministic behavior.
+
+	Args:
+		data_source: dataset providing __len__ and __getitem__ returning dicts
+			with keys for formula and adduct (defaults: 'formula', 'adduct').
+		sample_k (int): max samples to take from each composite group.
+		key_formula (str): key name to read formula from sample dict.
+		key_adduct (str): key name to read adduct from sample dict.
+		generator (Optional[th.Generator]): optional torch Generator for determinism.
+		num_samples (Optional[int]): limit total number of sampled indices.
+	"""
+
+	def __init__(self, data_source, sample_k: int = 1,
+				 key_formula: str = 'formula', key_adduct: str = 'adduct',
+				 generator: Optional[th.Generator] = None, num_samples: Optional[int] = None) -> None:
+		self.data_source = data_source
+		self.sample_k = int(sample_k)
+		self.key_formula = key_formula
+		self.key_adduct = key_adduct
+		self.generator = generator
+		self._epoch = 0
+		if num_samples is None:
+			num_samples = len(data_source)
+		self.num_samples = int(num_samples)
+
+		# capture base seed if generator provided
+		self._base_seed = None
+		if self.generator is not None and hasattr(self.generator, 'initial_seed'):
+			try:
+				self._base_seed = int(self.generator.initial_seed())
+			except Exception:
+				self._base_seed = 0
+
+		# group -> tensor(indices)
+		self._groups = {}
+		self._pre_compute_meta()
+		self._pre_compute_indices()
+
+	def _pre_compute_meta(self):
+		"""Build composite key -> list(indices) mapping.
+		Raises KeyError if required keys are missing.
+		"""
+		for dataset_idx in range(len(self.data_source)):
+			data = self.data_source[dataset_idx]
+			if self.key_formula not in data or self.key_adduct not in data:
+				raise KeyError(f"Sample {dataset_idx} missing '{self.key_formula}' or '{self.key_adduct}' key.")
+			# normalize to str for stable keys
+			formula = str(data[self.key_formula])
+			adduct = str(data[self.key_adduct])
+			key = f"{adduct}::{formula}"
+			if key not in self._groups:
+				self._groups[key] = []
+			self._groups[key].append(dataset_idx)
+
+		# convert to tensors
+		for k in list(self._groups.keys()):
+			self._groups[k] = th.tensor(self._groups[k], dtype=th.long)
+
+	def _pre_compute_indices(self):
+		"""Compute epoch-local sampled indices based on `sample_k` and `generator`.
+		Stores results in `self.sampled_indices` and updates `self.num_samples`.
+		"""
+		if self.generator is None:
+			gen = th.Generator()
+		else:
+			gen = self.generator
+
+		sampled_parts = []
+		for k in self._groups:
+			indices = self._groups[k]
+			if len(indices) == 0:
+				continue
+			take = min(len(indices), self.sample_k)
+			if len(indices) == 1:
+				part = indices[:take]
+			else:
+				perm = th.randperm(len(indices), generator=gen)
+				part = indices[perm][:take]
+			sampled_parts.append(part)
+
+		if sampled_parts:
+			self.sampled_indices = th.cat(sampled_parts)
+			# shuffle across groups for variety
+			if len(self.sampled_indices) > 1:
+				self.sampled_indices = self.sampled_indices[th.randperm(len(self.sampled_indices), generator=gen)]
+			self.num_samples = len(self.sampled_indices)
+		else:
+			self.sampled_indices = th.tensor([], dtype=th.long)
+			self.num_samples = 0
+
+	def set_epoch(self, epoch: int) -> None:
+		"""Set epoch, reseed generator deterministically and recompute indices."""
+		self._epoch = int(epoch)
+		if self.generator is not None and hasattr(self.generator, 'manual_seed'):
+			try:
+				base = self._base_seed if self._base_seed is not None else 0
+				self.generator.manual_seed(base + int(epoch))
+			except Exception:
+				pass
+		self._pre_compute_indices()
+
+	def __iter__(self) -> Iterator[int]:
+		for i in range(self.num_samples):
+			yield int(self.sampled_indices[i].item())
+
+	def __len__(self) -> int:
+		return self.num_samples
 
 class DualGroupDynamicBatchSampler(BatchSampler):
 	"""Build mini-batches that include samples grouped by two keys:

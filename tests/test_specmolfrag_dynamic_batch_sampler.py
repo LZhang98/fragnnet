@@ -2,14 +2,6 @@ import importlib.util
 import pathlib
 from types import SimpleNamespace
 import torch as th
-
-# Load data_sampler directly to avoid package import side-effects
-repo_root = pathlib.Path(__file__).resolve().parents[1]
-data_sampler_path = repo_root / "src" / "fragnnet" / "dataset" / "data_sampler.py"
-import importlib.util
-import pathlib
-from types import SimpleNamespace
-import torch as th
 import pytest
 
 # Load data_sampler directly to avoid package import side-effects
@@ -211,5 +203,7 @@ def test_specmolfrag_dynamic_batch_nodes_limit_skip_false_all_included_and_overf
     included = set(i for b in batches for i in b)
     assert included == set(range(len(ds)))
 
+    # When skip_too_big is False, the large sample should be included and cause at least one batch to exceed max
+    assert any(sum(sizes[i][0] for i in b) > 10 for b in batches)
     # When skip_too_big is False, the large sample should be included and cause at least one batch to exceed max
     assert any(sum(sizes[i][0] for i in b) > 10 for b in batches)
