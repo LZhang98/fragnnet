@@ -319,10 +319,10 @@ class GroupSampler(Sampler):
 		return self.num_samples 
 
 
-class FormulaAdductGroupSampler(Sampler):
-	"""Sample indices grouped by composite key `adduct::formula`.
+class FormulaPrecTypeGroupSampler(Sampler):
+	"""Sample indices grouped by composite key `prec_type::formula`.
 
-	This sampler yields up to `sample_k` indices per formula+adduct
+	This sampler yields up to `sample_k` indices per formula+prec_type
 	cluster each epoch. It is compatible with `SpecMolFragDynamicBatchSampler`
 	via the `sampler` argument and exposes an optional `generator` for
 	deterministic behavior.
@@ -338,7 +338,7 @@ class FormulaAdductGroupSampler(Sampler):
 	"""
 
 	def __init__(self, data_source, sample_k: int = 1,
-				 key_formula: str = 'formula', key_adduct: str = 'adduct',
+				 key_formula: str = 'formula', key_adduct: str = 'prec_type',
 				 generator: Optional[th.Generator] = None, num_samples: Optional[int] = None) -> None:
 		self.data_source = data_source
 		self.sample_k = int(sample_k)

@@ -36,7 +36,12 @@ Outputs written to `proc_dp`:
 	- formula: molecular formula from source
 	- inchikey: full InChIKey from source when available
 	- exact_mass: exact mass from source when available
-	- group_id: grouping id for spectra sharing compound/precursor
+	- group_id: grouping id for spectra sharing compound/precursor.
+		Current grouping key: `mol_id` + `prec_type` + `inst_type`.
+		Note: `ce_type` and `dset` are excluded from the group key so
+		that identical molecules/adducts across datasets or CE patterns
+		are grouped together (prevents molecule-level leakage across
+		datasets when training on mixed sources).
 
 - mol_df.pkl: one row per unique SMILES with columns
 	- smiles: canonicalized SMILES
@@ -149,8 +154,10 @@ def preprocess_spec(spec_df):
 	spec_df = spec_df[["spec_id","mol_id","prec_type","inst_type","frag_mode","spec_type","ion_mode","dset","dset_spec_id","col_gas","res","ace","ace_extra_1","ace_extra_2","nce","nce_extra_1","nce_extra_2","ce_type","prec_mz","peaks","ri","formula","inchikey","exact_mass"]]
 	# relabel spec_id (this is to make it unique across datasets)
 	spec_df.loc[:,"spec_id"] = np.arange(spec_df.shape[0])
-	# set group_id (same compound and precursor)
-	group_df = spec_df.drop(columns=["spec_id","dset_spec_id","peaks","ace","ace_extra_1","ace_extra_2","nce","nce_extra_1","nce_extra_2","res","prec_mz","ri","col_gas","formula","inchikey","exact_mass"]).drop_duplicates()
+	# set group_id (group by mol_id + prec_type + inst_type)
+	# Note: `ce_type` and `dset` are intentionally dropped so groups
+	# combine identical molecules/adducts across datasets and CE patterns.
+	group_df = spec_df.drop(columns=["spec_id","dset_spec_id","peaks","ace","ace_extra_1","ace_extra_2","nce","nce_extra_1","nce_extra_2","res","prec_mz","ri","col_gas","formula","inchikey","exact_mass","ce_type","dset"]).drop_duplicates()
 	group_df.loc[:,"group_id"] = np.arange(group_df.shape[0])
 	spec_df = spec_df.merge(group_df,how="inner")
 

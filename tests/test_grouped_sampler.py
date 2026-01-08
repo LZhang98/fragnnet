@@ -2,7 +2,7 @@ import pytest
 import torch as th
 
 from fragnnet.dataset.data_sampler import (
-    FormulaAdductGroupSampler,
+    FormulaPrecTypeGroupSampler,
     SpecMolFragDynamicBatchSampler,
     GroupSampler,
 )
@@ -27,24 +27,24 @@ class SyntheticDataset:
 
 def make_items():
     items = []
-    # cluster A: adduct 'A', formula 'F1' -> indices 0,1,2
+    # cluster A: prec_type 'A', formula 'F1' -> indices 0,1,2
     for i in range(3):
         items.append(
             {
                 'frag_pyg': MockFrag(nodes=1 + i, edges=0),
                 'formula': 'F1',
-                'adduct': 'A',
+                'prec_type': 'A',
                 'mol_id': f'm{i}',
                 'group_id': th.tensor([0]),
             }
         )
-    # cluster B: adduct 'B', formula 'F2' -> indices 3,4
+    # cluster B: prec_type 'B', formula 'F2' -> indices 3,4
     for i in range(2):
         items.append(
             {
                 'frag_pyg': MockFrag(nodes=2 + i, edges=0),
                 'formula': 'F2',
-                'adduct': 'B',
+                'prec_type': 'B',
                 'mol_id': f'm{3 + i}',
                 'group_id': th.tensor([1]),
             }
@@ -54,7 +54,7 @@ def make_items():
         {
             'frag_pyg': MockFrag(nodes=4, edges=0),
             'formula': 'F3',
-            'adduct': 'C',
+            'prec_type': 'C',
             'mol_id': 'm5',
             'group_id': th.tensor([2]),
         }
@@ -66,12 +66,12 @@ def test_grouping_basic():
     ds = SyntheticDataset(make_items())
     gen = th.Generator()
     gen.manual_seed(42)
-    sampler = FormulaAdductGroupSampler(ds, sample_k=1, generator=gen)
+    sampler = FormulaPrecTypeGroupSampler(ds, sample_k=1, generator=gen)
 
     counts = {}
     for idx in sampler:
         item = ds[idx]
-        key = f"{item['adduct']}::{item['formula']}"
+        key = f"{item['prec_type']}::{item['formula']}"
         counts[key] = counts.get(key, 0) + 1
 
     # Each composite key yields at most sample_k (1)
@@ -83,7 +83,7 @@ def test_integration_with_dynamic_batch_sampler():
     ds = SyntheticDataset(make_items())
     gen = th.Generator()
     gen.manual_seed(123)
-    sampler = FormulaAdductGroupSampler(ds, sample_k=2, generator=gen)
+    sampler = FormulaPrecTypeGroupSampler(ds, sample_k=2, generator=gen)
 
     batch_sampler = SpecMolFragDynamicBatchSampler(
         data_source=ds, max_num=6, limited_by='frag_node', sampler=sampler
@@ -104,14 +104,14 @@ def test_set_epoch_and_determinism():
 
     g1 = th.Generator()
     g1.manual_seed(999)
-    s1 = FormulaAdductGroupSampler(ds, sample_k=2, generator=g1)
+    s1 = FormulaPrecTypeGroupSampler(ds, sample_k=2, generator=g1)
     b1 = SpecMolFragDynamicBatchSampler(ds, max_num=9999, sampler=s1)
     b1.set_epoch(2)
     out1 = list(b1)
 
     g2 = th.Generator()
     g2.manual_seed(999)
-    s2 = FormulaAdductGroupSampler(ds, sample_k=2, generator=g2)
+    s2 = FormulaPrecTypeGroupSampler(ds, sample_k=2, generator=g2)
     b2 = SpecMolFragDynamicBatchSampler(ds, max_num=9999, sampler=s2)
     b2.set_epoch(2)
     out2 = list(b2)
@@ -126,7 +126,7 @@ def test_set_epoch_and_determinism():
 
 def test_missing_keys_raises():
     bad_items = make_items()
-    # remove 'adduct' from first item
+    # remove 'prec_type' from first item
     bad_items[0] = {
         'frag_pyg': MockFrag(1),
         'formula': 'F1',
@@ -135,7 +135,7 @@ def test_missing_keys_raises():
     }
     ds = SyntheticDataset(bad_items)
     with pytest.raises(KeyError):
-        FormulaAdductGroupSampler(ds)
+        FormulaPrecTypeGroupSampler(ds)
 
 
 def test_group_sampler_basic_and_epoch():
@@ -148,7 +148,7 @@ def test_group_sampler_basic_and_epoch():
                 {
                     'frag_pyg': MockFrag(nodes=1),
                     'formula': f'F{g}',
-                    'adduct': f'A{g}',
+                    'prec_type': f'A{g}',
                     'mol_id': f'm{g}_{i}',
                     'group_id': th.tensor([g]),
                 }
