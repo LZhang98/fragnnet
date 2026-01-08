@@ -352,37 +352,47 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 			n_edges = data['frag_pyg'].num_edges
 			self._data_meta.append((n_nodes, n_edges))
 
-			# Build group keys with safe fallbacks
-			adduct = data.get('adduct', None)
-			mol_id = data.get('mol_id', None)
-			formula = data.get('formula', None)
+			# Validate required keys (each item must have both key pairs: adduct+mol_id and adduct+formula)
+			for req_key in ('adduct', 'mol_id', 'formula'):
+				if req_key not in data:
+					raise KeyError(f"Sample at index {dataset_idx} missing required key '{req_key}'.")
+				if data[req_key] is None:
+					raise ValueError(f"Sample at index {dataset_idx} has None value for required key '{req_key}'.")
 
-			key1 = None
-			key2 = None
-			if adduct is not None and mol_id is not None:
-				key1 = f"{adduct}::{mol_id}"
-			if adduct is not None and formula is not None:
-				key2 = f"{adduct}::{formula}"
+			# Build group keys (keys are required to be present)
+			adduct = data['adduct']
+			mol_id = data['mol_id']
+			formula = data['formula']
 
-			if key1 is not None:
-				self._group1.setdefault(key1, []).append(dataset_idx)
-			if key2 is not None:
-				self._group2.setdefault(key2, []).append(dataset_idx)
+			# Add to group1 (adduct+mol_id) — mol_id is required to be present
+			key1 = f"{adduct}::{mol_id}"
+			self._group1.setdefault(key1, []).append(dataset_idx)
+
+			key2 = f"{adduct}::{formula}"
+			self._group2.setdefault(key2, []).append(dataset_idx)
+   
+			# Drawing from the same pool: avoid building formula-based group2 to prevent overlap
+			# (samples remain uniquely identified by adduct+mol_id)
+
+		# Remove overlapping samples: keep items in group1; drop them from group2
+		group1_indices = set()
+		for indices in self._group1.values():
+			group1_indices.update(indices)
+		# Prune group2 entries that overlap with group1
+		for k in list(self._group2.keys()):
+			indices = self._group2[k]
+			non_overlap = [idx for idx in indices if idx not in group1_indices]
+			if non_overlap:
+				self._group2[k] = non_overlap
+			else:
+				# Remove empty groups
+				del self._group2[k]
 
 		# convert lists to tensors for faster ops
 		for k in list(self._group1.keys()):
 			self._group1[k] = th.tensor(self._group1[k], dtype=th.long)
 		for k in list(self._group2.keys()):
 			self._group2[k] = th.tensor(self._group2[k], dtype=th.long)
-
-		limited_by_idx = 0 if self._limited_by == 'frag_node' else 1
-		# Optional report
-		valid_count = 0
-		for i, t in enumerate(self._data_meta):
-			n = t[limited_by_idx]
-			if not (n > self._max_num and self._skip_too_big):
-				valid_count += 1
-		print(f"[DualGroupDynamicBatchSampler] Loaded metadata for {len(self._data_meta)} samples; {valid_count} usable with skip_too_big={self._skip_too_big}")
 
 	def set_epoch(self, epoch: int) -> None:
 		self._epoch = epoch
@@ -400,93 +410,114 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 		"""
 		taken = []
 		if not group_dict:
-			return taken, used_mask
+			return taken, used_mask, budget_left
 		keys = list(group_dict.keys())
-		# randomize key order
-		if self.generator is None:
-			rand.shuffle(keys)
-		else:
+		# randomize key order using PyTorch Generator for consistency
+		if self.generator is not None:
 			perm = th.randperm(len(keys), generator=self.generator)
 			keys = [keys[i] for i in perm.tolist()]
+		# If no generator, keys remain in original order (deterministic)
+		
+		limited_by_idx = 0 if self._limited_by == 'frag_node' else 1
 		for key in keys:
 			if take_k <= 0:
 				break
 			candidates = group_dict[key]
+			# Try to take one sample from this group
 			for idx in candidates.tolist():
 				if used_mask.get(idx, False):
 					continue
-				# check size
-				n = self._data_meta[idx][0 if self._limited_by == 'frag_node' else 1]
+				# check size against remaining budget
+				n = self._data_meta[idx][limited_by_idx]
 				if n > budget_left and self._skip_too_big:
+					continue
+				if n > budget_left:
+					# Won't fit in budget
 					continue
 				# take it
 				used_mask[idx] = True
 				taken.append(idx)
+				budget_left -= n
 				take_k -= 1
 				break
-		return taken, used_mask
+		return taken, used_mask, budget_left
 
 	def _pre_compute_batches(self):
 		self._batches = []
-		limited_by_idx = 0 if self._limited_by == 'frag_node' else 1
 
 		# Flatten available indices and limit to max_sampling_step
 		all_indices = list(range(len(self.data_source)))[: self._max_sampling_step]
 		available = set(all_indices)
 		used_mask = {}
 
-		# Copy group dicts so we can remove emptied keys
-		group1 = {k: v.clone() for k, v in self._group1.items()}
-		group2 = {k: v.clone() for k, v in self._group2.items()}
+		# Cache limited_by index for budget checks
+		limited_by_idx = 0 if self._limited_by == 'frag_node' else 1
+
+		# Track which group keys still have available samples
+		active_group1_keys = set(self._group1.keys())
+		active_group2_keys = set(self._group2.keys())
 
 		while available:
 			batch = []
 			batch_n = 0
-			# Ensure at least one sample from each group type when possible
-			need1 = any(k for k in group1)
-			need2 = any(k for k in group2)
-			# First try to take one from group1 and one from group2
-			if need1:
-				taken1, used_mask = self._sample_from_group_dict(group1, used_mask, self._max_num - batch_n, self.sample_k1)
-				for idx in taken1:
-					batch.append(idx)
-					batch_n += self._data_meta[idx][limited_by_idx]
-			if need2:
-				taken2, used_mask = self._sample_from_group_dict(group2, used_mask, self._max_num - batch_n, self.sample_k2)
-				for idx in taken2:
-					if idx not in batch:
-						batch.append(idx)
-						batch_n += self._data_meta[idx][limited_by_idx]
+			budget_left = self._max_num
+			
+			# First try to take sample_k1 samples from group1
+			if active_group1_keys:
+				group1_active = {k: self._group1[k] for k in active_group1_keys}
+				taken1, used_mask, budget_left = self._sample_from_group_dict(
+					group1_active, used_mask, budget_left, self.sample_k1
+				)
+				batch.extend(taken1)
+				# Update batch_n from budget_left
+				batch_n = self._max_num - budget_left
+				# Remove exhausted keys
+				for key in list(active_group1_keys):
+					if all(used_mask.get(idx, False) for idx in self._group1[key].tolist()):
+						active_group1_keys.discard(key)
+			
+			# Then try to take sample_k2 samples from group2
+			if active_group2_keys:
+				group2_active = {k: self._group2[k] for k in active_group2_keys}
+				taken2, used_mask, budget_left = self._sample_from_group_dict(
+					group2_active, used_mask, budget_left, self.sample_k2
+				)
+				batch.extend(taken2)
+				batch_n = self._max_num - budget_left
+				# Remove exhausted keys
+				for key in list(active_group2_keys):
+					if all(used_mask.get(idx, False) for idx in self._group2[key].tolist()):
+						active_group2_keys.discard(key)
 
-			# Fill remaining budget with any available samples (preferring not-yet-used group members)
-			if batch_n < self._max_num:
-				# iterate available indices in random order
-				cand_list = list(available - set(k for k,v in used_mask.items() if v))
-				if self.generator is None:
-					rand.shuffle(cand_list)
-				else:
-					perm = th.randperm(len(cand_list), generator=self.generator)
-					cand_list = [cand_list[i] for i in perm.tolist()]
-				for idx in cand_list:
-					# if already chosen skip
-					if used_mask.get(idx, False):
-						continue
-					n = self._data_meta[idx][limited_by_idx]
-					if n > self._max_num and self._skip_too_big:
-						continue
-					if batch_n + n > self._max_num:
-						continue
-					batch.append(idx)
-					batch_n += n
-					used_mask[idx] = True
-					if batch_n >= self._max_num:
-						break
+			# Fill remaining budget with any available samples
+			if budget_left > 0:
+				cand_list = list(available - set(k for k, v in used_mask.items() if v))
+				if cand_list:
+					# Use PyTorch Generator for consistency
+					if self.generator is not None:
+						perm = th.randperm(len(cand_list), generator=self.generator)
+						cand_list = [cand_list[i] for i in perm.tolist()]
+					# If no generator, keep original order
+					
+					for idx in cand_list:
+						if used_mask.get(idx, False):
+							continue
+						n = self._data_meta[idx][limited_by_idx]
+						if n > self._max_num and self._skip_too_big:
+							continue
+						# Check budget BEFORE adding
+						if n > budget_left:
+							continue
+						batch.append(idx)
+						batch_n += n
+						used_mask[idx] = True
+						budget_left -= n
 
 			if not batch:
-				# nothing could be placed (maybe all remaining too large)
+				# Nothing could be placed (maybe all remaining too large or already used)
 				break
 
-			# mark used and remove from available
+			# Mark used and remove from available
 			for idx in batch:
 				available.discard(idx)
 
