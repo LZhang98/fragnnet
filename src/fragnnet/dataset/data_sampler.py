@@ -318,7 +318,6 @@ class GroupSampler(Sampler):
 		assert self.num_samples is not None
 		return self.num_samples 
 
-
 class FormulaPrecTypeGroupSampler(Sampler):
 	"""Sample indices grouped by composite key `prec_type::formula`.
 
@@ -665,7 +664,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 	def __len__(self) -> int:
 		return len(self._batches)
 	
-def get_group_sampler(ds, sampler_type: str, avg_per_group: int, generator: th.Generator) -> WeightedRandomSampler:
+def get_simple_group_sampler(ds, sampler_type: str, avg_per_group: int, generator: th.Generator) -> WeightedRandomSampler:
 	"""Create a WeightedRandomSampler based on group/molecule statistics.
 	
 	Balances sampling to ensure certain groups/molecules are sampled proportionally.
@@ -680,7 +679,8 @@ def get_group_sampler(ds, sampler_type: str, avg_per_group: int, generator: th.G
 		generator (th.Generator): PyTorch generator for reproducibility
 
 	Returns:
-		WeightedRandomSampler: Configured sampler, or None if invalid sampler_type
+		WeightedRandomSampler or Sampler: Configured sampler (or other Sampler),
+		or None if invalid sampler_type
 
 	Example:
 		```python

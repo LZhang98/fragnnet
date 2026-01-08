@@ -1,5 +1,7 @@
 import torch as th
 
+from fragnnet.dataset.data_sampler import FormulaPrecTypeGroupSampler
+
 try:
 	import lightning.pytorch as pl
 	from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
@@ -23,7 +25,7 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SequentialSampler, RandomSampler
 from fragnnet.utils.nn_utils import nan_forward_hook, nan_backward_hook
 from fragnnet.utils.pl_utils import ConsoleLogger
-from fragnnet.dataset import GroupSampler, get_group_sampler, DualGroupDynamicBatchSampler , SpecMolFragDynamicBatchSampler
+from fragnnet.dataset import GroupSampler, get_simple_group_sampler, DualGroupDynamicBatchSampler , SpecMolFragDynamicBatchSampler
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.utils.misc_utils import deep_update
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
@@ -178,11 +180,18 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 				sample_k=config_d['group_sampler_max_per_group'],
 				generator=generator)
 		elif config_d["simple_group_sampler"]:
-			sampler = get_group_sampler(
+			sampler = get_simple_group_sampler(
 				ds,
 				config_d["simple_group_sampler_type"],
 				config_d["simple_group_sampler_avg_per_group"],
 				generator)
+		elif config_d["formula_prec_type_group_sampler"]:
+			sampler =  FormulaPrecTypeGroupSampler(
+       			ds, 
+                sample_k=config_d["formula_prec_type_group_sampler_max_per_group"], 
+                key_formula='formula',
+                key_adduct='prec_type', 
+                generator=generator)
 		else:
 			sampler = RandomSampler(ds, False, generator=generator)
 	else:

@@ -109,5 +109,5 @@ mol_pool_type: attention # mean_max_sum
 
 #extra loss weights
 #dynamic_batch_sampler: True
-
-
+formula_prec_type_group_sampler: True
+formula_prec_type_group_sampler_max_per_group: 5

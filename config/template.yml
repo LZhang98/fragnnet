@@ -403,6 +403,7 @@ simple_group_sampler: False
 simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group #[group, group_mol, mol]
 formula_prec_type_group_sampler: False
+formula_prec_type_group_sampler_max_per_group: 5
 mp_sharing_strategy: file_descriptor
 check_gradient_norm: False
 use_tensor_float32: False
