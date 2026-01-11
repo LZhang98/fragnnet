@@ -215,6 +215,7 @@ slurm_scripts/
 - **Error handling**: Always use `raise` statements for explicit failure; never silently fail or use assert for validation
 - **Assertions**: Only use `assert` for debugging/development; prefer `raise` with descriptive exceptions for production code
 - **Dictionary access**: Never use `.get(key, None)` for expected fields; use direct access `dict[key]` to fail fast if fields are missing
+- **Imports**: Organize imports in three groups (separated by blank lines): (1) Python standard library, (2) third-party packages, (3) local package imports. Within each group, sort imports alphabetically by library name
 
 ## Important Constraints
 
@@ -229,3 +230,4 @@ slurm_scripts/
 - Update configs/ when adding new hyperparameters
 - Include docstrings explaining mathematical operations
 - Run full test suite and validate on validation set before submitting PR
+- Respect .gitattributes settings for line endings and file handling
