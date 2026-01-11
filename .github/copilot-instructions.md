@@ -216,6 +216,7 @@ slurm_scripts/
 - **Assertions**: Only use `assert` for debugging/development; prefer `raise` with descriptive exceptions for production code
 - **Dictionary access**: Never use `.get(key, None)` for expected fields; use direct access `dict[key]` to fail fast if fields are missing
 - **Imports**: Organize imports in three groups (separated by blank lines): (1) Python standard library, (2) third-party packages, (3) local package imports. Within each group, sort imports alphabetically by library name
+- **Indentation**: Use spaces (not tabs); use 4 spaces per indentation level (PEP 8 standard)
 
 ## Important Constraints
 
