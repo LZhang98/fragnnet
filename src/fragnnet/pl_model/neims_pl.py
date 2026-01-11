@@ -12,46 +12,46 @@ from fragnnet.pl_model import BinnedPL
 
 class NeimsPL(BinnedPL):
 
-	def _setup_model(self):
+    def _setup_model(self):
 
-		self.model = NeimsModel(
-			mol_fingerprint_morgan=self.hparams.mol_params["fingerprint_morgan"],
-			mol_fingerprint_rdkit=self.hparams.mol_params["fingerprint_rdkit"],
-			mol_fingerprint_maccs=self.hparams.mol_params["fingerprint_maccs"],
-			mlp_hidden_size=self.hparams.mlp_hidden_size,
-			mlp_dropout=self.hparams.mlp_dropout,
-			mlp_num_layers=self.hparams.mlp_num_layers,
-			mlp_use_residuals=self.hparams.mlp_use_residuals,
-			mz_max=self.hparams.mz_max,
-			mz_bin_res=self.hparams.mz_bin_res,
-			ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
-			ff_bidirectional=self.hparams.ff_bidirectional,
-			ff_output_map_size=self.hparams.ff_output_map_size,
-			ff_output_activation=self.hparams.ff_output_activation,
-			int_embedder=self.hparams.int_embedder,
-			ce_insert_type=self.hparams.ce_insert_type,
-			ce_insert_location=self.hparams.ce_insert_location,
-			ce_insert_merge=self.hparams.ce_insert_merge,
-			ce_insert_size=self.hparams.ce_insert_size,
-   			ce_mean=self.hparams.ce_mean,
-			ce_std=self.hparams.ce_std,
-			ce_max=self.hparams.ce_max,
-			prec_insert_location=self.hparams.prec_insert_location,
-			prec_insert_size=self.hparams.prec_insert_size,
-			prec_types=self.hparams.spec_params["prec_types"],
-			inst_insert_location=self.hparams.inst_insert_location,
-			inst_insert_size=self.hparams.inst_insert_size,
-			inst_types=self.hparams.spec_params["inst_types"],
-			log_min=self.hparams.log_min
-		)
-		
-		self._check_ce_params()
+        self.model = NeimsModel(
+            mol_fingerprint_morgan=self.hparams.mol_params["fingerprint_morgan"],
+            mol_fingerprint_rdkit=self.hparams.mol_params["fingerprint_rdkit"],
+            mol_fingerprint_maccs=self.hparams.mol_params["fingerprint_maccs"],
+            mlp_hidden_size=self.hparams.mlp_hidden_size,
+            mlp_dropout=self.hparams.mlp_dropout,
+            mlp_num_layers=self.hparams.mlp_num_layers,
+            mlp_use_residuals=self.hparams.mlp_use_residuals,
+            mz_max=self.hparams.mz_max,
+            mz_bin_res=self.hparams.mz_bin_res,
+            ff_prec_mz_offset=self.hparams.ff_prec_mz_offset,
+            ff_bidirectional=self.hparams.ff_bidirectional,
+            ff_output_map_size=self.hparams.ff_output_map_size,
+            ff_output_activation=self.hparams.ff_output_activation,
+            int_embedder=self.hparams.int_embedder,
+            ce_insert_type=self.hparams.ce_insert_type,
+            ce_insert_location=self.hparams.ce_insert_location,
+            ce_insert_merge=self.hparams.ce_insert_merge,
+            ce_insert_size=self.hparams.ce_insert_size,
+            ce_mean=self.hparams.ce_mean,
+            ce_std=self.hparams.ce_std,
+            ce_max=self.hparams.ce_max,
+            prec_insert_location=self.hparams.prec_insert_location,
+            prec_insert_size=self.hparams.prec_insert_size,
+            prec_types=self.hparams.spec_params["prec_types"],
+            inst_insert_location=self.hparams.inst_insert_location,
+            inst_insert_size=self.hparams.inst_insert_size,
+            inst_types=self.hparams.spec_params["inst_types"],
+            log_min=self.hparams.log_min
+        )
+        
+        self._check_ce_params()
 
-		# compile
-		if self.hparams.compile:
-			th_dynamo.reset()
-			if profiler_available:
-				self.dynamo_prof = CompileProfiler()
-				self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
-			else:
-				self.model = th.compile(self.model,dynamic=True)
+        # compile
+        if self.hparams.compile:
+            th_dynamo.reset()
+            if profiler_available:
+                self.dynamo_prof = CompileProfiler()
+                self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+            else:
+                self.model = th.compile(self.model,dynamic=True)
