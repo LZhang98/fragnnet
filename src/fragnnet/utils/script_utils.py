@@ -202,7 +202,6 @@ def init_model_from_ckpt(
     print("> Checkpoint was compiled, decompiling...")
     ckpt = decompile_jit_ckpt(ckpt)
     config_d['compile'] = False
-
     # Get model class and initialize
     model_type = config_d['model_type']
     print(f">> Model type: {model_type}")
@@ -265,7 +264,6 @@ def get_config_from_ckpt(
             elif k not in config_d:
                 print(f"  - Adding: {k} = {v}")
             config_d[k] = v
-
     return config_d
 
 # ============================================================================
@@ -318,7 +316,6 @@ def apply_inference_config(
     if skip_extra_losses is not None:
         config_d["skip_extra_losses"] = skip_extra_losses
     config_d["compile"] = False  # Disable compilation for evaluation
-
     # Disable preprocessing if requested
     if disable_preproc:
         for k in ["spec", "mol", "frag", "magma", "ann"]:
@@ -338,7 +335,6 @@ def apply_inference_config(
     config_d["magma_params"]["adduct_form_deltas"] = True
     # for graff
     config_d["ann_params"]["formula_str"] = output_formula_str
-
     # Set batch sizes if provided
     if train_batch_size is not None:
         config_d["train_batch_size"] = train_batch_size
@@ -593,7 +589,6 @@ def get_idx_vars(
     # Determine which index variables to track
     fraggnn_model = isinstance(model, FraGNNetPL)
     iceberg_model = isinstance(model, IcebergIntenPL)
-
     if not (fraggnn_model or iceberg_model):
         assert not nb_iso
         BATCH_IDX_VARS = ["pred_batch_idxs", "true_batch_idxs"]
@@ -1184,7 +1179,6 @@ def process_batch_to_tabular_row(
             b_pred_node_node_idxs = b_pred_node_node_idxs - n_offset
         if b_pred_joint_node_idxs is not None:
             b_pred_joint_node_idxs = b_pred_joint_node_idxs - n_offset
-
         # Apply intensity filtering
         (
             b_spec_ints, b_spec_mzs, b_frag_formula_peak_mzs, b_frag_formula_peak_idxs,

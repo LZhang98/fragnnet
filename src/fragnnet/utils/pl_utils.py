@@ -58,35 +58,35 @@ class ConsoleLogger(Logger):
 
 class PrintGradCallback(Callback):
 
-	def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
 
-		ps = []
-		model_params = pl_module.parameters()
-		for p in model_params:
-			ps.append(p.norm().item())
-		logging.info(ps[:10])
-		logging.info("param_norm",np.mean(ps))
-	
-	def on_after_backward(self, trainer, pl_module):
+        ps = []
+        model_params = pl_module.parameters()
+        for p in model_params:
+            ps.append(p.norm().item())
+        logging.info(ps[:10])
+        logging.info("param_norm",np.mean(ps))
+    
+    def on_after_backward(self, trainer, pl_module):
 
-		p_grads = []
-		model_params = pl_module.parameters()
-		for p in model_params:
-			if p.grad is not None:
-				p_grads.append(p.grad.norm().item())
-		logging.info(p_grads[:10])
-		logging.info("grad_norm",np.mean(p_grads))
+        p_grads = []
+        model_params = pl_module.parameters()
+        for p in model_params:
+            if p.grad is not None:
+                p_grads.append(p.grad.norm().item())
+        logging.info(p_grads[:10])
+        logging.info("grad_norm",np.mean(p_grads))
 
 
 def get_pl_hparams(ckpt) -> dict:
-	"""return a copied version of hyper_parameters
+    """return a copied version of hyper_parameters
 
-	Args:
-		ckpt (_type_): _description_
+    Args:
+        ckpt (_type_): _description_
 
-	Returns:
-		dict: _description_
-	"""
-	hyper_parameters = copy.deepcopy(ckpt["hyper_parameters"])
-	return hyper_parameters
+    Returns:
+        dict: _description_
+    """
+    hyper_parameters = copy.deepcopy(ckpt["hyper_parameters"])
+    return hyper_parameters
 
