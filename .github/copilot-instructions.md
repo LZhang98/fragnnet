@@ -211,6 +211,7 @@ slurm_scripts/
 - **Random seeds**: Set seeds (torch, numpy, random) for reproducibility
 - **Logging**: Use Python logging module, not print statements
 - **Tests**: Write unit tests for models and utilities; use pytest fixtures
+- **Test file organization**: Place each related set of tests in its own test file (for example, group tests by module, feature, or class into separate `tests/test_*.py` files). This makes tests easier to run, review, and maintain.
 - **Configs**: Use YAML for all experiment configs; never hardcode hyperparameters
 - **Error handling**: Always use `raise` statements for explicit failure; never silently fail or use assert for validation
 - **Assertions**: Only use `assert` for debugging/development; prefer `raise` with descriptive exceptions for production code
