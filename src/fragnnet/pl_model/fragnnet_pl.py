@@ -102,13 +102,13 @@ class FraGNNetPL(SpectrumPL):
             )
 
             # Handle freezing
-            freeze_components = self.hparams.finetune["freeze_components"]
             if self.hparams.finetune["freeze_all_shared"]:
                 # If freeze_all_shared is True, we freeze whatever we loaded
                 if self.pretrained_param_names:
                     self._freeze_components(
                         self.pretrained_param_names, exact_match=True)
-            elif freeze_components:
+            elif self.hparams.finetune["freeze_components"]:
+                freeze_components = self.hparams.finetune["freeze_components"]
                 # Otherwise freeze specific components by prefix
                 self._freeze_components(freeze_components, exact_match=False)
 
