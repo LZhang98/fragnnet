@@ -58,7 +58,7 @@ def load_config(template_fp: str, custom_fp: str | None, override: list) -> dict
         assert os.path.isfile(custom_fp), custom_fp
         with open(custom_fp) as custom_file:
             custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
-        assert all([k in config_d for k in custom_d]), set(custom_d.keys()) - set(config_d.keys())
+        assert all(k in config_d for k in custom_d), set(custom_d.keys()) - set(config_d.keys())
         config_d = deep_update(config_d, custom_d)
     # override
     for item in override:
@@ -69,8 +69,8 @@ def load_config(template_fp: str, custom_fp: str | None, override: list) -> dict
             if k in cur:
                 cur = cur[k]
             else:
-                print(f"{k} not in config")
-                assert False
+                msg = f"{k} not in config"
+                raise KeyError(msg)
 
         print(f"Updating {keys[-1]} from {cur[keys[-1]]} to {value}", flush=True)
         # here is not safe way to load, but I'll skip this issue now
@@ -104,21 +104,24 @@ def load_wandb_config(wandb_config_dp) -> dict:
 
 def init_dataset(config_d: dict, splits=("train", "val")) -> tuple:
     """
-    Initialize dataset objects for the specified splits based on the model type in config.
+    Instantiate dataset objects for the requested data splits using the configured model.
 
-    This function selects the appropriate dataset class according to config_d["model_type"],
-    prepares shared or local data dicts for multiprocessing if needed, and instantiates
-    the dataset for each split (e.g., "train", "val", "test").
+    Resolves the dataset class with `get_dataset_cls(config_d["model_type"])`, prepares
+    shared manager-backed dicts when `config_d["num_workers"] > 0 and config_d["share_memory"]`,
+    and constructs one dataset per split by passing `split=...` plus the prepared data
+    dictionaries merged into the dataset constructor call.
 
     Args:
-                    config_d (dict): Configuration dictionary containing at least "model_type" and other dataset args.
-                    splits (tuple): Tuple of split names to load (default: ("train", "val")).
+        config_d (dict): Configuration dictionary. Must include "model_type" and may
+            contain keyword arguments consumed by the resolved dataset class constructor.
+        splits (tuple[str, ...], optional): Iterable of split names to instantiate.
+            Defaults to ("train", "val").
 
     Returns:
-                    tuple: Tuple of dataset objects, one for each split in the order provided.
+        tuple[Dataset, ...]: Dataset instances in the same order as `splits`.
 
     Raises:
-                    ValueError: If an unknown model_type is provided in config_d.
+        Exception: Propagates errors raised by `get_dataset_cls` or the dataset constructor.
     """
     # Select dataset class based on model type
     dataset_cls = get_dataset_cls(config_d["model_type"])
@@ -133,7 +136,7 @@ def init_dataset(config_d: dict, splits=("train", "val")) -> tuple:
             manager = Manager()
             data_sds = {k: manager.dict() for k in data_dict_types}
         else:
-            data_sds = {k: dict() for k in data_dict_types}
+            data_sds = {k: {} for k in data_dict_types}
         # Instantiate the dataset for this split
         ds = dataset_cls(split=split, **{**data_sds, **config_d})
         dses.append(ds)
@@ -198,7 +201,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         else:
             return_batch_at = 0
         batch_sampler = SpecMolFragDynamicBatchSampler(
-            ds,
+            ds,  # type: ignore[arg-type]
             max_num=config_d["dynamic_batch_sampler_max"],
             limited_by=config_d["dynamic_batch_sampler_mode"],
             skip_too_big=True,
@@ -257,15 +260,15 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
     if wandb_mode != "disabled":
         import wandb
 
-        wandb_d = dict(
-            project=config_d["wandb_project"],
-            name=config_d["wandb_name"],
-            group=config_d["wandb_group"],
-            mode=wandb_mode,
-            entity=config_d["wandb_entity"],
-            tags=config_d["wandb_tags"],
-            resume="allow",
-        )
+        wandb_d = {
+            "project": config_d["wandb_project"],
+            "name": config_d["wandb_name"],
+            "group": config_d["wandb_group"],
+            "mode": wandb_mode,
+            "entity": config_d["wandb_entity"],
+            "tags": config_d["wandb_tags"],
+            "resume": "allow",
+        }
 
         if job_id and not config_d["disable_checkpoints"]:
             job_id_fp = os.path.join("job_id", f"{job_id}.id")

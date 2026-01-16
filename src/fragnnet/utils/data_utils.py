@@ -19,7 +19,7 @@ from fragnnet.utils.misc_utils import none_or_nan, np_temp_seed
 
 # don't do expesive import in runtime
 if TYPE_CHECKING:
-    import rdkit
+    pass
 
 JOBLIB_BACKEND = "loky"
 FRAGNNET_JOBLIB_N_JOBS = os.environ.get("FRAGNNET_JOBLIB_N_JOBS", None)
@@ -97,7 +97,7 @@ def list_replace(l, d):
     return [d[data] for data in l]
 
 
-def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "rdkit.Chem.rdchem.Mol":
+def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "Chem.rdchem.Mol":
     """return a rdkit mol from inchi str
 
     Args:
@@ -121,7 +121,7 @@ def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "rdkit.Chem.rdche
     return mol
 
 
-def rdkit_ml_standardize(mol: "rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol":
+def rdkit_ml_standardize(mol: "Chem.rdchem.Mol") -> "Chem.rdchem.Mol":
     """Standardize a molecule for consistent representation for spectra machine learning tasks.
     Do not directly copy this to other chemical machine leanring code base, check list of operations
     you want to perform first.
@@ -176,7 +176,7 @@ def rdkit_ml_standardize(mol: "rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol
     return mol
 
 
-def mol_from_smiles(smiles, ml_standardize: bool = True) -> "rdkit.Chem.rdchem.Mol":
+def mol_from_smiles(smiles, ml_standardize: bool = True) -> "Chem.rdchem.Mol":
     """Convert a SMILES string to an RDKit molecule object
 
     This function creates an RDKit molecule from a SMILES string and optionally
@@ -205,7 +205,7 @@ def mol_from_smiles(smiles, ml_standardize: bool = True) -> "rdkit.Chem.rdchem.M
 
 
 def mol_to_smiles(
-    mol: "rdkit.Chem.rdchem.Mol",
+    mol: "Chem.rdchem.Mol",
     canonical: bool = True,
     isomericSmiles: bool = False,
     kekuleSmiles: bool = False,
@@ -234,7 +234,7 @@ def mol_to_smiles(
     return smiles
 
 
-def mol_to_formula(mol: "rdkit.Chem.rdchem.Mol") -> str:
+def mol_to_formula(mol: "Chem.rdchem.Mol") -> str:
     """get formula string from give mol object
 
     Args:
@@ -252,7 +252,7 @@ def mol_to_formula(mol: "rdkit.Chem.rdchem.Mol") -> str:
     return formula
 
 
-def mol_to_inchikey(mol: "rdkit.Chem.rdchem.Mol") -> str:
+def mol_to_inchikey(mol: "Chem.rdchem.Mol") -> str:
     """get inchikey string from give mol object
 
     Args:
@@ -270,7 +270,7 @@ def mol_to_inchikey(mol: "rdkit.Chem.rdchem.Mol") -> str:
     return inchikey
 
 
-def mol_to_inchikey_s(mol: "rdkit.Chem.rdchem.Mol") -> str:
+def mol_to_inchikey_s(mol: "Chem.rdchem.Mol") -> str:
     """get inchikey string from give mol object
 
     Args:
@@ -283,25 +283,6 @@ def mol_to_inchikey_s(mol: "rdkit.Chem.rdchem.Mol") -> str:
     inchi = modules[0]
     try:
         inchikey_s = inchi.MolToInchiKey(mol)[:14]
-    except Exception:
-        inchikey_s = np.nan
-    return inchikey_s
-
-
-def mol_to_inchi(mol: "rdkit.Chem.rdchem.Mol") -> str:
-    """get inchi string from give mol object
-
-    Args:
-            mol (rdkit.Chem.rdchem.Mol): mol object
-
-    Returns:
-            str: inchi, np.nan if fails
-    """
-    modules = rdkit_import("rdkit.Chem.inchi")
-    inchi = modules[0]
-    try:
-        inchikey = inchi.MolToInchiKey(mol)
-        inchikey_s = inchikey[:14]
     except Exception:
         inchikey_s = np.nan
     return inchikey_s
@@ -346,7 +327,7 @@ def mol_to_mol_weight(mol, exact=True) -> float:
     return mol_weight
 
 
-def mol_to_charge(mol: "rdkit.Chem.rdchem.Mol") -> int:
+def mol_to_charge(mol: "Chem.rdchem.Mol") -> int:
     """get number of charges from mol object
 
     Returns:
@@ -361,7 +342,7 @@ def mol_to_charge(mol: "rdkit.Chem.rdchem.Mol") -> int:
     return charge
 
 
-def mol_to_num_atoms(mol: "rdkit.Chem.rdchem.Mol", heavy: bool = True) -> int | float:
+def mol_to_num_atoms(mol: "Chem.rdchem.Mol", heavy: bool = True) -> int | float:
     """get total number of atoms in get mol object
 
     Args:
@@ -378,7 +359,7 @@ def mol_to_num_atoms(mol: "rdkit.Chem.rdchem.Mol", heavy: bool = True) -> int | 
     return num_atoms
 
 
-def mol_to_num_bonds(mol: "rdkit.Chem.rdchem.Mol", heavy: bool = True) -> int | float:
+def mol_to_num_bonds(mol: "Chem.rdchem.Mol", heavy: bool = True) -> int | float:
     """get total number of bondss in get mol object
 
     Args:
@@ -395,7 +376,7 @@ def mol_to_num_bonds(mol: "rdkit.Chem.rdchem.Mol", heavy: bool = True) -> int | 
     return num_bonds
 
 
-def mol_to_num_radicals(mol: "rdkit.Chem.rdchem.Mol") -> int | float:
+def mol_to_num_radicals(mol: "Chem.rdchem.Mol") -> int | float:
     """get total number of radicals in the mol object
 
     Args:
@@ -413,7 +394,7 @@ def mol_to_num_radicals(mol: "rdkit.Chem.rdchem.Mol") -> int | float:
     return num_radicals
 
 
-def check_neutral_charge(mol: "rdkit.Chem.rdchem.Mol") -> bool:
+def check_neutral_charge(mol: "Chem.rdchem.Mol") -> bool:
     """check if mol is nertral
 
     Args:
@@ -426,7 +407,7 @@ def check_neutral_charge(mol: "rdkit.Chem.rdchem.Mol") -> bool:
     return valid
 
 
-def check_single_mol(mol: "rdkit.Chem.rdchem.Mol") -> bool:
+def check_single_mol(mol: "Chem.rdchem.Mol") -> bool:
     """check if mol object is a single mol (connected graph)
     Args:
             mol (rdkit.Chem.rdchem.Mol): mol object
@@ -495,9 +476,7 @@ def get_tanmimoto(fp, other_fp):
     return ds.DiceSimilarity(fp, other_fp)
 
 
-def make_morgan_fingerprint(
-    mol: "rdkit.Chem.rdchem.Mol", radius: int = 3, covert_to_np=True
-) -> np.array:
+def make_morgan_fingerprint(mol: "Chem.rdchem.Mol", radius: int = 3, covert_to_np=True) -> np.array:
     """make morgan fingerpirnt from mol object
 
     Args:
@@ -518,7 +497,7 @@ def make_morgan_fingerprint(
     return fp_arr
 
 
-def make_rdkit_fingerprint(mol: "rdkit.Chem.rdchem.Mol") -> np.array:
+def make_rdkit_fingerprint(mol: "Chem.rdchem.Mol") -> np.array:
     """make rdkit fingerpirnt from mol object
 
     Args:
@@ -535,7 +514,7 @@ def make_rdkit_fingerprint(mol: "rdkit.Chem.rdchem.Mol") -> np.array:
     return fp_arr
 
 
-def make_maccs_fingerprint(mol: "rdkit.Chem.rdchem.Mol") -> np.ndarray:
+def make_maccs_fingerprint(mol: "Chem.rdchem.Mol") -> np.ndarray:
     """make maccs fingerpirnt from mol object
 
     Args:
@@ -552,7 +531,7 @@ def make_maccs_fingerprint(mol: "rdkit.Chem.rdchem.Mol") -> np.ndarray:
     return fp_arr
 
 
-def remove_stereochemistry(mol: "rdkit.Chem.rdchem.Mol"):
+def remove_stereochemistry(mol: "Chem.rdchem.Mol"):
     """_summary_
 
     Args:
@@ -1162,7 +1141,7 @@ def get_murcko_scaffold(mol, output_type="smiles", include_chirality=False) -> s
     return scaffold
 
 
-def analyze_mol(mol: "rdkit.Chem.rdchem.Mol") -> dict:
+def analyze_mol(mol: "Chem.rdchem.Mol") -> dict:
     """get some basic properties of the mol object
     Args:
             mol (rdkit.Chem.rdchem.Mol): mol object
