@@ -45,5 +45,6 @@ output/*
 /wheels/pyteomics-4.7.5-py3-none-any.whl
 /scripts/debug/for_plot.pkl
 /scripts/debug/selected_df_30209.pkl
-
+.vscode
+.
 example

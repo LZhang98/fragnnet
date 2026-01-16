@@ -12,10 +12,10 @@ subsample_params:
   test: True
   secondary: True
 
-spec_fp: data/proc/nps/spec_df.pkl
-mol_fp: data/proc/nps/mol_df.pkl
-split_dp: data/split/nps_inchikey_cv/cv_0
-frag_dp: data/frag/nps_d3/dags
+spec_fp: data/proc/nps_nist23/spec_df.pkl
+mol_fp: data/proc/nps_nist23/mol_df.pkl
+split_dp: data/split/nps_nist23/cv0
+frag_dp: data/frag/nps_nist23_d3/dags
 num_depth: 4
 num_hs: 4
 

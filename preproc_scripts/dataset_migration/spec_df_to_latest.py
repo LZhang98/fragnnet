@@ -6,89 +6,89 @@ from datetime import datetime
 
 if __name__ == "__main__":
 
-	parser = argparse.ArgumentParser()
-	parser.add_argument("--spec_df_fp", type=str, required=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--spec_df_fp", type=str, required=True)
 
-	args = parser.parse_args()
-	print(f"> Loading spec_df from: {args.spec_df_fp}")
-	spec_df = pd.read_pickle(args.spec_df_fp)
-	original_cols = set(spec_df.columns)
-	print(f"> Loaded spec_df with shape: {spec_df.shape}")
-	print(f"> Original columns: {list(spec_df.columns)}")
-	
-	changes_made = False
-	
-	print(f"> Checking for missing collision energy columns...")
-	for name in ['ace_extra_1', 'nce_extra_1', 'ace_extra_2', 'nce_extra_2']:
-		if name not in spec_df.columns:
-			print(f"> adding missing column {name} to spec_df")
-			spec_df.loc[:, name] = np.nan
-			changes_made = True
-		else:
-			print(f"> column {name} already exists")
+    args = parser.parse_args()
+    print(f"> Loading spec_df from: {args.spec_df_fp}")
+    spec_df = pd.read_pickle(args.spec_df_fp)
+    original_cols = set(spec_df.columns)
+    print(f"> Loaded spec_df with shape: {spec_df.shape}")
+    print(f"> Original columns: {list(spec_df.columns)}")
+    
+    changes_made = False
+    
+    print(f"> Checking for missing collision energy columns...")
+    for name in ['ace_extra_1', 'nce_extra_1', 'ace_extra_2', 'nce_extra_2']:
+        if name not in spec_df.columns:
+            print(f"> adding missing column {name} to spec_df")
+            spec_df.loc[:, name] = np.nan
+            changes_made = True
+        else:
+            print(f"> column {name} already exists")
 
-	print(f"> Adding ce_type column if missing...")
-	if 'ce_type' not in spec_df.columns:
-		print(f"> computing ce_type")
-		has_any_ce = spec_df[["ace","nce","ace_extra_1","nce_extra_1","ace_extra_2","nce_extra_2"]].notna().any(axis=1)
-		has_extra_1 = spec_df[["ace_extra_1","nce_extra_1"]].notna().any(axis=1)
-		has_extra_2 = spec_df[["ace_extra_2","nce_extra_2"]].notna().any(axis=1)
-		spec_df.loc[:, "ce_type"] = np.select(
-			[~has_any_ce, has_extra_2, has_extra_1],
-			["none", "stepped", "ramped"],
-			default="single"
-		)
-		changes_made = True
-	else:
-		print(f"> ce_type already exists")
+    print(f"> Adding ce_type column if missing...")
+    if 'ce_type' not in spec_df.columns:
+        print(f"> computing ce_type")
+        has_any_ce = spec_df[["ace","nce","ace_extra_1","nce_extra_1","ace_extra_2","nce_extra_2"]].notna().any(axis=1)
+        has_extra_1 = spec_df[["ace_extra_1","nce_extra_1"]].notna().any(axis=1)
+        has_extra_2 = spec_df[["ace_extra_2","nce_extra_2"]].notna().any(axis=1)
+        spec_df.loc[:, "ce_type"] = np.select(
+            [~has_any_ce, has_extra_2, has_extra_1],
+            ["none", "stepped", "ramped"],
+            default="single"
+        )
+        changes_made = True
+    else:
+        print(f"> ce_type already exists")
 
-	print(f"> Dropping deprecated has_ace/has_nce if present...")
-	for name in ['has_ace','has_nce']:
-		if name in spec_df.columns:
-			print(f"> dropping column {name}")
-			spec_df = spec_df.drop(columns=[name])
-			changes_made = True
-		else:
-			print(f"> column {name} not present; nothing to drop")
+    print(f"> Dropping deprecated has_ace/has_nce if present...")
+    for name in ['has_ace','has_nce']:
+        if name in spec_df.columns:
+            print(f"> dropping column {name}")
+            spec_df = spec_df.drop(columns=[name])
+            changes_made = True
+        else:
+            print(f"> column {name} not present; nothing to drop")
 
-	print(f"> Dropping deprecated ramped/stepped if present...")
-	for name in ['ramped','stepped']:
-		if name in spec_df.columns:
-			print(f"> dropping column {name}")
-			spec_df = spec_df.drop(columns=[name])
-			changes_made = True
-		else:
-			print(f"> column {name} not present; nothing to drop")
+    print(f"> Dropping deprecated ramped/stepped if present...")
+    for name in ['ramped','stepped']:
+        if name in spec_df.columns:
+            print(f"> dropping column {name}")
+            spec_df = spec_df.drop(columns=[name])
+            changes_made = True
+        else:
+            print(f"> column {name} not present; nothing to drop")
 
-	print(f"> ce_type value counts:")
-	print(spec_df["ce_type"].value_counts())
+    print(f"> ce_type value counts:")
+    print(spec_df["ce_type"].value_counts())
   
-	print(f"> Updated spec_df shape: {spec_df.shape}")
-	print(f"> Updated columns: {list(spec_df.columns)}")
+    print(f"> Updated spec_df shape: {spec_df.shape}")
+    print(f"> Updated columns: {list(spec_df.columns)}")
 
-	if not changes_made:
-		print("> ==============================================")
-		print("> No changes detected. Skipping backup and save.")
-		print("> ==============================================")
-	else:
-		# Create backup of original spec_df as spec_df_orig with timestamp
-		timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-		spec_df_orig_fp = args.spec_df_fp.replace("spec_df.pkl", f"spec_df_orig_{timestamp}.pkl")
-		print(f"> Creating backup of original spec_df...")
-		print(f"> saving original spec_df as {spec_df_orig_fp}")
-		spec_df_orig = pd.read_pickle(args.spec_df_fp)  # Read original again to avoid modifications
-		spec_df_orig.to_pickle(spec_df_orig_fp)
-		print(f"> Backup saved successfully")
-		
-		# Save updated spec_df with same filename (replacing original)
-		print(f"> Saving updated spec_df to replace original...")
-		print(f"> saving updated spec_df as {args.spec_df_fp}")
-		spec_df.to_pickle(args.spec_df_fp)
-		print(f"> Updated spec_df saved successfully")
-		
-		print("> ==============================================")
-		print("> Migration complete!")
-		print(f"> Original backup: {spec_df_orig_fp}")
-		print(f"> Updated file: {args.spec_df_fp}")
-		print("> ==============================================")
+    if not changes_made:
+        print("> ==============================================")
+        print("> No changes detected. Skipping backup and save.")
+        print("> ==============================================")
+    else:
+        # Create backup of original spec_df as spec_df_orig with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        spec_df_orig_fp = args.spec_df_fp.replace("spec_df.pkl", f"spec_df_orig_{timestamp}.pkl")
+        print(f"> Creating backup of original spec_df...")
+        print(f"> saving original spec_df as {spec_df_orig_fp}")
+        spec_df_orig = pd.read_pickle(args.spec_df_fp)  # Read original again to avoid modifications
+        spec_df_orig.to_pickle(spec_df_orig_fp)
+        print(f"> Backup saved successfully")
+        
+        # Save updated spec_df with same filename (replacing original)
+        print(f"> Saving updated spec_df to replace original...")
+        print(f"> saving updated spec_df as {args.spec_df_fp}")
+        spec_df.to_pickle(args.spec_df_fp)
+        print(f"> Updated spec_df saved successfully")
+        
+        print("> ==============================================")
+        print("> Migration complete!")
+        print(f"> Original backup: {spec_df_orig_fp}")
+        print(f"> Updated file: {args.spec_df_fp}")
+        print("> ==============================================")
  

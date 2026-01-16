@@ -38,7 +38,13 @@ mces_fp: data/proc/mces/mces_pairs.pkl
 finetune:
   use_finetune: true
   pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
-  shared_all: true
+  shared_all: false
+  finetune_shared_components:
+    - mol_embedder
+    - mol_pool
+    - ce_embedder
+    - prec_embedder
+    - inst_embedder
   freeze_all_shared: true
   pretrained_weights_lr_ratio: 0.1
 
