@@ -5,9 +5,11 @@ Molecular Graph Encoder for embedding molecules.
 import torch as th
 import torch.nn as nn
 import torch_geometric as pyg
-from fragnnet.model.nn_blocks import GNN, build_pool_module, MLPBlocks
+
+from fragnnet.model.base_model import CEModel, InstModel, PrecModel
+from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.model.base_model import CEModel, PrecModel, InstModel
+
 
 class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
     """
@@ -46,7 +48,7 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
         inst_types: list[str],
     ):
         super().__init__()
-        
+
         # Save params
         self.mol_node_feats = mol_node_feats
         self.mol_edge_feats = mol_edge_feats
@@ -90,7 +92,7 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
         self._ce_location_check()
         self._prec_location_check()
         self._inst_location_check()
-        
+
         self._ce_init(
             int_embedder=self.int_embedder,
             ce_insert_location=self.ce_insert_location,
@@ -99,17 +101,17 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
             ce_insert_size=self.ce_insert_size,
             ce_mean=self.ce_mean,
             ce_std=self.ce_std,
-            ce_max=self.ce_max
+            ce_max=self.ce_max,
         )
         self._prec_init(
             prec_insert_location=self.prec_insert_location,
             prec_insert_size=self.prec_insert_size,
-            prec_num_types=self.prec_num_types
+            prec_num_types=self.prec_num_types,
         )
         self._inst_init(
             inst_insert_location=self.inst_insert_location,
             inst_insert_size=self.inst_insert_size,
-            inst_num_types=self.inst_num_types
+            inst_num_types=self.inst_num_types,
         )
 
         # GNN
@@ -123,14 +125,14 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
             mol_input_size += self.inst_insert_size
 
         self.mol_embedder = GNN(
-            input_dim=mol_input_size, # GNN wrapper uses input_dim? No, GNN uses node_feats_size
+            input_dim=mol_input_size,  # GNN wrapper uses input_dim? No, GNN uses node_feats_size
             node_feats_size=mol_input_size,
             edge_feats_size=self.mol_edge_feats_size,
             hidden_size=self.mol_hidden_size,
             num_layers=self.mol_num_layers,
             gnn_type=self.mol_gnn_type,
             normalization=self.mol_normalization,
-            dropout=self.mol_dropout
+            dropout=self.mol_dropout,
         )
 
         # Pooling
@@ -153,7 +155,7 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
             num_layers=self.mlp_num_layers,
             dropout=self.mlp_dropout,
             use_residuals=self.mlp_use_residuals,
-            normalization="layer_norm" # Usually good for projection heads
+            normalization="layer_norm",  # Usually good for projection heads
         )
 
     def forward(
@@ -167,7 +169,12 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
         """
         Forward pass for molecular graph embedding.
         """
-        mol_x, mol_edge_index, mol_edge_attr, mol_batch = mol_pyg.x, mol_pyg.edge_index, mol_pyg.edge_attr, mol_pyg.batch
+        mol_x, mol_edge_index, mol_edge_attr, mol_batch = (
+            mol_pyg.x,
+            mol_pyg.edge_index,
+            mol_pyg.edge_attr,
+            mol_pyg.batch,
+        )
         batch_size = mol_batch[-1] + 1
 
         # Metadata embedders
@@ -177,25 +184,28 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
 
         # Metadata embeddings at the node feature level
         if self.ce_insert_location == "mol":
-            mol_ce_embed = th.repeat_interleave(ce_embed, th.unique(mol_batch, return_counts=True)[1], dim=0)
+            mol_ce_embed = th.repeat_interleave(
+                ce_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
+            )
             mol_x = th.cat([mol_x, mol_ce_embed], dim=1)
         if self.prec_insert_location == "mol":
-            mol_prec_embed = th.repeat_interleave(prec_embed, th.unique(mol_batch, return_counts=True)[1], dim=0)
+            mol_prec_embed = th.repeat_interleave(
+                prec_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
+            )
             mol_x = th.cat([mol_x, mol_prec_embed], dim=1)
         if self.inst_insert_location == "mol":
-            mol_inst_embed = th.repeat_interleave(inst_embed, th.unique(mol_batch, return_counts=True)[1], dim=0)
+            mol_inst_embed = th.repeat_interleave(
+                inst_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
+            )
             mol_x = th.cat([mol_x, mol_inst_embed], dim=1)
-        
+
         # GNN encoding
         mol_embed_gnn = self.mol_embedder(
-            mol_x,
-            mol_batch,
-            mol_edge_index,
-            mol_edge_attr
+            mol_x, mol_batch, mol_edge_index, mol_edge_attr
         )
         # Pooling to get graph-level embedding
         mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn, mol_batch)
-        
+
         # Metadata embeddings at the MLP level
         mlp_input = mol_embed_gnn_pool
         if self.ce_insert_location == "mlp":
@@ -207,7 +217,7 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
 
         # Projection
         mol_embed = self.projector(mlp_input)
-        
+
         return mol_embed
 
     def _compute_mol_feats_sizes(self):
@@ -215,16 +225,20 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
         Compute molecular node and edge feature sizes.
         """
         self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
-            self.mol_node_feats, 
-            self.mol_edge_feats, 
-            self.mol_pe_embed_k
+            self.mol_node_feats, self.mol_edge_feats, self.mol_pe_embed_k
         )
 
     def _ce_location_check(self):
-        assert self.ce_insert_location in ["mlp", "mol", "none"], f"ce_insert_location={self.ce_insert_location} not supported"
+        assert self.ce_insert_location in ["mlp", "mol", "none"], (
+            f"ce_insert_location={self.ce_insert_location} not supported"
+        )
 
     def _prec_location_check(self):
-        assert self.prec_insert_location in ["mlp", "mol", "none"], f"prec_insert_location={self.prec_insert_location} not supported"
+        assert self.prec_insert_location in ["mlp", "mol", "none"], (
+            f"prec_insert_location={self.prec_insert_location} not supported"
+        )
 
     def _inst_location_check(self):
-        assert self.inst_insert_location in ["mlp", "mol", "none"], f"prec_insert_location={self.inst_insert_location} not supported"
+        assert self.inst_insert_location in ["mlp", "mol", "none"], (
+            f"prec_insert_location={self.inst_insert_location} not supported"
+        )
