@@ -1,25 +1,33 @@
+import gc
 import multiprocessing
+import os
+import tempfile
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import numpy as np
 import pandas as pd
 import torch as th
-import numpy as np
 from tqdm import tqdm
-import tempfile
-import os
-import gc
-from typing import Dict, Any, Optional, Set, List, Tuple
 
-from fragnnet.runner import load_config
-from fragnnet.utils.misc_utils import to_device, scatter_reduce, flatten_lol, LOG_ZERO, get_best_ckpt_from_wandb
-from fragnnet.pl_model import FraGNNetPL
 from fragnnet.iceberg.pl_model import IcebergIntenPL
+from fragnnet.pl_model import FraGNNetPL
+from fragnnet.runner import load_config
+from fragnnet.utils.frag_utils import get_node_feats
+from fragnnet.utils.misc_utils import (
+    LOG_ZERO,
+    flatten_lol,
+    get_best_ckpt_from_wandb,
+    scatter_reduce,
+    to_device,
+)
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls
-from fragnnet.utils.frag_utils import get_node_feats
 
 
 def init_wandb_ckpt(run_id, last_ckpt, model_cls, config_d):
     import wandb
+
     # load model
     with tempfile.TemporaryDirectory(dir=os.getcwd()) as temp_dp:
         api = wandb.Api()
@@ -32,14 +40,16 @@ def init_wandb_ckpt(run_id, last_ckpt, model_cls, config_d):
             for file in files:
                 if file.name.endswith(".ckpt") and "last" not in file.name:
                     ckpt_wandb_fp = file.name
-                    epoch = int(os.path.basename(file.name).removeprefix(
-                        "model-epoch=").removesuffix(".ckpt"))
+                    epoch = int(
+                        os.path.basename(file.name)
+                        .removeprefix("model-epoch=")
+                        .removesuffix(".ckpt")
+                    )
                     if best_ckpt_wandb_fp is None or epoch > best_epoch:
                         best_ckpt_wandb_fp = ckpt_wandb_fp
                         best_epoch = epoch
         assert ckpt_wandb_fp is not None
-        ckpt_file_local = run.file(ckpt_wandb_fp).download(
-            root=temp_dp, replace=False)
+        ckpt_file_local = run.file(ckpt_wandb_fp).download(root=temp_dp, replace=False)
         ckpt_fp = ckpt_file_local.name
         ckpt = th.load(ckpt_fp, map_location="cpu", weights_only=False)
         # decompile
@@ -49,15 +59,15 @@ def init_wandb_ckpt(run_id, last_ckpt, model_cls, config_d):
         model = model_cls(**config_d)
         try:
             model.load_state_dict(ckpt["state_dict"], strict=True)
-        except RuntimeError as e:
+        except RuntimeError:
             print(
-                f"> error when loading from checkpoint id {run_id}, will try with strict=False")
+                f"> error when loading from checkpoint id {run_id}, will try with strict=False"
+            )
             model.load_state_dict(ckpt["state_dict"], strict=False)
     return model
 
 
 def select_model_vals(model_to_vals, keys, stack_dim=0):
-
     select_d = {k: [] for k in keys}
     for model, vals in model_to_vals.items():
         for k in keys:
@@ -73,9 +83,10 @@ def log_mean(log_p, dim=0):
 def log_std(log_p, dim=0, correction=1):
     support_size = log_p.shape[dim]
     log_mean_p = log_mean(log_p, dim=dim)
-    log_mean_p_sq = log_mean(2*log_p, dim=dim)
-    log_var = th.log(th.exp(log_mean_p_sq) - th.exp(2*log_mean_p))
-    return 0.5*(log_var + np.log(support_size) - np.log(support_size - correction))
+    log_mean_p_sq = log_mean(2 * log_p, dim=dim)
+    log_var = th.log(th.exp(log_mean_p_sq) - th.exp(2 * log_mean_p))
+    return 0.5 * (log_var + np.log(support_size) - np.log(support_size - correction))
+
 
 # define sparse kl divergence
 
@@ -86,7 +97,7 @@ def sparse_kl(log_p, log_q, b_idx, dim_size):
         p * (log_p - th.clamp(log_q, min=LOG_ZERO(log_p.dtype))),
         b_idx,
         reduce="sum",
-        dim_size=dim_size
+        dim_size=dim_size,
     )
     kl = th.clamp(kl, min=0.0)
     return kl
@@ -97,14 +108,14 @@ def pearson_r(x, y, dim=0):
     y_mean = th.mean(y, dim=dim)
     x_std = th.std(x, dim=dim)
     y_std = th.std(y, dim=dim)
-    r = th.mean((x-x_mean)*(y-y_mean), dim=dim) / (x_std * y_std)
+    r = th.mean((x - x_mean) * (y - y_mean), dim=dim) / (x_std * y_std)
     return r
 
 
 def setup_device(
-        config_d: Dict[str, Any],
-        device: Optional[str] = None,
-        enable_cpu_optimizations: bool = True,
+    config_d: Dict[str, Any],
+    device: Optional[str] = None,
+    enable_cpu_optimizations: bool = True,
 ) -> th.device:
     """
     Prepare and configure the compute device for inference.
@@ -118,10 +129,13 @@ def setup_device(
             Configured torch device
     """
     if device is None:
-        th_device = th.device("cuda:0") if config_d.get(
-            "accelerator") == "gpu" else th.device("cpu")
+        th_device = (
+            th.device("cuda:0")
+            if config_d.get("accelerator") == "gpu"
+            else th.device("cpu")
+        )
     elif not th.cuda.is_available() and device != "cpu":
-        print(f"Warning: CUDA not available, falling back to CPU")
+        print("Warning: CUDA not available, falling back to CPU")
         th_device = th.device("cpu")
     else:
         th_device = th.device(device)
@@ -131,19 +145,19 @@ def setup_device(
     # CPU-specific optimizations
     if th_device.type == "cpu" and enable_cpu_optimizations:
         th.set_num_threads(multiprocessing.cpu_count())
-        th.multiprocessing.set_sharing_strategy('file_system')
+        th.multiprocessing.set_sharing_strategy("file_system")
         th.use_deterministic_algorithms(True)
         print(f"  - CPU threads: {multiprocessing.cpu_count()}")
-        print(f"  - Deterministic mode: enabled")
+        print("  - Deterministic mode: enabled")
 
     return th_device
 
 
 def get_ckpt_path(
-        wandb_run_id: Optional[str],
-        model_ckpt: Optional[str],
-        model_save_dp: str,
-        use_cached: bool = True,
+    wandb_run_id: Optional[str],
+    model_ckpt: Optional[str],
+    model_save_dp: str,
+    use_cached: bool = True,
 ) -> str:
     """
     Get checkpoint path either from local file or download from W&B.
@@ -163,7 +177,8 @@ def get_ckpt_path(
         print(f">> Downloading model to {model_save_dp} from W&B")
         print(f">> W&B run id: {wandb_run_id}")
         ckpt_fp = get_best_ckpt_from_wandb(
-            model_save_dp, wandb_run_id, use_cached=use_cached)
+            model_save_dp, wandb_run_id, use_cached=use_cached
+        )
     else:
         # Use local checkpoint
         ckpt_fp = model_ckpt
@@ -173,10 +188,10 @@ def get_ckpt_path(
 
 
 def init_model_from_ckpt(
-        ckpt_fp: str,
-        config_d: Dict[str, Any],
-        device: th.device,
-        map_location: Optional[str] = None,
+    ckpt_fp: str,
+    config_d: Dict[str, Any],
+    device: th.device,
+    map_location: Optional[str] = None,
 ) -> th.nn.Module:
     """
     Initialize and load model from checkpoint file.
@@ -201,9 +216,9 @@ def init_model_from_ckpt(
     # if config_d.get('compile', False):
     print("> Checkpoint was compiled, decompiling...")
     ckpt = decompile_jit_ckpt(ckpt)
-    config_d['compile'] = False
+    config_d["compile"] = False
     # Get model class and initialize
-    model_type = config_d['model_type']
+    model_type = config_d["model_type"]
     print(f">> Model type: {model_type}")
     model_cls = get_model_cls(model_type)
 
@@ -214,7 +229,7 @@ def init_model_from_ckpt(
         model.load_state_dict(ckpt["state_dict"], strict=True)
         print(">> Model loaded successfully (strict=True)")
     except RuntimeError as e:
-        print(f"> Warning: Error loading with strict=True, retrying with strict=False")
+        print("> Warning: Error loading with strict=True, retrying with strict=False")
         print(f"  Error: {e}")
         model.load_state_dict(ckpt["state_dict"], strict=False)
         print(">> Model loaded with strict=False")
@@ -226,9 +241,9 @@ def init_model_from_ckpt(
 
 
 def get_config_from_ckpt(
-        ckpt_fp: str,
-        custom_fp: Optional[str] = None,
-        template_fp: Optional[str] = None,
+    ckpt_fp: str,
+    custom_fp: Optional[str] = None,
+    template_fp: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Load model and config from checkpoint file (using checkpoint hparams).
@@ -253,7 +268,9 @@ def get_config_from_ckpt(
 
     # Override with custom config if provided
     if custom_fp is not None:
-        assert template_fp is not None, "template_fp required when custom_fp is provided"
+        assert template_fp is not None, (
+            "template_fp required when custom_fp is provided"
+        )
     # Load and merge template and custom config
     if template_fp is not None and custom_fp is not None:
         print(f">> Loading custom config from {custom_fp}")
@@ -266,6 +283,7 @@ def get_config_from_ckpt(
             config_d[k] = v
     return config_d
 
+
 # ============================================================================
 # Inference Configuration and Setup Utilities
 # ============================================================================
@@ -277,19 +295,19 @@ def get_config_from_ckpt(
 
 
 def apply_inference_config(
-        config_d: Dict[str, Any],
-        auxiliary_scores: Optional[list] = None,
-        skip_extra_losses: Optional[bool] = None,
-        disable_preproc: Optional[bool] = False,
-        eval_mz_bin_res: Optional[list] = None,
-        dynamic_batch_sampler: Optional[bool] = None,
-        num_workers: Optional[int] = None,
-        output_formula_str: bool = False,
-        train_batch_size: Optional[int] = None,
-        eval_batch_size: Optional[int] = None,
-        # Set dataframes in config for dataset initialization
-        mol_src: Optional[pd.DataFrame | str] = None,
-        spec_src: Optional[pd.DataFrame | str] = None,
+    config_d: Dict[str, Any],
+    auxiliary_scores: Optional[list] = None,
+    skip_extra_losses: Optional[bool] = None,
+    disable_preproc: Optional[bool] = False,
+    eval_mz_bin_res: Optional[list] = None,
+    dynamic_batch_sampler: Optional[bool] = None,
+    num_workers: Optional[int] = None,
+    output_formula_str: bool = False,
+    train_batch_size: Optional[int] = None,
+    eval_batch_size: Optional[int] = None,
+    # Set dataframes in config for dataset initialization
+    mol_src: Optional[pd.DataFrame | str] = None,
+    spec_src: Optional[pd.DataFrame | str] = None,
 ) -> Dict[str, Any]:
     """_summary_
 
@@ -343,40 +361,42 @@ def apply_inference_config(
 
     # config_d['auxiliary_scores'] = auxiliary_scores if auxiliary_scores is not None else []
     if eval_mz_bin_res is not None:
-        config_d['eval_mz_bin_res'] = eval_mz_bin_res
+        config_d["eval_mz_bin_res"] = eval_mz_bin_res
 
     # Apply common inference settings
-    config_d['track_datapoint_metrics'] = False
+    config_d["track_datapoint_metrics"] = False
 
     # Disable preprocessing to save memory
-    config_d['frag_params']['preload'] = False
-    config_d['frag_params']['preprocess'] = False
-    config_d['magma_params']['preprocess'] = False
+    config_d["frag_params"]["preload"] = False
+    config_d["frag_params"]["preprocess"] = False
+    config_d["magma_params"]["preprocess"] = False
 
     # Disable samplers for deterministic inference
-    config_d["dynamic_batch_sampler"] = dynamic_batch_sampler if dynamic_batch_sampler is not None else False
+    config_d["dynamic_batch_sampler"] = (
+        dynamic_batch_sampler if dynamic_batch_sampler is not None else False
+    )
     config_d["group_sampler"] = False
     config_d["simple_group_sampler"] = False
 
     if num_workers is not None:
-        config_d['num_workers'] = num_workers
+        config_d["num_workers"] = num_workers
 
     # Set dataframes in config for dataset initialization
     if mol_src is not None:
-        config_d['mol_fp'] = mol_src
+        config_d["mol_fp"] = mol_src
     if spec_src is not None:
-        config_d['spec_fp'] = spec_src
+        config_d["spec_fp"] = spec_src
     return config_d
 
 
 def save_inference_results(
-        vals: Any,
-        save_dp: str,
-        model_type: str,
-        seed: int,
-        eval_split: str,
-        force_overwrite: bool = False,
-        split_type: Optional[str] = None,
+    vals: Any,
+    save_dp: str,
+    model_type: str,
+    seed: int,
+    eval_split: str,
+    force_overwrite: bool = False,
+    split_type: Optional[str] = None,
 ) -> None:
     """
     Save inference results to disk with proper directory structure.
@@ -392,8 +412,7 @@ def save_inference_results(
     """
     # Build save path
     if split_type is not None:
-        seed_save_dp = os.path.join(
-            save_dp, split_type, model_type, f"s{seed}")
+        seed_save_dp = os.path.join(save_dp, split_type, model_type, f"s{seed}")
     else:
         seed_save_dp = os.path.join(save_dp, model_type, f"s{seed}")
 
@@ -407,7 +426,7 @@ def save_inference_results(
             print(f"> Warning: overwriting {seed_vals_fp}")
             th.save(vals, seed_vals_fp)
         else:
-            print(f"> Skipping save (use --force_overwrite to overwrite)")
+            print("> Skipping save (use --force_overwrite to overwrite)")
     else:
         th.save(vals, seed_vals_fp)
         print(f"> Saved results to {seed_vals_fp}")
@@ -452,9 +471,9 @@ def list_output_subset_options() -> list[str]:
 
 
 def prepare_output_subset(
-        output_everything: bool,
-        output_subset: Optional[Set[str]],
-        model_metric_names: Optional[Set[str]] = None,
+    output_everything: bool,
+    output_subset: Optional[Set[str]],
+    model_metric_names: Optional[Set[str]] = None,
 ) -> Optional[Set[str]]:
     """
     Prepare output subset for inference results.
@@ -482,9 +501,9 @@ def prepare_output_subset(
 
 
 def required_index_vars_for_outputs(
-        output_subset: Optional[Set[str]],
-        model,
-        nb_iso: bool = False,
+    output_subset: Optional[Set[str]],
+    model,
+    nb_iso: bool = False,
 ) -> Tuple[Set[str], Set[str], Set[str], Set[str]]:
     """
     Given desired `output_subset` tokens, determine which index variable arrays are
@@ -549,19 +568,25 @@ def required_index_vars_for_outputs(
 
     if is_fragnnet and nb_iso:
         # If neighbor isotope predictions are enabled, include NB index vars
-        req_batch |= {"pred_nb_node_batch_idxs",
-                      "pred_nb_joint_batch_idxs", "pred_nb_node_node_batch_idxs"}
+        req_batch |= {
+            "pred_nb_node_batch_idxs",
+            "pred_nb_joint_batch_idxs",
+            "pred_nb_node_node_batch_idxs",
+        }
         req_formula |= {"pred_nb_joint_formula_idxs"}
-        req_nb_node |= {"pred_nb_node_node_idxs",
-                        "pred_nb_joint_node_idxs", "pred_nb_node_node_node_idxs"}
+        req_nb_node |= {
+            "pred_nb_node_node_idxs",
+            "pred_nb_joint_node_idxs",
+            "pred_nb_node_node_node_idxs",
+        }
 
     return req_batch, req_node, req_formula, req_nb_node
 
 
 def get_required_config_indices(
-        output_subset: Optional[Set[str]],
-        model,
-        nb_iso: bool = False,
+    output_subset: Optional[Set[str]],
+    model,
+    nb_iso: bool = False,
 ) -> Tuple[Set[str], Set[str], Set[str], Set[str]]:
     """
     Public API: Given `output_subset` tokens, return required index variable names
@@ -572,9 +597,9 @@ def get_required_config_indices(
 
 
 def get_idx_vars(
-        output_subset: Optional[Set[str]],
-        model,
-        nb_iso: bool = False,
+    output_subset: Optional[Set[str]],
+    model,
+    nb_iso: bool = False,
 ) -> Tuple[List[str], List[str], List[str], List[str]]:
     """
     Get final output keys based on subset selection.
@@ -605,27 +630,36 @@ def get_idx_vars(
         NB_NODE_IDX_VARS = []
     else:  # fraggnn_model
         BATCH_IDX_VARS = [
-            "pred_batch_idxs", "true_batch_idxs", "pred_formula_batch_idxs",
-            "pred_node_batch_idxs", "pred_joint_batch_idxs"
+            "pred_batch_idxs",
+            "true_batch_idxs",
+            "pred_formula_batch_idxs",
+            "pred_node_batch_idxs",
+            "pred_joint_batch_idxs",
         ]
         NODE_IDX_VARS = ["pred_node_node_idxs", "pred_joint_node_idxs"]
-        FORMULA_IDX_VARS = ["pred_formula_formula_idxs",
-                            "pred_joint_formula_idxs"]
+        FORMULA_IDX_VARS = ["pred_formula_formula_idxs", "pred_joint_formula_idxs"]
         NB_NODE_IDX_VARS = []
         if nb_iso:
-            BATCH_IDX_VARS.extend([
-                "pred_nb_node_batch_idxs", "pred_nb_joint_batch_idxs",
-                "pred_nb_node_node_batch_idxs"
-            ])
+            BATCH_IDX_VARS.extend(
+                [
+                    "pred_nb_node_batch_idxs",
+                    "pred_nb_joint_batch_idxs",
+                    "pred_nb_node_node_batch_idxs",
+                ]
+            )
             FORMULA_IDX_VARS.extend(["pred_nb_joint_formula_idxs"])
-            NB_NODE_IDX_VARS.extend([
-                "pred_nb_node_node_idxs", "pred_nb_joint_node_idxs",
-                "pred_nb_node_node_node_idxs"
-            ])
+            NB_NODE_IDX_VARS.extend(
+                [
+                    "pred_nb_node_node_idxs",
+                    "pred_nb_joint_node_idxs",
+                    "pred_nb_node_node_node_idxs",
+                ]
+            )
 
     if output_subset is not None:
         req_batch, req_node, req_formula, req_nb_node = required_index_vars_for_outputs(
-            output_subset, model, nb_iso)
+            output_subset, model, nb_iso
+        )
         BATCH_IDX_VARS = [k for k in BATCH_IDX_VARS if k in req_batch]
         NODE_IDX_VARS = [k for k in NODE_IDX_VARS if k in req_node]
         FORMULA_IDX_VARS = [k for k in FORMULA_IDX_VARS if k in req_formula]
@@ -645,22 +679,22 @@ def get_score_types(config_d):
             List of evaluation score types
     """
     eval_score_types = []
-    for score_type in config_d['auxiliary_scores']:
+    for score_type in config_d["auxiliary_scores"]:
         if "_hun" in score_type:
             # Hungarian algorithm scores don't need binning
             eval_score_types.append(score_type)
         else:
             # Other scores need binning by m/z resolution
-            for bin_res in config_d['eval_mz_bin_res']:
+            for bin_res in config_d["eval_mz_bin_res"]:
                 eval_score_types.append(f"{score_type}_{bin_res}")
     return eval_score_types
 
 
 def get_tabular_columns(
-        config_d: Dict[str, Any],
-        return_formula_str: bool = False,
-        return_cc_hash: bool = False,
-        output_subset: Optional[Set[str]] = None
+    config_d: Dict[str, Any],
+    return_formula_str: bool = False,
+    return_cc_hash: bool = False,
+    output_subset: Optional[Set[str]] = None,
 ) -> List[str]:
     """
     Get column names for tabular inference output.
@@ -675,13 +709,22 @@ def get_tabular_columns(
     """
     eval_score_types = get_score_types(config_d)
     columns_name = [
-        "spec_id", "mol_id", "pred_mzs", "pred_ints", "pred_oos_prob",
-        "frag_formula_peak_idxs", "frag_formula_peak_mzs",
-        "pred_formula_formula_idxs", "pred_formula_probs",
-        "pred_joint_formula_idxs", "pred_formula_node_probs",
-        "pred_joint_node_idxs", "pred_node_formula_probs",
-        "pred_node_probs", "pred_node_node_idxs",
-        "index_rebased"
+        "spec_id",
+        "mol_id",
+        "pred_mzs",
+        "pred_ints",
+        "pred_oos_prob",
+        "frag_formula_peak_idxs",
+        "frag_formula_peak_mzs",
+        "pred_formula_formula_idxs",
+        "pred_formula_probs",
+        "pred_joint_formula_idxs",
+        "pred_formula_node_probs",
+        "pred_joint_node_idxs",
+        "pred_node_formula_probs",
+        "pred_node_probs",
+        "pred_node_node_idxs",
+        "index_rebased",
     ]
     if return_formula_str:
         columns_name.extend(["pred_formula_strs"])
@@ -693,20 +736,21 @@ def get_tabular_columns(
         missing_cols = [c for c in output_subset if c not in columns_name]
         if len(missing_cols) > 0:
             print(
-                f"Warning: {len(missing_cols)} columns in output_subset are not in available columns: {missing_cols}")
+                f"Warning: {len(missing_cols)} columns in output_subset are not in available columns: {missing_cols}"
+            )
         # columns_name = [c for c in columns_name if c in output_subset]
 
     return columns_name
 
 
 def run_inference_pkl(
-        model,
-        dataloader,
-        device: th.device,
-        batch_cutoff: int = -1,  # max number of batches to eval (-1 = all)
-        nb_iso: bool = False,
-        output_set: Optional[Set[str]] = None,
-        evaluate: bool = True
+    model,
+    dataloader,
+    device: th.device,
+    batch_cutoff: int = -1,  # max number of batches to eval (-1 = all)
+    nb_iso: bool = False,
+    output_set: Optional[Set[str]] = None,
+    evaluate: bool = True,
 ) -> Dict[str, Any]:
     """
     Run inference with optional chunked saving for resumable predictions.
@@ -732,12 +776,13 @@ def run_inference_pkl(
         raise RuntimeError(f"> Warning: model {model} is in training mode!")
 
     # Run inference loops
-    total_batches = len(dataloader) if batch_cutoff < 0 else min(
-        len(dataloader), batch_cutoff)
+    total_batches = (
+        len(dataloader) if batch_cutoff < 0 else min(len(dataloader), batch_cutoff)
+    )
     with th.inference_mode():
-        for batch_idx, batch_input in tqdm(enumerate(dataloader), total=total_batches,
-                                           desc="Running inference"):
-
+        for batch_idx, batch_input in tqdm(
+            enumerate(dataloader), total=total_batches, desc="Running inference"
+        ):
             # Early exit for batch cutoff
             if batch_idx >= total_batches:
                 break
@@ -749,15 +794,15 @@ def run_inference_pkl(
             if evaluate:
                 # Use ground truth evaluation method
                 b_output = model.inference_with_ground_truth_step(
-                    batch_input, split="test")
+                    batch_input, split="test"
+                )
             else:
                 # Use prediction-only method
                 b_output = model.inference_step(batch_input)
 
             b_output = to_device(b_output, "cpu", non_blocking=False)
             if output_set is not None:
-                b_output = {k: b_output[k]
-                            for k in b_output if k in output_set}
+                b_output = {k: b_output[k] for k in b_output if k in output_set}
 
             # ============================================================
             # EVALUATION MODE: Collect all outputs with index rebatching
@@ -766,24 +811,24 @@ def run_inference_pkl(
 
             # Calculate batch counts for index rebatching
             if "pred_batch_idxs" in output_keys:
-                b_num_datapoints = b_output["pred_batch_idxs"].max()+1
+                b_num_datapoints = b_output["pred_batch_idxs"].max() + 1
             elif "true_batch_idxs" in output_keys:
-                b_num_datapoints = b_output["true_batch_idxs"].max()+1
+                b_num_datapoints = b_output["true_batch_idxs"].max() + 1
             else:
                 b_num_datapoints = 0
 
             if is_fragnnet_model and "pred_node_node_idxs" in output_keys:
-                b_num_nodes = b_output["pred_node_node_idxs"].max()+1
+                b_num_nodes = b_output["pred_node_node_idxs"].max() + 1
             else:
                 b_num_nodes = 0
 
             if is_fragnnet_model and "pred_formula_formula_idxs" in output_keys:
-                b_num_formulas = b_output["pred_formula_formula_idxs"].max()+1
+                b_num_formulas = b_output["pred_formula_formula_idxs"].max() + 1
             else:
                 b_num_formulas = 0
 
             if is_fragnnet_model and nb_iso and "pred_nb_node_node_idxs" in output_keys:
-                b_num_nb_nodes = b_output["pred_nb_node_node_idxs"].max()+1
+                b_num_nb_nodes = b_output["pred_nb_node_node_idxs"].max() + 1
             else:
                 b_num_nb_nodes = 0
 
@@ -844,17 +889,17 @@ def run_inference_pkl(
 
 
 def run_inference_tabular(
-        model: th.nn.Module,
-        dataloader: th.utils.data.DataLoader,
-        device: th.device,
-        batch_cutoff: int = -1,
-        evaluate: bool = False,
-        output_set: Optional[set[str]] = None,
-        nb_iso: bool = False,
-        min_peak_int: float = 0.0,
-        return_formula_str: bool = False,
-        return_cc_hash: bool = False,
-        rebase_indices: bool = True,
+    model: th.nn.Module,
+    dataloader: th.utils.data.DataLoader,
+    device: th.device,
+    batch_cutoff: int = -1,
+    evaluate: bool = False,
+    output_set: Optional[set[str]] = None,
+    nb_iso: bool = False,
+    min_peak_int: float = 0.0,
+    return_formula_str: bool = False,
+    return_cc_hash: bool = False,
+    rebase_indices: bool = True,
 ) -> pd.DataFrame:
     """
     Run inference and return all results as a single DataFrame.
@@ -879,22 +924,23 @@ def run_inference_tabular(
     """
     # Get column names from config
     columns_name = get_tabular_columns(
-        model.hparams, return_formula_str, return_cc_hash, output_subset=output_set)
+        model.hparams, return_formula_str, return_cc_hash, output_subset=output_set
+    )
 
     # Accumulate all batch results
     preds_l = []
     for batch_rows in run_inference_tabular_iter(
-            model=model,
-            dataloader=dataloader,
-            device=device,
-            batch_cutoff=batch_cutoff,
-            evaluate=evaluate,
-            output_set=output_set,
-            nb_iso=nb_iso,
-            min_peak_int=min_peak_int,
-            return_formula_str=return_formula_str,
-            return_cc_hash=return_cc_hash,
-            rebase_indices=rebase_indices,
+        model=model,
+        dataloader=dataloader,
+        device=device,
+        batch_cutoff=batch_cutoff,
+        evaluate=evaluate,
+        output_set=output_set,
+        nb_iso=nb_iso,
+        min_peak_int=min_peak_int,
+        return_formula_str=return_formula_str,
+        return_cc_hash=return_cc_hash,
+        rebase_indices=rebase_indices,
     ):
         preds_l.extend(batch_rows)
 
@@ -903,17 +949,17 @@ def run_inference_tabular(
 
 
 def run_inference_tabular_iter(
-        model: th.nn.Module,
-        dataloader: th.utils.data.DataLoader,
-        device: th.device,
-        batch_cutoff: int = -1,
-        evaluate: bool = False,
-        output_set: Optional[set[str]] = None,
-        nb_iso: bool = False,
-        min_peak_int: float = 0.0,
-        return_formula_str: bool = False,
-        return_cc_hash: bool = False,
-        rebase_indices: bool = True,
+    model: th.nn.Module,
+    dataloader: th.utils.data.DataLoader,
+    device: th.device,
+    batch_cutoff: int = -1,
+    evaluate: bool = False,
+    output_set: Optional[set[str]] = None,
+    nb_iso: bool = False,
+    min_peak_int: float = 0.0,
+    return_formula_str: bool = False,
+    return_cc_hash: bool = False,
+    rebase_indices: bool = True,
 ):
     """
     Generator that yields batch results for streaming inference processing.
@@ -943,7 +989,8 @@ def run_inference_tabular_iter(
                     df.to_parquet(f"batch_{batch_num}.parquet")
     """
     print(
-        f"\n>>> Starting inference on {min(len(dataloader), batch_cutoff if batch_cutoff > 0 else len(dataloader))} batches...")
+        f"\n>>> Starting inference on {min(len(dataloader), batch_cutoff if batch_cutoff > 0 else len(dataloader))} batches..."
+    )
     if model.training:
         raise RuntimeError(f"> Warning: model {model} is in training mode!")
 
@@ -954,15 +1001,17 @@ def run_inference_tabular_iter(
     )
 
     eval_score_types = get_score_types(model.hparams)
-    total_batches = len(dataloader) if batch_cutoff < 0 else min(
-        len(dataloader), batch_cutoff)
+    total_batches = (
+        len(dataloader) if batch_cutoff < 0 else min(len(dataloader), batch_cutoff)
+    )
     model.eval()
     with th.inference_mode():
-        for batch_idx, batch_input in tqdm(enumerate(dataloader), total=total_batches, desc="Running inference"):
+        for batch_idx, batch_input in tqdm(
+            enumerate(dataloader), total=total_batches, desc="Running inference"
+        ):
             # Early exit for batch cutoff
             if batch_idx >= batch_cutoff and batch_cutoff > 0:
-                print(
-                    f"> reached batch cutoff of {batch_cutoff}, stopping inference")
+                print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
                 break
 
             # Process batch and get data rows
@@ -985,18 +1034,18 @@ def run_inference_tabular_iter(
 
 
 def process_batch_to_tabular_row(
-        batch_input: dict,
-        model: th.nn.Module,
-        device: th.device,
-        evaluate: bool,
-        eval_score_types: list,
-        BATCH_IDX_VARS: list,
-        NODE_IDX_VARS: list,
-        FORMULA_IDX_VARS: list,
-        min_peak_int: float,
-        rebase_indices: bool,
-        return_formula_str: bool,
-        return_cc_hash: bool,
+    batch_input: dict,
+    model: th.nn.Module,
+    device: th.device,
+    evaluate: bool,
+    eval_score_types: list,
+    BATCH_IDX_VARS: list,
+    NODE_IDX_VARS: list,
+    FORMULA_IDX_VARS: list,
+    min_peak_int: float,
+    rebase_indices: bool,
+    return_formula_str: bool,
+    return_cc_hash: bool,
 ) -> list:
     """
     Process a single batch and return list of data rows.
@@ -1015,8 +1064,8 @@ def process_batch_to_tabular_row(
     Returns:
             List of data rows for this batch
     """
-    spec_ids = batch_input['spec_unique_id']
-    mol_ids = batch_input['mol_id']
+    spec_ids = batch_input["spec_unique_id"]
+    mol_ids = batch_input["mol_id"]
 
     # Extract string/graph data before moving to device (if they are not tensors)
     frag_formula_str = batch_input.get("frag_formula_str", None)
@@ -1030,78 +1079,116 @@ def process_batch_to_tabular_row(
         batch_result = model.predict_step(**batch_input)
 
     # batch_input['batch_size'] is a tensor -> convert to Python int
-    batch_size = int(batch_input['batch_size'].detach().cpu().item())
+    batch_size = int(batch_input["batch_size"].detach().cpu().item())
 
     pred_mzs = batch_result["pred_mzs"].detach().cpu()
     pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
     pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
     pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
-    pred_oos_probs = batch_result["oos_prob"].detach(
-    ).cpu() if "oos_prob" in batch_result else None
+    pred_oos_probs = (
+        batch_result["oos_prob"].detach().cpu() if "oos_prob" in batch_result else None
+    )
 
     # values for eval scores
     # this will be np.nan if not evaluating
     eval_scores_d = {}
     if evaluate:
         for eval_score_type in eval_score_types:
-            eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach(
-            ).cpu()
+            eval_scores_d[eval_score_type] = (
+                batch_result[eval_score_type].detach().cpu()
+            )
 
     # ============================
     # land of input mappings
     # ============================
     # mapping each peak to its local formula index, peak index -> formula index
-    frag_formula_peak_idxs = batch_input['frag_formula_peak_idxs'].detach(
-    ).cpu() if "frag_formula_peak_idxs" in batch_input else None
+    frag_formula_peak_idxs = (
+        batch_input["frag_formula_peak_idxs"].detach().cpu()
+        if "frag_formula_peak_idxs" in batch_input
+        else None
+    )
 
     # ============================
     # land of results
     # ============================
     # forumla log probs p(f)
-    pred_formula_probs = th.exp(batch_result['pred_formula_logprobs'].detach(
-    ).cpu()) if "pred_formula_logprobs" in batch_result else None
+    pred_formula_probs = (
+        th.exp(batch_result["pred_formula_logprobs"].detach().cpu())
+        if "pred_formula_logprobs" in batch_result
+        else None
+    )
     # log prob p(n|f), node conditioned on formula
-    pred_formula_node_probs = th.exp(batch_result['pred_formula_node_logprobs'].detach(
-    ).cpu()) if "pred_formula_node_logprobs" in batch_result else None
+    pred_formula_node_probs = (
+        th.exp(batch_result["pred_formula_node_logprobs"].detach().cpu())
+        if "pred_formula_node_logprobs" in batch_result
+        else None
+    )
     # log prob p(f|n), formula conditioned on node
-    pred_node_formula_probs = th.exp(batch_result['pred_node_formula_logprobs'].detach(
-    ).cpu()) if "pred_node_formula_logprobs" in batch_result else None
+    pred_node_formula_probs = (
+        th.exp(batch_result["pred_node_formula_logprobs"].detach().cpu())
+        if "pred_node_formula_logprobs" in batch_result
+        else None
+    )
     # node log probs p(n)
-    pred_node_probs = th.exp(batch_result['pred_node_logprobs'].detach(
-    ).cpu()) if "pred_node_logprobs" in batch_result else None
+    pred_node_probs = (
+        th.exp(batch_result["pred_node_logprobs"].detach().cpu())
+        if "pred_node_logprobs" in batch_result
+        else None
+    )
 
     # ============================
     # node idx mappings
     # ============================
     # joint node idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
-    pred_joint_node_idxs = batch_result['pred_joint_node_idxs'].detach(
-    ).cpu() if "pred_joint_node_idxs" in NODE_IDX_VARS else None
+    pred_joint_node_idxs = (
+        batch_result["pred_joint_node_idxs"].detach().cpu()
+        if "pred_joint_node_idxs" in NODE_IDX_VARS
+        else None
+    )
     # node idxs maps each entry in pred_node_logprobs to its node idx
-    pred_node_node_idxs = batch_result['pred_node_node_idxs'].detach(
-    ).cpu() if "pred_node_node_idxs" in NODE_IDX_VARS else None
+    pred_node_node_idxs = (
+        batch_result["pred_node_node_idxs"].detach().cpu()
+        if "pred_node_node_idxs" in NODE_IDX_VARS
+        else None
+    )
 
     # ============================
     # land of formula idx mappings
     # ============================
     # joint formula idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
-    pred_joint_formula_idxs = batch_result['pred_joint_formula_idxs'].detach(
-    ).cpu() if "pred_joint_formula_idxs" in FORMULA_IDX_VARS else None
+    pred_joint_formula_idxs = (
+        batch_result["pred_joint_formula_idxs"].detach().cpu()
+        if "pred_joint_formula_idxs" in FORMULA_IDX_VARS
+        else None
+    )
     # formula idxs maps each entry in pred_formula_logprobs to its formula idx
-    pred_formula_formula_idxs = batch_result['pred_formula_formula_idxs'].detach(
-    ).cpu() if "pred_formula_formula_idxs" in FORMULA_IDX_VARS else None
+    pred_formula_formula_idxs = (
+        batch_result["pred_formula_formula_idxs"].detach().cpu()
+        if "pred_formula_formula_idxs" in FORMULA_IDX_VARS
+        else None
+    )
 
     # ============================
     #  batch idx mappings
     # ============================
     # joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
-    joint_batch_idxs = batch_result['pred_joint_batch_idxs'].detach(
-    ).cpu() if "pred_joint_batch_idxs" in BATCH_IDX_VARS else None
+    joint_batch_idxs = (
+        batch_result["pred_joint_batch_idxs"].detach().cpu()
+        if "pred_joint_batch_idxs" in BATCH_IDX_VARS
+        else None
+    )
     # formula prob batch idxs, maps each entry in pred_formula_logprobs to its batch idx
-    pred_formula_batch_idxs = batch_result['pred_formula_batch_idxs'].detach(
-    ).cpu() if "pred_formula_batch_idxs" in BATCH_IDX_VARS else None
+    pred_formula_batch_idxs = (
+        batch_result["pred_formula_batch_idxs"].detach().cpu()
+        if "pred_formula_batch_idxs" in BATCH_IDX_VARS
+        else None
+    )
     # node prob batch idxs, maps each entry in pred_node_logprobs to its batch idx
-    pred_node_batch_idxs = batch_result['pred_node_batch_idxs'].detach(
-    ).cpu() if "pred_node_batch_idxs" in BATCH_IDX_VARS else None
+    pred_node_batch_idxs = (
+        batch_result["pred_node_batch_idxs"].detach().cpu()
+        if "pred_node_batch_idxs" in BATCH_IDX_VARS
+        else None
+    )
 
     # =============================
     # extract formula strings and PyG object if needed
@@ -1123,47 +1210,88 @@ def process_batch_to_tabular_row(
     for b_idx in range(batch_size):
         # per-spectrum masks and basic fields
         b_peak_mask = pred_batch_idxs == b_idx
-        b_pred_oos_prob = pred_oos_probs[b_idx].numpy(
-        ).item() if pred_oos_probs is not None else np.nan
+        b_pred_oos_prob = (
+            pred_oos_probs[b_idx].numpy().item()
+            if pred_oos_probs is not None
+            else np.nan
+        )
         b_spec_id = spec_ids[b_idx]
         b_mol_id = mol_ids[b_idx]
         b_spec_mzs = pred_mzs[b_peak_mask]
         b_spec_ints = pred_ints[b_peak_mask]
-        b_frag_formula_peak_idxs = frag_formula_peak_idxs[
-            b_peak_mask] if frag_formula_peak_idxs is not None else None
-        b_frag_formula_peak_mzs = frag_formula_peak_mzs[
-            b_peak_mask] if frag_formula_peak_mzs is not None else None
+        b_frag_formula_peak_idxs = (
+            frag_formula_peak_idxs[b_peak_mask]
+            if frag_formula_peak_idxs is not None
+            else None
+        )
+        b_frag_formula_peak_mzs = (
+            frag_formula_peak_mzs[b_peak_mask]
+            if frag_formula_peak_mzs is not None
+            else None
+        )
 
         # Filter joint distribution data (P(f,n)), p(n|f) and p(f|n) for the current spectrum/molecule (b_idx)
-        b_joint_mask = (joint_batch_idxs ==
-                        b_idx) if joint_batch_idxs is not None else None
+        b_joint_mask = (
+            (joint_batch_idxs == b_idx) if joint_batch_idxs is not None else None
+        )
         # Conditional log probabilities P(n|f)
-        b_pred_formula_node_probs = pred_formula_node_probs[
-            b_joint_mask] if pred_formula_node_probs is not None and b_joint_mask is not None else None
+        b_pred_formula_node_probs = (
+            pred_formula_node_probs[b_joint_mask]
+            if pred_formula_node_probs is not None and b_joint_mask is not None
+            else None
+        )
         # Conditional log probabilities P(f|n)
-        b_pred_node_formula_probs = pred_node_formula_probs[
-            b_joint_mask] if pred_node_formula_probs is not None and b_joint_mask is not None else None
-        b_pred_joint_formula_idxs = pred_joint_formula_idxs[
-            b_joint_mask] if pred_joint_formula_idxs is not None and b_joint_mask is not None else None
-        b_pred_joint_node_idxs = pred_joint_node_idxs[
-            b_joint_mask] if pred_joint_node_idxs is not None and b_joint_mask is not None else None
+        b_pred_node_formula_probs = (
+            pred_node_formula_probs[b_joint_mask]
+            if pred_node_formula_probs is not None and b_joint_mask is not None
+            else None
+        )
+        b_pred_joint_formula_idxs = (
+            pred_joint_formula_idxs[b_joint_mask]
+            if pred_joint_formula_idxs is not None and b_joint_mask is not None
+            else None
+        )
+        b_pred_joint_node_idxs = (
+            pred_joint_node_idxs[b_joint_mask]
+            if pred_joint_node_idxs is not None and b_joint_mask is not None
+            else None
+        )
 
         # Filter formula probability data (P(f)) for the current spectrum/molecule (b_idx)
         # and sort formulas by probability descending
         b_pred_formula_mask = (
-            pred_formula_batch_idxs == b_idx) if pred_formula_batch_idxs is not None else None
-        b_pred_formula_formula_idxs = pred_formula_formula_idxs[
-            b_pred_formula_mask] if pred_formula_formula_idxs is not None and b_pred_formula_mask is not None else None
-        b_pred_formula_probs = pred_formula_probs[
-            b_pred_formula_mask] if pred_formula_probs is not None and b_pred_formula_mask is not None else None
+            (pred_formula_batch_idxs == b_idx)
+            if pred_formula_batch_idxs is not None
+            else None
+        )
+        b_pred_formula_formula_idxs = (
+            pred_formula_formula_idxs[b_pred_formula_mask]
+            if pred_formula_formula_idxs is not None and b_pred_formula_mask is not None
+            else None
+        )
+        b_pred_formula_probs = (
+            pred_formula_probs[b_pred_formula_mask]
+            if pred_formula_probs is not None and b_pred_formula_mask is not None
+            else None
+        )
 
         # node probabilities P(n) for the current spectrum/molecule (b_idx)
-        b_pred_node_mask = (pred_node_batch_idxs ==
-                            b_idx) if pred_node_batch_idxs is not None else None
+        b_pred_node_mask = (
+            (pred_node_batch_idxs == b_idx)
+            if pred_node_batch_idxs is not None
+            else None
+        )
         # b_pred_node_idxs = pred_joint_node_idxs[b_pred_node_mask]
-        b_pred_node_probs = pred_node_probs[b_pred_node_mask] if pred_node_probs is not None and b_pred_node_mask is not None else None
-        b_pred_node_node_idxs = pred_node_node_idxs[
-            b_pred_node_mask] if pred_node_node_idxs is not None and b_pred_node_mask is not None else None
+        b_pred_node_probs = (
+            pred_node_probs[b_pred_node_mask]
+            if pred_node_probs is not None and b_pred_node_mask is not None
+            else None
+        )
+        b_pred_node_node_idxs = (
+            pred_node_node_idxs[b_pred_node_mask]
+            if pred_node_node_idxs is not None and b_pred_node_mask is not None
+            else None
+        )
 
         # Rebase indices to 0-based per molecule
         f_offset = frag_formula_cumsizes[b_idx]
@@ -1181,11 +1309,18 @@ def process_batch_to_tabular_row(
             b_pred_joint_node_idxs = b_pred_joint_node_idxs - n_offset
         # Apply intensity filtering
         (
-            b_spec_ints, b_spec_mzs, b_frag_formula_peak_mzs, b_frag_formula_peak_idxs,
-            b_pred_formula_formula_idxs, b_pred_formula_probs,
-            b_pred_joint_formula_idxs, b_pred_formula_node_probs,
-            b_pred_joint_node_idxs, b_pred_node_formula_probs,
-            b_pred_node_probs, b_pred_node_node_idxs,
+            b_spec_ints,
+            b_spec_mzs,
+            b_frag_formula_peak_mzs,
+            b_frag_formula_peak_idxs,
+            b_pred_formula_formula_idxs,
+            b_pred_formula_probs,
+            b_pred_joint_formula_idxs,
+            b_pred_formula_node_probs,
+            b_pred_joint_node_idxs,
+            b_pred_node_formula_probs,
+            b_pred_node_probs,
+            b_pred_node_node_idxs,
         ) = filter_by_peak_intensity(
             min_peak_int,
             b_spec_ints,
@@ -1204,62 +1339,77 @@ def process_batch_to_tabular_row(
         )
 
         # Store original indices before rebasing (for lookups)
-        orig_formula_idxs_for_lookup = b_pred_formula_formula_idxs.clone(
-        ) if b_pred_formula_formula_idxs is not None else None
-        orig_node_idxs_for_lookup = b_pred_node_node_idxs.clone(
-        ) if b_pred_node_node_idxs is not None else None
+        orig_formula_idxs_for_lookup = (
+            b_pred_formula_formula_idxs.clone()
+            if b_pred_formula_formula_idxs is not None
+            else None
+        )
+        orig_node_idxs_for_lookup = (
+            b_pred_node_node_idxs.clone() if b_pred_node_node_idxs is not None else None
+        )
 
         if rebase_indices:
             # Rebase formula indices to 0-based contiguous
-            if b_pred_formula_formula_idxs is not None and len(b_pred_formula_formula_idxs) > 0:
-                unique_f_idxs = th.unique(
-                    b_pred_formula_formula_idxs, sorted=True)
+            if (
+                b_pred_formula_formula_idxs is not None
+                and len(b_pred_formula_formula_idxs) > 0
+            ):
+                unique_f_idxs = th.unique(b_pred_formula_formula_idxs, sorted=True)
                 formula_idx_map = {
-                    old_idx.item(): new_idx for new_idx, old_idx in enumerate(unique_f_idxs)}
+                    old_idx.item(): new_idx
+                    for new_idx, old_idx in enumerate(unique_f_idxs)
+                }
 
                 # Apply rebasing to formula arrays
                 b_pred_formula_formula_idxs = th.tensor(
-                    [formula_idx_map[idx.item()]
-                     for idx in b_pred_formula_formula_idxs],
+                    [
+                        formula_idx_map[idx.item()]
+                        for idx in b_pred_formula_formula_idxs
+                    ],
                     dtype=b_pred_formula_formula_idxs.dtype,
-                    device=b_pred_formula_formula_idxs.device
+                    device=b_pred_formula_formula_idxs.device,
                 )
                 if b_pred_joint_formula_idxs is not None:
                     b_pred_joint_formula_idxs = th.tensor(
-                        [formula_idx_map[idx.item()]
-                         for idx in b_pred_joint_formula_idxs],
+                        [
+                            formula_idx_map[idx.item()]
+                            for idx in b_pred_joint_formula_idxs
+                        ],
                         dtype=b_pred_joint_formula_idxs.dtype,
-                        device=b_pred_joint_formula_idxs.device
+                        device=b_pred_joint_formula_idxs.device,
                     )
                 # Rebase peak->formula mapping to the new contiguous formula ids
                 if b_frag_formula_peak_idxs is not None:
                     b_frag_formula_peak_idxs = th.tensor(
-                        [formula_idx_map[idx.item()]
-                         for idx in b_frag_formula_peak_idxs],
-                        dtype=b_frag_formula_peak_idxs.dtype if isinstance(
-                            b_frag_formula_peak_idxs, th.Tensor) else th.long,
-                        device=b_pred_formula_formula_idxs.device
+                        [
+                            formula_idx_map[idx.item()]
+                            for idx in b_frag_formula_peak_idxs
+                        ],
+                        dtype=b_frag_formula_peak_idxs.dtype
+                        if isinstance(b_frag_formula_peak_idxs, th.Tensor)
+                        else th.long,
+                        device=b_pred_formula_formula_idxs.device,
                     )
 
             # Rebase node indices to 0-based contiguous
             if b_pred_node_node_idxs is not None and len(b_pred_node_node_idxs) > 0:
                 unique_n_idxs = th.unique(b_pred_node_node_idxs, sorted=True)
-                node_idx_map = {old_idx.item(): new_idx for new_idx,
-                                old_idx in enumerate(unique_n_idxs)}
+                node_idx_map = {
+                    old_idx.item(): new_idx
+                    for new_idx, old_idx in enumerate(unique_n_idxs)
+                }
 
                 # Apply rebasing to node arrays
                 b_pred_node_node_idxs = th.tensor(
-                    [node_idx_map[idx.item()]
-                     for idx in b_pred_node_node_idxs],
+                    [node_idx_map[idx.item()] for idx in b_pred_node_node_idxs],
                     dtype=b_pred_node_node_idxs.dtype,
-                    device=b_pred_node_node_idxs.device
+                    device=b_pred_node_node_idxs.device,
                 )
                 if b_pred_joint_node_idxs is not None:
                     b_pred_joint_node_idxs = th.tensor(
-                        [node_idx_map[idx.item()]
-                         for idx in b_pred_joint_node_idxs],
+                        [node_idx_map[idx.item()] for idx in b_pred_joint_node_idxs],
                         dtype=b_pred_joint_node_idxs.dtype,
-                        device=b_pred_joint_node_idxs.device
+                        device=b_pred_joint_node_idxs.device,
                     )
 
         # assemble row and append
@@ -1271,18 +1421,35 @@ def process_batch_to_tabular_row(
             b_spec_mzs.tolist(),
             b_spec_ints.tolist(),
             b_pred_oos_prob,
-            b_frag_formula_peak_idxs.tolist() if b_frag_formula_peak_idxs is not None else np.nan,
-            b_frag_formula_peak_mzs.tolist() if b_frag_formula_peak_mzs is not None else np.nan,
-            b_pred_formula_formula_idxs.tolist(
-            ) if b_pred_formula_formula_idxs is not None else np.nan,
-            b_pred_formula_probs.tolist() if b_pred_formula_probs is not None else np.nan,
-            b_pred_joint_formula_idxs.tolist() if b_pred_joint_formula_idxs is not None else np.nan,
-            b_pred_formula_node_probs.tolist() if b_pred_formula_node_probs is not None else np.nan,
-            b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else np.nan,
-            b_pred_node_formula_probs.tolist() if b_pred_node_formula_probs is not None else np.nan,
+            b_frag_formula_peak_idxs.tolist()
+            if b_frag_formula_peak_idxs is not None
+            else np.nan,
+            b_frag_formula_peak_mzs.tolist()
+            if b_frag_formula_peak_mzs is not None
+            else np.nan,
+            b_pred_formula_formula_idxs.tolist()
+            if b_pred_formula_formula_idxs is not None
+            else np.nan,
+            b_pred_formula_probs.tolist()
+            if b_pred_formula_probs is not None
+            else np.nan,
+            b_pred_joint_formula_idxs.tolist()
+            if b_pred_joint_formula_idxs is not None
+            else np.nan,
+            b_pred_formula_node_probs.tolist()
+            if b_pred_formula_node_probs is not None
+            else np.nan,
+            b_pred_joint_node_idxs.tolist()
+            if b_pred_joint_node_idxs is not None
+            else np.nan,
+            b_pred_node_formula_probs.tolist()
+            if b_pred_node_formula_probs is not None
+            else np.nan,
             b_pred_node_probs.tolist() if b_pred_node_probs is not None else np.nan,
-            b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else np.nan,
-            rebased
+            b_pred_node_node_idxs.tolist()
+            if b_pred_node_node_idxs is not None
+            else np.nan,
+            rebased,
         ]
 
         if return_formula_str:
@@ -1299,8 +1466,9 @@ def process_batch_to_tabular_row(
                     global_f_idxs = None
 
                 if global_f_idxs is not None:
-                    b_pred_formula_strs = frag_formula_str[global_f_idxs.cpu(
-                    ).numpy()].tolist()
+                    b_pred_formula_strs = frag_formula_str[
+                        global_f_idxs.cpu().numpy()
+                    ].tolist()
             data_row.append(b_pred_formula_strs)
 
         if return_cc_hash:
@@ -1308,16 +1476,17 @@ def process_batch_to_tabular_row(
             if frag_pyg is not None:
                 i_frag_pyg = frag_pyg[b_idx]
                 node_feat_idxs = i_frag_pyg.node_feat_idxs.view(-1)
-                all_node_ccs = get_node_feats(
-                    i_frag_pyg.x, node_feat_idxs, "cc")
+                all_node_ccs = get_node_feats(i_frag_pyg.x, node_feat_idxs, "cc")
                 if rebase_indices and orig_node_idxs_for_lookup is not None:
                     # Use original (pre-rebase) indices
-                    b_pred_node_ccs = all_node_ccs[orig_node_idxs_for_lookup.long(
-                    )].detach().cpu()
+                    b_pred_node_ccs = (
+                        all_node_ccs[orig_node_idxs_for_lookup.long()].detach().cpu()
+                    )
                 elif not rebase_indices and b_pred_node_node_idxs is not None:
                     # Use current indices
-                    b_pred_node_ccs = all_node_ccs[b_pred_node_node_idxs.long(
-                    )].detach().cpu()
+                    b_pred_node_ccs = (
+                        all_node_ccs[b_pred_node_node_idxs.long()].detach().cpu()
+                    )
             data_row.append(b_pred_node_ccs)
 
         # Append evaluation scores
@@ -1334,20 +1503,20 @@ def process_batch_to_tabular_row(
 
 
 def filter_by_peak_intensity(
-        min_peak_int: float,
-        pred_ints: th.Tensor,
-        pred_mzs: th.Tensor,
-        frag_formula_peak_mzs: Optional[th.Tensor],
-        frag_formula_peak_idxs: Optional[th.Tensor],
-        b_pred_formula_formula_idxs: Optional[th.Tensor],
-        b_pred_formula_probs: Optional[th.Tensor],
-        b_pred_joint_formula_idxs: Optional[th.Tensor] = None,
-        b_pred_formula_node_probs: Optional[th.Tensor] = None,
-        b_pred_joint_node_idxs: Optional[th.Tensor] = None,
-        b_pred_node_formula_probs: Optional[th.Tensor] = None,
-        b_pred_node_probs: Optional[th.Tensor] = None,
-        b_pred_node_node_idxs: Optional[th.Tensor] = None,
-        verbose: bool = False,
+    min_peak_int: float,
+    pred_ints: th.Tensor,
+    pred_mzs: th.Tensor,
+    frag_formula_peak_mzs: Optional[th.Tensor],
+    frag_formula_peak_idxs: Optional[th.Tensor],
+    b_pred_formula_formula_idxs: Optional[th.Tensor],
+    b_pred_formula_probs: Optional[th.Tensor],
+    b_pred_joint_formula_idxs: Optional[th.Tensor] = None,
+    b_pred_formula_node_probs: Optional[th.Tensor] = None,
+    b_pred_joint_node_idxs: Optional[th.Tensor] = None,
+    b_pred_node_formula_probs: Optional[th.Tensor] = None,
+    b_pred_node_probs: Optional[th.Tensor] = None,
+    b_pred_node_node_idxs: Optional[th.Tensor] = None,
+    verbose: bool = False,
 ):
     """
     Filter predictions based on peak intensity threshold.
@@ -1370,18 +1539,30 @@ def filter_by_peak_intensity(
     """
     if min_peak_int <= 0:
         return (
-            pred_ints, pred_mzs, frag_formula_peak_mzs, frag_formula_peak_idxs,
-            b_pred_formula_formula_idxs, b_pred_formula_probs,
-            b_pred_joint_formula_idxs, b_pred_formula_node_probs,
-            b_pred_joint_node_idxs, b_pred_node_formula_probs,
-            b_pred_node_probs, b_pred_node_node_idxs
+            pred_ints,
+            pred_mzs,
+            frag_formula_peak_mzs,
+            frag_formula_peak_idxs,
+            b_pred_formula_formula_idxs,
+            b_pred_formula_probs,
+            b_pred_joint_formula_idxs,
+            b_pred_formula_node_probs,
+            b_pred_joint_node_idxs,
+            b_pred_node_formula_probs,
+            b_pred_node_probs,
+            b_pred_node_node_idxs,
         )
 
     # Track initial sizes for stats
     if verbose:
-        init_n_formulas = b_pred_formula_formula_idxs.shape[
-            0] if b_pred_formula_formula_idxs is not None else 0
-        init_n_nodes = b_pred_node_node_idxs.shape[0] if b_pred_node_node_idxs is not None else 0
+        init_n_formulas = (
+            b_pred_formula_formula_idxs.shape[0]
+            if b_pred_formula_formula_idxs is not None
+            else 0
+        )
+        init_n_nodes = (
+            b_pred_node_node_idxs.shape[0] if b_pred_node_node_idxs is not None else 0
+        )
         init_n_peaks = pred_ints.shape[0] if pred_ints is not None else 0
         final_n_peaks = init_n_peaks
 
@@ -1400,7 +1581,9 @@ def filter_by_peak_intensity(
         pred_ints = pred_ints[valid_peak_mask]
         pred_mzs = pred_mzs[valid_peak_mask]
         frag_formula_peak_idxs = frag_formula_peak_idxs[valid_peak_mask]
-        if frag_formula_peak_mzs is not None:  # Only if frag_formula_peak_mzs is available
+        if (
+            frag_formula_peak_mzs is not None
+        ):  # Only if frag_formula_peak_mzs is available
             frag_formula_peak_mzs = frag_formula_peak_mzs[valid_peak_mask]
 
         # Map local formula indices (0..N_formulas_in_mol) to global formula indices (if available)
@@ -1409,8 +1592,7 @@ def filter_by_peak_intensity(
             # Ensure indices are valid (should be within bounds if data is consistent)
             # We use .long() to ensure they are treated as indices
             # Note: valid_local_f_idxs are indices into the formula array for this molecule
-            valid_f_idxs = b_pred_formula_formula_idxs[valid_local_f_idxs.long(
-            )]
+            valid_f_idxs = b_pred_formula_formula_idxs[valid_local_f_idxs.long()]
             valid_f_idxs = th.unique(valid_f_idxs)
         else:
             # Fallback if formula indices are missing (unlikely to be useful but prevents crash)
@@ -1419,11 +1601,18 @@ def filter_by_peak_intensity(
     # If no filtering was applied (valid_f_idxs is None), return original tensors
     if valid_f_idxs is None:
         return (
-            pred_ints, pred_mzs, frag_formula_peak_mzs, frag_formula_peak_idxs,
-            b_pred_formula_formula_idxs, b_pred_formula_probs,
-            b_pred_joint_formula_idxs, b_pred_formula_node_probs,
-            b_pred_joint_node_idxs, b_pred_node_formula_probs,
-            b_pred_node_probs, b_pred_node_node_idxs
+            pred_ints,
+            pred_mzs,
+            frag_formula_peak_mzs,
+            frag_formula_peak_idxs,
+            b_pred_formula_formula_idxs,
+            b_pred_formula_probs,
+            b_pred_joint_formula_idxs,
+            b_pred_formula_node_probs,
+            b_pred_joint_node_idxs,
+            b_pred_node_formula_probs,
+            b_pred_node_probs,
+            b_pred_node_node_idxs,
         )
 
     # 3. Apply filtering to all formula-related tensors
@@ -1450,8 +1639,7 @@ def filter_by_peak_intensity(
 
         # Also filter by node if we have valid node indices
         if valid_n_idxs is not None and b_pred_joint_node_idxs is not None:
-            keep_mask_j = keep_mask_j & th.isin(
-                b_pred_joint_node_idxs, valid_n_idxs)
+            keep_mask_j = keep_mask_j & th.isin(b_pred_joint_node_idxs, valid_n_idxs)
 
         b_pred_joint_formula_idxs = b_pred_joint_formula_idxs[keep_mask_j]
         if b_pred_formula_node_probs is not None:
@@ -1463,16 +1651,29 @@ def filter_by_peak_intensity(
 
     # Track final sizes and print stats
     if verbose:
-        final_n_formulas = b_pred_formula_formula_idxs.shape[
-            0] if b_pred_formula_formula_idxs is not None else 0
-        final_n_nodes = b_pred_node_node_idxs.shape[0] if b_pred_node_node_idxs is not None else 0
+        final_n_formulas = (
+            b_pred_formula_formula_idxs.shape[0]
+            if b_pred_formula_formula_idxs is not None
+            else 0
+        )
+        final_n_nodes = (
+            b_pred_node_node_idxs.shape[0] if b_pred_node_node_idxs is not None else 0
+        )
         print(
-            f"  > Filtered stats: Peaks {init_n_peaks}->{final_n_peaks}, Formulas {init_n_formulas}->{final_n_formulas}, Nodes {init_n_nodes}->{final_n_nodes}")
+            f"  > Filtered stats: Peaks {init_n_peaks}->{final_n_peaks}, Formulas {init_n_formulas}->{final_n_formulas}, Nodes {init_n_nodes}->{final_n_nodes}"
+        )
 
     return (
-        pred_ints, pred_mzs, frag_formula_peak_mzs, frag_formula_peak_idxs,
-        b_pred_formula_formula_idxs, b_pred_formula_probs,
-        b_pred_joint_formula_idxs, b_pred_formula_node_probs,
-        b_pred_joint_node_idxs, b_pred_node_formula_probs,
-        b_pred_node_probs, b_pred_node_node_idxs
+        pred_ints,
+        pred_mzs,
+        frag_formula_peak_mzs,
+        frag_formula_peak_idxs,
+        b_pred_formula_formula_idxs,
+        b_pred_formula_probs,
+        b_pred_joint_formula_idxs,
+        b_pred_formula_node_probs,
+        b_pred_joint_node_idxs,
+        b_pred_node_formula_probs,
+        b_pred_node_probs,
+        b_pred_node_node_idxs,
     )

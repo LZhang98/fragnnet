@@ -7,15 +7,19 @@ precursor type, and instrument type, and predicts spectra using a feedforward ne
 import torch as th
 import torch.nn as nn
 import torch_geometric as pyg
-from fragnnet.model.base_model import CEModel, PrecModel, InstModel
+
+from fragnnet.model.base_model import CEModel, InstModel, PrecModel
+from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
-from fragnnet.model.nn_blocks import MLPBlocks, GNN, build_pool_module
+
+
 class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
     """
     Siamese GNN model for molecular graph embedding and MCES regression.
     Uses real CE, Prec, and Inst embedders (like FragGNNModel), but use default values in forward.
     This is done to maintain compatibility and without changing the data pipeline.
     """
+
     def __init__(
         self,
         mol_node_feats: list[str],
@@ -45,7 +49,6 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
         inst_insert_location: str,
         inst_insert_size: int,
         inst_types: list[str],
-
         # how to combine two mol embeddings before regression. Supported:
         #  - 'c' (default): absolute element-wise difference |xi - xj| (order-invariant)
         #  - 'signed_diff': signed element-wise difference xi - xj (order-sensitive)
@@ -69,17 +72,17 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
             ce_insert_size=ce_insert_size,
             ce_max=ce_max,
             ce_mean=ce_mean,
-            ce_std=ce_std
+            ce_std=ce_std,
         )
         self._prec_init(
             prec_insert_location=prec_insert_location,
             prec_insert_size=prec_insert_size,
-            prec_num_types=len(prec_types)
+            prec_num_types=len(prec_types),
         )
         self._inst_init(
             inst_insert_location=inst_insert_location,
             inst_insert_size=inst_insert_size,
-            inst_num_types=len(inst_types)
+            inst_num_types=len(inst_types),
         )
 
         # calculate node/edge feats sizes
@@ -89,7 +92,9 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
         self._compute_mol_feats_sizes()
 
         # setup mol gnn
-        self.mol_node_feats_size += self.ce_mol_input_dim + self.prec_mol_input_dim + self.inst_mol_input_dim
+        self.mol_node_feats_size += (
+            self.ce_mol_input_dim + self.prec_mol_input_dim + self.inst_mol_input_dim
+        )
         mol_kwargs = {
             "node_feats_size": self.mol_node_feats_size,
             "edge_feats_size": self.mol_edge_feats_size,
@@ -106,7 +111,9 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 
         # MLP input = GNN output
         self.mlp_input_dim = mol_hidden_size
-        self.mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
+        self.mlp_input_dim += (
+            self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
+        )
 
         # Determine regressor input size based on combination mode.
         # For concat modes we need double the input dimension.
@@ -126,7 +133,11 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
             self._cross_attn_heads = heads
             # register small projection + multihead attention for cross interaction
             self.cross_proj = nn.Linear(self.mlp_input_dim, self.cross_attn_dim)
-            self.cross_mha = nn.MultiheadAttention(embed_dim=self.cross_attn_dim, num_heads=self._cross_attn_heads, batch_first=True)
+            self.cross_mha = nn.MultiheadAttention(
+                embed_dim=self.cross_attn_dim,
+                num_heads=self._cross_attn_heads,
+                batch_first=True,
+            )
             # combined vector will contain [xi, attn_ij, xj, attn_ji]
             reg_input_size = 2 * self.mlp_input_dim + 2 * self.cross_attn_dim
         else:
@@ -139,18 +150,22 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
             num_layers=mlp_num_layers,
             dropout=mlp_dropout,
             use_residuals=mlp_use_residuals,
-            normalization="batch"
+            normalization="batch",
         )
 
     def forward(
         self,
         mol_pyg_i: pyg.data.Data,
         mol_pyg_j: pyg.data.Data,
-        ce_i=None, ce_j=None,
-        ce_batch_idxs_i=None, ce_batch_idxs_j=None,
-        prec_type_i=None, prec_type_j=None,
-        inst_type_i=None, inst_type_j=None,
-        **kwargs
+        ce_i=None,
+        ce_j=None,
+        ce_batch_idxs_i=None,
+        ce_batch_idxs_j=None,
+        prec_type_i=None,
+        prec_type_j=None,
+        inst_type_i=None,
+        inst_type_j=None,
+        **kwargs,
     ):
         """
         Forward pass for Siamese GNN: encodes both molecules, pools, computes absolute difference, and regresses MCES.
@@ -159,8 +174,12 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
         device = mol_pyg_i.x.device
 
         # Default values for CE, Prec, Inst if not provided
-        batch_size_i = mol_pyg_i.batch.max().item() + 1 if hasattr(mol_pyg_i, "batch") else 1
-        batch_size_j = mol_pyg_j.batch.max().item() + 1 if hasattr(mol_pyg_j, "batch") else 1
+        batch_size_i = (
+            mol_pyg_i.batch.max().item() + 1 if hasattr(mol_pyg_i, "batch") else 1
+        )
+        batch_size_j = (
+            mol_pyg_j.batch.max().item() + 1 if hasattr(mol_pyg_j, "batch") else 1
+        )
 
         if ce_i is None:
             ce_i = th.zeros(batch_size_i, device=device)
@@ -185,13 +204,19 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
         inst_embed_i = self.embed_inst(inst_type_i)
         mol_x_i = mol_pyg_i.x
         if self.ce_insert_location == "mol":
-            mol_ce_embed = th.repeat_interleave(ce_embed_i, th.unique(mol_pyg_i.batch, return_counts=True)[1], dim=0)
+            mol_ce_embed = th.repeat_interleave(
+                ce_embed_i, th.unique(mol_pyg_i.batch, return_counts=True)[1], dim=0
+            )
             mol_x_i = th.cat([mol_x_i, mol_ce_embed], dim=1)
         if self.prec_insert_location == "mol":
-            mol_prec_embed = th.repeat_interleave(prec_embed_i, th.unique(mol_pyg_i.batch, return_counts=True)[1], dim=0)
+            mol_prec_embed = th.repeat_interleave(
+                prec_embed_i, th.unique(mol_pyg_i.batch, return_counts=True)[1], dim=0
+            )
             mol_x_i = th.cat([mol_x_i, mol_prec_embed], dim=1)
         if self.inst_insert_location == "mol":
-            mol_inst_embed = th.repeat_interleave(inst_embed_i, th.unique(mol_pyg_i.batch, return_counts=True)[1], dim=0)
+            mol_inst_embed = th.repeat_interleave(
+                inst_embed_i, th.unique(mol_pyg_i.batch, return_counts=True)[1], dim=0
+            )
             mol_x_i = th.cat([mol_x_i, mol_inst_embed], dim=1)
 
         # Embeddings for molecule j
@@ -200,13 +225,19 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
         inst_embed_j = self.embed_inst(inst_type_j)
         mol_x_j = mol_pyg_j.x
         if self.ce_insert_location == "mol":
-            mol_ce_embed = th.repeat_interleave(ce_embed_j, th.unique(mol_pyg_j.batch, return_counts=True)[1], dim=0)
+            mol_ce_embed = th.repeat_interleave(
+                ce_embed_j, th.unique(mol_pyg_j.batch, return_counts=True)[1], dim=0
+            )
             mol_x_j = th.cat([mol_x_j, mol_ce_embed], dim=1)
         if self.prec_insert_location == "mol":
-            mol_prec_embed = th.repeat_interleave(prec_embed_j, th.unique(mol_pyg_j.batch, return_counts=True)[1], dim=0)
+            mol_prec_embed = th.repeat_interleave(
+                prec_embed_j, th.unique(mol_pyg_j.batch, return_counts=True)[1], dim=0
+            )
             mol_x_j = th.cat([mol_x_j, mol_prec_embed], dim=1)
         if self.inst_insert_location == "mol":
-            mol_inst_embed = th.repeat_interleave(inst_embed_j, th.unique(mol_pyg_j.batch, return_counts=True)[1], dim=0)
+            mol_inst_embed = th.repeat_interleave(
+                inst_embed_j, th.unique(mol_pyg_j.batch, return_counts=True)[1], dim=0
+            )
             mol_x_j = th.cat([mol_x_j, mol_inst_embed], dim=1)
 
         # Encode both molecules using the same GNN
@@ -268,7 +299,9 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
             # If batch sizes differ we fall back to simple concat (safe fallback).
             if batch_size_i != batch_size_j:
                 # fallback: concatenate (note: typically batches for pair datasets are aligned)
-                print(f"Warning: cross_attn requested but batch sizes differ ({batch_size_i}!={batch_size_j}), falling back to concat")
+                print(
+                    f"Warning: cross_attn requested but batch sizes differ ({batch_size_i}!={batch_size_j}), falling back to concat"
+                )
                 cat = th.cat([mlp_input_i, mlp_input_j], dim=1)
                 pred = self.regressor(cat)
                 return pred.squeeze(-1)
@@ -278,8 +311,12 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
             proj_j = self.cross_proj(mlp_input_j)
             proj_i_seq = proj_i.unsqueeze(1)  # (B, 1, D)
             proj_j_seq = proj_j.unsqueeze(1)
-            attn_ij, _ = self.cross_mha(query=proj_i_seq, key=proj_j_seq, value=proj_j_seq)
-            attn_ji, _ = self.cross_mha(query=proj_j_seq, key=proj_i_seq, value=proj_i_seq)
+            attn_ij, _ = self.cross_mha(
+                query=proj_i_seq, key=proj_j_seq, value=proj_j_seq
+            )
+            attn_ji, _ = self.cross_mha(
+                query=proj_j_seq, key=proj_i_seq, value=proj_i_seq
+            )
             attn_ij = attn_ij.squeeze(1)
             attn_ji = attn_ji.squeeze(1)
             combined = th.cat([mlp_input_i, attn_ij, mlp_input_j, attn_ji], dim=1)
@@ -291,9 +328,7 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
     def _compute_mol_feats_sizes(self):
         """Compute molecular feature sizes (does not rely on model parameters)."""
         self.mol_node_feats_size, self.mol_edge_feats_size = get_mol_feats_sizes(
-            self.mol_node_feats,
-            self.mol_edge_feats,
-            self.mol_pe_embed_k
+            self.mol_node_feats, self.mol_edge_feats, self.mol_pe_embed_k
         )
 
     def _ce_location_check(self):
@@ -306,4 +341,4 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
 
     def _inst_location_check(self):
         # input not used, just for shape consistency
-        pass 
+        pass
