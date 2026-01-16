@@ -227,9 +227,9 @@ def filter_spec_mol(
     spec_df = spec_df[all_mask].reset_index(drop=True)
     # sample
     if num_entries > 0:
-        spec_df = spec_df.sample(
-            n=num_entries, replace=False, random_state=420
-        ).reset_index(drop=True)
+        spec_df = spec_df.sample(n=num_entries, replace=False, random_state=420).reset_index(
+            drop=True
+        )
     # only keep molecules that are in the spectra
     mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])].reset_index(drop=True)
     return spec_df, mol_df
@@ -246,9 +246,7 @@ def merge_spec_df(spec_df, renormalize=False, sum_ints=True, keep_ces=False):
         .agg({"peaks": m_peaks_func})
         .reset_index()
     )
-    m_spec_meta_df = spec_df.drop(columns=["peaks", "spec_id"]).drop_duplicates(
-        subset=["group_id"]
-    )
+    m_spec_meta_df = spec_df.drop(columns=["peaks", "spec_id"]).drop_duplicates(subset=["group_id"])
     m_spec_df = m_spec_peaks_df.merge(m_spec_meta_df, on=["group_id"], how="inner")
     if keep_ces:
         m_spec_ce_df = (

@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import pandas as pd
 import torch as th
@@ -26,8 +26,8 @@ class MCESDataset(Dataset):
         split_dp: str,
         split: str,
         subsample_params: dict,
-        mol_params: Dict[str, Any],
-        mol_pp_sd: Optional[Dict[Union[str, int], Dict[str, Any]]] = None,
+        mol_params: dict[str, Any],
+        mol_pp_sd: dict[str | int, dict[str, Any]] | None = None,
         **kwargs,
     ) -> None:
         """
@@ -68,10 +68,7 @@ class MCESDataset(Dataset):
         ].reset_index(drop=True)
 
         # Subsample if needed
-        if (
-            subsample_params.get(split, False)
-            and subsample_params["subsample_size"] > 0
-        ):
+        if subsample_params.get(split, False) and subsample_params["subsample_size"] > 0:
             if isinstance(subsample_params["subsample_size"], int):
                 n = subsample_params["subsample_size"]
                 frac = None
@@ -91,9 +88,7 @@ class MCESDataset(Dataset):
             | self.mol_df["mol_id"].isin(self.mces_df["mol_id_2"])
         ]
         # use mol_id as index for speedy access
-        self.mol_df = (
-            self.mol_df.set_index("mol_id", drop=False).sort_index().rename_axis(None)
-        )
+        self.mol_df = self.mol_df.set_index("mol_id", drop=False).sort_index().rename_axis(None)
 
         # Setup MCES normalization parameters from kwargs
         self.mces_normalization = kwargs.get("mces_normalization", "none")
@@ -119,7 +114,7 @@ class MCESDataset(Dataset):
 
         # Initialize shared dict for preprocessing
         if mol_pp_sd is None:
-            mol_pp_sd = dict()
+            mol_pp_sd = {}
         self.mol_pp_sd = mol_pp_sd
 
         # Only preprocess if data is empty (main process only)
@@ -143,7 +138,7 @@ class MCESDataset(Dataset):
         if self.mol_params["preprocess"]:
             self.mol_datas = mol_pp_sd
             total_mol_graph_size = 0
-            for idx, mol_entry in tqdm(
+            for _, mol_entry in tqdm(
                 self.mol_df.iterrows(), desc="> preprocess mol", total=len(self.mol_df)
             ):
                 mol_data = self._process_mol(mol_entry)
@@ -151,7 +146,7 @@ class MCESDataset(Dataset):
                 self.mol_datas[mol_entry["mol_id"]] = mol_data
             print(f"> total_mol_graph_size: {total_mol_graph_size / 1e6:.2f} MB")
 
-    def _process_mol(self, mol_entry: pd.Series) -> Dict[str, Any]:
+    def _process_mol(self, mol_entry: pd.Series) -> dict[str, Any]:
         """
         Process a single molecular entry into PyG graph format only.
 
@@ -177,7 +172,7 @@ class MCESDataset(Dataset):
 
         return mol_data
 
-    def __getitem__(self, idx: int) -> Dict[str, Any]:
+    def __getitem__(self, idx: int) -> dict[str, Any]:
         """
         Get a single MCES pair sample from the dataset.
 
@@ -243,7 +238,7 @@ class MCESDataset(Dataset):
         return MCESDataset.collate_fn
 
     @staticmethod
-    def collate_fn(data_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def collate_fn(data_list: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Collate a list of MCES data samples into a batched dictionary.
 
@@ -262,7 +257,7 @@ class MCESDataset(Dataset):
         keys = list(data_list[0].keys())
 
         # Initialize collection structure
-        collate_data: Dict[str, Any] = {key: [] for key in keys}
+        collate_data: dict[str, Any] = {key: [] for key in keys}
 
         # Collect data for each key across all samples
         for data in data_list:
@@ -279,9 +274,7 @@ class MCESDataset(Dataset):
             elif key.startswith("mol_1_") or key.startswith("mol_2_"):
                 # Handle mol_1_* and mol_2_* keys
                 # Extract the actual key name (e.g., "mol_pyg" from "mol_1_mol_pyg")
-                actual_key = key.split("_", 2)[
-                    -1
-                ]  # Get part after "mol_1_" or "mol_2_"
+                actual_key = key.split("_", 2)[-1]  # Get part after "mol_1_" or "mol_2_"
 
                 if actual_key == "mol_pyg" or "pyg" in actual_key:
                     # PyG molecular graphs need special batching
@@ -320,7 +313,7 @@ class MCESDataset(Dataset):
         return collate_data
 
     @staticmethod
-    def get_data_dict_types() -> List[str]:
+    def get_data_dict_types() -> list[str]:
         """
         Return list of data dictionary types used for caching.
 

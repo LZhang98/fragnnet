@@ -90,9 +90,7 @@ def get_mol_im(smiles, width=1000, height=1000):
     return im
 
 
-def plot_dual_axis(
-    steps, ax1_metrics_d, ax2_metrics_d, fp, figsize=(10, 5), dpi=200, size=20
-):
+def plot_dual_axis(steps, ax1_metrics_d, ax2_metrics_d, fp, figsize=(10, 5), dpi=200, size=20):
     tick_size = int(0.6 * size)
     font_size = int(0.8 * size)
 
@@ -106,9 +104,7 @@ def plot_dual_axis(
 
     # Generate color schemes for the lines
     ax1_colors = mpl.colormaps["tab10"].colors[:num_lines_ax1]
-    ax2_colors = mpl.colormaps["tab10"].colors[
-        num_lines_ax1 : num_lines_ax1 + num_lines_ax2
-    ]
+    ax2_colors = mpl.colormaps["tab10"].colors[num_lines_ax1 : num_lines_ax1 + num_lines_ax2]
 
     # Plot lines for the first y-axis
     ax1_lines = []

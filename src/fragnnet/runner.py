@@ -58,9 +58,7 @@ def load_config(template_fp: str, custom_fp: str | None, override: list) -> dict
         assert os.path.isfile(custom_fp), custom_fp
         with open(custom_fp) as custom_file:
             custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
-        assert all([k in config_d for k in custom_d]), set(custom_d.keys()) - set(
-            config_d.keys()
-        )
+        assert all([k in config_d for k in custom_d]), set(custom_d.keys()) - set(config_d.keys())
         config_d = deep_update(config_d, custom_d)
     # override
     for item in override:
@@ -194,9 +192,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     # Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
     if config_d["dynamic_batch_sampler"]:
-        max_batch_size = (
-            config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
-        )
+        max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
         if split == "train":
             return_batch_at = max_batch_size
         else:
@@ -224,9 +220,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     return dl
 
 
-def init_run(
-    template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list
-):
+def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list):
     """
     Main entry point for initializing and running a training/validation/testing job.
     Args:
@@ -298,9 +292,7 @@ def init_run(
                 if os.path.isdir(wandb_dir):
                     wandb_d["dir"] = wandb_dir
                 else:
-                    print(
-                        f"> wandb dir does not exist: {wandb_dir}, using default instead"
-                    )
+                    print(f"> wandb dir does not exist: {wandb_dir}, using default instead")
         else:
             is_resume = False
             job_id_fp = None
@@ -330,9 +322,7 @@ def init_run(
                             config_d[k][kk] = wandb.config[k][kk]
                 else:
                     if config_d[k] != wandb.config[k]:
-                        print(
-                            f"> config diff -- {k}: {config_d[k]} vs {wandb.config[k]}"
-                        )
+                        print(f"> config diff -- {k}: {config_d[k]} vs {wandb.config[k]}")
                     config_d[k] = wandb.config[k]
         loggers.append(wandb_logger)
     else:
@@ -393,9 +383,7 @@ def init_run(
                     )
             if "best_k_models" in ckpt_callback_data:
                 for k in list(ckpt_callback_data["best_k_models"].keys()):
-                    new_k = k.replace(
-                        os.path.abspath(old_wandb_dp), os.path.abspath(wandb.run.dir)
-                    )
+                    new_k = k.replace(os.path.abspath(old_wandb_dp), os.path.abspath(wandb.run.dir))
                     ckpt_callback_data["best_k_models"][new_k] = ckpt_callback_data[
                         "best_k_models"
                     ].pop(k)
@@ -442,9 +430,7 @@ def init_run(
             export_to_chrome=False,
             export_to_flame_graph=True,
             experimental_config=th._C._profiler._ExperimentalConfig(verbose=True),
-            schedule=th.profiler.schedule(
-                wait=1, warmup=1, active=6, repeat=0, skip_first=0
-            ),
+            schedule=th.profiler.schedule(wait=1, warmup=1, active=6, repeat=0, skip_first=0),
         )
     else:
         assert config_d["profiler"] == "none", config_d["profiler"]
@@ -483,9 +469,7 @@ def init_run(
 
     # check config for CMF
     if config_d["frag_params"].get("include_cmf", False):
-        if "cmf_h_formulae_idx" not in config_d["frag_params"].get(
-            "pyg_node_feats", []
-        ):
+        if "cmf_h_formulae_idx" not in config_d["frag_params"].get("pyg_node_feats", []):
             raise ValueError(
                 "include_cmf is True but 'cmf_h_formulae_idx' is missing from pyg_node_feats"
             )
@@ -508,15 +492,11 @@ def init_run(
     # check precision support
     if str(config_d["precision"]) in ["bf16-mixed", "bf16"]:
         if not (th.cuda.is_available() and th.cuda.is_bf16_supported()):
-            logging.warning(
-                "BF16 not supported on this device, falling back to 32 bit precision"
-            )
+            logging.warning("BF16 not supported on this device, falling back to 32 bit precision")
             config_d["precision"] = 32
     elif str(config_d["precision"]) in ["16-mixed", "16"]:
         if not th.cuda.is_available():
-            logging.warning(
-                "FP16 mixed precision requires CUDA, falling back to 32 bit precision"
-            )
+            logging.warning("FP16 mixed precision requires CUDA, falling back to 32 bit precision")
             config_d["precision"] = 32
 
     trainer_param_d = {
@@ -606,9 +586,7 @@ def init_run(
         if not config_d["upload_checkpoints"] and not config_d["delete_checkpoints"]:
             temp_ckpt_dir = tempfile.TemporaryDirectory()
             for ckpt_fp in ckpt_fps:
-                shutil.move(
-                    ckpt_fp, os.path.join(temp_ckpt_dir.name, os.path.basename(ckpt_fp))
-                )
+                shutil.move(ckpt_fp, os.path.join(temp_ckpt_dir.name, os.path.basename(ckpt_fp)))
 
     if wandb_mode != "disabled":
         wandb.finish()

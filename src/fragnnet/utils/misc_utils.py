@@ -104,9 +104,7 @@ def none_or_nan(thing):
 
         # For numpy arrays
         if isinstance(thing, np.ndarray):
-            return thing.size == 0 or (
-                thing.dtype.kind in "fc" and np.isnan(thing).all()
-            )
+            return thing.size == 0 or (thing.dtype.kind in "fc" and np.isnan(thing).all())
 
         # For other iterables, check if they're effectively empty
         if hasattr(thing, "__iter__") and not isinstance(thing, str):
@@ -224,9 +222,7 @@ def timeout_func(func, args=None, kwargs=None, timeout=30, default=None):
                 self.exc_info = sys.exc_info()
 
         def suicide(self):
-            raise TimeoutException(
-                "{0} timeout (taking more than {1} sec)".format(func.__name__, timeout)
-            )
+            raise TimeoutException(f"{func.__name__} timeout (taking more than {timeout} sec)")
 
     it = InterruptableThread()
     it.start()
@@ -407,9 +403,7 @@ def scatter_softmax(logits, subset_idxs):
 
 def scatter_l1normalize(vals, subset_idxs):
     # calculate normalizing constant
-    c = scatter_reduce(
-        src=vals, index=subset_idxs, reduce="sum", dim_size=th.max(subset_idxs) + 1
-    )
+    c = scatter_reduce(src=vals, index=subset_idxs, reduce="sum", dim_size=th.max(subset_idxs) + 1)
     c = th.clamp(c, min=EPS)
     # apply normalizing constant
     vals = vals / c[subset_idxs]
@@ -442,16 +436,10 @@ def scatter_var(src, index, dim_size=None, correction=1, sqrt=False):
     else:
         assert dim_size >= th.max(index) + 1
     # calculate mean
-    m = scatter_reduce(
-        src=src, index=index, reduce="mean", dim_size=dim_size, include_self=False
-    )
+    m = scatter_reduce(src=src, index=index, reduce="mean", dim_size=dim_size, include_self=False)
     # calculate variance
-    v_num = scatter_reduce(
-        src=(src - m[index]) ** 2, index=index, reduce="sum", dim_size=dim_size
-    )
-    v_den = scatter_reduce(
-        src=th.ones_like(src), index=index, reduce="sum", dim_size=dim_size
-    )
+    v_num = scatter_reduce(src=(src - m[index]) ** 2, index=index, reduce="sum", dim_size=dim_size)
+    v_den = scatter_reduce(src=th.ones_like(src), index=index, reduce="sum", dim_size=dim_size)
     v = v_num / th.clamp(v_den - correction, min=EPS)
     if sqrt:
         v = th.sqrt(v)
@@ -465,9 +453,7 @@ def scatter_argmax(src, index, other_index, dim_size=None, return_max=False):
     else:
         assert dim_size >= th.max(index) + 1
     # calculate max
-    mx = scatter_reduce(
-        src=src, index=index, reduce="amax", dim_size=dim_size, include_self=False
-    )
+    mx = scatter_reduce(src=src, index=index, reduce="amax", dim_size=dim_size, include_self=False)
     # calculate mask
     ma = src == mx[index]
     # calculate argmax
@@ -500,9 +486,7 @@ def scatter_argtopk(src, index, other_index, k, dim_size=None, return_max=False)
     amxs, mxs = [], []
     for i in range(k):
         # print(src, index)
-        amx, mx = scatter_argmax(
-            src, index, other_index, dim_size=dim_size, return_max=True
-        )
+        amx, mx = scatter_argmax(src, index, other_index, dim_size=dim_size, return_max=True)
         mask = (th.arange(amx.shape[0], device=index.device)[index] == index) & (
             amx[index] == other_index
         )
@@ -520,9 +504,7 @@ def scatter_argtopk(src, index, other_index, k, dim_size=None, return_max=False)
         return amxs
 
 
-def scatter_reduce(
-    src, index, reduce, dim=0, dim_size=None, default=0.0, include_self=True
-):
+def scatter_reduce(src, index, reduce, dim=0, dim_size=None, default=0.0, include_self=True):
     if reduce == "mean" and include_self:
         print("scatter_reduce: mean reduce with include_self=True is not recommended")
     index = index.to(th.int64)
@@ -542,9 +524,7 @@ def scatter_reduce(
         )
     result_shape = src.shape[:dim] + (dim_size,) + src.shape[dim + 1 :]
     results = th.full(result_shape, default, dtype=src.dtype, device=src.device)
-    results.scatter_reduce_(
-        dim=dim, index=index, src=src, reduce=reduce, include_self=include_self
-    )
+    results.scatter_reduce_(dim=dim, index=index, src=src, reduce=reduce, include_self=include_self)
     return results
 
 
@@ -574,9 +554,7 @@ def batchwise_lse(xs, batch_idxs):
 
 def dedup_peaks(mzs, logprobs, batch_idxs):
     b_mzs = th.stack([batch_idxs.type(mzs.dtype), mzs], dim=1)
-    dd_b_mzs, dd_logprobs, dd_batch_idxs = dedup(
-        b_mzs, *[("lse", logprobs), ("amax", batch_idxs)]
-    )
+    dd_b_mzs, dd_logprobs, dd_batch_idxs = dedup(b_mzs, *[("lse", logprobs), ("amax", batch_idxs)])
     dd_b_mzs = dd_b_mzs[:, 1]
     return dd_b_mzs, dd_logprobs, dd_batch_idxs
 
@@ -618,11 +596,7 @@ def to_device(data_d, device, non_blocking=True):
     for k in data_d.keys():
         v = data_d[k]
         # Support optional DGL: use DGLGraph placeholder for isinstance checks
-        if (
-            isinstance(v, th.Tensor)
-            or isinstance(v, DGLGraph)
-            or isinstance(v, pyg.data.Data)
-        ):
+        if isinstance(v, th.Tensor) or isinstance(v, DGLGraph) or isinstance(v, pyg.data.Data):
             v = v.to(device, non_blocking=non_blocking)
             data_d[k] = v
     return data_d
@@ -693,9 +667,7 @@ def check_import_wandb():
     try:
         import wandb
     except ImportError:
-        print(
-            "wandb is not installed. Please install it using 'pip install wandb' if needed."
-        )
+        print("wandb is not installed. Please install it using 'pip install wandb' if needed.")
     return False
 
 
@@ -720,9 +692,7 @@ def get_best_ckpt_from_wandb(
     ckpt_file, ckpt_epoch_num = None, None
     for file in run.files():
         if file.name.startswith("ckpt/model-epoch="):
-            epoch_num = int(
-                file.name.removeprefix("ckpt/model-epoch=").removesuffix(".ckpt")
-            )
+            epoch_num = int(file.name.removeprefix("ckpt/model-epoch=").removesuffix(".ckpt"))
             # print(epoch_num)
             if ckpt_file is None or epoch_num > ckpt_epoch_num:
                 ckpt_epoch_num = epoch_num
@@ -750,9 +720,7 @@ def get_wandb_runs_by_grp(group_name, entity="frag-gnn", project="frag-gnn"):
     import wandb
 
     api = wandb.Api()
-    runs = api.runs(
-        f"{entity}/{project}", include_sweeps=False, filters={"group": group_name}
-    )
+    runs = api.runs(f"{entity}/{project}", include_sweeps=False, filters={"group": group_name})
     return runs
 
 
@@ -831,14 +799,10 @@ def js_div(x_ids, x_logprobs, y_ids, y_logprobs) -> th.Tensor:
     y_logprobs_p[z_inv_idxs[x_ids.shape[0] :]] = y_logprobs
 
     # Compute the combined log-probabilities (z_logprobs) using logsumexp, which handles the sum of logs
-    z_logprobs = (
-        th.logsumexp(th.stack([x_logprobs_p, y_logprobs_p], dim=0), dim=0) - LOG_TWO
-    )
+    z_logprobs = th.logsumexp(th.stack([x_logprobs_p, y_logprobs_p], dim=0), dim=0) - LOG_TWO
 
     # Compute the Jensen-Shannon Divergence (JSD) as the average of two Kullback-Leibler (KL) divergences
-    jsd = 0.5 * kl_div(x_logprobs_p, z_logprobs) + 0.5 * kl_div(
-        y_logprobs_p, z_logprobs
-    )
+    jsd = 0.5 * kl_div(x_logprobs_p, z_logprobs) + 0.5 * kl_div(y_logprobs_p, z_logprobs)
 
     # Normalize the JSD by dividing by LOG_TWO to ensure it is in a standard scale (between 0 and 1)
     jsd_n = jsd / LOG_TWO

@@ -18,8 +18,8 @@ class SpecMolDataset(BaseDataset):
         subsample_params: dict,
         spec_params: dict,
         mol_params: dict,
-        spec_pp_sd: dict = None,
-        mol_pp_sd: dict = None,
+        spec_pp_sd: dict | None = None,
+        mol_pp_sd: dict | None = None,
         **kwargs,
     ) -> None:
         """
@@ -48,9 +48,9 @@ class SpecMolDataset(BaseDataset):
         )
 
         if spec_pp_sd is None:
-            spec_pp_sd = dict()
+            spec_pp_sd = {}
         if mol_pp_sd is None:
-            mol_pp_sd = dict()
+            mol_pp_sd = {}
 
         self.mol_params = mol_params
         self._preprocess_spec(spec_pp_sd)
@@ -97,7 +97,7 @@ class SpecMolDataset(BaseDataset):
         if self.mol_params["preprocess"]:
             self.mol_datas = mol_pp_sd
             total_mol_graph_size = 0
-            for idx, mol_entry in tqdm(
+            for _, mol_entry in tqdm(
                 self.mol_df.iterrows(), desc="> preprocess mol", total=len(self.mol_df)
             ):
                 mol_data = self._process_mol(mol_entry)
@@ -234,5 +234,5 @@ class SpecMolDataset(BaseDataset):
         Raises:
             AssertionError: If peaks data contains NaN or empty values.
         """
-        assert self.spec_df["peaks"].isna().any() == False
-        assert (self.spec_df["peaks"] == "").any() == False
+        assert not self.spec_df["peaks"].isna().any()
+        assert not (self.spec_df["peaks"] == "").any()

@@ -95,9 +95,7 @@ class BaseDataset(Dataset):
             else pd.read_pickle(spec_fp_or_df)
         )
         mol_df = (
-            mol_fp_or_df
-            if isinstance(mol_fp_or_df, pd.DataFrame)
-            else pd.read_pickle(mol_fp_or_df)
+            mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
         )
 
         split_dfs = []
@@ -168,16 +166,10 @@ class BaseDataset(Dataset):
         if ce_key is not None:
             # print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_1"]])
             # print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_2"]])
-            print(
-                f">> replace missing {ce_key} with -1, and fill ramped/stepped ces accordingly"
-            )
+            print(f">> replace missing {ce_key} with -1, and fill ramped/stepped ces accordingly")
             # First fill extra columns with -1 (these stay as floats)
-            spec_df.loc[:, f"{ce_key}_extra_1"] = spec_df.loc[
-                :, f"{ce_key}_extra_1"
-            ].fillna(-1)
-            spec_df.loc[:, f"{ce_key}_extra_2"] = spec_df.loc[
-                :, f"{ce_key}_extra_2"
-            ].fillna(-1)
+            spec_df.loc[:, f"{ce_key}_extra_1"] = spec_df.loc[:, f"{ce_key}_extra_1"].fillna(-1)
+            spec_df.loc[:, f"{ce_key}_extra_2"] = spec_df.loc[:, f"{ce_key}_extra_2"].fillna(-1)
 
             def _fill_ce_list(row, ce_key):
                 ce = row[ce_key]
@@ -205,43 +197,27 @@ class BaseDataset(Dataset):
                     return [ce]
 
             # Apply the function to create lists - this will set the correct dtype
-            result_series = seq_apply_df_rows(
-                spec_df, lambda row: _fill_ce_list(row, ce_key)
-            )
+            result_series = seq_apply_df_rows(spec_df, lambda row: _fill_ce_list(row, ce_key))
             # Convert column to object dtype before assignment to avoid dtype warning
             spec_df[ce_key] = spec_df[ce_key].astype(object)
             spec_df.loc[:, ce_key] = result_series
 
-        if (
-            spec_params["test_ces"] is not None
-            and ce_key is not None
-            and "test" in splits
-        ):
+        if spec_params["test_ces"] is not None and ce_key is not None and "test" in splits:
             test_split_fp = os.path.join(split_dp, "test_ids.csv")
             test_split_df = pd.read_csv(test_split_fp)
-            orig_test_spec_df = spec_df[
-                spec_df["spec_id"].isin(test_split_df["spec_id"])
-            ]
+            orig_test_spec_df = spec_df[spec_df["spec_id"].isin(test_split_df["spec_id"])]
             test_drop_ids = orig_test_spec_df[
                 ~(orig_test_spec_df[ce_key].isin(np.array(spec_params["test_ces"])))
             ][["spec_id", "group_id"]]
             spec_df = spec_df[~(spec_df["spec_id"].isin(test_drop_ids["spec_id"]))]
-            new_test_spec_df = spec_df[
-                spec_df["spec_id"].isin(test_split_df["spec_id"])
-            ]
+            new_test_spec_df = spec_df[spec_df["spec_id"].isin(test_split_df["spec_id"])]
             orig_test_spec_count = orig_test_spec_df["spec_id"].nunique()
             orig_test_group_count = orig_test_spec_df["group_id"].nunique()
             new_test_spec_count = new_test_spec_df["spec_id"].nunique()
             new_test_group_count = new_test_spec_df["group_id"].nunique()
-            print(
-                f">> Dropping spectra unless {ce_key} is one of {spec_params['test_ces']}"
-            )
-            print(
-                f"> Before drop: {orig_test_spec_count} spectra, {orig_test_group_count} groups"
-            )
-            print(
-                f"> After drop: {new_test_spec_count} spectra, {new_test_group_count} groups"
-            )
+            print(f">> Dropping spectra unless {ce_key} is one of {spec_params['test_ces']}")
+            print(f"> Before drop: {orig_test_spec_count} spectra, {orig_test_group_count} groups")
+            print(f"> After drop: {new_test_spec_count} spectra, {new_test_group_count} groups")
 
         # merge spectra
         um_spec_df = spec_df[
@@ -254,10 +230,7 @@ class BaseDataset(Dataset):
             id_key = "spec_id"
 
         # subsample
-        if (
-            subsample_params.get(split, False)
-            and subsample_params["subsample_size"] > 0
-        ):
+        if subsample_params.get(split, False) and subsample_params["subsample_size"] > 0:
             if isinstance(subsample_params["subsample_size"], int):
                 n = subsample_params["subsample_size"]
                 frac = None
@@ -299,9 +272,7 @@ class BaseDataset(Dataset):
         )
         if self.spec_params["merge"]:
             self.spec_per_mol = copy.deepcopy(self.group_per_mol)
-            self.spec_per_group = {
-                group_id: 1 for group_id in self.spec_df["group_id"].unique()
-            }
+            self.spec_per_group = dict.fromkeys(self.spec_df["group_id"].unique(), 1)
         else:
             self.spec_per_mol = (
                 self.spec_df[["mol_id", "spec_id"]]
@@ -335,7 +306,7 @@ class BaseDataset(Dataset):
         spec_per_group_stats = []
         spec_per_mol_stats = []
         group_per_mol_stats = []
-        for row_idx, row in self.spec_df.iterrows():
+        for _, row in self.spec_df.iterrows():
             spec_entry = row
             mol_id = spec_entry["mol_id"]
             group_id = spec_entry["group_id"]
@@ -429,15 +400,9 @@ class BaseDataset(Dataset):
             - num_prec_types: Total number of precursor types.
         """
         prec_types = sorted(self.spec_params["prec_types"])
-        assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types), (
-            prec_types
-        )
-        self.prec_type_to_idx = {
-            prec_type: idx for idx, prec_type in enumerate(prec_types)
-        }
-        self.idx_to_prec_type = {
-            idx: prec_type for idx, prec_type in enumerate(prec_types)
-        }
+        assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types), prec_types
+        self.prec_type_to_idx = {prec_type: idx for idx, prec_type in enumerate(prec_types)}
+        self.idx_to_prec_type = {idx: prec_type for idx, prec_type in enumerate(prec_types)}
         self.num_prec_types = len(prec_types)
 
     def _setup_inst_type_to_idx(self) -> None:
@@ -450,12 +415,8 @@ class BaseDataset(Dataset):
             - num_inst_types: Total number of instrument types.
         """
         inst_types = sorted(self.spec_params["inst_types"])
-        self.inst_type_to_idx = {
-            inst_type: idx for idx, inst_type in enumerate(inst_types)
-        }
-        self.idx_to_inst_type = {
-            idx: inst_type for idx, inst_type in enumerate(inst_types)
-        }
+        self.inst_type_to_idx = {inst_type: idx for idx, inst_type in enumerate(inst_types)}
+        self.idx_to_inst_type = {idx: inst_type for idx, inst_type in enumerate(inst_types)}
         self.num_inst_types = len(inst_types)
 
     def _process_spec(self, spec_entry: pd.Series) -> dict:
@@ -610,9 +571,7 @@ class BaseDataset(Dataset):
         # handle sparse spectra
         if "spec_ints" in keys and "spec_mzs" in keys:
             # create batch_idxs
-            mzs, ints, batch_idxs = batch_func(
-                collate_data["spec_mzs"], collate_data["spec_ints"]
-            )
+            mzs, ints, batch_idxs = batch_func(collate_data["spec_mzs"], collate_data["spec_ints"])
             collate_data["spec_mzs"] = mzs
             collate_data["spec_ints"] = ints
             collate_data["spec_batch_idxs"] = batch_idxs

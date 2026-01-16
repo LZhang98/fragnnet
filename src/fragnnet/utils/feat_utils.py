@@ -141,9 +141,7 @@ class MolGraph:
 
         # Add doubles
         if bigraph:
-            rev_bonds = np.vstack([bond_tuples[:, 1], bond_tuples[:, 0]]).transpose(
-                1, 0
-            )
+            rev_bonds = np.vstack([bond_tuples[:, 1], bond_tuples[:, 0]]).transpose(1, 0)
             bond_tuples = np.vstack([bond_tuples, rev_bonds])
             bond_feats = np.vstack([bond_feats, bond_feats])
         return {
@@ -418,9 +416,7 @@ def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
     return list(map(lambda s: int(x == s), allowable_set))
 
 
-def batch_mols_frags(
-    mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula_peak_probs_list
-):
+def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula_peak_probs_list):
     """Create a batch of molecule and fragment graphs, and collate formula peak information.
 
     Args:
@@ -453,12 +449,10 @@ def batch_mols_frags(
     assert mol_pyg.num_graphs == frag_pyg.num_graphs == batch_size
     # Assert that the node feature indices and edge feature indices are consistent across all graphs in the fragment batch
     assert all(
-        th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i])
-        for i in range(batch_size)
+        th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i]) for i in range(batch_size)
     )
     assert all(
-        th.all(frag_pyg.edge_feat_idxs[0] == frag_pyg.edge_feat_idxs[i])
-        for i in range(batch_size)
+        th.all(frag_pyg.edge_feat_idxs[0] == frag_pyg.edge_feat_idxs[i]) for i in range(batch_size)
     )
 
     # Compute the cumulative sum of nodes for molecules and fragments, to track the total number of nodes per graph
@@ -598,9 +592,7 @@ def get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges, bigraph):
             # print(feat,feat_idx,_node_feat_size)
         _node_feat_idxs.append(_node_feat_size)
     _x = th.cat(_x, dim=1)
-    _node_feat_idxs = th.tensor(_node_feat_idxs, device=device, dtype=th.int64).reshape(
-        1, -1
-    )
+    _node_feat_idxs = th.tensor(_node_feat_idxs, device=device, dtype=th.int64).reshape(1, -1)
     # select edge features
     _edge_index = edge_index.clone()
     _edge_attr = []
@@ -610,9 +602,7 @@ def get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges, bigraph):
         if feat in frag_edge_feats:
             assert edges
             if feat == "complement":
-                _edge_attr_cur = th.zeros(
-                    edge_attr.shape[0], 1, device=device, dtype=th.int64
-                )
+                _edge_attr_cur = th.zeros(edge_attr.shape[0], 1, device=device, dtype=th.int64)
             else:
                 _edge_attr_cur = get_edge_feats(edge_attr, edge_feat_idxs[0], feat)
             _edge_attr.append(_edge_attr_cur)
@@ -622,9 +612,7 @@ def get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges, bigraph):
     if len(_edge_attr) == 0:
         _edge_attr = [th.zeros(edge_attr.shape[0], 1, device=device, dtype=th.int64)]
     _edge_attr = th.cat(_edge_attr, dim=1)
-    _edge_feat_idxs = th.tensor(_edge_feat_idxs, device=device, dtype=th.int64).reshape(
-        1, -1
-    )
+    _edge_feat_idxs = th.tensor(_edge_feat_idxs, device=device, dtype=th.int64).reshape(1, -1)
     # convert to undirected
     if bigraph:
         assert edges

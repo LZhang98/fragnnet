@@ -1,5 +1,3 @@
-from typing import Tuple, Union
-
 import numpy as np
 import scipy
 import scipy.optimize
@@ -56,7 +54,7 @@ def get_ints_transform_func(ints_transform):
     elif ints_transform == "none":
         _func = lambda ints: ints
     else:
-        raise ValueError("Invalid ints_transform: {}".format(ints_transform))
+        raise ValueError(f"Invalid ints_transform: {ints_transform}")
     return _func
 
 
@@ -101,9 +99,7 @@ def get_ints_untransform_func(ints_transform):
         raise ValueError("invalid transform")
 
     def _func(ints, batch_idxs):
-        old_max_ints = scatter_reduce(
-            ints, batch_idxs, "amax", default=0.0, include_self=False
-        )
+        old_max_ints = scatter_reduce(ints, batch_idxs, "amax", default=0.0, include_self=False)
         ints = ints / (old_max_ints[batch_idxs] + EPS) * max_ints
         ints = _untransform_fn(ints)
         ints = th.clamp(ints, min=0.0)
@@ -167,11 +163,11 @@ def transform_ace(ace: float) -> float:
 
 
 def filter_func(
-    mzs: Union[th.Tensor, np.ndarray],
-    ints: Union[th.Tensor, np.ndarray],
+    mzs: th.Tensor | np.ndarray,
+    ints: th.Tensor | np.ndarray,
     ints_thresh: float,
     mz_max: float,
-) -> Tuple[Union[th.Tensor, np.ndarray], Union[th.Tensor, np.ndarray]]:
+) -> tuple[th.Tensor | np.ndarray, th.Tensor | np.ndarray]:
     """filter spectrum by intesnity value and max mz
 
     Args:
@@ -244,7 +240,7 @@ def bin_func(
         return bin_spec
 
 
-def batch_func(*lists, offset_flags=False) -> Tuple[th.Tensor]:
+def batch_func(*lists, offset_flags=False) -> tuple[th.Tensor]:
     """ """
 
     if offset_flags is False:
@@ -254,9 +250,7 @@ def batch_func(*lists, offset_flags=False) -> Tuple[th.Tensor]:
     repeat_sizes = th.tensor([th.numel(item) for item in lists[0]])
     batch_idxs = th.repeat_interleave(batch_idxs, repeat_sizes)
     if any(offset_flags):
-        offsets = th.cat(
-            [th.zeros([1], dtype=th.long), th.cumsum(repeat_sizes, dim=0)[:-1]], dim=0
-        )
+        offsets = th.cat([th.zeros([1], dtype=th.long), th.cumsum(repeat_sizes, dim=0)[:-1]], dim=0)
     b_lists = []
     for l_idx, l in enumerate(lists):
         b_list = th.cat(l, dim=0)
@@ -274,7 +268,7 @@ def batched_filter_func(
     batch_idxs: th.Tensor,
     ints_thresh: float,
     mz_max: float,
-) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
     """bacthed filter func for filter spectra
 
     Args:
@@ -391,9 +385,7 @@ def batched_bin_func(
         return bin_spec
 
 
-def merge_sparse_specs(
-    *peakses, renormalize: bool = False, sum_ints: bool = True
-) -> th.Tensor:
+def merge_sparse_specs(*peakses, renormalize: bool = False, sum_ints: bool = True) -> th.Tensor:
     """
     this will result in peaks that are really close in mass (<5ppm)
     they are probably the same peak, but our model can handle this type of ambiguity
@@ -420,9 +412,7 @@ def merge_sparse_specs(
     merged_peaks = sorted(list(merged_peaks.items()), key=lambda x: x[0])
     if renormalize:
         total_intensity = sum([intensity for mz, intensity in merged_peaks])
-        merged_peaks = [
-            (mz, intensity / total_intensity) for mz, intensity in merged_peaks
-        ]
+        merged_peaks = [(mz, intensity / total_intensity) for mz, intensity in merged_peaks]
     return merged_peaks
 
 
@@ -480,9 +470,7 @@ def calculate_match_mzs(
         abs_func = np.abs
         copy_func = np.copy
     else:
-        raise ValueError(
-            "true_mzs and pred_mzs should be both torch tensors or numpy arrays"
-        )
+        raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
 
     diff_mzs = abs_func(true_mzs.reshape(-1, 1) - pred_mzs.reshape(1, -1))
     min_diff_mzs = tolerance
@@ -796,9 +784,7 @@ def batched_mf1000_normalize(ints, batch_idxs):
         _type_: _description_
     """
 
-    max_ints = scatter_reduce(
-        ints, batch_idxs, reduce="max", dim_size=th.max(batch_idxs) + 1
-    )
+    max_ints = scatter_reduce(ints, batch_idxs, reduce="max", dim_size=th.max(batch_idxs) + 1)
     ints = (ints / max_ints[batch_idxs]) * 1000.0
     return ints
 
@@ -819,7 +805,7 @@ def mf1000_normalize_np(ints: np.array) -> np.array:
 
 def round_aggregate_peaks(
     mzs: th.Tensor, ints: th.Tensor, batch_idxs: th.Tensor, decimals: int = 4, agg="sum"
-) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
     """methds to round and aggreate peaks to give decimals points
 
     Args:
@@ -930,8 +916,7 @@ def cos_hun_helper(
     b_true_ints = F.normalize(b_true_ints, p=2, dim=0)
     b_pred_ints = F.normalize(b_pred_ints, p=2, dim=0)
     b_score = b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
-        b_true_ints[b_true_match_mask].unsqueeze(1)
-        * b_pred_ints[b_pred_match_mask].unsqueeze(0)
+        b_true_ints[b_true_match_mask].unsqueeze(1) * b_pred_ints[b_pred_match_mask].unsqueeze(0)
     )
     b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
     b_cos_hun = th.dot(
@@ -952,12 +937,9 @@ def ndcg_helper(
 ):
     th_device = b_true_ints.device
     b_score = b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
-        b_true_ints[b_true_match_mask].unsqueeze(1)
-        * b_pred_ints[b_pred_match_mask].unsqueeze(0)
+        b_true_ints[b_true_match_mask].unsqueeze(1) * b_pred_ints[b_pred_match_mask].unsqueeze(0)
     )
-    b_true_match_idxs, b_pred_match_idxs = scipy_linear_sum_assignment(
-        b_score, maximize=True
-    )
+    b_true_match_idxs, b_pred_match_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
     b_pred_match_ints = b_pred_ints[b_pred_match_mask][b_pred_match_idxs]
     b_true_match_ints = b_true_ints[b_true_match_mask][b_true_match_idxs]
     if union:
@@ -1004,10 +986,7 @@ def ndcg_helper(
         b_pred_ranking = th.argsort(b_pred_all_ints, descending=True)
         b_true_ranking = th.argsort(b_true_all_ints, descending=True)
         b_denom = th.log2(
-            2
-            + th.arange(
-                b_true_all_ints.shape[0], dtype=b_true_all_ints.dtype, device=th_device
-            )
+            2 + th.arange(b_true_all_ints.shape[0], dtype=b_true_all_ints.dtype, device=th_device)
         )
         b_dcg = th.sum(b_true_all_ints[b_pred_ranking] / b_denom)
         b_idcg = th.sum(b_true_all_ints[b_true_ranking] / b_denom)
@@ -1052,8 +1031,7 @@ def jss_hun_helper(
         # heuristic to prevent nan
         b_pred_ints = th.ones_like(b_pred_ints) / b_pred_ints.shape[0]
     b_score = b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
-        b_true_ints[b_true_match_mask].unsqueeze(1)
-        + b_pred_ints[b_pred_match_mask].unsqueeze(0)
+        b_true_ints[b_true_match_mask].unsqueeze(1) + b_pred_ints[b_pred_match_mask].unsqueeze(0)
     )
     b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
     b_union_ints = th.cat(
@@ -1083,10 +1061,7 @@ def jss_hun_helper(
     )
     b_kl1 = th.sum(
         b_kl1_true_probs
-        * (
-            safelog(b_kl1_true_probs, eps=log_min)
-            - safelog(b_kl1_union_probs, eps=log_min)
-        ),
+        * (safelog(b_kl1_true_probs, eps=log_min) - safelog(b_kl1_union_probs, eps=log_min)),
         dim=0,
     )
     b_kl2_pred_probs = th.cat(
@@ -1102,10 +1077,7 @@ def jss_hun_helper(
     )
     b_kl2 = th.sum(
         b_kl2_pred_probs
-        * (
-            safelog(b_kl2_pred_probs, eps=log_min)
-            - safelog(b_kl2_union_probs, eps=log_min)
-        ),
+        * (safelog(b_kl2_pred_probs, eps=log_min) - safelog(b_kl2_union_probs, eps=log_min)),
         dim=0,
     )
     b_jss_hun = np.log(2.0) - 0.5 * (b_kl1 + b_kl2)
@@ -1149,10 +1121,7 @@ def jss_helper(
     kl1_union_bin_ints = union_bin_ints[union_bin_idxs_rev[: true_bin_idxs.shape[0]]]
     kl1 = scatter_reduce(
         true_bin_ints
-        * (
-            safelog(true_bin_ints, eps=log_min)
-            - safelog(kl1_union_bin_ints, eps=log_min)
-        ),
+        * (safelog(true_bin_ints, eps=log_min) - safelog(kl1_union_bin_ints, eps=log_min)),
         true_bin_batch_idxs,
         reduce="sum",
         dim_size=batch_size,
@@ -1161,10 +1130,7 @@ def jss_helper(
     kl2_union_bin_ints = union_bin_ints[union_bin_idxs_rev[true_bin_idxs.shape[0] :]]
     kl2 = scatter_reduce(
         pred_bin_ints
-        * (
-            safelog(pred_bin_ints, eps=log_min)
-            - safelog(kl2_union_bin_ints, eps=log_min)
-        ),
+        * (safelog(pred_bin_ints, eps=log_min) - safelog(kl2_union_bin_ints, eps=log_min)),
         pred_bin_batch_idxs,
         reduce="sum",
         dim_size=batch_size,

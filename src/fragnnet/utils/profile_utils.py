@@ -37,9 +37,7 @@ class MyPyTorchProfiler(PyTorchProfiler):
         schedule = profiler_kwargs.get("schedule", None)
         if schedule is not None:
             if not callable(schedule):
-                raise MisconfigurationException(
-                    f"Schedule should be a callable. Found: {schedule}"
-                )
+                raise MisconfigurationException(f"Schedule should be a callable. Found: {schedule}")
             action = schedule(0)
             if not isinstance(action, ProfilerAction):
                 raise MisconfigurationException(
@@ -52,16 +50,12 @@ class MyPyTorchProfiler(PyTorchProfiler):
 
         activities = profiler_kwargs.get("activities", None)
         self._profiler_kwargs["activities"] = activities or self._default_activities()
-        self._export_to_flame_graph = profiler_kwargs.get(
-            "export_to_flame_graph", False
-        )
+        self._export_to_flame_graph = profiler_kwargs.get("export_to_flame_graph", False)
         self._export_metrics = profiler_kwargs.get(
             "export_metrics", ("self_cpu_time_total", "self_cuda_time_total")
         )
         # self._metric = profiler_kwargs.get("metric", "self_cuda_time_total")
-        with_stack = (
-            profiler_kwargs.get("with_stack", False) or self._export_to_flame_graph
-        )
+        with_stack = profiler_kwargs.get("with_stack", False) or self._export_to_flame_graph
         self._profiler_kwargs["with_stack"] = with_stack
 
     def stop(self, action_name: str) -> None:
@@ -94,9 +88,7 @@ class MyPyTorchProfiler(PyTorchProfiler):
                     if self._export_to_chrome:
                         handler = tensorboard_trace_handler(
                             str(self.dirpath),
-                            self._prepare_filename(
-                                action_name=action_name, extension=""
-                            ),
+                            self._prepare_filename(action_name=action_name, extension=""),
                         )
                         handler(profiler)
 
