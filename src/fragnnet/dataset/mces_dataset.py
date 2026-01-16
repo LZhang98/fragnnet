@@ -30,6 +30,24 @@ class MCESDataset(Dataset):
         mol_pp_sd: Optional[Dict[Union[str, int], Dict[str, Any]]] = None,
         **kwargs,
     ) -> None:
+        """
+        Initialize MCES dataset for molecular similarity learning.
+
+        Args:
+            mces_fp: File path to the MCES data pickle file.
+            mol_fp: File path to the molecular data pickle file.
+            split_dp: Directory path containing split CSV files.
+            split: Name of the data split (e.g., 'train', 'val', 'test').
+            subsample_params: Dictionary of subsampling parameters.
+            mol_params: Dictionary of molecular processing parameters.
+            mol_pp_sd: Optional shared dictionary for preprocessed molecular data.
+            **kwargs: Additional keyword arguments including:
+                - mces_normalization: Normalization type ('minmax', 'zscore', or 'none')
+                - mces_min: Minimum MCES value for min-max normalization
+                - mces_max: Maximum MCES value for min-max normalization
+                - mces_mean: Mean MCES value for z-score normalization
+                - mces_std: Standard deviation for z-score normalization
+        """
         # Store split attribute (required by runner.py)
         self.split = split
 
@@ -110,10 +128,18 @@ class MCESDataset(Dataset):
             # print("WARNING: Preprocessing in dataset init - should be done in main process!")
             self._preprocess_mol(mol_pp_sd)
 
-    def _preprocess_mol(self, mol_pp_sd: dict):
+    def _preprocess_mol(self, mol_pp_sd: dict) -> None:
+        """
+        Preload and pre-process all molecular data into shared dictionary.
+
+        Args:
+            mol_pp_sd: Shared dictionary to store preprocessed molecular data.
+
+        Note:
+            This method is copied from spec_mol_dataset.py.
+            TODO: Move to a common molecular dataset base class.
+        """
         # preload and pre-process molecules
-        # this a copied from spec_mol_dataset.py
-        # TODO move to a common mol dataset class
         if self.mol_params["preprocess"]:
             self.mol_datas = mol_pp_sd
             total_mol_graph_size = 0
@@ -151,7 +177,19 @@ class MCESDataset(Dataset):
 
         return mol_data
 
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        """
+        Get a single MCES pair sample from the dataset.
+
+        Args:
+            idx: Index of the MCES pair to retrieve.
+
+        Returns:
+            Dictionary containing:
+                - mces: MCES value (normalized if enabled)
+                - mol_1_*: Keys from first molecule (e.g., mol_1_mol_pyg)
+                - mol_2_*: Keys from second molecule (e.g., mol_2_mol_pyg)
+        """
         mces_row = self.mces_df.iloc[idx]
         mces_value = mces_row["mces"]
 
@@ -186,29 +224,38 @@ class MCESDataset(Dataset):
         return result
 
     def __len__(self) -> int:
-        # Return the number of MCES pairs in the dataset
+        """
+        Get the total number of MCES pairs in the dataset.
+
+        Returns:
+            Number of MCES pairs in the dataset.
+        """
         return len(self.mces_df)
 
     @staticmethod
     def get_collate_fn():
         """
-        Return the collation function for batching MCES data samples.
+        Get the collate function for batching MCES dataset samples.
 
         Returns:
-            function: Collation function for DataLoader
+            Collate function to use with DataLoader.
         """
         return MCESDataset.collate_fn
 
     @staticmethod
-    def collate_fn(data_list):
+    def collate_fn(data_list: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Collation function for batching MCES dataset samples.
+        Collate a list of MCES data samples into a batched dictionary.
 
         Args:
-            data_list: List of data dictionaries from dataset samples
+            data_list: List of data dictionaries from dataset samples.
 
         Returns:
-            dict: Batched data dictionary ready for model input
+            Batched data dictionary ready for model input, containing:
+                - mces: Batched MCES values as tensor
+                - mol_1_mol_pyg: Batched PyG graphs for first molecules
+                - mol_2_mol_pyg: Batched PyG graphs for second molecules
+                - batch_size: Number of samples in the batch
         """
 
         batch_size = len(data_list)
@@ -274,6 +321,11 @@ class MCESDataset(Dataset):
 
     @staticmethod
     def get_data_dict_types() -> List[str]:
-        # Return list of data dict type used for caching
-        # Molecular Preprocessed Shared Dictionary: mol_pp_sd
+        """
+        Return list of data dictionary types used for caching.
+
+        Returns:
+            List containing data dictionary type identifiers.
+                - 'mol_pp_sd': Molecular Preprocessed Shared Dictionary
+        """
         return ["mol_pp_sd"]

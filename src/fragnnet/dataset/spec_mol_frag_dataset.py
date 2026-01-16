@@ -37,7 +37,26 @@ class SpecMolFragDataset(SpecMolDataset):
         frag_pl_sd: dict|None = None, # preloaded frag data
         frag_pp_sd: dict|None = None, # preprocessed frag data
         **kwargs
-    ):
+    ) -> None:
+        """
+        Initialize spectrum-molecule-fragment dataset with fragmentation graphs.
+
+        Args:
+            spec_fp: File path to the spectral data pickle file.
+            mol_fp: File path to the molecular data pickle file.
+            split_dp: Directory path containing split CSV files.
+            split: Name of the data split (e.g., 'train', 'val', 'test').
+            subsample_params: Dictionary of subsampling parameters.
+            spec_params: Dictionary of spectral processing parameters.
+            mol_params: Dictionary of molecular processing parameters.
+            frag_dp: Directory path containing fragmentation DAG data.
+            frag_params: Dictionary of fragmentation processing parameters.
+            spec_pp_sd: Optional shared dictionary for preprocessed spectral data.
+            mol_pp_sd: Optional shared dictionary for preprocessed molecular data.
+            frag_pl_sd: Optional shared dictionary for preloaded fragmentation data.
+            frag_pp_sd: Optional shared dictionary for preprocessed fragmentation data.
+            **kwargs: Additional keyword arguments.
+        """
 
         BaseDataset.__init__(self)
         self._base_init(
@@ -66,15 +85,27 @@ class SpecMolFragDataset(SpecMolDataset):
         self._preprocess_frag(frag_pl_sd, frag_pp_sd)
     
     @staticmethod
-    def get_data_dict_types():
-        # return list of data dict used for caching
-        # Spectral Preprocessed Shared Dictionary: spec_pp_sd
-        # Molecular Preprocessed Shared Dictionary: mol_pp_sd
-        # Fragment Preloaded Shared Dictionary: frag_pl_sd
-        # Fragment Preprocessed Shared Dictionary: frag_pp_sd
+    def get_data_dict_types() -> list[str]:
+        """
+        Return list of data dictionary types used for caching.
+
+        Returns:
+            List containing data dictionary type identifiers:
+                - 'spec_pp_sd': Spectral Preprocessed Shared Dictionary
+                - 'mol_pp_sd': Molecular Preprocessed Shared Dictionary
+                - 'frag_pl_sd': Fragment Preloaded Shared Dictionary
+                - 'frag_pp_sd': Fragment Preprocessed Shared Dictionary
+        """
         return ["spec_pp_sd", "mol_pp_sd", "frag_pl_sd", "frag_pp_sd"]
 
-    def _preprocess_frag(self, frag_pl_sd: dict, frag_pp_sd: dict):
+    def _preprocess_frag(self, frag_pl_sd: dict, frag_pp_sd: dict) -> None:
+        """
+        Preload and pre-process fragmentation DAG data into shared dictionaries.
+
+        Args:
+            frag_pl_sd: Shared dictionary to store preloaded fragmentation entries.
+            frag_pp_sd: Shared dictionary to store preprocessed fragmentation data.
+        """
 
         # preload frag dags
         if self.frag_params["preload"]:
@@ -99,7 +130,16 @@ class SpecMolFragDataset(SpecMolDataset):
             # remove them from the entries
             self.frag_entries = {}
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict:
+        """
+        Get a single spectrum-molecule-fragment sample from the dataset.
+
+        Args:
+            idx: Index of the sample to retrieve.
+
+        Returns:
+            Dictionary containing spectral, molecular, and fragmentation data.
+        """
         spec_entry = self.spec_df.iloc[idx]
         mol_id = spec_entry["mol_id"]
         mol_entry = self.mol_df.loc[mol_id]
@@ -142,14 +182,15 @@ class SpecMolFragDataset(SpecMolDataset):
         data = {**spec_data,**mol_data,**frag_data}
         return data
 
-    def _load_frag_entry(self,mol_id) -> dict:
-        """ load frag entry from precomputed dag on disk
+    def _load_frag_entry(self, mol_id: str) -> dict:
+        """
+        Load fragmentation entry from precomputed DAG on disk.
 
         Args:
-            mol_id (str): mol id
+            mol_id: Molecule identifier.
 
         Returns:
-            dict: dag dictrionary
+            Dictionary containing DAG and fragmentation data.
         """
 
         frag_entry = load_frag_d(
@@ -271,11 +312,25 @@ class SpecMolFragDataset(SpecMolDataset):
 
     @staticmethod
     def get_collate_fn():
+        """
+        Get the collate function for batching dataset samples.
 
+        Returns:
+            Collate function to use with DataLoader.
+        """
         return SpecMolFragDataset.collate_fn
 
     @staticmethod
-    def _special_collate(keys, collate_data):
+    def _special_collate(keys: list[str], collate_data: dict) -> None:
+        """
+        Handle special collation for fragmentation graphs and molecular data.
+
+        Mutates keys and collate_data in-place to batch fragment DAGs with molecules.
+
+        Args:
+            keys: List of data keys being collated (modified in-place).
+            collate_data: Dictionary containing lists of values to collate (modified in-place).
+        """
 
         if "frag_pyg" in keys:
             assert "mol_pyg" in keys
@@ -298,7 +353,16 @@ class SpecMolFragDataset(SpecMolDataset):
         SpecMolDataset._special_collate(keys,collate_data)
 
     @staticmethod
-    def collate_fn(data_list):
+    def collate_fn(data_list: list[dict]) -> dict:
+        """
+        Collate a list of spectrum-molecule-fragment data samples into a batched dictionary.
+
+        Args:
+            data_list: List of data dictionaries from dataset samples.
+
+        Returns:
+            Batched data dictionary ready for model input.
+        """
 
         # prevent edge case causing crash
         if len(data_list) == 0:
@@ -309,7 +373,21 @@ class SpecMolFragDataset(SpecMolDataset):
         SpecMolFragDataset._standard_collate(batch_size,keys,collate_data)
         return collate_data
 
-def get_batch_memory(batch):
+def get_batch_memory(batch: dict) -> tuple[dict, int]:
+    """
+    Calculate memory usage of a batched data dictionary.
+
+    Args:
+        batch: Batched data dictionary.
+
+    Returns:
+        Tuple containing:
+            - Dictionary mapping keys to their memory usage in bytes
+            - Total memory usage in bytes
+
+    Raises:
+        ValueError: If an unsupported data type is encountered.
+    """
 
     batch_mem_d = {}
     for k,v in batch.items():
@@ -324,7 +402,18 @@ def get_batch_memory(batch):
     batch_mem_total = sum(batch_mem_d.values())
     return batch_mem_d, batch_mem_total
 
-def find_largest_batch(dl):
+def find_largest_batch(dl) -> tuple[dict, int]:
+    """
+    Find the batch with largest memory footprint in a DataLoader.
+
+    Args:
+        dl: PyTorch DataLoader to analyze.
+
+    Returns:
+        Tuple containing:
+            - Memory dictionary of the largest batch
+            - Total memory of the largest batch in bytes
+    """
 
     batch_mem_ds, batch_mem_totals = [], []
     for batch in iter(dl):
@@ -342,21 +431,20 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
     def __init__(self, data_source: SpecMolFragDataset, max_num: int, limited_by: str = 'frag_edge',
                     skip_too_big: bool = False, num_samples  = None, 
                     return_batch_at = 0, sampler=None) -> None:
-        """_summary_
+        """
+        Initialize dynamic batch sampler for fragmentation datasets.
 
         Args:
-            dataset (Dataset): 
-            max_num (int): _description_
-            mode (str, optional): _description_. Defaults to 'node'.
-            shuffle (bool, optional): Samples elements randomly each epoch. Defaults to False.
-            skip_too_big (bool, optional): _description_. Defaults to False.
-            num_samples (Optional[int], optional): num of samples to draw. Defaults to None. if None set to all samples in dataset
-            generator
-            return_batch_at 
-            max_batch_sample_size
+            data_source: Dataset to sample from.
+            max_num: Maximum number of nodes/edges per batch.
+            limited_by: Limit batches by 'frag_node' or 'frag_edge'.
+            skip_too_big: Whether to skip samples larger than max_num.
+            num_samples: Number of samples to draw (None = all samples).
+            return_batch_at: Return batch at this interval for gradient accumulation.
+            sampler: Optional sampler for custom sampling order.
+
         Raises:
-            ValueError: _description_
-            ValueError: _description_
+            ValueError: If max_num is not positive or limited_by is invalid.
         """
         if not isinstance(max_num, int) or max_num <= 0:
             raise ValueError("`dag_node` should be a positive integer value "
@@ -380,7 +468,13 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         self._pre_load_batches()
         self._pre_compute_batches()
 
-    def _pre_load_batches(self):
+    def _pre_load_batches(self) -> None:
+        """
+        Pre-load batch metadata (node and edge counts) from all samples.
+
+        Caches the number of nodes and edges for each sample to enable
+        efficient dynamic batch construction.
+        """
 
         # get data meta once and cache them
         assert len(self._data_meta) == 0, len(self._data_meta)
@@ -408,7 +502,13 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
             print("[specmolfrag_dynamic_batch_sampler]", warning_msg)
         print(f"[SpecMolFragDynamicBatchSampler] Expecting {expected_total}/{len(self.data_source)} samples with skip_too_big:{self._skip_too_big}")
 
-    def _pre_compute_batches(self):
+    def _pre_compute_batches(self) -> None:
+        """
+        Pre-compute batch indices based on size constraints.
+
+        Groups samples into batches such that the total number of nodes/edges
+        per batch does not exceed max_num.
+        """
         
         self._batches = []
 
@@ -477,11 +577,13 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 class GroupSampler(Sampler):
 
     def __init__(self, data_source: SpecMolFragDataset, sample_k=None, generator=None) -> None:
-        """_summary_
+        """
+        Initialize group-based sampler for balanced sampling across spectrum groups.
 
         Args:
-            data_source (SpecMolFragDataset): _description_
-            sample_k (_type_, optional): _description_. Defaults to None.
+            data_source: Dataset to sample from.
+            sample_k: Number of samples to draw per group (default: 3).
+            generator: Optional random number generator for reproducibility.
         """
         self.data_source = data_source
         self.num_samples = None
@@ -491,7 +593,13 @@ class GroupSampler(Sampler):
         self._pre_compute_meta()
         self._pre_compute_batches()
 
-    def _pre_compute_meta(self):
+    def _pre_compute_meta(self) -> None:
+        """
+        Pre-compute metadata mapping group IDs to sample indices.
+
+        Builds a dictionary mapping each group_id to the list of dataset
+        indices belonging to that group.
+        """
 
         for dataset_idx in range(len(self.data_source)):
             data = self.data_source[dataset_idx]
@@ -503,7 +611,13 @@ class GroupSampler(Sampler):
         for group_id in self._data_meta_d:
             self._data_meta_d[group_id] =  th.tensor(self._data_meta_d[group_id])
 
-    def _pre_compute_batches(self):
+    def _pre_compute_batches(self) -> None:
+        """
+        Pre-compute sampled indices for the epoch.
+
+        Samples up to sample_k indices from each group and shuffles them
+        to create a balanced sampling distribution.
+        """
 
         if self.generator is None:
             seed = int(th.empty((), dtype=th.int64).random_().item())
@@ -540,14 +654,18 @@ class GroupSampler(Sampler):
         return self.num_samples 
     
 def get_group_sampler(ds: SpecMolFragDataset, sampler_type: str, avg_per_group: int, generator) -> WeightedRandomSampler:
-    """get WeightedRandomSampler based on input
+    """
+    Create a weighted random sampler for balanced group/molecule sampling.
 
     Args:
-        ds (SpecMolFragDataset): _description_
-        config_d (dict): _description_
+        ds: Dataset to sample from.
+        sampler_type: Weighting strategy ('group', 'mol', or 'group_mol').
+        avg_per_group: Average number of samples to draw per group.
+        generator: Random number generator for reproducibility.
 
     Returns:
-        _type_: _description_
+        WeightedRandomSampler configured with appropriate sample weights,
+        or None if sampler_type is invalid.
     """
     group_ids, _, spec_per_group, spec_per_mol, group_per_mol = ds.get_group_mol_stats()
 

@@ -21,7 +21,22 @@ class SpecMolDataset(BaseDataset):
         spec_pp_sd: dict = None,
         mol_pp_sd: dict = None,
         **kwargs,
-    ):
+    ) -> None:
+        """
+        Initialize spectrum-molecule paired dataset.
+
+        Args:
+            spec_fp: File path to the spectral data pickle file.
+            mol_fp: File path to the molecular data pickle file.
+            split_dp: Directory path containing split CSV files.
+            split: Name of the data split (e.g., 'train', 'val', 'test').
+            subsample_params: Dictionary of subsampling parameters.
+            spec_params: Dictionary of spectral processing parameters.
+            mol_params: Dictionary of molecular processing parameters.
+            spec_pp_sd: Optional shared dictionary for preprocessed spectral data.
+            mol_pp_sd: Optional shared dictionary for preprocessed molecular data.
+            **kwargs: Additional keyword arguments.
+        """
         BaseDataset.__init__(self)
         self._base_init(
             spec_fp=spec_fp,
@@ -42,13 +57,27 @@ class SpecMolDataset(BaseDataset):
         self._preprocess_mol(mol_pp_sd)
 
     @staticmethod
-    def get_data_dict_types():
-        # return list of data dict type used for caching
-        # Spectral Preprocessed Shared Dictionary: spec_pp_sd
-        # Molecular Preprocessed Shared Dictionary: mol_pp_sd
+    def get_data_dict_types() -> list[str]:
+        """
+        Return list of data dictionary types used for caching.
+
+        Returns:
+            List containing data dictionary type identifiers:
+                - 'spec_pp_sd': Spectral Preprocessed Shared Dictionary
+                - 'mol_pp_sd': Molecular Preprocessed Shared Dictionary
+        """
         return ["spec_pp_sd", "mol_pp_sd"]
 
-    def _get_mol_graph_size(self, mol_data):
+    def _get_mol_graph_size(self, mol_data: dict) -> int:
+        """
+        Calculate memory usage of molecular graph data.
+
+        Args:
+            mol_data: Dictionary containing molecular graph representations.
+
+        Returns:
+            Memory size in bytes of the molecular graph data.
+        """
         # if self.mol_params["pyg"]:
         #   mol_pyg = mol_data["mol_pyg"]
         #   mol_graph_size = get_pyg_memory_usage(mol_pyg)
@@ -57,7 +86,13 @@ class SpecMolDataset(BaseDataset):
         mol_graph_size = get_mol_graph_size(mol_data, self.mol_params)
         return mol_graph_size
 
-    def _preprocess_mol(self, mol_pp_sd: dict):
+    def _preprocess_mol(self, mol_pp_sd: dict) -> None:
+        """
+        Preload and pre-process all molecular data into shared dictionary.
+
+        Args:
+            mol_pp_sd: Shared dictionary to store preprocessed molecular data.
+        """
         # preload and pre-process molecules
         if self.mol_params["preprocess"]:
             self.mol_datas = mol_pp_sd
@@ -70,7 +105,16 @@ class SpecMolDataset(BaseDataset):
                 self.mol_datas[mol_entry["mol_id"]] = mol_data
             print(f"> total_mol_graph_size: {total_mol_graph_size / 1e6:.2f} MB")
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict:
+        """
+        Get a single spectrum-molecule pair sample from the dataset.
+
+        Args:
+            idx: Index of the sample to retrieve.
+
+        Returns:
+            Dictionary containing both spectral and molecular data.
+        """
         spec_entry = self.spec_df.iloc[idx]
         mol_id = spec_entry["mol_id"]
         mol_entry = self.mol_df.loc[mol_id]
@@ -85,7 +129,20 @@ class SpecMolDataset(BaseDataset):
         data = {**spec_data, **mol_data}
         return data
 
-    def _process_mol(self, mol_entry):
+    def _process_mol(self, mol_entry) -> dict:
+        """
+        Process a single molecular entry into model-ready format.
+
+        Args:
+            mol_entry: DataFrame row containing molecular data.
+
+        Returns:
+            Dictionary containing processed molecular data with keys depending on mol_params:
+                - mol_smiles: SMILES string (if smiles enabled)
+                - mol_fingerprint: Molecular fingerprint (if fingerprint enabled)
+                - mol_pyg: PyG graph representation (if pyg enabled)
+                - mol_mf: MassFormer preprocessed data (if mf enabled)
+        """
         mol_data = {}
         mol = mol_entry["mol"]
         if self.mol_params["smiles"]:
@@ -115,10 +172,25 @@ class SpecMolDataset(BaseDataset):
 
     @staticmethod
     def get_collate_fn():
+        """
+        Get the collate function for batching dataset samples.
+
+        Returns:
+            Collate function to use with DataLoader.
+        """
         return SpecMolDataset.collate_fn
 
     @staticmethod
-    def _special_collate(keys, collate_data):
+    def _special_collate(keys: list[str], collate_data: dict) -> None:
+        """
+        Handle special collation for molecular graph data and MassFormer data.
+
+        Mutates keys and collate_data in-place to batch molecular graphs and special data types.
+
+        Args:
+            keys: List of data keys being collated (modified in-place).
+            collate_data: Dictionary containing lists of values to collate (modified in-place).
+        """
         if "mol_pyg" in keys:
             # batch
             collate_data["mol_pyg"] = Batch.from_data_list(collate_data["mol_pyg"])
@@ -140,15 +212,27 @@ class SpecMolDataset(BaseDataset):
         BaseDataset._special_collate(keys, collate_data)
 
     @staticmethod
-    def collate_fn(data_list):
+    def collate_fn(data_list: list[dict]) -> dict:
+        """
+        Collate a list of spectrum-molecule data samples into a batched dictionary.
+
+        Args:
+            data_list: List of data dictionaries from dataset samples.
+
+        Returns:
+            Batched data dictionary ready for model input.
+        """
         batch_size, keys, collate_data = SpecMolDataset._setup_collate(data_list)
         SpecMolDataset._special_collate(keys, collate_data)
         SpecMolDataset._standard_collate(batch_size, keys, collate_data)
         return collate_data
 
-    def training_data_sanity_check(self):
+    def training_data_sanity_check(self) -> None:
         """
-        basic data sanity check for training time only
+        Perform basic data sanity checks for training time only.
+
+        Raises:
+            AssertionError: If peaks data contains NaN or empty values.
         """
         assert self.spec_df["peaks"].isna().any() == False
         assert (self.spec_df["peaks"] == "").any() == False

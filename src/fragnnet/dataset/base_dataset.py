@@ -27,7 +27,18 @@ class BaseDataset(Dataset):
         split: str,
         subsample_params: dict,
         spec_params: dict,
-    ):
+    ) -> None:
+        """
+        Initialize base dataset with spectral and molecular data.
+
+        Args:
+            spec_fp: File path to the spectral data pickle file.
+            mol_fp: File path to the molecular data pickle file.
+            split_dp: Directory path containing split CSV files.
+            split: Name of the data split (e.g., 'train', 'val', 'test').
+            subsample_params: Dictionary of subsampling parameters.
+            spec_params: Dictionary of spectral processing parameters.
+        """
         self.split = split
         self.subsample_params = subsample_params
         self.spec_params = spec_params
@@ -57,7 +68,27 @@ class BaseDataset(Dataset):
         splits: list[str],
         subsample_params: dict,
         spec_params: dict,
-    ):
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, str, str | None]:
+        """
+        Setup and process spectral and molecular dataframes with split information.
+
+        Args:
+            spec_fp_or_df: File path or DataFrame containing spectral data.
+            mol_fp_or_df: File path or DataFrame containing molecular data.
+            split_dp: Directory path containing split CSV files.
+            splits: List of split names to process.
+            subsample_params: Dictionary of subsampling parameters.
+            spec_params: Dictionary of spectral processing parameters.
+
+        Returns:
+            Tuple containing:
+                - spec_df: Processed spectral DataFrame
+                - mol_df: Processed molecular DataFrame
+                - um_spec_df: Unmerged spectral DataFrame
+                - split_df: Split DataFrame
+                - id_key: Identifier key ('spec_id' or 'group_id')
+                - ce_key: Collision energy key ('ace', 'nce', or None)
+        """
         spec_df = (
             spec_fp_or_df
             if isinstance(spec_fp_or_df, pd.DataFrame)
@@ -250,7 +281,15 @@ class BaseDataset(Dataset):
         mol_df = mol_df.set_index("mol_id", drop=False).sort_index().rename_axis(None)
         return spec_df, mol_df, um_spec_df, split_df, id_key, ce_key
 
-    def _compute_counts(self):
+    def _compute_counts(self) -> None:
+        """
+        Compute and store counts of spectra per molecule, per group, and groups per molecule.
+
+        Sets the following instance attributes:
+            - group_per_mol: Dictionary mapping molecule IDs to group counts.
+            - spec_per_mol: Dictionary mapping molecule IDs to spectrum counts.
+            - spec_per_group: Dictionary mapping group IDs to spectrum counts.
+        """
         self.group_per_mol = (
             self.spec_df[["mol_id", "group_id"]]
             .drop_duplicates()
@@ -279,7 +318,18 @@ class BaseDataset(Dataset):
                 .to_dict()
             )
 
-    def get_group_mol_stats(self):
+    def get_group_mol_stats(self) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+        """
+        Retrieve statistics about groups, molecules, and spectra counts.
+
+        Returns:
+            Tuple of tensors containing:
+                - group_ids: Group IDs for each spectrum
+                - mol_ids: Molecule IDs for each spectrum
+                - spec_per_group_stats: Number of spectra per group
+                - spec_per_mol_stats: Number of spectra per molecule
+                - group_per_mol_stats: Number of groups per molecule
+        """
         group_ids = []
         mol_ids = []
         spec_per_group_stats = []
@@ -311,12 +361,23 @@ class BaseDataset(Dataset):
         )
 
     @staticmethod
-    def get_data_dict_types():
-        # return list of data dict type used for caching
-        # Spectral Preprocessed Shared Dictionary: spec_pp_sd
+    def get_data_dict_types() -> list[str]:
+        """
+        Return list of data dictionary types used for caching.
+
+        Returns:
+            List containing data dictionary type identifiers.
+            - 'spec_pp_sd': Spectral Preprocessed Shared Dictionary
+        """
         return ["spec_pp_sd"]
 
-    def _preprocess_spec(self, spec_pp_sd: dict):
+    def _preprocess_spec(self, spec_pp_sd: dict) -> None:
+        """
+        Preload and pre-process all spectral data into shared dictionary.
+
+        Args:
+            spec_pp_sd: Shared dictionary to store preprocessed spectral data.
+        """
         # preload and pre-process spectra
         if self.spec_params["preprocess"]:
             self.spec_datas = spec_pp_sd
@@ -332,9 +393,20 @@ class BaseDataset(Dataset):
             print(f"> total_spec_data_size: {total_spec_data_size / 1e6:.2f} MB")
 
     @staticmethod
-    def _get_mzs_ints(peaks: list):
+    def _get_mzs_ints(peaks: list) -> tuple[th.Tensor, th.Tensor]:
         """
-        convert peaks to tensors, it is caller's responsibility to make sure data is valid
+        Convert peak list to m/z and intensity tensors.
+
+        Args:
+            peaks: List of (m/z, intensity) tuples.
+
+        Returns:
+            Tuple containing:
+                - mzs: Tensor of m/z values
+                - ints: Tensor of intensity values
+
+        Note:
+            It is the caller's responsibility to ensure data is valid.
         """
         mzs, ints = [], []
         for peak in peaks:
@@ -347,7 +419,15 @@ class BaseDataset(Dataset):
         # mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
         return mzs, ints
 
-    def _setup_prec_type_to_idx(self):
+    def _setup_prec_type_to_idx(self) -> None:
+        """
+        Setup bidirectional mappings between precursor types and indices.
+
+        Sets the following instance attributes:
+            - prec_type_to_idx: Dictionary mapping precursor type strings to indices.
+            - idx_to_prec_type: Dictionary mapping indices to precursor type strings.
+            - num_prec_types: Total number of precursor types.
+        """
         prec_types = sorted(self.spec_params["prec_types"])
         assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types), (
             prec_types
@@ -360,7 +440,15 @@ class BaseDataset(Dataset):
         }
         self.num_prec_types = len(prec_types)
 
-    def _setup_inst_type_to_idx(self):
+    def _setup_inst_type_to_idx(self) -> None:
+        """
+        Setup bidirectional mappings between instrument types and indices.
+
+        Sets the following instance attributes:
+            - inst_type_to_idx: Dictionary mapping instrument type strings to indices.
+            - idx_to_inst_type: Dictionary mapping indices to instrument type strings.
+            - num_inst_types: Total number of instrument types.
+        """
         inst_types = sorted(self.spec_params["inst_types"])
         self.inst_type_to_idx = {
             inst_type: idx for idx, inst_type in enumerate(inst_types)
@@ -370,7 +458,30 @@ class BaseDataset(Dataset):
         }
         self.num_inst_types = len(inst_types)
 
-    def _process_spec(self, spec_entry):
+    def _process_spec(self, spec_entry: pd.Series) -> dict:
+        """
+        Process a single spectral entry into model-ready format.
+
+        Args:
+            spec_entry: DataFrame row containing spectral data.
+
+        Returns:
+            Dictionary containing processed spectral data with keys depending on spec_params:
+                - spec_mzs: m/z values (if sparse)
+                - spec_ints: Intensity values (if sparse)
+                - spec_prec_type: Precursor type index (if prec_type enabled)
+                - spec_prec_type_str: Precursor type string (if prec_type_str enabled)
+                - spec_inst_type: Instrument type index (if inst_type enabled)
+                - spec_prec_mass_diff: Precursor mass difference (if prec_mass_diff enabled)
+                - spec_ce: Collision energy values (if nce or ace enabled)
+                - spec_prec_mz: Precursor m/z value (if prec_mz enabled)
+                - spec_unique_id: Unique identifier (if unique_id enabled)
+                - group_id: Group identifier (if unique_id enabled)
+                - mol_id: Molecule identifier (if unique_id enabled)
+                - spec_per_mol: Spectra count per molecule (if counts enabled)
+                - group_per_mol: Groups count per molecule (if counts enabled)
+                - spec_per_group: Spectra count per group (if counts enabled)
+        """
         spec_data = {}
         # peak data
         mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
@@ -429,18 +540,54 @@ class BaseDataset(Dataset):
             spec_data["spec_per_group"] = spec_per_group
         return spec_data
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict:
+        """
+        Get a single data sample from the dataset.
+
+        Args:
+            idx: Index of the sample to retrieve.
+
+        Returns:
+            Dictionary containing the processed data sample.
+
+        Raises:
+            NotImplementedError: Must be implemented by subclasses.
+        """
         raise NotImplementedError()
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """
+        Get the total number of samples in the dataset.
+
+        Returns:
+            Number of spectral entries in the dataset.
+        """
         return len(self.spec_df)
 
     @staticmethod
     def get_collate_fn():
+        """
+        Get the collate function for batching dataset samples.
+
+        Returns:
+            Collate function to use with DataLoader.
+        """
         return BaseDataset.collate_fn
 
     @staticmethod
-    def _setup_collate(data_list):
+    def _setup_collate(data_list: list[dict]) -> tuple[int, list[str], dict]:
+        """
+        Setup initial collation structure for batching.
+
+        Args:
+            data_list: List of data dictionaries from dataset samples.
+
+        Returns:
+            Tuple containing:
+                - batch_size: Number of samples in the batch
+                - keys: List of data keys to collate
+                - collate_data: Dictionary with lists of values for each key
+        """
         batch_size = len(data_list)
         keys = list(data_list[0].keys())
         collate_data = {key: [] for key in keys}
@@ -450,7 +597,16 @@ class BaseDataset(Dataset):
         return batch_size, keys, collate_data
 
     @staticmethod
-    def _special_collate(keys, collate_data):
+    def _special_collate(keys: list[str], collate_data: dict) -> None:
+        """
+        Handle special collation for sparse spectral data and collision energies.
+
+        Mutates keys and collate_data in-place to batch sparse tensors efficiently.
+
+        Args:
+            keys: List of data keys being collated (modified in-place).
+            collate_data: Dictionary containing lists of values to collate (modified in-place).
+        """
         # handle sparse spectra
         if "spec_ints" in keys and "spec_mzs" in keys:
             # create batch_idxs
@@ -477,8 +633,20 @@ class BaseDataset(Dataset):
             keys.remove("spec_ce")
 
     @staticmethod
-    def _standard_collate(batch_size, keys, collate_data):
-        """mutates keys and collate_data"""
+    def _standard_collate(batch_size: int, keys: list[str], collate_data: dict) -> None:
+        """
+        Perform standard collation for generic data types.
+
+        Mutates keys and collate_data in-place. Handles lists, tensors, and numpy arrays.
+
+        Args:
+            batch_size: Number of samples in the batch.
+            keys: List of data keys being collated (modified in-place).
+            collate_data: Dictionary containing lists of values to collate (modified in-place).
+
+        Raises:
+            TypeError: If an unsupported data type is encountered.
+        """
 
         # handle generic data
         for key in keys:
@@ -505,5 +673,17 @@ class BaseDataset(Dataset):
         collate_data["batch_size"] = th.tensor(batch_size, dtype=th.long)
 
     @staticmethod
-    def collate_fn(data_list):
+    def collate_fn(data_list: list[dict]) -> dict:
+        """
+        Collate a list of data samples into a batched dictionary.
+
+        Args:
+            data_list: List of data dictionaries from dataset samples.
+
+        Returns:
+            Batched data dictionary ready for model input.
+
+        Raises:
+            NotImplementedError: Must be implemented by subclasses.
+        """
         raise NotImplementedError()
