@@ -31,7 +31,14 @@ dev = [
     "wandb",
     "notebook",
     "ipywidgets",
-    "CairoSVG"
+    "CairoSVG",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-benchmark>=4.0",
+    "mypy>=1.0",
+    "ruff>=0.1.0",
+    "black>=23.0",
+    "isort>=5.12"
 ]
 
 [tool.setuptools]
