@@ -461,10 +461,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
         
         # Aggregate atom embeddings per fragment using pooling
-		# Use index_select for memory efficiency (avoids creating huge intermediate tensors)
-		frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:,1])
+        # Use index_select for memory efficiency (avoids creating huge intermediate tensors)
+        frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:,1])
         frag_node_mask_embed = self.mol_pool(
-			frag_node_embed,
+            frag_node_embed,
             frag_node_mask_idxs[:,0]
         )
         # # Original scatter_reduce implementation (commented out):
@@ -477,8 +477,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         # )
 
         # Aggregate rest node embeddings per fragment using pooling
-		# Use index_select for memory efficiency (avoids creating huge intermediate tensors)
-		rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:,1])
+        # Use index_select for memory efficiency (avoids creating huge intermediate tensors)
+        rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:,1])
         rest_node_mask_embed = self.mol_pool(
             mol_embed_gnn[rest_node_mask_idx[:,1]],
             rest_node_mask_idx[:,0]
@@ -535,11 +535,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             frag_edge_node_idxs = frag_edge_index[0][frag_edge_mask_idxs[:,0]]
             frag_edge_offsets = mol_num_nodes[th.bucketize(frag_edge_node_idxs,frag_num_nodes,right=True)-1]
             frag_edge_mask_idxs[:,1] = frag_edge_mask_idxs[:,1] + frag_edge_offsets
-			# Use index_select for memory efficiency instead of direct indexing
-			frag_edge_embed = th.index_select(mol_embed_gnn, 0, frag_edge_mask_idxs[:,1])
+            # Use index_select for memory efficiency instead of direct indexing
+            frag_edge_embed = th.index_select(mol_embed_gnn, 0, frag_edge_mask_idxs[:,1])
             frag_edge_mask_embed = scatter_reduce(
                 src=mol_embed_gnn[frag_edge_mask_idxs[:,1]],
-				src=frag_edge_embed,
+                src=frag_edge_embed,
                 index=frag_edge_mask_idxs[:,0:1].expand(-1,mol_embed_gnn.shape[1]),
                 reduce="sum",
                 dim_size=batch_frag_num_edges
@@ -748,18 +748,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             assert self.frag_embed_combine == "avg", self.frag_embed_combine
             frag_embed_parts = [0.5*frag_embed_gnn + 0.5*frag_embed_node]
         
-		# Cache unique batch counts to avoid redundant computation (Memory Opt #1)
-		if self.ce_insert_location == "mlp" or self.prec_insert_location == "mlp" or self.inst_insert_location == "mlp":
-			unique_batch_counts = th.unique(frag_node_batch_idxs, return_counts=True)[1]
-			if self.ce_insert_location == "mlp":
-				mlp_ce_embed = th.repeat_interleave(ce_embed, unique_batch_counts, dim=0)
-				frag_embed_parts.append(mlp_ce_embed)
-			if self.prec_insert_location == "mlp":
-				mlp_prec_embed = th.repeat_interleave(prec_embed, unique_batch_counts, dim=0)
-				frag_embed_parts.append(mlp_prec_embed)
-			if self.inst_insert_location == "mlp":
-				mlp_inst_embed = th.repeat_interleave(inst_embed, unique_batch_counts, dim=0)
-				frag_embed_parts.append(mlp_inst_embed)
+        # Cache unique batch counts to avoid redundant computation (Memory Opt #1)
+        if self.ce_insert_location == "mlp" or self.prec_insert_location == "mlp" or self.inst_insert_location == "mlp":
+            unique_batch_counts = th.unique(frag_node_batch_idxs, return_counts=True)[1]
+            if self.ce_insert_location == "mlp":
+                mlp_ce_embed = th.repeat_interleave(ce_embed, unique_batch_counts, dim=0)
+                frag_embed_parts.append(mlp_ce_embed)
+            if self.prec_insert_location == "mlp":
+                mlp_prec_embed = th.repeat_interleave(prec_embed, unique_batch_counts, dim=0)
+                frag_embed_parts.append(mlp_prec_embed)
+            if self.inst_insert_location == "mlp":
+                mlp_inst_embed = th.repeat_interleave(inst_embed, unique_batch_counts, dim=0)
+                frag_embed_parts.append(mlp_inst_embed)
 
         frag_embed = th.cat(frag_embed_parts, dim=1)
         frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs, self.mlp_output_dim)
@@ -933,18 +933,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             # print(scatter_logsumexp(frag_edge_logprobs,frag_edge_batch_idxs))
             frag_node_h_counts = get_node_feats(frag_x,frag_node_feat_idxs,"h_counts")
             frag_edge_h_ranges = get_edge_feats(frag_edge_attr,frag_edge_feat_idxs,"h_range")
-			# Memory Opt #2: Use einsum to compute h_diffs without Cartesian product expansion
-			src_h_counts = frag_node_h_counts[frag_edge_index[0]]  # (num_edges,)
-			dst_h_counts = frag_node_h_counts[frag_edge_index[1]]  # (num_edges,)
-			frag_edge_h_diffs = th.einsum('i,j->ij', src_h_counts, th.ones_like(dst_h_counts)).reshape(src_h_counts.shape[0], -1)
+            # Memory Opt #2: Use einsum to compute h_diffs without Cartesian product expansion
+            src_h_counts = frag_node_h_counts[frag_edge_index[0]]  # (num_edges,)
+            dst_h_counts = frag_node_h_counts[frag_edge_index[1]]  # (num_edges,)
+            frag_edge_h_diffs = th.einsum('i,j->ij', src_h_counts, th.ones_like(dst_h_counts)).reshape(src_h_counts.shape[0], -1)
             frag_edge_h_range_masks = th.logical_or(
                 frag_edge_h_diffs<frag_edge_h_ranges[:,0].unsqueeze(-1), 
                 frag_edge_h_diffs>frag_edge_h_ranges[:,1].unsqueeze(-1)
             )
-			# Memory Opt #3: Use einsum to compute logprobs without full Cartesian product expansion
-			src_formula_logprobs = frag_node_formula_logprobs[frag_edge_index[0]]  # (num_edges, mlp_output_dim)
-			dst_formula_logprobs = frag_node_formula_logprobs[frag_edge_index[1]]  # (num_edges, mlp_output_dim)
-			frag_edge_h_logprobs = th.einsum('ni,nj->nij', src_formula_logprobs, dst_formula_logprobs).reshape(len(src_formula_logprobs), -1) 
+            # Memory Opt #3: Use einsum to compute logprobs without full Cartesian product expansion
+            src_formula_logprobs = frag_node_formula_logprobs[frag_edge_index[0]]  # (num_edges, mlp_output_dim)
+            dst_formula_logprobs = frag_node_formula_logprobs[frag_edge_index[1]]  # (num_edges, mlp_output_dim)
+            frag_edge_h_logprobs = th.einsum('ni,nj->nij', src_formula_logprobs, dst_formula_logprobs).reshape(len(src_formula_logprobs), -1) 
 
         else:
 

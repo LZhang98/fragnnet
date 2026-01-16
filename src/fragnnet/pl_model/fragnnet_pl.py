@@ -333,12 +333,12 @@ class FraGNNetPL(SpectrumPL):
                     ]
                 )
             # Add pairwise losses if weights are positive
-			if self.hparams.pairwise_cosine_loss_weight > 0:
+            if self.hparams.pairwise_cosine_loss_weight > 0:
                 loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
-			if self.hparams.pairwise_jss_loss_weight > 0:
+            if self.hparams.pairwise_jss_loss_weight > 0:
                 loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
-			if self.hparams.pairwise_cross_entropy_loss_weight > 0:
-				loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
+            if self.hparams.pairwise_cross_entropy_loss_weight > 0:
+                loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
         else:
             # If extra losses are skipped, add specific ones if their weights are non-zero
             if not (
@@ -476,12 +476,12 @@ class FraGNNetPL(SpectrumPL):
                         ]
                     )
 
-			if self.hparams.pairwise_cosine_loss_weight > 0:
+            if self.hparams.pairwise_cosine_loss_weight > 0:
                 loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
-			if self.hparams.pairwise_jss_loss_weight > 0:
+            if self.hparams.pairwise_jss_loss_weight > 0:
                 loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
-			if self.hparams.pairwise_cross_entropy_loss_weight > 0:
-				loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
+            if self.hparams.pairwise_cross_entropy_loss_weight > 0:
+                loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
 
@@ -503,23 +503,23 @@ class FraGNNetPL(SpectrumPL):
         edge_h_transfer_loss_fn = get_edge_loss_fn(
             self.hparams.edge_h_transfer_loss_fn, 4.0
         )  # ,1.0)
-	def _setup_loss_fn(self):
+    def _setup_loss_fn(self):
 
-		# cross entropy
-		sparse_ce_fn = get_sparse_cross_entropy_fn(
-			dist=self.hparams.output_distribution,
-			vectorized=self.hparams.loss_vectorized,
-			tolerance=self.tolerance,
-			relative=self.relative,
-			tolerance_min_mz=self.tolerance_min_mz,
-			oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
-			gaussian_renormalize=self.hparams.gaussian_renormalize,
-			pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
-			loss_batch_size=self.hparams.loss_batch_size
-		)
-		# edge loss
-		edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
-		edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
+        # cross entropy
+        sparse_ce_fn = get_sparse_cross_entropy_fn(
+            dist=self.hparams.output_distribution,
+            vectorized=self.hparams.loss_vectorized,
+            tolerance=self.tolerance,
+            relative=self.relative,
+            tolerance_min_mz=self.tolerance_min_mz,
+            oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
+            gaussian_renormalize=self.hparams.gaussian_renormalize,
+            pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
+            loss_batch_size=self.hparams.loss_batch_size
+        )
+        # edge loss
+        edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
+        edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
 
         # binned cosine distance
         def cos_dist_fn(
@@ -1085,9 +1085,9 @@ class FraGNNetPL(SpectrumPL):
                 )
 
                 pairwise_sim_mse = F.mse_loss(pred_sim, true_sim)
-				loss = loss + self.hparams.pairwise_cosine_loss_weight * pairwise_sim_mse
-				# expand batch-level scalar to per-sample tensor for metric tracking
-				loss_d[f"pairwise_cossine_{self.hparams.mz_bin_res}"] = pairwise_sim_mse * th.ones([batch_size], device=pairwise_sim_mse.device, dtype=pairwise_sim_mse.dtype)
+                loss = loss + self.hparams.pairwise_cosine_loss_weight * pairwise_sim_mse
+                # expand batch-level scalar to per-sample tensor for metric tracking
+                loss_d[f"pairwise_cossine_{self.hparams.mz_bin_res}"] = pairwise_sim_mse * th.ones([batch_size], device=pairwise_sim_mse.device, dtype=pairwise_sim_mse.dtype)
                 )
                 loss_d[f"pairwise_cossine_{self.hparams.mz_bin_res}"] = (
                     pairwise_sim_mse.expand(batch_size)
@@ -1096,8 +1096,8 @@ class FraGNNetPL(SpectrumPL):
             # Pairwise JSS MSE loss
             if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
                 batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
-				true_sim = get_pairwise_jss_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
-				pred_sim = get_pairwise_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+                true_sim = get_pairwise_jss_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+                pred_sim = get_pairwise_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
                     true_logprobs,
                     true_batch_idxs,
                     batch_size,
@@ -1116,24 +1116,24 @@ class FraGNNetPL(SpectrumPL):
                 )
 
                 pairwise_jss_mse = F.mse_loss(pred_sim, true_sim)
-				loss = loss + self.hparams.pairwise_jss_loss_weight * pairwise_jss_mse
-				# expand batch-level scalar to per-sample tensor for metric tracking
-				loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = pairwise_jss_mse * th.ones([batch_size], device=pairwise_jss_mse.device, dtype=pairwise_jss_mse.dtype)
+                loss = loss + self.hparams.pairwise_jss_loss_weight * pairwise_jss_mse
+                # expand batch-level scalar to per-sample tensor for metric tracking
+                loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = pairwise_jss_mse * th.ones([batch_size], device=pairwise_jss_mse.device, dtype=pairwise_jss_mse.dtype)
                 )
                 loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = (
                     pairwise_jss_mse.expand(batch_size)
                 )
 
-			# Pairwise cross-entropy MSE loss
-			if f"pairwise_cross_entropy_{self.hparams.mz_bin_res}" in self.loss_names:
-				batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
-				true_sim = get_pairwise_cross_entropy(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
-				pred_sim = get_pairwise_cross_entropy(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+            # Pairwise cross-entropy MSE loss
+            if f"pairwise_cross_entropy_{self.hparams.mz_bin_res}" in self.loss_names:
+                batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
+                true_sim = get_pairwise_cross_entropy(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+                pred_sim = get_pairwise_cross_entropy(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
 
-				pairwise_ce_mse = F.mse_loss(pred_sim, true_sim)
-				loss = loss + self.hparams.pairwise_cross_entropy_loss_weight * pairwise_ce_mse
-				# expand batch-level scalar to per-sample tensor for metric tracking
-				loss_d[f"pairwise_cross_entropy_{self.hparams.mz_bin_res}"] = pairwise_ce_mse * th.ones([batch_size], device=pairwise_ce_mse.device, dtype=pairwise_ce_mse.dtype)
+                pairwise_ce_mse = F.mse_loss(pred_sim, true_sim)
+                loss = loss + self.hparams.pairwise_cross_entropy_loss_weight * pairwise_ce_mse
+                # expand batch-level scalar to per-sample tensor for metric tracking
+                loss_d[f"pairwise_cross_entropy_{self.hparams.mz_bin_res}"] = pairwise_ce_mse * th.ones([batch_size], device=pairwise_ce_mse.device, dtype=pairwise_ce_mse.dtype)
             # finally, update the loss
             loss_d["loss"] = loss
 
