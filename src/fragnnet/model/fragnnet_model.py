@@ -357,8 +357,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         if hasattr(self, "m_ce_embedder"):
             self.m_ce_embedder = th.compile(self.m_ce_embedder, **kwargs)
         if check_pyg_compile():
-            self.mol_embedder = pyg.compile(self.mol_embedder, **kwargs)
-            self.frag_embedder = pyg.compile(self.frag_embedder, **kwargs)
+            self.mol_embedder = pyg.compile(self.mol_embedder, **kwargs)  # type: ignore[assignment]
+            self.frag_embedder = pyg.compile(self.frag_embedder, **kwargs)  # type: ignore[assignment]
 
     def forward(
         self,
@@ -428,6 +428,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             frag_pyg.batch,
         )
 
+        # Type assertions for batch indices (PyG types them as Any | None)
+        assert mol_batch is not None, "mol_batch must not be None"
+        assert frag_batch is not None, "frag_batch must not be None"
+
         device = mol_num_nodes.device
         # int_dtype = mol_edge_index.dtype
         float_dtype = mol_edge_attr.dtype
@@ -447,17 +451,22 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         # get inst value
         inst_embed = self.embed_inst(spec_inst_type)
 
+        # Type assertions for embedding tensors (narrow types from Any | None to Tensor)
+
         if self.ce_insert_location == "mol":
+            assert ce_embed is not None, "ce_embed must not be None"
             mol_ce_embed = th.repeat_interleave(
                 ce_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
             )
             mol_x = th.cat([mol_x, mol_ce_embed], dim=1)
         if self.prec_insert_location == "mol":
+            assert prec_embed is not None, "prec_embed must not be None"
             mol_prec_embed = th.repeat_interleave(
                 prec_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
             )
             mol_x = th.cat([mol_x, mol_prec_embed], dim=1)
         if self.inst_insert_location == "mol":
+            assert inst_embed is not None, "inst_embed must not be None"
             mol_inst_embed = th.repeat_interleave(
                 inst_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
             )
