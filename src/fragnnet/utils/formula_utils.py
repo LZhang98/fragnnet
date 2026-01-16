@@ -250,7 +250,7 @@ def get_isotopes(atomicno: int, pct_thold: float = 0.01) -> list[tuple[int, floa
     """
 
     mass_probs = []
-    pt = Chem.GetPeriodicTable()
+    pt = PERIODIC_TABLE
 
     if atomicno not in ISOTOPES_DICT:
         return mass_probs

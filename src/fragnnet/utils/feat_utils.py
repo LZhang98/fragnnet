@@ -190,12 +190,12 @@ class MolGraph:
         Returns:
             PyTorch Geometric Data object with node and edge features.
         """
-
+        mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
         bond_inds = mol_graph["bond_tuples"]
         bond_feats = mol_graph["bond_feats"]
         atom_feats = mol_graph["atom_feats"]
 
-        g = pyg.data.Data(
+        g = Data(
             x=th.from_numpy(atom_feats).float(),
             edge_index=th.from_numpy(bond_inds).long().transpose(1, 0),
             edge_attr=th.from_numpy(bond_feats).float(),
