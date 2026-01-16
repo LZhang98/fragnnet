@@ -1,24 +1,43 @@
 import copy
 import math
+from typing import Any
 
 import torch as th
 import torch.nn as nn
 
 
-def get_clones(module, N):
+def get_clones(module: nn.Module, N: int) -> nn.ModuleList:
+    """Create N deep copies of a PyTorch module.
+
+    Args:
+        module: PyTorch module to clone
+        N: Number of clones to create
+
+    Returns:
+        ModuleList containing N deep copies of the input module
+    """
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
 
 def build_lr_scheduler(
-    optimizer, decay_rate: float, decay_steps: int = 5000, warmup_steps: int = 1000
-):
-    """build_lr_scheduler.
+    optimizer: th.optim.Optimizer,
+    decay_rate: float,
+    decay_steps: int = 5000,
+    warmup_steps: int = 1000,
+) -> th.optim.lr_scheduler.LambdaLR:
+    """Build learning rate scheduler with warmup and exponential decay.
+
+    Creates a learning rate schedule that applies linear warmup followed by
+    exponential decay with a specified decay rate.
 
     Args:
-        optimizer:
-        decay_rate (float): decay_rate
-        decay_steps (int): decay_steps
-        warmup_steps (int): warmup_steps
+        optimizer: PyTorch optimizer to schedule
+        decay_rate: Base for exponential decay (e.g., 0.1 for 10x decay per cycle)
+        decay_steps: Number of steps between decay applications (default: 5000)
+        warmup_steps: Number of steps for linear warmup (default: 1000)
+
+    Returns:
+        LambdaLR scheduler object
     """
 
     def lr_lambda(step):
@@ -34,7 +53,17 @@ def build_lr_scheduler(
     return scheduler
 
 
-def nan_forward_hook(self, input, output):
+def nan_forward_hook(self: nn.Module, input: Any, output: Any) -> None:
+    """Forward hook to detect NaN values in module outputs during training.
+
+    Args:
+        self: The module being hooked
+        input: Input to the module (unused)
+        output: Output from the module (checked for NaN values)
+
+    Raises:
+        RuntimeError: If NaN values are detected in the output
+    """
     if isinstance(output, tuple):
         outputs = list(output)
     elif isinstance(output, dict):
@@ -53,7 +82,17 @@ def nan_forward_hook(self, input, output):
             )
 
 
-def nan_backward_hook(self, grad_input, grad_output):
+def nan_backward_hook(self: nn.Module, grad_input: Any, grad_output: Any) -> None:
+    """Backward hook to detect NaN values in gradients during backpropagation.
+
+    Args:
+        self: The module being hooked
+        grad_input: Gradients with respect to module inputs (checked for NaN)
+        grad_output: Gradients with respect to module outputs (checked for NaN)
+
+    Raises:
+        RuntimeError: If NaN values are detected in gradients
+    """
     for i, val in enumerate(grad_input):
         if val is None:
             continue
@@ -80,10 +119,18 @@ def nan_backward_hook(self, grad_input, grad_output):
             )
 
 
-def decompile_jit_ckpt(ckpt):
-    """
-    convert compiled ckpt to normal version and return a patched checkpoint
-    Note this is a in place change
+def decompile_jit_ckpt(ckpt: dict[str, Any]) -> dict[str, Any]:
+    """Convert compiled PyTorch checkpoint to normal uncompiled version.
+
+    Removes `_orig_mod` prefix from compiled model state dict keys and updates
+    the compile flag. This is useful for loading compiled models in non-compiled
+    environments.
+
+    Args:
+        ckpt: Checkpoint dictionary containing 'state_dict' and 'hyper_parameters'
+
+    Returns:
+        Patched checkpoint dictionary with normalized state dict keys
     """
 
     # inspired by
@@ -108,12 +155,31 @@ def decompile_jit_ckpt(ckpt):
     return ckpt
 
 
-def is_ckpt_compiled(ckpt) -> bool:
+def is_ckpt_compiled(ckpt: dict[str, Any]) -> bool:
+    """Check if a checkpoint is from a compiled PyTorch model.
+
+    Args:
+        ckpt: Checkpoint dictionary to check
+
+    Returns:
+        True if checkpoint contains compiled model keys (with '_orig_mod'), False otherwise
+    """
     state_dict = ckpt["state_dict"]
     return any("_orig_mod" in key for key in state_dict)
 
 
-def get_optimizer_class(optimizer_name):
+def get_optimizer_class(optimizer_name: str) -> type:
+    """Get PyTorch optimizer class by name.
+
+    Args:
+        optimizer_name: Name of optimizer ('adam', 'adamw', or 'sgd')
+
+    Returns:
+        PyTorch optimizer class corresponding to the name
+
+    Raises:
+        ValueError: If optimizer name is not recognized
+    """
     if optimizer_name == "adam":
         optimizer_cls = th.optim.Adam
     elif optimizer_name == "adamw":

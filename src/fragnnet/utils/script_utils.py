@@ -25,7 +25,23 @@ from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls
 
 
-def init_wandb_ckpt(run_id, last_ckpt, model_cls, config_d):
+def init_wandb_ckpt(
+    run_id: str,
+    last_ckpt: bool,
+    model_cls: type,
+    config_d: dict[str, Any],
+) -> th.nn.Module:
+    """Initialize model from W&B checkpoint.
+
+    Args:
+        run_id: W&B run ID to download from
+        last_ckpt: Whether to load the last checkpoint (True) or best checkpoint (False)
+        model_cls: Model class to instantiate
+        config_d: Configuration dictionary for model initialization
+
+    Returns:
+        Initialized and loaded model
+    """
     import wandb
 
     # load model
@@ -65,20 +81,64 @@ def init_wandb_ckpt(run_id, last_ckpt, model_cls, config_d):
     return model
 
 
-def select_model_vals(model_to_vals, keys, stack_dim=0):
+def select_model_vals(
+    model_to_vals: dict[str, dict[str, th.Tensor]],
+    keys: list[str],
+    stack_dim: int = 0,
+) -> dict[str, th.Tensor]:
+    """Select and stack specific keys from model value dictionary.
+
+    Args:
+        model_to_vals: Dictionary mapping model names to value dictionaries
+        keys: List of keys to extract from each value dictionary
+        stack_dim: Dimension along which to stack values (default: 0)
+
+    Returns:
+        Dictionary with selected keys stacked into tensors
+    """
     select_d = {k: [] for k in keys}
-    for model, vals in model_to_vals.items():
+    for _, vals in model_to_vals.items():
         for k in keys:
             select_d[k].append(vals[k])
     select_d = {k: th.stack(v, dim=stack_dim) for k, v in select_d.items()}
     return select_d
 
 
-def log_mean(log_p, dim=0):
+def log_mean(
+    log_p: th.Tensor,
+    dim: int = 0,
+) -> th.Tensor:
+    """Compute logarithm of mean in log-probability space.
+
+    Computes: log(mean(exp(log_p))) = logsumexp(log_p) - log(size).
+
+    Args:
+        log_p: Log-probability tensor
+        dim: Dimension along which to compute mean (default: 0)
+
+    Returns:
+        Log of mean along specified dimension
+    """
     return th.logsumexp(log_p, dim=dim) - np.log(log_p.shape[dim])
 
 
-def log_std(log_p, dim=0, correction=1):
+def log_std(
+    log_p: th.Tensor,
+    dim: int = 0,
+    correction: int = 1,
+) -> th.Tensor:
+    """Compute logarithm of standard deviation in log-probability space.
+
+    Computes standard deviation using Bessel's correction.
+
+    Args:
+        log_p: Log-probability tensor
+        dim: Dimension along which to compute standard deviation (default: 0)
+        correction: Bessel's correction factor (default: 1 for unbiased estimate)
+
+    Returns:
+        Log of standard deviation along specified dimension
+    """
     support_size = log_p.shape[dim]
     log_mean_p = log_mean(log_p, dim=dim)
     log_mean_p_sq = log_mean(2 * log_p, dim=dim)
@@ -86,10 +146,26 @@ def log_std(log_p, dim=0, correction=1):
     return 0.5 * (log_var + np.log(support_size) - np.log(support_size - correction))
 
 
-# define sparse kl divergence
+def sparse_kl(
+    log_p: th.Tensor,
+    log_q: th.Tensor,
+    b_idx: th.Tensor,
+    dim_size: int,
+) -> th.Tensor:
+    """Compute sparse Kullback-Leibler divergence.
 
+    Computes KL(P || Q) using scatter reduction for sparse operations.
+    KL is clamped to [0, inf) to handle numerical precision issues.
 
-def sparse_kl(log_p, log_q, b_idx, dim_size):
+    Args:
+        log_p: Log-probability tensor for distribution P
+        log_q: Log-probability tensor for distribution Q
+        b_idx: Batch indices for scatter reduction
+        dim_size: Size of dimension for scatter reduction
+
+    Returns:
+        KL divergence per batch element
+    """
     p = th.exp(log_p)
     kl = scatter_reduce(
         p * (log_p - th.clamp(log_q, min=LOG_ZERO(log_p.dtype))),
@@ -101,7 +177,21 @@ def sparse_kl(log_p, log_q, b_idx, dim_size):
     return kl
 
 
-def pearson_r(x, y, dim=0):
+def pearson_r(
+    x: th.Tensor,
+    y: th.Tensor,
+    dim: int = 0,
+) -> th.Tensor:
+    """Compute Pearson correlation coefficient.
+
+    Args:
+        x: First tensor
+        y: Second tensor
+        dim: Dimension along which to compute correlation (default: 0)
+
+    Returns:
+        Pearson correlation coefficient
+    """
     x_mean = th.mean(x, dim=dim)
     y_mean = th.mean(y, dim=dim)
     x_std = th.std(x, dim=dim)
@@ -301,24 +391,27 @@ def apply_inference_config(
     mol_src: pd.DataFrame | str | None = None,
     spec_src: pd.DataFrame | str | None = None,
 ) -> dict[str, Any]:
-    """_summary_
+    """Apply inference-specific configuration modifications.
+
+    Modifies configuration dictionary for inference evaluation, including batch sizes,
+    preprocessing settings, output options, and model-specific parameters.
 
     Args:
-            config_d (Dict[str, Any]): _description_
-            auxiliary_scores (list): _description_
-            skip_extra_losses (bool): _description_
-            disable_preproc (bool): _description_
-            eval_mz_bin_res (Optional[list], optional): _description_. Defaults to None.
-            dynamic_batch_sampler (Optional[bool], optional): _description_. Defaults to None.
-            num_workers (Optional[int], optional): _description_. Defaults to None.
-            output_formula_str (bool, optional): _description_. Defaults to False.
-            train_batch_size (Optional[int], optional): _description_. Defaults to None.
-            eval_batch_size (Optional[int], optional): _description_. Defaults to None.
-            mol_df (Optional[pd.DataFrame], optional): _description_. Defaults to None.
-            spec_df (Optional[pd.DataFrame], optional): _description_. Defaults to None.
+        config_d: Configuration dictionary to modify
+        auxiliary_scores: List of auxiliary score types to compute
+        skip_extra_losses: Whether to skip extra loss terms
+        disable_preproc: Whether to disable preprocessing in all modules
+        eval_mz_bin_res: M/z bin resolutions for evaluation scoring
+        dynamic_batch_sampler: Whether to use dynamic batch sampling
+        num_workers: Number of data loading workers
+        output_formula_str: Whether to output formula strings
+        train_batch_size: Training batch size override
+        eval_batch_size: Evaluation batch size override
+        mol_src: DataFrame or path to molecule source data
+        spec_src: DataFrame or path to spectrum source data
 
     Returns:
-            Dict[str, Any]: _description_
+        Modified configuration dictionary
     """
     # Common configuration modifications
     if auxiliary_scores is not None:
@@ -458,7 +551,11 @@ OUTPUT_SUBSET_OPTIONS = [
 
 
 def list_output_subset_options() -> list[str]:
-    """Return all valid `output_subset` option tokens."""
+    """List all valid output subset option tokens.
+
+    Returns:
+        List of valid output subset tokens that can be used in inference
+    """
     return OUTPUT_SUBSET_OPTIONS
 
 
@@ -660,15 +757,14 @@ def get_idx_vars(
     return BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS, NB_NODE_IDX_VARS
 
 
-def get_score_types(config_d):
-    """
-    Generate a list of evaluation score types based on the configuration dictionary.
+def get_score_types(config_d: dict[str, Any]) -> list[str]:
+    """Generate a list of evaluation score types based on the configuration dictionary.
 
     Args:
-            config_d: Configuration dictionary containing 'auxiliary_scores' and 'eval_mz_bin_res'
+        config_d: Configuration dictionary containing 'auxiliary_scores' and 'eval_mz_bin_res'
 
     Returns:
-            List of evaluation score types
+        List of evaluation score types
     """
     eval_score_types = []
     for score_type in config_d["auxiliary_scores"]:
@@ -736,16 +832,30 @@ def get_tabular_columns(
 
 
 def run_inference_pkl(
-    model,
-    dataloader,
+    model: th.nn.Module,
+    dataloader: th.utils.data.DataLoader,
     device: th.device,
-    batch_cutoff: int = -1,  # max number of batches to eval (-1 = all)
+    batch_cutoff: int = -1,
     nb_iso: bool = False,
     output_set: set[str] | None = None,
     evaluate: bool = True,
 ) -> dict[str, Any]:
-    """
-    Run inference with optional chunked saving for resumable predictions.
+    """Run inference and return pickled dictionary of results.
+
+    Executes inference on all (or a subset of) batches, with optional index rebatching
+    to consolidate results across batches into a single output dictionary.
+
+    Args:
+        model: Model instance for inference
+        dataloader: DataLoader providing batches
+        device: Device to run inference on
+        batch_cutoff: Maximum number of batches to process (-1 for all)
+        nb_iso: Whether model uses neighbor isotope predictions
+        output_set: Subset of output keys to include (None for all)
+        evaluate: Whether to compute evaluation metrics using ground truth
+
+    Returns:
+        Dictionary with concatenated inference results from all batches
     """
     # setup accumulators and index vars
     cum_num_datapoints = 0
@@ -1033,22 +1143,28 @@ def process_batch_to_tabular_row(
     return_formula_str: bool,
     return_cc_hash: bool,
 ) -> list:
-    """
-    Process a single batch and return list of data rows.
+    """Process a single batch and return list of data rows.
+
+    Converts raw model outputs and batch inputs into tabular format, handling
+    index rebasing, formula/node probability extraction, and optional supplementary
+    fields (formula strings, node canonical SMILES).
 
     Args:
-            batch_input: Input batch data
-            model: Model instance
-            device: Device to run on
-            evaluate: Whether to run evaluation step
-            eval_score_types: List of evaluation score types
-            BATCH_IDX_VARS, NODE_IDX_VARS, FORMULA_IDX_VARS: Index variable names
-            min_peak_int: Minimum peak intensity threshold
-            rebase_indices: Whether to rebase indices
-            return_formula_and_cc: Whether to return formula strings and CCs
+        batch_input: Input batch data dictionary
+        model: Model instance for inference
+        device: Device to run on
+        evaluate: Whether to run evaluation step with ground truth
+        eval_score_types: List of evaluation score types to compute
+        BATCH_IDX_VARS: Names of batch index variables to include in output
+        NODE_IDX_VARS: Names of node index variables to include in output
+        FORMULA_IDX_VARS: Names of formula index variables to include in output
+        min_peak_int: Minimum peak intensity threshold for filtering
+        rebase_indices: Whether to rebase indices to 0-based per-molecule
+        return_formula_str: Whether to include formula strings
+        return_cc_hash: Whether to include node canonical SMILES
 
     Returns:
-            List of data rows for this batch
+        List of data rows for this batch, with one row per spectrum-molecule pair
     """
     spec_ids = batch_input["spec_unique_id"]
     mol_ids = batch_input["mol_id"]
@@ -1449,25 +1565,46 @@ def filter_by_peak_intensity(
     b_pred_node_probs: th.Tensor | None = None,
     b_pred_node_node_idxs: th.Tensor | None = None,
     verbose: bool = False,
-):
-    """
-    Filter predictions based on peak intensity threshold.
-    Keeps original formula and node indices.
+) -> tuple[
+    th.Tensor,
+    th.Tensor,
+    th.Tensor | None,
+    th.Tensor | None,
+    th.Tensor | None,
+    th.Tensor | None,
+    th.Tensor | None,
+    th.Tensor | None,
+    th.Tensor | None,
+    th.Tensor | None,
+    th.Tensor | None,
+    th.Tensor | None,
+]:
+    """Filter predictions based on peak intensity threshold.
+
+    Removes low-intensity peaks and cascades the filtering to associated formulas and nodes.
+    Preserves global index mappings during filtering.
+
     Args:
-            min_peak_int: Minimum peak intensity threshold
-            pred_ints: Predicted intensities for peaks
-            pred_mzs: Predicted m/z values for peaks
-            frag_formula_peak_mzs: m/z values per peak aligned with frag_formula_peak_idxs
-            frag_formula_peak_idxs: Mapping from peaks to local formula indices
-            b_pred_formula_formula_idxs: Global formula indices for predicted formulas
-            b_pred_formula_probs: Predicted formula probabilities
-            b_pred_joint_formula_idxs: Joint formula indices for P(f,n), P(n|f), P(f|n)
-            b_pred_formula_node_probs: Predicted P(n|f) probabilities
-            b_pred_joint_node_idxs: Joint node indices for P(f,n), P(n|f), P(f|n)
-            b_pred_node_formula_probs: Predicted P(f|n) probabilities
-            b_pred_node_probs: Predicted node probabilities
-            b_pred_node_node_idxs: Node indices for predicted nodes
-            verbose: Whether to print verbose output
+        min_peak_int: Minimum peak intensity threshold for filtering
+        pred_ints: Predicted intensities for peaks
+        pred_mzs: Predicted m/z values for peaks
+        frag_formula_peak_mzs: M/z values per peak aligned with frag_formula_peak_idxs
+        frag_formula_peak_idxs: Mapping from peaks to formula indices
+        b_pred_formula_formula_idxs: Global formula indices for predicted formulas
+        b_pred_formula_probs: Predicted formula probabilities P(f)
+        b_pred_joint_formula_idxs: Joint formula indices for P(f,n), P(n|f), P(f|n)
+        b_pred_formula_node_probs: Predicted P(n|f) probabilities
+        b_pred_joint_node_idxs: Joint node indices for P(f,n), P(n|f), P(f|n)
+        b_pred_node_formula_probs: Predicted P(f|n) probabilities
+        b_pred_node_probs: Predicted node probabilities P(n)
+        b_pred_node_node_idxs: Node indices for predicted nodes
+        verbose: Whether to print filtering statistics
+
+    Returns:
+        Tuple of filtered tensors: (pred_ints, pred_mzs, frag_formula_peak_mzs,
+        frag_formula_peak_idxs, b_pred_formula_formula_idxs, b_pred_formula_probs,
+        b_pred_joint_formula_idxs, b_pred_formula_node_probs, b_pred_joint_node_idxs,
+        b_pred_node_formula_probs, b_pred_node_probs, b_pred_node_node_idxs)
     """
     if min_peak_int <= 0:
         return (
