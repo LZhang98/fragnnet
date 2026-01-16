@@ -87,9 +87,7 @@ class SpectrumEncoder(nn.Module):
             self.pool = build_pool_module(pool_type, hidden_dim)
             self.gnn_proj = nn.Linear(hidden_dim, output_dim)
         else:
-            raise ValueError(
-                f"Unsupported spectrum_encoder_type: {spectrum_encoder_type}"
-            )
+            raise ValueError(f"Unsupported spectrum_encoder_type: {spectrum_encoder_type}")
 
     def forward(self, x, batch_idx=None):
         """
@@ -105,9 +103,7 @@ class SpectrumEncoder(nn.Module):
         if self.spectrum_encoder_type == "gnn":
             # x is expected to be a pyg Batch object
             batch = x
-            spec_embed = self.model(
-                batch.x, batch.batch, batch.edge_index, batch.edge_attr
-            )
+            spec_embed = self.model(batch.x, batch.batch, batch.edge_index, batch.edge_attr)
             spec_embed = self.pool(spec_embed, batch.batch)
             spec_embed = self.gnn_proj(spec_embed)
             batch_size = spec_embed.shape[0]

@@ -18,9 +18,6 @@ import torch as th
 import torch.nn.functional as F
 import torch_geometric as pyg
 
-# Fragment index dtype (change here to update everywhere)
-FRAG_INDEX_DTYPE = np.uint16
-
 import fragnnet.frag.compute_frags as compute_frags
 from fragnnet.frag.compute_frags import (
     MASK_DTYPE,
@@ -30,6 +27,9 @@ from fragnnet.frag.compute_frags import (
 from fragnnet.utils.data_utils import mol_from_smiles
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from fragnnet.utils.misc_utils import PPM
+
+# Fragment index dtype (change here to update everywhere)
+FRAG_INDEX_DTYPE = np.uint16
 
 # full list of common elements
 # NOTE: this maybe a bad idea to not cover all the element

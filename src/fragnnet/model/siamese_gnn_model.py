@@ -174,12 +174,8 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
         device = mol_pyg_i.x.device
 
         # Default values for CE, Prec, Inst if not provided
-        batch_size_i = (
-            mol_pyg_i.batch.max().item() + 1 if hasattr(mol_pyg_i, "batch") else 1
-        )
-        batch_size_j = (
-            mol_pyg_j.batch.max().item() + 1 if hasattr(mol_pyg_j, "batch") else 1
-        )
+        batch_size_i = mol_pyg_i.batch.max().item() + 1 if hasattr(mol_pyg_i, "batch") else 1
+        batch_size_j = mol_pyg_j.batch.max().item() + 1 if hasattr(mol_pyg_j, "batch") else 1
 
         if ce_i is None:
             ce_i = th.zeros(batch_size_i, device=device)
@@ -311,12 +307,8 @@ class SiameseGNNModel(nn.Module, CEModel, PrecModel, InstModel):
             proj_j = self.cross_proj(mlp_input_j)
             proj_i_seq = proj_i.unsqueeze(1)  # (B, 1, D)
             proj_j_seq = proj_j.unsqueeze(1)
-            attn_ij, _ = self.cross_mha(
-                query=proj_i_seq, key=proj_j_seq, value=proj_j_seq
-            )
-            attn_ji, _ = self.cross_mha(
-                query=proj_j_seq, key=proj_i_seq, value=proj_i_seq
-            )
+            attn_ij, _ = self.cross_mha(query=proj_i_seq, key=proj_j_seq, value=proj_j_seq)
+            attn_ji, _ = self.cross_mha(query=proj_j_seq, key=proj_i_seq, value=proj_i_seq)
             attn_ij = attn_ij.squeeze(1)
             attn_ji = attn_ji.squeeze(1)
             combined = th.cat([mlp_input_i, attn_ij, mlp_input_j, attn_ji], dim=1)

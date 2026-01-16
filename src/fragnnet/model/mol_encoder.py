@@ -200,9 +200,7 @@ class MolEncoder(nn.Module, CEModel, PrecModel, InstModel):
             mol_x = th.cat([mol_x, mol_inst_embed], dim=1)
 
         # GNN encoding
-        mol_embed_gnn = self.mol_embedder(
-            mol_x, mol_batch, mol_edge_index, mol_edge_attr
-        )
+        mol_embed_gnn = self.mol_embedder(mol_x, mol_batch, mol_edge_index, mol_edge_attr)
         # Pooling to get graph-level embedding
         mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn, mol_batch)
 

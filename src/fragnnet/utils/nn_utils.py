@@ -94,9 +94,7 @@ def decompile_jit_ckpt(ckpt):
         return ckpt
 
     in_state_dict = ckpt["state_dict"]
-    pairings = [
-        (src_key, src_key.replace("._orig_mod", "")) for src_key in in_state_dict.keys()
-    ]
+    pairings = [(src_key, src_key.replace("._orig_mod", "")) for src_key in in_state_dict.keys()]
     # if all(src_key == dest_key for src_key, dest_key in pairings):
     #   return  # Do not write checkpoint if no need to repair!
     out_state_dict = {}
@@ -112,10 +110,7 @@ def decompile_jit_ckpt(ckpt):
 
 def is_ckpt_compiled(ckpt) -> bool:
     state_dict = ckpt["state_dict"]
-    for key in state_dict.keys():
-        if "_orig_mod" in key:
-            return True
-    return False
+    return any("_orig_mod" in key for key in state_dict)
 
 
 def get_optimizer_class(optimizer_name):

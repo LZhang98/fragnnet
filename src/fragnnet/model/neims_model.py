@@ -172,9 +172,7 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
             fh = th.cat([fh, inst_embed], dim=1)
 
         # Predict spectrum using feedforward network
-        pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(
-            fh, spec_prec_mz
-        )
+        pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(fh, spec_prec_mz)
         out_d = {
             "pred_mzs": pred_mzs,
             "pred_logprobs": pred_logprobs,

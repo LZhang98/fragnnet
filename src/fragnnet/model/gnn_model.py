@@ -197,9 +197,7 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
             mol_x = th.cat([mol_x, mol_inst_embed], dim=1)
 
         # GNN encoding
-        mol_embed_gnn = self.mol_embedder(
-            mol_x, mol_batch, mol_edge_index, mol_edge_attr
-        )
+        mol_embed_gnn = self.mol_embedder(mol_x, mol_batch, mol_edge_index, mol_edge_attr)
         # Pooling to get graph-level embedding
         mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn, mol_batch)
         ffn_input = mol_embed_gnn_pool
@@ -213,9 +211,7 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
             ffn_input = th.cat([ffn_input, inst_embed], dim=1)
 
         # Spectrum prediction
-        pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(
-            ffn_input, spec_prec_mz
-        )
+        pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(ffn_input, spec_prec_mz)
         out_d = {
             "pred_mzs": pred_mzs,
             "pred_logprobs": pred_logprobs,

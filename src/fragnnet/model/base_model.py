@@ -94,9 +94,7 @@ class CEModel:
             embedder = get_embedder(
                 self.int_embedder, max_count_int=int(self.ce_max) + 1
             )  # +1 for the shifted range
-            ce_embedder = nn.Sequential(
-                embedder, nn.Linear(embedder.num_dim, self.ce_insert_size)
-            )
+            ce_embedder = nn.Sequential(embedder, nn.Linear(embedder.num_dim, self.ce_insert_size))
             ce_input_dim = self.ce_insert_size
         elif self.ce_insert_type == "embed_clamped":
 
@@ -107,9 +105,7 @@ class CEModel:
                 return ce
 
             embedder = get_embedder(self.int_embedder, max_count_int=int(self.ce_max))
-            ce_embedder = nn.Sequential(
-                embedder, nn.Linear(embedder.num_dim, self.ce_insert_size)
-            )
+            ce_embedder = nn.Sequential(embedder, nn.Linear(embedder.num_dim, self.ce_insert_size))
             ce_input_dim = self.ce_insert_size
         elif self.ce_insert_type == "bin":
 
@@ -185,9 +181,7 @@ class CEModel:
 class PrecModel:
     """Class for handling precursor type embedding."""
 
-    def _prec_init(
-        self, prec_insert_location: str, prec_insert_size: int, prec_num_types: int
-    ):
+    def _prec_init(self, prec_insert_location: str, prec_insert_size: int, prec_num_types: int):
         """
         Initialize precursor embedding configuration and embedding layers.
 
@@ -242,9 +236,7 @@ class PrecModel:
 class InstModel:
     """Class for handling instrument type embedding."""
 
-    def _inst_init(
-        self, inst_insert_location: str, inst_insert_size: int, inst_num_types: int
-    ):
+    def _inst_init(self, inst_insert_location: str, inst_insert_size: int, inst_num_types: int):
         """
         Initialize instrument embedding configuration and embedding layers.
 
