@@ -5,6 +5,9 @@ and bonds. Inspired by the dgllife library.
 
 """
 
+from collections.abc import Sequence
+from typing import Any
+
 import networkx as nx
 import numpy as np
 import scipy
@@ -27,23 +30,29 @@ from fragnnet.utils.frag_utils import (
 
 # TODO: remove this registry
 
-atom_feat_registry = {}
-bond_feat_registry = {}
+atom_feat_registry: dict[str, dict[str, Any]] = {}
+bond_feat_registry: dict[str, dict[str, Any]] = {}
 
 
-def register_bond_feat(cls):
-    """register_bond_feat."""
+def register_bond_feat(cls: type) -> type:
+    """Register a bond featurizer class in the global registry."""
+
     bond_feat_registry[cls.name] = {"fn": cls.featurize, "feat_size": cls.feat_size}
     return cls
 
 
-def register_atom_feat(cls):
-    """register_atom_feat."""
+def register_atom_feat(cls: type) -> type:
+    """Register an atom featurizer class in the global registry."""
+
     atom_feat_registry[cls.name] = {"fn": cls.featurize, "feat_size": cls.feat_size}
     return cls
 
 
-def get_mol_feats_sizes(atom_feats, bond_feats, pe_embed_k):
+def get_mol_feats_sizes(
+    atom_feats: Sequence[str] | None, bond_feats: Sequence[str] | None, pe_embed_k: int
+) -> tuple[int, int]:
+    """Return the dimensions of atom and bond feature vectors for a MolGraph."""
+
     mg = MolGraph(atom_feats, bond_feats, pe_embed_k)
     return mg.num_atom_feats, mg.num_bond_feats
 
@@ -51,27 +60,25 @@ def get_mol_feats_sizes(atom_feats, bond_feats, pe_embed_k):
 class MolGraph:
     def __init__(
         self,
-        atom_feats: list = [
-            "a_onehot",
-            "a_degree",
-            "a_hybrid",
-            "a_formal",
-            "a_radical",
-            "a_ring",
-            "a_mass",
-            "a_chiral",
-        ],
-        bond_feats: list = ["b_degree"],
+        atom_feats: Sequence[str] | None = None,
+        bond_feats: Sequence[str] | None = None,
         pe_embed_k: int = 0,
     ):
-        """__init__
+        """Create a molecular graph featurizer with atom/bond feature sets."""
+        if atom_feats is None:
+            atom_feats = [
+                "a_onehot",
+                "a_degree",
+                "a_hybrid",
+                "a_formal",
+                "a_radical",
+                "a_ring",
+                "a_mass",
+                "a_chiral",
+            ]
+        if bond_feats is None:
+            bond_feats = ["b_degree"]
 
-        Args:
-            atom_feats (list)
-            bond_feats (list)
-            pe_embed_k (int)
-
-        """
         self.pe_embed_k = pe_embed_k
         self.atom_feats = atom_feats
         self.bond_feats = bond_feats
@@ -99,21 +106,18 @@ class MolGraph:
 
     def get_mol_graph(
         self,
-        mol: Chem.Mol,
-        bigraph: str = True,
-    ) -> dict:
-        """get_mol_graph.
+        mol: "Chem.Mol",
+        bigraph: bool = True,
+    ) -> dict[str, np.ndarray]:
+        """Build raw numpy feature tensors for a molecule.
 
         Args:
-            mol (Chem.Mol):
-            bigraph (bool): If true, double all edges.
+            mol: RDKit molecule.
+            bigraph: If ``True``, create bidirectional edges.
 
-        Return:
-            dict:
-                "atom_feats": np.ndarray (|N| x d_n)
-                "bond_feats": np.ndarray (|E| x d_e)
-                "bond_tuples": np.ndarray (|E| x 2)
-
+        Returns:
+            Mapping containing atom features (|N| x d_n), bond features (|E| x d_e),
+            and bond index tuples (|E| x 2).
         """
         all_atoms = mol.GetAtoms()
         all_bonds = mol.GetBonds()
@@ -150,16 +154,8 @@ class MolGraph:
             "bond_tuples": bond_tuples,
         }
 
-    def get_networkx_graph(self, mol: Chem.Mol, bigraph: str = True):
-        """get_networkx_graph.
-
-        Args:
-            mol (Chem.Mol):
-            bigraph (bool): If true, double all edges.
-
-        Return:
-            networkx graph object
-        """
+    def get_networkx_graph(self, mol: "Chem.Mol", bigraph: bool = True) -> nx.Graph:
+        """Convert a molecule into a NetworkX graph with feature attributes."""
         mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
 
         bond_inds = mol_graph["bond_tuples"]
@@ -175,7 +171,7 @@ class MolGraph:
 
         return g
 
-    def get_pyg_graph(self, mol: Chem.Mol, bigraph: str = True):
+    def get_pyg_graph(self, mol: Chem.Mol, bigraph: bool = True) -> pyg.data.Data:
         mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
 
         bond_inds = mol_graph["bond_tuples"]
@@ -209,7 +205,7 @@ class FeatBase:
     name = "base"
 
     @classmethod
-    def featurize(cls, x) -> list:
+    def featurize(cls, x: Any) -> list[int]:
         raise NotImplementedError()
 
 
@@ -220,7 +216,7 @@ class AtomOneHot(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
         return one_hot_encoding(x.GetSymbol(), cls.allowable_set, True)
 
 
@@ -233,7 +229,7 @@ class AtomDegree(FeatBase):
     feat_size = len(allowable_set) + 1 + 2
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
         deg = [x.GetDegree(), x.GetTotalDegree()]
         onehot = one_hot_encoding(deg, cls.allowable_set, True)
         return deg + onehot
@@ -254,7 +250,7 @@ class AtomHybrid(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
         onehot = one_hot_encoding(x.GetHybridization(), cls.allowable_set, True)
         return onehot
 
@@ -268,7 +264,7 @@ class AtomFormal(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
         onehot = one_hot_encoding(x.GetFormalCharge(), cls.allowable_set, True)
         return onehot
 
@@ -282,7 +278,7 @@ class AtomRadical(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
         onehot = one_hot_encoding(x.GetNumRadicalElectrons(), cls.allowable_set, True)
         return onehot
 
@@ -296,7 +292,7 @@ class AtomRing(FeatBase):
     feat_size = len(allowable_set) * 2
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
         onehot_ring = one_hot_encoding(x.IsInRing(), cls.allowable_set, False)
         onehot_aromatic = one_hot_encoding(x.GetIsAromatic(), cls.allowable_set, False)
         return onehot_ring + onehot_aromatic
@@ -316,7 +312,7 @@ class AtomChiral(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
         chiral_onehot = one_hot_encoding(x.GetChiralTag(), cls.allowable_set, True)
         return chiral_onehot
 
@@ -328,7 +324,7 @@ class AtomMass(FeatBase):
     feat_size = 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
         return [x.GetMass() * cls.coef]
 
 
@@ -344,7 +340,7 @@ class BondDegree(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
         return one_hot_encoding(x.GetBondType(), cls.allowable_set, True)
 
 
@@ -364,7 +360,7 @@ class BondStereo(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
         return one_hot_encoding(x.GetStereo(), cls.allowable_set, True)
 
 
@@ -376,7 +372,7 @@ class BondRing(FeatBase):
     feat_size = 2
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
         return one_hot_encoding(x.IsInRing(), [False, True], False)
 
 
@@ -388,23 +384,22 @@ class BondConj(FeatBase):
     feat_size = 2
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
         return one_hot_encoding(x.GetIsConjugated(), [False, True], False)
 
 
-def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
-    """One_hot encoding.
+def one_hot_encoding(x: Any, allowable_set: list[Any], encode_unknown: bool = False) -> list[int]:
+    """One-hot encode ``x`` against an allowable set.
 
-    Code taken from dgllife library
-    https://lifesci.dgl.ai/_modules/dgllife/utils/featurizers.html
+    Code adapted from the DGL LifeSci featurizers.
 
     Args:
-        x: Val to encode
-        allowable_set: Options
-        encode_unknown: If true, encode unk
+        x: Value to encode.
+        allowable_set: Enumerated set of allowable values.
+        encode_unknown: If ``True``, append an unknown bucket and route missing values there.
 
-    Return:
-        list of bools
+    Returns:
+        Binary indicator vector marking the matching allowable value.
     """
 
     if encode_unknown and (allowable_set[-1] is not None):
@@ -413,32 +408,16 @@ def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
     if encode_unknown and (x not in allowable_set):
         x = None
 
-    return list(map(lambda s: int(x == s), allowable_set))
+    return [int(x == s) for s in allowable_set]
 
 
-def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula_peak_probs_list):
-    """Create a batch of molecule and fragment graphs, and collate formula peak information.
-
-    Args:
-        mol_pyg_list (list[pyg.data.Data]): List of PyG molecule graphs.
-        frag_pyg_list (list[pyg.data.Data]): List of PyG fragment graphs.
-        formula_peak_mzs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of m/z values for each mol.
-        formula_peak_probs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of probabilities for each mol.
-
-    Returns:
-        dict: {
-            "mol_pyg": PyG batch of molecules,
-            "frag_pyg": PyG batch of fragments,
-            "mol_num_nodes": Cumulative node counts for molecules,
-            "frag_num_nodes": Cumulative node counts for fragments,
-            "frag_formula_peak_idxs": 1D tensor of formula indices (per peak, per fragment, concatenated),
-            "frag_formula_peak_mzs": 1D tensor of m/z values for nonzero-probability peaks,
-            "frag_formula_peak_probs": 1D tensor of probabilities for nonzero-probability peaks,
-            "frag_formula_sizes": 1D tensor, number of unique formulae per fragment,
-            "frag_formula_cumsizes": 1D tensor, cumulative sum of frag_formula_sizes (for indexing),
-            "frag_formula_peak_sizes": 1D tensor, number of nonzero peaks per fragment,
-        }
-    """
+def batch_mols_frags(
+    mol_pyg_list: Sequence[pyg.data.Data],
+    frag_pyg_list: Sequence[pyg.data.Data],
+    formula_peak_mzs_list: Sequence[th.Tensor],
+    formula_peak_probs_list: Sequence[th.Tensor],
+) -> dict[str, Any]:
+    """Batch molecule/fragment graphs and sparse formula peak tensors."""
     # batch size
     batch_size = len(mol_pyg_list)
     # Convert the input lists of molecules and fragments into PyTorch Geometric data batches
@@ -508,16 +487,8 @@ def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula
     return batched_mol_frag
 
 
-def get_mol_fp(mol, morgan, rdkit, maccs):
-    """function to get the fingerprint of a molecule
-    Args:
-        mol (rdkit.Chem.Mol): molecule
-        morgan (bool): whether to use Morgan fingerprint
-        rdkit (bool): whether to use RDKit fingerprint
-        maccs (bool): whether to use MACCS fingerprint
-    Returns:
-        fp (torch.Tensor): fingerprint of the molecule
-    """
+def get_mol_fp(mol: Chem.Mol, morgan: bool, rdkit: bool, maccs: bool) -> th.Tensor:
+    """Compute concatenated molecular fingerprints as a float tensor."""
     assert morgan or rdkit or maccs
     fps = []
     if morgan:
@@ -533,16 +504,8 @@ def get_mol_fp(mol, morgan, rdkit, maccs):
     return fp
 
 
-def get_mol_fp_size(morgan, rdkit, maccs) -> int:
-    """Get the size of the fingerprint of a molecule
-    Args:
-        mol (rdkit.Chem.Mol): molecule
-        morgan (bool): whether to use Morgan fingerprint
-        rdkit (bool): whether to use RDKit fingerprint
-        maccs (bool): whether to use MACCS fingerprint
-    Returns:
-        size (int): size of the fingerprint
-    """
+def get_mol_fp_size(morgan: bool, rdkit: bool, maccs: bool) -> int:
+    """Return the length of the concatenated fingerprint vector for a test molecule."""
     mol = Chem.MolFromSmiles("CCO")
     fp = get_mol_fp(mol, morgan, rdkit, maccs)
     return fp.shape[0]
@@ -550,28 +513,26 @@ def get_mol_fp_size(morgan, rdkit, maccs) -> int:
 
 def get_mol_graph(
     mol: "rdkit.Chem.Mol",
-    atom_feats: list,
-    bond_feats: list,
-    pe_embed_k: bool,
+    atom_feats: Sequence[str],
+    bond_feats: Sequence[str],
+    pe_embed_k: int,
     bigraph: bool,
 ) -> "torch_geometric.data.Data":
-    """get_mol_graph.
-    Args:
-        mol (rdkit.Chem.Mol): molecule
-        atom_feats (list): list of atom features
-        bond_feats (list): list of bond features
-        pe_embed_k (int): number of random walk steps
-        bigraph (bool): if true, double all edges
-    Returns:
-        mol_pyg (torch_geometric.data.Data): molecule graph
-    """
+    """Create a PyG molecule graph with selected features and optional RWPE."""
 
     mg = MolGraph(atom_feats, bond_feats, pe_embed_k)
     mol_pyg = mg.get_pyg_graph(mol, bigraph=bigraph)
     return mol_pyg
 
 
-def get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges, bigraph):
+def get_frag_graph(
+    dag_pyg: pyg.data.Data,
+    frag_node_feats: Sequence[str],
+    frag_edge_feats: Sequence[str],
+    edges: bool,
+    bigraph: bool,
+) -> pyg.data.Data:
+    """Subselect DAG features and optionally symmetrize edges for fragments."""
     device = dag_pyg.x.device
     # cast
     x = dag_pyg.x.long()
@@ -579,12 +540,11 @@ def get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges, bigraph):
     edge_index = dag_pyg.edge_index.long()
     node_feat_idxs = dag_pyg.node_feat_idxs.long()
     edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
-    num_nodes = dag_pyg.num_nodes
     # select node features
     _x = []
     _node_feat_idxs = [0]
     _node_feat_size = 0
-    for feat, feat_idx in NODE_FEAT_TO_IDX.items():
+    for feat, _ in NODE_FEAT_TO_IDX.items():
         if feat in frag_node_feats:
             _x_cur = get_node_feats(x, node_feat_idxs[0], feat)
             _x.append(_x_cur)
@@ -638,7 +598,7 @@ def get_frag_graph(dag_pyg, frag_node_feats, frag_edge_feats, edges, bigraph):
     return dag_pyg
 
 
-def random_walk_pe(g, k):
+def random_walk_pe(g: pyg.data.Data, k: int) -> th.Tensor:
     """Random Walk Positional Encoding, as introduced in
     `Graph Neural Networks with Learnable Structural and Positional Representations
     <https://arxiv.org/abs/2110.07875>`__
@@ -648,17 +608,16 @@ def random_walk_pe(g, k):
 
     Parameters
     ----------
-    g : DGLGraph
-        The input graph. Must be homogeneous.
+    g : torch_geometric.data.Data
+        Homogeneous PyG graph.
     k : int
-        The number of random walk steps. The paper found the best value to be 16 and 20
-        for two experiments.
+        Number of random walk steps to include.
 
     Returns
     -------
     Tensor
-        The random walk positional encodings of shape :math:`(N, k)`, where :math:`N` is the
-        number of nodes in the input graph.
+        Random walk positional encodings of shape :math:`(N, k)` where :math:`N` is the
+        number of nodes.
 
     Example
     -------
