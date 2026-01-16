@@ -51,12 +51,12 @@ def load_config(template_fp: str, custom_fp: str | None, override: list) -> dict
     """
 
     assert os.path.isfile(template_fp), template_fp
-    with open(template_fp, "r") as template_file:
+    with open(template_fp) as template_file:
         config_d = yaml.load(template_file, Loader=yaml.FullLoader)
     # overwrite parts of the config
     if custom_fp is not None:
         assert os.path.isfile(custom_fp), custom_fp
-        with open(custom_fp, "r") as custom_file:
+        with open(custom_fp) as custom_file:
             custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
         assert all([k in config_d for k in custom_d]), set(custom_d.keys()) - set(
             config_d.keys()
@@ -92,7 +92,7 @@ def load_wandb_config(wandb_config_dp) -> dict:
     wandb_config_dp = os.path.join(wandb_config_dp, "config.yaml")
 
     if os.path.isfile(wandb_config_dp):
-        with open(wandb_config_dp, "r") as wandb_config_file:
+        with open(wandb_config_dp) as wandb_config_file:
             _config_d = yaml.load(wandb_config_file, Loader=yaml.FullLoader)
         del _config_d["wandb_version"]
         del _config_d["_wandb"]
@@ -277,7 +277,7 @@ def init_run(
             job_id_fp = os.path.join("job_id", f"{job_id}.id")
             if os.path.isfile(job_id_fp):
                 is_resume = True
-                with open(job_id_fp, "r") as job_id_file:
+                with open(job_id_fp) as job_id_file:
                     text = job_id_file.read().strip()
                 run_id, old_wandb_dp = text.split(";")
                 wandb_config = load_wandb_config(old_wandb_dp)
