@@ -115,7 +115,7 @@ class FraGNNetPL(SpectrumPL):
             self._load_pretrained_weights(
                 self.hparams.finetune_pretrained_ckpt,
                 strict=self.hparams.finetune_strict_load,
-                shared_components=self.hparams.finetune_finetune_shared_components
+                shared_components=self.hparams.finetune_shared_components
                 if not self.hparams.finetune_shared_all
                 else None,
             )
