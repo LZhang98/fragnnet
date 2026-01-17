@@ -9,9 +9,10 @@ precursor type, and instrument type, and predicts spectra using a feedforward ne
 import torch as th
 import torch.nn as nn
 
-from fragnnet.model.base_model import CEModel, PrecModel, InstModel
+from fragnnet.model.base_model import CEModel, InstModel, PrecModel
 from fragnnet.model.nn_blocks import SpecFFN
 from fragnnet.utils.feat_utils import get_mol_fp_size
+
 
 class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
     """
@@ -50,18 +51,22 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
         inst_insert_location: str,
         inst_insert_size: int,
         inst_types: list[str],
-        log_min: float):
-
+        log_min: float,
+    ):
         # Initialize nn.Module
         super().__init__()
-        
+
         # Store fingerprint configuration
         self.mol_fingerprint_morgan = mol_fingerprint_morgan
         self.mol_fingerprint_rdkit = mol_fingerprint_rdkit
         self.mol_fingerprint_maccs = mol_fingerprint_maccs
-        
+
         # Compute input size from fingerprint types
-        self.mol_fp_dim = get_mol_fp_size(self.mol_fingerprint_morgan, self.mol_fingerprint_rdkit, self.mol_fingerprint_maccs)
+        self.mol_fp_dim = get_mol_fp_size(
+            self.mol_fingerprint_morgan,
+            self.mol_fingerprint_rdkit,
+            self.mol_fingerprint_maccs,
+        )
         self.mlp_input_dim = self.mol_fp_dim
 
         # Initialize collision energy embedding (if used)
@@ -73,21 +78,24 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
             ce_insert_size=ce_insert_size,
             ce_max=ce_max,
             ce_mean=ce_mean,
-            ce_std=ce_std)
+            ce_std=ce_std,
+        )
         self.mlp_input_dim += self.ce_mlp_input_dim
 
         # Initialize precursor type embedding (if used)
         self._prec_init(
             prec_insert_location=prec_insert_location,
             prec_insert_size=prec_insert_size,
-            prec_num_types=len(prec_types))
+            prec_num_types=len(prec_types),
+        )
         self.mlp_input_dim += self.prec_mlp_input_dim
 
         # Initialize instrument type embedding (if used)
         self._inst_init(
             inst_insert_location=inst_insert_location,
             inst_insert_size=inst_insert_size,
-            inst_num_types=len(inst_types))
+            inst_num_types=len(inst_types),
+        )
         self.mlp_input_dim += self.inst_mlp_input_dim
 
         # Feedforward network for spectrum prediction
@@ -103,27 +111,33 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
             prec_mz_offset=ff_prec_mz_offset,
             output_map_size=ff_output_map_size,
             output_activation=ff_output_activation,
-            log_min=log_min
+            log_min=log_min,
         )
 
     def _ce_location_check(self):
-        assert self.ce_insert_location in ["mlp","none"], f"ce_insert_location={self.ce_insert_location} not supported"
+        assert self.ce_insert_location in ["mlp", "none"], (
+            f"ce_insert_location={self.ce_insert_location} not supported"
+        )
 
     def _prec_location_check(self):
-        assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+        assert self.prec_insert_location in ["mlp", "none"], (
+            f"prec_insert_location={self.prec_insert_location} not supported"
+        )
 
     def _inst_location_check(self):
-        assert self.inst_insert_location in ["mlp","none"], f"prec_insert_location={self.inst_insert_location} not supported"
+        assert self.inst_insert_location in ["mlp", "none"], (
+            f"prec_insert_location={self.inst_insert_location} not supported"
+        )
 
     def forward(
         self,
-        mol_fingerprint: th.Tensor, 
+        mol_fingerprint: th.Tensor,
         spec_prec_mz: th.Tensor,
         spec_ce: th.Tensor = None,
         spec_ce_batch_idxs: th.Tensor = None,
         spec_prec_type: th.Tensor = None,
         spec_inst_type: th.Tensor = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Forward pass for NEIMS model.
@@ -163,6 +177,6 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
             "pred_mzs": pred_mzs,
             "pred_logprobs": pred_logprobs,
             "pred_batch_idxs": pred_batch_idxs,
-            "pred_specs": pred_specs
+            "pred_specs": pred_specs,
         }
         return out_d

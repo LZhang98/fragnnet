@@ -1,11 +1,12 @@
-import rdkit.Chem as Chem
 import itertools
-import numpy as np
-import scipy
 import re
+from typing import Literal
+
+import numpy as np
+import rdkit.Chem as Chem
+import scipy
 from pyteomics.mass import Composition
 
-from typing import List, Tuple, Dict, Literal
 from fragnnet.utils.misc_utils import none_or_nan
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
@@ -25,21 +26,27 @@ PREC_TYPE_TO_MASS_DIFF = {
     "[M+Na]+": NA_MASS - ELECTRON_MASS,
     "[M+H+2i]+": H_MASS + 2 * I_MASS - ELECTRON_MASS,
     "[M+K]+": K_MASS - ELECTRON_MASS,
-    "[M+NH4]+": N_MASS + 4*H_MASS - ELECTRON_MASS,
+    "[M+NH4]+": N_MASS + 4 * H_MASS - ELECTRON_MASS,
     "[M-H2O+H]+": -H_MASS - O_MASS - ELECTRON_MASS,
     "[M-2H2O+H]+": -3 * H_MASS - 2 * O_MASS - ELECTRON_MASS,
     "[M+H-NH3]+": -2 * H_MASS + N_MASS - ELECTRON_MASS,
-    "[M]+": - ELECTRON_MASS,
-    "": 0.,
+    "[M]+": -ELECTRON_MASS,
+    "": 0.0,
     # negative stuff
     "[M-H]-": -H_MASS + ELECTRON_MASS,
     "[M-H-CO2]-": -H_MASS + ELECTRON_MASS,
     "[M+Cl]-": CL_MASS + ELECTRON_MASS,
     "[M-H-H2O]-": -3 * H_MASS - O_MASS + ELECTRON_MASS,
     "[M-H+2i]-": -H_MASS + 2 * I_MASS + ELECTRON_MASS,
-    "[M+CH2O2-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,           
-    "[M+CH3COOH-H]-": 2 * C_MASS + 4 * H_MASS + 2 * O_MASS + ELECTRON_MASS, #  M+CH3COO and [M+CH3COOH-H]- are the same, earlier spectraverse used different notation   
-    "[M+HCOOH-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,  # alias for formic acid adduct
+    "[M+CH2O2-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
+    "[M+CH3COOH-H]-": 2 * C_MASS
+    + 4 * H_MASS
+    + 2 * O_MASS
+    + ELECTRON_MASS,  #  M+CH3COO and [M+CH3COOH-H]- are the same, earlier spectraverse used different notation
+    "[M+HCOOH-H]-": C_MASS
+    + 1 * H_MASS
+    + 2 * O_MASS
+    + ELECTRON_MASS,  # alias for formic acid adduct
     "[M+CH3COO]-": 2 * C_MASS + 4 * H_MASS + 2 * O_MASS + ELECTRON_MASS,  # acetate adduct alias
     # some NL adducts
     "[M+H]+_NL": -H_MASS + ELECTRON_MASS,
@@ -51,14 +58,14 @@ PREC_TYPE_TO_CMF_MASS_DIFF = {
     "[M+Na]+": H_MASS - ELECTRON_MASS,
     "[M+H+2i]+": H_MASS - ELECTRON_MASS,
     "[M+K]+": H_MASS - ELECTRON_MASS,
-    "[M+NH4]+": H_MASS - ELECTRON_MASS,                                                                 
+    "[M+NH4]+": H_MASS - ELECTRON_MASS,
     "[M-H2O+H]+": H_MASS - ELECTRON_MASS,
     "[M-2H2O+H]+": H_MASS - ELECTRON_MASS,
     "[M+H-NH3]+": H_MASS - ELECTRON_MASS,
     # negative stuff
     "[M-H]-": -H_MASS + ELECTRON_MASS,
     "[M-H-CO2]-": -H_MASS + ELECTRON_MASS,
-    "[M+Cl]-":  H_MASS + ELECTRON_MASS,
+    "[M+Cl]-": H_MASS + ELECTRON_MASS,
     "[M-H-H2O]-": -H_MASS + ELECTRON_MASS,
     "[M-H+2i]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COOH-H]-": -H_MASS + ELECTRON_MASS,
@@ -74,7 +81,7 @@ PREC_TYPE_TO_FORMULA_DIFF = {
     "[M+K]+": "K1",
     "[M+NH4]+": "N1H4",
     "[M-H2O+H]+": "O-1H-1",
-    "[M-2H2O+H]+":"O-2H-3",
+    "[M-2H2O+H]+": "O-2H-3",
     "[M+H-NH3]+": "H-2N-1",
     "[M]+": "",
     # negative stuff
@@ -89,14 +96,14 @@ PREC_TYPE_TO_FORMULA_DIFF = {
     "[M+CH3COO]-": "C2H3O2",
 }
 
-PREC_TYPE_TO_COMP_DIFF = {
-    k: Composition(v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()
-}
+PREC_TYPE_TO_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()}
 
 NEUTRON_MASS = 1.008665
 
+
 def MASS(element: str | int) -> float:
     return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
+
 
 # Just huge table grabbed for atomic number and its stable isotopes
 # if atomic number is not in this table, that means we should even see it in the sample
@@ -104,88 +111,89 @@ def MASS(element: str | int) -> float:
 # with this we don't need scan atomicno - atomicno * 4
 # src http://moltensalt.org/references/static/downloads/pdf/stable-isotopes.pdf
 # src https://periodictable.com/Elements/043/data.html
-ISOTOPES_DICT = {1: [1, 2],
-                 2: [3, 4],
-                 3: [6, 7],
-                 4: [9],
-                 5: [10, 11],
-                 6: [12, 13],
-                 7: [14, 15],
-                 8: [16, 17, 18],
-                 9: [19],
-                 10: [20, 21, 22],
-                 11: [23],
-                 12: [24, 25, 26],
-                 13: [27],
-                 14: [28, 29, 30],
-                 15: [31],
-                 16: [32, 33, 34, 36],
-                 17: [35, 37],
-                 18: [36, 38, 40],
-                 19: [39, 41],
-                 20: [40, 42, 43, 44, 46],
-                 21: [45],
-                 22: [46, 47, 48, 49, 50],
-                 23: [51],
-                 24: [50, 52, 53, 54],
-                 25: [55],
-                 26: [54, 56, 57, 58],
-                 27: [59],
-                 28: [58, 60, 61, 62, 64],
-                 29: [63, 65],
-                 30: [64, 66, 67, 68, 70],
-                 31: [69, 71],
-                 32: [70, 72, 73, 74],
-                 33: [75],
-                 34: [74, 76, 77, 78, 80],
-                 35: [79, 81],
-                 36: [78, 80, 82, 83, 84, 86],
-                 37: [85],
-                 38: [84, 86, 87, 88],
-                 39: [89],
-                 40: [90, 91, 92, 94],
-                 41: [93],
-                 42: [92, 94, 95, 96, 97, 98],
-                 44: [100, 101, 102, 104, 96, 98, 99],
-                 45: [103],
-                 46: [102, 104, 105, 106, 108, 110],
-                 47: [107, 109],
-                 48: [106, 108, 110, 111, 112, 114],
-                 49: [113],
-                 50: [112, 114, 115, 116, 117, 118, 119, 120, 122, 124],
-                 51: [121, 123],
-                 52: [120, 122, 124, 125, 126],
-                 53: [127],
-                 54: [124, 126, 128, 129, 130, 131, 132, 134, 136],
-                 55: [133],
-                 56: [130, 132, 134, 135, 136, 137, 138],
-                 57: [139],
-                 58: [136, 138, 140, 142],
-                 59: [141],
-                 60: [142, 143, 145, 146, 148],
-                 62: [144, 149, 150, 152, 154],
-                 63: [151, 153],
-                 64: [154, 155, 156, 157, 158, 160],
-                 65: [159],
-                 66: [156, 158, 160, 161, 162, 163, 164],
-                 67: [165],
-                 68: [162, 164, 166, 167, 168, 170],
-                 69: [169],
-                 70: [168, 170, 171, 172, 173, 174, 176],
-                 71: [175],
-                 72: [176, 177, 178, 179, 180],
-                 73: [181],
-                 74: [180, 182, 183, 184, 186],
-                 75: [185],
-                 76: [184, 187, 188, 189, 190, 192],
-                 77: [191, 193],
-                 78: [192, 194, 195, 196, 198],
-                 79: [197],
-                 80: [196, 198, 199, 200, 201, 202, 204],
-                 81: [203, 205],
-                 82: [204, 206, 207, 208],
-                 90: [232]
-                 }
+ISOTOPES_DICT = {
+    1: [1, 2],
+    2: [3, 4],
+    3: [6, 7],
+    4: [9],
+    5: [10, 11],
+    6: [12, 13],
+    7: [14, 15],
+    8: [16, 17, 18],
+    9: [19],
+    10: [20, 21, 22],
+    11: [23],
+    12: [24, 25, 26],
+    13: [27],
+    14: [28, 29, 30],
+    15: [31],
+    16: [32, 33, 34, 36],
+    17: [35, 37],
+    18: [36, 38, 40],
+    19: [39, 41],
+    20: [40, 42, 43, 44, 46],
+    21: [45],
+    22: [46, 47, 48, 49, 50],
+    23: [51],
+    24: [50, 52, 53, 54],
+    25: [55],
+    26: [54, 56, 57, 58],
+    27: [59],
+    28: [58, 60, 61, 62, 64],
+    29: [63, 65],
+    30: [64, 66, 67, 68, 70],
+    31: [69, 71],
+    32: [70, 72, 73, 74],
+    33: [75],
+    34: [74, 76, 77, 78, 80],
+    35: [79, 81],
+    36: [78, 80, 82, 83, 84, 86],
+    37: [85],
+    38: [84, 86, 87, 88],
+    39: [89],
+    40: [90, 91, 92, 94],
+    41: [93],
+    42: [92, 94, 95, 96, 97, 98],
+    44: [100, 101, 102, 104, 96, 98, 99],
+    45: [103],
+    46: [102, 104, 105, 106, 108, 110],
+    47: [107, 109],
+    48: [106, 108, 110, 111, 112, 114],
+    49: [113],
+    50: [112, 114, 115, 116, 117, 118, 119, 120, 122, 124],
+    51: [121, 123],
+    52: [120, 122, 124, 125, 126],
+    53: [127],
+    54: [124, 126, 128, 129, 130, 131, 132, 134, 136],
+    55: [133],
+    56: [130, 132, 134, 135, 136, 137, 138],
+    57: [139],
+    58: [136, 138, 140, 142],
+    59: [141],
+    60: [142, 143, 145, 146, 148],
+    62: [144, 149, 150, 152, 154],
+    63: [151, 153],
+    64: [154, 155, 156, 157, 158, 160],
+    65: [159],
+    66: [156, 158, 160, 161, 162, 163, 164],
+    67: [165],
+    68: [162, 164, 166, 167, 168, 170],
+    69: [169],
+    70: [168, 170, 171, 172, 173, 174, 176],
+    71: [175],
+    72: [176, 177, 178, 179, 180],
+    73: [181],
+    74: [180, 182, 183, 184, 186],
+    75: [185],
+    76: [184, 187, 188, 189, 190, 192],
+    77: [191, 193],
+    78: [192, 194, 195, 196, 198],
+    79: [197],
+    80: [196, 198, 199, 200, 201, 202, 204],
+    81: [203, 205],
+    82: [204, 206, 207, 208],
+    90: [232],
+}
 
 # global cache for peak per element
 # so we don't compute this a million time
@@ -193,16 +201,17 @@ ISOTOPES_DICT = {1: [1, 2],
 # GIL will ensure this implicitly safe against concurrent access
 # peaks_for_element_cache = {}
 
-def enumerate_multinomial(N: int, p: List[float], cutoff_thold: float = 0.0001):
+
+def enumerate_multinomial(N: int, p: list[float], cutoff_thold: float = 0.0001):
     """
     Enumerate the state space of rolling a die with |p| faces
     N times
 
-    returns: [(prob_1, (tuple_of_counts)), 
-               (prob_2, (tuple_of_counts)), 
+    returns: [(prob_1, (tuple_of_counts)),
+               (prob_2, (tuple_of_counts)),
                ...]
 
-    cutoff_thold: Do not return points in the state space 
+    cutoff_thold: Do not return points in the state space
     with prob less than cutoff_thold
     """
 
@@ -222,16 +231,14 @@ def enumerate_multinomial(N: int, p: List[float], cutoff_thold: float = 0.0001):
     sort_idx = np.argsort(probs)[::-1]
 
     probs_sorted = probs[sort_idx]
-    thold_idx = np.argwhere(np.cumsum(probs_sorted) >=
-                            1-cutoff_thold).flatten()[0]
+    thold_idx = np.argwhere(np.cumsum(probs_sorted) >= 1 - cutoff_thold).flatten()[0]
     thold_idx += 1
 
-    return list(zip(probs_sorted[:thold_idx],
-                    [tuple(a) for a in counts[sort_idx][:thold_idx]]))
+    return list(zip(probs_sorted[:thold_idx], [tuple(a) for a in counts[sort_idx][:thold_idx]]))
 
 
-def get_isotopes(atomicno: int, pct_thold: float = 0.01) -> List[Tuple[int, float, float]]:
-    """  
+def get_isotopes(atomicno: int, pct_thold: float = 0.01) -> list[tuple[int, float, float]]:
+    """
     Get all isotopes and their masses for atomic number atomicno
 
     Args:
@@ -243,22 +250,22 @@ def get_isotopes(atomicno: int, pct_thold: float = 0.01) -> List[Tuple[int, floa
     """
 
     mass_probs = []
-    pt = Chem.GetPeriodicTable()
+    pt = PERIODIC_TABLE
 
     if atomicno not in ISOTOPES_DICT:
         return mass_probs
     else:
-        for m in ISOTOPES_DICT[atomicno]: 
-            #range(atomicno, 4*atomicno):
+        for m in ISOTOPES_DICT[atomicno]:
+            # range(atomicno, 4*atomicno):
             pct = pt.GetAbundanceForIsotope(atomicno, m)
             if pct >= pct_thold:
                 exact_mass = pt.GetMassForIsotope(atomicno, m)
-                mass_probs.append((m, pct/100, exact_mass))
+                mass_probs.append((m, pct / 100, exact_mass))
     return sorted(mass_probs, key=lambda r: -r[1])
 
 
-def get_peaks_for_element(element: str, num_atoms: int) -> List:
-    """  
+def get_peaks_for_element(element: str, num_atoms: int) -> list:
+    """
     Get the peaks for a formula with num_atoms of atomic no
     Args:
         element (str): element symbol
@@ -276,14 +283,16 @@ def get_peaks_for_element(element: str, num_atoms: int) -> List:
     comb_probs = enumerate_multinomial(num_atoms, probs, 0.001)
 
     exact_masses = [
-        np.sum([isotopes[a_i][2]*a for a_i, a in enumerate(m)]) for p, m in comb_probs]
+        np.sum([isotopes[a_i][2] * a for a_i, a in enumerate(m)]) for p, m in comb_probs
+    ]
 
-    peaks_masses_probs = [(comb_probs[i][0], m)
-                          for i, m in enumerate(exact_masses)]
+    peaks_masses_probs = [(comb_probs[i][0], m) for i, m in enumerate(exact_masses)]
     return peaks_masses_probs
 
 
-def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.001, peaks_for_element_cache:dict = None) -> Tuple[List[float], List[float]]:
+def get_peaks_for_formula(
+    element_counts: dict[str, int], threshold: float = 0.001, peaks_for_element_cache: dict = None
+) -> tuple[list[float], list[float]]:
     """for a given element configs, return masses with all possible isotopic configus
 
     Args:
@@ -317,9 +326,14 @@ def get_peaks_for_formula(element_counts: Dict[str, int], threshold: float = 0.0
     return keep_masses, keep_probs
 
 
-def formula_to_peak_mzs(formula, prec_type:Literal["[M+H]+","[M-H]-",""], 
-            isotopes=True, return_map=False, 
-            return_probs=False, peaks_for_element_cache: dict = None):
+def formula_to_peak_mzs(
+    formula,
+    prec_type: Literal["[M+H]+", "[M-H]-", ""],
+    isotopes=True,
+    return_map=False,
+    return_probs=False,
+    peaks_for_element_cache: dict | None = None,
+):
     """_summary_
 
     Args:
@@ -335,23 +349,26 @@ def formula_to_peak_mzs(formula, prec_type:Literal["[M+H]+","[M-H]-",""],
     element_counts = parse_formula(formula)
     mass_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
     if not isotopes:
-        peak_mz = 0.
+        peak_mz = 0.0
         for k, v in element_counts.items():
-            peak_mz += v*PERIODIC_TABLE.GetMostCommonIsotopeMass(k)
+            peak_mz += v * PERIODIC_TABLE.GetMostCommonIsotopeMass(k)
         peak_mz += mass_diff
         peak_mzs = [peak_mz]
         peak_probs = [1.0]
-    else:   
-        peak_mzs, peak_probs = get_peaks_for_formula(element_counts, peaks_for_element_cache = peaks_for_element_cache)
-        peak_mzs = [peak_mz+mass_diff for peak_mz in peak_mzs]
+    else:
+        peak_mzs, peak_probs = get_peaks_for_formula(
+            element_counts, peaks_for_element_cache=peaks_for_element_cache
+        )
+        peak_mzs = [peak_mz + mass_diff for peak_mz in peak_mzs]
     if return_map:
-        return {peak_mz:formula for peak_mz in peak_mzs}
+        return dict.fromkeys(peak_mzs, formula)
     elif return_probs:
         return peak_mzs, peak_probs
     else:
         return peak_mzs
 
-def get_formulae_hill_notation(element_counts: Dict[str,int]) -> str:
+
+def get_formulae_hill_notation(element_counts: dict[str, int]) -> str:
     """return formulae in string following hill notation
 
     Args:
@@ -360,7 +377,7 @@ def get_formulae_hill_notation(element_counts: Dict[str,int]) -> str:
     Returns:
         str: formulae string eg: BrClH2Si
     """
-    formulae_string = ''
+    formulae_string = ""
     sorted_keys = list(element_counts.keys())
     sorted_keys.sort()
     for element in sorted_keys:
@@ -369,7 +386,8 @@ def get_formulae_hill_notation(element_counts: Dict[str,int]) -> str:
             formulae_string += str(element_counts[element])
     return formulae_string
 
-def parse_formula(formula:str) -> Dict[str,int]:
+
+def parse_formula(formula: str) -> dict[str, int]:
     """
         Return a Dict of count of each elemnt in the forumla
         NOTE: THIS DOES NOT HANDLE Condensed formulas eg. CH3CH2OH
@@ -388,16 +406,16 @@ def parse_formula(formula:str) -> Dict[str,int]:
     cur_count = 1
     element_counts = {}
     if "-" in formula:
-        formula = formula[:formula.index("-")]
+        formula = formula[: formula.index("-")]
     if "+" in formula:
-        formula = formula[:formula.index("+")]
+        formula = formula[: formula.index("+")]
     # Use finditer to strictly parse tokens and detect unexpected characters
-    pattern = re.finditer(r'[A-Z][a-z]?|\d+', formula)
+    pattern = re.finditer(r"[A-Z][a-z]?|\d+", formula)
     pos = 0
     for m in pattern:
         # if there's any gap between last position and this match, it's invalid
         if m.start() != pos:
-            offending = formula[pos:m.start()]
+            offending = formula[pos : m.start()]
             raise ValueError(
                 f"Invalid substring '{offending}' at position {pos} in formula '{formula}'"
             )
@@ -422,11 +440,11 @@ def parse_formula(formula:str) -> Dict[str,int]:
         element_counts[cur_element] = cur_count
     return element_counts
 
-def get_elements_set(formula:str) -> set[str]:
+
+def get_elements_set(formula: str) -> set[str]:
     """
     method to get set of elements in a formula
     Args:
         formula (str): chemical formula eg.CH4 or chemical formula with adducts eg. CH4+H
     """
     return set(list(parse_formula(formula).keys()))
-

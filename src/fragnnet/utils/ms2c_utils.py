@@ -1,8 +1,9 @@
 import sqlite3
+
 from tqdm import tqdm
 
-class MolCandidateDB():
 
+class MolCandidateDB:
     def __init__(self, db_config: str):
         self.conn = None
         if type(db_config) == str:
@@ -23,13 +24,15 @@ class MolCandidateDB():
         # Try to connect
         # conn = None
         try:
-            self.conn = sqlite3.connect(self.db_file, isolation_level=None, detect_types=sqlite3.PARSE_DECLTYPES)
+            self.conn = sqlite3.connect(
+                self.db_file, isolation_level=None, detect_types=sqlite3.PARSE_DECLTYPES
+            )
         except:
             print(f"Unable to connect to the database: {self.db_file} ")
         else:
             # print("Database Connection Established")
             # use wal model
-            self.conn.execute('pragma journal_mode=wal2')
+            self.conn.execute("pragma journal_mode=wal2")
 
     def disconnect(self):
         if self.conn is not None:
@@ -39,7 +42,7 @@ class MolCandidateDB():
 
     def check_connection(self):
         if self.conn is None:
-            raise ValueError('No Connection')
+            raise ValueError("No Connection")
 
     def execute_query(self, query: str, commit: bool = False, fetch: bool = True):
         self.check_connection()
@@ -49,7 +52,7 @@ class MolCandidateDB():
             cursor.execute(query)
         except Exception as err:
             # pass exception to function
-            print(f'{err}')
+            print(f"{err}")
             self.conn.rollback()
             return None
         else:
@@ -57,9 +60,9 @@ class MolCandidateDB():
                 fetched = cursor.fetchall()
             if commit:
                 self.conn.commit()
-        #print("size of fetched", sys.getsizeof(fetched) >> 20, "MB")
-        return fetched 
-    
+        # print("size of fetched", sys.getsizeof(fetched) >> 20, "MB")
+        return fetched
+
     def execute_many_query(self, query: str, data):
         self.check_connection()
         try:
@@ -67,8 +70,8 @@ class MolCandidateDB():
             cursor.executemany(query, data)
         except Exception as err:
             # pass exception to function
-            #DatabaseUtilities.print_psycopg2_exception(err)
-            print(f'{err}')
+            # DatabaseUtilities.print_psycopg2_exception(err)
+            print(f"{err}")
             print(query)
             print(data)
             self.conn.rollback()
@@ -77,16 +80,15 @@ class MolCandidateDB():
             self.conn.commit()
 
     def _go_fast_at_all_cost(self):
-        """_summary_
-        """
+        """_summary_"""
         # Turning off journal_mode will result in no rollback journal
-        self.conn.execute('PRAGMA journal_mode = OFF;')
+        self.conn.execute("PRAGMA journal_mode = OFF;")
         # SQLite will not care about writing to disk reliably and hands off that responsibility to the OS
-        self.conn.execute('PRAGMA synchronous = 0;')
+        self.conn.execute("PRAGMA synchronous = 0;")
         # The cache_size specifies how many memory pages SQLite is allowed to hold in the memory
-        self.conn.execute('PRAGMA cache_size = 4000000;')  # give it  4GB
-        self.conn.execute('PRAGMA locking_mode = EXCLUSIVE;')
-        self.conn.execute('PRAGMA temp_store = MEMORY;')
+        self.conn.execute("PRAGMA cache_size = 4000000;")  # give it  4GB
+        self.conn.execute("PRAGMA locking_mode = EXCLUSIVE;")
+        self.conn.execute("PRAGMA temp_store = MEMORY;")
 
     def _create_compound_table(self):
         query = """
@@ -99,14 +101,17 @@ class MolCandidateDB():
             """
         self.execute_query(query)
 
-        for index_col in ['exact_mass']:
-            self.execute_query(f"CREATE INDEX IF NOT EXISTS {index_col}_idx on compound ({index_col});")
+        for index_col in ["exact_mass"]:
+            self.execute_query(
+                f"CREATE INDEX IF NOT EXISTS {index_col}_idx on compound ({index_col});"
+            )
 
     def create_tables(self):
         self._create_compound_table()
 
-
-    def get_compounds_by_exact_mass_range(self, mw_min:float, mw_max:float, verbose:bool=False):
+    def get_compounds_by_exact_mass_range(
+        self, mw_min: float, mw_max: float, verbose: bool = False
+    ):
         """_summary_
 
         Args:
@@ -120,8 +125,10 @@ class MolCandidateDB():
         if verbose:
             print(f">get_compounds_by_colname {selection_query}")
         return self.execute_query(selection_query, fetch=True)
-    
-    def get_compounds_by_colname(self, col_name:str, values_list:list[str|int|float], verbose:bool=False):
+
+    def get_compounds_by_colname(
+        self, col_name: str, values_list: list[str | int | float], verbose: bool = False
+    ):
         """_summary_
 
         Args:
@@ -131,20 +138,22 @@ class MolCandidateDB():
             _type_: return -1 for not found
         """
         # TODO use fetch and yelid if there is too many returns
-        if col_name in ['id','exact_mass']:
-            values_query = ','.join(["{}".format(i) for i in values_list])
-        elif col_name in ['inchikey','smiles','formula']:
-            values_query = ','.join(["'{}'".format(i) for i in values_list])
+        if col_name in ["id", "exact_mass"]:
+            values_query = ",".join([f"{i}" for i in values_list])
+        elif col_name in ["inchikey", "smiles", "formula"]:
+            values_query = ",".join([f"'{i}'" for i in values_list])
         else:
-            raise AttributeError(f"col_name need to be one of 'id','exact_mass','inchikey','smiles','formula' not {col_name} ")
-        
+            raise AttributeError(
+                f"col_name need to be one of 'id','exact_mass','inchikey','smiles','formula' not {col_name} "
+            )
+
         selection_query = f"SELECT COALESCE(id,-1),inchikey,smiles,formula,exact_mass FROM compound WHERE {col_name} in ({values_query})"
         if verbose:
             print(f">get_compounds_by_colname {selection_query}")
         return self.execute_query(selection_query, fetch=True)
-        
+
     @classmethod
-    def _list_to_sqlite(cls, data: list, quote = True):
+    def _list_to_sqlite(cls, data: list, quote=True):
         if type(data) is list:
             if quote:
                 return "('" + "','".join([str(d) for d in data]) + "')"
@@ -155,11 +164,9 @@ class MolCandidateDB():
                 return f"('{data}')"
             else:
                 return f"({data})"
-    
-    def add_compounds_from_df(self, df, chunk_size = 10000):
+
+    def add_compounds_from_df(self, df, chunk_size=10000):
         compound_query = """INSERT OR IGNORE INTO compound(id, inchikey, exact_mass, formula, smiles) VALUES (?,?,?,?,?); """
-        for i in tqdm(range(0,df.shape[0],chunk_size), leave = False):
-            compound_insert_data = df[i:i+chunk_size].values.tolist()
+        for i in tqdm(range(0, df.shape[0], chunk_size), leave=False):
+            compound_insert_data = df[i : i + chunk_size].values.tolist()
             self.execute_many_query(compound_query, compound_insert_data)
-
-

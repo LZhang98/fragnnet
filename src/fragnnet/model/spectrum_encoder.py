@@ -1,6 +1,13 @@
-import torch as th
 import torch.nn as nn
-from fragnnet.model.nn_blocks import MLPBlocks, SetTransformer, LowRankDense, GNN, build_pool_module
+
+from fragnnet.model.nn_blocks import (
+    GNN,
+    LowRankDense,
+    MLPBlocks,
+    SetTransformer,
+    build_pool_module,
+)
+
 
 class SpectrumEncoder(nn.Module):
     """
@@ -15,6 +22,7 @@ class SpectrumEncoder(nn.Module):
         num_blocks (int): Number of Set Transformer blocks.
         dropout (float): Dropout rate for regularization.
     """
+
     def __init__(
         self,
         spectrum_encoder_type: str,
@@ -74,7 +82,7 @@ class SpectrumEncoder(nn.Module):
                 edge_feats_size=edge_feats_size,
                 gnn_type=gnn_type,
                 dropout=dropout,
-                normalization=normalization
+                normalization=normalization,
             )
             self.pool = build_pool_module(pool_type, hidden_dim)
             self.gnn_proj = nn.Linear(hidden_dim, output_dim)
