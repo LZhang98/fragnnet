@@ -872,8 +872,7 @@ def get_slurm_allocated_cores(job_id: str) -> int | None:
             command,
             shell=True,
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
         )
         cpus_allocated = result.stdout.decode("utf-8").strip()
         return int(cpus_allocated)

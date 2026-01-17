@@ -332,7 +332,7 @@ def formula_to_peak_mzs(
     isotopes=True,
     return_map=False,
     return_probs=False,
-    peaks_for_element_cache: dict = None,
+    peaks_for_element_cache: dict | None = None,
 ):
     """_summary_
 

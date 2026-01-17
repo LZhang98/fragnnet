@@ -175,8 +175,13 @@ class MolGraph:
         g.add_nodes_from(range(atom_feats.shape[0]))
         g.add_edges_from(bond_inds)
 
-        nx.set_node_attributes(g, values=atom_feats, name="h")
-        nx.set_edge_attributes(g, values=bond_feats, name="e")
+        node_attr_dict = {i: atom_feats[i] for i in range(atom_feats.shape[0])}
+        nx.set_node_attributes(g, values=node_attr_dict, name="h")
+        edge_attr_dict = {
+            (int(bond_inds[i, 0]), int(bond_inds[i, 1])): bond_feats[i]
+            for i in range(bond_inds.shape[0])
+        }
+        nx.set_edge_attributes(g, values=edge_attr_dict, name="e")
 
         return g
 
@@ -206,7 +211,9 @@ class MolGraph:
                 g,
                 k=self.pe_embed_k,
             )
-            g.x = th.cat((g.x, pe_embeds), dim=-1)
+            if g.x is None:
+                raise ValueError("Node features (g.x) cannot be None when pe_embed_k > 0")
+            g.x = th.cat([g.x, pe_embeds], dim=-1)
 
         return g
 
@@ -740,7 +747,7 @@ def get_frag_graph(
     _edge_attr = []
     _edge_feat_idxs = [0]
     _edge_feat_size = 0
-    for feat, feat_idx in EDGE_FEAT_TO_IDX.items():
+    for feat, _ in EDGE_FEAT_TO_IDX.items():
         if feat in frag_edge_feats:
             assert edges
             if feat == "complement":
