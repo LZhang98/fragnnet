@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,7 +20,7 @@ class SpectrumMolClipPL(SpectrumPL):
     PyTorch Lightning module for a clip loss model on ms/ms spectra and molecular graphs.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.save_hyperparameters()
 
@@ -32,7 +34,8 @@ class SpectrumMolClipPL(SpectrumPL):
         # Define CLIP loss
         self.loss_fn = nn.CosineEmbeddingLoss()
 
-    def _setup_model(self):
+    def _setup_model(self) -> None:
+        """Initialize molecule and spectrum encoders used for CLIP-style training."""
         # TODO: initialize model based on params. finalize params
         self.mol_encoder = GNNModel(
             mol_node_feats=self.hparams.mol_params["pyg_node_feats"],  # mol feats
@@ -92,11 +95,10 @@ class SpectrumMolClipPL(SpectrumPL):
                 self.spec_encoder, backend=self.dynamo_prof, dynamic=True
             )
 
-    def forward(self, batch):
+    def forward(self, batch: dict[str, Any]) -> tuple[th.Tensor, th.Tensor]:
         """Forward pass through both encoders."""
         # Extract mol and spectrum data from batch
         mol_pyg = batch["mol_pyg"]
-        spec_mzs = batch["spec_mzs"]
         spec_ints = batch["spec_ints"]
         spec_batch_idxs = batch["spec_batch_idxs"]
 
@@ -127,10 +129,10 @@ class SpectrumMolClipPL(SpectrumPL):
 
         return mol_embed, spec_embed
 
-    def _common_step(self, batch, split="train"):
-        """
-        Common logic for train/val/test/inference steps.
-        """
+    def _common_step(
+        self, batch: dict[str, Any], split: str = "train"
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+        """Common logic for train/val/test/inference steps."""
         # Forward pass to get embeddings
         mol_embed, spec_embed = self.forward(batch)
 
@@ -153,17 +155,17 @@ class SpectrumMolClipPL(SpectrumPL):
 
         return mol_embed, spec_embed, loss
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """Training step."""
         _, _, loss = self._common_step(batch, split="train")
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """Validation step."""
         _, _, loss = self._common_step(batch, split="val")
         return loss
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """Test step."""
         _, _, loss = self._common_step(batch, split="test")
         return loss

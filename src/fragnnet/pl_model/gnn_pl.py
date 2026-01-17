@@ -13,7 +13,10 @@ from fragnnet.pl_model import BinnedPL
 
 
 class GNNPL(BinnedPL):
-    def _setup_model(self):
+    """PyTorch Lightning wrapper for GNNModel with binned spectrum loss."""
+
+    def _setup_model(self) -> None:
+        """Initialize the GNNModel based on hyperparameters."""
         # TODO: initialize model based on params. finalize params
         self.model = GNNModel(
             mol_node_feats=self.hparams.mol_params["pyg_node_feats"],  # mol feats
