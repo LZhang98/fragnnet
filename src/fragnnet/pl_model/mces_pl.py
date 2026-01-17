@@ -1,11 +1,12 @@
 
 import torch as th
+import torch._dynamo as th_dynamo
 import torch.nn as nn
-import torch.nn.functional as F
+
 from fragnnet.model import SiameseGNNModel
 from fragnnet.utils.data_utils import min_max_denormalize, zscore_denormalize
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
-import torch._dynamo as th_dynamo
+
 try:
     from torch._dynamo.utils import CompileProfiler
     profiler_available = True
@@ -37,7 +38,7 @@ class MCESPL(pl.LightningModule):
             self.loss_fn = nn.L1Loss()
         else:
             raise ValueError(f"Not Supported loss_type {self.hparams.loss_type}")
-   
+
         self.lr = self.hparams.lr
         self.weight_decay = self.hparams.weight_decay
         self.auxiliary_scores = self.hparams.get("auxiliary_scores", [])
@@ -90,7 +91,7 @@ class MCESPL(pl.LightningModule):
                 self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
             else:
                 self.model = th.compile(self.model,dynamic=True)
-   
+
     def _log_score(self, pred, target, score_type, split_name, original_scale=False):
         """Helper to compute and log scores (mean and std) in normalized or original scale."""
         if original_scale is False:
@@ -101,7 +102,7 @@ class MCESPL(pl.LightningModule):
             pred_denorm = self.denormalize_mces(pred.squeeze())
             target_denorm = self.denormalize_mces(target)
             score_prefix = f"{split_name}_original_{score_type}"
-            
+
         if score_type == "mae":
             # Compute per-sample absolute errors
             errors = th.abs(pred_denorm - target_denorm)
@@ -110,11 +111,11 @@ class MCESPL(pl.LightningModule):
             errors = (pred_denorm - target_denorm) ** 2
         else:
             raise ValueError(f"Unsupported score_type {score_type} for logging.")
-        
+
         # Log mean (MAE or MSE)
         score_mean = errors.mean()
         self.log(score_prefix, score_mean, on_step=False, on_epoch=True, prog_bar=False)
-        
+
         # Log standard deviation
         score_std = errors.std()
         self.log(f"{score_prefix}_std", score_std, on_step=False, on_epoch=True, prog_bar=False)
@@ -130,10 +131,10 @@ class MCESPL(pl.LightningModule):
         pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
         target = batch['mces'].float().to(pred.device)
         loss = self.loss_fn(pred, target)  # Loss on normalized scale
-        
+
         # Log loss on normalized scale
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-        
+
         # Log auxiliary scores in both normalized and original scales
         for score_type in self.auxiliary_scores:
             self._log_score(pred, target, score_type, "train", original_scale=False)
@@ -145,10 +146,10 @@ class MCESPL(pl.LightningModule):
         pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
         target = batch['mces'].float().to(pred.device)
         loss = self.loss_fn(pred, target)  # Loss on normalized scale
-        
+
         # Log loss on normalized scale
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        
+
         # Log MAE in both normalized and original scales
         for score_type in self.auxiliary_scores:
             self._log_score(pred, target, score_type, "val", original_scale=False)
@@ -160,10 +161,10 @@ class MCESPL(pl.LightningModule):
         pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
         target = batch['mces'].float().to(pred.device)
         loss = self.loss_fn(pred, target)  # Loss on normalized scale
-        
+
         # Log loss on normalized scale
         self.log("test_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        
+
         # Log MAE in both normalized and original scales
         for score_type in self.auxiliary_scores:
             self._log_score(pred, target, score_type, "test", original_scale=False)
@@ -197,8 +198,8 @@ class MCESPL(pl.LightningModule):
         """
         optimizer_cls = get_optimizer_class(self.hparams.optimizer)
         optimizer = optimizer_cls(
-            self.parameters(), 
-            lr=self.hparams.lr, 
+            self.parameters(),
+            lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay
         )
         ret = {
@@ -206,8 +207,8 @@ class MCESPL(pl.LightningModule):
         }
         if self.hparams.lr_schedule:
             scheduler = build_lr_scheduler(
-                optimizer=optimizer, 
-                decay_rate=self.hparams.lr_decay_rate, 
+                optimizer=optimizer,
+                decay_rate=self.hparams.lr_decay_rate,
                 warmup_steps=self.hparams.lr_warmup_steps,
                 decay_steps=self.hparams.lr_decay_steps,
             )

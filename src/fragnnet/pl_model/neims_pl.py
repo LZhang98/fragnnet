@@ -1,19 +1,20 @@
 import torch as th
 import torch._dynamo as th_dynamo
+
 try:
     from torch._dynamo.utils import CompileProfiler
+
     profiler_available = True
 except ImportError:
     profiler_available = False
-    
+
 from fragnnet.model import NeimsModel
-from fragnnet.utils.spec_utils import *
 from fragnnet.pl_model import BinnedPL
+from fragnnet.utils.spec_utils import *
+
 
 class NeimsPL(BinnedPL):
-
     def _setup_model(self):
-
         self.model = NeimsModel(
             mol_fingerprint_morgan=self.hparams.mol_params["fingerprint_morgan"],
             mol_fingerprint_rdkit=self.hparams.mol_params["fingerprint_rdkit"],
@@ -42,9 +43,9 @@ class NeimsPL(BinnedPL):
             inst_insert_location=self.hparams.inst_insert_location,
             inst_insert_size=self.hparams.inst_insert_size,
             inst_types=self.hparams.spec_params["inst_types"],
-            log_min=self.hparams.log_min
+            log_min=self.hparams.log_min,
         )
-        
+
         self._check_ce_params()
 
         # compile
@@ -52,6 +53,6 @@ class NeimsPL(BinnedPL):
             th_dynamo.reset()
             if profiler_available:
                 self.dynamo_prof = CompileProfiler()
-                self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+                self.model = self.model.get_compile(backend=self.dynamo_prof, dynamic=True)
             else:
-                self.model = th.compile(self.model,dynamic=True)
+                self.model = th.compile(self.model, dynamic=True)
