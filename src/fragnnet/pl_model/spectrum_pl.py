@@ -24,7 +24,7 @@ from fragnnet.utils.misc_utils import (
     flatten_lol,
     safelog,
     scatter_l1normalize,
-    th_temp_generator,
+    th_temp_seed,
     to_cpu,
 )
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
