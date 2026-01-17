@@ -71,13 +71,13 @@ class SpecMolFragDataset(SpecMolDataset):
         self.frag_params = frag_params
 
         if spec_pp_sd is None:
-            spec_pp_sd = dict()
+            spec_pp_sd = {}
         if mol_pp_sd is None:
-            mol_pp_sd = dict()
+            mol_pp_sd = {}
         if frag_pl_sd is None:
-            frag_pl_sd = dict()
+            frag_pl_sd = {}
         if frag_pp_sd is None:
-            frag_pp_sd = dict()
+            frag_pp_sd = {}
 
         self._preprocess_spec(spec_pp_sd)
         self._preprocess_mol(mol_pp_sd)

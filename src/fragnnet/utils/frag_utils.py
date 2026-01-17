@@ -399,7 +399,7 @@ def compute_approximate_formula(
     formula_strs: bool = False,
     bitmask: bool = True,
     base_formula=None,
-) -> dict[int, str] | dict[int, int]:
+) -> tuple[dict[int, str] | dict[int, np.ndarray], dict[int, int]]:
     """
     Given a connected component (fragment) of a molecule, compute all possible formulas
     within a specified hydrogen transfer range (delta H), and return either formula strings
@@ -409,16 +409,15 @@ def compute_approximate_formula(
         cc (list | np.ndarray): Connected component, either as a bitmask or atom indices.
         mol_d (dict): Molecule dictionary containing atom/bond info and arrays.
         max_h_transfer (int): Maximum allowed hydrogen transfer (delta H) for enumeration.
-        formula_strs (bool, optional): If True, return formula strings; if False, return arrays/counts. Defaults to False.
+        formula_strs (bool, optional): If True, return formula strings; if False, return formula arrays. Defaults to False.
         bitmask (bool, optional): If True, interpret cc as bitmask; if False, as atom indices. Defaults to True.
-        base_formula (optional): Precomputed base formula array for the fragment. If None, computed internally.
+        base_formula (np.ndarray, optional): Precomputed base formula array for the fragment. If None, computed internally. Defaults to None.
 
     Returns:
-        tuple:
-            - delta_h_to_formula (dict[int, str] | dict[int, np.ndarray]):
-                Maps delta H (hydrogen transfer) to formula string or array for each possible configuration.
-            - delta_h_to_h_count (dict[int, int]):
-                Maps delta H to the corresponding hydrogen count, or -1 for invalid configurations.
+        tuple[dict[int, str] | dict[int, np.ndarray], dict[int, int]]:
+            - delta_h_to_formula: Maps delta H (hydrogen transfer) to formula string (if formula_strs=True)
+              or formula array (if formula_strs=False) for each possible configuration.
+            - delta_h_to_h_count: Maps delta H to the corresponding hydrogen count, or -1 for invalid configurations.
     """
 
     # Extract molecule arrays and info
@@ -623,7 +622,9 @@ def cc_bitmask_to_formula_arr(cc, elem_idxs) -> np.ndarray:
     return formula_arr
 
 
-def formula_arr_to_str(formula_arr, get_h_template=False):
+def formula_arr_to_str(
+    formula_arr: np.ndarray, get_h_template: bool = False
+) -> str | tuple[str, str]:
     """
     Convert a formula array (element counts) to a string in canonical element order.
     Optionally returns a template for hydrogen count substitution.
@@ -633,9 +634,9 @@ def formula_arr_to_str(formula_arr, get_h_template=False):
         get_h_template (bool, optional): If True, return template string for hydrogen count. Defaults to False.
 
     Returns:
-        str or tuple:
-            - If get_h_template is False: formula string (e.g., 'C6H12O6').
-            - If get_h_template is True: (template string with 'H{:d}', string without hydrogen).
+        str | tuple[str, str]:
+            - If get_h_template is False: Formula string (e.g., 'C6H12O6').
+            - If get_h_template is True: Tuple of (template string with 'H{:d}' placeholder, string without hydrogen).
     """
     elem_d = {}
     for idx, count in enumerate(formula_arr):
