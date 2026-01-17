@@ -1,11 +1,26 @@
+"""Plotting utilities for FraGNNet visualization.
+
+This module provides functions for creating visualizations including:
+- Converting matplotlib figures to PIL images
+- Plotting histograms
+- Image trimming and processing
+- Molecular structure visualization
+- Spectrum comparison plots
+- Dual-axis plots for metric visualization
+- Spectrum binning and matching
+"""
+
 import io
+from typing import Any
 
 import matplotlib as mpl
 import matplotlib.collections as mc
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.figure import Figure
 from PIL import Image, ImageOps
+from rdkit.Chem import Mol
 from rdkit.Chem.Draw import rdMolDraw2D
 
 from fragnnet.utils.data_utils import mol_from_smiles
@@ -15,7 +30,16 @@ from fragnnet.utils.spec_utils import calculate_match_mzs
 EPS = np.finfo(np.float32).eps
 
 
-def fig_to_data(fig, **kwargs):
+def fig_to_data(fig: Figure, **kwargs: Any) -> Image.Image:
+    """Convert a matplotlib figure to a PIL Image.
+
+    Args:
+        fig: Matplotlib figure to convert.
+        **kwargs: Additional arguments passed to fig.savefig().
+
+    Returns:
+        PIL Image object containing the rendered figure.
+    """
     buf = io.BytesIO()
     fig.savefig(buf, **kwargs)
     buf.seek(0)
@@ -23,7 +47,20 @@ def fig_to_data(fig, **kwargs):
     return image
 
 
-def plot_histogram(values, title, log=False, bins=10):
+def plot_histogram(
+    values: np.ndarray | list[float], title: str, log: bool = False, bins: int = 10
+) -> Image.Image:
+    """Create a histogram plot and return as PIL Image.
+
+    Args:
+        values: Array of values to plot.
+        title: Title for the histogram.
+        log: Whether to use logarithmic scale for y-axis. Defaults to False.
+        bins: Number of histogram bins. Defaults to 10.
+
+    Returns:
+        PIL Image object containing the histogram plot.
+    """
     fig, ax = plt.subplots()
     ax.hist(values, bins=bins)
     ax.set_title(title)
@@ -33,12 +70,19 @@ def plot_histogram(values, title, log=False, bins=10):
     return data
 
 
-def trim_img_by_white(img, padding=0):
-    """
-    This function takes a PIL image, img, and crops it to the minimum rectangle
-    based on its whiteness/transparency. 5 pixel padding used automatically.
-    Adapted from:
+def trim_img_by_white(img: Image.Image, padding: int = 0) -> Image.Image:
+    """Crop a PIL image to the minimum rectangle based on whiteness/transparency.
+
+    This function removes white and transparent pixels from the edges of an image,
+    with automatic 5-pixel padding applied. Adapted from:
     https://github.com/connorcoley/retrosim/blob/master/retrosim/utils/draw.py
+
+    Args:
+        img: PIL Image object to crop.
+        padding: Border padding in pixels to add after cropping. Defaults to 0.
+
+    Returns:
+        Cropped PIL Image object with optional padding.
     """
 
     # Convert to array
@@ -55,16 +99,19 @@ def trim_img_by_white(img, padding=0):
     return ImageOps.expand(img, border=padding, fill=(255, 255, 255, 0))
 
 
-def get_mol_im(smiles, width=1000, height=1000):
-    """metho to get a PIL image of a molecule from its SMILES string
+def get_mol_im(smiles: str, width: int = 1000, height: int = 1000) -> Image.Image:
+    """Generate a PIL image of a molecule from its SMILES string.
+
+    Attempts to use cairosvg for high-quality SVG rendering, with fallback to
+    RDKit's Cairo drawer if cairosvg is not available.
 
     Args:
-        smiles (string): _description_
-        width (int, optional): _description_. Defaults to 1000.
-        height (int, optional): _description_. Defaults to 1000.
+        smiles: SMILES string representation of the molecule.
+        width: Width of the output image in pixels. Defaults to 1000.
+        height: Height of the output image in pixels. Defaults to 1000.
 
     Returns:
-        _type_: _description_
+        PIL Image object containing the rendered molecule structure.
     """
 
     mol = mol_from_smiles(smiles)
@@ -90,7 +137,29 @@ def get_mol_im(smiles, width=1000, height=1000):
     return im
 
 
-def plot_dual_axis(steps, ax1_metrics_d, ax2_metrics_d, fp, figsize=(10, 5), dpi=200, size=20):
+def plot_dual_axis(
+    steps: np.ndarray | list[float],
+    ax1_metrics_d: dict[str, np.ndarray | list[float]],
+    ax2_metrics_d: dict[str, np.ndarray | list[float]],
+    fp: str,
+    figsize: tuple[float, float] = (10, 5),
+    dpi: int = 200,
+    size: int = 20,
+) -> None:
+    """Create a plot with dual y-axes for different metric groups.
+
+    Args:
+        steps: X-axis values (steps/iterations).
+        ax1_metrics_d: Dictionary of metrics to plot on left y-axis.
+        ax2_metrics_d: Dictionary of metrics to plot on right y-axis.
+        fp: File path to save the figure.
+        figsize: Figure size as (width, height) in inches. Defaults to (10, 5).
+        dpi: Dots per inch for the figure. Defaults to 200.
+        size: Base font size for labels and ticks. Defaults to 20.
+
+    Returns:
+        None. Saves figure to disk at the specified file path.
+    """
     tick_size = int(0.6 * size)
     font_size = int(0.8 * size)
 
@@ -143,7 +212,23 @@ def plot_dual_axis(steps, ax1_metrics_d, ax2_metrics_d, fp, figsize=(10, 5), dpi
     plt.close("all")
 
 
-def bin_spectrum(mzs, ints, mz_res, mz_max):
+def bin_spectrum(
+    mzs: np.ndarray | list[float],
+    ints: np.ndarray | list[float],
+    mz_res: float,
+    mz_max: float,
+) -> np.ndarray:
+    """Bin mass spectrum values into uniform m/z bins.
+
+    Args:
+        mzs: Array of m/z (mass-to-charge) values.
+        ints: Array of intensity values corresponding to mzs.
+        mz_res: m/z resolution (bin width).
+        mz_max: Maximum m/z value for binning.
+
+    Returns:
+        Binned spectrum as numpy array of intensities for each bin.
+    """
     bins = np.arange(0, mz_max + mz_res, mz_res)
     bin_spec = np.zeros_like(bins, dtype=np.float32)
     bin_idx = np.digitize(mzs, bins, right=True)
@@ -152,37 +237,80 @@ def bin_spectrum(mzs, ints, mz_res, mz_max):
     return bin_spec
 
 
-def get_mz_bin_idx(mz, mz_res, mz_max):
+def get_mz_bin_idx(mz: float | np.ndarray, mz_res: float, mz_max: float) -> int | np.ndarray:
+    """Get bin indices for m/z values based on binning parameters.
+
+    Args:
+        mz: m/z value(s) to bin (scalar or array).
+        mz_res: m/z resolution (bin width).
+        mz_max: Maximum m/z value for binning.
+
+    Returns:
+        Bin index or indices corresponding to the input m/z value(s).
+    """
     bins = np.arange(0, mz_max + mz_res, mz_res)
     bin_idx = np.digitize(mz, bins, right=True)
     return bin_idx
 
 
 def plot_spectra_sparse(
-    true_mzs,
-    true_ints,
-    pred_mzs,
-    pred_ints,
-    smiles,
-    fp=None,
-    mz_res=1e-3,
-    mz_max=1000.0,
-    figsize=(20, 20),
-    size=24,
-    log=True,
-    true_ints_thresh=0.0,
-    pred_ints_thresh=0.0,
-    plot_title=True,
-    custom_title="",
-    match_peaks=True,
-    match_tolerance=1e-5,
-    match_relative=True,
-    match_tolerance_min_mz=TOLERANCE_MIN_MZ,
-    return_data=False,
-    colors=None,
-    bar_width=3.0,
-    dpi=200,
-):
+    true_mzs: np.ndarray | list[float],
+    true_ints: np.ndarray | list[float],
+    pred_mzs: np.ndarray | list[float],
+    pred_ints: np.ndarray | list[float],
+    smiles: str | None,
+    fp: str | None = None,
+    mz_res: float = 1e-3,
+    mz_max: float = 1000.0,
+    figsize: tuple[float, float] = (20, 20),
+    size: int = 24,
+    log: bool = True,
+    true_ints_thresh: float = 0.0,
+    pred_ints_thresh: float = 0.0,
+    plot_title: bool = True,
+    custom_title: str = "",
+    match_peaks: bool = True,
+    match_tolerance: float = 1e-5,
+    match_relative: bool = True,
+    match_tolerance_min_mz: float = TOLERANCE_MIN_MZ,
+    return_data: bool = False,
+    colors: list[str] | None = None,
+    bar_width: float = 3.0,
+    dpi: int = 200,
+) -> Image.Image | None:
+    """Plot true vs predicted mass spectra with optional molecular structure.
+
+    Creates a dual-spectrum comparison plot with optional molecular structure image.
+    Supports peak matching, intensity thresholding, and various visualization options.
+
+    Args:
+        true_mzs: Array of true m/z values.
+        true_ints: Array of true intensities.
+        pred_mzs: Array of predicted m/z values.
+        pred_ints: Array of predicted intensities.
+        smiles: SMILES string of the molecule (None to skip molecule image).
+        fp: File path to save the figure. If None, figure is not saved.
+        mz_res: m/z resolution for visualization. Defaults to 1e-3.
+        mz_max: Maximum m/z value to display. Defaults to 1000.0.
+        figsize: Figure size as (width, height). Defaults to (20, 20).
+        size: Base font size for labels. Defaults to 24.
+        log: Whether to use logarithmic scale. Defaults to True.
+        true_ints_thresh: Threshold for true intensity filtering. Defaults to 0.0.
+        pred_ints_thresh: Threshold for predicted intensity filtering. Defaults to 0.0.
+        plot_title: Whether to add a title to the plot. Defaults to True.
+        custom_title: Custom title text. Defaults to empty string.
+        match_peaks: Whether to match peaks between true and predicted. Defaults to True.
+        match_tolerance: Tolerance for peak matching. Defaults to 1e-5.
+        match_relative: Whether tolerance is relative to m/z. Defaults to True.
+        match_tolerance_min_mz: Minimum m/z for relative tolerance. Defaults to TOLERANCE_MIN_MZ.
+        return_data: Whether to return the figure as PIL Image. Defaults to False.
+        colors: List of [true_color, pred_color]. Uses defaults if None.
+        bar_width: Width of spectrum bars. Defaults to 3.0.
+        dpi: Dots per inch for the figure. Defaults to 200.
+
+    Returns:
+        PIL Image if return_data=True, None otherwise.
+    """
     true_mask = true_ints > true_ints_thresh
     true_mzs = true_mzs[true_mask]
     true_ints = true_ints[true_mask]
@@ -339,7 +467,16 @@ def plot_spectra_sparse(
     return data
 
 
-def get_highlighted_bonds(mol, node_atom_indices):
+def get_highlighted_bonds(mol: Mol, node_atom_indices: list[int] | set) -> list[int]:
+    """Extract bonds connecting atoms within a specified set of atom indices.
+
+    Args:
+        mol: RDKit Mol object.
+        node_atom_indices: Set or list of atom indices to include.
+
+    Returns:
+        List of bond indices connecting atoms in the specified set.
+    """
     atoms = []
     for a in mol.GetAtoms():
         atoms.append(a.GetIdx())
