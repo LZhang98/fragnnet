@@ -10,7 +10,6 @@ except ImportError:
 
 from fragnnet.model import NeimsModel
 from fragnnet.pl_model import BinnedPL
-from fragnnet.utils.spec_utils import *
 
 
 class NeimsPL(BinnedPL):
