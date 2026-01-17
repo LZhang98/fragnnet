@@ -1,22 +1,22 @@
+import copy
+
 import numpy as np
 import torch as th
-import pytorch_lightning as pl
 import torch.nn as nn
-import copy
+
 # Removed: import torch_scatter as ts  # Now using scatter functions from misc_utils instead
 from pyteomics.mass import Composition
 
-from fragnnet.utils.dgl_compat_utils import dgl, dgl_nn, DGL_AVAILABLE
-
 import fragnnet.iceberg.common as common
-import fragnnet.iceberg.nn_utils as nn_utils
 import fragnnet.iceberg.fragmentation as fragmentation
-from fragnnet.utils.misc_utils import scatter_logsoftmax, scatter_reduce, scatter_softmax, dedup
-from fragnnet.utils.data_utils import composition_to_string
+import fragnnet.iceberg.nn_utils as nn_utils
 from fragnnet.iceberg.common.chem_utils import vec_to_formula
+from fragnnet.utils.data_utils import composition_to_string
+from fragnnet.utils.dgl_compat_utils import DGL_AVAILABLE, dgl_nn
+from fragnnet.utils.misc_utils import dedup, scatter_logsoftmax, scatter_reduce, scatter_softmax
+
 
 class IcebergGenModel(nn.Module):
-
     def __init__(
         self,
         hidden_size: int,
@@ -33,9 +33,8 @@ class IcebergGenModel(nn.Module):
         encode_forms: bool = False,
         add_hs: bool = False,
     ):
-
         super().__init__()
-        
+
         # Check DGL is available
         if not DGL_AVAILABLE:
             raise ImportError(
@@ -145,14 +144,7 @@ class IcebergGenModel(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(
-        self,
-        graphs,
-        root_repr,
-        ind_maps,
-        broken,
-        adducts,
-        root_forms=None,
-        frag_forms=None
+        self, graphs, root_repr, ind_maps, broken, adducts, root_forms=None, frag_forms=None
     ):
         """forward _summary_
 
@@ -195,9 +187,7 @@ class IcebergGenModel(nn.Module):
         ext_root = root_embeddings[ind_maps]
 
         # Extend the root further to cover each individual atom
-        ext_root_atoms = th.repeat_interleave(
-            ext_root, graphs.batch_num_nodes(), dim=0
-        )
+        ext_root_atoms = th.repeat_interleave(ext_root, graphs.batch_num_nodes(), dim=0)
         concat_list = [graphs.ndata["h"]]
 
         if self.inject_early:
@@ -205,9 +195,7 @@ class IcebergGenModel(nn.Module):
 
         if self.embed_adduct:
             adducts_mapped = embed_adducts[ind_maps]
-            adducts_exp = th.repeat_interleave(
-                adducts_mapped, graphs.batch_num_nodes(), dim=0
-            )
+            adducts_exp = th.repeat_interleave(adducts_mapped, graphs.batch_num_nodes(), dim=0)
             concat_list.append(adducts_exp)
 
         with graphs.local_scope():
@@ -219,9 +207,7 @@ class IcebergGenModel(nn.Module):
             avg_frags = self.pool(graphs, frag_embeddings)
 
         # Extend the avg of each fragment
-        ext_frag_atoms = th.repeat_interleave(
-            avg_frags, graphs.batch_num_nodes(), dim=0
-        )
+        ext_frag_atoms = th.repeat_interleave(avg_frags, graphs.batch_num_nodes(), dim=0)
 
         exp_num = graphs.batch_num_nodes()
         # Do the same with the avg fragments
@@ -256,10 +242,9 @@ class IcebergGenModel(nn.Module):
         padded_out = nn_utils.pad_packed_tensor(output, graphs.batch_num_nodes(), 0)
         padded_out = th.squeeze(padded_out, -1)
         return padded_out
-        
+
 
 class IcebergIntenModel(nn.Module):
-
     def __init__(
         self,
         hidden_size: int,
@@ -287,14 +272,14 @@ class IcebergIntenModel(nn.Module):
         **kwargs,
     ):
         super().__init__()
-        
+
         # Check DGL is available
         if not DGL_AVAILABLE:
             raise ImportError(
                 "DGL (Deep Graph Library) is required to use Iceberg models. "
                 "Please install it with: pip install dgl"
             )
-        
+
         self.hidden_size = hidden_size
         self.pe_embed_k = pe_embed_k
         self.root_encode = root_encode
@@ -405,9 +390,7 @@ class IcebergIntenModel(nn.Module):
         self.num_outputs = 1
         self.output_activations = [nn.Sigmoid()]
         self.output_size = fragmentation.FRAGMENT_ENGINE_PARAMS["max_broken_bonds"] * 2 + 1
-        self.output_map = nn.Linear(
-            self.hidden_size, self.num_outputs * self.output_size
-        )
+        self.output_map = nn.Linear(self.hidden_size, self.num_outputs * self.output_size)
 
         # Define map from output layer to attn
         self.isomer_attn_out = copy.deepcopy(self.output_map)
@@ -415,7 +398,7 @@ class IcebergIntenModel(nn.Module):
         # Define buckets
         self.mz_bin_res = mz_bin_res
         self.mz_max = mz_max
-        buckets = th.DoubleTensor(np.arange(mz_bin_res,mz_max+mz_bin_res,mz_bin_res))
+        buckets = th.DoubleTensor(np.arange(mz_bin_res, mz_max + mz_bin_res, mz_bin_res))
         self.inten_buckets = nn.Parameter(buckets)
         self.inten_buckets.requires_grad = False
 
@@ -489,9 +472,7 @@ class IcebergIntenModel(nn.Module):
         # graphs
         ext_root = root_embeddings[ind_maps]
         # Extend the root further to cover each individual atom
-        ext_root_atoms = th.repeat_interleave(
-            ext_root, graphs.batch_num_nodes(), dim=0
-        )
+        ext_root_atoms = th.repeat_interleave(ext_root, graphs.batch_num_nodes(), dim=0)
         concat_list = [graphs.ndata["h"]]
 
         if self.inject_early:
@@ -499,9 +480,7 @@ class IcebergIntenModel(nn.Module):
 
         if self.embed_adduct:
             adducts_mapped = embed_adducts[ind_maps]
-            adducts_exp = th.repeat_interleave(
-                adducts_mapped, graphs.batch_num_nodes(), dim=0
-            )
+            adducts_exp = th.repeat_interleave(adducts_mapped, graphs.batch_num_nodes(), dim=0)
             concat_list.append(adducts_exp)
 
         with graphs.local_scope():
@@ -531,9 +510,7 @@ class IcebergIntenModel(nn.Module):
             diffs = root_forms[:, None, :] - frag_forms
             form_encodings = self.embedder(frag_forms)
             diff_encodings = self.embedder(diffs)
-            new_hidden = th.cat(
-                [padded_hidden, form_encodings, diff_encodings], dim=-1
-            )
+            new_hidden = th.cat([padded_hidden, form_encodings, diff_encodings], dim=-1)
             padded_hidden = new_hidden
 
         padded_hidden = self.intermediate_out(padded_hidden)
@@ -552,9 +529,7 @@ class IcebergIntenModel(nn.Module):
 
         # Build mask
         max_inten_shift = (self.output_size - 1) / 2
-        max_break_ar = th.arange(self.output_size, device=device)[None, None, :].to(
-            device
-        )
+        max_break_ar = th.arange(self.output_size, device=device)[None, None, :].to(device)
         max_breaks_ub = max_add_hs + max_inten_shift
         max_breaks_lb = -max_remove_hs + max_inten_shift
 
@@ -603,9 +578,7 @@ class IcebergIntenModel(nn.Module):
         # pool_weights_reshaped = pool_weights.reshape(
         #   batch_size, max_frags, -1
         # )
-        inverse_indices_reshaped = inverse_indices.reshape(
-            batch_size, max_frags, -1
-        )
+        inverse_indices_reshaped = inverse_indices.reshape(batch_size, max_frags, -1)
 
         # B x Outs x binned
         # Use scatter_reduce with "amax" instead of ts.scatter_max
@@ -629,35 +602,30 @@ class IcebergIntenModel(nn.Module):
         # # Revert the binned output back to frags for attribution
         # # B x Out x L x Mass shifts
         inverse_indices_reshaped_temp = inverse_indices_reshaped.reshape(batch_size, -1)
-        output_unbinned = th.take_along_dim(
-            output_binned, inverse_indices_reshaped_temp, dim=-1
-        )
-        output_unbinned = output_unbinned.reshape(
-            batch_size, max_frags, -1
-        )
+        output_unbinned = th.take_along_dim(output_binned, inverse_indices_reshaped_temp, dim=-1)
+        output_unbinned = output_unbinned.reshape(batch_size, max_frags, -1)
         # output_unbinned_alpha = output_unbinned * pool_weights_reshaped
 
         if self.fix_batch_bug:
             # note output_unbinned_alpha won't be correct anymore
-            output_binned[:,0] = 0.*output_binned[:,0]
+            output_binned[:, 0] = 0.0 * output_binned[:, 0]
 
         # do the stupid inverse
         output_binned_mask = output_binned > 0
-        pred_mzs = (self.inten_buckets.unsqueeze(0).expand_as(output_binned) - self.mz_bin_res/2.)[output_binned_mask]
+        pred_mzs = (
+            self.inten_buckets.unsqueeze(0).expand_as(output_binned) - self.mz_bin_res / 2.0
+        )[output_binned_mask]
         pred_logprobs = th.log(output_binned[output_binned_mask])
         pred_batch_idxs = th.repeat_interleave(
             th.arange(output_binned.shape[0], device=output_binned.device),
-            th.sum(output_binned_mask,dim=1),
-            dim=0
+            th.sum(output_binned_mask, dim=1),
+            dim=0,
         )
         # normalize
-        pred_logprobs = scatter_logsoftmax(
-            pred_logprobs,
-            pred_batch_idxs
-        )
+        pred_logprobs = scatter_logsoftmax(pred_logprobs, pred_batch_idxs)
 
         if self.fix_batch_bug:
-            assert th.min(pred_mzs) > 1., th.min(pred_mzs)
+            assert th.min(pred_mzs) > 1.0, th.min(pred_mzs)
 
         out_d = {
             "pred_mzs": pred_mzs,
@@ -669,8 +637,7 @@ class IcebergIntenModel(nn.Module):
             out_d["pred_spec"] = output_binned
 
         if self.output_formula_str:
-            
-            # get formula stuff 
+            # get formula stuff
             # note: does not include precursor adduct stuff
             # import pdb; pdb.set_trace()
             assert adduct_form_deltas is not None
@@ -679,34 +646,41 @@ class IcebergIntenModel(nn.Module):
             pred_formula_mzs = masses[valid_nz_pos]
             pred_formula_counts = th.sum(valid_nz_pos.long(), dim=2)
             pred_formula_vecs = th.repeat_interleave(
-                frag_forms.reshape(-1,frag_forms.shape[2]), 
-                pred_formula_counts.flatten(), 
-                dim=0
+                frag_forms.reshape(-1, frag_forms.shape[2]), pred_formula_counts.flatten(), dim=0
             )
-            _, pred_h_h_idxs = th.nonzero(valid_nz_pos.reshape(-1,valid_nz_pos.shape[2]), as_tuple=True)
-            pred_h_deltas = th.arange(valid_nz_pos.shape[2], device=valid_nz_pos.device) - valid_nz_pos.shape[2]//2
-            pred_formula_vecs[:,common.element_to_ind["H"]] += pred_h_deltas[pred_h_h_idxs]
+            _, pred_h_h_idxs = th.nonzero(
+                valid_nz_pos.reshape(-1, valid_nz_pos.shape[2]), as_tuple=True
+            )
+            pred_h_deltas = (
+                th.arange(valid_nz_pos.shape[2], device=valid_nz_pos.device)
+                - valid_nz_pos.shape[2] // 2
+            )
+            pred_formula_vecs[:, common.element_to_ind["H"]] += pred_h_deltas[pred_h_h_idxs]
             assert th.all(pred_formula_vecs >= 0)
             assert th.all(pred_formula_vecs.any(1))
             pred_formula_batch_idxs = th.repeat_interleave(
-                th.arange(frag_forms.shape[0], device=frag_forms.device), 
-                pred_formula_counts.sum(dim=1), 
-                dim=0
+                th.arange(frag_forms.shape[0], device=frag_forms.device),
+                pred_formula_counts.sum(dim=1),
+                dim=0,
             )
             # dedup
-            pred_b_formula_vecs = th.cat([pred_formula_batch_idxs.unsqueeze(1),pred_formula_vecs],dim=1)
-            pred_b_formula_vecs, pred_formula_mzs, pred_formula_batch_idxs = dedup(
-                pred_b_formula_vecs, 
-                *[("amax", pred_formula_mzs), ("amax", pred_formula_batch_idxs)],
-                dim=0
+            pred_b_formula_vecs = th.cat(
+                [pred_formula_batch_idxs.unsqueeze(1), pred_formula_vecs], dim=1
             )
-            pred_formula_vecs = pred_b_formula_vecs[:,1:]
+            pred_b_formula_vecs, pred_formula_mzs, pred_formula_batch_idxs = dedup(
+                pred_b_formula_vecs,
+                *[("amax", pred_formula_mzs), ("amax", pred_formula_batch_idxs)],
+                dim=0,
+            )
+            pred_formula_vecs = pred_b_formula_vecs[:, 1:]
             # account for adducts
             pred_formula_vecs += adduct_form_deltas[pred_formula_batch_idxs]
             # convert formula vecs to strings (this is slow!)
             pred_formula_str = [
-                composition_to_string(Composition(formula=vec_to_formula(pred_formula_vec.squeeze(0)))) \
-                    for pred_formula_vec in pred_formula_vecs.cpu().split(1, dim=0)
+                composition_to_string(
+                    Composition(formula=vec_to_formula(pred_formula_vec.squeeze(0)))
+                )
+                for pred_formula_vec in pred_formula_vecs.cpu().split(1, dim=0)
             ]
             pred_formula_str = np.array(pred_formula_str)
 

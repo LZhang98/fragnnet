@@ -1,16 +1,16 @@
-""" nn_utils.py
-"""
+"""nn_utils.py"""
+
 import copy
 import math
+
 import numpy as np
 import scipy.sparse as sparse
-
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 
-from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
 import fragnnet.iceberg.nn_utils.dgl_modules as dgl_mods
+from fragnnet.utils.dgl_compat_utils import dgl
 
 # Import dgl_F if available
 if dgl is not None:
@@ -61,7 +61,7 @@ class MoleculeGNN(nn.Module):
         node_feat_symbol="h",
         set_transform_layers: int = 2,
         dropout: float = 0,
-        **kwargs
+        **kwargs,
     ):
         """__init__.
         Args:
@@ -126,13 +126,7 @@ class MoleculeGNN(nn.Module):
             g.ndata.update({"_h": h_init})
             g.edata.update({"_e": edata})
 
-            if self.mpnn_type == "GGNN":
-                # Get graph output
-                output = self.gnn(g, "_h", "_e")
-            elif self.mpnn_type == "PNA":
-                # Get graph output
-                output = self.gnn(g, "_h", "_e")
-            elif self.mpnn_type == "GINE":
+            if self.mpnn_type == "GGNN" or self.mpnn_type == "PNA" or self.mpnn_type == "GINE":
                 # Get graph output
                 output = self.gnn(g, "_h", "_e")
             else:
@@ -144,12 +138,7 @@ class MoleculeGNN(nn.Module):
 
 class GINE(nn.Module):
     def __init__(
-        self,
-        hidden_size=64,
-        edge_feats=4,
-        num_step_message_passing=4,
-        dropout=0,
-        **kwargs
+        self, hidden_size=64, edge_feats=4, num_step_message_passing=4, dropout=0, **kwargs
     ):
         """GINE.
 
@@ -203,9 +192,7 @@ class GINE(nn.Module):
 
 
 class GGNN(nn.Module):
-    def __init__(
-        self, hidden_size=64, edge_feats=4, num_step_message_passing=4, **kwargs
-    ):
+    def __init__(self, hidden_size=64, edge_feats=4, num_step_message_passing=4, **kwargs):
         """GGNN.
 
         Define a gated graph neural network
@@ -248,12 +235,7 @@ class GGNN(nn.Module):
 
 class PNA(nn.Module):
     def __init__(
-        self,
-        hidden_size=64,
-        edge_feats=4,
-        num_step_message_passing=4,
-        dropout=0,
-        **kwargs
+        self, hidden_size=64, edge_feats=4, num_step_message_passing=4, dropout=0, **kwargs
     ):
         """PNA.
 
@@ -648,9 +630,7 @@ class SetTransformerEncoder(nn.Module):
         self.m = m
         layers = []
         if block_type == "isab" and m is None:
-            raise KeyError(
-                "The number of inducing points is not specified in ISAB block."
-            )
+            raise KeyError("The number of inducing points is not specified in ISAB block.")
 
         for _ in range(n_layers):
             if block_type == "sab":
@@ -718,13 +698,9 @@ def _gen_mask(lengths_x, lengths_y, max_len_x, max_len_y):
     """
     device = lengths_x.device
     # x_mask: (batch_size, max_len_x)
-    x_mask = th.arange(max_len_x, device=device).unsqueeze(0) < lengths_x.unsqueeze(
-        1
-    )
+    x_mask = th.arange(max_len_x, device=device).unsqueeze(0) < lengths_x.unsqueeze(1)
     # y_mask: (batch_size, max_len_y)
-    y_mask = th.arange(max_len_y, device=device).unsqueeze(0) < lengths_y.unsqueeze(
-        1
-    )
+    y_mask = th.arange(max_len_y, device=device).unsqueeze(0) < lengths_y.unsqueeze(1)
     # mask: (batch_size, 1, max_len_x, max_len_y)
     mask = (x_mask.unsqueeze(-1) & y_mask.unsqueeze(-2)).unsqueeze(1)
     return mask
@@ -794,18 +770,15 @@ def random_walk_pe(g, k, eweight_name=None):
             [0.5000, 0.7500]])
     """
     edges = g.edges()
-    indices = (
-        edges[0].numpy(),
-        edges[1].numpy()
-    )
+    indices = (edges[0].numpy(), edges[1].numpy())
     num_edges = g.num_edges()
     num_nodes = g.num_nodes()
     if eweight_name:
         vals = g.edata[eweight_name].squeeze().numpy()
     else:
-        vals = np.ones([num_edges],dtype=np.float32)
-    A = sparse.csr_matrix((vals,indices),shape=(num_nodes,num_nodes))
-    RW = A / (A.sum(axis=1).reshape(-1,1) + 1e-30)
+        vals = np.ones([num_edges], dtype=np.float32)
+    A = sparse.csr_matrix((vals, indices), shape=(num_nodes, num_nodes))
+    RW = A / (A.sum(axis=1).reshape(-1, 1) + 1e-30)
     # Iterate for k steps
     PE = [RW.diagonal()]
     RW_power = RW.copy()
@@ -813,7 +786,7 @@ def random_walk_pe(g, k, eweight_name=None):
         RW_power = RW_power @ RW
         PE.append(RW_power.diagonal())
     PE = np.stack(PE, axis=-1)
-    PE = th.as_tensor(PE,dtype=th.float32)
+    PE = th.as_tensor(PE, dtype=th.float32)
     return PE
 
 

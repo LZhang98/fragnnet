@@ -13,9 +13,7 @@ try:
     DGLGraph = getattr(dgl, "DGLGraph", type("DGLGraph", (), {}))
     dgl_function = getattr(dgl, "function", None)
     dgl_nn = getattr(dgl, "nn", None)
-    expand_as_pair = (
-        getattr(dgl_nn, "expand_as_pair", None) if dgl_nn is not None else None
-    )
+    expand_as_pair = getattr(dgl_nn, "expand_as_pair", None) if dgl_nn is not None else None
 except Exception:
     dgl = None  # type: ignore
     DGL_AVAILABLE = False

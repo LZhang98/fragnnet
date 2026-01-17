@@ -1,28 +1,28 @@
 import torch as th
-import torch.nn as nn
 import torch._dynamo as th_dynamo
+import torch.nn as nn
+
 try:
     from torch._dynamo.utils import CompileProfiler
+
     profiler_available = True
 except ImportError:
     profiler_available = False
 
 import numpy as np
-from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
-from fragnnet.pl_model import SpectrumPL
-from fragnnet.utils.misc_utils import to_cpu, scatter_reduce, LOG_ZERO
-from fragnnet.model.loss import sparse_cosine_distance_hungarian, sparse_cosine_distance_binned
+
 import fragnnet.iceberg.common as common
-from fragnnet.iceberg.model import IcebergGenModel, IcebergIntenModel
-from fragnnet.iceberg.dataset import TreeProcessor
 from fragnnet.iceberg import fragmentation
-from fragnnet.utils.spec_utils import calculate_cosine_similarity, binned_cosine_similarity
+from fragnnet.iceberg.dataset import TreeProcessor
+from fragnnet.iceberg.model import IcebergGenModel, IcebergIntenModel
+from fragnnet.model.loss import sparse_cosine_distance_binned
+from fragnnet.pl_model import SpectrumPL
+from fragnnet.utils.dgl_compat_utils import DGL_AVAILABLE, dgl
+from fragnnet.utils.misc_utils import scatter_reduce, to_cpu
 
 
 class IcebergGenPL(SpectrumPL):
-
     def _setup_model(self):
-        
         # Check DGL is available
         if not DGL_AVAILABLE:
             raise ImportError(
@@ -72,36 +72,22 @@ class IcebergGenPL(SpectrumPL):
                 pass
 
     def _setup_loss_fn(self):
-
         assert self.hparams.loss_type == "iceberg_gen_cross_entropy", self.hparams.loss_type
-        def _loss_fn(
-            outputs,
-            targets,
-            natoms,
-            batch_idxs,
-            **kwargs):
+
+        def _loss_fn(outputs, targets, natoms, batch_idxs, **kwargs):
             bce_loss_fn = nn.BCELoss(reduction="none")
             loss = bce_loss_fn(outputs, targets.float())
-            is_valid = (
-                th.arange(loss.shape[1], device=loss.device)[None, :] < natoms[:, None]
-            )
+            is_valid = th.arange(loss.shape[1], device=loss.device)[None, :] < natoms[:, None]
             assert (is_valid.sum(1) == natoms).all()
             loss = th.sum(loss * is_valid, dim=1) / natoms
-            loss = scatter_reduce(
-                loss, 
-                batch_idxs,
-                "sum",
-                dim_size=th.max(batch_idxs)+1
-            )
-            loss_d = {
-                "loss": loss
-            }
+            loss = scatter_reduce(loss, batch_idxs, "sum", dim_size=th.max(batch_idxs) + 1)
+            loss_d = {"loss": loss}
             return loss_d
+
         self.loss_fn = _loss_fn
         self.metric_names.add("loss")
 
-    def forward(self,**kwargs):
-
+    def forward(self, **kwargs):
         outputs = self.model(
             graphs=kwargs["magma_frag_graphs"],
             root_repr=kwargs["magma_root_reprs"],
@@ -109,12 +95,11 @@ class IcebergGenPL(SpectrumPL):
             broken=kwargs["magma_broken_bonds"],
             adducts=kwargs["magma_adducts"],
             root_forms=kwargs["magma_root_form_vecs"],
-            frag_forms=kwargs["magma_frag_form_vecs"]
+            frag_forms=kwargs["magma_frag_form_vecs"],
         )
         return outputs
 
     def _common_step(self, batch, split="train", log=True):
-
         batch_size = batch["batch_size"]
         unique_id = batch["spec_unique_id"]
         smiles = batch["mol_smiles"]
@@ -122,35 +107,24 @@ class IcebergGenPL(SpectrumPL):
         natoms = batch["magma_frag_atoms"]
         batch_idxs = batch["magma_inds"]
         outputs = self.forward(**batch)
-        both = {
-            "targets": targets,
-            "natoms": natoms,
-            "outputs": outputs,
-            "batch_idxs": batch_idxs
-        }
+        both = {"targets": targets, "natoms": natoms, "outputs": outputs, "batch_idxs": batch_idxs}
         loss_d = self.loss_fn(**both)
         loss = loss_d["loss"]
-        mean_loss = th.mean(loss,dim=0)
+        mean_loss = th.mean(loss, dim=0)
         # just log loss
         if log:
-            self.log(
-                f"{split}_batch_loss",
-                mean_loss,
-                batch_size=batch_size,
-                on_epoch=True
-            )
+            self.log(f"{split}_batch_loss", mean_loss, batch_size=batch_size, on_epoch=True)
         results = {
             "unique_id": unique_id,
             "smiles": smiles,
             "loss": loss,
             "mean_loss": mean_loss,
             **both,
-            **loss_d
+            **loss_d,
         }
         return results
 
     def _update_results(self, batch_results, split):
-
         if split == "train":
             num_log_images = self.hparams.num_log_train_images
             results_attr = "train_results"
@@ -168,26 +142,25 @@ class IcebergGenPL(SpectrumPL):
         ]
         keys.extend(list(self.metric_names))
         unique_ids = batch_results.pop("unique_id")
-        batch_results = {k:v for k,v in batch_results.items() if k in keys}
+        batch_results = {k: v for k, v in batch_results.items() if k in keys}
         batch_results["unique_ids"] = unique_ids
         # check all metrics
         assert all([metric_name in batch_results for metric_name in self.metric_names])
         # transfer to cpu
-        batch_results = to_cpu(batch_results,detach=True)
+        batch_results = to_cpu(batch_results, detach=True)
         # setup results dict
-        if getattr(self,results_attr) is None:
-            setattr(self,results_attr,{k:list() for k in keys})
+        if getattr(self, results_attr) is None:
+            setattr(self, results_attr, {k: list() for k in keys})
         else:
-            assert set(keys) == set(getattr(self,results_attr).keys())
-        results_dict = getattr(self,results_attr)
+            assert set(keys) == set(getattr(self, results_attr).keys())
+        results_dict = getattr(self, results_attr)
         # add to results dict
-        for k,v in batch_results.items():
+        for k, v in batch_results.items():
             results_dict[k].append(v)
         # increment counter
-        setattr(self,counter_attr,getattr(self,counter_attr)+unique_ids.shape[0])
+        setattr(self, counter_attr, getattr(self, counter_attr) + unique_ids.shape[0])
 
     def _reduce_metrics(self, results, split):
-
         mean_metrics, std_metrics = {}, {}
         for k, v in results.items():
             if k in self.metric_names:
@@ -195,8 +168,7 @@ class IcebergGenPL(SpectrumPL):
                 std_metrics[k] = th.std(v, dim=0)
         return mean_metrics, std_metrics
 
-    def _log_images(self,split):
-
+    def _log_images(self, split):
         if split == "train":
             num_log_images = self.hparams.num_log_train_images
         elif split == "val":
@@ -211,7 +183,8 @@ class IcebergGenPL(SpectrumPL):
         threshold=0,
         device: str = "cpu",
         max_nodes: int = None,
-        tree_processor: TreeProcessor = None):
+        tree_processor: TreeProcessor = None,
+    ):
         """predict_mol.
 
         Predict a new fragmentation tree from a starting root molecule
@@ -282,21 +255,16 @@ class IcebergGenPL(SpectrumPL):
 
         # Step 3: Run the autoregressive gen loop
         with th.inference_mode():
-
             # Note: we don't fragment at the final depth
             while len(stack) > 0 and depth < max_depth:
                 # Convert all new frags to graphs (stack is to run next)
 
                 new_dgl_dicts = [
-                    tree_processor.featurize_frag(
-                        frag=i, engine=engine, add_random_walk=True
-                    )
+                    tree_processor.featurize_frag(frag=i, engine=engine, add_random_walk=True)
                     for i in stack
                 ]
                 tuple_list = [
-                    (i, j)
-                    for i, j in zip(new_dgl_dicts, stack)
-                    if i["graph"].num_nodes() > 1
+                    (i, j) for i, j in zip(new_dgl_dicts, stack) if i["graph"].num_nodes() > 1
                 ]
 
                 if len(tuple_list) == 0:
@@ -342,9 +310,7 @@ class IcebergGenPL(SpectrumPL):
                 # the max node constraint ranked by prob
 
                 # Get all frag probabilities and sort them
-                cur_probs = sorted(
-                    [i["prob_gen"] for i in frag_hash_to_entry.values()]
-                )[::-1]
+                cur_probs = sorted([i["prob_gen"] for i in frag_hash_to_entry.values()])[::-1]
                 if max_nodes is None or len(cur_probs) < max_nodes:
                     min_prob = threshold
                 elif max_nodes is not None and len(cur_probs) >= max_nodes:
@@ -352,9 +318,7 @@ class IcebergGenPL(SpectrumPL):
                 else:
                     raise NotImplementedError()
 
-                new_items = list(
-                    zip(stack, new_frag_hashes, pred_leaving, new_dgl_dicts)
-                )
+                new_items = list(zip(stack, new_frag_hashes, pred_leaving, new_dgl_dicts))
                 sorted_order = []
                 for item_ind, item in enumerate(new_items):
                     frag_hash = item[1]
@@ -363,7 +327,6 @@ class IcebergGenPL(SpectrumPL):
                     for atom_ind, (atom_pred, prob_gen) in enumerate(
                         zip(pred_vals_f, parent_prob * pred_vals_f)
                     ):
-
                         sorted_order.append(
                             dict(
                                 item_ind=item_ind,
@@ -431,32 +394,24 @@ class IcebergGenPL(SpectrumPL):
                                 "prob_gen": prob_gen,
                             }
                             id_ += 1
-                            new_entry.update(
-                                engine.atom_pass_stats(out_frag, depth=max_broken)
-                            )
+                            new_entry.update(engine.atom_pass_stats(out_frag, depth=max_broken))
 
                             # reset to best score
                             temp_form = new_entry["form"]
-                            prev_best_score = form_to_min_score.get(
-                                temp_form, float("inf")
-                            )
-                            form_to_min_score[temp_form] = min(
-                                new_entry["score"], prev_best_score
-                            )
+                            prev_best_score = form_to_min_score.get(temp_form, float("inf"))
+                            form_to_min_score[temp_form] = min(new_entry["score"], prev_best_score)
                             frag_hash_to_entry[out_hash] = new_entry
 
                         else:
                             current_entry["parents"].append(frag_hash)
-                            current_entry["prob_gen"] = max(
-                                current_entry["prob_gen"], prob_gen
-                            )
+                            current_entry["prob_gen"] = max(current_entry["prob_gen"], prob_gen)
 
                         # Update cur probs
                         # This is inefficeint and can be made smarter withotu
                         # doing another minimum calculation
-                        cur_probs = sorted(
-                            [i["prob_gen"] for i in frag_hash_to_entry.values()]
-                        )[::-1]
+                        cur_probs = sorted([i["prob_gen"] for i in frag_hash_to_entry.values()])[
+                            ::-1
+                        ]
                         if max_nodes is None or len(cur_probs) < max_nodes:
                             min_prob = threshold
                         elif max_nodes is not None and len(cur_probs) >= max_nodes:
@@ -484,16 +439,12 @@ class IcebergGenPL(SpectrumPL):
                 list(frag_hash_to_entry.keys()),
                 key=lambda x: -frag_hash_to_entry[x]["prob_gen"],
             )
-            frag_hash_to_entry = {
-                k: frag_hash_to_entry[k] for k in sorted_keys[:max_nodes]
-            }
+            frag_hash_to_entry = {k: frag_hash_to_entry[k] for k in sorted_keys[:max_nodes]}
         return frag_hash_to_entry
 
 
 class IcebergIntenPL(SpectrumPL):
-
     def _setup_model(self):
-        
         # Check DGL is available
         if not DGL_AVAILABLE:
             raise ImportError(
@@ -534,20 +485,15 @@ class IcebergIntenPL(SpectrumPL):
             th_dynamo.reset()
             if profiler_available:
                 self.dynamo_prof = CompileProfiler()
-                self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+                self.model = self.model.get_compile(backend=self.dynamo_prof, dynamic=True)
             else:
-                self.model = th.compile(self.model,dynamic=True)
-    
-    def _setup_loss_fn(self):
+                self.model = th.compile(self.model, dynamic=True)
 
+    def _setup_loss_fn(self):
         # binned cosine distance
         def cos_dist_fn(
-            true_mzs,
-            true_logprobs,
-            true_batch_idxs,
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs):
+            true_mzs, true_logprobs, true_batch_idxs, pred_mzs, pred_logprobs, pred_batch_idxs
+        ):
             return sparse_cosine_distance_binned(
                 true_mzs,
                 true_logprobs,
@@ -555,14 +501,14 @@ class IcebergIntenPL(SpectrumPL):
                 pred_mzs,
                 pred_logprobs,
                 pred_batch_idxs,
-                log_distance=(self.hparams.loss_type == "log_cosine_distance")
+                log_distance=(self.hparams.loss_type == "log_cosine_distance"),
             )
 
         # cosine distance
         assert self.hparams.loss_type == "cosine_distance", self.hparams.loss_type
         assert self.hparams.sparse_cosine_similarity
         self.binned_loss = True
-        
+
         def _loss_fn(
             true_mzs,
             true_logprobs,
@@ -570,8 +516,8 @@ class IcebergIntenPL(SpectrumPL):
             pred_mzs,
             pred_logprobs,
             pred_batch_idxs,
-            **kwargs):
-        
+            **kwargs,
+        ):
             spec_cd = cos_dist_fn(
                 true_mzs,
                 true_logprobs,
@@ -583,21 +529,14 @@ class IcebergIntenPL(SpectrumPL):
             primary_loss = spec_cd
 
             loss = primary_loss
-            loss_d = {
-                "loss": loss,
-                "primary_loss": primary_loss
-            }
+            loss_d = {"loss": loss, "primary_loss": primary_loss}
             return loss_d
 
         self.loss_fn = _loss_fn
-        loss_names = [
-            "loss",
-            "primary_loss"
-        ]
+        loss_names = ["loss", "primary_loss"]
         self.metric_names.update(loss_names)
 
-    def forward(self,**kwargs):
-
+    def forward(self, **kwargs):
         outputs = self.model(
             graphs=kwargs["magma_frag_graphs"],
             root_repr=kwargs["magma_root_reprs"],
@@ -610,6 +549,6 @@ class IcebergIntenPL(SpectrumPL):
             masses=kwargs["magma_masses"],
             root_forms=kwargs["magma_root_form_vecs"],
             frag_forms=kwargs["magma_frag_form_vecs"],
-            adduct_form_deltas=kwargs.get("magma_adduct_form_deltas",None),
+            adduct_form_deltas=kwargs.get("magma_adduct_form_deltas"),
         )
         return outputs

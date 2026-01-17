@@ -80,9 +80,7 @@ class IntFeaturizer(nn.Module):
 
         # Other special extra embeddings (e.g., 998 → index 1, etc.)
         extra_token_indices = th.clamp(tensor - self.max_count_int, min=0)
-        extra_token_indices = (
-            th.clamp(extra_token_indices, max=self.num_extra_embeddings - 2) + 1
-        )
+        extra_token_indices = th.clamp(extra_token_indices, max=self.num_extra_embeddings - 2) + 1
         extra_embeds = self._extra_embeddings[extra_token_indices]
         extra_embeds[~extra_mask] = 0  # Mask-out invalid positions
 
@@ -133,8 +131,7 @@ class FourierFeaturizer(IntFeaturizer):
 
         # we will define the features at this frequency up front (as we only will ever see a fixed number of counts):
         combo_of_sinusoid_args = (
-            th.arange(self.max_count_int, dtype=th.float32)[:, None]
-            * freqs_time_2pi[None, :]
+            th.arange(self.max_count_int, dtype=th.float32)[:, None] * freqs_time_2pi[None, :]
         )
         all_features = th.cat(
             [th.cos(combo_of_sinusoid_args), th.sin(combo_of_sinusoid_args)],
@@ -181,8 +178,7 @@ class FourierFeaturizerSines(IntFeaturizer):
 
         # we will define the features at this frequency up front (as we only will ever see a fixed number of counts):
         combo_of_sinusoid_args = (
-            th.arange(self.max_count_int, dtype=th.float32)[:, None]
-            * freqs_time_2pi[None, :]
+            th.arange(self.max_count_int, dtype=th.float32)[:, None] * freqs_time_2pi[None, :]
         )
         # ^ shape:  MAX_COUNT_INT x 2 * num_freqs
         self.int_to_feat_matrix = nn.Parameter(th.sin(combo_of_sinusoid_args).float())
@@ -223,13 +219,10 @@ class FourierFeaturizerAbsoluteSines(IntFeaturizer):
 
         # we will define the features at this frequency up front (as we only will ever see a fixed number of counts):
         combo_of_sinusoid_args = (
-            th.arange(self.max_count_int, dtype=th.float32)[:, None]
-            * freqs_time_2pi[None, :]
+            th.arange(self.max_count_int, dtype=th.float32)[:, None] * freqs_time_2pi[None, :]
         )
         # ^ shape:  MAX_COUNT_INT x 2 * num_freqs
-        self.int_to_feat_matrix = nn.Parameter(
-            th.abs(th.sin(combo_of_sinusoid_args)).float()
-        )
+        self.int_to_feat_matrix = nn.Parameter(th.abs(th.sin(combo_of_sinusoid_args)).float())
         self.int_to_feat_matrix.requires_grad = False
 
 
@@ -261,8 +254,7 @@ class RBFFeaturizer(IntFeaturizer):
         centers = th.linspace(0, self.max_count_int - 1, num_funcs)
 
         pre_exponential_terms = (
-            -0.5
-            * ((th.arange(self.max_count_int)[:, None] - centers[None, :]) / width) ** 2
+            -0.5 * ((th.arange(self.max_count_int)[:, None] - centers[None, :]) / width) ** 2
         )
         # ^ shape: MAX_COUNT_INT x num_funcs
         feats = th.exp(pre_exponential_terms)
