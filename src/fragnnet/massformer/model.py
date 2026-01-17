@@ -1,17 +1,15 @@
 import torch as th
 import torch.nn as nn
 
-from fragnnet.model import CEModel, PrecModel, InstModel
 from fragnnet.massformer.nn_utils import GFv2Embedder
+from fragnnet.model import CEModel, InstModel, PrecModel
 from fragnnet.model.nn_blocks import SpecFFN
 from fragnnet.utils.nn_utils import *
-from fragnnet.utils.misc_utils import scatter_reduce
 
 
 class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
-
     def __init__(
-        self, 
+        self,
         mlp_hidden_size: int,
         mlp_dropout: float,
         mlp_num_layers: int,
@@ -39,8 +37,8 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
         inst_insert_location: str,
         inst_insert_size: int,
         inst_types: list[str],
-        log_min: float):
-        
+        log_min: float,
+    ):
         # nn.Module init
         super().__init__()
 
@@ -60,21 +58,24 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
             ce_insert_size=ce_insert_size,
             ce_max=ce_max,
             ce_mean=ce_mean,
-            ce_std=ce_std)
+            ce_std=ce_std,
+        )
         self.mlp_input_dim += self.ce_mlp_input_dim
 
         # prec stuff
         self._prec_init(
             prec_insert_location=prec_insert_location,
             prec_insert_size=prec_insert_size,
-            prec_num_types=len(prec_types))
+            prec_num_types=len(prec_types),
+        )
         self.mlp_input_dim += self.prec_mlp_input_dim
 
-                # inst stuff
+        # inst stuff
         self._inst_init(
             inst_insert_location=inst_insert_location,
             inst_insert_size=inst_insert_size,
-            inst_num_types=len(inst_types))
+            inst_num_types=len(inst_types),
+        )
         self.mlp_input_dim += self.inst_mlp_input_dim
 
         self.ffn = SpecFFN(
@@ -89,23 +90,25 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
             use_residuals=mlp_use_residuals,
             output_map_size=ff_output_map_size,
             output_activation=ff_output_activation,
-            log_min=log_min
+            log_min=log_min,
         )
 
     def _ce_location_check(self):
-
-        assert self.ce_insert_location in ["mlp","none"], f"ce_insert_location={self.ce_insert_location} not supported"
+        assert self.ce_insert_location in ["mlp", "none"], (
+            f"ce_insert_location={self.ce_insert_location} not supported"
+        )
 
     def _prec_location_check(self):
-
-        assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+        assert self.prec_insert_location in ["mlp", "none"], (
+            f"prec_insert_location={self.prec_insert_location} not supported"
+        )
 
     def _inst_location_check(self):
-
-        assert self.prec_insert_location in ["mlp","none"], f"prec_insert_location={self.prec_insert_location} not supported"
+        assert self.prec_insert_location in ["mlp", "none"], (
+            f"prec_insert_location={self.prec_insert_location} not supported"
+        )
 
     def get_split_params(self):
-
         nopt_params, pt_params = self.gf.get_split_params()
         pt_params.extend(list(self.ffn.parameters()))
         return nopt_params, pt_params
@@ -127,8 +130,8 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
         spec_prec_type: th.Tensor = None,
         spec_inst_type: th.Tensor = None,
         mf_perturb: th.Tensor = None,
-        **kwargs):
-
+        **kwargs,
+    ):
         gf_d = {
             "idx": mol_mf_idx,
             "attn_bias": mol_mf_attn_bias,
@@ -140,7 +143,7 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
             "edge_input": mol_mf_edge_input,
             "y": mol_mf_y,
         }
-        fh = self.gf(gf_d,perturb=mf_perturb)
+        fh = self.gf(gf_d, perturb=mf_perturb)
         batch_size = fh.shape[0]
         # get ce
         ce = spec_ce
@@ -149,18 +152,18 @@ class MassFormerModel(nn.Module, CEModel, PrecModel, InstModel):
         prec_embed = self.embed_prec(spec_prec_type)
         inst_embed = self.embed_inst(spec_inst_type)
         if self.ce_insert_location == "mlp":
-            fh = th.cat([fh,ce_embed],dim=1)
+            fh = th.cat([fh, ce_embed], dim=1)
         if self.prec_insert_location == "mlp":
-            fh = th.cat([fh,prec_embed],dim=1)
+            fh = th.cat([fh, prec_embed], dim=1)
         if self.inst_insert_location == "mlp":
-            fh = th.cat([fh,inst_embed],dim=1)
+            fh = th.cat([fh, inst_embed], dim=1)
 
         # apply ffn
-        pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(fh,spec_prec_mz)
+        pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs = self.ffn(fh, spec_prec_mz)
         out_d = {
             "pred_mzs": pred_mzs,
             "pred_logprobs": pred_logprobs,
             "pred_batch_idxs": pred_batch_idxs,
-            "pred_specs": pred_specs
+            "pred_specs": pred_specs,
         }
         return out_d

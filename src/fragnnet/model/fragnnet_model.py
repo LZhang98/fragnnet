@@ -988,7 +988,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             frag_edge_logprobs = scatter_logsoftmax(frag_edge_logits, frag_edge_batch_idxs)
             # print(scatter_logsumexp(frag_edge_logprobs,frag_edge_batch_idxs))
             frag_node_h_counts = get_node_feats(frag_x, frag_node_feat_idxs, "h_counts")
-            frag_edge_h_ranges = get_edge_feats(frag_edge_attr, frag_edge_feat_idxs, "h_ranges")
+            frag_edge_h_ranges = get_edge_feats(frag_edge_attr, frag_edge_feat_idxs, "h_range")
             # Memory Opt #2: Use einsum to compute h_diffs without Cartesian product expansion
             src_h_counts = frag_node_h_counts[frag_edge_index[0]]  # (num_edges,)
             dst_h_counts = frag_node_h_counts[frag_edge_index[1]]  # (num_edges,)

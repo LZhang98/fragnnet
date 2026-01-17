@@ -1,15 +1,17 @@
-""" dgl_modules.
+"""dgl_modules.
 
 Directly copy dgl modules to patch them
 
 """
-import numpy as np
 
+import numpy as np
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
-from fragnnet.utils.dgl_compat_utils import dgl, dgl_function as fn, expand_as_pair
+
+from fragnnet.utils.dgl_compat_utils import dgl_function as fn
+from fragnnet.utils.dgl_compat_utils import expand_as_pair
 
 
 class GatedGraphConv(nn.Module):
@@ -69,9 +71,7 @@ class GatedGraphConv(nn.Module):
         self._out_feats = out_feats
         self._n_steps = n_steps
         self._n_etypes = n_etypes
-        self.linears = nn.ModuleList(
-            [nn.Linear(out_feats, out_feats) for _ in range(n_etypes)]
-        )
+        self.linears = nn.ModuleList([nn.Linear(out_feats, out_feats) for _ in range(n_etypes)])
         self.gru = nn.GRUCell(out_feats, out_feats, bias=bias)
         self.reset_parameters()
 
@@ -139,9 +139,9 @@ class GatedGraphConv(nn.Module):
                 "and pass in the edge type as argument"
             )
             if self._n_etypes != 1:
-                assert (
-                    etypes.min() >= 0 and etypes.max() < self._n_etypes
-                ), "edge type indices out of range [0, {})".format(self._n_etypes)
+                assert etypes.min() >= 0 and etypes.max() < self._n_etypes, (
+                    f"edge type indices out of range [0, {self._n_etypes})"
+                )
 
             zero_pad = feat.new_zeros((feat.shape[0], self._out_feats - feat.shape[1]))
             feat = th.cat([feat, zero_pad], -1)
@@ -163,9 +163,7 @@ class GatedGraphConv(nn.Module):
                         )
                         if len(eids) > 0:
                             graph.apply_edges(
-                                lambda edges: {
-                                    "W_e*h": self.linears[i](edges.src["h"])
-                                },
+                                lambda edges: {"W_e*h": self.linears[i](edges.src["h"])},
                                 eids,
                             )
                     graph.update_all(fn.copy_e("W_e*h", "m"), fn.sum("m", "a"))
@@ -297,9 +295,7 @@ class PNAConvTower(nn.Module):
         h = th.cat([AGGREGATORS[agg](msg) for agg in self.aggregators], dim=1)
         h = th.cat(
             [
-                SCALERS[scaler](h, D=degree, delta=self.delta)
-                if scaler != "identity"
-                else h
+                SCALERS[scaler](h, D=degree, delta=self.delta) if scaler != "identity" else h
                 for scaler in self.scalers
             ],
             dim=1,
@@ -482,9 +478,7 @@ class PNAConv(nn.Module):
             [
                 tower(
                     graph,
-                    node_feat[
-                        :, ti * self.tower_in_size : (ti + 1) * self.tower_in_size
-                    ],
+                    node_feat[:, ti * self.tower_in_size : (ti + 1) * self.tower_in_size],
                     edge_feat,
                 )
                 for ti, tower in enumerate(self.towers)

@@ -3,15 +3,15 @@
 Hold pairwise attention enabled transformers
 
 """
+
 import math
-from typing import Optional, Union, Callable, Tuple
+from collections.abc import Callable
 
 import torch as th
 from torch import Tensor
+from torch.nn import Dropout, LayerNorm, Linear, Module, Parameter
 from torch.nn import functional as F
-from torch.nn import Module, LayerNorm, Linear, Dropout, Parameter
-from torch.nn.init import xavier_uniform_, constant_
-
+from torch.nn.init import constant_, xavier_uniform_
 from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
 
 
@@ -48,6 +48,7 @@ class TransformerEncoderLayer(Module):
         >>> src = th.rand(32, 10, 512)
         >>> out = encoder_layer(src)
     """
+
     __constants__ = ["batch_first", "norm_first"]
 
     def __init__(
@@ -56,7 +57,7 @@ class TransformerEncoderLayer(Module):
         nhead: int,
         dim_feedforward: int = 2048,
         dropout: float = 0.1,
-        activation: Union[str, Callable[[Tensor], Tensor]] = F.relu,
+        activation: str | Callable[[Tensor], Tensor] = F.relu,
         layer_norm_eps: float = 1e-5,
         batch_first: bool = False,
         norm_first: bool = False,
@@ -98,8 +99,8 @@ class TransformerEncoderLayer(Module):
     def forward(
         self,
         src: Tensor,
-        pairwise_features: Optional[Tensor] = None,
-        src_key_padding_mask: Optional[Tensor] = None,
+        pairwise_features: Tensor | None = None,
+        src_key_padding_mask: Tensor | None = None,
     ) -> Tensor:
         r"""Pass the input through the encoder layer.
 
@@ -116,14 +117,10 @@ class TransformerEncoderLayer(Module):
 
         x = src
         if self.norm_first:
-            x = x + self._sa_block(
-                self.norm1(x), pairwise_features, src_key_padding_mask
-            )
+            x = x + self._sa_block(self.norm1(x), pairwise_features, src_key_padding_mask)
             x = x + self._ff_block(self.norm2(x))
         else:
-            x = self.norm1(
-                x + self._sa_block(x, pairwise_features, src_key_padding_mask)
-            )
+            x = self.norm1(x + self._sa_block(x, pairwise_features, src_key_padding_mask))
             x = self.norm2(x + self._ff_block(x))
 
         return x, pairwise_features
@@ -132,10 +129,9 @@ class TransformerEncoderLayer(Module):
     def _sa_block(
         self,
         x: Tensor,
-        pairwise_features: Optional[Tensor],
-        key_padding_mask: Optional[Tensor],
+        pairwise_features: Tensor | None,
+        key_padding_mask: Tensor | None,
     ) -> Tensor:
-
         ## Apply joint featurizer
         x = self.self_attn(
             x,
@@ -207,17 +203,13 @@ class MultiheadAttention(Module):
         self.dropout = dropout
         self.batch_first = batch_first
         self.head_dim = embed_dim // num_heads
-        assert (
-            self.head_dim * num_heads == self.embed_dim
-        ), "embed_dim must be divisible by num_heads"
+        assert self.head_dim * num_heads == self.embed_dim, (
+            "embed_dim must be divisible by num_heads"
+        )
         if self.additive_attn:
-            head_1_input = (
-                self.head_dim * 3 if self.pairwise_featurization else self.head_dim * 2
-            )
+            head_1_input = self.head_dim * 3 if self.pairwise_featurization else self.head_dim * 2
             self.attn_weight_1_weight = Parameter(
-                th.empty(
-                    (self.num_heads, head_1_input, self.head_dim), **factory_kwargs
-                ),
+                th.empty((self.num_heads, head_1_input, self.head_dim), **factory_kwargs),
             )
             self.attn_weight_1_bias = Parameter(
                 th.empty((self.num_heads, self.head_dim), **factory_kwargs),
@@ -242,9 +234,7 @@ class MultiheadAttention(Module):
                     th.empty((self.num_heads, self.head_dim), **factory_kwargs),
                 )
 
-        self.in_proj_weight = Parameter(
-            th.empty((3 * embed_dim, embed_dim), **factory_kwargs)
-        )
+        self.in_proj_weight = Parameter(th.empty((3 * embed_dim, embed_dim), **factory_kwargs))
         self.in_proj_bias = Parameter(th.empty(3 * embed_dim, **factory_kwargs))
         self.out_proj = NonDynamicallyQuantizableLinear(
             embed_dim, embed_dim, bias=True, **factory_kwargs
@@ -272,9 +262,9 @@ class MultiheadAttention(Module):
         query: Tensor,
         key: Tensor,
         value: Tensor,
-        key_padding_mask: Optional[Tensor] = None,
-        pairwise_features: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Optional[Tensor]]:
+        key_padding_mask: Tensor | None = None,
+        pairwise_features: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor | None]:
         r"""
         Args:
             query: Query embeddings of shape :math:`(L, E_q)` for unbatched input, :math:`(L, N, E_q)` when ``batch_first=False``
@@ -347,14 +337,14 @@ class MultiheadAttention(Module):
         embed_dim_to_check: int,
         num_heads: int,
         in_proj_weight: Tensor,
-        in_proj_bias: Optional[Tensor],
+        in_proj_bias: Tensor | None,
         dropout_p: float,
         out_proj_weight: Tensor,
-        out_proj_bias: Optional[Tensor],
+        out_proj_bias: Tensor | None,
         training: bool = True,
-        key_padding_mask: Optional[Tensor] = None,
-        pairwise_features: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Optional[Tensor]]:
+        key_padding_mask: Tensor | None = None,
+        pairwise_features: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor | None]:
         r"""
         Args:
             query, key, value: map a query and a set of key-value pairs to an output.
@@ -397,20 +387,20 @@ class MultiheadAttention(Module):
         # set up shape vars
         tgt_len, bsz, embed_dim = query.shape
         src_len, _, _ = key.shape
-        assert (
-            embed_dim == embed_dim_to_check
-        ), f"was expecting embedding dimension of {embed_dim_to_check}, but got {embed_dim}"
+        assert embed_dim == embed_dim_to_check, (
+            f"was expecting embedding dimension of {embed_dim_to_check}, but got {embed_dim}"
+        )
         if isinstance(embed_dim, th.Tensor):
             # embed_dim can be a tensor when JIT tracing
             head_dim = embed_dim.div(num_heads, rounding_mode="trunc")
         else:
             head_dim = embed_dim // num_heads
-        assert (
-            head_dim * num_heads == embed_dim
-        ), f"embed_dim {embed_dim} not divisible by num_heads {num_heads}"
-        assert (
-            key.shape == value.shape
-        ), f"key shape {key.shape} does not match value shape {value.shape}"
+        assert head_dim * num_heads == embed_dim, (
+            f"embed_dim {embed_dim} not divisible by num_heads {num_heads}"
+        )
+        assert key.shape == value.shape, (
+            f"key shape {key.shape} does not match value shape {value.shape}"
+        )
 
         q, k, v = F.linear(query, in_proj_weight, in_proj_bias).chunk(3, dim=-1)
 
@@ -426,9 +416,7 @@ class MultiheadAttention(Module):
             # the attn head dim
             # B x L x L x H  => L x L x (B*Nh) x (H/nh)
             pairwise_features = pairwise_features.permute(1, 2, 0, 3).contiguous()
-            pairwise_features = pairwise_features.view(
-                tgt_len, tgt_len, bsz * num_heads, head_dim
-            )
+            pairwise_features = pairwise_features.view(tgt_len, tgt_len, bsz * num_heads, head_dim)
 
             # L x L x (B*Nh) x (H/nh)  => (B*Nh) x L x L x (H / Nh)
             pairwise_features = pairwise_features.permute(2, 0, 1, 3)
@@ -445,7 +433,9 @@ class MultiheadAttention(Module):
             assert key_padding_mask.shape == (
                 bsz,
                 src_len,
-            ), f"expecting key_padding_mask shape of {(bsz, src_len)}, but got {key_padding_mask.shape}"
+            ), (
+                f"expecting key_padding_mask shape of {(bsz, src_len)}, but got {key_padding_mask.shape}"
+            )
             key_padding_mask = (
                 key_padding_mask.view(bsz, 1, 1, src_len)
                 .expand(-1, num_heads, -1, -1)
@@ -470,9 +460,7 @@ class MultiheadAttention(Module):
                 q, k, v, attn_mask, dropout_p, pairwise_features=pairwise_features
             )
         # Editing
-        attn_output = (
-            attn_output.transpose(0, 1).contiguous().view(tgt_len * bsz, embed_dim)
-        )
+        attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len * bsz, embed_dim)
         attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
         attn_output = attn_output.view(tgt_len, bsz, attn_output.size(1))
 
@@ -484,10 +472,10 @@ class MultiheadAttention(Module):
         q: Tensor,
         k: Tensor,
         v: Tensor,
-        attn_mask: Optional[Tensor] = None,
+        attn_mask: Tensor | None = None,
         dropout_p: float = 0.0,
-        pairwise_features: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tensor]:
+        pairwise_features: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
         """_additive_attn.
 
         Args:
@@ -569,10 +557,10 @@ class MultiheadAttention(Module):
         q: Tensor,
         k: Tensor,
         v: Tensor,
-        attn_mask: Optional[Tensor] = None,
+        attn_mask: Tensor | None = None,
         dropout_p: float = 0.0,
-        pairwise_features: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tensor]:
+        pairwise_features: Tensor | None = None,
+    ) -> tuple[Tensor, Tensor]:
         r"""
         Computes scaled dot product attention on query, key and value tensors, using
         an optional attention mask if passed, and applying dropout if a probability

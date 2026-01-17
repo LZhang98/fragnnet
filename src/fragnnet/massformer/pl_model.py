@@ -1,21 +1,21 @@
 import torch as th
 import torch._dynamo as th_dynamo
+
 try:
     from torch._dynamo.utils import CompileProfiler
+
     profiler_available = True
 except ImportError:
     profiler_available = False
 
+from fragnnet.massformer.model import MassFormerModel
+from fragnnet.massformer.nn_utils import PolynomialDecayLR
 from fragnnet.pl_model import BinnedPL
 from fragnnet.utils.nn_utils import build_lr_scheduler
-from fragnnet.massformer.model import MassFormerModel
-from fragnnet.massformer.nn_utils import flag_bounded, PolynomialDecayLR
 
 
 class MassFormerPL(BinnedPL):
-
     def _setup_model(self):
-
         self.model = MassFormerModel(
             mlp_hidden_size=self.hparams.mlp_hidden_size,
             mlp_dropout=self.hparams.mlp_dropout,
@@ -56,18 +56,17 @@ class MassFormerPL(BinnedPL):
             th_dynamo.reset()
             if profiler_available:
                 self.dynamo_prof = CompileProfiler()
-                self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+                self.model = self.model.get_compile(backend=self.dynamo_prof, dynamic=True)
             else:
-                self.model = th.compile(self.model,dynamic=True)
+                self.model = th.compile(self.model, dynamic=True)
 
         self.mf_flag = self.hparams.mf_flag
         if self.mf_flag:
             raise NotImplementedError
             assert self.hparams.precision == 32, self.hparams.precision
             assert not self.hparams.automatic_optimization
-        
+
     def configure_optimizers(self):
-        
         if self.hparams.optimizer == "adam":
             optimizer_cls = th.optim.Adam
         elif self.hparams.optimizer == "adamw":
@@ -81,8 +80,8 @@ class MassFormerPL(BinnedPL):
             [
                 {"params": nopt_params, "weight_decay": self.hparams.weight_decay},
                 {"params": pt_params, "weight_decay": self.hparams.mf_pt_weight_decay},
-            ], 
-            lr=self.hparams.lr
+            ],
+            lr=self.hparams.lr,
         )
         ret = {
             "optimizer": optimizer,
@@ -90,8 +89,8 @@ class MassFormerPL(BinnedPL):
         assert not (self.hparams.lr_schedule and self.hparams.mf_lr_schedule)
         if self.hparams.lr_schedule:
             scheduler = build_lr_scheduler(
-                optimizer=optimizer, 
-                decay_rate=self.hparams.lr_decay_rate, 
+                optimizer=optimizer,
+                decay_rate=self.hparams.lr_decay_rate,
                 warmup_steps=self.hparams.lr_warmup_steps,
                 decay_steps=self.hparams.lr_decay_steps,
             )
@@ -109,7 +108,7 @@ class MassFormerPL(BinnedPL):
                 tot_updates=tot_updates,
                 lr=self.hparams.mf_high_lr,
                 end_lr=self.hparams.mf_low_lr,
-                power=1.0
+                power=1.0,
             )
             ret["lr_scheduler"] = {
                 "scheduler": scheduler,

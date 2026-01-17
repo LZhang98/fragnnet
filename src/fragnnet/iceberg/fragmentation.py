@@ -1,12 +1,13 @@
-""" fragmentation_engine.
+"""fragmentation_engine.
 
 Fragment a molecule combinatorially by pulling atoms
 
 """
-import numpy as np
+
 from collections import Counter, defaultdict
 from hashlib import blake2b
-from typing import Tuple, List
+
+import numpy as np
 from rdkit import Chem
 
 from fragnnet.iceberg.common import chem_utils as chem_utils
@@ -27,7 +28,7 @@ HETEROW = {False: 2, True: 1}
 FRAGMENT_ENGINE_PARAMS = {"max_broken_bonds": 6, "max_tree_depth": 3}
 
 
-class FragmentEngine(object):
+class FragmentEngine:
     """FragmentEngine."""
 
     def __init__(
@@ -78,12 +79,8 @@ class FragmentEngine(object):
             [i.GetNumImplicitHs() + i.GetNumExplicitHs() for i in self.mol.GetAtoms()]
         )
         self.total_hs = self.atom_hs.sum()
-        self.atom_weights = np.array(
-            [chem_utils.ELEMENT_TO_MASS[i] for i in self.atom_symbols]
-        )
-        self.atom_weights_h = (
-            self.atom_hs * chem_utils.ELEMENT_TO_MASS["H"] + self.atom_weights
-        )
+        self.atom_weights = np.array([chem_utils.ELEMENT_TO_MASS[i] for i in self.atom_symbols])
+        self.atom_weights_h = self.atom_hs * chem_utils.ELEMENT_TO_MASS["H"] + self.atom_weights
 
         # Get full mol weight
         self.full_weight = np.sum(self.atom_weights_h)
@@ -144,9 +141,7 @@ class FragmentEngine(object):
         # for masses
         # Shift factor for inverse
         # int((self.shift_buckets.shape[0] - 1) / 2)
-        self.shift_buckets = (
-            np.arange(self.max_broken_bonds * 2 + 1) - self.max_broken_bonds
-        )
+        self.shift_buckets = np.arange(self.max_broken_bonds * 2 + 1) - self.max_broken_bonds
         self.shift_bucket_inds = np.arange(self.max_broken_bonds * 2 + 1)
         self.shift_bucket_masses = self.shift_buckets * chem_utils.ELEMENT_TO_MASS["H"]
 
@@ -254,10 +249,7 @@ class FragmentEngine(object):
             new_fragment
         """
         # Step 1: Define initial hashes by symbol
-        cur_hashes = [
-            f"{i}"
-            for i, j, k in zip(self.atom_symbols, self.atom_hs, self.bonded_atoms)
-        ]
+        cur_hashes = [f"{i}" for i, j, k in zip(self.atom_symbols, self.atom_hs, self.bonded_atoms)]
 
         def get_graph_hash(full_hashes):
             """get_graph_hash."""
@@ -276,7 +268,6 @@ class FragmentEngine(object):
             temp_atoms = 0
             # Step 2: Update hashes with local neighborhoods
             for atom in range(self.natoms):
-
                 atombit = 1 << atom
                 cur_hash = cur_hashes[atom]
 
@@ -318,7 +309,7 @@ class FragmentEngine(object):
 
     def get_frag_masses(
         self,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """get_frag_masses.
 
         Assumes that frags have already been generated
@@ -423,10 +414,8 @@ class FragmentEngine(object):
 
         # generate fragments for max_broken_bond steps
         for step in range(self.max_tree_depth):
-
             # loop over all fragments to be fragmented
             for frag_hash in current_fragments:
-
                 # Get current parent node we are sub fragmenting
                 cur_parent = self.frag_to_entry[frag_hash]["id"]
                 fragment = self.frag_to_entry[frag_hash]["frag"]
@@ -438,7 +427,6 @@ class FragmentEngine(object):
                     extended_fragments = self.remove_atom(fragment, atom)
                     sibling_hashes = set([i["new_hash"] for i in extended_fragments])
                     for frag_dict in extended_fragments:
-
                         # unpack
                         removed_atom = frag_dict["removed_atom"]
                         new_frag_hash = frag_dict["new_hash"]
@@ -465,14 +453,11 @@ class FragmentEngine(object):
                                 "score": self.score_fragment(frag)[1],
                             }
 
-                            new_entry.update(
-                                self.atom_pass_stats(frag, depth=max_broken)
-                            )
+                            new_entry.update(self.atom_pass_stats(frag, depth=max_broken))
 
                             self.frag_to_entry[new_frag_hash] = new_entry
                             new_fragments.append(new_frag_hash)
                         elif old_entry["max_broken"] == max_broken:
-
                             # Add in a _new_ parent to this entry to indicate
                             # the different routes to this fragment
                             old_entry["parent_ind_removed"].append(removed_atom)
@@ -485,7 +470,7 @@ class FragmentEngine(object):
         # [(i['max_add_hs'], i['max_remove_hs'], i['max_broken'],
         #  i['frag_hs'])  for i in list(self.frag_to_entry.values())]
 
-    def remove_atom(self, fragment: int, atom: int) -> List[dict]:
+    def remove_atom(self, fragment: int, atom: int) -> list[dict]:
         """remove_atom.
 
         Remove an atom from the fragment and get all resulting frag int dicts
@@ -510,7 +495,6 @@ class FragmentEngine(object):
 
         # Get all neighboring atoms to the removed atom
         for a in self.bonded_atoms[atom]:
-
             # present in the fragment
             if (1 << a) & template_fragment:
                 list_ext_atoms.add(a)
@@ -567,8 +551,8 @@ class FragmentEngine(object):
 
     def export_edges(
         self,
-        frag_hashes: List[int],
-    ) -> List[Tuple[int, int]]:
+        frag_hashes: list[int],
+    ) -> list[tuple[int, int]]:
         """export_edges
 
         Get edges in the node set defined by frag_hashes list.
@@ -588,8 +572,8 @@ class FragmentEngine(object):
 
     def export_edges_dict(
         self,
-        frag_hashes: List[int],
-    ) -> Tuple[dict, dict]:
+        frag_hashes: list[int],
+    ) -> tuple[dict, dict]:
         """export_edges
 
         Get edges in the node set defined by frag_hashes list.
@@ -598,9 +582,7 @@ class FragmentEngine(object):
             Tuple of node to incoming, node to outgoing dict
 
         """
-        incoming_edges, outgoing_edges = defaultdict(lambda: []), defaultdict(
-            lambda: []
-        )
+        incoming_edges, outgoing_edges = defaultdict(lambda: []), defaultdict(lambda: [])
         explored = set(frag_hashes)
         for i in frag_hashes:
             entry = self.frag_to_entry[i]
@@ -659,9 +641,7 @@ class FragmentEngine(object):
         keep_atoms, _ = self.get_present_atoms(frag)
         _, keep_bonds = self.get_present_edges(frag)
         keep_bonds = [self.mol.GetBondBetweenAtoms(*i).GetIdx() for i in keep_bonds]
-        return dict(
-            hatoms=keep_atoms, hbonds=keep_bonds, mol=self.mol, smiles=self.smiles
-        )
+        return dict(hatoms=keep_atoms, hbonds=keep_bonds, mol=self.mol, smiles=self.smiles)
 
     def frags_to_intens(self, frags: dict):
         """frag_to_intens.
@@ -743,9 +723,6 @@ def bit_array(num):
 
 def create_new_ids(frags):
     """create_new_ids."""
-    frag_to_id = {
-        i: id
-        for id, i in enumerate(sorted(frags, key=lambda x: frags[x]["tree_depth"]))
-    }
+    frag_to_id = {i: id for id, i in enumerate(sorted(frags, key=lambda x: frags[x]["tree_depth"]))}
     id_to_frag = {id: i for i, id in frag_to_id.items()}
     return frag_to_id, id_to_frag

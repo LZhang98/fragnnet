@@ -1,21 +1,21 @@
-""" dag_data.py
+"""dag_data.py
 
 Fragment dataset to build out model class
 
 """
-from pathlib import Path
-from typing import List
+
 import json
+from pathlib import Path
+
 import numpy as np
 import torch as th
 from tqdm import tqdm
 
-from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
-
 import fragnnet.iceberg.common as common
-import fragnnet.iceberg.nn_utils as nn_utils
 import fragnnet.iceberg.fragmentation as fragmentation
+import fragnnet.iceberg.nn_utils as nn_utils
 from fragnnet.dataset import BaseDataset, SpecMolDataset
+from fragnnet.utils.dgl_compat_utils import DGL_AVAILABLE, dgl
 from fragnnet.utils.misc_utils import flatten_lol
 
 
@@ -43,7 +43,7 @@ class TreeProcessor:
                 "DGL (Deep Graph Library) is required to use Iceberg dataset. "
                 "Please install it with: pip install dgl"
             )
-        
+
         self.pe_embed_k = pe_embed_k
         self.root_encode = root_encode
         self.binned_targs = binned_targs
@@ -273,11 +273,11 @@ class TreeProcessor:
             # ###
             # from fragnnet.utils.spec_utils import bin_func
             # bin_spec = bin_func(
-            #   th.as_tensor(intens[:,0]).reshape(-1), 
-            #   th.as_tensor(intens[:,1]).reshape(-1), 
-            #   1500, 
-            #   0.1, 
-            #   False, 
+            #   th.as_tensor(intens[:,0]).reshape(-1),
+            #   th.as_tensor(intens[:,1]).reshape(-1),
+            #   1500,
+            #   0.1,
+            #   False,
             #   False
             # )
             # print(bin_spec.numpy().nonzero()[0])
@@ -286,9 +286,7 @@ class TreeProcessor:
         return out_dict
 
     def add_pe_embed(self, graph):
-        pe_embeds = nn_utils.random_walk_pe(
-            graph, k=self.pe_embed_k, eweight_name="e_ind"
-        )
+        pe_embeds = nn_utils.random_walk_pe(graph, k=self.pe_embed_k, eweight_name="e_ind")
         graph.ndata["h"] = th.cat((graph.ndata["h"], pe_embeds), -1).float()
         return graph
 
@@ -347,7 +345,7 @@ class TreeProcessor:
 
     def dgl_featurize(
         self,
-        atom_symbols: List[str],
+        atom_symbols: list[str],
         h_adds: np.ndarray,
         bond_inds: np.ndarray,
         bond_types: np.ndarray,
@@ -412,8 +410,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
         magma_pp_sd: dict = dict(),
         **kwargs,
     ):
-        """__init__.
-        """
+        """__init__."""
 
         BaseDataset.__init__(self)
         self._base_init(
@@ -422,7 +419,7 @@ class SpecMolMagmaDataset(SpecMolDataset):
             split_dp=split_dp,
             split=split,
             subsample_params=subsample_params,
-            spec_params=spec_params
+            spec_params=spec_params,
         )
         self.magma_dp = magma_dp
         self.mol_params = mol_params
@@ -435,7 +432,6 @@ class SpecMolMagmaDataset(SpecMolDataset):
         self._preprocess_magma(magma_pp_sd)
 
     def _init_magma(self):
-
         magma_dir = Path(self.magma_dp)
         magma_tree_dir = magma_dir / "magma_tree"
         assert magma_tree_dir.exists(), magma_tree_dir
@@ -443,31 +439,26 @@ class SpecMolMagmaDataset(SpecMolDataset):
         for fp in magma_tree_dir.glob("*.json"):
             tree_names.append(fp.stem)
             tree_files.append(Path(fp))
-        self.name_to_tree_file = {tree_name: tree_file for tree_name, tree_file in zip(tree_names, tree_files)}
+        self.name_to_tree_file = {
+            tree_name: tree_file for tree_name, tree_file in zip(tree_names, tree_files)
+        }
         self.tree_fn = lambda x: self._read_tree(self._load_tree(x))
         self.tree_processor = self.__class__.init_tree_processor(**self.magma_params)
 
     def _load_tree(self, name):
-        
         json_file = self.name_to_tree_file[name]
-        with open(str(json_file), "r") as file:
+        with open(str(json_file)) as file:
             tree_json = json.load(file)
         return tree_json
 
     def _read_tree(self, tree):
-
         raise NotImplementedError()
 
     def _get_magma_entry(self, spec_entry):
-        
         name = str(spec_entry["group_id"])
         adduct = spec_entry["prec_type"]
         magma_entry = self.tree_fn(name)["dgl_tree"]
-        magma_entry = {
-            "name": name, 
-            "adduct": adduct,
-            **magma_entry
-        }
+        magma_entry = {"name": name, "adduct": adduct, **magma_entry}
         return magma_entry
 
     def __getitem__(self, idx):
@@ -490,13 +481,14 @@ class SpecMolMagmaDataset(SpecMolDataset):
             magma_data = self._process_magma(spec_entry)
         data = {**spec_data, **mol_data, **magma_data}
         return data
-    
-    def _preprocess_magma(self, magma_pp_sd: dict):
 
+    def _preprocess_magma(self, magma_pp_sd: dict):
         if self.magma_params["preprocess"]:
             self.magma_datas = magma_pp_sd
             # total_magma_data_size = 0
-            for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess magma",total=len(self.spec_df)):
+            for idx, spec_entry in tqdm(
+                self.spec_df.iterrows(), desc="> preprocess magma", total=len(self.spec_df)
+            ):
                 magma_data = self._process_magma(spec_entry)
                 self.magma_datas[idx] = magma_data
             # print(f"> total_magma_data_size = {total_magma_data_size/1e6:.2f} MB")
@@ -508,27 +500,22 @@ class SpecMolMagmaDataset(SpecMolDataset):
         # MAGMA Preprocessed Shared Dictionary: magma_pp_sd
         return ["spec_pp_sd", "magma_pp_sd"]
 
+
 class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
     """TODO: fold this into the parent class"""
 
     @staticmethod
-    def init_tree_processor(pe_embed_k,root_encode,add_hs,**magma_params):
-
+    def init_tree_processor(pe_embed_k, root_encode, add_hs, **magma_params):
         tree_processor = TreeProcessor(
-            pe_embed_k=pe_embed_k,
-            root_encode=root_encode,
-            add_hs=add_hs,
-            binned_targs=False
+            pe_embed_k=pe_embed_k, root_encode=root_encode, add_hs=add_hs, binned_targs=False
         )
         return tree_processor
 
     def _read_tree(self, tree_json):
-        
         tree = self.tree_processor.process_tree_gen(tree_json)
         return tree
 
     def _process_magma(self, spec_entry):
-
         magma_entry = self._get_magma_entry(spec_entry)
         magma_data = {}
         magma_data["magma_names"] = [magma_entry["name"]]
@@ -536,45 +523,59 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
             magma_data["magma_root_reprs"] = magma_entry["root_repr"]
         else:
             assert isinstance(magma_entry["root_repr"], np.ndarray)
-            magma_data["magma_root_reprs"] = th.tensor(magma_entry["root_repr"], dtype=th.float).unsqueeze(0)
+            magma_data["magma_root_reprs"] = th.tensor(
+                magma_entry["root_repr"], dtype=th.float
+            ).unsqueeze(0)
         magma_data["magma_frag_graphs"] = dgl.batch(magma_entry["dgl_frags"])
-        magma_data["magma_targ_atoms"] = th.nn.utils.rnn.pad_sequence([i for i in magma_entry["targs"]], batch_first=True) ##
-        magma_data["magma_frag_atoms"] = th.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long) ##
-        magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long) ##
+        magma_data["magma_targ_atoms"] = th.nn.utils.rnn.pad_sequence(
+            [i for i in magma_entry["targs"]], batch_first=True
+        )  ##
+        magma_data["magma_frag_atoms"] = th.tensor(
+            [i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long
+        )  ##
+        magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long)  ##
         magma_data["magma_broken_bonds"] = th.tensor(magma_entry["max_broken"], dtype=th.long)
-        magma_data["magma_adducts"] = th.tensor([common.ion2onehot_pos[magma_entry["adduct"]]], dtype=th.float)
-        magma_data["magma_frag_form_vecs"] = th.tensor(np.array([i for i in magma_entry["form_vecs"]]), dtype=th.long) ##
-        magma_data["magma_root_form_vecs"] = th.tensor(np.array([magma_entry["root_form_vec"]]), dtype=th.long)
+        magma_data["magma_adducts"] = th.tensor(
+            [common.ion2onehot_pos[magma_entry["adduct"]]], dtype=th.float
+        )
+        magma_data["magma_frag_form_vecs"] = th.tensor(
+            np.array([i for i in magma_entry["form_vecs"]]), dtype=th.long
+        )  ##
+        magma_data["magma_root_form_vecs"] = th.tensor(
+            np.array([magma_entry["root_form_vec"]]), dtype=th.long
+        )
         return magma_data
 
     @classmethod
     def get_collate_fn(cls):
-        
         return SpecMolMagmaGenDataset.collate_fn
 
     @staticmethod
     def _special_collate(keys, collate_data):
-        
         frag_graphs = [dgl.unbatch(gs) for gs in collate_data["magma_frag_graphs"]]
-        num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]],dtype=th.long)
+        num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]], dtype=th.long)
         targ_atoms = []
         for i in collate_data["magma_targ_atoms"]:
-            targ_atoms.extend([j.squeeze(0) for j in th.split(i,1,dim=0)])
+            targ_atoms.extend([j.squeeze(0) for j in th.split(i, 1, dim=0)])
         collate_data["magma_names"] = flatten_lol(collate_data["magma_names"])
         keys.remove("magma_names")
         if isinstance(collate_data["magma_root_reprs"][0], dgl.DGLGraph):
             collate_data["magma_root_reprs"] = dgl.batch(collate_data["magma_root_reprs"])
         else:
             assert isinstance(collate_data["magma_root_reprs"][0], th.Tensor)
-            collate_data["magma_root_reprs"] = th.cat(collate_data["magma_root_reprs"],dim=0)
+            collate_data["magma_root_reprs"] = th.cat(collate_data["magma_root_reprs"], dim=0)
         keys.remove("magma_root_reprs")
         collate_data["magma_frag_graphs"] = dgl.batch(flatten_lol(frag_graphs))
         keys.remove("magma_frag_graphs")
-        collate_data["magma_targ_atoms"] = th.nn.utils.rnn.pad_sequence(targ_atoms, batch_first=True)
+        collate_data["magma_targ_atoms"] = th.nn.utils.rnn.pad_sequence(
+            targ_atoms, batch_first=True
+        )
         keys.remove("magma_targ_atoms")
         collate_data["magma_frag_atoms"] = th.cat(collate_data["magma_frag_atoms"], dim=0)
         keys.remove("magma_frag_atoms")
-        collate_data["magma_inds"] = th.arange(len(frag_graphs),dtype=th.long).repeat_interleave(num_frags)
+        collate_data["magma_inds"] = th.arange(len(frag_graphs), dtype=th.long).repeat_interleave(
+            num_frags
+        )
         keys.remove("magma_inds")
         collate_data["magma_broken_bonds"] = th.cat(collate_data["magma_broken_bonds"], dim=0)
         keys.remove("magma_broken_bonds")
@@ -588,7 +589,6 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 
     @staticmethod
     def collate_fn(data_list):
-
         batch_size, keys, collate_data = SpecMolMagmaGenDataset._setup_collate(data_list)
         SpecMolMagmaGenDataset._special_collate(keys, collate_data)
         SpecMolMagmaGenDataset._standard_collate(batch_size, keys, collate_data)
@@ -596,7 +596,6 @@ class SpecMolMagmaGenDataset(SpecMolMagmaDataset):
 
 
 class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
-
     def __init__(
         self,
         spec_fp: str,
@@ -612,7 +611,6 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
         magma_pp_sd: dict = dict(),
         **kwargs,
     ):
-
         BaseDataset.__init__(self)
         self._base_init(
             spec_fp=spec_fp,
@@ -620,18 +618,18 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
             split_dp=split_dp,
             split=split,
             subsample_params=subsample_params,
-            spec_params=spec_params
+            spec_params=spec_params,
         )
         self.magma_dp = magma_dp
         self.mol_params = mol_params
         self.magma_params = magma_params
         self._init_magma()
         tree_group_ids = [int(name) for name in self.name_to_tree_file.keys()]
-        
+
         if self.split == "predict_only":
             # drop the one has no tree group file
             before = len(self.spec_df)
-            self.spec_df = self.spec_df[self.spec_df['group_id'].isin(tree_group_ids)]
+            self.spec_df = self.spec_df[self.spec_df["group_id"].isin(tree_group_ids)]
             current = len(self.spec_df)
             if before < current:
                 print(f"{split} split, dropped {current - before} with out tree file")
@@ -644,9 +642,8 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
         self._preprocess_spec(spec_pp_sd)
         self._preprocess_mol({})
         self._preprocess_magma(magma_pp_sd)
-  
-    def _init_magma(self):
 
+    def _init_magma(self):
         super()._init_magma()
         # nothing to load if we are only predict
         if self.split == "predict_only":
@@ -658,20 +655,15 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
         for fp in formula_dir.glob("*.json"):
             formula_names.append(fp.stem)
             formula_files.append(Path(fp))
-        self.name_to_formula_file = {formula_name: formula_file for formula_name, formula_file in zip(formula_names, formula_files)}
+        self.name_to_formula_file = {
+            formula_name: formula_file
+            for formula_name, formula_file in zip(formula_names, formula_files)
+        }
 
     @staticmethod
     def init_tree_processor(
-        pe_embed_k,
-        root_encode,
-        add_hs,
-        binned_targs,
-        mz_bin_res,
-        mz_max,
-        sum_ints,
-        **magma_params
+        pe_embed_k, root_encode, add_hs, binned_targs, mz_bin_res, mz_max, sum_ints, **magma_params
     ):
-
         tree_processor = TreeProcessor(
             pe_embed_k=pe_embed_k,
             root_encode=root_encode,
@@ -679,12 +671,11 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
             binned_targs=binned_targs,
             mz_bin_res=mz_bin_res,
             mz_max=mz_max,
-            sum_ints=sum_ints
+            sum_ints=sum_ints,
         )
         return tree_processor
 
     def _load_tree(self, name):
-     
         tree_json = super()._load_tree(name)
         # this for training only
         if not self.split == "predict_only":
@@ -695,7 +686,6 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
         return tree_json
 
     def _read_tree(self, tree_json):
-        
         adduct = tree_json.pop("adduct")
         tree = self.tree_processor.process_tree_inten(tree_json)
         # adduct correction on masses
@@ -707,14 +697,12 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
         return tree
 
     def _load_formula(self, name):
-
         json_file = self.name_to_formula_file[name]
-        with open(str(json_file), "r") as file:
+        with open(str(json_file)) as file:
             formula_json = json.load(file)
         return formula_json
 
     def _read_formula(self, formula_json):
-
         true_tbl = formula_json["output_tbl"]
         true_adduct = formula_json["cand_ion"]
         # raw_spec = list(zip(true_tbl["formula_mass_no_adduct"], true_tbl["rel_inten"]))
@@ -731,11 +719,9 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 
     @classmethod
     def get_collate_fn(cls):
-        
         return SpecMolMagmaIntenDataset.collate_fn
 
     def _process_magma(self, spec_entry):
-
         magma_entry = self._get_magma_entry(spec_entry)
         magma_data = {}
         magma_data["magma_names"] = [magma_entry["name"]]
@@ -743,33 +729,52 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
             magma_data["magma_root_reprs"] = magma_entry["root_repr"]
         else:
             assert isinstance(magma_entry["root_repr"], np.ndarray)
-            magma_data["magma_root_reprs"] = th.tensor(magma_entry["root_repr"], dtype=th.float).unsqueeze(0)
-        magma_data["magma_frag_graphs"] = dgl.batch(magma_entry["dgl_frags"]) # batching for memory
-        magma_data["magma_frag_atoms"] = th.tensor([i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long)
+            magma_data["magma_root_reprs"] = th.tensor(
+                magma_entry["root_repr"], dtype=th.float
+            ).unsqueeze(0)
+        magma_data["magma_frag_graphs"] = dgl.batch(magma_entry["dgl_frags"])  # batching for memory
+        magma_data["magma_frag_atoms"] = th.tensor(
+            [i.num_nodes() for i in magma_entry["dgl_frags"]], dtype=th.long
+        )
         magma_data["magma_inds"] = th.zeros([len(magma_entry["dgl_frags"])], dtype=th.long)
-        magma_data["magma_broken_bonds"] = th.tensor(magma_entry["max_broken"], dtype=th.long).unsqueeze(0)
-        magma_data["magma_adducts"] = th.tensor([common.ion2onehot_pos[magma_entry["adduct"]]], dtype=th.float)
+        magma_data["magma_broken_bonds"] = th.tensor(
+            magma_entry["max_broken"], dtype=th.long
+        ).unsqueeze(0)
+        magma_data["magma_adducts"] = th.tensor(
+            [common.ion2onehot_pos[magma_entry["adduct"]]], dtype=th.float
+        )
         if self.magma_params["adduct_form_deltas"]:
-            magma_data["magma_adduct_form_deltas"] = th.as_tensor(common.ion2delta_formula[magma_entry["adduct"]], dtype=th.long).unsqueeze(0)
-        magma_data["magma_frag_form_vecs"] = th.tensor(np.array([i for i in magma_entry["form_vecs"]]), dtype=th.long).unsqueeze(0)
-        magma_data["magma_root_form_vecs"] = th.tensor(np.array([magma_entry["root_form_vec"]]), dtype=th.long)
+            magma_data["magma_adduct_form_deltas"] = th.as_tensor(
+                common.ion2delta_formula[magma_entry["adduct"]], dtype=th.long
+            ).unsqueeze(0)
+        magma_data["magma_frag_form_vecs"] = th.tensor(
+            np.array([i for i in magma_entry["form_vecs"]]), dtype=th.long
+        ).unsqueeze(0)
+        magma_data["magma_root_form_vecs"] = th.tensor(
+            np.array([magma_entry["root_form_vec"]]), dtype=th.long
+        )
         ###
         magma_data["magma_num_frags"] = th.tensor([len(magma_entry["dgl_frags"])], dtype=th.long)
         if self.magma_params["binned_targs"]:
-            magma_data["magma_inten_targs"] = th.tensor(magma_entry["inten_targs"], dtype=th.float).unsqueeze(0)
+            magma_data["magma_inten_targs"] = th.tensor(
+                magma_entry["inten_targs"], dtype=th.float
+            ).unsqueeze(0)
         magma_data["magma_masses"] = th.tensor(magma_entry["masses"], dtype=th.float).unsqueeze(0)
-        magma_data["magma_max_add_hs"] = th.tensor(magma_entry["max_add_hs"], dtype=th.float).unsqueeze(0)
-        magma_data["magma_max_remove_hs"] = th.tensor(magma_entry["max_remove_hs"], dtype=th.float).unsqueeze(0)
+        magma_data["magma_max_add_hs"] = th.tensor(
+            magma_entry["max_add_hs"], dtype=th.float
+        ).unsqueeze(0)
+        magma_data["magma_max_remove_hs"] = th.tensor(
+            magma_entry["max_remove_hs"], dtype=th.float
+        ).unsqueeze(0)
         magma_data["magma_inten_frag_ids"] = [magma_entry["inten_frag_ids"]]
         return magma_data
 
     @staticmethod
     def _special_collate(keys, collate_data):
-
         ###
         frag_graphs = [dgl.unbatch(gs) for gs in collate_data["magma_frag_graphs"]]
-        num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]],dtype=th.long)
-        assert th.all(num_frags == th.cat(collate_data["magma_num_frags"],dim=0))
+        num_frags = th.tensor([len(i) for i in collate_data["magma_inds"]], dtype=th.long)
+        assert th.all(num_frags == th.cat(collate_data["magma_num_frags"], dim=0))
         ###
         collate_data["magma_names"] = flatten_lol(collate_data["magma_names"])
         keys.remove("magma_names")
@@ -777,27 +782,29 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
             collate_data["magma_root_reprs"] = dgl.batch(collate_data["magma_root_reprs"])
         else:
             assert isinstance(collate_data["magma_root_reprs"][0], th.Tensor)
-            collate_data["magma_root_reprs"] = th.cat(collate_data["magma_root_reprs"],dim=0)
+            collate_data["magma_root_reprs"] = th.cat(collate_data["magma_root_reprs"], dim=0)
         keys.remove("magma_root_reprs")
         collate_data["magma_frag_graphs"] = dgl.batch(flatten_lol(frag_graphs))
         keys.remove("magma_frag_graphs")
         collate_data["magma_frag_atoms"] = th.cat(collate_data["magma_frag_atoms"], dim=0)
         keys.remove("magma_frag_atoms")
-        collate_data["magma_inds"] = th.arange(len(frag_graphs),dtype=th.long).repeat_interleave(num_frags)
+        collate_data["magma_inds"] = th.arange(len(frag_graphs), dtype=th.long).repeat_interleave(
+            num_frags
+        )
         keys.remove("magma_inds")
         collate_data["magma_broken_bonds"] = th.nn.utils.rnn.pad_sequence(
-            [i.squeeze(0) for i in collate_data["magma_broken_bonds"]], 
-            batch_first=True
+            [i.squeeze(0) for i in collate_data["magma_broken_bonds"]], batch_first=True
         )
         keys.remove("magma_broken_bonds")
         collate_data["magma_adducts"] = th.cat(collate_data["magma_adducts"], dim=0)
         keys.remove("magma_adducts")
         if "magma_adduct_form_deltas" in keys:
-            collate_data["magma_adduct_form_deltas"] = th.cat(collate_data["magma_adduct_form_deltas"], dim=0)
+            collate_data["magma_adduct_form_deltas"] = th.cat(
+                collate_data["magma_adduct_form_deltas"], dim=0
+            )
             keys.remove("magma_adduct_form_deltas")
         collate_data["magma_frag_form_vecs"] = th.nn.utils.rnn.pad_sequence(
-            [i.squeeze(0) for i in collate_data["magma_frag_form_vecs"]], 
-            batch_first=True
+            [i.squeeze(0) for i in collate_data["magma_frag_form_vecs"]], batch_first=True
         )
         keys.remove("magma_frag_form_vecs")
         collate_data["magma_root_form_vecs"] = th.cat(collate_data["magma_root_form_vecs"], dim=0)
@@ -806,21 +813,20 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
         collate_data["magma_num_frags"] = th.cat(collate_data["magma_num_frags"], dim=0)
         keys.remove("magma_num_frags")
         if "magma_inten_targs" in keys:
-            collate_data["magma_inten_targs"] = th.cat(collate_data["magma_inten_targs"], dim=0) ### not sure
+            collate_data["magma_inten_targs"] = th.cat(
+                collate_data["magma_inten_targs"], dim=0
+            )  ### not sure
             keys.remove("magma_inten_targs")
         collate_data["magma_masses"] = th.nn.utils.rnn.pad_sequence(
-            [i.squeeze(0) for i in collate_data["magma_masses"]], 
-            batch_first=True
+            [i.squeeze(0) for i in collate_data["magma_masses"]], batch_first=True
         )
         keys.remove("magma_masses")
         collate_data["magma_max_add_hs"] = th.nn.utils.rnn.pad_sequence(
-            [i.squeeze(0) for i in collate_data["magma_max_add_hs"]], 
-            batch_first=True
+            [i.squeeze(0) for i in collate_data["magma_max_add_hs"]], batch_first=True
         )
         keys.remove("magma_max_add_hs")
         collate_data["magma_max_remove_hs"] = th.nn.utils.rnn.pad_sequence(
-            [i.squeeze(0) for i in collate_data["magma_max_remove_hs"]], 
-            batch_first=True
+            [i.squeeze(0) for i in collate_data["magma_max_remove_hs"]], batch_first=True
         )
         keys.remove("magma_max_remove_hs")
         collate_data["magma_inten_frag_ids"] = flatten_lol(collate_data["magma_inten_frag_ids"])
@@ -830,7 +836,6 @@ class SpecMolMagmaIntenDataset(SpecMolMagmaDataset):
 
     @staticmethod
     def collate_fn(data_list):
-
         batch_size, keys, collate_data = SpecMolMagmaIntenDataset._setup_collate(data_list)
         SpecMolMagmaIntenDataset._special_collate(keys, collate_data)
         SpecMolMagmaIntenDataset._standard_collate(batch_size, keys, collate_data)

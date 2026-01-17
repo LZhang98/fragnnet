@@ -25,7 +25,6 @@ except ModuleNotFoundError:
     from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
     from pytorch_lightning.profilers import AdvancedProfiler, SimpleProfiler
 
-
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.dataset import (
     DualGroupDynamicBatchSampler,
@@ -42,13 +41,13 @@ from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 def load_config(template_fp: str, custom_fp: str | None, override: list) -> dict:
     """load config from template and custom yaml files
-                    if custom_fp is given, overwrite template config with custom config
+        if custom_fp is given, overwrite template config with custom config
     Args:
-                    template_fp (str): Path to the template YAML file.
-                    custom_fp (str | None): Path to the custom YAML file.
+        template_fp (str): Path to the template YAML file.
+        custom_fp (str | None): Path to the custom YAML file.
 
     Returns:
-                    dict: configuration dictionary.
+        dict: configuration dictionary.
     """
 
     assert os.path.isfile(template_fp), template_fp
@@ -153,11 +152,11 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     depending on the split (train/val/test), group sampling options, and dynamic batch sampler settings.
 
     Args:
-                    ds (Dataset): The dataset object (must have a .split attribute).
-                    config_d (dict): Configuration dictionary with dataloader and sampler options.
+        ds (Dataset): The dataset object (must have a .split attribute).
+        config_d (dict): Configuration dictionary with dataloader and sampler options.
 
     Returns:
-                    DataLoader: Configured PyTorch DataLoader for the dataset.
+        DataLoader: Configured PyTorch DataLoader for the dataset.
     """
     split = ds.split
     assert not (config_d["group_sampler"] and config_d["simple_group_sampler"]), (
@@ -258,10 +257,10 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
     """
     Main entry point for initializing and running a training/validation/testing job.
     Args:
-                    template_fp (str): Path to the template YAML config file.
-                    custom_fp (str): Path to the custom YAML config file (can be None).
-                    wandb_mode (str): Wandb mode ["online", "offline", "disabled"].
-                    job_id (str): Unique job identifier for checkpointing and wandb.
+        template_fp (str): Path to the template YAML config file.
+        custom_fp (str | None): Path to the custom YAML config file (can be None).
+        wandb_mode (str): Wandb mode ["online", "offline", "disabled"].
+        job_id (str): Unique job identifier for checkpointing and wandb.
 
     Returns:
                     model: The trained model (LightningModule).
@@ -487,7 +486,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         assert config_d["model_type"] == "frag_gnn", (
             "Dynamic batch sampler can only be use with frag_gnn model"
         )
-        assert config_d["automatic_optimization"] == False, (
+        assert not config_d["automatic_optimization"], (
             f"Dynamic batch sampler can not use in junction of automatic optimization {config_d['automatic_optimization']}"
         )
         assert config_d["dynamic_batch_sampler_mode"] in ["frag_node", "frag_edge"], (
@@ -502,11 +501,13 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         )
 
     # check config for CMF
-    if config_d["frag_params"].get("include_cmf", False):
-        if "cmf_h_formulae_idx" not in config_d["frag_params"].get("pyg_node_feats", []):
-            raise ValueError(
-                "include_cmf is True but 'cmf_h_formulae_idx' is missing from pyg_node_feats"
-            )
+    if (
+        config_d["frag_params"]["include_cmf"]
+        and "cmf_h_formulae_idx" not in config_d["frag_params"]["pyg_node_feats"]
+    ):
+        raise ValueError(
+            "include_cmf is True but 'cmf_h_formulae_idx' is missing from pyg_node_feats"
+        )
 
     # setup dataloaders
     logging.info("setup dataloader")
@@ -528,10 +529,9 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         if not (th.cuda.is_available() and th.cuda.is_bf16_supported()):
             logging.warning("BF16 not supported on this device, falling back to 32 bit precision")
             config_d["precision"] = 32
-    elif str(config_d["precision"]) in ["16-mixed", "16"]:
-        if not th.cuda.is_available():
-            logging.warning("FP16 mixed precision requires CUDA, falling back to 32 bit precision")
-            config_d["precision"] = 32
+    elif str(config_d["precision"]) in ["16-mixed", "16"] and not th.cuda.is_available():
+        logging.warning("FP16 mixed precision requires CUDA, falling back to 32 bit precision")
+        config_d["precision"] = 32
 
     trainer_param_d = {
         "logger": loggers,

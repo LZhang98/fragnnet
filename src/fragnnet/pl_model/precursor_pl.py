@@ -4,7 +4,6 @@ from fragnnet.model import PrecursorModel
 from fragnnet.model.loss import get_sparse_cross_entropy_fn
 from fragnnet.pl_model import SpectrumPL
 from fragnnet.utils.misc_utils import LOG_ZERO
-from fragnnet.utils.spec_utils import *
 
 
 class PrecursorPL(SpectrumPL):

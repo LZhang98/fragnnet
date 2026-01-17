@@ -9,10 +9,6 @@ from fragnnet.model.loss import clip_loss
 from fragnnet.pl_model import SpectrumPL
 
 # Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
-try:
-    import lightning.pytorch as pl
-except ModuleNotFoundError:
-    pass
 
 
 class SpectrumMolClipPL(SpectrumPL):
