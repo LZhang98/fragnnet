@@ -19,10 +19,13 @@ specialized layers for molecular and spectra.
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_geometric as pyg 
+import torch_geometric as pyg
 from torch_geometric.nn import aggr
-from fragnnet.utils.nn_utils import get_clones
+
 from fragnnet.utils.misc_utils import safelog
+from fragnnet.utils.nn_utils import get_clones
+
+
 class ZerosAggregation(nn.Module):
     """
     Zero Aggregation module.
@@ -33,6 +36,7 @@ class ZerosAggregation(nn.Module):
     Args:
         nn (torch.nn.Module): Base class for PyTorch modules.
     """
+
     def __init__(self):
         super().__init__()
         self.dummy_agg = aggr.SumAggregation()
@@ -49,7 +53,7 @@ class ZerosAggregation(nn.Module):
             torch.Tensor: Zero tensor with the same shape as the aggregated result.
         """
         agg = self.dummy_agg(x, batch)
-        return 0. * agg
+        return 0.0 * agg
 
 
 class GNN(nn.Module):
@@ -67,6 +71,7 @@ class GNN(nn.Module):
         dropout (float): Dropout rate.
         normalization (str): Type of normalization to use ("batch", "layer", etc.).
     """
+
     def __init__(
         self,
         hidden_size: int,
@@ -76,7 +81,7 @@ class GNN(nn.Module):
         gnn_type: str,
         dropout: float,
         normalization: str,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.hidden_size = hidden_size
@@ -98,7 +103,7 @@ class GNN(nn.Module):
                 node_feats_size=self.node_feats_size,
                 num_layers=self.num_layers,
                 dropout=self.dropout,
-                normalization=self.normalization
+                normalization=self.normalization,
             )
         elif self.gnn_type == "NodeMLP":
             self.gnn = NodeMLP(
@@ -107,7 +112,7 @@ class GNN(nn.Module):
                 node_feats_size=self.node_feats_size,
                 num_layers=self.num_layers,
                 dropout=self.dropout,
-                normalization=self.normalization
+                normalization=self.normalization,
             )
         elif self.gnn_type == "MPNN":
             self.gnn = MPNN(
@@ -116,7 +121,7 @@ class GNN(nn.Module):
                 hidden_size=self.hidden_size,
                 num_layers=self.num_layers,
                 dropout=self.dropout,
-                normalization=self.normalization
+                normalization=self.normalization,
             )
         elif self.gnn_type == "GAT" or self.gnn_type == "GATv2":
             self.gnn = GAT(
@@ -126,14 +131,14 @@ class GNN(nn.Module):
                 num_layers=self.num_layers,
                 dropout=self.dropout,
                 normalization=self.normalization,
-                is_v2=(self.gnn_type == "GATv2")
+                is_v2=(self.gnn_type == "GATv2"),
             )
         elif self.gnn_type == "GGNN":
             self.gnn = GGNN(
                 node_feats_size=self.node_feats_size,
                 edge_feats_size=self.edge_feats_size,
                 hidden_size=self.hidden_size,
-                num_layers=self.num_layers
+                num_layers=self.num_layers,
             )
         else:
             raise NotImplementedError(self.gnn_type)
@@ -156,8 +161,7 @@ class GNN(nn.Module):
         return z
 
 
-def get_norm(normalization,hidden_size):
-
+def get_norm(normalization, hidden_size):
     # norm_fn may or may not depend on the batch index
     if normalization == "batch":
         norm_mod = nn.BatchNorm1d(hidden_size)
@@ -167,7 +171,7 @@ def get_norm(normalization,hidden_size):
         norm_fn = lambda x, b, n: n(x)
     elif normalization == "graph":
         norm_mod = pyg.nn.GraphNorm(hidden_size)
-        norm_fn = lambda x, b, n: n(x,b)
+        norm_fn = lambda x, b, n: n(x, b)
     else:
         assert normalization == "none", normalization
         norm_mod = nn.Identity()
@@ -189,6 +193,7 @@ class GINE(nn.Module):
         dropout (float): Dropout rate.
         normalization (str): Type of normalization to use ("batch", "layer", etc.).
     """
+
     def __init__(
         self,
         hidden_size: int,
@@ -197,7 +202,7 @@ class GINE(nn.Module):
         num_layers: int,
         dropout: float,
         normalization: str,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         assert edge_feats_size >= 0, edge_feats_size
@@ -213,11 +218,7 @@ class GINE(nn.Module):
                 nn.ReLU(),
                 nn.Linear(hidden_size, hidden_size),
             )
-            temp_layer = pyg.nn.conv.GINEConv(
-                nn=apply_fn,
-                eps=0.,
-                edge_dim=None
-            )
+            temp_layer = pyg.nn.conv.GINEConv(nn=apply_fn, eps=0.0, edge_dim=None)
             self.layers.append(temp_layer)
 
         self.layers = nn.ModuleList(self.layers)
@@ -258,26 +259,25 @@ class MPNN(nn.Module):
         num_layers: int,
         dropout: float,
         normalization: str,
-        **kwargs
+        **kwargs,
     ):
         """Neural Message Passing for Quantum Chemistry
-            https://arxiv.org/abs/1704.01212
+        https://arxiv.org/abs/1704.01212
         """
         super().__init__()
         assert edge_feats_size >= 0, edge_feats_size
         self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
-        # MPNN 
+        # MPNN
         self.layers = []
         for i in range(num_layers):
             edge_network = edge_network = nn.Sequential(
-                nn.Linear(hidden_size, hidden_size), nn.ReLU(),
-                nn.Linear(hidden_size, hidden_size * hidden_size))
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, hidden_size * hidden_size),
+            )
             layer = pyg.nn.NNConv(
-                hidden_size,
-                hidden_size,
-                edge_network,
-                aggr='mean',
-                root_weight=False)
+                hidden_size, hidden_size, edge_network, aggr="mean", root_weight=False
+            )
             self.layers.append(layer)
         self.layers = nn.ModuleList(self.layers)
         # setup norms and dropout
@@ -287,8 +287,7 @@ class MPNN(nn.Module):
         self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
     def forward(self, x, batch_index, edge_index, edge_attr):
-        """forward.
-        """
+        """forward."""
         edge_attr = self.edge_transform(edge_attr)
         for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
             layer_out = layer(x, edge_index, edge_attr)
@@ -298,8 +297,8 @@ class MPNN(nn.Module):
 
 
 class GAT(nn.Module):
-    """ Graph attention networks. https://arxiv.org/abs/1710.10903 
-        Graph attention networks v2. (How Attentive are Graph Attention Networks?  https://arxiv.org/abs/2105.14491)
+    """Graph attention networks. https://arxiv.org/abs/1710.10903
+    Graph attention networks v2. (How Attentive are Graph Attention Networks?  https://arxiv.org/abs/2105.14491)
     """
 
     def __init__(
@@ -314,7 +313,7 @@ class GAT(nn.Module):
         gat_dropout: float = 0.0,
         is_v2: bool = True,
         is_concat: bool = True,
-        **kwargs
+        **kwargs,
     ):
         """_summary_
         Args:
@@ -334,9 +333,11 @@ class GAT(nn.Module):
         self.edge_transform = nn.Linear(edge_feats_size, hidden_size)
         gat_output_size = hidden_size // num_gat_heads if is_concat else hidden_size
         if is_concat and hidden_size % num_gat_heads != 0:
-            raise ValueError(f"Ensure that the number of output channels of "
-                             f"'GAT' (got '{hidden_size}') is divisible "
-                             f"by the number of heads (got '{num_gat_heads}')")
+            raise ValueError(
+                f"Ensure that the number of output channels of "
+                f"'GAT' (got '{hidden_size}') is divisible "
+                f"by the number of heads (got '{num_gat_heads}')"
+            )
         GATConv_fn = pyg.nn.conv.GATConv if not is_v2 else pyg.nn.conv.GATv2Conv
         self.layers = []
         for i in range(num_layers):
@@ -346,7 +347,8 @@ class GAT(nn.Module):
                 heads=num_gat_heads,
                 edge_dim=hidden_size,
                 dropout=gat_dropout,
-                concat=is_concat)
+                concat=is_concat,
+            )
             self.layers.append(layer)
         self.layers = nn.ModuleList(self.layers)
         # setup norms and dropout
@@ -365,38 +367,28 @@ class GAT(nn.Module):
 
 
 class GGNN(nn.Module):
-
     def __init__(
         self,
         node_feats_size: int,
         edge_feats_size: int,
         hidden_size: int,
         num_layers: int,
-        **kwargs
+        **kwargs,
     ):
-        """
-        """
+        """ """
         super().__init__()
         assert edge_feats_size >= 0, edge_feats_size
         self.edge_transform = nn.Linear(edge_feats_size, 1)
-        self.model = pyg.nn.conv.GatedGraphConv(
-            out_channels=hidden_size,
-            num_layers=num_layers
-        )
+        self.model = pyg.nn.conv.GatedGraphConv(out_channels=hidden_size, num_layers=num_layers)
 
     def forward(self, x, batch_index, edge_index, edge_attr):
-        """forward.
-        """
+        """forward."""
         edge_weight = self.edge_transform(edge_attr).squeeze(1)
-        x = self.model(
-            x=x,
-            edge_index=edge_index,
-            edge_weight=edge_weight
-        )
+        x = self.model(x=x, edge_index=edge_index, edge_weight=edge_weight)
         return x
 
-class NodeMLP(nn.Module):
 
+class NodeMLP(nn.Module):
     def __init__(
         self,
         hidden_size: int,
@@ -405,15 +397,16 @@ class NodeMLP(nn.Module):
         num_layers: int,
         dropout: float,
         normalization: str,
-        **kwargs
+        **kwargs,
     ):
-        """NodeMLP
-        """
+        """NodeMLP"""
         super().__init__()
 
         assert edge_feats_size >= 0, edge_feats_size
         if edge_feats_size > 0:
-            Warning("> NodeMLP does not use edge features, but got edge_feats_size > 0, this most likely indicates a misconfiguration and wasted VRAM.")
+            Warning(
+                "> NodeMLP does not use edge features, but got edge_feats_size > 0, this most likely indicates a misconfiguration and wasted VRAM."
+            )
 
         self.layers = []
         for i in range(num_layers):
@@ -436,7 +429,7 @@ class NodeMLP(nn.Module):
             self.norm_fn = lambda x, b, n: n(x)
         elif normalization == "graph":
             norm_mod = pyg.nn.GraphNorm(hidden_size)
-            self.norm_fn = lambda x, b, n: n(x,b)
+            self.norm_fn = lambda x, b, n: n(x, b)
         else:
             assert normalization == "none", normalization
             norm_mod = nn.Identity()
@@ -445,20 +438,21 @@ class NodeMLP(nn.Module):
         self.dropouts = get_clones(nn.Dropout(dropout), num_layers)
 
     def forward(self, x, batch_index, edge_index, edge_attr):
-        """forward.
-        """
+        """forward."""
         for dropout, layer, norm in zip(self.dropouts, self.layers, self.norms):
             layer_out = layer(x)
             layer_out = self.norm_fn(layer_out, batch_index, norm)
             x = F.relu(dropout(layer_out)) + x
         return x
 
+
 class MLPBlocks(nn.Module):
     """
-         Just Good Old Multilayer perceptron with residuals
-        layer->dropout->activation(Relu)
-        if residuals is True, add a skip connection between block
+     Just Good Old Multilayer perceptron with residuals
+    layer->dropout->activation(Relu)
+    if residuals is True, add a skip connection between block
     """
+
     def __init__(
         self,
         input_size: int,
@@ -469,7 +463,7 @@ class MLPBlocks(nn.Module):
         output_size: int = None,
         use_residuals: bool = False,
     ):
-        """ MLP with optional residual connections.
+        """MLP with optional residual connections.
 
         Args:
             input_size (int): Input feature dimension.
@@ -526,10 +520,9 @@ class MLPBlocks(nn.Module):
 
 
 class NeimsBlock(nn.Module):
-    """ from the NEIMS paper (uses LeakyReLU instead of ReLU) """
+    """from the NEIMS paper (uses LeakyReLU instead of ReLU)"""
 
     def __init__(self, in_dim, out_dim, dropout):
-
         super().__init__()
         bottleneck_factor = 0.5
         bottleneck_size = int(round(bottleneck_factor * out_dim))
@@ -542,7 +535,6 @@ class NeimsBlock(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x):
-
         h = x
         h = self.in_batch_norm(h)
         h = self.in_activation(h)
@@ -567,6 +559,7 @@ class LowRankDense(nn.Module):
         rank (int): Rank of the factorization (controls the size of the intermediate layer).
         bias (bool): Whether to include a bias term in the layer.
     """
+
     def __init__(self, input_dim, output_dim, rank, bias=True):
         super().__init__()
         self.input_dim = input_dim
@@ -597,26 +590,29 @@ class LowRankDense(nn.Module):
 
         return x
 
+
 class SpecFFN(nn.Module):
     """Spectral Feed-Forward Network.
 
     Args:
         nn (_type_): _description_
     """
-    def __init__(self, 
-        input_size, 
+
+    def __init__(
+        self,
+        input_size,
         hidden_size,
         mz_max,
         mz_bin_res,
         num_layers,
-        dropout, 
+        dropout,
         prec_mz_offset,
         bidirectional,
         use_residuals,
         output_map_size,
         output_activation,
-        log_min):
-
+        log_min,
+    ):
         super().__init__()
 
         self.input_size = input_size
@@ -631,33 +627,33 @@ class SpecFFN(nn.Module):
         self.ff_layers = nn.ModuleList([])
         # self.ff_layers.append(nn.Linear(mlp_hidden_size, mlp_hidden_size))
         for i in range(num_layers):
-            self.ff_layers.append(
-                NeimsBlock(
-                    hidden_size,
-                    hidden_size,
-                    dropout))
+            self.ff_layers.append(NeimsBlock(hidden_size, hidden_size, dropout))
         if output_map_size == -1:
             if self.bidirectional:
                 # assumes gating, mass masking
                 self.forw_out_layer = nn.Linear(hidden_size, self.output_size)
                 self.rev_out_layer = nn.Linear(hidden_size, self.output_size)
                 self.out_gate = nn.Sequential(
-                    *[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+                    *[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()]
+                )
             else:
                 self.out_layer = nn.Linear(hidden_size, self.output_size)
                 self.out_gate = nn.Sequential(
-                    *[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()])
+                    *[nn.Linear(hidden_size, self.output_size), nn.Sigmoid()]
+                )
         else:
             if self.bidirectional:
                 # assumes gating, mass masking
                 self.forw_out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
                 self.rev_out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
                 self.out_gate = nn.Sequential(
-                    *[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()])
+                    *[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()]
+                )
             else:
                 self.out_layer = LowRankDense(hidden_size, self.output_size, output_map_size)
                 self.out_gate = nn.Sequential(
-                    *[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()])
+                    *[LowRankDense(hidden_size, self.output_size, output_map_size), nn.Sigmoid()]
+                )
         assert output_activation in ["relu", "sigmoid"], output_activation
         if output_activation == "relu":
             self.out_activation = nn.ReLU()
@@ -667,18 +663,20 @@ class SpecFFN(nn.Module):
         self.log_min = log_min
 
     def _compute_output_size(self):
-        self.mz_bins = nn.Parameter(th.arange(self.mz_bin_res,self.mz_max+self.mz_bin_res,self.mz_bin_res, dtype=th.float32))
-        self.mzs = nn.Parameter(self.mz_bins-0.5*self.mz_bin_res)
+        self.mz_bins = nn.Parameter(
+            th.arange(
+                self.mz_bin_res, self.mz_max + self.mz_bin_res, self.mz_bin_res, dtype=th.float32
+            )
+        )
+        self.mzs = nn.Parameter(self.mz_bins - 0.5 * self.mz_bin_res)
         self.output_size = self.mzs.shape[0]
 
-    def _prec_mz_to_idx(self,prec_mz):
-
-        prec_mz_idx = th.bucketize(prec_mz,self.mz_bins.to(prec_mz.device),right=True)
-        assert th.max(prec_mz_idx) < self.output_size, (prec_mz_idx,self.output_size)
+    def _prec_mz_to_idx(self, prec_mz):
+        prec_mz_idx = th.bucketize(prec_mz, self.mz_bins.to(prec_mz.device), right=True)
+        assert th.max(prec_mz_idx) < self.output_size, (prec_mz_idx, self.output_size)
         return prec_mz_idx
 
     def forward(self, input_h, prec_mz):
-
         # get prec_mz_idxs
         prec_mz_idxs = self._prec_mz_to_idx(prec_mz)
         # process inputs
@@ -692,12 +690,9 @@ class SpecFFN(nn.Module):
         # bidirectional prediction
         if self.bidirectional:
             ff = self.forw_out_layer(fh)
-            fr = reverse_prediction(
-                self.rev_out_layer(fh),
-                prec_mz_idxs,
-                self.prec_mz_offset)
+            fr = reverse_prediction(self.rev_out_layer(fh), prec_mz_idxs, self.prec_mz_offset)
             fg = self.out_gate(fh)
-            fo = ff * fg + fr * (1. - fg)
+            fo = ff * fg + fr * (1.0 - fg)
         else:
             # apply output layer
             fo = self.out_layer(fh)
@@ -705,26 +700,30 @@ class SpecFFN(nn.Module):
             fg = self.out_gate(fh)
             fo = fg * fo
         fo = self.out_activation(fo)
-        fo = mask_prediction_by_mass(
-            fo, prec_mz_idxs, self.prec_mz_offset)
+        fo = mask_prediction_by_mass(fo, prec_mz_idxs, self.prec_mz_offset)
         spec = self.out_normalization(fo)
         # handle all zeroes (set to first bin by default)
-        all_zero_mask = th.max(spec,dim=1)[0]<=0.
+        all_zero_mask = th.max(spec, dim=1)[0] <= 0.0
         all_zero_bonus = th.zeros_like(spec)
-        all_zero_bonus[all_zero_mask,0] = 1.
+        all_zero_bonus[all_zero_mask, 0] = 1.0
         spec = spec + all_zero_bonus
         # convert dense spectrum to sparse
-        mask = spec>0.
-        pred_mzs = (self.mzs.unsqueeze(0).expand(spec.shape[0],-1))[mask]
+        mask = spec > 0.0
+        pred_mzs = (self.mzs.unsqueeze(0).expand(spec.shape[0], -1))[mask]
         pred_logprobs = safelog(spec, eps=self.log_min)[mask]
-        pred_batch_idxs = th.arange(spec.shape[0],device=spec.device).unsqueeze(1).expand(-1,spec.shape[1])[mask]
+        pred_batch_idxs = (
+            th.arange(spec.shape[0], device=spec.device)
+            .unsqueeze(1)
+            .expand(-1, spec.shape[1])[mask]
+        )
         pred_specs = spec
         return pred_mzs, pred_logprobs, pred_batch_idxs, pred_specs
+
 
 class SetTransformer(nn.Module):
     """
     Set Transformer implementation for processing sets of elements.
-    
+
 
     Args:
         input_dim (int): Dimension of the input features.
@@ -735,6 +734,7 @@ class SetTransformer(nn.Module):
         num_blocks (int): Number of Set Transformer blocks.
         dropout (float): Dropout rate for regularization.
     """
+
     def __init__(
         self,
         input_dim,
@@ -750,33 +750,39 @@ class SetTransformer(nn.Module):
 
         self.return_nodes = return_nodes
         self.inducing_points = nn.Parameter(th.randn(num_inds, input_dim))
-        self.attention_blocks = nn.ModuleList([
-            nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
-            for _ in range(num_blocks)
-        ])
-        
+        self.attention_blocks = nn.ModuleList(
+            [
+                nn.MultiheadAttention(
+                    embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True
+                )
+                for _ in range(num_blocks)
+            ]
+        )
+
         # Decoder: maps inducing points back to nodes (only used if return_nodes=True)
         if return_nodes:
-            self.decoder_attn = nn.MultiheadAttention(embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True)
+            self.decoder_attn = nn.MultiheadAttention(
+                embed_dim=input_dim, num_heads=num_heads, dropout=dropout, batch_first=True
+            )
             self.decoder_fc = nn.Sequential(
                 nn.Linear(input_dim, hidden_dim),
                 nn.ReLU(),
                 nn.Dropout(dropout),
-                nn.Linear(hidden_dim, output_dim)
+                nn.Linear(hidden_dim, output_dim),
             )
         else:
             self.fc = nn.Sequential(
                 nn.Linear(input_dim, hidden_dim),
                 nn.ReLU(),
                 nn.Dropout(dropout),
-                nn.Linear(hidden_dim, output_dim)
+                nn.Linear(hidden_dim, output_dim),
             )
 
     def forward(self, x, batch_idx=None):
         """
         Forward pass for the Set Transformer.
         Args:
-            x (Tensor): Input tensor. 
+            x (Tensor): Input tensor.
                 - If batch_idx is None: shape (batch_size, set_size, input_dim) - fixed size sets
                 - If batch_idx is provided: shape (total_elements, input_dim) - variable size sets
             # Input: (total_elements=85, input_dim=128)
@@ -791,16 +797,18 @@ class SetTransformer(nn.Module):
         if batch_idx is None:
             # Fixed-size sets: (batch_size, set_size, input_dim)
             batch_size, set_size, _ = x.size()
-            inducing_points = self.inducing_points.unsqueeze(0).expand(batch_size, -1, -1)  # (B, num_inds, input_dim)
+            inducing_points = self.inducing_points.unsqueeze(0).expand(
+                batch_size, -1, -1
+            )  # (B, num_inds, input_dim)
 
             # SetTransformer architecture:
             # 1. Encoder: inputs attend to inducing points
             h, _ = self.attention_blocks[0](inducing_points, x, x)  # (B, num_inds, input_dim)
-            
+
             # 2. Additional layers: inducing points attend to themselves
             for i in range(1, len(self.attention_blocks)):
                 h, _ = self.attention_blocks[i](h, h, h)
-            
+
             if self.return_nodes:
                 # 3. Decoder: map inducing points back to per-node outputs
                 x_decoded, _ = self.decoder_attn(x, h, h)  # (B, set_size, input_dim)
@@ -814,22 +822,24 @@ class SetTransformer(nn.Module):
             # Variable-size sets: (total_elements, input_dim) with batch_idx
             num_batches = int(batch_idx.max().item()) + 1
             output_list = []
-            
+
             for batch_id in range(num_batches):
                 # Extract elements for this batch
-                mask = (batch_idx == batch_id)
+                mask = batch_idx == batch_id
                 x_batch = x[mask].unsqueeze(0)  # (1, set_size_i, input_dim)
-                
+
                 # Apply SetTransformer: first attend from inputs to inducing points
                 inducing_points = self.inducing_points.unsqueeze(0)  # (1, num_inds, input_dim)
-                
+
                 # Encoder: inputs attend to inducing points (queries=inducing_points, keys/values=inputs)
-                h, _ = self.attention_blocks[0](inducing_points, x_batch, x_batch)  # (1, num_inds, input_dim)
-                
+                h, _ = self.attention_blocks[0](
+                    inducing_points, x_batch, x_batch
+                )  # (1, num_inds, input_dim)
+
                 # Additional encoding layers: inducing points attend to themselves
                 for i in range(1, len(self.attention_blocks)):
                     h, _ = self.attention_blocks[i](h, h, h)
-                
+
                 if self.return_nodes:
                     # Decoder: map inducing points back to per-node outputs
                     # queries=original inputs, keys/values=encoded inducing points
@@ -840,7 +850,7 @@ class SetTransformer(nn.Module):
                     # Aggregate: take mean of inducing points for set-level output
                     x_agg = h.mean(dim=1)  # (1, input_dim)
                     output_list.append(x_agg.squeeze(0))
-            
+
             # Stack all batch outputs
             if self.return_nodes:
                 x = th.cat(output_list, dim=0)  # (total_elements, output_dim)
@@ -848,6 +858,7 @@ class SetTransformer(nn.Module):
                 x = th.stack(output_list, dim=0)  # (num_batches, input_dim)
                 x = self.fc(x)
             return x
+
 
 def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
     # adapted from NEIMS
@@ -859,14 +870,12 @@ def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
     rev_prediction = th.flip(raw_prediction, dims=(1,))
     # convention is to shift right, so we express as negative to go left
     offset_idx = th.minimum(
-        max_idx * th.ones_like(prec_mass_idx),
-        prec_mass_idx + prec_mass_offset + 1)
-    shifts = - (max_idx - offset_idx)
-    gather_idx = th.arange(
-        max_idx,
-        device=raw_prediction.device).unsqueeze(0).expand(
-        batch_size,
-        max_idx)
+        max_idx * th.ones_like(prec_mass_idx), prec_mass_idx + prec_mass_offset + 1
+    )
+    shifts = -(max_idx - offset_idx)
+    gather_idx = (
+        th.arange(max_idx, device=raw_prediction.device).unsqueeze(0).expand(batch_size, max_idx)
+    )
     gather_idx = (gather_idx - shifts.unsqueeze(1)) % max_idx
     offset_rev_prediction = th.gather(rev_prediction, 1, gather_idx)
     # you could mask_prediction_by_mass here but it's unnecessary
@@ -875,11 +884,12 @@ def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):
 
 class Set2SetPooling(nn.Module):
     """Wrapper for Set2Set that handles batch argument correctly."""
+
     def __init__(self, node_dim: int, processing_steps: int = 3):
         super().__init__()
         self.set2set = pyg.nn.Set2Set(node_dim, processing_steps=processing_steps)
         self.linear = nn.Linear(2 * node_dim, node_dim)
-    
+
     def forward(self, x, batch):
         """Forward pass that accepts batch argument like other PyG aggregations."""
         x = self.set2set(x, batch)
@@ -889,7 +899,7 @@ class Set2SetPooling(nn.Module):
 
 def build_pool_module(pool_type: str, node_dim: int):
     """Method to build pooling layer for given pool_type and dim
-        node dim is required for attention layer. 
+        node dim is required for attention layer.
     Args:
         pool_type (str): pooling type in ['sum','mean','max','attention','set2set','set_transformer','softmax','powermean','none']
         node_dim (int): node_dim, used for attention and set_transformer
@@ -905,17 +915,13 @@ def build_pool_module(pool_type: str, node_dim: int):
         pool_module = aggr.MaxAggregation()
     elif pool_type == "attention":
         pool_module = aggr.AttentionalAggregation(
-            gate_nn = nn.Sequential(
-                nn.Linear(node_dim, node_dim),
-                nn.ReLU(),
-                nn.Linear(node_dim, 1)
-            )
+            gate_nn=nn.Sequential(nn.Linear(node_dim, node_dim), nn.ReLU(), nn.Linear(node_dim, 1))
         )
     elif pool_type == "set_transformer":
         # use SetTransformerAggregation from pyg
         # TODO pass channels, num_seed_points, num_encoder_blocks, num_decoder_blocks, heads, concat, layer_norm, dropout
         raise NotImplementedError
-        #pool_module = aggr.SetTransformerAggregation(
+        # pool_module = aggr.SetTransformerAggregation(
         #   channels=node_dim,
         #   num_seed_points=16,
         #   num_encoder_blocks=1,
@@ -924,24 +930,24 @@ def build_pool_module(pool_type: str, node_dim: int):
         #   concat=True,
         #   layer_norm=False,
         #   dropout= 0.1
-        #)
+        # )
     elif pool_type == "equilibrium":
         raise NotImplementedError
         # TODO pass in_channels and out_channels
-        #pool_module = aggr.EquilibriumAggregation(
+        # pool_module = aggr.EquilibriumAggregation(
         #   in_channels=node_dim,
         #   out_channels=node_dim
-        #)
+        # )
     elif pool_type == "softmax":
         pool_module = aggr.SoftmaxAggregation(learn=True)
     elif pool_type == "powermean":
         pool_module = aggr.PowerMeanAggregation(learn=True)
     elif pool_type == "mean_max_sum":
         # raise NotImplementedError
-        pool_module = aggr.MultiAggregation(['mean', 'max', 'sum'])
+        pool_module = aggr.MultiAggregation(["mean", "max", "sum"])
     elif pool_type == "mean_std_softmax":
-        #raise NotImplementedError
-        pool_module = aggr.MultiAggregation(['mean', 'std', aggr.SoftmaxAggregation(learn=True)])
+        # raise NotImplementedError
+        pool_module = aggr.MultiAggregation(["mean", "std", aggr.SoftmaxAggregation(learn=True)])
     else:
         assert pool_type == "none", pool_type
         # just return 0s
@@ -956,9 +962,5 @@ def mask_prediction_by_mass(raw_prediction, prec_mass_idx, prec_mass_offset):
     max_idx = raw_prediction.shape[1]
     assert th.all(prec_mass_idx < max_idx)
     idx = th.arange(max_idx, device=prec_mass_idx.device)
-    mask = (
-        idx.unsqueeze(0) <= (
-            prec_mass_idx.unsqueeze(1) +
-            prec_mass_offset)).float()
+    mask = (idx.unsqueeze(0) <= (prec_mass_idx.unsqueeze(1) + prec_mass_offset)).float()
     return mask * raw_prediction
-

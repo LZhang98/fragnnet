@@ -1,50 +1,51 @@
+import copy
 import importlib
+import os
 import re
 import warnings
-import pandas as pd
-import numpy as np
-import joblib
-from tqdm import tqdm
-from pprint import pformat, pprint
-from typing import Tuple, List, TYPE_CHECKING, Union
-import pyteomics
-from pyteomics.mass import Composition
+from pprint import pformat
+from typing import TYPE_CHECKING
 
-from fragnnet.utils.misc_utils import np_temp_seed, none_or_nan
-from fragnnet.utils.formula_utils import MASS, ELECTRON_MASS, NEUTRON_MASS
-import copy
+import joblib
+import numpy as np
+import pandas as pd
+import pyteomics
 import torch as th
-import os
+from pyteomics.mass import Composition
+from tqdm import tqdm
+
+from fragnnet.utils.formula_utils import ELECTRON_MASS, MASS, NEUTRON_MASS
+from fragnnet.utils.misc_utils import none_or_nan, np_temp_seed
 
 # don't do expesive import in runtime
 if TYPE_CHECKING:
-    import rdkit
+    pass
 
 JOBLIB_BACKEND = "loky"
 FRAGNNET_JOBLIB_N_JOBS = os.environ.get("FRAGNNET_JOBLIB_N_JOBS", None)
-JOBLIB_N_JOBS = joblib.cpu_count() if FRAGNNET_JOBLIB_N_JOBS is None else int(
-    FRAGNNET_JOBLIB_N_JOBS)
+JOBLIB_N_JOBS = (
+    joblib.cpu_count() if FRAGNNET_JOBLIB_N_JOBS is None else int(FRAGNNET_JOBLIB_N_JOBS)
+)
 JOBLIB_TIMEOUT = 10800  # default is 300 seconds for "loky"
 if FRAGNNET_JOBLIB_N_JOBS is not None:
-    print(
-        f"Using FRAGNNET_JOBLIB_N_JOBS={FRAGNNET_JOBLIB_N_JOBS} for joblib n_jobs")
+    print(f"Using FRAGNNET_JOBLIB_N_JOBS={FRAGNNET_JOBLIB_N_JOBS} for joblib n_jobs")
 
 
-def rdkit_import(*module_strs: str) -> Tuple:
-    """ until function for import rdkit modules
+def rdkit_import(*module_strs: str) -> tuple:
+    """until function for import rdkit modules
 
     Returns:
             tuple: tuple of loaded modules
     """
     RDLogger = importlib.import_module("rdkit.RDLogger")
-    RDLogger.DisableLog('rdApp.*')
+    RDLogger.DisableLog("rdApp.*")
     modules = []
     for module_str in module_strs:
         modules.append(importlib.import_module(module_str))
     return tuple(modules)
 
 
-def normalize_ints(ints: List[float]) -> List[float]:
+def normalize_ints(ints: list[float]) -> list[float]:
     """normalize intensities to 0-1.0
 
     Args:
@@ -65,20 +66,19 @@ def randomize_smiles(smiles, rseed, isomeric=False, kekule=False):
     modules = rdkit_import("rdkit.Chem")
     Chem = modules[0]
     m = Chem.MolFromSmiles(smiles)
-    assert not (m is None)
+    assert m is not None
     ans = list(range(m.GetNumAtoms()))
     # np_temp_seed now yields a local RNG (numpy.random.Generator)
     with np_temp_seed(rseed) as rng:
         # use the generator's in-place shuffle to avoid touching global state
         rng.shuffle(ans)
     nm = Chem.RenumberAtoms(m, ans)
-    smiles = Chem.MolToSmiles(
-        nm, canonical=False, isomericSmiles=isomeric, kekuleSmiles=kekule)
-    assert not (smiles is None)
+    smiles = Chem.MolToSmiles(nm, canonical=False, isomericSmiles=isomeric, kekuleSmiles=kekule)
+    assert smiles is not None
     return smiles
 
 
-def split_smiles(smiles_str: str) -> List:
+def split_smiles(smiles_str: str) -> list:
     """Tokenize a SMILES molecule use regex
 
     Args:
@@ -91,7 +91,7 @@ def split_smiles(smiles_str: str) -> List:
     pattern = r"(\[[^\]]+]|Br?|Cl?|N|O|S|P|F|I|b|c|n|o|s|p|\(|\)|\.|=|#|-|\+|\\\\|\/|:|~|@|\?|>|\*|\$|\%[0-9]{2}|[0-9])"
     regex = re.compile(pattern)
     token_list = [token for token in regex.findall(smiles_str)]
-    assert smiles_str == ''.join(token_list)
+    assert smiles_str == "".join(token_list)
     return token_list
 
 
@@ -99,7 +99,7 @@ def list_replace(l, d):
     return [d[data] for data in l]
 
 
-def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "rdkit.Chem.rdchem.Mol":
+def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "Chem.rdchem.Mol":
     """return a rdkit mol from inchi str
 
     Args:
@@ -123,7 +123,7 @@ def mol_from_inchi(inchi: str, ml_standardize: bool = True) -> "rdkit.Chem.rdche
     return mol
 
 
-def rdkit_ml_standardize(mol: "rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol":
+def rdkit_ml_standardize(mol: "Chem.rdchem.Mol") -> "Chem.rdchem.Mol":
     """Standardize a molecule for consistent representation for spectra machine learning tasks.
     Do not directly copy this to other chemical machine leanring code base, check list of operations
     you want to perform first.
@@ -140,8 +140,9 @@ def rdkit_ml_standardize(mol: "rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol
             rdkit.Chem.rdchem.Mol: Standardized molecule
     """
     # Import necessary RDKit modules
-    modules = rdkit_import("rdkit.Chem", "rdkit.Chem.MolStandardize",
-                           "rdkit.Chem.MolStandardize.rdMolStandardize")
+    modules = rdkit_import(
+        "rdkit.Chem", "rdkit.Chem.MolStandardize", "rdkit.Chem.MolStandardize.rdMolStandardize"
+    )
     rdMolStandardize = modules[-1]
 
     # Step 1: Clean up the molecule
@@ -177,7 +178,7 @@ def rdkit_ml_standardize(mol: "rdkit.Chem.rdchem.Mol") -> "rdkit.Chem.rdchem.Mol
     return mol
 
 
-def mol_from_smiles(smiles, ml_standardize: bool = True) -> "rdkit.Chem.rdchem.Mol":
+def mol_from_smiles(smiles, ml_standardize: bool = True) -> "Chem.rdchem.Mol":
     """Convert a SMILES string to an RDKit molecule object
 
     This function creates an RDKit molecule from a SMILES string and optionally
@@ -198,15 +199,20 @@ def mol_from_smiles(smiles, ml_standardize: bool = True) -> "rdkit.Chem.rdchem.M
         mol = Chem.MolFromSmiles(smiles)
         if ml_standardize:
             mol = rdkit_ml_standardize(mol)
-    except Exception as e:
+    except Exception:
         mol = np.nan
     if none_or_nan(mol):
         mol = np.nan
     return mol
 
 
-def mol_to_smiles(mol: "rdkit.Chem.rdchem.Mol", canonical: bool = True, isomericSmiles: bool = False, kekuleSmiles: bool = False) -> str:
-    """ get smiles string from give mol object
+def mol_to_smiles(
+    mol: "Chem.rdchem.Mol",
+    canonical: bool = True,
+    isomericSmiles: bool = False,
+    kekuleSmiles: bool = False,
+) -> str:
+    """get smiles string from give mol object
 
     Args:
             mol (rdkit.Chem.rdchem.Mol): mol object
@@ -221,15 +227,16 @@ def mol_to_smiles(mol: "rdkit.Chem.rdchem.Mol", canonical: bool = True, isomeric
     Chem = modules[0]
     try:
         smiles = Chem.MolToSmiles(
-            mol, canonical=canonical, isomericSmiles=isomericSmiles, kekuleSmiles=kekuleSmiles)
-    except Exception as e:
+            mol, canonical=canonical, isomericSmiles=isomericSmiles, kekuleSmiles=kekuleSmiles
+        )
+    except Exception:
         smiles = np.nan
     if none_or_nan(smiles):
         smiles = np.nan
     return smiles
 
 
-def mol_to_formula(mol: "rdkit.Chem.rdchem.Mol") -> str:
+def mol_to_formula(mol: "Chem.rdchem.Mol") -> str:
     """get formula string from give mol object
 
     Args:
@@ -242,12 +249,12 @@ def mol_to_formula(mol: "rdkit.Chem.rdchem.Mol") -> str:
     AllChem = modules[0]
     try:
         formula = AllChem.CalcMolFormula(mol)
-    except Exception as e:
+    except Exception:
         formula = np.nan
     return formula
 
 
-def mol_to_inchikey(mol: "rdkit.Chem.rdchem.Mol") -> str:
+def mol_to_inchikey(mol: "Chem.rdchem.Mol") -> str:
     """get inchikey string from give mol object
 
     Args:
@@ -260,12 +267,12 @@ def mol_to_inchikey(mol: "rdkit.Chem.rdchem.Mol") -> str:
     inchi = modules[0]
     try:
         inchikey = inchi.MolToInchiKey(mol)
-    except Exception as e:
+    except Exception:
         inchikey = np.nan
     return inchikey
 
 
-def mol_to_inchikey_s(mol: "rdkit.Chem.rdchem.Mol") -> str:
+def mol_to_inchikey_s(mol: "Chem.rdchem.Mol") -> str:
     """get inchikey string from give mol object
 
     Args:
@@ -278,26 +285,7 @@ def mol_to_inchikey_s(mol: "rdkit.Chem.rdchem.Mol") -> str:
     inchi = modules[0]
     try:
         inchikey_s = inchi.MolToInchiKey(mol)[:14]
-    except Exception as e:
-        inchikey_s = np.nan
-    return inchikey_s
-
-
-def mol_to_inchi(mol: "rdkit.Chem.rdchem.Mol") -> str:
-    """get inchi string from give mol object
-
-    Args:
-            mol (rdkit.Chem.rdchem.Mol): mol object
-
-    Returns:
-            str: inchi, np.nan if fails
-    """
-    modules = rdkit_import("rdkit.Chem.inchi")
-    inchi = modules[0]
-    try:
-        inchikey = inchi.MolToInchiKey(mol)
-        inchikey_s = inchikey[:14]
-    except Exception as e:
+    except Exception:
         inchikey_s = np.nan
     return inchikey_s
 
@@ -314,7 +302,7 @@ def mol_to_inchi(mol) -> str:
     modules = rdkit_import("rdkit.Chem.rdinchi")
     rdinchi = modules[0]
     try:
-        inchi = rdinchi.MolToInchi(mol, options='-SNon')[0]
+        inchi = rdinchi.MolToInchi(mol, options="-SNon")[0]
     except:
         inchi = np.nan
     return inchi
@@ -336,13 +324,13 @@ def mol_to_mol_weight(mol, exact=True) -> float:
             mol_weight = float(Desc.ExactMolWt(mol))
         else:
             mol_weight = float(Desc.MolWt(mol))
-    except Exception as e:
+    except Exception:
         mol_weight = np.nan
     return mol_weight
 
 
-def mol_to_charge(mol: "rdkit.Chem.rdchem.Mol") -> int:
-    """ get number of charges from mol object
+def mol_to_charge(mol: "Chem.rdchem.Mol") -> int:
+    """get number of charges from mol object
 
     Returns:
             int: total number of charges, np.nan if fails
@@ -351,13 +339,13 @@ def mol_to_charge(mol: "rdkit.Chem.rdchem.Mol") -> int:
     rdmolops = modules[0]
     try:
         charge = rdmolops.GetFormalCharge(mol)
-    except Exception as e:
+    except Exception:
         charge = np.nan
     return charge
 
 
-def mol_to_num_atoms(mol: "rdkit.Chem.rdchem.Mol", heavy: bool = True) -> Union[int, float]:
-    """ get total number of atoms in get mol object
+def mol_to_num_atoms(mol: "Chem.rdchem.Mol", heavy: bool = True) -> int | float:
+    """get total number of atoms in get mol object
 
     Args:
             mol (rdkit.Chem.rdchem.Mol): mol object
@@ -368,13 +356,13 @@ def mol_to_num_atoms(mol: "rdkit.Chem.rdchem.Mol", heavy: bool = True) -> Union[
     """
     try:
         num_atoms = mol.GetNumAtoms(onlyHeavy=heavy)
-    except Exception as e:
+    except Exception:
         num_atoms = np.nan
     return num_atoms
 
 
-def mol_to_num_bonds(mol: "rdkit.Chem.rdchem.Mol", heavy: bool = True) -> Union[int, float]:
-    """ get total number of bondss in get mol object
+def mol_to_num_bonds(mol: "Chem.rdchem.Mol", heavy: bool = True) -> int | float:
+    """get total number of bondss in get mol object
 
     Args:
             mol (rdkit.Chem.rdchem.Mol): mol object
@@ -390,7 +378,7 @@ def mol_to_num_bonds(mol: "rdkit.Chem.rdchem.Mol", heavy: bool = True) -> Union[
     return num_bonds
 
 
-def mol_to_num_radicals(mol: "rdkit.Chem.rdchem.Mol") -> Union[int, float]:
+def mol_to_num_radicals(mol: "Chem.rdchem.Mol") -> int | float:
     """get total number of radicals in the mol object
 
     Args:
@@ -408,7 +396,7 @@ def mol_to_num_radicals(mol: "rdkit.Chem.rdchem.Mol") -> Union[int, float]:
     return num_radicals
 
 
-def check_neutral_charge(mol: "rdkit.Chem.rdchem.Mol") -> bool:
+def check_neutral_charge(mol: "Chem.rdchem.Mol") -> bool:
     """check if mol is nertral
 
     Args:
@@ -421,8 +409,8 @@ def check_neutral_charge(mol: "rdkit.Chem.rdchem.Mol") -> bool:
     return valid
 
 
-def check_single_mol(mol: "rdkit.Chem.rdchem.Mol") -> bool:
-    """ check if mol object is a single mol (connected graph)
+def check_single_mol(mol: "Chem.rdchem.Mol") -> bool:
+    """check if mol object is a single mol (connected graph)
     Args:
             mol (rdkit.Chem.rdchem.Mol): mol object
 
@@ -433,13 +421,13 @@ def check_single_mol(mol: "rdkit.Chem.rdchem.Mol") -> bool:
     rdmolops = modules[0]
     try:
         num_frags = len(rdmolops.GetMolFrags(mol))
-    except Exception as e:
+    except Exception:
         num_frags = np.nan
     valid = num_frags == 1
     return valid
 
 
-def inchi_to_smiles(inchi: str) -> Union[str, float]:
+def inchi_to_smiles(inchi: str) -> str | float:
     """convert between inchi and smiles
 
     Args:
@@ -451,7 +439,7 @@ def inchi_to_smiles(inchi: str) -> Union[str, float]:
     try:
         mol = mol_from_inchi(inchi)
         smiles = mol_to_smiles(mol)
-    except Exception as e:
+    except Exception:
         smiles = np.nan
     return smiles
 
@@ -469,10 +457,9 @@ def smiles_to_selfies(smiles: str) -> str:
     try:
         # canonicalize, strip isomeric information, kekulize
         mol = Chem.MolFromSmiles(smiles)
-        smiles = Chem.MolToSmiles(
-            mol, canonical=False, isomericSmiles=False, kekuleSmiles=True)
+        smiles = Chem.MolToSmiles(mol, canonical=False, isomericSmiles=False, kekuleSmiles=True)
         selfies = sf.encoder(smiles)
-    except Exception as e:
+    except Exception:
         selfies = np.nan
     return selfies
 
@@ -491,7 +478,7 @@ def get_tanmimoto(fp, other_fp):
     return ds.DiceSimilarity(fp, other_fp)
 
 
-def make_morgan_fingerprint(mol: "rdkit.Chem.rdchem.Mol", radius: int = 3, covert_to_np=True) -> np.array:
+def make_morgan_fingerprint(mol: "Chem.rdchem.Mol", radius: int = 3, covert_to_np=True) -> np.array:
     """make morgan fingerpirnt from mol object
 
     Args:
@@ -512,7 +499,7 @@ def make_morgan_fingerprint(mol: "rdkit.Chem.rdchem.Mol", radius: int = 3, cover
     return fp_arr
 
 
-def make_rdkit_fingerprint(mol: "rdkit.Chem.rdchem.Mol") -> np.array:
+def make_rdkit_fingerprint(mol: "Chem.rdchem.Mol") -> np.array:
     """make rdkit fingerpirnt from mol object
 
     Args:
@@ -529,7 +516,7 @@ def make_rdkit_fingerprint(mol: "rdkit.Chem.rdchem.Mol") -> np.array:
     return fp_arr
 
 
-def make_maccs_fingerprint(mol: "rdkit.Chem.rdchem.Mol") -> np.ndarray:
+def make_maccs_fingerprint(mol: "Chem.rdchem.Mol") -> np.ndarray:
     """make maccs fingerpirnt from mol object
 
     Args:
@@ -546,7 +533,7 @@ def make_maccs_fingerprint(mol: "rdkit.Chem.rdchem.Mol") -> np.ndarray:
     return fp_arr
 
 
-def remove_stereochemistry(mol: "rdkit.Chem.rdchem.Mol"):
+def remove_stereochemistry(mol: "Chem.rdchem.Mol"):
     """_summary_
 
     Args:
@@ -556,7 +543,7 @@ def remove_stereochemistry(mol: "rdkit.Chem.rdchem.Mol"):
     mol = chem.RemoveStereochemistry(mol)
 
 
-def split_selfies(selfies_str: str) -> List[str]:
+def split_selfies(selfies_str: str) -> list[str]:
     """method to splt selfies strngs to list of tokens
 
     Args:
@@ -571,7 +558,6 @@ def split_selfies(selfies_str: str) -> List[str]:
 
 
 def seq_apply(iterator, func, need_unpack=False):
-
     result = []
     for i in iterator:
         if not need_unpack:
@@ -599,7 +585,7 @@ def par_apply(iterator, func, need_unpack=False, return_as_generator=False, n_jo
         backend=JOBLIB_BACKEND,
         n_jobs=n_jobs,
         timeout=JOBLIB_TIMEOUT,
-        return_as="list" if not return_as_generator else "generator"
+        return_as="list" if not return_as_generator else "generator",
     )
     if not need_unpack:
         result = parallel(par_func(i) for i in iterator)
@@ -619,10 +605,11 @@ def par_apply_series(series, func, tqdm_leave=True):
     Returns:
             _type_: _description_
     """
-    series_iter = tqdm(series.items(), desc=pformat(
-        func), total=series.shape[0], leave=tqdm_leave)
+    series_iter = tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
 
-    def series_func(tup): return func(tup[1])
+    def series_func(tup):
+        return func(tup[1])
+
     result_list = par_apply(series_iter, series_func)
     result_series = pd.Series(result_list, index=series.index)
     return result_series
@@ -639,10 +626,11 @@ def seq_apply_series(series, func, tqdm_leave=True) -> pd.Series:
     Returns:
             pd.Series: The results of applying the function to each item.
     """
-    series_iter = tqdm(series.items(), desc=pformat(
-        func), total=series.shape[0], leave=tqdm_leave)
+    series_iter = tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
 
-    def series_func(tup): return func(tup[1])
+    def series_func(tup):
+        return func(tup[1])
+
     result_list = seq_apply(series_iter, series_func)
     result_series = pd.Series(result_list, index=series.index)
     return result_series
@@ -660,11 +648,13 @@ def par_apply_df_rows(df, func):
     """
 
     df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
-    def df_func(tup): return func(tup[1])
+
+    def df_func(tup):
+        return func(tup[1])
+
     result_list = par_apply(df_iter, df_func)
     if isinstance(result_list[0], tuple):
-        raise NotImplementedError(
-            "Use par_apply_df_rows_t for multiple return values")
+        raise NotImplementedError("Use par_apply_df_rows_t for multiple return values")
     result_series = pd.Series(result_list, index=df.index)
 
     return result_series
@@ -681,10 +671,12 @@ def par_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
             pd.Series: The results of applying the function to each row.
     """
     df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
-    def df_func(tup): return func(tup[1])
+
+    def df_func(tup):
+        return func(tup[1])
+
     result_list = par_apply(df_iter, df_func)
-    result_series = tuple([pd.Series(rl, index=df.index)
-                          for rl in zip(*result_list)])
+    result_series = tuple([pd.Series(rl, index=df.index) for rl in zip(*result_list)])
     return result_series
 
 
@@ -699,11 +691,13 @@ def seq_apply_df_rows(df, func):
             tuple[pd.Series, ...]: The results of applying the function to each row.
     """
     df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
-    def df_func(tup): return func(tup[1])
+
+    def df_func(tup):
+        return func(tup[1])
+
     result_list = seq_apply(df_iter, df_func)
     if isinstance(result_list[0], tuple):
-        raise NotImplementedError(
-            "Use seq_apply_df_rows_t for multiple return values")
+        raise NotImplementedError("Use seq_apply_df_rows_t for multiple return values")
     result_series = pd.Series(result_list, index=df.index)
     return result_series
 
@@ -711,16 +705,17 @@ def seq_apply_df_rows(df, func):
 def seq_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
     """Apply a function to each row of a DataFrame in sequence, returning multiple Series."""
     df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
-    def df_func(tup): return func(tup[1])
+
+    def df_func(tup):
+        return func(tup[1])
+
     result_list = seq_apply(df_iter, df_func)
-    result_series = tuple([pd.Series(rl, index=df.index)
-                          for rl in zip(*result_list)])
+    result_series = tuple([pd.Series(rl, index=df.index) for rl in zip(*result_list)])
 
     return result_series
 
 
 def parse_ace_str(ce_str):
-
     if none_or_nan(ce_str):
         return np.nan
     matches = {
@@ -743,12 +738,13 @@ def parse_ace_str(ce_str):
 
 
 def parse_nce_str(ce_str):
-
     if none_or_nan(ce_str):
         return np.nan
     matches = {
         # nist ones
-        r"^NCE=[\d]+[.]?[\d]*% [\d]+[.]?[\d]*eV$": lambda x: float(x.split()[0].lstrip("NCE=").rstrip("%")),
+        r"^NCE=[\d]+[.]?[\d]*% [\d]+[.]?[\d]*eV$": lambda x: float(
+            x.split()[0].lstrip("NCE=").rstrip("%")
+        ),
         r"^NCE=[\d]+[.]?[\d]*%$": lambda x: float(x.lstrip("NCE=").rstrip("%")),
         r"^[\d]+% resonant relative/normalized$": lambda x: float(x.split("%")[0]),
         # other ones
@@ -764,6 +760,7 @@ def parse_nce_str(ce_str):
         if re.match(k, ce_str):
             return v(ce_str)
     return np.nan
+
 
 # def parse_ramp_ce_str(ce_str):
 
@@ -786,11 +783,7 @@ def parse_inst_info(df):
         return "EI", "EI"
     if none_or_nan(inst_type_str):
         # resort to instrument
-        inst_map = {
-            "Maxis II HD Q-TOF Bruker": "QTOF",
-            "qToF": "QTOF",
-            "Orbitrap": "FT"
-        }
+        inst_map = {"Maxis II HD Q-TOF Bruker": "QTOF", "qToF": "QTOF", "Orbitrap": "FT"}
         if none_or_nan(inst_str):
             inst_type = np.nan
         elif inst_str in inst_map:
@@ -839,9 +832,7 @@ def parse_inst_info(df):
         else:
             inst_type = "Other"
     # fragmentation mode
-    if inst_type_str == "HCD":
-        frag_mode = "HCD"
-    elif type(col_energy_str) == str and "HCD" in col_energy_str:
+    if inst_type_str == "HCD" or type(col_energy_str) == str and "HCD" in col_energy_str:
         frag_mode = "HCD"
     elif none_or_nan(frag_mode_str) or frag_mode_str == "CID":
         # default is CID if we don't know
@@ -854,7 +845,6 @@ def parse_inst_info(df):
 
 
 def parse_ion_mode_str(ion_mode_str):
-
     if none_or_nan(ion_mode_str):
         return np.nan
     if ion_mode_str in ["P", "N", "E", "EI"]:
@@ -868,7 +858,6 @@ def parse_ion_mode_str(ion_mode_str):
 
 
 def parse_ri_str(ri_str):
-
     if none_or_nan(ri_str):
         return np.nan
     else:
@@ -876,7 +865,6 @@ def parse_ri_str(ri_str):
 
 
 def parse_prec_type_str(prec_type_str):
-
     if none_or_nan(prec_type_str):
         return np.nan
     if prec_type_str == "EI":
@@ -897,17 +885,16 @@ def parse_prec_type_str(prec_type_str):
 
 
 def infer_prec_mz(df):
-
     # these were observed to be missing prec_mz in MoNA
     prec_type_to_mass_diff = {
-        "[M+HCOO]-": MASS("H")+MASS("C")+2*MASS("O")+ELECTRON_MASS,
+        "[M+HCOO]-": MASS("H") + MASS("C") + 2 * MASS("O") + ELECTRON_MASS,
         "[M]+": -ELECTRON_MASS,
-        "[M+HOO]-": MASS("H")+2*MASS("O")+ELECTRON_MASS,
-        "[M-OH]+": -MASS("H")-MASS("O")-ELECTRON_MASS,
-        "[M+H-C12H20O9]+": -19*MASS("H")-12*MASS("C")-9*MASS("O")-ELECTRON_MASS,
-        "[M-H]-": -MASS("H")+ELECTRON_MASS,
-        "[M+H]+": MASS("H")-ELECTRON_MASS,
-        "[M+Na]+": MASS("Na")-ELECTRON_MASS,
+        "[M+HOO]-": MASS("H") + 2 * MASS("O") + ELECTRON_MASS,
+        "[M-OH]+": -MASS("H") - MASS("O") - ELECTRON_MASS,
+        "[M+H-C12H20O9]+": -19 * MASS("H") - 12 * MASS("C") - 9 * MASS("O") - ELECTRON_MASS,
+        "[M-H]-": -MASS("H") + ELECTRON_MASS,
+        "[M+H]+": MASS("H") - ELECTRON_MASS,
+        "[M+Na]+": MASS("Na") - ELECTRON_MASS,
     }
 
     prec_mz = df["prec_mz"]
@@ -939,7 +926,7 @@ def parse_peaks_str(peaks_str):
 
 
 def composition_to_string(x):
-    return ''.join([a+str(x[a]) for a in sorted(x)])
+    return "".join([a + str(x[a]) for a in sorted(x)])
 
 
 def combine_formulae(formula_1, formula_2):
@@ -952,23 +939,23 @@ def combine_formulae(formula_1, formula_2):
 
 
 def parse_product_isotope(annot, precursor):
-    formula = Composition('')
+    formula = Composition("")
     precursor = Composition(formula=precursor)
     adducts = []
     losses = []
     isotope = 0
     charge = 1
-    chunks = [''] + re.split(r'([\+-])', annot)
+    chunks = [""] + re.split(r"([\+-])", annot)
     for prefix, chunk in zip(chunks[::2], chunks[1::2]):
         if len(chunk) == 0:
             continue
-        elif prefix == '^':
+        elif prefix == "^":
             charge = int(chunk)
         else:
-            if chunk[-1] == 'i' and chunk[-2:] != "Si":
+            if chunk[-1] == "i" and chunk[-2:] != "Si":
                 chunk = chunk[:-1]
                 isotope = int(chunk) if chunk else 1
-                if prefix == '-':
+                if prefix == "-":
                     isotope = -isotope
             else:
                 if chunk[0].isdigit():
@@ -976,16 +963,16 @@ def parse_product_isotope(annot, precursor):
                     chunk = chunk[1:]
                 else:
                     n = 1
-                if chunk == 'p':
+                if chunk == "p":
                     chunk = precursor
                 else:
                     chunk = Composition(formula=chunk) * n
-                if prefix == '':
+                if prefix == "":
                     formula += chunk
-                elif prefix == '+':
+                elif prefix == "+":
                     adducts.append(chunk)
                     formula += chunk
-                elif prefix == '-':
+                elif prefix == "-":
                     losses.append(chunk)
                     formula -= chunk
     return formula, adducts, losses, isotope, charge
@@ -997,9 +984,8 @@ def is_pep_annot(annot):
 
 
 def parse_annotations(row):
-
     RDLogger = importlib.import_module("rdkit.RDLogger")
-    RDLogger.DisableLog('rdApp.*')
+    RDLogger.DisableLog("rdApp.*")
     peaks_str = row["peaks"]
     prec_type = row["prec_type"]
     dset = row["dset"]
@@ -1009,7 +995,8 @@ def parse_annotations(row):
     current_supported_dsets = ["nist20_hr"]
     if dset not in current_supported_dsets:
         error = ValueError(
-            f"dataset not supported, supported {current_supported_dsets}, given {dset}")
+            f"dataset not supported, supported {current_supported_dsets}, given {dset}"
+        )
     elif "glycan" in notes.lower():
         error = ValueError("glycans not supported (1)")
     elif "peptide" in notes.lower():
@@ -1039,7 +1026,7 @@ def parse_annotations(row):
         if len(line) < 3:
             continue
         peak_mz = line[0]
-        annots = " ".join(line[2:]).strip('\"')
+        annots = " ".join(line[2:]).strip('"')
         # glycan parsing not implemented
         if "|" in annots:
             error = ValueError("glycans not supported (2)")
@@ -1053,20 +1040,19 @@ def parse_annotations(row):
         annots = annots.split(";")
         for annot in annots:
             # strip the peak count
-            annot = re.sub(r' ?\d+/\d+$', '', annot)
+            annot = re.sub(r" ?\d+/\d+$", "", annot)
             if len(annot) == 0:
                 error = ValueError("empty annotation")
                 all_good = False
                 break
-            if annot in ('?', 'more'):
+            if annot in ("?", "more"):
                 continue
-            if '/' in annot:
-                annot, ppm = annot.split('/')
-            if '=' in annot:
-                annot, _ = annot.split('=')
+            if "/" in annot:
+                annot, ppm = annot.split("/")
+            if "=" in annot:
+                annot, _ = annot.split("=")
             try:
-                product, _, _, isotope, _ = parse_product_isotope(
-                    annot, precursor)
+                product, _, _, isotope, _ = parse_product_isotope(annot, precursor)
             except pyteomics.auxiliary.structures.PyteomicsError as e:
                 error = e
                 all_good = False
@@ -1125,13 +1111,13 @@ def get_res(peaks):
         if dec_idx == -1:
             res = 0
         else:
-            res = len(mz) - (dec_idx+1)
+            res = len(mz) - (dec_idx + 1)
         ress.append(res)
     highest_res = max(ress)
     return highest_res
 
 
-def get_murcko_scaffold(mol, output_type="smiles", include_chirality=False) -> Union[str, float]:
+def get_murcko_scaffold(mol, output_type="smiles", include_chirality=False) -> str | float:
     """get murcko scaffold from mol object
     Args:
             mol (rdkit.Chem.rdchem.Mol): mol object
@@ -1143,12 +1129,12 @@ def get_murcko_scaffold(mol, output_type="smiles", include_chirality=False) -> U
 
     if none_or_nan(mol):
         return np.nan
-    MurckoScaffold = importlib.import_module(
-        "rdkit.Chem.Scaffolds.MurckoScaffold")
+    MurckoScaffold = importlib.import_module("rdkit.Chem.Scaffolds.MurckoScaffold")
     if output_type == "smiles":
         try:
             scaffold = MurckoScaffold.MurckoScaffoldSmiles(
-                mol=mol, includeChirality=include_chirality)
+                mol=mol, includeChirality=include_chirality
+            )
         except Exception as e:
             warnings.warn(f"failed to get murcko scaffold: {e}")
             scaffold = np.nan
@@ -1157,7 +1143,7 @@ def get_murcko_scaffold(mol, output_type="smiles", include_chirality=False) -> U
     return scaffold
 
 
-def analyze_mol(mol: "rdkit.Chem.rdchem.Mol") -> dict:
+def analyze_mol(mol: "Chem.rdchem.Mol") -> dict:
     """get some basic properties of the mol object
     Args:
             mol (rdkit.Chem.rdchem.Mol): mol object
@@ -1165,20 +1151,20 @@ def analyze_mol(mol: "rdkit.Chem.rdchem.Mol") -> dict:
             dict: dictionary of properties
     """
     import rdkit
-    from rdkit.Chem.Descriptors import MolWt
     import rdkit.Chem as Chem
+    from rdkit.Chem.Descriptors import MolWt
+
     mol_dict = {}
     mol_dict["num_atoms"] = mol.GetNumHeavyAtoms()
     mol_dict["num_bonds"] = mol.GetNumBonds(onlyHeavy=True)
     mol_dict["mol_weight"] = MolWt(mol)
     mol_dict["num_rings"] = len(list(Chem.GetSymmSSSR(mol)))
     mol_dict["max_ring_size"] = max(
-        [-1]+[len(list(atom_iter)) for atom_iter in Chem.GetSymmSSSR(mol)])
-    cnops_counts = {"C": 0, "N": 0, "O": 0,
-                    "P": 0, "S": 0, "Cl": 0, "other": 0}
+        [-1] + [len(list(atom_iter)) for atom_iter in Chem.GetSymmSSSR(mol)]
+    )
+    cnops_counts = {"C": 0, "N": 0, "O": 0, "P": 0, "S": 0, "Cl": 0, "other": 0}
     bond_counts = {"single": 0, "double": 0, "triple": 0, "aromatic": 0}
-    cnops_bond_counts = {"C": [-1], "N": [-1],
-                         "O": [-1], "P": [-1], "S": [-1], "Cl": [-1]}
+    cnops_bond_counts = {"C": [-1], "N": [-1], "O": [-1], "P": [-1], "S": [-1], "Cl": [-1]}
     h_counts = 0
     p_num_bonds = [-1]
     s_num_bonds = [-1]
@@ -1220,14 +1206,7 @@ def check_num_bonds(mol):
     return valid
 
 
-CHARGE_FACTOR_MAP = {
-    1: 1.00,
-    2: 0.90,
-    3: 0.85,
-    4: 0.80,
-    5: 0.75,
-    "large": 0.75
-}
+CHARGE_FACTOR_MAP = {1: 1.00, 2: 0.90, 3: 0.85, 4: 0.80, 5: 0.75, "large": 0.75}
 
 
 def get_charge(prec_type_str: str) -> int:
@@ -1241,7 +1220,7 @@ def get_charge(prec_type_str: str) -> int:
     if prec_type_str == "EI":
         return 1
     end_brac_idx = prec_type_str.index("]")
-    charge_str = prec_type_str[end_brac_idx+1:]
+    charge_str = prec_type_str[end_brac_idx + 1 :]
     if charge_str == "-":
         charge_str = "1-"
     elif charge_str == "+":
@@ -1272,7 +1251,7 @@ def nce_to_ace_helper(nce: float, charge: int, prec_mz: float) -> float:
         charge_factor = CHARGE_FACTOR_MAP[charge]
     else:
         charge_factor = CHARGE_FACTOR_MAP["large"]
-    ace = (nce * prec_mz * charge_factor) / 500.
+    ace = (nce * prec_mz * charge_factor) / 500.0
     return ace
 
 
@@ -1291,7 +1270,7 @@ def ace_to_nce_helper(ace: float, charge: int, prec_mz: float) -> float:
         charge_factor = CHARGE_FACTOR_MAP[charge]
     else:
         charge_factor = CHARGE_FACTOR_MAP["large"]
-    nce = (ace * 500.) / (prec_mz * charge_factor)
+    nce = (ace * 500.0) / (prec_mz * charge_factor)
 
     return nce
 
@@ -1344,7 +1323,8 @@ def fill_missing_nce(row, ace_colname: str, nce_colname: str) -> float:
         return nce
     else:
         warnings.warn(
-            f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace} from columns {nce_colname}, {ace_colname}")
+            f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace} from columns {nce_colname}, {ace_colname}"
+        )
         return nce
 
 
@@ -1363,7 +1343,8 @@ def fill_missing_ace(row, ace_colname: str, nce_colname: str) -> float:
         return ace
     else:
         warnings.warn(
-            f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce} from columns {ace_colname}, {nce_colname}")
+            f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce} from columns {ace_colname}, {nce_colname}"
+        )
         return nce
         return ace
 

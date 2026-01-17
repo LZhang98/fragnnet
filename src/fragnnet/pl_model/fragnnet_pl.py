@@ -503,6 +503,23 @@ class FraGNNetPL(SpectrumPL):
         edge_h_transfer_loss_fn = get_edge_loss_fn(
             self.hparams.edge_h_transfer_loss_fn, 4.0
         )  # ,1.0)
+    def _setup_loss_fn(self):
+
+        # cross entropy
+        sparse_ce_fn = get_sparse_cross_entropy_fn(
+            dist=self.hparams.output_distribution,
+            vectorized=self.hparams.loss_vectorized,
+            tolerance=self.tolerance,
+            relative=self.relative,
+            tolerance_min_mz=self.tolerance_min_mz,
+            oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
+            gaussian_renormalize=self.hparams.gaussian_renormalize,
+            pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
+            loss_batch_size=self.hparams.loss_batch_size
+        )
+        # edge loss
+        edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn,4.0)
+        edge_h_transfer_loss_fn = get_edge_loss_fn(self.hparams.edge_h_transfer_loss_fn,4.0) #,1.0)
 
         # binned cosine distance
         def cos_dist_fn(
@@ -1045,11 +1062,11 @@ class FraGNNetPL(SpectrumPL):
                 assert self.hparams.nb_formula_node_entropy_weight == 0.0
                 assert self.hparams.nb_formula_node_normalized_entropy_weight == 0.0
 
-            # Pairwise cosine similarity MSE loss
+            # Pairwise similarity MSE loss
             if f"pairwise_cossine_{self.hparams.mz_bin_res}" in self.loss_names:
                 batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
-                true_sim = get_pairwise_cossim(true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
-                pred_sim = get_pairwise_cossim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+                true_sim = get_pairwise_cossim(
+                    true_mzs,
                     true_logprobs,
                     true_batch_idxs,
                     batch_size,
@@ -1057,7 +1074,7 @@ class FraGNNetPL(SpectrumPL):
                     self.hparams.mz_bin_res,
                     chunk_size=self.hparams.loss_batch_size,
                 )
-                pred_sim = get_pairwise_binned_cossin_sim(
+                pred_sim = get_pairwise_cossim(
                     pred_mzs,
                     pred_logprobs,
                     pred_batch_idxs,

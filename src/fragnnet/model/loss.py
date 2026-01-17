@@ -12,7 +12,7 @@ from fragnnet.utils.misc_utils import scatter_reduce, EPS, safelog, LOG_ZERO, sc
 from fragnnet.utils.spec_utils import calculate_match_mzs, scipy_linear_sum_assignment, round_aggregate_peaks, batched_bin_func, jss_helper
 
 # LOG_TRUNC_FACTOR = {
-#   i: float(th.log(th.erf(th.tensor(i)/np.sqrt(2)))) for i in range(0,6)
+#     i: float(th.log(th.erf(th.tensor(i)/np.sqrt(2)))) for i in range(0,6)
 # }
 
 def mog_log_prob(
@@ -195,7 +195,7 @@ def sparse_cross_entropy_seq(
         if tolerance_multiple == -1:
             b_true_match_mask = th.ones_like(b_true_mzs,dtype=th.bool)
         else:
-            assert tolerance_multiple > 0, tolerance_multiple   
+            assert tolerance_multiple > 0, tolerance_multiple    
             b_true_match_mask = th.any(b_match_mask,dim=1)
         if not th.any(b_true_match_mask):
             print("> Warning: Everything is OOS!")
