@@ -1,7 +1,13 @@
+"""Unit tests for fragnnet.utils.misc_utils module.
+
+Tests for general utility functions and helpers.
+"""
+
 import math
 
 import numpy as np
 import pandas as pd
+import pytest
 import torch as th
 
 from fragnnet.utils import misc_utils
@@ -47,3 +53,7 @@ def test_to_device_and_to_cpu_roundtrip() -> None:
 
     back_on_cpu = misc_utils.to_cpu(on_device.copy())
     assert back_on_cpu["t"].device.type == "cpu"
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

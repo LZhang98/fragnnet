@@ -1,6 +1,6 @@
-"""Unit tests for data_utils.py utility functions.
+"""Unit tests for fragnnet.utils.data_utils module.
 
-Covers small deterministic helpers: normalization, tokenization, charge parsing, energy conversions.
+Tests for normalization, tokenization, charge parsing, and energy conversions.
 """
 
 import numpy as np
