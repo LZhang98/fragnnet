@@ -1,6 +1,14 @@
-import torch as th
+import glob
+import logging
+import os
+import shutil
+import tempfile
+from multiprocessing import Manager
 
-from fragnnet.dataset.data_sampler import FormulaPrecTypeGroupSampler
+import torch as th
+import yaml
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.data.sampler import RandomSampler, SequentialSampler
 
 try:
     import lightning.pytorch as pl
@@ -17,23 +25,13 @@ except ModuleNotFoundError:
     from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
     from pytorch_lightning.profilers import AdvancedProfiler, SimpleProfiler
 
-import glob
-import logging
-import os
-import shutil
-import tempfile
-from multiprocessing import Manager
 
-import yaml
-from torch.utils.data import DataLoader, Dataset
-from torch.utils.data.sampler import RandomSampler, SequentialSampler
-
-from fragnnet.dataset import GroupSampler, get_simple_group_sampler, DualGroupDynamicBatchSampler , SpecMolFragDynamicBatchSampler
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.dataset import (
+    DualGroupDynamicBatchSampler,
     GroupSampler,
     SpecMolFragDynamicBatchSampler,
-    get_group_sampler,
+    get_simple_group_sampler,
 )
 from fragnnet.utils.misc_utils import deep_update
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
@@ -178,7 +176,9 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     # Compute maximum effective batch size (accounts for gradient accumulation)
     # used by dynamic batch samplers to decide return thresholds.
-    max_batch_size = config_d.get("train_batch_size", 1) * config_d.get("accumulate_grad_batches", 1)
+    max_batch_size = config_d.get("train_batch_size", 1) * config_d.get(
+        "accumulate_grad_batches", 1
+    )
     if split == "train":
         # Choose sampler for training
         if config_d["group_sampler"]:
@@ -195,12 +195,13 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 generator,
             )
         elif config_d["formula_prec_type_group_sampler"]:
-            sampler =  FormulaPrecTypeGroupSampler(
-                   ds, 
-                sample_k=config_d["formula_prec_type_group_sampler_max_per_group"], 
-                key_formula='formula',
-                key_adduct='prec_type', 
-                generator=generator)
+            sampler = FormulaPrecTypeGroupSampler(
+                ds,
+                sample_k=config_d["formula_prec_type_group_sampler_max_per_group"],
+                key_formula="formula",
+                key_adduct="prec_type",
+                generator=generator,
+            )
         else:
             sampler = RandomSampler(ds, False, generator=generator)
     else:
@@ -223,7 +224,8 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
             limited_by=config_d["dynamic_batch_sampler_mode"],
             skip_too_big=True,
             return_batch_at=return_batch_at,
-            sampler=sampler)
+            sampler=sampler,
+        )
         dl_param_d["batch_sampler"] = batch_sampler
     elif config_d["dual_group_dynamic_batch_sampler"]:
         if split == "train":
@@ -235,7 +237,8 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
             max_num=config_d["dual_group_dynamic_batch_sampler_max"],
             limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
             skip_too_big=True,
-            return_batch_at=return_batch_at)
+            return_batch_at=return_batch_at,
+        )
         dl_param_d["batch_sampler"] = batch_sampler
     else:
         # Standard batching

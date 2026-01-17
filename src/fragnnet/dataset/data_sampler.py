@@ -1,4 +1,3 @@
-
 """
 Data samplers for spectrum-molecule-fragment datasets.
 
@@ -8,32 +7,32 @@ Includes:
 - get_group_sampler: WeightedRandomSampler factory
 """
 
-from typing import Iterator, List, Optional
-import torch as th
-from torch.utils.data import Sampler, BatchSampler, WeightedRandomSampler
-from tqdm import tqdm
+from collections.abc import Iterator
 
-import numpy as np
-import random
-import pandas as pd
 import torch as th
-from typing import Dict, List, Optional, Tuple, Iterator
-from torch.utils.data import Sampler, DataLoader, BatchSampler
-from collections import defaultdict
-from tqdm import tqdm
+from torch.utils.data import BatchSampler, Sampler, WeightedRandomSampler
 
 #####################################################
 # Batch Samplers
 #####################################################
 
+
 class SpecMolFragDynamicBatchSampler(BatchSampler):
     """Dynamically adds samples to a mini-batch up to a maximum size either based on number of nodes on frag DAG or number of edges on frag DAG.
-     This is used to avoid CUDA OOM errors, implmentation is inspired by PyG DynamicBatchSampler, and this should be used to replace default BatchSampler
-     This should have the same random sampling behavior as RandomSampler
+    This is used to avoid CUDA OOM errors, implmentation is inspired by PyG DynamicBatchSampler, and this should be used to replace default BatchSampler
+    This should have the same random sampling behavior as RandomSampler
     """
-    def __init__(self, data_source, max_num: int, limited_by: str = 'frag_edge',
-                       skip_too_big: bool = False, num_samples: Optional[int] = None, 
-                    return_batch_at: int = 0, sampler: Optional[Sampler] = None) -> None:
+
+    def __init__(
+        self,
+        data_source,
+        max_num: int,
+        limited_by: str = "frag_edge",
+        skip_too_big: bool = False,
+        num_samples: int | None = None,
+        return_batch_at: int = 0,
+        sampler: Sampler | None = None,
+    ) -> None:
         """Initialize dynamic batch sampler.
 
         Args:
@@ -50,8 +49,10 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         """
         if not isinstance(max_num, int) or max_num <= 0:
             raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
-        if limited_by not in ['frag_node', 'frag_edge']:
-            raise ValueError(f"`limited_by` choice should be either 'frag_node' or 'frag_edge' (got '{limited_by}').")
+        if limited_by not in ["frag_node", "frag_edge"]:
+            raise ValueError(
+                f"`limited_by` choice should be either 'frag_node' or 'frag_edge' (got '{limited_by}')."
+            )
 
         if num_samples is None:
             num_samples = len(data_source)
@@ -69,8 +70,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         # so we can reseed it in set_epoch() for deterministic epoch-aware behavior.
         self._base_sampler_generator = None
         self._base_sampler_seed = None
-        if self.sampler is not None and hasattr(self.sampler, 'generator'):
-            gen = getattr(self.sampler, 'generator')
+        if self.sampler is not None and hasattr(self.sampler, "generator"):
+            gen = self.sampler.generator
             if isinstance(gen, th.Generator):
                 self._base_sampler_generator = gen
                 try:
@@ -83,7 +84,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
     def _pre_load_batches(self):
         """Pre-load and cache frag graph metadata (nodes, edges) for each sample.
-        
+
         Optimizations:
         - Only load metadata once (no reloading across epochs)
         - Use compact tuple storage instead of dict access
@@ -93,18 +94,20 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         assert len(self._data_meta) == 0, len(self._data_meta)
         expected_total = 0
         warning_msg = ""
-        
-        print(f"[SpecMolFragDynamicBatchSampler] Pre-loading metadata for {len(self.data_source)} samples...")
-        
+
+        print(
+            f"[SpecMolFragDynamicBatchSampler] Pre-loading metadata for {len(self.data_source)} samples..."
+        )
+
         for dataset_idx in range(len(self.data_source)):
             data = self.data_source[dataset_idx]
             # Cache as compact tuple (num_nodes, num_edges)
-            self._data_meta.append((data['frag_pyg'].num_nodes, data['frag_pyg'].num_edges))
-            
+            self._data_meta.append((data["frag_pyg"].num_nodes, data["frag_pyg"].num_edges))
+
             # Quick lookup using limited_by index (0=nodes, 1=edges)
-            limited_by_idx = 0 if self._limited_by == 'frag_node' else 1
+            limited_by_idx = 0 if self._limited_by == "frag_node" else 1
             n = self._data_meta[dataset_idx][limited_by_idx]
-            
+
             if not (n > self._max_num and self._skip_too_big):
                 expected_total += 1
             else:
@@ -113,20 +116,22 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
                     warning_msg += "Sampler will skip this to prevent CUDA OOM ERROR.\n"
                 else:
                     warning_msg += "Attempting to fit into batch, may cause CUDA OOM ERROR.\n"
-        
+
         if warning_msg:
             print(f"[SpecMolFragDynamicBatchSampler] {warning_msg}")
-        print(f"[SpecMolFragDynamicBatchSampler] Metadata loaded. Expecting {expected_total}/{len(self.data_source)} samples with skip_too_big={self._skip_too_big}")
+        print(
+            f"[SpecMolFragDynamicBatchSampler] Metadata loaded. Expecting {expected_total}/{len(self.data_source)} samples with skip_too_big={self._skip_too_big}"
+        )
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch number to trigger batch recomputation.
-        
+
         Args:
             epoch (int): Current epoch number
         """
         self._epoch = epoch
         # If underlying sampler supports set_epoch, delegate to it
-        if self.sampler is not None and hasattr(self.sampler, 'set_epoch'):
+        if self.sampler is not None and hasattr(self.sampler, "set_epoch"):
             self.sampler.set_epoch(epoch)
         # If underlying sampler exposes a torch.Generator but lacks set_epoch,
         # reseed it deterministically based on the captured base seed.
@@ -138,7 +143,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
     def _pre_compute_batches(self):
         """Pre-compute batches respecting max_num constraint.
-        
+
         Optimizations:
         - Cache limited_by_idx (0 or 1) to avoid string comparison per sample
         - Use direct tuple indexing instead of dictionary
@@ -152,10 +157,10 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
             indices = th.arange(len(self.data_source), dtype=th.long)
 
         # limited index to _max_sampling_step
-        indices = indices[:self._max_sampling_step]
+        indices = indices[: self._max_sampling_step]
 
         # Cache this to avoid string comparison per iteration
-        limited_by_idx = 0 if self._limited_by == 'frag_node' else 1
+        limited_by_idx = 0 if self._limited_by == "frag_node" else 1
 
         num_processed = 0
         batch = []
@@ -167,17 +172,19 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
             idx_item = idx.item()
             # Direct tuple indexing (faster than dict access)
             n = self._data_meta[idx_item][limited_by_idx]
-            
+
             if n > self._max_num and self._skip_too_big:
-                continue 
+                continue
             # check batch_filled condition
             if batch_n + n > self._max_num:
                 # no more budget left, mini-batch filled
-                batch_filled = True    
+                batch_filled = True
             # check we need return at this point for ga
-            if self._return_batch_at > 0 \
-                and num_processed > 0 \
-                and num_processed % self._return_batch_at == 0:
+            if (
+                self._return_batch_at > 0
+                and num_processed > 0
+                and num_processed % self._return_batch_at == 0
+            ):
                 # Mini-batch filled
                 batch_filled = True
             if batch_filled:
@@ -190,14 +197,16 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
             batch.append(idx_item)
             num_processed += 1
             batch_n += n
-            
+
         if batch:  # Don't forget final batch
             self._batches.append(batch)
-        print(f"[SpecMolFragDynamicBatchSampler] Batch indices computed, Expecting {len(self._batches)} mini-batches for next epoch")
+        print(
+            f"[SpecMolFragDynamicBatchSampler] Batch indices computed, Expecting {len(self._batches)} mini-batches for next epoch"
+        )
 
-    def __iter__(self) -> Iterator[List[int]]:
+    def __iter__(self) -> Iterator[list[int]]:
         """Iterate over pre-computed batches.
-        
+
         Yields:
             List[int]: Batch of sample indices
         """
@@ -206,10 +215,10 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
     def __len__(self) -> int:
         """Return number of batches.
-        
+
         Note: __len__() is expected in calculations involving the length of a DataLoader.
         ref: https://pytorch.org/docs/stable/data.html#torch.utils.data.Sampler
-        
+
         Returns:
             int: Number of batches
         """
@@ -218,13 +227,15 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
 class GroupSampler(Sampler):
     """Sample K spectra per group_id to keep experimental groups together.
-    
+
     Use case: When spectra are grouped by experiment/acquisition (group_id),
     this sampler ensures that K random spectra from each group are sampled
     in each epoch.
     """
 
-    def __init__(self, data_source, sample_k: Optional[int] = None, generator: Optional[th.Generator] = None) -> None:
+    def __init__(
+        self, data_source, sample_k: int | None = None, generator: th.Generator | None = None
+    ) -> None:
         """Initialize group sampler.
 
         Args:
@@ -245,11 +256,11 @@ class GroupSampler(Sampler):
         """Build group_id -> [dataset_indices] mapping."""
         for dataset_idx in range(len(self.data_source)):
             data = self.data_source[dataset_idx]
-            group_id = data['group_id'].item()
+            group_id = data["group_id"].item()
             if group_id not in self._data_meta_d:
                 self._data_meta_d[group_id] = []
             self._data_meta_d[group_id].append(dataset_idx)
-        
+
         for group_id in self._data_meta_d:
             self._data_meta_d[group_id] = th.tensor(self._data_meta_d[group_id])
 
@@ -289,7 +300,7 @@ class GroupSampler(Sampler):
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch number to trigger re-sampling.
-        
+
         Args:
             epoch (int): Current epoch number
         """
@@ -298,7 +309,7 @@ class GroupSampler(Sampler):
 
     def __iter__(self) -> Iterator[int]:
         """Iterate over sampled indices.
-        
+
         Yields:
             int: Sample index
         """
@@ -307,16 +318,17 @@ class GroupSampler(Sampler):
 
     def __len__(self) -> int:
         """Return number of sampled indices.
-        
+
         Note: __len__() is not strictly required by DataLoader but is expected
         in calculations involving the length of a DataLoader.
         ref: https://pytorch.org/docs/stable/data.html#torch.utils.data.Sampler
-        
+
         Returns:
             int: Number of sampled indices
         """
         assert self.num_samples is not None
-        return self.num_samples 
+        return self.num_samples
+
 
 class FormulaPrecTypeGroupSampler(Sampler):
     """Sample indices grouped by composite key `prec_type::formula`.
@@ -336,9 +348,15 @@ class FormulaPrecTypeGroupSampler(Sampler):
         num_samples (Optional[int]): limit total number of sampled indices.
     """
 
-    def __init__(self, data_source, sample_k: int = 1,
-                 key_formula: str = 'formula', key_adduct: str = 'prec_type',
-                 generator: Optional[th.Generator] = None, num_samples: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        data_source,
+        sample_k: int = 1,
+        key_formula: str = "formula",
+        key_adduct: str = "prec_type",
+        generator: th.Generator | None = None,
+        num_samples: int | None = None,
+    ) -> None:
         self.data_source = data_source
         self.sample_k = int(sample_k)
         self.key_formula = key_formula
@@ -351,7 +369,7 @@ class FormulaPrecTypeGroupSampler(Sampler):
 
         # capture base seed if generator provided
         self._base_seed = None
-        if self.generator is not None and hasattr(self.generator, 'initial_seed'):
+        if self.generator is not None and hasattr(self.generator, "initial_seed"):
             try:
                 self._base_seed = int(self.generator.initial_seed())
             except Exception:
@@ -369,7 +387,9 @@ class FormulaPrecTypeGroupSampler(Sampler):
         for dataset_idx in range(len(self.data_source)):
             data = self.data_source[dataset_idx]
             if self.key_formula not in data or self.key_adduct not in data:
-                raise KeyError(f"Sample {dataset_idx} missing '{self.key_formula}' or '{self.key_adduct}' key.")
+                raise KeyError(
+                    f"Sample {dataset_idx} missing '{self.key_formula}' or '{self.key_adduct}' key."
+                )
             # normalize to str for stable keys
             formula = str(data[self.key_formula])
             adduct = str(data[self.key_adduct])
@@ -408,7 +428,9 @@ class FormulaPrecTypeGroupSampler(Sampler):
             self.sampled_indices = th.cat(sampled_parts)
             # shuffle across groups for variety
             if len(self.sampled_indices) > 1:
-                self.sampled_indices = self.sampled_indices[th.randperm(len(self.sampled_indices), generator=gen)]
+                self.sampled_indices = self.sampled_indices[
+                    th.randperm(len(self.sampled_indices), generator=gen)
+                ]
             self.num_samples = len(self.sampled_indices)
         else:
             self.sampled_indices = th.tensor([], dtype=th.long)
@@ -417,7 +439,7 @@ class FormulaPrecTypeGroupSampler(Sampler):
     def set_epoch(self, epoch: int) -> None:
         """Set epoch, reseed generator deterministically and recompute indices."""
         self._epoch = int(epoch)
-        if self.generator is not None and hasattr(self.generator, 'manual_seed'):
+        if self.generator is not None and hasattr(self.generator, "manual_seed"):
             try:
                 base = self._base_seed if self._base_seed is not None else 0
                 self.generator.manual_seed(base + int(epoch))
@@ -432,6 +454,7 @@ class FormulaPrecTypeGroupSampler(Sampler):
     def __len__(self) -> int:
         return self.num_samples
 
+
 class DualGroupDynamicBatchSampler(BatchSampler):
     """Build mini-batches that include samples grouped by two keys:
     1) adduct + mol_id
@@ -442,14 +465,24 @@ class DualGroupDynamicBatchSampler(BatchSampler):
     constraints (like SpecMolFragDynamicBatchSampler).
     """
 
-    def __init__(self, data_source, max_num: int, limited_by: str = 'frag_edge',
-             skip_too_big: bool = False, num_samples: Optional[int] = None,
-             return_batch_at: int = 0, sample_k1: int = 1, sample_k2: int = 1,
-             generator: Optional[th.Generator] = None) -> None:
+    def __init__(
+        self,
+        data_source,
+        max_num: int,
+        limited_by: str = "frag_edge",
+        skip_too_big: bool = False,
+        num_samples: int | None = None,
+        return_batch_at: int = 0,
+        sample_k1: int = 1,
+        sample_k2: int = 1,
+        generator: th.Generator | None = None,
+    ) -> None:
         if not isinstance(max_num, int) or max_num <= 0:
             raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
-        if limited_by not in ['frag_node', 'frag_edge']:
-            raise ValueError(f"`limited_by` choice should be either 'frag_node' or 'frag_edge' (got '{limited_by}').")
+        if limited_by not in ["frag_node", "frag_edge"]:
+            raise ValueError(
+                f"`limited_by` choice should be either 'frag_node' or 'frag_edge' (got '{limited_by}')."
+            )
 
         if num_samples is None:
             num_samples = len(data_source)
@@ -480,21 +513,25 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         for dataset_idx in range(len(self.data_source)):
             data = self.data_source[dataset_idx]
             # Expecting 'frag_pyg' present like other samplers
-            n_nodes = data['frag_pyg'].num_nodes
-            n_edges = data['frag_pyg'].num_edges
+            n_nodes = data["frag_pyg"].num_nodes
+            n_edges = data["frag_pyg"].num_edges
             self._data_meta.append((n_nodes, n_edges))
 
             # Validate required keys (each item must have both key pairs: adduct+mol_id and adduct+formula)
-            for req_key in ('adduct', 'mol_id', 'formula'):
+            for req_key in ("adduct", "mol_id", "formula"):
                 if req_key not in data:
-                    raise KeyError(f"Sample at index {dataset_idx} missing required key '{req_key}'.")
+                    raise KeyError(
+                        f"Sample at index {dataset_idx} missing required key '{req_key}'."
+                    )
                 if data[req_key] is None:
-                    raise ValueError(f"Sample at index {dataset_idx} has None value for required key '{req_key}'.")
+                    raise ValueError(
+                        f"Sample at index {dataset_idx} has None value for required key '{req_key}'."
+                    )
 
             # Build group keys (keys are required to be present)
-            adduct = data['adduct']
-            mol_id = data['mol_id']
-            formula = data['formula']
+            adduct = data["adduct"]
+            mol_id = data["mol_id"]
+            formula = data["formula"]
 
             # Add to group1 (adduct+mol_id) — mol_id is required to be present
             key1 = f"{adduct}::{mol_id}"
@@ -502,7 +539,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 
             key2 = f"{adduct}::{formula}"
             self._group2.setdefault(key2, []).append(dataset_idx)
-   
+
             # Drawing from the same pool: avoid building formula-based group2 to prevent overlap
             # (samples remain uniquely identified by adduct+mol_id)
 
@@ -529,7 +566,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
     def set_epoch(self, epoch: int) -> None:
         self._epoch = epoch
         # reseed generator if provided
-        if self.generator is not None and hasattr(self.generator, 'manual_seed'):
+        if self.generator is not None and hasattr(self.generator, "manual_seed"):
             try:
                 self.generator.manual_seed(int(epoch))
             except Exception:
@@ -549,8 +586,8 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             perm = th.randperm(len(keys), generator=self.generator)
             keys = [keys[i] for i in perm.tolist()]
         # If no generator, keys remain in original order (deterministic)
-        
-        limited_by_idx = 0 if self._limited_by == 'frag_node' else 1
+
+        limited_by_idx = 0 if self._limited_by == "frag_node" else 1
         for key in keys:
             if take_k <= 0:
                 break
@@ -583,7 +620,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         used_mask = {}
 
         # Cache limited_by index for budget checks
-        limited_by_idx = 0 if self._limited_by == 'frag_node' else 1
+        limited_by_idx = 0 if self._limited_by == "frag_node" else 1
 
         # Track which group keys still have available samples
         active_group1_keys = set(self._group1.keys())
@@ -593,7 +630,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             batch = []
             batch_n = 0
             budget_left = self._max_num
-            
+
             # First try to take sample_k1 samples from group1
             if active_group1_keys:
                 group1_active = {k: self._group1[k] for k in active_group1_keys}
@@ -607,7 +644,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 for key in list(active_group1_keys):
                     if all(used_mask.get(idx, False) for idx in self._group1[key].tolist()):
                         active_group1_keys.discard(key)
-            
+
             # Then try to take sample_k2 samples from group2
             if active_group2_keys:
                 group2_active = {k: self._group2[k] for k in active_group2_keys}
@@ -630,7 +667,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                         perm = th.randperm(len(cand_list), generator=self.generator)
                         cand_list = [cand_list[i] for i in perm.tolist()]
                     # If no generator, keep original order
-                    
+
                     for idx in cand_list:
                         if used_mask.get(idx, False):
                             continue
@@ -655,20 +692,25 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 
             self._batches.append(batch)
 
-        print(f"[DualGroupDynamicBatchSampler] Prepared {len(self._batches)} batches respecting max {self._limited_by}={self._max_num}")
+        print(
+            f"[DualGroupDynamicBatchSampler] Prepared {len(self._batches)} batches respecting max {self._limited_by}={self._max_num}"
+        )
 
-    def __iter__(self) -> Iterator[List[int]]:
+    def __iter__(self) -> Iterator[list[int]]:
         for b in self._batches:
             yield b
 
     def __len__(self) -> int:
         return len(self._batches)
-    
-def get_simple_group_sampler(ds, sampler_type: str, avg_per_group: int, generator: th.Generator) -> WeightedRandomSampler:
+
+
+def get_simple_group_sampler(
+    ds, sampler_type: str, avg_per_group: int, generator: th.Generator
+) -> WeightedRandomSampler:
     """Create a WeightedRandomSampler based on group/molecule statistics.
-    
+
     Balances sampling to ensure certain groups/molecules are sampled proportionally.
-    
+
     Args:
         ds: Dataset with get_group_mol_stats() method
         sampler_type (str): Weighting strategy:
@@ -698,18 +740,15 @@ def get_simple_group_sampler(ds, sampler_type: str, avg_per_group: int, generato
         sample_weights = 1.0 / (spec_per_group * group_per_mol)
     else:
         return None
-    
+
     # Get unique groups and their counts
     _, counts = th.unique(group_ids, return_counts=True)
     # For each group, we only want to sample up to the number of available samples
     total_samples = sum(min(count.item(), avg_per_group) for count in counts)
     # Make sure we don't exceed the total dataset size
     num_samples = min(total_samples, len(ds))
- 
-    sampler = WeightedRandomSampler(
-        sample_weights,
-        num_samples=num_samples,
-        replacement=False,
-        generator=generator)
-    return sampler
 
+    sampler = WeightedRandomSampler(
+        sample_weights, num_samples=num_samples, replacement=False, generator=generator
+    )
+    return sampler
