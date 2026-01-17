@@ -173,7 +173,7 @@ def th_temp_seed(seed: int) -> Generator[None, None, None]:
 
 @contextmanager
 def th_temp_generator(seed: int) -> Generator[th.Generator, None, None]:
-    """Temporarily create a torch Generator with a specific seed within the context."""
+    """Yield an independent torch Generator seeded with ``seed`` without touching global RNG."""
     gen = th.Generator()
     gen.manual_seed(seed)
     try:
