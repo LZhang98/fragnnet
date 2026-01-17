@@ -14,7 +14,10 @@ from fragnnet.utils.spec_utils import *
 
 
 class NeimsPL(BinnedPL):
-    def _setup_model(self):
+    """PyTorch Lightning wrapper for NEIMS model with binned spectrum loss."""
+
+    def _setup_model(self) -> None:
+        """Initialize the NeimsModel using hyperparameters."""
         self.model = NeimsModel(
             mol_fingerprint_morgan=self.hparams.mol_params["fingerprint_morgan"],
             mol_fingerprint_rdkit=self.hparams.mol_params["fingerprint_rdkit"],

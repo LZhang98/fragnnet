@@ -1,3 +1,4 @@
+from typing import Any
 
 import torch as th
 import torch._dynamo as th_dynamo
@@ -9,6 +10,7 @@ from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
 
 try:
     from torch._dynamo.utils import CompileProfiler
+
     profiler_available = True
 except ImportError:
     profiler_available = False
@@ -18,15 +20,15 @@ try:
     import lightning.pytorch as pl
 except ModuleNotFoundError:
     import pytorch_lightning as pl
+
+
 class MCESPL(pl.LightningModule):
-    """
-    PyTorch Lightning module for MCES regression using SiameseGNNModel and MCESDataset.
-    """
+    """PyTorch Lightning module for MCES regression using SiameseGNNModel."""
 
     def __init__(
         self,
-        **kwargs
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__()
         self.save_hyperparameters()
         self._setup_model()
@@ -43,9 +45,9 @@ class MCESPL(pl.LightningModule):
         self.weight_decay = self.hparams.weight_decay
         self.auxiliary_scores = self.hparams.get("auxiliary_scores", [])
 
-    def _setup_model(self):
+    def _setup_model(self) -> None:
         self.model = SiameseGNNModel(
-            mol_node_feats=self.hparams.mol_params["pyg_node_feats"],   # mol feats
+            mol_node_feats=self.hparams.mol_params["pyg_node_feats"],  # mol feats
             mol_edge_feats=self.hparams.mol_params["pyg_edge_feats"],
             mol_pe_embed_k=self.hparams.mol_params["pyg_pe_embed_k"],
             mol_hidden_size=self.hparams.mol_hidden_size,
@@ -58,14 +60,14 @@ class MCESPL(pl.LightningModule):
             mlp_dropout=self.hparams.mlp_dropout,
             mlp_num_layers=self.hparams.mlp_num_layers,
             mlp_use_residuals=self.hparams.mlp_use_residuals,
-            #mz_max=0,  # not used
-            #mz_bin_res=0,  # not used
-            #ff_prec_mz_offset=0,  # not used
-            #ff_bidirectional=False,  # not used
-            #ff_output_map_size=0,  # not used
-            #ff_output_activation="none",  # not used
-            int_embedder=self.hparams.int_embedder, # not used
-            #int_embedder_tight=self.hparams.int_embedder_tight, # not used
+            # mz_max=0,  # not used
+            # mz_bin_res=0,  # not used
+            # ff_prec_mz_offset=0,  # not used
+            # ff_bidirectional=False,  # not used
+            # ff_output_map_size=0,  # not used
+            # ff_output_activation="none",  # not used
+            int_embedder=self.hparams.int_embedder,  # not used
+            # int_embedder_tight=self.hparams.int_embedder_tight, # not used
             ce_insert_type=self.hparams.ce_insert_type,
             ce_insert_location=self.hparams.ce_insert_location,
             ce_insert_merge=self.hparams.ce_insert_merge,
@@ -80,7 +82,7 @@ class MCESPL(pl.LightningModule):
             inst_insert_size=self.hparams.inst_insert_size,
             inst_types=self.hparams.spec_params["inst_types"],
             combination_mode=self.hparams.mces_embed_combine,
-            #log_min=0.0
+            # log_min=0.0
         )
 
         # compile
@@ -88,12 +90,19 @@ class MCESPL(pl.LightningModule):
             th_dynamo.reset()
             if profiler_available:
                 self.dynamo_prof = CompileProfiler()
-                self.model = self.model.get_compile(backend=self.dynamo_prof,dynamic=True)
+                self.model = self.model.get_compile(backend=self.dynamo_prof, dynamic=True)
             else:
-                self.model = th.compile(self.model,dynamic=True)
+                self.model = th.compile(self.model, dynamic=True)
 
-    def _log_score(self, pred, target, score_type, split_name, original_scale=False):
-        """Helper to compute and log scores (mean and std) in normalized or original scale."""
+    def _log_score(
+        self,
+        pred: th.Tensor,
+        target: th.Tensor,
+        score_type: str,
+        split_name: str,
+        original_scale: bool = False,
+    ) -> None:
+        """Compute and log MAE or MSE (mean/std) in normalized or original scale."""
         if original_scale is False:
             score_prefix = f"{split_name}_normalized_{score_type}"
             pred_denorm = pred.squeeze()
@@ -120,16 +129,20 @@ class MCESPL(pl.LightningModule):
         score_std = errors.std()
         self.log(f"{score_prefix}_std", score_std, on_step=False, on_epoch=True, prog_bar=False)
 
-
-    def forward(self, mol_pyg_1, mol_pyg_2, **kwargs):
-        # Forward pass through SiameseGNNModel
+    def forward(
+        self,
+        mol_pyg_1: "torch_geometric.data.Data",
+        mol_pyg_2: "torch_geometric.data.Data",
+        **kwargs: Any,
+    ) -> th.Tensor:
+        """Forward pass through SiameseGNNModel."""
         return self.model(mol_pyg_1, mol_pyg_2, **kwargs)
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         # batch: dict with keys 'mol_1_mol_pyg', 'mol_2_mol_pyg', 'mces'
         # Note: 'mces' is already normalized by the dataset
-        pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
-        target = batch['mces'].float().to(pred.device)
+        pred = self.forward(batch["mol_1_mol_pyg"], batch["mol_2_mol_pyg"])
+        target = batch["mces"].float().to(pred.device)
         loss = self.loss_fn(pred, target)  # Loss on normalized scale
 
         # Log loss on normalized scale
@@ -142,9 +155,9 @@ class MCESPL(pl.LightningModule):
                 self._log_score(pred, target, score_type, "train", original_scale=True)
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
-        target = batch['mces'].float().to(pred.device)
+    def validation_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
+        pred = self.forward(batch["mol_1_mol_pyg"], batch["mol_2_mol_pyg"])
+        target = batch["mces"].float().to(pred.device)
         loss = self.loss_fn(pred, target)  # Loss on normalized scale
 
         # Log loss on normalized scale
@@ -157,9 +170,9 @@ class MCESPL(pl.LightningModule):
                 self._log_score(pred, target, score_type, "val", original_scale=True)
         return loss
 
-    def test_step(self, batch, batch_idx):
-        pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
-        target = batch['mces'].float().to(pred.device)
+    def test_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
+        pred = self.forward(batch["mol_1_mol_pyg"], batch["mol_2_mol_pyg"])
+        target = batch["mces"].float().to(pred.device)
         loss = self.loss_fn(pred, target)  # Loss on normalized scale
 
         # Log loss on normalized scale
@@ -173,23 +186,29 @@ class MCESPL(pl.LightningModule):
 
         return loss
 
-    def predict_step(self, batch, batch_idx):
+    def predict_step(self, batch: dict[str, Any], batch_idx: int) -> th.Tensor:
         """Prediction step that returns denormalized MCES values."""
-        pred = self.forward(batch['mol_1_mol_pyg'], batch['mol_2_mol_pyg'])
+        pred = self.forward(batch["mol_1_mol_pyg"], batch["mol_2_mol_pyg"])
         # Denormalize predictions to return in original scale
         pred_original = self.denormalize_mces(pred.squeeze())
         return pred_original
 
-    def denormalize_mces(self, normalized_mces):
+    def denormalize_mces(self, normalized_mces: th.Tensor) -> th.Tensor:
         """Denormalize MCES values based on the normalization type."""
         if self.hparams.mces_normalization == "zscore":
-            denorm_mces = zscore_denormalize(normalized_mces, self.hparams.mces_mean, self.hparams.mces_std)
+            denorm_mces = zscore_denormalize(
+                normalized_mces, self.hparams.mces_mean, self.hparams.mces_std
+            )
         elif self.hparams.mces_normalization == "minmax":
-            denorm_mces = min_max_denormalize(normalized_mces, self.hparams.mces_min, self.hparams.mces_max)
+            denorm_mces = min_max_denormalize(
+                normalized_mces, self.hparams.mces_min, self.hparams.mces_max
+            )
         elif self.hparams.mces_normalization == "none" or self.hparams.mces_normalization is None:
             denorm_mces = normalized_mces
         else:
-            raise ValueError(f"Unsupported mces_normalization {self.hparams.mces_normalization} for denormalization.")
+            raise ValueError(
+                f"Unsupported mces_normalization {self.hparams.mces_normalization} for denormalization."
+            )
         return denorm_mces
 
     def configure_optimizers(self):
@@ -198,9 +217,7 @@ class MCESPL(pl.LightningModule):
         """
         optimizer_cls = get_optimizer_class(self.hparams.optimizer)
         optimizer = optimizer_cls(
-            self.parameters(),
-            lr=self.hparams.lr,
-            weight_decay=self.hparams.weight_decay
+            self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
         )
         ret = {
             "optimizer": optimizer,
