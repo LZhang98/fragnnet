@@ -1,6 +1,6 @@
-"""Unit tests for formula_utils.py.
+"""Unit tests for fragnnet.utils.formula_utils module.
 
-Covers formula parsing, isotopic peak generation, and mass calculations.
+Tests for formula parsing, isotopic peak generation, and mass calculations.
 """
 
 import numpy as np
