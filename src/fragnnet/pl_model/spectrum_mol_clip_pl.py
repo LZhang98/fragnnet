@@ -8,8 +8,6 @@ from fragnnet.model import GNNModel, SpectrumEncoder
 from fragnnet.model.loss import clip_loss
 from fragnnet.pl_model import SpectrumPL
 
-# Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
-
 
 class SpectrumMolClipPL(SpectrumPL):
     """

@@ -5,25 +5,15 @@ import shutil
 import tempfile
 from multiprocessing import Manager
 
+import lightning as L
 import torch as th
 import yaml
+from lightning import seed_everything
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.profilers import AdvancedProfiler, SimpleProfiler
+from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
-
-try:
-    import lightning.pytorch as pl
-    from lightning import seed_everything
-    from lightning.pytorch.callbacks.model_checkpoint import ModelCheckpoint
-    from lightning.pytorch.profilers import (
-        AdvancedProfiler,
-        PyTorchProfiler,
-        SimpleProfiler,
-    )
-except ModuleNotFoundError:
-    import pytorch_lightning as pl
-    from pytorch_lightning import seed_everything
-    from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-    from pytorch_lightning.profilers import AdvancedProfiler, SimpleProfiler
 
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.dataset import (
@@ -333,7 +323,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         wandb.init(**wandb_d)
         assert wandb.run is not None, wandb.run
         wandb_d["offline"] = wandb_mode == "offline"
-        wandb_logger = pl.loggers.WandbLogger(**wandb_d)
+        wandb_logger = WandbLogger(**wandb_d)
         if job_id_fp:
             os.makedirs("job_id", exist_ok=True)
             with open(job_id_fp, "w+") as job_id_file:
@@ -566,7 +556,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         # not sure why this fixed our problem but it works
         trainer_param_d["reload_dataloaders_every_n_epochs"] = 1
 
-    trainer = pl.Trainer(**trainer_param_d)
+    trainer = L.Trainer(**trainer_param_d)
 
     # set determinism
     th.use_deterministic_algorithms(config_d["deterministic"], warn_only=True)

@@ -7,17 +7,15 @@ It is intended to be subclassed for specific model architectures and tasks.
 """
 
 import inspect
+from typing import Any
 
-import numpy as np
-import torch as th
+import lightning as L
 
 # Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
-try:
-    import lightning.pytorch as pl
-    from lightning.utilities.seed import _collect_rng_states, _set_rng_states
-except ModuleNotFoundError:
-    import pytorch_lightning as pl
-    from pytorch_lightning.utilities.seed import _collect_rng_states, _set_rng_states
+import numpy as np
+import torch as th
+from lightning.fabric.utilities.seed import _collect_rng_states, _set_rng_states
+from lightning.pytorch.loggers import WandbLogger
 
 from fragnnet.model.loss import sparse_entropy_fn
 from fragnnet.utils.misc_utils import (
@@ -29,15 +27,33 @@ from fragnnet.utils.misc_utils import (
 )
 from fragnnet.utils.nn_utils import build_lr_scheduler, get_optimizer_class
 from fragnnet.utils.plot_utils import plot_spectra_sparse
-from fragnnet.utils.spec_utils import *
+from fragnnet.utils.spec_utils import (
+    batched_bin_func,
+    batched_filter_func,
+    batched_l1_normalize,
+    batched_mf1000_normalize,
+    calculate_match_mzs,
+    cos_hun_helper,
+    cos_sim_helper,
+    get_ints_transform_func,
+    get_ints_untransform_func,
+    jss_helper,
+    jss_hun_helper,
+    ndcg_helper,
+    opt_cos_sim_helper,
+    round_aggregate_peaks,
+    scatter_reduce,
+)
 
 
-class SpectrumPL(pl.LightningModule):
+class SpectrumPL(L.LightningModule):
     """
     Base PyTorch LightningModule for spectrum prediction.
     Provides modular setup and hooks for spectrum modeling in FragGNN.
     Subclasses should override _setup_model and _setup_loss_fn.
     """
+
+    hparams: Any
 
     def __init__(self, **kwargs):
         super().__init__()
@@ -63,13 +79,13 @@ class SpectrumPL(pl.LightningModule):
         """
         Setup m/z tolerance for matching peaks, using either relative or absolute tolerance.
         """
-        if self.hparams.loss_tolerance_rel is not None:
-            self.tolerance = self.hparams.loss_tolerance_rel
+        if self.hparams["loss_tolerance_rel"] is not None:
+            self.tolerance = self.hparams["loss_tolerance_rel"]
             self.relative = True
-            self.tolerance_min_mz = self.hparams.loss_tolerance_min_mz
+            self.tolerance_min_mz = self.hparams["loss_tolerance_min_mz"]
         else:
-            assert self.hparams.loss_tolerance_abs is not None
-            self.tolerance = self.hparams.loss_tolerance_abs
+            assert self.hparams["loss_tolerance_abs"] is not None
+            self.tolerance = self.hparams["loss_tolerance_abs"]
             self.relative = False
             self.tolerance_min_mz = None
 
@@ -1093,7 +1109,7 @@ class SpectrumPL(pl.LightningModule):
         """
         wandb_logger = None
         for logger in self.loggers:
-            if isinstance(logger, pl.loggers.WandbLogger):
+            if isinstance(logger, WandbLogger):
                 wandb_logger = logger
         return wandb_logger
 

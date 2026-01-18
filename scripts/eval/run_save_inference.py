@@ -1,43 +1,34 @@
-from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL
-from fragnnet.massformer.pl_model import MassFormerPL
-from fragnnet.iceberg.pl_model import IcebergIntenPL
-from fragnnet.graff.pl_model import GrAFFPL
-from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
-from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset
-from fragnnet.graff.dataset import SpecMolAnnDataset
-from fragnnet.runner import load_config
-from fragnnet.runner import init_dataloader
-from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
-from fragnnet.utils.script_utils import (
-    init_wandb_ckpt,
-    run_inference_tabular,
-    apply_inference_config,
-    save_inference_results,
-    cleanup_model,
-    prepare_output_subset,
-)
+import argparse
+from pprint import pprint
 
 import torch as th
-import argparse
+
 import wandb
-from pprint import pprint
-from glob import glob
-import os
-import gc
+from fragnnet.dataset import SpecMolDataset, SpecMolFragDataset
+from fragnnet.graff.dataset import SpecMolAnnDataset
+from fragnnet.graff.pl_model import GrAFFPL
+from fragnnet.iceberg.dataset import SpecMolMagmaIntenDataset
+from fragnnet.iceberg.pl_model import IcebergIntenPL
+from fragnnet.massformer.pl_model import MassFormerPL
+from fragnnet.pl_model import FraGNNetPL, NeimsPL, PrecursorPL
+from fragnnet.runner import init_dataloader, load_config
+from fragnnet.utils.misc_utils import NestedDefaultDict, booltype
+from fragnnet.utils.script_utils import (
+    apply_inference_config,
+    cleanup_model,
+    init_wandb_ckpt,
+    prepare_output_subset,
+    run_inference_tabular,
+    save_inference_results,
+)
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
+    parser.add_argument("--split_types", type=str, nargs="+", default=["inchikey", "scaffold"])
     parser.add_argument(
-        "--split_types", 
-        type=str, 
-        nargs="+", 
-        default=["inchikey","scaffold"]
-    )
-    parser.add_argument(
-        "--wandb_model_types", 
-        type=str, 
-        nargs="+", 
+        "--wandb_model_types",
+        type=str,
+        nargs="+",
         default=[
             "fragnnet_d3",
             "fragnnet_d4",
@@ -46,56 +37,27 @@ if __name__ == "__main__":
             "neims",
             "massformer",
             "graff",
-            "precursor"
-        ]
+            "precursor",
+        ],
     )
+    parser.add_argument("--local_model_types", type=str, nargs="+", default=[])
     parser.add_argument(
-        "--local_model_types", 
-        type=str, 
-        nargs="+", 
-        default=[]
+        "--eval_split", type=str, default="test", choices=["train", "val", "test", "secondary"]
     )
+    parser.add_argument("--num_seeds", type=int, default=5)
+    parser.add_argument("--save_dp", type=str, required=True)
+    parser.add_argument("--force_overwrite", type=booltype, default=False)
     parser.add_argument(
-        "--eval_split", 
-        type=str, 
-        default="test", 
-        choices=["train","val","test","secondary"]
+        "--auxiliary_scores",
+        type=str,
+        nargs="+",
+        default=["cos_sim", "cos_hun", "true_oos_prob", "true_oos_e"],
     )
+    parser.add_argument("--skip_extra_losses", type=booltype, default=False)
     parser.add_argument(
-        "--num_seeds", 
-        type=int, 
-        default=5
-    )
-    parser.add_argument(
-        "--save_dp", 
-        type=str, 
-        required=True
-    )
-    parser.add_argument(
-        "--force_overwrite", 
-        type=booltype, 
-        default=False
-    )
-    parser.add_argument(
-        "--auxiliary_scores", 
-        type=str, 
-        nargs="+", 
-        default=[
-            "cos_sim",
-            "cos_hun",
-            "true_oos_prob",
-            "true_oos_e"
-        ]
-    )
-    parser.add_argument(
-        "--skip_extra_losses", 
-        type=booltype, 
-        default=False
-    )
-    parser.add_argument(
-        "--output_subset", 
-        type=str, 
-        nargs="+", 
+        "--output_subset",
+        type=str,
+        nargs="+",
         default=[
             "true_mzs",
             "true_logprobs",
@@ -105,28 +67,12 @@ if __name__ == "__main__":
             "pred_batch_idxs",
             "true_oos_prob",
             "oos_prob",
-        ]
+        ],
     )
-    parser.add_argument(
-        "--output_everything",
-        type=booltype,
-        default=False
-    )
-    parser.add_argument(
-        "--untransform_spec",
-        type=booltype,
-        default=False
-    )
-    parser.add_argument(
-        "--disable_preproc",
-        type=booltype,
-        default=True
-    )
-    parser.add_argument(
-        "--dset",
-        type=str,
-        default="nist20v3-1"
-    )
+    parser.add_argument("--output_everything", type=booltype, default=False)
+    parser.add_argument("--untransform_spec", type=booltype, default=False)
+    parser.add_argument("--disable_preproc", type=booltype, default=True)
+    parser.add_argument("--dset", type=str, default="nist20v3-1")
     args = parser.parse_args()
 
     eval_split = args.eval_split
@@ -139,7 +85,7 @@ if __name__ == "__main__":
     disable_preproc = args.disable_preproc
     output_everything = args.output_everything
     untransform_spec = args.untransform_spec
-    
+
     # Prepare output subset
     output_subset = prepare_output_subset(
         output_everything=output_everything,
@@ -154,7 +100,7 @@ if __name__ == "__main__":
     wandb_model_types = args.wandb_model_types
     local_model_types = args.local_model_types
     batch_cutoff = int(1e6)
-    
+
     model_type_to_model_cls = {
         "neims": NeimsPL,
         "massformer": MassFormerPL,
@@ -163,7 +109,7 @@ if __name__ == "__main__":
         "iceberg_inten": IcebergIntenPL,
         "iceberg_inten_opt": IcebergIntenPL,
         "graff": GrAFFPL,
-        "precursor": PrecursorPL
+        "precursor": PrecursorPL,
     }
 
     model_type_to_ds_cls = {
@@ -174,7 +120,7 @@ if __name__ == "__main__":
         "iceberg_inten": SpecMolMagmaIntenDataset,
         "iceberg_inten_opt": SpecMolMagmaIntenDataset,
         "graff": SpecMolAnnDataset,
-        "precursor": SpecMolDataset
+        "precursor": SpecMolDataset,
     }
 
     model_type_to_wandb_prefix = {
@@ -185,7 +131,7 @@ if __name__ == "__main__":
         "iceberg_inten": "iceberg_inten3_100_long",
         "iceberg_inten_opt": "iceberg_inten3_all_long",
         "graff": "graff3_long",
-        "precursor": "precursor"
+        "precursor": "precursor",
     }
 
     dset_to_wandb_prefix = {
@@ -202,12 +148,12 @@ if __name__ == "__main__":
         for model_type in wandb_model_types:
             model_type_wandb_prefix = model_type_to_wandb_prefix[model_type]
             dset_wandb_group_prefix = dset_to_wandb_prefix[dset]
-            model_to_config[split_type][model_type] = f"config/{dset}_{split_type}/{model_type}/s0.yml"
+            model_to_config[split_type][model_type] = (
+                f"config/{dset}_{split_type}/{model_type}/s0.yml"
+            )
             if model_type != "precursor":
                 group_name = f"{dset_wandb_group_prefix}_{split_type}_{model_type_wandb_prefix}"
-                runs = api.runs(
-                    path="frag-gnn/frag-gnn",
-                    filters={"group":group_name})
+                runs = api.runs(path="frag-gnn/frag-gnn", filters={"group": group_name})
                 for run in runs:
                     seed = int(run.name.split("_")[-1].removeprefix("s"))
                     if seed < num_seeds:
@@ -222,7 +168,7 @@ if __name__ == "__main__":
         for model_type in model_types:
             print(f">>> Starting model_type {model_type}")
             custom_fp = model_to_config[split_type][model_type]
-            
+
             # Setup configuration
             config_d = load_config(template_fp, custom_fp)
             config_d = apply_inference_config(
@@ -233,45 +179,47 @@ if __name__ == "__main__":
                 output_formula_str=True,
                 model_type=model_type,
             )
-            
+
             print(">>> Loading dataset")
             ds_cls = model_type_to_ds_cls[model_type]
             ds = ds_cls(split=eval_split, **config_d)
             dl = init_dataloader(ds, config_d)
             model_cls = model_type_to_model_cls[model_type]
-            device = th.device("cuda:0") if config_d["accelerator"]=="gpu" else th.device("cpu")
+            device = th.device("cuda:0") if config_d["accelerator"] == "gpu" else th.device("cpu")
             for seed in range(num_seeds):
                 print(f">>> Starting seed {seed}")
                 if model_type in model_to_run_id[split_type]:
                     assert model_type in wandb_model_types, model_type
                     run_id = model_to_run_id[split_type][model_type][seed]
-                    model = init_wandb_ckpt(run_id,last_ckpt=False,model_cls=model_cls,config_d=config_d)
+                    model = init_wandb_ckpt(
+                        run_id, last_ckpt=False, model_cls=model_cls, config_d=config_d
+                    )
                 else:
                     assert model_type == "precursor", model_type
                     # does not need a checkpoint
                     model = model_cls(**config_d)
             model.to(device)
             model.eval()
-            
+
             # Prepare output subset with model-specific metrics
             output_subset = prepare_output_subset(
                 output_everything=output_everything,
                 output_subset=set(args.output_subset) if not output_everything else None,
                 model_metric_names=model.metric_names,
             )
-            
+
             # run inference
             vals = run_inference_tabular(
-                dl, 
-                model, 
-                device, 
-                eval_split, 
-                batch_cutoff, 
-                config_d["nb_iso"], 
-                output_set=output_subset, 
-                untransform_spec=untransform_spec
+                dl,
+                model,
+                device,
+                eval_split,
+                batch_cutoff,
+                config_d["nb_iso"],
+                output_set=output_subset,
+                untransform_spec=untransform_spec,
             )
-            
+
             # Save results
             save_inference_results(
                 vals=vals,
@@ -282,6 +230,6 @@ if __name__ == "__main__":
                 force_overwrite=force_overwrite,
                 split_type=split_type,
             )
-            
+
             # Cleanup
-            cleanup_model(model, use_gpu=(config_d["accelerator"]=="gpu"))
+            cleanup_model(model, use_gpu=(config_d["accelerator"] == "gpu"))
