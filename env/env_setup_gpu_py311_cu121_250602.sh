@@ -20,7 +20,7 @@ pip install tqdm
 pip install scipy
 pip install joblib==1.3.2
 pip install matplotlib
-pip install pytorch_lightning==2.4.0
+pip install lightning==2.4.0
 #pip install dgl==2.4.0 -f https://data.dgl.ai/wheels/torch-2.4/cu121/repo.html 
 pip install dgl==1.1.3+cu121 -f https://data.dgl.ai/wheels/cu121/repo.html
 pip install omegaconf

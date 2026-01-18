@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import torch as th
 import torch._dynamo as th_dynamo
@@ -32,10 +33,12 @@ from fragnnet.utils.nn_utils import (
     decompile_jit_ckpt,
     get_optimizer_class,
 )
-from fragnnet.utils.spec_utils import *
+from fragnnet.utils.spec_utils import scatter_reduce
 
 
 class FraGNNetPL(SpectrumPL):
+    hparams: Any
+
     def _setup_model(self):
         # frag GNN
         self.model = FraGNNetModel(
