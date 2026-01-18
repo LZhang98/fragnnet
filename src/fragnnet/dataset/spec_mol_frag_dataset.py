@@ -286,7 +286,12 @@ class SpecMolFragDataset(SpecMolDataset):
         crf_peaks = neutral_peaks + prec_type_mass_diff
 
         # Charge Migration Fragmentation stuff
-        if self.frag_params["include_cmf"] and prec_type not in ["[M+H]+", "[M-H]-", "[M]+", "M-"]:
+        if self.frag_params["include_cmf"] and prec_type not in [
+            "[M+H]+",
+            "[M-H]-",
+            "[M]+",
+            "[M-]",
+        ]:
             # Check if cmf_h_formulae_idx exists in pyg node features:
             assert "cmf_h_formulae_idx" in self.frag_params["pyg_node_feats"], (
                 "cmf_h_formulae_idx not in pyg_node_feats"
