@@ -3,8 +3,6 @@
 Tests for batch samplers, group samplers, and dynamic batch sampling strategies.
 """
 
-import importlib.util
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -12,17 +10,12 @@ import torch as th
 from torch.utils.data import DataLoader, RandomSampler
 
 # Load data_sampler directly to avoid package-level import side-effects
-repo_root = Path(__file__).resolve().parents[1]
-data_sampler_path = repo_root / "src" / "fragnnet" / "dataset" / "data_sampler.py"
-spec = importlib.util.spec_from_file_location("data_sampler", str(data_sampler_path))
-data_sampler = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(data_sampler)
-
-SpecMolFragDynamicBatchSampler = data_sampler.SpecMolFragDynamicBatchSampler
-DualGroupDynamicBatchSampler = data_sampler.DualGroupDynamicBatchSampler
-GroupSampler = data_sampler.GroupSampler
-FormulaPrecTypeGroupSampler = data_sampler.FormulaPrecTypeGroupSampler
-
+from fragnnet.dataset import (
+    DualGroupDynamicBatchSampler,
+    FormulaPrecTypeGroupSampler,
+    GroupSampler,
+    SpecMolFragDynamicBatchSampler,
+)
 
 # ============================================================================
 # Mock and Helper Classes

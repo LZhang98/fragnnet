@@ -6,14 +6,8 @@ Tests for pairwise similarity and distance metrics:
 - Jensen-Shannon divergence
 """
 
-import sys
-from pathlib import Path
-
 import pytest
 import torch as th
-
-# Ensure src is importable when running tests from repo root
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from fragnnet.model.loss import (
     get_pairwise_cossim,
