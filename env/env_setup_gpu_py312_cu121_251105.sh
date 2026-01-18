@@ -20,7 +20,7 @@ pip install  \
  scipy \
  joblib==1.3.2 \
  matplotlib \
- pytorch_lightning==2.5.0 \
+ lightning==2.5.0 \
  omegaconf \
  cython==3.0.12 \
  pyteomics \

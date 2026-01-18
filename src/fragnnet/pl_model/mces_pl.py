@@ -15,15 +15,13 @@ try:
 except ImportError:
     profiler_available = False
 
-# Try to import Lightning, supporting both lightning.pytorch and pytorch_lightning for compatibility
-try:
-    import lightning.pytorch as pl
-except ModuleNotFoundError:
-    import pytorch_lightning as pl
+import lightning as L
 
 
-class MCESPL(pl.LightningModule):
+class MCESPL(L.LightningModule):
     """PyTorch Lightning module for MCES regression using SiameseGNNModel."""
+
+    hparams: Any
 
     def __init__(
         self,
