@@ -1,7 +1,12 @@
+import itertools
+import logging
 from collections.abc import Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any
 
 from torch.utils.data import IterableDataset, get_worker_info
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     pass
@@ -55,25 +60,24 @@ class IterableStreamBatchDataset(IterableDataset):
             worker_id = worker_info.id
             num_workers = worker_info.num_workers
 
-            # If the index_stream is a sequence (supports slicing), create a
-            # sliced view for this worker. Otherwise materialize the stream
-            # and slice it (safe for inference streams of moderate size).
+            # Use islice or sequence slicing to shard indices across workers.
+            # This avoids materializing the whole stream in each worker if it's
+            # already an iterator/generator.
             if isinstance(self.index_stream, Sequence):
                 try:
-                    worker_indices = self.index_stream[worker_id::num_workers]
+                    indices_iter = iter(self.index_stream[worker_id::num_workers])
                 except Exception:
-                    worker_indices = list(self.index_stream)[worker_id::num_workers]
+                    indices_iter = itertools.islice(self.index_stream, worker_id, None, num_workers)
             else:
-                worker_indices = list(self.index_stream)[worker_id::num_workers]
-            indices_iter = iter(worker_indices)
+                indices_iter = itertools.islice(self.index_stream, worker_id, None, num_workers)
 
         batch_samples = []
         batch_count = 0
 
         def sample_size(sample: dict) -> int:
-            pyg = sample.get("frag_pyg")
-            if pyg is None:
+            if "frag_pyg" not in sample:
                 return 0
+            pyg = sample["frag_pyg"]
             if self._limited_by == "frag_node":
                 return int(pyg.num_nodes)
             return int(pyg.num_edges)
@@ -91,9 +95,17 @@ class IterableStreamBatchDataset(IterableDataset):
 
             n = sample_size(sample)
 
-            if n > self._max_num and self._skip_too_big:
-                # skip oversized sample
-                continue
+            if n > self._max_num:
+                if self._skip_too_big:
+                    logger.warning(
+                        f"Skipping sample at index {idx} with size {n} (max_num={self._max_num})"
+                    )
+                    continue
+                else:
+                    logger.debug(
+                        f"Sample at index {idx} with size {n} exceeds max_num={self._max_num}. "
+                        "Yielding as a single-sample batch."
+                    )
 
             if batch_count + n > self._max_num and len(batch_samples) > 0:
                 # yield current batch
