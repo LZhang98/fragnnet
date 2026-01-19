@@ -115,15 +115,11 @@ def build_dataframe(zip_path: Path, max_files: int | None = None) -> pd.DataFram
         "col_energy_extra_2",
         "ramped",
         "stepped",
-    missing_cols = [col for col in optional_cols if col not in spec_df.columns]
-    if missing_cols:
-        spec_df = spec_df.assign(**{col: pd.NA for col in missing_cols})
+        "normalized",
+    ]
+    for col in optional_cols:
         if col not in spec_df.columns:
-    for flag_col in ("ramped", "stepped", "normalized"):
-        if flag_col in spec_df.columns:
-            spec_df.loc[:, flag_col] = spec_df[flag_col].fillna(False)
-        else:
-            spec_df.loc[:, flag_col] = False
+            spec_df.loc[:, col] = pd.NA
 
     spec_df.loc[:, ["ramped", "stepped", "normalized"]] = False
     return spec_df
@@ -153,13 +149,12 @@ def main() -> None:
     parser.add_argument("--output_dp", type=Path, default=Path("data/df"))
     parser.add_argument("--output_name", type=str, default="nist23_shr_ei")
     parser.add_argument("--max_files", type=int, default=None, help="Limit files for debugging")
-    logging.info(spec_df.head())
+    args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     spec_df = build_dataframes(list(args.zip_paths), max_files=args.max_files)
 
-    print(spec_df.head())
     args.output_dp.mkdir(parents=True, exist_ok=True)
     output_fp = args.output_dp / f"{args.output_name}_df.csv"
     logging.info("Saving %d spectra to %s", len(spec_df), output_fp)
