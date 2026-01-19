@@ -3,7 +3,159 @@ import os
 import subprocess
 
 
+def _normalize_profile_name(name: str) -> str:
+    return name.strip().lower().replace(" ", "")
+
+
+GPU_PROFILES = {
+    # Fir (H100)
+    "fir:h100-80gb": {
+        "cluster": "fir",
+        "gpu_label": "H100-80gb",
+        "gres_gpu": "gpu:h100:1",
+        "cpu": 12,
+        "mem": 280,
+        "price": 12.2,
+        "notes": "12 cores, 288GB (ideal); 12 cores, 280GB (sbatch)",
+    },
+    "fir:h100-1g.10gb": {
+        "cluster": "fir",
+        "gpu_label": "H100-1g.10gb",
+        "gres_gpu": "gpu:h100_1g.10gb:1",
+        "cpu": 1,
+        "mem": 35,
+        "price": 1.74,
+        "notes": "1.7 cores, 41GB (ideal); 1 core, 35GB (sbatch)",
+    },
+    "fir:h100-2g.20gb": {
+        "cluster": "fir",
+        "gpu_label": "H100-2g.20gb",
+        "gres_gpu": "gpu:h100_2g.20gb:1",
+        "cpu": 3,
+        "mem": 70,
+        "price": 3.48,
+        "notes": "3.4 cores, 82GB (ideal); 3 cores, 70GB (sbatch)",
+    },
+    "fir:h100-3g.40gb": {
+        "cluster": "fir",
+        "gpu_label": "H100-3g.40gb",
+        "gres_gpu": "gpu:h100_3g.40gb:1",
+        "cpu": 6,
+        "mem": 140,
+        "price": 6.1,
+        "notes": "6 cores, 144GB (ideal); 6 cores, 140GB (sbatch)",
+    },
+    # Narval (A100)
+    "narval:a100-40gb": {
+        "cluster": "narval",
+        "gpu_label": "A100-40gb",
+        "gres_gpu": "gpu:a100:1",
+        "cpu": 12,
+        "mem": 124,
+        "price": 4.0,
+        "notes": "12 cores, 124.5GB (ideal); 12 cores, 124GB (sbatch)",
+    },
+    "narval:a100-1g.5gb": {
+        "cluster": "narval",
+        "gpu_label": "A100-1g.5gb",
+        "gres_gpu": "gpu:a100_1g.5gb:1",
+        "cpu": 1,
+        "mem": 15,
+        "price": 0.57,
+        "notes": "1.7 cores, 17.7GB (ideal); 1 core, 15GB (sbatch)",
+    },
+    "narval:a100-2g.10gb": {
+        "cluster": "narval",
+        "gpu_label": "A100-2g.10gb",
+        "gres_gpu": "gpu:a100_2g.10gb:1",
+        "cpu": 3,
+        "mem": 31,
+        "price": 1.14,
+        "notes": "3.4 cores, 35.4GB (ideal); 3 cores, 31GB (sbatch)",
+    },
+    "narval:a100-3g.20gb": {
+        "cluster": "narval",
+        "gpu_label": "A100-3g.20gb",
+        "gres_gpu": "gpu:a100_3g.20gb:1",
+        "cpu": 6,
+        "mem": 62,
+        "price": 2.0,
+        "notes": "6.0 cores, 62.2GB (ideal); 6 cores, 62GB (sbatch)",
+    },
+    "narval:a100-4g.20gb": {
+        "cluster": "narval",
+        "gpu_label": "A100-4g.20gb",
+        "gres_gpu": "gpu:a100_4g.20gb:1",
+        "cpu": 6,
+        "mem": 62,
+        "price": 2.3,
+        "notes": "6.9 cores, 71.5GB (ideal); 6 cores, 62GB (sbatch)",
+    },
+    "vulcan:l40s": {
+        "cluster": "vulcan",
+        "gpu_label": "l40s",
+        "gres_gpu": "gpu:1",
+        "cpu": 6,
+        "mem": 192,
+        "price": 0,
+        "notes": "vulcan is free to use for all aip users",
+    },
+}
+
+
+GPU_PROFILE_ALIASES = {
+    # allow selecting by GPU label alone when unambiguous
+    "h100-80gb": "fir:h100-80gb",
+    "h100-1g.10gb": "fir:h100-1g.10gb",
+    "h100-2g.20gb": "fir:h100-2g.20gb",
+    "h100-3g.40gb": "fir:h100-3g.40gb",
+    "a100-40gb": "narval:a100-40gb",
+    "a100-1g.5gb": "narval:a100-1g.5gb",
+    "a100-2g.10gb": "narval:a100-2g.10gb",
+    "a100-3g.20gb": "narval:a100-3g.20gb",
+    "a100-4g.20gb": "narval:a100-4g.20gb",
+    "a6000": "vulcan:l40s",
+}
+
+
+def print_gpu_profiles() -> None:
+    print("Available --gpu_profile presets:")
+    for key in sorted(GPU_PROFILES.keys()):
+        p = GPU_PROFILES[key]
+        print(
+            f"- {key}\t({p['gpu_label']}, cpu={p['cpu']}, mem={p['mem']}G, gres={p['gres_gpu']}, price={p['price']})"
+        )
+
+
+def apply_gpu_profile(args) -> None:
+    if not args.gpu_profile:
+        return
+
+    name = _normalize_profile_name(args.gpu_profile)
+    name = GPU_PROFILE_ALIASES.get(name, name)
+    if name not in GPU_PROFILES:
+        raise ValueError(
+            f"Unknown gpu profile: {args.gpu_profile}. Use --list_gpu_profiles to see valid names."
+        )
+
+    p = GPU_PROFILES[name]
+    # override resource requests
+    args.cpu = int(p["cpu"])
+    args.mem = int(p["mem"])
+    # prefer --gres for MIG/full GPU selection
+    args.gres_gpu = p["gres_gpu"]
+    # ensure we still request a GPU when the old --gpu path is used elsewhere
+    if getattr(args, "gpu", 0) == 0:
+        args.gpu = 1
+
+
 def main(args):
+    if getattr(args, "list_gpu_profiles", False):
+        print_gpu_profiles()
+        return
+
+    apply_gpu_profile(args)
+
     # create folders
     os.makedirs(f"{os.path.abspath(args.frag_gnn_dp)}/wandb", exist_ok=True)
     os.makedirs(f"{os.path.abspath(args.script_dp)}", exist_ok=True)
@@ -11,46 +163,45 @@ def main(args):
 
     script_lines = []
     # account, ram, cpu, gpu, and etc
-    if not args.interactive:
-        script_lines.extend(
-            [
-                "#!/bin/bash",
-                f"#SBATCH --account={args.cc_account}",
-                "#SBATCH --nodes=1",
-                f"#SBATCH --job-name={args.job_name}",
-                f"#SBATCH --mem={args.mem}G",
-                f"#SBATCH --cpus-per-task={args.cpu}",
-                f"#SBATCH --time=0-{args.time}:00:00",
-                f"#SBATCH --mail-user={args.cc_email}",
-                "#SBATCH --mail-type=ALL",
-            ]
-        )
-        # add gpus
-        if args.gpu > 0:
-            # eg. --gpus-per-node=v100:1 or --gpus-per-node=1
+    script_lines.extend(
+        [
+            "#!/bin/bash",
+            f"#SBATCH --account={args.cc_account}",
+            "#SBATCH --nodes=1",
+            f"#SBATCH --job-name={args.job_name}",
+            f"#SBATCH --mem={args.mem}G",
+            f"#SBATCH --cpus-per-task={args.cpu}",
+            f"#SBATCH --time=0-{args.time}:00:00",
+            f"#SBATCH --mail-user={args.cc_email}",
+            "#SBATCH --mail-type=ALL",
+        ]
+    )
+    # add gpus
+    if getattr(args, "gres_gpu", None):
+        script_lines.append(f"#SBATCH --gres={args.gres_gpu}")
+    elif getattr(args, "gpus_per_node", None):
+        script_lines.append(f"#SBATCH --gpus-per-node={args.gpus_per_node}")
+    elif args.gpu > 0:
+        # eg. --gpus-per-node=v100:1 or --gpus-per-node=1
+        gpu_type = getattr(args, "gpu_type", None)
+        if gpu_type is not None:
+            script_lines.append(f"#SBATCH --gpus-per-node={gpu_type}:{args.gpu}")
+        else:
             script_lines.append(f"#SBATCH --gpus-per-node={args.gpu}")
 
-        # config where to save job output and job error
-        # append to existing onces
-        script_lines.extend(
-            [
-                f"#SBATCH --output={os.path.abspath(args.job_dp)}/{args.job_name}_%j.out",
-                f"#SBATCH --error={os.path.abspath(args.job_dp)}/{args.job_name}_%j.err",
-                "#SBATCH --open-mode=append",
-            ]
-        )
-        # start recording
-        script_lines.extend(
-            ["", "# record start", "echo `date`: Job ${SLURM_JOB_ID} is allocated resources"]
-        )
-
-    else:
-        script_lines.append("#allocate job")
-        cmd = f"salloc --account={args.cc_account} --nodes=1 --mem={args.mem}G --cpus-per-task={args.cpu} --time=0-{args.time}:00"
-        if args.gpu > 0:
-            # eg. --gpus-per-node=v100:1 or --gpus-per-node=1
-            cmd += " --gpus-per-node={args.gpu}"
-        script_lines.append(cmd)
+    # config where to save job output and job error
+    # append to existing onces
+    script_lines.extend(
+        [
+            f"#SBATCH --output={os.path.abspath(args.job_dp)}/{args.job_name}_%j.out",
+            f"#SBATCH --error={os.path.abspath(args.job_dp)}/{args.job_name}_%j.err",
+            "#SBATCH --open-mode=append",
+        ]
+    )
+    # start recording
+    script_lines.extend(
+        ["", "# record start", "echo `date`: Job ${SLURM_JOB_ID} is allocated resources"]
+    )
 
     # load modules
     script_lines.extend(
@@ -149,7 +300,7 @@ def main(args):
         if key == "t" or key == "template_fp":
             config_template_fp = value
 
-    # parse configs file
+    # parse configs    file
     config_keywords = [
         "spec_fp",
         "mol_fp",
@@ -254,12 +405,12 @@ def main(args):
         [
             "# create wandb directory if not exists",
             "if [ ! -d ${FRAGNNET_DP}/wandb ]; then",
-            "   mkdir ${FRAGNNET_DP}/wandb",
+            "    mkdir ${FRAGNNET_DP}/wandb",
             "fi",
             "# soft link to wandb",
             "cd ${WORKING_DIR}",
             "if [ ! -e wandb ]; then",
-            "   ln -s ${FRAGNNET_DP}/wandb wandb",
+            "    ln -s ${FRAGNNET_DP}/wandb wandb",
             "fi",
         ]
     )
@@ -267,21 +418,19 @@ def main(args):
     # add python line
     script_lines.extend(["# run python script", "cd ${WORKING_DIR}", python_line])
 
-    if not args.interactive:
-        script_lines.extend(
-            ["", "# record ending", "echo `date`: Job ${SLURM_JOB_ID} finished running"]
-        )
+    script_lines.extend(
+        ["", "# record ending", "echo `date`: Job ${SLURM_JOB_ID} finished running"]
+    )
 
-        script_str = "\n".join(script_lines)
-        assert os.path.isdir(args.script_dp), args.script_dp
-        script_fp = os.path.join(args.script_dp, f"{args.job_name}.sh")
-        with open(script_fp, "w") as script_file:
-            print(script_str, file=script_file)
-    else:
-        for row in script_lines:
-            print(row)
+    script_str = "\n".join(script_lines)
+    assert os.path.isdir(args.script_dp), args.script_dp
+    script_fp = os.path.join(args.script_dp, f"{args.job_name}.sh")
+    with open(script_fp, "w") as script_file:
+        print(script_str, file=script_file)
 
+    print("=" * 80)
     if not args.no_submit:
+        print(f"submitting job script {script_fp} to slurm")
         process = subprocess.Popen(
             ["sbatch", script_fp],
             stdout=subprocess.PIPE,
@@ -291,33 +440,63 @@ def main(args):
         out, err = process.communicate()
         print(out.strip(), err.strip())
     else:
-        print("=" * 80)
-        print("Job script creation complete. Not submitting job as --no_submit is set.")
-        print(f"\nTo submit job:\nsbatch {script_fp}\n")
-        print("=" * 80)
+        print("Slrum script created. Not submitted due to --no_submit=True\n")
+        print("To submit, run:")
+        print(f"sbatch {script_fp} \n")
+    print("=" * 80)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--script_dp", type=str, default="slurm_scripts")
     parser.add_argument("--job_dp", type=str, default="jobs")
-    parser.add_argument("--python_script_fp", type=str, required=True)
+    parser.add_argument(
+        "--python_script_fp", type=str, required=True, help="python script to run on cc"
+    )
     parser.add_argument(
         "--frag_gnn_dp", type=str, help="location of frag-gnn project", required=True
     )
     parser.add_argument("--mem", type=int, default=128)
     parser.add_argument("--cpu", type=int, default=8)
     parser.add_argument("--gpu", type=int, default=1)
+
+    parser.add_argument(
+        "--gpu_profile",
+        type=str,
+        default=None,
+        help=(
+            "Apply a preset resource profile (overrides --cpu/--mem and sets --gres). "
+            "Examples: fir:h100-1g.10gb, narval:a100-40gb. Use --list_gpu_profiles to view all."
+        ),
+    )
+    parser.add_argument(
+        "--list_gpu_profiles",
+        type=bool,
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Print available --gpu_profile presets and exit",
+    )
+    parser.add_argument(
+        "--gpus_per_node",
+        type=str,
+        default=None,
+        help="Raw value for #SBATCH --gpus-per-node (overrides --gpu/--gpu_type when set)",
+    )
+    parser.add_argument(
+        "--gres_gpu",
+        type=str,
+        default=None,
+        help="Raw value for #SBATCH --gres (e.g. gpu:a100:1 or gpu:h100_1g.10gb:1)",
+    )
     parser.add_argument("--time", type=int, default=3)
     parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
-    parser.add_argument("--job_name", type=str, required=True, help="name of the job")
+    parser.add_argument("--job_name", type=str, required=False, help="name of the job")
     parser.add_argument(
         "--cc_account",
         default="rrg-dwishart",
         choices=["rrg-dwishart", "rrg-rgreiner", "def-dwishart", "def-rgreiner", "aip-rgreiner"],
     )
     parser.add_argument("--cc_email", help="email", default="fw4@ualberta.ca")
-    # parser.add_argument('--python_env', default="./FRAG-GNN-GPU", help="virtualenv location")
     parser.add_argument(
         "--python_version", default="3.11", choices=["3.10", "3.11"], help="python version"
     )
@@ -327,15 +506,14 @@ if __name__ == "__main__":
         choices=["2022.03.5", "2023.09.5", "2024.03.5"],
         help="rdkit version",
     )
-    parser.add_argument(
-        "-i",
-        "--interactive",
-        type=bool,
-        default=False,
-        action=argparse.BooleanOptionalAction,
-        help="set to true to print interative command",
-    )
     parser.add_argument("--no_submit", type=bool, default=True)
     args = parser.parse_args()
+    # if not getattr(args, "list_gpu_profiles", False):
+    #    missing = []
+    #    for required_arg in ["python_script_fp", "frag_gnn_dp", "job_name"]:
+    #        if getattr(args, required_arg, None) in [None, ""]:
+    #            missing.append(required_arg)
+    #    if missing:
+    #        parser.error(f"Missing required arguments: {', '.join('--' + m for m in missing)}")
 
     main(args)

@@ -23,7 +23,7 @@ class CEModel:
 
     def _ce_init(
         self,
-        int_embedder,
+        int_embedder: str,
         ce_insert_location: str,
         ce_insert_type: str,
         ce_insert_merge: bool,
@@ -31,7 +31,7 @@ class CEModel:
         ce_mean: float,
         ce_std: float,
         ce_max: float,
-    ):
+    ) -> None:
         """
         Initialize CE embedding configuration and embedding layers.
 
@@ -58,15 +58,15 @@ class CEModel:
         self._ce_location_check()
         self._setup_ce()
 
-    def _ce_location_check(self):
-        raise NotImplementedError
+    def _ce_location_check(self) -> None:
+        raise NotImplementedError("Subclasses must implement _ce_location_check")
 
-    def _setup_ce(self):
+    def _setup_ce(self) -> None:
         """Setup CE embedding and transformation logic based on type and location."""
         # Setup embedding type
         if self.ce_insert_type == "id":
 
-            def ce_transform(ce):
+            def ce_transform(ce: th.Tensor) -> th.Tensor:
                 ce = transform_ce(ce, self.ce_mean, self.ce_std)
                 ce = ce.reshape(-1, 1)
                 ce = th.repeat_interleave(ce, self.ce_insert_size, dim=1)
@@ -76,7 +76,7 @@ class CEModel:
             ce_input_dim = self.ce_insert_size
         elif self.ce_insert_type == "lin":
 
-            def ce_transform(ce):
+            def ce_transform(ce: th.Tensor) -> th.Tensor:
                 ce = transform_ce(ce, self.ce_mean, self.ce_std)
                 ce = ce.reshape(-1, 1)
                 return ce
@@ -85,7 +85,7 @@ class CEModel:
             ce_input_dim = self.ce_insert_size
         elif self.ce_insert_type == "embed":
 
-            def ce_transform(ce):
+            def ce_transform(ce: th.Tensor) -> th.Tensor:
                 ce = th.clamp(ce, min=-1)
                 ce = th.round(ce, decimals=0).long()
                 ce = ce.reshape(-1, 1)
@@ -98,7 +98,7 @@ class CEModel:
             ce_input_dim = self.ce_insert_size
         elif self.ce_insert_type == "embed_clamped":
 
-            def ce_transform(ce):
+            def ce_transform(ce: th.Tensor) -> th.Tensor:
                 ce = th.clamp(ce, min=-1, max=int(self.ce_max) - 1)
                 ce = th.round(ce, decimals=0).long()
                 ce = ce.reshape(-1, 1)
@@ -109,7 +109,7 @@ class CEModel:
             ce_input_dim = self.ce_insert_size
         elif self.ce_insert_type == "bin":
 
-            def ce_transform(ce):
+            def ce_transform(ce: th.Tensor) -> th.Tensor:
                 # Handle -1 (missing/unknown) by giving it its own bin (index 0)
                 # Other values are binned normally then shifted up by 1
                 ce = th.clamp(ce, min=-1, max=int(self.ce_max) - 10)
@@ -119,7 +119,7 @@ class CEModel:
                 ce_binned = th.round(ce, decimals=-1).long() // 10
                 ce_binned = th.where(
                     missing_mask,
-                    th.tensor(0, device=ce.device, dtype=ce_binned.dtype),
+                    th.zeros_like(ce_binned),
                     ce_binned + 1,
                 )
                 # One-hot encode with -1 getting bin 0, others getting bins 1+
@@ -149,7 +149,9 @@ class CEModel:
         self.ce_mol_input_dim = ce_mol_input_dim
         self.ce_mlp_input_dim = ce_mlp_input_dim
 
-    def embed_ce(self, ce, ce_batch_idxs, batch_size):
+    def embed_ce(
+        self, ce: th.Tensor, ce_batch_idxs: th.Tensor, batch_size: int
+    ) -> th.Tensor | None:
         """
         Embed the collision energy values.
 
@@ -161,6 +163,7 @@ class CEModel:
         Returns:
             Embedded CE tensor or None.
         """
+        ce_embed = None
         if self.ce_insert_location != "none":
             ce_embed = self.ce_transform(ce)
             ce_embed = self.ce_embedder(ce_embed)
@@ -173,15 +176,15 @@ class CEModel:
                     dim_size=batch_size,
                     include_self=False,
                 )
-        else:
-            ce_embed = None
         return ce_embed
 
 
 class PrecModel:
     """Class for handling precursor type embedding."""
 
-    def _prec_init(self, prec_insert_location: str, prec_insert_size: int, prec_num_types: int):
+    def _prec_init(
+        self, prec_insert_location: str, prec_insert_size: int, prec_num_types: int
+    ) -> None:
         """
         Initialize precursor embedding configuration and embedding layers.
 
@@ -209,10 +212,10 @@ class PrecModel:
         self.prec_mol_input_dim = prec_mol_input_dim
         self.prec_mlp_input_dim = prec_mlp_input_dim
 
-    def _prec_location_check(self):
-        raise NotImplementedError
+    def _prec_location_check(self) -> None:
+        raise NotImplementedError("Subclasses must implement _prec_location_check")
 
-    def embed_prec(self, prec_type):
+    def embed_prec(self, prec_type: th.Tensor | None) -> th.Tensor | None:
         """
         Embed the precursor type.
 
@@ -222,21 +225,22 @@ class PrecModel:
         Returns:
             Embedded precursor tensor or None.
         """
+        prec_embed = None
         if self.prec_insert_location != "none":
             if prec_type is None:
                 raise ValueError(
                     f"prec_type is None but prec_insert_location is {self.prec_insert_location}"
                 )
             prec_embed = self.prec_embedder(prec_type)
-        else:
-            prec_embed = None
         return prec_embed
 
 
 class InstModel:
     """Class for handling instrument type embedding."""
 
-    def _inst_init(self, inst_insert_location: str, inst_insert_size: int, inst_num_types: int):
+    def _inst_init(
+        self, inst_insert_location: str, inst_insert_size: int, inst_num_types: int
+    ) -> None:
         """
         Initialize instrument embedding configuration and embedding layers.
 
@@ -264,10 +268,10 @@ class InstModel:
         self.inst_mol_input_dim = inst_mol_input_dim
         self.inst_mlp_input_dim = inst_mlp_input_dim
 
-    def _inst_location_check(self):
-        raise NotImplementedError(".")
+    def _inst_location_check(self) -> None:
+        raise NotImplementedError("Subclasses must implement _inst_location_check")
 
-    def embed_inst(self, inst_type):
+    def embed_inst(self, inst_type: th.Tensor | None) -> th.Tensor | None:
         """
         Embed the instrument type.
 
@@ -277,12 +281,11 @@ class InstModel:
         Returns:
             Embedded instrument tensor or None.
         """
+        inst_embed = None
         if self.inst_insert_location != "none":
             if inst_type is None:
                 raise ValueError(
                     f"inst_type is None but inst_insert_location is {self.inst_insert_location}"
                 )
             inst_embed = self.inst_embedder(inst_type)
-        else:
-            inst_embed = None
         return inst_embed

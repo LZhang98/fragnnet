@@ -171,6 +171,17 @@ def th_temp_seed(seed: int) -> Generator[None, None, None]:
         th.set_rng_state(state)
 
 
+@contextmanager
+def th_temp_generator(seed: int) -> Generator[th.Generator, None, None]:
+    """Yield an independent torch Generator seeded with ``seed`` without touching global RNG."""
+    gen = th.Generator()
+    gen.manual_seed(seed)
+    try:
+        yield gen
+    finally:
+        pass
+
+
 def flatten_lol(lol: Iterable[Iterable[T]]) -> list[T]:
     """Flatten a list of iterables into a single list."""
 

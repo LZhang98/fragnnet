@@ -293,8 +293,9 @@ node_formula_normalized_entropy_weight: 0.0
 formula_node_normalized_entropy_weight: 0.0
 joint_normalized_entropy_weight: 0.0
 # pairwise losses
-pairwise_cosine_binned_loss_weight: 0.0 
-pairwise_jss_binned_loss_weight: 0.0
+pairwise_cosine_loss_weight: 0.0 
+pairwise_jss_loss_weight: 0.0
+pairwise_cross_entropy_loss_weight: 0.0
 # nb stuff, set all to 0 to disable
 nb_iso: False
 nb_node_entropy_weight: 0.0
@@ -392,12 +393,17 @@ finetune_weights_lr_ratio: 1.0 # Learning rate ratio for pretrained weights duri
 dynamic_batch_sampler: False
 dynamic_batch_sampler_mode: frag_node
 dynamic_batch_sampler_max: 100000
+dual_group_dynamic_batch_sampler: False
+dual_group_dynamic_batch_sampler_mode: frag_node
+dual_group_dynamic_batch_sampler_max: 100000
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 3
 simple_group_sampler: False
 simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group #[group, group_mol, mol]
+formula_prec_type_group_sampler: False
+formula_prec_type_group_sampler_max_per_group: 5
 mp_sharing_strategy: file_descriptor
 check_gradient_norm: False
 use_tensor_float32: False

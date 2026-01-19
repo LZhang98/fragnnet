@@ -42,7 +42,12 @@ Outputs written to `proc_dp`:
     - formula: molecular formula from source
     - inchikey: full InChIKey from source when available
     - exact_mass: exact mass from source when available
-    - group_id: grouping id for spectra sharing compound/precursor
+    - group_id: grouping id for spectra sharing compound/precursor.
+        Current grouping key: `mol_id` + `prec_type` + `inst_type`.
+        Note: `ce_type` and `dset` are excluded from the group key so
+        that identical molecules/adducts across datasets or CE patterns
+        are grouped together (prevents molecule-level leakage across
+        datasets when training on mixed sources).
 
 - mol_df.pkl: one row per unique SMILES with columns
     - smiles: canonicalized SMILES
@@ -196,7 +201,10 @@ def preprocess_spec(spec_df):
     ]
     # relabel spec_id (this is to make it unique across datasets)
     spec_df.loc[:, "spec_id"] = np.arange(spec_df.shape[0])
-    # set group_id (same compound and precursor)
+    # set group_id (group by mol_id + prec_type + inst_type)
+    # Note: `ce_type` and `dset` are intentionally dropped so groups
+    # combine identical molecules/adducts across datasets and CE patterns.
+
     group_df = spec_df.drop(
         columns=[
             "spec_id",

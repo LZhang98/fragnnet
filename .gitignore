@@ -46,4 +46,6 @@ output/*
 /scripts/debug/for_plot.pkl
 /scripts/debug/selected_df_30209.pkl
 .vscode
+.
+example
 .github

@@ -138,10 +138,10 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
         self,
         mol_pyg: pyg.data.Data,
         spec_prec_mz: th.Tensor,
-        spec_ce: th.Tensor = None,
-        spec_ce_batch_idxs: th.Tensor = None,
-        spec_prec_type: th.Tensor = None,
-        spec_inst_type: th.Tensor = None,
+        spec_ce: th.Tensor | None = None,
+        spec_ce_batch_idxs: th.Tensor | None = None,
+        spec_prec_type: th.Tensor | None = None,
+        spec_inst_type: th.Tensor | None = None,
         **kwargs,
     ):
         """

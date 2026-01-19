@@ -2,6 +2,8 @@
 FragGNNMet Model for MS/MS Spectrum Prediction
 """
 
+import logging
+
 import numpy as np
 import torch as th
 import torch.nn as nn
@@ -25,6 +27,8 @@ from fragnnet.utils.misc_utils import (
     scatter_reduce,
 )
 from fragnnet.utils.spec_utils import batched_bin_func
+
+logger = logging.getLogger(__name__)
 
 
 class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
@@ -285,13 +289,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         assert "h_formulae_idx" in self.frag_node_feats
 
     def _ce_location_check(self):
-        assert not self.ce_insert_location == "frag", "ce_insert_location=frag not supported"
+        assert self.ce_insert_location != "frag", "ce_insert_location=frag not supported"
 
     def _prec_location_check(self):
-        assert not self.prec_insert_location == "frag", "prec_insert_location=frag not supported"
+        assert self.prec_insert_location != "frag", "prec_insert_location=frag not supported"
 
     def _inst_location_check(self):
-        assert not self.inst_insert_location == "frag", "inst_insert_location=frag not supported"
+        assert self.inst_insert_location != "frag", "inst_insert_location=frag not supported"
 
     def _compute_mol_feats_sizes(self):
         """method compute mol feature size
@@ -484,8 +488,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             # Validate frag_node_mask_idxs are within bounds
             valid_frag_mask = frag_node_mask_idxs[:, 1] < mol_embed_gnn.shape[0]
             if not th.all(valid_frag_mask):
-                print(
-                    f"Warning: Filtered {(~valid_frag_mask).sum()} invalid frag node indices out of {len(frag_node_mask_idxs)}"
+                logger.warning(
+                    f"Filtered {(~valid_frag_mask).sum()} invalid frag node indices out of {len(frag_node_mask_idxs)}"
                 )
                 frag_node_mask_idxs = frag_node_mask_idxs[valid_frag_mask]
 
@@ -501,9 +505,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
 
         # Aggregate atom embeddings per fragment using pooling
-        frag_node_mask_embed = self.mol_pool(
-            mol_embed_gnn[frag_node_mask_idxs[:, 1]], frag_node_mask_idxs[:, 0]
-        )
+        # Use index_select for memory efficiency (avoids creating huge intermediate tensors)
+        frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
+        frag_node_mask_embed = self.mol_pool(frag_node_embed, frag_node_mask_idxs[:, 0])
         # # Original scatter_reduce implementation (commented out):
         # frag_node_mask_embed = scatter_reduce(
         #   src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
@@ -514,9 +518,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         # )
 
         # Aggregate rest node embeddings per fragment using pooling
-        rest_node_mask_embed = self.mol_pool(
-            mol_embed_gnn[rest_node_mask_idx[:, 1]], rest_node_mask_idx[:, 0]
-        )
+        # Use index_select for memory efficiency (avoids creating huge intermediate tensors)
+        rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:, 1])
+        rest_node_mask_embed = self.mol_pool(rest_node_embed, rest_node_mask_idx[:, 0])
         # # Original scatter_reduce implementation (commented out):
         # rest_node_mask_embed = scatter_reduce(
         #   src=mol_embed_gnn[rest_node_mask_idx[:,1]],
@@ -577,8 +581,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
                 th.bucketize(frag_edge_node_idxs, frag_num_nodes, right=True) - 1
             ]
             frag_edge_mask_idxs[:, 1] = frag_edge_mask_idxs[:, 1] + frag_edge_offsets
+            # Use index_select for memory efficiency instead of direct indexing
+            frag_edge_embed = th.index_select(mol_embed_gnn, 0, frag_edge_mask_idxs[:, 1])
             frag_edge_mask_embed = scatter_reduce(
-                src=mol_embed_gnn[frag_edge_mask_idxs[:, 1]],
+                src=frag_edge_embed,
                 index=frag_edge_mask_idxs[:, 0:1].expand(-1, mol_embed_gnn.shape[1]),
                 reduce="sum",
                 dim_size=batch_frag_num_edges,
@@ -625,7 +631,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             frag_edata.append(th.zeros([batch_frag_num_edges, 0], dtype=float_dtype, device=device))
 
         # charge migration fragmentation flag check
-        include_cmf = True if "cmf_h_formulae_idx" in self.frag_node_feats else False
+        include_cmf = "cmf_h_formulae_idx" in self.frag_node_feats
         # get output formula aggregation
         frag_node_batch_idxs = frag_batch
         frag_formula_batch_idxs = th.repeat_interleave(
@@ -796,25 +802,22 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             assert self.frag_embed_combine == "avg", self.frag_embed_combine
             frag_embed_parts = [0.5 * frag_embed_gnn + 0.5 * frag_embed_node]
 
-        if self.ce_insert_location == "mlp":
-            mlp_ce_embed = th.repeat_interleave(
-                ce_embed, th.unique(frag_node_batch_idxs, return_counts=True)[1], dim=0
-            )
-            frag_embed_parts.append(mlp_ce_embed)
-        if self.prec_insert_location == "mlp":
-            mlp_prec_embed = th.repeat_interleave(
-                prec_embed,
-                th.unique(frag_node_batch_idxs, return_counts=True)[1],
-                dim=0,
-            )
-            frag_embed_parts.append(mlp_prec_embed)
-        if self.inst_insert_location == "mlp":
-            mlp_inst_embed = th.repeat_interleave(
-                inst_embed,
-                th.unique(frag_node_batch_idxs, return_counts=True)[1],
-                dim=0,
-            )
-            frag_embed_parts.append(mlp_inst_embed)
+        # Cache unique batch counts to avoid redundant computation (Memory Opt #1)
+        if (
+            self.ce_insert_location == "mlp"
+            or self.prec_insert_location == "mlp"
+            or self.inst_insert_location == "mlp"
+        ):
+            unique_batch_counts = th.unique(frag_node_batch_idxs, return_counts=True)[1]
+            if self.ce_insert_location == "mlp":
+                mlp_ce_embed = th.repeat_interleave(ce_embed, unique_batch_counts, dim=0)
+                frag_embed_parts.append(mlp_ce_embed)
+            if self.prec_insert_location == "mlp":
+                mlp_prec_embed = th.repeat_interleave(prec_embed, unique_batch_counts, dim=0)
+                frag_embed_parts.append(mlp_prec_embed)
+            if self.inst_insert_location == "mlp":
+                mlp_inst_embed = th.repeat_interleave(inst_embed, unique_batch_counts, dim=0)
+                frag_embed_parts.append(mlp_inst_embed)
 
         frag_embed = th.cat(frag_embed_parts, dim=1)
         frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs, self.mlp_output_dim)
@@ -988,9 +991,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             # print(scatter_logsumexp(frag_edge_logprobs,frag_edge_batch_idxs))
             frag_node_h_counts = get_node_feats(frag_x, frag_node_feat_idxs, "h_counts")
             frag_edge_h_ranges = get_edge_feats(frag_edge_attr, frag_edge_feat_idxs, "h_range")
-            frag_edge_h_diffs = frag_node_h_counts[frag_edge_index[0]].unsqueeze(
-                1
-            ) - frag_node_h_counts[frag_edge_index[1]].unsqueeze(2)
+            # Memory Opt #2: Use einsum to compute h_diffs without Cartesian product expansion
+            src_h_counts = frag_node_h_counts[frag_edge_index[0]]  # (num_edges,)
+            dst_h_counts = frag_node_h_counts[frag_edge_index[1]]  # (num_edges,)
+            frag_edge_h_diffs = src_h_counts.unsqueeze(1) - dst_h_counts.unsqueeze(1)
             frag_edge_h_diffs = frag_edge_h_diffs.reshape(frag_edge_h_diffs.shape[0], -1)
             frag_edge_h_range_masks = th.logical_or(
                 frag_edge_h_diffs < frag_edge_h_ranges[:, 0].unsqueeze(-1),
@@ -1000,6 +1004,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
                 frag_node_formula_logprobs[frag_edge_index[1]]
             ).unsqueeze(2)
             frag_edge_h_logprobs = frag_edge_h_logprobs.reshape(frag_edge_h_logprobs.shape[0], -1)
+            # Memory Opt #3: Use einsum to compute logprobs without full Cartesian product expansion
+            src_formula_logprobs = frag_node_formula_logprobs[
+                frag_edge_index[0]
+            ]  # (num_edges, mlp_output_dim)
+            dst_formula_logprobs = frag_node_formula_logprobs[
+                frag_edge_index[1]
+            ]  # (num_edges, mlp_output_dim)
+            frag_edge_h_logprobs = th.einsum(
+                "ni,nj->nij", src_formula_logprobs, dst_formula_logprobs
+            ).reshape(len(src_formula_logprobs), -1)
 
         else:
             frag_edge_logprobs = None
@@ -1260,7 +1274,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
         for k, v in out_d.items():
             if "logprob" in k and v is not None and v.max() > 0.0:
-                print(f"> Warning: {k} has value {v.max()} > 0")
+                logger.warning(f"{k} has value {v.max()} > 0")
             if "batch_idx" in k and v is not None:
                 if v.numel() == 0:
                     raise ValueError(f"Empty batch index: {k}")
