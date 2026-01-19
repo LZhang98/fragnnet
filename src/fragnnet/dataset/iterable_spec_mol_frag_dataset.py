@@ -1,18 +1,14 @@
 import itertools
 import logging
 from collections.abc import Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from torch.utils.data import IterableDataset, get_worker_info
 
 logger = logging.getLogger(__name__)
 
 
-if TYPE_CHECKING:
-    pass
-
-
-class IterableStreamBatchDataset(IterableDataset):
+class IterableSpecMolFragDataset(IterableDataset):
     """
     Iterable wrapper that consumes a stream/iterator of indices and groups
     them into dynamic mini-batches such that the total number of frag nodes

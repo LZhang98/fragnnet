@@ -1,6 +1,6 @@
 import torch as th
 
-from fragnnet.dataset.iterable_stream_batch_dataset import IterableStreamBatchDataset
+from fragnnet.dataset.iterable_spec_mol_frag_dataset import IterableSpecMolFragDataset
 
 
 class FakePyG:
@@ -51,7 +51,7 @@ def test_batches_by_nodes():
     node_counts = [3, 4, 5, 2]
     ds = FakeDataset(node_counts)
     idx_stream = iter(range(len(node_counts)))
-    it = IterableStreamBatchDataset(
+    it = IterableSpecMolFragDataset(
         dataset=ds,
         index_stream=idx_stream,
         max_num=7,
@@ -73,7 +73,7 @@ def test_skip_too_big():
     node_counts = [5, 12, 4]
     ds = FakeDataset(node_counts)
     idx_stream = iter(range(len(node_counts)))
-    it = IterableStreamBatchDataset(
+    it = IterableSpecMolFragDataset(
         dataset=ds,
         index_stream=idx_stream,
         max_num=10,
@@ -99,7 +99,7 @@ def test_return_list_mode_and_clone():
     ds = FakeDataset(node_counts, shared=True)
     idx_stream = iter(range(len(node_counts)))
     # when clone_graphs_on_get=True, yielded samples should not reference dataset._shared_pyg
-    it = IterableStreamBatchDataset(
+    it = IterableSpecMolFragDataset(
         dataset=ds,
         index_stream=idx_stream,
         max_num=10,

@@ -2,10 +2,10 @@
 Land of loss functions
 """
 
+import logging
 import math
 from collections.abc import Callable
 
-import numpy as np
 import torch as th
 import torch.nn.functional as F
 
@@ -26,6 +26,8 @@ from fragnnet.utils.spec_utils import (
     round_aggregate_peaks,
     scipy_linear_sum_assignment,
 )
+
+logger = logging.getLogger(__name__)
 
 # LOG_TRUNC_FACTOR = {
 #     i: float(th.log(th.erf(th.tensor(i)/np.sqrt(2)))) for i in range(0,6)
@@ -87,9 +89,11 @@ def mog_ce_fn(
         assert tolerance_multiple > 0, tolerance_multiple
         # log_trunc_factor = LOG_TRUNC_FACTOR.get(tolerance_multiple,1.)
         # b_log_trunc_factors = log_trunc_factor*th.ones_like(b_pred_mzs)
-        sigma = th.tensor(float(np.sqrt(2)), device=b_pred_mzs.device)
-        trunc_factor = th.erf(th.tensor(tolerance_multiple, device=b_pred_mzs.device) / sigma)
-        b_log_trunc_factors = th.log(trunc_factor * th.ones_like(b_pred_mzs))
+        sigma = math.sqrt(2)
+        trunc_factor = math.erf(tolerance_multiple / sigma)
+        b_log_trunc_factors = th.log(
+            th.tensor(trunc_factor, device=b_pred_mzs.device) * th.ones_like(b_pred_mzs)
+        )
     else:
         b_log_trunc_factors = th.zeros_like(b_pred_mzs)
     b_logprobs = mog_log_prob(b_true_mzs, b_pred_mzs, b_vars, b_pred_logprobs, b_log_trunc_factors)
@@ -140,6 +144,7 @@ def pm_ce_fn(
         relative=relative,
         tolerance_min_mz=tolerance_min_mz,
     )
+    b_match_mask = th.as_tensor(b_match_mask, device=b_pred_logprobs.device)
     # Aggregate matched predicted log-probs for each true peak via log-sum-exp.
     # Unmatched (false mask) entries are suppressed by adding a large negative
     # value (`LOG_ZERO`) so they do not contribute to the sum.
@@ -163,9 +168,9 @@ def sparse_cross_entropy_seq(
     tolerance: float,
     relative: bool,
     tolerance_min_mz: float,
-    tolerance_multiple: int,
+    tolerance_multiple: float,
     gaussian_renormalize: bool,
-) -> th.Tensor:
+) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     """compute sparse cross entropy in squence
 
     Args:
@@ -183,20 +188,17 @@ def sparse_cross_entropy_seq(
         pm_tolerance_multiple (int, optional): _description_.
 
     Returns:
-        _type_: _description_
+        tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]: ios_ces, oos_ces, true_oos_logprobs, true_oos_entropies
     """
 
-    # print(pred_logprobs.shape[0]*true_logprobs.shape[0]*4 / 1e6)
     mask_value = LOG_ZERO(true_logprobs.dtype)
-    batch_size = th.max(true_batch_idxs) + 1
+    batch_size = int(th.max(true_batch_idxs).item() + 1)
     # ces = th.zeros([batch_size],dtype=true_logprobs.dtype,device=true_logprobs.device)
-    ios_ces = th.zeros([batch_size], dtype=true_logprobs.dtype, device=true_logprobs.device)
-    oos_ces = th.zeros([batch_size], dtype=true_logprobs.dtype, device=true_logprobs.device)
-    true_oos_logprobs = th.zeros(
-        [batch_size], dtype=true_logprobs.dtype, device=true_logprobs.device
-    )
+    ios_ces = th.zeros(batch_size, dtype=true_logprobs.dtype, device=true_logprobs.device)
+    oos_ces = th.zeros(batch_size, dtype=true_logprobs.dtype, device=true_logprobs.device)
+    true_oos_logprobs = th.zeros(batch_size, dtype=true_logprobs.dtype, device=true_logprobs.device)
     true_oos_entropies = th.zeros_like(true_oos_logprobs)
-    for batch_idx in th.arange(batch_size):
+    for batch_idx in range(batch_size):
         # get groundtruth belongs to this batch idx
         b_true_mask = true_batch_idxs == batch_idx
         # get predictions belongs to this batch idx
@@ -214,13 +216,14 @@ def sparse_cross_entropy_seq(
             relative=relative,
             tolerance_min_mz=tolerance_min_mz,
         )
+        b_match_mask = th.as_tensor(b_match_mask, device=b_true_mzs.device)
         if tolerance_multiple == -1:
             b_true_match_mask = th.ones_like(b_true_mzs, dtype=th.bool)
         else:
             assert tolerance_multiple > 0, tolerance_multiple
             b_true_match_mask = th.any(b_match_mask, dim=1)
         if not th.any(b_true_match_mask):
-            print("> Warning: Everything is OOS!")
+            logger.warning("Everything is OOS!")
         # calculate ios logprobs
         b_ios_logprobs = ce_fn(
             b_true_mzs=b_true_mzs,
@@ -267,10 +270,10 @@ def sparse_cross_entropy_vec(
     tolerance: float,
     relative: bool,
     tolerance_min_mz: float,
-    oos_tolerance_multiple: int,
+    oos_tolerance_multiple: float,
     gaussian_renormalize: bool,
     loss_batch_size: int,
-) -> th.Tensor:
+) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     """
     Vectorized computation of sparse cross-entropy loss for batched spectra.
 
@@ -297,13 +300,12 @@ def sparse_cross_entropy_vec(
 
     # Set up types and constants
     float_dtype = true_logprobs.dtype
-    int_type = true_batch_idxs.dtype
     device = true_logprobs.device
     mask_value = LOG_ZERO(float_dtype)
-    batch_size = th.max(true_batch_idxs) + 1
+    batch_size = int(th.max(true_batch_idxs).item() + 1)
 
     # Calculate number of loss batches for memory efficiency
-    loss_num_batches = (batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0)
+    loss_num_batches = int((batch_size // loss_batch_size) + int(batch_size % loss_batch_size > 0))
 
     # Compute cumulative sum of counts for batch slicing
     true_batch_cumsum = th.cumsum(
@@ -313,9 +315,10 @@ def sparse_cross_entropy_vec(
         F.pad(th.unique(pred_batch_idxs, return_counts=True)[1], (1, 0), "constant", 0), dim=0
     )
 
-    # Initialize output tensors for in-sample and out-of-sample cross-entropy
-    ios_ce = th.zeros([batch_size], dtype=float_dtype, device=device)
-    oos_ce = th.zeros([batch_size], dtype=float_dtype, device=device)
+    # Initialize output tensors
+    ios_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
+    oos_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
+    true_oos_logprobs = th.zeros(batch_size, dtype=float_dtype, device=device)
 
     # Loop over loss batches for memory efficiency
     for bl in range(loss_num_batches):
@@ -347,6 +350,7 @@ def sparse_cross_entropy_vec(
             relative=relative,
             tolerance_min_mz=tolerance_min_mz,
         )
+        bl_match_mask = th.as_tensor(bl_match_mask, device=device)
         # Combine masks: only consider matches within same batch and within m/z tolerance
         bl_both_mask = bl_batch_mask & bl_match_mask
         del bl_batch_mask, bl_match_mask
@@ -361,10 +365,15 @@ def sparse_cross_entropy_vec(
             bl_stds = tolerance * th.ones_like(bl_pred_mzs)
         bl_vars = bl_stds**2
         if gaussian_renormalize:
-            assert oos_tolerance_multiple > 0, oos_tolerance_multiple
-            sigma = th.tensor(float(np.sqrt(2)), device=device)
-            bl_trunc_factor = th.erf(th.tensor(oos_tolerance_multiple, device=device) / sigma)
-            bl_log_trunc_factors = th.log(bl_trunc_factor * th.ones_like(bl_pred_mzs))
+            if oos_tolerance_multiple <= 0:
+                raise ValueError(
+                    f"oos_tolerance_multiple must be > 0, got {oos_tolerance_multiple}"
+                )
+            sigma = math.sqrt(2)
+            bl_trunc_factor = math.erf(oos_tolerance_multiple / sigma)
+            bl_log_trunc_factors = th.log(
+                th.tensor(bl_trunc_factor, device=device) * th.ones_like(bl_pred_mzs)
+            )
         else:
             bl_log_trunc_factors = th.zeros_like(bl_pred_mzs)
 
@@ -384,7 +393,7 @@ def sparse_cross_entropy_vec(
         if not th.any(bl_true_both_mask):
             # If no matches, fill with LOG_ZERO
             bl_ios_ce = th.full(
-                [bl_batch_size], LOG_ZERO(float_dtype), dtype=float_dtype, device=device
+                (bl_batch_size,), LOG_ZERO(float_dtype), dtype=float_dtype, device=device
             )
         else:
             # Sum over matched true peaks, reduce by batch index
@@ -408,13 +417,14 @@ def sparse_cross_entropy_vec(
         else:
             # If all matched, fill with LOG_ZERO
             bl_true_oos_logprobs = th.full(
-                [bl_batch_size], LOG_ZERO(float_dtype), dtype=float_dtype, device=device
+                (bl_batch_size,), LOG_ZERO(float_dtype), dtype=float_dtype, device=device
             )
         # Compute out-of-sample cross-entropy
         bl_oos_ce = -th.exp(bl_true_oos_logprobs) * bl_pred_oos_logprobs
         oos_ce[bl_lower:bl_upper] = bl_oos_ce
+        true_oos_logprobs[bl_lower:bl_upper] = bl_true_oos_logprobs
 
-    return ios_ce, oos_ce, 0.0, 1.0
+    return ios_ce, oos_ce, true_oos_logprobs, th.zeros_like(ios_ce)
 
 
 def get_sparse_cross_entropy_fn(
@@ -433,43 +443,54 @@ def get_sparse_cross_entropy_fn(
     elif dist == "peak_marginal":
         ce_fn = pm_ce_fn
     else:
-        raise NotImplementedError
-
-    if vectorized:
-        assert dist == "gaussian", dist
-        sce_fn = lambda *args: sparse_cross_entropy_vec(
-            *args,
-            tolerance=tolerance,
-            relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
-            oos_tolerance_multiple=oos_tolerance_multiple,
-            gaussian_renormalize=gaussian_renormalize,
-            loss_batch_size=loss_batch_size,
+        msg = (
+            f"Distribution '{dist}' not implemented. "
+            "Supported distributions: 'gaussian', 'peak_marginal'."
         )
+        raise NotImplementedError(msg)
+            msg = f"Vectorized loss only supports 'gaussian' distribution, got '{dist}'"
+    if vectorized:
+        if dist != "gaussian":
+            msg = f"Vectorized loss only supports 'gaussian' distribution, got {dist}"
+            raise NotImplementedError(msg)
+
+        def sce_fn(*args):
+            return sparse_cross_entropy_vec(
+                *args,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+                oos_tolerance_multiple=oos_tolerance_multiple,
+                gaussian_renormalize=gaussian_renormalize,
+                loss_batch_size=loss_batch_size,
+            )
     else:
         if dist == "gaussian":
             tolerance_multiple = oos_tolerance_multiple
         else:
             tolerance_multiple = pm_tolerance_multiple
-        sce_fn = lambda *args: sparse_cross_entropy_seq(
-            *args,
-            ce_fn=ce_fn,
-            tolerance=tolerance,
-            relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
-            tolerance_multiple=tolerance_multiple,
-            gaussian_renormalize=gaussian_renormalize,
-        )
+
+        def sce_fn(*args):
+            return sparse_cross_entropy_seq(
+                *args,
+                ce_fn=ce_fn,
+                tolerance=tolerance,
+                relative=relative,
+                tolerance_min_mz=tolerance_min_mz,
+                tolerance_multiple=tolerance_multiple,
+                gaussian_renormalize=gaussian_renormalize,
+            )
+
     return sce_fn
 
 
 def sparse_entropy_fn(
     logprobs: th.Tensor,
     batch_idxs: th.Tensor,
-    oos_logprobs: th.Tensor = None,
+    oos_logprobs: th.Tensor | None = None,
     renormalize: bool = False,
     support_size_delta: float = 0.0,
-) -> th.Tensor:
+) -> tuple[th.Tensor, th.Tensor]:
     if renormalize:
         logpartition = scatter_logsumexp(logprobs, batch_idxs)
         if oos_logprobs is not None:
@@ -479,14 +500,16 @@ def sparse_entropy_fn(
     logprobs = th.clamp(logprobs, max=0.0)
     probs = th.exp(logprobs)
     plogp = probs * logprobs
-    batch_size = th.max(batch_idxs) + 1
+    batch_size = int(th.max(batch_idxs).item() + 1)
     entropy = -scatter_reduce(
         src=plogp,
         index=batch_idxs,
         reduce="sum",
         dim_size=batch_size,
     )
-    assert th.min(entropy) >= -0.001, th.min(entropy)
+    if th.min(entropy) < -0.001:
+        raise ValueError(f"Negative entropy: {th.min(entropy)}")
+
     support_size = scatter_reduce(
         src=th.ones_like(batch_idxs, dtype=logprobs.dtype),
         index=batch_idxs,
@@ -503,7 +526,8 @@ def sparse_entropy_fn(
     max_entropy = th.clamp(max_entropy, min=EPS)
     entropy = th.clamp(entropy, min=th.zeros_like(max_entropy), max=max_entropy)
     norm_entropy = entropy / max_entropy
-    assert not th.any(norm_entropy < 0.0) and not th.any(norm_entropy > 1.0)
+    if th.any(norm_entropy < 0.0) or th.any(norm_entropy > 1.0):
+        raise ValueError("Normalized entropy out of bounds [0, 1]")
     return entropy, norm_entropy
 
 
@@ -514,8 +538,8 @@ def sparse_conditional_entropy_fn(
     conditional_idxs: th.Tensor,
     conditional_batch_idxs: th.Tensor,
     conditional_support_size_delta: float = 0.0,
-) -> th.Tensor:
-    batch_size = th.max(conditional_batch_idxs) + 1
+) -> tuple[th.Tensor, th.Tensor]:
+    batch_size = int(th.max(conditional_batch_idxs).item() + 1)
     marginal_support_size = marginal_logprobs.shape[0]
     marginal_logprobs = th.clamp(marginal_logprobs, max=0.0)
     conditional_logprobs = th.clamp(conditional_logprobs, max=0.0)
@@ -530,7 +554,9 @@ def sparse_conditional_entropy_fn(
         reduce="sum",
         dim_size=batch_size,
     )
-    assert th.min(entropy) >= -0.001, th.min(entropy)
+    if th.min(entropy) < -0.001:
+        raise ValueError(f"Negative conditional entropy: {th.min(entropy)}")
+
     conditional_support_size = scatter_reduce(
         th.ones_like(conditional_logprobs, dtype=marginal_logprobs.dtype),
         index=conditional_idxs,
@@ -544,28 +570,36 @@ def sparse_conditional_entropy_fn(
         reduce="sum",
         dim_size=batch_size,
     )
-    if th.any(max_entropy < 0.0):
-        import pdb
-
-        pdb.set_trace()
     # rescale entropy
     max_entropy = th.clamp(max_entropy, min=EPS)
     entropy = th.clamp(entropy, min=th.zeros_like(max_entropy), max=max_entropy)
     norm_entropy = entropy / max_entropy
-    assert not th.any(norm_entropy < 0.0) and not th.any(norm_entropy > 1.0)
+    if th.any(norm_entropy < 0.0) or th.any(norm_entropy > 1.0):
+        raise ValueError("Normalized conditional entropy out of bounds [0, 1]")
     return entropy, norm_entropy
 
 
 def get_edge_loss_fn(edge_loss_fn_type: str, constant: float) -> Callable:
     if edge_loss_fn_type == "quadratic":
-        edge_loss_fn = lambda x: constant * x**2
+
+        def quad_loss(x):
+            return constant * x**2
+
+        return quad_loss
     elif edge_loss_fn_type == "linear":
-        edge_loss_fn = lambda x: constant * th.abs(x)
+
+        def linear_loss(x):
+            return constant * th.abs(x)
+
+        return linear_loss
     elif edge_loss_fn_type == "exponential":
-        edge_loss_fn = lambda x: constant * th.exp(th.abs(x))
+
+        def exp_loss(x):
+            return constant * th.exp(th.abs(x))
+
+        return exp_loss
     else:
-        raise NotImplementedError
-    return edge_loss_fn
+        raise NotImplementedError(f"Edge loss function type {edge_loss_fn_type} not implemented")
 
 
 def sparse_cosine_distance(
@@ -624,7 +658,7 @@ def sparse_cosine_distance_binned(
     # dot product
     pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
     true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
-    batch_size = th.max(true_bin_batch_idxs) + 1
+    batch_size = int(th.max(true_bin_batch_idxs).item() + 1)
     if th.any(pred_mask):
         both_bin_logprobs = pred_bin_logprobs[pred_mask] + true_bin_logprobs[true_mask]
         assert th.all(pred_bin_batch_idxs[pred_mask] == true_bin_batch_idxs[true_mask])
@@ -687,8 +721,8 @@ def sparse_cosine_distance_hungarian(
         pred_mzs, pred_logprobs, pred_batch_idxs, agg="lse"
     )
     # Get number of batches
-    batch_size = th.max(true_batch_idxs) + 1
-    cos_dist_hun = th.zeros([batch_size], device=true_logprobs.device, dtype=true_logprobs.dtype)
+    batch_size = int(th.max(true_batch_idxs).item() + 1)
+    cos_dist_hun = th.zeros(batch_size, device=true_logprobs.device, dtype=true_logprobs.dtype)
     for batch_idx in range(batch_size):
         # Select peaks for current batch
         b_true_mask = true_batch_idxs == batch_idx
@@ -708,6 +742,7 @@ def sparse_cosine_distance_hungarian(
             relative=relative,
             tolerance_min_mz=tolerance_min_mz,
         )
+        b_match_mzs = th.as_tensor(b_match_mzs, device=b_true_mzs.device)
         # Identify which true and predicted peaks have matches
         b_true_match_mzs = th.any(b_match_mzs, dim=1)
         b_pred_match_mzs = th.any(b_match_mzs, dim=0)
@@ -774,8 +809,8 @@ def sparse_jensen_shannon_divergence_hungarian(
         pred_mzs, pred_logprobs, pred_batch_idxs, agg="lse"
     )
     # Get number of batches
-    batch_size = th.max(true_batch_idxs) + 1
-    jsd_hun = th.zeros([batch_size], device=true_logprobs.device, dtype=true_logprobs.dtype)
+    batch_size = int(th.max(true_batch_idxs).item() + 1)
+    jsd_hun = th.zeros(batch_size, device=true_logprobs.device, dtype=true_logprobs.dtype)
 
     for batch_idx in range(batch_size):
         # Select peaks for current batch
@@ -805,6 +840,7 @@ def sparse_jensen_shannon_divergence_hungarian(
             relative=relative,
             tolerance_min_mz=tolerance_min_mz,
         )
+        b_match_mzs = th.as_tensor(b_match_mzs, device=b_true_mzs.device)
 
         # Identify which true and predicted peaks have matches
         b_true_match_mzs = th.any(b_match_mzs, dim=1)
@@ -999,6 +1035,7 @@ def get_pairwise_cossim(
         Pairwise similarity matrix of shape [batch_size, batch_size].
     """
 
+    batch_size = int(batch_size)
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
@@ -1017,7 +1054,7 @@ def get_pairwise_cossim(
     num_unique_bins = unique_bins.numel()
 
     # Create a mapping from old bin indices to new compact indices
-    bin_idx_map = th.full((bin_idxs.max() + 1,), -1, device=mzs.device, dtype=th.long)
+    bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
 
     # Remap indices to compact space
@@ -1069,6 +1106,7 @@ def get_pairwise_jss_sim(
         Pairwise similarity matrix of shape [batch_size, batch_size].
     """
 
+    batch_size = int(batch_size)
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
@@ -1087,7 +1125,7 @@ def get_pairwise_jss_sim(
     num_unique_bins = unique_bins.numel()
 
     # Create a mapping from old bin indices to new compact indices
-    bin_idx_map = th.full((bin_idxs.max() + 1,), -1, device=mzs.device, dtype=th.long)
+    bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
 
     # Remap indices to compact space
@@ -1154,6 +1192,7 @@ def get_pairwise_cross_entropy(
         Pairwise cross-entropy matrix of shape [batch_size, batch_size].
     """
 
+    batch_size = int(batch_size)
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device)
 
@@ -1172,7 +1211,7 @@ def get_pairwise_cross_entropy(
     num_unique_bins = unique_bins.numel()
 
     # Create a mapping from old bin indices to new compact indices
-    bin_idx_map = th.full((bin_idxs.max() + 1,), -1, device=mzs.device, dtype=th.long)
+    bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
 
     # Remap indices to compact space
@@ -1265,6 +1304,84 @@ def get_pairwise_cross_entropy(
 ############################################
 
 
+def _compute_pair_jss_hun(
+    b_true_mzs: th.Tensor,
+    b_true_logprobs: th.Tensor,
+    b_pred_mzs: th.Tensor,
+    b_pred_logprobs: th.Tensor,
+    tolerance: float,
+    relative: bool,
+    tolerance_min_mz: float,
+) -> th.Tensor:
+    """
+    Helper to compute Jensen-Shannon similarity for a single pair of spectra using Hungarian matching.
+    Returns scalar tensor (Similarity in [0, 1]).
+    """
+    # Normalize probabilities (sum to 1)
+    b_true_probs = th.exp(b_true_logprobs)
+    b_true_sum = th.sum(b_true_probs)
+    if b_true_sum > 0:
+        b_true_probs = b_true_probs / b_true_sum
+
+    b_pred_probs = th.exp(b_pred_logprobs)
+    b_pred_sum = th.sum(b_pred_probs)
+    if b_pred_sum > 0:
+        b_pred_probs = b_pred_probs / b_pred_sum
+
+    # Compute m/z matching mask within tolerance
+    b_match_mzs = calculate_match_mzs(
+        b_true_mzs,
+        b_pred_mzs,
+        tolerance=tolerance,
+        relative=relative,
+        tolerance_min_mz=tolerance_min_mz,
+    )
+    b_match_mzs = th.as_tensor(b_match_mzs, device=b_true_mzs.device)
+
+    # Identify which true and predicted peaks have matches
+    b_true_match_mzs = th.any(b_match_mzs, dim=1)
+    b_pred_match_mzs = th.any(b_match_mzs, dim=0)
+
+    # Filter to only matched peaks
+    b_true_probs_m = b_true_probs[b_true_match_mzs]
+    b_pred_probs_m = b_pred_probs[b_pred_match_mzs]
+
+    # Compute score matrix (Gain)
+    p_expand = b_true_probs_m.unsqueeze(1)
+    q_expand = b_pred_probs_m.unsqueeze(0)
+    sum_pq = p_expand + q_expand
+    term1 = sum_pq * th.log(sum_pq + EPS)
+    term2 = p_expand * th.log(p_expand + EPS)
+    term3 = q_expand * th.log(q_expand + EPS)
+    b_score = 0.5 * (term1 - term2 - term3)
+
+    # Mask invalid matches
+    valid_matches = b_match_mzs[b_true_match_mzs][:, b_pred_match_mzs]
+    b_score[~valid_matches] = -1e9
+
+    # Hungarian algorithm
+    if b_score.numel() == 0:
+        if b_pred_probs.numel() > 0:
+            total_gain = b_pred_probs.sum() * 0.0
+        elif b_true_probs.numel() > 0:
+            total_gain = b_true_probs.sum() * 0.0
+        else:
+            total_gain = th.tensor(0.0, device=b_score.device, dtype=b_score.dtype)
+    else:
+        b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score.detach(), maximize=True)
+        matched_gains = b_score[b_true_idxs, b_pred_idxs]
+        valid_mask = matched_gains > -1e8
+        if th.any(valid_mask):
+            total_gain = th.sum(matched_gains[valid_mask])
+        else:
+            total_gain = b_score.sum() * 0.0
+
+    LOG2 = math.log(2.0)
+    b_jss = total_gain / LOG2
+    b_jss = th.clamp(b_jss, min=0.0, max=1.0)
+    return b_jss
+
+
 def get_pairwise_jss_sim_hun(
     mzs: th.Tensor,
     logprobs: th.Tensor,
@@ -1291,6 +1408,7 @@ def get_pairwise_jss_sim_hun(
         Matrix of shape [batch_size, batch_size] containing pairwise similarities.
     """
 
+    batch_size = int(batch_size)
     # Pre-aggregate peaks to save work in loop
     mzs, logprobs, batch_idxs = round_aggregate_peaks(mzs, logprobs, batch_idxs, agg="lse")
 
@@ -1309,7 +1427,7 @@ def get_pairwise_jss_sim_hun(
         sim_matrix[i, i] = 1.0
 
         for j in range(i + 1, batch_size):
-            jsd = _compute_pair_jss_hun(
+            sim = _compute_pair_jss_hun(
                 spectra_mzs[i],
                 spectra_logprobs[i],
                 spectra_mzs[j],
@@ -1318,7 +1436,6 @@ def get_pairwise_jss_sim_hun(
                 relative,
                 tolerance_min_mz,
             )
-            sim = 1.0 - jsd
             sim_matrix[i, j] = sim
             sim_matrix[j, i] = sim
 
@@ -1353,6 +1470,7 @@ def get_pairwise_cross_entropy_hun(
         Matrix of shape [batch_size, batch_size] containing pairwise cross entropies.
     """
 
+    batch_size = int(batch_size)
     # Pre-aggregate peaks to save work in loop
     mzs, logprobs, batch_idxs = round_aggregate_peaks(mzs, logprobs, batch_idxs, agg="lse")
 
@@ -1436,6 +1554,7 @@ def _compute_pair_ce_hun(
         relative=relative,
         tolerance_min_mz=tolerance_min_mz,
     )
+    b_match_mzs = th.as_tensor(b_match_mzs, device=b_true_mzs.device)
 
     # Identify which true and predicted peaks have matches
     b_true_match_mzs = th.any(b_match_mzs, dim=1)
