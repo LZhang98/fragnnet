@@ -448,10 +448,10 @@ def get_sparse_cross_entropy_fn(
             "Supported distributions: 'gaussian', 'peak_marginal'."
         )
         raise NotImplementedError(msg)
-            msg = f"Vectorized loss only supports 'gaussian' distribution, got '{dist}'"
+
     if vectorized:
         if dist != "gaussian":
-            msg = f"Vectorized loss only supports 'gaussian' distribution, got {dist}"
+            msg = f"Vectorized loss only supports 'gaussian' distribution, got '{dist}'"
             raise NotImplementedError(msg)
 
         def sce_fn(*args):

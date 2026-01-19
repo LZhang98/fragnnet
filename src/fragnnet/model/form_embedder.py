@@ -3,6 +3,7 @@ land of feature embedders
 """
 
 import logging
+from typing import Any
 
 import numpy as np
 import torch as th
@@ -118,7 +119,7 @@ class FourierFeaturizer(IntFeaturizer):
         self,
         max_count_int: int = DEFAULT_MAX_COUNT_INT,
         num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token: Optional[int] = None,
+        missing_token: int | None = None,
     ) -> None:
         num_freqs = int(np.ceil(np.log2(max_count_int))) + 2
         # ^ need at least this many to ensure that the whole input range can be represented on the half circle.
@@ -165,7 +166,7 @@ class FourierFeaturizerSines(IntFeaturizer):
         self,
         max_count_int: int = DEFAULT_MAX_COUNT_INT,
         num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token: Optional[int] = None,
+        missing_token: int | None = None,
     ) -> None:
         num_freqs = int(np.ceil(np.log2(max_count_int))) + 2
         # ^ need at least this many to ensure that the whole input range can be represented on the half circle.
@@ -207,7 +208,7 @@ class FourierFeaturizerAbsoluteSines(IntFeaturizer):
         self,
         max_count_int: int = DEFAULT_MAX_COUNT_INT,
         num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token: Optional[int] = None,
+        missing_token: int | None = None,
     ) -> None:
         num_freqs = int(np.ceil(np.log2(max_count_int))) + 2
 
@@ -242,7 +243,7 @@ class RBFFeaturizer(IntFeaturizer):
         num_funcs: int = 32,
         max_count_int: int = DEFAULT_MAX_COUNT_INT,
         num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token: Optional[int] = None,
+        missing_token: int | None = None,
     ) -> None:
         """
         :param num_funcs: number of radial basis functions to use: their width will automatically be chosen -- see class
@@ -280,10 +281,10 @@ class OneHotFeaturizer(IntFeaturizer):
 
     def __init__(
         self,
-        max_count_int=DEFAULT_MAX_COUNT_INT,
-        num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token=None,
-    ):
+        max_count_int: int = DEFAULT_MAX_COUNT_INT,
+        num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
+        missing_token: int | None = None,
+    ) -> None:
         super().__init__(
             embedding_dim=max_count_int,
             max_count_int=max_count_int,
@@ -304,11 +305,11 @@ class LearnedFeaturizer(IntFeaturizer):
 
     def __init__(
         self,
-        feature_dim=32,
-        max_count_int=DEFAULT_MAX_COUNT_INT,
-        num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token=None,
-    ):
+        feature_dim: int = 32,
+        max_count_int: int = DEFAULT_MAX_COUNT_INT,
+        num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
+        missing_token: int | None = None,
+    ) -> None:
         super().__init__(
             embedding_dim=feature_dim,
             max_count_int=max_count_int,
@@ -346,22 +347,21 @@ class LearnedFeaturizer(IntFeaturizer):
 #        return 1
 
 
-def get_embedder(embedder, **kwargs):
+def get_embedder(embedder: str, **kwargs: Any) -> IntFeaturizer:
     if embedder == "fourier":
-        embedder = FourierFeaturizer(**kwargs)
+        return FourierFeaturizer(**kwargs)
     elif embedder == "rbf":
-        embedder = RBFFeaturizer(**kwargs)
+        return RBFFeaturizer(**kwargs)
     elif embedder == "one-hot":
-        embedder = OneHotFeaturizer(**kwargs)
+        return OneHotFeaturizer(**kwargs)
     elif embedder == "learnt":
-        embedder = LearnedFeaturizer(**kwargs)
+        return LearnedFeaturizer(**kwargs)
     elif embedder == "float":
         raise NotImplementedError
         # embedder = FloatFeaturizer()
     elif embedder == "fourier-sines":
-        embedder = FourierFeaturizerSines(**kwargs)
+        return FourierFeaturizerSines(**kwargs)
     elif embedder == "abs-sines":
-        embedder = FourierFeaturizerAbsoluteSines(**kwargs)
+        return FourierFeaturizerAbsoluteSines(**kwargs)
     else:
-        raise NotImplementedError
-    return embedder
+        raise NotImplementedError(f"Unknown embedder type: {embedder}")

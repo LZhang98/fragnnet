@@ -2,6 +2,8 @@
 FragGNNMet Model for MS/MS Spectrum Prediction
 """
 
+import logging
+
 import numpy as np
 import torch as th
 import torch.nn as nn
@@ -25,6 +27,8 @@ from fragnnet.utils.misc_utils import (
     scatter_reduce,
 )
 from fragnnet.utils.spec_utils import batched_bin_func
+
+logger = logging.getLogger(__name__)
 
 
 class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
@@ -484,8 +488,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             # Validate frag_node_mask_idxs are within bounds
             valid_frag_mask = frag_node_mask_idxs[:, 1] < mol_embed_gnn.shape[0]
             if not th.all(valid_frag_mask):
-                print(
-                    f"Warning: Filtered {(~valid_frag_mask).sum()} invalid frag node indices out of {len(frag_node_mask_idxs)}"
+                logger.warning(
+                    f"Filtered {(~valid_frag_mask).sum()} invalid frag node indices out of {len(frag_node_mask_idxs)}"
                 )
                 frag_node_mask_idxs = frag_node_mask_idxs[valid_frag_mask]
 
@@ -516,9 +520,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         # Aggregate rest node embeddings per fragment using pooling
         # Use index_select for memory efficiency (avoids creating huge intermediate tensors)
         rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:, 1])
-        rest_node_mask_embed = self.mol_pool(
-            mol_embed_gnn[rest_node_mask_idx[:, 1]], rest_node_mask_idx[:, 0]
-        )
+        rest_node_mask_embed = self.mol_pool(rest_node_embed, rest_node_mask_idx[:, 0])
         # # Original scatter_reduce implementation (commented out):
         # rest_node_mask_embed = scatter_reduce(
         #   src=mol_embed_gnn[rest_node_mask_idx[:,1]],
@@ -629,7 +631,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             frag_edata.append(th.zeros([batch_frag_num_edges, 0], dtype=float_dtype, device=device))
 
         # charge migration fragmentation flag check
-        include_cmf = True if "cmf_h_formulae_idx" in self.frag_node_feats else False
+        include_cmf = "cmf_h_formulae_idx" in self.frag_node_feats
         # get output formula aggregation
         frag_node_batch_idxs = frag_batch
         frag_formula_batch_idxs = th.repeat_interleave(
@@ -1272,7 +1274,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
         for k, v in out_d.items():
             if "logprob" in k and v is not None and v.max() > 0.0:
-                print(f"> Warning: {k} has value {v.max()} > 0")
+                logger.warning(f"{k} has value {v.max()} > 0")
             if "batch_idx" in k and v is not None:
                 if v.numel() == 0:
                     raise ValueError(f"Empty batch index: {k}")
