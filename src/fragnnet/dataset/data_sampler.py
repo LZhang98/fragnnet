@@ -7,10 +7,13 @@ Includes:
 - get_group_sampler: WeightedRandomSampler factory
 """
 
+import logging
 from collections.abc import Iterator
 
 import torch as th
 from torch.utils.data import BatchSampler, Sampler, WeightedRandomSampler
+
+logger = logging.getLogger(__name__)
 
 #####################################################
 # Batch Samplers
@@ -95,7 +98,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         expected_total = 0
         warning_msg = ""
 
-        print(
+        logger.info(
             f"[SpecMolFragDynamicBatchSampler] Pre-loading metadata for {len(self.data_source)} samples..."
         )
 
@@ -118,8 +121,8 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
                     warning_msg += "Attempting to fit into batch, may cause CUDA OOM ERROR.\n"
 
         if warning_msg:
-            print(f"[SpecMolFragDynamicBatchSampler] {warning_msg}")
-        print(
+            logger.warning(f"[SpecMolFragDynamicBatchSampler] {warning_msg}")
+        logger.info(
             f"[SpecMolFragDynamicBatchSampler] Metadata loaded. Expecting {expected_total}/{len(self.data_source)} samples with skip_too_big={self._skip_too_big}"
         )
 
@@ -200,7 +203,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
         if batch:  # Don't forget final batch
             self._batches.append(batch)
-        print(
+        logger.info(
             f"[SpecMolFragDynamicBatchSampler] Batch indices computed, Expecting {len(self._batches)} mini-batches for next epoch"
         )
 
@@ -692,7 +695,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 
             self._batches.append(batch)
 
-        print(
+        logger.info(
             f"[DualGroupDynamicBatchSampler] Prepared {len(self._batches)} batches respecting max {self._limited_by}={self._max_num}"
         )
 
@@ -704,9 +707,9 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         return len(self._batches)
 
 
-def get_simple_group_sampler(
+def get_group_sampler(
     ds, sampler_type: str, avg_per_group: int, generator: th.Generator
-) -> WeightedRandomSampler:
+) -> WeightedRandomSampler | None:
     """Create a WeightedRandomSampler based on group/molecule statistics.
 
     Balances sampling to ensure certain groups/molecules are sampled proportionally.
@@ -721,8 +724,7 @@ def get_simple_group_sampler(
         generator (th.Generator): PyTorch generator for reproducibility
 
     Returns:
-        WeightedRandomSampler or Sampler: Configured sampler (or other Sampler),
-        or None if invalid sampler_type
+        WeightedRandomSampler | None: Configured sampler, or None if invalid sampler_type
 
     Example:
         ```python

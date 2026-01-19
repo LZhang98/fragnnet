@@ -1,11 +1,10 @@
+import logging
 import sys
-from collections.abc import Iterator
 
 import numpy as np
 import torch as th
 import torch.nn.functional as F
 import torch_geometric as pyg
-from torch.utils.data.sampler import BatchSampler, Sampler, WeightedRandomSampler
 from torch_geometric.data import Batch
 from tqdm import tqdm
 
@@ -17,6 +16,8 @@ from fragnnet.utils.formula_utils import (
 )
 from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, load_frag_d
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
+
+logger = logging.getLogger(__name__)
 
 
 class SpecMolFragDataset(SpecMolDataset):
@@ -116,7 +117,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 frag_entry = load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
                 total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
                 self.frag_entries[mol_id] = frag_entry
-            print(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")
+            logger.info(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")
 
         # preprocess frag dags
         if self.frag_params["preprocess"]:
@@ -131,7 +132,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 frag_data = self._process_neutral_frag(self.frag_entries.pop(k))
                 total_frag_data_size += get_pyg_memory_usage(frag_data["frag_pyg"])
                 self.frag_data[k] = frag_data
-            print(f"> total_frag_data_size: {total_frag_data_size / 1e6:.2f} MB")
+            logger.info(f"> total_frag_data_size: {total_frag_data_size / 1e6:.2f} MB")
             # remove them from the entries
             self.frag_entries = {}
 
@@ -458,308 +459,3 @@ def find_largest_batch(dl) -> tuple[dict, int]:
         batch_mem_totals.append(batch_mem_total)
     argmax_idx = np.argmax(batch_mem_totals)
     return batch_mem_ds[argmax_idx], batch_mem_totals[argmax_idx]
-
-
-class SpecMolFragDynamicBatchSampler(BatchSampler):
-    """Dynamically adds samples to a mini-batch up to a maximum size  either based on number of nodes on frag DAG or number of edges on frag DAG.
-    This is used to avoid CUDA OOM errors, implmentaion is inspired by PyG DynamicBatchSampler, and this should be used to replace default BatchSampler
-    This should have the same random sampling beheivor as RandomSampler
-    """
-
-    def __init__(
-        self,
-        data_source: SpecMolFragDataset,
-        max_num: int,
-        limited_by: str = "frag_edge",
-        skip_too_big: bool = False,
-        num_samples=None,
-        return_batch_at=0,
-        sampler=None,
-    ) -> None:
-        """
-        Initialize dynamic batch sampler for fragmentation datasets.
-
-        Args:
-            data_source: Dataset to sample from.
-            max_num: Maximum number of nodes/edges per batch.
-            limited_by: Limit batches by 'frag_node' or 'frag_edge'.
-            skip_too_big: Whether to skip samples larger than max_num.
-            num_samples: Number of samples to draw (None = all samples).
-            return_batch_at: Return batch at this interval for gradient accumulation.
-            sampler: Optional sampler for custom sampling order.
-
-        Raises:
-            ValueError: If max_num is not positive or limited_by is invalid.
-        """
-        if not isinstance(max_num, int) or max_num <= 0:
-            raise ValueError("`dag_node` should be a positive integer value (got {max_num}).")
-        if limited_by not in ["frag_node", "frag_edge"]:
-            raise ValueError(
-                "`limited_by` choice should be either "
-                f"'frag_node' or 'frag_edge' (got '{limited_by}')."
-            )
-
-        if num_samples is None:
-            num_samples = len(data_source)
-
-        self.data_source = data_source
-        self._max_num = max_num
-        self._limited_by = limited_by
-        self._skip_too_big = skip_too_big
-        self._max_sampling_step = num_samples
-        self._return_batch_at = return_batch_at
-        self._batches = []
-        self._data_meta = []
-        self.sampler = sampler
-        self._pre_load_batches()
-        self._pre_compute_batches()
-
-    def _pre_load_batches(self) -> None:
-        """
-        Pre-load batch metadata (node and edge counts) from all samples.
-
-        Caches the number of nodes and edges for each sample to enable
-        efficient dynamic batch construction.
-        """
-
-        # get data meta once and cache them
-        assert len(self._data_meta) == 0, len(self._data_meta)
-        expected_total = 0
-        warning_msg = ""
-        for dataset_idx in tqdm(
-            range(len(self.data_source)), desc="SpecMolFragDynamicBatchSampler:pre_load_batches"
-        ):
-            data = self.data_source[dataset_idx]
-            self._data_meta.append((data["frag_pyg"].num_nodes, data["frag_pyg"].num_edges))
-            n = (
-                self._data_meta[dataset_idx][0]
-                if self._limited_by == "frag_node"
-                else self._data_meta[dataset_idx][1]
-            )
-            if not (n > self._max_num and self._skip_too_big):
-                expected_total += 1
-            else:
-                warning_msg += (
-                    "Size of data sample at index "
-                    + f"{dataset_idx} is larger than "
-                    + f"{self._max_num} {self._limited_by}s "
-                    + f"Got {n} {self._limited_by}s."
-                    + "This sample can not fit into batch. "
-                )
-                if self._skip_too_big:
-                    warning_msg += "Sampler will skip this to prevent CUDA OOM ERROR \n"
-                else:
-                    warning_msg += (
-                        "Attempting to fit this in to batch, this may cause CUDA OOM ERROR  \n"
-                    )
-                # warnings.warn(warning_msg)
-                # print(warning_msg)
-        if warning_msg != "":
-            print("[specmolfrag_dynamic_batch_sampler]", warning_msg)
-        print(
-            f"[SpecMolFragDynamicBatchSampler] Expecting {expected_total}/{len(self.data_source)} samples with skip_too_big:{self._skip_too_big}"
-        )
-
-    def _pre_compute_batches(self) -> None:
-        """
-        Pre-compute batch indices based on size constraints.
-
-        Groups samples into batches such that the total number of nodes/edges
-        per batch does not exceed max_num.
-        """
-
-        self._batches = []
-
-        if self.sampler is not None:
-            indices = th.tensor([idx for idx in self.sampler])
-        else:
-            indices = th.arange(len(self.data_source), dtype=th.long)
-
-        # limited index to _max_sampling_step
-        indices = indices[: self._max_sampling_step]
-
-        num_processed = 0
-        batch = []
-        batch_n = 0
-        batch_filled = False
-
-        # Fill batch
-        for idx in indices:
-            # Size of sample
-            n = (
-                self._data_meta[idx.item()][0]
-                if self._limited_by == "frag_node"
-                else self._data_meta[idx.item()][1]
-            )
-            if n > self._max_num and self._skip_too_big:
-                continue
-            # check batch_filled condition
-            if batch_n + n > self._max_num:
-                # no more budget left, mini-batch filled
-                batch_filled = True
-            # check we need return at this point for ga
-            if (
-                self._return_batch_at > 0
-                and num_processed > 0
-                and num_processed % self._return_batch_at == 0
-            ):
-                # Mini-batch filled
-                batch_filled = True
-            if batch_filled:
-                self._batches.append(batch)
-                batch_n = 0
-                batch = []
-                batch_filled = False
-            # Add sample to current batch
-            batch.append(idx.item())
-            num_processed += 1
-            batch_n += n
-
-        if len(batch) > 0:
-            self._batches.append(batch)
-        print(
-            f"[SpecMolFragDynamicBatchSampler] Batch indices computed, Expecting {len(self._batches)} mini-batch for next epoch"
-        )
-
-    def __iter__(self) -> Iterator[list[int]]:
-        """we use a pre computed batche list, this way we could have a correct batch size
-            PL uses last batch in progress to toggle val step in training
-
-        Yields:
-            Iterator[List[int]]: _description_
-        """
-        for batch in self._batches:
-            yield batch
-
-    def __len__(self) -> int:
-        """Note The __len__() method isn't strictly required by DataLoader, but is expected in any calculation involving the length of a DataLoader.
-            ref: https://pytorch.org/docs/stable/data.html#torch.utils.data.Sampler
-        Returns:
-            int: length of datasource
-        """
-        return len(self._batches)
-
-
-class GroupSampler(Sampler):
-    def __init__(self, data_source: SpecMolFragDataset, sample_k=None, generator=None) -> None:
-        """
-        Initialize group-based sampler for balanced sampling across spectrum groups.
-
-        Args:
-            data_source: Dataset to sample from.
-            sample_k: Number of samples to draw per group (default: 3).
-            generator: Optional random number generator for reproducibility.
-        """
-        self.data_source = data_source
-        self.num_samples = None
-        self._data_meta_d = {}
-        self.sample_k = 3 if sample_k is None else sample_k
-        self.generator = generator
-        self._pre_compute_meta()
-        self._pre_compute_batches()
-
-    def _pre_compute_meta(self) -> None:
-        """
-        Pre-compute metadata mapping group IDs to sample indices.
-
-        Builds a dictionary mapping each group_id to the list of dataset
-        indices belonging to that group.
-        """
-
-        for dataset_idx in range(len(self.data_source)):
-            data = self.data_source[dataset_idx]
-            group_id = data["group_id"].item()
-            if group_id not in self._data_meta_d:
-                self._data_meta_d[group_id] = []
-            self._data_meta_d[group_id].append(dataset_idx)
-
-        for group_id in self._data_meta_d:
-            self._data_meta_d[group_id] = th.tensor(self._data_meta_d[group_id])
-
-    def _pre_compute_batches(self) -> None:
-        """
-        Pre-compute sampled indices for the epoch.
-
-        Samples up to sample_k indices from each group and shuffles them
-        to create a balanced sampling distribution.
-        """
-
-        if self.generator is None:
-            seed = int(th.empty((), dtype=th.int64).random_().item())
-            generator = th.Generator()
-            generator.manual_seed(seed)
-        else:
-            generator = self.generator
-
-        sampled_indices = []
-        for group_id in self._data_meta_d:
-            group_indices = self._data_meta_d[group_id]
-            sampled_group_indices = group_indices[
-                th.randperm(min(len(group_indices), self.sample_k), generator=generator)
-            ]
-            sampled_indices.append(sampled_group_indices)
-        sampled_indices = th.cat(sampled_indices)
-        self.sampled_indices = th.randperm(len(sampled_indices), generator=generator)
-        self.num_samples = len(sampled_indices)
-
-    def __iter__(self) -> Iterator[int]:
-        """
-        Yields:
-            Iterator[List[int]]: _description_
-        """
-
-        for i in range(self.num_samples):
-            yield self.sampled_indices[i].item()
-
-    def __len__(self) -> int:
-        """Note The __len__() method isn't strictly required by DataLoader
-            ref: https://pytorch.org/docs/stable/data.html#torch.utils.data.Sampler
-        Returns:
-            int: length of datasource
-        """
-        assert self.num_samples is not None
-        return self.num_samples
-
-
-def get_group_sampler(
-    ds: SpecMolFragDataset, sampler_type: str, avg_per_group: int, generator
-) -> WeightedRandomSampler:
-    """
-    Create a weighted random sampler for balanced group/molecule sampling.
-
-    Args:
-        ds: Dataset to sample from.
-        sampler_type: Weighting strategy ('group', 'mol', or 'group_mol').
-        avg_per_group: Average number of samples to draw per group.
-        generator: Random number generator for reproducibility.
-
-    Returns:
-        WeightedRandomSampler configured with appropriate sample weights,
-        or None if sampler_type is invalid.
-    """
-    group_ids, _, spec_per_group, spec_per_mol, group_per_mol = ds.get_group_mol_stats()
-
-    if sampler_type == "group":
-        sample_weights = 1.0 / spec_per_group
-    elif sampler_type == "mol":
-        sample_weights = 1.0 / spec_per_mol
-    elif sampler_type == "group_mol":
-        sample_weights = 1.0 / (spec_per_group * group_per_mol)
-    else:
-        return None
-
-    # spec_per_group_2 = th.mean(th.unique(group_ids,return_counts=True)[1].float(),dim=0)
-    # num_samples = th.ceil(len(ds) / spec_per_group_2 * avg_per_group).long()
-    # num_samples = min(num_samples.item(), len(ds))
-
-    # Get unique groups and their counts
-    _, counts = th.unique(group_ids, return_counts=True)
-    # For each group, we only  want to sample up to the number of available samples
-    total_samples = sum(min(count.item(), avg_per_group) for count in counts)
-    # Make sure we don't exceed the total dataset size
-    num_samples = min(total_samples, len(ds))
-
-    sampler = WeightedRandomSampler(
-        sample_weights, num_samples=num_samples, replacement=False, generator=generator
-    )
-    return sampler

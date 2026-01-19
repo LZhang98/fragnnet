@@ -20,7 +20,7 @@ from fragnnet.dataset import (
     DualGroupDynamicBatchSampler,
     GroupSampler,
     SpecMolFragDynamicBatchSampler,
-    get_simple_group_sampler,
+    get_group_sampler,
 )
 from fragnnet.utils.misc_utils import deep_update
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
@@ -177,7 +177,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 generator=generator,
             )
         elif config_d["simple_group_sampler"]:
-            sampler = get_simple_group_sampler(
+            sampler = get_group_sampler(
                 ds,
                 config_d["simple_group_sampler_type"],
                 config_d["simple_group_sampler_avg_per_group"],

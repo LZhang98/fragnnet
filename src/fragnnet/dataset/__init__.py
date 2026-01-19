@@ -6,7 +6,7 @@ from .data_sampler import (
     FormulaPrecTypeGroupSampler,
     GroupSampler,
     SpecMolFragDynamicBatchSampler,
-    get_simple_group_sampler,
+    get_group_sampler,
 )
 from .mces_dataset import MCESDataset
 from .spec_mol_dataset import SpecMolDataset
@@ -26,7 +26,7 @@ __all__ = [
     "FormulaPrecTypeGroupSampler",
     "GroupSampler",
     "SpecMolFragDynamicBatchSampler",
-    "get_simple_group_sampler",
+    "get_group_sampler",
     "MCESDataset",
     "SpecMolDataset",
     "SpecMolFragDataset",
