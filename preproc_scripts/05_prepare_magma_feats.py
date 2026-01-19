@@ -1,29 +1,27 @@
-import sys
 import argparse
-import logging
-import json
-from pathlib import Path
-import numpy as np
 import copy
-import pandas as pd
-from tqdm import tqdm
+import json
+import logging
+import sys
 from collections import defaultdict
+from pathlib import Path
 from pprint import pformat
+
+import numpy as np
+import pandas as pd
 from rdkit import RDLogger
+from tqdm import tqdm
 
 # Custom import
 import fragnnet.iceberg.common as common
 import fragnnet.iceberg.fragmentation as fragmentation
 import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
+from fragnnet.utils.data_utils import par_apply, seq_apply
 from fragnnet.utils.misc_utils import booltype
-from fragnnet.utils.data_utils import seq_apply, par_apply
+from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 
-def greedy_prune(
-    fe: fragmentation.FragmentEngine, included_nodes: list, tree_nodes: list
-):
-
+def greedy_prune(fe: fragmentation.FragmentEngine, included_nodes: list, tree_nodes: list):
     """greedy_prune.
 
     Multiple paths can be used to access each of the nodes in the graph. This
@@ -70,7 +68,6 @@ def greedy_prune(
 
     # Loop over tree depth from leaves up
     for depth in range(highest_depth, 0, -1):
-
         cur_layer_inds = tree_depths == depth
 
         # Define all parents of current layer (do this in loop below)
@@ -92,7 +89,6 @@ def greedy_prune(
 
         num_to_cover = np.sum(to_cover)
         while num_to_cover > 0:
-
             # Get all cover options
             max_score = np.max(node_priorities[cover_options])
             best_cands_mask = node_priorities == max_score
@@ -216,7 +212,7 @@ def get_formula_dict(
     else:
         # exhaustive enumeration
         cross_prod, masses = common.get_all_subsets(form)
-    
+
     masses_with_adduct = masses + adduct_masses
     adduct_types = np.array([adduct_type] * len(masses_with_adduct))
     mass_diffs = np.abs(spec_masses[:, None] - masses_with_adduct[None, :])
@@ -325,7 +321,7 @@ def magma_augmentation(
         parallel (bool)
     """
 
-    spectra_name = str(spec_entry["group_id"]) # assumes merged
+    spectra_name = str(spec_entry["group_id"])  # assumes merged
     tsv_dir = magma_dir / "magma_tsv"
     tree_dir = magma_dir / "magma_tree"
     assert tsv_dir.exists(), f"Missing tsv dir: {tsv_dir}"
@@ -346,10 +342,12 @@ def magma_augmentation(
         "adduct": spectra_adduct,
         "parentmass": spectra_parentmass,
     }
-    spectras = [(None,np.array(spec_entry["peaks"]))]
+    spectras = [(None, np.array(spec_entry["peaks"]))]
 
     # Step 1 - Generate fragmentations inside fragmentation engine
-    fe = fragmentation.FragmentEngine(mol_str=spectra_smiles, **fragmentation.FRAGMENT_ENGINE_PARAMS)
+    fe = fragmentation.FragmentEngine(
+        mol_str=spectra_smiles, **fragmentation.FRAGMENT_ENGINE_PARAMS
+    )
 
     # Outside try except loop
     if not parallel:
@@ -366,16 +364,14 @@ def magma_augmentation(
     # Read in file and filter it down
     try:
         spectra = common.process_spec_file(meta, spectras)
-    except Exception as e:
+    except Exception:
         spectra = None
-    
+
     if spectra is None:
         print(f"Error with reading file for spec {spectra_name}")
         return False
 
-    spectra_f = common.max_inten_spec(
-        spectra, max_num_inten=max_peaks, inten_thresh=inten_thresh
-    )
+    spectra_f = common.max_inten_spec(spectra, max_num_inten=max_peaks, inten_thresh=inten_thresh)
     s_m, s_i = spectra_f[:, 0], spectra_f[:, 1]
 
     # Correct for s_m by subtracting it
@@ -395,9 +391,7 @@ def magma_augmentation(
         masses[new_order],
         scores[new_order],
     )
-    ppm_diffs = (
-        np.abs(masses[None, :] - adjusted_m[:, None]) / adjusted_m[:, None] * 1e6
-    )
+    ppm_diffs = np.abs(masses[None, :] - adjusted_m[:, None]) / adjusted_m[:, None] * 1e6
 
     # Need to catch _all_ equivalent fragments
     # How do I remove the symmetry problem at each step and avoid branching
@@ -444,17 +438,13 @@ def magma_augmentation(
             min_score = np.min(scores[min_inds])
 
             # Filter even further down to inds that have min score and min ppm
-            min_score_ppm = min_inds[
-                np.argwhere(scores[min_inds] == min_score).flatten()
-            ]
+            min_score_ppm = min_inds[np.argwhere(scores[min_inds] == min_score).flatten()]
 
             frag_inds_temp = [frag_inds[temp_ind] for temp_ind in min_score_ppm]
             frag_masses_temp = [masses[temp_ind] for temp_ind in min_score_ppm]
             frag_hashes_temp = [frag_hashes[temp_ind] for temp_ind in min_score_ppm]
             shift_inds_temp = [shift_inds[temp_ind] for temp_ind in min_score_ppm]
-            frag_entries_temp = [
-                fe.frag_to_entry[frag_hash] for frag_hash in frag_hashes_temp
-            ]
+            frag_entries_temp = [fe.frag_to_entry[frag_hash] for frag_hash in frag_hashes_temp]
             frag_forms_temp = [frag_entry["form"] for frag_entry in frag_entries_temp]
 
             str_join = lambda x: ",".join([str(xx) for xx in x])
@@ -487,9 +477,7 @@ def magma_augmentation(
     df.to_csv(tsv_filename, sep="\t", index=None)
 
     # Build trees
-    tree_nodes = [
-        j for i in tsv_export_list for j in i["frag_hashes"].split(",") if len(j) > 0
-    ]
+    tree_nodes = [j for i in tsv_export_list for j in i["frag_hashes"].split(",") if len(j) > 0]
     tree_nodes = list(set(tree_nodes))
     # print(f"Number of nodes (with assignment to at least one peak): {len(tree_nodes)}")
 
@@ -613,7 +601,7 @@ def magma_augmentation(
         max_formulae=max_formulae,
         use_all=True,
         smiles=spectra_smiles,
-        use_magma=False
+        use_magma=False,
     )
     with open(formula_file, "w") as f:
         json.dump(formula_dict, f, indent=4)
@@ -634,7 +622,7 @@ def run_magma_augmentation(
     mass_diff_thresh: float,
     mass_diff_type: str,
     inten_thresh: float,
-    max_formulae: int
+    max_formulae: int,
 ):
     """run_magma_augmentation.
 
@@ -673,17 +661,21 @@ def run_magma_augmentation(
         dsets=dsets,
         prec_types=["[M+H]+"],
         num_entries=num_entries,
-        spec_type="MS2"
+        spec_type="MS2",
     )
-    m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
+    m_spec_df = merge_spec_df(spec_df, renormalize=False, sum_ints=False)
     if len(group_ids) > 0:
         m_spec_df = m_spec_df[m_spec_df["group_id"].isin(group_ids)].reset_index(drop=True)
 
     # get smiles, peaks, and metadata
-    both_df = m_spec_df[["group_id","mol_id","peaks","prec_type","prec_mz"]].merge(mol_df[["mol_id","smiles","formula"]],on="mol_id",how="inner")
+    both_df = m_spec_df[["group_id", "mol_id", "peaks", "prec_type", "prec_mz"]].merge(
+        mol_df[["mol_id", "smiles", "formula"]], on="mol_id", how="inner"
+    )
     del spec_df, mol_df, m_spec_df
 
-    spec_entries = both_df[["group_id","smiles","peaks","prec_type","prec_mz","formula"]].to_dict("records")
+    spec_entries = both_df[
+        ["group_id", "smiles", "peaks", "prec_type", "prec_mz", "formula"]
+    ].to_dict("records")
     del both_df
 
     # Run this over all files
@@ -698,17 +690,14 @@ def run_magma_augmentation(
         max_formulae=max_formulae,
         parallel=parallel,
     )
-    spec_entry_iter = tqdm(
-        spec_entries,
-        desc=pformat(partial_aug_safe),
-        total=len(spec_entries)
-    )
+    spec_entry_iter = tqdm(spec_entries, desc=pformat(partial_aug_safe), total=len(spec_entries))
     if not parallel:
-        results = seq_apply(spec_entry_iter,partial_aug_safe)
+        results = seq_apply(spec_entry_iter, partial_aug_safe)
     else:
-        results = par_apply(spec_entry_iter,partial_aug_safe)
+        results = par_apply(spec_entry_iter, partial_aug_safe)
     # with open(magma_dir / "results.json","w") as f:
     #   json.dump(results,f,indent=2)
+
 
 def get_args():
     """get args"""
@@ -775,6 +764,3 @@ if __name__ == "__main__":
     args = get_args()
     kwargs = args.__dict__
     run_magma_augmentation(**kwargs)
-
-
-
