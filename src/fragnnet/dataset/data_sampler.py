@@ -634,13 +634,22 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             batch_n = 0
             budget_left = self._max_num
 
+            # Initial sample budget for this batch
+            if self._return_batch_at > 0:
+                samples_to_take = self._return_batch_at
+            else:
+                # Effectively unlimited if return_batch_at is 0
+                samples_to_take = len(available)
+
             # First try to take sample_k1 samples from group1
-            if active_group1_keys:
+            if active_group1_keys and samples_to_take > 0:
+                k1 = min(self.sample_k1, samples_to_take)
                 group1_active = {k: self._group1[k] for k in active_group1_keys}
                 taken1, used_mask, budget_left = self._sample_from_group_dict(
-                    group1_active, used_mask, budget_left, self.sample_k1
+                    group1_active, used_mask, budget_left, k1
                 )
                 batch.extend(taken1)
+                samples_to_take -= len(taken1)
                 # Update batch_n from budget_left
                 batch_n = self._max_num - budget_left
                 # Remove exhausted keys
@@ -649,12 +658,14 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                         active_group1_keys.discard(key)
 
             # Then try to take sample_k2 samples from group2
-            if active_group2_keys:
+            if active_group2_keys and samples_to_take > 0:
+                k2 = min(self.sample_k2, samples_to_take)
                 group2_active = {k: self._group2[k] for k in active_group2_keys}
                 taken2, used_mask, budget_left = self._sample_from_group_dict(
-                    group2_active, used_mask, budget_left, self.sample_k2
+                    group2_active, used_mask, budget_left, k2
                 )
                 batch.extend(taken2)
+                samples_to_take -= len(taken2)
                 batch_n = self._max_num - budget_left
                 # Remove exhausted keys
                 for key in list(active_group2_keys):
@@ -662,7 +673,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                         active_group2_keys.discard(key)
 
             # Fill remaining budget with any available samples
-            if budget_left > 0:
+            if budget_left > 0 and samples_to_take > 0:
                 cand_list = list(available - set(k for k, v in used_mask.items() if v))
                 if cand_list:
                     # Use PyTorch Generator for consistency
@@ -674,6 +685,8 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                     for idx in cand_list:
                         if used_mask.get(idx, False):
                             continue
+                        if samples_to_take <= 0:
+                            break
                         n = self._data_meta[idx][limited_by_idx]
                         if n > self._max_num and self._skip_too_big:
                             continue
@@ -682,6 +695,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                             continue
                         batch.append(idx)
                         batch_n += n
+                        samples_to_take -= 1
                         used_mask[idx] = True
                         budget_left -= n
 

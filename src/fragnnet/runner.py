@@ -201,12 +201,11 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     # Prefer formula-based hard negative dynamic sampler when enabled (train only)
 
     if config_d["dynamic_batch_sampler"]:
-        max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
-
         if split == "train":
-            return_batch_at = max_batch_size
+            return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
         else:
-            return_batch_at = 0
+            return_batch_at = config_d["eval_batch_size"]
+
         batch_sampler = SpecMolFragDynamicBatchSampler(
             ds,
             max_num=config_d["dynamic_batch_sampler_max"],
@@ -218,9 +217,10 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         dl_param_d["batch_sampler"] = batch_sampler
     elif config_d["dual_group_dynamic_batch_sampler"]:
         if split == "train":
-            return_batch_at = max_batch_size
+            return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
         else:
-            return_batch_at = 0
+            return_batch_at = config_d["eval_batch_size"]
+
         batch_sampler = DualGroupDynamicBatchSampler(
             ds,
             max_num=config_d["dual_group_dynamic_batch_sampler_max"],
