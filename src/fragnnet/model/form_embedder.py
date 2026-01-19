@@ -2,6 +2,8 @@
 land of feature embedders
 """
 
+import logging
+
 import numpy as np
 import torch as th
 import torch.nn as nn
@@ -11,6 +13,8 @@ import torch.nn as nn
 
 DEFAULT_MAX_COUNT_INT = 255
 DEFAULT_NUM_EXTRA_EMBEDDINGS = 1
+
+logger = logging.getLogger(__name__)
 
 
 class IntFeaturizer(nn.Module):
@@ -28,11 +32,11 @@ class IntFeaturizer(nn.Module):
 
     def __init__(
         self,
-        embedding_dim,
-        max_count_int=DEFAULT_MAX_COUNT_INT,
-        num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token=None,
-    ):
+        embedding_dim: int,
+        max_count_int: int = DEFAULT_MAX_COUNT_INT,
+        num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
+        missing_token: int | None = None,
+    ) -> None:
         super().__init__()
         self.max_count_int = max_count_int
         self.num_extra_embeddings = num_extra_embeddings
@@ -42,11 +46,11 @@ class IntFeaturizer(nn.Module):
         weights = th.zeros(self.num_extra_embeddings, embedding_dim)
         self._extra_embeddings = nn.Parameter(weights, requires_grad=True)
         nn.init.normal_(self._extra_embeddings, 0.0, 1.0)
-        Warning(
+        logger.warning(
             "IntFeaturizer: Negative values and values >= max_count_int will be treated as 'extra' tokens."
         )
 
-    def forward(self, tensor):
+    def forward(self, tensor: th.Tensor) -> th.Tensor:
         """
         Convert the integer `tensor` into its new representation.
         - Use `int_to_feat_matrix` if 0 <= x < max_count_int
@@ -94,7 +98,7 @@ class IntFeaturizer(nn.Module):
         return out_tensor.reshape(*orig_shape[:-1], -1)
 
     @property
-    def num_dim(self):
+    def num_dim(self) -> int:
         return self.int_to_feat_matrix.shape[1]
 
 
@@ -112,10 +116,10 @@ class FourierFeaturizer(IntFeaturizer):
 
     def __init__(
         self,
-        max_count_int=DEFAULT_MAX_COUNT_INT,
-        num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token=None,
-    ):
+        max_count_int: int = DEFAULT_MAX_COUNT_INT,
+        num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
+        missing_token: Optional[int] = None,
+    ) -> None:
         num_freqs = int(np.ceil(np.log2(max_count_int))) + 2
         # ^ need at least this many to ensure that the whole input range can be represented on the half circle.
 
@@ -159,10 +163,10 @@ class FourierFeaturizerSines(IntFeaturizer):
 
     def __init__(
         self,
-        max_count_int=DEFAULT_MAX_COUNT_INT,
-        num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token=None,
-    ):
+        max_count_int: int = DEFAULT_MAX_COUNT_INT,
+        num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
+        missing_token: Optional[int] = None,
+    ) -> None:
         num_freqs = int(np.ceil(np.log2(max_count_int))) + 2
         # ^ need at least this many to ensure that the whole input range can be represented on the half circle.
 
@@ -201,10 +205,10 @@ class FourierFeaturizerAbsoluteSines(IntFeaturizer):
 
     def __init__(
         self,
-        max_count_int=DEFAULT_MAX_COUNT_INT,
-        num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token=None,
-    ):
+        max_count_int: int = DEFAULT_MAX_COUNT_INT,
+        num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
+        missing_token: Optional[int] = None,
+    ) -> None:
         num_freqs = int(np.ceil(np.log2(max_count_int))) + 2
 
         freqs = (0.5 ** th.arange(num_freqs, dtype=th.float32))[2:]
@@ -235,11 +239,11 @@ class RBFFeaturizer(IntFeaturizer):
 
     def __init__(
         self,
-        num_funcs=32,
-        max_count_int=DEFAULT_MAX_COUNT_INT,
-        num_extra_embeddings=DEFAULT_NUM_EXTRA_EMBEDDINGS,
-        missing_token=None,
-    ):
+        num_funcs: int = 32,
+        max_count_int: int = DEFAULT_MAX_COUNT_INT,
+        num_extra_embeddings: int = DEFAULT_NUM_EXTRA_EMBEDDINGS,
+        missing_token: Optional[int] = None,
+    ) -> None:
         """
         :param num_funcs: number of radial basis functions to use: their width will automatically be chosen -- see class
                             docstring.

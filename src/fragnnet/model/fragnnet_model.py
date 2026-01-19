@@ -285,13 +285,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         assert "h_formulae_idx" in self.frag_node_feats
 
     def _ce_location_check(self):
-        assert not self.ce_insert_location == "frag", "ce_insert_location=frag not supported"
+        assert self.ce_insert_location != "frag", "ce_insert_location=frag not supported"
 
     def _prec_location_check(self):
-        assert not self.prec_insert_location == "frag", "prec_insert_location=frag not supported"
+        assert self.prec_insert_location != "frag", "prec_insert_location=frag not supported"
 
     def _inst_location_check(self):
-        assert not self.inst_insert_location == "frag", "inst_insert_location=frag not supported"
+        assert self.inst_insert_location != "frag", "inst_insert_location=frag not supported"
 
     def _compute_mol_feats_sizes(self):
         """method compute mol feature size
