@@ -623,8 +623,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         Yields:
             Iterator[List[int]]: _description_
         """
-        for batch in self._batches:
-            yield batch
+        yield from self._batches
 
     def __len__(self) -> int:
         """Note The __len__() method isn't strictly required by DataLoader, but is expected in any calculation involving the length of a DataLoader.
