@@ -54,8 +54,6 @@ spec_params:
     - "FT"
     - "QTOF"
     - 'IT'
-mol_params:
-  preprocess: True
 
 ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
