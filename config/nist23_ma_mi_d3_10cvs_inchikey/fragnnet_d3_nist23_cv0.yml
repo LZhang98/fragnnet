@@ -1,13 +1,35 @@
-wandb_name: nps_pretrain_nist23_cv0_ccx
+wandb_name: fragnnet_d3_nist23_cv0
 wandb_tags:
+- retrieval
 - nist23
-- nps
+- d3
+- wr00
+- inchikey
+- new_proc
+- fragnnet_d3
+- dynamic_sampler
+- new_metrics
+- nodemlp
+- oos_multiple_1
+- gaussian_renormalize
+- b256
+- vectorized_loss
+- lb32
+- preload
+- preprocess
+- new_no_edges
+- skip_extra_losses
+- binned_cosine_similarity
+- m+h
+- m-h
+- m+na
+- m+cl
+- cmf
 
 spec_fp: data/proc/nist23/spec_df.pkl
 mol_fp: data/proc/nist23/mol_df.pkl
-split_dp: data/ccx/split/nist23/cv0
-frag_dp: data/ccx/frag/nist23_d3/dags
-
+split_dp: data/split/nist23_ma_mi_d3_10cvs_inchikey/cv0
+frag_dp: data/frag/nist23_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 
@@ -45,16 +67,19 @@ mol_params:
   preprocess: True
 
 ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
-ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
+ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]
 ce_insert_merge: True # merge ce embedding
 ce_insert_size: 32
-prec_insert_location: mol
+prec_insert_location: mlp
 prec_insert_size: 32
-inst_insert_location: mol
+inst_insert_location: mlp
 inst_insert_size: 32
 
-train_batch_size: 2
-eval_batch_size: 2
+mol_params:
+  preprocess: True
+
+train_batch_size: 256
+eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004
@@ -70,7 +95,7 @@ oos_tolerance_multiple: 1
 oos_loss: True
 gaussian_renormalize: True
 mz_bin_res: 0.01
-mz_max: 2000.0
+mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
@@ -84,7 +109,7 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler:  True
 
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
@@ -95,8 +120,12 @@ simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: False
+compile: True
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
+
+# save every n epochs
+checkpoint_every_n_epochs: 10
+checkpoint_save_top_k: -1

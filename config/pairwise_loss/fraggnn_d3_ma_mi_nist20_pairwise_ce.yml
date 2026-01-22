@@ -1,13 +1,34 @@
-wandb_name: nps_pretrain_nist23_cv0_ccx_data_fw_config
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_nist20_pairwise_ce
 wandb_tags:
-- nist23
-- nps
+- retrieval
+- nist20
+- d4
+- wr00
+- inchikey
+- new_proc
+- fraggnn_d3
+- dynamic_sampler
+- new_metrics
+- nodemlp
+- oos_multiple_1
+- gaussian_renormalize
+- b256
+- vectorized_loss
+- lb32
+- preload
+- preprocess
+- new_no_edges
+- skip_extra_losses
+- binned_cosine_similarity
+- m+h
+- m-h
+- m+na
+- m+cl
 
-spec_fp: data/proc/nist23/spec_df.pkl
-mol_fp: data/proc/nist23/mol_df.pkl
-split_dp: data/ccx/split/nist23/cv0
-frag_dp: data/ccx/frag/nist23_d3/dags
-
+spec_fp: data/proc/nist20/spec_df.pkl
+mol_fp: data/proc/nist20/mol_df.pkl
+split_dp: data/split/nist20_ma_mi_inchikey
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
@@ -33,8 +54,6 @@ spec_params:
     - "FT"
     - "QTOF"
     - 'IT'
-mol_params:
-  preprocess: True
 
 ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
@@ -79,19 +98,20 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
-
-group_sampler: False
-group_sampler_type: group #[group, group_mol, mol]
-group_sampler_max_per_group: 5
-simple_group_sampler: True
-simple_group_sampler_avg_per_group: 5
-simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: True
+compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
+
+# pairwise losses
+pairwise_cosine_loss_weight: 0.0 
+pairwise_jss_loss_weight: 0.0
+pairwise_cross_entropy_loss_weight: 0.5
+
+# samplers
+dynamic_batch_sampler: True
+simple_group_sampler: True

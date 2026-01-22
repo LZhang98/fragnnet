@@ -17,6 +17,7 @@ from torch.utils.data.sampler import RandomSampler, SequentialSampler
 
 import fragnnet.utils.misc_utils as misc_utils
 from fragnnet.dataset import (
+    DualGroupDynamicBatchSampler,
     GroupSampler,
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
@@ -161,6 +162,12 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     # Set up a generator for reproducible sampling (will be overwritten each epoch)
     generator = th.Generator()
+
+    # Compute maximum effective batch size (accounts for gradient accumulation)
+    # used by dynamic batch samplers to decide return thresholds.
+    max_batch_size = config_d.get("train_batch_size", 1) * config_d.get(
+        "accumulate_grad_batches", 1
+    )
     if split == "train":
         # Choose sampler for training
         if config_d["group_sampler"]:
@@ -176,6 +183,14 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 config_d["simple_group_sampler_avg_per_group"],
                 generator,
             )
+        elif config_d["formula_prec_type_group_sampler"]:
+            sampler = FormulaPrecTypeGroupSampler(
+                ds,
+                sample_k=config_d["formula_prec_type_group_sampler_max_per_group"],
+                key_formula="formula",
+                key_adduct="prec_type",
+                generator=generator,
+            )
         else:
             sampler = RandomSampler(ds, False, generator=generator)
     else:
@@ -183,19 +198,35 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         sampler = SequentialSampler(ds)
 
     # Dynamic batch sampler (for variable batch sizes, e.g. in frag_gnn)
+    # Prefer formula-based hard negative dynamic sampler when enabled (train only)
+
     if config_d["dynamic_batch_sampler"]:
-        max_batch_size = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
         if split == "train":
-            return_batch_at = max_batch_size
+            return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
         else:
-            return_batch_at = 0
+            return_batch_at = config_d["eval_batch_size"]
+
         batch_sampler = SpecMolFragDynamicBatchSampler(
-            ds,  # type: ignore[arg-type]
+            ds,
             max_num=config_d["dynamic_batch_sampler_max"],
             limited_by=config_d["dynamic_batch_sampler_mode"],
             skip_too_big=True,
             return_batch_at=return_batch_at,
             sampler=sampler,
+        )
+        dl_param_d["batch_sampler"] = batch_sampler
+    elif config_d["dual_group_dynamic_batch_sampler"]:
+        if split == "train":
+            return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
+        else:
+            return_batch_at = config_d["eval_batch_size"]
+
+        batch_sampler = DualGroupDynamicBatchSampler(
+            ds,
+            max_num=config_d["dual_group_dynamic_batch_sampler_max"],
+            limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
+            skip_too_big=True,
+            return_batch_at=return_batch_at,
         )
         dl_param_d["batch_sampler"] = batch_sampler
     else:

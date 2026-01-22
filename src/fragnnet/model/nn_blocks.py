@@ -16,6 +16,8 @@ specialized layers for molecular and spectra.
 - SpecFFN: Feed-forward network for spectrum prediction.
 """
 
+import logging
+
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,6 +26,8 @@ from torch_geometric.nn import aggr
 
 from fragnnet.utils.misc_utils import safelog
 from fragnnet.utils.nn_utils import get_clones
+
+logger = logging.getLogger(__name__)
 
 
 class ZerosAggregation(nn.Module):
@@ -165,17 +169,29 @@ def get_norm(normalization, hidden_size):
     # norm_fn may or may not depend on the batch index
     if normalization == "batch":
         norm_mod = nn.BatchNorm1d(hidden_size)
-        norm_fn = lambda x, b, n: n(x)
+
+        def norm_fn(x, b, n):
+            return n(x)
+
     elif normalization == "layer":
         norm_mod = nn.LayerNorm(hidden_size)
-        norm_fn = lambda x, b, n: n(x)
+
+        def norm_fn(x, b, n):
+            return n(x)
+
     elif normalization == "graph":
         norm_mod = pyg.nn.GraphNorm(hidden_size)
-        norm_fn = lambda x, b, n: n(x, b)
+
+        def norm_fn(x, b, n):
+            return n(x, b)
+
     else:
         assert normalization == "none", normalization
         norm_mod = nn.Identity()
-        norm_fn = lambda x, b, n: n(x)
+
+        def norm_fn(x, b, n):
+            return n(x)
+
     return norm_mod, norm_fn
 
 
@@ -404,8 +420,8 @@ class NodeMLP(nn.Module):
 
         assert edge_feats_size >= 0, edge_feats_size
         if edge_feats_size > 0:
-            Warning(
-                "> NodeMLP does not use edge features, but got edge_feats_size > 0, this most likely indicates a misconfiguration and wasted VRAM."
+            logger.warning(
+                "NodeMLP does not use edge features, but got edge_feats_size > 0, this most likely indicates a misconfiguration and wasted VRAM."
             )
 
         self.layers = []
@@ -737,16 +753,16 @@ class SetTransformer(nn.Module):
 
     def __init__(
         self,
-        input_dim,
-        hidden_dim,
-        output_dim,
-        num_heads=4,
-        num_inds=32,
-        num_blocks=2,
-        dropout=0.1,
-        return_nodes=False,  # If True, return per-node outputs; if False, return per-set outputs
-    ):
-        super(SetTransformer, self).__init__()
+        input_dim: int,
+        hidden_dim: int,
+        output_dim: int,
+        num_heads: int = 4,
+        num_inds: int = 32,
+        num_blocks: int = 2,
+        dropout: float = 0.1,
+        return_nodes: bool = False,  # If True, return per-node outputs; if False, return per-set outputs
+    ) -> None:
+        super().__init__()
 
         self.return_nodes = return_nodes
         self.inducing_points = nn.Parameter(th.randn(num_inds, input_dim))

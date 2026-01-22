@@ -1,12 +1,14 @@
-import os
-import glob
+import argparse
 import bz2
+import glob
+import os
 import pickle
+
 import h5py
 import numpy as np
-import argparse
 import torch
 from torch_geometric.data import Data as PyGData
+
 
 def dag_to_feature_vector(dag_dict, hdf5_keys):
     """
@@ -28,7 +30,7 @@ def dag_to_feature_vector(dag_dict, hdf5_keys):
         if isinstance(v, (int, float, np.number)):
             features_d[k] = v
         elif isinstance(v, list):
-            print(k,v)
+            print(k, v)
             features_d[k] = np.ndarray(v)
         elif isinstance(v, np.ndarray):
             features_d[k] = v
@@ -43,21 +45,22 @@ def dag_to_feature_vector(dag_dict, hdf5_keys):
         elif isinstance(v, PyGData):
             print(v)
             # Use number of nodes if possible, else 0.0
-            #try:
+            # try:
             #   features.append(float(v.num_nodes))
-            #except Exception:
+            # except Exception:
             #   try:
             #       features.append(float(len(v)))
             #   except Exception:
             #       features.append(np.nan)
         else:
             print(f"Warning: Unhandled type for key '{k}': {type(v)}")
-            #try:
+            # try:
             #   features.append(float(len(v)))
-            #except Exception:
+            # except Exception:
             #   features.append(0.0)
     exit()
     return np.array(features, dtype=np.float32)
+
 
 def append_hdf5_rows(hdf5_fp, new_rows):
     """
@@ -72,6 +75,7 @@ def append_hdf5_rows(hdf5_fp, new_rows):
         dataset[current_size:new_size, :] = new_rows
         f.flush()
 
+
 def create_hdf5_file(hdf5_fp, num_features, batch_size):
     """
     Create a new HDF5 file with an extendable dataset 'dags'.
@@ -85,15 +89,30 @@ def create_hdf5_file(hdf5_fp, num_features, batch_size):
             dtype="f4",
             chunks=(batch_size, num_features),
             compression="gzip",
-            compression_opts=4
+            compression_opts=4,
         )
+
 
 if __name__ == "__main__":
     # Parse command-line arguments for input directory, output file, and batch size
-    parser = argparse.ArgumentParser(description="Convert DAG pickle.bz2 files to a single HDF5 file.")
-    parser.add_argument("--dags_dp", type=str, default="data/frag/nist20_d3_h4_isoFalse_nb3/dags", help="Directory containing .pickle.bz2 DAG files")
-    parser.add_argument("--hdf5_fp", type=str, default="data/frag/nist20_d3_h4_isoFalse_nb3.hdf5", help="Output HDF5 file path")
-    parser.add_argument("--batch_size", type=int, default=128, help="Batch size for HDF5 chunking and writing")
+    parser = argparse.ArgumentParser(
+        description="Convert DAG pickle.bz2 files to a single HDF5 file."
+    )
+    parser.add_argument(
+        "--dags_dp",
+        type=str,
+        default="data/frag/nist20_d3_h4_isoFalse_nb3/dags",
+        help="Directory containing .pickle.bz2 DAG files",
+    )
+    parser.add_argument(
+        "--hdf5_fp",
+        type=str,
+        default="data/frag/nist20_d3_h4_isoFalse_nb3.hdf5",
+        help="Output HDF5 file path",
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=128, help="Batch size for HDF5 chunking and writing"
+    )
     args = parser.parse_args()
 
     dags_dp = args.dags_dp
@@ -113,9 +132,8 @@ if __name__ == "__main__":
         "dag_data_x",
         "dag_data_y",
         "dag_data_edge_index",
-        "dag_data_edge_attr",   
-        "dag_data_featuer_size"
-        "edges_min_depth",
+        "dag_data_edge_attr",
+        "dag_data_featuer_sizeedges_min_depth",
         "nodes_min_depth",
         "dag_num_edges",
         "dag_num_nodes",
@@ -126,7 +144,7 @@ if __name__ == "__main__":
         "edge_feature_size",
         "is_directed",
         "dag_num_edges_by_depth",
-        "dag_num_nodes_by_depth"
+        "dag_num_nodes_by_depth",
     ]
     num_features = len(hdf5_keys)
 
@@ -140,7 +158,7 @@ if __name__ == "__main__":
     # Process files in batches and write to HDF5
     batch = []
     for i, fp in enumerate(dag_files):
-        with bz2.BZ2File(fp, 'rb') as filein:
+        with bz2.BZ2File(fp, "rb") as filein:
             dag_dict = pickle.load(filein)
         feat = dag_to_feature_vector(dag_dict, hdf5_keys)
         batch.append(feat)
