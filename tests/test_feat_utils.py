@@ -548,6 +548,64 @@ class TestBatchMolsFrags:
         sig = inspect.signature(batch_mols_frags)
         assert len(sig.parameters) > 0
 
+    def test_batch_mols_frags_sparse_peaks(self):
+        """Test batching with sparse peak probabilities."""
+        node_feat_idxs = th.tensor([[0, 1]], dtype=th.int64)
+        edge_feat_idxs = th.tensor([[0, 1]], dtype=th.int64)
+
+        mol_pyg_list = [
+            Data(x=th.zeros((2, 1)), edge_index=th.tensor([[0], [1]]), edge_attr=th.zeros((1, 1))),
+            Data(x=th.zeros((3, 1)), edge_index=th.tensor([[0], [2]]), edge_attr=th.zeros((1, 1))),
+        ]
+        frag_pyg_list = [
+            Data(
+                x=th.zeros((2, 1)),
+                edge_index=th.tensor([[0], [1]]),
+                edge_attr=th.zeros((1, 1)),
+                node_feat_idxs=node_feat_idxs,
+                edge_feat_idxs=edge_feat_idxs,
+            ),
+            Data(
+                x=th.zeros((3, 1)),
+                edge_index=th.tensor([[0], [2]]),
+                edge_attr=th.zeros((1, 1)),
+                node_feat_idxs=node_feat_idxs,
+                edge_feat_idxs=edge_feat_idxs,
+            ),
+        ]
+
+        mzs1 = th.tensor([[10.0, 11.0], [20.0, 21.0]])
+        probs1 = th.tensor([[1.0, 0.0], [0.0, 0.0]])
+        mzs2 = th.tensor([[30.0, 31.0], [40.0, 41.0]])
+        probs2 = th.tensor([[0.1, 0.0], [0.2, 0.3]])
+
+        out = batch_mols_frags(
+            mol_pyg_list=mol_pyg_list,
+            frag_pyg_list=frag_pyg_list,
+            formula_peak_mzs_list=[mzs1, mzs2],
+            formula_peak_probs_list=[probs1, probs2],
+        )
+
+        # Indices are per-molecule, per-formula: the first molecule's first formula (index 0)
+        # contributes one non-zero isotope peak, and the second molecule's second formula
+        # (index 1) contributes three non-zero peaks, yielding the expected [0, 0, 1, 1].
+        assert out["frag_formula_peak_idxs"].tolist() == [0, 0, 1, 1]
+        assert th.allclose(
+            out["frag_formula_peak_mzs"],
+            th.tensor([10.0, 30.0, 40.0, 41.0]),
+            atol=1e-6,
+            rtol=1e-6,
+        )
+        assert th.allclose(
+            out["frag_formula_peak_probs"],
+            th.tensor([1.0, 0.1, 0.2, 0.3]),
+            atol=1e-6,
+            rtol=1e-6,
+        )
+        assert out["frag_formula_sizes"].tolist() == [1, 2]
+        assert out["frag_formula_peak_sizes"].tolist() == [1, 3]
+        assert out["frag_formula_cumsizes"].tolist() == [0, 1, 3]
+
 
 class TestGetFragGraph:
     """Tests for get_frag_graph function.
@@ -564,6 +622,65 @@ class TestGetFragGraph:
 
         sig = inspect.signature(get_frag_graph)
         assert len(sig.parameters) > 0
+
+    def test_frag_graph_selects_feats_and_bigraph(self):
+        """Test feature selection and complement handling in bigraph mode."""
+        node_feat_idxs = th.tensor([[0, 1, 2, 3, 4, 5, 6, 7]], dtype=th.int64)
+        edge_feat_idxs = th.tensor([[0, 1, 2, 3, 4]], dtype=th.int64)
+        x = th.tensor([[10, 11, 12, 13, 14, 15, 16], [20, 21, 22, 23, 24, 25, 26]])
+        edge_index = th.tensor([[0, 1], [1, 0]], dtype=th.int64)
+        edge_attr = th.tensor([[1, 2, 3, 0], [4, 5, 6, 1]], dtype=th.int64)
+        dag = Data(
+            x=x,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            node_feat_idxs=node_feat_idxs,
+            edge_feat_idxs=edge_feat_idxs,
+        )
+
+        out = get_frag_graph(
+            dag_pyg=dag,
+            frag_node_feats=["depth", "h_formulae_idx"],
+            frag_edge_feats=["cc", "complement"],
+            edges=True,
+            bigraph=True,
+        )
+
+        expected_x = th.stack([x[:, 0], x[:, 3]], dim=1)
+        assert th.equal(out.x, expected_x)
+
+        expected_edge = th.stack([edge_attr[:, 0], edge_attr[:, 3]], dim=1)
+        assert out.edge_attr.shape == (edge_attr.shape[0] * 2, expected_edge.shape[1])
+        assert th.equal(out.edge_attr[: edge_attr.shape[0]], expected_edge)
+        reversed_expected = expected_edge.clone()
+        reversed_expected[:, 1] = 1 - reversed_expected[:, 1]
+        assert th.equal(out.edge_attr[edge_attr.shape[0] :], reversed_expected)
+
+    def test_frag_graph_no_edges(self):
+        """Test edge stripping when edges=False."""
+        node_feat_idxs = th.tensor([[0, 1, 2, 3, 4, 5, 6, 7]], dtype=th.int64)
+        edge_feat_idxs = th.tensor([[0, 1, 2, 3, 4]], dtype=th.int64)
+        x = th.tensor([[0, 1, 2, 3, 4, 5, 6]])
+        edge_index = th.tensor([[0], [0]], dtype=th.int64)
+        edge_attr = th.tensor([[1, 2, 3, 0]], dtype=th.int64)
+        dag = Data(
+            x=x,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            node_feat_idxs=node_feat_idxs,
+            edge_feat_idxs=edge_feat_idxs,
+        )
+
+        out = get_frag_graph(
+            dag_pyg=dag,
+            frag_node_feats=["depth"],
+            frag_edge_feats=[],
+            edges=False,
+            bigraph=False,
+        )
+
+        assert out.edge_index.shape[1] == 0
+        assert out.edge_attr.shape[0] == 0
 
 
 class TestRandomWalkPE:
