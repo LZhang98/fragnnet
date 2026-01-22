@@ -43,7 +43,8 @@ jobs/
 slurm_scripts/
 
 # Containers
-containers/
+containers/apptainer_images/
+containers/apptainer/
 !containers/*.def
 
 # IDEs
@@ -55,6 +56,7 @@ containers/
 /scripts/debug/*.pkl
 
 # Others
-example
 .github
+# Claude AI assistant configuration and cache
+
 .claude
