@@ -371,19 +371,19 @@ if __name__ == "__main__":
         description="Prepare mol_df and spec_df for FragGNN inference",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-    # Single molecule, single condition
-    python prepare_inference_input.py --smiles_list "CCO" --prec_types "[M+H]+" --ces 20.0 --nces 25.0 --inst_types "FT" --output_dir output/
-    
-    # Multiple molecules, multiple conditions
-    python prepare_inference_input.py --smiles_list "CCO" "CC(=O)O" "CCN" --prec_types "[M+H]+" "[M-H]-" --ces 10.0 20.0 30.0 --nces 15.0 25.0 35.0 --inst_types "FT" "QTOF" --output_dir output/
-    
-    # Merged spectra (one entry per molecule)
-    python prepare_inference_input.py --smiles_list "CCO" "CC(=O)O" --prec_types "[M+H]+" --ces 20.0 --nces 25.0 --inst_types "QTOF" "FT" --merged_spectra true --output_dir output/
-    
-    # From file
-    python prepare_inference_input.py --smiles_file smiles.txt --prec_types "[M+H]+" --ces 20.0 --nces 25.0 --inst_types "FT" --output_dir output/
-        """,
+        Examples:
+            # Single molecule, single condition
+            python prepare_inference_input.py --smiles_list "CCO" --prec_types "[M+H]+" --ces 20.0 --nces 25.0 --inst_types "FT" --output_dir output/
+
+            # Multiple molecules, multiple conditions
+            python prepare_inference_input.py --smiles_list "CCO" "CC(=O)O" "CCN" --prec_types "[M+H]+" "[M-H]-" --ces 10.0 20.0 30.0 --nces 15.0 25.0 35.0 --inst_types "FT" "QTOF" --output_dir output/
+
+            # Merged spectra (one entry per molecule)
+            python prepare_inference_input.py --smiles_list "CCO" "CC(=O)O" --prec_types "[M+H]+" --ces 20.0 --nces 25.0 --inst_types "QTOF" "FT" --merged_spectra true --output_dir output/
+
+            # From file
+            python prepare_inference_input.py --smiles_file smiles.txt --prec_types "[M+H]+" --ces 20.0 --nces 25.0 --inst_types "FT" --output_dir output/
+                """,
     )
 
     # Input options
