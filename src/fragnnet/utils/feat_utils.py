@@ -750,10 +750,7 @@ def get_frag_graph(
     for feat, _ in EDGE_FEAT_TO_IDX.items():
         if feat in frag_edge_feats:
             assert edges
-            if feat == "complement":
-                _edge_attr_cur = th.zeros(edge_attr.shape[0], 1, device=device, dtype=th.int64)
-            else:
-                _edge_attr_cur = get_edge_feats(edge_attr, edge_feat_idxs[0], feat)
+            _edge_attr_cur = get_edge_feats(edge_attr, edge_feat_idxs[0], feat)
             _edge_attr.append(_edge_attr_cur)
             _edge_feat_size += _edge_attr_cur.shape[1]
             # print(feat,feat_idx,_edge_feat_size)
@@ -762,7 +759,6 @@ def get_frag_graph(
         _edge_attr = [th.zeros(edge_attr.shape[0], 1, device=device, dtype=th.int64)]
     _edge_attr = th.cat(_edge_attr, dim=1)
     _edge_feat_idxs = th.tensor(_edge_feat_idxs, device=device, dtype=th.int64).reshape(1, -1)
-    # convert to undirected
     if bigraph:
         assert edges
         _edge_index_c = th.stack([_edge_index[1], _edge_index[0]], dim=0)
