@@ -22,15 +22,18 @@ class TestNormalizeInts:
 class TestSplitSmiles:
     """Tests for split_smiles tokenizer."""
 
-    def test_simple_tokens(self):
-        tokens = du.split_smiles("CCO")
-        assert tokens == ["C", "C", "O"]
-
-    def test_bracket_and_ring(self):
-        smiles = "C1=CC=CC=C1"  # benzene
+    @pytest.mark.parametrize(
+        "smiles,expected",
+        [
+            ("CCO", ["C", "C", "O"]),
+            ("C1=CC=CC=C1", ["C", "1", "=", "C", "C", "=", "C", "C", "=", "C", "1"]),
+            ("[NH4+]", ["[NH4+]"]),
+            ("C12CC1CC2", ["C", "1", "2", "C", "C", "1", "C", "C", "2"]),
+        ],
+    )
+    def test_split_smiles_tokens(self, smiles, expected):
         tokens = du.split_smiles(smiles)
-        assert "1" in tokens
-        assert tokens[0] == "C"
+        assert tokens == expected
 
 
 class TestListReplace:

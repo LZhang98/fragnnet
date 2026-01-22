@@ -617,6 +617,16 @@ class TestRandomWalkPE:
         # PE should be finite
         assert th.isfinite(pe).all()
 
+    def test_pe_two_node_back_and_forth(self):
+        """Test PE values for a 2-node undirected graph."""
+        # 0 <-> 1 so the 1-step return prob is 0, 2-step return prob is 1
+        edge_index = th.tensor([[0, 1], [1, 0]], dtype=th.long)
+        data = Data(edge_index=edge_index, num_nodes=2)
+        pe = random_walk_pe(data, k=2)
+
+        expected = th.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=pe.dtype)
+        assert th.allclose(pe, expected, atol=1e-6, rtol=1e-6)
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
