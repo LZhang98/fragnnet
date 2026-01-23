@@ -31,7 +31,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-[project.optional-dependencies]
 # development dependency groups
 dev = [
     "wandb",
