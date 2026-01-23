@@ -5,8 +5,8 @@ This script takes a mol_df and configuration of experimental conditions (precurs
 collision energies, instrument types) and creates a spec_df file with spectrum metadata.
 
 Usage:
-    python 03_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --ft_ces 25.0NCE --inst_types "FT" --output_dir output/
-    python 03_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --qtof_ces 20.0eV --inst_types "QTOF" --merged_spectra true --output_dir output/
+    python 02_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --ft_ces 25.0NCE --inst_types "FT" --output_dir output/
+    python 02_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --qtof_ces 20.0eV --inst_types "QTOF" --merged_spectra true --output_dir output/
 """
 
 import argparse
