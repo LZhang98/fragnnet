@@ -1,12 +1,19 @@
 """
-Prepare mol_df for FragGNN inference from SMILES input.
+Prepare mol_df for FragGNN inference from various SMILES input sources.
 
-This script takes a list of SMILES strings and creates a mol_df file
+This script takes SMILES strings from multiple input modes and creates a mol_df file
 that contains molecular properties and metadata.
 
+Input modes:
+1. Command-line list: --smiles_list "CCO" "CC"
+2. Text/SMILES file: --smiles_file smiles.txt
+3. CSV/TSV file: --smiles_file data.csv --smiles_colname smiles
+4. JSON with candidates: --json_file candidates.json (for MS2C datasets)
+
 Usage:
-    python 02_prepare_mol_df.py --smiles_list "CCO" "CC" --output_dir output/
-    python 02_prepare_mol_df.py --smiles_file smiles.txt --output_dir output/
+    python 01_prepare_mol_df.py --smiles_list "CCO" "CC" --output_dir output/
+    python 01_prepare_mol_df.py --smiles_file smiles.txt --output_dir output/
+    python 01_prepare_mol_df.py --json_file candidates.json --output_dir output/
 """
 
 import argparse
@@ -17,12 +24,16 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+from rdkit import RDLogger
 
 import fragnnet.utils.formula_utils as formula_utils
 import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.frag.compute_frags import MAX_NUM_NODES
 from fragnnet.utils import data_utils
 from fragnnet.utils.data_utils import par_apply_series
+
+# Suppress RDKit warnings
+RDLogger.DisableLog("rdApp.*")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -137,23 +148,67 @@ def validate_inputs(smiles_list, max_heavy_atoms):
         raise ValueError(f"max_heavy_atoms must be between 1 and {MAX_NUM_NODES}")
 
 
+def save_per_query_mol_dfs(candidates_dict: dict, mol_df: pd.DataFrame, output_dp: str) -> None:
+    """
+    Save separate mol_df for each query SMILES (for MS2C datasets).
+
+    Args:
+        candidates_dict: Dictionary mapping query SMILES to candidate SMILES lists
+        mol_df: Full mol_df DataFrame with all molecules
+        output_dp: Output directory path
+    """
+    per_query_dp = os.path.join(output_dp, "per_query_mol_dfs")
+    os.makedirs(per_query_dp, exist_ok=True)
+
+    for idx, (query_smiles, candidate_list) in enumerate(candidates_dict.items()):
+        # Get all SMILES for this query (query + candidates)
+        query_smiles_set = {query_smiles}
+        query_smiles_set.update(candidate_list)
+
+        # Filter mol_df to only include these SMILES
+        query_mol_df = mol_df[mol_df["smiles"].isin(query_smiles_set)].copy()
+
+        # Reset mol_id to be sequential for this subset
+        query_mol_df = query_mol_df.reset_index(drop=True)
+        query_mol_df.loc[:, "mol_id"] = np.arange(len(query_mol_df))
+
+        # Create filename based on index
+        filename = f"mol_df_query_{idx:05d}.pkl"
+        output_fp = os.path.join(per_query_dp, filename)
+        query_mol_df.to_pickle(output_fp)
+
+        if (idx + 1) % 100 == 0 or idx == 0 or idx == len(candidates_dict) - 1:
+            logger.info(
+                f"Saved {idx + 1}/{len(candidates_dict)}: {filename} "
+                f"({len(query_mol_df)} molecules)"
+            )
+
+    logger.info(f"Saved {len(candidates_dict)} per-query mol_df files to {per_query_dp}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Prepare mol_df for FragGNN inference",
+        description="Prepare mol_df for FragGNN inference from various input sources",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
         Examples:
             # Single molecule
-            python 02_prepare_mol_df.py --smiles_list "CCO" --output_dir output/
+            python 01_prepare_mol_df.py --smiles_list "CCO" --output_dir output/
 
             # Multiple molecules
-            python 02_prepare_mol_df.py --smiles_list "CCO" "CC(=O)O" "CCN" --output_dir output/
+            python 01_prepare_mol_df.py --smiles_list "CCO" "CC(=O)O" "CCN" --output_dir output/
 
-            # From file
-            python 02_prepare_mol_df.py --smiles_file smiles.txt --output_dir output/
+            # From text/SMILES file
+            python 01_prepare_mol_df.py --smiles_file smiles.txt --output_dir output/
 
             # From CSV with IDs
-            python 02_prepare_mol_df.py --smiles_file data.csv --smiles_colname smiles --id_colname mol_id --output_dir output/
+            python 01_prepare_mol_df.py --smiles_file data.csv --smiles_colname smiles --id_colname mol_id --output_dir output/
+
+            # From JSON (MS2C candidates)
+            python 01_prepare_mol_df.py --json_file candidates.json --output_dir output/
+
+            # From JSON with per-query mol_dfs
+            python 01_prepare_mol_df.py --json_file candidates.json --output_dir output/ --save_per_query
                 """,
     )
 
@@ -162,6 +217,11 @@ if __name__ == "__main__":
     group.add_argument("--smiles_list", nargs="+", help="List of SMILES strings")
     group.add_argument(
         "--smiles_file", type=str, help="File containing SMILES strings (one per line, or CSV/TSV)"
+    )
+    group.add_argument(
+        "--json_file",
+        type=str,
+        help="JSON file with candidate SMILES {query_smiles: [candidate_smiles_list]} (MS2C mode)",
     )
     parser.add_argument("--smiles_colname", type=str, help="Column name containing SMILES strings")
     parser.add_argument("--id_colname", type=str, help="Column name containing mol IDs")
@@ -177,12 +237,35 @@ if __name__ == "__main__":
         default=MAX_NUM_NODES,
         help="Maximum number of heavy atoms in a molecule",
     )
+    parser.add_argument(
+        "--save_per_query",
+        action="store_true",
+        help="(JSON mode only) Save separate mol_df for each query SMILES in per_query_mol_dfs/ subdirectory",
+    )
     args = parser.parse_args()
 
-    # Read SMILES
+    # Read SMILES based on input mode
     ids_list = None
+    candidates_dict = None
+    input_mode = None
+
     if args.smiles_list:
         smiles_list = args.smiles_list
+        input_mode = "smiles_list"
+    elif args.json_file:
+        logger.info(f"Loading JSON from {args.json_file}")
+        with open(args.json_file) as f:
+            candidates_dict = json.load(f)
+
+        # Collect all unique SMILES
+        all_smiles = set()
+        for query_smiles, candidate_list in candidates_dict.items():
+            all_smiles.add(query_smiles)
+            all_smiles.update(candidate_list)
+
+        smiles_list = sorted(list(all_smiles))
+        input_mode = "json_file"
+        logger.info(f"Total unique SMILES from JSON: {len(smiles_list)}")
     else:
         logger.info(f"Reading SMILES from {args.smiles_file}")
         if (
@@ -192,6 +275,7 @@ if __name__ == "__main__":
         ):
             with open(args.smiles_file) as f:
                 smiles_list = [line.strip() for line in f if line.strip()]
+            input_mode = "text_file"
         elif (
             args.smiles_file.endswith(".csv")
             or args.smiles_file.endswith(".tsv")
@@ -219,13 +303,18 @@ if __name__ == "__main__":
                 logger.warning(
                     f"ID column name '{args.id_colname}' not found in CSV columns: {smiles_df.columns.tolist()}"
                 )
+            input_mode = "csv_file"
 
     # Validate inputs
     validate_inputs(smiles_list, args.max_heavy_atoms)
 
     logger.info("Input summary:")
+    logger.info(f"  - Input mode: {input_mode}")
     logger.info(f"  - {len(smiles_list)} SMILES")
     logger.info(f"  - Max heavy atoms: {args.max_heavy_atoms}")
+    if input_mode == "json_file":
+        logger.info(f"  - JSON queries: {len(candidates_dict)}")
+        logger.info(f"  - Save per-query: {args.save_per_query}")
 
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
@@ -244,21 +333,31 @@ if __name__ == "__main__":
         "timestamp": datetime.now().isoformat(),
         "input_parameters": {
             "num_smiles": len(smiles_list),
+            "input_mode": input_mode,
             "smiles_file": args.smiles_file
             if hasattr(args, "smiles_file") and args.smiles_file
             else None,
+            "json_file": args.json_file if hasattr(args, "json_file") and args.json_file else None,
             "max_heavy_atoms": args.max_heavy_atoms,
         },
         "output_files": {
             "mol_df": mol_df_path,
         },
     }
+    if input_mode == "json_file":
+        config_metadata["input_parameters"]["num_queries"] = len(candidates_dict)
+        config_metadata["input_parameters"]["save_per_query"] = args.save_per_query
 
     config_path = os.path.join(args.output_dir, "mol_df_config.json")
     with open(config_path, "w") as f:
         json.dump(config_metadata, f, indent=2, ensure_ascii=False)
 
     logger.info(f"Configuration saved to {config_path}")
+
+    # Save per-query mol_dfs if in JSON mode and flag is set
+    if input_mode == "json_file" and args.save_per_query:
+        logger.info("\n=== Saving per-query mol_df files ===")
+        save_per_query_mol_dfs(candidates_dict, mol_df, args.output_dir)
 
     # Print summary
     logger.info("Summary:")
