@@ -736,7 +736,7 @@ class TestErrorHandling:
         node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
 
         max_depth = 5
-        time_limit = 0
+        time_limit = 0  # Immediate timeout
 
         result = cf.compute_ccs(
             num_nodes, num_edges, node_mask, edges, edge_mask,

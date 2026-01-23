@@ -31,6 +31,28 @@ MAX_EDGE_PER_NODE = 6  # Sulfur
 class TimeoutError(RuntimeError):
 	pass
 
+# Global flag to enable/disable debug-only checks and logging.
+# Disabled by default to avoid debug I/O and runtime overhead.
+# Can be enabled at import time via env var `FRAG_ENABLE_DEBUG_CHECKS=1`
+# or at runtime with `set_debug_checks(True)`.
+DEBUG_CHECKS = False
+if os.getenv('FRAG_ENABLE_DEBUG_CHECKS') == '1':
+	DEBUG_CHECKS = True
+
+def set_debug_checks(enabled):
+	"""Enable or disable debug-only checks/logging at runtime.
+
+	Pass a truthy value to enable debug checks, falsy to disable.
+	"""
+	global DEBUG_CHECKS
+	DEBUG_CHECKS = bool(enabled)
+
+def disable_debug_checks():
+	set_debug_checks(False)
+
+def enable_debug_checks():
+	set_debug_checks(True)
+
 cdef void np_fill(int [::1] array, int val) nogil:
 	cdef Py_ssize_t i, num_elems = array.shape[0]
 	for i in range(num_elems):
@@ -188,11 +210,12 @@ cdef connected_components(
 				if node_enqueued[neighbour] == 0 and node_mask[neighbour] == 1:
 					# guard queue overflow when enqueuing neighbours
 					if queue_size >= num_nodes:
-						try:
-							with open('frag_debug.log', 'a') as _f:
-								_f.write(f'CONNECTED_COMPONENTS_QUEUE_OVERFLOW num_nodes={num_nodes} num_ccs={num_ccs}\n')
-						except Exception:
-							pass
+						if DEBUG_CHECKS:
+							try:
+								with open('frag_debug.log', 'a') as _f:
+									_f.write(f'CONNECTED_COMPONENTS_QUEUE_OVERFLOW num_nodes={num_nodes} num_ccs={num_ccs}\n')
+							except Exception:
+								pass
 						raise ValueError('queue overflow in connected_components')
 					node_queue[end_queue] = neighbour
 					end_queue = (end_queue + 1) % num_nodes
@@ -214,11 +237,12 @@ cdef connected_components(
 				if node_mask[i] == 1 and node_visited[i] == 0:
 					# enqueue (seed new BFS). Guard queue overflow.
 					if queue_size >= num_nodes:
-						try:
-							with open('frag_debug.log', 'a') as _f:
-								_f.write(f'CONNECTED_COMPONENTS_QUEUE_OVERFLOW num_nodes={num_nodes} num_ccs={num_ccs}\n')
-						except Exception:
-							pass
+						if DEBUG_CHECKS:
+							try:
+								with open('frag_debug.log', 'a') as _f:
+									_f.write(f'CONNECTED_COMPONENTS_QUEUE_OVERFLOW num_nodes={num_nodes} num_ccs={num_ccs}\n')
+							except Exception:
+								pass
 						raise ValueError('queue overflow in connected_components')
 					node_queue[end_queue] = i
 					end_queue = (end_queue + 1) % num_nodes
@@ -253,20 +277,21 @@ cdef connected_components(
 	# allow up to num_nodes connected components (safe upper bound)
 	if num_ccs < 0 or num_ccs > num_nodes:
 		# persist a detailed debug record before raising so we can inspect later
-		try:
-			with open('frag_debug.log', 'a') as _f:
-				_f.write(f'CONNECTED_COMPONENTS_ERROR num_nodes={num_nodes} num_edges={num_edges} num_nonmask={num_nonmask} num_visited={num_visited} num_ccs={num_ccs}\n')
-				try:
-					_f.write('node_mask_sample=' + np.asarray(node_mask[:min(num_nodes,64)]).tobytes().hex() + '\n')
-				except Exception:
-					_f.write('node_mask_sample=FAILED\n')
-				try:
-					_f.write('edge_mask_sample=' + np.asarray(edge_mask[:min(num_edges,64)]).tobytes().hex() + '\n')
-				except Exception:
-					_f.write('edge_mask_sample=FAILED\n')
-		except Exception:
-			# best effort logging; ignore write errors
-			pass
+		if DEBUG_CHECKS:
+			try:
+				with open('frag_debug.log', 'a') as _f:
+					_f.write(f'CONNECTED_COMPONENTS_ERROR num_nodes={num_nodes} num_edges={num_edges} num_nonmask={num_nonmask} num_visited={num_visited} num_ccs={num_ccs}\n')
+					try:
+						_f.write('node_mask_sample=' + np.asarray(node_mask[:min(num_nodes,64)]).tobytes().hex() + '\n')
+					except Exception:
+						_f.write('node_mask_sample=FAILED\n')
+					try:
+						_f.write('edge_mask_sample=' + np.asarray(edge_mask[:min(num_edges,64)]).tobytes().hex() + '\n')
+					except Exception:
+						_f.write('edge_mask_sample=FAILED\n')
+			except Exception:
+				# best effort logging; ignore write errors
+				pass
 		raise ValueError(f'{num_ccs} num_ccs <0 or num_ccs > {num_nodes}')
 
 	# Return the ndarray objects to ensure the buffers remain owned by Python
@@ -351,7 +376,11 @@ def compute_ccs(
 			if interrupted:
 				raise KeyboardInterrupt("Execution interrupted by user (Ctrl+C)")
 
-			if cur_time - start_time > time_limit:
+			# Unified semantics for time_limit:
+			# - time_limit < 0 : no limit
+			# - time_limit == 0: immediate timeout
+			# - time_limit > 0 : timeout when elapsed >= time_limit
+			if time_limit == 0 or (time_limit > 0 and (cur_time - start_time) >= time_limit):
 				force_stop = True
 				#print(f"Timeout reached, {time_limit} seconds. Stopping at depth {current_depth}.")
 				break
@@ -402,16 +431,17 @@ def compute_ccs(
 				)
 
 				# persist context for post-mortem debugging
-				try:
-					with open('frag_debug.log', 'a') as _f:
-						_f.write(f'CALL_CONNECTED_COMPONENTS depth={current_depth} node_idx={node_idx} edge_i={i} new_num_ccs={new_num_ccs} num_nodes={num_nodes} num_edges={num_edges}\n')
-						try:
-							_f.write('parent_node_mask_sum=' + str(int(np.sum(current_node_mask))) + ' parent_edge_mask_sum=' + str(int(np.sum(current_edge_mask))) + '\n')
-						except Exception:
-							_f.write('mask_sums_failed\n')
-				except Exception:
-					# ignore logging errors
-					pass
+				if DEBUG_CHECKS:
+					try:
+						with open('frag_debug.log', 'a') as _f:
+							_f.write(f'CALL_CONNECTED_COMPONENTS depth={current_depth} node_idx={node_idx} edge_i={i} new_num_ccs={new_num_ccs} num_nodes={num_nodes} num_edges={num_edges}\n')
+							try:
+								_f.write('parent_node_mask_sum=' + str(int(np.sum(current_node_mask))) + ' parent_edge_mask_sum=' + str(int(np.sum(current_edge_mask))) + '\n')
+							except Exception:
+								_f.write('mask_sums_failed\n')
+					except Exception:
+						# ignore logging errors
+						pass
 
 				# Temporary guard: if connected_components returns an unexpectedly large
 				# number of components (likely a corruption or unexpected case), skip
@@ -419,16 +449,21 @@ def compute_ccs(
 				# allows gathering more logs for diagnosis.
 				MAX_ALLOWED_CCS = 8
 				if new_num_ccs < 0 or new_num_ccs > MAX_ALLOWED_CCS:
-					try:
-						with open('frag_debug.log', 'a') as _f:
-							_f.write(f'WARNING_SKIP large_new_num_ccs depth={current_depth} node_idx={node_idx} edge_i={i} new_num_ccs={new_num_ccs}\n')
-					except Exception:
-						pass
+					if DEBUG_CHECKS:
+						try:
+							with open('frag_debug.log', 'a') as _f:
+								_f.write(f'WARNING_SKIP large_new_num_ccs depth={current_depth} node_idx={node_idx} edge_i={i} new_num_ccs={new_num_ccs}\n')
+						except Exception:
+							pass
 					# restore edge mask and continue
 					current_edge_mask[i] = 1
 					continue
-				# Debugging: if FRAG_DEBUG env var set, print returned shapes and counts
-				if os.getenv('FRAG_DEBUG') == '1':
+				# Debugging: if FRAG_DEBUG env var set, print returned shapes and counts.
+				# Note: DEBUG_CHECKS is the global gate for debug-only code paths; FRAG_DEBUG
+				# is an additional, opt-in env flag to enable noisy stdout logging so that
+				# verbose prints only occur when both debug checks are enabled and explicit
+				# fragment debugging has been requested.
+				if DEBUG_CHECKS and os.getenv('FRAG_DEBUG') == '1':
 					try:
 						print(f"DEBUG connected_components: depth={current_depth} node_idx={node_idx} edge_i={i} new_num_ccs={new_num_ccs}")
 						print(f"DEBUG new_cc_nodes.shape={getattr(new_cc_nodes, 'shape', None)} new_cc_edges.shape={getattr(new_cc_edges, 'shape', None)}")
