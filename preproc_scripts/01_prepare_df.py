@@ -1,5 +1,6 @@
 import argparse
 import glob
+import logging
 import os
 import re
 import zipfile
@@ -10,6 +11,16 @@ from tqdm import tqdm
 
 from fragnnet.utils.data_utils import par_apply, parse_mass_gym_ce_str, rdkit_import, seq_apply
 from fragnnet.utils.misc_utils import flatten_lol
+
+logger = logging.getLogger(__name__)
+
+# Constants for NIST EI data
+NIST_EI_COLLISION_ENERGY = "70.0 eV"
+NIST_EI_PRECURSOR_TYPE = "[M]+"
+NIST_EI_SPEC_TYPE = "MS1"
+NIST_EI_INST_TYPE = "GC-MS"
+NIST_EI_ION_MODE = "P"
+NIST_EI_DATASET_NAME = "nist_ei"
 
 """Preprocess raw spectral sources into a unified tabular format.
 
@@ -85,7 +96,7 @@ META_KEYS = list(MS_KEY_DICT.keys())
 SPEC_KEYS = [">ms1peaks", ">ms1merged", ">ms2peaks", ">ms2merged", ">collision"]
 
 
-def extract_info_from_comments(comments, key):
+def extract_info_from_comments(comments: str, key: str) -> str | None:
     start_idx = comments.find(key)
     if start_idx == -1:
         return None
@@ -105,7 +116,7 @@ No type conversions or filtering: all of that is done downstream
 """
 
 
-def preproc_msp(msp_fp, keys, num_entries):
+def preproc_msp(msp_fp: str, keys: set, num_entries: int) -> pd.DataFrame:
     """ """
 
     with open(msp_fp) as f:
@@ -165,10 +176,6 @@ def preproc_msp(msp_fp, keys, num_entries):
             elif key in keys:
                 value = raw_l_split[1]
                 raw_data_item[key] = value
-    if num_entries > -1:
-        import pdb
-
-        pdb.set_trace()
     msp_df = pd.DataFrame(raw_data_list)
     # drop all-NaN rows
     msp_df = msp_df.dropna(axis=0, how="all")
@@ -176,7 +183,7 @@ def preproc_msp(msp_fp, keys, num_entries):
     return msp_df
 
 
-def preproc_nist_mol(mol_dp):
+def preproc_nist_mol(mol_dp: str) -> pd.DataFrame:
     """read in all .MOL files and return a df"""
 
     mol_fp_list = glob.glob(os.path.join(mol_dp, "*.MOL"))
@@ -200,7 +207,9 @@ def preproc_nist_mol(mol_dp):
     return mol_df
 
 
-def merge_and_check(msp_df, mol_df, rename_dict):
+def merge_and_check(
+    msp_df: pd.DataFrame, mol_df: pd.DataFrame | None, rename_dict: dict
+) -> pd.DataFrame:
     # get rid of the columns that you don't care about
     msp_bad_cols = set(msp_df.columns) - set(rename_dict.keys())
     msp_df = msp_df.drop(columns=msp_bad_cols)
@@ -208,7 +217,7 @@ def merge_and_check(msp_df, mol_df, rename_dict):
     msp_df = msp_df.rename(columns=rename_dict)
     if mol_df is None:
         assert not msp_df["smiles"].isna().all()
-        msp_df.loc[:, "spec_id"] = np.arange(msp_df.shape[0])
+        msp_df["spec_id"] = np.arange(msp_df.shape[0])
         spec_df = msp_df
     else:
         assert msp_df["smiles"].isna().all()
@@ -217,21 +226,19 @@ def merge_and_check(msp_df, mol_df, rename_dict):
         msp_df = msp_df.drop(columns=["smiles"])
         spec_df = pd.merge(msp_df, mol_df, how="inner", on="spec_id")
     if "dset_spec_id" not in spec_df.columns:
-        spec_df.loc[:, "dset_spec_id"] = spec_df["spec_id"]
-    print("> num spec: ", spec_df.isna().sum())
+        spec_df["dset_spec_id"] = spec_df["spec_id"]
+    logger.info(f"Columns with NaN counts: {spec_df.isna().sum().to_dict()}")
     spec_df = spec_df.reset_index(drop=True)
     return spec_df
 
 
-def preproc_ms_files(ms_dp, ms_meta_fp, keys, num_entries):
+def preproc_ms_files(ms_dp: str, ms_meta_fp: str, keys: set, num_entries: int) -> pd.DataFrame:
     # read in meta file
     ms_meta_df = pd.read_csv(ms_meta_fp, sep="\t")
     ms_meta_df = ms_meta_df.rename(
         columns={"ionization": "prec_type", "spec": "dset_spec_id_base"}
     ).drop(columns=["name"])
     assert not ms_meta_df.isna().any().any(), ms_meta_df.isna().any()
-    # get all .ms files
-    ms_fp_list = glob.glob(os.path.join(ms_dp, "*.ms"))
     if num_entries > -1:
         ms_fp_list = ms_fp_list[:num_entries]
 
@@ -308,15 +315,15 @@ def preproc_ms_files(ms_dp, ms_meta_fp, keys, num_entries):
         how="inner",
     )
     # add ion_mode
-    spec_df.loc[:, "ion_mode"] = "P"
+    spec_df["ion_mode"] = "P"
     # add spec_type
-    spec_df.loc[:, "spec_type"] = "MS2"
+    spec_df["spec_type"] = "MS2"
     # add spec_id (this will be relabeled later)
-    spec_df.loc[:, "spec_id"] = np.arange(len(spec_df))
+    spec_df["spec_id"] = np.arange(len(spec_df))
     # add extra columns for compatibility
     for value in MSP_KEY_DICT.values():
         if value not in spec_df.columns:
-            spec_df.loc[:, value] = np.nan
+            spec_df[value] = np.nan
 
     # drop unnecessary columns
     spec_df = spec_df.drop(columns=["dset_spec_id_base"])
@@ -342,7 +349,7 @@ PCDL_KEYS = {
 }
 
 
-def read_pcdl(zipped_spectra_dp: str):
+def read_pcdl(zipped_spectra_dp: str) -> pd.DataFrame:
     def parse_pcdl(text_list: list[str], id_prefix=None):
         data_dict = {}
         for row in text_list:
@@ -375,57 +382,59 @@ def read_pcdl(zipped_spectra_dp: str):
         return data_dict
 
     spectrum_list = []
-    print(zipped_spectra_dp)
+    logger.info(f"Reading PCDL files from {zipped_spectra_dp}")
     zipped_spectra_filenames = [f for f in os.listdir(zipped_spectra_dp) if f.endswith(".zip")]
     for zipped_spectra_filename in zipped_spectra_filenames:
         zipped_spectra_fp = f"{zipped_spectra_dp}/{zipped_spectra_filename}"
         spectra_libname = zipped_spectra_filename.removesuffix(".zip")
-        print(f"> parse zip file {zipped_spectra_fp}")
+        logger.info(f"Parsing zip file {zipped_spectra_fp}")
         archive = zipfile.ZipFile(zipped_spectra_fp, "r")
         for file in archive.namelist():
             with archive.open(file) as f:
                 text_list = f.readlines()
                 spectrum_list.append(parse_pcdl(text_list, spectra_libname))
 
-    print(f"> {len(spectrum_list)} spectra parsed")
+    logger.info(f"{len(spectrum_list)} spectra parsed")
     spec_df = pd.DataFrame(spectrum_list)
     # this is one off, we need fix this
     spec_df = spec_df.drop(spec_df[~spec_df["prec_type"].isin(["[M+H]+", "[M-H]-"])].index)
     # fill some extrat meta data
-    spec_df.loc[:, "frag_mode"] = "CID"
-    spec_df.loc[:, "notes"] = ""
+    spec_df["frag_mode"] = "CID"
+    spec_df["notes"] = ""
     selected_idx = spec_df.groupby(["inchikey", "prec_type", "col_energy"])["num_peaks"].idxmax()
     spec_df = spec_df.loc[selected_idx]
-    spec_df.loc[:, "spec_id"] = np.arange(spec_df.shape[0])
+    spec_df["spec_id"] = np.arange(spec_df.shape[0])
 
     # add ion_type
-    spec_df.loc[:, "ion_type"] = "ESI"
+    spec_df["ion_type"] = "ESI"
     # add extra columns for compatibility
     for value in MSP_KEY_DICT.values():
         if value not in spec_df.columns:
-            spec_df.loc[:, value] = np.nan
+            spec_df[value] = np.nan
 
-    print(f"> {len(spec_df['inchikey'].unique())} unique inchikey")
+    logger.info(f"{len(spec_df['inchikey'].unique())} unique inchikey")
     return spec_df
 
 
-def process_ms_gym(ms_gym_tsv_fp, subset):
+def process_ms_gym(ms_gym_tsv_fp: str, subset: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     spec_df = pd.read_csv(ms_gym_tsv_fp, sep="\t")
 
     # only use on in simulation_challenge
     spec_df = spec_df.sort_values(by="simulation_challenge", ascending=False)
-    print(f"> processs ms gym file {ms_gym_tsv_fp}")
-    print(f"> using ms gym subset {subset}")
-    print("> if you are doing simulation challenge make sure use only simulation_challenge subset")
+    logger.info(f"Processing ms gym file {ms_gym_tsv_fp}")
+    logger.info(f"Using ms gym subset {subset}")
+    logger.warning(
+        "If you are doing simulation challenge, make sure to use only simulation_challenge subset"
+    )
 
     if subset == "simulation_challenge":
         spec_df = spec_df[spec_df["simulation_challenge"]]
-        print(f"> {len(spec_df)} rows selected for subset {subset}")
+        logger.info(f"{len(spec_df)} rows selected for subset {subset}")
     elif subset == "extra":
         spec_df = spec_df[~spec_df["simulation_challenge"]]
-        print(f"> {len(spec_df)} rows selected for subset {subset}")
+        logger.info(f"{len(spec_df)} rows selected for subset {subset}")
     elif subset != "all":
-        print(f">warningm unknown subset [{subset}] to msygm. Every row will be included")
+        logger.warning(f"Unknown subset [{subset}] to msgym. Every row will be included")
 
     spec_df["peaks"] = spec_df.apply(
         lambda x: "\n".join(
@@ -456,15 +465,15 @@ def process_ms_gym(ms_gym_tsv_fp, subset):
     # spec_df = spec_df.astype({"prec_mz":float,"exact_mass":float})
 
     # add ion_mode
-    spec_df.loc[:, "ion_mode"] = "P"
+    spec_df["ion_mode"] = "P"
     # add spec_type
-    spec_df.loc[:, "spec_type"] = "MS2"
+    spec_df["spec_type"] = "MS2"
     # add ion_type
-    spec_df.loc[:, "ion_type"] = "ESI"
+    spec_df["ion_type"] = "ESI"
     # add extra columns for compatibility
     for value in MSP_KEY_DICT.values():
         if value not in spec_df.columns:
-            spec_df.loc[:, value] = np.nan
+            spec_df[value] = np.nan
     split_df = spec_df[["dset_spec_id", "fold"]]
 
     return spec_df, split_df
@@ -502,7 +511,7 @@ SPECTRAVERSE_MGF_KEY_DICT = {
 }
 
 
-def process_specverse(mgf_fp):
+def process_specverse(mgf_fp: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     spectra_list = []
     with open(mgf_fp) as mgf_in:
         data_dict = None
@@ -549,16 +558,16 @@ def process_specverse(mgf_fp):
     spec_df = pd.DataFrame(spectra_list)
     spec_verse_folds_keys = ["fold_inchi", "fold_form", "fold_mces", "fold_mcesform"]
     for col in spec_verse_folds_keys:
-        spec_df.loc[:, col] = spec_df.loc[:, col].astype(int)
+        spec_df[col] = spec_df[col].astype(int)
 
     # spec_df.loc[:,"fold"] = spec_df.loc[:,"fold"].astype(float).astype(int)
     # spec_df.loc[:, 'ramped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (spec_df['col_energy_extra_2'].isna())
     # spec_df.loc[:, 'stepped'] = (~spec_df['col_energy'].isna()) & (~spec_df['col_energy_extra_1'].isna()) & (~spec_df['col_energy_extra_2'].isna())
 
     # setup dset
-    spec_df.loc[:, "dset"] = "spectraverse"
-    spec_df.loc[:, "dset_spec_id"] = spec_df["title"].apply(lambda x: int(x[len("SPECTRAVERSE") :]))
-    spec_df.loc[:, "ion_mode"] = spec_df["prec_type"].apply(
+    spec_df["dset"] = "spectraverse"
+    spec_df["dset_spec_id"] = spec_df["title"].apply(lambda x: int(x[len("SPECTRAVERSE") :]))
+    spec_df["ion_mode"] = spec_df["prec_type"].apply(
         lambda x: "P" if "+" in str(x) else ("N" if "-" in str(x) else np.nan)
     )
     split_df = spec_df[["spec_id"] + spec_verse_folds_keys]
@@ -566,32 +575,35 @@ def process_specverse(mgf_fp):
     # add extra columns for compatibility
     for value in MSP_KEY_DICT.values():
         if value not in spec_df.columns:
-            spec_df.loc[:, value] = np.nan
+            spec_df[value] = np.nan
 
     return spec_df, split_df
 
 
-def process_nist_ei_csv(csv_fp):
+def process_nist_ei_csv(csv_fp: str) -> pd.DataFrame:
     spec_df = pd.read_csv(csv_fp)
-    print(f"> processing nist csv file {csv_fp}")
-    print(f"> {len(spec_df)} rows read from {csv_fp}")
-    print("> num spec: ", spec_df.isna().sum())
+    logger.info(f"Processing nist csv file {csv_fp}")
+    logger.info(f"{len(spec_df)} rows read from {csv_fp}")
+    logger.debug(f"NaN counts by column: {spec_df.isna().sum().to_dict()}")
     # rename some columns
     # spec_df = spec_df.rename(columns={"NISTNO":"dset_spec_id","Precursor":"prec_mz","IonMode":"ion_mode","InstrumentType":"inst_type","SpectrumType":"spec_type","Ionization":"prec_type","ExactMass":"exact_mass","MW":"mw","CASNO":"cas_num","NumPeaks":"num_peaks","SMILES":"smiles","InChIKey":"inchikey","Name":"name"})
     # add extra columns for compatibility
     # spec_df = spec_df.rename(columns={"ExactMass":"exact_mass","NumPeaks":"num_peaks","SMILES":"smiles","Inchikey":"inchikey","Name":"name", "Formula":"formula"})
-    spec_df.loc[:, "frag_mode"] = "EI"
-    spec_df.loc[:, "ion_type"] = "EI"
-    spec_df.loc[:, "col_energy"] = "70.0 ev"
-    spec_df.loc[:, "prec_type"] = "[M]+"
-    spec_df.loc[:, "spec_type"] = "MS1"
-    spec_df.loc[:, "inst_type"] = "GC-MS"
-    spec_df.loc[:, "ion_mode"] = "P"
-    spec_df.loc[:, "dset"] = "nist_ei"
-    spec_df.loc[:, "dset_spec_id"] = np.arange(spec_df.shape[0])
-    spec_df.loc[:, "prec_mz"] = spec_df[
-        "exact_mass"
-    ]  # .apply(lambda x: int(x) if not pd.isna(x) else x)
+    spec_df["frag_mode"] = "EI"
+    spec_df["ion_type"] = "EI"
+    spec_df["col_energy"] = NIST_EI_COLLISION_ENERGY
+    spec_df["prec_type"] = NIST_EI_PRECURSOR_TYPE
+    spec_df["spec_type"] = NIST_EI_SPEC_TYPE
+    spec_df["inst_type"] = NIST_EI_INST_TYPE
+    spec_df["ion_mode"] = NIST_EI_ION_MODE
+    spec_df["dset"] = NIST_EI_DATASET_NAME
+    spec_df["dset_spec_id"] = np.arange(spec_df.shape[0])
+    spec_df["prec_mz"] = spec_df["exact_mass"]  # .apply(lambda x: int(x) if not pd.isna(x) else x)
+    for value in MSP_KEY_DICT.values():
+        if value not in spec_df.columns:
+            spec_df[value] = np.nan
+    # add spec_id
+    spec_df["spec_id"] = np.arange(spec_df.shape[0])
 
     def parse_nist_ei_peaks(peaks_str):
         if pd.isna(peaks_str) or peaks_str is None:
@@ -604,13 +616,13 @@ def process_nist_ei_csv(csv_fp):
         return "\n".join(peak_pairs)
 
     spec_df["peaks"] = spec_df["peaks"].apply(parse_nist_ei_peaks)
-    print(spec_df["peaks"].head())
+    logger.debug(f"First few parsed peaks:\n{spec_df['peaks'].head()}")
     # spec_df.loc[:,"exact_mass"] = spec_df["ExactMass"]
     for value in MSP_KEY_DICT.values():
         if value not in spec_df.columns:
-            spec_df.loc[:, value] = np.nan
+            spec_df[value] = np.nan
     # add spec_id
-    spec_df.loc[:, "spec_id"] = np.arange(spec_df.shape[0])
+    spec_df["spec_id"] = np.arange(spec_df.shape[0])
     # print(spec_df["peaks"].head())
     return spec_df
 

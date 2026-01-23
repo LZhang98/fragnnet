@@ -14,11 +14,16 @@ from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
 
-def print_and_log(name, series, wandb_flag, stats_d):
+def print_and_log(name: str, series: pd.Series, wandb_flag: bool, stats_d: dict) -> None:
+    """Log series statistics to dictionary and optionally to W&B.
+
+    Args:
+        name: Statistic name prefix
+        series: Pandas Series to compute statistics for
+        wandb_flag: Whether to log to Weights & Biases
+        stats_d: Dictionary to update with statistics
+    """
     stats = series.describe()
-    # print(f"> {name}")
-    # print(stats)
-    # print()
     for stat in ["mean", "std", "min", "25%", "50%", "75%", "max"]:
         stats_d[f"{name}/{stat}"] = stats[stat]
 
@@ -31,36 +36,12 @@ def print_and_log(name, series, wandb_flag, stats_d):
         wandb.log(log_d)
 
 
-"""
-def append_hdf5_rows(hdf5_fp,new_rows, num_features):
-    
-    with h5py.File(hdf5_fp, "a") as f:
-        dataset = f["data"]
-        current_size = dataset.shape[0]
-        new_size = current_size + len(new_rows)  # Increase row count
-        dataset.resize((new_size, num_features))  # Extend dataset
-        dataset[current_size:new_size, :] = new_rows  # Write new batch
-
-        # Flush changes to disk to ensure data is not lost
-        f.flush()
-
-def create_hdf5_file(hdf5_fp:str,num_features:int,batch_size:int):
-    # Create an HDF5 file with an extendable dataset
-    with h5py.File(hdf5_fp, "w") as f:
-        dataset = f.create_dataset(
-            "dags",
-            shape=(0, num_features),  # Start with zero rows
-            maxshape=(None, num_features),  # Allow unlimited rows
-            dtype="f4",
-            chunks=(batch_size, num_features),  # Write in small batches
-            compression="gzip",  # Optional compression
-            compression_opts=4
-        )
-"""
-
-
 def main(args):
-    assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time, data_utils.JOBLIB_TIMEOUT)
+    if args.max_time >= data_utils.JOBLIB_TIMEOUT:
+        raise ValueError(
+            f"max_time ({args.max_time}s) must be less than JOBLIB_TIMEOUT "
+            f"({data_utils.JOBLIB_TIMEOUT}s)"
+        )
 
     # Setup logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -236,32 +217,22 @@ def main(args):
 
     print("> Fragments Computed")
     frag_stats_df = pd.DataFrame({"mol_id": mol_df["mol_id"]})
-    frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth", np.nan), frag_results))
-    frag_stats_df["formula_peak_mzs"] = list(
-        map(lambda x: x.pop("formula_peak_mzs", np.nan), frag_results)
-    )
-    frag_stats_df["formula_peak_probs"] = list(
-        map(lambda x: x.pop("formula_peak_probs", np.nan), frag_results)
-    )
-    frag_stats_df["idx_to_formula"] = list(
-        map(lambda x: x.pop("idx_to_formula", np.nan), frag_results)
-    )
-    frag_stats_df["dag_num_edges"] = list(
-        map(lambda x: x.pop("dag_num_edges", np.nan), frag_results)
-    )
-    frag_stats_df["dag_num_nodes"] = list(
-        map(lambda x: x.pop("dag_num_nodes", np.nan), frag_results)
-    )
-    frag_stats_df["dag_sparsity"] = list(map(lambda x: x.pop("dag_sparsity", np.nan), frag_results))
-    frag_stats_df["dag_num_nodes_nb"] = list(
-        map(lambda x: x.pop("dag_num_nodes_nb", np.nan), frag_results)
-    )
-    frag_stats_df["formula_redundancy"] = list(
-        map(lambda x: x.pop("formula_redundancy", np.nan), frag_results)
-    )
-    frag_stats_df["idx_by_h_delta"] = list(
-        map(lambda x: x.pop("idx_by_h_delta", np.nan), frag_results)
-    )
+
+    # Extract fields from frag_results
+    keys_to_extract = [
+        ("max_depth", "depth"),
+        ("formula_peak_mzs", "formula_peak_mzs"),
+        ("formula_peak_probs", "formula_peak_probs"),
+        ("idx_to_formula", "idx_to_formula"),
+        ("dag_num_edges", "dag_num_edges"),
+        ("dag_num_nodes", "dag_num_nodes"),
+        ("dag_sparsity", "dag_sparsity"),
+        ("dag_num_nodes_nb", "dag_num_nodes_nb"),
+        ("formula_redundancy", "formula_redundancy"),
+        ("idx_by_h_delta", "idx_by_h_delta"),
+    ]
+    for result_key, col_name in keys_to_extract:
+        frag_stats_df[col_name] = [result.pop(result_key, np.nan) for result in frag_results]
 
     del frag_results
 
@@ -296,7 +267,6 @@ def main(args):
         wandb.log(depth_d)
 
     ### molecule properties
-    frag_stats_d = {}
     print_and_log("dag_num_edges", frag_stats_df["dag_num_edges"], wandb_flag, frag_stats_d)
     print_and_log("dag_num_nodes", frag_stats_df["dag_num_nodes"], wandb_flag, frag_stats_d)
     print_and_log("dag_sparsity", frag_stats_df["dag_sparsity"], wandb_flag, frag_stats_d)
@@ -306,12 +276,14 @@ def main(args):
     )
 
     # count number of formula per molecule
-    frag_stats_df.loc[:, "num_formulae"] = frag_stats_df["idx_to_formula"].apply(
-        lambda x: len(x) - 1
-    )
+    frag_stats_df["num_formulae"] = frag_stats_df["idx_to_formula"].apply(lambda x: len(x) - 1)
     print_and_log("num_formulae", frag_stats_df["num_formulae"], wandb_flag, frag_stats_d)
 
-    assert (frag_stats_df["num_formulae"] > 0).all()
+    if not (frag_stats_df["num_formulae"] > 0).all():
+        raise ValueError(
+            f"All molecules must have at least 1 formula. "
+            f"Found {(frag_stats_df['num_formulae'] <= 0).sum()} molecules with 0 or fewer formulae."
+        )
 
     # drop idx_to_formula
     frag_stats_df = frag_stats_df.drop(columns=["idx_to_formula"])
@@ -554,9 +526,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Check if --flag is True and --conditional-arg is missing
-    if args.wandb_mode != "disabled" and args.wandb_run_name:
-        parser.error("--wandb_run_name is required when --wandb_mode is not disabled")
+    # Check if wandb_mode is enabled but run_name is missing
+    if args.wandb_mode != "disabled" and not args.wandb_run_name:
+        parser.error("--wandb_run_name is required when --wandb_mode is not 'disabled'")
 
     if not args.disable_tqdm:
         tqdm.pandas()

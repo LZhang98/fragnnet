@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 
 import numpy as np
@@ -14,6 +15,9 @@ from fragnnet.utils.data_utils import (
 )
 from fragnnet.utils.misc_utils import booltype
 
+# Module-level logger
+logger = logging.getLogger(__name__)
+
 """Prepare processed spectral, molecule, and annotation tables.
 
 Outputs written to `proc_dp`:
@@ -24,7 +28,7 @@ Outputs written to `proc_dp`:
     - inst_type: standardized instrument type
     - frag_mode: standardized fragmentation mode
     - spec_type: spectrum type (e.g., MS2)
-    - ion_mode: P/N 
+    - ion_mode: P/N
     - dset: dataset name (eg. nist20hr)
     - dset_spec_id: source-specific spectrum id
     - col_gas: collision gas (may be NaN)
@@ -77,7 +81,7 @@ capture entries dropped or with inconsistencies.
 """
 
 
-def load_df(df_dp, dsets, num_entries):
+def load_df(df_dp: str, dsets: list[str], num_entries: int) -> pd.DataFrame:
     dfs = []
     for dset in dsets:
         dset_df = pd.read_csv(os.path.join(df_dp, f"{dset}_df.csv"), dtype=str)
@@ -93,7 +97,9 @@ def load_df(df_dp, dsets, num_entries):
     return all_df
 
 
-def preprocess_spec(spec_df):
+def preprocess_spec(
+    spec_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, pd.DataFrame]]:
     # drop entries with the same dset_spec_id (this happens sometimes in MoNA)
     spec_df = spec_df.drop_duplicates(subset=["dset", "dset_spec_id"], keep="first")
     # convert smiles to mol and back (for standardization/stereochemistry)
@@ -101,14 +107,16 @@ def preprocess_spec(spec_df):
     spec_df.loc[:, "smiles"] = par_apply_series(spec_df["mol"], data_utils.mol_to_smiles)
     no_mol_df = spec_df[spec_df["mol"].isna() | spec_df["smiles"].isna()][["dset_spec_id"]]
     spec_df = spec_df.dropna(subset=["mol", "smiles"])
-    assert not (spec_df["smiles"] == "").any()
+    if (spec_df["smiles"] == "").any():
+        raise ValueError("Empty SMILES encountered after molecule standardization")
     # enumerate smiles to create molecule ids
     smiles_set = set(spec_df["smiles"])
-    assert "" not in smiles_set
-    print("> num_smiles", len(smiles_set))
-    print("> sorting by smiles")
+    if "" in smiles_set:
+        raise ValueError("Empty SMILES present in smiles_set")
+    logger.info(f"> num_smiles {len(smiles_set)}")
+    logger.info("> sorting by smiles")
     smiles_to_mid = {smiles: i for i, smiles in enumerate(sorted(smiles_set))}
-    print("> updating mol_id")
+    logger.info("> updating mol_id")
     spec_df.loc[:, "mol_id"] = spec_df["smiles"].map(smiles_to_mid)  # .replace(smiles_to_mid)
 
     # copy for ann_df
@@ -205,28 +213,12 @@ def preprocess_spec(spec_df):
     # Note: `ce_type` and `dset` are intentionally dropped so groups
     # combine identical molecules/adducts across datasets and CE patterns.
 
-    group_df = spec_df.drop(
-        columns=[
-            "spec_id",
-            "dset_spec_id",
-            "peaks",
-            "ace",
-            "ace_extra_1",
-            "ace_extra_2",
-            "nce",
-            "nce_extra_1",
-            "nce_extra_2",
-            "res",
-            "prec_mz",
-            "ri",
-            "col_gas",
-            "formula",
-            "inchikey",
-            "exact_mass",
-        ]
-    ).drop_duplicates()
+    group_key_cols = ["mol_id", "prec_type", "inst_type"]
+    group_df = (
+        spec_df[group_key_cols].drop_duplicates().sort_values(group_key_cols).reset_index(drop=True)
+    )
     group_df.loc[:, "group_id"] = np.arange(group_df.shape[0])
-    spec_df = spec_df.merge(group_df, how="inner")
+    spec_df = spec_df.merge(group_df, how="inner", on=group_key_cols)
 
     # get mol df
     mol_df = pd.DataFrame(
@@ -248,15 +240,18 @@ def preprocess_spec(spec_df):
     mol_df.loc[:, "charge"] = par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
     mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
     mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
-    assert not (mol_df["smiles"] == "").any()
-    assert not (mol_df["formula"] == "").any()
-    assert not (mol_df["exact_mw"] == 0).any()
+    if (mol_df["smiles"] == "").any():
+        raise ValueError("Empty SMILES found in mol_df")
+    if (mol_df["formula"] == "").any():
+        raise ValueError("Empty formula found in mol_df")
+    if (mol_df["exact_mw"] == 0).any():
+        raise ValueError("Zero exact_mw found in mol_df")
 
     # remove invalid mols and corresponding spectra
     all_mol_id = set(mol_df["mol_id"])
     mol_df = mol_df.dropna(subset=["mol"], axis=0)
     bad_mol_id = all_mol_id - set(mol_df["mol_id"])
-    print("> bad_mol_id", len(bad_mol_id))
+    logger.info(f"> bad_mol_id {len(bad_mol_id)}")
     spec_df = spec_df[~spec_df["mol_id"].isin(bad_mol_id)]
 
     # check how many formulae/inchikeys are different
@@ -264,8 +259,8 @@ def preprocess_spec(spec_df):
     formula_df = formula_df[formula_df["formula"] != ""]
     formula_df = formula_df.merge(mol_df[["mol_id", "formula"]], on="mol_id", how="inner")
     diff_formula_df = formula_df[formula_df["formula_x"] != formula_df["formula_y"]]
-    print("> formula inconsistencies")
-    print(
+    logger.info("> formula inconsistencies")
+    logger.info(
         f"> diff mol: {diff_formula_df['mol_id'].nunique()}, diff spec: {diff_formula_df['spec_id'].nunique()}"
     )
     inchikey_df = spec_df[["dset_spec_id", "spec_id", "mol_id", "inchikey"]].copy().dropna()
@@ -273,8 +268,8 @@ def preprocess_spec(spec_df):
     inchikey_df = inchikey_df.drop(columns=["inchikey"])
     inchikey_df = inchikey_df.merge(mol_df[["mol_id", "inchikey_s"]], on="mol_id", how="inner")
     diff_inchikey_df = inchikey_df[inchikey_df["inchikey_s_x"] != inchikey_df["inchikey_s_y"]]
-    print("> inchikey_s inconsistencies")
-    print(
+    logger.info("> inchikey_s inconsistencies")
+    logger.info(
         f"> diff mol: {diff_inchikey_df['mol_id'].nunique()}, diff spec: {diff_inchikey_df['spec_id'].nunique()}"
     )
 
@@ -284,12 +279,12 @@ def preprocess_spec(spec_df):
         .rename(columns={"exact_mass": "exact_mw"})
     )
     # keep only non-trivial exact_mw annotations from the spec_df
-    mass_df = mass_df[~mass_df["exact_mw"].isna() & mass_df["exact_mw"] > 0.0]
+    mass_df = mass_df[(~mass_df["exact_mw"].isna()) & (mass_df["exact_mw"] > 0.0)]
     # compare with reported exact_mw from the mol_df
     mass_df = mass_df.merge(mol_df[["mol_id", "exact_mw"]], on="mol_id", how="inner")
     diff_mass_df = mass_df[(mass_df["exact_mw_x"] - mass_df["exact_mw_y"]).abs() > 0.1]
-    print("> mass inconsistencies")
-    print(
+    logger.info("> mass inconsistencies")
+    logger.info(
         f"> diff mol: {diff_mass_df['mol_id'].nunique()}, diff spec: {diff_mass_df['spec_id'].nunique()}"
     )
     spec_df = spec_df.drop(columns=["formula", "inchikey", "exact_mass"])
@@ -332,6 +327,10 @@ def preprocess_spec(spec_df):
 
 
 if __name__ == "__main__":
+    # Configure logging once when running as a script
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     RDLogger.DisableLog("rdApp.*")
 
     parser = argparse.ArgumentParser()
@@ -361,28 +360,32 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    print(f"> df_dp: {args.df_dp}")
-    print(f"> proc_dp: {args.proc_dp}")
-    print(f"> num_entries: {args.num_entries}")
-    print(f"> force update spec and mol df: {args.ow_spec_mol}")
-    print("> dsets", args.dsets)
+    logger.info(f"> df_dp: {args.df_dp}")
+    logger.info(f"> proc_dp: {args.proc_dp}")
+    logger.info(f"> num_entries: {args.num_entries}")
+    logger.info(f"> force update spec and mol df: {args.ow_spec_mol}")
+    logger.info(f"> dsets {args.dsets}")
 
     spec_df_fp = os.path.join(args.proc_dp, "spec_df.pkl")
     mol_df_fp = os.path.join(args.proc_dp, "mol_df.pkl")
     ann_df_fp = os.path.join(args.proc_dp, "ann_df.pkl")
 
     if not args.ow_spec_mol and os.path.isfile(spec_df_fp) and os.path.isfile(mol_df_fp):
-        print("> loading previous spec_df, mol_df, ann_df")
-        assert os.path.isdir(args.proc_dp), args.proc_dp
-        assert os.path.isfile(spec_df_fp), spec_df_fp
-        assert os.path.isfile(mol_df_fp), mol_df_fp
+        logger.info("> loading previous spec_df, mol_df, ann_df")
+        if not os.path.isdir(args.proc_dp):
+            raise FileNotFoundError(f"Processed directory not found: {args.proc_dp}")
+        if not os.path.isfile(spec_df_fp):
+            raise FileNotFoundError(f"spec_df file not found: {spec_df_fp}")
+        if not os.path.isfile(mol_df_fp):
+            raise FileNotFoundError(f"mol_df file not found: {mol_df_fp}")
         spec_df = pd.read_pickle(spec_df_fp)
         mol_df = pd.read_pickle(mol_df_fp)
         ann_df = pd.read_pickle(ann_df_fp)
 
     else:
-        print("> creating new spec_df, mol_df, ann_df")
-        assert os.path.isdir(args.df_dp), args.df_dp
+        logger.info("> creating new spec_df, mol_df, ann_df")
+        if not os.path.isdir(args.df_dp):
+            raise FileNotFoundError(f"Input dataframe directory not found: {args.df_dp}")
         os.makedirs(args.proc_dp, exist_ok=True)
         all_df = load_df(args.df_dp, args.dsets, args.num_entries)
 
@@ -393,24 +396,24 @@ if __name__ == "__main__":
             for col in str_cols:
                 if col in spec_df:
                     spec_df.loc[spec_df[col].isna(), col] = "NA"
-            print("> converted missing str labels to NA")
+            logger.info("> converted missing str labels to NA")
 
         # save everything to file
         spec_df.to_pickle(spec_df_fp)
         mol_df.to_pickle(mol_df_fp)
         ann_df.to_pickle(ann_df_fp)
-        print(f"> saved spec_df to {spec_df_fp}")
-        print(f"> saved mol_df to {mol_df_fp}")
+        logger.info(f"> saved spec_df to {spec_df_fp}")
+        logger.info(f"> saved mol_df to {mol_df_fp}")
 
         for k, v in debug_dfs.items():
             v.to_pickle(os.path.join(args.proc_dp, f"{k}.pkl"))
 
-    print(f"> spec_df {spec_df.shape}")
-    print("> spec_df num nan:")
-    print(spec_df.isna().sum())
-    print(f"> mol_df {mol_df.shape}")
-    print("> mol_df num nan:")
-    print(mol_df.isna().sum())
-    print(f"> ann_df {ann_df.shape}")
-    print("> ann_df num nan:")
-    print(ann_df.isna().sum())
+    logger.info(f"> spec_df {spec_df.shape}")
+    logger.info("> spec_df num nan:")
+    logger.info(spec_df.isna().sum())
+    logger.info(f"> mol_df {mol_df.shape}")
+    logger.info("> mol_df num nan:")
+    logger.info(mol_df.isna().sum())
+    logger.info(f"> ann_df {ann_df.shape}")
+    logger.info("> ann_df num nan:")
+    logger.info(ann_df.isna().sum())
