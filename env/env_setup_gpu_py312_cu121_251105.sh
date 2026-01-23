@@ -26,8 +26,7 @@ pip install  \
  pyteomics \
  notebook \
  scikit-learn \
- h5py \
- numpy==1.26.4
+ h5py
 
  # dgl==2.4.0 -f https://data.dgl.ai/wheels/torch-2.4/cu121/repo.html \
  # dgl==1.0.4 -f https://data.dgl.ai/wheels/repo.html \
