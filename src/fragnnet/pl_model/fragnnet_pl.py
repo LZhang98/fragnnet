@@ -105,6 +105,7 @@ class FraGNNetPL(SpectrumPL):
             if self.hparams.finetune["freeze_all_shared"]:
                 # If freeze_all_shared is True, we freeze whatever we loaded
                 if self.pretrained_param_names:
+                    print("shared param:", self.pretrained_param_names)
                     self._freeze_components(
                         self.pretrained_param_names, exact_match=True)
             elif self.hparams.finetune["freeze_components"]:
