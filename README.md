@@ -27,27 +27,34 @@ If you are having trouble preprocessing the data or reproducing the results, ple
 
 ## Installation
 
-### Set up Conda Environment
+**For detailed installation instructions, see [INSTALL.md](INSTALL.md)**
 
-Install miniconda from [here](https://docs.conda.io/en/latest/miniconda.html).
-
-Create a new conda environment called `FRAGNNET-GPU` with python 3.10:
-
-```
-conda create -n FRAGNNET-GPU python=3.10
-```
-
-### Install FraGNNet Python Package
+### Quick Start (Recommended)
 
 ```bash
-pip install .
+# Using conda (GPU, recommended)
+bash env/env_setup_gpu_py311_cu121_250602.sh
+conda activate FRAGNNET-GPU
 ```
 
-If you want dev features (wandb logging and jupyter notebook), you can install the package with the dev flag.
+For development with testing tools:
+```bash
+pip install -e ".[dev]"
+```
+
+### Alternative: Manual Pip Installation
 
 ```bash
-pip install -e .[dev]
+# Create virtual environment and install PyTorch
+python -m venv venv
+source venv/bin/activate
+pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+
+# Install fragnnet and dev dependencies
+pip install -e ".[dev]"
 ```
+
+See [INSTALL.md](INSTALL.md) for detailed options, troubleshooting, and HPC cluster setup.
 
 Note that the -e flag is used to install the package in editable mode.
 

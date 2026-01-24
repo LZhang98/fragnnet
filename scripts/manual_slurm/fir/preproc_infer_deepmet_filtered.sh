@@ -76,9 +76,13 @@ cp ${INPUT_FP} ${WORKING_DIR}/${INPUT_BASENAME}
 echo list file in local proc dir: $(ls ${WORKING_DIR}/${INPUT_BASENAME})
 
 cd ${WORKING_DIR}
-python preproc_scripts/inference/01_prepare_inference_input.py \
+python preproc_scripts/inference/02_prepare_mol_df.py \
 	--smiles_file ${INPUT_BASENAME}\
     --smiles_colname smiles \
+    --output_dir ${SAVE_NAME}/proc
+
+python preproc_scripts/inference/03_prepare_spec_df.py \
+	--mol_df_path ${SAVE_NAME}/proc/mol_df.pkl.gz \
     --ft_ces 10eV \
     --inst_types FT \
     --prec_types [M-H]- \

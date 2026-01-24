@@ -231,7 +231,7 @@ def main(args):
             "pip install --no-index --upgrade pip",
             "pip install --no-index torch==2.4.1 \\",
             "    torch_geometric==2.6.1 \\",
-            "    torch_scatter \\",
+            "    torch_scatter==2.1.2 \\",
             "    pandas \\",
             "    wandb \\",
             "    tqdm \\",
