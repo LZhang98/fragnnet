@@ -34,14 +34,17 @@ split_dp: data/split/nist20_ma_mi_inchikey
 frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
 mces_fp: data/proc/mces/mces_pairs.pkl
 
-# ============================================================================
-# Finetuning Configuration
-# ============================================================================
 finetune:
   use_finetune: true
   pretrained_ckpt: saved_ckpts/mces_nist20_ma_mi_inchikey_m30_mlpc_edd2j4yy_epoch=49.ckpt
-  shared_all: true
-  freeze_components: []
+  shared_all: false
+  finetune_shared_components:
+    - mol_embedder
+    - mol_pool
+    - ce_embedder
+    - prec_embedder
+    - inst_embedder
+  freeze_all_shared: false
   pretrained_weights_lr_ratio: 0.1
 
 subsample_params:
@@ -120,7 +123,7 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler:  True
 
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]

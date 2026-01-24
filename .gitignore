@@ -1,47 +1,62 @@
-build/
-*.egg-info/
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 *.egg
+*.egg-info/
+
+# Extensions
 *.c
-.pytest_cache
-# don't track cython generated c file
-src/frag_gnn/frag/compute_frags.c
+src/fragnnet/frag/compute_frags.c
+src/fragnnet/massformer/algos.c
+cysignals_crash_logs
+
+# Distribution / packaging
+build/
+dist/
+.pytest_cache/
+
+# Environments
+python_env/
+FRAGGNET-GPU*/
+FRAG-GNN-GPU*/
+wandb_venv/
+
+# Project-specific Data & Outputs
 data/
 wandb/
 figs/
-extra/
-*.code-workspace
-jobs/
-slurm_scripts/
-# default virtualenv on CC
-FRAGGNET-GPU*/
-FRAG-GNN-GPU*/
-python_env/
+output/*
+debug_output/
+saved_ckpts/
+saved_ckpt/
+ckpts/
+metrics.pickle
+model_eval/
 tmp_ckpt/
 job_id/
-# VSCode
+extra/
+
+# HPC / Scripts
+jobs/
+slurm_scripts/
+
+# Containers
+containers/apptainer_images/
+containers/apptainer/
+!containers/*.def
+
+# IDEs
+.vscode/
 *.code-workspace
-saved_ckpts
-saved_ckpt
-metrics.pickle
-src/frag_gnn/massformer/algos.c
-cysignals_crash_logs
-python_env/*
-data
-debug_output
 
-containers/apptainer_images
-containers/apptainer
-model_eval
-ckpts
-wandb_venv
-containers
-output/*
+# Specific ignored files
+/wheels/
+/scripts/debug/*.pkl
 
-/wheels/cysignals-1.12.3.tar.gz
-/wheels/pyteomics-4.7.5-py3-none-any.whl
-/scripts/debug/for_plot.pkl
-/scripts/debug/selected_df_30209.pkl
+# Others
+.github
+# Claude AI assistant configuration and cache
+
+.claude

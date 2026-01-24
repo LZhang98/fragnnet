@@ -5,10 +5,10 @@ try/except import logic so other modules can `from fragnnet.utils.dgl_compat
 import dgl, DGL_AVAILABLE, DGLGraph, dgl_function, dgl_nn, expand_as_pair`
 and handle the absence of DGL gracefully.
 """
-from typing import Any
 
 try:
     import dgl  # type: ignore
+
     DGL_AVAILABLE = True
     DGLGraph = getattr(dgl, "DGLGraph", type("DGLGraph", (), {}))
     dgl_function = getattr(dgl, "function", None)

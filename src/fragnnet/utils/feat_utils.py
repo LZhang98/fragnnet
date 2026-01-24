@@ -1,74 +1,85 @@
-""" mol_graph.py (adapted from SCARF)
+"""mol_graph.py (adapted from SCARF)
 
 Classes to featurize molecules into a graph with onehot concat feats on atoms
 and bonds. Inspired by the dgllife library.
 
 """
-from rdkit import Chem
-import numpy as np
-import torch as th
-import networkx as nx
-import torch_geometric as pyg
-import scipy
 
-from fragnnet.utils.frag_utils import (
-    CANONICAL_ELEMENT_ORDER,
-    NODE_FEAT_TO_IDX,
-    EDGE_FEAT_TO_IDX,
-    get_node_feats,
-    get_edge_feats,
-)
+from collections.abc import Sequence
+from typing import Any
+
+import networkx as nx
+import numpy as np
+import scipy
+import torch as th
+import torch_geometric as pyg
+from rdkit import Chem
+from torch_geometric.data import Data
+
 from fragnnet.utils.data_utils import (
+    make_maccs_fingerprint,
     make_morgan_fingerprint,
     make_rdkit_fingerprint,
-    make_maccs_fingerprint,
+)
+from fragnnet.utils.frag_utils import (
+    CANONICAL_ELEMENT_ORDER,
+    EDGE_FEAT_TO_IDX,
+    NODE_FEAT_TO_IDX,
+    get_edge_feats,
+    get_node_feats,
 )
 
 # TODO: remove this registry
 
-atom_feat_registry = {}
-bond_feat_registry = {}
+atom_feat_registry: dict[str, dict[str, Any]] = {}
+bond_feat_registry: dict[str, dict[str, Any]] = {}
 
 
-def register_bond_feat(cls):
-    """register_bond_feat."""
+def register_bond_feat(cls: type) -> type:
+    """Register a bond featurizer class in the global registry."""
+
     bond_feat_registry[cls.name] = {"fn": cls.featurize, "feat_size": cls.feat_size}
     return cls
 
-def register_atom_feat(cls):
-    """register_atom_feat."""
+
+def register_atom_feat(cls: type) -> type:
+    """Register an atom featurizer class in the global registry."""
+
     atom_feat_registry[cls.name] = {"fn": cls.featurize, "feat_size": cls.feat_size}
     return cls
 
-def get_mol_feats_sizes(atom_feats,bond_feats,pe_embed_k):
 
-    mg = MolGraph(atom_feats,bond_feats,pe_embed_k)
-    return mg.num_atom_feats,mg.num_bond_feats
+def get_mol_feats_sizes(
+    atom_feats: Sequence[str] | None, bond_feats: Sequence[str] | None, pe_embed_k: int
+) -> tuple[int, int]:
+    """Return the dimensions of atom and bond feature vectors for a MolGraph."""
+
+    mg = MolGraph(atom_feats, bond_feats, pe_embed_k)
+    return mg.num_atom_feats, mg.num_bond_feats
+
 
 class MolGraph:
     def __init__(
         self,
-        atom_feats: list = [
-            "a_onehot",
-            "a_degree",
-            "a_hybrid",
-            "a_formal",
-            "a_radical",
-            "a_ring",
-            "a_mass",
-            "a_chiral",
-        ],
-        bond_feats: list = ["b_degree"],
+        atom_feats: Sequence[str] | None = None,
+        bond_feats: Sequence[str] | None = None,
         pe_embed_k: int = 0,
     ):
-        """__init__
+        """Create a molecular graph featurizer with atom/bond feature sets."""
+        if atom_feats is None:
+            atom_feats = [
+                "a_onehot",
+                "a_degree",
+                "a_hybrid",
+                "a_formal",
+                "a_radical",
+                "a_ring",
+                "a_mass",
+                "a_chiral",
+            ]
+        if bond_feats is None:
+            bond_feats = ["b_degree"]
 
-        Args:
-            atom_feats (list)
-            bond_feats (list)
-            pe_embed_k (int)
-
-        """
         self.pe_embed_k = pe_embed_k
         self.atom_feats = atom_feats
         self.bond_feats = bond_feats
@@ -96,21 +107,18 @@ class MolGraph:
 
     def get_mol_graph(
         self,
-        mol: Chem.Mol,
-        bigraph: str = True,
-    ) -> dict:
-        """get_mol_graph.
+        mol: Chem.rdchem.Mol,
+        bigraph: bool = True,
+    ) -> dict[str, np.ndarray]:
+        """Build raw numpy feature tensors for a molecule.
 
         Args:
-            mol (Chem.Mol):
-            bigraph (bool): If true, double all edges.
+            mol: RDKit molecule.
+            bigraph: If ``True``, create bidirectional edges.
 
-        Return:
-            dict:
-                "atom_feats": np.ndarray (|N| x d_n)
-                "bond_feats": np.ndarray (|E| x d_e)
-                "bond_tuples": np.ndarray (|E| x 2)
-
+        Returns:
+            Mapping containing atom features (|N| x d_n), bond features (|E| x d_e),
+            and bond index tuples (|E| x 2).
         """
         all_atoms = mol.GetAtoms()
         all_bonds = mol.GetBonds()
@@ -138,9 +146,7 @@ class MolGraph:
 
         # Add doubles
         if bigraph:
-            rev_bonds = np.vstack([bond_tuples[:, 1], bond_tuples[:, 0]]).transpose(
-                1, 0
-            )
+            rev_bonds = np.vstack([bond_tuples[:, 1], bond_tuples[:, 0]]).transpose(1, 0)
             bond_tuples = np.vstack([bond_tuples, rev_bonds])
             bond_feats = np.vstack([bond_feats, bond_feats])
         return {
@@ -149,15 +155,15 @@ class MolGraph:
             "bond_tuples": bond_tuples,
         }
 
-    def get_networkx_graph(self, mol: Chem.Mol, bigraph: str = True):
-        """get_networkx_graph.
+    def get_networkx_graph(self, mol: Chem.rdchem.Mol, bigraph: bool = True) -> nx.Graph:
+        """Convert a molecule into a NetworkX graph with feature attributes.
 
         Args:
-            mol (Chem.Mol):
-            bigraph (bool): If true, double all edges.
+            mol: RDKit molecule object.
+            bigraph: Whether to create bidirectional edges.
 
-        Return:
-            networkx graph object
+        Returns:
+            NetworkX graph with node features 'h' and edge features 'e'.
         """
         mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
 
@@ -169,20 +175,32 @@ class MolGraph:
         g.add_nodes_from(range(atom_feats.shape[0]))
         g.add_edges_from(bond_inds)
 
-        nx.set_node_attributes(g, values=atom_feats, name="h")
-        nx.set_edge_attributes(g, values=bond_feats, name="e")
+        node_attr_dict = {i: atom_feats[i] for i in range(atom_feats.shape[0])}
+        nx.set_node_attributes(g, values=node_attr_dict, name="h")
+        edge_attr_dict = {
+            (int(bond_inds[i, 0]), int(bond_inds[i, 1])): bond_feats[i]
+            for i in range(bond_inds.shape[0])
+        }
+        nx.set_edge_attributes(g, values=edge_attr_dict, name="e")
 
         return g
 
-    def get_pyg_graph(self, mol: Chem.Mol, bigraph: str = True):
+    def get_pyg_graph(self, mol: Chem.rdchem.Mol, bigraph: bool = True) -> Data:
+        """Convert molecule to PyTorch Geometric Data object with features.
 
+        Args:
+            mol: RDKit molecule object.
+            bigraph: Whether to create bidirectional edges.
+
+        Returns:
+            PyTorch Geometric Data object with node and edge features.
+        """
         mol_graph = self.get_mol_graph(mol, bigraph=bigraph)
-
         bond_inds = mol_graph["bond_tuples"]
         bond_feats = mol_graph["bond_feats"]
         atom_feats = mol_graph["atom_feats"]
 
-        g = pyg.data.Data(
+        g = Data(
             x=th.from_numpy(atom_feats).float(),
             edge_index=th.from_numpy(bond_inds).long().transpose(1, 0),
             edge_attr=th.from_numpy(bond_feats).float(),
@@ -193,46 +211,77 @@ class MolGraph:
                 g,
                 k=self.pe_embed_k,
             )
-            g.x = th.cat((g.x, pe_embeds), dim=-1)
-        
-        return g        
+            if g.x is None:
+                raise ValueError("Node features (g.x) cannot be None when pe_embed_k > 0")
+            g.x = th.cat([g.x, pe_embeds], dim=-1)
+
+        return g
+
 
 class FeatBase:
-    """FeatBase.
+    """Base class for atom and bond featurizers.
 
-    Extend this class for atom and bond featurizers
-
+    Extend this class to implement custom atom and bond featurization functions.
     """
 
     feat_size = 0
     name = "base"
 
     @classmethod
-    def featurize(cls, x) -> list:
+    def featurize(cls, x: Chem.rdchem.Atom | Chem.rdchem.Bond) -> list[int]:
+        """Featurize an atom or bond.
+
+        Args:
+            x: RDKit atom or bond object to featurize.
+
+        Returns:
+            List of integer feature values.
+
+        Raises:
+            NotImplementedError: This method must be implemented by subclasses.
+        """
         raise NotImplementedError()
 
 
 @register_atom_feat
 class AtomOneHot(FeatBase):
+    """Atom element type features are one-hot encoded."""
+
     name = "a_onehot"
     allowable_set = CANONICAL_ELEMENT_ORDER
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """One-hot encode atom element type.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            One-hot encoded element type vector.
+        """
         return one_hot_encoding(x.GetSymbol(), cls.allowable_set, True)
 
 
 @register_atom_feat
 class AtomDegree(FeatBase):
-    """ Atom Degree features are one-hot encoded. 
-    """
+    """Atom Degree features are one-hot encoded."""
+
     name = "a_degree"
     allowable_set = list(range(11))
     feat_size = len(allowable_set) + 1 + 2
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """One-hot encode atom degree and total degree.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            List containing degree values and one-hot encoded degree vector.
+        """
         deg = [x.GetDegree(), x.GetTotalDegree()]
         onehot = one_hot_encoding(deg, cls.allowable_set, True)
         return deg + onehot
@@ -240,8 +289,8 @@ class AtomDegree(FeatBase):
 
 @register_atom_feat
 class AtomHybrid(FeatBase):
-    """ Atom HybridizationType Charge features are one-hot encoded. 
-    """
+    """Atom HybridizationType Charge features are one-hot encoded."""
+
     name = "a_hybrid"
     allowable_set = [
         Chem.rdchem.HybridizationType.SP,
@@ -253,49 +302,81 @@ class AtomHybrid(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """One-hot encode atom hybridization type.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            One-hot encoded hybridization type vector.
+        """
         onehot = one_hot_encoding(x.GetHybridization(), cls.allowable_set, True)
         return onehot
 
 
 @register_atom_feat
 class AtomFormal(FeatBase):
-    """ Atom Formal Charge features are one-hot encoded. 
-    """
+    """Atom Formal Charge features are one-hot encoded."""
+
     name = "a_formal"
     allowable_set = list(range(-2, 3))
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """One-hot encode atom formal charge.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            One-hot encoded formal charge vector.
+        """
         onehot = one_hot_encoding(x.GetFormalCharge(), cls.allowable_set, True)
         return onehot
 
 
 @register_atom_feat
 class AtomRadical(FeatBase):
-    """ AtomRadical features are one-hot encoded. 
-    """
+    """AtomRadical features are one-hot encoded."""
+
     name = "a_radical"
     allowable_set = list(range(5))
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """One-hot encode atom radical electron count.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            One-hot encoded radical electron count vector.
+        """
         onehot = one_hot_encoding(x.GetNumRadicalElectrons(), cls.allowable_set, True)
         return onehot
 
 
 @register_atom_feat
 class AtomRing(FeatBase):
-    """ Atom Ring and Atom Aromatic features are one-hot encoded. 
-    """
+    """Atom Ring and Atom Aromatic features are one-hot encoded."""
+
     name = "a_ring"
     allowable_set = [True, False]
     feat_size = len(allowable_set) * 2
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """One-hot encode atom ring and aromaticity status.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            List containing one-hot encoded ring status and aromaticity vectors.
+        """
         onehot_ring = one_hot_encoding(x.IsInRing(), cls.allowable_set, False)
         onehot_aromatic = one_hot_encoding(x.GetIsAromatic(), cls.allowable_set, False)
         return onehot_ring + onehot_aromatic
@@ -303,8 +384,8 @@ class AtomRing(FeatBase):
 
 @register_atom_feat
 class AtomChiral(FeatBase):
-    """ Atom Chiral features are one-hot encoded. The last feature is for unspecified chirality.
-    """
+    """Atom Chiral features are one-hot encoded. The last feature is for unspecified chirality."""
+
     name = "a_chiral"
     allowable_set = [
         Chem.rdchem.ChiralType.CHI_UNSPECIFIED,
@@ -315,25 +396,43 @@ class AtomChiral(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[int]:
+        """One-hot encode atom chiral type.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            One-hot encoded chiral type vector.
+        """
         chiral_onehot = one_hot_encoding(x.GetChiralTag(), cls.allowable_set, True)
         return chiral_onehot
 
 
 @register_atom_feat
 class AtomMass(FeatBase):
+    """Atom Mass features normalized by a coefficient."""
 
     name = "a_mass"
     coef = 0.01
     feat_size = 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Atom) -> list[float]:
+        """Compute normalized atomic mass.
+
+        Args:
+            x: RDKit atom object.
+
+        Returns:
+            List containing normalized atomic mass value.
+        """
         return [x.GetMass() * cls.coef]
 
 
 @register_bond_feat
 class BondDegree(FeatBase):
+    """Bond degree/type features are one-hot encoded."""
 
     name = "b_degree"
     allowable_set = [
@@ -345,13 +444,22 @@ class BondDegree(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
+        """One-hot encode bond type.
+
+        Args:
+            x: RDKit bond object.
+
+        Returns:
+            One-hot encoded bond type vector.
+        """
         return one_hot_encoding(x.GetBondType(), cls.allowable_set, True)
 
 
 @register_bond_feat
 class BondStereo(FeatBase):
-    """ Bond Stereo features are one-hot encoded. The last feature is for unspecified stereochemistry."""
+    """Bond Stereo features are one-hot encoded. The last feature is for unspecified stereochemistry."""
+
     name = "b_stereo"
     allowable_set = [
         Chem.rdchem.BondStereo.STEREONONE,
@@ -364,44 +472,70 @@ class BondStereo(FeatBase):
     feat_size = len(allowable_set) + 1
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
+        """One-hot encode bond stereochemistry.
+
+        Args:
+            x: RDKit bond object.
+
+        Returns:
+            One-hot encoded bond stereochemistry vector.
+        """
         return one_hot_encoding(x.GetStereo(), cls.allowable_set, True)
 
 
 @register_bond_feat
 class BondRing(FeatBase):
-    """ Bond Ring features are one-hot encoded. The last feature is for unspecified ring status."""
+    """Bond Ring features are one-hot encoded. The last feature is for unspecified ring status."""
+
     name = "b_ring"
     feat_size = 2
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
+        """One-hot encode bond ring membership.
+
+        Args:
+            x: RDKit bond object.
+
+        Returns:
+            One-hot encoded bond ring status vector.
+        """
         return one_hot_encoding(x.IsInRing(), [False, True], False)
 
 
 @register_bond_feat
 class BondConj(FeatBase):
-    """ Bond Conjugation features are one-hot encoded. The last feature is for unspecified conjugation."""
+    """Bond Conjugation features are one-hot encoded. The last feature is for unspecified conjugation."""
+
     name = "b_conj"
     feat_size = 2
 
     @classmethod
-    def featurize(cls, x) -> int:
+    def featurize(cls, x: Chem.rdchem.Bond) -> list[int]:
+        """One-hot encode bond conjugation status.
+
+        Args:
+            x: RDKit bond object.
+
+        Returns:
+            One-hot encoded bond conjugation vector.
+        """
         return one_hot_encoding(x.GetIsConjugated(), [False, True], False)
 
-def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
-    """One_hot encoding.
 
-    Code taken from dgllife library
-    https://lifesci.dgl.ai/_modules/dgllife/utils/featurizers.html
+def one_hot_encoding(x: Any, allowable_set: list[Any], encode_unknown: bool = False) -> list[int]:
+    """One-hot encode ``x`` against an allowable set.
+
+    Code adapted from the DGL LifeSci featurizers.
 
     Args:
-        x: Val to encode
-        allowable_set: Options
-        encode_unknown: If true, encode unk
+        x: Value to encode.
+        allowable_set: Enumerated set of allowable values.
+        encode_unknown: If ``True``, append an unknown bucket and route missing values there.
 
-    Return:
-        list of bools
+    Returns:
+        Binary indicator vector marking the matching allowable value.
     """
 
     if encode_unknown and (allowable_set[-1] is not None):
@@ -410,105 +544,104 @@ def one_hot_encoding(x, allowable_set, encode_unknown=False) -> list:
     if encode_unknown and (x not in allowable_set):
         x = None
 
-    return list(map(lambda s: int(x == s), allowable_set))
+    return [int(x == s) for s in allowable_set]
 
-def batch_mols_frags(mol_pyg_list, frag_pyg_list, formula_peak_mzs_list, formula_peak_probs_list):
-    """Create a batch of molecule and fragment graphs, and collate formula peak information.
 
-    Args:
-        mol_pyg_list (list[pyg.data.Data]): List of PyG molecule graphs.
-        frag_pyg_list (list[pyg.data.Data]): List of PyG fragment graphs.
-        formula_peak_mzs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of m/z values for each mol.
-        formula_peak_probs_list (list[th.Tensor]): List of [num_formula, num_isotopes] tensors of probabilities for each mol.
-
-    Returns:
-        dict: {
-            "mol_pyg": PyG batch of molecules,
-            "frag_pyg": PyG batch of fragments,
-            "mol_num_nodes": Cumulative node counts for molecules,
-            "frag_num_nodes": Cumulative node counts for fragments,
-            "frag_formula_peak_idxs": 1D tensor of formula indices (per peak, per fragment, concatenated),
-            "frag_formula_peak_mzs": 1D tensor of m/z values for nonzero-probability peaks,
-            "frag_formula_peak_probs": 1D tensor of probabilities for nonzero-probability peaks,
-            "frag_formula_sizes": 1D tensor, number of unique formulae per fragment,
-            "frag_formula_cumsizes": 1D tensor, cumulative sum of frag_formula_sizes (for indexing),
-            "frag_formula_peak_sizes": 1D tensor, number of nonzero peaks per fragment,
-        }
-    """
+def batch_mols_frags(
+    mol_pyg_list: Sequence[pyg.data.Data],
+    frag_pyg_list: Sequence[pyg.data.Data],
+    formula_peak_mzs_list: Sequence[th.Tensor],
+    formula_peak_probs_list: Sequence[th.Tensor],
+) -> dict[str, Any]:
+    """Batch molecule/fragment graphs and sparse formula peak tensors."""
     # batch size
     batch_size = len(mol_pyg_list)
     # Convert the input lists of molecules and fragments into PyTorch Geometric data batches
     mol_pyg = pyg.data.Batch.from_data_list(mol_pyg_list)
     frag_pyg = pyg.data.Batch.from_data_list(frag_pyg_list)
- 
+
     # Assert that the number of graphs in both molecule and fragment batches matches the batch size
     assert mol_pyg.num_graphs == frag_pyg.num_graphs == batch_size
-     # Assert that the node feature indices and edge feature indices are consistent across all graphs in the fragment batch
-    assert all(th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i]) for i in range(batch_size))
-    assert all(th.all(frag_pyg.edge_feat_idxs[0] == frag_pyg.edge_feat_idxs[i]) for i in range(batch_size))
- 
+    # Assert that the node feature indices and edge feature indices are consistent across all graphs in the fragment batch
+    assert all(
+        th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i]) for i in range(batch_size)
+    )
+    assert all(
+        th.all(frag_pyg.edge_feat_idxs[0] == frag_pyg.edge_feat_idxs[i]) for i in range(batch_size)
+    )
+
     # Compute the cumulative sum of nodes for molecules and fragments, to track the total number of nodes per graph
     mol_num_nodes = [g.num_nodes for g in mol_pyg_list]
     frag_num_nodes = [g.num_nodes for g in frag_pyg_list]
-    mol_num_nodes = th.cumsum(th.tensor([0]+mol_num_nodes),dim=0)
-    frag_num_nodes = th.cumsum(th.tensor([0]+frag_num_nodes),dim=0)
- 
+    mol_num_nodes = th.cumsum(th.tensor([0] + mol_num_nodes), dim=0)
+    frag_num_nodes = th.cumsum(th.tensor([0] + frag_num_nodes), dim=0)
+
     # Initialize lists
-    frag_formula_peak_idxs = [] # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
+    frag_formula_peak_idxs = []  # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
     frag_formula_peak_mzs = []
     frag_formula_peak_probs = []
-    frag_formula_sizes = [] # 1D tensor, offset for each fragment's formula indices in the concatenated batch.
-    frag_formula_peak_sizes = [] # 1D tensor, number of nonzero peaks per fragment. in case of isotopes, each formula can have more than one peak.
- 
-    # Loop through the mz and probs for each sample
-    for mzs, probs in zip(formula_peak_mzs_list,formula_peak_probs_list):
+    frag_formula_sizes = []  # 1D tensor, offset for each fragment's formula indices in the concatenated batch.
+    frag_formula_peak_sizes = []  # 1D tensor, number of nonzero peaks per fragment. in case of isotopes, each formula can have more than one peak.
 
+    # Loop through the mz and probs for each sample
+    for mzs, probs in zip(formula_peak_mzs_list, formula_peak_probs_list):
         # sparsify: retain only non-zero probability peaks
         idx = th.nonzero(probs)
         # Extract mass-to-charge ratios where probability is non-zero
-        mzs = mzs[idx[:,0],idx[:,1]] 
+        mzs = mzs[idx[:, 0], idx[:, 1]]
         # Extract probabilities where probability is non-zero
-        probs = probs[idx[:,0],idx[:,1]] 
+        probs = probs[idx[:, 0], idx[:, 1]]
         # Append the filtered results for each fragment
-        frag_formula_peak_idxs.append(idx[:,0])
+        frag_formula_peak_idxs.append(idx[:, 0])
         frag_formula_peak_mzs.append(mzs)
         frag_formula_peak_probs.append(probs)
- 
+
         # Calculate the number of unique formula peaks and the total peak sizes
         # In case of isotopes, each formula can have more then one peak
-        frag_formula_sizes.append(th.unique(idx,sorted=True).shape[0])
+        frag_formula_sizes.append(th.unique(idx, sorted=True).shape[0])
         frag_formula_peak_sizes.append(idx.shape[0])
-  
+
     # Flatten the lists to single dimension tensor
-    frag_formula_peak_idxs = th.cat(frag_formula_peak_idxs,dim=0)
-    frag_formula_peak_mzs = th.cat(frag_formula_peak_mzs,dim=0)
-    frag_formula_peak_probs = th.cat(frag_formula_peak_probs,dim=0)
-    frag_formula_cumsizes = th.cumsum(th.tensor([0]+frag_formula_sizes),dim=0)
+    frag_formula_peak_idxs = th.cat(frag_formula_peak_idxs, dim=0)
+    frag_formula_peak_mzs = th.cat(frag_formula_peak_mzs, dim=0)
+    frag_formula_peak_probs = th.cat(frag_formula_peak_probs, dim=0)
+    frag_formula_cumsizes = th.cumsum(th.tensor([0] + frag_formula_sizes), dim=0)
     frag_formula_sizes = th.tensor(frag_formula_sizes)
     frag_formula_peak_sizes = th.tensor(frag_formula_peak_sizes)
     batched_mol_frag = {
-        "mol_pyg": mol_pyg, # PyG batch for molecules
-        "frag_pyg": frag_pyg, # PyG batch for fragments
-        "mol_num_nodes": mol_num_nodes, # Cumulative node count for molecules
-        "frag_num_nodes": frag_num_nodes, # Cumulative node count for fragments
+        "mol_pyg": mol_pyg,  # PyG batch for molecules
+        "frag_pyg": frag_pyg,  # PyG batch for fragments
+        "mol_num_nodes": mol_num_nodes,  # Cumulative node count for molecules
+        "frag_num_nodes": frag_num_nodes,  # Cumulative node count for fragments
         "frag_formula_peak_idxs": frag_formula_peak_idxs,  # Flattened tensor mapping each peak to its local formula index (0-based per molecule)
-        "frag_formula_peak_mzs": frag_formula_peak_mzs, # Flattened tensor of m/z values for each peak
-        "frag_formula_peak_probs": frag_formula_peak_probs, # Flattened tensor of theoretical isotopic probabilities for each peak
-        "frag_formula_sizes": frag_formula_sizes, # Tensor containing the number of unique formulas (fragments) with peaks for each molecule
-        "frag_formula_cumsizes": frag_formula_cumsizes, # Cumulative sum of frag_formula_sizes (offsets for formula indices in batch)
-        "frag_formula_peak_sizes": frag_formula_peak_sizes, # Tensor containing the total number of peaks (isotopes) for each molecule
+        "frag_formula_peak_mzs": frag_formula_peak_mzs,  # Flattened tensor of m/z values for each peak
+        "frag_formula_peak_probs": frag_formula_peak_probs,  # Flattened tensor of theoretical isotopic probabilities for each peak
+        "frag_formula_sizes": frag_formula_sizes,  # Tensor containing the number of unique formulas (fragments) with peaks for each molecule
+        "frag_formula_cumsizes": frag_formula_cumsizes,  # Cumulative sum of frag_formula_sizes (offsets for formula indices in batch)
+        "frag_formula_peak_sizes": frag_formula_peak_sizes,  # Tensor containing the total number of peaks (isotopes) for each molecule
     }
     return batched_mol_frag
-    
-def get_mol_fp(mol,morgan,rdkit,maccs):
-    """  function to get the fingerprint of a molecule
+
+
+def get_mol_fp(
+    mol: Chem.rdchem.Mol,
+    morgan: bool,
+    rdkit: bool,
+    maccs: bool,
+) -> th.Tensor:
+    """Compute concatenated molecular fingerprints as a float tensor.
+
     Args:
-        mol (rdkit.Chem.Mol): molecule
-        morgan (bool): whether to use Morgan fingerprint
-        rdkit (bool): whether to use RDKit fingerprint
-        maccs (bool): whether to use MACCS fingerprint
+        mol: RDKit molecule object.
+        morgan: Whether to include Morgan fingerprints.
+        rdkit: Whether to include RDKit fingerprints.
+        maccs: Whether to include MACCS fingerprints.
+
     Returns:
-        fp (torch.Tensor): fingerprint of the molecule
+        Float tensor containing concatenated fingerprints.
+
+    Raises:
+        AssertionError: If all fingerprint flags are False.
     """
     assert morgan or rdkit or maccs
     fps = []
@@ -521,44 +654,73 @@ def get_mol_fp(mol,morgan,rdkit,maccs):
     if maccs:
         fp = make_maccs_fingerprint(mol)
         fps.append(fp)
-    fp = th.as_tensor(np.concatenate(fps,axis=0),dtype=th.float)
+    fp = th.as_tensor(np.concatenate(fps, axis=0), dtype=th.float)
     return fp
 
-def get_mol_fp_size(morgan,rdkit,maccs) -> int:
-    """Get the size of the fingerprint of a molecule
+
+def get_mol_fp_size(morgan: bool, rdkit: bool, maccs: bool) -> int:
+    """Return the length of the concatenated fingerprint vector for a test molecule.
+
     Args:
-        mol (rdkit.Chem.Mol): molecule
-        morgan (bool): whether to use Morgan fingerprint
-        rdkit (bool): whether to use RDKit fingerprint
-        maccs (bool): whether to use MACCS fingerprint
+        morgan: Whether to include Morgan fingerprints.
+        rdkit: Whether to include RDKit fingerprints.
+        maccs: Whether to include MACCS fingerprints.
+
     Returns:
-        size (int): size of the fingerprint
+        Total length of concatenated fingerprint vector.
     """
-    mol = Chem.MolFromSmiles("CCO")
-    fp = get_mol_fp(mol,morgan,rdkit,maccs)
+    mol = Chem.MolFromSmiles("CCO")  # type: ignore[attr-defined]
+    fp = get_mol_fp(mol, morgan, rdkit, maccs)
     return fp.shape[0]
 
-def get_mol_graph(mol: 'rdkit.Chem.Mol',atom_feats: list,bond_feats:list,pe_embed_k:bool,bigraph:bool) -> 'torch_geometric.data.Data':
-    """get_mol_graph.
+
+def get_mol_graph(
+    mol: Chem.rdchem.Mol,
+    atom_feats: Sequence[str],
+    bond_feats: Sequence[str],
+    pe_embed_k: int,
+    bigraph: bool,
+) -> Data:
+    """Create a PyG molecule graph with selected features and optional RWPE.
+
     Args:
-        mol (rdkit.Chem.Mol): molecule
-        atom_feats (list): list of atom features
-        bond_feats (list): list of bond features
-        pe_embed_k (int): number of random walk steps
-        bigraph (bool): if true, double all edges
+        mol: RDKit molecule object.
+        atom_feats: Sequence of atom feature names to include.
+        bond_feats: Sequence of bond feature names to include.
+        pe_embed_k: Number of random walk positional encoding steps (0 to disable).
+        bigraph: Whether to create bidirectional edges.
+
     Returns:
-        mol_pyg (torch_geometric.data.Data): molecule graph
+        PyTorch Geometric Data object representing the molecule graph.
     """
- 
-    mg = MolGraph(
-        atom_feats,
-        bond_feats,
-        pe_embed_k
-    )
-    mol_pyg = mg.get_pyg_graph(mol,bigraph=bigraph)
+
+    mg = MolGraph(atom_feats, bond_feats, pe_embed_k)
+    mol_pyg = mg.get_pyg_graph(mol, bigraph=bigraph)
     return mol_pyg
 
-def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,edges,bigraph):
+
+def get_frag_graph(
+    dag_pyg: Data,
+    frag_node_feats: Sequence[str],
+    frag_edge_feats: Sequence[str],
+    edges: bool,
+    bigraph: bool,
+) -> Data:
+    """Subselect DAG features and optionally symmetrize edges for fragments.
+
+    Args:
+        dag_pyg: Input PyTorch Geometric Data object with node and edge features.
+        frag_node_feats: Sequence of node feature names to include.
+        frag_edge_feats: Sequence of edge feature names to include.
+        edges: Whether to include edges in the output graph.
+        bigraph: Whether to symmetrize edges by adding reverse directions.
+
+    Returns:
+        PyTorch Geometric Data object with selected features and optionally symmetrized edges.
+
+    Raises:
+        ValueError: If dag_pyg.x (node features) is None.
+    """
 
     device = dag_pyg.x.device
     # cast
@@ -567,65 +729,61 @@ def get_frag_graph(dag_pyg,frag_node_feats,frag_edge_feats,edges,bigraph):
     edge_index = dag_pyg.edge_index.long()
     node_feat_idxs = dag_pyg.node_feat_idxs.long()
     edge_feat_idxs = dag_pyg.edge_feat_idxs.long()
-    num_nodes = dag_pyg.num_nodes
     # select node features
     _x = []
     _node_feat_idxs = [0]
     _node_feat_size = 0
-    for feat, feat_idx in NODE_FEAT_TO_IDX.items():
+    for feat, _ in NODE_FEAT_TO_IDX.items():
         if feat in frag_node_feats:
-            _x_cur = get_node_feats(x,node_feat_idxs[0],feat)
+            _x_cur = get_node_feats(x, node_feat_idxs[0], feat)
             _x.append(_x_cur)
             _node_feat_size += _x_cur.shape[1]
             # print(feat,feat_idx,_node_feat_size)
         _node_feat_idxs.append(_node_feat_size)
-    _x = th.cat(_x,dim=1)
-    _node_feat_idxs = th.tensor(_node_feat_idxs,device=device,dtype=th.int64).reshape(1,-1)
+    _x = th.cat(_x, dim=1)
+    _node_feat_idxs = th.tensor(_node_feat_idxs, device=device, dtype=th.int64).reshape(1, -1)
     # select edge features
     _edge_index = edge_index.clone()
     _edge_attr = []
     _edge_feat_idxs = [0]
     _edge_feat_size = 0
-    for feat, feat_idx in EDGE_FEAT_TO_IDX.items():
+    for feat, _ in EDGE_FEAT_TO_IDX.items():
         if feat in frag_edge_feats:
             assert edges
-            if feat == "complement":
-                _edge_attr_cur = th.zeros(edge_attr.shape[0],1,device=device,dtype=th.int64)
-            else:
-                _edge_attr_cur = get_edge_feats(edge_attr,edge_feat_idxs[0],feat)
+            _edge_attr_cur = get_edge_feats(edge_attr, edge_feat_idxs[0], feat)
             _edge_attr.append(_edge_attr_cur)
             _edge_feat_size += _edge_attr_cur.shape[1]
             # print(feat,feat_idx,_edge_feat_size)
         _edge_feat_idxs.append(_edge_feat_size)
     if len(_edge_attr) == 0:
-        _edge_attr = [th.zeros(edge_attr.shape[0],1,device=device,dtype=th.int64)]
-    _edge_attr = th.cat(_edge_attr,dim=1)
-    _edge_feat_idxs = th.tensor(_edge_feat_idxs,device=device,dtype=th.int64).reshape(1,-1)
-    # convert to undirected
+        _edge_attr = [th.zeros(edge_attr.shape[0], 1, device=device, dtype=th.int64)]
+    _edge_attr = th.cat(_edge_attr, dim=1)
+    _edge_feat_idxs = th.tensor(_edge_feat_idxs, device=device, dtype=th.int64).reshape(1, -1)
     if bigraph:
         assert edges
-        _edge_index_c = th.stack([_edge_index[1],_edge_index[0]],dim=0)
-        assert not th.any(th.all(_edge_index==_edge_index_c,dim=0),dim=0)
+        _edge_index_c = th.stack([_edge_index[1], _edge_index[0]], dim=0)
+        assert not th.any(th.all(_edge_index == _edge_index_c, dim=0), dim=0)
         _edge_attr_c = _edge_attr.clone()
         if "complement" in frag_edge_feats:
-            _edge_attr_c[:,-1] = 1 - _edge_attr_c[:,-1]
-        _edge_index = th.cat([_edge_index,_edge_index_c],dim=1)
-        _edge_attr = th.cat([_edge_attr,_edge_attr_c],dim=0)
+            _edge_attr_c[:, -1] = 1 - _edge_attr_c[:, -1]
+        _edge_index = th.cat([_edge_index, _edge_index_c], dim=1)
+        _edge_attr = th.cat([_edge_attr, _edge_attr_c], dim=0)
     if not edges:
         assert not bigraph
-        _edge_index = _edge_index[:,:0]
-        _edge_attr = _edge_attr[:0,:]
+        _edge_index = _edge_index[:, :0]
+        _edge_attr = _edge_attr[:0, :]
     # create pyg object
     dag_pyg = pyg.data.Data(
         x=_x,
         edge_index=_edge_index,
         edge_attr=_edge_attr,
         node_feat_idxs=_node_feat_idxs,
-        edge_feat_idxs=_edge_feat_idxs
+        edge_feat_idxs=_edge_feat_idxs,
     )
     return dag_pyg
 
-def random_walk_pe(g, k):
+
+def random_walk_pe(g: Data, k: int) -> th.Tensor:
     """Random Walk Positional Encoding, as introduced in
     `Graph Neural Networks with Learnable Structural and Positional Representations
     <https://arxiv.org/abs/2110.07875>`__
@@ -633,39 +791,28 @@ def random_walk_pe(g, k):
     This function computes the random walk positional encodings as landing probabilities
     from 1-step to k-step, starting from each node to itself.
 
-    Parameters
-    ----------
-    g : DGLGraph
-        The input graph. Must be homogeneous.
-    k : int
-        The number of random walk steps. The paper found the best value to be 16 and 20
-        for two experiments.
+    Args:
+        g: Homogeneous PyTorch Geometric Data object (graph).
+        k: Number of random walk steps to include.
 
-    Returns
-    -------
-    Tensor
-        The random walk positional encodings of shape :math:`(N, k)`, where :math:`N` is the
-        number of nodes in the input graph.
+    Returns:
+        Random walk positional encodings of shape (N, k) where N is the number of nodes.
 
-    Example
-    -------
-    >>> import dgl
-    >>> g = dgl.graph(([0,1,1], [1,1,0]))
-    >>> dgl.random_walk_pe(g, 2)
-    tensor([[0.0000, 0.5000],
-            [0.5000, 0.7500]])
+    Example:
+        >>> import dgl
+        >>> g = dgl.graph(([0,1,1], [1,1,0]))
+        >>> dgl.random_walk_pe(g, 2)
+        tensor([[0.0000, 0.5000],
+                [0.5000, 0.7500]])
     """
     # sparse adjacency matrix
     A = scipy.sparse.csr_matrix(
         (
             th.ones_like(g.edge_index[0]).numpy(),
-            (
-                g.edge_index[0].numpy(),
-                g.edge_index[1].numpy()
-            )
+            (g.edge_index[0].numpy(), g.edge_index[1].numpy()),
         )
     )
-    RW = A / (A.sum(1).reshape(-1,1) + 1e-30)  # 1-step transition probability
+    RW = A / (A.sum(1).reshape(-1, 1) + 1e-30)  # 1-step transition probability
 
     # Iterate for k steps
     PE = [RW.diagonal()]
@@ -674,5 +821,5 @@ def random_walk_pe(g, k):
         RW_power = RW_power @ RW
         PE.append(RW_power.diagonal())
     PE = np.stack(PE, axis=-1)
-    PE = th.as_tensor(PE,dtype=th.float32)
+    PE = th.as_tensor(PE, dtype=th.float32)
     return PE

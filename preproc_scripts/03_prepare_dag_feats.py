@@ -1,77 +1,58 @@
 import argparse
-import os
 import json
-from pprint import pformat
 import logging
+import os
+from pprint import pformat
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
-import fragnnet.utils.frag_utils as frag_utils
 import fragnnet.utils.data_utils as data_utils
+import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
-def print_and_log(name,series,wandb_flag,stats_d):
 
+def print_and_log(name: str, series: pd.Series, wandb_flag: bool, stats_d: dict) -> None:
+    """Log series statistics to dictionary and optionally to W&B.
+
+    Args:
+        name: Statistic name prefix
+        series: Pandas Series to compute statistics for
+        wandb_flag: Whether to log to Weights & Biases
+        stats_d: Dictionary to update with statistics
+    """
     stats = series.describe()
-    # print(f"> {name}")
-    # print(stats)
-    # print()
-    for stat in ["mean","std","min","25%","50%","75%","max"]:
+    for stat in ["mean", "std", "min", "25%", "50%", "75%", "max"]:
         stats_d[f"{name}/{stat}"] = stats[stat]
 
     if wandb_flag:
         import wandb
-        log_d = {"step":0}
-        for stat in ["mean","std","min","25%","50%","75%","max"]:
+
+        log_d = {"step": 0}
+        for stat in ["mean", "std", "min", "25%", "50%", "75%", "max"]:
             log_d[f"{name}/{stat}"] = stats[stat]
         wandb.log(log_d)
 
-"""
-def append_hdf5_rows(hdf5_fp,new_rows, num_features):
-    
-    with h5py.File(hdf5_fp, "a") as f:
-        dataset = f["data"]
-        current_size = dataset.shape[0]
-        new_size = current_size + len(new_rows)  # Increase row count
-        dataset.resize((new_size, num_features))  # Extend dataset
-        dataset[current_size:new_size, :] = new_rows  # Write new batch
-
-        # Flush changes to disk to ensure data is not lost
-        f.flush()
-
-def create_hdf5_file(hdf5_fp:str,num_features:int,batch_size:int):
-    # Create an HDF5 file with an extendable dataset
-    with h5py.File(hdf5_fp, "w") as f:
-        dataset = f.create_dataset(
-            "dags",
-            shape=(0, num_features),  # Start with zero rows
-            maxshape=(None, num_features),  # Allow unlimited rows
-            dtype="f4",
-            chunks=(batch_size, num_features),  # Write in small batches
-            compression="gzip",  # Optional compression
-            compression_opts=4
-        )
-"""
 
 def main(args):
+    if args.max_time >= data_utils.JOBLIB_TIMEOUT:
+        raise ValueError(
+            f"max_time ({args.max_time}s) must be less than JOBLIB_TIMEOUT "
+            f"({data_utils.JOBLIB_TIMEOUT}s)"
+        )
 
-    assert args.max_time < data_utils.JOBLIB_TIMEOUT, (args.max_time,data_utils.JOBLIB_TIMEOUT)
- 
     # Setup logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
- 
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
     elements = args.elements
     dsets = args.dsets
     # init wandb
     wandb_flag = args.wandb_mode != "off"
     if wandb_flag:
         import wandb
+
         wandb_config = vars(args)
         wandb.init(
             project=args.wandb_project,
@@ -80,15 +61,15 @@ def main(args):
             mode=args.wandb_mode,
             config=wandb_config,
             dir=args.project_dp,
-            group="prepare_dag_feats"
+            group="prepare_dag_feats",
         )
 
     # read in the molecule data
-    mol_df_fp = os.path.join(args.project_dp,args.proc_dp,"mol_df.pkl")
+    mol_df_fp = os.path.join(args.project_dp, args.proc_dp, "mol_df.pkl")
     print(f"read in mol from {mol_df_fp}")
     mol_df = pd.read_pickle(mol_df_fp)
 
-    sped_df_fp = os.path.join(args.project_dp,args.proc_dp,"spec_df.pkl")
+    sped_df_fp = os.path.join(args.project_dp, args.proc_dp, "spec_df.pkl")
     print(f"read in spec from {sped_df_fp}")
     spec_df = pd.read_pickle(sped_df_fp)
     print()
@@ -99,7 +80,7 @@ def main(args):
     ion_modes = args.ion_modes
     inst_types = args.inst_types
     spec_type = args.spec_type
- 
+
     spec_df, mol_df = filter_spec_mol(
         spec_df,
         mol_df,
@@ -110,37 +91,40 @@ def main(args):
         frag_modes=frag_modes,
         ion_modes=ion_modes,
         inst_types=inst_types,
-        spec_type=spec_type
+        spec_type=spec_type,
     )
 
     m_spec_df = merge_spec_df(spec_df)
 
-    print(f">> {len(spec_df)} spectra, {len(mol_df)} molecules") #, {len(m_spec_df)} merged spectra")
-    print(spec_df['prec_type'].value_counts())
-    print(spec_df['inst_type'].value_counts())
+    print(
+        f">> {len(spec_df)} spectra, {len(mol_df)} molecules"
+    )  # , {len(m_spec_df)} merged spectra")
+    print(spec_df["prec_type"].value_counts())
+    print(spec_df["inst_type"].value_counts())
 
     print()
 
     num_atoms = mol_df["num_atoms"]
-    print_and_log("num_atoms",num_atoms,wandb_flag,{})
+    print_and_log("num_atoms", num_atoms, wandb_flag, {})
 
     num_bonds = mol_df["num_bonds"]
-    print_and_log("num_bonds",num_bonds,wandb_flag,{})
+    print_and_log("num_bonds", num_bonds, wandb_flag, {})
 
-    os.makedirs(args.frag_dp,exist_ok=True)
+    os.makedirs(args.frag_dp, exist_ok=True)
     dag_dp = os.path.join(args.frag_dp, "dags")
-    os.makedirs(dag_dp,exist_ok=True)
+    os.makedirs(dag_dp, exist_ok=True)
     global_stats_fp = os.path.join(args.frag_dp, "global_stats.json")
 
     def compute_spectra_stats(
-            peaks,
-            formula_peak_mzs,
-            formula_peak_probs,
-            idx_by_h_delta,
-            prec_mz,
-            prec_type,
-            tolerances:list, 
-            max_h_transfer:int):
+        peaks,
+        formula_peak_mzs,
+        formula_peak_probs,
+        idx_by_h_delta,
+        prec_mz,
+        prec_type,
+        tolerances: list,
+        max_h_transfer: int,
+    ):
         """_summary_
 
         Args:
@@ -163,57 +147,92 @@ def main(args):
                     f"prec_recall_{tolerance}_h{h_transfer}",
                     f"prec_spec_recall_{tolerance}_h{h_transfer}",
                 ]
-                if 'ppm' in tolerance:
-                    result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
-                         prec_mz,h_transfer,tolerance=float(tolerance[:-3]),prec_type=prec_type,is_ppm=True)
+                if "ppm" in tolerance:
+                    result = frag_utils.compute_frag_peak_stats(
+                        peaks,
+                        formula_peak_mzs,
+                        formula_peak_probs,
+                        idx_by_h_delta,
+                        prec_mz,
+                        h_transfer,
+                        tolerance=float(tolerance[:-3]),
+                        prec_type=prec_type,
+                        is_ppm=True,
+                    )
                 else:
-                    result = frag_utils.compute_frag_peak_stats(peaks,formula_peak_mzs,formula_peak_probs,idx_by_h_delta,\
-                         prec_mz,h_transfer,tolerance=float(tolerance),prec_type=prec_type)
+                    result = frag_utils.compute_frag_peak_stats(
+                        peaks,
+                        formula_peak_mzs,
+                        formula_peak_probs,
+                        idx_by_h_delta,
+                        prec_mz,
+                        h_transfer,
+                        tolerance=float(tolerance),
+                        prec_type=prec_type,
+                    )
                 cols += keys
                 results.append(result)
         result_series = pd.concat(results, axis=0)
         result_df = result_series.to_frame().T
         result_df.columns = cols
         return result_df
-    
+
     print("> Compute Fragments")
     mol_input_rows = []
-    for _, row in progress_wrapper(mol_df.iterrows(), total=mol_df.shape[0], desc="prepare inputs", disable_tqdm=args.disable_tqdm):
+    for _, row in progress_wrapper(
+        mol_df.iterrows(),
+        total=mol_df.shape[0],
+        desc="prepare inputs",
+        disable_tqdm=args.disable_tqdm,
+    ):
         mol_input_rows.append(
             [
-                row['mol'],
-                row['mol_id'], 
+                row["mol"],
+                row["mol_id"],
                 args.max_depth,
-                True, # h_prior
+                True,  # h_prior
                 args.max_h_transfer,
                 args.max_time,
-                args.isotopes, 
+                args.isotopes,
                 args.nb_isomorphic,
                 args.wl_max_iterations,
                 dag_dp,
-                args.use_cached_dag, # use_cached, default to false
-                args.compress_dags
+                args.use_cached_dag,  # use_cached, default to false
+                args.compress_dags,
             ]
         )
-  
+
     print("> Running frag gen")
-    frag_results_gen = data_utils.par_apply(iter(mol_input_rows),frag_utils.timed_get_dags,True, return_as_generator=True)
+    frag_results_gen = data_utils.par_apply(
+        iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
+    )
     frag_results = []
-    for fr in progress_wrapper(frag_results_gen, total=len(mol_input_rows), desc="Compute Frags", disable_tqdm=args.disable_tqdm):
+    for fr in progress_wrapper(
+        frag_results_gen,
+        total=len(mol_input_rows),
+        desc="Compute Frags",
+        disable_tqdm=args.disable_tqdm,
+    ):
         frag_results.append(fr)
 
     print("> Fragments Computed")
-    frag_stats_df = pd.DataFrame({"mol_id":mol_df["mol_id"]})
-    frag_stats_df["depth"] = list(map(lambda x: x.pop("max_depth",np.nan),frag_results))
-    frag_stats_df["formula_peak_mzs"] = list(map(lambda x: x.pop("formula_peak_mzs",np.nan),frag_results))
-    frag_stats_df["formula_peak_probs"] = list(map(lambda x: x.pop("formula_peak_probs",np.nan),frag_results))
-    frag_stats_df["idx_to_formula"] = list(map(lambda x: x.pop("idx_to_formula",np.nan),frag_results))
-    frag_stats_df["dag_num_edges"] = list(map(lambda x: x.pop("dag_num_edges",np.nan),frag_results))
-    frag_stats_df["dag_num_nodes"] = list(map(lambda x: x.pop("dag_num_nodes",np.nan),frag_results))
-    frag_stats_df["dag_sparsity"] = list(map(lambda x: x.pop("dag_sparsity",np.nan),frag_results))
-    frag_stats_df["dag_num_nodes_nb"] = list(map(lambda x: x.pop("dag_num_nodes_nb",np.nan),frag_results))
-    frag_stats_df["formula_redundancy"] = list(map(lambda x: x.pop("formula_redundancy",np.nan),frag_results))  
-    frag_stats_df["idx_by_h_delta"] = list(map(lambda x: x.pop("idx_by_h_delta",np.nan),frag_results))  
+    frag_stats_df = pd.DataFrame({"mol_id": mol_df["mol_id"]})
+
+    # Extract fields from frag_results
+    keys_to_extract = [
+        ("max_depth", "depth"),
+        ("formula_peak_mzs", "formula_peak_mzs"),
+        ("formula_peak_probs", "formula_peak_probs"),
+        ("idx_to_formula", "idx_to_formula"),
+        ("dag_num_edges", "dag_num_edges"),
+        ("dag_num_nodes", "dag_num_nodes"),
+        ("dag_sparsity", "dag_sparsity"),
+        ("dag_num_nodes_nb", "dag_num_nodes_nb"),
+        ("formula_redundancy", "formula_redundancy"),
+        ("idx_by_h_delta", "idx_by_h_delta"),
+    ]
+    for result_key, col_name in keys_to_extract:
+        frag_stats_df[col_name] = [result.pop(result_key, np.nan) for result in frag_results]
 
     del frag_results
 
@@ -224,7 +243,7 @@ def main(args):
     print(f"> total num failures: {num_failures}")
     print()
     if wandb_flag:
-        wandb.log({"total_num_failures": num_failures,"step":0})
+        wandb.log({"total_num_failures": num_failures, "step": 0})
     frag_stats_df = frag_stats_df.dropna(axis=0)
 
     ### global properties
@@ -241,37 +260,49 @@ def main(args):
     print("> depth:")
     print(frag_stats_df["depth"].value_counts())
     print()
-    depth_d = {f"depth/{k}":v for k,v in frag_stats_df["depth"].value_counts().to_dict().items()}
+    depth_d = {f"depth/{k}": v for k, v in frag_stats_df["depth"].value_counts().to_dict().items()}
     frag_stats_d.update(depth_d)
     if wandb_flag:
         depth_d["step"] = 0
         wandb.log(depth_d)
 
     ### molecule properties
-    frag_stats_d = {}
-    print_and_log("dag_num_edges",frag_stats_df["dag_num_edges"],wandb_flag,frag_stats_d)
-    print_and_log("dag_num_nodes",frag_stats_df["dag_num_nodes"],wandb_flag,frag_stats_d)
-    print_and_log("dag_sparsity",frag_stats_df["dag_sparsity"],wandb_flag,frag_stats_d)
-    print_and_log("dag_num_nodes_nb",frag_stats_df["dag_num_nodes_nb"],wandb_flag,frag_stats_d)
-    print_and_log("formula_redundancy",frag_stats_df["formula_redundancy"],wandb_flag,frag_stats_d)
+    print_and_log("dag_num_edges", frag_stats_df["dag_num_edges"], wandb_flag, frag_stats_d)
+    print_and_log("dag_num_nodes", frag_stats_df["dag_num_nodes"], wandb_flag, frag_stats_d)
+    print_and_log("dag_sparsity", frag_stats_df["dag_sparsity"], wandb_flag, frag_stats_d)
+    print_and_log("dag_num_nodes_nb", frag_stats_df["dag_num_nodes_nb"], wandb_flag, frag_stats_d)
+    print_and_log(
+        "formula_redundancy", frag_stats_df["formula_redundancy"], wandb_flag, frag_stats_d
+    )
 
     # count number of formula per molecule
-    frag_stats_df.loc[:,"num_formulae"] = frag_stats_df["idx_to_formula"].apply(lambda x: len(x)-1)
-    print_and_log("num_formulae",frag_stats_df["num_formulae"],wandb_flag,frag_stats_d)
+    frag_stats_df["num_formulae"] = frag_stats_df["idx_to_formula"].apply(lambda x: len(x) - 1)
+    print_and_log("num_formulae", frag_stats_df["num_formulae"], wandb_flag, frag_stats_d)
 
-    assert (frag_stats_df["num_formulae"]>0).all()
+    if not (frag_stats_df["num_formulae"] > 0).all():
+        raise ValueError(
+            f"All molecules must have at least 1 formula. "
+            f"Found {(frag_stats_df['num_formulae'] <= 0).sum()} molecules with 0 or fewer formulae."
+        )
 
     # drop idx_to_formula
     frag_stats_df = frag_stats_df.drop(columns=["idx_to_formula"])
 
     print("> Compute Spectra Stats")
 
-    stats_cols = ["num_formulae","depth","formula_redundancy","dag_num_edges","dag_num_nodes","dag_sparsity","dag_num_nodes_nb"]
+    stats_cols = [
+        "num_formulae",
+        "depth",
+        "formula_redundancy",
+        "dag_num_edges",
+        "dag_num_nodes",
+        "dag_sparsity",
+        "dag_num_nodes_nb",
+    ]
     id_cols = ["mol_id"]
-    data_cols = list(set(frag_stats_df.columns)-set(stats_cols)-set(id_cols))
+    data_cols = list(set(frag_stats_df.columns) - set(stats_cols) - set(id_cols))
 
-    for merged in [False,True]:
-
+    for merged in [False, True]:
         if not merged:
             spec_key = "spec_id"
             _spec_df = spec_df
@@ -288,22 +319,32 @@ def main(args):
             mol_stats_fp = os.path.join(args.frag_dp, "m_mol_stats_df.pkl")
 
         # compute spectra stats
-        peak_spec_df = _spec_df[[spec_key,"mol_id","peaks","prec_mz","prec_type"]].merge(frag_stats_df[id_cols+data_cols],on="mol_id",how="inner")
-        assert peak_spec_df.shape[0] == peak_spec_df.drop_duplicates(subset=[spec_key,"mol_id"]).shape[0]
+        peak_spec_df = _spec_df[[spec_key, "mol_id", "peaks", "prec_mz", "prec_type"]].merge(
+            frag_stats_df[id_cols + data_cols], on="mol_id", how="inner"
+        )
+        assert (
+            peak_spec_df.shape[0]
+            == peak_spec_df.drop_duplicates(subset=[spec_key, "mol_id"]).shape[0]
+        )
 
         spectra_input_rows = []
         tolerances = args.tolerances
-        for _, row in progress_wrapper(peak_spec_df.iterrows(), total=peak_spec_df.shape[0], desc="prepare spectra stats inputs", disable_tqdm=args.disable_tqdm):
+        for _, row in progress_wrapper(
+            peak_spec_df.iterrows(),
+            total=peak_spec_df.shape[0],
+            desc="prepare spectra stats inputs",
+            disable_tqdm=args.disable_tqdm,
+        ):
             spectra_input_rows.append(
                 [
-                    row["peaks"], 
-                    row["formula_peak_mzs"], 
-                    row["formula_peak_probs"], 
-                    row["idx_by_h_delta"], 
+                    row["peaks"],
+                    row["formula_peak_mzs"],
+                    row["formula_peak_probs"],
+                    row["idx_by_h_delta"],
                     row["prec_mz"],
                     row["prec_type"],
-                    tolerances, 
-                    args.max_h_transfer
+                    tolerances,
+                    args.max_h_transfer,
                 ]
             )
 
@@ -311,7 +352,11 @@ def main(args):
             stats_iter = spectra_input_rows
             logging.info(f"Computing spectra stats for {len(spectra_input_rows)} inputs")
         else:
-            stats_iter = tqdm(spectra_input_rows, desc=pformat(compute_spectra_stats), total=len(spectra_input_rows))
+            stats_iter = tqdm(
+                spectra_input_rows,
+                desc=pformat(compute_spectra_stats),
+                total=len(spectra_input_rows),
+            )
         # run stats
         stats_results = data_utils.par_apply(stats_iter, compute_spectra_stats, True)
         # Loky and joblib should keep ordering
@@ -319,73 +364,171 @@ def main(args):
         metric_keys = list(stats_results_df.columns)
 
         # add peak stats
-        peak_spec_df = pd.concat((peak_spec_df[[spec_key,"mol_id"]],stats_results_df), axis=1)
+        peak_spec_df = pd.concat((peak_spec_df[[spec_key, "mol_id"]], stats_results_df), axis=1)
         # add dag stats
-        peak_spec_df = peak_spec_df.merge(frag_stats_df[id_cols+stats_cols],on="mol_id",how="inner")
+        peak_spec_df = peak_spec_df.merge(
+            frag_stats_df[id_cols + stats_cols], on="mol_id", how="inner"
+        )
 
         # save spectrum-level stats
         peak_spec_df.to_pickle(spec_stats_fp)
 
         # update the frag stats d
-        for key in metric_keys+stats_cols:
-            print_and_log(spec_prefix+key,peak_spec_df[key],wandb_flag,frag_stats_d)
+        for key in metric_keys + stats_cols:
+            print_and_log(spec_prefix + key, peak_spec_df[key], wandb_flag, frag_stats_d)
 
-        print("> Compute Molecule Stats")   
+        print("> Compute Molecule Stats")
 
         # collect across molecules and report summary statistics
-        peak_mol_df = peak_spec_df.drop(columns=[spec_key]).groupby("mol_id").agg(np.nanmean).reset_index()
-        for key in metric_keys+stats_cols:
-            print_and_log(mol_prefix+key,peak_mol_df[key],wandb_flag,frag_stats_d)
+        peak_mol_df = (
+            peak_spec_df.drop(columns=[spec_key]).groupby("mol_id").agg(np.nanmean).reset_index()
+        )
+        for key in metric_keys + stats_cols:
+            print_and_log(mol_prefix + key, peak_mol_df[key], wandb_flag, frag_stats_d)
 
         # save molecule-level stats
         peak_mol_df.to_pickle(mol_stats_fp)
 
-
     # save the frag stats dict
-    with open(global_stats_fp,"w",encoding="utf-8") as f:
-        frag_stats_d = {k:str(v) for k,v in frag_stats_d.items()}
-        json.dump(frag_stats_d,f,ensure_ascii=False,indent=4)
+    with open(global_stats_fp, "w", encoding="utf-8") as f:
+        frag_stats_d = {k: str(v) for k, v in frag_stats_d.items()}
+        json.dump(frag_stats_d, f, ensure_ascii=False, indent=4)
 
     if wandb_flag:
         wandb.finish()
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_entries",type=int,default=-1,help="Number of molecules to process (-1 for all)")
-    parser.add_argument("--max_depth",type=int,default=4,help="Maximum fragmentation depth for DAG generation")
-    parser.add_argument("--max_time",type=int,default=150,help="Maximum time (seconds) allowed per molecule fragmentation")
-    parser.add_argument("--project_dp",type=str,default=os.getcwd(),help="Project root directory")
-    parser.add_argument("--frag_dp",type=str,required=True,help="Output directory for fragment DAGs and statistics")
-    parser.add_argument("--proc_dp",type=str,required=True,help="Directory containing spec_df.pkl and mol_df.pkl")
-    parser.add_argument("--max_h_transfer",type=int,default=4,help="Maximum hydrogen transfer allowed during fragmentation")
-    parser.add_argument("--nb_isomorphic",type=booltype,default=False,help="Whether to compute neighborhood isomorphism features")
-    parser.add_argument("--wl_max_iterations",type=int,default=3,help="Max Weisfeiler-Lehman iterations for isomorphism detection")
-    parser.add_argument("--dsets",type=str,nargs="+",required=True,help="Dataset names to include (e.g., nist20_hr)")
-    parser.add_argument("--tolerances",type=str,nargs="+",default=["0.01","0.005","0.001","0.0001","10ppm","5ppm"],help="Mass tolerance values for peak matching statistics")
-    parser.add_argument("--isotopes",type=booltype,default=True,help="Whether to compute isotopic peak distributions")
-    parser.add_argument("--wandb_mode",type=str,default="disabled",choices=["online","offline","disabled"],help="Weights & Biases logging mode")
-    parser.add_argument("--wandb_project",type=str,default="frag-gnn",help="W&B project name")
-    parser.add_argument("--wandb_entity",type=str,default="frag-gnn",help="W&B entity/team name")
-    parser.add_argument("--wandb_dp",type=str,default="wandb",help="W&B logging directory")
-    parser.add_argument("--compress_dags",type=booltype,default=True,help="Whether to compress DAG files with gzip")
-    parser.add_argument("--wandb_run_name",type=str,help="Custom W&B run name (required when wandb_mode enabled)")
-    parser.add_argument("--save_dag",type=booltype,default=True,help="Whether to save DAG structures to disk")
-    parser.add_argument("--elements",type=str,nargs="+",default=frag_utils.ELEMENTS,help="Allowed chemical elements for molecules")
-    parser.add_argument("--prec_types",nargs="+",required=False,help="Precursor types to filter (optional)")
-    parser.add_argument("--inst_types",nargs="+",required=False,help="Instrument types to filter (optional)")
-    parser.add_argument("--frag_modes",nargs="+",required=False,help="Fragmentation modes to filter (optional)")
-    parser.add_argument("--ion_modes",nargs="+",required=False,help="Ion modes to filter (optional, e.g., P, N)")
-    parser.add_argument("--spec_type",type=str,default="MS2",help="Spectrum type to keep (e.g., MS2)")
-    parser.add_argument("--use_cached_dag",type=booltype,default=False,help="Whether to reuse cached DAG files if available")
-    parser.add_argument("--save_as_hdf5",type=booltype,default=False,help="Whether to save outputs in HDF5 format (currently unused)")
-    parser.add_argument("--disable_tqdm",type=booltype,default=False,help="Disable tqdm progress bars and use logging instead")
+    parser.add_argument(
+        "--num_entries", type=int, default=-1, help="Number of molecules to process (-1 for all)"
+    )
+    parser.add_argument(
+        "--max_depth", type=int, default=4, help="Maximum fragmentation depth for DAG generation"
+    )
+    parser.add_argument(
+        "--max_time",
+        type=int,
+        default=150,
+        help="Maximum time (seconds) allowed per molecule fragmentation",
+    )
+    parser.add_argument(
+        "--project_dp", type=str, default=os.getcwd(), help="Project root directory"
+    )
+    parser.add_argument(
+        "--frag_dp",
+        type=str,
+        required=True,
+        help="Output directory for fragment DAGs and statistics",
+    )
+    parser.add_argument(
+        "--proc_dp", type=str, required=True, help="Directory containing spec_df.pkl and mol_df.pkl"
+    )
+    parser.add_argument(
+        "--max_h_transfer",
+        type=int,
+        default=4,
+        help="Maximum hydrogen transfer allowed during fragmentation",
+    )
+    parser.add_argument(
+        "--nb_isomorphic",
+        type=booltype,
+        default=False,
+        help="Whether to compute neighborhood isomorphism features",
+    )
+    parser.add_argument(
+        "--wl_max_iterations",
+        type=int,
+        default=3,
+        help="Max Weisfeiler-Lehman iterations for isomorphism detection",
+    )
+    parser.add_argument(
+        "--dsets",
+        type=str,
+        nargs="+",
+        required=True,
+        help="Dataset names to include (e.g., nist20_hr)",
+    )
+    parser.add_argument(
+        "--tolerances",
+        type=str,
+        nargs="+",
+        default=["0.01", "0.005", "0.001", "0.0001", "10ppm", "5ppm"],
+        help="Mass tolerance values for peak matching statistics",
+    )
+    parser.add_argument(
+        "--isotopes",
+        type=booltype,
+        default=True,
+        help="Whether to compute isotopic peak distributions",
+    )
+    parser.add_argument(
+        "--wandb_mode",
+        type=str,
+        default="disabled",
+        choices=["online", "offline", "disabled"],
+        help="Weights & Biases logging mode",
+    )
+    parser.add_argument("--wandb_project", type=str, default="frag-gnn", help="W&B project name")
+    parser.add_argument("--wandb_entity", type=str, default="frag-gnn", help="W&B entity/team name")
+    parser.add_argument("--wandb_dp", type=str, default="wandb", help="W&B logging directory")
+    parser.add_argument(
+        "--compress_dags",
+        type=booltype,
+        default=True,
+        help="Whether to compress DAG files with gzip",
+    )
+    parser.add_argument(
+        "--wandb_run_name", type=str, help="Custom W&B run name (required when wandb_mode enabled)"
+    )
+    parser.add_argument(
+        "--save_dag", type=booltype, default=True, help="Whether to save DAG structures to disk"
+    )
+    parser.add_argument(
+        "--elements",
+        type=str,
+        nargs="+",
+        default=frag_utils.ELEMENTS,
+        help="Allowed chemical elements for molecules",
+    )
+    parser.add_argument(
+        "--prec_types", nargs="+", required=False, help="Precursor types to filter (optional)"
+    )
+    parser.add_argument(
+        "--inst_types", nargs="+", required=False, help="Instrument types to filter (optional)"
+    )
+    parser.add_argument(
+        "--frag_modes", nargs="+", required=False, help="Fragmentation modes to filter (optional)"
+    )
+    parser.add_argument(
+        "--ion_modes", nargs="+", required=False, help="Ion modes to filter (optional, e.g., P, N)"
+    )
+    parser.add_argument(
+        "--spec_type", type=str, default="MS2", help="Spectrum type to keep (e.g., MS2)"
+    )
+    parser.add_argument(
+        "--use_cached_dag",
+        type=booltype,
+        default=False,
+        help="Whether to reuse cached DAG files if available",
+    )
+    parser.add_argument(
+        "--save_as_hdf5",
+        type=booltype,
+        default=False,
+        help="Whether to save outputs in HDF5 format (currently unused)",
+    )
+    parser.add_argument(
+        "--disable_tqdm",
+        type=booltype,
+        default=False,
+        help="Disable tqdm progress bars and use logging instead",
+    )
     args = parser.parse_args()
- 
-    # Check if --flag is True and --conditional-arg is missing
-    if args.wandb_mode != 'disabled' and args.wandb_run_name:
-        parser.error("--wandb_run_name is required when --wandb_mode is not disabled")
+
+    # Check if wandb_mode is enabled but run_name is missing
+    if args.wandb_mode != "disabled" and not args.wandb_run_name:
+        parser.error("--wandb_run_name is required when --wandb_mode is not 'disabled'")
 
     if not args.disable_tqdm:
         tqdm.pandas()

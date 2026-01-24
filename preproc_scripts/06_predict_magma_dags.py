@@ -1,28 +1,24 @@
-import sys
 import argparse
-import logging
 import json
+import logging
+import shutil
+import sys
 from pathlib import Path
-import numpy as np
-import copy
-import pandas as pd
-from tqdm import tqdm
-from collections import defaultdict
 from pprint import pformat
+
+import pandas as pd
 import torch as th
 import yaml
-import rdkit
-from rdkit import Chem
 from rdkit import RDLogger
-import shutil
+from tqdm import tqdm
 
-from fragnnet.iceberg.pl_model import IcebergGenPL
-from fragnnet.utils.misc_utils import booltype
-from fragnnet.iceberg.dataset import SpecMolMagmaGenDataset
 import fragnnet.utils.frag_utils as frag_utils
-from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
+from fragnnet.iceberg.dataset import SpecMolMagmaGenDataset
+from fragnnet.iceberg.pl_model import IcebergGenPL
+from fragnnet.utils.data_utils import par_apply, rdkit_import, seq_apply
 from fragnnet.utils.misc_utils import booltype
-from fragnnet.utils.data_utils import seq_apply, par_apply, rdkit_import
+from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
+
 
 def run_magma_gen(
     num_entries: int,
@@ -38,7 +34,6 @@ def run_magma_gen(
     gpu: bool,
     rseed: int,
 ):
-
     th.manual_seed(rseed)
     device = "cuda" if gpu else "cpu"
 
@@ -64,7 +59,7 @@ def run_magma_gen(
         max_nodes=max_nodes,
         parallel=parallel,
         gpu=gpu,
-        rseed=rseed
+        rseed=rseed,
     )
     yaml_args = yaml.dump(args)
     with open(magma_gen_args_file, "w") as f:
@@ -86,18 +81,20 @@ def run_magma_gen(
         dsets=dsets,
         prec_types=["[M+H]+"],
         num_entries=num_entries,
-        spec_type="MS2"
+        spec_type="MS2",
     )
-    m_spec_df = merge_spec_df(spec_df,renormalize=False,sum_ints=False)
+    m_spec_df = merge_spec_df(spec_df, renormalize=False, sum_ints=False)
     if len(group_ids) > 0:
         m_spec_df = m_spec_df[m_spec_df["group_id"].isin(group_ids)].reset_index(drop=True)
-    both_df = m_spec_df[["group_id","mol_id","prec_type"]].merge(mol_df[["mol_id","smiles"]],on="mol_id",how="inner")
-    spec_entries = both_df[["group_id","prec_type","smiles"]].to_dict("records")
+    both_df = m_spec_df[["group_id", "mol_id", "prec_type"]].merge(
+        mol_df[["mol_id", "smiles"]], on="mol_id", how="inner"
+    )
+    spec_entries = both_df[["group_id", "prec_type", "smiles"]].to_dict("records")
 
     tree_processor = SpecMolMagmaGenDataset.init_tree_processor(
         pe_embed_k=pl_model.hparams.magma_params["pe_embed_k"],
         root_encode=pl_model.hparams.magma_params["root_encode"],
-        add_hs=pl_model.hparams.magma_params["add_hs"]
+        add_hs=pl_model.hparams.magma_params["add_hs"],
     )
 
     with th.no_grad():
@@ -118,7 +115,7 @@ def run_magma_gen(
                 threshold=threshold,
                 device=device,
                 max_nodes=max_nodes,
-                tree_processor=tree_processor
+                tree_processor=tree_processor,
             )
             output = {
                 "root_inchi": inchi,
@@ -131,14 +128,13 @@ def run_magma_gen(
             return output
 
         spec_entry_iter = tqdm(
-            spec_entries,
-            desc=pformat(single_predict_mol),
-            total=len(spec_entries)
+            spec_entries, desc=pformat(single_predict_mol), total=len(spec_entries)
         )
         if not parallel:
-            results = seq_apply(spec_entry_iter,single_predict_mol)
+            results = seq_apply(spec_entry_iter, single_predict_mol)
         else:
-            results = par_apply(spec_entry_iter,single_predict_mol)
+            results = par_apply(spec_entry_iter, single_predict_mol)
+
 
 def get_args():
     """get args"""

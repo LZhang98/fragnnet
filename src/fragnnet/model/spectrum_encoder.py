@@ -1,6 +1,14 @@
 import torch as th
 import torch.nn as nn
-from fragnnet.model.nn_blocks import MLPBlocks, SetTransformer, LowRankDense, GNN, build_pool_module
+
+from fragnnet.model.nn_blocks import (
+    GNN,
+    LowRankDense,
+    MLPBlocks,
+    SetTransformer,
+    build_pool_module,
+)
+
 
 class SpectrumEncoder(nn.Module):
     """
@@ -15,23 +23,24 @@ class SpectrumEncoder(nn.Module):
         num_blocks (int): Number of Set Transformer blocks.
         dropout (float): Dropout rate for regularization.
     """
+
     def __init__(
         self,
         spectrum_encoder_type: str,
-        input_dim,
-        hidden_dim,
-        output_dim,
-        num_heads=4,
-        num_inds=32,
-        num_blocks=2,
-        dropout=0.1,
-        normalization="batch",
+        input_dim: int,
+        hidden_dim: int,
+        output_dim: int,
+        num_heads: int = 4,
+        num_inds: int = 32,
+        num_blocks: int = 2,
+        dropout: float = 0.1,
+        normalization: str = "batch",
         # GNN parameters
-        gnn_type="GINE",
-        edge_feats_size=0,
-        pool_type="mean",
-    ):
-        super(SpectrumEncoder, self).__init__()
+        gnn_type: str = "GINE",
+        edge_feats_size: int = 0,
+        pool_type: str = "mean",
+    ) -> None:
+        super().__init__()
         self.spectrum_encoder_type = spectrum_encoder_type
 
         if spectrum_encoder_type == "set_transformer":
@@ -74,34 +83,31 @@ class SpectrumEncoder(nn.Module):
                 edge_feats_size=edge_feats_size,
                 gnn_type=gnn_type,
                 dropout=dropout,
-                normalization=normalization
+                normalization=normalization,
             )
             self.pool = build_pool_module(pool_type, hidden_dim)
             self.gnn_proj = nn.Linear(hidden_dim, output_dim)
         else:
             raise ValueError(f"Unsupported spectrum_encoder_type: {spectrum_encoder_type}")
 
-    def forward(self, x, batch_idx=None):
+    def forward(self, x: th.Tensor, batch_idx: th.Tensor | None = None) -> th.Tensor:
         """
-        Forward pass for the SetTransformer Spectrum Encoder.
+        Forward pass for the Spectrum Encoder.
 
         Args:
-            x (Tensor): Input tensor of shape (batch_size, set_size, input_dim) or (total_elements, input_dim).
-            batch_idx (Tensor, optional): Batch indices for variable-sized sets.
+            x (Tensor): Input tensor. If GNN, expected to have node features.
+            batch_idx (Tensor, optional): Batch indices for variable-sized sets or GNN pooling.
 
         Returns:
             Tensor: Encoded spectrum of shape (batch_size, output_dim).
         """
-        if self.spectrum_encoder_type == "gnn":
-            # x is expected to be a pyg Batch object
-            batch = x
-            spec_embed = self.model(batch.x, batch.batch, batch.edge_index, batch.edge_attr)
-            spec_embed = self.pool(spec_embed, batch.batch)
-            spec_embed = self.gnn_proj(spec_embed)
-            batch_size = spec_embed.shape[0]
+        if self.spectrum_encoder_type == "set_transformer":
+            return self.model(x, batch_idx=batch_idx)
+        elif self.spectrum_encoder_type == "gnn":
+            # For GNN, we need to handle batch_idx for pooling
+            node_embeds = self.model(x)
+            pooled = self.pool(node_embeds, batch_idx)
+            return self.gnn_proj(pooled)
         else:
-            # Get spectrum embedding from SetTransformer
-            spec_embed = self.model(x, batch_idx=batch_idx)
-            batch_size = spec_embed.shape[0]
-
-        return spec_embed
+            # MLP and LowRankDense expect (batch_size, input_dim) or handled by model
+            return self.model(x)

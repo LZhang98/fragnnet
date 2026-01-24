@@ -1,20 +1,24 @@
-import pandas as pd
+import copy
 import os
+
+import numpy as np
+import pandas as pd
 import torch as th
 from torch.utils.data import Dataset
-import numpy as np
-
 from tqdm import tqdm
-import copy
 
-from fragnnet.utils.spec_utils import batch_func
-from fragnnet.utils.proc_utils import merge_spec_df
-from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
-from fragnnet.utils.data_utils import fill_missing_ace, fill_missing_nce, seq_apply_df_rows
+from fragnnet.utils.data_utils import (
+    fill_missing_ace,
+    fill_missing_nce,
+    seq_apply_df_rows,
+)
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
+from fragnnet.utils.proc_utils import merge_spec_df
+from fragnnet.utils.spec_utils import batch_func
+
 
 class BaseDataset(Dataset):
-
     def _base_init(
         self,
         spec_fp: str,
@@ -22,8 +26,19 @@ class BaseDataset(Dataset):
         split_dp: str,
         split: str,
         subsample_params: dict,
-        spec_params: dict):
+        spec_params: dict,
+    ) -> None:
+        """
+        Initialize base dataset with spectral and molecular data.
 
+        Args:
+            spec_fp: File path to the spectral data pickle file.
+            mol_fp: File path to the molecular data pickle file.
+            split_dp: Directory path containing split CSV files.
+            split: Name of the data split (e.g., 'train', 'val', 'test').
+            subsample_params: Dictionary of subsampling parameters.
+            spec_params: Dictionary of spectral processing parameters.
+        """
         self.split = split
         self.subsample_params = subsample_params
         self.spec_params = spec_params
@@ -33,7 +48,7 @@ class BaseDataset(Dataset):
             split_dp=split_dp,
             splits=[split],
             subsample_params=subsample_params,
-            spec_params=spec_params
+            spec_params=spec_params,
         )
         self.spec_df = spec_df
         self.mol_df = mol_df
@@ -46,17 +61,43 @@ class BaseDataset(Dataset):
         self._setup_inst_type_to_idx()
 
     @staticmethod
-    def _setup_dfs( 
-        spec_fp_or_df: str|pd.DataFrame,
-        mol_fp_or_df: str|pd.DataFrame,
+    def _setup_dfs(
+        spec_fp_or_df: str | pd.DataFrame,
+        mol_fp_or_df: str | pd.DataFrame,
         split_dp: str,
         splits: list[str],
         subsample_params: dict,
-        spec_params: dict):
-        
-        spec_df = spec_fp_or_df if isinstance(spec_fp_or_df, pd.DataFrame) else pd.read_pickle(spec_fp_or_df)
-        mol_df = mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
-  
+        spec_params: dict,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, str, str | None]:
+        """
+        Setup and process spectral and molecular dataframes with split information.
+
+        Args:
+            spec_fp_or_df: File path or DataFrame containing spectral data.
+            mol_fp_or_df: File path or DataFrame containing molecular data.
+            split_dp: Directory path containing split CSV files.
+            splits: List of split names to process.
+            subsample_params: Dictionary of subsampling parameters.
+            spec_params: Dictionary of spectral processing parameters.
+
+        Returns:
+            Tuple containing:
+                - spec_df: Processed spectral DataFrame
+                - mol_df: Processed molecular DataFrame
+                - um_spec_df: Unmerged spectral DataFrame
+                - split_df: Split DataFrame
+                - id_key: Identifier key ('spec_id' or 'group_id')
+                - ce_key: Collision energy key ('ace', 'nce', or None)
+        """
+        spec_df = (
+            spec_fp_or_df
+            if isinstance(spec_fp_or_df, pd.DataFrame)
+            else pd.read_pickle(spec_fp_or_df)
+        )
+        mol_df = (
+            mol_fp_or_df if isinstance(mol_fp_or_df, pd.DataFrame) else pd.read_pickle(mol_fp_or_df)
+        )
+
         split_dfs = []
         for split in splits:
             # assert split in ["train","val","test","secondary","predict_only"], split
@@ -68,51 +109,77 @@ class BaseDataset(Dataset):
                 split_df["spec_id"] = spec_df["spec_id"]
                 split_df["mol_id"] = spec_df["mol_id"]
                 split_df["group_id"] = spec_df["spec_id"]
-            else:   
-                split_fp = os.path.join(split_dp,f"{split}_ids.csv")
+            else:
+                split_fp = os.path.join(split_dp, f"{split}_ids.csv")
                 assert os.path.isfile(split_fp), split_fp
                 split_df = pd.read_csv(split_fp)
             split_dfs.append(split_df)
-        split_df = pd.concat(split_dfs,ignore_index=True).reset_index(drop=True)
-   
+        split_df = pd.concat(split_dfs, ignore_index=True).reset_index(drop=True)
+
         # select spectra
         spec_df = spec_df[spec_df["spec_id"].isin(split_df["spec_id"])]
         # select molecules
         mol_df = mol_df[mol_df["mol_id"].isin(split_df["mol_id"])]
         assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
-        
+
         # covert ace and nce if there is data
         assert not (spec_params["ace"] and spec_params["nce"])
         if spec_params["ace"]:
             ce_key = "ace"
-            spec_df.loc[:,ce_key] = seq_apply_df_rows(spec_df, lambda row: fill_missing_ace(row, ace_colname="ace", nce_colname="nce"))
-            spec_df.loc[:,f"{ce_key}_extra_1"] = seq_apply_df_rows(spec_df, lambda row: fill_missing_ace(row, ace_colname="ace_extra_1", nce_colname="nce_extra_1"))
-            spec_df.loc[:,f"{ce_key}_extra_2"] = seq_apply_df_rows(spec_df, lambda row: fill_missing_ace(row, ace_colname="ace_extra_2", nce_colname="nce_extra_2"))
+            spec_df.loc[:, ce_key] = seq_apply_df_rows(
+                spec_df,
+                lambda row: fill_missing_ace(row, ace_colname="ace", nce_colname="nce"),
+            )
+            spec_df.loc[:, f"{ce_key}_extra_1"] = seq_apply_df_rows(
+                spec_df,
+                lambda row: fill_missing_ace(
+                    row, ace_colname="ace_extra_1", nce_colname="nce_extra_1"
+                ),
+            )
+            spec_df.loc[:, f"{ce_key}_extra_2"] = seq_apply_df_rows(
+                spec_df,
+                lambda row: fill_missing_ace(
+                    row, ace_colname="ace_extra_2", nce_colname="nce_extra_2"
+                ),
+            )
         elif spec_params["nce"]:
             ce_key = "nce"
-            spec_df.loc[:,ce_key] = seq_apply_df_rows(spec_df, lambda row: fill_missing_nce(row, ace_colname="ace", nce_colname="nce"))
-            spec_df.loc[:,f"{ce_key}_extra_1"] = seq_apply_df_rows(spec_df, lambda row: fill_missing_nce(row, ace_colname="ace_extra_1", nce_colname="nce_extra_1"))
-            spec_df.loc[:,f"{ce_key}_extra_2"] = seq_apply_df_rows(spec_df, lambda row: fill_missing_nce(row, ace_colname="ace_extra_2", nce_colname="nce_extra_2"))
+            spec_df.loc[:, ce_key] = seq_apply_df_rows(
+                spec_df,
+                lambda row: fill_missing_nce(row, ace_colname="ace", nce_colname="nce"),
+            )
+            spec_df.loc[:, f"{ce_key}_extra_1"] = seq_apply_df_rows(
+                spec_df,
+                lambda row: fill_missing_nce(
+                    row, ace_colname="ace_extra_1", nce_colname="nce_extra_1"
+                ),
+            )
+            spec_df.loc[:, f"{ce_key}_extra_2"] = seq_apply_df_rows(
+                spec_df,
+                lambda row: fill_missing_nce(
+                    row, ace_colname="ace_extra_2", nce_colname="nce_extra_2"
+                ),
+            )
         else:
             ce_key = None
 
         if ce_key is not None:
-            #print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_1"]])
-            #print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_2"]])
+            # print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_1"]])
+            # print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_2"]])
             print(f">> replace missing {ce_key} with -1, and fill ramped/stepped ces accordingly")
             # First fill extra columns with -1 (these stay as floats)
-            spec_df.loc[:,f"{ce_key}_extra_1"] = spec_df.loc[:,f"{ce_key}_extra_1"].fillna(-1)
-            spec_df.loc[:,f"{ce_key}_extra_2"] = spec_df.loc[:,f"{ce_key}_extra_2"].fillna(-1)
-            
+            spec_df.loc[:, f"{ce_key}_extra_1"] = spec_df.loc[:, f"{ce_key}_extra_1"].fillna(-1)
+            spec_df.loc[:, f"{ce_key}_extra_2"] = spec_df.loc[:, f"{ce_key}_extra_2"].fillna(-1)
+
             def _fill_ce_list(row, ce_key):
                 ce = row[ce_key]
                 ce_extra_1 = row[f"{ce_key}_extra_1"]
                 ce_extra_2 = row[f"{ce_key}_extra_2"]
-                
+
                 # Handle missing main CE value
                 if pd.isna(ce):
                     ce = -1
-                    
+
                 if ce != -1 and ce_extra_1 != -1 and ce_extra_2 != -1:
                     # for stepped ce
                     # ce is the lower bound, ce_extra_1 is the middle, ce_extra_2 is the upper bound
@@ -128,7 +195,7 @@ class BaseDataset(Dataset):
                 else:
                     # for single ce
                     return [ce]
-            
+
             # Apply the function to create lists - this will set the correct dtype
             result_series = seq_apply_df_rows(spec_df, lambda row: _fill_ce_list(row, ce_key))
             # Convert column to object dtype before assignment to avoid dtype warning
@@ -136,10 +203,12 @@ class BaseDataset(Dataset):
             spec_df.loc[:, ce_key] = result_series
 
         if spec_params["test_ces"] is not None and ce_key is not None and "test" in splits:
-            test_split_fp = os.path.join(split_dp,"test_ids.csv")
+            test_split_fp = os.path.join(split_dp, "test_ids.csv")
             test_split_df = pd.read_csv(test_split_fp)
             orig_test_spec_df = spec_df[spec_df["spec_id"].isin(test_split_df["spec_id"])]
-            test_drop_ids = orig_test_spec_df[~(orig_test_spec_df[ce_key].isin(np.array(spec_params["test_ces"])))][["spec_id","group_id"]]
+            test_drop_ids = orig_test_spec_df[
+                ~(orig_test_spec_df[ce_key].isin(np.array(spec_params["test_ces"])))
+            ][["spec_id", "group_id"]]
             spec_df = spec_df[~(spec_df["spec_id"].isin(test_drop_ids["spec_id"]))]
             new_test_spec_df = spec_df[spec_df["spec_id"].isin(test_split_df["spec_id"])]
             orig_test_spec_count = orig_test_spec_df["spec_id"].nunique()
@@ -151,27 +220,30 @@ class BaseDataset(Dataset):
             print(f"> After drop: {new_test_spec_count} spectra, {new_test_group_count} groups")
 
         # merge spectra
-        um_spec_df = spec_df[["dset","dset_spec_id","spec_id","group_id","mol_id","peaks"]].copy()
+        um_spec_df = spec_df[
+            ["dset", "dset_spec_id", "spec_id", "group_id", "mol_id", "peaks"]
+        ].copy()
         if spec_params["merge"]:
-            spec_df = merge_spec_df(spec_df,keep_ces=spec_params["merge_keep_ces"])
+            spec_df = merge_spec_df(spec_df, keep_ces=spec_params["merge_keep_ces"])
             id_key = "group_id"
         else:
             id_key = "spec_id"
-   
+
         # subsample
-        if subsample_params.get(split,False) and subsample_params["subsample_size"] > 0:
-            if isinstance(subsample_params["subsample_size"],int):
+        if subsample_params.get(split, False) and subsample_params["subsample_size"] > 0:
+            if isinstance(subsample_params["subsample_size"], int):
                 n = subsample_params["subsample_size"]
                 frac = None
             else:
-                assert isinstance(subsample_params["subsample_size"],float)
+                assert isinstance(subsample_params["subsample_size"], float)
                 n = None
                 frac = subsample_params["subsample_size"]
             spec_df = spec_df.sample(
                 n=n,
                 frac=frac,
                 random_state=subsample_params["subsample_seed"],
-                replace=False)
+                replace=False,
+            )
             mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
             um_spec_df = um_spec_df[um_spec_df[id_key].isin(spec_df[id_key])]
 
@@ -179,27 +251,62 @@ class BaseDataset(Dataset):
         spec_df = spec_df.reset_index(drop=True)
         mol_df = mol_df.reset_index(drop=True)
         # use mol_id as index for speedy access
-        mol_df = mol_df.set_index("mol_id",drop=False).sort_index().rename_axis(None)
+        mol_df = mol_df.set_index("mol_id", drop=False).sort_index().rename_axis(None)
         return spec_df, mol_df, um_spec_df, split_df, id_key, ce_key
 
-    def _compute_counts(self):
+    def _compute_counts(self) -> None:
+        """
+        Compute and store counts of spectra per molecule, per group, and groups per molecule.
 
-        self.group_per_mol = self.spec_df[["mol_id","group_id"]].drop_duplicates().groupby("mol_id").size().to_dict()
+        Sets the following instance attributes:
+            - group_per_mol: Dictionary mapping molecule IDs to group counts.
+            - spec_per_mol: Dictionary mapping molecule IDs to spectrum counts.
+            - spec_per_group: Dictionary mapping group IDs to spectrum counts.
+        """
+        self.group_per_mol = (
+            self.spec_df[["mol_id", "group_id"]]
+            .drop_duplicates()
+            .groupby("mol_id")
+            .size()
+            .to_dict()
+        )
         if self.spec_params["merge"]:
             self.spec_per_mol = copy.deepcopy(self.group_per_mol)
-            self.spec_per_group = {group_id: 1 for group_id in self.spec_df["group_id"].unique()}
+            self.spec_per_group = dict.fromkeys(self.spec_df["group_id"].unique(), 1)
         else:
-            self.spec_per_mol = self.spec_df[["mol_id","spec_id"]].drop_duplicates().groupby("mol_id").size().to_dict()
-            self.spec_per_group = self.spec_df[["group_id","spec_id"]].drop_duplicates().groupby("group_id").size().to_dict()
+            self.spec_per_mol = (
+                self.spec_df[["mol_id", "spec_id"]]
+                .drop_duplicates()
+                .groupby("mol_id")
+                .size()
+                .to_dict()
+            )
+            self.spec_per_group = (
+                self.spec_df[["group_id", "spec_id"]]
+                .drop_duplicates()
+                .groupby("group_id")
+                .size()
+                .to_dict()
+            )
 
-    def get_group_mol_stats(self):
+    def get_group_mol_stats(self) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
+        """
+        Retrieve statistics about groups, molecules, and spectra counts.
 
+        Returns:
+            Tuple of tensors containing:
+                - group_ids: Group IDs for each spectrum
+                - mol_ids: Molecule IDs for each spectrum
+                - spec_per_group_stats: Number of spectra per group
+                - spec_per_mol_stats: Number of spectra per molecule
+                - group_per_mol_stats: Number of groups per molecule
+        """
         group_ids = []
         mol_ids = []
         spec_per_group_stats = []
         spec_per_mol_stats = []
         group_per_mol_stats = []
-        for row_idx, row in self.spec_df.iterrows():
+        for _, row in self.spec_df.iterrows():
             spec_entry = row
             mol_id = spec_entry["mol_id"]
             group_id = spec_entry["group_id"]
@@ -216,30 +323,61 @@ class BaseDataset(Dataset):
         spec_per_group_stats = th.tensor(spec_per_group_stats)
         spec_per_mol_stats = th.tensor(spec_per_mol_stats)
         group_per_mol_stats = th.tensor(group_per_mol_stats)
-        return group_ids, mol_ids, spec_per_group_stats, spec_per_mol_stats, group_per_mol_stats
+        return (
+            group_ids,
+            mol_ids,
+            spec_per_group_stats,
+            spec_per_mol_stats,
+            group_per_mol_stats,
+        )
 
     @staticmethod
-    def get_data_dict_types():
-        # return list of data dict type used for caching
-        # Spectral Preprocessed Shared Dictionary: spec_pp_sd
+    def get_data_dict_types() -> list[str]:
+        """
+        Return list of data dictionary types used for caching.
+
+        Returns:
+            List containing data dictionary type identifiers.
+            - 'spec_pp_sd': Spectral Preprocessed Shared Dictionary
+        """
         return ["spec_pp_sd"]
 
-    def _preprocess_spec(self,spec_pp_sd: dict):
+    def _preprocess_spec(self, spec_pp_sd: dict) -> None:
+        """
+        Preload and pre-process all spectral data into shared dictionary.
 
+        Args:
+            spec_pp_sd: Shared dictionary to store preprocessed spectral data.
+        """
         # preload and pre-process spectra
         if self.spec_params["preprocess"]:
             self.spec_datas = spec_pp_sd
             total_spec_data_size = 0
-            for idx, spec_entry in tqdm(self.spec_df.iterrows(),desc="> preprocess spec",total=len(self.spec_df)):
+            for idx, spec_entry in tqdm(
+                self.spec_df.iterrows(),
+                desc="> preprocess spec",
+                total=len(self.spec_df),
+            ):
                 spec_data = self._process_spec(spec_entry)
                 total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
                 self.spec_datas[idx] = spec_data
-            print(f"> total_spec_data_size: {total_spec_data_size/1e6:.2f} MB")
+            print(f"> total_spec_data_size: {total_spec_data_size / 1e6:.2f} MB")
 
     @staticmethod
-    def _get_mzs_ints(peaks:list):
+    def _get_mzs_ints(peaks: list) -> tuple[th.Tensor, th.Tensor]:
         """
-        convert peaks to tensors, it is caller's responsibility to make sure data is valid 
+        Convert peak list to m/z and intensity tensors.
+
+        Args:
+            peaks: List of (m/z, intensity) tuples.
+
+        Returns:
+            Tuple containing:
+                - mzs: Tensor of m/z values
+                - ints: Tensor of intensity values
+
+        Note:
+            It is the caller's responsibility to ensure data is valid.
         """
         mzs, ints = [], []
         for peak in peaks:
@@ -247,27 +385,64 @@ class BaseDataset(Dataset):
             mzs.append(p_mz)
             ints.append(p_int)
 
-        mzs = th.tensor(mzs,dtype=th.float)
-        ints = th.tensor(ints,dtype=th.float)
+        mzs = th.tensor(mzs, dtype=th.float)
+        ints = th.tensor(ints, dtype=th.float)
         # mzs, ints = filter_func(mzs, ints, self.spec_params["ints_thresh"], self.spec_params["mz_max"])
         return mzs, ints
-    
-    def _setup_prec_type_to_idx(self):
 
+    def _setup_prec_type_to_idx(self) -> None:
+        """
+        Setup bidirectional mappings between precursor types and indices.
+
+        Sets the following instance attributes:
+            - prec_type_to_idx: Dictionary mapping precursor type strings to indices.
+            - idx_to_prec_type: Dictionary mapping indices to precursor type strings.
+            - num_prec_types: Total number of precursor types.
+        """
         prec_types = sorted(self.spec_params["prec_types"])
         assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types), prec_types
         self.prec_type_to_idx = {prec_type: idx for idx, prec_type in enumerate(prec_types)}
         self.idx_to_prec_type = {idx: prec_type for idx, prec_type in enumerate(prec_types)}
         self.num_prec_types = len(prec_types)
 
-    def _setup_inst_type_to_idx(self):
+    def _setup_inst_type_to_idx(self) -> None:
+        """
+        Setup bidirectional mappings between instrument types and indices.
 
+        Sets the following instance attributes:
+            - inst_type_to_idx: Dictionary mapping instrument type strings to indices.
+            - idx_to_inst_type: Dictionary mapping indices to instrument type strings.
+            - num_inst_types: Total number of instrument types.
+        """
         inst_types = sorted(self.spec_params["inst_types"])
         self.inst_type_to_idx = {inst_type: idx for idx, inst_type in enumerate(inst_types)}
         self.idx_to_inst_type = {idx: inst_type for idx, inst_type in enumerate(inst_types)}
         self.num_inst_types = len(inst_types)
 
-    def _process_spec(self,spec_entry):
+    def _process_spec(self, spec_entry: pd.Series) -> dict:
+        """
+        Process a single spectral entry into model-ready format.
+
+        Args:
+            spec_entry: DataFrame row containing spectral data.
+
+        Returns:
+            Dictionary containing processed spectral data with keys depending on spec_params:
+                - spec_mzs: m/z values (if sparse)
+                - spec_ints: Intensity values (if sparse)
+                - spec_prec_type: Precursor type index (if prec_type enabled)
+                - spec_prec_type_str: Precursor type string (if prec_type_str enabled)
+                - spec_inst_type: Instrument type index (if inst_type enabled)
+                - spec_prec_mass_diff: Precursor mass difference (if prec_mass_diff enabled)
+                - spec_ce: Collision energy values (if nce or ace enabled)
+                - spec_prec_mz: Precursor m/z value (if prec_mz enabled)
+                - spec_unique_id: Unique identifier (if unique_id enabled)
+                - group_id: Group identifier (if unique_id enabled)
+                - mol_id: Molecule identifier (if unique_id enabled)
+                - spec_per_mol: Spectra count per molecule (if counts enabled)
+                - group_per_mol: Groups count per molecule (if counts enabled)
+                - spec_per_group: Spectra count per group (if counts enabled)
+        """
         spec_data = {}
         # peak data
         mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
@@ -278,18 +453,18 @@ class BaseDataset(Dataset):
         # metadata
         if self.spec_params["prec_type"]:
             prec_type = spec_entry["prec_type"]
-            prec_type = th.tensor([self.prec_type_to_idx[prec_type]],dtype=th.long)
+            prec_type = th.tensor([self.prec_type_to_idx[prec_type]], dtype=th.long)
             spec_data["spec_prec_type"] = prec_type
         if self.spec_params["prec_type_str"]:
             prec_type_str = spec_entry["prec_type"]
             spec_data["spec_prec_type_str"] = np.array([prec_type_str])
         if self.spec_params["inst_type"]:
             inst_type = spec_entry["inst_type"]
-            inst_type = th.tensor([self.inst_type_to_idx[inst_type]],dtype=th.long)
+            inst_type = th.tensor([self.inst_type_to_idx[inst_type]], dtype=th.long)
             spec_data["spec_inst_type"] = inst_type
         if self.spec_params["prec_mass_diff"]:
             prec_type = spec_entry["prec_type"]
-            mass_diff = th.tensor([PREC_TYPE_TO_MASS_DIFF[prec_type]],dtype=th.float)
+            mass_diff = th.tensor([PREC_TYPE_TO_MASS_DIFF[prec_type]], dtype=th.float)
             spec_data["spec_prec_mass_diff"] = mass_diff
         if self.spec_params["nce"] or self.spec_params["ace"]:
             assert self.ce_key is not None
@@ -299,47 +474,81 @@ class BaseDataset(Dataset):
             # both merged and unmerged spectra are stored as list of ces
             # for merged spectra, it is list of ces used to merge
             # for unmerged spectra, it is list of ces available include both ramped/stepped ces
-            assert isinstance(ce,list), type(ce)
-            ce = th.tensor(ce,dtype=th.float)
+            assert isinstance(ce, list), type(ce)
+            ce = th.tensor(ce, dtype=th.float)
             spec_data["spec_ce"] = ce
         if self.spec_params["prec_mz"]:
             prec_mz = spec_entry["prec_mz"]
-            prec_mz = th.tensor([float(prec_mz)],dtype=th.float)
+            prec_mz = th.tensor([float(prec_mz)], dtype=th.float)
             spec_data["spec_prec_mz"] = prec_mz
         if self.spec_params["unique_id"]:
             unique_id = spec_entry[self.id_key]
-            unique_id = th.tensor([unique_id],dtype=th.long)
+            unique_id = th.tensor([unique_id], dtype=th.long)
             spec_data["spec_unique_id"] = unique_id
-            spec_data['group_id'] =  th.tensor([spec_entry['group_id']],dtype=th.long)
-            spec_data['mol_id'] = spec_entry['mol_id'] # mol id does not need to be an int #th.tensor([spec_entry['mol_id']],dtype=th.long)
+            spec_data["group_id"] = th.tensor([spec_entry["group_id"]], dtype=th.long)
+            spec_data["mol_id"] = spec_entry[
+                "mol_id"
+            ]  # mol id does not need to be an int #th.tensor([spec_entry['mol_id']],dtype=th.long)
         if self.spec_params["counts"]:
             spec_per_mol = self.spec_per_mol[spec_entry["mol_id"]]
-            spec_per_mol = th.tensor([spec_per_mol],dtype=th.long)
+            spec_per_mol = th.tensor([spec_per_mol], dtype=th.long)
             spec_data["spec_per_mol"] = spec_per_mol
             group_per_mol = self.group_per_mol[spec_entry["mol_id"]]
-            group_per_mol = th.tensor([group_per_mol],dtype=th.long)
+            group_per_mol = th.tensor([group_per_mol], dtype=th.long)
             spec_data["group_per_mol"] = group_per_mol
             spec_per_group = self.spec_per_group[spec_entry["group_id"]]
-            spec_per_group = th.tensor([spec_per_group],dtype=th.long)
+            spec_per_group = th.tensor([spec_per_group], dtype=th.long)
             spec_data["spec_per_group"] = spec_per_group
         return spec_data
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict:
+        """
+        Get a single data sample from the dataset.
 
+        Args:
+            idx: Index of the sample to retrieve.
+
+        Returns:
+            Dictionary containing the processed data sample.
+
+        Raises:
+            NotImplementedError: Must be implemented by subclasses.
+        """
         raise NotImplementedError()
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """
+        Get the total number of samples in the dataset.
 
+        Returns:
+            Number of spectral entries in the dataset.
+        """
         return len(self.spec_df)
 
     @staticmethod
     def get_collate_fn():
-        
+        """
+        Get the collate function for batching dataset samples.
+
+        Returns:
+            Collate function to use with DataLoader.
+        """
         return BaseDataset.collate_fn
 
     @staticmethod
-    def _setup_collate(data_list):
+    def _setup_collate(data_list: list[dict]) -> tuple[int, list[str], dict]:
+        """
+        Setup initial collation structure for batching.
 
+        Args:
+            data_list: List of data dictionaries from dataset samples.
+
+        Returns:
+            Tuple containing:
+                - batch_size: Number of samples in the batch
+                - keys: List of data keys to collate
+                - collate_data: Dictionary with lists of values for each key
+        """
         batch_size = len(data_list)
         keys = list(data_list[0].keys())
         collate_data = {key: [] for key in keys}
@@ -349,52 +558,69 @@ class BaseDataset(Dataset):
         return batch_size, keys, collate_data
 
     @staticmethod
-    def _special_collate(keys, collate_data):
+    def _special_collate(keys: list[str], collate_data: dict) -> None:
+        """
+        Handle special collation for sparse spectral data and collision energies.
 
+        Mutates keys and collate_data in-place to batch sparse tensors efficiently.
+
+        Args:
+            keys: List of data keys being collated (modified in-place).
+            collate_data: Dictionary containing lists of values to collate (modified in-place).
+        """
         # handle sparse spectra
         if "spec_ints" in keys and "spec_mzs" in keys:
             # create batch_idxs
-            mzs, ints, batch_idxs = batch_func(
-                collate_data["spec_mzs"],
-                collate_data["spec_ints"]
-            )
+            mzs, ints, batch_idxs = batch_func(collate_data["spec_mzs"], collate_data["spec_ints"])
             collate_data["spec_mzs"] = mzs
             collate_data["spec_ints"] = ints
             collate_data["spec_batch_idxs"] = batch_idxs
             # remove from list
             keys.remove("spec_ints")
             keys.remove("spec_mzs")
-   
+
         # handle sparse ces
-        if 'spec_ce' in keys:
+        if "spec_ce" in keys:
             # create batch_idxs
             ces, _, batch_idxs = batch_func(
-                collate_data['spec_ce'],
-                collate_data['spec_ce'] # duplicate for compatibility
+                collate_data["spec_ce"],
+                collate_data["spec_ce"],  # duplicate for compatibility
             )
-            collate_data['spec_ce'] = ces
+            collate_data["spec_ce"] = ces
             collate_data["spec_ce_batch_idxs"] = batch_idxs
             # remove from list
-            keys.remove('spec_ce')
-                
+            keys.remove("spec_ce")
+
     @staticmethod
-    def _standard_collate(batch_size,keys,collate_data):
-        """ mutates keys and collate_data """
+    def _standard_collate(batch_size: int, keys: list[str], collate_data: dict) -> None:
+        """
+        Perform standard collation for generic data types.
+
+        Mutates keys and collate_data in-place. Handles lists, tensors, and numpy arrays.
+
+        Args:
+            batch_size: Number of samples in the batch.
+            keys: List of data keys being collated (modified in-place).
+            collate_data: Dictionary containing lists of values to collate (modified in-place).
+
+        Raises:
+            TypeError: If an unsupported data type is encountered.
+        """
 
         # handle generic data
         for key in keys:
             values = collate_data[key]
-            if isinstance(values[0],list):
+            if isinstance(values[0], list):
                 # flatten
                 values = flatten_lol(values)
                 collate_data[key] = values
-            elif isinstance(values[0],th.Tensor):
+            elif isinstance(values[0], th.Tensor):
                 # cat
-                values = th.cat(values,dim=0)
+                values = th.cat(values, dim=0)
                 collate_data[key] = values
-            elif isinstance(values[0],np.ndarray):
+            elif isinstance(values[0], np.ndarray):
                 # cat
-                values = np.concatenate(values,axis=0)
+                values = np.concatenate(values, axis=0)
                 collate_data[key] = values
             elif key in ["mol_id"]:
                 collate_data[key] = values
@@ -406,6 +632,17 @@ class BaseDataset(Dataset):
         collate_data["batch_size"] = th.tensor(batch_size, dtype=th.long)
 
     @staticmethod
-    def collate_fn(data_list):
+    def collate_fn(data_list: list[dict]) -> dict:
+        """
+        Collate a list of data samples into a batched dictionary.
 
+        Args:
+            data_list: List of data dictionaries from dataset samples.
+
+        Returns:
+            Batched data dictionary ready for model input.
+
+        Raises:
+            NotImplementedError: Must be implemented by subclasses.
+        """
         raise NotImplementedError()

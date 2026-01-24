@@ -1,15 +1,16 @@
-""" mol_graph.py.
+"""mol_graph.py.
 
 Classes to featurize molecules into a graph with onehot concat feats on atoms
 and bonds. Inspired by the dgllife library.
 
 """
-from rdkit import Chem
+
 import numpy as np
 import torch as th
+from rdkit import Chem
 
-from fragnnet.utils.dgl_compat_utils import dgl, DGL_AVAILABLE
 import fragnnet.iceberg.nn_utils.nn_utils as nn_utils
+from fragnnet.utils.dgl_compat_utils import dgl
 
 atom_feat_registry = {}
 bond_feat_registry = {}
@@ -120,9 +121,7 @@ class MolDGLGraph:
 
         # Add doubles
         if bigraph:
-            rev_bonds = np.vstack([bond_tuples[:, 1], bond_tuples[:, 0]]).transpose(
-                1, 0
-            )
+            rev_bonds = np.vstack([bond_tuples[:, 1], bond_tuples[:, 0]]).transpose(1, 0)
             bond_tuples = np.vstack([bond_tuples, rev_bonds])
             bond_feats = np.vstack([bond_feats, bond_feats])
         return {
@@ -147,9 +146,7 @@ class MolDGLGraph:
         bond_feats = th.from_numpy(mol_graph["bond_feats"]).float()
         atom_feats = th.from_numpy(mol_graph["atom_feats"]).float()
 
-        g = dgl.graph(
-            data=(bond_inds[:, 0], bond_inds[:, 1]), num_nodes=atom_feats.shape[0]
-        )
+        g = dgl.graph(data=(bond_inds[:, 0], bond_inds[:, 1]), num_nodes=atom_feats.shape[0])
         g.ndata["h"] = atom_feats
         g.edata["e"] = bond_feats
 
@@ -248,7 +245,6 @@ class AtomDegree(FeatBase):
 
 @register_atom_feat
 class AtomHybrid(FeatBase):
-
     name = "a_hybrid"
     allowable_set = [
         Chem.rdchem.HybridizationType.SP,
@@ -267,7 +263,6 @@ class AtomHybrid(FeatBase):
 
 @register_atom_feat
 class AtomFormal(FeatBase):
-
     name = "a_formal"
     allowable_set = list(range(-2, 3))
     feat_size = len(allowable_set) + 1
@@ -280,7 +275,6 @@ class AtomFormal(FeatBase):
 
 @register_atom_feat
 class AtomRadical(FeatBase):
-
     name = "a_radical"
     allowable_set = list(range(5))
     feat_size = len(allowable_set) + 1
@@ -293,7 +287,6 @@ class AtomRadical(FeatBase):
 
 @register_atom_feat
 class AtomRing(FeatBase):
-
     name = "a_ring"
     allowable_set = [True, False]
     feat_size = len(allowable_set) * 2
@@ -307,7 +300,6 @@ class AtomRing(FeatBase):
 
 @register_atom_feat
 class AtomChiral(FeatBase):
-
     name = "a_chiral"
     allowable_set = [
         Chem.rdchem.ChiralType.CHI_UNSPECIFIED,
@@ -325,7 +317,6 @@ class AtomChiral(FeatBase):
 
 @register_atom_feat
 class AtomMass(FeatBase):
-
     name = "a_mass"
     coef = 0.01
     feat_size = 1
@@ -337,7 +328,6 @@ class AtomMass(FeatBase):
 
 @register_bond_feat
 class BondDegree(FeatBase):
-
     name = "b_degree"
     allowable_set = [
         Chem.rdchem.BondType.SINGLE,
@@ -354,7 +344,6 @@ class BondDegree(FeatBase):
 
 @register_bond_feat
 class BondStereo(FeatBase):
-
     name = "b_stereo"
     allowable_set = [
         Chem.rdchem.BondStereo.STEREONONE,
@@ -373,7 +362,6 @@ class BondStereo(FeatBase):
 
 @register_bond_feat
 class BondConj(FeatBase):
-
     name = "b_ring"
     feat_size = 2
 
@@ -384,7 +372,6 @@ class BondConj(FeatBase):
 
 @register_bond_feat
 class BondConj(FeatBase):
-
     name = "b_conj"
     feat_size = 2
 

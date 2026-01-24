@@ -1,6 +1,6 @@
+import numpy as np
 import torch as th
 import torch.nn as nn
-import numpy as np
 
 import fragnnet.iceberg.common as common
 
@@ -20,7 +20,9 @@ class IntFeaturizer(nn.Module):
     """
 
     MAX_COUNT_INT = 255  # the maximum number of integers that we are going to see as a "count", i.e. 0 to MAX_COUNT_INT-1
-    NUM_EXTRA_EMBEDDINGS = 1  # Number of extra embeddings to learn -- one for the "to be confirmed" embedding.
+    NUM_EXTRA_EMBEDDINGS = (
+        1  # Number of extra embeddings to learn -- one for the "to be confirmed" embedding.
+    )
 
     def __init__(self, embedding_dim):
         super().__init__()
@@ -34,9 +36,7 @@ class IntFeaturizer(nn.Module):
         Convert the integer `tensor` into its new representation -- note that it gets stacked along final dimension.
         """
         orig_shape = tensor.shape
-        out_tensor = th.empty(
-            (*orig_shape, self.embedding_dim), device=tensor.device
-        )
+        out_tensor = th.empty((*orig_shape, self.embedding_dim), device=tensor.device)
         extra_embed = tensor >= self.MAX_COUNT_INT
 
         tensor = tensor.long()
@@ -71,21 +71,17 @@ class FourierFeaturizer(IntFeaturizer):
     """
 
     def __init__(self):
-
         num_freqs = int(np.ceil(np.log2(self.MAX_COUNT_INT))) + 2
         # ^ need at least this many to ensure that the whole input range can be represented on the half circle.
 
         freqs = 0.5 ** th.arange(num_freqs, dtype=th.float32)
         freqs_time_2pi = 2 * np.pi * freqs
 
-        super().__init__(
-            embedding_dim=2 * freqs_time_2pi.shape[0]
-        )  # 2 for cosine and sine
+        super().__init__(embedding_dim=2 * freqs_time_2pi.shape[0])  # 2 for cosine and sine
 
         # we will define the features at this frequency up front (as we only will ever see a fixed number of counts):
         combo_of_sinusoid_args = (
-            th.arange(self.MAX_COUNT_INT, dtype=th.float32)[:, None]
-            * freqs_time_2pi[None, :]
+            th.arange(self.MAX_COUNT_INT, dtype=th.float32)[:, None] * freqs_time_2pi[None, :]
         )
         all_features = th.cat(
             [th.cos(combo_of_sinusoid_args), th.sin(combo_of_sinusoid_args)],
@@ -112,7 +108,6 @@ class FourierFeaturizerSines(IntFeaturizer):
     """
 
     def __init__(self):
-
         num_freqs = int(np.ceil(np.log2(self.MAX_COUNT_INT))) + 2
         # ^ need at least this many to ensure that the whole input range can be represented on the half circle.
 
@@ -123,13 +118,10 @@ class FourierFeaturizerSines(IntFeaturizer):
 
         # we will define the features at this frequency up front (as we only will ever see a fixed number of counts):
         combo_of_sinusoid_args = (
-            th.arange(self.MAX_COUNT_INT, dtype=th.float32)[:, None]
-            * freqs_time_2pi[None, :]
+            th.arange(self.MAX_COUNT_INT, dtype=th.float32)[:, None] * freqs_time_2pi[None, :]
         )
         # ^ shape:  MAX_COUNT_INT x 2 * num_freqs
-        self.int_to_feat_matrix = nn.Parameter(
-            th.sin(combo_of_sinusoid_args).float()
-        )
+        self.int_to_feat_matrix = nn.Parameter(th.sin(combo_of_sinusoid_args).float())
         self.int_to_feat_matrix.requires_grad = False
 
 
@@ -148,7 +140,6 @@ class FourierFeaturizerAbsoluteSines(IntFeaturizer):
     """
 
     def __init__(self):
-
         num_freqs = int(np.ceil(np.log2(self.MAX_COUNT_INT))) + 2
 
         freqs = (0.5 ** th.arange(num_freqs, dtype=th.float32))[2:]
@@ -158,13 +149,10 @@ class FourierFeaturizerAbsoluteSines(IntFeaturizer):
 
         # we will define the features at this frequency up front (as we only will ever see a fixed number of counts):
         combo_of_sinusoid_args = (
-            th.arange(self.MAX_COUNT_INT, dtype=th.float32)[:, None]
-            * freqs_time_2pi[None, :]
+            th.arange(self.MAX_COUNT_INT, dtype=th.float32)[:, None] * freqs_time_2pi[None, :]
         )
         # ^ shape:  MAX_COUNT_INT x 2 * num_freqs
-        self.int_to_feat_matrix = nn.Parameter(
-            th.abs(th.sin(combo_of_sinusoid_args)).float()
-        )
+        self.int_to_feat_matrix = nn.Parameter(th.abs(th.sin(combo_of_sinusoid_args)).float())
         self.int_to_feat_matrix.requires_grad = False
 
 
@@ -185,9 +173,7 @@ class RBFFeaturizer(IntFeaturizer):
         centers = th.linspace(0, self.MAX_COUNT_INT - 1, num_funcs)
 
         pre_exponential_terms = (
-            -0.5
-            * ((th.arange(self.MAX_COUNT_INT)[:, None] - centers[None, :]) / width)
-            ** 2
+            -0.5 * ((th.arange(self.MAX_COUNT_INT)[:, None] - centers[None, :]) / width) ** 2
         )
         # ^ shape: MAX_COUNT_INT x num_funcs
         feats = th.exp(pre_exponential_terms)
