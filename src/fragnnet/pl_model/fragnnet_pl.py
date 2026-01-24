@@ -1,26 +1,46 @@
-import torch as th
-import torch.nn.functional as F
 import logging
+from typing import Any
+
+import torch as th
 import torch._dynamo as th_dynamo
+import torch.nn.functional as F
+
 try:
     from torch._dynamo.utils import CompileProfiler
+
     profiler_available = True
 except ImportError:
     profiler_available = False
 import os
 
 from fragnnet.model import FraGNNetModel
-from fragnnet.model.loss import get_sparse_cross_entropy_fn, sparse_entropy_fn, sparse_conditional_entropy_fn, get_edge_loss_fn, sparse_cosine_distance_hungarian, sparse_cosine_distance_binned, get_pairwise_binned_cossin_sim, get_pairwise_binned_jss_sim, sparse_jensen_shannon_divergence, sparse_jensen_shannon_divergence_hungarian
-from fragnnet.utils.nn_utils import get_optimizer_class, build_lr_scheduler, decompile_jit_ckpt
-from fragnnet.utils.spec_utils import *
-from fragnnet.utils.misc_utils import safelog, scatter_logsumexp, scatter_logl2normalize
+from fragnnet.model.loss import (
+    get_edge_loss_fn,
+    get_pairwise_cossim,
+    get_pairwise_cross_entropy,
+    get_pairwise_jss_sim,
+    get_sparse_cross_entropy_fn,
+    sparse_conditional_entropy_fn,
+    sparse_cosine_distance_binned,
+    sparse_cosine_distance_hungarian,
+    sparse_entropy_fn,
+    sparse_jensen_shannon_divergence,
+    sparse_jensen_shannon_divergence_hungarian,
+)
 from fragnnet.pl_model import SpectrumPL
+from fragnnet.utils.misc_utils import safelog, scatter_logsumexp
+from fragnnet.utils.nn_utils import (
+    build_lr_scheduler,
+    decompile_jit_ckpt,
+    get_optimizer_class,
+)
+from fragnnet.utils.spec_utils import scatter_reduce
 
 
 class FraGNNetPL(SpectrumPL):
+    hparams: Any
 
     def _setup_model(self):
-
         # frag GNN
         self.model = FraGNNetModel(
             num_depth=self.hparams.num_depth,
@@ -75,7 +95,7 @@ class FraGNNetPL(SpectrumPL):
             inst_insert_location=self.hparams.inst_insert_location,
             inst_insert_size=self.hparams.inst_insert_size,
             inst_types=self.hparams.spec_params["inst_types"],
-            output_formula_str=self.hparams.output_formula_str
+            output_formula_str=self.hparams.output_formula_str,
         )
 
         self._check_ce_params()
@@ -86,30 +106,27 @@ class FraGNNetPL(SpectrumPL):
             assert "h_range" in self.hparams.frag_params["pyg_edge_feats"]
         else:
             if "h_counts" in self.hparams.frag_params["pyg_node_feats"]:
-                logging.warning(
-                    "h_counts in frag pyg_node_feats but edge_loss is disabled!")
+                logging.warning("h_counts in frag pyg_node_feats but edge_loss is disabled!")
             if "h_range" in self.hparams.frag_params["pyg_edge_feats"]:
-                logging.warning(
-                    "h_range in frag pyg_edge_feats but edge_loss is disabled!")
+                logging.warning("h_range in frag pyg_edge_feats but edge_loss is disabled!")
 
         # Load pre-trained weights if specified for finetuning
         if self.hparams.finetune:
             self._load_pretrained_weights(
-                self.hparams.finetune["pretrained_ckpt"],
-                strict=self.hparams.finetune["strict_load"],
-                shared_components=self.hparams.finetune[
-                    "finetune_shared_components"] if not self.hparams.finetune["shared_all"] else None
+                self.hparams.finetune_pretrained_ckpt,
+                strict=self.hparams.finetune_strict_load,
+                shared_components=self.hparams.finetune_shared_components
+                if not self.hparams.finetune_shared_all
+                else None,
             )
 
             # Handle freezing
-            if self.hparams.finetune["freeze_all_shared"]:
+            if self.hparams.finetune_freeze_all_shared:
                 # If freeze_all_shared is True, we freeze whatever we loaded
                 if self.pretrained_param_names:
-                    print("shared param:", self.pretrained_param_names)
-                    self._freeze_components(
-                        self.pretrained_param_names, exact_match=True)
-            elif self.hparams.finetune["freeze_components"]:
-                freeze_components = self.hparams.finetune["freeze_components"]
+                    self._freeze_components(self.pretrained_param_names, exact_match=True)
+            elif self.hparams.finetune_freeze_components:
+                freeze_components = self.hparams.finetune_freeze_components
                 # Otherwise freeze specific components by prefix
                 self._freeze_components(freeze_components, exact_match=False)
 
@@ -118,12 +135,16 @@ class FraGNNetPL(SpectrumPL):
             th_dynamo.reset()
             if profiler_available:
                 self.dynamo_prof = CompileProfiler()
-                self.model = self.model.get_compile(
-                    backend=self.dynamo_prof, dynamic=True)
+                self.model = self.model.get_compile(backend=self.dynamo_prof, dynamic=True)
             else:
                 self.model = th.compile(self.model, dynamic=True)
 
-    def _load_pretrained_weights(self, ckpt_path: str, strict: bool = False, shared_components: list[str] | None = None):
+    def _load_pretrained_weights(
+        self,
+        ckpt_path: str,
+        strict: bool = False,
+        shared_components: list[str] | None = None,
+    ):
         """
         Load pre-trained weights from a checkpoint file.
         Supports both MCES pre-training (partial load) and generic fine-tuning.
@@ -141,7 +162,7 @@ class FraGNNetPL(SpectrumPL):
         # fix compiled ckpt state dict prefix
         ckpt = decompile_jit_ckpt(ckpt)
         # 1. Load ckpt
-        state_dict = ckpt['state_dict'] if 'state_dict' in ckpt else ckpt
+        state_dict = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
 
         # Determine target components
         if shared_components is not None:
@@ -154,27 +175,24 @@ class FraGNNetPL(SpectrumPL):
 
         # Normalize source keys (remove 'model.' prefix if present)
         source_keys = list(state_dict.keys())
-        source_starts_with_model = any(
-            k.startswith('model.') for k in source_keys)
+        source_starts_with_model = any(k.startswith("model.") for k in source_keys)
         normalized_source_dict = {}
         for k, v in state_dict.items():
-            norm_k = k[6:] if (
-                source_starts_with_model and k.startswith('model.')) else k
+            norm_k = k[6:] if (source_starts_with_model and k.startswith("model.")) else k
             normalized_source_dict[norm_k] = v
 
         if target_components:
             for comp in target_components:
                 # Check target
                 if not any(k.startswith(comp) for k in target_keys):
-                    logging.warning(
-                        f"Component '{comp}' not found in current model (target).")
+                    logging.warning(f"Component '{comp}' not found in current model (target).")
                 # Check source
-                if not any(k.startswith(comp) for k in normalized_source_dict.keys()):
-                    logging.warning(
-                        f"Component '{comp}' not found in checkpoint (source).")
+                if not any(k.startswith(comp) for k in normalized_source_dict):
+                    logging.warning(f"Component '{comp}' not found in checkpoint (source).")
         else:
             logging.info(
-                "No specific shared_components provided; attempting to load all compatible weights.")
+                "No specific shared_components provided; attempting to load all compatible weights."
+            )
 
         # 3. Load model weight into target components
         weights_to_load = {}
@@ -195,8 +213,7 @@ class FraGNNetPL(SpectrumPL):
         # Load into self.model
         try:
             self.model.load_state_dict(weights_to_load, strict=False)
-            logging.info(
-                f"Successfully loaded {len(weights_to_load)} parameters.")
+            logging.info(f"Successfully loaded {len(weights_to_load)} parameters.")
 
             # 4. Update dictionary for tracking
             self.pretrained_param_names = list(weights_to_load.keys())
@@ -213,7 +230,7 @@ class FraGNNetPL(SpectrumPL):
 
         Args:
             components: List of component names (exact or prefixes)
-            exact_match: If True, requires exact name match (for specific weights). 
+            exact_match: If True, requires exact name match (for specific weights).
                          If False, matches as prefix (for whole submodules).
         """
         frozen_count = 0
@@ -231,8 +248,7 @@ class FraGNNetPL(SpectrumPL):
                 param.requires_grad = False
                 frozen_count += 1
 
-        logging.info(
-            f"Froze {frozen_count} parameters (exact_match={exact_match})")
+        logging.info(f"Froze {frozen_count} parameters (exact_match={exact_match})")
 
     def _setup_loss_names(self):
         """
@@ -251,140 +267,215 @@ class FraGNNetPL(SpectrumPL):
 
         # Add cross-entropy specific losses if applicable
         if self.hparams.loss_type == "cross_entropy":
-            loss_names.extend([
-                "spec_ce",
-                "oos_ce",
-                "ios_ce",
-            ])
+            loss_names.extend(
+                [
+                    "spec_ce",
+                    "oos_ce",
+                    "ios_ce",
+                ]
+            )
 
         # Add extra losses (entropy, mutual information, etc.) if not skipped
         if not self.hparams.skip_extra_losses:
-            loss_names.extend([
-                "spec_e",
-                "spec_ne",
-                "formula_e",
-                "formula_ne",
-                "node_e",
-                "node_ne",
-                "node_formula_e",
-                "node_formula_ne",
-                "formula_node_e",
-                "formula_node_ne",
-                "joint_e",
-                "joint_ne",
-                "node_formula_mi",
-                "formula_node_mi",
-                "h_mean",
-                "h_e",
-                "h_ne"
-            ])
-            # Add edge losses if enabled
-            if not self.hparams.skip_edge_loss:
-                loss_names.extend([
-                    "edge_h_range_loss",
-                    "edge_h_transfer_loss",
-                    "edge_e",
-                    "edge_ne"
-                ])
-            # Add neighbor isolation losses if enabled
-            if self.hparams.nb_iso:
-                loss_names.extend([
-                    "nb_node_e",
-                    "nb_node_ne",
-                    "nb_node_formula_e",
-                    "nb_node_formula_ne",
-                    "nb_formula_node_e",
-                    "nb_formula_node_ne",
-                    "nb_joint_e",
-                    "nb_joint_ne",
-                    "nb_node_node_e",
-                    "nb_node_node_ne",
-                    "nb_node_formula_mi",
-                    "nb_formula_node_mi",
-                    "nb_node_node_mi"
-                ])
-            # Add pairwise losses if weights are positive
-            if self.hparams.pairwise_cosine_binned_loss_weight > 0:
-                loss_names.append(
-                    f"pairwise_cossine_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_jss_binned_loss_weight > 0:
-                loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
-        else:
-            # If extra losses are skipped, add specific ones if their weights are non-zero
-            if not (self.hparams.formula_entropy_weight == self.hparams.formula_normalized_entropy_weight == 0.):
-                loss_names.extend([
+            loss_names.extend(
+                [
+                    "spec_e",
+                    "spec_ne",
                     "formula_e",
                     "formula_ne",
-                ])
-            if not (self.hparams.node_entropy_weight == self.hparams.node_normalized_entropy_weight == 0.):
-                loss_names.extend([
                     "node_e",
                     "node_ne",
-                ])
-            if not (self.hparams.node_formula_entropy_weight == self.hparams.node_formula_normalized_entropy_weight == 0.):
-                loss_names.extend([
                     "node_formula_e",
                     "node_formula_ne",
-                ])
-            if not (self.hparams.formula_node_entropy_weight == self.hparams.formula_node_normalized_entropy_weight == 0.):
-                loss_names.extend([
                     "formula_node_e",
                     "formula_node_ne",
-                ])
-            if not (self.hparams.joint_entropy_weight == self.hparams.joint_normalized_entropy_weight == 0.):
-                loss_names.extend([
                     "joint_e",
                     "joint_ne",
-                ])
-            if self.hparams.skip_edge_loss:
-                if not (self.hparams.edge_h_range_loss_weight == self.hparams.edge_h_transfer_loss_weight == 0.):
-                    loss_names.extend([
-                        "edge_h_range_loss",
-                        "edge_h_transfer_loss",
-                    ])
-                if not (self.hparams.edge_entropy_weight == self.hparams.edge_normalized_entropy_weight == 0.):
-                    loss_names.extend([
-                        "edge_e",
-                        "edge_ne",
-                    ])
+                    "node_formula_mi",
+                    "formula_node_mi",
+                    "h_mean",
+                    "h_e",
+                    "h_ne",
+                ]
+            )
+            # Add edge losses if enabled
+            if not self.hparams.skip_edge_loss:
+                loss_names.extend(
+                    ["edge_h_range_loss", "edge_h_transfer_loss", "edge_e", "edge_ne"]
+                )
+            # Add neighbor isolation losses if enabled
             if self.hparams.nb_iso:
-                if not (self.hparams.nb_node_entropy_weight == self.hparams.nb_node_normalized_entropy_weight == 0.):
-                    loss_names.extend([
+                loss_names.extend(
+                    [
                         "nb_node_e",
                         "nb_node_ne",
-                    ])
-                if not (self.hparams.nb_node_formula_entropy_weight == self.hparams.nb_node_formula_normalized_entropy_weight == 0.):
-                    loss_names.extend([
                         "nb_node_formula_e",
                         "nb_node_formula_ne",
-                    ])
-                if not (self.hparams.nb_formula_node_entropy_weight == self.hparams.nb_formula_node_normalized_entropy_weight == 0.):
-                    loss_names.extend([
                         "nb_formula_node_e",
                         "nb_formula_node_ne",
-                    ])
-                if not (self.hparams.nb_joint_entropy_weight == self.hparams.nb_joint_normalized_entropy_weight == 0.):
-                    loss_names.extend([
                         "nb_joint_e",
                         "nb_joint_ne",
-                    ])
-                if not (self.hparams.nb_node_node_entropy_weight == self.hparams.nb_node_node_normalized_entropy_weight == 0.):
-                    loss_names.extend([
                         "nb_node_node_e",
                         "nb_node_node_ne",
-                    ])
-
-            if self.hparams.pairwise_cosine_binned_loss_weight > 0:
-                loss_names.append(
-                    f"pairwise_cossine_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_jss_binned_loss_weight > 0:
+                        "nb_node_formula_mi",
+                        "nb_formula_node_mi",
+                        "nb_node_node_mi",
+                    ]
+                )
+            # Add pairwise losses if weights are positive
+            if self.hparams.pairwise_cosine_loss_weight > 0:
+                loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
+            if self.hparams.pairwise_jss_loss_weight > 0:
                 loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
+            if self.hparams.pairwise_cross_entropy_loss_weight > 0:
+                loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
+        else:
+            # If extra losses are skipped, add specific ones if their weights are non-zero
+            if not (
+                self.hparams.formula_entropy_weight
+                == self.hparams.formula_normalized_entropy_weight
+                == 0.0
+            ):
+                loss_names.extend(
+                    [
+                        "formula_e",
+                        "formula_ne",
+                    ]
+                )
+            if not (
+                self.hparams.node_entropy_weight
+                == self.hparams.node_normalized_entropy_weight
+                == 0.0
+            ):
+                loss_names.extend(
+                    [
+                        "node_e",
+                        "node_ne",
+                    ]
+                )
+            if not (
+                self.hparams.node_formula_entropy_weight
+                == self.hparams.node_formula_normalized_entropy_weight
+                == 0.0
+            ):
+                loss_names.extend(
+                    [
+                        "node_formula_e",
+                        "node_formula_ne",
+                    ]
+                )
+            if not (
+                self.hparams.formula_node_entropy_weight
+                == self.hparams.formula_node_normalized_entropy_weight
+                == 0.0
+            ):
+                loss_names.extend(
+                    [
+                        "formula_node_e",
+                        "formula_node_ne",
+                    ]
+                )
+            if not (
+                self.hparams.joint_entropy_weight
+                == self.hparams.joint_normalized_entropy_weight
+                == 0.0
+            ):
+                loss_names.extend(
+                    [
+                        "joint_e",
+                        "joint_ne",
+                    ]
+                )
+            if self.hparams.skip_edge_loss:
+                if not (
+                    self.hparams.edge_h_range_loss_weight
+                    == self.hparams.edge_h_transfer_loss_weight
+                    == 0.0
+                ):
+                    loss_names.extend(
+                        [
+                            "edge_h_range_loss",
+                            "edge_h_transfer_loss",
+                        ]
+                    )
+                if not (
+                    self.hparams.edge_entropy_weight
+                    == self.hparams.edge_normalized_entropy_weight
+                    == 0.0
+                ):
+                    loss_names.extend(
+                        [
+                            "edge_e",
+                            "edge_ne",
+                        ]
+                    )
+            if self.hparams.nb_iso:
+                if not (
+                    self.hparams.nb_node_entropy_weight
+                    == self.hparams.nb_node_normalized_entropy_weight
+                    == 0.0
+                ):
+                    loss_names.extend(
+                        [
+                            "nb_node_e",
+                            "nb_node_ne",
+                        ]
+                    )
+                if not (
+                    self.hparams.nb_node_formula_entropy_weight
+                    == self.hparams.nb_node_formula_normalized_entropy_weight
+                    == 0.0
+                ):
+                    loss_names.extend(
+                        [
+                            "nb_node_formula_e",
+                            "nb_node_formula_ne",
+                        ]
+                    )
+                if not (
+                    self.hparams.nb_formula_node_entropy_weight
+                    == self.hparams.nb_formula_node_normalized_entropy_weight
+                    == 0.0
+                ):
+                    loss_names.extend(
+                        [
+                            "nb_formula_node_e",
+                            "nb_formula_node_ne",
+                        ]
+                    )
+                if not (
+                    self.hparams.nb_joint_entropy_weight
+                    == self.hparams.nb_joint_normalized_entropy_weight
+                    == 0.0
+                ):
+                    loss_names.extend(
+                        [
+                            "nb_joint_e",
+                            "nb_joint_ne",
+                        ]
+                    )
+                if not (
+                    self.hparams.nb_node_node_entropy_weight
+                    == self.hparams.nb_node_node_normalized_entropy_weight
+                    == 0.0
+                ):
+                    loss_names.extend(
+                        [
+                            "nb_node_node_e",
+                            "nb_node_node_ne",
+                        ]
+                    )
 
+            if self.hparams.pairwise_cosine_loss_weight > 0:
+                loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
+            if self.hparams.pairwise_jss_loss_weight > 0:
+                loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
+            if self.hparams.pairwise_cross_entropy_loss_weight > 0:
+                loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
 
     def _setup_loss_fn(self):
-
         # cross entropy
         sparse_ce_fn = get_sparse_cross_entropy_fn(
             dist=self.hparams.output_distribution,
@@ -395,22 +486,42 @@ class FraGNNetPL(SpectrumPL):
             oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
             gaussian_renormalize=self.hparams.gaussian_renormalize,
             pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
-            loss_batch_size=self.hparams.loss_batch_size
+            loss_batch_size=self.hparams.loss_batch_size,
         )
         # edge loss
-        edge_h_range_loss_fn = get_edge_loss_fn(
-            self.hparams.edge_h_range_loss_fn, 4.0)
+        edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn, 4.0)
         edge_h_transfer_loss_fn = get_edge_loss_fn(
-            self.hparams.edge_h_transfer_loss_fn, 4.0)  # ,1.0)
+            self.hparams.edge_h_transfer_loss_fn, 4.0
+        )  # ,1.0)
+
+    def _setup_loss_fn(self):
+        # cross entropy
+        sparse_ce_fn = get_sparse_cross_entropy_fn(
+            dist=self.hparams.output_distribution,
+            vectorized=self.hparams.loss_vectorized,
+            tolerance=self.tolerance,
+            relative=self.relative,
+            tolerance_min_mz=self.tolerance_min_mz,
+            oos_tolerance_multiple=self.hparams.oos_tolerance_multiple,
+            gaussian_renormalize=self.hparams.gaussian_renormalize,
+            pm_tolerance_multiple=self.hparams.pm_tolerance_multiple,
+            loss_batch_size=self.hparams.loss_batch_size,
+        )
+        # edge loss
+        edge_h_range_loss_fn = get_edge_loss_fn(self.hparams.edge_h_range_loss_fn, 4.0)
+        edge_h_transfer_loss_fn = get_edge_loss_fn(
+            self.hparams.edge_h_transfer_loss_fn, 4.0
+        )  # ,1.0)
 
         # binned cosine distance
         def cos_dist_fn(
-                true_mzs,
-                true_logprobs,
-                true_batch_idxs,
-                pred_mzs,
-                pred_logprobs,
-                pred_batch_idxs):
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+        ):
             return sparse_cosine_distance_binned(
                 true_mzs,
                 true_logprobs,
@@ -418,17 +529,18 @@ class FraGNNetPL(SpectrumPL):
                 pred_mzs,
                 pred_logprobs,
                 pred_batch_idxs,
-                log_distance=(self.hparams.loss_type == "log_cosine_distance")
+                log_distance=(self.hparams.loss_type == "log_cosine_distance"),
             )
 
         # hungarian cosine distance
         def cos_hun_fn(
-                true_mzs,
-                true_logprobs,
-                true_batch_idxs,
-                pred_mzs,
-                pred_logprobs,
-                pred_batch_idxs):
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+        ):
             return sparse_cosine_distance_hungarian(
                 true_mzs,
                 true_logprobs,
@@ -438,18 +550,18 @@ class FraGNNetPL(SpectrumPL):
                 pred_batch_idxs,
                 tolerance=self.tolerance,
                 relative=self.relative,
-                log_distance=(self.hparams.loss_type ==
-                              "log_cosine_distance_hungarian")
+                log_distance=(self.hparams.loss_type == "log_cosine_distance_hungarian"),
             )
 
         # jensen-shannon distance
         def jss_dist_fn(
-                true_mzs,
-                true_logprobs,
-                true_batch_idxs,
-                pred_mzs,
-                pred_logprobs,
-                pred_batch_idxs):
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+        ):
             return sparse_jensen_shannon_divergence(
                 true_mzs,
                 true_logprobs,
@@ -458,17 +570,18 @@ class FraGNNetPL(SpectrumPL):
                 pred_logprobs,
                 pred_batch_idxs,
                 mz_max=self.hparams.mz_max,
-                mz_bin_res=self.hparams.mz_bin_res
+                mz_bin_res=self.hparams.mz_bin_res,
             )
 
         # jensen-shannon distance hungarian
         def jss_dist_hun_fn(
-                true_mzs,
-                true_logprobs,
-                true_batch_idxs,
-                pred_mzs,
-                pred_logprobs,
-                pred_batch_idxs):
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+        ):
             return sparse_jensen_shannon_divergence_hungarian(
                 true_mzs,
                 true_logprobs,
@@ -477,7 +590,7 @@ class FraGNNetPL(SpectrumPL):
                 pred_logprobs,
                 pred_batch_idxs,
                 tolerance=self.tolerance,
-                relative=self.relative
+                relative=self.relative,
             )
 
         assert self.hparams.sparse_cosine_similarity
@@ -486,93 +599,99 @@ class FraGNNetPL(SpectrumPL):
             self.binned_loss = False
         elif self.hparams.loss_type in ["cosine_distance", "log_cosine_distance"]:
             self.binned_loss = True
-        elif self.hparams.loss_type in ["cosine_distance_hungarian", "log_cosine_distance_hungarian"]:
-            self.binned_loss = False
-        elif self.hparams.loss_type in ["jss_distance", "jss_distance_hungarian"]:
+        elif self.hparams.loss_type in [
+            "cosine_distance_hungarian",
+            "log_cosine_distance_hungarian",
+        ] or self.hparams.loss_type in ["jss_distance", "jss_distance_hungarian"]:
             self.binned_loss = False
         else:
             raise ValueError(f"Unknown loss type {self.hparams.loss_type}")
 
         if self.binned_loss:
             if self.hparams.ints_transform != "none" and not self.hparams.bin_output:
-                print("> Warning: binned loss with ints transform; output is not binned; inverse transform will be biased for binned metrics")
+                print(
+                    "> Warning: binned loss with ints transform; output is not binned; inverse transform will be biased for binned metrics"
+                )
         else:
             assert not self.hparams.bin_output, "cannot train binned model with unbinned loss"
 
         def edge_loss(
-                pred_edge_logprobs,
-                pred_edge_h_diffs,
-                pred_edge_h_range_masks,
-                pred_edge_h_logprobs,
-                pred_edge_batch_idxs):
+            pred_edge_logprobs,
+            pred_edge_h_diffs,
+            pred_edge_h_range_masks,
+            pred_edge_h_logprobs,
+            pred_edge_batch_idxs,
+        ):
             edge_h_range_costs = edge_h_range_loss_fn(
-                pred_edge_h_diffs * pred_edge_h_range_masks.float())
-            edge_h_range_costs = edge_h_range_costs.reshape(
-                edge_h_range_costs.shape[0], -1)
+                pred_edge_h_diffs * pred_edge_h_range_masks.float()
+            )
+            edge_h_range_costs = edge_h_range_costs.reshape(edge_h_range_costs.shape[0], -1)
             edge_h_transfer_costs = edge_h_transfer_loss_fn(pred_edge_h_diffs)
             edge_h_transfer_costs = edge_h_transfer_costs.reshape(
-                edge_h_transfer_costs.shape[0], -1)
-            edge_h_logprobs = pred_edge_h_logprobs.reshape(
-                pred_edge_h_logprobs.shape[0], -1)
+                edge_h_transfer_costs.shape[0], -1
+            )
+            edge_h_logprobs = pred_edge_h_logprobs.reshape(pred_edge_h_logprobs.shape[0], -1)
             edge_h_range_avg_cost = th.logsumexp(
-                edge_h_logprobs + safelog(edge_h_range_costs, eps=self.hparams.log_min), dim=1)
+                edge_h_logprobs + safelog(edge_h_range_costs, eps=self.hparams.log_min),
+                dim=1,
+            )
             edge_h_transfer_avg_cost = th.logsumexp(
-                edge_h_logprobs + safelog(edge_h_transfer_costs, eps=self.hparams.log_min), dim=1)
+                edge_h_logprobs + safelog(edge_h_transfer_costs, eps=self.hparams.log_min),
+                dim=1,
+            )
             h_range_loss = scatter_logsumexp(
-                pred_edge_logprobs + edge_h_range_avg_cost,
-                pred_edge_batch_idxs
+                pred_edge_logprobs + edge_h_range_avg_cost, pred_edge_batch_idxs
             )
             h_transfer_loss = scatter_logsumexp(
-                pred_edge_logprobs + edge_h_transfer_avg_cost,
-                pred_edge_batch_idxs
+                pred_edge_logprobs + edge_h_transfer_avg_cost, pred_edge_batch_idxs
             )
             return h_range_loss, h_transfer_loss
 
         self._setup_loss_names()
 
         def _loss_fn(
-                true_mzs,
-                true_logprobs,
-                true_batch_idxs,
-                pred_mzs,
-                pred_logprobs,
-                pred_batch_idxs,
-                pred_formula_logprobs,
-                pred_formula_formula_idxs,
-                pred_formula_batch_idxs,
-                pred_node_logprobs,
-                pred_node_node_idxs,
-                pred_node_batch_idxs,
-                pred_node_formula_logprobs,
-                pred_formula_node_logprobs,
-                pred_joint_logprobs,
-                pred_joint_node_idxs,
-                pred_joint_formula_idxs,
-                pred_joint_batch_idxs,
-                pred_null_formula_logprob,
-                pred_edge_logprobs,
-                pred_edge_h_diffs,
-                pred_edge_h_range_masks,
-                pred_edge_h_logprobs,
-                pred_edge_batch_idxs,
-                pred_oos_logprobs,
-                pred_h_logprobs,
-                pred_h_counts,
-                pred_h_batch_idxs,
-                pred_nb_node_logprobs,
-                pred_nb_node_formula_logprobs,
-                pred_nb_formula_node_logprobs,
-                pred_nb_joint_logprobs,
-                pred_nb_node_node_logprobs,
-                pred_nb_node_node_idxs,
-                pred_nb_node_batch_idxs,
-                pred_nb_joint_node_idxs,
-                pred_nb_joint_formula_idxs,
-                pred_nb_joint_batch_idxs,
-                pred_nb_node_node_node_idxs,
-                pred_nb_node_node_batch_idxs,
-                **kwargs):
-
+            true_mzs,
+            true_logprobs,
+            true_batch_idxs,
+            pred_mzs,
+            pred_logprobs,
+            pred_batch_idxs,
+            pred_formula_logprobs,
+            pred_formula_formula_idxs,
+            pred_formula_batch_idxs,
+            pred_node_logprobs,
+            pred_node_node_idxs,
+            pred_node_batch_idxs,
+            pred_node_formula_logprobs,
+            pred_formula_node_logprobs,
+            pred_joint_logprobs,
+            pred_joint_node_idxs,
+            pred_joint_formula_idxs,
+            pred_joint_batch_idxs,
+            pred_null_formula_logprob,
+            pred_edge_logprobs,
+            pred_edge_h_diffs,
+            pred_edge_h_range_masks,
+            pred_edge_h_logprobs,
+            pred_edge_batch_idxs,
+            pred_oos_logprobs,
+            pred_h_logprobs,
+            pred_h_counts,
+            pred_h_batch_idxs,
+            pred_nb_node_logprobs,
+            pred_nb_node_formula_logprobs,
+            pred_nb_formula_node_logprobs,
+            pred_nb_joint_logprobs,
+            pred_nb_node_node_logprobs,
+            pred_nb_node_node_idxs,
+            pred_nb_node_batch_idxs,
+            pred_nb_joint_node_idxs,
+            pred_nb_joint_formula_idxs,
+            pred_nb_joint_batch_idxs,
+            pred_nb_node_node_node_idxs,
+            pred_nb_node_node_batch_idxs,
+            **kwargs,
+        ):
             loss_d = {}
 
             if self.hparams.loss_type == "cross_entropy":
@@ -583,7 +702,7 @@ class FraGNNetPL(SpectrumPL):
                     pred_mzs,
                     pred_logprobs,
                     pred_batch_idxs,
-                    pred_oos_logprobs
+                    pred_oos_logprobs,
                 )
                 spec_ce = ios_ce + oos_ce
                 if self.hparams.oos_loss:
@@ -600,16 +719,19 @@ class FraGNNetPL(SpectrumPL):
                     true_batch_idxs,
                     pred_mzs,
                     pred_logprobs,
-                    pred_batch_idxs
+                    pred_batch_idxs,
                 )
-            elif self.hparams.loss_type in ["cosine_distance_hungarian", "log_cosine_distance_hungarian"]:
+            elif self.hparams.loss_type in [
+                "cosine_distance_hungarian",
+                "log_cosine_distance_hungarian",
+            ]:
                 primary_loss = cos_hun_fn(
                     true_mzs,
                     true_logprobs,
                     true_batch_idxs,
                     pred_mzs,
                     pred_logprobs,
-                    pred_batch_idxs
+                    pred_batch_idxs,
                 )
             elif self.hparams.loss_type == "jss_distance":
                 primary_loss = jss_dist_fn(
@@ -618,7 +740,7 @@ class FraGNNetPL(SpectrumPL):
                     true_batch_idxs,
                     pred_mzs,
                     pred_logprobs,
-                    pred_batch_idxs
+                    pred_batch_idxs,
                 )
             elif self.hparams.loss_type == "jss_distance_hungarian":
                 primary_loss = jss_dist_hun_fn(
@@ -627,7 +749,7 @@ class FraGNNetPL(SpectrumPL):
                     true_batch_idxs,
                     pred_mzs,
                     pred_logprobs,
-                    pred_batch_idxs
+                    pred_batch_idxs,
                 )
 
             loss = self.hparams.primary_loss_weight * primary_loss
@@ -635,10 +757,17 @@ class FraGNNetPL(SpectrumPL):
 
             if self.hparams.null_loss:
                 assert self.hparams.loss_type != "cross_entropy", self.hparams.loss_type
-                if self.hparams.loss_type in ["cosine_distance", "cosine_distance_hungarian", "jss_distance", "jss_distance_hungarian"]:
-                    loss = loss + self.hparams.null_loss_weight * \
-                        th.exp(pred_null_formula_logprob)
-                elif self.hparams.loss_type in ["log_cosine_distance", "log_cosine_distance_hungarian"]:
+                if self.hparams.loss_type in [
+                    "cosine_distance",
+                    "cosine_distance_hungarian",
+                    "jss_distance",
+                    "jss_distance_hungarian",
+                ]:
+                    loss = loss + self.hparams.null_loss_weight * th.exp(pred_null_formula_logprob)
+                elif self.hparams.loss_type in [
+                    "log_cosine_distance",
+                    "log_cosine_distance_hungarian",
+                ]:
                     loss = loss + self.hparams.null_loss_weight * pred_null_formula_logprob
 
             if "spec_e" in self.loss_names or "spec_ne" in self.loss_names:
@@ -646,7 +775,7 @@ class FraGNNetPL(SpectrumPL):
                     pred_logprobs,
                     pred_batch_idxs,
                     oos_logprobs=pred_oos_logprobs,
-                    renormalize=True
+                    renormalize=True,
                 )
                 loss_d["spec_e"] = spec_e
                 loss_d["spec_ne"] = spec_ne
@@ -656,20 +785,23 @@ class FraGNNetPL(SpectrumPL):
                 formula_e, formula_ne = sparse_entropy_fn(
                     pred_formula_logprobs,
                     pred_formula_batch_idxs,
-                    support_size_delta=-1.  # for NULL formula
+                    support_size_delta=-1.0,  # for NULL formula
                 )
-                loss = loss + self.hparams.formula_entropy_weight * formula_e \
+                loss = (
+                    loss
+                    + self.hparams.formula_entropy_weight * formula_e
                     + self.hparams.formula_normalized_entropy_weight * formula_ne
+                )
                 loss_d["formula_e"] = formula_e
                 loss_d["formula_ne"] = formula_ne
 
             if "node_e" in self.loss_names or "node_ne" in self.loss_names:
-                node_e, node_ne = sparse_entropy_fn(
-                    pred_node_logprobs,
-                    pred_node_batch_idxs
-                )
-                loss = loss + self.hparams.node_entropy_weight * node_e \
+                node_e, node_ne = sparse_entropy_fn(pred_node_logprobs, pred_node_batch_idxs)
+                loss = (
+                    loss
+                    + self.hparams.node_entropy_weight * node_e
                     + self.hparams.node_normalized_entropy_weight * node_ne
+                )
                 loss_d["node_e"] = node_e
                 loss_d["node_ne"] = node_ne
 
@@ -682,8 +814,11 @@ class FraGNNetPL(SpectrumPL):
                     pred_joint_node_idxs,
                     pred_joint_batch_idxs,
                 )
-                loss = loss + self.hparams.node_formula_entropy_weight * node_formula_e \
+                loss = (
+                    loss
+                    + self.hparams.node_formula_entropy_weight * node_formula_e
                     + self.hparams.node_formula_normalized_entropy_weight * node_formula_ne
+                )
                 loss_d["node_formula_e"] = node_formula_e
                 loss_d["node_formula_ne"] = node_formula_ne
 
@@ -694,23 +829,26 @@ class FraGNNetPL(SpectrumPL):
                     pred_formula_batch_idxs,
                     pred_formula_node_logprobs,
                     pred_joint_formula_idxs,
-                    pred_joint_batch_idxs
+                    pred_joint_batch_idxs,
                 )
-                loss = loss + self.hparams.formula_node_entropy_weight * formula_node_e \
+                loss = (
+                    loss
+                    + self.hparams.formula_node_entropy_weight * formula_node_e
                     + self.hparams.formula_node_normalized_entropy_weight * formula_node_ne
+                )
                 loss_d["formula_node_e"] = formula_node_e
                 loss_d["formula_node_ne"] = formula_node_ne
 
             if "joint_e" in self.loss_names or "joint_ne" in self.loss_names:
                 # joint
-                joint_e, joint_ne = sparse_entropy_fn(
-                    pred_joint_logprobs,
-                    pred_joint_batch_idxs
-                )
+                joint_e, joint_ne = sparse_entropy_fn(pred_joint_logprobs, pred_joint_batch_idxs)
                 # assert th.all(th.isclose(joint_e, node_formula_e+node_e,rtol=0.,atol=0.001))
                 # assert th.all(th.isclose(joint_e, formula_node_e+formula_e,rtol=0.,atol=0.001))
-                loss = loss + self.hparams.joint_entropy_weight * joint_e \
+                loss = (
+                    loss
+                    + self.hparams.joint_entropy_weight * joint_e
                     + self.hparams.joint_normalized_entropy_weight * joint_ne
+                )
                 loss_d["joint_e"] = joint_e
                 loss_d["joint_ne"] = joint_ne
 
@@ -734,37 +872,40 @@ class FraGNNetPL(SpectrumPL):
                 h_mean = scatter_reduce(
                     th.exp(pred_h_logprobs) * pred_h_counts,
                     pred_h_batch_idxs,
-                    reduce="sum"
+                    reduce="sum",
                 )
-                h_e, h_ne = sparse_entropy_fn(
-                    pred_h_logprobs,
-                    pred_h_batch_idxs
-                )
+                h_e, h_ne = sparse_entropy_fn(pred_h_logprobs, pred_h_batch_idxs)
                 loss_d["h_mean"] = h_mean  # The mean predicted hydrogen count.
                 # Shannon entropy of the predicted hydrogen count distribution
                 loss_d["h_e"] = h_e
                 loss_d["h_ne"] = h_ne  # The normalized entropy
 
             if not self.hparams.skip_edge_loss:
-                if "edge_h_range_loss" in self.loss_names or "edge_h_transfer_loss" in self.loss_names:
+                if (
+                    "edge_h_range_loss" in self.loss_names
+                    or "edge_h_transfer_loss" in self.loss_names
+                ):
                     r_el, t_el = edge_loss(
                         pred_edge_logprobs,
                         pred_edge_h_diffs,
                         pred_edge_h_range_masks,
                         pred_edge_h_logprobs,
-                        pred_edge_batch_idxs
+                        pred_edge_batch_idxs,
                     )
-                    loss = loss + self.hparams.edge_h_range_loss_weight * r_el \
+                    loss = (
+                        loss
+                        + self.hparams.edge_h_range_loss_weight * r_el
                         + self.hparams.edge_h_transfer_loss_weight * t_el
+                    )
                     loss_d["edge_h_range_loss"] = r_el
                     loss_d["edge_h_transfer_loss"] = t_el
                 if "edge_e" in self.loss_names or "edge_ne" in self.loss_names:
-                    edge_e, edge_ne = sparse_entropy_fn(
-                        pred_edge_logprobs,
-                        pred_edge_batch_idxs
-                    )
-                    loss = loss + self.hparams.edge_entropy_weight * edge_e \
+                    edge_e, edge_ne = sparse_entropy_fn(pred_edge_logprobs, pred_edge_batch_idxs)
+                    loss = (
+                        loss
+                        + self.hparams.edge_entropy_weight * edge_e
                         + self.hparams.edge_normalized_entropy_weight * edge_ne
+                    )
                     loss_d["edge_e"] = edge_e
                     loss_d["edge_ne"] = edge_ne
             else:
@@ -776,14 +917,19 @@ class FraGNNetPL(SpectrumPL):
             if self.hparams.nb_iso:
                 if "nb_node_e" in self.loss_names or "nb_node_ne" in self.loss_names:
                     nb_node_e, nb_node_ne = sparse_entropy_fn(
-                        pred_nb_node_logprobs,
-                        pred_nb_node_batch_idxs
+                        pred_nb_node_logprobs, pred_nb_node_batch_idxs
                     )
-                    loss = loss + self.hparams.nb_node_entropy_weight * nb_node_e + \
-                        self.hparams.nb_node_normalized_entropy_weight * nb_node_ne
+                    loss = (
+                        loss
+                        + self.hparams.nb_node_entropy_weight * nb_node_e
+                        + self.hparams.nb_node_normalized_entropy_weight * nb_node_ne
+                    )
                     loss_d["nb_node_e"] = nb_node_e
                     loss_d["nb_node_ne"] = nb_node_ne
-                if "nb_node_formula_e" in self.loss_names or "nb_node_formula_ne" in self.loss_names:
+                if (
+                    "nb_node_formula_e" in self.loss_names
+                    or "nb_node_formula_ne" in self.loss_names
+                ):
                     nb_node_formula_e, nb_node_formula_ne = sparse_conditional_entropy_fn(
                         pred_nb_node_logprobs,
                         pred_nb_node_batch_idxs,
@@ -791,24 +937,33 @@ class FraGNNetPL(SpectrumPL):
                         pred_nb_joint_node_idxs,
                         pred_nb_joint_batch_idxs,
                     )
-                    loss = loss + self.hparams.nb_node_formula_entropy_weight * nb_node_formula_e + \
-                        self.hparams.nb_node_formula_normalized_entropy_weight * nb_node_formula_ne
+                    loss = (
+                        loss
+                        + self.hparams.nb_node_formula_entropy_weight * nb_node_formula_e
+                        + self.hparams.nb_node_formula_normalized_entropy_weight
+                        * nb_node_formula_ne
+                    )
                     loss_d["nb_node_formula_e"] = nb_node_formula_e
                     loss_d["nb_node_formula_ne"] = nb_node_formula_ne
-                if "nb_formula_node_e" in self.loss_names or "nb_formula_node_ne" in self.loss_names:
+                if (
+                    "nb_formula_node_e" in self.loss_names
+                    or "nb_formula_node_ne" in self.loss_names
+                ):
                     nb_formula_node_e, nb_formula_node_ne = sparse_conditional_entropy_fn(
                         pred_formula_logprobs,
                         pred_formula_batch_idxs,
                         pred_nb_formula_node_logprobs,
                         pred_nb_joint_formula_idxs,
-                        pred_nb_joint_batch_idxs
+                        pred_nb_joint_batch_idxs,
                     )
-                    assert not th.any(nb_formula_node_ne <
-                                      0.), nb_formula_node_ne
-                    assert not th.any(nb_formula_node_ne >
-                                      1.), nb_formula_node_ne
-                    loss = loss + self.hparams.nb_formula_node_entropy_weight * nb_formula_node_e + \
-                        self.hparams.nb_formula_node_normalized_entropy_weight * nb_formula_node_ne
+                    assert not th.any(nb_formula_node_ne < 0.0), nb_formula_node_ne
+                    assert not th.any(nb_formula_node_ne > 1.0), nb_formula_node_ne
+                    loss = (
+                        loss
+                        + self.hparams.nb_formula_node_entropy_weight * nb_formula_node_e
+                        + self.hparams.nb_formula_node_normalized_entropy_weight
+                        * nb_formula_node_ne
+                    )
                     loss_d["nb_formula_node_e"] = nb_formula_node_e
                     loss_d["nb_formula_node_ne"] = nb_formula_node_ne
                 if "nb_node_node_e" in self.loss_names or "nb_node_node_ne" in self.loss_names:
@@ -817,21 +972,26 @@ class FraGNNetPL(SpectrumPL):
                         pred_nb_node_batch_idxs,
                         pred_nb_node_node_logprobs,
                         pred_nb_node_node_node_idxs,
-                        pred_nb_node_node_batch_idxs
+                        pred_nb_node_node_batch_idxs,
                     )
-                    loss = loss + self.hparams.nb_node_node_entropy_weight * nb_node_node_e + \
-                        self.hparams.nb_node_node_normalized_entropy_weight * nb_node_node_ne
+                    loss = (
+                        loss
+                        + self.hparams.nb_node_node_entropy_weight * nb_node_node_e
+                        + self.hparams.nb_node_node_normalized_entropy_weight * nb_node_node_ne
+                    )
                     loss_d["nb_node_node_e"] = nb_node_node_e
                     loss_d["nb_node_node_ne"] = nb_node_node_ne
                 if "nb_joint_e" in self.loss_names or "nb_joint_ne" in self.loss_names:
                     nb_joint_e, nb_joint_ne = sparse_entropy_fn(
-                        pred_nb_joint_logprobs,
-                        pred_nb_joint_batch_idxs
+                        pred_nb_joint_logprobs, pred_nb_joint_batch_idxs
                     )
                     # assert th.all(th.isclose(nb_joint_e, nb_node_formula_e+nb_node_e,rtol=0.,atol=0.001))
                     # assert th.all(th.isclose(nb_joint_e, nb_formula_node_e+formula_e,rtol=0.,atol=0.001))
-                    loss = loss + self.hparams.nb_joint_entropy_weight * nb_joint_e \
+                    loss = (
+                        loss
+                        + self.hparams.nb_joint_entropy_weight * nb_joint_e
                         + self.hparams.nb_joint_normalized_entropy_weight * nb_joint_ne
+                    )
                     loss_d["nb_joint_e"] = nb_joint_e
                     loss_d["nb_joint_ne"] = nb_joint_ne
                 if "nb_node_formula_mi" in self.loss_names:
@@ -853,32 +1013,93 @@ class FraGNNetPL(SpectrumPL):
 
             # Pairwise similarity MSE loss
             if f"pairwise_cossine_{self.hparams.mz_bin_res}" in self.loss_names:
-                batch_size = kwargs.get(
-                    "batch_size", th.max(true_batch_idxs)+1)
-                true_sim = get_pairwise_binned_cossin_sim(
-                    true_mzs, true_logprobs, true_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
-                pred_sim = get_pairwise_binned_cossin_sim(
-                    pred_mzs, pred_logprobs, pred_batch_idxs, batch_size, self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+                batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
+                true_sim = get_pairwise_cossim(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    batch_size,
+                    self.hparams.mz_max,
+                    self.hparams.mz_bin_res,
+                    chunk_size=self.hparams.loss_batch_size,
+                )
+                pred_sim = get_pairwise_cossim(
+                    pred_mzs,
+                    pred_logprobs,
+                    pred_batch_idxs,
+                    batch_size,
+                    self.hparams.mz_max,
+                    self.hparams.mz_bin_res,
+                    chunk_size=self.hparams.loss_batch_size,
+                )
 
                 pairwise_sim_mse = F.mse_loss(pred_sim, true_sim)
-                loss = loss + self.hparams.pairwise_cosine_binned_loss_weight * pairwise_sim_mse
+                loss = loss + self.hparams.pairwise_cosine_loss_weight * pairwise_sim_mse
+                # expand batch-level scalar to per-sample tensor for metric tracking
                 loss_d[f"pairwise_cossine_{self.hparams.mz_bin_res}"] = pairwise_sim_mse.expand(
-                    batch_size)
+                    batch_size
+                )
 
             # Pairwise JSS MSE loss
             if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
-                batch_size = kwargs.get(
-                    "batch_size", th.max(true_batch_idxs)+1)
-                true_sim = get_pairwise_binned_jss_sim(true_mzs, true_logprobs, true_batch_idxs, batch_size,
-                                                       self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
-                pred_sim = get_pairwise_binned_jss_sim(pred_mzs, pred_logprobs, pred_batch_idxs, batch_size,
-                                                       self.hparams.mz_max, self.hparams.mz_bin_res, chunk_size=self.hparams.loss_batch_size)
+                batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
+                true_sim = get_pairwise_jss_sim(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    batch_size,
+                    self.hparams.mz_max,
+                    self.hparams.mz_bin_res,
+                    chunk_size=self.hparams.loss_batch_size,
+                )
+                pred_sim = get_pairwise_jss_sim(
+                    pred_mzs,
+                    pred_logprobs,
+                    pred_batch_idxs,
+                    batch_size,
+                    self.hparams.mz_max,
+                    self.hparams.mz_bin_res,
+                    chunk_size=self.hparams.loss_batch_size,
+                )
 
                 pairwise_jss_mse = F.mse_loss(pred_sim, true_sim)
-                loss = loss + self.hparams.pairwise_jss_binned_loss_weight * pairwise_jss_mse
+                loss = loss + self.hparams.pairwise_jss_loss_weight * pairwise_jss_mse
+                # expand batch-level scalar to per-sample tensor for metric tracking
                 loss_d[f"pairwise_jss_{self.hparams.mz_bin_res}"] = pairwise_jss_mse.expand(
-                    batch_size)
+                    batch_size
+                )
 
+            # Pairwise cross-entropy MSE loss
+            if f"pairwise_cross_entropy_{self.hparams.mz_bin_res}" in self.loss_names:
+                batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
+                true_sim = get_pairwise_cross_entropy(
+                    true_mzs,
+                    true_logprobs,
+                    true_batch_idxs,
+                    batch_size,
+                    self.hparams.mz_max,
+                    self.hparams.mz_bin_res,
+                    chunk_size=self.hparams.loss_batch_size,
+                )
+                pred_sim = get_pairwise_cross_entropy(
+                    pred_mzs,
+                    pred_logprobs,
+                    pred_batch_idxs,
+                    batch_size,
+                    self.hparams.mz_max,
+                    self.hparams.mz_bin_res,
+                    chunk_size=self.hparams.loss_batch_size,
+                )
+
+                pairwise_ce_mse = F.mse_loss(pred_sim, true_sim)
+                loss = loss + self.hparams.pairwise_cross_entropy_loss_weight * pairwise_ce_mse
+                # expand batch-level scalar to per-sample tensor for metric tracking
+                loss_d[f"pairwise_cross_entropy_{self.hparams.mz_bin_res}"] = (
+                    pairwise_ce_mse
+                    * th.ones(
+                        [batch_size], device=pairwise_ce_mse.device, dtype=pairwise_ce_mse.dtype
+                    )
+                )
             # finally, update the loss
             loss_d["loss"] = loss
 
@@ -887,28 +1108,32 @@ class FraGNNetPL(SpectrumPL):
         self.loss_fn = _loss_fn
 
     def on_train_epoch_end(self):
-
-        if not self.hparams.automatic_optimization and self.hparams.dynamic_batch_sampler and self._cur_batch_size > 0:
+        if (
+            not self.hparams.automatic_optimization
+            and self.hparams.dynamic_batch_sampler
+            and self._cur_batch_size > 0
+        ):
             # this is used for manul opt when lr_schedulers is not available from torch lightning
             self._manual_opt()
 
         super().on_train_epoch_end()
 
     def _manual_opt(self):
-        """ run manual opt
-        """
+        """run manual opt"""
         opt = self.optimizers()
         # scale gradients
         if self.hparams.dynamic_batch_sampler:
             for pg in opt.param_groups:
-                for p in pg['params']:
+                for p in pg["params"]:
                     if p.grad is not None:
-                        p.grad.data.mul_(
-                            self._max_batch_size / self._cur_batch_weight)
+                        p.grad.data.mul_(self._max_batch_size / self._cur_batch_weight)
         self.on_before_optimizer_step(opt)
         # clip gradients
-        self.clip_gradients(opt, gradient_clip_val=self.hparams.gradient_clip_val,
-                            gradient_clip_algorithm=self.hparams.gradient_clip_algorithm)
+        self.clip_gradients(
+            opt,
+            gradient_clip_val=self.hparams.gradient_clip_val,
+            gradient_clip_algorithm=self.hparams.gradient_clip_algorithm,
+        )
         # call opt
         opt.step()
         self.on_after_optimizer_step(opt)
@@ -916,7 +1141,7 @@ class FraGNNetPL(SpectrumPL):
         opt.zero_grad()
 
     def training_step(self, batch, batch_idx):
-        """ training loop for FragGNNPL
+        """training loop for FragGNNPL
 
         Args:
             batch (_type_): _description_
@@ -933,25 +1158,25 @@ class FraGNNetPL(SpectrumPL):
             batch_results = self._common_step(batch, split="train")
             mean_loss = batch_results["mean_loss"]
             if self.hparams.debug_zero_loss:
-                mean_loss = 0. * mean_loss
+                mean_loss = 0.0 * mean_loss
                 self.print(mean_loss)
             self._cur_batch_size += self.hparams.train_batch_size
             self._update_results(batch_results, "train")
             return mean_loss
 
         elif self.hparams.dynamic_batch_sampler:
-            batch_size = batch['batch_size'].item()
+            batch_size = batch["batch_size"].item()
             assert batch_size > 0, batch_size
             batch_results = self._common_step(batch, split="train")
             total_loss = batch_results["total_loss"]
             total_weight = batch_results["total_weight"]
             mean_loss = total_loss / self._max_batch_size
             if not isinstance(mean_loss, th.Tensor):
-                raise TypeError(
-                    f"Expected mean_loss to be a torch.Tensor, got {type(mean_loss)}")
+                raise TypeError(f"Expected mean_loss to be a torch.Tensor, got {type(mean_loss)}")
             if mean_loss.ndim != 0:
                 raise RuntimeError(
-                    f"Expected scalar mean_loss for backward(), got shape={tuple(mean_loss.shape)}")
+                    f"Expected scalar mean_loss for backward(), got shape={tuple(mean_loss.shape)}"
+                )
             if not mean_loss.requires_grad:
                 raise RuntimeError(
                     "mean_loss does not require grad (detached). "
@@ -963,7 +1188,7 @@ class FraGNNetPL(SpectrumPL):
                     f"(batch_idx={batch_idx}, batch_size={batch_size}, total_weight={float(total_weight) if not isinstance(total_weight, th.Tensor) else total_weight.detach().float().cpu().item()})"
                 )
             if self.hparams.debug_zero_loss:
-                mean_loss = 0. * mean_loss
+                mean_loss = 0.0 * mean_loss
                 self.print(mean_loss)
             self.manual_backward(mean_loss)
             # accumulate gradients of N samples
@@ -976,25 +1201,23 @@ class FraGNNetPL(SpectrumPL):
 
         else:
             batch_results = self._common_step(batch, split="train")
-            mean_loss = batch_results["mean_loss"] / \
-                self.hparams.accumulate_grad_batches
+            mean_loss = batch_results["mean_loss"] / self.hparams.accumulate_grad_batches
             total_weight = batch_results["total_weight"]
             if not isinstance(mean_loss, th.Tensor):
-                raise TypeError(
-                    f"Expected mean_loss to be a torch.Tensor, got {type(mean_loss)}")
+                raise TypeError(f"Expected mean_loss to be a torch.Tensor, got {type(mean_loss)}")
             if mean_loss.ndim != 0:
                 raise RuntimeError(
-                    f"Expected scalar mean_loss for backward(), got shape={tuple(mean_loss.shape)}")
+                    f"Expected scalar mean_loss for backward(), got shape={tuple(mean_loss.shape)}"
+                )
             if not mean_loss.requires_grad:
-                raise RuntimeError(
-                    "mean_loss does not require grad (detached).")
+                raise RuntimeError("mean_loss does not require grad (detached).")
             if not th.isfinite(mean_loss):
                 raise RuntimeError(
                     f"Non-finite mean_loss detected: {mean_loss.detach().float().cpu().item()} "
                     f"(batch_idx={batch_idx}, total_weight={float(total_weight) if not isinstance(total_weight, th.Tensor) else total_weight.detach().float().cpu().item()})"
                 )
             if self.hparams.debug_zero_loss:
-                mean_loss = 0. * mean_loss
+                mean_loss = 0.0 * mean_loss
                 self.print(mean_loss)
             self.manual_backward(mean_loss)
             # accumulate gradients of N samples
@@ -1010,20 +1233,25 @@ class FraGNNetPL(SpectrumPL):
         Configure optimizers with different learning rates for pre-trained and other parameters.
         """
         # Get LR ratio from finetune config
-        lr_ratio = self.hparams.finetune["pretrained_weights_lr_ratio"]
+        lr_ratio = self.hparams.finetune_weights_lr_ratio
 
         # Separate parameters into pre-trained and others
-        pretrained_params = [p for n, p in self.model.named_parameters(
-        ) if n in self.pretrained_param_names]
-        other_params = [p for n, p in self.model.named_parameters(
-        ) if n not in self.pretrained_param_names]
+        pretrained_params = [
+            p for n, p in self.model.named_parameters() if n in self.pretrained_param_names
+        ]
+        other_params = [
+            p for n, p in self.model.named_parameters() if n not in self.pretrained_param_names
+        ]
         optimizer_cls = get_optimizer_class(self.hparams.optimizer)
 
         # Define optimizer with parameter groups
-        optimizer = optimizer_cls([
-            {"params": pretrained_params, "lr": self.hparams.lr * lr_ratio},
-            {"params": other_params, "lr": self.hparams.lr}
-        ], weight_decay=self.hparams.weight_decay)
+        optimizer = optimizer_cls(
+            [
+                {"params": pretrained_params, "lr": self.hparams.lr * lr_ratio},
+                {"params": other_params, "lr": self.hparams.lr},
+            ],
+            weight_decay=self.hparams.weight_decay,
+        )
 
         ret = {
             "optimizer": optimizer,
@@ -1046,7 +1274,6 @@ class FraGNNetPL(SpectrumPL):
         return ret
 
     def optimizer_step(self, *args, **kwargs):
-
         super().optimizer_step(*args, **kwargs)
         opt = self.optimizers()
         self.on_after_optimizer_step(opt)
