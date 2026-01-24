@@ -15,6 +15,7 @@ import logging
 import os
 import re
 from datetime import datetime
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -27,7 +28,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def create_spec_df(mol_df, config_d):
+def create_spec_df(mol_df: pd.DataFrame, config_d: dict[str, Any]) -> pd.DataFrame:
     """
     Create spec_df from mol_df and configuration dictionary.
 
@@ -52,7 +53,14 @@ def create_spec_df(mol_df, config_d):
     spec_id = 0
     group_id = 0
 
-    for mol_id in mol_df["mol_id"]:
+    # Ensure mol_df has mol_id as index or use it if it's a column
+    if "mol_id" in mol_df.columns:
+        mol_iterator = mol_df.iterrows()
+    else:
+        mol_iterator = mol_df.reset_index().rename(columns={"index": "mol_id"}).iterrows()
+
+    for _, mol_row in mol_iterator:
+        mol_id = mol_row["mol_id"]
         for config_combo in config_d["combinations"]:
             prec_type = config_combo["prec_type"]
             inst_type = config_combo["inst_type"]
@@ -71,10 +79,10 @@ def create_spec_df(mol_df, config_d):
                     "prec_type": prec_type,
                     "nce": nce_value,
                     "ace": ace_value,
-                    "nce_extra_1": np.nan,  # TODO update this
-                    "ace_extra_1": np.nan,  # TODO update this
-                    "nce_extra_2": np.nan,  # TODO update this
-                    "ace_extra_2": np.nan,  # TODO update this
+                    "nce_extra_1": np.nan,
+                    "ace_extra_1": np.nan,
+                    "nce_extra_2": np.nan,
+                    "ace_extra_2": np.nan,
                     "inst_type": inst_type,
                     "group_id": group_id,
                     "dset": "inference",
@@ -84,9 +92,9 @@ def create_spec_df(mol_df, config_d):
                     "frag_mode": "CID",  # Default fragmentation mode
                     "spec_type": "MS2",  # Default spectrum type
                     "ion_mode": "P",  # Positive mode default
-                    "formula": mol_df.loc[mol_id, "formula"],
-                    "inchikey": mol_df.loc[mol_id, "inchikey_s"],
-                    "exact_mass": mol_df.loc[mol_id, "exact_mw"],
+                    "formula": mol_row["formula"],
+                    "inchikey": mol_row["inchikey_s"],
+                    "exact_mw": mol_row["exact_mw"],
                 }
             )
             spec_id += 1
@@ -105,7 +113,7 @@ def create_spec_df(mol_df, config_d):
         current_group_id = 0
 
         # Group by prec_type and inst_type combinations
-        for (prec_type, inst_type), group_data in spec_df.groupby(["prec_type", "inst_type"]):
+        for (prec_type, inst_type), _ in spec_df.groupby(["prec_type", "inst_type"]):
             group_key = (prec_type, inst_type)
             if group_key not in group_mapping:
                 group_mapping[group_key] = current_group_id
@@ -122,15 +130,18 @@ def create_spec_df(mol_df, config_d):
 
     # Compute precursor m/z from molecular mass and precursor type
     logger.info("Computing precursor m/z values...")
-    spec_df = spec_df.merge(mol_df[["exact_mw"]], left_on="mol_id", right_index=True, how="inner")
     spec_df.loc[:, "prec_mz"] = spec_df.apply(lambda row: data_utils.infer_prec_mz(row), axis=1)
-    spec_df = spec_df.drop(columns=["exact_mw"])
+
+    # rename exact_mw to exact_mass if needed by downstream, or keep both?
+    # original code had exact_mass in the dict but merged exact_mw.
+    # Let's keep exact_mw as it's used by infer_prec_mz
+    spec_df.rename(columns={"exact_mw": "exact_mass"}, inplace=True)
 
     logger.info(f"Created spec_df with {len(spec_df)} spectra")
     return spec_df
 
 
-def validate_inputs(prec_types, qtof_ces, ft_ces, inst_types):
+def validate_inputs(prec_types: list, qtof_ces: list, ft_ces: list, inst_types: list) -> None:
     """
     Validate input parameters.
 
@@ -168,13 +179,13 @@ def validate_inputs(prec_types, qtof_ces, ft_ces, inst_types):
 
 
 def get_config(
-    prec_types,
-    qtof_ces,
-    ft_ces,
-    inst_types,
-    output_dir,
-    merged_spectra=False,
-):
+    prec_types: list,
+    qtof_ces: list,
+    ft_ces: list,
+    inst_types: list,
+    output_dir: str,
+    merged_spectra: bool = False,
+) -> dict[str, Any]:
     """
     Build the configuration parameters for spec_df creation.
 
@@ -265,21 +276,21 @@ def get_config(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Prepare spec_df for FragGNN inference from mol_df",
+        description="Prepare spec_df for FraGNNet inference from mol_df",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
         Examples:
             # Single condition (FT Orbitrap with NCE)
-            python 03_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --ft_ces 25.0NCE --inst_types "FT" --output_dir output/
+            python 02_inf_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --ft_ces 25.0NCE --inst_types "FT" --output_dir output/
 
             # Multiple conditions
-            python 03_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" "[M-H]-" --ft_ces 15.0NCE 25.0NCE 35.0NCE --inst_types "FT" QTOF --output_dir output/
+            python 02_inf_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" "[M-H]-" --ft_ces 15.0NCE 25.0NCE 35.0NCE --inst_types "FT" QTOF --output_dir output/
 
             # Merged spectra (one entry per molecule + condition type)
-            python 03_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --qtof_ces 20.0eV --inst_types "QTOF" --merged_spectra true --output_dir output/
+            python 02_inf_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --qtof_ces 20.0eV --inst_types "QTOF" --merged_spectra true --output_dir output/
 
             # QToF with eV collision energies
-            python 03_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --qtof_ces 10.0eV 20.0eV 30.0eV --inst_types "QTOF" --output_dir output/
+            python 02_inf_prepare_spec_df.py --mol_df_path output/mol_df.pkl.gz --prec_types "[M+H]+" --qtof_ces 10.0eV 20.0eV 30.0eV --inst_types "QTOF" --output_dir output/
                 """,
     )
 

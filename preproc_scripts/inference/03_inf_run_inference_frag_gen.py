@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import time
 
 import pandas as pd
 from tqdm import tqdm
@@ -10,7 +11,7 @@ import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.utils.misc_utils import booltype
 
 
-def get_args():
+def get_args() -> argparse.Namespace:
     """
     Parse command line arguments for fragment generation configuration.
 
@@ -273,8 +274,6 @@ if __name__ == "__main__":
     logger.info(f"Starting parallel fragment generation for {len(dag_feat_inputs_l)} molecules")
     logger.info("Using FraGNNet timed_get_dags function with parallel processing")
 
-    import time
-
     start_time = time.time()
 
     # Use parallel processing to generate fragment DAGs for all molecules
@@ -298,6 +297,8 @@ if __name__ == "__main__":
         logger.info("Processing molecules with interval-based progress logging...")
         for res in frag_results:
             n_done += 1
+            if not res:
+                n_errors += 1
             current_time = time.time()
 
             # Log every 100 molecules OR every 30 seconds
@@ -320,6 +321,8 @@ if __name__ == "__main__":
         logger.info("Processing molecules with tqdm progress bar...")
         for res in tqdm(frag_results, total=len(dag_feat_inputs_l), desc="Compute Frags"):
             n_done += 1
+            if not res:
+                n_errors += 1
             current_time = time.time()
 
             # Still log every 100 molecules for permanent record
