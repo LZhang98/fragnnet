@@ -54,6 +54,9 @@ mol_params:
   fingerprint_morgan: True
   fingerprint_rdkit: True
   fingerprint_maccs: True
+  morgan_radius: 3  # Morgan fingerprint radius (default: 3, original NEIMS likely uses 2)
+  morgan_nbits: 2048  # Morgan fingerprint size in bits (default: 2048)
+  rdkit_nbits: 2048  # RDKit fingerprint size in bits (default: 2048)
   pyg: True
   pyg_node_feats:
     - a_onehot
@@ -169,12 +172,13 @@ mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]
 mlp_num_layers: 2  # Number of MLP layers
 mlp_use_residuals: True  # Use residual connections in MLP
 # ============================================================================
-# bin-specific model
+# NEIMS/Binned Spectrum Model Configuration
 # ============================================================================
+neims_bottleneck_factor: 0.5  # Bottleneck compression ratio in NeimsBlock (0.5 = half hidden size)
 ff_prec_mz_offset: 0 #5
 ff_bidirectional: True
-ff_output_map_size: -1
-ff_output_activation: relu
+ff_output_map_size: -1  # Low-rank size (-1 = standard Linear layers, >0 = LowRankDense with this rank)
+ff_output_activation: relu  # Output activation: "relu" or "sigmoid"
 # ============================================================================
 # iceberg model
 # ============================================================================

@@ -455,6 +455,154 @@ class TestGetMolFp:
         fp_arr_ben = np.array(fp_benzene)
         assert not np.array_equal(fp_arr_eth, fp_arr_ben)
 
+    @pytest.mark.parametrize("radius", [2, 3, 4])
+    def test_morgan_radius_parameter(self, ethanol_mol, radius):
+        """Test Morgan fingerprint with different radius values."""
+        fp = get_mol_fp(
+            ethanol_mol,
+            morgan=True,
+            rdkit=False,
+            maccs=False,
+            morgan_radius=radius,
+        )
+        assert fp is not None
+        assert len(fp) > 0
+        # Default nbits is 2048
+        assert len(fp) == 2048
+
+    @pytest.mark.parametrize("nbits", [1024, 2048, 4096, 1500])
+    def test_morgan_nbits_parameter(self, ethanol_mol, nbits):
+        """Test Morgan fingerprint with different nbits values."""
+        fp = get_mol_fp(
+            ethanol_mol,
+            morgan=True,
+            rdkit=False,
+            maccs=False,
+            morgan_nbits=nbits,
+        )
+        assert fp is not None
+        assert len(fp) == nbits
+
+    @pytest.mark.parametrize("nbits", [1024, 2048, 4096])
+    def test_rdkit_nbits_parameter(self, ethanol_mol, nbits):
+        """Test RDKit fingerprint with different nbits values."""
+        fp = get_mol_fp(
+            ethanol_mol,
+            morgan=False,
+            rdkit=True,
+            maccs=False,
+            rdkit_nbits=nbits,
+        )
+        assert fp is not None
+        assert len(fp) == nbits
+
+    def test_combined_custom_nbits(self, ethanol_mol):
+        """Test combined fingerprints with custom nbits values."""
+        morgan_nbits = 1024
+        rdkit_nbits = 512
+        fp = get_mol_fp(
+            ethanol_mol,
+            morgan=True,
+            rdkit=True,
+            maccs=True,
+            morgan_nbits=morgan_nbits,
+            rdkit_nbits=rdkit_nbits,
+        )
+        assert fp is not None
+        # Total length should be morgan_nbits + rdkit_nbits + 167 (MACCS)
+        expected_len = morgan_nbits + rdkit_nbits + 167
+        assert len(fp) == expected_len
+
+    def test_backwards_compatibility_defaults(self, ethanol_mol):
+        """Test that default parameters match previous behavior."""
+        # Old call (no explicit parameters)
+        fp_old = get_mol_fp(ethanol_mol, morgan=True, rdkit=False, maccs=False)
+        # New call with explicit defaults
+        fp_new = get_mol_fp(
+            ethanol_mol,
+            morgan=True,
+            rdkit=False,
+            maccs=False,
+            morgan_radius=3,
+            morgan_nbits=2048,
+        )
+        assert len(fp_old) == len(fp_new)
+        assert len(fp_new) == 2048
+
+
+class TestGetMolFpParameterValidation:
+    """Tests for fingerprint parameter validation."""
+
+    @pytest.fixture
+    def ethanol_mol(self):
+        return Chem.MolFromSmiles("CCO")
+
+    def test_morgan_radius_zero_raises_error(self, ethanol_mol):
+        """Test that morgan_radius=0 raises ValueError."""
+        with pytest.raises(ValueError, match="morgan_radius must be positive"):
+            get_mol_fp(
+                ethanol_mol,
+                morgan=True,
+                rdkit=False,
+                maccs=False,
+                morgan_radius=0,
+            )
+
+    def test_morgan_radius_negative_raises_error(self, ethanol_mol):
+        """Test that negative morgan_radius raises ValueError."""
+        with pytest.raises(ValueError, match="morgan_radius must be positive"):
+            get_mol_fp(
+                ethanol_mol,
+                morgan=True,
+                rdkit=False,
+                maccs=False,
+                morgan_radius=-1,
+            )
+
+    def test_morgan_nbits_zero_raises_error(self, ethanol_mol):
+        """Test that morgan_nbits=0 raises ValueError."""
+        with pytest.raises(ValueError, match="morgan_nbits must be positive"):
+            get_mol_fp(
+                ethanol_mol,
+                morgan=True,
+                rdkit=False,
+                maccs=False,
+                morgan_nbits=0,
+            )
+
+    def test_morgan_nbits_negative_raises_error(self, ethanol_mol):
+        """Test that negative morgan_nbits raises ValueError."""
+        with pytest.raises(ValueError, match="morgan_nbits must be positive"):
+            get_mol_fp(
+                ethanol_mol,
+                morgan=True,
+                rdkit=False,
+                maccs=False,
+                morgan_nbits=-1,
+            )
+
+    def test_rdkit_nbits_zero_raises_error(self, ethanol_mol):
+        """Test that rdkit_nbits=0 raises ValueError."""
+        with pytest.raises(ValueError, match="rdkit_nbits must be positive"):
+            get_mol_fp(
+                ethanol_mol,
+                morgan=False,
+                rdkit=True,
+                maccs=False,
+                rdkit_nbits=0,
+            )
+
+    def test_rdkit_nbits_negative_raises_error(self, ethanol_mol):
+        """Test that negative rdkit_nbits raises ValueError."""
+        with pytest.raises(ValueError, match="rdkit_nbits must be positive"):
+            get_mol_fp(
+                ethanol_mol,
+                morgan=False,
+                rdkit=True,
+                maccs=False,
+                rdkit_nbits=-1,
+            )
+
 
 class TestGetMolFpSize:
     """Tests for get_mol_fp_size function."""
@@ -483,6 +631,42 @@ class TestGetMolFpSize:
         size_maccs = get_mol_fp_size(morgan=False, rdkit=False, maccs=True)
 
         assert size_all == size_morgan + size_rdkit + size_maccs
+
+    @pytest.mark.parametrize("nbits", [1024, 2048, 4096])
+    def test_morgan_custom_nbits_size(self, nbits):
+        """Test Morgan fingerprint size with custom nbits."""
+        size = get_mol_fp_size(
+            morgan=True,
+            rdkit=False,
+            maccs=False,
+            morgan_nbits=nbits,
+        )
+        assert size == nbits
+
+    @pytest.mark.parametrize("nbits", [512, 1024, 2048])
+    def test_rdkit_custom_nbits_size(self, nbits):
+        """Test RDKit fingerprint size with custom nbits."""
+        size = get_mol_fp_size(
+            morgan=False,
+            rdkit=True,
+            maccs=False,
+            rdkit_nbits=nbits,
+        )
+        assert size == nbits
+
+    def test_combined_custom_nbits_size(self):
+        """Test combined fingerprint size with custom nbits."""
+        morgan_nbits = 1024
+        rdkit_nbits = 512
+        size = get_mol_fp_size(
+            morgan=True,
+            rdkit=True,
+            maccs=True,
+            morgan_nbits=morgan_nbits,
+            rdkit_nbits=rdkit_nbits,
+        )
+        expected_size = morgan_nbits + rdkit_nbits + 167  # MACCS is always 167
+        assert size == expected_size
 
 
 class TestGetMolGraphFunc:

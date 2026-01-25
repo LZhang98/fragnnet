@@ -154,6 +154,9 @@ class SpecMolDataset(BaseDataset):
                 self.mol_params["fingerprint_morgan"],
                 self.mol_params["fingerprint_rdkit"],
                 self.mol_params["fingerprint_maccs"],
+                morgan_radius=self.mol_params["morgan_radius"],
+                morgan_nbits=self.mol_params["morgan_nbits"],
+                rdkit_nbits=self.mol_params["rdkit_nbits"],
             )
             mol_data["mol_fingerprint"] = fingerprint
         if self.mol_params["pyg"]:

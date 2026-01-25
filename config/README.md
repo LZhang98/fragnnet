@@ -92,3 +92,63 @@ Low Entropy Ensemble: [configs](./entropy/d4_low_ens/)
 
 High Entropy Ensemble: [configs](./entropy/d4_high_ens/)
 
+## Configuration Parameters
+
+### Fingerprint Parameters (mol_params)
+
+For models using molecular fingerprints (e.g., NEIMS), the following parameters control fingerprint generation:
+
+- **`morgan_radius`** (int, default: 3): Radius for Morgan fingerprint computation. Must be > 0.
+  - Original NEIMS paper likely uses radius=2
+  - Current optimized default is 3
+
+- **`morgan_nbits`** (int, default: 2048): Number of bits in Morgan fingerprint. Must be > 0.
+  - Controls fingerprint vector size
+  - Higher values provide more detailed molecular representations but increase memory/computation
+
+- **`rdkit_nbits`** (int, default: 2048): Number of bits in RDKit fingerprint. Must be > 0.
+  - Controls RDKit fingerprint vector size
+  - Total fingerprint size = morgan_nbits + rdkit_nbits + 167 (MACCS)
+
+**Example:**
+```yaml
+mol_params:
+  fingerprint: True
+  fingerprint_morgan: True
+  fingerprint_rdkit: True
+  fingerprint_maccs: True
+  morgan_radius: 3
+  morgan_nbits: 2048
+  rdkit_nbits: 2048
+```
+
+### NEIMS Architecture Parameters
+
+For NEIMS models, the following parameters control the neural network architecture:
+
+- **`neims_bottleneck_factor`** (float, default: 0.5): Bottleneck compression ratio in NeimsBlock layers.
+  - Controls the size of intermediate layer: bottleneck_size = bottleneck_factor × hidden_size
+  - Lower values (e.g., 0.3) = more compression, fewer parameters, potentially faster training
+  - Higher values (e.g., 0.7) = less compression, more capacity, potentially better performance
+  - Original NEIMS paper uses 0.5
+
+- **`ff_output_map_size`** (int, default: -1): Low-rank approximation size for output layers.
+  - -1 = use standard Linear layers (original NEIMS)
+  - >0 = use LowRankDense layers with specified rank (optimized variant)
+  - Reduces parameters from ~150M to ~38.7M per output layer when using low-rank
+
+- **`ff_output_activation`** (str, default: "relu"): Output activation function.
+  - Options: "relu", "sigmoid"
+
+**Example:**
+```yaml
+# Original NEIMS configuration
+neims_bottleneck_factor: 0.5
+ff_output_map_size: -1  # Standard layers
+ff_output_activation: relu
+
+# Optimized configuration with low-rank layers
+neims_bottleneck_factor: 0.5
+ff_output_map_size: 256  # Low-rank approximation
+ff_output_activation: relu
+```
