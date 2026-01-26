@@ -1,18 +1,11 @@
-try:
-    from lightning.pytorch.callbacks import Callback
-    from lightning.pytorch.loggers import Logger
-    from lightning.pytorch.loggers.logger import rank_zero_experiment
-    from lightning.pytorch.utilities import rank_zero_only
-except ModuleNotFoundError:
-    from pytorch_lightning.callbacks import Callback
-    from pytorch_lightning.loggers import Logger
-    from pytorch_lightning.loggers.logger import rank_zero_experiment
-    from pytorch_lightning.utilities import rank_zero_only
-
 import copy
 import logging
 
 import numpy as np
+from lightning.fabric.loggers.logger import rank_zero_experiment
+from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.loggers import Logger
+from lightning.pytorch.utilities import rank_zero_only
 
 
 class ConsoleLogger(Logger):
