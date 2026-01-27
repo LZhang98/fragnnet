@@ -17,12 +17,12 @@ pip install --no-index \
   torch_scatter==2.1.2 \
   pandas \
   wandb \
-  tqdm \    
+  tqdm \
   scipy==1.15.2 \
   joblib==1.3.2 \
   matplotlib \
   lightning==2.4.0 \
-  dgl==2.4.0 \
+  dgl==2.1.0 \
   omegaconf \
   cython==3.0.12 \
   h5py
