@@ -11,7 +11,7 @@ conda install python=3.11
 
 pip install \
  torch==2.4.1 \
-lightning==2.4.0 \
+ lightning==2.4.0 \
  torch_geometric==2.6.1 \
  pyg_lib \
  torch_scatter \
@@ -23,7 +23,6 @@ lightning==2.4.0 \
  scipy \
  joblib==1.3.2 \
  matplotlib \
-
  dgl==1.1.3+cu121 \
  omegaconf \
  cython==3.0.12 \
