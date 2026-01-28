@@ -13,8 +13,8 @@ pip install \
  torch==2.4.1 \
  lightning==2.4.0 \
  torch_geometric==2.6.1 \
+ torch-scatter -f https://data.pyg.org/whl/torch-2.4.1+cu121.html \
  pyg_lib \
- torch_scatter \
  rdkit==2022.9.5 \
  pandas==2.2.3 \
  numpy==1.26.4 \
