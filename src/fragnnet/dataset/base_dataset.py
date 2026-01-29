@@ -113,6 +113,22 @@ class BaseDataset(Dataset):
                 split_fp = os.path.join(split_dp, f"{split}_ids.csv")
                 assert os.path.isfile(split_fp), split_fp
                 split_df = pd.read_csv(split_fp)
+            # optionally subsample the split ids here to avoid loading/processing
+            # large spec/mol DataFrames before sampling
+            if subsample_params.get(split, False) and subsample_params["subsample_size"] > 0:
+                if isinstance(subsample_params["subsample_size"], int):
+                    n = subsample_params["subsample_size"]
+                    frac = None
+                else:
+                    assert isinstance(subsample_params["subsample_size"], float)
+                    n = None
+                    frac = subsample_params["subsample_size"]
+                split_df = split_df.sample(
+                    n=n,
+                    frac=frac,
+                    random_state=subsample_params["subsample_seed"],
+                    replace=False,
+                ).reset_index(drop=True)
             split_dfs.append(split_df)
         split_df = pd.concat(split_dfs, ignore_index=True).reset_index(drop=True)
 
@@ -229,23 +245,9 @@ class BaseDataset(Dataset):
         else:
             id_key = "spec_id"
 
-        # subsample
-        if subsample_params.get(split, False) and subsample_params["subsample_size"] > 0:
-            if isinstance(subsample_params["subsample_size"], int):
-                n = subsample_params["subsample_size"]
-                frac = None
-            else:
-                assert isinstance(subsample_params["subsample_size"], float)
-                n = None
-                frac = subsample_params["subsample_size"]
-            spec_df = spec_df.sample(
-                n=n,
-                frac=frac,
-                random_state=subsample_params["subsample_seed"],
-                replace=False,
-            )
-            mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
-            um_spec_df = um_spec_df[um_spec_df[id_key].isin(spec_df[id_key])]
+        # NOTE: subsampling is performed on the split ID lists earlier
+        # (while reading the split files) to avoid processing large
+        # `spec_df` and `mol_df` before sampling.
 
         # reset indices
         spec_df = spec_df.reset_index(drop=True)

@@ -1,32 +1,18 @@
 import os
+from typing import Any
 
 import torch
+from lightning.fabric.utilities.exceptions import MisconfigurationException
+from lightning.pytorch.profilers.pytorch import (
+    _KINETO_AVAILABLE,
+    PyTorchProfiler,
+    ScheduleWrapper,
+    warning_cache,
+)
+from lightning_utilities.core.rank_zero import rank_zero_warn
+from torch.profiler import ProfilerAction, tensorboard_trace_handler
 
-try:
-    from lightning.pytorch.profilers.pytorch import (
-        _KINETO_AVAILABLE,
-        _PROFILER,
-        Any,
-        MisconfigurationException,
-        ProfilerAction,
-        PyTorchProfiler,
-        ScheduleWrapper,
-        rank_zero_warn,
-        tensorboard_trace_handler,
-        warning_cache,
-    )
-except ModuleNotFoundError:
-    from pytorch_lightning.profilers.pytorch import (
-        _KINETO_AVAILABLE,
-        Any,
-        MisconfigurationException,
-        ProfilerAction,
-        PyTorchProfiler,
-        ScheduleWrapper,
-        rank_zero_warn,
-        tensorboard_trace_handler,
-        warning_cache,
-    )
+__all__ = ["MyPyTorchProfiler"]
 
 
 class MyPyTorchProfiler(PyTorchProfiler):

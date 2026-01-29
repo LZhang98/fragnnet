@@ -478,19 +478,32 @@ def get_tanmimoto(fp, other_fp):
     return ds.DiceSimilarity(fp, other_fp)
 
 
-def make_morgan_fingerprint(mol: "Chem.rdchem.Mol", radius: int = 3, covert_to_np=True) -> np.array:
-    """make morgan fingerpirnt from mol object
+def make_morgan_fingerprint(
+    mol: "Chem.rdchem.Mol", radius: int = 3, nbits: int = 2048, covert_to_np=True
+) -> np.array:
+    """Make Morgan fingerprint from mol object.
 
     Args:
-            mol (rdkit mol): mol object
+        mol: RDKit mol object
+        radius: Fingerprint radius (default: 3). Must be > 0.
+        nbits: Number of bits in fingerprint (default: 2048). Must be > 0.
+        covert_to_np: Whether to convert to numpy array (default: True)
 
     Returns:
-            fp_arr
+        Fingerprint as numpy array or RDKit fingerprint object
+
+    Raises:
+        ValueError: If radius <= 0 or nbits <= 0
     """
-    modules = rdkit_import("rdkit.Chem.rdMolDescriptors", "rdkit.DataStructs")
-    rmd = modules[0]
+    if radius <= 0:
+        raise ValueError(f"morgan_radius must be positive integer, got {radius}")
+    if nbits <= 0:
+        raise ValueError(f"morgan_nbits must be positive integer, got {nbits}")
+
+    modules = rdkit_import("rdkit.Chem.AllChem", "rdkit.DataStructs")
+    AllChem = modules[0]
     ds = modules[1]
-    fp = rmd.GetHashedMorganFingerprint(mol, radius)
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
     if covert_to_np:
         fp_arr = np.zeros(1)
         ds.ConvertToNumpyArray(fp, fp_arr)
@@ -499,18 +512,24 @@ def make_morgan_fingerprint(mol: "Chem.rdchem.Mol", radius: int = 3, covert_to_n
     return fp_arr
 
 
-def make_rdkit_fingerprint(mol: "Chem.rdchem.Mol") -> np.array:
-    """make rdkit fingerpirnt from mol object
+def make_rdkit_fingerprint(mol: "Chem.rdchem.Mol", nbits: int = 2048) -> np.array:
+    """Make RDKit fingerprint from mol object.
 
     Args:
-            mol (rdkit mol): mol object
+        mol: RDKit mol object
+        nbits: Number of bits in fingerprint (default: 2048). Must be > 0.
 
     Returns:
-            fp_arr:  np.array
+        Fingerprint as numpy array
+
+    Raises:
+        ValueError: If nbits <= 0
     """
+    if nbits <= 0:
+        raise ValueError(f"rdkit_nbits must be positive integer, got {nbits}")
 
     chem, ds = rdkit_import("rdkit.Chem", "rdkit.DataStructs")
-    fp = chem.RDKFingerprint(mol)
+    fp = chem.RDKFingerprint(mol, fpSize=nbits)
     fp_arr = np.zeros(1)
     ds.ConvertToNumpyArray(fp, fp_arr)
     return fp_arr

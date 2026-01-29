@@ -52,6 +52,10 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
         inst_insert_size: int,
         inst_types: list[str],
         log_min: float,
+        morgan_radius: int = 3,
+        morgan_nbits: int = 2048,
+        rdkit_nbits: int = 2048,
+        neims_bottleneck_factor: float = 0.5,
     ):
         # Initialize nn.Module
         super().__init__()
@@ -66,6 +70,9 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
             self.mol_fingerprint_morgan,
             self.mol_fingerprint_rdkit,
             self.mol_fingerprint_maccs,
+            morgan_radius=morgan_radius,
+            morgan_nbits=morgan_nbits,
+            rdkit_nbits=rdkit_nbits,
         )
         self.mlp_input_dim = self.mol_fp_dim
 
@@ -112,6 +119,7 @@ class NeimsModel(nn.Module, CEModel, PrecModel, InstModel):
             output_map_size=ff_output_map_size,
             output_activation=ff_output_activation,
             log_min=log_min,
+            bottleneck_factor=neims_bottleneck_factor,
         )
 
     def _ce_location_check(self):

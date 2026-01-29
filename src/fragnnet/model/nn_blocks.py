@@ -538,9 +538,8 @@ class MLPBlocks(nn.Module):
 class NeimsBlock(nn.Module):
     """from the NEIMS paper (uses LeakyReLU instead of ReLU)"""
 
-    def __init__(self, in_dim, out_dim, dropout):
+    def __init__(self, in_dim, out_dim, dropout, bottleneck_factor=0.5):
         super().__init__()
-        bottleneck_factor = 0.5
         bottleneck_size = int(round(bottleneck_factor * out_dim))
         self.in_batch_norm = nn.BatchNorm1d(in_dim)
         self.in_activation = nn.LeakyReLU()
@@ -628,6 +627,7 @@ class SpecFFN(nn.Module):
         output_map_size,
         output_activation,
         log_min,
+        bottleneck_factor=0.5,
     ):
         super().__init__()
 
@@ -643,7 +643,7 @@ class SpecFFN(nn.Module):
         self.ff_layers = nn.ModuleList([])
         # self.ff_layers.append(nn.Linear(mlp_hidden_size, mlp_hidden_size))
         for i in range(num_layers):
-            self.ff_layers.append(NeimsBlock(hidden_size, hidden_size, dropout))
+            self.ff_layers.append(NeimsBlock(hidden_size, hidden_size, dropout, bottleneck_factor))
         if output_map_size == -1:
             if self.bidirectional:
                 # assumes gating, mass masking
