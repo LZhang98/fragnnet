@@ -77,30 +77,24 @@ def build_candidate_df(
         if query_spec_rows.empty:
             raise ValueError(f"No spec_df rows found for query mol_id={query_mol_id}")
 
-        candidate_mol_id_list: list[int | None] = []
-        missing_candidates = 0
-        for candidate_smiles in candidate_smiles_list:
-            if candidate_smiles in mol_smiles_to_id:
-                candidate_mol_id_list.append(mol_smiles_to_id[candidate_smiles])
-            else:
-                candidate_mol_id_list.append(None)
-                missing_candidates += 1
-
-        if missing_candidates:
-            logger.warning(
-                "%d candidate SMILES missing from mol_df for query_smiles=%s",
-                missing_candidates,
-                query_smiles,
-            )
-
+        num_candidate_smiles = len(candidate_smiles_list)
+        logger.info(f"Processing query_smiles: {query_smiles} with {num_candidate_smiles} candidates")
+        
         for _, spec_row in query_spec_rows.iterrows():
             records.append(
                 {
                     "query_spec_id": spec_row["spec_id"],
                     "query_mol_id": spec_row["mol_id"],
                     "query_peaks": spec_row["peaks"],
+                    "prec_type": spec_row["prec_type"],
+                    "inst_type": spec_row["inst_type"],
+                    "ace": spec_row["ace"],
+                    "nce": spec_row["nce"],
+                    "ace_extra_1": spec_row["ace_extra_1"],
+                    "nce_extra_1": spec_row["nce_extra_1"],
+                    "ace_extra_2": spec_row["ace_extra_2"],
+                    "nce_extra_2": spec_row["nce_extra_2"],
                     "candidate_smiles_list": candidate_smiles_list,
-                    "candidate_mol_id_list": candidate_mol_id_list,
                 }
             )
 
@@ -146,7 +140,7 @@ if __name__ == "__main__":
         "--output_path",
         type=str,
         #required=True,
-        default="data/preproc/ms2c_inference/nps_nist23_candidate_df.pkl.gz",
+        default="data/ms2c/candidates/nps_nist23_candidate_df.pkl.gz",
         help="Path to output candidate_df.pkl.gz",
     )
 

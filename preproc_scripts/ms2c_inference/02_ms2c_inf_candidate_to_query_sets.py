@@ -11,7 +11,6 @@ REQUIRED_CANDIDATE_COLS = [
     "query_mol_id",
     "query_peaks",
     "candidate_smiles_list",
-    "candidate_mol_id_list",
 ]
 
 def build_query_spec_df(row: pd.Series) -> pd.DataFrame:
@@ -35,7 +34,7 @@ def get_mol_subset(mol_df: pd.DataFrame, mol_id_list: list[int]) -> pd.DataFrame
     return subset
 
 
-def build_query_outputs(candidate_df: pd.DataFrame, mol_df: pd.DataFrame, output_dir: Path) -> None:
+def build_query_outputs(candidate_df: pd.DataFrame, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for col in REQUIRED_CANDIDATE_COLS:
@@ -91,17 +90,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Convert candidate_df to per-query spec_df and shared mol_df subsets.",
     )
-    parser.add_argument("--candidate_df_path", type=str, required=True, help="Path to candidate_df.pkl.gz")
-    parser.add_argument("--mol_df_path", type=str, required=True, help="Path to training mol_df.pkl.gz")
-    parser.add_argument("--output_dir", type=str, required=True, help="Output directory for query files")
+    parser.add_argument("--candidate_df_path", 
+                        type=str, 
+                        default="data/ms2c/candidates/nps_nist23_candidate_df.pkl.gz",
+                        required=False, help="Path to candidate_df.pkl.gz")
+    parser.add_argument("--output_dir", 
+                        type=str, required=False, 
+                        default="data/ms2c/proc/nps_nist23",
+                        help="Output directory for query files")
 
     args = parser.parse_args()
 
     candidate_df = pd.read_pickle(args.candidate_df_path)
-    mol_df = pd.read_pickle(args.mol_df_path)
 
-    logger.info("Loaded candidate_df with %d rows", len(candidate_df))
-    logger.info("Loaded mol_df with %d molecules", len(mol_df))
+    logger.info(f"Loaded candidate_df with {len(candidate_df)} rows")
 
-    build_query_outputs(candidate_df, mol_df, Path(args.output_dir))
-    logger.info("Saved query outputs to %s", args.output_dir)
+    build_query_outputs(candidate_df, Path(args.output_dir))
+    logger.info(f"Saved query outputs to {args.output_dir}")
