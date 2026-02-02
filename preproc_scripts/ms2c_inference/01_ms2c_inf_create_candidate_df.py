@@ -66,6 +66,7 @@ def build_candidate_df(
 
     records: list[dict[str, Any]] = []
     for query_smiles, candidate_smiles_list in candidates_dict.items():
+        
         if not isinstance(candidate_smiles_list, list):
             raise ValueError(f"Expected list of candidates for {query_smiles}")
         if query_smiles not in mol_smiles_to_id:
@@ -122,26 +123,30 @@ if __name__ == "__main__":
     parser.add_argument(
         "--json_file",
         type=str,
-        required=True,
+        #required=True,
+        default="data/ms2c/nps/nps_candidates/nps_nist23/nps_nist23_clm_formula.json",
         help="Path to JSON file containing query SMILES and candidate SMILES lists",
     )
 
     parser.add_argument(
         "--spec_df_path",
         type=str,
-        required=True,
+        #required=True,
+        default="data/proc/nps_nist23/spec_df.pkl",
         help="path to spec_df.pkl.gz file created by 02_prepare_spec_df.py which has specid and metadata",
     )
     parser.add_argument(
         "--mol_df_path",
         type=str,
-        required=True,
+        #required=True,
+        default="data/proc/nps_nist23/mol_df.pkl",
         help="path to mol_df.pkl.gz file created by 02_prepare_spec_df.py which has molid and metadata",
     )
     parser.add_argument(
         "--output_path",
         type=str,
-        required=True,
+        #required=True,
+        default="data/preproc/ms2c_inference/nps_nist23_candidate_df.pkl.gz",
         help="Path to output candidate_df.pkl.gz",
     )
 
@@ -156,8 +161,8 @@ if __name__ == "__main__":
     logger.info(f"Total query SMILES collected: {len(query_smiles_list)}")
 
     mol_df = pd.read_pickle(args.mol_df_path)
-    spec_df = pd.read_pickle(args.spec_df_path)
     logger.info("Loaded mol_df with %d molecules", len(mol_df))
+    spec_df = pd.read_pickle(args.spec_df_path)
     logger.info("Loaded spec_df with %d spectra", len(spec_df))
 
     candidate_df = build_candidate_df(candidates_dict, spec_df, mol_df, logger)
