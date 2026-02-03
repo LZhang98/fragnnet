@@ -66,7 +66,6 @@ def build_candidate_df(
 
     records: list[dict[str, Any]] = []
     for query_smiles, candidate_smiles_list in candidates_dict.items():
-        
         if not isinstance(candidate_smiles_list, list):
             raise ValueError(f"Expected list of candidates for {query_smiles}")
         if query_smiles not in mol_smiles_to_id:
@@ -78,8 +77,10 @@ def build_candidate_df(
             raise ValueError(f"No spec_df rows found for query mol_id={query_mol_id}")
 
         num_candidate_smiles = len(candidate_smiles_list)
-        logger.info(f"Processing query_smiles: {query_smiles} with {num_candidate_smiles} candidates")
-        
+        logger.info(
+            f"Processing query_smiles: {query_smiles} with {num_candidate_smiles} candidates"
+        )
+
         for _, spec_row in query_spec_rows.iterrows():
             records.append(
                 {
@@ -100,6 +101,7 @@ def build_candidate_df(
 
     return pd.DataFrame(records)
 
+
 if __name__ == "__main__":
     # Set up logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -117,7 +119,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--json_file",
         type=str,
-        #required=True,
+        # required=True,
         default="data/ms2c/nps/nps_candidates/nps_nist23/nps_nist23_clm_formula.json",
         help="Path to JSON file containing query SMILES and candidate SMILES lists",
     )
@@ -125,21 +127,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "--spec_df_path",
         type=str,
-        #required=True,
+        # required=True,
         default="data/proc/nps_nist23/spec_df.pkl",
         help="path to spec_df.pkl.gz file created by 02_prepare_spec_df.py which has specid and metadata",
     )
     parser.add_argument(
         "--mol_df_path",
         type=str,
-        #required=True,
+        # required=True,
         default="data/proc/nps_nist23/mol_df.pkl",
         help="path to mol_df.pkl.gz file created by 02_prepare_spec_df.py which has molid and metadata",
     )
     parser.add_argument(
         "--output_path",
         type=str,
-        #required=True,
+        # required=True,
         default="data/ms2c/candidates/nps_nist23_candidate_df.pkl.gz",
         help="Path to output candidate_df.pkl.gz",
     )
