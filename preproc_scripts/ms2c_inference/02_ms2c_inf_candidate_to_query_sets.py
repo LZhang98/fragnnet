@@ -1,5 +1,5 @@
 import argparse
-import json
+import csv
 import logging
 from pathlib import Path
 from typing import Any
@@ -59,22 +59,42 @@ def build_query_mol_df(candidate_smiles_list: list[str]) -> pd.DataFrame:
         zip(sorted(candidate_smiles_list), list(range(len(candidate_smiles_list)))),
         columns=["smiles", "mol_id"],
     )
-    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
-    mol_df.loc[:, "inchikey_s"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchikey_s)
-    mol_df.loc[:, "scaffold"] = par_apply_series(mol_df["mol"], data_utils.get_murcko_scaffold)
-    mol_df.loc[:, "formula"] = par_apply_series(mol_df["mol"], data_utils.mol_to_formula)
-    mol_df.loc[:, "inchi"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchi)
+    mol_df.loc[:, "mol"] = par_apply_series(
+        mol_df["smiles"], data_utils.mol_from_smiles, use_tqdm=False
+    )
+    mol_df.loc[:, "inchikey_s"] = par_apply_series(
+        mol_df["mol"], data_utils.mol_to_inchikey_s, use_tqdm=False
+    )
+    mol_df.loc[:, "scaffold"] = par_apply_series(
+        mol_df["mol"], data_utils.get_murcko_scaffold, use_tqdm=False
+    )
+    mol_df.loc[:, "formula"] = par_apply_series(
+        mol_df["mol"], data_utils.mol_to_formula, use_tqdm=False
+    )
+    mol_df.loc[:, "inchi"] = par_apply_series(
+        mol_df["mol"], data_utils.mol_to_inchi, use_tqdm=False
+    )
     mol_df.loc[:, "mw"] = par_apply_series(
-        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=False)
+        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=False), use_tqdm=False
     )
     mol_df.loc[:, "exact_mw"] = par_apply_series(
-        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=True)
+        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=True), use_tqdm=False
     )
-    mol_df.loc[:, "num_atoms"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_atoms)
-    mol_df.loc[:, "num_bonds"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_bonds)
-    mol_df.loc[:, "charge"] = par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
-    mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
-    mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
+    mol_df.loc[:, "num_atoms"] = par_apply_series(
+        mol_df["mol"], data_utils.mol_to_num_atoms, use_tqdm=False
+    )
+    mol_df.loc[:, "num_bonds"] = par_apply_series(
+        mol_df["mol"], data_utils.mol_to_num_bonds, use_tqdm=False
+    )
+    mol_df.loc[:, "charge"] = par_apply_series(
+        mol_df["mol"], data_utils.mol_to_charge, use_tqdm=False
+    )
+    mol_df.loc[:, "single_mol"] = par_apply_series(
+        mol_df["mol"], data_utils.check_single_mol, use_tqdm=False
+    )
+    mol_df.loc[:, "num_radicals"] = par_apply_series(
+        mol_df["mol"], data_utils.mol_to_num_radicals, use_tqdm=False
+    )
     if (mol_df["smiles"] == "").any():
         raise ValueError("Empty SMILES found in mol_df")
     if (mol_df["formula"] == "").any():
@@ -105,6 +125,16 @@ def create_query_mol_spec_df(candidate_df: pd.DataFrame, output_dir: Path) -> No
     processed_mol_d = {}
     index_records = []
 
+    # Prepare CSV index file: remove existing if present and write header
+    index_path = output_dir / "query_index.csv"
+    if index_path.exists():
+        index_path.unlink()
+
+    index_fieldnames = ["query_id", "mol_query_id", "spec_df_path", "mol_df_path"]
+    index_f = index_path.open("w", newline="")
+    index_writer = csv.DictWriter(index_f, fieldnames=index_fieldnames)
+    index_writer.writeheader()
+
     for i, row in candidate_df.iterrows():
         spec_query_id = row["spec_id"]
         mol_query_id = row["mol_id"]
@@ -124,22 +154,24 @@ def create_query_mol_spec_df(candidate_df: pd.DataFrame, output_dir: Path) -> No
         query_spec_path = output_dir / f"spec_df_query_{spec_query_id}.pkl.gz"
         spec_df.to_pickle(query_spec_path)
 
-        index_records.append(
-            {
-                "query_id": spec_query_id,
-                "mol_query_id": mol_query_id,
-                "spec_df_path": str(query_spec_path),
-                "mol_df_path": str(mol_df_path),
-            }
-        )
+        record = {
+            "query_id": spec_query_id,
+            "mol_query_id": mol_query_id,
+            "spec_df_path": str(query_spec_path),
+            "mol_df_path": str(mol_df_path),
+        }
+        index_records.append(record)
+
+        # Write row to CSV index incrementally
+        index_writer.writerow(record)
 
         if (i + 1) % 10 == 0:
             logging.getLogger(__name__).info(f"Processed {i + 1}/{len(candidate_df)} candidates")
 
-    index_path = output_dir / "query_index.json"
-    with index_path.open("w") as f:
-        json.dump(index_records, f, indent=2)
+    # Close CSV file
+    index_f.close()
 
+    # Also keep a fully-populated index in memory (same content) available if needed
     logger = logging.getLogger(__name__)
     logger.info(f"Processed all {len(candidate_df)} candidates successfully")
 

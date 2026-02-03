@@ -613,7 +613,7 @@ def par_apply(iterator, func, need_unpack=False, return_as_generator=False, n_jo
     return result
 
 
-def par_apply_series(series, func, tqdm_leave=True):
+def par_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True):
     """Apply a function to each item in a pandas Series in parallel.
 
     Args:
@@ -624,7 +624,11 @@ def par_apply_series(series, func, tqdm_leave=True):
     Returns:
             _type_: _description_
     """
-    series_iter = tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
+    series_iter = (
+        tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
+        if use_tqdm
+        else series.items()
+    )
 
     def series_func(tup):
         return func(tup[1])
@@ -634,7 +638,7 @@ def par_apply_series(series, func, tqdm_leave=True):
     return result_series
 
 
-def seq_apply_series(series, func, tqdm_leave=True) -> pd.Series:
+def seq_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True) -> pd.Series:
     """Apply a function to each item in a pandas Series in sequence.
 
     Args:
@@ -645,7 +649,11 @@ def seq_apply_series(series, func, tqdm_leave=True) -> pd.Series:
     Returns:
             pd.Series: The results of applying the function to each item.
     """
-    series_iter = tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
+    series_iter = (
+        tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
+        if use_tqdm
+        else series.items()
+    )
 
     def series_func(tup):
         return func(tup[1])
@@ -655,7 +663,7 @@ def seq_apply_series(series, func, tqdm_leave=True) -> pd.Series:
     return result_series
 
 
-def par_apply_df_rows(df, func):
+def par_apply_df_rows(df, func, use_tqdm: bool = True):
     """Apply a function to each row of a DataFrame in parallel.
 
     Args:
@@ -666,7 +674,9 @@ def par_apply_df_rows(df, func):
             pd.Series: The results of applying the function to each row.
     """
 
-    df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
+    df_iter = (
+        tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
+    )
 
     def df_func(tup):
         return func(tup[1])
@@ -679,7 +689,7 @@ def par_apply_df_rows(df, func):
     return result_series
 
 
-def par_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
+def par_apply_df_rows_t(df, func, use_tqdm: bool = True) -> tuple[pd.Series, ...]:
     """Apply a function to each row of a DataFrame in parallel.
 
     Args:
@@ -689,7 +699,9 @@ def par_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
     Returns:
             pd.Series: The results of applying the function to each row.
     """
-    df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
+    df_iter = (
+        tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
+    )
 
     def df_func(tup):
         return func(tup[1])
@@ -699,7 +711,7 @@ def par_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
     return result_series
 
 
-def seq_apply_df_rows(df, func):
+def seq_apply_df_rows(df, func, use_tqdm: bool = True):
     """Apply a function to each row of a DataFrame in sequence, returning multiple Series.
 
     Args:
@@ -709,7 +721,9 @@ def seq_apply_df_rows(df, func):
     Returns:
             tuple[pd.Series, ...]: The results of applying the function to each row.
     """
-    df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
+    df_iter = (
+        tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
+    )
 
     def df_func(tup):
         return func(tup[1])
@@ -721,9 +735,11 @@ def seq_apply_df_rows(df, func):
     return result_series
 
 
-def seq_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
+def seq_apply_df_rows_t(df, func, use_tqdm: bool = True) -> tuple[pd.Series, ...]:
     """Apply a function to each row of a DataFrame in sequence, returning multiple Series."""
-    df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
+    df_iter = (
+        tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
+    )
 
     def df_func(tup):
         return func(tup[1])
