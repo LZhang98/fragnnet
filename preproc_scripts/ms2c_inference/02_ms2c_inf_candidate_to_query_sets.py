@@ -6,6 +6,11 @@ from typing import Any
 
 import pandas as pd
 
+import fragnnet.utils.data_utils as data_utils
+from fragnnet.utils.data_utils import (
+    par_apply_series,
+)
+
 REQUIRED_CANDIDATE_COLS = [
     "spec_id",
     "mol_id",
@@ -24,13 +29,59 @@ REQUIRED_CANDIDATE_COLS = [
 
 def build_query_spec_df(row: pd.Series, size) -> pd.DataFrame:
     """Build a per-query spec_df from a single candidate_df row."""
-    pass
+    records: list[dict[str, Any]] = []
+
+    for i in range(size):
+        records.append(
+            {
+                "spec_id": i,
+                "mol_id": i,
+                "peaks": row["peaks"],
+                "prec_type": row["prec_type"],
+                "inst_type": row["inst_type"],
+                "ace": row["ace"],
+                "nce": row["nce"],
+                "ace_extra_1": row["ace_extra_1"],
+                "nce_extra_1": row["nce_extra_1"],
+                "ace_extra_2": row["ace_extra_2"],
+                "nce_extra_2": row["nce_extra_2"],
+            }
+        )
+    spec_df = pd.DataFrame(records)
+    return spec_df
 
 
 def build_query_mol_df(candidate_smiles_list: list[str]) -> pd.DataFrame:
     """Build a per-query mol_df from candidate_smiles_list."""
-
-    pass
+    # de-duplicate smiles
+    candidate_smiles_list = list(set(candidate_smiles_list))
+    mol_df = pd.DataFrame(
+        zip(sorted(candidate_smiles_list), list(range(len(candidate_smiles_list)))),
+        columns=["smiles", "mol_id"],
+    )
+    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
+    mol_df.loc[:, "inchikey_s"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchikey_s)
+    mol_df.loc[:, "scaffold"] = par_apply_series(mol_df["mol"], data_utils.get_murcko_scaffold)
+    mol_df.loc[:, "formula"] = par_apply_series(mol_df["mol"], data_utils.mol_to_formula)
+    mol_df.loc[:, "inchi"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchi)
+    mol_df.loc[:, "mw"] = par_apply_series(
+        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=False)
+    )
+    mol_df.loc[:, "exact_mw"] = par_apply_series(
+        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=True)
+    )
+    mol_df.loc[:, "num_atoms"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_atoms)
+    mol_df.loc[:, "num_bonds"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_bonds)
+    mol_df.loc[:, "charge"] = par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
+    mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
+    mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
+    if (mol_df["smiles"] == "").any():
+        raise ValueError("Empty SMILES found in mol_df")
+    if (mol_df["formula"] == "").any():
+        raise ValueError("Empty formula found in mol_df")
+    if (mol_df["exact_mw"] == 0).any():
+        raise ValueError("Zero exact_mw found in mol_df")
+    return mol_df
 
 
 def create_query_mol_spec_df(candidate_df: pd.DataFrame, output_dir: Path) -> None:
@@ -40,40 +91,34 @@ def create_query_mol_spec_df(candidate_df: pd.DataFrame, output_dir: Path) -> No
         if col not in candidate_df.columns:
             raise ValueError(f"Missing required column in candidate_df: {col}")
 
-    mol_cache: dict[tuple[int, ...], str] = {}
-    index_records: list[dict[str, Any]] = []
+    processed_mol_d = {}
+    index_records = []
 
     for i, row in candidate_df.iterrows():
-        query_id = row["query_spec_id"]
-        if pd.isna(query_id):
-            query_id = f"no_spec_{i}"
+        spec_query_id = row["spec_id"]
+        mol_query_id = row["mol_id"]
+        # if pd.isna(spec_query_id):
+        #    spec_query_id = f"no_spec_{i}"
 
-        query_spec_df = build_query_spec_df(row)
-        query_spec_path = output_dir / f"spec_df_query_{query_id}.pkl.gz"
-        query_spec_df.to_pickle(query_spec_path)
-
-        # mol_ids = [mid for mid in row["candidate_mol_id_list"] if mid is not None]
-        # if pd.notna(row["query_mol_id"]):
-        #    mol_ids.append(int(row["query_mol_id"]))
-        # mol_ids = sorted(set(mol_ids))
-
-        if not mol_ids:
-            raise ValueError(f"No mol_id values found for query_id={query_id}")
-
-        mol_key = tuple(mol_ids)
-        if mol_key in mol_cache:
-            mol_path = mol_cache[mol_key]
+        if row["mol_id"] in processed_mol_d:
+            candidates_size = processed_mol_d[row["mol_id"]]
         else:
-            mol_subset = get_mol_subset(mol_df, mol_ids)
-            mol_path = str(output_dir / f"mol_df_set_{len(mol_cache)}.pkl.gz")
-            mol_subset.to_pickle(mol_path)
-            mol_cache[mol_key] = mol_path
+            mol_df = build_query_mol_df(row["candidate_smiles_list"])
+            mol_df_path = output_dir / f"mol_df_query_{mol_query_id}.pkl.gz"
+            mol_df.to_pickle(mol_df_path)
+            candidates_size = len(mol_df)
+            processed_mol_d[row["mol_id"]] = candidates_size
+
+        spec_df = build_query_spec_df(row, size=candidates_size)
+        query_spec_path = output_dir / f"spec_df_query_{spec_query_id}.pkl.gz"
+        spec_df.to_pickle(query_spec_path)
 
         index_records.append(
             {
-                "query_id": query_id,
+                "query_id": spec_query_id,
+                "mol_query_id": mol_query_id,
                 "spec_df_path": str(query_spec_path),
-                "mol_df_path": mol_path,
+                "mol_df_path": str(mol_df_path),
             }
         )
 
