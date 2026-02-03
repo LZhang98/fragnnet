@@ -27,7 +27,7 @@ REQUIRED_CANDIDATE_COLS = [
 ]
 
 
-def build_query_spec_df(row: pd.Series, size) -> pd.DataFrame:
+def build_query_spec_df(row: pd.Series, size: int) -> pd.DataFrame:
     """Build a per-query spec_df from a single candidate_df row."""
     records: list[dict[str, Any]] = []
 
@@ -85,6 +85,17 @@ def build_query_mol_df(candidate_smiles_list: list[str]) -> pd.DataFrame:
 
 
 def create_query_mol_spec_df(candidate_df: pd.DataFrame, output_dir: Path) -> None:
+    """Create per-query spec_df and mol_df files from candidate_df.
+
+    For each row in candidate_df, creates:
+    - A spec_df with candidate molecule IDs
+    - A mol_df with candidate SMILES and properties (cached if same mol_id)
+    - Records in a query_index.json for reference
+
+    Args:
+        candidate_df: DataFrame with columns including candidate_smiles_list
+        output_dir: Directory to write query files and index
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for col in REQUIRED_CANDIDATE_COLS:
@@ -101,13 +112,13 @@ def create_query_mol_spec_df(candidate_df: pd.DataFrame, output_dir: Path) -> No
         #    spec_query_id = f"no_spec_{i}"
 
         if row["mol_id"] in processed_mol_d:
-            candidates_size = processed_mol_d[row["mol_id"]]
+            candidates_size, mol_df_path = processed_mol_d[row["mol_id"]]
         else:
             mol_df = build_query_mol_df(row["candidate_smiles_list"])
             mol_df_path = output_dir / f"mol_df_query_{mol_query_id}.pkl.gz"
             mol_df.to_pickle(mol_df_path)
             candidates_size = len(mol_df)
-            processed_mol_d[row["mol_id"]] = candidates_size
+            processed_mol_d[row["mol_id"]] = (candidates_size, mol_df_path)
 
         spec_df = build_query_spec_df(row, size=candidates_size)
         query_spec_path = output_dir / f"spec_df_query_{spec_query_id}.pkl.gz"
@@ -122,9 +133,15 @@ def create_query_mol_spec_df(candidate_df: pd.DataFrame, output_dir: Path) -> No
             }
         )
 
+        if (i + 1) % 10 == 0:
+            logging.getLogger(__name__).info(f"Processed {i + 1}/{len(candidate_df)} candidates")
+
     index_path = output_dir / "query_index.json"
     with index_path.open("w") as f:
         json.dump(index_records, f, indent=2)
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Processed all {len(candidate_df)} candidates successfully")
 
 
 if __name__ == "__main__":
