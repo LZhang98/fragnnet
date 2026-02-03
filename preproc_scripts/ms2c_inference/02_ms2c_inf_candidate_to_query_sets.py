@@ -7,34 +7,33 @@ from typing import Any
 import pandas as pd
 
 REQUIRED_CANDIDATE_COLS = [
-    "query_spec_id",
-    "query_mol_id",
-    "query_peaks",
+    "spec_id",
+    "mol_id",
+    "peaks",
+    "prec_type",
+    "inst_type",
+    "ace",
+    "nce",
+    "ace_extra_1",
+    "nce_extra_1",
+    "ace_extra_2",
+    "nce_extra_2",
     "candidate_smiles_list",
 ]
 
-def build_query_spec_df(row: pd.Series) -> pd.DataFrame:
+
+def build_query_spec_df(row: pd.Series, size) -> pd.DataFrame:
     """Build a per-query spec_df from a single candidate_df row."""
-    spec_cols = [col for col in row.index if col.startswith("query_")]
-    if "query_spec_id" not in spec_cols:
-        spec_cols.append("query_spec_id")
-
-    record: dict[str, Any] = {}
-    for col in spec_cols:
-        record[col.replace("query_", "")] = row[col]
-
-    return pd.DataFrame([record])
+    pass
 
 
-def get_mol_subset(mol_df: pd.DataFrame, mol_id_list: list[int]) -> pd.DataFrame:
-    """Return mol_df subset for a sorted list of mol_id values."""
-    subset = mol_df[mol_df["mol_id"].isin(mol_id_list)].copy()
-    if subset.empty:
-        raise ValueError("mol_df subset is empty. Check candidate_mol_id_list or mol_df.")
-    return subset
+def build_query_mol_df(candidate_smiles_list: list[str]) -> pd.DataFrame:
+    """Build a per-query mol_df from candidate_smiles_list."""
+
+    pass
 
 
-def build_query_outputs(candidate_df: pd.DataFrame, output_dir: Path) -> None:
+def create_query_mol_spec_df(candidate_df: pd.DataFrame, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for col in REQUIRED_CANDIDATE_COLS:
@@ -53,10 +52,10 @@ def build_query_outputs(candidate_df: pd.DataFrame, output_dir: Path) -> None:
         query_spec_path = output_dir / f"spec_df_query_{query_id}.pkl.gz"
         query_spec_df.to_pickle(query_spec_path)
 
-        mol_ids = [mid for mid in row["candidate_mol_id_list"] if mid is not None]
-        if pd.notna(row["query_mol_id"]):
-            mol_ids.append(int(row["query_mol_id"]))
-        mol_ids = sorted(set(mol_ids))
+        # mol_ids = [mid for mid in row["candidate_mol_id_list"] if mid is not None]
+        # if pd.notna(row["query_mol_id"]):
+        #    mol_ids.append(int(row["query_mol_id"]))
+        # mol_ids = sorted(set(mol_ids))
 
         if not mol_ids:
             raise ValueError(f"No mol_id values found for query_id={query_id}")
@@ -90,14 +89,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Convert candidate_df to per-query spec_df and shared mol_df subsets.",
     )
-    parser.add_argument("--candidate_df_path", 
-                        type=str, 
-                        default="data/ms2c/candidates/nps_nist23_candidate_df.pkl.gz",
-                        required=False, help="Path to candidate_df.pkl.gz")
-    parser.add_argument("--output_dir", 
-                        type=str, required=False, 
-                        default="data/ms2c/proc/nps_nist23",
-                        help="Output directory for query files")
+    parser.add_argument(
+        "--candidate_df_path",
+        type=str,
+        default="data/ms2c/candidates/nps_nist23_candidate_df.pkl.gz",
+        required=False,
+        help="Path to candidate_df.pkl.gz",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        required=False,
+        default="data/ms2c/proc/nps_nist23",
+        help="Output directory for query files",
+    )
 
     args = parser.parse_args()
 
@@ -105,5 +110,5 @@ if __name__ == "__main__":
 
     logger.info(f"Loaded candidate_df with {len(candidate_df)} rows")
 
-    build_query_outputs(candidate_df, Path(args.output_dir))
+    create_query_mol_spec_df(candidate_df, Path(args.output_dir))
     logger.info(f"Saved query outputs to {args.output_dir}")

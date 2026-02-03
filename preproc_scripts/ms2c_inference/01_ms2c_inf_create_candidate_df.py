@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import tarfile
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -84,9 +85,9 @@ def build_candidate_df(
         for _, spec_row in query_spec_rows.iterrows():
             records.append(
                 {
-                    "query_spec_id": spec_row["spec_id"],
-                    "query_mol_id": spec_row["mol_id"],
-                    "query_peaks": spec_row["peaks"],
+                    "spec_id": spec_row["spec_id"],
+                    "mol_id": spec_row["mol_id"],
+                    "peaks": spec_row["peaks"],
                     "prec_type": spec_row["prec_type"],
                     "inst_type": spec_row["inst_type"],
                     "ace": spec_row["ace"],
@@ -163,5 +164,10 @@ if __name__ == "__main__":
 
     candidate_df = build_candidate_df(candidates_dict, spec_df, mol_df, logger)
     logger.info("Built candidate_df with %d rows", len(candidate_df))
+
+    # Create output directory if it doesn't exist
+    output_path = Path(args.output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     candidate_df.to_pickle(args.output_path)
     logger.info("Saved candidate_df to %s", args.output_path)
