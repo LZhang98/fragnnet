@@ -60,6 +60,12 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--custom_fp", type=str, required=False)
     parser.add_argument("--template_fp", type=str, default="./config/template.yml")
     parser.add_argument("--num_workers", type=int, default=multiprocessing.cpu_count())
+    parser.add_argument(
+        "--auxiliary_scores",
+        type=str,
+        nargs="+",
+        default=["cos_sim", "cos_hun", "true_oos_prob", "true_oos_e"],
+    )
     args = parser.parse_args()
     return args
 
