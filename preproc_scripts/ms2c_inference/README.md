@@ -154,9 +154,46 @@ CSV file indexing all processed queries.
 
 ---
 
+## Running Inference
+
+### run_ms2c_predict_val.py
+
+Runs inference on MS2C prediction datasets using a trained FraGNNet checkpoint.
+
+**Usage:**
+```bash
+python scripts/ms2c/run_ms2c_predict_val.py \
+    --proc_dp data/ms2c/proc/nps_nist23 \
+    --frag_dp data/ms2c/frags/d3_h4_isoFalse/nps_nist23 \
+    --save_fp data/ms2c/predicted/nps_nist23_predictions.pkl \
+    --wandb_run_id wf1zkb7n \
+    --auxiliary_scores cos_sim cos_hun jss true_oos_prob \
+    --eval_mz_bin_res 0.01 0.1
+```
+
+**Arguments:**
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--device` | str | `cuda:0` | Device to run inference on |
+| `--save_fp` | str | - | Output file path for predictions |
+| `--proc_dp` | str | - | Directory containing processed mol_df.pkl.gz and spec_df.pkl.gz |
+| `--frag_dp` | str | - | Directory containing fragmentation DAG data |
+| `--wandb_run_id` | str | - | W&B run ID to download checkpoint from |
+| `--model_ckpt` | str | None | Local checkpoint path (alternative to wandb_run_id) |
+| `--model_save_dp` | str | `./saved_ckpts` | Directory to save downloaded checkpoints |
+| `--use_cached_ckpt` | bool | False | Use cached checkpoint if available |
+| `--batch_size` | int | 50 | Batch size for inference |
+| `--num_workers` | int | CPU count | Number of dataloader workers |
+| `--auxiliary_scores` | list | `[cos_sim, cos_hun, true_oos_prob, true_oos_e]` | Auxiliary scores to compute |
+| `--eval_mz_bin_res` | list | `[0.01]` | m/z bin resolutions for binned metrics |
+| `--custom_fp` | str | None | Custom config file path |
+| `--template_fp` | str | `./config/template.yml` | Template config file path |
+
+---
+
 ## Available Auxiliary Scores
 
-When running inference with `run_ms2c_predict_val.py`, you can specify auxiliary scores to compute.
+When running inference with `run_ms2c_predict_val.py`, you can specify auxiliary scores to compute via the `--auxiliary_scores` argument.
 
 ### Score Types
 
@@ -201,10 +238,11 @@ For `auxiliary_scores=["cos_hun"]`:
 
 In `run_ms2c_predict_val.py`, the sqrt variants are automatically computed when `cos_sim` or `cos_hun` is specified. Both regular and sqrt versions are generated:
 
-```python
-# This configuration automatically computes both cos and sqrt_cos variants
-auxiliary_scores = ["cos_sim", "cos_hun"]
-eval_mz_bin_res = [0.01]
+```bash
+python scripts/ms2c/run_ms2c_predict_val.py \
+    --auxiliary_scores cos_sim cos_hun \
+    --eval_mz_bin_res 0.01 \
+    ...
 
 # Generated metrics will include:
 # - cos_sim_0.01

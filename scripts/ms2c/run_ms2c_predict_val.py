@@ -65,6 +65,14 @@ def get_args() -> argparse.Namespace:
         type=str,
         nargs="+",
         default=["cos_sim", "cos_hun", "true_oos_prob", "true_oos_e"],
+        help="List of auxiliary scores to compute",
+    )
+    parser.add_argument(
+        "--eval_mz_bin_res",
+        type=float,
+        nargs="+",
+        default=[0.01],
+        help="List of m/z bin resolutions for binned metrics (e.g., 0.01 0.1)",
     )
     args = parser.parse_args()
     return args
@@ -112,12 +120,10 @@ if __name__ == "__main__":
     )
 
     # Apply inference-specific configuration
-    auxiliary_scores = ["cos_sim", "cos_hun"]
-    eval_mz_bin_res = [0.01]
     config_d = apply_inference_config(
         config_d,
-        auxiliary_scores=auxiliary_scores,
-        eval_mz_bin_res=eval_mz_bin_res,
+        auxiliary_scores=args.auxiliary_scores,
+        eval_mz_bin_res=args.eval_mz_bin_res,
         num_workers=args.num_workers,
         eval_batch_size=args.batch_size,
         mol_src=mol_df,
