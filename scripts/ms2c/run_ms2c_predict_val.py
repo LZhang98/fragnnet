@@ -133,6 +133,14 @@ if __name__ == "__main__":
     # Set fragmentation directory
     config_d["frag_dp"] = args.frag_dp
 
+    # Auto-detect sqrt options based on _sqrt suffix in auxiliary_scores
+    # e.g., cos_sim_sqrt triggers eval_bin_sqrt, cos_hun_sqrt triggers eval_hun_sqrt
+    binned_sqrt_metrics = {"cos_sim_sqrt", "jss_sqrt", "opt_cos_sim_sqrt"}
+    hungarian_sqrt_metrics = {"cos_hun_sqrt", "jss_hun_sqrt"}
+    requested_scores = set(args.auxiliary_scores)
+    config_d["eval_bin_sqrt"] = bool(requested_scores & binned_sqrt_metrics)
+    config_d["eval_hun_sqrt"] = bool(requested_scores & hungarian_sqrt_metrics)
+
     # Setup device
     device = setup_device(config_d, device=args.device)
 

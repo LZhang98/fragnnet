@@ -234,21 +234,26 @@ For `auxiliary_scores=["cos_hun"]`:
 - `cos_hun_np` - With precursor peak removed
 - `cos_hun_sqrt_np` - Both sqrt and precursor removed
 
-### Example: Using cos_sim and cos_sim_sqrt Together
+### Example: Generated Metrics
 
-In `run_ms2c_predict_val.py`, the sqrt variants are automatically computed when `cos_sim` or `cos_hun` is specified. Both regular and sqrt versions are generated:
+To compute sqrt variants, explicitly include `_sqrt` metrics in `--auxiliary_scores`:
 
 ```bash
+# Only regular metrics
 python scripts/ms2c/run_ms2c_predict_val.py \
     --auxiliary_scores cos_sim cos_hun \
-    --eval_mz_bin_res 0.01 \
-    ...
+    --eval_mz_bin_res 0.01
 
-# Generated metrics will include:
-# - cos_sim_0.01
-# - cos_sim_sqrt_0.01
-# - cos_hun
-# - cos_hun_sqrt
+# Generated: cos_sim_0.01, cos_hun
+
+# Include sqrt variants
+python scripts/ms2c/run_ms2c_predict_val.py \
+    --auxiliary_scores cos_sim cos_sim_sqrt cos_hun cos_hun_sqrt \
+    --eval_mz_bin_res 0.01
+
+# Generated: cos_sim_0.01, cos_sim_sqrt_0.01, cos_hun, cos_hun_sqrt
 ```
 
-The sqrt variants are controlled by the `bin_sqrt_flags` and `hun_sqrt_flags` in the model's `_compute_aux_metrics()` method, which default to `[False, True]` to compute both versions.
+The `_sqrt` suffix in auxiliary_scores automatically enables the corresponding config:
+- `cos_sim_sqrt`, `jss_sqrt`, `opt_cos_sim_sqrt` → enables `eval_bin_sqrt`
+- `cos_hun_sqrt`, `jss_hun_sqrt` → enables `eval_hun_sqrt`
