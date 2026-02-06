@@ -148,7 +148,7 @@ def build_candidate_df(
                         "nce_extra_1": spec_row["nce_extra_1"],
                         "ace_extra_2": spec_row["ace_extra_2"],
                         "nce_extra_2": spec_row["nce_extra_2"],
-                        "gt_spec_id": [spec_row["spec_id"]],
+                        "gt_spec_id": spec_row["spec_id"],
                         "spec_type":spec_row["spec_type"],
                         "dset":spec_row["dset"],
                         "ion_mode":spec_row["ion_mode"],
