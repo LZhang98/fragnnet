@@ -225,6 +225,13 @@ if __name__ == "__main__":
         default="data/ms2c/candidates/nps_nist23_candidate_df.pkl.gz",
         help="Path to output candidate_df.pkl.gz",
     )
+    parser.add_argument(
+        "--num_proc",
+        type=int,
+        # required=True,
+        default=5,
+        help="the number of process to use",
+    )
     args = parser.parse_args()
 
     # Load JSON file
@@ -248,7 +255,7 @@ if __name__ == "__main__":
         
     if not os.path.exists(args.output_path):
         os.makedirs(args.output_path)
-    pool=Pool(10)
+    pool=Pool(args.num_proc)
     pool.starmap(build_candidate_df, inp)
 
     # Create output directory if it doesn't exist
