@@ -86,7 +86,6 @@ def build_candidate_df(
     spec_records: list[dict[str, Any]] = []
     mol_records: list[dict[str, Any]] = []
     map_smi_to_mol_id={}
-    map_test_spec_spec_id={}
     for query_smiles in candidates_dict:
         if query_smiles not in mol_smiles_to_id:
             continue
@@ -136,30 +135,26 @@ def build_candidate_df(
             if np.isnan(spec_row["nce"]) and np.isnan(spec_row["ace"]):
                 continue
             for smi in candidate_smiles_list:
-                k=f'{smi}_{spec_row["prec_type"]}_{spec_row["inst_type"]}_{spec_row["ace"]}_{spec_row["nce"]}_{spec_row["ace_extra_1"]}_{spec_row["nce_extra_1"]}_{spec_row["ace_extra_2"]}'
-                if k in map_test_spec_spec_id:
-                    spec_records[map_test_spec_spec_id[k]]["gt_spec_id"].append(spec_row["spec_id"])
-                else:
-                    spec_records.append(
-                        {
-                            "spec_id": len(spec_records),
-                            "mol_id": map_smi_to_mol_id[smi],
-                            "peaks": spec_row["peaks"],
-                            "prec_type": spec_row["prec_type"],
-                            "inst_type": spec_row["inst_type"],
-                            "ace": spec_row["ace"],
-                            "nce": spec_row["nce"],
-                            "ace_extra_1": spec_row["ace_extra_1"],
-                            "nce_extra_1": spec_row["nce_extra_1"],
-                            "ace_extra_2": spec_row["ace_extra_2"],
-                            "nce_extra_2": spec_row["nce_extra_2"],
-                            "gt_spec_id": [spec_row["spec_id"]],
-                            "spec_type":spec_row["spec_type"],
-                            "dset":spec_row["dset"],
-                            "ion_mode":spec_row["ion_mode"],
-                            "group_id": len(spec_records)
-                        }
-                        )
+                spec_records.append(
+                    {
+                        "spec_id": len(spec_records),
+                        "mol_id": map_smi_to_mol_id[smi],
+                        "peaks": spec_row["peaks"],
+                        "prec_type": spec_row["prec_type"],
+                        "inst_type": spec_row["inst_type"],
+                        "ace": spec_row["ace"],
+                        "nce": spec_row["nce"],
+                        "ace_extra_1": spec_row["ace_extra_1"],
+                        "nce_extra_1": spec_row["nce_extra_1"],
+                        "ace_extra_2": spec_row["ace_extra_2"],
+                        "nce_extra_2": spec_row["nce_extra_2"],
+                        "gt_spec_id": [spec_row["spec_id"]],
+                        "spec_type":spec_row["spec_type"],
+                        "dset":spec_row["dset"],
+                        "ion_mode":spec_row["ion_mode"],
+                        "group_id": len(spec_records)
+                    }
+                    )
     if not os.path.exists(output_path):
         os.mkdir(output_path)
     save_spec_records=pd.DataFrame(spec_records)
