@@ -134,7 +134,7 @@ def create_query_mol_spec_df(
     if index_path.exists():
         index_path.unlink()
 
-    index_fieldnames = ["query_id", "mol_query_id", "spec_df_path", "mol_df_path"]
+    index_fieldnames = ["query_spec_id", "query_candidate_id"]
     index_f = index_path.open("w", newline="")
     index_writer = csv.DictWriter(index_f, fieldnames=index_fieldnames)
     index_writer.writeheader()
