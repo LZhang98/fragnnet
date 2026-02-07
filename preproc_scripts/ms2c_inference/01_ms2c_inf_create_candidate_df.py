@@ -88,6 +88,7 @@ def build_candidate_df(
     spec_records: list[dict[str, Any]] = []
     mol_records: list[dict[str, Any]] = []
     map_smi_to_mol_id={}
+    gt_mol_keys=set(mol_df.keys())
     for query_smiles in tqdm(candidates_dict):
         if query_smiles not in mol_smiles_to_id:
             continue
@@ -117,6 +118,7 @@ def build_candidate_df(
             mol_records.append(
                 {
                     "mol_id":len(mol_records),
+                    "smiles":smi,
                     "mol":mol,
                     "inchikey_s":data_utils.mol_to_inchikey_s(mol),
                     "scaffold":data_utils.get_murcko_scaffold(mol),
@@ -131,6 +133,8 @@ def build_candidate_df(
                     "num_radicals":data_utils.mol_to_num_radicals(mol),
                 }
             )
+            for v in gt_mol_keys:
+                assert v in mol_records[-1], v
             assert smi not in map_smi_to_mol_id
             map_smi_to_mol_id[smi]=mol_records[-1]["mol_id"]
         for _, spec_row in query_spec_rows.iterrows():
