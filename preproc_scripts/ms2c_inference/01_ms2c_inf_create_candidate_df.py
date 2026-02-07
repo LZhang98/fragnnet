@@ -10,6 +10,7 @@ import fragnnet.utils.data_utils as data_utils
 import numpy as np
 import os
 from multiprocessing import Pool
+from tqdm import tqdm
 REQUIRED_SPEC_COLS = ["spec_id", "mol_id", "peaks"]
 REQUIRED_MOL_COLS = ["mol_id", "smiles"]
 
@@ -48,9 +49,10 @@ def load_split(path):
     splits=sorted(splits, key=lambda x: int(x.replace("cv", "")))
     print("splits founded:", splits)
     ret_ids=[]
+    
     for sp in splits:
-        test_mol_id=set(pd.read_csv(os.path.join(path, sp, "test_ids.csv"))["mol_id"])
-        ret_ids.append(test_mol_id)
+        split=pd.read_csv(os.path.join(path, sp, "test_ids.csv"))
+        ret_ids.append([set(split["mol_id"]), set(split["spec_id"])])        
     return ret_ids
 
 
@@ -67,12 +69,12 @@ def build_candidate_df(
     mol_df: pd.DataFrame,
     logger: logging.Logger,
     output_path:str,
-    candidate_mol_ids:set
+    candidate_ids:set
 ) -> pd.DataFrame:
     """Build candidate_df compatible with ms2c_inference candidate_to_query_sets."""
     validate_columns(spec_df, REQUIRED_SPEC_COLS, "spec_df")
     validate_columns(mol_df, REQUIRED_MOL_COLS, "mol_df")
-
+    candidate_mol_ids,candidate_spec_ids=candidate_ids
     mol_smiles_to_id: dict[str, int] = {}
     for _, row in mol_df.iterrows():
         smiles = row["smiles"]
@@ -86,7 +88,7 @@ def build_candidate_df(
     spec_records: list[dict[str, Any]] = []
     mol_records: list[dict[str, Any]] = []
     map_smi_to_mol_id={}
-    for query_smiles in candidates_dict:
+    for query_smiles in tqdm(candidates_dict):
         if query_smiles not in mol_smiles_to_id:
             continue
         candidate_smiles_list=candidates_dict[query_smiles]
@@ -134,12 +136,14 @@ def build_candidate_df(
         for _, spec_row in query_spec_rows.iterrows():
             if np.isnan(spec_row["nce"]) and np.isnan(spec_row["ace"]):
                 continue
+            if spec_row["spec_id"] not in candidate_spec_ids:
+                continue
             for smi in candidate_smiles_list:
                 spec_records.append(
                     {
                         "spec_id": len(spec_records),
                         "mol_id": map_smi_to_mol_id[smi],
-                        "peaks": spec_row["peaks"],
+                        "peaks":spec_row["peaks"],
                         "prec_type": spec_row["prec_type"],
                         "inst_type": spec_row["inst_type"],
                         "ace": spec_row["ace"],

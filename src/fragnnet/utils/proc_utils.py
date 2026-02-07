@@ -72,7 +72,8 @@ def filter_spec_mol(
         masks.append(frag_mode_mask)
     else:
         print(">> no frag mode filter")
-        print(">> frag mode in data:", spec_df["frag_mode"].unique())
+        if "frag_mode" in spec_df:
+            print(">> frag mode in data:", spec_df["frag_mode"].unique())
 
     # ce filter
     assert ces in ["ace", "nce", "nce_or_ace", None], ces
@@ -148,9 +149,10 @@ def filter_spec_mol(
         print(">> spec type in data: ", spec_df["spec_type"].unique())
 
     # precursor mz
-    prec_mz_mask = ~spec_df["prec_mz"].isna()
-    print(f">> prec mz: {prec_mz_mask.mean()}")
-    masks.append(prec_mz_mask)
+    if "prec_mz" in spec_df:
+        prec_mz_mask = ~spec_df["prec_mz"].isna()
+        print(f">> prec mz: {prec_mz_mask.mean()}")
+        masks.append(prec_mz_mask)
 
     # max prec mz
     if max_prec_mz is not None:
