@@ -144,6 +144,7 @@ def build_candidate_df(
                         "spec_id": len(spec_records),
                         "mol_id": map_smi_to_mol_id[smi],
                         "peaks":spec_row["peaks"],
+                        "prec_mz":spec_row["prec_mz"],
                         "prec_type": spec_row["prec_type"],
                         "inst_type": spec_row["inst_type"],
                         "ace": spec_row["ace"],
