@@ -139,27 +139,13 @@ def build_candidate_df(
             if spec_row["spec_id"] not in candidate_spec_ids:
                 continue
             for smi in candidate_smiles_list:
-                spec_records.append(
-                    {
-                        "spec_id": len(spec_records),
-                        "mol_id": map_smi_to_mol_id[smi],
-                        "peaks":spec_row["peaks"],
-                        "prec_mz":spec_row["prec_mz"],
-                        "prec_type": spec_row["prec_type"],
-                        "inst_type": spec_row["inst_type"],
-                        "ace": spec_row["ace"],
-                        "nce": spec_row["nce"],
-                        "ace_extra_1": spec_row["ace_extra_1"],
-                        "nce_extra_1": spec_row["nce_extra_1"],
-                        "ace_extra_2": spec_row["ace_extra_2"],
-                        "nce_extra_2": spec_row["nce_extra_2"],
-                        "gt_spec_id": spec_row["spec_id"],
-                        "spec_type":spec_row["spec_type"],
-                        "dset":spec_row["dset"],
-                        "ion_mode":spec_row["ion_mode"],
-                        "group_id": len(spec_records)
-                    }
-                    )
+                save_e={}
+                for k in spec_row.keys():
+                    save_e[k]=spec_row[k]
+                save_e["mol_id"]=map_smi_to_mol_id[smi]
+                save_e["spec_id"]=len(spec_records)
+                save_e["gt_spec_id"]=spec_row["spec_id"]
+                spec_records.append(save_e)
     if not os.path.exists(output_path):
         os.mkdir(output_path)
     save_spec_records=pd.DataFrame(spec_records)
