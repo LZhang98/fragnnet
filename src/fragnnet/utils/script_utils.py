@@ -771,10 +771,14 @@ def get_score_types(config_d: dict[str, Any]) -> list[str]:
         if "_hun" in score_type:
             # Hungarian algorithm scores don't need binning
             eval_score_types.append(score_type)
+            if config_d["eval_hun_sqrt"]:
+                eval_score_types.append(score_type+"_sqrt")
         else:
             # Other scores need binning by m/z resolution
             for bin_res in config_d["eval_mz_bin_res"]:
                 eval_score_types.append(f"{score_type}_{bin_res}")
+                if config_d["eval_bin_sqrt"]:
+                    eval_score_types.append(f"{score_type}_sqrt_{bin_res}")
     return eval_score_types
 
 
@@ -1039,7 +1043,7 @@ def run_inference_tabular(
         return_formula_str=return_formula_str,
         return_cc_hash=return_cc_hash,
         rebase_indices=rebase_indices,
-    ):
+    ):  
         preds_l.extend(batch_rows)
 
     pred_df = pd.DataFrame(preds_l, columns=columns_name)
