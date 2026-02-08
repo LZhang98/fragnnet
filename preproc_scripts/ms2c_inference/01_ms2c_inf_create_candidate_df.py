@@ -93,7 +93,6 @@ def build_candidate_df(
         if query_smiles not in mol_smiles_to_id:
             continue
         candidate_smiles_list=candidates_dict[query_smiles]
-        assert query_smiles in candidate_smiles_list
         assert len(candidate_smiles_list)==len(set(candidate_smiles_list))
         if not isinstance(candidate_smiles_list, list):
             raise ValueError(f"Expected list of candidates for {query_smiles}")
