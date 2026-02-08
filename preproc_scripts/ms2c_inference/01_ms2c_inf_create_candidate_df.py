@@ -115,8 +115,7 @@ def build_candidate_df(
                 continue
             mol=data_utils.mol_from_smiles(smi)
             assert not mol is None, smi
-            mol_records.append(
-                {
+            save_e={
                     "mol_id":len(mol_records),
                     "smiles":smi,
                     "mol":mol,
@@ -132,6 +131,15 @@ def build_candidate_df(
                     "single_mol":data_utils.check_single_mol(mol),
                     "num_radicals":data_utils.mol_to_num_radicals(mol),
                 }
+            skip=False
+            for k in save_e:
+                if save_e[k] is None or (isinstance(save_e[k], float) and np.isnan(save_e[k])):
+                    print("Encounter none or nan", save_e[k])
+                    skip=True
+            if skip:
+                continue
+            mol_records.append(
+                save_e
             )
             for v in gt_mol_keys:
                 assert v in mol_records[-1], v
@@ -143,6 +151,8 @@ def build_candidate_df(
             if spec_row["spec_id"] not in candidate_spec_ids:
                 continue
             for smi in candidate_smiles_list:
+                if smi not in map_smi_to_mol_id:
+                    continue
                 save_e={}
                 for k in spec_row.keys():
                     save_e[k]=spec_row[k]
