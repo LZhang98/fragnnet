@@ -144,14 +144,14 @@ def build_candidate_df(
                 assert v in mol_records[-1], v
             assert smi not in map_smi_to_mol_id
             map_smi_to_mol_id[smi]=mol_records[-1]["mol_id"]
-        for _, spec_row in query_spec_rows.iterrows():
-            if np.isnan(spec_row["nce"]) and np.isnan(spec_row["ace"]):
+        for smi in candidate_smiles_list:
+            if smi not in map_smi_to_mol_id:
                 continue
-            if spec_row["spec_id"] not in candidate_spec_ids:
-                continue
-            for smi in candidate_smiles_list:
-                if smi not in map_smi_to_mol_id:
+            for _, spec_row in query_spec_rows.iterrows():
+                if np.isnan(spec_row["nce"]) and np.isnan(spec_row["ace"]):
                     continue
+                if spec_row["spec_id"] not in candidate_spec_ids:
+                    continue                    
                 save_e={}
                 for k in spec_row.keys():
                     save_e[k]=spec_row[k]
