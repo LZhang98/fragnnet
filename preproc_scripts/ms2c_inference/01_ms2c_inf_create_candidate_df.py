@@ -11,6 +11,7 @@ import numpy as np
 import os
 from multiprocessing import Pool
 from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 REQUIRED_SPEC_COLS = ["spec_id", "mol_id", "peaks"]
 REQUIRED_MOL_COLS = ["mol_id", "smiles"]
 
@@ -62,6 +63,76 @@ def validate_columns(df: pd.DataFrame, required_cols: list[str], df_name: str) -
     if missing:
         raise ValueError(f"Missing columns in {df_name}: {missing}")
 
+def get_mol_feat(smi:str):
+    mol=data_utils.mol_from_smiles(smi)
+    assert not mol is None, smi
+    save_e={
+            "smiles":smi,
+            "mol":mol,
+            "inchikey_s":data_utils.mol_to_inchikey_s(mol),
+            "scaffold":data_utils.get_murcko_scaffold(mol),
+            "formula":data_utils.mol_to_formula(mol),
+            "inchi":data_utils.mol_to_inchi(mol),
+            "mw":data_utils.mol_to_mol_weight(mol),
+            "exact_mw":data_utils.mol_to_mol_weight(mol),
+            "num_atoms":data_utils.mol_to_num_atoms(mol),
+            "num_bonds":data_utils.mol_to_num_bonds(mol),
+            "charge":data_utils.mol_to_charge(mol),
+            "single_mol":data_utils.check_single_mol(mol),
+            "num_radicals":data_utils.mol_to_num_radicals(mol),
+        }
+    # check validity
+    skip=False
+    for k in save_e:
+        if save_e[k] is None or (isinstance(save_e[k], float) and np.isnan(save_e[k])):
+            print("Encounter none or nan", save_e[k])
+            skip=True
+    if skip:
+        return None
+    return save_e
+
+
+def build_mol_df(
+        candidates_dict: dict[str, list[str]],
+        mol_df:pd.DataFrame,
+        output_path:str,
+        proc_num,
+        logger,
+        chunksize=1
+    ):
+    validate_columns(mol_df, REQUIRED_MOL_COLS, "mol_df")
+    save_path=os.path.join(output_path, "mol_df.pkl")
+    if os.path.exists(save_path):
+        logger.info(f"{save_path} exists, will load from saved results")
+        saved_mol_df=pd.read_pickle(save_path)
+        map_smi_to_mol_id={}
+        for _, row in saved_mol_df.iterrows():
+            map_smi_to_mol_id[row["smiles"]]=row["mol_id"]
+        return map_smi_to_mol_id
+    # get all candidate mols
+    all_candidate_smis=[]
+    for query_smiles in tqdm(candidates_dict):
+        all_candidate_smis.extend(candidates_dict[query_smiles])
+    logger.info(f"Candidate num is {len(all_candidate_smis)}")
+    map_smi_to_mol_id={}
+    all_candidate_feats=process_map(get_mol_feat,all_candidate_smis, max_workers=proc_num, chunksize=chunksize)
+    num_failed=[_ for _ in all_candidate_feats if _ is None]
+    logger.info(f"{num_failed} failed in {len(all_candidate_feats)} in mol")
+    mol_records=[]
+    for save_e in all_candidate_feats:
+        if save_e is None:
+            continue
+        smi=save_e["smiles"]
+        save_e["mol_id"]=len(mol_records)
+        mol_records.append(
+            save_e
+        )
+        assert smi not in map_smi_to_mol_id
+        map_smi_to_mol_id[smi]=mol_records[-1]["mol_id"]
+    logger.info("Finish processing mol, saving")
+    pd.DataFrame(mol_records).to_pickle(save_path)
+    logger.info("Finish saving mol")
+    return map_smi_to_mol_id
 
 def build_candidate_df(
     candidates_dict: dict[str, list[str]],
@@ -69,7 +140,8 @@ def build_candidate_df(
     mol_df: pd.DataFrame,
     logger: logging.Logger,
     output_path:str,
-    candidate_ids:set
+    candidate_ids:set,
+    map_smi_to_mol_id:dict
 ) -> pd.DataFrame:
     """Build candidate_df compatible with ms2c_inference candidate_to_query_sets."""
     validate_columns(spec_df, REQUIRED_SPEC_COLS, "spec_df")
@@ -86,9 +158,7 @@ def build_candidate_df(
         mol_smiles_to_id[smiles] = int(mol_id)
 
     spec_records: list[dict[str, Any]] = []
-    mol_records: list[dict[str, Any]] = []
-    map_smi_to_mol_id={}
-    gt_mol_keys=set(mol_df.keys())
+    
     for query_smiles in tqdm(candidates_dict):
         if query_smiles not in mol_smiles_to_id:
             continue
@@ -103,47 +173,6 @@ def build_candidate_df(
         query_spec_rows = spec_df[spec_df["mol_id"] == query_mol_id]
         if query_spec_rows.empty:
             raise ValueError(f"No spec_df rows found for query mol_id={query_mol_id}")
-
-        num_candidate_smiles = len(candidate_smiles_list)
-        logger.info(
-            f"Processing query_smiles: {query_smiles} with {num_candidate_smiles} candidates"
-        )
-        
-        for smi in candidate_smiles_list:
-            if smi in map_smi_to_mol_id:
-                continue
-            mol=data_utils.mol_from_smiles(smi)
-            assert not mol is None, smi
-            save_e={
-                    "mol_id":len(mol_records),
-                    "smiles":smi,
-                    "mol":mol,
-                    "inchikey_s":data_utils.mol_to_inchikey_s(mol),
-                    "scaffold":data_utils.get_murcko_scaffold(mol),
-                    "formula":data_utils.mol_to_formula(mol),
-                    "inchi":data_utils.mol_to_inchi(mol),
-                    "mw":data_utils.mol_to_mol_weight(mol),
-                    "exact_mw":data_utils.mol_to_mol_weight(mol),
-                    "num_atoms":data_utils.mol_to_num_atoms(mol),
-                    "num_bonds":data_utils.mol_to_num_bonds(mol),
-                    "charge":data_utils.mol_to_charge(mol),
-                    "single_mol":data_utils.check_single_mol(mol),
-                    "num_radicals":data_utils.mol_to_num_radicals(mol),
-                }
-            skip=False
-            for k in save_e:
-                if save_e[k] is None or (isinstance(save_e[k], float) and np.isnan(save_e[k])):
-                    print("Encounter none or nan", save_e[k])
-                    skip=True
-            if skip:
-                continue
-            mol_records.append(
-                save_e
-            )
-            for v in gt_mol_keys:
-                assert v in mol_records[-1], v
-            assert smi not in map_smi_to_mol_id
-            map_smi_to_mol_id[smi]=mol_records[-1]["mol_id"]
         for smi in candidate_smiles_list:
             if smi not in map_smi_to_mol_id:
                 continue
@@ -163,8 +192,7 @@ def build_candidate_df(
         os.mkdir(output_path)
     save_spec_records=pd.DataFrame(spec_records)
     save_spec_records.to_pickle(os.path.join(output_path, "spec_df.pkl"))
-    pd.DataFrame(mol_records).to_pickle(os.path.join(output_path, "mol_df.pkl"))
-    print(f"saving {len(spec_records)} spec_records to {output_path}")
+    logger.info(f"saving {len(spec_records)} spec_records to {output_path}")
 
     # generate split
     pd.DataFrame.from_dict({
@@ -228,34 +256,30 @@ if __name__ == "__main__":
         "--num_proc",
         type=int,
         # required=True,
-        default=5,
+        default=20,
         help="the number of process to use",
     )
     args = parser.parse_args()
 
-    # Load JSON file
+    # Load  files
     candidates_dict = load_candidates_dict(args.json_file, logger)
-
-    # Load split file, to consistant with cross-validation
-    splits=load_split(args.split_path)
-    
-    # logger.info(f"Total unique SMILES collected: {len(all_smiles)}")
     query_smiles_list = list(candidates_dict.keys())
     logger.info(f"Total query SMILES collected: {len(query_smiles_list)}")
-
     mol_df = pd.read_pickle(args.mol_df_path)
     logger.info("Loaded mol_df with %d molecules", len(mol_df))
     spec_df = pd.read_pickle(args.spec_df_path)
     logger.info("Loaded spec_df with %d spectra", len(spec_df))
-   
-    inp=[]
-    for i,s in enumerate(splits):
-        inp.append([candidates_dict, spec_df, mol_df, logger, os.path.join(args.output_path, f"{i}"), s])
-        
     if not os.path.exists(args.output_path):
         os.makedirs(args.output_path)
-    pool=Pool(args.num_proc)
-    pool.starmap(build_candidate_df, inp)
+    # prepare mol_df 
+    map_smi_to_mol_id=build_mol_df(candidates_dict=candidates_dict, mol_df=mol_df, output_path=args.output_path, logger=logger, proc_num=args.num_proc)
+
+    # Load split file, to consistant with cross-validation
+    splits=load_split(args.split_path)
+    
+    # build spec_df
+    for i,s in enumerate(splits):
+        build_candidate_df(candidates_dict, spec_df, mol_df, logger, os.path.join(args.output_path, f"{i}"), s, map_smi_to_mol_id)
 
     # Create output directory if it doesn't exist
     logger.info("Saved candidate_df to %s", args.output_path)
