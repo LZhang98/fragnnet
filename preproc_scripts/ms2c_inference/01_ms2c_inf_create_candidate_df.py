@@ -96,9 +96,23 @@ def get_mol_feat(smi: str):
         return None
     return save_e
 
+def get_mol_smi_to_id(mol_df, candidate_ids):
+    validate_columns(mol_df, REQUIRED_MOL_COLS, "mol_df")
+    candidate_mol_ids, candidate_spec_ids = candidate_ids
+    mol_smiles_to_id: dict[str, int] = {}
+    for _, row in mol_df.iterrows():
+        smiles = row["smiles"]
+        mol_id = row["mol_id"]
+        if smiles in mol_smiles_to_id:
+            continue
+        if mol_id not in candidate_mol_ids:
+            continue
+        mol_smiles_to_id[smiles] = int(mol_id)
+    return mol_smiles_to_id
 
 def build_mol_df(
     candidates_dict: dict[str, list[str]],
+    mol_smiles_to_id: dict,
     output_path: str,
     proc_num,
     logger,
@@ -115,6 +129,8 @@ def build_mol_df(
     # get all candidate mols
     all_candidate_smis = []
     for query_smiles in tqdm(candidates_dict):
+        if query_smiles not in mol_smiles_to_id:
+            continue
         all_candidate_smis.extend(candidates_dict[query_smiles])
     logger.info(f"Candidate num is {len(all_candidate_smis)}")
     map_smi_to_mol_id = {}
@@ -145,21 +161,13 @@ def build_candidate_df(
     logger: logging.Logger,
     output_path: str,
     candidate_ids: set,
-    map_smi_to_mol_id: dict
+    map_smi_to_mol_id: dict,
+    mol_smiles_to_id:dict
 ) -> pd.DataFrame:
     """Build candidate_df compatible with ms2c_inference candidate_to_query_sets."""
     validate_columns(spec_df, REQUIRED_SPEC_COLS, "spec_df")
     validate_columns(mol_df, REQUIRED_MOL_COLS, "mol_df")
     candidate_mol_ids, candidate_spec_ids = candidate_ids
-    mol_smiles_to_id: dict[str, int] = {}
-    for _, row in mol_df.iterrows():
-        smiles = row["smiles"]
-        mol_id = row["mol_id"]
-        if smiles in mol_smiles_to_id:
-            continue
-        if mol_id not in candidate_mol_ids:
-            continue
-        mol_smiles_to_id[smiles] = int(mol_id)
 
     spec_records: list[dict[str, Any]] = []
 
@@ -278,17 +286,19 @@ if __name__ == "__main__":
     logger.info("Loaded spec_df with %d spectra", len(spec_df))
     if not os.path.exists(args.output_path):
         os.makedirs(args.output_path)
-    # prepare mol_df
-    map_smi_to_mol_id = build_mol_df(
-        candidates_dict=candidates_dict, output_path=args.output_path, logger=logger, proc_num=args.num_proc)
 
     # Load split file, to consistant with cross-validation
     splits = load_split(args.split_path)
 
     # build spec_df
     for i, s in enumerate(splits):
-        build_candidate_df(candidates_dict, spec_df, mol_df, logger, os.path.join(
-            args.output_path, f"{i}"), s, map_smi_to_mol_id)
+        save_path=os.path.join(args.output_path, f"{i}")
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
+        mol_smiles_to_id=get_mol_smi_to_id(mol_df, s)
+        logger.info(f"{len(mol_smiles_to_id)} query mols loaded for split {i}")
+        map_smi_to_mol_id = build_mol_df(candidates_dict=candidates_dict, output_path=save_path, logger=logger, proc_num=args.num_proc, mol_smiles_to_id=mol_smiles_to_id)
+        build_candidate_df(candidates_dict, spec_df, mol_df, logger, save_path, s, map_smi_to_mol_id, mol_smiles_to_id=mol_smiles_to_id)
 
     # Create output directory if it doesn't exist
     logger.info("Saved candidate_df to %s", args.output_path)
