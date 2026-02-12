@@ -94,13 +94,11 @@ def get_mol_feat(smi:str):
 
 def build_mol_df(
         candidates_dict: dict[str, list[str]],
-        mol_df:pd.DataFrame,
         output_path:str,
         proc_num,
         logger,
         chunksize=1
     ):
-    validate_columns(mol_df, REQUIRED_MOL_COLS, "mol_df")
     save_path=os.path.join(output_path, "mol_df.pkl")
     if os.path.exists(save_path):
         logger.info(f"{save_path} exists, will load from saved results")
@@ -272,7 +270,7 @@ if __name__ == "__main__":
     if not os.path.exists(args.output_path):
         os.makedirs(args.output_path)
     # prepare mol_df 
-    map_smi_to_mol_id=build_mol_df(candidates_dict=candidates_dict, mol_df=mol_df, output_path=args.output_path, logger=logger, proc_num=args.num_proc)
+    map_smi_to_mol_id=build_mol_df(candidates_dict=candidates_dict, output_path=args.output_path, logger=logger, proc_num=args.num_proc)
 
     # Load split file, to consistant with cross-validation
     splits=load_split(args.split_path)
