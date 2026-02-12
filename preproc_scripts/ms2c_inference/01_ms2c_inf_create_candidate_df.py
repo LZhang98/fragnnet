@@ -132,6 +132,7 @@ def build_mol_df(
         if query_smiles not in mol_smiles_to_id:
             continue
         all_candidate_smis.extend(candidates_dict[query_smiles])
+    all_candidate_smis=list(set(all_candidate_smis))
     logger.info(f"Candidate num is {len(all_candidate_smis)}")
     map_smi_to_mol_id = {}
     all_candidate_feats = Pool(proc_num).map(get_mol_feat, all_candidate_smis)
@@ -274,6 +275,13 @@ if __name__ == "__main__":
         default=20,
         help="the number of process to use",
     )
+    parser.add_argument(
+        "--split_idx",
+        type=int,
+        # required=True,
+        default=None,
+        help="split to handle",
+    )
     args = parser.parse_args()
 
     # Load  files
@@ -291,7 +299,12 @@ if __name__ == "__main__":
     splits = load_split(args.split_path)
 
     # build spec_df
-    for i, s in enumerate(splits):
+    if args.split_idx is None:
+        candidates_split_idx=list(range(len(splits)))
+    else:
+        candidates_split_idx=[args.split_idx]
+    for i in candidates_split_idx:
+        s=splits[i]
         save_path=os.path.join(args.output_path, f"{i}")
         if not os.path.exists(save_path):
             os.mkdir(save_path)
