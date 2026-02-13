@@ -27,8 +27,8 @@ from fragnnet.utils.script_utils import (
     setup_device,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
-
-
+import h5py
+import numpy as np
 def get_args():
     # Set up command line argument parser
     parser = argparse.ArgumentParser(description="Run FragGNN inference evaluation with metrics")
@@ -252,18 +252,25 @@ if __name__ == "__main__":
         if dropped:
             print(f"> Dropped all-NaN columns: {dropped}")
 
-    # Print evaluation score statistics
+    
+    output_save_dp = os.path.join(save_dp, args.wandb_run_id)
+    os.makedirs(output_save_dp, exist_ok=True)
+
+    # Print evaluation score statistics & save scores as hdf5
     print("\n>>> Evaluation Score Statistics:")
     eval_score_types = get_score_types(config_d=config_d)
+    score_file=h5py.File(os.path.join(output_save_dp,  f"predictions_{eval_split}_score.pkl"), "w")
     for eval_score_type in eval_score_types:
         mean_score = predicted_df[eval_score_type].mean()
         std_score = predicted_df[eval_score_type].std()
         print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
+        score_file.create_dataset(eval_score_type, data=np.array(predicted_df[eval_score_type]))
+    score_file.create_dataset("spec_id", data=np.array(predicted_df["spec_id"]))
+    score_file.close()
+    predicted_df.drop(columns=eval_score_types)
 
     print(predicted_df.head())
     # Save predictions with evaluation scores
-    output_save_dp = os.path.join(save_dp, args.wandb_run_id)
-    os.makedirs(output_save_dp, exist_ok=True)
     output_path = os.path.join(output_save_dp, f"predictions_{eval_split}.pkl")
     predicted_df.to_pickle(output_path)
     print(f"\n>>> Saved predictions to: {output_path}")
