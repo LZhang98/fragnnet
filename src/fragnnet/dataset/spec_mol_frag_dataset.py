@@ -198,6 +198,8 @@ class SpecMolFragDataset(SpecMolDataset):
             )
 
         data = {**spec_data, **mol_data, **frag_data}
+        if "mol_id" not in data:
+            data["mol_id"]=mol_id
         return data
 
     def _load_frag_entry(self, mol_id: str) -> dict:
@@ -402,6 +404,7 @@ class SpecMolFragDataset(SpecMolDataset):
         # prevent edge case causing crash
         if len(data_list) == 0:
             return {"batch_size": th.tensor(0)}
+        
         batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
         # special handling
         SpecMolFragDataset._special_collate(keys, collate_data)

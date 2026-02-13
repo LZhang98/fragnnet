@@ -1113,7 +1113,6 @@ def run_inference_tabular_iter(
             if batch_idx >= batch_cutoff and batch_cutoff > 0:
                 print(f"> reached batch cutoff of {batch_cutoff}, stopping inference")
                 break
-
             # Process batch and get data rows
             batch_rows = process_batch_to_tabular_row(
                 batch_input=batch_input,
@@ -1172,10 +1171,10 @@ def process_batch_to_tabular_row(
     """
     spec_ids = batch_input["spec_unique_id"]
     mol_ids = batch_input["mol_id"]
-
     # Extract string/graph data before moving to device (if they are not tensors)
     frag_formula_str = batch_input.get("frag_formula_str")
     frag_pyg = batch_input.get("frag_pyg")
+    batch_input.get("mol_pyg").mol_ids=mol_ids
 
     batch_input = to_device(batch_input, device)
     # use existing evaluate to compute cos sim and etc
