@@ -213,7 +213,10 @@ def main(args):
         desc="Compute Frags",
         disable_tqdm=args.disable_tqdm,
     ):
-        frag_results.append(fr)
+        if not args.skip_stats:
+            frag_results.append(fr)
+    if args.skip_stats:
+        return 
 
     print("> Fragments Computed")
     frag_stats_df = pd.DataFrame({"mol_id": mol_df["mol_id"]})
@@ -523,6 +526,11 @@ if __name__ == "__main__":
         type=booltype,
         default=False,
         help="Disable tqdm progress bars and use logging instead",
+    )
+    parser.add_argument(
+        "--skip_stats",
+        action="store_true", 
+        help="whether skip stats comput"
     )
     args = parser.parse_args()
 
