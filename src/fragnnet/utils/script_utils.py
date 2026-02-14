@@ -23,7 +23,7 @@ from fragnnet.utils.misc_utils import (
 from fragnnet.utils.nn_utils import decompile_jit_ckpt
 from fragnnet.utils.pl_utils import get_pl_hparams
 from fragnnet.utils.setup_utils import get_model_cls
-
+import h5py
 
 def init_wandb_ckpt(
     run_id: str,
@@ -1049,6 +1049,109 @@ def run_inference_tabular(
     pred_df = pd.DataFrame(preds_l, columns=columns_name)
     return pred_df
 
+
+def run_inference_hdf5(
+    model: th.nn.Module,
+    dataloader: th.utils.data.DataLoader,
+    device: th.device,
+    batch_cutoff: int = -1,
+    evaluate: bool = False,
+    output_set: set[str] | None = None,
+    nb_iso: bool = False,
+    min_peak_int: float = 0.0,
+    return_formula_str: bool = False,
+    return_cc_hash: bool = False,
+    rebase_indices: bool = True,
+    chunk_size=5000,
+    save_path:str=""
+) -> pd.DataFrame:
+    """
+    Run inference and return all results as a single DataFrame.
+
+    This is a convenience wrapper around run_inference_tabular_iter that accumulates
+    all batch results into a single DataFrame.
+
+    Args:
+            model: Model instance
+            dataloader: DataLoader with batches
+            device: Device to run inference on
+            batch_cutoff: Max batches to process (-1 = all)
+            evaluate: Whether to run evaluation step
+            output_set: Subset of outputs to include
+            nb_iso: Whether model uses neighbor isotope prediction
+            min_peak_int: Minimum peak intensity threshold
+            return_formula_and_cc: Whether to return formula strings and CCs
+            rebase_indices: Whether to rebase indices
+
+    Returns:
+            DataFrame with all inference results
+    """
+    # Get column names from config
+    columns_name = get_tabular_columns(
+        model.hparams, return_formula_str, return_cc_hash, output_subset=output_set
+    )
+    sequential_name=set(["pred_mzs", "pred_ints", "frag_formula_peak_idxs", "frag_formula_peak_mzs"])
+    # Accumulate all batch results
+    num_pred=0
+    num_batch=len(dataloader)
+    preds_l=[]
+    
+    spec_start_point=0
+    start_point=0
+    with h5py.File(save_path, 'w') as save_file:
+        def resize_and_save(k, save_v, start_point):
+            save_file[k].resize(start_point+len(save_v), axis=0)
+            save_file[k][start_point:start_point+len(save_v)] = save_v
+        for k in columns_name:
+            save_file.create_dataset(k, shape=(0, ), dtype='float32', maxshape=(None,),)
+        save_file.create_dataset("start_points", shape=(0, ), dtype='int', maxshape=(None,),)
+        save_file.create_dataset("end_points", shape=(0, ), dtype='int', maxshape=(None,),)
+        for batch_rows in run_inference_tabular_iter(
+            model=model,
+            dataloader=dataloader,
+            device=device,
+            batch_cutoff=batch_cutoff,
+            evaluate=evaluate,
+            output_set=output_set,
+            nb_iso=nb_iso,
+            min_peak_int=min_peak_int,
+            return_formula_str=return_formula_str,
+            return_cc_hash=return_cc_hash,
+            rebase_indices=rebase_indices,
+        ):  
+            num_pred+=1
+            preds_l.extend(batch_rows)
+            if len(preds_l)>=chunk_size or num_pred==num_batch:
+                save_res= pd.DataFrame(preds_l, columns=columns_name)
+                for k in save_res.keys(): 
+                    if k not in sequential_name:
+                        resize_and_save(k, save_res[k], start_point)
+                # save mz and intensity
+                spec_start_points=[]
+                spec_end_points=[]
+                save_seq={}
+                for _, line in save_res.iterrows():
+                    mz=line["pred_mzs"]
+                    spec_start_points.append(spec_start_point)
+                    spec_start_point+=len(mz)
+                    spec_end_points.append(spec_start_point)
+                    for k in sequential_name:
+                        if k not in save_seq:
+                            save_seq[k]=[]
+                        save_seq[k].append(line[k])
+                save_length=None
+                for k in sequential_name:
+                    save_v=np.concatenate(save_seq[k], 0)
+                    if save_length is None:
+                        save_length=len(save_v)
+                    else:
+                        assert len(save_v)==save_length, k
+                    resize_and_save(k, save_v, spec_start_point-save_length)
+                resize_and_save("start_points", np.array(spec_start_points), start_point)
+                resize_and_save("end_points", np.array(spec_end_points), start_point)
+                start_point+=len(preds_l)
+                preds_l=[]
+    return num_pred
 
 def run_inference_tabular_iter(
     model: th.nn.Module,

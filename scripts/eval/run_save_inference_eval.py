@@ -24,6 +24,7 @@ from fragnnet.utils.script_utils import (
     list_output_subset_options,
     prepare_output_subset,
     run_inference_tabular,
+    run_inference_hdf5,
     setup_device,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
@@ -231,7 +232,9 @@ if __name__ == "__main__":
             print(f"  Formula indices: {req_formula}")
 
     print(f">>> Output set: {output_set}")
-    predicted_df = run_inference_tabular(
+    output_save_dp = os.path.join(save_dp, args.wandb_run_id)
+    os.makedirs(output_save_dp, exist_ok=True)
+    num_predict = run_inference_hdf5(
         model,
         dl,
         device,
@@ -242,37 +245,8 @@ if __name__ == "__main__":
         return_formula_str=args.return_formula_str or args.output_everything,
         return_cc_hash=args.return_cc_hash or args.output_everything,
         rebase_indices=True,
+        save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5")
     )
-
-    # Optionally drop columns that are entirely None/NaN to declutter output
-    if args.drop_none_cols:
-        before_cols = set(predicted_df.columns)
-        predicted_df = predicted_df.dropna(axis=1, how="all")
-        dropped = sorted(before_cols - set(predicted_df.columns))
-        if dropped:
-            print(f"> Dropped all-NaN columns: {dropped}")
-
-    
-    output_save_dp = os.path.join(save_dp, args.wandb_run_id)
-    os.makedirs(output_save_dp, exist_ok=True)
-
-    # Print evaluation score statistics & save scores as hdf5
-    print("\n>>> Evaluation Score Statistics:")
-    eval_score_types = get_score_types(config_d=config_d)
-    score_file=h5py.File(os.path.join(output_save_dp,  f"predictions_{eval_split}_score.pkl"), "w")
-    for eval_score_type in eval_score_types:
-        mean_score = predicted_df[eval_score_type].mean()
-        std_score = predicted_df[eval_score_type].std()
-        print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
-        score_file.create_dataset(eval_score_type, data=np.array(predicted_df[eval_score_type]))
-    score_file.create_dataset("spec_id", data=np.array(predicted_df["spec_id"]))
-    score_file.close()
-    predicted_df.drop(columns=eval_score_types)
-
-    print(predicted_df.head())
-    # Save predictions with evaluation scores
-    output_path = os.path.join(output_save_dp, f"predictions_{eval_split}.pkl")
-    predicted_df.to_pickle(output_path)
-    print(f"\n>>> Saved predictions to: {output_path}")
-    print(f">>> Total predictions: {len(predicted_df)}")
+    print(f"\n>>> Saved predictions to: {output_save_dp}")
+    print(f">>> Total predictions: {num_predict}")
     print(">>> Evaluation complete!")
