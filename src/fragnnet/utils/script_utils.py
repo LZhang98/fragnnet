@@ -1062,7 +1062,7 @@ def run_inference_hdf5(
     return_formula_str: bool = False,
     return_cc_hash: bool = False,
     rebase_indices: bool = True,
-    chunk_size=5000,
+    chunk_size=10000,
     save_path:str=""
 ) -> pd.DataFrame:
     """
@@ -1094,7 +1094,7 @@ def run_inference_hdf5(
     # Accumulate all batch results
     num_pred=0
     num_batch=len(dataloader)
-    preds_l=[]
+    preds_l={}
     
     spec_start_point=0
     start_point=0
@@ -1120,28 +1120,28 @@ def run_inference_hdf5(
             rebase_indices=rebase_indices,
         ):  
             num_pred+=1
-            preds_l.extend(batch_rows)
-            if len(preds_l)>=chunk_size or num_pred==num_batch:
-                save_res= pd.DataFrame(preds_l, columns=columns_name)
-                for k in save_res.keys(): 
+            for row in batch_rows:
+                for k,v in zip(columns_name, row):
+                    if k not in preds_l:
+                        preds_l[k]=[]
+                    preds_l[k].append(v)
+            
+            if len(preds_l[k])>=chunk_size or num_pred==num_batch:
+                for k in preds_l.keys(): 
                     if k not in sequential_name:
-                        resize_and_save(k, save_res[k], start_point)
+                        resize_and_save(k, np.array(preds_l[k]), start_point)
                 # save mz and intensity
                 spec_start_points=[]
                 spec_end_points=[]
-                save_seq={}
-                for _, line in save_res.iterrows():
-                    mz=line["pred_mzs"]
+                
+                for mz in preds_l["pred_mzs"]:        
                     spec_start_points.append(spec_start_point)
                     spec_start_point+=len(mz)
                     spec_end_points.append(spec_start_point)
-                    for k in sequential_name:
-                        if k not in save_seq:
-                            save_seq[k]=[]
-                        save_seq[k].append(line[k])
+        
                 save_length=None
                 for k in sequential_name:
-                    save_v=np.concatenate(save_seq[k], 0)
+                    save_v=np.concatenate(preds_l[k], 0)
                     if save_length is None:
                         save_length=len(save_v)
                     else:
@@ -1149,8 +1149,8 @@ def run_inference_hdf5(
                     resize_and_save(k, save_v, spec_start_point-save_length)
                 resize_and_save("start_points", np.array(spec_start_points), start_point)
                 resize_and_save("end_points", np.array(spec_end_points), start_point)
-                start_point+=len(preds_l)
-                preds_l=[]
+                start_point+=len(preds_l["pred_mzs"])
+                preds_l={}
                 th.cuda.empty_cache()
     return num_pred
 
