@@ -553,7 +553,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--map_size",
         type=int,
-        default=1024**4,
+        default=10*1024**4,
         help="map size of saving"
     )
     args = parser.parse_args()
