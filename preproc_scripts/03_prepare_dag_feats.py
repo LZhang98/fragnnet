@@ -179,6 +179,29 @@ def main(args):
 
     print("> Compute Fragments")
     mol_input_rows = []
+    for _, row in progress_wrapper(
+        mol_df.iterrows(),
+        total=mol_df.shape[0],
+        desc="prepare inputs",
+        disable_tqdm=args.disable_tqdm,
+    ):
+        mol_input_rows.append(
+            [
+                row["mol"],
+                row["mol_id"],
+                args.max_depth,
+                True,  # h_prior
+                args.max_h_transfer,
+                args.max_time,
+                args.isotopes,
+                args.nb_isomorphic,
+                args.wl_max_iterations,
+                args.use_cached_dag,  # use_cached, default to false
+                args.compress_dags,
+            ]
+        )
+
+    print("> Running frag gen")
     env = lmdb.open(
         dag_dp+"/dags.lmdb",
         map_size=args.map_size,  # 1TB
@@ -186,51 +209,32 @@ def main(args):
         meminit=False,
         map_async=True
     )
-    with env.begin(write=True) as txn:
-        for _, row in progress_wrapper(
-            mol_df.iterrows(),
-            total=mol_df.shape[0],
-            desc="prepare inputs",
-            disable_tqdm=args.disable_tqdm,
-        ):
-            mol_input_rows.append(
-                [
-                    row["mol"],
-                    row["mol_id"],
-                    args.max_depth,
-                    True,  # h_prior
-                    args.max_h_transfer,
-                    args.max_time,
-                    args.isotopes,
-                    args.nb_isomorphic,
-                    args.wl_max_iterations,
-                    args.use_cached_dag,  # use_cached, default to false
-                    args.compress_dags,
-                ]
-            )
-
-        print("> Running frag gen")
-        frag_results_gen = data_utils.par_apply(
-            iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
-        )
-        frag_results = []
-        for fr in progress_wrapper(
-            frag_results_gen,
-            total=len(mol_input_rows),
-            desc="Compute Frags",
-            disable_tqdm=args.disable_tqdm,
-        ):  
-            mol_id, dag_d=fr
-            if len(dag_d)==0:
-                print("error in ", mol_id)
-            else:
-                txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
-            if not args.skip_stats:
-                frag_results.append(dag_d)
-        env.sync()
-        env.close()
-        if args.skip_stats:
-            return 
+    
+    txn = env.begin(write=True)
+    frag_results_gen = data_utils.par_apply(
+        iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
+    )
+    frag_results = []
+    for fr in progress_wrapper(
+        frag_results_gen,
+        total=len(mol_input_rows),
+        desc="Compute Frags",
+        disable_tqdm=args.disable_tqdm,
+    ):  
+        mol_id, dag_d=fr
+        if len(dag_d)==0:
+            print("error in ", mol_id)
+        else:
+            txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
+            if (int(mol_id)+1)%200==0:
+                txn.commit()
+                txn = env.begin(write=True)
+        if not args.skip_stats:
+            frag_results.append(dag_d)
+    env.sync()
+    env.close()
+    if args.skip_stats:
+        return 
 
     print("> Fragments Computed")
     frag_stats_df = pd.DataFrame({"mol_id": mol_df["mol_id"]})
