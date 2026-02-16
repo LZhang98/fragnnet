@@ -1415,18 +1415,12 @@ def timed_get_dags(
     isotopes: bool,
     nb_isomorphic: bool,
     wl_max_iterations: int,
-    output_dir: str | None,
     use_cached=True,
     compressed=False,
     save_dag=True,
+    
 ) -> dict:
     need_compute = True
-    if save_dag and output_dir is None:
-        raise ValueError("If save_dag is True, output_dir must be specified")
-    elif save_dag:
-        output_file = get_frag_fp(mol_id, output_dir, compressed)
-        need_compute = not os.path.exists(output_file) or not use_cached
-
     if not need_compute:
         assert save_dag
         try:
@@ -1463,8 +1457,4 @@ def timed_get_dags(
             print("> Traceback", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
             dag_d = {}
-        else:
-            if save_dag:
-                save_frag_d(dag_d, mol_id, output_dir, compressed)
-                del dag_d["dag"]
-    return dag_d
+    return mol_id, dag_d

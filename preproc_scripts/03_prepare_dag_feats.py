@@ -12,8 +12,8 @@ import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
-
-
+import lmdb
+import pickle
 def print_and_log(name: str, series: pd.Series, wandb_flag: bool, stats_d: dict) -> None:
     """Log series statistics to dictionary and optionally to W&B.
 
@@ -111,7 +111,7 @@ def main(args):
     print_and_log("num_bonds", num_bonds, wandb_flag, {})
 
     os.makedirs(args.frag_dp, exist_ok=True)
-    dag_dp = os.path.join(args.frag_dp, "dags")
+    dag_dp = os.path.join(args.frag_dp)
     os.makedirs(dag_dp, exist_ok=True)
     global_stats_fp = os.path.join(args.frag_dp, "global_stats.json")
 
@@ -179,44 +179,58 @@ def main(args):
 
     print("> Compute Fragments")
     mol_input_rows = []
-    for _, row in progress_wrapper(
-        mol_df.iterrows(),
-        total=mol_df.shape[0],
-        desc="prepare inputs",
-        disable_tqdm=args.disable_tqdm,
-    ):
-        mol_input_rows.append(
-            [
-                row["mol"],
-                row["mol_id"],
-                args.max_depth,
-                True,  # h_prior
-                args.max_h_transfer,
-                args.max_time,
-                args.isotopes,
-                args.nb_isomorphic,
-                args.wl_max_iterations,
-                dag_dp,
-                args.use_cached_dag,  # use_cached, default to false
-                args.compress_dags,
-            ]
-        )
-
-    print("> Running frag gen")
-    frag_results_gen = data_utils.par_apply(
-        iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
+    env = lmdb.open(
+        dag_dp+"/dags.lmdb",
+        map_size=1024**4,  # 1TB
+        subdir=False,
+        meminit=False,
+        map_async=True
     )
-    frag_results = []
-    for fr in progress_wrapper(
-        frag_results_gen,
-        total=len(mol_input_rows),
-        desc="Compute Frags",
-        disable_tqdm=args.disable_tqdm,
-    ):
-        if not args.skip_stats:
-            frag_results.append(fr)
-    if args.skip_stats:
-        return 
+    with env.begin(write=True) as txn:
+        for _, row in progress_wrapper(
+            mol_df.iterrows(),
+            total=mol_df.shape[0],
+            desc="prepare inputs",
+            disable_tqdm=args.disable_tqdm,
+        ):
+            mol_input_rows.append(
+                [
+                    row["mol"],
+                    row["mol_id"],
+                    args.max_depth,
+                    True,  # h_prior
+                    args.max_h_transfer,
+                    args.max_time,
+                    args.isotopes,
+                    args.nb_isomorphic,
+                    args.wl_max_iterations,
+                    args.use_cached_dag,  # use_cached, default to false
+                    args.compress_dags,
+                ]
+            )
+
+        print("> Running frag gen")
+        frag_results_gen = data_utils.par_apply(
+            iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
+        )
+        frag_results = []
+        for fr in progress_wrapper(
+            frag_results_gen,
+            total=len(mol_input_rows),
+            desc="Compute Frags",
+            disable_tqdm=args.disable_tqdm,
+        ):  
+            mol_id, dag_d=fr
+            if len(dag_d)==0:
+                print("error in ", mol_id)
+            else:
+                txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
+            if not args.skip_stats:
+                frag_results.append(dag_d)
+        env.sync()
+        env.close()
+        if args.skip_stats:
+            return 
 
     print("> Fragments Computed")
     frag_stats_df = pd.DataFrame({"mol_id": mol_df["mol_id"]})

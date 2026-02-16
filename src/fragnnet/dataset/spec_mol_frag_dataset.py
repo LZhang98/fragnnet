@@ -16,7 +16,7 @@ from fragnnet.utils.formula_utils import (
 )
 from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, load_frag_d
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
-
+import lmdb
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +69,7 @@ class SpecMolFragDataset(SpecMolDataset):
         )
         self.mol_params = mol_params
         self.frag_dp = frag_dp
+        self.frag_env=lmdb.open(self.frag_dp+".lmdb", readonly=True, lock=False, meminit=False)
         self.frag_params = frag_params
 
         if spec_pp_sd is None:
@@ -108,33 +109,34 @@ class SpecMolFragDataset(SpecMolDataset):
         """
 
         # preload frag dags
-        if self.frag_params["preload"]:
-            self.frag_entries = frag_pl_sd
-            total_frag_entry_size = 0
-            for mol_id in tqdm(
-                self.mol_df["mol_id"].values, desc="> preload frag", total=len(self.mol_df)
-            ):
-                frag_entry = load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
-                total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
-                self.frag_entries[mol_id] = frag_entry
-            logger.info(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")
+        with self.frag_env.begin() as txn:
+            if self.frag_params["preload"]:
+                self.frag_entries = frag_pl_sd
+                total_frag_entry_size = 0
+                for mol_id in tqdm(
+                    self.mol_df["mol_id"].values, desc="> preload frag", total=len(self.mol_df)
+                ):
+                    frag_entry =pickle.loads(txn.get(f"{mol_id:08d}".encode()))#load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
+                    total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
+                    self.frag_entries[mol_id] = frag_entry
+                logger.info(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")
 
-        # preprocess frag dags
-        if self.frag_params["preprocess"]:
-            assert self.frag_params["preload"]
-            self.frag_data = frag_pp_sd
-            total_frag_data_size = 0
-            for k in tqdm(
-                list(self.frag_entries.keys()),
-                desc="> preprocess frag",
-                total=len(self.frag_entries),
-            ):
-                frag_data = self._process_neutral_frag(self.frag_entries.pop(k))
-                total_frag_data_size += get_pyg_memory_usage(frag_data["frag_pyg"])
-                self.frag_data[k] = frag_data
-            logger.info(f"> total_frag_data_size: {total_frag_data_size / 1e6:.2f} MB")
-            # remove them from the entries
-            self.frag_entries = {}
+            # preprocess frag dags
+            if self.frag_params["preprocess"]:
+                assert self.frag_params["preload"]
+                self.frag_data = frag_pp_sd
+                total_frag_data_size = 0
+                for k in tqdm(
+                    list(self.frag_entries.keys()),
+                    desc="> preprocess frag",
+                    total=len(self.frag_entries),
+                ):
+                    frag_data = self._process_neutral_frag(self.frag_entries.pop(k))
+                    total_frag_data_size += get_pyg_memory_usage(frag_data["frag_pyg"])
+                    self.frag_data[k] = frag_data
+                logger.info(f"> total_frag_data_size: {total_frag_data_size / 1e6:.2f} MB")
+                # remove them from the entries
+                self.frag_entries = {}
 
     def __getitem__(self, idx: int) -> dict:
         """
@@ -212,8 +214,8 @@ class SpecMolFragDataset(SpecMolDataset):
         Returns:
             Dictionary containing DAG and fragmentation data.
         """
-
-        frag_entry = load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
+        with self.frag_env.begin() as txn:
+            frag_entry =pickle.loads(txn.get(f"{mol_id:08d}".encode()))
         return frag_entry
 
     def _process_neutral_frag(self, frag_entry: dict) -> dict:
