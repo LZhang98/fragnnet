@@ -111,7 +111,7 @@ def main(args):
     print_and_log("num_bonds", num_bonds, wandb_flag, {})
 
     os.makedirs(args.frag_dp, exist_ok=True)
-    dag_dp = os.path.join(args.frag_dp)
+    dag_dp = os.path.join(args.frag_dp, "dags")
     os.makedirs(dag_dp, exist_ok=True)
     global_stats_fp = os.path.join(args.frag_dp, "global_stats.json")
 
@@ -203,7 +203,7 @@ def main(args):
 
     print("> Running frag gen")
     env = lmdb.open(
-        dag_dp+"/dags.lmdb",
+        dag_dp,
         map_size=args.map_size,  # 1TB
         subdir=False,
         meminit=False,

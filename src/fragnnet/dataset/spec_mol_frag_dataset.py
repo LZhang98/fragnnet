@@ -17,6 +17,7 @@ from fragnnet.utils.formula_utils import (
 from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, load_frag_d
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
 import lmdb
+import pickle
 logger = logging.getLogger(__name__)
 
 
@@ -69,7 +70,7 @@ class SpecMolFragDataset(SpecMolDataset):
         )
         self.mol_params = mol_params
         self.frag_dp = frag_dp
-        self.frag_env=lmdb.open(self.frag_dp+".lmdb", readonly=True, lock=False, meminit=False)
+        self.frag_env=lmdb.open(self.frag_dp, readonly=True, lock=False, meminit=False)
         self.frag_params = frag_params
 
         if spec_pp_sd is None:
