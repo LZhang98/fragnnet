@@ -181,7 +181,7 @@ def main(args):
     mol_input_rows = []
     env = lmdb.open(
         dag_dp+"/dags.lmdb",
-        map_size=1024**4,  # 1TB
+        map_size=args.map_size,  # 1TB
         subdir=False,
         meminit=False,
         map_async=True
@@ -545,6 +545,12 @@ if __name__ == "__main__":
         "--skip_stats",
         action="store_true", 
         help="whether skip stats comput"
+    )
+    parser.add_argument(
+        "--map_size",
+        type=int,
+        default=1024**4,
+        help="map size of saving"
     )
     args = parser.parse_args()
 
