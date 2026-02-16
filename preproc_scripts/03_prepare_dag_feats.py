@@ -205,7 +205,6 @@ def main(args):
     env = lmdb.open(
         dag_dp,
         map_size=args.map_size,  # 1TB
-        subdir=False,
         meminit=False,
         map_async=True
     )
