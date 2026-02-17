@@ -1444,6 +1444,7 @@ def timed_get_dags(
                 # False, b_isomorphic, this not used
                 wl_max_iterations,
             )
+            return mol_id, dag_d
         except KeyboardInterrupt as e:
             # let these through
             raise e
@@ -1457,4 +1458,4 @@ def timed_get_dags(
             print("> Traceback", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
             dag_d = {}
-    return mol_id, dag_d
+    return mol_id,{}

@@ -236,6 +236,7 @@ def main(args):
         return 
 
     print("> Fragments Computed")
+    # all the following code are not debuged
     frag_stats_df = pd.DataFrame({"mol_id": mol_df["mol_id"]})
 
     # Extract fields from frag_results
