@@ -16,8 +16,7 @@ from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
 from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import batch_func
-from pandarallel import pandarallel
-pandarallel.initialize(progress_bar=True, nb_workers=min(5,  os.cpu_count()))
+
 class BaseDataset(Dataset):
     def _base_init(
         self,

@@ -1232,7 +1232,6 @@ def run_inference_tabular_iter(
                 return_formula_str=return_formula_str,
                 return_cc_hash=return_cc_hash,
             )
-
             yield batch_rows
 
 def get_split_fn(bs_idx):
