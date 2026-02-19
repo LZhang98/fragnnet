@@ -165,6 +165,8 @@ def get_args():
 
 if __name__ == "__main__":
     # Early check for --list_output_options to avoid required argument validation
+    from pandarallel import pandarallel
+    pandarallel.initialize(progress_bar=True, nb_workers=min(5,  os.cpu_count()))
     if "--list_output_options" in sys.argv:
         print("Available output_subset options:")
         for opt in list_output_subset_options():
