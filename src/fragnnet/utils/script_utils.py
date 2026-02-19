@@ -1090,7 +1090,7 @@ def run_inference_hdf5(
     columns_name = get_tabular_columns(
         model.hparams, return_formula_str, return_cc_hash, output_subset=output_set
     )
-    sequential_name=set(["pred_mzs", "pred_ints", "frag_formula_peak_idxs", "frag_formula_peak_mzs"])
+    sequential_name=set(["pred_mzs", "pred_ints", "frag_formula_peak_idxs", "frag_formula_peak_mzs"]) # can update this vec
     # Accumulate all batch results
     num_pred=0
     num_batch=len(dataloader)
@@ -1120,13 +1120,13 @@ def run_inference_hdf5(
             rebase_indices=rebase_indices,
         ):  
             num_pred+=1
-            for row in batch_rows:
-                for k,v in zip(columns_name, row):
-                    if k not in preds_l:
-                        preds_l[k]=[]
-                    preds_l[k].append(v)
-            
+            assert len(batch_rows)==len(columns_name)
+            for k , v in zip(columns_name, batch_rows):
+                if k not in preds_l:
+                    preds_l[k]=[]
+                preds_l[k].extend(v)
             if len(preds_l[k])>=chunk_size or num_pred==num_batch:
+                print("saving ...", start_point)
                 for k in preds_l.keys(): 
                     if k not in sequential_name:
                         resize_and_save(k, np.array(preds_l[k]), start_point)
@@ -1141,7 +1141,7 @@ def run_inference_hdf5(
         
                 save_length=None
                 for k in sequential_name:
-                    save_v=np.concatenate(preds_l[k], 0)
+                    save_v=th.cat(preds_l[k], 0).detach().cpu().numpy()
                     if save_length is None:
                         save_length=len(save_v)
                     else:
@@ -1316,28 +1316,6 @@ def process_batch_to_tabular_row(
         for eval_score_type in eval_score_types:
             eval_scores_d[eval_score_type] = batch_result[eval_score_type].detach().cpu()
 
-    # ============================
-    # land of input mappings
-    # ============================
-    # mapping each peak to its local formula index, peak index -> formula index
-    
-    # ============================
-    # land of results
-    # ============================
-    # forumla log probs p(f)
-    # log prob p(n|f), node conditioned on formula
-    
-    # log prob p(f|n), formula conditioned on node
-
-    # ============================
-    # land of formula idx mappings
-    # ============================
-    # joint formula idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
-    
-    # formula idxs maps each entry in pred_formula_logprobs to its formula idx
-    # ============================
-    #  batch idx mappings
-    # ============================
     # joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
     frag_formula_cumsizes = batch_input["frag_formula_cumsizes"]
     frag_num_nodes = batch_input["frag_num_nodes"]
@@ -1412,7 +1390,7 @@ def process_batch_to_tabular_row(
     # These are tensors of shape (batch_size + 1) containing offsets
     
 
-    batch_rows = []
+    batch_rows = None
     for b_idx in range(batch_size):
         # per-spectrum masks and basic fields
         #b_peak_mask = pred_batch_idxs == b_idx
@@ -1537,21 +1515,21 @@ def process_batch_to_tabular_row(
         data_row = [
             b_spec_id.item(),
             b_mol_id,
-            b_spec_mzs.detach().cpu().tolist(),
-            b_spec_ints.detach().cpu().tolist(),
+            b_spec_mzs,
+            b_spec_ints,
             b_pred_oos_prob,
-            b_frag_formula_peak_idxs.detach().cpu().tolist() if b_frag_formula_peak_idxs is not None else np.nan,
-            b_frag_formula_peak_mzs.detach().cpu().tolist() if b_frag_formula_peak_mzs is not None else np.nan,
-            b_pred_formula_formula_idxs.detach().cpu().tolist()
+            b_frag_formula_peak_idxs if b_frag_formula_peak_idxs is not None else np.nan,
+            b_frag_formula_peak_mzs if b_frag_formula_peak_mzs is not None else np.nan,
+            b_pred_formula_formula_idxs
             if b_pred_formula_formula_idxs is not None
             else np.nan,
-            b_pred_formula_probs.detach().cpu().tolist() if b_pred_formula_probs is not None else np.nan,
-            b_pred_joint_formula_idxs.detach().cpu().tolist() if b_pred_joint_formula_idxs is not None else np.nan,
-            b_pred_formula_node_probs.detach().cpu().tolist() if b_pred_formula_node_probs is not None else np.nan,
-            b_pred_joint_node_idxs.detach().cpu().tolist() if b_pred_joint_node_idxs is not None else np.nan,
-            b_pred_node_formula_probs.detach().cpu().tolist() if b_pred_node_formula_probs is not None else np.nan,
-            b_pred_node_probs.detach().cpu().tolist() if b_pred_node_probs is not None else np.nan,
-            b_pred_node_node_idxs.detach().cpu().tolist() if b_pred_node_node_idxs is not None else np.nan,
+            b_pred_formula_probs if b_pred_formula_probs is not None else np.nan,
+            b_pred_joint_formula_idxs if b_pred_joint_formula_idxs is not None else np.nan,
+            b_pred_formula_node_probs if b_pred_formula_node_probs is not None else np.nan,
+            b_pred_joint_node_idxs if b_pred_joint_node_idxs is not None else np.nan,
+            b_pred_node_formula_probs if b_pred_node_formula_probs is not None else np.nan,
+            b_pred_node_probs if b_pred_node_probs is not None else np.nan,
+            b_pred_node_node_idxs if b_pred_node_node_idxs is not None else np.nan,
             rebased,
         ]
 
@@ -1594,8 +1572,11 @@ def process_batch_to_tabular_row(
                 data_row.append(np.nan)
 
         # Append the completed data row for this spectrum/molecule
-        batch_rows.append(data_row)
-
+        if batch_rows is None:
+            batch_rows=[[_] for _ in data_row]
+        else:
+            for d,v in zip(batch_rows, data_row):
+                d.append(v)
     return batch_rows
 
 
