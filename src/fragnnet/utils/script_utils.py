@@ -1232,9 +1232,16 @@ def run_inference_tabular_iter(
                 return_formula_str=return_formula_str,
                 return_cc_hash=return_cc_hash,
             )
-
             yield batch_rows
 
+def get_split_fn(bs_idx):
+    # check the validity of bs idx
+    assert (bs_idx[1:]-bs_idx[:-1]).min()>=0
+    _, batch_counts = th.unique(bs_idx, return_counts=True)
+    batch_counts=batch_counts.detach().cpu().tolist()
+    def split_fn(inp_tensor):
+        return th.split(inp_tensor, batch_counts)
+    return split_fn
 
 def process_batch_to_tabular_row(
     batch_input: dict,
@@ -1289,13 +1296,19 @@ def process_batch_to_tabular_row(
 
     # batch_input['batch_size'] is a tensor -> convert to Python int
     batch_size = int(batch_input["batch_size"].detach().cpu().item())
-
-    pred_mzs = batch_result["pred_mzs"].detach().cpu()
-    pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
-    pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
-    pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
+    # split peaks into batchs
+    pred_batch_idxs_batched = batch_result["pred_batch_idxs"]
+    pred_mzs_batched=batch_result["pred_mzs"]
+    pred_ints_batched=model.ints_untransform_func( th.exp(batch_result["pred_logprobs"]), pred_batch_idxs_batched)
+    batch_split_fn=get_split_fn(pred_batch_idxs_batched)
+    pred_mzs_split=batch_split_fn(pred_mzs_batched)
+    pred_ints_split=batch_split_fn(pred_ints_batched)
+    frag_formula_peak_idxs_split =batch_split_fn( batch_input["frag_formula_peak_idxs"])  if "frag_formula_peak_idxs" in batch_input else None
+    frag_formula_peak_mzs_split = batch_split_fn(batch_input["frag_formula_peak_mzs"]) if "frag_formula_peak_mzs" in batch_input else None
+    assert len(pred_mzs_split)==len(pred_ints_split)
+    
+    # prepare 
     pred_oos_probs = batch_result["oos_prob"].detach().cpu() if "oos_prob" in batch_result else None
-
     # values for eval scores
     # this will be np.nan if not evaluating
     eval_scores_d = {}
@@ -1307,93 +1320,82 @@ def process_batch_to_tabular_row(
     # land of input mappings
     # ============================
     # mapping each peak to its local formula index, peak index -> formula index
-    frag_formula_peak_idxs = (
-        batch_input["frag_formula_peak_idxs"].detach().cpu()
-        if "frag_formula_peak_idxs" in batch_input
-        else None
-    )
-
+    
     # ============================
     # land of results
     # ============================
     # forumla log probs p(f)
-    pred_formula_probs = (
-        th.exp(batch_result["pred_formula_logprobs"].detach().cpu())
-        if "pred_formula_logprobs" in batch_result
-        else None
-    )
     # log prob p(n|f), node conditioned on formula
-    pred_formula_node_probs = (
-        th.exp(batch_result["pred_formula_node_logprobs"].detach().cpu())
-        if "pred_formula_node_logprobs" in batch_result
-        else None
-    )
+    
     # log prob p(f|n), formula conditioned on node
-    pred_node_formula_probs = (
-        th.exp(batch_result["pred_node_formula_logprobs"].detach().cpu())
-        if "pred_node_formula_logprobs" in batch_result
-        else None
-    )
-    # node log probs p(n)
-    pred_node_probs = (
-        th.exp(batch_result["pred_node_logprobs"].detach().cpu())
-        if "pred_node_logprobs" in batch_result
-        else None
-    )
-
-    # ============================
-    # node idx mappings
-    # ============================
-    # joint node idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
-    pred_joint_node_idxs = (
-        batch_result["pred_joint_node_idxs"].detach().cpu()
-        if "pred_joint_node_idxs" in NODE_IDX_VARS
-        else None
-    )
-    # node idxs maps each entry in pred_node_logprobs to its node idx
-    pred_node_node_idxs = (
-        batch_result["pred_node_node_idxs"].detach().cpu()
-        if "pred_node_node_idxs" in NODE_IDX_VARS
-        else None
-    )
 
     # ============================
     # land of formula idx mappings
     # ============================
     # joint formula idxs maps each entry in the joint prediction arrays (eg. p(f,n), p(n|f), p(f|n))
-    pred_joint_formula_idxs = (
-        batch_result["pred_joint_formula_idxs"].detach().cpu()
-        if "pred_joint_formula_idxs" in FORMULA_IDX_VARS
-        else None
-    )
+    
     # formula idxs maps each entry in pred_formula_logprobs to its formula idx
-    pred_formula_formula_idxs = (
-        batch_result["pred_formula_formula_idxs"].detach().cpu()
-        if "pred_formula_formula_idxs" in FORMULA_IDX_VARS
-        else None
-    )
-
     # ============================
     #  batch idx mappings
     # ============================
     # joint_batch_idxs maps each entry in the joint prediction arrays (like pred_formula_node_logprobs)
+    frag_formula_cumsizes = batch_input["frag_formula_cumsizes"]
+    frag_num_nodes = batch_input["frag_num_nodes"]
     joint_batch_idxs = (
         batch_result["pred_joint_batch_idxs"].detach().cpu()
         if "pred_joint_batch_idxs" in BATCH_IDX_VARS
         else None
     )
+    if joint_batch_idxs is not None:
+        joint_split_fn=get_split_fn(joint_batch_idxs)
+        candidate_joint_ks=["pred_joint_formula_idxs", "pred_formula_node_logprobs",  "pred_joint_node_idxs", "pred_node_formula_logprobs", ]
+        joint_split_values={}
+        for k in candidate_joint_ks:
+            if k in batch_result:
+                if k.endswith("logprobs"):
+                    joint_split_values[k]=joint_split_fn(th.exp(batch_result[k]))
+                elif k.endswith("formula_idxs"):
+                    joint_split_values[k]=joint_split_fn(batch_result[k]-frag_formula_cumsizes[joint_batch_idxs])
+                elif k.endswith("node_idxs"):
+                    joint_split_values[k]=joint_split_fn(batch_result[k]-frag_num_nodes[joint_batch_idxs])
+                else:
+                    joint_split_values[k]=joint_split_fn(batch_result[k])
+            else:
+                joint_split_values[k]=None
+
     # formula prob batch idxs, maps each entry in pred_formula_logprobs to its batch idx
-    pred_formula_batch_idxs = (
-        batch_result["pred_formula_batch_idxs"].detach().cpu()
-        if "pred_formula_batch_idxs" in BATCH_IDX_VARS
-        else None
-    )
+    pred_formula_batch_idxs=batch_result["pred_formula_batch_idxs"] if "pred_formula_batch_idxs" in BATCH_IDX_VARS else None
+    if pred_formula_batch_idxs is not None:
+        formula_split_fn=get_split_fn(pred_formula_batch_idxs)
+        candidate_formula_ks=["pred_formula_formula_idxs", "pred_formula_logprobs"]
+        formula_split_values={}
+        for k in candidate_formula_ks:
+            if k in batch_result:
+                if k.endswith("logprobs"):
+                    formula_split_values[k]=formula_split_fn(th.exp(batch_result[k]))
+                elif k.endswith("formula_idxs"):
+                    formula_split_values[k]=formula_split_fn(batch_result[k]-frag_formula_cumsizes[pred_formula_batch_idxs])
+                else:
+                    formula_split_values[k]=formula_split_fn(batch_result[k])
+            else:
+                formula_split_values[k]=None
+    
     # node prob batch idxs, maps each entry in pred_node_logprobs to its batch idx
-    pred_node_batch_idxs = (
-        batch_result["pred_node_batch_idxs"].detach().cpu()
-        if "pred_node_batch_idxs" in BATCH_IDX_VARS
-        else None
-    )
+    pred_node_batch_idxs = batch_result["pred_node_batch_idxs"]  if "pred_node_batch_idxs" in BATCH_IDX_VARS  else None
+    if pred_node_batch_idxs is not None:
+        node_split_fn=get_split_fn(pred_node_batch_idxs)
+        candidate_node_ks=["pred_node_logprobs", "pred_node_node_idxs"]
+        node_split_values={}
+        for k in candidate_node_ks:
+            if k in batch_result:
+                if k.endswith("logprobs"):
+                    node_split_values[k]=node_split_fn(th.exp(batch_result[k]))
+                elif k.endswith("node_idxs"):
+                    node_split_values[k]=node_split_fn(batch_result[k]-frag_num_nodes[pred_node_batch_idxs])
+                else:
+                    node_split_values[k]=node_split_fn(batch_result[k])
+            else:
+                node_split_values[k]=None
 
     # =============================
     # extract formula strings and PyG object if needed
@@ -1401,105 +1403,45 @@ def process_batch_to_tabular_row(
     # Extract formula strings and PyG object if needed
     frag_formula_str = batch_input.get("frag_formula_str", None)
     frag_pyg = batch_input.get("frag_pyg", None)
-    frag_formula_peak_mzs = batch_input.get("frag_formula_peak_mzs", None)
+    
 
     # ============================s
     # per-spectrum processing
     # ============================
     # Get cumulative counts for rebasing from batch_input
     # These are tensors of shape (batch_size + 1) containing offsets
-    frag_formula_cumsizes = batch_input["frag_formula_cumsizes"].detach().cpu()
-    frag_num_nodes = batch_input["frag_num_nodes"].detach().cpu()
+    
 
     batch_rows = []
     for b_idx in range(batch_size):
         # per-spectrum masks and basic fields
-        b_peak_mask = pred_batch_idxs == b_idx
+        #b_peak_mask = pred_batch_idxs == b_idx
         b_pred_oos_prob = (
             pred_oos_probs[b_idx].numpy().item() if pred_oos_probs is not None else np.nan
         )
         b_spec_id = spec_ids[b_idx]
         b_mol_id = mol_ids[b_idx]
-        b_spec_mzs = pred_mzs[b_peak_mask]
-        b_spec_ints = pred_ints[b_peak_mask]
-        b_frag_formula_peak_idxs = (
-            frag_formula_peak_idxs[b_peak_mask] if frag_formula_peak_idxs is not None else None
-        )
-        b_frag_formula_peak_mzs = (
-            frag_formula_peak_mzs[b_peak_mask] if frag_formula_peak_mzs is not None else None
-        )
-
-        # Filter joint distribution data (P(f,n)), p(n|f) and p(f|n) for the current spectrum/molecule (b_idx)
-        b_joint_mask = (joint_batch_idxs == b_idx) if joint_batch_idxs is not None else None
-        # Conditional log probabilities P(n|f)
-        b_pred_formula_node_probs = (
-            pred_formula_node_probs[b_joint_mask]
-            if pred_formula_node_probs is not None and b_joint_mask is not None
-            else None
-        )
-        # Conditional log probabilities P(f|n)
-        b_pred_node_formula_probs = (
-            pred_node_formula_probs[b_joint_mask]
-            if pred_node_formula_probs is not None and b_joint_mask is not None
-            else None
-        )
-        b_pred_joint_formula_idxs = (
-            pred_joint_formula_idxs[b_joint_mask]
-            if pred_joint_formula_idxs is not None and b_joint_mask is not None
-            else None
-        )
-        b_pred_joint_node_idxs = (
-            pred_joint_node_idxs[b_joint_mask]
-            if pred_joint_node_idxs is not None and b_joint_mask is not None
-            else None
-        )
-
+        b_spec_mzs =pred_mzs_split[b_idx] #pred_mzs[b_peak_mask]
+        b_spec_ints = pred_ints_split[b_idx]#pred_ints[b_peak_mask]
+        b_frag_formula_peak_idxs =frag_formula_peak_idxs_split[b_idx] if frag_formula_peak_idxs_split is not None else None
+        b_frag_formula_peak_mzs =frag_formula_peak_mzs_split[b_idx] if frag_formula_peak_mzs_split is not None else None
+        if joint_batch_idxs is not None:
+            joint_feat=[joint_split_values[k][b_idx] if joint_split_values[k] is not None else None for k in candidate_joint_ks ]
+        else:
+            joint_feat=[None for _ in range(4)]
         # Filter formula probability data (P(f)) for the current spectrum/molecule (b_idx)
         # and sort formulas by probability descending
-        b_pred_formula_mask = (
-            (pred_formula_batch_idxs == b_idx) if pred_formula_batch_idxs is not None else None
-        )
-        b_pred_formula_formula_idxs = (
-            pred_formula_formula_idxs[b_pred_formula_mask]
-            if pred_formula_formula_idxs is not None and b_pred_formula_mask is not None
-            else None
-        )
-        b_pred_formula_probs = (
-            pred_formula_probs[b_pred_formula_mask]
-            if pred_formula_probs is not None and b_pred_formula_mask is not None
-            else None
-        )
+        if pred_formula_batch_idxs is not None:
+            formula_feat=[formula_split_values[k][b_idx] if formula_split_values[k] is not None else None for k in candidate_formula_ks]
+        else:
+            formula_feat=[None for _ in range(2)]
 
         # node probabilities P(n) for the current spectrum/molecule (b_idx)
-        b_pred_node_mask = (
-            (pred_node_batch_idxs == b_idx) if pred_node_batch_idxs is not None else None
-        )
-        # b_pred_node_idxs = pred_joint_node_idxs[b_pred_node_mask]
-        b_pred_node_probs = (
-            pred_node_probs[b_pred_node_mask]
-            if pred_node_probs is not None and b_pred_node_mask is not None
-            else None
-        )
-        b_pred_node_node_idxs = (
-            pred_node_node_idxs[b_pred_node_mask]
-            if pred_node_node_idxs is not None and b_pred_node_mask is not None
-            else None
-        )
+        if pred_node_batch_idxs is not None:
+            node_feat=[node_split_values[k][b_idx] if node_split_values[k] is not None else None for k in candidate_node_ks]
+        else:
+            node_feat=[None for _ in range(2)]
 
-        # Rebase indices to 0-based per molecule
-        f_offset = frag_formula_cumsizes[b_idx]
-        n_offset = frag_num_nodes[b_idx]
-
-        if b_pred_formula_formula_idxs is not None:
-            b_pred_formula_formula_idxs = b_pred_formula_formula_idxs - f_offset
-        if b_pred_joint_formula_idxs is not None:
-            b_pred_joint_formula_idxs = b_pred_joint_formula_idxs - f_offset
-            # Note: b_frag_formula_peak_idxs are already local (0-based per molecule), so no offset needed
-
-        if b_pred_node_node_idxs is not None:
-            b_pred_node_node_idxs = b_pred_node_node_idxs - n_offset
-        if b_pred_joint_node_idxs is not None:
-            b_pred_joint_node_idxs = b_pred_joint_node_idxs - n_offset
         # Apply intensity filtering
         (
             b_spec_ints,
@@ -1520,14 +1462,14 @@ def process_batch_to_tabular_row(
             b_spec_mzs,
             b_frag_formula_peak_mzs,
             b_frag_formula_peak_idxs,
-            b_pred_formula_formula_idxs,
-            b_pred_formula_probs,
-            b_pred_joint_formula_idxs,
-            b_pred_formula_node_probs,
-            b_pred_joint_node_idxs,
-            b_pred_node_formula_probs,
-            b_pred_node_probs,
-            b_pred_node_node_idxs,
+            formula_feat[0],
+            formula_feat[1],
+            joint_feat[0],
+            joint_feat[1],
+            joint_feat[2],
+            joint_feat[3],
+            node_feat[0],
+            node_feat[1],
             verbose=False,
         )
 
@@ -1595,21 +1537,21 @@ def process_batch_to_tabular_row(
         data_row = [
             b_spec_id.item(),
             b_mol_id,
-            b_spec_mzs.tolist(),
-            b_spec_ints.tolist(),
+            b_spec_mzs.detach().cpu().tolist(),
+            b_spec_ints.detach().cpu().tolist(),
             b_pred_oos_prob,
-            b_frag_formula_peak_idxs.tolist() if b_frag_formula_peak_idxs is not None else np.nan,
-            b_frag_formula_peak_mzs.tolist() if b_frag_formula_peak_mzs is not None else np.nan,
-            b_pred_formula_formula_idxs.tolist()
+            b_frag_formula_peak_idxs.detach().cpu().tolist() if b_frag_formula_peak_idxs is not None else np.nan,
+            b_frag_formula_peak_mzs.detach().cpu().tolist() if b_frag_formula_peak_mzs is not None else np.nan,
+            b_pred_formula_formula_idxs.detach().cpu().tolist()
             if b_pred_formula_formula_idxs is not None
             else np.nan,
-            b_pred_formula_probs.tolist() if b_pred_formula_probs is not None else np.nan,
-            b_pred_joint_formula_idxs.tolist() if b_pred_joint_formula_idxs is not None else np.nan,
-            b_pred_formula_node_probs.tolist() if b_pred_formula_node_probs is not None else np.nan,
-            b_pred_joint_node_idxs.tolist() if b_pred_joint_node_idxs is not None else np.nan,
-            b_pred_node_formula_probs.tolist() if b_pred_node_formula_probs is not None else np.nan,
-            b_pred_node_probs.tolist() if b_pred_node_probs is not None else np.nan,
-            b_pred_node_node_idxs.tolist() if b_pred_node_node_idxs is not None else np.nan,
+            b_pred_formula_probs.detach().cpu().tolist() if b_pred_formula_probs is not None else np.nan,
+            b_pred_joint_formula_idxs.detach().cpu().tolist() if b_pred_joint_formula_idxs is not None else np.nan,
+            b_pred_formula_node_probs.detach().cpu().tolist() if b_pred_formula_node_probs is not None else np.nan,
+            b_pred_joint_node_idxs.detach().cpu().tolist() if b_pred_joint_node_idxs is not None else np.nan,
+            b_pred_node_formula_probs.detach().cpu().tolist() if b_pred_node_formula_probs is not None else np.nan,
+            b_pred_node_probs.detach().cpu().tolist() if b_pred_node_probs is not None else np.nan,
+            b_pred_node_node_idxs.detach().cpu().tolist() if b_pred_node_node_idxs is not None else np.nan,
             rebased,
         ]
 
