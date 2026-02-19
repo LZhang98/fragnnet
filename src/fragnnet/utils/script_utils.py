@@ -1244,7 +1244,6 @@ def get_split_fn(bs_idx):
         return th.split(inp_tensor, batch_counts)
     return split_fn
 
-
 def process_batch_to_tabular_row(
     batch_input: dict,
     model: th.nn.Module,
@@ -1359,7 +1358,7 @@ def process_batch_to_tabular_row(
                 elif k.endswith("formula_idxs"):
                     joint_split_values[k]=joint_split_fn(batch_result[k]-frag_formula_cumsizes[joint_batch_idxs])
                 elif k.endswith("node_idxs"):
-                    joint_split_values[k]=joint_split_fn(batch_result[k]-frag_formula_cumsizes[frag_num_nodes])
+                    joint_split_values[k]=joint_split_fn(batch_result[k]-frag_num_nodes[joint_batch_idxs])
                 else:
                     joint_split_values[k]=joint_split_fn(batch_result[k])
             else:
