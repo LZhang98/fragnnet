@@ -1291,11 +1291,13 @@ def process_batch_to_tabular_row(
     batch_size = int(batch_input["batch_size"].detach().cpu().item())
 
     pred_mzs = batch_result["pred_mzs"].detach().cpu()
+    
     pred_batch_idxs = batch_result["pred_batch_idxs"].detach().cpu()
     pred_ints = th.exp(batch_result["pred_logprobs"]).detach().cpu()
     pred_ints = model.ints_untransform_func(pred_ints, pred_batch_idxs)
     pred_oos_probs = batch_result["oos_prob"].detach().cpu() if "oos_prob" in batch_result else None
-
+    print(pred_mzs.shape, pred_ints.shape, pred_oos_probs.shape if pred_oos_probs is not None else None)
+    exit()
     # values for eval scores
     # this will be np.nan if not evaluating
     eval_scores_d = {}
