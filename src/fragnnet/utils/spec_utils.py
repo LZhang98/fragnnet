@@ -14,6 +14,7 @@ from fragnnet.utils.misc_utils import (
     scatter_reduce,
     th_setdiff1d,
 )
+from torch_linear_assignment import batch_linear_assignment, assignment_to_indices
 
 # rough approximations from NIST20 Orbitrap/FT MS
 # NCE_MEAN = 60.
@@ -901,7 +902,6 @@ def cos_hun_helper(
     remove_prec_peak,
     b_true_prec_mask,
     b_pred_prec_mask,
-    return_idx=False
 ):
     if remove_prec_peak:
         import pdb
@@ -919,8 +919,6 @@ def cos_hun_helper(
         b_true_ints[b_true_match_mask][b_true_idxs],
         b_pred_ints[b_pred_match_mask][b_pred_idxs],
     )
-    if return_idx:
-        return b_cos_hun, [b_true_idxs, b_pred_idxs]
     return b_cos_hun
 
 
@@ -1019,7 +1017,6 @@ def jss_hun_helper(
     b_true_prec_mask,
     b_pred_prec_mask,
     log_min,
-    cidx=None
 ):
     if remove_prec_peak:
         b_true_ints = b_true_ints * (1 - b_true_prec_mask.float())
@@ -1032,10 +1029,7 @@ def jss_hun_helper(
     b_score = b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
         b_true_ints[b_true_match_mask].unsqueeze(1) + b_pred_ints[b_pred_match_mask].unsqueeze(0)
     )
-    if cidx is not None:
-        b_true_idxs, b_pred_idxs=cidx
-    else:
-        b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+    b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
     b_union_ints = th.cat(
         [
             0.5 * b_true_ints[~b_true_match_mask],

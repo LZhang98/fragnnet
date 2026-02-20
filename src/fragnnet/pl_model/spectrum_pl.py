@@ -531,7 +531,7 @@ class SpectrumPL(L.LightningModule):
                 if "wprecision" in self.hparams.auxiliary_scores:
                     b_wprecision = th.sum(b_pred_ints[b_pred_match_mask])
                     metric_d["wprecision"][b_idx] = b_wprecision
-                cached_idx={}
+
                 if "cos_hun" in self.hparams.auxiliary_scores:
                     for remove_prec_peak in hun_remove_prec_peak_flags:
                         for sqrt in hun_sqrt_flags:
@@ -539,7 +539,7 @@ class SpectrumPL(L.LightningModule):
                                 ints_transform = get_ints_transform_func("sqrt")
                             else:
                                 ints_transform = get_ints_transform_func("none")
-                            b_cos_hun, match_idx = cos_hun_helper(
+                            b_cos_hun = cos_hun_helper(
                                 ints_transform(b_true_ints_r),
                                 ints_transform(b_pred_ints_r),
                                 b_match_mask_r,
@@ -548,7 +548,6 @@ class SpectrumPL(L.LightningModule):
                                 remove_prec_peak,
                                 b_true_prec_mask_r,
                                 b_pred_prec_mask_r,
-                                return_idx=True
                             )
                             fname_base = "cos_hun"
                             if sqrt:
@@ -557,7 +556,6 @@ class SpectrumPL(L.LightningModule):
                                 fname_base += "_np"
                             fname = f"{fname_base}"
                             metric_d[fname][b_idx] = b_cos_hun
-                            cached_idx[fname.replace("cos_", "")]=match_idx
 
                 if "ndcg" in self.hparams.auxiliary_scores:
                     for union in [True, False]:
@@ -591,17 +589,6 @@ class SpectrumPL(L.LightningModule):
                                 ints_transform = get_ints_transform_func("sqrt")
                             else:
                                 ints_transform = get_ints_transform_func("none")
-                            
-                            fname_base = "jss_hun"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}"
-                            if fname.replace("jss_", "") in cached_idx:
-                                cidx=cached_idx[fname.replace("jss_", "")]
-                            else:
-                                cidx=None
                             b_jss_hun = jss_hun_helper(
                                 ints_transform(b_true_ints_r),
                                 ints_transform(b_pred_ints_r),
@@ -612,8 +599,13 @@ class SpectrumPL(L.LightningModule):
                                 b_true_prec_mask_r,
                                 b_pred_prec_mask_r,
                                 log_min=self.hparams.log_min,
-                                cidx=cidx
                             )
+                            fname_base = "jss_hun"
+                            if sqrt:
+                                fname_base += "_sqrt"
+                            if remove_prec_peak:
+                                fname_base += "_np"
+                            fname = f"{fname_base}"
                             metric_d[fname][b_idx] = b_jss_hun
 
                 if "true_oos_prob" in self.hparams.auxiliary_scores:
