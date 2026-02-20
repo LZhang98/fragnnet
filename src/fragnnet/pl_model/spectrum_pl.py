@@ -636,10 +636,10 @@ class SpectrumPL(L.LightningModule):
                 if "cos_hun" in self.hparams.auxiliary_scores:
                     for remove_prec_peak in hun_remove_prec_peak_flags:
                         for sqrt in hun_sqrt_flags:
-                            if sqrt:
+                            '''if sqrt:
                                 ints_transform = get_ints_transform_func("sqrt")
                             else:
-                                ints_transform = get_ints_transform_func("none")
+                                ints_transform = get_ints_transform_func("none")'''
                            
                             fname_base = "cos_hun"
                             if sqrt:
@@ -678,10 +678,10 @@ class SpectrumPL(L.LightningModule):
                 if "jss_hun" in self.hparams.auxiliary_scores:
                     for remove_prec_peak in hun_remove_prec_peak_flags:
                         for sqrt in hun_sqrt_flags:
-                            if sqrt:
+                            '''if sqrt:
                                 ints_transform = get_ints_transform_func("sqrt")
                             else:
-                                ints_transform = get_ints_transform_func("none")
+                                ints_transform = get_ints_transform_func("none")'''
                             fname_base = "jss_hun"
                             if sqrt:
                                 fname_base += "_sqrt"

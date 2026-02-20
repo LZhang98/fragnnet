@@ -1141,7 +1141,7 @@ def run_inference_hdf5(
         
                 save_length=None
                 for k in sequential_name:
-                    save_v=th.cat(preds_l[k], 0).detach().cpu().numpy()
+                    save_v=th.cat(preds_l[k], 0).numpy()
                     if save_length is None:
                         save_length=len(save_v)
                     else:
@@ -1573,10 +1573,10 @@ def process_batch_to_tabular_row(
 
         # Append the completed data row for this spectrum/molecule
         if batch_rows is None:
-            batch_rows=[[_] for _ in data_row]
+            batch_rows=[[_.detach().cpu() if hasattr(_, "detach") else _] for _ in data_row]
         else:
             for d,v in zip(batch_rows, data_row):
-                d.append(v)
+                d.append(v.detach().cpu() if hasattr(v, "detach") else v)
     return batch_rows
 
 
