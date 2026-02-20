@@ -471,16 +471,16 @@ def calculate_match_mzs(
         copy_func = np.copy
     else:
         raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
-
-    diff_mzs = abs_func(true_mzs[..., None] - pred_mzs[..., None, :])
-    min_diff_mzs = tolerance
-    if relative:
-        if pred_mz_divisor:
-            divisor_mzs = copy_func(pred_mzs)
-        else:
-            divisor_mzs = copy_func(true_mzs)
-        divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
-        diff_mzs = diff_mzs / divisor_mzs[..., None]
+    with th.autocast(device_type='cuda', dtype=th.bfloat16): # speed up and save mem
+        diff_mzs = abs_func(true_mzs[..., None] - pred_mzs[..., None, :])
+        min_diff_mzs = tolerance
+        if relative:
+            if pred_mz_divisor:
+                divisor_mzs = copy_func(pred_mzs)
+            else:
+                divisor_mzs = copy_func(true_mzs)
+            divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
+            diff_mzs = diff_mzs / divisor_mzs[..., None]
     match_mzs = diff_mzs < min_diff_mzs
     return match_mzs
 
