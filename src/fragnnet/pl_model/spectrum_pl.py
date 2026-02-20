@@ -598,8 +598,8 @@ class SpectrumPL(L.LightningModule):
                             if remove_prec_peak:
                                 fname_base += "_np"
                             fname = f"{fname_base}"
-                            if fname.replace("jss_") in cached_idx:
-                                cidx=cached_idx[fname.replace("jss_")]
+                            if fname.replace("jss_", "") in cached_idx:
+                                cidx=cached_idx[fname.replace("jss_", "")]
                             else:
                                 cidx=None
                             b_jss_hun = jss_hun_helper(
