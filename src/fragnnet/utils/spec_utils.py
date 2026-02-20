@@ -929,10 +929,11 @@ def batch_cos_hun_helper(
     #b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
     #    b_true_ints[b_true_match_mask].unsqueeze(1) * b_pred_ints[b_pred_match_mask].unsqueeze(0)
     #)
-    row_ind, col_ind=assignment_to_indices(batch_linear_assignment(-batch_score)) # maxmize
+    assignment=batch_linear_assignment(-batch_score)
+    row_ind, col_ind=assignment_to_indices(assignment) # maxmize
     #b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
     
-    return batch_score[batch_idx, row_ind, col_ind].sum(-1) # sum for cosine
+    return (batch_score[batch_idx, row_ind, col_ind]).sum(-1) # sum for cosine
 
 
 def batch_jss_hun_helper(
@@ -969,25 +970,35 @@ def batch_jss_hun_helper(
     sub_score=batch_true_ints[batch_idx, true_batch_pos_idx][..., None]+(batch_pred_ints[batch_idx, pred_batch_pos_idx][..., None, :])
     assert sub_mask.shape==sub_score.shape, f"{sub_mask.shape} {sub_score.shape}"
     # done
-    batch_score = sub_mask*sub_score
-    row_ind, col_ind=assignment_to_indices(batch_linear_assignment(-batch_score)) # maxmize
+    batch_score = sub_mask.float()*sub_score
+    assignment=batch_linear_assignment(-batch_score)
+    row_ind, col_ind=assignment_to_indices(assignment) # maxmize
     # map ind to ori ind
     raw_row_ind=true_batch_pos_idx[batch_idx, row_ind]
     raw_col_ind=pred_batch_pos_idx[batch_idx, col_ind]
     
 
     match_score=batch_score[batch_idx, row_ind, col_ind]
-    
+    match_mask=sub_mask[batch_idx, row_ind, col_ind] # False means wrong match
+    unmatch_true_ints_mask=th.zeros_like(batch_true_match_mask)
+    unmatch_pred_ints_mask=th.zeros_like(batch_pred_match_mask)
+    unmatch_true_ints_mask[batch_idx, raw_row_ind]=match_mask # True means match, False means unmatch
+    unmatch_pred_ints_mask[batch_idx, raw_col_ind]=match_mask
+    unmatch_true_ints_mask=~unmatch_true_ints_mask
+    unmatch_pred_ints_mask=~unmatch_pred_ints_mask
+    match_score=match_score*match_mask.float()
+
+
     batch_score_sum=match_score.sum(-1)
-    unmatch_true_ints_sum=(batch_true_ints*(1-batch_true_match_mask.float())).sum(-1)
-    unmatch_pred_ints_sum=(batch_pred_ints*(1-batch_pred_match_mask.float())).sum(-1)
+    unmatch_true_ints_sum=(batch_true_ints*unmatch_true_ints_mask.float()).sum(-1)
+    unmatch_pred_ints_sum=(batch_pred_ints*unmatch_pred_ints_mask.float()).sum(-1)
     union_sum=(batch_score_sum+unmatch_true_ints_sum+unmatch_pred_ints_sum).clamp(1e-8)*0.5
 
     batch_true_kl1_union_probs=th.zeros_like(batch_true_ints)
     # fill match pos with union match score
     batch_true_kl1_union_probs[batch_idx, raw_row_ind]=match_score*0.5/union_sum[..., None]
     # fill unmatch pos with true intensity/union sum # order matters
-    batch_true_kl1_union_probs[~batch_true_match_mask]=(0.5*batch_true_ints/union_sum[..., None])[~batch_true_match_mask]
+    batch_true_kl1_union_probs[unmatch_true_ints_mask]=(0.5*batch_true_ints/union_sum[..., None])[unmatch_true_ints_mask]
     batch_true_kl1=th.sum(
         batch_true_ints
         *(safelog(batch_true_ints, eps=log_min) - safelog(batch_true_kl1_union_probs, eps=log_min)),
@@ -997,13 +1008,14 @@ def batch_jss_hun_helper(
     batch_pred_kl1_union_probs=th.zeros_like(batch_pred_ints)
     # fill match pos with union match score, assign order matters here
     batch_pred_kl1_union_probs[batch_idx, raw_col_ind]=match_score*0.5/union_sum[..., None]
-    batch_pred_kl1_union_probs[~batch_pred_match_mask]=(0.5*batch_pred_ints/union_sum[..., None])[~batch_pred_match_mask]
+    batch_pred_kl1_union_probs[unmatch_pred_ints_mask]=(0.5*batch_pred_ints/union_sum[..., None])[unmatch_pred_ints_mask]
     batch_pred_kl1=th.sum(
         batch_pred_ints
         * (safelog(batch_pred_ints, eps=log_min) - safelog(batch_pred_kl1_union_probs, eps=log_min)),
         dim=-1,
     )
     return np.log(2.0) - 0.5 * (batch_true_kl1 + batch_pred_kl1)
+
 
 def cos_hun_helper(
     b_true_ints,
