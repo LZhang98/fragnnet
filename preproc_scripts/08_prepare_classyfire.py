@@ -2,14 +2,13 @@
 
 Merges ClassyFire chemical taxonomy (kingdom → superklass → klass → subklass →
 direct_parent) onto the project's mol_df via SMILES canonicalization, producing
-a lookup parquet keyed by mol_id.
+a lookup pickle keyed by mol_id.
 
 Usage:
     python preproc_scripts/08_prepare_classyfire.py \\
-        --mol_df data/processed/mol_df.parquet \\
-        --cf_nist20 data/classyfire/20231201_nist20mona23_1.zip \\
-        --cf_nist23 data/classyfire/20231201_nist23mona23_1.zip \\
-        --output data/classyfire/mol_classyfire.parquet
+        --mol_df data/proc/nist20/mol_df.pkl \\
+        --cf_zip data/classyfire/20231201_nist20mona23_1.zip \\
+        --output data/classyfire/nist20_mol_classyfire.pkl
 """
 
 import argparse
@@ -165,10 +164,10 @@ def build_mol_classyfire_df(
 
 
 def _load_mol_df(mol_df_path: str) -> pd.DataFrame:
-    """Load mol_df from parquet or pickle based on file extension.
+    """Load mol_df from pickle based on file extension.
 
     Args:
-        mol_df_path: Path to mol_df file (.parquet, .pkl, or .pickle).
+        mol_df_path: Path to mol_df file (.pkl or .pickle).
 
     Returns:
         Loaded mol_df DataFrame.
@@ -177,25 +176,26 @@ def _load_mol_df(mol_df_path: str) -> pd.DataFrame:
         ValueError: If the file extension is not supported.
     """
     path = Path(mol_df_path)
-    if path.suffix == ".parquet":
-        return pd.read_parquet(mol_df_path)
     if path.suffix in (".pkl", ".pickle"):
         return pd.read_pickle(mol_df_path)
-    raise ValueError(f"Unsupported mol_df format: {path.suffix}. Expected .parquet, .pkl, or .pickle")
+    raise ValueError(f"Unsupported mol_df format: {path.suffix}. Expected .pkl or .pickle")
 
 
 def main() -> None:
-    """CLI entry point: load data, build ClassyFire dataframe, save parquet."""
+    """CLI entry point: load data, build ClassyFire dataframe, save pickle."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mol_df", required=True, help="Path to mol_df (.parquet or .pkl)")
-    parser.add_argument("--cf_nist20", required=True, help="Path to NIST20 ClassyFire zip")
-    parser.add_argument("--cf_nist23", required=True, help="Path to NIST23 ClassyFire zip")
+    parser.add_argument(
+        "--mol_df",
+        default="data/proc/nist20/mol_df.pkl",
+        help="Path to mol_df (.pkl or .pickle, default: data/proc/nist20/mol_df.pkl)",
+    )
+    parser.add_argument("--cf_zip", required=True, help="Path to ClassyFire zip file")
     parser.add_argument(
         "--output",
-        default="data/classyfire/mol_classyfire.parquet",
-        help="Output parquet path (default: data/classyfire/mol_classyfire.parquet)",
+        default="data/classyfire/mol_classyfire.pkl",
+        help="Output pickle path (default: data/classyfire/mol_classyfire.pkl)",
     )
     args = parser.parse_args()
 
@@ -203,21 +203,16 @@ def main() -> None:
     logger.info("Loading mol_df from %s", args.mol_df)
     mol_df = _load_mol_df(args.mol_df)
 
-    logger.info("Loading ClassyFire TSVs...")
-    cf_nist20 = load_classyfire_tsv(args.cf_nist20)
-    cf_nist23 = load_classyfire_tsv(args.cf_nist23)
-
-    # Combine and deduplicate across datasets
-    cf_combined = pd.concat([cf_nist20, cf_nist23], ignore_index=True)
-    logger.info("Combined ClassyFire records: %d (before dedup)", len(cf_combined))
+    logger.info("Loading ClassyFire TSV from %s", args.cf_zip)
+    cf_df = load_classyfire_tsv(args.cf_zip)
 
     # Build output dataframe
-    result_df = build_mol_classyfire_df(mol_df, cf_combined)
+    result_df = build_mol_classyfire_df(mol_df, cf_df)
 
     # Save
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    result_df.to_parquet(output_path, index=False)
+    result_df.to_pickle(output_path)
     logger.info("Saved %d rows to %s", len(result_df), output_path)
 
     # Summary stats
