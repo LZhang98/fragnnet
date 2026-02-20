@@ -472,7 +472,7 @@ def calculate_match_mzs(
     else:
         raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
 
-    diff_mzs = abs_func(true_mzs.reshape(-1, 1) - pred_mzs.reshape(1, -1))
+    diff_mzs = abs_func(true_mzs[..., None] - pred_mzs[..., None, :])
     min_diff_mzs = tolerance
     if relative:
         if pred_mz_divisor:
@@ -480,7 +480,7 @@ def calculate_match_mzs(
         else:
             divisor_mzs = copy_func(true_mzs)
         divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
-        diff_mzs = diff_mzs / divisor_mzs.reshape(-1, 1)
+        diff_mzs = diff_mzs / divisor_mzs[..., None]
     match_mzs = diff_mzs < min_diff_mzs
     return match_mzs
 
@@ -893,6 +893,92 @@ def opt_cos_sim_helper(
     return opt_cos_sim
 
 
+def batch_cos_hun_helper(
+    batch_true_ints,
+    batch_pred_ints,
+    batch_match_mask,
+    batch_true_match_mask,
+    batch_pred_match_mask,
+    remove_prec_peak,
+    batch_true_prec_mask,
+    batch_pred_prec_mask,
+):
+    if remove_prec_peak:
+        assert batch_true_ints.shape==batch_true_prec_mask.shape, f"{batch_true_ints.shape} {batch_true_prec_mask.shape}"
+        assert batch_pred_ints.shape==batch_pred_prec_mask.shape, f"{batch_pred_ints.shape} {batch_pred_prec_mask.shape}"
+        batch_true_ints = batch_true_ints * (1 - batch_true_prec_mask.float())
+        batch_pred_ints = batch_pred_ints * (1 - batch_pred_prec_mask.float())
+    assert len(batch_true_ints.shape)==2
+    assert len(batch_pred_ints.shape)==2
+    batch_true_ints = F.normalize(batch_true_ints, p=2, dim=-1)
+    batch_pred_ints = F.normalize(batch_pred_ints, p=2, dim=-1)
+    batch_score =batch_match_mask.float()*(batch_true_ints[..., None]*batch_pred_ints[..., None, :])
+    #b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
+    #    b_true_ints[b_true_match_mask].unsqueeze(1) * b_pred_ints[b_pred_match_mask].unsqueeze(0)
+    #)
+    row_ind, col_ind=assignment_to_indices(batch_linear_assignment(-batch_score)) # maxmize
+    #b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+    batch_idx = th.arange(row_ind.shape[0], device=row_ind.device)[:, None] 
+    return batch_score[batch_idx, row_ind, col_ind].sum(-1) # sum for cosine
+
+
+def batch_jss_hun_helper(
+    batch_true_ints,
+    batch_pred_ints,
+    batch_match_mask,
+    batch_true_match_mask,
+    batch_pred_match_mask,
+    remove_prec_peak,
+    batch_true_prec_mask,
+    batch_pred_prec_mask,
+    log_min,
+):
+    if remove_prec_peak:
+        assert batch_true_ints.shape==batch_true_prec_mask.shape, f"{batch_true_ints.shape} {batch_true_prec_mask.shape}"
+        assert batch_pred_ints.shape==batch_pred_prec_mask.shape, f"{batch_pred_ints.shape} {batch_pred_prec_mask.shape}"
+        batch_true_ints = batch_true_ints * (1 - batch_true_prec_mask.float())
+        batch_pred_ints = batch_pred_ints * (1 - batch_pred_prec_mask.float())
+    batch_true_ints = F.normalize(batch_true_ints, p=1, dim=-1)
+    batch_pred_ints = F.normalize(batch_pred_ints, p=1, dim=-1)
+    #if th.all(b_pred_ints) == 0.0: # waiting for debug here
+    #    # heuristic to prevent nan
+    #    b_pred_ints = th.ones_like(b_pred_ints) / b_pred_ints.shape[0]
+    batch_score = batch_match_mask.float()* (
+        batch_true_ints[..., None] + batch_pred_ints[..., None, :]
+    )
+    row_ind, col_ind=assignment_to_indices(batch_linear_assignment(-batch_score)) # maxmize
+    
+    batch_idx = th.arange(row_ind.shape[0], device=row_ind.device)[:, None] 
+    #b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+    match_score=batch_score[batch_idx, row_ind, col_ind]
+    
+    batch_score_sum=match_score.sum(-1)
+    unmatch_true_ints_sum=(batch_true_ints*(1-batch_true_match_mask.float())).sum(-1)
+    unmatch_pred_ints_sum=(batch_pred_ints*(1-batch_pred_match_mask.float())).sum(-1)
+    union_sum=(batch_score_sum+unmatch_true_ints_sum+unmatch_pred_ints_sum).clamp(1e-8)*0.5
+
+    batch_true_kl1_union_probs=th.zeros_like(batch_true_ints)
+    # fill match pos with union match score
+    batch_true_kl1_union_probs[batch_idx, row_ind]=match_score*0.5/union_sum[..., None]
+    # fill unmatch pos with true intensity/union sum # order matters
+    batch_true_kl1_union_probs[~batch_true_match_mask]=(0.5*batch_true_ints/union_sum[..., None])[~batch_true_match_mask]
+    batch_true_kl1=th.sum(
+        batch_true_ints
+        * (safelog(batch_true_ints, eps=log_min) - safelog(batch_true_kl1_union_probs, eps=log_min)),
+        dim=-1,
+    )
+
+    batch_pred_kl1_union_probs=th.zeros_like(batch_pred_ints)
+    # fill match pos with union match score, assign order matters here
+    batch_pred_kl1_union_probs[batch_idx, col_ind]=match_score*0.5/union_sum[..., None]
+    batch_pred_kl1_union_probs[~batch_pred_match_mask]=(0.5*batch_pred_ints/union_sum[..., None])[~batch_pred_match_mask]
+    batch_pred_kl1=th.sum(
+        batch_pred_ints
+        * (safelog(batch_pred_ints, eps=log_min) - safelog(batch_pred_kl1_union_probs, eps=log_min)),
+        dim=-1,
+    )
+    return np.log(2.0) - 0.5 * (batch_true_kl1 + batch_pred_kl1)
+
 def cos_hun_helper(
     b_true_ints,
     b_pred_ints,
@@ -1023,9 +1109,9 @@ def jss_hun_helper(
         b_pred_ints = b_pred_ints * (1 - b_pred_prec_mask.float())
     b_true_ints = F.normalize(b_true_ints, p=1, dim=0)
     b_pred_ints = F.normalize(b_pred_ints, p=1, dim=0)
-    if th.all(b_pred_ints) == 0.0:
-        # heuristic to prevent nan
-        b_pred_ints = th.ones_like(b_pred_ints) / b_pred_ints.shape[0]
+    #if th.all(b_pred_ints) == 0.0:
+    #    # heuristic to prevent nan
+    #    b_pred_ints = th.ones_like(b_pred_ints) / b_pred_ints.shape[0]
     b_score = b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
         b_true_ints[b_true_match_mask].unsqueeze(1) + b_pred_ints[b_pred_match_mask].unsqueeze(0)
     )
