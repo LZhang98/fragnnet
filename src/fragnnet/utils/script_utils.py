@@ -1242,7 +1242,7 @@ def get_split_fn(bs_idx):
     def split_fn(inp_tensor):
         return th.split(inp_tensor, batch_counts)
     return split_fn
-import time
+
 def process_batch_to_tabular_row(
     batch_input: dict,
     model: th.nn.Module,
