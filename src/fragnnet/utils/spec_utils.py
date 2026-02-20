@@ -14,7 +14,6 @@ from fragnnet.utils.misc_utils import (
     scatter_reduce,
     th_setdiff1d,
 )
-from torch_linear_assignment import batch_linear_assignment, assignment_to_indices
 
 # rough approximations from NIST20 Orbitrap/FT MS
 # NCE_MEAN = 60.
