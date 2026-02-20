@@ -1150,8 +1150,9 @@ def run_inference_hdf5(
                 resize_and_save("start_points", np.array(spec_start_points), start_point)
                 resize_and_save("end_points", np.array(spec_end_points), start_point)
                 start_point+=len(preds_l["pred_mzs"])
+                del preds_l
                 preds_l={}
-                th.cuda.empty_cache()
+                
     return num_pred
 
 def run_inference_tabular_iter(
