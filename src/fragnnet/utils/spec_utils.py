@@ -974,13 +974,6 @@ def batch_jss_hun_helper(
     # map ind to ori ind
     raw_row_ind=true_batch_pos_idx[batch_idx, row_ind]
     raw_col_ind=pred_batch_pos_idx[batch_idx, col_ind]
-
-    # generate mask to consistent with previous CPU v
-    batch_true_match_mask_copy=1-batch_true_match_mask.float()
-    batch_pred_match_mask_copy=1-batch_pred_match_mask.float
-    # make matched pos to 1
-    batch_true_match_mask_copy[batch_idx, raw_row_ind]=1
-    batch_pred_match_mask_copy[batch_idx, raw_col_ind]=1
     
 
     match_score=batch_score[batch_idx, row_ind, col_ind]
@@ -997,7 +990,7 @@ def batch_jss_hun_helper(
     batch_true_kl1_union_probs[~batch_true_match_mask]=(0.5*batch_true_ints/union_sum[..., None])[~batch_true_match_mask]
     batch_true_kl1=th.sum(
         batch_true_ints
-        * batch_true_match_mask_copy*(safelog(batch_true_ints, eps=log_min) - safelog(batch_true_kl1_union_probs, eps=log_min)),
+        *(safelog(batch_true_ints, eps=log_min) - safelog(batch_true_kl1_union_probs, eps=log_min)),
         dim=-1,
     )
 
@@ -1006,7 +999,7 @@ def batch_jss_hun_helper(
     batch_pred_kl1_union_probs[batch_idx, raw_col_ind]=match_score*0.5/union_sum[..., None]
     batch_pred_kl1_union_probs[~batch_pred_match_mask]=(0.5*batch_pred_ints/union_sum[..., None])[~batch_pred_match_mask]
     batch_pred_kl1=th.sum(
-        batch_pred_ints*batch_pred_match_mask_copy
+        batch_pred_ints
         * (safelog(batch_pred_ints, eps=log_min) - safelog(batch_pred_kl1_union_probs, eps=log_min)),
         dim=-1,
     )
