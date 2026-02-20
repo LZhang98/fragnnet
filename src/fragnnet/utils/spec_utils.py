@@ -3,7 +3,6 @@ import scipy
 import scipy.optimize
 import torch as th
 import torch.nn.functional as F
-
 from fragnnet.utils.misc_utils import (
     EPS,
     TOLERANCE_MIN_MZ,
@@ -15,6 +14,7 @@ from fragnnet.utils.misc_utils import (
     scatter_reduce,
     th_setdiff1d,
 )
+from torch_linear_assignment import batch_linear_assignment, assignment_to_indices
 
 # rough approximations from NIST20 Orbitrap/FT MS
 # NCE_MEAN = 60.
@@ -741,7 +741,7 @@ def cos_sim_helper(
     # l2 normalize
     true_bin_ints = scatter_l2normalize(true_bin_ints, true_bin_batch_idxs)
     pred_bin_ints = scatter_l2normalize(pred_bin_ints, pred_bin_batch_idxs)
-    # dot product
+    
     pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
     true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
     both_bin_ints = pred_bin_ints[pred_mask] * true_bin_ints[true_mask]
@@ -847,7 +847,6 @@ def round_aggregate_peaks(
     round_batch_idxs = th.cat(round_batch_idxs, dim=0)
     return round_mzs, round_ints, round_batch_idxs
 
-
 def scipy_linear_sum_assignment(matrix, maximize=False):
     """
     Solve the linear sum assignment problem using Scipy's implementation (Hungarian algorithm).
@@ -861,13 +860,10 @@ def scipy_linear_sum_assignment(matrix, maximize=False):
     Returns:
         Tuple[th.Tensor, th.Tensor]: Row indices and column indices of the optimal assignment.
     """
-
     device = matrix.device
     matrix = matrix.cpu().numpy()
     x_idx, y_idx = scipy.optimize.linear_sum_assignment(matrix, maximize=maximize)
-    x_idx = th.as_tensor(x_idx, dtype=th.long, device=device)
-    y_idx = th.as_tensor(y_idx, dtype=th.long, device=device)
-    return x_idx, y_idx
+    return th.tensor(x_idx, device=device).long(),th.tensor(y_idx, device=device).long()
 
 
 ### helpers
@@ -906,6 +902,7 @@ def cos_hun_helper(
     remove_prec_peak,
     b_true_prec_mask,
     b_pred_prec_mask,
+    return_idx=False
 ):
     if remove_prec_peak:
         import pdb
@@ -923,6 +920,8 @@ def cos_hun_helper(
         b_true_ints[b_true_match_mask][b_true_idxs],
         b_pred_ints[b_pred_match_mask][b_pred_idxs],
     )
+    if return_idx:
+        return b_cos_hun, [b_true_idxs, b_pred_idxs]
     return b_cos_hun
 
 
@@ -1021,6 +1020,7 @@ def jss_hun_helper(
     b_true_prec_mask,
     b_pred_prec_mask,
     log_min,
+    cidx=None
 ):
     if remove_prec_peak:
         b_true_ints = b_true_ints * (1 - b_true_prec_mask.float())
@@ -1033,7 +1033,10 @@ def jss_hun_helper(
     b_score = b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
         b_true_ints[b_true_match_mask].unsqueeze(1) + b_pred_ints[b_pred_match_mask].unsqueeze(0)
     )
-    b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
+    if cidx is not None:
+        b_true_idxs, b_pred_idxs=cidx
+    else:
+        b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
     b_union_ints = th.cat(
         [
             0.5 * b_true_ints[~b_true_match_mask],

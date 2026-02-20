@@ -44,7 +44,14 @@ from fragnnet.utils.spec_utils import (
     round_aggregate_peaks,
     scatter_reduce,
 )
-
+def get_split_fn(bs_idx):
+    # check the validity of bs idx
+    assert (bs_idx[1:]-bs_idx[:-1]).min()>=0
+    _, batch_counts = th.unique(bs_idx, return_counts=True)
+    batch_counts=batch_counts.detach().cpu().tolist()
+    def split_fn(inp_tensor):
+        return th.split(inp_tensor, batch_counts)
+    return split_fn
 
 class SpectrumPL(L.LightningModule):
     """
@@ -446,13 +453,25 @@ class SpectrumPL(L.LightningModule):
                     metric_d["true_spec_ne"] = true_spec_ne
 
             # local calculations
+            pred_split_fn=get_split_fn(pred_batch_idxs)
+            true_split_fn=get_split_fn(true_batch_idxs)
+            true_r_split_fn=get_split_fn(true_batch_idxs_r)
+            pred_r_split_fn=get_split_fn(pred_batch_idxs_r)
+
+            split_true_mzs=true_split_fn(true_mzs)
+            split_pred_mzs=pred_split_fn(pred_mzs)
+            split_true_ints=true_split_fn(true_ints)
+            split_pred_ints=pred_split_fn(pred_ints)
+
+            true_mzs_r_split=true_r_split_fn(true_mzs_r)
+            true_ints_r_split=true_r_split_fn(true_ints_r)
+            pred_mzs_r_split=pred_r_split_fn(pred_mzs_r)
+            pred_ints_r_split=pred_r_split_fn(pred_ints_r)
             for b_idx in range(batch_size):
-                b_true_mask = true_batch_idxs == b_idx
-                b_pred_mask = pred_batch_idxs == b_idx
-                b_true_mzs = true_mzs[b_true_mask]
-                b_pred_mzs = pred_mzs[b_pred_mask]
-                b_true_ints = true_ints[b_true_mask]
-                b_pred_ints = pred_ints[b_pred_mask]
+                b_true_mzs = split_true_mzs[b_idx]
+                b_pred_mzs = split_pred_mzs[b_idx]
+                b_true_ints =split_true_ints[b_idx]
+                b_pred_ints = split_pred_ints[b_idx]
                 b_true_prec_mz = true_prec_mzs[b_idx : b_idx + 1]
 
                 if compute_match_mzs:
@@ -467,12 +486,10 @@ class SpectrumPL(L.LightningModule):
                     b_pred_match_mask = th.any(b_match_mask, dim=0)
 
                 if compute_rounded_match_mzs:
-                    b_true_mask_r = true_batch_idxs_r == b_idx
-                    b_pred_mask_r = pred_batch_idxs_r == b_idx
-                    b_true_mzs_r = true_mzs_r[b_true_mask_r]
-                    b_pred_mzs_r = pred_mzs_r[b_pred_mask_r]
-                    b_true_ints_r = true_ints_r[b_true_mask_r]
-                    b_pred_ints_r = pred_ints_r[b_pred_mask_r]
+                    b_true_mzs_r = true_mzs_r_split[b_idx]
+                    b_pred_mzs_r = pred_mzs_r_split[b_idx]
+                    b_true_ints_r =true_ints_r_split[b_idx]
+                    b_pred_ints_r =pred_ints_r_split[b_idx]
                     # precursor
                     b_true_prec_mask_r = calculate_match_mzs(
                         b_true_mzs_r,
@@ -514,7 +531,7 @@ class SpectrumPL(L.LightningModule):
                 if "wprecision" in self.hparams.auxiliary_scores:
                     b_wprecision = th.sum(b_pred_ints[b_pred_match_mask])
                     metric_d["wprecision"][b_idx] = b_wprecision
-
+                cached_idx={}
                 if "cos_hun" in self.hparams.auxiliary_scores:
                     for remove_prec_peak in hun_remove_prec_peak_flags:
                         for sqrt in hun_sqrt_flags:
@@ -522,7 +539,7 @@ class SpectrumPL(L.LightningModule):
                                 ints_transform = get_ints_transform_func("sqrt")
                             else:
                                 ints_transform = get_ints_transform_func("none")
-                            b_cos_hun = cos_hun_helper(
+                            b_cos_hun, match_idx = cos_hun_helper(
                                 ints_transform(b_true_ints_r),
                                 ints_transform(b_pred_ints_r),
                                 b_match_mask_r,
@@ -531,6 +548,7 @@ class SpectrumPL(L.LightningModule):
                                 remove_prec_peak,
                                 b_true_prec_mask_r,
                                 b_pred_prec_mask_r,
+                                return_idx=True
                             )
                             fname_base = "cos_hun"
                             if sqrt:
@@ -539,6 +557,7 @@ class SpectrumPL(L.LightningModule):
                                 fname_base += "_np"
                             fname = f"{fname_base}"
                             metric_d[fname][b_idx] = b_cos_hun
+                            cached_idx[fname.replace("cos_", "")]=match_idx
 
                 if "ndcg" in self.hparams.auxiliary_scores:
                     for union in [True, False]:
@@ -572,6 +591,17 @@ class SpectrumPL(L.LightningModule):
                                 ints_transform = get_ints_transform_func("sqrt")
                             else:
                                 ints_transform = get_ints_transform_func("none")
+                            
+                            fname_base = "jss_hun"
+                            if sqrt:
+                                fname_base += "_sqrt"
+                            if remove_prec_peak:
+                                fname_base += "_np"
+                            fname = f"{fname_base}"
+                            if fname.replace("jss_") in cached_idx:
+                                cidx=cached_idx[fname.replace("jss_")]
+                            else:
+                                cidx=None
                             b_jss_hun = jss_hun_helper(
                                 ints_transform(b_true_ints_r),
                                 ints_transform(b_pred_ints_r),
@@ -582,13 +612,8 @@ class SpectrumPL(L.LightningModule):
                                 b_true_prec_mask_r,
                                 b_pred_prec_mask_r,
                                 log_min=self.hparams.log_min,
+                                cidx=cidx
                             )
-                            fname_base = "jss_hun"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}"
                             metric_d[fname][b_idx] = b_jss_hun
 
                 if "true_oos_prob" in self.hparams.auxiliary_scores:
