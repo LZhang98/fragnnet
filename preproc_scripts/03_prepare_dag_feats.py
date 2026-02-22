@@ -214,6 +214,7 @@ def main(args):
         iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
     )
     frag_results = []
+    meta_info=[]
     for fr in progress_wrapper(
         frag_results_gen,
         total=len(mol_input_rows),
@@ -221,6 +222,7 @@ def main(args):
         disable_tqdm=args.disable_tqdm,
     ):  
         mol_id, dag_d=fr
+        meta_info.append([dag_d["dag"].num_nodes, dag_d["dag"].num_edges])
         if len(dag_d)==0:
             print("error in ", mol_id)
         else:
@@ -232,6 +234,8 @@ def main(args):
             frag_results.append(dag_d)
     env.sync()
     env.close()
+    with open(os.path.join(args.frag_dp, "meta_info.json"), "w") as f:
+        f.write(json.dumps(meta_info))
     if args.skip_stats:
         return 
 
