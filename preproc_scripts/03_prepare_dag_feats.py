@@ -214,7 +214,7 @@ def main(args):
         iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
     )
     frag_results = []
-    meta_info=[]
+    meta_info={}
     for fr in progress_wrapper(
         frag_results_gen,
         total=len(mol_input_rows),
@@ -226,7 +226,7 @@ def main(args):
         if len(dag_d)==0:
             print("error in ", mol_id)
         else:
-            meta_info.append([dag_d["dag"].num_nodes, dag_d["dag"].num_edges])
+            meta_info[mol_id]=[dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
             txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
             if (int(mol_id)+1)%200==0:
                 txn.commit()
