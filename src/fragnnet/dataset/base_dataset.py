@@ -17,7 +17,6 @@ from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
 from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import batch_func
 
-
 class BaseDataset(Dataset):
     def _base_init(
         self,
@@ -142,51 +141,17 @@ class BaseDataset(Dataset):
         assert not (spec_params["ace"] and spec_params["nce"])
         if spec_params["ace"]:
             ce_key = "ace"
-            spec_df.loc[:, ce_key] = seq_apply_df_rows(
-                spec_df,
-                lambda row: fill_missing_ace(row, ace_colname="ace", nce_colname="nce"),
-            )
-            spec_df.loc[:, f"{ce_key}_extra_1"] = seq_apply_df_rows(
-                spec_df,
-                lambda row: fill_missing_ace(
-                    row, ace_colname="ace_extra_1", nce_colname="nce_extra_1"
-                ),
-            )
-            spec_df.loc[:, f"{ce_key}_extra_2"] = seq_apply_df_rows(
-                spec_df,
-                lambda row: fill_missing_ace(
-                    row, ace_colname="ace_extra_2", nce_colname="nce_extra_2"
-                ),
-            )
+            ce_fn=fill_missing_ace
         elif spec_params["nce"]:
             ce_key = "nce"
-            spec_df.loc[:, ce_key] = seq_apply_df_rows(
-                spec_df,
-                lambda row: fill_missing_nce(row, ace_colname="ace", nce_colname="nce"),
-            )
-            spec_df.loc[:, f"{ce_key}_extra_1"] = seq_apply_df_rows(
-                spec_df,
-                lambda row: fill_missing_nce(
-                    row, ace_colname="ace_extra_1", nce_colname="nce_extra_1"
-                ),
-            )
-            spec_df.loc[:, f"{ce_key}_extra_2"] = seq_apply_df_rows(
-                spec_df,
-                lambda row: fill_missing_nce(
-                    row, ace_colname="ace_extra_2", nce_colname="nce_extra_2"
-                ),
-            )
+            ce_fn=fill_missing_nce
         else:
-            ce_key = None
-
+            ce_key=None
         if ce_key is not None:
-            # print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_1"]])
-            # print(spec_df[spec_df[ce_key] >= spec_df[f"{ce_key}_extra_2"]])
-            print(f">> replace missing {ce_key} with -1, and fill ramped/stepped ces accordingly")
-            # First fill extra columns with -1 (these stay as floats)
-            spec_df.loc[:, f"{ce_key}_extra_1"] = spec_df.loc[:, f"{ce_key}_extra_1"].fillna(-1)
-            spec_df.loc[:, f"{ce_key}_extra_2"] = spec_df.loc[:, f"{ce_key}_extra_2"].fillna(-1)
-
+            for endfix in ["", "_extra_1", "_extra_2"]:
+                spec_df.loc[:,  f"{ce_key}{endfix}"] = spec_df.parallel_apply(lambda row: ce_fn(row, ace_colname='ace'+endfix, nce_colname='nce'+endfix), axis=1)
+                if len(endfix)>0:
+                    spec_df.loc[:, f"{ce_key}{endfix}"] = spec_df.loc[:, f"{ce_key}{endfix}"].fillna(-1)
             def _fill_ce_list(row, ce_key):
                 ce = row[ce_key]
                 ce_extra_1 = row[f"{ce_key}_extra_1"]
@@ -213,7 +178,8 @@ class BaseDataset(Dataset):
                     return [ce]
 
             # Apply the function to create lists - this will set the correct dtype
-            result_series = seq_apply_df_rows(spec_df, lambda row: _fill_ce_list(row, ce_key))
+            result_series = spec_df.parallel_apply(lambda row: _fill_ce_list(row, ce_key), axis=1)
+            #seq_apply_df_rows(spec_df, lambda row: _fill_ce_list(row, ce_key))
             # Convert column to object dtype before assignment to avoid dtype warning
             spec_df[ce_key] = spec_df[ce_key].astype(object)
             spec_df.loc[:, ce_key] = result_series

@@ -30,6 +30,16 @@ from fragnnet.utils.spec_utils import batched_bin_func
 
 logger = logging.getLogger(__name__)
 
+def get_sparse_mean_pooled_feats(mask_idxs, num_frags, num_atoms, atom_feats):
+    if mask_idxs.shape[0] == 0:
+        return th.zeros((num_frags, atom_feats.shape[1]), device=atom_feats.device)
+    
+    indices = mask_idxs.t()
+    values = th.ones(indices.shape[1], device=atom_feats.device)
+    S = th.sparse_coo_tensor(indices, values, size=(num_frags, num_atoms)).coalesce()
+    row = mask_idxs[:, 0]
+    counts = th.bincount(row, minlength=num_frags).float()
+    return th.sparse.mm(S, atom_feats)/counts[..., None].clamp(1)
 
 class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
     def __init__(
@@ -409,6 +419,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             mol_pyg.edge_attr,
             mol_pyg.batch,
         )
+        
         # frag_x: frag-graph level node feature matrix
         # frag_edge_index: frag graph connectivity in COO format with shape [2, num_edges]
         # frag_edge_attr: frag graph edge feature matrix with shape [num_edges, num_edge_features]
@@ -419,7 +430,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             frag_pyg.edge_attr,
             frag_pyg.batch,
         )
-
+    
         # Type assertions for batch indices (PyG types them as Any | None)
         assert mol_batch is not None, "mol_batch must not be None"
         assert frag_batch is not None, "frag_batch must not be None"
@@ -469,7 +480,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
         # pool mol embeddings
         mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn, mol_batch)
-
+    
         # process dag
         # create interstage
         frag_ndata, frag_edata = [], []
@@ -506,7 +517,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
         # Aggregate atom embeddings per fragment using pooling
         # Use index_select for memory efficiency (avoids creating huge intermediate tensors)
-        frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
+
+        '''frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
         frag_node_mask_embed = self.mol_pool(frag_node_embed, frag_node_mask_idxs[:, 0])
         # # Original scatter_reduce implementation (commented out):
         # frag_node_mask_embed = scatter_reduce(
@@ -520,7 +532,17 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         # Aggregate rest node embeddings per fragment using pooling
         # Use index_select for memory efficiency (avoids creating huge intermediate tensors)
         rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:, 1])
-        rest_node_mask_embed = self.mol_pool(rest_node_embed, rest_node_mask_idx[:, 0])
+        rest_node_mask_embed = self.mol_pool(rest_node_embed, rest_node_mask_idx[:, 0])'''
+
+        num_frags = frag_num_nodes.max().long().item()  # 
+        num_atoms = mol_embed_gnn.shape[0]   #
+        frag_node_mask_embed = get_sparse_mean_pooled_feats(
+            frag_node_mask_idxs, num_frags, num_atoms, mol_embed_gnn
+        )
+        rest_node_mask_embed = get_sparse_mean_pooled_feats(
+            rest_node_mask_idx, num_frags, num_atoms, mol_embed_gnn
+        )
+        assert self.mol_pool_type=="mean"
         # # Original scatter_reduce implementation (commented out):
         # rest_node_mask_embed = scatter_reduce(
         #   src=mol_embed_gnn[rest_node_mask_idx[:,1]],
@@ -567,7 +589,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         else:
             assert self.cc_interstage_type == "direct", self.cc_interstage_type
             frag_node_mask_embed = frag_node_mask_embed
-
+        
         frag_ndata.append(frag_node_mask_embed)
         # edge atom embeddings
         if "cc" in self.frag_edge_feats:
@@ -1282,5 +1304,4 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
                     raise ValueError(
                         f"Missing items in {k} of batch: {th.unique(v).shape[0]} expeacting {batch_size}"
                     )
-
         return out_d
