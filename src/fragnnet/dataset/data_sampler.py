@@ -103,9 +103,12 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         )
 
         for dataset_idx in range(len(self.data_source)):
-            data = self.data_source[dataset_idx]
-            # Cache as compact tuple (num_nodes, num_edges)
-            self._data_meta.append((data["frag_pyg"].num_nodes, data["frag_pyg"].num_edges))
+            if hasattr(self.data_source, "precom_meta_info"):
+                self._data_meta.append(self.data_source.precom_meta_info[dataset_idx])
+            else:
+                data = self.data_source[dataset_idx]
+                # Cache as compact tuple (num_nodes, num_edges)
+                self._data_meta.append((data["frag_pyg"].num_nodes, data["frag_pyg"].num_edges))
 
             # Quick lookup using limited_by index (0=nodes, 1=edges)
             limited_by_idx = 0 if self._limited_by == "frag_node" else 1

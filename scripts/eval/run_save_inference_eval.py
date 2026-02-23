@@ -155,6 +155,11 @@ def get_args():
         help="Whether to drop columns with None values in the output",
     )
     parser.add_argument(
+        "--use_dynamic_sampler",
+        action="store_true",
+        help="whether use dynamic sampler",
+    )
+    parser.add_argument(
         "--override",
         nargs="*",
         default=[],
@@ -200,6 +205,7 @@ if __name__ == "__main__":
         output_formula_str=False,
         train_batch_size=args.train_batch_size,
         eval_batch_size=args.eval_batch_size,
+        dynamic_batch_sampler=args.use_dynamic_sampler
     )
 
     # Initialize dataset, dataloader, and model (inline)
