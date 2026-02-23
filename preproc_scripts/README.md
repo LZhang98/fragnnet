@@ -229,3 +229,23 @@ Don't forget to symlink the formula directory:
 ```bash
 ln -s $HOME/frag-gnn/data/magma/gen/nist20/magma_formula $HOME/frag-gnn/data/magma/inten/nist20_inchikey_s$SEED/magma_formula
 ```
+
+## Step 8: Preparing ClassyFire Labels
+
+This step merges ClassyFire chemical taxonomy annotations onto the molecule dataframe via SMILES canonicalization. The output is a pickle keyed by `mol_id` with columns: `kingdom`, `superklass`, `klass`, `subklass`, `direct_parent`, `alternative_parents`, `substituents`. Run once per dataset.
+
+### NIST 20
+```bash
+python preproc_scripts/08_prepare_classyfire.py \
+  --mol_df data/proc/nist20/mol_df.pkl \
+  --cf_zip data/classyfire/20231201_nist20mona23_1.zip \
+  --output data/classyfire/nist20_mol_classyfire.pkl
+```
+
+### NIST 23
+```bash
+python preproc_scripts/08_prepare_classyfire.py \
+  --mol_df data/proc/nist23/mol_df.pkl \
+  --cf_zip data/classyfire/20231201_nist23mona23_1.zip \
+  --output data/classyfire/nist23_mol_classyfire.pkl
+```
