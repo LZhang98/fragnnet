@@ -227,7 +227,7 @@ def main(args):
             print("error in ", mol_id)
         else:
             meta_info[mol_id]=[dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
-            txn.put(f"{mol_id}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
+            txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
             if (int(mol_id)+1)%200==0:
                 txn.commit()
                 txn = env.begin(write=True)
