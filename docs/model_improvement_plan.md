@@ -27,9 +27,11 @@ The current model (`fragnnet_d3_nist23_cv0`) already has these enabled — **the
 | Precursor type conditioning | ✅ enabled | `prec_insert_location: mlp` |
 | ACE → NCE conversion for QTOF | ✅ done | `fill_missing_nce()` via `ace_to_nce()` |
 | FT / QTOF / IT in inst\_types | ✅ included | `inst_types: [FT, QTOF, IT]` |
+| **Fragmentation mode conditioning** | ❌ **missing** | `frag_mode` not in config or model |
+| **Dual CE input (ACE + NCE)** | ❌ **missing** | assert prevents both from being loaded |
 
-The 0.762 median is the model **with all conditioning active**. Remaining gaps are data and
-fragmentation-graph problems, not architecture gaps.
+The 0.762 median is with all currently-implemented conditioning active.  The two missing
+conditioning signals are architecture gaps that gate the FT/CID and QTOF improvements.
 
 ---
 
@@ -38,12 +40,13 @@ fragmentation-graph problems, not architecture gaps.
 | Priority | Area | Expected Impact | Effort |
 |---|---|---|---|
 | 1 | `force_stopped` diagnostic per chemical class | Unblocks §4 and §5 decisions | Very low (query) |
-| 2 | QTOF/CID upweighting in sampler | High — sampler may not weight by inst/frag\_mode | Low |
-| 3 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
-| 4 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes median 0.276, polycyclics | Medium (Cython) |
-| 5 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
-| 6 | Dual CE input (ACE + NCE, no conversion) | Medium — eliminates 0.779-correlation noise for QTOF | Low–Medium (small arch change) |
-| 7 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
+| 2 | **Frag-mode conditioning** (HCD/CID token) | High — FT/CID gap 0.785→0.497, model blind to it | Low (arch, same pattern as inst\_type) |
+| 3 | QTOF/CID upweighting in sampler | High — sampler may not weight by inst/frag\_mode | Low |
+| 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
+| 5 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes median 0.276, polycyclics | Medium (Cython) |
+| 6 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
+| 7 | Dual CE input (ACE + NCE, no conversion) | Medium — eliminates 0.779-correlation noise for QTOF | Low–Medium (small arch change) |
+| 8 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
 
 ---
 
@@ -171,16 +174,32 @@ complete bond cleavages compared to HCD's beam-type dissociation.
 
 #### Step 2 — Frag-mode conditioning token
 
-Add `frag_mode` as a learned embedding concatenated to the molecular graph representation
-before the spectrum prediction head:
+The model currently sees `inst_type=FT` for both FT/HCD and FT/CID spectra and cannot
+distinguish them.  Adding `frag_mode` as a separate conditioning signal is the direct fix.
 
-```python
-frag_mode_emb = nn.Embedding(num_frag_modes, emb_dim)  # HCD=0, CID=1, unknown=2
+**1. Dataset** (`base_dataset.py` / `spec_mol_frag_dataset.py`):
+- Load `frag_mode` column from spectrum metadata.
+- Map to integer index: `HCD=0, CID=1, unknown=2`.
+- Store as `spec_frag_mode` integer tensor in the batch dict.
+- Fall back to `unknown=2` when `frag_mode` is missing or not in the known set.
+
+**2. Model** (`base_model.py`):
+- Add a `FragModeModel` class mirroring the existing `InstModel`.
+- `nn.Embedding(num_frag_modes + 1, frag_mode_insert_size)` — `+1` for unknown token.
+- Insert at `mlp` location (same as `inst_type`) so it conditions the intensity head.
+- `frag_mode_insert_size: 8` is sufficient (3 categories: HCD, CID, unknown).
+
+**3. Config**:
+```yaml
+frag_mode: True
+frag_mode_insert_size: 8
+frag_mode_insert_location: mlp
+frag_modes: [HCD, CID]   # unknown handled as fallback index
 ```
 
-This allows the model to shift its predicted peak distribution based on known fragmentation
-physics difference between HCD and CID (e.g., CID produces more low-mass fragment ions,
-less precise m/z due to ion-trap mass accuracy).
+This allows the model to shift its predicted peak distribution based on fragmentation
+physics: CID produces more low-mass fragment ions and less reproducible relative intensities
+compared to HCD's beam-type dissociation.
 
 #### Step 3 — CID-specific intensity scaling
 
