@@ -16,17 +16,34 @@ Analysis based on NIST23 test set predictions (`predictions_test.pkl`, 85,660 sp
 
 ---
 
+## What Is Already Done
+
+The current model (`fragnnet_d3_nist23_cv0`) already has these enabled — **these are not action items**:
+
+| Feature | Status | Config key |
+|---|---|---|
+| NCE conditioning | ✅ enabled | `nce: True`, `ce_insert_location: mlp` |
+| Instrument type conditioning | ✅ enabled | `inst_type: True`, `inst_insert_location: mlp` |
+| Precursor type conditioning | ✅ enabled | `prec_insert_location: mlp` |
+| ACE → NCE conversion for QTOF | ✅ done | `fill_missing_nce()` via `ace_to_nce()` |
+| FT / QTOF / IT in inst\_types | ✅ included | `inst_types: [FT, QTOF, IT]` |
+
+The 0.762 median is the model **with all conditioning active**. Remaining gaps are data and
+fragmentation-graph problems, not architecture gaps.
+
+---
+
 ## Priority Order
 
 | Priority | Area | Expected Impact | Effort |
 |---|---|---|---|
-| 1 | CID training data gap | High — 8% of test at median 0.497 | Low (data sourcing) |
-| 2 | NCE/ACE as explicit conditioning input | High — strong NCE-performance curve | Medium |
-| 3 | Instrument + frag\_mode conditioning | Medium — QTOF/CID domain gap | Medium |
-| 4 | Data imbalancing strategy | Medium — affects all underrepresented groups | Low–Medium |
-| 5 | Large molecule DAG truncation | Medium — affects MW>350 and polycyclics | High |
-| 6 | Rearrangement-prone chemical classes | Medium — benzopyrans, steroids, lignans | High |
-| 7 | MoNA domain normalization | Low-Medium — 22-point gap vs NIST | Low |
+| 1 | `force_stopped` diagnostic per chemical class | Unblocks §4 and §5 decisions | Very low (query) |
+| 2 | QTOF/CID upweighting in sampler | High — sampler may not weight by inst/frag\_mode | Low |
+| 3 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
+| 4 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes median 0.276, polycyclics | Medium (Cython) |
+| 5 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
+| 6 | Dual CE input (ACE + NCE, no conversion) | Medium — eliminates 0.779-correlation noise for QTOF | Low–Medium (small arch change) |
+| 7 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
 
 ---
 
@@ -47,64 +64,78 @@ The training set is heavily dominated along multiple axes simultaneously:
 These imbalances compound: a steroid measured on a QTOF instrument with CID and `[M+Na]+` sits in
 the tail of every axis simultaneously.
 
+**Key finding:** Class size explains only **4.2% of performance variance** (r²=0.042,
+log(n) vs median cos\_sim regression across all classes with n≥50).  Chemistry dominates —
+oversampling alone will not fix structurally hard classes.
+
 ### Strategy
 
-#### Step 1 — Stratified batch sampling
+#### Step 1 — Check existing sampler before changing anything
 
-Define a composite sampling key per spectrum:
+The current config uses `dynamic_sampler`.  Verify whether it already weights by
+`inst_type` / `frag_mode` before adding new weights:
+
+```bash
+grep -rn "dynamic_sampler\|WeightedRandom\|inst_type\|frag_mode" \
+    src/fragnnet/pl_model/ src/fragnnet/dataset/
+```
+
+Only proceed to Step 2 if the sampler does not upweight QTOF/CID.
+
+#### Step 2 — Add QTOF/CID upweighting to sampler
+
+Add stratum weights based on `(inst_type, frag_mode)` using inverse-sqrt frequency
+dampening.  This is a `DataLoader` change only — no model or config changes required:
 
 ```python
 stratum_key = (inst_type, frag_mode, prec_type_bucket, chem_superclass_bucket)
+# weight = 1 / sqrt(stratum_count)
 ```
 
-where `prec_type_bucket` groups rare adducts (`[M+Cl]-`, `[M+Na]+`, etc.) and
-`chem_superclass_bucket` groups rare chemical superclasses.
+#### Step 3 — Chemical class focal weighting in loss
 
-Use inverse-frequency sampling so that each stratum is sampled proportionally to
-`1 / sqrt(stratum_count)` (square-root dampening avoids over-weighting tiny strata with
-noisy labels).
-
-Implementation: replace the current `DataLoader` sampler with a `WeightedRandomSampler`
-using per-spectrum weights derived from the stratum frequencies.
-
-#### Step 2 — Chemical class focal weighting in loss
-
-For chemical classes with median cos\_sim more than 0.15 below the global median, apply a
-soft focal weight to the spectrum-level loss:
+Size explains almost nothing.  For classes with residual < -0.10 from the size-regression
+line, apply a soft focal weight to the per-spectrum loss:
 
 ```python
 focal_weight = 1.0 + alpha * max(0, global_median - class_median)
 ```
 
-Suggested `alpha = 2.0`.  Weight is applied per-spectrum at training time based on the
-molecule's ClassyFire superclass.  Classes to target first:
+Suggested `alpha = 2.0`.  Target classes (sorted by size-adjusted residual, excluding
+`n_mol=1` singletons like tetracyclines which are a separate CE-curve problem):
 
-| Class | Median cos\_sim | Δ from global |
-|---|---|---|
-| 1-benzopyrans | 0.505 | -0.257 |
-| Hydrocarbon derivatives | 0.428 | -0.334 |
-| Lignans / neolignans | 0.537 | -0.225 |
-| Steroids | 0.595 | -0.167 |
-| Stilbenes | 0.619 | -0.143 |
+| Class | Median | Size-adj residual | n | n\_mol |
+|---|---|---|---|---|
+| Anthracenes | 0.276 | -0.439 | 507 | 29 |
+| 2-arylbenzofuran flavonoids | 0.360 | -0.318 | 124 | 6 |
+| Furans | 0.383 | -0.313 | 246 | 16 |
+| Morphinans | 0.380 | -0.299 | 124 | 4 |
+| Thienodiazepines | 0.334 | -0.322 | 52 | 4 |
+| Lactones | 0.416 | -0.281 | 258 | 10 |
+| Benzopyrans | 0.511 | -0.221 | 985 | 46 |
+| Steroids | 0.595 | -0.152 | 1793 | 90 |
+| Prenol lipids | 0.634 | -0.127 | 3101 | 154 |
 
-#### Step 3 — Oversample rare adducts
+Note: **tetracyclines** (n=135, n\_mol=1, residual -0.492) is excluded — it is a
+single-molecule CE generalisation problem, not a class-level issue.
 
-`[M+Cl]-` (n=988 in test, ~1.2%) and `[M+Na]+` (n=6,816, ~8%) are underrepresented.
-Duplicate these spectra 3× and 1.5× respectively in the training dataloader.
+#### Step 4 — Oversample rare adducts
 
-#### Step 4 — Separate train/val splits per stratum
+`[M+Cl]-` (n=988, ~1.2%) and `[M+Na]+` (n=6,816, ~8%) are underrepresented.
+Duplicate in the training dataloader with multipliers 3× and 1.5× respectively.
 
-Ensure the validation set mirrors per-stratum composition so that improvements across all
-strata are visible in aggregate val metrics.  Current splits may be dominated by FT/HCD,
-masking regressions on QTOF/CID.
+#### Step 5 — Separate train/val splits per stratum
+
+Ensure the validation set mirrors per-stratum composition so improvements across all
+strata are visible in aggregate val metrics.  Current splits dominated by FT/HCD may mask
+regressions on QTOF/CID.
 
 ### Evaluation Signal
 
-Track per-stratum median cosine similarity in the validation loop.  Log the following
-groups separately to W&B:
+Log the following groups separately to W&B per validation epoch:
 - `val/cos_sim_FT_HCD`, `val/cos_sim_QTOF_CID`, `val/cos_sim_FT_CID`
 - `val/cos_sim_Mplus_H`, `val/cos_sim_Mplus_Na`, `val/cos_sim_Mplus_Cl`
-- Top-5 worst chemical classes by name
+- Per-class median for the 9 focal-weight target classes above
 
 ---
 
@@ -167,239 +198,252 @@ Either:
 
 ---
 
-## 3. NCE vs ACE Conditioning Plan
+## 3. Dual CE Input (ACE + NCE, No Conversion)
 
-### Problem
+### Problem with Current Approach
 
-Both normalized collision energy (NCE) and absolute collision energy (ACE) appear in the
-dataset, reflecting different instrument reporting conventions:
+`fill_missing_nce()` converts ACE → NCE for QTOF using
+`nce = ace * charge / (prec_mz / 500)`.  The ACE↔NCE correlation across all spectra is
+only **0.779** — the conversion is lossy and introduces m/z-dependent noise for QTOF.
+The current dataset enforces mutual exclusivity:
+
+```python
+# base_dataset.py:142
+assert not (spec_params["ace"] and spec_params["nce"])
+```
+
+CE coverage in test set:
 
 | Coverage | Count | % |
 |---|---|---|
 | Both NCE and ACE | 62,333 | 72.8% |
 | Only NCE | 15,865 | 18.5% |
-| Only ACE (no NCE) | 7,462 | 8.7% |
+| Only ACE (QTOF-heavy) | 7,462 | 8.7% |
 
-ACE-only spectra are predominantly QTOF (4,783 / 7,462) and show severe performance
-degradation at high ACE:
+### Proposed Approach: Feed Both, No Conversion
 
-| ACE bin (eV) | Median cos\_sim | n |
-|---|---|---|
-| 0–10 | 0.863 | 1,555 |
-| 10–20 | 0.653 | 1,087 |
-| 20–30 | 0.558 | 1,176 |
-| 30–50 | 0.367 | 2,723 |
-| 50–100 | 0.269 | 920 |
+Pass ACE and NCE as **two separate scalar inputs** with explicit validity masks.  The
+model embeds each independently and concatenates them.  When one is missing, a learned
+`[MISSING]` token is used instead.  This preserves full information and lets the model
+learn instrument-specific reliability of each CE type from data.
 
-NCE and ACE are related by `NCE ≈ ACE / (prec_mz / 500)` but the real-data correlation is
-0.779 (not 1.0), indicating inconsistent normalization conventions across instruments.
+| Spectrum | ace | nce | What model sees |
+|---|---|---|---|
+| FT/HCD | NaN or real | real | `[missing_ace, nce_embed]` |
+| QTOF/CID ACE-only | real | NaN | `[ace_embed, missing_nce]` |
+| Both available | real | real | `[ace_embed, nce_embed]` |
 
-### Plan
+### Implementation
 
-#### Step 1 — Unified collision energy representation
+**1. Dataset** (`base_dataset.py`):
+- Remove the `assert not (ace and nce)` guard at line 142.
+- Load both columns unconditionally; replace NaN with sentinel `-1`.
+- Store as `spec_ace` and `spec_nce` with `spec_ace_mask` / `spec_nce_mask` boolean
+  tensors indicating valid vs missing.
 
-Compute a unified `nce_unified` feature at preprocessing time:
+**2. Model** (`base_model.py`):
+- Add a `dual_ce` path alongside existing `CEModel`.
+- Embed each CE with its own `CEModel` instance (independent weights — ACE and NCE
+  have different scales and units).
+- Concatenate: `ce_embed = concat([ace_embed, nce_embed])` → size `2 × ce_insert_size`.
+- Where `spec_ace_mask=False`, replace `ace_embed` with a learned `ace_missing_token`;
+  same for NCE.
 
-```python
-if nce is not None:
-    nce_unified = nce
-elif ace is not None and prec_mz is not None:
-    nce_unified = ace / (prec_mz / 500.0)
-else:
-    nce_unified = NaN  # handled separately
+**3. Config**:
+```yaml
+# replaces:  nce: True
+dual_ce: True
+ce_insert_size: 32      # per-CE; concat output = 64
+ce_insert_location: mlp
+ce_insert_type: embed
 ```
 
-Store `nce_unified` and `ce_source` (one of `"nce"`, `"ace_converted"`, `"missing"`) as
-features in the processed spectrum dataframe.
+### Why No Conversion Is Better
 
-#### Step 2 — NCE as continuous model input
-
-NCE is currently likely binned or ignored.  Replace with a continuous Fourier feature
-encoding (sinusoidal, similar to positional encoding):
-
-```python
-nce_feat = fourier_encode(nce_unified / 100.0, num_freqs=16)  # normalized to ~[0,1]
-```
-
-Concatenate to the precursor/spectrum-level representation before the prediction head.
-
-The NCE-performance curve is steep (median drops from 0.935 at NCE 0–20 to 0.646 at NCE
-120–200), which means correctly conditioning on NCE can substantially improve high-energy
-predictions.
-
-#### Step 3 — Handle missing CE gracefully
-
-For the ~0% of spectra with no CE (currently zero in test, but possible in inference),
-learn a marginal CE distribution and use it as a soft prior rather than zeroing the feature.
-A `ce_missing` flag embedding should replace `nce_feat = 0` to avoid conflating "zero
-energy" with "unknown energy."
-
-#### Step 4 — ACE conversion validation
-
-For spectra where both ACE and NCE are available (n=62,333), validate the conversion
-formula per instrument type:
-
-```python
-# check residual: actual_nce vs ace_converted
-residual = df.groupby('inst_type')[['nce', 'nce_from_ace']].apply(
-    lambda g: (g['nce'] - g['nce_from_ace']).abs().median()
-)
-```
-
-If QTOF uses a different normalization constant than FT (possible — some QTOF vendors use
-a different reference mass), use instrument-specific conversion coefficients learned from
-the training data.
-
-#### Step 5 — ACE-only QTOF spectra
-
-The 4,783 QTOF ACE-only spectra are systematically the worst (median 0.367 at ACE 30–50 eV).
-Prioritize these for CID-specific conditioning (§2) and instrument-conditioning (instrument
-embedding) since ACE and QTOF co-occur.
+- ACE (eV) and NCE (%) encode physically different quantities — absolute beam energy vs
+  mass-normalised energy.  They carry partially independent information (r=0.779).
+- QTOF natively reports ACE; converting to NCE via `prec_mz` adds m/z-dependent noise.
+- FT natively reports NCE; it already has reliable NCE — the ACE path is absent or noisy.
+- The model implicitly learns "trust ACE for QTOF, trust NCE for FT" from training data
+  without any hand-coded conversion coefficients or per-instrument scaling factors.
 
 ---
 
-## 4. Large Molecule Plan
+## 4. DAG Truncation for Large / Polycyclic Molecules
+
+### Constraint
+
+All fixes must be **structure-only** — they must work at inference time from SMILES alone,
+with no observed spectrum.  MAGMA is not usable here because it scores fragments against
+the observed spectrum, which is unavailable at inference.
 
 ### Problem
 
-Performance degrades sharply with molecular size:
+Performance degrades with molecular size (MW > 350 Da, num\_atoms > 30) and is severe for
+polycyclic classes.  Two distinct failure modes:
 
-- MW > 350 Da: substantial performance drop
-- num\_atoms > 30: consistent degradation
+**A. Timeout truncation** — combinatorial explosion of bond-break paths hits the 150 s
+budget.  When `force_stop=True` the DAG is pruned to `reached_depth - 1`.  The most
+likely candidates based on size-adjusted residuals:
 
-Three distinct failure modes:
+| Class | Median | Residual | Why likely truncated |
+|---|---|---|---|
+| Anthracenes | 0.276 | -0.439 | 3 fused aromatic rings → exponential ring-bond combos |
+| Steroids | 0.595 | -0.152 | 4 fused rings, 90 unique molecules |
+| Morphinans | 0.380 | -0.299 | Polycyclic alkaloid scaffold |
 
-**A. DAG truncation** — combinatorial explosion of bond-break paths triggers the 150s
-timeout.  When `force_stop=True`, the DAG is pruned to `reached_depth - 1`, losing deep
-fragment coverage.
-
-**B. Formula redundancy** — large molecules generate many fragments with identical
-molecular formulas but different structures; the formula-matching signal becomes noisy.
-
-**C. Rearrangement-driven fragmentation** — some large molecule classes (steroids,
-terpenoids) fragment via retro-Diels-Alder, ring-opening, and isoprene loss — mechanisms
-not present in the bond-cleavage graph.
+**B. Formula redundancy** — large molecules produce many fragments sharing the same
+molecular formula but different structures; the model's formula-matching signal becomes
+noisy.
 
 ### Plan
 
-#### Step 1 — Audit `force_stopped` rates per chemical class
+#### Step 1 — Audit `force_stopped` rates per chemical class (diagnostic, do first)
 
 ```python
-dag_stats = load_dag_hdf5_stats()  # force_stopped, reached_depth, dag_num_nodes
+dag_stats = load_dag_hdf5_stats()  # force_stopped, reached_depth, dag_num_nodes per mol
 df_audit = df.merge(dag_stats, on='mol_id')
-print(df_audit.groupby('klass')[['force_stopped', 'dag_num_nodes', 'cos_sim_0.01']].agg(['mean','median']))
+print(df_audit.groupby('klass')[
+    ['force_stopped', 'dag_num_nodes', 'cos_sim_0.01']
+].agg(['mean', 'median']))
 ```
 
-This separates classes where graph truncation is the dominant cause of bad performance from
-classes with genuine model limitations.
+Gate Steps 2–4 on this result.  Only invest in BFS changes if anthracenes / steroids show
+high `force_stopped` rates.
 
-#### Step 2 — Prioritized BFS in fragmentation
+#### Step 2 — Prioritized BFS (inference-compatible)
 
-Replace the current uniform-bond BFS with a bond-priority queue.  Score bonds by
-fragmentation likelihood before enumeration:
+Replace uniform-bond BFS with a bond-priority queue scored purely from molecular structure.
+Higher-priority bonds are broken first so the most chemically meaningful fragments survive
+even when timeout is reached:
 
-- Heteroatom-adjacent bonds: higher priority (N–C, O–C, S–C)
-- Benzylic / allylic positions: higher priority
-- Ring bonds: lower priority unless labile (glycosidic, ester)
-- Simple C–C in aliphatic chains: lowest priority
+| Bond type | Priority |
+|---|---|
+| Heteroatom-adjacent (N–C, O–C, S–C) | Highest |
+| Benzylic / allylic C–C | High |
+| Labile ring bonds (glycosidic, ester, lactone) | High |
+| Generic ring C–C | Low |
+| Aliphatic chain C–C | Lowest |
 
-This ensures the most chemically meaningful fragments are generated first and survive even
-if timeout is reached.
+This is purely structure-derived and works identically at training and inference time.
+Implementation: `compute_frags.pyx` — replace the flat bond list with a priority-sorted
+list before the BFS depth loop.
 
-#### Step 3 — Expose `force_stopped` and `dag_num_nodes` as model inputs
+#### Step 3 — Ring-contraction strategy for polycyclics
 
-Add these as scalar features to the molecule-level representation:
+For molecules with ≥ 3 fused rings, add an optional fragmentation pass that treats each
+fused ring system as an atomic unit (does not break internal ring bonds at depth 1).
+This dramatically reduces the BFS branching factor while still enumerating all fragments
+that result from breaking bonds at ring junctions or on external chains.  Inference-safe:
+ring system detection is structure-only.
+
+#### Step 4 — Expose `force_stopped` and `dag_num_nodes` as model inputs
 
 ```python
 mol_features = concat([existing_features, log(dag_num_nodes + 1), force_stopped_flag])
 ```
 
-Let the model learn to reduce confidence / shift predictions when it knows the DAG is
-truncated.
+The model learns to adjust confidence when it knows the DAG is incomplete.  Both values
+are computed at preprocessing time and available at inference.
 
-#### Step 4 — Neutral loss DAG representation
+#### Step 5 — Neutral loss representation for high-MW molecules
 
-For large molecules, represent the DAG in terms of **neutral losses** (delta formula from
-parent) rather than absolute fragment formulas.  Losses are more structurally specific than
-absolute formulas at high MW and reduce formula redundancy.
-
-#### Step 5 — MAGMA fallback for truncated DAGs
-
-For molecules where `force_stop=True` or `dag_num_nodes < threshold`, run MAGMA to generate
-a chemically-prioritized fragment tree as a supplement.  MAGMA uses thermodynamic scoring
-to rank fragmentation pathways and is better suited to polycyclic structures.
+For molecules above a MW threshold, represent DAG edges as neutral losses (Δformula from
+parent) rather than absolute fragment formulas.  Neutral losses are more structurally
+specific than absolute formulas at high MW and reduce formula-redundancy noise.
 
 #### Step 6 — 128-atom hard limit audit
 
-Verify what fraction of training/test molecules exceed 128 atoms.  If non-trivial, extend
-`MAX_NUM_NODES` and `MAX_NUM_EDGES` in `compute_frags.pyx` and reprocess affected molecules.
+Check what fraction of training/test molecules hit the `MAX_NUM_NODES=128` assertion in
+`compute_frags.pyx`.  If non-trivial, extend the limit and reprocess.
 
 ---
 
-## 5. Fragmentation Graph Limitations by Chemical Class
+## 5. Chemical Class Fragmentation Failures
 
-The algorithm is pure bond-cleavage with BFS.  It has **no rearrangement rules, no ring
-priority, no thermodynamic scoring**.  Some classes are fundamentally mispredicted because
-their real MS2 fragmentation proceeds via mechanisms outside the model:
+### Revised Understanding of RDA and Rearrangements
 
-### Classes with structural fragmentation graph failures
+RDA and other rearrangement products are **not missing from the DAG**.  For a 6-membered
+ring RDA (e.g. flavonoid C-ring), breaking two bonds sequentially reaches the same product
+masses at depth ≤ 2, well within `max_depth=4`.  The fragment *masses* are present.
 
-**1-benzopyrans (median 0.505) — retro-Diels-Alder (RDA)**
-- Flavonoids and isoflavonoids (classified here) fragment via **RDA at the C-ring**,
-  producing A-ring and B-ring ions with specific diagnostic m/z.
-- This is a rearrangement; simple bond cleavage generates different fragments.
-- Fix: implement RDA as an explicit fragmentation rule for 6-membered rings with the
-  [C=C–C=O] pattern.
+The actual problem is **intensity misprediction**: among many competing depth-2 fragments
+that share the same formula, the model hasn't learned to assign high intensity to the
+specific fragments that correspond to preferred fragmentation pathways (RDA, benzyl-ether
+cleavage, isoprene loss).  This is a training signal problem, not a graph coverage problem.
 
-**Steroids and steroid derivatives (median 0.595) — RDA + ring junction opening**
-- Dominant fragmentation: RDA on ring A/B or B/C junction, loss of side chains via
-  specific ring-opening.
-- 4-fused-ring system also causes combinatorial explosion → likely high `force_stopped` rate.
-- Fix: RDA rule + prioritized ring-junction bond scoring.
+Consequence: explicit rearrangement rules in the fragmentation algorithm are **not
+needed** for mass coverage.  They may still help by surfacing RDA fragments earlier in the
+BFS so they receive better graph attention, but this is a secondary concern.
 
-**Lignans / neolignans (median 0.537) — benzyl-ether cleavage + furan ring-opening**
-- Involves preferential benzyl-ether bond cleavage (not prioritized by uniform BFS),
-  ring-opening of furanoid rings, and retro-[2+2] in some subtypes.
-- Fix: add benzyl-ether bond priority score; furan ring-opening rule.
+### Diagnosis Decision Tree
 
-**Prenol lipids / terpenoids (median 0.634) — isoprene loss**
-- Characteristic fragmentation via loss of isoprene units (C₅H₈, 68 Da) after
-  cyclization/retro-cyclization.
-- The DAG can generate C5 losses via random bond cleavage but doesn't preferentially
-  weight isoprene-unit boundaries.
-- Fix: detect isoprene-unit junctions by SMARTS and upweight those bonds.
+Run the `force_stopped` audit (§4 Step 1) first, then apply:
 
-### Classes likely suffering from timeout truncation
+| `force_stopped` rate | Cos\_sim | Chemistry | Root cause | Fix |
+|---|---|---|---|---|
+| High (>30%) | Low | Any | DAG truncation | Prioritized BFS (§4 Step 2), ring-contraction (§4 Step 3) |
+| Low | Low | RDA / ring-strain | Intensity misprediction | Focal loss (§1 Step 3), bond-priority BFS |
+| Low | Low | No special chemistry | Data imbalance | Focal loss + more training data |
 
-- **Hydrocarbon derivatives (median 0.428):** saturated polycyclics (adamantane, hopanes)
-  have exponential ring-bond combinations; BFS explodes before reaching terminal fragments.
-- **Organic polymers (median 0.680):** repeated unit × fragmentation depth = combinatorial
-  explosion; many also exceed the 128-atom limit.
+### Classes and Their Expected Root Cause
 
-### Test to confirm: `force_stopped` cross-tabulation
+| Class | Median | Residual | Expected cause |
+|---|---|---|---|
+| Anthracenes | 0.276 | -0.439 | DAG truncation (3 fused rings) |
+| Morphinans | 0.380 | -0.299 | DAG truncation (polycyclic alkaloid) |
+| Furans | 0.383 | -0.313 | Intensity misprediction — ring-opening bonds not prioritised |
+| Lactones | 0.416 | -0.281 | Intensity misprediction — ring-strain cleavage not prioritised |
+| 2-arylbenzofuran flavonoids | 0.360 | -0.318 | Intensity misprediction — benzofuran + RDA pattern |
+| Benzopyrans | 0.511 | -0.221 | Intensity misprediction — RDA masses present, weights wrong |
+| Steroids | 0.595 | -0.152 | Mixed — DAG truncation + intensity misprediction |
+| Prenol lipids | 0.634 | -0.127 | Intensity misprediction — isoprene junctions not prioritised |
+| Lignans / neolignans | 0.537 | — | Intensity misprediction — benzyl-ether cleavage not prioritised |
 
-| If... | Then root cause is... | Fix |
-|---|---|---|
-| `force_stopped` rate high + low cos\_sim | DAG truncation | Prioritized BFS, MAGMA fallback |
-| `force_stopped` rate low + low cos\_sim + RDA chemistry | Missing rearrangement | Explicit RDA/rearrangement rules |
-| `force_stopped` rate low + low cos\_sim + no rearrangement | Training data imbalance | Weighted sampling, more data |
+### Bond-Priority BFS as the Unified Fix
+
+The prioritized BFS (§4 Step 2) addresses both truncation and intensity misprediction:
+- Truncation: chemically meaningful fragments are enumerated before timeout
+- Intensity: BFS order influences graph depth embedding — fragments reached earlier
+  get shallower depth features, and training will associate those features with higher
+  predicted intensity if the real spectra confirm it
+
+Specific SMARTS patterns to detect and upweight for intensity misprediction classes:
+
+| Class | High-priority bond pattern |
+|---|---|
+| Benzopyrans / flavonoids | C-ring junction bonds: `[c,C]-[O,C]` in 6-membered O-rings |
+| Lactones | Ester C–O bond: `[C](=O)-O-[C]` |
+| Furans | α-bond to furan oxygen: `[c]-[O]-[c]` ring bond |
+| Prenol lipids | Isoprene junction: `[C](=C)-[C]-[C]=C` |
+| Lignans | Benzyl-ether: `[c]-[CH2]-O` |
 
 ---
 
 ## 6. MoNA Domain Gap
 
-MoNA23 performance (median 0.559) vs NIST23 (median ~0.782) is inflated by IT spectra
-(all 35 IT samples are MoNA23-only, median 0.000).  Strip IT from MoNA before drawing
-conclusions:
+MoNA23 performance (median 0.559) vs NIST23 (median ~0.782) is likely inflated by the 35
+IT spectra (all from MoNA23, median 0.000).  Run the FT-only check before any remediation:
 
 ```python
 mona_ft = df[(df['dset'] == 'mona23') & (df['inst_type'] == 'FT')]
-print(mona_ft['cos_sim_0.01'].median())  # expected to be closer to NIST23 FT
+print(mona_ft['cos_sim_0.01'].median())  # expected to be closer to NIST23 FT (~0.78)
 ```
 
-If the FT-only MoNA gap is small, the MoNA issue is provenance (IT data) not curation.
-If a gap remains, investigate peak normalization and intensity preprocessing differences
-between MoNA and NIST curation pipelines.
+- If gap is small (< 0.05): MoNA issue is entirely the IT spectra — no action needed.
+- If gap remains: investigate peak normalization and intensity preprocessing differences
+  between MoNA and NIST curation pipelines.
+
+## 7. Pending Diagnostics (Run Before Any Code Changes)
+
+These are quick queries that gate decisions in §1–§6:
+
+| Diagnostic | Code | Gates |
+|---|---|---|
+| `force_stopped` audit | `df_audit.groupby('klass')[['force_stopped','dag_num_nodes','cos_sim_0.01']].agg(...)` | §4 Steps 2–3, §5 root cause |
+| MoNA FT-only check | `df[(df.dset=='mona23')&(df.inst_type=='FT')].cos_sim_0.01.median()` | §6 action |
+| ACE→NCE residual per instrument | `both.groupby('inst_type').apply(lambda g: (g.nce - g.nce_converted).abs().median())` | §3 Step 1 |
+| Current sampler weighting | `grep -rn "dynamic_sampler\|WeightedRandom" src/fragnnet/` | §1 Step 1 |
 
 ---
 
