@@ -233,6 +233,7 @@ def main(args):
                 txn = env.begin(write=True)
         if not args.skip_stats:
             frag_results.append(dag_d)
+    txn.commit()
     env.sync()
     env.close()
     with open(os.path.join(args.frag_dp, "meta_info.json"), "w") as f:
