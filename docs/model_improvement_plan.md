@@ -1,18 +1,38 @@
 # Model Improvement Plan
 
-Analysis based on NIST23 test set predictions (`predictions_test.pkl`, 85,660 spectra, 4,560 molecules).
+Analysis based on NIST23 test set predictions, all 9 CV folds combined (764,637 spectra, 28,256 unique molecules).
 
 ---
 
 ## Current State
 
+**Overall (764,637 spectra, 28,256 unique molecules — NIST23 9-fold CV)**
+
 | Metric | Value |
 |---|---|
-| Median cosine sim | 0.762 |
-| Mean cosine sim | 0.660 |
-| cos\_sim ≥ 0.9 | 34.7% |
-| cos\_sim ≥ 0.7 | 55.2% |
+| Median cosine sim (tol=0.01) | 0.759 |
+| Mean cosine sim (tol=0.01) | 0.658 |
+| Median cos\_hun | 0.786 |
+| Mean cos\_hun | 0.681 |
+| cos\_sim ≥ 0.9 | 34.5% |
+| cos\_sim ≥ 0.7 | 55.0% |
 | cos\_sim ≥ 0.5 | 69.1% |
+| cos\_sim ≥ 0.2 | 86.5% |
+
+**By ion mode**
+
+| Ion mode | Median cos\_sim | n |
+|---|---|---|
+| Positive (P) | 0.764 | 572,107 |
+| Negative (N) | 0.739 | 192,525 |
+
+**By dataset source**
+
+| Dataset | Median cos\_sim | n |
+|---|---|---|
+| nist23\_hr1 | 0.778 | 396,028 |
+| nist23\_hr2 | 0.763 | 302,648 |
+| mona23 | 0.563 | 65,961 |
 
 ---
 
@@ -39,14 +59,16 @@ conditioning signals are architecture gaps that gate the FT/CID and QTOF improve
 
 | Priority | Area | Expected Impact | Effort |
 |---|---|---|---|
-| 1 | `force_stopped` diagnostic per chemical class | Unblocks §4 and §5 decisions | Very low (query) |
+| 1 | `force_stopped` + formula-recall (AR) diagnostic per class | Unblocks §4 and §5 decisions | Very low (query) |
 | 2 | **Frag-mode conditioning** (HCD/CID token) | High — FT/CID gap 0.785→0.497, model blind to it | Low (arch, same pattern as inst\_type) |
 | 3 | QTOF/CID upweighting in sampler | High — sampler may not weight by inst/frag\_mode | Low |
 | 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
-| 5 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes median 0.276, polycyclics | Medium (Cython) |
+| 5 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes 0.276, AR=0.81 vs GrAFF 0.95 | Medium (Cython) |
 | 6 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
 | 7 | Dual CE input (ACE + NCE, no conversion) | Medium — eliminates 0.779-correlation noise for QTOF | Low–Medium (small arch change) |
 | 8 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
+| 9 | **Model ensembling** | +4% cos\_hun, no arch change needed | Very low (multi-seed inference) |
+| 10 | OOS calibration per stratum | Confidence filter for downstream use | Very low (query) |
 
 ---
 
@@ -60,9 +82,21 @@ The training set is heavily dominated along multiple axes simultaneously:
 |---|---|---|---|
 | Instrument | FT (Orbitrap) | ~94% | QTOF (~6%), IT (~0%) |
 | Frag mode | HCD | ~87% | CID (~13%) |
-| Adduct | `[M+H]+` | ~66% | `[M+Na]+`, `[M+Cl]-` |
+| Adduct | `[M+H]+` | ~66% | `[M+Na]+`, `[M+Cl]-`, `[M-H]-` |
+| Ion mode | Positive | ~74% | Negative (~26%, median −0.04 gap) |
 | Dataset source | NIST23 | ~91% | MoNA23 (~9%) |
 | Chemical class | Benzenoids + organoheterocyclics | ~60% | steroids, lignans, benzopyrans, etc. |
+
+**Adduct performance** (all 9 folds):
+
+| Adduct | Median cos\_sim | n |
+|---|---|---|
+| `[M+H]+` | 0.768 | 514,124 |
+| `[M-H]-` | 0.744 | 183,441 |
+| `[M+Na]+` | 0.720 | 57,971 |
+| `[M+Cl]-` | 0.626 | 9,092 |
+
+Note: `[M-H]-` has a large count (n=21,078) but a ~3.5% gap vs `[M+H]+` — worth upweighting alongside `[M+Na]+`.
 
 These imbalances compound: a steroid measured on a QTOF instrument with CID and `[M+Na]+` sits in
 the tail of every axis simultaneously.
@@ -124,8 +158,9 @@ single-molecule CE generalisation problem, not a class-level issue.
 
 #### Step 4 — Oversample rare adducts
 
-`[M+Cl]-` (n=988, ~1.2%) and `[M+Na]+` (n=6,816, ~8%) are underrepresented.
-Duplicate in the training dataloader with multipliers 3× and 1.5× respectively.
+`[M+Cl]-` (n=988, ~1.2%), `[M+Na]+` (n=6,816, ~8%), and `[M-H]-` are underrepresented
+relative to `[M+H]+`.  Apply upweighting multipliers: `[M+Cl]-` 3×, `[M+Na]+` 1.5×,
+`[M-H]-` 1.2× (moderate, since it is already large but underperforms).
 
 #### Step 5 — Separate train/val splits per stratum
 
@@ -137,7 +172,9 @@ regressions on QTOF/CID.
 
 Log the following groups separately to W&B per validation epoch:
 - `val/cos_sim_FT_HCD`, `val/cos_sim_QTOF_CID`, `val/cos_sim_FT_CID`
-- `val/cos_sim_Mplus_H`, `val/cos_sim_Mplus_Na`, `val/cos_sim_Mplus_Cl`
+- `val/cos_sim_Mplus_H`, `val/cos_sim_Mplus_Na`, `val/cos_sim_Mplus_Cl`, `val/cos_sim_Mminus_H`
+- `val/cos_sim_ion_pos`, `val/cos_sim_ion_neg`
+- `val/cos_sim_oos_low` (pred\_oos\_prob ≤ 0.05), `val/cos_sim_oos_high` (pred\_oos\_prob > 0.2)
 - Per-class median for the 9 focal-weight target classes above
 
 ---
@@ -146,7 +183,16 @@ Log the following groups separately to W&B per validation epoch:
 
 ### Problem
 
-| Condition | Median cos\_sim | n |
+**Frag-mode marginals** (all 9 folds):
+
+| frag\_mode | Median cos\_sim | n |
+|---|---|---|
+| HCD | 0.781 | 663,143 |
+| CID | 0.547 | 101,494 |
+
+**By (inst\_type, frag\_mode) cross-table** (single-fold estimate — cross-table not yet recomputed for 9-fold):
+
+| Condition | Median cos\_sim | n (single fold) |
 |---|---|---|
 | FT / HCD | 0.785 | 74,263 |
 | QTOF / CID | 0.616 | 4,806 |
@@ -296,6 +342,22 @@ All fixes must be **structure-only** — they must work at inference time from S
 with no observed spectrum.  MAGMA is not usable here because it scores fragments against
 the observed spectrum, which is unavailable at inference.
 
+### Formula Recall Baseline (from `formula_ann_exp.ipynb`)
+
+Comparison of formula-level annotation recall (AR) and precision (AP) across models,
+measured against ground-truth MS/MS annotations from the NIST23 scaffold split:
+
+| Model | True Recall (AR) | Weighted Recall (AWR) | Pred Precision (AP) | Weighted Precision (AWP) | F1 | Weighted F1 |
+|---|---|---|---|---|---|---|
+| FraGNNet-D4 | 0.81 | 0.90 | 0.98 | 1.00 | 0.89 | 0.95 |
+| GrAFF | **0.95** | **0.98** | 0.61 | 0.80 | 0.74 | 0.88 |
+| ICEBERG | 0.66 | 0.81 | 0.99 | — | 0.79 | — |
+
+**FraGNNet-D4 misses ~19% of ground-truth annotated fragment formulas** (AR=0.81 vs GrAFF
+AR=0.95). GrAFF's higher recall comes at the cost of precision (AP=0.61 vs 0.98) — it
+over-generates fragments.  The target for improved BFS is **AR > 0.90 while keeping AP
+> 0.95**.  Formula-recall improvement is the primary quantitative goal of §4.
+
 ### Problem
 
 Performance degrades with molecular size (MW > 350 Da, num\_atoms > 30) and is severe for
@@ -418,6 +480,8 @@ Run the `force_stopped` audit (§4 Step 1) first, then apply:
 | Steroids | 0.595 | -0.152 | Mixed — DAG truncation + intensity misprediction |
 | Prenol lipids | 0.634 | -0.127 | Intensity misprediction — isoprene junctions not prioritised |
 | Lignans / neolignans | 0.537 | — | Intensity misprediction — benzyl-ether cleavage not prioritised |
+| **Stilbenes** | **0.619** | — | Intensity misprediction — trans/cis stilbene retro-Diels-Alder |
+| **Hydrocarbon derivatives** (superclass) | **0.428** | — | DAG priority failure — few heteroatom anchors, BFS gains little structural signal |
 
 ### Bond-Priority BFS as the Unified Fix
 
@@ -460,9 +524,73 @@ These are quick queries that gate decisions in §1–§6:
 | Diagnostic | Code | Gates |
 |---|---|---|
 | `force_stopped` audit | `df_audit.groupby('klass')[['force_stopped','dag_num_nodes','cos_sim_0.01']].agg(...)` | §4 Steps 2–3, §5 root cause |
+| Formula recall (AR) per class | Run `test_fraggnn_formula.py` loop over all groups, group AR by `klass` | §4 target (AR>0.90), §5 root cause |
 | MoNA FT-only check | `df[(df.dset=='mona23')&(df.inst_type=='FT')].cos_sim_0.01.median()` | §6 action |
 | ACE→NCE residual per instrument | `both.groupby('inst_type').apply(lambda g: (g.nce - g.nce_converted).abs().median())` | §3 Step 1 |
 | Current sampler weighting | `grep -rn "dynamic_sampler\|WeightedRandom" src/fragnnet/` | §1 Step 1 |
+| OOS calibration per stratum | `df.groupby(['inst_type','frag_mode'])['pred_oos_prob'].describe()` | §8 confidence filter |
+
+---
+
+## 8. OOS Probability as Confidence Signal
+
+### Finding
+
+`pred_oos_prob` (predicted out-of-spectrum probability) is a **strong calibrated confidence
+indicator**:
+
+| pred\_oos\_prob bin | Median cos\_sim | n |
+|---|---|---|
+| ≤ 0.05 | **0.900** | 35,435 |
+| 0.05–0.10 | 0.795 | 15,620 |
+| 0.10–0.20 | 0.709 | 13,780 |
+| 0.20–0.50 | 0.558 | 14,327 |
+| > 0.50 | **0.261** | 6,498 |
+
+The OOS head is well-calibrated — its score monotonically tracks actual prediction quality
+across nearly a 3.5× range in median cosine sim.
+
+### Uses
+
+**1. Downstream reliability filter** — Flag predictions with `pred_oos_prob > 0.2` as
+low-confidence in inference outputs.  Useful for library search applications.
+
+**2. Training signal** — If OOS prediction quality degrades after model changes (e.g., CID
+conditioning), check `val/cos_sim_oos_low` vs `val/cos_sim_oos_high` to catch regressions
+in the OOS head specifically.
+
+**3. Per-stratum calibration audit** — Check whether OOS is miscalibrated for specific
+strata (e.g., QTOF/CID may have higher OOS scores than warranted):
+```python
+df.groupby(['inst_type','frag_mode'])['pred_oos_prob'].describe()
+```
+
+---
+
+## 9. Model Ensembling
+
+### Finding (from `frag_ann_exp.ipynb`)
+
+Ensembling models trained with different loss weights gives **~+4% cosine sim** on the
+scaffold split (cos\_hun: individual 0.654 → ensemble 0.682) and **~+8% formula node
+entropy** (individual 0.399 → ensemble 0.432).  Higher entropy indicates more diverse
+formula predictions — better coverage of true annotated fragments.
+
+| Training variant | Individual cos\_hun | Ensemble cos\_hun | Formula NE (ind) | Formula NE (ens) |
+|---|---|---|---|---|
+| Baseline | 0.654 | 0.682 (+4.3%) | 0.399 | 0.432 (+8.3%) |
+| Low weight | — | — | lower NE → less diverse | — |
+| High weight | — | — | higher NE → more diverse | — |
+| Mix | — | — | balanced | — |
+
+### Strategy
+
+**Effort: very low — no architecture changes.**  Train 3–5 seeds of the best model config,
+ensemble predictions by averaging normalized intensity vectors.  The diversity across
+seeds explains the gain: each model finds slightly different high-probability fragments.
+
+Add to Priority Order table as **Priority 9** between §6 (CID data) and §7 (Dual CE):
+ensemble is zero-architecture-cost and should be validated before any structural changes.
 
 ---
 
