@@ -64,7 +64,8 @@ conditioning signals are architecture gaps that gate the FT/CID and QTOF improve
 | 3 | QTOF/CID upweighting in sampler | High — sampler may not weight by inst/frag\_mode | Low |
 | 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
 | 5 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes 0.276, AR=0.81 vs GrAFF 0.95 | Medium (Cython) |
-| 6 | **Explicit fragmentation rules for fused rings/steroids** | High — fixes low `wrecall` for steroids, coumarins, indoles | Medium (Cython/SMARTS) |
+| 5a | **One-shot 2-bond ring cleavage pre-pass** | High — RDA/fused-ring fragments at depth 1, fixes low `wrecall` for steroids/coumarins/indoles | Medium (Cython, ~190 checks/mol) |
+| 6 | **Explicit fragmentation rules for fused rings/steroids** | Medium — 3-bond cleavages not covered by one-shot pre-pass | Medium (SMARTS) |
 | 7 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
 | 8 | Dual CE input (ACE + NCE, no conversion) | Medium — eliminates 0.779-correlation noise for QTOF | Low–Medium (small arch change) |
 | 9 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
@@ -411,7 +412,52 @@ This is purely structure-derived and works identically at training and inference
 Implementation: `compute_frags.pyx` — replace the flat bond list with a priority-sorted
 list before the BFS depth loop.
 
-#### Step 3 — Ring-contraction strategy for polycyclics
+#### Step 3 — One-shot 2-bond ring cleavage pre-pass
+
+**Root cause:** Breaking one bond in a fused ring never disconnects the molecule (the ring
+closure provides an alternative path), so `connected_components` always returns `num_ccs=1`
+and no new DAG node is created.  For naphthalene at depth 1: all 11 bond masks produce the
+same atom set — **zero new fragments**.  Meaningful ring products only appear at depth 2+,
+which is where timeout hits polycyclics.
+
+**Fix:** Before the main BFS depth loop in `compute_frags.pyx`, run a pre-pass that
+enumerates all **pairs of ring bonds** whose *simultaneous* removal disconnects the molecule
+(`num_ccs == 2`), and inserts the resulting child fragments as synthetic **depth-1** nodes.
+
+```python
+# pre-pass (Python-side, runs once per molecule, before compute_ccs)
+ring_bond_ids = [i for i, b in enumerate(mol.GetBonds()) if b.IsInRing()]
+for i, j in combinations(ring_bond_ids, 2):
+    edge_mask[i] = 0; edge_mask[j] = 0
+    cc_nodes, cc_edges, num_ccs = connected_components(...)
+    edge_mask[i] = 1; edge_mask[j] = 1
+    if num_ccs == 2:
+        inject both children into depth-1 frontier of compute_ccs
+```
+
+This directly models **retro-Diels-Alder** (RDA), fused-ring junction cleavage, and
+lactone ring opening — all 2-bond events that currently require sequential depth-2+ BFS.
+
+**Depth savings per class:**
+
+| Molecule | Current first ring fragment depth | With one-shot |
+|---|---|---|
+| Naphthalene (2 fused rings) | Depth 2 | Depth 1 |
+| Anthracene (3 fused rings) | Depth 2–3 (often timeout) | Depth 1 |
+| Steroid A-ring RDA | Depth 4+ (timeout) | Depth 1 |
+| Coumarin lactone + benzene | Depth 3–4 | Depth 1 |
+
+**Complexity:** `O(R²)` at the root only, where R = number of ring bonds.  For a steroid
+with ~20 ring bonds, that's ≤ 190 connectivity checks — negligible vs. the current BFS.
+
+**Implementation notes:**
+- `ring_bond_mask` (bool array per bond) computed in `extract_mol_info` from
+  `bond.IsInRing()` and passed into `compute_dags` / `compute_ccs`.
+- Injected children enter `ccs` with `depth = 1` and participate in the normal BFS from
+  depth 2 onward — no changes to the BFS core logic.
+- Inference-safe: ring membership is structure-only, no spectrum needed.
+
+#### Step 4 — Ring-contraction strategy for polycyclics
 
 For molecules with ≥ 3 fused rings, add an optional fragmentation pass that treats each
 fused ring system as an atomic unit (does not break internal ring bonds at depth 1).
@@ -419,7 +465,7 @@ This dramatically reduces the BFS branching factor while still enumerating all f
 that result from breaking bonds at ring junctions or on external chains.  Inference-safe:
 ring system detection is structure-only.
 
-#### Step 4 — Expose `force_stopped` and `dag_num_nodes` as model inputs
+#### Step 5 — Expose `force_stopped` and `dag_num_nodes` as model inputs
 
 ```python
 mol_features = concat([existing_features, log(dag_num_nodes + 1), force_stopped_flag])
@@ -428,13 +474,13 @@ mol_features = concat([existing_features, log(dag_num_nodes + 1), force_stopped_
 The model learns to adjust confidence when it knows the DAG is incomplete.  Both values
 are computed at preprocessing time and available at inference.
 
-#### Step 5 — Neutral loss representation for high-MW molecules
+#### Step 6 — Neutral loss representation for high-MW molecules
 
 For molecules above a MW threshold, represent DAG edges as neutral losses (Δformula from
 parent) rather than absolute fragment formulas.  Neutral losses are more structurally
 specific than absolute formulas at high MW and reduce formula-redundancy noise.
 
-#### Step 6 — 128-atom hard limit audit
+#### Step 7 — 128-atom hard limit audit
 
 Check what fraction of training/test molecules hit the `MAX_NUM_NODES=128` assertion in
 `compute_frags.pyx`.  If non-trivial, extend the limit and reprocess.
@@ -471,8 +517,8 @@ Run the `force_stopped` audit (§4 Step 1) first, then apply:
 
 | `force_stopped` rate | `wrecall` | Cos\_sim | Chemistry | Root cause | Fix |
 |---|---|---|---|---|---|
-| High (>30%) | Low | Low | Any | DAG truncation | Prioritized BFS (§4 Step 2), ring-contraction (§4 Step 3) |
-| Low | Low | Low | Fused rings, steroids | Missing complex pathways | Explicit multi-bond/rearrangement rules |
+| High (>30%) | Low | Low | Any | DAG truncation | Prioritized BFS (§4 Step 2), one-shot ring cleavage (§4 Step 3), ring-contraction (§4 Step 4) |
+| Low | Low | Low | Fused rings, steroids | Missing 2-bond ring cleavages (RDA etc.) | One-shot pre-pass (§4 Step 3) + explicit SMARTS rules |
 | Low | High | Low | RDA / ring-strain | Intensity misprediction | Focal loss (§1 Step 3), bond-priority BFS |
 | Low | High | Low | No special chemistry | Data imbalance | Focal loss + more training data |
 
@@ -502,7 +548,10 @@ The prioritized BFS (§4 Step 2) addresses both truncation and intensity mispred
   get shallower depth features, and training will associate those features with higher
   predicted intensity if the real spectra confirm it
 
-However, for classes with low `wrecall` (steroids, coumarins, indoles), we must also add **explicit fragmentation rules** for complex rearrangements and multi-bond cleavages.
+For classes with low `wrecall` (steroids, coumarins, indoles), the **one-shot 2-bond ring
+cleavage pre-pass (§4 Step 3)** is the primary fix — it injects RDA and fused-ring cleavage
+products at depth 1 without requiring any SMARTS patterns.  For rare 3-bond cleavages not
+covered by the pre-pass, explicit SMARTS rules remain the fallback.
 
 Specific SMARTS patterns to detect and upweight (or apply explicit rules) for problem classes:
 
