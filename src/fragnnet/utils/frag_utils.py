@@ -1420,42 +1420,31 @@ def timed_get_dags(
     save_dag=True,
     
 ) -> dict:
-    need_compute = True
-    if not need_compute:
-        assert save_dag
-        try:
-            dag_d = load_frag_d(mol_id, output_dir, compressed)
-        except Exception as e:
-            print(e, "cache is not usable")
-            need_compute = True
-    if need_compute:
-        dag_d = {}
-        try:
-            mol_d = extract_mol_info(mol)
-            # this maybe dangers in multi processing because of scopes
-            dag_d = compute_dags(
-                mol_d,
-                max_depth,
-                h_prior,
-                max_h_transfer,
-                max_time,
-                isotopes,
-                nb_isomorphic,
-                # False, b_isomorphic, this not used
-                wl_max_iterations,
-            )
-            return mol_id, dag_d
-        except KeyboardInterrupt as e:
-            # let these through
-            raise e
-        except Exception as e:
-            # don't retry, theres a bug
-            if type(mol) is not str:
-                mol = Chem.MolToSmiles(mol)
-            print(
-                f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}", file=sys.stderr
-            )
-            print("> Traceback", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            dag_d = {}
-    return mol_id,{}
+    try:
+        mol_d = extract_mol_info(mol)
+        # this maybe dangers in multi processing because of scopes
+        dag_d = compute_dags(
+            mol_d,
+            max_depth,
+            h_prior,
+            max_h_transfer,
+            max_time,
+            isotopes,
+            nb_isomorphic,
+            # False, b_isomorphic, this not used
+            wl_max_iterations,
+        )
+        return mol_id, dag_d
+    except KeyboardInterrupt as e:
+        # let these through
+        raise e
+    except Exception as e:
+        # don't retry, theres a bug
+        if type(mol) is not str:
+            mol = Chem.MolToSmiles(mol)
+        print(
+            f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}", file=sys.stderr
+        )
+        print("> Traceback", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+    return mol_id, {}

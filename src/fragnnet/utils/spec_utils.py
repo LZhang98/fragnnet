@@ -14,7 +14,49 @@ from fragnnet.utils.misc_utils import (
     scatter_reduce,
     th_setdiff1d,
 )
-from torch_linear_assignment import batch_linear_assignment, assignment_to_indices
+try:
+    from torch_linear_assignment import assignment_to_indices, batch_linear_assignment
+
+    def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
+        """Solve a batched linear assignment problem, maximizing total score.
+
+        Args:
+            batch_score: Score matrix of shape (batch, rows, cols).
+
+        Returns:
+            Tuple of (row_ind, col_ind) tensors of shape (batch, K) where
+            K = min(rows, cols), giving the optimal assignment indices.
+        """
+        assignment = batch_linear_assignment(-batch_score)
+        return assignment_to_indices(assignment)
+
+except ImportError:
+    import logging
+
+    logging.getLogger(__name__).warning(
+        "torch_linear_assignment not found; falling back to scipy.optimize.linear_sum_assignment (slower, CPU-only)"
+    )
+
+    def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
+        """Solve a batched linear assignment problem, maximizing total score.
+
+        Args:
+            batch_score: Score matrix of shape (batch, rows, cols).
+
+        Returns:
+            Tuple of (row_ind, col_ind) tensors of shape (batch, K) where
+            K = min(rows, cols), giving the optimal assignment indices.
+        """
+        device = batch_score.device
+        scores_np = batch_score.detach().cpu().numpy()
+        row_inds, col_inds = [], []
+        for b in range(scores_np.shape[0]):
+            r, c = scipy.optimize.linear_sum_assignment(scores_np[b], maximize=True)
+            row_inds.append(r)
+            col_inds.append(c)
+        row_ind = th.tensor(np.stack(row_inds), device=device)
+        col_ind = th.tensor(np.stack(col_inds), device=device)
+        return row_ind, col_ind
 
 # rough approximations from NIST20 Orbitrap/FT MS
 # NCE_MEAN = 60.
@@ -322,9 +364,7 @@ def batched_bin_func(
     """
 
     if mzs.shape[0] == 0:
-        import pdb
-
-        pdb.set_trace()
+        raise ValueError("batched_bin_func received empty mzs tensor")
     assert th.max(mzs) < mz_max, (th.max(mzs), mz_max)
     batch_size = th.max(batch_idxs) + 1
     bins = th.arange(
@@ -929,10 +969,7 @@ def batch_cos_hun_helper(
     #b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
     #    b_true_ints[b_true_match_mask].unsqueeze(1) * b_pred_ints[b_pred_match_mask].unsqueeze(0)
     #)
-    assignment=batch_linear_assignment(-batch_score)
-    row_ind, col_ind=assignment_to_indices(assignment) # maxmize
-    #b_true_idxs, b_pred_idxs = scipy_linear_sum_assignment(b_score, maximize=True)
-    
+    row_ind, col_ind = _solve_batch_assignment(batch_score)
     return (batch_score[batch_idx, row_ind, col_ind]).sum(-1) # sum for cosine
 
 
@@ -971,8 +1008,7 @@ def batch_jss_hun_helper(
     assert sub_mask.shape==sub_score.shape, f"{sub_mask.shape} {sub_score.shape}"
     # done
     batch_score = sub_mask.float()*sub_score
-    assignment=batch_linear_assignment(-batch_score)
-    row_ind, col_ind=assignment_to_indices(assignment) # maxmize
+    row_ind, col_ind = _solve_batch_assignment(batch_score)
     # map ind to ori ind
     raw_row_ind=true_batch_pos_idx[batch_idx, row_ind]
     raw_col_ind=pred_batch_pos_idx[batch_idx, col_ind]
@@ -1028,9 +1064,6 @@ def cos_hun_helper(
     b_pred_prec_mask,
 ):
     if remove_prec_peak:
-        import pdb
-
-        pdb.set_trace()
         b_true_ints = b_true_ints * (1 - b_true_prec_mask.float())
         b_pred_ints = b_pred_ints * (1 - b_pred_prec_mask.float())
     b_true_ints = F.normalize(b_true_ints, p=2, dim=0)

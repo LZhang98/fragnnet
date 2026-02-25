@@ -380,7 +380,7 @@ def main(args):
         else:
             stats_iter = tqdm(
                 spectra_input_rows,
-                desc=pformat(compute_spectra_stats),
+                desc="Computing spectra stats",
                 total=len(spectra_input_rows),
             )
         # run stats

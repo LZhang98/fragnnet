@@ -30,6 +30,7 @@ from fragnnet.utils.script_utils import (
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 import h5py
 import numpy as np
+
 def get_args():
     # Set up command line argument parser
     parser = argparse.ArgumentParser(description="Run FragGNN inference evaluation with metrics")
@@ -126,7 +127,7 @@ def get_args():
     )
     parser.add_argument(
         "--output_everything",
-        type=bool,
+        type=booltype,
         default=False,
         help="Output all available metrics and predictions",
     )

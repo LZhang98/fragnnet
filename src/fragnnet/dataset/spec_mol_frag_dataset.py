@@ -18,7 +18,6 @@ from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, load_frag_d
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
 import lmdb
 import pickle
-import builtins
 logger = logging.getLogger(__name__)
 
 
@@ -122,7 +121,6 @@ class SpecMolFragDataset(SpecMolDataset):
                 self.mol_df["mol_id"].values, desc="> preload frag", total=len(self.mol_df)
             ):
                 frag_entry =pickle.loads(bytes(self.txn.get(f"{mol_id:08d}".encode())))#load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
-                assert slice is builtins.slice, mol_id
                 total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
                 self.frag_entries[mol_id] = frag_entry
             logger.info(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")
@@ -154,8 +152,7 @@ class SpecMolFragDataset(SpecMolDataset):
         Returns:
             Dictionary containing spectral, molecular, and fragmentation data.
         """
-        assert isinstance(idx, int),idx
-        assert slice is builtins.slice, idx
+        assert isinstance(idx, int), idx
         spec_entry = self.spec_df.iloc[idx]
         mol_id = spec_entry["mol_id"]
         mol_entry = self.mol_df.loc[mol_id]
@@ -228,7 +225,6 @@ class SpecMolFragDataset(SpecMolDataset):
         v=self.txn.get(f"{mol_id:08d}".encode())
         assert v is not None, mol_id
         frag_entry =pickle.loads(bytes(v))
-        assert slice is builtins.slice, mol_id # for debug
         return frag_entry
 
     def _process_neutral_frag(self, frag_entry: dict) -> dict:

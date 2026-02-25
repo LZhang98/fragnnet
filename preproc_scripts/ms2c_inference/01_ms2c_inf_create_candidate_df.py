@@ -50,7 +50,7 @@ def load_candidates_dict(json_file: str, logger: logging.Logger) -> dict[str, li
 
 
 def load_split(path):
-    splits = os.listdir(path)
+    splits = [s for s in os.listdir(path) if s.startswith("cv") and os.path.isdir(os.path.join(path, s))]
     splits = sorted(splits, key=lambda x: int(x.replace("cv", "")))
     print("splits founded:", splits)
     ret_ids = []
@@ -136,7 +136,7 @@ def build_mol_df(
     logger.info(f"Candidate num is {len(all_candidate_smis)}")
     map_smi_to_mol_id = {}
     all_candidate_feats = Pool(proc_num).map(get_mol_feat, all_candidate_smis)
-    num_failed = [_ for _ in all_candidate_feats if _ is None]
+    num_failed = sum(1 for _ in all_candidate_feats if _ is None)
     logger.info(f"{num_failed} failed in {len(all_candidate_feats)} in mol")
     mol_records = []
     for save_e in all_candidate_feats:
@@ -177,11 +177,6 @@ def build_candidate_df(
             continue
         candidate_smiles_list = candidates_dict[query_smiles]
         assert len(candidate_smiles_list) == len(set(candidate_smiles_list))
-        if not isinstance(candidate_smiles_list, list):
-            raise ValueError(f"Expected list of candidates for {query_smiles}")
-        if query_smiles not in mol_smiles_to_id:
-            raise ValueError(
-                f"Query SMILES not found in mol_df: {query_smiles}")
 
         query_mol_id = mol_smiles_to_id[query_smiles]
         query_spec_rows = spec_df[spec_df["mol_id"] == query_mol_id]
@@ -229,7 +224,7 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
         Example:
-            python create_candidate_set.py --json_file candidates.json
+            python create_candidate_df.py --json_file candidates.json
         """,
     )
 

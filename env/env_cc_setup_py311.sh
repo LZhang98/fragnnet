@@ -25,8 +25,10 @@ pip install --no-index \
   dgl==2.1.0 \
   omegaconf \
   cython==3.0.12 \
+  pandarallel==1.6.5 \
+  lmdb==1.7.5 \
   h5py
 
-pip install pyteomics
+pip install pyteomics torch-linear-assignment
 
 pip install --no-deps -I -e .

@@ -188,8 +188,11 @@ class BaseDataset(Dataset):
             test_split_fp = os.path.join(split_dp, "test_ids.csv")
             test_split_df = pd.read_csv(test_split_fp)
             orig_test_spec_df = spec_df[spec_df["spec_id"].isin(test_split_df["spec_id"])]
+            test_ces_set = set(spec_params["test_ces"])
             test_drop_ids = orig_test_spec_df[
-                ~(orig_test_spec_df[ce_key].isin(np.array(spec_params["test_ces"])))
+                ~orig_test_spec_df[ce_key].apply(
+                    lambda ce_list: any(ce in test_ces_set for ce in ce_list)
+                )
             ][["spec_id", "group_id"]]
             spec_df = spec_df[~(spec_df["spec_id"].isin(test_drop_ids["spec_id"]))]
             new_test_spec_df = spec_df[spec_df["spec_id"].isin(test_split_df["spec_id"])]

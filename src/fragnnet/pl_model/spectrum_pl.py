@@ -7,6 +7,7 @@ It is intended to be subclassed for specific model architectures and tasks.
 """
 
 import inspect
+import warnings
 from typing import Any
 
 import lightning as L
@@ -283,6 +284,7 @@ class SpectrumPL(L.LightningModule):
                         self.metric_bests.append(fname)
                         self.auxiliary_metric_names.add(fname)
                 compute_rounded_match_mzs = True
+                compute_match_mzs = True
             elif metric_name == "jss_hun":
                 for remove_prec_peak in hun_remove_prec_peak_flags:
                     for sqrt in hun_sqrt_flags:
@@ -384,9 +386,6 @@ class SpectrumPL(L.LightningModule):
                                 remove_prec_peaks=remove_prec_peak,
                                 prec_mzs=true_prec_mzs,
                             )
-                            true_ints = scatter_l1normalize(
-                                ints_transform(true_ints), true_batch_idxs
-                            )
                             pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
                                 pred_mzs,
                                 pred_ints,
@@ -397,9 +396,6 @@ class SpectrumPL(L.LightningModule):
                                 sparse=True,
                                 remove_prec_peaks=remove_prec_peak,
                                 prec_mzs=true_prec_mzs,
-                            )
-                            pred_ints = scatter_l1normalize(
-                                ints_transform(pred_ints), pred_batch_idxs
                             )
                             if "cos_sim" in self.hparams.auxiliary_scores:
                                 fname_base = "cos_sim"
@@ -465,18 +461,19 @@ class SpectrumPL(L.LightningModule):
             # local calculations
             pred_split_fn=get_split_fn(pred_batch_idxs)
             true_split_fn=get_split_fn(true_batch_idxs)
-            true_r_split_fn=get_split_fn(true_batch_idxs_r)
-            pred_r_split_fn=get_split_fn(pred_batch_idxs_r)
 
             split_true_mzs=true_split_fn(true_mzs)
             split_pred_mzs=pred_split_fn(pred_mzs)
             split_true_ints=true_split_fn(true_ints)
             split_pred_ints=pred_split_fn(pred_ints)
 
-            true_mzs_r_split=true_r_split_fn(true_mzs_r)
-            true_ints_r_split=true_r_split_fn(true_ints_r)
-            pred_mzs_r_split=pred_r_split_fn(pred_mzs_r)
-            pred_ints_r_split=pred_r_split_fn(pred_ints_r)
+            if compute_rounded_match_mzs:
+                true_r_split_fn=get_split_fn(true_batch_idxs_r)
+                pred_r_split_fn=get_split_fn(pred_batch_idxs_r)
+                true_mzs_r_split=true_r_split_fn(true_mzs_r)
+                true_ints_r_split=true_r_split_fn(true_ints_r)
+                pred_mzs_r_split=pred_r_split_fn(pred_mzs_r)
+                pred_ints_r_split=pred_r_split_fn(pred_ints_r)
             if compute_match_mzs:
                 batch_true_mzs=list_to_batch_tensor(split_true_mzs, pad=float("inf"))
                 batch_pred_mzs=list_to_batch_tensor(split_pred_mzs, pad=float("inf"))
@@ -517,10 +514,11 @@ class SpectrumPL(L.LightningModule):
 
             # calculate batched cosine and batched jss
             batched_metric={}
-            batched_true_ints_r=list_to_batch_tensor(true_ints_r_split, pad=0)
-            batched_pred_ints_r=list_to_batch_tensor(pred_ints_r_split, pad=0)
-            sqrt_batched_true_ints_r=get_ints_transform_func("sqrt")(batched_true_ints_r)
-            sqrt_batched_pred_ints_r=get_ints_transform_func("sqrt")(batched_pred_ints_r)
+            if compute_rounded_match_mzs:
+                batched_true_ints_r=list_to_batch_tensor(true_ints_r_split, pad=0)
+                batched_pred_ints_r=list_to_batch_tensor(pred_ints_r_split, pad=0)
+                sqrt_batched_true_ints_r=get_ints_transform_func("sqrt")(batched_true_ints_r)
+                sqrt_batched_pred_ints_r=get_ints_transform_func("sqrt")(batched_pred_ints_r)
             if "cos_hun" in self.hparams.auxiliary_scores:
                 for remove_prec_peak in hun_remove_prec_peak_flags:
                     for sqrt in hun_sqrt_flags:
@@ -1137,7 +1135,7 @@ class SpectrumPL(L.LightningModule):
         This will assume that the batch contains ground truth spectra.
         """
         if self.training:
-            Warning("Model is in training mode")
+            warnings.warn("Model is in training mode")
         batch_results = self._common_step(batch, split=split, log=False)
 
         return batch_results
@@ -1148,7 +1146,7 @@ class SpectrumPL(L.LightningModule):
         This will assume that the model is in eval mode, but will not switch modes.
         """
         if self.training:
-            Warning("Model is in training mode")
+            warnings.warn("Model is in training mode")
 
         # forward pass and get predictions
         pred_d = self.forward(**batch)

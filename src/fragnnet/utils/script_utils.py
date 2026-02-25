@@ -64,6 +64,7 @@ def init_wandb_ckpt(
                     if best_ckpt_wandb_fp is None or epoch > best_epoch:
                         best_ckpt_wandb_fp = ckpt_wandb_fp
                         best_epoch = epoch
+            ckpt_wandb_fp = best_ckpt_wandb_fp
         assert ckpt_wandb_fp is not None
         ckpt_file_local = run.file(ckpt_wandb_fp).download(root=temp_dp, replace=False)
         ckpt_fp = ckpt_file_local.name
@@ -296,11 +297,10 @@ def init_model_from_ckpt(
     ckpt = th.load(ckpt_fp, map_location=map_location, weights_only=False)
 
     # Handle compiled checkpoints
-    # print(">> Checking for compiled checkpoint...")
-    # if config_d.get('compile', False):
-    print("> Checkpoint was compiled, decompiling...")
-    ckpt = decompile_jit_ckpt(ckpt)
-    config_d["compile"] = False
+    if config_d.get("compile", False):
+        print("> Checkpoint was compiled, decompiling...")
+        ckpt = decompile_jit_ckpt(ckpt)
+        config_d["compile"] = False
     # Get model class and initialize
     model_type = config_d["model_type"]
     print(f">> Model type: {model_type}")
@@ -1125,7 +1125,7 @@ def run_inference_hdf5(
                 if k not in preds_l:
                     preds_l[k]=[]
                 preds_l[k].extend(v)
-            if len(preds_l[k])>=chunk_size or num_pred==num_batch:
+            if len(preds_l["pred_mzs"])>=chunk_size or num_pred==num_batch:
                 print("saving ...", start_point)
                 for k in preds_l.keys(): 
                     if k not in sequential_name:
@@ -1141,6 +1141,8 @@ def run_inference_hdf5(
         
                 save_length=None
                 for k in sequential_name:
+                    if k not in preds_l:
+                        continue
                     save_v=th.cat(preds_l[k], 0).numpy()
                     if save_length is None:
                         save_length=len(save_v)
@@ -1286,7 +1288,7 @@ def process_batch_to_tabular_row(
     # Extract string/graph data before moving to device (if they are not tensors)
     frag_formula_str = batch_input.get("frag_formula_str")
     frag_pyg = batch_input.get("frag_pyg")
-    batch_input.get("mol_pyg").mol_ids=mol_ids
+    batch_input["mol_pyg"].mol_ids=mol_ids
 
     batch_input = to_device(batch_input, device)
     # use existing evaluate to compute cos sim and etc
