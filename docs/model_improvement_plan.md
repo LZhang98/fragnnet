@@ -64,11 +64,12 @@ conditioning signals are architecture gaps that gate the FT/CID and QTOF improve
 | 3 | QTOF/CID upweighting in sampler | High — sampler may not weight by inst/frag\_mode | Low |
 | 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
 | 5 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes 0.276, AR=0.81 vs GrAFF 0.95 | Medium (Cython) |
-| 6 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
-| 7 | Dual CE input (ACE + NCE, no conversion) | Medium — eliminates 0.779-correlation noise for QTOF | Low–Medium (small arch change) |
-| 8 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
-| 9 | **Model ensembling** | +4% cos\_hun, no arch change needed | Very low (multi-seed inference) |
-| 10 | OOS calibration per stratum | Confidence filter for downstream use | Very low (query) |
+| 6 | **Explicit fragmentation rules for fused rings/steroids** | High — fixes low `wrecall` for steroids, coumarins, indoles | Medium (Cython/SMARTS) |
+| 7 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
+| 8 | Dual CE input (ACE + NCE, no conversion) | Medium — eliminates 0.779-correlation noise for QTOF | Low–Medium (small arch change) |
+| 9 | MoNA FT-only gap check | Low — 2-line diagnostic | Very low (query) |
+| 10 | **Model ensembling** | +4% cos\_hun, no arch change needed | Very low (multi-seed inference) |
+| 11 | OOS calibration per stratum | Confidence filter for downstream use | Very low (query) |
 
 ---
 
@@ -442,30 +443,38 @@ Check what fraction of training/test molecules hit the `MAX_NUM_NODES=128` asser
 
 ## 5. Chemical Class Fragmentation Failures
 
+### New Finding: DAG Coverage Gaps for Fused Rings and Steroids
+
+Recent explainability analysis (`predictions_frag_explainability.ipynb`) using the `wrecall_0.01_h1` metric (fraction of spectral intensity explainable by DAG formulas) reveals severe coverage gaps for specific chemical classes:
+
+**High Explainability (DAG works well):**
+- Nitrogen-containing heterocycles: `azoles` (0.698), `pyrrolopyridines` (0.659), `diazines` (0.612)
+- Lipids: `prenol lipids` (0.571), `fatty acyls` (0.568)
+
+**Low Explainability (DAG is missing crucial fragments):**
+- Fused Ring Systems: `coumarins and derivatives` (0.358), `diazanaphthalenes` (0.376), `indoles and derivatives` (0.421)
+- Steroids: `steroids and steroid derivatives` (0.416) — highly significant due to large class size (n=112 in top 20).
+
+**Conclusion:** The DAG generation algorithm struggles heavily with **polycyclic/fused-ring structures**. Breaking a single bond in a fused ring doesn't split the molecule; it requires multiple coordinated bond breaks or complex rearrangements (e.g., retro-Diels-Alder, water losses, multi-bond ring cleavages) that simple bond-breaking rules fail to capture within the depth/timeout limits.
+
 ### Revised Understanding of RDA and Rearrangements
 
-RDA and other rearrangement products are **not missing from the DAG**.  For a 6-membered
-ring RDA (e.g. flavonoid C-ring), breaking two bonds sequentially reaches the same product
-masses at depth ≤ 2, well within `max_depth=4`.  The fragment *masses* are present.
+While some simple RDA products (e.g., in flavonoids) might be reachable within `max_depth=4` by breaking two bonds sequentially, the low `wrecall` for steroids and coumarins proves that **many complex rearrangement products are indeed missing from the DAG**. 
 
-The actual problem is **intensity misprediction**: among many competing depth-2 fragments
-that share the same formula, the model hasn't learned to assign high intensity to the
-specific fragments that correspond to preferred fragmentation pathways (RDA, benzyl-ether
-cleavage, isoprene loss).  This is a training signal problem, not a graph coverage problem.
+For classes where the masses *are* present (high `wrecall` but low `cos_sim`), the problem is **intensity misprediction**: the model hasn't learned to assign high intensity to the specific fragments corresponding to preferred pathways.
 
-Consequence: explicit rearrangement rules in the fragmentation algorithm are **not
-needed** for mass coverage.  They may still help by surfacing RDA fragments earlier in the
-BFS so they receive better graph attention, but this is a secondary concern.
+Consequence: We **do** need explicit fragmentation rules for ring-opening events, complex rearrangements, or multi-bond cleavages characteristic of steroids and fused heterocycles to improve mass coverage. For other classes, surfacing these fragments earlier in the BFS helps them receive better graph attention.
 
 ### Diagnosis Decision Tree
 
 Run the `force_stopped` audit (§4 Step 1) first, then apply:
 
-| `force_stopped` rate | Cos\_sim | Chemistry | Root cause | Fix |
-|---|---|---|---|---|
-| High (>30%) | Low | Any | DAG truncation | Prioritized BFS (§4 Step 2), ring-contraction (§4 Step 3) |
-| Low | Low | RDA / ring-strain | Intensity misprediction | Focal loss (§1 Step 3), bond-priority BFS |
-| Low | Low | No special chemistry | Data imbalance | Focal loss + more training data |
+| `force_stopped` rate | `wrecall` | Cos\_sim | Chemistry | Root cause | Fix |
+|---|---|---|---|---|---|
+| High (>30%) | Low | Low | Any | DAG truncation | Prioritized BFS (§4 Step 2), ring-contraction (§4 Step 3) |
+| Low | Low | Low | Fused rings, steroids | Missing complex pathways | Explicit multi-bond/rearrangement rules |
+| Low | High | Low | RDA / ring-strain | Intensity misprediction | Focal loss (§1 Step 3), bond-priority BFS |
+| Low | High | Low | No special chemistry | Data imbalance | Focal loss + more training data |
 
 ### Classes and Their Expected Root Cause
 
@@ -477,13 +486,15 @@ Run the `force_stopped` audit (§4 Step 1) first, then apply:
 | Lactones | 0.416 | -0.281 | Intensity misprediction — ring-strain cleavage not prioritised |
 | 2-arylbenzofuran flavonoids | 0.360 | -0.318 | Intensity misprediction — benzofuran + RDA pattern |
 | Benzopyrans | 0.511 | -0.221 | Intensity misprediction — RDA masses present, weights wrong |
-| Steroids | 0.595 | -0.152 | Mixed — DAG truncation + intensity misprediction |
+| Steroids | 0.595 | -0.152 | Missing complex pathways (low `wrecall`) + DAG truncation |
+| Coumarins | 0.358 | — | Missing complex pathways (low `wrecall`) |
+| Indoles | 0.421 | — | Missing complex pathways (low `wrecall`) |
 | Prenol lipids | 0.634 | -0.127 | Intensity misprediction — isoprene junctions not prioritised |
 | Lignans / neolignans | 0.537 | — | Intensity misprediction — benzyl-ether cleavage not prioritised |
 | **Stilbenes** | **0.619** | — | Intensity misprediction — trans/cis stilbene retro-Diels-Alder |
-| **Hydrocarbon derivatives** (superclass) | **0.428** | — | DAG priority failure — few heteroatom anchors, BFS gains little structural signal |
+| **Hydrocarbon derivatives** | **0.428** | — | DAG priority failure — few heteroatom anchors, BFS gains little structural signal |
 
-### Bond-Priority BFS as the Unified Fix
+### Bond-Priority BFS and Explicit Rules as the Unified Fix
 
 The prioritized BFS (§4 Step 2) addresses both truncation and intensity misprediction:
 - Truncation: chemically meaningful fragments are enumerated before timeout
@@ -491,15 +502,19 @@ The prioritized BFS (§4 Step 2) addresses both truncation and intensity mispred
   get shallower depth features, and training will associate those features with higher
   predicted intensity if the real spectra confirm it
 
-Specific SMARTS patterns to detect and upweight for intensity misprediction classes:
+However, for classes with low `wrecall` (steroids, coumarins, indoles), we must also add **explicit fragmentation rules** for complex rearrangements and multi-bond cleavages.
 
-| Class | High-priority bond pattern |
+Specific SMARTS patterns to detect and upweight (or apply explicit rules) for problem classes:
+
+| Class | High-priority bond pattern / Explicit Rule |
 |---|---|
 | Benzopyrans / flavonoids | C-ring junction bonds: `[c,C]-[O,C]` in 6-membered O-rings |
 | Lactones | Ester C–O bond: `[C](=O)-O-[C]` |
 | Furans | α-bond to furan oxygen: `[c]-[O]-[c]` ring bond |
 | Prenol lipids | Isoprene junction: `[C](=C)-[C]-[C]=C` |
 | Lignans | Benzyl-ether: `[c]-[CH2]-O` |
+| Steroids | Explicit rules for retro-Diels-Alder, water losses, and multi-bond ring cleavages |
+| Coumarins / Indoles | Explicit rules for fused-ring opening events |
 
 ---
 
@@ -525,6 +540,7 @@ These are quick queries that gate decisions in §1–§6:
 |---|---|---|
 | `force_stopped` audit | `df_audit.groupby('klass')[['force_stopped','dag_num_nodes','cos_sim_0.01']].agg(...)` | §4 Steps 2–3, §5 root cause |
 | Formula recall (AR) per class | Run `test_fraggnn_formula.py` loop over all groups, group AR by `klass` | §4 target (AR>0.90), §5 root cause |
+| `wrecall_0.01_h1` per class | `frag_cf.groupby('klass')['wrecall_0.01_h1'].median()` | §5 explicit rules for fused rings |
 | MoNA FT-only check | `df[(df.dset=='mona23')&(df.inst_type=='FT')].cos_sim_0.01.median()` | §6 action |
 | ACE→NCE residual per instrument | `both.groupby('inst_type').apply(lambda g: (g.nce - g.nce_converted).abs().median())` | §3 Step 1 |
 | Current sampler weighting | `grep -rn "dynamic_sampler\|WeightedRandom" src/fragnnet/` | §1 Step 1 |
