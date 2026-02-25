@@ -1100,10 +1100,11 @@ def run_inference_hdf5(
     start_point=0
     with h5py.File(save_path, 'w') as save_file:
         def resize_and_save(k, save_v, start_point):
+            if k not in save_file:
+                save_file.create_dataset(k, shape=(0, ), dtype=save_v.dtype, maxshape=(None,),) # important to avoid bug in large number
             save_file[k].resize(start_point+len(save_v), axis=0)
             save_file[k][start_point:start_point+len(save_v)] = save_v
-        for k in columns_name:
-            save_file.create_dataset(k, shape=(0, ), dtype='float32', maxshape=(None,),)
+            
         save_file.create_dataset("start_points", shape=(0, ), dtype='int', maxshape=(None,),)
         save_file.create_dataset("end_points", shape=(0, ), dtype='int', maxshape=(None,),)
         for batch_rows in run_inference_tabular_iter(

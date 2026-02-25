@@ -12,7 +12,7 @@ from collections.abc import Iterator
 
 import torch as th
 from torch.utils.data import BatchSampler, Sampler, WeightedRandomSampler
-
+from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 #####################################################
@@ -102,10 +102,13 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
             f"[SpecMolFragDynamicBatchSampler] Pre-loading metadata for {len(self.data_source)} samples..."
         )
 
-        for dataset_idx in range(len(self.data_source)):
-            data = self.data_source[dataset_idx]
-            # Cache as compact tuple (num_nodes, num_edges)
-            self._data_meta.append((data["frag_pyg"].num_nodes, data["frag_pyg"].num_edges))
+        for dataset_idx in tqdm(range(len(self.data_source))):
+            if hasattr(self.data_source, "precom_meta_info"):
+                self._data_meta.append(self.data_source.precom_meta_info[dataset_idx])
+            else:
+                data = self.data_source[dataset_idx]
+                # Cache as compact tuple (num_nodes, num_edges)
+                self._data_meta.append((data["frag_pyg"].num_nodes, data["frag_pyg"].num_edges))
 
             # Quick lookup using limited_by index (0=nodes, 1=edges)
             limited_by_idx = 0 if self._limited_by == "frag_node" else 1
@@ -171,7 +174,7 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
         batch_filled = False
 
         # Fill batch
-        for idx in indices:
+        for idx in tqdm(indices):
             idx_item = idx.item()
             # Direct tuple indexing (faster than dict access)
             n = self._data_meta[idx_item][limited_by_idx]
