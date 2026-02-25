@@ -1105,8 +1105,8 @@ def run_inference_hdf5(
             save_file[k].resize(start_point+len(save_v), axis=0)
             save_file[k][start_point:start_point+len(save_v)] = save_v
             
-        save_file.create_dataset("start_points", shape=(0, ), dtype='int', maxshape=(None,),)
-        save_file.create_dataset("end_points", shape=(0, ), dtype='int', maxshape=(None,),)
+        save_file.create_dataset("start_points", shape=(0, ), dtype=np.int64, maxshape=(None,),)
+        save_file.create_dataset("end_points", shape=(0, ), dtype=np.int64, maxshape=(None,),)
         for batch_rows in run_inference_tabular_iter(
             model=model,
             dataloader=dataloader,
