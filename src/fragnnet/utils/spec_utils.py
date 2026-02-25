@@ -3,7 +3,6 @@ import scipy
 import scipy.optimize
 import torch as th
 import torch.nn.functional as F
-
 from fragnnet.utils.misc_utils import (
     EPS,
     TOLERANCE_MIN_MZ,
@@ -15,6 +14,49 @@ from fragnnet.utils.misc_utils import (
     scatter_reduce,
     th_setdiff1d,
 )
+try:
+    from torch_linear_assignment import assignment_to_indices, batch_linear_assignment
+
+    def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
+        """Solve a batched linear assignment problem, maximizing total score.
+
+        Args:
+            batch_score: Score matrix of shape (batch, rows, cols).
+
+        Returns:
+            Tuple of (row_ind, col_ind) tensors of shape (batch, K) where
+            K = min(rows, cols), giving the optimal assignment indices.
+        """
+        assignment = batch_linear_assignment(-batch_score)
+        return assignment_to_indices(assignment)
+
+except ImportError:
+    import logging
+
+    logging.getLogger(__name__).warning(
+        "torch_linear_assignment not found; falling back to scipy.optimize.linear_sum_assignment (slower, CPU-only)"
+    )
+
+    def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
+        """Solve a batched linear assignment problem, maximizing total score.
+
+        Args:
+            batch_score: Score matrix of shape (batch, rows, cols).
+
+        Returns:
+            Tuple of (row_ind, col_ind) tensors of shape (batch, K) where
+            K = min(rows, cols), giving the optimal assignment indices.
+        """
+        device = batch_score.device
+        scores_np = batch_score.detach().cpu().numpy()
+        row_inds, col_inds = [], []
+        for b in range(scores_np.shape[0]):
+            r, c = scipy.optimize.linear_sum_assignment(scores_np[b], maximize=True)
+            row_inds.append(r)
+            col_inds.append(c)
+        row_ind = th.tensor(np.stack(row_inds), device=device)
+        col_ind = th.tensor(np.stack(col_inds), device=device)
+        return row_ind, col_ind
 
 # rough approximations from NIST20 Orbitrap/FT MS
 # NCE_MEAN = 60.
@@ -322,9 +364,7 @@ def batched_bin_func(
     """
 
     if mzs.shape[0] == 0:
-        import pdb
-
-        pdb.set_trace()
+        raise ValueError("batched_bin_func received empty mzs tensor")
     assert th.max(mzs) < mz_max, (th.max(mzs), mz_max)
     batch_size = th.max(batch_idxs) + 1
     bins = th.arange(
@@ -471,16 +511,16 @@ def calculate_match_mzs(
         copy_func = np.copy
     else:
         raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
-
-    diff_mzs = abs_func(true_mzs.reshape(-1, 1) - pred_mzs.reshape(1, -1))
-    min_diff_mzs = tolerance
-    if relative:
-        if pred_mz_divisor:
-            divisor_mzs = copy_func(pred_mzs)
-        else:
-            divisor_mzs = copy_func(true_mzs)
-        divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
-        diff_mzs = diff_mzs / divisor_mzs.reshape(-1, 1)
+    with th.autocast(device_type='cuda', dtype=th.bfloat16): # speed up and save mem
+        diff_mzs = abs_func(true_mzs[..., None] - pred_mzs[..., None, :])
+        min_diff_mzs = tolerance
+        if relative:
+            if pred_mz_divisor:
+                divisor_mzs = copy_func(pred_mzs)
+            else:
+                divisor_mzs = copy_func(true_mzs)
+            divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
+            diff_mzs = diff_mzs / divisor_mzs[..., None]
     match_mzs = diff_mzs < min_diff_mzs
     return match_mzs
 
@@ -741,7 +781,7 @@ def cos_sim_helper(
     # l2 normalize
     true_bin_ints = scatter_l2normalize(true_bin_ints, true_bin_batch_idxs)
     pred_bin_ints = scatter_l2normalize(pred_bin_ints, pred_bin_batch_idxs)
-    # dot product
+    
     pred_mask = th.isin(pred_bin_idxs, true_bin_idxs)
     true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
     both_bin_ints = pred_bin_ints[pred_mask] * true_bin_ints[true_mask]
@@ -847,7 +887,6 @@ def round_aggregate_peaks(
     round_batch_idxs = th.cat(round_batch_idxs, dim=0)
     return round_mzs, round_ints, round_batch_idxs
 
-
 def scipy_linear_sum_assignment(matrix, maximize=False):
     """
     Solve the linear sum assignment problem using Scipy's implementation (Hungarian algorithm).
@@ -861,13 +900,10 @@ def scipy_linear_sum_assignment(matrix, maximize=False):
     Returns:
         Tuple[th.Tensor, th.Tensor]: Row indices and column indices of the optimal assignment.
     """
-
     device = matrix.device
     matrix = matrix.cpu().numpy()
     x_idx, y_idx = scipy.optimize.linear_sum_assignment(matrix, maximize=maximize)
-    x_idx = th.as_tensor(x_idx, dtype=th.long, device=device)
-    y_idx = th.as_tensor(y_idx, dtype=th.long, device=device)
-    return x_idx, y_idx
+    return th.tensor(x_idx, device=device).long(),th.tensor(y_idx, device=device).long()
 
 
 ### helpers
@@ -897,6 +933,126 @@ def opt_cos_sim_helper(
     return opt_cos_sim
 
 
+def batch_cos_hun_helper(
+    batch_true_ints,
+    batch_pred_ints,
+    batch_match_mask,
+    batch_true_match_mask,
+    batch_pred_match_mask,
+    remove_prec_peak,
+    batch_true_prec_mask,
+    batch_pred_prec_mask,
+):
+    if remove_prec_peak:
+        assert batch_true_ints.shape==batch_true_prec_mask.shape, f"{batch_true_ints.shape} {batch_true_prec_mask.shape}"
+        assert batch_pred_ints.shape==batch_pred_prec_mask.shape, f"{batch_pred_ints.shape} {batch_pred_prec_mask.shape}"
+        batch_true_ints = batch_true_ints * (1 - batch_true_prec_mask.float())
+        batch_pred_ints = batch_pred_ints * (1 - batch_pred_prec_mask.float())
+    assert len(batch_true_ints.shape)==2
+    assert len(batch_pred_ints.shape)==2
+    batch_true_ints = F.normalize(batch_true_ints, p=2, dim=-1)
+    batch_pred_ints = F.normalize(batch_pred_ints, p=2, dim=-1)
+    true_batch_pos_idx=th.argsort(~batch_true_match_mask) # max to min
+    pred_batch_pos_idx=th.argsort(~batch_pred_match_mask) # max to min
+    max_true_match_pos=batch_true_match_mask.float().sum(-1).long().max()
+    max_pred_match_pos=batch_pred_match_mask.float().sum(-1).long().max()
+    true_batch_pos_idx=true_batch_pos_idx[:, :max_true_match_pos]
+    pred_batch_pos_idx=pred_batch_pos_idx[:, :max_pred_match_pos]
+    batch_idx = th.arange(true_batch_pos_idx.shape[0], device=true_batch_pos_idx.device)[:, None] 
+    sub_mask = batch_match_mask[
+    batch_idx[..., None],
+    true_batch_pos_idx[:, :, None],
+    pred_batch_pos_idx[:, None, :]]
+    sub_score=batch_true_ints[batch_idx, true_batch_pos_idx][..., None]*(batch_pred_ints[batch_idx, pred_batch_pos_idx][..., None, :])
+    assert sub_mask.shape==sub_score.shape, f"{sub_mask.shape} {sub_score.shape}"
+    batch_score =sub_mask*sub_score
+    #b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
+    #    b_true_ints[b_true_match_mask].unsqueeze(1) * b_pred_ints[b_pred_match_mask].unsqueeze(0)
+    #)
+    row_ind, col_ind = _solve_batch_assignment(batch_score)
+    return (batch_score[batch_idx, row_ind, col_ind]).sum(-1) # sum for cosine
+
+
+def batch_jss_hun_helper(
+    batch_true_ints,
+    batch_pred_ints,
+    batch_match_mask,
+    batch_true_match_mask,
+    batch_pred_match_mask,
+    remove_prec_peak,
+    batch_true_prec_mask,
+    batch_pred_prec_mask,
+    log_min,
+):
+    if remove_prec_peak:
+        assert batch_true_ints.shape==batch_true_prec_mask.shape, f"{batch_true_ints.shape} {batch_true_prec_mask.shape}"
+        assert batch_pred_ints.shape==batch_pred_prec_mask.shape, f"{batch_pred_ints.shape} {batch_pred_prec_mask.shape}"
+        batch_true_ints = batch_true_ints * (1 - batch_true_prec_mask.float())
+        batch_pred_ints = batch_pred_ints * (1 - batch_pred_prec_mask.float())
+    batch_true_ints = F.normalize(batch_true_ints, p=1, dim=-1)
+    batch_pred_ints = F.normalize(batch_pred_ints, p=1, dim=-1)
+    
+    # select subset to find idx
+    true_batch_pos_idx=th.argsort(~batch_true_match_mask) # max to min
+    pred_batch_pos_idx=th.argsort(~batch_pred_match_mask) # max to min
+    max_true_match_pos=batch_true_match_mask.float().sum(-1).long().max()
+    max_pred_match_pos=batch_pred_match_mask.float().sum(-1).long().max()
+    true_batch_pos_idx=true_batch_pos_idx[:, :max_true_match_pos]
+    pred_batch_pos_idx=pred_batch_pos_idx[:, :max_pred_match_pos]
+    batch_idx = th.arange(true_batch_pos_idx.shape[0], device=true_batch_pos_idx.device)[:, None] 
+    sub_mask = batch_match_mask[
+    batch_idx[..., None],
+    true_batch_pos_idx[:, :, None],
+    pred_batch_pos_idx[:, None, :]]
+    sub_score=batch_true_ints[batch_idx, true_batch_pos_idx][..., None]+(batch_pred_ints[batch_idx, pred_batch_pos_idx][..., None, :])
+    assert sub_mask.shape==sub_score.shape, f"{sub_mask.shape} {sub_score.shape}"
+    # done
+    batch_score = sub_mask.float()*sub_score
+    row_ind, col_ind = _solve_batch_assignment(batch_score)
+    # map ind to ori ind
+    raw_row_ind=true_batch_pos_idx[batch_idx, row_ind]
+    raw_col_ind=pred_batch_pos_idx[batch_idx, col_ind]
+    
+
+    match_score=batch_score[batch_idx, row_ind, col_ind]
+    match_mask=sub_mask[batch_idx, row_ind, col_ind] # False means wrong match
+    unmatch_true_ints_mask=th.zeros_like(batch_true_match_mask)
+    unmatch_pred_ints_mask=th.zeros_like(batch_pred_match_mask)
+    unmatch_true_ints_mask[batch_idx, raw_row_ind]=match_mask # True means match, False means unmatch
+    unmatch_pred_ints_mask[batch_idx, raw_col_ind]=match_mask
+    unmatch_true_ints_mask=~unmatch_true_ints_mask
+    unmatch_pred_ints_mask=~unmatch_pred_ints_mask
+    match_score=match_score*match_mask.float()
+
+
+    batch_score_sum=match_score.sum(-1)
+    unmatch_true_ints_sum=(batch_true_ints*unmatch_true_ints_mask.float()).sum(-1)
+    unmatch_pred_ints_sum=(batch_pred_ints*unmatch_pred_ints_mask.float()).sum(-1)
+    union_sum=(batch_score_sum+unmatch_true_ints_sum+unmatch_pred_ints_sum).clamp(1e-8)*0.5
+
+    batch_true_kl1_union_probs=th.zeros_like(batch_true_ints)
+    # fill match pos with union match score
+    batch_true_kl1_union_probs[batch_idx, raw_row_ind]=match_score*0.5/union_sum[..., None]
+    # fill unmatch pos with true intensity/union sum # order matters
+    batch_true_kl1_union_probs[unmatch_true_ints_mask]=(0.5*batch_true_ints/union_sum[..., None])[unmatch_true_ints_mask]
+    batch_true_kl1=th.sum(
+        batch_true_ints
+        *(safelog(batch_true_ints, eps=log_min) - safelog(batch_true_kl1_union_probs, eps=log_min)),
+        dim=-1,
+    )
+
+    batch_pred_kl1_union_probs=th.zeros_like(batch_pred_ints)
+    # fill match pos with union match score, assign order matters here
+    batch_pred_kl1_union_probs[batch_idx, raw_col_ind]=match_score*0.5/union_sum[..., None]
+    batch_pred_kl1_union_probs[unmatch_pred_ints_mask]=(0.5*batch_pred_ints/union_sum[..., None])[unmatch_pred_ints_mask]
+    batch_pred_kl1=th.sum(
+        batch_pred_ints
+        * (safelog(batch_pred_ints, eps=log_min) - safelog(batch_pred_kl1_union_probs, eps=log_min)),
+        dim=-1,
+    )
+    return np.log(2.0) - 0.5 * (batch_true_kl1 + batch_pred_kl1)
+
+
 def cos_hun_helper(
     b_true_ints,
     b_pred_ints,
@@ -908,9 +1064,6 @@ def cos_hun_helper(
     b_pred_prec_mask,
 ):
     if remove_prec_peak:
-        import pdb
-
-        pdb.set_trace()
         b_true_ints = b_true_ints * (1 - b_true_prec_mask.float())
         b_pred_ints = b_pred_ints * (1 - b_pred_prec_mask.float())
     b_true_ints = F.normalize(b_true_ints, p=2, dim=0)
@@ -1027,9 +1180,9 @@ def jss_hun_helper(
         b_pred_ints = b_pred_ints * (1 - b_pred_prec_mask.float())
     b_true_ints = F.normalize(b_true_ints, p=1, dim=0)
     b_pred_ints = F.normalize(b_pred_ints, p=1, dim=0)
-    if th.all(b_pred_ints) == 0.0:
-        # heuristic to prevent nan
-        b_pred_ints = th.ones_like(b_pred_ints) / b_pred_ints.shape[0]
+    #if th.all(b_pred_ints) == 0.0:
+    #    # heuristic to prevent nan
+    #    b_pred_ints = th.ones_like(b_pred_ints) / b_pred_ints.shape[0]
     b_score = b_match_mask[b_true_match_mask][:, b_pred_match_mask] * (
         b_true_ints[b_true_match_mask].unsqueeze(1) + b_pred_ints[b_pred_match_mask].unsqueeze(0)
     )

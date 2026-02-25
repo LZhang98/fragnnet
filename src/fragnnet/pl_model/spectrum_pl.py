@@ -7,6 +7,7 @@ It is intended to be subclassed for specific model architectures and tasks.
 """
 
 import inspect
+import warnings
 from typing import Any
 
 import lightning as L
@@ -43,8 +44,25 @@ from fragnnet.utils.spec_utils import (
     opt_cos_sim_helper,
     round_aggregate_peaks,
     scatter_reduce,
+    batch_cos_hun_helper,
+    batch_jss_hun_helper
 )
+def get_split_fn(bs_idx):
+    # check the validity of bs idx
+    assert (bs_idx[1:]-bs_idx[:-1]).min()>=0
+    _, batch_counts = th.unique(bs_idx, return_counts=True)
+    batch_counts=batch_counts.detach().cpu().tolist()
+    def split_fn(inp_tensor):
+        return th.split(inp_tensor, batch_counts)
+    return split_fn
 
+def list_to_batch_tensor(inp, pad):
+    max_l=max([len(_) for _ in inp])
+    def padv(v):
+        if len(v)<max_l:
+            return th.cat([v, v.new_zeros(max_l-len(v))+pad], 0)
+        return v
+    return th.stack([padv(_) for _ in inp], 0)
 
 class SpectrumPL(L.LightningModule):
     """
@@ -266,6 +284,7 @@ class SpectrumPL(L.LightningModule):
                         self.metric_bests.append(fname)
                         self.auxiliary_metric_names.add(fname)
                 compute_rounded_match_mzs = True
+                compute_match_mzs = True
             elif metric_name == "jss_hun":
                 for remove_prec_peak in hun_remove_prec_peak_flags:
                     for sqrt in hun_sqrt_flags:
@@ -367,9 +386,6 @@ class SpectrumPL(L.LightningModule):
                                 remove_prec_peaks=remove_prec_peak,
                                 prec_mzs=true_prec_mzs,
                             )
-                            true_ints = scatter_l1normalize(
-                                ints_transform(true_ints), true_batch_idxs
-                            )
                             pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
                                 pred_mzs,
                                 pred_ints,
@@ -380,9 +396,6 @@ class SpectrumPL(L.LightningModule):
                                 sparse=True,
                                 remove_prec_peaks=remove_prec_peak,
                                 prec_mzs=true_prec_mzs,
-                            )
-                            pred_ints = scatter_l1normalize(
-                                ints_transform(pred_ints), pred_batch_idxs
                             )
                             if "cos_sim" in self.hparams.auxiliary_scores:
                                 fname_base = "cos_sim"
@@ -446,48 +459,151 @@ class SpectrumPL(L.LightningModule):
                     metric_d["true_spec_ne"] = true_spec_ne
 
             # local calculations
+            pred_split_fn=get_split_fn(pred_batch_idxs)
+            true_split_fn=get_split_fn(true_batch_idxs)
+
+            split_true_mzs=true_split_fn(true_mzs)
+            split_pred_mzs=pred_split_fn(pred_mzs)
+            split_true_ints=true_split_fn(true_ints)
+            split_pred_ints=pred_split_fn(pred_ints)
+
+            if compute_rounded_match_mzs:
+                true_r_split_fn=get_split_fn(true_batch_idxs_r)
+                pred_r_split_fn=get_split_fn(pred_batch_idxs_r)
+                true_mzs_r_split=true_r_split_fn(true_mzs_r)
+                true_ints_r_split=true_r_split_fn(true_ints_r)
+                pred_mzs_r_split=pred_r_split_fn(pred_mzs_r)
+                pred_ints_r_split=pred_r_split_fn(pred_ints_r)
+            if compute_match_mzs:
+                batch_true_mzs=list_to_batch_tensor(split_true_mzs, pad=float("inf"))
+                batch_pred_mzs=list_to_batch_tensor(split_pred_mzs, pad=float("inf"))
+                batch_match_mask=calculate_match_mzs(batch_true_mzs, batch_pred_mzs, 
+                                                     tolerance=self.tolerance,
+                                                    relative=self.relative,
+                                                    tolerance_min_mz=self.tolerance_min_mz,)
+                batch_true_match_mask=batch_match_mask.max(-1).values
+                batch_pred_match_mask=batch_match_mask.max(-2).values
+            if compute_rounded_match_mzs:
+                batch_true_mzs_r=list_to_batch_tensor(true_mzs_r_split, pad=float("inf"))
+                batch_pred_mzs_r=list_to_batch_tensor(pred_mzs_r_split, pad=float("inf"))
+                batch_true_prec_mask_r = calculate_match_mzs(
+                        batch_true_mzs_r,
+                        true_prec_mzs[..., None],
+                        tolerance=self.tolerance,
+                        relative=self.relative,
+                        tolerance_min_mz=self.tolerance_min_mz,
+                    ).squeeze(-1)
+                batch_pred_prec_mask_r = calculate_match_mzs(
+                    batch_pred_mzs_r,
+                    true_prec_mzs[..., None],
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                ).squeeze(-1)
+                # match
+                batch_match_mask_r = calculate_match_mzs(
+                    batch_true_mzs_r,
+                    batch_pred_mzs_r,
+                    tolerance=self.tolerance,
+                    relative=self.relative,
+                    tolerance_min_mz=self.tolerance_min_mz,
+                )
+                batch_true_match_mask_r = batch_match_mask_r.max(-1).values #th.any(b_match_mask_r, dim=1)
+                batch_pred_match_mask_r = batch_match_mask_r.max(-2).values #th.any(b_match_mask_r, dim=0)
+
+
+            # calculate batched cosine and batched jss
+            batched_metric={}
+            if compute_rounded_match_mzs:
+                batched_true_ints_r=list_to_batch_tensor(true_ints_r_split, pad=0)
+                batched_pred_ints_r=list_to_batch_tensor(pred_ints_r_split, pad=0)
+                sqrt_batched_true_ints_r=get_ints_transform_func("sqrt")(batched_true_ints_r)
+                sqrt_batched_pred_ints_r=get_ints_transform_func("sqrt")(batched_pred_ints_r)
+            if "cos_hun" in self.hparams.auxiliary_scores:
+                for remove_prec_peak in hun_remove_prec_peak_flags:
+                    for sqrt in hun_sqrt_flags:
+                        if sqrt:
+                            inp_true=sqrt_batched_true_ints_r
+                            inp_pred=sqrt_batched_pred_ints_r
+                            #ints_transform = get_ints_transform_func("sqrt")
+                        else:
+                            inp_true=batched_true_ints_r
+                            inp_pred=batched_pred_ints_r
+                            #ints_transform = get_ints_transform_func("none")
+                        fname_base = "cos_hun"
+                        if sqrt:
+                            fname_base += "_sqrt"
+                        if remove_prec_peak:
+                            fname_base += "_np"
+                        fname = f"{fname_base}"
+                        #metric_d[fname][b_idx] = b_cos_hun
+                        batched_metric[fname] = batch_cos_hun_helper(
+                            inp_true,
+                            inp_pred,
+                            batch_match_mask_r,
+                            batch_true_match_mask_r,
+                            batch_pred_match_mask_r,
+                            remove_prec_peak,
+                            batch_true_prec_mask_r,
+                            batch_pred_prec_mask_r,
+                        )
+            if "jss_hun" in self.hparams.auxiliary_scores:
+                for remove_prec_peak in hun_remove_prec_peak_flags:
+                    for sqrt in hun_sqrt_flags:
+                        if sqrt:
+                            inp_true=sqrt_batched_true_ints_r
+                            inp_pred=sqrt_batched_pred_ints_r
+                            #ints_transform = get_ints_transform_func("sqrt")
+                        else:
+                            inp_true=batched_true_ints_r
+                            inp_pred=batched_pred_ints_r
+                        fname_base = "jss_hun"
+                        if sqrt:
+                            fname_base += "_sqrt"
+                        if remove_prec_peak:
+                            fname_base += "_np"
+                        fname = f"{fname_base}"
+
+                        batched_metric[fname] = batch_jss_hun_helper(
+                            inp_true,
+                            inp_pred,
+                            batch_match_mask_r,
+                            batch_true_match_mask_r,
+                            batch_pred_match_mask_r,
+                            remove_prec_peak,
+                            batch_true_prec_mask_r,
+                            batch_pred_prec_mask_r,
+                            log_min=self.hparams.log_min,
+                        )
+                        
+                        
+                        
             for b_idx in range(batch_size):
-                b_true_mask = true_batch_idxs == b_idx
-                b_pred_mask = pred_batch_idxs == b_idx
-                b_true_mzs = true_mzs[b_true_mask]
-                b_pred_mzs = pred_mzs[b_pred_mask]
-                b_true_ints = true_ints[b_true_mask]
-                b_pred_ints = pred_ints[b_pred_mask]
-                b_true_prec_mz = true_prec_mzs[b_idx : b_idx + 1]
+                #b_true_mzs = split_true_mzs[b_idx]
+                #b_pred_mzs = split_pred_mzs[b_idx]
+                b_true_ints =split_true_ints[b_idx]
+                b_pred_ints = split_pred_ints[b_idx]
+                #b_true_prec_mz = true_prec_mzs[b_idx : b_idx + 1]
 
                 if compute_match_mzs:
-                    b_match_mask = calculate_match_mzs(
+                    '''b_match_mask = calculate_match_mzs(
                         b_true_mzs,
                         b_pred_mzs,
                         tolerance=self.tolerance,
                         relative=self.relative,
                         tolerance_min_mz=self.tolerance_min_mz,
-                    )
-                    b_true_match_mask = th.any(b_match_mask, dim=1)
-                    b_pred_match_mask = th.any(b_match_mask, dim=0)
+                    )'''
+                    b_true_match_mask = batch_true_match_mask[b_idx][:b_true_ints.shape[0]] #th.any(b_match_mask, dim=1)
+                    b_pred_match_mask = batch_pred_match_mask[b_idx][:b_pred_ints.shape[0]]#th.any(b_match_mask, dim=0)
 
-                if compute_rounded_match_mzs:
-                    b_true_mask_r = true_batch_idxs_r == b_idx
-                    b_pred_mask_r = pred_batch_idxs_r == b_idx
-                    b_true_mzs_r = true_mzs_r[b_true_mask_r]
-                    b_pred_mzs_r = pred_mzs_r[b_pred_mask_r]
-                    b_true_ints_r = true_ints_r[b_true_mask_r]
-                    b_pred_ints_r = pred_ints_r[b_pred_mask_r]
+                '''if compute_rounded_match_mzs:
+                    #b_true_mzs_r = true_mzs_r_split[b_idx]
+                    #b_pred_mzs_r = pred_mzs_r_split[b_idx]
+                    #b_true_ints_r =true_ints_r_split[b_idx]
+                    #b_pred_ints_r =pred_ints_r_split[b_idx]
                     # precursor
-                    b_true_prec_mask_r = calculate_match_mzs(
-                        b_true_mzs_r,
-                        b_true_prec_mz,
-                        tolerance=self.tolerance,
-                        relative=self.relative,
-                        tolerance_min_mz=self.tolerance_min_mz,
-                    ).squeeze(1)
-                    b_pred_prec_mask_r = calculate_match_mzs(
-                        b_pred_mzs_r,
-                        b_true_prec_mz,
-                        tolerance=self.tolerance,
-                        relative=self.relative,
-                        tolerance_min_mz=self.tolerance_min_mz,
-                    ).squeeze(1)
+                    #b_true_prec_mask_r =batch_true_prec_mask_r[b_idx][:b_true_ints_r.shape[0]]
+                    #b_pred_prec_mask_r = batch_pred_prec_mask_r[b_idx][:b_pred_ints_r.shape[0]]
                     # match
                     b_match_mask_r = calculate_match_mzs(
                         b_true_mzs_r,
@@ -496,49 +612,41 @@ class SpectrumPL(L.LightningModule):
                         relative=self.relative,
                         tolerance_min_mz=self.tolerance_min_mz,
                     )
-                    b_true_match_mask_r = th.any(b_match_mask_r, dim=1)
-                    b_pred_match_mask_r = th.any(b_match_mask_r, dim=0)
-
-                if "recall" in self.hparams.auxiliary_scores:
+                    #b_true_match_mask_r = batch_true_match_mask_r[b_idx][:b_true_ints_r.shape[0]] #th.any(b_match_mask_r, dim=1)
+                    #b_pred_match_mask_r = batch_pred_match_mask_r[b_idx][:b_pred_ints_r.shape[0]]#th.any(b_match_mask_r, dim=0)
+                '''
+                if "recall" in self.hparams.auxiliary_scores: #fast, ignore
                     b_recall = th.sum(b_true_match_mask.float()) / b_true_match_mask.shape[0]
                     metric_d["recall"][b_idx] = b_recall
 
-                if "wrecall" in self.hparams.auxiliary_scores:
+                if "wrecall" in self.hparams.auxiliary_scores:#fast, ignore
                     b_wrecall = th.sum(b_true_ints[b_true_match_mask])  # / th.sum(b_true_ints)
                     metric_d["wrecall"][b_idx] = b_wrecall
 
-                if "precision" in self.hparams.auxiliary_scores:
+                if "precision" in self.hparams.auxiliary_scores:#fast, ignore
                     b_precision = th.sum(b_pred_match_mask.float()) / b_pred_match_mask.shape[0]
                     metric_d["precision"][b_idx] = b_precision
 
-                if "wprecision" in self.hparams.auxiliary_scores:
+                if "wprecision" in self.hparams.auxiliary_scores:#fast, ignore
                     b_wprecision = th.sum(b_pred_ints[b_pred_match_mask])
                     metric_d["wprecision"][b_idx] = b_wprecision
 
                 if "cos_hun" in self.hparams.auxiliary_scores:
                     for remove_prec_peak in hun_remove_prec_peak_flags:
                         for sqrt in hun_sqrt_flags:
-                            if sqrt:
+                            '''if sqrt:
                                 ints_transform = get_ints_transform_func("sqrt")
                             else:
-                                ints_transform = get_ints_transform_func("none")
-                            b_cos_hun = cos_hun_helper(
-                                ints_transform(b_true_ints_r),
-                                ints_transform(b_pred_ints_r),
-                                b_match_mask_r,
-                                b_true_match_mask_r,
-                                b_pred_match_mask_r,
-                                remove_prec_peak,
-                                b_true_prec_mask_r,
-                                b_pred_prec_mask_r,
-                            )
+                                ints_transform = get_ints_transform_func("none")'''
+                           
                             fname_base = "cos_hun"
                             if sqrt:
                                 fname_base += "_sqrt"
                             if remove_prec_peak:
                                 fname_base += "_np"
                             fname = f"{fname_base}"
-                            metric_d[fname][b_idx] = b_cos_hun
+                            metric_d[fname][b_idx] = batched_metric[fname][b_idx]
+                            #assert abs(b_cos_hun.item()-batched_metric[fname][b_idx].item())<0.001, f"{b_cos_hun} {batched_metric[fname][b_idx]} {fname}"
 
                 if "ndcg" in self.hparams.auxiliary_scores:
                     for union in [True, False]:
@@ -556,7 +664,7 @@ class SpectrumPL(L.LightningModule):
                             b_ndcg = ndcg_helper(
                                 b_true_ints,
                                 b_pred_ints,
-                                b_match_mask,
+                                batch_match_mask[b_idx][:b_true_ints.shape[0], :b_pred_ints.shape[0]],
                                 b_true_match_mask,
                                 b_pred_match_mask,
                                 optimistic,
@@ -568,28 +676,17 @@ class SpectrumPL(L.LightningModule):
                 if "jss_hun" in self.hparams.auxiliary_scores:
                     for remove_prec_peak in hun_remove_prec_peak_flags:
                         for sqrt in hun_sqrt_flags:
-                            if sqrt:
+                            '''if sqrt:
                                 ints_transform = get_ints_transform_func("sqrt")
                             else:
-                                ints_transform = get_ints_transform_func("none")
-                            b_jss_hun = jss_hun_helper(
-                                ints_transform(b_true_ints_r),
-                                ints_transform(b_pred_ints_r),
-                                b_match_mask_r,
-                                b_true_match_mask_r,
-                                b_pred_match_mask_r,
-                                remove_prec_peak,
-                                b_true_prec_mask_r,
-                                b_pred_prec_mask_r,
-                                log_min=self.hparams.log_min,
-                            )
+                                ints_transform = get_ints_transform_func("none")'''
                             fname_base = "jss_hun"
                             if sqrt:
                                 fname_base += "_sqrt"
                             if remove_prec_peak:
                                 fname_base += "_np"
                             fname = f"{fname_base}"
-                            metric_d[fname][b_idx] = b_jss_hun
+                            metric_d[fname][b_idx] = batched_metric[fname][b_idx]
 
                 if "true_oos_prob" in self.hparams.auxiliary_scores:
                     b_true_oos_prob = th.sum(b_true_ints[~b_true_match_mask]) / th.sum(b_true_ints)
@@ -1038,7 +1135,7 @@ class SpectrumPL(L.LightningModule):
         This will assume that the batch contains ground truth spectra.
         """
         if self.training:
-            Warning("Model is in training mode")
+            warnings.warn("Model is in training mode")
         batch_results = self._common_step(batch, split=split, log=False)
 
         return batch_results
@@ -1049,7 +1146,7 @@ class SpectrumPL(L.LightningModule):
         This will assume that the model is in eval mode, but will not switch modes.
         """
         if self.training:
-            Warning("Model is in training mode")
+            warnings.warn("Model is in training mode")
 
         # forward pass and get predictions
         pred_d = self.forward(**batch)

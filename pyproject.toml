@@ -28,6 +28,9 @@ dependencies = [
     "pyteomics",
     "omegaconf",
     "h5py",
+    "lmdb==1.7.5",
+    "torch-linear-assignment",
+    "pandarallel",
 ]
 
 [project.optional-dependencies]

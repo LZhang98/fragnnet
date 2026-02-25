@@ -5,7 +5,8 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
-
+logs
+logs*
 # Extensions
 *.c
 src/fragnnet/frag/compute_frags.c

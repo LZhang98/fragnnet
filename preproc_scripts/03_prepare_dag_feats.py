@@ -12,8 +12,8 @@ import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
-
-
+import lmdb
+import pickle
 def print_and_log(name: str, series: pd.Series, wandb_flag: bool, stats_d: dict) -> None:
     """Log series statistics to dictionary and optionally to W&B.
 
@@ -196,26 +196,52 @@ def main(args):
                 args.isotopes,
                 args.nb_isomorphic,
                 args.wl_max_iterations,
-                dag_dp,
                 args.use_cached_dag,  # use_cached, default to false
                 args.compress_dags,
             ]
         )
 
     print("> Running frag gen")
+    env = lmdb.open(
+        dag_dp,
+        map_size=args.map_size,  # 1TB
+        meminit=False,
+        map_async=True
+    )
+    
+    txn = env.begin(write=True)
     frag_results_gen = data_utils.par_apply(
         iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
     )
     frag_results = []
+    meta_info={}
     for fr in progress_wrapper(
         frag_results_gen,
         total=len(mol_input_rows),
         desc="Compute Frags",
         disable_tqdm=args.disable_tqdm,
-    ):
-        frag_results.append(fr)
+    ):  
+        mol_id, dag_d=fr
+        
+        if len(dag_d)==0:
+            print("error in ", mol_id)
+        else:
+            meta_info[mol_id]=[dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
+            txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
+            if (int(mol_id)+1)%200==0:
+                txn.commit()
+                txn = env.begin(write=True)
+        if not args.skip_stats:
+            frag_results.append(dag_d)
+    env.sync()
+    env.close()
+    with open(os.path.join(args.frag_dp, "meta_info.json"), "w") as f:
+        f.write(json.dumps(meta_info))
+    if args.skip_stats:
+        return 
 
     print("> Fragments Computed")
+    # all the following code are not debuged
     frag_stats_df = pd.DataFrame({"mol_id": mol_df["mol_id"]})
 
     # Extract fields from frag_results
@@ -354,7 +380,7 @@ def main(args):
         else:
             stats_iter = tqdm(
                 spectra_input_rows,
-                desc=pformat(compute_spectra_stats),
+                desc="Computing spectra stats",
                 total=len(spectra_input_rows),
             )
         # run stats
@@ -523,6 +549,17 @@ if __name__ == "__main__":
         type=booltype,
         default=False,
         help="Disable tqdm progress bars and use logging instead",
+    )
+    parser.add_argument(
+        "--skip_stats",
+        action="store_true", 
+        help="whether skip stats comput"
+    )
+    parser.add_argument(
+        "--map_size",
+        type=int,
+        default=10*1024**4,
+        help="map size of saving"
     )
     args = parser.parse_args()
 
