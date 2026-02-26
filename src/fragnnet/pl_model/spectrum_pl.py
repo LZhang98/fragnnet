@@ -465,18 +465,24 @@ class SpectrumPL(L.LightningModule):
             # local calculations
             pred_split_fn=get_split_fn(pred_batch_idxs)
             true_split_fn=get_split_fn(true_batch_idxs)
-            true_r_split_fn=get_split_fn(true_batch_idxs_r)
-            pred_r_split_fn=get_split_fn(pred_batch_idxs_r)
+            if compute_rounded_match_mzs:
+                true_r_split_fn=get_split_fn(true_batch_idxs_r)
+                pred_r_split_fn=get_split_fn(pred_batch_idxs_r)
+                true_mzs_r_split=true_r_split_fn(true_mzs_r)
+                true_ints_r_split=true_r_split_fn(true_ints_r)
+                pred_mzs_r_split=pred_r_split_fn(pred_mzs_r)
+                pred_ints_r_split=pred_r_split_fn(pred_ints_r)
+                batched_true_ints_r=list_to_batch_tensor(true_ints_r_split, pad=0)
+                batched_pred_ints_r=list_to_batch_tensor(pred_ints_r_split, pad=0)
+                sqrt_batched_true_ints_r=get_ints_transform_func("sqrt")(batched_true_ints_r)
+                sqrt_batched_pred_ints_r=get_ints_transform_func("sqrt")(batched_pred_ints_r)
 
             split_true_mzs=true_split_fn(true_mzs)
             split_pred_mzs=pred_split_fn(pred_mzs)
             split_true_ints=true_split_fn(true_ints)
             split_pred_ints=pred_split_fn(pred_ints)
 
-            true_mzs_r_split=true_r_split_fn(true_mzs_r)
-            true_ints_r_split=true_r_split_fn(true_ints_r)
-            pred_mzs_r_split=pred_r_split_fn(pred_mzs_r)
-            pred_ints_r_split=pred_r_split_fn(pred_ints_r)
+            
             if compute_match_mzs:
                 batch_true_mzs=list_to_batch_tensor(split_true_mzs, pad=float("inf"))
                 batch_pred_mzs=list_to_batch_tensor(split_pred_mzs, pad=float("inf"))
@@ -517,10 +523,7 @@ class SpectrumPL(L.LightningModule):
 
             # calculate batched cosine and batched jss
             batched_metric={}
-            batched_true_ints_r=list_to_batch_tensor(true_ints_r_split, pad=0)
-            batched_pred_ints_r=list_to_batch_tensor(pred_ints_r_split, pad=0)
-            sqrt_batched_true_ints_r=get_ints_transform_func("sqrt")(batched_true_ints_r)
-            sqrt_batched_pred_ints_r=get_ints_transform_func("sqrt")(batched_pred_ints_r)
+            
             if "cos_hun" in self.hparams.auxiliary_scores:
                 for remove_prec_peak in hun_remove_prec_peak_flags:
                     for sqrt in hun_sqrt_flags:

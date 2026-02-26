@@ -1107,6 +1107,7 @@ def run_inference_hdf5(
             
         save_file.create_dataset("start_points", shape=(0, ), dtype=np.int64, maxshape=(None,),)
         save_file.create_dataset("end_points", shape=(0, ), dtype=np.int64, maxshape=(None,),)
+        
         for batch_rows in run_inference_tabular_iter(
             model=model,
             dataloader=dataloader,
@@ -1153,7 +1154,6 @@ def run_inference_hdf5(
                 start_point+=len(preds_l["pred_mzs"])
                 del preds_l
                 preds_l={}
-                
     return num_pred
 
 def run_inference_tabular_iter(
@@ -1464,52 +1464,39 @@ def process_batch_to_tabular_row(
         if rebase_indices:
             # Rebase formula indices to 0-based contiguous
             if b_pred_formula_formula_idxs is not None and len(b_pred_formula_formula_idxs) > 0:
-                unique_f_idxs = th.unique(b_pred_formula_formula_idxs, sorted=True)
-                formula_idx_map = {
-                    old_idx.item(): new_idx for new_idx, old_idx in enumerate(unique_f_idxs)
-                }
-
-                # Apply rebasing to formula arrays
-                b_pred_formula_formula_idxs = th.tensor(
-                    [formula_idx_map[idx.item()] for idx in b_pred_formula_formula_idxs],
-                    dtype=b_pred_formula_formula_idxs.dtype,
-                    device=b_pred_formula_formula_idxs.device,
+                unique_f_idxs, inverse = th.unique(
+                    b_pred_formula_formula_idxs,
+                    sorted=True,
+                    return_inverse=True
                 )
+            
+                # Apply rebasing to formula arrays
+                b_pred_formula_formula_idxs = inverse
                 if b_pred_joint_formula_idxs is not None:
-                    b_pred_joint_formula_idxs = th.tensor(
-                        [formula_idx_map[idx.item()] for idx in b_pred_joint_formula_idxs],
-                        dtype=b_pred_joint_formula_idxs.dtype,
-                        device=b_pred_joint_formula_idxs.device,
+                    b_pred_joint_formula_idxs = th.searchsorted(
+                        unique_f_idxs,
+                        b_pred_joint_formula_idxs
                     )
-                # Rebase peak->formula mapping to the new contiguous formula ids
                 if b_frag_formula_peak_idxs is not None:
-                    b_frag_formula_peak_idxs = th.tensor(
-                        [formula_idx_map[idx.item()] for idx in b_frag_formula_peak_idxs],
-                        dtype=b_frag_formula_peak_idxs.dtype
-                        if isinstance(b_frag_formula_peak_idxs, th.Tensor)
-                        else th.long,
-                        device=b_pred_formula_formula_idxs.device,
+                    b_frag_formula_peak_idxs = th.searchsorted(
+                        unique_f_idxs,
+                        b_frag_formula_peak_idxs
                     )
 
             # Rebase node indices to 0-based contiguous
             if b_pred_node_node_idxs is not None and len(b_pred_node_node_idxs) > 0:
-                unique_n_idxs = th.unique(b_pred_node_node_idxs, sorted=True)
-                node_idx_map = {
-                    old_idx.item(): new_idx for new_idx, old_idx in enumerate(unique_n_idxs)
-                }
-
-                # Apply rebasing to node arrays
-                b_pred_node_node_idxs = th.tensor(
-                    [node_idx_map[idx.item()] for idx in b_pred_node_node_idxs],
-                    dtype=b_pred_node_node_idxs.dtype,
-                    device=b_pred_node_node_idxs.device,
-                )
+                unique_n_idxs, inverse = th.unique(
+                b_pred_node_node_idxs,
+                sorted=True,
+                return_inverse=True
+            )
+                b_pred_node_node_idxs = inverse
                 if b_pred_joint_node_idxs is not None:
-                    b_pred_joint_node_idxs = th.tensor(
-                        [node_idx_map[idx.item()] for idx in b_pred_joint_node_idxs],
-                        dtype=b_pred_joint_node_idxs.dtype,
-                        device=b_pred_joint_node_idxs.device,
+                    b_pred_joint_node_idxs = th.searchsorted(
+                        unique_n_idxs,
+                        b_pred_joint_node_idxs
                     )
+                
 
         # assemble row and append
         # Add rebase flag: True if indices were rebased, False otherwise
