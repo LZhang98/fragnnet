@@ -351,14 +351,18 @@ measured against ground-truth MS/MS annotations from the NIST23 scaffold split:
 
 | Model | True Recall (AR) | Weighted Recall (AWR) | Pred Precision (AP) | Weighted Precision (AWP) | F1 | Weighted F1 |
 |---|---|---|---|---|---|---|
-| FraGNNet-D4 | 0.81 | 0.90 | 0.98 | 1.00 | 0.89 | 0.95 |
-| GrAFF | **0.95** | **0.98** | 0.61 | 0.80 | 0.74 | 0.88 |
-| ICEBERG | 0.66 | 0.81 | 0.99 | — | 0.79 | — |
+| FraGNNet-D4 | 0.8088 | 0.8997 | 0.9837 | 0.9991 | 0.8877 | 0.9468 |
+| GrAFF | **0.9509** | **0.9804** | 0.6106 | 0.8022 | 0.7437 | 0.8824 |
+| ICEBERG | 0.6559 | 0.8094 | 0.9926 | — | 0.7899 | — |
 
-**FraGNNet-D4 misses ~19% of ground-truth annotated fragment formulas** (AR=0.81 vs GrAFF
-AR=0.95). GrAFF's higher recall comes at the cost of precision (AP=0.61 vs 0.98) — it
+**FraGNNet-D4 misses ~19% of ground-truth annotated fragment formulas** (AR=0.8088 vs GrAFF
+AR=0.9509). GrAFF's higher recall comes at the cost of precision (AP=0.61 vs 0.98) — it
 over-generates fragments.  The target for improved BFS is **AR > 0.90 while keeping AP
 > 0.95**.  Formula-recall improvement is the primary quantitative goal of §4.
+
+Weighted metrics favour FraGNNet-D4: AWP=0.9991 vs GrAFF AWP=0.8022.  The precision gap
+means GrAFF's additional recalled fragments are predominantly low-intensity peaks — the
+model correctly de-emphasises them by intensity weighting.
 
 ### Problem
 
@@ -489,9 +493,57 @@ Check what fraction of training/test molecules hit the `MAX_NUM_NODES=128` asser
 
 ## 5. Chemical Class Fragmentation Failures
 
+### Wrecall Metrics Used in This Section
+
+Two complementary metrics from `predictions_frag_explainability.ipynb`:
+
+- **`wrecall_0.01_h1`** (primary for diagnosis): intensity fraction covered within ±0.01 Da with max 1 H-shift.  H1 is strict and therefore discriminating — used for chemical-class comparisons in the plan tables.
+- **`wrecall_10ppm_h4`** (relaxed): same but 10 ppm and up to 4 H-shifts.  Higher overall (median 0.932 at mol-level vs 0.722 for h1) but **not recommended as the primary metric**: allowing h4 *hurts* worst-case performance (p10) for lipids (−0.255) and organoheterocyclics (−0.184), indicating over-matching of spurious fragment formulas.  **Cap H-shifts at h2 or h3 for production inference.**
+
+### Superclass-Level Wrecall Analysis (from `predictions_frag_explainability.ipynb`)
+
+**Mol-level `wrecall_10ppm_h4` by ClassyFire superclass** (1,486 molecules — scaffold split):
+
+| Superclass | Median wrecall_h4 | N Molecules | Notes |
+|---|---|---|---|
+| Organic polymers | 0.808 | 3 | Worst overall — large, irregular structures |
+| Organosulfur compounds | 0.887 | 31 | Sulfur-specific bond losses not covered |
+| Organophosphorus compounds | 0.931 | 17 | At overall median |
+| Hydrocarbons | 0.942 | 23 | Few heteroatom anchors |
+| Organic oxygen compounds | 0.955 | 265 | Broad class; high tail risk |
+| Lipids | 0.968 | 3,957 | High median but high variance (see below) |
+| Organoheterocyclic | 0.974 | 3,038 | — |
+| Benzenoids | 0.989 | 677 | — |
+| Alkaloids | 0.997 | 87 | Best overall |
+| Organic acids | 0.999 | 598 | — |
+
+**`[M+H]+` FT spectra only — fraction with `wrecall_h4 < 0.9`** (6,597 spectra):
+
+| Superclass | Median wrecall | Frac < 0.9 | Frac < 0.5 |
+|---|---|---|---|
+| Organic oxygen compounds | 0.875 | 33.5% | 11.7% |
+| Lipids | 0.902 | 32.6% | 10.9% |
+| Organoheterocyclic | 0.925 | 32.4% | 8.6% |
+| Organosulfur | 0.943 | 24.1% | 10.3% |
+| Alkaloids | — | 19.0% | 5.1% |
+| Benzenoids | — | 15.8% | 3.2% |
+
+**Key finding:** Even for the "easy" Lipid superclass, ~11% of `[M+H]+` FT spectra have <50% of intensity covered by the DAG — these are the molecules most likely to benefit from one-shot 2-bond ring cleavage or explicit fragmentation rules.
+
+### H-Shift Sensitivity — Do Not Use h4
+
+| H-shifts | Median wrecall (mol) | p10 wrecall (Lipids) | p10 wrecall (Heterocyclics) |
+|---|---|---|---|
+| h1 | 0.722 | — | — |
+| h2 | 0.844 | — | — |
+| h3 | 0.901 | — | — |
+| h4 | 0.932 | **−0.255 vs h1** | **−0.184 vs h1** |
+
+Allowing h4 inflates the median but degrades the worst 10% of molecules.  This indicates spurious formula matches at the 4-H-shift level.  Use h2 as the default, h3 as maximum.
+
 ### New Finding: DAG Coverage Gaps for Fused Rings and Steroids
 
-Recent explainability analysis (`predictions_frag_explainability.ipynb`) using the `wrecall_0.01_h1` metric (fraction of spectral intensity explainable by DAG formulas) reveals severe coverage gaps for specific chemical classes:
+`predictions_frag_explainability.ipynb` using the `wrecall_0.01_h1` metric (fraction of spectral intensity explainable by DAG formulas, strict ±0.01 Da / 1 H-shift) reveals severe coverage gaps for specific chemical classes:
 
 **High Explainability (DAG works well):**
 - Nitrogen-containing heterocycles: `azoles` (0.698), `pyrrolopyridines` (0.659), `diazines` (0.612)
@@ -594,6 +646,40 @@ These are quick queries that gate decisions in §1–§6:
 | ACE→NCE residual per instrument | `both.groupby('inst_type').apply(lambda g: (g.nce - g.nce_converted).abs().median())` | §3 Step 1 |
 | Current sampler weighting | `grep -rn "dynamic_sampler\|WeightedRandom" src/fragnnet/` | §1 Step 1 |
 | OOS calibration per stratum | `df.groupby(['inst_type','frag_mode'])['pred_oos_prob'].describe()` | §8 confidence filter |
+| wrecall superclass tail | `df.groupby('superclass')['wrecall_h4'].quantile([0.1,0.5]).unstack()` — flag superclasses with p10 < 0.5 | §5 root cause for lipid/oxygen tail |
+| CE-performance curve (FT) | `df[df.inst=='FT'].groupby(pd.cut(df.nce,[0,20,40,65,120,200]))['cos_sim_0.01'].median()` | Validates sampler CE bin targets |
+| CE-performance curve (QTOF) | same with ace bins [0,10,20,30,50] | §1 QTOF upweighting priority |
+
+### CE Performance Reference (from `predictions_test_analysis.ipynb`)
+
+**FT (NCE %) — median cos_sim_0.01 by CE bin:**
+
+| NCE range | Median cos_sim | N spectra |
+|---|---|---|
+| 0–20% | **0.934** | 112,779 |
+| 20–30% | 0.889 | 66,051 |
+| 30–40% | 0.714 | 124,576 |
+| 40–60% | 0.810 | 119,781 |
+| 60–80% | 0.709 | 68,060 |
+| 80–120% | 0.680 | 108,569 |
+| 120–200% | 0.642 | 83,441 |
+
+**QTOF (ACE eV) — median cos_sim_0.01 by CE bin:**
+
+| ACE range | Median cos_sim | N spectra |
+|---|---|---|
+| 0–10 eV | **0.864** | 13,584 |
+| 10–20 eV | 0.619 | 8,749 |
+| 20–30 eV | 0.528 | 9,009 |
+| 30–50 eV | 0.438 | 11,449 |
+
+**IT:** essentially non-functional (mean cos_sim ~0.01–0.04 across all CE ranges).
+
+**Implication for sampler:** the 30–40% NCE bin contains ~16% of FT spectra (124k)
+yet has median 0.714 — 0.22 below low-CE performance.  Upweighting low-CE training
+examples is **not** the right fix (the model already sees these; the drop is from
+increased fragmentation diversity at high CE).  The correct fix is frag-mode conditioning
+(§2) so the model can predict broader, less reproducible spectra for high-CE / CID modes.
 
 ---
 
@@ -637,22 +723,38 @@ df.groupby(['inst_type','frag_mode'])['pred_oos_prob'].describe()
 ### Finding (from `frag_ann_exp.ipynb`)
 
 Ensembling models trained with different loss weights gives **~+4% cosine sim** on the
-scaffold split (cos\_hun: individual 0.654 → ensemble 0.682) and **~+8% formula node
-entropy** (individual 0.399 → ensemble 0.432).  Higher entropy indicates more diverse
-formula predictions — better coverage of true annotated fragments.
+scaffold split and **~+8–11% formula node entropy** (higher entropy = more diverse formula
+predictions, better coverage of true annotated fragments).
 
-| Training variant | Individual cos\_hun | Ensemble cos\_hun | Formula NE (ind) | Formula NE (ens) |
-|---|---|---|---|---|
-| Baseline | 0.654 | 0.682 (+4.3%) | 0.399 | 0.432 (+8.3%) |
-| Low weight | — | — | lower NE → less diverse | — |
-| High weight | — | — | higher NE → more diverse | — |
-| Mix | — | — | balanced | — |
+**Exact numbers from notebook (4 variants × individual vs ensemble):**
+
+| Training variant | Individual cos\_hun | Ensemble cos\_hun | Formula NE (ind) | Formula NE (ens) | NE gain |
+|---|---|---|---|---|---|
+| Baseline | 0.6541 | 0.6818 (+4.2%) | 0.3986 | 0.4317 | +8.3% |
+| Low freq | 0.6526 | 0.6810 (+4.3%) | 0.3374 | 0.3707 | +9.9% |
+| High freq | 0.6543 | 0.6817 (+4.2%) | 0.4803 | 0.5170 | +7.6% |
+| **Mix** | **0.6541** | **0.6819 (+4.2%)** | **0.4057** | **0.4521** | **+11.4%** |
+
+**Mix variant** shows the highest entropy improvement (+11.4%), meaning the most gain
+in formula coverage diversity.  Cosine similarity gains are uniform across variants (~+4.2%).
+
+**Non-isomeric (NB) variant entropy:**
+
+| Variant | NB NE (ind) | NB NE (ens) |
+|---|---|---|
+| Baseline | 0.2998 | 0.3326 |
+| Low | 0.2511 | 0.2803 |
+| High | 0.3655 | 0.4067 |
+| Mix | 0.3146 | 0.3563 |
 
 ### Strategy
 
 **Effort: very low — no architecture changes.**  Train 3–5 seeds of the best model config,
 ensemble predictions by averaging normalized intensity vectors.  The diversity across
 seeds explains the gain: each model finds slightly different high-probability fragments.
+
+Recommended: ensemble the **Mix** variant (highest entropy diversity) alongside the
+Baseline for 2-model ensembles; add Low/High seeds for 4-model ensembles.
 
 Add to Priority Order table as **Priority 9** between §6 (CID data) and §7 (Dual CE):
 ensemble is zero-architecture-cost and should be validated before any structural changes.
