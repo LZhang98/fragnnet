@@ -1,12 +1,21 @@
 # Model Improvement Plan
 
-Analysis based on NIST23 test set predictions, all 9 CV folds combined (764,637 spectra, 28,256 unique molecules).
+Analysis based on NIST23 test set predictions.
+
+**Two evaluation setups are used throughout this document — numbers are NOT directly comparable between them:**
+
+| Setup | Description | Spectra per molecule | Source |
+|---|---|---|---|
+| **Per-CE** | Individual spectra at each collision energy | ~27 (multiple CEs per molecule) | 9-fold CV, 764,637 total |
+| **Merged** | Peaks from all CEs combined into one spectrum per molecule | 1 | Scaffold split, used in §4, §5, §9 |
+
+Merged spectra yield systematically higher metrics (low-CE + high-CE fragments all present) and should not be compared directly to per-CE results.
 
 ---
 
 ## Current State
 
-**Overall (764,637 spectra, 28,256 unique molecules — NIST23 9-fold CV)**
+**Overall (764,637 spectra, 28,256 unique molecules — NIST23 9-fold CV, per-CE spectra)**
 
 | Metric | Value |
 |---|---|
@@ -347,7 +356,9 @@ the observed spectrum, which is unavailable at inference.
 ### Formula Recall Baseline (from `formula_ann_exp.ipynb`)
 
 Comparison of formula-level annotation recall (AR) and precision (AP) across models,
-measured against ground-truth MS/MS annotations from the NIST23 scaffold split:
+measured against ground-truth MS/MS annotations from the NIST23 scaffold split.
+**Evaluated on merged spectra (all CEs combined per molecule) — absolute values are higher
+than per-CE evaluation; use for relative model comparisons only.**
 
 | Model | True Recall (AR) | Weighted Recall (AWR) | Pred Precision (AP) | Weighted Precision (AWP) | F1 | Weighted F1 |
 |---|---|---|---|---|---|---|
@@ -502,22 +513,24 @@ Two complementary metrics from `predictions_frag_explainability.ipynb`:
 
 ### Superclass-Level Wrecall Analysis (from `predictions_frag_explainability.ipynb`)
 
-**Mol-level `wrecall_10ppm_h4` by ClassyFire superclass** (1,486 molecules — scaffold split):
+**Mol-level `wrecall_10ppm_h4` by ClassyFire superclass** (1,486 molecules — scaffold split,
+**merged spectra**; one combined spectrum per molecule across all CEs):
 
 | Superclass | Median wrecall_h4 | N Molecules | Notes |
 |---|---|---|---|
-| Organic polymers | 0.808 | 3 | Worst overall — large, irregular structures |
-| Organosulfur compounds | 0.887 | 31 | Sulfur-specific bond losses not covered |
+| Organic polymers | 0.808 | 3 | Atom-count limit + OOD; deprioritize (see below) |
+| Organosulfur compounds | 0.887 | 31 | Rearrangement neutral losses (SO₂, H₂S…); neutral loss pre-pass needed (see below) |
 | Organophosphorus compounds | 0.931 | 17 | At overall median |
 | Hydrocarbons | 0.942 | 23 | Few heteroatom anchors |
-| Organic oxygen compounds | 0.955 | 265 | Broad class; high tail risk |
+| Organic oxygen compounds | 0.955 | 265 | McLafferty (ketones/esters) + H₂O loss (alcohols) missing; worst tail of all superclasses (33.5% below 0.9) |
 | Lipids | 0.968 | 3,957 | High median but high variance (see below) |
 | Organoheterocyclic | 0.974 | 3,038 | — |
 | Benzenoids | 0.989 | 677 | — |
 | Alkaloids | 0.997 | 87 | Best overall |
 | Organic acids | 0.999 | 598 | — |
 
-**`[M+H]+` FT spectra only — fraction with `wrecall_h4 < 0.9`** (6,597 spectra):
+**`[M+H]+` FT spectra only — fraction with `wrecall_h4 < 0.9`** (6,597 spectra,
+**per-CE spectra** from scaffold split test set):
 
 | Superclass | Median wrecall | Frac < 0.9 | Frac < 0.5 |
 |---|---|---|---|
@@ -543,7 +556,10 @@ Allowing h4 inflates the median but degrades the worst 10% of molecules.  This i
 
 ### New Finding: DAG Coverage Gaps for Fused Rings and Steroids
 
-`predictions_frag_explainability.ipynb` using the `wrecall_0.01_h1` metric (fraction of spectral intensity explainable by DAG formulas, strict ±0.01 Da / 1 H-shift) reveals severe coverage gaps for specific chemical classes:
+`predictions_frag_explainability.ipynb` using the `wrecall_0.01_h1` metric (fraction of spectral
+intensity explainable by DAG formulas, strict ±0.01 Da / 1 H-shift) reveals severe coverage gaps
+for specific chemical classes. **Evaluated on merged spectra — wrecall values are higher than
+per-CE equivalents.**
 
 **High Explainability (DAG works well):**
 - Nitrogen-containing heterocycles: `azoles` (0.698), `pyrrolopyridines` (0.659), `diazines` (0.612)
@@ -616,6 +632,99 @@ Specific SMARTS patterns to detect and upweight (or apply explicit rules) for pr
 | Lignans | Benzyl-ether: `[c]-[CH2]-O` |
 | Steroids | Explicit rules for retro-Diels-Alder, water losses, and multi-bond ring cleavages |
 | Coumarins / Indoles | Explicit rules for fused-ring opening events |
+
+### Rearrangement Neutral Loss Pre-Pass (General)
+
+The neutral loss pre-pass is not sulfur-specific — it applies to **any fragmentation requiring
+new bond formation**, which BFS can never produce regardless of depth.  The dividing line is
+mechanical, not elemental:
+
+| Mechanism | New bond formed? | BFS reachable? | Fix |
+|---|---|---|---|
+| Retro-Diels-Alder | No (2 bond breaks only) | Yes, depth 2 | One-shot ring pre-pass |
+| CO loss via C–CO bond break | No | Yes, depth 1–2 | BFS handles |
+| Simple NH₃ loss (C–N break only) | No | Yes, depth 1 | BFS handles |
+| **McLafferty** (γ-H transfer + β-cleavage) | Yes — new C=C in enol | **Never** | Neutral loss pre-pass (variable Δm) |
+| **H₂O loss** (1,2-elimination from alcohol) | Yes — new C=C | **Never** | Neutral loss pre-pass (−18 Da, fixed) |
+| **SO₂ loss** (sulfonamides/sulfones) | Yes — new C–N connectivity | **Never** | Neutral loss pre-pass (−64 Da, fixed) |
+| **SO₃ loss** (sulfates) | Yes | **Never** | Neutral loss pre-pass (−80 Da, fixed) |
+
+#### Phase 1 — Fixed-Δm losses (low effort, implement first)
+
+These have a known constant Δm detectable by a single SMARTS pattern:
+
+| Neutral loss | Δm (Da) | Functional group | SMARTS | Affected superclass |
+|---|---|---|---|---|
+| H₂O | −18 | alcohols, carboxylic acids | `[OH]` | Org. oxygen, lipids |
+| SO₂ | −64 | sulfonamides, sulfones | `[S](=O)(=O)` | Organosulfur |
+| SO₃ | −80 | sulfates, sulfonates | `[S](=O)(=O)[OH,O-]` | Organosulfur |
+| CH₃SH | −48 | thioethers | `[S][CH3]` | Organosulfur |
+| S | −32 | thioketones | `[S;!$(S=O)]` | Organosulfur |
+| CS₂ | −76 | dithiocarbamates | `[S]C(=S)` | Organosulfur |
+
+H₂O loss is expected to recover a substantial fraction of the organic oxygen compounds
+tail (33.5% below wrecall 0.9) since alcohols and carboxylic acids are the dominant
+subclasses and elimination products are high-intensity peaks.
+
+Implementation: inject `parent_formula − Δm_formula` as a depth-1 DAG node when the
+SMARTS matches.  No changes to BFS core.  Complexity O(P) per molecule (~7 patterns).
+
+```python
+FIXED_NEUTRAL_LOSSES = [
+    ("[OH]",               18.0),   # H2O — alcohols, acids
+    ("[S](=O)(=O)",        64.0),   # SO2 — sulfonamides, sulfones
+    ("[S](=O)(=O)[OH,O-]", 80.0),   # SO3 — sulfates
+    ("[S][CH3]",           48.0),   # CH3SH — thioethers
+    ("[S;!$(S=O)]",        32.0),   # S   — thioketones
+    ("[S]C(=S)",           76.0),   # CS2 — dithiocarbamates
+]
+for smarts, delta_mass in FIXED_NEUTRAL_LOSSES:
+    if mol.HasSubstructMatch(Chem.MolFromSmarts(smarts)):
+        inject_neutral_loss_fragment(parent_formula, delta_mass, depth=1)
+```
+
+#### Phase 2 — McLafferty (variable Δm, higher effort)
+
+McLafferty is the **most common rearrangement in EI/CID MS/MS** for carbonyl-containing
+molecules (ketones, aldehydes, esters, carboxylic acids).  It affects organic oxygen
+compounds and lipids — the two superclasses with the highest wrecall tail.
+
+**Mechanism:** γ-H transfers to carbonyl O; β-C–C bond breaks simultaneously, producing
+a new C=C in the alkene neutral and a new C=O in the enol fragment.  New bond formation
+means BFS can never produce the enol product.
+
+**Variable Δm problem:** The Δm equals the mass of the departing alkene (the β–γ alkyl
+chain), which differs per molecule.  Cannot use a single fixed Δm.
+
+**Implementation approach:**
+1. Detect γ-keto SMARTS: `[CH2,CH3][CH2][C](=O)` in the molecule
+2. For each match, identify the γ-carbon atoms and compute the formula of the γ-alkyl
+   fragment that departs as alkene
+3. Inject `parent_formula − alkene_formula` as a depth-1 node
+
+Effort: medium (requires formula subtraction from matched substructure atoms, not just
+fixed Δm).  Implement after Phase 1 is validated on organosulfur and organic oxygen data.
+
+### Organic Polymers: Deprioritize, Audit Atom Limit
+
+**Root cause:** Polymers are out-of-distribution for the BFS algorithm on two levels:
+1. Very large MW / atom count likely exceeds `MAX_NUM_NODES=128` in `compute_frags.pyx`,
+   silently truncating or skipping the DAG entirely.
+2. Repeating units produce many fragments with identical or near-identical formulas at
+   multiple depths — the DAG becomes enormous and hits the 150 s timeout.
+
+**Action:** Deprioritize for now — n=3 in the test set is too small to draw conclusions.
+Run the §4 Step 7 audit first:
+
+```python
+# Check how many training/test molecules exceed 128 atoms
+n_exceed = df[df['num_atoms'] > 128].shape[0]
+print(f"{n_exceed} molecules exceed MAX_NUM_NODES=128 ({n_exceed/len(df)*100:.1f}%)")
+```
+
+If the fraction is non-trivial (> 0.5%), raise the limit and reprocess.  If polymers are
+the only class affected and represent < 0.1% of data, treat as out-of-domain and exclude
+from wrecall benchmarks rather than investing engineering effort.
 
 ---
 
@@ -725,6 +834,10 @@ df.groupby(['inst_type','frag_mode'])['pred_oos_prob'].describe()
 Ensembling models trained with different loss weights gives **~+4% cosine sim** on the
 scaffold split and **~+8–11% formula node entropy** (higher entropy = more diverse formula
 predictions, better coverage of true annotated fragments).
+
+**Evaluated on merged spectra (scaffold split) — absolute cos\_hun values (~0.65–0.68) are
+lower than the per-CE 9-fold CV median (0.786) because the scaffold split uses a harder
+molecule-level split; gains (+4.2%) are relative and transferable.**
 
 **Exact numbers from notebook (4 variants × individual vs ensemble):**
 
