@@ -59,7 +59,7 @@ def make_splits(args):
         # filter dags
         node_key = "dag_num_nodes"
         edge_key = "dag_num_edges"
-        wrecall_key = "wrecall_10ppm_h4"
+        wrecall_key = args.dag_wrecall_key
         dag_masks = []
         if args.max_num_dag_nodes != -1:
             print(f"> filtering on max dag nodes {args.max_num_dag_nodes}")
@@ -494,6 +494,12 @@ if __name__ == "__main__":
         type=int,
         default=250000,
         help="Maximum DAG edge count; -1 disables the filter",
+    )
+    parser.add_argument(
+        "--dag_wrecall_key",
+        type=str,
+        default="wrecall_10ppm_h4",
+        help="Column name in DAG stats dataframe used for weighted recall filtering (e.g. wrecall_10ppm_h4, wrecall_0.01_h4)",
     )
     parser.add_argument(
         "--min_dag_wrecall",
