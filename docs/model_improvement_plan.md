@@ -118,27 +118,43 @@ oversampling alone will not fix structurally hard classes.
 
 ### Strategy
 
-#### Step 1 — Check existing sampler before changing anything
+#### Step 1 — Existing sampler (audited ✅)
 
-The current config uses `dynamic_sampler`.  Verify whether it already weights by
-`inst_type` / `frag_mode` before adding new weights:
+Config (`fragnnet_d3_nist23_cv0.yml`): `simple_group_sampler: True`, `type: group`,
+`avg_per_group: 5`.
 
-```bash
-grep -rn "dynamic_sampler\|WeightedRandom\|inst_type\|frag_mode" \
-    src/fragnnet/pl_model/ src/fragnnet/dataset/
-```
+This calls `get_group_sampler()` in `src/fragnnet/dataset/data_sampler.py`, which
+creates a `WeightedRandomSampler` with:
 
-Only proceed to Step 2 if the sampler does not upweight QTOF/CID.
+- `sample_weights = 1 / spec_per_group` — inverse CE-count weighting per mol+adduct group
+- `num_samples = sum(min(spec_per_group, 5) for each group)` — targets ~5 spectra per mol+adduct per epoch
+- `replacement=False`
+
+**What it does:** Each mol+adduct combination (= `group_id` in NIST23 unmerged) contributes
+~5 randomly-sampled CE measurements per epoch.  Molecules measured at many CEs (20+) are
+downweighted so they don't dominate.
+
+**What it does NOT do:** No weighting by `inst_type`, `frag_mode`, adduct, or chemical class.
+QTOF/CID spectra are not upweighted — **Priority 3 confirmed needed.**
+
+Keep this sampler as-is.  The QTOF/CID weighting is a multiplicative addition on top.
 
 #### Step 2 — Add QTOF/CID upweighting to sampler
 
-Add stratum weights based on `(inst_type, frag_mode)` using inverse-sqrt frequency
-dampening.  This is a `DataLoader` change only — no model or config changes required:
+The existing `get_group_sampler()` only weights by CE count.  Add a stratum multiplier
+based on `(inst_type, frag_mode)` using inverse-sqrt frequency dampening, applied on top
+of the existing `1/spec_per_group` weights.  This is a `data_sampler.py` change only —
+no model or config changes required beyond a new config key:
 
 ```python
-stratum_key = (inst_type, frag_mode, prec_type_bucket, chem_superclass_bucket)
-# weight = 1 / sqrt(stratum_count)
+# Multiply existing weight by stratum factor
+stratum_key = (inst_type, frag_mode)          # start simple; extend to adduct if needed
+stratum_count = count of training spectra per stratum
+stratum_weight = 1 / sqrt(stratum_count)      # FT/HCD ~87% → low multiplier; QTOF/CID ~6% → high
+sample_weight[i] *= stratum_weight[stratum_key[i]]
 ```
+
+Config key to add: `simple_group_sampler_inst_frag_upweight: True`
 
 #### Step 3 — Chemical class focal weighting in loss
 
@@ -753,7 +769,7 @@ These are quick queries that gate decisions in §1–§6:
 | `wrecall_0.01_h1` per class | `frag_cf.groupby('klass')['wrecall_0.01_h1'].median()` | §5 explicit rules for fused rings |
 | MoNA FT-only check | `df[(df.dset=='mona23')&(df.inst_type=='FT')].cos_sim_0.01.median()` | §6 action |
 | ACE→NCE residual per instrument | `both.groupby('inst_type').apply(lambda g: (g.nce - g.nce_converted).abs().median())` | §3 Step 1 |
-| Current sampler weighting | `grep -rn "dynamic_sampler\|WeightedRandom" src/fragnnet/` | §1 Step 1 |
+| Current sampler weighting | ✅ **Done** — `simple_group_sampler` with `type=group`, `avg_per_group=5`, weights `1/spec_per_group`. No inst_type/frag_mode weighting. | §1 Step 1 |
 | OOS calibration per stratum | `df.groupby(['inst_type','frag_mode'])['pred_oos_prob'].describe()` | §8 confidence filter |
 | wrecall superclass tail | `df.groupby('superclass')['wrecall_h4'].quantile([0.1,0.5]).unstack()` — flag superclasses with p10 < 0.5 | §5 root cause for lipid/oxygen tail |
 | CE-performance curve (FT) | `df[df.inst=='FT'].groupby(pd.cut(df.nce,[0,20,40,65,120,200]))['cos_sim_0.01'].median()` | Validates sampler CE bin targets |
