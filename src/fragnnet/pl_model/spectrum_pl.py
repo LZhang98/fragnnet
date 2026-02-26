@@ -348,8 +348,6 @@ class SpectrumPL(L.LightningModule):
             )
 
             metric_d = {
-                k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device)
-                for k in self.auxiliary_metric_names
             }
 
             # define aggregation
@@ -465,6 +463,8 @@ class SpectrumPL(L.LightningModule):
             # local calculations
             pred_split_fn=get_split_fn(pred_batch_idxs)
             true_split_fn=get_split_fn(true_batch_idxs)
+            true_ion_num=th.bincount(true_batch_idxs)
+            pred_ion_num=th.bincount(pred_batch_idxs)
             if compute_rounded_match_mzs:
                 true_r_split_fn=get_split_fn(true_batch_idxs_r)
                 pred_r_split_fn=get_split_fn(pred_batch_idxs_r)
@@ -484,6 +484,8 @@ class SpectrumPL(L.LightningModule):
 
             
             if compute_match_mzs:
+                batch_true_ints=list_to_batch_tensor(split_true_ints, pad=float("inf"))
+                batch_pred_ints=list_to_batch_tensor(split_pred_ints, pad=float("inf"))
                 batch_true_mzs=list_to_batch_tensor(split_true_mzs, pad=float("inf"))
                 batch_pred_mzs=list_to_batch_tensor(split_pred_mzs, pad=float("inf"))
                 batch_match_mask=calculate_match_mzs(batch_true_mzs, batch_pred_mzs, 
@@ -581,129 +583,81 @@ class SpectrumPL(L.LightningModule):
                             log_min=self.hparams.log_min,
                         )
                         
-                        
-                        
-            for b_idx in range(batch_size):
-                #b_true_mzs = split_true_mzs[b_idx]
-                #b_pred_mzs = split_pred_mzs[b_idx]
-                b_true_ints =split_true_ints[b_idx]
-                b_pred_ints = split_pred_ints[b_idx]
-                #b_true_prec_mz = true_prec_mzs[b_idx : b_idx + 1]
+            
+            if "recall" in self.hparams.auxiliary_scores: 
+                metric_d["recall"] = batch_true_match_mask.float().sum(-1) / true_ion_num.float()
+            if "wrecall" in self.hparams.auxiliary_scores:
+                metric_d["wrecall"] = (batch_true_ints*batch_true_match_mask.float()).sum(-1)
+            if "precision" in self.hparams.auxiliary_scores:
+                metric_d["precision"] = batch_pred_match_mask.float().sum(-1) / pred_ion_num.float()
+            if "wprecision" in self.hparams.auxiliary_scores:
+                metric_d["wprecision"]=(batch_pred_ints*batch_pred_match_mask.float()).sum(-1)
+            if "cos_hun" in self.hparams.auxiliary_scores:
+                for remove_prec_peak in hun_remove_prec_peak_flags:
+                    for sqrt in hun_sqrt_flags:
+                        fname_base = "cos_hun"
+                        if sqrt:
+                            fname_base += "_sqrt"
+                        if remove_prec_peak:
+                            fname_base += "_np"
+                        fname = f"{fname_base}"
+                        metric_d[fname]= batched_metric[fname]
+            if "jss_hun" in self.hparams.auxiliary_scores:
+                for remove_prec_peak in hun_remove_prec_peak_flags:
+                    for sqrt in hun_sqrt_flags:
+                        fname_base = "jss_hun"
+                        if sqrt:
+                            fname_base += "_sqrt"
+                        if remove_prec_peak:
+                            fname_base += "_np"
+                        fname = f"{fname_base}"
+                        metric_d[fname] = batched_metric[fname]
+            if "ndcg"  in self.hparams.auxiliary_scores or "true_oos_prob" in self.hparams.auxiliary_scores or "true_oos_e" in self.hparams.auxiliary_scores:
+                for b_idx in range(batch_size): # the followings are not speed up yet
+                    b_true_ints =split_true_ints[b_idx]
+                    b_pred_ints = split_pred_ints[b_idx]
 
-                if compute_match_mzs:
-                    '''b_match_mask = calculate_match_mzs(
-                        b_true_mzs,
-                        b_pred_mzs,
-                        tolerance=self.tolerance,
-                        relative=self.relative,
-                        tolerance_min_mz=self.tolerance_min_mz,
-                    )'''
-                    b_true_match_mask = batch_true_match_mask[b_idx][:b_true_ints.shape[0]] #th.any(b_match_mask, dim=1)
-                    b_pred_match_mask = batch_pred_match_mask[b_idx][:b_pred_ints.shape[0]]#th.any(b_match_mask, dim=0)
+                    if compute_match_mzs:
+                        b_true_match_mask = batch_true_match_mask[b_idx][:b_true_ints.shape[0]] #th.any(b_match_mask, dim=1)
+                        b_pred_match_mask = batch_pred_match_mask[b_idx][:b_pred_ints.shape[0]]#th.any(b_match_mask, dim=0)
 
-                '''if compute_rounded_match_mzs:
-                    #b_true_mzs_r = true_mzs_r_split[b_idx]
-                    #b_pred_mzs_r = pred_mzs_r_split[b_idx]
-                    #b_true_ints_r =true_ints_r_split[b_idx]
-                    #b_pred_ints_r =pred_ints_r_split[b_idx]
-                    # precursor
-                    #b_true_prec_mask_r =batch_true_prec_mask_r[b_idx][:b_true_ints_r.shape[0]]
-                    #b_pred_prec_mask_r = batch_pred_prec_mask_r[b_idx][:b_pred_ints_r.shape[0]]
-                    # match
-                    b_match_mask_r = calculate_match_mzs(
-                        b_true_mzs_r,
-                        b_pred_mzs_r,
-                        tolerance=self.tolerance,
-                        relative=self.relative,
-                        tolerance_min_mz=self.tolerance_min_mz,
-                    )
-                    #b_true_match_mask_r = batch_true_match_mask_r[b_idx][:b_true_ints_r.shape[0]] #th.any(b_match_mask_r, dim=1)
-                    #b_pred_match_mask_r = batch_pred_match_mask_r[b_idx][:b_pred_ints_r.shape[0]]#th.any(b_match_mask_r, dim=0)
-                '''
-                if "recall" in self.hparams.auxiliary_scores: #fast, ignore
-                    b_recall = th.sum(b_true_match_mask.float()) / b_true_match_mask.shape[0]
-                    metric_d["recall"][b_idx] = b_recall
 
-                if "wrecall" in self.hparams.auxiliary_scores:#fast, ignore
-                    b_wrecall = th.sum(b_true_ints[b_true_match_mask])  # / th.sum(b_true_ints)
-                    metric_d["wrecall"][b_idx] = b_wrecall
-
-                if "precision" in self.hparams.auxiliary_scores:#fast, ignore
-                    b_precision = th.sum(b_pred_match_mask.float()) / b_pred_match_mask.shape[0]
-                    metric_d["precision"][b_idx] = b_precision
-
-                if "wprecision" in self.hparams.auxiliary_scores:#fast, ignore
-                    b_wprecision = th.sum(b_pred_ints[b_pred_match_mask])
-                    metric_d["wprecision"][b_idx] = b_wprecision
-
-                if "cos_hun" in self.hparams.auxiliary_scores:
-                    for remove_prec_peak in hun_remove_prec_peak_flags:
-                        for sqrt in hun_sqrt_flags:
-                            '''if sqrt:
-                                ints_transform = get_ints_transform_func("sqrt")
-                            else:
-                                ints_transform = get_ints_transform_func("none")'''
-                           
-                            fname_base = "cos_hun"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}"
-                            metric_d[fname][b_idx] = batched_metric[fname][b_idx]
-                            #assert abs(b_cos_hun.item()-batched_metric[fname][b_idx].item())<0.001, f"{b_cos_hun} {batched_metric[fname][b_idx]} {fname}"
-
-                if "ndcg" in self.hparams.auxiliary_scores:
-                    for union in [True, False]:
-                        if union:
-                            fname_base = "ndcg_un"
-                            tie_break_flags = [True, False]
-                        else:
-                            fname_base = "ndcg_int"
-                            tie_break_flags = [True]
-                        for optimistic in tie_break_flags:
+                    if "ndcg" in self.hparams.auxiliary_scores:
+                        for union in [True, False]:
                             if union:
-                                suffix = "_opt" if optimistic else "_pess"
+                                fname_base = "ndcg_un"
+                                tie_break_flags = [True, False]
                             else:
-                                suffix = ""
-                            b_ndcg = ndcg_helper(
-                                b_true_ints,
-                                b_pred_ints,
-                                batch_match_mask[b_idx][:b_true_ints.shape[0], :b_pred_ints.shape[0]],
-                                b_true_match_mask,
-                                b_pred_match_mask,
-                                optimistic,
-                                union,
-                            )
-                            fname = f"{fname_base}{suffix}"
-                            metric_d[fname][b_idx] = b_ndcg
+                                fname_base = "ndcg_int"
+                                tie_break_flags = [True]
+                            for optimistic in tie_break_flags:
+                                if union:
+                                    suffix = "_opt" if optimistic else "_pess"
+                                else:
+                                    suffix = ""
+                                b_ndcg = ndcg_helper(
+                                    b_true_ints,
+                                    b_pred_ints,
+                                    batch_match_mask[b_idx][:b_true_ints.shape[0], :b_pred_ints.shape[0]],
+                                    b_true_match_mask,
+                                    b_pred_match_mask,
+                                    optimistic,
+                                    union,
+                                )
+                                fname = f"{fname_base}{suffix}"
+                                metric_d[fname][b_idx] = b_ndcg
 
-                if "jss_hun" in self.hparams.auxiliary_scores:
-                    for remove_prec_peak in hun_remove_prec_peak_flags:
-                        for sqrt in hun_sqrt_flags:
-                            '''if sqrt:
-                                ints_transform = get_ints_transform_func("sqrt")
-                            else:
-                                ints_transform = get_ints_transform_func("none")'''
-                            fname_base = "jss_hun"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            fname = f"{fname_base}"
-                            metric_d[fname][b_idx] = batched_metric[fname][b_idx]
+                    if "true_oos_prob" in self.hparams.auxiliary_scores:
+                        b_true_oos_prob = th.sum(b_true_ints[~b_true_match_mask]) / th.sum(b_true_ints)
+                        metric_d["true_oos_prob"][b_idx] = b_true_oos_prob
 
-                if "true_oos_prob" in self.hparams.auxiliary_scores:
-                    b_true_oos_prob = th.sum(b_true_ints[~b_true_match_mask]) / th.sum(b_true_ints)
-                    metric_d["true_oos_prob"][b_idx] = b_true_oos_prob
-
-                if "true_oos_e" in self.hparams.auxiliary_scores:
-                    b_true_oos_probs = b_true_ints[~b_true_match_mask] / th.sum(
-                        b_true_ints[~b_true_match_mask]
-                    )
-                    b_true_oos_logprobs = safelog(b_true_oos_probs, eps=self.hparams.log_min)
-                    b_true_oos_e = -th.sum(b_true_oos_probs * b_true_oos_logprobs)
-                    metric_d["true_oos_e"][b_idx] = b_true_oos_e
+                    if "true_oos_e" in self.hparams.auxiliary_scores:
+                        b_true_oos_probs = b_true_ints[~b_true_match_mask] / th.sum(
+                            b_true_ints[~b_true_match_mask]
+                        )
+                        b_true_oos_logprobs = safelog(b_true_oos_probs, eps=self.hparams.log_min)
+                        b_true_oos_e = -th.sum(b_true_oos_probs * b_true_oos_logprobs)
+                        metric_d["true_oos_e"][b_idx] = b_true_oos_e
 
             if "pred_node_count" in self.hparams.auxiliary_scores:
                 for nb_flag in nb_flags:
