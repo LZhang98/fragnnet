@@ -46,22 +46,45 @@ from fragnnet.utils.spec_utils import (
     batch_cos_hun_helper,
     batch_jss_hun_helper
 )
+
 def get_split_fn(bs_idx):
     # check the validity of bs idx
     assert (bs_idx[1:]-bs_idx[:-1]).min()>=0
-    _, batch_counts = th.unique(bs_idx, return_counts=True)
-    batch_counts=batch_counts.detach().cpu().tolist()
+    batch_counts = th.bincount(bs_idx)
+    batch_counts=batch_counts.tolist()
     def split_fn(inp_tensor):
         return th.split(inp_tensor, batch_counts)
     return split_fn
 
-def list_to_batch_tensor(inp, pad):
-    max_l=max([len(_) for _ in inp])
-    def padv(v):
-        if len(v)<max_l:
-            return th.cat([v, v.new_zeros(max_l-len(v))+pad], 0)
-        return v
-    return th.stack([padv(_) for _ in inp], 0)
+def ragged_to_batch(feat: th.Tensor,
+                    batch_idx: th.Tensor,
+                    pad_value=0):
+
+    assert batch_idx.ndim == 1
+    assert feat.size(0) == batch_idx.size(0)
+
+    device = feat.device
+    N = batch_idx.size(0)
+
+    lengths = th.bincount(batch_idx)
+    B = lengths.size(0)
+    max_len = lengths.max()
+
+    offsets = th.cumsum(lengths, dim=0)
+    offsets = th.cat(
+        [th.zeros(1, device=device, dtype=offsets.dtype), offsets[:-1]]
+    )
+    local_idx = th.arange(N, device=device) - offsets[batch_idx]
+    assert feat.ndim == 1
+    
+    out = th.full(
+        (B, max_len),
+        pad_value,
+        device=device,
+        dtype=feat.dtype
+    )
+    out[batch_idx, local_idx] = feat
+    return out
 
 class SpectrumPL(L.LightningModule):
     """
@@ -461,33 +484,23 @@ class SpectrumPL(L.LightningModule):
                     metric_d["true_spec_ne"] = true_spec_ne
 
             # local calculations
-            pred_split_fn=get_split_fn(pred_batch_idxs)
-            true_split_fn=get_split_fn(true_batch_idxs)
             true_ion_num=th.bincount(true_batch_idxs)
             pred_ion_num=th.bincount(pred_batch_idxs)
             if compute_rounded_match_mzs:
-                true_r_split_fn=get_split_fn(true_batch_idxs_r)
-                pred_r_split_fn=get_split_fn(pred_batch_idxs_r)
-                true_mzs_r_split=true_r_split_fn(true_mzs_r)
-                true_ints_r_split=true_r_split_fn(true_ints_r)
-                pred_mzs_r_split=pred_r_split_fn(pred_mzs_r)
-                pred_ints_r_split=pred_r_split_fn(pred_ints_r)
-                batched_true_ints_r=list_to_batch_tensor(true_ints_r_split, pad=0)
-                batched_pred_ints_r=list_to_batch_tensor(pred_ints_r_split, pad=0)
+                batched_true_ints_r=ragged_to_batch(true_ints_r,true_batch_idxs_r, pad_value=0)
+                batched_pred_ints_r=ragged_to_batch(pred_ints_r,pred_batch_idxs_r, pad_value=0)
                 sqrt_batched_true_ints_r=get_ints_transform_func("sqrt")(batched_true_ints_r)
                 sqrt_batched_pred_ints_r=get_ints_transform_func("sqrt")(batched_pred_ints_r)
 
-            split_true_mzs=true_split_fn(true_mzs)
-            split_pred_mzs=pred_split_fn(pred_mzs)
-            split_true_ints=true_split_fn(true_ints)
-            split_pred_ints=pred_split_fn(pred_ints)
+            
+            
 
             
             if compute_match_mzs:
-                batch_true_ints=list_to_batch_tensor(split_true_ints, pad=float("inf"))
-                batch_pred_ints=list_to_batch_tensor(split_pred_ints, pad=float("inf"))
-                batch_true_mzs=list_to_batch_tensor(split_true_mzs, pad=float("inf"))
-                batch_pred_mzs=list_to_batch_tensor(split_pred_mzs, pad=float("inf"))
+                batch_true_ints=ragged_to_batch(true_ints,true_batch_idxs, pad_value=float("inf"))
+                batch_pred_ints=ragged_to_batch(pred_ints, pred_batch_idxs, pad_value=float("inf"))
+                batch_true_mzs=ragged_to_batch(true_mzs, true_batch_idxs, pad_value=float("inf"))
+                batch_pred_mzs=ragged_to_batch(pred_mzs, pred_batch_idxs, pad_value=float("inf"))
                 batch_match_mask=calculate_match_mzs(batch_true_mzs, batch_pred_mzs, 
                                                      tolerance=self.tolerance,
                                                     relative=self.relative,
@@ -495,8 +508,8 @@ class SpectrumPL(L.LightningModule):
                 batch_true_match_mask=batch_match_mask.max(-1).values
                 batch_pred_match_mask=batch_match_mask.max(-2).values
             if compute_rounded_match_mzs:
-                batch_true_mzs_r=list_to_batch_tensor(true_mzs_r_split, pad=float("inf"))
-                batch_pred_mzs_r=list_to_batch_tensor(pred_mzs_r_split, pad=float("inf"))
+                batch_true_mzs_r=ragged_to_batch(true_mzs_r, true_batch_idxs_r, pad_value=float("inf"))
+                batch_pred_mzs_r=ragged_to_batch(pred_mzs_r, pred_batch_idxs_r, pad_value=float("inf"))
                 batch_true_prec_mask_r = calculate_match_mzs(
                         batch_true_mzs_r,
                         true_prec_mzs[..., None],
@@ -613,6 +626,10 @@ class SpectrumPL(L.LightningModule):
                         fname = f"{fname_base}"
                         metric_d[fname] = batched_metric[fname]
             if "ndcg"  in self.hparams.auxiliary_scores or "true_oos_prob" in self.hparams.auxiliary_scores or "true_oos_e" in self.hparams.auxiliary_scores:
+                pred_split_fn=get_split_fn(pred_batch_idxs)
+                true_split_fn=get_split_fn(true_batch_idxs)
+                split_true_ints=true_split_fn(true_ints)
+                split_pred_ints=pred_split_fn(pred_ints)
                 for b_idx in range(batch_size): # the followings are not speed up yet
                     b_true_ints =split_true_ints[b_idx]
                     b_pred_ints = split_pred_ints[b_idx]
