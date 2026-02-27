@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Callable
+from typing import cast
 
 import numpy as np
 import torch as th
@@ -17,7 +19,10 @@ from fragnnet.utils.misc_utils import (
 )
 
 try:
-    from torch_linear_assignment import assignment_to_indices, batch_linear_assignment
+    from torch_linear_assignment import (  # pyright: ignore[reportMissingImports]
+        assignment_to_indices,
+        batch_linear_assignment,
+    )
 
     _torch_linear_assignment = True
 except ImportError:
@@ -63,7 +68,7 @@ def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tenso
     return row_ind, col_ind
 
 
-def get_ints_transform_func(ints_transform):
+def get_ints_transform_func(ints_transform: str) -> Callable[[th.Tensor], th.Tensor]:
     """method to get int transferom func
 
     Args:
@@ -76,23 +81,32 @@ def get_ints_transform_func(ints_transform):
         _type_: _description_
     """
 
-    _func = None
     if ints_transform == "log10":
-        _func = lambda ints: th.log10(ints + 1.0)
+
+        def _func(ints: th.Tensor) -> th.Tensor:
+            return th.log10(ints + 1.0)
     elif ints_transform == "log10t3":
-        _func = lambda ints: th.log10(ints / 3.0 + 1.0)
+
+        def _func(ints: th.Tensor) -> th.Tensor:
+            return th.log10(ints / 3.0 + 1.0)
     elif ints_transform == "loge":
-        _func = lambda ints: th.log(ints + 1.0)
+
+        def _func(ints: th.Tensor) -> th.Tensor:
+            return th.log(ints + 1.0)
     elif ints_transform == "sqrt":
-        _func = lambda ints: th.sqrt(ints)
+
+        def _func(ints: th.Tensor) -> th.Tensor:
+            return th.sqrt(ints)
     elif ints_transform == "none":
-        _func = lambda ints: ints
+
+        def _func(ints: th.Tensor) -> th.Tensor:
+            return ints
     else:
         raise ValueError(f"Invalid ints_transform: {ints_transform}")
     return _func
 
 
-def get_ints_untransform_func(ints_transform):
+def get_ints_untransform_func(ints_transform: str):
     """
 
     Args:
@@ -107,28 +121,38 @@ def get_ints_untransform_func(ints_transform):
     if ints_transform == "log10":
         max_ints = float(np.log10(1000.0 + 1.0))
 
-        def _untransform_fn(x):
+        def _untransform_fn_log10(x: th.Tensor) -> th.Tensor:
             return 10**x - 1.0
+
+        _untransform_fn = _untransform_fn_log10
     elif ints_transform == "log10t3":
         max_ints = float(np.log10(1000.0 / 3.0 + 1.0))
 
-        def _untransform_fn(x):
+        def _untransform_fn_log10t3(x: th.Tensor) -> th.Tensor:
             return 3.0 * (10**x - 1.0)
+
+        _untransform_fn = _untransform_fn_log10t3
     elif ints_transform == "loge":
         max_ints = float(np.log(1000.0 + 1.0))
 
-        def _untransform_fn(x):
+        def _untransform_fn_loge(x: th.Tensor) -> th.Tensor:
             return th.exp(x) - 1.0
+
+        _untransform_fn = _untransform_fn_loge
     elif ints_transform == "sqrt":
         max_ints = float(np.sqrt(1000.0))
 
-        def _untransform_fn(x):
+        def _untransform_fn_sqrt(x: th.Tensor) -> th.Tensor:
             return x**2
+
+        _untransform_fn = _untransform_fn_sqrt
     elif ints_transform == "none":
         max_ints = 1000.0
 
-        def _untransform_fn(x):
+        def _untransform_fn_none(x: th.Tensor) -> th.Tensor:
             return x
+
+        _untransform_fn = _untransform_fn_none
     else:
         raise ValueError("invalid transform")
 
@@ -213,17 +237,27 @@ def filter_func(
     Returns:
         Tuple[Union[th.Tensor,np.ndarray], Union[th.Tensor,np.ndarray]]: mzs, ints
     """
-    thresh_mask = ints > ints_thresh
+    is_tensor_pair = isinstance(mzs, th.Tensor) and isinstance(ints, th.Tensor)
+    is_ndarray_pair = isinstance(mzs, np.ndarray) and isinstance(ints, np.ndarray)
+    if not (is_tensor_pair or is_ndarray_pair):
+        raise TypeError("mzs and ints must both be torch tensors or both numpy arrays")
 
+    thresh_mask = ints > ints_thresh
     if mz_max > 0:
-        max_mask = mzs < mz_max
-        both_mask = thresh_mask & max_mask
+        both_mask = thresh_mask & (mzs < mz_max)
     else:
         both_mask = thresh_mask
 
-    mzs = mzs[both_mask]
-    ints = ints[both_mask]
-    return mzs, ints
+    if is_tensor_pair:
+        mzs_t = cast(th.Tensor, mzs)
+        ints_t = cast(th.Tensor, ints)
+        mask_t = cast(th.Tensor, both_mask)
+        return mzs_t[mask_t], ints_t[mask_t]
+
+    mzs_n = cast(np.ndarray, mzs)
+    ints_n = cast(np.ndarray, ints)
+    mask_n = cast(np.ndarray, both_mask)
+    return mzs_n[mask_n], ints_n[mask_n]
 
 
 def bin_func(
@@ -274,10 +308,10 @@ def bin_func(
         return bin_spec
 
 
-def batch_func(*lists, offset_flags=False) -> tuple[th.Tensor]:
+def batch_func(*lists, offset_flags: list[bool] | None = None) -> tuple[th.Tensor]:
     """ """
 
-    if offset_flags is False:
+    if offset_flags is None:
         offset_flags = [False] * len(lists)
     batch_size = len(lists[0])
     batch_idxs = th.arange(batch_size)
@@ -286,10 +320,10 @@ def batch_func(*lists, offset_flags=False) -> tuple[th.Tensor]:
     if any(offset_flags):
         offsets = th.cat([th.zeros([1], dtype=th.long), th.cumsum(repeat_sizes, dim=0)[:-1]], dim=0)
     b_lists = []
-    for l_idx, l in enumerate(lists):
-        b_list = th.cat(l, dim=0)
+    for l_idx, seq in enumerate(lists):
+        b_list = th.cat(seq, dim=0)
         if offset_flags[l_idx]:
-            repeat_sizes = th.tensor([th.numel(item) for item in l])
+            repeat_sizes = th.tensor([th.numel(item) for item in seq])
             repeat_offsets = th.repeat_interleave(offsets, repeat_sizes)
             b_list = b_list + repeat_offsets
         b_lists.append(b_list)
@@ -337,9 +371,9 @@ def batched_bin_func(
     agg: str,
     sparse: bool = False,
     remove_prec_peaks: bool = False,
-    prec_mzs: th.Tensor = None,
+    prec_mzs: th.Tensor | None = None,
     return_mzs: bool = False,
-) -> th.Tensor:
+) -> th.Tensor | tuple[th.Tensor, th.Tensor, th.Tensor]:
     """method to get binned spectra for batch
 
     Args:
@@ -358,7 +392,7 @@ def batched_bin_func(
     if mzs.shape[0] == 0:
         raise ValueError("batched_bin_func received empty mzs tensor")
     assert th.max(mzs) < mz_max, (th.max(mzs), mz_max)
-    batch_size = th.max(batch_idxs) + 1
+    batch_size = int(th.max(batch_idxs).item()) + 1
     bins = th.arange(
         mz_bin_res,
         mz_max + mz_bin_res,
@@ -366,7 +400,7 @@ def batched_bin_func(
         device=mzs.device,
         dtype=mzs.dtype,
     )
-    num_bins = bins.shape[0]
+    num_bins = int(bins.shape[0])
     bin_idxs = th.searchsorted(bins, mzs, right=True)
     bin_offsets = (th.arange(batch_size, device=mzs.device) * num_bins)[batch_idxs]
     bin_idxs = bin_idxs + bin_offsets
@@ -417,7 +451,9 @@ def batched_bin_func(
         return bin_spec
 
 
-def merge_sparse_specs(*peakses, renormalize: bool = False, sum_ints: bool = True) -> th.Tensor:
+def merge_sparse_specs(
+    *peakses, renormalize: bool = False, sum_ints: bool = True
+) -> list[tuple[float, float]]:
     """
     this will result in peaks that are really close in mass (<5ppm)
     they are probably the same peak, but our model can handle this type of ambiguity
@@ -441,7 +477,7 @@ def merge_sparse_specs(*peakses, renormalize: bool = False, sum_ints: bool = Tru
                     merged_peaks[mz] = max(merged_peaks[mz], intensity)
             else:
                 merged_peaks[mz] = intensity
-    merged_peaks = sorted(list(merged_peaks.items()), key=lambda x: x[0])
+    merged_peaks = sorted(merged_peaks.items(), key=lambda x: x[0])
     if renormalize:
         total_intensity = sum([intensity for mz, intensity in merged_peaks])
         merged_peaks = [(mz, intensity / total_intensity) for mz, intensity in merged_peaks]
@@ -460,8 +496,8 @@ def calculate_spectrum_entropy(log_ints: th.Tensor, batch_idxs: th.Tensor) -> th
         th.Tensor: spectrum entropy
     """
 
-    k = th.max(batch_idxs) + 1
-    log_norm_ints = scatter_logsoftmax(log_ints, batch_idxs, dim=0)
+    k = int(th.max(batch_idxs).item()) + 1
+    log_norm_ints = scatter_logsoftmax(log_ints, batch_idxs)
     entropy = -scatter_reduce(
         src=th.exp(log_norm_ints) * log_norm_ints,
         index=batch_idxs,
@@ -496,25 +532,31 @@ def calculate_match_mzs(
     """
 
     if isinstance(true_mzs, th.Tensor) and isinstance(pred_mzs, th.Tensor):
-        abs_func = th.abs
-        copy_func = th.clone
-    elif isinstance(true_mzs, np.ndarray) and isinstance(pred_mzs, np.ndarray):
-        abs_func = np.abs
-        copy_func = np.copy
-    else:
-        raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
-    with th.autocast(device_type="cuda", dtype=th.bfloat16):  # speed up and save mem
-        diff_mzs = abs_func(true_mzs[..., None] - pred_mzs[..., None, :])
+        with th.autocast(device_type="cuda", dtype=th.bfloat16):  # speed up and save mem
+            diff_mzs = th.abs(true_mzs[..., None] - pred_mzs[..., None, :])
+            min_diff_mzs = tolerance
+            if relative:
+                if pred_mz_divisor:
+                    divisor_mzs = pred_mzs.clone()
+                else:
+                    divisor_mzs = true_mzs.clone()
+                divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
+                diff_mzs = diff_mzs / divisor_mzs[..., None]
+        return diff_mzs < min_diff_mzs
+
+    if isinstance(true_mzs, np.ndarray) and isinstance(pred_mzs, np.ndarray):
+        diff_mzs = np.abs(true_mzs[..., None] - pred_mzs[..., None, :])
         min_diff_mzs = tolerance
         if relative:
             if pred_mz_divisor:
-                divisor_mzs = copy_func(pred_mzs)
+                divisor_mzs = np.copy(pred_mzs)
             else:
-                divisor_mzs = copy_func(true_mzs)
+                divisor_mzs = np.copy(true_mzs)
             divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
             diff_mzs = diff_mzs / divisor_mzs[..., None]
-    match_mzs = diff_mzs < min_diff_mzs
-    return match_mzs
+        return diff_mzs < min_diff_mzs
+
+    raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
 
 
 # cosine similarity code ... all of them
@@ -529,7 +571,7 @@ def calculate_cosine_similarity(
     mz_bin_res: float = 0.01,
     sum_ints: bool = True,
     remove_prec_peaks: bool = False,
-    true_prec_mzs: th.Tensor = None,
+    true_prec_mzs: th.Tensor | None = None,
 ) -> th.Tensor:
     """calculate cosine similarity using binned spectra
 
@@ -585,7 +627,7 @@ def calculate_sparse_cosine_similarity(
     mz_bin_res: float = 0.01,
     sum_ints: bool = True,
     remove_prec_peaks: bool = False,
-    true_prec_mzs: th.Tensor = None,
+    true_prec_mzs: th.Tensor | None = None,
     log_ints: bool = False,
 ) -> th.Tensor:
     """
@@ -660,7 +702,7 @@ def calculate_sparse_cosine_hungarian(
     relative: bool = True,
     sum_ints: bool = True,
     remove_prec_peaks: bool = False,
-    true_prec_mzs: th.Tensor = None,
+    true_prec_mzs: th.Tensor | None = None,
     tolerance_min_mz: float = TOLERANCE_MIN_MZ,
 ) -> th.Tensor:
     """Calculate cosine similarity using the Hungarian algorithm as the matching method.
@@ -688,8 +730,8 @@ def calculate_sparse_cosine_hungarian(
         pred_mzs, pred_ints, pred_batch_idxs, agg=agg
     )
     # calculate
-    batch_size = th.max(true_batch_idxs_r) + 1
-    cos_hun = th.zeros([batch_size], device=true_ints.device, dtype=true_ints.dtype)
+    batch_size = int(th.max(true_batch_idxs_r).item()) + 1
+    cos_hun = th.zeros((batch_size,), device=true_ints.device, dtype=true_ints.dtype)
     for b_idx in range(batch_size):
         b_true_mask_r = true_batch_idxs_r == b_idx
         b_pred_mask_r = pred_batch_idxs_r == b_idx
@@ -702,6 +744,8 @@ def calculate_sparse_cosine_hungarian(
 
         # assert remove_prec_peaks and true_prec_mzs is None,
         if remove_prec_peaks:
+            if true_prec_mzs is None:
+                raise ValueError("true_prec_mzs must be provided when remove_prec_peaks is True")
             b_true_prec_mz = true_prec_mzs[b_true_mask_r]
             # precursor
             b_true_prec_mask_r = calculate_match_mzs(
@@ -726,6 +770,8 @@ def calculate_sparse_cosine_hungarian(
             relative=relative,
             tolerance_min_mz=tolerance_min_mz,
         )
+        if isinstance(b_match_mask_r, np.ndarray):
+            b_match_mask_r = th.from_numpy(b_match_mask_r).to(b_true_ints_r.device)
         b_true_match_mask_r = th.any(b_match_mask_r, dim=1)
         b_pred_match_mask_r = th.any(b_match_mask_r, dim=0)
 
@@ -778,19 +824,20 @@ def cos_sim_helper(
     true_mask = th.isin(true_bin_idxs, pred_bin_idxs)
     both_bin_ints = pred_bin_ints[pred_mask] * true_bin_ints[true_mask]
     assert th.all(pred_bin_batch_idxs[pred_mask] == true_bin_batch_idxs[true_mask])
+    dim_size = int(th.max(true_bin_batch_idxs).item()) + 1
     if pred_mask.sum() == 0:
         cos_sims = scatter_reduce(
             src=0.0 * pred_bin_ints,
             index=pred_bin_batch_idxs,
             reduce="sum",
-            dim_size=th.max(true_bin_batch_idxs) + 1,
+            dim_size=dim_size,
         )
     else:
         cos_sims = scatter_reduce(
             src=both_bin_ints,
             index=pred_bin_batch_idxs[pred_mask],
             reduce="sum",
-            dim_size=th.max(true_bin_batch_idxs) + 1,
+            dim_size=dim_size,
         )
     return cos_sims
 
@@ -816,12 +863,13 @@ def batched_mf1000_normalize(ints, batch_idxs):
         _type_: _description_
     """
 
-    max_ints = scatter_reduce(ints, batch_idxs, reduce="max", dim_size=th.max(batch_idxs) + 1)
+    dim_size = int(th.max(batch_idxs).item()) + 1
+    max_ints = scatter_reduce(ints, batch_idxs, reduce="max", dim_size=dim_size)
     ints = (ints / max_ints[batch_idxs]) * 1000.0
     return ints
 
 
-def mf1000_normalize_np(ints: np.array) -> np.array:
+def mf1000_normalize_np(ints: np.ndarray) -> np.ndarray:
     """mf 1000 normalize implemetion in numpy, not batched
 
     Args:
@@ -1480,7 +1528,7 @@ def jss_helper(
     pred_bin_batch_idxs,
     log_min,
 ):
-    batch_size = th.max(true_bin_batch_idxs) + 1
+    batch_size = int(th.max(true_bin_batch_idxs).item()) + 1
     # l1 normalize
     true_bin_ints = scatter_l1normalize(true_bin_ints, true_bin_batch_idxs)
     pred_bin_ints = scatter_l1normalize(pred_bin_ints, pred_bin_batch_idxs)
