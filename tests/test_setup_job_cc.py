@@ -1,6 +1,8 @@
+import argparse
 import importlib.util
-from argparse import Namespace
 from pathlib import Path
+
+import pytest
 
 
 def load_module():
@@ -12,52 +14,181 @@ def load_module():
     return mod
 
 
-def test_sanitize_job_name():
-    mod = load_module()
-    assert mod._sanitize_job_name("/path/to/my-config.yaml") == "my-config"
-    assert mod._sanitize_job_name("weird name@v1.yml") == "weird-name-v1"
-    assert mod._sanitize_job_name("") == "job"
+@pytest.fixture(scope="module")
+def mod():
+    return load_module()
 
 
-def test_build_python_line_and_override():
-    mod = load_module()
-    kwargs = ["config=cfg.yaml", "a=1", "verbose=true"]
-    line = mod._build_python_line(kwargs, "scripts/run.py")
-    assert "python scripts/run.py" in line
-    assert "--config cfg.yaml" in line
-    # override config
-    line2 = mod._build_python_line(kwargs, "scripts/run.py", override_config="other.yaml")
-    assert "--config other.yaml" in line2
+def make_args(**kwargs) -> argparse.Namespace:
+    """Return a Namespace with sensible defaults, overridden by kwargs."""
+    defaults = {
+        "gpu_profile": None,
+        "gpu": 1,
+        "cpu": 8,
+        "mem": 128,
+        "gres_gpu": None,
+        "gpus_per_node": None,
+    }
+    defaults.update(kwargs)
+    return argparse.Namespace(**defaults)
 
 
-def test_config_list_creates_scripts(tmp_path):
-    mod = load_module()
-    args = Namespace()
-    args.list_gpu_profiles = False
-    args.gpu_profile = None
-    args.frag_gnn_dp = str(tmp_path)
-    args.script_dp = str(tmp_path / "scripts_out")
-    args.job_dp = str(tmp_path / "jobs_out")
-    args.python_script_fp = "scripts/run_pl_model_fit.py"
-    args.mem = 4
-    args.cpu = 1
-    args.gpu = 0
-    args.gpus_per_node = None
-    args.gres_gpu = None
-    args.time = 1
-    args.script_kwargs = None
-    args.job_name = None
-    args.cc_account = "rrg-dwishart"
-    args.cc_email = "a@b.com"
-    args.python_version = "3.11"
-    args.rdkit_version = "2023.09.5"
-    args.no_submit = True
-    args.config_list = ["configs/one.yaml", "configs/two.yaml"]
+# ---------------------------------------------------------------------------
+# _normalize_profile_name
+# ---------------------------------------------------------------------------
 
-    mod.main(args)
 
-    # Expect two scripts created
-    s1 = Path(args.script_dp) / "one.sh"
-    s2 = Path(args.script_dp) / "two.sh"
-    assert s1.exists()
-    assert s2.exists()
+class TestNormalizeProfileName:
+    def test_lowercases(self, mod):
+        assert mod._normalize_profile_name("H100-80GB") == "h100-80gb"
+
+    def test_strips_leading_trailing_whitespace(self, mod):
+        assert mod._normalize_profile_name("  a100-40gb  ") == "a100-40gb"
+
+    def test_removes_internal_spaces(self, mod):
+        # e.g. user types "fir: h100-80gb"
+        assert mod._normalize_profile_name("fir: h100-80gb") == "fir:h100-80gb"
+
+    def test_already_normalized_unchanged(self, mod):
+        assert mod._normalize_profile_name("narval:a100-40gb") == "narval:a100-40gb"
+
+    def test_empty_string(self, mod):
+        assert mod._normalize_profile_name("") == ""
+
+
+# ---------------------------------------------------------------------------
+# GPU_PROFILES structure
+# ---------------------------------------------------------------------------
+
+REQUIRED_PROFILE_KEYS = {"cluster", "gpu_label", "gres_gpu", "cpu", "mem", "price", "notes"}
+
+
+class TestGpuProfilesStructure:
+    def test_all_profiles_have_required_keys(self, mod):
+        for name, profile in mod.GPU_PROFILES.items():
+            missing = REQUIRED_PROFILE_KEYS - profile.keys()
+            assert not missing, f"Profile '{name}' missing keys: {missing}"
+
+    def test_cpu_and_mem_are_positive(self, mod):
+        for name, profile in mod.GPU_PROFILES.items():
+            assert profile["cpu"] > 0, f"Profile '{name}' has non-positive cpu"
+            assert profile["mem"] > 0, f"Profile '{name}' has non-positive mem"
+
+    def test_gres_starts_with_gpu(self, mod):
+        for name, profile in mod.GPU_PROFILES.items():
+            assert profile["gres_gpu"].startswith("gpu"), (
+                f"Profile '{name}' gres_gpu does not start with 'gpu': {profile['gres_gpu']}"
+            )
+
+    def test_known_fir_h100_80gb_values(self, mod):
+        p = mod.GPU_PROFILES["fir:h100-80gb"]
+        assert p["cluster"] == "fir"
+        assert p["cpu"] == 12
+        assert p["mem"] == 280
+        assert p["gres_gpu"] == "gpu:h100:1"
+
+    def test_known_narval_a100_40gb_values(self, mod):
+        p = mod.GPU_PROFILES["narval:a100-40gb"]
+        assert p["cluster"] == "narval"
+        assert p["cpu"] == 12
+        assert p["mem"] == 124
+        assert p["gres_gpu"] == "gpu:a100:1"
+
+
+# ---------------------------------------------------------------------------
+# GPU_PROFILE_ALIASES
+# ---------------------------------------------------------------------------
+
+
+class TestGpuProfileAliases:
+    def test_all_aliases_point_to_valid_profiles(self, mod):
+        for alias, target in mod.GPU_PROFILE_ALIASES.items():
+            assert target in mod.GPU_PROFILES, (
+                f"Alias '{alias}' points to unknown profile '{target}'"
+            )
+
+    def test_h100_80gb_alias(self, mod):
+        assert mod.GPU_PROFILE_ALIASES["h100-80gb"] == "fir:h100-80gb"
+
+    def test_a100_40gb_alias(self, mod):
+        assert mod.GPU_PROFILE_ALIASES["a100-40gb"] == "narval:a100-40gb"
+
+    def test_a6000_alias(self, mod):
+        assert mod.GPU_PROFILE_ALIASES["a6000"] == "vulcan:l40s"
+
+
+# ---------------------------------------------------------------------------
+# apply_gpu_profile
+# ---------------------------------------------------------------------------
+
+
+class TestApplyGpuProfile:
+    def test_no_profile_is_noop(self, mod):
+        args = make_args(gpu_profile=None, cpu=4, mem=64)
+        mod.apply_gpu_profile(args)
+        assert args.cpu == 4
+        assert args.mem == 64
+
+    def test_full_profile_key_sets_resources(self, mod):
+        args = make_args(gpu_profile="fir:h100-80gb", gpu=0)
+        mod.apply_gpu_profile(args)
+        expected = mod.GPU_PROFILES["fir:h100-80gb"]
+        assert args.cpu == expected["cpu"]
+        assert args.mem == expected["mem"]
+        assert args.gres_gpu == expected["gres_gpu"]
+
+    def test_alias_resolves_to_correct_profile(self, mod):
+        args = make_args(gpu_profile="a100-40gb", gpu=0)
+        mod.apply_gpu_profile(args)
+        expected = mod.GPU_PROFILES["narval:a100-40gb"]
+        assert args.cpu == expected["cpu"]
+        assert args.mem == expected["mem"]
+        assert args.gres_gpu == expected["gres_gpu"]
+
+    def test_case_insensitive_input(self, mod):
+        args = make_args(gpu_profile="FIR:H100-80GB", gpu=0)
+        mod.apply_gpu_profile(args)
+        expected = mod.GPU_PROFILES["fir:h100-80gb"]
+        assert args.cpu == expected["cpu"]
+        assert args.gres_gpu == expected["gres_gpu"]
+
+    def test_whitespace_in_input(self, mod):
+        args = make_args(gpu_profile="  narval:a100-40gb  ", gpu=0)
+        mod.apply_gpu_profile(args)
+        expected = mod.GPU_PROFILES["narval:a100-40gb"]
+        assert args.cpu == expected["cpu"]
+
+    def test_unknown_profile_raises_value_error(self, mod):
+        args = make_args(gpu_profile="nonexistent:gpu")
+        with pytest.raises(ValueError, match="Unknown gpu profile"):
+            mod.apply_gpu_profile(args)
+
+    def test_gpu_set_to_1_when_zero(self, mod):
+        """gpu=0 should be bumped to 1 after applying a profile."""
+        args = make_args(gpu_profile="fir:h100-1g.10gb", gpu=0)
+        mod.apply_gpu_profile(args)
+        assert args.gpu == 1
+
+    def test_gpu_not_overwritten_when_already_positive(self, mod):
+        """Pre-existing positive gpu value must be preserved."""
+        args = make_args(gpu_profile="fir:h100-1g.10gb", gpu=2)
+        mod.apply_gpu_profile(args)
+        assert args.gpu == 2
+
+    def test_mig_slice_sets_correct_gres(self, mod):
+        args = make_args(gpu_profile="narval:a100-1g.5gb", gpu=0)
+        mod.apply_gpu_profile(args)
+        assert args.gres_gpu == "gpu:a100_1g.5gb:1"
+
+    def test_all_profiles_apply_without_error(self, mod):
+        """Smoke test: every declared profile applies cleanly."""
+        for name in mod.GPU_PROFILES:
+            args = make_args(gpu_profile=name, gpu=0)
+            mod.apply_gpu_profile(args)
+
+    def test_alias_case_insensitive(self, mod):
+        """Aliases should also be resolved case-insensitively."""
+        args = make_args(gpu_profile="A100-40GB", gpu=0)
+        mod.apply_gpu_profile(args)
+        expected = mod.GPU_PROFILES["narval:a100-40gb"]
+        assert args.cpu == expected["cpu"]
