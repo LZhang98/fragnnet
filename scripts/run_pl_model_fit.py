@@ -1,11 +1,8 @@
 import argparse
 
 from fragnnet.runner import init_run
-import os
+
 if __name__ == "__main__":
-    # get arguments
-    from pandarallel import pandarallel
-    pandarallel.initialize(progress_bar=True, nb_workers=min(5,  os.cpu_count()))
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-t",

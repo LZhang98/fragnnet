@@ -11,6 +11,7 @@ import yaml
 from lightning import seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.profilers import AdvancedProfiler, SimpleProfiler
+from pandarallel import pandarallel
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
@@ -22,7 +23,7 @@ from fragnnet.dataset import (
     SpecMolFragDynamicBatchSampler,
     get_group_sampler,
 )
-from fragnnet.utils.misc_utils import deep_update
+from fragnnet.utils.misc_utils import deep_update, get_core_count
 from fragnnet.utils.nn_utils import nan_backward_hook, nan_forward_hook
 from fragnnet.utils.pl_utils import ConsoleLogger
 from fragnnet.utils.profile_utils import MyPyTorchProfiler
@@ -165,9 +166,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     # Compute maximum effective batch size (accounts for gradient accumulation)
     # used by dynamic batch samplers to decide return thresholds.
-    max_batch_size = config_d.get("train_batch_size", 1) * config_d.get(
-        "accumulate_grad_batches", 1
-    )
+
     if split == "train":
         # Choose sampler for training
         if config_d["group_sampler"]:
@@ -205,7 +204,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
             return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
         else:
             return_batch_at = config_d["eval_batch_size"]
-        if split=="train":
+        if split == "train":
             batch_sampler = SpecMolFragDynamicBatchSampler(
                 ds,
                 max_num=config_d["dynamic_batch_sampler_max"],
@@ -264,6 +263,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
     Returns:
                     model: The trained model (LightningModule).
     """
+
     # setup logger
     logging.basicConfig(
         level=logging.INFO,
@@ -362,7 +362,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         job_id_fp = None
 
     # CUDA and TF32 setup
-    if config_d["use_tensor_float32"] == True and config_d["accelerator"] == "gpu":
+    if config_d["use_tensor_float32"] and config_d["accelerator"] == "gpu":
         # The flag below controls whether to allow TF32 on matmul. This flag defaults to False in PyTorch 1.12 and later.
         th.backends.cuda.matmul.allow_tf32 = True
         # The flag below controls whether to allow TF32 on cuDNN. This flag defaults to True.
@@ -373,6 +373,11 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         misc_utils.LOG_ZERO_FP32 = float(config_d["log_zero_fp32"])
     if config_d["log_zero_fp16"] is not None:
         misc_utils.LOG_ZERO_FP16 = float(config_d["log_zero_fp16"])
+
+    # setup pandarallel
+    pandarallel.initialize(
+        progress_bar=config_d["pl_enable_progress_bar"], nb_workers=get_core_count()
+    )
 
     # setup model
     logging.info("setup model")
