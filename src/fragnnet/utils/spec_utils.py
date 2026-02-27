@@ -1,6 +1,6 @@
+import logging
+
 import numpy as np
-import scipy
-import scipy.optimize
 import torch as th
 import torch.nn.functional as F
 
@@ -19,59 +19,48 @@ from fragnnet.utils.misc_utils import (
 try:
     from torch_linear_assignment import assignment_to_indices, batch_linear_assignment
 
-    def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
-        """Solve a batched linear assignment problem, maximizing total score.
-
-        Args:
-            batch_score: Score matrix of shape (batch, rows, cols).
-
-        Returns:
-            Tuple of (row_ind, col_ind) tensors of shape (batch, K) where
-            K = min(rows, cols), giving the optimal assignment indices.
-        """
-        assignment = batch_linear_assignment(-batch_score)
-        return assignment_to_indices(assignment)
-
+    _torch_linear_assignment = True
 except ImportError:
-    import logging
+    _torch_linear_assignment = False
 
     logging.getLogger(__name__).warning(
         "torch_linear_assignment not found; falling back to scipy.optimize.linear_sum_assignment (slower, CPU-only)"
     )
 
-    def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
-        """Solve a batched linear assignment problem, maximizing total score.
 
-        Args:
-            batch_score: Score matrix of shape (batch, rows, cols).
-
-        Returns:
-            Tuple of (row_ind, col_ind) tensors of shape (batch, K) where
-            K = min(rows, cols), giving the optimal assignment indices.
-        """
-        device = batch_score.device
-        scores_np = batch_score.detach().cpu().numpy()
-        row_inds, col_inds = [], []
-        for b in range(scores_np.shape[0]):
-            r, c = scipy.optimize.linear_sum_assignment(scores_np[b], maximize=True)
-            row_inds.append(r)
-            col_inds.append(c)
-        row_ind = th.tensor(np.stack(row_inds), device=device)
-        col_ind = th.tensor(np.stack(col_inds), device=device)
-        return row_ind, col_ind
-
-
-# rough approximations from NIST20 Orbitrap/FT MS
-# NCE_MEAN = 60.
-# NCE_STD = 40.
-# NCE_MAX = 200.
-# rough approximations from NIST20 QToF
-# ACE_MEAN = 20
-# ACE_STD = 10
-# ACE_MAX = 60.
 MZ_MAX = 1500.0
 MZ_BIN_RES = 0.01
 INTS_THRESH = 0.0
+
+
+def _solve_batch_assignment(batch_score: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
+    """Solve a batched linear assignment problem, maximizing total score.
+
+    Args:
+        batch_score: Score matrix of shape (batch, rows, cols).
+
+    Returns:
+        Tuple of (row_ind, col_ind) tensors of shape (batch, K) where
+        K = min(rows, cols), giving the optimal assignment indices.
+    """
+    if _torch_linear_assignment:
+        assignment = batch_linear_assignment(-batch_score)
+        return assignment_to_indices(assignment)
+
+    device = batch_score.device
+    if batch_score.shape[0] == 0:
+        row_ind = th.empty((0, 0), device=device, dtype=th.long)
+        col_ind = th.empty((0, 0), device=device, dtype=th.long)
+        return row_ind, col_ind
+
+    row_inds, col_inds = [], []
+    for b in range(batch_score.shape[0]):
+        b_row_ind, b_col_ind = scipy_linear_sum_assignment(batch_score[b], maximize=True)
+        row_inds.append(b_row_ind.detach().cpu().numpy())
+        col_inds.append(b_col_ind.detach().cpu().numpy())
+    row_ind = th.tensor(np.stack(row_inds), device=device, dtype=th.long)
+    col_ind = th.tensor(np.stack(col_inds), device=device, dtype=th.long)
+    return row_ind, col_ind
 
 
 def get_ints_transform_func(ints_transform):
@@ -904,9 +893,14 @@ def scipy_linear_sum_assignment(matrix, maximize=False):
     Returns:
         Tuple[th.Tensor, th.Tensor]: Row indices and column indices of the optimal assignment.
     """
+    try:
+        from scipy.optimize import linear_sum_assignment
+    except ImportError as exc:
+        raise ImportError("scipy is required for scipy_linear_sum_assignment") from exc
+
     device = matrix.device
     matrix = matrix.cpu().numpy()
-    x_idx, y_idx = scipy.optimize.linear_sum_assignment(matrix, maximize=maximize)
+    x_idx, y_idx = linear_sum_assignment(matrix, maximize=maximize)
     return th.tensor(x_idx, device=device).long(), th.tensor(y_idx, device=device).long()
 
 
