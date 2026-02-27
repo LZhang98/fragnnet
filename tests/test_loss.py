@@ -18,6 +18,7 @@ from fragnnet.model.loss import (
     get_pairwise_cross_entropy,
     get_pairwise_jss_sim,
     get_pairwise_jss_sim_hun,
+    sparse_jensen_shannon_divergence,
 )
 
 
@@ -444,6 +445,139 @@ class TestHungarianCE:
 
         expected = -math.log(EPS)
         assert th.allclose(ce, th.tensor(expected), atol=1e-3)
+
+
+class TestSparseJensenShannonDivergence:
+    """Tests for sparse_jensen_shannon_divergence (wraps jss_helper from spec_utils)."""
+
+    def test_identical_single_peak(self):
+        """Identical single-peak spectra should have zero divergence."""
+        mzs = th.tensor([100.0])
+        logprobs = th.tensor([0.0])
+        batch_idxs = th.tensor([0], dtype=th.long)
+
+        jsd = sparse_jensen_shannon_divergence(
+            mzs, logprobs, batch_idxs,
+            mzs, logprobs, batch_idxs,
+            mz_max=200.0, mz_bin_res=1.0,
+        )
+        assert th.allclose(jsd, th.zeros(1), atol=1e-6), (
+            "Identical spectra should have zero divergence"
+        )
+
+    def test_orthogonal_spectra(self):
+        """Completely non-overlapping spectra should have normalized divergence = 1."""
+        mzs1 = th.tensor([50.0])
+        logprobs1 = th.tensor([0.0])
+        batch_idxs1 = th.tensor([0], dtype=th.long)
+
+        mzs2 = th.tensor([150.0])
+        logprobs2 = th.tensor([0.0])
+        batch_idxs2 = th.tensor([0], dtype=th.long)
+
+        jsd = sparse_jensen_shannon_divergence(
+            mzs1, logprobs1, batch_idxs1,
+            mzs2, logprobs2, batch_idxs2,
+            mz_max=200.0, mz_bin_res=1.0,
+        )
+        assert th.allclose(jsd, th.ones(1), atol=1e-6), (
+            "Orthogonal spectra should have divergence = 1"
+        )
+
+    def test_known_partial_overlap(self):
+        """Spectra sharing one of two equal-intensity peaks should have divergence = 0.5.
+
+        P = [0.5, 0.5] at mz=50,100; Q = [0.5, 0.5] at mz=50,150.
+        M = [0.5, 0.25, 0.25]; KL(P||M) = KL(Q||M) = 0.5*log2.
+        JSD = 0.5*log2; normalized by log2 → 0.5.
+        """
+        mzs_true = th.tensor([50.0, 100.0])
+        logprobs_true = th.tensor([0.0, 0.0])
+        batch_idxs_true = th.tensor([0, 0], dtype=th.long)
+
+        mzs_pred = th.tensor([50.0, 150.0])
+        logprobs_pred = th.tensor([0.0, 0.0])
+        batch_idxs_pred = th.tensor([0, 0], dtype=th.long)
+
+        jsd = sparse_jensen_shannon_divergence(
+            mzs_true, logprobs_true, batch_idxs_true,
+            mzs_pred, logprobs_pred, batch_idxs_pred,
+            mz_max=200.0, mz_bin_res=1.0,
+        )
+        assert th.allclose(jsd, th.tensor([0.5]), atol=1e-5), (
+            f"Expected divergence 0.5, got {jsd.item():.6f}"
+        )
+
+    def test_non_negative_many_overlapping_bins(self):
+        """Regression: JSS must stay non-negative with many overlapping bins.
+
+        Before the renormalization fix in jss_helper, floating-point accumulation
+        in scatter_reduce could cause union_bin_ints to sum slightly below 1,
+        inflating the KL terms beyond log(2) and yielding a negative JSS.
+        """
+        N = 1000
+        mzs = th.arange(1.0, N + 1.0)
+        logprobs = th.full((N,), float(-math.log(N)))
+        batch_idxs = th.zeros(N, dtype=th.long)
+
+        jsd = sparse_jensen_shannon_divergence(
+            mzs, logprobs, batch_idxs,
+            mzs, logprobs, batch_idxs,
+            mz_max=float(N + 1), mz_bin_res=1.0,
+        )
+        assert jsd.item() >= -1e-6, f"JSD must be non-negative, got {jsd.item()}"
+        assert jsd.item() <= 1e-5, f"Identical spectra should have JSD ≈ 0, got {jsd.item()}"
+
+    def test_symmetry(self):
+        """Divergence should be symmetric: JSD(P, Q) == JSD(Q, P)."""
+        mzs1 = th.tensor([50.0, 75.0, 100.0])
+        logprobs1 = th.tensor([0.0, 1.0, 0.5])
+        batch_idxs1 = th.tensor([0, 0, 0], dtype=th.long)
+
+        mzs2 = th.tensor([100.0, 150.0])
+        logprobs2 = th.tensor([0.5, 1.0])
+        batch_idxs2 = th.tensor([0, 0], dtype=th.long)
+
+        jsd_pq = sparse_jensen_shannon_divergence(
+            mzs1, logprobs1, batch_idxs1,
+            mzs2, logprobs2, batch_idxs2,
+            mz_max=200.0, mz_bin_res=1.0,
+        )
+        jsd_qp = sparse_jensen_shannon_divergence(
+            mzs2, logprobs2, batch_idxs2,
+            mzs1, logprobs1, batch_idxs1,
+            mz_max=200.0, mz_bin_res=1.0,
+        )
+        assert th.allclose(jsd_pq, jsd_qp, atol=1e-6), (
+            f"JSD should be symmetric, got {jsd_pq.item():.6f} vs {jsd_qp.item():.6f}"
+        )
+
+    def test_batch_multiple_pairs(self):
+        """Test JSD computation for a batch with multiple spectrum pairs.
+
+        Pair 0: identical single-peak spectra → JSD = 0.
+        Pair 1: orthogonal single-peak spectra → JSD = 1.
+        """
+        mzs_true = th.tensor([50.0, 100.0])
+        logprobs_true = th.tensor([0.0, 0.0])
+        batch_idxs_true = th.tensor([0, 1], dtype=th.long)
+
+        mzs_pred = th.tensor([50.0, 200.0])
+        logprobs_pred = th.tensor([0.0, 0.0])
+        batch_idxs_pred = th.tensor([0, 1], dtype=th.long)
+
+        jsd = sparse_jensen_shannon_divergence(
+            mzs_true, logprobs_true, batch_idxs_true,
+            mzs_pred, logprobs_pred, batch_idxs_pred,
+            mz_max=300.0, mz_bin_res=1.0,
+        )
+        assert jsd.shape == (2,), f"Expected shape (2,), got {jsd.shape}"
+        assert th.allclose(jsd[0], th.tensor(0.0), atol=1e-6), (
+            f"Pair 0 (identical): expected JSD=0, got {jsd[0].item()}"
+        )
+        assert th.allclose(jsd[1], th.tensor(1.0), atol=1e-6), (
+            f"Pair 1 (orthogonal): expected JSD=1, got {jsd[1].item()}"
+        )
 
 
 if __name__ == "__main__":
