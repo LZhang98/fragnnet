@@ -478,19 +478,32 @@ def get_tanmimoto(fp, other_fp):
     return ds.DiceSimilarity(fp, other_fp)
 
 
-def make_morgan_fingerprint(mol: "Chem.rdchem.Mol", radius: int = 3, covert_to_np=True) -> np.array:
-    """make morgan fingerpirnt from mol object
+def make_morgan_fingerprint(
+    mol: "Chem.rdchem.Mol", radius: int = 3, nbits: int = 2048, covert_to_np=True
+) -> np.array:
+    """Make Morgan fingerprint from mol object.
 
     Args:
-            mol (rdkit mol): mol object
+        mol: RDKit mol object
+        radius: Fingerprint radius (default: 3). Must be > 0.
+        nbits: Number of bits in fingerprint (default: 2048). Must be > 0.
+        covert_to_np: Whether to convert to numpy array (default: True)
 
     Returns:
-            fp_arr
+        Fingerprint as numpy array or RDKit fingerprint object
+
+    Raises:
+        ValueError: If radius <= 0 or nbits <= 0
     """
-    modules = rdkit_import("rdkit.Chem.rdMolDescriptors", "rdkit.DataStructs")
-    rmd = modules[0]
+    if radius <= 0:
+        raise ValueError(f"morgan_radius must be positive integer, got {radius}")
+    if nbits <= 0:
+        raise ValueError(f"morgan_nbits must be positive integer, got {nbits}")
+
+    modules = rdkit_import("rdkit.Chem.AllChem", "rdkit.DataStructs")
+    AllChem = modules[0]
     ds = modules[1]
-    fp = rmd.GetHashedMorganFingerprint(mol, radius)
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
     if covert_to_np:
         fp_arr = np.zeros(1)
         ds.ConvertToNumpyArray(fp, fp_arr)
@@ -499,18 +512,24 @@ def make_morgan_fingerprint(mol: "Chem.rdchem.Mol", radius: int = 3, covert_to_n
     return fp_arr
 
 
-def make_rdkit_fingerprint(mol: "Chem.rdchem.Mol") -> np.array:
-    """make rdkit fingerpirnt from mol object
+def make_rdkit_fingerprint(mol: "Chem.rdchem.Mol", nbits: int = 2048) -> np.array:
+    """Make RDKit fingerprint from mol object.
 
     Args:
-            mol (rdkit mol): mol object
+        mol: RDKit mol object
+        nbits: Number of bits in fingerprint (default: 2048). Must be > 0.
 
     Returns:
-            fp_arr:  np.array
+        Fingerprint as numpy array
+
+    Raises:
+        ValueError: If nbits <= 0
     """
+    if nbits <= 0:
+        raise ValueError(f"rdkit_nbits must be positive integer, got {nbits}")
 
     chem, ds = rdkit_import("rdkit.Chem", "rdkit.DataStructs")
-    fp = chem.RDKFingerprint(mol)
+    fp = chem.RDKFingerprint(mol, fpSize=nbits)
     fp_arr = np.zeros(1)
     ds.ConvertToNumpyArray(fp, fp_arr)
     return fp_arr
@@ -594,7 +613,7 @@ def par_apply(iterator, func, need_unpack=False, return_as_generator=False, n_jo
     return result
 
 
-def par_apply_series(series, func, tqdm_leave=True):
+def par_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True):
     """Apply a function to each item in a pandas Series in parallel.
 
     Args:
@@ -605,7 +624,11 @@ def par_apply_series(series, func, tqdm_leave=True):
     Returns:
             _type_: _description_
     """
-    series_iter = tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
+    series_iter = (
+        tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
+        if use_tqdm
+        else series.items()
+    )
 
     def series_func(tup):
         return func(tup[1])
@@ -615,7 +638,7 @@ def par_apply_series(series, func, tqdm_leave=True):
     return result_series
 
 
-def seq_apply_series(series, func, tqdm_leave=True) -> pd.Series:
+def seq_apply_series(series, func, tqdm_leave=True, use_tqdm: bool = True) -> pd.Series:
     """Apply a function to each item in a pandas Series in sequence.
 
     Args:
@@ -626,7 +649,11 @@ def seq_apply_series(series, func, tqdm_leave=True) -> pd.Series:
     Returns:
             pd.Series: The results of applying the function to each item.
     """
-    series_iter = tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
+    series_iter = (
+        tqdm(series.items(), desc=pformat(func), total=series.shape[0], leave=tqdm_leave)
+        if use_tqdm
+        else series.items()
+    )
 
     def series_func(tup):
         return func(tup[1])
@@ -636,7 +663,7 @@ def seq_apply_series(series, func, tqdm_leave=True) -> pd.Series:
     return result_series
 
 
-def par_apply_df_rows(df, func):
+def par_apply_df_rows(df, func, use_tqdm: bool = True):
     """Apply a function to each row of a DataFrame in parallel.
 
     Args:
@@ -647,7 +674,9 @@ def par_apply_df_rows(df, func):
             pd.Series: The results of applying the function to each row.
     """
 
-    df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
+    df_iter = (
+        tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
+    )
 
     def df_func(tup):
         return func(tup[1])
@@ -660,7 +689,7 @@ def par_apply_df_rows(df, func):
     return result_series
 
 
-def par_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
+def par_apply_df_rows_t(df, func, use_tqdm: bool = True) -> tuple[pd.Series, ...]:
     """Apply a function to each row of a DataFrame in parallel.
 
     Args:
@@ -670,7 +699,9 @@ def par_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
     Returns:
             pd.Series: The results of applying the function to each row.
     """
-    df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
+    df_iter = (
+        tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
+    )
 
     def df_func(tup):
         return func(tup[1])
@@ -680,7 +711,7 @@ def par_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
     return result_series
 
 
-def seq_apply_df_rows(df, func):
+def seq_apply_df_rows(df, func, use_tqdm: bool = True):
     """Apply a function to each row of a DataFrame in sequence, returning multiple Series.
 
     Args:
@@ -690,7 +721,9 @@ def seq_apply_df_rows(df, func):
     Returns:
             tuple[pd.Series, ...]: The results of applying the function to each row.
     """
-    df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
+    df_iter = (
+        tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
+    )
 
     def df_func(tup):
         return func(tup[1])
@@ -702,9 +735,11 @@ def seq_apply_df_rows(df, func):
     return result_series
 
 
-def seq_apply_df_rows_t(df, func) -> tuple[pd.Series, ...]:
+def seq_apply_df_rows_t(df, func, use_tqdm: bool = True) -> tuple[pd.Series, ...]:
     """Apply a function to each row of a DataFrame in sequence, returning multiple Series."""
-    df_iter = tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0])
+    df_iter = (
+        tqdm(df.iterrows(), desc=pformat(func), total=df.shape[0]) if use_tqdm else df.iterrows()
+    )
 
     def df_func(tup):
         return func(tup[1])

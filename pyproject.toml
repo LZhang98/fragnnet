@@ -28,6 +28,9 @@ dependencies = [
     "pyteomics",
     "omegaconf",
     "h5py",
+    "lmdb==1.7.5",
+    "torch-linear-assignment",
+    "pandarallel",
 ]
 
 [project.optional-dependencies]
@@ -130,6 +133,7 @@ convention = "google"
 ]
 "preproc_scripts/**/*.py" = ["B", "SIM"]  # more lenient for scripts
 "scripts/**/*.py" = ["B", "SIM"]
+"*.ipynb" = ["E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["fragnnet"]

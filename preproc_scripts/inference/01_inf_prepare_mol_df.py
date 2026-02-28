@@ -40,7 +40,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
-def create_mol_df(smiles_list, ids_list, max_heavy_atoms):
+def create_mol_df(
+    smiles_list: list[str], ids_list: list[str] | None, max_heavy_atoms: int
+) -> pd.DataFrame:
     """
     Create mol_df from a list of SMILES strings.
 
@@ -58,7 +60,7 @@ def create_mol_df(smiles_list, ids_list, max_heavy_atoms):
     mol_df = pd.DataFrame(
         {
             "smiles": smiles_list,
-            "mol_id": range(len(smiles_list)),
+            "mol_id": np.arange(len(smiles_list)),
             "input_mol_id": np.array([str(i) for i in range(len(smiles_list))])
             if ids_list is None
             else np.where(pd.isna(ids_list), np.nan, [str(x) for x in ids_list]),
@@ -87,7 +89,6 @@ def create_mol_df(smiles_list, ids_list, max_heavy_atoms):
         mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=True)
     )
     mol_df.loc[:, "num_atoms"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_atoms)
-    mol_df.loc[:, "num_bonds"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_bonds)
     mol_df.loc[:, "charge"] = par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
     mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
     mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
@@ -114,7 +115,7 @@ def create_mol_df(smiles_list, ids_list, max_heavy_atoms):
         (mol_df["single_mol"] == True)
         & (mol_df["num_radicals"] == 0)
         & (mol_df["charge"] == 0)
-        & (mol_df["num_atoms"] <= max_heavy_atoms)
+        & (mol_df["num_heavy_atoms"] <= max_heavy_atoms)
         & (mol_df["num_out_set_elements"] == 0)
     ]
 
@@ -127,13 +128,13 @@ def create_mol_df(smiles_list, ids_list, max_heavy_atoms):
 
     # Reset mol_id after filtering
     mol_df = mol_df.reset_index(drop=True)
-    mol_df.loc[:, "mol_id"] = list(range(len(mol_df)))
+    mol_df.loc[:, "mol_id"] = np.arange(len(mol_df))
 
     logger.info(f"Created mol_df with {len(mol_df)} molecules")
     return mol_df
 
 
-def validate_inputs(smiles_list, max_heavy_atoms):
+def validate_inputs(smiles_list: list[str], max_heavy_atoms: int) -> None:
     """
     Validate input parameters.
 
@@ -193,22 +194,22 @@ if __name__ == "__main__":
         epilog="""
         Examples:
             # Single molecule
-            python 01_prepare_mol_df.py --smiles_list "CCO" --output_dir output/
+            python 01_inf_prepare_mol_df.py --smiles_list "CCO" --output_dir output/
 
             # Multiple molecules
-            python 01_prepare_mol_df.py --smiles_list "CCO" "CC(=O)O" "CCN" --output_dir output/
+            python 01_inf_prepare_mol_df.py --smiles_list "CCO" "CC(=O)O" "CCN" --output_dir output/
 
             # From text/SMILES file
-            python 01_prepare_mol_df.py --smiles_file smiles.txt --output_dir output/
+            python 01_inf_prepare_mol_df.py --smiles_file smiles.txt --output_dir output/
 
-            # From CSV with IDs
-            python 01_prepare_mol_df.py --smiles_file data.csv --smiles_colname smiles --id_colname mol_id --output_dir output/
+            # CSV/TSV file with IDs
+            python 01_inf_prepare_mol_df.py --smiles_file data.csv --smiles_colname smiles --id_colname mol_id --output_dir output/
 
             # From JSON (MS2C candidates)
-            python 01_prepare_mol_df.py --json_file candidates.json --output_dir output/
+            python 01_inf_prepare_mol_df.py --json_file candidates.json --output_dir output/
 
             # From JSON with per-query mol_dfs
-            python 01_prepare_mol_df.py --json_file candidates.json --output_dir output/ --save_per_query
+            python 01_inf_prepare_mol_df.py --json_file candidates.json --output_dir output/ --save_per_query
                 """,
     )
 

@@ -242,6 +242,8 @@ def main(args):
             "    dgl==2.4.0 \\",
             "    omegaconf \\",
             "    cython==3.0.12 \\",
+            "    pandarallel==1.6.5 \\",
+            "    lmdb==1.7.5 \\",
             "    h5py",
             "",
             "# intall from whl",
@@ -276,7 +278,7 @@ def main(args):
     custom_config_fp = None
     # default config template
     config_template_fp = os.path.join(args.frag_gnn_dp, "config", "template.yml")
-    config_d = dict()
+    config_d = {}
     # parse script kwargs
     for idx, kwarg in enumerate(args.script_kwargs):
         assert "=" in kwarg, kwarg

@@ -30,6 +30,39 @@ from fragnnet.utils.spec_utils import batched_bin_func
 
 logger = logging.getLogger(__name__)
 
+def get_sparse_pooled_feats(mask_idxs, num_frags, num_atoms, atom_feats, pool_type="mean"):
+    if mask_idxs.shape[0] == 0:
+        return th.zeros((num_frags, atom_feats.shape[1]), device=atom_feats.device)
+    
+    indices = mask_idxs.t()
+    values = th.ones(indices.shape[1], device=atom_feats.device)
+    S = th.sparse_coo_tensor(indices, values, size=(num_frags, num_atoms)).coalesce()
+    
+    # sparse mm performs sum reduction: (num_frags, num_atoms) X (num_atoms, hidden_dim)
+    pooled = th.sparse.mm(S, atom_feats)
+    
+    if pool_type == "sum":
+        return pooled
+    elif pool_type == "mean":
+        row = mask_idxs[:, 0]
+        counts = th.bincount(row, minlength=num_frags).float()
+        return pooled / counts[..., None].clamp(1)
+    else:
+        # Fallback to scatter_reduce for 'max' or other unsupported types
+        # This incurs memory overhead but supports the operation
+        if pool_type == "max":
+            reduce = "amax"
+        else:
+            logger.warning(f"Unsupported pool_type {pool_type}, defaulting to mean.")
+            reduce = "mean"
+            
+        return scatter_reduce(
+            atom_feats[mask_idxs[:, 1]],
+            mask_idxs[:, 0],
+            dim=0,
+            dim_size=num_frags,
+            reduce=reduce,
+        )
 
 class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
     def __init__(
@@ -409,6 +442,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             mol_pyg.edge_attr,
             mol_pyg.batch,
         )
+        
         # frag_x: frag-graph level node feature matrix
         # frag_edge_index: frag graph connectivity in COO format with shape [2, num_edges]
         # frag_edge_attr: frag graph edge feature matrix with shape [num_edges, num_edge_features]
@@ -419,7 +453,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             frag_pyg.edge_attr,
             frag_pyg.batch,
         )
-
+    
         # Type assertions for batch indices (PyG types them as Any | None)
         assert mol_batch is not None, "mol_batch must not be None"
         assert frag_batch is not None, "frag_batch must not be None"
@@ -469,7 +503,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
         # pool mol embeddings
         mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn, mol_batch)
-
+    
         # process dag
         # create interstage
         frag_ndata, frag_edata = [], []
@@ -500,75 +534,61 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             ]
             rest_node_mask_idx[:, 1] = rest_node_mask_idx[:, 1] + rest_node_offsets
 
-        # Validate rest_node_mask_idx are within bounds (after adding offsets)
-        valid_rest_mask = rest_node_mask_idx[:, 1] < mol_embed_gnn.shape[0]
-        rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
+            # Validate rest_node_mask_idx are within bounds (after adding offsets)
+            valid_rest_mask = rest_node_mask_idx[:, 1] < mol_embed_gnn.shape[0]
+            rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
 
-        # Aggregate atom embeddings per fragment using pooling
-        # Use index_select for memory efficiency (avoids creating huge intermediate tensors)
-        frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
-        frag_node_mask_embed = self.mol_pool(frag_node_embed, frag_node_mask_idxs[:, 0])
-        # # Original scatter_reduce implementation (commented out):
-        # frag_node_mask_embed = scatter_reduce(
-        #   src=mol_embed_gnn[frag_node_mask_idxs[:,1]],
-        #   index=frag_node_mask_idxs[:,0],  # 1D index, not 2D!
-        #   reduce="sum",
-        #   dim=0,
-        #   dim_size=batch_frag_num_nodes
-        # )
-
-        # Aggregate rest node embeddings per fragment using pooling
-        # Use index_select for memory efficiency (avoids creating huge intermediate tensors)
-        rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:, 1])
-        rest_node_mask_embed = self.mol_pool(rest_node_embed, rest_node_mask_idx[:, 0])
-        # # Original scatter_reduce implementation (commented out):
-        # rest_node_mask_embed = scatter_reduce(
-        #   src=mol_embed_gnn[rest_node_mask_idx[:,1]],
-        #   index=rest_node_mask_idx[:,0],  # 1D index, not 2D!
-        #   reduce="sum",
-        #   dim=0,
-        #   dim_size=batch_frag_num_nodes
-        # )
-
-        # frag_node_mask_embed can be one of following:
-        # 1. add/sub: Simple arithmetic operations
-        # 2. linear: Linear projection of concatenation
-        # 3. gated: Learnable gate to mix embeddings
-        # 4. mlp: Deep nonlinear fusion
-        # 5. bilinear: Bilinear interaction
-        # 6. direct: No fusion, use fragment embedding only
-
-        if self.cc_interstage_use_rest:
-            mol_pool_embed = rest_node_mask_embed  # mol_embed_gnn_pool[frag_batch]
-        else:
-            mol_pool_embed = mol_embed_gnn_pool[frag_batch]
-
-        if self.cc_interstage_type == "add":
-            frag_node_mask_embed = frag_node_mask_embed + mol_pool_embed
-        elif self.cc_interstage_type == "sub":
-            frag_node_mask_embed = frag_node_mask_embed - mol_pool_embed
-        elif self.cc_interstage_type == "linear":
-            frag_node_mask_embed = self.cc_interstage(
-                th.cat([frag_node_mask_embed, mol_pool_embed], dim=1)
+            # Aggregate atom embeddings per fragment using pooling
+            num_frags = frag_num_nodes.max().long().item()
+            num_atoms = mol_embed_gnn.shape[0]
+            frag_node_mask_embed = get_sparse_pooled_feats(
+                frag_node_mask_idxs, num_frags, num_atoms, mol_embed_gnn, pool_type=self.mol_pool_type
             )
-        elif self.cc_interstage_type == "gated":
-            # Gate controls mixing: g * frag + (1-g) * mol
-            gate = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
-            frag_node_mask_embed = gate * frag_node_mask_embed + (1 - gate) * mol_pool_embed
-        elif self.cc_interstage_type == "mlp":
-            # MLPBlocks fusion (handles residuals internally if use_residuals=True)
-            frag_node_mask_embed = self.cc_interstage(
-                th.cat([frag_node_mask_embed, mol_pool_embed], dim=1)
+            rest_node_mask_embed = get_sparse_pooled_feats(
+                rest_node_mask_idx, num_frags, num_atoms, mol_embed_gnn, pool_type=self.mol_pool_type
             )
-        elif self.cc_interstage_type == "bilinear":
-            # Bilinear interaction: captures pairwise interactions
-            interaction = self.cc_interstage_bilinear(frag_node_mask_embed, mol_pool_embed)
-            frag_node_mask_embed = frag_node_mask_embed + self.cc_interstage_proj(interaction)
-        else:
-            assert self.cc_interstage_type == "direct", self.cc_interstage_type
-            frag_node_mask_embed = frag_node_mask_embed
+            # if self.mol_pool_type != "mean":
+            #    raise ValueError(f"Unsupported mol_pool_type: {self.mol_pool_type!r}; only 'mean' is supported")
 
-        frag_ndata.append(frag_node_mask_embed)
+            # frag_node_mask_embed can be one of following:
+            # 1. add/sub: Simple arithmetic operations
+            # 2. linear: Linear projection of concatenation
+            # 3. gated: Learnable gate to mix embeddings
+            # 4. mlp: Deep nonlinear fusion
+            # 5. bilinear: Bilinear interaction
+            # 6. direct: No fusion, use fragment embedding only
+
+            if self.cc_interstage_use_rest:
+                mol_pool_embed = rest_node_mask_embed  # mol_embed_gnn_pool[frag_batch]
+            else:
+                mol_pool_embed = mol_embed_gnn_pool[frag_batch]
+
+            if self.cc_interstage_type == "add":
+                frag_node_mask_embed = frag_node_mask_embed + mol_pool_embed
+            elif self.cc_interstage_type == "sub":
+                frag_node_mask_embed = frag_node_mask_embed - mol_pool_embed
+            elif self.cc_interstage_type == "linear":
+                frag_node_mask_embed = self.cc_interstage(
+                    th.cat([frag_node_mask_embed, mol_pool_embed], dim=1)
+                )
+            elif self.cc_interstage_type == "gated":
+                # Gate controls mixing: g * frag + (1-g) * mol
+                gate = self.cc_interstage(th.cat([frag_node_mask_embed, mol_pool_embed], dim=1))
+                frag_node_mask_embed = gate * frag_node_mask_embed + (1 - gate) * mol_pool_embed
+            elif self.cc_interstage_type == "mlp":
+                # MLPBlocks fusion (handles residuals internally if use_residuals=True)
+                frag_node_mask_embed = self.cc_interstage(
+                    th.cat([frag_node_mask_embed, mol_pool_embed], dim=1)
+                )
+            elif self.cc_interstage_type == "bilinear":
+                # Bilinear interaction: captures pairwise interactions
+                interaction = self.cc_interstage_bilinear(frag_node_mask_embed, mol_pool_embed)
+                frag_node_mask_embed = frag_node_mask_embed + self.cc_interstage_proj(interaction)
+            else:
+                assert self.cc_interstage_type == "direct", self.cc_interstage_type
+                frag_node_mask_embed = frag_node_mask_embed
+
+            frag_ndata.append(frag_node_mask_embed)
         # edge atom embeddings
         if "cc" in self.frag_edge_feats:
             # connected competents
@@ -1282,5 +1302,4 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
                     raise ValueError(
                         f"Missing items in {k} of batch: {th.unique(v).shape[0]} expeacting {batch_size}"
                     )
-
         return out_d

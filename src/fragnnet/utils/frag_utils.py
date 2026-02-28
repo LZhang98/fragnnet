@@ -1415,56 +1415,36 @@ def timed_get_dags(
     isotopes: bool,
     nb_isomorphic: bool,
     wl_max_iterations: int,
-    output_dir: str | None,
     use_cached=True,
     compressed=False,
     save_dag=True,
+    
 ) -> dict:
-    need_compute = True
-    if save_dag and output_dir is None:
-        raise ValueError("If save_dag is True, output_dir must be specified")
-    elif save_dag:
-        output_file = get_frag_fp(mol_id, output_dir, compressed)
-        need_compute = not os.path.exists(output_file) or not use_cached
-
-    if not need_compute:
-        assert save_dag
-        try:
-            dag_d = load_frag_d(mol_id, output_dir, compressed)
-        except Exception as e:
-            print(e, "cache is not usable")
-            need_compute = True
-    if need_compute:
-        dag_d = {}
-        try:
-            mol_d = extract_mol_info(mol)
-            # this maybe dangers in multi processing because of scopes
-            dag_d = compute_dags(
-                mol_d,
-                max_depth,
-                h_prior,
-                max_h_transfer,
-                max_time,
-                isotopes,
-                nb_isomorphic,
-                # False, b_isomorphic, this not used
-                wl_max_iterations,
-            )
-        except KeyboardInterrupt as e:
-            # let these through
-            raise e
-        except Exception as e:
-            # don't retry, theres a bug
-            if type(mol) is not str:
-                mol = Chem.MolToSmiles(mol)
-            print(
-                f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}", file=sys.stderr
-            )
-            print("> Traceback", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
-            dag_d = {}
-        else:
-            if save_dag:
-                save_frag_d(dag_d, mol_id, output_dir, compressed)
-                del dag_d["dag"]
-    return dag_d
+    try:
+        mol_d = extract_mol_info(mol)
+        # this maybe dangers in multi processing because of scopes
+        dag_d = compute_dags(
+            mol_d,
+            max_depth,
+            h_prior,
+            max_h_transfer,
+            max_time,
+            isotopes,
+            nb_isomorphic,
+            # False, b_isomorphic, this not used
+            wl_max_iterations,
+        )
+        return mol_id, dag_d
+    except KeyboardInterrupt as e:
+        # let these through
+        raise e
+    except Exception as e:
+        # don't retry, theres a bug
+        if type(mol) is not str:
+            mol = Chem.MolToSmiles(mol)
+        print(
+            f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}", file=sys.stderr
+        )
+        print("> Traceback", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+    return mol_id, {}

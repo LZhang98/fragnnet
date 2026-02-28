@@ -5,7 +5,8 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
-
+logs
+logs*
 # Extensions
 *.c
 src/fragnnet/frag/compute_frags.c
@@ -26,6 +27,7 @@ wandb_venv/
 # Project-specific Data & Outputs
 data/
 wandb/
+wandb_exports/
 figs/
 output/*
 debug_output/

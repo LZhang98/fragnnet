@@ -16,7 +16,10 @@ from fragnnet.utils.formula_utils import (
 )
 from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, load_frag_d
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
-
+import lmdb
+import pickle
+import os
+import json
 logger = logging.getLogger(__name__)
 
 
@@ -69,6 +72,7 @@ class SpecMolFragDataset(SpecMolDataset):
         )
         self.mol_params = mol_params
         self.frag_dp = frag_dp
+        self.frag_env=None
         self.frag_params = frag_params
 
         if spec_pp_sd is None:
@@ -79,10 +83,22 @@ class SpecMolFragDataset(SpecMolDataset):
             frag_pl_sd = {}
         if frag_pp_sd is None:
             frag_pp_sd = {}
-
+        
         self._preprocess_spec(spec_pp_sd)
         self._preprocess_mol(mol_pp_sd)
         self._preprocess_frag(frag_pl_sd, frag_pp_sd)
+
+        meta_info_path=os.path.join("/".join(self.frag_dp.split("/")[:-1]), "meta_info.json")
+        if os.path.exists(meta_info_path):
+            logger.info(f"loading meta info {meta_info_path}")
+            with open(meta_info_path, "r") as f:
+                precom_meta_info=json.load(f)
+            precom_meta_info={int(k):precom_meta_info[k] for k in precom_meta_info}
+            self.precom_meta_info=[]
+            for idx in range(len(self.spec_df)):
+                spec_entry = self.spec_df.iloc[idx]
+                mol_id = spec_entry["mol_id"]
+                self.precom_meta_info.append(precom_meta_info[mol_id])
 
     @staticmethod
     def get_data_dict_types() -> list[str]:
@@ -108,13 +124,17 @@ class SpecMolFragDataset(SpecMolDataset):
         """
 
         # preload frag dags
+        if self.frag_env is None:
+            self.frag_env=lmdb.open(self.frag_dp,readahead=False, max_readers=2048, readonly=True, lock=False, meminit=False)
+            self.txn=self.frag_env.begin()
+        
         if self.frag_params["preload"]:
             self.frag_entries = frag_pl_sd
             total_frag_entry_size = 0
             for mol_id in tqdm(
                 self.mol_df["mol_id"].values, desc="> preload frag", total=len(self.mol_df)
             ):
-                frag_entry = load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
+                frag_entry =pickle.loads(bytes(self.txn.get(f"{mol_id:08d}".encode())))#load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
                 total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
                 self.frag_entries[mol_id] = frag_entry
             logger.info(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")
@@ -146,6 +166,7 @@ class SpecMolFragDataset(SpecMolDataset):
         Returns:
             Dictionary containing spectral, molecular, and fragmentation data.
         """
+        assert isinstance(idx, int), idx
         spec_entry = self.spec_df.iloc[idx]
         mol_id = spec_entry["mol_id"]
         mol_entry = self.mol_df.loc[mol_id]
@@ -198,6 +219,8 @@ class SpecMolFragDataset(SpecMolDataset):
             )
 
         data = {**spec_data, **mol_data, **frag_data}
+        if "mol_id" not in data:
+            data["mol_id"]=mol_id
         return data
 
     def _load_frag_entry(self, mol_id: str) -> dict:
@@ -210,8 +233,12 @@ class SpecMolFragDataset(SpecMolDataset):
         Returns:
             Dictionary containing DAG and fragmentation data.
         """
-
-        frag_entry = load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
+        if self.frag_env is None:
+            self.frag_env=lmdb.open(self.frag_dp,readahead=False, readonly=True,max_readers=2048, lock=False, meminit=False)
+            self.txn=self.frag_env.begin() 
+        v=self.txn.get(f"{mol_id:08d}".encode())
+        assert v is not None, mol_id
+        frag_entry =pickle.loads(bytes(v))
         return frag_entry
 
     def _process_neutral_frag(self, frag_entry: dict) -> dict:
@@ -402,6 +429,7 @@ class SpecMolFragDataset(SpecMolDataset):
         # prevent edge case causing crash
         if len(data_list) == 0:
             return {"batch_size": th.tensor(0)}
+        
         batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
         # special handling
         SpecMolFragDataset._special_collate(keys, collate_data)

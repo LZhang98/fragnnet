@@ -3,7 +3,6 @@ import argparse
 from fragnnet.runner import init_run
 
 if __name__ == "__main__":
-    # get arguments
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-t",

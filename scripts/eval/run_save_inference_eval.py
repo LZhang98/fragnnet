@@ -24,10 +24,12 @@ from fragnnet.utils.script_utils import (
     list_output_subset_options,
     prepare_output_subset,
     run_inference_tabular,
+    run_inference_hdf5,
     setup_device,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
-
+import h5py
+import numpy as np
 
 def get_args():
     # Set up command line argument parser
@@ -125,7 +127,7 @@ def get_args():
     )
     parser.add_argument(
         "--output_everything",
-        type=bool,
+        type=booltype,
         default=False,
         help="Output all available metrics and predictions",
     )
@@ -154,6 +156,11 @@ def get_args():
         help="Whether to drop columns with None values in the output",
     )
     parser.add_argument(
+        "--use_dynamic_sampler",
+        action="store_true",
+        help="whether use dynamic sampler",
+    )
+    parser.add_argument(
         "--override",
         nargs="*",
         default=[],
@@ -164,6 +171,8 @@ def get_args():
 
 if __name__ == "__main__":
     # Early check for --list_output_options to avoid required argument validation
+    from pandarallel import pandarallel
+    pandarallel.initialize(progress_bar=True, nb_workers=min(10,  os.cpu_count()))
     if "--list_output_options" in sys.argv:
         print("Available output_subset options:")
         for opt in list_output_subset_options():
@@ -197,6 +206,7 @@ if __name__ == "__main__":
         output_formula_str=False,
         train_batch_size=args.train_batch_size,
         eval_batch_size=args.eval_batch_size,
+        dynamic_batch_sampler=args.use_dynamic_sampler
     )
 
     # Initialize dataset, dataloader, and model (inline)
@@ -231,7 +241,9 @@ if __name__ == "__main__":
             print(f"  Formula indices: {req_formula}")
 
     print(f">>> Output set: {output_set}")
-    predicted_df = run_inference_tabular(
+    output_save_dp = os.path.join(save_dp, args.wandb_run_id)
+    os.makedirs(output_save_dp, exist_ok=True)
+    num_predict = run_inference_hdf5(
         model,
         dl,
         device,
@@ -242,30 +254,8 @@ if __name__ == "__main__":
         return_formula_str=args.return_formula_str or args.output_everything,
         return_cc_hash=args.return_cc_hash or args.output_everything,
         rebase_indices=True,
+        save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5")
     )
-
-    # Optionally drop columns that are entirely None/NaN to declutter output
-    if args.drop_none_cols:
-        before_cols = set(predicted_df.columns)
-        predicted_df = predicted_df.dropna(axis=1, how="all")
-        dropped = sorted(before_cols - set(predicted_df.columns))
-        if dropped:
-            print(f"> Dropped all-NaN columns: {dropped}")
-
-    # Print evaluation score statistics
-    print("\n>>> Evaluation Score Statistics:")
-    eval_score_types = get_score_types(config_d=config_d)
-    for eval_score_type in eval_score_types:
-        mean_score = predicted_df[eval_score_type].mean()
-        std_score = predicted_df[eval_score_type].std()
-        print(f"{eval_score_type}: mean={mean_score:.4f}, std={std_score:.4f}")
-
-    print(predicted_df.head())
-    # Save predictions with evaluation scores
-    output_save_dp = os.path.join(save_dp, args.wandb_run_id)
-    os.makedirs(output_save_dp, exist_ok=True)
-    output_path = os.path.join(output_save_dp, f"predictions_{eval_split}.pkl")
-    predicted_df.to_pickle(output_path)
-    print(f"\n>>> Saved predictions to: {output_path}")
-    print(f">>> Total predictions: {len(predicted_df)}")
+    print(f"\n>>> Saved predictions to: {output_save_dp}")
+    print(f">>> Total predictions: {num_predict}")
     print(">>> Evaluation complete!")

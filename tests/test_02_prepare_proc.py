@@ -26,7 +26,7 @@ def load_prepare_module():
 
 def _setup_stubs(monkeypatch, module):
     """Common stub setup for all tests."""
-    monkeypatch.setattr(module.data_utils, "mol_from_smiles", lambda s: f"mol({s})")
+    monkeypatch.setattr(module.data_utils, "mol_from_smiles", lambda s, **kwargs: f"mol({s})")
     monkeypatch.setattr(
         module.data_utils, "mol_to_smiles", lambda m: str(m).removeprefix("mol(").removesuffix(")")
     )

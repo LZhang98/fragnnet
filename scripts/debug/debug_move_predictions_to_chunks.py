@@ -1,5 +1,7 @@
-import pandas as pd
 import os
+
+import pandas as pd
+
 
 def chunk_and_save_df(src_df, chunk_size, out_dir, prefix="chunk"):
     os.makedirs(out_dir, exist_ok=True)
@@ -13,7 +15,7 @@ def chunk_and_save_df(src_df, chunk_size, out_dir, prefix="chunk"):
 
 if __name__ == "__main__":
     #src_fp = "output/inference_outputs/ikohsc16/chunks/chunk_11.pkl"
-    
+
     # Example usage
     chunk_size = 10_000
     #chunk_and_save_df(pd.read_pickle(src_fp), chunk_size, "output/inference_outputs/ikohsc16/chunks_2")
