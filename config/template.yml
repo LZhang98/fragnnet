@@ -40,6 +40,8 @@ spec_params:
   inst_type: True
   inst_types:
     - "FT"
+  frag_mode: False          # load fragmentation mode (HCD/CID) from spectrum metadata
+  frag_modes: []            # known frag modes; unknown falls back to index num_frag_modes
   prec_mz: True
   prec_mass_diff: True
   nce: False
@@ -367,6 +369,13 @@ prec_insert_size: 32  # Dimension of precursor type embedding (must match MCES c
 # ============================================================================
 inst_insert_location: none  # Where instrument type is inserted: ["none","mol_input","frag_input","mlp_input"]
 inst_insert_size: 32  # Dimension of instrument type embedding (must match MCES config if using pre-training)
+
+# ============================================================================
+# Fragmentation Mode Configuration
+# ============================================================================
+frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none", "mol", "mlp"]
+frag_mode_insert_size: 8         # Dimension of frag-mode embedding (3 categories: HCD, CID, unknown)
+frag_mode_scale: False           # Enable mode-conditioned affine output scaling layer
 
 # ============================================================================
 # MCES Pre-training Configuration

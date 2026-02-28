@@ -95,6 +95,10 @@ class FraGNNetPL(SpectrumPL):
             inst_insert_location=self.hparams.inst_insert_location,
             inst_insert_size=self.hparams.inst_insert_size,
             inst_types=self.hparams.spec_params["inst_types"],
+            frag_mode_insert_location=self.hparams.frag_mode_insert_location,
+            frag_mode_insert_size=self.hparams.frag_mode_insert_size,
+            frag_modes=self.hparams.spec_params.get["frag_modes"],
+            frag_mode_scale=self.hparams.frag_mode_scale,
             output_formula_str=self.hparams.output_formula_str,
         )
 

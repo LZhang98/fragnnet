@@ -1,12 +1,15 @@
 """
 base_model.py
 
-Base classes for embedding collision energy (CE), precursor type(Prec), and instrument type (Inst)
-for FragGNN models. Intended to be used as base classes for more complex model architectures.
+Base classes for embedding collision energy (CE), precursor type(Prec), instrument type (Inst),
+and fragmentation mode (FragMode) for FragGNN models. Intended to be used as base classes for
+more complex model architectures.
 
 - CEModel: Handles collision energy embedding and transformation.
 - PrecModel: Handles precursor type embedding.
 - InstModel: Handles instrument type embedding.
+- FragModeModel: Handles fragmentation mode embedding (HCD/CID/unknown).
+- FragModeScaler: Mode-conditioned affine output scaling layer.
 """
 
 import torch as th
@@ -289,3 +292,122 @@ class InstModel:
                 )
             inst_embed = self.inst_embedder(inst_type)
         return inst_embed
+
+
+class FragModeModel:
+    """Class for handling fragmentation mode embedding (e.g. HCD, CID, unknown)."""
+
+    def _frag_mode_init(
+        self,
+        frag_mode_insert_location: str,
+        frag_mode_insert_size: int,
+        frag_mode_num_types: int,
+    ) -> None:
+        """
+        Initialize fragmentation mode embedding configuration and embedding layers.
+
+        Args:
+            frag_mode_insert_location: Where to insert frag-mode embedding ("none", "mol", "mlp").
+            frag_mode_insert_size: Output embedding size.
+            frag_mode_num_types: Number of known fragmentation mode types (unknown handled as +1).
+        """
+        self.frag_mode_insert_location = frag_mode_insert_location
+        # +1 for the unknown/fallback token at index frag_mode_num_types
+        self.frag_mode_embedder = nn.Embedding(frag_mode_num_types + 1, frag_mode_insert_size)
+        frag_mode_dim = frag_mode_insert_size
+
+        self._frag_mode_location_check()
+
+        if self.frag_mode_insert_location == "mol":
+            frag_mode_mol_input_dim = frag_mode_dim
+            frag_mode_mlp_input_dim = 0
+        elif self.frag_mode_insert_location == "mlp":
+            frag_mode_mol_input_dim = 0
+            frag_mode_mlp_input_dim = frag_mode_dim
+        else:
+            assert self.frag_mode_insert_location == "none"
+            frag_mode_mol_input_dim = 0
+            frag_mode_mlp_input_dim = 0
+        self.frag_mode_mol_input_dim = frag_mode_mol_input_dim
+        self.frag_mode_mlp_input_dim = frag_mode_mlp_input_dim
+
+    def _frag_mode_location_check(self) -> None:
+        raise NotImplementedError("Subclasses must implement _frag_mode_location_check")
+
+    def embed_frag_mode(self, frag_mode: th.Tensor | None) -> th.Tensor | None:
+        """
+        Embed the fragmentation mode.
+
+        Args:
+            frag_mode: Tensor of fragmentation mode indices (HCD=0, CID=1, unknown=num_types).
+
+        Returns:
+            Embedded frag-mode tensor or None.
+        """
+        frag_mode_embed = None
+        if self.frag_mode_insert_location != "none":
+            if frag_mode is None:
+                raise ValueError(
+                    f"frag_mode is None but frag_mode_insert_location is "
+                    f"{self.frag_mode_insert_location}"
+                )
+            frag_mode_embed = self.frag_mode_embedder(frag_mode)
+        return frag_mode_embed
+
+
+class FragModeScaler(nn.Module):
+    """Mode-conditioned affine output scaling layer.
+
+    Applies a per-fragmentation-mode learned scale and bias to the raw logit output of the
+    intensity head, allowing the model to shift its predicted intensity distribution based
+    on fragmentation physics (HCD vs CID vs unknown).
+
+    The transform is: ``logits_out = logits * exp(log_scale) + bias``
+
+    Both ``log_scale`` and ``bias`` are initialised to zero so the layer starts as the
+    identity transform and can be trained from scratch or fine-tuned.
+
+    Attributes:
+        params: Embedding of shape (num_frag_modes + 1, 2) storing (log_scale, bias)
+            for each mode.  Index ``num_frag_modes`` is the fallback unknown token.
+    """
+
+    def __init__(self, num_frag_modes: int, output_dim: int) -> None:
+        """
+        Initialize the FragModeScaler.
+
+        Args:
+            num_frag_modes: Number of known fragmentation modes (unknown handled as +1).
+            output_dim: Dimension of the logit output to scale (mlp_output_dim).
+        """
+        super().__init__()
+        self.output_dim = output_dim
+        # shape: (num_frag_modes + 1, output_dim * 2) — first half is log_scale, second is bias
+        # Initialise to zero so the layer starts as an identity transform.
+        self.params = nn.Embedding(num_frag_modes + 1, output_dim * 2)
+        nn.init.zeros_(self.params.weight)
+
+    def forward(
+        self,
+        logits: th.Tensor,
+        frag_mode: th.Tensor,
+        node_batch_idxs: th.Tensor,
+    ) -> th.Tensor:
+        """
+        Apply per-mode affine scaling to the intensity logits.
+
+        Args:
+            logits: Raw MLP logits of shape (num_nodes, output_dim).
+            frag_mode: Per-sample mode indices of shape (batch_size,).
+            node_batch_idxs: Batch index for each node of shape (num_nodes,).
+
+        Returns:
+            Scaled logits of shape (num_nodes, output_dim).
+        """
+        # mode_params: (batch_size, output_dim * 2)
+        mode_params = self.params(frag_mode)
+        # expand to per-node: (num_nodes, output_dim * 2)
+        mode_params_per_node = mode_params[node_batch_idxs]
+        log_scale = mode_params_per_node[:, : self.output_dim]
+        bias = mode_params_per_node[:, self.output_dim :]
+        return logits * th.exp(log_scale) + bias

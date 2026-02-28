@@ -58,6 +58,7 @@ class BaseDataset(Dataset):
         self._compute_counts()
         self._setup_prec_type_to_idx()
         self._setup_inst_type_to_idx()
+        self._setup_frag_mode_to_idx()
 
     @staticmethod
     def _setup_dfs(
@@ -390,6 +391,24 @@ class BaseDataset(Dataset):
         self.idx_to_inst_type = {idx: inst_type for idx, inst_type in enumerate(inst_types)}
         self.num_inst_types = len(inst_types)
 
+    def _setup_frag_mode_to_idx(self) -> None:
+        """
+        Setup bidirectional mappings between fragmentation modes and indices.
+
+        Known modes (e.g. HCD, CID) are mapped to consecutive indices.  Any value
+        not in the known set (including missing / NaN) is mapped to the fallback
+        index ``num_frag_modes`` (the unknown token used by the embedding layer).
+
+        Sets the following instance attributes:
+            - frag_mode_to_idx: Dictionary mapping frag-mode strings to indices.
+            - idx_to_frag_mode: Dictionary mapping indices to frag-mode strings.
+            - num_frag_modes: Number of known fragmentation modes (excluding unknown).
+        """
+        frag_modes = sorted(self.spec_params.get("frag_modes", []))
+        self.frag_mode_to_idx = {mode: idx for idx, mode in enumerate(frag_modes)}
+        self.idx_to_frag_mode = {idx: mode for idx, mode in enumerate(frag_modes)}
+        self.num_frag_modes = len(frag_modes)
+
     def _process_spec(self, spec_entry: pd.Series) -> dict:
         """
         Process a single spectral entry into model-ready format.
@@ -404,6 +423,7 @@ class BaseDataset(Dataset):
                 - spec_prec_type: Precursor type index (if prec_type enabled)
                 - spec_prec_type_str: Precursor type string (if prec_type_str enabled)
                 - spec_inst_type: Instrument type index (if inst_type enabled)
+                - spec_frag_mode: Fragmentation mode index (if frag_mode enabled; unknown=num_frag_modes)
                 - spec_prec_mass_diff: Precursor mass difference (if prec_mass_diff enabled)
                 - spec_ce: Collision energy values (if nce or ace enabled)
                 - spec_prec_mz: Precursor m/z value (if prec_mz enabled)
@@ -433,6 +453,15 @@ class BaseDataset(Dataset):
             inst_type = spec_entry["inst_type"]
             inst_type = th.tensor([self.inst_type_to_idx[inst_type]], dtype=th.long)
             spec_data["spec_inst_type"] = inst_type
+        if self.spec_params.get("frag_mode", False):
+            raw_mode = spec_entry.get("frag_mode", None)
+            # Fall back to unknown token index when the column is missing or the value
+            # is not in the configured known set (handles NaN, None, and unseen labels).
+            if raw_mode is None or (isinstance(raw_mode, float) and __import__("math").isnan(raw_mode)):
+                frag_mode_idx = self.num_frag_modes  # unknown token
+            else:
+                frag_mode_idx = self.frag_mode_to_idx.get(str(raw_mode), self.num_frag_modes)
+            spec_data["spec_frag_mode"] = th.tensor([frag_mode_idx], dtype=th.long)
         if self.spec_params["prec_mass_diff"]:
             prec_type = spec_entry["prec_type"]
             mass_diff = th.tensor([PREC_TYPE_TO_MASS_DIFF[prec_type]], dtype=th.float)

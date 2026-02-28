@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg
 
-from fragnnet.model.base_model import CEModel, InstModel, PrecModel
+from fragnnet.model.base_model import CEModel, FragModeModel, FragModeScaler, InstModel, PrecModel
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.data_utils import combine_formulae
@@ -64,7 +64,7 @@ def get_sparse_pooled_feats(mask_idxs, num_frags, num_atoms, atom_feats, pool_ty
             reduce=reduce,
         )
 
-class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
+class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
     def __init__(
         self,
         num_depth: int,
@@ -119,6 +119,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         inst_insert_location: str,
         inst_insert_size: int,
         inst_types: list[str],
+        frag_mode_insert_location: str,
+        frag_mode_insert_size: int,
+        frag_modes: list[str],
+        frag_mode_scale: bool,
         output_formula_str: bool,
     ):
         # nn.Module init
@@ -147,6 +151,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             inst_num_types=len(inst_types),
         )
 
+        self._frag_mode_init(
+            frag_mode_insert_location=frag_mode_insert_location,
+            frag_mode_insert_size=frag_mode_insert_size,
+            frag_mode_num_types=len(frag_modes),
+        )
+        self.frag_modes = frag_modes
+
         self.num_depth = num_depth
         self.num_hs = num_hs
         self.num_elements = num_elements
@@ -159,7 +170,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
         # setup mol gnn
         self.mol_node_feats_size += (
-            self.ce_mol_input_dim + self.prec_mol_input_dim + self.inst_mol_input_dim
+            self.ce_mol_input_dim
+            + self.prec_mol_input_dim
+            + self.inst_mol_input_dim
+            + self.frag_mode_mol_input_dim
         )
         mol_kwargs = {
             "node_feats_size": self.mol_node_feats_size,
@@ -256,7 +270,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         else:
             assert self.frag_embed_combine == "avg", self.frag_embed_combine
             mlp_input_dim = self.frag_embedder.hidden_size
-        mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
+        mlp_input_dim += (
+            self.ce_mlp_input_dim
+            + self.prec_mlp_input_dim
+            + self.inst_mlp_input_dim
+            + self.frag_mode_mlp_input_dim
+        )
 
         #  mlp for forumla
         if self.mlp_output_format in ["formula", "node_formula"]:
@@ -270,6 +289,17 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
                 "normalization": mlp_normalization,
             }
             self.formula_module = MLPBlocks(**formula_mlp_kwargs)
+
+        # mode-conditioned output scaling (applied after formula_module)
+        self.frag_mode_scale = frag_mode_scale
+        if self.frag_mode_scale:
+            self.frag_mode_scaler = FragModeScaler(
+                num_frag_modes=len(frag_modes),
+                output_dim=self.mlp_output_dim,
+            )
+        else:
+            self.frag_mode_scaler = None
+
         # use extra mlp for node formula
         if self.mlp_output_format in ["node_formula"]:
             node_mlp_kwargs = {
@@ -329,6 +359,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
     def _inst_location_check(self):
         assert self.inst_insert_location != "frag", "inst_insert_location=frag not supported"
+
+    def _frag_mode_location_check(self):
+        assert (
+            self.frag_mode_insert_location != "frag"
+        ), "frag_mode_insert_location=frag not supported"
 
     def _compute_mol_feats_sizes(self):
         """method compute mol feature size
@@ -402,6 +437,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         spec_ce_batch_idxs: th.Tensor | None = None,
         spec_prec_type: th.Tensor | None = None,
         spec_inst_type: th.Tensor | None = None,
+        spec_frag_mode: th.Tensor | None = None,
         spec_prec_type_str: np.ndarray | None = None,
         **kwargs,
     ):
@@ -476,6 +512,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         prec_embed = self.embed_prec(spec_prec_type)
         # get inst value
         inst_embed = self.embed_inst(spec_inst_type)
+        # get frag_mode value
+        frag_mode_embed = self.embed_frag_mode(spec_frag_mode)
 
         # Type assertions for embedding tensors (narrow types from Any | None to Tensor)
 
@@ -497,6 +535,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
                 inst_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
             )
             mol_x = th.cat([mol_x, mol_inst_embed], dim=1)
+        if self.frag_mode_insert_location == "mol":
+            assert frag_mode_embed is not None, "frag_mode_embed must not be None"
+            mol_frag_mode_embed = th.repeat_interleave(
+                frag_mode_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
+            )
+            mol_x = th.cat([mol_x, mol_frag_mode_embed], dim=1)
 
         # get per-atom embeddings
         mol_embed_gnn = self.mol_embedder(mol_x, mol_batch, mol_edge_index, mol_edge_attr)
@@ -827,6 +871,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             self.ce_insert_location == "mlp"
             or self.prec_insert_location == "mlp"
             or self.inst_insert_location == "mlp"
+            or self.frag_mode_insert_location == "mlp"
         ):
             unique_batch_counts = th.unique(frag_node_batch_idxs, return_counts=True)[1]
             if self.ce_insert_location == "mlp":
@@ -838,6 +883,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             if self.inst_insert_location == "mlp":
                 mlp_inst_embed = th.repeat_interleave(inst_embed, unique_batch_counts, dim=0)
                 frag_embed_parts.append(mlp_inst_embed)
+            if self.frag_mode_insert_location == "mlp":
+                mlp_frag_mode_embed = th.repeat_interleave(
+                    frag_mode_embed, unique_batch_counts, dim=0
+                )
+                frag_embed_parts.append(mlp_frag_mode_embed)
 
         frag_embed = th.cat(frag_embed_parts, dim=1)
         frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs, self.mlp_output_dim)
@@ -866,7 +916,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             #  predicts joint logits for each (node, formula) pair:
             # log p(f,n)
             frag_joint_logits = self.formula_module(frag_embed)
-            # frag_joint_logits = frag_joint_logits
+            # apply mode-conditioned affine scaling if enabled
+            if self.frag_mode_scaler is not None:
+                assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"
+                frag_joint_logits = self.frag_mode_scaler(
+                    frag_joint_logits, spec_frag_mode, frag_node_batch_idxs
+                )
             # if include_cmf:
             #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)
             assert frag_joint_logits.shape[1] == self.mlp_output_dim, (
@@ -910,6 +965,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             # predicts log p(f|n) (formula given node) and log p(n) (node probability) separately.
             # log p(f|n) formula given node
             frag_node_formula_logits = self.formula_module(frag_embed)
+            # apply mode-conditioned affine scaling if enabled
+            if self.frag_mode_scaler is not None:
+                assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"
+                frag_node_formula_logits = self.frag_mode_scaler(
+                    frag_node_formula_logits, spec_frag_mode, frag_node_batch_idxs
+                )
             assert frag_node_formula_logits.shape[1] == self.mlp_output_dim, (
                 frag_node_formula_logits.shape[1],
                 self.mlp_output_dim,
