@@ -709,8 +709,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # When CMF features are present the node feature layout may include extra columns
         expected_h_width = 2 * self.num_hs + 1
         if not include_cmf:
-            assert h_formulae_idx_feat.shape[1] == expected_h_width, (
-                f"h_formulae_idx feature size {h_formulae_idx_feat.shape[1]} does not match expected {expected_h_width} (2*num_hs+1)"
+            assert h_formulae_idx_feat.shape[1] >= expected_h_width, (
+                f"h_formulae_idx feature size {h_formulae_idx_feat.shape[1]} is smaller than expected {expected_h_width} "
+                f"(2*num_hs+1); DAG was built with fewer h-transfers than num_hs={self.num_hs}"
             )
         else:
             # allow extra columns when CMF is included but ensure minimum expected width
@@ -729,89 +730,77 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 dim=1,
             )
 
-        frag_joint_formula_idxs = frag_joint_formula_idxs.flatten()
-
-        # TODO check if num_h match h_formulae_idx featuresize
-
-        # assert frag_joint_formula_idxs.shape[0] == batch_frag_num_nodes * (self.mlp_output_dim), (
-        #   f"frag_joint_formula_idxs shape {frag_joint_formula_idxs.shape} does not match expected shape {batch_frag_num_nodes * (self.num_hs + 1)}")
-
-        """
-        # TODO fix this with CMF formulaes
-        # remove formulae if necessary this only happen if we use h_n dags for h_n-1 training
-        frag_formula_idxs = th.unique(frag_joint_formula_idxs)
-        frag_joint_formula_idxs = frag_joint_formula_idxs.reshape(batch_frag_num_nodes,-1)
-        num_hs_diff = (frag_joint_formula_idxs.shape[1]-1)//2 - self.num_hs
-        assert num_hs_diff >= 0 and num_hs_diff <= (frag_joint_formula_idxs.shape[1]-1)//2, num_hs_diff
+        # Trim h-columns if the DAG was built with more h-transfers than model's num_hs.
+        # This allows loading h4 DAGs while training/inferring with num_hs=3 (or lower).
+        # Layout: [Δ0, Δ-1, Δ+1, Δ-2, Δ+2, ..., Δ-num_hs, Δ+num_hs] — trimming from
+        # the end removes the largest-magnitude shifts first.
+        frag_formula_idxs_pretrim = th.unique(frag_joint_formula_idxs)  # all h4 formula indices
+        frag_joint_formula_idxs = frag_joint_formula_idxs.reshape(batch_frag_num_nodes, -1)
+        h_width = frag_joint_formula_idxs.shape[1] // (2 if include_cmf else 1)
+        num_hs_diff = (h_width - 1) // 2 - self.num_hs
+        assert num_hs_diff >= 0, (
+            f"DAG max_h_transfer ({(h_width - 1) // 2}) < model num_hs ({self.num_hs}); "
+            "regenerate DAGs with at least num_hs h-transfers"
+        )
+        if num_hs_diff > 0 and include_cmf:
+            raise NotImplementedError(
+                "Trimming h-shifts on CMF DAGs is not yet supported. "
+                "Regenerate DAGs with max_h_transfer matching num_hs."
+            )
         if num_hs_diff > 0:
+            # Remove last 2*num_hs_diff columns (drops Δ±(num_hs+1) … Δ±dag_max_h)
+            frag_joint_formula_idxs = frag_joint_formula_idxs[:, :-2 * num_hs_diff].flatten()
 
-            # remove last 2*num_hs formulae
-            frag_joint_formula_idxs = frag_joint_formula_idxs[:,:-2*num_hs_diff].flatten()
-
-            # Find unique formula indices, including NULL formula indices, and get their inverse mapping
+            # Find unique formula indices still referenced after trimming (+ NULL per batch)
             frag_joint_formula_idxs_un, frag_joint_formula_idxs_inv = th.unique(
                 th.cat([frag_joint_formula_idxs, frag_formula_cumsizes[:-1]], dim=0),
-                return_inverse=True
+                return_inverse=True,
             )
-            # Only keep the inverse indices for the real (non-NULL) formulas
             frag_joint_formula_idxs_inv = frag_joint_formula_idxs_inv[:frag_joint_formula_idxs.shape[0]]
 
-            # Update the number of formulas after removal
-            batch_frag_num_formulae = frag_joint_formula_idxs_un.shape[0]
-
-            # Update the batch index for each formula (maps each formula to its batch)
-            frag_formula_batch_idxs = frag_formula_batch_idxs[frag_joint_formula_idxs_un]
-
-            # Re-index formula indices to be contiguous (0...num_formulae-1)
-            frag_joint_formula_idxs = th.arange(batch_frag_num_formulae, device=device)[frag_joint_formula_idxs_inv]
-
-            # Create a mask for peak formulas (real, non-NULL formulas)
+            # Mask for which pre-trim peaks survive into the trimmed set
             frag_formula_peak_mask = th.isin(
-                frag_formula_idxs[~th.isin(frag_formula_idxs, frag_formula_cumsizes[:-1])],
-                frag_joint_formula_idxs_un
+                frag_formula_idxs_pretrim[~th.isin(frag_formula_idxs_pretrim, frag_formula_cumsizes[:-1])],
+                frag_joint_formula_idxs_un,
             )
 
-            # Update the list of formula indices to be contiguous
-            frag_formula_idxs = th.arange(batch_frag_num_formulae, device=device)
+            # Update formula counts and batch mapping
+            batch_frag_num_formulae = frag_joint_formula_idxs_un.shape[0]
+            frag_formula_batch_idxs = frag_formula_batch_idxs[frag_joint_formula_idxs_un]
+            frag_joint_formula_idxs = th.arange(batch_frag_num_formulae, device=device)[
+                frag_joint_formula_idxs_inv
+            ]
 
-            # Calculate the number of formulas per batch (sample)
+            frag_formula_idxs = th.arange(batch_frag_num_formulae, device=device)
             frag_formula_sizes = scatter_reduce(
-                th.ones_like(frag_joint_formula_idxs_un),
+                th.ones_like(frag_formula_batch_idxs),
                 frag_formula_batch_idxs,
                 reduce="sum",
-                dim_size=batch_size
+                dim_size=batch_size,
             )
-
-            # Ensure that every batch has more than one formula (sanity check)
             assert not th.any(frag_formula_sizes <= 1), frag_formula_sizes
 
-            # Recompute cumulative sizes for formulas per batch
-            frag_formula_cumsizes = th.cat(
-                [th.zeros([1], device=device, dtype=frag_formula_sizes.dtype), frag_formula_sizes],
-                dim=0
+            frag_formula_cumsizes = th.cumsum(
+                th.cat(
+                    [th.zeros([1], device=device, dtype=frag_formula_sizes.dtype), frag_formula_sizes],
+                    dim=0,
+                ),
+                dim=0,
             )
-            frag_formula_cumsizes = th.cumsum(frag_formula_cumsizes, dim=0)
-
-            # Update node offsets based on new formula cumsizes
             frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
 
-            # Peak-related updates:
-            # Get indices of peak formulas (non-NULL)
-            frag_formula_peak_idxs = frag_formula_idxs[~th.isin(frag_formula_idxs, frag_formula_cumsizes[:-1])]
-
-            # Adjust peak indices to be relative to their batch
-            frag_formula_peak_idxs = frag_formula_peak_idxs - frag_formula_cumsizes[:-1][frag_formula_batch_idxs[~th.isin(frag_formula_idxs, frag_formula_cumsizes[:-1])]]
-
-            # Filter peak probabilities and m/z values using the mask
+            # Update peak-related tensors
+            non_null_mask = ~th.isin(frag_formula_idxs, frag_formula_cumsizes[:-1])
+            frag_formula_peak_idxs = frag_formula_idxs[non_null_mask]
+            frag_formula_peak_idxs = (
+                frag_formula_peak_idxs
+                - frag_formula_cumsizes[:-1][frag_formula_batch_idxs[non_null_mask]]
+            )
             frag_formula_peak_probs = frag_formula_peak_probs[frag_formula_peak_mask]
             frag_formula_peak_mzs = frag_formula_peak_mzs[frag_formula_peak_mask]
-
-            # Number of peaks per formula (excluding NULL)
             frag_formula_peak_sizes = frag_formula_sizes - 1
         else:
-            # no removal required
             frag_joint_formula_idxs = frag_joint_formula_idxs.flatten()
-        """
         # get isomorphism aggregation
         if self.nb_iso:
             frag_nb_idxs = get_node_feats(frag_x, frag_node_feat_idxs, "nb_iso_idx").flatten()
