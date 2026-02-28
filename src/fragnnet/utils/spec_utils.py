@@ -204,21 +204,6 @@ def transform_nce_to_ace(nce: float, mw: float, charge_factor: int = 1) -> float
     return nce * mw / 500 * charge_factor
 
 
-def transform_ace(ace: float) -> float:
-    """ev most likely between 0 to 100, return normalized absolute collision energy for ml
-
-    Args:
-        ace (float): _description_
-
-    Raises:
-        NotImplementedError: _description_
-    Returns:
-        float: normalized absolute collision energy for ml
-    """
-    # TODO fix this
-    raise NotImplementedError
-    # return ace/100
-
 
 def filter_func(
     mzs: th.Tensor | np.ndarray,
@@ -559,240 +544,8 @@ def calculate_match_mzs(
     raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
 
 
-# cosine similarity code ... all of them
-def calculate_cosine_similarity(
-    true_mzs: th.Tensor,
-    true_ints: th.Tensor,
-    true_batch_idxs: th.Tensor,
-    pred_mzs: th.Tensor,
-    pred_ints: th.Tensor,
-    pred_batch_idxs: th.Tensor,
-    mz_max: float = 1500.0,
-    mz_bin_res: float = 0.01,
-    sum_ints: bool = True,
-    remove_prec_peaks: bool = False,
-    true_prec_mzs: th.Tensor | None = None,
-) -> th.Tensor:
-    """calculate cosine similarity using binned spectra
-
-    Args:
-        true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array
-        true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
-        true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
-        pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array
-        pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-        pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
-        mz_max (float, optional): max mz. Defaults to 1500.
-        mz_bin_res (float, optional): bin size measured in Da. Defaults to 0.01.
-        sum_ints (bool, optional): flag to get sum intensities in the same bin else use max. Defaults to True.
-
-    Returns:
-        th.Tensor: cosine similarity using binned spectra
-    """
-    agg = "sum" if sum_ints else "amax"
-    true_spec = batched_bin_func(
-        true_mzs,
-        true_ints,
-        true_batch_idxs,
-        mz_max,
-        mz_bin_res,
-        agg=agg,
-        sparse=False,
-        remove_prec_peaks=remove_prec_peaks,
-        prec_mzs=true_prec_mzs,
-    )
-    pred_spec = batched_bin_func(
-        pred_mzs,
-        pred_ints,
-        pred_batch_idxs,
-        mz_max,
-        mz_bin_res,
-        agg=agg,
-        sparse=False,
-        remove_prec_peaks=remove_prec_peaks,
-        prec_mzs=true_prec_mzs,
-    )
-    cos_sims = binned_cosine_similarity(true_spec, pred_spec)
-    return cos_sims
 
 
-def calculate_sparse_cosine_similarity(
-    true_mzs: th.Tensor,
-    true_ints: th.Tensor,
-    true_batch_idxs: th.Tensor,
-    pred_mzs: th.Tensor,
-    pred_ints: th.Tensor,
-    pred_batch_idxs: th.Tensor,
-    mz_max: float = 1500.0,
-    mz_bin_res: float = 0.01,
-    sum_ints: bool = True,
-    remove_prec_peaks: bool = False,
-    true_prec_mzs: th.Tensor | None = None,
-    log_ints: bool = False,
-) -> th.Tensor:
-    """
-    Calculate the cosine similarity using binned spectra and sparse methods,
-
-    Args:
-        true_mzs (th.Tensor): _description_
-        true_ints (th.Tensor): _description_
-        true_batch_idxs (th.Tensor): _description_
-        pred_mzs (th.Tensor): _description_
-        pred_ints (th.Tensor): _description_
-        pred_batch_idxs (th.Tensor): _description_
-        mz_max (float, optional): _description_. Defaults to 1500..
-        mz_bin_res (float, optional): _description_. Defaults to 0.01.
-        sum_ints (bool, optional): _description_. Defaults to True.
-
-    Returns:
-        th.Tensor: cosine similarity
-    """
-
-    # sparse bin
-    if not sum_ints:
-        agg = "amax"
-    elif log_ints:
-        agg = "lse"
-    else:
-        agg = "sum"
-    true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
-        true_mzs,
-        true_ints,
-        true_batch_idxs,
-        mz_max=mz_max,
-        mz_bin_res=mz_bin_res,
-        agg=agg,
-        sparse=True,
-        remove_prec_peaks=remove_prec_peaks,
-        prec_mzs=true_prec_mzs,
-    )
-    pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
-        pred_mzs,
-        pred_ints,
-        pred_batch_idxs,
-        mz_max=mz_max,
-        mz_bin_res=mz_bin_res,
-        agg=agg,
-        sparse=True,
-        remove_prec_peaks=remove_prec_peaks,
-        prec_mzs=true_prec_mzs,
-    )
-    if log_ints:
-        true_bin_ints = true_bin_ints.exp()
-        pred_bin_ints = pred_bin_ints.exp()
-    cos_sims = cos_sim_helper(
-        true_bin_idxs,
-        true_bin_ints,
-        true_bin_batch_idxs,
-        pred_bin_idxs,
-        pred_bin_ints,
-        pred_bin_batch_idxs,
-    )
-    return cos_sims
-
-
-def calculate_sparse_cosine_hungarian(
-    true_mzs: th.Tensor,
-    true_ints: th.Tensor,
-    true_batch_idxs: th.Tensor,
-    pred_mzs: th.Tensor,
-    pred_ints: th.Tensor,
-    pred_batch_idxs: th.Tensor,
-    tolerance: float = 1e-5,
-    relative: bool = True,
-    sum_ints: bool = True,
-    remove_prec_peaks: bool = False,
-    true_prec_mzs: th.Tensor | None = None,
-    tolerance_min_mz: float = TOLERANCE_MIN_MZ,
-) -> th.Tensor:
-    """Calculate cosine similarity using the Hungarian algorithm as the matching method.
-
-    Args:
-        true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array
-        true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
-        true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
-        pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array
-        pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-        pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
-        tolerance (float):
-        relative (bool, optional): flag to use relative match else use abs tolerance measured in Da. Defaults to True.
-        sum_ints (bool, optional): flag to get summed intesnities in aggregate, else get max. Defaults to True.
-
-    Returns:
-        th.Tensor: cosine similarity tensor, one per pair
-    """
-    # round peaks
-    agg = "sum" if sum_ints else "amax"
-    true_mzs_r, true_ints_r, true_batch_idxs_r = round_aggregate_peaks(
-        true_mzs, true_ints, true_batch_idxs, agg=agg
-    )
-    pred_mzs_r, pred_ints_r, pred_batch_idxs_r = round_aggregate_peaks(
-        pred_mzs, pred_ints, pred_batch_idxs, agg=agg
-    )
-    # calculate
-    batch_size = int(th.max(true_batch_idxs_r).item()) + 1
-    cos_hun = th.zeros((batch_size,), device=true_ints.device, dtype=true_ints.dtype)
-    for b_idx in range(batch_size):
-        b_true_mask_r = true_batch_idxs_r == b_idx
-        b_pred_mask_r = pred_batch_idxs_r == b_idx
-        b_true_mzs_r = true_mzs_r[b_true_mask_r]
-        b_pred_mzs_r = pred_mzs_r[b_pred_mask_r]
-        b_true_ints_r = true_ints_r[b_true_mask_r]
-        b_pred_ints_r = pred_ints_r[b_pred_mask_r]
-        b_true_prec_mask_r = None
-        b_pred_prec_mask_r = None
-
-        # assert remove_prec_peaks and true_prec_mzs is None,
-        if remove_prec_peaks:
-            if true_prec_mzs is None:
-                raise ValueError("true_prec_mzs must be provided when remove_prec_peaks is True")
-            b_true_prec_mz = true_prec_mzs[b_true_mask_r]
-            # precursor
-            b_true_prec_mask_r = calculate_match_mzs(
-                b_true_mzs_r,
-                b_true_prec_mz,
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-            ).squeeze(1)
-            b_pred_prec_mask_r = calculate_match_mzs(
-                b_pred_mzs_r,
-                b_true_prec_mz,
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-            ).squeeze(1)
-        # match
-        b_match_mask_r = calculate_match_mzs(
-            b_true_mzs_r,
-            b_pred_mzs_r,
-            tolerance=tolerance,
-            relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
-        )
-        if isinstance(b_match_mask_r, np.ndarray):
-            b_match_mask_r = th.from_numpy(b_match_mask_r).to(b_true_ints_r.device)
-        b_true_match_mask_r = th.any(b_match_mask_r, dim=1)
-        b_pred_match_mask_r = th.any(b_match_mask_r, dim=0)
-
-        cos_hun[b_idx] = cos_hun_helper(
-            b_true_ints_r,
-            b_pred_ints_r,
-            b_match_mask_r,
-            b_true_match_mask_r,
-            b_pred_match_mask_r,
-            remove_prec_peaks,
-            b_true_prec_mask_r,
-            b_pred_prec_mask_r,
-        )
-    return cos_hun
-
-
-def binned_cosine_similarity(true_spec, pred_spec):
-    true_spec = F.normalize(true_spec, p=2, dim=1)
-    pred_spec = F.normalize(pred_spec, p=2, dim=1)
-    cos_sims = (true_spec.unsqueeze(1) @ pred_spec.unsqueeze(2)).squeeze(2).squeeze(1)
-    return cos_sims
 
 
 def cos_sim_helper(
@@ -847,10 +600,6 @@ def batched_l1_normalize(ints, batch_idxs):
     return ints
 
 
-def batched_l2_normalize(ints, batch_idxs):
-    ints = scatter_l2normalize(ints, batch_idxs)
-    return ints
-
 
 def batched_mf1000_normalize(ints, batch_idxs):
     """mf 1000 normalize implemention in pytorch, batched
@@ -868,19 +617,6 @@ def batched_mf1000_normalize(ints, batch_idxs):
     ints = (ints / max_ints[batch_idxs]) * 1000.0
     return ints
 
-
-def mf1000_normalize_np(ints: np.ndarray) -> np.ndarray:
-    """mf 1000 normalize implemetion in numpy, not batched
-
-    Args:
-        ints (np.array): peak intensity
-
-    Returns:
-        np.array: normalized intensities
-    """
-    int_max = np.max(ints)
-    ints = (ints / int_max) * 1000.0
-    return ints
 
 
 def round_aggregate_peaks(

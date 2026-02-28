@@ -2,7 +2,7 @@
 
 Tests for:
 - get_ints_transform_func / get_ints_untransform_func (intensity transforms)
-- transform_ce, transform_nce_to_ace, transform_ace (collision energy transforms)
+- transform_ce, transform_nce_to_ace (collision energy transforms)
 - filter_func, bin_func, batch_func (single-spectrum operations)
 - batched_filter_func, batched_bin_func (batched operations)
 - merge_sparse_specs, calculate_spectrum_entropy (spectrum utilities)
@@ -26,7 +26,6 @@ from fragnnet.utils.spec_utils import (
     get_ints_untransform_func,
     merge_sparse_specs,
     round_aggregate_peaks,
-    transform_ace,
     transform_ce,
     transform_nce_to_ace,
 )
@@ -179,14 +178,6 @@ class TestTransformNceToAce:
         """NCE=0 always gives ACE=0 regardless of mw."""
         assert transform_nce_to_ace(0.0, 1000.0) == pytest.approx(0.0)
 
-
-class TestTransformAce:
-    """Tests for transform_ace — not yet implemented."""
-
-    def test_always_raises_not_implemented(self):
-        """transform_ace raises NotImplementedError for any input."""
-        with pytest.raises(NotImplementedError):
-            transform_ace(50.0)
 
 
 class TestFilterFunc:
