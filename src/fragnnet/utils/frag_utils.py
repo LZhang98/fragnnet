@@ -272,7 +272,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
     hs_arr = np.array(hs_arr, dtype=np.int32)
     # enumerate bonds
     atoms_to_bonds = {}
-    bonds, bond_type_idxs = [], []
+    bonds, bond_type_idxs, ring_bond_mask = [], [], []
     num_bonds = 0
     adj = np.zeros((num_atoms, num_atoms), dtype=np.int32)
     # adj = Chem.rdmolops.GetAdjacencyMatrix(mol)
@@ -286,6 +286,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
 
         bonds.append((from_idx, to_idx))
         bond_type_idxs.append(cur_type_idx)
+        ring_bond_mask.append(1 if bond.IsInRing() else 0)
 
         if from_idx not in atoms_to_bonds:
             atoms_to_bonds[from_idx] = [cur_idx]
@@ -308,6 +309,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
     mol_d["elem_idxs"] = elem_idxs
     mol_d["bonds"] = bonds
     mol_d["bond_type_idxs"] = bond_type_idxs
+    mol_d["ring_bond_mask"] = np.array(ring_bond_mask, dtype=np.uint8)
     mol_d["bond_mask_arr"] = np.ones((num_bonds,), dtype=bool)
     mol_d["atom_mask_arr"] = np.ones((num_atoms,), dtype=bool)  # can be computed
     mol_d["atoms_to_bonds"] = atoms_to_bonds  # can be computed
@@ -1418,7 +1420,6 @@ def timed_get_dags(
     use_cached=True,
     compressed=False,
     save_dag=True,
-    
 ) -> dict:
     try:
         mol_d = extract_mol_info(mol)
@@ -1442,9 +1443,7 @@ def timed_get_dags(
         # don't retry, theres a bug
         if type(mol) is not str:
             mol = Chem.MolToSmiles(mol)
-        print(
-            f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}", file=sys.stderr
-        )
+        print(f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}", file=sys.stderr)
         print("> Traceback", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
     return mol_id, {}
