@@ -355,6 +355,93 @@ class FragModeModel:
         return frag_mode_embed
 
 
+class CEScaler(nn.Module):
+    """CE-conditioned FiLM output scaling layer.
+
+    Treats collision energy like a temperature: predicts a per-H-shift (log_scale, bias)
+    from normalized CE via a small MLP, then applies:
+        ``logits_out = logits * exp(log_scale) + bias``
+    before the scatter softmax. Higher CE can increase certain H-shift dimensions
+    (e.g. Δ-2) while suppressing others, capturing the physics of CE-dependent
+    fragment appearance / disappearance.
+
+    Initialized to zero so the layer starts as an identity transform.
+
+    Attributes:
+        ce_mean: Mean used for CE z-score normalization.
+        ce_std: Std used for CE z-score normalization.
+        output_dim: Number of H-shift logit dimensions (2*num_hs+1, or doubled for CMF).
+        net: MLP mapping normalized CE scalar → (log_scale, bias) of shape (output_dim*2,).
+    """
+
+    def __init__(
+        self,
+        ce_mean: float,
+        ce_std: float,
+        output_dim: int,
+        hidden_dim: int = 64,
+    ) -> None:
+        """Initialize CEScaler.
+
+        Args:
+            ce_mean: Mean CE for z-score normalization.
+            ce_std: Std CE for z-score normalization.
+            output_dim: Logit output dimension (mlp_output_dim).
+            hidden_dim: Hidden dim of the CE→FiLM MLP. Defaults to 64.
+        """
+        super().__init__()
+        self.ce_mean = ce_mean
+        self.ce_std = ce_std
+        self.output_dim = output_dim
+        self.net = nn.Sequential(
+            nn.Linear(1, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, output_dim * 2),
+        )
+        # Init to zero → identity transform at the start of training
+        nn.init.zeros_(self.net[-1].weight)
+        nn.init.zeros_(self.net[-1].bias)
+
+    def forward(
+        self,
+        logits: th.Tensor,
+        ce: th.Tensor,
+        ce_batch_idxs: th.Tensor,
+        frag_node_batch_idxs: th.Tensor,
+        batch_size: int,
+    ) -> th.Tensor:
+        """Apply CE-conditioned affine scaling to intensity logits.
+
+        Args:
+            logits: Raw MLP logits of shape (num_nodes, output_dim).
+            ce: Per-CE values of shape (num_ces,); -1 means missing.
+            ce_batch_idxs: Batch index per CE of shape (num_ces,).
+            frag_node_batch_idxs: Batch index per node of shape (num_nodes,).
+            batch_size: Number of samples in the batch.
+
+        Returns:
+            Scaled logits of shape (num_nodes, output_dim).
+        """
+        # Normalize CE; treat missing values (-1) as 0 so identity scaling is preserved
+        mask = ce >= 0
+        norm_ce = th.where(mask, (ce - self.ce_mean) / self.ce_std, th.zeros_like(ce))
+        norm_ce = norm_ce.reshape(-1, 1)
+        # MLP: (num_ces, 1) → (num_ces, output_dim * 2)
+        params = self.net(norm_ce)
+        # Aggregate multiple CEs per sample via mean
+        params_per_sample = scatter_reduce(
+            src=params,
+            index=ce_batch_idxs.unsqueeze(1).expand_as(params),
+            reduce="mean",
+            dim_size=batch_size,
+            include_self=False,
+        )  # (batch_size, output_dim * 2)
+        params_per_node = params_per_sample[frag_node_batch_idxs]  # (num_nodes, output_dim * 2)
+        log_scale = params_per_node[:, : self.output_dim]
+        bias = params_per_node[:, self.output_dim :]
+        return logits * th.exp(log_scale) + bias
+
+
 class FragModeScaler(nn.Module):
     """Mode-conditioned affine output scaling layer.
 

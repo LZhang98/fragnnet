@@ -10,7 +10,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg
 
-from fragnnet.model.base_model import CEModel, FragModeModel, FragModeScaler, InstModel, PrecModel
+from fragnnet.model.base_model import (
+    CEModel,
+    CEScaler,
+    FragModeModel,
+    FragModeScaler,
+    InstModel,
+    PrecModel,
+)
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.data_utils import combine_formulae
@@ -123,6 +130,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         frag_mode_insert_size: int,
         frag_modes: list[str],
         frag_mode_scale: bool,
+        ce_scale: bool,
+        ce_scaler_hidden_dim: int,
         output_formula_str: bool,
     ):
         # nn.Module init
@@ -299,6 +308,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
         else:
             self.frag_mode_scaler = None
+
+        # CE-conditioned FiLM output scaling (applied after frag_mode_scaler)
+        self.ce_scale = ce_scale
+        if self.ce_scale:
+            self.ce_scaler = CEScaler(
+                ce_mean=ce_mean,
+                ce_std=ce_std,
+                output_dim=self.mlp_output_dim,
+                hidden_dim=ce_scaler_hidden_dim,
+            )
+        else:
+            self.ce_scaler = None
 
         # use extra mlp for node formula
         if self.mlp_output_format in ["node_formula"]:
@@ -910,6 +931,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"
                 frag_joint_logits = self.frag_mode_scaler(
                     frag_joint_logits, spec_frag_mode, frag_node_batch_idxs
+                )
+            # apply CE-conditioned FiLM scaling if enabled
+            if self.ce_scaler is not None:
+                assert ce is not None and ce_batch_idxs is not None, (
+                    "spec_ce and spec_ce_batch_idxs required for ce_scaler"
+                )
+                frag_joint_logits = self.ce_scaler(
+                    frag_joint_logits, ce, ce_batch_idxs, frag_node_batch_idxs, batch_size
                 )
             # if include_cmf:
             #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)

@@ -377,6 +377,10 @@ frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none
 frag_mode_insert_size: 8         # Dimension of frag-mode embedding (3 categories: HCD, CID, unknown)
 frag_mode_scale: False           # Enable mode-conditioned affine output scaling layer
 
+# CE-conditioned FiLM output scaling (temperature-style)
+ce_scale: False              # Enable CE-conditioned FiLM scaler on logits before softmax
+ce_scaler_hidden_dim: 64     # Hidden dim of the CE→FiLM MLP
+
 # ============================================================================
 # MCES Pre-training Configuration
 # ============================================================================
