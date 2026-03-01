@@ -51,7 +51,8 @@ The current model (`fragnnet_d3_nist23_cv0`) already has these enabled — **the
 
 | Feature | Status | Config key |
 |---|---|---|
-| NCE conditioning | ✅ enabled | `nce: True`, `ce_insert_location: mlp` |
+| NCE conditioning (feature) | ✅ enabled | `nce: True`, `ce_insert_location: mlp` |
+| **CE FiLM scaler (output logits)** | ✅ **implemented** | `ce_scale: True`, `ce_scaler_hidden_dim: 64` |
 | Instrument type conditioning | ✅ enabled | `inst_type: True`, `inst_insert_location: mlp` |
 | Precursor type conditioning | ✅ enabled | `prec_insert_location: mlp` |
 | ACE → NCE conversion for QTOF | ✅ done | `fill_missing_nce()` via `ace_to_nce()` |
@@ -361,6 +362,101 @@ ce_insert_type: embed
 
 ---
 
+## 3a. CE as Temperature — FiLM Logit Scaler
+
+### Motivation
+
+The existing `ce_insert_location: mlp` approach embeds CE as an *additive input feature*
+concatenated to fragment embeddings before the MLP head.  The network must then implicitly
+learn to use this feature to produce different output distributions.  This is indirect:
+CE physically controls which fragments appear and at what intensity, which is fundamentally
+a *multiplicative* effect on the output distribution — directly analogous to temperature
+in a Boltzmann distribution.
+
+Concretely:
+
+- **Low CE** → little energy deposited → molecule barely fragments → distribution
+  concentrated on a few large fragments (sharp).
+- **High CE** → many bonds broken → different H-shift variants activated (e.g. H-loss,
+  water-loss fragments) → different subset of fragments dominate.
+
+This is not just a uniform sharpening/flattening (pure temperature) — some fragment
+variants *appear* at high CE that were absent at low CE, while others *disappear*.
+
+### Design: `CEScaler` (FiLM on H-shift logits) [2, 3]
+
+**Class**: `CEScaler` in `src/fragnnet/model/base_model.py`
+
+The model output before softmax has shape `(num_nodes, mlp_output_dim)` where
+`mlp_output_dim = 2 * num_hs + 1`.  Each column corresponds to a proton-transfer
+variant of each fragment node:
+
+```
+columns: [Δ0, Δ-1, Δ+1, Δ-2, Δ+2, ..., Δ-num_hs, Δ+num_hs]
+```
+
+`CEScaler` predicts per-H-shift `(log_scale, bias)` from normalized CE via a 2-layer MLP
+and applies:
+
+```
+logits_out = logits * exp(log_scale(CE)) + bias(CE)
+```
+
+before the `scatter_logsoftmax`.  This lets the model learn physics like:
+- At high CE: upweight Δ-1, Δ-2 columns (H-loss / water-loss fragments become prominent)
+- At low CE: upweight Δ0 column (intact-formula fragments dominate)
+
+**Implementation details:**
+
+| Aspect | Detail |
+|---|---|
+| MLP architecture | `Linear(1, 64) → SiLU → Linear(64, output_dim * 2)` |
+| Init | Last-layer weights and biases set to zero → identity at training start |
+| Missing CE (-1) | Masked to 0 before normalization → identity scaling preserved |
+| Multi-CE per sample (ramped/stepped) | Scatter mean over CE dim before expanding to nodes |
+| Applied | After `frag_mode_scaler`, before `frag_joint_logits.flatten()` |
+
+**Two complementary CE conditioning roles:**
+
+| Mechanism | Controls | Config |
+|---|---|---|
+| `ce_insert_location: mlp` | Which *fragment nodes* the MLP selects (representation level) | `ce_insert_location: mlp`, `ce_insert_type: lin` |
+| `ce_scale: True` (new) | Which *H-shift columns* are preferred at a given CE (output level) | `ce_scale: True`, `ce_scaler_hidden_dim: 64` |
+
+Both should be active together for full CE conditioning.
+
+### Config
+
+```yaml
+# CE as input feature (existing — representation conditioning)
+ce_insert_location: mlp
+ce_insert_type: lin
+ce_insert_size: 32
+
+# CE as temperature (new — output distribution conditioning)
+ce_scale: true
+ce_scaler_hidden_dim: 64
+```
+
+### Why FiLM, not pure temperature? [3]
+
+A scalar temperature `logits / τ(CE)` would uniformly sharpen or flatten all H-shift
+columns equally.  FiLM [2] allows *non-uniform* modulation: H-loss columns can be amplified
+while the Δ0 column is suppressed, matching the actual physics of CE-dependent
+fragment appearance and disappearance.  The Distill article [3] further shows that
+multiplicative feature-wise conditioning is consistently more expressive than additive
+concatenation — motivating `ce_scale` over relying solely on `ce_insert_location`.
+
+### Key files
+
+- `src/fragnnet/model/base_model.py` — `CEScaler` class
+- `src/fragnnet/model/fragnnet_model.py` — `__init__` wiring (`ce_scale`, `ce_scaler_hidden_dim`), `forward` application
+- `src/fragnnet/pl_model/fragnnet_pl.py` — hparam passthrough
+- `config/template.yml` — default `ce_scale: false`, `ce_scaler_hidden_dim: 64`
+- `tests/test_ce_scaler.py` — unit tests (identity init, FiLM scaling, missing CE, multi-CE aggregation)
+
+---
+
 ## 4. DAG Truncation for Large / Polycyclic Molecules
 
 ### Constraint
@@ -665,34 +761,100 @@ mechanical, not elemental:
 | **SO₂ loss** (sulfonamides/sulfones) | Yes — new C–N connectivity | **Never** | Neutral loss pre-pass (−64 Da, fixed) |
 | **SO₃ loss** (sulfates) | Yes | **Never** | Neutral loss pre-pass (−80 Da, fixed) |
 
+#### PPGB_MS2 reaction coverage analysis
+
+The 28 fragmentation reactions used by PPGB_MS2 [1] (Supplementary Figure 1, `smiles_fragmentation.py`)
+have been systematically mapped to what our BFS + H-transfer model can and cannot produce.
+Key insight: BFS generates atom-set fragments; bond orders within fragments are not tracked.
+Many reactions that "form new pi bonds" are therefore covered **at formula level** by the
+existing ±`max_h_transfer` H flexibility — the model just needs to assign the right intensity.
+
+| SMARTS var | Figure # | Mechanism | Coverage |
+|---|---|---|---|
+| `crf1_0` | R1 | HX 1,2-elimination (break B–X, A=B forms) | BFS + H-transfer=1 ✓ |
+| `crf1_1` | R2 | Vinyl HX elimination → triple bond | BFS + H-transfer=1 ✓ |
+| `crf2_0` | R3 | Alpha-cleavage (H on C: break A–B, B=C) | BFS + H-transfer=1 ✓ |
+| `crf2_1` | R4 | Alpha-cleavage → triple bond | BFS + H-transfer=1 ✓ |
+| `crf3_0` | R5 | 6-ring → diene + alkene (2 bonds break) | 2-bond ring pre-pass ✓ |
+| `crf3_1` | R6 | 6-ring → diene + alkyne | 2-bond ring pre-pass + H-transfer ✓ |
+| `crf4_0` | R7 | McLafferty: break β–γ bond, H from γ | BFS + H-transfer=1 ✓ (formula-level) |
+| `crf5_0` | R8 | H2 loss + 1 bond break (both frags lose 1H) | BFS + H-transfer=2 ✓ (each fragment independently at −2H from natural) |
+| `crf6_0` | R9 | 8-atom polyene retro-rearrangement | ❌ Too complex; deprioritize |
+| `crf7_0` | R10 | 6-ring → **3 fragments** (3 bonds break) | Pre-pass (depth-1) + BFS (depth-2) ✓ |
+| `crf7_1` | R11 | 6-ring → 3 frags, 1 triple bond | Same + H-transfer ✓ |
+| `crf7_2` | R12 | 6-ring → 3 frags, 2 triple bonds | Same ✓ |
+| `crf7_3` | R13 | 6-ring → 3 frags, 3 triple bonds | Same ✓ |
+| `crf8_0` | R14 | Allylic H-shift (isomerization, 1 product) | ❌ Not fragmentation; skip |
+| `crf8_1` | R15 | Bis-allylic H-shift | ❌ Same |
+| `crf8_2` | R16 | Extended allylic H-shift | ❌ Same |
+| `crf9_0` | R17 | CO loss from ring ketone (2 ring bonds) | 2-bond ring pre-pass ✓ |
+| `crf11_0` | R18 | H2 loss from adjacent C–H bonds (1 product) | ❌ H2 neutral loss needed (see below) |
+| `crf11_1` | R19 | H2 loss → triple bond | ❌ Same |
+| `crf12_0` | R20 | Retro-ene: 2 bond breaks + new A–D bond | ❌ New bond formed; skip |
+| `crf12_1` | R21 | Retro-ene → triple bond | ❌ Same |
+| `crf13_0` | R22 | CO2 from –COOH (break R–C, H-shift=2) | BFS + H-transfer=2 ✓; explicit better |
+| `crf13_1` | R23 | CO2 from formate ester H–C(=O)–O–R | BFS + H-transfer=1 ✓; explicit better |
+| `crf13_2` | R24 | CO2 from acyclic ester + new R1–R2 bond | ❌ Acyclic: NOT covered. Cyclic (lactone): ring pre-pass ✓ |
+| `cmf2_0` | R25 | Heteroatom-activated cleavage [N/O/S]=B + C | BFS + H-transfer ✓ |
+| `cmf2_1` | R26 | Same → triple bond | BFS + H-transfer ✓ |
+| `cmf7_0` | R27 | Simple heterolytic A–B → A⁺ + B⁻ | BFS ✓ |
+| `cmf13_0` | R28 | 6-ring contraction → 5-ring + atom (2 bonds) | 2-bond ring pre-pass ✓ (formula-level) |
+
+**Summary:** 18/28 reactions covered by current BFS + H-transfer (R8 is covered: each fragment
+independently at H-transfer=−2).  The 2-bond ring pre-pass adds coverage for R5, R6, R10–R13,
+R17, R28 (6 additional).  One reaction class requires a new neutral loss entry (R18–19: pure
+H2 loss with no bond break).  R9, R14–16, R20–21, R24-acyclic are deprioritized (too complex
+or not fragmentation events).
+
 #### Phase 1 — Fixed-Δm losses (low effort, implement first)
 
 These have a known constant Δm detectable by a single SMARTS pattern:
 
-| Neutral loss | Δm (Da) | Functional group | SMARTS | Affected superclass |
-|---|---|---|---|---|
-| H₂O | −18 | alcohols, carboxylic acids | `[OH]` | Org. oxygen, lipids |
-| SO₂ | −64 | sulfonamides, sulfones | `[S](=O)(=O)` | Organosulfur |
-| SO₃ | −80 | sulfates, sulfonates | `[S](=O)(=O)[OH,O-]` | Organosulfur |
-| CH₃SH | −48 | thioethers | `[S][CH3]` | Organosulfur |
-| S | −32 | thioketones | `[S;!$(S=O)]` | Organosulfur |
-| CS₂ | −76 | dithiocarbamates | `[S]C(=S)` | Organosulfur |
+| Neutral loss | Δm (Da) | Functional group | SMARTS | Affected superclass | PPGB/smarts.md ref |
+|---|---|---|---|---|---|
+| H₂O | −18.011 | alcohols, carboxylic acids | `[OH]` | Org. oxygen, lipids | R1/R3; `nl_h2o_alc`, `nl_h2o_1` |
+| CO₂ | −43.990 | carboxylic acids, formate esters | `[C](=O)[OH]` | Org. oxygen, lipids | R22, R23; `nl_co2` |
+| NH₃ | −17.027 | primary/secondary amines, amides | `[NX3;H1,H2]` | Alkaloids, amino acids | `nl_nh3_1`, `nl_nh3_2` |
+| H₂ | −2.016 | vicinal C–H bonds (ring dehydrogenation) | `[#6;H1,H2][#6;H1,H2]` | Polycyclics, aromatics | R18, R19 (`crf11_0/1`) |
+| SO₂ | −63.962 | sulfonamides, sulfones | `[S](=O)(=O)` | Organosulfur | — |
+| SO₃ | −79.957 | sulfates, sulfonates | `[S](=O)(=O)[OH,O-]` | Organosulfur | — |
+| CH₃SH | −48.003 | thioethers | `[S][CH3]` | Organosulfur | — |
+| S | −31.972 | thioketones | `[S;!$(S=O)]` | Organosulfur | — |
+| CS₂ | −75.944 | dithiocarbamates | `[S]C(=S)` | Organosulfur | — |
 
 H₂O loss is expected to recover a substantial fraction of the organic oxygen compounds
 tail (33.5% below wrecall 0.9) since alcohols and carboxylic acids are the dominant
 subclasses and elimination products are high-intensity peaks.
 
+**CO₂ loss** (new): while BFS + H-transfer=2 can formally reach the CO₂ fragment formula
+from a –COOH group, explicit depth-1 injection is more reliable — it ensures the model
+sees this high-intensity product early in training rather than buried in the H-transfer
+lattice at depth 2+.  SMARTS `[C](=O)[OH]` fires on all carboxylic acids and matches
+`crf13_0` (R22) and `crf13_1` (R23) from [1].
+
+**H₂ loss** (new): only R18/R19 (`crf11_0/1`) require the neutral loss pre-pass.  These
+produce a **single product** (same atom set as precursor, −2H) with no bond break, so BFS
+never generates the required child node (BFS requires num_ccs=2 after bond removal).  H-transfer
+also cannot cover this: H-transfer shifts H *between* two charged fragment nodes, but here
+there is only one node (no split).  R8 (`crf5_0`) — bond break + both fragments each at −2H
+from natural — is correctly covered by H-transfer=2 applied independently to each fragment.
+Implementation: inject `parent_formula − H₂` as a depth-1 DAG node with the **same atom
+mask as the root** (unusual — this is a formula-only node, not a structural subset).
+
 Implementation: inject `parent_formula − Δm_formula` as a depth-1 DAG node when the
-SMARTS matches.  No changes to BFS core.  Complexity O(P) per molecule (~7 patterns).
+SMARTS matches.  No changes to BFS core.  Complexity O(P) per molecule (~9 patterns).
 
 ```python
 FIXED_NEUTRAL_LOSSES = [
-    ("[OH]",               18.0),   # H2O — alcohols, acids
-    ("[S](=O)(=O)",        64.0),   # SO2 — sulfonamides, sulfones
-    ("[S](=O)(=O)[OH,O-]", 80.0),   # SO3 — sulfates
-    ("[S][CH3]",           48.0),   # CH3SH — thioethers
-    ("[S;!$(S=O)]",        32.0),   # S   — thioketones
-    ("[S]C(=S)",           76.0),   # CS2 — dithiocarbamates
+    ("[OH]",                   18.011),  # H2O  — alcohols, acids
+    ("[C](=O)[OH]",            43.990),  # CO2  — carboxylic acids / formate esters
+    ("[NX3;H1,H2]",            17.027),  # NH3  — primary/secondary amines, amides
+    ("[#6;H1,H2][#6;H1,H2]",   2.016),  # H2   — vicinal CH (ring dehydrogenation, R18/R19 only)
+    ("[S](=O)(=O)",            63.962),  # SO2  — sulfonamides, sulfones
+    ("[S](=O)(=O)[OH,O-]",     79.957),  # SO3  — sulfates
+    ("[S][CH3]",               48.003),  # CH3SH — thioethers
+    ("[S;!$(S=O)]",            31.972),  # S    — thioketones
+    ("[S]C(=S)",               75.944),  # CS2  — dithiocarbamates
 ]
 for smarts, delta_mass in FIXED_NEUTRAL_LOSSES:
     if mol.HasSubstructMatch(Chem.MolFromSmarts(smarts)):
@@ -901,3 +1063,31 @@ ensemble is zero-architecture-cost and should be validated before any structural
 | `src/fragnnet/pl_model/fragnnet_pl.py` | Lightning training loop |
 | `src/fragnnet/model/fragnnet_model.py` | Model architecture |
 | `notebooks/predictions_test_analysis.ipynb` | Source of all analysis above |
+
+---
+
+## References
+
+[1] Zheng, F. et al. **PPGB-MS2: A peak-pair graph-based approach for MS/MS spectra prediction.**
+    GitHub: https://github.com/zhengfj1994/PPGB_MS2
+    Supplementary Figure 1 defines 28 MS/MS fragmentation reaction types (X = N, O, S; H = hydrogen)
+    implemented as RDKit reaction SMARTS in `smiles_fragmentation.py`.  The 28 reactions
+    (`crf1_0`–`cmf13_0`) were systematically cross-referenced against our BFS coverage in §5
+    (Rearrangement Neutral Loss Pre-Pass) to identify H₂ loss and CO₂ loss as gaps in the
+    fixed neutral loss list.
+
+[2] Perez, E., Strub, F., de Vries, H., Dumoulin, V., & Courville, A. (2018).
+    **FiLM: Visual Reasoning with a General Conditioning Layer.** *AAAI 2018.*
+    https://arxiv.org/abs/1709.07871
+    Original paper introducing feature-wise linear modulation (FiLM): conditioning a neural
+    network by predicting per-feature (γ, β) affine parameters from an auxiliary input and
+    applying `y = γ · x + β` to intermediate activations.  The `CEScaler` in §3a applies
+    this pattern at the output logit level, conditioned on continuous CE.
+
+[3] Dumoulin, V., Perez, E., Schucher, N., Strub, F., de Vries, H., Courville, A., & Bengio, Y. (2018).
+    **Feature-wise Transformations.** *Distill.*
+    https://distill.pub/2018/feature-wise-transformations/
+    Unifying treatment of feature-wise affine conditioning across domains (conditional batch
+    norm, AdaIN / StyleGAN, HyperNetworks, FiLM).  Shows that multiplicative feature-wise
+    conditioning is consistently more expressive than additive concatenation, motivating the
+    CEScaler design over the existing `ce_insert_location` concatenation approach.
