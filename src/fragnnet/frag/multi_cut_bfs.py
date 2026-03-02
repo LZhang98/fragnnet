@@ -1,23 +1,89 @@
 """Multi-bond-cut BFS fragmentation.
 
 Drop-in augmentation of ``compute_frags.compute_ccs`` that supports
-simultaneous 2-bond ring cleavage (``max_cut_size=2``), enabling retro-
-Diels-Alder and other ring-opening reactions at depth 1.
+simultaneous 2- and 3-bond ring cleavage (``max_cut_size=2`` or ``3``).
 
-The core change relative to the Cython BFS:
+The core change relative to the single-bond Cython BFS:
 
     Standard BFS (cut_size=1):
         For each live edge i → mask i → if num_ccs==2: add children
 
     Multi-cut BFS (cut_size=2):
-        Same as above, PLUS:
-        For each ring edge i that gave num_ccs==1 (ring bond, didn't disconnect):
-            For each ring edge j > i:
-                mask both i and j → if num_ccs==2: add children at same depth
+        Same as above, PLUS for ring-bond pairs in the same ring system:
+            mask both i and j → if num_ccs==2: add children at same depth
 
-Only ring+ring pairs are tried for cut_size=2.  Acyclic+anything pairs
-are always redundant — an acyclic bond alone already disconnects (num_ccs==2),
-so pairs containing it would just be covered by sequential BFS steps.
+    Multi-cut BFS (cut_size=3):
+        Same as cut_size=2, PLUS ring-bond triples at depth=0 only (O(R³) cost).
+
+Only ring+ring pairs/triples within the same ring system are tried.
+Cross-system cuts are pruned: they can never disconnect the molecule in one
+step because the acyclic linker between systems is still intact.
+
+PPGB_MS2 reaction coverage
+---------------------------
+The following table cross-references all 28 PPGB_MS2 reactions against this
+BFS (+ H-transfer ±max_h_transfer applied independently per fragment).
+
+Covered reactions
+~~~~~~~~~~~~~~~~~
+* crf1_0/1, crf2_0/1  — alpha-cleavage + H-rearrangement
+  cut=1, H-transfer(−1) on the fragment that forms the new double/triple bond.
+
+* crf3_0/1  — retro-Diels-Alder (2 ring bonds, same ring system)
+  cut=2.  Two ring sigma bonds flanking the diene system are severed simultaneously.
+
+* crf4_0  — 1,4-H rearrangement (retro-ene)
+  cut=1 (the acyclic beta bond), H-transfer(±1).
+
+* crf5_0  — double H-rearrangement (McLafferty-type, 2 H donors)
+  cut=1, H-transfer(−1) independently on EACH fragment.
+
+* crf7_0-3  — 6-membered ring → 3 diatomic fragments
+  NOT a single-step 3-fragment event.  The BFS decomposes it in 2 steps:
+    depth 1: cut=2 (2 alternating ring bonds) → pair fragment + quad fragment
+    depth 2: cut=1 from the quad fragment → 2 pair fragments
+  All 3 diatomic nodes appear at depth ≤ 2; no 3-fragment extension required.
+
+* crf9_0  — ring CO extrusion (ring ketone/carbonyl)
+  cut=2 (both ring bonds adjacent to the carbonyl carbon).  For any ring ≥ 4
+  atoms the remaining ring atoms stay connected, giving n_ccs=2.
+
+* crf13_0/1  — CO2 loss from carboxylic acid / formate ester
+  cut=1 (acyclic R–C bond), H-transfer(−1).
+
+* crf13_2  — CO2 loss from ester (CYCLIC case: lactone)
+  cut=2 (both ring bonds flanking the ester linkage).
+
+* cmf2_0/1  — charge-migration + single bond cleavage
+  cut=1; the formal charge change does not affect atom sets.
+
+* cmf7_0  — heterolytic bond cleavage (any single bond)
+  cut=1.
+
+* cmf13_0  — aromatic ring contraction (6-ring → 5-ring + exocyclic atom)
+  cut=2 (both ring bonds adjacent to the departing atom).
+
+Not covered — permanently outside BFS capability
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* crf6_0  — 8π electrocyclic ring closure (octatriene → cyclohexadiene + ethylene)
+  Requires new bond formation between non-adjacent atoms; no bond-cutting
+  interpretation exists.
+
+* crf8_0/1/2  — 1,3-/1,5-/1,7-H shift (H-migration, no bond cleavage)
+  Single product; same atom set as reactant.  Pure isomerization — outside the
+  fragmentation graph model entirely.
+
+* crf11_0/1  — H2 loss (dehydrogenation, no bond cleavage)
+  Single product, −2 Da, no fragmentation.  Handled as a fixed neutral loss
+  (−2.016 Da) rather than a BFS node.
+
+* crf12_0/1  — 1,3-elimination (acyclic case)
+  Products include a new bond between atoms 0 and 3 (retro-ene with ring
+  closure).  Cyclic case (cyclobutane → 2×ethylene) IS covered by cut=2.
+
+* crf13_2  — CO2 loss from acyclic ester
+  Products require a new R–R' bond; not representable as atom-set partition.
+  Cyclic (lactone) case IS covered by cut=2 (see above).
 
 Usage::
 
@@ -399,7 +465,9 @@ def compute_ccs_multi_cut(
                 for i, j, k in combinations(ring_edges, 3):
                     if any(x in single_cut_disconnected for x in (i, j, k)):
                         continue
-                    if bond_to_sys.get(i) != bond_to_sys.get(j) or bond_to_sys.get(j) != bond_to_sys.get(k):
+                    if bond_to_sys.get(i) != bond_to_sys.get(j) or bond_to_sys.get(
+                        j
+                    ) != bond_to_sys.get(k):
                         continue  # cross-system triple — guaranteed num_ccs != 2
                     _try_cut((i, j, k))
 

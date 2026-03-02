@@ -7,21 +7,24 @@
 # cython: cdivision=True
 """Multi-bond-cut BFS fragmentation — Cython implementation.
 
-Cython port of ``multi_cut_bfs.py``; same public interface, faster execution.
+Cython port of ``multi_cut_bfs.py``; identical public interface, faster execution.
+See ``multi_cut_bfs.py`` for the full PPGB_MS2 reaction coverage table and design
+rationale.
 
-Key improvements over the Python version:
-
-- ``_cc_uf``: union-find CC using C stack arrays (zero heap allocation per CC call).
-- ``bond_to_sys_arr``: ``int[::1]`` typed array for O(1) ring-system lookup vs Python
-  dict.
-- ``disconnected_arr``: ``char[::1]`` bit flags (avoid Python ``set`` overhead).
-- Single CC call per candidate cut (Python version called ``_union_find_ccs`` twice
-  for disconnecting bonds — once to check, once inside ``_try_cut``).
-- In-place mask modify/restore (no extra array copy per pair/triple).
-- Pre-allocated working buffers: keys (bytes) ARE the mask data; masks are
-  reconstructed into fixed pre-allocated C buffers via ``const char[::1]`` views,
-  eliminating all per-node ``malloc``/``free`` and dict storage of mask arrays.
-- Tuple keys in ``has_seen_dict`` avoid bytes concatenation per iteration.
+Key implementation improvements over the Python version
+-------------------------------------------------------
+- ``_cc_uf``: union-find CC using C stack arrays — zero heap allocation per call.
+- ``bond_to_sys_mv``: ``int[::1]`` typed array for O(1) ring-system lookup vs dict.
+- ``disconnected_mv``: ``char[::1]`` bit flags (avoid Python ``set`` overhead).
+- Single CC call per candidate cut (Python version called ``_union_find_ccs`` twice).
+- In-place mask modify/restore — no extra array copy per pair/triple.
+- Pre-allocated working buffers: bytes keys ARE the mask data; masks are reconstructed
+  into fixed C buffers via ``PyBytes_AS_STRING + memcpy``, eliminating all per-node
+  ``malloc``/``free`` and dict storage of mask arrays.
+- ``PyBytes_FromStringAndSize`` for child key creation — direct C API, no buffer
+  protocol overhead from ``bytes(memoryview_slice)``.
+- ``seen_set`` (plain ``set``) replaces depth-tracking dict: BFS processes depths
+  strictly in order so once-seen → always-skip is correct.
 """
 
 import numpy as np
