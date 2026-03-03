@@ -1,3 +1,34 @@
+## Coverage Summary
+
+72 rules across 9 categories.  Status codes used in per-rule comments below:
+`BFS ✓` = already handled by multi_cut_bfs cut=1/2 + H-transfer.
+`prepass-1` = needs isomerization prepass (run full BFS on structural isomer).
+`prepass-2` = needs direct-fragment prepass (SMARTS → atom-set extraction → depth-1 DAG leaf).
+`BUG` = SMARTS is syntactically or chemically invalid; see inline comment.
+
+| Category | Total | BFS ✓ | prepass-1 | prepass-2 | BUG / skip |
+|---|---|---|---|---|---|
+| PPGB_MS2 original (28 reactions) | 28 | 21 | 3 (crf8_0-2) | 2 (crf12_0/1 acyclic, crf13_2 acyclic) | 2 (crf11 → neutral loss, crf6 not coverable) |
+| Extended neutral loss | 10 | 7 | — | — | 3 (nl2, nl_h2o_2, nl_co) |
+| Amide / peptide | 7 | 6 | — | — | 1 (amide_acylium) |
+| Ring & RDA | 9 | 0 | — | — | 9 (all: unmapped atoms / new bonds / wrong formula) |
+| Rearrangement | 4 | 1 (ortho_effect) | — | — | 3 (mclafferty ×2 buggy; mclaff_beta bimolecular) |
+| Lipid / phospholipid | 3 | — | — | — | 3 (all: bimolecular or invalid [R]/[OP] atoms) |
+| Ester / ether | 3 | 1 (ether_alpha) | — | — | 2 (ester_cleavage_1/2: invalid [OC]/[OP]) |
+| Charge migration | 5 | — | — | — | 5 (all no-ops: explicit +0 on both sides) |
+| Glycan | 3 | — | — | — | 3 (all: invalid [NHAC]/[R] atoms or wrong formula) |
+| Specialized | 7 | 2 (nitro_loss, nglycosidic) | — | — | 5 (phos_loss, omega_cleavage, cr_acid, pl_head, b_ion: invalid [OP]/[R]) |
+
+**Net new coverage from a rearrangement prepass: 5 valid rules**
+- Sub-type 1 (isomerize → re-BFS): crf8_0, crf8_1, crf8_2
+- Sub-type 2 (direct atom-set extraction): crf12_0/1 (acyclic), crf13_2 (acyclic)
+
+McLafferty (mclafferty / mclaff_classic) is BUGGY in this list but the
+correct McLafferty reaction is already fully covered by crf4_0 (BFS cut=1 +
+H-transfer) — no additional rule needed.
+
+---
+
 ## Original PPGB-MS2 Rules (27 rules from `smiles_fragmentation.py`)
 
 ```
