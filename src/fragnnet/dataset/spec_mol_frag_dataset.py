@@ -21,25 +21,9 @@ import pickle
 import builtins
 import os
 import json
-from multiprocessing import Pool
 logger = logging.getLogger(__name__)
 
-def _load_frag_worker(args):
-    mol_id, frag_dp = args
-    env = lmdb.open(
-        frag_dp,
-        readahead=False,
-        max_readers=2048,
-        readonly=True,
-        lock=False,
-        meminit=False,
-    )
 
-    with env.begin() as txn:
-        raw = txn.get(f"{mol_id:08d}".encode())
-        frag_entry = pickle.loads(bytes(raw))
-    size = get_pyg_memory_usage(frag_entry["dag"])
-    return mol_id, frag_entry, size
 class SpecMolFragDataset(SpecMolDataset):
     def __init__(
         self,
@@ -148,18 +132,11 @@ class SpecMolFragDataset(SpecMolDataset):
         if self.frag_params["preload"]:
             self.frag_entries = frag_pl_sd
             total_frag_entry_size = 0
-            with Pool(min(10, os.cpu_count())) as pool:
-                for mol_id, frag_entry, size in tqdm(
-                    pool.imap_unordered(_load_frag_worker, [(mol_id, self.frag_dp) for mol_id in self.mol_df["mol_id"].values]),
-                    total=len(self.mol_df["mol_id"].values),
-                    desc="> preload frag"
-                ):
-                    total_frag_entry_size += size
-                    self.frag_entries[mol_id] = frag_entry
             for mol_id in tqdm(
                 self.mol_df["mol_id"].values, desc="> preload frag", total=len(self.mol_df)
             ):
-                frag_entry =pickle.loads(bytes(self.txn.get(f"{mol_id:08d}".encode())))
+                frag_entry =pickle.loads(bytes(self.txn.get(f"{mol_id:08d}".encode())))#load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
+                assert slice is builtins.slice, mol_id
                 total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
                 self.frag_entries[mol_id] = frag_entry
             logger.info(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")
