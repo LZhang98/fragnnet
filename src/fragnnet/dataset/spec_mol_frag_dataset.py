@@ -212,14 +212,30 @@ class SpecMolFragDataset(SpecMolDataset):
                 clone_pyg=True,
             )
         else:
-            frag_entry = self._load_frag_entry(mol_id)
-            frag_data = self._process_neutral_frag(frag_entry)
-            frag_data = self._apply_fragment_mz_change(
-                frag_data,
-                spec_entry["prec_type"],
-                frag_data["frag_formula_peak_mzs"],
-                clone_pyg=False,
-            )
+            if self.split=="train":
+                if not hasattr(self, "frag_cache"):
+                    self.frag_cache={}
+                if mol_id in self.frag_cache:
+                    frag_data= self.frag_cache[mol_id]
+                else:
+                    frag_entry = self._load_frag_entry(mol_id)
+                    frag_data = self._process_neutral_frag(frag_entry)
+                    frag_data = self._apply_fragment_mz_change(
+                        frag_data,
+                        spec_entry["prec_type"],
+                        frag_data["frag_formula_peak_mzs"],
+                        clone_pyg=False,
+                    )
+                    self.frag_cache[mol_id]=frag_data
+            else:
+                frag_entry = self._load_frag_entry(mol_id)
+                frag_data = self._process_neutral_frag(frag_entry)
+                frag_data = self._apply_fragment_mz_change(
+                    frag_data,
+                    spec_entry["prec_type"],
+                    frag_data["frag_formula_peak_mzs"],
+                    clone_pyg=False,
+                )
 
         data = {**spec_data, **mol_data, **frag_data}
         if "mol_id" not in data:
@@ -236,20 +252,12 @@ class SpecMolFragDataset(SpecMolDataset):
         Returns:
             Dictionary containing DAG and fragmentation data.
         """
-        if self.split=="train":
-            if not hasattr(self, "frag_cache"):
-                self.frag_cache={}
-            if mol_id in self.frag_cache:
-                return self.frag_cache[mol_id]
-
         if self.frag_env is None:
             self.frag_env=lmdb.open(self.frag_dp,readahead=False, readonly=True,max_readers=2048, lock=False, meminit=False)
             self.txn=self.frag_env.begin() 
         v=self.txn.get(f"{mol_id:08d}".encode())
         assert v is not None, mol_id
         frag_entry =pickle.loads(bytes(v))
-        if self.split=="train":
-            self.frag_cache[mol_id]=frag_entry
         return frag_entry
 
     def _process_neutral_frag(self, frag_entry: dict) -> dict:

@@ -248,7 +248,7 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
             dl_param_d["batch_size"] = config_d["eval_batch_size"]
             dl_param_d["drop_last"] = False
 
-    dl = DataLoader(**dl_param_d)
+    dl = DataLoader(**dl_param_d, persistent_workers=True)
     return dl
 
 
