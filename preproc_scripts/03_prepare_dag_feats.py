@@ -196,8 +196,12 @@ def main(args):
                 args.isotopes,
                 args.nb_isomorphic,
                 args.wl_max_iterations,
-                args.use_cached_dag,  # use_cached, default to false
-                args.compress_dags,
+                args.use_cached_dag,  # use_cached
+                args.compress_dags,   # compressed
+                args.save_dag,        # save_dag (must precede multi_cut_bfs in signature)
+                args.multi_cut_bfs,
+                args.max_cut_size,
+                args.smarts_prepass,
             ]
         )
 
@@ -553,7 +557,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--skip_stats",
-        action="store_true", 
+        action="store_true",
         help="whether skip stats comput"
     )
     parser.add_argument(
@@ -561,6 +565,41 @@ if __name__ == "__main__":
         type=int,
         default=10*1024**4,
         help="map size of saving"
+    )
+    parser.add_argument(
+        "--multi_cut_bfs",
+        type=booltype,
+        default=False,
+        help=(
+            "Use ring-aware multi-bond-cut BFS (multi_cut_bfs.compute_ccs_multi_cut) "
+            "instead of the standard single-bond BFS. Enables ring-opening fragmentation "
+            "patterns (e.g. retro-Diels-Alder). Note: substantially slower on large "
+            "fused-ring molecules; consider reducing --max_depth to 3 and --max_time to 30."
+        ),
+    )
+    parser.add_argument(
+        "--max_cut_size",
+        type=int,
+        default=2,
+        choices=[1, 2, 3],
+        help=(
+            "Maximum number of bonds cut simultaneously per BFS step "
+            "(only used when --multi_cut_bfs True). "
+            "1 = single-bond only (same as standard BFS on rings), "
+            "2 = up to 2 ring bonds (recommended), "
+            "3 = up to 3 ring bonds (depth-0 only, high cost)."
+        ),
+    )
+    parser.add_argument(
+        "--smarts_prepass",
+        type=booltype,
+        default=False,
+        help=(
+            "Run SMARTS rearrangement prepass before BFS "
+            "(only used when --multi_cut_bfs True). "
+            "Injects acyclic 1,3-elimination and ester CO2-loss fragments "
+            "as depth-1 DAG children (crf12_0/1, crf13_2 PPGB_MS2 rules)."
+        ),
     )
     args = parser.parse_args()
 
