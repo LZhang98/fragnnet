@@ -219,13 +219,14 @@ class SpecMolFragDataset(SpecMolDataset):
                 else:
                     frag_entry = self._load_frag_entry(mol_id)
                     frag_data = self._process_neutral_frag(frag_entry)
-                    frag_data = self._apply_fragment_mz_change(
-                        frag_data,
-                        spec_entry["prec_type"],
-                        frag_data["frag_formula_peak_mzs"],
-                        clone_pyg=True,
-                    )
                     self.frag_cache[mol_id]=frag_data
+                frag_data = self._apply_fragment_mz_change(
+                    frag_data,
+                    spec_entry["prec_type"],
+                    frag_data["frag_formula_peak_mzs"],
+                    clone_pyg=True,
+                )
+                    
             else:
                 frag_entry = self._load_frag_entry(mol_id)
                 frag_data = self._process_neutral_frag(frag_entry)
