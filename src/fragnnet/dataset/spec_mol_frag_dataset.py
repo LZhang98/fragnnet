@@ -211,31 +211,14 @@ class SpecMolFragDataset(SpecMolDataset):
                 clone_pyg=True,
             )
         else:
-            if self.split=="train":
-                if not hasattr(self, "frag_cache"):
-                    self.frag_cache={}
-                if mol_id in self.frag_cache:
-                    frag_data= self.frag_cache[mol_id]
-                else:
-                    frag_entry = self._load_frag_entry(mol_id)
-                    frag_data = self._process_neutral_frag(frag_entry)
-                    self.frag_cache[mol_id]=frag_data
-                frag_data = self._apply_fragment_mz_change(
-                    frag_data,
-                    spec_entry["prec_type"],
-                    frag_data["frag_formula_peak_mzs"],
-                    clone_pyg=True,
-                )
-                    
-            else:
-                frag_entry = self._load_frag_entry(mol_id)
-                frag_data = self._process_neutral_frag(frag_entry)
-                frag_data = self._apply_fragment_mz_change(
-                    frag_data,
-                    spec_entry["prec_type"],
-                    frag_data["frag_formula_peak_mzs"],
-                    clone_pyg=False,
-                )
+            frag_entry = self._load_frag_entry(mol_id)
+            frag_data = self._process_neutral_frag(frag_entry)
+            frag_data = self._apply_fragment_mz_change(
+                frag_data,
+                spec_entry["prec_type"],
+                frag_data["frag_formula_peak_mzs"],
+                clone_pyg=False,
+            )
 
         data = {**spec_data, **mol_data, **frag_data}
         if "mol_id" not in data:

@@ -247,8 +247,6 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
         else:
             dl_param_d["batch_size"] = config_d["eval_batch_size"]
             dl_param_d["drop_last"] = False
-    if split=="train":
-        dl_param_d["persistent_workers"]=True
     dl = DataLoader(**dl_param_d)
     return dl
 
