@@ -236,13 +236,20 @@ class SpecMolFragDataset(SpecMolDataset):
         Returns:
             Dictionary containing DAG and fragmentation data.
         """
+        if self.split=="train":
+            if not hasattr(self, "frag_cache"):
+                self.frag_cache={}
+            if mol_id in self.frag_cache:
+                return self.frag_cache[mol_id]
+
         if self.frag_env is None:
             self.frag_env=lmdb.open(self.frag_dp,readahead=False, readonly=True,max_readers=2048, lock=False, meminit=False)
             self.txn=self.frag_env.begin() 
         v=self.txn.get(f"{mol_id:08d}".encode())
         assert v is not None, mol_id
         frag_entry =pickle.loads(bytes(v))
-        assert slice is builtins.slice, mol_id # for debug
+        if self.split=="train":
+            self.frag_cache[mol_id]=frag_entry
         return frag_entry
 
     def _process_neutral_frag(self, frag_entry: dict) -> dict:
