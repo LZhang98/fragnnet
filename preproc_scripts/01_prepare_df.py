@@ -574,10 +574,14 @@ def process_specverse(mgf_fp):
                 range(len(spec_df["title"])))
     if "spec_id" not in spec_df:
         spec_df.loc[:, "spec_id"] = np.array(range(len(spec_df["smiles"])))
-    if "prec_type" not in spec_df:
-        print(f"prec_type is missing, set all data as MS2")
-        spec_df.loc[:, "prec_type"] = np.array(
+    if "spec_type" not in spec_df:
+        print(f"spec_type is missing, set all data as MS2")
+        spec_df.loc[:, "spec_type"] = np.array(
             ["MS2" for _ in range(len(spec_df["smiles"]))])
+    if "prec_type" not in spec_df:
+        print(f"prec_type is missing, set all data as [M+H]+")
+        spec_df.loc[:, "prec_type"] = np.array(
+            ["[M+H]+" for _ in range(len(spec_df["smiles"]))])
     if "dset_spec_id" not in spec_df:
         spec_df.loc[:, "dset_spec_id"] = spec_df["spec_id"]
     if "inchikey" not in spec_df:
