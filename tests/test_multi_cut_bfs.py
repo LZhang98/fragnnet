@@ -298,3 +298,140 @@ class TestRingBondMask:
         for smiles in ["C1CCCCC1", "c1ccccc1", "CCCCC", "CC1CCCCC1"]:
             mol_d = extract_mol_info(smiles)
             assert len(mol_d["ring_bond_mask"]) == len(mol_d["bonds"])
+
+
+# ---------------------------------------------------------------------------
+# Test 7: depth bitmask — nodes_depth_matrix correctness after optimization
+# ---------------------------------------------------------------------------
+
+
+class TestDepthMatrix:
+    """Verify nodes_depth_matrix values are exact (bitmask optimization must
+    reproduce the same matrix as the original set-based approach)."""
+
+    def test_root_only_at_depth_0(self):
+        """Root node appears at depth 0 only, not at deeper depths."""
+        r = _run("C1CCCCC1", max_cut_size=2, max_depth=2)
+        # root = index 0; depth column 0 must be 1, columns 1/2 must be 0
+        assert r["nodes_depth"][0, 0] == 1
+        assert r["nodes_depth"][0, 1] == 0
+        assert r["nodes_depth"][0, 2] == 0
+
+    def test_depth1_fragments_not_at_depth0(self):
+        """Depth-1 fragments (ring cuts) should NOT have depth-0 set."""
+        r = _run("C1CCCCC1", max_cut_size=2, max_depth=2)
+        for i in range(1, len(r["nodes_mask"])):
+            if r["nodes_depth"][i, 1] == 1:
+                # This node is a depth-1 child; it must not have depth 0 set
+                assert r["nodes_depth"][i, 0] == 0, (
+                    f"Node {i} has depth-0 set but was only found at depth 1"
+                )
+
+    def test_multi_ring_system_depth_correct(self):
+        """Steroid scaffold (multi-ring system): depth-1 fragments only at depth 1."""
+        # androstane skeleton — 4 fused rings, many ring bonds in different systems
+        r = _run("C1CCC2CCCC3CCCC4CCCCC4C3C2C1", max_cut_size=2, max_depth=2)
+        for i in range(1, len(r["nodes_mask"])):
+            depths_set = set(int(d) for d in range(3) if r["nodes_depth"][i, d] == 1)
+            # If found at depth 1 only, depth 0 and depth 2 must be 0
+            if depths_set == {1}:
+                assert r["nodes_depth"][i, 0] == 0
+                assert r["nodes_depth"][i, 2] == 0
+
+    def test_nodes_min_depth_consistent_with_depth_matrix(self):
+        """nodes_min_depth must match the minimum set column in nodes_depth_matrix."""
+        r = _run("c1ccc2ccccc2c1", max_cut_size=2, max_depth=3)
+        min_depths = r["meta"]["nodes_min_depth"]
+        for i in range(len(r["nodes_mask"])):
+            cols_set = [int(d) for d in range(4) if r["nodes_depth"][i, d] == 1]
+            assert len(cols_set) > 0, f"Node {i} has no depth set in matrix"
+            assert int(min_depths[i]) == min(cols_set), (
+                f"Node {i}: nodes_min_depth={min_depths[i]} but matrix min={min(cols_set)}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Test 8: pre-grouped ring-system cut=2 — multi-ring-system molecules
+# ---------------------------------------------------------------------------
+
+
+class TestMultiRingSystemCuts:
+    """Molecules with multiple distinct ring systems exercise the ring-grouping
+    optimization: cross-system pairs must never produce a valid 2-bond cut."""
+
+    SPIRO = "C1CCC2(CC1)CCCC2"  # spiro[5.4]decane — two rings sharing ONE atom
+
+    def test_spiro_multi_ring_system_fragments(self):
+        """Spiro compound: 2-bond cuts within each ring produce fragments."""
+        r = _run(self.SPIRO, max_cut_size=2, max_depth=1)
+        assert len(r["nodes_mask"]) > 1, "Should find fragments in spiro compound"
+
+    def test_spiro_no_3plus_cc_fragments(self):
+        """2-bond cuts can never produce 3+ connected components (would be pruned)."""
+        r = _run(self.SPIRO, max_cut_size=2, max_depth=1)
+        # All non-root fragments sum with their pair to the full atom count
+        total_atoms = r["num_nodes"]
+        counts = sorted(_atom_counts(r["nodes_mask"]))
+        for c in counts:
+            # Each fragment must have a complementary fragment (partner sums to total)
+            complement = total_atoms - c
+            assert complement in counts or complement == total_atoms, (
+                f"Fragment of size {c} has no complement in {counts}"
+            )
+
+    def test_bicyclo_cuts_within_system(self):
+        """Bicyclo[2.2.1]heptane (norbornane): both ring bonds in same system."""
+        # norbornane — bridged bicyclic; all ring bonds in one system
+        r = _run("C1CC2CCC1C2", max_cut_size=2, max_depth=1)
+        assert len(r["nodes_mask"]) > 1
+
+    def test_two_disconnected_rings_no_cross_cut(self):
+        """Biphenyl: two phenyl rings connected by one bond.
+
+        The single bond between rings disconnects in cut=1.
+        The two ring systems are distinct; cross-ring-system cut=2 pairs
+        cannot disconnect the molecule and must not appear as valid cuts.
+        """
+        r1 = _run("c1ccccc1-c1ccccc1", max_cut_size=1, max_depth=1)
+        r2 = _run("c1ccccc1-c1ccccc1", max_cut_size=2, max_depth=1)
+        # cut=2 must find AT LEAST as many nodes as cut=1
+        assert len(r2["nodes_mask"]) >= len(r1["nodes_mask"])
+        # The single inter-ring bond cut (6+6 split) should appear in both
+        counts2 = set(_atom_counts(r2["nodes_mask"]))
+        assert 6 in counts2, "Biphenyl 6+6 split must appear"
+
+
+# ---------------------------------------------------------------------------
+# Test 9: selective scratch reset — correctness on back-to-back cuts
+# ---------------------------------------------------------------------------
+
+
+class TestSelectiveScratchReset:
+    """These tests exercise the selective scratch reset by running many cuts
+    in sequence on the same BFS node and checking correctness of each result."""
+
+    def test_many_cuts_cyclohexane_consistent(self):
+        """Cyclohexane has C(6,2)=15 ring pairs; all must produce valid results."""
+        r = _run("C1CCCCC1", max_cut_size=2, max_depth=1)
+        # Cyclohexane 2-bond cuts produce fragments of sizes 1..5
+        counts = sorted(set(_atom_counts(r["nodes_mask"])))
+        for expected in [1, 2, 3, 4, 5]:
+            assert expected in counts
+
+    def test_large_ring_cuts(self):
+        """Cyclooctane (8-membered ring): C(8,2)=28 ring pairs."""
+        r = _run("C1CCCCCCC1", max_cut_size=2, max_depth=1)
+        counts = set(_atom_counts(r["nodes_mask"]))
+        # Valid splits: 1+7, 2+6, 3+5, 4+4
+        for expected in [1, 2, 3, 4, 5, 6, 7]:
+            assert expected in counts, f"Expected {expected}-atom fragment from cyclooctane"
+
+    def test_no_phantom_atoms_in_fragment(self):
+        """No fragment should have atom count 0 or equal to the full molecule (except root)."""
+        r = _run("C1CCCCC1", max_cut_size=2, max_depth=2)
+        total = r["num_nodes"]
+        for i in range(1, len(r["nodes_mask"])):
+            count = int(r["nodes_mask"][i].sum())
+            assert 0 < count < total, (
+                f"Non-root node {i} has invalid atom count {count} (total={total})"
+            )

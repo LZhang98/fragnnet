@@ -30,7 +30,7 @@ Key implementation improvements over the Python version
 import numpy as np
 
 from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_FromStringAndSize
-from libc.string cimport memcpy
+from libc.string cimport memcpy, memset
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 from rdkit import Chem
 
@@ -63,21 +63,37 @@ cdef inline int _uf_find(int* parent, int x) nogil:
 
 # ---------------------------------------------------------------------------
 # Zero scratch arrays before each CC call.
+#
+# _zero_scratch_full: memset-based full clear (used for first call per BFS node).
+# _zero_scratch_live: selective clear — only live nodes/edges (subsequent calls).
 # ---------------------------------------------------------------------------
 
-cdef inline void _zero_scratch(
+cdef inline void _zero_scratch_full(
     int num_nodes,
     int num_edges,
     char[:, ::1] cc_nodes_s,
     char[:, ::1] cc_edges_s,
 ) nogil:
-    cdef int i
-    for i in range(num_nodes):
-        cc_nodes_s[0, i] = 0
-        cc_nodes_s[1, i] = 0
-    for i in range(num_edges):
-        cc_edges_s[0, i] = 0
-        cc_edges_s[1, i] = 0
+    memset(&cc_nodes_s[0, 0], 0, 2 * num_nodes)
+    memset(&cc_edges_s[0, 0], 0, 2 * num_edges)
+
+
+cdef inline void _zero_scratch_live(
+    int n_live_nodes,
+    int n_live_edges,
+    int* live_node_arr,
+    int* live_edge_arr,
+    char[:, ::1] cc_nodes_s,
+    char[:, ::1] cc_edges_s,
+) nogil:
+    """Reset only entries that _cc_uf can write — avoids clearing unvisited slots."""
+    cdef int idx
+    for idx in range(n_live_nodes):
+        cc_nodes_s[0, live_node_arr[idx]] = 0
+        cc_nodes_s[1, live_node_arr[idx]] = 0
+    for idx in range(n_live_edges):
+        cc_edges_s[0, live_edge_arr[idx]] = 0
+        cc_edges_s[1, live_edge_arr[idx]] = 0
 
 
 # ---------------------------------------------------------------------------
@@ -334,19 +350,26 @@ def compute_ccs_multi_cut(
     # cc_node_mask_dict and cc_edge_mask_dict from the Python version are
     # ELIMINATED: the bytes key already encodes the mask, so we reconstruct
     # masks from keys on demand.  Only two dicts remain:
-    #   css_to_id_dict  — unique node_key → integer DAG node ID
-    #   ccs_depth_dict  — unique node_key → set of depths where it was seen
+    #   css_to_id_dict   — unique node_key → integer DAG node ID
+    #   ccs_min_depth    — unique node_key → int min depth seen (replaces set)
+    #
+    # Storing min-depth as a plain int avoids Python set creation per fragment
+    # and simplifies the output construction loop.
     # -----------------------------------------------------------------------
     # Direct C API: no buffer-protocol overhead
     cdef bytes root_node_key = PyBytes_FromStringAndSize(&node_mask_mv[0], num_nodes)
     cdef bytes root_edge_key = PyBytes_FromStringAndSize(&base_edge_mask_mv[0], num_edges)
 
-    css_to_id_dict = {root_node_key: 0}
-    ccs_depth_dict = {root_node_key: {0}}
+    css_to_id_dict  = {root_node_key: 0}
+    # ccs_depth_bits: node_key → int bitmask of depths seen (bit d = depth d).
+    # Replaces the set-per-node approach: `bits |= (1 << d)` is faster than
+    # set.add() because it avoids Python set object allocation and hash overhead.
+    ccs_depth_bits  = {root_node_key: 1}   # bit 0 = depth 0 for root
+    ccs_min_depth   = {root_node_key: 0}   # node_key → int min depth seen
     # seen_set replaces has_seen_dict: BFS processes depths in order so
     # once-seen → always-skip is correct (no depth value needed).
-    seen_set       = set()
-    dag_edge_dict  = {}
+    seen_set        = set()
+    dag_edge_dict   = {}
 
     cdef list ccs      = [root_node_key]
     cdef list cc_edges = [root_edge_key]
@@ -359,7 +382,7 @@ def compute_ccs_multi_cut(
     cdef int node_idx
     cdef int current_depth
     cdef int i, j, k, ii, jj, kk
-    cdef int n_live, n_ring
+    cdef int n_live, n_ring, n_live_nodes
     cdef int n_ccs
     cdef int si, sj, sk
     cdef int c
@@ -367,6 +390,8 @@ def compute_ccs_multi_cut(
     # C arrays for live-edge and ring-edge indices (avoid Python list per node)
     cdef int live_arr[512]    # MAX_NUM_EDGES
     cdef int ring_arr[512]
+    # Live atom indices — used for selective scratch reset
+    cdef int live_node_arr[128]   # MAX_NUM_NODES
 
     # Per-bond flag: did cutting this bond alone disconnect the molecule?
     cdef cnp.ndarray disconnected_np = np.zeros(num_edges, dtype=MASK_DTYPE)
@@ -421,9 +446,11 @@ def compute_ccs_multi_cut(
             key_ptr = PyBytes_AS_STRING(cur_edge_key)
             memcpy(&cur_edge_mask_mv[0], key_ptr, num_edges)
 
-            # Build live-edge and ring-edge C arrays
+            # Build live-edge, ring-edge, and live-node C arrays.
+            # live_node_arr is used for selective scratch reset.
             n_live = 0
             n_ring = 0
+            n_live_nodes = 0
             for i in range(num_edges):
                 if cur_edge_mask_mv[i] == 0:
                     continue
@@ -432,6 +459,10 @@ def compute_ccs_multi_cut(
                 if ring_edge_mask is not None and ring_edge_mask_mv[i] == 1:
                     ring_arr[n_ring] = i
                     n_ring += 1
+            for i in range(num_nodes):
+                if cur_node_mask_mv[i] != 0:
+                    live_node_arr[n_live_nodes] = i
+                    n_live_nodes += 1
 
             if n_live == 0:
                 continue
@@ -441,12 +472,19 @@ def compute_ccs_multi_cut(
                 disconnected_mv[live_arr[i]] = 0
 
             # -----------------------------------------------------------
-            # Cut = 1: try every single live edge
+            # Cut = 1: try every single live edge.
+            # First call uses full memset; subsequent calls use selective
+            # reset (only live nodes/edges touched by _cc_uf).
             # -----------------------------------------------------------
+            _zero_scratch_full(num_nodes, num_edges, cc_nodes_s, cc_edges_s)
             for ii in range(n_live):
                 i = live_arr[ii]
                 cur_edge_mask_mv[i] = 0
-                _zero_scratch(num_nodes, num_edges, cc_nodes_s, cc_edges_s)
+                if ii > 0:
+                    _zero_scratch_live(
+                        n_live_nodes, n_live, live_node_arr, live_arr,
+                        cc_nodes_s, cc_edges_s,
+                    )
                 n_ccs = _cc_uf(
                     num_nodes, num_edges,
                     cur_node_mask_mv, edges_mv, cur_edge_mask_mv,
@@ -456,6 +494,7 @@ def compute_ccs_multi_cut(
 
                 if n_ccs == 2:
                     disconnected_mv[i] = 1
+                    child_depth_bit = 1 << (current_depth + 1)
                     for c in range(2):
                         child_node_key = PyBytes_FromStringAndSize(&cc_nodes_s[c, 0], num_nodes)
                         child_edge_key = PyBytes_FromStringAndSize(&cc_edges_s[c, 0], num_edges)
@@ -463,7 +502,11 @@ def compute_ccs_multi_cut(
                         if child_node_key not in css_to_id_dict:
                             css_to_id_dict[child_node_key] = len(css_to_id_dict)
 
-                        ccs_depth_dict.setdefault(child_node_key, set()).add(current_depth + 1)
+                        if child_node_key not in ccs_min_depth:
+                            ccs_min_depth[child_node_key] = current_depth + 1
+                            ccs_depth_bits[child_node_key] = child_depth_bit
+                        else:
+                            ccs_depth_bits[child_node_key] |= child_depth_bit
                         ccs.append(child_node_key)
                         cc_edges.append(child_edge_key)
 
@@ -476,84 +519,41 @@ def compute_ccs_multi_cut(
             reached_depth = current_depth + 1
 
             # -----------------------------------------------------------
-            # Cut = 2: pairs of ring edges (same ring system only)
+            # Cut = 2: pairs of ring edges (same ring system only).
+            #
+            # Optimization: pre-group ring bonds by system so we only
+            # iterate within each system — eliminates the O(R²) cross-
+            # system pairs that were previously rejected by an si != sj check.
             # -----------------------------------------------------------
             if effective_max_cut >= 2 and n_ring >= 2:
+                # Group non-disconnecting ring bonds by their ring system.
+                # Python dict keyed by int system id → Python list of bond indices.
+                sys_groups = {}
                 for ii in range(n_ring):
                     i = ring_arr[ii]
                     if disconnected_mv[i]:
                         continue
                     si = bond_to_sys_mv[i]
+                    if si not in sys_groups:
+                        sys_groups[si] = [i]
+                    else:
+                        sys_groups[si].append(i)
 
-                    for jj in range(ii + 1, n_ring):
-                        j = ring_arr[jj]
-                        if disconnected_mv[j]:
-                            continue
-                        sj = bond_to_sys_mv[j]
-                        if si != sj:
-                            continue   # cross-system — can never disconnect
-
-                        cur_edge_mask_mv[i] = 0
-                        cur_edge_mask_mv[j] = 0
-                        _zero_scratch(num_nodes, num_edges, cc_nodes_s, cc_edges_s)
-                        n_ccs = _cc_uf(
-                            num_nodes, num_edges,
-                            cur_node_mask_mv, edges_mv, cur_edge_mask_mv,
-                            cc_nodes_s, cc_edges_s,
-                        )
-                        cur_edge_mask_mv[i] = 1
-                        cur_edge_mask_mv[j] = 1
-
-                        if n_ccs != 2:
-                            continue
-
-                        for c in range(2):
-                            child_node_key = PyBytes_FromStringAndSize(&cc_nodes_s[c, 0], num_nodes)
-                            child_edge_key = PyBytes_FromStringAndSize(&cc_edges_s[c, 0], num_edges)
-
-                            if child_node_key not in css_to_id_dict:
-                                css_to_id_dict[child_node_key] = len(css_to_id_dict)
-
-                            ccs_depth_dict.setdefault(child_node_key, set()).add(current_depth + 1)
-                            ccs.append(child_node_key)
-                            cc_edges.append(child_edge_key)
-
-                            if cur_node_key != child_node_key:
-                                edge_pair = (css_to_id_dict[cur_node_key],
-                                             css_to_id_dict[child_node_key])
-                                if edge_pair not in dag_edge_dict:
-                                    dag_edge_dict[edge_pair] = current_depth + 1
-
-            # -----------------------------------------------------------
-            # Cut = 3: triples of ring edges — depth 0 only (avoid O(R³) blowup)
-            # -----------------------------------------------------------
-            if effective_max_cut >= 3 and current_depth == 0 and n_ring >= 3:
-                for ii in range(n_ring):
-                    i = ring_arr[ii]
-                    if disconnected_mv[i]:
+                for bonds_in_sys in sys_groups.values():
+                    n_sys = len(bonds_in_sys)
+                    if n_sys < 2:
                         continue
-                    si = bond_to_sys_mv[i]
-
-                    for jj in range(ii + 1, n_ring):
-                        j = ring_arr[jj]
-                        if disconnected_mv[j]:
-                            continue
-                        sj = bond_to_sys_mv[j]
-                        if si != sj:
-                            continue
-
-                        for kk in range(jj + 1, n_ring):
-                            k = ring_arr[kk]
-                            if disconnected_mv[k]:
-                                continue
-                            sk = bond_to_sys_mv[k]
-                            if si != sk:
-                                continue
+                    for ii in range(n_sys):
+                        i = bonds_in_sys[ii]
+                        for jj in range(ii + 1, n_sys):
+                            j = bonds_in_sys[jj]
 
                             cur_edge_mask_mv[i] = 0
                             cur_edge_mask_mv[j] = 0
-                            cur_edge_mask_mv[k] = 0
-                            _zero_scratch(num_nodes, num_edges, cc_nodes_s, cc_edges_s)
+                            _zero_scratch_live(
+                                n_live_nodes, n_live, live_node_arr, live_arr,
+                                cc_nodes_s, cc_edges_s,
+                            )
                             n_ccs = _cc_uf(
                                 num_nodes, num_edges,
                                 cur_node_mask_mv, edges_mv, cur_edge_mask_mv,
@@ -561,11 +561,11 @@ def compute_ccs_multi_cut(
                             )
                             cur_edge_mask_mv[i] = 1
                             cur_edge_mask_mv[j] = 1
-                            cur_edge_mask_mv[k] = 1
 
                             if n_ccs != 2:
                                 continue
 
+                            child_depth_bit = 1 << (current_depth + 1)
                             for c in range(2):
                                 child_node_key = PyBytes_FromStringAndSize(&cc_nodes_s[c, 0], num_nodes)
                                 child_edge_key = PyBytes_FromStringAndSize(&cc_edges_s[c, 0], num_edges)
@@ -573,7 +573,11 @@ def compute_ccs_multi_cut(
                                 if child_node_key not in css_to_id_dict:
                                     css_to_id_dict[child_node_key] = len(css_to_id_dict)
 
-                                ccs_depth_dict.setdefault(child_node_key, set()).add(current_depth + 1)
+                                if child_node_key not in ccs_min_depth:
+                                    ccs_min_depth[child_node_key] = current_depth + 1
+                                    ccs_depth_bits[child_node_key] = child_depth_bit
+                                else:
+                                    ccs_depth_bits[child_node_key] |= child_depth_bit
                                 ccs.append(child_node_key)
                                 cc_edges.append(child_edge_key)
 
@@ -582,6 +586,76 @@ def compute_ccs_multi_cut(
                                                  css_to_id_dict[child_node_key])
                                     if edge_pair not in dag_edge_dict:
                                         dag_edge_dict[edge_pair] = current_depth + 1
+
+            # -----------------------------------------------------------
+            # Cut = 3: triples of ring edges — depth 0 only (avoid O(R³) blowup).
+            # Also pre-grouped by ring system.
+            # -----------------------------------------------------------
+            if effective_max_cut >= 3 and current_depth == 0 and n_ring >= 3:
+                # Reuse sys_groups if already built; build it if cut=2 was skipped.
+                if effective_max_cut < 2 or n_ring < 2:
+                    sys_groups = {}
+                    for ii in range(n_ring):
+                        i = ring_arr[ii]
+                        if disconnected_mv[i]:
+                            continue
+                        si = bond_to_sys_mv[i]
+                        if si not in sys_groups:
+                            sys_groups[si] = [i]
+                        else:
+                            sys_groups[si].append(i)
+
+                for bonds_in_sys in sys_groups.values():
+                    n_sys = len(bonds_in_sys)
+                    if n_sys < 3:
+                        continue
+                    for ii in range(n_sys):
+                        i = bonds_in_sys[ii]
+                        for jj in range(ii + 1, n_sys):
+                            j = bonds_in_sys[jj]
+                            for kk in range(jj + 1, n_sys):
+                                k = bonds_in_sys[kk]
+
+                                cur_edge_mask_mv[i] = 0
+                                cur_edge_mask_mv[j] = 0
+                                cur_edge_mask_mv[k] = 0
+                                _zero_scratch_live(
+                                    n_live_nodes, n_live, live_node_arr, live_arr,
+                                    cc_nodes_s, cc_edges_s,
+                                )
+                                n_ccs = _cc_uf(
+                                    num_nodes, num_edges,
+                                    cur_node_mask_mv, edges_mv, cur_edge_mask_mv,
+                                    cc_nodes_s, cc_edges_s,
+                                )
+                                cur_edge_mask_mv[i] = 1
+                                cur_edge_mask_mv[j] = 1
+                                cur_edge_mask_mv[k] = 1
+
+                                if n_ccs != 2:
+                                    continue
+
+                                child_depth_bit = 1 << (current_depth + 1)
+                                for c in range(2):
+                                    child_node_key = PyBytes_FromStringAndSize(&cc_nodes_s[c, 0], num_nodes)
+                                    child_edge_key = PyBytes_FromStringAndSize(&cc_edges_s[c, 0], num_edges)
+
+                                    if child_node_key not in css_to_id_dict:
+                                        css_to_id_dict[child_node_key] = len(css_to_id_dict)
+
+                                    if child_node_key not in ccs_min_depth:
+                                        ccs_min_depth[child_node_key] = current_depth + 1
+                                        ccs_depth_bits[child_node_key] = child_depth_bit
+                                    else:
+                                        ccs_depth_bits[child_node_key] |= child_depth_bit
+                                    ccs.append(child_node_key)
+                                    cc_edges.append(child_edge_key)
+
+                                    if cur_node_key != child_node_key:
+                                        edge_pair = (css_to_id_dict[cur_node_key],
+                                                     css_to_id_dict[child_node_key])
+                                        if edge_pair not in dag_edge_dict:
+                                            dag_edge_dict[edge_pair] = current_depth + 1
 
         # -------------------------------------------------------------------
         # SMARTS prepass injection (depth 0 only).
@@ -608,7 +682,11 @@ def compute_ccs_multi_cut(
                     child_edge_key = PyBytes_FromStringAndSize(&seed_edge_mv[0], num_edges)
                     if child_node_key not in css_to_id_dict:
                         css_to_id_dict[child_node_key] = len(css_to_id_dict)
-                    ccs_depth_dict.setdefault(child_node_key, set()).add(1)
+                    if child_node_key not in ccs_min_depth:
+                        ccs_min_depth[child_node_key] = 1
+                        ccs_depth_bits[child_node_key] = 1 << 1
+                    else:
+                        ccs_depth_bits[child_node_key] |= (1 << 1)
                     ccs.append(child_node_key)
                     cc_edges.append(child_edge_key)
                     edge_pair = (css_to_id_dict[root_node_key], css_to_id_dict[child_node_key])
@@ -617,12 +695,13 @@ def compute_ccs_multi_cut(
 
         if force_stop:
             reached_depth = current_depth - 1 if current_depth > 0 else 0
-            filtered = {
-                k: {d for d in v if d <= reached_depth}
-                for k, v in ccs_depth_dict.items()
+            # Mask off depth bits beyond reached_depth and prune empty entries.
+            valid_bits = (1 << (reached_depth + 1)) - 1
+            ccs_depth_bits = {
+                k: (v & valid_bits) for k, v in ccs_depth_bits.items() if v & valid_bits
             }
-            ccs_depth_dict = {k: v for k, v in filtered.items() if v}
-            css_to_id_dict = {k: css_to_id_dict[k] for k in ccs_depth_dict}
+            ccs_min_depth = {k: v for k, v in ccs_min_depth.items() if v <= reached_depth}
+            css_to_id_dict = {k: css_to_id_dict[k] for k in ccs_min_depth}
             id_to_css = {v: k for k, v in css_to_id_dict.items()}
             dag_edge_dict = {
                 (s, d): dep
@@ -649,10 +728,14 @@ def compute_ccs_multi_cut(
     nodes_depth_matrix = np.zeros((num_un_ccs, max_depth + 1), dtype=MASK_DTYPE)
     nodes_min_depth    = np.zeros(num_un_ccs, dtype=MASK_DTYPE)
 
+    # ccs_depth_bits is an int bitmask (bit d = 1 iff fragment seen at depth d).
+    # Unpack into nodes_depth_matrix without creating intermediate Python sets.
     for idx, cc in enumerate(ordered_ccs):
-        for d in ccs_depth_dict[cc]:
-            nodes_depth_matrix[idx, d] = 1
-        nodes_min_depth[idx] = min(ccs_depth_dict[cc])
+        bits = ccs_depth_bits[cc]
+        for d in range(max_depth + 1):
+            if (bits >> d) & 1:
+                nodes_depth_matrix[idx, d] = 1
+        nodes_min_depth[idx] = ccs_min_depth[cc]
 
     if dag_edge_dict:
         dag_edges_matrix = np.array(list(dag_edge_dict.keys()), dtype=np.int64)
