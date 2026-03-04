@@ -169,7 +169,6 @@ class SpecMolFragDataset(SpecMolDataset):
             Dictionary containing spectral, molecular, and fragmentation data.
         """
         assert isinstance(idx, int),idx
-        assert slice is builtins.slice, idx
         spec_entry = self.spec_df.iloc[idx]
         mol_id = spec_entry["mol_id"]
         mol_entry = self.mol_df.loc[mol_id]
@@ -224,7 +223,7 @@ class SpecMolFragDataset(SpecMolDataset):
                         frag_data,
                         spec_entry["prec_type"],
                         frag_data["frag_formula_peak_mzs"],
-                        clone_pyg=False,
+                        clone_pyg=True,
                     )
                     self.frag_cache[mol_id]=frag_data
             else:
