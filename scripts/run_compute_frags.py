@@ -16,7 +16,7 @@ def run_frag(smiles, **kwargs):
     num_nodes = mol_d["atom_mask_arr"].shape[0]
     print(f"> num heavy atoms {num_nodes}")
 
-    dag_d = frag_utils.timed_get_dags(
+    _, dag_d = frag_utils.timed_get_dags(
         mol=mol_d["mol"],
         mol_id=0,
         max_depth=kwargs.get("max_depth", 3),
@@ -26,8 +26,10 @@ def run_frag(smiles, **kwargs):
         isotopes=kwargs.get("isotopes", False),
         nb_isomorphic=kwargs.get("nb_isomorphic", False),
         wl_max_iterations=kwargs.get("max_iterations", 3),
-        output_dir=None,
         save_dag=False,
+        multi_cut_bfs=kwargs.get("multi_cut_bfs", False),
+        max_cut_size=kwargs.get("max_cut_size", 2),
+        smarts_prepass=kwargs.get("smarts_prepass", False),
     )
 
     dag = dag_d["dag"]
@@ -77,6 +79,9 @@ if __name__ == "__main__":
     parser.add_argument("--isotopes", type=booltype, default=True)
     parser.add_argument("--nb_isomorphic", type=booltype, default=False)
     parser.add_argument("--wl_max_iterations", type=int, default=3)
+    parser.add_argument("--multi_cut_bfs", type=booltype, default=False)
+    parser.add_argument("--max_cut_size", type=int, default=2)
+    parser.add_argument("--smarts_prepass", type=booltype, default=False)
     args = parser.parse_args()
 
     # np.random.seed(420)
@@ -137,6 +142,9 @@ if __name__ == "__main__":
         isotopes=args.isotopes,
         nb_isomorphic=args.nb_isomorphic,
         wl_max_iterations=args.wl_max_iterations,
+        multi_cut_bfs=args.multi_cut_bfs,
+        max_cut_size=args.max_cut_size,
+        smarts_prepass=args.smarts_prepass,
     )
 
     dag_d = run_frag(smiles, **frag_kw_d)

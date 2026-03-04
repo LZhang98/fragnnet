@@ -239,6 +239,7 @@ def compute_ccs_multi_cut(
     long time_limit = 150,
     cnp.ndarray ring_edge_mask = None,
     int max_cut_size = 2,
+    smarts_seed_pairs = None,
 ):
     """Multi-bond-cut BFS fragmentation (Cython).
 
@@ -258,6 +259,11 @@ def compute_ccs_multi_cut(
             If ``None``, behaves like single-bond BFS.
         max_cut_size: Max simultaneous bond breaks per step (1, 2, or 3).
             Cut=3 is restricted to depth 0 to prevent O(R³) blowup.
+        smarts_seed_pairs: Optional list of ``(node_mask_a, node_mask_b)``
+            uint8 numpy array pairs pre-computed by ``_apply_smarts_prepass``
+            in Python.  Each pair is injected as a depth-1 DAG child pair
+            identical to BFS cut=1/2 children.  Pass ``None`` (default) to
+            skip the SMARTS prepass.
 
     Returns:
         Tuple ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
@@ -366,8 +372,20 @@ def compute_ccs_multi_cut(
     cdef cnp.ndarray disconnected_np = np.zeros(num_edges, dtype=MASK_DTYPE)
     cdef char[::1] disconnected_mv = disconnected_np
 
+    # Seed injection working buffers (smarts_seed_pairs)
+    cdef cnp.ndarray seed_edge_buf
+    cdef char[::1] seed_node_mv
+    cdef char[::1] seed_edge_mv
+    cdef int u_s, v_s
+
     force_stop = False
     reached_depth = 0
+
+    # Pre-allocate seed edge buffer once if needed (injection happens at depth 0
+    # inside the BFS loop so seeds are processed at depth 1, matching Python behaviour).
+    if smarts_seed_pairs is not None:
+        seed_edge_buf = np.empty(num_edges, dtype=MASK_DTYPE)
+        seed_edge_mv = seed_edge_buf
 
     # -----------------------------------------------------------------------
     # BFS depth loop
@@ -564,6 +582,38 @@ def compute_ccs_multi_cut(
                                                  css_to_id_dict[child_node_key])
                                     if edge_pair not in dag_edge_dict:
                                         dag_edge_dict[edge_pair] = current_depth + 1
+
+        # -------------------------------------------------------------------
+        # SMARTS prepass injection (depth 0 only).
+        # Seeds are appended AFTER ccs_end was captured, so they fall beyond
+        # the current depth's frontier and are processed at depth 1 — exactly
+        # matching the Python version's behaviour.
+        # -------------------------------------------------------------------
+        if current_depth == 0 and smarts_seed_pairs is not None:
+            for pair in smarts_seed_pairs:
+                for child_mask_np in pair:
+                    seed_node_mv = np.ascontiguousarray(child_mask_np, dtype=MASK_DTYPE)
+                    child_node_key = PyBytes_FromStringAndSize(&seed_node_mv[0], num_nodes)
+                    if child_node_key == root_node_key:
+                        continue
+                    for i in range(num_edges):
+                        if base_edge_mask_mv[i] == 0:
+                            seed_edge_mv[i] = 0
+                        else:
+                            u_s = edges_mv[i, 0]
+                            v_s = edges_mv[i, 1]
+                            seed_edge_mv[i] = (
+                                1 if (seed_node_mv[u_s] == 1 and seed_node_mv[v_s] == 1) else 0
+                            )
+                    child_edge_key = PyBytes_FromStringAndSize(&seed_edge_mv[0], num_edges)
+                    if child_node_key not in css_to_id_dict:
+                        css_to_id_dict[child_node_key] = len(css_to_id_dict)
+                    ccs_depth_dict.setdefault(child_node_key, set()).add(1)
+                    ccs.append(child_node_key)
+                    cc_edges.append(child_edge_key)
+                    edge_pair = (css_to_id_dict[root_node_key], css_to_id_dict[child_node_key])
+                    if edge_pair not in dag_edge_dict:
+                        dag_edge_dict[edge_pair] = 1
 
         if force_stop:
             reached_depth = current_depth - 1 if current_depth > 0 else 0

@@ -24,6 +24,9 @@ from fragnnet.frag.compute_frags import (
     MAX_NUM_EDGES,
     MAX_NUM_NODES,
 )
+from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut as _compute_ccs_multi_cut_cy
+from fragnnet.frag.multi_cut_bfs import get_ring_edge_mask
+from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
 from fragnnet.utils.data_utils import mol_from_smiles
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
 from fragnnet.utils.misc_utils import PPM
@@ -808,6 +811,9 @@ def compute_dags(
     nb_isomorphic: bool = False,
     # b_isomorphic:bool = False, # not used
     wl_max_iterations: int = -1,
+    multi_cut_bfs: bool = False,
+    max_cut_size: int = 2,
+    smarts_prepass: bool = False,
 ) -> dict:
     """_summary_
 
@@ -837,18 +843,48 @@ def compute_dags(
 
     node_mask = node_mask.astype(MASK_DTYPE)
     edge_mask = edge_mask.astype(MASK_DTYPE)
-    nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
-        compute_frags.compute_ccs(
-            num_nodes,
-            num_edges,
-            node_mask,
-            edges,
-            edge_mask,
-            node_to_edge_idx,
-            max_depth,
-            frag_max_time,
+    if multi_cut_bfs:
+        ring_edge_mask = get_ring_edge_mask(mol_d["mol"], num_edges)
+        # SMARTS prepass: compute fragment pairs in Python (RDKit API), then pass
+        # as smarts_seed_pairs to the Cython BFS for injection as depth-1 children.
+        smarts_seed_pairs = None
+        if smarts_prepass:
+            smarts_seed_pairs = _apply_smarts_prepass(
+                FRAG_RULES,
+                mol_d["mol"],
+                edge_mask,
+                edges,
+                num_nodes,
+                num_edges,
+            )
+        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+            _compute_ccs_multi_cut_cy(
+                num_nodes,
+                num_edges,
+                node_mask,
+                edges,
+                edge_mask,
+                node_to_edge_idx,
+                max_depth,
+                frag_max_time,
+                ring_edge_mask=ring_edge_mask,
+                max_cut_size=max_cut_size,
+                smarts_seed_pairs=smarts_seed_pairs,
+            )
         )
-    )
+    else:
+        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+            compute_frags.compute_ccs(
+                num_nodes,
+                num_edges,
+                node_mask,
+                edges,
+                edge_mask,
+                node_to_edge_idx,
+                max_depth,
+                frag_max_time,
+            )
+        )
 
     if nb_isomorphic:
         node_nb_hashes = get_subgraph_hashes(
@@ -1420,6 +1456,9 @@ def timed_get_dags(
     use_cached=True,
     compressed=False,
     save_dag=True,
+    multi_cut_bfs: bool = False,
+    max_cut_size: int = 2,
+    smarts_prepass: bool = False,
 ) -> dict:
     try:
         mol_d = extract_mol_info(mol)
@@ -1434,6 +1473,9 @@ def timed_get_dags(
             nb_isomorphic,
             # False, b_isomorphic, this not used
             wl_max_iterations,
+            multi_cut_bfs=multi_cut_bfs,
+            max_cut_size=max_cut_size,
+            smarts_prepass=smarts_prepass,
         )
         return mol_id, dag_d
     except KeyboardInterrupt as e:
