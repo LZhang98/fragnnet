@@ -2,7 +2,6 @@ import argparse
 import json
 import logging
 import os
-from pprint import pformat
 
 import numpy as np
 import pandas as pd
@@ -14,6 +13,7 @@ from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 import lmdb
 import pickle
+
 def print_and_log(name: str, series: pd.Series, wandb_flag: bool, stats_d: dict) -> None:
     """Log series statistics to dictionary and optionally to W&B.
 
@@ -557,8 +557,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--skip_stats",
-        action="store_true",
-        help="whether skip stats comput"
+        type=booltype,
+        default=False,
+        help="whether skip stats compute and only compute and save the DAGs "
     )
     parser.add_argument(
         "--map_size",
