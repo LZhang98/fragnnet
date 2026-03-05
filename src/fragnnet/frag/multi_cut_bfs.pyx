@@ -23,8 +23,15 @@ Key implementation improvements over the Python version
   ``malloc``/``free`` and dict storage of mask arrays.
 - ``PyBytes_FromStringAndSize`` for child key creation — direct C API, no buffer
   protocol overhead from ``bytes(memoryview_slice)``.
-- ``seen_set`` (plain ``set``) replaces depth-tracking dict: BFS processes depths
-  strictly in order so once-seen → always-skip is correct.
+- ``queued_set`` prevents duplicate BFS queue entries: each ``(node_key, edge_key)``
+  pair is enqueued at most once, eliminating O(r²) duplicates for fused ring systems.
+- ``cur_node_id`` cached once per BFS node (avoids repeated dict lookup).
+- ``n_css_unique`` C-int counter replaces ``len(css_to_id_dict)`` in the hot path.
+- Cut=1 replaced by Tarjan's bridge-finding algorithm: O(V+E) DFS identifies all
+  bridges, then O(V+E) per bridge recovers fragment masks from DFS entry/exit times.
+  Total cut=1 cost O(V+E + bridges*(V+E)) vs original O(live_bonds*(V+E)).
+- ``_build_adj_c``: CSR adjacency list built in O(E) from live edges — stack only.
+- ``_find_bridges_c``: iterative (stack-based) Tarjan bridge DFS — fully ``nogil``.
 """
 
 import numpy as np
@@ -219,6 +226,187 @@ cdef void _build_ring_sys_labels_c(
 
 
 # ---------------------------------------------------------------------------
+# Build CSR adjacency list for live edges (used by bridge-finding).
+#
+# Fills ``adj_start[0..num_nodes]`` (prefix-sum of degrees) and
+# ``adj_list_[0..2*num_live_edges-1]`` (edge indices per node).
+# Both arrays must be pre-allocated by the caller (stack arrays in practice).
+# ---------------------------------------------------------------------------
+
+cdef void _build_adj_c(
+    int num_nodes,
+    int num_edges,
+    int[:, ::1] edges,
+    char[::1] edge_mask,
+    int* adj_start,
+    int* adj_list_,
+) nogil:
+    """Build CSR adjacency list from live edges (edge_mask == 1).
+
+    Args:
+        num_nodes: Number of nodes (atoms).
+        num_edges: Number of bond slots to scan.
+        edges: Shape ``(MAX_NUM_EDGES, 2)`` — bond endpoints.
+        edge_mask: Shape ``(num_edges,)`` — 1 for live bonds.
+        adj_start: Output prefix-sum array, size ``num_nodes + 1``.
+        adj_list_: Output edge-index list, size ``2 * num_edges``.
+    """
+    cdef int i, u, v
+    cdef int degree[128]
+
+    for i in range(num_nodes):
+        degree[i] = 0
+
+    for i in range(num_edges):
+        if edge_mask[i] == 0:
+            continue
+        u = edges[i, 0]
+        v = edges[i, 1]
+        degree[u] += 1
+        degree[v] += 1
+
+    adj_start[0] = 0
+    for i in range(num_nodes):
+        adj_start[i + 1] = adj_start[i] + degree[i]
+        degree[i] = 0
+
+    for i in range(num_edges):
+        if edge_mask[i] == 0:
+            continue
+        u = edges[i, 0]
+        v = edges[i, 1]
+        adj_list_[adj_start[u] + degree[u]] = i
+        degree[u] += 1
+        adj_list_[adj_start[v] + degree[v]] = i
+        degree[v] += 1
+
+
+# ---------------------------------------------------------------------------
+# Tarjan's bridge algorithm — iterative, stack-based, fully nogil.
+#
+# Returns the number of bridges found.  For each bridge i:
+#   ``bridge_bonds[i]`` — edge index of the bridge bond.
+#   ``bridge_child[i]`` — the child-side node (subtree root in DFS tree).
+#   ``entry_t[v]``      — DFS entry (discovery) time for each node v.
+#   ``exit_t[v]``       — DFS exit (finish) time for each node v.
+#
+# Membership in the child-side CC for bridge i:
+#   node k is in child side  iff  entry_t[child] <= entry_t[k] <= exit_t[k] <= exit_t[child]
+#   node k is in parent side iff  entry_t[k] < entry_t[child]  or  exit_t[k] > exit_t[child]
+#
+# This O(V+E) pass replaces O(live_bonds) calls to _cc_uf for cut=1.
+# ---------------------------------------------------------------------------
+
+cdef int _find_bridges_c(
+    int num_nodes,
+    int num_edges,
+    int n_live_nodes,
+    int* live_node_arr,
+    int[:, ::1] edges,
+    int* adj_start,    # CSR from _build_adj_c
+    int* adj_list_,    # CSR from _build_adj_c
+    int* bridge_bonds,
+    int* bridge_child,
+    int* entry_t,
+    int* exit_t,
+) nogil:
+    """Iterative Tarjan bridge-finding DFS.
+
+    Args:
+        num_nodes: Total node count (for initialisation).
+        num_edges: Total edge count (unused here; kept for symmetry).
+        n_live_nodes: Number of live (active) nodes.
+        live_node_arr: C array of live node indices; DFS starts from index 0.
+        edges: Bond endpoints, shape ``(MAX_NUM_EDGES, 2)``.
+        adj_start: CSR adjacency prefix-sum (size ``num_nodes + 1``).
+        adj_list_: CSR adjacency edge list (size ``2 * num_live_edges``).
+        bridge_bonds: Output — bridge edge indices.
+        bridge_child: Output — child-side node for each bridge.
+        entry_t: Output — DFS entry time per node (-1 if unvisited).
+        exit_t: Output — DFS exit time per node (-1 if unvisited).
+
+    Returns:
+        Number of bridges found.
+    """
+    cdef int disc[128]
+    cdef int low[128]
+    cdef int par_node_[128]
+    cdef int par_edge_[128]
+    cdef int stk_node[128]
+    cdef int stk_cursor[128]
+    cdef int stk_top = 0
+    cdef int timer = 0
+    cdef int n_bridges = 0
+    cdef int i, v, w, e, u_e, v_e, cur, p, pe
+
+    for i in range(num_nodes):
+        disc[i] = -1
+        entry_t[i] = -1
+        exit_t[i] = -1
+
+    if n_live_nodes == 0:
+        return 0
+
+    # Start DFS from the first live node
+    v = live_node_arr[0]
+    disc[v] = low[v] = timer
+    entry_t[v] = timer
+    timer += 1
+    par_node_[v] = -1
+    par_edge_[v] = -1
+    stk_node[0] = v
+    stk_cursor[0] = adj_start[v]
+    stk_top = 1
+
+    while stk_top > 0:
+        v = stk_node[stk_top - 1]
+        cur = stk_cursor[stk_top - 1]
+
+        if cur >= adj_start[v + 1]:
+            # All neighbours of v visited — finish v and propagate low upward
+            stk_top -= 1
+            exit_t[v] = timer
+            timer += 1
+            p = par_node_[v]
+            pe = par_edge_[v]
+            if p != -1:
+                if low[v] < low[p]:
+                    low[p] = low[v]
+                if low[v] > disc[p]:
+                    # Edge (p → v) is a bridge
+                    bridge_bonds[n_bridges] = pe
+                    bridge_child[n_bridges] = v
+                    n_bridges += 1
+            continue
+
+        # Advance to the next adjacent edge
+        e = adj_list_[cur]
+        stk_cursor[stk_top - 1] = cur + 1
+
+        u_e = edges[e, 0]
+        v_e = edges[e, 1]
+        w = v_e if u_e == v else u_e
+
+        if disc[w] == -1:
+            # Tree edge — push w onto the DFS stack
+            disc[w] = low[w] = timer
+            entry_t[w] = timer
+            timer += 1
+            par_node_[w] = v
+            par_edge_[w] = e
+            stk_node[stk_top] = w
+            stk_cursor[stk_top] = adj_start[w]
+            stk_top += 1
+        elif e != par_edge_[v]:
+            # Back edge (skip the exact tree edge that brought us here so that
+            # parallel edges are treated correctly and not masked as back edges)
+            if disc[w] < low[v]:
+                low[v] = disc[w]
+
+    return n_bridges
+
+
+# ---------------------------------------------------------------------------
 # Public Python helper: build ring-edge mask from RDKit mol
 # (kept for API compatibility with multi_cut_bfs.py)
 # ---------------------------------------------------------------------------
@@ -326,48 +514,43 @@ def compute_ccs_multi_cut(
 
     # -----------------------------------------------------------------------
     # Pre-allocated working mask buffers.
-    #
-    # Key insight: the bytes keys in `ccs` and `cc_edges` ARE the mask data.
-    # We reconstruct masks on demand into these fixed buffers using
-    # const char[::1] typed views of the bytes objects — zero allocation,
-    # one fast typed-loop memcpy per BFS node.  This eliminates the
-    # per-node malloc/free that was present in the previous version.
     # -----------------------------------------------------------------------
     cdef cnp.ndarray cur_node_mask_buf = np.empty(num_nodes, dtype=MASK_DTYPE)
     cdef cnp.ndarray cur_edge_mask_buf = np.empty(num_edges, dtype=MASK_DTYPE)
     cdef char[::1] cur_node_mask_mv = cur_node_mask_buf
     cdef char[::1] cur_edge_mask_mv = cur_edge_mask_buf
 
-    # Raw C pointers used to read bytes keys via PyBytes_AS_STRING + memcpy.
-    # Avoids buffer-protocol type-mismatch (bytes export as 'unsigned char',
-    # but char[::1] expects 'char').  PyBytes_AS_STRING is a direct macro —
-    # zero overhead, no buffer acquisition needed.
     cdef char* key_ptr
 
     # -----------------------------------------------------------------------
-    # BFS state.
+    # Bridge-finding buffers (stack-allocated, reused each BFS node).
     #
-    # cc_node_mask_dict and cc_edge_mask_dict from the Python version are
-    # ELIMINATED: the bytes key already encodes the mask, so we reconstruct
-    # masks from keys on demand.  Only two dicts remain:
-    #   css_to_id_dict   — unique node_key → integer DAG node ID
-    #   ccs_min_depth    — unique node_key → int min depth seen (replaces set)
-    #
-    # Storing min-depth as a plain int avoids Python set creation per fragment
-    # and simplifies the output construction loop.
+    # adj_start_c[129]  — CSR prefix-sum (num_nodes + 1 entries).
+    # adj_list_c[1024]  — CSR edge list (2 × MAX_NUM_EDGES entries).
+    # bridge_bonds_c / bridge_child_c — one entry per bridge (≤ num_edges).
+    # entry_t_c / exit_t_c            — DFS timestamps per node.
     # -----------------------------------------------------------------------
-    # Direct C API: no buffer-protocol overhead
+    cdef int adj_start_c[129]
+    cdef int adj_list_c[1024]
+    cdef int bridge_bonds_c[512]
+    cdef int bridge_child_c[512]
+    cdef int entry_t_c[128]
+    cdef int exit_t_c[128]
+
+    # -----------------------------------------------------------------------
+    # BFS state.
+    # -----------------------------------------------------------------------
     cdef bytes root_node_key = PyBytes_FromStringAndSize(&node_mask_mv[0], num_nodes)
     cdef bytes root_edge_key = PyBytes_FromStringAndSize(&base_edge_mask_mv[0], num_edges)
 
     css_to_id_dict  = {root_node_key: 0}
-    # ccs_depth_bits: node_key → int bitmask of depths seen (bit d = depth d).
-    # Replaces the set-per-node approach: `bits |= (1 << d)` is faster than
-    # set.add() because it avoids Python set object allocation and hash overhead.
     ccs_depth_bits  = {root_node_key: 1}   # bit 0 = depth 0 for root
-    ccs_min_depth   = {root_node_key: 0}   # node_key → int min depth seen
-    # seen_set replaces has_seen_dict: BFS processes depths in order so
-    # once-seen → always-skip is correct (no depth value needed).
+    ccs_min_depth   = {root_node_key: 0}
+    # queued_set tracks every (node_key, edge_key) pair ever appended to the
+    # BFS queue.  Each unique pair is enqueued at most once, eliminating the
+    # O(r²) duplicate entries that fused ring systems previously produced.
+    queued_set      = {(root_node_key, root_edge_key)}
+    # seen_set kept as a safety net (effectively a no-op with queued_set).
     seen_set        = set()
     dag_edge_dict   = {}
 
@@ -387,11 +570,19 @@ def compute_ccs_multi_cut(
     cdef int si, sj, sk
     cdef int c
 
+    # Bridge-finding loop variables
+    cdef int n_bridges, bi_b, bridge_e, child_v, ev, xv, node_k, edge_k
+    cdef int cur_node_id    # cached css_to_id_dict[cur_node_key] per BFS node
+    cdef int n_css_unique = 1  # counter: replaces len(css_to_id_dict) in hot path
+
     # C arrays for live-edge and ring-edge indices (avoid Python list per node)
     cdef int live_arr[512]    # MAX_NUM_EDGES
     cdef int ring_arr[512]
     # Live atom indices — used for selective scratch reset
     cdef int live_node_arr[128]   # MAX_NUM_NODES
+
+    # Endpoint temporaries for bridge mask computation
+    cdef int u_ep, v_ep
 
     # Per-bond flag: did cutting this bond alone disconnect the molecule?
     cdef cnp.ndarray disconnected_np = np.zeros(num_edges, dtype=MASK_DTYPE)
@@ -406,8 +597,7 @@ def compute_ccs_multi_cut(
     force_stop = False
     reached_depth = 0
 
-    # Pre-allocate seed edge buffer once if needed (injection happens at depth 0
-    # inside the BFS loop so seeds are processed at depth 1, matching Python behaviour).
+    # Pre-allocate seed edge buffer once if needed.
     if smarts_seed_pairs is not None:
         seed_edge_buf = np.empty(num_edges, dtype=MASK_DTYPE)
         seed_edge_mv = seed_edge_buf
@@ -427,19 +617,19 @@ def compute_ccs_multi_cut(
             cur_node_key = ccs[node_idx]
             cur_edge_key = cc_edges[node_idx]
 
-            # Deduplicate: same (node, edge) config can appear from multiple parents.
-            # Tuple key reuses cached per-element hash values — cheaper than bytes concat.
+            # Safety dedup (effectively no-op when queued_set is correct).
             seen_key = (cur_node_key, cur_edge_key)
             if seen_key in seen_set:
                 continue
             seen_set.add(seen_key)
 
-            # ---------------------------------------------------------------
+            # Cache the DAG node-id for cur_node_key — used in all child
+            # edge-pair registrations below.
+            cur_node_id = css_to_id_dict[cur_node_key]
+
+            # -----------------------------------------------------------
             # Reconstruct masks from bytes keys into pre-allocated buffers.
-            # PyBytes_AS_STRING gives a raw char* with zero overhead (a
-            # direct macro), then memcpy fills the working buffer — no heap
-            # allocation, no buffer-protocol type checks.
-            # ---------------------------------------------------------------
+            # -----------------------------------------------------------
             key_ptr = PyBytes_AS_STRING(cur_node_key)
             memcpy(&cur_node_mask_mv[0], key_ptr, num_nodes)
 
@@ -447,7 +637,6 @@ def compute_ccs_multi_cut(
             memcpy(&cur_edge_mask_mv[0], key_ptr, num_edges)
 
             # Build live-edge, ring-edge, and live-node C arrays.
-            # live_node_arr is used for selective scratch reset.
             n_live = 0
             n_ring = 0
             n_live_nodes = 0
@@ -472,62 +661,104 @@ def compute_ccs_multi_cut(
                 disconnected_mv[live_arr[i]] = 0
 
             # -----------------------------------------------------------
-            # Cut = 1: try every single live edge.
-            # First call uses full memset; subsequent calls use selective
-            # reset (only live nodes/edges touched by _cc_uf).
+            # Cut = 1: Tarjan bridge-finding (O(V+E)) replaces O(m) CC tests.
+            #
+            # Build CSR adjacency from live edges, run iterative DFS to find
+            # all bridges, then recover fragment masks for each bridge from
+            # DFS entry/exit times in O(V+E) per bridge.
+            #
+            # For each bridge (u, child_v):
+            #   CC 0 (child side)  — subtree of child_v in DFS tree.
+            #   CC 1 (parent side) — all remaining live nodes.
+            # Both sides are contiguous because non-bridge edges cannot span
+            # the two sides (that would create a cycle, contradicting bridge).
             # -----------------------------------------------------------
-            _zero_scratch_full(num_nodes, num_edges, cc_nodes_s, cc_edges_s)
-            for ii in range(n_live):
-                i = live_arr[ii]
-                cur_edge_mask_mv[i] = 0
-                if ii > 0:
-                    _zero_scratch_live(
-                        n_live_nodes, n_live, live_node_arr, live_arr,
-                        cc_nodes_s, cc_edges_s,
-                    )
-                n_ccs = _cc_uf(
-                    num_nodes, num_edges,
-                    cur_node_mask_mv, edges_mv, cur_edge_mask_mv,
-                    cc_nodes_s, cc_edges_s,
-                )
-                cur_edge_mask_mv[i] = 1
-
-                if n_ccs == 2:
-                    disconnected_mv[i] = 1
-                    child_depth_bit = 1 << (current_depth + 1)
-                    for c in range(2):
-                        child_node_key = PyBytes_FromStringAndSize(&cc_nodes_s[c, 0], num_nodes)
-                        child_edge_key = PyBytes_FromStringAndSize(&cc_edges_s[c, 0], num_edges)
-
-                        if child_node_key not in css_to_id_dict:
-                            css_to_id_dict[child_node_key] = len(css_to_id_dict)
-
-                        if child_node_key not in ccs_min_depth:
-                            ccs_min_depth[child_node_key] = current_depth + 1
-                            ccs_depth_bits[child_node_key] = child_depth_bit
-                        else:
-                            ccs_depth_bits[child_node_key] |= child_depth_bit
-                        ccs.append(child_node_key)
-                        cc_edges.append(child_edge_key)
-
-                        if cur_node_key != child_node_key:
-                            edge_pair = (css_to_id_dict[cur_node_key],
-                                         css_to_id_dict[child_node_key])
-                            if edge_pair not in dag_edge_dict:
-                                dag_edge_dict[edge_pair] = current_depth + 1
+            _build_adj_c(
+                num_nodes, num_edges,
+                edges_mv, cur_edge_mask_mv,
+                adj_start_c, adj_list_c,
+            )
+            n_bridges = _find_bridges_c(
+                num_nodes, num_edges, n_live_nodes, live_node_arr,
+                edges_mv, adj_start_c, adj_list_c,
+                bridge_bonds_c, bridge_child_c,
+                entry_t_c, exit_t_c,
+            )
 
             reached_depth = current_depth + 1
+            child_depth_bit = 1 << (current_depth + 1)
+
+            for bi_b in range(n_bridges):
+                bridge_e = bridge_bonds_c[bi_b]
+                child_v  = bridge_child_c[bi_b]
+                ev = entry_t_c[child_v]
+                xv = exit_t_c[child_v]
+
+                disconnected_mv[bridge_e] = 1
+
+                # Selective-reset only live positions (same cost as the
+                # original _zero_scratch_live before each _cc_uf call).
+                _zero_scratch_live(
+                    n_live_nodes, n_live, live_node_arr, live_arr,
+                    cc_nodes_s, cc_edges_s,
+                )
+
+                # Assign each live node to child (CC 0) or parent (CC 1)
+                # based on whether it falls inside the DFS subtree of child_v.
+                for kk in range(n_live_nodes):
+                    node_k = live_node_arr[kk]
+                    if entry_t_c[node_k] >= ev and exit_t_c[node_k] <= xv:
+                        cc_nodes_s[0, node_k] = 1
+                    else:
+                        cc_nodes_s[1, node_k] = 1
+
+                # Assign each live non-bridge edge to the CC of its first
+                # endpoint.  Because bridge_e is the only cut, all non-bridge
+                # live edges have BOTH endpoints in the same CC — so checking
+                # just one endpoint is sufficient and correct.
+                for kk in range(n_live):
+                    edge_k = live_arr[kk]
+                    if edge_k == bridge_e:
+                        continue
+                    u_ep = edges_mv[edge_k, 0]
+                    if cc_nodes_s[0, u_ep]:
+                        cc_edges_s[0, edge_k] = 1
+                    else:
+                        cc_edges_s[1, edge_k] = 1
+
+                # Register both child fragments
+                for c in range(2):
+                    child_node_key = PyBytes_FromStringAndSize(
+                        &cc_nodes_s[c, 0], num_nodes)
+                    child_edge_key = PyBytes_FromStringAndSize(
+                        &cc_edges_s[c, 0], num_edges)
+
+                    if child_node_key not in css_to_id_dict:
+                        css_to_id_dict[child_node_key] = n_css_unique
+                        n_css_unique += 1
+
+                    if child_node_key not in ccs_min_depth:
+                        ccs_min_depth[child_node_key] = current_depth + 1
+                        ccs_depth_bits[child_node_key] = child_depth_bit
+                    else:
+                        ccs_depth_bits[child_node_key] |= child_depth_bit
+
+                    child_queue_key = (child_node_key, child_edge_key)
+                    if child_queue_key not in queued_set:
+                        ccs.append(child_node_key)
+                        cc_edges.append(child_edge_key)
+                        queued_set.add(child_queue_key)
+
+                    if cur_node_key != child_node_key:
+                        edge_pair = (cur_node_id,
+                                     css_to_id_dict[child_node_key])
+                        if edge_pair not in dag_edge_dict:
+                            dag_edge_dict[edge_pair] = current_depth + 1
 
             # -----------------------------------------------------------
             # Cut = 2: pairs of ring edges (same ring system only).
-            #
-            # Optimization: pre-group ring bonds by system so we only
-            # iterate within each system — eliminates the O(R²) cross-
-            # system pairs that were previously rejected by an si != sj check.
             # -----------------------------------------------------------
             if effective_max_cut >= 2 and n_ring >= 2:
-                # Group non-disconnecting ring bonds by their ring system.
-                # Python dict keyed by int system id → Python list of bond indices.
                 sys_groups = {}
                 for ii in range(n_ring):
                     i = ring_arr[ii]
@@ -567,32 +798,38 @@ def compute_ccs_multi_cut(
 
                             child_depth_bit = 1 << (current_depth + 1)
                             for c in range(2):
-                                child_node_key = PyBytes_FromStringAndSize(&cc_nodes_s[c, 0], num_nodes)
-                                child_edge_key = PyBytes_FromStringAndSize(&cc_edges_s[c, 0], num_edges)
+                                child_node_key = PyBytes_FromStringAndSize(
+                                    &cc_nodes_s[c, 0], num_nodes)
+                                child_edge_key = PyBytes_FromStringAndSize(
+                                    &cc_edges_s[c, 0], num_edges)
 
                                 if child_node_key not in css_to_id_dict:
-                                    css_to_id_dict[child_node_key] = len(css_to_id_dict)
+                                    css_to_id_dict[child_node_key] = n_css_unique
+                                    n_css_unique += 1
 
                                 if child_node_key not in ccs_min_depth:
                                     ccs_min_depth[child_node_key] = current_depth + 1
                                     ccs_depth_bits[child_node_key] = child_depth_bit
                                 else:
                                     ccs_depth_bits[child_node_key] |= child_depth_bit
-                                ccs.append(child_node_key)
-                                cc_edges.append(child_edge_key)
+
+                                child_queue_key = (child_node_key, child_edge_key)
+                                if child_queue_key not in queued_set:
+                                    ccs.append(child_node_key)
+                                    cc_edges.append(child_edge_key)
+                                    queued_set.add(child_queue_key)
 
                                 if cur_node_key != child_node_key:
-                                    edge_pair = (css_to_id_dict[cur_node_key],
+                                    edge_pair = (cur_node_id,
                                                  css_to_id_dict[child_node_key])
                                     if edge_pair not in dag_edge_dict:
                                         dag_edge_dict[edge_pair] = current_depth + 1
 
             # -----------------------------------------------------------
-            # Cut = 3: triples of ring edges — depth 0 only (avoid O(R³) blowup).
-            # Also pre-grouped by ring system.
+            # Cut = 3: triples of ring edges — depth 0 only.
             # -----------------------------------------------------------
             if effective_max_cut >= 3 and current_depth == 0 and n_ring >= 3:
-                # Reuse sys_groups if already built; build it if cut=2 was skipped.
+                # Reuse sys_groups if already built by cut=2; build it otherwise.
                 if effective_max_cut < 2 or n_ring < 2:
                     sys_groups = {}
                     for ii in range(n_ring):
@@ -637,31 +874,35 @@ def compute_ccs_multi_cut(
 
                                 child_depth_bit = 1 << (current_depth + 1)
                                 for c in range(2):
-                                    child_node_key = PyBytes_FromStringAndSize(&cc_nodes_s[c, 0], num_nodes)
-                                    child_edge_key = PyBytes_FromStringAndSize(&cc_edges_s[c, 0], num_edges)
+                                    child_node_key = PyBytes_FromStringAndSize(
+                                        &cc_nodes_s[c, 0], num_nodes)
+                                    child_edge_key = PyBytes_FromStringAndSize(
+                                        &cc_edges_s[c, 0], num_edges)
 
                                     if child_node_key not in css_to_id_dict:
-                                        css_to_id_dict[child_node_key] = len(css_to_id_dict)
+                                        css_to_id_dict[child_node_key] = n_css_unique
+                                        n_css_unique += 1
 
                                     if child_node_key not in ccs_min_depth:
                                         ccs_min_depth[child_node_key] = current_depth + 1
                                         ccs_depth_bits[child_node_key] = child_depth_bit
                                     else:
                                         ccs_depth_bits[child_node_key] |= child_depth_bit
-                                    ccs.append(child_node_key)
-                                    cc_edges.append(child_edge_key)
+
+                                    child_queue_key = (child_node_key, child_edge_key)
+                                    if child_queue_key not in queued_set:
+                                        ccs.append(child_node_key)
+                                        cc_edges.append(child_edge_key)
+                                        queued_set.add(child_queue_key)
 
                                     if cur_node_key != child_node_key:
-                                        edge_pair = (css_to_id_dict[cur_node_key],
+                                        edge_pair = (cur_node_id,
                                                      css_to_id_dict[child_node_key])
                                         if edge_pair not in dag_edge_dict:
                                             dag_edge_dict[edge_pair] = current_depth + 1
 
         # -------------------------------------------------------------------
         # SMARTS prepass injection (depth 0 only).
-        # Seeds are appended AFTER ccs_end was captured, so they fall beyond
-        # the current depth's frontier and are processed at depth 1 — exactly
-        # matching the Python version's behaviour.
         # -------------------------------------------------------------------
         if current_depth == 0 and smarts_seed_pairs is not None:
             for pair in smarts_seed_pairs:
@@ -680,22 +921,29 @@ def compute_ccs_multi_cut(
                                 1 if (seed_node_mv[u_s] == 1 and seed_node_mv[v_s] == 1) else 0
                             )
                     child_edge_key = PyBytes_FromStringAndSize(&seed_edge_mv[0], num_edges)
+
                     if child_node_key not in css_to_id_dict:
-                        css_to_id_dict[child_node_key] = len(css_to_id_dict)
+                        css_to_id_dict[child_node_key] = n_css_unique
+                        n_css_unique += 1
                     if child_node_key not in ccs_min_depth:
                         ccs_min_depth[child_node_key] = 1
                         ccs_depth_bits[child_node_key] = 1 << 1
                     else:
                         ccs_depth_bits[child_node_key] |= (1 << 1)
-                    ccs.append(child_node_key)
-                    cc_edges.append(child_edge_key)
-                    edge_pair = (css_to_id_dict[root_node_key], css_to_id_dict[child_node_key])
+
+                    child_queue_key = (child_node_key, child_edge_key)
+                    if child_queue_key not in queued_set:
+                        ccs.append(child_node_key)
+                        cc_edges.append(child_edge_key)
+                        queued_set.add(child_queue_key)
+
+                    edge_pair = (css_to_id_dict[root_node_key],
+                                 css_to_id_dict[child_node_key])
                     if edge_pair not in dag_edge_dict:
                         dag_edge_dict[edge_pair] = 1
 
         if force_stop:
             reached_depth = current_depth - 1 if current_depth > 0 else 0
-            # Mask off depth bits beyond reached_depth and prune empty entries.
             valid_bits = (1 << (reached_depth + 1)) - 1
             ccs_depth_bits = {
                 k: (v & valid_bits) for k, v in ccs_depth_bits.items() if v & valid_bits
@@ -720,7 +968,6 @@ def compute_ccs_multi_cut(
     for cc, idx in css_to_id_dict.items():
         ordered_ccs[idx] = cc
 
-    # Reconstruct node masks from bytes keys (zero-copy frombuffer + stack)
     nodes_mask_matrix = np.stack(
         [np.frombuffer(cc, dtype=MASK_DTYPE) for cc in ordered_ccs],
         dtype=MASK_DTYPE,
@@ -728,8 +975,6 @@ def compute_ccs_multi_cut(
     nodes_depth_matrix = np.zeros((num_un_ccs, max_depth + 1), dtype=MASK_DTYPE)
     nodes_min_depth    = np.zeros(num_un_ccs, dtype=MASK_DTYPE)
 
-    # ccs_depth_bits is an int bitmask (bit d = 1 iff fragment seen at depth d).
-    # Unpack into nodes_depth_matrix without creating intermediate Python sets.
     for idx, cc in enumerate(ordered_ccs):
         bits = ccs_depth_bits[cc]
         for d in range(max_depth + 1):
