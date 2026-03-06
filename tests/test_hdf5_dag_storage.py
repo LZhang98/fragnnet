@@ -1,7 +1,5 @@
 """Tests for HDF5 DAG serialization round-trip."""
 
-import json
-
 import h5py
 import numpy as np
 import pytest

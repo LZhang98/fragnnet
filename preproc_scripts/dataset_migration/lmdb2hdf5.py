@@ -7,7 +7,7 @@ Reads the LMDB database at ``<frag_dp>/dags/`` produced by
 
 Usage::
 
-    python preproc_scripts/07_prepare_dag_hdf5.py \\
+    python preproc_scripts/dataset_migration/lmdb2hdf5.py \\
         --frag_dp /path/to/frag_dp \\
         --num_entries -1
 """
