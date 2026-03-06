@@ -58,6 +58,9 @@ def main(args):
             "--compress_dags is ignored when --use_lmdb=True because DAGs are stored in LMDB."
         )
 
+    if args.use_hdf5 and args.use_lmdb:
+        raise ValueError("--use_hdf5 and --use_lmdb are mutually exclusive.")
+
     elements = args.elements
     dsets = args.dsets
     # init wandb
@@ -225,9 +228,18 @@ def main(args):
         txn = env.begin(write=True)
         if txn is None:
             raise RuntimeError("Failed to open LMDB write transaction")
+        h5_file = None
+    elif args.use_hdf5:
+        import h5py
+
+        h5_fp = os.path.join(args.frag_dp, "dags.h5")
+        h5_file = h5py.File(h5_fp, "w")
+        env = None
+        txn = None
     else:
         env = None
         txn = None
+        h5_file = None
     frag_results_gen = data_utils.par_apply(
         iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
     )
@@ -257,6 +269,11 @@ def main(args):
                 if (int(mol_id) + 1) % 200 == 0:
                     txn.commit()
                     txn = env.begin(write=True)
+            elif args.use_hdf5:
+                if h5_file is None:
+                    raise RuntimeError("HDF5 file was not initialized")
+                grp = h5_file.create_group(f"{mol_id:08d}")
+                frag_utils.dump_dag_hdf5(grp, dag_d)
             else:
                 # Write one artifact per molecule when LMDB storage is disabled.
                 fp = frag_utils.get_dag_output_path(
@@ -275,6 +292,10 @@ def main(args):
         txn.commit()
         env.sync()
         env.close()
+    elif args.use_hdf5:
+        if h5_file is None:
+            raise RuntimeError("HDF5 file was not initialized")
+        h5_file.close()
     with open(os.path.join(args.frag_dp, "meta_info.json"), "w") as f:
         f.write(json.dumps(meta_info))
     if args.skip_stats:
@@ -589,10 +610,10 @@ if __name__ == "__main__":
         help="Whether to reuse cached DAG files if available",
     )
     parser.add_argument(
-        "--save_as_hdf5",
+        "--use_hdf5",
         type=booltype,
         default=False,
-        help="Whether to save outputs in HDF5 format (currently unused)",
+        help="Save DAGs to <frag_dp>/dags.h5 (HDF5). Mutually exclusive with --use_lmdb.",
     )
     parser.add_argument(
         "--disable_tqdm",

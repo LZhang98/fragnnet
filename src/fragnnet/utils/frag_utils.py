@@ -1365,6 +1365,155 @@ def dump_dag_pickle(fp: str, dag_d: dict) -> None:
     _dump_pickle_file(fp, dag_d)
 
 
+def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
+    """Write one DAG dictionary into an open h5py group.
+
+    All PyTorch tensors are converted to numpy arrays before writing.
+    Dict-typed fields (``idx_to_formula``, ``idx_by_h_delta``, depth-by-depth
+    counts) are JSON-encoded and stored as group attributes.
+
+    Args:
+        h5_group: An open, writable ``h5py.Group`` for this molecule.
+        dag_d: DAG payload dictionary as returned by ``compute_dags``.
+    """
+    import json
+
+    dag = dag_d["dag"]
+    g = h5_group.create_group("dag")
+    g.create_dataset("x", data=dag.x.numpy(), compression="gzip", compression_opts=4)
+    g.create_dataset(
+        "edge_index", data=dag.edge_index.numpy(), compression="gzip", compression_opts=4
+    )
+    g.create_dataset(
+        "edge_attr", data=dag.edge_attr.numpy(), compression="gzip", compression_opts=4
+    )
+    g.create_dataset("node_feat_idxs", data=dag.node_feat_idxs.numpy())
+    g.create_dataset("edge_feat_idxs", data=dag.edge_feat_idxs.numpy())
+
+    h5_group.create_dataset(
+        "formula_peak_mzs",
+        data=dag_d["formula_peak_mzs"].numpy(),
+        compression="gzip",
+        compression_opts=4,
+    )
+    h5_group.create_dataset(
+        "formula_peak_probs",
+        data=dag_d["formula_peak_probs"].numpy(),
+        compression="gzip",
+        compression_opts=4,
+    )
+
+    edges_min_depth = dag_d["edges_min_depth"]
+    nodes_min_depth = dag_d["nodes_min_depth"]
+    h5_group.create_dataset("edges_min_depth", data=edges_min_depth)
+    h5_group.create_dataset("nodes_min_depth", data=nodes_min_depth)
+
+    # JSON-encoded variable-structure fields
+    h5_group.attrs["idx_to_formula"] = json.dumps(
+        {str(k): v for k, v in dag_d["idx_to_formula"].items()}
+    )
+    h5_group.attrs["idx_by_h_delta"] = json.dumps(
+        [sorted(map(int, s)) for s in dag_d["idx_by_h_delta"]]
+    )
+    h5_group.attrs["dag_num_edges_by_depth"] = json.dumps(
+        {str(k): int(v) for k, v in dag_d["dag_num_edges_by_depth"].items()}
+    )
+    h5_group.attrs["dag_num_nodes_by_depth"] = json.dumps(
+        {str(k): int(v) for k, v in dag_d["dag_num_nodes_by_depth"].items()}
+    )
+
+    # Integer scalars
+    for key in [
+        "max_depth",
+        "reached_depth",
+        "max_h_transfer",
+        "dag_num_edges",
+        "dag_num_nodes",
+        "dag_num_nodes_nb",
+        "node_feature_size",
+        "edge_feature_size",
+    ]:
+        h5_group.attrs[key] = int(dag_d[key])
+
+    # Float scalars
+    for key in ["dag_sparsity", "formula_redundancy"]:
+        h5_group.attrs[key] = float(dag_d[key])
+
+    # Bool scalars
+    for key in ["h_prior", "is_directed", "force_stopped"]:
+        h5_group.attrs[key] = bool(dag_d[key])
+
+
+def load_dag_hdf5(h5_group) -> dict:
+    """Read one DAG dictionary from an open h5py group.
+
+    Numpy arrays are converted back to PyTorch tensors with their original
+    dtypes.  JSON-encoded attributes are decoded to their original Python types.
+
+    Args:
+        h5_group: An open ``h5py.Group`` previously written by
+            :func:`dump_dag_hdf5`.
+
+    Returns:
+        DAG payload dictionary compatible with the format returned by
+        ``compute_dags``.
+    """
+    import json
+
+    g = h5_group["dag"]
+    dag = pyg.data.Data(
+        x=th.from_numpy(g["x"][:]),
+        edge_index=th.from_numpy(g["edge_index"][:]),
+        edge_attr=th.from_numpy(g["edge_attr"][:]),
+    )
+    dag.node_feat_idxs = th.from_numpy(g["node_feat_idxs"][:])
+    dag.edge_feat_idxs = th.from_numpy(g["edge_feat_idxs"][:])
+
+    dag_d: dict = {
+        "dag": dag,
+        "formula_peak_mzs": th.from_numpy(h5_group["formula_peak_mzs"][:]),
+        "formula_peak_probs": th.from_numpy(h5_group["formula_peak_probs"][:]),
+        "edges_min_depth": h5_group["edges_min_depth"][:],
+        "nodes_min_depth": h5_group["nodes_min_depth"][:],
+    }
+
+    # JSON-encoded variable-structure fields
+    dag_d["idx_to_formula"] = {
+        int(k): v for k, v in json.loads(h5_group.attrs["idx_to_formula"]).items()
+    }
+    # Stored as list-of-lists; restore as list-of-sets to match original type
+    dag_d["idx_by_h_delta"] = [set(s) for s in json.loads(h5_group.attrs["idx_by_h_delta"])]
+    dag_d["dag_num_edges_by_depth"] = {
+        int(k): v for k, v in json.loads(h5_group.attrs["dag_num_edges_by_depth"]).items()
+    }
+    dag_d["dag_num_nodes_by_depth"] = {
+        int(k): v for k, v in json.loads(h5_group.attrs["dag_num_nodes_by_depth"]).items()
+    }
+
+    # Integer scalars
+    for key in [
+        "max_depth",
+        "reached_depth",
+        "max_h_transfer",
+        "dag_num_edges",
+        "dag_num_nodes",
+        "dag_num_nodes_nb",
+        "node_feature_size",
+        "edge_feature_size",
+    ]:
+        dag_d[key] = int(h5_group.attrs[key])
+
+    # Float scalars
+    for key in ["dag_sparsity", "formula_redundancy"]:
+        dag_d[key] = float(h5_group.attrs[key])
+
+    # Bool scalars
+    for key in ["h_prior", "is_directed", "force_stopped"]:
+        dag_d[key] = bool(h5_group.attrs[key])
+
+    return dag_d
+
+
 def save_frag_d(frag_d: dict, mol_id: str, frag_dp: str, is_compressed: bool = False):
     """save frag_d use pickle if is_compressed save as .pbz
     Args:
