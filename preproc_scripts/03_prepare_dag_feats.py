@@ -48,6 +48,16 @@ def main(args):
     # Setup logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+    if args.compress_dags and args.compress_format not in {"gz", "bz2"}:
+        raise ValueError(
+            f"Invalid --compress_format '{args.compress_format}'. Expected one of: 'gz', 'bz2'."
+        )
+
+    if args.use_lmdb and args.compress_dags:
+        logging.info(
+            "--compress_dags is ignored when --use_lmdb=True because DAGs are stored in LMDB."
+        )
+
     elements = args.elements
     dsets = args.dsets
     # init wandb
@@ -248,10 +258,14 @@ def main(args):
                     txn.commit()
                     txn = env.begin(write=True)
             else:
-                # write individual pickle file per molecule
-                fp = os.path.join(dag_dp, f"{mol_id:08d}.pkl")
-                with open(fp, "wb") as pf:
-                    pickle.dump(dag_d, pf, protocol=pickle.HIGHEST_PROTOCOL)
+                # Write one artifact per molecule when LMDB storage is disabled.
+                fp = frag_utils.get_dag_output_path(
+                    dag_dp=dag_dp,
+                    mol_id=mol_id,
+                    compress_dags=args.compress_dags,
+                    compress_format=args.compress_format,
+                )
+                frag_utils.dump_dag_pickle(fp, dag_d)
         if not args.skip_stats:
             frag_results.append(dag_d)
 
@@ -528,7 +542,17 @@ if __name__ == "__main__":
         "--compress_dags",
         type=booltype,
         default=True,
-        help="Whether to compress DAG files with gzip",
+        help=(
+            "Whether to compress per-molecule DAG files when --use_lmdb=False. "
+            "Ignored when --use_lmdb=True."
+        ),
+    )
+    parser.add_argument(
+        "--compress_format",
+        type=str,
+        default="bz2",
+        choices=["gz", "bz2"],
+        help="Compression format for DAG files when --compress_dags=True and --use_lmdb=False.",
     )
     parser.add_argument(
         "--wandb_run_name", type=str, help="Custom W&B run name (required when wandb_mode enabled)"

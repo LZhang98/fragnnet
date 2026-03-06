@@ -1,6 +1,6 @@
 # from copy import deepcopy
-import _pickle as cPickle
 import bz2
+import gzip
 import os
 import pickle
 import sys
@@ -1275,6 +1275,96 @@ def get_frag_fp(mol_id: str, frag_dp: str, is_compressed: bool):
     return fp
 
 
+def _dump_pickle_file(fp: str, payload: dict) -> None:
+    """Write a pickled payload using compression inferred from file suffix."""
+    if fp.endswith((".pkl", ".pickle")):
+        with open(fp, "wb") as pf:
+            pickle.dump(payload, pf, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+
+    if fp.endswith((".pkl.gz", ".pickle.gz")):
+        with gzip.open(fp, "wb") as pf:
+            pickle.dump(payload, pf, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+
+    if fp.endswith((".pkl.bz2", ".pickle.bz2")):
+        with bz2.open(fp, "wb") as pf:
+            pickle.dump(payload, pf, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+
+    raise ValueError(
+        f"Unsupported pickle output extension for '{fp}'. "
+        "Expected .pkl/.pickle with optional .gz or .bz2"
+    )
+
+
+def _load_pickle_file(fp: str):
+    """Read a pickled payload using compression inferred from file suffix."""
+    if fp.endswith((".pkl", ".pickle")):
+        with open(fp, "rb") as pf:
+            return pickle.load(pf)
+
+    if fp.endswith((".pkl.gz", ".pickle.gz")):
+        with gzip.open(fp, "rb") as pf:
+            return pickle.load(pf)
+
+    if fp.endswith((".pkl.bz2", ".pickle.bz2")):
+        with bz2.open(fp, "rb") as pf:
+            return pickle.load(pf)
+
+    raise ValueError(
+        f"Unsupported pickle input extension for '{fp}'. "
+        "Expected .pkl/.pickle with optional .gz or .bz2"
+    )
+
+
+def get_dag_output_path(
+    dag_dp: str,
+    mol_id: str | int,
+    compress_dags: bool,
+    compress_format: str,
+) -> str:
+    """Build output path for one DAG artifact.
+
+    Args:
+        dag_dp: DAG output directory.
+        mol_id: Molecule identifier.
+        compress_dags: Whether per-file DAG outputs should be compressed.
+        compress_format: Compression format, either ``"gz"`` or ``"bz2"``.
+
+    Returns:
+        Full output path for the DAG file.
+
+    Raises:
+        ValueError: If ``compress_format`` is invalid when compression is enabled.
+    """
+    base_fp = os.path.join(dag_dp, f"{int(mol_id):08d}.pkl")
+    if not compress_dags:
+        return base_fp
+
+    if compress_format == "gz":
+        return f"{base_fp}.gz"
+    if compress_format == "bz2":
+        return f"{base_fp}.bz2"
+
+    raise ValueError(
+        f"Invalid compression format '{compress_format}'. Expected one of: 'gz', 'bz2'."
+    )
+
+
+def dump_dag_pickle(fp: str, dag_d: dict) -> None:
+    """Write a DAG dictionary to disk with extension-aware compression.
+
+    Args:
+        fp: Output path ending with ``.pkl``, ``.pkl.gz``, or ``.pkl.bz2``.
+        dag_d: DAG payload dictionary.
+
+    Raises:
+        ValueError: If file suffix is unsupported.
+    """
+    _dump_pickle_file(fp, dag_d)
+
+
 def save_frag_d(frag_d: dict, mol_id: str, frag_dp: str, is_compressed: bool = False):
     """save frag_d use pickle if is_compressed save as .pbz
     Args:
@@ -1285,15 +1375,7 @@ def save_frag_d(frag_d: dict, mol_id: str, frag_dp: str, is_compressed: bool = F
     """
 
     fp = get_frag_fp(mol_id, frag_dp, is_compressed)
-    try:
-        if not is_compressed:
-            with open(fp, "wb") as fileout:
-                pickle.dump(frag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
-        else:
-            with bz2.BZ2File(fp, "wb") as fileout:
-                cPickle.dump(frag_d, fileout)
-    except Exception as e:
-        print(e, fp)
+    _dump_pickle_file(fp, frag_d)
 
 
 def load_frag_d(mol_id: str, frag_dp: str, is_compressed: bool = False):
@@ -1305,36 +1387,32 @@ def load_frag_d(mol_id: str, frag_dp: str, is_compressed: bool = False):
     Returns:
         _type_: _description_
     """
-    frag_d = None
-
     if os.path.isfile(frag_dp) and str(frag_dp).endswith(".tar"):
         frag_filename = get_frag_name(mol_id, is_compressed)
         with tarfile.open(frag_dp, "r") as tar_read:
             for member in tar_read.getmembers():
                 if member.name == frag_filename:
                     f = tar_read.extractfile(member)
+                    if f is None:
+                        raise ValueError(
+                            f"Could not extract '{frag_filename}' from archive '{frag_dp}'"
+                        )
                     content = f.read()
-                    frag_d = pickle.loads(bz2.decompress(content))
-                    break
+                    if frag_filename.endswith(".bz2"):
+                        return pickle.loads(bz2.decompress(content))
+                    return pickle.loads(content)
+        return None
 
     elif os.path.isfile(frag_dp) and str(frag_dp).endswith(".zip"):
         frag_filename = get_frag_name(mol_id, is_compressed)
         with ZipFile(frag_dp, "r") as zip_read, zip_read.open(frag_filename) as f:
             content = f.read()
             if frag_filename.endswith("bz2"):
-                frag_d = pickle.loads(bz2.decompress(content))
-            else:
-                frag_d = pickle.loads(content)
-    else:
-        fp = get_frag_fp(mol_id, frag_dp, is_compressed)
-        if not is_compressed:
-            with open(fp, "rb") as filein:
-                frag_d = pickle.load(filein)
-        else:
-            with bz2.BZ2File(fp, "rb") as filein:
-                frag_d = cPickle.load(filein)
+                return pickle.loads(bz2.decompress(content))
+            return pickle.loads(content)
 
-    return frag_d
+    fp = get_frag_fp(mol_id, frag_dp, is_compressed)
+    return _load_pickle_file(fp)
 
 
 def _hash_label(label, digest_size=32):
