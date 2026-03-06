@@ -206,14 +206,17 @@ def main(args):
         )
 
     print("> Running frag gen")
-    env = lmdb.open(
-        dag_dp,
-        map_size=args.map_size,  # 1TB
-        meminit=False,
-        map_async=True
-    )
-    
-    txn = env.begin(write=True)
+    if args.use_lmdb:
+        env = lmdb.open(
+            dag_dp,
+            map_size=args.map_size,
+            meminit=False,
+            map_async=True,
+        )
+        txn = env.begin(write=True)
+    else:
+        env = None
+        txn = None
     frag_results_gen = data_utils.par_apply(
         iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
     )
@@ -225,21 +228,28 @@ def main(args):
         desc="Compute Frags",
         disable_tqdm=args.disable_tqdm,
     ):  
-        mol_id, dag_d=fr
-        
-        if len(dag_d)==0:
+        mol_id, dag_d = fr
+
+        if len(dag_d) == 0:
             print("error in ", mol_id)
         else:
-            meta_info[mol_id]=[dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
-            txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
-            if (int(mol_id)+1)%200==0:
-                txn.commit()
-                txn = env.begin(write=True)
+            meta_info[mol_id] = [dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
+            if args.use_lmdb:
+                txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
+                if (int(mol_id) + 1) % 200 == 0:
+                    txn.commit()
+                    txn = env.begin(write=True)
+            else:
+                # write individual pickle file per molecule
+                fp = os.path.join(dag_dp, f"{mol_id:08d}.pkl")
+                with open(fp, "wb") as pf:
+                    pickle.dump(dag_d, pf, protocol=pickle.HIGHEST_PROTOCOL)
         if not args.skip_stats:
             frag_results.append(dag_d)
-    txn.commit()
-    env.sync()
-    env.close()
+    if args.use_lmdb:
+        txn.commit()
+        env.sync()
+        env.close()
     with open(os.path.join(args.frag_dp, "meta_info.json"), "w") as f:
         f.write(json.dumps(meta_info))
     if args.skip_stats:
@@ -564,8 +574,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "--map_size",
         type=int,
-        default=10*1024**4,
-        help="map size of saving"
+        default=10*1024**3,
+        help="map size for LMDB (bytes). Default 10*1024**3 = 10 GiB"
+    )
+    parser.add_argument(
+        "--use_lmdb",
+        type=booltype,
+        default=True,
+        help=(
+            "Whether to use LMDB to store DAGs. If False, each DAG will be saved as an "
+            "individual pickle file under <frag_dp>/dags/. Default True."
+        ),
     )
     parser.add_argument(
         "--multi_cut_bfs",

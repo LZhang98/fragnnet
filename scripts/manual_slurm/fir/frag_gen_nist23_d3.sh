@@ -112,7 +112,8 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --isotopes ${ISO_FALSE} \
     --frag_mode ${FRAG_MODE} \
     --max_h_transfer ${MAX_H_TRANSFER} \
-    --dsets ${DSETS}
+    --dsets ${DSETS} \
+    --use_lmdb False
 
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/
