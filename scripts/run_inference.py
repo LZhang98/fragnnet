@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import time
+from typing import cast
 
 import pandas as pd
 from tqdm import tqdm
@@ -143,7 +144,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--frag_dp",
         type=str,
-        required=True,
+        required=False,
+        default=None,
         help="Directory containing precomputed fragment graphs; if None, will auto-generate in temp directory",
     )
 
@@ -227,7 +229,7 @@ if __name__ == "__main__":
         try:
             c_idx = int(f.split("_")[-1].split(".")[0])
             max_chunk_idx = max(max_chunk_idx, c_idx)
-        except:
+        except Exception:
             pass
 
         fp = os.path.join(args.save_dp, f)
@@ -290,6 +292,8 @@ if __name__ == "__main__":
             else None
         )
         if config_d["model_type"] in ["frag_gnn", "fragnnet"]:
+            if temp_frag_dir is None:
+                raise RuntimeError("Temporary fragment directory could not be created")
             print(f"> Using temporary fragment directory: {temp_frag_dir.name}")
             config_d["frag_dp"] = temp_frag_dir.name
 
@@ -307,11 +311,11 @@ if __name__ == "__main__":
                         config_d["num_hs"],  # Maximum hydrogen transfers
                         150,  # Maximum time for fragmentation (seconds)
                         False,  # Include isotopes
-                        False,  # Number of isomorphic fragments
-                        -1,  # Random seed (-1 for no seed)
-                        config_d["frag_dp"],  # Fragment directory (temporary)
-                        False,  # Don't use cached fragments
-                        config_d["frag_params"]["compressed"],  # Compression flag
+                        False,  # Collapse isomorphic fragments
+                        -1,  # WL hashing max iterations (-1 disables hash computation)
+                        False,  # Disable multi-cut BFS
+                        2,  # Maximum cut size if multi-cut BFS is enabled
+                        False,  # Disable SMARTS prepass
                     ]
                 )
 
@@ -324,18 +328,33 @@ if __name__ == "__main__":
             frag_results = data_utils.par_apply(
                 iter(dag_feat_inputs_l), frag_utils.timed_get_dags, True, return_as_generator=True
             )
+            if frag_results is None:
+                raise RuntimeError("Parallel fragment generation did not return any results")
+            frag_results_iter = cast("list[tuple[str, dict]]", frag_results)
             # Consume the generator to complete all fragment computations
-            for res in tqdm(frag_results, total=len(dag_feat_inputs_l), desc="Computing Fragments"):
-                continue
+            failed_frag_count = 0
+            for mol_id, dag_d in tqdm(
+                frag_results_iter, total=len(dag_feat_inputs_l), desc="Computing Fragments"
+            ):
+                if not dag_d:
+                    failed_frag_count += 1
+                    continue
+                frag_utils.save_frag_d(
+                    frag_d=dag_d,
+                    mol_id=mol_id,
+                    frag_dp=config_d["frag_dp"],
+                    is_compressed=config_d["frag_params"]["compressed"],
+                )
             end = time.time()
             time_cost = end - start
             print(
                 f"> Fragment generation completed in {time_cost:.2f}s ({len(dag_feat_inputs_l) / time_cost:.2f} mol/s)"
             )
+            print(f"> Fragment generation failures: {failed_frag_count}")
 
     # Filter input data to only include molecules with successfully generated fragments
     print(">> Filtering molecules without fragments...")
-    all_frags = set([f.split(".")[0] for f in os.listdir(config_d["frag_dp"])])
+    all_frags = {f.split(".")[0] for f in os.listdir(config_d["frag_dp"])}
     print(f">> Found {len(all_frags)} fragment files")
     mol_df = mol_df[mol_df["mol_id"].astype(str).isin(all_frags)]
     print(f"> Molecules after filtering: {len(mol_df)}")

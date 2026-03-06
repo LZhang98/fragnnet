@@ -2,7 +2,10 @@ import argparse
 import json
 import logging
 import os
+import pickle
+from typing import cast
 
+import lmdb
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -11,8 +14,7 @@ import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
-import lmdb
-import pickle
+
 
 def print_and_log(name: str, series: pd.Series, wandb_flag: bool, stats_d: dict) -> None:
     """Log series statistics to dictionary and optionally to W&B.
@@ -196,9 +198,6 @@ def main(args):
                 args.isotopes,
                 args.nb_isomorphic,
                 args.wl_max_iterations,
-                args.use_cached_dag,  # use_cached
-                args.compress_dags,   # compressed
-                args.save_dag,        # save_dag (must precede multi_cut_bfs in signature)
                 args.multi_cut_bfs,
                 args.max_cut_size,
                 args.smarts_prepass,
@@ -214,20 +213,25 @@ def main(args):
             map_async=True,
         )
         txn = env.begin(write=True)
+        if txn is None:
+            raise RuntimeError("Failed to open LMDB write transaction")
     else:
         env = None
         txn = None
     frag_results_gen = data_utils.par_apply(
         iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
     )
+    if frag_results_gen is None:
+        raise RuntimeError("Parallel fragment generation did not return any results")
+    frag_results_iter = cast("list[tuple[str, dict]]", frag_results_gen)
     frag_results = []
-    meta_info={}
+    meta_info = {}
     for fr in progress_wrapper(
-        frag_results_gen,
+        frag_results_iter,
         total=len(mol_input_rows),
         desc="Compute Frags",
         disable_tqdm=args.disable_tqdm,
-    ):  
+    ):
         mol_id, dag_d = fr
 
         if len(dag_d) == 0:
@@ -235,7 +239,11 @@ def main(args):
         else:
             meta_info[mol_id] = [dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
             if args.use_lmdb:
-                txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
+                if txn is None or env is None:
+                    raise RuntimeError("LMDB environment was not initialized")
+                txn.put(
+                    f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL)
+                )
                 if (int(mol_id) + 1) % 200 == 0:
                     txn.commit()
                     txn = env.begin(write=True)
@@ -246,14 +254,17 @@ def main(args):
                     pickle.dump(dag_d, pf, protocol=pickle.HIGHEST_PROTOCOL)
         if not args.skip_stats:
             frag_results.append(dag_d)
+
     if args.use_lmdb:
+        if txn is None or env is None:
+            raise RuntimeError("LMDB environment was not initialized")
         txn.commit()
         env.sync()
         env.close()
     with open(os.path.join(args.frag_dp, "meta_info.json"), "w") as f:
         f.write(json.dumps(meta_info))
     if args.skip_stats:
-        return 
+        return
 
     print("> Fragments Computed")
     # all the following code are not debuged
@@ -569,13 +580,13 @@ if __name__ == "__main__":
         "--skip_stats",
         type=booltype,
         default=False,
-        help="whether skip stats compute and only compute and save the DAGs "
+        help="whether skip stats compute and only compute and save the DAGs ",
     )
     parser.add_argument(
         "--map_size",
         type=int,
-        default=10*1024**3,
-        help="map size for LMDB (bytes). Default 10*1024**3 = 10 GiB"
+        default=10 * 1024**3,
+        help="map size for LMDB (bytes). Default 10*1024**3 = 10 GiB",
     )
     parser.add_argument(
         "--use_lmdb",

@@ -1458,13 +1458,10 @@ def timed_get_dags(
     isotopes: bool,
     nb_isomorphic: bool,
     wl_max_iterations: int,
-    use_cached=True,
-    compressed=False,
-    save_dag=True,
     multi_cut_bfs: bool = False,
     max_cut_size: int = 2,
     smarts_prepass: bool = False,
-) -> dict:
+) -> tuple:
     try:
         mol_d = extract_mol_info(mol)
         # this maybe dangers in multi processing because of scopes
