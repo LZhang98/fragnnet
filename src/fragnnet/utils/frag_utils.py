@@ -1109,7 +1109,12 @@ def compute_dags(
         from_idx, to_idx = edge
         from_cc_mask = nodes_mask_matrix[from_idx]
         to_cc_mask = nodes_mask_matrix[to_idx]
-        diff_cc_mask = from_cc_mask - to_cc_mask
+        # Use signed subtraction to avoid uint8 underflow (0 - 1 = 255 in uint8)
+        diff_cc_mask = np.clip(
+            from_cc_mask.astype(np.int16) - to_cc_mask.astype(np.int16), 0, 1
+        ).astype(MASK_DTYPE)
+        # compute_cc_h_floor/cap expect atom indices, not a bitmask
+        diff_atom_ids = cc_bit_mask_to_atom_idx(diff_cc_mask)
 
         from_formula_mask = node_base_formula_matrix[from_idx]
         to_formula_mask = node_base_formula_matrix[to_idx]
@@ -1117,7 +1122,7 @@ def compute_dags(
         diff_formula_mask[CANONICAL_H_IDX] = 0  # we don't care Hs for this
 
         diff_h_floor = compute_cc_h_floor(
-            diff_cc_mask,
+            diff_atom_ids,
             mol_d["ve_arr"],
             mol_d["sbond_arr"],
             0,
@@ -1125,7 +1130,7 @@ def compute_dags(
             mol_d["atoms_to_bonds"],
             mol_d["bond_mask_arr"],
         )
-        diff_h_cap = compute_cc_h_cap(diff_cc_mask, mol_d["ve_arr"], mol_d["sbond_arr"], 0)
+        diff_h_cap = compute_cc_h_cap(diff_atom_ids, mol_d["ve_arr"], mol_d["sbond_arr"], 0)
         assert diff_h_floor <= diff_h_cap, (diff_h_floor, diff_h_cap)
         assert diff_h_floor >= 0, diff_h_floor
         diff_h_range = [diff_h_floor, diff_h_cap]
