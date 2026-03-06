@@ -1,4 +1,4 @@
-"""Unit tests for preproc_scripts/08_prepare_classyfire.py.
+"""Unit tests for preproc_scripts/07_prepare_classyfire.py.
 
 Tests validate:
 - TSV loading from a zip archive
@@ -9,22 +9,21 @@ Tests validate:
 """
 
 import importlib.util
-import io
 import zipfile
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Module loader
 # ---------------------------------------------------------------------------
 
+
 def load_module():
-    """Load preproc_scripts/08_prepare_classyfire.py as a Python module."""
+    """Load preproc_scripts/07_prepare_classyfire.py as a Python module."""
     repo_root = Path(__file__).resolve().parent.parent
-    script_path = repo_root / "preproc_scripts" / "08_prepare_classyfire.py"
+    script_path = repo_root / "preproc_scripts" / "07_prepare_classyfire.py"
     spec = importlib.util.spec_from_file_location("prepare_classyfire", str(script_path))
     if spec is None or spec.loader is None:
         raise FileNotFoundError(f"Unable to load module spec from {script_path}")
@@ -80,7 +79,11 @@ def make_mol_df() -> pd.DataFrame:
                 "CC(=O)Oc1ccccc1C(=O)O",
                 "CCO",  # ethanol - not in ClassyFire fixture
             ],
-            "inchikey_s": ["RYYVLZVUVIJVGH-UHFFFAOYSA-N", "BSYNRYMUTXBXSQ-UHFFFAOYSA-N", "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"],
+            "inchikey_s": [
+                "RYYVLZVUVIJVGH-UHFFFAOYSA-N",
+                "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
+                "LFQSCWFLJHTTHZ-UHFFFAOYSA-N",
+            ],
         }
     )
 
@@ -89,14 +92,23 @@ def make_mol_df() -> pd.DataFrame:
 # Tests: load_classyfire_tsv
 # ---------------------------------------------------------------------------
 
+
 def test_load_classyfire_tsv_basic(mod, tmp_path):
     """TSV is loaded correctly from a valid zip archive."""
     zip_path = make_cf_zip(CF_TSV_CONTENT, tmp_path)
     df = mod.load_classyfire_tsv(zip_path)
     assert len(df) == 3
     assert list(df.columns) == [
-        "sid", "smiles", "kingdom", "superklass", "klass", "subklass",
-        "direct_parent", "geometric_descriptor", "alternative_parents", "substituents",
+        "sid",
+        "smiles",
+        "kingdom",
+        "superklass",
+        "klass",
+        "subklass",
+        "direct_parent",
+        "geometric_descriptor",
+        "alternative_parents",
+        "substituents",
     ]
     assert df["klass"].iloc[0] == "purines and purine derivatives"
 
@@ -124,6 +136,7 @@ def test_load_classyfire_tsv_multiple_tsv(mod, tmp_path):
 # Tests: parse_semicolon_list
 # ---------------------------------------------------------------------------
 
+
 def test_parse_semicolon_list_normal(mod):
     """Semicolon-separated string is split and stripped correctly."""
     result = mod.parse_semicolon_list("azacyclic compounds;purines;xanthines")
@@ -143,7 +156,6 @@ def test_parse_semicolon_list_empty_string(mod):
 
 def test_parse_semicolon_list_nan(mod):
     """NaN / None returns empty list without raising."""
-    import math
     assert mod.parse_semicolon_list(float("nan")) == []
     assert mod.parse_semicolon_list(None) == []
 
@@ -157,6 +169,7 @@ def test_parse_semicolon_list_whitespace(mod):
 # ---------------------------------------------------------------------------
 # Tests: canonicalize_smiles_series
 # ---------------------------------------------------------------------------
+
 
 def test_canonicalize_smiles_series_known(mod):
     """Caffeine SMILES in non-canonical form is canonicalized consistently."""
@@ -187,6 +200,7 @@ def test_canonicalize_smiles_series_empty(mod):
 # Tests: build_mol_classyfire_df
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def cf_df_raw(mod, tmp_path):
     """Load the synthetic ClassyFire DataFrame."""
@@ -208,9 +222,18 @@ def test_build_output_columns(mod, cf_df_raw):
     """Output has exactly the expected columns."""
     mol_df = make_mol_df()
     result = mod.build_mol_classyfire_df(mol_df, cf_df_raw)
-    assert list(result.columns) == ["mol_id", "smiles", "inchikey", "kingdom", "superklass",
-                                     "klass", "subklass", "direct_parent",
-                                     "alternative_parents", "substituents"]
+    assert list(result.columns) == [
+        "mol_id",
+        "smiles",
+        "inchikey",
+        "kingdom",
+        "superklass",
+        "klass",
+        "subklass",
+        "direct_parent",
+        "alternative_parents",
+        "substituents",
+    ]
 
 
 def test_build_list_columns(mod, cf_df_raw):
@@ -266,9 +289,18 @@ def test_build_all_missing(mod):
     )
     result = mod.build_mol_classyfire_df(mol_df, cf_df)
     assert len(result) == 0
-    assert list(result.columns) == ["mol_id", "smiles", "inchikey", "kingdom", "superklass",
-                                     "klass", "subklass", "direct_parent",
-                                     "alternative_parents", "substituents"]
+    assert list(result.columns) == [
+        "mol_id",
+        "smiles",
+        "inchikey",
+        "kingdom",
+        "superklass",
+        "klass",
+        "subklass",
+        "direct_parent",
+        "alternative_parents",
+        "substituents",
+    ]
 
 
 def test_build_reset_index(mod, cf_df_raw):
