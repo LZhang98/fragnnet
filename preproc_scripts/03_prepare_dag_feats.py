@@ -193,29 +193,23 @@ def main(args):
         return result_df
 
     print("> Compute Fragments")
-    mol_input_rows = []
-    for _, row in progress_wrapper(
-        mol_df.iterrows(),
-        total=mol_df.shape[0],
-        desc="prepare inputs",
-        disable_tqdm=args.disable_tqdm,
-    ):
-        mol_input_rows.append(
-            [
-                row["mol"],
-                row["mol_id"],
-                args.max_depth,
-                True,  # h_prior
-                args.max_h_transfer,
-                args.max_time,
-                args.isotopes,
-                args.nb_isomorphic,
-                args.wl_max_iterations,
-                args.multi_cut_bfs,
-                args.max_cut_size,
-                args.smarts_prepass,
-            ]
-        )
+    mol_input_rows = (
+        [
+            row["mol"],
+            row["mol_id"],
+            args.max_depth,
+            True,  # h_prior
+            args.max_h_transfer,
+            args.max_time,
+            args.isotopes,
+            args.nb_isomorphic,
+            args.wl_max_iterations,
+            args.multi_cut_bfs,
+            args.max_cut_size,
+            args.smarts_prepass,
+        ]
+        for _, row in mol_df.iterrows()
+    )
 
     print("> Running frag gen")
     if args.use_lmdb:
@@ -250,7 +244,7 @@ def main(args):
     meta_info = {}
     for fr in progress_wrapper(
         frag_results_iter,
-        total=len(mol_input_rows),
+        total=mol_df.shape[0],
         desc="Compute Frags",
         disable_tqdm=args.disable_tqdm,
     ):
@@ -284,7 +278,15 @@ def main(args):
                 )
                 frag_utils.dump_dag_pickle(fp, dag_d)
         if not args.skip_stats:
-            frag_results.append(dag_d)
+            # Only retain the lightweight stats keys — the DGL graph (dag_d["dag"])
+            # is already serialised to disk above and must not be held in memory.
+            _STATS_KEYS = {
+                "max_depth", "formula_peak_mzs", "formula_peak_probs",
+                "idx_to_formula", "dag_num_edges", "dag_num_nodes",
+                "dag_sparsity", "dag_num_nodes_nb", "formula_redundancy",
+                "idx_by_h_delta",
+            }
+            frag_results.append({k: dag_d[k] for k in _STATS_KEYS if k in dag_d})
 
     if args.use_lmdb:
         if txn is None or env is None:
