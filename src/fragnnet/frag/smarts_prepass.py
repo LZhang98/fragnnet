@@ -43,6 +43,9 @@ class SmartsFragRule:
         filter_bond_map_nums: Optional pair of map numbers.  If the matched atoms
             are directly bonded in the original graph the rule is skipped — used
             to exclude cyclic cases already covered by BFS cut=2.
+        min_num_atoms: Minimum number of atoms required for this rule to apply.
+            Rules are skipped early if the molecule has fewer atoms, avoiding
+            unnecessary SMARTS matching on small molecules.
 
     Example:
         >>> rule = SmartsFragRule(
@@ -51,6 +54,7 @@ class SmartsFragRule:
         ...     cut_bond_map_pairs=[(1, 2), (3, 4)],
         ...     merge_outer_map_nums=[1, 4],
         ...     filter_bond_map_nums=(1, 4),
+        ...     min_num_atoms=4,
         ... )
     """
 
@@ -59,6 +63,7 @@ class SmartsFragRule:
     cut_bond_map_pairs: list[tuple[int, int]]
     merge_outer_map_nums: list[int] = field(default_factory=list)
     filter_bond_map_nums: tuple[int, int] | None = None
+    min_num_atoms: int = 0
 
 
 FRAG_RULES: list[SmartsFragRule] = [
@@ -72,6 +77,7 @@ FRAG_RULES: list[SmartsFragRule] = [
         cut_bond_map_pairs=[(1, 2), (3, 4)],
         merge_outer_map_nums=[1, 4],
         filter_bond_map_nums=(1, 4),
+        min_num_atoms=4,
     ),
     # crf12_1: acyclic 1,3-elimination (double bond between inner atoms)
     # A–B=C–D  →  A·D (new bond) + B≡C
@@ -81,6 +87,7 @@ FRAG_RULES: list[SmartsFragRule] = [
         cut_bond_map_pairs=[(1, 2), (3, 4)],
         merge_outer_map_nums=[1, 4],
         filter_bond_map_nums=(1, 4),
+        min_num_atoms=4,
     ),
     # crf13_2: CO2 loss from acyclic ester
     # R–C(=O)–O–R'  →  CO2  +  R·R' (new R-R' bond)
@@ -92,8 +99,19 @@ FRAG_RULES: list[SmartsFragRule] = [
         cut_bond_map_pairs=[(1, 2), (4, 5)],
         merge_outer_map_nums=[1, 5],
         filter_bond_map_nums=(1, 5),
+        min_num_atoms=5,
     ),
 ]
+
+# Pre-compiled SMARTS patterns (keyed by rule name) — avoid recompiling per molecule.
+_COMPILED_PATTERNS: dict[str, Chem.Mol] = {}
+
+
+def _get_compiled_pattern(rule: SmartsFragRule) -> Chem.Mol | None:
+    """Return a cached compiled SMARTS pattern for *rule*, compiling on first call."""
+    if rule.name not in _COMPILED_PATTERNS:
+        _COMPILED_PATTERNS[rule.name] = Chem.MolFromSmarts(rule.reactant_smarts)
+    return _COMPILED_PATTERNS[rule.name]
 
 
 def _union_find_ccs_all(
@@ -119,7 +137,8 @@ def _union_find_ccs_all(
         List of node-mask arrays (shape ``(num_nodes,)`` uint8), one per CC.
         Empty list if no active atoms.
     """
-    parent = np.arange(num_nodes, dtype=np.int32)
+    # Use a Python list for parent to avoid numpy indexing overhead in the hot loop.
+    parent = list(range(num_nodes))
 
     def find(x: int) -> int:
         while parent[x] != x:
@@ -152,23 +171,25 @@ def _union_find_ccs_all(
     return cc_masks
 
 
-def _find_bond_idx(atom_a: int, atom_b: int, edges: np.ndarray, num_edges: int) -> int:
-    """Find the edge-array index for the bond between atom_a and atom_b.
+def _build_edge_dict(edges: np.ndarray, num_edges: int) -> dict[tuple[int, int], int]:
+    """Build a reverse lookup from (atom_u, atom_v) → edge index.
+
+    Both orderings (u, v) and (v, u) are stored so lookups are O(1) regardless
+    of the direction the edge was stored in the array.
 
     Args:
-        atom_a: First atom index.
-        atom_b: Second atom index.
         edges: Shape ``(MAX_NUM_EDGES, 2)`` int32 — bond endpoints.
         num_edges: Number of real bonds (un-padded prefix length).
 
     Returns:
-        Edge index (0-based) if found, ``-1`` otherwise.
+        Dict mapping ``(atom_a, atom_b)`` to its 0-based edge index.
     """
-    src = edges[:num_edges, 0]
-    dst = edges[:num_edges, 1]
-    mask = ((src == atom_a) & (dst == atom_b)) | ((src == atom_b) & (dst == atom_a))
-    idxs = np.where(mask)[0]
-    return int(idxs[0]) if len(idxs) > 0 else -1
+    d: dict[tuple[int, int], int] = {}
+    for i in range(num_edges):
+        u, v = int(edges[i, 0]), int(edges[i, 1])
+        d[(u, v)] = i
+        d[(v, u)] = i
+    return d
 
 
 def _apply_smarts_prepass(
@@ -207,8 +228,16 @@ def _apply_smarts_prepass(
     root_node_mask = np.ones(num_nodes, dtype=MASK_DTYPE)
     results: list[tuple[np.ndarray, np.ndarray]] = []
 
+    # Fix 1: build (atom_a, atom_b) → edge_idx lookup once per molecule call.
+    edge_dict = _build_edge_dict(edges, num_edges)
+
     for rule in rules:
-        patt = Chem.MolFromSmarts(rule.reactant_smarts)
+        # Fix 3: skip rules that can't match given the molecule size.
+        if rule.min_num_atoms > 0 and num_nodes < rule.min_num_atoms:
+            continue
+
+        # Use pre-compiled SMARTS pattern (avoids recompiling on every molecule).
+        patt = _get_compiled_pattern(rule)
         if patt is None:
             continue
 
@@ -226,17 +255,18 @@ def _apply_smarts_prepass(
                 map_num: match[q_idx] for q_idx, map_num in q_idx_to_map.items()
             }
 
-            # Skip cyclic cases already covered by BFS cut=2
+            # Skip cyclic cases already covered by BFS cut=2.
+            # Fix 1: O(1) dict lookup instead of O(E) np.where scan.
             if rule.filter_bond_map_nums is not None:
                 fa, fb = rule.filter_bond_map_nums
                 mol_a = map_num_to_mol.get(fa)
                 mol_b = map_num_to_mol.get(fb)
                 if mol_a is not None and mol_b is not None:
-                    bond_idx = _find_bond_idx(mol_a, mol_b, edges, num_edges)
+                    bond_idx = edge_dict.get((mol_a, mol_b), -1)
                     if bond_idx != -1 and base_edge_mask[bond_idx] == 1:
                         continue  # atoms directly bonded → cyclic; covered by cut=2
 
-            # Cut the specified bonds in a temporary mask
+            # Cut the specified bonds in a temporary mask.
             work_mask = base_edge_mask.copy()
             valid = True
             for map_a, map_b in rule.cut_bond_map_pairs:
@@ -245,7 +275,7 @@ def _apply_smarts_prepass(
                 if mol_a is None or mol_b is None:
                     valid = False
                     break
-                bond_idx = _find_bond_idx(mol_a, mol_b, edges, num_edges)
+                bond_idx = edge_dict.get((mol_a, mol_b), -1)  # Fix 1: O(1) lookup
                 if bond_idx == -1:
                     valid = False
                     break
@@ -253,6 +283,8 @@ def _apply_smarts_prepass(
             if not valid:
                 continue
 
+            # Fix 2: _union_find_ccs_all now uses Python list for parent array
+            # (avoids numpy element-wise indexing overhead in the union-find loop).
             cc_masks = _union_find_ccs_all(
                 num_nodes, root_node_mask, edges, work_mask, num_edges
             )
