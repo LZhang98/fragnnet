@@ -1233,7 +1233,10 @@ class FraGNNetPL(SpectrumPL):
         Configure optimizers with different learning rates for pre-trained and other parameters.
         """
         # Get LR ratio from finetune config
-        lr_ratio = self.hparams.finetune["pretrained_weights_lr_ratio"]
+        if  self.hparams.finetune:
+            lr_ratio = self.hparams.finetune["pretrained_weights_lr_ratio"]
+        else:
+            lr_ratio = self.hparams.finetune_weights_lr_ratio
 
         # Separate parameters into pre-trained and others
         pretrained_params = [
