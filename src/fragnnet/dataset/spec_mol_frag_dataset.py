@@ -136,7 +136,6 @@ class SpecMolFragDataset(SpecMolDataset):
                 self.mol_df["mol_id"].values, desc="> preload frag", total=len(self.mol_df)
             ):
                 frag_entry =pickle.loads(bytes(self.txn.get(f"{mol_id:08d}".encode())))#load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
-                assert slice is builtins.slice, mol_id
                 total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
                 self.frag_entries[mol_id] = frag_entry
             logger.info(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")

@@ -371,9 +371,13 @@ class SpectrumPL(L.LightningModule):
                 th.max(pred_batch_idxs) + 1,
             )
 
-            metric_d = {
-            }
-
+            if split=="train" or split =="val":
+                metric_d = {
+                k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device)
+                for k in self.auxiliary_metric_names
+                        }
+            else:
+                metric_d={}
             # define aggregation
             agg = "sum" if self.hparams.sum_ints else "amax"
 
@@ -487,11 +491,6 @@ class SpectrumPL(L.LightningModule):
             # local calculations
             # train
             if split=="train" or split =="val":
-                metric_d = {
-                k: -th.ones([batch_size], dtype=true_ints.dtype, device=true_ints.device)
-                for k in self.auxiliary_metric_names
-                        }
-
                 for b_idx in range(batch_size):
                     b_true_mask = true_batch_idxs == b_idx
                     b_pred_mask = pred_batch_idxs == b_idx
