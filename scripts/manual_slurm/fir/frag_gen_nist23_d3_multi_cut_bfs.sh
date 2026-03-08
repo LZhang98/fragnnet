@@ -115,7 +115,7 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --dsets ${DSETS} \
     --multi_cut_bfs True \
     --max_cut_size 2 \
-    --smarts_prepass True \
+    --smarts_prepass False \
     --use_lmdb False
 
 # go to frag directory
