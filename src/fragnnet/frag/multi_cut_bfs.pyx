@@ -171,61 +171,6 @@ cdef int _cc_uf(
 
 
 # ---------------------------------------------------------------------------
-# Build ring-system labels (one per ring bond, -1 for non-ring bonds).
-#
-# Two ring bonds are in the same ring system if they share an atom
-# (directly or transitively). Cross-system pairs can never disconnect
-# a molecule by themselves, so they are pruned from the inner loops.
-#
-# Uses C stack arrays — no heap allocation.
-# ---------------------------------------------------------------------------
-
-cdef void _build_ring_sys_labels_c(
-    int num_nodes,
-    int num_edges,
-    char[::1] ring_edge_mask,
-    int[:, ::1] edges,
-    int[::1] bond_to_sys_out,   # length >= num_edges; caller pre-fills with -1
-) nogil:
-    # Stack arrays (MAX_NUM_EDGES = 512, MAX_NUM_NODES = 128)
-    cdef int parent[512]
-    cdef int root_label[512]   # bond root → contiguous system label (-1 = unseen)
-    cdef int atom_first[128]   # first ring bond seen at each atom (-1 = none)
-    cdef int bi, atom, k, pa, pb, root
-    cdef int num_labels = 0
-
-    for bi in range(512):
-        parent[bi] = bi
-        root_label[bi] = -1
-    for atom in range(128):
-        atom_first[atom] = -1
-
-    # Union ring bonds that share an atom
-    for bi in range(num_edges):
-        if ring_edge_mask[bi] == 0:
-            continue
-        for k in range(2):
-            atom = edges[bi, k]
-            if atom_first[atom] == -1:
-                atom_first[atom] = bi
-            else:
-                pa = _uf_find(parent, atom_first[atom])
-                pb = _uf_find(parent, bi)
-                if pa != pb:
-                    parent[pa] = pb
-
-    # Assign contiguous system labels (bond_to_sys_out already -1 for non-ring)
-    for bi in range(num_edges):
-        if ring_edge_mask[bi] == 0:
-            continue
-        root = _uf_find(parent, bi)
-        if root_label[root] == -1:
-            root_label[root] = num_labels
-            num_labels += 1
-        bond_to_sys_out[bi] = root_label[root]
-
-
-# ---------------------------------------------------------------------------
 # Build CSR adjacency list for live edges (used by bridge-finding).
 #
 # Fills ``adj_start[0..num_nodes]`` (prefix-sum of degrees) and
@@ -444,6 +389,7 @@ def compute_ccs_multi_cut(
     cnp.ndarray ring_edge_mask = None,
     int max_cut_size = 2,
     smarts_seed_pairs = None,
+    ring_bond_groups = None,
 ):
     """Multi-bond-cut BFS fragmentation (Cython).
 
@@ -468,6 +414,13 @@ def compute_ccs_multi_cut(
             in Python.  Each pair is injected as a depth-1 DAG child pair
             identical to BFS cut=1/2 children.  Pass ``None`` (default) to
             skip the SMARTS prepass.
+        ring_bond_groups: List of lists — one entry per SSSR ring, each
+            containing the bond indices of that ring (from
+            ``mol.GetRingInfo().BondRings()``).  Used by cut=2 and cut=3 to
+            pair bonds within the same individual ring rather than the entire
+            ring system, reducing O(r²) candidate pairs for fused ring systems.
+            If ``None``, cut=2/3 are skipped even when ``ring_edge_mask`` is
+            provided.
 
     Returns:
         Tuple ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
@@ -490,19 +443,12 @@ def compute_ccs_multi_cut(
     cdef char[::1] base_edge_mask_mv = np.asarray(edge_mask_arr, dtype=MASK_DTYPE)
 
     # -----------------------------------------------------------------------
-    # Ring-system labels: int[::1] array, -1 for non-ring bonds
+    # Ring-edge mask memoryview (used to count live ring bonds per BFS node).
     # -----------------------------------------------------------------------
-    cdef cnp.ndarray bond_to_sys_np = np.full(num_edges, -1, dtype=np.intc)
-    cdef int[::1] bond_to_sys_mv = bond_to_sys_np
     cdef char[::1] ring_edge_mask_mv
 
     if ring_edge_mask is not None:
         ring_edge_mask_mv = np.asarray(ring_edge_mask, dtype=MASK_DTYPE)
-        _build_ring_sys_labels_c(
-            num_nodes, num_edges,
-            ring_edge_mask_mv, edges_mv,
-            bond_to_sys_mv,
-        )
 
     # -----------------------------------------------------------------------
     # Pre-allocated scratch arrays for CC computation (reused every cut attempt)
@@ -566,7 +512,6 @@ def compute_ccs_multi_cut(
     cdef int i, j, k, ii, jj, kk
     cdef int n_live, n_ring, n_live_nodes
     cdef int n_ccs
-    cdef int si, sj, sk
     cdef int c
 
     # Bridge-finding loop variables
@@ -574,9 +519,8 @@ def compute_ccs_multi_cut(
     cdef int cur_node_id    # cached css_to_id_dict[cur_node_key] per BFS node
     cdef int n_css_unique = 1  # counter: replaces len(css_to_id_dict) in hot path
 
-    # C arrays for live-edge and ring-edge indices (avoid Python list per node)
+    # C array for live-edge indices (avoid Python list per node)
     cdef int live_arr[512]    # MAX_NUM_EDGES
-    cdef int ring_arr[512]
     # Live atom indices — used for selective scratch reset
     cdef int live_node_arr[128]   # MAX_NUM_NODES
 
@@ -631,7 +575,7 @@ def compute_ccs_multi_cut(
             key_ptr = PyBytes_AS_STRING(cur_edge_key)
             memcpy(&cur_edge_mask_mv[0], key_ptr, num_edges)
 
-            # Build live-edge, ring-edge, and live-node C arrays.
+            # Build live-edge and live-node C arrays; count live ring bonds.
             n_live = 0
             n_ring = 0
             n_live_nodes = 0
@@ -641,7 +585,6 @@ def compute_ccs_multi_cut(
                 live_arr[n_live] = i
                 n_live += 1
                 if ring_edge_mask is not None and ring_edge_mask_mv[i] == 1:
-                    ring_arr[n_ring] = i
                     n_ring += 1
             for i in range(num_nodes):
                 if cur_node_mask_mv[i] != 0:
@@ -750,29 +693,30 @@ def compute_ccs_multi_cut(
                             dag_edge_dict[edge_pair] = current_depth + 1
 
             # -----------------------------------------------------------
-            # Cut = 2: pairs of ring edges (same ring system only).
+            # Cut = 2: pairs of ring bonds within the same SSSR ring.
             # Cut=2 consumes 2 depth units: children land at current_depth+2.
+            #
+            # Uses ring_bond_groups (one list per SSSR ring) instead of the
+            # old ring-system grouping.  Cross-ring pairs within a fused
+            # system are skipped entirely — they never produce n_ccs==2 and
+            # the CC test on them was pure overhead.
             # -----------------------------------------------------------
-            if effective_max_cut >= 2 and n_ring >= 2 and current_depth + 2 <= max_depth:
-                sys_groups = {}
-                for ii in range(n_ring):
-                    i = ring_arr[ii]
-                    if disconnected_mv[i]:
-                        continue
-                    si = bond_to_sys_mv[i]
-                    if si not in sys_groups:
-                        sys_groups[si] = [i]
-                    else:
-                        sys_groups[si].append(i)
-
-                for bonds_in_sys in sys_groups.values():
-                    n_sys = len(bonds_in_sys)
+            if effective_max_cut >= 2 and ring_bond_groups is not None and n_ring >= 2 and current_depth + 2 <= max_depth:
+                child_depth_bit = 1 << (current_depth + 2)
+                for ring_bonds in ring_bond_groups:
+                    # Collect bonds from this SSSR ring that are live and
+                    # not already identified as bridges (cut=1 candidates).
+                    live_ring = []
+                    for i in ring_bonds:
+                        if cur_edge_mask_mv[i] == 1 and not disconnected_mv[i]:
+                            live_ring.append(i)
+                    n_sys = len(live_ring)
                     if n_sys < 2:
                         continue
                     for ii in range(n_sys):
-                        i = bonds_in_sys[ii]
+                        i = live_ring[ii]
                         for jj in range(ii + 1, n_sys):
-                            j = bonds_in_sys[jj]
+                            j = live_ring[jj]
 
                             cur_edge_mask_mv[i] = 0
                             cur_edge_mask_mv[j] = 0
@@ -791,7 +735,6 @@ def compute_ccs_multi_cut(
                             if n_ccs != 2:
                                 continue
 
-                            child_depth_bit = 1 << (current_depth + 2)
                             for c in range(2):
                                 child_node_key = PyBytes_FromStringAndSize(
                                     &cc_nodes_s[c, 0], num_nodes)
@@ -820,33 +763,26 @@ def compute_ccs_multi_cut(
                                         dag_edge_dict[edge_pair] = current_depth + 2
 
             # -----------------------------------------------------------
-            # Cut = 3: triples of ring edges — depth 0 only.
+            # Cut = 3: triples of ring bonds within the same SSSR ring —
+            # depth 0 only.
             # Cut=3 consumes 3 depth units: children land at current_depth+3.
             # -----------------------------------------------------------
-            if effective_max_cut >= 3 and current_depth == 0 and n_ring >= 3 and current_depth + 3 <= max_depth:
-                # Reuse sys_groups if already built by cut=2; build it otherwise.
-                if effective_max_cut < 2 or n_ring < 2:
-                    sys_groups = {}
-                    for ii in range(n_ring):
-                        i = ring_arr[ii]
-                        if disconnected_mv[i]:
-                            continue
-                        si = bond_to_sys_mv[i]
-                        if si not in sys_groups:
-                            sys_groups[si] = [i]
-                        else:
-                            sys_groups[si].append(i)
-
-                for bonds_in_sys in sys_groups.values():
-                    n_sys = len(bonds_in_sys)
+            if effective_max_cut >= 3 and ring_bond_groups is not None and current_depth == 0 and n_ring >= 3 and current_depth + 3 <= max_depth:
+                child_depth_bit = 1 << (current_depth + 3)
+                for ring_bonds in ring_bond_groups:
+                    live_ring = []
+                    for i in ring_bonds:
+                        if cur_edge_mask_mv[i] == 1 and not disconnected_mv[i]:
+                            live_ring.append(i)
+                    n_sys = len(live_ring)
                     if n_sys < 3:
                         continue
                     for ii in range(n_sys):
-                        i = bonds_in_sys[ii]
+                        i = live_ring[ii]
                         for jj in range(ii + 1, n_sys):
-                            j = bonds_in_sys[jj]
+                            j = live_ring[jj]
                             for kk in range(jj + 1, n_sys):
-                                k = bonds_in_sys[kk]
+                                k = live_ring[kk]
 
                                 cur_edge_mask_mv[i] = 0
                                 cur_edge_mask_mv[j] = 0
@@ -867,7 +803,6 @@ def compute_ccs_multi_cut(
                                 if n_ccs != 2:
                                     continue
 
-                                child_depth_bit = 1 << (current_depth + 3)
                                 for c in range(2):
                                     child_node_key = PyBytes_FromStringAndSize(
                                         &cc_nodes_s[c, 0], num_nodes)

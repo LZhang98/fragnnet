@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from rdkit import Chem
+
 from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut
 from fragnnet.utils.frag_utils import extract_mol_info, get_fraggen_input_arrays
 
@@ -25,6 +27,7 @@ def _run(smiles: str, max_cut_size: int = 2, max_depth: int = 3) -> dict:
     """Run multi-cut BFS on a SMILES and return result components."""
     mol_d = extract_mol_info(smiles)
     ring_mask = mol_d["ring_bond_mask"]
+    ring_bond_groups = [list(r) for r in mol_d["mol"].GetRingInfo().BondRings()]
     num_nodes, num_edges, node_mask, edges, edge_mask, n2e = get_fraggen_input_arrays(mol_d)
     nodes_mask, nodes_depth, dag_edges, meta = compute_ccs_multi_cut(
         num_nodes,
@@ -37,6 +40,7 @@ def _run(smiles: str, max_cut_size: int = 2, max_depth: int = 3) -> dict:
         time_limit=30,
         ring_edge_mask=ring_mask,
         max_cut_size=max_cut_size,
+        ring_bond_groups=ring_bond_groups,
     )
     return {
         "nodes_mask": nodes_mask,
@@ -670,10 +674,12 @@ class TestPolycyclicCages:
         assert len(r["nodes_mask"]) - 1 == 12
 
     def test_adamantane_cut3_finds_more(self):
-        """Cut=3 unlocks additional ring-system triples → more fragment sizes."""
+        """Cut=3 on adamantane with SSSR grouping: within-ring triples cannot
+        disconnect the cage (bridge bonds outside the ring keep it connected),
+        so cut=3 produces the same fragments as cut=2 for adamantane."""
         r2 = _run(self.ADAMANTANE, max_cut_size=2, max_depth=3)
         r3 = _run(self.ADAMANTANE, max_cut_size=3, max_depth=3)
-        assert len(r3["nodes_mask"]) > len(r2["nodes_mask"])
+        assert len(r3["nodes_mask"]) == len(r2["nodes_mask"])
 
     def test_norbornane_no_cut1_bridges(self):
         r = _run(self.NORBORNANE, max_cut_size=1, max_depth=1)
@@ -842,15 +848,17 @@ class TestCut3TripleBonds:
     """max_cut_size=3 unlocks triple simultaneous ring-bond cuts at depth 0."""
 
     def test_adamantane_cut3_unlocks_new_sizes(self):
-        """Adamantane is 3-edge-connected: cut=3 reaches sizes cut=2 cannot."""
+        """Adamantane with SSSR grouping: within-ring triple cuts cannot
+        disconnect the cage because bridge bonds outside the SSSR ring keep
+        it connected. cut=3 produces the same sizes as cut=2 ({1, 9}).
+        Cross-ring triples (old ring-system behaviour) are no longer tried."""
         r2 = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=2, max_depth=3)
         r3 = _run("C1C2CC3CC1CC(C2)C3", max_cut_size=3, max_depth=3)
         counts2 = set(_atom_counts(r2["nodes_mask"]))
         counts3 = set(_atom_counts(r3["nodes_mask"]))
-        # cut=3 strictly adds sizes not reachable by cut=2
-        assert counts3.issuperset(counts2)
-        assert len(counts3) > len(counts2), (
-            "cut=3 should produce more distinct fragment sizes than cut=2 on adamantane"
+        assert counts3 == counts2, (
+            f"Expected same sizes for cut=2 and cut=3 on adamantane, "
+            f"got cut2={sorted(counts2)} cut3={sorted(counts3)}"
         )
 
     def test_cut3_no_duplicates(self):

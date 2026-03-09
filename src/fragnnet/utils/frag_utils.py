@@ -845,6 +845,11 @@ def compute_dags(
     edge_mask = edge_mask.astype(MASK_DTYPE)
     if multi_cut_bfs:
         ring_edge_mask = get_ring_edge_mask(mol_d["mol"], num_edges)
+        # Per-SSSR-ring bond groups: one list per ring, containing bond indices.
+        # Used by cut=2/3 to pair bonds within the same individual ring rather
+        # than the entire ring system, avoiding O(r²) cross-ring pairs that
+        # can never disconnect a fused ring system.
+        ring_bond_groups = [list(r) for r in mol_d["mol"].GetRingInfo().BondRings()]
         # SMARTS prepass: compute fragment pairs in Python (RDKit API), then pass
         # as smarts_seed_pairs to the Cython BFS for injection as depth-1 children.
         smarts_seed_pairs = None
@@ -870,6 +875,7 @@ def compute_dags(
                 ring_edge_mask=ring_edge_mask,
                 max_cut_size=max_cut_size,
                 smarts_seed_pairs=smarts_seed_pairs,
+                ring_bond_groups=ring_bond_groups,
             )
         )
     else:
