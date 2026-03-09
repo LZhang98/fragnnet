@@ -207,6 +207,7 @@ def main(args):
             args.multi_cut_bfs,
             args.max_cut_size,
             args.smarts_prepass,
+            args.min_frag_atoms,
         ]
         for _, row in mol_df.iterrows()
     )
@@ -677,6 +678,17 @@ if __name__ == "__main__":
             "(only used when --multi_cut_bfs True). "
             "Injects acyclic 1,3-elimination and ester CO2-loss fragments "
             "as depth-1 DAG children (crf12_0/1, crf13_2 PPGB_MS2 rules)."
+        ),
+    )
+    parser.add_argument(
+        "--min_frag_atoms",
+        type=int,
+        default=3,
+        help=(
+            "Minimum number of heavy atoms a child fragment must have to be registered "
+            "in the DAG (only used when --multi_cut_bfs True). Fragments smaller than "
+            "this threshold are silently dropped; their subtrees are never explored. "
+            "0 disables the filter. Default 3 removes single- and two-atom shards."
         ),
     )
     args = parser.parse_args()
