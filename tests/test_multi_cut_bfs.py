@@ -23,7 +23,7 @@ from fragnnet.utils.frag_utils import extract_mol_info, get_fraggen_input_arrays
 # ---------------------------------------------------------------------------
 
 
-def _run(smiles: str, max_cut_size: int = 2, max_depth: int = 3) -> dict:
+def _run(smiles: str, max_cut_size: int = 2, max_depth: int = 3, min_frag_atoms: int = 0) -> dict:
     """Run multi-cut BFS on a SMILES and return result components."""
     mol_d = extract_mol_info(smiles)
     ring_mask = mol_d["ring_bond_mask"]
@@ -37,10 +37,10 @@ def _run(smiles: str, max_cut_size: int = 2, max_depth: int = 3) -> dict:
         edge_mask,
         n2e,
         max_depth=max_depth,
-        time_limit=30,
         ring_edge_mask=ring_mask,
         max_cut_size=max_cut_size,
         ring_bond_groups=ring_bond_groups,
+        min_frag_atoms=min_frag_atoms,
     )
     return {
         "nodes_mask": nodes_mask,
@@ -878,3 +878,65 @@ class TestCut3TripleBonds:
         r2 = _run("C1CC2CCC1C2", max_cut_size=2, max_depth=1)
         r3 = _run("C1CC2CCC1C2", max_cut_size=3, max_depth=1)
         assert len(r3["nodes_mask"]) >= len(r2["nodes_mask"])
+
+
+# ---------------------------------------------------------------------------
+# Test 18: min_frag_atoms filter
+# ---------------------------------------------------------------------------
+
+
+class TestMinFragAtoms:
+    """min_frag_atoms prunes child fragments smaller than the threshold.
+
+    min_frag_atoms=0 disables the filter (default in _run helper).
+    min_frag_atoms=3 drops 1- and 2-atom shards.
+    """
+
+    def test_filter_removes_small_fragments(self):
+        """n-pentane bridges produce size-1 and size-2 fragments.
+
+        With min_frag_atoms=3, those must not appear.
+        """
+        r0 = _run("CCCCC", max_cut_size=1, max_depth=1, min_frag_atoms=0)
+        r3 = _run("CCCCC", max_cut_size=1, max_depth=1, min_frag_atoms=3)
+        counts0 = set(_atom_counts(r0["nodes_mask"]))
+        counts3 = set(_atom_counts(r3["nodes_mask"]))
+        # Without filter: sizes 1,2,3,4 all present
+        assert 1 in counts0 and 2 in counts0
+        # With filter: sizes 1 and 2 must be absent
+        assert 1 not in counts3 and 2 not in counts3
+        # Large fragments (3+) still present
+        assert 3 in counts3 and 4 in counts3
+
+    def test_filter_fewer_nodes_than_no_filter(self):
+        """Filtering must produce <= node count compared to no filter."""
+        r0 = _run("CCCCCC", max_cut_size=1, max_depth=2, min_frag_atoms=0)
+        r3 = _run("CCCCCC", max_cut_size=1, max_depth=2, min_frag_atoms=3)
+        assert len(r3["nodes_mask"]) <= len(r0["nodes_mask"])
+
+    def test_filter_zero_is_identity(self):
+        """min_frag_atoms=0 must produce identical node count as no filter."""
+        r0 = _run("CC(C)Cc1ccc(cc1)C(C)C(=O)O", max_cut_size=2, max_depth=2, min_frag_atoms=0)
+        r1 = _run("CC(C)Cc1ccc(cc1)C(C)C(=O)O", max_cut_size=2, max_depth=2, min_frag_atoms=0)
+        assert len(r0["nodes_mask"]) == len(r1["nodes_mask"])
+
+    def test_filter3_all_fragments_at_least_3_atoms(self):
+        """With min_frag_atoms=3, every non-root fragment has >= 3 atoms."""
+        for smiles in ["CCCCC", "CC(C)C", "c1ccccc1", "CC(C)Cc1ccc(cc1)C(C)C(=O)O"]:
+            r = _run(smiles, max_cut_size=2, max_depth=2, min_frag_atoms=3)
+            for i in range(1, len(r["nodes_mask"])):
+                count = int(r["nodes_mask"][i].sum())
+                assert count >= 3, (
+                    f"{smiles}: non-root node {i} has {count} atoms (< min_frag_atoms=3)"
+                )
+
+    def test_filter_ring_cut_sizes(self):
+        """Cyclohexane cut=2: sizes 1 and 2 pruned, 3+ kept with min_frag_atoms=3."""
+        r = _run("C1CCCCC1", max_cut_size=2, max_depth=2, min_frag_atoms=3)
+        counts = set(_atom_counts(r["nodes_mask"]))
+        assert 1 not in counts and 2 not in counts
+        # 3-, 4-, 5-atom splits should still appear
+        for expected in [3, 4, 5]:
+            assert expected in counts, (
+                f"Expected {expected}-atom fragment to survive min_frag_atoms=3 filter"
+            )

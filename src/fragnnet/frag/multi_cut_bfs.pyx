@@ -385,11 +385,12 @@ def compute_ccs_multi_cut(
     cnp.ndarray edge_mask_arr,
     cnp.ndarray node_to_edge_idx_arr,
     int max_depth = 3,
-    long time_limit = 150,
+    long time_limit = 0,
     cnp.ndarray ring_edge_mask = None,
     int max_cut_size = 2,
     smarts_seed_pairs = None,
     ring_bond_groups = None,
+    int min_frag_atoms = 3,
 ):
     """Multi-bond-cut BFS fragmentation (Cython).
 
@@ -404,7 +405,8 @@ def compute_ccs_multi_cut(
         edge_mask_arr: Shape ``(num_edges,)`` uint8 — active bonds.
         node_to_edge_idx_arr: Kept for interface compatibility; unused here.
         max_depth: Maximum BFS depth.
-        time_limit: Wall-clock seconds before timeout.
+        time_limit: Wall-clock seconds before timeout.  ``0`` (default) means
+            no limit.
         ring_edge_mask: Shape ``(num_edges,)`` uint8 — 1 for ring bonds.
             If ``None``, behaves like single-bond BFS.
         max_cut_size: Max simultaneous bond breaks per step (1, 2, or 3).
@@ -421,6 +423,12 @@ def compute_ccs_multi_cut(
             ring system, reducing O(r²) candidate pairs for fused ring systems.
             If ``None``, cut=2/3 are skipped even when ``ring_edge_mask`` is
             provided.
+        min_frag_atoms: Minimum number of heavy atoms a child fragment must
+            have to be registered in the DAG.  Fragments smaller than this
+            threshold are silently dropped (and their subtrees never explored,
+            since all children would be even smaller).  ``0`` disables the
+            filter.  Default ``3`` removes single-atom and two-atom shards that
+            never appear as observable MS/MS peaks.
 
     Returns:
         Tuple ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
@@ -516,6 +524,7 @@ def compute_ccs_multi_cut(
 
     # Bridge-finding loop variables
     cdef int n_bridges, bi_b, bridge_e, child_v, ev, xv, node_k, edge_k
+    cdef int child_n_atoms
     cdef int cur_node_id    # cached css_to_id_dict[cur_node_key] per BFS node
     cdef int n_css_unique = 1  # counter: replaces len(css_to_id_dict) in hot path
 
@@ -552,7 +561,7 @@ def compute_ccs_multi_cut(
 
         for cur_node_key, cur_edge_key in depth_queue[current_depth]:
             cur_time = _get_time()
-            if cur_time - start_time > time_limit:
+            if time_limit > 0 and cur_time - start_time > time_limit:
                 force_stop = True
                 break
 
@@ -666,6 +675,13 @@ def compute_ccs_multi_cut(
 
                 # Register both child fragments
                 for c in range(2):
+                    child_n_atoms = 0
+                    for kk in range(n_live_nodes):
+                        if cc_nodes_s[c, live_node_arr[kk]]:
+                            child_n_atoms += 1
+                    if child_n_atoms < min_frag_atoms:
+                        continue
+
                     child_node_key = PyBytes_FromStringAndSize(
                         &cc_nodes_s[c, 0], num_nodes)
                     child_edge_key = PyBytes_FromStringAndSize(
@@ -736,6 +752,13 @@ def compute_ccs_multi_cut(
                                 continue
 
                             for c in range(2):
+                                child_n_atoms = 0
+                                for kk in range(n_live_nodes):
+                                    if cc_nodes_s[c, live_node_arr[kk]]:
+                                        child_n_atoms += 1
+                                if child_n_atoms < min_frag_atoms:
+                                    continue
+
                                 child_node_key = PyBytes_FromStringAndSize(
                                     &cc_nodes_s[c, 0], num_nodes)
                                 child_edge_key = PyBytes_FromStringAndSize(
@@ -804,6 +827,13 @@ def compute_ccs_multi_cut(
                                     continue
 
                                 for c in range(2):
+                                    child_n_atoms = 0
+                                    for kk in range(n_live_nodes):
+                                        if cc_nodes_s[c, live_node_arr[kk]]:
+                                            child_n_atoms += 1
+                                    if child_n_atoms < min_frag_atoms:
+                                        continue
+
                                     child_node_key = PyBytes_FromStringAndSize(
                                         &cc_nodes_s[c, 0], num_nodes)
                                     child_edge_key = PyBytes_FromStringAndSize(
@@ -836,6 +866,8 @@ def compute_ccs_multi_cut(
         if current_depth == 0 and smarts_seed_pairs is not None:
             for pair in smarts_seed_pairs:
                 for child_mask_np in pair:
+                    if int(child_mask_np.sum()) < min_frag_atoms:
+                        continue
                     seed_node_mv = np.ascontiguousarray(child_mask_np, dtype=MASK_DTYPE)
                     child_node_key = PyBytes_FromStringAndSize(&seed_node_mv[0], num_nodes)
                     if child_node_key == root_node_key:
