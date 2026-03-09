@@ -554,15 +554,14 @@ def compute_ccs_multi_cut(
     seen_set        = set()
     dag_edge_dict   = {}
 
-    cdef list ccs      = [root_node_key]
-    cdef list cc_edges = [root_edge_key]
+    # depth_queue[d] = list of (node_key, edge_key) pairs to process at depth d.
+    # A cut=k bond break at depth d places children at depth d+k (cut weight = depth
+    # consumed), preventing compounding multi-cuts across depths.
+    depth_queue = [[(root_node_key, root_edge_key)]] + [[] for _ in range(max_depth)]
 
     # -----------------------------------------------------------------------
     # C-level loop variables
     # -----------------------------------------------------------------------
-    cdef int ccs_idx = 0
-    cdef int ccs_end = 0
-    cdef int node_idx
     cdef int current_depth
     cdef int i, j, k, ii, jj, kk
     cdef int n_live, n_ring, n_live_nodes
@@ -606,16 +605,12 @@ def compute_ccs_multi_cut(
     # BFS depth loop
     # -----------------------------------------------------------------------
     for current_depth in range(max_depth):
-        ccs_end = len(ccs)
 
-        for node_idx in range(ccs_idx, ccs_end):
+        for cur_node_key, cur_edge_key in depth_queue[current_depth]:
             cur_time = _get_time()
             if cur_time - start_time > time_limit:
                 force_stop = True
                 break
-
-            cur_node_key = ccs[node_idx]
-            cur_edge_key = cc_edges[node_idx]
 
             # Safety dedup (effectively no-op when queued_set is correct).
             seen_key = (cur_node_key, cur_edge_key)
@@ -745,8 +740,7 @@ def compute_ccs_multi_cut(
 
                     child_queue_key = (child_node_key, child_edge_key)
                     if child_queue_key not in queued_set:
-                        ccs.append(child_node_key)
-                        cc_edges.append(child_edge_key)
+                        depth_queue[current_depth + 1].append((child_node_key, child_edge_key))
                         queued_set.add(child_queue_key)
 
                     if cur_node_key != child_node_key:
@@ -757,8 +751,9 @@ def compute_ccs_multi_cut(
 
             # -----------------------------------------------------------
             # Cut = 2: pairs of ring edges (same ring system only).
+            # Cut=2 consumes 2 depth units: children land at current_depth+2.
             # -----------------------------------------------------------
-            if effective_max_cut >= 2 and n_ring >= 2:
+            if effective_max_cut >= 2 and n_ring >= 2 and current_depth + 2 <= max_depth:
                 sys_groups = {}
                 for ii in range(n_ring):
                     i = ring_arr[ii]
@@ -796,7 +791,7 @@ def compute_ccs_multi_cut(
                             if n_ccs != 2:
                                 continue
 
-                            child_depth_bit = 1 << (current_depth + 1)
+                            child_depth_bit = 1 << (current_depth + 2)
                             for c in range(2):
                                 child_node_key = PyBytes_FromStringAndSize(
                                     &cc_nodes_s[c, 0], num_nodes)
@@ -808,27 +803,27 @@ def compute_ccs_multi_cut(
                                     n_css_unique += 1
 
                                 if child_node_key not in ccs_min_depth:
-                                    ccs_min_depth[child_node_key] = current_depth + 1
+                                    ccs_min_depth[child_node_key] = current_depth + 2
                                     ccs_depth_bits[child_node_key] = child_depth_bit
                                 else:
                                     ccs_depth_bits[child_node_key] |= child_depth_bit
 
                                 child_queue_key = (child_node_key, child_edge_key)
                                 if child_queue_key not in queued_set:
-                                    ccs.append(child_node_key)
-                                    cc_edges.append(child_edge_key)
+                                    depth_queue[current_depth + 2].append((child_node_key, child_edge_key))
                                     queued_set.add(child_queue_key)
 
                                 if cur_node_key != child_node_key:
                                     edge_pair = (cur_node_id,
                                                  css_to_id_dict[child_node_key])
                                     if edge_pair not in dag_edge_dict:
-                                        dag_edge_dict[edge_pair] = current_depth + 1
+                                        dag_edge_dict[edge_pair] = current_depth + 2
 
             # -----------------------------------------------------------
             # Cut = 3: triples of ring edges — depth 0 only.
+            # Cut=3 consumes 3 depth units: children land at current_depth+3.
             # -----------------------------------------------------------
-            if effective_max_cut >= 3 and current_depth == 0 and n_ring >= 3:
+            if effective_max_cut >= 3 and current_depth == 0 and n_ring >= 3 and current_depth + 3 <= max_depth:
                 # Reuse sys_groups if already built by cut=2; build it otherwise.
                 if effective_max_cut < 2 or n_ring < 2:
                     sys_groups = {}
@@ -872,7 +867,7 @@ def compute_ccs_multi_cut(
                                 if n_ccs != 2:
                                     continue
 
-                                child_depth_bit = 1 << (current_depth + 1)
+                                child_depth_bit = 1 << (current_depth + 3)
                                 for c in range(2):
                                     child_node_key = PyBytes_FromStringAndSize(
                                         &cc_nodes_s[c, 0], num_nodes)
@@ -884,22 +879,21 @@ def compute_ccs_multi_cut(
                                         n_css_unique += 1
 
                                     if child_node_key not in ccs_min_depth:
-                                        ccs_min_depth[child_node_key] = current_depth + 1
+                                        ccs_min_depth[child_node_key] = current_depth + 3
                                         ccs_depth_bits[child_node_key] = child_depth_bit
                                     else:
                                         ccs_depth_bits[child_node_key] |= child_depth_bit
 
                                     child_queue_key = (child_node_key, child_edge_key)
                                     if child_queue_key not in queued_set:
-                                        ccs.append(child_node_key)
-                                        cc_edges.append(child_edge_key)
+                                        depth_queue[current_depth + 3].append((child_node_key, child_edge_key))
                                         queued_set.add(child_queue_key)
 
                                     if cur_node_key != child_node_key:
                                         edge_pair = (cur_node_id,
                                                      css_to_id_dict[child_node_key])
                                         if edge_pair not in dag_edge_dict:
-                                            dag_edge_dict[edge_pair] = current_depth + 1
+                                            dag_edge_dict[edge_pair] = current_depth + 3
 
         # -------------------------------------------------------------------
         # SMARTS prepass injection (depth 0 only).
@@ -933,8 +927,7 @@ def compute_ccs_multi_cut(
 
                     child_queue_key = (child_node_key, child_edge_key)
                     if child_queue_key not in queued_set:
-                        ccs.append(child_node_key)
-                        cc_edges.append(child_edge_key)
+                        depth_queue[1].append((child_node_key, child_edge_key))
                         queued_set.add(child_queue_key)
 
                     edge_pair = (css_to_id_dict[root_node_key],
@@ -957,8 +950,6 @@ def compute_ccs_multi_cut(
                 if dep <= reached_depth and s in id_to_css and d in id_to_css
             }
             break
-
-        ccs_idx = ccs_end
 
     # -----------------------------------------------------------------------
     # Build output matrices — same format as compute_frags.compute_ccs
