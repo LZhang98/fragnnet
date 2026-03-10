@@ -891,6 +891,7 @@ def compute_dags(
                 node_to_edge_idx,
                 max_depth,
                 frag_max_time,
+                min_frag_atoms,
             )
         )
 

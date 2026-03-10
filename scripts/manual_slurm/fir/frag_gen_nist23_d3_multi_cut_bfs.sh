@@ -67,6 +67,7 @@ MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FALSE=False
+MIN_FRAG_ATOMS=3
 SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}_mbfs
 DSETS='nist23_hr1 nist23_hr2'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]-'
@@ -83,6 +84,7 @@ echo PREC: ${PREC}
 echo INST: ${INST}
 echo FRAG_MODE: ${FRAG_MODE}
 echo ISO_FALSE: ${ISO_FALSE}
+echo MIN_FRAG_ATOMS: ${MIN_FRAG_ATOMS}
 echo DEST_DP: ${DEST_DP}
 
 echo create local proc_dp: ${WORKING_DIR}/data/proc
@@ -116,7 +118,8 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --multi_cut_bfs True \
     --max_cut_size 2 \
     --smarts_prepass False \
-    --use_lmdb False
+    --use_lmdb False \
+    --min_frag_atoms ${MIN_FRAG_ATOMS}
 
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/

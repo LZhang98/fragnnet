@@ -50,13 +50,13 @@ def _make_edges(pairs: list[tuple[int, int]]) -> np.ndarray:
     return arr
 
 
-def _run_smiles(smiles: str, max_depth: int = 3, time_limit: int = 30) -> dict:
+def _run_smiles(smiles: str, max_depth: int = 3, time_limit: int = 30, min_frag_atoms: int = 0) -> dict:
     """Run compute_ccs on a SMILES string and return result components."""
     mol_d = extract_mol_info(smiles)
     num_nodes, num_edges, node_mask, edges, edge_mask, n2e = get_fraggen_input_arrays(mol_d)
     nm, nd, de, meta = compute_ccs(
         num_nodes, num_edges, node_mask, edges, edge_mask, n2e,
-        max_depth=max_depth, time_limit=time_limit,
+        max_depth=max_depth, time_limit=time_limit, min_frag_atoms=min_frag_atoms,
     )
     return {
         "nodes_mask": nm,
@@ -91,7 +91,7 @@ def chain_ccs(linear_chain):
     num_nodes, num_edges, node_mask, edges, edge_mask, n2e = linear_chain
     nm, nd, de, meta = compute_ccs(
         num_nodes, num_edges, node_mask, edges, edge_mask, n2e,
-        max_depth=3, time_limit=30,
+        max_depth=3, time_limit=30, min_frag_atoms=0,
     )
     return nm, nd, de, meta
 

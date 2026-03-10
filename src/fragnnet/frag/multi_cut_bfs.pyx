@@ -429,7 +429,6 @@ def compute_ccs_multi_cut(
             since all children would be even smaller).  ``0`` disables the
             filter.  Default ``3`` removes single-atom and two-atom shards that
             never appear as observable MS/MS peaks.
-
     Returns:
         Tuple ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
         dag_frag_meta)`` — same format as ``compute_frags.compute_ccs``.
@@ -681,7 +680,6 @@ def compute_ccs_multi_cut(
                             child_n_atoms += 1
                     if child_n_atoms < min_frag_atoms:
                         continue
-
                     child_node_key = PyBytes_FromStringAndSize(
                         &cc_nodes_s[c, 0], num_nodes)
                     child_edge_key = PyBytes_FromStringAndSize(

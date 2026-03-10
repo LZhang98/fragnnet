@@ -35,7 +35,13 @@ def _get_arrays(smiles: str):
     return mol_d, num_nodes, num_edges, node_mask, edges, edge_mask, n2e, mol_d["mol"]
 
 
-def _run_cy(smiles: str, max_cut_size: int = 2, max_depth: int = 3, use_prepass: bool = True):
+def _run_cy(
+    smiles: str,
+    max_cut_size: int = 2,
+    max_depth: int = 3,
+    use_prepass: bool = True,
+    min_frag_atoms: int = 3,
+):
     """Run the Cython BFS on *smiles*, optionally with smarts_seed_pairs."""
     mol_d, num_nodes, num_edges, node_mask, edges, edge_mask, n2e, mol = _get_arrays(smiles)
     ring_mask = mol_d["ring_bond_mask"]
@@ -55,6 +61,7 @@ def _run_cy(smiles: str, max_cut_size: int = 2, max_depth: int = 3, use_prepass:
         ring_edge_mask=ring_mask,
         max_cut_size=max_cut_size,
         smarts_seed_pairs=seed_pairs,
+        min_frag_atoms=min_frag_atoms,
     )
     return {
         "nodes_mask": nodes_mask,
@@ -82,7 +89,7 @@ class TestCythonSmartsPrepassFunctionality:
 
     def test_butane_non_contiguous_fragment_present(self):
         """{C0, C3} appears when prepass is enabled (crf12_0: 1,3-elimination)."""
-        result = _run_cy("CCCC", use_prepass=True)
+        result = _run_cy("CCCC", use_prepass=True, min_frag_atoms=0)
         assert frozenset({0, 3}) in _atom_sets(result["nodes_mask"]), (
             "Cython prepass must include non-contiguous {C0,C3} (crf12_0) for butane"
         )
@@ -164,7 +171,7 @@ class TestCythonSmartsPrepassFunctionality:
         Pattern: A–B=C–D → outer {A,D} merged + inner {B,C}.
         crf12_1 differs from crf12_0 by requiring a double bond between inner atoms.
         """
-        result = _run_cy("CC=CC", use_prepass=True)
+        result = _run_cy("CC=CC", use_prepass=True, min_frag_atoms=0)
         atom_sets = _atom_sets(result["nodes_mask"])
         assert frozenset({0, 3}) in atom_sets, (
             "crf12_1 must produce non-contiguous outer {C0,C3} for but-2-ene"
@@ -262,7 +269,7 @@ class TestSeedDepthPlacement:
 
     def test_seed_registered_at_depth_1(self):
         """{C0,C3} outer fragment must have nodes_depth[:,1]==1."""
-        result = _run_cy(self.SMILES, use_prepass=True, max_depth=3)
+        result = _run_cy(self.SMILES, use_prepass=True, max_depth=3, min_frag_atoms=0)
         idx = self._find_idx(result["nodes_mask"], frozenset({0, 3}))
         assert idx != -1, "{C0,C3} not found in Cython output with prepass"
         assert result["nodes_depth"][idx, 1] == 1, (
@@ -271,7 +278,7 @@ class TestSeedDepthPlacement:
 
     def test_seed_not_at_depth_0(self):
         """{C0,C3} seed fragment must NOT be at depth 0."""
-        result = _run_cy(self.SMILES, use_prepass=True, max_depth=3)
+        result = _run_cy(self.SMILES, use_prepass=True, max_depth=3, min_frag_atoms=0)
         idx = self._find_idx(result["nodes_mask"], frozenset({0, 3}))
         assert idx != -1, "{C0,C3} not found"
         assert result["nodes_depth"][idx, 0] == 0, (
@@ -280,7 +287,7 @@ class TestSeedDepthPlacement:
 
     def test_only_root_at_depth_0(self):
         """Only the root (full molecule) may be recorded at depth 0."""
-        result = _run_cy(self.SMILES, use_prepass=True, max_depth=3)
+        result = _run_cy(self.SMILES, use_prepass=True, max_depth=3, min_frag_atoms=0)
         for i in range(1, len(result["nodes_mask"])):
             assert result["nodes_depth"][i, 0] == 0, (
                 f"Fragment {i} (atoms={frozenset(np.where(result['nodes_mask'][i])[0])}) "
@@ -289,8 +296,8 @@ class TestSeedDepthPlacement:
 
     def test_seeds_present_at_max_depth_1(self):
         """With max_depth=1, depth-1 seeds still appear; depth ≥2 fragments do not."""
-        result_d1 = _run_cy(self.SMILES, use_prepass=True, max_depth=1)
-        result_d3 = _run_cy(self.SMILES, use_prepass=True, max_depth=3)
+        result_d1 = _run_cy(self.SMILES, use_prepass=True, max_depth=1, min_frag_atoms=0)
+        result_d3 = _run_cy(self.SMILES, use_prepass=True, max_depth=3, min_frag_atoms=0)
         sets_d1 = _atom_sets(result_d1["nodes_mask"])
         sets_d3 = _atom_sets(result_d3["nodes_mask"])
         # {C0,C3} is a seed injected at depth 1 → must appear at max_depth=1

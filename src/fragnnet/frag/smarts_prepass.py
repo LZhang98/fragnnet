@@ -50,7 +50,7 @@ class SmartsFragRule:
     Example:
         >>> rule = SmartsFragRule(
         ...     name="crf12_0",
-        ...     reactant_smarts="[*+0:1][*+0:2][*+0:3][*+0:4]",
+        ...     reactant_smarts="[*+0:1]-[*+0:2]-[*+0:3]-[*+0:4]",
         ...     cut_bond_map_pairs=[(1, 2), (3, 4)],
         ...     merge_outer_map_nums=[1, 4],
         ...     filter_bond_map_nums=(1, 4),
@@ -73,7 +73,7 @@ FRAG_RULES: list[SmartsFragRule] = [
     # Skip if A and D are already directly bonded (4-membered ring → BFS cut=2).
     SmartsFragRule(
         name="crf12_0",
-        reactant_smarts="[*+0:1][*+0:2][*+0:3][*+0:4]",
+        reactant_smarts="[*+0:1]-[*+0:2]-[*+0:3]-[*+0:4]",
         cut_bond_map_pairs=[(1, 2), (3, 4)],
         merge_outer_map_nums=[1, 4],
         filter_bond_map_nums=(1, 4),
@@ -83,7 +83,7 @@ FRAG_RULES: list[SmartsFragRule] = [
     # A–B=C–D  →  A·D (new bond) + B≡C
     SmartsFragRule(
         name="crf12_1",
-        reactant_smarts="[*+0:1][*+0:2]=[*+0:3][*+0:4]",
+        reactant_smarts="[*+0:1]-[*+0:2]=[*+0:3]-[*+0:4]",
         cut_bond_map_pairs=[(1, 2), (3, 4)],
         merge_outer_map_nums=[1, 4],
         filter_bond_map_nums=(1, 4),

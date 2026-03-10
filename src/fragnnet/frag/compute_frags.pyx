@@ -237,6 +237,7 @@ def compute_ccs(
 	int [:,::1] node_to_edge_idx,   # kept for API compat; unused internally
 	int max_depth,
 	long time_limit,
+	int min_frag_atoms = 3,
 ):
 	assert num_nodes <= MAX_NUM_NODES, num_nodes
 	assert num_edges <= MAX_NUM_EDGES, num_edges
@@ -275,8 +276,9 @@ def compute_ccs(
 	cdef list cc_edges_list = [root_edge_key]
 
 	cdef int ccs_idx = 0, ccs_end = 0, node_idx
-	cdef int current_depth, i, ii, c
+	cdef int current_depth, i, ii, c, kk
 	cdef int n_live, n_live_nodes, n_ccs
+	cdef int child_n_atoms
 
 	# C arrays for live edge / node indices — no Python list per BFS node
 	cdef int live_arr[512]       # MAX_NUM_EDGES
@@ -354,6 +356,12 @@ def compute_ccs(
 				# n_ccs==1: ring bond opened (same atoms, chain) -> enqueue for depth+1
 				# n_ccs==2: bridge bond -> genuine split, add DAG edge
 				for c in range(n_ccs):
+					child_n_atoms = 0
+					for kk in range(n_live_nodes):
+						if cc_nodes_s[c, live_node_arr[kk]]:
+							child_n_atoms += 1
+					if child_n_atoms < min_frag_atoms:
+						continue
 					child_node_key = PyBytes_FromStringAndSize(&cc_nodes_s[c, 0], num_nodes)
 					child_edge_key = PyBytes_FromStringAndSize(&cc_edges_s[c, 0], num_edges)
 
