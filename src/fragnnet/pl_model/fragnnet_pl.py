@@ -97,7 +97,7 @@ class FraGNNetPL(SpectrumPL):
             inst_types=self.hparams.spec_params["inst_types"],
             frag_mode_insert_location=self.hparams.frag_mode_insert_location,
             frag_mode_insert_size=self.hparams.frag_mode_insert_size,
-            frag_modes=self.hparams.spec_params.get["frag_modes"],
+            frag_modes=self.hparams.spec_params["frag_modes"],
             frag_mode_scale=self.hparams.frag_mode_scale,
             ce_scale=self.hparams.ce_scale,
             ce_scaler_hidden_dim=self.hparams.ce_scaler_hidden_dim,

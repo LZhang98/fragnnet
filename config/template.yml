@@ -374,8 +374,10 @@ inst_insert_size: 32  # Dimension of instrument type embedding (must match MCES 
 # Fragmentation Mode Configuration
 # ============================================================================
 frag_mode_insert_location: none  # Where frag-mode embedding is inserted: ["none", "mol", "mlp"]
-frag_mode_insert_size: 8         # Dimension of frag-mode embedding (3 categories: HCD, CID, unknown)
+frag_mode_insert_size: 8         # Dimension of frag-mode embedding
 frag_mode_scale: False           # Enable mode-conditioned affine output scaling layer
+# Note: frag_modes list is declared under spec_params.frag_modes (e.g. ["HCD", "CID"]);
+# unknown modes fall back to embedding index num_frag_modes.
 
 # CE-conditioned FiLM output scaling (temperature-style)
 ce_scale: False              # Enable CE-conditioned FiLM scaler on logits before softmax
