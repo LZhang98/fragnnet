@@ -8,14 +8,16 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 
 from fragnnet.utils.data_utils import (
+    CHARGE_FACTOR_MAP,
     fill_missing_ace,
     fill_missing_nce,
-    seq_apply_df_rows,
+    get_charge,
 )
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
 from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
 from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import batch_func
+
 
 class BaseDataset(Dataset):
     def _base_init(
@@ -139,51 +141,93 @@ class BaseDataset(Dataset):
         assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 
         # covert ace and nce if there is data
-        assert not (spec_params["ace"] and spec_params["nce"])
-        if spec_params["ace"]:
+        # Determine which CE keys to compute; both may be enabled for dual CE input.
+        dual_ce = spec_params["ace"] and spec_params["nce"]
+        if spec_params["ace"] and not dual_ce:
+            ce_keys_to_compute = [("ace", fill_missing_ace)]
             ce_key = "ace"
-            ce_fn=fill_missing_ace
-        elif spec_params["nce"]:
+        elif spec_params["nce"] and not dual_ce:
+            ce_keys_to_compute = [("nce", fill_missing_nce)]
             ce_key = "nce"
-            ce_fn=fill_missing_nce
+        elif dual_ce:
+            ce_keys_to_compute = [("nce", fill_missing_nce), ("ace", fill_missing_ace)]
+            ce_key = "nce"  # primary key used for test_ces filtering
         else:
-            ce_key=None
-        if ce_key is not None:
+            ce_keys_to_compute = []
+            ce_key = None
+
+        def _fill_ce_list(row, key):
+            ce = row[key]
+            ce_extra_1 = row[f"{key}_extra_1"]
+            ce_extra_2 = row[f"{key}_extra_2"]
+
+            # -1 sentinel means "no value"; normalise NaN to -1 for all three fields.
+            if pd.isna(ce):
+                ce = -1
+            if pd.isna(ce_extra_1):
+                ce_extra_1 = -1
+            if pd.isna(ce_extra_2):
+                ce_extra_2 = -1
+
+            if ce != -1 and ce_extra_1 != -1 and ce_extra_2 != -1:
+                # for stepped ce
+                # ce is the lower bound, ce_extra_1 is the middle, ce_extra_2 is the upper bound
+                assert ce < ce_extra_1 < ce_extra_2, row
+                return [ce, ce_extra_1, ce_extra_2]
+            elif ce != -1 and ce_extra_1 != -1:
+                # for ramped ce
+                ramped_step_size = 1.0
+                # assert ce_extra_1 > ce, (ce, ce_extra_1)
+                # assert (ce_extra_1 - ce) > ramped_step_size, (ce, ce_extra_1, ramped_step_size)
+                ces = np.arange(ce, ce_extra_1 + 0.1, ramped_step_size).tolist()
+                return ces
+            else:
+                # for single ce
+                return [ce]
+
+        # Phase 1: scalar CE fill (vectorized).
+        # fill_missing_nce/ace each reduce to a single multiply/divide per row
+        # (ace_to_nce_helper / nce_to_ace_helper). Parallelism overhead (pickling
+        # each pd.Series row for IPC) dominates for such cheap per-row work, so
+        # we vectorize with numpy instead — ~10-50x faster than parallel_apply.
+        #
+        # NOTE: must complete before Phase 2 so that fill_missing_ace can read
+        # nce as a scalar when dual_ce=True.
+        charge_factors = spec_df["prec_type"].map(
+            lambda pt: CHARGE_FACTOR_MAP.get(np.abs(get_charge(pt)), CHARGE_FACTOR_MAP["large"])
+        )
+        prec_mz = spec_df["prec_mz"]
+
+        def _fill_ce_scalar_vectorized(ace_col: str, nce_col: str, target_key: str) -> None:
+            ace = spec_df[ace_col].where(spec_df[ace_col].notna() & (spec_df[ace_col] != -1))
+            nce = spec_df[nce_col].where(spec_df[nce_col].notna() & (spec_df[nce_col] != -1))
+            if target_key.startswith("nce"):
+                # fill missing nce from ace: nce = ace * 500 / (prec_mz * charge_factor)
+                computed = (ace * 500.0) / (prec_mz * charge_factors)
+                result = nce.fillna(computed)
+            else:
+                # fill missing ace from nce: ace = nce * prec_mz * charge_factor / 500
+                computed = (nce * prec_mz * charge_factors) / 500.0
+                result = ace.fillna(computed)
+            spec_df.loc[:, target_key] = result
+
+        for key, _ in ce_keys_to_compute:
             for endfix in ["", "_extra_1", "_extra_2"]:
-                spec_df.loc[:,  f"{ce_key}{endfix}"] = spec_df.parallel_apply(lambda row: ce_fn(row, ace_colname='ace'+endfix, nce_colname='nce'+endfix), axis=1)
-                if len(endfix)>0:
-                    spec_df.loc[:, f"{ce_key}{endfix}"] = spec_df.loc[:, f"{ce_key}{endfix}"].fillna(-1)
-            def _fill_ce_list(row, ce_key):
-                ce = row[ce_key]
-                ce_extra_1 = row[f"{ce_key}_extra_1"]
-                ce_extra_2 = row[f"{ce_key}_extra_2"]
+                _fill_ce_scalar_vectorized(
+                    ace_col=f"ace{endfix}", nce_col=f"nce{endfix}", target_key=f"{key}{endfix}"
+                )
+                if len(endfix) > 0:
+                    spec_df.loc[:, f"{key}{endfix}"] = spec_df.loc[:, f"{key}{endfix}"].fillna(-1)
 
-                # Handle missing main CE value
-                if pd.isna(ce):
-                    ce = -1
-
-                if ce != -1 and ce_extra_1 != -1 and ce_extra_2 != -1:
-                    # for stepped ce
-                    # ce is the lower bound, ce_extra_1 is the middle, ce_extra_2 is the upper bound
-                    assert ce < ce_extra_1 < ce_extra_2, row
-                    return [ce, ce_extra_1, ce_extra_2]
-                elif ce != -1 and ce_extra_1 != -1:
-                    # for ramped ce
-                    ramped_step_size = 1.0
-                    # assert ce_extra_1 > ce, (ce, ce_extra_1)
-                    # assert (ce_extra_1 - ce) > ramped_step_size, (ce, ce_extra_1, ramped_step_size)
-                    ces = np.arange(ce, ce_extra_1 + 0.1, ramped_step_size).tolist()
-                    return ces
-                else:
-                    # for single ce
-                    return [ce]
-
-            # Apply the function to create lists - this will set the correct dtype
-            result_series = spec_df.parallel_apply(lambda row: _fill_ce_list(row, ce_key), axis=1)
-            #seq_apply_df_rows(spec_df, lambda row: _fill_ce_list(row, ce_key))
-            # Convert column to object dtype before assignment to avoid dtype warning
-            spec_df[ce_key] = spec_df[ce_key].astype(object)
-            spec_df.loc[:, ce_key] = result_series
+        # Phase 2: convert scalar CE columns to lists (stepped / ramped / single).
+        # _fill_ce_list does NaN checks + possibly np.arange over a small range —
+        # microseconds per row. Process-based parallelism (joblib / pandarallel)
+        # serializes each pd.Series row via pickle, costing ~50-200µs overhead per
+        # row — more than the work itself. Plain .apply() is faster here.
+        for key, _ in ce_keys_to_compute:
+            result_series = spec_df.apply(lambda row, _k=key: _fill_ce_list(row, _k), axis=1)
+            spec_df[key] = spec_df[key].astype(object)
+            spec_df.loc[:, key] = result_series
 
         if spec_params["test_ces"] is not None and ce_key is not None and "test" in splits:
             test_split_fp = os.path.join(split_dp, "test_ids.csv")
@@ -457,7 +501,9 @@ class BaseDataset(Dataset):
             raw_mode = spec_entry.get("frag_mode", None)
             # Fall back to unknown token index when the column is missing or the value
             # is not in the configured known set (handles NaN, None, and unseen labels).
-            if raw_mode is None or (isinstance(raw_mode, float) and __import__("math").isnan(raw_mode)):
+            if raw_mode is None or (
+                isinstance(raw_mode, float) and __import__("math").isnan(raw_mode)
+            ):
                 frag_mode_idx = self.num_frag_modes  # unknown token
             else:
                 frag_mode_idx = self.frag_mode_to_idx.get(str(raw_mode), self.num_frag_modes)
@@ -469,14 +515,23 @@ class BaseDataset(Dataset):
         if self.spec_params["nce"] or self.spec_params["ace"]:
             assert self.ce_key is not None
             assert (not self.spec_params["merge"]) or self.spec_params["merge_keep_ces"]
-            assert not (self.spec_params["ace"] and self.spec_params["nce"])
-            ce = spec_entry[self.ce_key]
-            # both merged and unmerged spectra are stored as list of ces
-            # for merged spectra, it is list of ces used to merge
-            # for unmerged spectra, it is list of ces available include both ramped/stepped ces
-            assert isinstance(ce, list), type(ce)
-            ce = th.tensor(ce, dtype=th.float)
-            spec_data["spec_ce"] = ce
+            dual_ce = self.spec_params["ace"] and self.spec_params["nce"]
+            if dual_ce:
+                # dual CE input: expose both NCE and ACE as separate tensors
+                nce_list = spec_entry["nce"]
+                ace_list = spec_entry["ace"]
+                assert isinstance(nce_list, list), type(nce_list)
+                assert isinstance(ace_list, list), type(ace_list)
+                spec_data["spec_nce"] = th.tensor(nce_list, dtype=th.float)
+                spec_data["spec_ace"] = th.tensor(ace_list, dtype=th.float)
+            else:
+                ce = spec_entry[self.ce_key]
+                # both merged and unmerged spectra are stored as list of ces
+                # for merged spectra, it is list of ces used to merge
+                # for unmerged spectra, it is list of ces available include both ramped/stepped ces
+                assert isinstance(ce, list), type(ce)
+                ce = th.tensor(ce, dtype=th.float)
+                spec_data["spec_ce"] = ce
         if self.spec_params["prec_mz"]:
             prec_mz = spec_entry["prec_mz"]
             prec_mz = th.tensor([float(prec_mz)], dtype=th.float)
@@ -590,6 +645,26 @@ class BaseDataset(Dataset):
             collate_data["spec_ce_batch_idxs"] = batch_idxs
             # remove from list
             keys.remove("spec_ce")
+
+        # handle dual-CE (nce & ace) which are stored as per-sample lists
+        # batch them like `spec_ce` so variable-length CE lists are preserved
+        if "spec_nce" in keys:
+            nces, _, nce_batch_idxs = batch_func(
+                collate_data["spec_nce"],
+                collate_data["spec_nce"],
+            )
+            collate_data["spec_nce"] = nces
+            collate_data["spec_nce_batch_idxs"] = nce_batch_idxs
+            keys.remove("spec_nce")
+
+        if "spec_ace" in keys:
+            aces, _, ace_batch_idxs = batch_func(
+                collate_data["spec_ace"],
+                collate_data["spec_ace"],
+            )
+            collate_data["spec_ace"] = aces
+            collate_data["spec_ace_batch_idxs"] = ace_batch_idxs
+            keys.remove("spec_ace")
 
     @staticmethod
     def _standard_collate(batch_size: int, keys: list[str], collate_data: dict) -> None:

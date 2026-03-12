@@ -1351,16 +1351,17 @@ def fill_missing_nce(row, ace_colname: str, nce_colname: str) -> float:
     """
     nce = row[nce_colname]
     ace = row[ace_colname]
-    if none_or_nan(nce) and not none_or_nan(ace):
-        nce = ace_to_nce(row, ace_colname)
-        return nce
-    elif not none_or_nan(nce):
+    nce_missing = none_or_nan(nce) or nce == -1
+    ace_missing = none_or_nan(ace) or ace == -1
+    if nce_missing and not ace_missing:
+        return ace_to_nce(row, ace_colname)
+    elif not nce_missing:
         return nce
     else:
         warnings.warn(
             f"Warning: can not compute nce from ace. nce: {nce}, ace: {ace} from columns {nce_colname}, {ace_colname}"
         )
-        return nce
+        return np.nan
 
 
 def fill_missing_ace(row, ace_colname: str, nce_colname: str) -> float:
@@ -1372,16 +1373,17 @@ def fill_missing_ace(row, ace_colname: str, nce_colname: str) -> float:
     """
     nce = row[nce_colname]
     ace = row[ace_colname]
-    if none_or_nan(ace) and not none_or_nan(nce):
+    ace_missing = none_or_nan(ace) or ace == -1
+    nce_missing = none_or_nan(nce) or nce == -1
+    if ace_missing and not nce_missing:
         return nce_to_ace(row, nce_colname)
-    elif not none_or_nan(ace):
+    elif not ace_missing:
         return ace
     else:
         warnings.warn(
             f"Warning: can not compute ace from nce. ace: {ace}, nce: {nce} from columns {ace_colname}, {nce_colname}"
         )
-        return nce
-        return ace
+        return np.nan
 
 
 def parse_mass_gym_ce_str(ce_str):

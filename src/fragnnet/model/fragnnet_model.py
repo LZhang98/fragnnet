@@ -423,6 +423,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         frag_formula_str: np.ndarray | None = None,
         spec_ce: th.Tensor | None = None,
         spec_ce_batch_idxs: th.Tensor | None = None,
+        spec_nce: th.Tensor | None = None,
+        spec_nce_batch_idxs: th.Tensor | None = None,
+        spec_ace: th.Tensor | None = None,
+        spec_ace_batch_idxs: th.Tensor | None = None,
         spec_prec_type: th.Tensor | None = None,
         spec_inst_type: th.Tensor | None = None,
         spec_frag_mode: th.Tensor | None = None,
@@ -492,9 +496,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         batch_frag_num_formulae = frag_formula_cumsizes[-1]
         batch_size = frag_batch[-1] + 1
 
-        # get ce value
-        ce = spec_ce
-        ce_batch_idxs = spec_ce_batch_idxs
+        # get ce value; dual_ce mode provides spec_nce/spec_ace instead of spec_ce
+        if spec_ce is None and spec_nce is not None:
+            ce = spec_nce
+            ce_batch_idxs = spec_nce_batch_idxs
+        else:
+            ce = spec_ce
+            ce_batch_idxs = spec_ce_batch_idxs
         ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
         # get prec value
         prec_embed = self.embed_prec(spec_prec_type)
