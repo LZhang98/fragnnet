@@ -89,6 +89,7 @@ class FraGNNetPL(SpectrumPL):
             ce_mean=self.hparams.ce_mean,
             ce_std=self.hparams.ce_std,
             ce_max=self.hparams.ce_max,
+            ce_insert_dual=self.hparams.ce_insert_dual,
             prec_insert_location=self.hparams.prec_insert_location,
             prec_insert_size=self.hparams.prec_insert_size,
             prec_types=self.hparams.spec_params["prec_types"],

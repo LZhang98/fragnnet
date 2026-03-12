@@ -140,18 +140,18 @@ class BaseDataset(Dataset):
         mol_df = mol_df[mol_df["mol_id"].isin(split_df["mol_id"])]
         assert np.all(np.unique(mol_df["mol_id"]) == np.unique(spec_df["mol_id"]))
 
-        # covert ace and nce if there is data
-        # Determine which CE keys to compute; both may be enabled for dual CE input.
-        dual_ce = spec_params["ace"] and spec_params["nce"]
-        if spec_params["ace"] and not dual_ce:
-            ce_keys_to_compute = [("ace", fill_missing_ace)]
-            ce_key = "ace"
-        elif spec_params["nce"] and not dual_ce:
+        # Determine which CE columns to compute and which is primary.
+        # When both ace and nce are requested, nce is primary; ace is also computed
+        # so it exists in the dataframe (e.g. for future ce_insert_dual support).
+        if spec_params["nce"] and spec_params["ace"]:
+            ce_keys_to_compute = [("nce", fill_missing_nce), ("ace", fill_missing_ace)]
+            ce_key = "nce"
+        elif spec_params["nce"]:
             ce_keys_to_compute = [("nce", fill_missing_nce)]
             ce_key = "nce"
-        elif dual_ce:
-            ce_keys_to_compute = [("nce", fill_missing_nce), ("ace", fill_missing_ace)]
-            ce_key = "nce"  # primary key used for test_ces filtering
+        elif spec_params["ace"]:
+            ce_keys_to_compute = [("ace", fill_missing_ace)]
+            ce_key = "ace"
         else:
             ce_keys_to_compute = []
             ce_key = None
@@ -192,7 +192,7 @@ class BaseDataset(Dataset):
         # we vectorize with numpy instead — ~10-50x faster than parallel_apply.
         #
         # NOTE: must complete before Phase 2 so that fill_missing_ace can read
-        # nce as a scalar when dual_ce=True.
+        # nce as a scalar (both columns must be scalars before either becomes a list).
         charge_factors = spec_df["prec_type"].map(
             lambda pt: CHARGE_FACTOR_MAP.get(np.abs(get_charge(pt)), CHARGE_FACTOR_MAP["large"])
         )
@@ -515,23 +515,12 @@ class BaseDataset(Dataset):
         if self.spec_params["nce"] or self.spec_params["ace"]:
             assert self.ce_key is not None
             assert (not self.spec_params["merge"]) or self.spec_params["merge_keep_ces"]
-            dual_ce = self.spec_params["ace"] and self.spec_params["nce"]
-            if dual_ce:
-                # dual CE input: expose both NCE and ACE as separate tensors
-                nce_list = spec_entry["nce"]
-                ace_list = spec_entry["ace"]
-                assert isinstance(nce_list, list), type(nce_list)
-                assert isinstance(ace_list, list), type(ace_list)
-                spec_data["spec_nce"] = th.tensor(nce_list, dtype=th.float)
-                spec_data["spec_ace"] = th.tensor(ace_list, dtype=th.float)
-            else:
-                ce = spec_entry[self.ce_key]
-                # both merged and unmerged spectra are stored as list of ces
-                # for merged spectra, it is list of ces used to merge
-                # for unmerged spectra, it is list of ces available include both ramped/stepped ces
-                assert isinstance(ce, list), type(ce)
-                ce = th.tensor(ce, dtype=th.float)
-                spec_data["spec_ce"] = ce
+            ce = spec_entry[self.ce_key]
+            # both merged and unmerged spectra are stored as list of ces
+            # for merged spectra, it is list of ces used to merge
+            # for unmerged spectra, it is list of ces available include both ramped/stepped ces
+            assert isinstance(ce, list), type(ce)
+            spec_data["spec_ce"] = th.tensor(ce, dtype=th.float)
         if self.spec_params["prec_mz"]:
             prec_mz = spec_entry["prec_mz"]
             prec_mz = th.tensor([float(prec_mz)], dtype=th.float)
@@ -645,26 +634,6 @@ class BaseDataset(Dataset):
             collate_data["spec_ce_batch_idxs"] = batch_idxs
             # remove from list
             keys.remove("spec_ce")
-
-        # handle dual-CE (nce & ace) which are stored as per-sample lists
-        # batch them like `spec_ce` so variable-length CE lists are preserved
-        if "spec_nce" in keys:
-            nces, _, nce_batch_idxs = batch_func(
-                collate_data["spec_nce"],
-                collate_data["spec_nce"],
-            )
-            collate_data["spec_nce"] = nces
-            collate_data["spec_nce_batch_idxs"] = nce_batch_idxs
-            keys.remove("spec_nce")
-
-        if "spec_ace" in keys:
-            aces, _, ace_batch_idxs = batch_func(
-                collate_data["spec_ace"],
-                collate_data["spec_ace"],
-            )
-            collate_data["spec_ace"] = aces
-            collate_data["spec_ace_batch_idxs"] = ace_batch_idxs
-            keys.remove("spec_ace")
 
     @staticmethod
     def _standard_collate(batch_size: int, keys: list[str], collate_data: dict) -> None:

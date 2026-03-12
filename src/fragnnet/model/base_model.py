@@ -34,6 +34,7 @@ class CEModel:
         ce_mean: float,
         ce_std: float,
         ce_max: float,
+        ce_insert_dual: bool = False,
     ) -> None:
         """
         Initialize CE embedding configuration and embedding layers.
@@ -47,9 +48,12 @@ class CEModel:
             ce_mean: Mean for CE normalization.
             ce_std: Std for CE normalization.
             ce_max: Max value for CE binning/embedding.
+            ce_insert_dual: Embed both NCE and ACE independently. Not yet implemented.
         """
         assert ce_insert_type in ["id", "lin", "embed", "embed_clamped", "bin"]
         assert ce_insert_location in ["none", "mol", "frag", "mlp"]
+        if ce_insert_dual:
+            raise NotImplementedError("ce_insert_dual is not yet implemented")
         self.ce_insert_type = ce_insert_type
         self.ce_insert_location = ce_insert_location
         self.ce_insert_merge = ce_insert_merge
@@ -58,6 +62,7 @@ class CEModel:
         self.ce_max = ce_max
         self.ce_mean = ce_mean
         self.ce_std = ce_std
+        self.ce_insert_dual = ce_insert_dual
         self._ce_location_check()
         self._setup_ce()
 
