@@ -32,7 +32,8 @@ from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak
 from fragnnet.utils.misc_utils import PPM
 
 # Fragment index dtype (change here to update everywhere)
-FRAG_INDEX_DTYPE = np.uint16
+# uint32 supports up to ~4B unique formulas per molecule (uint16 max is 65535)
+FRAG_INDEX_DTYPE = np.uint32
 
 # full list of common elements
 # NOTE: this maybe a bad idea to not cover all the element
@@ -959,10 +960,12 @@ def compute_dags(
     hs_arr_np = np.array(hs_arr)
     for cc_mask in nodes_mask_matrix:
         cc_h_count = np.sum(np.multiply(cc_mask, hs_arr_np))
-        cc_formula = cc_bitmask_to_formula_arr(cc_mask, elem_idxs)
+        # Cast to uint16 before setting H count: uint8 overflows for fragments with >255 H atoms
+        # (possible when MAX_NUM_NODES=128 and ~4 H per heavy atom → up to 512 H)
+        cc_formula = cc_bitmask_to_formula_arr(cc_mask, elem_idxs).astype(np.uint16)
         cc_formula[ELEMENT_TO_IDX["H"]] = cc_h_count
         cc_formula_list.append(cc_formula)
-    node_base_formula_matrix = np.stack(cc_formula_list, dtype=MASK_DTYPE)
+    node_base_formula_matrix = np.stack(cc_formula_list, dtype=np.uint16)
 
     # map nodes to formulae
     formula_d_list, h_count_d_list = [], []
@@ -988,7 +991,7 @@ def compute_dags(
 
     formula_idx_list, h_count_list = [], []
     for formulae_dict, h_count_dict in zip(formula_d_list, h_count_d_list):
-        # idxs have value range 0 - uint16 max
+        # idxs have value range 0 - uint32 max
         formulae_idxs = np.zeros(formula_node_feat_size, dtype=FRAG_INDEX_DTYPE)
         # h_counts have value range -1 - int16 max, we use int16 here, -1 is for invalid
         # we are not expecting h_counts to be that high anyway
@@ -1127,7 +1130,9 @@ def compute_dags(
 
         from_formula_mask = node_base_formula_matrix[from_idx]
         to_formula_mask = node_base_formula_matrix[to_idx]
-        diff_formula_mask = from_formula_mask - to_formula_mask
+        # Use signed subtraction to avoid uint16 underflow (parent always >= child for heavy atoms,
+        # but H is zeroed below, so sign safety is needed)
+        diff_formula_mask = from_formula_mask.astype(np.int32) - to_formula_mask.astype(np.int32)
         diff_formula_mask[CANONICAL_H_IDX] = 0  # we don't care Hs for this
 
         diff_h_floor = compute_cc_h_floor(

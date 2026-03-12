@@ -7,6 +7,10 @@ Tests cover:
 3. DAG result structure: expected keys and tensor shapes.
 4. cc_bit_mask_to_atom_idx correctly excludes uint8 underflow values (255).
 5. Signed subtraction + clip yields correct diff atom ids.
+6. FRAG_INDEX_DTYPE is np.uint32 (was uint16; changed to prevent overflow for
+   molecules with many unique fragment formulae).
+7. node_base_formula_matrix uses uint16 so H counts >255 are not truncated.
+8. diff_formula_mask uses signed int32 subtraction to avoid uint16 underflow.
 """
 
 from __future__ import annotations
@@ -16,6 +20,9 @@ import pytest
 
 from fragnnet.frag.compute_frags import MASK_DTYPE
 from fragnnet.utils.frag_utils import (
+    ELEMENT_TO_IDX,
+    FRAG_INDEX_DTYPE,
+    NODE_FEAT_TO_IDX,
     cc_bit_mask_to_atom_idx,
     compute_dags,
     extract_mol_info,
@@ -142,3 +149,100 @@ def test_diff_cc_mask_signed_subtraction_correct() -> None:
 
     # Atoms 0 and 2 are in from but not to; atom 1 is in both; atom 3 in neither
     np.testing.assert_array_equal(np.sort(atom_ids), [0, 2])
+
+
+# ---------------------------------------------------------------------------
+# 6. FRAG_INDEX_DTYPE is np.uint32
+# ---------------------------------------------------------------------------
+
+
+def test_frag_index_dtype_is_uint32() -> None:
+    """FRAG_INDEX_DTYPE must be np.uint32, not uint16, to support molecules
+    with more than 65535 unique fragment formulae."""
+    assert FRAG_INDEX_DTYPE == np.uint32, (
+        f"Expected np.uint32, got {FRAG_INDEX_DTYPE}. "
+        "uint16 max (65535) can be exceeded by molecules with many unique fragments."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 7. node_base_formula_matrix uses uint16 — H counts >255 are not truncated
+# ---------------------------------------------------------------------------
+
+
+def test_base_formula_heavy_atom_counts_correct() -> None:
+    """Heavy atom counts in node features (base_formula columns) must be exact.
+
+    H is intentionally zeroed in base_formula node features (compute_dags sets
+    it to 0 before storing).  We verify the non-H element counts instead.
+    For ethanol CCO: root node has C=2, O=1.
+    """
+    dag_d = _run_compute_dags("CCO")
+    dag = dag_d["dag"]
+    node_feat_idxs = dag.node_feat_idxs[0].tolist()
+    bf_start = node_feat_idxs[NODE_FEAT_TO_IDX["base_formula"]]
+    c_col = bf_start + ELEMENT_TO_IDX["C"]
+    o_col = bf_start + ELEMENT_TO_IDX["O"]
+
+    # Root node (index 0) is the full molecule: CCO → C=2, O=1
+    assert dag.x[0, c_col].item() == 2, f"Root node C count wrong: {dag.x[0, c_col].item()}"
+    assert dag.x[0, o_col].item() == 1, f"Root node O count wrong: {dag.x[0, o_col].item()}"
+
+
+def test_base_formula_formula_strings_correct() -> None:
+    """Formula strings in idx_to_formula must use the actual H count, not the
+    uint8-truncated value from node_base_formula_matrix.
+
+    compute_approximate_formula computes H counts from hs_arr directly (not
+    from the formula array), so formula strings are always correct. This test
+    guards against regressions in that path.
+
+    Ethanol CCO: root node h_delta=0 formula must be 'C2H6O'.
+    """
+    dag_d = _run_compute_dags("CCO")
+    # idx_to_formula: {int_idx: formula_str}
+    formulae = set(dag_d["idx_to_formula"].values())
+    assert "C2H6O" in formulae, (
+        f"Expected 'C2H6O' in formula set for CCO, got {formulae}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 8. diff_formula_mask uses signed int32 subtraction — no uint16 underflow
+# ---------------------------------------------------------------------------
+
+
+def test_diff_formula_mask_no_underflow() -> None:
+    """Edge features must not show uint underflow in the formula diff columns.
+
+    For any DAG edge (parent → child), the parent always has >= atoms of each
+    heavy element than the child, so diff >= 0 for heavy atoms. H is zeroed.
+    No edge feature value should be a large positive number caused by underflow
+    (e.g., 65535 or 255).
+    """
+    # Use a molecule with multiple fragments to exercise edge features
+    dag_d = _run_compute_dags("c1ccccc1CC(=O)O")  # phenylacetic acid
+    dag = dag_d["dag"]
+    edge_attr = dag.edge_attr  # int64 tensor
+
+    if edge_attr.shape[0] == 0:
+        pytest.skip("No edges in DAG — nothing to test")
+
+    # Grab the formula diff columns from edge_feat_idxs
+    edge_feat_idxs = dag.edge_feat_idxs[0].tolist()
+    # Edge feature groups: cc_mask, base_formula_diff, h_range
+    formula_diff_start = edge_feat_idxs[1]
+    formula_diff_end = edge_feat_idxs[2]
+    formula_diff_cols = edge_attr[:, formula_diff_start:formula_diff_end]
+
+    # Underflow sentinel values: 65535 (uint16 wrap), 255 (uint8 wrap)
+    assert not (formula_diff_cols == 65535).any(), (
+        "Found 65535 in formula diff edge features — uint16 underflow detected."
+    )
+    assert not (formula_diff_cols == 255).any(), (
+        "Found 255 in formula diff edge features — uint8 underflow detected."
+    )
+    # All heavy-atom diffs should be non-negative (parent >= child)
+    assert (formula_diff_cols >= 0).all(), (
+        "Negative formula diff found — unexpected for parent→child edges."
+    )
