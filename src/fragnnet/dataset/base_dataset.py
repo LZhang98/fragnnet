@@ -185,49 +185,52 @@ class BaseDataset(Dataset):
                 # for single ce
                 return [ce]
 
-        # Phase 1: scalar CE fill (vectorized).
-        # fill_missing_nce/ace each reduce to a single multiply/divide per row
-        # (ace_to_nce_helper / nce_to_ace_helper). Parallelism overhead (pickling
-        # each pd.Series row for IPC) dominates for such cheap per-row work, so
-        # we vectorize with numpy instead — ~10-50x faster than parallel_apply.
-        #
-        # NOTE: must complete before Phase 2 so that fill_missing_ace can read
-        # nce as a scalar (both columns must be scalars before either becomes a list).
-        charge_factors = spec_df["prec_type"].map(
-            lambda pt: CHARGE_FACTOR_MAP.get(np.abs(get_charge(pt)), CHARGE_FACTOR_MAP["large"])
-        )
-        prec_mz = spec_df["prec_mz"]
+        if ce_keys_to_compute:
+            # Phase 1: scalar CE fill (vectorized).
+            # fill_missing_nce/ace each reduce to a single multiply/divide per row
+            # (ace_to_nce_helper / nce_to_ace_helper). Parallelism overhead (pickling
+            # each pd.Series row for IPC) dominates for such cheap per-row work, so
+            # we vectorize with numpy instead — ~10-50x faster than parallel_apply.
+            #
+            # NOTE: must complete before Phase 2 so that fill_missing_ace can read
+            # nce as a scalar (both columns must be scalars before either becomes a list).
+            charge_factors = spec_df["prec_type"].map(
+                lambda pt: CHARGE_FACTOR_MAP.get(np.abs(get_charge(pt)), CHARGE_FACTOR_MAP["large"])
+            )
+            prec_mz = spec_df["prec_mz"]
 
-        def _fill_ce_scalar_vectorized(ace_col: str, nce_col: str, target_key: str) -> None:
-            ace = spec_df[ace_col].where(spec_df[ace_col].notna() & (spec_df[ace_col] != -1))
-            nce = spec_df[nce_col].where(spec_df[nce_col].notna() & (spec_df[nce_col] != -1))
-            if target_key.startswith("nce"):
-                # fill missing nce from ace: nce = ace * 500 / (prec_mz * charge_factor)
-                computed = (ace * 500.0) / (prec_mz * charge_factors)
-                result = nce.fillna(computed)
-            else:
-                # fill missing ace from nce: ace = nce * prec_mz * charge_factor / 500
-                computed = (nce * prec_mz * charge_factors) / 500.0
-                result = ace.fillna(computed)
-            spec_df.loc[:, target_key] = result
+            def _fill_ce_scalar_vectorized(ace_col: str, nce_col: str, target_key: str) -> None:
+                ace = spec_df[ace_col].where(spec_df[ace_col].notna() & (spec_df[ace_col] != -1))
+                nce = spec_df[nce_col].where(spec_df[nce_col].notna() & (spec_df[nce_col] != -1))
+                if target_key.startswith("nce"):
+                    # fill missing nce from ace: nce = ace * 500 / (prec_mz * charge_factor)
+                    computed = (ace * 500.0) / (prec_mz * charge_factors)
+                    result = nce.fillna(computed)
+                else:
+                    # fill missing ace from nce: ace = nce * prec_mz * charge_factor / 500
+                    computed = (nce * prec_mz * charge_factors) / 500.0
+                    result = ace.fillna(computed)
+                spec_df.loc[:, target_key] = result
 
-        for key, _ in ce_keys_to_compute:
-            for endfix in ["", "_extra_1", "_extra_2"]:
-                _fill_ce_scalar_vectorized(
-                    ace_col=f"ace{endfix}", nce_col=f"nce{endfix}", target_key=f"{key}{endfix}"
-                )
-                if len(endfix) > 0:
-                    spec_df.loc[:, f"{key}{endfix}"] = spec_df.loc[:, f"{key}{endfix}"].fillna(-1)
+            for key, _ in ce_keys_to_compute:
+                for endfix in ["", "_extra_1", "_extra_2"]:
+                    _fill_ce_scalar_vectorized(
+                        ace_col=f"ace{endfix}", nce_col=f"nce{endfix}", target_key=f"{key}{endfix}"
+                    )
+                    if len(endfix) > 0:
+                        spec_df.loc[:, f"{key}{endfix}"] = spec_df.loc[:, f"{key}{endfix}"].fillna(
+                            -1
+                        )
 
-        # Phase 2: convert scalar CE columns to lists (stepped / ramped / single).
-        # _fill_ce_list does NaN checks + possibly np.arange over a small range —
-        # microseconds per row. Process-based parallelism (joblib / pandarallel)
-        # serializes each pd.Series row via pickle, costing ~50-200µs overhead per
-        # row — more than the work itself. Plain .apply() is faster here.
-        for key, _ in ce_keys_to_compute:
-            result_series = spec_df.apply(lambda row, _k=key: _fill_ce_list(row, _k), axis=1)
-            spec_df[key] = spec_df[key].astype(object)
-            spec_df.loc[:, key] = result_series
+            # Phase 2: convert scalar CE columns to lists (stepped / ramped / single).
+            # _fill_ce_list does NaN checks + possibly np.arange over a small range —
+            # microseconds per row. Process-based parallelism (joblib / pandarallel)
+            # serializes each pd.Series row via pickle, costing ~50-200µs overhead per
+            # row — more than the work itself. Plain .apply() is faster here.
+            for key, _ in ce_keys_to_compute:
+                result_series = spec_df.apply(lambda row, _k=key: _fill_ce_list(row, _k), axis=1)
+                spec_df[key] = spec_df[key].astype(object)
+                spec_df.loc[:, key] = result_series
 
         if spec_params["test_ces"] is not None and ce_key is not None and "test" in splits:
             test_split_fp = os.path.join(split_dp, "test_ids.csv")
