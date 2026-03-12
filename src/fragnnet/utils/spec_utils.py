@@ -204,7 +204,6 @@ def transform_nce_to_ace(nce: float, mw: float, charge_factor: int = 1) -> float
     return nce * mw / 500 * charge_factor
 
 
-
 def filter_func(
     mzs: th.Tensor | np.ndarray,
     ints: th.Tensor | np.ndarray,
@@ -544,10 +543,6 @@ def calculate_match_mzs(
     raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
 
 
-
-
-
-
 def cos_sim_helper(
     true_bin_idxs,
     true_bin_ints,
@@ -600,7 +595,6 @@ def batched_l1_normalize(ints, batch_idxs):
     return ints
 
 
-
 def batched_mf1000_normalize(ints, batch_idxs):
     """mf 1000 normalize implemention in pytorch, batched
 
@@ -616,7 +610,6 @@ def batched_mf1000_normalize(ints, batch_idxs):
     max_ints = scatter_reduce(ints, batch_idxs, reduce="max", dim_size=dim_size)
     ints = (ints / max_ints[batch_idxs]) * 1000.0
     return ints
-
 
 
 def round_aggregate_peaks(
@@ -785,8 +778,8 @@ def batch_cos_hun_helper(
     assert len(batch_pred_ints.shape) == 2
     batch_true_ints = F.normalize(batch_true_ints, p=2, dim=-1)
     batch_pred_ints = F.normalize(batch_pred_ints, p=2, dim=-1)
-    true_batch_pos_idx = th.argsort(~batch_true_match_mask)  # max to min
-    pred_batch_pos_idx = th.argsort(~batch_pred_match_mask)  # max to min
+    true_batch_pos_idx = th.argsort(batch_true_match_mask.to(th.int64), descending=True)
+    pred_batch_pos_idx = th.argsort(batch_pred_match_mask.to(th.int64), descending=True)
     max_true_match_pos = batch_true_match_mask.float().sum(-1).long().max()
     max_pred_match_pos = batch_pred_match_mask.float().sum(-1).long().max()
     true_batch_pos_idx = true_batch_pos_idx[:, :max_true_match_pos]
@@ -866,8 +859,8 @@ def batch_jss_hun_helper(
     batch_pred_ints = F.normalize(batch_pred_ints, p=1, dim=-1)
 
     # select subset to find idx
-    true_batch_pos_idx = th.argsort(~batch_true_match_mask)  # max to min
-    pred_batch_pos_idx = th.argsort(~batch_pred_match_mask)  # max to min
+    true_batch_pos_idx = th.argsort(batch_true_match_mask.to(th.int64), descending=True)
+    pred_batch_pos_idx = th.argsort(batch_pred_match_mask.to(th.int64), descending=True)
     max_true_match_pos = batch_true_match_mask.float().sum(-1).long().max()
     max_pred_match_pos = batch_pred_match_mask.float().sum(-1).long().max()
     true_batch_pos_idx = true_batch_pos_idx[:, :max_true_match_pos]
