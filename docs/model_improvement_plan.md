@@ -57,8 +57,8 @@ The current model (`fragnnet_d3_nist23_cv0`) already has these enabled — **the
 | Precursor type conditioning | ✅ enabled | `prec_insert_location: mlp` |
 | ACE → NCE conversion for QTOF | ✅ done | `fill_missing_nce()` via `ace_to_nce()` |
 | FT / QTOF / IT in inst\_types | ✅ included | `inst_types: [FT, QTOF, IT]` |
-| **Fragmentation mode conditioning** | ❌ **missing** | `frag_mode` not in config or model |
-| **Dual CE input (ACE + NCE)** | ❌ **missing** | assert prevents both from being loaded |
+| **Fragmentation mode conditioning** | ✅ **implemented** | `frag_mode: True`, `frag_mode_insert_location: mlp`, `frag_mode_scale: True` |
+| **Dual CE input (ACE + NCE)** | ❌ **not yet** | dataset ready; model stub `ce_insert_dual: False` |
 
 The 0.762 median is with all currently-implemented conditioning active.  The two missing
 conditioning signals are architecture gaps that gate the FT/CID and QTOF improvements.
@@ -298,12 +298,11 @@ Either:
 `fill_missing_nce()` converts ACE → NCE for QTOF using
 `nce = ace * charge / (prec_mz / 500)`.  The ACE↔NCE correlation across all spectra is
 only **0.779** — the conversion is lossy and introduces m/z-dependent noise for QTOF.
-The current dataset enforces mutual exclusivity:
 
-```python
-# base_dataset.py:142
-assert not (spec_params["ace"] and spec_params["nce"])
-```
+The dataset no longer enforces mutual exclusivity (old assert removed). When both
+`nce: True` and `ace: True` are set in `spec_params`, both CE columns are computed
+(for fallback conversion) but the model only receives `spec_ce` from `ce_key="nce"`.
+Full dual-CE model support requires `ce_insert_dual: True` (not yet implemented).
 
 CE coverage in test set:
 
@@ -328,24 +327,24 @@ learn instrument-specific reliability of each CE type from data.
 
 ### Implementation
 
-**1. Dataset** (`base_dataset.py`):
-- Remove the `assert not (ace and nce)` guard at line 142.
-- Load both columns unconditionally; replace NaN with sentinel `-1`.
-- Store as `spec_ace` and `spec_nce` with `spec_ace_mask` / `spec_nce_mask` boolean
-  tensors indicating valid vs missing.
+**1. Dataset** (`base_dataset.py`): ✅ **Done**
+- Old `assert not (ace and nce)` guard removed.
+- Both CE columns computed when either is requested (vectorised fill via `_fill_ce_scalar_vectorized`).
+- `ce_key="nce"` when both enabled; model always receives a single `spec_ce` tensor.
+- `-1` sentinel for missing values handled in `fill_missing_ace` / `fill_missing_nce`.
 
-**2. Model** (`base_model.py`):
-- Add a `dual_ce` path alongside existing `CEModel`.
-- Embed each CE with its own `CEModel` instance (independent weights — ACE and NCE
-  have different scales and units).
-- Concatenate: `ce_embed = concat([ace_embed, nce_embed])` → size `2 × ce_insert_size`.
-- Where `spec_ace_mask=False`, replace `ace_embed` with a learned `ace_missing_token`;
-  same for NCE.
+**2. Model** (`base_model.py`): ❌ **Not yet implemented**
+- Config stub `ce_insert_dual: False` added to `template.yml` and wired through `_ce_init` / `FraGNNetModel`.
+- Raises `NotImplementedError` if set to `True`.
+- When implemented: add a second `CEModel` instance for ACE (independent weights), concat embeddings, use learned missing tokens for absent CE.
 
-**3. Config**:
+**3. Config** (when implemented):
 ```yaml
-# replaces:  nce: True
-dual_ce: True
+# spec_params: both True so dataset computes both columns
+nce: True
+ace: True
+# model: embed both independently
+ce_insert_dual: True
 ce_insert_size: 32      # per-CE; concat output = 64
 ce_insert_location: mlp
 ce_insert_type: embed
