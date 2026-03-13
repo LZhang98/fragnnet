@@ -258,6 +258,13 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
         # not defualt valence can be -1 for transition metals
         # on paper we should not encounter them at all
         ve_value = atom.GetTotalValence()
+        # For cationic atoms with no H (e.g. [N+] in nitro, N-oxide), the
+        # formal charge funds an extra heavy-atom bond rather than an H slot.
+        # Subtracting FC prevents the H-cap from being inflated by 1 per such
+        # atom.  The guard cur_num_hs == 0 preserves correctness for protonated
+        # amines ([NH3+], [NH2+]) where the extra valence IS used for H.
+        if atom.GetFormalCharge() > 0 and cur_num_hs == 0:
+            ve_value -= atom.GetFormalCharge()
         if use_default_valence:
             default_valence = pt.GetDefaultValence(cur_element)
             if default_valence != -1:
