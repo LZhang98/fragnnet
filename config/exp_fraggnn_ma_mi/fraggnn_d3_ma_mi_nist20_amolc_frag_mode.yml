@@ -42,7 +42,7 @@ frag_params:
   preprocess: True
 spec_params:
   merge: False
-  nce: True
+  nce: False
   ace: True
   merge_keep_ces: False
   preprocess: True
