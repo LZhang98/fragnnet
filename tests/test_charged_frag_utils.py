@@ -19,7 +19,15 @@ import pytest
 from rdkit import Chem
 
 from fragnnet.frag.compute_frags import update_bonds
-from fragnnet.utils.frag_utils import compute_cc_h_cap, extract_mol_info
+from fragnnet.utils.frag_utils import compute_cc_h_cap, compute_dags, extract_mol_info
+
+_NITROBENZENE = "c1ccc([N+](=O)[O-])cc1"
+
+
+@pytest.fixture(scope="module")
+def nitrobenzene_mol_d() -> dict:
+    """Parsed mol_d for nitrobenzene, shared across tests 1–3."""
+    return extract_mol_info(_NITROBENZENE)
 
 
 # ---------------------------------------------------------------------------
@@ -27,23 +35,16 @@ from fragnnet.utils.frag_utils import compute_cc_h_cap, extract_mol_info
 # ---------------------------------------------------------------------------
 
 
-def test_nitro_nitrogen_ve_is_three():
+def test_nitro_nitrogen_ve_is_three(nitrobenzene_mol_d):
     """[N+] in nitro group must have ve=3 after formal-charge adjustment.
 
-    Nitrobenzene: without fix GetTotalValence()=4 → ve=4.
+    Without fix: GetTotalValence()=4 → ve=4.
     With fix: FC=+1, Hs=0 → ve = 4 - 1 = 3.
     """
-    smiles = "c1ccc([N+](=O)[O-])cc1"
-    mol_d = extract_mol_info(smiles)
-
-    mol = Chem.MolFromSmiles(smiles)
-    nitro_n_idx = next(
-        a.GetIdx()
-        for a in mol.GetAtoms()
-        if a.GetSymbol() == "N" and a.GetFormalCharge() == 1
-    )
-    assert mol_d["ve_arr"][nitro_n_idx] == 3, (
-        f"Expected ve=3 for [N+] in nitro, got {mol_d['ve_arr'][nitro_n_idx]}"
+    mol_d = nitrobenzene_mol_d
+    n_idx = next(i for i, e in enumerate(mol_d["elems"]) if e == "N")
+    assert mol_d["ve_arr"][n_idx] == 3, (
+        f"Expected ve=3 for [N+] in nitro, got {mol_d['ve_arr'][n_idx]}"
     )
 
 
@@ -52,7 +53,7 @@ def test_nitro_nitrogen_ve_is_three():
 # ---------------------------------------------------------------------------
 
 
-def test_h_cap_isolated_no2_fragment():
+def test_h_cap_isolated_no2_fragment(nitrobenzene_mol_d):
     """After cutting the N-C(ring) bond, the NO2 fragment H-cap must be 2.
 
     Fragment atoms: {N+, =O, O-}.  With fix:
@@ -65,25 +66,18 @@ def test_h_cap_isolated_no2_fragment():
     The remaining +1 from =O is an inherent property of the loose-cap design
     (shared with all double-bonded atoms, not specific to formal charges).
     """
-    smiles = "c1ccc([N+](=O)[O-])cc1"
-    mol_d = extract_mol_info(smiles)
+    mol_d = nitrobenzene_mol_d
+    elems, ve = mol_d["elems"], mol_d["ve_arr"]
 
-    mol = Chem.MolFromSmiles(smiles)
-    nitro_n_idx = next(
-        a.GetIdx() for a in mol.GetAtoms() if a.GetSymbol() == "N" and a.GetFormalCharge() == 1
-    )
-    o_double_idx = next(
-        a.GetIdx()
-        for a in mol.GetAtoms()
-        if a.GetSymbol() == "O" and a.GetFormalCharge() == 0
-    )
-    o_minus_idx = next(
-        a.GetIdx()
-        for a in mol.GetAtoms()
-        if a.GetSymbol() == "O" and a.GetFormalCharge() == -1
-    )
+    # Identify nitro atoms from elems + ve (no second RDKit parse needed):
+    #   N+ → unique N in nitrobenzene
+    #   =O → O with ve=2 (neutral double-bond O)
+    #   O- → O with ve=1 (anionic single-bond O; GetTotalValence()=1, FC unchanged)
+    n_idx = next(i for i, e in enumerate(elems) if e == "N")
+    o_double_idx = next(i for i, e in enumerate(elems) if e == "O" and ve[i] == 2)
+    o_minus_idx = next(i for i, e in enumerate(elems) if e == "O" and ve[i] == 1)
 
-    no2_atom_ids = np.array([nitro_n_idx, o_double_idx, o_minus_idx], dtype=np.int32)
+    no2_atom_ids = np.array([n_idx, o_double_idx, o_minus_idx], dtype=np.int32)
 
     # Recompute sbond_arr for this fragment only (mirrors compute_dags internals)
     updated_sbond, _ = update_bonds(
@@ -105,19 +99,15 @@ def test_h_cap_isolated_no2_fragment():
 # ---------------------------------------------------------------------------
 
 
-def test_nitrobenzene_dag_no_h3no2():
+def test_nitrobenzene_dag_no_h3no2(nitrobenzene_mol_d):
     """Nitrobenzene DAG must not contain the phantom H3NO2 fragment formula.
 
     H3NO2 arises when the N+ valence inflation is not corrected (cap=3 → H=3
     for isolated NO2). After the fix cap=2, so only H=0,1,2 are valid and
     H3NO2 is absent.
     """
-    from fragnnet.utils.frag_utils import compute_dags
-
-    smiles = "c1ccc([N+](=O)[O-])cc1"
-    mol_d = extract_mol_info(smiles)
     dag_d = compute_dags(
-        mol_d,
+        nitrobenzene_mol_d,
         max_depth=3,
         h_prior=False,
         max_h_transfer=4,
@@ -145,8 +135,10 @@ def test_protonated_amine_ve_unaffected():
     The N+ has FC=+1 but Hs=3, so the guard (cur_num_hs == 0) blocks the
     adjustment → ve stays at GetTotalValence() = 4, correctly reflecting
     the 3 H bonds plus 1 heavy bond.
+
+    The mol is passed directly to skip ml_standardize, which would neutralize
+    the zwitterion to NCC(=O)O before we can test the charged form.
     """
-    # Pass mol directly to skip ml_standardize (which would neutralize the zwitterion)
     mol = Chem.MolFromSmiles("[NH3+]CC(=O)[O-]")
     mol_d = extract_mol_info(mol)
 
@@ -165,10 +157,9 @@ def test_n_oxide_nitrogen_ve_is_three():
     """Pyridine N-oxide: [n+]([O-]) nitrogen must have ve=3 after adjustment.
 
     The N+ has FC=+1 and no H.  GetTotalValence()=4 is reduced to 3 by the fix.
-    Pass mol directly to bypass the standardizer.
+    The mol is passed directly to bypass the standardizer.
     """
     mol = Chem.MolFromSmiles("c1cc[n+]([O-])cc1")
-    assert mol is not None, "RDKit could not parse pyridine N-oxide SMILES"
     mol_d = extract_mol_info(mol)
 
     n_idx = next(i for i, e in enumerate(mol_d["elems"]) if e == "N")
