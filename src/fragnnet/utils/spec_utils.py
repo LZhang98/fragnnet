@@ -6,6 +6,7 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
+from fragnnet.utils.formula_utils import NEUTRON_MASS
 from fragnnet.utils.misc_utils import (
     EPS,
     TOLERANCE_MIN_MZ,
@@ -1307,3 +1308,79 @@ def jss_helper(
     # (ln(2) - jsd_e) / ln(2)
     jss = 1.0 - jsd_e / np.log(2.0)
     return jss
+
+
+def detect_isotope_peaks(
+    mzs: np.ndarray,
+    ints: np.ndarray,
+    mz_tol: float = 0.02,
+    max_isotope: int = 3,
+    check_intensity: bool = True,
+) -> np.ndarray:
+    """Detect isotope peaks in a reference spectrum.
+
+    A peak is considered an isotope peak (M+k, k >= 1) if there exists a
+    lower-m/z peak separated by approximately k * NEUTRON_MASS within
+    ``mz_tol``.  Optionally, that lower-m/z peak must also be more intense
+    than the candidate isotope peak.
+
+    The function works with raw (non-normalised) m/z and intensity arrays as
+    produced by standard reference libraries such as NIST.
+
+    Args:
+        mzs: Peak m/z values of shape (N,).  Need not be sorted.
+        ints: Peak intensities of shape (N,).  Same order as ``mzs``.
+        mz_tol: Absolute m/z tolerance in Da for matching isotope spacing.
+            The default of 0.02 Da covers both the exact 13C–12C spacing
+            (~1.0034 Da) and the NEUTRON_MASS approximation (1.0087 Da) used
+            in the rest of the codebase.  Defaults to 0.02.
+        max_isotope: Maximum isotope order to consider (1 = M+1 only,
+            2 = up to M+2, etc.). Defaults to 3.
+        check_intensity: If True, require that the candidate monoisotopic
+            peak (the one at mz - k * NEUTRON_MASS) is at least as intense
+            as the current peak.  This suppresses false positives from
+            noise but may miss isotope peaks of low-intensity fragments.
+            Defaults to True.
+
+    Returns:
+        Boolean array of shape (N,) where True means the peak is an
+        isotope peak.
+
+    Example:
+        >>> mzs = np.array([100.0, 101.008, 200.0, 201.012])
+        >>> ints = np.array([1000.0, 100.0, 500.0, 50.0])
+        >>> mask = detect_isotope_peaks(mzs, ints)
+        >>> mask  # peaks at 101.008 and 201.012 flagged as isotopes
+        array([False,  True, False,  True])
+    """
+    mzs = np.asarray(mzs, dtype=np.float64)
+    ints = np.asarray(ints, dtype=np.float64)
+    if mzs.shape != ints.shape or mzs.ndim != 1:
+        raise ValueError(f"mzs and ints must be 1-D arrays of the same length, got {mzs.shape}")
+
+    n = len(mzs)
+    is_isotope = np.zeros(n, dtype=bool)
+    if n == 0:
+        return is_isotope
+
+    sort_idx = np.argsort(mzs)
+    sorted_mzs = mzs[sort_idx]
+    sorted_ints = ints[sort_idx]
+
+    for i in range(n):
+        for k in range(1, max_isotope + 1):
+            target_mz = sorted_mzs[i] - k * NEUTRON_MASS
+            lo = np.searchsorted(sorted_mzs, target_mz - mz_tol, side="left")
+            hi = np.searchsorted(sorted_mzs, target_mz + mz_tol, side="right")
+            if lo >= hi:
+                continue
+            # At least one candidate monoisotopic peak exists in the window.
+            if check_intensity:
+                if np.any(sorted_ints[lo:hi] >= sorted_ints[i]):
+                    is_isotope[sort_idx[i]] = True
+                    break
+            else:
+                is_isotope[sort_idx[i]] = True
+                break
+
+    return is_isotope
