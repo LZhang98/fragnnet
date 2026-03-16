@@ -28,7 +28,11 @@ from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut as _compute_ccs_mu
 from fragnnet.frag.multi_cut_bfs import get_ring_edge_mask
 from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
 from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
+from fragnnet.utils.formula_utils import (
+    PREC_TYPE_TO_CMF_MASS_DIFF,
+    PREC_TYPE_TO_MASS_DIFF,
+    formula_to_peak_mzs,
+)
 from fragnnet.utils.misc_utils import PPM
 
 # Fragment index dtype (change here to update everywhere)
@@ -724,8 +728,14 @@ def compute_frag_peak_stats(
     theoretical_probs = th.index_select(theoretical_probs, 0, indices)
 
     prec_mask = (theoretical_probs > 0.0).type(th.float32)
-    # account for adduct mass
-    theoretical_mzs = theoretical_mzs + prec_mask * PREC_TYPE_TO_MASS_DIFF[prec_type]
+    # Compute two sets of theoretical m/z values:
+    #   - CMF: charge migrates to H+ before fragmentation (correct for [M+NH4]+, [M+Cl]-, etc.)
+    #   - std: adduct mass added directly (correct for [M+H]+, [M-H]- where CMF == std)
+    # A true peak is matched if it falls within tolerance of EITHER set.
+    cmf_diff = PREC_TYPE_TO_CMF_MASS_DIFF.get(prec_type, PREC_TYPE_TO_MASS_DIFF[prec_type])
+    std_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
+    theoretical_mzs_cmf = theoretical_mzs + prec_mask * cmf_diff
+    theoretical_mzs_std = theoretical_mzs + prec_mask * std_diff
     # compute overlap
     overlap_true_idxs = []
     overlap_true_ints = []
@@ -733,13 +743,15 @@ def compute_frag_peak_stats(
     overlap_pred_peak_counts = []
     overlap_pred_formula_counts = []
 
-    # check true_mzs
+    # check true_mzs against union of CMF and standard theoretical peaks
     for true_idx, true_mz in enumerate(true_mzs):
-        mz_diffs = th.abs(theoretical_mzs - true_mz)
         if not is_ppm:
-            mz_close = mz_diffs < tolerance
+            mz_close_cmf = th.abs(theoretical_mzs_cmf - true_mz) < tolerance
+            mz_close_std = th.abs(theoretical_mzs_std - true_mz) < tolerance
         else:
-            mz_close = mz_diffs < (true_mz * tolerance * PPM)
+            mz_close_cmf = th.abs(theoretical_mzs_cmf - true_mz) < (true_mz * tolerance * PPM)
+            mz_close_std = th.abs(theoretical_mzs_std - true_mz) < (true_mz * tolerance * PPM)
+        mz_close = mz_close_cmf | mz_close_std
         if th.any(mz_close):
             pred_idx = th.nonzero(mz_close, as_tuple=False)
             num_formula_match = th.sum(th.any(mz_close, dim=1).type(th.int32)).item()
@@ -765,7 +777,7 @@ def compute_frag_peak_stats(
         ppt_formula = np.nan
     # check prec_mz stuff
     prec_recalls = []
-    for comp_mzs in [theoretical_mzs, th.tensor(true_mzs)]:
+    for comp_mzs in [theoretical_mzs_std, th.tensor(true_mzs)]:
         prec_mz_diffs = th.abs(comp_mzs - prec_mz)
         if not is_ppm:
             prec_mz_close = prec_mz_diffs < tolerance
