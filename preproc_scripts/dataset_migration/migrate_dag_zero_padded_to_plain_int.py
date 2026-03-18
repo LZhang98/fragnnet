@@ -101,19 +101,20 @@ def migrate_dir(dag_dp: Path, apply: bool) -> tuple[int, int, int]:
         apply: If ``False``, only log what would happen without touching disk.
 
     Returns:
-        Tuple of ``(renamed, skipped_collision, already_canonical)`` counts.
+        Tuple of ``(renamed, skipped_collision, untouched)`` counts.
+        *untouched*: files already in canonical format — left on disk as-is.
     """
     if not dag_dp.is_dir():
         raise ValueError(f"Not a directory: {dag_dp}")
 
     renamed = 0
     skipped_collision = 0
-    already_canonical = 0
+    untouched = 0
 
     for src in sorted(dag_dp.iterdir()):
         new_name, was_changed = _resolve_name(src.name)
         if not was_changed:
-            already_canonical += 1
+            untouched += 1
             continue
 
         dst = src.parent / new_name
@@ -129,7 +130,7 @@ def migrate_dir(dag_dp: Path, apply: bool) -> tuple[int, int, int]:
             src.rename(dst)
         renamed += 1
 
-    return renamed, skipped_collision, already_canonical
+    return renamed, skipped_collision, untouched
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +141,9 @@ def migrate_dir(dag_dp: Path, apply: bool) -> tuple[int, int, int]:
 def migrate_tar(src_tar: Path, dst_tar: Path, apply: bool) -> tuple[int, int, int]:
     """Read *src_tar* and write *dst_tar* with legacy member names renamed to canonical.
 
-    Members already in canonical format are copied unchanged.  The output tar
-    is written atomically via a temporary file so *dst_tar* is never left in a
-    partial state if the process is interrupted.
+    Every member is written to *dst_tar* — renamed members under their new name,
+    all others under their original name.  The output tar is written atomically
+    via a temporary file so *dst_tar* is never left in a partial state.
 
     Args:
         src_tar: Source tar archive.
@@ -150,14 +151,16 @@ def migrate_tar(src_tar: Path, dst_tar: Path, apply: bool) -> tuple[int, int, in
         apply: If ``False``, only log planned renames without writing *dst_tar*.
 
     Returns:
-        Tuple of ``(renamed, skipped_collision, already_canonical)`` counts.
+        Tuple of ``(renamed, skipped_collision, copied_unchanged)`` counts.
+        *copied_unchanged*: members already in canonical format — written to
+        *dst_tar* as-is (name unchanged, content unchanged).
 
     Raises:
         ValueError: If a member cannot be extracted from the archive.
     """
     renamed = 0
     skipped_collision = 0
-    already_canonical = 0
+    copied_unchanged = 0
 
     with tarfile.open(src_tar, "r") as tf_in:
         members = tf_in.getmembers()
@@ -172,7 +175,7 @@ def migrate_tar(src_tar: Path, dst_tar: Path, apply: bool) -> tuple[int, int, in
         for member in members:
             new_name, was_changed = _resolve_name(member.name)
             if not was_changed:
-                already_canonical += 1
+                copied_unchanged += 1
                 continue
             if new_name in existing_names:
                 logger.warning(
@@ -198,7 +201,7 @@ def migrate_tar(src_tar: Path, dst_tar: Path, apply: bool) -> tuple[int, int, in
             )
 
         if not apply:
-            return renamed, skipped_collision, already_canonical
+            return renamed, skipped_collision, copied_unchanged
 
         # Write output tar atomically.
         dst_tar.parent.mkdir(parents=True, exist_ok=True)
@@ -231,7 +234,7 @@ def migrate_tar(src_tar: Path, dst_tar: Path, apply: bool) -> tuple[int, int, in
             Path(tmp_path).unlink(missing_ok=True)
             raise
 
-    return renamed, skipped_collision, already_canonical
+    return renamed, skipped_collision, copied_unchanged
 
 
 # ---------------------------------------------------------------------------
@@ -289,18 +292,19 @@ def main() -> None:
             sys.exit(1)
         logger.info("Source tar : %s", args.dag_dp)
         logger.info("Output tar : %s", dst_tar)
-        renamed, skipped, canonical = migrate_tar(args.dag_dp, dst_tar, apply=args.apply)
+        renamed, skipped, third = migrate_tar(args.dag_dp, dst_tar, apply=args.apply)
+        logger.info(
+            "Done. renamed=%d  skipped_collision=%d  copied_unchanged=%d",
+            renamed, skipped, third,
+        )
     else:
         if args.output is not None:
             logger.warning("--output is ignored in directory mode")
-        renamed, skipped, canonical = migrate_dir(args.dag_dp, apply=args.apply)
-
-    logger.info(
-        "Done. renamed=%d  skipped_collision=%d  already_canonical=%d",
-        renamed,
-        skipped,
-        canonical,
-    )
+        renamed, skipped, third = migrate_dir(args.dag_dp, apply=args.apply)
+        logger.info(
+            "Done. renamed=%d  skipped_collision=%d  untouched=%d",
+            renamed, skipped, third,
+        )
     if skipped:
         logger.warning("%d file(s) skipped due to collision — review manually.", skipped)
         sys.exit(1)

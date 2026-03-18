@@ -72,7 +72,7 @@ def test_migrate_dir_zero_padded(tmp_path):
     _write_pkl(tmp_path / "00000007.pkl", {"id": 7})
     _write_pkl(tmp_path / "00000042.pkl", {"id": 42})
 
-    renamed, skipped, canonical = migrate_dir(tmp_path, apply=True)
+    renamed, skipped, untouched = migrate_dir(tmp_path, apply=True)
 
     assert renamed == 2
     assert skipped == 0
@@ -86,7 +86,7 @@ def test_migrate_dir_old_pickle_ext(tmp_path):
     _write_pkl(tmp_path / "7.pickle", {"id": 7})
     _write_pkl(tmp_path / "7.pickle.bz2", {"id": 7})  # wrong ext but valid legacy
 
-    renamed, skipped, canonical = migrate_dir(tmp_path, apply=True)
+    renamed, skipped, untouched = migrate_dir(tmp_path, apply=True)
 
     assert renamed == 2
     assert (tmp_path / "7.pkl").exists()
@@ -97,7 +97,7 @@ def test_migrate_dir_dry_run_no_changes(tmp_path):
     """Dry run does not rename any files."""
     _write_pkl(tmp_path / "00000007.pkl", {"id": 7})
 
-    renamed, skipped, canonical = migrate_dir(tmp_path, apply=False)
+    renamed, skipped, untouched = migrate_dir(tmp_path, apply=False)
 
     assert renamed == 1
     assert (tmp_path / "00000007.pkl").exists()  # untouched
@@ -108,10 +108,10 @@ def test_migrate_dir_already_canonical(tmp_path):
     """Files already in canonical format are counted but not renamed."""
     _write_pkl(tmp_path / "7.pkl", {"id": 7})
 
-    renamed, skipped, canonical = migrate_dir(tmp_path, apply=True)
+    renamed, skipped, untouched = migrate_dir(tmp_path, apply=True)
 
     assert renamed == 0
-    assert canonical == 1
+    assert untouched == 1
     assert (tmp_path / "7.pkl").exists()
 
 
@@ -120,7 +120,7 @@ def test_migrate_dir_collision_skipped(tmp_path):
     _write_pkl(tmp_path / "00000007.pkl", {"zero_padded": True})
     _write_pkl(tmp_path / "7.pkl", {"canonical": True})
 
-    renamed, skipped, canonical = migrate_dir(tmp_path, apply=True)
+    renamed, skipped, untouched = migrate_dir(tmp_path, apply=True)
 
     assert skipped == 1
     # Both files still present; canonical was not overwritten
@@ -134,10 +134,10 @@ def test_migrate_dir_mixed(tmp_path):
     _write_pkl(tmp_path / "00000002.pkl", {"id": 2})    # zero-padded
     _write_pkl(tmp_path / "3.pickle", {"id": 3})        # old ext
 
-    renamed, skipped, canonical = migrate_dir(tmp_path, apply=True)
+    renamed, skipped, untouched = migrate_dir(tmp_path, apply=True)
 
     assert renamed == 2
-    assert canonical == 1
+    assert untouched == 1
     assert skipped == 0
     assert (tmp_path / "1.pkl").exists()
     assert (tmp_path / "2.pkl").exists()
@@ -176,7 +176,7 @@ def test_migrate_tar_zero_padded(tmp_path):
     dst = tmp_path / "dst.tar"
     _make_tar(src, {"00000007.pkl": {"id": 7}, "00000042.pkl": {"id": 42}})
 
-    renamed, skipped, canonical = migrate_tar(src, dst, apply=True)
+    renamed, skipped, copied_unchanged = migrate_tar(src, dst, apply=True)
 
     assert renamed == 2
     members = _read_tar_members(dst)
@@ -191,7 +191,7 @@ def test_migrate_tar_old_pickle_ext(tmp_path):
     dst = tmp_path / "dst.tar"
     _make_tar(src, {"7.pickle": {"id": 7}, "42.pickle.bz2": {"id": 42}})
 
-    renamed, skipped, canonical = migrate_tar(src, dst, apply=True)
+    renamed, skipped, copied_unchanged = migrate_tar(src, dst, apply=True)
 
     assert renamed == 2
     members = _read_tar_members(dst)
@@ -204,10 +204,10 @@ def test_migrate_tar_already_canonical(tmp_path):
     dst = tmp_path / "dst.tar"
     _make_tar(src, {"7.pkl": {"id": 7}})
 
-    renamed, skipped, canonical = migrate_tar(src, dst, apply=True)
+    renamed, skipped, copied_unchanged = migrate_tar(src, dst, apply=True)
 
     assert renamed == 0
-    assert canonical == 1
+    assert copied_unchanged == 1
     members = _read_tar_members(dst)
     assert members == {"7.pkl": {"id": 7}}
 
@@ -218,7 +218,7 @@ def test_migrate_tar_dry_run_no_output(tmp_path):
     dst = tmp_path / "dst.tar"
     _make_tar(src, {"00000007.pkl": {"id": 7}})
 
-    renamed, skipped, canonical = migrate_tar(src, dst, apply=False)
+    renamed, skipped, copied_unchanged = migrate_tar(src, dst, apply=False)
 
     assert renamed == 1
     assert not dst.exists()
@@ -237,10 +237,10 @@ def test_migrate_tar_mixed(tmp_path):
         },
     )
 
-    renamed, skipped, canonical = migrate_tar(src, dst, apply=True)
+    renamed, skipped, copied_unchanged = migrate_tar(src, dst, apply=True)
 
     assert renamed == 2
-    assert canonical == 1
+    assert copied_unchanged == 1
     members = _read_tar_members(dst)
     assert set(members) == {"1.pkl", "2.pkl", "3.pkl"}
 
@@ -252,10 +252,10 @@ def test_migrate_tar_collision_with_existing_canonical(tmp_path):
     # 7.pkl (canonical) and 00000007.pkl (legacy) both present — legacy must be skipped.
     _make_tar(src, {"7.pkl": {"source": "canonical"}, "00000007.pkl": {"source": "zero_padded"}})
 
-    renamed, skipped, canonical = migrate_tar(src, dst, apply=True)
+    renamed, skipped, copied_unchanged = migrate_tar(src, dst, apply=True)
 
     assert skipped == 1
-    assert canonical == 1
+    assert copied_unchanged == 1
     assert renamed == 0
     members = _read_tar_members(dst)
     assert members["7.pkl"] == {"source": "canonical"}
@@ -268,7 +268,7 @@ def test_migrate_tar_cross_legacy_collision(tmp_path):
     # 00000007.pkl and 7.pickle both resolve to 7.pkl.
     _make_tar(src, {"00000007.pkl": {"source": "zero_padded"}, "7.pickle": {"source": "old_ext"}})
 
-    renamed, skipped, canonical = migrate_tar(src, dst, apply=True)
+    renamed, skipped, copied_unchanged = migrate_tar(src, dst, apply=True)
 
     assert skipped == 1
     assert renamed == 1  # first one wins; second keeps its legacy name
