@@ -6,7 +6,7 @@ wandb_tags:
 - wr00
 - inchikey
 - new_proc
-- fraggnn_d3
+- fraggnn_d3c
 - dynamic_sampler
 - new_metrics
 - nodemlp
@@ -48,7 +48,7 @@ frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: True
+  preload: False
   preprocess: True
   include_cmf: True
 spec_params:
@@ -121,6 +121,8 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: True
+dynamic_batch_sampler_mode: frag_edge
+dynamic_batch_sampler_max: 100000
 
 group_sampler: False
 group_sampler_type: group
@@ -131,7 +133,7 @@ simple_group_sampler_type: group
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: True
+compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
