@@ -164,19 +164,34 @@ def migrate_tar(src_tar: Path, dst_tar: Path, apply: bool) -> tuple[int, int, in
         existing_names = {m.name for m in members}
 
         # Build rename map, detecting collisions up front.
+        # Two collision cases:
+        #   1. Target name already exists as another member in the archive.
+        #   2. Two different legacy names both resolve to the same canonical name.
         rename_map: dict[str, str] = {}
+        claimed_targets: set[str] = set()
         for member in members:
             new_name, was_changed = _resolve_name(member.name)
             if not was_changed:
                 already_canonical += 1
                 continue
-            if new_name in existing_names and new_name != member.name:
+            if new_name in existing_names:
                 logger.warning(
-                    "SKIP (collision) %s → %s (name already in archive)", member.name, new_name
+                    "SKIP (collision) %s → %s (canonical name already exists in archive)",
+                    member.name,
+                    new_name,
+                )
+                skipped_collision += 1
+                continue
+            if new_name in claimed_targets:
+                logger.warning(
+                    "SKIP (collision) %s → %s (another member already maps to this name)",
+                    member.name,
+                    new_name,
                 )
                 skipped_collision += 1
                 continue
             rename_map[member.name] = new_name
+            claimed_targets.add(new_name)
             renamed += 1
             logger.info(
                 "%s %s → %s", "RENAME" if apply else "WOULD RENAME", member.name, new_name

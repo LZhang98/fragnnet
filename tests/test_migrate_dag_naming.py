@@ -245,6 +245,40 @@ def test_migrate_tar_mixed(tmp_path):
     assert set(members) == {"1.pkl", "2.pkl", "3.pkl"}
 
 
+def test_migrate_tar_collision_with_existing_canonical(tmp_path):
+    """Zero-padded member is skipped when canonical name already exists in archive."""
+    src = tmp_path / "src.tar"
+    dst = tmp_path / "dst.tar"
+    # 7.pkl (canonical) and 00000007.pkl (legacy) both present — legacy must be skipped.
+    _make_tar(src, {"7.pkl": {"source": "canonical"}, "00000007.pkl": {"source": "zero_padded"}})
+
+    renamed, skipped, canonical = migrate_tar(src, dst, apply=True)
+
+    assert skipped == 1
+    assert canonical == 1
+    assert renamed == 0
+    members = _read_tar_members(dst)
+    assert members["7.pkl"] == {"source": "canonical"}
+
+
+def test_migrate_tar_cross_legacy_collision(tmp_path):
+    """Two legacy names resolving to the same canonical are detected as a collision."""
+    src = tmp_path / "src.tar"
+    dst = tmp_path / "dst.tar"
+    # 00000007.pkl and 7.pickle both resolve to 7.pkl.
+    _make_tar(src, {"00000007.pkl": {"source": "zero_padded"}, "7.pickle": {"source": "old_ext"}})
+
+    renamed, skipped, canonical = migrate_tar(src, dst, apply=True)
+
+    assert skipped == 1
+    assert renamed == 1  # first one wins; second keeps its legacy name
+    members = _read_tar_members(dst)
+    # The renamed entry gets the canonical name; the skipped entry keeps its original legacy name.
+    assert "7.pkl" in members
+    assert "7.pickle" in members  # not dropped, preserved under original name
+    assert members["7.pkl"] == {"source": "zero_padded"}
+
+
 def test_migrate_tar_atomic_on_error(tmp_path, monkeypatch):
     """Temp file is cleaned up if writing fails midway."""
     src = tmp_path / "src.tar"
