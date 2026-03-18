@@ -117,7 +117,7 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --dsets ${DSETS} \
     --multi_cut_bfs True \
     --max_cut_size 2 \
-    --smarts_prepass False \
+    --smarts_prepass True \
     --use_lmdb False \
     --min_frag_atoms ${MIN_FRAG_ATOMS}
 
