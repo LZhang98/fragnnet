@@ -156,9 +156,9 @@ class SpecMolFragDataset(SpecMolDataset):
                 self.mol_df["mol_id"].values, desc="> preload frag", total=len(self.mol_df)
             ):
                 if self.frag_backend == "h5":
-                    frag_entry = load_dag_hdf5(self.frag_h5[f"{mol_id:08d}"])
+                    frag_entry = load_dag_hdf5(self.frag_h5[f"{int(mol_id)}"])
                 elif self.frag_backend == "lmdb":
-                    frag_entry = pickle.loads(bytes(self.txn.get(f"{mol_id:08d}".encode())))
+                    frag_entry = pickle.loads(bytes(self.txn.get(f"{int(mol_id)}".encode())))
                 else:
                     frag_entry = load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
                 total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
@@ -264,7 +264,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 import h5py
 
                 self.frag_h5 = h5py.File(self.frag_dp, "r")
-            return load_dag_hdf5(self.frag_h5[f"{mol_id:08d}"])
+            return load_dag_hdf5(self.frag_h5[f"{int(mol_id)}"])
         elif self.frag_backend == "lmdb":
             if self.frag_env is None:
                 self.frag_env = lmdb.open(
@@ -276,7 +276,7 @@ class SpecMolFragDataset(SpecMolDataset):
                     meminit=False,
                 )
                 self.txn = self.frag_env.begin()
-            v = self.txn.get(f"{mol_id:08d}".encode())
+            v = self.txn.get(f"{int(mol_id)}".encode())
             assert v is not None, mol_id
             return pickle.loads(bytes(v))
         else:

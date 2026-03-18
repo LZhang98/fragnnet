@@ -259,7 +259,7 @@ def main(args):
                 if txn is None or env is None:
                     raise RuntimeError("LMDB environment was not initialized")
                 txn.put(
-                    f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL)
+                    f"{int(mol_id)}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL)
                 )
                 if (int(mol_id) + 1) % 200 == 0:
                     txn.commit()
@@ -267,7 +267,7 @@ def main(args):
             elif args.use_hdf5:
                 if h5_file is None:
                     raise RuntimeError("HDF5 file was not initialized")
-                grp = h5_file.create_group(f"{mol_id:08d}")
+                grp = h5_file.create_group(f"{int(mol_id)}")
                 frag_utils.dump_dag_hdf5(grp, dag_d)
             else:
                 # Write one artifact per molecule when LMDB storage is disabled.

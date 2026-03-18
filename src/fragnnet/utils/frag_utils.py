@@ -1295,17 +1295,34 @@ def get_edge_feats(edge_feats: th.Tensor, edge_feat_idxs: int, key: str):
     return edge_feats
 
 
-def get_frag_name(mol_id: str, is_compressed: bool):
-    name = f"{mol_id}.pickle"
+def get_frag_name(mol_id: str | int, is_compressed: bool) -> str:
+    """Return the canonical filename for a fragment DAG pickle file.
+
+    Args:
+        mol_id: Molecule identifier (int or numeric string).
+        is_compressed: Whether the file is bz2-compressed.
+
+    Returns:
+        Filename of the form ``{mol_id}.pkl[.bz2]``.
+    """
+    name = f"{int(mol_id)}.pkl"
     if is_compressed:
         name += ".bz2"
     return name
 
 
-def get_frag_fp(mol_id: str, frag_dp: str, is_compressed: bool):
-    fp = os.path.join(frag_dp, get_frag_name(mol_id, is_compressed))
+def get_frag_fp(mol_id: str | int, frag_dp: str, is_compressed: bool) -> str:
+    """Return the full path for a fragment DAG pickle file.
 
-    return fp
+    Args:
+        mol_id: Molecule identifier (int or numeric string).
+        frag_dp: Directory containing fragment files.
+        is_compressed: Whether the file is bz2-compressed.
+
+    Returns:
+        Full file path using the canonical naming convention.
+    """
+    return os.path.join(frag_dp, get_frag_name(mol_id, is_compressed))
 
 
 def _dump_pickle_file(fp: str, payload: dict) -> None:
@@ -1359,6 +1376,11 @@ def get_dag_output_path(
 ) -> str:
     """Build output path for one DAG artifact.
 
+    The base filename is determined by :func:`get_frag_name` (canonical format
+    ``{mol_id}.pkl``).  Compression with ``"gz"`` appends ``.gz``; ``"bz2"``
+    appends ``.bz2`` (equivalent to passing ``is_compressed=True`` to
+    :func:`get_frag_name`).
+
     Args:
         dag_dp: DAG output directory.
         mol_id: Molecule identifier.
@@ -1371,14 +1393,13 @@ def get_dag_output_path(
     Raises:
         ValueError: If ``compress_format`` is invalid when compression is enabled.
     """
-    base_fp = os.path.join(dag_dp, f"{int(mol_id):08d}.pkl")
     if not compress_dags:
-        return base_fp
+        return get_frag_fp(mol_id, dag_dp, is_compressed=False)
 
     if compress_format == "gz":
-        return f"{base_fp}.gz"
+        return os.path.join(dag_dp, f"{int(mol_id)}.pkl.gz")
     if compress_format == "bz2":
-        return f"{base_fp}.bz2"
+        return get_frag_fp(mol_id, dag_dp, is_compressed=True)
 
     raise ValueError(
         f"Invalid compression format '{compress_format}'. Expected one of: 'gz', 'bz2'."
@@ -1560,40 +1581,86 @@ def save_frag_d(frag_d: dict, mol_id: str, frag_dp: str, is_compressed: bool = F
     _dump_pickle_file(fp, frag_d)
 
 
-def load_frag_d(mol_id: str, frag_dp: str, is_compressed: bool = False):
-    """_summary_
+def _legacy_frag_names(mol_id: str | int, is_compressed: bool) -> list[str]:
+    """Return legacy filenames to try for backward compatibility.
+
+    Covers two previous naming conventions:
+
+    - ``{mol_id}.pickle[.bz2]`` — original format before unification
+    - ``{mol_id:08d}.pkl[.bz2]`` — short-lived zero-padded format
 
     Args:
-        filepath (str): _description_
+        mol_id: Molecule identifier.
+        is_compressed: Whether the file is bz2-compressed.
 
     Returns:
-        _type_: _description_
+        List of legacy filenames to probe, in preference order.
+    """
+    suffix = ".bz2" if is_compressed else ""
+    return [
+        f"{int(mol_id):08d}.pkl{suffix}",
+        f"{mol_id}.pickle{suffix}",
+    ]
+
+
+def load_frag_d(mol_id: str | int, frag_dp: str, is_compressed: bool = False):
+    """Load a fragment DAG dictionary from disk.
+
+    Supports folder, tar archive, and zip archive backends.  The canonical
+    filename format is ``{mol_id}.pkl[.bz2]`` (see :func:`get_frag_name`).
+    For backward compatibility, the zero-padded ``{mol_id:08d}.pkl[.bz2]`` and
+    the original ``{mol_id}.pickle[.bz2]`` formats are also tried when the
+    canonical file is not found.
+
+    Args:
+        mol_id: Molecule identifier (int or numeric string).
+        frag_dp: Directory path or archive file (``.tar`` / ``.zip``) containing
+            fragment DAG files.
+        is_compressed: Whether the files are bz2-compressed. Defaults to False.
+
+    Returns:
+        Loaded fragment dictionary, or ``None`` if not found inside a tar archive.
     """
     if os.path.isfile(frag_dp) and str(frag_dp).endswith(".tar"):
-        frag_filename = get_frag_name(mol_id, is_compressed)
+        canonical = get_frag_name(mol_id, is_compressed)
+        accepted = {canonical} | set(_legacy_frag_names(mol_id, is_compressed))
         with tarfile.open(frag_dp, "r") as tar_read:
             for member in tar_read.getmembers():
-                if member.name == frag_filename:
+                if member.name in accepted:
                     f = tar_read.extractfile(member)
                     if f is None:
                         raise ValueError(
-                            f"Could not extract '{frag_filename}' from archive '{frag_dp}'"
+                            f"Could not extract '{member.name}' from archive '{frag_dp}'"
                         )
                     content = f.read()
-                    if frag_filename.endswith(".bz2"):
+                    if member.name.endswith(".bz2"):
                         return pickle.loads(bz2.decompress(content))
                     return pickle.loads(content)
         return None
 
-    elif os.path.isfile(frag_dp) and str(frag_dp).endswith(".zip"):
-        frag_filename = get_frag_name(mol_id, is_compressed)
-        with ZipFile(frag_dp, "r") as zip_read, zip_read.open(frag_filename) as f:
-            content = f.read()
-            if frag_filename.endswith("bz2"):
-                return pickle.loads(bz2.decompress(content))
-            return pickle.loads(content)
+    if os.path.isfile(frag_dp) and str(frag_dp).endswith(".zip"):
+        canonical = get_frag_name(mol_id, is_compressed)
+        with ZipFile(frag_dp, "r") as zip_read:
+            names = zip_read.namelist()
+            member_name = canonical
+            if member_name not in names:
+                for legacy in _legacy_frag_names(mol_id, is_compressed):
+                    if legacy in names:
+                        member_name = legacy
+                        break
+            with zip_read.open(member_name) as f:
+                content = f.read()
+        if member_name.endswith(".bz2"):
+            return pickle.loads(bz2.decompress(content))
+        return pickle.loads(content)
 
     fp = get_frag_fp(mol_id, frag_dp, is_compressed)
+    if not os.path.isfile(fp):
+        for legacy in _legacy_frag_names(mol_id, is_compressed):
+            legacy_fp = os.path.join(frag_dp, legacy)
+            if os.path.isfile(legacy_fp):
+                fp = legacy_fp
+                break
     return _load_pickle_file(fp)
 
 

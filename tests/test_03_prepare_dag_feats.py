@@ -221,7 +221,7 @@ def test_get_dag_output_path_with_gzip():
         compress_dags=True,
         compress_format="gz",
     )
-    assert fp.endswith("00000042.pkl.gz")
+    assert fp.endswith("42.pkl.gz")
 
 
 def test_get_dag_output_path_with_bz2():
@@ -233,7 +233,7 @@ def test_get_dag_output_path_with_bz2():
         compress_dags=True,
         compress_format="bz2",
     )
-    assert fp.endswith("00000042.pkl.bz2")
+    assert fp.endswith("42.pkl.bz2")
 
 
 def test_dump_dag_pickle_round_trip_gzip():
@@ -242,7 +242,7 @@ def test_dump_dag_pickle_round_trip_gzip():
     payload = {"dag": {"num_nodes": 3}, "meta": [1, 2, 3]}
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        fp = str(Path(tmpdir) / "00000001.pkl.gz")
+        fp = str(Path(tmpdir) / "1.pkl.gz")
         frag_utils.dump_dag_pickle(fp, payload)
         with gzip.open(fp, "rb") as f:
             loaded = pickle.load(f)
@@ -255,7 +255,7 @@ def test_dump_dag_pickle_round_trip_bz2():
     payload = {"dag": {"num_nodes": 5}, "meta": [4, 5, 6]}
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        fp = str(Path(tmpdir) / "00000002.pkl.bz2")
+        fp = str(Path(tmpdir) / "2.pkl.bz2")
         frag_utils.dump_dag_pickle(fp, payload)
         with bz2.open(fp, "rb") as f:
             loaded = pickle.load(f)

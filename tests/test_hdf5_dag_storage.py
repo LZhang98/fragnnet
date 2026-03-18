@@ -117,7 +117,7 @@ class TestDagHdf5RoundTrip:
         """Round-trip a DAG with a single node and zero edges (edge case)."""
         dag_d = _make_dag_d(num_nodes=1, num_edges=0, num_formulae=2)
         h5_fp = str(tmp_path / "dags.h5")
-        mol_key = "00000000"
+        mol_key = "0"
 
         with h5py.File(h5_fp, "w") as h5f:
             dump_dag_hdf5(h5f.create_group(mol_key), dag_d)
@@ -136,11 +136,11 @@ class TestDagHdf5RoundTrip:
 
         with h5py.File(h5_fp, "w") as h5f:
             for mol_id, dag_d in dags.items():
-                dump_dag_hdf5(h5f.create_group(f"{mol_id:08d}"), dag_d)
+                dump_dag_hdf5(h5f.create_group(f"{int(mol_id)}"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
             for mol_id, orig in dags.items():
-                loaded = load_dag_hdf5(h5f[f"{mol_id:08d}"])
+                loaded = load_dag_hdf5(h5f[f"{int(mol_id)}"])
                 _assert_dag_d_equal(orig, loaded)
 
     def test_dtype_preservation(self, tmp_path):
@@ -149,10 +149,10 @@ class TestDagHdf5RoundTrip:
         h5_fp = str(tmp_path / "dags.h5")
 
         with h5py.File(h5_fp, "w") as h5f:
-            dump_dag_hdf5(h5f.create_group("00000000"), dag_d)
+            dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["00000000"])
+            loaded = load_dag_hdf5(h5f["0"])
 
         assert loaded["dag"].x.dtype == torch.int64
         assert loaded["dag"].edge_index.dtype == torch.int64
@@ -167,10 +167,10 @@ class TestDagHdf5RoundTrip:
         h5_fp = str(tmp_path / "dags.h5")
 
         with h5py.File(h5_fp, "w") as h5f:
-            dump_dag_hdf5(h5f.create_group("00000000"), dag_d)
+            dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["00000000"])
+            loaded = load_dag_hdf5(h5f["0"])
 
         assert loaded["idx_to_formula"][0] == ""
 
@@ -181,10 +181,10 @@ class TestDagHdf5RoundTrip:
         h5_fp = str(tmp_path / "dags.h5")
 
         with h5py.File(h5_fp, "w") as h5f:
-            dump_dag_hdf5(h5f.create_group("00000000"), dag_d)
+            dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["00000000"])
+            loaded = load_dag_hdf5(h5f["0"])
 
         assert len(loaded["idx_by_h_delta"]) == 1 + 2 * max_h_transfer
         for slot in loaded["idx_by_h_delta"]:
@@ -196,10 +196,10 @@ class TestDagHdf5RoundTrip:
         h5_fp = str(tmp_path / "dags.h5")
 
         with h5py.File(h5_fp, "w") as h5f:
-            dump_dag_hdf5(h5f.create_group("00000000"), dag_d)
+            dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["00000000"])
+            loaded = load_dag_hdf5(h5f["0"])
 
         for key in ["max_depth", "reached_depth", "max_h_transfer", "dag_num_edges",
                     "dag_num_nodes", "dag_num_nodes_nb", "node_feature_size", "edge_feature_size"]:
@@ -217,10 +217,10 @@ class TestDagHdf5RoundTrip:
         h5_fp = str(tmp_path / "dags.h5")
 
         with h5py.File(h5_fp, "w") as h5f:
-            dump_dag_hdf5(h5f.create_group("00000000"), dag_d)
+            dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["00000000"])
+            loaded = load_dag_hdf5(h5f["0"])
 
         assert loaded["dag_num_edges_by_depth"] == {0: 4, 1: 3, 2: 2}
         assert loaded["dag_num_nodes_by_depth"] == {0: 1, 1: 3, 2: 3}
@@ -235,10 +235,10 @@ class TestDagHdf5RoundTrip:
         h5_fp = str(tmp_path / "dags.h5")
 
         with h5py.File(h5_fp, "w") as h5f:
-            dump_dag_hdf5(h5f.create_group("00000000"), dag_d)
+            dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["00000000"])
+            loaded = load_dag_hdf5(h5f["0"])
 
         assert loaded["formula_peak_mzs"].shape == (num_formulae, num_isotopes)
         assert loaded["formula_peak_probs"].shape == (num_formulae, num_isotopes)
@@ -250,10 +250,10 @@ class TestDagHdf5RoundTrip:
         h5_fp = str(tmp_path / "dags.h5")
 
         with h5py.File(h5_fp, "w") as h5f:
-            dump_dag_hdf5(h5f.create_group("00000000"), dag_d)
+            dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["00000000"])
+            loaded = load_dag_hdf5(h5f["0"])
 
         np.testing.assert_array_equal(loaded["nodes_min_depth"], [0, 1, 1, 2, 2])
 
@@ -266,10 +266,10 @@ class TestDagHdf5RoundTrip:
         h5_fp = str(tmp_path / "dags.h5")
 
         with h5py.File(h5_fp, "w") as h5f:
-            dump_dag_hdf5(h5f.create_group("00000000"), dag_d)
+            dump_dag_hdf5(h5f.create_group("0"), dag_d)
 
         with h5py.File(h5_fp, "r") as h5f:
-            loaded = load_dag_hdf5(h5f["00000000"])
+            loaded = load_dag_hdf5(h5f["0"])
 
         assert loaded["force_stopped"] == force_stopped
         assert loaded["h_prior"] == h_prior
