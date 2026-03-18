@@ -51,6 +51,15 @@ migrate_tar = _mod.migrate_tar
         # Unrelated files — untouched
         ("meta_info.json", ("meta_info.json", False)),
         ("dags.h5", ("dags.h5", False)),
+        # Tar member paths with directory prefix — prefix preserved
+        ("dags/00000123.pkl", ("dags/123.pkl", True)),
+        ("dags/00000001.pkl", ("dags/1.pkl", True)),
+        ("dags/123.pickle", ("dags/123.pkl", True)),
+        ("dags/00000123.pickle.bz2", ("dags/123.pkl.bz2", True)),
+        ("dags/123.pkl", ("dags/123.pkl", False)),
+        ("dags/meta_info.json", ("dags/meta_info.json", False)),
+        # Nested prefix
+        ("a/b/00000007.pkl", ("a/b/7.pkl", True)),
     ],
 )
 def test_resolve_name(name, expected):
@@ -277,6 +286,36 @@ def test_migrate_tar_cross_legacy_collision(tmp_path):
     assert "7.pkl" in members
     assert "7.pickle" in members  # not dropped, preserved under original name
     assert members["7.pkl"] == {"source": "zero_padded"}
+
+
+def test_migrate_tar_prefixed_member_names(tmp_path):
+    """Tar members with a directory prefix (e.g. dags/00000001.pkl) are renamed correctly."""
+    src = tmp_path / "src.tar"
+    dst = tmp_path / "dst.tar"
+    _make_tar(
+        src,
+        {
+            "dags/00000001.pkl": {"id": 1},
+            "dags/00000123.pkl": {"id": 123},
+            "dags/7.pkl": {"id": 7},          # already canonical
+            "dags/meta_info.json": {"n": 3},  # unrelated, untouched
+        },
+    )
+
+    renamed, skipped, copied_unchanged = migrate_tar(src, dst, apply=True)
+
+    assert renamed == 2
+    assert skipped == 0
+    assert copied_unchanged == 2
+
+    members = _read_tar_members(dst)
+    assert members["dags/1.pkl"] == {"id": 1}
+    assert members["dags/123.pkl"] == {"id": 123}
+    assert members["dags/7.pkl"] == {"id": 7}
+    assert members["dags/meta_info.json"] == {"n": 3}
+    # Legacy names must not appear in output
+    assert "dags/00000001.pkl" not in members
+    assert "dags/00000123.pkl" not in members
 
 
 def test_migrate_tar_atomic_on_error(tmp_path, monkeypatch):

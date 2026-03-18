@@ -62,28 +62,36 @@ _OLD_EXT_RE = re.compile(r"^(\d+)\.pickle(\.bz2)?$")
 
 
 def _resolve_name(name: str) -> tuple[str, bool]:
-    """Return ``(canonical_name, was_changed)`` for a single filename.
+    """Return ``(canonical_name, was_changed)`` for a filename or tar member path.
 
-    Applies both legacy→canonical transformations:
+    Applies both legacy→canonical transformations to the **basename** only;
+    any leading directory prefix (e.g. ``dags/``) is preserved unchanged.
 
-    - Zero-padded .pkl → plain-int .pkl
-    - .pickle[.bz2]   → .pkl[.bz2]   (stripping zero-padding too if present)
+    - Zero-padded .pkl → plain-int .pkl   (``dags/00000123.pkl`` → ``dags/123.pkl``)
+    - .pickle[.bz2]   → .pkl[.bz2]        (stripping zero-padding too if present)
 
     Args:
-        name: Original filename (basename only, no directory component).
+        name: Filename or tar member path (directory prefix allowed).
 
     Returns:
-        Tuple of the canonical filename and whether it differs from *name*.
+        Tuple of the canonical path and whether it differs from *name*.
     """
-    m = _ZERO_PADDED_RE.match(name)
-    if m:
-        suffix = m.group(2) or ""
-        return f"{int(m.group(1))}.pkl{suffix}", True
+    # Split off any leading directory components so the regexes match the basename.
+    slash = name.rfind("/")
+    if slash >= 0:
+        prefix, basename = name[: slash + 1], name[slash + 1 :]
+    else:
+        prefix, basename = "", name
 
-    m = _OLD_EXT_RE.match(name)
+    m = _ZERO_PADDED_RE.match(basename)
     if m:
         suffix = m.group(2) or ""
-        return f"{int(m.group(1))}.pkl{suffix}", True
+        return f"{prefix}{int(m.group(1))}.pkl{suffix}", True
+
+    m = _OLD_EXT_RE.match(basename)
+    if m:
+        suffix = m.group(2) or ""
+        return f"{prefix}{int(m.group(1))}.pkl{suffix}", True
 
     return name, False
 
