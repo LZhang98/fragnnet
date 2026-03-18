@@ -32,6 +32,10 @@ Usage
     python migrate_dag_zero_padded_to_plain_int.py \\
         --dag_dp data/frag/nist20.tar --apply
 
+    # Tar – apply in-place (overwrites the source file atomically)
+    python migrate_dag_zero_padded_to_plain_int.py \\
+        --dag_dp data/frag/nist20.tar --in-place --apply
+
     # Tar – apply with explicit output path
     python migrate_dag_zero_padded_to_plain_int.py \\
         --dag_dp data/frag/nist20.tar --output data/frag/nist20_canonical.tar --apply
@@ -272,7 +276,18 @@ def main() -> None:
         default=None,
         help=(
             "Output path for the migrated tar archive (tar mode only). "
-            "Defaults to <stem>_migrated.tar next to the source file."
+            "Defaults to <stem>_migrated.tar next to the source file. "
+            "Mutually exclusive with --in-place."
+        ),
+    )
+    parser.add_argument(
+        "--in-place",
+        action="store_true",
+        default=False,
+        help=(
+            "Overwrite the source tar file in-place (tar mode only). "
+            "Uses an atomic temp-file swap so the original is never left corrupt. "
+            "Mutually exclusive with --output."
         ),
     )
     parser.add_argument(
@@ -294,12 +309,21 @@ def main() -> None:
         sys.exit(1)
 
     if is_tar:
-        dst_tar = args.output or args.dag_dp.with_name(args.dag_dp.stem + "_migrated.tar")
-        if args.apply and dst_tar.exists():
-            logger.error("Output file already exists: %s (remove it or choose --output)", dst_tar)
+        if args.output and args.in_place:
+            logger.error("--output and --in-place are mutually exclusive")
             sys.exit(1)
+        if args.in_place:
+            dst_tar = args.dag_dp
+        else:
+            dst_tar = args.output or args.dag_dp.with_name(args.dag_dp.stem + "_migrated.tar")
+            if args.apply and dst_tar.exists():
+                logger.error(
+                    "Output file already exists: %s (remove it, choose --output, or use --in-place)",
+                    dst_tar,
+                )
+                sys.exit(1)
         logger.info("Source tar : %s", args.dag_dp)
-        logger.info("Output tar : %s", dst_tar)
+        logger.info("Output tar : %s%s", dst_tar, " (in-place)" if args.in_place else "")
         renamed, skipped, third = migrate_tar(args.dag_dp, dst_tar, apply=args.apply)
         logger.info(
             "Done. renamed=%d  skipped_collision=%d  copied_unchanged=%d",

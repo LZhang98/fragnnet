@@ -318,6 +318,26 @@ def test_migrate_tar_prefixed_member_names(tmp_path):
     assert "dags/00000123.pkl" not in members
 
 
+def test_migrate_tar_in_place(tmp_path):
+    """Passing src_tar == dst_tar overwrites the archive atomically."""
+    src = tmp_path / "dags.tar"
+    _make_tar(src, {"00000001.pkl": {"id": 1}, "42.pkl": {"id": 42}})
+    original_size = src.stat().st_size
+
+    renamed, skipped, copied_unchanged = migrate_tar(src, src, apply=True)
+
+    assert renamed == 1
+    assert skipped == 0
+    assert copied_unchanged == 1
+    assert src.exists()
+    members = _read_tar_members(src)
+    assert members["1.pkl"] == {"id": 1}
+    assert members["42.pkl"] == {"id": 42}
+    assert "00000001.pkl" not in members
+    # File was rewritten (size may differ from original)
+    _ = original_size  # just ensure no exception above
+
+
 def test_migrate_tar_atomic_on_error(tmp_path, monkeypatch):
     """Temp file is cleaned up if writing fails midway."""
     src = tmp_path / "src.tar"
