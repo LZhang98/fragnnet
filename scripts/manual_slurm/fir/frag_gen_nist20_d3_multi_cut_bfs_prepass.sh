@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --account=rrg-dwishart
+#SBATCH --account=def-rgreiner
 #SBATCH --nodes=1
 #SBATCH --job-name=frag_gen_nist20_d3_mbfs
 #SBATCH --mem=180G
