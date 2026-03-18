@@ -48,7 +48,7 @@ frag_params:
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
-  preload: True
+  preload: False
   preprocess: True
   include_cmf: True
 spec_params:
