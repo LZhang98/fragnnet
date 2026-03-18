@@ -251,6 +251,33 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     return dl
 
 
+def validate_sampler_config(config_d: dict) -> None:
+    """Validate dynamic batch sampler config entries.
+
+    Args:
+        config_d: Experiment config dictionary.
+
+    Raises:
+        ValueError: If the sampler configuration is invalid.
+    """
+    if not config_d["dynamic_batch_sampler"]:
+        return
+    if config_d["model_type"] != "frag_gnn":
+        raise ValueError("Dynamic batch sampler can only be used with frag_gnn model")
+    if config_d["automatic_optimization"]:
+        raise ValueError(
+            f"Dynamic batch sampler cannot be used with automatic optimization "
+            f"(got automatic_optimization={config_d['automatic_optimization']})"
+        )
+    if config_d["dynamic_batch_sampler_mode"] not in ["frag_node", "frag_edge"]:
+        raise ValueError(
+            f"Dynamic batch sampler only supports frag_node or frag_edge mode "
+            f"(got '{config_d['dynamic_batch_sampler_mode']}')"
+        )
+    if config_d["dynamic_batch_sampler_max"] is None:
+        raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
+
+
 def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list):
     """
     Main entry point for initializing and running a training/validation/testing job.
@@ -486,23 +513,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         test_ds = dses[2]
 
     # check config for sampler
-    if config_d["dynamic_batch_sampler"]:
-        assert config_d["model_type"] == "frag_gnn", (
-            "Dynamic batch sampler can only be use with frag_gnn model"
-        )
-        assert not config_d["automatic_optimization"], (
-            f"Dynamic batch sampler can not use in junction of automatic optimization {config_d['automatic_optimization']}"
-        )
-        assert config_d["dynamic_batch_sampler_mode"] in ["frag_node", "frag_edge"], (
-            f"Dynamic batch sampler only support frag_node or frag_edge mode (given {config_d['dynamic_batch_sampler_mode']}) "
-        )
-        assert config_d["dynamic_batch_sampler_max"] is not None, (
-            "Dynamic batch sampler needs a max num"
-        )
-    if config_d["frag_gnn_type"] == "NodeMLP" and config_d["dynamic_batch_sampler"]:
-        assert config_d["dynamic_batch_sampler_mode"] == "frag_node", (
-            f"Dynamic batch sampler can only be use with dynamic_batch_sampler_mode frag_node, not {config_d['dynamic_batch_sampler_mode']}"
-        )
+    validate_sampler_config(config_d)
 
     # check config for CMF
     if (
