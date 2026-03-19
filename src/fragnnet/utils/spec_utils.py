@@ -6,7 +6,7 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.utils.formula_utils import NEUTRON_MASS
+from fragnnet.utils.formula_utils import NEUTRON_MASS, parse_formula
 from fragnnet.utils.misc_utils import (
     EPS,
     TOLERANCE_MIN_MZ,
@@ -1382,5 +1382,206 @@ def detect_isotope_peaks(
             else:
                 is_isotope[sort_idx[i]] = True
                 break
+
+    return is_isotope
+
+
+# ---------------------------------------------------------------------------
+# Training-data isotope cleaning
+# ---------------------------------------------------------------------------
+
+# Natural abundance M+1/M+0 contribution per atom (Poisson/binomial approx)
+_M1_CONTRIB: dict[str, float] = {
+    "C": 0.01103,    # 13C
+    "H": 0.000149,   # 2H
+    "N": 0.00368,    # 15N
+    "O": 0.000404,   # 17O
+    "S": 0.00421,    # 33S
+    "Si": 0.04683,   # 29Si
+}
+
+# Additive M+2/M+0 contributions from heavy isotopes (Cl, Br dominate)
+_M2_ADDITIVE: dict[str, float] = {
+    "Cl": 0.3220,    # 37Cl
+    "Br": 0.9735,    # 81Br
+    "S":  0.0425,    # 34S
+    "Si": 0.0337,    # 30Si
+    "O":  0.00204,   # 18O
+}
+
+# mz_tol per instrument type for isotope detection.
+# FT: 5 mDa resolves H-gain (Δ = 0.84 mDa) from M+1 isotope.
+# All other instruments: None → never filter (H-gain and isotope indistinguishable).
+_INST_MZ_TOL: dict[str, float | None] = {
+    "FT": 0.005,
+}
+
+
+def _expected_mk_ratio(counts: dict[str, int], scale: float, k: int) -> float:
+    """Expected M+k/M+0 intensity ratio for a fragment of scaled formula composition.
+
+    Args:
+        counts: Element counts from parse_formula.
+        scale: Mass fraction of the precursor in the fragment (frag_mz / prec_mz),
+            used to scale down the precursor's atom counts.
+        k: Isotope order (1 = M+1, 2 = M+2).
+
+    Returns:
+        Expected M+k/M+0 intensity ratio, floored at 1e-4.
+    """
+    import math
+
+    mol_m1 = sum(counts.get(elem, 0) * c for elem, c in _M1_CONTRIB.items())
+    poisson = (mol_m1 * scale) ** k / math.factorial(k)
+    if k == 2:
+        additive = sum(counts.get(elem, 0) * c for elem, c in _M2_ADDITIVE.items())
+        return max(poisson + additive * scale, 1e-4)
+    return max(poisson, 1e-4)
+
+
+def detect_isotope_peaks_for_training(
+    mzs: np.ndarray,
+    ints: np.ndarray,
+    prec_mz: float,
+    formula: str,
+    inst_type: str,
+    max_isotope: int = 2,
+    require_monotone: bool = True,
+    require_envelope: bool = True,
+    lo_factor: float = 0.5,
+    hi_factor: float = 2.0,
+) -> np.ndarray:
+    """Detect isotope peaks for training-data cleaning.
+
+    Designed for high precision (minimal false positives) rather than high recall,
+    because false positives delete real H-transfer peaks that the model must learn.
+
+    Key differences from ``detect_isotope_peaks``:
+
+    * **Instrument gating**: Only FT spectra are filtered.  For QTOF/IT/QqQ the
+      0.84 mDa gap between H-gain (+1H) and M+1 isotope is unresolvable, so
+      filtering would delete valid training signal.
+    * **Tight mz_tol**: 5 mDa for FT, which sits above the 0.84 mDa H/isotope
+      separation and below the 5–10 mDa noise floor.
+    * **Formula-aware ratio check**: Uses the precursor formula and a mass-fraction
+      scale to predict the expected M+k/M+0 ratio with tighter bounds (0.5×–2.0×
+      vs the exploratory 0.3×–3.0×).
+    * **Monotonicity**: Requires I(M+0) > I(M+k), which always holds for true
+      isotope envelopes of small molecules at typical MS2 energies.
+    * **Envelope coherence** (``require_envelope=True``): For M+k peaks with k > 1,
+      every intermediate M+j (1 ≤ j < k) must also be present and pass the ratio
+      check.  A coincidental M+2 match without a consistent M+1 is rejected.
+
+    Args:
+        mzs: Peak m/z values of shape (N,).  Need not be sorted.
+        ints: Peak intensities of shape (N,).  Same order as ``mzs``.
+        prec_mz: Precursor m/z (used as mass-fraction denominator for scale).
+        formula: Precursor molecular formula (e.g. ``"C12H22O11"``).
+        inst_type: Instrument type string as stored in spec_df (e.g. ``"FT"``,
+            ``"QTOF"``, ``"IT"``).  Only ``"FT"`` is currently filtered.
+        max_isotope: Maximum isotope order to consider.  Defaults to 2.
+        require_monotone: If True, require I(M+0) > I(M+k).  Defaults to True.
+        require_envelope: If True, require all intermediate isotope peaks M+1 …
+            M+(k-1) to be present and pass the ratio check before accepting M+k.
+            Defaults to True.
+        lo_factor: Lower bound multiplier on expected ratio.  Defaults to 0.5.
+        hi_factor: Upper bound multiplier on expected ratio.  Defaults to 2.0.
+
+    Returns:
+        Boolean array of shape (N,) where True means the peak is an isotope peak
+        that should be removed from the training spectrum.  All-False for
+        non-FT instruments.
+
+    Example:
+        >>> mzs = np.array([100.0, 101.009, 200.0, 201.009])
+        >>> ints = np.array([1000.0, 110.0, 500.0, 55.0])
+        >>> mask = detect_isotope_peaks_for_training(
+        ...     mzs, ints, prec_mz=300.0, formula="C10H20O5", inst_type="FT"
+        ... )
+    """
+    mzs = np.asarray(mzs, dtype=np.float64)
+    ints = np.asarray(ints, dtype=np.float64)
+    if mzs.shape != ints.shape or mzs.ndim != 1:
+        raise ValueError(
+            f"mzs and ints must be 1-D arrays of the same length, got {mzs.shape}"
+        )
+
+    n = len(mzs)
+    is_isotope = np.zeros(n, dtype=bool)
+
+    # Gate: only FT spectra are filtered
+    mz_tol = _INST_MZ_TOL.get(inst_type)
+    if mz_tol is None:
+        return is_isotope
+
+    if n == 0 or prec_mz <= 0 or not isinstance(formula, str):
+        return is_isotope
+
+    try:
+        counts = parse_formula(formula)
+    except (ValueError, AssertionError):
+        return is_isotope
+
+    sort_idx = np.argsort(mzs)
+    smzs = mzs[sort_idx]
+    sints = ints[sort_idx]
+
+    def _find_peak(target: float) -> tuple[float, float] | None:
+        """Return (mz, intensity) of the most intense peak within mz_tol, or None."""
+        lo = np.searchsorted(smzs, target - mz_tol, side="left")
+        hi = np.searchsorted(smzs, target + mz_tol, side="right")
+        if lo >= hi:
+            return None
+        best = lo + int(np.argmax(sints[lo:hi]))
+        return smzs[best], sints[best]
+
+    def _ratio_ok(obs_int: float, m0_int: float, scale: float, k: int) -> bool:
+        if m0_int <= 0:
+            return False
+        obs = obs_int / m0_int
+        exp = _expected_mk_ratio(counts, scale, k)
+        return lo_factor * exp <= obs <= hi_factor * exp
+
+    for i in range(n):
+        frag_mz = smzs[i]
+        frag_int = sints[i]
+        scale = min(frag_mz / prec_mz, 1.0)
+
+        for k in range(1, max_isotope + 1):
+            # Find M+0 for this M+k candidate
+            m0 = _find_peak(frag_mz - k * NEUTRON_MASS)
+            if m0 is None:
+                continue
+            m0_mz, m0_int = m0
+
+            # Monotonicity: M+0 must be more intense than M+k
+            if require_monotone and m0_int <= frag_int:
+                continue
+
+            # Formula-aware ratio check for M+k vs M+0
+            if not _ratio_ok(frag_int, m0_int, scale, k):
+                continue
+
+            # Envelope coherence: all intermediate M+j peaks must also be present
+            # and consistent before accepting M+k (k > 1 only)
+            if require_envelope and k > 1:
+                envelope_ok = True
+                for j in range(1, k):
+                    mj = _find_peak(frag_mz - (k - j) * NEUTRON_MASS)
+                    if mj is None:
+                        envelope_ok = False
+                        break
+                    _, mj_int = mj
+                    if require_monotone and mj_int >= m0_int:
+                        envelope_ok = False
+                        break
+                    if not _ratio_ok(mj_int, m0_int, scale, j):
+                        envelope_ok = False
+                        break
+                if not envelope_ok:
+                    continue
+
+            is_isotope[sort_idx[i]] = True
+            break
 
     return is_isotope
