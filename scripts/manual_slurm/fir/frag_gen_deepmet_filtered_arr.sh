@@ -72,18 +72,18 @@ pip install --no-deps -I ${WORKING_DIR}
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
-ISO_FALSE=False
+ISO_FLAG=False
 MAX_TIME=150
 ## Ensure SAVE_NAME contains a usable array task id even if SLURM didn't set it.
 ## Use parameter expansion to default to '1' when SLURM_ARRAY_TASK_ID is empty.
-SAVE_NAME=mas_250905_filtered_d${MAX_DEPTH}_h${MAX_H_TRANSFER}${ISO_FALSE}_${SLURM_ARRAY_TASK_ID:-1}
+SAVE_NAME=mas_250905_filtered_d${MAX_DEPTH}_h${MAX_H_TRANSFER}${ISO_FLAG}_${SLURM_ARRAY_TASK_ID:-1}
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 PROC_DP=${FRAGNNET_DP}/data/other/mas_250905_filtered/proc/
 
 echo MAX_DEPTH: ${MAX_DEPTH}
 echo SAVE_NAME: ${SAVE_NAME}
 echo NB_FLAG: ${NB_FLAG}
-echo ISO_FALSE: ${ISO_FALSE}
+echo ISO_FLAG: ${ISO_FLAG}
 echo MAX_H_TRANSFER: ${MAX_H_TRANSFER}
 echo MAX_TIME: ${MAX_TIME}
 echo PROC_DP: ${PROC_DP}

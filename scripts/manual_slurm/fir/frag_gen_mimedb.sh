@@ -62,15 +62,15 @@ pip install --no-deps -I ${WORKING_DIR}
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
-ISO_FALSE=False
-SAVE_NAME=mimedb_d${MAX_DEPTH}_h${MAX_H_TRANSFER}${ISO_FALSE}
+ISO_FLAG=False
+SAVE_NAME=mimedb_d${MAX_DEPTH}_h${MAX_H_TRANSFER}${ISO_FLAG}
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 PROC_DP=${FRAGNNET_DP}/data/other/mimedb/proc
 
 echo MAX_DEPTH: ${MAX_DEPTH}
 echo SAVE_NAME: ${SAVE_NAME}
 echo NB_FLAG: ${NB_FLAG}
-echo ISO_FALSE: ${ISO_FALSE}
+echo ISO_FLAG: ${ISO_FLAG}
 echo MAX_H_TRANSFER: ${MAX_H_TRANSFER}
 echo PROC_DP: ${PROC_DP}
 echo DEST_DP: ${DEST_DP}

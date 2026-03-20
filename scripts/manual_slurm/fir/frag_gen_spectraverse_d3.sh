@@ -63,8 +63,8 @@ DATASET_NAME=spectraverse
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
-ISO_FALSE=False
-SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
+ISO_FLAG=False
+SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}
 DSETS='spectraverse'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]- [M+CH3COOH-H]-'
 INST='FT QTOF IT'
@@ -79,7 +79,7 @@ echo DSETS: ${DSETS}
 echo PREC: ${PREC}
 echo INST: ${INST}
 echo FRAG_MODE: ${FRAG_MODE}
-echo ISO_FALSE: ${ISO_FALSE}
+echo ISO_FLAG: ${ISO_FLAG}
 echo DEST_DP: ${DEST_DP}
 
 echo create local proc_dp: ${WORKING_DIR}/data/proc
@@ -106,7 +106,7 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --prec_types ${PREC}\
     --inst_types ${INST} \
     --nb_isomorphic ${NB_FLAG} \
-    --isotopes ${ISO_FALSE} \
+    --isotopes ${ISO_FLAG} \
     --frag_mode ${FRAG_MODE} \
     --max_h_transfer ${MAX_H_TRANSFER} \
     --dsets ${DSETS}
