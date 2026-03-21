@@ -20,6 +20,7 @@ from lightning.pytorch.loggers import WandbLogger
 
 from fragnnet.model.loss import sparse_entropy_fn
 from fragnnet.utils.misc_utils import (
+    TOLERANCE_MIN_MZ,
     flatten_lol,
     safelog,
     scatter_l1normalize,
@@ -132,7 +133,11 @@ class SpectrumPL(L.LightningModule):
 
     def _setup_tolerance(self):
         """
-        Setup m/z tolerance for matching peaks, using either relative or absolute tolerance.
+        Setup m/z tolerance for matching peaks.
+
+        Sets the global tolerance scalars and, optionally, a per-instrument-type tolerance map
+        when ``inst_type_loss_tol`` is configured. All per-instrument entries must use relative
+        tolerance (``rel`` + ``min_mz``).
         """
         if self.hparams["loss_tolerance_rel"] is not None:
             self.tolerance = self.hparams["loss_tolerance_rel"]
@@ -143,6 +148,29 @@ class SpectrumPL(L.LightningModule):
             self.tolerance = self.hparams["loss_tolerance_abs"]
             self.relative = False
             self.tolerance_min_mz = None
+
+        # Per-instrument-type tolerance lookup tensors: shape [num_inst_types].
+        # Indexed by inst_type_idx in _common_step to build per-sample tolerance tensors
+        # without a Python loop. None when inst_type_loss_tol is not configured (fast path).
+        inst_type_loss_tol = self.hparams.get("inst_type_loss_tol")
+        if inst_type_loss_tol is not None and len(inst_type_loss_tol) > 0:
+            inst_types_sorted = sorted(self.hparams.spec_params["inst_types"])
+            global_min_mz = self.tolerance_min_mz if self.tolerance_min_mz is not None else TOLERANCE_MIN_MZ
+            tols, min_mzs = [], []
+            for inst_type in inst_types_sorted:
+                if inst_type in inst_type_loss_tol:
+                    cfg = inst_type_loss_tol[inst_type]
+                    tols.append(float(cfg["rel"]))
+                    min_mzs.append(float(cfg["min_mz"]))
+                else:
+                    tols.append(self.tolerance)
+                    min_mzs.append(global_min_mz)
+            # CPU tensors — moved to device in _common_step via .to()
+            self.inst_tol_lookup: th.Tensor = th.tensor(tols, dtype=th.float32)
+            self.inst_min_mz_lookup: th.Tensor = th.tensor(min_mzs, dtype=th.float32)
+        else:
+            self.inst_tol_lookup = None
+            self.inst_min_mz_lookup = None
 
     def _setup_loss_fn(self):
         """
@@ -1175,6 +1203,23 @@ class SpectrumPL(L.LightningModule):
             log_out=True,
         )
 
+        # Build per-sample tolerance tensors when inst_type_loss_tol is configured.
+        # Each sample gets the (rel, min_mz) pair for its instrument type, looked up from
+        # inst_tol_map (keyed by inst_type index). This lets FT use tight 10 ppm matching
+        # while QTOF uses a wider floor to cover floor-truncated m/z artifacts (≤0.009 Da).
+        # When inst_type_loss_tol is null in config, inst_tol_map is None and both tensors
+        # stay None, falling back to the global scalar tolerance in all loss functions.
+        tol_per_sample = None
+        min_mz_per_sample = None
+        if self.inst_tol_lookup is not None and "spec_inst_type" in batch:
+            # reshape(-1) instead of squeeze(-1): squeeze would collapse [1] → 0-d scalar
+            # when batch_size=1. reshape(-1) always produces a flat 1-D tensor.
+            inst_type_idxs = batch["spec_inst_type"].reshape(-1)  # [batch_size]
+            dtype, device = train_true_logprobs.dtype, train_true_logprobs.device
+            # Tensor indexing (no Python loop) — lookup tensors built once in _setup_tolerance
+            tol_per_sample = self.inst_tol_lookup[inst_type_idxs.cpu()].to(dtype=dtype, device=device)
+            min_mz_per_sample = self.inst_min_mz_lookup[inst_type_idxs.cpu()].to(dtype=dtype, device=device)
+
         # prepare training dict and compute loss
         train_d = {
             "true_mzs": train_true_mzs,
@@ -1187,6 +1232,9 @@ class SpectrumPL(L.LightningModule):
             "batch_size": batch_size,
             **pred_d,
         }
+        if tol_per_sample is not None:
+            train_d["tol_per_sample"] = tol_per_sample
+            train_d["min_mz_per_sample"] = min_mz_per_sample
 
         loss_d = self.loss_fn(**train_d)
         loss = loss_d["loss"]

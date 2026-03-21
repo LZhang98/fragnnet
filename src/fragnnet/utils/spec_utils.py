@@ -499,6 +499,8 @@ def calculate_match_mzs(
     relative: bool = True,
     tolerance_min_mz: float = TOLERANCE_MIN_MZ,
     pred_mz_divisor: bool = False,
+    tol_per_true: th.Tensor | None = None,
+    min_mz_per_true: th.Tensor | None = None,
 ) -> th.Tensor | np.ndarray:
     """
     Method to match two spectra based on m/z, return a N x M matrix, where N is number of mz in true_mzs, M is number of mz in pred_mzs
@@ -512,6 +514,10 @@ def calculate_match_mzs(
         relative (bool, optional): Flag to use a relative measure. Defaults to True.
         tolerance_min_mz (float, optional): Divisor floor used in relative measure. Defaults to 200 Da.
         pred_mz_divisor (bool, optional): If the measure is relative, whether to use the pred_mzs as divisors (instead of the true_mzs). Defaults to False.
+        tol_per_true (th.Tensor | None): Per-true-peak tolerance of shape [N_true]. When provided,
+            overrides the scalar ``tolerance`` for each true peak (torch path only).
+        min_mz_per_true (th.Tensor | None): Per-true-peak divisor floor of shape [N_true]. When
+            provided, overrides the scalar ``tolerance_min_mz`` for each true peak (torch path only).
     Returns:
         th.Tensor: return a N x M matrix of True or False, dim 0 for ground truth, dim 1 for predicted
     """
@@ -519,14 +525,30 @@ def calculate_match_mzs(
     if isinstance(true_mzs, th.Tensor) and isinstance(pred_mzs, th.Tensor):
         with th.autocast(device_type="cuda", dtype=th.bfloat16):  # speed up and save mem
             diff_mzs = th.abs(true_mzs[..., None] - pred_mzs[..., None, :])
-            min_diff_mzs = tolerance
-            if relative:
-                if pred_mz_divisor:
-                    divisor_mzs = pred_mzs.clone()
-                else:
-                    divisor_mzs = true_mzs.clone()
-                divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
-                diff_mzs = diff_mzs / divisor_mzs[..., None]
+            if tol_per_true is not None:
+                # Per-true-peak tolerance: shape [N_true, 1] broadcasts over [N_true, N_pred]
+                min_diff_mzs = tol_per_true[..., None]
+                if relative:
+                    if pred_mz_divisor:
+                        divisor_mzs = pred_mzs.clone()
+                        divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
+                        diff_mzs = diff_mzs / divisor_mzs[..., None]
+                    else:
+                        divisor_mzs = true_mzs.clone()
+                        if min_mz_per_true is not None:
+                            divisor_mzs = th.maximum(divisor_mzs, min_mz_per_true)
+                        else:
+                            divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
+                        diff_mzs = diff_mzs / divisor_mzs[..., None]
+            else:
+                min_diff_mzs = tolerance
+                if relative:
+                    if pred_mz_divisor:
+                        divisor_mzs = pred_mzs.clone()
+                    else:
+                        divisor_mzs = true_mzs.clone()
+                    divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
+                    diff_mzs = diff_mzs / divisor_mzs[..., None]
         return diff_mzs < min_diff_mzs
 
     if isinstance(true_mzs, np.ndarray) and isinstance(pred_mzs, np.ndarray):

@@ -170,6 +170,8 @@ def sparse_cross_entropy_seq(
     tolerance_min_mz: float,
     tolerance_multiple: float,
     gaussian_renormalize: bool,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
 ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     """compute sparse cross entropy in squence
 
@@ -208,13 +210,16 @@ def sparse_cross_entropy_seq(
         b_true_mzs = true_mzs[b_true_mask]
         b_pred_logprobs = pred_logprobs[b_pred_mask]
         b_pred_mzs = pred_mzs[b_pred_mask]
+        # per-sample tolerance (falls back to global scalars when not provided)
+        b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
+        b_min_mz = min_mz_per_sample[batch_idx].item() if min_mz_per_sample is not None else tolerance_min_mz
         # get matches
         b_match_mask = calculate_match_mzs(
             b_true_mzs,
             b_pred_mzs,
-            tolerance=tolerance_multiple * tolerance,
+            tolerance=tolerance_multiple * b_tolerance,
             relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
+            tolerance_min_mz=b_min_mz,
         )
         b_match_mask = th.as_tensor(b_match_mask, device=b_true_mzs.device)
         if tolerance_multiple == -1:
@@ -230,8 +235,8 @@ def sparse_cross_entropy_seq(
             b_pred_mzs=b_pred_mzs,
             b_pred_logprobs=b_pred_logprobs,
             relative=relative,
-            tolerance=tolerance,
-            tolerance_min_mz=tolerance_min_mz,
+            tolerance=b_tolerance,
+            tolerance_min_mz=b_min_mz,
             tolerance_multiple=tolerance_multiple,
             gaussian_renormalize=gaussian_renormalize,
         )
@@ -273,6 +278,8 @@ def sparse_cross_entropy_vec(
     oos_tolerance_multiple: float,
     gaussian_renormalize: bool,
     loss_batch_size: int,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
 ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     """
     Vectorized computation of sparse cross-entropy loss for batched spectra.
@@ -320,6 +327,18 @@ def sparse_cross_entropy_vec(
     oos_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
     true_oos_logprobs = th.zeros(batch_size, dtype=float_dtype, device=device)
 
+    # Expand per-sample tolerances to per-peak if provided
+    if tol_per_sample is not None:
+        tol_per_true_peak = tol_per_sample[true_batch_idxs].to(float_dtype)
+        min_mz_per_true_peak = min_mz_per_sample[true_batch_idxs].to(float_dtype)
+        tol_per_pred_peak = tol_per_sample[pred_batch_idxs].to(float_dtype)
+        min_mz_per_pred_peak = min_mz_per_sample[pred_batch_idxs].to(float_dtype)
+    else:
+        tol_per_true_peak = None
+        min_mz_per_true_peak = None
+        tol_per_pred_peak = None
+        min_mz_per_pred_peak = None
+
     # Loop over loss batches for memory efficiency
     for bl in range(loss_num_batches):
         # Compute batch slice indices
@@ -340,6 +359,24 @@ def sparse_cross_entropy_vec(
         bl_pred_mzs = pred_mzs[bl_pred_lower:bl_pred_upper]
         bl_pred_oos_logprobs = pred_oos_logprobs[bl_lower:bl_upper]
 
+        # Slice per-peak tolerance arrays for this loss batch
+        bl_tol_per_true = (
+            tol_per_true_peak[bl_true_lower:bl_true_upper] if tol_per_true_peak is not None else None
+        )
+        bl_min_mz_per_true = (
+            min_mz_per_true_peak[bl_true_lower:bl_true_upper]
+            if min_mz_per_true_peak is not None
+            else None
+        )
+        bl_tol_per_pred = (
+            tol_per_pred_peak[bl_pred_lower:bl_pred_upper] if tol_per_pred_peak is not None else None
+        )
+        bl_min_mz_per_pred = (
+            min_mz_per_pred_peak[bl_pred_lower:bl_pred_upper]
+            if min_mz_per_pred_peak is not None
+            else None
+        )
+
         # Create mask for matching batch indices
         bl_batch_mask = bl_true_batch_idxs.reshape(-1, 1) == bl_pred_batch_idxs.reshape(1, -1)
         # Create mask for matching m/z values within tolerance
@@ -349,6 +386,10 @@ def sparse_cross_entropy_vec(
             tolerance=oos_tolerance_multiple * tolerance,
             relative=relative,
             tolerance_min_mz=tolerance_min_mz,
+            tol_per_true=(
+                oos_tolerance_multiple * bl_tol_per_true if bl_tol_per_true is not None else None
+            ),
+            min_mz_per_true=bl_min_mz_per_true,
         )
         bl_match_mask = th.as_tensor(bl_match_mask, device=device)
         # Combine masks: only consider matches within same batch and within m/z tolerance
@@ -360,7 +401,10 @@ def sparse_cross_entropy_vec(
 
         # Compute Gaussian stds and log truncation factors for predictions
         if relative:
-            bl_stds = th.clamp(bl_pred_mzs, min=tolerance_min_mz) * tolerance
+            if bl_tol_per_pred is not None:
+                bl_stds = th.maximum(bl_pred_mzs, bl_min_mz_per_pred) * bl_tol_per_pred
+            else:
+                bl_stds = th.clamp(bl_pred_mzs, min=tolerance_min_mz) * tolerance
         else:
             bl_stds = tolerance * th.ones_like(bl_pred_mzs)
         bl_vars = bl_stds**2
@@ -454,7 +498,7 @@ def get_sparse_cross_entropy_fn(
             msg = f"Vectorized loss only supports 'gaussian' distribution, got '{dist}'"
             raise NotImplementedError(msg)
 
-        def sce_fn(*args):
+        def sce_fn(*args, tol_per_sample=None, min_mz_per_sample=None):
             return sparse_cross_entropy_vec(
                 *args,
                 tolerance=tolerance,
@@ -463,6 +507,8 @@ def get_sparse_cross_entropy_fn(
                 oos_tolerance_multiple=oos_tolerance_multiple,
                 gaussian_renormalize=gaussian_renormalize,
                 loss_batch_size=loss_batch_size,
+                tol_per_sample=tol_per_sample,
+                min_mz_per_sample=min_mz_per_sample,
             )
     else:
         if dist == "gaussian":
@@ -470,7 +516,7 @@ def get_sparse_cross_entropy_fn(
         else:
             tolerance_multiple = pm_tolerance_multiple
 
-        def sce_fn(*args):
+        def sce_fn(*args, tol_per_sample=None, min_mz_per_sample=None):
             return sparse_cross_entropy_seq(
                 *args,
                 ce_fn=ce_fn,
@@ -479,6 +525,8 @@ def get_sparse_cross_entropy_fn(
                 tolerance_min_mz=tolerance_min_mz,
                 tolerance_multiple=tolerance_multiple,
                 gaussian_renormalize=gaussian_renormalize,
+                tol_per_sample=tol_per_sample,
+                min_mz_per_sample=min_mz_per_sample,
             )
 
     return sce_fn
@@ -693,6 +741,8 @@ def sparse_cosine_distance_hungarian(
     relative: bool = True,
     tolerance_min_mz: float = TOLERANCE_MIN_MZ,
     log_distance: bool = False,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
 ) -> th.Tensor:
     """
     Compute the sparse cosine distance between spectra using the Hungarian algorithm for optimal matching.
@@ -734,13 +784,16 @@ def sparse_cosine_distance_hungarian(
         # L2 normalize log-probabilities for cosine similarity
         b_true_logprobs = b_true_logprobs - 0.5 * th.logsumexp(2 * b_true_logprobs, dim=0)
         b_pred_logprobs = b_pred_logprobs - 0.5 * th.logsumexp(2 * b_pred_logprobs, dim=0)
+        # per-sample tolerance (falls back to global scalars when not provided)
+        b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
+        b_min_mz = min_mz_per_sample[batch_idx].item() if min_mz_per_sample is not None else tolerance_min_mz
         # Compute m/z matching mask within tolerance
         b_match_mzs = calculate_match_mzs(
             b_true_mzs,
             b_pred_mzs,
-            tolerance=tolerance,
+            tolerance=b_tolerance,
             relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
+            tolerance_min_mz=b_min_mz,
         )
         b_match_mzs = th.as_tensor(b_match_mzs, device=b_true_mzs.device)
         # Identify which true and predicted peaks have matches
@@ -781,6 +834,8 @@ def sparse_jensen_shannon_divergence_hungarian(
     relative: bool = True,
     tolerance_min_mz: float = TOLERANCE_MIN_MZ,
     log_min: float = EPS,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
 ) -> th.Tensor:
     """
     Compute the sparse Jensen-Shannon divergence between spectra using the Hungarian algorithm for optimal matching.
@@ -832,13 +887,16 @@ def sparse_jensen_shannon_divergence_hungarian(
         if b_pred_sum > 0:
             b_pred_probs = b_pred_probs / b_pred_sum
 
+        # per-sample tolerance (falls back to global scalars when not provided)
+        b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
+        b_min_mz = min_mz_per_sample[batch_idx].item() if min_mz_per_sample is not None else tolerance_min_mz
         # Compute m/z matching mask within tolerance
         b_match_mzs = calculate_match_mzs(
             b_true_mzs,
             b_pred_mzs,
-            tolerance=tolerance,
+            tolerance=b_tolerance,
             relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
+            tolerance_min_mz=b_min_mz,
         )
         b_match_mzs = th.as_tensor(b_match_mzs, device=b_true_mzs.device)
 

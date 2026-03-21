@@ -547,6 +547,8 @@ class FraGNNetPL(SpectrumPL):
             pred_mzs,
             pred_logprobs,
             pred_batch_idxs,
+            tol_per_sample=None,
+            min_mz_per_sample=None,
         ):
             return sparse_cosine_distance_hungarian(
                 true_mzs,
@@ -558,6 +560,8 @@ class FraGNNetPL(SpectrumPL):
                 tolerance=self.tolerance,
                 relative=self.relative,
                 log_distance=(self.hparams.loss_type == "log_cosine_distance_hungarian"),
+                tol_per_sample=tol_per_sample,
+                min_mz_per_sample=min_mz_per_sample,
             )
 
         # jensen-shannon distance
@@ -588,6 +592,8 @@ class FraGNNetPL(SpectrumPL):
             pred_mzs,
             pred_logprobs,
             pred_batch_idxs,
+            tol_per_sample=None,
+            min_mz_per_sample=None,
         ):
             return sparse_jensen_shannon_divergence_hungarian(
                 true_mzs,
@@ -598,6 +604,8 @@ class FraGNNetPL(SpectrumPL):
                 pred_batch_idxs,
                 tolerance=self.tolerance,
                 relative=self.relative,
+                tol_per_sample=tol_per_sample,
+                min_mz_per_sample=min_mz_per_sample,
             )
 
         assert self.hparams.sparse_cosine_similarity
@@ -700,6 +708,8 @@ class FraGNNetPL(SpectrumPL):
             **kwargs,
         ):
             loss_d = {}
+            tol_per_sample = kwargs.get("tol_per_sample")
+            min_mz_per_sample = kwargs.get("min_mz_per_sample")
 
             if self.hparams.loss_type == "cross_entropy":
                 ios_ce, oos_ce, _, _ = sparse_ce_fn(
@@ -710,6 +720,8 @@ class FraGNNetPL(SpectrumPL):
                     pred_logprobs,
                     pred_batch_idxs,
                     pred_oos_logprobs,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
                 )
                 spec_ce = ios_ce + oos_ce
                 if self.hparams.oos_loss:
@@ -739,6 +751,8 @@ class FraGNNetPL(SpectrumPL):
                     pred_mzs,
                     pred_logprobs,
                     pred_batch_idxs,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
                 )
             elif self.hparams.loss_type == "jss_distance":
                 primary_loss = jss_dist_fn(
@@ -757,6 +771,8 @@ class FraGNNetPL(SpectrumPL):
                     pred_mzs,
                     pred_logprobs,
                     pred_batch_idxs,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
                 )
 
             loss = self.hparams.primary_loss_weight * primary_loss

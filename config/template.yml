@@ -239,6 +239,12 @@ loss_tolerance_rel: 0.00001 # 10 ppm
 loss_tolerance_abs: #0.001
 loss_batch_size: 32
 loss_tolerance_min_mz: 200.0
+# Per-instrument-type tolerance override. When set, overrides loss_tolerance_rel/abs for
+# specific instrument types. All entries must use relative tolerance (rel + min_mz).
+# Example: QTOF floor 0.015 Da covers NIST23 floor-truncated m/z (up to 0.009 Da error).
+inst_type_loss_tol: # null = use global loss_tolerance_rel/abs for all inst types
+#   FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da (same as global default)
+#   QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
 bin_output: False
 auxiliary_scores:
   - cos_sim
