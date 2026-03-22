@@ -1472,13 +1472,10 @@ def get_pairwise_jss_sim_hun(
 
     sim_matrix = th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
-    # Separate spectra
-    spectra_mzs = []
-    spectra_logprobs = []
-    for i in range(batch_size):
-        mask = batch_idxs == i
-        spectra_mzs.append(mzs[mask])
-        spectra_logprobs.append(logprobs[mask])
+    # Separate spectra using split (O(num_peaks) vs O(batch_size * num_peaks) mask loop)
+    counts = th.bincount(batch_idxs, minlength=batch_size).tolist()
+    spectra_mzs = list(th.split(mzs, counts))
+    spectra_logprobs = list(th.split(logprobs, counts))
 
     for i in range(batch_size):
         # Self similarity is always 1.
@@ -1534,13 +1531,10 @@ def get_pairwise_cross_entropy_hun(
 
     ce_matrix = th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
-    # Separate spectra
-    spectra_mzs = []
-    spectra_logprobs = []
-    for i in range(batch_size):
-        mask = batch_idxs == i
-        spectra_mzs.append(mzs[mask])
-        spectra_logprobs.append(logprobs[mask])
+    # Separate spectra using split (O(num_peaks) vs O(batch_size * num_peaks) mask loop)
+    counts = th.bincount(batch_idxs, minlength=batch_size).tolist()
+    spectra_mzs = list(th.split(mzs, counts))
+    spectra_logprobs = list(th.split(logprobs, counts))
 
     # Fill matrix
     # CE is NOT symmetric. Loop over all pairs.

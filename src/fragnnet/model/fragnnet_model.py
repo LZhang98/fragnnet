@@ -341,6 +341,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # this is required
         assert "h_formulae_idx" in self.frag_node_feats
 
+        # Pre-compute h_counts as a buffer — fixed for the lifetime of the model.
+        # Layout: [0, -1, +1, -2, +2, ..., -num_hs, +num_hs]
+        _h_counts = th.zeros([2 * num_hs + 1], dtype=th.long)
+        _h_counts[1 + 2 * th.arange(num_hs)] = -th.arange(1, num_hs + 1)
+        _h_counts[2 + 2 * th.arange(num_hs)] = th.arange(1, num_hs + 1)
+        include_cmf = "cmf_h_formulae_idx" in frag_node_feats
+        if include_cmf:
+            _h_counts = th.cat([_h_counts, _h_counts], dim=0)
+        self.register_buffer("_h_counts_buf", _h_counts)
+
     def _ce_location_check(self):
         assert self.ce_insert_location != "frag", "ce_insert_location=frag not supported"
 
@@ -507,29 +517,25 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
         # Type assertions for embedding tensors (narrow types from Any | None to Tensor)
 
+        # Precompute per-mol node counts once from the cumulative prefix sum (avoids up to 4
+        # redundant th.unique scans over mol_batch when multiple embeddings insert at "mol").
+        mol_batch_counts = mol_num_nodes[1:] - mol_num_nodes[:-1]
+
         if self.ce_insert_location == "mol":
             assert ce_embed is not None, "ce_embed must not be None"
-            mol_ce_embed = th.repeat_interleave(
-                ce_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
-            )
+            mol_ce_embed = th.repeat_interleave(ce_embed, mol_batch_counts, dim=0)
             mol_x = th.cat([mol_x, mol_ce_embed], dim=1)
         if self.prec_insert_location == "mol":
             assert prec_embed is not None, "prec_embed must not be None"
-            mol_prec_embed = th.repeat_interleave(
-                prec_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
-            )
+            mol_prec_embed = th.repeat_interleave(prec_embed, mol_batch_counts, dim=0)
             mol_x = th.cat([mol_x, mol_prec_embed], dim=1)
         if self.inst_insert_location == "mol":
             assert inst_embed is not None, "inst_embed must not be None"
-            mol_inst_embed = th.repeat_interleave(
-                inst_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
-            )
+            mol_inst_embed = th.repeat_interleave(inst_embed, mol_batch_counts, dim=0)
             mol_x = th.cat([mol_x, mol_inst_embed], dim=1)
         if self.frag_mode_insert_location == "mol":
             assert frag_mode_embed is not None, "frag_mode_embed must not be None"
-            mol_frag_mode_embed = th.repeat_interleave(
-                frag_mode_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
-            )
+            mol_frag_mode_embed = th.repeat_interleave(frag_mode_embed, mol_batch_counts, dim=0)
             mol_x = th.cat([mol_x, mol_frag_mode_embed], dim=1)
 
         # get per-atom embeddings
@@ -684,7 +690,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         frag_node_batch_idxs = frag_batch
         frag_formula_batch_idxs = th.repeat_interleave(
             th.arange(batch_size, device=device),
-            frag_formula_cumsizes[1:] - frag_formula_cumsizes[:-1],
+            frag_formula_sizes,  # equivalent to cumsizes[1:] - cumsizes[:-1], already computed
         )
         frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
 
@@ -846,7 +852,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             or self.inst_insert_location == "mlp"
             or self.frag_mode_insert_location == "mlp"
         ):
-            unique_batch_counts = th.unique(frag_node_batch_idxs, return_counts=True)[1]
+            # frag_num_nodes is a cumulative prefix sum → diff gives per-sample node counts,
+            # equivalent to th.unique(frag_node_batch_idxs, return_counts=True)[1] but O(batch)
+            unique_batch_counts = frag_num_nodes[1:] - frag_num_nodes[:-1]
             if self.ce_insert_location == "mlp":
                 mlp_ce_embed = th.repeat_interleave(ce_embed, unique_batch_counts, dim=0)
                 frag_embed_parts.append(mlp_ce_embed)
@@ -864,24 +872,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
         frag_embed = th.cat(frag_embed_parts, dim=1)
         frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs, self.mlp_output_dim)
-        # create mask for null forumla, for each sample #0 forumla is null
-        frag_joint_mask = (~th.isin(frag_joint_formula_idxs, frag_formula_cumsizes[:-1])).float()
-        # h count stuff
-        h_counts = th.zeros([2 * self.num_hs + 1], device=device, dtype=frag_joint_batch_idxs.dtype)
-        h_counts[1 + 2 * th.arange(self.num_hs, device=device)] = -th.arange(
-            1, self.num_hs + 1, device=device
-        )
-        h_counts[2 + 2 * th.arange(self.num_hs, device=device)] = th.arange(
-            1, self.num_hs + 1, device=device
-        )
-        # in case of include cmf
-        if include_cmf:
-            h_counts = th.cat([h_counts, h_counts], dim=0)
-            # cmf_mask = th.cat([th.ones(2 * self.num_hs + 1, device=device, dtype=float_dtype), th.zeros(2 * self.num_hs + 1, device=device, dtype=float_dtype)])
-        # else:
-        # cmf_mask = th.ones(2 * self.num_hs + 1, device=device, dtype=float_dtype)
-
-        frag_joint_h_counts = h_counts.repeat(frag_node_batch_idxs.shape[0])
+        # create mask for null formula — the null formula for batch sample b is always at global
+        # index frag_formula_cumsizes[b].  Expand per-node then tile across mlp_output_dim columns
+        # for an O(num_nodes * mlp_output_dim) element-wise comparison instead of th.isin set-search.
+        null_per_node = frag_formula_cumsizes[:-1][frag_node_batch_idxs]  # (num_nodes,)
+        null_tiled = null_per_node.repeat_interleave(self.mlp_output_dim)  # (num_nodes * mlp_output_dim,)
+        frag_joint_mask = (frag_joint_formula_idxs != null_tiled).float()
+        # h counts — use pre-computed buffer (registered in __init__) to avoid rebuilding each step
+        frag_joint_h_counts = self._h_counts_buf.repeat(frag_node_batch_idxs.shape[0])
 
         # frag_joint_cmf_mask = cmf_mask.repeat(frag_node_batch_idxs.shape[0], 1)
 
@@ -1089,11 +1087,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.mlp_output_dim,
         )
         # select (will remove all NULL formula idxs, potentially some node idxs too if they contain only NULLs)
-        frag_real_joint_logits = frag_joint_logits[frag_joint_mask.bool()]
-        frag_real_joint_h_counts = frag_joint_h_counts[frag_joint_mask.bool()]
-        frag_real_joint_node_idxs = frag_joint_node_idxs[frag_joint_mask.bool()]
-        frag_real_joint_formula_idxs = frag_joint_formula_idxs[frag_joint_mask.bool()]
-        frag_real_joint_batch_idxs = frag_joint_batch_idxs[frag_joint_mask.bool()]
+        _real_mask = frag_joint_mask.bool()
+        frag_real_joint_logits = frag_joint_logits[_real_mask]
+        frag_real_joint_h_counts = frag_joint_h_counts[_real_mask]
+        frag_real_joint_node_idxs = frag_joint_node_idxs[_real_mask]
+        frag_real_joint_formula_idxs = frag_joint_formula_idxs[_real_mask]
+        frag_real_joint_batch_idxs = frag_joint_batch_idxs[_real_mask]
         # P(f,n)
         frag_real_joint_logprobs = scatter_logsoftmax(
             frag_real_joint_logits, frag_real_joint_batch_idxs
@@ -1218,22 +1217,23 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_nb_node_node_node_idxs = None
             frag_nb_node_node_batch_idxs = None
 
-        assert (
-            th.unique(frag_real_node_node_idxs).shape[0]
-            == frag_real_node_node_idxs.max() + 1
-            == batch_frag_num_nodes
-        )
-        assert (
-            th.unique(frag_real_formula_formula_idxs).shape[0]
-            == frag_real_formula_formula_idxs.max() + 1
-            == batch_frag_num_formulae
-        )
-        if self.nb_iso:
+        if __debug__:
             assert (
-                th.unique(frag_nb_node_node_idxs).shape[0]
-                == frag_nb_node_node_idxs.max() + 1
-                == batch_frag_nb_num_nodes
+                th.unique(frag_real_node_node_idxs).shape[0]
+                == frag_real_node_node_idxs.max() + 1
+                == batch_frag_num_nodes
             )
+            assert (
+                th.unique(frag_real_formula_formula_idxs).shape[0]
+                == frag_real_formula_formula_idxs.max() + 1
+                == batch_frag_num_formulae
+            )
+            if self.nb_iso:
+                assert (
+                    th.unique(frag_nb_node_node_idxs).shape[0]
+                    == frag_nb_node_node_idxs.max() + 1
+                    == batch_frag_nb_num_nodes
+                )
 
         if self.bin_output:
             # import pdb; pdb.set_trace()
@@ -1251,15 +1251,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             spec_logprobs = spec_bin_logprobs
             spec_batch_idxs = spec_bin_batch_idxs
 
-        term1 = scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp()
-        term2 = oos_logprobs.exp()
-        term3 = (not_oos_logprobs + frag_null_formula_logprob).exp()
-        sum_probs = term1 + term2 + term3
-        assert th.all(th.isclose(sum_probs, th.ones_like(sum_probs), rtol=0.0, atol=5e-2)), (
-            term1,
-            term2,
-            term3,
-        )
+        if __debug__:
+            term1 = scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp()
+            term2 = oos_logprobs.exp()
+            term3 = (not_oos_logprobs + frag_null_formula_logprob).exp()
+            sum_probs = term1 + term2 + term3
+            assert th.all(th.isclose(sum_probs, th.ones_like(sum_probs), rtol=0.0, atol=5e-2)), (
+                term1,
+                term2,
+                term3,
+            )
         # size definitions:
         # B: batch size
         # P: total number of predicted spectrum peaks across the batch
