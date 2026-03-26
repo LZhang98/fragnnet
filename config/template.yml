@@ -119,7 +119,14 @@ ann_params:
   library_splits:
     - train
   formula_str: False
+  # Absolute m/z error threshold (Da). Spectra with any annotation whose
+  # |peak_mz - exact_mz| exceeds this value are dropped entirely.
+  # Set to null to disable. Default: 0.1 Da.
   huge_mz_diff_threshold: 0.1
+  # Relative m/z error threshold (fraction, not ppm). Individual annotations
+  # whose |peak_mz - exact_mz| / max(peak_mz, 200) exceeds this value are
+  # pruned (spectrum is kept). Equivalent to ~10 ppm at the 200 Da floor.
+  # Set to null to disable. Default: 1e-5.
   big_mz_diff_ppm_threshold:
   library_fp:
   preprocess: False

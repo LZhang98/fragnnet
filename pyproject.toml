@@ -31,6 +31,7 @@ dependencies = [
     "lmdb==1.7.5",
     "torch-linear-assignment",
     "pandarallel",
+    "pyopenms",
 ]
 
 [project.optional-dependencies]

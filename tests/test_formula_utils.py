@@ -33,28 +33,28 @@ class TestMassAndIsotopes:
         expected = Chem.GetPeriodicTable().GetMostCommonIsotopeMass("H")
         assert fu.MASS("H") == pytest.approx(expected, rel=1e-8, abs=1e-8)
 
-    def test_get_isotopes_nonexistent(self):
-        assert fu.get_isotopes(999) == []
-
-    def test_get_isotopes_threshold(self):
-        isotopes = fu.get_isotopes(1, pct_thold=0.01)
-        assert isotopes[0][0] == 1  # most abundant hydrogen isotope
-        assert isotopes[0][1] > 0.9
-
-    def test_enumerate_multinomial_prob_sums_to_one(self):
-        probs = fu.enumerate_multinomial(2, [0.5, 0.5], cutoff_thold=0.0)
-        total = sum(p for p, _ in probs)
-        assert total == pytest.approx(1.0, rel=1e-7, abs=1e-7)
-
-
 class TestPeaks:
-    """Peak generation helpers."""
+    """Peak generation via get_peaks_for_formula (pyopenms-backed)."""
 
-    def test_get_peaks_for_element(self):
-        peaks = fu.get_peaks_for_element("H", 2)
-        assert len(peaks) > 0
-        probs = sum(p for p, _ in peaks)
-        assert probs == pytest.approx(1.0, rel=5e-4, abs=5e-4)
+    def test_probs_sum_to_one(self):
+        masses, probs = fu.get_peaks_for_formula({"C": 6, "H": 12, "O": 6}, threshold=0.0)
+        assert sum(probs) == pytest.approx(1.0, rel=1e-4, abs=1e-4)
+
+    def test_monoisotopic_is_most_abundant_small_molecule(self):
+        masses, probs = fu.get_peaks_for_formula({"C": 6, "H": 12, "O": 6})
+        assert probs[0] == max(probs)
+
+    def test_bromine_m2_dominates(self):
+        # For C10H8Br2, M+2 relative intensity should exceed M+1
+        masses, probs = fu.get_peaks_for_formula({"C": 10, "H": 8, "Br": 2})
+        sorted_pairs = sorted(zip(masses, probs))
+        m2_prob = sorted_pairs[2][1]
+        m1_prob = sorted_pairs[1][1]
+        assert m2_prob > m1_prob
+
+    def test_empty_raises(self):
+        with pytest.raises((ValueError, Exception)):
+            fu.get_peaks_for_formula({})
 
     def test_get_peaks_for_formula(self):
         masses, probs = fu.get_peaks_for_formula({"H": 2, "O": 1}, threshold=0.0)

@@ -6,7 +6,14 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
-from fragnnet.utils.formula_utils import NEUTRON_MASS, parse_formula
+from fragnnet.utils.formula_utils import (
+    C13_SPACING,
+    MASS,
+    NEUTRON_MASS,
+    PREC_TYPE_TO_FORMULA_DIFF,
+    isotope_offsets_from_formula,
+    parse_formula,
+)
 from fragnnet.utils.misc_utils import (
     EPS,
     TOLERANCE_MIN_MZ,
@@ -1408,57 +1415,210 @@ def detect_isotope_peaks(
     return is_isotope
 
 
+def detect_isotope_peaks_formula_aware(
+    mzs: np.ndarray,
+    ints: np.ndarray,
+    element_counts: dict[str, int],
+    mz_tol: float = 0.02,
+    max_isotope: int = 3,
+    check_intensity: bool = True,
+    intensity_ratio_lo: float = 0.1,
+    intensity_ratio_hi: float = 10.0,
+) -> np.ndarray:
+    """Detect isotope peaks using exact pyopenms isotopologue mass offsets.
+
+    Unlike :func:`detect_isotope_peaks`, which uses a fixed ``k * NEUTRON_MASS``
+    step, this function queries pyopenms ``CoarseIsotopePatternGenerator`` for
+    the actual M+k mass offsets predicted for the given molecular formula.  This
+    improves accuracy for molecules containing Cl, Br, S, or K where even-mass
+    isotopes shift the M+2/M+3 positions away from the simple neutron-mass
+    approximation.
+
+    An optional intensity ratio gate rejects peaks whose observed/expected ratio
+    falls outside ``[intensity_ratio_lo * exp, intensity_ratio_hi * exp]``.
+
+    Requires pyopenms to be installed.
+
+    Args:
+        mzs: Peak m/z values of shape (N,).  Need not be sorted.
+        ints: Peak intensities of shape (N,).  Same order as ``mzs``.
+        element_counts: Molecular formula as element count dict from
+            :func:`~fragnnet.utils.formula_utils.parse_formula`.
+        mz_tol: Absolute m/z tolerance in Da.  Defaults to 0.02.
+        max_isotope: Maximum isotope order to query from pyopenms.
+            Defaults to 3.
+        check_intensity: If True, require that the candidate monoisotopic peak
+            is at least as intense as the candidate isotope peak.  Defaults to
+            True.
+        intensity_ratio_lo: Lower multiplier on the pyopenms-predicted
+            relative intensity for the ratio gate.  Set to 0.0 to disable.
+            Defaults to 0.1.
+        intensity_ratio_hi: Upper multiplier on the pyopenms-predicted
+            relative intensity for the ratio gate.  Set to ``np.inf`` to
+            disable.  Defaults to 10.0.
+
+    Returns:
+        Boolean array of shape (N,) where True means the peak is an isotope
+        peak.
+
+    Example:
+        >>> import numpy as np
+        >>> from fragnnet.utils.formula_utils import parse_formula
+        >>> ec = parse_formula("C10H8Br2")
+        >>> mzs = np.array([285.899, 286.902, 287.902, 288.902, 289.902])
+        >>> ints = np.array([100.0, 5.0, 97.0, 2.0, 24.0])
+        >>> mask = detect_isotope_peaks_formula_aware(mzs, ints, ec)
+        >>> mask[2]  # M+2 (large Br peak) is correctly flagged
+        True
+    """
+    mzs = np.asarray(mzs, dtype=np.float64)
+    ints = np.asarray(ints, dtype=np.float64)
+    if mzs.shape != ints.shape or mzs.ndim != 1:
+        raise ValueError(f"mzs and ints must be 1-D arrays of the same length, got {mzs.shape}")
+
+    n = len(mzs)
+    is_isotope = np.zeros(n, dtype=bool)
+    if n == 0:
+        return is_isotope
+
+    offsets = isotope_offsets_from_formula(element_counts, max_isotope=max_isotope)
+    if not offsets:
+        return is_isotope
+
+    sort_idx = np.argsort(mzs)
+    sorted_mzs = mzs[sort_idx]
+    sorted_ints = ints[sort_idx]
+
+    for i in range(n):
+        for offset, exp_ratio in offsets:
+            target_mz = sorted_mzs[i] - offset
+            if target_mz < 0:
+                continue
+            lo = np.searchsorted(sorted_mzs, target_mz - mz_tol, side="left")
+            hi = np.searchsorted(sorted_mzs, target_mz + mz_tol, side="right")
+            if lo >= hi:
+                continue
+            mono_int = sorted_ints[lo:hi].max()
+            if check_intensity and mono_int < sorted_ints[i]:
+                continue
+            if mono_int > 0:
+                obs_ratio = sorted_ints[i] / mono_int
+                if not (intensity_ratio_lo * exp_ratio <= obs_ratio <= intensity_ratio_hi * exp_ratio):
+                    continue
+            is_isotope[sort_idx[i]] = True
+            break
+
+    return is_isotope
+
+
 # ---------------------------------------------------------------------------
 # Training-data isotope cleaning
 # ---------------------------------------------------------------------------
 
 # Natural abundance M+1/M+0 contribution per atom (Poisson/binomial approx)
 _M1_CONTRIB: dict[str, float] = {
-    "C": 0.01103,    # 13C
-    "H": 0.000149,   # 2H
-    "N": 0.00368,    # 15N
-    "O": 0.000404,   # 17O
-    "S": 0.00421,    # 33S
-    "Si": 0.04683,   # 29Si
+    "C": 0.01103,  # 13C
+    "H": 0.000149,  # 2H
+    "N": 0.00368,  # 15N
+    "O": 0.000404,  # 17O
+    "S": 0.00421,  # 33S
+    "Si": 0.04683,  # 29Si
 }
 
 # Additive M+2/M+0 contributions from heavy isotopes (Cl, Br dominate)
 _M2_ADDITIVE: dict[str, float] = {
-    "Cl": 0.3220,    # 37Cl
-    "Br": 0.9735,    # 81Br
-    "S":  0.0425,    # 34S
-    "Si": 0.0337,    # 30Si
-    "O":  0.00204,   # 18O
+    "Cl": 0.3220,  # 37Cl
+    "Br": 0.9735,  # 81Br
+    "K": 0.0673,  # 41K
+    "S": 0.0425,  # 34S
+    "Si": 0.0337,  # 30Si
+    "O": 0.00204,  # 18O
 }
 
 # mz_tol per instrument type for isotope detection.
-# FT: 5 mDa resolves H-gain (Δ = 0.84 mDa) from M+1 isotope.
+# The M+0 search is centred on k × C13_SPACING (1.003355 Da per step) not NEUTRON_MASS.
+# H-gain (+1H = 1.007825 Da) sits 4.47 mDa from C13_SPACING, so 4 mDa excludes it
+# while retaining a 0.47 mDa safety margin for FT mass accuracy (~1–3 ppm).
+# For k ≥ 2, the tolerance is doubled (8 mDa) to cover heavy-isotope spacings
+# (³⁷Cl 1.9970 Da, ⁴¹K 1.9981 Da, ³⁴S 1.9985 Da) that differ from 2 × C13_SPACING
+# (2.0067 Da) by up to ~9.7 mDa.
 # All other instruments: None → never filter (H-gain and isotope indistinguishable).
 _INST_MZ_TOL: dict[str, float | None] = {
-    "FT": 0.005,
+    "FT": 0.004,
 }
 
 
-def _expected_mk_ratio(counts: dict[str, int], scale: float, k: int) -> float:
-    """Expected M+k/M+0 intensity ratio for a fragment of scaled formula composition.
+def _expected_mk_ratio(
+    mol_counts: dict[str, int],
+    mol_scale: float,
+    k: int,
+    adduct_counts: dict[str, int] | None = None,
+) -> float:
+    """Expected M+k/M+0 intensity ratio for a fragment, adduct-aware.
+
+    Molecule atoms are scaled by ``mol_scale`` (≈ neutral fragment mass / neutral
+    precursor mass).  Adduct atoms (e.g. K from ``[M+K]+``, Cl from ``[M+Cl]-``)
+    are applied at **full weight** because the adduct charge carrier either stays
+    with a fragment entirely or is absent—it does not distribute proportionally
+    across all fragments the way carbon does.
 
     Args:
-        counts: Element counts from parse_formula.
-        scale: Mass fraction of the precursor in the fragment (frag_mz / prec_mz),
-            used to scale down the precursor's atom counts.
+        mol_counts: Element counts for the neutral molecule from ``parse_formula``.
+        mol_scale: Fraction of the neutral molecule mass present in this neutral
+            fragment, i.e. ``(frag_mz - adduct_delta_mass) / (prec_mz - adduct_delta_mass)``.
         k: Isotope order (1 = M+1, 2 = M+2).
+        adduct_counts: Element counts for atoms *added* by the adduct (positive
+            atoms only, e.g. ``{"K": 1}`` for ``[M+K]+``).  None or empty means
+            no adduct correction is applied.
 
     Returns:
         Expected M+k/M+0 intensity ratio, floored at 1e-4.
     """
     import math
 
-    mol_m1 = sum(counts.get(elem, 0) * c for elem, c in _M1_CONTRIB.items())
-    poisson = (mol_m1 * scale) ** k / math.factorial(k)
+    if adduct_counts is None:
+        adduct_counts = {}
+
+    m1_mol = sum(mol_counts.get(elem, 0) * c for elem, c in _M1_CONTRIB.items())
+    m1_add = sum(adduct_counts.get(elem, 0) * c for elem, c in _M1_CONTRIB.items())
+    total_m1 = m1_mol * mol_scale + m1_add
+    poisson = total_m1**k / math.factorial(k)
     if k == 2:
-        additive = sum(counts.get(elem, 0) * c for elem, c in _M2_ADDITIVE.items())
-        return max(poisson + additive * scale, 1e-4)
+        m2_mol = sum(mol_counts.get(elem, 0) * c for elem, c in _M2_ADDITIVE.items())
+        m2_add = sum(adduct_counts.get(elem, 0) * c for elem, c in _M2_ADDITIVE.items())
+        return max(poisson + m2_mol * mol_scale + m2_add, 1e-4)
     return max(poisson, 1e-4)
+
+
+def _parse_adduct_counts(prec_type: str | None) -> tuple[dict[str, int], float]:
+    """Return positive adduct atom counts and their total monoisotopic mass.
+
+    Only atoms that are *added* by the adduct are returned (positive counts).
+    Atoms removed by the adduct (e.g. the ``-H`` in ``[M-H]-``) are ignored
+    because they reduce the precursor mass and have negligible isotope impact.
+
+    Args:
+        prec_type: Adduct/precursor type string (e.g. ``"[M+K]+"``, ``"[M+Cl]-"``).
+            If None or not found in ``PREC_TYPE_TO_FORMULA_DIFF``, returns empty
+            counts and zero mass.
+
+    Returns:
+        Tuple of (adduct_counts, adduct_delta_mass) where adduct_counts maps
+        element symbol to integer count for atoms added by the adduct, and
+        adduct_delta_mass is the total monoisotopic mass of those atoms in Da.
+    """
+    if prec_type is None:
+        return {}, 0.0
+    formula_diff = PREC_TYPE_TO_FORMULA_DIFF.get(prec_type, "")
+    if not formula_diff:
+        return {}, 0.0
+    try:
+        diff_counts = parse_formula(formula_diff)
+    except (ValueError, AssertionError):
+        return {}, 0.0
+    adduct_counts = {elem: cnt for elem, cnt in diff_counts.items() if cnt > 0}
+    adduct_delta_mass = sum(MASS(elem) * cnt for elem, cnt in adduct_counts.items())
+    return adduct_counts, adduct_delta_mass
 
 
 def detect_isotope_peaks_for_training(
@@ -1467,11 +1627,12 @@ def detect_isotope_peaks_for_training(
     prec_mz: float,
     formula: str,
     inst_type: str,
+    prec_type: str | None = None,
     max_isotope: int = 2,
     require_monotone: bool = True,
     require_envelope: bool = True,
-    lo_factor: float = 0.5,
-    hi_factor: float = 2.0,
+    lo_factor: float = 0.3,
+    hi_factor: float = 3.0,
 ) -> np.ndarray:
     """Detect isotope peaks for training-data cleaning.
 
@@ -1483,11 +1644,17 @@ def detect_isotope_peaks_for_training(
     * **Instrument gating**: Only FT spectra are filtered.  For QTOF/IT/QqQ the
       0.84 mDa gap between H-gain (+1H) and M+1 isotope is unresolvable, so
       filtering would delete valid training signal.
-    * **Tight mz_tol**: 5 mDa for FT, which sits above the 0.84 mDa H/isotope
-      separation and below the 5–10 mDa noise floor.
-    * **Formula-aware ratio check**: Uses the precursor formula and a mass-fraction
-      scale to predict the expected M+k/M+0 ratio with tighter bounds (0.5×–2.0×
-      vs the exploratory 0.3×–3.0×).
+    * **Tight mz_tol**: 4 mDa for FT (k=1), centred on C13_SPACING (1.003355 Da).
+      H-gain (+1H) spacing is 1.007825 Da — 4.47 mDa from the search centre — so
+      4 mDa excludes H-gain while leaving a 0.47 mDa FT-accuracy margin.
+      For k ≥ 2 the tolerance is doubled (8 mDa) to cover heavy-isotope M+2
+      spacings (³⁷Cl, ⁴¹K, ³⁴S) that differ from 2 × C13_SPACING by up to ~9.7 mDa.
+    * **Adduct-aware ratio check**: Uses the neutral molecule formula *plus* atoms
+      added by the adduct (via ``prec_type``) to predict M+k/M+0 ratios.  Adduct
+      atoms (e.g. K from ``[M+K]+``) are applied at full weight because the charge
+      carrier either stays with a fragment entirely or is absent—it does not
+      distribute proportionally.  The mol_scale is computed from neutral masses
+      (subtracting the adduct atom mass from both fragment and precursor m/z).
     * **Monotonicity**: Requires I(M+0) > I(M+k), which always holds for true
       isotope envelopes of small molecules at typical MS2 energies.
     * **Envelope coherence** (``require_envelope=True``): For M+k peaks with k > 1,
@@ -1497,17 +1664,22 @@ def detect_isotope_peaks_for_training(
     Args:
         mzs: Peak m/z values of shape (N,).  Need not be sorted.
         ints: Peak intensities of shape (N,).  Same order as ``mzs``.
-        prec_mz: Precursor m/z (used as mass-fraction denominator for scale).
-        formula: Precursor molecular formula (e.g. ``"C12H22O11"``).
+        prec_mz: Precursor m/z (used as mass-fraction denominator).
+        formula: Neutral molecule formula (e.g. ``"C12H22O11"``).
         inst_type: Instrument type string as stored in spec_df (e.g. ``"FT"``,
             ``"QTOF"``, ``"IT"``).  Only ``"FT"`` is currently filtered.
+        prec_type: Adduct/precursor type string (e.g. ``"[M+K]+"``, ``"[M+Cl]-"``).
+            When provided, atoms added by the adduct (positive formula diff) are
+            included in the isotope ratio prediction at full weight.  This is
+            critical for adducts with significant heavy isotopes such as ⁴¹K
+            (6.73 %) and ³⁷Cl (32.2 %).  Defaults to None (no adduct correction).
         max_isotope: Maximum isotope order to consider.  Defaults to 2.
         require_monotone: If True, require I(M+0) > I(M+k).  Defaults to True.
         require_envelope: If True, require all intermediate isotope peaks M+1 …
             M+(k-1) to be present and pass the ratio check before accepting M+k.
             Defaults to True.
-        lo_factor: Lower bound multiplier on expected ratio.  Defaults to 0.5.
-        hi_factor: Upper bound multiplier on expected ratio.  Defaults to 2.0.
+        lo_factor: Lower bound multiplier on expected ratio.  Defaults to 0.3.
+        hi_factor: Upper bound multiplier on expected ratio.  Defaults to 3.0.
 
     Returns:
         Boolean array of shape (N,) where True means the peak is an isotope peak
@@ -1524,9 +1696,7 @@ def detect_isotope_peaks_for_training(
     mzs = np.asarray(mzs, dtype=np.float64)
     ints = np.asarray(ints, dtype=np.float64)
     if mzs.shape != ints.shape or mzs.ndim != 1:
-        raise ValueError(
-            f"mzs and ints must be 1-D arrays of the same length, got {mzs.shape}"
-        )
+        raise ValueError(f"mzs and ints must be 1-D arrays of the same length, got {mzs.shape}")
 
     n = len(mzs)
     is_isotope = np.zeros(n, dtype=bool)
@@ -1544,34 +1714,48 @@ def detect_isotope_peaks_for_training(
     except (ValueError, AssertionError):
         return is_isotope
 
+    # Parse adduct: positive atoms only (e.g. K:1 for [M+K]+, Cl:1 for [M+Cl]-)
+    adduct_counts, adduct_delta_mass = _parse_adduct_counts(prec_type)
+    # Neutral precursor mass (denominator for mol_scale)
+    neutral_prec = max(prec_mz - adduct_delta_mass, 1.0)
+
     sort_idx = np.argsort(mzs)
     smzs = mzs[sort_idx]
     sints = ints[sort_idx]
 
-    def _find_peak(target: float) -> tuple[float, float] | None:
-        """Return (mz, intensity) of the most intense peak within mz_tol, or None."""
-        lo = np.searchsorted(smzs, target - mz_tol, side="left")
-        hi = np.searchsorted(smzs, target + mz_tol, side="right")
+    def _find_peak(target: float, tol: float | None = None) -> tuple[float, float] | None:
+        """Return (mz, intensity) of the most intense peak within tol (default mz_tol), or None."""
+        t = mz_tol if tol is None else tol
+        lo = np.searchsorted(smzs, target - t, side="left")
+        hi = np.searchsorted(smzs, target + t, side="right")
         if lo >= hi:
             return None
         best = lo + int(np.argmax(sints[lo:hi]))
         return smzs[best], sints[best]
 
-    def _ratio_ok(obs_int: float, m0_int: float, scale: float, k: int) -> bool:
+    def _ratio_ok(obs_int: float, m0_int: float, mol_scale: float, k: int) -> bool:
         if m0_int <= 0:
             return False
         obs = obs_int / m0_int
-        exp = _expected_mk_ratio(counts, scale, k)
+        exp = _expected_mk_ratio(counts, mol_scale, k, adduct_counts)
         return lo_factor * exp <= obs <= hi_factor * exp
 
     for i in range(n):
         frag_mz = smzs[i]
         frag_int = sints[i]
-        scale = min(frag_mz / prec_mz, 1.0)
+        # mol_scale: fraction of the neutral molecule mass in the neutral fragment.
+        # Subtract adduct delta mass from both sides so the K/Na/Cl offset cancels.
+        neutral_frag = max(frag_mz - adduct_delta_mass, 0.0)
+        mol_scale = min(neutral_frag / neutral_prec, 1.0)
 
         for k in range(1, max_isotope + 1):
-            # Find M+0 for this M+k candidate
-            m0 = _find_peak(frag_mz - k * NEUTRON_MASS)
+            # Search centre uses C13_SPACING (1.003355 Da/step) — the true ¹³C
+            # isotope spacing — rather than NEUTRON_MASS (1.008665 Da), which sits
+            # 5.31 mDa off-centre and causes M+0 to fall outside the 4 mDa window.
+            # k ≥ 2 uses double tolerance to cover heavy-isotope M+2 spacings
+            # (³⁷Cl, ⁴¹K, ³⁴S) that differ from 2 × C13_SPACING by up to ~9.7 mDa.
+            k_tol = mz_tol if k == 1 else mz_tol * 2
+            m0 = _find_peak(frag_mz - k * C13_SPACING, k_tol)
             if m0 is None:
                 continue
             m0_mz, m0_int = m0
@@ -1580,8 +1764,8 @@ def detect_isotope_peaks_for_training(
             if require_monotone and m0_int <= frag_int:
                 continue
 
-            # Formula-aware ratio check for M+k vs M+0
-            if not _ratio_ok(frag_int, m0_int, scale, k):
+            # Adduct-aware ratio check for M+k vs M+0
+            if not _ratio_ok(frag_int, m0_int, mol_scale, k):
                 continue
 
             # Envelope coherence: all intermediate M+j peaks must also be present
@@ -1589,7 +1773,7 @@ def detect_isotope_peaks_for_training(
             if require_envelope and k > 1:
                 envelope_ok = True
                 for j in range(1, k):
-                    mj = _find_peak(frag_mz - (k - j) * NEUTRON_MASS)
+                    mj = _find_peak(frag_mz - (k - j) * C13_SPACING)
                     if mj is None:
                         envelope_ok = False
                         break
@@ -1597,7 +1781,7 @@ def detect_isotope_peaks_for_training(
                     if require_monotone and mj_int >= m0_int:
                         envelope_ok = False
                         break
-                    if not _ratio_ok(mj_int, m0_int, scale, j):
+                    if not _ratio_ok(mj_int, m0_int, mol_scale, j):
                         envelope_ok = False
                         break
                 if not envelope_ok:

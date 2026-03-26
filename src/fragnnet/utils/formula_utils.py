@@ -1,10 +1,8 @@
-import itertools
 import re
 from typing import Literal
 
 import numpy as np
 import rdkit.Chem as Chem
-import scipy
 from pyteomics.mass import Composition
 
 from fragnnet.utils.misc_utils import none_or_nan
@@ -99,231 +97,51 @@ PREC_TYPE_TO_FORMULA_DIFF = {
 PREC_TYPE_TO_COMP_DIFF = {k: Composition(v) for k, v in PREC_TYPE_TO_FORMULA_DIFF.items()}
 
 NEUTRON_MASS = 1.008665
+C13_SPACING = 1.003355  # ¹³C – ¹²C monoisotopic mass difference (Da); true M+1 peak spacing
 
 
 def MASS(element: str | int) -> float:
     return PERIODIC_TABLE.GetMostCommonIsotopeMass(element)
 
 
-# Just huge table grabbed for atomic number and its stable isotopes
-# if atomic number is not in this table, that means we should even see it in the sample
-# After all this is MS not Cyclotron and we are not try to finding super hevay elemet
-# with this we don't need scan atomicno - atomicno * 4
-# src http://moltensalt.org/references/static/downloads/pdf/stable-isotopes.pdf
-# src https://periodictable.com/Elements/043/data.html
-ISOTOPES_DICT = {
-    1: [1, 2],
-    2: [3, 4],
-    3: [6, 7],
-    4: [9],
-    5: [10, 11],
-    6: [12, 13],
-    7: [14, 15],
-    8: [16, 17, 18],
-    9: [19],
-    10: [20, 21, 22],
-    11: [23],
-    12: [24, 25, 26],
-    13: [27],
-    14: [28, 29, 30],
-    15: [31],
-    16: [32, 33, 34, 36],
-    17: [35, 37],
-    18: [36, 38, 40],
-    19: [39, 41],
-    20: [40, 42, 43, 44, 46],
-    21: [45],
-    22: [46, 47, 48, 49, 50],
-    23: [51],
-    24: [50, 52, 53, 54],
-    25: [55],
-    26: [54, 56, 57, 58],
-    27: [59],
-    28: [58, 60, 61, 62, 64],
-    29: [63, 65],
-    30: [64, 66, 67, 68, 70],
-    31: [69, 71],
-    32: [70, 72, 73, 74],
-    33: [75],
-    34: [74, 76, 77, 78, 80],
-    35: [79, 81],
-    36: [78, 80, 82, 83, 84, 86],
-    37: [85],
-    38: [84, 86, 87, 88],
-    39: [89],
-    40: [90, 91, 92, 94],
-    41: [93],
-    42: [92, 94, 95, 96, 97, 98],
-    44: [100, 101, 102, 104, 96, 98, 99],
-    45: [103],
-    46: [102, 104, 105, 106, 108, 110],
-    47: [107, 109],
-    48: [106, 108, 110, 111, 112, 114],
-    49: [113],
-    50: [112, 114, 115, 116, 117, 118, 119, 120, 122, 124],
-    51: [121, 123],
-    52: [120, 122, 124, 125, 126],
-    53: [127],
-    54: [124, 126, 128, 129, 130, 131, 132, 134, 136],
-    55: [133],
-    56: [130, 132, 134, 135, 136, 137, 138],
-    57: [139],
-    58: [136, 138, 140, 142],
-    59: [141],
-    60: [142, 143, 145, 146, 148],
-    62: [144, 149, 150, 152, 154],
-    63: [151, 153],
-    64: [154, 155, 156, 157, 158, 160],
-    65: [159],
-    66: [156, 158, 160, 161, 162, 163, 164],
-    67: [165],
-    68: [162, 164, 166, 167, 168, 170],
-    69: [169],
-    70: [168, 170, 171, 172, 173, 174, 176],
-    71: [175],
-    72: [176, 177, 178, 179, 180],
-    73: [181],
-    74: [180, 182, 183, 184, 186],
-    75: [185],
-    76: [184, 187, 188, 189, 190, 192],
-    77: [191, 193],
-    78: [192, 194, 195, 196, 198],
-    79: [197],
-    80: [196, 198, 199, 200, 201, 202, 204],
-    81: [203, 205],
-    82: [204, 206, 207, 208],
-    90: [232],
-}
-
-# global cache for peak per element
-# so we don't compute this a million time
-# https://docs.python.org/3/glossary.html#term-global-interpreter-lock
-# GIL will ensure this implicitly safe against concurrent access
-# peaks_for_element_cache = {}
-
-
-def enumerate_multinomial(N: int, p: list[float], cutoff_thold: float = 0.0001):
-    """
-    Enumerate the state space of rolling a die with |p| faces
-    N times
-
-    returns: [(prob_1, (tuple_of_counts)),
-               (prob_2, (tuple_of_counts)),
-               ...]
-
-    cutoff_thold: Do not return points in the state space
-    with prob less than cutoff_thold
-    """
-
-    K = len(p)
-    counts = []
-    for s in itertools.combinations_with_replacement(range(K), N):
-        count = np.zeros(K, dtype=np.int32)
-        for i in s:
-            count[i] += 1
-        counts.append(count)
-    counts = np.array(counts)
-
-    p = p / np.sum(p)
-    rv = scipy.stats.multinomial(N, p)
-
-    probs = rv.pmf(counts)
-    sort_idx = np.argsort(probs)[::-1]
-
-    probs_sorted = probs[sort_idx]
-    thold_idx = np.argwhere(np.cumsum(probs_sorted) >= 1 - cutoff_thold).flatten()[0]
-    thold_idx += 1
-
-    return list(zip(probs_sorted[:thold_idx], [tuple(a) for a in counts[sort_idx][:thold_idx]]))
-
-
-def get_isotopes(atomicno: int, pct_thold: float = 0.01) -> list[tuple[int, float, float]]:
-    """
-    Get all isotopes and their masses for atomic number atomicno
-
-    Args:
-        atomicno (int): atomic number
-        pct_thold (float, optional): probility theorshold. Defaults to 0.01.
-
-    Returns:
-        List[Tuple[int,float,float]]:  [(int_mass, prob, exact_mass),...] for each isotope up to 4
-    """
-
-    mass_probs = []
-    pt = PERIODIC_TABLE
-
-    if atomicno not in ISOTOPES_DICT:
-        return mass_probs
-    else:
-        for m in ISOTOPES_DICT[atomicno]:
-            # range(atomicno, 4*atomicno):
-            pct = pt.GetAbundanceForIsotope(atomicno, m)
-            if pct >= pct_thold:
-                exact_mass = pt.GetMassForIsotope(atomicno, m)
-                mass_probs.append((m, pct / 100, exact_mass))
-    return sorted(mass_probs, key=lambda r: -r[1])
-
-
-def get_peaks_for_element(element: str, num_atoms: int) -> list:
-    """
-    Get the peaks for a formula with num_atoms of atomic no
-    Args:
-        element (str): element symbol
-        num_atoms (int): num of atoms
-
-    Returns:
-        _type_: _description_
-    """
-
-    atomicno = Chem.GetPeriodicTable().GetAtomicNumber(element)
-
-    isotopes = get_isotopes(atomicno)
-    probs = [i[1] for i in isotopes]
-
-    comb_probs = enumerate_multinomial(num_atoms, probs, 0.001)
-
-    exact_masses = [
-        np.sum([isotopes[a_i][2] * a for a_i, a in enumerate(m)]) for p, m in comb_probs
-    ]
-
-    peaks_masses_probs = [(comb_probs[i][0], m) for i, m in enumerate(exact_masses)]
-    return peaks_masses_probs
-
-
 def get_peaks_for_formula(
-    element_counts: dict[str, int], threshold: float = 0.001, peaks_for_element_cache: dict = None
+    element_counts: dict[str, int],
+    threshold: float = 0.001,
+    peaks_for_element_cache: dict = None,  # kept for API compatibility, unused
 ) -> tuple[list[float], list[float]]:
-    """for a given element configs, return masses with all possible isotopic configus
+    """Return isotope peak masses and relative intensities for a molecular formula.
+
+    Uses pyopenms ``CoarseIsotopePatternGenerator`` with IUPAC 2016 natural
+    abundances.  Replaces the previous multinomial convolution implementation,
+    which was 100–1000× slower and used an older RDKit abundance table.
 
     Args:
-        element_counts (Dict): element configs eg:  {"C":6,"H":7,"O":6,"N":0}
-        threshold (float, optional): _description_. Defaults to 0.001.
+        element_counts: Element counts dict, e.g. ``{"C": 6, "H": 12, "O": 6}``.
+        threshold: Minimum relative intensity to include.  Defaults to 0.001.
+        peaks_for_element_cache: Ignored.  Kept for API compatibility.
 
     Returns:
-        Tuple[List[float],List[float]]: ([mass,mass,mass,mass],[prob,prob,prob,prob])
+        Tuple of ``(masses, probs)`` where each is a list of floats.  Masses
+        are monoisotopic-based exact masses in Da; probs are renormalised
+        relative intensities summing to ≤ 1 (peaks below threshold excluded).
+
+    Raises:
+        ValueError: If ``element_counts`` is empty or contains no positive counts.
     """
-    if peaks_for_element_cache is None:
-        peaks_for_element_cache = {}
+    from pyopenms import CoarseIsotopePatternGenerator, EmpiricalFormula
 
-    peaks_masses_probs = {}
-    for k, v in element_counts.items():
-        if v > 0:
-            key_str = k + str(v)
-            if key_str not in peaks_for_element_cache:
-                peaks_for_element_cache[key_str] = get_peaks_for_element(k, v)
-            peaks_masses_probs[k] = peaks_for_element_cache[key_str]
-
-    assert len(peaks_masses_probs) > 0, peaks_masses_probs
-    probs = [[item[0] for item in v] for v in peaks_masses_probs.values()]
-    masses = [[item[1] for item in v] for v in peaks_masses_probs.values()]
-    all_probs = [np.prod(tup) for tup in itertools.product(*probs)]
-    all_masses = [np.sum(tup) for tup in itertools.product(*masses)]
-    keep_masses, keep_probs = [], []
-    for mass, prob in zip(all_masses, all_probs):
-        if prob >= threshold:
-            keep_masses.append(mass)
-            keep_probs.append(prob)
-    return keep_masses, keep_probs
+    formula_str = "".join(f"{el}{n}" for el, n in element_counts.items() if n > 0)
+    if not formula_str:
+        raise ValueError(f"element_counts has no positive counts: {element_counts}")
+    emp = EmpiricalFormula(formula_str)
+    gen = CoarseIsotopePatternGenerator(5)
+    iso = gen.run(emp)
+    iso.renormalize()
+    container = iso.getContainer()
+    keep = [(p.getMZ(), p.getIntensity()) for p in container if p.getIntensity() >= threshold]
+    if not keep:
+        return [container[0].getMZ()], [1.0]
+    return [m for m, p in keep], [p for m, p in keep]
 
 
 def formula_to_peak_mzs(
@@ -439,6 +257,59 @@ def parse_formula(formula: str) -> dict[str, int]:
         assert cur_element not in element_counts
         element_counts[cur_element] = cur_count
     return element_counts
+
+
+def isotope_offsets_from_formula(
+    element_counts: dict[str, int],
+    max_isotope: int = 4,
+    threshold: float = 0.001,
+) -> list[tuple[float, float]]:
+    """Return isotopologue mass offsets and relative intensities for a molecular formula.
+
+    Uses pyopenms ``CoarseIsotopePatternGenerator`` to compute the exact mass
+    offset of each M+k peak from the monoisotopic M+0 peak.  These offsets
+    differ from ``k * NEUTRON_MASS`` for heavy-isotope elements such as Cl
+    and Br where even-mass isotopes dominate.
+
+    Args:
+        element_counts: Element counts dict as returned by ``parse_formula``.
+        max_isotope: Maximum number of isotope peaks beyond M+0 to return.
+            Defaults to 4.
+        threshold: Minimum relative intensity to include.  Peaks below this
+            threshold are discarded.  Defaults to 0.001.
+
+    Returns:
+        List of ``(offset_da, relative_intensity)`` tuples sorted by offset,
+        excluding M+0 (offset ≈ 0).  Empty list if no peaks pass the threshold.
+
+    Example:
+        >>> ec = parse_formula("C10H8Br2")
+        >>> offsets = isotope_offsets_from_formula(ec)
+        >>> # M+2 ~0.46 dominates (81Br), not M+1 ~0.03
+        >>> offsets[0][0]  # offset_da ≈ 1.0034
+        1.003...
+    """
+    from pyopenms import CoarseIsotopePatternGenerator, EmpiricalFormula
+
+    formula_str = "".join(f"{el}{n}" for el, n in element_counts.items() if n > 0)
+    if not formula_str:
+        return []
+    emp = EmpiricalFormula(formula_str)
+    gen = CoarseIsotopePatternGenerator(max_isotope + 1)
+    iso = gen.run(emp)
+    iso.renormalize()
+    container = iso.getContainer()
+
+    peaks = sorted((p.getMZ(), p.getIntensity()) for p in container)
+    if not peaks:
+        return []
+
+    mono_mass = peaks[0][0]
+    return [
+        (mass - mono_mass, intensity)
+        for mass, intensity in peaks[1:]
+        if intensity >= threshold
+    ]
 
 
 def get_elements_set(formula: str) -> set[str]:

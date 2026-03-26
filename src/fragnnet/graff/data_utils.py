@@ -20,6 +20,43 @@ def fit_ann_library(
     huge_mz_diff_threshold=0.1,
     big_mz_diff_ppm_threshold=1e-5,
 ):
+    """Fit an annotation library to spectra, filtering bad peak-formula matches.
+
+    Matches annotated peaks to observed spectrum peaks and filters out
+    annotations where the observed m/z deviates too far from the theoretical
+    exact m/z. Two independent filters are applied in sequence:
+
+    1. **Huge absolute error** (``huge_mz_diff_threshold``): if any annotation
+       for a spectrum has ``|peak_mz - exact_mz| > huge_mz_diff_threshold``,
+       the entire spectrum is dropped. This catches grossly wrong formula
+       assignments.
+
+    2. **Big relative error** (``big_mz_diff_ppm_threshold``): annotations
+       where ``|peak_mz - exact_mz| / max(peak_mz, 200.0) > big_mz_diff_ppm_threshold``
+       are pruned individually; the rest of the spectrum is retained.
+       The denominator is floored at 200 Da so low-m/z peaks are not
+       unfairly penalised. A value of ``1e-5`` is approximately 10 ppm
+       relative to the 200 Da floor.
+
+    Args:
+        spec_df: DataFrame with columns ``spec_id``, ``mzs``, ``ints``, etc.
+        ann_df: DataFrame with columns ``spec_id``, ``ann_products``,
+            ``ann_losses``, ``ann_isotopes``, ``ann_exact_mzs``, ``peak_mzs``.
+        library_size: Maximum number of library entries to retain.
+        max_isotope: Maximum allowed isotope offset; annotations with
+            ``isotopes > max_isotope`` or ``isotopes < 0`` are dropped.
+        debug: If True, print m/z diff and isotope distributions.
+        huge_mz_diff_threshold: Absolute m/z error threshold in Da. Spectra
+            with any annotation exceeding this are dropped entirely.
+            Pass ``None`` to disable. Defaults to 0.1.
+        big_mz_diff_ppm_threshold: Relative m/z error threshold (fraction).
+            Individual annotations exceeding this are pruned. Pass ``None``
+            to disable. Defaults to 1e-5.
+
+    Returns:
+        Tuple of ``(ann_df, spec_df)`` after filtering, with annotation
+        counts normalised and library entries clipped to ``library_size``.
+    """
     orig_spec_ids = spec_df[["dset", "dset_spec_id", "spec_id"]].copy()
     spec_df = spec_df[spec_df["spec_id"].isin(ann_df["spec_id"])]
     spec_df = spec_df[["spec_id", "peaks"]]
