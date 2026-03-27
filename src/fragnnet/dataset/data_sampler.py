@@ -546,22 +546,10 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             key2 = f"{adduct}::{formula}"
             self._group2.setdefault(key2, []).append(dataset_idx)
 
-            # Drawing from the same pool: avoid building formula-based group2 to prevent overlap
-            # (samples remain uniquely identified by adduct+mol_id)
-
-        # Remove overlapping samples: keep items in group1; drop them from group2
-        group1_indices = set()
-        for indices in self._group1.values():
-            group1_indices.update(indices)
-        # Prune group2 entries that overlap with group1
-        for k in list(self._group2.keys()):
-            indices = self._group2[k]
-            non_overlap = [idx for idx in indices if idx not in group1_indices]
-            if non_overlap:
-                self._group2[k] = non_overlap
-            else:
-                # Remove empty groups
-                del self._group2[k]
+        # Within-batch deduplication is handled by used_mask in _sample_from_group_dict,
+        # so group2 intentionally retains all indices (including those also in group1).
+        # This allows isomer contrast: group1 picks a sample first, used_mask prevents
+        # group2 from re-picking the same index in the same batch.
 
         # convert lists to tensors for faster ops
         for k in list(self._group1.keys()):

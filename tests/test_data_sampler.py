@@ -299,8 +299,15 @@ class TestDualGroupDynamicBatchSampler:
             total_edges = sum(samples[i]["frag_pyg"].num_edges for i in b)
             assert total_edges <= 10
 
-    def test_dual_group_overlap_removal(self):
-        """Test overlapping samples removed from group2."""
+    def test_group2_retains_all_indices(self):
+        """group2 must retain all indices including those also in group1.
+
+        Every sample is in group1 (keyed by adduct::mol_id). The old dedup
+        logic wiped group2 entirely because group1_indices == all indices.
+        Within-batch dedup is handled by used_mask in _sample_from_group_dict,
+        so group2 should not be permanently pruned.
+        """
+        # Two isomers of formula X under adduct A (different mol_ids)
         samples = [
             {"frag_pyg": FakeFrag(3, 2), "adduct": "A", "mol_id": 1, "formula": "X"},
             {"frag_pyg": FakeFrag(2, 1), "adduct": "A", "mol_id": 2, "formula": "X"},
@@ -319,8 +326,148 @@ class TestDualGroupDynamicBatchSampler:
             generator=gen,
         )
 
-        # Check overlap removal
-        assert len(sampler._group2) == 0
+        # group2 must not be empty: A::X has two isomers (idx 0 and 1)
+        assert len(sampler._group2) > 0
+        # A::X group in group2 must contain both isomer indices
+        assert set(sampler._group2["A::X"].tolist()) == {0, 1}
+        # group2 coverage: every index must appear in at least one group2 entry
+        group2_all = set(i for t in sampler._group2.values() for i in t.tolist())
+        assert group2_all == set(range(len(samples)))
+
+    def test_no_duplicate_indices_within_batch(self):
+        """used_mask prevents the same index from appearing twice in one batch."""
+        # Two isomers share formula X; without within-batch dedup they could both
+        # be picked by group1 and group2 in the same batch.
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 2, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 3, "formula": "X"},
+        ]
+
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(0)
+
+        sampler = DualGroupDynamicBatchSampler(
+            ds,
+            max_num=10,
+            limited_by="frag_node",
+            generator=gen,
+        )
+
+        for batch in sampler:
+            assert len(batch) == len(set(batch)), f"Duplicate indices in batch: {batch}"
+
+    def test_every_index_covered_exactly_once(self):
+        """Every dataset index must appear in exactly one batch per epoch."""
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": i, "formula": f"F{i % 3}"}
+            for i in range(10)
+        ]
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(7)
+
+        sampler = DualGroupDynamicBatchSampler(ds, max_num=20, limited_by="frag_node", generator=gen)
+        all_indices = [i for b in sampler for i in b]
+
+        assert sorted(all_indices) == list(range(len(samples)))
+
+    def test_isomer_contrast_in_same_batch(self):
+        """With a large budget, two isomers (same formula, different mol_id) should
+        land in the same batch: one via group1 (adduct::mol_id) and one via group2
+        (adduct::formula)."""
+        # idx 0 and 1 are isomers of A::X; budget fits both easily
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 2, "formula": "X"},
+        ]
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(0)
+
+        sampler = DualGroupDynamicBatchSampler(
+            ds, max_num=10, limited_by="frag_node", sample_k1=1, sample_k2=1, generator=gen
+        )
+        batches = list(sampler)
+
+        # Both indices should end up in the same single batch
+        assert len(batches) == 1
+        assert set(batches[0]) == {0, 1}
+
+    def test_sample_k1_k2_limits(self):
+        """sample_k1=1 sample_k2=1 means at most 2 group-guided picks per batch,
+        with the remainder filled freely."""
+        # 3 isomers of A::X; with k1=1, k2=1 and a tight budget we expect
+        # at most 2 group-guided picks per batch
+        samples = [
+            {"frag_pyg": FakeFrag(2, 1), "adduct": "A", "mol_id": i, "formula": "X"}
+            for i in range(6)
+        ]
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(1)
+
+        sampler = DualGroupDynamicBatchSampler(
+            ds, max_num=4, limited_by="frag_node", sample_k1=1, sample_k2=1, generator=gen
+        )
+        # With budget=4 and each sample costing 2 nodes, each batch holds at most 2 samples
+        for batch in sampler:
+            assert len(batch) <= 2
+
+    def test_adduct_scopes_formula_groups(self):
+        """Same formula under different adducts must be separate group2 entries."""
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "B", "mol_id": 2, "formula": "X"},
+        ]
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(0)
+
+        sampler = DualGroupDynamicBatchSampler(ds, max_num=10, limited_by="frag_node", generator=gen)
+
+        assert "A::X" in sampler._group2
+        assert "B::X" in sampler._group2
+        # Each adduct group should contain only its own index
+        assert set(sampler._group2["A::X"].tolist()) == {0}
+        assert set(sampler._group2["B::X"].tolist()) == {1}
+
+    def test_single_molecule_formula_still_in_group2(self):
+        """A formula with only one molecule must still appear in group2.
+        The old dedup bug would delete it because its single index was in group1.
+        """
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "UNIQUE"},
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 2, "formula": "COMMON"},
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 3, "formula": "COMMON"},
+        ]
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(0)
+
+        sampler = DualGroupDynamicBatchSampler(ds, max_num=10, limited_by="frag_node", generator=gen)
+
+        assert "A::UNIQUE" in sampler._group2
+        assert set(sampler._group2["A::UNIQUE"].tolist()) == {0}
+
+    def test_missing_required_key_raises(self):
+        """Missing adduct/mol_id/formula keys must raise KeyError at init."""
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1},  # missing formula
+        ]
+        ds = DummyDataset(samples)
+        with pytest.raises(KeyError):
+            DualGroupDynamicBatchSampler(ds, max_num=10, limited_by="frag_node")
+
+    def test_invalid_limited_by_raises(self):
+        """Invalid limited_by value must raise ValueError."""
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "X"},
+        ]
+        ds = DummyDataset(samples)
+        with pytest.raises(ValueError, match="limited_by"):
+            DualGroupDynamicBatchSampler(ds, max_num=10, limited_by="invalid")
 
     def test_dual_group_sampler_skip_too_big(self):
         """Test skip_too_big flag."""
