@@ -674,10 +674,10 @@ if __name__ == "__main__":
         type=booltype,
         default=False,
         help=(
-            "Run SMARTS rearrangement prepass before BFS "
-            "(only used when --multi_cut_bfs True). "
-            "Injects acyclic 1,3-elimination and ester CO2-loss fragments "
-            "as depth-1 DAG children (crf12_0/1, crf13_2 PPGB_MS2 rules)."
+            "Run SMARTS rearrangement prepass and inject results as depth-1 DAG children. "
+            "Works with both the default BFS and --multi_cut_bfs. "
+            "Covers acyclic 1,3-elimination and ester CO2-loss fragments "
+            "(crf12_0/1, crf13_2 PPGB_MS2 rules)."
         ),
     )
     parser.add_argument(
@@ -686,8 +686,7 @@ if __name__ == "__main__":
         default=3,
         help=(
             "Minimum number of heavy atoms a child fragment must have to be registered "
-            "in the DAG (only used when --multi_cut_bfs True). Fragments smaller than "
-            "this threshold are silently dropped; their subtrees are never explored. "
+            "in the DAG. Fragments smaller than this threshold are silently dropped. "
             "0 disables the filter. Default 3 removes single- and two-atom shards."
         ),
     )

@@ -821,6 +821,104 @@ def th_mask_to_long(mask):
     return th.sum(long * mask, dim=2).long()
 
 
+def _inject_smarts_pairs_into_dag(
+    smarts_pairs: list[tuple[np.ndarray, np.ndarray]],
+    nodes_mask_matrix: np.ndarray,
+    nodes_depth_matrix: np.ndarray,
+    dag_edges_matrix: np.ndarray,
+    dag_frag_meta: dict,
+    num_nodes: int,
+    min_frag_atoms: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+    """Inject SMARTS prepass fragment pairs into a DAG produced by compute_frags.
+
+    Appends fragment pairs from the SMARTS rearrangement prepass as depth-1
+    children of the root node (index 0).  Fragments already present in the DAG
+    are deduplicated via their byte-string node-mask key.  Fragments smaller
+    than ``min_frag_atoms`` heavy atoms are silently dropped, consistent with
+    the ``min_frag_atoms`` filter applied inside the BFS.
+
+    Args:
+        smarts_pairs: List of ``(node_mask_a, node_mask_b)`` uint8 array pairs
+            returned by ``_apply_smarts_prepass``.
+        nodes_mask_matrix: Shape ``(n_frags, num_nodes)`` uint8 — existing DAG
+            fragment node masks, root at index 0.
+        nodes_depth_matrix: Shape ``(n_frags, max_depth+1)`` uint8 — depth
+            one-hot for each fragment.
+        dag_edges_matrix: Shape ``(n_edges, 2)`` int64 — (parent, child) pairs.
+        dag_frag_meta: Dict with keys ``reached_depth``, ``edges_min_depth``,
+            ``nodes_min_depth``, ``force_stopped``.
+        num_nodes: Number of atoms in the root molecule.
+        min_frag_atoms: Minimum heavy-atom count for a fragment to be kept.
+
+    Returns:
+        Updated ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
+        dag_frag_meta)`` tuple with the same format as the input.
+    """
+    if not smarts_pairs:
+        return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+    max_depth_cols = nodes_depth_matrix.shape[1]
+
+    # Build bytes-key → fragment index lookup from existing rows.
+    key_to_idx: dict[bytes, int] = {
+        nodes_mask_matrix[i].tobytes(): i for i in range(len(nodes_mask_matrix))
+    }
+    # Build set of existing (parent, child) edges for O(1) dedup.
+    existing_edges: set[tuple[int, int]] = {
+        (int(dag_edges_matrix[i, 0]), int(dag_edges_matrix[i, 1]))
+        for i in range(len(dag_edges_matrix))
+    }
+
+    new_masks: list[np.ndarray] = []
+    new_depth_rows: list[np.ndarray] = []
+    new_min_depths: list[int] = []
+    new_edges: list[tuple[int, int]] = []
+    new_edge_min_depths: list[int] = []
+
+    for mask_a, mask_b in smarts_pairs:
+        for mask in (mask_a, mask_b):
+            if int(mask.sum()) < min_frag_atoms:
+                continue
+            key = mask.tobytes()
+            if key not in key_to_idx:
+                new_idx = len(nodes_mask_matrix) + len(new_masks)
+                key_to_idx[key] = new_idx
+                new_masks.append(mask.astype(MASK_DTYPE))
+                depth_row = np.zeros(max_depth_cols, dtype=MASK_DTYPE)
+                depth_row[min(1, max_depth_cols - 1)] = 1
+                new_depth_rows.append(depth_row)
+                new_min_depths.append(1)
+            frag_idx = key_to_idx[key]
+            edge = (0, frag_idx)
+            if edge not in existing_edges:
+                existing_edges.add(edge)
+                new_edges.append(edge)
+                new_edge_min_depths.append(1)
+
+    if not new_masks and not new_edges:
+        return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+    if new_masks:
+        nodes_mask_matrix = np.vstack(
+            [nodes_mask_matrix] + [m.reshape(1, num_nodes) for m in new_masks]
+        )
+        nodes_depth_matrix = np.vstack([nodes_depth_matrix] + new_depth_rows)
+        dag_frag_meta["nodes_min_depth"] = np.concatenate(
+            [dag_frag_meta["nodes_min_depth"], np.array(new_min_depths, dtype=MASK_DTYPE)]
+        )
+
+    if new_edges:
+        dag_edges_matrix = np.vstack(
+            [dag_edges_matrix, np.array(new_edges, dtype=np.int64)]
+        )
+        dag_frag_meta["edges_min_depth"] = np.concatenate(
+            [dag_frag_meta["edges_min_depth"], np.array(new_edge_min_depths, dtype=MASK_DTYPE)]
+        )
+
+    return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+
 def compute_dags(
     mol_d: dict,
     max_depth: int,
@@ -914,6 +1012,26 @@ def compute_dags(
                 min_frag_atoms,
             )
         )
+        if smarts_prepass:
+            smarts_seed_pairs = _apply_smarts_prepass(
+                FRAG_RULES,
+                mol_d["mol"],
+                edge_mask,
+                edges,
+                num_nodes,
+                num_edges,
+            )
+            nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+                _inject_smarts_pairs_into_dag(
+                    smarts_seed_pairs,
+                    nodes_mask_matrix,
+                    nodes_depth_matrix,
+                    dag_edges_matrix,
+                    dag_frag_meta,
+                    num_nodes,
+                    min_frag_atoms,
+                )
+            )
 
     if nb_isomorphic:
         node_nb_hashes = get_subgraph_hashes(
