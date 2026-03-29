@@ -7,8 +7,8 @@
 #SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3_%j.out
-#SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3_%j.err
+#SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3%j.out
+#SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3%j.err
 #SBATCH --open-mode=append
 
 # record start
@@ -64,7 +64,9 @@ MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FLAG=False
-SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}
+SMARTS_PREPASS=False
+USE_LMDB=False
+SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}_smp${SMARTS_PREPASS}
 DSETS='nist20_hr'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]-'
 INST='FT QTOF IT'
@@ -109,7 +111,9 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --isotopes ${ISO_FLAG} \
     --frag_mode ${FRAG_MODE} \
     --max_h_transfer ${MAX_H_TRANSFER} \
-    --dsets ${DSETS}
+    --dsets ${DSETS} \
+    --smarts_prepass ${SMARTS_PREPASS} \
+    --use_lmdb ${USE_LMDB}
 
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/
