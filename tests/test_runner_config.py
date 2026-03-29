@@ -10,6 +10,8 @@ def _base_config(**overrides) -> dict:
     cfg = {
         "dynamic_batch_sampler": True,
         "dual_group_dynamic_batch_sampler": False,
+        "dual_group_dynamic_batch_sampler_mode": "frag_node",
+        "dual_group_dynamic_batch_sampler_max": 1000,
         "model_type": "frag_gnn",
         "automatic_optimization": False,
         "dynamic_batch_sampler_mode": "frag_node",
@@ -59,3 +61,62 @@ class TestValidateSamplerConfig:
     def test_missing_max_raises(self):
         with pytest.raises(ValueError, match="dynamic_batch_sampler_max"):
             validate_sampler_config(_base_config(dynamic_batch_sampler_max=None))
+
+    def test_mutually_exclusive_dynamic_and_dual_group_raises(self):
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            validate_sampler_config(
+                _base_config(
+                    dynamic_batch_sampler=True,
+                    dual_group_dynamic_batch_sampler=True,
+                )
+            )
+
+    def test_dual_group_sampler_valid_config_passes(self):
+        validate_sampler_config(
+            _base_config(
+                dynamic_batch_sampler=False,
+                dual_group_dynamic_batch_sampler=True,
+                dual_group_dynamic_batch_sampler_mode="frag_node",
+                dual_group_dynamic_batch_sampler_max=1000,
+            )
+        )
+
+    def test_dual_group_invalid_mode_raises(self):
+        with pytest.raises(ValueError, match="frag_node or frag_edge"):
+            validate_sampler_config(
+                _base_config(
+                    dynamic_batch_sampler=False,
+                    dual_group_dynamic_batch_sampler=True,
+                    dual_group_dynamic_batch_sampler_mode="invalid_mode",
+                )
+            )
+
+    def test_dual_group_missing_max_raises(self):
+        with pytest.raises(ValueError, match="dual_group_dynamic_batch_sampler_max"):
+            validate_sampler_config(
+                _base_config(
+                    dynamic_batch_sampler=False,
+                    dual_group_dynamic_batch_sampler=True,
+                    dual_group_dynamic_batch_sampler_max=None,
+                )
+            )
+
+    def test_dual_group_non_frag_gnn_model_raises(self):
+        with pytest.raises(ValueError, match="frag_gnn"):
+            validate_sampler_config(
+                _base_config(
+                    dynamic_batch_sampler=False,
+                    dual_group_dynamic_batch_sampler=True,
+                    model_type="spectrum",
+                )
+            )
+
+    def test_dual_group_automatic_optimization_raises(self):
+        with pytest.raises(ValueError, match="automatic optimization"):
+            validate_sampler_config(
+                _base_config(
+                    dynamic_batch_sampler=False,
+                    dual_group_dynamic_batch_sampler=True,
+                    automatic_optimization=True,
+                )
+            )
