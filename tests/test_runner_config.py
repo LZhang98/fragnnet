@@ -9,6 +9,7 @@ def _base_config(**overrides) -> dict:
     """Return a minimal config dict for validate_sampler_config tests."""
     cfg = {
         "dynamic_batch_sampler": True,
+        "dual_group_dynamic_batch_sampler": False,
         "model_type": "frag_gnn",
         "automatic_optimization": False,
         "dynamic_batch_sampler_mode": "frag_node",
@@ -19,6 +20,13 @@ def _base_config(**overrides) -> dict:
 
 
 class TestValidateSamplerConfig:
+    def test_missing_dual_group_key_raises(self):
+        """Old configs without dual_group_dynamic_batch_sampler should fail fast."""
+        cfg = _base_config()
+        del cfg["dual_group_dynamic_batch_sampler"]
+        with pytest.raises(KeyError, match="dual_group_dynamic_batch_sampler"):
+            validate_sampler_config(cfg)
+
     def test_disabled_sampler_always_passes(self):
         # dynamic_batch_sampler=False should skip all checks regardless of other values
         cfg = _base_config(

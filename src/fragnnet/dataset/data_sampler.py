@@ -467,8 +467,10 @@ class DualGroupDynamicBatchSampler(BatchSampler):
     2) adduct + formula
 
     Each produced batch will try to include at least one sample of each
-    type (when available) and will respect maximum fragment node/edge
-    constraints (like SpecMolFragDynamicBatchSampler).
+    type (when available) and will generally respect maximum fragment
+    node/edge constraints (like SpecMolFragDynamicBatchSampler).
+    When `skip_too_big=False`, an oversized sample may be emitted as a
+    singleton batch to avoid dropping data.
     """
 
     def __init__(
@@ -595,12 +597,15 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 if n > budget_left and self._skip_too_big:
                     continue
                 if n > budget_left:
-                    # Won't fit in budget
-                    continue
+                    # Match SpecMolFragDynamicBatchSampler behavior: when
+                    # skip_too_big=False, allow an oversized singleton batch
+                    # instead of silently dropping the sample.
+                    if not (n > self._max_num and budget_left == self._max_num):
+                        continue
                 # take it
                 used_mask[idx] = True
                 taken.append(idx)
-                budget_left -= n
+                budget_left = max(0, budget_left - n)
                 take_k -= 1
                 break
         return taken, used_mask, budget_left
@@ -683,12 +688,15 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                             continue
                         # Check budget BEFORE adding
                         if n > budget_left:
-                            continue
+                            # Match SpecMolFragDynamicBatchSampler behavior: when
+                            # skip_too_big=False, allow an oversized singleton batch.
+                            if not (n > self._max_num and len(batch) == 0):
+                                continue
                         batch.append(idx)
                         batch_n += n
                         samples_to_take -= 1
                         used_mask[idx] = True
-                        budget_left -= n
+                        budget_left = max(0, budget_left - n)
 
             if not batch:
                 # Nothing could be placed (maybe all remaining too large or already used)

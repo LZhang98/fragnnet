@@ -492,6 +492,29 @@ class TestDualGroupDynamicBatchSampler:
         all_indices = [i for b in batches for i in b]
         assert 1 not in all_indices
 
+    def test_dual_group_sampler_skip_false_keeps_oversized(self):
+        """When skip_too_big=False, oversized samples should still be yielded."""
+        samples = [
+            {"frag_pyg": FakeFrag(3, 2), "adduct": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(100, 1), "adduct": "B", "mol_id": 2, "formula": "Y"},
+        ]
+
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(42)
+
+        sampler = DualGroupDynamicBatchSampler(
+            ds,
+            max_num=10,
+            limited_by="frag_node",
+            skip_too_big=False,
+            generator=gen,
+        )
+
+        batches = list(iter(sampler))
+        all_indices = [i for b in batches for i in b]
+        assert 1 in all_indices
+
     def test_dual_group_sampler_deterministic_with_generator(self):
         """Test determinism with manual seed."""
         samples = [

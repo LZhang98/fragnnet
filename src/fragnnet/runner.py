@@ -223,18 +223,15 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 sampler=sampler,
             )
         dl_param_d["batch_sampler"] = batch_sampler
-    elif config_d["dual_group_dynamic_batch_sampler"]:
-        if split == "train":
-            return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
-        else:
-            return_batch_at = config_d["eval_batch_size"]
-
+    elif config_d["dual_group_dynamic_batch_sampler"] and split == "train":
+        return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
         batch_sampler = DualGroupDynamicBatchSampler(
             ds,
             max_num=config_d["dual_group_dynamic_batch_sampler_max"],
             limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
             skip_too_big=True,
             return_batch_at=return_batch_at,
+            generator=generator,
         )
         dl_param_d["batch_sampler"] = batch_sampler
     else:
@@ -260,22 +257,47 @@ def validate_sampler_config(config_d: dict) -> None:
     Raises:
         ValueError: If the sampler configuration is invalid.
     """
-    if not config_d["dynamic_batch_sampler"]:
-        return
-    if config_d["model_type"] != "frag_gnn":
-        raise ValueError("Dynamic batch sampler can only be used with frag_gnn model")
-    if config_d["automatic_optimization"]:
-        raise ValueError(
-            f"Dynamic batch sampler cannot be used with automatic optimization "
-            f"(got automatic_optimization={config_d['automatic_optimization']})"
-        )
-    if config_d["dynamic_batch_sampler_mode"] not in ["frag_node", "frag_edge"]:
-        raise ValueError(
-            f"Dynamic batch sampler only supports frag_node or frag_edge mode "
-            f"(got '{config_d['dynamic_batch_sampler_mode']}')"
-        )
-    if config_d["dynamic_batch_sampler_max"] is None:
-        raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
+
+
+    if config_d["dynamic_batch_sampler"] and config_d["dual_group_dynamic_batch_sampler"]:
+        raise ValueError("dynamic_batch_sampler and dual_group_dynamic_batch_sampler are mutually exclusive")
+
+    if config_d["dynamic_batch_sampler"]:
+        if config_d["model_type"] != "frag_gnn":
+            raise ValueError("Dynamic batch sampler can only be used with frag_gnn model")
+        if config_d["automatic_optimization"]:
+            raise ValueError(
+                f"Dynamic batch sampler cannot be used with automatic optimization "
+                f"(got automatic_optimization={config_d['automatic_optimization']})"
+            )
+        if config_d["dynamic_batch_sampler_mode"] not in ["frag_node", "frag_edge"]:
+            raise ValueError(
+                f"Dynamic batch sampler only supports frag_node or frag_edge mode "
+                f"(got '{config_d['dynamic_batch_sampler_mode']}')"
+            )
+        if config_d["dynamic_batch_sampler_max"] is None:
+            raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
+
+    if  config_d["dual_group_dynamic_batch_sampler"]:
+
+        if config_d["model_type"] != "frag_gnn":
+            raise ValueError("Dual-group dynamic batch sampler can only be used with frag_gnn model")
+        if config_d["automatic_optimization"]:
+            raise ValueError(
+                f"Dual-group dynamic batch sampler cannot be used with automatic optimization "
+                f"(got automatic_optimization={config_d['automatic_optimization']})"
+            )
+        dual_mode = config_d.get("dual_group_dynamic_batch_sampler_mode")
+        if dual_mode not in ["frag_node", "frag_edge"]:
+            raise ValueError(
+                f"Dual-group dynamic batch sampler only supports frag_node or frag_edge mode "
+                f"(got '{dual_mode}')"
+            )
+        dual_max = config_d.get("dual_group_dynamic_batch_sampler_max")
+        if dual_max is None:
+            raise ValueError(
+                "Dual-group dynamic batch sampler requires dual_group_dynamic_batch_sampler_max to be set"
+            )
 
 
 def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list):
