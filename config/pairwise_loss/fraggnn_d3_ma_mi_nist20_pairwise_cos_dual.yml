@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_nist20_pairwise_cos
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_pairwise_cos_dual
 wandb_tags:
 - retrieval
 - nist20
@@ -7,7 +7,7 @@ wandb_tags:
 - inchikey
 - new_proc
 - fraggnn_d3
-- dynamic_sampler
+- dual_dynamic_sampler
 - new_metrics
 - nodemlp
 - oos_multiple_1
@@ -24,6 +24,11 @@ wandb_tags:
 - m-h
 - m+na
 - m+cl
+- frag_mode
+- frag_mode_scale
+- ce_scale
+- ace
+- pairwise_cos
 
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
@@ -41,6 +46,7 @@ frag_params:
 spec_params:
   merge: False
   nce: True
+  ace: False
   merge_keep_ces: False
   preprocess: True
   prec_type_str: False
@@ -53,21 +59,27 @@ spec_params:
   inst_types:
     - "FT"
     - "QTOF"
-    - 'IT'
+    - "IT"
+  frag_mode: True
+  frag_modes:
+    - "HCD"
+    - "CID"
 mol_params:
   preprocess: True
 
-ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
-ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
-ce_insert_merge: False # merge ce embedding
+ce_insert_type: embed
+ce_insert_location: mol
+ce_insert_merge: True
 ce_insert_size: 32
 prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
-
-mol_params:
-  preprocess: True
+frag_mode_insert_location: mol
+frag_mode_insert_size: 32
+frag_mode_scale: True
+ce_scale: True
+ce_scaler_hidden_dim: 64
 
 train_batch_size: 256
 eval_batch_size: 256
@@ -103,13 +115,26 @@ automatic_optimization: False
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: False
+compile: True
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
 
 # pairwise losses
-pairwise_cosine_loss_weight: 0.5 
+pairwise_cosine_loss_weight: 0.5
 pairwise_jss_loss_weight: 0.0
 pairwise_cross_entropy_loss_weight: 0.0
+
+# dynamic batch samplers (mutually exclusive)
+dynamic_batch_sampler: False
+dual_group_dynamic_batch_sampler: True
+dual_group_dynamic_batch_sampler_mode: frag_node
+dual_group_dynamic_batch_sampler_max: 100000
+
+group_sampler: False
+group_sampler_type: group
+group_sampler_max_per_group: 5
+simple_group_sampler: False
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group
