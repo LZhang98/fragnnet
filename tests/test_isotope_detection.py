@@ -1,14 +1,19 @@
-"""Tests for adduct-aware isotope peak detection.
+"""Tests for isotope peak detection.
 
 Covers:
 - ``_parse_adduct_counts``: correct parsing of adduct formula diffs
 - ``_expected_mk_ratio``: adduct atoms applied at full weight
-- ``detect_isotope_peaks_for_training``: end-to-end with adduct correction
+- ``detect_isotope_peaks_for_training``: co-isolation R_k based detection
 
-Note on peak spacing: ``detect_isotope_peaks_for_training`` searches for M+0 at
-``candidate_mz - k * C13_SPACING`` (1.003355 Da per step) — the true ¹³C isotope
-spacing.  Tests therefore place peaks at multiples of C13_SPACING so the search
-window (±4 mDa for k=1, ±8 mDa for k≥2) reliably finds the monoisotopic peak.
+Design of ``detect_isotope_peaks_for_training`` spectra
+-------------------------------------------------------
+The function estimates R_k from precursor M+k peaks *above* prec_mz.  Test
+spectra are therefore built with two series:
+  1. Fragment peaks: [M+0, M+1, ...] at ``frag_base + i * C13_SPACING``
+  2. Precursor peaks: [M+0, M+1, ...] at ``prec_mz + i * C13_SPACING``
+
+The tight FT tolerance (4 mDa for k=1, 8 mDa for k≥2) means peaks must be
+placed at exact C13_SPACING multiples so the search window reliably finds them.
 """
 
 import numpy as np
@@ -120,148 +125,368 @@ class TestExpectedMkRatio:
 
 
 # ---------------------------------------------------------------------------
-# detect_isotope_peaks_for_training — adduct correction end-to-end
+# detect_isotope_peaks_for_training — co-isolation R_k based detection
 # ---------------------------------------------------------------------------
 
-# Helpers: build spectra with peaks placed at NEUTRON_MASS multiples
-# so the ±5 mDa search window reliably finds the monoisotopic peak.
-
-_NM = C13_SPACING  # 1.003355 Da — true ¹³C isotope spacing used by the detector
+_NM = C13_SPACING  # 1.003355 Da
 
 
-def _mk_spectrum(base_mz: float, *intensities: float) -> tuple[np.ndarray, np.ndarray]:
-    """Return (mzs, ints) for a peak series [M+0, M+1, M+2, ...] at C13_SPACING spacing."""
-    mzs = np.array([base_mz + i * _NM for i in range(len(intensities))])
-    ints = np.array(list(intensities), dtype=float)
+def _build_spectrum(
+    frag_base: float,
+    frag_ints: tuple[float, ...],
+    prec_mz: float,
+    prec_ints: tuple[float, ...],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build a spectrum with a fragment peak series and precursor isotope peaks.
+
+    Fragment peaks are placed at ``frag_base + i * C13_SPACING``.
+    Precursor peaks are placed at ``prec_mz + i * C13_SPACING`` (M+0 at prec_mz,
+    M+1 at prec_mz + C13_SPACING, etc.).  The precursor M+k peaks above prec_mz
+    serve as the reference from which R_k is estimated.
+
+    Args:
+        frag_base: m/z of the monoisotopic fragment peak (M+0).
+        frag_ints: Intensities for fragment M+0, M+1, M+2, ...
+        prec_mz: Precursor m/z (M+0 position).
+        prec_ints: Intensities for precursor M+0, M+1, M+2, ...
+
+    Returns:
+        Tuple of (mzs, ints) arrays for the combined spectrum.
+    """
+    frag_mzs = np.array([frag_base + i * _NM for i in range(len(frag_ints))])
+    prec_mzs = np.array([prec_mz + i * _NM for i in range(len(prec_ints))])
+    mzs = np.concatenate([frag_mzs, prec_mzs])
+    ints = np.concatenate([np.array(frag_ints, dtype=float), np.array(prec_ints, dtype=float)])
     return mzs, ints
 
 
-class TestDetectIsotopePeaksAdductAware:
-    """End-to-end tests for adduct-aware isotope detection."""
+class TestDetectIsotopePeaksForTraining:
+    """Tests for co-isolation-ratio-based isotope leak detection."""
 
-    # ----- [M+K]+ : ⁴¹K M+2 isotope detection -----
+    # ----- M+1 detection -----
 
-    def test_mk_plus_m2_detected_with_prec_type(self):
-        """M+2 peak at ~6.7% from ⁴¹K IS flagged when prec_type=[M+K]+."""
-        # Molecule C10H20, [M+K]+ prec.  Fragment [C5H10+K]+ at ~109 Da.
-        # prec_mz = mol_neutral + K_mass ≈ 140.16 + 38.97 ≈ 179.13
-        # frag_mz = frag_neutral + K_mass ≈ 70.08 + 38.97 ≈ 109.05
+    def test_m1_detected_when_ratio_matches_prec(self):
+        """Fragment M+1 is flagged when its ratio matches the precursor R_1."""
+        # prec_mz=179.13, frag at 109.05.
+        # R_1 = 57/1000 = 0.057; fragment M+1 intensity = 57 → ratio matches.
         prec_mz = 179.13
-        base = 109.05
-        m0_int, m1_int, m2_int = 1000.0, 57.0, 67.0  # M+1 ~5.7%, M+2 ~6.7% (41K)
-        mzs, ints = _mk_spectrum(base, m0_int, m1_int, m2_int)
-
-        mask = detect_isotope_peaks_for_training(
-            mzs, ints, prec_mz=prec_mz, formula="C10H20", inst_type="FT",
-            prec_type="[M+K]+"
+        mzs, ints = _build_spectrum(
+            frag_base=109.05, frag_ints=(1000.0, 57.0),
+            prec_mz=prec_mz, prec_ints=(1000.0, 57.0),  # R_1 = 0.057
         )
-        assert mask[2], "M+2 from 41K should be detected with prec_type=[M+K]+"
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        assert mask[1], "Fragment M+1 with ratio matching prec R_1 should be detected"
 
-    def test_mk_plus_m2_not_detected_without_prec_type(self):
-        """Without prec_type the K M+2 peak falls outside the expected range."""
+    def test_m1_not_detected_when_no_above_prec_peaks(self):
+        """Without any above-prec peaks, R_k cannot be estimated → nothing flagged."""
         prec_mz = 179.13
-        base = 109.05
-        mzs, ints = _mk_spectrum(base, 1000.0, 57.0, 67.0)
+        # Fragment only — no precursor peaks in spectrum
+        mzs = np.array([109.05, 109.05 + _NM])
+        ints = np.array([1000.0, 57.0])
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        assert not mask.any(), "Without above-prec peaks, R_k is unknown → all-False"
 
-        mask = detect_isotope_peaks_for_training(
-            mzs, ints, prec_mz=prec_mz, formula="C10H20", inst_type="FT",
-            prec_type=None
-        )
-        assert not mask[2], "Without prec_type, K M+2 should NOT be detected"
-
-    def test_mk_plus_m1_still_detected(self):
-        """M+1 (¹³C) detection is unaffected by [M+K]+ correction."""
+    def test_m1_not_detected_when_ratio_far_from_prec(self):
+        """Fragment M+1 whose ratio differs greatly from prec R_1 is not flagged."""
         prec_mz = 179.13
-        base = 109.05
-        # C5H10 fragment: expected M+1 ~5.7%; use 6% to be comfortably in range
-        mzs, ints = _mk_spectrum(base, 1000.0, 60.0)
-
-        mask = detect_isotope_peaks_for_training(
-            mzs, ints, prec_mz=prec_mz, formula="C10H20", inst_type="FT",
-            prec_type="[M+K]+"
+        # R_1 = 30/1000 = 0.03; fragment M+1 = 30% (ratio = 0.30 >> 2.0 * 0.03)
+        mzs, ints = _build_spectrum(
+            frag_base=109.05, frag_ints=(1000.0, 300.0),
+            prec_mz=prec_mz, prec_ints=(1000.0, 30.0),  # R_1 = 0.03
         )
-        assert mask[1], "M+1 from 13C should still be detected with [M+K]+"
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        assert not mask[1], "Fragment M+1 with ratio >> R_1 × ratio_hi should not be flagged"
 
-    # ----- [M+Cl]- : ³⁷Cl M+2 detection -----
+    # ----- M+2 detection with Cl precursor -----
 
-    def test_mcl_minus_m2_detected_with_prec_type(self):
-        """M+2 at ~32% from ³⁷Cl IS flagged when prec_type=[M+Cl]- and M+1 present."""
-        # Molecule C5H10O (no Cl). Fragment [C3H6O+Cl]- retaining Cl.
-        # prec_mz ≈ 86.07 + 34.97 ≈ 121.0, frag_mz ≈ 58.04 + 34.97 ≈ 93.0
+    def test_cl_m2_detected_for_fragment_retaining_cl(self):
+        """Fragment that retained Cl has M+2 ≈ 32.2%, matching prec R_2 → detected."""
+        # [M+Cl]- precursor.  Precursor R_2 = 322/1000 = 0.322 (37Cl dominates).
+        # Fragment [frag+Cl]- retains Cl → its M+2 ≈ 32.2% of M+0.
         prec_mz = 121.04
-        base = 93.02
-        # M+1 ~3.5% from 13C (C3), M+2 ~32.2% from 37Cl
-        mzs, ints = _mk_spectrum(base, 1000.0, 35.0, 322.0)
-
-        mask = detect_isotope_peaks_for_training(
-            mzs, ints, prec_mz=prec_mz, formula="C5H10O", inst_type="FT",
-            prec_type="[M+Cl]-"
+        frag_base = 93.02
+        mzs, ints = _build_spectrum(
+            frag_base=frag_base, frag_ints=(1000.0, 35.0, 322.0),
+            prec_mz=prec_mz, prec_ints=(1000.0, 35.0, 322.0),  # R_1=0.035, R_2=0.322
         )
-        assert mask[2], "M+2 from 37Cl should be detected with prec_type=[M+Cl]-"
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        assert mask[2], "Cl-retaining fragment M+2 matching prec R_2 should be detected"
 
-    def test_mcl_minus_cmf_m2_not_falsely_flagged(self):
-        """CMF fragment [frag-H]- has tiny M+2 (no Cl) — must NOT be flagged."""
-        # Despite [M+Cl]- precursor, this fragment lost Cl: only 13C M+2 (~1%)
+    def test_cmf_fragment_not_falsely_flagged(self):
+        """CMF fragment [frag-H]- lost Cl: M+2 ≈ 1.2%, far below prec R_2 = 32.2%."""
+        # Even though the precursor was [M+Cl]-, this fragment lost Cl via CMF.
+        # Its M+2 comes only from 13C (C3 → ~1.2%).
+        # prec R_2 = 0.322; fragment ratio = 0.012 → 0.012 / 0.322 = 0.037 < ratio_lo=0.5
         prec_mz = 121.04
-        base = 57.03   # [C3H5O-H]- after CMF
-        mzs, ints = _mk_spectrum(base, 1000.0, 35.0, 12.0)  # M+2 = 1.2%
-
-        mask = detect_isotope_peaks_for_training(
-            mzs, ints, prec_mz=prec_mz, formula="C5H10O", inst_type="FT",
-            prec_type="[M+Cl]-"
+        frag_base = 57.03
+        mzs, ints = _build_spectrum(
+            frag_base=frag_base, frag_ints=(1000.0, 35.0, 12.0),
+            prec_mz=prec_mz, prec_ints=(1000.0, 35.0, 322.0),  # R_2 = 0.322
         )
-        # 1.2% M+2 << lo_factor * expected(Cl) ≈ 0.5 * 0.322 = 16.1% → outside range
-        assert not mask[2], "CMF fragment with tiny M+2 should NOT be falsely flagged"
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        assert not mask[2], "CMF fragment with tiny M+2 should NOT be flagged (ratio << R_2)"
 
-    # ----- [M+H]+ baseline (no regression) -----
+    # ----- [M+H]+ baseline -----
 
-    def test_mh_plus_m1_detected_unchanged(self):
-        """[M+H]+ M+1 detection still works (no regression from adduct correction)."""
-        # C18H24 molecule, [M+H]+ prec ~241.2 Da; C9 fragment ~121.1 Da
-        # Expected M+1 for C9 ≈ 9 * 1.103% ≈ 9.9%
+    def test_mh_plus_m1_detected(self):
+        """[M+H]+ M+1 detection works via observed prec R_1."""
+        # C9 fragment ~121.1 Da; prec ~241.2 Da.  R_1 = 95/1000 = 0.095.
+        # Fragment M+1 = 9.5% → ratio matches R_1.
         prec_mz = 241.19
-        base = 121.10
-        mzs, ints = _mk_spectrum(base, 1000.0, 95.0)  # M+1 = 9.5%
-
-        mask = detect_isotope_peaks_for_training(
-            mzs, ints, prec_mz=prec_mz, formula="C18H24", inst_type="FT",
-            prec_type="[M+H]+"
+        mzs, ints = _build_spectrum(
+            frag_base=121.10, frag_ints=(1000.0, 95.0),
+            prec_mz=prec_mz, prec_ints=(1000.0, 95.0),  # R_1 = 0.095
         )
-        assert mask[1], "[M+H]+ M+1 should still be detected"
-
-    # ----- mol_scale correction -----
-
-    def test_mol_scale_corrected_for_heavy_adduct(self):
-        """mol_scale uses neutral masses; for [M+K]+ a pure-13C M+1 is still found."""
-        # With a 39 Da K adduct, naive scale = frag_mz/prec_mz overestimates C count.
-        # Corrected scale = (frag_mz - K_mass) / (prec_mz - K_mass) ≈ 0.5.
-        # For C10H20, C5 fragment: expected M+1 ≈ 5 * 1.103% * 0.5 = 2.76% (scaled by mol_scale)
-        # Actual: 5.5% — within [0.5, 2.0] × expected? Let's check.
-        # Expected M+1 with corrected scale: mol_m1 = 10 * 0.01103 * 0.5 = 0.0552
-        # range: [0.0276, 0.1104]; observed 0.055 → in range ✓
-        prec_mz = 179.13
-        base = 109.05
-        mzs, ints = _mk_spectrum(base, 1000.0, 55.0)  # M+1 = 5.5%
-
-        mask = detect_isotope_peaks_for_training(
-            mzs, ints, prec_mz=prec_mz, formula="C10H20", inst_type="FT",
-            prec_type="[M+K]+"
-        )
-        assert mask[1], "M+1 should be within expected range with corrected mol_scale"
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="FT")
+        assert mask[1], "[M+H]+ M+1 should be detected"
 
     # ----- instrument gating -----
 
     def test_qtof_always_returns_false(self):
-        mzs, ints = _mk_spectrum(100.0, 1000.0, 110.0)
-        mask = detect_isotope_peaks_for_training(
-            mzs, ints, prec_mz=200.0, formula="C10H20", inst_type="QTOF",
-            prec_type="[M+K]+"
+        prec_mz = 200.0
+        mzs, ints = _build_spectrum(
+            frag_base=100.0, frag_ints=(1000.0, 110.0),
+            prec_mz=prec_mz, prec_ints=(1000.0, 110.0),
         )
+        mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=prec_mz, inst_type="QTOF")
         assert not mask.any(), "QTOF should never be filtered"
 
 
 # ---------------------------------------------------------------------------
-# isotope_offsets_from_formula
+# detect_isotope_peaks_for_training — aggressive mode (cross-pair consistency)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectIsotopePeaksAggressiveMode:
+    """Tests for aggressive=True: R_k estimated from cross-pair consistency.
+
+    The key identity: if co-isolation is present with ratio R, then for any two
+    fragment pairs (M_i, M+1_i) and (M_j, M+1_j):
+
+        I(M+1_i) / I(M+1_j) = I(M_i) / I(M_j)   (= R is the same for all i)
+
+    This cross-pair consistency (low CV of r_i = I(M+1_i)/I(M_i)) allows R to
+    be estimated from the spectrum itself, without requiring above-prec peaks.
+    """
+
+    def _make_consistent_spectrum(
+        self,
+        R: float,
+        prec_mz: float,
+        frag_bases: tuple[float, ...],
+        m0_ints: tuple[float, ...],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Build a spectrum with N fragments each having M+1 = R * M+0.
+
+        No precursor M+k peaks above prec_mz are included, so the default mode
+        would return all-False.  Aggressive mode should recover R from consistency.
+        """
+        mz_list, int_list = [], []
+        for base, m0 in zip(frag_bases, m0_ints):
+            mz_list += [base, base + _NM]
+            int_list += [m0, R * m0]
+        return np.array(mz_list), np.array(int_list)
+
+    def test_consistent_ratio_detected_in_aggressive_mode(self):
+        """Three fragments all with R=0.06 → aggressive mode detects all M+1 peaks."""
+        R = 0.06
+        prec_mz = 400.0
+        mzs, ints = self._make_consistent_spectrum(
+            R, prec_mz,
+            frag_bases=(80.0, 120.0, 160.0),
+            m0_ints=(2000.0, 1500.0, 800.0),
+        )
+        mask = detect_isotope_peaks_for_training(
+            mzs, ints, prec_mz=prec_mz, inst_type="FT",
+            aggressive=True, aggressive_min_pairs=3, aggressive_cv=0.3,
+        )
+        # Indices 1, 3, 5 are the M+1 peaks (every second element)
+        m1_indices = [1, 3, 5]
+        assert all(mask[i] for i in m1_indices), "All M+1 peaks should be detected in aggressive mode"
+
+    def test_aggressive_not_triggered_when_above_prec_available(self):
+        """When above-prec peaks exist, aggressive fallback is not needed."""
+        prec_mz = 300.0
+        # Build with above-prec peaks — primary path should handle this (R_1 = 0.07)
+        mzs, ints = _build_spectrum(
+            frag_base=100.0, frag_ints=(1000.0, 70.0),
+            prec_mz=prec_mz, prec_ints=(2000.0, 140.0),
+        )
+        mask_default = detect_isotope_peaks_for_training(
+            mzs, ints, prec_mz=prec_mz, inst_type="FT", aggressive=False,
+        )
+        mask_aggressive = detect_isotope_peaks_for_training(
+            mzs, ints, prec_mz=prec_mz, inst_type="FT", aggressive=True,
+        )
+        # Both modes should give the same result when above-prec peaks are present
+        np.testing.assert_array_equal(mask_default, mask_aggressive)
+
+    def test_inconsistent_ratios_not_flagged_in_aggressive_mode(self):
+        """Fragments with scattered r_i (high CV) → aggressive mode returns all-False."""
+        prec_mz = 400.0
+        # Three fragments with very different M+1/M+0 ratios → not co-isolation
+        mzs = np.array([
+            80.0, 80.0 + _NM,    # r = 0.02
+            120.0, 120.0 + _NM,  # r = 0.20
+            160.0, 160.0 + _NM,  # r = 0.50
+        ])
+        ints = np.array([2000.0, 40.0, 1500.0, 300.0, 800.0, 400.0])
+        mask = detect_isotope_peaks_for_training(
+            mzs, ints, prec_mz=prec_mz, inst_type="FT",
+            aggressive=True, aggressive_min_pairs=3, aggressive_cv=0.3,
+        )
+        assert not mask.any(), "Inconsistent ratios (high CV) should not be flagged"
+
+    def test_aggressive_requires_min_pairs(self):
+        """Fewer pairs than min_pairs → aggressive mode returns all-False."""
+        R = 0.06
+        prec_mz = 400.0
+        # Only 2 pairs, but min_pairs=3
+        mzs, ints = self._make_consistent_spectrum(
+            R, prec_mz,
+            frag_bases=(80.0, 120.0),
+            m0_ints=(2000.0, 1500.0),
+        )
+        mask = detect_isotope_peaks_for_training(
+            mzs, ints, prec_mz=prec_mz, inst_type="FT",
+            aggressive=True, aggressive_min_pairs=3,
+        )
+        assert not mask.any(), "Fewer than min_pairs should not trigger aggressive detection"
+
+
+# ---------------------------------------------------------------------------
+# detect_isotope_peaks_for_training — formula-aware co-isolation (corrected physics)
+# ---------------------------------------------------------------------------
+
+
+class TestDetectIsotopePeaksFormulaMode:
+    """Tests for formula-aware co-isolation detection.
+
+    Physics: the isolation window co-selects fraction f of the M+k precursor
+    isotopologue.  Every fragment gains a satellite at +k×C13 with intensity
+
+        I(M+k_frag) = f × R_exp_frag_i × I(M+0_frag)
+
+    At the precursor level:  R_k / R_exp_prec = f  (always ≤ 1.0).
+    The old ``min_leak_factor ≥ 1.5`` was impossible; the correct gate is
+    ``f ≥ min_coiso_fraction`` (default 0.05).
+    """
+
+    @staticmethod
+    def _build_coiso_spectrum(
+        formula: str,
+        prec_type: str,
+        prec_mz: float,
+        f: float,
+        frag_bases: tuple[float, ...],
+        m0_ints: tuple[float, ...],
+        with_prec_residuals: bool = True,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Build a spectrum with physics-correct co-isolation intensities."""
+        from fragnnet.utils.formula_utils import parse_formula
+
+        mol_counts = parse_formula(formula)
+        adduct_counts, adduct_mass = _parse_adduct_counts(prec_type)
+        prec_neutral = prec_mz - adduct_mass
+
+        r_exp_prec1 = _expected_mk_ratio(mol_counts, mol_scale=1.0, k=1, adduct_counts=adduct_counts)
+
+        mz_list: list[float] = []
+        int_list: list[float] = []
+
+        for frag_mz, m0_int in zip(frag_bases, m0_ints):
+            mol_scale = max(0.0, min(1.0, (frag_mz - adduct_mass) / prec_neutral))
+            r_exp_frag = _expected_mk_ratio(
+                mol_counts, mol_scale=mol_scale, k=1, adduct_counts=adduct_counts
+            )
+            mz_list += [frag_mz, frag_mz + _NM]
+            int_list += [m0_int, f * r_exp_frag * m0_int]
+
+        if with_prec_residuals:
+            mz_list += [prec_mz, prec_mz + _NM]
+            int_list += [1000.0, f * r_exp_prec1 * 1000.0]
+
+        return np.array(mz_list), np.array(int_list)
+
+    def test_genuine_coiso_detected_primary_mode(self):
+        """f=0.3 co-isolation detected via precursor residuals in formula mode."""
+        mzs, ints = self._build_coiso_spectrum(
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            prec_mz=243.098,
+            f=0.3,
+            frag_bases=(120.0,),
+            m0_ints=(2000.0,),
+            with_prec_residuals=True,
+        )
+        mask = detect_isotope_peaks_for_training(
+            mzs, ints, prec_mz=243.098, inst_type="FT",
+            formula="C10H14N2O5", prec_type="[M+H]+",
+        )
+        # Index 1 is the fragment M+1 peak
+        assert mask[1], "Fragment M+1 from f=0.3 co-isolation should be detected"
+        assert not mask[0], "Fragment M+0 should not be flagged"
+
+    def test_coiso_below_min_fraction_not_detected(self):
+        """f=0.01 (1%) is below the default min_coiso_fraction=0.05 → all-False."""
+        mzs, ints = self._build_coiso_spectrum(
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            prec_mz=243.098,
+            f=0.01,
+            frag_bases=(120.0,),
+            m0_ints=(2000.0,),
+            with_prec_residuals=True,
+        )
+        mask = detect_isotope_peaks_for_training(
+            mzs, ints, prec_mz=243.098, inst_type="FT",
+            formula="C10H14N2O5", prec_type="[M+H]+",
+        )
+        assert not mask.any(), "1% co-isolation below min_coiso_fraction=0.05 should not fire"
+
+    def test_genuine_coiso_detected_aggressive_formula(self):
+        """f=0.3, no above-prec peaks: aggressive formula mode detects from fragment pairs."""
+        mzs, ints = self._build_coiso_spectrum(
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            prec_mz=400.0,
+            f=0.3,
+            frag_bases=(80.0, 120.0, 160.0),
+            m0_ints=(2000.0, 1500.0, 800.0),
+            with_prec_residuals=False,
+        )
+        mask = detect_isotope_peaks_for_training(
+            mzs, ints, prec_mz=400.0, inst_type="FT",
+            formula="C10H14N2O5", prec_type="[M+H]+",
+            aggressive=True, aggressive_min_pairs=3,
+        )
+        m1_indices = [1, 3, 5]
+        assert all(mask[i] for i in m1_indices), (
+            "All M+1 co-isolation peaks should be detected in aggressive formula mode"
+        )
+
+    def test_k1_kept_when_k2_absent(self):
+        """k=2 below noise for small molecule: k=1 is still kept (not discarded)."""
+        # Small molecule: M+2 residual ≈ f × R_exp_prec[2] × 1000 ≈ very small → absent
+        mzs, ints = self._build_coiso_spectrum(
+            formula="C5H8O2",
+            prec_type="[M+H]+",
+            prec_mz=101.060,
+            f=0.5,
+            frag_bases=(57.0,),
+            m0_ints=(2000.0,),
+            with_prec_residuals=True,  # only k=1 residual; k=2 too tiny to include
+        )
+        mask = detect_isotope_peaks_for_training(
+            mzs, ints, prec_mz=101.060, inst_type="FT",
+            formula="C5H8O2", prec_type="[M+H]+",
+            max_isotope=2,
+        )
+        assert mask[1], "Fragment M+1 should be detected even without k=2 residual peak"
+
+
+# ---------------------------------------------------------------------------
+# detect_isotope_peaks_formula_aware
 # ---------------------------------------------------------------------------
 
 

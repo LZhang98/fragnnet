@@ -1503,7 +1503,9 @@ def detect_isotope_peaks_formula_aware(
                 continue
             if mono_int > 0:
                 obs_ratio = sorted_ints[i] / mono_int
-                if not (intensity_ratio_lo * exp_ratio <= obs_ratio <= intensity_ratio_hi * exp_ratio):
+                if not (
+                    intensity_ratio_lo * exp_ratio <= obs_ratio <= intensity_ratio_hi * exp_ratio
+                ):
                     continue
             is_isotope[sort_idx[i]] = True
             break
@@ -1621,77 +1623,200 @@ def _parse_adduct_counts(prec_type: str | None) -> tuple[dict[str, int], float]:
     return adduct_counts, adduct_delta_mass
 
 
+def _estimate_leak_ratio_from_spectrum(
+    smzs: np.ndarray,
+    sints: np.ndarray,
+    k: int,
+    mz_tol: float,
+    min_pairs: int,
+    consistency_cv: float,
+    mol_counts: dict[str, int] | None = None,
+    adduct_counts: dict[str, int] | None = None,
+    adduct_delta_mass: float = 0.0,
+    prec_neutral_mass: float = 0.0,
+) -> float | None:
+    """Estimate co-isolation ratio from cross-pair consistency of M+k peaks.
+
+    When ``mol_counts`` is provided, each raw ratio ``r_i = I(M+k_i) / I(M_i)``
+    is normalised by the formula-predicted natural M+k/M+0 for that fragment:
+
+        r_normalised_i = r_i / R_exp_frag_i ≈ R_leak   (co-isolation amplification)
+
+    Because ``R_exp_frag_i`` varies with fragment composition while ``R_leak`` is
+    a spectrum-level constant, normalising collapses the distribution so Coefficient of Variation (CV) is
+    small only when genuine co-isolation is present.  Without ``mol_counts`` the
+    raw ``r_i`` values are used and the function returns the median as ``R_k``
+    (the old behaviour, appropriate when the formula is unavailable).
+
+    Args:
+        smzs: Sorted m/z array.
+        sints: Sorted intensity array (same order as smzs).
+        k: Isotope order (1 = M+1, 2 = M+2).
+        mz_tol: Per-step m/z tolerance in Da (doubled for k ≥ 2 by caller).
+        min_pairs: Minimum number of (M, M+k) pairs required to accept consensus.
+        consistency_cv: Maximum coefficient of variation (std/mean) of values to
+            accept the consensus as a genuine co-isolation signal.
+        mol_counts: Element counts of the neutral precursor molecule.  When given,
+            enables formula-normalised R_leak estimation.
+        adduct_counts: Element counts added by the adduct (positive atoms only).
+        adduct_delta_mass: Monoisotopic mass of adduct atoms (Da).
+        prec_neutral_mass: Neutral precursor mass ``prec_mz - adduct_delta_mass``
+            used as denominator for the per-fragment mol_scale estimate.
+
+    Returns:
+        Consensus R_leak (when ``mol_counts`` given) or R_k (when not), or None
+        if the signal is inconsistent or there are too few pairs.
+    """
+    k_tol = mz_tol if k == 1 else mz_tol * 2
+    n = len(smzs)
+    r_vals: list[float] = []
+    use_formula = mol_counts is not None and prec_neutral_mass > 0
+
+    for i in range(n):
+        m0_int = sints[i]
+        if m0_int <= 0:
+            continue
+        target = smzs[i] + k * C13_SPACING
+        lo = np.searchsorted(smzs, target - k_tol, side="left")
+        hi = np.searchsorted(smzs, target + k_tol, side="right")
+        if lo >= hi:
+            continue
+        mk_int = sints[lo + int(np.argmax(sints[lo:hi]))]
+        # Monotonicity: M+0 must be more intense (R_k < 1 for typical co-isolation)
+        if mk_int >= m0_int:
+            continue
+        r_raw = mk_int / m0_int
+        if use_formula:
+            neutral_frag = smzs[i] - adduct_delta_mass
+            mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
+            r_exp = _expected_mk_ratio(mol_counts, mol_scale, k, adduct_counts or {})
+            if r_exp <= 0:
+                continue
+            r_vals.append(r_raw / r_exp)  # normalised → R_leak
+        else:
+            r_vals.append(r_raw)  # unnormalised → R_k
+
+    if len(r_vals) < min_pairs:
+        return None
+
+    r_arr = np.array(r_vals)
+    r_median = float(np.median(r_arr))
+    if r_median <= 0:
+        return None
+
+    cv = float(np.std(r_arr) / r_median)
+    if cv > consistency_cv:
+        return None  # values too scattered → not a coherent co-isolation signal
+
+    return r_median
+
+
 def detect_isotope_peaks_for_training(
     mzs: np.ndarray,
     ints: np.ndarray,
     prec_mz: float,
-    formula: str,
     inst_type: str,
-    prec_type: str | None = None,
     max_isotope: int = 2,
     require_monotone: bool = True,
     require_envelope: bool = True,
-    lo_factor: float = 0.3,
-    hi_factor: float = 3.0,
+    ratio_lo: float = 0.7,
+    ratio_hi: float = 2.0,
+    aggressive: bool = True,
+    aggressive_min_pairs: int = 3,
+    aggressive_cv: float = 0.3,
+    formula: str | None = None,
+    prec_type: str | None = None,
+    min_coiso_fraction: float = 0.05,
+    max_leak_factor: float = 1.5,
 ) -> np.ndarray:
-    """Detect isotope peaks for training-data cleaning.
+    """Detect isotope leak peaks for training-data cleaning.
 
     Designed for high precision (minimal false positives) rather than high recall,
     because false positives delete real H-transfer peaks that the model must learn.
 
-    Key differences from ``detect_isotope_peaks``:
+    **Physics model** (``formula`` provided):
 
-    * **Instrument gating**: Only FT spectra are filtered.  For QTOF/IT/QqQ the
-      0.84 mDa gap between H-gain (+1H) and M+1 isotope is unresolvable, so
-      filtering would delete valid training signal.
-    * **Tight mz_tol**: 4 mDa for FT (k=1), centred on C13_SPACING (1.003355 Da).
-      H-gain (+1H) spacing is 1.007825 Da — 4.47 mDa from the search centre — so
-      4 mDa excludes H-gain while leaving a 0.47 mDa FT-accuracy margin.
-      For k ≥ 2 the tolerance is doubled (8 mDa) to cover heavy-isotope M+2
-      spacings (³⁷Cl, ⁴¹K, ³⁴S) that differ from 2 × C13_SPACING by up to ~9.7 mDa.
-    * **Adduct-aware ratio check**: Uses the neutral molecule formula *plus* atoms
-      added by the adduct (via ``prec_type``) to predict M+k/M+0 ratios.  Adduct
-      atoms (e.g. K from ``[M+K]+``) are applied at full weight because the charge
-      carrier either stays with a fragment entirely or is absent—it does not
-      distribute proportionally.  The mol_scale is computed from neutral masses
-      (subtracting the adduct atom mass from both fragment and precursor m/z).
-    * **Monotonicity**: Requires I(M+0) > I(M+k), which always holds for true
-      isotope envelopes of small molecules at typical MS2 energies.
-    * **Envelope coherence** (``require_envelope=True``): For M+k peaks with k > 1,
-      every intermediate M+j (1 ≤ j < k) must also be present and pass the ratio
-      check.  A coincidental M+2 match without a consistent M+1 is rejected.
+    The isolation window co-selects a fraction ``f`` of the M+k precursor isotopologue
+    alongside M+0.  Both fragment identically, so every fragment ion gains a satellite
+    at ``+k × C13_SPACING`` with intensity proportional to ``f``:
+
+        observed ratio at fragment i  =  R_exp_frag_i × f
+
+    where ``R_exp_frag_i`` is the natural M+k/M+0 ratio for that fragment's formula
+    (proportional to carbon/heteroatom count) and ``f`` is the co-isolation fraction
+    (0 < f ≤ 1).  ``f`` is estimated from the precursor residual peaks above
+    ``prec_mz`` (primary path) or from cross-pair consistency of in-spectrum
+    fragment M+k pairs (aggressive fallback):
+
+        f  =  R_k_prec / R_exp_prec          (primary: precursor residuals)
+        f  ≈  median(r_raw_i / R_exp_frag_i) (aggressive: formula-normalised pairs)
+
+    Only spectra where ``f ≥ min_coiso_fraction`` are flagged.  Because ``f ≤ 1``
+    always, the old ``min_leak_factor ≥ 1.5`` threshold was physically impossible
+    for genuine co-isolation — this is the corrected formulation.
+
+    Per-fragment expected ratio is estimated as
+    ``R_exp_frag_i ≈ _expected_mk_ratio(mol_counts, frag_mz/prec_neutral, k)``
+    using the fragment's m/z as a proxy for its formula size.  This correctly
+    scales the detection threshold: small fragments require a much smaller
+    absolute M+k/M+0 ratio to be considered a leak than large ones.
+
+    **Without formula** (``formula=None``): falls back to comparing ``obs ≈ R_k``
+    uniformly across all fragments (previous behaviour).  No ``R_leak`` gating.
+
+    **Default mode** (``aggressive=False``): ``R_k`` / ``R_leak`` is read from
+    the precursor's own M+k peaks above ``prec_mz``.  Returns all-False when
+    those peaks are absent.
+
+    **Aggressive mode** (``aggressive=True``): when no above-prec reference is
+    found, estimates ``R_leak`` from cross-pair consistency of in-spectrum M+k
+    candidates, formula-normalised when ``mol_counts`` is available.
+
+    Key design choices:
+
+    * **Instrument gating**: Only FT spectra are filtered.
+    * **Tight mz_tol**: 4 mDa (k=1), 8 mDa (k≥2), centred on C13_SPACING.
+    * **Monotonicity**: Requires I(M+0_frag) > I(M+k_frag).
+    * **Envelope coherence**: M+k requires M+1…M+(k-1) confirmed first.
 
     Args:
         mzs: Peak m/z values of shape (N,).  Need not be sorted.
         ints: Peak intensities of shape (N,).  Same order as ``mzs``.
-        prec_mz: Precursor m/z (used as mass-fraction denominator).
-        formula: Neutral molecule formula (e.g. ``"C12H22O11"``).
-        inst_type: Instrument type string as stored in spec_df (e.g. ``"FT"``,
-            ``"QTOF"``, ``"IT"``).  Only ``"FT"`` is currently filtered.
-        prec_type: Adduct/precursor type string (e.g. ``"[M+K]+"``, ``"[M+Cl]-"``).
-            When provided, atoms added by the adduct (positive formula diff) are
-            included in the isotope ratio prediction at full weight.  This is
-            critical for adducts with significant heavy isotopes such as ⁴¹K
-            (6.73 %) and ³⁷Cl (32.2 %).  Defaults to None (no adduct correction).
+        prec_mz: Precursor m/z.
+        inst_type: Instrument type string (``"FT"``, ``"QTOF"``, ``"IT"``).
+            Only ``"FT"`` is currently filtered.
         max_isotope: Maximum isotope order to consider.  Defaults to 2.
-        require_monotone: If True, require I(M+0) > I(M+k).  Defaults to True.
-        require_envelope: If True, require all intermediate isotope peaks M+1 …
-            M+(k-1) to be present and pass the ratio check before accepting M+k.
-            Defaults to True.
-        lo_factor: Lower bound multiplier on expected ratio.  Defaults to 0.3.
-        hi_factor: Upper bound multiplier on expected ratio.  Defaults to 3.0.
+        require_monotone: If True, require I(M+0_frag) > I(M+k_frag).
+        require_envelope: If True, require all intermediate M+j confirmed first.
+        ratio_lo: Lower bound multiplier on the per-fragment expected ratio.
+        ratio_hi: Upper bound multiplier on the per-fragment expected ratio.
+        aggressive: If True and no above-prec reference found, estimate R_leak
+            from cross-pair consistency.  Defaults to False.
+        aggressive_min_pairs: Min pairs for aggressive consensus.  Defaults to 3.
+        aggressive_cv: Max CV of (normalised) r_i for aggressive mode.  Defaults to 0.3.
+        formula: Neutral molecular formula string (e.g. ``"C10H14N2"``).  When
+            given, enables R_leak gating and per-fragment expected-ratio correction.
+        prec_type: Adduct/precursor type (e.g. ``"[M+H]+"``, ``"[M-H]-"``).
+            Used together with ``formula`` to account for adduct atoms.
+        min_coiso_fraction: Minimum co-isolation fraction ``f = R_k / R_exp_prec``
+            required to trigger flagging.  For genuine co-isolation ``f ≤ 1``; below
+            this threshold the signal is too weak to distinguish from noise.
+            Only active when ``formula`` is provided.  Defaults to 0.05.
+        max_leak_factor: Maximum ``f = R_k / R_exp_prec`` accepted for the above-prec
+            reference peak.  Genuine co-isolation gives ``f ≤ 1``; values above this
+            indicate a stray fragment coincidentally at the isotope position.
+            Only active when ``formula`` is provided.  Defaults to 1.5.
 
     Returns:
-        Boolean array of shape (N,) where True means the peak is an isotope peak
-        that should be removed from the training spectrum.  All-False for
-        non-FT instruments.
+        Boolean array of shape (N,) where True means co-isolation isotope leak.
+        All-False for non-FT instruments or when co-isolation cannot be confirmed.
 
     Example:
-        >>> mzs = np.array([100.0, 101.009, 200.0, 201.009])
-        >>> ints = np.array([1000.0, 110.0, 500.0, 55.0])
-        >>> mask = detect_isotope_peaks_for_training(
-        ...     mzs, ints, prec_mz=300.0, formula="C10H20O5", inst_type="FT"
-        ... )
+        >>> mzs = np.array([100.0, 101.003, 300.0, 301.003])
+        >>> ints = np.array([1000.0, 50.0, 2000.0, 100.0])  # R_1 = 100/2000 = 0.05
+        >>> mask = detect_isotope_peaks_for_training(mzs, ints, prec_mz=300.0, inst_type="FT")
+        >>> mask[1]  # fragment M+1: ratio 50/1000=0.05 == R_1 → True
+        True
     """
     mzs = np.asarray(mzs, dtype=np.float64)
     ints = np.asarray(ints, dtype=np.float64)
@@ -1706,74 +1831,177 @@ def detect_isotope_peaks_for_training(
     if mz_tol is None:
         return is_isotope
 
-    if n == 0 or prec_mz <= 0 or not isinstance(formula, str):
+    if n == 0 or prec_mz <= 0:
         return is_isotope
-
-    try:
-        counts = parse_formula(formula)
-    except (ValueError, AssertionError):
-        return is_isotope
-
-    # Parse adduct: positive atoms only (e.g. K:1 for [M+K]+, Cl:1 for [M+Cl]-)
-    adduct_counts, adduct_delta_mass = _parse_adduct_counts(prec_type)
-    # Neutral precursor mass (denominator for mol_scale)
-    neutral_prec = max(prec_mz - adduct_delta_mass, 1.0)
 
     sort_idx = np.argsort(mzs)
     smzs = mzs[sort_idx]
     sints = ints[sort_idx]
 
-    def _find_peak(target: float, tol: float | None = None) -> tuple[float, float] | None:
-        """Return (mz, intensity) of the most intense peak within tol (default mz_tol), or None."""
-        t = mz_tol if tol is None else tol
-        lo = np.searchsorted(smzs, target - t, side="left")
-        hi = np.searchsorted(smzs, target + t, side="right")
+    def _build_tol_with_floor(tol: float, tol_floor: float = 1e-6) -> float:
+        """Return a non-zero tolerance window using a small floor."""
+        return max(float(tol), tol_floor)
+
+    def _find_peak(target: float, tol: float) -> tuple[float, float] | None:
+        """Return (mz, intensity) of the most intense peak within tol, or None."""
+        tol = _build_tol_with_floor(tol)
+        lo = np.searchsorted(smzs, target - tol, side="left")
+        hi = np.searchsorted(smzs, target + tol, side="right")
         if lo >= hi:
             return None
         best = lo + int(np.argmax(sints[lo:hi]))
         return smzs[best], sints[best]
 
-    def _ratio_ok(obs_int: float, m0_int: float, mol_scale: float, k: int) -> bool:
-        if m0_int <= 0:
-            return False
-        obs = obs_int / m0_int
-        exp = _expected_mk_ratio(counts, mol_scale, k, adduct_counts)
-        return lo_factor * exp <= obs <= hi_factor * exp
+    # Precompute precursor formula-based expected ratios when formula is known.
+    # R_exp_prec[k] = natural M+k/M+0 for the intact precursor (adduct-inclusive).
+    # R_leak[k]     = R_k / R_exp_prec[k] — pure co-isolation amplification factor.
+    # Only genuine co-isolation (R_leak >= min_leak_factor) triggers flagging.
+    mol_counts: dict[str, int] | None = None
+    adduct_counts_parsed: dict[str, int] = {}
+    adduct_delta_mass: float = 0.0
+    r_exp_prec: dict[int, float] = {}
+
+    if formula is not None:
+        try:
+            mol_counts = parse_formula(formula)
+            adduct_counts_parsed, adduct_delta_mass = _parse_adduct_counts(prec_type)
+            for _k in range(1, max_isotope + 1):
+                r_exp_prec[_k] = _expected_mk_ratio(mol_counts, 1.0, _k, adduct_counts_parsed)
+        except Exception:
+            mol_counts = None
+            r_exp_prec = {}
+
+    prec_neutral_mass = prec_mz - adduct_delta_mass if mol_counts is not None else 0.0
+
+    # Step 1: Estimate R_k from precursor M+k peaks above prec_mz (primary path).
+    # When formula is known, gate on R_leak = R_k/R_exp_prec >= min_leak_factor to
+    # avoid false positives from natural precursor M+1 peaks in high-S/N spectra.
+    M0_TOL = 0.05
+    # Require prec M+0 to be at least 0.5% of the base peak; noise peaks at
+    # prec_mz (int ≈ 5-10 in a spectrum with base 10000) produce bogus R_k values.
+    MIN_PREC_M0_FRAC = 0.01
+    base_int = float(sints.max()) if len(sints) > 0 else 0.0
+    prec_m0 = _find_peak(prec_mz, M0_TOL)
+    prec_m0_int: float | None = None
+    if prec_m0 is not None and prec_m0[1] > 0 and (base_int <= 0 or prec_m0[1] / base_int >= MIN_PREC_M0_FRAC):
+        prec_m0_int = prec_m0[1]
+
+    leak_ratios: dict[int, float] = {}  # k -> R_k  (= R_leak * R_exp_prec[k])
+    r_leak: dict[int, float] = {}  # k -> R_leak (only when formula known)
+
+    if prec_m0_int is not None:
+        for k in range(1, max_isotope + 1):
+            k_tol = mz_tol if k == 1 else mz_tol * 2
+            peak = _find_peak(prec_mz + k * C13_SPACING, k_tol)
+            if peak is None:
+                continue
+            pk_mz, pk_int = peak
+            if pk_mz <= prec_mz + k_tol:
+                continue  # not strictly above prec_mz
+            R_k = pk_int / prec_m0_int
+            if r_exp_prec:
+                r_exp_k = r_exp_prec.get(k, 0.0)
+                if r_exp_k > 0:
+                    factor = R_k / r_exp_k
+                    if factor < min_coiso_fraction:
+                        continue  # co-isolation fraction too small — skip
+                    if factor > max_leak_factor:
+                        continue  # too intense — stray fragment, not co-isolation
+                    r_leak[k] = factor
+            leak_ratios[k] = R_k
+
+    # Step 1b: R_leak consistency check across k values (formula mode only).
+    # Both k=1 and k=2 come from the same isolation window, so their co-isolation
+    # fractions must be equal: r_leak[1] ≈ r_leak[2] ≈ f.
+    # If k=2 is present but its ratio disagrees with k=1, both are stray fragments.
+    # If k=2 is absent (e.g. small molecule where M+2 residual is below noise),
+    # keep k=1 — absence of k=2 does not indicate a stray fragment.
+    if r_exp_prec and max_isotope >= 2 and 1 in r_leak and 2 in r_leak:
+        ratio = r_leak[2] / r_leak[1]
+        if not (ratio_lo <= ratio <= ratio_hi):
+            # r_leak[2] inconsistent with r_leak[1] — both are stray fragments
+            leak_ratios.clear()
+            r_leak.clear()
+
+    # Step 2 (aggressive fallback): when above-prec reference is unavailable,
+    # estimate R_leak (formula-normalised) or R_k (no formula) from cross-pair
+    # consistency of in-spectrum M+k candidates.
+    if aggressive:
+        for k in range(1, max_isotope + 1):
+            if k in leak_ratios:
+                continue
+            r_consensus = _estimate_leak_ratio_from_spectrum(
+                smzs,
+                sints,
+                k,
+                mz_tol=mz_tol,
+                min_pairs=aggressive_min_pairs,
+                consistency_cv=aggressive_cv,
+                mol_counts=mol_counts,
+                adduct_counts=adduct_counts_parsed if mol_counts is not None else None,
+                adduct_delta_mass=adduct_delta_mass,
+                prec_neutral_mass=prec_neutral_mass,
+            )
+            if r_consensus is None:
+                continue
+            if mol_counts is not None:
+                # r_consensus ≈ f (co-isolation fraction); apply min_coiso_fraction gate
+                if r_consensus < min_coiso_fraction:
+                    continue
+                r_leak[k] = r_consensus
+                r_exp_k = r_exp_prec.get(k, 0.0)
+                leak_ratios[k] = r_consensus * r_exp_k if r_exp_k > 0 else r_consensus
+            else:
+                leak_ratios[k] = r_consensus
+
+    if not leak_ratios:
+        return is_isotope
+
+    # Step 3: Flag each peak that is the M+k satellite of a lower-m/z fragment.
+    # When formula is known, per-fragment expected ratio = R_exp_frag_i × R_leak[k]
+    # where R_exp_frag_i is estimated via m/z-based mol_scale.  This correctly
+    # scales the window for each fragment's composition instead of applying the
+    # precursor-level R_k uniformly.
+    def _frag_expected(m0_mz: float, k: int) -> float:
+        """Return per-fragment expected M+k/M+0 ratio given its M+0 m/z."""
+        if mol_counts is None or k not in r_leak or prec_neutral_mass <= 0:
+            return leak_ratios[k]  # fallback: use R_k directly
+        neutral_frag = m0_mz - adduct_delta_mass
+        mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
+        r_exp_frag = _expected_mk_ratio(mol_counts, mol_scale, k, adduct_counts_parsed)
+        return r_exp_frag * r_leak[k]
 
     for i in range(n):
         frag_mz = smzs[i]
         frag_int = sints[i]
-        # mol_scale: fraction of the neutral molecule mass in the neutral fragment.
-        # Subtract adduct delta mass from both sides so the K/Na/Cl offset cancels.
-        neutral_frag = max(frag_mz - adduct_delta_mass, 0.0)
-        mol_scale = min(neutral_frag / neutral_prec, 1.0)
 
-        for k in range(1, max_isotope + 1):
-            # Search centre uses C13_SPACING (1.003355 Da/step) — the true ¹³C
-            # isotope spacing — rather than NEUTRON_MASS (1.008665 Da), which sits
-            # 5.31 mDa off-centre and causes M+0 to fall outside the 4 mDa window.
-            # k ≥ 2 uses double tolerance to cover heavy-isotope M+2 spacings
-            # (³⁷Cl, ⁴¹K, ³⁴S) that differ from 2 × C13_SPACING by up to ~9.7 mDa.
+        for k in leak_ratios:
             k_tol = mz_tol if k == 1 else mz_tol * 2
             m0 = _find_peak(frag_mz - k * C13_SPACING, k_tol)
             if m0 is None:
                 continue
             m0_mz, m0_int = m0
 
-            # Monotonicity: M+0 must be more intense than M+k
             if require_monotone and m0_int <= frag_int:
                 continue
-
-            # Adduct-aware ratio check for M+k vs M+0
-            if not _ratio_ok(frag_int, m0_int, mol_scale, k):
+            if m0_int <= 0:
                 continue
 
-            # Envelope coherence: all intermediate M+j peaks must also be present
-            # and consistent before accepting M+k (k > 1 only)
+            obs = frag_int / m0_int
+            R_expected = _frag_expected(m0_mz, k)
+            if not (ratio_lo * R_expected <= obs <= ratio_hi * R_expected):
+                continue
+
+            # Envelope coherence: all intermediate M+j peaks must be present
+            # and match their per-fragment expected ratio before accepting M+k.
             if require_envelope and k > 1:
                 envelope_ok = True
                 for j in range(1, k):
-                    mj = _find_peak(frag_mz - (k - j) * C13_SPACING)
+                    if j not in leak_ratios:
+                        envelope_ok = False
+                        break
+                    j_tol = mz_tol if j == 1 else mz_tol * 2
+                    mj = _find_peak(frag_mz - (k - j) * C13_SPACING, j_tol)
                     if mj is None:
                         envelope_ok = False
                         break
@@ -1781,9 +2009,12 @@ def detect_isotope_peaks_for_training(
                     if require_monotone and mj_int >= m0_int:
                         envelope_ok = False
                         break
-                    if not _ratio_ok(mj_int, m0_int, mol_scale, j):
-                        envelope_ok = False
-                        break
+                    if m0_int > 0:
+                        obs_j = mj_int / m0_int
+                        R_exp_j = _frag_expected(m0_mz, j)
+                        if not (ratio_lo * R_exp_j <= obs_j <= ratio_hi * R_exp_j):
+                            envelope_ok = False
+                            break
                 if not envelope_ok:
                     continue
 

@@ -27,7 +27,10 @@ import numpy as np
 import pandas as pd
 
 from fragnnet.utils.formula_utils import isotope_offsets_from_formula, parse_formula
-from fragnnet.utils.spec_utils import detect_isotope_peaks_formula_aware
+from fragnnet.utils.spec_utils import (
+    detect_isotope_peaks_for_training,
+    detect_isotope_peaks_formula_aware,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
@@ -48,15 +51,6 @@ MZ_TOL_BY_INST: dict[str, float] = {
 MZ_TOL_DEFAULT = 0.020  # fallback for unknown inst_type
 
 
-# Single universal ratio window — the isotope ratio I(M+k)/I(M+0) is a physical
-# property of the molecule, not the instrument. mz_tol handles instrument-specific
-# mass accuracy; the ratio gate is formula-based and applies equally to all instruments.
-# [0.5, 2.0] allows ±2x around the expected ratio — covers real measurement noise
-# without being so loose it accepts coincidental peaks.
-RATIO_LO = 0.7
-RATIO_HI = 1.5
-
-
 def find_prec_leakage(
     mzs: np.ndarray,
     ints: np.ndarray,
@@ -64,15 +58,13 @@ def find_prec_leakage(
     element_counts: dict[str, int],
     mz_tol: float = MZ_TOL_DEFAULT,
     max_k: int = MAX_K,
-    lo: float = RATIO_LO,
-    hi: float = RATIO_HI,
 ) -> list[tuple[int, int, float]]:
     """Return (peak_idx, k, delta_mz) for above-prec peaks confirmed as isotope leakage.
 
-    A candidate is confirmed only if:
-      1. m/z matches prec_mz + pyopenms_offset(k) within mz_tol, AND
-      2. obs_ratio = I(candidate) / I(M+0) is within [lo * exp_ratio, hi * exp_ratio].
-         If no M+0 peak is found, the ratio check is skipped (m/z only).
+    A candidate is confirmed if m/z matches prec_mz + pyopenms_offset(k) within mz_tol.
+    No intensity ratio check is applied — the ratio I(M+k)/I(M+0) for leakage peaks
+    is determined by the MS1 isolation window, not by natural abundance, and is
+    therefore unpredictable from the molecular formula alone.
 
     Args:
         mzs: All peak m/z values.
@@ -81,26 +73,17 @@ def find_prec_leakage(
         element_counts: Molecular formula element counts from parse_formula.
         mz_tol: m/z tolerance in Da.
         max_k: Maximum isotope order to check.
-        lo: Lower multiplier on expected ratio.
-        hi: Upper multiplier on expected ratio.
 
     Returns:
         List of (peak_index, k, delta_mz) for confirmed leakage peaks.
     """
     offsets = isotope_offsets_from_formula(element_counts, max_isotope=max_k)
 
-    # Find M+0 precursor peak intensity for ratio check — wide tolerance,
-    # locating the peak not discriminating isotopes.
-    M0_TOL = 0.05
-    d0 = np.abs(mzs - prec_mz)
-    m0_idx = int(np.argmin(d0))
-    m0_int = float(ints[m0_idx]) if d0[m0_idx] <= M0_TOL else None
-
-    # Check each k in order; stop as soon as one fails — M+k requires M+1…M+(k-1)
+    # Check each k in order; stop as soon as one is missing — M+k requires M+1…M+(k-1)
     # all confirmed (envelope coherence: no M+2 without M+1).
     confirmed_ks: set[int] = set()
     leakage = []
-    for k, (offset, exp_ratio) in enumerate(offsets, start=1):
+    for k, (offset, _exp_ratio) in enumerate(offsets, start=1):
         # Envelope coherence: all lower orders must be confirmed first
         if k > 1 and (k - 1) not in confirmed_ks:
             break
@@ -110,12 +93,6 @@ def find_prec_leakage(
         best_idx = int(np.argmin(d))
         if d[best_idx] > mz_tol or mzs[best_idx] <= prec_mz + mz_tol:
             break  # M+k missing — no point checking M+(k+1)
-
-        # Ratio check against M+0
-        if m0_int is not None and m0_int > 0:
-            obs_ratio = float(ints[best_idx]) / m0_int
-            if not (lo * exp_ratio <= obs_ratio <= hi * exp_ratio):
-                break  # ratio wrong — stop envelope here
 
         confirmed_ks.add(k)
         leakage.append((int(best_idx), k, float(d[best_idx])))
@@ -199,10 +176,11 @@ def plot_one(
     zoom_hi = mzs.max() + 1.0
 
     from matplotlib.lines import Line2D
+
     legend_handles = [
         Line2D([0], [0], color="steelblue", lw=1.5, label="Fragment"),
-        Line2D([0], [0], color="tomato",    lw=1.5, label="Fragment isotope (pyopenms)"),
-        Line2D([0], [0], color="crimson",   lw=2.0, label="Prec leakage M+k"),
+        Line2D([0], [0], color="tomato", lw=1.5, label="Fragment isotope (pyopenms)"),
+        Line2D([0], [0], color="crimson", lw=2.0, label="Prec leakage M+k"),
         Line2D([0], [0], color="darkgreen", lw=2.0, label="M+0 precursor peak"),
     ]
 
@@ -230,24 +208,45 @@ def plot_one(
     ax_full.set_ylabel("Relative intensity (%)", fontsize=9)
     ax_full.set_title("Full spectrum", fontsize=9)
     ax_full.text(
-        0.01, 0.97, f"Formula: {h['formula']}",
-        transform=ax_full.transAxes, fontsize=8, va="top", ha="left",
+        0.01,
+        0.97,
+        f"Formula: {h['formula']}",
+        transform=ax_full.transAxes,
+        fontsize=8,
+        va="top",
+        ha="left",
         bbox={"boxstyle": "round,pad=0.2", "facecolor": "lightyellow", "alpha": 0.8},
     )
     ax_full.legend(handles=legend_handles, fontsize=7, loc="upper right")
     # shade the zoom region
     ax_full.axvspan(zoom_lo, zoom_hi, color="gold", alpha=0.12, zorder=0)
     ax_full.axvline(prec_mz, color="black", lw=1.0, ls="--", alpha=0.4)
-    ax_full.text(prec_mz, 104, f"prec\n{prec_mz:.3f}", fontsize=6,
-                 color="black", ha="center", va="bottom", alpha=0.6)
+    ax_full.text(
+        prec_mz,
+        104,
+        f"prec\n{prec_mz:.3f}",
+        fontsize=6,
+        color="black",
+        ha="center",
+        va="bottom",
+        alpha=0.6,
+    )
 
     # ── Right: zoomed into prec region ───────────────────────────────────────
     _draw_peaks(ax_zoom)
     ax_zoom.set_xlim(zoom_lo, zoom_hi)
     ax_zoom.set_title(f"Zoom: prec±5 Da → max mz  ({zoom_lo:.1f}–{zoom_hi:.1f})", fontsize=9)
     ax_zoom.axvline(prec_mz, color="black", lw=1.0, ls="--", alpha=0.4)
-    ax_zoom.text(prec_mz, 104, f"prec\n{prec_mz:.4f}", fontsize=7,
-                 color="black", ha="center", va="bottom", alpha=0.7)
+    ax_zoom.text(
+        prec_mz,
+        104,
+        f"prec\n{prec_mz:.4f}",
+        fontsize=7,
+        color="black",
+        ha="center",
+        va="bottom",
+        alpha=0.7,
+    )
 
     # Label M+0 on zoom panel
     if 0 in mk_peaks:
@@ -255,8 +254,14 @@ def plot_one(
         m0_norm = ints_norm[int(np.argmin(np.abs(mzs - m0_mz)))]
         ax_zoom.annotate(
             f"M\n{m0_mz:.4f}\n{m0_raw:.0f}",
-            xy=(m0_mz, m0_norm), xytext=(0, 6), textcoords="offset points",
-            fontsize=8, color="darkgreen", ha="center", va="bottom", fontweight="bold",
+            xy=(m0_mz, m0_norm),
+            xytext=(0, 6),
+            textcoords="offset points",
+            fontsize=8,
+            color="darkgreen",
+            ha="center",
+            va="bottom",
+            fontweight="bold",
         )
 
     # Label leakage peaks on zoom panel
@@ -271,17 +276,23 @@ def plot_one(
         )
         ax_zoom.annotate(
             f"M+{k}\n{mz:.4f}\n{raw_int:.0f}\n{ratio_line}",
-            xy=(mz, rel_int), xytext=(0, 6), textcoords="offset points",
-            fontsize=8, color="crimson", ha="center", va="bottom", fontweight="bold",
+            xy=(mz, rel_int),
+            xytext=(0, 6),
+            textcoords="offset points",
+            fontsize=8,
+            color="crimson",
+            ha="center",
+            va="bottom",
+            fontweight="bold",
         )
 
     ks_str = ", ".join(f"M+{k}" for _, k, _ in sorted(h["leakage"], key=lambda x: x[1]))
     fig.suptitle(
         f"[{idx + 1}/{N_PLOTS}]  spec_id={h['spec_id']}  |  {h['prec_type']}  |  "
-        f"inst={h['inst_type']}  mz_tol={h['mz_tol'] * 1000:.0f} mDa  "
-        f"ratio=[{RATIO_LO:.2f}×, {RATIO_HI:.2f}×]  |  "
+        f"inst={h['inst_type']}  mz_tol={h['mz_tol'] * 1000:.0f} mDa  |  "
         f"prec_mz={prec_mz:.4f}  |  leakage: {ks_str}",
-        fontsize=9, y=1.01,
+        fontsize=9,
+        y=1.01,
     )
     plt.tight_layout()
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
@@ -334,7 +345,6 @@ def _scan_row(row: pd.Series) -> dict | None:
         "inst_type": inst_type,
         "prec_mz": prec_mz,
         "mz_tol": mz_tol,
-        "ratio_window": (RATIO_LO, RATIO_HI),
         "mzs": mzs,
         "ints": ints,
         "leakage": leakage,
@@ -387,9 +397,11 @@ def count_mode(df: pd.DataFrame) -> None:
 
     log.info("\n── Precursor isotope leakage — full NIST20 count ──────────────────")
     log.info(f"  Total spectra (formula+prec_mz): {total:,}")
-    log.info(f"  Have any peak > prec_mz:         {n_candidates:,}  ({n_candidates/total*100:.1f}%)")
-    log.info(f"  Confirmed leakage (pyopenms):     {n_hit:,}  ({n_hit/total*100:.1f}%)")
-    log.info(f"  Confirmed / candidates:           {n_hit/n_candidates*100:.1f}%")
+    log.info(
+        f"  Have any peak > prec_mz:         {n_candidates:,}  ({n_candidates / total * 100:.1f}%)"
+    )
+    log.info(f"  Confirmed leakage (pyopenms):     {n_hit:,}  ({n_hit / total * 100:.1f}%)")
+    log.info(f"  Confirmed / candidates:           {n_hit / n_candidates * 100:.1f}%")
     log.info("\n  By inst_type:")
     for inst, cnt in sorted(by_inst.items(), key=lambda x: -x[1]):
         log.info(f"    {inst or '(unknown)':8s}  {cnt:,}")
@@ -436,6 +448,177 @@ def plot_mode(df: pd.DataFrame) -> None:
     log.info(f"Done. All plots in {FIG_DIR}")
 
 
+# min_coiso_fraction values to sweep in eval_mode (co-isolation fraction f = R_k/R_exp_prec)
+MIN_COISO_SWEEP: list[float] = [0.05, 0.10, 0.20]
+
+
+def eval_mode(df: pd.DataFrame) -> None:
+    """Evaluate detect_isotope_peaks_for_training (formula mode) against NIST ann_df.
+
+    Always uses formula + prec_type (always available in practice).
+
+    Sweeps min_coiso_fraction values (MIN_COISO_SWEEP): the minimum co-isolation
+    fraction f = R_k/R_exp_prec required to trigger flagging.  Lower values detect
+    weaker co-isolation but may increase false positives.
+
+    Also reports per-spectrum FP breakdown for the first sweep value to diagnose
+    whether FPs are concentrated in a few spectra.
+
+    Scoring is per raw peak (not per annotation): multiple NIST annotations that map
+    to the same observed peak are deduplicated — the peak is labelled isotope if ANY
+    of its annotations has ann_isotope > 0.  This prevents a single flagged peak with
+    N NIST annotations from inflating FP/TP counts by N×.
+
+    True positive  = detector flags a peak whose best NIST annotation is isotope (k > 0)
+    False positive = detector flags a peak whose best NIST annotation is a fragment (k == 0)
+    False negative = detector misses a peak whose best NIST annotation is isotope
+
+    Only annotated peaks are scored; unannotated peaks are not penalised.
+    """
+    import collections
+
+    log.info("Loading ann_df…")
+    ann_df = pd.read_pickle(PROC_DP / "nist20/ann_df.pkl")[
+        ["spec_id", "formula", "prec_type", "ann_peak_mzs", "ann_isotopes"]
+    ]
+
+    # Keep only FT spectra (the only ones our detector handles)
+    ft_spec_ids = set(df[df["inst_type"] == "FT"]["spec_id"].tolist())
+    ann_df = ann_df[ann_df["spec_id"].isin(ft_spec_ids)].reset_index(drop=True)
+    log.info(f"  FT annotated spectra: {len(ann_df):,}")
+
+    ft_df = df[df["inst_type"] == "FT"].set_index("spec_id")
+    match_tol = MZ_TOL_BY_INST["FT"]  # 4 mDa
+
+    # Per-sweep accumulators
+    sweep_stats: dict[float, dict[str, int]] = {
+        mcf: {"tp": 0, "fp": 0, "fn": 0} for mcf in MIN_COISO_SWEEP
+    }
+    sweep_fired: dict[float, int] = dict.fromkeys(MIN_COISO_SWEEP, 0)
+
+    # FP concentration for the first sweep value only
+    primary_mlf = MIN_COISO_SWEEP[0]
+    spec_fp_counts: dict[int, list[int]] = collections.defaultdict(lambda: [0, 0, 0])
+
+    for i, row in ann_df.iterrows():
+        if (i + 1) % 20_000 == 0:
+            log.info(f"  {i + 1:,}/{len(ann_df):,}")
+
+        spec_id = row["spec_id"]
+        if spec_id not in ft_df.index:
+            continue
+        spec_row = ft_df.loc[spec_id]
+        peaks = spec_row["peaks"]
+        if not peaks:
+            continue
+
+        prec_mz = float(spec_row["prec_mz"])
+        formula = str(row["formula"]) if pd.notna(row["formula"]) else None
+        prec_type = str(row["prec_type"]) if pd.notna(row["prec_type"]) else None
+        ann_mzs = np.array(row["ann_peak_mzs"], dtype=np.float64)
+        ann_iso = np.array(row["ann_isotopes"], dtype=np.int32)
+
+        mzs = np.array([p[0] for p in peaks], dtype=np.float64)
+        ints = np.array([p[1] for p in peaks], dtype=np.float64)
+
+        masks: dict[float, np.ndarray] = {}
+        for mcf in MIN_COISO_SWEEP:
+            masks[mcf] = detect_isotope_peaks_for_training(
+                mzs,
+                ints,
+                prec_mz=prec_mz,
+                inst_type="FT",
+                formula=formula,
+                prec_type=prec_type,
+                min_coiso_fraction=mcf,
+            )
+
+        # Track fired count and FP concentration for primary sweep value
+        primary_fired = bool(masks[primary_mlf].any())
+        if primary_fired:
+            sweep_fired[primary_mlf] += 1
+
+        # Deduplicate annotations by raw peak index: one entry per peak, taking
+        # max(is_iso) so that a peak annotated as both fragment and isotope is
+        # treated as isotope (conservative — avoids penalising the detector).
+        peak_iso_label: dict[int, int] = {}
+        for ann_mz, is_iso in zip(ann_mzs, ann_iso):
+            d = np.abs(mzs - ann_mz)
+            idx = int(np.argmin(d))
+            if d[idx] > match_tol * 10:
+                continue
+            if idx not in peak_iso_label or int(is_iso) > peak_iso_label[idx]:
+                peak_iso_label[idx] = int(is_iso)
+
+        # Score each unique observed peak across all sweep values
+        for peak_idx, iso_label in peak_iso_label.items():
+            for mcf, mask in masks.items():
+                flagged = bool(mask[peak_idx])
+                if iso_label > 0:
+                    if flagged:
+                        sweep_stats[mcf]["tp"] += 1
+                    else:
+                        sweep_stats[mcf]["fn"] += 1
+                else:
+                    if flagged:
+                        sweep_stats[mcf]["fp"] += 1
+                        if mcf == primary_mlf and primary_fired:
+                            spec_fp_counts[spec_id][1] += 1
+
+            if primary_fired and iso_label > 0:
+                # tp/fn within fired spectra (for FP concentration table)
+                flagged = bool(masks[primary_mlf][peak_idx])
+                if flagged:
+                    spec_fp_counts[spec_id][0] += 1
+                else:
+                    spec_fp_counts[spec_id][2] += 1
+
+        # Track fired for non-primary sweep values
+        for mcf in MIN_COISO_SWEEP[1:]:
+            if masks[mcf].any():
+                sweep_fired[mcf] += 1
+
+    log.info("\n── Evaluation vs NIST ann_isotopes (FT, formula mode — min_coiso_fraction sweep) ──")
+    log.info(
+        f"  {'min_coiso':>10}  {'fired':>7}  {'TP':>7}  {'FP':>7}  {'FN':>8}  "
+        f"{'prec':>7}  {'rec':>7}  {'F1':>7}"
+    )
+    for mcf in MIN_COISO_SWEEP:
+        s = sweep_stats[mcf]
+        tp, fp, fn = s["tp"], s["fp"], s["fn"]
+        pv = tp / (tp + fp) if (tp + fp) > 0 else float("nan")
+        rv = tp / (tp + fn) if (tp + fn) > 0 else float("nan")
+        f1 = 2 * pv * rv / (pv + rv) if (pv + rv) > 0 else float("nan")
+        log.info(
+            f"  {mcf:>10.2f}  {sweep_fired[mcf]:>7,}  {tp:>7,}  {fp:>7,}  {fn:>8,}  "
+            f"{pv:>7.3f}  {rv:>7.3f}  {f1:>7.3f}"
+        )
+
+    # FP concentration for primary sweep value
+    fp_counts = sorted(v[1] for v in spec_fp_counts.values() if v[1] > 0)
+    if fp_counts:
+        from statistics import median
+
+        log.info(
+            f"\n── FP concentration for min_coiso={primary_mlf} "
+            f"({len(fp_counts):,} spectra with ≥1 FP) ──"
+        )
+        log.info(f"  Median FPs per spec: {median(fp_counts):.1f}  Max: {max(fp_counts)}")
+        for threshold in (5, 10, 20):
+            heavy = sum(1 for c in fp_counts if c >= threshold)
+            heavy_fp = sum(c for c in fp_counts if c >= threshold)
+            log.info(
+                f"  Spectra with ≥{threshold} FPs: {heavy:,}  "
+                f"({heavy_fp / sum(fp_counts) * 100:.1f}% of all FPs)"
+            )
+
+    top_fp = sorted(spec_fp_counts.items(), key=lambda x: -x[1][1])[:10]
+    log.info(f"\n  Top-10 spectra by FP (max_leak={primary_mlf}):")
+    log.info(f"  {'spec_id':>10}  {'TP':>5}  {'FP':>5}  {'FN':>5}")
+    for sid, (tp, fp, fn) in top_fp:
+        log.info(f"  {sid:>10}  {tp:>5}  {fp:>5}  {fn:>5}")
+
+
 def main() -> None:
     import argparse
 
@@ -445,11 +628,18 @@ def main() -> None:
         action="store_true",
         help="Count leakage across all NIST20 (no plots saved)",
     )
+    parser.add_argument(
+        "--eval",
+        action="store_true",
+        help="Evaluate detect_isotope_peaks_for_training vs NIST annotations",
+    )
     args = parser.parse_args()
 
     df = _load_df()
     if args.count:
         count_mode(df)
+    elif args.eval:
+        eval_mode(df)
     else:
         plot_mode(df)
 
