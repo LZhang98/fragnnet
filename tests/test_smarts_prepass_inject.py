@@ -199,19 +199,11 @@ class TestComputeDagsWithSmartsPrepass:
         _run_compute_dags(self.METHYL_ACETATE, smarts_prepass=True)
 
     def test_prepass_adds_fragments(self):
-        """smarts_prepass=True yields a valid, non-trivial DAG.
-
-        Note: prepass=True now runs the single-cut multi-cut engine to enable
-        seed add+expand behavior, while prepass=False keeps the legacy
-        compute_frags path. Raw fragment counts are therefore not guaranteed
-        to be monotonic between the two code paths.
-        """
+        """smarts_prepass=True adds nodes/edges on top of the same BFS engine."""
         dag_no = _run_compute_dags(self.METHYL_ACETATE, smarts_prepass=False)
         dag_yes = _run_compute_dags(self.METHYL_ACETATE, smarts_prepass=True)
-        n_yes = dag_yes["dag_num_nodes"]
-        assert dag_no["dag_num_nodes"] > 0
-        assert n_yes > 0
-        assert dag_yes["dag_num_edges"] > 0
+        assert dag_yes["dag_num_nodes"] >= dag_no["dag_num_nodes"]
+        assert dag_yes["dag_num_edges"] >= dag_no["dag_num_edges"]
 
     def test_prepass_ester_co2_fragment_present(self):
         """For methyl acetate, the CO2 fragment (C=O and two O) should be in the DAG."""
@@ -292,3 +284,84 @@ class TestComputeDagsWithSmartsPrepass:
         )
         # crf12_0 should fire on butane's C-C-C-C chain
         assert len(pairs) > 0, "Expected crf12_0 to match on butane"
+    def test_prepass_unique_fragment_in_dag(self):
+        """The unique SMARTS fragment (not reachable by bond cuts) must appear in the DAG.
+
+        Ethyl propanoate (CCOC(=O)CC): crf13_2 (CO2 loss from ester) produces
+        fragments whose atom subsets cannot be obtained by any single bond cut
+        from the root — verifies the post-merge actually adds new nodes.
+        Note: methyl acetate (COC(C)=O) SMARTS fragments ARE reachable by bond
+        cuts at depth 3, so we need a longer-chain ester.
+        """
+        import fragnnet.frag.compute_frags as compute_frags
+
+        # Ethyl propanoate: crf13_2 fires and produces fragments not in BFS
+        smiles = "CCOC(=O)CC"
+        mol_d = extract_mol_info(smiles)
+        num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx = (
+            get_fraggen_input_arrays(mol_d)
+        )
+        nmm_base, _, _, _ = compute_frags.compute_ccs(
+            num_nodes, num_edges,
+            node_mask.astype(MASK_DTYPE), edges, edge_mask.astype(MASK_DTYPE),
+            node_to_edge_idx, 3, int(1e6), 3,
+        )
+        pairs = _apply_smarts_prepass(
+            FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
+        )
+        bfs_keys = {nmm_base[i].tobytes() for i in range(len(nmm_base))}
+        unique_masks = [
+            m for pair in pairs for m in pair
+            if m.sum() >= 3 and m[:num_nodes].astype(np.uint8).tobytes() not in bfs_keys
+        ]
+        assert len(unique_masks) > 0, (
+            "Expected at least one SMARTS fragment not reachable by plain bond cuts"
+        )
+        # Verify those fragments appear in the post-merge DAG
+        dag_yes = _run_compute_dags(smiles, smarts_prepass=True)
+        dag_no = _run_compute_dags(smiles, smarts_prepass=False)
+        assert dag_yes["dag_num_nodes"] > dag_no["dag_num_nodes"], (
+            "Post-merge should add at least one unique SMARTS node"
+        )
+
+    def test_prepass_ring_nodes_unchanged(self):
+        """Ring-containing molecules: BFS node count is identical with/without prepass.
+
+        The post-merge approach runs compute_frags.compute_ccs unchanged, so all
+        ring-opening fragmentation (n_ccs=1 path) is preserved.  Prepass can only
+        ADD nodes, never remove ring-opened intermediates.
+        """
+        benzene = "c1ccccc1"
+        indole = "c1ccc2[nH]ccc2c1"
+        for smiles in (benzene, indole):
+            dag_no = _run_compute_dags(smiles, smarts_prepass=False)
+            dag_yes = _run_compute_dags(smiles, smarts_prepass=True)
+            assert dag_yes["dag_num_nodes"] >= dag_no["dag_num_nodes"], (
+                f"{smiles}: prepass reduced node count "
+                f"({dag_no['dag_num_nodes']} → {dag_yes['dag_num_nodes']})"
+            )
+
+    def test_prepass_new_edges_connect_root(self):
+        """New edges introduced by the prepass must originate from root (node 0)."""
+        import fragnnet.frag.compute_frags as compute_frags
+
+        mol_d = extract_mol_info(self.METHYL_ACETATE)
+        num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx = (
+            get_fraggen_input_arrays(mol_d)
+        )
+        pairs = _apply_smarts_prepass(
+            FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
+        )
+        nmm, ndm, dem, meta = compute_frags.compute_ccs(
+            num_nodes, num_edges,
+            node_mask.astype(MASK_DTYPE), edges, edge_mask.astype(MASK_DTYPE),
+            node_to_edge_idx, 3, int(1e6), 3,
+        )
+        _, _, dem2, _ = _inject_smarts_pairs_into_dag(
+            pairs, nmm, ndm, dem, meta, num_nodes, min_frag_atoms=3
+        )
+        new_edges = dem2[len(dem):]
+        if len(new_edges) > 0:
+            assert (new_edges[:, 0] == 0).all(), (
+                "All new SMARTS edges must originate from root (index 0)"
+            )

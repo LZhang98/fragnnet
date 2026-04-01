@@ -11,6 +11,9 @@ Tests cover:
    molecules with many unique fragment formulae).
 7. node_base_formula_matrix uses uint16 so H counts >255 are not truncated.
 8. diff_formula_mask uses signed int32 subtraction to avoid uint16 underflow.
+9. smarts_prepass=True with multi_cut_bfs=False runs compute_frags.compute_ccs
+   unchanged and post-processes SMARTS pairs via _inject_smarts_pairs_into_dag,
+   preserving ring-opening fragmentation while adding rearrangement fragments.
 """
 
 from __future__ import annotations
@@ -246,3 +249,47 @@ def test_diff_formula_mask_no_underflow() -> None:
     assert (formula_diff_cols >= 0).all(), (
         "Negative formula diff found — unexpected for parent→child edges."
     )
+
+
+# ---------------------------------------------------------------------------
+# 9. smarts_prepass=True with multi_cut_bfs=False: post-process merge
+# ---------------------------------------------------------------------------
+
+
+def test_smarts_prepass_without_multi_cut_bfs_works() -> None:
+    """smarts_prepass=True with multi_cut_bfs=False runs correctly via post-merge.
+
+    compute_frags.compute_ccs runs unchanged (preserving ring-opening via the
+    n_ccs=1 path), then _inject_smarts_pairs_into_dag appends any SMARTS
+    rearrangement fragments as depth-1 children.  The result must be a valid
+    DAG with at least as many nodes as the baseline (no prepass).
+    """
+    mol_d = extract_mol_info("CCOC(=O)CC")  # ethyl propanoate — matches crf13_2 CO2 loss
+    baseline = compute_dags(
+        mol_d,
+        max_depth=3,
+        h_prior=True,
+        max_h_transfer=2,
+        frag_max_time=int(1e6),
+        isotopes=False,
+        nb_isomorphic=False,
+        wl_max_iterations=-1,
+        multi_cut_bfs=False,
+        smarts_prepass=False,
+    )
+    with_prepass = compute_dags(
+        mol_d,
+        max_depth=3,
+        h_prior=True,
+        max_h_transfer=2,
+        frag_max_time=int(1e6),
+        isotopes=False,
+        nb_isomorphic=False,
+        wl_max_iterations=-1,
+        multi_cut_bfs=False,
+        smarts_prepass=True,
+    )
+    assert with_prepass is not None
+    # prepass can only add nodes/edges, never remove them
+    assert with_prepass["dag_num_nodes"] >= baseline["dag_num_nodes"]
+    assert with_prepass["dag_num_edges"] >= baseline["dag_num_edges"]

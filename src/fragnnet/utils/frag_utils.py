@@ -999,11 +999,27 @@ def compute_dags(
             )
         )
     else:
+        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+            compute_frags.compute_ccs(
+                num_nodes,
+                num_edges,
+                node_mask,
+                edges,
+                edge_mask,
+                node_to_edge_idx,
+                max_depth,
+                frag_max_time,
+                min_frag_atoms,
+            )
+        )
         if smarts_prepass:
-            # For standard frag-gen, use the same SMARTS seed add+expand
-            # behavior as the multi-cut path by running the multi-cut engine
-            # in single-cut mode (ring_edge_mask=None -> effective cut size 1).
-            smarts_seed_pairs = _apply_smarts_prepass(
+            # Post-process: inject SMARTS rearrangement fragments as depth-1
+            # children of the root.  compute_frags.compute_ccs runs unchanged
+            # (preserving ring-opening via its n_ccs=1 path), and the SMARTS
+            # pairs are merged in afterwards.  No further BFS expansion of the
+            # SMARTS fragments is needed because their sub-fragments are already
+            # covered by the BFS from the root molecule.
+            smarts_pairs = _apply_smarts_prepass(
                 FRAG_RULES,
                 mol_d["mol"],
                 edge_mask,
@@ -1012,33 +1028,13 @@ def compute_dags(
                 num_edges,
             )
             nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
-                _compute_ccs_multi_cut_cy(
+                _inject_smarts_pairs_into_dag(
+                    smarts_pairs,
+                    nodes_mask_matrix,
+                    nodes_depth_matrix,
+                    dag_edges_matrix,
+                    dag_frag_meta,
                     num_nodes,
-                    num_edges,
-                    node_mask,
-                    edges,
-                    edge_mask,
-                    node_to_edge_idx,
-                    max_depth,
-                    frag_max_time,
-                    ring_edge_mask=None,
-                    max_cut_size=1,
-                    smarts_seed_pairs=smarts_seed_pairs,
-                    ring_bond_groups=None,
-                    min_frag_atoms=min_frag_atoms,
-                )
-            )
-        else:
-            nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
-                compute_frags.compute_ccs(
-                    num_nodes,
-                    num_edges,
-                    node_mask,
-                    edges,
-                    edge_mask,
-                    node_to_edge_idx,
-                    max_depth,
-                    frag_max_time,
                     min_frag_atoms,
                 )
             )

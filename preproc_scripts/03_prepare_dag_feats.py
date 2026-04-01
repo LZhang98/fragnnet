@@ -676,6 +676,8 @@ if __name__ == "__main__":
         help=(
             "Run SMARTS rearrangement prepass and inject results as depth-1 DAG children. "
             "Works with both the default BFS and --multi_cut_bfs. "
+            "With the default BFS, SMARTS fragments are post-merged into the existing DAG "
+            "so ring-opening fragmentation is preserved. "
             "Covers acyclic 1,3-elimination and ester CO2-loss fragments "
             "(crf12_0/1, crf13_2 PPGB_MS2 rules)."
         ),
