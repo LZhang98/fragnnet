@@ -246,7 +246,11 @@ class SpecMolFragDataset(SpecMolDataset):
 
         data = {**spec_data, **mol_data, **frag_data}
         if "mol_id" not in data:
-            data["mol_id"]=mol_id
+            data["mol_id"] = mol_id
+        if "prec_type" not in data:
+            data["prec_type"] = spec_entry["prec_type"]
+        if "formula" not in data:
+            data["formula"] = mol_entry["formula"]
         return data
 
     def _load_frag_entry(self, mol_id: str) -> dict:

@@ -669,7 +669,7 @@ class BaseDataset(Dataset):
                 # cat
                 values = np.concatenate(values, axis=0)
                 collate_data[key] = values
-            elif key in ["mol_id"]:
+            elif key in ["mol_id", "prec_type", "formula"]:
                 collate_data[key] = values
             else:
                 raise TypeError(f"Unsupported type: {key} {type(values[0])}")

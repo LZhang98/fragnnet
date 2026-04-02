@@ -238,12 +238,12 @@ class TestDualGroupDynamicBatchSampler:
     def test_dual_group_dynamic_batch_sampler_nodes_limit(self):
         """Test node budget constraint."""
         samples = [
-            {"frag_pyg": FakeFrag(3, 2), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(2, 1), "adduct": "A", "mol_id": 1, "formula": "Y"},
-            {"frag_pyg": FakeFrag(4, 3), "adduct": "A", "mol_id": 2, "formula": "X"},
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "B", "mol_id": 3, "formula": "Z"},
-            {"frag_pyg": FakeFrag(5, 4), "adduct": "B", "mol_id": 3, "formula": "Z"},
-            {"frag_pyg": FakeFrag(2, 1), "adduct": "C", "mol_id": 4, "formula": "W"},
+            {"frag_pyg": FakeFrag(3, 2), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(2, 1), "prec_type": "A", "mol_id": 1, "formula": "Y"},
+            {"frag_pyg": FakeFrag(4, 3), "prec_type": "A", "mol_id": 2, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "B", "mol_id": 3, "formula": "Z"},
+            {"frag_pyg": FakeFrag(5, 4), "prec_type": "B", "mol_id": 3, "formula": "Z"},
+            {"frag_pyg": FakeFrag(2, 1), "prec_type": "C", "mol_id": 4, "formula": "W"},
         ]
 
         ds = DummyDataset(samples)
@@ -274,10 +274,10 @@ class TestDualGroupDynamicBatchSampler:
     def test_dual_group_dynamic_batch_sampler_edges_limit(self):
         """Test edge budget constraint."""
         samples = [
-            {"frag_pyg": FakeFrag(3, 5), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(2, 3), "adduct": "A", "mol_id": 1, "formula": "Y"},
-            {"frag_pyg": FakeFrag(4, 7), "adduct": "A", "mol_id": 2, "formula": "X"},
-            {"frag_pyg": FakeFrag(1, 2), "adduct": "B", "mol_id": 3, "formula": "Z"},
+            {"frag_pyg": FakeFrag(3, 5), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(2, 3), "prec_type": "A", "mol_id": 1, "formula": "Y"},
+            {"frag_pyg": FakeFrag(4, 7), "prec_type": "A", "mol_id": 2, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 2), "prec_type": "B", "mol_id": 3, "formula": "Z"},
         ]
 
         ds = DummyDataset(samples)
@@ -309,10 +309,10 @@ class TestDualGroupDynamicBatchSampler:
         """
         # Two isomers of formula X under adduct A (different mol_ids)
         samples = [
-            {"frag_pyg": FakeFrag(3, 2), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(2, 1), "adduct": "A", "mol_id": 2, "formula": "X"},
-            {"frag_pyg": FakeFrag(4, 3), "adduct": "B", "mol_id": 5, "formula": "Y"},
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "C", "mol_id": 3, "formula": "Z"},
+            {"frag_pyg": FakeFrag(3, 2), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(2, 1), "prec_type": "A", "mol_id": 2, "formula": "X"},
+            {"frag_pyg": FakeFrag(4, 3), "prec_type": "B", "mol_id": 5, "formula": "Y"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "C", "mol_id": 3, "formula": "Z"},
         ]
 
         ds = DummyDataset(samples)
@@ -339,9 +339,9 @@ class TestDualGroupDynamicBatchSampler:
         # Two isomers share formula X; without within-batch dedup they could both
         # be picked by group1 and group2 in the same batch.
         samples = [
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 2, "formula": "X"},
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 3, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 2, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 3, "formula": "X"},
         ]
 
         ds = DummyDataset(samples)
@@ -361,7 +361,7 @@ class TestDualGroupDynamicBatchSampler:
     def test_every_index_covered_exactly_once(self):
         """Every dataset index must appear in exactly one batch per epoch."""
         samples = [
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": i, "formula": f"F{i % 3}"}
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": i, "formula": f"F{i % 3}"}
             for i in range(10)
         ]
         ds = DummyDataset(samples)
@@ -379,8 +379,8 @@ class TestDualGroupDynamicBatchSampler:
         (adduct::formula)."""
         # idx 0 and 1 are isomers of A::X; budget fits both easily
         samples = [
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 2, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 2, "formula": "X"},
         ]
         ds = DummyDataset(samples)
         gen = th.Generator()
@@ -401,7 +401,7 @@ class TestDualGroupDynamicBatchSampler:
         # 3 isomers of A::X; with k1=1, k2=1 and a tight budget we expect
         # at most 2 group-guided picks per batch
         samples = [
-            {"frag_pyg": FakeFrag(2, 1), "adduct": "A", "mol_id": i, "formula": "X"}
+            {"frag_pyg": FakeFrag(2, 1), "prec_type": "A", "mol_id": i, "formula": "X"}
             for i in range(6)
         ]
         ds = DummyDataset(samples)
@@ -418,8 +418,8 @@ class TestDualGroupDynamicBatchSampler:
     def test_adduct_scopes_formula_groups(self):
         """Same formula under different adducts must be separate group2 entries."""
         samples = [
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "B", "mol_id": 2, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "B", "mol_id": 2, "formula": "X"},
         ]
         ds = DummyDataset(samples)
         gen = th.Generator()
@@ -438,9 +438,9 @@ class TestDualGroupDynamicBatchSampler:
         The old dedup bug would delete it because its single index was in group1.
         """
         samples = [
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "UNIQUE"},
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 2, "formula": "COMMON"},
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 3, "formula": "COMMON"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "UNIQUE"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 2, "formula": "COMMON"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 3, "formula": "COMMON"},
         ]
         ds = DummyDataset(samples)
         gen = th.Generator()
@@ -454,7 +454,7 @@ class TestDualGroupDynamicBatchSampler:
     def test_missing_required_key_raises(self):
         """Missing adduct/mol_id/formula keys must raise KeyError at init."""
         samples = [
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1},  # missing formula
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1},  # missing formula
         ]
         ds = DummyDataset(samples)
         with pytest.raises(KeyError):
@@ -463,7 +463,7 @@ class TestDualGroupDynamicBatchSampler:
     def test_invalid_limited_by_raises(self):
         """Invalid limited_by value must raise ValueError."""
         samples = [
-            {"frag_pyg": FakeFrag(1, 1), "adduct": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
         ]
         ds = DummyDataset(samples)
         with pytest.raises(ValueError, match="limited_by"):
@@ -472,8 +472,8 @@ class TestDualGroupDynamicBatchSampler:
     def test_dual_group_sampler_skip_too_big(self):
         """Test skip_too_big flag."""
         samples = [
-            {"frag_pyg": FakeFrag(3, 2), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(100, 1), "adduct": "B", "mol_id": 2, "formula": "Y"},
+            {"frag_pyg": FakeFrag(3, 2), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(100, 1), "prec_type": "B", "mol_id": 2, "formula": "Y"},
         ]
 
         ds = DummyDataset(samples)
@@ -495,8 +495,8 @@ class TestDualGroupDynamicBatchSampler:
     def test_dual_group_sampler_skip_false_keeps_oversized(self):
         """When skip_too_big=False, oversized samples should still be yielded."""
         samples = [
-            {"frag_pyg": FakeFrag(3, 2), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(100, 1), "adduct": "B", "mol_id": 2, "formula": "Y"},
+            {"frag_pyg": FakeFrag(3, 2), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(100, 1), "prec_type": "B", "mol_id": 2, "formula": "Y"},
         ]
 
         ds = DummyDataset(samples)
@@ -518,9 +518,9 @@ class TestDualGroupDynamicBatchSampler:
     def test_dual_group_sampler_deterministic_with_generator(self):
         """Test determinism with manual seed."""
         samples = [
-            {"frag_pyg": FakeFrag(3, 2), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(2, 1), "adduct": "A", "mol_id": 1, "formula": "Y"},
-            {"frag_pyg": FakeFrag(4, 3), "adduct": "B", "mol_id": 2, "formula": "X"},
+            {"frag_pyg": FakeFrag(3, 2), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(2, 1), "prec_type": "A", "mol_id": 1, "formula": "Y"},
+            {"frag_pyg": FakeFrag(4, 3), "prec_type": "B", "mol_id": 2, "formula": "X"},
         ]
 
         ds = DummyDataset(samples)
@@ -540,9 +540,9 @@ class TestDualGroupDynamicBatchSampler:
     def test_dual_group_sampler_set_epoch(self):
         """Test set_epoch changes order."""
         samples = [
-            {"frag_pyg": FakeFrag(3, 2), "adduct": "A", "mol_id": 1, "formula": "X"},
-            {"frag_pyg": FakeFrag(2, 1), "adduct": "A", "mol_id": 1, "formula": "Y"},
-            {"frag_pyg": FakeFrag(4, 3), "adduct": "B", "mol_id": 2, "formula": "X"},
+            {"frag_pyg": FakeFrag(3, 2), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(2, 1), "prec_type": "A", "mol_id": 1, "formula": "Y"},
+            {"frag_pyg": FakeFrag(4, 3), "prec_type": "B", "mol_id": 2, "formula": "X"},
         ]
 
         ds = DummyDataset(samples)
@@ -802,37 +802,37 @@ class TestDataloaderSmoke:
         samples = [
             {
                 "frag_pyg": SimpleNamespace(num_nodes=3, num_edges=2),
-                "adduct": "A",
+                "prec_type": "A",
                 "mol_id": 1,
                 "formula": "F1",
             },
             {
                 "frag_pyg": SimpleNamespace(num_nodes=2, num_edges=1),
-                "adduct": "A",
+                "prec_type": "A",
                 "mol_id": 1,
                 "formula": "F2",
             },
             {
                 "frag_pyg": SimpleNamespace(num_nodes=4, num_edges=3),
-                "adduct": "A",
+                "prec_type": "A",
                 "mol_id": 2,
                 "formula": "F1",
             },
             {
                 "frag_pyg": SimpleNamespace(num_nodes=1, num_edges=1),
-                "adduct": "B",
+                "prec_type": "B",
                 "mol_id": 3,
                 "formula": "F3",
             },
             {
                 "frag_pyg": SimpleNamespace(num_nodes=5, num_edges=4),
-                "adduct": "B",
+                "prec_type": "B",
                 "mol_id": 3,
                 "formula": "F3",
             },
             {
                 "frag_pyg": SimpleNamespace(num_nodes=2, num_edges=1),
-                "adduct": "C",
+                "prec_type": "C",
                 "mol_id": 4,
                 "formula": "F4",
             },
