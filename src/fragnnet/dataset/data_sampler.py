@@ -484,6 +484,9 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         sample_k1: int = 1,
         sample_k2: int = 1,
         generator: th.Generator | None = None,
+        key_adduct: str = "prec_type",
+        key_mol_id: str = "mol_id",
+        key_formula: str = "formula",
     ) -> None:
         if not isinstance(max_num, int) or max_num <= 0:
             raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
@@ -509,13 +512,16 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         self._group1 = {}  # adduct+mol_id -> tensor(indices)
         self._group2 = {}  # adduct+formula -> tensor(indices)
         self._batches = []
+        self.key_adduct = key_adduct
+        self.key_mol_id = key_mol_id
+        self.key_formula = key_formula
 
         self._pre_load_metadata_and_groups()
         self._pre_compute_batches()
 
     def _pre_load_metadata_and_groups(self):
         """Load frag metadata and build group mappings.
-        Assumes each dataset sample contains keys: 'adduct', 'mol_id', 'formula'.
+        Assumes each dataset sample contains keys configured by key_adduct, key_mol_id, key_formula.
         """
         assert len(self._data_meta) == 0, len(self._data_meta)
         for dataset_idx in range(len(self.data_source)):
@@ -526,7 +532,7 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             self._data_meta.append((n_nodes, n_edges))
 
             # Validate required keys (each item must have both key pairs: adduct+mol_id and adduct+formula)
-            for req_key in ("adduct", "mol_id", "formula"):
+            for req_key in (self.key_adduct, self.key_mol_id, self.key_formula):
                 if req_key not in data:
                     raise KeyError(
                         f"Sample at index {dataset_idx} missing required key '{req_key}'."
@@ -537,9 +543,9 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                     )
 
             # Build group keys (keys are required to be present)
-            adduct = data["adduct"]
-            mol_id = data["mol_id"]
-            formula = data["formula"]
+            adduct = data[self.key_adduct]
+            mol_id = data[self.key_mol_id]
+            formula = data[self.key_formula]
 
             # Add to group1 (adduct+mol_id) — mol_id is required to be present
             key1 = f"{adduct}::{mol_id}"
