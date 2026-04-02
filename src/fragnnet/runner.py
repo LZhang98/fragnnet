@@ -223,16 +223,27 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 sampler=sampler,
             )
         dl_param_d["batch_sampler"] = batch_sampler
-    elif config_d["dual_group_dynamic_batch_sampler"] and split == "train":
-        return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
-        batch_sampler = DualGroupDynamicBatchSampler(
-            ds,
-            max_num=config_d["dual_group_dynamic_batch_sampler_max"],
-            limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
-            skip_too_big=True,
-            return_batch_at=return_batch_at,
-            generator=generator,
-        )
+    elif config_d["dual_group_dynamic_batch_sampler"]:
+        if split == "train":
+            return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
+            batch_sampler = DualGroupDynamicBatchSampler(
+                ds,
+                max_num=config_d["dual_group_dynamic_batch_sampler_max"],
+                limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
+                skip_too_big=True,
+                return_batch_at=return_batch_at,
+                generator=generator,
+            )
+        else:
+            return_batch_at = config_d["eval_batch_size"]
+            batch_sampler = SpecMolFragDynamicBatchSampler(
+                ds,
+                max_num=config_d["dual_group_dynamic_batch_sampler_max"],
+                limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
+                skip_too_big=False,
+                return_batch_at=return_batch_at,
+                sampler=sampler,
+            )
         dl_param_d["batch_sampler"] = batch_sampler
     else:
         # Standard batching
