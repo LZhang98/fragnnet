@@ -500,6 +500,95 @@ def eval_mode(df: pd.DataFrame) -> None:
     primary_mlf = MIN_COISO_SWEEP[0]
     spec_fp_counts: dict[int, list[int]] = collections.defaultdict(lambda: [0, 0, 0])
 
+    # FN root-cause counters for primary sweep value.
+    # fn_no_fire:     FN peak in a spectrum where the detector didn't flag anything
+    # fn_fired_missed: FN peak in a spectrum where the detector DID flag other peaks
+    #   sub-categories (disjoint, checked in order):
+    #   fn_no_m0:    no M+0 partner found within mz_tol at frag_mz - k*C13
+    #   fn_monotone: M+k intensity >= M+0 intensity (monotonicity gate)
+    #   fn_ratio:    M+0 found, monotone ok, but obs/expected ratio outside window
+    #   fn_other:    none of the above (envelope coherence or unknown)
+    fn_no_fire = 0
+    fn_fired_missed = 0
+    fn_no_m0 = 0
+    fn_monotone = 0
+    fn_ratio = 0
+    fn_other = 0
+    fn_ratio_oor_vals: list[float] = []  # obs/R_expected for ratio-window rejections
+
+    # No-fire diagnostic: for each no-fire spectrum that has ≥1 FN peak,
+    # scan for any (M, M+k) pair at C13_SPACING and record estimated f.
+    # Keyed by spec_id to avoid double-counting spectra with multiple FN peaks.
+    nofire_spec_seen: set[int] = set()
+    nofire_no_formula = 0       # no formula available → can't estimate f
+    nofire_no_pairs = 0         # formula available but no M+k pair found
+    nofire_f_vals: list[float] = []       # best (max) f per no-fire spectrum
+    nofire_f_median_vals: list[float] = []  # median f across ALL pairs per spectrum
+
+    # Import helpers needed for FN sub-classification
+    from fragnnet.utils.formula_utils import C13_SPACING as _C13
+    from fragnnet.utils.spec_utils import (
+        _expected_mk_ratio,
+        _parse_adduct_counts,
+    )
+    from fragnnet.utils.formula_utils import parse_formula as _parse_formula
+
+    _ratio_lo = 0.2   # must match detect_isotope_peaks_for_training default
+    _ratio_hi = 5.0
+    _mz_tol = MZ_TOL_BY_INST["FT"]
+
+    def _classify_fn_peak(
+        frag_idx: int,
+        smzs: np.ndarray,
+        sints: np.ndarray,
+        sort_idx: np.ndarray,
+        mol_counts: dict | None,
+        adduct_counts: dict,
+        adduct_delta_mass: float,
+        prec_neutral_mass: float,
+        r_exp_prec: dict[int, float],
+        leak_ratios: dict[int, float],
+        r_leak: dict[int, float],
+        max_isotope: int,
+    ) -> tuple[str, float | None]:
+        """Return (reason, obs_over_expected) where reason is one of: 'no_m0', 'monotone', 'ratio', 'other'.
+        obs_over_expected is obs/R_expected when reason=='ratio', else None."""
+        si = np.where(sort_idx == frag_idx)[0]
+        if len(si) == 0:
+            return "other", None
+        i = si[0]
+        frag_mz = smzs[i]
+        frag_int = sints[i]
+
+        for k in range(1, max_isotope + 1):
+            if k not in leak_ratios:
+                continue
+            k_tol = _mz_tol if k == 1 else _mz_tol * 2
+            target = frag_mz - k * _C13
+            lo = np.searchsorted(smzs, target - k_tol, side="left")
+            hi = np.searchsorted(smzs, target + k_tol, side="right")
+            if lo >= hi:
+                continue
+            m0_int = sints[lo + int(np.argmax(sints[lo:hi]))]
+            m0_mz = smzs[lo + int(np.argmax(sints[lo:hi]))]
+            if m0_int <= frag_int:
+                return "monotone", None
+            if m0_int <= 0:
+                continue
+            obs = frag_int / m0_int
+            if mol_counts is not None and k in r_leak and prec_neutral_mass > 0:
+                neutral_frag = m0_mz - adduct_delta_mass
+                mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
+                r_exp_frag = _expected_mk_ratio(mol_counts, mol_scale, k, adduct_counts)
+                r_expected = r_exp_frag * r_leak[k]
+            else:
+                r_expected = leak_ratios[k]
+            if not (_ratio_lo * r_expected <= obs <= _ratio_hi * r_expected):
+                oor = obs / r_expected if r_expected > 0 else float("nan")
+                return "ratio", oor
+            return "other", None
+        return "no_m0", None
+
     for i, row in ann_df.iterrows():
         if (i + 1) % 20_000 == 0:
             log.info(f"  {i + 1:,}/{len(ann_df):,}")
@@ -538,6 +627,25 @@ def eval_mode(df: pd.DataFrame) -> None:
         if primary_fired:
             sweep_fired[primary_mlf] += 1
 
+        # Precompute sorted arrays + formula data for FN sub-classification
+        sort_idx_arr = np.argsort(mzs)
+        smzs = mzs[sort_idx_arr]
+        sints = ints[sort_idx_arr]
+        _mol_counts: dict | None = None
+        _adduct_counts: dict = {}
+        _adduct_delta: float = 0.0
+        _prec_neutral: float = 0.0
+        _r_exp_prec: dict[int, float] = {}
+        if formula is not None:
+            try:
+                _mol_counts = _parse_formula(formula)
+                _adduct_counts, _adduct_delta = _parse_adduct_counts(prec_type)
+                _prec_neutral = prec_mz - _adduct_delta
+                for _k in range(1, MAX_K + 1):
+                    _r_exp_prec[_k] = _expected_mk_ratio(_mol_counts, 1.0, _k, _adduct_counts)
+            except Exception:
+                _mol_counts = None
+
         # Deduplicate annotations by raw peak index: one entry per peak, taking
         # max(is_iso) so that a peak annotated as both fragment and isotope is
         # treated as isotope (conservative — avoids penalising the detector).
@@ -572,6 +680,100 @@ def eval_mode(df: pd.DataFrame) -> None:
                     spec_fp_counts[spec_id][0] += 1
                 else:
                     spec_fp_counts[spec_id][2] += 1
+
+            # FN root-cause for primary sweep value
+            if iso_label > 0 and not bool(masks[primary_mlf][peak_idx]):
+                if not primary_fired:
+                    fn_no_fire += 1
+                    # Per-spectrum no-fire diagnostic (once per spectrum)
+                    if spec_id not in nofire_spec_seen:
+                        nofire_spec_seen.add(spec_id)
+                        if _mol_counts is None:
+                            nofire_no_formula += 1
+                        else:
+                            # Scan all peak pairs for any (M, M+k) at k=1
+                            best_f: float | None = None
+                            all_f_vals: list[float] = []
+                            for pi in range(len(smzs)):
+                                m0_int = sints[pi]
+                                if m0_int <= 0:
+                                    continue
+                                target = smzs[pi] + _C13
+                                lo = np.searchsorted(smzs, target - _mz_tol, side="left")
+                                hi = np.searchsorted(smzs, target + _mz_tol, side="right")
+                                if lo >= hi:
+                                    continue
+                                mk_int = sints[lo + int(np.argmax(sints[lo:hi]))]
+                                if mk_int <= 0 or mk_int >= m0_int:
+                                    continue
+                                r_raw = mk_int / m0_int
+                                neutral_frag = smzs[pi] - _adduct_delta
+                                ms = max(0.0, min(1.0, neutral_frag / _prec_neutral)) if _prec_neutral > 0 else 1.0
+                                r_exp = _expected_mk_ratio(_mol_counts, ms, 1, _adduct_counts)
+                                f_est = r_raw / r_exp if r_exp > 0 else 0.0
+                                all_f_vals.append(f_est)
+                                if best_f is None or f_est > best_f:
+                                    best_f = f_est
+                            if best_f is None:
+                                nofire_no_pairs += 1
+                            else:
+                                nofire_f_vals.append(best_f)
+                                nofire_f_median_vals.append(float(np.median(all_f_vals)))
+                else:
+                    fn_fired_missed += 1
+                    # Reconstruct leak_ratios/r_leak as best-effort from primary path
+                    # (use any-k fired heuristic: spectrum fired → at least k=1 has a ratio)
+                    # We approximate: use uniform leak_ratio = median of flagged peaks ratios.
+                    flagged_idxs = np.where(masks[primary_mlf])[0]
+                    _leak_ratios: dict[int, float] = {}
+                    _r_leak: dict[int, float] = {}
+                    if len(flagged_idxs) > 0 and _mol_counts is not None:
+                        # Estimate R_k from flagged peaks
+                        ratios_k1 = []
+                        for fi in flagged_idxs:
+                            fi_mz = mzs[fi]
+                            fi_int = ints[fi]
+                            target = fi_mz - _C13
+                            si_arr = np.where(sort_idx_arr == fi)[0]
+                            if len(si_arr) == 0:
+                                continue
+                            si_i = si_arr[0]
+                            lo = np.searchsorted(smzs, target - _mz_tol, side="left")
+                            hi = np.searchsorted(smzs, target + _mz_tol, side="right")
+                            if lo >= hi:
+                                continue
+                            m0_int = sints[lo + int(np.argmax(sints[lo:hi]))]
+                            if m0_int > 0 and m0_int > fi_int:
+                                ratios_k1.append(fi_int / m0_int)
+                        if ratios_k1:
+                            r_k1 = float(np.median(ratios_k1))
+                            _leak_ratios[1] = r_k1
+                            if _r_exp_prec.get(1, 0) > 0:
+                                _r_leak[1] = r_k1 / _r_exp_prec[1]
+                    reason, oor = _classify_fn_peak(
+                        peak_idx,
+                        smzs,
+                        sints,
+                        sort_idx_arr,
+                        _mol_counts,
+                        _adduct_counts,
+                        _adduct_delta,
+                        _prec_neutral,
+                        _r_exp_prec,
+                        _leak_ratios,
+                        _r_leak,
+                        max_isotope=MAX_K,
+                    )
+                    if reason == "no_m0":
+                        fn_no_m0 += 1
+                    elif reason == "monotone":
+                        fn_monotone += 1
+                    elif reason == "ratio":
+                        fn_ratio += 1
+                        if oor is not None and not np.isnan(oor):
+                            fn_ratio_oor_vals.append(oor)
+                    else:
+                        fn_other += 1
 
         # Track fired for non-primary sweep values
         for mcf in MIN_COISO_SWEEP[1:]:
@@ -617,6 +819,68 @@ def eval_mode(df: pd.DataFrame) -> None:
     log.info(f"  {'spec_id':>10}  {'TP':>5}  {'FP':>5}  {'FN':>5}")
     for sid, (tp, fp, fn) in top_fp:
         log.info(f"  {sid:>10}  {tp:>5}  {fp:>5}  {fn:>5}")
+
+    # FN root-cause breakdown
+    total_fn = fn_no_fire + fn_fired_missed
+    log.info(f"\n── FN root-cause breakdown (min_coiso={primary_mlf}) ─────────────────")
+    log.info(f"  Total FN:                      {total_fn:,}")
+    log.info(
+        f"  Detector never fired:          {fn_no_fire:,}  "
+        f"({fn_no_fire / total_fn * 100:.1f}%)"
+        if total_fn > 0 else "  Detector never fired:          0"
+    )
+    log.info(
+        f"  Detector fired, peak missed:   {fn_fired_missed:,}  "
+        f"({fn_fired_missed / total_fn * 100:.1f}%)"
+        if total_fn > 0 else "  Detector fired, peak missed:   0"
+    )
+    if fn_fired_missed > 0:
+        log.info(f"    ├ no M+0 partner found:      {fn_no_m0:,}  ({fn_no_m0 / fn_fired_missed * 100:.1f}%)")
+        log.info(f"    ├ monotonicity failed:        {fn_monotone:,}  ({fn_monotone / fn_fired_missed * 100:.1f}%)")
+        log.info(f"    ├ ratio window rejected:      {fn_ratio:,}  ({fn_ratio / fn_fired_missed * 100:.1f}%)")
+        log.info(f"    └ other (envelope/unknown):   {fn_other:,}  ({fn_other / fn_fired_missed * 100:.1f}%)")
+
+    if fn_ratio_oor_vals:
+        oor = np.array(fn_ratio_oor_vals)
+        log.info(f"\n── Ratio-window FN: obs/R_expected distribution ({len(oor):,} peaks) ──")
+        log.info(f"  Below window (obs < {_ratio_lo}×): {(oor < _ratio_lo).sum():,}  ({(oor < _ratio_lo).mean()*100:.1f}%)")
+        log.info(f"  Above window (obs > {_ratio_hi}×): {(oor > _ratio_hi).sum():,}  ({(oor > _ratio_hi).mean()*100:.1f}%)")
+        log.info(f"  Percentiles: p5={np.percentile(oor,5):.3f}  p10={np.percentile(oor,10):.3f}  "
+                 f"p25={np.percentile(oor,25):.3f}  median={np.median(oor):.3f}  "
+                 f"p75={np.percentile(oor,75):.3f}  p90={np.percentile(oor,90):.3f}  "
+                 f"p95={np.percentile(oor,95):.3f}")
+        log.info("  Recoverable by widening ratio_lo/ratio_hi:")
+        for lo_thr, hi_thr in [(0.3, 3.0), (0.2, 5.0), (0.1, 5.0), (0.05, 10.0)]:
+            n_rec = int(((oor >= lo_thr) & (oor <= hi_thr)).sum())
+            log.info(f"    [{lo_thr}, {hi_thr}]: recovers {n_rec:,}  ({n_rec/len(oor)*100:.1f}%)")
+
+    # No-fire spectra: f-value distribution
+    n_nofire_specs = len(nofire_spec_seen)
+    n_has_pairs = len(nofire_f_vals)
+    log.info(f"\n── No-fire spectrum analysis (min_coiso={primary_mlf}) ────────────────")
+    log.info(f"  Unique no-fire spectra with ≥1 FN peak: {n_nofire_specs:,}")
+    log.info(f"  No formula available:                   {nofire_no_formula:,}  ({nofire_no_formula / n_nofire_specs * 100:.1f}%)" if n_nofire_specs else "")
+    log.info(f"  Formula but no M+k pair found:          {nofire_no_pairs:,}  ({nofire_no_pairs / n_nofire_specs * 100:.1f}%)" if n_nofire_specs else "")
+    log.info(f"  Has ≥1 pair (f estimable):              {n_has_pairs:,}  ({n_has_pairs / n_nofire_specs * 100:.1f}%)" if n_nofire_specs else "")
+    if nofire_f_vals:
+        f_arr = np.array(nofire_f_vals)
+        fm_arr = np.array(nofire_f_median_vals)
+        thresholds = [0.02, 0.05, 0.10, 0.15, 0.20, 0.30]
+        log.info(f"  f distribution — BEST pair per spectrum (max f across all pairs):")
+        log.info(f"    p10={np.percentile(f_arr,10):.3f}  p25={np.percentile(f_arr,25):.3f}  "
+                 f"median={np.median(f_arr):.3f}  p75={np.percentile(f_arr,75):.3f}  "
+                 f"p90={np.percentile(f_arr,90):.3f}  mean={f_arr.mean():.3f}")
+        log.info(f"  f distribution — MEDIAN across all pairs per spectrum:")
+        log.info(f"    p10={np.percentile(fm_arr,10):.3f}  p25={np.percentile(fm_arr,25):.3f}  "
+                 f"median={np.median(fm_arr):.3f}  p75={np.percentile(fm_arr,75):.3f}  "
+                 f"p90={np.percentile(fm_arr,90):.3f}  mean={fm_arr.mean():.3f}")
+        log.info(f"  Recoverable by strategy (f ≥ threshold):")
+        log.info(f"    {'threshold':>10}  {'by best-pair':>14}  {'by median':>12}")
+        for thr in thresholds:
+            n_best = int((f_arr >= thr).sum())
+            n_med  = int((fm_arr >= thr).sum())
+            log.info(f"    f ≥ {thr:.2f}:    {n_best:>7,} ({n_best/n_has_pairs*100:4.1f}%)   "
+                     f"{n_med:>7,} ({n_med/n_has_pairs*100:4.1f}%)")
 
 
 def main() -> None:

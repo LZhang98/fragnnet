@@ -1719,14 +1719,15 @@ def detect_isotope_peaks_for_training(
     max_isotope: int = 2,
     require_monotone: bool = True,
     require_envelope: bool = True,
-    ratio_lo: float = 0.7,
-    ratio_hi: float = 2.0,
+    ratio_lo: float = 0.2,
+    ratio_hi: float = 5.0,
     aggressive: bool = True,
-    aggressive_min_pairs: int = 3,
-    aggressive_cv: float = 0.3,
+    aggressive_min_pairs: int = 2,
+    aggressive_cv: float = 0.4,
+    aggressive_single_pair_min_f: float = 0.15,
     formula: str | None = None,
     prec_type: str | None = None,
-    min_coiso_fraction: float = 0.05,
+    min_coiso_fraction: float = 0.02,
     max_leak_factor: float = 1.5,
 ) -> np.ndarray:
     """Detect isotope leak peaks for training-data cleaning.
@@ -1752,8 +1753,7 @@ def detect_isotope_peaks_for_training(
         f  ≈  median(r_raw_i / R_exp_frag_i) (aggressive: formula-normalised pairs)
 
     Only spectra where ``f ≥ min_coiso_fraction`` are flagged.  Because ``f ≤ 1``
-    always, the old ``min_leak_factor ≥ 1.5`` threshold was physically impossible
-    for genuine co-isolation — this is the corrected formulation.
+    always.
 
     Per-fragment expected ratio is estimated as
     ``R_exp_frag_i ≈ _expected_mk_ratio(mol_counts, frag_mz/prec_neutral, k)``
@@ -1791,9 +1791,14 @@ def detect_isotope_peaks_for_training(
         ratio_lo: Lower bound multiplier on the per-fragment expected ratio.
         ratio_hi: Upper bound multiplier on the per-fragment expected ratio.
         aggressive: If True and no above-prec reference found, estimate R_leak
-            from cross-pair consistency.  Defaults to False.
-        aggressive_min_pairs: Min pairs for aggressive consensus.  Defaults to 3.
-        aggressive_cv: Max CV of (normalised) r_i for aggressive mode.  Defaults to 0.3.
+            from cross-pair consistency.  Defaults to True.
+        aggressive_min_pairs: Min pairs for aggressive consensus.  Defaults to 2.
+        aggressive_cv: Max CV of (normalised) r_i for aggressive mode.  Defaults to 0.4.
+        aggressive_single_pair_min_f: When ``formula`` is given and only one
+            (M, M+k) pair is found, accept it as genuine co-isolation if the
+            estimated f exceeds this threshold.  Allows detection in spectra with
+            very few visible fragments.  Ignored when ``formula`` is None or when
+            ``aggressive_min_pairs`` pairs are already available.  Defaults to 0.15.
         formula: Neutral molecular formula string (e.g. ``"C10H14N2"``).  When
             given, enables R_leak gating and per-fragment expected-ratio correction.
         prec_type: Adduct/precursor type (e.g. ``"[M+H]+"``, ``"[M-H]-"``).
@@ -1801,7 +1806,7 @@ def detect_isotope_peaks_for_training(
         min_coiso_fraction: Minimum co-isolation fraction ``f = R_k / R_exp_prec``
             required to trigger flagging.  For genuine co-isolation ``f ≤ 1``; below
             this threshold the signal is too weak to distinguish from noise.
-            Only active when ``formula`` is provided.  Defaults to 0.05.
+            Only active when ``formula`` is provided.  Defaults to 0.02.
         max_leak_factor: Maximum ``f = R_k / R_exp_prec`` accepted for the above-prec
             reference peak.  Genuine co-isolation gives ``f ≤ 1``; values above this
             indicate a stray fragment coincidentally at the isotope position.
@@ -1879,11 +1884,15 @@ def detect_isotope_peaks_for_training(
     M0_TOL = 0.05
     # Require prec M+0 to be at least 0.5% of the base peak; noise peaks at
     # prec_mz (int ≈ 5-10 in a spectrum with base 10000) produce bogus R_k values.
-    MIN_PREC_M0_FRAC = 0.01
+    MIN_PREC_M0_FRAC = 0.005
     base_int = float(sints.max()) if len(sints) > 0 else 0.0
     prec_m0 = _find_peak(prec_mz, M0_TOL)
     prec_m0_int: float | None = None
-    if prec_m0 is not None and prec_m0[1] > 0 and (base_int <= 0 or prec_m0[1] / base_int >= MIN_PREC_M0_FRAC):
+    if (
+        prec_m0 is not None
+        and prec_m0[1] > 0
+        and (base_int <= 0 or prec_m0[1] / base_int >= MIN_PREC_M0_FRAC)
+    ):
         prec_m0_int = prec_m0[1]
 
     leak_ratios: dict[int, float] = {}  # k -> R_k  (= R_leak * R_exp_prec[k])
@@ -1926,6 +1935,9 @@ def detect_isotope_peaks_for_training(
     # Step 2 (aggressive fallback): when above-prec reference is unavailable,
     # estimate R_leak (formula-normalised) or R_k (no formula) from cross-pair
     # consistency of in-spectrum M+k candidates.
+    # Step 2b: single-pair fallback (formula mode only) — if only one (M, M+k) pair
+    # is found but the estimated f is large enough, accept it.  This covers sparse
+    # spectra where the multi-pair CV check cannot fire.
     if aggressive:
         for k in range(1, max_isotope + 1):
             if k in leak_ratios:
@@ -1942,6 +1954,24 @@ def detect_isotope_peaks_for_training(
                 adduct_delta_mass=adduct_delta_mass,
                 prec_neutral_mass=prec_neutral_mass,
             )
+            if r_consensus is None and mol_counts is not None and prec_neutral_mass > 0:
+                # Single-pair fallback: try with min_pairs=1 (no CV check possible).
+                # Only accepted when formula is known so f can be estimated, and only
+                # when f ≥ aggressive_single_pair_min_f to guard against real fragments.
+                r_single = _estimate_leak_ratio_from_spectrum(
+                    smzs,
+                    sints,
+                    k,
+                    mz_tol=mz_tol,
+                    min_pairs=1,
+                    consistency_cv=1.0,  # CV irrelevant for a single pair
+                    mol_counts=mol_counts,
+                    adduct_counts=adduct_counts_parsed,
+                    adduct_delta_mass=adduct_delta_mass,
+                    prec_neutral_mass=prec_neutral_mass,
+                )
+                if r_single is not None and r_single >= aggressive_single_pair_min_f:
+                    r_consensus = r_single
             if r_consensus is None:
                 continue
             if mol_counts is not None:
