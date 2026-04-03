@@ -1,6 +1,10 @@
+import json
 import logging
+import os
+import pickle
 import sys
 
+import lmdb
 import numpy as np
 import torch as th
 import torch.nn.functional as F
@@ -14,14 +18,9 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
 )
-import json
-import os
-import pickle
-
-import lmdb
-
 from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, load_dag_hdf5, load_frag_d
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,22 +91,51 @@ class SpecMolFragDataset(SpecMolDataset):
             frag_pl_sd = {}
         if frag_pp_sd is None:
             frag_pp_sd = {}
-        
+
         self._preprocess_spec(spec_pp_sd)
         self._preprocess_mol(mol_pp_sd)
         self._preprocess_frag(frag_pl_sd, frag_pp_sd)
 
-        meta_info_path=os.path.join("/".join(self.frag_dp.split("/")[:-1]), "meta_info.json")
+        meta_info_dir = os.path.dirname(os.path.abspath(self.frag_dp))
+        meta_info_path = os.path.join(meta_info_dir, "meta_info.json")
         if os.path.exists(meta_info_path):
             logger.info(f"loading meta info {meta_info_path}")
-            with open(meta_info_path, "r") as f:
-                precom_meta_info=json.load(f)
-            precom_meta_info={int(k):precom_meta_info[k] for k in precom_meta_info}
-            self.precom_meta_info=[]
+            with open(meta_info_path) as f:
+                precom_meta_info = json.load(f)
+            precom_meta_info = {int(k): value for k, value in precom_meta_info.items()}
+
+            self.precom_meta_info = []
+            self.precom_group_info = []
             for idx in range(len(self.spec_df)):
                 spec_entry = self.spec_df.iloc[idx]
                 mol_id = spec_entry["mol_id"]
+                if mol_id not in precom_meta_info:
+                    raise KeyError(f"Missing meta info for mol_id {mol_id} at sample index {idx}.")
+                if mol_id not in self.mol_df.index:
+                    raise KeyError(
+                        f"Missing mol_df entry for mol_id {mol_id} at sample index {idx}."
+                    )
+
+                adduct = spec_entry["prec_type"]
+                formula = self.mol_df.loc[mol_id]["formula"]
+
                 self.precom_meta_info.append(precom_meta_info[mol_id])
+                self.precom_group_info.append((adduct, mol_id, formula))
+
+        else:
+            # Pre-compute per-sample (adduct, mol_id, formula) for DualGroupDynamicBatchSampler.
+            # Reads only from spec_df / mol_df — no frag_pyg loading needed.
+            self.precom_group_info = []
+            for idx in range(len(self.spec_df)):
+                spec_entry = self.spec_df.iloc[idx]
+                mol_id = spec_entry["mol_id"]
+                if mol_id not in self.mol_df.index:
+                    raise KeyError(
+                        f"Missing mol_df entry for mol_id {mol_id} at sample index {idx}."
+                    )
+                adduct = spec_entry["prec_type"]
+                formula = self.mol_df.loc[mol_id]["formula"]
+                self.precom_group_info.append((adduct, mol_id, formula))
 
     @staticmethod
     def get_data_dict_types() -> list[str]:
@@ -474,7 +502,7 @@ class SpecMolFragDataset(SpecMolDataset):
         # prevent edge case causing crash
         if len(data_list) == 0:
             return {"batch_size": th.tensor(0)}
-        
+
         batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
         # special handling
         SpecMolFragDataset._special_collate(keys, collate_data)
