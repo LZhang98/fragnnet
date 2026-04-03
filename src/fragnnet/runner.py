@@ -608,7 +608,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
             # https://discuss.pytorch.org/t/how-to-share-data-among-dataloader-processes-to-save-memory/108772
             # https://ppwwyyxx.com/blog/2022/Demystify-RAM-Usage-in-Multiprocess-DataLoader/
             trainer_param_d["reload_dataloaders_every_n_epochs"] = 1
-    elif config_d["dynamic_batch_sampler"]:
+    elif config_d["dynamic_batch_sampler"] or config_d["dual_group_dynamic_batch_sampler"]:
         # with out this progress will not track dataset length change
         # this will call train_dataloader and val_dataloader before every epoch
         # not sure why this fixed our problem but it works
