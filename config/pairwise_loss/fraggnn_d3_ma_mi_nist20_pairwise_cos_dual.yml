@@ -113,10 +113,11 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False
 
-pl_enable_progress_bar: True
+pl_enable_progress_bar: False
 activation_checkpointing: False
 compile: False
 pin_memory: True
+num_workers: 2
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
