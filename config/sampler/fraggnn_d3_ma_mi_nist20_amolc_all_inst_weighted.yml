@@ -112,6 +112,8 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: True
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 50000  # reduced from default 100000 to cap per-batch memory
 
 # sampler: balance by (adduct, inst_type)
 group_sampler: False
@@ -123,7 +125,7 @@ eval_sample_weight: none
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: True
+compile: False  # disabled: grad_mode changes from manual opt hit cache_size_limit(8), leaking compiled graphs
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
