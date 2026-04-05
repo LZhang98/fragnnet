@@ -28,6 +28,7 @@ class MCESDataset(Dataset):
         subsample_params: dict,
         mol_params: dict[str, Any],
         mol_pp_sd: dict[str | int, dict[str, Any]] | None = None,
+        pl_enable_progress_bar: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -41,6 +42,7 @@ class MCESDataset(Dataset):
             subsample_params: Dictionary of subsampling parameters.
             mol_params: Dictionary of molecular processing parameters.
             mol_pp_sd: Optional shared dictionary for preprocessed molecular data.
+            pl_enable_progress_bar: Whether to show tqdm progress bars during preprocessing.
             **kwargs: Additional keyword arguments including:
                 - mces_normalization: Normalization type ('minmax', 'zscore', or 'none')
                 - mces_min: Minimum MCES value for min-max normalization
@@ -50,6 +52,7 @@ class MCESDataset(Dataset):
         """
         # Store split attribute (required by runner.py)
         self.split = split
+        self.enable_progress_bar = pl_enable_progress_bar
 
         # Load data from .pkl file
         self.mces_df = pd.read_pickle(mces_fp)
@@ -139,7 +142,10 @@ class MCESDataset(Dataset):
             self.mol_datas = mol_pp_sd
             total_mol_graph_size = 0
             for _, mol_entry in tqdm(
-                self.mol_df.iterrows(), desc="> preprocess mol", total=len(self.mol_df)
+                self.mol_df.iterrows(),
+                desc="> preprocess mol",
+                total=len(self.mol_df),
+                disable=not self.enable_progress_bar,
             ):
                 mol_data = self._process_mol(mol_entry)
                 total_mol_graph_size += get_mol_graph_size(mol_data, self.mol_params)

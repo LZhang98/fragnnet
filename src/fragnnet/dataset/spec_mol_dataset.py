@@ -20,6 +20,7 @@ class SpecMolDataset(BaseDataset):
         mol_params: dict,
         spec_pp_sd: dict | None = None,
         mol_pp_sd: dict | None = None,
+        pl_enable_progress_bar: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -35,6 +36,7 @@ class SpecMolDataset(BaseDataset):
             mol_params: Dictionary of molecular processing parameters.
             spec_pp_sd: Optional shared dictionary for preprocessed spectral data.
             mol_pp_sd: Optional shared dictionary for preprocessed molecular data.
+            pl_enable_progress_bar: Whether to show tqdm progress bars during preprocessing.
             **kwargs: Additional keyword arguments.
         """
         BaseDataset.__init__(self)
@@ -45,6 +47,7 @@ class SpecMolDataset(BaseDataset):
             split=split,
             subsample_params=subsample_params,
             spec_params=spec_params,
+            enable_progress_bar=pl_enable_progress_bar,
         )
 
         if spec_pp_sd is None:
@@ -98,7 +101,10 @@ class SpecMolDataset(BaseDataset):
             self.mol_datas = mol_pp_sd
             total_mol_graph_size = 0
             for _, mol_entry in tqdm(
-                self.mol_df.iterrows(), desc="> preprocess mol", total=len(self.mol_df)
+                self.mol_df.iterrows(),
+                desc="> preprocess mol",
+                total=len(self.mol_df),
+                disable=not self.enable_progress_bar,
             ):
                 mol_data = self._process_mol(mol_entry)
                 total_mol_graph_size += self._get_mol_graph_size(mol_data)

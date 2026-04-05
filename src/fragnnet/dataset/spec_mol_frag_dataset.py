@@ -40,6 +40,7 @@ class SpecMolFragDataset(SpecMolDataset):
         mol_pp_sd: dict | None = None,  # preprocessed mol data
         frag_pl_sd: dict | None = None,  # preloaded frag data
         frag_pp_sd: dict | None = None,  # preprocessed frag data
+        pl_enable_progress_bar: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -59,6 +60,7 @@ class SpecMolFragDataset(SpecMolDataset):
             mol_pp_sd: Optional shared dictionary for preprocessed molecular data.
             frag_pl_sd: Optional shared dictionary for preloaded fragmentation data.
             frag_pp_sd: Optional shared dictionary for preprocessed fragmentation data.
+            pl_enable_progress_bar: Whether to show tqdm progress bars during preprocessing.
             **kwargs: Additional keyword arguments.
         """
 
@@ -70,6 +72,7 @@ class SpecMolFragDataset(SpecMolDataset):
             split=split,
             subsample_params=subsample_params,
             spec_params=spec_params,
+            enable_progress_bar=pl_enable_progress_bar,
         )
         self.mol_params = mol_params
         self.frag_dp = frag_dp
@@ -181,7 +184,10 @@ class SpecMolFragDataset(SpecMolDataset):
             self.frag_entries = frag_pl_sd
             total_frag_entry_size = 0
             for mol_id in tqdm(
-                self.mol_df["mol_id"].values, desc="> preload frag", total=len(self.mol_df)
+                self.mol_df["mol_id"].values,
+                desc="> preload frag",
+                total=len(self.mol_df),
+                disable=not self.enable_progress_bar,
             ):
                 if self.frag_backend == "h5":
                     frag_entry = load_dag_hdf5(self.frag_h5[f"{int(mol_id)}"])
@@ -202,6 +208,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 list(self.frag_entries.keys()),
                 desc="> preprocess frag",
                 total=len(self.frag_entries),
+                disable=not self.enable_progress_bar,
             ):
                 frag_data = self._process_neutral_frag(self.frag_entries.pop(k))
                 total_frag_data_size += get_pyg_memory_usage(frag_data["frag_pyg"])

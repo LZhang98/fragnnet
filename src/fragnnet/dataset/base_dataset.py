@@ -28,6 +28,7 @@ class BaseDataset(Dataset):
         split: str,
         subsample_params: dict,
         spec_params: dict,
+        enable_progress_bar: bool = True,
     ) -> None:
         """
         Initialize base dataset with spectral and molecular data.
@@ -39,10 +40,12 @@ class BaseDataset(Dataset):
             split: Name of the data split (e.g., 'train', 'val', 'test').
             subsample_params: Dictionary of subsampling parameters.
             spec_params: Dictionary of spectral processing parameters.
+            enable_progress_bar: Whether to show tqdm progress bars during preprocessing.
         """
         self.split = split
         self.subsample_params = subsample_params
         self.spec_params = spec_params
+        self.enable_progress_bar = enable_progress_bar
         spec_df, mol_df, um_spec_df, split_df, id_key, ce_key = BaseDataset._setup_dfs(
             spec_fp_or_df=spec_fp,
             mol_fp_or_df=mol_fp,
@@ -393,6 +396,7 @@ class BaseDataset(Dataset):
                 self.spec_df.iterrows(),
                 desc="> preprocess spec",
                 total=len(self.spec_df),
+                disable=not self.enable_progress_bar,
             ):
                 spec_data = self._process_spec(spec_entry)
                 total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
