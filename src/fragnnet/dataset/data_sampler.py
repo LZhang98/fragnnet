@@ -746,28 +746,51 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 def get_group_sampler(
     ds, sampler_type: str, avg_per_group: int, generator: th.Generator
 ) -> WeightedRandomSampler | None:
-    """Create a WeightedRandomSampler based on group/molecule statistics.
+    """Create a WeightedRandomSampler based on group/molecule or adduct+instrument statistics.
 
     Balances sampling to ensure certain groups/molecules are sampled proportionally.
 
     Args:
-        ds: Dataset with get_group_mol_stats() method
+        ds: Dataset with get_group_mol_stats() and get_adduct_inst_type_stats() methods.
         sampler_type (str): Weighting strategy:
-            - 'group': Weight by 1/specs_per_group
-            - 'mol': Weight by 1/specs_per_mol
-            - 'group_mol': Weight by 1/(specs_per_group * group_per_mol)
-        avg_per_group (int): Average samples per group to target
-        generator (th.Generator): PyTorch generator for reproducibility
+            - 'group': Weight by 1/specs_per_group (replacement=False)
+            - 'mol': Weight by 1/specs_per_mol (replacement=False)
+            - 'group_mol': Weight by 1/(specs_per_group * group_per_mol) (replacement=False)
+            - 'adduct_inst_type': Weight by 1/count(prec_type, inst_type) (replacement=True).
+              Oversample minority (adduct, instrument) combinations. Epoch size = len(ds).
+            - 'adduct_inst_type_group': Weight by 1/(count(prec_type, inst_type) *
+              specs_per_group) (replacement=True). Combines adduct+instrument balancing
+              with group-level balancing. Epoch size = len(ds).
+        avg_per_group (int): Average samples per group to target (used by group/mol types).
+        generator (th.Generator): PyTorch generator for reproducibility.
 
     Returns:
-        WeightedRandomSampler | None: Configured sampler, or None if invalid sampler_type
+        WeightedRandomSampler | None: Configured sampler, or None if invalid sampler_type.
 
     Example:
         ```python
-        sampler = get_group_sampler(ds, "group", avg_per_group=3, generator=generator)
+        sampler = get_group_sampler(ds, "adduct_inst_type", avg_per_group=1, generator=generator)
         loader = DataLoader(ds, batch_sampler=sampler)
         ```
     """
+    if sampler_type in ("adduct_inst_type", "adduct_inst_type_group"):
+        prec_types, inst_types = ds.get_adduct_inst_type_stats()
+        combo_counts: dict[str, int] = {}
+        for pt, it in zip(prec_types, inst_types):
+            key = f"{pt}::{it}"
+            combo_counts[key] = combo_counts.get(key, 0) + 1
+        sample_weights = th.tensor(
+            [1.0 / combo_counts[f"{pt}::{it}"] for pt, it in zip(prec_types, inst_types)],
+            dtype=th.float32,
+        )
+        if sampler_type == "adduct_inst_type_group":
+            _, _, spec_per_group, _, _ = ds.get_group_mol_stats()
+            sample_weights = sample_weights / spec_per_group.float()
+        num_samples = len(ds)
+        return WeightedRandomSampler(
+            sample_weights, num_samples=num_samples, replacement=True, generator=generator
+        )
+
     group_ids, _, spec_per_group, spec_per_mol, group_per_mol = ds.get_group_mol_stats()
 
     if sampler_type == "group":
