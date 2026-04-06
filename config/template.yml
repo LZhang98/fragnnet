@@ -86,6 +86,7 @@ frag_params:
     # - cmf_h_formulae_idx
     # - h_counts
     # - nb_iso_idx
+    # - prepass_rule_id  # one-hot over FRAG_RULES (len(FRAG_RULES) dims); all-zero = BFS fragment; requires smarts_prepass=True at preprocessing time
   pyg_edge_feats:
     - cc
     - base_formula
