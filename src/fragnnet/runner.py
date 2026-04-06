@@ -613,6 +613,13 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         # this will call train_dataloader and val_dataloader before every epoch
         # not sure why this fixed our problem but it works
         trainer_param_d["reload_dataloaders_every_n_epochs"] = 1
+        # val_check_interval=1.0 (default) converts to a step count = len(train_dl).
+        # With a dynamic batch sampler, len(train_dl) varies per epoch (different random
+        # sample mixes → different fragment counts → different number of packed batches).
+        # If Lightning caches the step count from the first epoch, val misses epoch ends
+        # in later epochs. check_val_every_n_epoch=1 switches to epoch-boundary triggering
+        # and guarantees val always runs at the end of every epoch.
+        trainer_param_d["check_val_every_n_epoch"] = 1
 
     trainer = L.Trainer(**trainer_param_d)
 
