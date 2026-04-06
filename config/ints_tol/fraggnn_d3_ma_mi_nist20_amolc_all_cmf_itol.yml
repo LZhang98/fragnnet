@@ -27,7 +27,7 @@ wandb_tags:
 - frag_mode
 - frag_mode_scale
 - ce_scale
-- ace
+- nce
 - cmf
 - inst_tol
 

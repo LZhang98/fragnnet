@@ -30,7 +30,7 @@ wandb_tags:
 - frag_mode     # HCD/CID conditioning token
 - frag_mode_scale  # mode-conditioned affine output scaling
 - ce_scale      # CE-conditioned FiLM scaler
-- ace
+- nce
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
 
