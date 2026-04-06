@@ -108,8 +108,12 @@ class TestInjectSmartsPairs:
         assert len(nmm2) == n_before + 2
         assert len(ndm2) == n_before + 2
 
-    def test_new_fragments_have_depth_1(self):
-        """Injected fragments are marked at depth 1."""
+    def test_new_fragments_have_depth_2(self):
+        """Injected prepass fragments are marked at depth 2 (not 1).
+
+        Prepass rules require ≥2 bond cuts + 1 new bond from the root,
+        so the node depth label is 2.  See docs/frag_gen_prepass.md.
+        """
         num_nodes = 6
         nmm, ndm, dem, meta = self._make_dag(n_frags=1, num_nodes=num_nodes)
         # Single root only, depth matrix has only root
@@ -120,9 +124,11 @@ class TestInjectSmartsPairs:
         nmm2, ndm2, dem2, meta2 = _inject_smarts_pairs_into_dag(
             [(mask_a, mask_b)], nmm, ndm, dem, meta, num_nodes, min_frag_atoms=0
         )
-        # New rows should have depth 1 set
-        assert ndm2[1, 1] == 1
-        assert ndm2[2, 1] == 1
+        # New rows must have depth 2 set (index 2 in one-hot), not depth 1
+        assert ndm2[1, 2] == 1, f"expected depth 2 for fragment 1, got {ndm2[1]}"
+        assert ndm2[2, 2] == 1, f"expected depth 2 for fragment 2, got {ndm2[2]}"
+        assert ndm2[1, 1] == 0, "depth 1 must not be set for prepass fragment"
+        assert ndm2[2, 1] == 0, "depth 1 must not be set for prepass fragment"
 
     def test_duplicate_fragment_not_added_twice(self):
         """A fragment already in the DAG is not duplicated."""
@@ -250,9 +256,11 @@ class TestComputeDagsWithSmartsPrepass:
             node_mask.astype(MASK_DTYPE), edges, edge_mask.astype(MASK_DTYPE),
             node_to_edge_idx, 3, int(1e6), 3,
         )
-        pairs = _apply_smarts_prepass(
-            FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
-        )
+        pairs = [
+            (a, b) for a, b, _ in _apply_smarts_prepass(
+                FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
+            )
+        ]
         nmm2, ndm2, dem2, meta2 = _inject_smarts_pairs_into_dag(
             pairs, nmm, ndm, dem, meta, num_nodes, min_frag_atoms=3
         )
@@ -306,9 +314,11 @@ class TestComputeDagsWithSmartsPrepass:
             node_mask.astype(MASK_DTYPE), edges, edge_mask.astype(MASK_DTYPE),
             node_to_edge_idx, 3, int(1e6), 3,
         )
-        pairs = _apply_smarts_prepass(
-            FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
-        )
+        pairs = [
+            (a, b) for a, b, _ in _apply_smarts_prepass(
+                FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
+            )
+        ]
         bfs_keys = {nmm_base[i].tobytes() for i in range(len(nmm_base))}
         unique_masks = [
             m for pair in pairs for m in pair
@@ -349,9 +359,11 @@ class TestComputeDagsWithSmartsPrepass:
         num_nodes, num_edges, node_mask, edges, edge_mask, node_to_edge_idx = (
             get_fraggen_input_arrays(mol_d)
         )
-        pairs = _apply_smarts_prepass(
-            FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
-        )
+        pairs = [
+            (a, b) for a, b, _ in _apply_smarts_prepass(
+                FRAG_RULES, mol_d["mol"], edge_mask.astype(np.uint8), edges, num_nodes, num_edges
+            )
+        ]
         nmm, ndm, dem, meta = compute_frags.compute_ccs(
             num_nodes, num_edges,
             node_mask.astype(MASK_DTYPE), edges, edge_mask.astype(MASK_DTYPE),

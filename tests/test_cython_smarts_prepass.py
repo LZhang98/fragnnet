@@ -48,7 +48,11 @@ def _run_cy(
     seed_pairs = None
     if use_prepass:
         em = np.asarray(edge_mask, dtype=MASK_DTYPE)
-        seed_pairs = _apply_smarts_prepass(FRAG_RULES, mol, em, edges, num_nodes, num_edges)
+        # Strip rule_idx — Cython expects plain (mask_a, mask_b) 2-tuples.
+        seed_pairs = [
+            (a, b)
+            for a, b, _ in _apply_smarts_prepass(FRAG_RULES, mol, em, edges, num_nodes, num_edges)
+        ]
     nodes_mask, nodes_depth, dag_edges, meta = compute_ccs_multi_cut_cy(
         num_nodes,
         num_edges,
@@ -208,7 +212,9 @@ class TestCythonSmartsPrepassFunctionality:
         smiles = "CC(=O)OC"  # methyl acetate
         mol_d, nn, ne, nm, edges, em, n2e, mol = _get_arrays(smiles)
         em_u8 = np.asarray(em, dtype=MASK_DTYPE)
-        seed_pairs = _apply_smarts_prepass(FRAG_RULES, mol, em_u8, edges, nn, ne)
+        seed_pairs = [
+            (a, b) for a, b, _ in _apply_smarts_prepass(FRAG_RULES, mol, em_u8, edges, nn, ne)
+        ]
         assert len(seed_pairs) > 0, "Need at least one seed pair to test"
         for mask_a, mask_b in seed_pairs:
             union_count = int(np.logical_or(mask_a[:nn], mask_b[:nn]).sum())
@@ -219,7 +225,9 @@ class TestCythonSmartsPrepassFunctionality:
         smiles = "CSCCC(C(=O)O)N"  # methionine
         mol_d, nn, ne, nm, edges, em, n2e, mol = _get_arrays(smiles)
         em_u8 = np.asarray(em, dtype=MASK_DTYPE)
-        seed_pairs = _apply_smarts_prepass(FRAG_RULES, mol, em_u8, edges, nn, ne)
+        seed_pairs = [
+            (a, b) for a, b, _ in _apply_smarts_prepass(FRAG_RULES, mol, em_u8, edges, nn, ne)
+        ]
         root_mask = np.ones(nn, dtype=MASK_DTYPE)
         for mask_a, mask_b in seed_pairs:
             assert not np.array_equal(mask_a[:nn], root_mask), (
@@ -325,7 +333,9 @@ def test_benchmark_cython_with_prepass(benchmark, name, smiles):
     mol_d, nn, ne, nm, edges, em, n2e, mol = _get_arrays(smiles)
     ring_mask = mol_d["ring_bond_mask"]
     em_u8 = np.asarray(em, dtype=MASK_DTYPE)
-    seed_pairs = _apply_smarts_prepass(FRAG_RULES, mol, em_u8, edges, nn, ne)
+    seed_pairs = [
+        (a, b) for a, b, _ in _apply_smarts_prepass(FRAG_RULES, mol, em_u8, edges, nn, ne)
+    ]
 
     benchmark(
         compute_ccs_multi_cut_cy,

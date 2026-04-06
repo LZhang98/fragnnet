@@ -1110,12 +1110,22 @@ def get_pairwise_cossim(
     norm_logprobs = scatter_logl2normalize(bin_logprobs, bin_batch_idxs)
     norm_probs = norm_logprobs.exp()
 
+    # batched_bin_func returns batch-offset bin indices (batch element k uses range [k*num_bins,
+    # (k+1)*num_bins)). Strip the offset to get per-spectrum bin positions so that the same m/z
+    # bin in different spectra maps to the same column in the V matrix, enabling valid dot-product
+    # cosine similarity. Without this, every spectrum occupies exclusively different columns and
+    # all off-diagonal similarities are zero by construction.
+    num_bins = int(round(mz_max / mz_bin_res))
+    intra_bin_idxs = bin_idxs % num_bins
+
     # Compact bin space: avoids 150k-wide matrices when only a few bins are occupied
-    unique_bins = th.unique(bin_idxs)
+    unique_bins = th.unique(intra_bin_idxs)
     num_unique_bins = unique_bins.numel()
-    bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
+    bin_idx_map = th.full(
+        (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
+    )
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
-    compact_bin_idxs = bin_idx_map[bin_idxs]
+    compact_bin_idxs = bin_idx_map[intra_bin_idxs]
 
     effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
@@ -1189,12 +1199,21 @@ def get_pairwise_jss_sim(
     log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
     probs = log_probs.exp()
 
+    # Strip batch offsets (same fix as get_pairwise_cossim): batched_bin_func returns
+    # batch-offset bin indices; without stripping, each spectrum occupies exclusively
+    # different columns, making all pairwise mixtures trivially equal to 0.5*(P+0)=0.5*P
+    # and H(M) collapses to a function of individual entropies only.
+    num_bins = int(round(mz_max / mz_bin_res))
+    intra_bin_idxs = bin_idxs % num_bins
+
     # Compact bin space
-    unique_bins = th.unique(bin_idxs)
+    unique_bins = th.unique(intra_bin_idxs)
     num_unique_bins = unique_bins.numel()
-    bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
+    bin_idx_map = th.full(
+        (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
+    )
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
-    compact_bin_idxs = bin_idx_map[bin_idxs]
+    compact_bin_idxs = bin_idx_map[intra_bin_idxs]
 
     effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
@@ -1278,16 +1297,25 @@ def get_pairwise_cross_entropy(
     log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
     probs = log_probs.exp()
 
+    # Strip batch offsets: batched_bin_func returns batch-offset bin indices; without
+    # stripping, each spectrum occupies exclusively different columns so P and Q never
+    # share any bin and cross-entropy reduces to -sum(P*log(eps)) for all off-diagonal
+    # pairs — masking any real signal from shared peaks.
+    num_bins = int(round(mz_max / mz_bin_res))
+    intra_bin_idxs = bin_idxs % num_bins
+
     # Optimization: only use bins that are actually present in data
-    unique_bins = th.unique(bin_idxs)
+    unique_bins = th.unique(intra_bin_idxs)
     num_unique_bins = unique_bins.numel()
 
     # Create a mapping from old bin indices to new compact indices
-    bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
+    bin_idx_map = th.full(
+        (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
+    )
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
 
     # Remap indices to compact space
-    compact_bin_idxs = bin_idx_map[bin_idxs]
+    compact_bin_idxs = bin_idx_map[intra_bin_idxs]
 
     indices = th.stack([bin_batch_idxs, compact_bin_idxs])
 

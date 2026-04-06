@@ -94,6 +94,11 @@ NODE_FEAT_TO_IDX = {
     "h_counts": 4,
     "nb_iso_idx": 5,
     "cmf_h_formulae_idx": 6,
+    # prepass_rule_id: one-hot over FRAG_RULES (len(FRAG_RULES) dims).
+    # All zeros = BFS-generated fragment.  Bit k = 1 means the fragment was
+    # produced by FRAG_RULES[k] (e.g. k=0 → crf12_0, k=2 → crf13_2).
+    # All zeros when smarts_prepass=False.
+    "prepass_rule_id": 7,
 }
 
 EDGE_FEAT_TO_IDX = {"cc": 0, "base_formula": 1, "h_range": 2, "complement": 3}
@@ -832,11 +837,18 @@ def _inject_smarts_pairs_into_dag(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """Inject SMARTS prepass fragment pairs into a DAG produced by compute_frags.
 
-    Appends fragment pairs from the SMARTS rearrangement prepass as depth-1
-    children of the root node (index 0).  Fragments already present in the DAG
-    are deduplicated via their byte-string node-mask key.  Fragments smaller
-    than ``min_frag_atoms`` heavy atoms are silently dropped, consistent with
-    the ``min_frag_atoms`` filter applied inside the BFS.
+    Appends fragment pairs from the SMARTS rearrangement prepass as direct
+    children of the root node (index 0).  Prepass rules require at least 2 bond
+    cuts plus 1 new bond formation, so injected fragments receive **node depth 2**
+    (not 1) to reflect the two-cut distance from the root.  The root→fragment
+    edge retains ``min_depth=1`` since it is introduced in the same expansion
+    pass as depth-1 BFS edges.  See ``docs/frag_gen_prepass.md`` for the full
+    depth-semantics rationale.
+
+    Fragments already present in the DAG are deduplicated via their byte-string
+    node-mask key.  Fragments smaller than ``min_frag_atoms`` heavy atoms are
+    silently dropped, consistent with the ``min_frag_atoms`` filter applied
+    inside the BFS.
 
     Args:
         smarts_pairs: List of ``(node_mask_a, node_mask_b)`` uint8 array pairs
@@ -886,14 +898,18 @@ def _inject_smarts_pairs_into_dag(
                 key_to_idx[key] = new_idx
                 new_masks.append(mask.astype(MASK_DTYPE))
                 depth_row = np.zeros(max_depth_cols, dtype=MASK_DTYPE)
-                depth_row[min(1, max_depth_cols - 1)] = 1
+                # Prepass rules require ≥2 bond cuts + 1 new bond from the root,
+                # so the node depth label is 2 (not 1).  See docs/frag_gen_prepass.md.
+                depth_row[min(2, max_depth_cols - 1)] = 1
                 new_depth_rows.append(depth_row)
-                new_min_depths.append(1)
+                new_min_depths.append(2)
             frag_idx = key_to_idx[key]
             edge = (0, frag_idx)
             if edge not in existing_edges:
                 existing_edges.add(edge)
                 new_edges.append(edge)
+                # Edge min_depth stays 1: the root→prepass edge is introduced
+                # in the same expansion pass as depth-1 BFS edges.
                 new_edge_min_depths.append(1)
 
     if not new_masks and not new_edges:
@@ -972,8 +988,12 @@ def compute_dags(
         # SMARTS prepass: compute fragment pairs in Python (RDKit API), then pass
         # as smarts_seed_pairs to the Cython BFS for injection as depth-1 children.
         smarts_seed_pairs = None
+        # Map mask bytes → set of rule indices that produced this fragment.
+        # Used after BFS to build the prepass_rule_id one-hot node feature.
+        # Keys are filtered by min_frag_atoms to match what the BFS will keep.
+        prepass_mask_to_rules: dict[bytes, set[int]] = {}
         if smarts_prepass:
-            smarts_seed_pairs = _apply_smarts_prepass(
+            smarts_seed_pairs_tagged = _apply_smarts_prepass(
                 FRAG_RULES,
                 mol_d["mol"],
                 edge_mask,
@@ -981,6 +1001,15 @@ def compute_dags(
                 num_nodes,
                 num_edges,
             )
+            for mask_a, mask_b, rule_idx in smarts_seed_pairs_tagged:
+                if int(mask_a.sum()) >= min_frag_atoms:
+                    key_a = mask_a.tobytes()
+                    prepass_mask_to_rules.setdefault(key_a, set()).add(rule_idx)
+                if int(mask_b.sum()) >= min_frag_atoms:
+                    key_b = mask_b.tobytes()
+                    prepass_mask_to_rules.setdefault(key_b, set()).add(rule_idx)
+            # Strip rule_idx before passing to Cython (expects plain mask pairs).
+            smarts_seed_pairs = [(a, b) for a, b, _ in smarts_seed_pairs_tagged]
         nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
             _compute_ccs_multi_cut_cy(
                 num_nodes,
@@ -999,6 +1028,7 @@ def compute_dags(
             )
         )
     else:
+        prepass_mask_to_rules: dict[bytes, set[int]] = {}
         nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
             compute_frags.compute_ccs(
                 num_nodes,
@@ -1019,7 +1049,7 @@ def compute_dags(
             # pairs are merged in afterwards.  No further BFS expansion of the
             # SMARTS fragments is needed because their sub-fragments are already
             # covered by the BFS from the root molecule.
-            smarts_pairs = _apply_smarts_prepass(
+            smarts_pairs_tagged = _apply_smarts_prepass(
                 FRAG_RULES,
                 mol_d["mol"],
                 edge_mask,
@@ -1027,6 +1057,14 @@ def compute_dags(
                 num_nodes,
                 num_edges,
             )
+            for mask_a, mask_b, rule_idx in smarts_pairs_tagged:
+                if int(mask_a.sum()) >= min_frag_atoms:
+                    key_a = mask_a.tobytes()
+                    prepass_mask_to_rules.setdefault(key_a, set()).add(rule_idx)
+                if int(mask_b.sum()) >= min_frag_atoms:
+                    key_b = mask_b.tobytes()
+                    prepass_mask_to_rules.setdefault(key_b, set()).add(rule_idx)
+            smarts_pairs = [(a, b) for a, b, _ in smarts_pairs_tagged]
             nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
                 _inject_smarts_pairs_into_dag(
                     smarts_pairs,
@@ -1081,6 +1119,7 @@ def compute_dags(
     h_count_node_feat_size = formula_node_feat_size
     nb_iso_node_feat_size = 1 if nb_isomorphic else 0
     cmf_formula_node_feat_size = formula_node_feat_size  # 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
+    prepass_rule_id_node_feat_size = len(FRAG_RULES)  # one-hot over FRAG_RULES; all-zero = BFS fragment
     # edge feature sizes
     cc_edge_feat_size = cc_node_feat_size
     base_formula_edge_feat_size = base_formula_node_feat_size
@@ -1093,6 +1132,7 @@ def compute_dags(
         h_count_node_feat_size,
         nb_iso_node_feat_size,
         cmf_formula_node_feat_size,
+        prepass_rule_id_node_feat_size,
     ]
     edge_feat_shapes = [cc_edge_feat_size, base_formula_edge_feat_size, h_range_edge_feat_size]
 
@@ -1196,6 +1236,20 @@ def compute_dags(
         node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0], 0), dtype=FRAG_INDEX_DTYPE)
         dag_num_nodes_nb = -1
 
+    # Build prepass_rule_id one-hot: shape (num_frags, len(FRAG_RULES)).
+    # Row is all-zero for BFS-generated fragments and the root.
+    # Bit k is set when FRAG_RULES[k] produced this fragment (multi-hot if
+    # multiple rules independently generate the same atom mask).
+    num_rules = len(FRAG_RULES)
+    node_prepass_rule_id = np.zeros(
+        (nodes_mask_matrix.shape[0], num_rules), dtype=np.int8
+    )
+    for frag_idx, row in enumerate(nodes_mask_matrix):
+        rule_set = prepass_mask_to_rules.get(row.tobytes())
+        if rule_set:
+            for r in rule_set:
+                node_prepass_rule_id[frag_idx, r] = 1
+
     assert nodes_mask_matrix.shape[1] <= MASK_SIZE
     node_cc_mask = th.as_tensor(nodes_mask_matrix, dtype=th.bool)
     node_cc_mask = F.pad(node_cc_mask, (0, MASK_SIZE - node_cc_mask.shape[1]), "constant", 0)
@@ -1211,6 +1265,7 @@ def compute_dags(
             th.as_tensor(node_nb_iso_idx, dtype=NODE_FEAT_DTYPE),
             # cmf features bit, not set here, this should set in dataloader, use 0 for NULL forumla
             th.zeros((node_cc_mask.shape[0], cmf_formula_node_feat_size), dtype=NODE_FEAT_DTYPE),
+            th.as_tensor(node_prepass_rule_id, dtype=NODE_FEAT_DTYPE),
         ],
         dim=1,
     )
