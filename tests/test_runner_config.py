@@ -16,6 +16,8 @@ def _base_config(**overrides) -> dict:
         "automatic_optimization": False,
         "dynamic_batch_sampler_mode": "frag_node",
         "dynamic_batch_sampler_max": 1000,
+        "simple_group_sampler": False,
+        "simple_group_sampler_type": "adduct_inst_type",
     }
     cfg.update(overrides)
     return cfg
@@ -120,3 +122,34 @@ class TestValidateSamplerConfig:
                     automatic_optimization=True,
                 )
             )
+
+
+class TestSimpleGroupSamplerTypeValidation:
+    @pytest.mark.parametrize(
+        "sampler_type",
+        [
+            "group",
+            "mol",
+            "group_mol",
+            "adduct_inst_type",
+            "adduct_inst_type_group",
+            "adduct_inst_type_frag_mode",
+            "adduct_inst_type_frag_mode_group",
+        ],
+    )
+    def test_valid_types_pass(self, sampler_type):
+        validate_sampler_config(
+            _base_config(simple_group_sampler=True, simple_group_sampler_type=sampler_type)
+        )
+
+    def test_invalid_type_raises(self):
+        with pytest.raises(ValueError, match="simple_group_sampler_type"):
+            validate_sampler_config(
+                _base_config(simple_group_sampler=True, simple_group_sampler_type="bad_type")
+            )
+
+    def test_disabled_sampler_skips_type_check(self):
+        """simple_group_sampler=False should not validate simple_group_sampler_type."""
+        validate_sampler_config(
+            _base_config(simple_group_sampler=False, simple_group_sampler_type="bad_type")
+        )

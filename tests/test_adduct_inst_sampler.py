@@ -27,6 +27,7 @@ class MockDataset:
     Args:
         prec_types: Per-sample precursor type strings.
         inst_types: Per-sample instrument type strings.
+        frag_modes: Per-sample fragmentation mode strings. Defaults to None (unknown).
         group_ids: Per-sample group IDs (ints). Defaults to one group per sample.
     """
 
@@ -34,12 +35,14 @@ class MockDataset:
         self,
         prec_types: list[str],
         inst_types: list[str],
+        frag_modes: list[str] | None = None,
         group_ids: list[int] | None = None,
     ):
         assert len(prec_types) == len(inst_types)
         self._prec_types = prec_types
         self._inst_types = inst_types
         n = len(prec_types)
+        self._frag_modes = frag_modes if frag_modes is not None else ["unknown"] * n
         self._group_ids = group_ids if group_ids is not None else list(range(n))
 
     def __len__(self) -> int:
@@ -47,6 +50,9 @@ class MockDataset:
 
     def get_adduct_inst_type_stats(self) -> tuple[list[str], list[str]]:
         return list(self._prec_types), list(self._inst_types)
+
+    def get_frag_mode_stats(self) -> list[str]:
+        return list(self._frag_modes)
 
     def get_group_mol_stats(self):
         n = len(self._group_ids)
@@ -182,6 +188,109 @@ class TestAdductInstTypeSampler:
         gen = th.Generator()
         result = get_group_sampler(ds, "nonexistent_type", avg_per_group=1, generator=gen)
         assert result is None
+
+
+class TestFragModeSampler:
+    def test_cid_minority_gets_higher_weight(self):
+        """9:1 HCD:CID imbalance → CID weight should be 9x HCD weight."""
+        prec_types = ["[M+H]+"] * 10
+        inst_types = ["FT"] * 10
+        frag_modes = ["HCD"] * 9 + ["CID"]
+        ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes)
+
+        gen = th.Generator()
+        gen.manual_seed(0)
+        sampler = get_group_sampler(
+            ds, "adduct_inst_type_frag_mode", avg_per_group=1, generator=gen
+        )
+
+        assert sampler is not None
+        weights = th.tensor(list(sampler.weights))
+        hcd_weight = weights[0].item()   # 1/9
+        cid_weight = weights[-1].item()  # 1/1
+
+        assert cid_weight == pytest.approx(9.0 * hcd_weight, rel=1e-5)
+
+    def test_unknown_frag_mode_forms_own_bucket(self):
+        """Samples with unknown frag_mode are balanced separately from HCD/CID."""
+        prec_types = ["[M+H]+"] * 12
+        inst_types = ["FT"] * 12
+        # 6 HCD, 4 CID, 2 unknown → weights: 1/6, 1/4, 1/2
+        frag_modes = ["HCD"] * 6 + ["CID"] * 4 + ["unknown"] * 2
+        ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes)
+
+        gen = th.Generator()
+        sampler = get_group_sampler(
+            ds, "adduct_inst_type_frag_mode", avg_per_group=1, generator=gen
+        )
+
+        weights = th.tensor(list(sampler.weights))
+        w_hcd = weights[0].item()    # 1/6
+        w_cid = weights[6].item()    # 1/4
+        w_unk = weights[10].item()   # 1/2
+
+        assert w_cid == pytest.approx(6.0 / 4.0 * w_hcd, rel=1e-5)
+        assert w_unk == pytest.approx(6.0 / 2.0 * w_hcd, rel=1e-5)
+
+    def test_epoch_size_equals_dataset_length(self):
+        """num_samples must equal len(ds)."""
+        prec_types = ["[M+H]+"] * 10
+        inst_types = ["FT"] * 10
+        frag_modes = ["HCD"] * 9 + ["CID"]
+        ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes)
+
+        gen = th.Generator()
+        sampler = get_group_sampler(
+            ds, "adduct_inst_type_frag_mode", avg_per_group=1, generator=gen
+        )
+
+        assert sampler.num_samples == len(ds)
+
+    def test_frag_mode_group_compounds_weights(self):
+        """adduct_inst_type_frag_mode_group further divides by specs_per_group.
+
+        Two CID samples in the same group → group count = 2, weight halved vs
+        adduct_inst_type_frag_mode alone.
+        """
+        prec_types = ["[M+H]+"] * 10
+        inst_types = ["FT"] * 10
+        frag_modes = ["HCD"] * 8 + ["CID"] * 2
+        group_ids = list(range(8)) + [99, 99]  # CID pair share one group
+        ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes, group_ids=group_ids)
+
+        gen1 = th.Generator()
+        sampler_plain = get_group_sampler(
+            ds, "adduct_inst_type_frag_mode", avg_per_group=1, generator=gen1
+        )
+        gen2 = th.Generator()
+        sampler_group = get_group_sampler(
+            ds, "adduct_inst_type_frag_mode_group", avg_per_group=1, generator=gen2
+        )
+
+        weights_plain = th.tensor(list(sampler_plain.weights))
+        weights_group = th.tensor(list(sampler_group.weights))
+
+        # CID samples at idx 8, 9: group size=2 → weight /= 2
+        assert weights_group[8].item() == pytest.approx(
+            weights_plain[8].item() / 2.0, rel=1e-5
+        )
+        # HCD samples each in own group (size=1) → unchanged
+        assert weights_group[0].item() == pytest.approx(weights_plain[0].item(), rel=1e-5)
+
+    def test_single_frag_mode_uniform_weights(self):
+        """When all samples share the same (prec_type, inst_type, frag_mode), weights are equal."""
+        prec_types = ["[M+H]+"] * 8
+        inst_types = ["FT"] * 8
+        frag_modes = ["HCD"] * 8
+        ds = MockDataset(prec_types, inst_types, frag_modes=frag_modes)
+
+        gen = th.Generator()
+        sampler = get_group_sampler(
+            ds, "adduct_inst_type_frag_mode", avg_per_group=1, generator=gen
+        )
+
+        weights = th.tensor(list(sampler.weights))
+        assert th.allclose(weights, weights[0].expand_as(weights))
 
     def test_sampler_yields_correct_length(self):
         """Iterating the sampler yields exactly num_samples indices."""
