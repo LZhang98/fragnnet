@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_amol_all_prepass
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_prepass
 wandb_tags:
 - retrieval
 - nist20
@@ -27,8 +27,9 @@ wandb_tags:
 - frag_mode
 - frag_mode_scale
 - ce_scale
-- ace
+- nce
 - cmf
+- inst_tol
 - prepass
 
 spec_fp: data/proc/nist20/spec_df.pkl
@@ -117,12 +118,15 @@ auxiliary_scores:
 eval_mz_bin_res:
   - 0.01
 
+# per-instrument-type tolerance
+inst_type_loss_tol:
+  FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
+  
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler: True
-dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 100000
 
 group_sampler: False
 group_sampler_type: group
@@ -131,9 +135,9 @@ simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group
 
-pl_enable_progress_bar: False
+pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: False
+compile: True
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
