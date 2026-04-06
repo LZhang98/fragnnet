@@ -132,6 +132,19 @@ dynamic_batch_sampler: False
 dual_group_dynamic_batch_sampler: True
 dual_group_dynamic_batch_sampler_mode: frag_node
 dual_group_dynamic_batch_sampler_max: 100000
+# 4 distinct molecules seeded per batch (group1 = same adduct+mol_id).
+# Together with k1_per_key=5 this places 4*5=20 same-molecule spectra per batch,
+# yielding 4*(5 choose 2)=40 informative same-molecule pairs for the pairwise loss.
+dual_group_sampler_k1: 4
+# 1 isomer key seeded per batch (group2 = same adduct+formula, different mol_id).
+# A single isomer alongside the k1 anchors is sufficient for isomer contrast.
+dual_group_sampler_k2: 1
+# 5 spectra per molecule (different CEs) taken from each group-1 key.
+# Raises pairwise pair count from ~10 (k1_per_key=1) to 40 without increasing
+# total batch size.
+dual_group_sampler_k1_per_key: 5
+# 1 spectrum per isomer key is enough; the contrast comes from the different mol_id.
+dual_group_sampler_k2_per_key: 1
 
 group_sampler: False
 group_sampler_type: group

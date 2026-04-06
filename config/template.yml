@@ -422,6 +422,23 @@ dynamic_batch_sampler_max: 100000
 dual_group_dynamic_batch_sampler: False
 dual_group_dynamic_batch_sampler_mode: frag_node
 dual_group_dynamic_batch_sampler_max: 100000
+# Number of distinct group-1 keys (adduct + mol_id) to seed per batch.
+# Each key contributes up to dual_group_sampler_k1_per_key spectra.
+dual_group_sampler_k1: 1
+# Number of distinct group-2 keys (adduct + formula) to seed per batch.
+# Each key contributes up to dual_group_sampler_k2_per_key spectra.
+# Group-2 seeds isomer contrast: a different molecule with the same formula lands
+# alongside the group-1 anchor.
+dual_group_sampler_k2: 1
+# Maximum spectra to take from each group-1 key (same adduct + mol_id).
+# Setting this > 1 places multiple spectra of the same molecule (e.g. different CEs)
+# in a single batch, creating same-molecule pairs for pairwise similarity losses.
+# Total group-1 slots per batch = k1 * k1_per_key.
+dual_group_sampler_k1_per_key: 1
+# Maximum spectra to take from each group-2 key (same adduct + formula).
+# Usually 1 is sufficient; the isomer contrast is provided by the key itself,
+# not by multiple spectra of the same isomer.
+dual_group_sampler_k2_per_key: 1
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 3

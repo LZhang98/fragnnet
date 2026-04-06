@@ -484,6 +484,8 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         return_batch_at: int = 0,
         sample_k1: int = 1,
         sample_k2: int = 1,
+        sample_k1_per_key: int = 1,
+        sample_k2_per_key: int = 1,
         generator: th.Generator | None = None,
         key_adduct: str = "prec_type",
         key_mol_id: str = "mol_id",
@@ -507,6 +509,8 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         self._return_batch_at = return_batch_at
         self.sample_k1 = int(sample_k1)
         self.sample_k2 = int(sample_k2)
+        self.sample_k1_per_key = int(sample_k1_per_key)
+        self.sample_k2_per_key = int(sample_k2_per_key)
         self.generator = generator
         self._epoch = 0
         self._data_meta = []  # tuples (num_nodes, num_edges)
@@ -591,8 +595,13 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 pass
         self._pre_compute_batches()
 
-    def _sample_from_group_dict(self, group_dict, active_keys, available, budget_left, take_k):
+    def _sample_from_group_dict(self, group_dict, active_keys, available, budget_left, take_k, per_key: int = 1):
         """Try to take up to `take_k` samples from group_dict (which maps key->tensor).
+
+        Iterates over up to `take_k` group keys and takes up to `per_key` samples from
+        each key. Using `per_key > 1` places multiple spectra of the same molecule (or
+        same formula) in a single batch, which provides meaningful signal for pairwise
+        similarity losses.
 
         Modifies `available` in-place by removing taken indices.
 
@@ -601,7 +610,8 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             active_keys: Set of keys in group_dict that still have available samples.
             available: Set of dataset indices not yet assigned to a batch.
             budget_left: Remaining node/edge budget for the current batch.
-            take_k: Maximum number of samples to take.
+            take_k: Maximum number of keys to visit (total samples taken ≤ take_k * per_key).
+            per_key: Maximum number of samples to take from each key. Defaults to 1.
 
         Returns:
             Tuple of (taken indices list, updated budget_left).
@@ -621,8 +631,11 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             if take_k <= 0:
                 break
             candidates = group_dict[key]
-            # Try to take one sample from this group
+            # Try to take up to per_key samples from this group
+            count_from_key = 0
             for idx in candidates.tolist():
+                if count_from_key >= per_key:
+                    break
                 if idx not in available:
                     continue
                 # check size against remaining budget
@@ -639,8 +652,9 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 available.discard(idx)
                 taken.append(idx)
                 budget_left = max(0, budget_left - n)
+                count_from_key += 1
+            if count_from_key > 0:
                 take_k -= 1
-                break
         return taken, budget_left
 
     def _pre_compute_batches(self):
@@ -669,12 +683,13 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 # Effectively unlimited if return_batch_at is 0
                 samples_to_take = len(available)
 
-            # First try to take sample_k1 samples from group1.
+            # First try to take sample_k1 keys from group1, up to sample_k1_per_key each.
             # _sample_from_group_dict removes taken indices from `available` in-place.
             if active_group1_keys and samples_to_take > 0:
                 k1 = min(self.sample_k1, samples_to_take)
                 taken1, budget_left = self._sample_from_group_dict(
-                    self._group1, active_group1_keys, available, budget_left, k1
+                    self._group1, active_group1_keys, available, budget_left, k1,
+                    per_key=self.sample_k1_per_key,
                 )
                 batch.extend(taken1)
                 samples_to_take -= len(taken1)
@@ -683,11 +698,12 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                     if not any(idx in available for idx in self._group1[key].tolist()):
                         active_group1_keys.discard(key)
 
-            # Then try to take sample_k2 samples from group2
+            # Then try to take sample_k2 keys from group2, up to sample_k2_per_key each.
             if active_group2_keys and samples_to_take > 0:
                 k2 = min(self.sample_k2, samples_to_take)
                 taken2, budget_left = self._sample_from_group_dict(
-                    self._group2, active_group2_keys, available, budget_left, k2
+                    self._group2, active_group2_keys, available, budget_left, k2,
+                    per_key=self.sample_k2_per_key,
                 )
                 batch.extend(taken2)
                 samples_to_take -= len(taken2)

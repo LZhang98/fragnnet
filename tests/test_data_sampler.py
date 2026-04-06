@@ -559,6 +559,87 @@ class TestDualGroupDynamicBatchSampler:
         # Different epochs should produce different orders
         assert out0 != out1
 
+    def test_k1_per_key_places_multiple_same_mol_in_batch(self):
+        """With k1_per_key > 1, multiple spectra of the same molecule should
+        appear in the same batch, providing same-molecule pairs for pairwise loss."""
+        # Molecule 1 has 5 spectra (different CEs), molecule 2 has 1.
+        # With k1_per_key=3 and a large budget, 3 spectra of mol 1 must land together.
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "B", "mol_id": 2, "formula": "Y"},
+        ]
+        mol1_indices = {0, 1, 2, 3, 4}
+
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(0)
+
+        sampler = DualGroupDynamicBatchSampler(
+            ds,
+            max_num=100,
+            limited_by="frag_node",
+            sample_k1=1,
+            sample_k1_per_key=3,
+            generator=gen,
+        )
+        batches = list(sampler)
+
+        # At least one batch must contain ≥ 2 mol-1 spectra (i.e., a same-mol pair)
+        max_mol1_in_batch = max(len(set(b) & mol1_indices) for b in batches)
+        assert max_mol1_in_batch >= 2, (
+            f"Expected ≥ 2 same-molecule spectra in a batch, got max {max_mol1_in_batch}"
+        )
+
+    def test_k1_per_key_default_one_unchanged(self):
+        """Default k1_per_key=1 behaviour must be identical to the old code:
+        at most 1 sample per group1 key per group pass."""
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": 1, "formula": "X"},
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "B", "mol_id": 2, "formula": "Y"},
+        ]
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(5)
+
+        sampler = DualGroupDynamicBatchSampler(
+            ds,
+            max_num=1,  # budget = 1 node → only 1 sample per batch
+            limited_by="frag_node",
+            sample_k1=1,
+            sample_k1_per_key=1,  # explicit default
+            generator=gen,
+        )
+        # With budget 1 each batch can hold exactly 1 sample
+        for batch in sampler:
+            assert len(batch) == 1
+
+    def test_every_index_covered_with_per_key(self):
+        """All samples must be covered exactly once even with per_key > 1."""
+        samples = [
+            {"frag_pyg": FakeFrag(1, 1), "prec_type": "A", "mol_id": i // 3, "formula": f"F{i // 3}"}
+            for i in range(9)
+        ]
+        ds = DummyDataset(samples)
+        gen = th.Generator()
+        gen.manual_seed(42)
+
+        sampler = DualGroupDynamicBatchSampler(
+            ds,
+            max_num=100,
+            limited_by="frag_node",
+            sample_k1=5,
+            sample_k1_per_key=3,
+            generator=gen,
+        )
+        all_indices = [i for b in sampler for i in b]
+        assert sorted(all_indices) == list(range(len(samples)))
+
 
 # ============================================================================
 # Tests for FormulaPrecTypeGroupSampler

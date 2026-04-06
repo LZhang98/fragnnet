@@ -232,6 +232,10 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
                 limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
                 skip_too_big=True,
                 return_batch_at=return_batch_at,
+                sample_k1=config_d["dual_group_sampler_k1"],
+                sample_k2=config_d["dual_group_sampler_k2"],
+                sample_k1_per_key=config_d["dual_group_sampler_k1_per_key"],
+                sample_k2_per_key=config_d["dual_group_sampler_k2_per_key"],
                 generator=generator,
             )
         else:
