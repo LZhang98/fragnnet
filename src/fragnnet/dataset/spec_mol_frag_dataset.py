@@ -1,6 +1,10 @@
+import json
 import logging
+import os
+import pickle
 import sys
 
+import lmdb
 import numpy as np
 import torch as th
 import torch.nn.functional as F
@@ -14,12 +18,9 @@ from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
 )
-from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, load_frag_d
+from fragnnet.utils.frag_utils import NODE_FEAT_TO_IDX, load_dag_hdf5, load_frag_d
 from fragnnet.utils.misc_utils import get_pyg_memory_usage
-import lmdb
-import pickle
-import os
-import json
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,6 +40,7 @@ class SpecMolFragDataset(SpecMolDataset):
         mol_pp_sd: dict | None = None,  # preprocessed mol data
         frag_pl_sd: dict | None = None,  # preloaded frag data
         frag_pp_sd: dict | None = None,  # preprocessed frag data
+        pl_enable_progress_bar: bool = True,
         **kwargs,
     ) -> None:
         """
@@ -58,6 +60,7 @@ class SpecMolFragDataset(SpecMolDataset):
             mol_pp_sd: Optional shared dictionary for preprocessed molecular data.
             frag_pl_sd: Optional shared dictionary for preloaded fragmentation data.
             frag_pp_sd: Optional shared dictionary for preprocessed fragmentation data.
+            pl_enable_progress_bar: Whether to show tqdm progress bars during preprocessing.
             **kwargs: Additional keyword arguments.
         """
 
@@ -69,11 +72,19 @@ class SpecMolFragDataset(SpecMolDataset):
             split=split,
             subsample_params=subsample_params,
             spec_params=spec_params,
+            enable_progress_bar=pl_enable_progress_bar,
         )
         self.mol_params = mol_params
         self.frag_dp = frag_dp
-        self.frag_env=None
+        self.frag_env = None
+        self.frag_h5 = None  # h5py.File handle when using HDF5 backend
         self.frag_params = frag_params
+        if frag_dp.endswith(".h5"):
+            self.frag_backend = "h5"
+        elif os.path.isdir(frag_dp) and os.path.exists(os.path.join(frag_dp, "data.mdb")):
+            self.frag_backend = "lmdb"
+        else:
+            self.frag_backend = "folder"
 
         if spec_pp_sd is None:
             spec_pp_sd = {}
@@ -83,22 +94,51 @@ class SpecMolFragDataset(SpecMolDataset):
             frag_pl_sd = {}
         if frag_pp_sd is None:
             frag_pp_sd = {}
-        
+
         self._preprocess_spec(spec_pp_sd)
         self._preprocess_mol(mol_pp_sd)
         self._preprocess_frag(frag_pl_sd, frag_pp_sd)
 
-        meta_info_path=os.path.join("/".join(self.frag_dp.split("/")[:-1]), "meta_info.json")
+        meta_info_dir = os.path.dirname(os.path.abspath(self.frag_dp))
+        meta_info_path = os.path.join(meta_info_dir, "meta_info.json")
         if os.path.exists(meta_info_path):
             logger.info(f"loading meta info {meta_info_path}")
-            with open(meta_info_path, "r") as f:
-                precom_meta_info=json.load(f)
-            precom_meta_info={int(k):precom_meta_info[k] for k in precom_meta_info}
-            self.precom_meta_info=[]
+            with open(meta_info_path) as f:
+                precom_meta_info = json.load(f)
+            precom_meta_info = {int(k): value for k, value in precom_meta_info.items()}
+
+            self.precom_meta_info = []
+            self.precom_group_info = []
             for idx in range(len(self.spec_df)):
                 spec_entry = self.spec_df.iloc[idx]
                 mol_id = spec_entry["mol_id"]
+                if mol_id not in precom_meta_info:
+                    raise KeyError(f"Missing meta info for mol_id {mol_id} at sample index {idx}.")
+                if mol_id not in self.mol_df.index:
+                    raise KeyError(
+                        f"Missing mol_df entry for mol_id {mol_id} at sample index {idx}."
+                    )
+
+                adduct = spec_entry["prec_type"]
+                formula = self.mol_df.loc[mol_id]["formula"]
+
                 self.precom_meta_info.append(precom_meta_info[mol_id])
+                self.precom_group_info.append((adduct, mol_id, formula))
+
+        else:
+            # Pre-compute per-sample (adduct, mol_id, formula) for DualGroupDynamicBatchSampler.
+            # Reads only from spec_df / mol_df — no frag_pyg loading needed.
+            self.precom_group_info = []
+            for idx in range(len(self.spec_df)):
+                spec_entry = self.spec_df.iloc[idx]
+                mol_id = spec_entry["mol_id"]
+                if mol_id not in self.mol_df.index:
+                    raise KeyError(
+                        f"Missing mol_df entry for mol_id {mol_id} at sample index {idx}."
+                    )
+                adduct = spec_entry["prec_type"]
+                formula = self.mol_df.loc[mol_id]["formula"]
+                self.precom_group_info.append((adduct, mol_id, formula))
 
     @staticmethod
     def get_data_dict_types() -> list[str]:
@@ -124,17 +164,37 @@ class SpecMolFragDataset(SpecMolDataset):
         """
 
         # preload frag dags
-        if self.frag_env is None:
-            self.frag_env=lmdb.open(self.frag_dp,readahead=False, max_readers=2048, readonly=True, lock=False, meminit=False)
-            self.txn=self.frag_env.begin()
-        
+        if self.frag_backend == "h5" and self.frag_h5 is None:
+            import h5py
+
+            self.frag_h5 = h5py.File(self.frag_dp, "r")
+        elif self.frag_backend == "lmdb" and self.frag_env is None:
+            self.frag_env = lmdb.open(
+                self.frag_dp,
+                readahead=False,
+                max_readers=2048,
+                readonly=True,
+                lock=False,
+                meminit=False,
+            )
+            self.txn = self.frag_env.begin()
+        # folder backend: no setup needed
+
         if self.frag_params["preload"]:
             self.frag_entries = frag_pl_sd
             total_frag_entry_size = 0
             for mol_id in tqdm(
-                self.mol_df["mol_id"].values, desc="> preload frag", total=len(self.mol_df)
+                self.mol_df["mol_id"].values,
+                desc="> preload frag",
+                total=len(self.mol_df),
+                disable=not self.enable_progress_bar,
             ):
-                frag_entry =pickle.loads(bytes(self.txn.get(f"{mol_id:08d}".encode())))#load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
+                if self.frag_backend == "h5":
+                    frag_entry = load_dag_hdf5(self.frag_h5[f"{int(mol_id)}"])
+                elif self.frag_backend == "lmdb":
+                    frag_entry = pickle.loads(bytes(self.txn.get(f"{int(mol_id)}".encode())))
+                else:
+                    frag_entry = load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
                 total_frag_entry_size += get_pyg_memory_usage(frag_entry["dag"])
                 self.frag_entries[mol_id] = frag_entry
             logger.info(f"> total_frag_entry_size: {total_frag_entry_size / 1e6:.2f} MB")
@@ -148,6 +208,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 list(self.frag_entries.keys()),
                 desc="> preprocess frag",
                 total=len(self.frag_entries),
+                disable=not self.enable_progress_bar,
             ):
                 frag_data = self._process_neutral_frag(self.frag_entries.pop(k))
                 total_frag_data_size += get_pyg_memory_usage(frag_data["frag_pyg"])
@@ -220,7 +281,11 @@ class SpecMolFragDataset(SpecMolDataset):
 
         data = {**spec_data, **mol_data, **frag_data}
         if "mol_id" not in data:
-            data["mol_id"]=mol_id
+            data["mol_id"] = mol_id
+        if "prec_type" not in data:
+            data["prec_type"] = spec_entry["prec_type"]
+        if "formula" not in data:
+            data["formula"] = mol_entry["formula"]
         return data
 
     def _load_frag_entry(self, mol_id: str) -> dict:
@@ -233,13 +298,28 @@ class SpecMolFragDataset(SpecMolDataset):
         Returns:
             Dictionary containing DAG and fragmentation data.
         """
-        if self.frag_env is None:
-            self.frag_env=lmdb.open(self.frag_dp,readahead=False, readonly=True,max_readers=2048, lock=False, meminit=False)
-            self.txn=self.frag_env.begin() 
-        v=self.txn.get(f"{mol_id:08d}".encode())
-        assert v is not None, mol_id
-        frag_entry =pickle.loads(bytes(v))
-        return frag_entry
+        if self.frag_backend == "h5":
+            if self.frag_h5 is None:
+                import h5py
+
+                self.frag_h5 = h5py.File(self.frag_dp, "r")
+            return load_dag_hdf5(self.frag_h5[f"{int(mol_id)}"])
+        elif self.frag_backend == "lmdb":
+            if self.frag_env is None:
+                self.frag_env = lmdb.open(
+                    self.frag_dp,
+                    readahead=False,
+                    readonly=True,
+                    max_readers=2048,
+                    lock=False,
+                    meminit=False,
+                )
+                self.txn = self.frag_env.begin()
+            v = self.txn.get(f"{int(mol_id)}".encode())
+            assert v is not None, mol_id
+            return pickle.loads(bytes(v))
+        else:
+            return load_frag_d(mol_id, self.frag_dp, self.frag_params["compressed"])
 
     def _process_neutral_frag(self, frag_entry: dict) -> dict:
         """
@@ -429,7 +509,7 @@ class SpecMolFragDataset(SpecMolDataset):
         # prevent edge case causing crash
         if len(data_list) == 0:
             return {"batch_size": th.tensor(0)}
-        
+
         batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
         # special handling
         SpecMolFragDataset._special_collate(keys, collate_data)

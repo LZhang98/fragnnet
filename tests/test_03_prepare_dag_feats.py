@@ -7,12 +7,17 @@ Tests validate:
 - Function parameter handling
 """
 
+import bz2
+import gzip
 import importlib.util
+import pickle
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+
+from fragnnet.utils import frag_utils
 
 
 def load_prepare_module():
@@ -194,6 +199,7 @@ def test_dag_generation_parameters():
     args.wl_max_iterations = 3
     args.isotopes = True
     args.compress_dags = True
+    args.compress_format = "gz"
     args.use_cached_dag = False
 
     # Verify parameter structure
@@ -203,6 +209,57 @@ def test_dag_generation_parameters():
     assert isinstance(args.wl_max_iterations, int)
     assert isinstance(args.isotopes, bool)
     assert isinstance(args.compress_dags, bool)
+    assert args.compress_format in {"gz", "bz2"}
+
+
+def test_get_dag_output_path_with_gzip():
+    """Test DAG file naming for gzip compression."""
+
+    fp = frag_utils.get_dag_output_path(
+        dag_dp="/tmp/dags",
+        mol_id=42,
+        compress_dags=True,
+        compress_format="gz",
+    )
+    assert fp.endswith("42.pkl.gz")
+
+
+def test_get_dag_output_path_with_bz2():
+    """Test DAG file naming for bz2 compression."""
+
+    fp = frag_utils.get_dag_output_path(
+        dag_dp="/tmp/dags",
+        mol_id=42,
+        compress_dags=True,
+        compress_format="bz2",
+    )
+    assert fp.endswith("42.pkl.bz2")
+
+
+def test_dump_dag_pickle_round_trip_gzip():
+    """Test writing and reading a gzip-compressed DAG pickle."""
+
+    payload = {"dag": {"num_nodes": 3}, "meta": [1, 2, 3]}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fp = str(Path(tmpdir) / "1.pkl.gz")
+        frag_utils.dump_dag_pickle(fp, payload)
+        with gzip.open(fp, "rb") as f:
+            loaded = pickle.load(f)
+    assert loaded == payload
+
+
+def test_dump_dag_pickle_round_trip_bz2():
+    """Test writing and reading a bz2-compressed DAG pickle."""
+
+    payload = {"dag": {"num_nodes": 5}, "meta": [4, 5, 6]}
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fp = str(Path(tmpdir) / "2.pkl.bz2")
+        frag_utils.dump_dag_pickle(fp, payload)
+        with bz2.open(fp, "rb") as f:
+            loaded = pickle.load(f)
+    assert loaded == payload
 
 
 def test_output_structure():

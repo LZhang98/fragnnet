@@ -41,6 +41,9 @@ pip install --no-index  \
  dgl==2.4.0  \
  omegaconf  \
  cython==3.0.12 \
+ pandarallel==1.6.5 \
+ lmdb==1.7.5 \
+ h5py
 
 # intall from whl
 cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
@@ -63,8 +66,8 @@ DATASET_NAME=nist23
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
-ISO_FALSE=False
-SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FALSE}
+ISO_FLAG=False
+SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}
 DSETS='nist23_hr1 nist23_hr2'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]-'
 INST='FT QTOF IT'
@@ -79,7 +82,7 @@ echo DSETS: ${DSETS}
 echo PREC: ${PREC}
 echo INST: ${INST}
 echo FRAG_MODE: ${FRAG_MODE}
-echo ISO_FALSE: ${ISO_FALSE}
+echo ISO_FLAG: ${ISO_FLAG}
 echo DEST_DP: ${DEST_DP}
 
 echo create local proc_dp: ${WORKING_DIR}/data/proc
@@ -106,10 +109,11 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --prec_types ${PREC}\
     --inst_types ${INST} \
     --nb_isomorphic ${NB_FLAG} \
-    --isotopes ${ISO_FALSE} \
+    --isotopes ${ISO_FLAG} \
     --frag_mode ${FRAG_MODE} \
     --max_h_transfer ${MAX_H_TRANSFER} \
-    --dsets ${DSETS}
+    --dsets ${DSETS} \
+    --use_lmdb False
 
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/

@@ -513,7 +513,7 @@ class MLPBlocks(nn.Module):
         else:
             assert normalization == "none", normalization
             norm_mod = nn.Identity()
-        self.norms = get_clones(norm_mod, num_layers)
+        self.norms = get_clones(norm_mod, num_layers - 1)
 
     def forward(self, x):
         output = x
@@ -679,13 +679,12 @@ class SpecFFN(nn.Module):
         self.log_min = log_min
 
     def _compute_output_size(self):
-        self.mz_bins = nn.Parameter(
-            th.arange(
-                self.mz_bin_res, self.mz_max + self.mz_bin_res, self.mz_bin_res, dtype=th.float32
-            )
+        mz_bins = th.arange(
+            self.mz_bin_res, self.mz_max + self.mz_bin_res, self.mz_bin_res, dtype=th.float32
         )
-        self.mzs = nn.Parameter(self.mz_bins - 0.5 * self.mz_bin_res)
-        self.output_size = self.mzs.shape[0]
+        self.register_buffer("mz_bins", mz_bins)
+        self.register_buffer("mzs", mz_bins - 0.5 * self.mz_bin_res)
+        self.output_size = mz_bins.shape[0]
 
     def _prec_mz_to_idx(self, prec_mz):
         prec_mz_idx = th.bucketize(prec_mz, self.mz_bins.to(prec_mz.device), right=True)
@@ -836,44 +835,44 @@ class SetTransformer(nn.Module):
                 return self.fc(x)
         else:
             # Variable-size sets: (total_elements, input_dim) with batch_idx
+            # Pad to fixed size and use key_padding_mask for a single batched attention call.
             num_batches = int(batch_idx.max().item()) + 1
-            output_list = []
+            set_sizes = [int((batch_idx == i).sum().item()) for i in range(num_batches)]
+            max_size = max(set_sizes)
+            input_dim = x.shape[-1]
 
-            for batch_id in range(num_batches):
-                # Extract elements for this batch
-                mask = batch_idx == batch_id
-                x_batch = x[mask].unsqueeze(0)  # (1, set_size_i, input_dim)
+            # Build padded input (num_batches, max_size, input_dim) and padding mask.
+            # key_padding_mask: True = position is padding (ignored by attention).
+            x_padded = x.new_zeros(num_batches, max_size, input_dim)
+            key_padding_mask = th.ones(num_batches, max_size, dtype=th.bool, device=x.device)
+            for i in range(num_batches):
+                idx_i = (batch_idx == i).nonzero(as_tuple=True)[0]
+                x_padded[i, : set_sizes[i]] = x[idx_i]
+                key_padding_mask[i, : set_sizes[i]] = False
 
-                # Apply SetTransformer: first attend from inputs to inducing points
-                inducing_points = self.inducing_points.unsqueeze(0)  # (1, num_inds, input_dim)
+            inducing_points = self.inducing_points.unsqueeze(0).expand(
+                num_batches, -1, -1
+            )  # (num_batches, num_inds, input_dim)
 
-                # Encoder: inputs attend to inducing points (queries=inducing_points, keys/values=inputs)
-                h, _ = self.attention_blocks[0](
-                    inducing_points, x_batch, x_batch
-                )  # (1, num_inds, input_dim)
+            # Encoder: inducing points attend over inputs (masked padding ignored).
+            h, _ = self.attention_blocks[0](
+                inducing_points, x_padded, x_padded, key_padding_mask=key_padding_mask
+            )  # (num_batches, num_inds, input_dim)
 
-                # Additional encoding layers: inducing points attend to themselves
-                for i in range(1, len(self.attention_blocks)):
-                    h, _ = self.attention_blocks[i](h, h, h)
+            for i in range(1, len(self.attention_blocks)):
+                h, _ = self.attention_blocks[i](h, h, h)
 
-                if self.return_nodes:
-                    # Decoder: map inducing points back to per-node outputs
-                    # queries=original inputs, keys/values=encoded inducing points
-                    x_decoded, _ = self.decoder_attn(x_batch, h, h)  # (1, set_size_i, input_dim)
-                    x_out = self.decoder_fc(x_decoded.squeeze(0))  # (set_size_i, output_dim)
-                    output_list.append(x_out)
-                else:
-                    # Aggregate: take mean of inducing points for set-level output
-                    x_agg = h.mean(dim=1)  # (1, input_dim)
-                    output_list.append(x_agg.squeeze(0))
-
-            # Stack all batch outputs
             if self.return_nodes:
-                x = th.cat(output_list, dim=0)  # (total_elements, output_dim)
+                # Decoder: original inputs attend over encoded inducing points.
+                x_decoded, _ = self.decoder_attn(x_padded, h, h)  # (num_batches, max_size, input_dim)
+                x_decoded = self.decoder_fc(x_decoded)  # (num_batches, max_size, output_dim)
+                # Strip padding and concatenate back to (total_elements, output_dim).
+                return th.cat(
+                    [x_decoded[i, : set_sizes[i]] for i in range(num_batches)], dim=0
+                )
             else:
-                x = th.stack(output_list, dim=0)  # (num_batches, input_dim)
-                x = self.fc(x)
-            return x
+                x_agg = h.mean(dim=1)  # (num_batches, input_dim)
+                return self.fc(x_agg)
 
 
 def reverse_prediction(raw_prediction, prec_mass_idx, prec_mass_offset):

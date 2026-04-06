@@ -170,6 +170,8 @@ def sparse_cross_entropy_seq(
     tolerance_min_mz: float,
     tolerance_multiple: float,
     gaussian_renormalize: bool,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
 ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     """compute sparse cross entropy in squence
 
@@ -208,13 +210,16 @@ def sparse_cross_entropy_seq(
         b_true_mzs = true_mzs[b_true_mask]
         b_pred_logprobs = pred_logprobs[b_pred_mask]
         b_pred_mzs = pred_mzs[b_pred_mask]
+        # per-sample tolerance (falls back to global scalars when not provided)
+        b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
+        b_min_mz = min_mz_per_sample[batch_idx].item() if min_mz_per_sample is not None else tolerance_min_mz
         # get matches
         b_match_mask = calculate_match_mzs(
             b_true_mzs,
             b_pred_mzs,
-            tolerance=tolerance_multiple * tolerance,
+            tolerance=tolerance_multiple * b_tolerance,
             relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
+            tolerance_min_mz=b_min_mz,
         )
         b_match_mask = th.as_tensor(b_match_mask, device=b_true_mzs.device)
         if tolerance_multiple == -1:
@@ -230,8 +235,8 @@ def sparse_cross_entropy_seq(
             b_pred_mzs=b_pred_mzs,
             b_pred_logprobs=b_pred_logprobs,
             relative=relative,
-            tolerance=tolerance,
-            tolerance_min_mz=tolerance_min_mz,
+            tolerance=b_tolerance,
+            tolerance_min_mz=b_min_mz,
             tolerance_multiple=tolerance_multiple,
             gaussian_renormalize=gaussian_renormalize,
         )
@@ -273,6 +278,8 @@ def sparse_cross_entropy_vec(
     oos_tolerance_multiple: float,
     gaussian_renormalize: bool,
     loss_batch_size: int,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
 ) -> tuple[th.Tensor, th.Tensor, th.Tensor, th.Tensor]:
     """
     Vectorized computation of sparse cross-entropy loss for batched spectra.
@@ -320,6 +327,18 @@ def sparse_cross_entropy_vec(
     oos_ce = th.zeros(batch_size, dtype=float_dtype, device=device)
     true_oos_logprobs = th.zeros(batch_size, dtype=float_dtype, device=device)
 
+    # Expand per-sample tolerances to per-peak if provided
+    if tol_per_sample is not None:
+        tol_per_true_peak = tol_per_sample[true_batch_idxs].to(float_dtype)
+        min_mz_per_true_peak = min_mz_per_sample[true_batch_idxs].to(float_dtype)
+        tol_per_pred_peak = tol_per_sample[pred_batch_idxs].to(float_dtype)
+        min_mz_per_pred_peak = min_mz_per_sample[pred_batch_idxs].to(float_dtype)
+    else:
+        tol_per_true_peak = None
+        min_mz_per_true_peak = None
+        tol_per_pred_peak = None
+        min_mz_per_pred_peak = None
+
     # Loop over loss batches for memory efficiency
     for bl in range(loss_num_batches):
         # Compute batch slice indices
@@ -340,6 +359,24 @@ def sparse_cross_entropy_vec(
         bl_pred_mzs = pred_mzs[bl_pred_lower:bl_pred_upper]
         bl_pred_oos_logprobs = pred_oos_logprobs[bl_lower:bl_upper]
 
+        # Slice per-peak tolerance arrays for this loss batch
+        bl_tol_per_true = (
+            tol_per_true_peak[bl_true_lower:bl_true_upper] if tol_per_true_peak is not None else None
+        )
+        bl_min_mz_per_true = (
+            min_mz_per_true_peak[bl_true_lower:bl_true_upper]
+            if min_mz_per_true_peak is not None
+            else None
+        )
+        bl_tol_per_pred = (
+            tol_per_pred_peak[bl_pred_lower:bl_pred_upper] if tol_per_pred_peak is not None else None
+        )
+        bl_min_mz_per_pred = (
+            min_mz_per_pred_peak[bl_pred_lower:bl_pred_upper]
+            if min_mz_per_pred_peak is not None
+            else None
+        )
+
         # Create mask for matching batch indices
         bl_batch_mask = bl_true_batch_idxs.reshape(-1, 1) == bl_pred_batch_idxs.reshape(1, -1)
         # Create mask for matching m/z values within tolerance
@@ -349,6 +386,10 @@ def sparse_cross_entropy_vec(
             tolerance=oos_tolerance_multiple * tolerance,
             relative=relative,
             tolerance_min_mz=tolerance_min_mz,
+            tol_per_true=(
+                oos_tolerance_multiple * bl_tol_per_true if bl_tol_per_true is not None else None
+            ),
+            min_mz_per_true=bl_min_mz_per_true,
         )
         bl_match_mask = th.as_tensor(bl_match_mask, device=device)
         # Combine masks: only consider matches within same batch and within m/z tolerance
@@ -360,7 +401,10 @@ def sparse_cross_entropy_vec(
 
         # Compute Gaussian stds and log truncation factors for predictions
         if relative:
-            bl_stds = th.clamp(bl_pred_mzs, min=tolerance_min_mz) * tolerance
+            if bl_tol_per_pred is not None:
+                bl_stds = th.maximum(bl_pred_mzs, bl_min_mz_per_pred) * bl_tol_per_pred
+            else:
+                bl_stds = th.clamp(bl_pred_mzs, min=tolerance_min_mz) * tolerance
         else:
             bl_stds = tolerance * th.ones_like(bl_pred_mzs)
         bl_vars = bl_stds**2
@@ -454,7 +498,7 @@ def get_sparse_cross_entropy_fn(
             msg = f"Vectorized loss only supports 'gaussian' distribution, got '{dist}'"
             raise NotImplementedError(msg)
 
-        def sce_fn(*args):
+        def sce_fn(*args, tol_per_sample=None, min_mz_per_sample=None):
             return sparse_cross_entropy_vec(
                 *args,
                 tolerance=tolerance,
@@ -463,6 +507,8 @@ def get_sparse_cross_entropy_fn(
                 oos_tolerance_multiple=oos_tolerance_multiple,
                 gaussian_renormalize=gaussian_renormalize,
                 loss_batch_size=loss_batch_size,
+                tol_per_sample=tol_per_sample,
+                min_mz_per_sample=min_mz_per_sample,
             )
     else:
         if dist == "gaussian":
@@ -470,7 +516,7 @@ def get_sparse_cross_entropy_fn(
         else:
             tolerance_multiple = pm_tolerance_multiple
 
-        def sce_fn(*args):
+        def sce_fn(*args, tol_per_sample=None, min_mz_per_sample=None):
             return sparse_cross_entropy_seq(
                 *args,
                 ce_fn=ce_fn,
@@ -479,6 +525,8 @@ def get_sparse_cross_entropy_fn(
                 tolerance_min_mz=tolerance_min_mz,
                 tolerance_multiple=tolerance_multiple,
                 gaussian_renormalize=gaussian_renormalize,
+                tol_per_sample=tol_per_sample,
+                min_mz_per_sample=min_mz_per_sample,
             )
 
     return sce_fn
@@ -693,6 +741,8 @@ def sparse_cosine_distance_hungarian(
     relative: bool = True,
     tolerance_min_mz: float = TOLERANCE_MIN_MZ,
     log_distance: bool = False,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
 ) -> th.Tensor:
     """
     Compute the sparse cosine distance between spectra using the Hungarian algorithm for optimal matching.
@@ -734,13 +784,16 @@ def sparse_cosine_distance_hungarian(
         # L2 normalize log-probabilities for cosine similarity
         b_true_logprobs = b_true_logprobs - 0.5 * th.logsumexp(2 * b_true_logprobs, dim=0)
         b_pred_logprobs = b_pred_logprobs - 0.5 * th.logsumexp(2 * b_pred_logprobs, dim=0)
+        # per-sample tolerance (falls back to global scalars when not provided)
+        b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
+        b_min_mz = min_mz_per_sample[batch_idx].item() if min_mz_per_sample is not None else tolerance_min_mz
         # Compute m/z matching mask within tolerance
         b_match_mzs = calculate_match_mzs(
             b_true_mzs,
             b_pred_mzs,
-            tolerance=tolerance,
+            tolerance=b_tolerance,
             relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
+            tolerance_min_mz=b_min_mz,
         )
         b_match_mzs = th.as_tensor(b_match_mzs, device=b_true_mzs.device)
         # Identify which true and predicted peaks have matches
@@ -781,6 +834,8 @@ def sparse_jensen_shannon_divergence_hungarian(
     relative: bool = True,
     tolerance_min_mz: float = TOLERANCE_MIN_MZ,
     log_min: float = EPS,
+    tol_per_sample: th.Tensor | None = None,
+    min_mz_per_sample: th.Tensor | None = None,
 ) -> th.Tensor:
     """
     Compute the sparse Jensen-Shannon divergence between spectra using the Hungarian algorithm for optimal matching.
@@ -832,13 +887,16 @@ def sparse_jensen_shannon_divergence_hungarian(
         if b_pred_sum > 0:
             b_pred_probs = b_pred_probs / b_pred_sum
 
+        # per-sample tolerance (falls back to global scalars when not provided)
+        b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
+        b_min_mz = min_mz_per_sample[batch_idx].item() if min_mz_per_sample is not None else tolerance_min_mz
         # Compute m/z matching mask within tolerance
         b_match_mzs = calculate_match_mzs(
             b_true_mzs,
             b_pred_mzs,
-            tolerance=tolerance,
+            tolerance=b_tolerance,
             relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
+            tolerance_min_mz=b_min_mz,
         )
         b_match_mzs = th.as_tensor(b_match_mzs, device=b_true_mzs.device)
 
@@ -1019,8 +1077,12 @@ def get_pairwise_cossim(
     mz_bin_res: float,
     chunk_size: int = 32,
 ) -> th.Tensor:
-    """
-    Compute pairwise cosine similarity matrix for a batch of spectra.
+    """Compute pairwise cosine similarity matrix for a batch of spectra.
+
+    Avoids materializing the full [batch_size, num_unique_bins] dense matrix by
+    building chunk-sized row slices on the fly. Peak GPU memory for the spectrum
+    vectors is O(chunk_size * num_unique_bins) instead of O(batch_size * num_unique_bins),
+    which prevents OOM when batch_size is large.
 
     Args:
         mzs: m/z values.
@@ -1029,12 +1091,12 @@ def get_pairwise_cossim(
         batch_size: Number of spectra in the batch.
         mz_max: Maximum m/z value.
         mz_bin_res: m/z bin resolution.
-        chunk_size: Batch size for chunked computation to save memory.
+        chunk_size: Number of rows to process at once. Controls the memory/speed
+            trade-off: smaller values use less memory but more iterations.
 
     Returns:
         Pairwise similarity matrix of shape [batch_size, batch_size].
     """
-
     batch_size = int(batch_size)
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
@@ -1048,35 +1110,41 @@ def get_pairwise_cossim(
     norm_logprobs = scatter_logl2normalize(bin_logprobs, bin_batch_idxs)
     norm_probs = norm_logprobs.exp()
 
-    # Optimization: only use bins that are actually present in data
-    # This avoids allocating a massive 150k-dim dense matrix
+    # Compact bin space: avoids 150k-wide matrices when only a few bins are occupied
     unique_bins = th.unique(bin_idxs)
     num_unique_bins = unique_bins.numel()
-
-    # Create a mapping from old bin indices to new compact indices
     bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
-
-    # Remap indices to compact space
     compact_bin_idxs = bin_idx_map[bin_idxs]
 
-    indices = th.stack([bin_batch_idxs, compact_bin_idxs])
+    effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    V = th.sparse_coo_tensor(indices, norm_probs, (batch_size, num_unique_bins), device=mzs.device)
-    V_dense = V.to_dense()
+    def _make_chunk(row_start: int, row_end: int) -> th.Tensor:
+        """Build a dense [row_end - row_start, num_unique_bins] matrix for the given rows."""
+        mask = (bin_batch_idxs >= row_start) & (bin_batch_idxs < row_end)
+        V = th.zeros(
+            (row_end - row_start, num_unique_bins), device=mzs.device, dtype=norm_probs.dtype
+        )
+        V[bin_batch_idxs[mask] - row_start, compact_bin_idxs[mask]] = norm_probs[mask]
+        return V
 
-    if chunk_size is None or chunk_size >= batch_size:
-        # Compute pairwise similarity
-        S = th.mm(V_dense, V_dense.t())
-    else:
-        S = th.zeros((batch_size, batch_size), device=mzs.device, dtype=V_dense.dtype)
-        for i in range(0, batch_size, chunk_size):
-            i_end = min(i + chunk_size, batch_size)
-            V_i = V_dense[i:i_end]
-            for j in range(0, batch_size, chunk_size):
-                j_end = min(j + chunk_size, batch_size)
-                V_j = V_dense[j:j_end]
-                S[i:i_end, j:j_end] = th.mm(V_i, V_j.t())
+    S = th.zeros((batch_size, batch_size), device=mzs.device, dtype=norm_probs.dtype)
+
+    # Exploit symmetry: only compute upper triangle (j >= i) and mirror.
+    # V_i is built once per i-chunk; V_j is built once per (i, j) pair with j >= i.
+    for i in range(0, batch_size, effective_chunk):
+        i_end = min(i + effective_chunk, batch_size)
+        V_i = _make_chunk(i, i_end)
+        for j in range(i, batch_size, effective_chunk):
+            j_end = min(j + effective_chunk, batch_size)
+            if i == j:
+                block = th.mm(V_i, V_i.t())
+                S[i:i_end, i:i_end] = block
+            else:
+                V_j = _make_chunk(j, j_end)
+                block = th.mm(V_i, V_j.t())
+                S[i:i_end, j:j_end] = block
+                S[j:j_end, i:i_end] = block.t()
 
     return S
 
@@ -1090,8 +1158,10 @@ def get_pairwise_jss_sim(
     mz_bin_res: float,
     chunk_size: int = 32,
 ) -> th.Tensor:
-    """
-    Compute pairwise Jensen-Shannon similarity matrix for a batch of spectra.
+    """Compute pairwise Jensen-Shannon similarity matrix for a batch of spectra.
+
+    Avoids materializing the full [batch_size, num_unique_bins] dense matrix by
+    building chunk-sized row slices on the fly.
 
     Args:
         mzs: m/z values.
@@ -1100,12 +1170,12 @@ def get_pairwise_jss_sim(
         batch_size: Number of spectra in the batch.
         mz_max: Maximum m/z value.
         mz_bin_res: m/z bin resolution.
-        chunk_size: Batch size for chunked computation to save memory.
+        chunk_size: Number of rows to process at once. Controls the memory/speed
+            trade-off: smaller values use less memory but more iterations.
 
     Returns:
         Pairwise similarity matrix of shape [batch_size, batch_size].
     """
-
     batch_size = int(batch_size)
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
@@ -1116,49 +1186,51 @@ def get_pairwise_jss_sim(
     )
 
     # Normalize (L1 on probabilities)
-    # log_softmax to get log probabilities
     log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
     probs = log_probs.exp()
 
-    # Optimization: only use bins that are actually present in data
+    # Compact bin space
     unique_bins = th.unique(bin_idxs)
     num_unique_bins = unique_bins.numel()
-
-    # Create a mapping from old bin indices to new compact indices
     bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
-
-    # Remap indices to compact space
     compact_bin_idxs = bin_idx_map[bin_idxs]
 
-    indices = th.stack([bin_batch_idxs, compact_bin_idxs])
+    effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    V = th.sparse_coo_tensor(indices, probs, (batch_size, num_unique_bins), device=mzs.device)
-    V_dense = V.to_dense()  # (B, D)
+    def _make_chunk(row_start: int, row_end: int) -> th.Tensor:
+        """Build a dense [row_end - row_start, num_unique_bins] probability matrix."""
+        mask = (bin_batch_idxs >= row_start) & (bin_batch_idxs < row_end)
+        P = th.zeros(
+            (row_end - row_start, num_unique_bins), device=mzs.device, dtype=probs.dtype
+        )
+        P[bin_batch_idxs[mask] - row_start, compact_bin_idxs[mask]] = probs[mask]
+        return P
 
-    # Compute JSS
-    # JSD(P, Q) = H(M) - 0.5 H(P) - 0.5 H(Q)
-    # M = 0.5 (P + Q)
-    P = V_dense
+    # H(P) for each spectrum: computed chunk-by-chunk to avoid full dense matrix
+    H_P = th.zeros(batch_size, device=mzs.device, dtype=probs.dtype)
+    for i in range(0, batch_size, effective_chunk):
+        i_end = min(i + effective_chunk, batch_size)
+        P_i = _make_chunk(i, i_end)
+        H_P[i:i_end] = -th.sum(P_i * th.log(P_i + EPS), dim=1)
 
-    # H(P)
-    H_P = -th.sum(P * th.log(P + EPS), dim=1)  # (B,)
-
-    # H(M)
-    H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=P.dtype)
-    if chunk_size is None or chunk_size >= batch_size:
-        for i in range(batch_size):
-            M_i = 0.5 * (P[i].unsqueeze(0) + P)
-            H_M[i] = -th.sum(M_i * th.log(M_i + EPS), dim=1)
-    else:
-        for i in range(0, batch_size, chunk_size):
-            i_end = min(i + chunk_size, batch_size)
-            P_i = P[i:i_end]  # (chunk_i, D)
-            for j in range(0, batch_size, chunk_size):
-                j_end = min(j + chunk_size, batch_size)
-                P_j = P[j:j_end]  # (chunk_j, D)
+    # H(M) where M = 0.5*(P_i + P_j): exploit symmetry (j >= i)
+    H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=probs.dtype)
+    for i in range(0, batch_size, effective_chunk):
+        i_end = min(i + effective_chunk, batch_size)
+        P_i = _make_chunk(i, i_end)
+        for j in range(i, batch_size, effective_chunk):
+            j_end = min(j + effective_chunk, batch_size)
+            if i == j:
+                M_ij = 0.5 * (P_i.unsqueeze(1) + P_i.unsqueeze(0))
+                block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
+                H_M[i:i_end, i:i_end] = block
+            else:
+                P_j = _make_chunk(j, j_end)
                 M_ij = 0.5 * (P_i.unsqueeze(1) + P_j.unsqueeze(0))
-                H_M[i:i_end, j:j_end] = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
+                block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
+                H_M[i:i_end, j:j_end] = block
+                H_M[j:j_end, i:i_end] = block.t()
 
     JSD = H_M - 0.5 * H_P.unsqueeze(1) - 0.5 * H_P.unsqueeze(0)
     JSS = 1.0 - JSD / math.log(2.0)
@@ -1414,13 +1486,10 @@ def get_pairwise_jss_sim_hun(
 
     sim_matrix = th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
-    # Separate spectra
-    spectra_mzs = []
-    spectra_logprobs = []
-    for i in range(batch_size):
-        mask = batch_idxs == i
-        spectra_mzs.append(mzs[mask])
-        spectra_logprobs.append(logprobs[mask])
+    # Separate spectra using split (O(num_peaks) vs O(batch_size * num_peaks) mask loop)
+    counts = th.bincount(batch_idxs, minlength=batch_size).tolist()
+    spectra_mzs = list(th.split(mzs, counts))
+    spectra_logprobs = list(th.split(logprobs, counts))
 
     for i in range(batch_size):
         # Self similarity is always 1.
@@ -1476,13 +1545,10 @@ def get_pairwise_cross_entropy_hun(
 
     ce_matrix = th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
 
-    # Separate spectra
-    spectra_mzs = []
-    spectra_logprobs = []
-    for i in range(batch_size):
-        mask = batch_idxs == i
-        spectra_mzs.append(mzs[mask])
-        spectra_logprobs.append(logprobs[mask])
+    # Separate spectra using split (O(num_peaks) vs O(batch_size * num_peaks) mask loop)
+    counts = th.bincount(batch_idxs, minlength=batch_size).tolist()
+    spectra_mzs = list(th.split(mzs, counts))
+    spectra_logprobs = list(th.split(logprobs, counts))
 
     # Fill matrix
     # CE is NOT symmetric. Loop over all pairs.

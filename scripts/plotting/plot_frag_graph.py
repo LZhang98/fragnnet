@@ -1,13 +1,11 @@
 from io import BytesIO
 
 from PIL import Image
-from rdkit import Chem
-from rdkit.Chem import AllChem as Chem
-from rdkit.Chem.Draw import MolDraw2DCairo
+from rdkit.Chem import MolFromSmiles
+from rdkit.Chem.Draw.rdMolDraw2D import MolDraw2DCairo
 
 from fragnnet.utils.frag_utils import th_long_to_mask, timed_get_dags
 from fragnnet.utils.plot_utils import get_highlighted_bonds
-from fragnnet.utils.spec_utils import *
 
 
 def plot_mol_frag_axes(
@@ -28,9 +26,22 @@ def plot_mol_frag_axes(
 
 
 if __name__ == "__main__":
-    mol = Chem.MolFromSmiles("C(N(C))O")
+    mol = MolFromSmiles("C(N(C))O")
     depth = 3
-    frag_d = timed_get_dags(mol, 0, depth, True, 4, 150, False, False, 1, None, False, False, False)
+    _, frag_d = timed_get_dags(
+        mol=mol,
+        mol_id=0,
+        max_depth=depth,
+        h_prior=True,
+        max_h_transfer=4,
+        max_time=150,
+        isotopes=False,
+        nb_isomorphic=False,
+        wl_max_iterations=1,
+        multi_cut_bfs=False,
+        max_cut_size=2,
+        smarts_prepass=False,
+    )
     # print(frag_d)
     data = frag_d["dag"]
     # networkX_graph = to_networkx(data, node_attrs=["x"], edge_attrs=["edge_attr"])

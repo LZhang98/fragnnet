@@ -562,13 +562,17 @@ def batch_mols_frags(
 
     # Assert that the number of graphs in both molecule and fragment batches matches the batch size
     assert mol_pyg.num_graphs == frag_pyg.num_graphs == batch_size
-    # Assert that the node feature indices and edge feature indices are consistent across all graphs in the fragment batch
-    assert all(
-        th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i]) for i in range(batch_size)
-    )
-    assert all(
-        th.all(frag_pyg.edge_feat_idxs[0] == frag_pyg.edge_feat_idxs[i]) for i in range(batch_size)
-    )
+    # Assert that the node/edge feature indices are consistent — gated so they don't run every batch
+    # in production (Python's -O flag or PYTHONOPTIMIZE=1 disables __debug__ blocks).
+    if __debug__:
+        assert all(
+            th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i])
+            for i in range(batch_size)
+        )
+        assert all(
+            th.all(frag_pyg.edge_feat_idxs[0] == frag_pyg.edge_feat_idxs[i])
+            for i in range(batch_size)
+        )
 
     # Compute the cumulative sum of nodes for molecules and fragments, to track the total number of nodes per graph
     mol_num_nodes = [g.num_nodes for g in mol_pyg_list]

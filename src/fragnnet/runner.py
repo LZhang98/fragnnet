@@ -226,16 +226,28 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
     elif config_d["dual_group_dynamic_batch_sampler"]:
         if split == "train":
             return_batch_at = config_d["train_batch_size"] * config_d["accumulate_grad_batches"]
+            batch_sampler = DualGroupDynamicBatchSampler(
+                ds,
+                max_num=config_d["dual_group_dynamic_batch_sampler_max"],
+                limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
+                skip_too_big=True,
+                return_batch_at=return_batch_at,
+                sample_k1=config_d["dual_group_sampler_k1"],
+                sample_k2=config_d["dual_group_sampler_k2"],
+                sample_k1_per_key=config_d["dual_group_sampler_k1_per_key"],
+                sample_k2_per_key=config_d["dual_group_sampler_k2_per_key"],
+                generator=generator,
+            )
         else:
             return_batch_at = config_d["eval_batch_size"]
-
-        batch_sampler = DualGroupDynamicBatchSampler(
-            ds,
-            max_num=config_d["dual_group_dynamic_batch_sampler_max"],
-            limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
-            skip_too_big=True,
-            return_batch_at=return_batch_at,
-        )
+            batch_sampler = SpecMolFragDynamicBatchSampler(
+                ds,
+                max_num=config_d["dual_group_dynamic_batch_sampler_max"],
+                limited_by=config_d["dual_group_dynamic_batch_sampler_mode"],
+                skip_too_big=False,
+                return_batch_at=return_batch_at,
+                sampler=sampler,
+            )
         dl_param_d["batch_sampler"] = batch_sampler
     else:
         # Standard batching
@@ -249,6 +261,58 @@ def init_dataloader(ds: Dataset, config_d: dict) -> DataLoader:
 
     dl = DataLoader(**dl_param_d)
     return dl
+
+
+def validate_sampler_config(config_d: dict) -> None:
+    """Validate dynamic batch sampler config entries.
+
+    Args:
+        config_d: Experiment config dictionary.
+
+    Raises:
+        ValueError: If the sampler configuration is invalid.
+    """
+
+
+    if config_d["dynamic_batch_sampler"] and config_d["dual_group_dynamic_batch_sampler"]:
+        raise ValueError("dynamic_batch_sampler and dual_group_dynamic_batch_sampler are mutually exclusive")
+
+    if config_d["dynamic_batch_sampler"]:
+        if config_d["model_type"] != "frag_gnn":
+            raise ValueError("Dynamic batch sampler can only be used with frag_gnn model")
+        if config_d["automatic_optimization"]:
+            raise ValueError(
+                f"Dynamic batch sampler cannot be used with automatic optimization "
+                f"(got automatic_optimization={config_d['automatic_optimization']})"
+            )
+        if config_d["dynamic_batch_sampler_mode"] not in ["frag_node", "frag_edge"]:
+            raise ValueError(
+                f"Dynamic batch sampler only supports frag_node or frag_edge mode "
+                f"(got '{config_d['dynamic_batch_sampler_mode']}')"
+            )
+        if config_d["dynamic_batch_sampler_max"] is None:
+            raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
+
+    if  config_d["dual_group_dynamic_batch_sampler"]:
+
+        if config_d["model_type"] != "frag_gnn":
+            raise ValueError("Dual-group dynamic batch sampler can only be used with frag_gnn model")
+        if config_d["automatic_optimization"]:
+            raise ValueError(
+                f"Dual-group dynamic batch sampler cannot be used with automatic optimization "
+                f"(got automatic_optimization={config_d['automatic_optimization']})"
+            )
+        dual_mode = config_d.get("dual_group_dynamic_batch_sampler_mode")
+        if dual_mode not in ["frag_node", "frag_edge"]:
+            raise ValueError(
+                f"Dual-group dynamic batch sampler only supports frag_node or frag_edge mode "
+                f"(got '{dual_mode}')"
+            )
+        dual_max = config_d.get("dual_group_dynamic_batch_sampler_max")
+        if dual_max is None:
+            raise ValueError(
+                "Dual-group dynamic batch sampler requires dual_group_dynamic_batch_sampler_max to be set"
+            )
 
 
 def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list):
@@ -486,23 +550,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         test_ds = dses[2]
 
     # check config for sampler
-    if config_d["dynamic_batch_sampler"]:
-        assert config_d["model_type"] == "frag_gnn", (
-            "Dynamic batch sampler can only be use with frag_gnn model"
-        )
-        assert not config_d["automatic_optimization"], (
-            f"Dynamic batch sampler can not use in junction of automatic optimization {config_d['automatic_optimization']}"
-        )
-        assert config_d["dynamic_batch_sampler_mode"] in ["frag_node", "frag_edge"], (
-            f"Dynamic batch sampler only support frag_node or frag_edge mode (given {config_d['dynamic_batch_sampler_mode']}) "
-        )
-        assert config_d["dynamic_batch_sampler_max"] is not None, (
-            "Dynamic batch sampler needs a max num"
-        )
-    if config_d["frag_gnn_type"] == "NodeMLP" and config_d["dynamic_batch_sampler"]:
-        assert config_d["dynamic_batch_sampler_mode"] == "frag_node", (
-            f"Dynamic batch sampler can only be use with dynamic_batch_sampler_mode frag_node, not {config_d['dynamic_batch_sampler_mode']}"
-        )
+    validate_sampler_config(config_d)
 
     # check config for CMF
     if (
@@ -564,11 +612,18 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
             # https://discuss.pytorch.org/t/how-to-share-data-among-dataloader-processes-to-save-memory/108772
             # https://ppwwyyxx.com/blog/2022/Demystify-RAM-Usage-in-Multiprocess-DataLoader/
             trainer_param_d["reload_dataloaders_every_n_epochs"] = 1
-    elif config_d["dynamic_batch_sampler"]:
+    elif config_d["dynamic_batch_sampler"] or config_d["dual_group_dynamic_batch_sampler"]:
         # with out this progress will not track dataset length change
         # this will call train_dataloader and val_dataloader before every epoch
         # not sure why this fixed our problem but it works
         trainer_param_d["reload_dataloaders_every_n_epochs"] = 1
+        # val_check_interval=1.0 (default) converts to a step count = len(train_dl).
+        # With a dynamic batch sampler, len(train_dl) varies per epoch (different random
+        # sample mixes → different fragment counts → different number of packed batches).
+        # If Lightning caches the step count from the first epoch, val misses epoch ends
+        # in later epochs. check_val_every_n_epoch=1 switches to epoch-boundary triggering
+        # and guarantees val always runs at the end of every epoch.
+        trainer_param_d["check_val_every_n_epoch"] = 1
 
     trainer = L.Trainer(**trainer_param_d)
 

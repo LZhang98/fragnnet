@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import time
+from typing import cast
 
 import pandas as pd
 from tqdm import tqdm
@@ -170,7 +171,11 @@ if __name__ == "__main__":
     if os.path.exists(args.frag_dp):
         logger.info("Output directory already exists")
         existing_files = len(
-            [f for f in os.listdir(args.frag_dp) if f.endswith(".pkl") or f.endswith(".pkl.gz")]
+            [
+                f
+                for f in os.listdir(args.frag_dp)
+                if f.endswith(".pickle") or f.endswith(".pickle.bz2")
+            ]
         )
         logger.info(f"Found {existing_files} existing fragment files in output directory")
         if args.allow_cached:
@@ -244,7 +249,14 @@ if __name__ == "__main__":
     logger.info(f"  Use caching: {args.allow_cached}")
     logger.info(f"  Use compression: {args.compressed}")
 
+    skipped_cached = 0
     for idx, (_, row) in enumerate(mol_df_chunk.iterrows()):
+        if args.allow_cached:
+            cached_fp = frag_utils.get_frag_fp(row["mol_id"], args.frag_dp, args.compressed)
+            if os.path.isfile(cached_fp):
+                skipped_cached += 1
+                continue
+
         dag_feat_inputs_l.append(
             [
                 row["mol"],  # RDKit molecule object
@@ -256,9 +268,6 @@ if __name__ == "__main__":
                 args.isotopes,  # Consider isotopic variations
                 args.nb_isomorphic,  # Consider non-bonded isomorphic structures
                 args.wl_max_iterations,  # Maximum fragmentation iterations
-                args.frag_dp,  # Output directory for fragment data
-                args.allow_cached,  # Use cached results if available
-                args.compressed,  # Use compression for output files
             ]
         )
 
@@ -267,6 +276,8 @@ if __name__ == "__main__":
             logger.info(f"Prepared inputs for {idx + 1}/{len(mol_df_chunk)} molecules")
 
     logger.info(f"Completed input preparation for {len(dag_feat_inputs_l)} molecules")
+    if skipped_cached > 0:
+        logger.info(f"Skipped {skipped_cached} molecules with cached fragments")
     logger.info("-" * 40)
 
     # Execute parallel fragment generation using FraGNNet algorithm
@@ -282,6 +293,9 @@ if __name__ == "__main__":
         frag_results = data_utils.par_apply(
             iter(dag_feat_inputs_l), frag_utils.timed_get_dags, True, return_as_generator=True
         )
+        if frag_results is None:
+            raise RuntimeError("Parallel fragment generation did not return any results")
+        frag_results_iter = cast("list[tuple[str, dict]]", frag_results)
         logger.info("Successfully initialized parallel fragment generation")
     except Exception as e:
         logger.error(f"Failed to initialize parallel processing: {e}")
@@ -295,10 +309,12 @@ if __name__ == "__main__":
     if not args.show_tqdm:
         # Use interval-based logging instead of progress bar for better log files
         logger.info("Processing molecules with interval-based progress logging...")
-        for res in frag_results:
+        for mol_id, dag_d in frag_results_iter:
             n_done += 1
-            if not res:
+            if not dag_d:
                 n_errors += 1
+            else:
+                frag_utils.save_frag_d(dag_d, mol_id, args.frag_dp, args.compressed)
             current_time = time.time()
 
             # Log every 100 molecules OR every 30 seconds
@@ -319,10 +335,14 @@ if __name__ == "__main__":
     else:
         # Use tqdm progress bar for interactive monitoring
         logger.info("Processing molecules with tqdm progress bar...")
-        for res in tqdm(frag_results, total=len(dag_feat_inputs_l), desc="Compute Frags"):
+        for mol_id, dag_d in tqdm(
+            frag_results_iter, total=len(dag_feat_inputs_l), desc="Compute Frags"
+        ):
             n_done += 1
-            if not res:
+            if not dag_d:
                 n_errors += 1
+            else:
+                frag_utils.save_frag_d(dag_d, mol_id, args.frag_dp, args.compressed)
             current_time = time.time()
 
             # Still log every 100 molecules for permanent record
@@ -352,7 +372,9 @@ if __name__ == "__main__":
     # Log output directory information
     try:
         output_files = [
-            f for f in os.listdir(args.frag_dp) if f.endswith(".pkl") or f.endswith(".pkl.gz")
+            f
+            for f in os.listdir(args.frag_dp)
+            if f.endswith(".pickle") or f.endswith(".pickle.bz2")
         ]
         logger.info(f"Generated {len(output_files)} fragment files in {args.frag_dp}")
         total_size = sum(os.path.getsize(os.path.join(args.frag_dp, f)) for f in output_files) / (

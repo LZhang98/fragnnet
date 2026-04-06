@@ -6,6 +6,7 @@ import numpy as np
 import torch as th
 import torch.nn.functional as F
 
+from fragnnet.utils.formula_utils import NEUTRON_MASS, parse_formula
 from fragnnet.utils.misc_utils import (
     EPS,
     TOLERANCE_MIN_MZ,
@@ -202,22 +203,6 @@ def transform_nce_to_ace(nce: float, mw: float, charge_factor: int = 1) -> float
         float: absolute energy
     """
     return nce * mw / 500 * charge_factor
-
-
-def transform_ace(ace: float) -> float:
-    """ev most likely between 0 to 100, return normalized absolute collision energy for ml
-
-    Args:
-        ace (float): _description_
-
-    Raises:
-        NotImplementedError: _description_
-    Returns:
-        float: normalized absolute collision energy for ml
-    """
-    # TODO fix this
-    raise NotImplementedError
-    # return ace/100
 
 
 def filter_func(
@@ -514,6 +499,8 @@ def calculate_match_mzs(
     relative: bool = True,
     tolerance_min_mz: float = TOLERANCE_MIN_MZ,
     pred_mz_divisor: bool = False,
+    tol_per_true: th.Tensor | None = None,
+    min_mz_per_true: th.Tensor | None = None,
 ) -> th.Tensor | np.ndarray:
     """
     Method to match two spectra based on m/z, return a N x M matrix, where N is number of mz in true_mzs, M is number of mz in pred_mzs
@@ -527,6 +514,10 @@ def calculate_match_mzs(
         relative (bool, optional): Flag to use a relative measure. Defaults to True.
         tolerance_min_mz (float, optional): Divisor floor used in relative measure. Defaults to 200 Da.
         pred_mz_divisor (bool, optional): If the measure is relative, whether to use the pred_mzs as divisors (instead of the true_mzs). Defaults to False.
+        tol_per_true (th.Tensor | None): Per-true-peak tolerance of shape [N_true]. When provided,
+            overrides the scalar ``tolerance`` for each true peak (torch path only).
+        min_mz_per_true (th.Tensor | None): Per-true-peak divisor floor of shape [N_true]. When
+            provided, overrides the scalar ``tolerance_min_mz`` for each true peak (torch path only).
     Returns:
         th.Tensor: return a N x M matrix of True or False, dim 0 for ground truth, dim 1 for predicted
     """
@@ -534,14 +525,30 @@ def calculate_match_mzs(
     if isinstance(true_mzs, th.Tensor) and isinstance(pred_mzs, th.Tensor):
         with th.autocast(device_type="cuda", dtype=th.bfloat16):  # speed up and save mem
             diff_mzs = th.abs(true_mzs[..., None] - pred_mzs[..., None, :])
-            min_diff_mzs = tolerance
-            if relative:
-                if pred_mz_divisor:
-                    divisor_mzs = pred_mzs.clone()
-                else:
-                    divisor_mzs = true_mzs.clone()
-                divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
-                diff_mzs = diff_mzs / divisor_mzs[..., None]
+            if tol_per_true is not None:
+                # Per-true-peak tolerance: shape [N_true, 1] broadcasts over [N_true, N_pred]
+                min_diff_mzs = tol_per_true[..., None]
+                if relative:
+                    if pred_mz_divisor:
+                        divisor_mzs = pred_mzs.clone()
+                        divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
+                        diff_mzs = diff_mzs / divisor_mzs[..., None]
+                    else:
+                        divisor_mzs = true_mzs.clone()
+                        if min_mz_per_true is not None:
+                            divisor_mzs = th.maximum(divisor_mzs, min_mz_per_true)
+                        else:
+                            divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
+                        diff_mzs = diff_mzs / divisor_mzs[..., None]
+            else:
+                min_diff_mzs = tolerance
+                if relative:
+                    if pred_mz_divisor:
+                        divisor_mzs = pred_mzs.clone()
+                    else:
+                        divisor_mzs = true_mzs.clone()
+                    divisor_mzs[divisor_mzs < tolerance_min_mz] = tolerance_min_mz
+                    diff_mzs = diff_mzs / divisor_mzs[..., None]
         return diff_mzs < min_diff_mzs
 
     if isinstance(true_mzs, np.ndarray) and isinstance(pred_mzs, np.ndarray):
@@ -557,242 +564,6 @@ def calculate_match_mzs(
         return diff_mzs < min_diff_mzs
 
     raise ValueError("true_mzs and pred_mzs should be both torch tensors or numpy arrays")
-
-
-# cosine similarity code ... all of them
-def calculate_cosine_similarity(
-    true_mzs: th.Tensor,
-    true_ints: th.Tensor,
-    true_batch_idxs: th.Tensor,
-    pred_mzs: th.Tensor,
-    pred_ints: th.Tensor,
-    pred_batch_idxs: th.Tensor,
-    mz_max: float = 1500.0,
-    mz_bin_res: float = 0.01,
-    sum_ints: bool = True,
-    remove_prec_peaks: bool = False,
-    true_prec_mzs: th.Tensor | None = None,
-) -> th.Tensor:
-    """calculate cosine similarity using binned spectra
-
-    Args:
-        true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array
-        true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
-        true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
-        pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array
-        pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-        pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
-        mz_max (float, optional): max mz. Defaults to 1500.
-        mz_bin_res (float, optional): bin size measured in Da. Defaults to 0.01.
-        sum_ints (bool, optional): flag to get sum intensities in the same bin else use max. Defaults to True.
-
-    Returns:
-        th.Tensor: cosine similarity using binned spectra
-    """
-    agg = "sum" if sum_ints else "amax"
-    true_spec = batched_bin_func(
-        true_mzs,
-        true_ints,
-        true_batch_idxs,
-        mz_max,
-        mz_bin_res,
-        agg=agg,
-        sparse=False,
-        remove_prec_peaks=remove_prec_peaks,
-        prec_mzs=true_prec_mzs,
-    )
-    pred_spec = batched_bin_func(
-        pred_mzs,
-        pred_ints,
-        pred_batch_idxs,
-        mz_max,
-        mz_bin_res,
-        agg=agg,
-        sparse=False,
-        remove_prec_peaks=remove_prec_peaks,
-        prec_mzs=true_prec_mzs,
-    )
-    cos_sims = binned_cosine_similarity(true_spec, pred_spec)
-    return cos_sims
-
-
-def calculate_sparse_cosine_similarity(
-    true_mzs: th.Tensor,
-    true_ints: th.Tensor,
-    true_batch_idxs: th.Tensor,
-    pred_mzs: th.Tensor,
-    pred_ints: th.Tensor,
-    pred_batch_idxs: th.Tensor,
-    mz_max: float = 1500.0,
-    mz_bin_res: float = 0.01,
-    sum_ints: bool = True,
-    remove_prec_peaks: bool = False,
-    true_prec_mzs: th.Tensor | None = None,
-    log_ints: bool = False,
-) -> th.Tensor:
-    """
-    Calculate the cosine similarity using binned spectra and sparse methods,
-
-    Args:
-        true_mzs (th.Tensor): _description_
-        true_ints (th.Tensor): _description_
-        true_batch_idxs (th.Tensor): _description_
-        pred_mzs (th.Tensor): _description_
-        pred_ints (th.Tensor): _description_
-        pred_batch_idxs (th.Tensor): _description_
-        mz_max (float, optional): _description_. Defaults to 1500..
-        mz_bin_res (float, optional): _description_. Defaults to 0.01.
-        sum_ints (bool, optional): _description_. Defaults to True.
-
-    Returns:
-        th.Tensor: cosine similarity
-    """
-
-    # sparse bin
-    if not sum_ints:
-        agg = "amax"
-    elif log_ints:
-        agg = "lse"
-    else:
-        agg = "sum"
-    true_bin_idxs, true_bin_ints, true_bin_batch_idxs = batched_bin_func(
-        true_mzs,
-        true_ints,
-        true_batch_idxs,
-        mz_max=mz_max,
-        mz_bin_res=mz_bin_res,
-        agg=agg,
-        sparse=True,
-        remove_prec_peaks=remove_prec_peaks,
-        prec_mzs=true_prec_mzs,
-    )
-    pred_bin_idxs, pred_bin_ints, pred_bin_batch_idxs = batched_bin_func(
-        pred_mzs,
-        pred_ints,
-        pred_batch_idxs,
-        mz_max=mz_max,
-        mz_bin_res=mz_bin_res,
-        agg=agg,
-        sparse=True,
-        remove_prec_peaks=remove_prec_peaks,
-        prec_mzs=true_prec_mzs,
-    )
-    if log_ints:
-        true_bin_ints = true_bin_ints.exp()
-        pred_bin_ints = pred_bin_ints.exp()
-    cos_sims = cos_sim_helper(
-        true_bin_idxs,
-        true_bin_ints,
-        true_bin_batch_idxs,
-        pred_bin_idxs,
-        pred_bin_ints,
-        pred_bin_batch_idxs,
-    )
-    return cos_sims
-
-
-def calculate_sparse_cosine_hungarian(
-    true_mzs: th.Tensor,
-    true_ints: th.Tensor,
-    true_batch_idxs: th.Tensor,
-    pred_mzs: th.Tensor,
-    pred_ints: th.Tensor,
-    pred_batch_idxs: th.Tensor,
-    tolerance: float = 1e-5,
-    relative: bool = True,
-    sum_ints: bool = True,
-    remove_prec_peaks: bool = False,
-    true_prec_mzs: th.Tensor | None = None,
-    tolerance_min_mz: float = TOLERANCE_MIN_MZ,
-) -> th.Tensor:
-    """Calculate cosine similarity using the Hungarian algorithm as the matching method.
-
-    Args:
-        true_mzs (th.Tensor): 1d flat tensor of ground truth m/zs, each row is an m/z array
-        true_ints (th.Tensor): 1d flat tensor of ground truth intensities, each row is an intensities array, should be the same size as mz tensor
-        true_batch_idxs (th.Tensor): 1d flat tensor of ground truth batch indices, each cell, true_batch_idxs[i] indicates batch index for true_mzs[i] and true_ints[i], should be the same size as mz tensor
-        pred_mzs (th.Tensor): 1d flat tensor of predicted m/zs, each row is an m/z array
-        pred_ints (th.Tensor): 1d flat tensor of predicted intensities, each row is an intensities array, should be the same size as mz tensor
-        pred_batch_idxs (th.Tensor): 1d flat tensor of predicted batch indices, each cell, pred_batch_idxs[i] indicates batch index for pred_mzs[i] and pred_ints[i], should be the same size as mz tensor
-        tolerance (float):
-        relative (bool, optional): flag to use relative match else use abs tolerance measured in Da. Defaults to True.
-        sum_ints (bool, optional): flag to get summed intesnities in aggregate, else get max. Defaults to True.
-
-    Returns:
-        th.Tensor: cosine similarity tensor, one per pair
-    """
-    # round peaks
-    agg = "sum" if sum_ints else "amax"
-    true_mzs_r, true_ints_r, true_batch_idxs_r = round_aggregate_peaks(
-        true_mzs, true_ints, true_batch_idxs, agg=agg
-    )
-    pred_mzs_r, pred_ints_r, pred_batch_idxs_r = round_aggregate_peaks(
-        pred_mzs, pred_ints, pred_batch_idxs, agg=agg
-    )
-    # calculate
-    batch_size = int(th.max(true_batch_idxs_r).item()) + 1
-    cos_hun = th.zeros((batch_size,), device=true_ints.device, dtype=true_ints.dtype)
-    for b_idx in range(batch_size):
-        b_true_mask_r = true_batch_idxs_r == b_idx
-        b_pred_mask_r = pred_batch_idxs_r == b_idx
-        b_true_mzs_r = true_mzs_r[b_true_mask_r]
-        b_pred_mzs_r = pred_mzs_r[b_pred_mask_r]
-        b_true_ints_r = true_ints_r[b_true_mask_r]
-        b_pred_ints_r = pred_ints_r[b_pred_mask_r]
-        b_true_prec_mask_r = None
-        b_pred_prec_mask_r = None
-
-        # assert remove_prec_peaks and true_prec_mzs is None,
-        if remove_prec_peaks:
-            if true_prec_mzs is None:
-                raise ValueError("true_prec_mzs must be provided when remove_prec_peaks is True")
-            b_true_prec_mz = true_prec_mzs[b_true_mask_r]
-            # precursor
-            b_true_prec_mask_r = calculate_match_mzs(
-                b_true_mzs_r,
-                b_true_prec_mz,
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-            ).squeeze(1)
-            b_pred_prec_mask_r = calculate_match_mzs(
-                b_pred_mzs_r,
-                b_true_prec_mz,
-                tolerance=tolerance,
-                relative=relative,
-                tolerance_min_mz=tolerance_min_mz,
-            ).squeeze(1)
-        # match
-        b_match_mask_r = calculate_match_mzs(
-            b_true_mzs_r,
-            b_pred_mzs_r,
-            tolerance=tolerance,
-            relative=relative,
-            tolerance_min_mz=tolerance_min_mz,
-        )
-        if isinstance(b_match_mask_r, np.ndarray):
-            b_match_mask_r = th.from_numpy(b_match_mask_r).to(b_true_ints_r.device)
-        b_true_match_mask_r = th.any(b_match_mask_r, dim=1)
-        b_pred_match_mask_r = th.any(b_match_mask_r, dim=0)
-
-        cos_hun[b_idx] = cos_hun_helper(
-            b_true_ints_r,
-            b_pred_ints_r,
-            b_match_mask_r,
-            b_true_match_mask_r,
-            b_pred_match_mask_r,
-            remove_prec_peaks,
-            b_true_prec_mask_r,
-            b_pred_prec_mask_r,
-        )
-    return cos_hun
-
-
-def binned_cosine_similarity(true_spec, pred_spec):
-    true_spec = F.normalize(true_spec, p=2, dim=1)
-    pred_spec = F.normalize(pred_spec, p=2, dim=1)
-    cos_sims = (true_spec.unsqueeze(1) @ pred_spec.unsqueeze(2)).squeeze(2).squeeze(1)
-    return cos_sims
 
 
 def cos_sim_helper(
@@ -847,11 +618,6 @@ def batched_l1_normalize(ints, batch_idxs):
     return ints
 
 
-def batched_l2_normalize(ints, batch_idxs):
-    ints = scatter_l2normalize(ints, batch_idxs)
-    return ints
-
-
 def batched_mf1000_normalize(ints, batch_idxs):
     """mf 1000 normalize implemention in pytorch, batched
 
@@ -866,20 +632,6 @@ def batched_mf1000_normalize(ints, batch_idxs):
     dim_size = int(th.max(batch_idxs).item()) + 1
     max_ints = scatter_reduce(ints, batch_idxs, reduce="max", dim_size=dim_size)
     ints = (ints / max_ints[batch_idxs]) * 1000.0
-    return ints
-
-
-def mf1000_normalize_np(ints: np.ndarray) -> np.ndarray:
-    """mf 1000 normalize implemetion in numpy, not batched
-
-    Args:
-        ints (np.array): peak intensity
-
-    Returns:
-        np.array: normalized intensities
-    """
-    int_max = np.max(ints)
-    ints = (ints / int_max) * 1000.0
     return ints
 
 
@@ -1049,8 +801,8 @@ def batch_cos_hun_helper(
     assert len(batch_pred_ints.shape) == 2
     batch_true_ints = F.normalize(batch_true_ints, p=2, dim=-1)
     batch_pred_ints = F.normalize(batch_pred_ints, p=2, dim=-1)
-    true_batch_pos_idx = th.argsort(~batch_true_match_mask)  # max to min
-    pred_batch_pos_idx = th.argsort(~batch_pred_match_mask)  # max to min
+    true_batch_pos_idx = th.argsort(batch_true_match_mask.to(th.int64), descending=True)
+    pred_batch_pos_idx = th.argsort(batch_pred_match_mask.to(th.int64), descending=True)
     max_true_match_pos = batch_true_match_mask.float().sum(-1).long().max()
     max_pred_match_pos = batch_pred_match_mask.float().sum(-1).long().max()
     true_batch_pos_idx = true_batch_pos_idx[:, :max_true_match_pos]
@@ -1130,8 +882,8 @@ def batch_jss_hun_helper(
     batch_pred_ints = F.normalize(batch_pred_ints, p=1, dim=-1)
 
     # select subset to find idx
-    true_batch_pos_idx = th.argsort(~batch_true_match_mask)  # max to min
-    pred_batch_pos_idx = th.argsort(~batch_pred_match_mask)  # max to min
+    true_batch_pos_idx = th.argsort(batch_true_match_mask.to(th.int64), descending=True)
+    pred_batch_pos_idx = th.argsort(batch_pred_match_mask.to(th.int64), descending=True)
     max_true_match_pos = batch_true_match_mask.float().sum(-1).long().max()
     max_pred_match_pos = batch_pred_match_mask.float().sum(-1).long().max()
     true_batch_pos_idx = true_batch_pos_idx[:, :max_true_match_pos]
@@ -1578,3 +1330,280 @@ def jss_helper(
     # (ln(2) - jsd_e) / ln(2)
     jss = 1.0 - jsd_e / np.log(2.0)
     return jss
+
+
+def detect_isotope_peaks(
+    mzs: np.ndarray,
+    ints: np.ndarray,
+    mz_tol: float = 0.02,
+    max_isotope: int = 3,
+    check_intensity: bool = True,
+) -> np.ndarray:
+    """Detect isotope peaks in a reference spectrum.
+
+    A peak is considered an isotope peak (M+k, k >= 1) if there exists a
+    lower-m/z peak separated by approximately k * NEUTRON_MASS within
+    ``mz_tol``.  Optionally, that lower-m/z peak must also be more intense
+    than the candidate isotope peak.
+
+    The function works with raw (non-normalised) m/z and intensity arrays as
+    produced by standard reference libraries such as NIST.
+
+    Args:
+        mzs: Peak m/z values of shape (N,).  Need not be sorted.
+        ints: Peak intensities of shape (N,).  Same order as ``mzs``.
+        mz_tol: Absolute m/z tolerance in Da for matching isotope spacing.
+            The default of 0.02 Da covers both the exact 13C–12C spacing
+            (~1.0034 Da) and the NEUTRON_MASS approximation (1.0087 Da) used
+            in the rest of the codebase.  Defaults to 0.02.
+        max_isotope: Maximum isotope order to consider (1 = M+1 only,
+            2 = up to M+2, etc.). Defaults to 3.
+        check_intensity: If True, require that the candidate monoisotopic
+            peak (the one at mz - k * NEUTRON_MASS) is at least as intense
+            as the current peak.  This suppresses false positives from
+            noise but may miss isotope peaks of low-intensity fragments.
+            Defaults to True.
+
+    Returns:
+        Boolean array of shape (N,) where True means the peak is an
+        isotope peak.
+
+    Example:
+        >>> mzs = np.array([100.0, 101.008, 200.0, 201.012])
+        >>> ints = np.array([1000.0, 100.0, 500.0, 50.0])
+        >>> mask = detect_isotope_peaks(mzs, ints)
+        >>> mask  # peaks at 101.008 and 201.012 flagged as isotopes
+        array([False,  True, False,  True])
+    """
+    mzs = np.asarray(mzs, dtype=np.float64)
+    ints = np.asarray(ints, dtype=np.float64)
+    if mzs.shape != ints.shape or mzs.ndim != 1:
+        raise ValueError(f"mzs and ints must be 1-D arrays of the same length, got {mzs.shape}")
+
+    n = len(mzs)
+    is_isotope = np.zeros(n, dtype=bool)
+    if n == 0:
+        return is_isotope
+
+    sort_idx = np.argsort(mzs)
+    sorted_mzs = mzs[sort_idx]
+    sorted_ints = ints[sort_idx]
+
+    for i in range(n):
+        for k in range(1, max_isotope + 1):
+            target_mz = sorted_mzs[i] - k * NEUTRON_MASS
+            lo = np.searchsorted(sorted_mzs, target_mz - mz_tol, side="left")
+            hi = np.searchsorted(sorted_mzs, target_mz + mz_tol, side="right")
+            if lo >= hi:
+                continue
+            # At least one candidate monoisotopic peak exists in the window.
+            if check_intensity:
+                if np.any(sorted_ints[lo:hi] >= sorted_ints[i]):
+                    is_isotope[sort_idx[i]] = True
+                    break
+            else:
+                is_isotope[sort_idx[i]] = True
+                break
+
+    return is_isotope
+
+
+# ---------------------------------------------------------------------------
+# Training-data isotope cleaning
+# ---------------------------------------------------------------------------
+
+# Natural abundance M+1/M+0 contribution per atom (Poisson/binomial approx)
+_M1_CONTRIB: dict[str, float] = {
+    "C": 0.01103,    # 13C
+    "H": 0.000149,   # 2H
+    "N": 0.00368,    # 15N
+    "O": 0.000404,   # 17O
+    "S": 0.00421,    # 33S
+    "Si": 0.04683,   # 29Si
+}
+
+# Additive M+2/M+0 contributions from heavy isotopes (Cl, Br dominate)
+_M2_ADDITIVE: dict[str, float] = {
+    "Cl": 0.3220,    # 37Cl
+    "Br": 0.9735,    # 81Br
+    "S":  0.0425,    # 34S
+    "Si": 0.0337,    # 30Si
+    "O":  0.00204,   # 18O
+}
+
+# mz_tol per instrument type for isotope detection.
+# FT: 5 mDa resolves H-gain (Δ = 0.84 mDa) from M+1 isotope.
+# All other instruments: None → never filter (H-gain and isotope indistinguishable).
+_INST_MZ_TOL: dict[str, float | None] = {
+    "FT": 0.005,
+}
+
+
+def _expected_mk_ratio(counts: dict[str, int], scale: float, k: int) -> float:
+    """Expected M+k/M+0 intensity ratio for a fragment of scaled formula composition.
+
+    Args:
+        counts: Element counts from parse_formula.
+        scale: Mass fraction of the precursor in the fragment (frag_mz / prec_mz),
+            used to scale down the precursor's atom counts.
+        k: Isotope order (1 = M+1, 2 = M+2).
+
+    Returns:
+        Expected M+k/M+0 intensity ratio, floored at 1e-4.
+    """
+    import math
+
+    mol_m1 = sum(counts.get(elem, 0) * c for elem, c in _M1_CONTRIB.items())
+    poisson = (mol_m1 * scale) ** k / math.factorial(k)
+    if k == 2:
+        additive = sum(counts.get(elem, 0) * c for elem, c in _M2_ADDITIVE.items())
+        return max(poisson + additive * scale, 1e-4)
+    return max(poisson, 1e-4)
+
+
+def detect_isotope_peaks_for_training(
+    mzs: np.ndarray,
+    ints: np.ndarray,
+    prec_mz: float,
+    formula: str,
+    inst_type: str,
+    max_isotope: int = 2,
+    require_monotone: bool = True,
+    require_envelope: bool = True,
+    lo_factor: float = 0.5,
+    hi_factor: float = 2.0,
+) -> np.ndarray:
+    """Detect isotope peaks for training-data cleaning.
+
+    Designed for high precision (minimal false positives) rather than high recall,
+    because false positives delete real H-transfer peaks that the model must learn.
+
+    Key differences from ``detect_isotope_peaks``:
+
+    * **Instrument gating**: Only FT spectra are filtered.  For QTOF/IT/QqQ the
+      0.84 mDa gap between H-gain (+1H) and M+1 isotope is unresolvable, so
+      filtering would delete valid training signal.
+    * **Tight mz_tol**: 5 mDa for FT, which sits above the 0.84 mDa H/isotope
+      separation and below the 5–10 mDa noise floor.
+    * **Formula-aware ratio check**: Uses the precursor formula and a mass-fraction
+      scale to predict the expected M+k/M+0 ratio with tighter bounds (0.5×–2.0×
+      vs the exploratory 0.3×–3.0×).
+    * **Monotonicity**: Requires I(M+0) > I(M+k), which always holds for true
+      isotope envelopes of small molecules at typical MS2 energies.
+    * **Envelope coherence** (``require_envelope=True``): For M+k peaks with k > 1,
+      every intermediate M+j (1 ≤ j < k) must also be present and pass the ratio
+      check.  A coincidental M+2 match without a consistent M+1 is rejected.
+
+    Args:
+        mzs: Peak m/z values of shape (N,).  Need not be sorted.
+        ints: Peak intensities of shape (N,).  Same order as ``mzs``.
+        prec_mz: Precursor m/z (used as mass-fraction denominator for scale).
+        formula: Precursor molecular formula (e.g. ``"C12H22O11"``).
+        inst_type: Instrument type string as stored in spec_df (e.g. ``"FT"``,
+            ``"QTOF"``, ``"IT"``).  Only ``"FT"`` is currently filtered.
+        max_isotope: Maximum isotope order to consider.  Defaults to 2.
+        require_monotone: If True, require I(M+0) > I(M+k).  Defaults to True.
+        require_envelope: If True, require all intermediate isotope peaks M+1 …
+            M+(k-1) to be present and pass the ratio check before accepting M+k.
+            Defaults to True.
+        lo_factor: Lower bound multiplier on expected ratio.  Defaults to 0.5.
+        hi_factor: Upper bound multiplier on expected ratio.  Defaults to 2.0.
+
+    Returns:
+        Boolean array of shape (N,) where True means the peak is an isotope peak
+        that should be removed from the training spectrum.  All-False for
+        non-FT instruments.
+
+    Example:
+        >>> mzs = np.array([100.0, 101.009, 200.0, 201.009])
+        >>> ints = np.array([1000.0, 110.0, 500.0, 55.0])
+        >>> mask = detect_isotope_peaks_for_training(
+        ...     mzs, ints, prec_mz=300.0, formula="C10H20O5", inst_type="FT"
+        ... )
+    """
+    mzs = np.asarray(mzs, dtype=np.float64)
+    ints = np.asarray(ints, dtype=np.float64)
+    if mzs.shape != ints.shape or mzs.ndim != 1:
+        raise ValueError(
+            f"mzs and ints must be 1-D arrays of the same length, got {mzs.shape}"
+        )
+
+    n = len(mzs)
+    is_isotope = np.zeros(n, dtype=bool)
+
+    # Gate: only FT spectra are filtered
+    mz_tol = _INST_MZ_TOL.get(inst_type)
+    if mz_tol is None:
+        return is_isotope
+
+    if n == 0 or prec_mz <= 0 or not isinstance(formula, str):
+        return is_isotope
+
+    try:
+        counts = parse_formula(formula)
+    except (ValueError, AssertionError):
+        return is_isotope
+
+    sort_idx = np.argsort(mzs)
+    smzs = mzs[sort_idx]
+    sints = ints[sort_idx]
+
+    def _find_peak(target: float) -> tuple[float, float] | None:
+        """Return (mz, intensity) of the most intense peak within mz_tol, or None."""
+        lo = np.searchsorted(smzs, target - mz_tol, side="left")
+        hi = np.searchsorted(smzs, target + mz_tol, side="right")
+        if lo >= hi:
+            return None
+        best = lo + int(np.argmax(sints[lo:hi]))
+        return smzs[best], sints[best]
+
+    def _ratio_ok(obs_int: float, m0_int: float, scale: float, k: int) -> bool:
+        if m0_int <= 0:
+            return False
+        obs = obs_int / m0_int
+        exp = _expected_mk_ratio(counts, scale, k)
+        return lo_factor * exp <= obs <= hi_factor * exp
+
+    for i in range(n):
+        frag_mz = smzs[i]
+        frag_int = sints[i]
+        scale = min(frag_mz / prec_mz, 1.0)
+
+        for k in range(1, max_isotope + 1):
+            # Find M+0 for this M+k candidate
+            m0 = _find_peak(frag_mz - k * NEUTRON_MASS)
+            if m0 is None:
+                continue
+            m0_mz, m0_int = m0
+
+            # Monotonicity: M+0 must be more intense than M+k
+            if require_monotone and m0_int <= frag_int:
+                continue
+
+            # Formula-aware ratio check for M+k vs M+0
+            if not _ratio_ok(frag_int, m0_int, scale, k):
+                continue
+
+            # Envelope coherence: all intermediate M+j peaks must also be present
+            # and consistent before accepting M+k (k > 1 only)
+            if require_envelope and k > 1:
+                envelope_ok = True
+                for j in range(1, k):
+                    mj = _find_peak(frag_mz - (k - j) * NEUTRON_MASS)
+                    if mj is None:
+                        envelope_ok = False
+                        break
+                    _, mj_int = mj
+                    if require_monotone and mj_int >= m0_int:
+                        envelope_ok = False
+                        break
+                    if not _ratio_ok(mj_int, m0_int, scale, j):
+                        envelope_ok = False
+                        break
+                if not envelope_ok:
+                    continue
+
+            is_isotope[sort_idx[i]] = True
+            break
+
+    return is_isotope

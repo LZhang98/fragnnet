@@ -5,7 +5,7 @@ direct_parent) onto the project's mol_df via SMILES canonicalization, producing
 a lookup pickle keyed by mol_id.
 
 Usage:
-    python preproc_scripts/08_prepare_classyfire.py \\
+    python preproc_scripts/07_prepare_classyfire.py \\
         --mol_df data/proc/nist20/mol_df.pkl \\
         --cf_zip data/classyfire/20231201_nist20mona23_1.zip \\
         --output data/classyfire/nist20_mol_classyfire.pkl

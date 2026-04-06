@@ -7,8 +7,9 @@
 # cython: cdivision=True
 
 import numpy as np
-import os
 import signal
+from cpython.bytes cimport PyBytes_AS_STRING, PyBytes_FromStringAndSize
+from libc.string cimport memcpy, memset
 from posix.time cimport clock_gettime, timespec, CLOCK_REALTIME
 
 cimport numpy as cnp
@@ -31,32 +32,27 @@ MAX_EDGE_PER_NODE = 6  # Sulfur
 class TimeoutError(RuntimeError):
 	pass
 
-# Global flag to enable/disable debug-only checks and logging.
-# Disabled by default to avoid debug I/O and runtime overhead.
-# Can be enabled at import time via env var `FRAG_ENABLE_DEBUG_CHECKS=1`
-# or at runtime with `set_debug_checks(True)`.
-DEBUG_CHECKS = False
-if os.getenv('FRAG_ENABLE_DEBUG_CHECKS') == '1':
-	DEBUG_CHECKS = True
-
-def set_debug_checks(enabled):
-	"""Enable or disable debug-only checks/logging at runtime.
-
-	Pass a truthy value to enable debug checks, falsy to disable.
-	"""
-	global DEBUG_CHECKS
-	DEBUG_CHECKS = bool(enabled)
-
-def disable_debug_checks():
-	set_debug_checks(False)
-
-def enable_debug_checks():
-	set_debug_checks(True)
+# ---------------------------------------------------------------------------
+# Legacy fill helpers — kept for compute_cc_h_floor / update_bonds
+# ---------------------------------------------------------------------------
 
 cdef void np_fill(int [::1] array, int val) nogil:
 	cdef Py_ssize_t i, num_elems = array.shape[0]
 	for i in range(num_elems):
 		array[i] = val
+
+cdef void char_fill(char [::1] array, char val) nogil:
+	cdef Py_ssize_t i, num_elems = array.shape[0]
+	for i in range(num_elems):
+		array[i] = val
+
+cdef void char2d_fill(char [:,::1] array, char val) nogil:
+	cdef Py_ssize_t i, j
+	cdef Py_ssize_t rows = array.shape[0]
+	cdef Py_ssize_t cols = array.shape[1]
+	for i in range(rows):
+		for j in range(cols):
+			array[i, j] = val
 
 cdef int np_sum(char [::1] array) nogil:
 	cdef Py_ssize_t i, num_elems = array.shape[0]
@@ -72,51 +68,129 @@ cdef long get_time():
 	current = ts.tv_sec
 	return current
 
-#cdef long node_mask_to_int(int num_nodes, char [::1] node_mask):
-
-#	assert MAX_NUM_NODES < 64, MAX_NUM_NODES
-#	cdef long node_mask_int = 0
-#	cdef int i
-#	for i in range(num_nodes):
-#		assert node_mask[i] >= 0, node_mask[i]
-#		node_mask_int += node_mask[i]*(2**i)
-#	assert node_mask_int >= 0, node_mask_int
-#	return node_mask_int
-
 def mask_to_binary_hash(char [::1] mask):
 	return np.asarray(mask).tobytes()
 
+# ---------------------------------------------------------------------------
+# Union-Find CC — replaces BFS-based connected_components.
+#
+# Key improvements over the old BFS implementation:
+#   - O(α·n) union-find vs O(V+E) BFS per cut attempt.
+#   - C stack arrays (no heap allocation per call).
+#   - Caller-zeroed scratch arrays + selective reset eliminates 5×
+#     numpy allocations per CC call that the BFS version required.
+#   - Returns early with sentinel 99 when > 2 CCs found.
+# ---------------------------------------------------------------------------
 
-cdef object mask_to_int_memview(char [::1] arr):
-	# pack a 0/1 mask from a memoryview into a Python int (up to 128 bits)
-	# Use Python int throughout to avoid C sign extension issues
-	cdef Py_ssize_t n = arr.shape[0]
-	cdef Py_ssize_t i
-	cdef object result = 0  # Python int
-	cdef object one = 1     # Python int
+cdef inline int _uf_find(int* parent, int x) nogil:
+	"""Path-halving find — O(α) amortised."""
+	while parent[x] != x:
+		parent[x] = parent[parent[x]]
+		x = parent[x]
+	return x
 
-	for i in range(n):
-		if arr[i]:
-			result |= (one << i)
 
-	return result
+cdef inline void _zero_scratch_full(
+	int num_nodes,
+	int num_edges,
+	char[:, ::1] cc_nodes_s,
+	char[:, ::1] cc_edges_s,
+) nogil:
+	"""Full memset of CC scratch arrays before the first cut attempt per BFS node."""
+	memset(&cc_nodes_s[0, 0], 0, 2 * num_nodes)
+	memset(&cc_edges_s[0, 0], 0, 2 * num_edges)
 
-def py_mask_to_int_memview(mask):
-	"""Python wrapper for testing mask_to_int_memview.
 
-	Converts input to uint8 array and calls the cdef version.
+cdef inline void _zero_scratch_live(
+	int n_live_nodes,
+	int n_live_edges,
+	int* live_node_arr,
+	int* live_edge_arr,
+	char[:, ::1] cc_nodes_s,
+	char[:, ::1] cc_edges_s,
+) nogil:
+	"""Selective reset — only clears entries _cc_uf can write, avoids full memset."""
+	cdef int idx
+	for idx in range(n_live_nodes):
+		cc_nodes_s[0, live_node_arr[idx]] = 0
+		cc_nodes_s[1, live_node_arr[idx]] = 0
+	for idx in range(n_live_edges):
+		cc_edges_s[0, live_edge_arr[idx]] = 0
+		cc_edges_s[1, live_edge_arr[idx]] = 0
+
+
+cdef int _cc_uf(
+	int num_nodes,
+	int num_edges,
+	char[::1]    node_mask,
+	int[:, ::1]  edges,
+	char[::1]    edge_mask,
+	char[:, ::1] cc_nodes_out,   # (2, num_nodes) — zeroed by caller
+	char[:, ::1] cc_edges_out,   # (2, num_edges) — zeroed by caller
+) nogil:
+	"""Connected components via union-find.
+
+	Returns num_ccs (0, 1, 2) or 99 if > 2 components (invalid cut).
+	Results written into caller-zeroed cc_nodes_out / cc_edges_out.
+	Uses C stack arrays — zero heap allocation.
 	"""
-	cdef cnp.ndarray[cnp.uint8_t, ndim=1] arr = np.asarray(mask, dtype=np.uint8)
-	return mask_to_int_memview(arr)
+	cdef int parent[128]   # MAX_NUM_NODES
+	cdef int cc_root[128]  # atom root → CC index (-1 = unseen)
+	cdef int i, u, v, pu, pv, r, num_ccs, cc_idx
+
+	for i in range(num_nodes):
+		parent[i] = i
+		cc_root[i] = -1
+
+	# Union connected atoms via live edges
+	for i in range(num_edges):
+		if edge_mask[i] == 0:
+			continue
+		u = edges[i, 0]
+		v = edges[i, 1]
+		pu = _uf_find(parent, u)
+		pv = _uf_find(parent, v)
+		if pu != pv:
+			parent[pu] = pv
+
+	# Assign CC indices to live atoms
+	num_ccs = 0
+	for i in range(num_nodes):
+		if node_mask[i] == 0:
+			continue
+		r = _uf_find(parent, i)
+		if cc_root[r] == -1:
+			if num_ccs == 2:
+				return 99   # > 2 CCs → bail early
+			cc_root[r] = num_ccs
+			num_ccs += 1
+		cc_nodes_out[cc_root[r], i] = 1
+
+	# Assign live edges to their CC
+	for i in range(num_edges):
+		if edge_mask[i] == 0:
+			continue
+		u = edges[i, 0]
+		if node_mask[u] == 0:
+			continue
+		r = _uf_find(parent, u)
+		cc_idx = cc_root[r]
+		if cc_idx >= 0:
+			cc_edges_out[cc_idx, i] = 1
+
+	return num_ccs
+
+
+# ---------------------------------------------------------------------------
+# node_to_edge_idx — kept for interface compatibility with frag_utils.py
+# ---------------------------------------------------------------------------
 
 cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
-	# use np fill instead of np.ones to speed up
 	cdef int [:,::1] node_to_edge_idx = np.full((num_nodes, MAX_EDGE_PER_NODE), -1, dtype=np.intc)
 	cdef int src_node, dst_node, j, k
 	for j in range(num_edges):
 		src_node = edges[j,0]
 		dst_node = edges[j,1]
-		#assert src_node < num_nodes and dst_node < num_nodes
 		for k in range(MAX_EDGE_PER_NODE):
 			if node_to_edge_idx[src_node,k] == -1:
 				node_to_edge_idx[src_node,k] = j
@@ -130,499 +204,244 @@ cdef int [:,::1] compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,:
 def py_compute_node_to_edge_idx(int num_nodes, int num_edges, int [:,::1] edges):
 	return np.asarray(compute_node_to_edge_idx(num_nodes,num_edges,edges),dtype=np.intc)
 
-cdef connected_components(
-		int num_nodes,
-		int num_edges,
-		char [::1] node_mask,
-		int [:,::1] edges,
-		char [::1] edge_mask,
-		int [:,::1] node_to_edge_idx
-	):
-	# print('>connected_components')
-	# return the number of connected components
-	cdef Py_ssize_t num_visited = 0
-	cdef Py_ssize_t num_nonmask = np_sum(node_mask)
-	cdef Py_ssize_t cur_node
-	cdef Py_ssize_t num_ccs = 0
-	cdef Py_ssize_t start_queue = 0
-	cdef Py_ssize_t end_queue = 0
-	cdef Py_ssize_t queue_size = 0
-	cdef Py_ssize_t cur_edge
-	cdef Py_ssize_t i
-	cdef Py_ssize_t j
-	cdef Py_ssize_t neighbour
 
-	cdef int [::1] node_visited = np.zeros(num_nodes,dtype=np.intc)
-	cdef int [::1] node_enqueued = np.zeros(num_nodes,dtype=np.intc)
-	cdef int [::1] node_queue = np.full(num_nodes, -1, dtype=np.intc)
-
-	cdef list comp_nodes = None
-
-	# allocate with safe capacity: worst-case each node is its own component
-	# using num_nodes rows prevents out-of-bounds writes when unexpected
-	# logic paths create many components (observed in logs).
-	# Keep the ndarray objects alive by holding references; memoryviews
-	# alone may not own the underlying buffer, causing use-after-free when
-	# returning views. Allocate ndarrays and create memoryviews that point
-	# to them; return the ndarrays below so Python owns the buffers.
-	cdef cnp.ndarray[cnp.uint8_t, ndim=2] cc_nodes_arr = np.zeros((num_nodes, num_nodes), dtype=MASK_DTYPE)
-	cdef cnp.ndarray[cnp.uint8_t, ndim=2] cc_edges_arr = np.zeros((num_nodes, num_edges), dtype=MASK_DTYPE)
-	cdef char[:,::1] cc_nodes = cc_nodes_arr
-	cdef char[:,::1] cc_edges = cc_edges_arr
-
-	# run BFS
-	while num_visited < num_nonmask:
-		if start_queue != end_queue:
-			# dequeue
-			cur_node = node_queue[start_queue]
-			start_queue = (start_queue + 1) % num_nodes
-			# maintain queue size
-			if queue_size > 0:
-				queue_size -= 1
-			# mark as visited
-			#assert node_enqueued[cur_node] == 1, cur_node
-			#assert node_visited[cur_node] == 0, cur_node
-			#assert node_mask[cur_node] == 1, cur_node
-			node_visited[cur_node] = 1
-			num_visited += 1
-			# buffer node for this component; flush into cc_nodes when component completes
-			if comp_nodes is None:
-				# defensive fallback: ensure buffer exists
-				comp_nodes = []
-			comp_nodes.append(cur_node)
-			# add neighbours
-			for j in range(MAX_EDGE_PER_NODE):
-				cur_edge = node_to_edge_idx[cur_node,j]
-				# check if null
-				if cur_edge == -1:
-					break
-				# check if edge is masked
-				if edge_mask[cur_edge] == 0:
-					continue
-				# add unvisited neighbours
-				if edges[cur_edge,0] == cur_node:
-					neighbour = edges[cur_edge,1]
-				else:
-					#assert edges[cur_edge,1] == cur_node
-					neighbour = edges[cur_edge,0]
-
-				# if we have not seen node before and it is in the active mask
-				if node_enqueued[neighbour] == 0 and node_mask[neighbour] == 1:
-					# guard queue overflow when enqueuing neighbours
-					if queue_size >= num_nodes:
-						if DEBUG_CHECKS:
-							try:
-								with open('frag_debug.log', 'a') as _f:
-									_f.write(f'CONNECTED_COMPONENTS_QUEUE_OVERFLOW num_nodes={num_nodes} num_ccs={num_ccs}\n')
-							except Exception:
-								pass
-						raise ValueError('queue overflow in connected_components')
-					node_queue[end_queue] = neighbour
-					end_queue = (end_queue + 1) % num_nodes
-					node_enqueued[neighbour] = 1
-					# maintain queue size
-					queue_size += 1
-
-				# add edge to cc
-				cc_edges[num_ccs-1,cur_edge] = 1
-
-		else:
-			# if we have just finished a component (queue empty) flush buffered nodes
-			if comp_nodes is not None:
-				for _n in comp_nodes:
-					cc_nodes[num_ccs-1, _n] = 1
-				comp_nodes = None
-			# check for new nodes to seed BFS
-			for i in range(num_nodes):
-				if node_mask[i] == 1 and node_visited[i] == 0:
-					# enqueue (seed new BFS). Guard queue overflow.
-					if queue_size >= num_nodes:
-						if DEBUG_CHECKS:
-							try:
-								with open('frag_debug.log', 'a') as _f:
-									_f.write(f'CONNECTED_COMPONENTS_QUEUE_OVERFLOW num_nodes={num_nodes} num_ccs={num_ccs}\n')
-							except Exception:
-								pass
-						raise ValueError('queue overflow in connected_components')
-					node_queue[end_queue] = i
-					end_queue = (end_queue + 1) % num_nodes
-					#print(f"new end node {end_queue}")
-					#assert node_enqueued[i] == 0
-					node_enqueued[i] = 1
-					queue_size += 1
-					# start a fresh per-component buffer for nodes
-					comp_nodes = []
-					# safety: guard against runaway num_ccs (should be <= num_nodes)
-					if num_ccs >= num_nodes:
-						try:
-							with open('frag_debug.log', 'a') as _f:
-								_f.write(f'CONNECTED_COMPONENTS_OVERFLOW num_nodes={num_nodes} num_ccs={num_ccs}\n')
-						except Exception:
-							pass
-						raise ValueError(f'unexpected num_ccs {num_ccs} >= {num_nodes}')
-					num_ccs += 1
-					break
-	
-	if num_visited != num_nonmask:
-		raise ValueError(f'num_visited ({num_visited}) != num_nonmask ({num_nonmask})')
-	
-	# Flush any remaining buffered nodes for the final component
-	if comp_nodes is not None and num_ccs > 0:
-		for _n in comp_nodes:
-			cc_nodes[num_ccs-1, _n] = 1
-	
-	if start_queue != end_queue:
-		raise ValueError(f'start_queue ({start_queue}) != end_queue ({end_queue}), num_ccs {num_ccs}')
-
-	# allow up to num_nodes connected components (safe upper bound)
-	if num_ccs < 0 or num_ccs > num_nodes:
-		# persist a detailed debug record before raising so we can inspect later
-		if DEBUG_CHECKS:
-			try:
-				with open('frag_debug.log', 'a') as _f:
-					_f.write(f'CONNECTED_COMPONENTS_ERROR num_nodes={num_nodes} num_edges={num_edges} num_nonmask={num_nonmask} num_visited={num_visited} num_ccs={num_ccs}\n')
-					try:
-						_f.write('node_mask_sample=' + np.asarray(node_mask[:min(num_nodes,64)]).tobytes().hex() + '\n')
-					except Exception:
-						_f.write('node_mask_sample=FAILED\n')
-					try:
-						_f.write('edge_mask_sample=' + np.asarray(edge_mask[:min(num_edges,64)]).tobytes().hex() + '\n')
-					except Exception:
-						_f.write('edge_mask_sample=FAILED\n')
-			except Exception:
-				# best effort logging; ignore write errors
-				pass
-		raise ValueError(f'{num_ccs} num_ccs <0 or num_ccs > {num_nodes}')
-
-	# Return the ndarray objects to ensure the buffers remain owned by Python
-	return cc_nodes_arr, cc_edges_arr, num_ccs
+# ---------------------------------------------------------------------------
+# Main BFS — optimised rewrite of the original compute_ccs.
+#
+# Changes vs the old implementation
+# -----------------------------------
+# - _cc_uf (union-find) replaces connected_components (BFS):
+#     old: O(V+E) BFS + 5× numpy allocation per cut.
+#     new: O(α·n) UF + zero heap allocation per cut.
+# - cc_node_mask_dict / cc_edge_mask_dict eliminated:
+#     masks are now reconstructed from bytes keys on demand via
+#     PyBytes_AS_STRING + memcpy (no per-fragment numpy copy).
+# - cc_edge_active_dict eliminated:
+#     live edges collected into a C int[] per BFS node.
+# - PyBytes_FromStringAndSize replaces np.asarray(...).tobytes():
+#     direct C API, no buffer-protocol round-trip.
+# - ccs_depth_dict (Python set per fragment) → int bitmask:
+#     bit-OR update is faster than set.add(), no set object created.
+# - has_seen_dict replaced by seen_set (plain set):
+#     BFS processes depths in order → once-seen = always-skip is correct.
+# - Selective scratch reset (_zero_scratch_live) after first cut:
+#     avoids re-memset'ing the whole (2×N / 2×E) buffer per edge.
+# ---------------------------------------------------------------------------
 
 def compute_ccs(
-		int num_nodes,
-		int num_edges,
-		char [::1] node_mask,
-		int [:,::1] edges,
-		char [::1] edge_mask,
-		int [:,::1] node_to_edge_idx,
-		int max_depth,
-		long time_limit
-	):
-
-	# and a time check
+	int num_nodes,
+	int num_edges,
+	char [::1] node_mask,
+	int [:,::1] edges,
+	char [::1] edge_mask,
+	int [:,::1] node_to_edge_idx,   # kept for API compat; unused internally
+	int max_depth,
+	long time_limit,
+	int min_frag_atoms = 3,
+):
 	assert num_nodes <= MAX_NUM_NODES, num_nodes
 	assert num_edges <= MAX_NUM_EDGES, num_edges
 	cdef long start_time = get_time()
-
-	# this need happen within loop
 	cdef long cur_time = 0
-	
-	# define a load of things
-	cdef list child_node_mask_list = []
-	cdef list child_edge_mask_list = []
-	cdef int node_idx
-	cdef int num_edges_nomask = 0
-	
-	cdef int ccs_idx = 0
-	cdef int ccs_end = 0
-	cdef int c = 0
-	cdef int i = 0
-	cdef int current_depth = 0
 
-	# start with return_parents
-	# use memoryview-based packing to avoid temporary numpy allocations
-	node_mask_key = mask_to_int_memview(node_mask)
-	edge_mask_key = mask_to_int_memview(edge_mask)
+	# Pre-allocated CC scratch arrays (reused every cut attempt)
+	cdef cnp.ndarray cc_nodes_np = np.zeros((2, num_nodes), dtype=MASK_DTYPE)
+	cdef cnp.ndarray cc_edges_np = np.zeros((2, num_edges), dtype=MASK_DTYPE)
+	cdef char[:, ::1] cc_nodes_s = cc_nodes_np
+	cdef char[:, ::1] cc_edges_s = cc_edges_np
 
-	# Preallocate lists to avoid repeated append/resizing in hot loops
-	cdef int est_per_edge = max_depth + 1
-	cdef Py_ssize_t est_capacity = 1 + (num_edges * est_per_edge * 2)
-	cdef list ccs = [None] * est_capacity
-	ccs[0] = node_mask_key
-	cdef list cc_edges = [None] * est_capacity
-	cc_edges[0] = edge_mask_key
-	cdef list ccs_depths = [0]
-	cdef Py_ssize_t ccs_len = 1
-	cdef dict cc_node_mask_dict = {node_mask_key:node_mask}
-	cdef dict cc_edge_mask_dict = {edge_mask_key:edge_mask}
-	cdef dict has_seen_dict = {}
-	# store depths as a bitmask integer: bit d set means node exists at depth d
-	cdef dict ccs_depth_dict = {node_mask_key: (1 << 0)}
-	cdef int num_ccs = 0
-	
-	# data for gaphs
-	cdef dict css_to_id_dict = {node_mask_key:0}
-	# needed by pyg
-	# dag_edge_dict, used to keep track dag edges and min depth
-	# Collect dag edges in preallocated lists; dedupe after nogil work
-	dag_edge_dict = {} # final mapping (built later)
-	cdef list dag_src = [0] * (num_edges * est_per_edge + 4)
-	cdef list dag_dst = [0] * (num_edges * est_per_edge + 4)
-	cdef list dag_depths = [0] * (num_edges * est_per_edge + 4)
-	cdef Py_ssize_t dag_len = 0
+	# Working buffers: masks reconstructed from bytes keys via memcpy.
+	# Eliminates cc_node_mask_dict / cc_edge_mask_dict entirely.
+	cdef cnp.ndarray cur_node_mask_buf = np.empty(num_nodes, dtype=MASK_DTYPE)
+	cdef cnp.ndarray cur_edge_mask_buf = np.empty(num_edges, dtype=MASK_DTYPE)
+	cdef char[::1] cur_node_mask_mv = cur_node_mask_buf
+	cdef char[::1] cur_edge_mask_mv = cur_edge_mask_buf
+	cdef char* key_ptr
 
-	#print("test_list", test_list[0])
-	force_stop = False
+	# Root keys via direct C API (avoids .tobytes() numpy round-trip)
+	cdef bytes root_node_key = PyBytes_FromStringAndSize(&node_mask[0], num_nodes)
+	cdef bytes root_edge_key = PyBytes_FromStringAndSize(&edge_mask[0], num_edges)
+
+	css_to_id_dict = {root_node_key: 0}
+	# int bitmask per fragment: bit d = depth d seen.
+	# Replaces Python set per fragment — bit-OR is faster than set.add().
+	ccs_depth_bits = {root_node_key: 1}   # bit 0 = depth 0 for root
+	ccs_min_depth  = {root_node_key: 0}
+	# Plain set replaces has_seen_dict: BFS depth-order guarantees
+	# once-seen → always-skip is safe (no depth value needed).
+	seen_set       = set()
+	dag_edge_dict  = {}
+
+	cdef list ccs           = [root_node_key]
+	cdef list cc_edges_list = [root_edge_key]
+
+	cdef int ccs_idx = 0, ccs_end = 0, node_idx
+	cdef int current_depth, i, ii, c, kk
+	cdef int n_live, n_live_nodes, n_ccs
+	cdef int child_n_atoms
+
+	# C arrays for live edge / node indices — no Python list per BFS node
+	cdef int live_arr[512]       # MAX_NUM_EDGES
+	cdef int live_node_arr[128]  # MAX_NUM_NODES
+
+	force_stop    = False
 	reached_depth = 0
-	# for each depth
+
 	for current_depth in range(max_depth):
-		# keep all the ccs mask for next round
-		child_edge_mask_list = []		
-		ccs_end = ccs_len
-		
+		ccs_end = len(ccs)
+
 		for node_idx in range(ccs_idx, ccs_end):
-			# let us check time
 			cur_time = get_time()
-			#sig_check()
 			if interrupted:
 				raise KeyboardInterrupt("Execution interrupted by user (Ctrl+C)")
-
-			# Unified semantics for time_limit:
-			# - time_limit < 0 : no limit
-			# - time_limit == 0: immediate timeout
-			# - time_limit > 0 : timeout when elapsed >= time_limit
-			if time_limit == 0 or (time_limit > 0 and (cur_time - start_time) >= time_limit):
+			if cur_time - start_time > time_limit:
 				force_stop = True
-				#print(f"Timeout reached, {time_limit} seconds. Stopping at depth {current_depth}.")
 				break
-			
-			# get mask hash and mask
-			curent_node_mask_key = ccs[node_idx]
-			current_edge_mask_key = cc_edges[node_idx]
-			current_node_mask = cc_node_mask_dict[curent_node_mask_key]
-			current_edge_mask = cc_edge_mask_dict[current_edge_mask_key]
 
-			# let us check mask; there is more than one way to get each node
-			# thus, we need to check if we have seen this node mask and edge mask before
-			# pack node+edge into a single int key to avoid tuple allocations
-			# use 128-bit shift (masks support up to 128 bits)
-			node_full_mask = ( (curent_node_mask_key << 128) | current_edge_mask_key )
+			cur_node_key = ccs[node_idx]
+			cur_edge_key = cc_edges_list[node_idx]
 
-			# check if we have seen this configuration before (store min depth)
-			need_skip = False
-			if node_full_mask not in has_seen_dict:
-				has_seen_dict[node_full_mask] = current_depth
-			elif has_seen_dict[node_full_mask] > current_depth:
-				has_seen_dict[node_full_mask] = current_depth
-			else:
-				need_skip = True
+			# Tuple key reuses cached per-element hashes — cheaper than bytes concat.
+			seen_key = (cur_node_key, cur_edge_key)
+			if seen_key in seen_set:
+				continue
+			seen_set.add(seen_key)
 
-			# check if there any bond left to kill
-			num_edges_nomask = np_sum(current_edge_mask)
-			if need_skip or num_edges_nomask == 0:
+			# Reconstruct masks from bytes keys via C memcpy — zero heap allocation,
+			# no buffer-protocol type checks, no numpy intermediary.
+			key_ptr = PyBytes_AS_STRING(cur_node_key)
+			memcpy(&cur_node_mask_mv[0], key_ptr, num_nodes)
+			key_ptr = PyBytes_AS_STRING(cur_edge_key)
+			memcpy(&cur_edge_mask_mv[0], key_ptr, num_edges)
+
+			# Build C arrays of live edges and live nodes
+			n_live = 0
+			n_live_nodes = 0
+			for i in range(num_edges):
+				if cur_edge_mask_mv[i] == 1:
+					live_arr[n_live] = i
+					n_live += 1
+			for i in range(num_nodes):
+				if cur_node_mask_mv[i] != 0:
+					live_node_arr[n_live_nodes] = i
+					n_live_nodes += 1
+
+			if n_live == 0:
 				continue
 
-			# now we need to break more bond
-			#i = 0
-			for i in range(num_edges):
-				# check if edge is already masked
-				# sorry Mr Bond, you already dead
-				if current_edge_mask[i] == 0:
-					continue
-				# mask edge, kill bond
-				current_edge_mask[i] = 0
-				# compute ccs
-				new_cc_nodes, new_cc_edges, new_num_ccs = connected_components(
-					num_nodes,
-					num_edges,
-					current_node_mask,
-					edges,
-					current_edge_mask,
-					node_to_edge_idx
+			# Full memset before first CC call; selective reset for subsequent cuts.
+			_zero_scratch_full(num_nodes, num_edges, cc_nodes_s, cc_edges_s)
+
+			child_depth_bit = 1 << (current_depth + 1)
+
+			for ii in range(n_live):
+				i = live_arr[ii]
+				cur_edge_mask_mv[i] = 0
+				if ii > 0:
+					_zero_scratch_live(
+						n_live_nodes, n_live,
+						live_node_arr, live_arr,
+						cc_nodes_s, cc_edges_s,
+					)
+				n_ccs = _cc_uf(
+					num_nodes, num_edges,
+					cur_node_mask_mv, edges, cur_edge_mask_mv,
+					cc_nodes_s, cc_edges_s,
 				)
+				cur_edge_mask_mv[i] = 1
 
-				# persist context for post-mortem debugging
-				if DEBUG_CHECKS:
-					try:
-						with open('frag_debug.log', 'a') as _f:
-							_f.write(f'CALL_CONNECTED_COMPONENTS depth={current_depth} node_idx={node_idx} edge_i={i} new_num_ccs={new_num_ccs} num_nodes={num_nodes} num_edges={num_edges}\n')
-							try:
-								_f.write('parent_node_mask_sum=' + str(int(np.sum(current_node_mask))) + ' parent_edge_mask_sum=' + str(int(np.sum(current_edge_mask))) + '\n')
-							except Exception:
-								_f.write('mask_sums_failed\n')
-					except Exception:
-						# ignore logging errors
-						pass
+				if n_ccs == 99:
+					continue   # >2 CCs -- impossible for single-cut; skip
 
-				# Temporary guard: if connected_components returns an unexpectedly large
-				# number of components (likely a corruption or unexpected case), skip
-				# processing this edge and continue; this avoids array OOB later and
-				# allows gathering more logs for diagnosis.
-				MAX_ALLOWED_CCS = 8
-				if new_num_ccs < 0 or new_num_ccs > MAX_ALLOWED_CCS:
-					if DEBUG_CHECKS:
-						try:
-							with open('frag_debug.log', 'a') as _f:
-								_f.write(f'WARNING_SKIP large_new_num_ccs depth={current_depth} node_idx={node_idx} edge_i={i} new_num_ccs={new_num_ccs}\n')
-						except Exception:
-							pass
-					# restore edge mask and continue
-					current_edge_mask[i] = 1
-					continue
-				# Debugging: if FRAG_DEBUG env var set, print returned shapes and counts.
-				# Note: DEBUG_CHECKS is the global gate for debug-only code paths; FRAG_DEBUG
-				# is an additional, opt-in env flag to enable noisy stdout logging so that
-				# verbose prints only occur when both debug checks are enabled and explicit
-				# fragment debugging has been requested.
-				if DEBUG_CHECKS and os.getenv('FRAG_DEBUG') == '1':
-					try:
-						print(f"DEBUG connected_components: depth={current_depth} node_idx={node_idx} edge_i={i} new_num_ccs={new_num_ccs}")
-						print(f"DEBUG new_cc_nodes.shape={getattr(new_cc_nodes, 'shape', None)} new_cc_edges.shape={getattr(new_cc_edges, 'shape', None)}")
-						# print masks for inspection
-						for cc_i in range(new_num_ccs):
-							print(f"DEBUG cc[{cc_i}] nodes_sum={int(np.sum(new_cc_nodes[cc_i,:]))} edges_sum={int(np.sum(new_cc_edges[cc_i,:]))}")
-					except Exception as e:
-						print('DEBUG logging failed:', e)
+				# n_ccs==1: ring bond opened (same atoms, chain) -> enqueue for depth+1
+				# n_ccs==2: bridge bond -> genuine split, add DAG edge
+				for c in range(n_ccs):
+					child_n_atoms = 0
+					for kk in range(n_live_nodes):
+						if cc_nodes_s[c, live_node_arr[kk]]:
+							child_n_atoms += 1
+					if child_n_atoms < min_frag_atoms:
+						continue
+					child_node_key = PyBytes_FromStringAndSize(&cc_nodes_s[c, 0], num_nodes)
+					child_edge_key = PyBytes_FromStringAndSize(&cc_edges_s[c, 0], num_edges)
 
-				# restore edge
-				current_edge_mask[i] = 1
-				# save data and save edge and node configure
-				for c in range(new_num_ccs):
-					# save cc_nodes
-					child_node_mask_key = mask_to_int_memview(new_cc_nodes[c,:])
-					child_edge_mask_key = mask_to_int_memview(new_cc_edges[c,:])
+					if child_node_key not in css_to_id_dict:
+						css_to_id_dict[child_node_key] = len(css_to_id_dict)
 
-					# add to dict to track node and edges
-					if child_node_mask_key not in cc_node_mask_dict:
-						# store a copy to ensure the mask memory outlives the local
-						# array returned from connected_components
-						cc_node_mask_dict[child_node_mask_key] = np.asarray(new_cc_nodes[c,:]).copy()
-						# track ccs to idx 
-						css_to_id_dict[child_node_mask_key] = len(css_to_id_dict)
-						
-					if child_edge_mask_key not in cc_edge_mask_dict:
-						cc_edge_mask_dict[child_edge_mask_key] = np.asarray(new_cc_edges[c,:]).copy()
-
-					# track depth for each cc node as a bitmask
-					if child_node_mask_key not in ccs_depth_dict:
-						ccs_depth_dict[child_node_mask_key] = (1 << (current_depth + 1))
+					if child_node_key not in ccs_min_depth:
+						ccs_min_depth[child_node_key] = current_depth + 1
+						ccs_depth_bits[child_node_key] = child_depth_bit
 					else:
-						ccs_depth_dict[child_node_mask_key] |= (1 << (current_depth + 1))
+						ccs_depth_bits[child_node_key] |= child_depth_bit
 
-					# append to preallocated lists
-					if ccs_len >= est_capacity:
-						# fallback to append (unlikely) if we exceed estimate
-						ccs.append(child_node_mask_key)
-						cc_edges.append(child_edge_mask_key)
-						ccs_len += 1
-					else:
-						ccs[ccs_len] = child_node_mask_key
-						cc_edges[ccs_len] = child_edge_mask_key
-						ccs_len += 1
-					
-					# add edge from node to node if mask are different
-					# NOTE: it is possiable we have parent and child with the same mask
-					# eg. first bond break on a ring
-					if curent_node_mask_key != child_node_mask_key:
-						# record dag edge in preallocated lists; dedupe later
-						src_id = css_to_id_dict[curent_node_mask_key]
-						dst_id = css_to_id_dict[child_node_mask_key]
-						if dag_len >= len(dag_src):
-							dag_src.append(src_id); dag_dst.append(dst_id); dag_depths.append(current_depth + 1)
-							dag_len += 1
-						else:
-							dag_src[dag_len] = src_id
-							dag_dst[dag_len] = dst_id
-							dag_depths[dag_len] = current_depth + 1
-							dag_len += 1
-					
-				num_ccs += new_num_ccs
-				reached_depth = current_depth + 1
-		# print(dag_edge_dict)
-		# break outer loop
+					ccs.append(child_node_key)
+					cc_edges_list.append(child_edge_key)
+
+					if cur_node_key != child_node_key:
+						edge_pair = (css_to_id_dict[cur_node_key],
+						             css_to_id_dict[child_node_key])
+						if edge_pair not in dag_edge_dict:
+							dag_edge_dict[edge_pair] = current_depth + 1
+
+			reached_depth = current_depth + 1
+
 		if force_stop:
-			# Timeout occurred during current_depth processing
-			# Discard all incomplete work from current_depth and keep only fully completed depths
-			# The last fully completed depth is (current_depth - 1)
 			reached_depth = current_depth - 1 if current_depth > 0 else 0
-			# Truncate any provisional CC entries collected for this depth
-			ccs_len = ccs_end
-			
-			# Filter ccs_depth_dict: keep only nodes with at least one depth <= reached_depth
-			filtered_ccs_depth_dict = {}
-			# v is a bitmask; keep only bits <= reached_depth
-			mask_limit = (1 << (reached_depth + 1)) - 1
-			for k, v in ccs_depth_dict.items():
-				filtered = v & mask_limit
-				if filtered:
-					filtered_ccs_depth_dict[k] = filtered
-			ccs_depth_dict = filtered_ccs_depth_dict
-			
-			# Filter css_to_id_dict: keep only nodes that are in filtered_ccs_depth_dict
-			filtered_css_to_id_dict = {cc: css_to_id_dict[cc] for cc in filtered_ccs_depth_dict}
-			
-			# Build reverse mapping (id -> cc) to validate edge endpoints
-			id_to_css = {v: k for k, v in filtered_css_to_id_dict.items()}
-			
-			# Build dag_edge_dict from collected lists (take min depth for duplicates)
-			built_dag = {}
-			for edge_idx in range(dag_len):
-				_p = (dag_src[edge_idx], dag_dst[edge_idx])
-				_d = dag_depths[edge_idx]
-				built_dag[_p] = _d
-			# Filter built_dag: keep only edges where BOTH endpoints exist in filtered nodes
-			# AND the edge depth is <= reached_depth
-			filtered_dag_edge_dict = {}
-			for (src_id, dst_id), depth in built_dag.items():
-				if depth <= reached_depth and src_id in id_to_css and dst_id in id_to_css:
-					filtered_dag_edge_dict[(src_id, dst_id)] = depth
-			dag_edge_dict = filtered_dag_edge_dict
-			css_to_id_dict = filtered_css_to_id_dict
-			# print(f"Timeout reached. Stopping at depth {reached_depth}.")
+			valid_bits = (1 << (reached_depth + 1)) - 1
+			ccs_depth_bits = {
+				k: (v & valid_bits) for k, v in ccs_depth_bits.items() if v & valid_bits
+			}
+			ccs_min_depth = {k: v for k, v in ccs_min_depth.items() if v <= reached_depth}
+			css_to_id_dict = {k: css_to_id_dict[k] for k in ccs_min_depth}
+			id_to_css = {v: k for k, v in css_to_id_dict.items()}
+			dag_edge_dict = {
+				(s, d): dep
+				for (s, d), dep in dag_edge_dict.items()
+				if dep <= reached_depth and s in id_to_css and d in id_to_css
+			}
 			break
-		# finishing current depth, move to next
+
 		ccs_idx = ccs_end
 
-	# build graph
+	# -----------------------------------------------------------------------
+	# Build output matrices — same format as the old compute_ccs
+	# -----------------------------------------------------------------------
 	num_un_ccs = len(css_to_id_dict)
+	ordered_ccs = [b""] * num_un_ccs
+	for cc, idx in css_to_id_dict.items():
+		ordered_ccs[idx] = cc
 
-	# Build final dag_edge_dict from collected lists (take min depth for duplicates)
-	if dag_len > 0:
-		built_dag = {}
-		for __i in range(dag_len):
-			_p = (dag_src[__i], dag_dst[__i])
-			_d = dag_depths[__i]
-			if _p not in built_dag or built_dag[_p] > _d:
-				built_dag[_p] = _d
-		dag_edge_dict = built_dag
-	# create sorted node matirx with masks
-	cdef list ordered_ccs = [0] * num_un_ccs
-	for cc in css_to_id_dict:
-		ordered_ccs[css_to_id_dict[cc]] = cc
+	# np.frombuffer avoids a copy (bytes are immutable, view is safe read-only)
+	nodes_mask_matrix = np.stack(
+		[np.frombuffer(cc, dtype=MASK_DTYPE) for cc in ordered_ccs],
+		dtype=MASK_DTYPE,
+	)
+	nodes_depth_matrix = np.zeros((num_un_ccs, max_depth + 1), dtype=MASK_DTYPE)
+	nodes_min_depth    = np.zeros(num_un_ccs, dtype=MASK_DTYPE)
 
-	# create node masks using a preallocated array and direct copies to avoid np.stack
-	cdef int nn_nodes = num_nodes
-	nodes_mask_matrix = np.empty((num_un_ccs, nn_nodes), dtype = MASK_DTYPE)
+	# Unpack bitmask into depth matrix without creating Python set intermediaries
 	for idx, cc in enumerate(ordered_ccs):
-		nodes_mask_matrix[idx, : ] = cc_node_mask_dict[cc]
+		bits = ccs_depth_bits[cc]
+		for d in range(max_depth + 1):
+			if (bits >> d) & 1:
+				nodes_depth_matrix[idx, d] = 1
+		nodes_min_depth[idx] = ccs_min_depth[cc]
 
-	# create node depth matrix
-	nodes_depth_matrix = np.zeros((num_un_ccs, max_depth + 1),dtype = MASK_DTYPE)
-	nodes_min_depth = np.zeros((num_un_ccs),dtype = MASK_DTYPE)
+	if dag_edge_dict:
+		dag_edges_matrix = np.array(list(dag_edge_dict.keys()), dtype=np.int64)
+		edges_min_depth  = np.array(list(dag_edge_dict.values()), dtype=MASK_DTYPE)
+	else:
+		dag_edges_matrix = np.empty((0, 2), dtype=np.int64)
+		edges_min_depth  = np.empty(0, dtype=MASK_DTYPE)
 
-	for idx,cc in enumerate(ordered_ccs):
-		v = ccs_depth_dict[cc]
-		# iterate bits in bitmask v
-		for d_id in range(max_depth + 1):
-			if v & (1 << d_id):
-				nodes_depth_matrix[idx,d_id] = 1
-		# set lowest depth on the dag for each node (find lowest set bit)
-		lowest = None
-		for d_id in range(max_depth + 1):
-			if v & (1 << d_id):
-				lowest = d_id
-				break
-		if lowest is None:
-			nodes_min_depth[idx] = 0
-		else:
-			nodes_min_depth[idx] = lowest
-
-	# create edge set:
-	dag_edges_matrix = np.asarray(list(dag_edge_dict.keys()), dtype = np.int64)
-	edges_min_depth = np.asarray(list(dag_edge_dict.values()), dtype = MASK_DTYPE)
-	dag_frag_meta = {"reached_depth": reached_depth, "edges_min_depth": edges_min_depth, "nodes_min_depth": nodes_min_depth, "force_stopped": force_stop}
-	# both edges_min_depth and node_min_depth should be ordered
-
+	dag_frag_meta = {
+		"reached_depth":   reached_depth,
+		"edges_min_depth": edges_min_depth,
+		"nodes_min_depth": nodes_min_depth,
+		"force_stopped":   force_stop,
+	}
 	return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
 
 def compute_cc_h_floor(
 		cnp.ndarray[cnp.int32_t, ndim=1] cc_atom_ids,
@@ -656,8 +475,6 @@ def compute_cc_h_floor(
 			if bond_mask_arr[bond_idx] == 0:  # Use explicit comparison for uint8_t
 				continue
 
-			#bond = bonds[bond_idx]
-			#other = bond[1] if bond[0] == atom else bond[0]
 			other = bonds[bond_idx, 1] if bonds[bond_idx, 0] == atom else bonds[bond_idx, 0]
 
 			# Ensure we don't form more than 3 bonds
@@ -681,8 +498,15 @@ def update_bonds(
 	cdef cnp.ndarray[cnp.int32_t, ndim=1] new_sbond_arr = np.zeros_like(sbond_arr, dtype=np.int32)
 	cdef cnp.ndarray[cnp.uint8_t, ndim=1] new_bond_mask_arr = np.zeros_like(bond_mask_arr, dtype=np.uint8)
 
+	# Boolean lookup array: O(1) membership test instead of O(n) linear scan per atom
+	cdef Py_ssize_t num_atoms = sbond_arr.shape[0]
+	cdef cnp.ndarray[cnp.uint8_t, ndim=1] in_cc = np.zeros(num_atoms, dtype=np.uint8)
+	cdef Py_ssize_t k
+	for k in range(cc_atom_ids.shape[0]):
+		in_cc[cc_atom_ids[k]] = 1
+
 	# Define Cython integer variables
-	cdef Py_ssize_t  atom, other, bond_idx, i, j
+	cdef Py_ssize_t atom, other, bond_idx, i, j
 	cdef list bond_idxs
 
 	# Iterate through each atom in the connected component
@@ -696,8 +520,8 @@ def update_bonds(
 			# Get bond endpoints
 			other = bonds[bond_idx, 1] if bonds[bond_idx, 0] == atom else bonds[bond_idx, 0]
 
-			# Check if both atoms are in the connected component
-			if other in cc_atom_ids:
+			# O(1) lookup instead of O(n) linear scan through cc_atom_ids
+			if in_cc[other]:
 				new_sbond_arr[atom] += 1
 				new_bond_mask_arr[bond_idx] = 1  # Use 1 instead of True for uint8_t
 

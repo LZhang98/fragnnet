@@ -65,7 +65,7 @@ PREC_TYPE_TO_CMF_MASS_DIFF = {
     # negative stuff
     "[M-H]-": -H_MASS + ELECTRON_MASS,
     "[M-H-CO2]-": -H_MASS + ELECTRON_MASS,
-    "[M+Cl]-": H_MASS + ELECTRON_MASS,
+    "[M+Cl]-": -H_MASS + ELECTRON_MASS,  # fragments are [frag-H]-, same carrier as [M-H]-
     "[M-H-H2O]-": -H_MASS + ELECTRON_MASS,
     "[M-H+2i]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COOH-H]-": -H_MASS + ELECTRON_MASS,

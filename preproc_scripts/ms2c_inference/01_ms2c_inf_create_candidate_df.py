@@ -135,8 +135,13 @@ def build_mol_df(
     all_candidate_smis=list(set(all_candidate_smis))
     logger.info(f"Candidate num is {len(all_candidate_smis)}")
     map_smi_to_mol_id = {}
-    all_candidate_feats = Pool(proc_num).map(get_mol_feat, all_candidate_smis)
-    num_failed = sum(1 for _ in all_candidate_feats if _ is None)
+    with Pool(proc_num) as pool:
+        all_candidate_feats = list(
+            tqdm(
+                pool.imap(get_mol_feat, all_candidate_smis),
+                total=len(all_candidate_smis)
+            )
+        )
     logger.info(f"{num_failed} failed in {len(all_candidate_feats)} in mol")
     mol_records = []
     for save_e in all_candidate_feats:
@@ -175,8 +180,8 @@ def build_candidate_df(
     for query_smiles in tqdm(candidates_dict):
         if query_smiles not in mol_smiles_to_id:
             continue
-        candidate_smiles_list = candidates_dict[query_smiles]
-        assert len(candidate_smiles_list) == len(set(candidate_smiles_list))
+        candidate_smiles_list =list(set(candidates_dict[query_smiles])) 
+        #assert len(candidate_smiles_list) == len(set(candidate_smiles_list))
 
         query_mol_id = mol_smiles_to_id[query_smiles]
         query_spec_rows = spec_df[spec_df["mol_id"] == query_mol_id]
@@ -253,7 +258,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--split_path",
         type=str,
-        required=True,
+        default=None,
         help="path to training splits",
     )
     parser.add_argument(
@@ -291,13 +296,17 @@ if __name__ == "__main__":
         os.makedirs(args.output_path)
 
     # Load split file, to consistant with cross-validation
-    splits = load_split(args.split_path)
-
-    # build spec_df
+    if args.split_path is not None:
+        splits = load_split(args.split_path)
+    else:
+        splits=[[set(spec_df["mol_id"]), set(spec_df["spec_id"])]]
+        
     if args.split_idx is None:
         candidates_split_idx=list(range(len(splits)))
     else:
         candidates_split_idx=[args.split_idx]
+    
+    # build spec_df
     for i in candidates_split_idx:
         s=splits[i]
         save_path=os.path.join(args.output_path, f"{i}")

@@ -2,8 +2,10 @@ import argparse
 import json
 import logging
 import os
-from pprint import pformat
+import pickle
+from typing import cast
 
+import lmdb
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -12,8 +14,8 @@ import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
-import lmdb
-import pickle
+
+
 def print_and_log(name: str, series: pd.Series, wandb_flag: bool, stats_d: dict) -> None:
     """Log series statistics to dictionary and optionally to W&B.
 
@@ -45,6 +47,19 @@ def main(args):
 
     # Setup logging
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+    if args.compress_dags and args.compress_format not in {"gz", "bz2"}:
+        raise ValueError(
+            f"Invalid --compress_format '{args.compress_format}'. Expected one of: 'gz', 'bz2'."
+        )
+
+    if args.use_lmdb and args.compress_dags:
+        logging.info(
+            "--compress_dags is ignored when --use_lmdb=True because DAGs are stored in LMDB."
+        )
+
+    if args.use_hdf5 and args.use_lmdb:
+        raise ValueError("--use_hdf5 and --use_lmdb are mutually exclusive.")
 
     elements = args.elements
     dsets = args.dsets
@@ -178,68 +193,116 @@ def main(args):
         return result_df
 
     print("> Compute Fragments")
-    mol_input_rows = []
-    for _, row in progress_wrapper(
-        mol_df.iterrows(),
-        total=mol_df.shape[0],
-        desc="prepare inputs",
-        disable_tqdm=args.disable_tqdm,
-    ):
-        mol_input_rows.append(
-            [
-                row["mol"],
-                row["mol_id"],
-                args.max_depth,
-                True,  # h_prior
-                args.max_h_transfer,
-                args.max_time,
-                args.isotopes,
-                args.nb_isomorphic,
-                args.wl_max_iterations,
-                args.use_cached_dag,  # use_cached, default to false
-                args.compress_dags,
-            ]
-        )
+    mol_input_rows = (
+        [
+            row["mol"],
+            row["mol_id"],
+            args.max_depth,
+            True,  # h_prior
+            args.max_h_transfer,
+            args.max_time,
+            args.isotopes,
+            args.nb_isomorphic,
+            args.wl_max_iterations,
+            args.multi_cut_bfs,
+            args.max_cut_size,
+            args.smarts_prepass,
+            args.min_frag_atoms,
+        ]
+        for _, row in mol_df.iterrows()
+    )
 
     print("> Running frag gen")
-    env = lmdb.open(
-        dag_dp,
-        map_size=args.map_size,  # 1TB
-        meminit=False,
-        map_async=True
-    )
-    
-    txn = env.begin(write=True)
+    if args.use_lmdb:
+        env = lmdb.open(
+            dag_dp,
+            map_size=args.map_size,
+            meminit=False,
+            map_async=True,
+        )
+        txn = env.begin(write=True)
+        if txn is None:
+            raise RuntimeError("Failed to open LMDB write transaction")
+        h5_file = None
+    elif args.use_hdf5:
+        import h5py
+
+        h5_fp = os.path.join(args.frag_dp, "dags.h5")
+        h5_file = h5py.File(h5_fp, "w")
+        env = None
+        txn = None
+    else:
+        env = None
+        txn = None
+        h5_file = None
     frag_results_gen = data_utils.par_apply(
         iter(mol_input_rows), frag_utils.timed_get_dags, True, return_as_generator=True
     )
+    if frag_results_gen is None:
+        raise RuntimeError("Parallel fragment generation did not return any results")
+    frag_results_iter = cast("list[tuple[str, dict]]", frag_results_gen)
     frag_results = []
-    meta_info={}
+    meta_info = {}
     for fr in progress_wrapper(
-        frag_results_gen,
-        total=len(mol_input_rows),
+        frag_results_iter,
+        total=mol_df.shape[0],
         desc="Compute Frags",
         disable_tqdm=args.disable_tqdm,
-    ):  
-        mol_id, dag_d=fr
-        
-        if len(dag_d)==0:
+    ):
+        mol_id, dag_d = fr
+
+        if len(dag_d) == 0:
             print("error in ", mol_id)
         else:
-            meta_info[mol_id]=[dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
-            txn.put(f"{mol_id:08d}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL))
-            if (int(mol_id)+1)%200==0:
-                txn.commit()
-                txn = env.begin(write=True)
+            meta_info[mol_id] = [dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
+            if args.use_lmdb:
+                if txn is None or env is None:
+                    raise RuntimeError("LMDB environment was not initialized")
+                txn.put(
+                    f"{int(mol_id)}".encode(), pickle.dumps(dag_d, protocol=pickle.HIGHEST_PROTOCOL)
+                )
+                if (int(mol_id) + 1) % 200 == 0:
+                    txn.commit()
+                    txn = env.begin(write=True)
+            elif args.use_hdf5:
+                if h5_file is None:
+                    raise RuntimeError("HDF5 file was not initialized")
+                grp = h5_file.create_group(f"{int(mol_id)}")
+                frag_utils.dump_dag_hdf5(grp, dag_d)
+            else:
+                # Write one artifact per molecule when LMDB storage is disabled.
+                fp = frag_utils.get_dag_output_path(
+                    dag_dp=dag_dp,
+                    mol_id=mol_id,
+                    compress_dags=args.compress_dags,
+                    compress_format=args.compress_format,
+                )
+                frag_utils.dump_dag_pickle(fp, dag_d)
         if not args.skip_stats:
-            frag_results.append(dag_d)
-    txn.commit()
-    env.sync()
-    env.close()
+            # Only retain the lightweight stats keys — the DGL graph (dag_d["dag"])
+            # is already serialised to disk above and must not be held in memory.
+            _STATS_KEYS = {
+                "max_depth", "formula_peak_mzs", "formula_peak_probs",
+                "idx_to_formula", "dag_num_edges", "dag_num_nodes",
+                "dag_sparsity", "dag_num_nodes_nb", "formula_redundancy",
+                "idx_by_h_delta",
+            }
+            frag_results.append({k: dag_d[k] for k in _STATS_KEYS if k in dag_d})
+
+    if args.use_lmdb:
+        if txn is None or env is None:
+            raise RuntimeError("LMDB environment was not initialized")
+        txn.commit()
+        env.sync()
+        env.close()
+    elif args.use_hdf5:
+        if h5_file is None:
+            raise RuntimeError("HDF5 file was not initialized")
+        h5_file.close()
     with open(os.path.join(args.frag_dp, "meta_info.json"), "w") as f:
         f.write(json.dumps(meta_info))
     if args.skip_stats:
-        return 
+        return
 
     print("> Fragments Computed")
     # all the following code are not debuged
@@ -503,7 +566,17 @@ if __name__ == "__main__":
         "--compress_dags",
         type=booltype,
         default=True,
-        help="Whether to compress DAG files with gzip",
+        help=(
+            "Whether to compress per-molecule DAG files when --use_lmdb=False. "
+            "Ignored when --use_lmdb=True."
+        ),
+    )
+    parser.add_argument(
+        "--compress_format",
+        type=str,
+        default="bz2",
+        choices=["gz", "bz2"],
+        help="Compression format for DAG files when --compress_dags=True and --use_lmdb=False.",
     )
     parser.add_argument(
         "--wandb_run_name", type=str, help="Custom W&B run name (required when wandb_mode enabled)"
@@ -540,10 +613,10 @@ if __name__ == "__main__":
         help="Whether to reuse cached DAG files if available",
     )
     parser.add_argument(
-        "--save_as_hdf5",
+        "--use_hdf5",
         type=booltype,
         default=False,
-        help="Whether to save outputs in HDF5 format (currently unused)",
+        help="Save DAGs to <frag_dp>/dags.h5 (HDF5). Mutually exclusive with --use_lmdb.",
     )
     parser.add_argument(
         "--disable_tqdm",
@@ -553,14 +626,71 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--skip_stats",
-        action="store_true", 
-        help="whether skip stats comput"
+        type=booltype,
+        default=False,
+        help="whether skip stats compute and only compute and save the DAGs ",
     )
     parser.add_argument(
         "--map_size",
         type=int,
-        default=10*1024**4,
-        help="map size of saving"
+        default=10 * 1024**3,
+        help="map size for LMDB (bytes). Default 10*1024**3 = 10 GiB",
+    )
+    parser.add_argument(
+        "--use_lmdb",
+        type=booltype,
+        default=True,
+        help=(
+            "Whether to use LMDB to store DAGs. If False, each DAG will be saved as an "
+            "individual pickle file under <frag_dp>/dags/. Default True."
+        ),
+    )
+    parser.add_argument(
+        "--multi_cut_bfs",
+        type=booltype,
+        default=False,
+        help=(
+            "Use ring-aware multi-bond-cut BFS (multi_cut_bfs.compute_ccs_multi_cut) "
+            "instead of the standard single-bond BFS. Enables ring-opening fragmentation "
+            "patterns (e.g. retro-Diels-Alder). Note: substantially slower on large "
+            "fused-ring molecules; consider reducing --max_depth to 3 and --max_time to 30."
+        ),
+    )
+    parser.add_argument(
+        "--max_cut_size",
+        type=int,
+        default=2,
+        choices=[1, 2, 3],
+        help=(
+            "Maximum number of bonds cut simultaneously per BFS step "
+            "(only used when --multi_cut_bfs True). "
+            "1 = single-bond only (same as standard BFS on rings), "
+            "2 = up to 2 ring bonds (recommended), "
+            "3 = up to 3 ring bonds (depth-0 only, high cost)."
+        ),
+    )
+    parser.add_argument(
+        "--smarts_prepass",
+        type=booltype,
+        default=False,
+        help=(
+            "Run SMARTS rearrangement prepass and inject results as depth-1 DAG children. "
+            "Works with both the default BFS and --multi_cut_bfs. "
+            "With the default BFS, SMARTS fragments are post-merged into the existing DAG "
+            "so ring-opening fragmentation is preserved. "
+            "Covers acyclic 1,3-elimination and ester CO2-loss fragments "
+            "(crf12_0/1, crf13_2 PPGB_MS2 rules)."
+        ),
+    )
+    parser.add_argument(
+        "--min_frag_atoms",
+        type=int,
+        default=3,
+        help=(
+            "Minimum number of heavy atoms a child fragment must have to be registered "
+            "in the DAG. Fragments smaller than this threshold are silently dropped. "
+            "0 disables the filter. Default 3 removes single- and two-atom shards."
+        ),
     )
     args = parser.parse_args()
 

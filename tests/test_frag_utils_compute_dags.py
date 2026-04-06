@@ -1,0 +1,295 @@
+"""Tests for compute_dags in frag_utils.py.
+
+Tests cover:
+1. Brominated amine (BrCCNc1ccccc1): previously caused KeyError: 255 due to
+   uint8 underflow in diff_cc_mask and bitmask passed directly as atom indices.
+2. Brominated piperidine (BrCCC1CCCCN1): same bug class.
+3. DAG result structure: expected keys and tensor shapes.
+4. cc_bit_mask_to_atom_idx correctly excludes uint8 underflow values (255).
+5. Signed subtraction + clip yields correct diff atom ids.
+6. FRAG_INDEX_DTYPE is np.uint32 (was uint16; changed to prevent overflow for
+   molecules with many unique fragment formulae).
+7. node_base_formula_matrix uses uint16 so H counts >255 are not truncated.
+8. diff_formula_mask uses signed int32 subtraction to avoid uint16 underflow.
+9. smarts_prepass=True with multi_cut_bfs=False runs compute_frags.compute_ccs
+   unchanged and post-processes SMARTS pairs via _inject_smarts_pairs_into_dag,
+   preserving ring-opening fragmentation while adding rearrangement fragments.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from fragnnet.frag.compute_frags import MASK_DTYPE
+from fragnnet.utils.frag_utils import (
+    ELEMENT_TO_IDX,
+    FRAG_INDEX_DTYPE,
+    NODE_FEAT_TO_IDX,
+    cc_bit_mask_to_atom_idx,
+    compute_dags,
+    extract_mol_info,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _run_compute_dags(smiles: str, max_depth: int = 3) -> dict:
+    """Run compute_dags with default parameters on a SMILES string."""
+    mol_d = extract_mol_info(smiles)
+    return compute_dags(
+        mol_d,
+        max_depth=max_depth,
+        h_prior=True,
+        max_h_transfer=2,
+        frag_max_time=int(1e6),
+        isotopes=False,
+        nb_isomorphic=False,
+        wl_max_iterations=-1,
+        multi_cut_bfs=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1 & 2. Regression: KeyError: 255 on brominated molecules
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        "BrCCNc1ccccc1",  # N-phenyl-2-bromoethylamine
+        "BrCCC1CCCCN1",   # 1-(3-bromopropyl)piperidine
+    ],
+)
+def test_compute_dags_brominated_molecule_no_keyerror(smiles: str) -> None:
+    """Brominated molecules previously raised KeyError: 255 due to uint8
+    underflow in diff_cc_mask (0 - 1 = 255 in uint8) and the bitmask being
+    passed directly to compute_cc_h_floor as atom indices instead of being
+    converted via cc_bit_mask_to_atom_idx first."""
+    dag_d = _run_compute_dags(smiles)
+    assert dag_d is not None
+
+
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        "BrCCNc1ccccc1",
+        "BrCCC1CCCCN1",
+    ],
+)
+def test_compute_dags_brominated_molecule_has_edges(smiles: str) -> None:
+    """Brominated molecules with multiple bonds must produce DAG edges."""
+    dag_d = _run_compute_dags(smiles)
+    assert dag_d["dag_num_edges"] > 0
+
+
+# ---------------------------------------------------------------------------
+# 3. DAG result structure
+# ---------------------------------------------------------------------------
+
+
+def test_compute_dags_result_keys() -> None:
+    """Result dict must contain the core expected keys."""
+    dag_d = _run_compute_dags("CCO")
+    for key in ("dag", "dag_num_edges", "dag_num_nodes", "max_depth", "reached_depth"):
+        assert key in dag_d, f"Missing key: {key}"
+
+
+def test_compute_dags_edge_index_shape() -> None:
+    """dag.edge_index has shape (2, num_edges)."""
+    dag_d = _run_compute_dags("CCO")
+    assert dag_d["dag"].edge_index.shape[0] == 2
+    assert dag_d["dag"].edge_index.shape[1] == dag_d["dag_num_edges"]
+
+
+def test_compute_dags_node_feat_shape() -> None:
+    """dag.x has num_nodes rows."""
+    dag_d = _run_compute_dags("CCO")
+    assert dag_d["dag"].x.shape[0] == dag_d["dag_num_nodes"]
+
+
+# ---------------------------------------------------------------------------
+# 4. cc_bit_mask_to_atom_idx excludes uint8 underflow value 255
+# ---------------------------------------------------------------------------
+
+
+def test_cc_bit_mask_to_atom_idx_excludes_uint8_underflow() -> None:
+    """uint8 subtraction 0 - 1 = 255; cc_bit_mask_to_atom_idx must not
+    include those positions since it only selects positions where value == 1."""
+    from_mask = np.array([1, 0, 1], dtype=MASK_DTYPE)
+    to_mask = np.array([1, 1, 1], dtype=MASK_DTYPE)
+
+    # Demonstrate the underflow: 0 - 1 = 255 in uint8
+    raw_diff = from_mask - to_mask
+    assert raw_diff[1] == 255, "Expected uint8 underflow to produce 255"
+
+    # cc_bit_mask_to_atom_idx only picks positions with value exactly 1
+    atom_ids = cc_bit_mask_to_atom_idx(raw_diff)
+    assert 255 not in atom_ids
+    # raw_diff is [0, 255, 0] — no position has value 1, so result is empty
+    assert len(atom_ids) == 0
+
+
+# ---------------------------------------------------------------------------
+# 5. Signed subtraction + clip gives correct diff atom ids
+# ---------------------------------------------------------------------------
+
+
+def test_diff_cc_mask_signed_subtraction_correct() -> None:
+    """With signed subtraction and clip, diff correctly identifies atoms in
+    parent but not child, ignoring underflow."""
+    from_mask = np.array([1, 1, 1, 0], dtype=MASK_DTYPE)
+    to_mask = np.array([0, 1, 0, 0], dtype=MASK_DTYPE)
+
+    diff = np.clip(
+        from_mask.astype(np.int16) - to_mask.astype(np.int16), 0, 1
+    ).astype(MASK_DTYPE)
+    atom_ids = cc_bit_mask_to_atom_idx(diff)
+
+    # Atoms 0 and 2 are in from but not to; atom 1 is in both; atom 3 in neither
+    np.testing.assert_array_equal(np.sort(atom_ids), [0, 2])
+
+
+# ---------------------------------------------------------------------------
+# 6. FRAG_INDEX_DTYPE is np.uint32
+# ---------------------------------------------------------------------------
+
+
+def test_frag_index_dtype_is_uint32() -> None:
+    """FRAG_INDEX_DTYPE must be np.uint32, not uint16, to support molecules
+    with more than 65535 unique fragment formulae."""
+    assert FRAG_INDEX_DTYPE == np.uint32, (
+        f"Expected np.uint32, got {FRAG_INDEX_DTYPE}. "
+        "uint16 max (65535) can be exceeded by molecules with many unique fragments."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 7. node_base_formula_matrix uses uint16 — H counts >255 are not truncated
+# ---------------------------------------------------------------------------
+
+
+def test_base_formula_heavy_atom_counts_correct() -> None:
+    """Heavy atom counts in node features (base_formula columns) must be exact.
+
+    H is intentionally zeroed in base_formula node features (compute_dags sets
+    it to 0 before storing).  We verify the non-H element counts instead.
+    For ethanol CCO: root node has C=2, O=1.
+    """
+    dag_d = _run_compute_dags("CCO")
+    dag = dag_d["dag"]
+    node_feat_idxs = dag.node_feat_idxs[0].tolist()
+    bf_start = node_feat_idxs[NODE_FEAT_TO_IDX["base_formula"]]
+    c_col = bf_start + ELEMENT_TO_IDX["C"]
+    o_col = bf_start + ELEMENT_TO_IDX["O"]
+
+    # Root node (index 0) is the full molecule: CCO → C=2, O=1
+    assert dag.x[0, c_col].item() == 2, f"Root node C count wrong: {dag.x[0, c_col].item()}"
+    assert dag.x[0, o_col].item() == 1, f"Root node O count wrong: {dag.x[0, o_col].item()}"
+
+
+def test_base_formula_formula_strings_correct() -> None:
+    """Formula strings in idx_to_formula must use the actual H count, not the
+    uint8-truncated value from node_base_formula_matrix.
+
+    compute_approximate_formula computes H counts from hs_arr directly (not
+    from the formula array), so formula strings are always correct. This test
+    guards against regressions in that path.
+
+    Ethanol CCO: root node h_delta=0 formula must be 'C2H6O'.
+    """
+    dag_d = _run_compute_dags("CCO")
+    # idx_to_formula: {int_idx: formula_str}
+    formulae = set(dag_d["idx_to_formula"].values())
+    assert "C2H6O" in formulae, (
+        f"Expected 'C2H6O' in formula set for CCO, got {formulae}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 8. diff_formula_mask uses signed int32 subtraction — no uint16 underflow
+# ---------------------------------------------------------------------------
+
+
+def test_diff_formula_mask_no_underflow() -> None:
+    """Edge features must not show uint underflow in the formula diff columns.
+
+    For any DAG edge (parent → child), the parent always has >= atoms of each
+    heavy element than the child, so diff >= 0 for heavy atoms. H is zeroed.
+    No edge feature value should be a large positive number caused by underflow
+    (e.g., 65535 or 255).
+    """
+    # Use a molecule with multiple fragments to exercise edge features
+    dag_d = _run_compute_dags("c1ccccc1CC(=O)O")  # phenylacetic acid
+    dag = dag_d["dag"]
+    edge_attr = dag.edge_attr  # int64 tensor
+
+    if edge_attr.shape[0] == 0:
+        pytest.skip("No edges in DAG — nothing to test")
+
+    # Grab the formula diff columns from edge_feat_idxs
+    edge_feat_idxs = dag.edge_feat_idxs[0].tolist()
+    # Edge feature groups: cc_mask, base_formula_diff, h_range
+    formula_diff_start = edge_feat_idxs[1]
+    formula_diff_end = edge_feat_idxs[2]
+    formula_diff_cols = edge_attr[:, formula_diff_start:formula_diff_end]
+
+    # Underflow sentinel values: 65535 (uint16 wrap), 255 (uint8 wrap)
+    assert not (formula_diff_cols == 65535).any(), (
+        "Found 65535 in formula diff edge features — uint16 underflow detected."
+    )
+    assert not (formula_diff_cols == 255).any(), (
+        "Found 255 in formula diff edge features — uint8 underflow detected."
+    )
+    # All heavy-atom diffs should be non-negative (parent >= child)
+    assert (formula_diff_cols >= 0).all(), (
+        "Negative formula diff found — unexpected for parent→child edges."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. smarts_prepass=True with multi_cut_bfs=False: post-process merge
+# ---------------------------------------------------------------------------
+
+
+def test_smarts_prepass_without_multi_cut_bfs_works() -> None:
+    """smarts_prepass=True with multi_cut_bfs=False runs correctly via post-merge.
+
+    compute_frags.compute_ccs runs unchanged (preserving ring-opening via the
+    n_ccs=1 path), then _inject_smarts_pairs_into_dag appends any SMARTS
+    rearrangement fragments as depth-1 children.  The result must be a valid
+    DAG with at least as many nodes as the baseline (no prepass).
+    """
+    mol_d = extract_mol_info("CCOC(=O)CC")  # ethyl propanoate — matches crf13_2 CO2 loss
+    baseline = compute_dags(
+        mol_d,
+        max_depth=3,
+        h_prior=True,
+        max_h_transfer=2,
+        frag_max_time=int(1e6),
+        isotopes=False,
+        nb_isomorphic=False,
+        wl_max_iterations=-1,
+        multi_cut_bfs=False,
+        smarts_prepass=False,
+    )
+    with_prepass = compute_dags(
+        mol_d,
+        max_depth=3,
+        h_prior=True,
+        max_h_transfer=2,
+        frag_max_time=int(1e6),
+        isotopes=False,
+        nb_isomorphic=False,
+        wl_max_iterations=-1,
+        multi_cut_bfs=False,
+        smarts_prepass=True,
+    )
+    assert with_prepass is not None
+    # prepass can only add nodes/edges, never remove them
+    assert with_prepass["dag_num_nodes"] >= baseline["dag_num_nodes"]
+    assert with_prepass["dag_num_edges"] >= baseline["dag_num_edges"]

@@ -10,7 +10,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg
 
-from fragnnet.model.base_model import CEModel, InstModel, PrecModel
+from fragnnet.model.base_model import (
+    CEModel,
+    CEScaler,
+    FragModeModel,
+    FragModeScaler,
+    InstModel,
+    PrecModel,
+)
 from fragnnet.model.form_embedder import get_embedder
 from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.data_utils import combine_formulae
@@ -30,41 +37,8 @@ from fragnnet.utils.spec_utils import batched_bin_func
 
 logger = logging.getLogger(__name__)
 
-def get_sparse_pooled_feats(mask_idxs, num_frags, num_atoms, atom_feats, pool_type="mean"):
-    if mask_idxs.shape[0] == 0:
-        return th.zeros((num_frags, atom_feats.shape[1]), device=atom_feats.device)
-    
-    indices = mask_idxs.t()
-    values = th.ones(indices.shape[1], device=atom_feats.device)
-    S = th.sparse_coo_tensor(indices, values, size=(num_frags, num_atoms)).coalesce()
-    
-    # sparse mm performs sum reduction: (num_frags, num_atoms) X (num_atoms, hidden_dim)
-    pooled = th.sparse.mm(S, atom_feats)
-    
-    if pool_type == "sum":
-        return pooled
-    elif pool_type == "mean":
-        row = mask_idxs[:, 0]
-        counts = th.bincount(row, minlength=num_frags).float()
-        return pooled / counts[..., None].clamp(1)
-    else:
-        # Fallback to scatter_reduce for 'max' or other unsupported types
-        # This incurs memory overhead but supports the operation
-        if pool_type == "max":
-            reduce = "amax"
-        else:
-            logger.warning(f"Unsupported pool_type {pool_type}, defaulting to mean.")
-            reduce = "mean"
-            
-        return scatter_reduce(
-            atom_feats[mask_idxs[:, 1]],
-            mask_idxs[:, 0],
-            dim=0,
-            dim_size=num_frags,
-            reduce=reduce,
-        )
 
-class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
+class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
     def __init__(
         self,
         num_depth: int,
@@ -119,7 +93,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         inst_insert_location: str,
         inst_insert_size: int,
         inst_types: list[str],
+        frag_mode_insert_location: str,
+        frag_mode_insert_size: int,
+        frag_modes: list[str],
+        frag_mode_scale: bool,
+        ce_scale: bool,
+        ce_scaler_hidden_dim: int,
         output_formula_str: bool,
+        ce_insert_dual: bool = False,
     ):
         # nn.Module init
         super().__init__()
@@ -133,6 +114,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             ce_max=ce_max,
             ce_mean=ce_mean,
             ce_std=ce_std,
+            ce_insert_dual=ce_insert_dual,
         )
 
         self._prec_init(
@@ -147,6 +129,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             inst_num_types=len(inst_types),
         )
 
+        self._frag_mode_init(
+            frag_mode_insert_location=frag_mode_insert_location,
+            frag_mode_insert_size=frag_mode_insert_size,
+            frag_mode_num_types=len(frag_modes),
+        )
+        self.frag_modes = frag_modes
+
         self.num_depth = num_depth
         self.num_hs = num_hs
         self.num_elements = num_elements
@@ -159,7 +148,10 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
         # setup mol gnn
         self.mol_node_feats_size += (
-            self.ce_mol_input_dim + self.prec_mol_input_dim + self.inst_mol_input_dim
+            self.ce_mol_input_dim
+            + self.prec_mol_input_dim
+            + self.inst_mol_input_dim
+            + self.frag_mode_mol_input_dim
         )
         mol_kwargs = {
             "node_feats_size": self.mol_node_feats_size,
@@ -256,7 +248,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         else:
             assert self.frag_embed_combine == "avg", self.frag_embed_combine
             mlp_input_dim = self.frag_embedder.hidden_size
-        mlp_input_dim += self.ce_mlp_input_dim + self.prec_mlp_input_dim + self.inst_mlp_input_dim
+        mlp_input_dim += (
+            self.ce_mlp_input_dim
+            + self.prec_mlp_input_dim
+            + self.inst_mlp_input_dim
+            + self.frag_mode_mlp_input_dim
+        )
 
         #  mlp for forumla
         if self.mlp_output_format in ["formula", "node_formula"]:
@@ -270,6 +267,29 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
                 "normalization": mlp_normalization,
             }
             self.formula_module = MLPBlocks(**formula_mlp_kwargs)
+
+        # mode-conditioned output scaling (applied after formula_module)
+        self.frag_mode_scale = frag_mode_scale
+        if self.frag_mode_scale:
+            self.frag_mode_scaler = FragModeScaler(
+                num_frag_modes=len(frag_modes),
+                output_dim=self.mlp_output_dim,
+            )
+        else:
+            self.frag_mode_scaler = None
+
+        # CE-conditioned FiLM output scaling (applied after frag_mode_scaler)
+        self.ce_scale = ce_scale
+        if self.ce_scale:
+            self.ce_scaler = CEScaler(
+                ce_mean=ce_mean,
+                ce_std=ce_std,
+                output_dim=self.mlp_output_dim,
+                hidden_dim=ce_scaler_hidden_dim,
+            )
+        else:
+            self.ce_scaler = None
+
         # use extra mlp for node formula
         if self.mlp_output_format in ["node_formula"]:
             node_mlp_kwargs = {
@@ -321,6 +341,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         # this is required
         assert "h_formulae_idx" in self.frag_node_feats
 
+        # Pre-compute h_counts as a buffer — fixed for the lifetime of the model.
+        # Layout: [0, -1, +1, -2, +2, ..., -num_hs, +num_hs]
+        _h_counts = th.zeros([2 * num_hs + 1], dtype=th.long)
+        _h_counts[1 + 2 * th.arange(num_hs)] = -th.arange(1, num_hs + 1)
+        _h_counts[2 + 2 * th.arange(num_hs)] = th.arange(1, num_hs + 1)
+        include_cmf = "cmf_h_formulae_idx" in frag_node_feats
+        if include_cmf:
+            _h_counts = th.cat([_h_counts, _h_counts], dim=0)
+        self.register_buffer("_h_counts_buf", _h_counts)
+
     def _ce_location_check(self):
         assert self.ce_insert_location != "frag", "ce_insert_location=frag not supported"
 
@@ -329,6 +359,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
 
     def _inst_location_check(self):
         assert self.inst_insert_location != "frag", "inst_insert_location=frag not supported"
+
+    def _frag_mode_location_check(self):
+        assert (
+            self.frag_mode_insert_location != "frag"
+        ), "frag_mode_insert_location=frag not supported"
 
     def _compute_mol_feats_sizes(self):
         """method compute mol feature size
@@ -402,6 +437,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         spec_ce_batch_idxs: th.Tensor | None = None,
         spec_prec_type: th.Tensor | None = None,
         spec_inst_type: th.Tensor | None = None,
+        spec_frag_mode: th.Tensor | None = None,
         spec_prec_type_str: np.ndarray | None = None,
         **kwargs,
     ):
@@ -476,27 +512,31 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         prec_embed = self.embed_prec(spec_prec_type)
         # get inst value
         inst_embed = self.embed_inst(spec_inst_type)
+        # get frag_mode value
+        frag_mode_embed = self.embed_frag_mode(spec_frag_mode)
 
         # Type assertions for embedding tensors (narrow types from Any | None to Tensor)
 
+        # Precompute per-mol node counts once from the cumulative prefix sum (avoids up to 4
+        # redundant th.unique scans over mol_batch when multiple embeddings insert at "mol").
+        mol_batch_counts = mol_num_nodes[1:] - mol_num_nodes[:-1]
+
         if self.ce_insert_location == "mol":
             assert ce_embed is not None, "ce_embed must not be None"
-            mol_ce_embed = th.repeat_interleave(
-                ce_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
-            )
+            mol_ce_embed = th.repeat_interleave(ce_embed, mol_batch_counts, dim=0)
             mol_x = th.cat([mol_x, mol_ce_embed], dim=1)
         if self.prec_insert_location == "mol":
             assert prec_embed is not None, "prec_embed must not be None"
-            mol_prec_embed = th.repeat_interleave(
-                prec_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
-            )
+            mol_prec_embed = th.repeat_interleave(prec_embed, mol_batch_counts, dim=0)
             mol_x = th.cat([mol_x, mol_prec_embed], dim=1)
         if self.inst_insert_location == "mol":
             assert inst_embed is not None, "inst_embed must not be None"
-            mol_inst_embed = th.repeat_interleave(
-                inst_embed, th.unique(mol_batch, return_counts=True)[1], dim=0
-            )
+            mol_inst_embed = th.repeat_interleave(inst_embed, mol_batch_counts, dim=0)
             mol_x = th.cat([mol_x, mol_inst_embed], dim=1)
+        if self.frag_mode_insert_location == "mol":
+            assert frag_mode_embed is not None, "frag_mode_embed must not be None"
+            mol_frag_mode_embed = th.repeat_interleave(frag_mode_embed, mol_batch_counts, dim=0)
+            mol_x = th.cat([mol_x, mol_frag_mode_embed], dim=1)
 
         # get per-atom embeddings
         mol_embed_gnn = self.mol_embedder(mol_x, mol_batch, mol_edge_index, mol_edge_attr)
@@ -527,28 +567,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
                 )
                 frag_node_mask_idxs = frag_node_mask_idxs[valid_frag_mask]
 
-            # compute rest node idxs
-            rest_node_mask_idx = th.nonzero(~frag_node_mask).long()
-            rest_node_offsets = mol_num_nodes[
-                th.bucketize(rest_node_mask_idx[:, 0], frag_num_nodes, right=True) - 1
-            ]
-            rest_node_mask_idx[:, 1] = rest_node_mask_idx[:, 1] + rest_node_offsets
-
-            # Validate rest_node_mask_idx are within bounds (after adding offsets)
-            valid_rest_mask = rest_node_mask_idx[:, 1] < mol_embed_gnn.shape[0]
-            rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
-
-            # Aggregate atom embeddings per fragment using pooling
-            num_frags = frag_num_nodes.max().long().item()
-            num_atoms = mol_embed_gnn.shape[0]
-            frag_node_mask_embed = get_sparse_pooled_feats(
-                frag_node_mask_idxs, num_frags, num_atoms, mol_embed_gnn, pool_type=self.mol_pool_type
-            )
-            rest_node_mask_embed = get_sparse_pooled_feats(
-                rest_node_mask_idx, num_frags, num_atoms, mol_embed_gnn, pool_type=self.mol_pool_type
-            )
-            # if self.mol_pool_type != "mean":
-            #    raise ValueError(f"Unsupported mol_pool_type: {self.mol_pool_type!r}; only 'mean' is supported")
+            # Aggregate CC atom embeddings per fragment using pooling
+            frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
+            frag_node_mask_embed = self.mol_pool(frag_node_embed, frag_node_mask_idxs[:, 0])
 
             # frag_node_mask_embed can be one of following:
             # 1. add/sub: Simple arithmetic operations
@@ -559,7 +580,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             # 6. direct: No fusion, use fragment embedding only
 
             if self.cc_interstage_use_rest:
-                mol_pool_embed = rest_node_mask_embed  # mol_embed_gnn_pool[frag_batch]
+                # compute rest node idxs (non-CC atoms per fragment)
+                # NOTE: ~frag_node_mask includes padding zeros (bits beyond mol size) so
+                # bounds-filtering is required to exclude them.
+                rest_node_mask_idx = th.nonzero(~frag_node_mask).long()
+                rest_node_offsets = mol_num_nodes[
+                    th.bucketize(rest_node_mask_idx[:, 0], frag_num_nodes, right=True) - 1
+                ]
+                rest_node_mask_idx[:, 1] = rest_node_mask_idx[:, 1] + rest_node_offsets
+                valid_rest_mask = rest_node_mask_idx[:, 1] < mol_embed_gnn.shape[0]
+                rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
+                rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:, 1])
+                mol_pool_embed = self.mol_pool(rest_node_embed, rest_node_mask_idx[:, 0])
             else:
                 mol_pool_embed = mol_embed_gnn_pool[frag_batch]
 
@@ -656,7 +688,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         frag_node_batch_idxs = frag_batch
         frag_formula_batch_idxs = th.repeat_interleave(
             th.arange(batch_size, device=device),
-            frag_formula_cumsizes[1:] - frag_formula_cumsizes[:-1],
+            frag_formula_sizes,  # equivalent to cumsizes[1:] - cumsizes[:-1], already computed
         )
         frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
 
@@ -665,8 +697,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
         # When CMF features are present the node feature layout may include extra columns
         expected_h_width = 2 * self.num_hs + 1
         if not include_cmf:
-            assert h_formulae_idx_feat.shape[1] == expected_h_width, (
-                f"h_formulae_idx feature size {h_formulae_idx_feat.shape[1]} does not match expected {expected_h_width} (2*num_hs+1)"
+            assert h_formulae_idx_feat.shape[1] >= expected_h_width, (
+                f"h_formulae_idx feature size {h_formulae_idx_feat.shape[1]} is smaller than expected {expected_h_width} "
+                f"(2*num_hs+1); DAG was built with fewer h-transfers than num_hs={self.num_hs}"
             )
         else:
             # allow extra columns when CMF is included but ensure minimum expected width
@@ -685,89 +718,77 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
                 dim=1,
             )
 
-        frag_joint_formula_idxs = frag_joint_formula_idxs.flatten()
-
-        # TODO check if num_h match h_formulae_idx featuresize
-
-        # assert frag_joint_formula_idxs.shape[0] == batch_frag_num_nodes * (self.mlp_output_dim), (
-        #   f"frag_joint_formula_idxs shape {frag_joint_formula_idxs.shape} does not match expected shape {batch_frag_num_nodes * (self.num_hs + 1)}")
-
-        """
-        # TODO fix this with CMF formulaes
-        # remove formulae if necessary this only happen if we use h_n dags for h_n-1 training
-        frag_formula_idxs = th.unique(frag_joint_formula_idxs)
-        frag_joint_formula_idxs = frag_joint_formula_idxs.reshape(batch_frag_num_nodes,-1)
-        num_hs_diff = (frag_joint_formula_idxs.shape[1]-1)//2 - self.num_hs
-        assert num_hs_diff >= 0 and num_hs_diff <= (frag_joint_formula_idxs.shape[1]-1)//2, num_hs_diff
+        # Trim h-columns if the DAG was built with more h-transfers than model's num_hs.
+        # This allows loading h4 DAGs while training/inferring with num_hs=3 (or lower).
+        # Layout: [Δ0, Δ-1, Δ+1, Δ-2, Δ+2, ..., Δ-num_hs, Δ+num_hs] — trimming from
+        # the end removes the largest-magnitude shifts first.
+        frag_formula_idxs_pretrim = th.unique(frag_joint_formula_idxs)  # all h4 formula indices
+        frag_joint_formula_idxs = frag_joint_formula_idxs.reshape(batch_frag_num_nodes, -1)
+        h_width = frag_joint_formula_idxs.shape[1] // (2 if include_cmf else 1)
+        num_hs_diff = (h_width - 1) // 2 - self.num_hs
+        assert num_hs_diff >= 0, (
+            f"DAG max_h_transfer ({(h_width - 1) // 2}) < model num_hs ({self.num_hs}); "
+            "regenerate DAGs with at least num_hs h-transfers"
+        )
+        if num_hs_diff > 0 and include_cmf:
+            raise NotImplementedError(
+                "Trimming h-shifts on CMF DAGs is not yet supported. "
+                "Regenerate DAGs with max_h_transfer matching num_hs."
+            )
         if num_hs_diff > 0:
+            # Remove last 2*num_hs_diff columns (drops Δ±(num_hs+1) … Δ±dag_max_h)
+            frag_joint_formula_idxs = frag_joint_formula_idxs[:, :-2 * num_hs_diff].flatten()
 
-            # remove last 2*num_hs formulae
-            frag_joint_formula_idxs = frag_joint_formula_idxs[:,:-2*num_hs_diff].flatten()
-
-            # Find unique formula indices, including NULL formula indices, and get their inverse mapping
+            # Find unique formula indices still referenced after trimming (+ NULL per batch)
             frag_joint_formula_idxs_un, frag_joint_formula_idxs_inv = th.unique(
                 th.cat([frag_joint_formula_idxs, frag_formula_cumsizes[:-1]], dim=0),
-                return_inverse=True
+                return_inverse=True,
             )
-            # Only keep the inverse indices for the real (non-NULL) formulas
             frag_joint_formula_idxs_inv = frag_joint_formula_idxs_inv[:frag_joint_formula_idxs.shape[0]]
 
-            # Update the number of formulas after removal
-            batch_frag_num_formulae = frag_joint_formula_idxs_un.shape[0]
-
-            # Update the batch index for each formula (maps each formula to its batch)
-            frag_formula_batch_idxs = frag_formula_batch_idxs[frag_joint_formula_idxs_un]
-
-            # Re-index formula indices to be contiguous (0...num_formulae-1)
-            frag_joint_formula_idxs = th.arange(batch_frag_num_formulae, device=device)[frag_joint_formula_idxs_inv]
-
-            # Create a mask for peak formulas (real, non-NULL formulas)
+            # Mask for which pre-trim peaks survive into the trimmed set
             frag_formula_peak_mask = th.isin(
-                frag_formula_idxs[~th.isin(frag_formula_idxs, frag_formula_cumsizes[:-1])],
-                frag_joint_formula_idxs_un
+                frag_formula_idxs_pretrim[~th.isin(frag_formula_idxs_pretrim, frag_formula_cumsizes[:-1])],
+                frag_joint_formula_idxs_un,
             )
 
-            # Update the list of formula indices to be contiguous
-            frag_formula_idxs = th.arange(batch_frag_num_formulae, device=device)
+            # Update formula counts and batch mapping
+            batch_frag_num_formulae = frag_joint_formula_idxs_un.shape[0]
+            frag_formula_batch_idxs = frag_formula_batch_idxs[frag_joint_formula_idxs_un]
+            frag_joint_formula_idxs = th.arange(batch_frag_num_formulae, device=device)[
+                frag_joint_formula_idxs_inv
+            ]
 
-            # Calculate the number of formulas per batch (sample)
+            frag_formula_idxs = th.arange(batch_frag_num_formulae, device=device)
             frag_formula_sizes = scatter_reduce(
-                th.ones_like(frag_joint_formula_idxs_un),
+                th.ones_like(frag_formula_batch_idxs),
                 frag_formula_batch_idxs,
                 reduce="sum",
-                dim_size=batch_size
+                dim_size=batch_size,
             )
-
-            # Ensure that every batch has more than one formula (sanity check)
             assert not th.any(frag_formula_sizes <= 1), frag_formula_sizes
 
-            # Recompute cumulative sizes for formulas per batch
-            frag_formula_cumsizes = th.cat(
-                [th.zeros([1], device=device, dtype=frag_formula_sizes.dtype), frag_formula_sizes],
-                dim=0
+            frag_formula_cumsizes = th.cumsum(
+                th.cat(
+                    [th.zeros([1], device=device, dtype=frag_formula_sizes.dtype), frag_formula_sizes],
+                    dim=0,
+                ),
+                dim=0,
             )
-            frag_formula_cumsizes = th.cumsum(frag_formula_cumsizes, dim=0)
-
-            # Update node offsets based on new formula cumsizes
             frag_node_offsets = frag_formula_cumsizes[frag_node_batch_idxs]
 
-            # Peak-related updates:
-            # Get indices of peak formulas (non-NULL)
-            frag_formula_peak_idxs = frag_formula_idxs[~th.isin(frag_formula_idxs, frag_formula_cumsizes[:-1])]
-
-            # Adjust peak indices to be relative to their batch
-            frag_formula_peak_idxs = frag_formula_peak_idxs - frag_formula_cumsizes[:-1][frag_formula_batch_idxs[~th.isin(frag_formula_idxs, frag_formula_cumsizes[:-1])]]
-
-            # Filter peak probabilities and m/z values using the mask
+            # Update peak-related tensors
+            non_null_mask = ~th.isin(frag_formula_idxs, frag_formula_cumsizes[:-1])
+            frag_formula_peak_idxs = frag_formula_idxs[non_null_mask]
+            frag_formula_peak_idxs = (
+                frag_formula_peak_idxs
+                - frag_formula_cumsizes[:-1][frag_formula_batch_idxs[non_null_mask]]
+            )
             frag_formula_peak_probs = frag_formula_peak_probs[frag_formula_peak_mask]
             frag_formula_peak_mzs = frag_formula_peak_mzs[frag_formula_peak_mask]
-
-            # Number of peaks per formula (excluding NULL)
             frag_formula_peak_sizes = frag_formula_sizes - 1
         else:
-            # no removal required
             frag_joint_formula_idxs = frag_joint_formula_idxs.flatten()
-        """
         # get isomorphism aggregation
         if self.nb_iso:
             frag_nb_idxs = get_node_feats(frag_x, frag_node_feat_idxs, "nb_iso_idx").flatten()
@@ -827,8 +848,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             self.ce_insert_location == "mlp"
             or self.prec_insert_location == "mlp"
             or self.inst_insert_location == "mlp"
+            or self.frag_mode_insert_location == "mlp"
         ):
-            unique_batch_counts = th.unique(frag_node_batch_idxs, return_counts=True)[1]
+            # frag_num_nodes is a cumulative prefix sum → diff gives per-sample node counts,
+            # equivalent to th.unique(frag_node_batch_idxs, return_counts=True)[1] but O(batch)
+            unique_batch_counts = frag_num_nodes[1:] - frag_num_nodes[:-1]
             if self.ce_insert_location == "mlp":
                 mlp_ce_embed = th.repeat_interleave(ce_embed, unique_batch_counts, dim=0)
                 frag_embed_parts.append(mlp_ce_embed)
@@ -838,27 +862,22 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             if self.inst_insert_location == "mlp":
                 mlp_inst_embed = th.repeat_interleave(inst_embed, unique_batch_counts, dim=0)
                 frag_embed_parts.append(mlp_inst_embed)
+            if self.frag_mode_insert_location == "mlp":
+                mlp_frag_mode_embed = th.repeat_interleave(
+                    frag_mode_embed, unique_batch_counts, dim=0
+                )
+                frag_embed_parts.append(mlp_frag_mode_embed)
 
         frag_embed = th.cat(frag_embed_parts, dim=1)
         frag_joint_batch_idxs = th.repeat_interleave(frag_node_batch_idxs, self.mlp_output_dim)
-        # create mask for null forumla, for each sample #0 forumla is null
-        frag_joint_mask = (~th.isin(frag_joint_formula_idxs, frag_formula_cumsizes[:-1])).float()
-        # h count stuff
-        h_counts = th.zeros([2 * self.num_hs + 1], device=device, dtype=frag_joint_batch_idxs.dtype)
-        h_counts[1 + 2 * th.arange(self.num_hs, device=device)] = -th.arange(
-            1, self.num_hs + 1, device=device
-        )
-        h_counts[2 + 2 * th.arange(self.num_hs, device=device)] = th.arange(
-            1, self.num_hs + 1, device=device
-        )
-        # in case of include cmf
-        if include_cmf:
-            h_counts = th.cat([h_counts, h_counts], dim=0)
-            # cmf_mask = th.cat([th.ones(2 * self.num_hs + 1, device=device, dtype=float_dtype), th.zeros(2 * self.num_hs + 1, device=device, dtype=float_dtype)])
-        # else:
-        # cmf_mask = th.ones(2 * self.num_hs + 1, device=device, dtype=float_dtype)
-
-        frag_joint_h_counts = h_counts.repeat(frag_node_batch_idxs.shape[0])
+        # create mask for null formula — the null formula for batch sample b is always at global
+        # index frag_formula_cumsizes[b].  Expand per-node then tile across mlp_output_dim columns
+        # for an O(num_nodes * mlp_output_dim) element-wise comparison instead of th.isin set-search.
+        null_per_node = frag_formula_cumsizes[:-1][frag_node_batch_idxs]  # (num_nodes,)
+        null_tiled = null_per_node.repeat_interleave(self.mlp_output_dim)  # (num_nodes * mlp_output_dim,)
+        frag_joint_mask = (frag_joint_formula_idxs != null_tiled).float()
+        # h counts — use pre-computed buffer (registered in __init__) to avoid rebuilding each step
+        frag_joint_h_counts = self._h_counts_buf.repeat(frag_node_batch_idxs.shape[0])
 
         # frag_joint_cmf_mask = cmf_mask.repeat(frag_node_batch_idxs.shape[0], 1)
 
@@ -866,7 +885,20 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             #  predicts joint logits for each (node, formula) pair:
             # log p(f,n)
             frag_joint_logits = self.formula_module(frag_embed)
-            # frag_joint_logits = frag_joint_logits
+            # apply mode-conditioned affine scaling if enabled
+            if self.frag_mode_scaler is not None:
+                assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"
+                frag_joint_logits = self.frag_mode_scaler(
+                    frag_joint_logits, spec_frag_mode, frag_node_batch_idxs
+                )
+            # apply CE-conditioned FiLM scaling if enabled
+            if self.ce_scaler is not None:
+                assert ce is not None and ce_batch_idxs is not None, (
+                    "spec_ce and spec_ce_batch_idxs required for ce_scaler"
+                )
+                frag_joint_logits = self.ce_scaler(
+                    frag_joint_logits, ce, ce_batch_idxs, frag_node_batch_idxs, batch_size
+                )
             # if include_cmf:
             #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)
             assert frag_joint_logits.shape[1] == self.mlp_output_dim, (
@@ -910,6 +942,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             # predicts log p(f|n) (formula given node) and log p(n) (node probability) separately.
             # log p(f|n) formula given node
             frag_node_formula_logits = self.formula_module(frag_embed)
+            # apply mode-conditioned affine scaling if enabled
+            if self.frag_mode_scaler is not None:
+                assert spec_frag_mode is not None, "spec_frag_mode required for frag_mode_scaler"
+                frag_node_formula_logits = self.frag_mode_scaler(
+                    frag_node_formula_logits, spec_frag_mode, frag_node_batch_idxs
+                )
             assert frag_node_formula_logits.shape[1] == self.mlp_output_dim, (
                 frag_node_formula_logits.shape[1],
                 self.mlp_output_dim,
@@ -1047,11 +1085,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             self.mlp_output_dim,
         )
         # select (will remove all NULL formula idxs, potentially some node idxs too if they contain only NULLs)
-        frag_real_joint_logits = frag_joint_logits[frag_joint_mask.bool()]
-        frag_real_joint_h_counts = frag_joint_h_counts[frag_joint_mask.bool()]
-        frag_real_joint_node_idxs = frag_joint_node_idxs[frag_joint_mask.bool()]
-        frag_real_joint_formula_idxs = frag_joint_formula_idxs[frag_joint_mask.bool()]
-        frag_real_joint_batch_idxs = frag_joint_batch_idxs[frag_joint_mask.bool()]
+        _real_mask = frag_joint_mask.bool()
+        frag_real_joint_logits = frag_joint_logits[_real_mask]
+        frag_real_joint_h_counts = frag_joint_h_counts[_real_mask]
+        frag_real_joint_node_idxs = frag_joint_node_idxs[_real_mask]
+        frag_real_joint_formula_idxs = frag_joint_formula_idxs[_real_mask]
+        frag_real_joint_batch_idxs = frag_joint_batch_idxs[_real_mask]
         # P(f,n)
         frag_real_joint_logprobs = scatter_logsoftmax(
             frag_real_joint_logits, frag_real_joint_batch_idxs
@@ -1176,22 +1215,23 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             frag_nb_node_node_node_idxs = None
             frag_nb_node_node_batch_idxs = None
 
-        assert (
-            th.unique(frag_real_node_node_idxs).shape[0]
-            == frag_real_node_node_idxs.max() + 1
-            == batch_frag_num_nodes
-        )
-        assert (
-            th.unique(frag_real_formula_formula_idxs).shape[0]
-            == frag_real_formula_formula_idxs.max() + 1
-            == batch_frag_num_formulae
-        )
-        if self.nb_iso:
+        if __debug__:
             assert (
-                th.unique(frag_nb_node_node_idxs).shape[0]
-                == frag_nb_node_node_idxs.max() + 1
-                == batch_frag_nb_num_nodes
+                th.unique(frag_real_node_node_idxs).shape[0]
+                == frag_real_node_node_idxs.max() + 1
+                == batch_frag_num_nodes
             )
+            assert (
+                th.unique(frag_real_formula_formula_idxs).shape[0]
+                == frag_real_formula_formula_idxs.max() + 1
+                == batch_frag_num_formulae
+            )
+            if self.nb_iso:
+                assert (
+                    th.unique(frag_nb_node_node_idxs).shape[0]
+                    == frag_nb_node_node_idxs.max() + 1
+                    == batch_frag_nb_num_nodes
+                )
 
         if self.bin_output:
             # import pdb; pdb.set_trace()
@@ -1209,15 +1249,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel):
             spec_logprobs = spec_bin_logprobs
             spec_batch_idxs = spec_bin_batch_idxs
 
-        term1 = scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp()
-        term2 = oos_logprobs.exp()
-        term3 = (not_oos_logprobs + frag_null_formula_logprob).exp()
-        sum_probs = term1 + term2 + term3
-        assert th.all(th.isclose(sum_probs, th.ones_like(sum_probs), rtol=0.0, atol=5e-2)), (
-            term1,
-            term2,
-            term3,
-        )
+        if __debug__:
+            term1 = scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp()
+            term2 = oos_logprobs.exp()
+            term3 = (not_oos_logprobs + frag_null_formula_logprob).exp()
+            sum_probs = term1 + term2 + term3
+            assert th.all(th.isclose(sum_probs, th.ones_like(sum_probs), rtol=0.0, atol=5e-2)), (
+                term1,
+                term2,
+                term3,
+            )
         # size definitions:
         # B: batch size
         # P: total number of predicted spectrum peaks across the batch

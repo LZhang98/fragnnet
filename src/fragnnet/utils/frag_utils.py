@@ -1,6 +1,6 @@
 # from copy import deepcopy
-import _pickle as cPickle
 import bz2
+import gzip
 import os
 import pickle
 import sys
@@ -24,12 +24,20 @@ from fragnnet.frag.compute_frags import (
     MAX_NUM_EDGES,
     MAX_NUM_NODES,
 )
+from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut as _compute_ccs_multi_cut_cy
+from fragnnet.frag.multi_cut_bfs import get_ring_edge_mask
+from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
 from fragnnet.utils.data_utils import mol_from_smiles
-from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF, formula_to_peak_mzs
+from fragnnet.utils.formula_utils import (
+    PREC_TYPE_TO_CMF_MASS_DIFF,
+    PREC_TYPE_TO_MASS_DIFF,
+    formula_to_peak_mzs,
+)
 from fragnnet.utils.misc_utils import PPM
 
 # Fragment index dtype (change here to update everywhere)
-FRAG_INDEX_DTYPE = np.uint16
+# uint32 supports up to ~4B unique formulas per molecule (uint16 max is 65535)
+FRAG_INDEX_DTYPE = np.uint32
 
 # full list of common elements
 # NOTE: this maybe a bad idea to not cover all the element
@@ -254,6 +262,13 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
         # not defualt valence can be -1 for transition metals
         # on paper we should not encounter them at all
         ve_value = atom.GetTotalValence()
+        # For cationic atoms with no H (e.g. [N+] in nitro, N-oxide), the
+        # formal charge funds an extra heavy-atom bond rather than an H slot.
+        # Subtracting FC prevents the H-cap from being inflated by 1 per such
+        # atom.  The guard cur_num_hs == 0 preserves correctness for protonated
+        # amines ([NH3+], [NH2+]) where the extra valence IS used for H.
+        if atom.GetFormalCharge() > 0 and cur_num_hs == 0:
+            ve_value -= atom.GetFormalCharge()
         if use_default_valence:
             default_valence = pt.GetDefaultValence(cur_element)
             if default_valence != -1:
@@ -272,7 +287,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
     hs_arr = np.array(hs_arr, dtype=np.int32)
     # enumerate bonds
     atoms_to_bonds = {}
-    bonds, bond_type_idxs = [], []
+    bonds, bond_type_idxs, ring_bond_mask = [], [], []
     num_bonds = 0
     adj = np.zeros((num_atoms, num_atoms), dtype=np.int32)
     # adj = Chem.rdmolops.GetAdjacencyMatrix(mol)
@@ -286,6 +301,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
 
         bonds.append((from_idx, to_idx))
         bond_type_idxs.append(cur_type_idx)
+        ring_bond_mask.append(1 if bond.IsInRing() else 0)
 
         if from_idx not in atoms_to_bonds:
             atoms_to_bonds[from_idx] = [cur_idx]
@@ -308,6 +324,7 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
     mol_d["elem_idxs"] = elem_idxs
     mol_d["bonds"] = bonds
     mol_d["bond_type_idxs"] = bond_type_idxs
+    mol_d["ring_bond_mask"] = np.array(ring_bond_mask, dtype=np.uint8)
     mol_d["bond_mask_arr"] = np.ones((num_bonds,), dtype=bool)
     mol_d["atom_mask_arr"] = np.ones((num_atoms,), dtype=bool)  # can be computed
     mol_d["atoms_to_bonds"] = atoms_to_bonds  # can be computed
@@ -711,8 +728,14 @@ def compute_frag_peak_stats(
     theoretical_probs = th.index_select(theoretical_probs, 0, indices)
 
     prec_mask = (theoretical_probs > 0.0).type(th.float32)
-    # account for adduct mass
-    theoretical_mzs = theoretical_mzs + prec_mask * PREC_TYPE_TO_MASS_DIFF[prec_type]
+    # Compute two sets of theoretical m/z values:
+    #   - CMF: charge migrates to H+ before fragmentation (correct for [M+NH4]+, [M+Cl]-, etc.)
+    #   - std: adduct mass added directly (correct for [M+H]+, [M-H]- where CMF == std)
+    # A true peak is matched if it falls within tolerance of EITHER set.
+    cmf_diff = PREC_TYPE_TO_CMF_MASS_DIFF.get(prec_type, PREC_TYPE_TO_MASS_DIFF[prec_type])
+    std_diff = PREC_TYPE_TO_MASS_DIFF[prec_type]
+    theoretical_mzs_cmf = theoretical_mzs + prec_mask * cmf_diff
+    theoretical_mzs_std = theoretical_mzs + prec_mask * std_diff
     # compute overlap
     overlap_true_idxs = []
     overlap_true_ints = []
@@ -720,13 +743,15 @@ def compute_frag_peak_stats(
     overlap_pred_peak_counts = []
     overlap_pred_formula_counts = []
 
-    # check true_mzs
+    # check true_mzs against union of CMF and standard theoretical peaks
     for true_idx, true_mz in enumerate(true_mzs):
-        mz_diffs = th.abs(theoretical_mzs - true_mz)
         if not is_ppm:
-            mz_close = mz_diffs < tolerance
+            mz_close_cmf = th.abs(theoretical_mzs_cmf - true_mz) < tolerance
+            mz_close_std = th.abs(theoretical_mzs_std - true_mz) < tolerance
         else:
-            mz_close = mz_diffs < (true_mz * tolerance * PPM)
+            mz_close_cmf = th.abs(theoretical_mzs_cmf - true_mz) < (true_mz * tolerance * PPM)
+            mz_close_std = th.abs(theoretical_mzs_std - true_mz) < (true_mz * tolerance * PPM)
+        mz_close = mz_close_cmf | mz_close_std
         if th.any(mz_close):
             pred_idx = th.nonzero(mz_close, as_tuple=False)
             num_formula_match = th.sum(th.any(mz_close, dim=1).type(th.int32)).item()
@@ -752,7 +777,7 @@ def compute_frag_peak_stats(
         ppt_formula = np.nan
     # check prec_mz stuff
     prec_recalls = []
-    for comp_mzs in [theoretical_mzs, th.tensor(true_mzs)]:
+    for comp_mzs in [theoretical_mzs_std, th.tensor(true_mzs)]:
         prec_mz_diffs = th.abs(comp_mzs - prec_mz)
         if not is_ppm:
             prec_mz_close = prec_mz_diffs < tolerance
@@ -796,6 +821,104 @@ def th_mask_to_long(mask):
     return th.sum(long * mask, dim=2).long()
 
 
+def _inject_smarts_pairs_into_dag(
+    smarts_pairs: list[tuple[np.ndarray, np.ndarray]],
+    nodes_mask_matrix: np.ndarray,
+    nodes_depth_matrix: np.ndarray,
+    dag_edges_matrix: np.ndarray,
+    dag_frag_meta: dict,
+    num_nodes: int,
+    min_frag_atoms: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+    """Inject SMARTS prepass fragment pairs into a DAG produced by compute_frags.
+
+    Appends fragment pairs from the SMARTS rearrangement prepass as depth-1
+    children of the root node (index 0).  Fragments already present in the DAG
+    are deduplicated via their byte-string node-mask key.  Fragments smaller
+    than ``min_frag_atoms`` heavy atoms are silently dropped, consistent with
+    the ``min_frag_atoms`` filter applied inside the BFS.
+
+    Args:
+        smarts_pairs: List of ``(node_mask_a, node_mask_b)`` uint8 array pairs
+            returned by ``_apply_smarts_prepass``.
+        nodes_mask_matrix: Shape ``(n_frags, num_nodes)`` uint8 — existing DAG
+            fragment node masks, root at index 0.
+        nodes_depth_matrix: Shape ``(n_frags, max_depth+1)`` uint8 — depth
+            one-hot for each fragment.
+        dag_edges_matrix: Shape ``(n_edges, 2)`` int64 — (parent, child) pairs.
+        dag_frag_meta: Dict with keys ``reached_depth``, ``edges_min_depth``,
+            ``nodes_min_depth``, ``force_stopped``.
+        num_nodes: Number of atoms in the root molecule.
+        min_frag_atoms: Minimum heavy-atom count for a fragment to be kept.
+
+    Returns:
+        Updated ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
+        dag_frag_meta)`` tuple with the same format as the input.
+    """
+    if not smarts_pairs:
+        return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+    max_depth_cols = nodes_depth_matrix.shape[1]
+
+    # Build bytes-key → fragment index lookup from existing rows.
+    key_to_idx: dict[bytes, int] = {
+        nodes_mask_matrix[i].tobytes(): i for i in range(len(nodes_mask_matrix))
+    }
+    # Build set of existing (parent, child) edges for O(1) dedup.
+    existing_edges: set[tuple[int, int]] = {
+        (int(dag_edges_matrix[i, 0]), int(dag_edges_matrix[i, 1]))
+        for i in range(len(dag_edges_matrix))
+    }
+
+    new_masks: list[np.ndarray] = []
+    new_depth_rows: list[np.ndarray] = []
+    new_min_depths: list[int] = []
+    new_edges: list[tuple[int, int]] = []
+    new_edge_min_depths: list[int] = []
+
+    for mask_a, mask_b in smarts_pairs:
+        for mask in (mask_a, mask_b):
+            if int(mask.sum()) < min_frag_atoms:
+                continue
+            key = mask.tobytes()
+            if key not in key_to_idx:
+                new_idx = len(nodes_mask_matrix) + len(new_masks)
+                key_to_idx[key] = new_idx
+                new_masks.append(mask.astype(MASK_DTYPE))
+                depth_row = np.zeros(max_depth_cols, dtype=MASK_DTYPE)
+                depth_row[min(1, max_depth_cols - 1)] = 1
+                new_depth_rows.append(depth_row)
+                new_min_depths.append(1)
+            frag_idx = key_to_idx[key]
+            edge = (0, frag_idx)
+            if edge not in existing_edges:
+                existing_edges.add(edge)
+                new_edges.append(edge)
+                new_edge_min_depths.append(1)
+
+    if not new_masks and not new_edges:
+        return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+    if new_masks:
+        nodes_mask_matrix = np.vstack(
+            [nodes_mask_matrix] + [m.reshape(1, num_nodes) for m in new_masks]
+        )
+        nodes_depth_matrix = np.vstack([nodes_depth_matrix] + new_depth_rows)
+        dag_frag_meta["nodes_min_depth"] = np.concatenate(
+            [dag_frag_meta["nodes_min_depth"], np.array(new_min_depths, dtype=MASK_DTYPE)]
+        )
+
+    if new_edges:
+        dag_edges_matrix = np.vstack(
+            [dag_edges_matrix, np.array(new_edges, dtype=np.int64)]
+        )
+        dag_frag_meta["edges_min_depth"] = np.concatenate(
+            [dag_frag_meta["edges_min_depth"], np.array(new_edge_min_depths, dtype=MASK_DTYPE)]
+        )
+
+    return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+
 def compute_dags(
     mol_d: dict,
     max_depth: int,
@@ -806,6 +929,10 @@ def compute_dags(
     nb_isomorphic: bool = False,
     # b_isomorphic:bool = False, # not used
     wl_max_iterations: int = -1,
+    multi_cut_bfs: bool = False,
+    max_cut_size: int = 2,
+    smarts_prepass: bool = False,
+    min_frag_atoms: int = 3,
 ) -> dict:
     """_summary_
 
@@ -835,18 +962,82 @@ def compute_dags(
 
     node_mask = node_mask.astype(MASK_DTYPE)
     edge_mask = edge_mask.astype(MASK_DTYPE)
-    nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
-        compute_frags.compute_ccs(
-            num_nodes,
-            num_edges,
-            node_mask,
-            edges,
-            edge_mask,
-            node_to_edge_idx,
-            max_depth,
-            frag_max_time,
+    if multi_cut_bfs:
+        ring_edge_mask = get_ring_edge_mask(mol_d["mol"], num_edges)
+        # Per-SSSR-ring bond groups: one list per ring, containing bond indices.
+        # Used by cut=2/3 to pair bonds within the same individual ring rather
+        # than the entire ring system, avoiding O(r²) cross-ring pairs that
+        # can never disconnect a fused ring system.
+        ring_bond_groups = [list(r) for r in mol_d["mol"].GetRingInfo().BondRings()]
+        # SMARTS prepass: compute fragment pairs in Python (RDKit API), then pass
+        # as smarts_seed_pairs to the Cython BFS for injection as depth-1 children.
+        smarts_seed_pairs = None
+        if smarts_prepass:
+            smarts_seed_pairs = _apply_smarts_prepass(
+                FRAG_RULES,
+                mol_d["mol"],
+                edge_mask,
+                edges,
+                num_nodes,
+                num_edges,
+            )
+        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+            _compute_ccs_multi_cut_cy(
+                num_nodes,
+                num_edges,
+                node_mask,
+                edges,
+                edge_mask,
+                node_to_edge_idx,
+                max_depth,
+                frag_max_time,
+                ring_edge_mask=ring_edge_mask,
+                max_cut_size=max_cut_size,
+                smarts_seed_pairs=smarts_seed_pairs,
+                ring_bond_groups=ring_bond_groups,
+                min_frag_atoms=min_frag_atoms,
+            )
         )
-    )
+    else:
+        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+            compute_frags.compute_ccs(
+                num_nodes,
+                num_edges,
+                node_mask,
+                edges,
+                edge_mask,
+                node_to_edge_idx,
+                max_depth,
+                frag_max_time,
+                min_frag_atoms,
+            )
+        )
+        if smarts_prepass:
+            # Post-process: inject SMARTS rearrangement fragments as depth-1
+            # children of the root.  compute_frags.compute_ccs runs unchanged
+            # (preserving ring-opening via its n_ccs=1 path), and the SMARTS
+            # pairs are merged in afterwards.  No further BFS expansion of the
+            # SMARTS fragments is needed because their sub-fragments are already
+            # covered by the BFS from the root molecule.
+            smarts_pairs = _apply_smarts_prepass(
+                FRAG_RULES,
+                mol_d["mol"],
+                edge_mask,
+                edges,
+                num_nodes,
+                num_edges,
+            )
+            nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+                _inject_smarts_pairs_into_dag(
+                    smarts_pairs,
+                    nodes_mask_matrix,
+                    nodes_depth_matrix,
+                    dag_edges_matrix,
+                    dag_frag_meta,
+                    num_nodes,
+                    min_frag_atoms,
+                )
+            )
 
     if nb_isomorphic:
         node_nb_hashes = get_subgraph_hashes(
@@ -912,10 +1103,12 @@ def compute_dags(
     hs_arr_np = np.array(hs_arr)
     for cc_mask in nodes_mask_matrix:
         cc_h_count = np.sum(np.multiply(cc_mask, hs_arr_np))
-        cc_formula = cc_bitmask_to_formula_arr(cc_mask, elem_idxs)
+        # Cast to uint16 before setting H count: uint8 overflows for fragments with >255 H atoms
+        # (possible when MAX_NUM_NODES=128 and ~4 H per heavy atom → up to 512 H)
+        cc_formula = cc_bitmask_to_formula_arr(cc_mask, elem_idxs).astype(np.uint16)
         cc_formula[ELEMENT_TO_IDX["H"]] = cc_h_count
         cc_formula_list.append(cc_formula)
-    node_base_formula_matrix = np.stack(cc_formula_list, dtype=MASK_DTYPE)
+    node_base_formula_matrix = np.stack(cc_formula_list, dtype=np.uint16)
 
     # map nodes to formulae
     formula_d_list, h_count_d_list = [], []
@@ -941,7 +1134,7 @@ def compute_dags(
 
     formula_idx_list, h_count_list = [], []
     for formulae_dict, h_count_dict in zip(formula_d_list, h_count_d_list):
-        # idxs have value range 0 - uint16 max
+        # idxs have value range 0 - uint32 max
         formulae_idxs = np.zeros(formula_node_feat_size, dtype=FRAG_INDEX_DTYPE)
         # h_counts have value range -1 - int16 max, we use int16 here, -1 is for invalid
         # we are not expecting h_counts to be that high anyway
@@ -1071,15 +1264,22 @@ def compute_dags(
         from_idx, to_idx = edge
         from_cc_mask = nodes_mask_matrix[from_idx]
         to_cc_mask = nodes_mask_matrix[to_idx]
-        diff_cc_mask = from_cc_mask - to_cc_mask
+        # Use signed subtraction to avoid uint8 underflow (0 - 1 = 255 in uint8)
+        diff_cc_mask = np.clip(
+            from_cc_mask.astype(np.int16) - to_cc_mask.astype(np.int16), 0, 1
+        ).astype(MASK_DTYPE)
+        # compute_cc_h_floor/cap expect atom indices, not a bitmask
+        diff_atom_ids = cc_bit_mask_to_atom_idx(diff_cc_mask)
 
         from_formula_mask = node_base_formula_matrix[from_idx]
         to_formula_mask = node_base_formula_matrix[to_idx]
-        diff_formula_mask = from_formula_mask - to_formula_mask
+        # Use signed subtraction to avoid uint16 underflow (parent always >= child for heavy atoms,
+        # but H is zeroed below, so sign safety is needed)
+        diff_formula_mask = from_formula_mask.astype(np.int32) - to_formula_mask.astype(np.int32)
         diff_formula_mask[CANONICAL_H_IDX] = 0  # we don't care Hs for this
 
         diff_h_floor = compute_cc_h_floor(
-            diff_cc_mask,
+            diff_atom_ids,
             mol_d["ve_arr"],
             mol_d["sbond_arr"],
             0,
@@ -1087,7 +1287,7 @@ def compute_dags(
             mol_d["atoms_to_bonds"],
             mol_d["bond_mask_arr"],
         )
-        diff_h_cap = compute_cc_h_cap(diff_cc_mask, mol_d["ve_arr"], mol_d["sbond_arr"], 0)
+        diff_h_cap = compute_cc_h_cap(diff_atom_ids, mol_d["ve_arr"], mol_d["sbond_arr"], 0)
         assert diff_h_floor <= diff_h_cap, (diff_h_floor, diff_h_cap)
         assert diff_h_floor >= 0, diff_h_floor
         diff_h_range = [diff_h_floor, diff_h_cap]
@@ -1219,17 +1419,277 @@ def get_edge_feats(edge_feats: th.Tensor, edge_feat_idxs: int, key: str):
     return edge_feats
 
 
-def get_frag_name(mol_id: str, is_compressed: bool):
-    name = f"{mol_id}.pickle"
+def get_frag_name(mol_id: str | int, is_compressed: bool) -> str:
+    """Return the canonical filename for a fragment DAG pickle file.
+
+    Args:
+        mol_id: Molecule identifier (int or numeric string).
+        is_compressed: Whether the file is bz2-compressed.
+
+    Returns:
+        Filename of the form ``{mol_id}.pkl[.bz2]``.
+    """
+    name = f"{int(mol_id)}.pkl"
     if is_compressed:
         name += ".bz2"
     return name
 
 
-def get_frag_fp(mol_id: str, frag_dp: str, is_compressed: bool):
-    fp = os.path.join(frag_dp, get_frag_name(mol_id, is_compressed))
+def get_frag_fp(mol_id: str | int, frag_dp: str, is_compressed: bool) -> str:
+    """Return the full path for a fragment DAG pickle file.
 
-    return fp
+    Args:
+        mol_id: Molecule identifier (int or numeric string).
+        frag_dp: Directory containing fragment files.
+        is_compressed: Whether the file is bz2-compressed.
+
+    Returns:
+        Full file path using the canonical naming convention.
+    """
+    return os.path.join(frag_dp, get_frag_name(mol_id, is_compressed))
+
+
+def _dump_pickle_file(fp: str, payload: dict) -> None:
+    """Write a pickled payload using compression inferred from file suffix."""
+    if fp.endswith((".pkl", ".pickle")):
+        with open(fp, "wb") as pf:
+            pickle.dump(payload, pf, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+
+    if fp.endswith((".pkl.gz", ".pickle.gz")):
+        with gzip.open(fp, "wb") as pf:
+            pickle.dump(payload, pf, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+
+    if fp.endswith((".pkl.bz2", ".pickle.bz2")):
+        with bz2.open(fp, "wb") as pf:
+            pickle.dump(payload, pf, protocol=pickle.HIGHEST_PROTOCOL)
+        return
+
+    raise ValueError(
+        f"Unsupported pickle output extension for '{fp}'. "
+        "Expected .pkl/.pickle with optional .gz or .bz2"
+    )
+
+
+def _load_pickle_file(fp: str):
+    """Read a pickled payload using compression inferred from file suffix."""
+    if fp.endswith((".pkl", ".pickle")):
+        with open(fp, "rb") as pf:
+            return pickle.load(pf)
+
+    if fp.endswith((".pkl.gz", ".pickle.gz")):
+        with gzip.open(fp, "rb") as pf:
+            return pickle.load(pf)
+
+    if fp.endswith((".pkl.bz2", ".pickle.bz2")):
+        with bz2.open(fp, "rb") as pf:
+            return pickle.load(pf)
+
+    raise ValueError(
+        f"Unsupported pickle input extension for '{fp}'. "
+        "Expected .pkl/.pickle with optional .gz or .bz2"
+    )
+
+
+def get_dag_output_path(
+    dag_dp: str,
+    mol_id: str | int,
+    compress_dags: bool,
+    compress_format: str,
+) -> str:
+    """Build output path for one DAG artifact.
+
+    The base filename is determined by :func:`get_frag_name` (canonical format
+    ``{mol_id}.pkl``).  Compression with ``"gz"`` appends ``.gz``; ``"bz2"``
+    appends ``.bz2`` (equivalent to passing ``is_compressed=True`` to
+    :func:`get_frag_name`).
+
+    Args:
+        dag_dp: DAG output directory.
+        mol_id: Molecule identifier.
+        compress_dags: Whether per-file DAG outputs should be compressed.
+        compress_format: Compression format, either ``"gz"`` or ``"bz2"``.
+
+    Returns:
+        Full output path for the DAG file.
+
+    Raises:
+        ValueError: If ``compress_format`` is invalid when compression is enabled.
+    """
+    if not compress_dags:
+        return get_frag_fp(mol_id, dag_dp, is_compressed=False)
+
+    if compress_format == "gz":
+        return os.path.join(dag_dp, f"{int(mol_id)}.pkl.gz")
+    if compress_format == "bz2":
+        return get_frag_fp(mol_id, dag_dp, is_compressed=True)
+
+    raise ValueError(
+        f"Invalid compression format '{compress_format}'. Expected one of: 'gz', 'bz2'."
+    )
+
+
+def dump_dag_pickle(fp: str, dag_d: dict) -> None:
+    """Write a DAG dictionary to disk with extension-aware compression.
+
+    Args:
+        fp: Output path ending with ``.pkl``, ``.pkl.gz``, or ``.pkl.bz2``.
+        dag_d: DAG payload dictionary.
+
+    Raises:
+        ValueError: If file suffix is unsupported.
+    """
+    _dump_pickle_file(fp, dag_d)
+
+
+def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
+    """Write one DAG dictionary into an open h5py group.
+
+    All PyTorch tensors are converted to numpy arrays before writing.
+    Dict-typed fields (``idx_to_formula``, ``idx_by_h_delta``, depth-by-depth
+    counts) are JSON-encoded and stored as group attributes.
+
+    Args:
+        h5_group: An open, writable ``h5py.Group`` for this molecule.
+        dag_d: DAG payload dictionary as returned by ``compute_dags``.
+    """
+    import json
+
+    dag = dag_d["dag"]
+    g = h5_group.create_group("dag")
+    g.create_dataset("x", data=dag.x.numpy(), compression="gzip", compression_opts=4)
+    g.create_dataset(
+        "edge_index", data=dag.edge_index.numpy(), compression="gzip", compression_opts=4
+    )
+    g.create_dataset(
+        "edge_attr", data=dag.edge_attr.numpy(), compression="gzip", compression_opts=4
+    )
+    g.create_dataset("node_feat_idxs", data=dag.node_feat_idxs.numpy())
+    g.create_dataset("edge_feat_idxs", data=dag.edge_feat_idxs.numpy())
+
+    h5_group.create_dataset(
+        "formula_peak_mzs",
+        data=dag_d["formula_peak_mzs"].numpy(),
+        compression="gzip",
+        compression_opts=4,
+    )
+    h5_group.create_dataset(
+        "formula_peak_probs",
+        data=dag_d["formula_peak_probs"].numpy(),
+        compression="gzip",
+        compression_opts=4,
+    )
+
+    edges_min_depth = dag_d["edges_min_depth"]
+    nodes_min_depth = dag_d["nodes_min_depth"]
+    h5_group.create_dataset("edges_min_depth", data=edges_min_depth)
+    h5_group.create_dataset("nodes_min_depth", data=nodes_min_depth)
+
+    # JSON-encoded variable-structure fields
+    h5_group.attrs["idx_to_formula"] = json.dumps(
+        {str(k): v for k, v in dag_d["idx_to_formula"].items()}
+    )
+    h5_group.attrs["idx_by_h_delta"] = json.dumps(
+        [sorted(map(int, s)) for s in dag_d["idx_by_h_delta"]]
+    )
+    h5_group.attrs["dag_num_edges_by_depth"] = json.dumps(
+        {str(k): int(v) for k, v in dag_d["dag_num_edges_by_depth"].items()}
+    )
+    h5_group.attrs["dag_num_nodes_by_depth"] = json.dumps(
+        {str(k): int(v) for k, v in dag_d["dag_num_nodes_by_depth"].items()}
+    )
+
+    # Integer scalars
+    for key in [
+        "max_depth",
+        "reached_depth",
+        "max_h_transfer",
+        "dag_num_edges",
+        "dag_num_nodes",
+        "dag_num_nodes_nb",
+        "node_feature_size",
+        "edge_feature_size",
+    ]:
+        h5_group.attrs[key] = int(dag_d[key])
+
+    # Float scalars
+    for key in ["dag_sparsity", "formula_redundancy"]:
+        h5_group.attrs[key] = float(dag_d[key])
+
+    # Bool scalars
+    for key in ["h_prior", "is_directed", "force_stopped"]:
+        h5_group.attrs[key] = bool(dag_d[key])
+
+
+def load_dag_hdf5(h5_group) -> dict:
+    """Read one DAG dictionary from an open h5py group.
+
+    Numpy arrays are converted back to PyTorch tensors with their original
+    dtypes.  JSON-encoded attributes are decoded to their original Python types.
+
+    Args:
+        h5_group: An open ``h5py.Group`` previously written by
+            :func:`dump_dag_hdf5`.
+
+    Returns:
+        DAG payload dictionary compatible with the format returned by
+        ``compute_dags``.
+    """
+    import json
+
+    g = h5_group["dag"]
+    dag = pyg.data.Data(
+        x=th.from_numpy(g["x"][:]),
+        edge_index=th.from_numpy(g["edge_index"][:]),
+        edge_attr=th.from_numpy(g["edge_attr"][:]),
+    )
+    dag.node_feat_idxs = th.from_numpy(g["node_feat_idxs"][:])
+    dag.edge_feat_idxs = th.from_numpy(g["edge_feat_idxs"][:])
+
+    dag_d: dict = {
+        "dag": dag,
+        "formula_peak_mzs": th.from_numpy(h5_group["formula_peak_mzs"][:]),
+        "formula_peak_probs": th.from_numpy(h5_group["formula_peak_probs"][:]),
+        "edges_min_depth": h5_group["edges_min_depth"][:],
+        "nodes_min_depth": h5_group["nodes_min_depth"][:],
+    }
+
+    # JSON-encoded variable-structure fields
+    dag_d["idx_to_formula"] = {
+        int(k): v for k, v in json.loads(h5_group.attrs["idx_to_formula"]).items()
+    }
+    # Stored as list-of-lists; restore as list-of-sets to match original type
+    dag_d["idx_by_h_delta"] = [set(s) for s in json.loads(h5_group.attrs["idx_by_h_delta"])]
+    dag_d["dag_num_edges_by_depth"] = {
+        int(k): v for k, v in json.loads(h5_group.attrs["dag_num_edges_by_depth"]).items()
+    }
+    dag_d["dag_num_nodes_by_depth"] = {
+        int(k): v for k, v in json.loads(h5_group.attrs["dag_num_nodes_by_depth"]).items()
+    }
+
+    # Integer scalars
+    for key in [
+        "max_depth",
+        "reached_depth",
+        "max_h_transfer",
+        "dag_num_edges",
+        "dag_num_nodes",
+        "dag_num_nodes_nb",
+        "node_feature_size",
+        "edge_feature_size",
+    ]:
+        dag_d[key] = int(h5_group.attrs[key])
+
+    # Float scalars
+    for key in ["dag_sparsity", "formula_redundancy"]:
+        dag_d[key] = float(h5_group.attrs[key])
+
+    # Bool scalars
+    for key in ["h_prior", "is_directed", "force_stopped"]:
+        dag_d[key] = bool(h5_group.attrs[key])
+
+    return dag_d
 
 
 def save_frag_d(frag_d: dict, mol_id: str, frag_dp: str, is_compressed: bool = False):
@@ -1242,56 +1702,90 @@ def save_frag_d(frag_d: dict, mol_id: str, frag_dp: str, is_compressed: bool = F
     """
 
     fp = get_frag_fp(mol_id, frag_dp, is_compressed)
-    try:
-        if not is_compressed:
-            with open(fp, "wb") as fileout:
-                pickle.dump(frag_d, fileout, protocol=pickle.HIGHEST_PROTOCOL)
-        else:
-            with bz2.BZ2File(fp, "wb") as fileout:
-                cPickle.dump(frag_d, fileout)
-    except Exception as e:
-        print(e, fp)
+    _dump_pickle_file(fp, frag_d)
 
 
-def load_frag_d(mol_id: str, frag_dp: str, is_compressed: bool = False):
-    """_summary_
+def _legacy_frag_names(mol_id: str | int, is_compressed: bool) -> list[str]:
+    """Return legacy filenames to try for backward compatibility.
+
+    Covers two previous naming conventions:
+
+    - ``{mol_id}.pickle[.bz2]`` — original format before unification
+    - ``{mol_id:08d}.pkl[.bz2]`` — short-lived zero-padded format
 
     Args:
-        filepath (str): _description_
+        mol_id: Molecule identifier.
+        is_compressed: Whether the file is bz2-compressed.
 
     Returns:
-        _type_: _description_
+        List of legacy filenames to probe, in preference order.
     """
-    frag_d = None
+    suffix = ".bz2" if is_compressed else ""
+    return [
+        f"{int(mol_id):08d}.pkl{suffix}",
+        f"{mol_id}.pickle{suffix}",
+    ]
 
+
+def load_frag_d(mol_id: str | int, frag_dp: str, is_compressed: bool = False):
+    """Load a fragment DAG dictionary from disk.
+
+    Supports folder, tar archive, and zip archive backends.  The canonical
+    filename format is ``{mol_id}.pkl[.bz2]`` (see :func:`get_frag_name`).
+    For backward compatibility, the zero-padded ``{mol_id:08d}.pkl[.bz2]`` and
+    the original ``{mol_id}.pickle[.bz2]`` formats are also tried when the
+    canonical file is not found.
+
+    Args:
+        mol_id: Molecule identifier (int or numeric string).
+        frag_dp: Directory path or archive file (``.tar`` / ``.zip``) containing
+            fragment DAG files.
+        is_compressed: Whether the files are bz2-compressed. Defaults to False.
+
+    Returns:
+        Loaded fragment dictionary, or ``None`` if not found inside a tar archive.
+    """
     if os.path.isfile(frag_dp) and str(frag_dp).endswith(".tar"):
-        frag_filename = get_frag_name(mol_id, is_compressed)
+        canonical = get_frag_name(mol_id, is_compressed)
+        accepted = {canonical} | set(_legacy_frag_names(mol_id, is_compressed))
         with tarfile.open(frag_dp, "r") as tar_read:
             for member in tar_read.getmembers():
-                if member.name == frag_filename:
+                if member.name in accepted:
                     f = tar_read.extractfile(member)
+                    if f is None:
+                        raise ValueError(
+                            f"Could not extract '{member.name}' from archive '{frag_dp}'"
+                        )
                     content = f.read()
-                    frag_d = pickle.loads(bz2.decompress(content))
-                    break
+                    if member.name.endswith(".bz2"):
+                        return pickle.loads(bz2.decompress(content))
+                    return pickle.loads(content)
+        return None
 
-    elif os.path.isfile(frag_dp) and str(frag_dp).endswith(".zip"):
-        frag_filename = get_frag_name(mol_id, is_compressed)
-        with ZipFile(frag_dp, "r") as zip_read, zip_read.open(frag_filename) as f:
-            content = f.read()
-            if frag_filename.endswith("bz2"):
-                frag_d = pickle.loads(bz2.decompress(content))
-            else:
-                frag_d = pickle.loads(content)
-    else:
-        fp = get_frag_fp(mol_id, frag_dp, is_compressed)
-        if not is_compressed:
-            with open(fp, "rb") as filein:
-                frag_d = pickle.load(filein)
-        else:
-            with bz2.BZ2File(fp, "rb") as filein:
-                frag_d = cPickle.load(filein)
+    if os.path.isfile(frag_dp) and str(frag_dp).endswith(".zip"):
+        canonical = get_frag_name(mol_id, is_compressed)
+        with ZipFile(frag_dp, "r") as zip_read:
+            names = zip_read.namelist()
+            member_name = canonical
+            if member_name not in names:
+                for legacy in _legacy_frag_names(mol_id, is_compressed):
+                    if legacy in names:
+                        member_name = legacy
+                        break
+            with zip_read.open(member_name) as f:
+                content = f.read()
+        if member_name.endswith(".bz2"):
+            return pickle.loads(bz2.decompress(content))
+        return pickle.loads(content)
 
-    return frag_d
+    fp = get_frag_fp(mol_id, frag_dp, is_compressed)
+    if not os.path.isfile(fp):
+        for legacy in _legacy_frag_names(mol_id, is_compressed):
+            legacy_fp = os.path.join(frag_dp, legacy)
+            if os.path.isfile(legacy_fp):
+                fp = legacy_fp
+                break
+    return _load_pickle_file(fp)
 
 
 def _hash_label(label, digest_size=32):
@@ -1415,11 +1909,11 @@ def timed_get_dags(
     isotopes: bool,
     nb_isomorphic: bool,
     wl_max_iterations: int,
-    use_cached=True,
-    compressed=False,
-    save_dag=True,
-    
-) -> dict:
+    multi_cut_bfs: bool = False,
+    max_cut_size: int = 2,
+    smarts_prepass: bool = False,
+    min_frag_atoms: int = 3,
+) -> tuple:
     try:
         mol_d = extract_mol_info(mol)
         # this maybe dangers in multi processing because of scopes
@@ -1433,6 +1927,10 @@ def timed_get_dags(
             nb_isomorphic,
             # False, b_isomorphic, this not used
             wl_max_iterations,
+            multi_cut_bfs=multi_cut_bfs,
+            max_cut_size=max_cut_size,
+            smarts_prepass=smarts_prepass,
+            min_frag_atoms=min_frag_atoms,
         )
         return mol_id, dag_d
     except KeyboardInterrupt as e:
@@ -1442,9 +1940,7 @@ def timed_get_dags(
         # don't retry, theres a bug
         if type(mol) is not str:
             mol = Chem.MolToSmiles(mol)
-        print(
-            f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}", file=sys.stderr
-        )
+        print(f">> Non-timeout error, aborting: {type(e)} {repr(e)} Input {mol}", file=sys.stderr)
         print("> Traceback", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
     return mol_id, {}

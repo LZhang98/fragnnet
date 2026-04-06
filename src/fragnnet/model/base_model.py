@@ -1,12 +1,15 @@
 """
 base_model.py
 
-Base classes for embedding collision energy (CE), precursor type(Prec), and instrument type (Inst)
-for FragGNN models. Intended to be used as base classes for more complex model architectures.
+Base classes for embedding collision energy (CE), precursor type(Prec), instrument type (Inst),
+and fragmentation mode (FragMode) for FragGNN models. Intended to be used as base classes for
+more complex model architectures.
 
 - CEModel: Handles collision energy embedding and transformation.
 - PrecModel: Handles precursor type embedding.
 - InstModel: Handles instrument type embedding.
+- FragModeModel: Handles fragmentation mode embedding (HCD/CID/unknown).
+- FragModeScaler: Mode-conditioned affine output scaling layer.
 """
 
 import torch as th
@@ -31,6 +34,7 @@ class CEModel:
         ce_mean: float,
         ce_std: float,
         ce_max: float,
+        ce_insert_dual: bool = False,
     ) -> None:
         """
         Initialize CE embedding configuration and embedding layers.
@@ -44,9 +48,12 @@ class CEModel:
             ce_mean: Mean for CE normalization.
             ce_std: Std for CE normalization.
             ce_max: Max value for CE binning/embedding.
+            ce_insert_dual: Embed both NCE and ACE independently. Not yet implemented.
         """
         assert ce_insert_type in ["id", "lin", "embed", "embed_clamped", "bin"]
         assert ce_insert_location in ["none", "mol", "frag", "mlp"]
+        if ce_insert_dual:
+            raise NotImplementedError("ce_insert_dual is not yet implemented")
         self.ce_insert_type = ce_insert_type
         self.ce_insert_location = ce_insert_location
         self.ce_insert_merge = ce_insert_merge
@@ -55,6 +62,7 @@ class CEModel:
         self.ce_max = ce_max
         self.ce_mean = ce_mean
         self.ce_std = ce_std
+        self.ce_insert_dual = ce_insert_dual
         self._ce_location_check()
         self._setup_ce()
 
@@ -289,3 +297,209 @@ class InstModel:
                 )
             inst_embed = self.inst_embedder(inst_type)
         return inst_embed
+
+
+class FragModeModel:
+    """Class for handling fragmentation mode embedding (e.g. HCD, CID, unknown)."""
+
+    def _frag_mode_init(
+        self,
+        frag_mode_insert_location: str,
+        frag_mode_insert_size: int,
+        frag_mode_num_types: int,
+    ) -> None:
+        """
+        Initialize fragmentation mode embedding configuration and embedding layers.
+
+        Args:
+            frag_mode_insert_location: Where to insert frag-mode embedding ("none", "mol", "mlp").
+            frag_mode_insert_size: Output embedding size.
+            frag_mode_num_types: Number of known fragmentation mode types (unknown handled as +1).
+        """
+        self.frag_mode_insert_location = frag_mode_insert_location
+        # +1 for the unknown/fallback token at index frag_mode_num_types
+        self.frag_mode_embedder = nn.Embedding(frag_mode_num_types + 1, frag_mode_insert_size)
+        frag_mode_dim = frag_mode_insert_size
+
+        self._frag_mode_location_check()
+
+        if self.frag_mode_insert_location == "mol":
+            frag_mode_mol_input_dim = frag_mode_dim
+            frag_mode_mlp_input_dim = 0
+        elif self.frag_mode_insert_location == "mlp":
+            frag_mode_mol_input_dim = 0
+            frag_mode_mlp_input_dim = frag_mode_dim
+        else:
+            assert self.frag_mode_insert_location == "none"
+            frag_mode_mol_input_dim = 0
+            frag_mode_mlp_input_dim = 0
+        self.frag_mode_mol_input_dim = frag_mode_mol_input_dim
+        self.frag_mode_mlp_input_dim = frag_mode_mlp_input_dim
+
+    def _frag_mode_location_check(self) -> None:
+        raise NotImplementedError("Subclasses must implement _frag_mode_location_check")
+
+    def embed_frag_mode(self, frag_mode: th.Tensor | None) -> th.Tensor | None:
+        """
+        Embed the fragmentation mode.
+
+        Args:
+            frag_mode: Tensor of fragmentation mode indices (HCD=0, CID=1, unknown=num_types).
+
+        Returns:
+            Embedded frag-mode tensor or None.
+        """
+        frag_mode_embed = None
+        if self.frag_mode_insert_location != "none":
+            if frag_mode is None:
+                raise ValueError(
+                    f"frag_mode is None but frag_mode_insert_location is "
+                    f"{self.frag_mode_insert_location}"
+                )
+            frag_mode_embed = self.frag_mode_embedder(frag_mode)
+        return frag_mode_embed
+
+
+class CEScaler(nn.Module):
+    """CE-conditioned FiLM output scaling layer.
+
+    Treats collision energy like a temperature: predicts a per-H-shift (log_scale, bias)
+    from normalized CE via a small MLP, then applies:
+        ``logits_out = logits * exp(log_scale) + bias``
+    before the scatter softmax. Higher CE can increase certain H-shift dimensions
+    (e.g. Δ-2) while suppressing others, capturing the physics of CE-dependent
+    fragment appearance / disappearance.
+
+    Initialized to zero so the layer starts as an identity transform.
+
+    Attributes:
+        ce_mean: Mean used for CE z-score normalization.
+        ce_std: Std used for CE z-score normalization.
+        output_dim: Number of H-shift logit dimensions (2*num_hs+1, or doubled for CMF).
+        net: MLP mapping normalized CE scalar → (log_scale, bias) of shape (output_dim*2,).
+    """
+
+    def __init__(
+        self,
+        ce_mean: float,
+        ce_std: float,
+        output_dim: int,
+        hidden_dim: int = 64,
+    ) -> None:
+        """Initialize CEScaler.
+
+        Args:
+            ce_mean: Mean CE for z-score normalization.
+            ce_std: Std CE for z-score normalization.
+            output_dim: Logit output dimension (mlp_output_dim).
+            hidden_dim: Hidden dim of the CE→FiLM MLP. Defaults to 64.
+        """
+        super().__init__()
+        self.ce_mean = ce_mean
+        self.ce_std = ce_std
+        self.output_dim = output_dim
+        self.net = nn.Sequential(
+            nn.Linear(1, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, output_dim * 2),
+        )
+        # Init to zero → identity transform at the start of training
+        nn.init.zeros_(self.net[-1].weight)
+        nn.init.zeros_(self.net[-1].bias)
+
+    def forward(
+        self,
+        logits: th.Tensor,
+        ce: th.Tensor,
+        ce_batch_idxs: th.Tensor,
+        frag_node_batch_idxs: th.Tensor,
+        batch_size: int,
+    ) -> th.Tensor:
+        """Apply CE-conditioned affine scaling to intensity logits.
+
+        Args:
+            logits: Raw MLP logits of shape (num_nodes, output_dim).
+            ce: Per-CE values of shape (num_ces,); -1 means missing.
+            ce_batch_idxs: Batch index per CE of shape (num_ces,).
+            frag_node_batch_idxs: Batch index per node of shape (num_nodes,).
+            batch_size: Number of samples in the batch.
+
+        Returns:
+            Scaled logits of shape (num_nodes, output_dim).
+        """
+        # Normalize CE; treat missing values (-1) as 0 so identity scaling is preserved
+        mask = ce >= 0
+        norm_ce = th.where(mask, (ce - self.ce_mean) / self.ce_std, th.zeros_like(ce))
+        norm_ce = norm_ce.reshape(-1, 1)
+        # MLP: (num_ces, 1) → (num_ces, output_dim * 2)
+        params = self.net(norm_ce)
+        # Aggregate multiple CEs per sample via mean
+        params_per_sample = scatter_reduce(
+            src=params,
+            index=ce_batch_idxs.unsqueeze(1).expand_as(params),
+            reduce="mean",
+            dim_size=batch_size,
+            include_self=False,
+        )  # (batch_size, output_dim * 2)
+        params_per_node = params_per_sample[frag_node_batch_idxs]  # (num_nodes, output_dim * 2)
+        log_scale = params_per_node[:, : self.output_dim]
+        bias = params_per_node[:, self.output_dim :]
+        return logits * th.exp(log_scale) + bias
+
+
+class FragModeScaler(nn.Module):
+    """Mode-conditioned affine output scaling layer.
+
+    Applies a per-fragmentation-mode learned scale and bias to the raw logit output of the
+    intensity head, allowing the model to shift its predicted intensity distribution based
+    on fragmentation physics (HCD vs CID vs unknown).
+
+    The transform is: ``logits_out = logits * exp(log_scale) + bias``
+
+    Both ``log_scale`` and ``bias`` are initialised to zero so the layer starts as the
+    identity transform and can be trained from scratch or fine-tuned.
+
+    Attributes:
+        params: Embedding of shape (num_frag_modes + 1, 2) storing (log_scale, bias)
+            for each mode.  Index ``num_frag_modes`` is the fallback unknown token.
+    """
+
+    def __init__(self, num_frag_modes: int, output_dim: int) -> None:
+        """
+        Initialize the FragModeScaler.
+
+        Args:
+            num_frag_modes: Number of known fragmentation modes (unknown handled as +1).
+            output_dim: Dimension of the logit output to scale (mlp_output_dim).
+        """
+        super().__init__()
+        self.output_dim = output_dim
+        # shape: (num_frag_modes + 1, output_dim * 2) — first half is log_scale, second is bias
+        # Initialise to zero so the layer starts as an identity transform.
+        self.params = nn.Embedding(num_frag_modes + 1, output_dim * 2)
+        nn.init.zeros_(self.params.weight)
+
+    def forward(
+        self,
+        logits: th.Tensor,
+        frag_mode: th.Tensor,
+        node_batch_idxs: th.Tensor,
+    ) -> th.Tensor:
+        """
+        Apply per-mode affine scaling to the intensity logits.
+
+        Args:
+            logits: Raw MLP logits of shape (num_nodes, output_dim).
+            frag_mode: Per-sample mode indices of shape (batch_size,).
+            node_batch_idxs: Batch index for each node of shape (num_nodes,).
+
+        Returns:
+            Scaled logits of shape (num_nodes, output_dim).
+        """
+        # mode_params: (batch_size, output_dim * 2)
+        mode_params = self.params(frag_mode)
+        # expand to per-node: (num_nodes, output_dim * 2)
+        mode_params_per_node = mode_params[node_batch_idxs]
+        log_scale = mode_params_per_node[:, : self.output_dim]
+        bias = mode_params_per_node[:, self.output_dim :]
+        return logits * th.exp(log_scale) + bias

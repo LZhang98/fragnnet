@@ -2,18 +2,11 @@
 
 Tests for:
 - calculate_match_mzs (pairwise m/z tolerance matching, relative and absolute)
-- binned_cosine_similarity (dense binned cosine similarity)
 - cos_sim_helper (sparse cosine similarity via bin index overlap)
-- batched_l1_normalize, batched_l2_normalize (scatter-based normalization)
-- batched_mf1000_normalize, mf1000_normalize_np (MF1000 normalization)
+- batched_l1_normalize, batched_mf1000_normalize (scatter-based normalization)
 - scipy_linear_sum_assignment (Hungarian algorithm wrapper)
 - opt_cos_sim_helper (oracle upper-bound cosine similarity)
-- calculate_cosine_similarity (end-to-end dense pipeline)
-- calculate_sparse_cosine_similarity (end-to-end sparse pipeline)
-- calculate_sparse_cosine_hungarian (end-to-end Hungarian-matched pipeline)
 """
-
-import math
 
 import numpy as np
 import pytest
@@ -21,15 +14,9 @@ import torch as th
 
 from fragnnet.utils.spec_utils import (
     batched_l1_normalize,
-    batched_l2_normalize,
     batched_mf1000_normalize,
-    binned_cosine_similarity,
-    calculate_cosine_similarity,
     calculate_match_mzs,
-    calculate_sparse_cosine_hungarian,
-    calculate_sparse_cosine_similarity,
     cos_sim_helper,
-    mf1000_normalize_np,
     opt_cos_sim_helper,
     scipy_linear_sum_assignment,
 )
@@ -127,51 +114,6 @@ class TestCalculateMatchMzs:
             calculate_match_mzs(th.tensor([100.0]), np.array([100.0]))
 
 
-class TestBinnedCosineSimilarity:
-    """Tests for binned_cosine_similarity — cosine similarity on dense spectra."""
-
-    def test_identical_spectra_returns_one(self):
-        """Identical spectra have cosine similarity = 1.0."""
-        spec = th.tensor([[0.0, 1.0, 0.0, 2.0]])
-        assert binned_cosine_similarity(spec, spec).item() == pytest.approx(1.0)
-
-    def test_orthogonal_spectra_returns_zero(self):
-        """Spectra with no shared non-zero bins → 0.0."""
-        true_spec = th.tensor([[1.0, 0.0]])
-        pred_spec = th.tensor([[0.0, 1.0]])
-        assert binned_cosine_similarity(true_spec, pred_spec).item() == pytest.approx(0.0)
-
-    def test_partial_overlap_known_value(self):
-        """[1,0] vs [1,1]: cos = dot([1,0], [1/√2, 1/√2]) = 1/√2."""
-        true_spec = th.tensor([[1.0, 0.0]])
-        pred_spec = th.tensor([[1.0, 1.0]])
-        result = binned_cosine_similarity(true_spec, pred_spec)
-        assert result.item() == pytest.approx(1.0 / math.sqrt(2), abs=1e-5)
-
-    def test_scale_invariant(self):
-        """Scaling a spectrum by a positive constant doesn't change cosine similarity."""
-        spec_a = th.tensor([[1.0, 0.0, 2.0]])
-        spec_b = th.tensor([[100.0, 0.0, 200.0]])
-        assert binned_cosine_similarity(spec_a, spec_b).item() == pytest.approx(1.0)
-
-    def test_batch_of_two_computed_independently(self):
-        """B=2: each (true, pred) pair is evaluated independently."""
-        true_spec = th.tensor([[1.0, 0.0], [0.0, 1.0]])
-        pred_spec = th.tensor([[1.0, 0.0], [0.0, 1.0]])
-        result = binned_cosine_similarity(true_spec, pred_spec)
-        assert result.shape == (2,)
-        assert result[0].item() == pytest.approx(1.0)
-        assert result[1].item() == pytest.approx(1.0)
-
-    def test_result_in_zero_one_range(self):
-        """Cosine similarity is always in [0, 1] for non-negative spectra."""
-        th.manual_seed(0)
-        spec_a = th.rand(4, 20).abs()
-        spec_b = th.rand(4, 20).abs()
-        result = binned_cosine_similarity(spec_a, spec_b)
-        assert (result >= 0).all()
-        assert (result <= 1.0 + 1e-6).all()
-
 
 class TestCosSimHelper:
     """Tests for cos_sim_helper — sparse cosine similarity via bin index overlap."""
@@ -241,7 +183,7 @@ class TestCosSimHelper:
 
 
 class TestBatchedNormalize:
-    """Tests for batched_l1_normalize, batched_l2_normalize, batched_mf1000_normalize."""
+    """Tests for batched_l1_normalize and batched_mf1000_normalize."""
 
     def test_l1_sum_equals_one_per_batch(self):
         """After L1 normalization, each batch group sums to 1."""
@@ -258,24 +200,6 @@ class TestBatchedNormalize:
         result = batched_l1_normalize(ints, batch_idxs)
         assert result[1].item() / result[0].item() == pytest.approx(3.0, abs=1e-5)
 
-    def test_l2_norm_equals_one_per_batch(self):
-        """After L2 normalization, each batch group has unit Euclidean norm."""
-        ints = th.tensor([3.0, 4.0, 5.0])
-        batch_idxs = th.tensor([0, 0, 1])
-        result = batched_l2_normalize(ints, batch_idxs)
-        norm_batch0 = result[batch_idxs == 0].pow(2).sum().sqrt()
-        norm_batch1 = result[batch_idxs == 1].pow(2).sum().sqrt()
-        assert norm_batch0.item() == pytest.approx(1.0, abs=1e-5)
-        assert norm_batch1.item() == pytest.approx(1.0, abs=1e-5)
-
-    def test_l2_known_values_pythagorean(self):
-        """3-4-5 Pythagorean triple normalizes to [0.6, 0.8]."""
-        ints = th.tensor([3.0, 4.0])
-        batch_idxs = th.tensor([0, 0])
-        result = batched_l2_normalize(ints, batch_idxs)
-        assert result[0].item() == pytest.approx(0.6, abs=1e-5)
-        assert result[1].item() == pytest.approx(0.8, abs=1e-5)
-
     def test_mf1000_max_equals_1000_per_batch(self):
         """After MF1000 normalization, max per batch is exactly 1000."""
         ints = th.tensor([100.0, 200.0, 500.0, 50.0])
@@ -291,27 +215,6 @@ class TestBatchedNormalize:
         result = batched_mf1000_normalize(ints, batch_idxs)
         assert result[1].item() / result[0].item() == pytest.approx(2.0, abs=1e-5)
 
-
-class TestMf1000NormalizeNp:
-    """Tests for mf1000_normalize_np — numpy MF1000 normalization (single spectrum)."""
-
-    def test_max_equals_1000(self):
-        """Maximum intensity after normalization is 1000."""
-        ints = np.array([200.0, 400.0, 800.0])
-        result = mf1000_normalize_np(ints)
-        assert result.max() == pytest.approx(1000.0)
-
-    def test_preserves_ratios(self):
-        """Intensity ratios are preserved after normalization."""
-        ints = np.array([200.0, 400.0, 800.0])
-        result = mf1000_normalize_np(ints)
-        assert result[1] / result[0] == pytest.approx(2.0)
-        assert result[2] / result[0] == pytest.approx(4.0)
-
-    def test_single_peak_becomes_1000(self):
-        """Single peak scales to exactly 1000."""
-        result = mf1000_normalize_np(np.array([42.0]))
-        assert result[0] == pytest.approx(1000.0)
 
 
 class TestScipyLinearSumAssignment:
@@ -421,173 +324,5 @@ class TestOptCosSimHelper:
         assert 0.0 <= result.item() <= 1.0 + 1e-6
 
 
-class TestCalculateCosineSimilarity:
-    """End-to-end tests for calculate_cosine_similarity (dense binned pipeline).
-
-    Uses mz_max=10.0, mz_bin_res=1.0 (10 bins) to keep tensors small.
-    """
-
-    def test_identical_spectra_returns_one(self):
-        """Identical spectra → cos_sim = 1.0."""
-        mzs = th.tensor([2.5])
-        ints = th.tensor([1.0])
-        batch_idxs = th.tensor([0])
-        result = calculate_cosine_similarity(
-            mzs, ints, batch_idxs, mzs, ints, batch_idxs, mz_max=10.0, mz_bin_res=1.0
-        )
-        assert result.item() == pytest.approx(1.0)
-
-    def test_orthogonal_spectra_returns_zero(self):
-        """Spectra in different bins → cos_sim = 0.0."""
-        true_mzs = th.tensor([2.5])
-        pred_mzs = th.tensor([7.5])
-        ints = th.tensor([1.0])
-        batch_idxs = th.tensor([0])
-        result = calculate_cosine_similarity(
-            true_mzs, ints, batch_idxs,
-            pred_mzs, ints, batch_idxs,
-            mz_max=10.0, mz_bin_res=1.0,
-        )
-        assert result.item() == pytest.approx(0.0)
-
-    def test_batch_of_two_processed_independently(self):
-        """B=2: each pair is independent; output shape is (2,)."""
-        mzs = th.tensor([2.5, 7.5])
-        ints = th.tensor([1.0, 1.0])
-        batch_idxs = th.tensor([0, 1])
-        result = calculate_cosine_similarity(
-            mzs, ints, batch_idxs, mzs, ints, batch_idxs, mz_max=10.0, mz_bin_res=1.0
-        )
-        assert result.shape == (2,)
-        assert result[0].item() == pytest.approx(1.0)
-        assert result[1].item() == pytest.approx(1.0)
-
-    def test_amax_aggregation_mode(self):
-        """sum_ints=False uses amax per bin; identical spectra still give 1.0."""
-        mzs = th.tensor([2.5])
-        ints = th.tensor([1.0])
-        batch_idxs = th.tensor([0])
-        result = calculate_cosine_similarity(
-            mzs, ints, batch_idxs, mzs, ints, batch_idxs,
-            mz_max=10.0, mz_bin_res=1.0, sum_ints=False,
-        )
-        assert result.item() == pytest.approx(1.0)
 
 
-class TestCalculateSparseCosineSimilarity:
-    """End-to-end tests for calculate_sparse_cosine_similarity (sparse binning pipeline)."""
-
-    def test_identical_spectra_returns_one(self):
-        """Identical spectra → cos_sim = 1.0 via sparse binning."""
-        mzs = th.tensor([2.5, 4.5])
-        ints = th.tensor([1.0, 2.0])
-        batch_idxs = th.tensor([0, 0])
-        result = calculate_sparse_cosine_similarity(
-            mzs, ints, batch_idxs, mzs, ints, batch_idxs, mz_max=10.0, mz_bin_res=1.0
-        )
-        assert result.item() == pytest.approx(1.0)
-
-    def test_orthogonal_spectra_returns_zero(self):
-        """No shared bins → cos_sim = 0.0 via sparse binning."""
-        true_mzs = th.tensor([2.5])
-        pred_mzs = th.tensor([7.5])
-        ints = th.tensor([1.0])
-        batch_idxs = th.tensor([0])
-        result = calculate_sparse_cosine_similarity(
-            true_mzs, ints, batch_idxs,
-            pred_mzs, ints, batch_idxs,
-            mz_max=10.0, mz_bin_res=1.0,
-        )
-        assert result.item() == pytest.approx(0.0)
-
-    def test_agrees_with_dense_binning(self):
-        """Sparse and dense methods give the same result for non-duplicate inputs."""
-        mzs = th.tensor([2.5, 4.5, 7.5])
-        ints = th.tensor([1.0, 2.0, 3.0])
-        batch_idxs = th.tensor([0, 0, 0])
-        pred_mzs = th.tensor([2.5, 7.5])
-        pred_ints = th.tensor([1.0, 3.0])
-        pred_batch = th.tensor([0, 0])
-        dense = calculate_cosine_similarity(
-            mzs, ints, batch_idxs, pred_mzs, pred_ints, pred_batch,
-            mz_max=10.0, mz_bin_res=1.0,
-        )
-        sparse = calculate_sparse_cosine_similarity(
-            mzs, ints, batch_idxs, pred_mzs, pred_ints, pred_batch,
-            mz_max=10.0, mz_bin_res=1.0,
-        )
-        assert sparse.item() == pytest.approx(dense.item(), abs=1e-5)
-
-
-class TestCalculateSparseCosinehungarian:
-    """End-to-end tests for calculate_sparse_cosine_hungarian (Hungarian matching pipeline)."""
-
-    def test_identical_spectra_returns_one(self):
-        """Identical spectra with exact m/z match → cos_sim = 1.0."""
-        mzs = th.tensor([100.0, 200.0])
-        ints = th.tensor([1.0, 2.0])
-        batch_idxs = th.tensor([0, 0])
-        result = calculate_sparse_cosine_hungarian(
-            mzs, ints, batch_idxs, mzs, ints, batch_idxs
-        )
-        assert result.item() == pytest.approx(1.0)
-
-    def test_orthogonal_spectra_returns_zero(self):
-        """Peaks with no m/z matches within tolerance → cos_sim = 0.0."""
-        true_mzs = th.tensor([100.0])
-        pred_mzs = th.tensor([500.0])  # far away from true
-        ints = th.tensor([1.0])
-        batch_idxs = th.tensor([0])
-        result = calculate_sparse_cosine_hungarian(
-            true_mzs, ints, batch_idxs, pred_mzs, ints, batch_idxs, tolerance=1e-5
-        )
-        assert result.item() == pytest.approx(0.0)
-
-    def test_within_tolerance_matches_and_scores_one(self):
-        """Peaks within relative tolerance with equal intensities → cos_sim = 1.0."""
-        true_mzs = th.tensor([100.0])
-        pred_mzs = th.tensor([100.001])  # very small relative diff
-        ints = th.tensor([1.0])
-        batch_idxs = th.tensor([0])
-        result = calculate_sparse_cosine_hungarian(
-            true_mzs, ints, batch_idxs,
-            pred_mzs, ints, batch_idxs,
-            tolerance=1e-2,  # 1%, clamped to 200 Da floor → diff 0.001/200 << 0.01
-        )
-        assert result.item() == pytest.approx(1.0)
-
-    def test_batch_of_two_independent(self):
-        """B=2: each pair is processed independently; output shape is (2,)."""
-        mzs = th.tensor([100.0, 200.0])
-        ints = th.tensor([1.0, 1.0])
-        batch_idxs = th.tensor([0, 1])
-        result = calculate_sparse_cosine_hungarian(
-            mzs, ints, batch_idxs, mzs, ints, batch_idxs
-        )
-        assert result.shape == (2,)
-        assert result[0].item() == pytest.approx(1.0)
-        assert result[1].item() == pytest.approx(1.0)
-
-    def test_output_in_zero_one_range(self):
-        """Output is always in [0, 1] for valid inputs."""
-        th.manual_seed(42)
-        true_mzs = th.rand(5) * 400 + 100  # 100–500 Da
-        pred_mzs = th.rand(3) * 400 + 100
-        ints_true = th.rand(5)
-        ints_pred = th.rand(3)
-        batch_t = th.zeros(5, dtype=th.long)
-        batch_p = th.zeros(3, dtype=th.long)
-        result = calculate_sparse_cosine_hungarian(
-            true_mzs, ints_true, batch_t, pred_mzs, ints_pred, batch_p
-        )
-        assert 0.0 <= result.item() <= 1.0 + 1e-6
-
-    def test_result_leq_binned_cosine_on_identical(self):
-        """Hungarian result matches binned cosine on identical inputs (both return 1.0)."""
-        mzs = th.tensor([100.0, 200.0, 300.0])
-        ints = th.tensor([1.0, 2.0, 3.0])
-        batch_idxs = th.tensor([0, 0, 0])
-        hungarian_result = calculate_sparse_cosine_hungarian(
-            mzs, ints, batch_idxs, mzs, ints, batch_idxs
-        )
-        assert hungarian_result.item() == pytest.approx(1.0)

@@ -89,12 +89,19 @@ class FraGNNetPL(SpectrumPL):
             ce_mean=self.hparams.ce_mean,
             ce_std=self.hparams.ce_std,
             ce_max=self.hparams.ce_max,
+            ce_insert_dual=self.hparams.ce_insert_dual,
             prec_insert_location=self.hparams.prec_insert_location,
             prec_insert_size=self.hparams.prec_insert_size,
             prec_types=self.hparams.spec_params["prec_types"],
             inst_insert_location=self.hparams.inst_insert_location,
             inst_insert_size=self.hparams.inst_insert_size,
             inst_types=self.hparams.spec_params["inst_types"],
+            frag_mode_insert_location=self.hparams.frag_mode_insert_location,
+            frag_mode_insert_size=self.hparams.frag_mode_insert_size,
+            frag_modes=self.hparams.spec_params["frag_modes"],
+            frag_mode_scale=self.hparams.frag_mode_scale,
+            ce_scale=self.hparams.ce_scale,
+            ce_scaler_hidden_dim=self.hparams.ce_scaler_hidden_dim,
             output_formula_str=self.hparams.output_formula_str,
         )
 
@@ -113,20 +120,20 @@ class FraGNNetPL(SpectrumPL):
         # Load pre-trained weights if specified for finetuning
         if self.hparams.finetune:
             self._load_pretrained_weights(
-                self.hparams.finetune_pretrained_ckpt,
-                strict=self.hparams.finetune_strict_load,
-                shared_components=self.hparams.finetune_shared_components
-                if not self.hparams.finetune_shared_all
+                self.hparams.finetune["pretrained_ckpt"],
+                strict=self.hparams.finetune["strict_load"],
+                shared_components=self.hparams.finetune["finetune_shared_components"]
+                if not self.hparams.finetune["shared_all"]
                 else None,
             )
 
             # Handle freezing
-            if self.hparams.finetune_freeze_all_shared:
+            if self.hparams.finetune["freeze_all_shared"]:
                 # If freeze_all_shared is True, we freeze whatever we loaded
                 if self.pretrained_param_names:
                     self._freeze_components(self.pretrained_param_names, exact_match=True)
-            elif self.hparams.finetune_freeze_components:
-                freeze_components = self.hparams.finetune_freeze_components
+            elif self.hparams.finetune["freeze_components"]:
+                freeze_components = self.hparams.finetune["freeze_components"]
                 # Otherwise freeze specific components by prefix
                 self._freeze_components(freeze_components, exact_match=False)
 
@@ -540,6 +547,8 @@ class FraGNNetPL(SpectrumPL):
             pred_mzs,
             pred_logprobs,
             pred_batch_idxs,
+            tol_per_sample=None,
+            min_mz_per_sample=None,
         ):
             return sparse_cosine_distance_hungarian(
                 true_mzs,
@@ -551,6 +560,8 @@ class FraGNNetPL(SpectrumPL):
                 tolerance=self.tolerance,
                 relative=self.relative,
                 log_distance=(self.hparams.loss_type == "log_cosine_distance_hungarian"),
+                tol_per_sample=tol_per_sample,
+                min_mz_per_sample=min_mz_per_sample,
             )
 
         # jensen-shannon distance
@@ -581,6 +592,8 @@ class FraGNNetPL(SpectrumPL):
             pred_mzs,
             pred_logprobs,
             pred_batch_idxs,
+            tol_per_sample=None,
+            min_mz_per_sample=None,
         ):
             return sparse_jensen_shannon_divergence_hungarian(
                 true_mzs,
@@ -591,6 +604,8 @@ class FraGNNetPL(SpectrumPL):
                 pred_batch_idxs,
                 tolerance=self.tolerance,
                 relative=self.relative,
+                tol_per_sample=tol_per_sample,
+                min_mz_per_sample=min_mz_per_sample,
             )
 
         assert self.hparams.sparse_cosine_similarity
@@ -693,6 +708,8 @@ class FraGNNetPL(SpectrumPL):
             **kwargs,
         ):
             loss_d = {}
+            tol_per_sample = kwargs.get("tol_per_sample")
+            min_mz_per_sample = kwargs.get("min_mz_per_sample")
 
             if self.hparams.loss_type == "cross_entropy":
                 ios_ce, oos_ce, _, _ = sparse_ce_fn(
@@ -703,6 +720,8 @@ class FraGNNetPL(SpectrumPL):
                     pred_logprobs,
                     pred_batch_idxs,
                     pred_oos_logprobs,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
                 )
                 spec_ce = ios_ce + oos_ce
                 if self.hparams.oos_loss:
@@ -732,6 +751,8 @@ class FraGNNetPL(SpectrumPL):
                     pred_mzs,
                     pred_logprobs,
                     pred_batch_idxs,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
                 )
             elif self.hparams.loss_type == "jss_distance":
                 primary_loss = jss_dist_fn(
@@ -750,6 +771,8 @@ class FraGNNetPL(SpectrumPL):
                     pred_mzs,
                     pred_logprobs,
                     pred_batch_idxs,
+                    tol_per_sample=tol_per_sample,
+                    min_mz_per_sample=min_mz_per_sample,
                 )
 
             loss = self.hparams.primary_loss_weight * primary_loss
@@ -1233,7 +1256,10 @@ class FraGNNetPL(SpectrumPL):
         Configure optimizers with different learning rates for pre-trained and other parameters.
         """
         # Get LR ratio from finetune config
-        lr_ratio = self.hparams.finetune_weights_lr_ratio
+        if  self.hparams.finetune:
+            lr_ratio = self.hparams.finetune["pretrained_weights_lr_ratio"]
+        else:
+            lr_ratio = self.hparams.finetune_weights_lr_ratio
 
         # Separate parameters into pre-trained and others
         pretrained_params = [

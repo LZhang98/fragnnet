@@ -1,1098 +1,392 @@
+"""Tests for compute_frags BFS fragmentation (compute_frags.pyx).
+
+Tests cover:
+1. py_compute_node_to_edge_idx: correct neighbor-lookup structure.
+2. mask_to_binary_hash: unique bytes per distinct mask.
+3. compute_ccs — single-node molecule: trivial no-fragmentation case.
+4. compute_ccs — max_depth=0: root only, no fragmentation attempted.
+5. compute_ccs — linear chain (3 nodes, 2 undirected edges): known fragment
+   count, DAG structure, and min-depth assignments.
+6. compute_ccs — ethanol (real molecule via frag_utils): matches linear chain.
+7. compute_ccs — cyclohexane ring: depth-1 fragments are all 6-node (ring opens,
+   does not split into two components).
+8. update_bonds — both atoms in CC: bond preserved.
+9. update_bonds — only one atom in CC: bond removed.
+10. compute_cc_h_floor — known H-floor for a 2-atom C–C fragment.
+11. compute_cc_h_floor — single isolated atom.
 """
-Comprehensive unit tests for compute_frags.pyx
 
-Complete test suite covering:
-- Mask packing and bit operations
-- Node-to-edge index mapping
-- Connected components computation
-- Main fragmentation algorithm
-- Depth tracking and DAG construction
-- Error handling and edge cases
-- Fragment properties and consistency
-- Regression tests for bug fixes
+from __future__ import annotations
 
-Total: 52 tests covering all aspects of compute_frags functionality
-"""
-
-import pytest
 import numpy as np
-from fragnnet.frag import compute_frags as cf
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-def _expected_int(mask):
-    """Reference implementation for mask-to-int conversion."""
-    k = 0
-    for i, v in enumerate(np.asarray(mask)):
-        if int(v):
-            k |= (1 << i)
-    return k
-
-
-# ============================================================================
-# Category 1: Mask Packing & Bit Operations (15 tests)
-# ============================================================================
-
-class TestMaskPacking:
-    """Test mask-to-int conversion for correctness."""
-
-    def test_mask_to_int_memview_small(self):
-        """Test small masks (< 64 bits)."""
-        mask = np.array([1, 0, 1, 1, 0], dtype=np.uint8)
-        result = cf.py_mask_to_int_memview(mask)
-        # Expected: bits 0, 2, 3 set = 1 + 4 + 8 = 13
-        assert result == 13
-
-    def test_mask_to_int_memview_large(self):
-        """Test large masks (> 64 bits, uses high word)."""
-        mask = np.zeros(128, dtype=np.uint8)
-        mask[0] = 1    # bit 0
-        mask[63] = 1   # bit 63 (last bit of low word)
-        mask[64] = 1   # bit 64 (first bit of high word)
-        mask[127] = 1  # bit 127 (last bit of high word)
-
-        result = cf.py_mask_to_int_memview(mask)
-        expected = (1 << 0) | (1 << 63) | (1 << 64) | (1 << 127)
-        assert result == expected
-
-    def test_mask_to_int_memview_all_zeros(self):
-        """Test empty mask."""
-        mask = np.zeros(10, dtype=np.uint8)
-        assert cf.py_mask_to_int_memview(mask) == 0
-
-    def test_mask_to_int_memview_all_ones(self):
-        """Test full mask."""
-        mask = np.ones(8, dtype=np.uint8)
-        result = cf.py_mask_to_int_memview(mask)
-        expected = (1 << 8) - 1  # 255
-        assert result == expected
-
-    def test_mask_to_int_memview_exactly_64_bits(self):
-        """Test boundary at 64 bits."""
-        mask = np.zeros(64, dtype=np.uint8)
-        mask[0] = 1
-        mask[63] = 1
-        result = cf.py_mask_to_int_memview(mask)
-        expected = (1 << 0) | (1 << 63)
-        assert result == expected
-
-    def test_mask_to_int_memview_bit_63(self):
-        """Test specifically bit 63 (the problematic bit from old implementation)."""
-        mask = np.zeros(64, dtype=np.uint8)
-        mask[63] = 1
-        result = cf.py_mask_to_int_memview(mask)
-        expected = (1 << 63)
-        assert result == expected
-
-    def test_mask_to_int_memview_multiple_high_bits(self):
-        """Test multiple bits in the high word."""
-        mask = np.zeros(128, dtype=np.uint8)
-        mask[64] = 1
-        mask[65] = 1
-        mask[100] = 1
-        result = cf.py_mask_to_int_memview(mask)
-        expected = (1 << 64) | (1 << 65) | (1 << 100)
-        assert result == expected
-
-    def test_mask_to_int_memview_sparse_large(self):
-        """Test sparse mask with only a few bits set in 128-bit space."""
-        mask = np.zeros(128, dtype=np.uint8)
-        mask[5] = 1
-        mask[17] = 1
-        mask[42] = 1
-        mask[68] = 1
-        mask[99] = 1
-        mask[120] = 1
-
-        result = cf.py_mask_to_int_memview(mask)
-        expected = (1 << 5) | (1 << 17) | (1 << 42) | (1 << 68) | (1 << 99) | (1 << 120)
-        assert result == expected
-
-    def test_mask_to_int_memview_dense_pattern(self):
-        """Test dense patterns (alternating bits)."""
-        mask = np.zeros(32, dtype=np.uint8)
-        for i in range(0, 32, 2):
-            mask[i] = 1
-
-        result = cf.py_mask_to_int_memview(mask)
-        expected = sum(1 << i for i in range(0, 32, 2))
-        assert result == expected
-
-    def test_mask_to_int_memview_all_high_bits(self):
-        """Test with all bits in high word set."""
-        mask = np.zeros(128, dtype=np.uint8)
-        for i in range(64, 128):
-            mask[i] = 1
-
-        result = cf.py_mask_to_int_memview(mask)
-        expected = ((1 << 64) - 1) << 64
-        assert result == expected
-
-    def test_mask_to_int_memview_boundary_bits(self):
-        """Test bits at word boundaries (31/32, 63/64)."""
-        mask = np.zeros(96, dtype=np.uint8)
-        mask[31] = 1
-        mask[32] = 1
-        mask[63] = 1
-        mask[64] = 1
-
-        result = cf.py_mask_to_int_memview(mask)
-        expected = (1 << 31) | (1 << 32) | (1 << 63) | (1 << 64)
-        assert result == expected
-
-    def test_mask_to_int_memview_single_bit_each_word(self):
-        """Test with single bit in low word and single bit in high word."""
-        mask = np.zeros(128, dtype=np.uint8)
-        mask[10] = 1
-        mask[90] = 1
-
-        result = cf.py_mask_to_int_memview(mask)
-        expected = (1 << 10) | (1 << 90)
-        assert result == expected
-
-    def test_mask_to_int_memview_nonzero_values(self):
-        """Test that any non-zero value is treated as 1."""
-        mask = np.array([0, 2, 0, 255, 0, 128], dtype=np.uint8)
-        result = cf.py_mask_to_int_memview(mask)
-        expected = (1 << 1) | (1 << 3) | (1 << 5)
-        assert result == expected
-
-    def test_mask_to_int_memview_reference_impl(self):
-        """Test against reference implementation."""
-        m = np.array([1, 0, 1, 1], dtype=np.uint8)
-        assert cf.py_mask_to_int_memview(m) == _expected_int(m)
-
-    def test_bytes_equivalence(self):
-        """Test equivalence between int and bytes representations."""
-        m = np.array([1, 0, 1, 1], dtype=np.uint8)
-        int_key = cf.py_mask_to_int_memview(m)
-        bs = cf.mask_to_binary_hash(m)
-        arr = np.frombuffer(bs, dtype=np.uint8)
-        assert int_key == _expected_int(arr)
-
-
-# ============================================================================
-# Category 2: Node-to-Edge Index Mapping (4 tests)
-# ============================================================================
-
-class TestNodeToEdgeIdx:
-    """Test the node_to_edge_idx computation."""
-
-    def test_simple_chain(self):
-        """Test node-to-edge mapping for a simple chain."""
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-
-        result = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        # Node 0: connected to edge 0
-        assert result[0, 0] == 0
-        assert result[0, 1] == -1
-
-        # Node 1: connected to edges 0, 1
-        assert 0 in result[1, :2]
-        assert 1 in result[1, :2]
-        assert result[1, 2] == -1
-
-        # Node 2: connected to edges 1, 2
-        assert 1 in result[2, :2]
-        assert 2 in result[2, :2]
-
-        # Node 3: connected to edge 2
-        assert result[3, 0] == 2
-        assert result[3, 1] == -1
-
-    def test_star_graph(self):
-        """Test node-to-edge mapping for a star graph."""
-        num_nodes = 5
-        num_edges = 4
-        edges = np.array([[0, 1], [0, 2], [0, 3], [0, 4]], dtype=np.intc)
-
-        result = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        # Center node 0: connected to all 4 edges
-        center_edges = set(result[0, :4])
-        assert center_edges == {0, 1, 2, 3}
-        assert result[0, 4] == -1
-
-        # Leaf nodes: each connected to one edge
-        for i in range(1, 5):
-            assert result[i, 0] == i - 1
-            assert result[i, 1] == -1
-
-    def test_ring_graph(self):
-        """Test node-to-edge mapping for a ring."""
-        num_nodes = 4
-        num_edges = 4
-        edges = np.array([[0, 1], [1, 2], [2, 3], [3, 0]], dtype=np.intc)
-
-        result = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        # Each node should be connected to exactly 2 edges
-        for i in range(num_nodes):
-            assert result[i, 0] != -1
-            assert result[i, 1] != -1
-            assert result[i, 2] == -1
-
-    def test_complete_graph_k4(self):
-        """Test complete graph K4."""
-        num_nodes = 4
-        edges = []
-        for i in range(num_nodes):
-            for j in range(i + 1, num_nodes):
-                edges.append([i, j])
-        edges = np.array(edges, dtype=np.intc)
-        num_edges = len(edges)
-
-        result = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        # Each node should be connected to 3 edges
-        for i in range(num_nodes):
-            edge_count = np.sum(result[i, :] != -1)
-            assert edge_count == 3
-
-
-# ============================================================================
-# Category 3: Connected Components (4 tests)
-# ============================================================================
-
-class TestConnectedComponents:
-    """Test the connected_components function."""
-
-    def setup_method(self):
-        """Set up test graphs."""
-        self.triangle_edges = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.intc)
-        self.two_comp_edges = np.array([[0, 1], [2, 3]], dtype=np.intc)
-        self.chain_edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-        self.star_edges = np.array([[0, 1], [0, 2], [0, 3], [0, 4]], dtype=np.intc)
-
-    def test_single_component_triangle(self):
-        """Test triangle graph - should be 1 component."""
-        num_nodes = 3
-        num_edges = 3
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(
-            num_nodes, num_edges, self.triangle_edges
-        )
-        # Tested indirectly through compute_ccs
-
-    def test_two_components_separate(self):
-        """Test graph with 2 disconnected components."""
-        num_nodes = 4
-        num_edges = 2
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(
-            num_nodes, num_edges, self.two_comp_edges
-        )
-        # Tested indirectly through compute_ccs
-
-    def test_masked_node_creates_components(self):
-        """Test that masking a node creates separate components."""
-        num_nodes = 4
-        num_edges = 3
-        node_mask = np.array([1, 0, 1, 1], dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(
-            num_nodes, num_edges, self.chain_edges
-        )
-        # Tested indirectly through compute_ccs
-
-    def test_star_graph_center_masked(self):
-        """Test star graph with center node masked."""
-        num_nodes = 5
-        num_edges = 4
-        node_mask = np.array([0, 1, 1, 1, 1], dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(
-            num_nodes, num_edges, self.star_edges
-        )
-        # Tested indirectly through compute_ccs
-
-
-# ============================================================================
-# Category 4: Main Fragmentation Algorithm (12 tests)
-# ============================================================================
-
-class TestComputeCCs:
-    """Test the main compute_ccs function."""
-
-    def test_simple_molecule_fragmentation(self):
-        """Test simple molecule: A-B-C, break bonds progressively."""
-        num_nodes = 3
-        num_edges = 2
-        edges = np.array([[0, 1], [1, 2]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 3
-        assert dag_frag_meta['force_stopped'] == False
-        assert dag_frag_meta['reached_depth'] <= max_depth
-
-    def test_ring_molecule(self):
-        """Test cyclic molecule (benzene-like)."""
-        num_nodes = 4
-        num_edges = 4
-        edges = np.array([[0, 1], [1, 2], [2, 3], [3, 0]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 1
-        assert not dag_frag_meta['force_stopped']
-
-    def test_star_molecule_many_components(self):
-        """Test star molecule: central atom with many branches."""
-        num_nodes = 7
-        num_edges = 6
-        edges = np.array([
-            [0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6]
-        ], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 1
-
-    def test_highly_branched_molecule(self):
-        """Test molecule with 10 branches (tests MAX_ALLOWED_CCS guard)."""
-        num_nodes = 11
-        num_edges = 10
-        edges = np.array([
-            [0, 1], [0, 2], [0, 3], [0, 4], [0, 5],
-            [0, 6], [0, 7], [0, 8], [0, 9], [0, 10]
-        ], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 1
-
-    def test_timeout_handling(self):
-        """Test that timeout works correctly."""
-        num_nodes = 10
-        edge_list = []
-        for i in range(num_nodes-1):
-            edge_list.append([i, i+1])
-        for i in range(0, num_nodes-2, 2):
-            edge_list.append([i, i+2])
-        edges = np.array(edge_list, dtype=np.intc)
-        num_edges = len(edge_list)
-
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 5
-        time_limit = 0
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert dag_frag_meta['force_stopped'] == True
-        assert dag_frag_meta['reached_depth'] < max_depth
-
-    def test_depth_tracking(self):
-        """Test that depth tracking is correct."""
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        nodes_min_depth = dag_frag_meta['nodes_min_depth']
-        assert nodes_min_depth[0] == 0
-
-    def test_linear_chain_all_depths(self):
-        """Test linear chain fragmentation at all depths."""
-        num_nodes = 5
-        num_edges = 4
-        edges = np.array([[0, 1], [1, 2], [2, 3], [3, 4]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 3
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 5
-        single_node_frags = np.sum(nodes_mask_matrix, axis=1) == 1
-        assert np.sum(single_node_frags) >= 1
-        assert dag_frag_meta['reached_depth'] <= max_depth
-        assert not dag_frag_meta['force_stopped']
-
-    def test_branched_molecule(self):
-        """Test Y-shaped branched molecule."""
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [1, 3]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 3
-
-    def test_multiple_disconnected_components_initial(self):
-        """Test with multiple disconnected components from the start."""
-        num_nodes = 6
-        num_edges = 4
-        edges = np.array([[0, 1], [1, 2], [3, 4], [4, 5]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 2
-
-    def test_complex_ring_system(self):
-        """Test bicyclic system (two fused rings)."""
-        num_nodes = 7
-        num_edges = 9
-        edges = np.array([
-            [0, 1], [1, 2], [2, 0],
-            [1, 3], [3, 2],
-            [3, 4], [4, 5], [5, 6], [6, 3]
-        ], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 2
-        assert not dag_frag_meta['force_stopped']
-
-    def test_zero_depth(self):
-        """Test with max_depth=0 (only original molecule)."""
-        num_nodes = 3
-        num_edges = 2
-        edges = np.array([[0, 1], [1, 2]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 0
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] == 1
-        assert np.all(nodes_mask_matrix[0, :] == node_mask)
-        assert dag_frag_meta['reached_depth'] == 0
-
-    def test_large_depth(self):
-        """Test with large max_depth on small molecule."""
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 10
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert dag_frag_meta['reached_depth'] <= max_depth
-        assert not dag_frag_meta['force_stopped']
-
-
-# ============================================================================
-# Category 5: Depth Tracking & DAG Construction (3 tests)
-# ============================================================================
-
-class TestDepthTracking:
-    """Test depth tracking and DAG construction."""
-
-    def test_depth_matrix_structure(self):
-        """Test that depth matrix has correct structure."""
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_depth_matrix.shape[1] == max_depth + 1
-
-        for i in range(nodes_depth_matrix.shape[0]):
-            assert np.sum(nodes_depth_matrix[i, :]) >= 1
-
-        assert nodes_depth_matrix[0, 0] == 1
-
-    def test_min_depth_consistency(self):
-        """Test that min_depth matches depth matrix."""
-        num_nodes = 5
-        num_edges = 4
-        edges = np.array([[0, 1], [1, 2], [2, 3], [3, 4]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-        nodes_min_depth = dag_frag_meta['nodes_min_depth']
-
-        for i in range(nodes_depth_matrix.shape[0]):
-            depths_present = np.where(nodes_depth_matrix[i, :])[0]
-            if len(depths_present) > 0:
-                assert nodes_min_depth[i] == depths_present[0]
-
-    def test_dag_edges_validity(self):
-        """Test that DAG edges are valid."""
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        num_fragments = nodes_mask_matrix.shape[0]
-
-        if dag_edges_matrix.size > 0:
-            assert np.all(dag_edges_matrix >= 0)
-            assert np.all(dag_edges_matrix[:, 0] < num_fragments)
-            assert np.all(dag_edges_matrix[:, 1] < num_fragments)
-
-        edges_min_depth = dag_frag_meta['edges_min_depth']
-        if len(edges_min_depth) > 0:
-            assert np.all(edges_min_depth >= 0)
-            assert np.all(edges_min_depth <= max_depth)
-
-
-# ============================================================================
-# Category 6: Error Handling & Edge Cases (8 tests)
-# ============================================================================
-
-class TestErrorHandling:
-    """Test error handling and edge cases."""
-
-    def test_very_short_timeout(self):
-        """Test that very short timeout is handled gracefully."""
-        num_nodes = 10
-        edge_list = []
-        for i in range(num_nodes - 1):
-            edge_list.append([i, i + 1])
-        for i in range(0, num_nodes - 2, 2):
-            edge_list.append([i, i + 2])
-        edges = np.array(edge_list, dtype=np.intc)
-        num_edges = len(edge_list)
-
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 5
-        time_limit = 0  # Immediate timeout
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert dag_frag_meta['force_stopped'] == True
-        assert dag_frag_meta['reached_depth'] <= max_depth
-        assert nodes_mask_matrix.shape[0] >= 1
-
-    def test_single_node_no_edges(self):
-        """Test graph with single node and no edges."""
-        num_nodes = 1
-        num_edges = 0
-        edges = np.empty((0, 2), dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.empty(0, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] == 1
-        assert nodes_mask_matrix[0, 0] == 1
-        assert dag_edges_matrix.size == 0
-
-    def test_partially_masked_nodes(self):
-        """Test with some nodes masked out from the start."""
-        num_nodes = 5
-        num_edges = 4
-        edges = np.array([[0, 1], [1, 2], [2, 3], [3, 4]], dtype=np.intc)
-        node_mask = np.array([1, 0, 1, 0, 1], dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 1
-        assert nodes_mask_matrix[0, 1] == 0
-        assert nodes_mask_matrix[0, 3] == 0
-
-    def test_partially_masked_edges(self):
-        """Test with some edges masked out from the start."""
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.array([1, 0, 1], dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 2
-
-    def test_single_node(self):
-        """Test single isolated node."""
-        num_nodes = 1
-        num_edges = 0
-        edges = np.empty((0, 2), dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.empty(0, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] == 1
-        assert nodes_mask_matrix[0, 0] == 1
-
-    def test_two_isolated_nodes(self):
-        """Test two nodes with no edges."""
-        num_nodes = 2
-        num_edges = 0
-        edges = np.empty((0, 2), dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.empty(0, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 1
-
-    def test_all_nodes_masked(self):
-        """Test with all nodes masked out."""
-        num_nodes = 3
-        num_edges = 2
-        edges = np.array([[0, 1], [1, 2]], dtype=np.intc)
-        node_mask = np.zeros(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 1
-
-    def test_all_edges_masked(self):
-        """Test with all edges masked (disconnected nodes)."""
-        num_nodes = 3
-        num_edges = 2
-        edges = np.array([[0, 1], [1, 2]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.zeros(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 1
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        assert nodes_mask_matrix.shape[0] >= 1
-
-
-# ============================================================================
-# Category 7: Fragment Properties (3 tests)
-# ============================================================================
-
-class TestFragmentProperties:
-    """Test properties of generated fragments."""
-
-    def test_fragments_are_subgraphs(self):
-        """Test that all fragments are subgraphs of original."""
-        num_nodes = 5
-        num_edges = 4
-        edges = np.array([[0, 1], [1, 2], [2, 3], [3, 4]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
-
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-
-        original_nodes = set(np.where(nodes_mask_matrix[0, :])[0])
-
-        for i in range(1, nodes_mask_matrix.shape[0]):
-            frag_nodes = set(np.where(nodes_mask_matrix[i, :])[0])
-            assert frag_nodes.issubset(original_nodes)
-
-    def test_no_duplicate_fragments(self):
-        """Test that there are no duplicate fragments."""
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
-
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
-
-        max_depth = 2
-        time_limit = 10
-
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
+import pytest
+
+from fragnnet.frag.compute_frags import (
+    compute_cc_h_floor,
+    compute_ccs,
+    mask_to_binary_hash,
+    py_compute_node_to_edge_idx,
+    update_bonds,
+)
+from fragnnet.utils.frag_utils import extract_mol_info, get_fraggen_input_arrays
+
+# ---------------------------------------------------------------------------
+# Constants matching compute_frags.pyx
+# ---------------------------------------------------------------------------
+_MAX_EDGES = 512  # 4 * MAX_NUM_NODES
+_MASK_DTYPE = np.uint8
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_edges(pairs: list[tuple[int, int]]) -> np.ndarray:
+    """Build a padded edge array with _MAX_EDGES rows."""
+    arr = np.zeros((_MAX_EDGES, 2), dtype=np.intc)
+    for i, (u, v) in enumerate(pairs):
+        arr[i] = [u, v]
+    return arr
+
+
+def _run_smiles(smiles: str, max_depth: int = 3, time_limit: int = 30, min_frag_atoms: int = 0) -> dict:
+    """Run compute_ccs on a SMILES string and return result components."""
+    mol_d = extract_mol_info(smiles)
+    num_nodes, num_edges, node_mask, edges, edge_mask, n2e = get_fraggen_input_arrays(mol_d)
+    nm, nd, de, meta = compute_ccs(
+        num_nodes, num_edges, node_mask, edges, edge_mask, n2e,
+        max_depth=max_depth, time_limit=time_limit, min_frag_atoms=min_frag_atoms,
+    )
+    return {
+        "nodes_mask": nm,
+        "nodes_depth": nd,
+        "dag_edges": de,
+        "meta": meta,
+        "num_nodes": num_nodes,
+        "num_edges": num_edges,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def linear_chain():
+    """3-node undirected chain: 0 — 1 — 2."""
+    num_nodes = 3
+    num_edges = 2
+    edges = _make_edges([(0, 1), (1, 2)])
+    node_mask = np.ones(num_nodes, dtype=_MASK_DTYPE)
+    edge_mask = np.ones(num_edges, dtype=_MASK_DTYPE)
+    n2e = py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
+    return num_nodes, num_edges, node_mask, edges, edge_mask, n2e
+
+
+@pytest.fixture
+def chain_ccs(linear_chain):
+    """compute_ccs result for the 3-node chain."""
+    num_nodes, num_edges, node_mask, edges, edge_mask, n2e = linear_chain
+    nm, nd, de, meta = compute_ccs(
+        num_nodes, num_edges, node_mask, edges, edge_mask, n2e,
+        max_depth=3, time_limit=30, min_frag_atoms=0,
+    )
+    return nm, nd, de, meta
 
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
 
-        masks_as_tuples = [tuple(nodes_mask_matrix[i, :]) for i in range(nodes_mask_matrix.shape[0])]
-        unique_masks = set(masks_as_tuples)
+# ---------------------------------------------------------------------------
+# 1. py_compute_node_to_edge_idx
+# ---------------------------------------------------------------------------
 
-        assert len(unique_masks) == len(masks_as_tuples)
 
-    def test_fragment_sizes_decrease_with_depth(self):
-        """Test that fragments generally get smaller at higher depths."""
-        num_nodes = 6
-        num_edges = 5
-        edges = np.array([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
+def test_node_to_edge_idx_interior_node(linear_chain):
+    """Interior node 1 is incident to both edges (indices 0 and 1)."""
+    _, _, _, _, _, n2e = linear_chain
+    neighbors_1 = set(n2e[1].tolist()) - {-1}
+    assert neighbors_1 == {0, 1}
 
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
 
-        max_depth = 3
-        time_limit = 10
+def test_node_to_edge_idx_endpoint_nodes(linear_chain):
+    """Endpoint nodes 0 and 2 each have exactly one incident edge."""
+    _, _, _, _, _, n2e = linear_chain
+    neighbors_0 = set(n2e[0].tolist()) - {-1}
+    neighbors_2 = set(n2e[2].tolist()) - {-1}
+    assert neighbors_0 == {0}
+    assert neighbors_2 == {1}
 
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
 
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-        nodes_min_depth = dag_frag_meta['nodes_min_depth']
+def test_node_to_edge_idx_unused_slots_are_sentinel(linear_chain):
+    """Unused neighbor slots must be -1."""
+    _, _, _, _, _, n2e = linear_chain
+    # Node 0 has 1 neighbor; slots [1:] should all be -1
+    assert all(v == -1 for v in n2e[0, 1:].tolist())
 
-        sizes_by_depth = {}
-        for depth in range(max_depth + 1):
-            frags_at_depth = nodes_min_depth == depth
-            if np.any(frags_at_depth):
-                sizes = np.sum(nodes_mask_matrix[frags_at_depth, :], axis=1)
-                sizes_by_depth[depth] = np.mean(sizes)
 
-        if len(sizes_by_depth) >= 2:
-            if max(sizes_by_depth.keys()) in sizes_by_depth:
-                assert sizes_by_depth[max(sizes_by_depth.keys())] <= sizes_by_depth[0]
+# ---------------------------------------------------------------------------
+# 2. mask_to_binary_hash
+# ---------------------------------------------------------------------------
 
 
-# ============================================================================
-# Category 8: Symmetry & Consistency (2 tests)
-# ============================================================================
+def test_mask_to_binary_hash_returns_bytes():
+    mask = np.ones(4, dtype=_MASK_DTYPE)
+    result = mask_to_binary_hash(mask)
+    assert isinstance(result, bytes)
 
-class TestSymmetry:
-    """Test symmetry and consistency."""
 
-    def test_symmetric_graph_produces_consistent_results(self):
-        """Test that symmetric graphs produce consistent fragmentation."""
-        num_nodes = 3
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 0]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
+def test_mask_to_binary_hash_unique():
+    """Different masks produce different hashes."""
+    m1 = np.array([1, 0, 1], dtype=_MASK_DTYPE)
+    m2 = np.array([1, 1, 0], dtype=_MASK_DTYPE)
+    assert mask_to_binary_hash(m1) != mask_to_binary_hash(m2)
 
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
 
-        max_depth = 1
-        time_limit = 10
+def test_mask_to_binary_hash_deterministic():
+    """Same mask always produces the same hash."""
+    m = np.array([1, 0, 0, 1], dtype=_MASK_DTYPE)
+    assert mask_to_binary_hash(m) == mask_to_binary_hash(m.copy())
 
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
 
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
+# ---------------------------------------------------------------------------
+# 3. compute_ccs — single-node molecule
+# ---------------------------------------------------------------------------
 
-        assert nodes_mask_matrix.shape[0] >= 1
-        assert not dag_frag_meta['force_stopped']
 
-    def test_isomorphic_fragments_have_same_properties(self):
-        """Test that isomorphic fragments are recognized."""
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-        node_mask = np.ones(num_nodes, dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
+def test_single_node_one_fragment():
+    """Single node with no edges yields exactly 1 fragment (the molecule itself)."""
+    num_nodes = 1
+    edges = _make_edges([])
+    node_mask = np.ones(1, dtype=_MASK_DTYPE)
+    edge_mask = np.zeros(0, dtype=_MASK_DTYPE)
+    n2e = py_compute_node_to_edge_idx(num_nodes, 0, edges)
+    nm, nd, de, meta = compute_ccs(
+        num_nodes, 0, node_mask, edges, edge_mask, n2e,
+        max_depth=3, time_limit=30,
+    )
+    assert nm.shape[0] == 1
+    assert de.shape[0] == 0
+    assert meta["reached_depth"] == 0
+    assert not meta["force_stopped"]
 
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
 
-        max_depth = 2
-        time_limit = 10
+# ---------------------------------------------------------------------------
+# 4. compute_ccs — max_depth=0
+# ---------------------------------------------------------------------------
 
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
 
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
-        nodes_min_depth = dag_frag_meta['nodes_min_depth']
+def test_max_depth_zero_no_fragmentation():
+    """max_depth=0 returns only the root fragment with no DAG edges."""
+    result = _run_smiles("CCO", max_depth=0)
+    assert result["nodes_mask"].shape[0] == 1
+    assert result["dag_edges"].shape[0] == 0
+    assert result["meta"]["reached_depth"] == 0
 
-        single_node_masks = np.sum(nodes_mask_matrix, axis=1) == 1
-        single_node_count = np.sum(single_node_masks)
 
-        assert single_node_count >= 2
+# ---------------------------------------------------------------------------
+# 5. compute_ccs — linear chain known structure
+# ---------------------------------------------------------------------------
 
-        single_node_sizes = np.sum(nodes_mask_matrix[single_node_masks, :], axis=1)
-        assert np.all(single_node_sizes == 1)
 
+def test_linear_chain_fragment_count(chain_ccs):
+    """3-node chain with 2 bonds produces exactly 6 unique fragments."""
+    nm, _, _, _ = chain_ccs
+    assert nm.shape[0] == 6
 
-# ============================================================================
-# Category 9: Regression Tests (1 test)
-# ============================================================================
 
-class TestRegressionCases:
-    """Test cases for previously identified bugs."""
+def test_linear_chain_dag_edge_count(chain_ccs):
+    """3-node chain DAG has exactly 8 directed edges."""
+    _, _, de, _ = chain_ccs
+    assert de.shape[0] == 8
 
-    def test_neighbor_masking_bug(self):
-        """Test the critical neighbor masking bug fix.
 
-        Old code: if node_enqueued[neighbour] == 0:
-        New code: if node_enqueued[neighbour] == 0 and node_mask[neighbour] == 1:
-        """
-        num_nodes = 4
-        num_edges = 3
-        edges = np.array([[0, 1], [1, 2], [2, 3]], dtype=np.intc)
-        node_mask = np.array([1, 1, 0, 1], dtype=np.uint8)
-        edge_mask = np.ones(num_edges, dtype=np.uint8)
+def test_linear_chain_reached_depth(chain_ccs):
+    """3-node chain reaches depth 2 (both bonds broken)."""
+    _, _, _, meta = chain_ccs
+    assert meta["reached_depth"] == 2
 
-        node_to_edge_idx = cf.py_compute_node_to_edge_idx(num_nodes, num_edges, edges)
 
-        max_depth = 1
-        time_limit = 10
+def test_linear_chain_root_is_full_molecule(chain_ccs):
+    """First row of nodes_mask is the full molecule (all nodes active)."""
+    nm, _, _, _ = chain_ccs
+    assert nm[0].sum() == 3
+    assert nm[0].tolist() == [1, 1, 1]
 
-        result = cf.compute_ccs(
-            num_nodes, num_edges, node_mask, edges, edge_mask,
-            node_to_edge_idx, max_depth, time_limit
-        )
 
-        nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = result
+def test_linear_chain_singleton_fragments_exist(chain_ccs):
+    """All three singleton node masks appear in the fragment set."""
+    nm, _, _, _ = chain_ccs
+    row_sums = nm.sum(axis=1).tolist()
+    # 1 root (size 3) + 2 pairs (size 2) + 3 singletons (size 1)
+    assert row_sums.count(1) == 3
+    assert row_sums.count(2) == 2
+    assert row_sums.count(3) == 1
 
-        assert nodes_mask_matrix.shape[0] >= 1
 
+def test_linear_chain_min_depths(chain_ccs):
+    """Root has min_depth=0; all others ≥1; only node {1} appears first at depth 2."""
+    _, _, _, meta = chain_ccs
+    min_depths = meta["nodes_min_depth"].tolist()
+    assert min_depths[0] == 0  # root
+    assert max(min_depths) == 2  # node {1} first reachable at depth 2
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+
+def test_linear_chain_dag_endpoints_valid(chain_ccs):
+    """All DAG edge endpoints reference valid fragment indices."""
+    nm, _, de, _ = chain_ccs
+    num_frags = nm.shape[0]
+    assert de.min() >= 0
+    assert de.max() < num_frags
+
+
+def test_linear_chain_no_self_loops(chain_ccs):
+    """DAG must not contain self-loop edges."""
+    _, _, de, _ = chain_ccs
+    assert not np.any(de[:, 0] == de[:, 1])
+
+
+# ---------------------------------------------------------------------------
+# 6. compute_ccs — ethanol via frag_utils (matches linear chain result)
+# ---------------------------------------------------------------------------
+
+
+def test_ethanol_fragment_count():
+    """Ethanol (3 heavy atoms, 2 bonds) produces the same 6 fragments as the
+    3-node linear chain fixture."""
+    result = _run_smiles("CCO", max_depth=3)
+    assert result["nodes_mask"].shape[0] == 6
+
+
+def test_ethanol_dag_edge_count():
+    result = _run_smiles("CCO", max_depth=3)
+    assert result["dag_edges"].shape[0] == 8
+
+
+def test_ethanol_not_force_stopped():
+    result = _run_smiles("CCO", max_depth=3)
+    assert not result["meta"]["force_stopped"]
+
+
+# ---------------------------------------------------------------------------
+# 7. compute_ccs — cyclohexane ring
+# ---------------------------------------------------------------------------
+
+
+def test_cyclohexane_depth1_all_six_nodes():
+    """Cutting one bond in cyclohexane at depth 1 opens the ring but keeps all
+    6 atoms in a single connected component (no split yet)."""
+    result = _run_smiles("C1CCCCC1", max_depth=2)
+    nd = result["nodes_depth"]
+    nm = result["nodes_mask"]
+    # fragments first seen at depth 1
+    depth1_mask = nd[:, 1] == 1
+    depth1_frags = nm[depth1_mask]
+    node_counts = depth1_frags.sum(axis=1).tolist()
+    # every depth-1 fragment should still have all 6 nodes
+    assert all(c == 6 for c in node_counts), f"Expected all 6, got {node_counts}"
+
+
+def test_cyclohexane_depth2_has_smaller_fragments():
+    """At depth 2, two bonds are broken, producing smaller fragments."""
+    result = _run_smiles("C1CCCCC1", max_depth=2)
+    nd = result["nodes_depth"]
+    nm = result["nodes_mask"]
+    depth2_mask = nd[:, 2] == 1
+    depth2_frags = nm[depth2_mask]
+    node_counts = depth2_frags.sum(axis=1).tolist()
+    assert any(c < 6 for c in node_counts)
+
+
+# ---------------------------------------------------------------------------
+# 8. update_bonds — both atoms in CC
+# ---------------------------------------------------------------------------
+
+
+def test_update_bonds_full_cc_preserves_bond():
+    """When both endpoints are in the CC, the bond count and mask are preserved."""
+    cc_atom_ids = np.array([0, 1], dtype=np.int32)
+    sbond_arr = np.array([1, 1], dtype=np.int32)
+    bond_mask_arr = np.array([1], dtype=np.uint8)
+    bonds = np.array([[0, 1]], dtype=np.int32)
+    atoms_to_bonds = {0: [0], 1: [0]}
+
+    new_sbond, new_bond_mask = update_bonds(cc_atom_ids, sbond_arr, bond_mask_arr, bonds, atoms_to_bonds)
+
+    assert new_sbond[0] == 1
+    assert new_sbond[1] == 1
+    assert new_bond_mask[0] == 1
+
+
+# ---------------------------------------------------------------------------
+# 9. update_bonds — only one atom in CC
+# ---------------------------------------------------------------------------
+
+
+def test_update_bonds_partial_cc_removes_bond():
+    """When only one endpoint is in the CC, the cross bond is masked out."""
+    cc_atom_ids = np.array([0], dtype=np.int32)
+    sbond_arr = np.array([1, 1], dtype=np.int32)
+    bond_mask_arr = np.array([1], dtype=np.uint8)
+    bonds = np.array([[0, 1]], dtype=np.int32)
+    atoms_to_bonds = {0: [0], 1: [0]}
+
+    new_sbond, new_bond_mask = update_bonds(cc_atom_ids, sbond_arr, bond_mask_arr, bonds, atoms_to_bonds)
+
+    assert new_sbond[0] == 0  # no intra-CC bonds for atom 0
+    assert new_bond_mask[0] == 0  # bond removed
+
+
+def test_update_bonds_output_shapes():
+    """Output arrays have the same shape as inputs."""
+    cc_atom_ids = np.array([0, 1], dtype=np.int32)
+    sbond_arr = np.zeros(3, dtype=np.int32)
+    bond_mask_arr = np.zeros(2, dtype=np.uint8)
+    bonds = np.array([[0, 1], [1, 2]], dtype=np.int32)
+    atoms_to_bonds = {0: [0], 1: [0, 1], 2: [1]}
+
+    new_sbond, new_bond_mask = update_bonds(cc_atom_ids, sbond_arr, bond_mask_arr, bonds, atoms_to_bonds)
+
+    assert new_sbond.shape == sbond_arr.shape
+    assert new_bond_mask.shape == bond_mask_arr.shape
+
+
+# ---------------------------------------------------------------------------
+# 10. compute_cc_h_floor — 2-atom C–C fragment
+# ---------------------------------------------------------------------------
+
+
+def test_h_floor_two_atom_cc():
+    """Two-carbon fragment sharing one bond: each C needs at least 2H (h_floor=4 total).
+
+    diff_arr = max(valence - sbonds, 0) = max(4-1, 0) = 3 for each C.
+    h_arr[0] = max(0, 3 - min(3, 2)) = 1
+    h_arr[1] = max(0, 3 - min(3, 2)) = 1
+    cc_floor = 1 + 1 = 2
+    """
+    cc_atom_ids = np.array([0, 1], dtype=np.int32)
+    ve_arr = np.array([4, 4], dtype=np.int32)   # carbon valence = 4
+    sbond_arr = np.array([1, 1], dtype=np.int32)
+    bonds = np.array([[0, 1]], dtype=np.int32)
+    atoms_to_bonds = {0: [0], 1: [0]}
+    bond_mask_arr = np.array([1], dtype=np.uint8)
+
+    h_floor = compute_cc_h_floor(cc_atom_ids, ve_arr, sbond_arr, 0, bonds, atoms_to_bonds, bond_mask_arr)
+    assert h_floor == 2
+
+
+# ---------------------------------------------------------------------------
+# 11. compute_cc_h_floor — single isolated atom
+# ---------------------------------------------------------------------------
+
+
+def test_h_floor_single_isolated_carbon():
+    """Single carbon with no bonds in its CC: h_floor = max(valence - 0, 0) = 4."""
+    cc_atom_ids = np.array([0], dtype=np.int32)
+    ve_arr = np.array([4], dtype=np.int32)
+    sbond_arr = np.array([0], dtype=np.int32)
+    bonds = np.empty((0, 2), dtype=np.int32)
+    atoms_to_bonds: dict = {0: []}
+    bond_mask_arr = np.empty(0, dtype=np.uint8)
+
+    h_floor = compute_cc_h_floor(cc_atom_ids, ve_arr, sbond_arr, 0, bonds, atoms_to_bonds, bond_mask_arr)
+    assert h_floor == 4

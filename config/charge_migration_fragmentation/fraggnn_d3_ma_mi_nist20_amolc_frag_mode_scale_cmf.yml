@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_nist20_pairwise_cos
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_frag_mode_scale_cmf
 wandb_tags:
 - retrieval
 - nist20
@@ -24,6 +24,10 @@ wandb_tags:
 - m-h
 - m+na
 - m+cl
+- frag_mode
+- frag_mode_scale
+- ace
+- cmf
 
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
@@ -33,14 +37,22 @@ num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - cmf_h_formulae_idx
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
   preload: True
   preprocess: True
+  include_cmf: True
 spec_params:
   merge: False
   nce: True
+  ace: False
   merge_keep_ces: False
   preprocess: True
   prec_type_str: False
@@ -53,21 +65,25 @@ spec_params:
   inst_types:
     - "FT"
     - "QTOF"
-    - 'IT'
+    - "IT"
+  frag_mode: True
+  frag_modes:
+    - "HCD"
+    - "CID"
 mol_params:
   preprocess: True
 
-ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
-ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
-ce_insert_merge: False # merge ce embedding
+ce_insert_type: embed
+ce_insert_location: mol
+ce_insert_merge: True
 ce_insert_size: 32
 prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
-
-mol_params:
-  preprocess: True
+frag_mode_insert_location: mol
+frag_mode_insert_size: 32
+frag_mode_scale: True
 
 train_batch_size: 256
 eval_batch_size: 256
@@ -100,16 +116,19 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
+dynamic_batch_sampler: True
+
+group_sampler: False
+group_sampler_type: group
+group_sampler_max_per_group: 5
+simple_group_sampler: True
+simple_group_sampler_avg_per_group: 5
+simple_group_sampler_type: group
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: False
+compile: True
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
-
-# pairwise losses
-pairwise_cosine_loss_weight: 0.5 
-pairwise_jss_loss_weight: 0.0
-pairwise_cross_entropy_loss_weight: 0.0
