@@ -28,6 +28,8 @@ wandb_tags:
 - frag_mode_scale
 - ce_scale
 - ace
+- cmf
+- inst_tol
 
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
@@ -37,11 +39,18 @@ num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
+  pyg_node_feats:
+    - cc
+    - base_formula
+    - depth
+    - h_formulae_idx
+    - cmf_h_formulae_idx
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
   preload: True
   preprocess: True
+  include_cmf: True
 spec_params:
   merge: False
   nce: True
@@ -108,6 +117,11 @@ auxiliary_scores:
 eval_mz_bin_res:
   - 0.01
 
+# per-instrument-type tolerance
+inst_type_loss_tol:
+  FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
+  
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
