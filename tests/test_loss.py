@@ -111,6 +111,95 @@ class TestPairwiseCossim:
             f"Expected shape {(batch_size, batch_size)}, got {S.shape}"
         )
 
+    def test_pairwise_cossim_identical_spectra(self):
+        """Regression: identical spectra in different batch slots must have cosine sim = 1.
+
+        Before the batch-offset fix, batched_bin_func returned batch-offset bin indices.
+        Each batch element occupied exclusively different columns in the V matrix, making
+        all off-diagonal dot products zero. This test catches that regression: two
+        identical single-peak spectra must produce off-diagonal similarity = 1, not 0.
+        """
+        # Two batch elements, each with one peak at m/z=100, equal intensity.
+        mzs = th.tensor([100.0, 100.0])
+        logprobs = th.tensor([0.0, 0.0])  # log(1) — single peak per spectrum
+        batch_idxs = th.tensor([0, 1], dtype=th.long)
+        batch_size = 2
+        mz_max = 200.0
+        mz_bin_res = 1.0
+
+        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+
+        assert th.allclose(S[0, 0], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
+        assert th.allclose(S[1, 1], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
+        assert th.allclose(S[0, 1], th.tensor(1.0), atol=1e-6), (
+            "Identical spectra must have cosine similarity 1, not 0 (batch-offset bug)"
+        )
+        assert th.allclose(S[1, 0], th.tensor(1.0), atol=1e-6), (
+            "Identical spectra must have cosine similarity 1, not 0 (batch-offset bug)"
+        )
+
+    def test_pairwise_cossim_known_partial_overlap(self):
+        """Spectra sharing half their peaks should have cosine similarity = 0.5.
+
+        Spectrum 0: equal-intensity peaks at m/z=50 and m/z=100.
+        Spectrum 1: equal-intensity peaks at m/z=50 and m/z=150.
+        After L2 normalization both vectors are [1/√2, 1/√2, 0] and [1/√2, 0, 1/√2]
+        in the three-bin space {50, 100, 150}. Their dot product = 1/2.
+        """
+        import math
+
+        log_half = math.log(0.5)
+        mzs = th.tensor([50.0, 100.0, 50.0, 150.0])
+        logprobs = th.tensor([log_half, log_half, log_half, log_half])
+        batch_idxs = th.tensor([0, 0, 1, 1], dtype=th.long)
+        batch_size = 2
+        mz_max = 200.0
+        mz_bin_res = 1.0
+
+        S = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+
+        assert th.allclose(S[0, 0], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
+        assert th.allclose(S[1, 1], th.tensor(1.0), atol=1e-6), "Self-similarity should be 1"
+        assert th.allclose(S[0, 1], th.tensor(0.5), atol=1e-5), (
+            f"Expected cosine similarity 0.5 for 50% peak overlap, got {S[0, 1].item():.6f}"
+        )
+        assert th.allclose(S[1, 0], th.tensor(0.5), atol=1e-5), "Matrix must be symmetric"
+
+    def test_pairwise_cossim_mse_nonzero_when_spectra_differ(self):
+        """MSE between two different pairwise sim matrices must be nonzero.
+
+        This is the end-to-end regression for the pairwise cosine loss in fragnnet_pl.py:
+        if pred_sim ≠ true_sim, F.mse_loss(pred_sim, true_sim) must be > 0.
+        Before the fix, both matrices were always the identity, giving MSE ≈ 0 regardless
+        of predictions.
+        """
+        import torch.nn.functional as F
+
+        # true: two identical spectra at m/z=100 → sim matrix all-ones
+        mzs_true = th.tensor([100.0, 100.0])
+        logprobs_true = th.tensor([0.0, 0.0])
+        batch_idxs = th.tensor([0, 1], dtype=th.long)
+        batch_size = 2
+        mz_max = 200.0
+        mz_bin_res = 1.0
+
+        # pred: two orthogonal spectra → off-diagonal sim = 0
+        mzs_pred = th.tensor([50.0, 150.0])
+        logprobs_pred = th.tensor([0.0, 0.0])
+
+        true_sim = get_pairwise_cossim(
+            mzs_true, logprobs_true, batch_idxs, batch_size, mz_max, mz_bin_res
+        )
+        pred_sim = get_pairwise_cossim(
+            mzs_pred, logprobs_pred, batch_idxs, batch_size, mz_max, mz_bin_res
+        )
+
+        mse = F.mse_loss(pred_sim, true_sim)
+        assert mse.item() > 0.1, (
+            f"MSE between different pairwise sim matrices must be > 0.1, got {mse.item():.2e}. "
+            "If this is ~1e-9, the batch-offset bug is present."
+        )
+
 
 class TestPairwiseCrossEntropy:
     """Tests for cross-entropy computation."""
