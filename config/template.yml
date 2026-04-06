@@ -445,7 +445,7 @@ group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 3
 simple_group_sampler: False
 simple_group_sampler_avg_per_group: 5
-simple_group_sampler_type: group #[group, group_mol, mol]
+simple_group_sampler_type: group #[group, mol, group_mol, adduct_inst_type, adduct_inst_type_group, adduct_inst_type_frag_mode, adduct_inst_type_frag_mode_group]
 formula_prec_type_group_sampler: False
 formula_prec_type_group_sampler_max_per_group: 5
 mp_sharing_strategy: file_descriptor

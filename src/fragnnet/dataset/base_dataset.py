@@ -356,19 +356,29 @@ class BaseDataset(Dataset):
     def get_adduct_inst_type_stats(self) -> tuple[list[str], list[str]]:
         """Return per-sample precursor type and instrument type strings.
 
-        Iterates over spec_df in dataset order, returning one entry per sample.
         Used by get_group_sampler() for adduct+instrument-type balanced sampling.
 
         Returns:
             Tuple of (prec_types, inst_types) where each is a list of strings
             with length equal to len(self).
         """
-        prec_types = []
-        inst_types = []
-        for _, row in self.spec_df.iterrows():
-            prec_types.append(str(row["prec_type"]))
-            inst_types.append(str(row["inst_type"]))
+        prec_types = self.spec_df["prec_type"].astype(str).tolist()
+        inst_types = self.spec_df["inst_type"].astype(str).tolist()
         return prec_types, inst_types
+
+    def get_frag_mode_stats(self) -> list[str]:
+        """Return per-sample fragmentation mode strings.
+
+        Missing or NaN values are returned as "unknown".
+        Used by get_group_sampler() for frag-mode balanced sampling.
+
+        Returns:
+            List of fragmentation mode strings (e.g. "HCD", "CID", "unknown")
+            with length equal to len(self).
+        """
+        if "frag_mode" not in self.spec_df.columns:
+            return ["unknown"] * len(self.spec_df)
+        return self.spec_df["frag_mode"].fillna("unknown").astype(str).tolist()
 
     @staticmethod
     def get_data_dict_types() -> list[str]:

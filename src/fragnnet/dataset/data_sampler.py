@@ -777,6 +777,12 @@ def get_group_sampler(
             - 'adduct_inst_type_group': Weight by 1/(count(prec_type, inst_type) *
               specs_per_group) (replacement=True). Combines adduct+instrument balancing
               with group-level balancing. Epoch size = len(ds).
+            - 'adduct_inst_type_frag_mode': Weight by 1/count(prec_type, inst_type, frag_mode)
+              (replacement=True). Extends adduct+instrument balancing to also upweight minority
+              fragmentation modes (e.g. CID vs HCD). Epoch size = len(ds).
+            - 'adduct_inst_type_frag_mode_group': Weight by 1/(count(prec_type, inst_type,
+              frag_mode) * specs_per_group) (replacement=True). Combines frag-mode balancing
+              with group-level balancing. Epoch size = len(ds).
         avg_per_group (int): Average samples per group to target (used by group/mol types).
         generator (th.Generator): PyTorch generator for reproducibility.
 
@@ -789,17 +795,37 @@ def get_group_sampler(
         loader = DataLoader(ds, batch_sampler=sampler)
         ```
     """
-    if sampler_type in ("adduct_inst_type", "adduct_inst_type_group"):
+    if sampler_type in (
+        "adduct_inst_type",
+        "adduct_inst_type_group",
+        "adduct_inst_type_frag_mode",
+        "adduct_inst_type_frag_mode_group",
+    ):
         prec_types, inst_types = ds.get_adduct_inst_type_stats()
-        combo_counts: dict[str, int] = {}
-        for pt, it in zip(prec_types, inst_types):
-            key = f"{pt}::{it}"
-            combo_counts[key] = combo_counts.get(key, 0) + 1
-        sample_weights = th.tensor(
-            [1.0 / combo_counts[f"{pt}::{it}"] for pt, it in zip(prec_types, inst_types)],
-            dtype=th.float32,
+        use_frag_mode = sampler_type in (
+            "adduct_inst_type_frag_mode",
+            "adduct_inst_type_frag_mode_group",
         )
-        if sampler_type == "adduct_inst_type_group":
+        if use_frag_mode:
+            frag_modes = ds.get_frag_mode_stats()
+        combo_counts: dict[str, int] = {}
+        for i, (pt, it) in enumerate(zip(prec_types, inst_types)):
+            key = f"{pt}::{it}::{frag_modes[i]}" if use_frag_mode else f"{pt}::{it}"
+            combo_counts[key] = combo_counts.get(key, 0) + 1
+        if use_frag_mode:
+            sample_weights = th.tensor(
+                [
+                    1.0 / combo_counts[f"{pt}::{it}::{fm}"]
+                    for pt, it, fm in zip(prec_types, inst_types, frag_modes)
+                ],
+                dtype=th.float32,
+            )
+        else:
+            sample_weights = th.tensor(
+                [1.0 / combo_counts[f"{pt}::{it}"] for pt, it in zip(prec_types, inst_types)],
+                dtype=th.float32,
+            )
+        if sampler_type in ("adduct_inst_type_group", "adduct_inst_type_frag_mode_group"):
             _, _, spec_per_group, _, _ = ds.get_group_mol_stats()
             sample_weights = sample_weights / spec_per_group.float()
         num_samples = len(ds)

@@ -274,6 +274,21 @@ def validate_sampler_config(config_d: dict) -> None:
     """
 
 
+    _VALID_SIMPLE_GROUP_SAMPLER_TYPES = {
+        "group",
+        "mol",
+        "group_mol",
+        "adduct_inst_type",
+        "adduct_inst_type_group",
+        "adduct_inst_type_frag_mode",
+        "adduct_inst_type_frag_mode_group",
+    }
+    if config_d.get("simple_group_sampler") and config_d.get("simple_group_sampler_type") not in _VALID_SIMPLE_GROUP_SAMPLER_TYPES:
+        raise ValueError(
+            f"simple_group_sampler_type must be one of {sorted(_VALID_SIMPLE_GROUP_SAMPLER_TYPES)} "
+            f"(got '{config_d['simple_group_sampler_type']}')"
+        )
+
     if config_d["dynamic_batch_sampler"] and config_d["dual_group_dynamic_batch_sampler"]:
         raise ValueError("dynamic_batch_sampler and dual_group_dynamic_batch_sampler are mutually exclusive")
 
