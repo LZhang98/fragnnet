@@ -23,7 +23,12 @@ from fragnnet.model.nn_blocks import GNN, MLPBlocks, build_pool_module
 from fragnnet.utils.data_utils import combine_formulae
 from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
-from fragnnet.utils.frag_utils import get_edge_feats, get_node_feats, th_long_to_mask
+from fragnnet.utils.frag_utils import (
+    compute_boundary_mask,
+    get_edge_feats,
+    get_node_feats,
+    th_long_to_mask,
+)
 from fragnnet.utils.misc_utils import (
     LOG_ZERO,
     check_pyg_compile,
@@ -387,6 +392,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.frag_node_feats_size = 0
         if "cc" in self.frag_node_feats:
             self.frag_node_feats_size += mol_pool_out_size
+        if "boundary_cc" in self.frag_node_feats:
+            self.frag_node_feats_size += mol_pool_out_size
         if "base_formula" in self.frag_node_feats:
             self.frag_node_feats_size += self.num_elements * self.formula_embedder.num_dim
         if "depth" in self.frag_node_feats:
@@ -567,22 +574,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 )
                 frag_node_mask_idxs = frag_node_mask_idxs[valid_frag_mask]
 
-            # compute rest node idxs
-            rest_node_mask_idx = th.nonzero(~frag_node_mask).long()
-            rest_node_offsets = mol_num_nodes[
-                th.bucketize(rest_node_mask_idx[:, 0], frag_num_nodes, right=True) - 1
-            ]
-            rest_node_mask_idx[:, 1] = rest_node_mask_idx[:, 1] + rest_node_offsets
-
-            # Validate rest_node_mask_idx are within bounds (after adding offsets)
-            valid_rest_mask = rest_node_mask_idx[:, 1] < mol_embed_gnn.shape[0]
-            rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
-
-            # Aggregate atom embeddings per fragment using pooling
+            # Aggregate CC atom embeddings per fragment using pooling
             frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
             frag_node_mask_embed = self.mol_pool(frag_node_embed, frag_node_mask_idxs[:, 0])
-            rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:, 1])
-            rest_node_mask_embed = self.mol_pool(rest_node_embed, rest_node_mask_idx[:, 0])
 
             # frag_node_mask_embed can be one of following:
             # 1. add/sub: Simple arithmetic operations
@@ -593,7 +587,18 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             # 6. direct: No fusion, use fragment embedding only
 
             if self.cc_interstage_use_rest:
-                mol_pool_embed = rest_node_mask_embed  # mol_embed_gnn_pool[frag_batch]
+                # compute rest node idxs (non-CC atoms per fragment)
+                # NOTE: ~frag_node_mask includes padding zeros (bits beyond mol size) so
+                # bounds-filtering is required to exclude them.
+                rest_node_mask_idx = th.nonzero(~frag_node_mask).long()
+                rest_node_offsets = mol_num_nodes[
+                    th.bucketize(rest_node_mask_idx[:, 0], frag_num_nodes, right=True) - 1
+                ]
+                rest_node_mask_idx[:, 1] = rest_node_mask_idx[:, 1] + rest_node_offsets
+                valid_rest_mask = rest_node_mask_idx[:, 1] < mol_embed_gnn.shape[0]
+                rest_node_mask_idx = rest_node_mask_idx[valid_rest_mask]
+                rest_node_embed = th.index_select(mol_embed_gnn, 0, rest_node_mask_idx[:, 1])
+                mol_pool_embed = self.mol_pool(rest_node_embed, rest_node_mask_idx[:, 0])
             else:
                 mol_pool_embed = mol_embed_gnn_pool[frag_batch]
 
@@ -623,6 +628,26 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 frag_node_mask_embed = frag_node_mask_embed
 
             frag_ndata.append(frag_node_mask_embed)
+        if "boundary_cc" in self.frag_node_feats:
+            num_frags_total = frag_x.shape[0]
+            boundary_mask = compute_boundary_mask(
+                frag_node_mask, mol_edge_index, mol_num_nodes, frag_num_nodes
+            )
+            boundary_idxs = th.nonzero(boundary_mask).long()
+            if boundary_idxs.numel() > 0:
+                boundary_offsets = mol_num_nodes[
+                    th.bucketize(boundary_idxs[:, 0], frag_num_nodes, right=True) - 1
+                ]
+                boundary_idxs[:, 1] = boundary_idxs[:, 1] + boundary_offsets
+                valid = boundary_idxs[:, 1] < mol_embed_gnn.shape[0]
+                boundary_idxs = boundary_idxs[valid]
+                boundary_embed = th.index_select(mol_embed_gnn, 0, boundary_idxs[:, 1])
+                boundary_embed = self.mol_pool(boundary_embed, boundary_idxs[:, 0])
+            else:
+                boundary_embed = th.zeros(
+                    num_frags_total, mol_embed_gnn.shape[1], device=device, dtype=mol_embed_gnn.dtype
+                )
+            frag_ndata.append(boundary_embed)
         # edge atom embeddings
         if "cc" in self.frag_edge_feats:
             # connected competents

@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 import fragnnet.utils.data_utils as data_utils
 import fragnnet.utils.frag_utils as frag_utils
+from fragnnet.utils.frag_utils import run_frag_gen_hdf5
 from fragnnet.utils.misc_utils import booltype, progress_wrapper
 from fragnnet.utils.proc_utils import filter_spec_mol, merge_spec_df
 
@@ -213,6 +214,34 @@ def main(args):
     )
 
     print("> Running frag gen")
+    h5_fp = os.path.join(args.frag_dp, "dags.h5")
+    meta_info_fp = os.path.join(args.frag_dp, "meta_info.json")
+
+    if args.use_hdf5 and args.skip_stats:
+        # Fast path: delegate entirely to the shared utility (no stats needed).
+        import h5py
+
+        with h5py.File(h5_fp, "w") as h5_file:
+            meta_info = run_frag_gen_hdf5(
+                mol_df=mol_df,
+                h5_file=h5_file,
+                max_depth=args.max_depth,
+                max_h_transfer=args.max_h_transfer,
+                max_time=args.max_time,
+                isotopes=args.isotopes,
+                nb_isomorphic=args.nb_isomorphic,
+                wl_max_iterations=args.wl_max_iterations,
+                multi_cut_bfs=args.multi_cut_bfs,
+                max_cut_size=args.max_cut_size,
+                smarts_prepass=args.smarts_prepass,
+                min_frag_atoms=args.min_frag_atoms,
+                disable_tqdm=args.disable_tqdm,
+            )
+        with open(meta_info_fp, "w") as f:
+            f.write(json.dumps(meta_info))
+        return
+
+    # Full path: keep loop so stats can be accumulated alongside DAG writes.
     if args.use_lmdb:
         env = lmdb.open(
             dag_dp,
@@ -227,7 +256,6 @@ def main(args):
     elif args.use_hdf5:
         import h5py
 
-        h5_fp = os.path.join(args.frag_dp, "dags.h5")
         h5_file = h5py.File(h5_fp, "w")
         env = None
         txn = None
@@ -282,9 +310,15 @@ def main(args):
             # Only retain the lightweight stats keys — the DGL graph (dag_d["dag"])
             # is already serialised to disk above and must not be held in memory.
             _STATS_KEYS = {
-                "max_depth", "formula_peak_mzs", "formula_peak_probs",
-                "idx_to_formula", "dag_num_edges", "dag_num_nodes",
-                "dag_sparsity", "dag_num_nodes_nb", "formula_redundancy",
+                "max_depth",
+                "formula_peak_mzs",
+                "formula_peak_probs",
+                "idx_to_formula",
+                "dag_num_edges",
+                "dag_num_nodes",
+                "dag_sparsity",
+                "dag_num_nodes_nb",
+                "formula_redundancy",
                 "idx_by_h_delta",
             }
             frag_results.append({k: dag_d[k] for k in _STATS_KEYS if k in dag_d})
@@ -299,7 +333,7 @@ def main(args):
         if h5_file is None:
             raise RuntimeError("HDF5 file was not initialized")
         h5_file.close()
-    with open(os.path.join(args.frag_dp, "meta_info.json"), "w") as f:
+    with open(meta_info_fp, "w") as f:
         f.write(json.dumps(meta_info))
     if args.skip_stats:
         return
@@ -674,10 +708,12 @@ if __name__ == "__main__":
         type=booltype,
         default=False,
         help=(
-            "Run SMARTS rearrangement prepass before BFS "
-            "(only used when --multi_cut_bfs True). "
-            "Injects acyclic 1,3-elimination and ester CO2-loss fragments "
-            "as depth-1 DAG children (crf12_0/1, crf13_2 PPGB_MS2 rules)."
+            "Run SMARTS rearrangement prepass and inject results as depth-1 DAG children. "
+            "Works with both the default BFS and --multi_cut_bfs. "
+            "With the default BFS, SMARTS fragments are post-merged into the existing DAG "
+            "so ring-opening fragmentation is preserved. "
+            "Covers acyclic 1,3-elimination and ester CO2-loss fragments "
+            "(crf12_0/1, crf13_2 PPGB_MS2 rules)."
         ),
     )
     parser.add_argument(
@@ -686,8 +722,7 @@ if __name__ == "__main__":
         default=3,
         help=(
             "Minimum number of heavy atoms a child fragment must have to be registered "
-            "in the DAG (only used when --multi_cut_bfs True). Fragments smaller than "
-            "this threshold are silently dropped; their subtrees are never explored. "
+            "in the DAG. Fragments smaller than this threshold are silently dropped. "
             "0 disables the filter. Default 3 removes single- and two-atom shards."
         ),
     )

@@ -30,7 +30,7 @@ import fragnnet.utils.formula_utils as formula_utils
 import fragnnet.utils.frag_utils as frag_utils
 from fragnnet.frag.compute_frags import MAX_NUM_NODES
 from fragnnet.utils import data_utils
-from fragnnet.utils.data_utils import par_apply_series
+from fragnnet.utils.data_utils import compute_mol_df_props, par_apply_series
 
 # Suppress RDKit warnings
 RDLogger.DisableLog("rdApp.*")
@@ -80,24 +80,10 @@ def create_mol_df(
 
     # Generate molecular properties
     logger.info("Computing molecular properties...")
-    mol_df.loc[:, "inchikey_s"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchikey_s)
-    mol_df.loc[:, "formula"] = par_apply_series(mol_df["mol"], data_utils.mol_to_formula)
-    mol_df.loc[:, "mw"] = par_apply_series(
-        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=False)
-    )
-    mol_df.loc[:, "exact_mw"] = par_apply_series(
-        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=True)
-    )
-    mol_df.loc[:, "num_atoms"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_atoms)
-    mol_df.loc[:, "charge"] = par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
-    mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
-    mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
-    # Heavy atoms = non-hydrogen atoms
+    compute_mol_df_props(mol_df, scaffold=False, inchi=False)
+    # Heavy atoms = non-hydrogen atoms (alias for num_atoms with explicit heavy-atom API)
     mol_df.loc[:, "num_heavy_atoms"] = par_apply_series(
         mol_df["mol"], lambda m: int(m.GetNumHeavyAtoms()) if m is not None else np.nan
-    )
-    mol_df.loc[:, "num_bonds"] = par_apply_series(
-        mol_df["mol"], lambda m: int(m.GetNumBonds()) if m is not None else np.nan
     )
 
     # filter by out_set_elements

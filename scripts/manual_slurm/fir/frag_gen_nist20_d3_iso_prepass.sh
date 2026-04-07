@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --account=def-rgreiner
+#SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=frag_gen_nist20_d3_mbfs
+#SBATCH --job-name=frag_gen_nist20_pcdl_d3
 #SBATCH --mem=180G
 #SBATCH --cpus-per-task=48
 #SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3_mbfs_%j.out
-#SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3_mbfs_%j.err
+#SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3_iso_prepass_%j.out
+#SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3_iso_prepass_%j.err
 #SBATCH --open-mode=append
 
 # record start
@@ -44,7 +44,7 @@ pip install --no-index  \
  pandarallel==1.6.5 \
  lmdb==1.7.5 \
  h5py
-
+ 
 # intall from whl
 cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
 pip install pyteomics-4.7.5-py3-none-any.whl
@@ -66,9 +66,10 @@ DATASET_NAME=nist20
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
 NB_FLAG=False
-ISO_FLAG=False
-MIN_FRAG_ATOMS=3
-SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}_mbfs_cut3
+ISO_FLAG=True
+SMARTS_PREPASS=True
+USE_LMDB=False
+SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}_smp${SMARTS_PREPASS}
 DSETS='nist20_hr'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]-'
 INST='FT QTOF IT'
@@ -84,7 +85,6 @@ echo PREC: ${PREC}
 echo INST: ${INST}
 echo FRAG_MODE: ${FRAG_MODE}
 echo ISO_FLAG: ${ISO_FLAG}
-echo MIN_FRAG_ATOMS: ${MIN_FRAG_ATOMS}
 echo DEST_DP: ${DEST_DP}
 
 echo create local proc_dp: ${WORKING_DIR}/data/proc
@@ -115,11 +115,8 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --frag_mode ${FRAG_MODE} \
     --max_h_transfer ${MAX_H_TRANSFER} \
     --dsets ${DSETS} \
-    --multi_cut_bfs True \
-    --max_cut_size 3 \
-    --smarts_prepass False \
-    --use_lmdb False \
-    --min_frag_atoms ${MIN_FRAG_ATOMS}
+    --smarts_prepass ${SMARTS_PREPASS} \
+    --use_lmdb ${USE_LMDB}
 
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/

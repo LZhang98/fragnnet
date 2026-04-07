@@ -26,7 +26,7 @@ wandb_tags:
 - m+cl
 - frag_mode
 - frag_mode_scale
-- ace
+- nce
 - cmf
 
 spec_fp: data/proc/nist20/spec_df.pkl

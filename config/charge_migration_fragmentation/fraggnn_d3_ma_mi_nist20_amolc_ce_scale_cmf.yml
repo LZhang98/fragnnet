@@ -25,7 +25,7 @@ wandb_tags:
 - m+na
 - m+cl
 - ce_scale
-- ace
+- nce
 - cmf
 
 spec_fp: data/proc/nist20/spec_df.pkl

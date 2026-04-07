@@ -13,6 +13,7 @@ from collections.abc import Iterator
 import torch as th
 from torch.utils.data import BatchSampler, Sampler, WeightedRandomSampler
 from tqdm import tqdm
+
 logger = logging.getLogger(__name__)
 
 #####################################################
@@ -467,8 +468,10 @@ class DualGroupDynamicBatchSampler(BatchSampler):
     2) adduct + formula
 
     Each produced batch will try to include at least one sample of each
-    type (when available) and will respect maximum fragment node/edge
-    constraints (like SpecMolFragDynamicBatchSampler).
+    type (when available) and will generally respect maximum fragment
+    node/edge constraints (like SpecMolFragDynamicBatchSampler).
+    When `skip_too_big=False`, an oversized sample may be emitted as a
+    singleton batch to avoid dropping data.
     """
 
     def __init__(
@@ -481,7 +484,12 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         return_batch_at: int = 0,
         sample_k1: int = 1,
         sample_k2: int = 1,
+        sample_k1_per_key: int = 1,
+        sample_k2_per_key: int = 1,
         generator: th.Generator | None = None,
+        key_adduct: str = "prec_type",
+        key_mol_id: str = "mol_id",
+        key_formula: str = "formula",
     ) -> None:
         if not isinstance(max_num, int) or max_num <= 0:
             raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
@@ -501,67 +509,75 @@ class DualGroupDynamicBatchSampler(BatchSampler):
         self._return_batch_at = return_batch_at
         self.sample_k1 = int(sample_k1)
         self.sample_k2 = int(sample_k2)
+        self.sample_k1_per_key = int(sample_k1_per_key)
+        self.sample_k2_per_key = int(sample_k2_per_key)
         self.generator = generator
         self._epoch = 0
         self._data_meta = []  # tuples (num_nodes, num_edges)
         self._group1 = {}  # adduct+mol_id -> tensor(indices)
         self._group2 = {}  # adduct+formula -> tensor(indices)
         self._batches = []
+        self.key_adduct = key_adduct
+        self.key_mol_id = key_mol_id
+        self.key_formula = key_formula
 
         self._pre_load_metadata_and_groups()
         self._pre_compute_batches()
 
     def _pre_load_metadata_and_groups(self):
         """Load frag metadata and build group mappings.
-        Assumes each dataset sample contains keys: 'adduct', 'mol_id', 'formula'.
+
+        Uses precom_meta_info and precom_group_info caches on the dataset when available,
+        avoiding a full frag_pyg load for each sample (which would be expensive for
+        HDF5/LMDB-backed datasets). Falls back to data_source[idx] otherwise.
         """
         assert len(self._data_meta) == 0, len(self._data_meta)
+
+        has_meta_cache = hasattr(self.data_source, "precom_meta_info")
+        has_group_cache = hasattr(self.data_source, "precom_group_info")
+
         for dataset_idx in range(len(self.data_source)):
-            data = self.data_source[dataset_idx]
-            # Expecting 'frag_pyg' present like other samplers
-            n_nodes = data["frag_pyg"].num_nodes
-            n_edges = data["frag_pyg"].num_edges
+            # --- node/edge counts ---
+            if has_meta_cache:
+                n_nodes, n_edges = self.data_source.precom_meta_info[dataset_idx]
+            else:
+                data = self.data_source[dataset_idx]
+                n_nodes = data["frag_pyg"].num_nodes
+                n_edges = data["frag_pyg"].num_edges
             self._data_meta.append((n_nodes, n_edges))
 
-            # Validate required keys (each item must have both key pairs: adduct+mol_id and adduct+formula)
-            for req_key in ("adduct", "mol_id", "formula"):
-                if req_key not in data:
-                    raise KeyError(
-                        f"Sample at index {dataset_idx} missing required key '{req_key}'."
-                    )
-                if data[req_key] is None:
-                    raise ValueError(
-                        f"Sample at index {dataset_idx} has None value for required key '{req_key}'."
-                    )
+            # --- group keys (adduct, mol_id, formula) ---
+            if has_group_cache:
+                adduct, mol_id, formula = self.data_source.precom_group_info[dataset_idx]
+            else:
+                if not has_meta_cache:
+                    # data already loaded above
+                    pass
+                else:
+                    data = self.data_source[dataset_idx]
+                for req_key in (self.key_adduct, self.key_mol_id, self.key_formula):
+                    if req_key not in data:
+                        raise KeyError(
+                            f"Sample at index {dataset_idx} missing required key '{req_key}'."
+                        )
+                    if data[req_key] is None:
+                        raise ValueError(
+                            f"Sample at index {dataset_idx} has None value for required key '{req_key}'."
+                        )
+                adduct = data[self.key_adduct]
+                mol_id = data[self.key_mol_id]
+                formula = data[self.key_formula]
 
-            # Build group keys (keys are required to be present)
-            adduct = data["adduct"]
-            mol_id = data["mol_id"]
-            formula = data["formula"]
-
-            # Add to group1 (adduct+mol_id) — mol_id is required to be present
             key1 = f"{adduct}::{mol_id}"
             self._group1.setdefault(key1, []).append(dataset_idx)
 
             key2 = f"{adduct}::{formula}"
             self._group2.setdefault(key2, []).append(dataset_idx)
 
-            # Drawing from the same pool: avoid building formula-based group2 to prevent overlap
-            # (samples remain uniquely identified by adduct+mol_id)
-
-        # Remove overlapping samples: keep items in group1; drop them from group2
-        group1_indices = set()
-        for indices in self._group1.values():
-            group1_indices.update(indices)
-        # Prune group2 entries that overlap with group1
-        for k in list(self._group2.keys()):
-            indices = self._group2[k]
-            non_overlap = [idx for idx in indices if idx not in group1_indices]
-            if non_overlap:
-                self._group2[k] = non_overlap
-            else:
-                # Remove empty groups
-                del self._group2[k]
+        # Within-batch deduplication is handled by used_mask in _sample_from_group_dict,
+        # so group2 intentionally retains all indices (including those also in group1).
+        # This allows isomer contrast: group1 picks a sample first, used_mask prevents
+        # group2 from re-picking the same index in the same batch.
 
         # convert lists to tensors for faster ops
         for k in list(self._group1.keys()):
@@ -579,14 +595,31 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 pass
         self._pre_compute_batches()
 
-    def _sample_from_group_dict(self, group_dict, used_mask, budget_left, take_k):
+    def _sample_from_group_dict(self, group_dict, active_keys, available, budget_left, take_k, per_key: int = 1):
         """Try to take up to `take_k` samples from group_dict (which maps key->tensor).
-        Returns list of taken indices and updated used_mask.
+
+        Iterates over up to `take_k` group keys and takes up to `per_key` samples from
+        each key. Using `per_key > 1` places multiple spectra of the same molecule (or
+        same formula) in a single batch, which provides meaningful signal for pairwise
+        similarity losses.
+
+        Modifies `available` in-place by removing taken indices.
+
+        Args:
+            group_dict: Mapping of key -> tensor of dataset indices.
+            active_keys: Set of keys in group_dict that still have available samples.
+            available: Set of dataset indices not yet assigned to a batch.
+            budget_left: Remaining node/edge budget for the current batch.
+            take_k: Maximum number of keys to visit (total samples taken ≤ take_k * per_key).
+            per_key: Maximum number of samples to take from each key. Defaults to 1.
+
+        Returns:
+            Tuple of (taken indices list, updated budget_left).
         """
         taken = []
-        if not group_dict:
-            return taken, used_mask, budget_left
-        keys = list(group_dict.keys())
+        if not active_keys:
+            return taken, budget_left
+        keys = list(active_keys)
         # randomize key order using PyTorch Generator for consistency
         if self.generator is not None:
             perm = th.randperm(len(keys), generator=self.generator)
@@ -598,32 +631,39 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             if take_k <= 0:
                 break
             candidates = group_dict[key]
-            # Try to take one sample from this group
+            # Try to take up to per_key samples from this group
+            count_from_key = 0
             for idx in candidates.tolist():
-                if used_mask.get(idx, False):
+                if count_from_key >= per_key:
+                    break
+                if idx not in available:
                     continue
                 # check size against remaining budget
                 n = self._data_meta[idx][limited_by_idx]
                 if n > budget_left and self._skip_too_big:
                     continue
                 if n > budget_left:
-                    # Won't fit in budget
-                    continue
-                # take it
-                used_mask[idx] = True
+                    # Match SpecMolFragDynamicBatchSampler behavior: when
+                    # skip_too_big=False, allow an oversized singleton batch
+                    # instead of silently dropping the sample.
+                    if not (n > self._max_num and budget_left == self._max_num):
+                        continue
+                # take it — remove from available immediately so fill phase sees it
+                available.discard(idx)
                 taken.append(idx)
-                budget_left -= n
+                budget_left = max(0, budget_left - n)
+                count_from_key += 1
+            if count_from_key > 0:
                 take_k -= 1
-                break
-        return taken, used_mask, budget_left
+        return taken, budget_left
 
     def _pre_compute_batches(self):
         self._batches = []
 
-        # Flatten available indices and limit to max_sampling_step
-        all_indices = list(range(len(self.data_source)))[: self._max_sampling_step]
-        available = set(all_indices)
-        used_mask = {}
+        # Flatten available indices and limit to max_sampling_step.
+        # `available` is the single source of truth for unassigned indices —
+        # no separate used_mask dict needed.
+        available = set(range(len(self.data_source))[: self._max_sampling_step])
 
         # Cache limited_by index for budget checks
         limited_by_idx = 0 if self._limited_by == "frag_node" else 1
@@ -634,7 +674,6 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 
         while available:
             batch = []
-            batch_n = 0
             budget_left = self._max_num
 
             # Initial sample budget for this batch
@@ -644,49 +683,47 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 # Effectively unlimited if return_batch_at is 0
                 samples_to_take = len(available)
 
-            # First try to take sample_k1 samples from group1
+            # First try to take sample_k1 keys from group1, up to sample_k1_per_key each.
+            # _sample_from_group_dict removes taken indices from `available` in-place.
             if active_group1_keys and samples_to_take > 0:
                 k1 = min(self.sample_k1, samples_to_take)
-                group1_active = {k: self._group1[k] for k in active_group1_keys}
-                taken1, used_mask, budget_left = self._sample_from_group_dict(
-                    group1_active, used_mask, budget_left, k1
+                taken1, budget_left = self._sample_from_group_dict(
+                    self._group1, active_group1_keys, available, budget_left, k1,
+                    per_key=self.sample_k1_per_key,
                 )
                 batch.extend(taken1)
                 samples_to_take -= len(taken1)
-                # Update batch_n from budget_left
-                batch_n = self._max_num - budget_left
-                # Remove exhausted keys
+                # Remove exhausted keys (all candidates consumed)
                 for key in list(active_group1_keys):
-                    if all(used_mask.get(idx, False) for idx in self._group1[key].tolist()):
+                    if not any(idx in available for idx in self._group1[key].tolist()):
                         active_group1_keys.discard(key)
 
-            # Then try to take sample_k2 samples from group2
+            # Then try to take sample_k2 keys from group2, up to sample_k2_per_key each.
             if active_group2_keys and samples_to_take > 0:
                 k2 = min(self.sample_k2, samples_to_take)
-                group2_active = {k: self._group2[k] for k in active_group2_keys}
-                taken2, used_mask, budget_left = self._sample_from_group_dict(
-                    group2_active, used_mask, budget_left, k2
+                taken2, budget_left = self._sample_from_group_dict(
+                    self._group2, active_group2_keys, available, budget_left, k2,
+                    per_key=self.sample_k2_per_key,
                 )
                 batch.extend(taken2)
                 samples_to_take -= len(taken2)
-                batch_n = self._max_num - budget_left
                 # Remove exhausted keys
                 for key in list(active_group2_keys):
-                    if all(used_mask.get(idx, False) for idx in self._group2[key].tolist()):
+                    if not any(idx in available for idx in self._group2[key].tolist()):
                         active_group2_keys.discard(key)
 
-            # Fill remaining budget with any available samples
+            # Fill remaining budget with any available samples.
+            # `available` already excludes everything taken by group passes above.
             if budget_left > 0 and samples_to_take > 0:
-                cand_list = list(available - set(k for k, v in used_mask.items() if v))
+                cand_list = list(available)
                 if cand_list:
                     # Use PyTorch Generator for consistency
                     if self.generator is not None:
                         perm = th.randperm(len(cand_list), generator=self.generator)
                         cand_list = [cand_list[i] for i in perm.tolist()]
-                    # If no generator, keep original order
 
                     for idx in cand_list:
-                        if used_mask.get(idx, False):
+                        if idx not in available:
                             continue
                         if samples_to_take <= 0:
                             break
@@ -695,20 +732,18 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                             continue
                         # Check budget BEFORE adding
                         if n > budget_left:
-                            continue
+                            # Match SpecMolFragDynamicBatchSampler behavior: when
+                            # skip_too_big=False, allow an oversized singleton batch.
+                            if not (n > self._max_num and len(batch) == 0):
+                                continue
                         batch.append(idx)
-                        batch_n += n
                         samples_to_take -= 1
-                        used_mask[idx] = True
-                        budget_left -= n
+                        available.discard(idx)
+                        budget_left = max(0, budget_left - n)
 
             if not batch:
-                # Nothing could be placed (maybe all remaining too large or already used)
+                # Nothing could be placed (maybe all remaining too large)
                 break
-
-            # Mark used and remove from available
-            for idx in batch:
-                available.discard(idx)
 
             self._batches.append(batch)
 
@@ -727,28 +762,77 @@ class DualGroupDynamicBatchSampler(BatchSampler):
 def get_group_sampler(
     ds, sampler_type: str, avg_per_group: int, generator: th.Generator
 ) -> WeightedRandomSampler | None:
-    """Create a WeightedRandomSampler based on group/molecule statistics.
+    """Create a WeightedRandomSampler based on group/molecule or adduct+instrument statistics.
 
     Balances sampling to ensure certain groups/molecules are sampled proportionally.
 
     Args:
-        ds: Dataset with get_group_mol_stats() method
+        ds: Dataset with get_group_mol_stats() and get_adduct_inst_type_stats() methods.
         sampler_type (str): Weighting strategy:
-            - 'group': Weight by 1/specs_per_group
-            - 'mol': Weight by 1/specs_per_mol
-            - 'group_mol': Weight by 1/(specs_per_group * group_per_mol)
-        avg_per_group (int): Average samples per group to target
-        generator (th.Generator): PyTorch generator for reproducibility
+            - 'group': Weight by 1/specs_per_group (replacement=False)
+            - 'mol': Weight by 1/specs_per_mol (replacement=False)
+            - 'group_mol': Weight by 1/(specs_per_group * group_per_mol) (replacement=False)
+            - 'adduct_inst_type': Weight by 1/count(prec_type, inst_type) (replacement=True).
+              Oversample minority (adduct, instrument) combinations. Epoch size = len(ds).
+            - 'adduct_inst_type_group': Weight by 1/(count(prec_type, inst_type) *
+              specs_per_group) (replacement=True). Combines adduct+instrument balancing
+              with group-level balancing. Epoch size = len(ds).
+            - 'adduct_inst_type_frag_mode': Weight by 1/count(prec_type, inst_type, frag_mode)
+              (replacement=True). Extends adduct+instrument balancing to also upweight minority
+              fragmentation modes (e.g. CID vs HCD). Epoch size = len(ds).
+            - 'adduct_inst_type_frag_mode_group': Weight by 1/(count(prec_type, inst_type,
+              frag_mode) * specs_per_group) (replacement=True). Combines frag-mode balancing
+              with group-level balancing. Epoch size = len(ds).
+        avg_per_group (int): Average samples per group to target (used by group/mol types).
+        generator (th.Generator): PyTorch generator for reproducibility.
 
     Returns:
-        WeightedRandomSampler | None: Configured sampler, or None if invalid sampler_type
+        WeightedRandomSampler | None: Configured sampler, or None if invalid sampler_type.
 
     Example:
         ```python
-        sampler = get_group_sampler(ds, "group", avg_per_group=3, generator=generator)
+        sampler = get_group_sampler(ds, "adduct_inst_type", avg_per_group=1, generator=generator)
         loader = DataLoader(ds, batch_sampler=sampler)
         ```
     """
+    if sampler_type in (
+        "adduct_inst_type",
+        "adduct_inst_type_group",
+        "adduct_inst_type_frag_mode",
+        "adduct_inst_type_frag_mode_group",
+    ):
+        prec_types, inst_types = ds.get_adduct_inst_type_stats()
+        use_frag_mode = sampler_type in (
+            "adduct_inst_type_frag_mode",
+            "adduct_inst_type_frag_mode_group",
+        )
+        if use_frag_mode:
+            frag_modes = ds.get_frag_mode_stats()
+        combo_counts: dict[str, int] = {}
+        for i, (pt, it) in enumerate(zip(prec_types, inst_types)):
+            key = f"{pt}::{it}::{frag_modes[i]}" if use_frag_mode else f"{pt}::{it}"
+            combo_counts[key] = combo_counts.get(key, 0) + 1
+        if use_frag_mode:
+            sample_weights = th.tensor(
+                [
+                    1.0 / combo_counts[f"{pt}::{it}::{fm}"]
+                    for pt, it, fm in zip(prec_types, inst_types, frag_modes)
+                ],
+                dtype=th.float32,
+            )
+        else:
+            sample_weights = th.tensor(
+                [1.0 / combo_counts[f"{pt}::{it}"] for pt, it in zip(prec_types, inst_types)],
+                dtype=th.float32,
+            )
+        if sampler_type in ("adduct_inst_type_group", "adduct_inst_type_frag_mode_group"):
+            _, _, spec_per_group, _, _ = ds.get_group_mol_stats()
+            sample_weights = sample_weights / spec_per_group.float()
+        num_samples = len(ds)
+        return WeightedRandomSampler(
+            sample_weights, num_samples=num_samples, replacement=True, generator=generator
+        )
+
     group_ids, _, spec_per_group, spec_per_mol, group_per_mol = ds.get_group_mol_stats()
 
     if sampler_type == "group":

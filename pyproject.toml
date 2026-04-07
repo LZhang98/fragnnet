@@ -29,7 +29,6 @@ dependencies = [
     "omegaconf",
     "h5py",
     "lmdb==1.7.5",
-    "torch-linear-assignment",
     "pandarallel",
     "pyopenms",
 ]
@@ -48,6 +47,10 @@ dev = [
     "ruff>=0.1.0",
     "black>=23.0",
     "isort>=5.12"
+]
+
+speed = [
+    "torch-linear-assignment"
 ]
 
 [tool.setuptools]

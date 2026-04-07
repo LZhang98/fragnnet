@@ -68,7 +68,9 @@ MAX_H_TRANSFER=4
 NB_FLAG=False
 ISO_FLAG=False
 MIN_FRAG_ATOMS=3
-SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}_mbfs_prepass
+SMARTS_PREPASS=False
+USE_LMDB=False
+SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}_smp${SMARTS_PREPASS}_mbfs
 DSETS='nist20_hr'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]-'
 INST='FT QTOF IT'
@@ -116,9 +118,9 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --max_h_transfer ${MAX_H_TRANSFER} \
     --dsets ${DSETS} \
     --multi_cut_bfs True \
-    --max_cut_size 2 \
-    --smarts_prepass True \
-    --use_lmdb False \
+    --max_cut_size 3 \
+    --smarts_prepass ${SMARTS_PREPASS} \
+    --use_lmdb ${USE_LMDB} \
     --min_frag_atoms ${MIN_FRAG_ATOMS}
 
 # go to frag directory

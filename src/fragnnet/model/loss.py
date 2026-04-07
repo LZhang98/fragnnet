@@ -1077,8 +1077,12 @@ def get_pairwise_cossim(
     mz_bin_res: float,
     chunk_size: int = 32,
 ) -> th.Tensor:
-    """
-    Compute pairwise cosine similarity matrix for a batch of spectra.
+    """Compute pairwise cosine similarity matrix for a batch of spectra.
+
+    Avoids materializing the full [batch_size, num_unique_bins] dense matrix by
+    building chunk-sized row slices on the fly. Peak GPU memory for the spectrum
+    vectors is O(chunk_size * num_unique_bins) instead of O(batch_size * num_unique_bins),
+    which prevents OOM when batch_size is large.
 
     Args:
         mzs: m/z values.
@@ -1087,12 +1091,12 @@ def get_pairwise_cossim(
         batch_size: Number of spectra in the batch.
         mz_max: Maximum m/z value.
         mz_bin_res: m/z bin resolution.
-        chunk_size: Batch size for chunked computation to save memory.
+        chunk_size: Number of rows to process at once. Controls the memory/speed
+            trade-off: smaller values use less memory but more iterations.
 
     Returns:
         Pairwise similarity matrix of shape [batch_size, batch_size].
     """
-
     batch_size = int(batch_size)
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
@@ -1106,35 +1110,51 @@ def get_pairwise_cossim(
     norm_logprobs = scatter_logl2normalize(bin_logprobs, bin_batch_idxs)
     norm_probs = norm_logprobs.exp()
 
-    # Optimization: only use bins that are actually present in data
-    # This avoids allocating a massive 150k-dim dense matrix
-    unique_bins = th.unique(bin_idxs)
+    # batched_bin_func returns batch-offset bin indices (batch element k uses range [k*num_bins,
+    # (k+1)*num_bins)). Strip the offset to get per-spectrum bin positions so that the same m/z
+    # bin in different spectra maps to the same column in the V matrix, enabling valid dot-product
+    # cosine similarity. Without this, every spectrum occupies exclusively different columns and
+    # all off-diagonal similarities are zero by construction.
+    num_bins = int(round(mz_max / mz_bin_res))
+    intra_bin_idxs = bin_idxs % num_bins
+
+    # Compact bin space: avoids 150k-wide matrices when only a few bins are occupied
+    unique_bins = th.unique(intra_bin_idxs)
     num_unique_bins = unique_bins.numel()
-
-    # Create a mapping from old bin indices to new compact indices
-    bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
+    bin_idx_map = th.full(
+        (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
+    )
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
+    compact_bin_idxs = bin_idx_map[intra_bin_idxs]
 
-    # Remap indices to compact space
-    compact_bin_idxs = bin_idx_map[bin_idxs]
+    effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    indices = th.stack([bin_batch_idxs, compact_bin_idxs])
+    def _make_chunk(row_start: int, row_end: int) -> th.Tensor:
+        """Build a dense [row_end - row_start, num_unique_bins] matrix for the given rows."""
+        mask = (bin_batch_idxs >= row_start) & (bin_batch_idxs < row_end)
+        V = th.zeros(
+            (row_end - row_start, num_unique_bins), device=mzs.device, dtype=norm_probs.dtype
+        )
+        V[bin_batch_idxs[mask] - row_start, compact_bin_idxs[mask]] = norm_probs[mask]
+        return V
 
-    V = th.sparse_coo_tensor(indices, norm_probs, (batch_size, num_unique_bins), device=mzs.device)
-    V_dense = V.to_dense()
+    S = th.zeros((batch_size, batch_size), device=mzs.device, dtype=norm_probs.dtype)
 
-    if chunk_size is None or chunk_size >= batch_size:
-        # Compute pairwise similarity
-        S = th.mm(V_dense, V_dense.t())
-    else:
-        S = th.zeros((batch_size, batch_size), device=mzs.device, dtype=V_dense.dtype)
-        for i in range(0, batch_size, chunk_size):
-            i_end = min(i + chunk_size, batch_size)
-            V_i = V_dense[i:i_end]
-            for j in range(0, batch_size, chunk_size):
-                j_end = min(j + chunk_size, batch_size)
-                V_j = V_dense[j:j_end]
-                S[i:i_end, j:j_end] = th.mm(V_i, V_j.t())
+    # Exploit symmetry: only compute upper triangle (j >= i) and mirror.
+    # V_i is built once per i-chunk; V_j is built once per (i, j) pair with j >= i.
+    for i in range(0, batch_size, effective_chunk):
+        i_end = min(i + effective_chunk, batch_size)
+        V_i = _make_chunk(i, i_end)
+        for j in range(i, batch_size, effective_chunk):
+            j_end = min(j + effective_chunk, batch_size)
+            if i == j:
+                block = th.mm(V_i, V_i.t())
+                S[i:i_end, i:i_end] = block
+            else:
+                V_j = _make_chunk(j, j_end)
+                block = th.mm(V_i, V_j.t())
+                S[i:i_end, j:j_end] = block
+                S[j:j_end, i:i_end] = block.t()
 
     return S
 
@@ -1148,8 +1168,10 @@ def get_pairwise_jss_sim(
     mz_bin_res: float,
     chunk_size: int = 32,
 ) -> th.Tensor:
-    """
-    Compute pairwise Jensen-Shannon similarity matrix for a batch of spectra.
+    """Compute pairwise Jensen-Shannon similarity matrix for a batch of spectra.
+
+    Avoids materializing the full [batch_size, num_unique_bins] dense matrix by
+    building chunk-sized row slices on the fly.
 
     Args:
         mzs: m/z values.
@@ -1158,12 +1180,12 @@ def get_pairwise_jss_sim(
         batch_size: Number of spectra in the batch.
         mz_max: Maximum m/z value.
         mz_bin_res: m/z bin resolution.
-        chunk_size: Batch size for chunked computation to save memory.
+        chunk_size: Number of rows to process at once. Controls the memory/speed
+            trade-off: smaller values use less memory but more iterations.
 
     Returns:
         Pairwise similarity matrix of shape [batch_size, batch_size].
     """
-
     batch_size = int(batch_size)
     if mzs.numel() == 0:
         return th.zeros((batch_size, batch_size), device=mzs.device, dtype=logprobs.dtype)
@@ -1174,49 +1196,60 @@ def get_pairwise_jss_sim(
     )
 
     # Normalize (L1 on probabilities)
-    # log_softmax to get log probabilities
     log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
     probs = log_probs.exp()
 
-    # Optimization: only use bins that are actually present in data
-    unique_bins = th.unique(bin_idxs)
+    # Strip batch offsets (same fix as get_pairwise_cossim): batched_bin_func returns
+    # batch-offset bin indices; without stripping, each spectrum occupies exclusively
+    # different columns, making all pairwise mixtures trivially equal to 0.5*(P+0)=0.5*P
+    # and H(M) collapses to a function of individual entropies only.
+    num_bins = int(round(mz_max / mz_bin_res))
+    intra_bin_idxs = bin_idxs % num_bins
+
+    # Compact bin space
+    unique_bins = th.unique(intra_bin_idxs)
     num_unique_bins = unique_bins.numel()
-
-    # Create a mapping from old bin indices to new compact indices
-    bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
+    bin_idx_map = th.full(
+        (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
+    )
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
+    compact_bin_idxs = bin_idx_map[intra_bin_idxs]
 
-    # Remap indices to compact space
-    compact_bin_idxs = bin_idx_map[bin_idxs]
+    effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    indices = th.stack([bin_batch_idxs, compact_bin_idxs])
+    def _make_chunk(row_start: int, row_end: int) -> th.Tensor:
+        """Build a dense [row_end - row_start, num_unique_bins] probability matrix."""
+        mask = (bin_batch_idxs >= row_start) & (bin_batch_idxs < row_end)
+        P = th.zeros(
+            (row_end - row_start, num_unique_bins), device=mzs.device, dtype=probs.dtype
+        )
+        P[bin_batch_idxs[mask] - row_start, compact_bin_idxs[mask]] = probs[mask]
+        return P
 
-    V = th.sparse_coo_tensor(indices, probs, (batch_size, num_unique_bins), device=mzs.device)
-    V_dense = V.to_dense()  # (B, D)
+    # H(P) for each spectrum: computed chunk-by-chunk to avoid full dense matrix
+    H_P = th.zeros(batch_size, device=mzs.device, dtype=probs.dtype)
+    for i in range(0, batch_size, effective_chunk):
+        i_end = min(i + effective_chunk, batch_size)
+        P_i = _make_chunk(i, i_end)
+        H_P[i:i_end] = -th.sum(P_i * th.log(P_i + EPS), dim=1)
 
-    # Compute JSS
-    # JSD(P, Q) = H(M) - 0.5 H(P) - 0.5 H(Q)
-    # M = 0.5 (P + Q)
-    P = V_dense
-
-    # H(P)
-    H_P = -th.sum(P * th.log(P + EPS), dim=1)  # (B,)
-
-    # H(M)
-    H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=P.dtype)
-    if chunk_size is None or chunk_size >= batch_size:
-        for i in range(batch_size):
-            M_i = 0.5 * (P[i].unsqueeze(0) + P)
-            H_M[i] = -th.sum(M_i * th.log(M_i + EPS), dim=1)
-    else:
-        for i in range(0, batch_size, chunk_size):
-            i_end = min(i + chunk_size, batch_size)
-            P_i = P[i:i_end]  # (chunk_i, D)
-            for j in range(0, batch_size, chunk_size):
-                j_end = min(j + chunk_size, batch_size)
-                P_j = P[j:j_end]  # (chunk_j, D)
+    # H(M) where M = 0.5*(P_i + P_j): exploit symmetry (j >= i)
+    H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=probs.dtype)
+    for i in range(0, batch_size, effective_chunk):
+        i_end = min(i + effective_chunk, batch_size)
+        P_i = _make_chunk(i, i_end)
+        for j in range(i, batch_size, effective_chunk):
+            j_end = min(j + effective_chunk, batch_size)
+            if i == j:
+                M_ij = 0.5 * (P_i.unsqueeze(1) + P_i.unsqueeze(0))
+                block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
+                H_M[i:i_end, i:i_end] = block
+            else:
+                P_j = _make_chunk(j, j_end)
                 M_ij = 0.5 * (P_i.unsqueeze(1) + P_j.unsqueeze(0))
-                H_M[i:i_end, j:j_end] = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
+                block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
+                H_M[i:i_end, j:j_end] = block
+                H_M[j:j_end, i:i_end] = block.t()
 
     JSD = H_M - 0.5 * H_P.unsqueeze(1) - 0.5 * H_P.unsqueeze(0)
     JSS = 1.0 - JSD / math.log(2.0)
@@ -1264,16 +1297,25 @@ def get_pairwise_cross_entropy(
     log_probs = scatter_logsoftmax(bin_logprobs, bin_batch_idxs)
     probs = log_probs.exp()
 
+    # Strip batch offsets: batched_bin_func returns batch-offset bin indices; without
+    # stripping, each spectrum occupies exclusively different columns so P and Q never
+    # share any bin and cross-entropy reduces to -sum(P*log(eps)) for all off-diagonal
+    # pairs — masking any real signal from shared peaks.
+    num_bins = int(round(mz_max / mz_bin_res))
+    intra_bin_idxs = bin_idxs % num_bins
+
     # Optimization: only use bins that are actually present in data
-    unique_bins = th.unique(bin_idxs)
+    unique_bins = th.unique(intra_bin_idxs)
     num_unique_bins = unique_bins.numel()
 
     # Create a mapping from old bin indices to new compact indices
-    bin_idx_map = th.full((int(bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long)
+    bin_idx_map = th.full(
+        (int(intra_bin_idxs.max().item()) + 1,), -1, device=mzs.device, dtype=th.long
+    )
     bin_idx_map[unique_bins] = th.arange(num_unique_bins, device=mzs.device, dtype=th.long)
 
     # Remap indices to compact space
-    compact_bin_idxs = bin_idx_map[bin_idxs]
+    compact_bin_idxs = bin_idx_map[intra_bin_idxs]
 
     indices = th.stack([bin_batch_idxs, compact_bin_idxs])
 

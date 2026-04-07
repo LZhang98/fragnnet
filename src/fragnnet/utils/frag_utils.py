@@ -1,6 +1,8 @@
 # from copy import deepcopy
 import bz2
 import gzip
+import json
+import logging
 import os
 import pickle
 import sys
@@ -8,7 +10,11 @@ import tarfile
 import traceback
 from collections import Counter
 from hashlib import blake2b
+from typing import TYPE_CHECKING
 from zipfile import ZipFile
+
+if TYPE_CHECKING:
+    import h5py as _h5py
 
 import numpy as np
 import pandas as pd
@@ -27,13 +33,13 @@ from fragnnet.frag.compute_frags import (
 from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut as _compute_ccs_multi_cut_cy
 from fragnnet.frag.multi_cut_bfs import get_ring_edge_mask
 from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
-from fragnnet.utils.data_utils import mol_from_smiles
+from fragnnet.utils.data_utils import mol_from_smiles, par_apply
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     formula_to_peak_mzs,
 )
-from fragnnet.utils.misc_utils import PPM
+from fragnnet.utils.misc_utils import PPM, progress_wrapper
 
 # Fragment index dtype (change here to update everywhere)
 # uint32 supports up to ~4B unique formulas per molecule (uint16 max is 65535)
@@ -94,6 +100,11 @@ NODE_FEAT_TO_IDX = {
     "h_counts": 4,
     "nb_iso_idx": 5,
     "cmf_h_formulae_idx": 6,
+    # prepass_rule_id: one-hot over FRAG_RULES (len(FRAG_RULES) dims).
+    # All zeros = BFS-generated fragment.  Bit k = 1 means the fragment was
+    # produced by FRAG_RULES[k] (e.g. k=0 → crf12_0, k=2 → crf13_2).
+    # All zeros when smarts_prepass=False.
+    "prepass_rule_id": 7,
 }
 
 EDGE_FEAT_TO_IDX = {"cc": 0, "base_formula": 1, "h_range": 2, "complement": 3}
@@ -821,6 +832,113 @@ def th_mask_to_long(mask):
     return th.sum(long * mask, dim=2).long()
 
 
+def _inject_smarts_pairs_into_dag(
+    smarts_pairs: list[tuple[np.ndarray, np.ndarray]],
+    nodes_mask_matrix: np.ndarray,
+    nodes_depth_matrix: np.ndarray,
+    dag_edges_matrix: np.ndarray,
+    dag_frag_meta: dict,
+    num_nodes: int,
+    min_frag_atoms: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+    """Inject SMARTS prepass fragment pairs into a DAG produced by compute_frags.
+
+    Appends fragment pairs from the SMARTS rearrangement prepass as direct
+    children of the root node (index 0).  Prepass rules require at least 2 bond
+    cuts plus 1 new bond formation, so injected fragments receive **node depth 2**
+    (not 1) to reflect the two-cut distance from the root.  The root→fragment
+    edge retains ``min_depth=1`` since it is introduced in the same expansion
+    pass as depth-1 BFS edges.  See ``docs/frag_gen_prepass.md`` for the full
+    depth-semantics rationale.
+
+    Fragments already present in the DAG are deduplicated via their byte-string
+    node-mask key.  Fragments smaller than ``min_frag_atoms`` heavy atoms are
+    silently dropped, consistent with the ``min_frag_atoms`` filter applied
+    inside the BFS.
+
+    Args:
+        smarts_pairs: List of ``(node_mask_a, node_mask_b)`` uint8 array pairs
+            returned by ``_apply_smarts_prepass``.
+        nodes_mask_matrix: Shape ``(n_frags, num_nodes)`` uint8 — existing DAG
+            fragment node masks, root at index 0.
+        nodes_depth_matrix: Shape ``(n_frags, max_depth+1)`` uint8 — depth
+            one-hot for each fragment.
+        dag_edges_matrix: Shape ``(n_edges, 2)`` int64 — (parent, child) pairs.
+        dag_frag_meta: Dict with keys ``reached_depth``, ``edges_min_depth``,
+            ``nodes_min_depth``, ``force_stopped``.
+        num_nodes: Number of atoms in the root molecule.
+        min_frag_atoms: Minimum heavy-atom count for a fragment to be kept.
+
+    Returns:
+        Updated ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
+        dag_frag_meta)`` tuple with the same format as the input.
+    """
+    if not smarts_pairs:
+        return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+    max_depth_cols = nodes_depth_matrix.shape[1]
+
+    # Build bytes-key → fragment index lookup from existing rows.
+    key_to_idx: dict[bytes, int] = {
+        nodes_mask_matrix[i].tobytes(): i for i in range(len(nodes_mask_matrix))
+    }
+    # Build set of existing (parent, child) edges for O(1) dedup.
+    existing_edges: set[tuple[int, int]] = {
+        (int(dag_edges_matrix[i, 0]), int(dag_edges_matrix[i, 1]))
+        for i in range(len(dag_edges_matrix))
+    }
+
+    new_masks: list[np.ndarray] = []
+    new_depth_rows: list[np.ndarray] = []
+    new_min_depths: list[int] = []
+    new_edges: list[tuple[int, int]] = []
+    new_edge_min_depths: list[int] = []
+
+    for mask_a, mask_b in smarts_pairs:
+        for mask in (mask_a, mask_b):
+            if int(mask.sum()) < min_frag_atoms:
+                continue
+            key = mask.tobytes()
+            if key not in key_to_idx:
+                new_idx = len(nodes_mask_matrix) + len(new_masks)
+                key_to_idx[key] = new_idx
+                new_masks.append(mask.astype(MASK_DTYPE))
+                depth_row = np.zeros(max_depth_cols, dtype=MASK_DTYPE)
+                # Prepass rules require ≥2 bond cuts + 1 new bond from the root,
+                # so the node depth label is 2 (not 1).  See docs/frag_gen_prepass.md.
+                depth_row[min(2, max_depth_cols - 1)] = 1
+                new_depth_rows.append(depth_row)
+                new_min_depths.append(2)
+            frag_idx = key_to_idx[key]
+            edge = (0, frag_idx)
+            if edge not in existing_edges:
+                existing_edges.add(edge)
+                new_edges.append(edge)
+                # Edge min_depth stays 1: the root→prepass edge is introduced
+                # in the same expansion pass as depth-1 BFS edges.
+                new_edge_min_depths.append(1)
+
+    if not new_masks and not new_edges:
+        return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+    if new_masks:
+        nodes_mask_matrix = np.vstack(
+            [nodes_mask_matrix] + [m.reshape(1, num_nodes) for m in new_masks]
+        )
+        nodes_depth_matrix = np.vstack([nodes_depth_matrix] + new_depth_rows)
+        dag_frag_meta["nodes_min_depth"] = np.concatenate(
+            [dag_frag_meta["nodes_min_depth"], np.array(new_min_depths, dtype=MASK_DTYPE)]
+        )
+
+    if new_edges:
+        dag_edges_matrix = np.vstack([dag_edges_matrix, np.array(new_edges, dtype=np.int64)])
+        dag_frag_meta["edges_min_depth"] = np.concatenate(
+            [dag_frag_meta["edges_min_depth"], np.array(new_edge_min_depths, dtype=MASK_DTYPE)]
+        )
+
+    return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
+
+
 def compute_dags(
     mol_d: dict,
     max_depth: int,
@@ -875,7 +993,7 @@ def compute_dags(
         # as smarts_seed_pairs to the Cython BFS for injection as depth-1 children.
         smarts_seed_pairs = None
         if smarts_prepass:
-            smarts_seed_pairs = _apply_smarts_prepass(
+            smarts_seed_pairs_tagged = _apply_smarts_prepass(
                 FRAG_RULES,
                 mol_d["mol"],
                 edge_mask,
@@ -883,6 +1001,9 @@ def compute_dags(
                 num_nodes,
                 num_edges,
             )
+            # Pass 3-tuples directly; rule_idx tracking is done inside the BFS
+            # and returned via dag_frag_meta["prepass_node_rules"].
+            smarts_seed_pairs = smarts_seed_pairs_tagged
         nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
             _compute_ccs_multi_cut_cy(
                 num_nodes,
@@ -900,7 +1021,11 @@ def compute_dags(
                 min_frag_atoms=min_frag_atoms,
             )
         )
+        prepass_mask_to_rules: dict[bytes, set[int]] = dag_frag_meta.get(
+            "prepass_node_rules", {}
+        )
     else:
+        prepass_mask_to_rules: dict[bytes, set[int]] = {}
         nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
             compute_frags.compute_ccs(
                 num_nodes,
@@ -914,6 +1039,40 @@ def compute_dags(
                 min_frag_atoms,
             )
         )
+        if smarts_prepass:
+            # Post-process: inject SMARTS rearrangement fragments as depth-1
+            # children of the root.  compute_frags.compute_ccs runs unchanged
+            # (preserving ring-opening via its n_ccs=1 path), and the SMARTS
+            # pairs are merged in afterwards.  No further BFS expansion of the
+            # SMARTS fragments is needed because their sub-fragments are already
+            # covered by the BFS from the root molecule.
+            smarts_pairs_tagged = _apply_smarts_prepass(
+                FRAG_RULES,
+                mol_d["mol"],
+                edge_mask,
+                edges,
+                num_nodes,
+                num_edges,
+            )
+            for mask_a, mask_b, rule_idx in smarts_pairs_tagged:
+                if int(mask_a.sum()) >= min_frag_atoms:
+                    key_a = mask_a.tobytes()
+                    prepass_mask_to_rules.setdefault(key_a, set()).add(rule_idx)
+                if int(mask_b.sum()) >= min_frag_atoms:
+                    key_b = mask_b.tobytes()
+                    prepass_mask_to_rules.setdefault(key_b, set()).add(rule_idx)
+            smarts_pairs = [(a, b) for a, b, _ in smarts_pairs_tagged]
+            nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
+                _inject_smarts_pairs_into_dag(
+                    smarts_pairs,
+                    nodes_mask_matrix,
+                    nodes_depth_matrix,
+                    dag_edges_matrix,
+                    dag_frag_meta,
+                    num_nodes,
+                    min_frag_atoms,
+                )
+            )
 
     if nb_isomorphic:
         node_nb_hashes = get_subgraph_hashes(
@@ -957,6 +1116,9 @@ def compute_dags(
     h_count_node_feat_size = formula_node_feat_size
     nb_iso_node_feat_size = 1 if nb_isomorphic else 0
     cmf_formula_node_feat_size = formula_node_feat_size  # 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
+    prepass_rule_id_node_feat_size = len(
+        FRAG_RULES
+    )  # one-hot over FRAG_RULES; all-zero = BFS fragment
     # edge feature sizes
     cc_edge_feat_size = cc_node_feat_size
     base_formula_edge_feat_size = base_formula_node_feat_size
@@ -969,6 +1131,7 @@ def compute_dags(
         h_count_node_feat_size,
         nb_iso_node_feat_size,
         cmf_formula_node_feat_size,
+        prepass_rule_id_node_feat_size,
     ]
     edge_feat_shapes = [cc_edge_feat_size, base_formula_edge_feat_size, h_range_edge_feat_size]
 
@@ -1072,6 +1235,18 @@ def compute_dags(
         node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0], 0), dtype=FRAG_INDEX_DTYPE)
         dag_num_nodes_nb = -1
 
+    # Build prepass_rule_id one-hot: shape (num_frags, len(FRAG_RULES)).
+    # Row is all-zero for BFS-generated fragments and the root.
+    # Bit k is set when FRAG_RULES[k] produced this fragment (multi-hot if
+    # multiple rules independently generate the same atom mask).
+    num_rules = len(FRAG_RULES)
+    node_prepass_rule_id = np.zeros((nodes_mask_matrix.shape[0], num_rules), dtype=np.int8)
+    for frag_idx, row in enumerate(nodes_mask_matrix):
+        rule_set = prepass_mask_to_rules.get(row.tobytes())
+        if rule_set:
+            for r in rule_set:
+                node_prepass_rule_id[frag_idx, r] = 1
+
     assert nodes_mask_matrix.shape[1] <= MASK_SIZE
     node_cc_mask = th.as_tensor(nodes_mask_matrix, dtype=th.bool)
     node_cc_mask = F.pad(node_cc_mask, (0, MASK_SIZE - node_cc_mask.shape[1]), "constant", 0)
@@ -1087,6 +1262,7 @@ def compute_dags(
             th.as_tensor(node_nb_iso_idx, dtype=NODE_FEAT_DTYPE),
             # cmf features bit, not set here, this should set in dataloader, use 0 for NULL forumla
             th.zeros((node_cc_mask.shape[0], cmf_formula_node_feat_size), dtype=NODE_FEAT_DTYPE),
+            th.as_tensor(node_prepass_rule_id, dtype=NODE_FEAT_DTYPE),
         ],
         dim=1,
     )
@@ -1430,7 +1606,6 @@ def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
         h5_group: An open, writable ``h5py.Group`` for this molecule.
         dag_d: DAG payload dictionary as returned by ``compute_dags``.
     """
-    import json
 
     dag = dag_d["dag"]
     g = h5_group.create_group("dag")
@@ -1512,7 +1687,6 @@ def load_dag_hdf5(h5_group) -> dict:
         DAG payload dictionary compatible with the format returned by
         ``compute_dags``.
     """
-    import json
 
     g = h5_group["dag"]
     dag = pyg.data.Data(
@@ -1820,3 +1994,159 @@ def timed_get_dags(
         print("> Traceback", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
     return mol_id, {}
+
+
+def run_frag_gen_hdf5(
+    mol_df: "pd.DataFrame",
+    h5_file: "_h5py.File",
+    max_depth: int,
+    max_h_transfer: int,
+    max_time: int,
+    isotopes: bool,
+    nb_isomorphic: bool,
+    wl_max_iterations: int,
+    multi_cut_bfs: bool,
+    max_cut_size: int,
+    smarts_prepass: bool,
+    min_frag_atoms: int,
+    disable_tqdm: bool = False,
+) -> dict[str, list[int]]:
+    """Run fragment generation for all molecules and write DAGs to an open HDF5 file.
+
+    Iterates over rows in ``mol_df``, calls :func:`timed_get_dags` in parallel via
+    :func:`~fragnnet.utils.data_utils.par_apply`, and writes each successfully
+    fragmented molecule's DAG into ``h5_file`` under the key ``str(mol_id)``.
+
+    Args:
+        mol_df: DataFrame with at least ``mol`` and ``mol_id`` columns.
+        h5_file: Open writable ``h5py.File`` object. Groups are created directly
+            inside the root; the caller is responsible for opening and closing the file.
+        max_depth: Maximum fragmentation depth for DAG generation.
+        max_h_transfer: Maximum hydrogen transfers per fragment.
+        max_time: Per-molecule time budget in seconds.
+        isotopes: Whether to compute isotopic peak distributions.
+        nb_isomorphic: Whether to compute neighbourhood-isomorphism features.
+        wl_max_iterations: Maximum Weisfeiler-Lehman iterations.
+        multi_cut_bfs: Whether to use ring-aware multi-bond-cut BFS.
+        max_cut_size: Maximum bonds cut per BFS step (only when ``multi_cut_bfs``).
+        smarts_prepass: Whether to run the SMARTS rearrangement prepass.
+        min_frag_atoms: Minimum heavy atoms per fragment.
+        disable_tqdm: Suppress the tqdm progress bar.
+
+    Returns:
+        Dictionary mapping ``str(mol_id)`` to ``[num_nodes, num_edges]`` for every
+        molecule that was successfully fragmented.
+    """
+    _log = logging.getLogger(__name__)
+
+    mol_input_rows = (
+        [
+            row["mol"],
+            row["mol_id"],
+            max_depth,
+            True,  # h_prior
+            max_h_transfer,
+            max_time,
+            isotopes,
+            nb_isomorphic,
+            wl_max_iterations,
+            multi_cut_bfs,
+            max_cut_size,
+            smarts_prepass,
+            min_frag_atoms,
+        ]
+        for _, row in mol_df.iterrows()
+    )
+
+    from typing import cast
+
+    frag_results_gen = par_apply(
+        iter(mol_input_rows), timed_get_dags, True, return_as_generator=True
+    )
+    if frag_results_gen is None:
+        raise RuntimeError("Parallel fragment generation returned no results")
+    frag_results_iter = cast("list[tuple[str, dict]]", frag_results_gen)
+
+    meta_info: dict[str, list[int]] = {}
+    n_errors = 0
+
+    for fr in progress_wrapper(
+        frag_results_iter,
+        total=mol_df.shape[0],
+        desc="Compute Frags",
+        disable_tqdm=disable_tqdm,
+    ):
+        mol_id, dag_d = fr
+        if len(dag_d) == 0:
+            _log.warning("Empty DAG for mol_id=%s", mol_id)
+            n_errors += 1
+            continue
+        meta_info[str(int(mol_id))] = [dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
+        grp = h5_file.create_group(f"{int(mol_id)}")
+        dump_dag_hdf5(grp, dag_d)
+
+    _log.info("Fragment generation done: %d stored, %d errors", len(meta_info), n_errors)
+
+
+def compute_boundary_mask(
+    frag_node_mask: th.Tensor,
+    mol_edge_index: th.Tensor,
+    mol_num_nodes: th.Tensor,
+    frag_num_nodes: th.Tensor,
+) -> th.Tensor:
+    """Compute boundary atom mask for each fragment on-the-fly.
+
+    A boundary atom is one that belongs to the fragment AND is adjacent to at
+    least one atom that does not (i.e. it sits at a cut bond).  The root
+    fragment (full precursor) always produces an all-zero row.
+
+    Args:
+        frag_node_mask: Bool tensor of shape ``(F, mask_size)`` with LOCAL atom
+            indices per molecule (as returned by ``th_long_to_mask`` on the cc
+            node feature).
+        mol_edge_index: Long tensor of shape ``(2, E)`` with GLOBAL atom indices
+            across the batch (standard PyG format).
+        mol_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative atom counts
+            per molecule in the batch (prefix sum, starts at 0).
+        frag_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative fragment
+            counts per molecule in the batch (prefix sum, starts at 0).
+
+    Returns:
+        Bool tensor of shape ``(F, mask_size)`` where ``True`` marks boundary
+        atoms for each fragment.
+    """
+    num_frags_total = frag_node_mask.shape[0]
+    mask_size = frag_node_mask.shape[1]
+    device = frag_node_mask.device
+
+    u_global = mol_edge_index[0]
+    v_global = mol_edge_index[1]
+    edge_mol_idx = th.bucketize(u_global, mol_num_nodes, right=True) - 1
+
+    boundary_mask = th.zeros(num_frags_total, mask_size, dtype=th.bool, device=device)
+    num_mols = int(mol_num_nodes.shape[0]) - 1
+    for m in range(num_mols):
+        f_start = int(frag_num_nodes[m])
+        f_end = int(frag_num_nodes[m + 1])
+        if f_start == f_end:
+            continue
+        edge_sel = edge_mol_idx == m
+        if not edge_sel.any():
+            continue
+        atom_off = int(mol_num_nodes[m])
+        u_loc = u_global[edge_sel] - atom_off
+        v_loc = v_global[edge_sel] - atom_off
+        valid_e = (u_loc >= 0) & (u_loc < mask_size) & (v_loc >= 0) & (v_loc < mask_size)
+        u_loc, v_loc = u_loc[valid_e], v_loc[valid_e]
+
+        frags_m = frag_node_mask[f_start:f_end]  # (F_m, mask_size)
+        f_m = f_end - f_start
+        u_in = frags_m[:, u_loc].float()
+        v_in = frags_m[:, v_loc].float()
+        bm = th.zeros(f_m, mask_size, device=device)
+        bm.scatter_add_(1, u_loc.unsqueeze(0).expand(f_m, -1), u_in * (1 - v_in))
+        bm.scatter_add_(1, v_loc.unsqueeze(0).expand(f_m, -1), v_in * (1 - u_in))
+        boundary_mask[f_start:f_end] = bm > 0
+
+    return boundary_mask
+    return meta_info

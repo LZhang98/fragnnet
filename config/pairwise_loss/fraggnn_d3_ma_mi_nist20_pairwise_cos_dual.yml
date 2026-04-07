@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_all_cmf_mbfs_itol
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_pairwise_cos_dual
 wandb_tags:
 - retrieval
 - nist20
@@ -6,8 +6,8 @@ wandb_tags:
 - wr00
 - inchikey
 - new_proc
-- fraggnn_d3c
-- dynamic_sampler
+- fraggnn_d3
+- dual_dynamic_sampler
 - new_metrics
 - nodemlp
 - oos_multiple_1
@@ -27,31 +27,22 @@ wandb_tags:
 - frag_mode
 - frag_mode_scale
 - ce_scale
-- ace
-- cmf
-- mbfs
-- inst_tol
+- nce
+- pairwise_cos
 
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey
-frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_mbfs/dags
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
-  pyg_node_feats:
-    - cc
-    - base_formula
-    - depth
-    - h_formulae_idx
-    - cmf_h_formulae_idx
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
   preload: True
   preprocess: True
-  include_cmf: True
 spec_params:
   merge: False
   nce: True
@@ -90,14 +81,6 @@ frag_mode_scale: True
 ce_scale: True
 ce_scaler_hidden_dim: 64
 
-# per-instrument-type loss tolerance
-# FT (Orbitrap): 10 ppm, floor 0.002 Da — needed to separate N vs CO isobar (0.011 Da)
-# QTOF: 20 ppm, min_mz 750 → floor 0.015 Da — covers floor-truncated m/z artifact (up to 0.009 Da)
-# IT: uses global default (no override) — IT training signal is poor regardless
-inst_type_loss_tol:
-  FT:   {rel: 1.0e-5, min_mz: 200.0}
-  QTOF: {rel: 2.0e-5, min_mz: 750.0}
-
 train_batch_size: 256
 eval_batch_size: 256
 accumulate_grad_batches: 1
@@ -129,21 +112,43 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: True
-dynamic_batch_sampler_mode: frag_node
-dynamic_batch_sampler_max: 100000
+
+pl_enable_progress_bar: False
+activation_checkpointing: False
+compile: False
+pin_memory: True
+num_workers: 2
+loss_vectorized: True
+loss_batch_size: 16
+skip_extra_losses: True
+
+# pairwise losses
+pairwise_cosine_loss_weight: 0.5
+pairwise_jss_loss_weight: 0.0
+pairwise_cross_entropy_loss_weight: 0.0
+
+# dynamic batch samplers (mutually exclusive)
+dynamic_batch_sampler: False
+dual_group_dynamic_batch_sampler: True
+dual_group_dynamic_batch_sampler_mode: frag_node
+dual_group_dynamic_batch_sampler_max: 100000
+# 4 distinct molecules seeded per batch (group1 = same adduct+mol_id).
+# Together with k1_per_key=5 this places 4*5=20 same-molecule spectra per batch,
+# yielding 4*(5 choose 2)=40 informative same-molecule pairs for the pairwise loss.
+dual_group_sampler_k1: 4
+# 1 isomer key seeded per batch (group2 = same adduct+formula, different mol_id).
+# A single isomer alongside the k1 anchors is sufficient for isomer contrast.
+dual_group_sampler_k2: 1
+# 5 spectra per molecule (different CEs) taken from each group-1 key.
+# Raises pairwise pair count from ~10 (k1_per_key=1) to 40 without increasing
+# total batch size.
+dual_group_sampler_k1_per_key: 5
+# 1 spectrum per isomer key is enough; the contrast comes from the different mol_id.
+dual_group_sampler_k2_per_key: 1
 
 group_sampler: False
 group_sampler_type: group
 group_sampler_max_per_group: 5
-simple_group_sampler: True
+simple_group_sampler: False
 simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group
-
-pl_enable_progress_bar: True
-activation_checkpointing: False
-compile: False
-pin_memory: True
-loss_vectorized: True
-loss_batch_size: 16
-skip_extra_losses: True

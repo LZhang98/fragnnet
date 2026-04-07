@@ -27,7 +27,7 @@ wandb_tags:
 - frag_mode
 - frag_mode_scale
 - ce_scale
-- ace
+- nce
 
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl

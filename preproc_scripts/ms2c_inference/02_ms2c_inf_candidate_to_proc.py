@@ -9,6 +9,7 @@ import pandas as pd
 
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import (
+    compute_mol_df_props,
     par_apply_series,
 )
 
@@ -63,39 +64,7 @@ def build_query_mol_df(candidate_smiles_list: list[str]) -> pd.DataFrame:
     mol_df.loc[:, "mol"] = par_apply_series(
         mol_df["smiles"], data_utils.mol_from_smiles, use_tqdm=False
     )
-    mol_df.loc[:, "inchikey_s"] = par_apply_series(
-        mol_df["mol"], data_utils.mol_to_inchikey_s, use_tqdm=False
-    )
-    mol_df.loc[:, "scaffold"] = par_apply_series(
-        mol_df["mol"], data_utils.get_murcko_scaffold, use_tqdm=False
-    )
-    mol_df.loc[:, "formula"] = par_apply_series(
-        mol_df["mol"], data_utils.mol_to_formula, use_tqdm=False
-    )
-    mol_df.loc[:, "inchi"] = par_apply_series(
-        mol_df["mol"], data_utils.mol_to_inchi, use_tqdm=False
-    )
-    mol_df.loc[:, "mw"] = par_apply_series(
-        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=False), use_tqdm=False
-    )
-    mol_df.loc[:, "exact_mw"] = par_apply_series(
-        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=True), use_tqdm=False
-    )
-    mol_df.loc[:, "num_atoms"] = par_apply_series(
-        mol_df["mol"], data_utils.mol_to_num_atoms, use_tqdm=False
-    )
-    mol_df.loc[:, "num_bonds"] = par_apply_series(
-        mol_df["mol"], data_utils.mol_to_num_bonds, use_tqdm=False
-    )
-    mol_df.loc[:, "charge"] = par_apply_series(
-        mol_df["mol"], data_utils.mol_to_charge, use_tqdm=False
-    )
-    mol_df.loc[:, "single_mol"] = par_apply_series(
-        mol_df["mol"], data_utils.check_single_mol, use_tqdm=False
-    )
-    mol_df.loc[:, "num_radicals"] = par_apply_series(
-        mol_df["mol"], data_utils.mol_to_num_radicals, use_tqdm=False
-    )
+    compute_mol_df_props(mol_df, use_tqdm=False)
     if (mol_df["smiles"] == "").any():
         raise ValueError("Empty SMILES found in mol_df")
     if (mol_df["formula"] == "").any():

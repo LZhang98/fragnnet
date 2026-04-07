@@ -199,7 +199,7 @@ def _apply_smarts_prepass(
     edges: np.ndarray,
     num_nodes: int,
     num_edges: int,
-) -> list[tuple[np.ndarray, np.ndarray]]:
+) -> list[tuple[np.ndarray, np.ndarray, int]]:
     """Apply SMARTS fragmentation rules to the root molecule.
 
     For each rule, matches the reactant SMARTS against *mol*, cuts the specified
@@ -221,17 +221,18 @@ def _apply_smarts_prepass(
         num_edges: Number of real bonds.
 
     Returns:
-        List of ``(node_mask_a, node_mask_b)`` uint8 array pairs, one per valid
-        match.  Duplicate fragment pairs are **not** deduplicated here; the BFS
+        List of ``(node_mask_a, node_mask_b, rule_idx)`` tuples, one per valid
+        match.  ``rule_idx`` is the 0-based index into *rules* that produced the
+        pair.  Duplicate fragment pairs are **not** deduplicated here; the BFS
         ``css_to_id_dict`` handles deduplication by node-mask key.
     """
     root_node_mask = np.ones(num_nodes, dtype=MASK_DTYPE)
-    results: list[tuple[np.ndarray, np.ndarray]] = []
+    results: list[tuple[np.ndarray, np.ndarray, int]] = []
 
     # Fix 1: build (atom_a, atom_b) → edge_idx lookup once per molecule call.
     edge_dict = _build_edge_dict(edges, num_edges)
 
-    for rule in rules:
+    for rule_idx, rule in enumerate(rules):
         # Fix 3: skip rules that can't match given the molecule size.
         if rule.min_num_atoms > 0 and num_nodes < rule.min_num_atoms:
             continue
@@ -291,7 +292,7 @@ def _apply_smarts_prepass(
             n_ccs = len(cc_masks)
 
             if n_ccs == 2:
-                results.append((cc_masks[0], cc_masks[1]))
+                results.append((cc_masks[0], cc_masks[1], rule_idx))
             elif n_ccs == 3 and rule.merge_outer_map_nums:
                 # Identify which CCs contain the "outer" atoms
                 outer_cc_set: set[int] = set()
@@ -308,6 +309,6 @@ def _apply_smarts_prepass(
                     for cc_idx in outer_cc_set:
                         outer_mask |= cc_masks[cc_idx]
                     inner_mask = cc_masks[next(iter(inner_cc_set))]
-                    results.append((outer_mask, inner_mask))
+                    results.append((outer_mask, inner_mask, rule_idx))
 
     return results

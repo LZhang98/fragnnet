@@ -28,6 +28,7 @@ class BaseDataset(Dataset):
         split: str,
         subsample_params: dict,
         spec_params: dict,
+        enable_progress_bar: bool = True,
     ) -> None:
         """
         Initialize base dataset with spectral and molecular data.
@@ -39,10 +40,12 @@ class BaseDataset(Dataset):
             split: Name of the data split (e.g., 'train', 'val', 'test').
             subsample_params: Dictionary of subsampling parameters.
             spec_params: Dictionary of spectral processing parameters.
+            enable_progress_bar: Whether to show tqdm progress bars during preprocessing.
         """
         self.split = split
         self.subsample_params = subsample_params
         self.spec_params = spec_params
+        self.enable_progress_bar = enable_progress_bar
         spec_df, mol_df, um_spec_df, split_df, id_key, ce_key = BaseDataset._setup_dfs(
             spec_fp_or_df=spec_fp,
             mol_fp_or_df=mol_fp,
@@ -350,6 +353,33 @@ class BaseDataset(Dataset):
             group_per_mol_stats,
         )
 
+    def get_adduct_inst_type_stats(self) -> tuple[list[str], list[str]]:
+        """Return per-sample precursor type and instrument type strings.
+
+        Used by get_group_sampler() for adduct+instrument-type balanced sampling.
+
+        Returns:
+            Tuple of (prec_types, inst_types) where each is a list of strings
+            with length equal to len(self).
+        """
+        prec_types = self.spec_df["prec_type"].astype(str).tolist()
+        inst_types = self.spec_df["inst_type"].astype(str).tolist()
+        return prec_types, inst_types
+
+    def get_frag_mode_stats(self) -> list[str]:
+        """Return per-sample fragmentation mode strings.
+
+        Missing or NaN values are returned as "unknown".
+        Used by get_group_sampler() for frag-mode balanced sampling.
+
+        Returns:
+            List of fragmentation mode strings (e.g. "HCD", "CID", "unknown")
+            with length equal to len(self).
+        """
+        if "frag_mode" not in self.spec_df.columns:
+            return ["unknown"] * len(self.spec_df)
+        return self.spec_df["frag_mode"].fillna("unknown").astype(str).tolist()
+
     @staticmethod
     def get_data_dict_types() -> list[str]:
         """
@@ -376,6 +406,7 @@ class BaseDataset(Dataset):
                 self.spec_df.iterrows(),
                 desc="> preprocess spec",
                 total=len(self.spec_df),
+                disable=not self.enable_progress_bar,
             ):
                 spec_data = self._process_spec(spec_entry)
                 total_spec_data_size += get_tensor_dict_memory_usage(**spec_data)
@@ -669,7 +700,7 @@ class BaseDataset(Dataset):
                 # cat
                 values = np.concatenate(values, axis=0)
                 collate_data[key] = values
-            elif key in ["mol_id"]:
+            elif key in ["mol_id", "prec_type", "formula"]:
                 collate_data[key] = values
             else:
                 raise TypeError(f"Unsupported type: {key} {type(values[0])}")

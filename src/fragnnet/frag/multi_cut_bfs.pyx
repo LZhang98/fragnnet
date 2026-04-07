@@ -545,6 +545,11 @@ def compute_ccs_multi_cut(
     cdef char[::1] seed_edge_mv
     cdef int u_s, v_s
 
+    # Maps node_key (bytes) → set of rule indices from smarts_seed_pairs that
+    # produced this fragment.  Built only when smarts_seed_pairs is not None.
+    # Returned in dag_frag_meta["prepass_node_rules"] for the caller.
+    prepass_node_rules = {}
+
     force_stop = False
     reached_depth = 0
 
@@ -863,7 +868,8 @@ def compute_ccs_multi_cut(
         # -------------------------------------------------------------------
         if current_depth == 0 and smarts_seed_pairs is not None:
             for pair in smarts_seed_pairs:
-                for child_mask_np in pair:
+                pair_mask_a, pair_mask_b, pair_rule_idx = pair
+                for child_mask_np in (pair_mask_a, pair_mask_b):
                     if int(child_mask_np.sum()) < min_frag_atoms:
                         continue
                     seed_node_mv = np.ascontiguousarray(child_mask_np, dtype=MASK_DTYPE)
@@ -894,6 +900,14 @@ def compute_ccs_multi_cut(
                     if child_queue_key not in queued_set:
                         depth_queue[1].append((child_node_key, child_edge_key))
                         queued_set.add(child_queue_key)
+
+                    # Record which prepass rule produced this fragment (multi-hot
+                    # when multiple rules independently generate the same mask).
+                    _prepass_rule_set = prepass_node_rules.get(child_node_key)
+                    if _prepass_rule_set is None:
+                        prepass_node_rules[child_node_key] = {pair_rule_idx}
+                    else:
+                        _prepass_rule_set.add(pair_rule_idx)
 
                     edge_pair = (css_to_id_dict[root_node_key],
                                  css_to_id_dict[child_node_key])
@@ -946,9 +960,14 @@ def compute_ccs_multi_cut(
         edges_min_depth  = np.empty(0, dtype=MASK_DTYPE)
 
     dag_frag_meta = {
-        "reached_depth":   reached_depth,
-        "edges_min_depth": edges_min_depth,
-        "nodes_min_depth": nodes_min_depth,
-        "force_stopped":   force_stop,
+        "reached_depth":      reached_depth,
+        "edges_min_depth":    edges_min_depth,
+        "nodes_min_depth":    nodes_min_depth,
+        "force_stopped":      force_stop,
+        # node_key (bytes) → set[int] of FRAG_RULES indices.  Empty when no
+        # smarts_seed_pairs were passed.  Used by compute_dags to build
+        # the prepass_rule_id one-hot node feature without separate Python
+        # bookkeeping.
+        "prepass_node_rules": prepass_node_rules,
     }
     return nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta
