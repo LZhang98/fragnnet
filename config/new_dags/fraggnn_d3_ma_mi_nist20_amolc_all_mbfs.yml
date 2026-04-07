@@ -33,7 +33,7 @@ wandb_tags:
 - nce
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
-- prepass
+- mbfs          # multi-cut bfs dags (vs. single-cut dfs)
 
 # ============================================================================
 # Data File Paths
