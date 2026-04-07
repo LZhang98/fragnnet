@@ -188,3 +188,4 @@ pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
 skip_extra_losses: True          # skip auxiliary losses (entropy, edge) to save time
+num_workers: 2
