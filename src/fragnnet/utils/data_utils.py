@@ -1178,6 +1178,57 @@ def get_murcko_scaffold(mol, output_type="smiles", include_chirality=False) -> s
     return scaffold
 
 
+def compute_mol_df_props(
+    mol_df: "pd.DataFrame",
+    scaffold: bool = True,
+    inchi: bool = True,
+    use_tqdm: bool = True,
+) -> "pd.DataFrame":
+    """Compute standard molecular properties and add them as columns to ``mol_df``.
+
+    Requires a ``mol`` column containing RDKit mol objects. All new columns are
+    written in-place via ``loc`` and the modified dataframe is also returned.
+
+    The following columns are always added:
+    ``inchikey_s``, ``formula``, ``mw``, ``exact_mw``, ``num_atoms``,
+    ``num_bonds``, ``charge``, ``single_mol``, ``num_radicals``.
+
+    Args:
+        mol_df: DataFrame with a ``mol`` column of RDKit mol objects.
+        scaffold: If ``True`` (default), also compute the ``scaffold`` column
+            (Murcko scaffold SMILES).
+        inchi: If ``True`` (default), also compute the ``inchi`` column.
+        use_tqdm: Passed through to :func:`par_apply_series`; set ``False`` to
+            suppress progress bars (e.g. in tight loops).
+
+    Returns:
+        The same ``mol_df`` with new property columns added in-place.
+    """
+    mol_col = mol_df["mol"]
+    mol_df.loc[:, "inchikey_s"] = par_apply_series(mol_col, mol_to_inchikey_s, use_tqdm=use_tqdm)
+    if scaffold:
+        mol_df.loc[:, "scaffold"] = par_apply_series(
+            mol_col, get_murcko_scaffold, use_tqdm=use_tqdm
+        )
+    mol_df.loc[:, "formula"] = par_apply_series(mol_col, mol_to_formula, use_tqdm=use_tqdm)
+    if inchi:
+        mol_df.loc[:, "inchi"] = par_apply_series(mol_col, mol_to_inchi, use_tqdm=use_tqdm)
+    mol_df.loc[:, "mw"] = par_apply_series(
+        mol_col, lambda mol: mol_to_mol_weight(mol, exact=False), use_tqdm=use_tqdm
+    )
+    mol_df.loc[:, "exact_mw"] = par_apply_series(
+        mol_col, lambda mol: mol_to_mol_weight(mol, exact=True), use_tqdm=use_tqdm
+    )
+    mol_df.loc[:, "num_atoms"] = par_apply_series(mol_col, mol_to_num_atoms, use_tqdm=use_tqdm)
+    mol_df.loc[:, "num_bonds"] = par_apply_series(mol_col, mol_to_num_bonds, use_tqdm=use_tqdm)
+    mol_df.loc[:, "charge"] = par_apply_series(mol_col, mol_to_charge, use_tqdm=use_tqdm)
+    mol_df.loc[:, "single_mol"] = par_apply_series(mol_col, check_single_mol, use_tqdm=use_tqdm)
+    mol_df.loc[:, "num_radicals"] = par_apply_series(
+        mol_col, mol_to_num_radicals, use_tqdm=use_tqdm
+    )
+    return mol_df
+
+
 def analyze_mol(mol: "Chem.rdchem.Mol") -> dict:
     """get some basic properties of the mol object
     Args:

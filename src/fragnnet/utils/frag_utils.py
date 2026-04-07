@@ -1,6 +1,8 @@
 # from copy import deepcopy
 import bz2
 import gzip
+import json
+import logging
 import os
 import pickle
 import sys
@@ -8,7 +10,11 @@ import tarfile
 import traceback
 from collections import Counter
 from hashlib import blake2b
+from typing import TYPE_CHECKING
 from zipfile import ZipFile
+
+if TYPE_CHECKING:
+    import h5py as _h5py
 
 import numpy as np
 import pandas as pd
@@ -27,13 +33,13 @@ from fragnnet.frag.compute_frags import (
 from fragnnet.frag.multi_cut_bfs import compute_ccs_multi_cut as _compute_ccs_multi_cut_cy
 from fragnnet.frag.multi_cut_bfs import get_ring_edge_mask
 from fragnnet.frag.smarts_prepass import FRAG_RULES, _apply_smarts_prepass
-from fragnnet.utils.data_utils import mol_from_smiles
+from fragnnet.utils.data_utils import mol_from_smiles, par_apply
 from fragnnet.utils.formula_utils import (
     PREC_TYPE_TO_CMF_MASS_DIFF,
     PREC_TYPE_TO_MASS_DIFF,
     formula_to_peak_mzs,
 )
-from fragnnet.utils.misc_utils import PPM
+from fragnnet.utils.misc_utils import PPM, progress_wrapper
 
 # Fragment index dtype (change here to update everywhere)
 # uint32 supports up to ~4B unique formulas per molecule (uint16 max is 65535)
@@ -925,9 +931,7 @@ def _inject_smarts_pairs_into_dag(
         )
 
     if new_edges:
-        dag_edges_matrix = np.vstack(
-            [dag_edges_matrix, np.array(new_edges, dtype=np.int64)]
-        )
+        dag_edges_matrix = np.vstack([dag_edges_matrix, np.array(new_edges, dtype=np.int64)])
         dag_frag_meta["edges_min_depth"] = np.concatenate(
             [dag_frag_meta["edges_min_depth"], np.array(new_edge_min_depths, dtype=MASK_DTYPE)]
         )
@@ -988,10 +992,6 @@ def compute_dags(
         # SMARTS prepass: compute fragment pairs in Python (RDKit API), then pass
         # as smarts_seed_pairs to the Cython BFS for injection as depth-1 children.
         smarts_seed_pairs = None
-        # Map mask bytes → set of rule indices that produced this fragment.
-        # Used after BFS to build the prepass_rule_id one-hot node feature.
-        # Keys are filtered by min_frag_atoms to match what the BFS will keep.
-        prepass_mask_to_rules: dict[bytes, set[int]] = {}
         if smarts_prepass:
             smarts_seed_pairs_tagged = _apply_smarts_prepass(
                 FRAG_RULES,
@@ -1001,15 +1001,9 @@ def compute_dags(
                 num_nodes,
                 num_edges,
             )
-            for mask_a, mask_b, rule_idx in smarts_seed_pairs_tagged:
-                if int(mask_a.sum()) >= min_frag_atoms:
-                    key_a = mask_a.tobytes()
-                    prepass_mask_to_rules.setdefault(key_a, set()).add(rule_idx)
-                if int(mask_b.sum()) >= min_frag_atoms:
-                    key_b = mask_b.tobytes()
-                    prepass_mask_to_rules.setdefault(key_b, set()).add(rule_idx)
-            # Strip rule_idx before passing to Cython (expects plain mask pairs).
-            smarts_seed_pairs = [(a, b) for a, b, _ in smarts_seed_pairs_tagged]
+            # Pass 3-tuples directly; rule_idx tracking is done inside the BFS
+            # and returned via dag_frag_meta["prepass_node_rules"].
+            smarts_seed_pairs = smarts_seed_pairs_tagged
         nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
             _compute_ccs_multi_cut_cy(
                 num_nodes,
@@ -1026,6 +1020,9 @@ def compute_dags(
                 ring_bond_groups=ring_bond_groups,
                 min_frag_atoms=min_frag_atoms,
             )
+        )
+        prepass_mask_to_rules: dict[bytes, set[int]] = dag_frag_meta.get(
+            "prepass_node_rules", {}
         )
     else:
         prepass_mask_to_rules: dict[bytes, set[int]] = {}
@@ -1119,7 +1116,9 @@ def compute_dags(
     h_count_node_feat_size = formula_node_feat_size
     nb_iso_node_feat_size = 1 if nb_isomorphic else 0
     cmf_formula_node_feat_size = formula_node_feat_size  # 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
-    prepass_rule_id_node_feat_size = len(FRAG_RULES)  # one-hot over FRAG_RULES; all-zero = BFS fragment
+    prepass_rule_id_node_feat_size = len(
+        FRAG_RULES
+    )  # one-hot over FRAG_RULES; all-zero = BFS fragment
     # edge feature sizes
     cc_edge_feat_size = cc_node_feat_size
     base_formula_edge_feat_size = base_formula_node_feat_size
@@ -1241,9 +1240,7 @@ def compute_dags(
     # Bit k is set when FRAG_RULES[k] produced this fragment (multi-hot if
     # multiple rules independently generate the same atom mask).
     num_rules = len(FRAG_RULES)
-    node_prepass_rule_id = np.zeros(
-        (nodes_mask_matrix.shape[0], num_rules), dtype=np.int8
-    )
+    node_prepass_rule_id = np.zeros((nodes_mask_matrix.shape[0], num_rules), dtype=np.int8)
     for frag_idx, row in enumerate(nodes_mask_matrix):
         rule_set = prepass_mask_to_rules.get(row.tobytes())
         if rule_set:
@@ -1609,7 +1606,6 @@ def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
         h5_group: An open, writable ``h5py.Group`` for this molecule.
         dag_d: DAG payload dictionary as returned by ``compute_dags``.
     """
-    import json
 
     dag = dag_d["dag"]
     g = h5_group.create_group("dag")
@@ -1691,7 +1687,6 @@ def load_dag_hdf5(h5_group) -> dict:
         DAG payload dictionary compatible with the format returned by
         ``compute_dags``.
     """
-    import json
 
     g = h5_group["dag"]
     dag = pyg.data.Data(
@@ -1999,3 +1994,96 @@ def timed_get_dags(
         print("> Traceback", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
     return mol_id, {}
+
+
+def run_frag_gen_hdf5(
+    mol_df: "pd.DataFrame",
+    h5_file: "_h5py.File",
+    max_depth: int,
+    max_h_transfer: int,
+    max_time: int,
+    isotopes: bool,
+    nb_isomorphic: bool,
+    wl_max_iterations: int,
+    multi_cut_bfs: bool,
+    max_cut_size: int,
+    smarts_prepass: bool,
+    min_frag_atoms: int,
+    disable_tqdm: bool = False,
+) -> dict[str, list[int]]:
+    """Run fragment generation for all molecules and write DAGs to an open HDF5 file.
+
+    Iterates over rows in ``mol_df``, calls :func:`timed_get_dags` in parallel via
+    :func:`~fragnnet.utils.data_utils.par_apply`, and writes each successfully
+    fragmented molecule's DAG into ``h5_file`` under the key ``str(mol_id)``.
+
+    Args:
+        mol_df: DataFrame with at least ``mol`` and ``mol_id`` columns.
+        h5_file: Open writable ``h5py.File`` object. Groups are created directly
+            inside the root; the caller is responsible for opening and closing the file.
+        max_depth: Maximum fragmentation depth for DAG generation.
+        max_h_transfer: Maximum hydrogen transfers per fragment.
+        max_time: Per-molecule time budget in seconds.
+        isotopes: Whether to compute isotopic peak distributions.
+        nb_isomorphic: Whether to compute neighbourhood-isomorphism features.
+        wl_max_iterations: Maximum Weisfeiler-Lehman iterations.
+        multi_cut_bfs: Whether to use ring-aware multi-bond-cut BFS.
+        max_cut_size: Maximum bonds cut per BFS step (only when ``multi_cut_bfs``).
+        smarts_prepass: Whether to run the SMARTS rearrangement prepass.
+        min_frag_atoms: Minimum heavy atoms per fragment.
+        disable_tqdm: Suppress the tqdm progress bar.
+
+    Returns:
+        Dictionary mapping ``str(mol_id)`` to ``[num_nodes, num_edges]`` for every
+        molecule that was successfully fragmented.
+    """
+    _log = logging.getLogger(__name__)
+
+    mol_input_rows = (
+        [
+            row["mol"],
+            row["mol_id"],
+            max_depth,
+            True,  # h_prior
+            max_h_transfer,
+            max_time,
+            isotopes,
+            nb_isomorphic,
+            wl_max_iterations,
+            multi_cut_bfs,
+            max_cut_size,
+            smarts_prepass,
+            min_frag_atoms,
+        ]
+        for _, row in mol_df.iterrows()
+    )
+
+    from typing import cast
+
+    frag_results_gen = par_apply(
+        iter(mol_input_rows), timed_get_dags, True, return_as_generator=True
+    )
+    if frag_results_gen is None:
+        raise RuntimeError("Parallel fragment generation returned no results")
+    frag_results_iter = cast("list[tuple[str, dict]]", frag_results_gen)
+
+    meta_info: dict[str, list[int]] = {}
+    n_errors = 0
+
+    for fr in progress_wrapper(
+        frag_results_iter,
+        total=mol_df.shape[0],
+        desc="Compute Frags",
+        disable_tqdm=disable_tqdm,
+    ):
+        mol_id, dag_d = fr
+        if len(dag_d) == 0:
+            _log.warning("Empty DAG for mol_id=%s", mol_id)
+            n_errors += 1
+            continue
+        meta_info[str(int(mol_id))] = [dag_d["dag"].num_nodes, dag_d["dag"].num_edges]
+        grp = h5_file.create_group(f"{int(mol_id)}")
+        dump_dag_hdf5(grp, dag_d)
+
+    _log.info("Fragment generation done: %d stored, %d errors", len(meta_info), n_errors)
+    return meta_info

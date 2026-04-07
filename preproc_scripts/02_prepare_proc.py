@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -8,13 +9,13 @@ from rdkit import RDLogger
 
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import (
+    compute_mol_df_props,
     par_apply_df_rows,
     par_apply_df_rows_t,
     par_apply_series,
     seq_apply_df_rows_t,
 )
 from fragnnet.utils.misc_utils import booltype
-from functools import partial
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -104,7 +105,9 @@ def preprocess_spec(
     # drop entries with the same dset_spec_id (this happens sometimes in MoNA)
     spec_df = spec_df.drop_duplicates(subset=["dset", "dset_spec_id"], keep="first")
     # convert smiles to mol and back (for standardization/stereochemistry)
-    spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False))
+    spec_df.loc[:, "mol"] = par_apply_series(
+        spec_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False)
+    )
     spec_df.loc[:, "smiles"] = par_apply_series(spec_df["mol"], data_utils.mol_to_smiles)
     no_mol_df = spec_df[spec_df["mol"].isna() | spec_df["smiles"].isna()][["dset_spec_id"]]
     spec_df = spec_df.dropna(subset=["mol", "smiles"])
@@ -226,21 +229,7 @@ def preprocess_spec(
         zip(sorted(smiles_set), list(range(len(smiles_set)))), columns=["smiles", "mol_id"]
     )
     mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
-    mol_df.loc[:, "inchikey_s"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchikey_s)
-    mol_df.loc[:, "scaffold"] = par_apply_series(mol_df["mol"], data_utils.get_murcko_scaffold)
-    mol_df.loc[:, "formula"] = par_apply_series(mol_df["mol"], data_utils.mol_to_formula)
-    mol_df.loc[:, "inchi"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchi)
-    mol_df.loc[:, "mw"] = par_apply_series(
-        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=False)
-    )
-    mol_df.loc[:, "exact_mw"] = par_apply_series(
-        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=True)
-    )
-    mol_df.loc[:, "num_atoms"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_atoms)
-    mol_df.loc[:, "num_bonds"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_bonds)
-    mol_df.loc[:, "charge"] = par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
-    mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
-    mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
+    compute_mol_df_props(mol_df)
     if (mol_df["smiles"] == "").any():
         raise ValueError("Empty SMILES found in mol_df")
     if (mol_df["formula"] == "").any():
