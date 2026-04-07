@@ -75,6 +75,7 @@ conditioning signals are architecture gaps that gate the FT/CID and QTOF improve
 | 4 | Chemical class focal loss weighting | Medium — size explains only 4.2% of variance | Low–Medium |
 | 5 | Prioritized BFS for polycyclic DAG truncation | High — anthracenes 0.276, AR=0.81 vs GrAFF 0.95 | Medium (Cython) |
 | 5a | **One-shot 2-bond ring cleavage pre-pass** | High — RDA/fused-ring fragments at depth 1, fixes low `wrecall` for steroids/coumarins/indoles | Medium (Cython, ~190 checks/mol) |
+| 5b | **DAG mass filter (prune, not expand)** | Medium — SMARTS prepass/MBFS experiments show expansion hurts (−0.007 cos\_sim); mass filter recovers this at near-zero cost | Low (filter at dataset prep) |
 | 6 | **Explicit fragmentation rules for fused rings/steroids** | Medium — 3-bond cleavages not covered by one-shot pre-pass | Medium (SMARTS) |
 | 7 | CID training data sourcing | High — FT/CID median 0.497 with ~8% of data | Low (data work) |
 | 8 | Dual CE input (ACE + NCE, no conversion) | Medium — eliminates 0.779-correlation noise for QTOF | Low–Medium (small arch change) |
@@ -610,6 +611,178 @@ specific than absolute formulas at high MW and reduce formula-redundancy noise.
 
 Check what fraction of training/test molecules hit the `MAX_NUM_NODES=128` assertion in
 `compute_frags.pyx`.  If non-trivial, extend the limit and reprocess.
+
+---
+
+## 4a. DAG Expansion Experiments — Prepass and MBFS (Negative Results)
+
+### Experiments Run (2026-04-06/07, NIST20 inchikey split, 100 epochs)
+
+The prepass/ruleid DAG files were regenerated with mass-based pruning after the first round
+of experiments.  The updated `smpTrue` and `smpTrue_ruleid` tarballs shrank from 2.4 GB to
+1.7 GB — identical to the baseline — while the MBFS variants remain larger.
+
+| Job | DAG data | Size | Extra feature | Val cos_sim (best) | Val loss (best) | Status |
+|---|---|---|---|---|---|---|
+| `all` (baseline) | `smpFalse` | 1.7 GB | — | **0.6688** | **−2.416** | Completed |
+| `prepass` | `smpTrue` (updated) | **1.7 GB** | — | 0.6621 | −2.373 | Completed |
+| `prepass_ruleid` | `smpTrue_ruleid` (updated) | **1.7 GB** | `prepass_rule_id` node feat | 0.6623 | −2.365 | Completed |
+| `mbfs` | `smpFalse_mbfs` | 2.2 GB | — | — | — | OOM Killed |
+| `mbfs_prepass` | `smpTrue_mbfs` | 2.5 GB | — | — | — | OOM Killed |
+
+Val loss is negative log-likelihood — more negative is better. Baseline wins on both metrics.
+
+### DAG Coverage Stats (mol_stats_df, tol=0.01 Da, h1)
+
+| Dataset | DAG nodes (mean/median) | recall_h1 | wrecall_h1 | prec_h1 | noise_ratio |
+|---|---|---|---|---|---|
+| smpFalse (baseline) | 764 / 280 | 0.341 | 0.456 | 0.071 | 0.929 |
+| smpTrue (prepass) | 769 / 282 | 0.345 | 0.460 | 0.071 | 0.929 |
+| smpTrue_ruleid | 769 / 282 | 0.325 | 0.405 | 0.100 | 0.900 |
+| smpFalse_mbfs | 1816 / 402 | 0.402 | 0.533 | 0.062 | 0.938 |
+| smpTrue_mbfs | 2197 / 421 | 0.419 | 0.547 | 0.062 | 0.938 |
+
+`prec_h1` = fraction of DAG nodes matching at least one observed peak.
+`noise_ratio` = 1 − prec_h1 = fraction of DAG nodes that match no observed peak.
+
+### Key Findings
+
+**1. Prepass DAG coverage stats are nearly identical to baseline.**
+After pruning, smpTrue has almost the same node count (769 vs 764), the same precision
+(0.071), the same noise ratio (0.929), and marginally better recall (+0.4%).  The coverage
+stats give no reason to expect degradation — yet val cos_sim drops by 0.007.  This rules
+out quantity-of-noise as the cause.  The degradation must come from the *character* of the
+prepass fragments (graph topology, connectivity pattern) rather than their count.
+
+**2. smpTrue_ruleid has anomalous stats despite the same DAG structure.**
+Same dag_num_nodes/edges as smpTrue, but lower recall (0.325 vs 0.345) and higher precision
+(0.100 vs 0.071).  This is paradoxical and likely indicates a labeling/matching artifact in
+how the ruleid dataset's stats were computed — possibly a different matching criterion or a
+data pipeline bug.  The val cos_sim is essentially the same as prepass (0.6623 vs 0.6621),
+confirming the ruleid feature adds nothing.
+
+**3. MBFS has genuine coverage gains but at the cost of 2.4× more nodes and lower precision.**
+mbfs recall = 0.402 (+18% over baseline), wrecall = 0.533 (+17%), but prec drops to 0.062
+(−13%) and median nodes jump from 280 → 402.  The coverage gain is real but diluted by
+proportionally more noise.  MBFS still OOM at 2.2 GB — the cluster memory budget sits just
+above the 1.7 GB baseline threshold.
+
+### Possible Causes for Persistent Prepass Degradation
+
+The stats confirm prepass and baseline DAGs have nearly identical coverage properties
+(same node count, same noise ratio, marginally better recall).  The degradation is therefore
+not about fragment *quantity* but fragment *quality* — specifically how the model embeds and
+ranks SMARTS-generated fragments vs BFS-generated ones.
+
+1. **Rearrangement fragments are out-of-distribution for the GNN.**
+   SMARTS-generated fragments result from bond rearrangements (1,3-eliminations, retro-ester,
+   CO₂ loss, etc.).  They can share the same atom set as a BFS fragment but have different
+   bond connectivity (e.g., a ring-opened form vs the closed form).  The GNN has never seen
+   these subgraph patterns during training on BFS-only DAGs, so their embeddings are
+   unreliable — they look chemically plausible but score incorrectly.
+
+2. **DAG message-passing corrupted by atypical depth-1 nodes.**
+   Prepass fragments are injected at depth 1 as synthetic children of the precursor.  GNN
+   message-passing aggregates over all children before computing the precursor embedding.
+   If some depth-1 nodes have unusual subgraph structure, the aggregated precursor
+   representation is perturbed — affecting every fragment score in the DAG, not just the
+   prepass ones.
+
+3. **The model has no way to distinguish BFS from SMARTS fragments.**
+   Both fragment types look like ordinary molecular graphs to the GNN.  The ruleid experiment
+   confirms that providing an explicit label doesn't help (arbitrary index, not learnable).
+   The model cannot learn "SMARTS fragments need different scoring" without a structural
+   inductive bias — it would need a better embedding strategy (see §4b below).
+
+4. **Gradient interference from label ambiguity.**
+   When a prepass fragment has the same nominal mass as a BFS fragment (mass collision), both
+   compete for the same observed peak.  Across training examples, this creates conflicting
+   gradients: push the prepass fragment up for molecule A (where it's the true fragment),
+   push it down for molecule B (where BFS is correct).  Net effect: both fragment types are
+   scored slightly worse.
+
+### Correct Direction: DAG Pruning, Not Expansion
+
+**Fragment coverage is not the bottleneck** — the baseline BFS already generates enough
+candidate fragments.  The bottleneck is precision: wrong candidates (whether from prepass
+or MBFS) dilute the signal regardless of their count.
+
+Instead of adding more fragments, the correct direction is to reduce DAG noise by pruning:
+
+1. **Mass filter on baseline BFS DAGs** — drop BFS fragments whose neutral mass (±
+   H-transfer range) has no matching peak in the spectrum's m/z window.  This shrinks
+   baseline DAGs without changing their structural character.
+2. **Depth/cut limit** — reducing max BFS depth from d3→d2 would shrink DAGs significantly;
+   measure coverage loss on training set before applying.
+3. **Top-k by structural simplicity** — keep only the k least-complex fragments at each
+   depth level.
+
+---
+
+## 4b. Better Fragment Embedding for Rearrangement Products
+
+### Problem
+
+The prepass stats show rearrangement fragments have identical coverage properties to BFS
+fragments (same noise ratio, slightly better recall), yet the model scores them worse.
+The root cause is that the GNN embeds all fragments from their molecular graph alone —
+it cannot tell whether a fragment was produced by simple bond cleavage (BFS) or a bond
+rearrangement (SMARTS prepass), and it has no inductive bias to score them differently.
+
+### Option 1 — Fragment origin as a learned node embedding (low effort, try first)
+
+Add a binary or categorical `frag_type` node feature to every atom in each fragment:
+`0 = BFS-generated`, `1 = SMARTS prepass`.  Unlike the integer `rule_id` (which was
+arbitrary and unlearnable), a binary flag provides a clean inductive bias: the model can
+learn a scalar adjustment to fragment scores conditioned on whether they came from a
+rearrangement.
+
+```python
+# in dag feature extraction
+frag_type = torch.zeros(num_atoms, dtype=torch.long)  # 0 = BFS
+if is_prepass_fragment:
+    frag_type[:] = 1  # 1 = SMARTS rearrangement
+node_feats = torch.cat([existing_feats, F.one_hot(frag_type, 2).float()], dim=-1)
+```
+
+**Why this is better than ruleid:** the model only needs to learn one scalar per type
+(two types), not a separate scalar per rule (N rules).  Much lower-variance gradient.
+
+### Option 2 — Bond-breaking type as edge feature (medium effort)
+
+Encode *how* each bond in the parent molecule was broken to produce this fragment:
+`0 = not broken`, `1 = simple BFS cut`, `2 = SMARTS rearrangement cut`.  This is richer
+than a per-fragment flag because the model can attend to which specific bonds distinguish
+BFS from rearrangement topology.
+
+Requires passing the bond-breaking record from the fragmentation code into the DAG
+feature extraction pipeline.
+
+### Option 3 — Separate GNN tower with late fusion (high effort)
+
+Run two separate GNN encoders — one for BFS fragments, one for prepass fragments — and
+fuse their outputs at the DAG aggregation step.  The BFS tower is trained on the large,
+clean BFS signal; the prepass tower learns from the smaller rearrangement signal without
+the two interfering.
+
+This is architecturally sound but expensive: doubles fragment encoder parameters and
+requires routing each DAG node to the correct tower.  Only worth pursuing if Options 1
+and 2 fail.
+
+### Option 4 — Contrastive pre-training of fragment encoder (high effort)
+
+Pre-train the fragment GNN with a contrastive objective: BFS fragments of the same
+molecule should be closer to each other than to prepass fragments of unrelated molecules.
+Provides a structural inductive bias before any spectrum supervision.
+
+### Recommended order
+
+1. Try **Option 1** (frag_type binary flag) — one line of feature code, reuse existing
+   configs, cheapest experiment.  If prepass val cos_sim recovers to ≥ baseline, done.
+2. If Option 1 fails, try **Option 2** (bond-breaking edge feature) — requires fragmentation
+   code changes but provides richer signal.
+3. Options 3 and 4 only if structural embedding is confirmed as the bottleneck and
+   Options 1/2 provide no gain.
 
 ---
 

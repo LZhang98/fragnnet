@@ -2086,4 +2086,67 @@ def run_frag_gen_hdf5(
         dump_dag_hdf5(grp, dag_d)
 
     _log.info("Fragment generation done: %d stored, %d errors", len(meta_info), n_errors)
+
+
+def compute_boundary_mask(
+    frag_node_mask: th.Tensor,
+    mol_edge_index: th.Tensor,
+    mol_num_nodes: th.Tensor,
+    frag_num_nodes: th.Tensor,
+) -> th.Tensor:
+    """Compute boundary atom mask for each fragment on-the-fly.
+
+    A boundary atom is one that belongs to the fragment AND is adjacent to at
+    least one atom that does not (i.e. it sits at a cut bond).  The root
+    fragment (full precursor) always produces an all-zero row.
+
+    Args:
+        frag_node_mask: Bool tensor of shape ``(F, mask_size)`` with LOCAL atom
+            indices per molecule (as returned by ``th_long_to_mask`` on the cc
+            node feature).
+        mol_edge_index: Long tensor of shape ``(2, E)`` with GLOBAL atom indices
+            across the batch (standard PyG format).
+        mol_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative atom counts
+            per molecule in the batch (prefix sum, starts at 0).
+        frag_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative fragment
+            counts per molecule in the batch (prefix sum, starts at 0).
+
+    Returns:
+        Bool tensor of shape ``(F, mask_size)`` where ``True`` marks boundary
+        atoms for each fragment.
+    """
+    num_frags_total = frag_node_mask.shape[0]
+    mask_size = frag_node_mask.shape[1]
+    device = frag_node_mask.device
+
+    u_global = mol_edge_index[0]
+    v_global = mol_edge_index[1]
+    edge_mol_idx = th.bucketize(u_global, mol_num_nodes, right=True) - 1
+
+    boundary_mask = th.zeros(num_frags_total, mask_size, dtype=th.bool, device=device)
+    num_mols = int(mol_num_nodes.shape[0]) - 1
+    for m in range(num_mols):
+        f_start = int(frag_num_nodes[m])
+        f_end = int(frag_num_nodes[m + 1])
+        if f_start == f_end:
+            continue
+        edge_sel = edge_mol_idx == m
+        if not edge_sel.any():
+            continue
+        atom_off = int(mol_num_nodes[m])
+        u_loc = u_global[edge_sel] - atom_off
+        v_loc = v_global[edge_sel] - atom_off
+        valid_e = (u_loc >= 0) & (u_loc < mask_size) & (v_loc >= 0) & (v_loc < mask_size)
+        u_loc, v_loc = u_loc[valid_e], v_loc[valid_e]
+
+        frags_m = frag_node_mask[f_start:f_end]  # (F_m, mask_size)
+        f_m = f_end - f_start
+        u_in = frags_m[:, u_loc].float()
+        v_in = frags_m[:, v_loc].float()
+        bm = th.zeros(f_m, mask_size, device=device)
+        bm.scatter_add_(1, u_loc.unsqueeze(0).expand(f_m, -1), u_in * (1 - v_in))
+        bm.scatter_add_(1, v_loc.unsqueeze(0).expand(f_m, -1), v_in * (1 - u_in))
+        boundary_mask[f_start:f_end] = bm > 0
+
+    return boundary_mask
     return meta_info

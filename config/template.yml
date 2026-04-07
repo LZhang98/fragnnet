@@ -79,14 +79,15 @@ mol_params:
 frag_params:
   pyg: True
   pyg_node_feats:
-    - cc
-    - base_formula
-    - depth
-    - h_formulae_idx
-    # - cmf_h_formulae_idx
-    # - h_counts
-    # - nb_iso_idx
-    # - prepass_rule_id  # one-hot over FRAG_RULES (len(FRAG_RULES) dims); all-zero = BFS fragment; requires smarts_prepass=True at preprocessing time
+    - cc              # mol_embedder atom embeddings pooled over fragment atoms
+    - base_formula    # fragment's elemental formula (one-hot)
+    - depth           # depth of fragment in the DAG
+    - h_formulae_idx  # index into list of possible H-shifted formulae
+    # - cmf_h_formulae_idx  # CMF-derived H-formula index (filled at dataset load time)
+    # - h_counts            # explicit H counts per fragment atom
+    # - nb_iso_idx          # isotope index; requires nb_iso=True
+    # - prepass_rule_id     # one-hot over FRAG_RULES (len(FRAG_RULES) dims); all-zero = BFS fragment; requires smarts_prepass=True at preprocessing time
+    # - boundary_cc         # atoms at cut bonds; computed on-the-fly from mol graph, not stored in DAG
   pyg_edge_feats:
     - cc
     - base_formula
