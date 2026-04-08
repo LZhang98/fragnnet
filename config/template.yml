@@ -230,6 +230,9 @@ graff_min_mz: 0.0
 # ============================================================================
 lr: 0.0001
 lr_schedule: False
+lr_schedule_type: exponential  # "exponential" or "cosine"
+lr_total_steps: null           # required for cosine; set to max_epochs * steps_per_epoch
+lr_min_ratio: 0.0              # cosine: final LR as fraction of peak (e.g. 0.01)
 weight_decay: 0.01
 lr_decay_rate: 0.95
 lr_warmup_steps: 1000

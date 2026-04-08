@@ -122,13 +122,33 @@ train_batch_size: 256
 eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
-lr: 0.0004
 accelerator: gpu
 devices: 1
 min_epochs: 100
 max_epochs: 100
-lr_schedule: False
 debug_overfit: False
+
+# ============================================================================
+# Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
+# ============================================================================
+mol_dropout: 0.2    # from fragnnet_d3/s0.yml
+frag_dropout: 0.1   # from fragnnet_d3/s0.yml
+mlp_dropout: 0.2    # from fragnnet_d3/s0.yml
+weight_decay: 0.01
+
+# ============================================================================
+# LR Schedule — cosine warmup + decay
+# ~1300 steps/epoch × 300 epochs = ~390k total steps
+# warmup: first ~4 epochs (5000 steps); cosine decay to 1% of peak by end
+# ============================================================================
+lr_schedule: False
+lr: 0.0004
+lr_schedule_type: cosine
+lr_warmup_steps: 5000
+lr_total_steps: 390000
+lr_min_ratio: 0.01    # floor at 1% of peak LR (4e-6)
+lr_decay_rate: 0.95   # unused for cosine but required by template
+lr_decay_steps: 5000  # unused for cosine but required by template
 
 # ============================================================================
 # Loss Configuration
