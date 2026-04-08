@@ -431,6 +431,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.ce_embedder = th.compile(self.ce_embedder, **kwargs)
         if hasattr(self, "m_ce_embedder"):
             self.m_ce_embedder = th.compile(self.m_ce_embedder, **kwargs)
+        if hasattr(self, "boundary_pair_proj"):
+            self.boundary_pair_proj = th.compile(self.boundary_pair_proj, **kwargs)
         if check_pyg_compile():
             self.mol_embedder = pyg.compile(self.mol_embedder, **kwargs)  # type: ignore[assignment]
             self.frag_embedder = pyg.compile(self.frag_embedder, **kwargs)  # type: ignore[assignment]
