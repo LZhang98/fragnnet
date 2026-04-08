@@ -60,6 +60,7 @@ frag_params:
     - depth         # depth of fragment node in the DAG
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
+    - boundary_cc   # connected-component index of the fragment's boundary (new)
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
