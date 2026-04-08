@@ -184,7 +184,7 @@ simple_group_sampler_type: group
 # ============================================================================
 # Miscellaneous
 # ============================================================================
-pl_enable_progress_bar: True
+pl_enable_progress_bar: False
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: True                    # torch.compile for speed
 pin_memory: True

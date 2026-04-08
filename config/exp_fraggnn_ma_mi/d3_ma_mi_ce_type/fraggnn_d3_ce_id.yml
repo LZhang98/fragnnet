@@ -87,7 +87,7 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False
 dynamic_batch_sampler:  True
-pl_enable_progress_bar: True
+pl_enable_progress_bar: False
 activation_checkpointing: False
 compile: True
 pin_memory: True
@@ -102,7 +102,7 @@ simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group #[group, group_mol, mol]
 
-pl_enable_progress_bar: True
+pl_enable_progress_bar: False
 activation_checkpointing: False
 compile: True
 pin_memory: True
