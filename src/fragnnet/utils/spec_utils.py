@@ -17,6 +17,7 @@ from fragnnet.utils.misc_utils import (
     scatter_logsumexp,
     scatter_reduce,
     th_setdiff1d,
+    validate_bin_geometry,
 )
 
 try:
@@ -377,6 +378,8 @@ def batched_bin_func(
     if mzs.shape[0] == 0:
         raise ValueError("batched_bin_func received empty mzs tensor")
     assert th.max(mzs) < mz_max, (th.max(mzs), mz_max)
+    # Validate bin geometry
+    num_bins = validate_bin_geometry(mz_max, mz_bin_res)
     batch_size = int(th.max(batch_idxs).item()) + 1
     bins = th.arange(
         mz_bin_res,
@@ -385,7 +388,7 @@ def batched_bin_func(
         device=mzs.device,
         dtype=mzs.dtype,
     )
-    num_bins = int(bins.shape[0])
+    # num_bins already validated above
     bin_idxs = th.searchsorted(bins, mzs, right=True)
     bin_offsets = (th.arange(batch_size, device=mzs.device) * num_bins)[batch_idxs]
     bin_idxs = bin_idxs + bin_offsets
@@ -1414,21 +1417,21 @@ def detect_isotope_peaks(
 
 # Natural abundance M+1/M+0 contribution per atom (Poisson/binomial approx)
 _M1_CONTRIB: dict[str, float] = {
-    "C": 0.01103,    # 13C
-    "H": 0.000149,   # 2H
-    "N": 0.00368,    # 15N
-    "O": 0.000404,   # 17O
-    "S": 0.00421,    # 33S
-    "Si": 0.04683,   # 29Si
+    "C": 0.01103,  # 13C
+    "H": 0.000149,  # 2H
+    "N": 0.00368,  # 15N
+    "O": 0.000404,  # 17O
+    "S": 0.00421,  # 33S
+    "Si": 0.04683,  # 29Si
 }
 
 # Additive M+2/M+0 contributions from heavy isotopes (Cl, Br dominate)
 _M2_ADDITIVE: dict[str, float] = {
-    "Cl": 0.3220,    # 37Cl
-    "Br": 0.9735,    # 81Br
-    "S":  0.0425,    # 34S
-    "Si": 0.0337,    # 30Si
-    "O":  0.00204,   # 18O
+    "Cl": 0.3220,  # 37Cl
+    "Br": 0.9735,  # 81Br
+    "S": 0.0425,  # 34S
+    "Si": 0.0337,  # 30Si
+    "O": 0.00204,  # 18O
 }
 
 # mz_tol per instrument type for isotope detection.
@@ -1524,9 +1527,7 @@ def detect_isotope_peaks_for_training(
     mzs = np.asarray(mzs, dtype=np.float64)
     ints = np.asarray(ints, dtype=np.float64)
     if mzs.shape != ints.shape or mzs.ndim != 1:
-        raise ValueError(
-            f"mzs and ints must be 1-D arrays of the same length, got {mzs.shape}"
-        )
+        raise ValueError(f"mzs and ints must be 1-D arrays of the same length, got {mzs.shape}")
 
     n = len(mzs)
     is_isotope = np.zeros(n, dtype=bool)

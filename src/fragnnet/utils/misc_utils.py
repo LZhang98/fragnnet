@@ -903,6 +903,48 @@ def get_core_count() -> int:
     return int(num_core) if num_core is not None else multiprocessing.cpu_count()
 
 
+def validate_bin_geometry(mz_max: float, mz_bin_res: float) -> int:
+    """Validate and return the bin count for a given m/z grid configuration.
+
+    Enforces that mz_max and mz_bin_res define a consistent, integer bin grid:
+    ``num_bins = mz_max / mz_bin_res`` must be an integer.
+
+    Args:
+        mz_max: Maximum m/z value covered by the grid.
+        mz_bin_res: m/z bin resolution.
+
+    Returns:
+        Number of bins in the grid.
+
+    Raises:
+        ValueError: If ``mz_max`` or ``mz_bin_res`` is non-positive, or if
+            ``mz_max / mz_bin_res`` is not an integer (within floating-point tolerance).
+
+    Example:
+        >>> validate_bin_geometry(1500.0, 0.01)  # Default: 150,000 bins
+        150000
+        >>> validate_bin_geometry(200.0, 0.5)    # Non-default: 400 bins
+        400
+        >>> validate_bin_geometry(200.0, 0.3)    # ValueError: 666.666... not integer
+        Traceback: ValueError: Incompatible bin geometry...
+    """
+    import math
+
+    if mz_max <= 0:
+        raise ValueError(f"mz_max must be > 0, got {mz_max}")
+    if mz_bin_res <= 0:
+        raise ValueError(f"mz_bin_res must be > 0, got {mz_bin_res}")
+
+    num_bins_float = mz_max / mz_bin_res
+    num_bins = int(round(num_bins_float))
+    if not math.isclose(num_bins_float, num_bins, rel_tol=0.0, abs_tol=1e-9):
+        raise ValueError(
+            "Incompatible bin geometry: mz_max / mz_bin_res must be an integer. "
+            f"Got mz_max={mz_max}, mz_bin_res={mz_bin_res}, ratio={num_bins_float}."
+        )
+    return num_bins
+
+
 def progress_wrapper(
     iterable: Iterable[T],
     total: int | None = None,
