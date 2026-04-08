@@ -25,6 +25,7 @@ from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
 from fragnnet.utils.frag_utils import (
     compute_boundary_mask,
+    compute_boundary_pair_idxs,
     get_edge_feats,
     get_node_feats,
     th_long_to_mask,
@@ -230,6 +231,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             )
             self.cc_interstage_proj = nn.Linear(mol_pool_out_size, mol_pool_out_size)
 
+        if "boundary_pair" in self.frag_node_feats:
+            # Projects cat(inside_atom_embed, outside_atom_embed) → mol_hidden_size.
+            # Pooling over pairs then yields mol_pool_out_size (same as cc / boundary_cc).
+            self.boundary_pair_proj = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
+
         frag_kwargs = {
             "node_feats_size": self.frag_node_feats_size,
             "edge_feats_size": self.frag_edge_feats_size,
@@ -393,6 +399,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if "cc" in self.frag_node_feats:
             self.frag_node_feats_size += mol_pool_out_size
         if "boundary_cc" in self.frag_node_feats:
+            self.frag_node_feats_size += mol_pool_out_size
+        if "boundary_pair" in self.frag_node_feats:
             self.frag_node_feats_size += mol_pool_out_size
         if "base_formula" in self.frag_node_feats:
             self.frag_node_feats_size += self.num_elements * self.formula_embedder.num_dim
@@ -648,6 +656,34 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     num_frags_total, mol_embed_gnn.shape[1], device=device, dtype=mol_embed_gnn.dtype
                 )
             frag_ndata.append(boundary_embed)
+        if "boundary_pair" in self.frag_node_feats:
+            # boundary_pair requires cc to be in frag_node_feats (frag_node_mask must exist)
+            num_frags_total = frag_x.shape[0]
+            pair_frag_idxs, pair_in_global, pair_out_global = compute_boundary_pair_idxs(
+                frag_node_mask, mol_edge_index, mol_num_nodes, frag_num_nodes
+            )
+            if pair_frag_idxs.numel() > 0:
+                valid = (pair_in_global < mol_embed_gnn.shape[0]) & (
+                    pair_out_global < mol_embed_gnn.shape[0]
+                )
+                pair_frag_idxs = pair_frag_idxs[valid]
+                pair_in_global = pair_in_global[valid]
+                pair_out_global = pair_out_global[valid]
+            if pair_frag_idxs.numel() > 0:
+                in_embed = th.index_select(mol_embed_gnn, 0, pair_in_global)
+                out_embed = th.index_select(mol_embed_gnn, 0, pair_out_global)
+                pair_embed = self.boundary_pair_proj(th.cat([in_embed, out_embed], dim=-1))
+                boundary_pair_out = self.mol_pool(
+                    pair_embed, pair_frag_idxs, dim_size=num_frags_total
+                )
+            else:
+                boundary_pair_out = th.zeros(
+                    num_frags_total,
+                    mol_embed_gnn.shape[1],
+                    device=device,
+                    dtype=mol_embed_gnn.dtype,
+                )
+            frag_ndata.append(boundary_pair_out)
         # edge atom embeddings
         if "cc" in self.frag_edge_feats:
             # connected competents
