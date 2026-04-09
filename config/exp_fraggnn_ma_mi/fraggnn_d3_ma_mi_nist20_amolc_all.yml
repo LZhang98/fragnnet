@@ -59,6 +59,8 @@ frag_params:
     - depth         # depth of fragment node in the DAG
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
+    - boundary_pair     # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
+    - boundary_cc       # connected-component index within DAG of atoms at fragmentation boundary (i.e. cut bonds)
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
