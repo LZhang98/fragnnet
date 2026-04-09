@@ -24,33 +24,58 @@ def build_lr_scheduler(
     decay_rate: float,
     decay_steps: int = 5000,
     warmup_steps: int = 1000,
+    schedule_type: str = "exponential",
+    total_steps: int | None = None,
+    min_lr_ratio: float = 0.0,
 ) -> th.optim.lr_scheduler.LambdaLR:
-    """Build learning rate scheduler with warmup and exponential decay.
+    """Build learning rate scheduler with warmup followed by decay.
 
-    Creates a learning rate schedule that applies linear warmup followed by
-    exponential decay with a specified decay rate.
+    Supports two schedule types after the linear warmup phase:
+    - ``"exponential"``: stepwise exponential decay (original behavior).
+    - ``"cosine"``: cosine annealing from peak LR down to ``min_lr_ratio * peak``.
 
     Args:
-        optimizer: PyTorch optimizer to schedule
-        decay_rate: Base for exponential decay (e.g., 0.1 for 10x decay per cycle)
-        decay_steps: Number of steps between decay applications (default: 5000)
-        warmup_steps: Number of steps for linear warmup (default: 1000)
+        optimizer: PyTorch optimizer to schedule.
+        decay_rate: Base for exponential decay; ignored when ``schedule_type="cosine"``.
+        decay_steps: Steps between exponential decay applications; ignored for cosine.
+        warmup_steps: Number of steps for linear warmup.
+        schedule_type: One of ``"exponential"`` or ``"cosine"``.
+        total_steps: Total training steps (warmup + decay); required for cosine.
+        min_lr_ratio: Minimum LR as a fraction of peak LR; only used for cosine.
 
     Returns:
-        LambdaLR scheduler object
+        LambdaLR scheduler object.
+
+    Raises:
+        ValueError: If ``schedule_type="cosine"`` and ``total_steps`` is not provided.
+        ValueError: If ``schedule_type`` is not recognised.
     """
+    if schedule_type == "exponential":
 
-    def lr_lambda(step):
-        if step >= warmup_steps:
-            # Adjust
-            step = step - warmup_steps
-            rate = decay_rate ** (step // decay_steps)
-        else:
-            rate = 1 - math.exp(-step / warmup_steps)
-        return rate
+        def lr_lambda(step):
+            if step >= warmup_steps:
+                s = step - warmup_steps
+                return decay_rate ** (s // decay_steps)
+            else:
+                return (step / warmup_steps) if warmup_steps > 0 else 1.0
 
-    scheduler = th.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
-    return scheduler
+    elif schedule_type == "cosine":
+        if total_steps is None:
+            raise ValueError("total_steps must be provided for cosine schedule")
+        decay_steps_cosine = max(total_steps - warmup_steps, 1)
+
+        def lr_lambda(step):
+            if step < warmup_steps:
+                return (step / warmup_steps) if warmup_steps > 0 else 1.0
+            progress = (step - warmup_steps) / decay_steps_cosine
+            progress = min(progress, 1.0)
+            cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+            return min_lr_ratio + (1.0 - min_lr_ratio) * cosine
+
+    else:
+        raise ValueError(f"Unknown schedule_type: {schedule_type!r}. Choose 'exponential' or 'cosine'.")
+
+    return th.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
 
 def nan_forward_hook(self: nn.Module, input: Any, output: Any) -> None:

@@ -1,5 +1,14 @@
-"""
-Land of loss functions
+"""Loss functions for sparse mass-spectrum training and retrieval.
+
+Important binning assumption:
+    Several distance/similarity losses use binned spectra with a nominal
+    support size of ``num_bins = round(mz_max / mz_bin_res)``.
+    With the common defaults ``mz_max=1500.0`` and ``mz_bin_res=0.01``,
+    this implies a 150,000-bin spectrum grid.
+
+    Pairwise helpers in this module remap to occupied bins to avoid
+    materializing a full 150,000-wide dense matrix when possible, but the
+    numerical behavior is still defined by that underlying bin grid.
 """
 
 import logging
@@ -18,6 +27,7 @@ from fragnnet.utils.misc_utils import (
     scatter_logsoftmax,
     scatter_logsumexp,
     scatter_reduce,
+    validate_bin_geometry,
 )
 from fragnnet.utils.spec_utils import (
     batched_bin_func,
@@ -212,7 +222,11 @@ def sparse_cross_entropy_seq(
         b_pred_mzs = pred_mzs[b_pred_mask]
         # per-sample tolerance (falls back to global scalars when not provided)
         b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
-        b_min_mz = min_mz_per_sample[batch_idx].item() if min_mz_per_sample is not None else tolerance_min_mz
+        b_min_mz = (
+            min_mz_per_sample[batch_idx].item()
+            if min_mz_per_sample is not None
+            else tolerance_min_mz
+        )
         # get matches
         b_match_mask = calculate_match_mzs(
             b_true_mzs,
@@ -361,7 +375,9 @@ def sparse_cross_entropy_vec(
 
         # Slice per-peak tolerance arrays for this loss batch
         bl_tol_per_true = (
-            tol_per_true_peak[bl_true_lower:bl_true_upper] if tol_per_true_peak is not None else None
+            tol_per_true_peak[bl_true_lower:bl_true_upper]
+            if tol_per_true_peak is not None
+            else None
         )
         bl_min_mz_per_true = (
             min_mz_per_true_peak[bl_true_lower:bl_true_upper]
@@ -369,7 +385,9 @@ def sparse_cross_entropy_vec(
             else None
         )
         bl_tol_per_pred = (
-            tol_per_pred_peak[bl_pred_lower:bl_pred_upper] if tol_per_pred_peak is not None else None
+            tol_per_pred_peak[bl_pred_lower:bl_pred_upper]
+            if tol_per_pred_peak is not None
+            else None
         )
         bl_min_mz_per_pred = (
             min_mz_per_pred_peak[bl_pred_lower:bl_pred_upper]
@@ -661,6 +679,28 @@ def sparse_cosine_distance(
     mz_bin_res: float = 0.01,
     log_distance: bool = False,
 ) -> th.Tensor:
+    """Compute sparse cosine distance after m/z binning.
+
+    Note:
+        The implicit spectrum support size is
+        ``num_bins = round(mz_max / mz_bin_res)``. With defaults,
+        this is 150,000 bins.
+
+    Args:
+        true_mzs: Ground truth m/z values.
+        true_logprobs: Ground truth log-probabilities (intensities).
+        true_batch_idxs: Batch indices for ground truth peaks.
+        pred_mzs: Predicted m/z values.
+        pred_logprobs: Predicted log-probabilities (intensities).
+        pred_batch_idxs: Batch indices for predicted peaks.
+        mz_max: Maximum m/z value for binning. Defaults to 1500.0.
+        mz_bin_res: Resolution of m/z bins. Defaults to 0.01.
+        log_distance: If True, return log(1-cosine); else return 1-cosine.
+
+    Returns:
+        Tensor of cosine distances per batch.
+    """
+
     # sparse bin
     true_bin_idxs, true_bin_logprobs, true_bin_batch_idxs = batched_bin_func(
         true_mzs,
@@ -786,7 +826,11 @@ def sparse_cosine_distance_hungarian(
         b_pred_logprobs = b_pred_logprobs - 0.5 * th.logsumexp(2 * b_pred_logprobs, dim=0)
         # per-sample tolerance (falls back to global scalars when not provided)
         b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
-        b_min_mz = min_mz_per_sample[batch_idx].item() if min_mz_per_sample is not None else tolerance_min_mz
+        b_min_mz = (
+            min_mz_per_sample[batch_idx].item()
+            if min_mz_per_sample is not None
+            else tolerance_min_mz
+        )
         # Compute m/z matching mask within tolerance
         b_match_mzs = calculate_match_mzs(
             b_true_mzs,
@@ -889,7 +933,11 @@ def sparse_jensen_shannon_divergence_hungarian(
 
         # per-sample tolerance (falls back to global scalars when not provided)
         b_tolerance = tol_per_sample[batch_idx].item() if tol_per_sample is not None else tolerance
-        b_min_mz = min_mz_per_sample[batch_idx].item() if min_mz_per_sample is not None else tolerance_min_mz
+        b_min_mz = (
+            min_mz_per_sample[batch_idx].item()
+            if min_mz_per_sample is not None
+            else tolerance_min_mz
+        )
         # Compute m/z matching mask within tolerance
         b_match_mzs = calculate_match_mzs(
             b_true_mzs,
@@ -984,6 +1032,11 @@ def sparse_jensen_shannon_divergence(
         mz_max: Maximum m/z value for binning.
         mz_bin_res: Resolution of m/z bins.
         log_min: Minimum log value to avoid log(0).
+
+    Note:
+        The implicit spectrum support size is
+        ``num_bins = round(mz_max / mz_bin_res)``. With defaults,
+        this is 150,000 bins.
 
     Returns:
         Jensen-Shannon divergence (distance) between the binned spectra, per batch.
@@ -1094,6 +1147,12 @@ def get_pairwise_cossim(
         chunk_size: Number of rows to process at once. Controls the memory/speed
             trade-off: smaller values use less memory but more iterations.
 
+    Note:
+        The nominal full spectrum grid size is
+        ``num_bins = mz_max / mz_bin_res`` and must be an integer.
+        For ``mz_max=1500.0`` and ``mz_bin_res=0.01``, this is 150,000 bins.
+        This function compacts to occupied bins to reduce memory.
+
     Returns:
         Pairwise similarity matrix of shape [batch_size, batch_size].
     """
@@ -1115,7 +1174,7 @@ def get_pairwise_cossim(
     # bin in different spectra maps to the same column in the V matrix, enabling valid dot-product
     # cosine similarity. Without this, every spectrum occupies exclusively different columns and
     # all off-diagonal similarities are zero by construction.
-    num_bins = int(round(mz_max / mz_bin_res))
+    num_bins = validate_bin_geometry(mz_max, mz_bin_res)
     intra_bin_idxs = bin_idxs % num_bins
 
     # Compact bin space: avoids 150k-wide matrices when only a few bins are occupied
@@ -1183,6 +1242,12 @@ def get_pairwise_jss_sim(
         chunk_size: Number of rows to process at once. Controls the memory/speed
             trade-off: smaller values use less memory but more iterations.
 
+    Note:
+        The nominal full spectrum grid size is
+        ``num_bins = mz_max / mz_bin_res`` and must be an integer.
+        For ``mz_max=1500.0`` and ``mz_bin_res=0.01``, this is 150,000 bins.
+        This function compacts to occupied bins to reduce memory.
+
     Returns:
         Pairwise similarity matrix of shape [batch_size, batch_size].
     """
@@ -1203,7 +1268,7 @@ def get_pairwise_jss_sim(
     # batch-offset bin indices; without stripping, each spectrum occupies exclusively
     # different columns, making all pairwise mixtures trivially equal to 0.5*(P+0)=0.5*P
     # and H(M) collapses to a function of individual entropies only.
-    num_bins = int(round(mz_max / mz_bin_res))
+    num_bins = validate_bin_geometry(mz_max, mz_bin_res)
     intra_bin_idxs = bin_idxs % num_bins
 
     # Compact bin space
@@ -1220,9 +1285,7 @@ def get_pairwise_jss_sim(
     def _make_chunk(row_start: int, row_end: int) -> th.Tensor:
         """Build a dense [row_end - row_start, num_unique_bins] probability matrix."""
         mask = (bin_batch_idxs >= row_start) & (bin_batch_idxs < row_end)
-        P = th.zeros(
-            (row_end - row_start, num_unique_bins), device=mzs.device, dtype=probs.dtype
-        )
+        P = th.zeros((row_end - row_start, num_unique_bins), device=mzs.device, dtype=probs.dtype)
         P[bin_batch_idxs[mask] - row_start, compact_bin_idxs[mask]] = probs[mask]
         return P
 
@@ -1279,6 +1342,12 @@ def get_pairwise_cross_entropy(
         mz_bin_res: m/z bin resolution.
         chunk_size: Batch size for chunked computation to save memory.
 
+    Note:
+        The nominal full spectrum grid size is
+        ``num_bins = mz_max / mz_bin_res`` and must be an integer.
+        For ``mz_max=1500.0`` and ``mz_bin_res=0.01``, this is 150,000 bins.
+        Bins are compacted to occupied indices before sparse/dense assembly.
+
     Returns:
         Pairwise cross-entropy matrix of shape [batch_size, batch_size].
     """
@@ -1301,7 +1370,7 @@ def get_pairwise_cross_entropy(
     # stripping, each spectrum occupies exclusively different columns so P and Q never
     # share any bin and cross-entropy reduces to -sum(P*log(eps)) for all off-diagonal
     # pairs — masking any real signal from shared peaks.
-    num_bins = int(round(mz_max / mz_bin_res))
+    num_bins = validate_bin_geometry(mz_max, mz_bin_res)
     intra_bin_idxs = bin_idxs % num_bins
 
     # Optimization: only use bins that are actually present in data

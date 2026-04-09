@@ -1142,25 +1142,28 @@ class FraGNNetPL(SpectrumPL):
         super().on_train_epoch_end()
 
     def _manual_opt(self):
-        """run manual opt"""
         opt = self.optimizers()
-        # scale gradients
+
         if self.hparams.dynamic_batch_sampler:
+            scale = self._max_batch_size / self._cur_batch_weight
             for pg in opt.param_groups:
                 for p in pg["params"]:
                     if p.grad is not None:
-                        p.grad.data.mul_(self._max_batch_size / self._cur_batch_weight)
+                        p.grad.mul_(scale)
+
         self.on_before_optimizer_step(opt)
-        # clip gradients
         self.clip_gradients(
             opt,
             gradient_clip_val=self.hparams.gradient_clip_val,
             gradient_clip_algorithm=self.hparams.gradient_clip_algorithm,
         )
-        # call opt
         opt.step()
-        self.on_after_optimizer_step(opt)
-        # clean gradient
+
+        if self.hparams.lr_schedule:
+            sch = self.lr_schedulers()
+            if sch is not None:
+                sch.step()
+
         opt.zero_grad()
 
     def training_step(self, batch, batch_idx):
@@ -1256,7 +1259,7 @@ class FraGNNetPL(SpectrumPL):
         Configure optimizers with different learning rates for pre-trained and other parameters.
         """
         # Get LR ratio from finetune config
-        if  self.hparams.finetune:
+        if self.hparams.finetune:
             lr_ratio = self.hparams.finetune["pretrained_weights_lr_ratio"]
         else:
             lr_ratio = self.hparams.finetune_weights_lr_ratio
@@ -1290,6 +1293,9 @@ class FraGNNetPL(SpectrumPL):
                 decay_rate=self.hparams.lr_decay_rate,
                 warmup_steps=self.hparams.lr_warmup_steps,
                 decay_steps=self.hparams.lr_decay_steps,
+                schedule_type=self.hparams.lr_schedule_type,
+                total_steps=self.hparams.lr_total_steps,
+                min_lr_ratio=self.hparams.lr_min_ratio,
             )
             ret["lr_scheduler"] = {
                 "scheduler": scheduler,

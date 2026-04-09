@@ -874,9 +874,22 @@ def get_slurm_job_id() -> str | None:
     return os.getenv("SLURM_JOB_ID", default=None)
 
 
-def get_slurm_allocated_cores(job_id: str) -> int | None:
-    """Query SLURM for number of CPUs allocated to a job."""
+def get_slurm_allocated_cores(job_id: str) -> Optional[int]:
+    """Query SLURM for number of CPUs allocated to a job.
 
+    Prefers the ``SLURM_CPUS_PER_TASK`` environment variable (set by SLURM
+    for every task, including array tasks) and falls back to ``scontrol``
+    when that variable is absent.  The ``scontrol`` path takes the first
+    match so it works correctly for array jobs, which emit one line per task.
+    """
+    cpus_env = os.getenv("SLURM_CPUS_PER_TASK")
+    if cpus_env is not None:
+        try:
+            return int(cpus_env)
+        except ValueError:
+            pass  # fall back to scontrol
+
+    # fallback: use scontrol and take only the first line
     try:
         command = f"scontrol show job {job_id} | grep -oP 'NumCPUs=\\K\\d+'"
         result = subprocess.run(
@@ -884,12 +897,15 @@ def get_slurm_allocated_cores(job_id: str) -> int | None:
             shell=True,
             check=True,
             capture_output=True,
+            text=True,  # get str directly
         )
-        cpus_allocated = result.stdout.decode("utf-8").strip()
-        return int(cpus_allocated)
-    except subprocess.CalledProcessError as e:
-        print(f"Error running command: {e}")
-    return None
+        lines = result.stdout.strip().splitlines()
+        if not lines:
+            return None
+        return int(lines[0])  # first line only; array jobs may have multiple
+    except (subprocess.CalledProcessError, ValueError) as e:
+        print(f"Error querying SLURM for job {job_id}: {e}")
+        return None
 
 
 def get_core_count() -> int:
@@ -901,6 +917,48 @@ def get_core_count() -> int:
     else:
         num_core = multiprocessing.cpu_count()
     return int(num_core) if num_core is not None else multiprocessing.cpu_count()
+
+
+def validate_bin_geometry(mz_max: float, mz_bin_res: float) -> int:
+    """Validate and return the bin count for a given m/z grid configuration.
+
+    Enforces that mz_max and mz_bin_res define a consistent, integer bin grid:
+    ``num_bins = mz_max / mz_bin_res`` must be an integer.
+
+    Args:
+        mz_max: Maximum m/z value covered by the grid.
+        mz_bin_res: m/z bin resolution.
+
+    Returns:
+        Number of bins in the grid.
+
+    Raises:
+        ValueError: If ``mz_max`` or ``mz_bin_res`` is non-positive, or if
+            ``mz_max / mz_bin_res`` is not an integer (within floating-point tolerance).
+
+    Example:
+        >>> validate_bin_geometry(1500.0, 0.01)  # Default: 150,000 bins
+        150000
+        >>> validate_bin_geometry(200.0, 0.5)    # Non-default: 400 bins
+        400
+        >>> validate_bin_geometry(200.0, 0.3)    # ValueError: 666.666... not integer
+        Traceback: ValueError: Incompatible bin geometry...
+    """
+    import math
+
+    if mz_max <= 0:
+        raise ValueError(f"mz_max must be > 0, got {mz_max}")
+    if mz_bin_res <= 0:
+        raise ValueError(f"mz_bin_res must be > 0, got {mz_bin_res}")
+
+    num_bins_float = mz_max / mz_bin_res
+    num_bins = int(round(num_bins_float))
+    if not math.isclose(num_bins_float, num_bins, rel_tol=0.0, abs_tol=1e-9):
+        raise ValueError(
+            "Incompatible bin geometry: mz_max / mz_bin_res must be an integer. "
+            f"Got mz_max={mz_max}, mz_bin_res={mz_bin_res}, ratio={num_bins_float}."
+        )
+    return num_bins
 
 
 def progress_wrapper(

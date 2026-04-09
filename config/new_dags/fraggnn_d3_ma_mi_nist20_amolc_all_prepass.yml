@@ -34,6 +34,7 @@ wandb_tags:
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
 - prepass
+- boundary_pair   # boundary_pair node feature in fragment GNN
 
 # ============================================================================
 # Data File Paths
@@ -60,6 +61,7 @@ frag_params:
     - depth         # depth of fragment node in the DAG
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
+    - boundary_pair   # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
@@ -181,7 +183,7 @@ simple_group_sampler_type: group
 # ============================================================================
 # Miscellaneous
 # ============================================================================
-pl_enable_progress_bar: True
+pl_enable_progress_bar: False
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: True                    # torch.compile for speed
 pin_memory: True

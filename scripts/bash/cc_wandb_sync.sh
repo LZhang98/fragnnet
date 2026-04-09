@@ -6,7 +6,7 @@ if [ ! -d "wandb_venv" ]; then
     virtualenv wandb_venv
     source wandb_venv/bin/activate
     pip install --no-index --upgrade pip
-    pip install --no-index wandb
+    pip install --no-index wandb==0.21.2
 
     # https://github.com/wandb/wandb/issues/2423
     wandb sync --sync-all --append

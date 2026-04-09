@@ -24,6 +24,7 @@ from fragnnet.utils.misc_utils import (
     scatter_logsumexp,
     scatter_reduce,
     th_setdiff1d,
+    validate_bin_geometry,
 )
 
 try:
@@ -384,6 +385,8 @@ def batched_bin_func(
     if mzs.shape[0] == 0:
         raise ValueError("batched_bin_func received empty mzs tensor")
     assert th.max(mzs) < mz_max, (th.max(mzs), mz_max)
+    # Validate bin geometry
+    num_bins = validate_bin_geometry(mz_max, mz_bin_res)
     batch_size = int(th.max(batch_idxs).item()) + 1
     bins = th.arange(
         mz_bin_res,
@@ -392,7 +395,7 @@ def batched_bin_func(
         device=mzs.device,
         dtype=mzs.dtype,
     )
-    num_bins = int(bins.shape[0])
+    # num_bins already validated above
     bin_idxs = th.searchsorted(bins, mzs, right=True)
     bin_offsets = (th.arange(batch_size, device=mzs.device) * num_bins)[batch_idxs]
     bin_idxs = bin_idxs + bin_offsets

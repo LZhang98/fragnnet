@@ -88,6 +88,7 @@ frag_params:
     # - nb_iso_idx          # isotope index; requires nb_iso=True
     # - prepass_rule_id     # one-hot over FRAG_RULES (len(FRAG_RULES) dims); all-zero = BFS fragment; requires smarts_prepass=True at preprocessing time
     # - boundary_cc         # atoms at cut bonds; computed on-the-fly from mol graph, not stored in DAG
+    # - boundary_pair       # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts; requires cc
   pyg_edge_feats:
     - cc
     - base_formula
@@ -153,7 +154,7 @@ mol_num_layers: 4  # Number of GNN layers for molecular encoding
 mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GCN", "GAT", "PNA"]
 mol_dropout: 0.0  # Dropout rate for molecular GNN
 mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
-mol_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "set2set", "set_transformer", "softmax", "powermean", "none"]
+mol_pool_type: none  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]
 
 # ============================================================================
 # Inter-stage Configuration (Mol → Frag connection)
@@ -169,7 +170,7 @@ frag_num_layers: 4  # Number of GNN layers for fragment encoding
 frag_gnn_type: GINE  # GNN architecture for fragments: ["GIN", "GINE", "GCN", "GAT", "PNA"]
 frag_dropout: 0.0  # Dropout rate for fragment GNN
 frag_normalization: batch  # Normalization: ["batch", "layer", "none"]
-frag_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "set2set", "set_transformer", "softmax", "powermean", "none"]
+frag_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "mean_max_sum", "mean_std_softmax", "none"]
 frag_embed_combine: cat  # How to combine fragment embeddings: ["add", "cat"]
 frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "cat"]
 
@@ -236,6 +237,9 @@ graff_min_mz: 0.0
 # ============================================================================
 lr: 0.0001
 lr_schedule: False
+lr_schedule_type: exponential  # "exponential" or "cosine"
+lr_total_steps: null           # required for cosine; set to max_epochs * steps_per_epoch
+lr_min_ratio: 0.0              # cosine: final LR as fraction of peak (e.g. 0.01)
 weight_decay: 0.01
 lr_decay_rate: 0.95
 lr_warmup_steps: 1000
@@ -463,13 +467,19 @@ nan_module_hook: False
 debug_zero_loss: False
 checkpoint_metric: epoch
 checkpoint_metric_mode: max
-checkpoint_save_last: True
-checkpoint_every_n_epochs: 1 # Save checkpoint every n epochs
-checkpoint_save_top_k: 1 # Number of top checkpoints keep based on metric
-upload_checkpoints: False
-disable_checkpoints: False
-delete_checkpoints: False
-pl_enable_progress_bar: True
+checkpoint_save_last: True  # Keep the final checkpoint for resume/debugging.
+checkpoint_every_n_epochs: 1  # Save a checkpoint every n epochs.
+checkpoint_save_top_k: 1  # Keep the best k checkpoints by checkpoint_metric.
+# Modes:
+# - online: set upload_checkpoints=True to upload checkpoints to W&B artifacts.
+# - offline/local-only: keep upload_checkpoints=False and store checkpoints on disk.
+# - no checkpoints: set disable_checkpoints=True for fast debug runs.
+# - cleanup after training: set delete_checkpoints=True if checkpoints are temporary.
+upload_checkpoints: False  # Upload checkpoints to W&B artifacts when running online.
+disable_checkpoints: False  # Disable checkpoint saving entirely.
+delete_checkpoints: False  # Delete checkpoint files after training finishes.
+pl_enable_progress_bar: False
+pandarallel_enable_progress_bar: False
 sparse_cosine_similarity: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False

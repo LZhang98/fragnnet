@@ -116,7 +116,8 @@ simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5
 simple_group_sampler_type: group
 
-pl_enable_progress_bar: True
+pl_enable_progress_bar: False
+pandarallel_enable_progress_bar: False
 activation_checkpointing: False
 compile: True
 pin_memory: True

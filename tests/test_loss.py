@@ -546,9 +546,14 @@ class TestSparseJensenShannonDivergence:
         batch_idxs = th.tensor([0], dtype=th.long)
 
         jsd = sparse_jensen_shannon_divergence(
-            mzs, logprobs, batch_idxs,
-            mzs, logprobs, batch_idxs,
-            mz_max=200.0, mz_bin_res=1.0,
+            mzs,
+            logprobs,
+            batch_idxs,
+            mzs,
+            logprobs,
+            batch_idxs,
+            mz_max=200.0,
+            mz_bin_res=1.0,
         )
         assert th.allclose(jsd, th.zeros(1), atol=1e-6), (
             "Identical spectra should have zero divergence"
@@ -565,9 +570,14 @@ class TestSparseJensenShannonDivergence:
         batch_idxs2 = th.tensor([0], dtype=th.long)
 
         jsd = sparse_jensen_shannon_divergence(
-            mzs1, logprobs1, batch_idxs1,
-            mzs2, logprobs2, batch_idxs2,
-            mz_max=200.0, mz_bin_res=1.0,
+            mzs1,
+            logprobs1,
+            batch_idxs1,
+            mzs2,
+            logprobs2,
+            batch_idxs2,
+            mz_max=200.0,
+            mz_bin_res=1.0,
         )
         assert th.allclose(jsd, th.ones(1), atol=1e-6), (
             "Orthogonal spectra should have divergence = 1"
@@ -589,9 +599,14 @@ class TestSparseJensenShannonDivergence:
         batch_idxs_pred = th.tensor([0, 0], dtype=th.long)
 
         jsd = sparse_jensen_shannon_divergence(
-            mzs_true, logprobs_true, batch_idxs_true,
-            mzs_pred, logprobs_pred, batch_idxs_pred,
-            mz_max=200.0, mz_bin_res=1.0,
+            mzs_true,
+            logprobs_true,
+            batch_idxs_true,
+            mzs_pred,
+            logprobs_pred,
+            batch_idxs_pred,
+            mz_max=200.0,
+            mz_bin_res=1.0,
         )
         assert th.allclose(jsd, th.tensor([0.5]), atol=1e-5), (
             f"Expected divergence 0.5, got {jsd.item():.6f}"
@@ -610,9 +625,14 @@ class TestSparseJensenShannonDivergence:
         batch_idxs = th.zeros(N, dtype=th.long)
 
         jsd = sparse_jensen_shannon_divergence(
-            mzs, logprobs, batch_idxs,
-            mzs, logprobs, batch_idxs,
-            mz_max=float(N + 1), mz_bin_res=1.0,
+            mzs,
+            logprobs,
+            batch_idxs,
+            mzs,
+            logprobs,
+            batch_idxs,
+            mz_max=float(N + 1),
+            mz_bin_res=1.0,
         )
         assert jsd.item() >= -1e-6, f"JSD must be non-negative, got {jsd.item()}"
         assert jsd.item() <= 1e-5, f"Identical spectra should have JSD ≈ 0, got {jsd.item()}"
@@ -628,14 +648,24 @@ class TestSparseJensenShannonDivergence:
         batch_idxs2 = th.tensor([0, 0], dtype=th.long)
 
         jsd_pq = sparse_jensen_shannon_divergence(
-            mzs1, logprobs1, batch_idxs1,
-            mzs2, logprobs2, batch_idxs2,
-            mz_max=200.0, mz_bin_res=1.0,
+            mzs1,
+            logprobs1,
+            batch_idxs1,
+            mzs2,
+            logprobs2,
+            batch_idxs2,
+            mz_max=200.0,
+            mz_bin_res=1.0,
         )
         jsd_qp = sparse_jensen_shannon_divergence(
-            mzs2, logprobs2, batch_idxs2,
-            mzs1, logprobs1, batch_idxs1,
-            mz_max=200.0, mz_bin_res=1.0,
+            mzs2,
+            logprobs2,
+            batch_idxs2,
+            mzs1,
+            logprobs1,
+            batch_idxs1,
+            mz_max=200.0,
+            mz_bin_res=1.0,
         )
         assert th.allclose(jsd_pq, jsd_qp, atol=1e-6), (
             f"JSD should be symmetric, got {jsd_pq.item():.6f} vs {jsd_qp.item():.6f}"
@@ -656,9 +686,14 @@ class TestSparseJensenShannonDivergence:
         batch_idxs_pred = th.tensor([0, 1], dtype=th.long)
 
         jsd = sparse_jensen_shannon_divergence(
-            mzs_true, logprobs_true, batch_idxs_true,
-            mzs_pred, logprobs_pred, batch_idxs_pred,
-            mz_max=300.0, mz_bin_res=1.0,
+            mzs_true,
+            logprobs_true,
+            batch_idxs_true,
+            mzs_pred,
+            logprobs_pred,
+            batch_idxs_pred,
+            mz_max=300.0,
+            mz_bin_res=1.0,
         )
         assert jsd.shape == (2,), f"Expected shape (2,), got {jsd.shape}"
         assert th.allclose(jsd[0], th.tensor(0.0), atol=1e-6), (
@@ -667,6 +702,66 @@ class TestSparseJensenShannonDivergence:
         assert th.allclose(jsd[1], th.tensor(1.0), atol=1e-6), (
             f"Pair 1 (orthogonal): expected JSD=1, got {jsd[1].item()}"
         )
+
+
+class TestPairwiseBinningGeometry:
+    """Tests for configurable m/z grid geometry in pairwise losses."""
+
+    @staticmethod
+    def _simple_two_spectra() -> tuple[th.Tensor, th.Tensor, th.Tensor, int]:
+        """Create two identical single-peak spectra in different batch slots."""
+        mzs = th.tensor([100.0, 100.0])
+        logprobs = th.tensor([0.0, 0.0])
+        batch_idxs = th.tensor([0, 1], dtype=th.long)
+        batch_size = 2
+        return mzs, logprobs, batch_idxs, batch_size
+
+    def test_pairwise_losses_support_non_default_resolution(self):
+        """Pairwise helpers should work with a non-default valid bin geometry."""
+        mzs, logprobs, batch_idxs, batch_size = self._simple_two_spectra()
+        mz_max = 200.0
+        mz_bin_res = 0.5  # 400 bins, valid integer grid
+
+        cossim = get_pairwise_cossim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        jss = get_pairwise_jss_sim(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+        ce = get_pairwise_cross_entropy(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+
+        assert th.allclose(cossim[0, 1], th.tensor(1.0), atol=1e-6)
+        assert th.allclose(jss[0, 1], th.tensor(1.0), atol=1e-6)
+        assert th.allclose(ce[0, 1], th.tensor(0.0), atol=1e-6)
+
+    @pytest.mark.parametrize(
+        "fn",
+        [get_pairwise_cossim, get_pairwise_jss_sim, get_pairwise_cross_entropy],
+    )
+    def test_pairwise_losses_raise_on_non_integer_bin_geometry(self, fn):
+        """Fail fast when mz_max / mz_bin_res does not define an integer bin count."""
+        mzs, logprobs, batch_idxs, batch_size = self._simple_two_spectra()
+        mz_max = 200.0
+        mz_bin_res = 0.3  # 666.666..., invalid grid
+
+        with pytest.raises(ValueError, match="mz_max / mz_bin_res"):
+            fn(mzs, logprobs, batch_idxs, batch_size, mz_max, mz_bin_res)
+
+    def test_batched_bin_func_validates_geometry(self):
+        """Verify batched_bin_func validates bin geometry on invalid config."""
+        from fragnnet.utils.spec_utils import batched_bin_func
+
+        mzs = th.tensor([100.0, 150.0])
+        ints = th.tensor([1.0, 2.0])
+        batch_idxs = th.tensor([0, 1], dtype=th.long)
+
+        # Valid geometry (400 bins) should work
+        result = batched_bin_func(
+            mzs, ints, batch_idxs, mz_max=250.0, mz_bin_res=0.5, agg="sum", sparse=True
+        )
+        assert result[0].numel() > 0  # Should return non-empty result
+
+        # Invalid geometry (666.666... bins) should raise ValueError
+        with pytest.raises(ValueError, match="mz_max / mz_bin_res"):
+            batched_bin_func(
+                mzs, ints, batch_idxs, mz_max=250.0, mz_bin_res=0.3, agg="sum", sparse=True
+            )
 
 
 if __name__ == "__main__":

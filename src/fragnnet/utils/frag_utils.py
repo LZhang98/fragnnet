@@ -2150,3 +2150,93 @@ def compute_boundary_mask(
 
     return boundary_mask
     return meta_info
+
+
+def compute_boundary_pair_idxs(
+    frag_node_mask: th.Tensor,
+    mol_edge_index: th.Tensor,
+    mol_num_nodes: th.Tensor,
+    frag_num_nodes: th.Tensor,
+) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+    """Compute boundary pair indices for each fragment on-the-fly.
+
+    For each cut bond ``(u_in, v_out)`` where ``u`` is inside the fragment and
+    ``v`` is outside (or vice versa), returns the global fragment index and the
+    global atom indices of both endpoints.  The root fragment (full precursor)
+    always produces zero pairs.
+
+    Args:
+        frag_node_mask: Bool tensor of shape ``(F, mask_size)`` with LOCAL atom
+            indices per molecule (as returned by ``th_long_to_mask`` on the cc
+            node feature).
+        mol_edge_index: Long tensor of shape ``(2, E)`` with GLOBAL atom indices
+            across the batch (standard PyG format).
+        mol_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative atom counts
+            per molecule in the batch (prefix sum, starts at 0).
+        frag_num_nodes: Long tensor of shape ``(B+1,)`` — cumulative fragment
+            counts per molecule in the batch (prefix sum, starts at 0).
+
+    Returns:
+        Tuple of three long tensors of shape ``(N_pairs,)``:
+
+        - ``pair_frag_idxs``: global fragment index for each pair.
+        - ``pair_in_global``: global atom index of the inside atom.
+        - ``pair_out_global``: global atom index of the outside atom.
+
+        All three tensors are empty (numel == 0) when no cut bonds exist.
+    """
+    device = frag_node_mask.device
+    mask_size = frag_node_mask.shape[1]
+
+    u_global = mol_edge_index[0]
+    v_global = mol_edge_index[1]
+    edge_mol_idx = th.bucketize(u_global, mol_num_nodes, right=True) - 1
+
+    num_mols = int(mol_num_nodes.shape[0]) - 1
+
+    all_pair_frag: list[th.Tensor] = []
+    all_pair_in: list[th.Tensor] = []
+    all_pair_out: list[th.Tensor] = []
+
+    for m in range(num_mols):
+        f_start = int(frag_num_nodes[m])
+        f_end = int(frag_num_nodes[m + 1])
+        if f_start == f_end:
+            continue
+        edge_sel = edge_mol_idx == m
+        if not edge_sel.any():
+            continue
+        atom_off = int(mol_num_nodes[m])
+        u_loc = u_global[edge_sel] - atom_off
+        v_loc = v_global[edge_sel] - atom_off
+        valid_e = (u_loc >= 0) & (u_loc < mask_size) & (v_loc >= 0) & (v_loc < mask_size)
+        u_loc, v_loc = u_loc[valid_e], v_loc[valid_e]
+        u_glob_m = u_global[edge_sel][valid_e]
+        v_glob_m = v_global[edge_sel][valid_e]
+
+        frags_m = frag_node_mask[f_start:f_end]  # (F_m, mask_size)
+
+        u_in = frags_m[:, u_loc]  # (F_m, E_m) bool
+        v_in = frags_m[:, v_loc]  # (F_m, E_m) bool
+
+        # cut bonds: u inside, v outside
+        cut_uv = u_in & ~v_in  # (F_m, E_m)
+        if cut_uv.any():
+            idxs = th.nonzero(cut_uv)  # (N, 2): [frag_local, edge_local]
+            all_pair_frag.append(idxs[:, 0] + f_start)
+            all_pair_in.append(u_glob_m[idxs[:, 1]])
+            all_pair_out.append(v_glob_m[idxs[:, 1]])
+
+        # cut bonds: v inside, u outside
+        cut_vu = v_in & ~u_in  # (F_m, E_m)
+        if cut_vu.any():
+            idxs = th.nonzero(cut_vu)  # (N, 2): [frag_local, edge_local]
+            all_pair_frag.append(idxs[:, 0] + f_start)
+            all_pair_in.append(v_glob_m[idxs[:, 1]])
+            all_pair_out.append(u_glob_m[idxs[:, 1]])
+
+    if not all_pair_frag:
+        empty = th.zeros(0, dtype=th.long, device=device)
+        return empty, empty, empty
+
+    return th.cat(all_pair_frag), th.cat(all_pair_in), th.cat(all_pair_out)
