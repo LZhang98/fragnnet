@@ -149,12 +149,22 @@ def apply_gpu_profile(args) -> None:
         args.gpu = 1
 
 
+def validate_array_job_config(args) -> None:
+    """Validate array job configuration."""
+    if getattr(args, "num_sweep_agents", None) is not None:
+        if args.num_sweep_agents <= 0:
+            raise ValueError("--num_sweep_agents must be > 0")
+        if args.num_sweep_agents > 1000:
+            raise ValueError("--num_sweep_agents must be <= 1000")
+
+
 def main(args):
     if getattr(args, "list_gpu_profiles", False):
         print_gpu_profiles()
         return
 
     apply_gpu_profile(args)
+    validate_array_job_config(args)
 
     # create folders
     os.makedirs(f"{os.path.abspath(args.frag_gnn_dp)}/wandb", exist_ok=True)
@@ -176,6 +186,12 @@ def main(args):
             "#SBATCH --mail-type=ALL",
         ]
     )
+    # add array job directive if num_sweep_agents is specified
+    if getattr(args, "num_sweep_agents", None) is not None:
+        num_agents = args.num_sweep_agents
+        # SLURM array indices are 0-based
+        script_lines.append(f"#SBATCH --array=0-{num_agents - 1}")
+
     # add gpus
     if getattr(args, "gres_gpu", None):
         script_lines.append(f"#SBATCH --gres={args.gres_gpu}")
@@ -191,10 +207,18 @@ def main(args):
 
     # config where to save job output and job error
     # append to existing onces
+    # For array jobs, include task ID in output filename
+    if getattr(args, "num_sweep_agents", None) is not None:
+        job_output = f"{os.path.abspath(args.job_dp)}/{args.job_name}_%j_%a.out"
+        job_error = f"{os.path.abspath(args.job_dp)}/{args.job_name}_%j_%a.err"
+    else:
+        job_output = f"{os.path.abspath(args.job_dp)}/{args.job_name}_%j.out"
+        job_error = f"{os.path.abspath(args.job_dp)}/{args.job_name}_%j.err"
+
     script_lines.extend(
         [
-            f"#SBATCH --output={os.path.abspath(args.job_dp)}/{args.job_name}_%j.out",
-            f"#SBATCH --error={os.path.abspath(args.job_dp)}/{args.job_name}_%j.err",
+            f"#SBATCH --output={job_output}",
+            f"#SBATCH --error={job_error}",
             "#SBATCH --open-mode=append",
         ]
     )
@@ -202,6 +226,22 @@ def main(args):
     script_lines.extend(
         ["", "# record start", "echo `date`: Job ${SLURM_JOB_ID} is allocated resources"]
     )
+
+    # handle array jobs for wandb sweep
+    if getattr(args, "num_sweep_agents", None) is not None:
+        script_lines.extend(
+            [
+                "",
+                "# array job setup for wandb sweep",
+                'if [ -z "${SLURM_ARRAY_TASK_ID}" ]; then',
+                "    AGENT_ID=0",
+                "else",
+                "    AGENT_ID=${SLURM_ARRAY_TASK_ID}",
+                "fi",
+                'echo "Running as sweep agent ${AGENT_ID} of ${SLURM_ARRAY_TASK_MAX} agents (job ${SLURM_JOB_ID})"',
+                "export AGENT_ID",
+            ]
+        )
 
     # load modules
     script_lines.extend(
@@ -279,8 +319,13 @@ def main(args):
     # default config template
     config_template_fp = os.path.join(args.frag_gnn_dp, "config", "template.yml")
     config_d = {}
+
+    # Check if running sweep script
+    is_sweep_script = "run_wandb_sweep.py" in args.python_script_fp
+
     # parse script kwargs
-    for idx, kwarg in enumerate(args.script_kwargs):
+    script_kwargs_list = args.script_kwargs if args.script_kwargs else []
+    for idx, kwarg in enumerate(script_kwargs_list):
         assert "=" in kwarg, kwarg
         key, value = kwarg.split("=")
         # this useful for inference setup where some config are overridden via command line
@@ -294,13 +339,19 @@ def main(args):
         else:
             python_line += f" --{key} {value}"
         # add line breaks
-        if idx != len(args.script_kwargs) - 1:
+        if idx != len(script_kwargs_list) - 1:
             python_line += " \\\n"
 
         if key == "c" or key == "custom_fp":
             custom_config_fp = value
         if key == "t" or key == "template_fp":
             config_template_fp = value
+
+    # For sweep scripts with array jobs, append --job_id
+    if is_sweep_script and getattr(args, "num_sweep_agents", None) is not None:
+        if len(script_kwargs_list) > 0:
+            python_line += " \\\n"
+        python_line += " -j ${AGENT_ID}"
 
     # parse configs    file
     config_keywords = [
@@ -337,6 +388,7 @@ def main(args):
 
     # change keywords based model type
     data_keyword = ["config", "config_template", "spec_fp", "mol_fp", "split_dp"]
+
     if config_d["model_type"] in ["frag_gnn", "fragnnet"]:
         data_keyword.append("frag_dp")
     elif config_d["model_type"] in ["iceberg_gen", "iceberg_inten"]:
@@ -349,12 +401,18 @@ def main(args):
 
     if config_d["finetune"] == "true":
         data_keyword.append(config_d["finetune_pretrained_ckpt"])
-    print(f"> model type: {config_d['model_type']}")
+
+    if is_sweep_script:
+        print(f"> running wandb sweep script with model_type: {config_d['model_type']}")
+    else:
+        print(f"> model type: {config_d['model_type']}")
+
     # copy data files
     script_lines.extend(["#copy files"])
 
     for name in data_keyword:
         path_value = config_d[name]
+
         if path_value.startswith("./"):
             path_value = path_value[2:]
         if name not in config_d:
@@ -493,6 +551,16 @@ if __name__ == "__main__":
     parser.add_argument("--time", type=int, default=3)
     parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
     parser.add_argument("--job_name", type=str, required=False, help="name of the job")
+    parser.add_argument(
+        "--num_sweep_agents",
+        type=int,
+        default=None,
+        help=(
+            "Number of parallel agents for wandb sweep (creates SLURM array job). "
+            "Each agent will run the same sweep configuration independently. "
+            "Example: --num_sweep_agents=10 creates --array=0-9"
+        ),
+    )
     parser.add_argument(
         "--cc_account",
         default="rrg-dwishart",
