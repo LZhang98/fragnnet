@@ -233,7 +233,7 @@ def main(args):
             "    torch_geometric==2.6.1 \\",
             "    torch_scatter==2.1.2 \\",
             "    pandas \\",
-            "    wandb \\",
+            "    wandb==0.21.2 \\",  # 0.24 is known to have upload bugs
             "    tqdm \\",
             "    scipy==1.15.2 \\",
             "    joblib==1.3.2 \\",
