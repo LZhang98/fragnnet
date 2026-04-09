@@ -874,7 +874,7 @@ def get_slurm_job_id() -> str | None:
     return os.getenv("SLURM_JOB_ID", default=None)
 
 
-def get_slurm_allocated_cores(job_id: str) -> Optional[int]:
+def get_slurm_allocated_cores(job_id: str) -> int | None:
     """Query SLURM for number of CPUs allocated to a job.
 
     Prefers the ``SLURM_CPUS_PER_TASK`` environment variable (set by SLURM
