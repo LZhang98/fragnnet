@@ -874,9 +874,22 @@ def get_slurm_job_id() -> str | None:
     return os.getenv("SLURM_JOB_ID", default=None)
 
 
-def get_slurm_allocated_cores(job_id: str) -> int | None:
-    """Query SLURM for number of CPUs allocated to a job."""
+def get_slurm_allocated_cores(job_id: str) -> Optional[int]:
+    """Query SLURM for number of CPUs allocated to a job.
 
+    Prefers the ``SLURM_CPUS_PER_TASK`` environment variable (set by SLURM
+    for every task, including array tasks) and falls back to ``scontrol``
+    when that variable is absent.  The ``scontrol`` path takes the first
+    match so it works correctly for array jobs, which emit one line per task.
+    """
+    cpus_env = os.getenv("SLURM_CPUS_PER_TASK")
+    if cpus_env is not None:
+        try:
+            return int(cpus_env)
+        except ValueError:
+            pass  # fall back to scontrol
+
+    # fallback: use scontrol and take only the first line
     try:
         command = f"scontrol show job {job_id} | grep -oP 'NumCPUs=\\K\\d+'"
         result = subprocess.run(
@@ -884,12 +897,15 @@ def get_slurm_allocated_cores(job_id: str) -> int | None:
             shell=True,
             check=True,
             capture_output=True,
+            text=True,  # get str directly
         )
-        cpus_allocated = result.stdout.decode("utf-8").strip()
-        return int(cpus_allocated)
-    except subprocess.CalledProcessError as e:
-        print(f"Error running command: {e}")
-    return None
+        lines = result.stdout.strip().splitlines()
+        if not lines:
+            return None
+        return int(lines[0])  # first line only; array jobs may have multiple
+    except (subprocess.CalledProcessError, ValueError) as e:
+        print(f"Error querying SLURM for job {job_id}: {e}")
+        return None
 
 
 def get_core_count() -> int:
