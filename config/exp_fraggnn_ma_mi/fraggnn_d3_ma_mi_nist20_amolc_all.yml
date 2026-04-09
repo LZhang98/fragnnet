@@ -139,14 +139,6 @@ mlp_dropout: 0.2    # from fragnnet_d3/s0.yml
 weight_decay: 0.01
 
 # ============================================================================
-# Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
-# ============================================================================
-mol_dropout: 0.2    # from fragnnet_d3/s0.yml
-frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.2    # from fragnnet_d3/s0.yml
-weight_decay: 0.01
-
-# ============================================================================
 # LR Schedule — cosine warmup + decay
 # ~1300 steps/epoch × 300 epochs = ~390k total steps
 # warmup: first ~4 epochs (5000 steps); cosine decay to 1% of peak by end
