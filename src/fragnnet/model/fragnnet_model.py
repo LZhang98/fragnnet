@@ -565,10 +565,15 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # create interstage
         frag_ndata, frag_edata = [], []
         # node atom embeddings
-        if "cc" in self.frag_node_feats:
+        # frag_node_mask is needed by cc, boundary_cc, and boundary_pair features
+        _needs_frag_node_mask = any(
+            f in self.frag_node_feats for f in ("cc", "boundary_cc", "boundary_pair")
+        )
+        if _needs_frag_node_mask:
             frag_node_mask = th_long_to_mask(
                 get_node_feats(frag_x, frag_node_feat_idxs, "cc").to(device)
             )
+        if "cc" in self.frag_node_feats:
             frag_node_mask_idxs = th.nonzero(frag_node_mask).long()
             # Compute offset to convert local atom indices to global batch indices
             frag_node_offsets = mol_num_nodes[
