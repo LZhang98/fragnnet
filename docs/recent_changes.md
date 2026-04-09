@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-04-09
+
+### Edge feature ablation: bcc vs bp vs bp_bcc
+
+Compared three edge feature variants trained on NIST20 (100 epochs, same architecture/seed).
+
+| Variant | Params | Model size | val_cos_sim_0.01 (best) | val_loss_best |
+|---------|--------|-----------|------------------------|---------------|
+| bcc | 1.7 M | 6.7 MB | 0.6789 | −2.4658 |
+| bp | 1.8 M | 7.2 MB | **0.6888** | −2.5097 |
+| bp_bcc | 1.9 M | 7.5 MB | 0.6885 | −2.5107 |
+
+**Conclusion: use `bp`.**
+
+- `bp` gains +1.0pp val cos_sim over `bcc`
+- `bp_bcc` adds ~100K params over `bp` for negligible val improvement (0.6888 vs 0.6885)
+- Bond-path (bp) features are the driver of improvement; bcc features appear redundant when bp is present
+
+---
+
 ## 2026-02-24
 
 ### Dependency audit from `ccx_run` merge

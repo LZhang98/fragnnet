@@ -33,6 +33,7 @@ wandb_tags:
 - nce
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
+- boundary_pair   # boundary_pair node feature in fragment GNN
 
 # ============================================================================
 # Data File Paths
@@ -60,7 +61,6 @@ frag_params:
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
     - boundary_pair     # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
-    - boundary_cc       # connected-component index within DAG of atoms at fragmentation boundary (i.e. cut bonds)
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
@@ -129,6 +129,14 @@ devices: 1
 min_epochs: 100
 max_epochs: 100
 debug_overfit: False
+
+# ============================================================================
+# Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
+# ============================================================================
+mol_dropout: 0.2    # from fragnnet_d3/s0.yml
+frag_dropout: 0.1   # from fragnnet_d3/s0.yml
+mlp_dropout: 0.2    # from fragnnet_d3/s0.yml
+weight_decay: 0.01
 
 # ============================================================================
 # Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
