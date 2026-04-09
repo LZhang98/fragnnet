@@ -129,7 +129,7 @@ def main():
                         best_ckpt_wandb_fp = file.name
                         best_epoch = epoch
 
-            if best_ckpt_wandb_fp is None:
+            if best_ckpt_wandb_fp is None and any(file.name.endswith(".ckpt") for file in files):
                 print(
                     f"{i + 1}/{total_runs} Run {run.name[:50]}: No epoch checkpoints found; deleting all .ckpt files"
                 )
