@@ -471,7 +471,8 @@ checkpoint_save_top_k: 1  # Keep the best k checkpoints by checkpoint_metric.
 upload_checkpoints: False  # Upload checkpoints to W&B artifacts when running online.
 disable_checkpoints: False  # Disable checkpoint saving entirely.
 delete_checkpoints: False  # Delete checkpoint files after training finishes.
-pl_enable_progress_bar: True
+pl_enable_progress_bar: False
+pandarallel_enable_progress_bar: False
 sparse_cosine_similarity: False
 debug_val_loop_trigger: False
 debug_bypass_train_val: False

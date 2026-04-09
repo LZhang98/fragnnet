@@ -466,7 +466,8 @@ def init_run(
 
     # setup pandarallel
     pandarallel.initialize(
-        progress_bar=config_d["pl_enable_progress_bar"], nb_workers=get_core_count()
+        progress_bar=config_d["pandarallel_enable_progress_bar"],
+        nb_workers=get_core_count(),
     )
 
     # setup model
