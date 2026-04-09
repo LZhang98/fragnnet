@@ -487,6 +487,11 @@ def main(args):
     )
 
     script_str = "\n".join(script_lines)
+    if not script_str.startswith("#!"):
+        raise ValueError("Generated script must start with a shebang (#!).")
+
+    # Defensive normalization to avoid accidental leading blank lines/BOM.
+    script_str = script_str.lstrip("\ufeff")
     assert os.path.isdir(args.script_dp), args.script_dp
     script_fp = os.path.join(args.script_dp, f"{args.job_name}.sh")
     with open(script_fp, "w") as script_file:
