@@ -238,6 +238,7 @@ def main(args):
                 "else",
                 "    AGENT_ID=${SLURM_ARRAY_TASK_ID}",
                 "fi",
+                'echo "SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID}"',
                 'echo "Running as sweep agent ${AGENT_ID} of ${SLURM_ARRAY_TASK_MAX} agents (job ${SLURM_JOB_ID})"',
                 "export AGENT_ID",
             ]
