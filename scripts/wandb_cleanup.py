@@ -130,8 +130,9 @@ def main():
                         best_epoch = epoch
 
             if best_ckpt_wandb_fp is None:
-                print(f"{i + 1}/{total_runs} Run {run.name[:50]}: No valid checkpoints")
-                continue
+                print(
+                    f"{i + 1}/{total_runs} Run {run.name[:50]}: No epoch checkpoints found; deleting all .ckpt files"
+                )
 
         # Delete all other .ckpt files (but skip recent ones)
         deleted_in_run = 0
