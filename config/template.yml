@@ -460,12 +460,17 @@ nan_module_hook: False
 debug_zero_loss: False
 checkpoint_metric: epoch
 checkpoint_metric_mode: max
-checkpoint_save_last: True
-checkpoint_every_n_epochs: 1 # Save checkpoint every n epochs
-checkpoint_save_top_k: 1 # Number of top checkpoints keep based on metric
-upload_checkpoints: False
-disable_checkpoints: False
-delete_checkpoints: False
+checkpoint_save_last: True  # Keep the final checkpoint for resume/debugging.
+checkpoint_every_n_epochs: 1  # Save a checkpoint every n epochs.
+checkpoint_save_top_k: 1  # Keep the best k checkpoints by checkpoint_metric.
+# Modes:
+# - online: set upload_checkpoints=True to upload checkpoints to W&B artifacts.
+# - offline/local-only: keep upload_checkpoints=False and store checkpoints on disk.
+# - no checkpoints: set disable_checkpoints=True for fast debug runs.
+# - cleanup after training: set delete_checkpoints=True if checkpoints are temporary.
+upload_checkpoints: False  # Upload checkpoints to W&B artifacts when running online.
+disable_checkpoints: False  # Disable checkpoint saving entirely.
+delete_checkpoints: False  # Delete checkpoint files after training finishes.
 pl_enable_progress_bar: True
 sparse_cosine_similarity: False
 debug_val_loop_trigger: False
