@@ -422,7 +422,10 @@ def main(args):
             # check if frag_dp is a file or dir, if it is file, copy it and unpack
             tar_ext = None
             print(path_value)
-            if args.python_script_fp.rsplit("/", 1)[-1] == "run_pl_model_fit.py":
+            if args.python_script_fp.rsplit("/", 1)[-1] in [
+                "run_pl_model_fit.py",
+                "run_wandb_sweep.py",
+            ]:
                 frag_dp = path_value.rsplit("/", 1)[0]  # this is for training setup
             else:
                 frag_dp = path_value
