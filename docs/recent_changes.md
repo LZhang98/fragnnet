@@ -4,6 +4,39 @@
 
 ## 2026-04-09
 
+### Weighted sampler ablation: inst_weighted / inst_frag_mode_weighted / inst_frag_mode_group_weighted
+
+All three runs hit SLURM time limits (epochs 15, 32, 28 of 100) — results are not converged and
+not comparable to the 100-epoch baseline. The weighted samplers produce ~3–4× more mini-batches
+per epoch than the baseline (~1,376), making each epoch much slower.
+
+| Variant | mini-batches/epoch | Epochs done | val_cos_sim_0.01 (best) |
+|---------|--------------------|-------------|------------------------|
+| inst_weighted | ~4,000 | 15 | N/A (too early) |
+| inst_frag_mode_weighted | ~4,530 | 32 | 0.6420 |
+| inst_frag_mode_group_weighted | ~5,300 | 28 | 0.6083 |
+
+**Why `group_weighted` is much worse even at equal epochs:**
+
+The `adduct_inst_type_frag_mode_group` sampler applies a compound weight:
+
+```
+weight = 1 / (class_count × specs_per_group)
+```
+
+This doubly-downweights molecules that appear at many CEs. Well-sampled molecules
+(e.g. a common HCD/FT/[M+H]+ compound with 5 CE spectra) get weight `~1/(65k × 5)` —
+essentially invisible to training. This starves the model of clean signal from the
+easy/common regime early in training, leading to noisier gradients and slower convergence.
+
+The plain `adduct_inst_type_frag_mode` sampler only balances by (adduct, inst, frag_mode)
+class — a milder intervention that does not destroy the signal from the common regime.
+
+**Conclusion:** Do not use `_group` compound weighting. Need longer wall-time (or
+`limit_train_batches`) to properly evaluate any of these weighted samplers.
+
+---
+
 ### Edge feature ablation: bcc vs bp vs bp_bcc
 
 Compared three edge feature variants trained on NIST20 (100 epochs, same architecture/seed).
