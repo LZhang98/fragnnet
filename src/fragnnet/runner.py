@@ -30,12 +30,13 @@ from fragnnet.utils.profile_utils import MyPyTorchProfiler
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
 
 
-def load_config(template_fp: str, custom_fp: str | None, override: list) -> dict:
+def load_config(template_fp: str, custom_fp: str | None, override: list | None) -> dict:
     """load config from template and custom yaml files
         if custom_fp is given, overwrite template config with custom config
     Args:
         template_fp (str): Path to the template YAML file.
         custom_fp (str | None): Path to the custom YAML file.
+        override (list | None): List of key-value pairs to override in the config.
 
     Returns:
         dict: configuration dictionary.
@@ -51,21 +52,24 @@ def load_config(template_fp: str, custom_fp: str | None, override: list) -> dict
             custom_d = yaml.load(custom_file, Loader=yaml.FullLoader)
         assert all(k in config_d for k in custom_d), set(custom_d.keys()) - set(config_d.keys())
         config_d = deep_update(config_d, custom_d)
-    # override
-    for item in override:
-        key, value = item.split("=", 1)
-        keys = key.split(".")
-        cur = config_d
-        for k in keys[:-1]:
-            if k in cur:
-                cur = cur[k]
-            else:
-                msg = f"{k} not in config"
-                raise KeyError(msg)
 
-        print(f"Updating {keys[-1]} from {cur[keys[-1]]} to {value}", flush=True)
-        # here is not safe way to load, but I'll skip this issue now
-        cur[keys[-1]] = yaml.safe_load(value)
+    # override
+    if override is not None:
+        for item in override:
+            key, value = item.split("=", 1)
+            keys = key.split(".")
+            cur = config_d
+            for k in keys[:-1]:
+                if k in cur:
+                    cur = cur[k]
+                else:
+                    msg = f"{k} not in config"
+                    raise KeyError(msg)
+
+            print(f"Updating {keys[-1]} from {cur[keys[-1]]} to {value}", flush=True)
+            # here is not safe way to load, but I'll skip this issue now
+            cur[keys[-1]] = yaml.safe_load(value)
+
     return config_d
 
 
@@ -273,7 +277,6 @@ def validate_sampler_config(config_d: dict) -> None:
         ValueError: If the sampler configuration is invalid.
     """
 
-
     _VALID_SIMPLE_GROUP_SAMPLER_TYPES = {
         "group",
         "mol",
@@ -283,14 +286,19 @@ def validate_sampler_config(config_d: dict) -> None:
         "adduct_inst_type_frag_mode",
         "adduct_inst_type_frag_mode_group",
     }
-    if config_d.get("simple_group_sampler") and config_d.get("simple_group_sampler_type") not in _VALID_SIMPLE_GROUP_SAMPLER_TYPES:
+    if (
+        config_d.get("simple_group_sampler")
+        and config_d.get("simple_group_sampler_type") not in _VALID_SIMPLE_GROUP_SAMPLER_TYPES
+    ):
         raise ValueError(
             f"simple_group_sampler_type must be one of {sorted(_VALID_SIMPLE_GROUP_SAMPLER_TYPES)} "
             f"(got '{config_d['simple_group_sampler_type']}')"
         )
 
     if config_d["dynamic_batch_sampler"] and config_d["dual_group_dynamic_batch_sampler"]:
-        raise ValueError("dynamic_batch_sampler and dual_group_dynamic_batch_sampler are mutually exclusive")
+        raise ValueError(
+            "dynamic_batch_sampler and dual_group_dynamic_batch_sampler are mutually exclusive"
+        )
 
     if config_d["dynamic_batch_sampler"]:
         if config_d["model_type"] != "frag_gnn":
@@ -308,10 +316,11 @@ def validate_sampler_config(config_d: dict) -> None:
         if config_d["dynamic_batch_sampler_max"] is None:
             raise ValueError("Dynamic batch sampler requires dynamic_batch_sampler_max to be set")
 
-    if  config_d["dual_group_dynamic_batch_sampler"]:
-
+    if config_d["dual_group_dynamic_batch_sampler"]:
         if config_d["model_type"] != "frag_gnn":
-            raise ValueError("Dual-group dynamic batch sampler can only be used with frag_gnn model")
+            raise ValueError(
+                "Dual-group dynamic batch sampler can only be used with frag_gnn model"
+            )
         if config_d["automatic_optimization"]:
             raise ValueError(
                 f"Dual-group dynamic batch sampler cannot be used with automatic optimization "
@@ -330,7 +339,9 @@ def validate_sampler_config(config_d: dict) -> None:
             )
 
 
-def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list):
+def init_run(
+    template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, override: list | None
+) -> L.LightningModule:
     """
     Main entry point for initializing and running a training/validation/testing job.
     Args:
@@ -338,7 +349,7 @@ def init_run(template_fp: str, custom_fp: str, wandb_mode: str, job_id: str, ove
         custom_fp (str | None): Path to the custom YAML config file (can be None).
         wandb_mode (str): Wandb mode ["online", "offline", "disabled"].
         job_id (str): Unique job identifier for checkpointing and wandb.
-
+        override (list | None): List of key-value pairs to override in the config.
     Returns:
                     model: The trained model (LightningModule).
     """

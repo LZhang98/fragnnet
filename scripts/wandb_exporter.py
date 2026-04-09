@@ -243,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 
+
 def scan_local_runs(out_dir: str | Path = "./wandb") -> list[dict]:
     """Scan a local export directory for wandb run exports.
 
@@ -267,7 +268,9 @@ def scan_local_runs(out_dir: str | Path = "./wandb") -> list[dict]:
             run_id = stem[len("wandb_run_") : -len("_history")]
         else:
             run_id = stem
-        rec = runs.setdefault(run_id, {"id": run_id, "dir": csv_path.parent, "csv": None, "txt": None})
+        rec = runs.setdefault(
+            run_id, {"id": run_id, "dir": csv_path.parent, "csv": None, "txt": None}
+        )
         rec["csv"] = csv_path
 
     for txt_path in out_p.rglob("wandb_run_*_history.txt"):
@@ -276,7 +279,9 @@ def scan_local_runs(out_dir: str | Path = "./wandb") -> list[dict]:
             run_id = stem[len("wandb_run_") : -len("_history")]
         else:
             run_id = stem
-        rec = runs.setdefault(run_id, {"id": run_id, "dir": txt_path.parent, "csv": None, "txt": None})
+        rec = runs.setdefault(
+            run_id, {"id": run_id, "dir": txt_path.parent, "csv": None, "txt": None}
+        )
         rec["txt"] = txt_path
 
     # also consider directories directly under out_p that look like earlier CLI layout

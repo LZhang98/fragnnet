@@ -23,10 +23,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     def agent_func():
-        model = init_run(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id)
+        init_run(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, None)
 
     # load config, just for wandb info
-    config_d = load_config(args.template_fp, args.custom_fp)
+    config_d = load_config(args.template_fp, args.custom_fp, None)
 
     job_fp = os.path.join("job_id", f"{args.job_id}.id")
     if os.path.exists(job_fp):
