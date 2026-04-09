@@ -39,7 +39,7 @@ def should_delete_all_ckpts(run):
     run_name_lower = run.name.lower()
 
     # These model families are explicitly marked for full checkpoint cleanup.
-    target_keywords = ["massformer", "neims"]
+    target_keywords = ["massformer", "neims", "nemis", "_gnn_", "gnn_sam", "msg_gnn"]
     has_target = any(keyword in run_name_lower for keyword in target_keywords)
 
     # Keep all checkpoints for protected benchmark datasets.
