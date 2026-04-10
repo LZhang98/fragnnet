@@ -1,7 +1,6 @@
 import re
 from typing import Literal
 
-import numpy as np
 import rdkit.Chem as Chem
 from pyteomics.mass import Composition
 
@@ -305,10 +304,11 @@ def isotope_offsets_from_formula(
         return []
 
     mono_mass = peaks[0][0]
+    mono_intensity = peaks[0][1]
     return [
-        (mass - mono_mass, intensity)
+        (mass - mono_mass, intensity / mono_intensity)
         for mass, intensity in peaks[1:]
-        if intensity >= threshold
+        if (intensity / mono_intensity) >= threshold
     ]
 
 

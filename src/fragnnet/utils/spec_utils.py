@@ -1502,7 +1502,7 @@ def detect_isotope_peaks_formula_aware(
             if lo >= hi:
                 continue
             mono_int = sorted_ints[lo:hi].max()
-            if check_intensity and mono_int < sorted_ints[i]:
+            if check_intensity and exp_ratio <= 1.0 and mono_int < sorted_ints[i]:
                 continue
             if mono_int > 0:
                 obs_ratio = sorted_ints[i] / mono_int
@@ -1722,15 +1722,15 @@ def detect_isotope_peaks_for_training(
     max_isotope: int = 2,
     require_monotone: bool = True,
     require_envelope: bool = True,
-    ratio_lo: float = 0.2,
-    ratio_hi: float = 5.0,
+    ratio_lo: float = 0.05,
+    ratio_hi: float = 10.0,
     aggressive: bool = True,
     aggressive_min_pairs: int = 2,
-    aggressive_cv: float = 0.4,
-    aggressive_single_pair_min_f: float = 0.15,
+    aggressive_cv: float = 0.6,
+    aggressive_single_pair_min_f: float = 0.05,
     formula: str | None = None,
     prec_type: str | None = None,
-    min_coiso_fraction: float = 0.02,
+    min_coiso_fraction: float = 0.05,
     max_leak_factor: float = 1.5,
 ) -> np.ndarray:
     """Detect isotope leak peaks for training-data cleaning.
@@ -1998,7 +1998,7 @@ def detect_isotope_peaks_for_training(
     def _frag_expected(m0_mz: float, k: int) -> float:
         """Return per-fragment expected M+k/M+0 ratio given its M+0 m/z."""
         if mol_counts is None or k not in r_leak or prec_neutral_mass <= 0:
-            return leak_ratios[k]  # fallback: use R_k directly
+            return leak_ratios.get(k, 0.0)  # fallback: use R_k directly
         neutral_frag = m0_mz - adduct_delta_mass
         mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
         r_exp_frag = _expected_mk_ratio(mol_counts, mol_scale, k, adduct_counts_parsed)
@@ -2015,41 +2015,47 @@ def detect_isotope_peaks_for_training(
                 continue
             m0_mz, m0_int = m0
 
-            if require_monotone and m0_int <= frag_int:
-                continue
             if m0_int <= 0:
                 continue
 
             obs = frag_int / m0_int
             R_expected = _frag_expected(m0_mz, k)
+
+            if require_monotone and R_expected <= 1.0 and m0_int <= frag_int:
+                continue
+
             if not (ratio_lo * R_expected <= obs <= ratio_hi * R_expected):
                 continue
 
             # Envelope coherence: all intermediate M+j peaks must be present
             # and match their per-fragment expected ratio before accepting M+k.
             if require_envelope and k > 1:
-                envelope_ok = True
-                for j in range(1, k):
-                    if j not in leak_ratios:
-                        envelope_ok = False
-                        break
-                    j_tol = mz_tol if j == 1 else mz_tol * 2
-                    mj = _find_peak(frag_mz - (k - j) * C13_SPACING, j_tol)
-                    if mj is None:
-                        envelope_ok = False
-                        break
-                    _, mj_int = mj
-                    if require_monotone and mj_int >= m0_int:
-                        envelope_ok = False
-                        break
-                    if m0_int > 0:
-                        obs_j = mj_int / m0_int
-                        R_exp_j = _frag_expected(m0_mz, j)
-                        if not (ratio_lo * R_exp_j <= obs_j <= ratio_hi * R_exp_j):
+                # Disable envelope requirement for Cl/Br where M+2 dominates M+1
+                if k == 2 and R_expected > _frag_expected(m0_mz, 1):
+                    pass
+                else:
+                    envelope_ok = True
+                    for j in range(1, k):
+                        if j not in leak_ratios:
                             envelope_ok = False
                             break
-                if not envelope_ok:
-                    continue
+                        j_tol = mz_tol if j == 1 else mz_tol * 2
+                        mj = _find_peak(frag_mz - (k - j) * C13_SPACING, j_tol)
+                        if mj is None:
+                            envelope_ok = False
+                            break
+                        _, mj_int = mj
+                        R_exp_j = _frag_expected(m0_mz, j)
+                        if require_monotone and R_exp_j <= 1.0 and mj_int >= m0_int:
+                            envelope_ok = False
+                            break
+                        if m0_int > 0:
+                            obs_j = mj_int / m0_int
+                            if not (ratio_lo * R_exp_j <= obs_j <= ratio_hi * R_exp_j):
+                                envelope_ok = False
+                                break
+                    if not envelope_ok:
+                        continue
 
             is_isotope[sort_idx[i]] = True
             break
