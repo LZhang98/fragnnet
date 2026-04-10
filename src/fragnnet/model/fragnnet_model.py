@@ -251,6 +251,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.frag_pool = build_pool_module(frag_pool_type, frag_hidden_size)
         self.frag_embed_combine = frag_embed_combine
         self.frag_pool_combine = frag_pool_combine
+        self.frag_pool_preserves_hidden_size = self.frag_pool_type not in [
+            "mean_max_sum",
+            "mean_std_softmax",
+        ]
+        if self.frag_pool_combine in ["subtract", "add"] and not self.frag_pool_preserves_hidden_size:
+            raise ValueError(
+                "frag_pool_combine must be 'none' when frag_pool_type expands feature width. "
+                f"Received frag_pool_type={self.frag_pool_type!r}, "
+                f"frag_pool_combine={self.frag_pool_combine!r}."
+            )
         self.mlp_output_format = mlp_output_format
 
         # determine mlp input dims
@@ -657,7 +667,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 valid = boundary_idxs[:, 1] < mol_embed_gnn.shape[0]
                 boundary_idxs = boundary_idxs[valid]
                 boundary_embed = th.index_select(mol_embed_gnn, 0, boundary_idxs[:, 1])
-                boundary_embed = self.mol_pool(boundary_embed, boundary_idxs[:, 0])
+                boundary_embed = self.mol_pool(
+                    boundary_embed, boundary_idxs[:, 0], dim_size=num_frags_total
+                )
             else:
                 boundary_embed = th.zeros(
                     num_frags_total, mol_embed_gnn.shape[1], device=device, dtype=mol_embed_gnn.dtype

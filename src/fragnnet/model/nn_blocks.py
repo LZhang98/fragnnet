@@ -30,6 +30,45 @@ from fragnnet.utils.nn_utils import get_clones
 logger = logging.getLogger(__name__)
 
 
+class PoolWithDimSizeAdapter(nn.Module):
+    """Normalize pooling modules to a common interface with optional ``dim_size``."""
+
+    def __init__(self, pool_module: nn.Module):
+        super().__init__()
+        self.pool_module = pool_module
+
+    def forward(
+        self,
+        x: th.Tensor,
+        index: th.Tensor | None = None,
+        ptr: th.Tensor | None = None,
+        dim_size: int | None = None,
+        dim: int = -2,
+        **kwargs,
+    ) -> th.Tensor:
+        try:
+            pooled = self.pool_module(
+                x,
+                index=index,
+                ptr=ptr,
+                dim_size=dim_size,
+                dim=dim,
+                **kwargs,
+            )
+        except TypeError as exc:
+            if "dim_size" not in str(exc):
+                raise
+            pooled = self.pool_module(x, index)
+
+        if dim_size is None or pooled.shape[0] == dim_size:
+            return pooled
+
+        out = x.new_zeros((dim_size, pooled.shape[1]))
+        if pooled.shape[0] > 0:
+            out[: pooled.shape[0]] = pooled
+        return out
+
+
 class ZerosAggregation(nn.Module):
     """
     Zero Aggregation module.
@@ -978,7 +1017,7 @@ def build_pool_module(pool_type: str, node_dim: int):
         assert pool_type == "none", pool_type
         # just return 0s
         pool_module = ZerosAggregation()
-    return pool_module
+    return PoolWithDimSizeAdapter(pool_module)
 
 
 def mask_prediction_by_mass(raw_prediction, prec_mass_idx, prec_mass_offset):
