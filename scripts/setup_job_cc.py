@@ -348,12 +348,6 @@ def main(args):
         if key == "t" or key == "template_fp":
             config_template_fp = value
 
-    # For sweep scripts with array jobs, append --job_id
-    if is_sweep_script and getattr(args, "num_sweep_agents", None) is not None:
-        if len(script_kwargs_list) > 0:
-            python_line += " \\\n"
-        python_line += " -j ${AGENT_ID}"
-
     # parse configs    file
     config_keywords = [
         "spec_fp",

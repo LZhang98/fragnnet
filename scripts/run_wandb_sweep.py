@@ -1,8 +1,14 @@
 import argparse
+import logging
 import os
 
 import wandb
 from fragnnet.runner import init_run, load_config
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -21,13 +27,18 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--sweep_key", type=str, required=True)
     args = parser.parse_args()
 
+    logger.info(f"Starting wandb sweep script with args: {args}")
+
     def agent_func():
+        logger.info("Initializing run in agent_func()")
         init_run(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, None)
 
     # Only load config if needed for agent (avoid wandb calls in job mode)
     if args.job_id or os.path.exists(os.path.join("job_id", f"{args.job_id}.id")):
+        logger.info("Running agent directly for job_id: %s", args.job_id)
         agent_func()
     else:
+        logger.info("Setting up wandb.agent with sweep_key: %s", args.sweep_key)
         config_d = load_config(args.template_fp, args.custom_fp, None)
         wandb.agent(
             args.sweep_key,
