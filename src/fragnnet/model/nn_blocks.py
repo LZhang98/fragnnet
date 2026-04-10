@@ -45,18 +45,29 @@ class ZerosAggregation(nn.Module):
         super().__init__()
         self.dummy_agg = aggr.SumAggregation()
 
-    def forward(self, x, batch):
+    def forward(
+        self,
+        x: th.Tensor,
+        index: th.Tensor | None = None,
+        ptr: th.Tensor | None = None,
+        dim_size: int | None = None,
+        dim: int = -2,
+        **kwargs,
+    ) -> th.Tensor:
         """
         Forward pass for zero aggregation.
 
         Args:
             x (torch.Tensor): Input features.
-            batch (torch.Tensor): Batch indices for aggregation.
+            index (torch.Tensor | None): Group indices for aggregation.
+            ptr (torch.Tensor | None): CSR-style segment pointers.
+            dim_size (int | None): Explicit number of output groups.
+            dim (int): Aggregation dimension.
 
         Returns:
             torch.Tensor: Zero tensor with the same shape as the aggregated result.
         """
-        agg = self.dummy_agg(x, batch)
+        agg = self.dummy_agg(x, index=index, ptr=ptr, dim_size=dim_size, dim=dim, **kwargs)
         return 0.0 * agg
 
 
@@ -864,12 +875,12 @@ class SetTransformer(nn.Module):
 
             if self.return_nodes:
                 # Decoder: original inputs attend over encoded inducing points.
-                x_decoded, _ = self.decoder_attn(x_padded, h, h)  # (num_batches, max_size, input_dim)
+                x_decoded, _ = self.decoder_attn(
+                    x_padded, h, h
+                )  # (num_batches, max_size, input_dim)
                 x_decoded = self.decoder_fc(x_decoded)  # (num_batches, max_size, output_dim)
                 # Strip padding and concatenate back to (total_elements, output_dim).
-                return th.cat(
-                    [x_decoded[i, : set_sizes[i]] for i in range(num_batches)], dim=0
-                )
+                return th.cat([x_decoded[i, : set_sizes[i]] for i in range(num_batches)], dim=0)
             else:
                 x_agg = h.mean(dim=1)  # (num_batches, input_dim)
                 return self.fc(x_agg)
