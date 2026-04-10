@@ -601,7 +601,15 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
             # Aggregate CC atom embeddings per fragment using pooling
             frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
-            frag_node_mask_embed = self.mol_pool(frag_node_embed, frag_node_mask_idxs[:, 0])
+            # PowerMeanAggregation computes x^p which is NaN for negative x with non-integer p.
+            # GNN outputs can be negative (batch/graph norm → linear). Clamp to non-negative
+            # to prevent NaN when mol_pool_type='powermean' after the first epoch updates p.
+            _cc_pool_input = (
+                frag_node_embed.clamp(min=0)
+                if self.mol_pool_type == "powermean"
+                else frag_node_embed
+            )
+            frag_node_mask_embed = self.mol_pool(_cc_pool_input, frag_node_mask_idxs[:, 0])
 
             # frag_node_mask_embed can be one of following:
             # 1. add/sub: Simple arithmetic operations
