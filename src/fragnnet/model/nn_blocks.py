@@ -68,7 +68,7 @@ class ZerosAggregation(nn.Module):
             torch.Tensor: Zero tensor with the same shape as the aggregated result.
         """
         agg = self.dummy_agg(x, index=index, ptr=ptr, dim_size=dim_size, dim=dim, **kwargs)
-        return 0.0 * agg
+        return th.zeros_like(agg)
 
 
 class GNN(nn.Module):

@@ -163,9 +163,9 @@ frag_num_layers: 4  # Number of GNN layers for fragment encoding
 frag_gnn_type: GINE  # GNN architecture for fragments: ["GIN", "GINE", "GCN", "GAT", "PNA"]
 frag_dropout: 0.0  # Dropout rate for fragment GNN
 frag_normalization: batch  # Normalization: ["batch", "layer", "none"]
-frag_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "mean_max_sum", "mean_std_softmax", "none"]
+frag_pool_type: none  # Pooling method: ["sum", "mean", "max", "attention", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
 frag_embed_combine: cat  # How to combine fragment embeddings: ["add", "cat"]
-frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "cat"]
+frag_pool_combine: subtract  # How to combine pooled features: ["add", "subtract", "none"]; use "none" with frag_pool_type in ["mean_max_sum", "mean_std_softmax"]
 
 # ============================================================================
 # MLP/Output Configuration
