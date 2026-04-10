@@ -57,7 +57,7 @@ formula-normalised ratios of all in-spectrum (M, M+k) candidate pairs:
 
 $$\tilde{f}_i^{(k)} = \frac{r_i^{(k)}}{R_{\text{exp},i}^{(k)}},
 \qquad
-\hat{f}^{(k)} = \operatorname{median}_i\!\left(\tilde{f}_i^{(k)}\right)$$
+\hat{f}^{(k)} = \text{median}_i\!\left(\tilde{f}_i^{(k)}\right)$$
 
 Because genuine co-isolation makes $f$ a spectrum-level constant, all
 normalised values should cluster tightly.  Accept if the coefficient of
