@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_bp
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all
 wandb_tags:
 - retrieval
 - nist20
@@ -33,7 +33,7 @@ wandb_tags:
 - nce
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
-- boundary_pair   # new tag for experiment with boundary_pair node feature in fragment GNN
+- boundary_pair   # boundary_pair node feature in fragment GNN
 
 # ============================================================================
 # Data File Paths
@@ -55,7 +55,6 @@ frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
 # ============================================================================
 frag_params:
   pyg_node_feats:
-    - cc            # connected-component index within DAG
     - base_formula  # molecular formula of fragment (no H)
     - depth         # depth of fragment node in the DAG
     - h_formulae_idx     # index into H-transfer formula table
@@ -169,7 +168,7 @@ mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
 mol_pool_type: mean
 frag_pool_type: mean
-upload_checkpoints: True
+upload_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim

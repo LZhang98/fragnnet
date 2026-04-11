@@ -1,7 +1,6 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_frag_mode
+wandb_name: nist23_inchikey_fraggnn_d3_ma_mi_all_mol_conditon
 wandb_tags:
-- retrieval
-- nist20
+- nist23
 - d4
 - wr00
 - inchikey
@@ -24,13 +23,11 @@ wandb_tags:
 - m-h
 - m+na
 - m+cl
-- frag_mode
-- nce
 
-spec_fp: data/proc/nist20/spec_df.pkl
-mol_fp: data/proc/nist20/mol_df.pkl
-split_dp: data/split/nist20_ma_mi_inchikey
-frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
+spec_fp: data/proc/nist23/spec_df.pkl
+mol_fp: data/proc/nist23/mol_df.pkl
+split_dp: data/split/nist23_ma_mi_inchikey
+frag_dp: data/frag/nist23_ma_mi_d3_h4_isoFalse/dags
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
@@ -42,8 +39,7 @@ frag_params:
   preprocess: True
 spec_params:
   merge: False
-  nce: False
-  ace: True
+  nce: True
   merge_keep_ces: False
   preprocess: True
   prec_type_str: False
@@ -56,25 +52,18 @@ spec_params:
   inst_types:
     - "FT"
     - "QTOF"
-    - "IT"
-  frag_mode: True
-  frag_modes:
-    - "HCD"
-    - "CID"
+    - 'IT'
 mol_params:
   preprocess: True
 
-ce_insert_type: embed
-ce_insert_location: mol
-ce_insert_merge: True
+ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
+ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
+ce_insert_merge: True # merge ce embedding
 ce_insert_size: 32
 prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
-frag_mode_insert_location: mol
-frag_mode_insert_size: 32
-frag_mode_scale: False
 
 train_batch_size: 256
 eval_batch_size: 256
@@ -97,7 +86,7 @@ mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
-upload_checkpoints: True
+upload_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
   - cos_sim
@@ -107,14 +96,14 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: True
+dynamic_batch_sampler:  True
 
 group_sampler: False
-group_sampler_type: group
+group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 5
 simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5
-simple_group_sampler_type: group
+simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: False
 pandarallel_enable_progress_bar: False

@@ -33,7 +33,6 @@ wandb_tags:
 - nce
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
-- boundary_pair   # boundary_pair node feature in fragment GNN
 
 # ============================================================================
 # Data File Paths
@@ -55,11 +54,11 @@ frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
 # ============================================================================
 frag_params:
   pyg_node_feats:
+    - cc            # connected-component index within DAG
     - base_formula  # molecular formula of fragment (no H)
     - depth         # depth of fragment node in the DAG
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
-    - boundary_pair     # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
@@ -166,9 +165,9 @@ gaussian_renormalize: True # renormalize output with Gaussian smoothing before l
 mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
-mol_pool_type: mean
+mol_pool_type: mean_max_sum  # combine mean, max, and sum pooling for molecule embedding
 frag_pool_type: mean
-upload_checkpoints: True
+upload_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim

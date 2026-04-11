@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_frag_mode_scale
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_frag_mode
 wandb_tags:
 - retrieval
 - nist20
@@ -25,7 +25,6 @@ wandb_tags:
 - m+na
 - m+cl
 - frag_mode
-- frag_mode_scale
 - nce
 
 spec_fp: data/proc/nist20/spec_df.pkl
@@ -43,8 +42,8 @@ frag_params:
   preprocess: True
 spec_params:
   merge: False
-  nce: True
-  ace: False
+  nce: False
+  ace: True
   merge_keep_ces: False
   preprocess: True
   prec_type_str: False
@@ -75,7 +74,7 @@ inst_insert_location: mol
 inst_insert_size: 32
 frag_mode_insert_location: mol
 frag_mode_insert_size: 32
-frag_mode_scale: True
+frag_mode_scale: False
 
 train_batch_size: 256
 eval_batch_size: 256
@@ -98,7 +97,7 @@ mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
-upload_checkpoints: True
+upload_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
   - cos_sim

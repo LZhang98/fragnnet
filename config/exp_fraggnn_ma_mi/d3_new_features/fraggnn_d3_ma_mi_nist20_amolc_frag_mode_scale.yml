@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_ce_scale
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_frag_mode_scale
 wandb_tags:
 - retrieval
 - nist20
@@ -24,7 +24,8 @@ wandb_tags:
 - m-h
 - m+na
 - m+cl
-- ce_scale
+- frag_mode
+- frag_mode_scale
 - nce
 
 spec_fp: data/proc/nist20/spec_df.pkl
@@ -57,6 +58,10 @@ spec_params:
     - "FT"
     - "QTOF"
     - "IT"
+  frag_mode: True
+  frag_modes:
+    - "HCD"
+    - "CID"
 mol_params:
   preprocess: True
 
@@ -68,8 +73,9 @@ prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
-ce_scale: True
-ce_scaler_hidden_dim: 64
+frag_mode_insert_location: mol
+frag_mode_insert_size: 32
+frag_mode_scale: True
 
 train_batch_size: 256
 eval_batch_size: 256
@@ -92,7 +98,7 @@ mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
-upload_checkpoints: True
+upload_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
   - cos_sim

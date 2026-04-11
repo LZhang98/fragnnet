@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_amolc_inst_tol
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_ce_scale
 wandb_tags:
 - retrieval
 - nist20
@@ -24,11 +24,8 @@ wandb_tags:
 - m-h
 - m+na
 - m+cl
-- frag_mode
-- frag_mode_scale
 - ce_scale
 - nce
-- inst_type_loss_tol
 
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
@@ -60,10 +57,6 @@ spec_params:
     - "FT"
     - "QTOF"
     - "IT"
-  frag_mode: True
-  frag_modes:
-    - "HCD"
-    - "CID"
 mol_params:
   preprocess: True
 
@@ -75,9 +68,6 @@ prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
-frag_mode_insert_location: mol
-frag_mode_insert_size: 32
-frag_mode_scale: True
 ce_scale: True
 ce_scaler_hidden_dim: 64
 
@@ -102,7 +92,7 @@ mz_max: 1500.0
 sparse_cosine_similarity: True
 mol_pool_type: mean
 frag_pool_type: mean
-upload_checkpoints: True
+upload_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
   - cos_sim
@@ -129,8 +119,3 @@ pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
 skip_extra_losses: True
-
-# per-instrument-type tolerance
-inst_type_loss_tol:
-  FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor 0.002 Da
-  QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor 0.015 Da (covers truncation artifact)
