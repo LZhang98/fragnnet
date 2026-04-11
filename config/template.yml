@@ -47,6 +47,19 @@ spec_params:
   nce: False
   ace: False
   preprocess: False
+  # Monoisotopic target cleanup. When True, isotope peaks are removed from
+  # observed spectra before they become training/evaluation targets; isotope
+  # envelopes can then be added back as a post-process.
+  remove_isotope_peaks: False
+  remove_regular_isotope_peaks: True
+  remove_coisolation_peaks: True
+  remove_isotope_use_group_f: True
+  remove_isotope_max_isotope: 2
+  remove_isotope_min_coiso_fraction: 0.05
+  remove_isotope_max_leak_factor: 1.5
+  remove_isotope_group_min_count: 1
+  remove_isotope_group_max_cv: 1.0
+  remove_isotope_regular_mz_tol:
   unique_id: True
   counts: True
   test_ces:

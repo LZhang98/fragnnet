@@ -20,10 +20,12 @@ import numpy as np
 import pytest
 
 from fragnnet.utils.formula_utils import C13_SPACING
-from fragnnet.utils.spec_utils import (
+from fragnnet.utils.isotope_utils import (
     _expected_mk_ratio,
     _parse_adduct_counts,
     detect_isotope_peaks_for_training,
+    detect_isotope_peaks_for_training_cleanup,
+    estimate_coisolation_fraction_from_precursor,
 )
 
 # ---------------------------------------------------------------------------
@@ -479,6 +481,60 @@ class TestDetectIsotopePeaksFormulaMode:
         assert mask[1], "Fragment M+1 from f=0.3 co-isolation should be detected"
         assert not mask[0], "Fragment M+0 should not be flagged"
 
+    def test_precursor_f_estimator_recovers_coiso_fraction(self):
+        """Precursor residuals provide f that can be reused at group level."""
+        mzs, ints = self._build_coiso_spectrum(
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            prec_mz=243.098,
+            f=0.3,
+            frag_bases=(120.0,),
+            m0_ints=(2000.0,),
+            with_prec_residuals=True,
+        )
+        f_by_k = estimate_coisolation_fraction_from_precursor(
+            mzs,
+            ints,
+            prec_mz=243.098,
+            inst_type="FT",
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+        )
+        assert f_by_k[1] == pytest.approx(0.3, rel=1e-6)
+
+    def test_group_level_f_detects_spectrum_without_precursor_residuals(self):
+        """Borrowed group f fills the gap when this spectrum has no precursor f."""
+        mzs, ints = self._build_coiso_spectrum(
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            prec_mz=243.098,
+            f=0.3,
+            frag_bases=(120.0,),
+            m0_ints=(2000.0,),
+            with_prec_residuals=False,
+        )
+        mask_without_group_f = detect_isotope_peaks_for_training(
+            mzs,
+            ints,
+            prec_mz=243.098,
+            inst_type="FT",
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            aggressive=False,
+        )
+        mask_with_group_f = detect_isotope_peaks_for_training(
+            mzs,
+            ints,
+            prec_mz=243.098,
+            inst_type="FT",
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            aggressive=False,
+            coiso_fraction_by_k={1: 0.3},
+        )
+        assert not mask_without_group_f.any(), "No local f and no fallback should not fire"
+        assert mask_with_group_f[1], "Group-level f should recover the M+1 coisolation peak"
+
     def test_coiso_below_min_fraction_not_detected(self):
         """f=0.01 (1%) is below the default min_coiso_fraction=0.05 → all-False."""
         mzs, ints = self._build_coiso_spectrum(
@@ -590,7 +646,7 @@ class TestDetectIsotopePeaksFormulaMode:
         """Single fragment pair with large f detected via formula single-pair fallback."""
         # f=0.4 >> aggressive_single_pair_min_f=0.15; only 1 pair visible.
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.spec_utils import _parse_adduct_counts
+        from fragnnet.utils.isotope_utils import _parse_adduct_counts
 
         formula = "C10H14N2O5"
         prec_type = "[M+H]+"
@@ -620,7 +676,7 @@ class TestDetectIsotopePeaksFormulaMode:
     def test_single_pair_formula_fallback_small_f_rejected(self):
         """Single fragment pair with f=0.01 (below threshold) is not flagged."""
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.spec_utils import _parse_adduct_counts
+        from fragnnet.utils.isotope_utils import _parse_adduct_counts
 
         formula = "C10H14N2O5"
         prec_type = "[M+H]+"
@@ -701,7 +757,7 @@ class TestDetectIsotopePeaksFormulaAware:
     def test_basic_carbon_m1_detected(self):
         """M+1 of a carbon-rich molecule at correct spacing is flagged."""
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.spec_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C10H14N2O5")
         mono = 242.090
@@ -714,7 +770,7 @@ class TestDetectIsotopePeaksFormulaAware:
     def test_bromine_m2_detected(self):
         """For C10H8Br2, the large M+2 peak should be flagged as isotope."""
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.spec_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C10H8Br2")
         mono = 285.899
@@ -726,7 +782,7 @@ class TestDetectIsotopePeaksFormulaAware:
     def test_intensity_gate_rejects_noise(self):
         """A peak at the right offset but wrong intensity is not flagged when check_intensity=True."""
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.spec_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C6H12O6")
         mono = 180.063
@@ -738,7 +794,7 @@ class TestDetectIsotopePeaksFormulaAware:
 
     def test_empty_spectrum(self):
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.spec_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C6H12O6")
         mask = detect_isotope_peaks_formula_aware(np.array([]), np.array([]), ec)
@@ -746,8 +802,51 @@ class TestDetectIsotopePeaksFormulaAware:
 
     def test_wrong_shape_raises(self):
         from fragnnet.utils.formula_utils import parse_formula
-        from fragnnet.utils.spec_utils import detect_isotope_peaks_formula_aware
+        from fragnnet.utils.isotope_utils import detect_isotope_peaks_formula_aware
 
         ec = parse_formula("C6H12O6")
         with pytest.raises(ValueError):
             detect_isotope_peaks_formula_aware(np.array([100.0, 101.0]), np.array([1.0]), ec)
+
+
+class TestTrainingIsotopeCleanup:
+    """Tests for monoisotopic target cleanup masks."""
+
+    def test_regular_isotope_peak_removed(self):
+        mono = 120.0
+        mzs = np.array([mono, mono + C13_SPACING, 150.0])
+        ints = np.array([1000.0, 80.0, 500.0])
+        mask = detect_isotope_peaks_for_training_cleanup(
+            mzs,
+            ints,
+            prec_mz=243.098,
+            inst_type="FT",
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            remove_regular_isotopes=True,
+            remove_coisolation=False,
+        )
+        assert mask.tolist() == [False, True, False]
+
+    def test_group_level_coiso_peak_removed_without_regular_path(self):
+        mzs, ints = TestDetectIsotopePeaksFormulaMode._build_coiso_spectrum(
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            prec_mz=243.098,
+            f=0.3,
+            frag_bases=(120.0,),
+            m0_ints=(2000.0,),
+            with_prec_residuals=False,
+        )
+        mask = detect_isotope_peaks_for_training_cleanup(
+            mzs,
+            ints,
+            prec_mz=243.098,
+            inst_type="FT",
+            formula="C10H14N2O5",
+            prec_type="[M+H]+",
+            remove_regular_isotopes=False,
+            remove_coisolation=True,
+            coiso_fraction_by_k={1: 0.3},
+        )
+        assert mask.tolist() == [False, True]

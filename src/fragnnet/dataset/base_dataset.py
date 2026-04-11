@@ -1,3 +1,4 @@
+import collections
 import copy
 import os
 
@@ -14,6 +15,10 @@ from fragnnet.utils.data_utils import (
     get_charge,
 )
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.isotope_utils import (
+    detect_isotope_peaks_for_training_cleanup,
+    estimate_coisolation_fraction_from_precursor,
+)
 from fragnnet.utils.misc_utils import flatten_lol, get_tensor_dict_memory_usage
 from fragnnet.utils.proc_utils import merge_spec_df
 from fragnnet.utils.spec_utils import batch_func
@@ -60,6 +65,7 @@ class BaseDataset(Dataset):
         self.split_df = split_df
         self.id_key = id_key
         self.ce_key = ce_key
+        self._setup_isotope_peak_cleanup()
         self._compute_counts()
         self._setup_prec_type_to_idx()
         self._setup_inst_type_to_idx()
@@ -256,9 +262,18 @@ class BaseDataset(Dataset):
             print(f"> After drop: {new_test_spec_count} spectra, {new_test_group_count} groups")
 
         # merge spectra
-        um_spec_df = spec_df[
-            ["dset", "dset_spec_id", "spec_id", "group_id", "mol_id", "peaks"]
-        ].copy()
+        um_spec_cols = [
+            "dset",
+            "dset_spec_id",
+            "spec_id",
+            "group_id",
+            "mol_id",
+            "prec_type",
+            "inst_type",
+            "prec_mz",
+            "peaks",
+        ]
+        um_spec_df = spec_df[[col for col in um_spec_cols if col in spec_df.columns]].copy()
         if spec_params["merge"]:
             spec_df = merge_spec_df(spec_df, keep_ces=spec_params["merge_keep_ces"])
             id_key = "group_id"
@@ -275,6 +290,61 @@ class BaseDataset(Dataset):
         # use mol_id as index for speedy access
         mol_df = mol_df.set_index("mol_id", drop=False).sort_index().rename_axis(None)
         return spec_df, mol_df, um_spec_df, split_df, id_key, ce_key
+
+    def _setup_isotope_peak_cleanup(self) -> None:
+        """Precompute group-level co-isolation fractions for isotope cleanup."""
+        self.group_coiso_fraction_by_k: dict[int, dict[int, float]] = {}
+        if not self.spec_params.get("remove_isotope_peaks", False):
+            return
+        if not self.spec_params.get("remove_isotope_use_group_f", True):
+            return
+        if self.um_spec_df.empty:
+            return
+        required_cols = {"group_id", "mol_id", "prec_type", "inst_type", "prec_mz", "peaks"}
+        if not required_cols.issubset(self.um_spec_df.columns):
+            return
+
+        max_isotope = self.spec_params.get("remove_isotope_max_isotope", 2)
+        min_coiso_fraction = self.spec_params.get("remove_isotope_min_coiso_fraction", 0.05)
+        max_leak_factor = self.spec_params.get("remove_isotope_max_leak_factor", 1.5)
+        min_group_count = self.spec_params.get("remove_isotope_group_min_count", 1)
+        max_group_cv = self.spec_params.get("remove_isotope_group_max_cv", 1.0)
+
+        vals_by_group_k: dict[tuple[int, int], list[float]] = collections.defaultdict(list)
+        for _, spec_entry in self.um_spec_df.iterrows():
+            mol_id = spec_entry["mol_id"]
+            if mol_id not in self.mol_df.index:
+                continue
+            formula = self.mol_df.loc[mol_id]["formula"]
+            peaks = spec_entry["peaks"]
+            if not peaks:
+                continue
+            mzs, ints = self._get_mzs_ints(peaks)
+            f_by_k = estimate_coisolation_fraction_from_precursor(
+                mzs.numpy(),
+                ints.numpy(),
+                prec_mz=float(spec_entry["prec_mz"]),
+                inst_type=str(spec_entry["inst_type"]),
+                formula=str(formula),
+                prec_type=str(spec_entry["prec_type"]),
+                max_isotope=max_isotope,
+                min_coiso_fraction=min_coiso_fraction,
+                max_leak_factor=max_leak_factor,
+            )
+            for k, f in f_by_k.items():
+                vals_by_group_k[(int(spec_entry["group_id"]), int(k))].append(float(f))
+
+        for (group_id, k), vals in vals_by_group_k.items():
+            if len(vals) < min_group_count:
+                continue
+            vals_arr = np.asarray(vals, dtype=np.float64)
+            med = float(np.median(vals_arr))
+            if med <= 0:
+                continue
+            cv = float(np.std(vals_arr) / med)
+            if cv > max_group_cv:
+                continue
+            self.group_coiso_fraction_by_k.setdefault(group_id, {})[k] = med
 
     def _compute_counts(self) -> None:
         """
@@ -452,7 +522,7 @@ class BaseDataset(Dataset):
         prec_types = sorted(self.spec_params["prec_types"])
         assert all(prec_type in PREC_TYPE_TO_MASS_DIFF for prec_type in prec_types), prec_types
         self.prec_type_to_idx = {prec_type: idx for idx, prec_type in enumerate(prec_types)}
-        self.idx_to_prec_type = {idx: prec_type for idx, prec_type in enumerate(prec_types)}
+        self.idx_to_prec_type = dict(enumerate(prec_types))
         self.num_prec_types = len(prec_types)
 
     def _setup_inst_type_to_idx(self) -> None:
@@ -466,7 +536,7 @@ class BaseDataset(Dataset):
         """
         inst_types = sorted(self.spec_params["inst_types"])
         self.inst_type_to_idx = {inst_type: idx for idx, inst_type in enumerate(inst_types)}
-        self.idx_to_inst_type = {idx: inst_type for idx, inst_type in enumerate(inst_types)}
+        self.idx_to_inst_type = dict(enumerate(inst_types))
         self.num_inst_types = len(inst_types)
 
     def _setup_frag_mode_to_idx(self) -> None:
@@ -484,7 +554,7 @@ class BaseDataset(Dataset):
         """
         frag_modes = sorted(self.spec_params.get("frag_modes", []))
         self.frag_mode_to_idx = {mode: idx for idx, mode in enumerate(frag_modes)}
-        self.idx_to_frag_mode = {idx: mode for idx, mode in enumerate(frag_modes)}
+        self.idx_to_frag_mode = dict(enumerate(frag_modes))
         self.num_frag_modes = len(frag_modes)
 
     def _process_spec(self, spec_entry: pd.Series) -> dict:
@@ -515,6 +585,8 @@ class BaseDataset(Dataset):
         spec_data = {}
         # peak data
         mzs, ints = BaseDataset._get_mzs_ints(spec_entry["peaks"])
+        if self.spec_params.get("remove_isotope_peaks", False):
+            mzs, ints = self._remove_isotope_peaks_from_spec(spec_entry, mzs, ints)
         if self.spec_params["sparse"]:
             # get sparse spectrum
             spec_data["spec_mzs"] = mzs
@@ -578,6 +650,44 @@ class BaseDataset(Dataset):
             spec_per_group = th.tensor([spec_per_group], dtype=th.long)
             spec_data["spec_per_group"] = spec_per_group
         return spec_data
+
+    def _remove_isotope_peaks_from_spec(
+        self, spec_entry: pd.Series, mzs: th.Tensor, ints: th.Tensor
+    ) -> tuple[th.Tensor, th.Tensor]:
+        """Remove isotope peaks from a spectrum for monoisotopic training targets."""
+        if mzs.numel() == 0:
+            return mzs, ints
+        required_cols = {"group_id", "mol_id", "prec_type", "inst_type", "prec_mz"}
+        if not required_cols.issubset(spec_entry.index):
+            return mzs, ints
+
+        mol_id = spec_entry["mol_id"]
+        formula = str(self.mol_df.loc[mol_id]["formula"]) if mol_id in self.mol_df.index else None
+        group_f = self.group_coiso_fraction_by_k.get(int(spec_entry["group_id"]))
+        remove_mask_np = detect_isotope_peaks_for_training_cleanup(
+            mzs.numpy(),
+            ints.numpy(),
+            prec_mz=float(spec_entry["prec_mz"]),
+            inst_type=str(spec_entry["inst_type"]),
+            formula=formula,
+            prec_type=str(spec_entry["prec_type"]),
+            max_isotope=self.spec_params.get("remove_isotope_max_isotope", 2),
+            remove_regular_isotopes=self.spec_params.get("remove_regular_isotope_peaks", True),
+            remove_coisolation=self.spec_params.get("remove_coisolation_peaks", True),
+            regular_mz_tol=self.spec_params.get("remove_isotope_regular_mz_tol"),
+            coiso_fraction_by_k=group_f,
+            min_coiso_fraction=self.spec_params.get("remove_isotope_min_coiso_fraction", 0.05),
+            max_leak_factor=self.spec_params.get("remove_isotope_max_leak_factor", 1.5),
+        )
+        if not remove_mask_np.any():
+            return mzs, ints
+
+        keep_mask = ~th.as_tensor(remove_mask_np, dtype=th.bool)
+        # Avoid returning an empty target spectrum; keep the original if every
+        # peak was classified as isotope.
+        if not keep_mask.any():
+            return mzs, ints
+        return mzs[keep_mask], ints[keep_mask]
 
     def __getitem__(self, idx: int) -> dict:
         """

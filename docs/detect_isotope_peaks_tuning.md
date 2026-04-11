@@ -7,9 +7,15 @@
 
 ### Physics model
 
+The training target should be monoisotopic.  Regular fragment isotope peaks and
+co-isolation isotope peaks are both isotope-derived signal in this target space;
+they can be added back later as a Fragnnet post-process instead of being learned
+as ordinary fragment peaks.
+
 When the MS1 isolation window co-selects a fraction $f$ of the M+k precursor
-isotopologue alongside M+0, both fragment identically.  Every fragment ion $i$
-gains a satellite at $+k \times 1.003355\,\text{Da}$ with intensity:
+isotopologue alongside M+0, the selected populations both fragment.  A simple
+first-order model says that every fragment ion $i$ gains a satellite at
+$+k \times 1.003355\,\text{Da}$ with intensity:
 
 $$r_i^{(k)} = R_{\text{exp},i}^{(k)} \cdot f$$
 
@@ -23,9 +29,41 @@ $$R_{\text{exp},i}^{(k)} \approx R_{\text{exp,prec}}^{(k)} \cdot
 \qquad
 m_i^{\text{neutral}} = \mathrm{mz}_i - \Delta m_{\text{adduct}}$$
 
-This correctly scales the detection window per fragment: a small fragment needs
-a much lower absolute M+k/M+0 ratio than the intact precursor to qualify as a
-co-isolation satellite.
+This is intended to scale the detection window per fragment: a small fragment
+needs a much lower absolute M+k/M+0 ratio than the intact precursor to qualify
+as a co-isolation satellite.
+
+That equation is an approximation.  For $k=1$, an M+1 precursor population can
+also add intensity to the observed fragment M+0 peak when the heavy isotope is
+carried by the neutral loss rather than the charged fragment.  A better
+single-isotope approximation is:
+
+$$
+\frac{I_i(M{+}1)}{I_i(M{+}0)}
+\approx
+\frac{f \cdot R_{\text{frag},i}^{(1)}}
+{1 + f \cdot \left(R_{\text{prec}}^{(1)} - R_{\text{frag},i}^{(1)}\right)}
+$$
+
+Solving this for a single pair gives:
+
+$$
+f_i
+\approx
+\frac{r_i}
+{R_{\text{frag},i}^{(1)} -
+ r_i \cdot \left(R_{\text{prec}}^{(1)} - R_{\text{frag},i}^{(1)}\right)}
+,\qquad
+r_i = \frac{I_i(M{+}1)}{I_i(M{+}0)}
+$$
+
+This matters most when $f$ is large, including the regular-isotope-like case
+where $f \approx 1$.  The current aggressive fallback should therefore be
+treated as an approximate heuristic, not as a physically exact estimate.
+
+When DAG fragment formulas are available, use them to compute
+$R_{\text{frag},i}^{(k)}$ directly.  The mass-scaled precursor approximation
+should be only a fallback when the candidate fragment formula is unknown.
 
 ---
 
@@ -52,8 +90,9 @@ $$r_{\text{lo}} \;\leq\; \frac{\hat{f}^{(2)}}{\hat{f}^{(1)}} \;\leq\; r_{\text{h
 
 ### Step 2 — Aggressive fallback: $f$ from cross-pair consistency
 
-When no above-precursor reference peaks are found, estimate $f$ from the
-formula-normalised ratios of all in-spectrum (M, M+k) candidate pairs:
+When no above-precursor reference peaks are found, the current fallback estimates
+$f$ from the formula-normalised ratios of all in-spectrum (M, M+k) candidate
+pairs:
 
 $$\tilde{f}_i^{(k)} = \frac{r_i^{(k)}}{R_{\text{exp},i}^{(k)}},
 \qquad
@@ -67,6 +106,75 @@ $$\mathrm{CV}\!\left(\tilde{f}_i^{(k)}\right)
 = \frac{\sigma\!\left(\tilde{f}_i^{(k)}\right)}{\hat{f}^{(k)}}
 \;\leq\; \mathrm{CV}_{\max}$$
 
+This fallback is the highest-risk path because it tries to infer $f$ from
+fragment peaks alone.  For monoisotopic-target cleanup, prefer this priority:
+
+1. Use local precursor-derived $f$ when visible.
+2. Use group-level precursor-derived $f$ from the same `mol_id + prec_type +
+   inst_type` group when local precursor residuals are missing.
+3. Use DAG formula support to downweight ambiguous isotope-derived peaks.
+4. Use aggressive cross-pair fallback only as weak evidence, or disable it for
+   hard removal.
+
+---
+
+### Step 2b — Group-level $f$ imputation
+
+For NIST spectra, `group_id` is built from `mol_id + prec_type + inst_type`.
+Spectra in the same group are more likely to share the same instrument and
+isolation setting, so a reliable precursor-derived $f$ from one spectrum can be
+used as a fallback for another spectrum in the same group when that spectrum has
+no visible precursor M+k residual peaks.
+
+Workflow:
+
+1. For each unmerged spectrum, call
+   `estimate_coisolation_fraction_from_precursor(...)`.  This uses only the
+   precursor M+0/M+k residual method and returns `{k: f}`.
+2. Aggregate $f$ values within each `group_id` and isotope order, preferably by
+   median and with a count/dispersion sanity check.
+3. When cleaning another spectrum in the same group, pass the aggregate as
+   `detect_isotope_peaks_for_training(..., coiso_fraction_by_k=group_f)`.
+   The local spectrum's own precursor-derived $f$ still takes priority; the
+   group-level value is used only for missing isotope orders.
+
+This is specifically for co-isolation cleanup.  It should not be interpreted as
+evidence that all NIST `ann_isotopes > 0` peaks are co-isolation artifacts.  For
+monoisotopic targets, the important label is not whether a peak is regular
+isotope or co-isolation; the important label is whether it is isotope-derived
+signal that should be removed or downweighted during target construction.
+
+---
+
+### Step 2c — DAG-aware isotope scoring
+
+If a DAG fragment candidate explains the M+0 peak, compute isotope expectations
+from the fragment formula instead of estimating fragment composition from m/z:
+
+$$
+R_{\text{frag},i}^{(k)} =
+\mathrm{isotope\_ratio}\!\left(\text{DAG formula}_i, k\right)
+$$
+
+Then score each candidate isotope-derived peak using:
+
+1. mass error to $M+k$,
+2. intensity-ratio agreement with $R_{\text{frag},i}^{(k)}$,
+3. local precursor-derived or group-level $f$ support,
+4. whether the shifted peak is also explainable as a separate monoisotopic DAG
+   fragment.
+
+Recommended action for monoisotopic targets:
+
+| Evidence | Action |
+|---|---|
+| Strong isotope explanation, weak monoisotopic DAG explanation | remove |
+| Strong isotope explanation and plausible monoisotopic DAG explanation | downweight |
+| Weak isotope explanation, strong monoisotopic DAG explanation | keep |
+
+This avoids forcing a hard regular-isotope vs co-isolation label when the
+observable spectrum cannot support that distinction.
+
 ---
 
 ### Step 3 — Per-peak acceptance
@@ -78,11 +186,24 @@ Accept as an isotope leak if:
 1. **Monotonicity** — $I(M{+}0)_i > I(M{+}k)_i$
 2. **Ratio window** —
 
+For the current first-order model, the ratio window is:
+
 $$r_{\text{lo}} \cdot R_{\text{exp},i}^{(k)} \cdot \hat{f}^{(k)}
 \;\leq\;
 \frac{I(M{+}k)_i}{I(M{+}0)_i}
 \;\leq\;
 r_{\text{hi}} \cdot R_{\text{exp},i}^{(k)} \cdot \hat{f}^{(k)}$$
+
+For $k=1$, the corrected denominator-aware expectation should be preferred when
+$R_{\text{prec}}^{(1)}$ and a DAG fragment formula are available:
+
+$$
+R_{\text{expected},i}^{(1)}
+=
+\frac{\hat{f}^{(1)} \cdot R_{\text{frag},i}^{(1)}}
+{1 + \hat{f}^{(1)}
+\cdot \left(R_{\text{prec}}^{(1)} - R_{\text{frag},i}^{(1)}\right)}
+$$
 
 3. **Envelope coherence** — for $k=2$, the M+1 satellite must already be confirmed
 
