@@ -28,7 +28,7 @@ parameters:
     values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, attention]
   # How to combine mol and frag embeddings:  
   cc_interstage_type: 
-    values: [add, sub, linear, direct, gated, attention, mlp, bilinear]
+    values: [add, sub, linear, direct, gated, mlp, bilinear]
   # frag-specific
   frag_hidden_size:
     values: [64, 128, 256]
