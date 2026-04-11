@@ -2,6 +2,9 @@
 # W&B Logging
 # ============================================================================
 wandb_name: nist20_d3_ma_mi_sweep_template
+wandb_group: nist20_d3_ma_mi_sweep
+wandb_tags:
+- nist20_d3_ma_mi_sweep
 
 # ============================================================================
 # Data File Paths

@@ -1,8 +1,8 @@
 entity: fragnnet
 project: fragnnet
 program: ~/fragnnet/scripts/run_wandb_sweep.py
-method: random
-name: nist20_d3_ma_mi_sweep
+method: bayes
+name: nist20_d3_ma_mi_sweep_bayes
 description: Optimize fragnnet-D3 hyperparameters for NIST20 MA/MI binned cosine similarity (0.01 Da)
 metric:
   goal: maximize
@@ -26,6 +26,9 @@ parameters:
     values: [0.0,0.1,0.2,0.3,0.4]
   mol_pool_type:
     values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, powermean, attention]
+  # How to combine mol and frag embeddings:  
+  cc_interstage_type: 
+    values: [add, sub, linear, direct, gated, attention, mlp, bilinear]
   # frag-specific
   frag_hidden_size:
     values: [64, 128, 256]
