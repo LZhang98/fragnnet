@@ -966,7 +966,7 @@ def build_pool_module(pool_type: str, node_dim: int):
     """Method to build pooling layer for given pool_type and dim
         node dim is required for attention layer.
     Args:
-        pool_type (str): pooling type in ['sum','mean','max','attention','set2set','set_transformer','softmax','powermean','none']
+        pool_type (str): pooling type in ['sum','mean','max','attention','set2set','set_transformer','softmax','none']
         node_dim (int): node_dim, used for attention and set_transformer
     Returns:
         nn.Module: pooling module
@@ -1005,8 +1005,6 @@ def build_pool_module(pool_type: str, node_dim: int):
         # )
     elif pool_type == "softmax":
         pool_module = aggr.SoftmaxAggregation(learn=True)
-    elif pool_type == "powermean":
-        pool_module = aggr.PowerMeanAggregation(learn=True)
     elif pool_type == "mean_max_sum":
         # raise NotImplementedError
         pool_module = aggr.MultiAggregation(["mean", "max", "sum"])

@@ -25,7 +25,7 @@ parameters:
   mol_dropout:
     values: [0.0,0.1,0.2,0.3,0.4]
   mol_pool_type:
-    values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, powermean, attention]
+    values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, attention]
   # frag-specific
   frag_hidden_size:
     values: [64, 128, 256]
@@ -34,7 +34,7 @@ parameters:
   frag_embed_combine:
     values: [cat, avg]
   frag_pool_type:
-    values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, powermean, attention]
+    values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, attention]
   frag_pool_combine:
     values: [add, subtract, none]
   frag_dropout:
