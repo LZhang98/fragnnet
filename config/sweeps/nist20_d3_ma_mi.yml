@@ -97,8 +97,8 @@ accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 accelerator: gpu
 devices: 1
-min_epochs: 50
-max_epochs: 50
+min_epochs: 30
+max_epochs: 30
 debug_overfit: False
 
 # ============================================================================
