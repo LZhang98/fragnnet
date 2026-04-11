@@ -23,7 +23,7 @@ parameters:
   mol_hidden_size:
     values: [64, 128, 256]
   mol_dropout:
-    values: [0.0,0.1,0.2,0.3,0.4]
+    values: [0.0,0.1,0.2,0.3,0.4,0.5]
   mol_pool_type:
     values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, attention]
   # How to combine mol and frag embeddings:  
@@ -41,11 +41,11 @@ parameters:
   frag_pool_combine:
     values: [add, subtract, none]
   frag_dropout:
-    values: [0.0,0.1,0.2,0.3,0.4]
+    values: [0.0,0.1,0.2,0.3,0.4,0.5]
   # mlp-specific
   mlp_normalization:
     values: [none, batch, layer]
   mlp_hidden_size:
     values: [64, 128, 256]
   mlp_dropout:
-    values: [0.0,0.1,0.2,0.3,0.4]
+    values: [0.0,0.1,0.2,0.3,0.4,0.5]
