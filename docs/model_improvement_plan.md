@@ -717,6 +717,149 @@ Instead of adding more fragments, the correct direction is to reduce DAG noise b
 3. **Top-k by structural simplicity** — keep only the k least-complex fragments at each
    depth level.
 
+### DAG SNR Diagnostic for Fragment Prior (2026-04-12)
+
+Goal: decide whether a structure-only `fragment_prior_logit` is worth implementing after
+the successful `boundary_pair` feature.  The question is whether DAG candidates have a
+stable structural signal-to-noise pattern that the model can learn as a reusable prior,
+rather than only as part of the existing condition-specific intensity head.
+
+**Data caveat:** the exact non-CMF `bp` DAG directory from the `bp` config was not present
+locally during this check.  The aggregate diagnostics use the available NIST20 CMF DAG
+stats (`data/frag/nist20_ma_mi_d3_h4_isoFalse_cmf`) plus NIST23 non-CMF stats as a
+cross-check.  The candidate-level diagnostic uses NIST20 CMF DAGs.  The conclusion should
+be rechecked on the exact `bp` DAGs before a full ablation run, but the observed SNR
+pattern is strong enough to justify implementation.
+
+#### Aggregate SNR check
+
+Using `spec_stats_df.pkl` and `prec_0.01_h4` as the candidate precision proxy:
+
+| Dataset | Spectra | Median `prec_0.01_h4` | Median `wrecall_0.01_h4` | Median `recall_0.01_h4` | Median DAG nodes |
+|---|---:|---:|---:|---:|---:|
+| NIST20 CMF | 490,173 | 0.0271 | 0.9748 | 0.8125 | 339 |
+| NIST23 | 805,040 | 0.0279 | 0.9699 | 0.8000 | 341 |
+
+Both datasets show the same failure mode: larger DAGs mostly add unmatched candidates.
+
+**NIST20 CMF by DAG-node quintile:**
+
+| Median DAG nodes | Median precision | Median wrecall | Median recall |
+|---:|---:|---:|---:|
+| 129 | 0.0421 | 0.9850 | 0.8000 |
+| 225 | 0.0304 | 0.9821 | 0.8182 |
+| 343 | 0.0273 | 0.9749 | 0.8125 |
+| 570 | 0.0236 | 0.9703 | 0.8250 |
+| 1,412 | 0.0155 | 0.9528 | 0.8000 |
+
+**NIST23 by DAG-node quintile:**
+
+| Median DAG nodes | Median precision | Median wrecall | Median recall |
+|---:|---:|---:|---:|
+| 122 | 0.0443 | 0.9819 | 0.7826 |
+| 217 | 0.0314 | 0.9791 | 0.8000 |
+| 342 | 0.0273 | 0.9700 | 0.8000 |
+| 573 | 0.0227 | 0.9655 | 0.8095 |
+| 1,267 | 0.0176 | 0.9394 | 0.7869 |
+
+Spearman correlations are consistent with a DAG SNR problem:
+
+| Dataset | `dag_num_nodes` vs precision | `dag_num_nodes` vs wrecall | `dag_num_nodes` vs recall |
+|---|---:|---:|---:|
+| NIST20 CMF | -0.304 | -0.149 | -0.047 |
+| NIST23 | -0.289 | -0.154 | -0.036 |
+
+Interpretation: node count strongly reduces candidate precision, while recall moves weakly.
+This supports denoising/ranking existing candidates rather than expanding the DAG.
+
+#### Candidate-level SNR check
+
+Sample: 800 NIST20 CMF spectra stratified by DAG size, 786 unique molecules.  Each DAG
+node/H-shift candidate was expanded to an m/z candidate and matched to observed peaks at
+0.01 Da.
+
+| Quantity | Value |
+|---|---:|
+| Candidate rows | 5,126,727 |
+| Spectra | 800 |
+| Molecules | 786 |
+| Overall candidate match rate | 0.0186 |
+
+Structural features strongly separate matched from unmatched candidates:
+
+| Feature bin | Candidate match rate |
+|---|---:|
+| depth 0 | 0.1295 |
+| depth 1 | 0.0477 |
+| depth 2 | 0.0234 |
+| depth 3 | 0.0170 |
+| H-shift -1 | 0.0288 |
+| H-shift 0 | 0.0253 |
+| H-shift -4 | 0.0102 |
+| H-shift +4 | 0.0096 |
+| formula multiplicity 1-5 | 0.0285 |
+| formula multiplicity 72-1330 | 0.0046 |
+| DAG nodes 28-596 | 0.0354 |
+| DAG nodes 10,346-65,899 | 0.0024 |
+
+Boundary/cut context also carries useful SNR:
+
+| Boundary pair type | Candidate match rate |
+|---|---:|
+| C-N | 0.0426 |
+| C-C + N-O | 0.0298 |
+| C-C | 0.0230 |
+| C-O | 0.0199 |
+| C-C + C-O | 0.0165 |
+| C-C + O-P | 0.0010 |
+
+The strongest structural bins have >50x lift over the weakest bins in the sampled
+diagnostic.  Example grouped by `(depth, h_shift, cut_hetero, cut_ring, cut_arom)`, with
+at least 1,000 candidates per group:
+
+| Structural group | Candidate match rate |
+|---|---:|
+| depth 3, H -4, non-hetero, non-ring, non-aromatic cut | 0.0030 |
+| depth 3, H +4, non-hetero, non-ring, non-aromatic cut | 0.0034 |
+| depth 3, H -3, hetero, non-ring, non-aromatic cut | 0.0069 |
+| depth 2, H 0, hetero, ring, non-aromatic cut | 0.0773 |
+| depth 2, H -2, hetero, ring, non-aromatic cut | 0.0867 |
+| depth 1, H -1, non-hetero, non-ring, non-aromatic cut | 0.1090 |
+| depth 1, H -1, hetero, non-ring, non-aromatic cut | 0.1690 |
+
+#### Decision
+
+Proceed with a **structure-only** `fragment_prior_logit` ablation.  The prior should not
+see CE, adduct, instrument, or frag mode in the first implementation; otherwise it becomes
+too similar to the existing intensity head.  The intended factorisation is:
+
+```text
+final_logit =
+    condition-specific intensity_logit(fragment, CE, adduct, inst, frag_mode)
+  + alpha * structure_prior_logit(fragment structure only)
+```
+
+Recommended first config:
+
+```yaml
+fragment_prior: True
+fragment_prior_weight: 0.1
+fragment_prior_loss: False
+fragment_prior_conditioning: structure_only
+```
+
+Implementation constraints:
+
+- Zero-initialize the final layer or start from `fragment_prior_weight: 0.0` for a sanity
+  run, so the enabled model initially matches the current `bp` model.
+- Try fixed weights first (`0.1`, then `0.25` if neutral/positive) for clean ablation
+  interpretation.
+- Add an auxiliary candidate-match loss only after the soft prior is neutral or positive:
+  `fragment_prior_loss: True`, `fragment_prior_loss_weight: 0.01`.
+- Validate on `val_cos_sim_0.01`, `val_loss`, `wrecall`, high-node-count DAGs, and hard
+  classes.  Stop if the prior improves aggregate cosine by suppressing rare/high-depth
+  true fragments.
+
 ---
 
 ## 4b. Better Fragment Embedding for Rearrangement Products

@@ -102,6 +102,11 @@ class FraGNNetPL(SpectrumPL):
             frag_mode_scale=self.hparams.frag_mode_scale,
             ce_scale=self.hparams.ce_scale,
             ce_scaler_hidden_dim=self.hparams.ce_scaler_hidden_dim,
+            fragment_prior=self.hparams["fragment_prior"],
+            fragment_prior_weight=self.hparams["fragment_prior_weight"],
+            fragment_prior_conditioning=self.hparams["fragment_prior_conditioning"],
+            fragment_prior_loss=self.hparams["fragment_prior_loss"],
+            fragment_prior_loss_weight=self.hparams["fragment_prior_loss_weight"],
             output_formula_str=self.hparams.output_formula_str,
         )
 
