@@ -307,19 +307,28 @@ def _estimate_leak_ratio_from_spectrum(
     adduct_counts: dict[str, int] | None = None,
     adduct_delta_mass: float = 0.0,
     prec_neutral_mass: float = 0.0,
+    r_exp_prec: Mapping[int, float] | None = None,
+    dag_formula_mzs: np.ndarray | None = None,
+    dag_formula_strs: np.ndarray | None = None,
+    dag_mz_tol: float = 0.015,
 ) -> float | None:
     """Estimate co-isolation ratio from cross-pair consistency of M+k peaks.
 
     When ``mol_counts`` is provided, each raw ratio ``r_i = I(M+k_i) / I(M_i)``
-    is normalised by the formula-predicted natural M+k/M+0 for that fragment:
+    is converted into a co-isolation fraction using the formula-predicted
+    natural M+k/M+0 ratio for that fragment:
 
-        r_normalised_i = r_i / R_exp_frag_i ≈ R_leak   (co-isolation amplification)
+        f_i = r_i / R_exp_frag_i
 
-    Because ``R_exp_frag_i`` varies with fragment composition while ``R_leak`` is
-    a spectrum-level constant, normalising collapses the distribution so Coefficient of Variation (CV) is
-    small only when genuine co-isolation is present.  Without ``mol_counts`` the
-    raw ``r_i`` values are used and the function returns the median as ``R_k``
-    (the old behaviour, appropriate when the formula is unavailable).
+    For ``k == 1`` and a precursor isotope ratio is available, use the
+    denominator-corrected approximation:
+
+        f_i = r_i / (R_frag_i - r_i * (R_prec - R_frag_i))
+
+    because an M+1 precursor can contribute to observed fragment M+0 when the
+    heavy isotope is carried by the neutral loss.  Without ``mol_counts`` the raw
+    ``r_i`` values are used and the function returns the median as ``R_k`` (the
+    old behaviour, appropriate when the formula is unavailable).
 
     Args:
         smzs: Sorted m/z array.
@@ -330,14 +339,20 @@ def _estimate_leak_ratio_from_spectrum(
         consistency_cv: Maximum coefficient of variation (std/mean) of values to
             accept the consensus as a genuine co-isolation signal.
         mol_counts: Element counts of the neutral precursor molecule.  When given,
-            enables formula-normalised R_leak estimation.
+            enables formula-normalised f estimation.
         adduct_counts: Element counts added by the adduct (positive atoms only).
         adduct_delta_mass: Monoisotopic mass of adduct atoms (Da).
         prec_neutral_mass: Neutral precursor mass ``prec_mz - adduct_delta_mass``
             used as denominator for the per-fragment mol_scale estimate.
+        r_exp_prec: Precursor expected isotope ratios by order.  When present,
+            enables denominator correction for k=1.
+        dag_formula_mzs: Optional DAG monoisotopic fragment m/z values.
+        dag_formula_strs: Formula strings aligned to ``dag_formula_mzs``.
+        dag_mz_tol: Absolute tolerance for matching observed M+0 peaks to DAG
+            formula entries.
 
     Returns:
-        Consensus R_leak (when ``mol_counts`` given) or R_k (when not), or None
+        Consensus f (when ``mol_counts`` given) or R_k (when not), or None
         if the signal is inconsistent or there are too few pairs.
     """
     k_tol = mz_tol if k == 1 else mz_tol * 2
@@ -360,12 +375,27 @@ def _estimate_leak_ratio_from_spectrum(
             continue
         r_raw = mk_int / m0_int
         if use_formula:
-            neutral_frag = smzs[i] - adduct_delta_mass
-            mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
-            r_exp = _expected_mk_ratio(mol_counts, mol_scale, k, adduct_counts or {})
+            r_exp = _fragment_expected_ratio(
+                smzs[i],
+                k,
+                mol_counts,
+                adduct_counts or {},
+                adduct_delta_mass,
+                prec_neutral_mass,
+                dag_formula_mzs=dag_formula_mzs,
+                dag_formula_strs=dag_formula_strs,
+                dag_mz_tol=dag_mz_tol,
+            )
             if r_exp <= 0:
                 continue
-            r_vals.append(r_raw / r_exp)  # normalised → R_leak
+            if k == 1 and r_exp_prec is not None:
+                r_prec = float(r_exp_prec.get(k, 0.0))
+                denom = r_exp - r_raw * (r_prec - r_exp)
+                if denom <= 0:
+                    continue
+                r_vals.append(r_raw / denom)  # denominator-corrected f
+            else:
+                r_vals.append(r_raw / r_exp)  # first-order f
         else:
             r_vals.append(r_raw)  # unnormalised → R_k
 
@@ -382,6 +412,74 @@ def _estimate_leak_ratio_from_spectrum(
         return None  # values too scattered → not a coherent co-isolation signal
 
     return r_median
+
+
+def _find_dag_formula(
+    query_mz: float,
+    dag_formula_mzs: np.ndarray | None,
+    dag_formula_strs: np.ndarray | None,
+    dag_mz_tol: float,
+) -> str | None:
+    """Return the closest DAG formula string for ``query_mz`` if available."""
+    if dag_formula_mzs is None or dag_formula_strs is None:
+        return None
+    mzs = np.asarray(dag_formula_mzs, dtype=np.float64)
+    formulas = np.asarray(dag_formula_strs, dtype=object)
+    if mzs.ndim != 1 or formulas.ndim != 1 or len(mzs) != len(formulas) or len(mzs) == 0:
+        return None
+    valid = np.isfinite(mzs) & (mzs > 0)
+    if not np.any(valid):
+        return None
+    candidate_idx = np.where(valid & (np.abs(mzs - query_mz) <= dag_mz_tol))[0]
+    if len(candidate_idx) == 0:
+        return None
+    best = candidate_idx[int(np.argmin(np.abs(mzs[candidate_idx] - query_mz)))]
+    formula = formulas[best]
+    if formula is None:
+        return None
+    formula = str(formula)
+    return formula or None
+
+
+def _fragment_expected_ratio(
+    m0_mz: float,
+    k: int,
+    mol_counts: dict[str, int],
+    adduct_counts: dict[str, int],
+    adduct_delta_mass: float,
+    prec_neutral_mass: float,
+    dag_formula_mzs: np.ndarray | None = None,
+    dag_formula_strs: np.ndarray | None = None,
+    dag_mz_tol: float = 0.015,
+) -> float:
+    """Return expected natural fragment M+k/M+0 ratio.
+
+    DAG formulas are preferred because they provide the fragment composition.
+    The m/z-scaled precursor formula is retained as a fallback.
+    """
+    dag_formula = _find_dag_formula(m0_mz, dag_formula_mzs, dag_formula_strs, dag_mz_tol)
+    if dag_formula is not None:
+        try:
+            return _expected_mk_ratio(parse_formula(dag_formula), 1.0, k)
+        except Exception:
+            pass
+    neutral_frag = m0_mz - adduct_delta_mass
+    mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
+    return _expected_mk_ratio(mol_counts, mol_scale, k, adduct_counts)
+
+
+def _expected_observed_isotope_ratio(
+    f: float,
+    r_frag: float,
+    k: int,
+    r_exp_prec: Mapping[int, float] | None = None,
+) -> float:
+    """Expected observed I(M+k_frag)/I(M+0_frag) for co-isolation cleanup."""
+    if k == 1 and r_exp_prec is not None:
+        r_prec = float(r_exp_prec.get(k, 0.0))
+        if r_prec > 0:
+            return (f * r_frag) / (1.0 + f * (r_prec - r_frag))
+    return f * r_frag
 
 
 def _find_peak_sorted(
@@ -542,6 +640,10 @@ def detect_isotope_peaks_for_training(
     min_coiso_fraction: float = 0.05,
     max_leak_factor: float = 1.5,
     coiso_fraction_by_k: Mapping[int, float] | None = None,
+    dag_formula_mzs: np.ndarray | None = None,
+    dag_formula_strs: np.ndarray | None = None,
+    dag_mz_tol: float = 0.015,
+    protect_dag_mono: bool = False,
 ) -> np.ndarray:
     """Detect isotope leak peaks for training-data cleaning.
 
@@ -629,6 +731,15 @@ def detect_isotope_peaks_for_training(
             group (for example ``mol_id + prec_type + inst_type``). These values
             are used only for isotope orders where this spectrum lacks its own
             precursor-derived reference.
+        dag_formula_mzs: Optional DAG monoisotopic fragment m/z values.  When
+            provided with ``dag_formula_strs``, fragment isotope ratios are
+            computed from DAG formulas instead of the m/z-scaled precursor proxy.
+        dag_formula_strs: Formula strings aligned to ``dag_formula_mzs``.
+        dag_mz_tol: Absolute m/z tolerance for matching observed M+0 peaks to DAG
+            formula entries.
+        protect_dag_mono: If True, never flag a peak whose m/z is itself matched
+            by a DAG monoisotopic formula.  This is conservative and may reduce
+            recall when isotope and monoisotopic explanations overlap.
 
     Returns:
         Boolean array of shape (N,) where True means co-isolation isotope leak.
@@ -765,6 +876,10 @@ def detect_isotope_peaks_for_training(
                 adduct_counts=adduct_counts_parsed if mol_counts is not None else None,
                 adduct_delta_mass=adduct_delta_mass,
                 prec_neutral_mass=prec_neutral_mass,
+                r_exp_prec=r_exp_prec,
+                dag_formula_mzs=dag_formula_mzs,
+                dag_formula_strs=dag_formula_strs,
+                dag_mz_tol=dag_mz_tol,
             )
             if r_consensus is None and mol_counts is not None and prec_neutral_mass > 0:
                 # Single-pair fallback: try with min_pairs=1 (no CV check possible).
@@ -781,6 +896,10 @@ def detect_isotope_peaks_for_training(
                     adduct_counts=adduct_counts_parsed,
                     adduct_delta_mass=adduct_delta_mass,
                     prec_neutral_mass=prec_neutral_mass,
+                    r_exp_prec=r_exp_prec,
+                    dag_formula_mzs=dag_formula_mzs,
+                    dag_formula_strs=dag_formula_strs,
+                    dag_mz_tol=dag_mz_tol,
                 )
                 if r_single is not None and r_single >= aggressive_single_pair_min_f:
                     r_consensus = r_single
@@ -808,14 +927,27 @@ def detect_isotope_peaks_for_training(
         """Return per-fragment expected M+k/M+0 ratio given its M+0 m/z."""
         if mol_counts is None or k not in r_leak or prec_neutral_mass <= 0:
             return leak_ratios.get(k, 0.0)  # fallback: use R_k directly
-        neutral_frag = m0_mz - adduct_delta_mass
-        mol_scale = max(0.0, min(1.0, neutral_frag / prec_neutral_mass))
-        r_exp_frag = _expected_mk_ratio(mol_counts, mol_scale, k, adduct_counts_parsed)
-        return r_exp_frag * r_leak[k]
+        r_exp_frag = _fragment_expected_ratio(
+            m0_mz,
+            k,
+            mol_counts,
+            adduct_counts_parsed,
+            adduct_delta_mass,
+            prec_neutral_mass,
+            dag_formula_mzs=dag_formula_mzs,
+            dag_formula_strs=dag_formula_strs,
+            dag_mz_tol=dag_mz_tol,
+        )
+        return _expected_observed_isotope_ratio(r_leak[k], r_exp_frag, k, r_exp_prec)
 
     for i in range(n):
         frag_mz = smzs[i]
         frag_int = sints[i]
+
+        if protect_dag_mono and _find_dag_formula(
+            frag_mz, dag_formula_mzs, dag_formula_strs, dag_mz_tol
+        ):
+            continue
 
         for k in leak_ratios:
             k_tol = mz_tol if k == 1 else mz_tol * 2
@@ -886,6 +1018,10 @@ def detect_isotope_peaks_for_training_cleanup(
     coiso_fraction_by_k: Mapping[int, float] | None = None,
     min_coiso_fraction: float = 0.05,
     max_leak_factor: float = 1.5,
+    dag_formula_mzs: np.ndarray | None = None,
+    dag_formula_strs: np.ndarray | None = None,
+    dag_mz_tol: float = 0.015,
+    protect_dag_mono: bool = False,
 ) -> np.ndarray:
     """Detect isotope peaks to remove from monoisotopic training targets.
 
@@ -910,6 +1046,11 @@ def detect_isotope_peaks_for_training_cleanup(
         coiso_fraction_by_k: Optional group-level co-isolation fractions.
         min_coiso_fraction: Minimum co-isolation fraction for co-isolation cleanup.
         max_leak_factor: Maximum accepted co-isolation fraction.
+        dag_formula_mzs: Optional DAG monoisotopic fragment m/z values.
+        dag_formula_strs: Formula strings aligned to ``dag_formula_mzs``.
+        dag_mz_tol: Absolute tolerance for matching peaks to DAG formula m/z.
+        protect_dag_mono: If True, never remove peaks that match a DAG
+            monoisotopic formula.
 
     Returns:
         Boolean mask of shape (N,), where True means remove this isotope peak.
@@ -955,6 +1096,10 @@ def detect_isotope_peaks_for_training_cleanup(
             min_coiso_fraction=min_coiso_fraction,
             max_leak_factor=max_leak_factor,
             coiso_fraction_by_k=coiso_fraction_by_k,
+            dag_formula_mzs=dag_formula_mzs,
+            dag_formula_strs=dag_formula_strs,
+            dag_mz_tol=dag_mz_tol,
+            protect_dag_mono=protect_dag_mono,
         )
 
     return remove_mask

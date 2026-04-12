@@ -702,6 +702,71 @@ class TestDetectIsotopePeaksFormulaMode:
         )
         assert not mask.any(), "Single-pair with f below threshold should not be flagged"
 
+    def test_single_pair_fallback_uses_denominator_corrected_k1_math(self):
+        """For f≈1, M+1 precursor neutral-loss contribution must not under-estimate f."""
+        from fragnnet.utils.formula_utils import parse_formula
+
+        formula = "C10H22"
+        frag_formula = "C5H11"
+        prec_mz = 143.179
+        frag_mz = 71.086
+        f = 1.0
+
+        r_prec = _expected_mk_ratio(parse_formula(formula), 1.0, k=1)
+        r_frag = _expected_mk_ratio(parse_formula(frag_formula), 1.0, k=1)
+        obs = (f * r_frag) / (1.0 + f * (r_prec - r_frag))
+
+        mzs = np.array([frag_mz, frag_mz + _NM])
+        ints = np.array([2000.0, obs * 2000.0])
+        mask = detect_isotope_peaks_for_training(
+            mzs,
+            ints,
+            prec_mz=prec_mz,
+            inst_type="FT",
+            formula=formula,
+            prec_type="[M+H]+",
+            aggressive=True,
+            aggressive_single_pair_min_f=0.99,
+            dag_formula_mzs=np.array([frag_mz]),
+            dag_formula_strs=np.array([frag_formula], dtype=object),
+        )
+        assert mask[1], "Corrected k=1 fallback should recover f≈1 and flag the isotope peak"
+
+    def test_dag_mono_protection_keeps_plausible_monoisotopic_peak(self):
+        """A shifted peak can be protected when the DAG also explains it as monoisotopic."""
+        from fragnnet.utils.formula_utils import parse_formula
+
+        formula = "C10H22"
+        frag_formula = "C5H11"
+        competing_formula = "C4H9N"
+        prec_mz = 143.179
+        frag_mz = 71.086
+        isotope_mz = frag_mz + _NM
+
+        r_prec = _expected_mk_ratio(parse_formula(formula), 1.0, k=1)
+        r_frag = _expected_mk_ratio(parse_formula(frag_formula), 1.0, k=1)
+        obs = r_frag / (1.0 + (r_prec - r_frag))
+
+        mzs = np.array([frag_mz, isotope_mz])
+        ints = np.array([2000.0, obs * 2000.0])
+        kwargs = {
+            "mzs": mzs,
+            "ints": ints,
+            "prec_mz": prec_mz,
+            "inst_type": "FT",
+            "formula": formula,
+            "prec_type": "[M+H]+",
+            "aggressive": True,
+            "aggressive_single_pair_min_f": 0.99,
+            "dag_formula_mzs": np.array([frag_mz, isotope_mz]),
+            "dag_formula_strs": np.array([frag_formula, competing_formula], dtype=object),
+        }
+        mask_unprotected = detect_isotope_peaks_for_training(**kwargs)
+        mask_protected = detect_isotope_peaks_for_training(**kwargs, protect_dag_mono=True)
+
+        assert mask_unprotected[1]
+        assert not mask_protected[1]
+
 
 # ---------------------------------------------------------------------------
 # detect_isotope_peaks_formula_aware
