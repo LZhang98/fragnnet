@@ -12,7 +12,7 @@ parameters:
   lr:
     distribution: log_uniform_values
     min: 0.0001
-    max: 0.01
+    max: 0.001
   weight_decay:
     values: [0.,0.001,0.01,0.1]
   train_batch_size:
@@ -23,9 +23,9 @@ parameters:
   mol_hidden_size:
     values: [64, 128, 256]
   mol_dropout:
-    values: [0.0,0.1,0.2,0.3,0.4]
-  mol_pool_type:
-    values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, attention]
+    values: [0.0,0.1,0.2,0.3,0.4,0.5]
+  #mol_pool_type:
+  #  values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, attention]
   # frag-specific
   frag_hidden_size:
     values: [64, 128, 256]
@@ -33,16 +33,16 @@ parameters:
     values: [none, batch, layer, graph]
   frag_embed_combine:
     values: [cat, avg]
-  frag_pool_type:
-    values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, attention]
-  frag_pool_combine:
-    values: [add, subtract, none]
+  #frag_pool_type:
+  #  values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, attention]
+  #frag_pool_combine:
+  #  values: [add, subtract, none]
   frag_dropout:
-    values: [0.0,0.1,0.2,0.3,0.4]
+    values: [0.0,0.1,0.2,0.3,0.4,0.5]
   # mlp-specific
-  mlp_normalization:
-    values: [none, batch, layer]
+  #mlp_normalization:
+  #  values: [none, batch, layer]
   mlp_hidden_size:
     values: [64, 128, 256]
   mlp_dropout:
-    values: [0.0,0.1,0.2,0.3,0.4]
+    values: [0.0,0.1,0.2,0.3,0.4,0.5]
