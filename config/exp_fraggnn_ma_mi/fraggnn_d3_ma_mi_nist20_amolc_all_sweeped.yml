@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_sweeped
 wandb_tags:
 - retrieval
 - nist20
@@ -200,8 +200,6 @@ gaussian_renormalize: True # renormalize output with Gaussian smoothing before l
 mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
-mol_pool_type: mean
-frag_pool_type: mean
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
