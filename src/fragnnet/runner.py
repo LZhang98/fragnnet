@@ -10,9 +10,9 @@ import torch as th
 import yaml
 from lightning import seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.profilers import AdvancedProfiler, SimpleProfiler
 from pandarallel import pandarallel
-from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import RandomSampler, SequentialSampler
 

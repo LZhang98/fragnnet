@@ -93,6 +93,59 @@ def ragged_to_batch(feat: th.Tensor, batch_idx: th.Tensor, pad_value=0):
     return out
 
 
+def primary_ce_to_batch(
+    spec_ce: th.Tensor, spec_ce_batch_idxs: th.Tensor | None, batch_size: int
+) -> th.Tensor:
+    """Extract one collision energy value per batch element.
+
+    Args:
+        spec_ce: Collision energy tensor. This is typically flattened by collation and has
+            shape (num_ce_values,) or (batch_size, num_ce_values_per_sample).
+        spec_ce_batch_idxs: Batch indices for flattened CE values of shape (num_ce_values,).
+        batch_size: Number of samples in the batch.
+
+    Returns:
+        Collision energy tensor of shape (batch_size,).
+    """
+    if spec_ce.ndim == 2:
+        if spec_ce.size(1) == 1:
+            # batch_func produced (total_ces, 1) — squeeze trailing dim and
+            # fall through to the sparse batch_idxs path below.
+            spec_ce = spec_ce.squeeze(-1)
+        elif spec_ce.size(0) == batch_size:
+            # Dense layout (batch_size, num_ces) — take first CE per sample.
+            return spec_ce[:, 0].detach().cpu()
+        else:
+            raise ValueError(
+                "Expected spec_ce to have batch_size rows when it is 2D, "
+                f"got shape {tuple(spec_ce.shape)} and batch_size={batch_size}"
+            )
+
+    flat_spec_ce = spec_ce.reshape(-1).detach().cpu()
+    if spec_ce_batch_idxs is None:
+        if flat_spec_ce.numel() != batch_size:
+            raise ValueError(
+                "spec_ce_batch_idxs is required when spec_ce is flattened and does not "
+                f"already have one value per batch item; got {flat_spec_ce.numel()} values "
+                f"for batch_size={batch_size}"
+            )
+        return flat_spec_ce
+
+    flat_batch_idxs = spec_ce_batch_idxs.reshape(-1).detach().cpu().long()
+    if flat_batch_idxs.numel() != flat_spec_ce.numel():
+        raise ValueError(
+            "spec_ce and spec_ce_batch_idxs must have the same number of elements; "
+            f"got {flat_spec_ce.numel()} and {flat_batch_idxs.numel()}"
+        )
+
+    ce_primary = th.full((batch_size,), float("nan"), dtype=flat_spec_ce.dtype)
+    for batch_idx in range(batch_size):
+        batch_mask = flat_batch_idxs == batch_idx
+        if batch_mask.any():
+            ce_primary[batch_idx] = flat_spec_ce[batch_mask][0]
+    return ce_primary
+
+
 class SpectrumPL(L.LightningModule):
     """
     Base PyTorch LightningModule for spectrum prediction.
@@ -164,6 +217,9 @@ class SpectrumPL(L.LightningModule):
         else:
             self.inst_tol_lookup = None
             self.inst_min_mz_lookup = None
+
+        # idx↔str maps are fetched lazily from the dataloader dataset via
+        # _get_dataset_maps() — the dataset is the canonical source of truth.
 
     def _setup_loss_fn(self):
         """
@@ -1144,6 +1200,25 @@ class SpectrumPL(L.LightningModule):
                 results[k] = v
         for metric_name in self.metric_names:
             assert metric_name in results, metric_name
+        # Metadata for the per-(adduct×inst, CE-bin) wandb table logged at test time.
+        # Always populated (with fallbacks) so _update_results keys are consistent.
+        idx_to_inst, idx_to_prec, _ = self._get_dataset_maps()
+        if "spec_inst_type" in batch and idx_to_inst:
+            inst_idxs = batch["spec_inst_type"].reshape(-1).tolist()
+            results["inst_type_str"] = [idx_to_inst.get(i, "unknown") for i in inst_idxs]
+        else:
+            results["inst_type_str"] = ["unknown"] * batch_size
+        if "spec_prec_type" in batch and idx_to_prec:
+            prec_idxs = batch["spec_prec_type"].reshape(-1).tolist()
+            results["prec_type_str"] = [idx_to_prec.get(i, "unknown") for i in prec_idxs]
+        else:
+            results["prec_type_str"] = ["unknown"] * batch_size
+        if "spec_ce" in batch:
+            results["ce_primary"] = primary_ce_to_batch(
+                batch["spec_ce"], batch.get("spec_ce_batch_idxs"), batch_size
+            )
+        else:
+            results["ce_primary"] = th.full((batch_size,), float("nan"))
         return results
 
     def training_step(self, batch, batch_idx):
@@ -1255,11 +1330,43 @@ class SpectrumPL(L.LightningModule):
         """
         Helper to get the WandbLogger from the list of loggers.
         """
-        wandb_logger = None
         for logger in self.loggers:
             if isinstance(logger, WandbLogger):
-                wandb_logger = logger
-        return wandb_logger
+                return logger
+        return None
+
+    def _get_dataset_maps(self) -> tuple[dict[int, str], dict[int, str], dict[str, int]]:
+        """Return (idx_to_inst_type, idx_to_prec_type, inst_type_to_idx) from the dataloader dataset.
+
+        The dataset is the canonical source of these maps (built in
+        BaseDataset._setup_inst_type_to_idx / _setup_prec_type_to_idx).  Results
+        are cached on first call so the trainer is only queried once per run.
+
+        Returns:
+            Tuple of (idx_to_inst_type, idx_to_prec_type, inst_type_to_idx) dicts.
+            Returns empty dicts if the trainer or dataset is not yet available.
+        """
+        if hasattr(self, "_cached_ds_maps"):
+            return self._cached_ds_maps
+
+        ds = None
+        for dl_attr in ("train_dataloader", "val_dataloaders", "test_dataloaders"):
+            try:
+                dl_or_list = getattr(self.trainer, dl_attr)
+                dl = dl_or_list[0] if isinstance(dl_or_list, list) else dl_or_list
+                ds = dl.dataset
+                break
+            except (AttributeError, IndexError, TypeError):
+                continue
+
+        if ds is None:
+            return {}, {}, {}
+
+        idx_to_inst = getattr(ds, "idx_to_inst_type", {})
+        idx_to_prec = getattr(ds, "idx_to_prec_type", {})
+        inst_to_idx = getattr(ds, "inst_type_to_idx", {})
+        self._cached_ds_maps = (idx_to_inst, idx_to_prec, inst_to_idx)
+        return self._cached_ds_maps
 
     def _update_results(self, batch_results, split):
         """
@@ -1280,6 +1387,9 @@ class SpectrumPL(L.LightningModule):
             "spec_per_group",
             "spec_per_mol",
             "group_per_mol",
+            "inst_type_str",
+            "prec_type_str",
+            "ce_primary",
         ]
         keys.extend(list(self.metric_names))
         unique_ids = batch_results.pop("unique_id")
@@ -1377,6 +1487,8 @@ class SpectrumPL(L.LightningModule):
                 )
 
         mean_metrics, std_metrics = self._reduce_metrics(results, split)
+        if self.hparams["log_adduct_inst_ce_metrics"] and split in ("val", "test"):
+            self._log_adduct_inst_ce_table(results, split)
         for k in mean_metrics.keys():
             self.log(
                 f"{split}_{k}_epoch/mean",
@@ -1458,6 +1570,108 @@ class SpectrumPL(L.LightningModule):
             for k in mean_metrics.keys():
                 assert len(results[k]) == num_datapoints, (k, len(results[k]), num_datapoints)
                 datapoint_metrics[k.replace(".", "-")][:num_datapoints] = results[k]
+
+    def _log_adduct_inst_ce_table(self, results: dict, split: str) -> None:
+        """Log per-(adduct×inst, CE-bin) median metrics to wandb.
+
+        Groups spectra by the cross-product of precursor type and instrument type,
+        then bins collision energy in steps of 10 (NCE % for FT/IT, ACE eV for
+        QTOF).  Each row reports the median of every auxiliary metric together with
+        the per-instrument m/z tolerance.
+
+        - ``val``: logs ``wandb.plot.bar`` — one panel per primary metric, updated
+          each epoch, no history accumulation.
+        - ``test``: logs a full ``wandb.Table`` for detailed inspection.
+
+        Silently returns if no WandbLogger is present, ``spec_inst_type`` is absent
+        from the batch, or CE values are not loaded (``nce``/``ace`` both False).
+
+        Args:
+            results: Consolidated results dict from ``_consolidate_results``.
+            split: One of ``"val"`` or ``"test"``.
+        """
+        import pandas as pd
+
+        wandb_logger = self._get_wandb_logger()
+        if wandb_logger is None:
+            return
+        import wandb
+
+        inst_types = results["inst_type_str"]  # list[str], length N
+        prec_types = results["prec_type_str"]  # list[str], length N
+        ce_vals = results["ce_primary"].numpy()  # np.ndarray, shape (N,)
+
+        if all(it == "unknown" for it in inst_types):
+            return  # spec_inst_type not in batch — nothing to group on
+
+        df = pd.DataFrame(
+            {
+                "inst_type": inst_types,
+                "prec_type": prec_types,
+                "ce_val": ce_vals,
+            }
+        )
+        for m in self.auxiliary_metric_names:
+            if m in results and isinstance(results[m], th.Tensor):
+                df[m] = results[m].numpy()
+
+        df = df.dropna(subset=["ce_val"])  # CE not loaded → skip
+        if df.empty:
+            return
+
+        df["ce_bin"] = (df["ce_val"] // 10 * 10).astype(int)
+        df["adduct_inst"] = df["prec_type"] + "_" + df["inst_type"]
+
+        metric_cols = [m for m in self.auxiliary_metric_names if m in df.columns]
+        _, _, inst_to_idx = self._get_dataset_maps()
+        min_count = self.hparams["log_adduct_inst_ce_min_count"]
+        rows = []
+        for (adduct_inst, ce_bin), grp in df.groupby(["adduct_inst", "ce_bin"], observed=True):
+            if len(grp) < min_count:
+                continue
+
+            inst_type = grp["inst_type"].iloc[0]
+            if self.inst_tol_lookup is not None and inst_type in inst_to_idx:
+                tol = self.inst_tol_lookup[inst_to_idx[inst_type]].item()
+            else:
+                tol = self.tolerance
+            tol_label = f"{tol * 1e6:.0f}ppm" if self.relative else f"{tol:.4f}Da"
+
+            row: dict = {
+                "adduct_inst": adduct_inst,
+                "ce_bin": f"{ce_bin}-{ce_bin + 10}",
+                "inst_tol": tol_label,
+                "count": len(grp),
+            }
+            for m in metric_cols:
+                row[f"{m}_median"] = round(float(grp[m].median()), 4)
+            rows.append(row)
+
+        if not rows:
+            return
+
+        columns = list(rows[0].keys())
+        table = wandb.Table(columns=columns, data=[list(r.values()) for r in rows])
+
+        if split == "val":
+            # One bar-chart panel per metric, updated in-place each epoch.
+            # Uses the first metric that has a _median column as the primary view.
+            primary = f"{metric_cols[0]}_median" if metric_cols else None
+            if primary:
+                wandb_logger.experiment.log(
+                    {
+                        f"val_adduct_inst_ce/{metric_cols[0]}": wandb.plot.bar(
+                            table,
+                            label="adduct_inst",
+                            value=primary,
+                            title=f"val {metric_cols[0]} by adduct×inst×CE (ep {self.current_epoch})",
+                        ),
+                        "epoch": self.current_epoch,
+                    }
+                )
+        else:
+            # Full table at test time for detailed inspection.
+            wandb_logger.experiment.log({f"{split}_adduct_inst_ce_table": table})
 
     def _log_images(self, split):
         """
