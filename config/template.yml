@@ -60,11 +60,15 @@ spec_params:
   #   QTOF spectra always carry raw ace; ace: true is NOT required (and conflicts with nce: true).
   #   Spectra of a listed instrument with missing/unfillable CE are dropped.
   # Example:
-  #   split_ce_by_inst_filters:
-  #     train:
-  #         FT:   {nce_min: 0, nce_max: 60}
-  #         QTOF: {ace_min: 0, ace_max: 40}
-  #     val: {}
+  # split_filters:
+  #  train:
+  #    filter_ce_by_inst:
+  #      FT:   {nce_min: 0, nce_max: 60}
+  #      QTOF: {ace_min: 0, ace_max: 40}
+  #  val:
+  #    filter_ce_by_inst:
+  #      FT:   {nce_min: 0, nce_max: 60}
+  #      QTOF: {ace_min: 0, ace_max: 40}
   split_filters: {}
 mol_params:
   smiles: True
