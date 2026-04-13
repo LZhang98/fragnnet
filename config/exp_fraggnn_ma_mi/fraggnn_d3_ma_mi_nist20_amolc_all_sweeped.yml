@@ -17,7 +17,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
-- lb16          # loss batch size 16
+- lb32          # loss batch size 16
 - preload
 - preprocess
 - new_no_edges  # no edge features in fragment GNN
@@ -41,13 +41,14 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey   # inchikey split: [M+H]+ and [M-H]- adducts
-frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_cmf/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
 # Model Architecture
 # ============================================================================
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
 num_hs: 4       # number of H-transfer options per fragment (0..4)
+frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -151,7 +152,7 @@ cc_interstage_use_rest: False  # Whether to use rest of molecule embedding
 # ============================================================================
 frag_hidden_size: 256  # Hidden dimension for fragment GNN
 frag_num_layers: 4  # Number of GNN layers for fragment encoding
-frag_gnn_type: NodeMLP  # no edge message passing; matches frag_params.pyg_edges: False
+frag_gnn_type: GINE  # GNN architecture for fragments: ["GIN", "GINE", "GCN", "GAT", "PNA"]
 frag_dropout: 0.1  # Dropout rate for fragment GNN
 frag_normalization: graph  # Normalization: ["batch", "layer", "none", "graph"] (graph-level norm for stability)
 frag_pool_type: attention  # Pooling method: ["sum", "mean", "max", "attention", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
