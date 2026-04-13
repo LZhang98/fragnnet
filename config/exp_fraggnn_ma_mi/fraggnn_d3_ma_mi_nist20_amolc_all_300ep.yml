@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all2_300ep
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_300ep
 wandb_tags:
 - retrieval
 - nist20
@@ -17,7 +17,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
-- lb32          # loss batch size 16
+- lb16          # loss batch size 16
 - preload
 - preprocess
 - new_no_edges  # no edge features in fragment GNN
@@ -41,7 +41,7 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey   # inchikey split: [M+H]+ and [M-H]- adducts
-frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_cmf/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
 # Model Architecture

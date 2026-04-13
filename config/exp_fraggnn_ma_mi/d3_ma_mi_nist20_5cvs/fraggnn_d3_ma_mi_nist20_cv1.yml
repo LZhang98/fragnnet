@@ -15,7 +15,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256
 - vectorized_loss
-- lb32
+- lb16
 - preload
 - preprocess
 - new_no_edges
@@ -29,7 +29,7 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_d3_5cvs_inchikey/cv_1
-frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_cmf/dags
 num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
@@ -66,9 +66,6 @@ prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
-
-mol_params:
-  preprocess: True
 
 train_batch_size: 256
 eval_batch_size: 256

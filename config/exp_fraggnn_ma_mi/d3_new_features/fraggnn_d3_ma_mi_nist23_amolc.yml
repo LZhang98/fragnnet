@@ -13,7 +13,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256
 - vectorized_loss
-- lb32
+- lb16
 - preload
 - preprocess
 - new_no_edges
