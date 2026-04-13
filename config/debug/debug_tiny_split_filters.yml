@@ -29,7 +29,7 @@ frag_params:
 spec_params:
   merge: False
   nce: True
-  ace: True             # needed so Phase-1 fills ace for non-QTOF spectra
+  ace: False            # filter_ce_by_inst reads raw ace column from pickle (QTOF always has it)
   merge_keep_ces: False
   preprocess: False
   prec_types:

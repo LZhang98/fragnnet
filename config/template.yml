@@ -55,14 +55,13 @@ spec_params:
   # Only the entry matching the current split is used.  Missing entry = no filter.
   # filter_prec_types: drop spectra whose prec_type is not in spec_params.prec_types.
   # filter_ce_by_inst: per-instrument CE range filter (scalar, after Phase-1 CE fill).
-  #   nce_min/nce_max operate on the filled NCE column (requires nce: true).
-  #   ace_min/ace_max operate on the raw/filled ACE column (QTOF always has raw ace).
+  #   nce_min/nce_max operate on the Phase-1-filled NCE column (requires nce: true).
+  #   ace_min/ace_max operate on the raw ACE column from the pickle file.
+  #   QTOF spectra always carry raw ace; ace: true is NOT required (and conflicts with nce: true).
   #   Spectra of a listed instrument with missing/unfillable CE are dropped.
   # Example:
-  #   split_filters:
+  #   split_ce_by_inst_filters:
   #     train:
-  #       filter_prec_types: true
-  #       filter_ce_by_inst:
   #         FT:   {nce_min: 0, nce_max: 60}
   #         QTOF: {ace_min: 0, ace_max: 40}
   #     val: {}
