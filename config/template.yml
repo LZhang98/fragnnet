@@ -49,7 +49,24 @@ spec_params:
   preprocess: False
   unique_id: True
   counts: True
+  # this is deplicated and will be removed in favor of split_filters.val.filter_ce_by_inst.QTOF. Use split_filters instead.
   test_ces:
+  # Per-split spectrum filters applied at dataset load time.
+  # Only the entry matching the current split is used.  Missing entry = no filter.
+  # filter_prec_types: drop spectra whose prec_type is not in spec_params.prec_types.
+  # filter_ce_by_inst: per-instrument CE range filter (scalar, after Phase-1 CE fill).
+  #   nce_min/nce_max operate on the filled NCE column (requires nce: true).
+  #   ace_min/ace_max operate on the raw/filled ACE column (QTOF always has raw ace).
+  #   Spectra of a listed instrument with missing/unfillable CE are dropped.
+  # Example:
+  #   split_filters:
+  #     train:
+  #       filter_prec_types: true
+  #       filter_ce_by_inst:
+  #         FT:   {nce_min: 0, nce_max: 60}
+  #         QTOF: {ace_min: 0, ace_max: 40}
+  #     val: {}
+  split_filters: {}
 mol_params:
   smiles: True
   fingerprint: False
