@@ -105,11 +105,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         frag_mode_scale: bool,
         ce_scale: bool,
         ce_scaler_hidden_dim: int,
-        fragment_prior: bool,
-        fragment_prior_weight: float,
-        fragment_prior_conditioning: str,
-        fragment_prior_loss: bool,
-        fragment_prior_loss_weight: float,
         output_formula_str: bool,
         ce_insert_dual: bool = False,
     ):
@@ -270,26 +265,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 f"frag_pool_combine={self.frag_pool_combine!r}."
             )
         self.mlp_output_format = mlp_output_format
-        self.fragment_prior = fragment_prior
-        self.fragment_prior_weight = fragment_prior_weight
-        self.fragment_prior_conditioning = fragment_prior_conditioning
-        self.fragment_prior_loss = fragment_prior_loss
-        self.fragment_prior_loss_weight = fragment_prior_loss_weight
-        # v1 is intentionally a soft logit prior only; candidate-match auxiliary loss is
-        # reserved until the structure-only ablation proves useful.
-        if self.fragment_prior_loss:
-            raise NotImplementedError("fragment_prior_loss is not implemented in v1")
-        # Keep the prior structurally identifiable: it must not see CE, adduct,
-        # instrument, or fragmentation mode conditioning in this ablation.
-        if self.fragment_prior and self.fragment_prior_conditioning != "structure_only":
-            raise ValueError(
-                "fragment_prior_conditioning only supports 'structure_only' in v1; "
-                f"got {self.fragment_prior_conditioning!r}"
-            )
-        if self.fragment_prior and self.mlp_output_format != "formula":
-            raise NotImplementedError(
-                "fragment_prior=True only supports mlp_output_format='formula' in v1"
-            )
 
         # determine mlp input dims
         if self.frag_embed_combine == "cat":
@@ -316,26 +291,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 "normalization": mlp_normalization,
             }
             self.formula_module = MLPBlocks(**formula_mlp_kwargs)
-
-        if self.fragment_prior:
-            # The prior scores the same node/H-shift candidates as formula_module, but from
-            # structure-only fragment embeddings before the full fragment GNN pass.
-            prior_mlp_kwargs = {
-                "input_size": self.frag_embedder.hidden_size,
-                "output_size": self.mlp_output_dim,
-                "hidden_size": mlp_hidden_size,
-                "num_layers": mlp_num_layers,
-                "dropout": mlp_dropout,
-                "use_residuals": mlp_use_residuals,
-                "normalization": mlp_normalization,
-            }
-            self.fragment_prior_module = MLPBlocks(**prior_mlp_kwargs)
-            assert self.fragment_prior_module.output_layer is not None
-            # Zero init makes fragment_prior=True start equivalent to the current model.
-            nn.init.zeros_(self.fragment_prior_module.output_layer.weight)
-            nn.init.zeros_(self.fragment_prior_module.output_layer.bias)
-        else:
-            self.fragment_prior_module = None
 
         # mode-conditioned output scaling (applied after formula_module)
         self.frag_mode_scale = frag_mode_scale
@@ -434,23 +389,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "frag_mode_insert_location=frag not supported"
         )
 
-    def _zero_conditioned_mol_x(self, mol_x: th.Tensor) -> th.Tensor:
-        """Append zero-valued mol-level conditioning slots for structure-only prior.
-
-        The shared mol_embedder expects the conditioned input width.  Zero-filling those
-        slots preserves shape while preventing CE/adduct/instrument/mode leakage.
-        """
-        parts = [mol_x]
-        if self.ce_insert_location == "mol" and self.ce_mol_input_dim > 0:
-            parts.append(mol_x.new_zeros((mol_x.shape[0], self.ce_mol_input_dim)))
-        if self.prec_insert_location == "mol" and self.prec_mol_input_dim > 0:
-            parts.append(mol_x.new_zeros((mol_x.shape[0], self.prec_mol_input_dim)))
-        if self.inst_insert_location == "mol" and self.inst_mol_input_dim > 0:
-            parts.append(mol_x.new_zeros((mol_x.shape[0], self.inst_mol_input_dim)))
-        if self.frag_mode_insert_location == "mol" and self.frag_mode_mol_input_dim > 0:
-            parts.append(mol_x.new_zeros((mol_x.shape[0], self.frag_mode_mol_input_dim)))
-        return th.cat(parts, dim=1) if len(parts) > 1 else mol_x
-
     def _compute_mol_feats_sizes(self):
         """method compute mol feature size
         these features don't rely on any model parameters
@@ -508,8 +446,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             self.m_ce_embedder = th.compile(self.m_ce_embedder, **kwargs)
         if hasattr(self, "boundary_pair_proj"):
             self.boundary_pair_proj = th.compile(self.boundary_pair_proj, **kwargs)
-        if self.fragment_prior_module is not None:
-            self.fragment_prior_module = th.compile(self.fragment_prior_module, **kwargs)
         if check_pyg_compile():
             self.mol_embedder = pyg.compile(self.mol_embedder, **kwargs)  # type: ignore[assignment]
             self.frag_embedder = pyg.compile(self.frag_embedder, **kwargs)  # type: ignore[assignment]
@@ -614,8 +550,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # Precompute per-mol node counts once from the cumulative prefix sum (avoids up to 4
         # redundant th.unique scans over mol_batch when multiple embeddings insert at "mol").
         mol_batch_counts = mol_num_nodes[1:] - mol_num_nodes[:-1]
-        # Capture the unconditioned molecule input before CE/adduct/instrument/mode are appended.
-        prior_mol_x = self._zero_conditioned_mol_x(mol_x) if self.fragment_prior else None
 
         if self.ce_insert_location == "mol":
             assert ce_embed is not None, "ce_embed must not be None"
@@ -639,19 +573,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
         # pool mol embeddings
         mol_embed_gnn_pool = self.mol_pool(mol_embed_gnn, mol_batch)
-        if self.fragment_prior:
-            assert prior_mol_x is not None
-            # Reuse the shared mol_embedder with zero-filled conditioning slots so the
-            # prior sees molecular structure only while preserving the trained input shape.
-            prior_mol_embed_gnn = self.mol_embedder(
-                prior_mol_x, mol_batch, mol_edge_index, mol_edge_attr
-            )
-            prior_mol_embed_gnn_pool = self.mol_pool(prior_mol_embed_gnn, mol_batch)
-            prior_frag_ndata = []
-        else:
-            prior_mol_embed_gnn = None
-            prior_mol_embed_gnn_pool = None
-            prior_frag_ndata = None
 
         # process dag
         # create interstage
@@ -735,69 +656,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 frag_node_mask_embed = frag_node_mask_embed
 
             frag_ndata.append(frag_node_mask_embed)
-            if prior_frag_ndata is not None:
-                # Mirror the normal cc feature using zero-conditioned atom embeddings; this
-                # keeps prior_frag_x_embed aligned with frag_x_embed feature-by-feature.
-                assert prior_mol_embed_gnn is not None
-                assert prior_mol_embed_gnn_pool is not None
-                prior_frag_node_embed = th.index_select(
-                    prior_mol_embed_gnn, 0, frag_node_mask_idxs[:, 1]
-                )
-                prior_frag_node_mask_embed = self.mol_pool(
-                    prior_frag_node_embed, frag_node_mask_idxs[:, 0]
-                )
-                if self.cc_interstage_use_rest:
-                    prior_rest_node_mask_idx = th.nonzero(~frag_node_mask).long()
-                    prior_rest_node_offsets = mol_num_nodes[
-                        th.bucketize(prior_rest_node_mask_idx[:, 0], frag_num_nodes, right=True)
-                        - 1
-                    ]
-                    prior_rest_node_mask_idx[:, 1] = (
-                        prior_rest_node_mask_idx[:, 1] + prior_rest_node_offsets
-                    )
-                    prior_valid_rest_mask = (
-                        prior_rest_node_mask_idx[:, 1] < prior_mol_embed_gnn.shape[0]
-                    )
-                    prior_rest_node_mask_idx = prior_rest_node_mask_idx[prior_valid_rest_mask]
-                    prior_rest_node_embed = th.index_select(
-                        prior_mol_embed_gnn, 0, prior_rest_node_mask_idx[:, 1]
-                    )
-                    prior_mol_pool_embed = self.mol_pool(
-                        prior_rest_node_embed, prior_rest_node_mask_idx[:, 0]
-                    )
-                else:
-                    prior_mol_pool_embed = prior_mol_embed_gnn_pool[frag_batch]
-
-                if self.cc_interstage_type == "add":
-                    prior_frag_node_mask_embed = prior_frag_node_mask_embed + prior_mol_pool_embed
-                elif self.cc_interstage_type == "sub":
-                    prior_frag_node_mask_embed = prior_frag_node_mask_embed - prior_mol_pool_embed
-                elif self.cc_interstage_type == "linear":
-                    prior_frag_node_mask_embed = self.cc_interstage(
-                        th.cat([prior_frag_node_mask_embed, prior_mol_pool_embed], dim=1)
-                    )
-                elif self.cc_interstage_type == "gated":
-                    prior_gate = self.cc_interstage(
-                        th.cat([prior_frag_node_mask_embed, prior_mol_pool_embed], dim=1)
-                    )
-                    prior_frag_node_mask_embed = (
-                        prior_gate * prior_frag_node_mask_embed
-                        + (1 - prior_gate) * prior_mol_pool_embed
-                    )
-                elif self.cc_interstage_type == "mlp":
-                    prior_frag_node_mask_embed = self.cc_interstage(
-                        th.cat([prior_frag_node_mask_embed, prior_mol_pool_embed], dim=1)
-                    )
-                elif self.cc_interstage_type == "bilinear":
-                    prior_interaction = self.cc_interstage_bilinear(
-                        prior_frag_node_mask_embed, prior_mol_pool_embed
-                    )
-                    prior_frag_node_mask_embed = (
-                        prior_frag_node_mask_embed + self.cc_interstage_proj(prior_interaction)
-                    )
-                else:
-                    assert self.cc_interstage_type == "direct", self.cc_interstage_type
-                prior_frag_ndata.append(prior_frag_node_mask_embed)
         if "boundary_cc" in self.frag_node_feats:
             num_frags_total = frag_x.shape[0]
             boundary_mask = compute_boundary_mask(
@@ -823,23 +681,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     dtype=mol_embed_gnn.dtype,
                 )
             frag_ndata.append(boundary_embed)
-            if prior_frag_ndata is not None:
-                assert prior_mol_embed_gnn is not None
-                if boundary_idxs.numel() > 0:
-                    prior_boundary_embed = th.index_select(
-                        prior_mol_embed_gnn, 0, boundary_idxs[:, 1]
-                    )
-                    prior_boundary_embed = self.mol_pool(
-                        prior_boundary_embed, boundary_idxs[:, 0], dim_size=num_frags_total
-                    )
-                else:
-                    prior_boundary_embed = th.zeros(
-                        num_frags_total,
-                        prior_mol_embed_gnn.shape[1],
-                        device=device,
-                        dtype=prior_mol_embed_gnn.dtype,
-                    )
-                prior_frag_ndata.append(prior_boundary_embed)
         if "boundary_pair" in self.frag_node_feats:
             # boundary_pair requires cc to be in frag_node_feats (frag_node_mask must exist)
             num_frags_total = frag_x.shape[0]
@@ -868,25 +709,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                     dtype=mol_embed_gnn.dtype,
                 )
             frag_ndata.append(boundary_pair_out)
-            if prior_frag_ndata is not None:
-                assert prior_mol_embed_gnn is not None
-                if pair_frag_idxs.numel() > 0:
-                    prior_in_embed = th.index_select(prior_mol_embed_gnn, 0, pair_in_global)
-                    prior_out_embed = th.index_select(prior_mol_embed_gnn, 0, pair_out_global)
-                    prior_pair_embed = self.boundary_pair_proj(
-                        th.cat([prior_in_embed, prior_out_embed], dim=-1)
-                    )
-                    prior_boundary_pair_out = self.mol_pool(
-                        prior_pair_embed, pair_frag_idxs, dim_size=num_frags_total
-                    )
-                else:
-                    prior_boundary_pair_out = th.zeros(
-                        num_frags_total,
-                        prior_mol_embed_gnn.shape[1],
-                        device=device,
-                        dtype=prior_mol_embed_gnn.dtype,
-                    )
-                prior_frag_ndata.append(prior_boundary_pair_out)
         # edge atom embeddings
         if "cc" in self.frag_edge_feats:
             # connected competents
@@ -916,8 +738,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 )
             )
             frag_ndata.append(frag_node_formula)
-            if prior_frag_ndata is not None:
-                prior_frag_ndata.append(frag_node_formula)
         # edge formulae
         if "base_formula" in self.frag_edge_feats:
             frag_edge_formula = self.formula_embedder(
@@ -934,8 +754,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 )
             )
             frag_ndata.append(frag_depth)
-            if prior_frag_ndata is not None:
-                prior_frag_ndata.append(frag_depth)
         # edge complement
         if "complement" in self.frag_edge_feats:
             frag_edge_complement = self.complement_embedder(
@@ -948,11 +766,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if len(frag_ndata) == 0:
             assert self.frag_node_feats_size == 0, self.frag_node_feats_size
             frag_ndata.append(th.zeros([batch_frag_num_nodes, 0], dtype=float_dtype, device=device))
-        if prior_frag_ndata is not None and len(prior_frag_ndata) == 0:
-            assert self.frag_node_feats_size == 0, self.frag_node_feats_size
-            prior_frag_ndata.append(
-                th.zeros([batch_frag_num_nodes, 0], dtype=float_dtype, device=device)
-            )
         if len(frag_edata) == 0:
             assert self.frag_edge_feats_size == 0, self.frag_edge_feats_size
             frag_edata.append(th.zeros([batch_frag_num_edges, 0], dtype=float_dtype, device=device))
@@ -1099,16 +912,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # assemble all features for dag
         # concatenate everything
         frag_x_embed = th.cat(frag_ndata, dim=-1)
-        if prior_frag_ndata is not None:
-            prior_frag_x_embed = th.cat(prior_frag_ndata, dim=-1)
-            # The prior path must build the same feature layout as the main fragment path
-            # so the shared input projection can be reused without a second fragment GNN.
-            assert prior_frag_x_embed.shape == frag_x_embed.shape, (
-                prior_frag_x_embed.shape,
-                frag_x_embed.shape,
-            )
-        else:
-            prior_frag_x_embed = None
         # concatenate everything
         frag_edge_attr_embed = th.cat(frag_edata, dim=-1)
 
@@ -1117,12 +920,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_x_embed, frag_node_batch_idxs, frag_edge_index, frag_edge_attr_embed
         )
         frag_embed_node = self.frag_embedder.input_project(frag_x_embed)
-        if prior_frag_x_embed is not None:
-            # Stop the prior at input_project: this is a cheap structural candidate scorer,
-            # not another condition-specific fragment message-passing tower.
-            prior_frag_embed = self.frag_embedder.input_project(prior_frag_x_embed)
-        else:
-            prior_frag_embed = None
         frag_embed_gnn_pool = self.frag_pool(frag_embed_gnn, frag_batch)
         frag_embed_node_pool = self.frag_pool(frag_embed_node, frag_batch)
         if self.frag_pool_combine == "subtract":
@@ -1199,16 +996,6 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 frag_joint_logits = self.ce_scaler(
                     frag_joint_logits, ce, ce_batch_idxs, frag_node_batch_idxs, batch_size
                 )
-            if self.fragment_prior_module is not None:
-                assert prior_frag_embed is not None
-                prior_logits = self.fragment_prior_module(prior_frag_embed)
-                assert prior_logits.shape == frag_joint_logits.shape, (
-                    prior_logits.shape,
-                    frag_joint_logits.shape,
-                )
-                # Add the structure-only candidate prior after condition-specific scalers:
-                # final_logit = intensity_logit(conditioned) + alpha * structure_prior_logit.
-                frag_joint_logits = frag_joint_logits + self.fragment_prior_weight * prior_logits
             # if include_cmf:
             #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)
             assert frag_joint_logits.shape[1] == self.mlp_output_dim, (

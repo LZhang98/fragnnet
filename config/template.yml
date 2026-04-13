@@ -396,13 +396,6 @@ frag_mode_scale: False           # Enable mode-conditioned affine output scaling
 ce_scale: False              # Enable CE-conditioned FiLM scaler on logits before softmax
 ce_scaler_hidden_dim: 64     # Hidden dim of the CE→FiLM MLP
 
-# Structure-only fragment prior over DAG node/H-shift logits.
-fragment_prior: False
-fragment_prior_weight: 0.0
-fragment_prior_conditioning: structure_only
-fragment_prior_loss: False
-fragment_prior_loss_weight: 0.0
-
 # ============================================================================
 # MCES Pre-training Configuration
 # ============================================================================
