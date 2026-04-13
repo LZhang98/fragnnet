@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_fragment_prior_2
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_fragment_prior_025
 wandb_tags:
 - retrieval
 - nist20
