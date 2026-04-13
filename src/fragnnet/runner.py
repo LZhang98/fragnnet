@@ -565,16 +565,12 @@ def init_run(
         # no profiler
         profiler = None
 
-    # setup datasets
+    # setup datasets — test is intentionally excluded here and loaded after
+    # training to avoid holding the test set in memory throughout the run.
     logging.info("setup dataset")
-    splits = ["train", "val"]
-    if config_d["eval_test_split"]:
-        splits.append("test")
-    dses = init_dataset(config_d, splits=splits)
+    dses = init_dataset(config_d, splits=["train", "val"])
     train_ds = dses[0]
     val_ds = dses[1]
-    if config_d["eval_test_split"]:
-        test_ds = dses[2]
 
     # check config for sampler
     validate_sampler_config(config_d)
@@ -592,8 +588,6 @@ def init_run(
     logging.info("setup dataloader")
     train_dl = init_dataloader(train_ds, config_d)
     val_dl = init_dataloader(val_ds, config_d)
-    if config_d["eval_test_split"]:
-        test_dl = init_dataloader(test_ds, config_d)
 
     # setup trainer
     logging.info("setup trainer")
@@ -681,6 +675,9 @@ def init_run(
     logging.info("callback metrics")
 
     if not trainer.interrupted and config_d["eval_test_split"]:
+        logging.info("setup test dataset")
+        test_ds = init_dataset(config_d, splits=["test"])[0]
+        test_dl = init_dataloader(test_ds, config_d)
         logging.info("test model")
         trainer.test(
             model=model,
