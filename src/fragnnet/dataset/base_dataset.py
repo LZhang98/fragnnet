@@ -255,8 +255,10 @@ class BaseDataset(Dataset):
             # must satisfy the range — e.g. a ramp [10–70] fails nce_max: 60.
             _filter_ce_by_inst: dict = _split_filter.get("filter_ce_by_inst", {})
             if _filter_ce_by_inst:
-                def _ce_range_valid(col_primary: str, col_e1: str, col_e2: str,
-                                    lo, hi) -> pd.Series:
+
+                def _ce_range_valid(
+                    col_primary: str, col_e1: str, col_e2: str, lo, hi
+                ) -> pd.Series:
                     """Return boolean Series: True when ALL present CE scalars are in [lo, hi].
 
                     A CE column is considered present when it is neither NaN nor the -1
