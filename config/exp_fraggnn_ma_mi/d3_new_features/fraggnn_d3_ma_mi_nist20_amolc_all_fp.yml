@@ -139,12 +139,44 @@ max_epochs: 100
 debug_overfit: False
 
 # ============================================================================
-# Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
+# Molecular GNN Configuration
+# NOTE: If using MCES pre-training, these MUST match the pre-training config
 # ============================================================================
-mol_dropout: 0.2    # from fragnnet_d3/s0.yml
-frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.2    # from fragnnet_d3/s0.yml
-weight_decay: 0.01
+mol_hidden_size: 128  # Hidden dimension for molecular GNN
+mol_num_layers: 4  # Number of GNN layers for molecular encoding
+mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GCN", "GAT", "PNA"]
+mol_dropout: 0.3  # Dropout rate for molecular GNN
+mol_normalization: layer  # Normalization: ["batch", "layer", "none"]
+mol_pool_type: mean_max_sum  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]
+
+# ============================================================================
+# Inter-stage Configuration (Mol → Frag connection)
+# ============================================================================
+cc_interstage_type: direct  # How to combine mol and frag embeddings: ["add", "sub", "linear", "direct", "gated", "attention", "mlp", "bilinear", "set_transformer"]
+cc_interstage_use_rest: False  # Whether to use rest of molecule embedding
+
+# ============================================================================
+# Fragment GNN Configuration
+# ============================================================================
+frag_hidden_size: 256  # Hidden dimension for fragment GNN
+frag_num_layers: 4  # Number of GNN layers for fragment encoding
+frag_gnn_type: GINE  # GNN architecture for fragments: ["GIN", "GINE", "GCN", "GAT", "PNA"]
+frag_dropout: 0.1  # Dropout rate for fragment GNN
+frag_normalization: graph  # Normalization: ["batch", "layer", "none", "graph"] (graph-level norm for stability)
+frag_pool_type: attention  # Pooling method: ["sum", "mean", "max", "attention", "mean_max_sum", "mean_std_softmax", "none"]; multi-stat pools expand feature width
+frag_embed_combine: cat  # How to combine fragment embeddings: ["add", "cat"]
+frag_pool_combine: none  # How to combine pooled features: ["add", "subtract", "none"]; use "none" with frag_pool_type in ["mean_max_sum", "mean_std_softmax"]
+
+# ============================================================================
+# MLP/Output Configuration
+# ============================================================================
+mlp_output_format: formula  # Output format: ["formula", "peak"]
+mlp_hidden_size: 256  # Hidden dimension for MLP layers
+mlp_dropout: 0.4  # Dropout rate for MLP
+mlp_normalization: none  # Normalization for MLP: ["batch", "layer", "none"]
+mlp_num_layers: 2  # Number of MLP layers
+mlp_use_residuals: True  # Use residual connections in MLP
+
 
 # ============================================================================
 # LR Schedule — cosine warmup + decay
@@ -152,13 +184,14 @@ weight_decay: 0.01
 # warmup: first ~4 epochs (5000 steps); cosine decay to 1% of peak by end
 # ============================================================================
 lr_schedule: False
-lr: 0.0004
+lr: 0.000387
 lr_schedule_type: cosine
 lr_warmup_steps: 5000
 lr_total_steps: 390000
 lr_min_ratio: 0.01    # floor at 1% of peak LR (4e-6)
 lr_decay_rate: 0.95   # unused for cosine but required by template
 lr_decay_steps: 5000  # unused for cosine but required by template
+weight_decay: 0.0
 
 # ============================================================================
 # Loss Configuration
