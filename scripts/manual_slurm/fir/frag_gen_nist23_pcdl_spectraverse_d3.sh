@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
-#SBATCH --job-name=frag_gen_nist20_d3
+#SBATCH --job-name=frag_gen_nist23_pcdl_spectraverse_d3
 #SBATCH --mem=180G
-#SBATCH --cpus-per-task=48
+#SBATCH --cpus-per-task=96
 #SBATCH --time=0-1:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3%j.out
-#SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist20_d3%j.err
+#SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist23_pcdl_spectraverse_d3_%j.out
+#SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist23_pcdl_spectraverse_d3_%j.err
 #SBATCH --open-mode=append
 
 # record start
