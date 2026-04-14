@@ -217,3 +217,4 @@ pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
 skip_extra_losses: True          # skip auxiliary losses (entropy, edge) to save time
+log_adduct_inst_ce_metrics: True  # log separate CE histogram metrics for each adduct and instrument type
