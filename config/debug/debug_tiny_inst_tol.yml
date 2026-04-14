@@ -131,3 +131,4 @@ num_workers: 0
 detect_anomaly: True
 log_adduct_inst_ce_metrics: True
 log_adduct_inst_ce_min_count: 1
+eval_test_split: True
