@@ -474,7 +474,34 @@ def _expected_observed_isotope_ratio(
     k: int,
     r_exp_prec: Mapping[int, float] | None = None,
 ) -> float:
-    """Expected observed I(M+k_frag)/I(M+0_frag) for co-isolation cleanup."""
+    """Expected observed I(M+k_frag)/I(M+0_frag) for co-isolation cleanup.
+
+    In MS2, the isolation window selects the monoisotopic M+0 precursor (all-12C).
+    Its fragments are all M+0 — no natural M+k contribution.  Only the co-isolated
+    M+k precursor produces M+k satellite peaks in the fragment spectrum.
+
+    For a fragment with formula-predicted natural ratio ``r_frag``, the probability
+    that the single 13C from the M+1 precursor lands in this fragment is
+    ``mol_scale ≈ r_frag / r_prec``.  So the expected M+k satellite ratio is:
+
+        obs = f × r_frag                      (k ≥ 2, no denominator correction)
+
+    For k=1, the M+1 precursor also dilutes the observed M+0 fragment intensity
+    (when 13C is carried by the neutral loss rather than retained in the fragment).
+    The denominator correction accounts for this:
+
+        obs = (f × r_frag) / (1 + f × (r_prec − r_frag))
+
+    Args:
+        f: Co-isolation efficiency (``R_k_obs_prec / R_k_exp_prec``).
+        r_frag: Expected natural M+k/M+0 ratio for this fragment (used as a proxy
+            for the fraction of 13C that would land in the fragment).
+        k: Isotope order.
+        r_exp_prec: Precursor expected isotope ratios by order.
+
+    Returns:
+        Expected observed I(M+k_frag)/I(M+0_frag).
+    """
     if k == 1 and r_exp_prec is not None:
         r_prec = float(r_exp_prec.get(k, 0.0))
         if r_prec > 0:
@@ -924,9 +951,36 @@ def detect_isotope_peaks_for_training(
     # scales the window for each fragment's composition instead of applying the
     # precursor-level R_k uniformly.
     def _frag_expected(m0_mz: float, k: int) -> float:
-        """Return per-fragment expected M+k/M+0 ratio given its M+0 m/z."""
-        if mol_counts is None or k not in r_leak or prec_neutral_mass <= 0:
-            return leak_ratios.get(k, 0.0)  # fallback: use R_k directly
+        """Return per-fragment expected M+k/M+0 ratio given its M+0 m/z.
+
+        Two code paths depending on whether the precursor formula is known:
+
+        **Formula known** (``mol_counts is not None``):
+            ``r_leak[k]`` = co-isolation fraction f (formula-normalised).
+            Returns ``_expected_observed_isotope_ratio(f, r_nat_frag, k, r_exp_prec)``
+            where r_nat_frag comes from the DAG or an m/z proxy
+            (handled by ``_fragment_expected_ratio``).
+
+        **No formula** (``mol_counts is None``):
+            ``leak_ratios[k]`` = observed M+k / M+0 ratio of the precursor residual
+            peaks (or cross-pair-consistent estimate from fragment pairs).  Returned
+            directly as R_expected.  Applying mol_scale here would lower the absolute
+            flagging floor from ``ratio_lo × R_k`` to ``ratio_lo × R_k × mol_scale``,
+            which dramatically increases FP on small fragments because many small noise
+            peaks fall within the shrunken window.  The formula-aware path handles
+            per-fragment natural-abundance scaling correctly via ``r_leak`` +
+            ``_fragment_expected_ratio``.
+        """
+        r_k = leak_ratios.get(k, 0.0)
+
+        if k not in r_leak:
+            # No-formula path: return the spectrum-level R_k directly.
+            return r_k
+
+        if prec_neutral_mass <= 0:
+            return r_k
+
+        # Formula path: r_leak[k] = f; compute exact per-fragment expected ratio.
         r_exp_frag = _fragment_expected_ratio(
             m0_mz,
             k,
@@ -938,6 +992,14 @@ def detect_isotope_peaks_for_training(
             dag_formula_strs=dag_formula_strs,
             dag_mz_tol=dag_mz_tol,
         )
+
+        if r_exp_frag is None or r_exp_frag <= 0:
+            mol_scale = max(
+                0.0,
+                min(1.0, (m0_mz - adduct_delta_mass) / prec_neutral_mass),
+            )
+            r_exp_frag = r_k * mol_scale
+
         return _expected_observed_isotope_ratio(r_leak[k], r_exp_frag, k, r_exp_prec)
 
     for i in range(n):
