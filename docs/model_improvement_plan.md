@@ -626,7 +626,7 @@ of experiments.  The updated `smpTrue` and `smpTrue_ruleid` tarballs shrank from
 |---|---|---|---|---|---|---|
 | `all` (baseline) | `smpFalse` | 1.7 GB | — | **0.6688** | **−2.416** | Completed |
 | `prepass` | `smpTrue` (updated) | **1.7 GB** | — | 0.6621 | −2.373 | Completed |
-| `prepass_ruleid` | `smpTrue_ruleid` (updated) | **1.7 GB** | `prepass_rule_id` node feat | 0.6623 | −2.365 | Completed |
+| `prepass_ruleid` | `smpTrue_ruleid` (updated) | **1.7 GB** | legacy rule-id variant | 0.6623 | −2.365 | Completed |
 | `mbfs` | `smpFalse_mbfs` | 2.2 GB | — | — | — | OOM Killed |
 | `mbfs_prepass` | `smpTrue_mbfs` | 2.5 GB | — | — | — | OOM Killed |
 

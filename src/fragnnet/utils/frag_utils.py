@@ -100,11 +100,6 @@ NODE_FEAT_TO_IDX = {
     "h_counts": 4,
     "nb_iso_idx": 5,
     "cmf_h_formulae_idx": 6,
-    # prepass_rule_id: one-hot over FRAG_RULES (len(FRAG_RULES) dims).
-    # All zeros = BFS-generated fragment.  Bit k = 1 means the fragment was
-    # produced by FRAG_RULES[k] (e.g. k=0 → crf12_0, k=2 → crf13_2).
-    # All zeros when smarts_prepass=False.
-    "prepass_rule_id": 7,
 }
 
 EDGE_FEAT_TO_IDX = {"cc": 0, "base_formula": 1, "h_range": 2, "complement": 3}
@@ -1001,8 +996,7 @@ def compute_dags(
                 num_nodes,
                 num_edges,
             )
-            # Pass 3-tuples directly; rule_idx tracking is done inside the BFS
-            # and returned via dag_frag_meta["prepass_node_rules"].
+            # Pass 3-tuples directly; the caller only needs the fragment masks.
             smarts_seed_pairs = smarts_seed_pairs_tagged
         nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
             _compute_ccs_multi_cut_cy(
@@ -1021,11 +1015,7 @@ def compute_dags(
                 min_frag_atoms=min_frag_atoms,
             )
         )
-        prepass_mask_to_rules: dict[bytes, set[int]] = dag_frag_meta.get(
-            "prepass_node_rules", {}
-        )
     else:
-        prepass_mask_to_rules: dict[bytes, set[int]] = {}
         nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
             compute_frags.compute_ccs(
                 num_nodes,
@@ -1054,13 +1044,6 @@ def compute_dags(
                 num_nodes,
                 num_edges,
             )
-            for mask_a, mask_b, rule_idx in smarts_pairs_tagged:
-                if int(mask_a.sum()) >= min_frag_atoms:
-                    key_a = mask_a.tobytes()
-                    prepass_mask_to_rules.setdefault(key_a, set()).add(rule_idx)
-                if int(mask_b.sum()) >= min_frag_atoms:
-                    key_b = mask_b.tobytes()
-                    prepass_mask_to_rules.setdefault(key_b, set()).add(rule_idx)
             smarts_pairs = [(a, b) for a, b, _ in smarts_pairs_tagged]
             nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix, dag_frag_meta = (
                 _inject_smarts_pairs_into_dag(
@@ -1116,9 +1099,6 @@ def compute_dags(
     h_count_node_feat_size = formula_node_feat_size
     nb_iso_node_feat_size = 1 if nb_isomorphic else 0
     cmf_formula_node_feat_size = formula_node_feat_size  # 1+2*max_h_transfer # h_formulae_idx, at max we can have 1 + 2 * max_h_transfer different formula
-    prepass_rule_id_node_feat_size = len(
-        FRAG_RULES
-    )  # one-hot over FRAG_RULES; all-zero = BFS fragment
     # edge feature sizes
     cc_edge_feat_size = cc_node_feat_size
     base_formula_edge_feat_size = base_formula_node_feat_size
@@ -1131,7 +1111,6 @@ def compute_dags(
         h_count_node_feat_size,
         nb_iso_node_feat_size,
         cmf_formula_node_feat_size,
-        prepass_rule_id_node_feat_size,
     ]
     edge_feat_shapes = [cc_edge_feat_size, base_formula_edge_feat_size, h_range_edge_feat_size]
 
@@ -1235,18 +1214,6 @@ def compute_dags(
         node_nb_iso_idx = np.zeros((nodes_mask_matrix.shape[0], 0), dtype=FRAG_INDEX_DTYPE)
         dag_num_nodes_nb = -1
 
-    # Build prepass_rule_id one-hot: shape (num_frags, len(FRAG_RULES)).
-    # Row is all-zero for BFS-generated fragments and the root.
-    # Bit k is set when FRAG_RULES[k] produced this fragment (multi-hot if
-    # multiple rules independently generate the same atom mask).
-    num_rules = len(FRAG_RULES)
-    node_prepass_rule_id = np.zeros((nodes_mask_matrix.shape[0], num_rules), dtype=np.int8)
-    for frag_idx, row in enumerate(nodes_mask_matrix):
-        rule_set = prepass_mask_to_rules.get(row.tobytes())
-        if rule_set:
-            for r in rule_set:
-                node_prepass_rule_id[frag_idx, r] = 1
-
     assert nodes_mask_matrix.shape[1] <= MASK_SIZE
     node_cc_mask = th.as_tensor(nodes_mask_matrix, dtype=th.bool)
     node_cc_mask = F.pad(node_cc_mask, (0, MASK_SIZE - node_cc_mask.shape[1]), "constant", 0)
@@ -1262,7 +1229,6 @@ def compute_dags(
             th.as_tensor(node_nb_iso_idx, dtype=NODE_FEAT_DTYPE),
             # cmf features bit, not set here, this should set in dataloader, use 0 for NULL forumla
             th.zeros((node_cc_mask.shape[0], cmf_formula_node_feat_size), dtype=NODE_FEAT_DTYPE),
-            th.as_tensor(node_prepass_rule_id, dtype=NODE_FEAT_DTYPE),
         ],
         dim=1,
     )
