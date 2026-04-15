@@ -180,9 +180,10 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
-  - jss_sqrt
+  - jss
 eval_mz_bin_res:
   - 0.01
+eval_bin_sqrt: True  # use sqrt m/z bins for evaluation (but not training)
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
