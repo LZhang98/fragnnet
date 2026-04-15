@@ -173,6 +173,7 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
+  - jss_sqrt
 eval_mz_bin_res:
   - 0.01
 
