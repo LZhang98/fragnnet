@@ -40,7 +40,7 @@ wandb_tags:
 # ============================================================================
 spec_fp: data/proc/nist23_pcdl_spectraverse/spec_df.pkl
 mol_fp: data/proc/nist23_pcdl_spectraverse/mol_df.pkl
-split_dp: data/split/nist23_pcdl_spectraverse_ma_mi_inchikey   # inchikey split: [M+H]+ and [M-H]- adducts
+split_dp: data/split/ccx_nist23_pcdl_spectraverse/cv0   # inchikey split: [M+H]+ and [M-H]- adducts
 frag_dp: data/frag/nist23_pcdl_spectraverse_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
