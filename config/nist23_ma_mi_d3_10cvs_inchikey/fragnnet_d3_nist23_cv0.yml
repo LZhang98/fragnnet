@@ -124,7 +124,7 @@ compile: True
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
-skip_extra_losses: True
+
 
 # save every n epochs
 checkpoint_every_n_epochs: 10

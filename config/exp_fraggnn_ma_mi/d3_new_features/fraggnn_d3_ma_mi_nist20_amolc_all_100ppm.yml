@@ -127,7 +127,7 @@ compile: True
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
-skip_extra_losses: True
+
 
 
 loss_tolerance_rel: 0.0001 # 100 ppm

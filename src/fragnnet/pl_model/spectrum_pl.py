@@ -295,6 +295,9 @@ class SpectrumPL(L.LightningModule):
         compute_rounded_match_mzs = False
         compute_bin_specs = False
         compute_entropies = False
+        compute_pred_entropies = False
+        compute_inst_tol_match_mzs = False
+        self.batch_metric_args: set[str] = set()
 
         for metric_name in self.hparams.auxiliary_scores:
             if metric_name == "cos_sim":
@@ -353,6 +356,14 @@ class SpectrumPL(L.LightningModule):
                 self.metric_min_max["true_spec_ne"] = None
                 self.auxiliary_metric_names.add("true_spec_ne")
                 compute_entropies = True
+            elif metric_name == "pred_spec_e":
+                self.metric_min_max["pred_spec_e"] = None
+                self.auxiliary_metric_names.add("pred_spec_e")
+                compute_pred_entropies = True
+            elif metric_name == "pred_spec_ne":
+                self.metric_min_max["pred_spec_ne"] = None
+                self.auxiliary_metric_names.add("pred_spec_ne")
+                compute_pred_entropies = True
             elif metric_name == "cos_hun":
                 for remove_prec_peak in hun_remove_prec_peak_flags:
                     for sqrt in hun_sqrt_flags:
@@ -440,6 +451,21 @@ class SpectrumPL(L.LightningModule):
                 self.extra_metric_args.extend(["pred_edge_batch_idxs"])
                 self.metric_min_max[fname] = None
                 self.auxiliary_metric_names.add(fname)
+            elif metric_name == "cos_hun_inst_tol":
+                for remove_prec_peak in hun_remove_prec_peak_flags:
+                    for sqrt in hun_sqrt_flags:
+                        fname_base = "cos_hun_inst_tol"
+                        if sqrt:
+                            fname_base += "_sqrt"
+                        if remove_prec_peak:
+                            fname_base += "_np"
+                        fname = fname_base
+                        self.metric_min_max[fname] = "max"
+                        self.metric_bests.append(fname)
+                        self.auxiliary_metric_names.add(fname)
+                compute_inst_tol_match_mzs = True
+                compute_rounded_match_mzs = True
+                self.batch_metric_args.add("spec_inst_type")
             else:
                 raise ValueError(f"metric_name {metric_name} not recognized")
 
@@ -514,6 +540,9 @@ class SpectrumPL(L.LightningModule):
                                 remove_prec_peaks=remove_prec_peak,
                                 prec_mzs=true_prec_mzs,
                             )
+                            # apply intensity transform (e.g. sqrt); helpers normalize internally
+                            true_bin_ints = ints_transform(true_bin_ints)
+                            pred_bin_ints = ints_transform(pred_bin_ints)
                             if "cos_sim" in self.hparams.auxiliary_scores:
                                 fname_base = "cos_sim"
                                 if sqrt:
@@ -574,6 +603,16 @@ class SpectrumPL(L.LightningModule):
                     metric_d["true_spec_e"] = true_spec_e
                 if "true_spec_ne" in self.hparams.auxiliary_scores:
                     metric_d["true_spec_ne"] = true_spec_ne
+
+            if compute_pred_entropies:
+                pred_log_probs = safelog(
+                    scatter_l1normalize(pred_ints, pred_batch_idxs), eps=self.hparams.log_min
+                )
+                pred_spec_e, pred_spec_ne = sparse_entropy_fn(pred_log_probs, pred_batch_idxs)
+                if "pred_spec_e" in self.hparams.auxiliary_scores:
+                    metric_d["pred_spec_e"] = pred_spec_e
+                if "pred_spec_ne" in self.hparams.auxiliary_scores:
+                    metric_d["pred_spec_ne"] = pred_spec_ne
 
             true_ion_num = th.bincount(true_batch_idxs)
             pred_ion_num = th.bincount(pred_batch_idxs)
@@ -724,6 +763,50 @@ class SpectrumPL(L.LightningModule):
                             fname_base += "_np"
                         fname = f"{fname_base}"
                         metric_d[fname] = batched_metric[fname]
+            if compute_inst_tol_match_mzs and "cos_hun_inst_tol" in self.hparams.auxiliary_scores:
+                spec_inst_type = kwargs.get("spec_inst_type")
+                if spec_inst_type is not None and self.inst_tol_lookup is not None:
+                    inst_idxs = spec_inst_type.reshape(-1).cpu()
+                    device = true_ints.device
+                    dtype = true_ints.dtype
+                    tol_per_sample = self.inst_tol_lookup[inst_idxs].to(device=device, dtype=dtype)
+                    min_mz_per_sample = self.inst_min_mz_lookup[inst_idxs].to(
+                        device=device, dtype=dtype
+                    )
+                    # Build per-peak effective absolute tolerance: (B, N_true).
+                    # tol_rel * clamp(mz, min=min_mz) converts relative ppm to absolute Da.
+                    safe_mzs = batch_true_mzs_r.clamp(max=self.hparams.mz_max)
+                    tol_per_peak = tol_per_sample[:, None] * th.maximum(
+                        safe_mzs, min_mz_per_sample[:, None]
+                    )
+                    batch_match_mask_it = calculate_match_mzs(
+                        batch_true_mzs_r,
+                        batch_pred_mzs_r,
+                        tolerance=0.0,
+                        relative=False,
+                        tol_per_true=tol_per_peak,
+                    )
+                    batch_true_match_mask_it = batch_match_mask_it.max(-1).values
+                    batch_pred_match_mask_it = batch_match_mask_it.max(-2).values
+                    for remove_prec_peak in hun_remove_prec_peak_flags:
+                        for sqrt in hun_sqrt_flags:
+                            inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
+                            inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
+                            fname_base = "cos_hun_inst_tol"
+                            if sqrt:
+                                fname_base += "_sqrt"
+                            if remove_prec_peak:
+                                fname_base += "_np"
+                            metric_d[fname_base] = batch_cos_hun_helper(
+                                inp_true,
+                                inp_pred,
+                                batch_match_mask_it,
+                                batch_true_match_mask_it,
+                                batch_pred_match_mask_it,
+                                remove_prec_peak,
+                                batch_true_prec_mask_r,
+                                batch_pred_prec_mask_r,
+                            )
             if (
                 "ndcg" in self.hparams.auxiliary_scores
                 or "true_oos_prob" in self.hparams.auxiliary_scores
@@ -1194,6 +1277,9 @@ class SpectrumPL(L.LightningModule):
             }
             for arg in self.extra_metric_args:
                 metric_input_d[arg] = both_d[arg]
+            for arg in self.batch_metric_args:
+                if arg in batch:
+                    metric_input_d[arg] = batch[arg]
             metric_output_d = self.metric_fn(**metric_input_d)
             for k, v in metric_output_d.items():
                 assert k not in results, k

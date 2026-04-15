@@ -115,7 +115,7 @@ compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
-skip_extra_losses: True
+
 
 loss_type: jss_distance
 ints_transform: sqrt

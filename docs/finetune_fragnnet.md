@@ -285,7 +285,7 @@ wandb_tags:                         # W&B tags for filtering
 pin_memory: True                    # Pin GPU memory for faster data loading
 loss_vectorized: True               # Vectorized loss computation
 loss_batch_size: 16                 # Batch size for loss computation
-skip_extra_losses: True             # Skip edge and other auxiliary losses
+             # Skip edge and other auxiliary losses
 
 dynamic_batch_sampler: SpecMolFragDynamicBatchSampler  # Dynamic batching
 pl_enable_progress_bar: True        # Progress bar

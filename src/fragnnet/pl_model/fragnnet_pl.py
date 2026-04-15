@@ -258,13 +258,11 @@ class FraGNNetPL(SpectrumPL):
         logging.info(f"Froze {frozen_count} parameters (exact_match={exact_match})")
 
     def _setup_loss_names(self):
-        """
-        Setup the list of loss names to be tracked during training/validation.
-        This includes primary losses, entropy terms, and other auxiliary losses
-        depending on the configuration.
-        """
+        """Setup the list of loss names to be tracked during training/validation.
 
-        # flag losses for tracking
+        A term is included only when at least one of its associated weights is non-zero.
+        Zero-weight terms are excluded from ``loss_names`` and never computed.
+        """
         loss_names = [
             "loss",
             "primary_loss",
@@ -272,213 +270,95 @@ class FraGNNetPL(SpectrumPL):
             "oos_prob",
         ]
 
-        # Add cross-entropy specific losses if applicable
         if self.hparams.loss_type == "cross_entropy":
-            loss_names.extend(
-                [
-                    "spec_ce",
-                    "oos_ce",
-                    "ios_ce",
-                ]
+            loss_names.extend(["spec_ce", "oos_ce", "ios_ce"])
+
+        def _add_if_active(names: list[str], *weights: float) -> None:
+            """Add names only when at least one weight is non-zero."""
+            if any(w != 0.0 for w in weights):
+                loss_names.extend(names)
+
+        # Entropy terms
+        _add_if_active(
+            ["formula_e", "formula_ne"],
+            self.hparams.formula_entropy_weight,
+            self.hparams.formula_normalized_entropy_weight,
+        )
+        _add_if_active(
+            ["node_e", "node_ne"],
+            self.hparams.node_entropy_weight,
+            self.hparams.node_normalized_entropy_weight,
+        )
+        _add_if_active(
+            ["node_formula_e", "node_formula_ne"],
+            self.hparams.node_formula_entropy_weight,
+            self.hparams.node_formula_normalized_entropy_weight,
+        )
+        _add_if_active(
+            ["formula_node_e", "formula_node_ne"],
+            self.hparams.formula_node_entropy_weight,
+            self.hparams.formula_node_normalized_entropy_weight,
+        )
+        _add_if_active(
+            ["joint_e", "joint_ne"],
+            self.hparams.joint_entropy_weight,
+            self.hparams.joint_normalized_entropy_weight,
+        )
+
+        # Edge losses: only when edge computation is not globally disabled
+        if not self.hparams.skip_edge_loss:
+            _add_if_active(
+                ["edge_h_range_loss", "edge_h_transfer_loss"],
+                self.hparams.edge_h_range_loss_weight,
+                self.hparams.edge_h_transfer_loss_weight,
+            )
+            _add_if_active(
+                ["edge_e", "edge_ne"],
+                self.hparams.edge_entropy_weight,
+                self.hparams.edge_normalized_entropy_weight,
             )
 
-        # Add extra losses (entropy, mutual information, etc.) if not skipped
-        if not self.hparams.skip_extra_losses:
-            loss_names.extend(
-                [
-                    "spec_e",
-                    "spec_ne",
-                    "formula_e",
-                    "formula_ne",
-                    "node_e",
-                    "node_ne",
-                    "node_formula_e",
-                    "node_formula_ne",
-                    "formula_node_e",
-                    "formula_node_ne",
-                    "joint_e",
-                    "joint_ne",
-                    "node_formula_mi",
-                    "formula_node_mi",
-                    "h_mean",
-                    "h_e",
-                    "h_ne",
-                ]
+        # Neighbor isolation losses
+        if self.hparams.nb_iso:
+            _add_if_active(
+                ["nb_node_e", "nb_node_ne"],
+                self.hparams.nb_node_entropy_weight,
+                self.hparams.nb_node_normalized_entropy_weight,
             )
-            # Add edge losses if enabled
-            if not self.hparams.skip_edge_loss:
-                loss_names.extend(
-                    ["edge_h_range_loss", "edge_h_transfer_loss", "edge_e", "edge_ne"]
-                )
-            # Add neighbor isolation losses if enabled
-            if self.hparams.nb_iso:
-                loss_names.extend(
-                    [
-                        "nb_node_e",
-                        "nb_node_ne",
-                        "nb_node_formula_e",
-                        "nb_node_formula_ne",
-                        "nb_formula_node_e",
-                        "nb_formula_node_ne",
-                        "nb_joint_e",
-                        "nb_joint_ne",
-                        "nb_node_node_e",
-                        "nb_node_node_ne",
-                        "nb_node_formula_mi",
-                        "nb_formula_node_mi",
-                        "nb_node_node_mi",
-                    ]
-                )
-            # Add pairwise losses if weights are positive
-            if self.hparams.pairwise_cosine_loss_weight > 0:
-                loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_jss_loss_weight > 0:
-                loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_cross_entropy_loss_weight > 0:
-                loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
-        else:
-            # If extra losses are skipped, add specific ones if their weights are non-zero
-            if not (
-                self.hparams.formula_entropy_weight
-                == self.hparams.formula_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "formula_e",
-                        "formula_ne",
-                    ]
-                )
-            if not (
-                self.hparams.node_entropy_weight
-                == self.hparams.node_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "node_e",
-                        "node_ne",
-                    ]
-                )
-            if not (
-                self.hparams.node_formula_entropy_weight
-                == self.hparams.node_formula_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "node_formula_e",
-                        "node_formula_ne",
-                    ]
-                )
-            if not (
-                self.hparams.formula_node_entropy_weight
-                == self.hparams.formula_node_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "formula_node_e",
-                        "formula_node_ne",
-                    ]
-                )
-            if not (
-                self.hparams.joint_entropy_weight
-                == self.hparams.joint_normalized_entropy_weight
-                == 0.0
-            ):
-                loss_names.extend(
-                    [
-                        "joint_e",
-                        "joint_ne",
-                    ]
-                )
-            if self.hparams.skip_edge_loss:
-                if not (
-                    self.hparams.edge_h_range_loss_weight
-                    == self.hparams.edge_h_transfer_loss_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "edge_h_range_loss",
-                            "edge_h_transfer_loss",
-                        ]
-                    )
-                if not (
-                    self.hparams.edge_entropy_weight
-                    == self.hparams.edge_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "edge_e",
-                            "edge_ne",
-                        ]
-                    )
-            if self.hparams.nb_iso:
-                if not (
-                    self.hparams.nb_node_entropy_weight
-                    == self.hparams.nb_node_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_node_e",
-                            "nb_node_ne",
-                        ]
-                    )
-                if not (
-                    self.hparams.nb_node_formula_entropy_weight
-                    == self.hparams.nb_node_formula_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_node_formula_e",
-                            "nb_node_formula_ne",
-                        ]
-                    )
-                if not (
-                    self.hparams.nb_formula_node_entropy_weight
-                    == self.hparams.nb_formula_node_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_formula_node_e",
-                            "nb_formula_node_ne",
-                        ]
-                    )
-                if not (
-                    self.hparams.nb_joint_entropy_weight
-                    == self.hparams.nb_joint_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_joint_e",
-                            "nb_joint_ne",
-                        ]
-                    )
-                if not (
-                    self.hparams.nb_node_node_entropy_weight
-                    == self.hparams.nb_node_node_normalized_entropy_weight
-                    == 0.0
-                ):
-                    loss_names.extend(
-                        [
-                            "nb_node_node_e",
-                            "nb_node_node_ne",
-                        ]
-                    )
+            _add_if_active(
+                ["nb_node_formula_e", "nb_node_formula_ne"],
+                self.hparams.nb_node_formula_entropy_weight,
+                self.hparams.nb_node_formula_normalized_entropy_weight,
+            )
+            _add_if_active(
+                ["nb_formula_node_e", "nb_formula_node_ne"],
+                self.hparams.nb_formula_node_entropy_weight,
+                self.hparams.nb_formula_node_normalized_entropy_weight,
+            )
+            _add_if_active(
+                ["nb_joint_e", "nb_joint_ne"],
+                self.hparams.nb_joint_entropy_weight,
+                self.hparams.nb_joint_normalized_entropy_weight,
+            )
+            _add_if_active(
+                ["nb_node_node_e", "nb_node_node_ne"],
+                self.hparams.nb_node_node_entropy_weight,
+                self.hparams.nb_node_node_normalized_entropy_weight,
+            )
 
-            if self.hparams.pairwise_cosine_loss_weight > 0:
-                loss_names.append(f"pairwise_cossine_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_jss_loss_weight > 0:
-                loss_names.append(f"pairwise_jss_{self.hparams.mz_bin_res}")
-            if self.hparams.pairwise_cross_entropy_loss_weight > 0:
-                loss_names.append(f"pairwise_cross_entropy_{self.hparams.mz_bin_res}")
+        _add_if_active(
+            [f"pairwise_cossine_{self.hparams.mz_bin_res}"],
+            self.hparams.pairwise_cosine_loss_weight,
+        )
+        _add_if_active(
+            [f"pairwise_jss_{self.hparams.mz_bin_res}"],
+            self.hparams.pairwise_jss_loss_weight,
+        )
+        _add_if_active(
+            [f"pairwise_cross_entropy_{self.hparams.mz_bin_res}"],
+            self.hparams.pairwise_cross_entropy_loss_weight,
+        )
+
         self.loss_names = loss_names
         self.metric_names.update(loss_names)
 

@@ -73,7 +73,7 @@ gaussian_renormalize: True
 sparse_cosine_similarity: True
 loss_vectorized: True
 loss_batch_size: 16
-skip_extra_losses: True
+
 
 # sampler: balance by (adduct, inst_type)
 group_sampler: False

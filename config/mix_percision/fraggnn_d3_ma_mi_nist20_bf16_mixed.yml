@@ -124,4 +124,3 @@ compile: False
 pin_memory: True
 loss_vectorized: False
 loss_batch_size: 16
-skip_extra_losses: True
