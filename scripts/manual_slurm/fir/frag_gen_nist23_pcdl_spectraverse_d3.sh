@@ -69,6 +69,7 @@ NB_FLAG=False
 ISO_FLAG=False
 SMARTS_PREPASS=False
 USE_LMDB=False
+USE_HDF5=False
 SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}_smp${SMARTS_PREPASS}
 DSETS='nist23_hr1 nist23_hr2 mona23 pcdl spectraverse'
 PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]- [M+]'
@@ -86,6 +87,9 @@ echo INST: ${INST}
 echo FRAG_MODE: ${FRAG_MODE}
 echo ISO_FLAG: ${ISO_FLAG}
 echo DEST_DP: ${DEST_DP}
+echo SMARTS_PREPASS: ${SMARTS_PREPASS}
+echo USE_HDF5: ${USE_HDF5}
+echo USE_LMDB: ${USE_LMDB}
 
 echo create local proc_dp: ${WORKING_DIR}/data/proc
 mkdir -p ${WORKING_DIR}/data/proc
@@ -116,7 +120,8 @@ python preproc_scripts/03_prepare_dag_feats.py \
     --max_h_transfer ${MAX_H_TRANSFER} \
     --dsets ${DSETS} \
     --smarts_prepass ${SMARTS_PREPASS} \
-    --use_lmdb ${USE_LMDB}
+    --use_lmdb ${USE_LMDB} \
+    --use_hdf5 ${USE_HDF5}
 
 # go to frag directory
 cd ${WORKING_DIR}/data/frag/
