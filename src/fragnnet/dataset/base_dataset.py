@@ -244,72 +244,76 @@ class BaseDataset(Dataset):
                             -1
                         )
 
-            # CE range filter by instrument type (after Phase 1 scalar fill, before Phase 2
-            # list conversion so we can compare plain floats rather than lists).
-            # Config shape (under spec_params.split_filters.<split>.filter_ce_by_inst):
-            #   FT:   {nce_min: 0, nce_max: 60}
-            #   QTOF: {ace_min: 0, ace_max: 40}
-            # Instruments absent from the dict are not filtered.
-            # Spectra of a listed instrument whose CE is missing/unfillable are dropped.
-            # For ramped/stepped CEs ALL scalar CE columns (primary + extra_1 + extra_2)
-            # must satisfy the range — e.g. a ramp [10–70] fails nce_max: 60.
-            _filter_ce_by_inst: dict = _split_filter.get("filter_ce_by_inst", {})
-            if _filter_ce_by_inst:
+        # CE range filter by instrument type (after Phase 1 scalar fill, before Phase 2
+        # list conversion so we can compare plain floats rather than lists).
+        # Config shape (under spec_params.split_filters.<split>.filter_ce_by_inst):
+        #   FT:   {nce_min: 0, nce_max: 60}
+        #   QTOF: {ace_min: 0, ace_max: 40}
+        # Instruments absent from the dict are not filtered.
+        # Spectra of a listed instrument whose CE is missing/unfillable are dropped.
+        # For ramped/stepped CEs ALL scalar CE columns (primary + extra_1 + extra_2)
+        # must satisfy the range — e.g. a ramp [10–70] fails nce_max: 60.
+        # NOTE: ace filters read the raw ace column and do NOT require ace: true.
+        #   QTOF spectra always carry raw ace, so ace filters work with nce: true too.
+        #   nce filters use Phase-1-filled values; require nce: true for correct results.
+        _filter_ce_by_inst: dict = _split_filter.get("filter_ce_by_inst", {})
+        if _filter_ce_by_inst:
 
-                def _ce_range_valid(
-                    col_primary: str, col_e1: str, col_e2: str, lo, hi
-                ) -> pd.Series:
-                    """Return boolean Series: True when ALL present CE scalars are in [lo, hi].
+            def _ce_range_valid(
+                col_primary: str, col_e1: str, col_e2: str, lo, hi
+            ) -> pd.Series:
+                """Return boolean Series: True when ALL present CE scalars are in [lo, hi].
 
-                    A CE column is considered present when it is neither NaN nor the -1
-                    sentinel.  The extra columns (col_e1, col_e2) are optional; they are
-                    only checked when present so that single-CE spectra are not penalised.
-                    """
-                    primary = spec_df[col_primary]
-                    e1 = spec_df[col_e1]
-                    e2 = spec_df[col_e2]
+                A CE column is considered present when it is neither NaN nor the -1
+                sentinel.  The extra columns (col_e1, col_e2) are optional; they are
+                only checked when present so that single-CE spectra are not penalised.
+                """
+                primary = spec_df[col_primary]
+                e1 = spec_df[col_e1]
+                e2 = spec_df[col_e2]
 
-                    e1_present = e1.notna() & (e1 != -1)
-                    e2_present = e2.notna() & (e2 != -1)
+                e1_present = e1.notna() & (e1 != -1)
+                e2_present = e2.notna() & (e2 != -1)
 
-                    # Primary must be valid (not missing)
-                    valid = primary.notna() & (primary != -1)
-                    if lo is not None:
-                        valid &= primary >= lo
-                        valid &= ~e1_present | (e1 >= lo)
-                        valid &= ~e2_present | (e2 >= lo)
-                    if hi is not None:
-                        valid &= primary <= hi
-                        valid &= ~e1_present | (e1 <= hi)
-                        valid &= ~e2_present | (e2 <= hi)
-                    return valid
+                # Primary must be valid (not missing)
+                valid = primary.notna() & (primary != -1)
+                if lo is not None:
+                    valid &= primary >= lo
+                    valid &= ~e1_present | (e1 >= lo)
+                    valid &= ~e2_present | (e2 >= lo)
+                if hi is not None:
+                    valid &= primary <= hi
+                    valid &= ~e1_present | (e1 <= hi)
+                    valid &= ~e2_present | (e2 <= hi)
+                return valid
 
-                keep = pd.Series(True, index=spec_df.index)
-                for _inst, _ce_cfg in _filter_ce_by_inst.items():
-                    _inst_mask = spec_df["inst_type"] == _inst
-                    _nce_min = _ce_cfg.get("nce_min", None)
-                    _nce_max = _ce_cfg.get("nce_max", None)
-                    _ace_min = _ce_cfg.get("ace_min", None)
-                    _ace_max = _ce_cfg.get("ace_max", None)
-                    if _nce_min is not None or _nce_max is not None:
-                        _valid = _ce_range_valid(
-                            "nce", "nce_extra_1", "nce_extra_2", _nce_min, _nce_max
-                        )
-                        # Only enforce for spectra of this instrument type
-                        keep &= ~_inst_mask | _valid
-                    if _ace_min is not None or _ace_max is not None:
-                        _valid = _ce_range_valid(
-                            "ace", "ace_extra_1", "ace_extra_2", _ace_min, _ace_max
-                        )
-                        keep &= ~_inst_mask | _valid
-                orig_n = len(spec_df)
-                spec_df = spec_df[keep]
-                mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
-                print(
-                    f">> split_filter [{splits[0]}] filter_ce_by_inst "
-                    f"{list(_filter_ce_by_inst)}: {orig_n} → {len(spec_df)} spectra"
-                )
+            keep = pd.Series(True, index=spec_df.index)
+            for _inst, _ce_cfg in _filter_ce_by_inst.items():
+                _inst_mask = spec_df["inst_type"] == _inst
+                _nce_min = _ce_cfg.get("nce_min", None)
+                _nce_max = _ce_cfg.get("nce_max", None)
+                _ace_min = _ce_cfg.get("ace_min", None)
+                _ace_max = _ce_cfg.get("ace_max", None)
+                if _nce_min is not None or _nce_max is not None:
+                    _valid = _ce_range_valid(
+                        "nce", "nce_extra_1", "nce_extra_2", _nce_min, _nce_max
+                    )
+                    # Only enforce for spectra of this instrument type
+                    keep &= ~_inst_mask | _valid
+                if _ace_min is not None or _ace_max is not None:
+                    _valid = _ce_range_valid(
+                        "ace", "ace_extra_1", "ace_extra_2", _ace_min, _ace_max
+                    )
+                    keep &= ~_inst_mask | _valid
+            orig_n = len(spec_df)
+            spec_df = spec_df[keep]
+            mol_df = mol_df[mol_df["mol_id"].isin(spec_df["mol_id"])]
+            print(
+                f">> split_filter [{splits[0]}] filter_ce_by_inst "
+                f"{list(_filter_ce_by_inst)}: {orig_n} → {len(spec_df)} spectra"
+            )
 
+        if ce_keys_to_compute:
             # Phase 2: convert scalar CE columns to lists (stepped / ramped / single).
             # _fill_ce_list does NaN checks + possibly np.arange over a small range —
             # microseconds per row. Process-based parallelism (joblib / pandarallel)
