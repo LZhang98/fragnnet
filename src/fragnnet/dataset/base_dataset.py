@@ -312,6 +312,22 @@ class BaseDataset(Dataset):
                 f">> split_filter [{splits[0]}] filter_ce_by_inst "
                 f"{list(_filter_ce_by_inst)}: {orig_n} → {len(spec_df)} spectra"
             )
+            # Print CE distribution per filtered instrument type.
+            for _inst, _ce_cfg in _filter_ce_by_inst.items():
+                _inst_rows = spec_df[spec_df["inst_type"] == _inst]
+                _ce_col = "ace" if ("ace_min" in _ce_cfg or "ace_max" in _ce_cfg) else "nce"
+                _ce_vals = _inst_rows[_ce_col]
+                _ce_vals = _ce_vals[_ce_vals.notna() & (_ce_vals != -1)]
+                if len(_ce_vals) == 0:
+                    print(f"   [{_inst}] {_ce_col}: no valid values after filter")
+                    continue
+                _q = _ce_vals.quantile([0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0])
+                print(
+                    f"   [{_inst}] {_ce_col} distribution (n={len(_ce_vals)}): "
+                    f"min={_q[0.0]:.1f}  p10={_q[0.1]:.1f}  p25={_q[0.25]:.1f}  "
+                    f"p50={_q[0.5]:.1f}  p75={_q[0.75]:.1f}  p90={_q[0.9]:.1f}  "
+                    f"max={_q[1.0]:.1f}"
+                )
 
         if ce_keys_to_compute:
             # Phase 2: convert scalar CE columns to lists (stepped / ramped / single).
