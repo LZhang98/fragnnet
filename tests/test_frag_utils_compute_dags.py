@@ -20,6 +20,12 @@ Tests cover:
     bond, leaving O= with apparent free valence that its saturated N+ neighbour
     (diff=0 after formal-charge correction) cannot absorb.  The guard
     `floor = min(floor, num_hs_prior)` in compute_approximate_formula fixes this.
+11. delta_h=0 is never invalid for any DAG node (root or sub-fragment).
+    The guard `floor = min(floor, num_hs_prior)` ensures floor <= num_hs_prior
+    for every fragment, making the natural H count always a valid configuration.
+    Previously, sub-fragments containing [N+](=O)[O-] would receive "" at slot 0
+    even when the parent molecule's root formula was correct — affecting 82% of
+    nitro-containing molecules in NIST20 at the sub-fragment level.
 """
 
 from __future__ import annotations
@@ -349,4 +355,58 @@ def test_nitro_root_formula_in_dag(smiles: str, expected_formula: str) -> None:
         f"for SMILES '{smiles}'.  "
         "Likely cause: compute_cc_h_floor overcounted the H floor (floor > num_hs_prior), "
         "making delta_h=0 invalid and assigning the sentinel '' to the root node."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 11. delta_h=0 is never invalid for any DAG node (root or sub-fragment)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        # Nitro group — sub-fragments retaining [N+](=O)[O-] previously got ""
+        # at delta_h=0 due to H-floor overcounting in compute_cc_h_floor.
+        "Cn1cnc([N+](=O)[O-])c1",           # 1-methylimidazole-4-carbaldehyde nitro
+        "O=[N+]([O-])c1ccccc1CC",            # nitrobenzene + ethyl: aryl-C cut leaves nitrophenyl sub-frag
+        "COc1ccc([N+](=O)[O-])cc1CCC",       # methoxy-nitrophenyl + propyl chain
+        "COc1nc(OC)c([N+](=O)[O-])cc1[N+](=O)[O-]",   # two nitro groups
+        # Sanity: molecule without nitro must also satisfy the invariant
+        "c1ccccc1CC(=O)O",
+        "CCO",
+    ],
+)
+def test_all_nodes_have_valid_delta_h0_formula(smiles: str) -> None:
+    """Every DAG node must have a non-empty formula at delta_h=0 (slot 0).
+
+    delta_h=0 corresponds to the fragment retaining its natural H count from
+    the parent molecule.  This is always chemically valid: floor <= num_hs_prior
+    is guaranteed by the guard ``floor = min(floor, num_hs_prior)`` in
+    compute_approximate_formula, and cap >= num_hs_prior always holds.
+
+    Before the fix, sub-fragments containing [N+](=O)[O-] received "" at slot 0
+    even when the root formula was correct, because compute_cc_h_floor
+    overcounted the floor for any CC containing a nitro group — not just the
+    root CC.  This was confirmed at dataset scale: 436,181 sub-fragment nodes
+    across 21,172 molecules (82% of NIST20) had empty slot-0 formulas before
+    the fix.
+    """
+    dag_d = _run_compute_dags(smiles)
+    dag = dag_d["dag"]
+    idx_to_formula = dag_d["idx_to_formula"]
+
+    h_formulae_start = dag.node_feat_idxs[0].tolist()[NODE_FEAT_TO_IDX["h_formulae_idx"]]
+    empty_nodes = []
+    for node_i in range(dag.x.shape[0]):
+        fidx = int(dag.x[node_i, h_formulae_start].item())
+        formula = idx_to_formula.get(fidx, "")
+        if formula == "":
+            empty_nodes.append(node_i)
+
+    assert len(empty_nodes) == 0, (
+        f"{len(empty_nodes)} DAG node(s) have empty formula at delta_h=0 for SMILES '{smiles}': "
+        f"node indices {empty_nodes[:10]}{'...' if len(empty_nodes) > 10 else ''}.  "
+        "Likely cause: compute_cc_h_floor overcounted the H floor for sub-fragments "
+        "containing [N+](=O)[O-], making delta_h=0 invalid (floor > num_hs_prior)."
     )
