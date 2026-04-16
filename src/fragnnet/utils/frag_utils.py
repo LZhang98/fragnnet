@@ -482,6 +482,13 @@ def compute_approximate_formula(
     # Restrict hydrogen range to allowed transfer window
     floor = max(floor, num_hs_prior - max_h_transfer)
     cap = min(cap, num_hs_prior + max_h_transfer, num_hs)
+    # Guard: the actual H count in the molecule is always a valid configuration.
+    # compute_cc_h_floor can overcount for fragments containing nitro groups because
+    # update_bonds treats all bonds as single bonds — the double bond O= in [N+](=O)[O-]
+    # appears to have 1 free valence slot (ve=2, sbond=1), but its only neighbor N+ has
+    # diff=0 (after formal-charge correction), so the floor can't be reduced and ends up
+    # > num_hs_prior, making delta_h=0 invalid and assigning "" to the node formula.
+    floor = min(floor, num_hs_prior)
 
     delta_h_to_formula = {}  # Maps delta H to formula string/array
     delta_h_to_h_count = {}  # Maps delta H to hydrogen count (or -1 if invalid)

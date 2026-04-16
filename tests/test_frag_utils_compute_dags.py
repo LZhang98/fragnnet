@@ -14,6 +14,12 @@ Tests cover:
 9. smarts_prepass=True with multi_cut_bfs=False runs compute_frags.compute_ccs
    unchanged and post-processes SMARTS pairs via _inject_smarts_pairs_into_dag,
    preserving ring-opening fragmentation while adding rearrangement fragments.
+10. Nitro-group molecules: root formula is always present in idx_to_formula.
+    compute_cc_h_floor overcounts the H floor by 1 for fragments containing
+    [N+](=O)[O-] because update_bonds treats the N+=O double bond as a single
+    bond, leaving O= with apparent free valence that its saturated N+ neighbour
+    (diff=0 after formal-charge correction) cannot absorb.  The guard
+    `floor = min(floor, num_hs_prior)` in compute_approximate_formula fixes this.
 """
 
 from __future__ import annotations
@@ -293,3 +299,54 @@ def test_smarts_prepass_without_multi_cut_bfs_works() -> None:
     # prepass can only add nodes/edges, never remove them
     assert with_prepass["dag_num_nodes"] >= baseline["dag_num_nodes"]
     assert with_prepass["dag_num_edges"] >= baseline["dag_num_edges"]
+
+
+# ---------------------------------------------------------------------------
+# 10. Nitro-group molecules: root formula present in idx_to_formula
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "smiles,expected_formula",
+    [
+        # Single nitro + N-methyl: floor overcount = 1 (1 O= blocked by N+ diff=0)
+        ("Cn1cnc([N+](=O)[O-])c1",                                    "C4H5N3O2"),
+        ("Cn1cnc([N+](=O)[O-])n1",                                    "C3H4N4O2"),
+        # Single nitro + N-CH2Cl
+        ("O=[N+]([O-])c1nn(CCl)cc1Cl",                               "C4H3Cl2N3O2"),
+        # Two nitro groups + methoxy
+        ("COc1nc(OC)c([N+](=O)[O-])cc1[N+](=O)[O-]",                 "C7H7N3O6"),
+        ("COc1n[n+]([O-])c([N+](=O)[O-])cc1[N+](=O)[O-]",            "C5H4N4O6"),
+        # Three nitro groups + methoxy
+        ("COc1ccc([N+](=O)[O-])c([N+](=O)[O-])c1[N+](=O)[O-]",      "C7H5N3O7"),
+        # Sanity: molecule without nitro must also work
+        ("CCO",                                                        "C2H6O"),
+    ],
+)
+def test_nitro_root_formula_in_dag(smiles: str, expected_formula: str) -> None:
+    """Root node formula (delta_h=0) must equal the true molecular formula.
+
+    compute_cc_h_floor previously overcounted the H floor by 1 for molecules
+    containing [N+](=O)[O-] groups: the double-bond O= had apparent free valence
+    (ve=2, sbond=1 after bond-order-agnostic update_bonds), but its only
+    neighbour N+ had diff=0 (formal-charge correction ve 4→3 = sbond 3), so
+    the floor could not be reduced and ended up > num_hs_prior.  This made
+    delta_h=0 invalid at the root, assigning formula "" to node 0.
+    """
+    dag_d = _run_compute_dags(smiles)
+    dag = dag_d["dag"]
+    idx_to_formula = dag_d["idx_to_formula"]
+
+    # Retrieve the root node's formula at delta_h=0.
+    # h_formulae_idx feature group stores one formula-index per H-transfer slot;
+    # slot 0 corresponds to delta_h=0 (h_delta_idx = delta_h * 2 for delta_h >= 0).
+    h_formulae_start = dag.node_feat_idxs[0].tolist()[NODE_FEAT_TO_IDX["h_formulae_idx"]]
+    root_formula_idx = dag.x[0, h_formulae_start].item()  # slot 0 = delta_h=0
+    root_formula = idx_to_formula[root_formula_idx]
+
+    assert root_formula == expected_formula, (
+        f"Root node formula at delta_h=0 is '{root_formula}', expected '{expected_formula}' "
+        f"for SMILES '{smiles}'.  "
+        "Likely cause: compute_cc_h_floor overcounted the H floor (floor > num_hs_prior), "
+        "making delta_h=0 invalid and assigning the sentinel '' to the root node."
+    )
