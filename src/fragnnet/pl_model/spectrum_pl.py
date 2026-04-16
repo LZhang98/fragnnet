@@ -1662,8 +1662,8 @@ class SpectrumPL(L.LightningModule):
 
         Groups spectra by the cross-product of precursor type and instrument type,
         then bins collision energy in steps of 10 (NCE % for FT/IT, ACE eV for
-        QTOF).  Each row reports the median of every auxiliary metric together with
-        the per-instrument m/z tolerance.
+        QTOF).  Each row reports the median, mean, min, and max of every auxiliary
+        metric together with the per-instrument m/z tolerance.
 
         - ``val``: logs ``wandb.plot.bar`` — one panel per primary metric, updated
           each epoch, no history accumulation.
@@ -1731,6 +1731,9 @@ class SpectrumPL(L.LightningModule):
             }
             for m in metric_cols:
                 row[f"{m}_median"] = round(float(grp[m].median()), 4)
+                row[f"{m}_mean"] = round(float(grp[m].mean()), 4)
+                row[f"{m}_min"] = round(float(grp[m].min()), 4)
+                row[f"{m}_max"] = round(float(grp[m].max()), 4)
             rows.append(row)
 
         if not rows:
