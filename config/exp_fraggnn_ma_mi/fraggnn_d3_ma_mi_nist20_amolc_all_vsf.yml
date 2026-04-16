@@ -94,12 +94,10 @@ spec_params:
     - "CID"
 
   split_filters:
-    train: {}
     val:
       filter_ce_by_inst:
         FT:   {nce_min: 0, nce_max: 60}
         QTOF: {ace_min: 0, ace_max: 40}
-    test: {}
 # ============================================================================
 # Molecule Parameters
 # ============================================================================
