@@ -369,6 +369,22 @@ class TestFilterCEByInstACE:
         ft_ids = set(out_spec[out_spec["inst_type"] == "FT"]["spec_id"].tolist())
         assert {1, 2, 3, 4, 5, 6, 7}.issubset(ft_ids)
 
+    def test_qtof_ace_filter_with_nce_only_mode(self, mixed_spec_df, mixed_mol_df):
+        """ACE filter works when ace=False (nce-only mode) — real config scenario.
+
+        The config fraggnn_d3_ma_mi_nist20_amolc_all_sf.yml uses nce=True, ace=False
+        with QTOF: {ace_min: 0, ace_max: 40}.  The filter must read the raw ace column
+        even though ace CE computation is disabled.
+        """
+        params = _base_spec_params(
+            nce=True,
+            ace=False,  # real config: nce-only mode
+            split_filters={"train": {"filter_ce_by_inst": {"QTOF": {"ace_min": 0.0, "ace_max": 40.0}}}},
+        )
+        out_spec, _ = _run_setup_dfs(mixed_spec_df, mixed_mol_df, "train", params)
+        assert 9 not in out_spec["spec_id"].values, "Spec 9 (QTOF ACE=50 > 40) should be dropped"
+        assert 8 in out_spec["spec_id"].values, "Spec 8 (QTOF ACE=20 <= 40) should be kept"
+
 
 # ============================================================================
 # Tests: ramped and stepped CE — all scalars must satisfy the range
