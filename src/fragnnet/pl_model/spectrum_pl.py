@@ -1305,6 +1305,18 @@ class SpectrumPL(L.LightningModule):
             )
         else:
             results["ce_primary"] = th.full((batch_size,), float("nan"))
+        if "spec_nce" in batch:
+            results["ce_nce"] = primary_ce_to_batch(
+                batch["spec_nce"], batch.get("spec_nce_batch_idxs"), batch_size
+            )
+        else:
+            results["ce_nce"] = th.full((batch_size,), float("nan"))
+        if "spec_ace" in batch:
+            results["ce_ace"] = primary_ce_to_batch(
+                batch["spec_ace"], batch.get("spec_ace_batch_idxs"), batch_size
+            )
+        else:
+            results["ce_ace"] = th.full((batch_size,), float("nan"))
         return results
 
     def training_step(self, batch, batch_idx):
@@ -1476,6 +1488,8 @@ class SpectrumPL(L.LightningModule):
             "inst_type_str",
             "prec_type_str",
             "ce_primary",
+            "ce_nce",
+            "ce_ace",
         ]
         keys.extend(list(self.metric_names))
         unique_ids = batch_results.pop("unique_id")
@@ -1685,10 +1699,21 @@ class SpectrumPL(L.LightningModule):
 
         inst_types = results["inst_type_str"]  # list[str], length N
         prec_types = results["prec_type_str"]  # list[str], length N
-        ce_vals = results["ce_primary"].numpy()  # np.ndarray, shape (N,)
 
         if all(it == "unknown" for it in inst_types):
             return  # spec_inst_type not in batch — nothing to group on
+
+        # Use ACE for QTOF (native unit) and NCE for FT so CE bins reflect the values
+        # used in split_filters and match human-readable experiment conventions.
+        # Falls back to ce_primary when the per-instrument CE is unavailable (all NaN).
+        ce_nce = results["ce_nce"].numpy()
+        ce_ace = results["ce_ace"].numpy()
+        ce_primary = results["ce_primary"].numpy()
+        ce_vals = np.where(
+            np.array(inst_types) == "QTOF",
+            np.where(np.isnan(ce_ace), ce_primary, ce_ace),
+            np.where(np.isnan(ce_nce), ce_primary, ce_nce),
+        )
 
         df = pd.DataFrame(
             {

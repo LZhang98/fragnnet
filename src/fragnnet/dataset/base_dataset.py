@@ -163,16 +163,14 @@ class BaseDataset(Dataset):
             )
 
         # Determine which CE columns to compute and which is primary.
-        # When both ace and nce are requested, nce is primary; ace is also computed
-        # so it exists in the dataframe (e.g. for future ce_insert_dual support).
-        if spec_params["nce"] and spec_params["ace"]:
+        # nce/ace flags select the primary CE type (ce_key) fed to the model as spec_ce.
+        # Both NCE and ACE are always computed when either flag is set so that spec_nce
+        # and spec_ace are available in every batch for display / dual-CE input.
+        if spec_params["nce"] and spec_params["ace"] or spec_params["nce"]:
             ce_keys_to_compute = [("nce", fill_missing_nce), ("ace", fill_missing_ace)]
             ce_key = "nce"
-        elif spec_params["nce"]:
-            ce_keys_to_compute = [("nce", fill_missing_nce)]
-            ce_key = "nce"
         elif spec_params["ace"]:
-            ce_keys_to_compute = [("ace", fill_missing_ace)]
+            ce_keys_to_compute = [("nce", fill_missing_nce), ("ace", fill_missing_ace)]
             ce_key = "ace"
         else:
             ce_keys_to_compute = []
@@ -259,9 +257,7 @@ class BaseDataset(Dataset):
         _filter_ce_by_inst: dict = _split_filter.get("filter_ce_by_inst", {})
         if _filter_ce_by_inst:
 
-            def _ce_range_valid(
-                col_primary: str, col_e1: str, col_e2: str, lo, hi
-            ) -> pd.Series:
+            def _ce_range_valid(col_primary: str, col_e1: str, col_e2: str, lo, hi) -> pd.Series:
                 """Return boolean Series: True when ALL present CE scalars are in [lo, hi].
 
                 A CE column is considered present when it is neither NaN nor the -1
@@ -660,6 +656,15 @@ class BaseDataset(Dataset):
             # for unmerged spectra, it is list of ces available include both ramped/stepped ces
             assert isinstance(ce, list), type(ce)
             spec_data["spec_ce"] = th.tensor(ce, dtype=th.float)
+            # Always include both spec_nce and spec_ace so batches carry both CE types
+            # regardless of which is primary (ce_key). Used for per-instrument display and
+            # dual-CE input. Both are computed in _setup_dfs whenever either flag is set.
+            nce_val = spec_entry["nce"]
+            ace_val = spec_entry["ace"]
+            assert isinstance(nce_val, list), type(nce_val)
+            assert isinstance(ace_val, list), type(ace_val)
+            spec_data["spec_nce"] = th.tensor(nce_val, dtype=th.float)
+            spec_data["spec_ace"] = th.tensor(ace_val, dtype=th.float)
         if self.spec_params["prec_mz"]:
             prec_mz = spec_entry["prec_mz"]
             prec_mz = th.tensor([float(prec_mz)], dtype=th.float)
@@ -773,6 +778,15 @@ class BaseDataset(Dataset):
             collate_data["spec_ce_batch_idxs"] = batch_idxs
             # remove from list
             keys.remove("spec_ce")
+        for _ce_key in ("spec_nce", "spec_ace"):
+            if _ce_key in keys:
+                _ces, _, _batch_idxs = batch_func(
+                    collate_data[_ce_key],
+                    collate_data[_ce_key],
+                )
+                collate_data[_ce_key] = _ces
+                collate_data[f"{_ce_key}_batch_idxs"] = _batch_idxs
+                keys.remove(_ce_key)
 
     @staticmethod
     def _standard_collate(batch_size: int, keys: list[str], collate_data: dict) -> None:
