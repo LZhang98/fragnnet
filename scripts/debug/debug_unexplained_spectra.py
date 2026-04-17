@@ -38,7 +38,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--frag_dp",
         type=str,
-        default="data/frag/nist20_ma_mi_d3_h4_isoFalse_cmf",
+        default="data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse",
         help="Path to frag directory containing spec_stats_df.pkl",
     )
     parser.add_argument(
@@ -143,16 +143,18 @@ def report(df: pd.DataFrame, wrecall_col: str, wrecall_thresh: float, top_n: int
         DataFrame of unexplained spectra sorted by wrecall ascending.
     """
     col = df[wrecall_col]
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  wrecall column : {wrecall_col}")
     print(f"  total spectra  : {len(df):,}")
     print(f"  mean           : {col.mean():.4f}")
     print(f"  median         : {col.median():.4f}")
     print(f"  p10            : {np.percentile(col, 10):.4f}")
     print(f"  p1             : {np.percentile(col, 1):.4f}")
-    print(f"  wrecall == 0   : {(col == 0).sum():,} ({100*(col==0).mean():.2f}%)")
-    print(f"  wrecall <= {wrecall_thresh:.3f} : {(col <= wrecall_thresh).sum():,} ({100*(col<=wrecall_thresh).mean():.2f}%)")
-    print(f"{'='*60}\n")
+    print(f"  wrecall == 0   : {(col == 0).sum():,} ({100 * (col == 0).mean():.2f}%)")
+    print(
+        f"  wrecall <= {wrecall_thresh:.3f} : {(col <= wrecall_thresh).sum():,} ({100 * (col <= wrecall_thresh).mean():.2f}%)"
+    )
+    print(f"{'=' * 60}\n")
 
     unexplained = df[col <= wrecall_thresh].sort_values(wrecall_col)
 

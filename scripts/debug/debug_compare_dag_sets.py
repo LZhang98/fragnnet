@@ -18,7 +18,7 @@ Usage::
 
     conda activate FRAGNNET-GPU
     python scripts/debug/debug_compare_dag_sets.py \\
-        --cmf  data/frag/nist20_ma_mi_d3_h4_isoFalse_cmf.tar \\
+        --cmf  data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse.tar \\
         --smp  data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse.tar \\
         [--min-heavy 3] [--max-mols 0] [--out /tmp/dag_compare.csv]
 """
@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import argparse
 import bz2
-import collections
 import pickle
 import re
 import tarfile
@@ -207,36 +206,33 @@ def main() -> None:
         f"median={df['cmf_nodes'].sub(df['smp_nodes']).median():.1f}"
     )
 
-    print(f"\n--- CMF has extra CCs not in SMP ---")
+    print("\n--- CMF has extra CCs not in SMP ---")
     print(
         f"  small (<{args.min_heavy} heavy): total={df['cmf_extra_ccs_small'].sum():,}, "
         f"mean/mol={df['cmf_extra_ccs_small'].mean():.2f}"
     )
     print(
         f"  large (>={args.min_heavy} heavy): total={df['cmf_extra_ccs_large'].sum():,}, "
-        f"mols affected={( df['cmf_extra_ccs_large'] > 0).sum()}"
+        f"mols affected={(df['cmf_extra_ccs_large'] > 0).sum()}"
     )
 
-    print(f"\n--- SMP has extra CCs not in CMF ---")
-    print(
-        f"  small (<{args.min_heavy} heavy): total={df['smp_extra_ccs_small'].sum():,}"
-    )
+    print("\n--- SMP has extra CCs not in CMF ---")
+    print(f"  small (<{args.min_heavy} heavy): total={df['smp_extra_ccs_small'].sum():,}")
     print(
         f"  large (>={args.min_heavy} heavy): total={df['smp_extra_ccs_large'].sum():,}, "
         f"mols affected={(df['smp_extra_ccs_large'] > 0).sum()}"
     )
 
-    print(f"\n--- Shared CCs with formula assignment difference (H-floor bug) ---")
+    print("\n--- Shared CCs with formula assignment difference (H-floor bug) ---")
     n_hfloor = df["shared_cmf_slot0_large_smp_empty"].sum()
     n_mols_hfloor = (df["shared_cmf_slot0_large_smp_empty"] > 0).sum()
     print(
-        f"  CMF slot-0 = large formula, SMP slot-0 = '' : "
-        f"total={n_hfloor:,}, mols={n_mols_hfloor}"
+        f"  CMF slot-0 = large formula, SMP slot-0 = '' : total={n_hfloor:,}, mols={n_mols_hfloor}"
     )
     n_rev = df["shared_smp_slot0_large_cmf_empty"].sum()
     print(f"  SMP slot-0 = large formula, CMF slot-0 = '' : total={n_rev:,}")
 
-    print(f"\n--- Net unique-formula counts (large frags only) ---")
+    print("\n--- Net unique-formula counts (large frags only) ---")
     print(
         f"  CMF-only large formulas: {df['cmf_only_large_forms'].sum():,} "
         f"(mols: {(df['cmf_only_large_forms'] > 0).sum()})"
@@ -246,13 +242,13 @@ def main() -> None:
         f"(mols: {(df['smp_only_large_forms'] > 0).sum()})"
     )
 
-    print(f"\n--- Top-10 molecules by SMP-only large formulas ---")
+    print("\n--- Top-10 molecules by SMP-only large formulas ---")
     top_smp = df.nlargest(10, "smp_only_large_forms")[
         ["cmf_nodes", "smp_nodes", "cmf_only_large_forms", "smp_only_large_forms"]
     ]
     print(top_smp.to_string())
 
-    print(f"\n--- Top-10 molecules by CMF-only large formulas ---")
+    print("\n--- Top-10 molecules by CMF-only large formulas ---")
     top_cmf = df.nlargest(10, "cmf_only_large_forms")[
         ["cmf_nodes", "smp_nodes", "cmf_only_large_forms", "shared_cmf_slot0_large_smp_empty"]
     ]

@@ -17,7 +17,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
-- lb32          # loss batch size 16
+- lb16          # loss batch size 16
 - preload
 - preprocess
 - new_no_edges  # no edge features in fragment GNN
@@ -41,7 +41,7 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey   # inchikey split: [M+H]+ and [M-H]- adducts
-frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes, with CMF
 
 # ============================================================================
 # Model Architecture
@@ -133,6 +133,14 @@ lr_schedule: False
 debug_overfit: False
 
 # ============================================================================
+# Regularization
+# ============================================================================
+mol_dropout: 0.2
+frag_dropout: 0.1
+mlp_dropout: 0.2
+weight_decay: 0.01
+
+# ============================================================================
 # Loss Configuration
 # ============================================================================
 mask_null_formula: False   # include null-formula peaks in loss
@@ -153,8 +161,12 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
+  - jss
+  - true_spec_ne
+  - pred_spec_ne
 eval_mz_bin_res:
   - 0.01
+eval_bin_sqrt: True
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
@@ -167,7 +179,6 @@ inst_type_loss_tol:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
-dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
 
 # ============================================================================
 # Pairwise losses
