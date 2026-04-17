@@ -19,17 +19,14 @@ from fragnnet.utils.script_utils import (
     apply_inference_config,
     get_ckpt_path,
     get_required_config_indices,
-    get_score_types,
     init_model_from_ckpt,
     list_output_subset_options,
     prepare_output_subset,
-    run_inference_tabular,
     run_inference_hdf5,
     setup_device,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
-import h5py
-import numpy as np
+
 
 def get_args():
     # Set up command line argument parser
@@ -150,6 +147,12 @@ def get_args():
         "--batch_cutoff", type=int, default=1000, help="Number of batches to evaluate (-1 for all)"
     )
     parser.add_argument(
+        "--min_peak_int",
+        type=float,
+        default=1.0,
+        help="Minimum peak intensity threshold for inference output filtering",
+    )
+    parser.add_argument(
         "--drop_none_cols",
         type=booltype,
         default=True,
@@ -172,7 +175,9 @@ def get_args():
 if __name__ == "__main__":
     # Early check for --list_output_options to avoid required argument validation
     from pandarallel import pandarallel
-    pandarallel.initialize(progress_bar=True, nb_workers=min(10,  os.cpu_count()))
+
+    cpu_count = os.cpu_count() or 1
+    pandarallel.initialize(progress_bar=True, nb_workers=min(10, cpu_count))
     if "--list_output_options" in sys.argv:
         print("Available output_subset options:")
         for opt in list_output_subset_options():
@@ -206,7 +211,7 @@ if __name__ == "__main__":
         output_formula_str=False,
         train_batch_size=args.train_batch_size,
         eval_batch_size=args.eval_batch_size,
-        dynamic_batch_sampler=args.use_dynamic_sampler
+        dynamic_batch_sampler=args.use_dynamic_sampler,
     )
 
     # Initialize dataset, dataloader, and model (inline)
@@ -250,11 +255,11 @@ if __name__ == "__main__":
         evaluate=True,
         output_set=output_set,
         batch_cutoff=args.batch_cutoff,
-        min_peak_int=1.0,
+        min_peak_int=args.min_peak_int,
         return_formula_str=args.return_formula_str or args.output_everything,
         return_cc_hash=args.return_cc_hash or args.output_everything,
         rebase_indices=True,
-        save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5")
+        save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5"),
     )
     print(f"\n>>> Saved predictions to: {output_save_dp}")
     print(f">>> Total predictions: {num_predict}")
