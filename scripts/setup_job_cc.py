@@ -483,11 +483,13 @@ def main(args):
     )
 
     # for sweep scripts, append SLURM job/agent ID so wandb run names are unique
+    # job name is used for local sweep, since fir and vulcan now support wandb agent directly,
+    # job id is used for narval only, and it maybe broken.
     if is_sweep_script:
         if getattr(args, "num_sweep_jobs", None) is not None:
-            python_line += " \\\n -j ${SLURM_JOB_ID}_${AGENT_ID}"
+            python_line += " \\\n -p ${SLURM_JOB_ID}_${AGENT_ID}"
         else:
-            python_line += " \\\n -j ${SLURM_JOB_ID}"
+            python_line += " \\\n -p ${SLURM_JOB_ID}"
 
     # add python line
     script_lines.extend(["# run python script", "cd ${WORKING_DIR}", python_line])

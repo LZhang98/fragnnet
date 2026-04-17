@@ -24,6 +24,13 @@ if __name__ == "__main__":
         "-w", "--wandb_mode", type=str, default="online", choices=["online", "offline", "disabled"]
     )
     parser.add_argument("-j", "--job_id", type=str, required=False)  # Use $SLURM_ARRAY_TASK_ID
+    parser.add_argument(
+        "-p",
+        "--job_name_postfix",
+        type=str,
+        default="",
+        help="optional postfix to add to job name in W&B (e.g. for sweep vs. single run)",
+    )
     parser.add_argument("-s", "--sweep_key", type=str, required=True)
     args = parser.parse_args()
 
@@ -32,9 +39,9 @@ if __name__ == "__main__":
     def agent_func():
         logger.info("Initializing run in agent_func()")
         override = None
-        if args.job_id:
+        if args.job_name_postfix:
             config_d = load_config(args.template_fp, args.custom_fp, None)
-            wandb_name = f"{config_d['wandb_name']}_{args.job_id}"
+            wandb_name = f"{config_d['wandb_name']}_{args.job_name_postfix}"
             override = [f"wandb_name={wandb_name}"]
         init_run(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, override)
 
