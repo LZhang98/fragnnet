@@ -1,10 +1,11 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist23_pcdl_inchikey_fraggnn_d3_ma_mi_all_sf_cv0
+wandb_name: nist23_pcdl_inchikey_fraggnn_d3_ma_mi_all_cv0
 wandb_tags:
 - retrieval
 - nist23
+- pcdl
 - d4
 - wr00
 - inchikey
@@ -143,9 +144,9 @@ debug_overfit: False
 # ============================================================================
 # Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
 # ============================================================================
-mol_dropout: 0.2    # from fragnnet_d3/s0.yml
+mol_dropout: 0.1    # from fragnnet_d3/s0.yml
 frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.2    # from fragnnet_d3/s0.yml
+mlp_dropout: 0.1    # from fragnnet_d3/s0.yml
 weight_decay: 0.01
 
 # ============================================================================
