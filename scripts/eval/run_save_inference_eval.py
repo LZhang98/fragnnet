@@ -50,7 +50,7 @@ def get_args():
     parser.add_argument(
         "--wandb_run_id",
         type=str,
-        default="32n55f2m",
+        required=True,
         help="Weights & Biases run ID for model retrieval",
     )
     parser.add_argument(
@@ -93,6 +93,7 @@ def get_args():
         default=[
             "cos_sim",  # Cosine similarity between predicted and true spectra
             "cos_hun",  # Hungarian algorithm cosine similarity
+            "cos_hun_inst_tol",  # Hungarian cosine similarity with instrument-specific tolerance
             # "true_oos_prob",  # True out-of-scope probability
             # "true_oos_e"      # True out-of-scope energy
         ],
