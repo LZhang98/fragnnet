@@ -135,9 +135,9 @@ debug_overfit: False
 # ============================================================================
 # Regularization
 # ============================================================================
-mol_dropout: 0.2
+mol_dropout: 0.1
 frag_dropout: 0.1
-mlp_dropout: 0.2
+mlp_dropout: 0.1
 weight_decay: 0.01
 
 # ============================================================================
@@ -161,12 +161,9 @@ upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
-  - jss
-  - true_spec_ne
-  - pred_spec_ne
 eval_mz_bin_res:
   - 0.01
-eval_bin_sqrt: True
+eval_bin_sqrt: False
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
