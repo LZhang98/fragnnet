@@ -60,12 +60,12 @@ frag_params:
     - depth         # depth of fragment node in the DAG
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
-    - boundary_cc       # connected-component index within DAG of atoms at fragmentation boundary (i.e. cut bonds);
+    - boundary_pair       # connected-component index within DAG of atoms at fragmentation boundary (i.e. cut bonds);
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
-  preload: False       # load all DAGs into memory at startup for speed
-  preprocess: False    # apply preprocessing transforms at load time
+  preload: True       # load all DAGs into memory at startup for speed
+  preprocess: True    # apply preprocessing transforms at load time
   include_cmf: True    # include charge-migration fragment nodes
 
 # ============================================================================
@@ -216,5 +216,5 @@ compile: True                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
-          # skip auxiliary losses (entropy, edge) to save time
+# skip auxiliary losses (entropy, edge) to save time
 num_workers: 2                   
