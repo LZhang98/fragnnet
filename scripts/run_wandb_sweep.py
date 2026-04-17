@@ -31,7 +31,12 @@ if __name__ == "__main__":
 
     def agent_func():
         logger.info("Initializing run in agent_func()")
-        init_run(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, None)
+        override = None
+        if args.job_id:
+            config_d = load_config(args.template_fp, args.custom_fp, None)
+            wandb_name = f"{config_d['wandb_name']}_{args.job_id}"
+            override = [f"wandb_name={wandb_name}"]
+        init_run(args.template_fp, args.custom_fp, args.wandb_mode, args.job_id, override)
 
     # Only load config if needed for agent (avoid wandb calls in job mode)
     if args.job_id or os.path.exists(os.path.join("job_id", f"{args.job_id}.id")):

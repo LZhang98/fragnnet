@@ -473,6 +473,13 @@ def main(args):
         ]
     )
 
+    # for sweep scripts, append SLURM job/agent ID so wandb run names are unique
+    if is_sweep_script:
+        if getattr(args, "num_sweep_agents", None) is not None:
+            python_line += " \\\n -j ${SLURM_JOB_ID}_${AGENT_ID}"
+        else:
+            python_line += " \\\n -j ${SLURM_JOB_ID}"
+
     # add python line
     script_lines.extend(["# run python script", "cd ${WORKING_DIR}", python_line])
 
