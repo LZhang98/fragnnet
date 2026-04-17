@@ -151,11 +151,18 @@ def apply_gpu_profile(args) -> None:
 
 def validate_array_job_config(args) -> None:
     """Validate array job configuration."""
+    if getattr(args, "num_sweep_jobs", None) is not None:
+        if args.num_sweep_jobs <= 0:
+            raise ValueError("--num_sweep_jobs must be > 0")
+        if args.num_sweep_jobs > 1000:
+            raise ValueError("--num_sweep_jobs must be <= 1000")
     if getattr(args, "num_sweep_agents", None) is not None:
         if args.num_sweep_agents <= 0:
             raise ValueError("--num_sweep_agents must be > 0")
         if args.num_sweep_agents > 1000:
             raise ValueError("--num_sweep_agents must be <= 1000")
+        if getattr(args, "num_sweep_jobs", None) is None:
+            raise ValueError("--num_sweep_agents requires --num_sweep_jobs to be set")
 
 
 def main(args):
@@ -186,11 +193,13 @@ def main(args):
             "#SBATCH --mail-type=ALL",
         ]
     )
-    # add array job directive if num_sweep_agents is specified
-    if getattr(args, "num_sweep_agents", None) is not None:
-        num_agents = args.num_sweep_agents
-        # SLURM array indices are 0-based
-        script_lines.append(f"#SBATCH --array=0-{num_agents - 1}")
+    # add array job directive if num_sweep_jobs is specified
+    if getattr(args, "num_sweep_jobs", None) is not None:
+        num_jobs = args.num_sweep_jobs
+        array_spec = f"0-{num_jobs - 1}"
+        if getattr(args, "num_sweep_agents", None) is not None:
+            array_spec += f"%{args.num_sweep_agents}"
+        script_lines.append(f"#SBATCH --array={array_spec}")
 
     # add gpus
     if getattr(args, "gres_gpu", None):
@@ -208,7 +217,7 @@ def main(args):
     # config where to save job output and job error
     # append to existing onces
     # For array jobs, include task ID in output filename
-    if getattr(args, "num_sweep_agents", None) is not None:
+    if getattr(args, "num_sweep_jobs", None) is not None:
         job_output = f"{os.path.abspath(args.job_dp)}/{args.job_name}_%j_%a.out"
         job_error = f"{os.path.abspath(args.job_dp)}/{args.job_name}_%j_%a.err"
     else:
@@ -228,7 +237,7 @@ def main(args):
     )
 
     # handle array jobs for wandb sweep
-    if getattr(args, "num_sweep_agents", None) is not None:
+    if getattr(args, "num_sweep_jobs", None) is not None:
         script_lines.extend(
             [
                 "",
@@ -239,7 +248,7 @@ def main(args):
                 "    AGENT_ID=${SLURM_ARRAY_TASK_ID}",
                 "fi",
                 'echo "SLURM_ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID}"',
-                'echo "Running as sweep agent ${AGENT_ID} of ${SLURM_ARRAY_TASK_MAX} agents (job ${SLURM_JOB_ID})"',
+                'echo "Running sweep job ${AGENT_ID} of ${SLURM_ARRAY_TASK_MAX} total jobs (job ${SLURM_JOB_ID})"',
                 "export AGENT_ID",
             ]
         )
@@ -475,7 +484,7 @@ def main(args):
 
     # for sweep scripts, append SLURM job/agent ID so wandb run names are unique
     if is_sweep_script:
-        if getattr(args, "num_sweep_agents", None) is not None:
+        if getattr(args, "num_sweep_jobs", None) is not None:
             python_line += " \\\n -j ${SLURM_JOB_ID}_${AGENT_ID}"
         else:
             python_line += " \\\n -j ${SLURM_JOB_ID}"
@@ -562,13 +571,22 @@ if __name__ == "__main__":
     parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
     parser.add_argument("--job_name", type=str, required=False, help="name of the job")
     parser.add_argument(
+        "--num_sweep_jobs",
+        type=int,
+        default=None,
+        help=(
+            "Total number of array jobs for wandb sweep (creates SLURM array job). "
+            "Example: --num_sweep_jobs=20 creates --array=0-19"
+        ),
+    )
+    parser.add_argument(
         "--num_sweep_agents",
         type=int,
         default=None,
         help=(
-            "Number of parallel agents for wandb sweep (creates SLURM array job). "
-            "Each agent will run the same sweep configuration independently. "
-            "Example: --num_sweep_agents=10 creates --array=0-9"
+            "Max number of concurrently running sweep jobs (throttle). "
+            "Requires --num_sweep_jobs. "
+            "Example: --num_sweep_jobs=20 --num_sweep_agents=4 creates --array=0-19%%4"
         ),
     )
     parser.add_argument(
