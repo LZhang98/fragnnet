@@ -42,7 +42,7 @@ def get_args():
     parser.add_argument(
         "--custom_fp",
         type=str,
-        default="config/exp_fraggnn_ma_mi/fraggnn_d3_ma_mi_nist20_amolc.yml",
+        required=True,
         help="Path to custom config file",
     )
 
@@ -226,7 +226,6 @@ if __name__ == "__main__":
     # Prepare device and load model from checkpoint
     device = setup_device(config_d)
     model = init_model_from_ckpt(ckpt_fp, config_d, device)
-
     # Run inference and collect predictions with evaluation scores
     print(">>> Running inference and evaluation...")
     output_set = prepare_output_subset(

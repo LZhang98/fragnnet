@@ -1434,36 +1434,21 @@ class SpectrumPL(L.LightningModule):
         return None
 
     def _get_dataset_maps(self) -> tuple[dict[int, str], dict[int, str], dict[str, int]]:
-        """Return (idx_to_inst_type, idx_to_prec_type, inst_type_to_idx) from the dataloader dataset.
+        """Return (idx_to_inst_type, idx_to_prec_type, inst_type_to_idx) from hparams.
 
-        The dataset is the canonical source of these maps (built in
-        BaseDataset._setup_inst_type_to_idx / _setup_prec_type_to_idx).  Results
-        are cached on first call so the trainer is only queried once per run.
+        Built deterministically from spec_params, matching BaseDataset logic.
 
         Returns:
             Tuple of (idx_to_inst_type, idx_to_prec_type, inst_type_to_idx) dicts.
-            Returns empty dicts if the trainer or dataset is not yet available.
         """
         if hasattr(self, "_cached_ds_maps"):
             return self._cached_ds_maps
-
-        ds = None
-        for dl_attr in ("train_dataloader", "val_dataloaders", "test_dataloaders"):
-            try:
-                dl_or_list = getattr(self.trainer, dl_attr)
-                dl = dl_or_list[0] if isinstance(dl_or_list, list) else dl_or_list
-                ds = dl.dataset
-                break
-            except (AttributeError, IndexError, TypeError):
-                continue
-
-        if ds is None:
-            return {}, {}, {}
-
-        idx_to_inst = getattr(ds, "idx_to_inst_type", {})
-        idx_to_prec = getattr(ds, "idx_to_prec_type", {})
-        inst_to_idx = getattr(ds, "inst_type_to_idx", {})
-        self._cached_ds_maps = (idx_to_inst, idx_to_prec, inst_to_idx)
+        inst_types = sorted(self.hparams.spec_params.get("inst_types", []))
+        prec_types = sorted(self.hparams.spec_params.get("prec_types", []))
+        idx_to_inst = dict(enumerate(inst_types))
+        idx_to_prec = dict(enumerate(prec_types))
+        inst_to_idx = {t: idx for idx, t in enumerate(inst_types)}
+        object.__setattr__(self, "_cached_ds_maps", (idx_to_inst, idx_to_prec, inst_to_idx))
         return self._cached_ds_maps
 
     def _update_results(self, batch_results, split):
