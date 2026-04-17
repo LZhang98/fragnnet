@@ -104,9 +104,9 @@ debug_overfit: False
 # ============================================================================
 # Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
 # ============================================================================
-mol_dropout: 0.2    # from fragnnet_d3/s0.yml
+mol_dropout: 0.1    # from fragnnet_d3/s0.yml
 frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.2    # from fragnnet_d3/s0.yml
+mlp_dropout: 0.1    # from fragnnet_d3/s0.yml
 weight_decay: 0.01
 
 # ============================================================================
@@ -146,8 +146,10 @@ delete_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
+  - jss
 eval_mz_bin_res:
   - 0.01
+eval_bin_sqrt: False  # use sqrt m/z bins for evaluation (but not training)
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
@@ -176,9 +178,9 @@ simple_group_sampler_type: group
 # Miscellaneous
 # ============================================================================
 pl_enable_progress_bar: False
+pandarallel_enable_progress_bar: False
 activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: True                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
-          # skip auxiliary losses (entropy, edge) to save time
