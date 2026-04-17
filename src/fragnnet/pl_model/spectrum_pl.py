@@ -1661,8 +1661,8 @@ class SpectrumPL(L.LightningModule):
 
         Groups spectra by the cross-product of precursor type and instrument type,
         then bins collision energy in steps of 10 (NCE % for FT/IT, ACE eV for
-        QTOF).  Each row reports the median, mean, min, and max of every auxiliary
-        metric together with the per-instrument m/z tolerance.
+        QTOF).  Each row reports the median, mean, std, 95% CI, min, and max of
+        every auxiliary metric together with the per-instrument m/z tolerance.
 
         - ``val``: logs ``wandb.plot.bar`` — one panel per primary metric, updated
           each epoch, no history accumulation.
@@ -1740,10 +1740,17 @@ class SpectrumPL(L.LightningModule):
                 "count": len(grp),
             }
             for m in metric_cols:
-                row[f"{m}_median"] = round(float(grp[m].median()), 4)
-                row[f"{m}_mean"] = round(float(grp[m].mean()), 4)
-                row[f"{m}_min"] = round(float(grp[m].min()), 4)
-                row[f"{m}_max"] = round(float(grp[m].max()), 4)
+                col = grp[m]
+                n = len(col)
+                mean = col.mean()
+                std = col.std(ddof=1) if n > 1 else 0.0
+                ci95 = 1.96 * std / (n**0.5) if n > 1 else 0.0
+                row[f"{m}_median"] = round(float(col.median()), 4)
+                row[f"{m}_mean"] = round(float(mean), 4)
+                row[f"{m}_std"] = round(float(std), 4)
+                row[f"{m}_ci95"] = round(float(ci95), 4)
+                row[f"{m}_min"] = round(float(col.min()), 4)
+                row[f"{m}_max"] = round(float(col.max()), 4)
             rows.append(row)
 
         if not rows:
