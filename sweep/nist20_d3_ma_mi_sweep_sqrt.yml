@@ -23,7 +23,7 @@ parameters:
   mol_hidden_size:
     values: [64, 128, 256]
   mol_dropout:
-    values: [0.0, 0.05, 0.1, 0.2]
+    values: [0.0, 0.01, 0.02, 0.05, 0.1, 0.2]
   #mol_pool_type:
   #  values: [none, sum, mean, max, mean_max_sum, mean_std_softmax, attention]
   # frag-specific
@@ -38,11 +38,14 @@ parameters:
   #frag_pool_combine:
   #  values: [add, subtract, none]
   frag_dropout:
-    values: [0.0, 0.05, 0.1, 0.2]
+    values: [0.0, 0.01, 0.02, 0.05, 0.1, 0.2]
   # mlp-specific
   #mlp_normalization:
   #  values: [none, batch, layer]
   mlp_hidden_size:
     values: [64, 128, 256]
   mlp_dropout:
-    values: [0.0, 0.05, 0.1, 0.2]
+    values: [0.0, 0.01, 0.02, 0.05, 0.1, 0.2]
+  # loss-specific
+  node_normalized_entropy_weight:
+    values: [-0.05,-0.01, 0.0, 0.01, 0.05, 0.1]

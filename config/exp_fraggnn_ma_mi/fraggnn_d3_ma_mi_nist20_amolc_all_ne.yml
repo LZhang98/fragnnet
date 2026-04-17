@@ -213,5 +213,5 @@ compile: True                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
-          # only non-zero weight terms are computed (node_ne below)
+# only non-zero weight terms are computed (node_ne below)
 node_normalized_entropy_weight: 0.005  # penalize spread over DAG nodes → fewer tiny peaks
