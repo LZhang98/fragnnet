@@ -84,6 +84,8 @@ spec_params:
     - "[M-H]-"
     - "[M+Na]+"
     - "[M+Cl]-"
+    - "[M]+"
+    - '[M+CH3COOH-H]-'
   inst_type: True       # condition on instrument type
   inst_types:           # instrument types to include
     - "FT"
