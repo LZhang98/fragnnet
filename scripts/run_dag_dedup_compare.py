@@ -243,6 +243,14 @@ def create_dedup_tar(input_tar: str, output_tar: str, strategy: str) -> dict:
     totals: dict[str, int] = defaultdict(int)
     t0 = time.perf_counter()
 
+    input_base = os.path.basename(input_tar).replace(".tar", "")
+    output_base = os.path.basename(output_tar).replace(".tar", "")
+
+    def rewrite_name(name: str) -> str:
+        if name.startswith(input_base + "/"):
+            return output_base + name[len(input_base):]
+        return name
+
     with tarfile.open(input_tar, "r") as tf:
         members = tf.getmembers()
 
@@ -254,7 +262,7 @@ def create_dedup_tar(input_tar: str, output_tar: str, strategy: str) -> dict:
             f = tf_in.extractfile(m)
             if f is not None:
                 data = f.read()
-                info = tarfile.TarInfo(name=m.name)
+                info = tarfile.TarInfo(name=rewrite_name(m.name))
                 info.size = len(data)
                 tf_out.addfile(info, io.BytesIO(data))
             else:
@@ -280,7 +288,7 @@ def create_dedup_tar(input_tar: str, output_tar: str, strategy: str) -> dict:
                     print(f"    [WARN] {member.name}: {e}")
                     raw = bz2.compress(pickle.dumps(dag))
 
-            info = tarfile.TarInfo(name=member.name)
+            info = tarfile.TarInfo(name=rewrite_name(member.name))
             info.size = len(raw)
             tf_out.addfile(info, io.BytesIO(raw))
 

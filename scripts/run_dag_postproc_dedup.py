@@ -28,6 +28,7 @@ import argparse
 import bz2
 import io
 import json
+import os
 import pickle
 import sys
 import tarfile
@@ -227,6 +228,14 @@ def process_tar(input_tar: str, output_tar: str) -> None:
     print(f"Input:  {input_tar}")
     print(f"Output: {output_tar}\n")
 
+    input_base = os.path.basename(input_tar).replace(".tar", "")
+    output_base = os.path.basename(output_tar).replace(".tar", "")
+
+    def rewrite_name(name: str) -> str:
+        if name.startswith(input_base + "/"):
+            return output_base + name[len(input_base):]
+        return name
+
     with tarfile.open(input_tar, "r") as tf:
         members = tf.getmembers()
 
@@ -244,7 +253,7 @@ def process_tar(input_tar: str, output_tar: str) -> None:
             f = tf_in.extractfile(m)
             if f is not None:
                 data = f.read()
-                info = tarfile.TarInfo(name=m.name)
+                info = tarfile.TarInfo(name=rewrite_name(m.name))
                 info.size = len(data)
                 tf_out.addfile(info, io.BytesIO(data))
             else:
@@ -264,7 +273,7 @@ def process_tar(input_tar: str, output_tar: str) -> None:
             if dag["reached_depth"] < 1:
                 # Trivial DAG (root only) — copy unchanged
                 raw = bz2.compress(pickle.dumps(dag))
-                info = tarfile.TarInfo(name=member.name)
+                info = tarfile.TarInfo(name=rewrite_name(member.name))
                 info.size = len(raw)
                 tf_out.addfile(info, io.BytesIO(raw))
                 totals["n_nodes_before"] += dag["dag_num_nodes"]
@@ -289,7 +298,7 @@ def process_tar(input_tar: str, output_tar: str) -> None:
                 }
 
             raw = bz2.compress(pickle.dumps(new_dag))
-            info = tarfile.TarInfo(name=member.name)
+            info = tarfile.TarInfo(name=rewrite_name(member.name))
             info.size = len(raw)
             tf_out.addfile(info, io.BytesIO(raw))
 
