@@ -110,6 +110,11 @@ def main(args):
         spec_type=spec_type,
     )
 
+    n_dup = mol_df["mol_id"].duplicated().sum()
+    if n_dup > 0:
+        print(f">> WARNING: mol_df has {n_dup} duplicate mol_ids — deduplicating")
+        mol_df = mol_df.drop_duplicates(subset=["mol_id"]).reset_index(drop=True)
+
     m_spec_df = merge_spec_df(spec_df)
 
     print(
