@@ -338,11 +338,11 @@ def compute_recall(tar_path: str, n_sample: int = 0, seed: int = 42) -> dict:
                         present_fidxs.add(fidx)
 
             # All matched fidxs (fpp > 0) grouped by |h_delta|
+            # idx_by_h_delta is a list: [0]=h0, [1]=+1, [2]=-1, [3]=+2, [4]=-2, ...
             for h_max in H_MAXES:
                 eligible: set[int] = set()
-                for h_delta, fidxs in idx_by_h_delta.items():
-                    if abs(int(h_delta)) <= h_max:
-                        eligible.update(int(f) for f in fidxs)
+                for slot_idx in range(min(1 + 2 * h_max, len(idx_by_h_delta))):
+                    eligible.update(int(f) for f in idx_by_h_delta[slot_idx])
                 matched = {f for f in eligible if 1 <= f < fpp.shape[0] and fpp[f].sum() > 0}
                 kept = matched & present_fidxs
                 total_matched[h_max] += len(matched)
@@ -372,6 +372,8 @@ def main() -> None:
     parser.add_argument("--recall_sample", type=int, default=0,
                         help="Molecules to sample for recall (0=all)")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--recall_only", action="store_true",
+                        help="Skip tar creation (tars already exist); only compute recall")
     args = parser.parse_args()
 
     import os
@@ -389,21 +391,24 @@ def main() -> None:
 
     t0_all = time.perf_counter()
     create_stats: dict[str, dict] = {}
-    with concurrent.futures.ProcessPoolExecutor(max_workers=len(args.strategies)) as pool:
-        futures = {
-            pool.submit(create_dedup_tar, args.input_tar, tar_paths[s], s): s
-            for s in args.strategies
-        }
-        for fut in concurrent.futures.as_completed(futures):
-            strategy = futures[fut]
-            stats = fut.result()
-            create_stats[strategy] = stats
-            nn_b, nn_a = stats.get("n_nodes_before", 0), stats.get("n_nodes_after", 0)
-            ne_b, ne_a = stats.get("n_edges_before", 0), stats.get("n_edges_after", 0)
-            print(f"  [{strategy}] done in {stats['elapsed']}s — "
-                  f"nodes {nn_b:,}→{nn_a:,} ({100*(nn_b-nn_a)/nn_b if nn_b else 0:.1f}%) | "
-                  f"edges {ne_b:,}→{ne_a:,} ({100*(ne_b-ne_a)/ne_b if ne_b else 0:.1f}%)")
-    print(f"\nAll tars done in {time.perf_counter()-t0_all:.0f}s")
+    if args.recall_only:
+        print("  (--recall_only: skipping tar creation)\n")
+    else:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=len(args.strategies)) as pool:
+            futures = {
+                pool.submit(create_dedup_tar, args.input_tar, tar_paths[s], s): s
+                for s in args.strategies
+            }
+            for fut in concurrent.futures.as_completed(futures):
+                strategy = futures[fut]
+                stats = fut.result()
+                create_stats[strategy] = stats
+                nn_b, nn_a = stats.get("n_nodes_before", 0), stats.get("n_nodes_after", 0)
+                ne_b, ne_a = stats.get("n_edges_before", 0), stats.get("n_edges_after", 0)
+                print(f"  [{strategy}] done in {stats['elapsed']}s — "
+                      f"nodes {nn_b:,}→{nn_a:,} ({100*(nn_b-nn_a)/nn_b if nn_b else 0:.1f}%) | "
+                      f"edges {ne_b:,}→{ne_a:,} ({100*(ne_b-ne_a)/ne_b if ne_b else 0:.1f}%)")
+        print(f"\nAll tars done in {time.perf_counter()-t0_all:.0f}s")
 
     # Also include baseline (original tar) in recall eval
     tar_paths["baseline"] = args.input_tar
