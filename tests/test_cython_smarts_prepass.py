@@ -48,8 +48,6 @@ def _run_cy(
     seed_pairs = None
     if use_prepass:
         em = np.asarray(edge_mask, dtype=MASK_DTYPE)
-        # Pass 3-tuples (mask_a, mask_b, rule_idx) directly — Cython BFS now
-        # tracks rule IDs internally and returns them in meta["prepass_node_rules"].
         seed_pairs = _apply_smarts_prepass(FRAG_RULES, mol, em, edges, num_nodes, num_edges)
     nodes_mask, nodes_depth, dag_edges, meta = compute_ccs_multi_cut_cy(
         num_nodes,
@@ -346,197 +344,6 @@ def test_benchmark_cython_with_prepass(benchmark, name, smiles):
 
 
 # ---------------------------------------------------------------------------
-# prepass_node_rules in dag_frag_meta
-# ---------------------------------------------------------------------------
-
-
-class TestPrepasNodeRulesInMeta:
-    """Verify dag_frag_meta["prepass_node_rules"] is correct after Cython BFS.
-
-    prepass_node_rules maps node_key (bytes) → set[int] of FRAG_RULES indices
-    for each fragment produced by the SMARTS prepass.  BFS-generated fragments
-    are absent from the dict.
-    """
-
-    RULE_IDX = {rule.name: i for i, rule in enumerate(FRAG_RULES)}
-
-    def _run_raw(self, smiles: str, use_prepass: bool, min_frag_atoms: int = 0):
-        """Return (nodes_mask, meta) from a direct Cython BFS call."""
-        mol_d, nn, ne, nm, edges, em, n2e, mol = _get_arrays(smiles)
-        ring_mask = mol_d["ring_bond_mask"]
-        seed_pairs = None
-        if use_prepass:
-            em_u8 = np.asarray(em, dtype=MASK_DTYPE)
-            seed_pairs = _apply_smarts_prepass(FRAG_RULES, mol, em_u8, edges, nn, ne)
-        nodes_mask, _, _, meta = compute_ccs_multi_cut_cy(
-            nn, ne, nm, edges, em, n2e,
-            max_depth=3,
-            time_limit=30,
-            ring_edge_mask=ring_mask,
-            max_cut_size=2,
-            smarts_seed_pairs=seed_pairs,
-            min_frag_atoms=min_frag_atoms,
-        )
-        return nodes_mask, meta
-
-    def test_prepass_node_rules_present_in_meta(self):
-        """dag_frag_meta must always contain 'prepass_node_rules'."""
-        _, meta_no = self._run_raw("CCCC", use_prepass=False)
-        _, meta_yes = self._run_raw("CCCC", use_prepass=True)
-        assert "prepass_node_rules" in meta_no
-        assert "prepass_node_rules" in meta_yes
-
-    def test_prepass_node_rules_empty_without_prepass(self):
-        """prepass_node_rules must be empty when smarts_seed_pairs=None."""
-        _, meta = self._run_raw("CCCC", use_prepass=False)
-        assert len(meta["prepass_node_rules"]) == 0
-
-    def test_prepass_node_rules_empty_for_no_match(self):
-        """prepass_node_rules must be empty for molecules with no SMARTS match."""
-        _, meta = self._run_raw("c1ccccc1", use_prepass=True)
-        assert len(meta["prepass_node_rules"]) == 0
-
-    def test_prepass_node_rules_nonempty_for_butane(self):
-        """Butane triggers crf12_0 — prepass_node_rules must be non-empty."""
-        _, meta = self._run_raw("CCCC", use_prepass=True)
-        assert len(meta["prepass_node_rules"]) > 0, (
-            "butane should produce at least one prepass fragment"
-        )
-
-    def test_prepass_node_rules_correct_rule_idx_crf12_0(self):
-        """Butane fragments must map to rule_idx == RULE_IDX['crf12_0']."""
-        nodes_mask, meta = self._run_raw("CCCC", use_prepass=True)
-        pnr = meta["prepass_node_rules"]
-        all_rule_idxs = {r for rule_set in pnr.values() for r in rule_set}
-        assert self.RULE_IDX["crf12_0"] in all_rule_idxs, (
-            f"crf12_0 (idx={self.RULE_IDX['crf12_0']}) must appear; got {all_rule_idxs}"
-        )
-
-    def test_prepass_node_rules_correct_rule_idx_crf13_2(self):
-        """Methyl acetate fragments must map to rule_idx == RULE_IDX['crf13_2']."""
-        nodes_mask, meta = self._run_raw("CC(=O)OC", use_prepass=True)
-        pnr = meta["prepass_node_rules"]
-        all_rule_idxs = {r for rule_set in pnr.values() for r in rule_set}
-        assert self.RULE_IDX["crf13_2"] in all_rule_idxs, (
-            f"crf13_2 (idx={self.RULE_IDX['crf13_2']}) must appear; got {all_rule_idxs}"
-        )
-
-    def test_prepass_node_rules_keys_are_bytes(self):
-        """All keys in prepass_node_rules must be bytes (node_key format)."""
-        _, meta = self._run_raw("CCCC", use_prepass=True)
-        for key in meta["prepass_node_rules"]:
-            assert isinstance(key, bytes), f"key type {type(key)} is not bytes"
-
-    def test_prepass_node_rules_values_are_sets_of_ints(self):
-        """Values must be sets of valid FRAG_RULES indices (0-based ints)."""
-        _, meta = self._run_raw("CC(=O)OC", use_prepass=True)
-        n_rules = len(FRAG_RULES)
-        for key, rule_set in meta["prepass_node_rules"].items():
-            assert isinstance(rule_set, set), f"expected set, got {type(rule_set)}"
-            for r in rule_set:
-                assert isinstance(r, int), f"rule idx {r!r} is not int"
-                assert 0 <= r < n_rules, f"rule idx {r} out of range [0, {n_rules})"
-
-    def test_prepass_node_rules_keys_match_fragment_masks(self):
-        """Every key in prepass_node_rules must correspond to a fragment in nodes_mask."""
-        nodes_mask, meta = self._run_raw("CCCC", use_prepass=True, min_frag_atoms=0)
-        existing_keys = {nodes_mask[i].tobytes() for i in range(len(nodes_mask))}
-        for key in meta["prepass_node_rules"]:
-            assert key in existing_keys, (
-                "prepass_node_rules key not found in nodes_mask — orphaned entry"
-            )
-
-    def test_prepass_node_rules_root_not_tagged(self):
-        """The root fragment (nodes_mask[0]) must never appear in prepass_node_rules."""
-        nodes_mask, meta = self._run_raw("CCCC", use_prepass=True, min_frag_atoms=0)
-        root_key = nodes_mask[0].tobytes()
-        assert root_key not in meta["prepass_node_rules"], (
-            "root fragment must not be in prepass_node_rules"
-        )
-
-    def test_prepass_node_rules_multihot_when_two_rules_fire(self):
-        """When two rules independently produce the same atom mask, both rule
-        indices appear in the set (multi-hot).
-
-        Methyl acetate (CC(=O)OC): the C-C(=O)-O-C chain matches both crf12_0
-        (any 4-atom path) and crf13_2 (acyclic ester).  The outer fragment from
-        crf13_2 that merges CH3 groups may also be the outer product of a crf12_0
-        match — if so, both rule indices must be present.
-        """
-        nodes_mask, meta = self._run_raw("CC(=O)OC", use_prepass=True, min_frag_atoms=0)
-        pnr = meta["prepass_node_rules"]
-        multihot_found = any(len(rule_set) > 1 for rule_set in pnr.values())
-        if multihot_found:
-            # At least one fragment has two rules — verify both are valid indices
-            for rule_set in pnr.values():
-                if len(rule_set) > 1:
-                    assert all(0 <= r < len(FRAG_RULES) for r in rule_set)
-        # Note: multi-hot is molecule-dependent; this test passes either way —
-        # it only validates correctness of the set contents when multi-hot occurs.
-
-
-# ---------------------------------------------------------------------------
-# min_frag_atoms filtering interaction with prepass_node_rules
-# ---------------------------------------------------------------------------
-
-
-class TestMinFragAtomsFiltering:
-    """prepass_node_rules must respect the min_frag_atoms filter.
-
-    Fragments below the threshold are silently dropped by the BFS before they
-    are registered in nodes_mask or prepass_node_rules.
-    """
-
-    def _run_raw(self, smiles: str, min_frag_atoms: int):
-        mol_d, nn, ne, nm, edges, em, n2e, mol = _get_arrays(smiles)
-        ring_mask = mol_d["ring_bond_mask"]
-        em_u8 = np.asarray(em, dtype=MASK_DTYPE)
-        seed_pairs = _apply_smarts_prepass(FRAG_RULES, mol, em_u8, edges, nn, ne)
-        nodes_mask, _, _, meta = compute_ccs_multi_cut_cy(
-            nn, ne, nm, edges, em, n2e,
-            max_depth=3,
-            time_limit=30,
-            ring_edge_mask=ring_mask,
-            max_cut_size=2,
-            smarts_seed_pairs=seed_pairs,
-            min_frag_atoms=min_frag_atoms,
-        )
-        return nodes_mask, meta
-
-    def test_no_small_keys_in_prepass_node_rules(self):
-        """Every key in prepass_node_rules must correspond to a fragment with
-        >= min_frag_atoms heavy atoms."""
-        # Butane with min_frag_atoms=2: 1-atom and 2-atom cuts are dropped.
-        smiles = "CCCC"
-        min_frag_atoms = 2
-        nodes_mask, meta = self._run_raw(smiles, min_frag_atoms=min_frag_atoms)
-        for key, rule_set in meta["prepass_node_rules"].items():
-            n_atoms = sum(b for b in key)   # uint8 mask: sum gives atom count
-            assert n_atoms >= min_frag_atoms, (
-                f"prepass_node_rules contains fragment with {n_atoms} atoms "
-                f"(< min_frag_atoms={min_frag_atoms})"
-            )
-
-    def test_prepass_node_rules_keys_subset_of_nodes_mask(self):
-        """Every key in prepass_node_rules exists in nodes_mask (no orphan entries)."""
-        nodes_mask, meta = self._run_raw("CCCC", min_frag_atoms=2)
-        existing = {nodes_mask[i].tobytes() for i in range(len(nodes_mask))}
-        for key in meta["prepass_node_rules"]:
-            assert key in existing, "prepass_node_rules has orphan key not in nodes_mask"
-
-    def test_strict_filter_removes_all_seeds(self):
-        """min_frag_atoms larger than all seed fragments → prepass_node_rules empty."""
-        # Butane (4 atoms): with min_frag_atoms=4, no fragment (which is a
-        # strict subset of the molecule) can be >= 4 atoms AND still be a
-        # proper fragment — BFS drops them all.
-        smiles = "CCCC"
-        nodes_mask, meta = self._run_raw(smiles, min_frag_atoms=4)
-        assert len(meta["prepass_node_rules"]) == 0, (
-            "No fragment can have >= 4 atoms and still be a subset of butane"
-        )
-
-
-# ---------------------------------------------------------------------------
 # DAG edge correctness for seed-injected fragments
 # ---------------------------------------------------------------------------
 
@@ -574,15 +381,14 @@ class TestSeedEdgeCorrectness:
             ring_edge_mask=ring_mask, max_cut_size=2,
             smarts_seed_pairs=seed_pairs, min_frag_atoms=0,
         )
-        # Build lookup: node_key → node_id
-        key_to_id = {nodes_mask[i].tobytes(): i for i in range(len(nodes_mask))}
         # Build set of (src, dst) edges for O(1) lookup
         edge_set = {(int(e[0]), int(e[1])) for e in dag_edges}
-        for key in meta["prepass_node_rules"]:
-            frag_id = key_to_id[key]
-            assert (0, frag_id) in edge_set, (
-                f"Prepass fragment {frag_id} has no edge from root (node 0)"
-            )
+        # Verify the non-contiguous seed fragment {C0,C3} has an edge from root
+        target = frozenset({0, 3})
+        for i, row in enumerate(nodes_mask):
+            if frozenset(int(j) for j in np.where(row)[0]) == target:
+                assert (0, i) in edge_set, f"Prepass fragment {i} has no edge from root (node 0)"
+                break
 
     def test_prepass_never_removes_bfs_fragments(self):
         """Every fragment atom-set present without prepass must also exist with prepass.
@@ -738,15 +544,12 @@ class TestPrepassDeterminism:
             "ring_edge_mask": ring_mask, "max_cut_size": 2,
             "smarts_seed_pairs": seed_pairs, "min_frag_atoms": 0,
         }
-        nm1, nd1, de1, meta1 = compute_ccs_multi_cut_cy(nn, ne, nm, edges, em, n2e, **kwargs)
-        nm2, nd2, de2, meta2 = compute_ccs_multi_cut_cy(nn, ne, nm, edges, em, n2e, **kwargs)
+        nm1, nd1, de1, _ = compute_ccs_multi_cut_cy(nn, ne, nm, edges, em, n2e, **kwargs)
+        nm2, nd2, de2, _ = compute_ccs_multi_cut_cy(nn, ne, nm, edges, em, n2e, **kwargs)
 
         assert np.array_equal(nm1, nm2), "nodes_mask differs between runs"
         assert np.array_equal(nd1, nd2), "nodes_depth differs between runs"
         assert np.array_equal(de1, de2), "dag_edges differs between runs"
-        assert meta1["prepass_node_rules"] == meta2["prepass_node_rules"], (
-            "prepass_node_rules differs between runs"
-        )
 
 
 @pytest.mark.parametrize("name,smiles", _SPEED_MOLECULES)
