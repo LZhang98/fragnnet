@@ -390,7 +390,7 @@ def compute_ccs_multi_cut(
     int max_cut_size = 2,
     smarts_seed_pairs = None,
     ring_bond_groups = None,
-    int min_frag_atoms = 3,
+    int min_frag_atoms = 0,
 ):
     """Multi-bond-cut BFS fragmentation (Cython).
 
@@ -427,8 +427,7 @@ def compute_ccs_multi_cut(
             have to be registered in the DAG.  Fragments smaller than this
             threshold are silently dropped (and their subtrees never explored,
             since all children would be even smaller).  ``0`` disables the
-            filter.  Default ``3`` removes single-atom and two-atom shards that
-            never appear as observable MS/MS peaks.
+            filter.  Default ``0`` disables the filter.
     Returns:
         Tuple ``(nodes_mask_matrix, nodes_depth_matrix, dag_edges_matrix,
         dag_frag_meta)`` — same format as ``compute_frags.compute_ccs``.

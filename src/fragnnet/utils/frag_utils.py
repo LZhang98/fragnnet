@@ -954,7 +954,7 @@ def compute_dags(
     multi_cut_bfs: bool = False,
     max_cut_size: int = 2,
     smarts_prepass: bool = False,
-    min_frag_atoms: int = 3,
+    min_frag_atoms: int = 0,
 ) -> dict:
     """_summary_
 
@@ -1935,7 +1935,7 @@ def timed_get_dags(
     multi_cut_bfs: bool = False,
     max_cut_size: int = 2,
     smarts_prepass: bool = False,
-    min_frag_atoms: int = 3,
+    min_frag_atoms: int = 0,
 ) -> tuple:
     try:
         mol_d = extract_mol_info(mol)

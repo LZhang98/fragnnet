@@ -719,11 +719,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--min_frag_atoms",
         type=int,
-        default=3,
+        default=0,
         help=(
             "Minimum number of heavy atoms a child fragment must have to be registered "
             "in the DAG. Fragments smaller than this threshold are silently dropped. "
-            "0 disables the filter. Default 3 removes single- and two-atom shards."
+            "0 disables the filter."
         ),
     )
     args = parser.parse_args()
