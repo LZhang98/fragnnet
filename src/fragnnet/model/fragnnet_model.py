@@ -1082,9 +1082,12 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # log p(f) = logsumexp_n log p(f,n)
         frag_formula_mask = th.ones_like(frag_formula_batch_idxs, dtype=float_dtype)
         frag_formula_mask[frag_formula_cumsizes[:-1]] = 0.0
-        # aggregate by formula
+        # aggregate by formula — use explicit dim_size so dedup'd batches where some high-index
+        # formula slots are unreferenced still produce a tensor of size batch_frag_num_formulae,
+        # matching frag_formula_mask / frag_formula_batch_idxs.
         frag_formula_logprobs = scatter_logsumexp(
-            frag_joint_logprobs.flatten(), frag_joint_formula_idxs
+            frag_joint_logprobs.flatten(), frag_joint_formula_idxs,
+            dim_size=int(batch_frag_num_formulae),
         )
         # softmax over formulae
         if self.mask_null_formula:

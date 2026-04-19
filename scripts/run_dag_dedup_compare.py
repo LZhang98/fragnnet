@@ -37,7 +37,7 @@ import torch
 from torch_geometric.data import Data
 
 sys.path.insert(0, "src")
-from fragnnet.utils.frag_utils import ELEMENT_TO_IDX, get_node_feats
+from fragnnet.utils.frag_utils import ELEMENT_TO_IDX, NODE_FEAT_TO_IDX, get_node_feats
 
 ALL_STRATEGIES = ["leaf_only", "all_depths", "hybrid", "h_coverage"]
 
@@ -166,6 +166,59 @@ def apply_remove_set(dag: dict, remove_set: set[int]) -> tuple[dict, dict]:
     new_nmd = nmd[np.array(keep_nodes, dtype=np.intp)]
     new_emd = emd[np.array(keep_edges, dtype=np.intp)] if keep_edges else emd[:0]
 
+    # --- Formula compaction: remove formula rows not referenced by any surviving node ---
+    # After dedup, surviving nodes may not reference the highest formula indices, causing
+    # scatter_logsumexp (without explicit dim_size) to produce undersized output tensors.
+    node_feat_idxs = g.node_feat_idxs[0]
+    h_feat_idx = NODE_FEAT_TO_IDX["h_formulae_idx"]
+    cmf_feat_idx = NODE_FEAT_TO_IDX["cmf_h_formulae_idx"]
+    h_col_start = node_feat_idxs[h_feat_idx].item()
+    h_col_end = node_feat_idxs[h_feat_idx + 1].item()
+    cmf_col_start = node_feat_idxs[cmf_feat_idx].item()
+    cmf_col_end = node_feat_idxs[cmf_feat_idx + 1].item()
+
+    ref_idxs: set[int] = {0}  # 0 is always the null/padding formula
+    for col in range(h_col_start, h_col_end):
+        for v in new_x[:, col].tolist():
+            if v > 0:
+                ref_idxs.add(int(v))
+    for col in range(cmf_col_start, cmf_col_end):
+        for v in new_x[:, col].tolist():
+            if v > 0:
+                ref_idxs.add(int(v))
+
+    old_fpp = dag["formula_peak_probs"]
+    new_fpp = old_fpp
+    new_fpm = dag["formula_peak_mzs"]
+    new_i2f = dag["idx_to_formula"]
+    new_ibhd = dag["idx_by_h_delta"]
+
+    if len(ref_idxs) < old_fpp.shape[0]:
+        keep_fidxs = [0] + sorted(ref_idxs - {0})
+        fidx_remap: dict[int, int] = {old: new for new, old in enumerate(keep_fidxs)}
+
+        keep_fidx_tensor = torch.tensor(keep_fidxs, dtype=torch.long)
+        new_fpp = old_fpp[keep_fidx_tensor]
+        new_fpm = dag["formula_peak_mzs"][keep_fidx_tensor]
+
+        old_i2f: dict[int, str] = dag["idx_to_formula"]
+        new_i2f = {fidx_remap[oi]: fs for oi, fs in old_i2f.items() if oi in fidx_remap}
+
+        old_ibhd: list[set[int]] = dag["idx_by_h_delta"]
+        new_ibhd = [{fidx_remap[v] for v in s if v in fidx_remap} for s in old_ibhd]
+
+        new_x = new_x.clone()
+        for col in range(h_col_start, h_col_end):
+            new_x[:, col] = torch.tensor(
+                [fidx_remap.get(int(v), 0) for v in new_x[:, col].tolist()],
+                dtype=new_x.dtype,
+            )
+        for col in range(cmf_col_start, cmf_col_end):
+            new_x[:, col] = torch.tensor(
+                [fidx_remap.get(int(v), 0) for v in new_x[:, col].tolist()],
+                dtype=new_x.dtype,
+            )
+
     if keep_edges:
         ei_kept = edge_index[:, keep_edges]
         new_edge_index = torch.tensor(
@@ -208,6 +261,10 @@ def apply_remove_set(dag: dict, remove_set: set[int]) -> tuple[dict, dict]:
     new_dag["dag_num_edges_by_depth"] = dict(edges_by_depth)
     new_dag["formula_redundancy"] = new_n_nodes / n_unique if n_unique > 0 else 1.0
     new_dag["dag_sparsity"] = new_n_edges / (new_n_nodes ** 2) if new_n_nodes > 1 else 0.0
+    new_dag["formula_peak_probs"] = new_fpp
+    new_dag["formula_peak_mzs"] = new_fpm
+    new_dag["idx_to_formula"] = new_i2f
+    new_dag["idx_by_h_delta"] = new_ibhd
 
     stats = {
         "n_nodes_before": n_nodes,
