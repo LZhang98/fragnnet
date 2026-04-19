@@ -24,6 +24,7 @@ Usage:
 
 import argparse
 import bz2
+import concurrent.futures
 import io
 import pickle
 import sys
@@ -379,36 +380,49 @@ def main() -> None:
     base = os.path.basename(args.input_tar).replace(".tar", "")
     tar_paths: dict[str, str] = {}
 
-    # ---- Step 1: create dedup tars ----
-    print(f"Creating {len(args.strategies)} deduplicated tars ...\n")
-    create_stats: dict[str, dict] = {}
+    # ---- Step 1: create dedup tars in parallel ----
+    print(f"Creating {len(args.strategies)} deduplicated tars in parallel ...\n")
     for strategy in args.strategies:
         out_tar = os.path.join(args.out_dir, f"{base}_{strategy}.tar")
         tar_paths[strategy] = out_tar
         print(f"  [{strategy}] → {out_tar}")
-        stats = create_dedup_tar(args.input_tar, out_tar, strategy)
-        create_stats[strategy] = stats
-        nn_b = stats.get("n_nodes_before", 0)
-        nn_a = stats.get("n_nodes_after", 0)
-        ne_b = stats.get("n_edges_before", 0)
-        ne_a = stats.get("n_edges_after", 0)
-        print(f"    nodes: {nn_b:,} → {nn_a:,}  ({100*(nn_b-nn_a)/nn_b if nn_b else 0:.1f}% reduction)")
-        print(f"    edges: {ne_b:,} → {ne_a:,}  ({100*(ne_b-ne_a)/ne_b if ne_b else 0:.1f}% reduction)")
-        print(f"    time:  {stats['elapsed']}s\n")
+
+    t0_all = time.perf_counter()
+    create_stats: dict[str, dict] = {}
+    with concurrent.futures.ProcessPoolExecutor(max_workers=len(args.strategies)) as pool:
+        futures = {
+            pool.submit(create_dedup_tar, args.input_tar, tar_paths[s], s): s
+            for s in args.strategies
+        }
+        for fut in concurrent.futures.as_completed(futures):
+            strategy = futures[fut]
+            stats = fut.result()
+            create_stats[strategy] = stats
+            nn_b, nn_a = stats.get("n_nodes_before", 0), stats.get("n_nodes_after", 0)
+            ne_b, ne_a = stats.get("n_edges_before", 0), stats.get("n_edges_after", 0)
+            print(f"  [{strategy}] done in {stats['elapsed']}s — "
+                  f"nodes {nn_b:,}→{nn_a:,} ({100*(nn_b-nn_a)/nn_b if nn_b else 0:.1f}%) | "
+                  f"edges {ne_b:,}→{ne_a:,} ({100*(ne_b-ne_a)/ne_b if ne_b else 0:.1f}%)")
+    print(f"\nAll tars done in {time.perf_counter()-t0_all:.0f}s")
 
     # Also include baseline (original tar) in recall eval
     tar_paths["baseline"] = args.input_tar
 
-    # ---- Step 2: compute recall ----
+    # ---- Step 2: compute recall in parallel ----
     sample_str = f"{args.recall_sample:,}" if args.recall_sample else "all"
-    print(f"\nComputing recall (h1..h4) on {sample_str} molecules per tar ...\n")
+    print(f"\nComputing recall (h1..h4) on {sample_str} molecules per tar in parallel ...\n")
 
-    recall_results: dict[str, dict] = {}
     eval_order = ["baseline"] + args.strategies
-    for label in eval_order:
-        tar = tar_paths[label]
-        print(f"  [{label}] ...")
-        recall_results[label] = compute_recall(tar, n_sample=args.recall_sample, seed=args.seed)
+    recall_results: dict[str, dict] = {}
+    with concurrent.futures.ProcessPoolExecutor(max_workers=len(eval_order)) as pool:
+        futures = {
+            pool.submit(compute_recall, tar_paths[label], args.recall_sample, args.seed): label
+            for label in eval_order
+        }
+        for fut in concurrent.futures.as_completed(futures):
+            label = futures[fut]
+            recall_results[label] = fut.result()
+            print(f"  [{label}] recall computed")
 
     # ---- Step 3: print table ----
     H_MAXES = [1, 2, 3, 4, "all"]
