@@ -50,8 +50,13 @@ if __name__ == "__main__":
         logger.info("Running agent directly for job_id: %s", args.job_id)
         agent_func()
     else:
-        logger.info("Setting up wandb.agent with sweep_key: %s", args.sweep_key)
         config_d = load_config(args.template_fp, args.custom_fp, None)
+
+        logger.info("Setting up wandb.agent with sweep_key: %s", args.sweep_key)
+        logger.info(
+            f"wandb_entity: {config_d['wandb_entity']} and wandb_project:{config_d['wandb_project']} will be loaded from template and custom config files"
+        )
+
         wandb.agent(
             sweep_id=args.sweep_key,
             count=1,

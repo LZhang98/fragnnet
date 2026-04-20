@@ -1,8 +1,6 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_entity: fragnnet
-wandb_project: fragnnet
 wandb_name: nist20_d3_ma_mi_focused_template
 wandb_group: nist20_d3_ma_mi_focused
 wandb_tags:
