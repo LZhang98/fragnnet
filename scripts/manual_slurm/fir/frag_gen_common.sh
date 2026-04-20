@@ -10,6 +10,7 @@ FRAGNNET_DP=${FRAGNNET_DP:-/home/feiw/project/feiw/frag-gnn}
 WORKING_DIR=${WORKING_DIR:-${SLURM_TMPDIR}/${SLURM_JOB_ID}}
 DEST_DP=${DEST_DP:-/scratch/feiw/frag-gnn-data/frags/}
 MAX_H_TRANSFER=${MAX_H_TRANSFER:-4}
+MAX_TIME=${MAX_TIME:-150}
 NB_FLAG=${NB_FLAG:-False}
 ISO_FLAG=${ISO_FLAG:-False}
 FRAG_MODE=${FRAG_MODE:-'CID HCD'}
@@ -103,6 +104,7 @@ PREPARE_ARGS=(
     --isotopes ${ISO_FLAG}
     --frag_mode "${FRAG_MODE_ARGS[@]}"
     --max_h_transfer ${MAX_H_TRANSFER}
+    --max_time ${MAX_TIME}
     --dsets "${DSET_ARGS[@]}"
 )
 

@@ -4,7 +4,7 @@
 #SBATCH --job-name=frag_gen_nist23_pcdl_d3
 #SBATCH --mem=256G
 #SBATCH --cpus-per-task=128
-#SBATCH --time=0-2:00
+#SBATCH --time=0-12:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
 #SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_nist23_pcdl_d3_%j.out
@@ -14,6 +14,7 @@
 DATASET_NAME=nist23_pcdl
 MAX_DEPTH=3
 MAX_H_TRANSFER=4
+MAX_TIME=-1
 NB_FLAG=False
 ISO_FLAG=False
 SMARTS_PREPASS=False
