@@ -42,7 +42,7 @@ wandb_tags:
 spec_fp: data/proc/nist23_pcdl/spec_df.pkl
 mol_fp: data/proc/nist23_pcdl/mol_df.pkl
 split_dp: data/split/ccx_nist23_pcdl/cv0   # inchikey split: [M+H]+ and [M-H]- adducts
-frag_dp: data/frag/nist23_pcdlma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+frag_dp: data/frag/nist23_pcdl_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
 # Model Architecture
