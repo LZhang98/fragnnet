@@ -27,4 +27,9 @@ FRAG_MODE='CID HCD'
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-source "${SCRIPT_DIR}/frag_gen_common.sh"
+FRAGNNET_DP=${FRAGNNET_DP:-/home/feiw/project/feiw/frag-gnn}
+if [ -f "${SCRIPT_DIR}/frag_gen_common.sh" ]; then
+    source "${SCRIPT_DIR}/frag_gen_common.sh"
+else
+    source "${FRAGNNET_DP}/scripts/manual_slurm/fir/frag_gen_common.sh"
+fi
