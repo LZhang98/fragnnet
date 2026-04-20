@@ -53,7 +53,7 @@ if __name__ == "__main__":
         logger.info("Setting up wandb.agent with sweep_key: %s", args.sweep_key)
         config_d = load_config(args.template_fp, args.custom_fp, None)
         wandb.agent(
-            args.sweep_key,
+            sweep_id=args.sweep_key,
             count=1,
             entity=config_d["wandb_entity"],
             project=config_d["wandb_project"],
