@@ -9,6 +9,7 @@ wandb_tags:
 - nist20_d3_ma_mi_mol_width
 - mol_width
 - mean_vs_mean_max_sum
+- focused_arch
 
 # ============================================================================
 # Data File Paths
@@ -115,17 +116,20 @@ mol_dropout: 0.1
 mol_normalization: batch
 mol_pool_type: mean
 
+cc_interstage_type: direct
+cc_interstage_use_rest: False
+
 frag_hidden_size: 256
 frag_num_layers: 4
-frag_dropout: 0.1
-frag_normalization: batch
-frag_pool_type: mean
+frag_dropout: 0.2
+frag_normalization: graph
+frag_pool_type: attention
 frag_embed_combine: cat
-frag_pool_combine: subtract
+frag_pool_combine: none
 
 mlp_output_format: formula
 mlp_hidden_size: 256
-mlp_dropout: 0.05
+mlp_dropout: 0.3
 mlp_normalization: none
 mlp_num_layers: 2
 mlp_use_residuals: True

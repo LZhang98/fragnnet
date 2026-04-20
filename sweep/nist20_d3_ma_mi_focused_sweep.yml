@@ -3,7 +3,7 @@ project: fragnnet
 program: ~/fragnnet/scripts/run_wandb_sweep.py
 method: random
 name: nist20_d3_ma_mi_mol_width
-description: Focused follow-up sweep for NIST20 D3 MA/MI after sweep_2 showed a strong mol_hidden_size boundary effect.
+description: Focused NIST20 D3 MA/MI sweep for molecular encoder width using safer architecture defaults from prior W&B exports.
 metric:
   goal: maximize
   name: val_cos_sim_0.01_best/mean
@@ -14,13 +14,23 @@ parameters:
   mol_pool_type:
     values: [mean, mean_max_sum]
 
-  # Keep fragment side at the previous best boundary to isolate molecule scaling.
+  # Keep the fragment side narrow; prior broad sweeps showed many failures from bad pooling choices.
   frag_hidden_size:
     values: [256]
+  frag_pool_type:
+    values: [attention, max]
+  frag_normalization:
+    values: [graph, batch]
+  frag_pool_combine:
+    values: [none]
+  cc_interstage_type:
+    values: [direct]
 
   # MLP size had a weaker sweep_2 effect, so keep this narrow.
   mlp_hidden_size:
     values: [128, 256]
+  mlp_normalization:
+    values: [none]
 
   # Optimization around the best sweep_2 and new_frags2 regimes.
   lr:
@@ -32,11 +42,11 @@ parameters:
 
   # Regularization. Avoid zero-heavy dropout and weight_decay=0.1 from the prior sweep.
   mol_dropout:
-    values: [0.05, 0.1, 0.2]
+    values: [0.1, 0.3]
   frag_dropout:
-    values: [0.05, 0.1, 0.2]
+    values: [0.1, 0.2]
   mlp_dropout:
-    values: [0.02, 0.05, 0.1]
+    values: [0.1, 0.3, 0.4]
 
   # Prior sweep favored small/non-negative entropy pressure.
   node_normalized_entropy_weight:
