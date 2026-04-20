@@ -65,6 +65,16 @@ class SpecMolFragDataset(SpecMolDataset):
         """
 
         BaseDataset.__init__(self)
+        spec_params = dict(spec_params)
+        if (
+            spec_params.get("remove_isotope_peaks", False)
+            and spec_params.get("remove_isotope_use_dag_formula", True)
+        ):
+            spec_params.setdefault("remove_isotope_dag_dp", frag_dp)
+            spec_params.setdefault(
+                "remove_isotope_dag_compressed",
+                frag_params.get("compressed", True),
+            )
         self._base_init(
             spec_fp=spec_fp,
             mol_fp=mol_fp,

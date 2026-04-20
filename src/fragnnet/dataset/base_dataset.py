@@ -15,6 +15,7 @@ from fragnnet.utils.data_utils import (
     get_charge,
 )
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_MASS_DIFF
+from fragnnet.utils.frag_utils import load_frag_d
 from fragnnet.utils.isotope_utils import (
     detect_isotope_peaks_for_training_cleanup,
     estimate_coisolation_fraction_from_precursor,
@@ -294,6 +295,7 @@ class BaseDataset(Dataset):
     def _setup_isotope_peak_cleanup(self) -> None:
         """Precompute group-level co-isolation fractions for isotope cleanup."""
         self.group_coiso_fraction_by_k: dict[int, dict[int, float]] = {}
+        self._isotope_dag_formula_cache: dict[int, tuple[np.ndarray, np.ndarray] | None] = {}
         if not self.spec_params.get("remove_isotope_peaks", False):
             return
         if not self.spec_params.get("remove_isotope_use_group_f", True):
@@ -307,6 +309,8 @@ class BaseDataset(Dataset):
         max_isotope = self.spec_params.get("remove_isotope_max_isotope", 2)
         min_coiso_fraction = self.spec_params.get("remove_isotope_min_coiso_fraction", 0.05)
         max_leak_factor = self.spec_params.get("remove_isotope_max_leak_factor", 1.5)
+        precursor_envelope_lo = self.spec_params.get("remove_isotope_precursor_envelope_lo", 0.2)
+        precursor_envelope_hi = self.spec_params.get("remove_isotope_precursor_envelope_hi", 5.0)
         min_group_count = self.spec_params.get("remove_isotope_group_min_count", 1)
         max_group_cv = self.spec_params.get("remove_isotope_group_max_cv", 1.0)
 
@@ -330,6 +334,8 @@ class BaseDataset(Dataset):
                 max_isotope=max_isotope,
                 min_coiso_fraction=min_coiso_fraction,
                 max_leak_factor=max_leak_factor,
+                precursor_envelope_lo=precursor_envelope_lo,
+                precursor_envelope_hi=precursor_envelope_hi,
             )
             for k, f in f_by_k.items():
                 vals_by_group_k[(int(spec_entry["group_id"]), int(k))].append(float(f))
@@ -345,6 +351,55 @@ class BaseDataset(Dataset):
             if cv > max_group_cv:
                 continue
             self.group_coiso_fraction_by_k.setdefault(group_id, {})[k] = med
+
+    def _get_isotope_dag_formula_arrays(
+        self,
+        mol_id: int,
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """Return DAG M+0 m/z and formula arrays for isotope cleanup if configured."""
+        if not self.spec_params.get("remove_isotope_use_dag_formula", True):
+            return None
+
+        dag_dp = self.spec_params.get("remove_isotope_dag_dp")
+        if not dag_dp:
+            return None
+
+        mol_id = int(mol_id)
+        if mol_id in self._isotope_dag_formula_cache:
+            return self._isotope_dag_formula_cache[mol_id]
+
+        try:
+            frag_entry = load_frag_d(
+                mol_id,
+                str(dag_dp),
+                is_compressed=self.spec_params.get("remove_isotope_dag_compressed", True),
+            )
+        except Exception:
+            self._isotope_dag_formula_cache[mol_id] = None
+            return None
+
+        if not frag_entry or "formula_peak_mzs" not in frag_entry:
+            self._isotope_dag_formula_cache[mol_id] = None
+            return None
+
+        formula_peak_mzs = frag_entry["formula_peak_mzs"]
+        if hasattr(formula_peak_mzs, "detach"):
+            formula_peak_mzs = formula_peak_mzs.detach().cpu().numpy()
+        else:
+            formula_peak_mzs = np.asarray(formula_peak_mzs)
+        if formula_peak_mzs.ndim != 2 or formula_peak_mzs.shape[0] == 0:
+            self._isotope_dag_formula_cache[mol_id] = None
+            return None
+
+        idx_to_formula = frag_entry.get("idx_to_formula", {})
+        dag_formula_mzs = formula_peak_mzs[:, 0].astype(np.float64, copy=False)
+        dag_formula_strs = np.array(
+            [idx_to_formula.get(i, "") for i in range(len(dag_formula_mzs))],
+            dtype=object,
+        )
+        out = (dag_formula_mzs, dag_formula_strs)
+        self._isotope_dag_formula_cache[mol_id] = out
+        return out
 
     def _compute_counts(self) -> None:
         """
@@ -664,6 +719,9 @@ class BaseDataset(Dataset):
         mol_id = spec_entry["mol_id"]
         formula = str(self.mol_df.loc[mol_id]["formula"]) if mol_id in self.mol_df.index else None
         group_f = self.group_coiso_fraction_by_k.get(int(spec_entry["group_id"]))
+        dag_formula_arrays = self._get_isotope_dag_formula_arrays(int(mol_id))
+        dag_formula_mzs = dag_formula_arrays[0] if dag_formula_arrays is not None else None
+        dag_formula_strs = dag_formula_arrays[1] if dag_formula_arrays is not None else None
         remove_mask_np = detect_isotope_peaks_for_training_cleanup(
             mzs.numpy(),
             ints.numpy(),
@@ -678,6 +736,16 @@ class BaseDataset(Dataset):
             coiso_fraction_by_k=group_f,
             min_coiso_fraction=self.spec_params.get("remove_isotope_min_coiso_fraction", 0.05),
             max_leak_factor=self.spec_params.get("remove_isotope_max_leak_factor", 1.5),
+            precursor_envelope_lo=self.spec_params.get(
+                "remove_isotope_precursor_envelope_lo", 0.2
+            ),
+            precursor_envelope_hi=self.spec_params.get(
+                "remove_isotope_precursor_envelope_hi", 5.0
+            ),
+            dag_formula_mzs=dag_formula_mzs,
+            dag_formula_strs=dag_formula_strs,
+            dag_mz_tol=self.spec_params.get("remove_isotope_dag_mz_tol", 0.015),
+            protect_dag_mono=self.spec_params.get("remove_isotope_protect_dag_mono", False),
         )
         if not remove_mask_np.any():
             return mzs, ints

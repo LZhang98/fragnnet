@@ -537,8 +537,16 @@ def _estimate_coiso_fraction_from_precursor_sorted(
     max_leak_factor: float,
     ratio_lo: float,
     ratio_hi: float,
+    precursor_envelope_lo: float,
+    precursor_envelope_hi: float,
 ) -> tuple[dict[int, float], dict[int, float]]:
-    """Estimate precursor-derived co-isolation f and R_k from sorted peaks."""
+    """Estimate precursor-derived co-isolation f and R_k from sorted peaks.
+
+    When precursor M+1 and M+2 residual peaks are both present, validate their
+    direct M2/M1 ratio against the expected precursor isotope envelope.  This is
+    equivalent to checking ``f[2] / f[1]`` but keeps the above-precursor envelope
+    test explicit and independently tunable from the fragment ratio gate.
+    """
     if not r_exp_prec:
         return {}, {}
 
@@ -556,6 +564,7 @@ def _estimate_coiso_fraction_from_precursor_sorted(
     prec_m0_int = prec_m0[1]
     leak_ratios: dict[int, float] = {}
     r_leak: dict[int, float] = {}
+    precursor_residual_ints: dict[int, float] = {}
 
     for k in range(1, max_isotope + 1):
         k_tol = mz_tol if k == 1 else mz_tol * 2
@@ -576,8 +585,14 @@ def _estimate_coiso_fraction_from_precursor_sorted(
             continue
         r_leak[k] = factor
         leak_ratios[k] = R_k
+        precursor_residual_ints[k] = pk_int
 
     if max_isotope >= 2 and 1 in r_leak and 2 in r_leak:
+        exp_m2_m1 = r_exp_prec[2] / r_exp_prec[1]
+        obs_m2_m1 = precursor_residual_ints[2] / precursor_residual_ints[1]
+        envelope_factor = obs_m2_m1 / exp_m2_m1
+        if not (precursor_envelope_lo <= envelope_factor <= precursor_envelope_hi):
+            return {}, {}
         ratio = r_leak[2] / r_leak[1]
         if not (ratio_lo <= ratio <= ratio_hi):
             return {}, {}
@@ -597,6 +612,8 @@ def estimate_coisolation_fraction_from_precursor(
     max_leak_factor: float = 1.5,
     ratio_lo: float = 0.05,
     ratio_hi: float = 10.0,
+    precursor_envelope_lo: float = 0.2,
+    precursor_envelope_hi: float = 5.0,
 ) -> dict[int, float]:
     """Estimate co-isolation fraction f from precursor M+k residual peaks only.
 
@@ -644,6 +661,8 @@ def estimate_coisolation_fraction_from_precursor(
         max_leak_factor,
         ratio_lo,
         ratio_hi,
+        precursor_envelope_lo,
+        precursor_envelope_hi,
     )
     return r_leak
 
@@ -658,6 +677,8 @@ def detect_isotope_peaks_for_training(
     require_envelope: bool = True,
     ratio_lo: float = 0.05,
     ratio_hi: float = 10.0,
+    precursor_envelope_lo: float = 0.2,
+    precursor_envelope_hi: float = 5.0,
     aggressive: bool = True,
     aggressive_min_pairs: int = 2,
     aggressive_cv: float = 0.6,
@@ -732,15 +753,19 @@ def detect_isotope_peaks_for_training(
         require_envelope: If True, require all intermediate M+j confirmed first.
         ratio_lo: Lower bound multiplier on the per-fragment expected ratio.
         ratio_hi: Upper bound multiplier on the per-fragment expected ratio.
+        precursor_envelope_lo: Lower bound for the normalized above-precursor
+            M2/M1 envelope ratio when both precursor residuals are visible.
+        precursor_envelope_hi: Upper bound for the normalized above-precursor
+            M2/M1 envelope ratio when both precursor residuals are visible.
         aggressive: If True and no above-prec reference found, estimate R_leak
             from cross-pair consistency.  Defaults to True.
         aggressive_min_pairs: Min pairs for aggressive consensus.  Defaults to 2.
-        aggressive_cv: Max CV of (normalised) r_i for aggressive mode.  Defaults to 0.4.
+        aggressive_cv: Max CV of (normalised) r_i for aggressive mode.  Defaults to 0.6.
         aggressive_single_pair_min_f: When ``formula`` is given and only one
             (M, M+k) pair is found, accept it as genuine co-isolation if the
             estimated f exceeds this threshold.  Allows detection in spectra with
             very few visible fragments.  Ignored when ``formula`` is None or when
-            ``aggressive_min_pairs`` pairs are already available.  Defaults to 0.15.
+            ``aggressive_min_pairs`` pairs are already available.  Defaults to 0.05.
         formula: Neutral molecular formula string (e.g. ``"C10H14N2"``).  When
             given, enables R_leak gating and per-fragment expected-ratio correction.
         prec_type: Adduct/precursor type (e.g. ``"[M+H]+"``, ``"[M-H]-"``).
@@ -748,7 +773,7 @@ def detect_isotope_peaks_for_training(
         min_coiso_fraction: Minimum co-isolation fraction ``f = R_k / R_exp_prec``
             required to trigger flagging.  For genuine co-isolation ``f ≤ 1``; below
             this threshold the signal is too weak to distinguish from noise.
-            Only active when ``formula`` is provided.  Defaults to 0.02.
+            Only active when ``formula`` is provided.  Defaults to 0.05.
         max_leak_factor: Maximum ``f = R_k / R_exp_prec`` accepted for the above-prec
             reference peak.  Genuine co-isolation gives ``f ≤ 1``; values above this
             indicate a stray fragment coincidentally at the isotope position.
@@ -840,6 +865,8 @@ def detect_isotope_peaks_for_training(
             max_leak_factor,
             ratio_lo,
             ratio_hi,
+            precursor_envelope_lo,
+            precursor_envelope_hi,
         )
     else:
         # Legacy no-formula mode: estimate raw R_k from precursor residuals and
@@ -1080,6 +1107,8 @@ def detect_isotope_peaks_for_training_cleanup(
     coiso_fraction_by_k: Mapping[int, float] | None = None,
     min_coiso_fraction: float = 0.05,
     max_leak_factor: float = 1.5,
+    precursor_envelope_lo: float = 0.2,
+    precursor_envelope_hi: float = 5.0,
     dag_formula_mzs: np.ndarray | None = None,
     dag_formula_strs: np.ndarray | None = None,
     dag_mz_tol: float = 0.015,
@@ -1108,6 +1137,10 @@ def detect_isotope_peaks_for_training_cleanup(
         coiso_fraction_by_k: Optional group-level co-isolation fractions.
         min_coiso_fraction: Minimum co-isolation fraction for co-isolation cleanup.
         max_leak_factor: Maximum accepted co-isolation fraction.
+        precursor_envelope_lo: Lower bound for the normalized above-precursor
+            M2/M1 envelope ratio.
+        precursor_envelope_hi: Upper bound for the normalized above-precursor
+            M2/M1 envelope ratio.
         dag_formula_mzs: Optional DAG monoisotopic fragment m/z values.
         dag_formula_strs: Formula strings aligned to ``dag_formula_mzs``.
         dag_mz_tol: Absolute tolerance for matching peaks to DAG formula m/z.
@@ -1157,6 +1190,8 @@ def detect_isotope_peaks_for_training_cleanup(
             prec_type=prec_type,
             min_coiso_fraction=min_coiso_fraction,
             max_leak_factor=max_leak_factor,
+            precursor_envelope_lo=precursor_envelope_lo,
+            precursor_envelope_hi=precursor_envelope_hi,
             coiso_fraction_by_k=coiso_fraction_by_k,
             dag_formula_mzs=dag_formula_mzs,
             dag_formula_strs=dag_formula_strs,

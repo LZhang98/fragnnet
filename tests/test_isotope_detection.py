@@ -502,6 +502,65 @@ class TestDetectIsotopePeaksFormulaMode:
         )
         assert f_by_k[1] == pytest.approx(0.3, rel=1e-6)
 
+    def test_precursor_f_estimator_recovers_m1_and_m2_when_envelope_matches(self):
+        """Consistent above-precursor M2/M1 residuals recover both f values."""
+        from fragnnet.utils.formula_utils import parse_formula
+
+        formula = "C10H14N2O5"
+        prec_type = "[M+H]+"
+        prec_mz = 243.098
+        f = 0.3
+        mol_counts = parse_formula(formula)
+        adduct_counts, _ = _parse_adduct_counts(prec_type)
+        r1 = _expected_mk_ratio(mol_counts, mol_scale=1.0, k=1, adduct_counts=adduct_counts)
+        r2 = _expected_mk_ratio(mol_counts, mol_scale=1.0, k=2, adduct_counts=adduct_counts)
+        mzs = np.array([prec_mz, prec_mz + _NM, prec_mz + 2 * _NM])
+        ints = np.array([1000.0, f * r1 * 1000.0, f * r2 * 1000.0])
+
+        f_by_k = estimate_coisolation_fraction_from_precursor(
+            mzs,
+            ints,
+            prec_mz=prec_mz,
+            inst_type="FT",
+            formula=formula,
+            prec_type=prec_type,
+            max_isotope=2,
+        )
+
+        assert f_by_k[1] == pytest.approx(f, rel=1e-6)
+        assert f_by_k[2] == pytest.approx(f, rel=1e-6)
+
+    def test_precursor_f_estimator_rejects_bad_m2_m1_envelope(self):
+        """A stray M+2 residual is rejected by the explicit M2/M1 envelope check."""
+        from fragnnet.utils.formula_utils import parse_formula
+
+        formula = "C10H14N2O5"
+        prec_type = "[M+H]+"
+        prec_mz = 243.098
+        mol_counts = parse_formula(formula)
+        adduct_counts, _ = _parse_adduct_counts(prec_type)
+        r1 = _expected_mk_ratio(mol_counts, mol_scale=1.0, k=1, adduct_counts=adduct_counts)
+        r2 = _expected_mk_ratio(mol_counts, mol_scale=1.0, k=2, adduct_counts=adduct_counts)
+        mzs = np.array([prec_mz, prec_mz + _NM, prec_mz + 2 * _NM])
+        # Both individual f values pass min/max gates, and f2/f1=8 would pass the
+        # broad fragment ratio_hi=10 gate.  The tighter precursor M2/M1 envelope
+        # check rejects the pair as incoherent above-precursor evidence.
+        ints = np.array([1000.0, 0.05 * r1 * 1000.0, 0.4 * r2 * 1000.0])
+
+        f_by_k = estimate_coisolation_fraction_from_precursor(
+            mzs,
+            ints,
+            prec_mz=prec_mz,
+            inst_type="FT",
+            formula=formula,
+            prec_type=prec_type,
+            max_isotope=2,
+            ratio_hi=10.0,
+            precursor_envelope_hi=5.0,
+        )
+
+        assert f_by_k == {}
+
     def test_group_level_f_detects_spectrum_without_precursor_residuals(self):
         """Borrowed group f fills the gap when this spectrum has no precursor f."""
         mzs, ints = self._build_coiso_spectrum(
