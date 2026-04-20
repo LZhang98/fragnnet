@@ -1,6 +1,6 @@
-entity: fragnnet
-project: fragnnet
-program: ~/fragnnet/scripts/run_wandb_sweep.py
+entity: frag-gnn
+project: frag-gnn
+program: ~/frag-gnn/scripts/run_wandb_sweep.py
 method: random
 name: d4_sweep
 description: Optimize fragnnet-D4 hyperparameters for binned cosine similarity (0.01 Da)

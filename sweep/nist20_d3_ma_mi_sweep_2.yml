@@ -1,6 +1,6 @@
-entity: fragnnet
-project: fragnnet
-program: ~/fragnnet/scripts/run_wandb_sweep.py
+entity: frag-gnn
+project: frag-gnn
+program: ~/frag-gnn/scripts/run_wandb_sweep.py
 method: random
 name: nist20_d3_ma_mi_sweep_2
 description: Optimize fragnnet-D3 hyperparameters for NIST20 MA/MI binned cosine similarity (0.01 Da)
