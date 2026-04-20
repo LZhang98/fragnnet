@@ -3,11 +3,10 @@
 # ============================================================================
 wandb_entity: fragnnet
 wandb_project: fragnnet
-wandb_name: nist20_d3_ma_mi_mol_width_template
-wandb_group: nist20_d3_ma_mi_mol_width
+wandb_name: nist20_d3_ma_mi_focused_template
+wandb_group: nist20_d3_ma_mi_focused
 wandb_tags:
-- nist20_d3_ma_mi_mol_width
-- mol_width
+- nist20_d3_ma_mi_focused
 - mean_vs_mean_max_sum
 - focused_arch
 
@@ -107,7 +106,7 @@ debug_overfit: False
 
 # ============================================================================
 # Focused Architecture Defaults
-# These values are swept in sweep/nist20_d3_ma_mi_mol_width_sweep.yml.
+# These values are swept in sweep/nist20_d3_ma_mi_focused_sweep.yml.
 # ============================================================================
 mol_hidden_size: 256
 mol_num_layers: 4

@@ -2,7 +2,7 @@ entity: fragnnet
 project: fragnnet
 program: ~/fragnnet/scripts/run_wandb_sweep.py
 method: random
-name: nist20_d3_ma_mi_mol_width
+name: nist20_d3_ma_mi_focused
 description: Focused NIST20 D3 MA/MI sweep for molecular encoder width using safer architecture defaults from prior W&B exports.
 metric:
   goal: maximize
