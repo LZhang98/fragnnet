@@ -542,6 +542,11 @@ def init_run(
         profiler = AdvancedProfiler(dirpath=profile_dp, filename="profile")
     elif config_d["profiler"] == "pytorch":
         th.profiler._utils._init_for_cuda_graphs()
+        profiler_wait = int(config_d["profiler_wait_steps"])
+        profiler_warmup = int(config_d["profiler_warmup_steps"])
+        profiler_active = int(config_d["profiler_active_steps"])
+        profiler_repeat = int(config_d["profiler_repeat"])
+        profiler_skip_first = int(config_d["profiler_skip_first_steps"])
         profiler = MyPyTorchProfiler(
             dirpath=profile_dp,
             filename="profile",
@@ -558,7 +563,13 @@ def init_run(
             export_to_chrome=False,
             export_to_flame_graph=True,
             experimental_config=th._C._profiler._ExperimentalConfig(verbose=True),
-            schedule=th.profiler.schedule(wait=1, warmup=1, active=6, repeat=0, skip_first=0),
+            schedule=th.profiler.schedule(
+                wait=profiler_wait,
+                warmup=profiler_warmup,
+                active=profiler_active,
+                repeat=profiler_repeat,
+                skip_first=profiler_skip_first,
+            ),
         )
     else:
         assert config_d["profiler"] == "none", config_d["profiler"]
