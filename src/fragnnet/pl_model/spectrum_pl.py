@@ -976,24 +976,31 @@ class SpectrumPL(L.LightningModule):
             self.max_num_datapoints = 22000
         else:
             self.max_num_datapoints = 270000
+        report_metric_std = getattr(self.hparams, "report_metric_std", False)
         for split in ["train", "val", "test"]:
             setattr(self, f"{split}_results", None)
             setattr(self, f"{split}_counter", 0)
+            setattr(self, f"{split}_metric_sum_w", {})
+            setattr(self, f"{split}_metric_sum_wx", {})
+            setattr(self, f"{split}_metric_sum_wx2", {} if report_metric_std else None)
             setattr(self, f"{split}_mean_metrics", {})
-            setattr(self, f"{split}_std_metrics", {})
+            setattr(self, f"{split}_std_metrics", {} if report_metric_std else None)
             if self.hparams.track_datapoint_metrics:
                 setattr(self, f"{split}_datapoint_metrics", {})
                 setattr(self, f"{split}_num_datapoints", -th.ones([1], dtype=th.int64))
             for name in self.metric_names:
                 _name = name.replace(".", "-")
                 mean_metrics = getattr(self, f"{split}_mean_metrics")
-                std_metrics = getattr(self, f"{split}_std_metrics")
                 if split != "test":
                     mean_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
-                    std_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
                 else:
                     mean_metrics[_name] = -th.ones([1], dtype=th.float32)
-                    std_metrics[_name] = -th.ones([1], dtype=th.float32)
+                if report_metric_std:
+                    std_metrics = getattr(self, f"{split}_std_metrics")
+                    if split != "test":
+                        std_metrics[_name] = -th.ones([self.hparams.max_epochs], dtype=th.float32)
+                    else:
+                        std_metrics[_name] = -th.ones([1], dtype=th.float32)
 
     def _setup_sampler(self):
         self._cur_batch_size = 0
@@ -1466,6 +1473,19 @@ class SpectrumPL(L.LightningModule):
         """Return whether CE/adduct/instrument metadata must be retained."""
         return bool(self.hparams["log_adduct_inst_ce_metrics"] and split in ("val", "test"))
 
+    def _should_store_metric_vectors(self, split: str) -> bool:
+        """Return whether per-example metric tensors must be retained for a split."""
+        return bool(
+            self._should_store_raw_epoch_results(split)
+            or self._should_store_ce_metadata(split)
+            or self.hparams.log_hist_metrics
+            or self.hparams.track_datapoint_metrics
+        )
+
+    def _should_report_metric_std(self) -> bool:
+        """Return whether epoch std metrics should be computed and logged."""
+        return bool(getattr(self.hparams, "report_metric_std", True))
+
     def _get_active_metric_names(self, split: str) -> set[str]:
         """Return the metric names that should be computed and reduced for a split."""
         if split == "train":
@@ -1474,11 +1494,7 @@ class SpectrumPL(L.LightningModule):
 
     def _get_result_keys(self, split: str) -> list[str]:
         """Return the minimal set of batch-result keys required for a split."""
-        keys = [
-            "spec_per_group",
-            "spec_per_mol",
-            "group_per_mol",
-        ]
+        keys = []
         if self._should_store_raw_epoch_results(split):
             keys.extend(
                 [
@@ -1502,8 +1518,92 @@ class SpectrumPL(L.LightningModule):
                     "ce_ace",
                 ]
             )
-        keys.extend(list(self._get_active_metric_names(split)))
+        if self._should_store_metric_vectors(split):
+            keys.extend(list(self._get_active_metric_names(split)))
         return keys
+
+    def _get_sample_weights(
+        self,
+        split: str,
+        spec_per_group: th.Tensor,
+        spec_per_mol: th.Tensor,
+        group_per_mol: th.Tensor,
+    ) -> th.Tensor:
+        """Return per-sample weights for the configured reduction mode."""
+        sample_weight = (
+            self.hparams.train_sample_weight
+            if split == "train"
+            else self.hparams.eval_sample_weight
+        )
+        if sample_weight == "none":
+            return th.ones_like(spec_per_group, dtype=th.float32)
+        if sample_weight == "group":
+            return 1.0 / spec_per_group
+        if sample_weight == "mol":
+            return 1.0 / spec_per_mol
+        assert sample_weight == "group_mol", sample_weight
+        return 1.0 / (spec_per_group * group_per_mol)
+
+    def _accumulate_running_metrics(self, batch_results: dict, split: str) -> None:
+        """Accumulate weighted metric moments for online epoch reduction."""
+        active_metric_names = self._get_active_metric_names(split)
+        report_metric_std = self._should_report_metric_std()
+        sample_weights = self._get_sample_weights(
+            split,
+            batch_results["spec_per_group"],
+            batch_results["spec_per_mol"],
+            batch_results["group_per_mol"],
+        )
+        sum_w_d = getattr(self, f"{split}_metric_sum_w")
+        sum_wx_d = getattr(self, f"{split}_metric_sum_wx")
+        sum_wx2_d = getattr(self, f"{split}_metric_sum_wx2")
+        for metric_name in active_metric_names:
+            metric = batch_results[metric_name]
+            weights = sample_weights.to(dtype=metric.dtype, device=metric.device)
+            metric_sum_w = weights.sum().detach()
+            metric_sum_wx = (weights * metric).sum().detach()
+            if metric_name in sum_w_d:
+                sum_w_d[metric_name] = sum_w_d[metric_name] + metric_sum_w
+                sum_wx_d[metric_name] = sum_wx_d[metric_name] + metric_sum_wx
+                if report_metric_std:
+                    metric_sum_wx2 = (weights * metric.square()).sum().detach()
+                    sum_wx2_d[metric_name] = sum_wx2_d[metric_name] + metric_sum_wx2
+            else:
+                sum_w_d[metric_name] = metric_sum_w
+                sum_wx_d[metric_name] = metric_sum_wx
+                if report_metric_std:
+                    metric_sum_wx2 = (weights * metric.square()).sum().detach()
+                    sum_wx2_d[metric_name] = metric_sum_wx2
+
+    def _reduce_running_metrics(
+        self, split: str
+    ) -> tuple[dict[str, th.Tensor], dict[str, th.Tensor]]:
+        """Reduce online metric moments into epoch mean/std."""
+        mean_metrics, std_metrics = {}, {}
+        report_metric_std = self._should_report_metric_std()
+        sum_w_d = getattr(self, f"{split}_metric_sum_w")
+        sum_wx_d = getattr(self, f"{split}_metric_sum_wx")
+        sum_wx2_d = getattr(self, f"{split}_metric_sum_wx2")
+        for metric_name in self._get_active_metric_names(split):
+            if metric_name not in sum_w_d:
+                continue
+            sum_w = sum_w_d[metric_name]
+            mean = sum_wx_d[metric_name] / sum_w
+            mean_metrics[metric_name] = mean
+            if report_metric_std:
+                var = sum_wx2_d[metric_name] / sum_w - mean.square()
+                std_metrics[metric_name] = th.sqrt(th.clamp(var, min=0.0))
+        return mean_metrics, std_metrics
+
+    def _reset_running_metrics(self, split: str) -> None:
+        """Reset online metric accumulators for a split."""
+        setattr(self, f"{split}_metric_sum_w", {})
+        setattr(self, f"{split}_metric_sum_wx", {})
+        setattr(
+            self,
+            f"{split}_metric_sum_wx2",
+            {} if self._should_report_metric_std() else None,
+        )
 
     def _ensure_datapoint_metric_buffers(self, split: str, metric_names) -> None:
         """Lazily allocate per-datapoint metric buffers for the requested metric names."""
@@ -1522,6 +1622,7 @@ class SpectrumPL(L.LightningModule):
         results_attr = f"{split}_results"
         counter_attr = f"{split}_counter"
         active_metric_names = self._get_active_metric_names(split)
+        self._accumulate_running_metrics(batch_results, split)
         # filter keys (filtering first to save time/memory)
         keys = self._get_result_keys(split)
         unique_ids = batch_results.pop("unique_id")
@@ -1540,112 +1641,79 @@ class SpectrumPL(L.LightningModule):
             batch_results["true_unique_ids"] = true_unique_ids
             batch_results["pred_unique_ids"] = pred_unique_ids
         # check all metrics
-        assert all([metric_name in batch_results for metric_name in active_metric_names])
-        # transfer to cpu
-        batch_results = to_cpu(batch_results, detach=True)
-        # setup results dict
-        if getattr(self, results_attr) is None:
-            setattr(self, results_attr, {k: list() for k in keys})
-        else:
-            assert set(keys) == set(getattr(self, results_attr).keys())
-        results_dict = getattr(self, results_attr)
-        # add to results dict
-        for k, v in batch_results.items():
-            results_dict[k].append(v)
+        if self._should_store_metric_vectors(split):
+            assert all([metric_name in batch_results for metric_name in active_metric_names])
+        if keys:
+            # transfer to cpu
+            batch_results = to_cpu(batch_results, detach=True)
+            # setup results dict
+            if getattr(self, results_attr) is None:
+                setattr(self, results_attr, {k: list() for k in keys})
+            else:
+                assert set(keys) == set(getattr(self, results_attr).keys())
+            results_dict = getattr(self, results_attr)
+            # add to results dict
+            for k, v in batch_results.items():
+                results_dict[k].append(v)
         # increment counter
         setattr(self, counter_attr, getattr(self, counter_attr) + unique_ids.shape[0])
-
-    def _reduce_metrics(self, results, split):
-        mean_metrics, std_metrics = {}, {}
-        active_metric_names = self._get_active_metric_names(split)
-        for k, v in results.items():
-            if k in active_metric_names:
-                mean_metrics[k] = self.batch_metric_reduce_fn(
-                    b_metric=v,
-                    b_spec_per_group=results["spec_per_group"],
-                    b_spec_per_mol=results["spec_per_mol"],
-                    b_group_per_mol=results["group_per_mol"],
-                    reduce="w_mean",
-                    split=split,
-                )
-                std_metrics[k] = self.batch_metric_reduce_fn(
-                    b_metric=v,
-                    b_spec_per_group=results["spec_per_group"],
-                    b_spec_per_mol=results["spec_per_mol"],
-                    b_group_per_mol=results["group_per_mol"],
-                    reduce="w_std",
-                    split=split,
-                )
-        return mean_metrics, std_metrics
 
     def _consolidate_results(self, split):
         """
         Consolidate all batch results for a split, log metrics, and update best metrics.
         """
         results = getattr(self, f"{split}_results")
-        if results is None:
-            return
-        keys = results.keys()
-        for k in keys:
-            elems = results[k]
-            # If elements are tensors, make sure they're all at least 1-d before concat
-            if all(isinstance(x, th.Tensor) for x in elems):
-                norm = []
-                for x in elems:
-                    if x.dim() == 0:
-                        # convert scalar tensor to 1-d so it can be concatenated
-                        norm.append(x.unsqueeze(0))
-                    else:
-                        norm.append(x)
-                # concatenate along first dimension
-                results[k] = th.cat(norm, dim=0)
-            else:
-                # expected lists-of-lists for non-tensor entries
-                assert isinstance(elems[0], list)
-                results[k] = flatten_lol(elems)
-
-        # log all the metrics
-        # sanity-check shapes before reducing metrics to get clearer errors
-        def _len(x):
-            if isinstance(x, th.Tensor):
-                return x.shape[0]
-            elif isinstance(x, list):
-                return len(x)
-            else:
-                return None
-
-        base_len = _len(results.get("spec_per_group"))
         active_metric_names = self._get_active_metric_names(split)
-        for k in active_metric_names:
-            mlen = _len(results.get(k))
-            if mlen is None or base_len is None:
-                continue
-            if mlen != base_len:
-                raise RuntimeError(
-                    f"Metric/weight length mismatch for key '{k}': metric len={mlen}, spec_per_group len={base_len}"
-                )
+        mean_metrics, std_metrics = self._reduce_running_metrics(split)
+        if not mean_metrics:
+            return
+        if results is not None:
+            keys = results.keys()
+            for k in keys:
+                elems = results[k]
+                # If elements are tensors, make sure they're all at least 1-d before concat
+                if all(isinstance(x, th.Tensor) for x in elems):
+                    norm = []
+                    for x in elems:
+                        if x.dim() == 0:
+                            # convert scalar tensor to 1-d so it can be concatenated
+                            norm.append(x.unsqueeze(0))
+                        else:
+                            norm.append(x)
+                    # concatenate along first dimension
+                    results[k] = th.cat(norm, dim=0)
+                else:
+                    # expected lists-of-lists for non-tensor entries
+                    assert isinstance(elems[0], list)
+                    results[k] = flatten_lol(elems)
 
-        mean_metrics, std_metrics = self._reduce_metrics(results, split)
-        if self.hparams["log_adduct_inst_ce_metrics"] and split in ("val", "test"):
+        if (
+            self.hparams["log_adduct_inst_ce_metrics"]
+            and split in ("val", "test")
+            and results is not None
+        ):
             self._log_adduct_inst_ce_table(results, split)
         for k in mean_metrics.keys():
             self.log(
                 f"{split}_{k}_epoch/mean",
                 mean_metrics[k],
             )
-            self.log(
-                f"{split}_{k}_epoch/std",
-                std_metrics[k],
-            )
+            if self._should_report_metric_std():
+                self.log(
+                    f"{split}_{k}_epoch/std",
+                    std_metrics[k],
+                )
         if split != "test":
             # update epoch stats
             mean_metrics_epochs = getattr(self, f"{split}_mean_metrics")
-            std_metrics_epochs = getattr(self, f"{split}_std_metrics")
             for k in mean_metrics.keys():
                 mean_metrics_epochs[k.replace(".", "-")][self.current_epoch] = mean_metrics[k]
-                std_metrics_epochs[k.replace(".", "-")][self.current_epoch] = std_metrics[k]
+            if self._should_report_metric_std():
+                std_metrics_epochs = getattr(self, f"{split}_std_metrics")
+                for k in mean_metrics.keys():
+                    std_metrics_epochs[k.replace(".", "-")][self.current_epoch] = std_metrics[k]
             # log histograms
-            if self.hparams.log_hist_metrics:
+            if self.hparams.log_hist_metrics and results is not None:
                 wandb_logger = self._get_wandb_logger()
                 import wandb
 
@@ -1672,9 +1740,6 @@ class SpectrumPL(L.LightningModule):
                 mean_metric_epochs = mean_metrics_epochs[k.replace(".", "-")][
                     : self.current_epoch + 1
                 ]
-                std_metric_epochs = std_metrics_epochs[k.replace(".", "-")][
-                    : self.current_epoch + 1
-                ]
                 if self.metric_min_max[k] == "min":
                     argbest_metric = th.argmin(mean_metric_epochs)
                 elif self.metric_min_max[k] == "max":
@@ -1683,9 +1748,13 @@ class SpectrumPL(L.LightningModule):
                     assert self.metric_min_max[k] is None, self.metric_min_max[k]
                     continue
                 mean_metric_best = mean_metric_epochs[argbest_metric]
-                std_metric_best = std_metric_epochs[argbest_metric]
                 self.log(f"{split}_{k}_best/mean", mean_metric_best)
-                self.log(f"{split}_{k}_best/std", std_metric_best)
+                if self._should_report_metric_std():
+                    std_metric_epochs = std_metrics_epochs[k.replace(".", "-")][
+                        : self.current_epoch + 1
+                    ]
+                    std_metric_best = std_metric_epochs[argbest_metric]
+                    self.log(f"{split}_{k}_best/std", std_metric_best)
                 # if it's the best, update the datapoint metrics
                 if k == checkpoint_metric and argbest_metric == self.current_epoch:
                     update_datapoint_metrics = True
@@ -1695,7 +1764,11 @@ class SpectrumPL(L.LightningModule):
         else:
             update_datapoint_metrics = True
 
-        if self.hparams.track_datapoint_metrics and update_datapoint_metrics:
+        if (
+            self.hparams.track_datapoint_metrics
+            and update_datapoint_metrics
+            and results is not None
+        ):
             datapoint_metrics = getattr(self, f"{split}_datapoint_metrics")
             num_datapoints_p = getattr(self, f"{split}_num_datapoints")
             self._ensure_datapoint_metric_buffers(split, mean_metrics.keys())
@@ -1908,6 +1981,7 @@ class SpectrumPL(L.LightningModule):
         self._log_images("train")
         # reset
         self.train_results = None
+        self._reset_running_metrics("train")
         self.train_counter = 0
         # seed dataloader
         # self._seed_dataloader(self.current_epoch+1)
@@ -1920,6 +1994,7 @@ class SpectrumPL(L.LightningModule):
             self._log_images("val")
         # reset
         self.val_results = None
+        self._reset_running_metrics("val")
         self.val_counter = 0
 
     def on_test_epoch_end(self):
@@ -1927,6 +2002,7 @@ class SpectrumPL(L.LightningModule):
         self._consolidate_results("test")
         # reset
         self.test_results = None
+        self._reset_running_metrics("test")
         self.test_counter = 0
 
     def _print_grad_norm(self, prefix=None, total_num_params=5):
@@ -2000,8 +2076,9 @@ class SpectrumPL(L.LightningModule):
         # metrics
         checkpoint["train_mean_metrics"] = self.train_mean_metrics
         checkpoint["val_mean_metrics"] = self.val_mean_metrics
-        checkpoint["train_std_metrics"] = self.train_std_metrics
-        checkpoint["val_std_metrics"] = self.val_std_metrics
+        if self._should_report_metric_std():
+            checkpoint["train_std_metrics"] = self.train_std_metrics
+            checkpoint["val_std_metrics"] = self.val_std_metrics
         if self.hparams.track_datapoint_metrics:
             checkpoint["train_num_datapoints"] = self.train_num_datapoints
             checkpoint["val_num_datapoints"] = self.val_num_datapoints
@@ -2020,8 +2097,9 @@ class SpectrumPL(L.LightningModule):
         # metrics
         self.train_mean_metrics = checkpoint["train_mean_metrics"]
         self.val_mean_metrics = checkpoint["val_mean_metrics"]
-        self.train_std_metrics = checkpoint["train_std_metrics"]
-        self.val_std_metrics = checkpoint["val_std_metrics"]
+        if self._should_report_metric_std():
+            self.train_std_metrics = checkpoint.get("train_std_metrics", self.train_std_metrics)
+            self.val_std_metrics = checkpoint.get("val_std_metrics", self.val_std_metrics)
         if self.hparams.track_datapoint_metrics:
             self.train_num_datapoints = checkpoint["train_num_datapoints"]
             self.val_num_datapoints = checkpoint["val_num_datapoints"]

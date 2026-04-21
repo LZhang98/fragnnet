@@ -527,6 +527,7 @@ eval_sample_weight: none
 log_hist_metrics: False
 log_adduct_inst_ce_metrics: False  # log per-(adduct×inst, CE-bin) metrics to wandb (val: bar chart, test: table)
 log_adduct_inst_ce_min_count: 20  # min spectra per group to include in the table/chart
+report_metric_std: False
 track_datapoint_metrics: False
 gaussian_renormalize: False
 pm_tolerance_multiple: 3.0
