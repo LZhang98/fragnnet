@@ -60,41 +60,34 @@ class IntFeaturizer(nn.Module):
         """
         tensor = tensor.long()
         orig_shape = tensor.shape
+        flat_tensor = tensor.reshape(-1)
+        out_tensor = th.empty(
+            (flat_tensor.shape[0], self.embedding_dim),
+            dtype=self.int_to_feat_matrix.dtype,
+            device=flat_tensor.device,
+        )
 
         # all negative values and values >= max_count_int will be treated as "extra" tokens.
         # TODO: may be we should default to negtive values being missing tokens?
-        norm_mask = (tensor >= 0) & (tensor < self.max_count_int)
-        # print("int_to_feat_matrix shape:", self.int_to_feat_matrix.shape)
-        # assert tensor.min() >= 0 and tensor.max() < self.int_to_feat_matrix.shape[0], \
-        #   f"Index out of bounds: min={tensor.min().item()}, max={tensor.max().item()}, allowed=[0, {self.int_to_feat_matrix.shape[0]-1}]"
+        norm_mask = (flat_tensor >= 0) & (flat_tensor < self.max_count_int)
 
         if self.missing_token is None:
-            missing_mask = th.zeros_like(tensor, dtype=th.bool)
+            missing_mask = th.zeros_like(flat_tensor, dtype=th.bool)
         else:
-            missing_mask = tensor == self.missing_token
+            missing_mask = flat_tensor == self.missing_token
 
         extra_mask = (~norm_mask) & (~missing_mask)
 
-        # Normal features
-        norm_indices = tensor.clone()
-        norm_indices[~norm_mask] = 0  # Dummy index to avoid OOB
-        norm_embeds = self.int_to_feat_matrix[norm_indices]
-
-        # Missing features(e.g., 999 → index 0)
-        missing_embeds = self._extra_embeddings[0].expand_as(norm_embeds)
-
-        # Other special extra embeddings (e.g., 998 → index 1, etc.)
-        extra_token_indices = th.clamp(tensor - self.max_count_int, min=0)
-        extra_token_indices = th.clamp(extra_token_indices, max=self.num_extra_embeddings - 2) + 1
-        extra_embeds = self._extra_embeddings[extra_token_indices]
-        extra_embeds[~extra_mask] = 0  # Mask-out invalid positions
-
-        # Combine
-        out_tensor = (
-            norm_mask.unsqueeze(-1) * norm_embeds
-            + missing_mask.unsqueeze(-1) * missing_embeds
-            + extra_mask.unsqueeze(-1) * extra_embeds
-        )
+        if th.any(norm_mask):
+            out_tensor[norm_mask] = self.int_to_feat_matrix[flat_tensor[norm_mask]]
+        if th.any(missing_mask):
+            out_tensor[missing_mask] = self._extra_embeddings[0]
+        if th.any(extra_mask):
+            extra_token_indices = th.clamp(flat_tensor[extra_mask] - self.max_count_int, min=0)
+            extra_token_indices = (
+                th.clamp(extra_token_indices, max=self.num_extra_embeddings - 2) + 1
+            )
+            out_tensor[extra_mask] = self._extra_embeddings[extra_token_indices]
 
         return out_tensor.reshape(*orig_shape[:-1], -1)
 
