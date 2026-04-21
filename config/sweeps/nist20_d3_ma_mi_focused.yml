@@ -2,7 +2,7 @@
 # W&B Logging
 # ============================================================================
 wandb_name: nist20_d3_ma_mi_focused_template
-wandb_group: nist20_d3_ma_mi_focused
+wandb_group: nist20_d3_ma_mi_focused_sweep
 wandb_tags:
 - nist20_d3_ma_mi_focused
 - mean_vs_mean_max_sum

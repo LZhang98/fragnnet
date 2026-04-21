@@ -1,8 +1,8 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_d3_ma_mi_sqrt_loss_template
-wandb_group: nist20_d3_ma_mi_sqrt_loss
+wandb_name: nist20_d3_ma_mi_sqrt_template
+wandb_group: nist20_d3_ma_mi_sqrt_sweep
 wandb_tags:
 - nist20_d3_ma_mi_sqrt_loss
 - sqrt_loss
