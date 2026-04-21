@@ -552,6 +552,7 @@ def batch_mols_frags(
     frag_pyg_list: Sequence[pyg.data.Data],
     formula_peak_mzs_list: Sequence[th.Tensor],
     formula_peak_probs_list: Sequence[th.Tensor],
+    debug_validate_outputs: bool = False,
 ) -> dict[str, Any]:
     """Batch molecule/fragment graphs and sparse formula peak tensors."""
     # batch size
@@ -562,9 +563,9 @@ def batch_mols_frags(
 
     # Assert that the number of graphs in both molecule and fragment batches matches the batch size
     assert mol_pyg.num_graphs == frag_pyg.num_graphs == batch_size
-    # Assert that the node/edge feature indices are consistent — gated so they don't run every batch
-    # in production (Python's -O flag or PYTHONOPTIMIZE=1 disables __debug__ blocks).
-    if __debug__:
+    # Assert that the node/edge feature indices are consistent. This is useful for
+    # debugging data corruption, but expensive enough to keep off in normal training.
+    if debug_validate_outputs:
         assert all(
             th.all(frag_pyg.node_feat_idxs[0] == frag_pyg.node_feat_idxs[i])
             for i in range(batch_size)

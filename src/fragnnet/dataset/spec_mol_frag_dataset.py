@@ -100,6 +100,7 @@ class SpecMolFragDataset(SpecMolDataset):
             frag_pl_sd = {}
         if frag_pp_sd is None:
             frag_pp_sd = {}
+        self.debug_validate_outputs = bool(kwargs.get("debug_validate_outputs", False))
 
         missing_mol_ids = self._find_missing_frag_mol_ids()
         if missing_mol_ids:
@@ -494,18 +495,25 @@ class SpecMolFragDataset(SpecMolDataset):
             frag_data["frag_formula_peak_mzs"] = crf_peaks
         return frag_data
 
-    @staticmethod
-    def get_collate_fn():
+    def get_collate_fn(self):
         """
         Get the collate function for batching dataset samples.
 
         Returns:
             Collate function to use with DataLoader.
         """
-        return SpecMolFragDataset.collate_fn
+        def _collate_fn(data_list: list[dict]) -> dict:
+            return SpecMolFragDataset.collate_fn(
+                data_list,
+                debug_validate_outputs=self.debug_validate_outputs,
+            )
+
+        return _collate_fn
 
     @staticmethod
-    def _special_collate(keys: list[str], collate_data: dict) -> None:
+    def _special_collate(
+        keys: list[str], collate_data: dict, debug_validate_outputs: bool = False
+    ) -> None:
         """
         Handle special collation for fragmentation graphs and molecular data.
 
@@ -526,6 +534,7 @@ class SpecMolFragDataset(SpecMolDataset):
                 collate_data["frag_pyg"],
                 collate_data["frag_formula_peak_mzs"],
                 collate_data["frag_formula_peak_probs"],
+                debug_validate_outputs=debug_validate_outputs,
             )
             for k, v in batch_mol_frag_data.items():
                 collate_data[k] = v
@@ -537,7 +546,7 @@ class SpecMolFragDataset(SpecMolDataset):
         SpecMolDataset._special_collate(keys, collate_data)
 
     @staticmethod
-    def collate_fn(data_list: list[dict]) -> dict:
+    def collate_fn(data_list: list[dict], debug_validate_outputs: bool = False) -> dict:
         """
         Collate a list of spectrum-molecule-fragment data samples into a batched dictionary.
 
@@ -554,7 +563,9 @@ class SpecMolFragDataset(SpecMolDataset):
 
         batch_size, keys, collate_data = SpecMolFragDataset._setup_collate(data_list)
         # special handling
-        SpecMolFragDataset._special_collate(keys, collate_data)
+        SpecMolFragDataset._special_collate(
+            keys, collate_data, debug_validate_outputs=debug_validate_outputs
+        )
         SpecMolFragDataset._standard_collate(batch_size, keys, collate_data)
         return collate_data
 
