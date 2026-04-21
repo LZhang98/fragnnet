@@ -2,6 +2,34 @@
 
 ---
 
+## 2026-04-21
+
+### `boundary_pair` moved into DAG generation/storage
+
+The `boundary_pair` fragment feature is now precomputed during DAG generation and stored on the
+fragment DAG object as:
+
+- `boundary_pair_frag_idxs`
+- `boundary_pair_in_local`
+- `boundary_pair_out_local`
+
+These tensors are also serialized through HDF5 DAG storage and preserved when the training-time
+fragment graph is built.
+
+**Runtime behavior change:**
+
+- The model now expects batched `boundary_pair_*` tensors to come from the loaded DAG data.
+- The temporary runtime fallback/cache path was removed.
+- If `boundary_pair` is enabled in config, the DAGs must be regenerated with the new code.
+
+**Practical implication:** existing old DAG artifacts without these stored tensors are no longer
+supported for `boundary_pair` runs.
+
+**Planned follow-up:** `boundary_pair` itself is intended to be removed in the next version; TODO
+notes were added in the model where the feature is instantiated and consumed.
+
+---
+
 ## 2026-04-09
 
 ### Weighted sampler ablation: inst_weighted / inst_frag_mode_weighted / inst_frag_mode_group_weighted
