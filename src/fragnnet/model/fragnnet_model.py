@@ -236,6 +236,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         if "boundary_pair" in self.frag_node_feats:
             # Projects cat(inside_atom_embed, outside_atom_embed) → mol_hidden_size.
             # Pooling over pairs then yields mol_pool_out_size (same as cc / boundary_cc).
+            # TODO(next version): remove the legacy boundary_pair feature path entirely.
             self.boundary_pair_proj = nn.Linear(mol_hidden_size * 2, mol_hidden_size)
 
         frag_kwargs = {
@@ -685,10 +686,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_ndata.append(boundary_embed)
         if "boundary_pair" in self.frag_node_feats:
             # boundary_pair requires cc to be in frag_node_feats (frag_node_mask must exist)
+            # TODO(next version): delete this block when boundary_pair is removed from configs/features.
             num_frags_total = frag_x.shape[0]
-            pair_frag_idxs, pair_in_global, pair_out_global = compute_boundary_pair_idxs(
-                frag_node_mask, mol_edge_index, mol_num_nodes, frag_num_nodes
-            )
+            pair_frag_idxs = kwargs["boundary_pair_frag_idxs"]
+            pair_in_global = kwargs["boundary_pair_in_idxs"]
+            pair_out_global = kwargs["boundary_pair_out_idxs"]
             if pair_frag_idxs.numel() > 0:
                 valid = (pair_in_global < mol_embed_gnn.shape[0]) & (
                     pair_out_global < mol_embed_gnn.shape[0]

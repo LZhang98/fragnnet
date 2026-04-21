@@ -790,6 +790,49 @@ class TestBatchMolsFrags:
         assert out["frag_formula_peak_sizes"].tolist() == [1, 3]
         assert out["frag_formula_cumsizes"].tolist() == [0, 1, 3]
 
+    def test_batch_mols_frags_offsets_boundary_pair_cache(self):
+        """Boundary-pair caches should be offset into the global batched index space."""
+        node_feat_idxs = th.tensor([[0, 1]], dtype=th.int64)
+        edge_feat_idxs = th.tensor([[0, 1]], dtype=th.int64)
+
+        mol_pyg_list = [
+            Data(x=th.zeros((2, 1)), edge_index=th.tensor([[0], [1]]), edge_attr=th.zeros((1, 1))),
+            Data(x=th.zeros((3, 1)), edge_index=th.tensor([[0], [2]]), edge_attr=th.zeros((1, 1))),
+        ]
+        frag_pyg_list = [
+            Data(
+                x=th.zeros((2, 1)),
+                edge_index=th.tensor([[0], [1]]),
+                edge_attr=th.zeros((1, 1)),
+                node_feat_idxs=node_feat_idxs,
+                edge_feat_idxs=edge_feat_idxs,
+                boundary_pair_frag_idxs=th.tensor([1], dtype=th.long),
+                boundary_pair_in_local=th.tensor([0], dtype=th.long),
+                boundary_pair_out_local=th.tensor([1], dtype=th.long),
+            ),
+            Data(
+                x=th.zeros((3, 1)),
+                edge_index=th.tensor([[0], [2]]),
+                edge_attr=th.zeros((1, 1)),
+                node_feat_idxs=node_feat_idxs,
+                edge_feat_idxs=edge_feat_idxs,
+                boundary_pair_frag_idxs=th.tensor([2], dtype=th.long),
+                boundary_pair_in_local=th.tensor([2], dtype=th.long),
+                boundary_pair_out_local=th.tensor([1], dtype=th.long),
+            ),
+        ]
+
+        out = batch_mols_frags(
+            mol_pyg_list=mol_pyg_list,
+            frag_pyg_list=frag_pyg_list,
+            formula_peak_mzs_list=[th.tensor([[10.0]]), th.tensor([[20.0]])],
+            formula_peak_probs_list=[th.tensor([[1.0]]), th.tensor([[1.0]])],
+        )
+
+        assert out["boundary_pair_frag_idxs"].tolist() == [1, 4]
+        assert out["boundary_pair_in_idxs"].tolist() == [0, 4]
+        assert out["boundary_pair_out_idxs"].tolist() == [1, 3]
+
 
 class TestGetFragGraph:
     """Tests for get_frag_graph function.

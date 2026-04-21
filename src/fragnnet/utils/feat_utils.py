@@ -581,6 +581,18 @@ def batch_mols_frags(
     mol_num_nodes = th.cumsum(th.tensor([0] + mol_num_nodes), dim=0)
     frag_num_nodes = th.cumsum(th.tensor([0] + frag_num_nodes), dim=0)
 
+    boundary_pair_frag_idxs = []
+    boundary_pair_in_idxs = []
+    boundary_pair_out_idxs = []
+    for mol_idx, (mol_pyg_item, frag_pyg_item) in enumerate(zip(mol_pyg_list, frag_pyg_list)):
+        if not hasattr(frag_pyg_item, "boundary_pair_frag_idxs"):
+            continue
+        frag_offsets = frag_num_nodes[mol_idx]
+        mol_offsets = mol_num_nodes[mol_idx]
+        boundary_pair_frag_idxs.append(frag_pyg_item.boundary_pair_frag_idxs + frag_offsets)
+        boundary_pair_in_idxs.append(frag_pyg_item.boundary_pair_in_local + mol_offsets)
+        boundary_pair_out_idxs.append(frag_pyg_item.boundary_pair_out_local + mol_offsets)
+
     # Initialize lists
     frag_formula_peak_idxs = []  # 1D tensor, indices of the formula_i of fragment_j created peak_k in fragments, concatenated across all fragments.
     frag_formula_peak_mzs = []
@@ -625,6 +637,15 @@ def batch_mols_frags(
         "frag_formula_cumsizes": frag_formula_cumsizes,  # Cumulative sum of frag_formula_sizes (offsets for formula indices in batch)
         "frag_formula_peak_sizes": frag_formula_peak_sizes,  # Tensor containing the total number of peaks (isotopes) for each molecule
     }
+    if boundary_pair_frag_idxs:
+        batched_mol_frag["boundary_pair_frag_idxs"] = th.cat(boundary_pair_frag_idxs, dim=0)
+        batched_mol_frag["boundary_pair_in_idxs"] = th.cat(boundary_pair_in_idxs, dim=0)
+        batched_mol_frag["boundary_pair_out_idxs"] = th.cat(boundary_pair_out_idxs, dim=0)
+    else:
+        empty = th.zeros(0, dtype=th.long)
+        batched_mol_frag["boundary_pair_frag_idxs"] = empty
+        batched_mol_frag["boundary_pair_in_idxs"] = empty
+        batched_mol_frag["boundary_pair_out_idxs"] = empty
     return batched_mol_frag
 
 
@@ -743,6 +764,7 @@ def get_frag_graph(
         ValueError: If dag_pyg.x (node features) is None.
     """
 
+    source_dag_pyg = dag_pyg
     device = dag_pyg.x.device
     # cast
     x = dag_pyg.x.long()
@@ -801,6 +823,9 @@ def get_frag_graph(
         node_feat_idxs=_node_feat_idxs,
         edge_feat_idxs=_edge_feat_idxs,
     )
+    for attr_name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
+        if hasattr(source_dag_pyg, attr_name):
+            setattr(dag_pyg, attr_name, getattr(source_dag_pyg, attr_name))
     return dag_pyg
 
 

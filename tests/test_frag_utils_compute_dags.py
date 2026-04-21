@@ -124,6 +124,21 @@ def test_compute_dags_node_feat_shape() -> None:
     assert dag_d["dag"].x.shape[0] == dag_d["dag_num_nodes"]
 
 
+def test_compute_dags_attaches_boundary_pair_cache() -> None:
+    """Generated DAGs should carry precomputed boundary-pair indices."""
+    dag_d = _run_compute_dags("CCO")
+    dag = dag_d["dag"]
+
+    assert hasattr(dag, "boundary_pair_frag_idxs")
+    assert hasattr(dag, "boundary_pair_in_local")
+    assert hasattr(dag, "boundary_pair_out_local")
+    assert dag.boundary_pair_frag_idxs.dtype == np.dtype(np.int64) or str(dag.boundary_pair_frag_idxs.dtype) == "torch.int64"
+    assert dag.boundary_pair_in_local.dtype == np.dtype(np.int64) or str(dag.boundary_pair_in_local.dtype) == "torch.int64"
+    assert dag.boundary_pair_out_local.dtype == np.dtype(np.int64) or str(dag.boundary_pair_out_local.dtype) == "torch.int64"
+    assert dag.boundary_pair_frag_idxs.shape == dag.boundary_pair_in_local.shape
+    assert dag.boundary_pair_frag_idxs.shape == dag.boundary_pair_out_local.shape
+
+
 # ---------------------------------------------------------------------------
 # 4. cc_bit_mask_to_atom_idx excludes uint8 underflow value 255
 # ---------------------------------------------------------------------------

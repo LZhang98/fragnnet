@@ -1225,6 +1225,17 @@ def compute_dags(
     node_cc_mask = th.as_tensor(nodes_mask_matrix, dtype=th.bool)
     node_cc_mask = F.pad(node_cc_mask, (0, MASK_SIZE - node_cc_mask.shape[1]), "constant", 0)
     node_cc_long = th_mask_to_long(node_cc_mask).type(NODE_FEAT_DTYPE)
+    mol_edge_index = th.as_tensor(mol_d["bonds"].T, dtype=th.long)
+    if mol_edge_index.numel() > 0:
+        mol_edge_index = th.cat([mol_edge_index, mol_edge_index.flip(0)], dim=1)
+    boundary_pair_frag_idxs, boundary_pair_in_local, boundary_pair_out_local = (
+        compute_boundary_pair_idxs(
+            node_cc_mask,
+            mol_edge_index,
+            th.tensor([0, num_nodes], dtype=th.long),
+            th.tensor([0, node_cc_mask.shape[0]], dtype=th.long),
+        )
+    )
     # the order is important!
     pyg_node_feats = th.cat(
         [
@@ -1361,6 +1372,9 @@ def compute_dags(
     pyg_cc_g.edge_feat_idxs = th.cumsum(
         th.tensor([0] + edge_feat_shapes, dtype=th.long), 0
     ).reshape(1, -1)
+    pyg_cc_g.boundary_pair_frag_idxs = boundary_pair_frag_idxs
+    pyg_cc_g.boundary_pair_in_local = boundary_pair_in_local
+    pyg_cc_g.boundary_pair_out_local = boundary_pair_out_local
 
     # convert to pyg
     frag_d = {}
@@ -1591,6 +1605,11 @@ def dump_dag_hdf5(h5_group, dag_d: dict) -> None:
     )
     g.create_dataset("node_feat_idxs", data=dag.node_feat_idxs.numpy())
     g.create_dataset("edge_feat_idxs", data=dag.edge_feat_idxs.numpy())
+    for name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
+        if hasattr(dag, name):
+            g.create_dataset(
+                name, data=getattr(dag, name).numpy(), compression="gzip", compression_opts=4
+            )
 
     h5_group.create_dataset(
         "formula_peak_mzs",
@@ -1669,6 +1688,9 @@ def load_dag_hdf5(h5_group) -> dict:
     )
     dag.node_feat_idxs = th.from_numpy(g["node_feat_idxs"][:])
     dag.edge_feat_idxs = th.from_numpy(g["edge_feat_idxs"][:])
+    for name in ("boundary_pair_frag_idxs", "boundary_pair_in_local", "boundary_pair_out_local"):
+        if name in g:
+            setattr(dag, name, th.from_numpy(g[name][:]))
 
     dag_d: dict = {
         "dag": dag,
