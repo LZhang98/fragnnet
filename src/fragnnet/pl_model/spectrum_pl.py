@@ -973,9 +973,9 @@ class SpectrumPL(L.LightningModule):
 
     def _setup_result_trackers(self):
         if self.hparams.spec_params["merge"]:
-            max_num_datapoints = 22000
+            self.max_num_datapoints = 22000
         else:
-            max_num_datapoints = 270000
+            self.max_num_datapoints = 270000
         for split in ["train", "val", "test"]:
             setattr(self, f"{split}_results", None)
             setattr(self, f"{split}_counter", 0)
@@ -994,9 +994,6 @@ class SpectrumPL(L.LightningModule):
                 else:
                     mean_metrics[_name] = -th.ones([1], dtype=th.float32)
                     std_metrics[_name] = -th.ones([1], dtype=th.float32)
-                if self.hparams.track_datapoint_metrics:
-                    datapoint_metrics = getattr(self, f"{split}_datapoint_metrics")
-                    datapoint_metrics[_name] = -th.ones([max_num_datapoints], dtype=th.float32)
 
     def _setup_sampler(self):
         self._cur_batch_size = 0
@@ -1214,38 +1211,48 @@ class SpectrumPL(L.LightningModule):
             split=split,
         )
 
-        # prepare eval dict
-        # Note we need to compare spectra in normal space, so no log here
-        eval_true_mzs, eval_true_probs, eval_true_batch_idxs = self.preproc_spec(
-            true_mzs,
-            true_ints,
-            true_batch_idxs,
-            train=False,
-            pred=False,
-            log_in=False,
-            log_out=False,
+        active_metric_names = self._get_active_metric_names(split)
+        need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
+        need_eval_artifacts = (
+            need_aux_metrics
+            or self._should_store_raw_epoch_results(split)
+            or self._should_store_ce_metadata(split)
         )
-        eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
-        eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
-            pred_mzs,
-            pred_logprobs,
-            pred_batch_idxs,
-            train=False,
-            pred=True,
-            log_in=True,
-            log_out=False,
-        )
-        eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
-        both_d = {
-            "true_mzs": eval_true_mzs,
-            "true_logprobs": eval_true_logprobs,
-            "true_batch_idxs": eval_true_batch_idxs,
-            "true_prec_mzs": true_prec_mzs,
-            "pred_mzs": eval_pred_mzs,
-            "pred_logprobs": eval_pred_logprobs,
-            "pred_batch_idxs": eval_pred_batch_idxs,
-            **pred_d,
-        }
+        both_d = {}
+        if need_eval_artifacts:
+            # Prepare eval tensors outside autograd: they are only used for metrics/logging.
+            with th.inference_mode():
+                # Note we need to compare spectra in normal space, so no log here.
+                eval_true_mzs, eval_true_probs, eval_true_batch_idxs = self.preproc_spec(
+                    true_mzs,
+                    true_ints,
+                    true_batch_idxs,
+                    train=False,
+                    pred=False,
+                    log_in=False,
+                    log_out=False,
+                )
+                eval_true_logprobs = safelog(eval_true_probs, eps=self.hparams.log_min)
+                eval_pred_mzs, eval_pred_probs, eval_pred_batch_idxs = self.preproc_spec(
+                    pred_mzs.detach(),
+                    pred_logprobs.detach(),
+                    pred_batch_idxs.detach(),
+                    train=False,
+                    pred=True,
+                    log_in=True,
+                    log_out=False,
+                )
+                eval_pred_logprobs = safelog(eval_pred_probs, eps=self.hparams.log_min)
+                both_d = {
+                    "true_mzs": eval_true_mzs,
+                    "true_logprobs": eval_true_logprobs,
+                    "true_batch_idxs": eval_true_batch_idxs,
+                    "true_prec_mzs": true_prec_mzs,
+                    "pred_mzs": eval_pred_mzs,
+                    "pred_logprobs": eval_pred_logprobs,
+                    "pred_batch_idxs": eval_pred_batch_idxs,
+                    **pred_d,
+                }
         # just log loss
         if log:
             self.log(f"{split}_batch_loss", mean_loss, batch_size=batch_size, on_epoch=True)
@@ -1262,61 +1269,60 @@ class SpectrumPL(L.LightningModule):
             **loss_d,
         }
         # running inference and report metrics
-        assert true_mzs.shape[0] > 0, true_mzs.shape[0]
-        # this is not needed, but to be safe
-        with th.inference_mode():
-            metric_input_d = {
-                "true_mzs": eval_true_mzs,
-                "true_ints": eval_true_probs,
-                "true_batch_idxs": eval_true_batch_idxs,
-                "pred_mzs": eval_pred_mzs,
-                "pred_ints": eval_pred_probs,
-                "pred_batch_idxs": eval_pred_batch_idxs,
-                "true_prec_mzs": true_prec_mzs,
-                "split": split,
-            }
-            for arg in self.extra_metric_args:
-                metric_input_d[arg] = both_d[arg]
-            for arg in self.batch_metric_args:
-                if arg in batch:
-                    metric_input_d[arg] = batch[arg]
-            metric_output_d = self.metric_fn(**metric_input_d)
-            for k, v in metric_output_d.items():
-                assert k not in results, k
-                results[k] = v
-        for metric_name in self.metric_names:
+        if need_aux_metrics:
+            assert true_mzs.shape[0] > 0, true_mzs.shape[0]
+            with th.inference_mode():
+                metric_input_d = {
+                    "true_mzs": eval_true_mzs,
+                    "true_ints": eval_true_probs,
+                    "true_batch_idxs": eval_true_batch_idxs,
+                    "pred_mzs": eval_pred_mzs,
+                    "pred_ints": eval_pred_probs,
+                    "pred_batch_idxs": eval_pred_batch_idxs,
+                    "true_prec_mzs": true_prec_mzs,
+                    "split": split,
+                }
+                for arg in self.extra_metric_args:
+                    metric_input_d[arg] = both_d[arg]
+                for arg in self.batch_metric_args:
+                    if arg in batch:
+                        metric_input_d[arg] = batch[arg]
+                metric_output_d = self.metric_fn(**metric_input_d)
+                for k, v in metric_output_d.items():
+                    assert k not in results, k
+                    results[k] = v
+        for metric_name in active_metric_names:
             assert metric_name in results, metric_name
-        # Metadata for the per-(adduct×inst, CE-bin) wandb table logged at test time.
-        # Always populated (with fallbacks) so _update_results keys are consistent.
-        idx_to_inst, idx_to_prec, _ = self._get_dataset_maps()
-        if "spec_inst_type" in batch and idx_to_inst:
-            inst_idxs = batch["spec_inst_type"].reshape(-1).tolist()
-            results["inst_type_str"] = [idx_to_inst.get(i, "unknown") for i in inst_idxs]
-        else:
-            results["inst_type_str"] = ["unknown"] * batch_size
-        if "spec_prec_type" in batch and idx_to_prec:
-            prec_idxs = batch["spec_prec_type"].reshape(-1).tolist()
-            results["prec_type_str"] = [idx_to_prec.get(i, "unknown") for i in prec_idxs]
-        else:
-            results["prec_type_str"] = ["unknown"] * batch_size
-        if "spec_ce" in batch:
-            results["ce_primary"] = primary_ce_to_batch(
-                batch["spec_ce"], batch.get("spec_ce_batch_idxs"), batch_size
-            )
-        else:
-            results["ce_primary"] = th.full((batch_size,), float("nan"))
-        if "spec_nce" in batch:
-            results["ce_nce"] = primary_ce_to_batch(
-                batch["spec_nce"], batch.get("spec_nce_batch_idxs"), batch_size
-            )
-        else:
-            results["ce_nce"] = th.full((batch_size,), float("nan"))
-        if "spec_ace" in batch:
-            results["ce_ace"] = primary_ce_to_batch(
-                batch["spec_ace"], batch.get("spec_ace_batch_idxs"), batch_size
-            )
-        else:
-            results["ce_ace"] = th.full((batch_size,), float("nan"))
+        if self._should_store_ce_metadata(split):
+            idx_to_inst, idx_to_prec, _ = self._get_dataset_maps()
+            if "spec_inst_type" in batch and idx_to_inst:
+                inst_idxs = batch["spec_inst_type"].reshape(-1).tolist()
+                results["inst_type_str"] = [idx_to_inst.get(i, "unknown") for i in inst_idxs]
+            else:
+                results["inst_type_str"] = ["unknown"] * batch_size
+            if "spec_prec_type" in batch and idx_to_prec:
+                prec_idxs = batch["spec_prec_type"].reshape(-1).tolist()
+                results["prec_type_str"] = [idx_to_prec.get(i, "unknown") for i in prec_idxs]
+            else:
+                results["prec_type_str"] = ["unknown"] * batch_size
+            if "spec_ce" in batch:
+                results["ce_primary"] = primary_ce_to_batch(
+                    batch["spec_ce"], batch.get("spec_ce_batch_idxs"), batch_size
+                )
+            else:
+                results["ce_primary"] = th.full((batch_size,), float("nan"))
+            if "spec_nce" in batch:
+                results["ce_nce"] = primary_ce_to_batch(
+                    batch["spec_nce"], batch.get("spec_nce_batch_idxs"), batch_size
+                )
+            else:
+                results["ce_nce"] = th.full((batch_size,), float("nan"))
+            if "spec_ace" in batch:
+                results["ce_ace"] = primary_ce_to_batch(
+                    batch["spec_ace"], batch.get("spec_ace_batch_idxs"), batch_size
+                )
+            else:
+                results["ce_ace"] = th.full((batch_size,), float("nan"))
         return results
 
     def training_step(self, batch, batch_idx):
@@ -1451,44 +1457,90 @@ class SpectrumPL(L.LightningModule):
         object.__setattr__(self, "_cached_ds_maps", (idx_to_inst, idx_to_prec, inst_to_idx))
         return self._cached_ds_maps
 
+    def _should_store_raw_epoch_results(self, split: str) -> bool:
+        """Return whether raw spectra/IDs must be retained for epoch-end logging."""
+        num_log_images = getattr(self.hparams, f"num_log_{split}_images", 0)
+        return num_log_images > 0
+
+    def _should_store_ce_metadata(self, split: str) -> bool:
+        """Return whether CE/adduct/instrument metadata must be retained."""
+        return bool(self.hparams["log_adduct_inst_ce_metrics"] and split in ("val", "test"))
+
+    def _get_active_metric_names(self, split: str) -> set[str]:
+        """Return the metric names that should be computed and reduced for a split."""
+        if split == "train":
+            return self.metric_names.difference(self.auxiliary_metric_names)
+        return self.metric_names
+
+    def _get_result_keys(self, split: str) -> list[str]:
+        """Return the minimal set of batch-result keys required for a split."""
+        keys = [
+            "spec_per_group",
+            "spec_per_mol",
+            "group_per_mol",
+        ]
+        if self._should_store_raw_epoch_results(split):
+            keys.extend(
+                [
+                    "unique_ids",
+                    "smiles",
+                    "true_mzs",
+                    "true_logprobs",
+                    "true_unique_ids",
+                    "pred_mzs",
+                    "pred_logprobs",
+                    "pred_unique_ids",
+                ]
+            )
+        if self._should_store_ce_metadata(split):
+            keys.extend(
+                [
+                    "inst_type_str",
+                    "prec_type_str",
+                    "ce_primary",
+                    "ce_nce",
+                    "ce_ace",
+                ]
+            )
+        keys.extend(list(self._get_active_metric_names(split)))
+        return keys
+
+    def _ensure_datapoint_metric_buffers(self, split: str, metric_names) -> None:
+        """Lazily allocate per-datapoint metric buffers for the requested metric names."""
+        if not self.hparams.track_datapoint_metrics:
+            return
+        datapoint_metrics = getattr(self, f"{split}_datapoint_metrics")
+        for name in metric_names:
+            key = name.replace(".", "-")
+            if key not in datapoint_metrics:
+                datapoint_metrics[key] = -th.ones([self.max_num_datapoints], dtype=th.float32)
+
     def _update_results(self, batch_results, split):
         """
         Update the results tracker with new batch results for the given split.
         """
         results_attr = f"{split}_results"
         counter_attr = f"{split}_counter"
+        active_metric_names = self._get_active_metric_names(split)
         # filter keys (filtering first to save time/memory)
-        keys = [
-            "unique_ids",
-            "smiles",
-            "true_mzs",
-            "true_logprobs",
-            "true_unique_ids",
-            "pred_mzs",
-            "pred_logprobs",
-            "pred_unique_ids",
-            "spec_per_group",
-            "spec_per_mol",
-            "group_per_mol",
-            "inst_type_str",
-            "prec_type_str",
-            "ce_primary",
-            "ce_nce",
-            "ce_ace",
-        ]
-        keys.extend(list(self.metric_names))
+        keys = self._get_result_keys(split)
         unique_ids = batch_results.pop("unique_id")
-        true_batch_idxs = batch_results.pop("true_batch_idxs")
-        pred_batch_idxs = batch_results.pop("pred_batch_idxs")
+        true_batch_idxs = batch_results.pop("true_batch_idxs", None)
+        pred_batch_idxs = batch_results.pop("pred_batch_idxs", None)
         batch_results = {k: v for k, v in batch_results.items() if k in keys}
-        # update unique_ids
-        true_unique_ids = unique_ids[true_batch_idxs]
-        pred_unique_ids = unique_ids[pred_batch_idxs]
-        batch_results["unique_ids"] = unique_ids
-        batch_results["true_unique_ids"] = true_unique_ids
-        batch_results["pred_unique_ids"] = pred_unique_ids
+        # update unique IDs only when raw spectra are retained for image logging
+        if (
+            self._should_store_raw_epoch_results(split)
+            and true_batch_idxs is not None
+            and pred_batch_idxs is not None
+        ):
+            true_unique_ids = unique_ids[true_batch_idxs]
+            pred_unique_ids = unique_ids[pred_batch_idxs]
+            batch_results["unique_ids"] = unique_ids
+            batch_results["true_unique_ids"] = true_unique_ids
+            batch_results["pred_unique_ids"] = pred_unique_ids
         # check all metrics
-        assert all([metric_name in batch_results for metric_name in self.metric_names])
+        assert all([metric_name in batch_results for metric_name in active_metric_names])
         # transfer to cpu
         batch_results = to_cpu(batch_results, detach=True)
         # setup results dict
@@ -1505,8 +1557,9 @@ class SpectrumPL(L.LightningModule):
 
     def _reduce_metrics(self, results, split):
         mean_metrics, std_metrics = {}, {}
+        active_metric_names = self._get_active_metric_names(split)
         for k, v in results.items():
-            if k in self.metric_names:
+            if k in active_metric_names:
                 mean_metrics[k] = self.batch_metric_reduce_fn(
                     b_metric=v,
                     b_spec_per_group=results["spec_per_group"],
@@ -1562,7 +1615,8 @@ class SpectrumPL(L.LightningModule):
                 return None
 
         base_len = _len(results.get("spec_per_group"))
-        for k in self.metric_names:
+        active_metric_names = self._get_active_metric_names(split)
+        for k in active_metric_names:
             mlen = _len(results.get(k))
             if mlen is None or base_len is None:
                 continue
@@ -1596,7 +1650,7 @@ class SpectrumPL(L.LightningModule):
                 import wandb
 
                 for k, v in results.items():
-                    if k in self.metric_names:
+                    if k in active_metric_names:
                         log_d = {
                             f"{split}_{k}_hist": wandb.Histogram(v.cpu()),
                             "epoch": self.current_epoch,
@@ -1613,7 +1667,8 @@ class SpectrumPL(L.LightningModule):
                 .removesuffix("_epoch")
             )
             for k in self.metric_bests:
-                assert k in self.metric_names, (k, self.metric_names)
+                if k not in active_metric_names:
+                    continue
                 mean_metric_epochs = mean_metrics_epochs[k.replace(".", "-")][
                     : self.current_epoch + 1
                 ]
@@ -1643,6 +1698,7 @@ class SpectrumPL(L.LightningModule):
         if self.hparams.track_datapoint_metrics and update_datapoint_metrics:
             datapoint_metrics = getattr(self, f"{split}_datapoint_metrics")
             num_datapoints_p = getattr(self, f"{split}_num_datapoints")
+            self._ensure_datapoint_metric_buffers(split, mean_metrics.keys())
             example_key = list(mean_metrics.keys())[0]
             num_datapoints = num_datapoints_p.item()
             if num_datapoints == -1:
@@ -1785,6 +1841,8 @@ class SpectrumPL(L.LightningModule):
         """
         results = getattr(self, f"{split}_results")
         num_log_images = getattr(self.hparams, f"num_log_{split}_images")
+        if num_log_images <= 0 or results is None:
+            return
         counter = getattr(self, f"{split}_counter")
         num_log_images = min(num_log_images, counter)
         wandb_logger = self._get_wandb_logger()
