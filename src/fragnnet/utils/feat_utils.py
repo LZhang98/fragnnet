@@ -586,7 +586,10 @@ def batch_mols_frags(
     boundary_pair_out_idxs = []
     for mol_idx, (mol_pyg_item, frag_pyg_item) in enumerate(zip(mol_pyg_list, frag_pyg_list)):
         if not hasattr(frag_pyg_item, "boundary_pair_frag_idxs"):
-            continue
+            raise ValueError(
+                "frag_pyg is missing precomputed boundary_pair_* attributes; "
+                "regenerate DAGs before using the boundary_pair feature"
+            )
         frag_offsets = frag_num_nodes[mol_idx]
         mol_offsets = mol_num_nodes[mol_idx]
         boundary_pair_frag_idxs.append(frag_pyg_item.boundary_pair_frag_idxs + frag_offsets)
@@ -637,15 +640,9 @@ def batch_mols_frags(
         "frag_formula_cumsizes": frag_formula_cumsizes,  # Cumulative sum of frag_formula_sizes (offsets for formula indices in batch)
         "frag_formula_peak_sizes": frag_formula_peak_sizes,  # Tensor containing the total number of peaks (isotopes) for each molecule
     }
-    if boundary_pair_frag_idxs:
-        batched_mol_frag["boundary_pair_frag_idxs"] = th.cat(boundary_pair_frag_idxs, dim=0)
-        batched_mol_frag["boundary_pair_in_idxs"] = th.cat(boundary_pair_in_idxs, dim=0)
-        batched_mol_frag["boundary_pair_out_idxs"] = th.cat(boundary_pair_out_idxs, dim=0)
-    else:
-        empty = th.zeros(0, dtype=th.long)
-        batched_mol_frag["boundary_pair_frag_idxs"] = empty
-        batched_mol_frag["boundary_pair_in_idxs"] = empty
-        batched_mol_frag["boundary_pair_out_idxs"] = empty
+    batched_mol_frag["boundary_pair_frag_idxs"] = th.cat(boundary_pair_frag_idxs, dim=0)
+    batched_mol_frag["boundary_pair_in_idxs"] = th.cat(boundary_pair_in_idxs, dim=0)
+    batched_mol_frag["boundary_pair_out_idxs"] = th.cat(boundary_pair_out_idxs, dim=0)
     return batched_mol_frag
 
 

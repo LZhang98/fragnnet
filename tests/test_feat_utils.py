@@ -748,6 +748,9 @@ class TestBatchMolsFrags:
                 edge_attr=th.zeros((1, 1)),
                 node_feat_idxs=node_feat_idxs,
                 edge_feat_idxs=edge_feat_idxs,
+                boundary_pair_frag_idxs=th.zeros(0, dtype=th.long),
+                boundary_pair_in_local=th.zeros(0, dtype=th.long),
+                boundary_pair_out_local=th.zeros(0, dtype=th.long),
             ),
             Data(
                 x=th.zeros((3, 1)),
@@ -755,6 +758,9 @@ class TestBatchMolsFrags:
                 edge_attr=th.zeros((1, 1)),
                 node_feat_idxs=node_feat_idxs,
                 edge_feat_idxs=edge_feat_idxs,
+                boundary_pair_frag_idxs=th.zeros(0, dtype=th.long),
+                boundary_pair_in_local=th.zeros(0, dtype=th.long),
+                boundary_pair_out_local=th.zeros(0, dtype=th.long),
             ),
         ]
 
@@ -832,6 +838,32 @@ class TestBatchMolsFrags:
         assert out["boundary_pair_frag_idxs"].tolist() == [1, 4]
         assert out["boundary_pair_in_idxs"].tolist() == [0, 4]
         assert out["boundary_pair_out_idxs"].tolist() == [1, 3]
+
+    def test_batch_mols_frags_requires_precomputed_boundary_pair_attrs(self):
+        """Batching should fail fast when DAG-derived boundary-pair attrs are missing."""
+        node_feat_idxs = th.tensor([[0, 1]], dtype=th.int64)
+        edge_feat_idxs = th.tensor([[0, 1]], dtype=th.int64)
+
+        mol_pyg_list = [
+            Data(x=th.zeros((2, 1)), edge_index=th.tensor([[0], [1]]), edge_attr=th.zeros((1, 1)))
+        ]
+        frag_pyg_list = [
+            Data(
+                x=th.zeros((2, 1)),
+                edge_index=th.tensor([[0], [1]]),
+                edge_attr=th.zeros((1, 1)),
+                node_feat_idxs=node_feat_idxs,
+                edge_feat_idxs=edge_feat_idxs,
+            )
+        ]
+
+        with pytest.raises(ValueError, match="missing precomputed boundary_pair_"):
+            batch_mols_frags(
+                mol_pyg_list=mol_pyg_list,
+                frag_pyg_list=frag_pyg_list,
+                formula_peak_mzs_list=[th.tensor([[10.0]])],
+                formula_peak_probs_list=[th.tensor([[1.0]])],
+            )
 
 
 class TestGetFragGraph:

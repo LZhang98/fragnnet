@@ -25,7 +25,6 @@ from fragnnet.utils.feat_utils import get_mol_feats_sizes
 from fragnnet.utils.formula_utils import PREC_TYPE_TO_FORMULA_DIFF
 from fragnnet.utils.frag_utils import (
     compute_boundary_mask,
-    compute_boundary_pair_idxs,
     get_edge_feats,
     get_node_feats,
     th_long_to_mask,
