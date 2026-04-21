@@ -72,9 +72,7 @@ if __name__ == "__main__":
     )
 
     # process root-level splits (train_ids.csv directly in split_dp)
-    root_csvs = [
-        f for f in os.listdir(args.split_dp) if f.endswith("_ids.csv")
-    ]
+    root_csvs = [f for f in os.listdir(args.split_dp) if f.endswith("_ids.csv")]
     if root_csvs:
         print(f"> Filtering root split: {args.split_dp}")
         filter_split_dir(args.split_dp, spec_df, args.max_prec_mz)
