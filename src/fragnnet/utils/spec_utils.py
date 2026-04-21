@@ -20,8 +20,6 @@ from fragnnet.utils.misc_utils import (
     validate_bin_geometry,
 )
 
-logger = logging.getLogger(__name__)
-
 try:
     from torch_linear_assignment import (  # pyright: ignore[reportMissingImports]
         assignment_to_indices,
@@ -379,20 +377,7 @@ def batched_bin_func(
 
     if mzs.shape[0] == 0:
         raise ValueError("batched_bin_func received empty mzs tensor")
-    over_max = mzs >= mz_max
-    if over_max.any():
-        logger.warning(
-            "batched_bin_func: %d peak(s) with m/z >= %.1f (max=%.1f) dropped before binning",
-            int(over_max.sum().item()),
-            float(mzs[over_max].max().item()),
-            mz_max,
-        )
-        keep = ~over_max
-        mzs = mzs[keep]
-        ints = ints[keep]
-        batch_idxs = batch_idxs[keep]
-    if mzs.shape[0] == 0:
-        raise ValueError("batched_bin_func: all peaks exceed mz_max")
+    assert th.max(mzs) < mz_max, (th.max(mzs), mz_max)
     # Validate bin geometry
     num_bins = validate_bin_geometry(mz_max, mz_bin_res)
     batch_size = int(th.max(batch_idxs).item()) + 1
@@ -409,7 +394,7 @@ def batched_bin_func(
     bin_idxs = bin_idxs + bin_offsets
     if remove_prec_peaks:
         assert prec_mzs is not None
-        prec_mzs = prec_mzs.clamp(max=mz_max - mz_bin_res)
+        assert th.max(prec_mzs) < mz_max, (th.max(prec_mzs), mz_max)
         prec_mz_bin_idxs = th.searchsorted(bins, prec_mzs, right=True)
         prec_mz_bin_offsets = th.arange(batch_size, device=mzs.device) * num_bins
         prec_mz_bin_idxs = prec_mz_bin_idxs + prec_mz_bin_offsets
