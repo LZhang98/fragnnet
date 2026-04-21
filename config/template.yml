@@ -386,6 +386,7 @@ null_loss_weight: 1.0
 # ============================================================================
 seed: 42
 detect_anomaly: False
+debug_validate_outputs: False
 automatic_optimization: True
 profiler: none
 profiler_wait_steps: 10

@@ -107,6 +107,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ce_scaler_hidden_dim: int,
         output_formula_str: bool,
         ce_insert_dual: bool = False,
+        debug_validate_outputs: bool = False,
     ):
         # nn.Module init
         super().__init__()
@@ -145,6 +146,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.num_depth = num_depth
         self.num_hs = num_hs
         self.num_elements = num_elements
+        self.debug_validate_outputs = debug_validate_outputs
 
         # calculate node/edge feats sizes
         self.mol_node_feats = mol_node_feats
@@ -1315,7 +1317,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_nb_node_node_node_idxs = None
             frag_nb_node_node_batch_idxs = None
 
-        if __debug__:
+        if self.debug_validate_outputs:
             assert (
                 th.unique(frag_real_node_node_idxs).shape[0]
                 == frag_real_node_node_idxs.max() + 1
@@ -1349,7 +1351,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             spec_logprobs = spec_bin_logprobs
             spec_batch_idxs = spec_bin_batch_idxs
 
-        if __debug__:
+        if self.debug_validate_outputs:
             term1 = scatter_logsumexp(spec_logprobs, spec_batch_idxs).exp()
             term2 = oos_logprobs.exp()
             term3 = (not_oos_logprobs + frag_null_formula_logprob).exp()
@@ -1433,14 +1435,15 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             pred_formula_str = np.array(pred_formula_str)
             out_d["pred_formula_str"] = pred_formula_str
 
-        for k, v in out_d.items():
-            if "logprob" in k and v is not None and v.max() > 0.0:
-                logger.warning(f"{k} has value {v.max()} > 0")
-            if "batch_idx" in k and v is not None:
-                if v.numel() == 0:
-                    raise ValueError(f"Empty batch index: {k}")
-                elif th.unique(v).shape[0] != batch_size:
-                    raise ValueError(
-                        f"Missing items in {k} of batch: {th.unique(v).shape[0]} expeacting {batch_size}"
-                    )
+        if self.debug_validate_outputs:
+            for k, v in out_d.items():
+                if "logprob" in k and v is not None and v.max() > 0.0:
+                    logger.warning(f"{k} has value {v.max()} > 0")
+                if "batch_idx" in k and v is not None:
+                    if v.numel() == 0:
+                        raise ValueError(f"Empty batch index: {k}")
+                    elif th.unique(v).shape[0] != batch_size:
+                        raise ValueError(
+                            f"Missing items in {k} of batch: {th.unique(v).shape[0]} expeacting {batch_size}"
+                        )
         return out_d

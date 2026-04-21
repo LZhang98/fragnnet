@@ -103,6 +103,7 @@ class FraGNNetPL(SpectrumPL):
             ce_scale=self.hparams.ce_scale,
             ce_scaler_hidden_dim=self.hparams.ce_scaler_hidden_dim,
             output_formula_str=self.hparams.output_formula_str,
+            debug_validate_outputs=self.hparams.debug_validate_outputs,
         )
 
         self._check_ce_params()
