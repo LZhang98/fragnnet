@@ -49,6 +49,7 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
+mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -135,7 +136,7 @@ debug_overfit: False
 # ============================================================================
 mol_dropout: 0.1    # from fragnnet_d3/s0.yml
 frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.1    # from fragnnet_d3/s0.yml
+mlp_dropout: 0.3    # sweep: top runs favour 0.3
 weight_decay: 0.01
 
 # ============================================================================
@@ -168,7 +169,7 @@ mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
 mol_pool_type: mean
-frag_pool_type: mean
+frag_pool_type: max  # sweep: top 3 runs all use max
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
