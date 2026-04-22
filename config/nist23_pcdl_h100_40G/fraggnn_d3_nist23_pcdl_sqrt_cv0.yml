@@ -22,7 +22,6 @@ wandb_tags:
 - preload
 - preprocess
 - new_no_edges  # no edge features in fragment GNN
-- skip_extra_losses
 - binned_cosine_similarity
 - m+h
 - m-h
@@ -97,10 +96,7 @@ spec_params:
     - "CID"
 
   split_filters:
-    train:
-      filter_ce_by_inst:
-        FT:   {nce_min: 0, nce_max: 60}
-        QTOF: {ace_min: 0, ace_max: 40}
+    train: {}
     val:
       filter_ce_by_inst:
         FT:   {nce_min: 0, nce_max: 60}
