@@ -18,7 +18,6 @@ wandb_tags:
 - preload
 - preprocess
 - new_no_edges
-- skip_extra_losses
 - binned_cosine_similarity
 - m+h
 - m-h
