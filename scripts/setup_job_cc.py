@@ -118,6 +118,36 @@ GPU_PROFILE_ALIASES = {
 }
 
 
+def _resolve_wandb_api_key(explicit_key: str | None = None) -> str | None:
+    """Resolve W&B API key from multiple sources in priority order.
+
+    Args:
+        explicit_key: Key passed directly via CLI argument.
+
+    Returns:
+        API key string, or None if not found in any source.
+    """
+    if explicit_key:
+        return explicit_key
+    local_key_file = os.path.normpath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "wandb_api_key")
+    )
+    if os.path.isfile(local_key_file):
+        with open(local_key_file) as f:
+            key = f.read().strip()
+        if key:
+            return key
+    import netrc as _netrc
+
+    try:
+        auth = _netrc.netrc().authenticators("api.wandb.ai")
+        if auth:
+            return auth[2]
+    except Exception:
+        pass
+    return os.environ.get("WANDB_API_KEY")
+
+
 def print_gpu_profiles() -> None:
     print("Available --gpu_profile presets:")
     for key in sorted(GPU_PROFILES.keys()):
@@ -491,6 +521,10 @@ def main(args):
         else:
             python_line += " \\\n -p ${SLURM_JOB_ID}"
 
+    wandb_api_key = _resolve_wandb_api_key(getattr(args, "wandb_api_key", None))
+    if wandb_api_key:
+        script_lines.extend(["# set wandb api key", f"export WANDB_API_KEY={wandb_api_key}", ""])
+
     # add python line
     script_lines.extend(["# run python script", "cd ${WORKING_DIR}", python_line])
 
@@ -605,6 +639,15 @@ if __name__ == "__main__":
         default="2023.09.5",
         choices=["2022.03.5", "2023.09.5", "2024.03.5"],
         help="rdkit version",
+    )
+    parser.add_argument(
+        "--wandb_api_key",
+        type=str,
+        default=None,
+        help=(
+            "W&B API key to export in the job script. "
+            "Falls back to ~/.wandb_api_key (plain text file) then WANDB_API_KEY env var."
+        ),
     )
     parser.add_argument("--no_submit", type=bool, default=True)
     args = parser.parse_args()
