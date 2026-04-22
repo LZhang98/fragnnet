@@ -595,9 +595,11 @@ class SpectrumPL(L.LightningModule):
                                 metric_d[fname] = jss
 
             if compute_entropies:
-                true_log_probs = safelog(
-                    scatter_l1normalize(true_ints, true_batch_idxs), eps=self.hparams.log_min
-                )
+                true_log_probs = kwargs.get("true_logprobs")
+                if true_log_probs is None:
+                    true_log_probs = safelog(
+                        scatter_l1normalize(true_ints, true_batch_idxs), eps=self.hparams.log_min
+                    )
                 true_spec_e, true_spec_ne = sparse_entropy_fn(true_log_probs, true_batch_idxs)
                 if "true_spec_e" in self.hparams.auxiliary_scores:
                     metric_d["true_spec_e"] = true_spec_e
@@ -605,9 +607,11 @@ class SpectrumPL(L.LightningModule):
                     metric_d["true_spec_ne"] = true_spec_ne
 
             if compute_pred_entropies:
-                pred_log_probs = safelog(
-                    scatter_l1normalize(pred_ints, pred_batch_idxs), eps=self.hparams.log_min
-                )
+                pred_log_probs = kwargs.get("pred_logprobs")
+                if pred_log_probs is None:
+                    pred_log_probs = safelog(
+                        scatter_l1normalize(pred_ints, pred_batch_idxs), eps=self.hparams.log_min
+                    )
                 pred_spec_e, pred_spec_ne = sparse_entropy_fn(pred_log_probs, pred_batch_idxs)
                 if "pred_spec_e" in self.hparams.auxiliary_scores:
                     metric_d["pred_spec_e"] = pred_spec_e
@@ -1220,13 +1224,9 @@ class SpectrumPL(L.LightningModule):
 
         active_metric_names = self._get_active_metric_names(split)
         need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
-        need_eval_artifacts = (
-            need_aux_metrics
-            or self._should_store_raw_epoch_results(split)
-            or self._should_store_ce_metadata(split)
-        )
+        need_eval_tensors = self._needs_eval_tensors(split)
         both_d = {}
-        if need_eval_artifacts:
+        if need_eval_tensors:
             # Prepare eval tensors outside autograd: they are only used for metrics/logging.
             with th.inference_mode():
                 # Note we need to compare spectra in normal space, so no log here.
@@ -1282,9 +1282,11 @@ class SpectrumPL(L.LightningModule):
                 metric_input_d = {
                     "true_mzs": eval_true_mzs,
                     "true_ints": eval_true_probs,
+                    "true_logprobs": eval_true_logprobs,
                     "true_batch_idxs": eval_true_batch_idxs,
                     "pred_mzs": eval_pred_mzs,
                     "pred_ints": eval_pred_probs,
+                    "pred_logprobs": eval_pred_logprobs,
                     "pred_batch_idxs": eval_pred_batch_idxs,
                     "true_prec_mzs": true_prec_mzs,
                     "split": split,
@@ -1485,6 +1487,12 @@ class SpectrumPL(L.LightningModule):
     def _should_report_metric_std(self) -> bool:
         """Return whether epoch std metrics should be computed and logged."""
         return bool(getattr(self.hparams, "report_metric_std", True))
+
+    def _needs_eval_tensors(self, split: str) -> bool:
+        """Return whether eval spectra must be materialized for this split."""
+        active_metric_names = self._get_active_metric_names(split)
+        need_aux_metrics = len(active_metric_names.intersection(self.auxiliary_metric_names)) > 0
+        return bool(need_aux_metrics or self._should_store_raw_epoch_results(split))
 
     def _get_active_metric_names(self, split: str) -> set[str]:
         """Return the metric names that should be computed and reduced for a split."""
