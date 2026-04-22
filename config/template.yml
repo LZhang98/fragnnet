@@ -399,7 +399,7 @@ num_log_train_images: 0
 num_log_val_images: 0
 deterministic: False
 drop_last: False
-num_sanity_val_steps: 2
+num_sanity_val_steps: 0
 # ============================================================================
 # Collision Energy (CE) Configuration
 # ============================================================================
