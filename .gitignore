@@ -60,7 +60,7 @@ containers/apptainer/
 
 # Others
 .github
-# Claude AI assistant configuration and cache
-
+# Claude configuration and cache
 .claude
+# codex configuration and cache
 .codex
