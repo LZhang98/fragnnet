@@ -135,7 +135,7 @@ simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
-compile: True
+compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
