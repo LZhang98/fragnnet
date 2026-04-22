@@ -225,11 +225,15 @@ class BaseDataset(Dataset):
                 if target_key.startswith("nce"):
                     # fill missing nce from ace: nce = ace * 500 / (prec_mz * charge_factor)
                     computed = (ace * 500.0) / (prec_mz * charge_factors)
-                    result = nce.fillna(computed).astype(float)
+                    result = pd.to_numeric(nce, errors="coerce").fillna(
+                        pd.to_numeric(computed, errors="coerce")
+                    )
                 else:
                     # fill missing ace from nce: ace = nce * prec_mz * charge_factor / 500
                     computed = (nce * prec_mz * charge_factors) / 500.0
-                    result = ace.fillna(computed).astype(float)
+                    result = pd.to_numeric(ace, errors="coerce").fillna(
+                        pd.to_numeric(computed, errors="coerce")
+                    )
                 spec_df.loc[:, target_key] = result
 
             for key, _ in ce_keys_to_compute:
