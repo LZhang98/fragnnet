@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_all_cmf
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_ce_scale_cmf
 wandb_tags:
 - retrieval
 - nist20
@@ -18,13 +18,12 @@ wandb_tags:
 - preload
 - preprocess
 - new_no_edges
+- skip_extra_losses
 - binned_cosine_similarity
 - m+h
 - m-h
 - m+na
 - m+cl
-- frag_mode
-- frag_mode_scale
 - ce_scale
 - nce
 - cmf
@@ -66,14 +65,10 @@ spec_params:
     - "FT"
     - "QTOF"
     - "IT"
-  frag_mode: True
-  frag_modes:
-    - "HCD"
-    - "CID"
 mol_params:
   preprocess: True
 
-ce_insert_type: embed
+ce_insert_type: embed_clamped
 ce_insert_location: mol
 ce_insert_merge: True
 ce_insert_size: 32
@@ -81,9 +76,6 @@ prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
-frag_mode_insert_location: mol
-frag_mode_insert_size: 32
-frag_mode_scale: True
 ce_scale: True
 ce_scaler_hidden_dim: 64
 

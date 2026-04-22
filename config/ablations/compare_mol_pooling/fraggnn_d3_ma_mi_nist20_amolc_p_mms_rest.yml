@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_mol_condition_frag_mode_scale_cmf
+wandb_name: fraggnn_d3_ma_mi_nist20_amolc_p_mms_rest
 wandb_tags:
 - retrieval
 - nist20
@@ -24,10 +24,6 @@ wandb_tags:
 - m-h
 - m+na
 - m+cl
-- frag_mode
-- frag_mode_scale
-- nce
-- cmf
 
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
@@ -37,22 +33,14 @@ num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
-  pyg_node_feats:
-    - cc
-    - base_formula
-    - depth
-    - h_formulae_idx
-    - cmf_h_formulae_idx
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
   preload: True
   preprocess: True
-  include_cmf: True
 spec_params:
   merge: False
   nce: True
-  ace: False
   merge_keep_ces: False
   preprocess: True
   prec_type_str: False
@@ -65,25 +53,23 @@ spec_params:
   inst_types:
     - "FT"
     - "QTOF"
-    - "IT"
-  frag_mode: True
-  frag_modes:
-    - "HCD"
-    - "CID"
+    - 'IT'
 mol_params:
   preprocess: True
 
-ce_insert_type: embed
-ce_insert_location: mol
-ce_insert_merge: True
+ce_insert_type: embed_clamped # ce insert type ["id","lin","embed","bin"]
+ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
+ce_insert_merge: False # merge ce embedding
 ce_insert_size: 32
 prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
-frag_mode_insert_location: mol
-frag_mode_insert_size: 32
-frag_mode_scale: True
+cc_interstage_type: gated
+cc_interstage_use_rest: True
+
+mol_params:
+  preprocess: True
 
 train_batch_size: 256
 eval_batch_size: 256
@@ -92,8 +78,8 @@ gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 50
+max_epochs: 50
 lr_schedule: False
 debug_overfit: False
 mask_null_formula: False
@@ -104,8 +90,8 @@ gaussian_renormalize: True
 mz_bin_res: 0.01
 mz_max: 1500.0
 sparse_cosine_similarity: True
-mol_pool_type: mean
-frag_pool_type: mean
+mol_pool_type: mean_max_sum
+frag_pool_type: none
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
@@ -116,14 +102,16 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: True
+dynamic_batch_sampler:  True
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 25000
 
 group_sampler: False
-group_sampler_type: group
+group_sampler_type: group #[group, group_mol, mol]
 group_sampler_max_per_group: 5
 simple_group_sampler: True
 simple_group_sampler_avg_per_group: 5
-simple_group_sampler_type: group
+simple_group_sampler_type: group #[group, group_mol, mol]
 
 pl_enable_progress_bar: True
 activation_checkpointing: False
@@ -131,4 +119,3 @@ compile: False
 pin_memory: True
 loss_vectorized: True
 loss_batch_size: 16
-

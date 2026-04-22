@@ -83,7 +83,7 @@ spec_params:
 mol_params:
   preprocess: True
 
-ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
+ce_insert_type: embed_clamped # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: mlp # where ce insert happens ["none","mol","frag","mlp"]
 ce_insert_merge: False # merge ce embedding
 ce_insert_size: 32

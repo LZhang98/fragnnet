@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_dedup_h_coverage
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_fp_max
 wandb_tags:
 - retrieval
 - nist20
@@ -17,7 +17,7 @@ wandb_tags:
 - gaussian_renormalize
 - b256          # batch size 256
 - vectorized_loss
-- lb16          # loss batch size 16
+- lb32          # loss batch size 16
 - preload
 - preprocess
 - new_no_edges  # no edge features in fragment GNN
@@ -33,7 +33,6 @@ wandb_tags:
 - nce
 - cmf           # charge-migration fragments included
 - inst_tol      # per-instrument loss tolerance
-- boundary_pair   # boundary_pair node feature in fragment GNN
 
 # ============================================================================
 # Data File Paths
@@ -41,7 +40,7 @@ wandb_tags:
 spec_fp: data/proc/nist20/spec_df.pkl
 mol_fp: data/proc/nist20/mol_df.pkl
 split_dp: data/split/nist20_ma_mi_inchikey   # inchikey split: [M+H]+ and [M-H]- adducts
-frag_dp: data/frag/dedup/nist20_ma_mi_d3_h4_isoFalse_smpFalse_h_coverage/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
+frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse/dags  # depth-3 DAGs, ±4 H-transfers, no isotopes
 
 # ============================================================================
 # Model Architecture
@@ -60,7 +59,6 @@ frag_params:
     - depth         # depth of fragment node in the DAG
     - h_formulae_idx     # index into H-transfer formula table
     - cmf_h_formulae_idx # same as above but for charge-migration fragments
-    - boundary_pair     # cut-bond pair encoding: Linear(cat(inside_atom_embed, outside_atom_embed)) pooled over cuts
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
@@ -103,7 +101,7 @@ mol_params:
 # Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
 # All inserted at the mol encoder input ("mol" location)
 # ============================================================================
-ce_insert_type: embed         # learned CE embedding (vs. linear/bin)
+ce_insert_type: embed_clamped         # learned CE embedding (vs. linear/bin)
 ce_insert_location: mol       # inject into molecule encoder input
 ce_insert_merge: True         # merge embeddings when injected at multiple locations
 ce_insert_size: 32            # CE embedding dimension
@@ -126,16 +124,16 @@ accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 50
+max_epochs: 50
 debug_overfit: False
 
 # ============================================================================
 # Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
 # ============================================================================
-mol_dropout: 0.1    # from fragnnet_d3/s0.yml
+mol_dropout: 0.2    # from fragnnet_d3/s0.yml
 frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.1    # from fragnnet_d3/s0.yml
+mlp_dropout: 0.2    # from fragnnet_d3/s0.yml
 weight_decay: 0.01
 
 # ============================================================================
@@ -168,17 +166,13 @@ mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
 mol_pool_type: mean
-frag_pool_type: mean
-upload_checkpoints: False
+frag_pool_type: max
+upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
-  - jss
-  - true_spec_ne   # ground truth normalized entropy — reference target
-  - pred_spec_ne   # predicted normalized entropy — watch this decrease toward true_spec_ne
 eval_mz_bin_res:
   - 0.01
-eval_bin_sqrt: True  # use sqrt m/z bins for evaluation (but not training)
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:

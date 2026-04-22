@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_fp_max
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_fp_mms
 wandb_tags:
 - retrieval
 - nist20
@@ -101,7 +101,7 @@ mol_params:
 # Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
 # All inserted at the mol encoder input ("mol" location)
 # ============================================================================
-ce_insert_type: embed         # learned CE embedding (vs. linear/bin)
+ce_insert_type: embed_clamped         # learned CE embedding (vs. linear/bin)
 ce_insert_location: mol       # inject into molecule encoder input
 ce_insert_merge: True         # merge embeddings when injected at multiple locations
 ce_insert_size: 32            # CE embedding dimension
@@ -166,7 +166,7 @@ mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
 mol_pool_type: mean
-frag_pool_type: max
+frag_pool_type: mean_max_sum  # combine mean, max, and sum pooling for fragment embedding
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:

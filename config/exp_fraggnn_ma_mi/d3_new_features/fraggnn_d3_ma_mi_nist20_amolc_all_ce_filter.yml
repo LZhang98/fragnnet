@@ -116,7 +116,7 @@ mol_params:
 # ============================================================================
 # Conditioning Embeddings
 # ============================================================================
-ce_insert_type: embed
+ce_insert_type: embed_clamped
 ce_insert_location: mol
 ce_insert_merge: True
 ce_insert_size: 32

@@ -1,4 +1,4 @@
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_amolc_cmf
+wandb_name: fraggnn_d3_ma_mi_nist20_amolc_p_sum_rests
 wandb_tags:
 - retrieval
 - nist20
@@ -33,18 +33,11 @@ num_depth: 4
 num_hs: 4
 frag_gnn_type: NodeMLP
 frag_params:
-  pyg_node_feats:
-    - cc
-    - base_formula
-    - depth
-    - h_formulae_idx
-    - cmf_h_formulae_idx
   pyg_edge_feats: []
   pyg_edges: False
   pyg_bigraph: False
   preload: True
   preprocess: True
-  include_cmf: True
 spec_params:
   merge: False
   nce: True
@@ -64,39 +57,41 @@ spec_params:
 mol_params:
   preprocess: True
 
-ce_insert_type: embed # ce insert type ["id","lin","embed","bin"]
+ce_insert_type: embed_clamped # ce insert type ["id","lin","embed","bin"]
 ce_insert_location: mol # where ce insert happens ["none","mol","frag","mlp"]
-ce_insert_merge: True # merge ce embedding
+ce_insert_merge: False # merge ce embedding
 ce_insert_size: 32
 prec_insert_location: mol
 prec_insert_size: 32
 inst_insert_location: mol
 inst_insert_size: 32
+cc_interstage_type: gated
+cc_interstage_use_rest: True
 
 mol_params:
   preprocess: True
 
-train_batch_size: 128
-eval_batch_size: 128
+train_batch_size: 256
+eval_batch_size: 256
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004
 accelerator: gpu
 devices: 1
-min_epochs: 100
-max_epochs: 100
+min_epochs: 50
+max_epochs: 50
 lr_schedule: False
 debug_overfit: False
 mask_null_formula: False
 predict_oos: True
 oos_tolerance_multiple: 1
 oos_loss: True
-gaussian_renormalize: True
+gaussian_renormalize: Trues
 mz_bin_res: 0.01
 mz_max: 1500.0
 sparse_cosine_similarity: True
-mol_pool_type: mean
-frag_pool_type: mean
+mol_pool_type: sum
+frag_pool_type: none
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean
 auxiliary_scores:
@@ -107,7 +102,7 @@ eval_mz_bin_res:
 precision: 32
 use_tensor_float32: True
 automatic_optimization: False
-dynamic_batch_sampler: SpecMolFragDynamicBatchSampler
+dynamic_batch_sampler:  True
 
 group_sampler: False
 group_sampler_type: group #[group, group_mol, mol]

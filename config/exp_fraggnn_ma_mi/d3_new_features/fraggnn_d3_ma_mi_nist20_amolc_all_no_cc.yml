@@ -102,7 +102,7 @@ mol_params:
 # Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
 # All inserted at the mol encoder input ("mol" location)
 # ============================================================================
-ce_insert_type: embed         # learned CE embedding (vs. linear/bin)
+ce_insert_type: embed_clamped         # learned CE embedding (vs. linear/bin)
 ce_insert_location: mol       # inject into molecule encoder input
 ce_insert_merge: True         # merge embeddings when injected at multiple locations
 ce_insert_size: 32            # CE embedding dimension

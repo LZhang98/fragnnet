@@ -94,7 +94,7 @@ class CEModel:
         elif self.ce_insert_type == "embed":
 
             def ce_transform(ce: th.Tensor) -> th.Tensor:
-                ce = th.clamp(ce, min=-1)
+                ce = th.clamp(ce, min=-1, max=int(self.ce_max))
                 ce = th.round(ce, decimals=0).long()
                 ce = ce.reshape(-1, 1)
                 return ce
@@ -427,8 +427,8 @@ class CEScaler(nn.Module):
         Returns:
             Scaled logits of shape (num_nodes, output_dim).
         """
-        # Normalize CE; treat missing values (-1) as 0 so identity scaling is preserved
-        mask = ce >= 0
+        # Normalize CE; treat missing (-1) and non-finite (inf/nan) values as 0
+        mask = (ce >= 0) & th.isfinite(ce)
         norm_ce = th.where(mask, (ce - self.ce_mean) / self.ce_std, th.zeros_like(ce))
         norm_ce = norm_ce.reshape(-1, 1)
         # MLP: (num_ces, 1) → (num_ces, output_dim * 2)
