@@ -2081,6 +2081,7 @@ def run_frag_gen_hdf5(
         dump_dag_hdf5(grp, dag_d)
 
     _log.info("Fragment generation done: %d stored, %d errors", len(meta_info), n_errors)
+    return meta_info
 
 
 def compute_boundary_mask(

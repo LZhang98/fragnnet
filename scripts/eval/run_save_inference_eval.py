@@ -145,7 +145,7 @@ def get_args():
     )
     parser.add_argument("--eval_batch_size", type=int, default=4, help="Evaluation batch size")
     parser.add_argument(
-        "--batch_cutoff", type=int, default=1000, help="Number of batches to evaluate (-1 for all)"
+        "--batch_cutoff", type=int, default=-1, help="Number of batches to evaluate (-1 for all)"
     )
     parser.add_argument(
         "--min_peak_int",
@@ -163,7 +163,20 @@ def get_args():
         "--use_dynamic_sampler",
         type=booltype,
         default=False,
-        help="whether use dynamic sampler",
+        help="Use dynamic batch sampler (sequential order, node/edge budget per batch)",
+    )
+    parser.add_argument(
+        "--dynamic_sampler_max",
+        type=int,
+        default=None,
+        help="Max frag nodes/edges per batch for dynamic sampler (overrides config)",
+    )
+    parser.add_argument(
+        "--dynamic_sampler_mode",
+        type=str,
+        default=None,
+        choices=["frag_node", "frag_edge"],
+        help="Budget metric for dynamic sampler: frag_node or frag_edge (overrides config)",
     )
     parser.add_argument(
         "--override",
@@ -215,6 +228,10 @@ if __name__ == "__main__":
         eval_batch_size=args.eval_batch_size,
         dynamic_batch_sampler=args.use_dynamic_sampler,
     )
+    if args.dynamic_sampler_max is not None:
+        config_d["dynamic_batch_sampler_max"] = args.dynamic_sampler_max
+    if args.dynamic_sampler_mode is not None:
+        config_d["dynamic_batch_sampler_mode"] = args.dynamic_sampler_mode
 
     # Initialize dataset, dataloader, and model (inline)
     print(">>> Initializing components...")
