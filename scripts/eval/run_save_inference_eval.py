@@ -161,7 +161,8 @@ def get_args():
     )
     parser.add_argument(
         "--use_dynamic_sampler",
-        action="store_true",
+        type=booltype,
+        default=False,
         help="whether use dynamic sampler",
     )
     parser.add_argument(

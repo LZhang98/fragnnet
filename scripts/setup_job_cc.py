@@ -368,7 +368,7 @@ def main(args):
     script_kwargs_list = args.script_kwargs if args.script_kwargs else []
     for idx, kwarg in enumerate(script_kwargs_list):
         assert "=" in kwarg, kwarg
-        key, value = kwarg.split("=")
+        key, value = kwarg.split("=", 1)
         # this useful for inference setup where some config are overridden via command line
         config_d[key] = value
         if idx == 0:
