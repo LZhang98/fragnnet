@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import subprocess
 
 
@@ -179,6 +180,24 @@ def apply_gpu_profile(args) -> None:
         args.gpu = 1
 
 
+_SLURM_TIME_RE = re.compile(
+    r"^(\d+-)?(\d+)(:\d{2})?(:\d{2})?$"
+)
+
+
+def validate_slurm_time(time_str: str) -> None:
+    """Validate SLURM --time format: [D-]HH[:MM[:SS]], MM, or MM:SS.
+
+    Raises:
+        ValueError: If the format is invalid.
+    """
+    if not _SLURM_TIME_RE.match(time_str):
+        raise ValueError(
+            f"Invalid --time format: {time_str!r}. "
+            "Expected SLURM format: HH:MM:SS, D-HH:MM:SS, MM:SS, or MM."
+        )
+
+
 def validate_array_job_config(args) -> None:
     """Validate array job configuration."""
     if getattr(args, "num_sweep_jobs", None) is not None:
@@ -201,6 +220,7 @@ def main(args):
         return
 
     apply_gpu_profile(args)
+    validate_slurm_time(args.time)
     validate_array_job_config(args)
 
     # create folders
@@ -218,7 +238,7 @@ def main(args):
             f"#SBATCH --job-name={args.job_name}",
             f"#SBATCH --mem={args.mem}G",
             f"#SBATCH --cpus-per-task={args.cpu}",
-            f"#SBATCH --time=0-{args.time}:00:00",
+            f"#SBATCH --time={args.time}",
             f"#SBATCH --mail-user={args.cc_email}",
             "#SBATCH --mail-type=ALL",
         ]
@@ -628,7 +648,12 @@ if __name__ == "__main__":
         default=None,
         help="Raw value for #SBATCH --gres (e.g. gpu:a100:1 or gpu:h100_1g.10gb:1)",
     )
-    parser.add_argument("--time", type=int, default=3)
+    parser.add_argument(
+        "--time",
+        type=str,
+        default="3:00:00",
+        help="Job wall-clock time limit in SLURM format: D-HH:MM:SS, HH:MM:SS, or H (hours)",
+    )
     parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
     parser.add_argument("--job_name", type=str, required=False, help="name of the job")
     parser.add_argument(
