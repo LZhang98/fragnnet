@@ -152,7 +152,7 @@ def get_args():
     parser.add_argument(
         "--train_batch_size", type=int, default=4, help="Training batch size for evaluation"
     )
-    parser.add_argument("--eval_batch_size", type=int, default=4, help="Evaluation batch size")
+    parser.add_argument("--eval_batch_size", type=int, default=256, help="Evaluation batch size")
     parser.add_argument(
         "--batch_cutoff", type=int, default=-1, help="Number of batches to evaluate (-1 for all)"
     )
