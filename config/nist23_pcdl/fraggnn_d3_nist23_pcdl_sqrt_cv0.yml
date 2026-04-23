@@ -148,7 +148,7 @@ weight_decay: 0.01
 # warmup: first ~4 epochs (5000 steps); cosine decay to 1% of peak by end
 # ============================================================================
 lr_schedule: False
-lr: 0.0004
+lr: 0.0007
 lr_schedule_type: cosine
 lr_warmup_steps: 5000
 lr_total_steps: 390000
