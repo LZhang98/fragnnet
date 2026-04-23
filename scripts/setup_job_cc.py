@@ -362,6 +362,7 @@ def main(args):
 
     # Check if running sweep script
     is_sweep_script = "run_wandb_sweep.py" in args.python_script_fp
+    is_inference_eval_script = "run_save_inference_eval.py" in args.python_script_fp
 
     # parse script kwargs
     script_kwargs_list = args.script_kwargs if args.script_kwargs else []
@@ -386,6 +387,12 @@ def main(args):
             custom_config_fp = value
         if key == "t" or key == "template_fp":
             config_template_fp = value
+
+    # For inference eval scripts, inject --save_dp pointing inside WORKING_DIR unless already set
+    if is_inference_eval_script:
+        has_save_dp = any(kw.split("=")[0].lstrip("-") == "save_dp" for kw in script_kwargs_list)
+        if not has_save_dp:
+            python_line += " \\\n --save_dp output/inference_eval"
 
     # parse configs    file
     config_keywords = [
@@ -528,6 +535,18 @@ def main(args):
     # add python line
     script_lines.extend(["# run python script", "cd ${WORKING_DIR}", python_line])
 
+    # copy predictions output back to project directory
+    if is_inference_eval_script:
+        dest_dp = os.path.abspath(args.inference_save_dp)
+        script_lines.extend(
+            [
+                "",
+                "# copy inference eval predictions back to local directory",
+                f"mkdir -p {dest_dp}",
+                f"rsync -av ${{WORKING_DIR}}/output/inference_eval/ {dest_dp}/",
+            ]
+        )
+
     script_lines.extend(
         ["", "# record ending", "echo `date`: Job ${SLURM_JOB_ID} finished running"]
     )
@@ -565,6 +584,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--script_dp", type=str, default="slurm_scripts")
     parser.add_argument("--job_dp", type=str, default="jobs")
+    parser.add_argument(
+        "--inference_save_dp",
+        type=str,
+        default="output/inference_eval",
+        help="Local directory to rsync inference eval predictions into after the job completes",
+    )
     parser.add_argument(
         "--python_script_fp", type=str, required=True, help="python script to run on cc"
     )

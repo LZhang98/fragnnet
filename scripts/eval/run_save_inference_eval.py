@@ -92,7 +92,7 @@ def get_args():
         nargs="+",
         default=[
             "cos_sim",  # Cosine similarity between predicted and true spectra
-            "cos_hun",  # Hungarian algorithm cosine similarity
+            # "cos_hun",  # Hungarian algorithm cosine similarity
             "cos_hun_inst_tol",  # Hungarian cosine similarity with instrument-specific tolerance
             # "true_oos_prob",  # True out-of-scope probability
             # "true_oos_e"      # True out-of-scope energy
