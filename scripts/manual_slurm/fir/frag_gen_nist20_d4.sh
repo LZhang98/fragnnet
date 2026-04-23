@@ -2,7 +2,7 @@
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
 #SBATCH --job-name=frag_gen_nist20_d4
-#SBATCH --mem=256G
+#SBATCH --mem=512G
 #SBATCH --cpus-per-task=96
 #SBATCH --time=0-2:00
 #SBATCH --mail-user=fw4@ualberta.ca
