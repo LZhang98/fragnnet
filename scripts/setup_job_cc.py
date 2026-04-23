@@ -486,8 +486,9 @@ def main(args):
             if args.python_script_fp.rsplit("/", 1)[-1] in [
                 "run_pl_model_fit.py",
                 "run_wandb_sweep.py",
+                "run_save_inference_eval.py",
             ]:
-                frag_dp = path_value.rsplit("/", 1)[0]  # this is for training setup
+                frag_dp = path_value.rsplit("/", 1)[0]  # strip /dags suffix to get parent dir
             else:
                 frag_dp = path_value
             # use tarball and then unpacks
