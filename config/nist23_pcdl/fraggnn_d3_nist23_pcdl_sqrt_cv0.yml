@@ -50,6 +50,7 @@ frag_dp: data/frag/nist23_pcdl_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAG
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
+mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -96,13 +97,6 @@ spec_params:
     - "HCD"
     - "CID"
 
-  split_filters:
-    train: {}
-    val:
-      filter_ce_by_inst:
-        FT:   {nce_min: 0, nce_max: 60}
-        QTOF: {ace_min: 0, ace_max: 40}
-    test: {}
 # ============================================================================
 # Molecule Parameters
 # ============================================================================
@@ -145,7 +139,7 @@ debug_overfit: False
 # ============================================================================
 mol_dropout: 0.1    # from fragnnet_d3/s0.yml
 frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.1    # from fragnnet_d3/s0.yml
+mlp_dropout: 0.3    # sweep: top runs favour 0.3
 weight_decay: 0.01
 
 # ============================================================================
@@ -178,13 +172,15 @@ mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
 mol_pool_type: mean
-frag_pool_type: mean
+frag_pool_type: max  # sweep: top 3 runs all use max
 upload_checkpoints: True
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
 eval_mz_bin_res:
   - 0.01
+eval_bin_sqrt: True  # use sqrt m/z bins for evaluation (but not training)
+ints_transform: sqrt  # intensity transform for evaluation metrics (sqrt or log)
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
@@ -222,5 +218,5 @@ pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
 loss_batch_size: 16              # sub-batch size for vectorized loss
           # skip auxiliary losses (entropy, edge) to save time
-log_adduct_inst_ce_metrics: True  # log separate CE histogram metrics for each adduct and instrument type
+log_adduct_inst_ce_metrics: False  # log separate CE histogram metrics for each adduct and instrument type
 num_workers: 2                   # num DataLoader workers (0 for debugging, >0 for speed), use 2 to avoid too many processes on limited CPU cores and RAM usages
