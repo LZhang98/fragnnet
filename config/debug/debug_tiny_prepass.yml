@@ -2,7 +2,6 @@ wandb_name: debug_tiny_prepass
 wandb_tags:
 - cc_test_run
 - prepass
-- mbfs
 - cmf
 - frag_mode
 - ce_scale
