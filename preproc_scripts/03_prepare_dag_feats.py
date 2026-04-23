@@ -678,7 +678,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use_lmdb",
         type=booltype,
-        default=True,
+        default=False,
         help=(
             "Whether to use LMDB to store DAGs. If False, each DAG will be saved as an "
             "individual pickle file under <frag_dp>/dags/. Default True."
