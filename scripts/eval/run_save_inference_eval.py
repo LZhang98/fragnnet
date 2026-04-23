@@ -14,7 +14,7 @@ import os
 import sys
 
 from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.script_utils import (
     apply_inference_config,
     get_ckpt_path,
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     # Early check for --list_output_options to avoid required argument validation
     from pandarallel import pandarallel
 
-    cpu_count = os.cpu_count() or 1
+    cpu_count = get_core_count()
     pandarallel.initialize(progress_bar=True, nb_workers=min(10, cpu_count))
     if "--list_output_options" in sys.argv:
         print("Available output_subset options:")
