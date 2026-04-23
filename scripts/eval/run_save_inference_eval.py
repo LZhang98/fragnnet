@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import os
+import pickle
 import sys
 
 from fragnnet.runner import init_dataloader, load_config
@@ -23,6 +24,7 @@ from fragnnet.utils.script_utils import (
     list_output_subset_options,
     prepare_output_subset,
     run_inference_hdf5,
+    run_inference_pkl,
     setup_device,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
@@ -78,6 +80,13 @@ def get_args():
         type=str,
         default="output/inference_eval",
         help="Directory to save inference evaluation results",
+    )
+    parser.add_argument(
+        "--output_format",
+        type=str,
+        default="hdf5",
+        choices=["hdf5", "pkl"],
+        help="Output file format for predictions",
     )
     parser.add_argument(
         "--list_output_options",
@@ -266,19 +275,33 @@ if __name__ == "__main__":
     print(f">>> Output set: {output_set}")
     output_save_dp = os.path.join(save_dp, args.wandb_run_id)
     os.makedirs(output_save_dp, exist_ok=True)
-    num_predict = run_inference_hdf5(
-        model,
-        dl,
-        device,
-        evaluate=True,
-        output_set=output_set,
-        batch_cutoff=args.batch_cutoff,
-        min_peak_int=args.min_peak_int,
-        return_formula_str=args.return_formula_str or args.output_everything,
-        return_cc_hash=args.return_cc_hash or args.output_everything,
-        rebase_indices=True,
-        save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5"),
-    )
+    if args.output_format == "hdf5":
+        num_predict = run_inference_hdf5(
+            model,
+            dl,
+            device,
+            evaluate=True,
+            output_set=output_set,
+            batch_cutoff=args.batch_cutoff,
+            min_peak_int=args.min_peak_int,
+            return_formula_str=args.return_formula_str or args.output_everything,
+            return_cc_hash=args.return_cc_hash or args.output_everything,
+            rebase_indices=True,
+            save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5"),
+        )
+    else:
+        results = run_inference_pkl(
+            model,
+            dl,
+            device,
+            batch_cutoff=args.batch_cutoff,
+            output_set=output_set,
+            evaluate=True,
+        )
+        out_fp = os.path.join(output_save_dp, f"predictions_{eval_split}.pkl")
+        with open(out_fp, "wb") as f:
+            pickle.dump(results, f)
+        num_predict = len(next(iter(results.values()))) if results else 0
     print(f"\n>>> Saved predictions to: {output_save_dp}")
     print(f">>> Total predictions: {num_predict}")
     print(">>> Evaluation complete!")
