@@ -299,8 +299,7 @@ class GreedyInferenceBatchSampler(BatchSampler):
 
         self._batches = batches
         logger.info(
-            f"[GreedyInferenceBatchSampler] {len(batches)} batches "
-            f"(max_{limited_by}={max_num})"
+            f"[GreedyInferenceBatchSampler] {len(batches)} batches (max_{limited_by}={max_num})"
         )
 
     def __iter__(self) -> Iterator[list[int]]:
@@ -683,7 +682,9 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 pass
         self._pre_compute_batches()
 
-    def _sample_from_group_dict(self, group_dict, active_keys, available, budget_left, take_k, per_key: int = 1):
+    def _sample_from_group_dict(
+        self, group_dict, active_keys, available, budget_left, take_k, per_key: int = 1
+    ):
         """Try to take up to `take_k` samples from group_dict (which maps key->tensor).
 
         Iterates over up to `take_k` group keys and takes up to `per_key` samples from
@@ -776,7 +777,11 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             if active_group1_keys and samples_to_take > 0:
                 k1 = min(self.sample_k1, samples_to_take)
                 taken1, budget_left = self._sample_from_group_dict(
-                    self._group1, active_group1_keys, available, budget_left, k1,
+                    self._group1,
+                    active_group1_keys,
+                    available,
+                    budget_left,
+                    k1,
                     per_key=self.sample_k1_per_key,
                 )
                 batch.extend(taken1)
@@ -790,7 +795,11 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             if active_group2_keys and samples_to_take > 0:
                 k2 = min(self.sample_k2, samples_to_take)
                 taken2, budget_left = self._sample_from_group_dict(
-                    self._group2, active_group2_keys, available, budget_left, k2,
+                    self._group2,
+                    active_group2_keys,
+                    available,
+                    budget_left,
+                    k2,
                     per_key=self.sample_k2_per_key,
                 )
                 batch.extend(taken2)
