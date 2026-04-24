@@ -198,8 +198,6 @@ def build_candidate_df(
             if smi not in map_smi_to_mol_id:
                 continue
             for _, spec_row in query_spec_rows.iterrows():
-                if np.isnan(spec_row["nce"]) and np.isnan(spec_row["ace"]):
-                    continue
                 if spec_row["spec_id"] not in candidate_spec_ids:
                     continue
                 save_e = {}
