@@ -286,9 +286,30 @@ def plot_metrics_ci(meta: pd.DataFrame, save_dp: str) -> None:
         labels.append(label)
 
     errors = [lower_iqr, upper_iqr]
-    bars = ax.bar(x_pos, medians, color=_METRIC_COLORS, alpha=0.75, edgecolor="black", linewidth=0.8)
-    ax.errorbar(x_pos, medians, yerr=errors, fmt="none", ecolor="black", capsize=5, capthick=1.5, linewidth=1.5)
-    ax.scatter(x_pos, means, color="white", s=80, zorder=5, edgecolors="black", linewidths=1.5, marker="o", label="Mean")
+    bars = ax.bar(
+        x_pos, medians, color=_METRIC_COLORS, alpha=0.75, edgecolor="black", linewidth=0.8
+    )
+    ax.errorbar(
+        x_pos,
+        medians,
+        yerr=errors,
+        fmt="none",
+        ecolor="black",
+        capsize=5,
+        capthick=1.5,
+        linewidth=1.5,
+    )
+    ax.scatter(
+        x_pos,
+        means,
+        color="white",
+        s=80,
+        zorder=5,
+        edgecolors="black",
+        linewidths=1.5,
+        marker="o",
+        label="Mean",
+    )
 
     ax.set_xlabel("Metric", fontsize=13)
     ax.set_ylabel("Score", fontsize=13)
@@ -418,15 +439,21 @@ def plot_peak_stats(
         if "spec_id" not in meta.columns:
             logger.warning("spec_id not in meta — cannot compare with ground truth")
         else:
+            # Build a dict for fast lookup instead of iterating + pandas lookup
+            spec_peaks_dict = {}
+            for _, row in spec_df.iterrows():
+                spec_id = int(row["spec_id"])
+                peaks = row["peaks"]
+                if peaks is not None and not (isinstance(peaks, float) and np.isnan(peaks)):
+                    if isinstance(peaks, (list, np.ndarray)):
+                        spec_peaks_dict[spec_id] = len(peaks)
+                    elif isinstance(peaks, str) and peaks.strip():
+                        spec_peaks_dict[spec_id] = len(peaks.strip().split("\n"))
+
             n_peaks_gt = np.zeros(len(meta), dtype=int)
-            for idx, row in meta.iterrows():
-                spec_id = row["spec_id"]
-                if spec_id in spec_df.index:
-                    gt_peaks = spec_df.loc[spec_id, "mz"]
-                    if isinstance(gt_peaks, (list, np.ndarray)):
-                        n_peaks_gt[idx] = len(gt_peaks)
-                    else:
-                        n_peaks_gt[idx] = 1 if pd.notna(gt_peaks) else 0
+            for idx, spec_id in meta["spec_id"].items():
+                n_peaks_gt[idx] = spec_peaks_dict.get(int(spec_id), 0)
+
             peak_delta = n_peaks_pred - n_peaks_gt
             over_pred = (peak_delta > 0).sum()
             under_pred = (peak_delta < 0).sum()
@@ -455,14 +482,21 @@ def plot_peak_stats(
         ax.set_xlabel("Predicted - Ground Truth (# peaks)", fontsize=11, fontweight="bold")
         ax.set_ylabel("Frequency", fontsize=11, fontweight="bold")
         stats_text = (
-            f"Over-predicted: {over_pred} ({over_pred/len(meta)*100:.1f}%)\n"
-            f"Under-predicted: {under_pred} ({under_pred/len(meta)*100:.1f}%)\n"
-            f"Exact match: {exact_match} ({exact_match/len(meta)*100:.1f}%)\n"
+            f"Over-predicted: {over_pred} ({over_pred / len(meta) * 100:.1f}%)\n"
+            f"Under-predicted: {under_pred} ({under_pred / len(meta) * 100:.1f}%)\n"
+            f"Exact match: {exact_match} ({exact_match / len(meta) * 100:.1f}%)\n"
             f"Mean delta: {peak_delta.mean():.2f}"
         )
-        ax.text(0.98, 0.97, stats_text, transform=ax.transAxes, fontsize=10,
-               verticalalignment="top", horizontalalignment="right",
-               bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8))
+        ax.text(
+            0.98,
+            0.97,
+            stats_text,
+            transform=ax.transAxes,
+            fontsize=10,
+            verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
+        )
         ax.set_title("Prediction Error Distribution", fontsize=12, fontweight="bold")
         ax.legend(loc="upper left")
         ax.spines["top"].set_visible(False)
@@ -477,7 +511,9 @@ def plot_peak_stats(
             "# peaks",
             colors_true[0],
         )
-        axes[0, 2].hist(n_peaks_pred_false, bins=80, color=colors_false[0], edgecolor="none", alpha=0.55)
+        axes[0, 2].hist(
+            n_peaks_pred_false, bins=80, color=colors_false[0], edgecolor="none", alpha=0.55
+        )
 
     # --- Row 1: intensity ---
     _hist_ax(
@@ -878,10 +914,12 @@ def _plot_ce_breakdown_grid(
     fig.patch.set_facecolor("white")
 
     # Row 0: QTOF (ACE), Row 1: FT (NCE)
-    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate([
-        ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
-        ("FT", "nce", 70, "#70AD47"),    # Green
-    ]):
+    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate(
+        [
+            ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
+            ("FT", "nce", 70, "#70AD47"),  # Green
+        ]
+    ):
         for col_idx, adduct in enumerate(adducts_all):
             ax = axes[row_idx, col_idx]
 
@@ -894,7 +932,7 @@ def _plot_ce_breakdown_grid(
                 ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
                 ax.set_xlim(0, 160)
                 ax.set_ylim(0, 1.05)
-                ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
+                ax.set_title(f"{adduct}", fontsize=12)
                 ax.spines["top"].set_visible(False)
                 ax.spines["right"].set_visible(False)
                 continue
@@ -923,7 +961,7 @@ def _plot_ce_breakdown_grid(
                 ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
                 ax.set_xlim(0, 160)
                 ax.set_ylim(0, 1.05)
-                ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
+                ax.set_title(f"{adduct}", fontsize=12)
                 continue
 
             # Ensure errors are non-negative
@@ -934,38 +972,54 @@ def _plot_ce_breakdown_grid(
 
             # Plot bars and error bars
             bin_width = 8
-            ax.bar(bin_centers, means, width=bin_width, color=color,
-                  alpha=0.7, edgecolor="black", linewidth=0.8)
-            ax.errorbar(bin_centers, means, yerr=errors, fmt="none",
-                       ecolor="black", capsize=4, linewidth=1.5)
-            ax.scatter(bin_centers, means, color="red", s=50, zorder=5,
-                      edgecolors="darkred", linewidths=1)
+            ax.bar(
+                bin_centers,
+                means,
+                width=bin_width,
+                color=color,
+                alpha=0.7,
+                edgecolor="black",
+                linewidth=0.8,
+            )
+            ax.errorbar(
+                bin_centers,
+                means,
+                yerr=errors,
+                fmt="none",
+                ecolor="black",
+                capsize=4,
+                linewidth=1.5,
+            )
+            ax.scatter(
+                bin_centers, means, color="red", s=50, zorder=5, edgecolors="darkred", linewidths=1
+            )
 
             ax.set_xlim(-5, 165)
             ax.set_ylim(0, 1.05)
-            ax.set_ylabel("Score", fontsize=11)
-            ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
+            ax.set_ylabel("Score", fontsize=10)
+            ax.set_title(f"{adduct}", fontsize=12)
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
             ax.grid(axis="y", alpha=0.2, linestyle="-")
 
             # Show x-axis on both rows
             ce_unit = "eV" if inst_type == "QTOF" else "NCE"
-            ax.set_xlabel(f"Collision Energy ({ce_unit})", fontsize=11)
+            ax.set_xlabel(f"Collision Energy ({ce_unit})", fontsize=10)
 
     # Add row labels on the left
-    fig.text(0.02, 0.75, "QTOF", fontsize=14, fontweight="bold", rotation=90, va="center")
-    fig.text(0.02, 0.25, "FT", fontsize=14, fontweight="bold", rotation=90, va="center")
+    fig.text(0.02, 0.75, "QTOF", fontsize=11, fontweight="bold", rotation=90, va="center")
+    fig.text(0.02, 0.25, "FT", fontsize=11, fontweight="bold", rotation=90, va="center")
 
-    fig.suptitle(f"{score_col} — Collision Energy Breakdown (95% CI)", fontsize=16, fontweight="bold")
+    fig.suptitle(
+        f"{score_col} — Collision Energy Breakdown (95% CI)", fontsize=13, fontweight="bold"
+    )
     fig.subplots_adjust(hspace=0.35, wspace=0.3, left=0.08)
 
-    out_fp = os.path.join(save_dp, f"ce_breakdown_bar_all.png")
+    out_fp = os.path.join(save_dp, "ce_breakdown_bar_all.png")
     fig.savefig(out_fp, dpi=150, bbox_inches="tight")
     plt.close(fig)
     logger.info(f"Saved CE breakdown grid: {out_fp}")
     print(f"Saved: {out_fp}")
-
 
 
 def _plot_ce_breakdown_violin_inst(
@@ -1104,13 +1158,21 @@ def _plot_ce_breakdown_grid_violin(
     inst_full_qtof = inst_full_qtof[inst_full_qtof["ace"] > 0]
     inst_full_qtof = inst_full_qtof[inst_full_qtof["ace"] < 50]
     qtof_ce_max = inst_full_qtof["ace"].max() + 10 if len(inst_full_qtof) > 0 else 50
-    qtof_labels, _ = _make_ce_bins(inst_full_qtof, "ace", 10, qtof_ce_max, score_col) if len(inst_full_qtof) > 0 else ([], [])
+    qtof_labels, _ = (
+        _make_ce_bins(inst_full_qtof, "ace", 10, qtof_ce_max, score_col)
+        if len(inst_full_qtof) > 0
+        else ([], [])
+    )
     qtof_n_bins = len(qtof_labels)
 
     inst_full_ft = df[(df["inst_type"] == "FT") & df["nce"].notna()]
     inst_full_ft = inst_full_ft[inst_full_ft["nce"] < 70]
     ft_ce_max = inst_full_ft["nce"].max() + 10 if len(inst_full_ft) > 0 else 70
-    ft_labels, _ = _make_ce_bins(inst_full_ft, "nce", 10, ft_ce_max, score_col) if len(inst_full_ft) > 0 else ([], [])
+    ft_labels, _ = (
+        _make_ce_bins(inst_full_ft, "nce", 10, ft_ce_max, score_col)
+        if len(inst_full_ft) > 0
+        else ([], [])
+    )
     ft_n_bins = len(ft_labels)
 
     n_bins = max(qtof_n_bins, ft_n_bins)
@@ -1121,10 +1183,12 @@ def _plot_ce_breakdown_grid_violin(
     fig.patch.set_facecolor("white")
 
     # Row 0: QTOF (ACE), Row 1: FT (NCE)
-    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate([
-        ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
-        ("FT", "nce", 70, "#70AD47"),    # Green
-    ]):
+    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate(
+        [
+            ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
+            ("FT", "nce", 70, "#70AD47"),  # Green
+        ]
+    ):
         # Compute global CE bins for this instrument type
         inst_full = df[(df["inst_type"] == inst_type) & df[ce_col].notna()]
         if ce_col == "ace":
@@ -1184,10 +1248,12 @@ def _plot_ce_breakdown_grid_violin(
     fig.text(0.02, 0.75, "QTOF", fontsize=11, fontweight="bold", rotation=90, va="center")
     fig.text(0.02, 0.25, "FT", fontsize=11, fontweight="bold", rotation=90, va="center")
 
-    fig.suptitle(f"{score_col} — Collision Energy Breakdown (Violin)", fontsize=13, fontweight="bold")
+    fig.suptitle(
+        f"{score_col} — Collision Energy Breakdown (Violin)", fontsize=13, fontweight="bold"
+    )
     fig.subplots_adjust(hspace=0.35, wspace=0.3, left=0.08)
 
-    out_fp = os.path.join(save_dp, f"ce_breakdown_violin_all.png")
+    out_fp = os.path.join(save_dp, "ce_breakdown_violin_all.png")
     fig.savefig(out_fp, dpi=150, bbox_inches="tight")
     plt.close(fig)
     logger.info(f"Saved CE breakdown violin grid: {out_fp}")
@@ -1601,8 +1667,6 @@ def plot_ce_breakdown_bar(
     )
 
 
-
-
 def plot_all_metrics_ce_summary_bar(
     meta: pd.DataFrame,
     spec_df: pd.DataFrame,
@@ -1634,10 +1698,12 @@ def plot_all_metrics_ce_summary_bar(
 
     fig, axes = plt.subplots(2, 1, figsize=(max(12, len(available_metrics) * 2), 12), squeeze=False)
 
-    for row_idx, (inst_type, ce_col, ce_label, ce_max, ce_cap) in enumerate([
-        ("QTOF", "ace", "ACE (eV)", 50, 50),
-        ("FT", "nce", "NCE (%)", 70, 70),
-    ]):
+    for row_idx, (inst_type, ce_col, ce_label, ce_max, ce_cap) in enumerate(
+        [
+            ("QTOF", "ace", "ACE (eV)", 50, 50),
+            ("FT", "nce", "NCE (%)", 70, 70),
+        ]
+    ):
         ax = axes[row_idx, 0]
         inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()].copy()
         if ce_col == "ace":
@@ -1646,8 +1712,15 @@ def plot_all_metrics_ce_summary_bar(
 
         if len(inst_df) == 0:
             logger.warning(f"No data for {inst_type}")
-            ax.text(0.5, 0.5, f"No data for {inst_type}", ha="center", va="center",
-                   transform=ax.transAxes, fontsize=12)
+            ax.text(
+                0.5,
+                0.5,
+                f"No data for {inst_type}",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=12,
+            )
             continue
 
         # Define CE bins
@@ -1834,24 +1907,28 @@ def main() -> None:
     if args.mode in ("summary", "all"):
         plot_summary(meta, save_dp)
 
-    if args.mode in ("plot_all", "peak_stats"):
+    if args.mode == "peak_stats":
         plot_peak_stats(meta, args.pred_fp, save_dp, filter_col=args.filter_col)
 
     if args.mode == "plot_all":
-        plot_summary(meta, save_dp)
-        plot_all_metrics(meta, save_dp)
-        plot_metrics_ci(meta, save_dp)
-        plot_peak_stats(meta, args.pred_fp, save_dp, filter_col=args.filter_col)
+        # Load spec_df for peak stats and CE breakdown
+        spec_df_for_peaks = None
         if args.spec_df_fp is not None:
             logger.info("Loading spec_df from %s", args.spec_df_fp)
-            spec_df = pd.read_pickle(args.spec_df_fp)
-            plot_all_metrics_ce_summary_bar(meta, spec_df, save_dp)
+            spec_df_for_peaks = pd.read_pickle(args.spec_df_fp)
+
+        # Plot peak stats with ground truth comparison
+        plot_peak_stats(meta, args.pred_fp, save_dp, filter_col=args.filter_col, spec_df=spec_df_for_peaks)
+
+        # Plot CE breakdown if spec_df available
+        if spec_df_for_peaks is not None:
             plot_ce_breakdown(
                 meta=meta,
-                spec_df=spec_df,
+                spec_df=spec_df_for_peaks,
                 score_col=args.score_col,
                 save_dp=save_dp,
             )
+
 
     if args.mode in ("ce", "spectra", "all"):
         if args.spec_df_fp is None:
