@@ -114,6 +114,17 @@ def get_args():
         default=False,
         help="Skip computation of extra loss terms",
     )
+    # To get cos_hun_inst_tol_sqrt, set --eval_sqrt True together with
+    # cos_hun_inst_tol in --auxiliary_scores.
+    parser.add_argument(
+        "--eval_sqrt",
+        type=booltype,
+        default=False,
+        help=(
+            "Apply sqrt intensity transform when computing Hungarian cosine scores. "
+            "Enables the _sqrt metric variants (e.g. cos_hun_inst_tol_sqrt)."
+        ),
+    )
     # Output control arguments
     parser.add_argument(
         "--output_subset",
@@ -237,6 +248,7 @@ if __name__ == "__main__":
         eval_batch_size=args.eval_batch_size,
         dynamic_batch_sampler=args.use_dynamic_sampler,
     )
+    config_d["eval_hun_sqrt"] = args.eval_sqrt
     if args.dynamic_sampler_max is not None:
         config_d["dynamic_batch_sampler_max"] = args.dynamic_sampler_max
     if args.dynamic_sampler_mode is not None:

@@ -340,74 +340,69 @@ def _make_ce_bins(
 
 def _violin_ax(
     ax: plt.Axes,
-    labels: list[str],
-    arrays: list[np.ndarray],
+    global_labels: list[str],
+    arrays_aligned: list[np.ndarray | None],
     title: str,
     xlabel: str,
     color: str,
     score_col: str,
+    show_xticklabels: bool = True,
+    show_xlabel: bool = True,
 ) -> None:
-    """Draw violin + IQR bar (tol range) + median dot on ax.
+    """Draw violin + IQR bar (tol range) + median/mean dots on ax.
 
-    The thick vertical bar on each violin spans Q1–Q3 (interquartile range),
-    indicating the tolerance spread of predictions for that CE bin.
+    Accepts a globally-aligned arrays list (None for bins with insufficient data)
+    so x-axis positions are consistent across all subplots sharing the same axis.
 
     Args:
         ax: Axes to draw on.
-        labels: Bin label strings for x-ticks.
-        arrays: One score array per bin.
+        global_labels: Bin label strings for every position (including empty bins).
+        arrays_aligned: Score array per bin, or None for bins with < _MIN_BIN_N spectra.
         title: Axes title.
-        xlabel: X-axis label.
+        xlabel: X-axis label (shown only when show_xlabel=True).
         color: Violin fill colour.
         score_col: Score column name (for y-axis label).
+        show_xticklabels: Whether to draw x-tick labels (False for non-bottom rows).
+        show_xlabel: Whether to draw the x-axis label (False for non-bottom rows).
     """
-    positions = list(range(1, len(labels) + 1))
-    parts = ax.violinplot(arrays, positions=positions, showmedians=False, showextrema=False)
-    for pc in parts["bodies"]:
-        pc.set_facecolor(color)
-        pc.set_alpha(0.6)
-        pc.set_edgecolor("grey")
-        pc.set_linewidth(0.5)
+    all_positions = list(range(1, len(global_labels) + 1))
+    n_total = len(global_labels)
 
-    medians = [np.median(a) for a in arrays]
-    means = [np.mean(a) for a in arrays]
-    q1s = [np.percentile(a, 25) for a in arrays]
-    q3s = [np.percentile(a, 75) for a in arrays]
-    counts = [len(a) for a in arrays]
+    _MED_COLOR = "#1a1a2e"
+    _MEAN_COLOR = "#e05c1a"
 
-    _MED_COLOR = "#1a1a2e"  # dark navy — median
-    _MEAN_COLOR = "#e05c1a"  # orange-red — mean
+    for pos, arr in zip(all_positions, arrays_aligned):
+        if arr is None or len(arr) < _MIN_BIN_N:
+            continue
 
-    # IQR bar (tol range)
-    ax.vlines(
-        positions, q1s, q3s, color=_MED_COLOR, linewidth=3.5, zorder=4, label="IQR (tol range)"
-    )
-    # Median dot
-    ax.scatter(
-        positions,
-        medians,
-        color="white",
-        s=35,
-        zorder=6,
-        edgecolors=_MED_COLOR,
-        linewidths=1.5,
-        label="Median",
-    )
-    # Mean diamond
-    ax.scatter(
-        positions,
-        means,
-        color=_MEAN_COLOR,
-        s=30,
-        zorder=6,
-        marker="D",
-        edgecolors="white",
-        linewidths=0.6,
-        label="Mean",
-    )
+        parts = ax.violinplot([arr], positions=[pos], showmedians=False, showextrema=False)
+        for pc in parts["bodies"]:
+            pc.set_facecolor(color)
+            pc.set_alpha(0.6)
+            pc.set_edgecolor("grey")
+            pc.set_linewidth(0.5)
 
-    for pos, med, mn, q1, q3, n in zip(positions, medians, means, q1s, q3s, counts):
-        # Median label above Q3
+        med = np.median(arr)
+        mn = np.mean(arr)
+        q1 = np.percentile(arr, 25)
+        q3 = np.percentile(arr, 75)
+        n = len(arr)
+
+        ax.vlines([pos], [q1], [q3], color=_MED_COLOR, linewidth=3.5, zorder=4)
+        ax.scatter(
+            [pos], [med], color="white", s=35, zorder=6, edgecolors=_MED_COLOR, linewidths=1.5
+        )
+        ax.scatter(
+            [pos],
+            [mn],
+            color=_MEAN_COLOR,
+            s=30,
+            zorder=6,
+            marker="D",
+            edgecolors="white",
+            linewidths=0.6,
+        )
+
         ax.text(
             pos - 0.3,
             q3 + 0.018,
@@ -418,7 +413,6 @@ def _violin_ax(
             color=_MED_COLOR,
             fontweight="bold",
         )
-        # Mean label — offset right to avoid overlap
         ax.text(
             pos + 0.3,
             q3 + 0.018,
@@ -429,7 +423,6 @@ def _violin_ax(
             color=_MEAN_COLOR,
             fontweight="bold",
         )
-        # IQR half-range below Q1
         ax.text(
             pos,
             q1 - 0.01,
@@ -450,15 +443,34 @@ def _violin_ax(
             transform=ax.get_xaxis_transform(),
         )
 
-    ax.set_xticks(positions)
-    ax.set_xticklabels(labels, rotation=40, ha="right", fontsize=9)
+    # Legend proxy handles
+    ax.vlines([], [], [], color=_MED_COLOR, linewidth=3.5, label="IQR (tol range)")
+    ax.scatter([], [], color="white", s=35, edgecolors=_MED_COLOR, linewidths=1.5, label="Median")
+    ax.scatter(
+        [],
+        [],
+        color=_MEAN_COLOR,
+        s=30,
+        marker="D",
+        edgecolors="white",
+        linewidths=0.6,
+        label="Mean",
+    )
+
+    ax.set_xticks(all_positions)
+    if show_xticklabels:
+        ax.set_xticklabels(global_labels, rotation=40, ha="right", fontsize=9)
+    else:
+        ax.set_xticklabels([])
+    ax.set_xlim(0.5, n_total + 0.5)
     ax.set_ylim(-0.05, 1.08)
     ax.set_ylabel(score_col, fontsize=10)
-    ax.set_xlabel(xlabel, fontsize=10)
+    if show_xlabel:
+        ax.set_xlabel(xlabel, fontsize=10)
     ax.set_title(title, fontsize=11, pad=22)
     for thresh, ls in [(0.5, "--"), (0.7, ":"), (0.9, "--")]:
         ax.axhline(thresh, color="grey", lw=0.7, ls=ls, alpha=0.55)
-        ax.text(len(labels) + 0.5, thresh, f"{thresh}", va="center", fontsize=7, color="grey")
+        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=7, color="grey")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.legend(fontsize=8, loc="lower left", ncol=3)
@@ -506,29 +518,39 @@ def _plot_inst_adduct_grid(
     ce_max = inst_df[ce_col].max() + 10
     n_rows = len(adducts)
 
-    # Width driven by number of CE bins; height 4.5 per row
-    example_labels, _ = _make_ce_bins(inst_df, ce_col, 10, ce_max, score_col)
-    n_bins = len(example_labels)
-    fig_w = max(10, n_bins * 1.05 + 2)
-    fig_h = n_rows * 5.0
+    # Global bin labels from the full inst_df (same for every adduct row)
+    global_labels, _ = _make_ce_bins(inst_df, ce_col, 10, ce_max, score_col)
+    n_bins = len(global_labels)
+    # Build lo edges for global bins so we can align per-adduct data
+    global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
 
-    fig, axes = plt.subplots(n_rows, 1, figsize=(fig_w, fig_h), squeeze=False)
+    fig_w = max(32, n_bins * 4.0 + 3)
+    fig_h = n_rows * 7.0
+
+    fig, axes = plt.subplots(n_rows, 1, figsize=(fig_w, fig_h), squeeze=False, sharex=True)
 
     for row_idx, adduct in enumerate(adducts):
         sub = inst_df[inst_df["prec_type"] == adduct]
-        labels, arrays = _make_ce_bins(sub, ce_col, 10, ce_max, score_col)
+        # Align per-adduct arrays to global positions (None where bin is empty)
+        arrays_aligned: list[np.ndarray | None] = []
+        for lo in global_lo:
+            hi = lo + 10
+            mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
+            vals = sub.loc[mask, score_col].dropna().to_numpy()
+            arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
+
         ax = axes[row_idx, 0]
-        if not arrays:
-            ax.set_visible(False)
-            continue
+        is_bottom = row_idx == n_rows - 1
         _violin_ax(
             ax,
-            labels,
-            arrays,
+            global_labels,
+            arrays_aligned,
             title=f"{inst_type} · {adduct}  [n={len(sub):,}]",
             xlabel=ce_label,
             color=color,
             score_col=score_col,
+            show_xticklabels=is_bottom,
+            show_xlabel=is_bottom,
         )
 
     fig.suptitle(
@@ -536,7 +558,7 @@ def _plot_inst_adduct_grid(
         fontsize=13,
         y=1.005,
     )
-    fig.tight_layout(h_pad=3.5)
+    fig.subplots_adjust(hspace=0.08)
     fname = f"ce_breakdown_{inst_type.lower()}_violin.png"
     out_fp = os.path.join(save_dp, fname)
     fig.savefig(out_fp, dpi=150, bbox_inches="tight")

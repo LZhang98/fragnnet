@@ -1099,6 +1099,7 @@ def run_inference_hdf5(
     num_pred = 0
     num_batch = len(dataloader)
     preds_l = {}
+    filter_stats: dict = {}
 
     spec_start_point = 0
     start_point = 0
@@ -1140,6 +1141,7 @@ def run_inference_hdf5(
             return_formula_str=return_formula_str,
             return_cc_hash=return_cc_hash,
             rebase_indices=rebase_indices,
+            filter_stats=filter_stats if min_peak_int > 0 else None,
         ):
             num_pred += 1
             assert len(batch_rows) == len(columns_name)
@@ -1182,6 +1184,18 @@ def run_inference_hdf5(
                 start_point += len(preds_l["pred_mzs"])
                 del preds_l
                 preds_l = {}
+    if filter_stats:
+        n_before = filter_stats.get("n_peaks_before", 0)
+        n_after = filter_stats.get("n_peaks_after", 0)
+        n_inst_filt = filter_stats.get("n_inst_filtered", 0)
+        n_inst_total = filter_stats.get("n_inst_total", 0)
+        pct_peaks = 100.0 * (n_before - n_after) / n_before if n_before > 0 else 0.0
+        pct_inst = 100.0 * n_inst_filt / n_inst_total if n_inst_total > 0 else 0.0
+        print(
+            f">>> Peak filter stats (min_peak_int={min_peak_int}):\n"
+            f"    Peaks before: {n_before:,}  after: {n_after:,}  removed: {n_before - n_after:,} ({pct_peaks:.1f}%)\n"
+            f"    Instances filtered: {n_inst_filt:,} / {n_inst_total:,} ({pct_inst:.1f}%)"
+        )
     return num_pred
 
 
@@ -1197,6 +1211,7 @@ def run_inference_tabular_iter(
     return_formula_str: bool = False,
     return_cc_hash: bool = False,
     rebase_indices: bool = True,
+    filter_stats: dict | None = None,
 ):
     """
     Generator that yields batch results for streaming inference processing.
@@ -1215,6 +1230,8 @@ def run_inference_tabular_iter(
             min_peak_int: Minimum peak intensity threshold
             return_formula_and_cc: Whether to return formula strings and CCs
             rebase_indices: Whether to rebase indices
+            filter_stats: Optional mutable dict to accumulate peak-filtering statistics
+                (n_peaks_before, n_peaks_after, n_inst_filtered, n_inst_total).
 
     Yields:
             List of data rows for each batch
@@ -1262,6 +1279,7 @@ def run_inference_tabular_iter(
                 rebase_indices=rebase_indices,
                 return_formula_str=return_formula_str,
                 return_cc_hash=return_cc_hash,
+                filter_stats=filter_stats,
             )
             yield batch_rows
 
@@ -1291,6 +1309,7 @@ def process_batch_to_tabular_row(
     rebase_indices: bool,
     return_formula_str: bool,
     return_cc_hash: bool,
+    filter_stats: dict | None = None,
 ) -> list:
     """Process a single batch and return list of data rows.
 
@@ -1425,6 +1444,7 @@ def process_batch_to_tabular_row(
         None if pred_node_batch_idxs is None else th.exp(batch_result.get("pred_node_logprobs")),
         None if pred_node_batch_idxs is None else batch_result.get("pred_node_node_idxs"),
         verbose=False,
+        filter_stats=filter_stats,
     )
     numpy_pred_oos_probs = (
         pred_oos_probs.detach().cpu().numpy() if pred_oos_probs is not None else None
@@ -1829,6 +1849,7 @@ def batch_filter_by_peak_intensity(
     pred_node_probs: th.Tensor | None = None,
     pred_node_node_idxs: th.Tensor | None = None,
     verbose: bool = False,
+    filter_stats: dict | None = None,
 ) -> tuple[
     th.Tensor,
     th.Tensor,
@@ -1898,6 +1919,7 @@ def batch_filter_by_peak_intensity(
         [pred_peak_in_each_batch_cumsum.new_zeros(1), pred_peak_in_each_batch_cumsum], 0
     )
     if min_peak_int > 0 and frag_formula_peak_idxs is not None:
+        n_peaks_before = len(pred_ints)
         valid_peak_mask = pred_ints > min_peak_int
         # Filter peaks themselves
         pred_ints = pred_ints[valid_peak_mask]
@@ -1908,6 +1930,18 @@ def batch_filter_by_peak_intensity(
         valid_pred_batch_idx = pred_batch_idxs[valid_peak_mask]
         if frag_formula_peak_mzs is not None:  # Only if frag_formula_peak_mzs is available
             frag_formula_peak_mzs = frag_formula_peak_mzs[valid_peak_mask]
+
+        if filter_stats is not None:
+            n_peaks_after = int(valid_peak_mask.sum().item())
+            batch_size_local = int(pred_batch_idxs.max().item()) + 1 if len(pred_batch_idxs) > 0 else 0
+            before_counts = th.bincount(pred_batch_idxs, minlength=batch_size_local)
+            after_counts = th.bincount(valid_pred_batch_idx, minlength=batch_size_local)
+            filter_stats["n_peaks_before"] = filter_stats.get("n_peaks_before", 0) + n_peaks_before
+            filter_stats["n_peaks_after"] = filter_stats.get("n_peaks_after", 0) + n_peaks_after
+            filter_stats["n_inst_filtered"] = filter_stats.get("n_inst_filtered", 0) + int(
+                (before_counts != after_counts).sum().item()
+            )
+            filter_stats["n_inst_total"] = filter_stats.get("n_inst_total", 0) + batch_size_local
 
         # Map local formula indices (0..N_formulas_in_mol) to global formula indices (if available)
         # b_pred_formula_formula_idxs contains the global indices for the formulas in this molecule
