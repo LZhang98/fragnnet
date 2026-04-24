@@ -96,6 +96,9 @@ def get_pred_spectrum(f: h5py.File, row: pd.Series) -> tuple[np.ndarray, np.ndar
 _METRICS = [
     ("cos_sim_0.01", "Cosine Similarity (tol=0.01 Da)"),
     ("cos_hun_inst_tol", "Hungarian Cosine (instrument tol)"),
+    ("cos_hun_inst_tol_sqrt", "Hungarian Cosine Sqrt (instrument tol)"),
+    ("jss_hun_inst_tol", "Hungarian JSS (instrument tol)"),
+    ("jss_hun_inst_tol_sqrt", "Hungarian JSS Sqrt (instrument tol)"),
 ]
 
 
