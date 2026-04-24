@@ -58,6 +58,7 @@ plt.rcParams.update(
 
 COS_BINS = [0, 0.5, 0.7, 0.85, 0.9, 0.95, 1.001]
 COS_LABELS = ["<0.50", "0.50–0.70", "0.70–0.85", "0.85–0.90", "0.90–0.95", "≥0.95"]
+PCDL_DSET = "pcdl"
 NIST_DSET = "nist20_hr"
 MONA_DSET = "mona23"
 
@@ -68,18 +69,72 @@ def bin_cos(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _normalize_sources(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize source labels to explicit values used by the report logic.
+
+    The report expects three source labels:
+    - pcdl (PCDL side)
+    - nist20_hr (NIST20-HR side)
+    - mona23 (MoNA side)
+    """
+    out = df.copy()
+
+    pcdl_source = out["pcdl_dset"].astype(str).str.strip().str.lower()
+    if not pcdl_source.eq(PCDL_DSET).all():
+        bad = sorted(set(pcdl_source[~pcdl_source.eq(PCDL_DSET)]))
+        raise ValueError(
+            f"Unexpected PCDL source(s) in pcdl_dset: {bad}. Expected only '{PCDL_DSET}'."
+        )
+    out["pcdl_source"] = pcdl_source
+
+    nist_dset = out["nist_dset"].astype(str).str.strip().str.lower()
+    nist_spec = out["nist_dset_spec_id"].astype(str).str.strip().str.lower()
+
+    nist_source = pd.Series("", index=out.index, dtype="object")
+    nist_source = nist_source.mask(nist_dset.eq(NIST_DSET), NIST_DSET)
+    nist_source = nist_source.mask(nist_dset.eq(MONA_DSET), MONA_DSET)
+
+    # Backward compatibility for legacy labels and ID-prefixed records.
+    nist_source = nist_source.mask(nist_source.eq("") & nist_dset.eq("nist20"), NIST_DSET)
+    nist_source = nist_source.mask(
+        nist_source.eq("") & nist_spec.str.startswith(NIST_DSET), NIST_DSET
+    )
+    nist_source = nist_source.mask(
+        nist_source.eq("") & nist_spec.str.startswith(MONA_DSET), MONA_DSET
+    )
+
+    unknown = sorted(set(nist_dset[nist_source.eq("")]))
+    if unknown:
+        raise ValueError(
+            "Could not map nist source labels to expected values "
+            f"('{NIST_DSET}' or '{MONA_DSET}'). Unknown labels: {unknown}."
+        )
+
+    out["nist_source"] = nist_source
+    return out
+
+
 # ── load data ────────────────────────────────────────────────────────────────
 df_all = pd.read_csv(MAIN_CSV)  # unfiltered – used only for mirror plot metadata
+df_all = _normalize_sources(df_all)
 
-mona_mask_all = df_all["nist_dset_spec_id"].astype(str).str.lower().str.startswith(MONA_DSET)
-nist_mask_all = df_all["nist_dset_spec_id"].astype(str).str.lower().str.startswith(NIST_DSET)
+mona_mask_all = df_all["nist_source"].eq(MONA_DSET) & df_all["pcdl_source"].eq(PCDL_DSET)
+nist_mask_all = df_all["nist_source"].eq(NIST_DSET) & df_all["pcdl_source"].eq(PCDL_DSET)
 mona_pcdl_ids = set(df_all.loc[mona_mask_all, "pcdl_spec_id"])
 
 df = df_all.loc[nist_mask_all].reset_index(drop=True)
 df = bin_cos(df)
-worst = pd.read_csv(WORST)
+
+# Load or create worst_100
+if WORST.exists():
+    worst = pd.read_csv(WORST)
+    worst = _normalize_sources(worst)
+else:
+    # Create worst_100 from NIST vs PCDL data (non-MoNA)
+    worst = df_all.loc[nist_mask_all].nsmallest(100, "best_cos")
+
 worst = worst.loc[
-    worst["nist_dset_spec_id"].astype(str).str.lower().str.startswith(NIST_DSET)
+    worst["nist_source"].eq(NIST_DSET) & worst["pcdl_source"].eq(PCDL_DSET)
 ].reset_index(drop=True)
 n_total = len(df)
 
@@ -978,8 +1033,12 @@ def make_mirror_plot_pages(pdf: PdfPages) -> None:
     from matplotlib.image import imread
 
     mirror_dir = DATA_DIR / "mirror_plots"
+    if not mirror_dir.exists():
+        print("    [mirror_plots directory not found, skipping mirror plot pages]")
+        return
     all_pngs = sorted(mirror_dir.glob("*.png"))
-    # exclude MoNA-sourced mirror plots from this section
+    if not all_pngs:
+        return
     pngs = [
         p
         for p in all_pngs
@@ -1001,7 +1060,7 @@ def make_mirror_plot_pages(pdf: PdfPages) -> None:
         batch = pngs[page_idx * per_page : (page_idx + 1) * per_page]
         fig = plt.figure(figsize=(8.5, 11))
         fig.suptitle(
-            f"Mirror Plots – Bad Matches  "
+            f"NIST vs PCDL – Bad Matches  "
             f"[{page_idx * per_page + 1}–{min((page_idx + 1) * per_page, len(pngs))} of {len(pngs)}]",
             fontsize=11,
             fontweight="bold",
@@ -1036,7 +1095,7 @@ def make_mirror_plot_pages(pdf: PdfPages) -> None:
                 pcdl_id_int = int(pcdl_id)
 
                 # pull row from CSV
-                meta_lines = [f"#{idx_str}  PCDL spec {pcdl_id}  ↔  NIST20 spec {nist_id}"]
+                meta_lines = [f"#{idx_str}  NIST20 spec {nist_id}  ↔  PCDL spec {pcdl_id}"]
                 if pcdl_id_int in lookup.index:
                     row = lookup.loc[pcdl_id_int]
                     # some pcdl_spec_ids may appear multiple times (different CE); take first
@@ -1089,7 +1148,12 @@ def make_pcdl_vs_mona_pages(pdf: PdfPages) -> None:
     from matplotlib.image import imread
 
     mirror_dir = DATA_DIR / "mirror_plots"
+    if not mirror_dir.exists():
+        print("    [mirror_plots directory not found, skipping NIST vs MoNA mirror plot pages]")
+        return
     all_pngs = sorted(mirror_dir.glob("*.png"))
+    if not all_pngs:
+        return
     pngs = [
         p
         for p in all_pngs
@@ -1103,7 +1167,7 @@ def make_pcdl_vs_mona_pages(pdf: PdfPages) -> None:
 
     # lookup using unfiltered df_all for MoNA rows
     lookup = df_all[
-        df_all["nist_dset_spec_id"].astype(str).str.lower().str.startswith(MONA_DSET)
+        df_all["nist_source"].eq(MONA_DSET) & df_all["pcdl_source"].eq(PCDL_DSET)
     ].set_index("pcdl_spec_id")
 
     per_page = 2
@@ -1113,7 +1177,7 @@ def make_pcdl_vs_mona_pages(pdf: PdfPages) -> None:
         batch = pngs[page_idx * per_page : (page_idx + 1) * per_page]
         fig = plt.figure(figsize=(8.5, 11))
         fig.suptitle(
-            f"PCDL vs MoNA – Bad Matches  "
+            f"NIST vs MoNA – Bad Matches  "
             f"[{page_idx * per_page + 1}–{min((page_idx + 1) * per_page, len(pngs))} of {len(pngs)}]",
             fontsize=11,
             fontweight="bold",
@@ -1139,7 +1203,7 @@ def make_pcdl_vs_mona_pages(pdf: PdfPages) -> None:
             if m:
                 idx_str, cos_str, pcdl_id, nist_id = m.groups()
                 pcdl_id_int = int(pcdl_id)
-                meta_lines = [f"#{idx_str}  PCDL spec {pcdl_id}  ↔  MoNA/NIST20 spec {nist_id}"]
+                meta_lines = [f"#{idx_str}  NIST20 spec {nist_id}  ↔  MoNA spec {pcdl_id}"]
                 if pcdl_id_int in lookup.index:
                     row = lookup.loc[pcdl_id_int]
                     if isinstance(row, pd.DataFrame):
@@ -1177,7 +1241,7 @@ def make_pcdl_vs_mona_pages(pdf: PdfPages) -> None:
 
         pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
-        print(f"    PCDL vs MoNA page {page_idx + 1}/{n_pages}")
+        print(f"    NIST vs MoNA page {page_idx + 1}/{n_pages}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1204,9 +1268,9 @@ def main() -> None:
         make_page_bad_matches(pdf)
         print("  [6/6] Bad match deep-dive")
         make_mirror_plot_pages(pdf)
-        print("  [7/8] Mirror plots (non-MoNA)")
+        print("  [7/8] Mirror plots (NIST vs PCDL)")
         make_pcdl_vs_mona_pages(pdf)
-        print("  [8/8] PCDL vs MoNA mirror plots")
+        print("  [8/8] Mirror plots (NIST vs MoNA)")
 
     print(f"\nDone. PDF saved to:\n  {OUT_PDF}")
 
