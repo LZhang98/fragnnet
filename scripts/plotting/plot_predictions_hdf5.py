@@ -706,36 +706,6 @@ def _violin_ax(
             linewidths=0.6,
         )
 
-        ax.text(
-            pos - 0.3,
-            q3 + 0.018,
-            f"{med:.2f}",
-            ha="center",
-            va="bottom",
-            fontsize=13,
-            color=_MED_COLOR,
-            fontweight="bold",
-        )
-        ax.text(
-            pos + 0.3,
-            q3 + 0.018,
-            f"{mn:.2f}",
-            ha="center",
-            va="bottom",
-            fontsize=13,
-            color=_MEAN_COLOR,
-            fontweight="bold",
-        )
-        ax.text(
-            pos,
-            q1 - 0.01,
-            f"±{(q3 - q1) / 2:.2f}",
-            ha="center",
-            va="top",
-            fontsize=11,
-            color="#555555",
-        )
-
     # Legend proxy handles
     ax.vlines([], [], [], color=_MED_COLOR, linewidth=3.5, label="IQR (tol range)")
     ax.scatter([], [], color="white", s=35, edgecolors=_MED_COLOR, linewidths=1.5, label="Median")
@@ -788,6 +758,268 @@ def _violin_ax(
     ax.spines["bottom"].set_linewidth(0.8)
     ax.grid(axis="y", alpha=0.2, linestyle="-", linewidth=0.5)
     ax.legend(fontsize=11, loc="lower left", ncol=3, framealpha=0.95, edgecolor="grey")
+
+
+def _plot_ce_breakdown_grid(
+    joined: pd.DataFrame,
+    score_col: str,
+    save_dp: str,
+) -> None:
+    """Plot CE breakdown bars as grid: QTOF (ACE) in row 0, FT (NCE) in row 1.
+
+    Creates a single figure with 2 rows (QTOF and FT) and columns for each adduct.
+    Both rows show x-axis with their respective units.
+
+    Args:
+        joined: DataFrame with score_col, inst_type, prec_type, ace, nce.
+        score_col: Score column to plot.
+        save_dp: Output directory.
+    """
+    df = joined[[score_col, "inst_type", "prec_type", "ace", "nce"]].copy()
+
+    # Get adducts across all inst types
+    adducts_all = (
+        df.groupby("prec_type")[score_col]
+        .count()
+        .loc[lambda s: s >= _MIN_BIN_N]
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    if not adducts_all:
+        logger.warning("No adducts with enough data")
+        return
+
+    n_adducts = len(adducts_all)
+    n_rows = 2  # QTOF and FT
+
+    fig, axes = plt.subplots(n_rows, n_adducts, figsize=(6 * n_adducts, 5 * n_rows), squeeze=False)
+    fig.patch.set_facecolor("white")
+
+    # Row 0: QTOF (ACE), Row 1: FT (NCE)
+    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate([
+        ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
+        ("FT", "nce", 70, "#70AD47"),    # Green
+    ]):
+        for col_idx, adduct in enumerate(adducts_all):
+            ax = axes[row_idx, col_idx]
+
+            sub = df[(df["prec_type"] == adduct) & (df["inst_type"] == inst_type)].copy()
+            if ce_col == "ace":
+                sub = sub[sub[ce_col] > 0]
+            sub = sub[sub[ce_col] < ce_cap]
+
+            if len(sub) < _MIN_BIN_N:
+                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+                ax.set_xlim(0, 160)
+                ax.set_ylim(0, 1.05)
+                ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
+                continue
+
+            ce_max = sub[ce_col].max() + 10
+            bin_edges = list(range(0, int(ce_max), 10))
+
+            means = []
+            lows = []
+            highs = []
+            bin_centers = []
+
+            for lo in bin_edges[:-1]:
+                hi = lo + 10
+                mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
+                vals = sub.loc[mask, score_col].dropna().to_numpy()
+                if len(vals) >= _MIN_BIN_N:
+                    mean = np.mean(vals)
+                    lo_ci, hi_ci = _ci_95(vals)
+                    means.append(mean)
+                    lows.append(lo_ci)
+                    highs.append(hi_ci)
+                    bin_centers.append((lo + hi) / 2)
+
+            if len(means) == 0:
+                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+                ax.set_xlim(0, 160)
+                ax.set_ylim(0, 1.05)
+                ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
+                continue
+
+            # Ensure errors are non-negative
+            errors = [
+                np.maximum(np.array(means) - np.array(lows), 0),
+                np.maximum(np.array(highs) - np.array(means), 0),
+            ]
+
+            # Plot bars and error bars
+            bin_width = 8
+            ax.bar(bin_centers, means, width=bin_width, color=color,
+                  alpha=0.7, edgecolor="black", linewidth=0.8)
+            ax.errorbar(bin_centers, means, yerr=errors, fmt="none",
+                       ecolor="black", capsize=4, linewidth=1.5)
+            ax.scatter(bin_centers, means, color="red", s=50, zorder=5,
+                      edgecolors="darkred", linewidths=1)
+
+            ax.set_xlim(-5, 165)
+            ax.set_ylim(0, 1.05)
+            ax.set_ylabel("Score", fontsize=11)
+            ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            ax.grid(axis="y", alpha=0.2, linestyle="-")
+
+            # Show x-axis on both rows
+            ce_unit = "eV" if inst_type == "QTOF" else "NCE"
+            ax.set_xlabel(f"Collision Energy ({ce_unit})", fontsize=11)
+
+    # Add row labels on the left
+    fig.text(0.02, 0.75, "QTOF", fontsize=14, fontweight="bold", rotation=90, va="center")
+    fig.text(0.02, 0.25, "FT", fontsize=14, fontweight="bold", rotation=90, va="center")
+
+    fig.suptitle(f"{score_col} — Collision Energy Breakdown (95% CI)", fontsize=16, fontweight="bold")
+    fig.subplots_adjust(hspace=0.35, wspace=0.3, left=0.08)
+
+    out_fp = os.path.join(save_dp, f"ce_breakdown_bar_all.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved CE breakdown grid: {out_fp}")
+    print(f"Saved: {out_fp}")
+
+
+
+def _plot_ce_breakdown_violin_inst(
+    df: pd.DataFrame,
+    inst_type: str,
+    ce_col: str,
+    ce_cap: float,
+    color: str,
+    adducts_all: list[str],
+    score_col: str,
+    save_dp: str,
+) -> None:
+    """Plot CE breakdown violins for one instrument type (QTOF or FT) with adducts as columns.
+
+    Args:
+        df: DataFrame with score_col, inst_type, prec_type, ce_col.
+        inst_type: Instrument type ('QTOF' or 'FT').
+        ce_col: CE column to bin by ('ace' or 'nce').
+        ce_cap: Upper limit for CE values.
+        color: Violin fill colour.
+        adducts_all: List of adduct types to plot as columns.
+        score_col: Score column to plot.
+        save_dp: Output directory.
+    """
+    # Compute global CE bins for this instrument type
+    inst_full = df[(df["inst_type"] == inst_type) & df[ce_col].notna()]
+    if ce_col == "ace":
+        inst_full = inst_full[inst_full[ce_col] > 0]
+    inst_full = inst_full[inst_full[ce_col] < ce_cap]
+
+    if len(inst_full) == 0:
+        logger.warning(f"No data for {inst_type}")
+        return
+
+    ce_max = inst_full[ce_col].max() + 10
+    global_labels, _ = _make_ce_bins(inst_full, ce_col, 10, ce_max, score_col)
+    global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
+    n_bins = len(global_labels)
+
+    n_cols = len(adducts_all)
+    fig_w = max(36, n_bins * 4.5 + 4)
+    fig_h = 7
+
+    fig, axes = plt.subplots(1, n_cols, figsize=(fig_w / n_cols * n_cols, fig_h), squeeze=False)
+    fig.patch.set_facecolor("white")
+
+    for col_idx, adduct in enumerate(adducts_all):
+        ax = axes[0, col_idx]
+
+        sub = df[(df["prec_type"] == adduct) & (df["inst_type"] == inst_type)].copy()
+        if ce_col == "ace":
+            sub = sub[sub[ce_col] > 0]
+        sub = sub[sub[ce_col] < ce_cap]
+
+        if len(sub) < _MIN_BIN_N:
+            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+            ax.set_xlim(0.5, len(global_labels) + 0.5)
+            ax.set_ylim(0, 1.05)
+            ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+            continue
+
+        # Align per-adduct arrays to global positions
+        arrays_aligned: list[np.ndarray | None] = []
+        for lo in global_lo:
+            hi = lo + 10
+            mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
+            vals = sub.loc[mask, score_col].dropna().to_numpy()
+            arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
+
+        ce_unit = "eV" if inst_type == "QTOF" else "NCE"
+        _violin_ax(
+            ax,
+            global_labels,
+            arrays_aligned,
+            title=f"{adduct}  [n={len(sub):,}]",
+            xlabel=f"Collision Energy ({ce_unit})",
+            color=color,
+            score_col=score_col,
+            show_xticklabels=True,
+            show_xlabel=True,
+        )
+
+    ce_unit = "eV" if inst_type == "QTOF" else "NCE"
+    fig.suptitle(
+        f"{score_col} — {inst_type} Collision Energy Breakdown (Violin, {ce_unit})",
+        fontsize=16,
+        fontweight="bold",
+        y=1.005,
+    )
+    fig.subplots_adjust(hspace=0.35, wspace=0.3)
+
+    fname = f"ce_breakdown_violin_{inst_type.lower()}.png"
+    out_fp = os.path.join(save_dp, fname)
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved CE breakdown violin plot for {inst_type}: {out_fp}")
+    print(f"Saved: {out_fp}")
+
+
+def _plot_ce_breakdown_grid_violin(
+    joined: pd.DataFrame,
+    score_col: str,
+    save_dp: str,
+) -> None:
+    """Plot CE breakdown violins as two separate subplots: QTOF (ACE) and FT (NCE).
+
+    Creates two figures, one for each instrument type, with adducts as columns.
+    Shows violin plots for CE bins with median (white dot) and mean (orange diamond).
+
+    Args:
+        joined: DataFrame with score_col, inst_type, prec_type, ace, nce.
+        score_col: Score column to plot.
+        save_dp: Output directory.
+    """
+    df = joined[[score_col, "inst_type", "prec_type", "ace", "nce"]].copy()
+
+    # Get adducts across all inst types
+    adducts_all = (
+        df.groupby("prec_type")[score_col]
+        .count()
+        .loc[lambda s: s >= _MIN_BIN_N]
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    if not adducts_all:
+        logger.warning("No adducts with enough data")
+        return
+
+    # Plot QTOF and FT as separate subplots
+    for inst_type, ce_col, ce_cap, color in [
+        ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
+        ("FT", "nce", 70, "#70AD47"),    # Green
+    ]:
+        _plot_ce_breakdown_violin_inst(df, inst_type, ce_col, ce_cap, color, adducts_all, score_col, save_dp)
 
 
 def _plot_inst_adduct_grid(
@@ -889,11 +1121,11 @@ def plot_ce_breakdown(
     score_col: str,
     save_dp: str,
 ) -> None:
-    """Plot score violin plots broken down by CE bin, adduct and instrument type.
+    """Plot CE breakdown bar charts with 95% CI, merging QTOF (ACE) and FT (NCE).
 
-    Produces two figures: one for QTOF (ACE bins) and one for FT (NCE bins).
-    Each figure has one row per adduct type. The IQR bar on each violin shows
-    the tolerance spread (tol range) of predictions for that CE bin.
+    Creates a single figure showing bars for each CE bin with 95% confidence interval
+    error bars and mean points, organized in a grid by adduct type.
+    QTOF bars are blue, FT bars are green.
 
     Args:
         meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
@@ -912,10 +1144,8 @@ def plot_ce_breakdown(
         how="left",
     )
 
-    _plot_inst_adduct_grid(
-        joined, "QTOF", "ace", "ACE (eV)", "#4878CF", score_col, save_dp, ce_cap=50
-    )
-    _plot_inst_adduct_grid(joined, "FT", "nce", "NCE (%)", "#6ACC65", score_col, save_dp, ce_cap=70)
+    _plot_ce_breakdown_grid(joined, score_col, save_dp)
+    _plot_ce_breakdown_grid_violin(joined, score_col, save_dp)
 
 
 # ---------------------------------------------------------------------------
