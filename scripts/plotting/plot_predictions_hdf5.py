@@ -157,6 +157,98 @@ def plot_summary(meta: pd.DataFrame, save_dp: str) -> None:
     print(f"Saved: {out_fp}")
 
 
+_METRIC_COLORS = ["#4878CF", "#e05c1a", "#6ACC65", "#8B6BB1", "#D65F5F"]
+
+
+def plot_all_metrics(meta: pd.DataFrame, save_dp: str) -> None:
+    """Create a single overview figure with all available metrics.
+
+    Layout (4-column grid throughout):
+    - CDF rows: one subplot per metric, 4 per row, with threshold annotations.
+    - Histogram rows: one subplot per metric, 4 per row, median/mean lines.
+
+    Args:
+        meta: DataFrame from load_hdf5_meta.
+        save_dp: Directory to save figures.
+    """
+    os.makedirs(save_dp, exist_ok=True)
+    available_metrics = [(k, label) for k, label in _METRICS if k in meta.columns]
+    if not available_metrics:
+        logger.warning("No score metrics found in HDF5.")
+        return
+
+    n = len(available_metrics)
+    n_cols = 4
+    n_rows_per_section = (n + n_cols - 1) // n_cols
+    n_rows_total = 2 * n_rows_per_section  # CDF section + histogram section
+
+    fig, axes = plt.subplots(
+        n_rows_total,
+        n_cols,
+        figsize=(6 * n_cols, 5 * n_rows_total),
+        squeeze=False,
+    )
+    fig.subplots_adjust(hspace=0.55, wspace=0.35)
+
+    # --- CDF subplots (top section) ---
+    for idx, ((key, label), color) in enumerate(zip(available_metrics, _METRIC_COLORS)):
+        row, col = divmod(idx, n_cols)
+        ax = axes[row, col]
+        vals = meta[key].dropna().to_numpy()
+        sorted_vals = np.sort(vals)
+        cdf = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+        med = np.median(vals)
+        mn = np.mean(vals)
+        ax.plot(sorted_vals, cdf, color=color, lw=2.0)
+        for thresh in (0.5, 0.7, 0.9):
+            frac = np.mean(vals >= thresh)
+            ax.axvline(thresh, color="grey", lw=0.8, ls="--", alpha=0.6)
+            ax.text(thresh + 0.004, 0.04, f"≥{thresh:.1f}:{frac:.1%}", fontsize=8, color="grey")
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.set_xlabel("Score", fontsize=11)
+        ax.set_ylabel("CDF", fontsize=11)
+        ax.set_title(f"{label}\nmed={med:.3f}  mean={mn:.3f}", fontsize=12, pad=6)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    # Hide unused CDF cells
+    for idx in range(n, n_rows_per_section * n_cols):
+        row, col = divmod(idx, n_cols)
+        axes[row, col].set_visible(False)
+
+    # --- Histogram subplots (bottom section) ---
+    for idx, ((key, label), color) in enumerate(zip(available_metrics, _METRIC_COLORS)):
+        row = n_rows_per_section + idx // n_cols
+        col = idx % n_cols
+        ax = axes[row, col]
+        vals = meta[key].dropna().to_numpy()
+        med = np.median(vals)
+        mn = np.mean(vals)
+        ax.hist(vals, bins=80, color=color, edgecolor="none", alpha=0.75)
+        ax.axvline(med, color="black", lw=1.5, label=f"med={med:.3f}")
+        ax.axvline(mn, color="white", lw=1.5, ls="--", label=f"mean={mn:.3f}")
+        ax.set_xlabel("Score", fontsize=11)
+        ax.set_ylabel("Count", fontsize=11)
+        ax.set_title(label, fontsize=12, pad=6)
+        ax.legend(fontsize=9)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    # Hide unused histogram cells
+    for idx in range(n, n_rows_per_section * n_cols):
+        row = n_rows_per_section + idx // n_cols
+        col = idx % n_cols
+        axes[row, col].set_visible(False)
+
+    fig.suptitle("All Metrics Overview", fontsize=20, y=1.01)
+    out_fp = os.path.join(save_dp, "all_metrics_overview.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved all-metrics plot: %s", out_fp)
+    print(f"Saved: {out_fp}")
+
+
 # ---------------------------------------------------------------------------
 # Mirror spectrum plot
 # ---------------------------------------------------------------------------
@@ -643,9 +735,9 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["summary", "ce", "spectra", "all"],
+        choices=["summary", "ce", "spectra", "all", "plot_all"],
         default="summary",
-        help="What to plot (ce requires --spec_df_fp)",
+        help="What to plot (ce/all requires --spec_df_fp; plot_all = summary + 4-col CDF/hist overview)",
     )
     parser.add_argument(
         "--select",
@@ -681,6 +773,10 @@ def main() -> None:
 
     if args.mode in ("summary", "all"):
         plot_summary(meta, save_dp)
+
+    if args.mode == "plot_all":
+        plot_summary(meta, save_dp)
+        plot_all_metrics(meta, save_dp)
 
     if args.mode in ("ce", "spectra", "all"):
         if args.spec_df_fp is None:
