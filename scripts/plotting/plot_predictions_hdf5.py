@@ -37,6 +37,7 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy import stats
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
@@ -365,12 +366,12 @@ def plot_peak_stats(
             "# peaks",
             colors_true[0],
         )
-        axes[0, 2].hist(
-            n_peaks_false, bins=80, color=colors_false[0], edgecolor="none", alpha=0.55
-        )
+        axes[0, 2].hist(n_peaks_false, bins=80, color=colors_false[0], edgecolor="none", alpha=0.55)
 
     # --- Row 1: intensity ---
-    _hist_ax(axes[1, 0], all_ints, "Intensity — all peaks", "Intensity", colors_all[1], log_scale=True)
+    _hist_ax(
+        axes[1, 0], all_ints, "Intensity — all peaks", "Intensity", colors_all[1], log_scale=True
+    )
     _cdf_ax(axes[1, 1], all_ints, "Intensity CDF — all peaks", "Intensity", colors_all[1])
     if has_filter:
         _hist_ax(
@@ -381,7 +382,9 @@ def plot_peak_stats(
             colors_true[1],
             log_scale=True,
         )
-        axes[1, 2].hist(ints_false, bins=80, color=colors_false[1], edgecolor="none", alpha=0.55, log=True)
+        axes[1, 2].hist(
+            ints_false, bins=80, color=colors_false[1], edgecolor="none", alpha=0.55, log=True
+        )
 
     filter_note = f" (split by {filter_col})" if has_filter else ""
     fig.suptitle(f"Peak Count & Intensity Stats{filter_note}", fontsize=18, y=1.01)
@@ -856,6 +859,287 @@ def plot_ce_breakdown(
 
 
 # ---------------------------------------------------------------------------
+# Bar plots with 95% confidence intervals
+# ---------------------------------------------------------------------------
+
+
+def _ci_95(arr: np.ndarray) -> tuple[float, float]:
+    """Compute 95% confidence interval for the mean.
+
+    Args:
+        arr: Array of values.
+
+    Returns:
+        Tuple of (lower_bound, upper_bound) for the 95% CI.
+    """
+    if len(arr) < 2:
+        return 0.0, 0.0
+    mean = np.mean(arr)
+    se = stats.sem(arr)
+    margin = se * stats.t.ppf((1 + 0.95) / 2, len(arr) - 1)
+    return mean - margin, mean + margin
+
+
+def _bar_ax(
+    ax: plt.Axes,
+    global_labels: list[str],
+    arrays_aligned: list[np.ndarray | None],
+    title: str,
+    xlabel: str,
+    color: str,
+    score_col: str,
+    show_xticklabels: bool = True,
+    show_xlabel: bool = True,
+) -> None:
+    """Draw bar plot with 95% CI error bars.
+
+    Args:
+        ax: Axes to draw on.
+        global_labels: Bin label strings for every position (including empty bins).
+        arrays_aligned: Score array per bin, or None for bins with < _MIN_BIN_N spectra.
+        title: Axes title.
+        xlabel: X-axis label (shown only when show_xlabel=True).
+        color: Bar fill colour.
+        score_col: Score column name (for y-axis label).
+        show_xticklabels: Whether to draw x-tick labels (False for non-bottom rows).
+        show_xlabel: Whether to draw the x-axis label (False for non-bottom rows).
+    """
+    all_positions = list(range(1, len(global_labels) + 1))
+    n_total = len(global_labels)
+
+    means = []
+    lower_cis = []
+    upper_cis = []
+    bin_counts: dict[int, int] = {}
+
+    for pos, arr in zip(all_positions, arrays_aligned):
+        if arr is None or len(arr) < _MIN_BIN_N:
+            means.append(0)
+            lower_cis.append(0)
+            upper_cis.append(0)
+            continue
+
+        mean = np.mean(arr)
+        lo, hi = _ci_95(arr)
+        error_lower = mean - lo
+        error_upper = hi - mean
+
+        means.append(mean)
+        lower_cis.append(error_lower)
+        upper_cis.append(error_upper)
+        bin_counts[pos] = len(arr)
+
+    # Plot bars only for non-empty bins
+    valid_positions = [
+        pos
+        for pos, arr in zip(all_positions, arrays_aligned)
+        if arr is not None and len(arr) >= _MIN_BIN_N
+    ]
+    valid_means = [means[pos - 1] for pos in valid_positions]
+    valid_lower = [lower_cis[pos - 1] for pos in valid_positions]
+    valid_upper = [upper_cis[pos - 1] for pos in valid_positions]
+
+    if valid_positions:
+        ax.bar(
+            valid_positions,
+            valid_means,
+            yerr=[valid_lower, valid_upper],
+            capsize=5,
+            color=color,
+            alpha=0.75,
+            edgecolor="black",
+            linewidth=1.2,
+            error_kw={"elinewidth": 2, "capthick": 2, "ecolor": "black"},
+        )
+
+        # Add value labels on bars
+        for pos, mean in zip(valid_positions, valid_means):
+            ax.text(
+                pos,
+                mean + 0.03,
+                f"{mean:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=11,
+                fontweight="bold",
+            )
+
+    ax.set_xticks(all_positions)
+    if show_xticklabels:
+        tick_labels = [
+            f"{lbl}\nn={bin_counts[p]:,}" if p in bin_counts else lbl
+            for p, lbl in zip(all_positions, global_labels)
+        ]
+        ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=12)
+    else:
+        ax.set_xticklabels([])
+        # Show n= as small text inside the plot top for non-bottom rows
+        for pos in valid_positions:
+            if pos in bin_counts:
+                ax.text(
+                    pos,
+                    1.02,
+                    f"n={bin_counts[pos]:,}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=9,
+                    color="grey",
+                    transform=ax.get_xaxis_transform(),
+                )
+
+    ax.set_xlim(0.5, n_total + 0.5)
+    ax.set_ylim(-0.05, 1.12)
+    ax.set_ylabel(score_col, fontsize=13)
+    if show_xlabel:
+        ax.set_xlabel(xlabel, fontsize=13)
+    ax.set_title(title, fontsize=17, pad=12)
+
+    # Add threshold reference lines
+    for thresh, ls in [(0.5, "--"), (0.7, ":"), (0.9, "--")]:
+        ax.axhline(thresh, color="grey", lw=0.7, ls=ls, alpha=0.55)
+        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=10, color="grey")
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    # Legend
+    ax.legend(
+        [mpatches.Patch(facecolor=color, edgecolor="black", label="Mean ± 95% CI")],
+        ["Mean ± 95% CI"],
+        fontsize=11,
+        loc="upper left",
+    )
+
+
+def _plot_inst_adduct_grid_bar(
+    joined: pd.DataFrame,
+    inst_type: str,
+    ce_col: str,
+    ce_label: str,
+    color: str,
+    score_col: str,
+    save_dp: str,
+    ce_cap: float | None = None,
+) -> None:
+    """Produce one bar plot figure for a given instrument type, one row per adduct.
+
+    Args:
+        joined: Merged DataFrame with spec metadata and scores.
+        inst_type: Instrument type string (e.g. 'FT', 'QTOF').
+        ce_col: CE column to bin by ('ace' or 'nce').
+        ce_label: Human-readable CE axis label.
+        color: Bar fill colour.
+        score_col: Score column to plot.
+        save_dp: Output directory.
+        ce_cap: If set, discard spectra with ce_col >= ce_cap before binning.
+    """
+    inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()]
+    if ce_col == "ace":
+        inst_df = inst_df[inst_df[ce_col] > 0]
+    if ce_cap is not None:
+        inst_df = inst_df[inst_df[ce_col] < ce_cap]
+
+    adducts = (
+        inst_df.groupby("prec_type")["spec_id"]
+        .count()
+        .loc[lambda s: s >= _MIN_BIN_N]
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    if not adducts:
+        logger.warning("No adducts with enough data for %s", inst_type)
+        return
+
+    ce_max = inst_df[ce_col].max() + 10
+    n_rows = len(adducts)
+
+    # Global bin labels from the full inst_df (same for every adduct row)
+    global_labels, _ = _make_ce_bins(inst_df, ce_col, 10, ce_max, score_col)
+    n_bins = len(global_labels)
+    # Build lo edges for global bins so we can align per-adduct data
+    global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
+
+    fig_w = max(32, n_bins * 4.0 + 3)
+    fig_h = n_rows * 6.5
+
+    fig, axes = plt.subplots(n_rows, 1, figsize=(fig_w, fig_h), squeeze=False, sharex=True)
+
+    for row_idx, adduct in enumerate(adducts):
+        sub = inst_df[inst_df["prec_type"] == adduct]
+        # Align per-adduct arrays to global positions (None where bin is empty)
+        arrays_aligned: list[np.ndarray | None] = []
+        for lo in global_lo:
+            hi = lo + 10
+            mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
+            vals = sub.loc[mask, score_col].dropna().to_numpy()
+            arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
+
+        ax = axes[row_idx, 0]
+        is_bottom = row_idx == n_rows - 1
+        _bar_ax(
+            ax,
+            global_labels,
+            arrays_aligned,
+            title=f"{inst_type} · {adduct}  [n={len(sub):,}]",
+            xlabel=ce_label,
+            color=color,
+            score_col=score_col,
+            show_xticklabels=is_bottom,
+            show_xlabel=is_bottom,
+        )
+
+    fig.suptitle(
+        f"{score_col} — {inst_type} by adduct + {ce_label} (Mean ± 95% CI)",
+        fontsize=18,
+        y=1.005,
+    )
+    fig.subplots_adjust(hspace=0.35)
+    fname = f"ce_breakdown_{inst_type.lower()}_bar_ci.png"
+    out_fp = os.path.join(save_dp, fname)
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved: %s", out_fp)
+    print(f"Saved: {out_fp}")
+
+
+def plot_ce_breakdown_bar(
+    meta: pd.DataFrame,
+    spec_df: pd.DataFrame,
+    score_col: str,
+    save_dp: str,
+) -> None:
+    """Plot bar graphs with 95% CI for metrics, binned by CE, grouped by adduct + inst type.
+
+    Produces two figures: one for QTOF (ACE 10 eV bins) and one for FT (NCE 10% bins).
+    Each figure has one row per adduct type. Error bars show 95% confidence intervals
+    of the mean.
+
+    Args:
+        meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
+        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, prec_type, ace, nce].
+        score_col: Score column to plot (must be in meta).
+        save_dp: Directory to save figures.
+    """
+    if score_col not in meta.columns:
+        raise ValueError(f"Score column '{score_col}' not in meta. Available: {list(meta.columns)}")
+
+    os.makedirs(save_dp, exist_ok=True)
+
+    joined = meta[["spec_id", score_col]].merge(
+        spec_df[["spec_id", "inst_type", "prec_type", "ace", "nce"]],
+        on="spec_id",
+        how="left",
+    )
+
+    _plot_inst_adduct_grid_bar(
+        joined, "QTOF", "ace", "ACE (eV)", "#4878CF", score_col, save_dp, ce_cap=50
+    )
+    _plot_inst_adduct_grid_bar(
+        joined, "FT", "nce", "NCE (%)", "#6ACC65", score_col, save_dp, ce_cap=70
+    )
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -878,9 +1162,9 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["summary", "ce", "spectra", "all", "plot_all", "peak_stats"],
+        choices=["summary", "ce", "ce_bar", "spectra", "all", "plot_all", "peak_stats"],
         default="summary",
-        help="What to plot (ce/all requires --spec_df_fp; plot_all = all stats; peak_stats = peak count + intensity)",
+        help="What to plot (ce/ce_bar/spectra/all require --spec_df_fp; ce=violin, ce_bar=bar+95CI; plot_all=all stats; peak_stats=peak count+intensity)",
     )
     parser.add_argument(
         "--select",
@@ -954,6 +1238,18 @@ def main() -> None:
                 score_col=args.score_col,
                 save_dp=save_dp,
             )
+
+    if args.mode == "ce_bar":
+        if args.spec_df_fp is None:
+            raise ValueError("--spec_df_fp is required for 'ce_bar' mode")
+        logger.info("Loading spec_df from %s", args.spec_df_fp)
+        spec_df = pd.read_pickle(args.spec_df_fp)
+        plot_ce_breakdown_bar(
+            meta=meta,
+            spec_df=spec_df,
+            score_col=args.score_col,
+            save_dp=save_dp,
+        )
 
 
 if __name__ == "__main__":
