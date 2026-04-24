@@ -96,10 +96,10 @@ def get_pred_spectrum(f: h5py.File, row: pd.Series) -> tuple[np.ndarray, np.ndar
 
 _METRICS = [
     ("cos_sim_0.01", "Cosine Similarity (tol=0.01 Da)"),
-    ("cos_hun_inst_tol", "Hungarian Cosine (instrument tol)"),
-    ("cos_hun_inst_tol_sqrt", "Hungarian Cosine Sqrt (instrument tol)"),
-    ("jss_hun_inst_tol", "Hungarian JSS (instrument tol)"),
-    ("jss_hun_inst_tol_sqrt", "Hungarian JSS Sqrt (instrument tol)"),
+    ("cos_hun_inst_tol", "Cosine (instrument tol)"),
+    ("cos_hun_inst_tol_sqrt", "Cosine Sqrt (instrument tol)"),
+    ("jss_hun_inst_tol", "JSS (instrument tol)"),
+    ("jss_hun_inst_tol_sqrt", "JSS Sqrt (instrument tol)"),
 ]
 
 
@@ -164,9 +164,8 @@ _METRIC_COLORS = ["#4878CF", "#e05c1a", "#6ACC65", "#8B6BB1", "#D65F5F"]
 def plot_all_metrics(meta: pd.DataFrame, save_dp: str) -> None:
     """Create a single overview figure with all available metrics.
 
-    Layout (4-column grid throughout):
-    - CDF rows: one subplot per metric, 4 per row, with threshold annotations.
-    - Histogram rows: one subplot per metric, 4 per row, median/mean lines.
+    Layout: 2 metric pairs per row. Each metric shows histogram + CDF side by side.
+    For N metrics: ceil(N/2) rows × 4 cols.
 
     Args:
         meta: DataFrame from load_hdf5_meta.
@@ -179,70 +178,64 @@ def plot_all_metrics(meta: pd.DataFrame, save_dp: str) -> None:
         return
 
     n = len(available_metrics)
-    n_cols = 4
-    n_rows_per_section = (n + n_cols - 1) // n_cols
-    n_rows_total = 2 * n_rows_per_section  # CDF section + histogram section
+    n_cols = 4  # 2 metrics per row: [hist0] [cdf0] [hist1] [cdf1]
+    n_rows = (n + 1) // 2  # ceil(n/2)
 
     fig, axes = plt.subplots(
-        n_rows_total,
+        n_rows,
         n_cols,
-        figsize=(6 * n_cols, 5 * n_rows_total),
+        figsize=(6 * n_cols, 5 * n_rows),
         squeeze=False,
     )
-    fig.subplots_adjust(hspace=0.55, wspace=0.35)
+    fig.subplots_adjust(hspace=0.40, wspace=0.35)
 
-    # --- CDF subplots (top section) ---
     for idx, ((key, label), color) in enumerate(zip(available_metrics, _METRIC_COLORS)):
-        row, col = divmod(idx, n_cols)
-        ax = axes[row, col]
+        row = idx // 2
+        col_pair = 2 * (idx % 2)  # 0 or 2
+        col_hist = col_pair
+        col_cdf = col_pair + 1
+
         vals = meta[key].dropna().to_numpy()
+        med = np.median(vals)
+        mn = np.mean(vals)
         sorted_vals = np.sort(vals)
         cdf = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
-        med = np.median(vals)
-        mn = np.mean(vals)
-        ax.plot(sorted_vals, cdf, color=color, lw=2.0)
+
+        # Histogram
+        ax_hist = axes[row, col_hist]
+        ax_hist.hist(vals, bins=80, color=color, edgecolor="none", alpha=0.75)
+        ax_hist.axvline(med, color="black", lw=1.5, label=f"med={med:.3f}")
+        ax_hist.axvline(mn, color="#FF6B35", lw=1.5, ls="--", label=f"mean={mn:.3f}")
+        ax_hist.set_xlabel("Score", fontsize=11)
+        ax_hist.set_ylabel("Count", fontsize=11)
+        ax_hist.set_title(f"{label} — histogram", fontsize=12, pad=6)
+        ax_hist.legend(fontsize=9)
+        ax_hist.spines["top"].set_visible(False)
+        ax_hist.spines["right"].set_visible(False)
+
+        # CDF
+        ax_cdf = axes[row, col_cdf]
+        ax_cdf.plot(sorted_vals, cdf, color=color, lw=2.0)
         for thresh in (0.5, 0.7, 0.9):
             frac = np.mean(vals >= thresh)
-            ax.axvline(thresh, color="grey", lw=0.8, ls="--", alpha=0.6)
-            ax.text(thresh + 0.004, 0.04, f"≥{thresh:.1f}:{frac:.1%}", fontsize=8, color="grey")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.set_xlabel("Score", fontsize=11)
-        ax.set_ylabel("CDF", fontsize=11)
-        ax.set_title(f"{label}\nmed={med:.3f}  mean={mn:.3f}", fontsize=12, pad=6)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+            ax_cdf.axvline(thresh, color="grey", lw=0.8, ls="--", alpha=0.6)
+            ax_cdf.text(thresh + 0.004, 0.04, f"≥{thresh:.1f}:{frac:.1%}", fontsize=8, color="grey")
+        ax_cdf.set_xlim(0, 1)
+        ax_cdf.set_ylim(0, 1)
+        ax_cdf.set_xlabel("Score", fontsize=11)
+        ax_cdf.set_ylabel("CDF", fontsize=11)
+        ax_cdf.set_title(f"{label} — CDF", fontsize=12, pad=6)
+        ax_cdf.spines["top"].set_visible(False)
+        ax_cdf.spines["right"].set_visible(False)
 
-    # Hide unused CDF cells
-    for idx in range(n, n_rows_per_section * n_cols):
-        row, col = divmod(idx, n_cols)
-        axes[row, col].set_visible(False)
+    # Hide unused cells
+    for idx in range(n, n_rows * 2):
+        row = idx // 2
+        col_pair = 2 * (idx % 2)
+        axes[row, col_pair].set_visible(False)
+        axes[row, col_pair + 1].set_visible(False)
 
-    # --- Histogram subplots (bottom section) ---
-    for idx, ((key, label), color) in enumerate(zip(available_metrics, _METRIC_COLORS)):
-        row = n_rows_per_section + idx // n_cols
-        col = idx % n_cols
-        ax = axes[row, col]
-        vals = meta[key].dropna().to_numpy()
-        med = np.median(vals)
-        mn = np.mean(vals)
-        ax.hist(vals, bins=80, color=color, edgecolor="none", alpha=0.75)
-        ax.axvline(med, color="black", lw=1.5, label=f"med={med:.3f}")
-        ax.axvline(mn, color="white", lw=1.5, ls="--", label=f"mean={mn:.3f}")
-        ax.set_xlabel("Score", fontsize=11)
-        ax.set_ylabel("Count", fontsize=11)
-        ax.set_title(label, fontsize=12, pad=6)
-        ax.legend(fontsize=9)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-
-    # Hide unused histogram cells
-    for idx in range(n, n_rows_per_section * n_cols):
-        row = n_rows_per_section + idx // n_cols
-        col = idx % n_cols
-        axes[row, col].set_visible(False)
-
-    fig.suptitle("All Metrics Overview", fontsize=20, y=1.01)
+    fig.suptitle("All Metrics Overview (Histogram + CDF)", fontsize=20, y=1.01)
     out_fp = os.path.join(save_dp, "all_metrics_overview.png")
     fig.savefig(out_fp, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -253,6 +246,68 @@ def plot_all_metrics(meta: pd.DataFrame, save_dp: str) -> None:
 # ---------------------------------------------------------------------------
 # Peak count & intensity stats
 # ---------------------------------------------------------------------------
+
+
+def plot_metrics_ci(meta: pd.DataFrame, save_dp: str) -> None:
+    """Plot bar chart with IQR for each metric.
+
+    Shows median (bar) with IQR (25th-75th percentile) as error bars.
+
+    Args:
+        meta: DataFrame from load_hdf5_meta.
+        save_dp: Directory to save figures.
+    """
+    os.makedirs(save_dp, exist_ok=True)
+    available_metrics = [(k, label) for k, label in _METRICS if k in meta.columns]
+    if not available_metrics:
+        logger.warning("No score metrics found in HDF5.")
+        return
+
+    n = len(available_metrics)
+    fig, ax = plt.subplots(figsize=(max(8, n * 1.5), 6))
+
+    x_pos = np.arange(n)
+    medians = []
+    lower_iqr = []
+    upper_iqr = []
+    means = []
+    labels = []
+
+    for (key, label), color in zip(available_metrics, _METRIC_COLORS):
+        vals = meta[key].dropna().to_numpy()
+        med = np.median(vals)
+        q25 = np.percentile(vals, 25)
+        q75 = np.percentile(vals, 75)
+        mn = np.mean(vals)
+        medians.append(med)
+        lower_iqr.append(med - q25)
+        upper_iqr.append(q75 - med)
+        means.append(mn)
+        labels.append(label)
+
+    errors = [lower_iqr, upper_iqr]
+    bars = ax.bar(x_pos, medians, color=_METRIC_COLORS, alpha=0.75, edgecolor="black", linewidth=0.8)
+    ax.errorbar(x_pos, medians, yerr=errors, fmt="none", ecolor="black", capsize=5, capthick=1.5, linewidth=1.5)
+    ax.scatter(x_pos, means, color="white", s=80, zorder=5, edgecolors="black", linewidths=1.5, marker="o", label="Mean")
+
+    ax.set_xlabel("Metric", fontsize=13)
+    ax.set_ylabel("Score", fontsize=13)
+    ax.set_title("Metrics: Median ± IQR (with Mean)", fontsize=16, pad=15)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=11)
+    ax.set_ylim(0, 1.1)
+    ax.axhline(0, color="black", linewidth=0.5)
+    ax.legend(fontsize=11, loc="upper right")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", alpha=0.3, linestyle="--")
+
+    fig.tight_layout()
+    out_fp = os.path.join(save_dp, "metrics_ci_bar.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved metrics CI bar plot: %s", out_fp)
+    print(f"Saved: {out_fp}")
 
 
 def _hist_ax(
@@ -269,7 +324,7 @@ def _hist_ax(
     mn = np.mean(vals)
     ax.hist(vals, bins=bins, color=color, edgecolor="none", alpha=0.75, log=log_scale)
     ax.axvline(med, color="black", lw=1.5, label=f"med={med:.2f}")
-    ax.axvline(mn, color="white", lw=1.5, ls="--", label=f"mean={mn:.2f}")
+    ax.axvline(mn, color="#FF6B35", lw=1.5, ls="--", label=f"mean={mn:.2f}")
     ax.set_xlabel(xlabel, fontsize=11)
     ax.set_ylabel("Count", fontsize=11)
     ax.set_title(title, fontsize=13, pad=6)
@@ -701,7 +756,7 @@ def _violin_ax(
             f"{lbl}\nn={bin_counts[p]:,}" if p in bin_counts else lbl
             for p, lbl in zip(all_positions, global_labels)
         ]
-        ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=13)
+        ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=12)
     else:
         # Show n= as small text inside the plot top for non-bottom rows
         for pos, arr in zip(all_positions, arrays_aligned):
@@ -713,23 +768,26 @@ def _violin_ax(
                 f"n={len(arr):,}",
                 ha="center",
                 va="bottom",
-                fontsize=10,
+                fontsize=9,
                 color="grey",
                 transform=ax.get_xaxis_transform(),
             )
         ax.set_xticklabels([])
     ax.set_xlim(0.5, n_total + 0.5)
     ax.set_ylim(-0.05, 1.12)
-    ax.set_ylabel(score_col, fontsize=14)
+    ax.set_ylabel(score_col, fontsize=13, fontweight="bold")
     if show_xlabel:
-        ax.set_xlabel(xlabel, fontsize=14)
-    ax.set_title(title, fontsize=18, pad=12)
+        ax.set_xlabel(xlabel, fontsize=13, fontweight="bold")
+    ax.set_title(title, fontsize=16, pad=12, fontweight="bold")
     for thresh, ls in [(0.5, "--"), (0.7, ":"), (0.9, "--")]:
         ax.axhline(thresh, color="grey", lw=0.7, ls=ls, alpha=0.55)
-        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=11, color="grey")
+        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=10, color="grey")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(fontsize=12, loc="lower left", ncol=3)
+    ax.spines["left"].set_linewidth(0.8)
+    ax.spines["bottom"].set_linewidth(0.8)
+    ax.grid(axis="y", alpha=0.2, linestyle="-", linewidth=0.5)
+    ax.legend(fontsize=11, loc="lower left", ncol=3, framealpha=0.95, edgecolor="grey")
 
 
 def _plot_inst_adduct_grid(
@@ -780,10 +838,11 @@ def _plot_inst_adduct_grid(
     # Build lo edges for global bins so we can align per-adduct data
     global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
 
-    fig_w = max(32, n_bins * 4.0 + 3)
-    fig_h = n_rows * 7.0
+    fig_w = max(36, n_bins * 4.5 + 4)
+    fig_h = max(n_rows * 7.5, 8)
 
     fig, axes = plt.subplots(n_rows, 1, figsize=(fig_w, fig_h), squeeze=False, sharex=True)
+    fig.patch.set_facecolor("white")
 
     for row_idx, adduct in enumerate(adducts):
         sub = inst_df[inst_df["prec_type"] == adduct]
@@ -810,14 +869,15 @@ def _plot_inst_adduct_grid(
         )
 
     fig.suptitle(
-        f"{score_col} — {inst_type} by adduct + {ce_label}",
-        fontsize=18,
+        f"{score_col} — {inst_type} by Adduct & {ce_label}",
+        fontsize=20,
+        fontweight="bold",
         y=1.005,
     )
-    fig.subplots_adjust(hspace=0.35)
+    fig.subplots_adjust(hspace=0.45)
     fname = f"ce_breakdown_{inst_type.lower()}_violin.png"
     out_fp = os.path.join(save_dp, fname)
-    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    fig.savefig(out_fp, dpi=200, bbox_inches="tight")
     plt.close(fig)
     logger.info("Saved: %s", out_fp)
     print(f"Saved: {out_fp}")
@@ -1093,10 +1153,10 @@ def _plot_inst_adduct_grid_bar(
         fontsize=18,
         y=1.005,
     )
-    fig.subplots_adjust(hspace=0.35)
+    fig.subplots_adjust(hspace=0.45)
     fname = f"ce_breakdown_{inst_type.lower()}_bar_ci.png"
     out_fp = os.path.join(save_dp, fname)
-    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    fig.savefig(out_fp, dpi=200, bbox_inches="tight")
     plt.close(fig)
     logger.info("Saved: %s", out_fp)
     print(f"Saved: {out_fp}")
@@ -1137,6 +1197,171 @@ def plot_ce_breakdown_bar(
     _plot_inst_adduct_grid_bar(
         joined, "FT", "nce", "NCE (%)", "#6ACC65", score_col, save_dp, ce_cap=70
     )
+
+
+
+
+def plot_all_metrics_ce_summary_bar(
+    meta: pd.DataFrame,
+    spec_df: pd.DataFrame,
+    save_dp: str,
+) -> None:
+    """Plot summary bar charts with all metrics grouped by CE bins and instrument type.
+
+    Creates one figure with two subplots (QTOF and FT), each showing bars for all
+    available metrics grouped by CE bins. Error bars show 95% CI around the mean.
+
+    Args:
+        meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
+        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, prec_type, ace, nce].
+        save_dp: Directory to save figures.
+    """
+    available_metrics = [k for k, _ in _METRICS if k in meta.columns]
+    metric_labels = [label for k, label in _METRICS if k in meta.columns]
+    if not available_metrics:
+        logger.warning("No score metrics found in HDF5.")
+        return
+
+    os.makedirs(save_dp, exist_ok=True)
+
+    joined = meta[["spec_id"] + available_metrics].merge(
+        spec_df[["spec_id", "inst_type", "ace", "nce"]],
+        on="spec_id",
+        how="left",
+    )
+
+    fig, axes = plt.subplots(2, 1, figsize=(max(12, len(available_metrics) * 2), 12), squeeze=False)
+
+    for row_idx, (inst_type, ce_col, ce_label, ce_max, ce_cap) in enumerate([
+        ("QTOF", "ace", "ACE (eV)", 50, 50),
+        ("FT", "nce", "NCE (%)", 70, 70),
+    ]):
+        ax = axes[row_idx, 0]
+        inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()].copy()
+        if ce_col == "ace":
+            inst_df = inst_df[inst_df[ce_col] > 0]
+        inst_df = inst_df[inst_df[ce_col] < ce_cap]
+
+        if len(inst_df) == 0:
+            logger.warning(f"No data for {inst_type}")
+            ax.text(0.5, 0.5, f"No data for {inst_type}", ha="center", va="center",
+                   transform=ax.transAxes, fontsize=12)
+            continue
+
+        # Define CE bins
+        bin_edges = list(range(0, int(ce_max) + 10, 10))
+        bin_labels = [f"{lo}-{hi}" for lo, hi in zip(bin_edges[:-1], bin_edges[1:])]
+        inst_df["ce_bin"] = pd.cut(inst_df[ce_col], bins=bin_edges, labels=bin_labels, right=False)
+
+        # Prepare data: for each metric, for each CE bin, compute mean and CI
+        n_metrics = len(available_metrics)
+        n_bins = len(bin_labels)
+        bar_width = 0.8 / n_bins
+
+        colors_ce = plt.cm.Blues(np.linspace(0.4, 0.9, n_bins))
+
+        x_pos = np.arange(n_metrics)
+        for bin_idx, (bin_label, ce_color) in enumerate(zip(bin_labels, colors_ce)):
+            bin_data = inst_df[inst_df["ce_bin"] == bin_label]
+            if len(bin_data) == 0:
+                continue
+
+            means = []
+            medians = []
+            lower_cis = []
+            upper_cis = []
+            for metric_col in available_metrics:
+                vals = bin_data[metric_col].dropna().to_numpy()
+                if len(vals) < 2:
+                    means.append(0)
+                    medians.append(0)
+                    lower_cis.append(0)
+                    upper_cis.append(0)
+                else:
+                    mean = np.mean(vals)
+                    med = np.median(vals)
+                    lo, hi = _ci_95(vals)
+                    means.append(mean)
+                    medians.append(med)
+                    lower_cis.append(mean - lo)
+                    upper_cis.append(hi - mean)
+
+            errors = [lower_cis, upper_cis]
+            offset = (bin_idx - n_bins / 2 + 0.5) * bar_width
+            ax.bar(
+                x_pos + offset,
+                means,
+                bar_width,
+                label=bin_label,
+                color=[ce_color] * n_metrics,
+                alpha=0.75,
+                edgecolor=_METRIC_COLORS,
+                linewidth=2.0,
+            )
+            ax.errorbar(
+                x_pos + offset,
+                means,
+                yerr=errors,
+                fmt="none",
+                ecolor="black",
+                capsize=2,
+                linewidth=0.8,
+                alpha=0.7,
+            )
+            # Overlay median points
+            ax.scatter(
+                x_pos + offset,
+                medians,
+                color="white",
+                s=30,
+                zorder=5,
+                edgecolors="black",
+                linewidths=1.0,
+                marker="D",
+            )
+
+        ax.set_xlabel("Metric", fontsize=12)
+        ax.set_ylabel("Score", fontsize=12)
+        ax.set_title(f"{inst_type} by {ce_label}", fontsize=14, pad=10)
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(metric_labels, rotation=45, ha="right", fontsize=10)
+        ax.set_ylim(0, 1.1)
+        ax.legend(fontsize=9, loc="upper right", ncol=2, title="CE Bin")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(axis="y", alpha=0.3, linestyle="--")
+
+    fig.suptitle("All Metrics by Collision Energy", fontsize=16, y=1.00)
+    fig.tight_layout()
+    out_fp = os.path.join(save_dp, "all_metrics_ce_summary.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved CE summary bar plot: {out_fp}")
+    print(f"Saved: {out_fp}")
+
+
+def plot_all_metrics_ce_breakdown_bar(
+    meta: pd.DataFrame,
+    spec_df: pd.DataFrame,
+    save_dp: str,
+) -> None:
+    """Plot CE breakdown bar charts with median ± IQR for all available metrics.
+
+    For each metric, generates bar charts binned by CE (QTOF/FT).
+
+    Args:
+        meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
+        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, prec_type, ace, nce].
+        save_dp: Directory to save figures.
+    """
+    available_metrics = [k for k, _ in _METRICS if k in meta.columns]
+    if not available_metrics:
+        logger.warning("No score metrics found in HDF5.")
+        return
+
+    for score_col in available_metrics:
+        logger.info(f"Plotting CE breakdown for {score_col}...")
+        plot_ce_breakdown_bar(meta, spec_df, score_col, save_dp)
 
 
 # ---------------------------------------------------------------------------
@@ -1213,6 +1438,18 @@ def main() -> None:
     if args.mode == "plot_all":
         plot_summary(meta, save_dp)
         plot_all_metrics(meta, save_dp)
+        plot_metrics_ci(meta, save_dp)
+        plot_peak_stats(meta, args.pred_fp, save_dp, filter_col=args.filter_col)
+        if args.spec_df_fp is not None:
+            logger.info("Loading spec_df from %s", args.spec_df_fp)
+            spec_df = pd.read_pickle(args.spec_df_fp)
+            plot_all_metrics_ce_summary_bar(meta, spec_df, save_dp)
+            plot_ce_breakdown(
+                meta=meta,
+                spec_df=spec_df,
+                score_col=args.score_col,
+                save_dp=save_dp,
+            )
 
     if args.mode in ("ce", "spectra", "all"):
         if args.spec_df_fp is None:
