@@ -60,6 +60,9 @@ def load_hdf5_meta(pred_fp: str) -> pd.DataFrame:
         "mol_id",
         "cos_sim_0.01",
         "cos_hun_inst_tol",
+        "cos_hun_inst_tol_sqrt",
+        "jss_hun_inst_tol",
+        "jss_hun_inst_tol_sqrt",
         "cos_sim_sqrt_0.01",
         "pred_oos_prob",
         "start_points",
@@ -371,6 +374,9 @@ def _violin_ax(
     _MED_COLOR = "#1a1a2e"
     _MEAN_COLOR = "#e05c1a"
 
+    # Collect per-bin counts for x-tick labels
+    bin_counts: dict[int, int] = {}
+
     for pos, arr in zip(all_positions, arrays_aligned):
         if arr is None or len(arr) < _MIN_BIN_N:
             continue
@@ -387,6 +393,7 @@ def _violin_ax(
         q1 = np.percentile(arr, 25)
         q3 = np.percentile(arr, 75)
         n = len(arr)
+        bin_counts[pos] = n
 
         ax.vlines([pos], [q1], [q3], color=_MED_COLOR, linewidth=3.5, zorder=4)
         ax.scatter(
@@ -409,7 +416,7 @@ def _violin_ax(
             f"{med:.2f}",
             ha="center",
             va="bottom",
-            fontsize=7,
+            fontsize=13,
             color=_MED_COLOR,
             fontweight="bold",
         )
@@ -419,7 +426,7 @@ def _violin_ax(
             f"{mn:.2f}",
             ha="center",
             va="bottom",
-            fontsize=7,
+            fontsize=13,
             color=_MEAN_COLOR,
             fontweight="bold",
         )
@@ -429,18 +436,8 @@ def _violin_ax(
             f"±{(q3 - q1) / 2:.2f}",
             ha="center",
             va="top",
-            fontsize=6.5,
+            fontsize=11,
             color="#555555",
-        )
-        ax.text(
-            pos,
-            1.04,
-            f"n={n:,}",
-            ha="center",
-            va="bottom",
-            fontsize=6.5,
-            color="grey",
-            transform=ax.get_xaxis_transform(),
         )
 
     # Legend proxy handles
@@ -459,21 +456,39 @@ def _violin_ax(
 
     ax.set_xticks(all_positions)
     if show_xticklabels:
-        ax.set_xticklabels(global_labels, rotation=40, ha="right", fontsize=9)
+        tick_labels = [
+            f"{lbl}\nn={bin_counts[p]:,}" if p in bin_counts else lbl
+            for p, lbl in zip(all_positions, global_labels)
+        ]
+        ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=13)
     else:
+        # Show n= as small text inside the plot top for non-bottom rows
+        for pos, arr in zip(all_positions, arrays_aligned):
+            if arr is None or len(arr) < _MIN_BIN_N:
+                continue
+            ax.text(
+                pos,
+                1.02,
+                f"n={len(arr):,}",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                color="grey",
+                transform=ax.get_xaxis_transform(),
+            )
         ax.set_xticklabels([])
     ax.set_xlim(0.5, n_total + 0.5)
-    ax.set_ylim(-0.05, 1.08)
-    ax.set_ylabel(score_col, fontsize=10)
+    ax.set_ylim(-0.05, 1.12)
+    ax.set_ylabel(score_col, fontsize=14)
     if show_xlabel:
-        ax.set_xlabel(xlabel, fontsize=10)
-    ax.set_title(title, fontsize=11, pad=22)
+        ax.set_xlabel(xlabel, fontsize=14)
+    ax.set_title(title, fontsize=18, pad=12)
     for thresh, ls in [(0.5, "--"), (0.7, ":"), (0.9, "--")]:
         ax.axhline(thresh, color="grey", lw=0.7, ls=ls, alpha=0.55)
-        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=7, color="grey")
+        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=11, color="grey")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(fontsize=8, loc="lower left", ncol=3)
+    ax.legend(fontsize=12, loc="lower left", ncol=3)
 
 
 def _plot_inst_adduct_grid(
@@ -555,10 +570,10 @@ def _plot_inst_adduct_grid(
 
     fig.suptitle(
         f"{score_col} — {inst_type} by adduct + {ce_label}",
-        fontsize=13,
+        fontsize=18,
         y=1.005,
     )
-    fig.subplots_adjust(hspace=0.08)
+    fig.subplots_adjust(hspace=0.35)
     fname = f"ce_breakdown_{inst_type.lower()}_violin.png"
     out_fp = os.path.join(save_dp, fname)
     fig.savefig(out_fp, dpi=150, bbox_inches="tight")
