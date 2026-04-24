@@ -290,6 +290,17 @@ class TestOutputFormat:
         r = _run(self.SMILES, max_cut_size=2)
         assert r["nodes_depth"][0, 0] == 1  # root at depth 0
 
+    def test_no_all_zero_cc_rows(self):
+        """MBFS output must not contain empty connected-component masks."""
+        r = _run(
+            "COc1ccc2nccc(NC(=O)C3CCN(CCc4ccc(Cl)cc4)CC3)c2n1",
+            max_cut_size=2,
+            max_depth=3,
+        )
+        sums = r["nodes_mask"].sum(axis=1)
+        zero_rows = [i for i, s in enumerate(sums) if int(s) == 0]
+        assert zero_rows == [], f"Found all-zero CC rows at indices {zero_rows[:10]}"
+
 
 # ---------------------------------------------------------------------------
 # Test 6: ring_bond_mask in mol_d

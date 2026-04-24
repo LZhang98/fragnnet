@@ -1121,6 +1121,28 @@ def clip_loss(spectrum_embeddings, mol_embeddings, temperature=0.07):
 ###########################################
 
 
+def _build_dense_chunk(
+    sorted_batch_idxs: th.Tensor,
+    sorted_bin_idxs: th.Tensor,
+    sorted_vals: th.Tensor,
+    row_ptr_cpu: th.Tensor,
+    row_start: int,
+    row_end: int,
+    num_unique_bins: int,
+    device: th.device,
+) -> th.Tensor:
+    """Build a dense chunk [row_end-row_start, num_unique_bins] from sorted COO data."""
+    chunk = th.zeros((row_end - row_start, num_unique_bins), device=device, dtype=sorted_vals.dtype)
+    start_idx = int(row_ptr_cpu[row_start])
+    end_idx = int(row_ptr_cpu[row_end])
+    if end_idx <= start_idx:
+        return chunk
+    rows = sorted_batch_idxs[start_idx:end_idx] - row_start
+    cols = sorted_bin_idxs[start_idx:end_idx]
+    chunk[rows, cols] = sorted_vals[start_idx:end_idx]
+    return chunk
+
+
 def get_pairwise_cossim(
     mzs: th.Tensor,
     logprobs: th.Tensor,
@@ -1188,14 +1210,14 @@ def get_pairwise_cossim(
 
     effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    def _make_chunk(row_start: int, row_end: int) -> th.Tensor:
-        """Build a dense [row_end - row_start, num_unique_bins] matrix for the given rows."""
-        mask = (bin_batch_idxs >= row_start) & (bin_batch_idxs < row_end)
-        V = th.zeros(
-            (row_end - row_start, num_unique_bins), device=mzs.device, dtype=norm_probs.dtype
-        )
-        V[bin_batch_idxs[mask] - row_start, compact_bin_idxs[mask]] = norm_probs[mask]
-        return V
+    sort_idx = th.argsort(bin_batch_idxs)
+    sorted_batch_idxs = bin_batch_idxs[sort_idx]
+    sorted_bin_idxs = compact_bin_idxs[sort_idx]
+    sorted_probs = norm_probs[sort_idx]
+    counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
+    row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
+    row_ptr[1:] = th.cumsum(counts, dim=0)
+    row_ptr_cpu = row_ptr.detach().cpu()
 
     S = th.zeros((batch_size, batch_size), device=mzs.device, dtype=norm_probs.dtype)
 
@@ -1203,14 +1225,32 @@ def get_pairwise_cossim(
     # V_i is built once per i-chunk; V_j is built once per (i, j) pair with j >= i.
     for i in range(0, batch_size, effective_chunk):
         i_end = min(i + effective_chunk, batch_size)
-        V_i = _make_chunk(i, i_end)
+        V_i = _build_dense_chunk(
+            sorted_batch_idxs,
+            sorted_bin_idxs,
+            sorted_probs,
+            row_ptr_cpu,
+            i,
+            i_end,
+            num_unique_bins,
+            mzs.device,
+        )
         for j in range(i, batch_size, effective_chunk):
             j_end = min(j + effective_chunk, batch_size)
             if i == j:
                 block = th.mm(V_i, V_i.t())
                 S[i:i_end, i:i_end] = block
             else:
-                V_j = _make_chunk(j, j_end)
+                V_j = _build_dense_chunk(
+                    sorted_batch_idxs,
+                    sorted_bin_idxs,
+                    sorted_probs,
+                    row_ptr_cpu,
+                    j,
+                    j_end,
+                    num_unique_bins,
+                    mzs.device,
+                )
                 block = th.mm(V_i, V_j.t())
                 S[i:i_end, j:j_end] = block
                 S[j:j_end, i:i_end] = block.t()
@@ -1282,25 +1322,33 @@ def get_pairwise_jss_sim(
 
     effective_chunk = batch_size if (chunk_size is None or chunk_size >= batch_size) else chunk_size
 
-    def _make_chunk(row_start: int, row_end: int) -> th.Tensor:
-        """Build a dense [row_end - row_start, num_unique_bins] probability matrix."""
-        mask = (bin_batch_idxs >= row_start) & (bin_batch_idxs < row_end)
-        P = th.zeros((row_end - row_start, num_unique_bins), device=mzs.device, dtype=probs.dtype)
-        P[bin_batch_idxs[mask] - row_start, compact_bin_idxs[mask]] = probs[mask]
-        return P
+    sort_idx = th.argsort(bin_batch_idxs)
+    sorted_batch_idxs = bin_batch_idxs[sort_idx]
+    sorted_bin_idxs = compact_bin_idxs[sort_idx]
+    sorted_probs = probs[sort_idx]
+    counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
+    row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
+    row_ptr[1:] = th.cumsum(counts, dim=0)
+    row_ptr_cpu = row_ptr.detach().cpu()
 
-    # H(P) for each spectrum: computed chunk-by-chunk to avoid full dense matrix
+    # H(P) for each spectrum. Reuse P_i from the H(M) loop to avoid rebuilding chunks.
     H_P = th.zeros(batch_size, device=mzs.device, dtype=probs.dtype)
-    for i in range(0, batch_size, effective_chunk):
-        i_end = min(i + effective_chunk, batch_size)
-        P_i = _make_chunk(i, i_end)
-        H_P[i:i_end] = -th.sum(P_i * th.log(P_i + EPS), dim=1)
 
     # H(M) where M = 0.5*(P_i + P_j): exploit symmetry (j >= i)
     H_M = th.zeros((batch_size, batch_size), device=mzs.device, dtype=probs.dtype)
     for i in range(0, batch_size, effective_chunk):
         i_end = min(i + effective_chunk, batch_size)
-        P_i = _make_chunk(i, i_end)
+        P_i = _build_dense_chunk(
+            sorted_batch_idxs,
+            sorted_bin_idxs,
+            sorted_probs,
+            row_ptr_cpu,
+            i,
+            i_end,
+            num_unique_bins,
+            mzs.device,
+        )
+        H_P[i:i_end] = -th.sum(P_i * th.log(P_i + EPS), dim=1)
         for j in range(i, batch_size, effective_chunk):
             j_end = min(j + effective_chunk, batch_size)
             if i == j:
@@ -1308,7 +1356,16 @@ def get_pairwise_jss_sim(
                 block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
                 H_M[i:i_end, i:i_end] = block
             else:
-                P_j = _make_chunk(j, j_end)
+                P_j = _build_dense_chunk(
+                    sorted_batch_idxs,
+                    sorted_bin_idxs,
+                    sorted_probs,
+                    row_ptr_cpu,
+                    j,
+                    j_end,
+                    num_unique_bins,
+                    mzs.device,
+                )
                 M_ij = 0.5 * (P_i.unsqueeze(1) + P_j.unsqueeze(0))
                 block = -th.sum(M_ij * th.log(M_ij + EPS), dim=2)
                 H_M[i:i_end, j:j_end] = block
@@ -1446,18 +1503,40 @@ def get_pairwise_cross_entropy(
     else:
         CE = th.zeros((batch_size, batch_size), device=mzs.device, dtype=mzs.dtype)
 
-        # Pre-computation can be expensive if we densify everything.
-        # But we can chunk.
+        sort_idx = th.argsort(bin_batch_idxs)
+        sorted_batch_idxs = bin_batch_idxs[sort_idx]
+        sorted_bin_idxs = compact_bin_idxs[sort_idx]
+        sorted_probs = probs[sort_idx]
+        counts = th.bincount(sorted_batch_idxs, minlength=batch_size)
+        row_ptr = th.zeros(batch_size + 1, device=mzs.device, dtype=th.long)
+        row_ptr[1:] = th.cumsum(counts, dim=0)
+        row_ptr_cpu = row_ptr.detach().cpu()
 
         for i in range(0, batch_size, chunk_size):
             i_end = min(i + chunk_size, batch_size)
-            i_idxs = th.arange(i, i_end, device=mzs.device)
-            P_i = th.index_select(P, 0, i_idxs).to_dense()  # (chunk_i, D)
+            P_i = _build_dense_chunk(
+                sorted_batch_idxs,
+                sorted_bin_idxs,
+                sorted_probs,
+                row_ptr_cpu,
+                i,
+                i_end,
+                num_unique_bins,
+                mzs.device,
+            )
 
             for j in range(0, batch_size, chunk_size):
                 j_end = min(j + chunk_size, batch_size)
-                j_idxs = th.arange(j, j_end, device=mzs.device)
-                P_j = th.index_select(P, 0, j_idxs).to_dense()  # (chunk_j, D)
+                P_j = _build_dense_chunk(
+                    sorted_batch_idxs,
+                    sorted_bin_idxs,
+                    sorted_probs,
+                    row_ptr_cpu,
+                    j,
+                    j_end,
+                    num_unique_bins,
+                    mzs.device,
+                )
 
                 # Q_j_log
                 Q_j_log = th.log(P_j + EPS)
