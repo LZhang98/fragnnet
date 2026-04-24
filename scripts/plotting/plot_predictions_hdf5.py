@@ -250,6 +250,149 @@ def plot_all_metrics(meta: pd.DataFrame, save_dp: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Peak count & intensity stats
+# ---------------------------------------------------------------------------
+
+
+def _hist_ax(
+    ax: plt.Axes,
+    vals: np.ndarray,
+    title: str,
+    xlabel: str,
+    color: str,
+    bins: int = 80,
+    log_scale: bool = False,
+) -> None:
+    """Draw annotated histogram with median/mean lines."""
+    med = np.median(vals)
+    mn = np.mean(vals)
+    ax.hist(vals, bins=bins, color=color, edgecolor="none", alpha=0.75, log=log_scale)
+    ax.axvline(med, color="black", lw=1.5, label=f"med={med:.2f}")
+    ax.axvline(mn, color="white", lw=1.5, ls="--", label=f"mean={mn:.2f}")
+    ax.set_xlabel(xlabel, fontsize=11)
+    ax.set_ylabel("Count", fontsize=11)
+    ax.set_title(title, fontsize=13, pad=6)
+    ax.legend(fontsize=9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+def _cdf_ax(
+    ax: plt.Axes,
+    vals: np.ndarray,
+    title: str,
+    xlabel: str,
+    color: str,
+) -> None:
+    """Draw CDF with percentile annotations."""
+    sorted_vals = np.sort(vals)
+    cdf = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+    ax.plot(sorted_vals, cdf, color=color, lw=2.0)
+    p50, p90, p99 = np.percentile(vals, [50, 90, 99])
+    for pct, val, ls in [(50, p50, "--"), (90, p90, ":"), (99, p99, "-.")]:
+        ax.axvline(val, color="grey", lw=0.8, ls=ls)
+        ax.text(val, 0.05, f"p{pct}={val:.1f}", fontsize=8, color="grey", rotation=90, va="bottom")
+    ax.set_xlabel(xlabel, fontsize=11)
+    ax.set_ylabel("CDF", fontsize=11)
+    ax.set_title(title, fontsize=13, pad=6)
+    ax.set_ylim(0, 1)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+def plot_peak_stats(
+    meta: pd.DataFrame,
+    pred_fp: str,
+    save_dp: str,
+    filter_col: str = "index_rebased",
+) -> None:
+    """Plot per-spectrum peak count and per-peak intensity distributions.
+
+    Shows overall histograms and CDFs. If filter_col exists in meta, adds
+    split panels for filter=True and filter=False groups.
+
+    Args:
+        meta: DataFrame from load_hdf5_meta (must have start_points, end_points).
+        pred_fp: Path to predictions HDF5 (for pred_ints).
+        save_dp: Output directory.
+        filter_col: Optional boolean column in meta to split plots by.
+    """
+    if "start_points" not in meta.columns or "end_points" not in meta.columns:
+        logger.warning("start_points/end_points not in meta — skipping peak stats.")
+        return
+
+    os.makedirs(save_dp, exist_ok=True)
+
+    n_peaks = (meta["end_points"] - meta["start_points"]).to_numpy()
+
+    with h5py.File(pred_fp, "r") as f:
+        all_ints = f["pred_ints"][:]
+
+    has_filter = filter_col in meta.columns
+    if has_filter:
+        mask_true = meta[filter_col].to_numpy().astype(bool)
+        mask_false = ~mask_true
+
+        # Per-spectrum peak counts for each group
+        n_peaks_true = n_peaks[mask_true]
+        n_peaks_false = n_peaks[mask_false]
+
+        # Per-peak intensities mapped back through spectrum index
+        starts = meta["start_points"].to_numpy()
+        ends = meta["end_points"].to_numpy()
+        peak_filter = np.zeros(len(all_ints), dtype=bool)
+        for i in np.where(mask_true)[0]:
+            peak_filter[starts[i] : ends[i]] = True
+        ints_true = all_ints[peak_filter]
+        ints_false = all_ints[~peak_filter]
+
+    n_cols = 3 if has_filter else 2
+    colors_all = ["#4878CF", "#4878CF"]
+    colors_true = ["#6ACC65", "#6ACC65"]
+    colors_false = ["#D65F5F", "#D65F5F"]
+
+    fig, axes = plt.subplots(2, n_cols, figsize=(6 * n_cols, 10), squeeze=False)
+    fig.subplots_adjust(hspace=0.45, wspace=0.35)
+
+    # --- Row 0: peak count ---
+    _hist_ax(axes[0, 0], n_peaks, "Peak count — all", "# peaks", colors_all[0])
+    _cdf_ax(axes[0, 1], n_peaks, "Peak count CDF — all", "# peaks", colors_all[0])
+    if has_filter:
+        _hist_ax(
+            axes[0, 2],
+            n_peaks_true if mask_true.sum() > 0 else np.array([0]),
+            f"Peak count  {filter_col}=T ({mask_true.sum():,})\nvs =F ({mask_false.sum():,})",
+            "# peaks",
+            colors_true[0],
+        )
+        axes[0, 2].hist(
+            n_peaks_false, bins=80, color=colors_false[0], edgecolor="none", alpha=0.55
+        )
+
+    # --- Row 1: intensity ---
+    _hist_ax(axes[1, 0], all_ints, "Intensity — all peaks", "Intensity", colors_all[1], log_scale=True)
+    _cdf_ax(axes[1, 1], all_ints, "Intensity CDF — all peaks", "Intensity", colors_all[1])
+    if has_filter:
+        _hist_ax(
+            axes[1, 2],
+            ints_true if len(ints_true) > 0 else np.array([0]),
+            f"Intensity  {filter_col}=T vs =F\n(log scale)",
+            "Intensity",
+            colors_true[1],
+            log_scale=True,
+        )
+        axes[1, 2].hist(ints_false, bins=80, color=colors_false[1], edgecolor="none", alpha=0.55, log=True)
+
+    filter_note = f" (split by {filter_col})" if has_filter else ""
+    fig.suptitle(f"Peak Count & Intensity Stats{filter_note}", fontsize=18, y=1.01)
+    out_fp = os.path.join(save_dp, "peak_stats.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved peak stats plot: %s", out_fp)
+    print(f"Saved: {out_fp}")
+
+
+# ---------------------------------------------------------------------------
 # Mirror spectrum plot
 # ---------------------------------------------------------------------------
 
@@ -735,9 +878,9 @@ def get_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["summary", "ce", "spectra", "all", "plot_all"],
+        choices=["summary", "ce", "spectra", "all", "plot_all", "peak_stats"],
         default="summary",
-        help="What to plot (ce/all requires --spec_df_fp; plot_all = summary + 4-col CDF/hist overview)",
+        help="What to plot (ce/all requires --spec_df_fp; plot_all = all stats; peak_stats = peak count + intensity)",
     )
     parser.add_argument(
         "--select",
@@ -758,6 +901,12 @@ def get_args() -> argparse.Namespace:
         default="cos_hun_inst_tol",
         help="Score column to rank spectra by",
     )
+    parser.add_argument(
+        "--filter_col",
+        type=str,
+        default="index_rebased",
+        help="Boolean column in HDF5 to split peak stats plots by (used in plot_all / peak_stats modes)",
+    )
     return parser.parse_args()
 
 
@@ -773,6 +922,9 @@ def main() -> None:
 
     if args.mode in ("summary", "all"):
         plot_summary(meta, save_dp)
+
+    if args.mode in ("plot_all", "peak_stats"):
+        plot_peak_stats(meta, args.pred_fp, save_dp, filter_col=args.filter_col)
 
     if args.mode == "plot_all":
         plot_summary(meta, save_dp)
