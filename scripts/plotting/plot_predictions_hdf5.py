@@ -361,17 +361,20 @@ def plot_peak_stats(
     pred_fp: str,
     save_dp: str,
     filter_col: str = "index_rebased",
+    spec_df: pd.DataFrame | None = None,
 ) -> None:
     """Plot per-spectrum peak count and per-peak intensity distributions.
 
     Shows overall histograms and CDFs. If filter_col exists in meta, adds
     split panels for filter=True and filter=False groups.
+    If spec_df is provided, also shows predicted vs ground-truth peak count comparison.
 
     Args:
-        meta: DataFrame from load_hdf5_meta (must have start_points, end_points).
+        meta: DataFrame from load_hdf5_meta (must have start_points, end_points, spec_id).
         pred_fp: Path to predictions HDF5 (for pred_ints).
         save_dp: Output directory.
         filter_col: Optional boolean column in meta to split plots by.
+        spec_df: Optional ground-truth spec_df (must have spec_id, "mz", "intensity" columns).
     """
     if "start_points" not in meta.columns or "end_points" not in meta.columns:
         logger.warning("start_points/end_points not in meta — skipping peak stats.")
@@ -379,19 +382,21 @@ def plot_peak_stats(
 
     os.makedirs(save_dp, exist_ok=True)
 
-    n_peaks = (meta["end_points"] - meta["start_points"]).to_numpy()
+    n_peaks_pred = (meta["end_points"] - meta["start_points"]).to_numpy()
 
     with h5py.File(pred_fp, "r") as f:
         all_ints = f["pred_ints"][:]
 
     has_filter = filter_col in meta.columns
+    has_gt = spec_df is not None
+
     if has_filter:
         mask_true = meta[filter_col].to_numpy().astype(bool)
         mask_false = ~mask_true
 
         # Per-spectrum peak counts for each group
-        n_peaks_true = n_peaks[mask_true]
-        n_peaks_false = n_peaks[mask_false]
+        n_peaks_pred_true = n_peaks_pred[mask_true]
+        n_peaks_pred_false = n_peaks_pred[mask_false]
 
         # Per-peak intensities mapped back through spectrum index
         starts = meta["start_points"].to_numpy()
@@ -402,33 +407,85 @@ def plot_peak_stats(
         ints_true = all_ints[peak_filter]
         ints_false = all_ints[~peak_filter]
 
-    n_cols = 3 if has_filter else 2
+    # Get ground truth peak counts if spec_df provided
+    n_peaks_gt = None
+    peak_delta = None
+    over_pred = None
+    under_pred = None
+    exact_match = None
+
+    if has_gt:
+        if "spec_id" not in meta.columns:
+            logger.warning("spec_id not in meta — cannot compare with ground truth")
+        else:
+            n_peaks_gt = np.zeros(len(meta), dtype=int)
+            for idx, row in meta.iterrows():
+                spec_id = row["spec_id"]
+                if spec_id in spec_df.index:
+                    gt_peaks = spec_df.loc[spec_id, "mz"]
+                    if isinstance(gt_peaks, (list, np.ndarray)):
+                        n_peaks_gt[idx] = len(gt_peaks)
+                    else:
+                        n_peaks_gt[idx] = 1 if pd.notna(gt_peaks) else 0
+            peak_delta = n_peaks_pred - n_peaks_gt
+            over_pred = (peak_delta > 0).sum()
+            under_pred = (peak_delta < 0).sum()
+            exact_match = (peak_delta == 0).sum()
+
+    n_cols = 4 if has_gt else (3 if has_filter else 2)
     colors_all = ["#4878CF", "#4878CF"]
     colors_true = ["#6ACC65", "#6ACC65"]
     colors_false = ["#D65F5F", "#D65F5F"]
+    colors_gt = ["#E8A83C", "#E8A83C"]
 
     fig, axes = plt.subplots(2, n_cols, figsize=(6 * n_cols, 10), squeeze=False)
     fig.subplots_adjust(hspace=0.45, wspace=0.35)
 
     # --- Row 0: peak count ---
-    _hist_ax(axes[0, 0], n_peaks, "Peak count — all", "# peaks", colors_all[0])
-    _cdf_ax(axes[0, 1], n_peaks, "Peak count CDF — all", "# peaks", colors_all[0])
-    if has_filter:
+    _hist_ax(axes[0, 0], n_peaks_pred, "Peak count — Predicted", "# peaks", colors_all[0])
+    _cdf_ax(axes[0, 1], n_peaks_pred, "Peak count CDF — Predicted", "# peaks", colors_all[0])
+
+    if has_gt:
+        # Ground truth peak count
+        _hist_ax(axes[0, 2], n_peaks_gt, "Peak count — Ground Truth", "# peaks", colors_gt[0])
+        # Over/Under prediction delta
+        ax = axes[0, 3]
+        ax.hist(peak_delta, bins=80, color="#7030A0", edgecolor="none", alpha=0.7)
+        ax.axvline(0, color="red", linestyle="--", linewidth=2, label="Perfect prediction")
+        ax.set_xlabel("Predicted - Ground Truth (# peaks)", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Frequency", fontsize=11, fontweight="bold")
+        stats_text = (
+            f"Over-predicted: {over_pred} ({over_pred/len(meta)*100:.1f}%)\n"
+            f"Under-predicted: {under_pred} ({under_pred/len(meta)*100:.1f}%)\n"
+            f"Exact match: {exact_match} ({exact_match/len(meta)*100:.1f}%)\n"
+            f"Mean delta: {peak_delta.mean():.2f}"
+        )
+        ax.text(0.98, 0.97, stats_text, transform=ax.transAxes, fontsize=10,
+               verticalalignment="top", horizontalalignment="right",
+               bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8))
+        ax.set_title("Prediction Error Distribution", fontsize=12, fontweight="bold")
+        ax.legend(loc="upper left")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(axis="y", alpha=0.2)
+
+    elif has_filter:
         _hist_ax(
             axes[0, 2],
-            n_peaks_true if mask_true.sum() > 0 else np.array([0]),
+            n_peaks_pred_true if mask_true.sum() > 0 else np.array([0]),
             f"Peak count  {filter_col}=T ({mask_true.sum():,})\nvs =F ({mask_false.sum():,})",
             "# peaks",
             colors_true[0],
         )
-        axes[0, 2].hist(n_peaks_false, bins=80, color=colors_false[0], edgecolor="none", alpha=0.55)
+        axes[0, 2].hist(n_peaks_pred_false, bins=80, color=colors_false[0], edgecolor="none", alpha=0.55)
 
     # --- Row 1: intensity ---
     _hist_ax(
         axes[1, 0], all_ints, "Intensity — all peaks", "Intensity", colors_all[1], log_scale=True
     )
     _cdf_ax(axes[1, 1], all_ints, "Intensity CDF — all peaks", "Intensity", colors_all[1])
-    if has_filter:
+
+    if has_filter and not has_gt:
         _hist_ax(
             axes[1, 2],
             ints_true if len(ints_true) > 0 else np.array([0]),
@@ -440,9 +497,34 @@ def plot_peak_stats(
         axes[1, 2].hist(
             ints_false, bins=80, color=colors_false[1], edgecolor="none", alpha=0.55, log=True
         )
+    elif has_gt:
+        # Show predicted vs GT peak count comparison scatter
+        ax = axes[1, 2]
+        ax.scatter(n_peaks_gt, n_peaks_pred, alpha=0.5, s=20, color="#1f77b4")
+        # Add perfect prediction line
+        max_peaks = max(n_peaks_gt.max(), n_peaks_pred.max())
+        ax.plot([0, max_peaks], [0, max_peaks], "r--", linewidth=2, label="Perfect prediction")
+        ax.set_xlabel("Ground Truth Peak Count", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Predicted Peak Count", fontsize=11, fontweight="bold")
+        ax.set_title("Predicted vs Ground Truth", fontsize=12, fontweight="bold")
+        ax.legend()
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(alpha=0.2)
+
+        # Show intensity distribution for second row
+        _hist_ax(
+            axes[1, 3],
+            all_ints,
+            "Intensity — Predicted peaks\n(log scale)",
+            "Intensity",
+            colors_all[1],
+            log_scale=True,
+        )
 
     filter_note = f" (split by {filter_col})" if has_filter else ""
-    fig.suptitle(f"Peak Count & Intensity Stats{filter_note}", fontsize=18, y=1.01)
+    gt_note = " + Ground Truth Comparison" if has_gt else ""
+    fig.suptitle(f"Peak Count & Intensity Stats{filter_note}{gt_note}", fontsize=16, y=1.01)
     out_fp = os.path.join(save_dp, "peak_stats.png")
     fig.savefig(out_fp, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -691,7 +773,7 @@ def _violin_ax(
         n = len(arr)
         bin_counts[pos] = n
 
-        ax.vlines([pos], [q1], [q3], color=_MED_COLOR, linewidth=3.5, zorder=4)
+        ax.vlines([pos], [q1], [q3], color=_MED_COLOR, linewidth=2, zorder=4)
         ax.scatter(
             [pos], [med], color="white", s=35, zorder=6, edgecolors=_MED_COLOR, linewidths=1.5
         )
@@ -707,7 +789,7 @@ def _violin_ax(
         )
 
     # Legend proxy handles
-    ax.vlines([], [], [], color=_MED_COLOR, linewidth=3.5, label="IQR (tol range)")
+    ax.vlines([], [], [], color=_MED_COLOR, linewidth=2, label="IQR (tol range)")
     ax.scatter([], [], color="white", s=35, edgecolors=_MED_COLOR, linewidths=1.5, label="Median")
     ax.scatter(
         [],
@@ -726,7 +808,7 @@ def _violin_ax(
             f"{lbl}\nn={bin_counts[p]:,}" if p in bin_counts else lbl
             for p, lbl in zip(all_positions, global_labels)
         ]
-        ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=12)
+        ax.set_xticklabels(tick_labels, rotation=40, ha="right", fontsize=9)
     else:
         # Show n= as small text inside the plot top for non-bottom rows
         for pos, arr in zip(all_positions, arrays_aligned):
@@ -738,26 +820,26 @@ def _violin_ax(
                 f"n={len(arr):,}",
                 ha="center",
                 va="bottom",
-                fontsize=9,
+                fontsize=7,
                 color="grey",
                 transform=ax.get_xaxis_transform(),
             )
         ax.set_xticklabels([])
     ax.set_xlim(0.5, n_total + 0.5)
     ax.set_ylim(-0.05, 1.12)
-    ax.set_ylabel(score_col, fontsize=13, fontweight="bold")
+    ax.set_ylabel(score_col, fontsize=10)
     if show_xlabel:
-        ax.set_xlabel(xlabel, fontsize=13, fontweight="bold")
-    ax.set_title(title, fontsize=16, pad=12, fontweight="bold")
+        ax.set_xlabel(xlabel, fontsize=10)
+    ax.set_title(title, fontsize=12, pad=12)
     for thresh, ls in [(0.5, "--"), (0.7, ":"), (0.9, "--")]:
         ax.axhline(thresh, color="grey", lw=0.7, ls=ls, alpha=0.55)
-        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=10, color="grey")
+        ax.text(n_total + 0.55, thresh, f"{thresh}", va="center", fontsize=8, color="grey")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_linewidth(0.8)
     ax.spines["bottom"].set_linewidth(0.8)
     ax.grid(axis="y", alpha=0.2, linestyle="-", linewidth=0.5)
-    ax.legend(fontsize=11, loc="lower left", ncol=3, framealpha=0.95, edgecolor="grey")
+    ax.legend(fontsize=8, loc="lower left", ncol=3, framealpha=0.95, edgecolor="grey")
 
 
 def _plot_ce_breakdown_grid(
@@ -990,10 +1072,10 @@ def _plot_ce_breakdown_grid_violin(
     score_col: str,
     save_dp: str,
 ) -> None:
-    """Plot CE breakdown violins as two separate subplots: QTOF (ACE) and FT (NCE).
+    """Plot CE breakdown violins as grid: QTOF (ACE) in row 0, FT (NCE) in row 1.
 
-    Creates two figures, one for each instrument type, with adducts as columns.
-    Shows violin plots for CE bins with median (white dot) and mean (orange diamond).
+    Creates a single figure with 2 rows (QTOF and FT) and columns for each adduct.
+    Both rows show x-axis with their respective units.
 
     Args:
         joined: DataFrame with score_col, inst_type, prec_type, ace, nce.
@@ -1014,12 +1096,102 @@ def _plot_ce_breakdown_grid_violin(
         logger.warning("No adducts with enough data")
         return
 
-    # Plot QTOF and FT as separate subplots
-    for inst_type, ce_col, ce_cap, color in [
+    n_adducts = len(adducts_all)
+    n_rows = 2  # QTOF and FT
+
+    # Compute max bins to determine figure width
+    inst_full_qtof = df[(df["inst_type"] == "QTOF") & df["ace"].notna()]
+    inst_full_qtof = inst_full_qtof[inst_full_qtof["ace"] > 0]
+    inst_full_qtof = inst_full_qtof[inst_full_qtof["ace"] < 50]
+    qtof_ce_max = inst_full_qtof["ace"].max() + 10 if len(inst_full_qtof) > 0 else 50
+    qtof_labels, _ = _make_ce_bins(inst_full_qtof, "ace", 10, qtof_ce_max, score_col) if len(inst_full_qtof) > 0 else ([], [])
+    qtof_n_bins = len(qtof_labels)
+
+    inst_full_ft = df[(df["inst_type"] == "FT") & df["nce"].notna()]
+    inst_full_ft = inst_full_ft[inst_full_ft["nce"] < 70]
+    ft_ce_max = inst_full_ft["nce"].max() + 10 if len(inst_full_ft) > 0 else 70
+    ft_labels, _ = _make_ce_bins(inst_full_ft, "nce", 10, ft_ce_max, score_col) if len(inst_full_ft) > 0 else ([], [])
+    ft_n_bins = len(ft_labels)
+
+    n_bins = max(qtof_n_bins, ft_n_bins)
+    fig_w = max(36, n_bins * 4.5 + 4)
+    fig_h = 7 * n_rows
+
+    fig, axes = plt.subplots(n_rows, n_adducts, figsize=(6 * n_adducts, 5 * n_rows), squeeze=False)
+    fig.patch.set_facecolor("white")
+
+    # Row 0: QTOF (ACE), Row 1: FT (NCE)
+    for row_idx, (inst_type, ce_col, ce_cap, color) in enumerate([
         ("QTOF", "ace", 50, "#5B9BD5"),  # Blue
         ("FT", "nce", 70, "#70AD47"),    # Green
-    ]:
-        _plot_ce_breakdown_violin_inst(df, inst_type, ce_col, ce_cap, color, adducts_all, score_col, save_dp)
+    ]):
+        # Compute global CE bins for this instrument type
+        inst_full = df[(df["inst_type"] == inst_type) & df[ce_col].notna()]
+        if ce_col == "ace":
+            inst_full = inst_full[inst_full[ce_col] > 0]
+        inst_full = inst_full[inst_full[ce_col] < ce_cap]
+
+        if len(inst_full) == 0:
+            for col_idx in range(n_adducts):
+                ax = axes[row_idx, col_idx]
+                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+                ax.axis("off")
+            continue
+
+        ce_max = inst_full[ce_col].max() + 10
+        global_labels, _ = _make_ce_bins(inst_full, ce_col, 10, ce_max, score_col)
+        global_lo = [int(lbl.split("–")[0]) for lbl in global_labels]
+
+        for col_idx, adduct in enumerate(adducts_all):
+            ax = axes[row_idx, col_idx]
+
+            sub = df[(df["prec_type"] == adduct) & (df["inst_type"] == inst_type)].copy()
+            if ce_col == "ace":
+                sub = sub[sub[ce_col] > 0]
+            sub = sub[sub[ce_col] < ce_cap]
+
+            if len(sub) < _MIN_BIN_N:
+                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
+                ax.set_xlim(0.5, len(global_labels) + 0.5)
+                ax.set_ylim(0, 1.05)
+                ax.set_title(f"{adduct}", fontsize=12, fontweight="bold")
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
+                continue
+
+            # Align per-adduct arrays to global positions
+            arrays_aligned: list[np.ndarray | None] = []
+            for lo in global_lo:
+                hi = lo + 10
+                mask = (sub[ce_col] >= lo) & (sub[ce_col] < hi)
+                vals = sub.loc[mask, score_col].dropna().to_numpy()
+                arrays_aligned.append(vals if len(vals) >= _MIN_BIN_N else None)
+
+            ce_unit = "eV" if inst_type == "QTOF" else "NCE"
+            _violin_ax(
+                ax,
+                global_labels,
+                arrays_aligned,
+                title=f"{adduct}",
+                xlabel=f"Collision Energy ({ce_unit})",
+                color=color,
+                score_col=score_col,
+                show_xticklabels=True,
+                show_xlabel=True,
+            )
+
+    # Add row labels on the left
+    fig.text(0.02, 0.75, "QTOF", fontsize=11, fontweight="bold", rotation=90, va="center")
+    fig.text(0.02, 0.25, "FT", fontsize=11, fontweight="bold", rotation=90, va="center")
+
+    fig.suptitle(f"{score_col} — Collision Energy Breakdown (Violin)", fontsize=13, fontweight="bold")
+    fig.subplots_adjust(hspace=0.35, wspace=0.3, left=0.08)
+
+    out_fp = os.path.join(save_dp, f"ce_breakdown_violin_all.png")
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info(f"Saved CE breakdown violin grid: {out_fp}")
+    print(f"Saved: {out_fp}")
 
 
 def _plot_inst_adduct_grid(
