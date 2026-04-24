@@ -347,7 +347,10 @@ def _violin_ax(
     color: str,
     score_col: str,
 ) -> None:
-    """Draw violin + median scatter on ax.
+    """Draw violin + IQR bar (tol range) + median dot on ax.
+
+    The thick vertical bar on each violin spans Q1–Q3 (interquartile range),
+    indicating the tolerance spread of predictions for that CE bin.
 
     Args:
         ax: Axes to draw on.
@@ -362,27 +365,134 @@ def _violin_ax(
     parts = ax.violinplot(arrays, positions=positions, showmedians=False, showextrema=False)
     for pc in parts["bodies"]:
         pc.set_facecolor(color)
-        pc.set_alpha(0.65)
+        pc.set_alpha(0.6)
+        pc.set_edgecolor("grey")
+        pc.set_linewidth(0.5)
 
     medians = [np.median(a) for a in arrays]
+    means = [np.mean(a) for a in arrays]
+    q1s = [np.percentile(a, 25) for a in arrays]
+    q3s = [np.percentile(a, 75) for a in arrays]
     counts = [len(a) for a in arrays]
-    ax.scatter(positions, medians, color="black", s=25, zorder=3)
 
-    for pos, med, n in zip(positions, medians, counts):
-        ax.text(pos, med + 0.018, f"{med:.2f}", ha="center", va="bottom", fontsize=7, color="black")
-        ax.text(pos, -0.07, f"n={n}", ha="center", va="top", fontsize=6.5, color="grey",
+    _MED_COLOR = "#1a1a2e"   # dark navy — median
+    _MEAN_COLOR = "#e05c1a"  # orange-red — mean
+
+    # IQR bar (tol range)
+    ax.vlines(positions, q1s, q3s, color=_MED_COLOR, linewidth=3.5, zorder=4, label="IQR (tol range)")
+    # Median dot
+    ax.scatter(positions, medians, color="white", s=35, zorder=6, edgecolors=_MED_COLOR, linewidths=1.5,
+               label="Median")
+    # Mean diamond
+    ax.scatter(positions, means, color=_MEAN_COLOR, s=30, zorder=6, marker="D",
+               edgecolors="white", linewidths=0.6, label="Mean")
+
+    for pos, med, mn, q1, q3, n in zip(positions, medians, means, q1s, q3s, counts):
+        # Median label above Q3
+        ax.text(pos - 0.3, q3 + 0.018, f"{med:.2f}", ha="center", va="bottom", fontsize=7,
+                color=_MED_COLOR, fontweight="bold")
+        # Mean label — offset right to avoid overlap
+        ax.text(pos + 0.3, q3 + 0.018, f"{mn:.2f}", ha="center", va="bottom", fontsize=7,
+                color=_MEAN_COLOR, fontweight="bold")
+        # IQR half-range below Q1
+        ax.text(pos, q1 - 0.01, f"±{(q3-q1)/2:.2f}", ha="center", va="top", fontsize=6.5,
+                color="#555555")
+        ax.text(pos, 1.04, f"n={n:,}", ha="center", va="bottom", fontsize=6.5, color="grey",
                 transform=ax.get_xaxis_transform())
 
     ax.set_xticks(positions)
-    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=9)
-    ax.set_ylim(-0.05, 1.05)
+    ax.set_xticklabels(labels, rotation=40, ha="right", fontsize=9)
+    ax.set_ylim(-0.05, 1.08)
     ax.set_ylabel(score_col, fontsize=10)
     ax.set_xlabel(xlabel, fontsize=10)
-    ax.set_title(title, fontsize=11)
-    ax.axhline(0.5, color="grey", lw=0.6, ls="--", alpha=0.5)
-    ax.axhline(0.9, color="grey", lw=0.6, ls="--", alpha=0.5)
+    ax.set_title(title, fontsize=11, pad=22)
+    for thresh, ls in [(0.5, "--"), (0.7, ":"), (0.9, "--")]:
+        ax.axhline(thresh, color="grey", lw=0.7, ls=ls, alpha=0.55)
+        ax.text(len(labels) + 0.5, thresh, f"{thresh}", va="center", fontsize=7, color="grey")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    ax.legend(fontsize=8, loc="lower left", ncol=3)
+
+
+def _plot_inst_adduct_grid(
+    joined: pd.DataFrame,
+    inst_type: str,
+    ce_col: str,
+    ce_label: str,
+    color: str,
+    score_col: str,
+    save_dp: str,
+    ce_cap: float | None = None,
+) -> None:
+    """Produce one figure for a given instrument type, one row per adduct.
+
+    Args:
+        joined: Merged DataFrame with spec metadata and scores.
+        inst_type: Instrument type string (e.g. 'FT', 'QTOF').
+        ce_col: CE column to bin by ('ace' or 'nce').
+        ce_label: Human-readable CE axis label.
+        color: Violin fill colour.
+        score_col: Score column to plot.
+        save_dp: Output directory.
+        ce_cap: If set, discard spectra with ce_col >= ce_cap before binning.
+    """
+    inst_df = joined[(joined["inst_type"] == inst_type) & joined[ce_col].notna()]
+    if ce_col == "ace":
+        inst_df = inst_df[inst_df[ce_col] > 0]
+    if ce_cap is not None:
+        inst_df = inst_df[inst_df[ce_col] < ce_cap]
+
+    adducts = (
+        inst_df.groupby("prec_type")["spec_id"]
+        .count()
+        .loc[lambda s: s >= _MIN_BIN_N]
+        .sort_values(ascending=False)
+        .index.tolist()
+    )
+    if not adducts:
+        logger.warning("No adducts with enough data for %s", inst_type)
+        return
+
+    ce_max = inst_df[ce_col].max() + 10
+    n_rows = len(adducts)
+
+    # Width driven by number of CE bins; height 4.5 per row
+    example_labels, _ = _make_ce_bins(inst_df, ce_col, 10, ce_max, score_col)
+    n_bins = len(example_labels)
+    fig_w = max(10, n_bins * 1.05 + 2)
+    fig_h = n_rows * 5.0
+
+    fig, axes = plt.subplots(n_rows, 1, figsize=(fig_w, fig_h), squeeze=False)
+
+    for row_idx, adduct in enumerate(adducts):
+        sub = inst_df[inst_df["prec_type"] == adduct]
+        labels, arrays = _make_ce_bins(sub, ce_col, 10, ce_max, score_col)
+        ax = axes[row_idx, 0]
+        if not arrays:
+            ax.set_visible(False)
+            continue
+        _violin_ax(
+            ax,
+            labels,
+            arrays,
+            title=f"{inst_type} · {adduct}  [n={len(sub):,}]",
+            xlabel=ce_label,
+            color=color,
+            score_col=score_col,
+        )
+
+    fig.suptitle(
+        f"{score_col} — {inst_type} by adduct + {ce_label}",
+        fontsize=13,
+        y=1.005,
+    )
+    fig.tight_layout(h_pad=3.5)
+    fname = f"ce_breakdown_{inst_type.lower()}_violin.png"
+    out_fp = os.path.join(save_dp, fname)
+    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("Saved: %s", out_fp)
+    print(f"Saved: {out_fp}")
 
 
 def plot_ce_breakdown(
@@ -391,14 +501,15 @@ def plot_ce_breakdown(
     score_col: str,
     save_dp: str,
 ) -> None:
-    """Plot cos_hun_inst_tol violin plots broken down by CE bin for QTOF and FT.
+    """Plot score violin plots broken down by CE bin, adduct and instrument type.
 
-    QTOF uses ACE (eV) in 10 eV bins; FT uses NCE (%) in 10% bins.
-    Bins with fewer than _MIN_BIN_N spectra are omitted.
+    Produces two figures: one for QTOF (ACE bins) and one for FT (NCE bins).
+    Each figure has one row per adduct type. The IQR bar on each violin shows
+    the tolerance spread (tol range) of predictions for that CE bin.
 
     Args:
         meta: Per-spectrum metadata DataFrame from load_hdf5_meta.
-        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, ace, nce].
+        spec_df: Ground-truth spec_df with columns [spec_id, inst_type, prec_type, ace, nce].
         score_col: Score column to plot (must be in meta).
         save_dp: Directory to save figures.
     """
@@ -408,49 +519,13 @@ def plot_ce_breakdown(
     os.makedirs(save_dp, exist_ok=True)
 
     joined = meta[["spec_id", score_col]].merge(
-        spec_df[["spec_id", "inst_type", "frag_mode", "ace", "nce"]],
+        spec_df[["spec_id", "inst_type", "prec_type", "ace", "nce"]],
         on="spec_id",
         how="left",
     )
 
-    qtof = joined[(joined["inst_type"] == "QTOF") & joined["ace"].notna() & (joined["ace"] > 0)]
-    ft = joined[(joined["inst_type"] == "FT") & joined["nce"].notna()]
-
-    qtof_labels, qtof_arrays = _make_ce_bins(qtof, "ace", 10, qtof["ace"].max() + 10, score_col)
-    ft_labels, ft_arrays = _make_ce_bins(ft, "nce", 10, ft["nce"].max() + 10, score_col)
-
-    # Two subplots: QTOF left, FT right
-    n_qtof = len(qtof_labels)
-    n_ft = len(ft_labels)
-    fig_w = max(8, n_qtof * 0.9) + max(8, n_ft * 0.9)
-    fig, (ax_qtof, ax_ft) = plt.subplots(1, 2, figsize=(fig_w, 5.5))
-
-    _violin_ax(
-        ax_qtof,
-        qtof_labels,
-        qtof_arrays,
-        title=f"QTOF — ACE (eV) breakdown  [n={len(qtof):,}]",
-        xlabel="ACE bin (eV)",
-        color="#4878CF",
-        score_col=score_col,
-    )
-    _violin_ax(
-        ax_ft,
-        ft_labels,
-        ft_arrays,
-        title=f"FT — NCE (%) breakdown  [n={len(ft):,}]",
-        xlabel="NCE bin (%)",
-        color="#6ACC65",
-        score_col=score_col,
-    )
-
-    fig.suptitle(f"{score_col} by instrument type and collision energy", fontsize=12, y=1.01)
-    fig.tight_layout()
-    out_fp = os.path.join(save_dp, "ce_breakdown_violin.png")
-    fig.savefig(out_fp, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    logger.info("Saved CE breakdown plot: %s", out_fp)
-    print(f"Saved: {out_fp}")
+    _plot_inst_adduct_grid(joined, "QTOF", "ace", "ACE (eV)", "#4878CF", score_col, save_dp, ce_cap=50)
+    _plot_inst_adduct_grid(joined, "FT", "nce", "NCE (%)", "#6ACC65", score_col, save_dp, ce_cap=70)
 
 
 # ---------------------------------------------------------------------------
