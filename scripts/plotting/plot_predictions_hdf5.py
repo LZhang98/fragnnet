@@ -375,30 +375,80 @@ def _violin_ax(
     q3s = [np.percentile(a, 75) for a in arrays]
     counts = [len(a) for a in arrays]
 
-    _MED_COLOR = "#1a1a2e"   # dark navy — median
+    _MED_COLOR = "#1a1a2e"  # dark navy — median
     _MEAN_COLOR = "#e05c1a"  # orange-red — mean
 
     # IQR bar (tol range)
-    ax.vlines(positions, q1s, q3s, color=_MED_COLOR, linewidth=3.5, zorder=4, label="IQR (tol range)")
+    ax.vlines(
+        positions, q1s, q3s, color=_MED_COLOR, linewidth=3.5, zorder=4, label="IQR (tol range)"
+    )
     # Median dot
-    ax.scatter(positions, medians, color="white", s=35, zorder=6, edgecolors=_MED_COLOR, linewidths=1.5,
-               label="Median")
+    ax.scatter(
+        positions,
+        medians,
+        color="white",
+        s=35,
+        zorder=6,
+        edgecolors=_MED_COLOR,
+        linewidths=1.5,
+        label="Median",
+    )
     # Mean diamond
-    ax.scatter(positions, means, color=_MEAN_COLOR, s=30, zorder=6, marker="D",
-               edgecolors="white", linewidths=0.6, label="Mean")
+    ax.scatter(
+        positions,
+        means,
+        color=_MEAN_COLOR,
+        s=30,
+        zorder=6,
+        marker="D",
+        edgecolors="white",
+        linewidths=0.6,
+        label="Mean",
+    )
 
     for pos, med, mn, q1, q3, n in zip(positions, medians, means, q1s, q3s, counts):
         # Median label above Q3
-        ax.text(pos - 0.3, q3 + 0.018, f"{med:.2f}", ha="center", va="bottom", fontsize=7,
-                color=_MED_COLOR, fontweight="bold")
+        ax.text(
+            pos - 0.3,
+            q3 + 0.018,
+            f"{med:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+            color=_MED_COLOR,
+            fontweight="bold",
+        )
         # Mean label — offset right to avoid overlap
-        ax.text(pos + 0.3, q3 + 0.018, f"{mn:.2f}", ha="center", va="bottom", fontsize=7,
-                color=_MEAN_COLOR, fontweight="bold")
+        ax.text(
+            pos + 0.3,
+            q3 + 0.018,
+            f"{mn:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+            color=_MEAN_COLOR,
+            fontweight="bold",
+        )
         # IQR half-range below Q1
-        ax.text(pos, q1 - 0.01, f"±{(q3-q1)/2:.2f}", ha="center", va="top", fontsize=6.5,
-                color="#555555")
-        ax.text(pos, 1.04, f"n={n:,}", ha="center", va="bottom", fontsize=6.5, color="grey",
-                transform=ax.get_xaxis_transform())
+        ax.text(
+            pos,
+            q1 - 0.01,
+            f"±{(q3 - q1) / 2:.2f}",
+            ha="center",
+            va="top",
+            fontsize=6.5,
+            color="#555555",
+        )
+        ax.text(
+            pos,
+            1.04,
+            f"n={n:,}",
+            ha="center",
+            va="bottom",
+            fontsize=6.5,
+            color="grey",
+            transform=ax.get_xaxis_transform(),
+        )
 
     ax.set_xticks(positions)
     ax.set_xticklabels(labels, rotation=40, ha="right", fontsize=9)
@@ -524,7 +574,9 @@ def plot_ce_breakdown(
         how="left",
     )
 
-    _plot_inst_adduct_grid(joined, "QTOF", "ace", "ACE (eV)", "#4878CF", score_col, save_dp, ce_cap=50)
+    _plot_inst_adduct_grid(
+        joined, "QTOF", "ace", "ACE (eV)", "#4878CF", score_col, save_dp, ce_cap=50
+    )
     _plot_inst_adduct_grid(joined, "FT", "nce", "NCE (%)", "#6ACC65", score_col, save_dp, ce_cap=70)
 
 
