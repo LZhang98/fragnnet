@@ -466,6 +466,21 @@ class SpectrumPL(L.LightningModule):
                 compute_inst_tol_match_mzs = True
                 compute_rounded_match_mzs = True
                 self.batch_metric_args.add("spec_inst_type")
+            elif metric_name == "jss_hun_inst_tol":
+                for remove_prec_peak in hun_remove_prec_peak_flags:
+                    for sqrt in hun_sqrt_flags:
+                        fname_base = "jss_hun_inst_tol"
+                        if sqrt:
+                            fname_base += "_sqrt"
+                        if remove_prec_peak:
+                            fname_base += "_np"
+                        fname = fname_base
+                        self.metric_min_max[fname] = "max"
+                        self.metric_bests.append(fname)
+                        self.auxiliary_metric_names.add(fname)
+                compute_inst_tol_match_mzs = True
+                compute_rounded_match_mzs = True
+                self.batch_metric_args.add("spec_inst_type")
             else:
                 raise ValueError(f"metric_name {metric_name} not recognized")
 
@@ -767,7 +782,10 @@ class SpectrumPL(L.LightningModule):
                             fname_base += "_np"
                         fname = f"{fname_base}"
                         metric_d[fname] = batched_metric[fname]
-            if compute_inst_tol_match_mzs and "cos_hun_inst_tol" in self.hparams.auxiliary_scores:
+            if compute_inst_tol_match_mzs and (
+                "cos_hun_inst_tol" in self.hparams.auxiliary_scores
+                or "jss_hun_inst_tol" in self.hparams.auxiliary_scores
+            ):
                 spec_inst_type = kwargs.get("spec_inst_type")
                 if spec_inst_type is not None and self.inst_tol_lookup is not None:
                     inst_idxs = spec_inst_type.reshape(-1).cpu()
@@ -792,25 +810,47 @@ class SpectrumPL(L.LightningModule):
                     )
                     batch_true_match_mask_it = batch_match_mask_it.max(-1).values
                     batch_pred_match_mask_it = batch_match_mask_it.max(-2).values
-                    for remove_prec_peak in hun_remove_prec_peak_flags:
-                        for sqrt in hun_sqrt_flags:
-                            inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
-                            inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
-                            fname_base = "cos_hun_inst_tol"
-                            if sqrt:
-                                fname_base += "_sqrt"
-                            if remove_prec_peak:
-                                fname_base += "_np"
-                            metric_d[fname_base] = batch_cos_hun_helper(
-                                inp_true,
-                                inp_pred,
-                                batch_match_mask_it,
-                                batch_true_match_mask_it,
-                                batch_pred_match_mask_it,
-                                remove_prec_peak,
-                                batch_true_prec_mask_r,
-                                batch_pred_prec_mask_r,
-                            )
+                    if "cos_hun_inst_tol" in self.hparams.auxiliary_scores:
+                        for remove_prec_peak in hun_remove_prec_peak_flags:
+                            for sqrt in hun_sqrt_flags:
+                                inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
+                                inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
+                                fname_base = "cos_hun_inst_tol"
+                                if sqrt:
+                                    fname_base += "_sqrt"
+                                if remove_prec_peak:
+                                    fname_base += "_np"
+                                metric_d[fname_base] = batch_cos_hun_helper(
+                                    inp_true,
+                                    inp_pred,
+                                    batch_match_mask_it,
+                                    batch_true_match_mask_it,
+                                    batch_pred_match_mask_it,
+                                    remove_prec_peak,
+                                    batch_true_prec_mask_r,
+                                    batch_pred_prec_mask_r,
+                                )
+                    if "jss_hun_inst_tol" in self.hparams.auxiliary_scores:
+                        for remove_prec_peak in hun_remove_prec_peak_flags:
+                            for sqrt in hun_sqrt_flags:
+                                inp_true = sqrt_batched_true_ints_r if sqrt else batched_true_ints_r
+                                inp_pred = sqrt_batched_pred_ints_r if sqrt else batched_pred_ints_r
+                                fname_base = "jss_hun_inst_tol"
+                                if sqrt:
+                                    fname_base += "_sqrt"
+                                if remove_prec_peak:
+                                    fname_base += "_np"
+                                metric_d[fname_base] = batch_jss_hun_helper(
+                                    inp_true,
+                                    inp_pred,
+                                    batch_match_mask_it,
+                                    batch_true_match_mask_it,
+                                    batch_pred_match_mask_it,
+                                    remove_prec_peak,
+                                    batch_true_prec_mask_r,
+                                    batch_pred_prec_mask_r,
+                                    log_min=self.hparams.log_min,
+                                )
             if (
                 "ndcg" in self.hparams.auxiliary_scores
                 or "true_oos_prob" in self.hparams.auxiliary_scores

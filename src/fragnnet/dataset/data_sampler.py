@@ -3,6 +3,7 @@ Data samplers for spectrum-molecule-fragment datasets.
 
 Includes:
 - SpecMolFragDynamicBatchSampler: Dynamic batching to avoid OOM
+- GreedyInferenceBatchSampler: Simple greedy sequential batching for inference
 - GroupSampler: Sample K specs per group_id
 - get_group_sampler: WeightedRandomSampler factory
 """
@@ -228,6 +229,92 @@ class SpecMolFragDynamicBatchSampler(BatchSampler):
 
         Returns:
             int: Number of batches
+        """
+        return len(self._batches)
+
+
+class GreedyInferenceBatchSampler(BatchSampler):
+    """Greedy sequential batch sampler for inference.
+
+    Iterates samples in index order and accumulates them into a batch until adding
+    the next sample would exceed `max_num` nodes or edges. No randomization or
+    tight packing — once a sample doesn't fit the current batch is flushed and a
+    new one starts. Oversized singletons (a single sample larger than `max_num`)
+    are emitted as-is to avoid silently dropping data.
+
+    Compared to `SpecMolFragDynamicBatchSampler` this class has no epoch logic,
+    no gradient-accumulation return points, and no generator — it is intentionally
+    stateless and deterministic.
+    """
+
+    def __init__(
+        self,
+        data_source,
+        max_num: int,
+        limited_by: str = "frag_edge",
+    ) -> None:
+        """Initialize greedy inference batch sampler.
+
+        Args:
+            data_source: Dataset with frag_pyg data or precom_meta_info cache.
+            max_num: Maximum number of nodes or edges per batch.
+            limited_by: Either 'frag_node' or 'frag_edge'. Defaults to 'frag_edge'.
+
+        Raises:
+            ValueError: If max_num <= 0 or limited_by is not a valid option.
+        """
+        if not isinstance(max_num, int) or max_num <= 0:
+            raise ValueError(f"`max_num` should be a positive integer value (got {max_num}).")
+        if limited_by not in ("frag_node", "frag_edge"):
+            raise ValueError(
+                f"`limited_by` must be 'frag_node' or 'frag_edge' (got '{limited_by}')."
+            )
+
+        self.data_source = data_source
+        self._max_num = max_num
+        self._limited_by = limited_by
+        idx_col = 0 if limited_by == "frag_node" else 1
+
+        logger.info(
+            f"[GreedyInferenceBatchSampler] Building batches for {len(data_source)} samples..."
+        )
+        has_cache = hasattr(data_source, "precom_meta_info")
+        batches: list[list[int]] = []
+        batch: list[int] = []
+        batch_n = 0
+        for idx in tqdm(range(len(data_source))):
+            if has_cache:
+                n = data_source.precom_meta_info[idx][idx_col]
+            else:
+                data = data_source[idx]
+                n = data["frag_pyg"].num_nodes if idx_col == 0 else data["frag_pyg"].num_edges
+            if batch and batch_n + n > max_num:
+                batches.append(batch)
+                batch = []
+                batch_n = 0
+            batch.append(idx)
+            batch_n += n
+        if batch:
+            batches.append(batch)
+
+        self._batches = batches
+        logger.info(
+            f"[GreedyInferenceBatchSampler] {len(batches)} batches (max_{limited_by}={max_num})"
+        )
+
+    def __iter__(self) -> Iterator[list[int]]:
+        """Yield pre-computed batches in sequential order.
+
+        Yields:
+            List of sample indices forming one batch.
+        """
+        yield from self._batches
+
+    def __len__(self) -> int:
+        """Return number of batches.
+
+        Returns:
+            Number of batches.
         """
         return len(self._batches)
 
@@ -595,7 +682,9 @@ class DualGroupDynamicBatchSampler(BatchSampler):
                 pass
         self._pre_compute_batches()
 
-    def _sample_from_group_dict(self, group_dict, active_keys, available, budget_left, take_k, per_key: int = 1):
+    def _sample_from_group_dict(
+        self, group_dict, active_keys, available, budget_left, take_k, per_key: int = 1
+    ):
         """Try to take up to `take_k` samples from group_dict (which maps key->tensor).
 
         Iterates over up to `take_k` group keys and takes up to `per_key` samples from
@@ -688,7 +777,11 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             if active_group1_keys and samples_to_take > 0:
                 k1 = min(self.sample_k1, samples_to_take)
                 taken1, budget_left = self._sample_from_group_dict(
-                    self._group1, active_group1_keys, available, budget_left, k1,
+                    self._group1,
+                    active_group1_keys,
+                    available,
+                    budget_left,
+                    k1,
                     per_key=self.sample_k1_per_key,
                 )
                 batch.extend(taken1)
@@ -702,7 +795,11 @@ class DualGroupDynamicBatchSampler(BatchSampler):
             if active_group2_keys and samples_to_take > 0:
                 k2 = min(self.sample_k2, samples_to_take)
                 taken2, budget_left = self._sample_from_group_dict(
-                    self._group2, active_group2_keys, available, budget_left, k2,
+                    self._group2,
+                    active_group2_keys,
+                    available,
+                    budget_left,
+                    k2,
                     per_key=self.sample_k2_per_key,
                 )
                 batch.extend(taken2)

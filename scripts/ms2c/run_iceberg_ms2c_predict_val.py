@@ -1,6 +1,5 @@
 import argparse
 import json
-import multiprocessing
 import os
 import time
 
@@ -12,7 +11,7 @@ from tqdm import tqdm
 from fragnnet.iceberg.dataset import SpecMolMagmaGenDataset
 from fragnnet.iceberg.pl_model import IcebergGenPL
 from fragnnet.utils.data_utils import par_apply, par_apply_series
-from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.script_utils import (
     get_ckpt_path,
     load_model_and_init_config,
@@ -118,7 +117,7 @@ def get_args():
         "--iceberg_inten_template_fp", type=str, default="./config/template.yml", help=""
     )
     parser.add_argument(
-        "--iceberg_inten_num_workers", type=int, default=multiprocessing.cpu_count(), help=""
+        "--iceberg_inten_num_workers", type=int, default=get_core_count(), help=""
     )
     args = parser.parse_args()
     return args

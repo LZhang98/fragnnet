@@ -11,10 +11,11 @@ Usage:
 
 import argparse
 import os
+import pickle
 import sys
 
 from fragnnet.runner import init_dataloader, load_config
-from fragnnet.utils.misc_utils import booltype
+from fragnnet.utils.misc_utils import booltype, get_core_count
 from fragnnet.utils.script_utils import (
     apply_inference_config,
     get_ckpt_path,
@@ -23,6 +24,7 @@ from fragnnet.utils.script_utils import (
     list_output_subset_options,
     prepare_output_subset,
     run_inference_hdf5,
+    run_inference_pkl,
     setup_device,
 )
 from fragnnet.utils.setup_utils import get_dataset_cls, get_model_cls
@@ -80,6 +82,13 @@ def get_args():
         help="Directory to save inference evaluation results",
     )
     parser.add_argument(
+        "--output_format",
+        type=str,
+        default="hdf5",
+        choices=["hdf5", "pkl"],
+        help="Output file format for predictions",
+    )
+    parser.add_argument(
         "--list_output_options",
         action="store_true",
         help="List all valid tokens for --output_subset and exit",
@@ -92,7 +101,7 @@ def get_args():
         nargs="+",
         default=[
             "cos_sim",  # Cosine similarity between predicted and true spectra
-            "cos_hun",  # Hungarian algorithm cosine similarity
+            # "cos_hun",  # Hungarian algorithm cosine similarity
             "cos_hun_inst_tol",  # Hungarian cosine similarity with instrument-specific tolerance
             # "true_oos_prob",  # True out-of-scope probability
             # "true_oos_e"      # True out-of-scope energy
@@ -104,6 +113,17 @@ def get_args():
         type=booltype,
         default=False,
         help="Skip computation of extra loss terms",
+    )
+    # To get cos_hun_inst_tol_sqrt, set --eval_sqrt True together with
+    # cos_hun_inst_tol in --auxiliary_scores.
+    parser.add_argument(
+        "--eval_sqrt",
+        type=booltype,
+        default=False,
+        help=(
+            "Apply sqrt intensity transform when computing Hungarian cosine scores. "
+            "Enables the _sqrt metric variants (e.g. cos_hun_inst_tol_sqrt)."
+        ),
     )
     # Output control arguments
     parser.add_argument(
@@ -143,9 +163,9 @@ def get_args():
     parser.add_argument(
         "--train_batch_size", type=int, default=4, help="Training batch size for evaluation"
     )
-    parser.add_argument("--eval_batch_size", type=int, default=4, help="Evaluation batch size")
+    parser.add_argument("--eval_batch_size", type=int, default=256, help="Evaluation batch size")
     parser.add_argument(
-        "--batch_cutoff", type=int, default=1000, help="Number of batches to evaluate (-1 for all)"
+        "--batch_cutoff", type=int, default=-1, help="Number of batches to evaluate (-1 for all)"
     )
     parser.add_argument(
         "--min_peak_int",
@@ -161,8 +181,22 @@ def get_args():
     )
     parser.add_argument(
         "--use_dynamic_sampler",
-        action="store_true",
-        help="whether use dynamic sampler",
+        type=booltype,
+        default=False,
+        help="Use dynamic batch sampler (sequential order, node/edge budget per batch)",
+    )
+    parser.add_argument(
+        "--dynamic_sampler_max",
+        type=int,
+        default=None,
+        help="Max frag nodes/edges per batch for dynamic sampler (overrides config)",
+    )
+    parser.add_argument(
+        "--dynamic_sampler_mode",
+        type=str,
+        default=None,
+        choices=["frag_node", "frag_edge"],
+        help="Budget metric for dynamic sampler: frag_node or frag_edge (overrides config)",
     )
     parser.add_argument(
         "--override",
@@ -177,7 +211,7 @@ if __name__ == "__main__":
     # Early check for --list_output_options to avoid required argument validation
     from pandarallel import pandarallel
 
-    cpu_count = os.cpu_count() or 1
+    cpu_count = get_core_count()
     pandarallel.initialize(progress_bar=True, nb_workers=min(10, cpu_count))
     if "--list_output_options" in sys.argv:
         print("Available output_subset options:")
@@ -214,6 +248,11 @@ if __name__ == "__main__":
         eval_batch_size=args.eval_batch_size,
         dynamic_batch_sampler=args.use_dynamic_sampler,
     )
+    config_d["eval_hun_sqrt"] = args.eval_sqrt
+    if args.dynamic_sampler_max is not None:
+        config_d["dynamic_batch_sampler_max"] = args.dynamic_sampler_max
+    if args.dynamic_sampler_mode is not None:
+        config_d["dynamic_batch_sampler_mode"] = args.dynamic_sampler_mode
 
     # Initialize dataset, dataloader, and model (inline)
     print(">>> Initializing components...")
@@ -248,19 +287,33 @@ if __name__ == "__main__":
     print(f">>> Output set: {output_set}")
     output_save_dp = os.path.join(save_dp, args.wandb_run_id)
     os.makedirs(output_save_dp, exist_ok=True)
-    num_predict = run_inference_hdf5(
-        model,
-        dl,
-        device,
-        evaluate=True,
-        output_set=output_set,
-        batch_cutoff=args.batch_cutoff,
-        min_peak_int=args.min_peak_int,
-        return_formula_str=args.return_formula_str or args.output_everything,
-        return_cc_hash=args.return_cc_hash or args.output_everything,
-        rebase_indices=True,
-        save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5"),
-    )
+    if args.output_format == "hdf5":
+        num_predict = run_inference_hdf5(
+            model,
+            dl,
+            device,
+            evaluate=True,
+            output_set=output_set,
+            batch_cutoff=args.batch_cutoff,
+            min_peak_int=args.min_peak_int,
+            return_formula_str=args.return_formula_str or args.output_everything,
+            return_cc_hash=args.return_cc_hash or args.output_everything,
+            rebase_indices=True,
+            save_path=os.path.join(output_save_dp, f"predictions_{eval_split}.hdf5"),
+        )
+    else:
+        results = run_inference_pkl(
+            model,
+            dl,
+            device,
+            batch_cutoff=args.batch_cutoff,
+            output_set=output_set,
+            evaluate=True,
+        )
+        out_fp = os.path.join(output_save_dp, f"predictions_{eval_split}.pkl")
+        with open(out_fp, "wb") as f:
+            pickle.dump(results, f)
+        num_predict = len(next(iter(results.values()))) if results else 0
     print(f"\n>>> Saved predictions to: {output_save_dp}")
     print(f">>> Total predictions: {num_predict}")
     print(">>> Evaluation complete!")

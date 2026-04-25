@@ -15,7 +15,6 @@ NB_FLAG=${NB_FLAG:-False}
 ISO_FLAG=${ISO_FLAG:-False}
 FRAG_MODE=${FRAG_MODE:-'CID HCD'}
 INST=${INST:-'FT QTOF IT'}
-INSTALL_STORAGE_DEPS=${INSTALL_STORAGE_DEPS:-True}
 
 mkdir -p ${WORKING_DIR}
 
@@ -36,14 +35,10 @@ pip install --no-index \
  pytorch_lightning==2.4.0 \
  dgl==2.4.0 \
  omegaconf \
- cython==3.0.12
-
-if [ "${INSTALL_STORAGE_DEPS}" = "True" ]; then
-    pip install --no-index \
-     pandarallel==1.6.5 \
-     lmdb==1.7.5 \
-     h5py
-fi
+ cython==3.0.12 \
+ pandarallel==1.6.5 \
+ lmdb==1.7.5 \
+ h5py
 
 cp ${FRAGNNET_DP}/wheels/pyteomics-4.7.5-py3-none-any.whl ${WORKING_DIR}/pyteomics-4.7.5-py3-none-any.whl
 pip install pyteomics-4.7.5-py3-none-any.whl

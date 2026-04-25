@@ -677,7 +677,7 @@ def compute_ccs_multi_cut(
                     for kk in range(n_live_nodes):
                         if cc_nodes_s[c, live_node_arr[kk]]:
                             child_n_atoms += 1
-                    if child_n_atoms < min_frag_atoms:
+                    if child_n_atoms == 0 or child_n_atoms < min_frag_atoms:
                         continue
                     child_node_key = PyBytes_FromStringAndSize(
                         &cc_nodes_s[c, 0], num_nodes)
@@ -753,7 +753,7 @@ def compute_ccs_multi_cut(
                                 for kk in range(n_live_nodes):
                                     if cc_nodes_s[c, live_node_arr[kk]]:
                                         child_n_atoms += 1
-                                if child_n_atoms < min_frag_atoms:
+                                if child_n_atoms == 0 or child_n_atoms < min_frag_atoms:
                                     continue
 
                                 child_node_key = PyBytes_FromStringAndSize(
@@ -828,7 +828,7 @@ def compute_ccs_multi_cut(
                                     for kk in range(n_live_nodes):
                                         if cc_nodes_s[c, live_node_arr[kk]]:
                                             child_n_atoms += 1
-                                    if child_n_atoms < min_frag_atoms:
+                                    if child_n_atoms == 0 or child_n_atoms < min_frag_atoms:
                                         continue
 
                                     child_node_key = PyBytes_FromStringAndSize(

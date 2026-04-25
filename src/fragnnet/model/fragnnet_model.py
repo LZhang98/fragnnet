@@ -606,7 +606,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
 
             # Aggregate CC atom embeddings per fragment using pooling
             frag_node_embed = th.index_select(mol_embed_gnn, 0, frag_node_mask_idxs[:, 1])
-            frag_node_mask_embed = self.mol_pool(frag_node_embed, frag_node_mask_idxs[:, 0])
+            frag_node_mask_embed = self.mol_pool(
+                frag_node_embed, frag_node_mask_idxs[:, 0], dim_size=batch_frag_num_nodes
+            )
 
             # frag_node_mask_embed can be one of following:
             # 1. add/sub: Simple arithmetic operations

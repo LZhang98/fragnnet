@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import subprocess
 
 
@@ -179,6 +180,24 @@ def apply_gpu_profile(args) -> None:
         args.gpu = 1
 
 
+_SLURM_TIME_RE = re.compile(
+    r"^(\d+-)?(\d+)(:\d{2})?(:\d{2})?$"
+)
+
+
+def validate_slurm_time(time_str: str) -> None:
+    """Validate SLURM --time format: [D-]HH[:MM[:SS]], MM, or MM:SS.
+
+    Raises:
+        ValueError: If the format is invalid.
+    """
+    if not _SLURM_TIME_RE.match(time_str):
+        raise ValueError(
+            f"Invalid --time format: {time_str!r}. "
+            "Expected SLURM format: HH:MM:SS, D-HH:MM:SS, MM:SS, or MM."
+        )
+
+
 def validate_array_job_config(args) -> None:
     """Validate array job configuration."""
     if getattr(args, "num_sweep_jobs", None) is not None:
@@ -201,6 +220,7 @@ def main(args):
         return
 
     apply_gpu_profile(args)
+    validate_slurm_time(args.time)
     validate_array_job_config(args)
 
     # create folders
@@ -218,7 +238,7 @@ def main(args):
             f"#SBATCH --job-name={args.job_name}",
             f"#SBATCH --mem={args.mem}G",
             f"#SBATCH --cpus-per-task={args.cpu}",
-            f"#SBATCH --time=0-{args.time}:00:00",
+            f"#SBATCH --time={args.time}",
             f"#SBATCH --mail-user={args.cc_email}",
             "#SBATCH --mail-type=ALL",
         ]
@@ -362,12 +382,13 @@ def main(args):
 
     # Check if running sweep script
     is_sweep_script = "run_wandb_sweep.py" in args.python_script_fp
+    is_inference_eval_script = "run_save_inference_eval.py" in args.python_script_fp
 
     # parse script kwargs
     script_kwargs_list = args.script_kwargs if args.script_kwargs else []
     for idx, kwarg in enumerate(script_kwargs_list):
         assert "=" in kwarg, kwarg
-        key, value = kwarg.split("=")
+        key, value = kwarg.split("=", 1)
         # this useful for inference setup where some config are overridden via command line
         config_d[key] = value
         if idx == 0:
@@ -386,6 +407,12 @@ def main(args):
             custom_config_fp = value
         if key == "t" or key == "template_fp":
             config_template_fp = value
+
+    # For inference eval scripts, inject --save_dp pointing inside WORKING_DIR unless already set
+    if is_inference_eval_script:
+        has_save_dp = any(kw.split("=")[0].lstrip("-") == "save_dp" for kw in script_kwargs_list)
+        if not has_save_dp:
+            python_line += " \\\n --save_dp output/inference_eval"
 
     # parse configs    file
     config_keywords = [
@@ -459,8 +486,9 @@ def main(args):
             if args.python_script_fp.rsplit("/", 1)[-1] in [
                 "run_pl_model_fit.py",
                 "run_wandb_sweep.py",
+                "run_save_inference_eval.py",
             ]:
-                frag_dp = path_value.rsplit("/", 1)[0]  # this is for training setup
+                frag_dp = path_value.rsplit("/", 1)[0]  # strip /dags suffix to get parent dir
             else:
                 frag_dp = path_value
             # use tarball and then unpacks
@@ -528,6 +556,18 @@ def main(args):
     # add python line
     script_lines.extend(["# run python script", "cd ${WORKING_DIR}", python_line])
 
+    # copy predictions output back to project directory
+    if is_inference_eval_script:
+        dest_dp = os.path.abspath(args.inference_save_dp)
+        script_lines.extend(
+            [
+                "",
+                "# copy inference eval predictions back to local directory",
+                f"mkdir -p {dest_dp}",
+                f"rsync -av ${{WORKING_DIR}}/output/inference_eval/ {dest_dp}/",
+            ]
+        )
+
     script_lines.extend(
         ["", "# record ending", "echo `date`: Job ${SLURM_JOB_ID} finished running"]
     )
@@ -566,6 +606,12 @@ if __name__ == "__main__":
     parser.add_argument("--script_dp", type=str, default="slurm_scripts")
     parser.add_argument("--job_dp", type=str, default="jobs")
     parser.add_argument(
+        "--inference_save_dp",
+        type=str,
+        default="output/inference_eval",
+        help="Local directory to rsync inference eval predictions into after the job completes",
+    )
+    parser.add_argument(
         "--python_script_fp", type=str, required=True, help="python script to run on cc"
     )
     parser.add_argument(
@@ -603,7 +649,12 @@ if __name__ == "__main__":
         default=None,
         help="Raw value for #SBATCH --gres (e.g. gpu:a100:1 or gpu:h100_1g.10gb:1)",
     )
-    parser.add_argument("--time", type=int, default=3)
+    parser.add_argument(
+        "--time",
+        type=str,
+        default="3:00:00",
+        help="Job wall-clock time limit in SLURM format: D-HH:MM:SS, HH:MM:SS, or H (hours)",
+    )
     parser.add_argument("--script_kwargs", type=str, nargs="+", required=False)
     parser.add_argument("--job_name", type=str, required=False, help="name of the job")
     parser.add_argument(

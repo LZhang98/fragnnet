@@ -11,7 +11,6 @@
 #SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/frag_gen_spectraverse_d3_%j.err
 #SBATCH --open-mode=append
 
-INSTALL_STORAGE_DEPS=False
 DATASET_NAME=spectraverse
 MAX_DEPTH=3
 MAX_H_TRANSFER=4

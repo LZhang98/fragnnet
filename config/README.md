@@ -152,3 +152,102 @@ neims_bottleneck_factor: 0.5
 ff_output_map_size: 256  # Low-rank approximation
 ff_output_activation: relu
 ```
+
+### Evaluation Metrics (`auxiliary_scores`)
+
+Controls which similarity/quality metrics are computed during evaluation.
+Set in config or passed via `--auxiliary_scores` in `run_save_inference_eval.py`.
+
+#### Binned metrics (require `eval_mz_bin_res`)
+
+Output column name format: `{metric}_{bin_res}` (e.g. `cos_sim_0.01`)
+
+| Name | Description |
+|------|-------------|
+| `cos_sim` | Cosine similarity between binned predicted and true spectra |
+| `jss` | Jensen-Shannon similarity between binned spectra |
+| `opt_cos_sim` | Cosine similarity using true peak positions (diagnostic upper bound) |
+
+#### Hungarian matching metrics (global tolerance)
+
+Use rounded m/z values and a fixed matching tolerance.
+
+| Name | Description |
+|------|-------------|
+| `cos_hun` | Cosine similarity via Hungarian peak matching |
+| `jss_hun` | Jensen-Shannon similarity via Hungarian peak matching |
+
+#### Hungarian matching metrics (per-instrument ppm tolerance)
+
+Use per-instrument-type ppm tolerance from `inst_type_loss_tol`. Require `spec_inst_type` in
+the batch. Fall back silently to no score if `inst_type_loss_tol` is not configured.
+
+| Name | Description |
+|------|-------------|
+| `cos_hun_inst_tol` | Cosine via Hungarian matching with per-instrument ppm tolerance |
+| `jss_hun_inst_tol` | JSS via Hungarian matching with per-instrument ppm tolerance |
+
+#### Match-based metrics
+
+| Name | Description |
+|------|-------------|
+| `recall` | Fraction of true peaks matched by a predicted peak |
+| `wrecall` | Intensity-weighted recall |
+| `precision` | Fraction of predicted peaks matched by a true peak |
+| `wprecision` | Intensity-weighted precision |
+| `ndcg` | Normalized discounted cumulative gain (union and intersection variants) |
+
+#### Diagnostic / distribution metrics
+
+| Name | Description |
+|------|-------------|
+| `true_spec_e` | Entropy of the true spectrum |
+| `true_spec_ne` | Normalized entropy of the true spectrum |
+| `pred_spec_e` | Entropy of the predicted spectrum |
+| `pred_spec_ne` | Normalized entropy of the predicted spectrum |
+| `true_oos_prob` | True out-of-scope probability |
+| `true_oos_e` | True out-of-scope energy |
+| `pred_node_count` | Number of predicted fragment nodes |
+| `pred_formula_count` | Number of predicted formulas |
+| `pred_edge_count` | Number of predicted edges |
+
+#### Sqrt intensity variants
+
+Setting `eval_hun_sqrt: True` enables additional `_sqrt` output columns for all Hungarian
+metrics (e.g. `cos_hun_sqrt`, `cos_hun_inst_tol_sqrt`). Intensities are sqrt-transformed
+before scoring, which down-weights dominant peaks.
+
+Setting `eval_bin_sqrt: True` does the same for binned metrics (e.g. `cos_sim_sqrt_0.01`).
+
+In `run_save_inference_eval.py` pass `--eval_sqrt True` (controls `eval_hun_sqrt` only).
+
+#### Per-instrument tolerance configuration
+
+Required for `cos_hun_inst_tol` and `jss_hun_inst_tol` to use instrument-specific ppm
+windows instead of the global tolerance.
+
+```yaml
+inst_type_loss_tol:
+  FT:   {rel: 1.0e-5, min_mz: 200.0}   # 10 ppm, floor at 200 Da
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}   # 20 ppm, floor at 750 Da
+```
+
+`rel` is the relative tolerance (ppm as a fraction, so 10 ppm = `1e-5`).
+`min_mz` sets a floor m/z below which the absolute tolerance is fixed (avoids
+unrealistically tight windows at low mass).
+
+#### Example config snippet
+
+```yaml
+auxiliary_scores:
+  - cos_hun_inst_tol
+  - jss_hun_inst_tol
+
+eval_hun_sqrt: True
+
+inst_type_loss_tol:
+  FT:   {rel: 1.0e-5, min_mz: 200.0}
+  QTOF: {rel: 2.0e-5, min_mz: 750.0}
+```
+
+Produces columns: `cos_hun_inst_tol`, `cos_hun_inst_tol_sqrt`, `jss_hun_inst_tol`, `jss_hun_inst_tol_sqrt`.

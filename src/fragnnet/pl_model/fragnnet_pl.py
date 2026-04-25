@@ -899,15 +899,16 @@ class FraGNNetPL(SpectrumPL):
             # Pairwise similarity MSE loss
             if f"pairwise_cossine_{self.hparams.mz_bin_res}" in self.loss_names:
                 batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
-                true_sim = get_pairwise_cossim(
-                    true_mzs,
-                    true_logprobs,
-                    true_batch_idxs,
-                    batch_size,
-                    self.hparams.mz_max,
-                    self.hparams.mz_bin_res,
-                    chunk_size=self.hparams.loss_batch_size,
-                )
+                with th.no_grad():
+                    true_sim = get_pairwise_cossim(
+                        true_mzs,
+                        true_logprobs,
+                        true_batch_idxs,
+                        batch_size,
+                        self.hparams.mz_max,
+                        self.hparams.mz_bin_res,
+                        chunk_size=self.hparams.loss_batch_size,
+                    )
                 pred_sim = get_pairwise_cossim(
                     pred_mzs,
                     pred_logprobs,
@@ -928,15 +929,16 @@ class FraGNNetPL(SpectrumPL):
             # Pairwise JSS MSE loss
             if f"pairwise_jss_{self.hparams.mz_bin_res}" in self.loss_names:
                 batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
-                true_sim = get_pairwise_jss_sim(
-                    true_mzs,
-                    true_logprobs,
-                    true_batch_idxs,
-                    batch_size,
-                    self.hparams.mz_max,
-                    self.hparams.mz_bin_res,
-                    chunk_size=self.hparams.loss_batch_size,
-                )
+                with th.no_grad():
+                    true_sim = get_pairwise_jss_sim(
+                        true_mzs,
+                        true_logprobs,
+                        true_batch_idxs,
+                        batch_size,
+                        self.hparams.mz_max,
+                        self.hparams.mz_bin_res,
+                        chunk_size=self.hparams.loss_batch_size,
+                    )
                 pred_sim = get_pairwise_jss_sim(
                     pred_mzs,
                     pred_logprobs,
@@ -957,15 +959,16 @@ class FraGNNetPL(SpectrumPL):
             # Pairwise cross-entropy MSE loss
             if f"pairwise_cross_entropy_{self.hparams.mz_bin_res}" in self.loss_names:
                 batch_size = kwargs.get("batch_size", th.max(true_batch_idxs) + 1)
-                true_sim = get_pairwise_cross_entropy(
-                    true_mzs,
-                    true_logprobs,
-                    true_batch_idxs,
-                    batch_size,
-                    self.hparams.mz_max,
-                    self.hparams.mz_bin_res,
-                    chunk_size=self.hparams.loss_batch_size,
-                )
+                with th.no_grad():
+                    true_sim = get_pairwise_cross_entropy(
+                        true_mzs,
+                        true_logprobs,
+                        true_batch_idxs,
+                        batch_size,
+                        self.hparams.mz_max,
+                        self.hparams.mz_bin_res,
+                        chunk_size=self.hparams.loss_batch_size,
+                    )
                 pred_sim = get_pairwise_cross_entropy(
                     pred_mzs,
                     pred_logprobs,
