@@ -60,6 +60,8 @@ ELEMENT_TO_VE = {
     "I": 1,
     "Se": 2,  # up to 6, same as S
     "Si": 4,
+    "As": 3,  # up to 5
+    "B": 3,
 }
 HEAVY_ELEMENTS = list(ELEMENT_TO_VE.keys())
 NUM_HEAVY_ELEMENTS = len(HEAVY_ELEMENTS)
