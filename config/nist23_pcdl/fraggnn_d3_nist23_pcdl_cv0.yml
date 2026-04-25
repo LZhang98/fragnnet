@@ -2,6 +2,7 @@
 # W&B Logging
 # ============================================================================
 wandb_name: nist23_pcdl_inchikey_fraggnn_d3_ma_mi_all_cv0
+wandb_group: nist23_pcdl_fraggnn_d3
 wandb_tags:
 - retrieval
 - nist23
