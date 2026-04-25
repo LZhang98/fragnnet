@@ -62,6 +62,9 @@ PCDL_DSET = "pcdl"
 NIST_DSET = "nist20_hr"
 MONA_DSET = "mona23"
 
+# Global section title for analysis pages
+CURRENT_SECTION = "NIST vs PCDL"
+
 
 def bin_cos(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -87,28 +90,14 @@ def _normalize_sources(df: pd.DataFrame) -> pd.DataFrame:
         )
     out["pcdl_source"] = pcdl_source
 
-    nist_dset = out["nist_dset"].astype(str).str.strip().str.lower()
-    nist_spec = out["nist_dset_spec_id"].astype(str).str.strip().str.lower()
-
+    # Determine NIST source by checking nist_dset_spec_id prefix
+    nist_spec = out["nist_dset_spec_id"].astype(str).str.strip().str.upper()
     nist_source = pd.Series("", index=out.index, dtype="object")
-    nist_source = nist_source.mask(nist_dset.eq(NIST_DSET), NIST_DSET)
-    nist_source = nist_source.mask(nist_dset.eq(MONA_DSET), MONA_DSET)
 
-    # Backward compatibility for legacy labels and ID-prefixed records.
-    nist_source = nist_source.mask(nist_source.eq("") & nist_dset.eq("nist20"), NIST_DSET)
-    nist_source = nist_source.mask(
-        nist_source.eq("") & nist_spec.str.startswith(NIST_DSET), NIST_DSET
-    )
-    nist_source = nist_source.mask(
-        nist_source.eq("") & nist_spec.str.startswith(MONA_DSET), MONA_DSET
-    )
-
-    unknown = sorted(set(nist_dset[nist_source.eq("")]))
-    if unknown:
-        raise ValueError(
-            "Could not map nist source labels to expected values "
-            f"('{NIST_DSET}' or '{MONA_DSET}'). Unknown labels: {unknown}."
-        )
+    # If nist_dset_spec_id starts with "MoNA", it's from MoNA
+    nist_source = nist_source.mask(nist_spec.str.startswith("MONA"), MONA_DSET)
+    # Otherwise, it's from NIST20
+    nist_source = nist_source.mask(nist_source.eq(""), NIST_DSET)
 
     out["nist_source"] = nist_source
     return out
@@ -137,6 +126,10 @@ worst = worst.loc[
     worst["nist_source"].eq(NIST_DSET) & worst["pcdl_source"].eq(PCDL_DSET)
 ].reset_index(drop=True)
 n_total = len(df)
+
+# Create df_mona for NIST vs MoNA analysis
+df_mona = df_all.loc[mona_mask_all].reset_index(drop=True)
+df_mona = bin_cos(df_mona)
 
 
 # ── helper functions ──────────────────────────────────────────────────────────
@@ -324,7 +317,9 @@ def make_cover(pdf: PdfPages) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 def make_page_cos_overview(pdf: PdfPages) -> None:
     fig = plt.figure(figsize=(8.5, 11))
-    fig.suptitle("Cosine Similarity Overview", fontsize=14, fontweight="bold", y=0.97)
+    fig.suptitle(
+        f"{CURRENT_SECTION} – Cosine Similarity Overview", fontsize=14, fontweight="bold", y=0.97
+    )
 
     gs = gridspec.GridSpec(
         3, 2, figure=fig, hspace=0.45, wspace=0.35, left=0.1, right=0.93, top=0.92, bottom=0.06
@@ -420,7 +415,10 @@ def make_page_cos_overview(pdf: PdfPages) -> None:
 def make_page_ce_adduct(pdf: PdfPages) -> None:
     fig = plt.figure(figsize=(8.5, 11))
     fig.suptitle(
-        "Cosine by Collision Energy and Adduct Type", fontsize=14, fontweight="bold", y=0.97
+        f"{CURRENT_SECTION} – Cosine by Collision Energy and Adduct Type",
+        fontsize=14,
+        fontweight="bold",
+        y=0.97,
     )
     gs = gridspec.GridSpec(
         3, 2, figure=fig, hspace=0.5, wspace=0.35, left=0.1, right=0.93, top=0.92, bottom=0.06
@@ -539,7 +537,10 @@ def make_page_ce_adduct(pdf: PdfPages) -> None:
 def make_page_residuals(pdf: PdfPages) -> None:
     fig = plt.figure(figsize=(8.5, 11))
     fig.suptitle(
-        "Failure Mode Analysis (dominant_residual)", fontsize=14, fontweight="bold", y=0.97
+        f"{CURRENT_SECTION} – Failure Mode Analysis (dominant_residual)",
+        fontsize=14,
+        fontweight="bold",
+        y=0.97,
     )
     gs = gridspec.GridSpec(
         3, 2, figure=fig, hspace=0.5, wspace=0.4, left=0.1, right=0.93, top=0.92, bottom=0.06
@@ -669,7 +670,7 @@ def make_page_residuals(pdf: PdfPages) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 def make_page_peaks(pdf: PdfPages) -> None:
     fig = plt.figure(figsize=(8.5, 11))
-    fig.suptitle("Peak Count Analysis", fontsize=14, fontweight="bold", y=0.97)
+    fig.suptitle(f"{CURRENT_SECTION} – Peak Count Analysis", fontsize=14, fontweight="bold", y=0.97)
     gs = gridspec.GridSpec(
         3, 2, figure=fig, hspace=0.5, wspace=0.4, left=0.1, right=0.93, top=0.92, bottom=0.06
     )
@@ -748,7 +749,12 @@ def make_page_peaks(pdf: PdfPages) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 def make_page_bad_matches(pdf: PdfPages) -> None:
     fig = plt.figure(figsize=(8.5, 11))
-    fig.suptitle("Bad Match Deep-Dive (cos < 0.70)", fontsize=14, fontweight="bold", y=0.97)
+    fig.suptitle(
+        f"{CURRENT_SECTION} – Bad Match Deep-Dive (cos < 0.70)",
+        fontsize=14,
+        fontweight="bold",
+        y=0.97,
+    )
     gs = gridspec.GridSpec(
         3, 2, figure=fig, hspace=0.5, wspace=0.4, left=0.1, right=0.93, top=0.92, bottom=0.06
     )
@@ -1248,6 +1254,7 @@ def make_pcdl_vs_mona_pages(pdf: PdfPages) -> None:
 # MAIN
 # ═══════════════════════════════════════════════════════════════════════════════
 def main() -> None:
+    global CURRENT_SECTION, df
     print(f"Generating report → {OUT_PDF}")
     with PdfPages(OUT_PDF) as pdf:
         meta = pdf.infodict()
@@ -1256,21 +1263,34 @@ def main() -> None:
         meta["Subject"] = "Spectral library quality analysis"
 
         make_cover(pdf)
-        print("  [1/7] Cover page")
+        print("  [1] Cover page")
+
+        # ── NIST vs PCDL analysis (5 pages) ──────────────────────────────────
+        CURRENT_SECTION = "NIST vs PCDL"
+        print("  [2–6] NIST vs PCDL Analysis")
         make_page_cos_overview(pdf)
-        print("  [2/7] Cosine overview")
         make_page_ce_adduct(pdf)
-        print("  [3/7] CE & adduct breakdown")
         make_page_residuals(pdf)
-        print("  [4/7] Residual analysis")
         make_page_peaks(pdf)
-        print("  [5/6] Peak count analysis")
         make_page_bad_matches(pdf)
-        print("  [6/6] Bad match deep-dive")
+
+        # ── NIST vs MoNA analysis (5 pages) ──────────────────────────────────
+        df_temp = df
+        df = df_mona
+        CURRENT_SECTION = "NIST vs MoNA"
+        print("  [7–11] NIST vs MoNA Analysis")
+        make_page_cos_overview(pdf)
+        make_page_ce_adduct(pdf)
+        make_page_residuals(pdf)
+        make_page_peaks(pdf)
+        make_page_bad_matches(pdf)
+        df = df_temp
+
+        # ── Mirror plots ─────────────────────────────────────────────────────
+        print("  [12–36] Mirror plots (NIST vs PCDL)")
         make_mirror_plot_pages(pdf)
-        print("  [7/8] Mirror plots (NIST vs PCDL)")
+        print("  [37–40] Mirror plots (NIST vs MoNA)")
         make_pcdl_vs_mona_pages(pdf)
-        print("  [8/8] Mirror plots (NIST vs MoNA)")
 
     print(f"\nDone. PDF saved to:\n  {OUT_PDF}")
 
