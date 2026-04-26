@@ -412,6 +412,7 @@ class SpecMolFragDataset(SpecMolDataset):
             frag_data["frag_formula_peak_mzs"] = formula_peak_mzs
 
         return frag_data
+
     def _apply_fragment_mz_change(
         self, frag_data: dict, prec_type: str, neutral_peaks: th.Tensor, clone_pyg: bool = False
     ) -> dict:

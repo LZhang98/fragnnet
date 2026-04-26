@@ -62,6 +62,10 @@ ELEMENT_TO_VE = {
     "Si": 4,
     "As": 3,  # up to 5
     "B": 3,
+    # Tier 1 metals — covalent organometallics only (C–metal single bonds)
+    "Hg": 2,  # methylmercury, ethylmercury
+    "Sn": 4,  # organotin (tributyltin, trimethyltin)
+    "Pb": 4,  # organolead (tetraethyllead)
 }
 HEAVY_ELEMENTS = list(ELEMENT_TO_VE.keys())
 NUM_HEAVY_ELEMENTS = len(HEAVY_ELEMENTS)
@@ -234,7 +238,10 @@ def extract_mol_info(smiles_or_mol, use_default_valence=False) -> dict:
     # GetValenceList
     # some checks
     charge = rdmolops.GetFormalCharge(mol)
-    assert charge == 0, charge
+    if charge not in {0, 1}:
+        raise ValueError(
+            f"unsupported molecular charge {charge}; only 0 (neutral) or +1 ([M]+ cations) supported"
+        )
     # enumerate atoms
     sbond_arr = []
     ve_arr = []
