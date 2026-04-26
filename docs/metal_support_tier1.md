@@ -1,16 +1,16 @@
 # Tier 1 Metal Atom Support Plan
 
-Support simple organometallics with covalent C–metal bonds (e.g., methylmercury, organotin,
-organoplatinum) through three targeted edits. Coordination compounds with dative bonds are
-explicitly out of scope.
+Support simple organometallics with covalent C–metal bonds (methylmercury, organotin, organolead)
+through three targeted edits. Coordination compounds with dative bonds and ferrocene-type hapticity
+complexes are explicitly out of scope.
 
 ## Scope
 
 **In scope:** Molecules where the metal participates in standard covalent single bonds only
-(C–Hg, C–Sn, C–Pb, C–Pt, etc.), overall neutral charge, no radical electrons.
+(C–Hg, C–Sn, C–Pb), overall neutral charge, no radical electrons.
 
 **Out of scope:** Coordination complexes with dative bonds (Fe-porphyrins, cisplatin-type),
-ionic metal salts, multi-fragment metal species.
+ionic metal salts, multi-fragment metal species, η-bonded sandwich complexes (ferrocene).
 
 ---
 
@@ -18,7 +18,7 @@ ionic metal salts, multi-fragment metal species.
 
 **File:** `src/fragnnet/utils/frag_utils.py` line 51
 
-Add target metals to `ELEMENT_TO_VE`. Start with the most common in MS/MS databases:
+Add Hg, Sn, Pb to `ELEMENT_TO_VE`:
 
 ```python
 ELEMENT_TO_VE = {
@@ -35,16 +35,12 @@ ELEMENT_TO_VE = {
     "Si": 4,
     "As": 3,
     "B": 3,
-    # Tier 1 metals — covalent organometallics only
+    # Tier 1 metals — covalent organometallics only (C–metal single bonds)
     "Hg": 2,   # methylmercury, ethylmercury
     "Sn": 4,   # organotin (tributyltin, trimethyltin)
     "Pb": 4,   # organolead (tetraethyllead)
-    "Pt": 4,   # organoplatinum drugs (oxaliplatin, carboplatin)
-    "Fe": 2,   # ferrocenes (covalent cyclopentadienyl bonds)
 }
 ```
-
-Adjust the list to match which databases are being targeted.
 
 **Auto-updates for free (no additional edits needed):**
 - `HEAVY_ELEMENTS`, `NUM_HEAVY_ELEMENTS`, `ELEMENTS`, `NUM_ELEMENTS` — all derived from the dict
@@ -60,7 +56,7 @@ Adjust the list to match which databases are being targeted.
 **File:** `src/fragnnet/utils/data_utils.py` line 153
 
 `rdMolStandardize.Cleanup()` internally runs `MetalDisconnector`, which strips covalent
-metal bonds. Replace it with the individual sub-steps, omitting the disconnector:
+metal bonds. Replace it with the two chemically meaningful sub-steps, omitting the disconnector:
 
 ```python
 # Before:
@@ -70,10 +66,6 @@ mol = rdMolStandardize.Cleanup(mol)
 mol = rdMolStandardize.Normalize(mol)    # normalize functional groups
 mol = rdMolStandardize.Reionize(mol)     # canonical ionization state
 ```
-
-`Normalize` and `Reionize` are the two chemically meaningful steps for ML standardization.
-`MetalDisconnector` and `LargestFragmentChooser` are the steps we're dropping — the latter
-was already commented out at line 159.
 
 **Verify with a quick sanity check after this change:**
 ```python
@@ -92,12 +84,19 @@ assert mol.GetNumAtoms() == 3          # C, Hg, Cl — not disconnected
 `num_elements` is the count of heavy elements used in formula embeddings. It is hardcoded
 in YAML and must match `NUM_HEAVY_ELEMENTS` in `frag_utils.py` at runtime.
 
+The baseline whitelist had 13 heavy elements (not 12 — the config was already stale by one).
+Adding 3 metals brings the total to **16**.
+
 ```bash
-# Find all configs that set this field
-grep -rn "num_elements:" config/
+# Verify current count
+python -c "from fragnnet.utils.frag_utils import NUM_HEAVY_ELEMENTS; print(NUM_HEAVY_ELEMENTS)"
+# Should print 16
 ```
 
-Update every occurrence from `12` to the new count (e.g., `17` if 5 metals are added).
+Update `config/template.yml`:
+```yaml
+num_elements: 16  # Number of heavy elements (13 base + 3 Tier-1 metals: Hg, Sn, Pb)
+```
 
 **This is a checkpoint-breaking change.** The formula embedder dimension changes, so
 existing saved checkpoints will not load. Options:
@@ -109,39 +108,14 @@ existing saved checkpoints will not load. Options:
 
 ## Validation
 
-### Unit test — end-to-end featurization
+### Unit tests
 
-Add to `tests/test_metal_support.py`:
-
-```python
-import pytest
-from fragnnet.utils.frag_utils import mol_to_frag_data, ELEMENT_TO_VE
-
-METAL_SMILES = [
-    ("[CH3][Hg]Cl",    "methylmercury chloride"),
-    ("CC[Sn](CC)(CC)Cl", "triethyltin chloride"),
-]
-
-@pytest.mark.parametrize("smiles,name", METAL_SMILES)
-def test_metal_featurization(smiles, name):
-    """Metal atoms should featurize without error and appear in element counts."""
-    mol_d = mol_to_frag_data(smiles)
-    assert mol_d is not None, f"featurization failed for {name}"
-
-@pytest.mark.parametrize("smiles,name", METAL_SMILES)
-def test_metal_in_element_counts(smiles, name):
-    """Metal element should appear in element_counts with count > 0."""
-    mol_d = mol_to_frag_data(smiles)
-    metal_sym = [a for a in mol_d["elems"] if a not in {"C","H","O","N","P","S","F","Cl","Br","I","Se","Si","As","B"}]
-    assert len(metal_sym) > 0, f"no metal atom found in element_counts for {name}"
-
-def test_metal_not_disconnected():
-    """Cleanup() fix must not disconnect C–Hg bond."""
-    from fragnnet.utils.data_utils import mol_from_smiles
-    mol = mol_from_smiles("[CH3][Hg]Cl")
-    assert mol.GetNumAtoms() == 3   # C, Hg, Cl intact
-    assert mol.GetNumBonds() == 2   # C-Hg and Hg-Cl
-```
+See `tests/test_metal_support.py`. Covers:
+- End-to-end featurization for methylmercury, triethyltin, tetraethyllead
+- Metal elements present in element counts
+- C–Hg bond not disconnected by standardization
+- Whitelist contains all three metals
+- `NUM_HEAVY_ELEMENTS` matches `len(ELEMENT_TO_VE)`
 
 ### Manual check
 
@@ -171,6 +145,6 @@ formulas include the metal element correctly.
 |------|------|------|
 | Add metals to `ELEMENT_TO_VE` | `frag_utils.py:51` | 15 min |
 | Replace `Cleanup()` | `data_utils.py:153` | 30 min |
-| Update `num_elements` in all configs | `config/**/*.yml` | 30 min |
+| Update `num_elements` in all configs | `config/template.yml` | 30 min |
 | Write and run tests | `tests/test_metal_support.py` | 30 min |
 | **Total** | | **~1.5 hours** |
