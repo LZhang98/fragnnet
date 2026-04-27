@@ -153,7 +153,7 @@ ann_params:
 model_type: frag_gnn  # Model type: ["frag_gnn", "mces", "neims", "precursor", etc.]
 num_depth: 5  # Maximum fragmentation depth for DAG
 num_hs: 4  # Number of hydrogen transfer options
-num_elements: 16  # Number of heavy elements (13 base + 3 Tier-1 metals: Hg, Sn, Pb)
+num_elements: 17  # Number of elements including H (16 heavy: 13 base + As + B + Hg + Sn + Pb)
 int_embedder: abs-sines  # Integer embedder type: ["linear", "abs-sines", "sinusoidal"]
 int_embedder_tight: False  # Use tight integer range for embeddings
 output_formula_str: False  # Output formula as string (slower but useful for debugging)
