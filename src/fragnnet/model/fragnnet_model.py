@@ -1091,7 +1091,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # formula slots are unreferenced still produce a tensor of size batch_frag_num_formulae,
         # matching frag_formula_mask / frag_formula_batch_idxs.
         frag_formula_logprobs = scatter_logsumexp(
-            frag_joint_logprobs.flatten(), frag_joint_formula_idxs,
+            frag_joint_logprobs.flatten(),
+            frag_joint_formula_idxs,
             dim_size=int(batch_frag_num_formulae),
         )
         # softmax over formulae
