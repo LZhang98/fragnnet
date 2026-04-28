@@ -84,7 +84,7 @@ spec_params:
     - '[M+Na]+'
     - '[M+K]+'
     - '[M+NH4]+'
-    - '[M+CH3COO]-'
+    - '[M+CH3COOH-H]-'
     - '[M+Cl]-'
   inst_type: True
   inst_types:
