@@ -7,8 +7,8 @@
 #SBATCH --time=0-3:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
-#SBATCH --output=/home/feiw/feiw/frag-gnn/jobs/msgym_mass_frag_gen_arr%j.out
-#SBATCH --error=/home/feiw/feiw/frag-gnn/jobs/msgym_mass_frag_gen_arr%j.err
+#SBATCH --output=/home/feiw/project/feiw/frag-gnn/jobs/msgym_mass_frag_gen_arr_%A_%a.out
+#SBATCH --error=/home/feiw/project/feiw/frag-gnn/jobs/msgym_mass_frag_gen_arr_%A_%a.err
 #SBATCH --open-mode=append
 #SBATCH --array=0-2000:500
 
@@ -20,7 +20,7 @@ module load python/3.10
 module load rdkit/2023.09.5
 
 # go to script dir
-cd /home/feiw/feiw/frag-gnn
+cd /home/feiw/project/feiw/frag-gnn
 # load env
 source ./FRAG-GNN-GPU2/bin/activate
 
