@@ -16,7 +16,7 @@ spec_params:
   merge: False
   nce: True
   merge_keep_ces: False
-  preprocess: True
+  preprocess: False
   prec_type_str: False
   prec_types:
     - '[M-H]-' 
@@ -45,7 +45,7 @@ mol_params:
   morgan_nbits: 2048
   rdkit_nbits: 2048
   pyg: False
-  preprocess: True
+  preprocess: False
 frag_params:
   pyg: False
 
