@@ -23,6 +23,7 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as pyg
+from torch.utils.checkpoint import checkpoint as th_checkpoint
 from torch_geometric.nn import aggr
 
 from fragnnet.utils.misc_utils import safelog
@@ -466,8 +467,10 @@ class GINE_EFA(nn.Module):
             Q = q_proj(local_out).view(N, self.num_heads, self.head_dim)
             K = k_proj(local_out).view(N, self.num_heads, self.head_dim)
             V = v_proj(local_out).view(N, self.num_heads, self.head_dim)
-            efa_out = _efa_linear_attn(Q, K, V, batch_index).reshape(N, C)
-            efa_out = out_proj(F.relu(efa_out))
+            efa_out = th_checkpoint(
+                _efa_linear_attn, Q, K, V, batch_index, use_reentrant=False
+            ).reshape(N, C)
+            efa_out = dropout(out_proj(F.relu(efa_out)))
 
             x = local_out + efa_out
         return x
