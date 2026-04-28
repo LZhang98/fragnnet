@@ -21,7 +21,7 @@ spec_params:
   prec_types:
     - '[M-H]-' 
     - '[M+H]+' 
-    - '[M+CH2O2-H]-' 
+    - '[M+HCOOH-H]-' 
     - '[M]+' 
     - '[M+Na]+' 
     - '[M+K]+' 
