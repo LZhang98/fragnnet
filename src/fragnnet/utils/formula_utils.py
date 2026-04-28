@@ -39,15 +39,8 @@ PREC_TYPE_TO_MASS_DIFF = {
     "[M-H-H2O]-": -3 * H_MASS - O_MASS + ELECTRON_MASS,
     "[M-H+2i]-": -H_MASS + 2 * I_MASS + ELECTRON_MASS,
     "[M+HCOOH-H]-": C_MASS + 1 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
-    "[M+CH3COOH-H]-": 2 * C_MASS
-    + 4 * H_MASS
-    + 2 * O_MASS
-    + ELECTRON_MASS,  #  M+CH3COO and [M+CH3COOH-H]- are the same, earlier spectraverse used different notation
-    "[M+HCOOH-H]-": C_MASS
-    + 1 * H_MASS
-    + 2 * O_MASS
-    + ELECTRON_MASS,  # alias for formic acid adduct
-    "[M+CH3COO]-": 2 * C_MASS + 4 * H_MASS + 2 * O_MASS + ELECTRON_MASS,  # acetate adduct alias
+    "[M+CH3COOH-H]-": 2 * C_MASS + 4 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
+    "[M+CH3COO]-": 2 * C_MASS + 4 * H_MASS + 2 * O_MASS + ELECTRON_MASS,
     # some NL adducts
     "[M+H]+_NL": -H_MASS + ELECTRON_MASS,
     "[M-H]-_NL": H_MASS - ELECTRON_MASS,
@@ -71,7 +64,6 @@ PREC_TYPE_TO_CMF_MASS_DIFF = {
     "[M+CH3COOH-H]-": -H_MASS + ELECTRON_MASS,
     "[M+CH3COO]-": -H_MASS + ELECTRON_MASS,
     "[M+HCOOH-H]-": -H_MASS + ELECTRON_MASS,
-    "[M+HCOOH-H]-": -H_MASS + ELECTRON_MASS,
 }
 
 PREC_TYPE_TO_FORMULA_DIFF = {
@@ -91,6 +83,7 @@ PREC_TYPE_TO_FORMULA_DIFF = {
     "[M-H-H2O]-": "H-2O-2",
     "[M-H+2i]-": "H-1I2",
     "[M+HCOOH-H]-": "CH2O2",
+    "[M+CH3COOH-H]-": "C2H3O2",
     "[M+CH3COO]-": "C2H3O2",
 }
 
