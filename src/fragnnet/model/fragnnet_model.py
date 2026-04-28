@@ -59,6 +59,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         mol_gnn_type: str,
         mol_normalization: str,
         mol_dropout: float,
+        mol_num_heads: int,
         mol_pool_type: str,
         frag_node_feats: list[str],
         frag_edge_feats: list[str],
@@ -168,6 +169,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "gnn_type": mol_gnn_type,
             "dropout": mol_dropout,
             "normalization": mol_normalization,
+            "num_heads": mol_num_heads,
         }
 
         # Mol GNN

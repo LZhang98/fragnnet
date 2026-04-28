@@ -168,6 +168,7 @@ mol_gnn_type: GINE  # GNN architecture: ["GIN", "GINE", "GCN", "GAT", "PNA"]
 mol_dropout: 0.0  # Dropout rate for molecular GNN
 mol_normalization: batch  # Normalization: ["batch", "layer", "none"]
 mol_pool_type: none  # Pooling method for molecular embeddings: ["sum", "mean", "max", "attention", "mean_max_sum", "none"]
+mol_num_heads: 4  # Number of attention heads (GINE_EFA only); must divide mol_hidden_size
 
 # ============================================================================
 # Inter-stage Configuration (Mol → Frag connection)

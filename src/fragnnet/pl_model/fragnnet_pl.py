@@ -56,6 +56,7 @@ class FraGNNetPL(SpectrumPL):
             mol_gnn_type=self.hparams.mol_gnn_type,
             mol_dropout=self.hparams.mol_dropout,
             mol_normalization=self.hparams.mol_normalization,
+            mol_num_heads=self.hparams["mol_num_heads"],
             mol_pool_type=self.hparams.mol_pool_type,
             frag_node_feats=self.hparams.frag_params["pyg_node_feats"],
             frag_edge_feats=self.hparams.frag_params["pyg_edge_feats"],
