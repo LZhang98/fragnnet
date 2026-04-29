@@ -1,5 +1,20 @@
 wandb_name: spectraverse_inchikey_neims_cv7
 wandb_group: spectraverse_inchikey_neims
+wandb_tags:
+- neims
+- fingerprint
+- morgan2048
+- rdkit2048
+- maccs
+- ff_bidirectional
+- low_rank          # ff_output_map_size=256
+- mlp_residual
+- ce_embed
+- ce_mlp            # CE inserted at MLP location
+- inst_type
+- nce
+- sqrt              # ints_transform: sqrt
+- b384              # batch size 384
 
 # seed
 seed: 397623
