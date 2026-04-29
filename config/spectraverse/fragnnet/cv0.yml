@@ -62,8 +62,8 @@ frag_params:
   pyg_edge_feats: []   # no edge features (new_no_edges variant)
   pyg_edges: False     # disable edge message-passing
   pyg_bigraph: False
-  preload: True        # load all DAGs into memory at startup for speed
-  preprocess: True     # apply preprocessing transforms at load time
+  preload: False      # load all DAGs into memory at startup for speed
+  preprocess: False   # apply preprocessing transforms at load time
   include_cmf: True    # include charge-migration fragment nodes
 
 # ============================================================================
@@ -74,17 +74,17 @@ spec_params:
   nce: True             # use normalized collision energy (NCE) as input
   ace: False            # do not use absolute collision energy (ACE)
   merge_keep_ces: False
-  preprocess: True
+  preprocess: False
   prec_type_str: False  # encode precursor type as integer index, not string
   prec_types:
     - '[M-H]-' 
     - '[M+H]+' 
-    - '[M+CH2O2-H]-' 
+    - '[M+HCOOH-H]-' 
     - '[M]+' 
     - '[M+Na]+' 
     - '[M+K]+' 
     - '[M+NH4]+'
-    - '[M+CH3COO]-' 
+    - '[M+CH3COOH-H]-'
     - '[M+Cl]-'
   inst_type: True
   inst_types:
@@ -102,7 +102,7 @@ spec_params:
 # Molecule Parameters
 # ============================================================================
 mol_params:
-  preprocess: True
+  preprocess: False
 
 # ============================================================================
 # Conditioning Embeddings (CE / Precursor / Instrument / Frag-mode)
@@ -219,4 +219,5 @@ activation_checkpointing: False  # disable gradient checkpointing (enough VRAM)
 compile: False                    # torch.compile for speed
 pin_memory: True
 loss_vectorized: True            # vectorized pairwise loss computation
-loss_batch_size: 16              # sub-batch size for vectorized loss
+loss_batch_size: 16              # sub-batch size for vectorized 
+num_workers: 6

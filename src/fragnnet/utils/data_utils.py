@@ -145,12 +145,9 @@ def rdkit_ml_standardize(mol: "Chem.rdchem.Mol") -> "Chem.rdchem.Mol":
     )
     rdMolStandardize = modules[-1]
 
-    # Step 1: Clean up the molecule
-    # - Removes hydrogen atoms
-    # - Disconnects metal atoms
-    # - Normalizes functional groups to canonical forms
-    # - Reionizes certain groups to their preferred states
-    mol = rdMolStandardize.Cleanup(mol)
+    # Step 1: Normalize and reionize — skip MetalDisconnector (would strip covalent C–metal bonds)
+    mol = rdMolStandardize.Normalize(mol)
+    mol = rdMolStandardize.Reionize(mol)
 
     # Step 2: Get the parent fragment
     # - If the molecule contains multiple fragments (e.g., salt forms)

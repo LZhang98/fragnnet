@@ -1,5 +1,20 @@
 wandb_name: spectraverse_inchikey_neims_cv1
 wandb_group: spectraverse_inchikey_neims
+wandb_tags:
+- neims
+- fingerprint
+- morgan2048
+- rdkit2048
+- maccs
+- ff_bidirectional
+- low_rank          # ff_output_map_size=256
+- mlp_residual
+- ce_embed
+- ce_mlp            # CE inserted at MLP location
+- inst_type
+- nce
+- sqrt              # ints_transform: sqrt
+- b384              # batch size 384
 
 # seed
 seed: 397623
@@ -7,22 +22,22 @@ seed: 397623
 # data stuff
 spec_fp: data/proc/spectraverse/spec_df.pkl
 mol_fp: data/proc/spectraverse/mol_df.pkl
-split_dp: data/split/spectraverse_nemis_inchikey_cv1
+split_dp: data/split/spectraverse_benchmark/cv1
 spec_params:
   merge: False
   nce: True
   merge_keep_ces: False
-  preprocess: True
+  preprocess: False
   prec_type_str: False
   prec_types:
     - '[M-H]-' 
     - '[M+H]+' 
-    - '[M+CH2O2-H]-' 
+    - '[M+HCOOH-H]-' 
     - '[M]+' 
     - '[M+Na]+' 
     - '[M+K]+' 
     - '[M+NH4]+'
-    - '[M+CH3COO]-' 
+    - '[M+CH3COOH-H]-' 
     - '[M+Cl]-'
   inst_type: True
   inst_types:
@@ -37,7 +52,7 @@ mol_params:
   fingerprint_maccs: True
   fingerprint: True
   pyg: False
-  preprocess: True
+  preprocess: False
 frag_params:
   pyg: False
 
@@ -63,8 +78,8 @@ sparse_cosine_similarity: True
 ints_transform: sqrt
 
 # optimization stuff
-train_batch_size: 256
-eval_batch_size: 256
+train_batch_size: 384
+eval_batch_size: 384
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004006
@@ -89,3 +104,4 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: True
 compile: False
+num_workers: 4

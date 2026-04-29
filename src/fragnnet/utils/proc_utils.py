@@ -184,11 +184,26 @@ def filter_spec_mol(
     single_mol_mask = spec_df["mol_id"].isin(single_mol_ids)
     print(f">> single mol: {single_mol_mask.mean()}")
     masks.append(single_mol_mask)
-    # neutral molecule
-    neutral_ids = mol_df[mol_df["charge"] == 0]["mol_id"]
+    # neutral or pre-formed +1 cation ([M]+ support: quaternary ammonium, sulfonium, etc.)
+    neutral_ids = mol_df[mol_df["charge"].isin([0, 1])]["mol_id"]
     neutral_mask = spec_df["mol_id"].isin(neutral_ids)
-    print(f">> neutral: {neutral_mask.mean()}")
+    print(f">> neutral or [M]+: {neutral_mask.mean()}")
     masks.append(neutral_mask)
+    # Cross-check: charge=+1 molecules are only valid with [M]+ spectra.
+    # A charge=+1 molecule paired with [M+H]+ would apply +H to already-charged
+    # fragment formulas, producing wrong m/z values.
+    charged_mol_ids = set(mol_df[mol_df["charge"] == 1]["mol_id"].tolist())
+    if charged_mol_ids:
+        bad_adduct_mask = spec_df["mol_id"].isin(charged_mol_ids) & (
+            spec_df["prec_type"] != "[M]+"
+        )
+        n_bad = int(bad_adduct_mask.sum())
+        if n_bad > 0:
+            print(
+                f">> charge cross-check: dropping {n_bad} spectra of charge=+1 molecules "
+                f"with prec_type != '[M]+'"
+            )
+        masks.append(~bad_adduct_mask)
     # element composition
     if elements is not None:
         element_ids = mol_df[

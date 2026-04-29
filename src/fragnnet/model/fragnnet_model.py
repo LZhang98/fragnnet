@@ -59,6 +59,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         mol_gnn_type: str,
         mol_normalization: str,
         mol_dropout: float,
+        mol_num_heads: int,
         mol_pool_type: str,
         frag_node_feats: list[str],
         frag_edge_feats: list[str],
@@ -168,6 +169,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             "gnn_type": mol_gnn_type,
             "dropout": mol_dropout,
             "normalization": mol_normalization,
+            "num_heads": mol_num_heads,
         }
 
         # Mol GNN
@@ -1091,7 +1093,8 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         # formula slots are unreferenced still produce a tensor of size batch_frag_num_formulae,
         # matching frag_formula_mask / frag_formula_batch_idxs.
         frag_formula_logprobs = scatter_logsumexp(
-            frag_joint_logprobs.flatten(), frag_joint_formula_idxs,
+            frag_joint_logprobs.flatten(),
+            frag_joint_formula_idxs,
             dim_size=int(batch_frag_num_formulae),
         )
         # softmax over formulae

@@ -1,7 +1,7 @@
 # ============================================================================
 # W&B Logging
 # ============================================================================
-wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_new_frags
+wandb_name: nist20_inchikey_fraggnn_d3_ma_mi_all_efa
 wandb_tags:
 - retrieval
 - nist20
@@ -49,6 +49,8 @@ frag_dp: data/frag/nist20_ma_mi_d3_h4_isoFalse_smpFalse/dags  # depth-3 DAGs, ±
 num_depth: 4    # max fragmentation depth in DAG (depth-3 frags + root = 4 levels)
 num_hs: 4       # number of H-transfer options per fragment (0..4)
 frag_gnn_type: NodeMLP  # lightweight per-node MLP (no message-passing edges)
+mol_gnn_type: GINE_EFA  # GINE + per-graph EFA linear global attention; num_heads=4 (default)
+mol_hidden_size: 384    # sweep: 4/5 top runs use 384 (vs default 256)
 
 # ============================================================================
 # Fragment DAG Parameters
@@ -133,9 +135,9 @@ debug_overfit: False
 # ============================================================================
 # Regularization (all dropouts were 0.0 → overfitting gap of 0.16 at ep 99)
 # ============================================================================
-mol_dropout: 0.2    # from fragnnet_d3/s0.yml
+mol_dropout: 0.1    # from fragnnet_d3/s0.yml
 frag_dropout: 0.1   # from fragnnet_d3/s0.yml
-mlp_dropout: 0.2    # from fragnnet_d3/s0.yml
+mlp_dropout: 0.3    # sweep: top runs favour 0.3
 weight_decay: 0.01
 
 # ============================================================================
@@ -168,15 +170,17 @@ mz_bin_res: 0.01           # m/z bin resolution in Da
 mz_max: 1500.0             # maximum m/z to include
 sparse_cosine_similarity: True  # use sparse dot-product for speed
 mol_pool_type: mean
-frag_pool_type: mean
-upload_checkpoints: True
+frag_pool_type: max  # sweep: top 3 runs all use max
+upload_checkpoints: False
 checkpoint_metric: val_cos_sim_0.01_epoch/mean  # metric used to select best checkpoint
 auxiliary_scores:
   - cos_sim
-  - jss
+  #- jss
+  #- true_spec_ne   # ground truth normalized entropy — reference target
+  #- pred_spec_ne   # predicted normalized entropy — watch this decrease toward true_spec_ne
 eval_mz_bin_res:
   - 0.01
-eval_bin_sqrt: True  # use sqrt m/z bins for evaluation (but not training)
+eval_bin_sqrt: False  # use sqrt m/z bins for evaluation (but not training)
 
 # Per-instrument-type loss tolerance (overrides global loss_tolerance_rel)
 inst_type_loss_tol:
@@ -190,6 +194,8 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: False  # manual optimization (custom grad-step logic in pl_model)
 dynamic_batch_sampler: True    # dynamically balance batch by fragment node count
+dynamic_batch_sampler_mode: frag_node
+dynamic_batch_sampler_max: 200000
 
 # ============================================================================
 # Group Sampler (same-molecule multi-CE batching)

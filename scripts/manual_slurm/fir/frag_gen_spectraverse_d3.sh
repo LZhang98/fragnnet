@@ -2,8 +2,8 @@
 #SBATCH --account=rrg-dwishart
 #SBATCH --nodes=1
 #SBATCH --job-name=frag_gen_spectraverse_d3
-#SBATCH --mem=180G
-#SBATCH --cpus-per-task=128
+#SBATCH --mem=265G
+#SBATCH --cpus-per-task=32
 #SBATCH --time=0-3:00
 #SBATCH --mail-user=fw4@ualberta.ca
 #SBATCH --mail-type=ALL
@@ -19,9 +19,9 @@ NB_FLAG=False
 ISO_FLAG=False
 SAVE_NAME=${DATASET_NAME}_ma_mi_d${MAX_DEPTH}_h${MAX_H_TRANSFER}_iso${ISO_FLAG}
 DSETS='spectraverse'
-PREC='[M+H]+ [M-H]- [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]- [M+CH3COOH-H]-'
-INST='FT QTOF IT'
-FRAG_MODE='CID HCD'
+PREC='[M+H]+ [M-H]- [M]+ [M+Na]+ [M+K]+ [M+NH4]+ [M+Cl]- [M+CH3COOH-H]- [M+HCOOH-H]-'
+INST='FT QTOF NA Other'
+FRAG_MODE='CID'
 DEST_DP=/scratch/feiw/frag-gnn-data/frags/
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

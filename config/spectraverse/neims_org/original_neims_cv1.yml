@@ -1,5 +1,23 @@
 wandb_name: spectraverse_neims_original_cv1
 wandb_group: spectraverse_neims_original
+wandb_tags:
+- neims
+- neims_paper       # original paper settings (no low-rank, 1 Da bins)
+- fingerprint
+- morgan2048
+- rdkit2048
+- maccs
+- ff_bidirectional
+- standard_linear   # ff_output_map_size=-1 (not low-rank)
+- bottleneck        # neims_bottleneck_factor=0.5
+- mlp_residual
+- ce_embed
+- ce_mlp            # CE inserted at MLP location
+- inst_type
+- nce
+- sqrt              # ints_transform: sqrt
+- mz_1da            # 1 Da bin resolution
+- b256              # batch size 256
 
 # Original NEIMS Configuration
 # Based on the original NEIMS paper: https://pubs.acs.org/doi/10.1021/acscentsci.9b00085
@@ -16,17 +34,17 @@ spec_params:
   merge: False
   nce: True
   merge_keep_ces: False
-  preprocess: True
+  preprocess: False
   prec_type_str: False
   prec_types:
     - '[M-H]-' 
     - '[M+H]+' 
-    - '[M+CH2O2-H]-' 
+    - '[M+HCOOH-H]-' 
     - '[M]+' 
     - '[M+Na]+' 
     - '[M+K]+' 
     - '[M+NH4]+'
-    - '[M+CH3COO]-' 
+    - '[M+CH3COOH-H]-' 
     - '[M+Cl]-'
   inst_type: True
   inst_types:
@@ -45,7 +63,7 @@ mol_params:
   morgan_nbits: 2048
   rdkit_nbits: 2048
   pyg: False
-  preprocess: True
+  preprocess: False
 frag_params:
   pyg: False
 
@@ -99,3 +117,4 @@ precision: 32
 use_tensor_float32: True
 automatic_optimization: True
 compile: False
+num_workers: 4
