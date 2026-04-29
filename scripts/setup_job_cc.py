@@ -180,9 +180,7 @@ def apply_gpu_profile(args) -> None:
         args.gpu = 1
 
 
-_SLURM_TIME_RE = re.compile(
-    r"^(\d+-)?(\d+)(:\d{2})?(:\d{2})?$"
-)
+_SLURM_TIME_RE = re.compile(r"^(\d+-)?(\d+)(:\d{2})?(:\d{2})?$")
 
 
 def validate_slurm_time(time_str: str) -> None:
@@ -226,9 +224,7 @@ def validate_cv_config(args) -> None:
     if getattr(args, "num_sweep_jobs", None) is not None:
         raise ValueError("--cv_config_dp and --num_sweep_jobs are mutually exclusive")
     if args.cv_end - args.cv_start >= 100:
-        raise ValueError(
-            f"CV range too large (max 99 folds): {args.cv_start}-{args.cv_end}"
-        )
+        raise ValueError(f"CV range too large (max 99 folds): {args.cv_start}-{args.cv_end}")
 
 
 def main(args):
@@ -459,7 +455,7 @@ def main(args):
             custom_config_fp = f"{cv_config_dp_rel}/cv{args.cv_start}.yml"
             if not os.path.isfile(custom_config_fp):
                 raise FileNotFoundError(f"Reference CV config not found: {custom_config_fp}")
-        python_line += f" \\\n --c {cv_config_dp_rel}/cv${{CV_FOLD}}.yml"
+        python_line += f" \\\n -c {cv_config_dp_rel}/cv${{CV_FOLD}}.yml"
 
     # parse configs    file
     config_keywords = [
