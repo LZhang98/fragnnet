@@ -7,7 +7,7 @@ seed: 397623
 # data stuff
 spec_fp: data/proc/spectraverse/spec_df.pkl
 mol_fp: data/proc/spectraverse/mol_df.pkl
-split_dp: data/split/spectraverse_nemis_inchikey_cv1
+split_dp: data/split/spectraverse_benchmark/cv1
 spec_params:
   merge: False
   nce: True
