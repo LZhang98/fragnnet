@@ -1,7 +1,6 @@
 import argparse
 import logging
 import os
-from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -9,14 +8,13 @@ from rdkit import RDLogger
 
 import fragnnet.utils.data_utils as data_utils
 from fragnnet.utils.data_utils import (
-    compute_mol_df_props,
     par_apply_df_rows,
     par_apply_df_rows_t,
     par_apply_series,
     seq_apply_df_rows_t,
 )
 from fragnnet.utils.misc_utils import booltype
-
+from functools import partial
 # Module-level logger
 logger = logging.getLogger(__name__)
 
@@ -105,9 +103,10 @@ def preprocess_spec(
     # drop entries with the same dset_spec_id (this happens sometimes in MoNA)
     spec_df = spec_df.drop_duplicates(subset=["dset", "dset_spec_id"], keep="first")
     # convert smiles to mol and back (for standardization/stereochemistry)
-    spec_df.loc[:, "mol"] = par_apply_series(
-        spec_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False)
-    )
+    if  args.skip_standardize:
+        spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False))
+    else:
+        spec_df.loc[:, "mol"] = par_apply_series(spec_df["smiles"], data_utils.mol_from_smiles)
     spec_df.loc[:, "smiles"] = par_apply_series(spec_df["mol"], data_utils.mol_to_smiles)
     no_mol_df = spec_df[spec_df["mol"].isna() | spec_df["smiles"].isna()][["dset_spec_id"]]
     spec_df = spec_df.dropna(subset=["mol", "smiles"])
@@ -181,7 +180,8 @@ def preprocess_spec(
     spec_df.loc[:, "ri"] = par_apply_series(spec_df["ri"], data_utils.parse_ri_str)
     # convert exact_mass
     spec_df.loc[:, "exact_mass"] = pd.to_numeric(spec_df["exact_mass"], errors="coerce")
-
+    if "formula" not in spec_df:
+        spec_df.loc[:, "formula"] = par_apply_series(spec_df["mol"], data_utils.mol_to_formula)
     # remove columns from spec_df
     spec_df = spec_df[
         [
@@ -228,8 +228,25 @@ def preprocess_spec(
     mol_df = pd.DataFrame(
         zip(sorted(smiles_set), list(range(len(smiles_set)))), columns=["smiles", "mol_id"]
     )
-    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
-    compute_mol_df_props(mol_df)
+    if  args.skip_standardize:
+        mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False))
+    else:
+        mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
+    mol_df.loc[:, "inchikey_s"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchikey_s)
+    mol_df.loc[:, "scaffold"] = par_apply_series(mol_df["mol"], data_utils.get_murcko_scaffold)
+    mol_df.loc[:, "formula"] = par_apply_series(mol_df["mol"], data_utils.mol_to_formula)
+    mol_df.loc[:, "inchi"] = par_apply_series(mol_df["mol"], data_utils.mol_to_inchi)
+    mol_df.loc[:, "mw"] = par_apply_series(
+        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=False)
+    )
+    mol_df.loc[:, "exact_mw"] = par_apply_series(
+        mol_df["mol"], lambda mol: data_utils.mol_to_mol_weight(mol, exact=True)
+    )
+    mol_df.loc[:, "num_atoms"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_atoms)
+    mol_df.loc[:, "num_bonds"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_bonds)
+    mol_df.loc[:, "charge"] = par_apply_series(mol_df["mol"], data_utils.mol_to_charge)
+    mol_df.loc[:, "single_mol"] = par_apply_series(mol_df["mol"], data_utils.check_single_mol)
+    mol_df.loc[:, "num_radicals"] = par_apply_series(mol_df["mol"], data_utils.mol_to_num_radicals)
     if (mol_df["smiles"] == "").any():
         raise ValueError("Empty SMILES found in mol_df")
     if (mol_df["formula"] == "").any():
@@ -249,6 +266,7 @@ def preprocess_spec(
     formula_df = formula_df[formula_df["formula"] != ""]
     formula_df = formula_df.merge(mol_df[["mol_id", "formula"]], on="mol_id", how="inner")
     diff_formula_df = formula_df[formula_df["formula_x"] != formula_df["formula_y"]]
+
     logger.info("> formula inconsistencies")
     logger.info(
         f"> diff mol: {diff_formula_df['mol_id'].nunique()}, diff spec: {diff_formula_df['spec_id'].nunique()}"
@@ -257,6 +275,7 @@ def preprocess_spec(
     inchikey_df["inchikey_s"] = inchikey_df["inchikey"].str[:14]
     inchikey_df = inchikey_df.drop(columns=["inchikey"])
     inchikey_df = inchikey_df.merge(mol_df[["mol_id", "inchikey_s"]], on="mol_id", how="inner")
+    
     diff_inchikey_df = inchikey_df[inchikey_df["inchikey_s_x"] != inchikey_df["inchikey_s_y"]]
     logger.info("> inchikey_s inconsistencies")
     logger.info(
@@ -347,6 +366,11 @@ if __name__ == "__main__":
         type=booltype,
         default=True,
         help="whether use NA for missing str labels (such as inst_type, frag_mode, etc.) or use np.nan",
+    )
+    parser.add_argument(
+        "--skip_standardize",
+        action="store_true",
+        help="whether skip standardize for mols"
     )
     args = parser.parse_args()
 
