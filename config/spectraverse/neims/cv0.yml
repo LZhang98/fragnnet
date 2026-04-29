@@ -63,8 +63,8 @@ sparse_cosine_similarity: True
 ints_transform: sqrt
 
 # optimization stuff
-train_batch_size: 256
-eval_batch_size: 256
+train_batch_size: 384
+eval_batch_size: 384
 accumulate_grad_batches: 1
 gradient_clip_val: 5.0
 lr: 0.0004006
