@@ -90,9 +90,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ce_insert_type: str,
         ce_insert_merge: bool,
         ce_insert_size: int,
-        ce_max: float,
-        ce_mean: float,
-        ce_std: float,
+        nce_max: float,
+        nce_mean: float,
+        nce_std: float,
         prec_insert_location: str,
         prec_insert_size: int,
         prec_types: list[str],
@@ -106,7 +106,11 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         ce_scale: bool,
         ce_scaler_hidden_dim: int,
         output_formula_str: bool,
-        ce_insert_dual: bool = False,
+        use_nce: bool = True,
+        use_ace: bool = False,
+        ace_max: float = 100.0,
+        ace_mean: float = 20.0,
+        ace_std: float = 15.0,
         debug_validate_outputs: bool = False,
     ):
         # nn.Module init
@@ -118,10 +122,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             ce_insert_type=ce_insert_type,
             ce_insert_merge=ce_insert_merge,
             ce_insert_size=ce_insert_size,
-            ce_max=ce_max,
-            ce_mean=ce_mean,
-            ce_std=ce_std,
-            ce_insert_dual=ce_insert_dual,
+            nce_max=nce_max,
+            nce_mean=nce_mean,
+            nce_std=nce_std,
+            use_nce=use_nce,
+            use_ace=use_ace,
+            ace_max=ace_max,
+            ace_mean=ace_mean,
+            ace_std=ace_std,
         )
 
         self._prec_init(
@@ -310,10 +318,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         self.ce_scale = ce_scale
         if self.ce_scale:
             self.ce_scaler = CEScaler(
-                ce_mean=ce_mean,
-                ce_std=ce_std,
+                nce_mean=nce_mean,
+                nce_std=nce_std,
                 output_dim=self.mlp_output_dim,
                 hidden_dim=ce_scaler_hidden_dim,
+                use_nce=use_nce,
+                use_ace=use_ace,
+                ace_mean=ace_mean,
+                ace_std=ace_std,
             )
         else:
             self.ce_scaler = None
@@ -539,9 +551,13 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         batch_size = frag_batch[-1] + 1
 
         # get ce value
-        ce = spec_ce
-        ce_batch_idxs = spec_ce_batch_idxs
-        ce_embed = self.embed_ce(ce, ce_batch_idxs, batch_size)
+        if self.use_ace:
+            ace = kwargs["spec_ace"]
+            ace_batch_idxs = kwargs["spec_ace_batch_idxs"]
+        else:
+            ace = None
+            ace_batch_idxs = None
+        ce_embed = self.embed_ce(spec_ce, spec_ce_batch_idxs, batch_size, ace=ace, ace_batch_idxs=ace_batch_idxs)
         # get prec value
         prec_embed = self.embed_prec(spec_prec_type)
         # get inst value
@@ -997,11 +1013,9 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
                 )
             # apply CE-conditioned FiLM scaling if enabled
             if self.ce_scaler is not None:
-                assert ce is not None and ce_batch_idxs is not None, (
-                    "spec_ce and spec_ce_batch_idxs required for ce_scaler"
-                )
                 frag_joint_logits = self.ce_scaler(
-                    frag_joint_logits, ce, ce_batch_idxs, frag_node_batch_idxs, batch_size
+                    frag_joint_logits, spec_ce, spec_ce_batch_idxs, frag_node_batch_idxs, batch_size,
+                    ace=ace, ace_batch_idxs=ace_batch_idxs,
                 )
             # if include_cmf:
             #   frag_joint_logits[:, 2 * self.num_hs + 1:] = LOG_ZERO(frag_joint_logits.dtype)

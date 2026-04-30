@@ -408,15 +408,20 @@ ce_insert_type: id # CE insert type: ["id","lin","embed","embed_clamped","bin"]
 ce_insert_location: none # Where CE is inserted: ["none","mol_input","frag_input","mlp_input"] or comma-separated
 ce_insert_merge: False # Whether to merge CE embeddings when inserted at multiple locations
 ce_insert_size: 32 # Dimension of CE embedding (must match MCES config if using pre-training)
-ce_insert_dual: False # Embed both NCE and ACE independently (requires spec_params.nce and ace both True; not yet implemented)
+use_nce: True  # Embed NCE signal
+use_ace: False # Embed ACE signal; when both use_nce and use_ace are True, embeddings are concatenated (doubles CE dim)
 # Rough approximations from NIST20 Orbitrap/FT MS
-ce_max: 200  # Maximum CE value for normalization/binning
-ce_mean: 60  # Mean CE for normalization (dataset-specific)
-ce_std: 40   # Standard deviation of CE for normalization (dataset-specific)
-# Rough approximations from NIST20 QToF (alternative values)
-# ce_mean: 20
-# ce_std: 10
-# ce_max: 60
+nce_max: 200  # Maximum NCE value for normalization/binning
+nce_mean: 60  # Mean NCE for normalization (dataset-specific)
+nce_std: 40   # Standard deviation of NCE for normalization (dataset-specific)
+# Rough approximations from NIST20 QToF (ACE values, use_ace only)
+ace_max: 100  # Maximum ACE value (eV) for normalization/binning
+ace_mean: 20  # Mean ACE value (eV) for normalization (dataset-specific)
+ace_std: 15   # Standard deviation of ACE for normalization (dataset-specific)
+# Rough approximations from NIST20 QToF (alternative NCE values)
+# nce_mean: 20
+# nce_std: 10
+# nce_max: 60
 
 # ============================================================================
 # Precursor Type Configuration

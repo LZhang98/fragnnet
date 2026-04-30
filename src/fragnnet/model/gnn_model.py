@@ -52,9 +52,9 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
         ce_insert_location: str,
         ce_insert_merge: bool,
         ce_insert_size: int,
-        ce_max: float,
-        ce_mean: float,
-        ce_std: float,
+        nce_max: float,
+        nce_mean: float,
+        nce_std: float,
         prec_insert_location: str,
         prec_insert_size: int,
         prec_types: list[str],
@@ -71,9 +71,9 @@ class GNNModel(nn.Module, CEModel, PrecModel, InstModel):
             ce_insert_type=ce_insert_type,
             ce_insert_merge=ce_insert_merge,
             ce_insert_size=ce_insert_size,
-            ce_max=ce_max,
-            ce_mean=ce_mean,
-            ce_std=ce_std,
+            nce_max=nce_max,
+            nce_mean=nce_mean,
+            nce_std=nce_std,
         )
         # precursor embedding
         self._prec_init(
