@@ -101,6 +101,7 @@ def load_df(df_dp: str, dsets: list[str], num_entries: int) -> pd.DataFrame:
 
 def preprocess_spec(
     spec_df: pd.DataFrame,
+    canonicalize_tautomers: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, pd.DataFrame]]:
     # drop entries with the same dset_spec_id (this happens sometimes in MoNA)
     spec_df = spec_df.drop_duplicates(subset=["dset", "dset_spec_id"], keep="first")
@@ -228,7 +229,10 @@ def preprocess_spec(
     mol_df = pd.DataFrame(
         zip(sorted(smiles_set), list(range(len(smiles_set)))), columns=["smiles", "mol_id"]
     )
-    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
+    mol_df.loc[:, "mol"] = par_apply_series(
+        mol_df["smiles"],
+        partial(data_utils.mol_from_smiles, canonicalize_tautomers=canonicalize_tautomers),
+    )
     compute_mol_df_props(mol_df)
     if (mol_df["smiles"] == "").any():
         raise ValueError("Empty SMILES found in mol_df")
@@ -348,6 +352,12 @@ if __name__ == "__main__":
         default=True,
         help="whether use NA for missing str labels (such as inst_type, frag_mode, etc.) or use np.nan",
     )
+    parser.add_argument(
+        "--canonicalize_tautomers",
+        type=booltype,
+        default=True,
+        help="whether to canonicalize tautomers during mol standardization",
+    )
     args = parser.parse_args()
 
     logger.info(f"> df_dp: {args.df_dp}")
@@ -355,6 +365,7 @@ if __name__ == "__main__":
     logger.info(f"> num_entries: {args.num_entries}")
     logger.info(f"> force update spec and mol df: {args.ow_spec_mol}")
     logger.info(f"> dsets {args.dsets}")
+    logger.info(f"> canonicalize_tautomers: {args.canonicalize_tautomers}")
 
     spec_df_fp = os.path.join(args.proc_dp, "spec_df.pkl")
     mol_df_fp = os.path.join(args.proc_dp, "mol_df.pkl")
@@ -379,7 +390,9 @@ if __name__ == "__main__":
         os.makedirs(args.proc_dp, exist_ok=True)
         all_df = load_df(args.df_dp, args.dsets, args.num_entries)
 
-        spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(all_df)
+        spec_df, mol_df, ann_df, debug_dfs = preprocess_spec(
+            all_df, canonicalize_tautomers=args.canonicalize_tautomers
+        )
 
         if args.na_str_for_missing:
             str_cols = ["inst_type", "frag_mode", "spec_type", "ion_mode", "col_gas", "prec_type"]
