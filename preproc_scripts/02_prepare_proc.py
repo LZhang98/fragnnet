@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -12,10 +13,9 @@ from fragnnet.utils.data_utils import (
     par_apply_df_rows_t,
     par_apply_series,
     seq_apply_df_rows_t,
+    compute_mol_df_props,
 )
-from functools import partial
 
-from fragnnet.utils.data_utils import compute_mol_df_props
 from fragnnet.utils.misc_utils import booltype
 
 # Module-level logger
@@ -232,10 +232,10 @@ def preprocess_spec(
     mol_df = pd.DataFrame(
         zip(sorted(smiles_set), list(range(len(smiles_set)))), columns=["smiles", "mol_id"]
     )
-    if  args.skip_standardize:
-        mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=False))
-    else:
-        mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], data_utils.mol_from_smiles)
+    
+    # convert smiles to mol
+    # use skip_standardize flag to control whether to apply the same standardization as in the spec_df processing step, this is to save time when we want to keep the original mols without standardization
+    mol_df.loc[:, "mol"] = par_apply_series(mol_df["smiles"], partial(data_utils.mol_from_smiles, ml_standardize=not args.skip_standardize, canonicalize_tautomers=canonicalize_tautomers))
     
     compute_mol_df_props(mol_df)
     if (mol_df["smiles"] == "").any():
