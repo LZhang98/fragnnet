@@ -998,8 +998,16 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         frag_joint_mask = (frag_joint_formula_idxs != null_tiled).float()
         # h counts — use pre-computed buffer (registered in __init__) to avoid rebuilding each step
         frag_joint_h_counts = self._h_counts_buf.repeat(frag_node_batch_idxs.shape[0])
-
-        # frag_joint_cmf_mask = cmf_mask.repeat(frag_node_batch_idxs.shape[0], 1)
+        if include_cmf:
+            h_width = 2 * self.num_hs + 1
+            frag_joint_h_offsets = th.cat(
+                [
+                    th.zeros(h_width, dtype=frag_joint_h_counts.dtype, device=device),
+                    th.full((h_width,), h_width, dtype=frag_joint_h_counts.dtype, device=device),
+                ]
+            ).repeat(frag_node_batch_idxs.shape[0])
+        else:
+            frag_joint_h_offsets = th.zeros_like(frag_joint_h_counts)
 
         if self.mlp_output_format == "formula":
             #  predicts joint logits for each (node, formula) pair:
@@ -1210,6 +1218,7 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
         _real_mask = frag_joint_mask.bool()
         frag_real_joint_logits = frag_joint_logits[_real_mask]
         frag_real_joint_h_counts = frag_joint_h_counts[_real_mask]
+        frag_real_joint_h_offsets = frag_joint_h_offsets[_real_mask]
         frag_real_joint_node_idxs = frag_joint_node_idxs[_real_mask]
         frag_real_joint_formula_idxs = frag_joint_formula_idxs[_real_mask]
         frag_real_joint_batch_idxs = frag_joint_batch_idxs[_real_mask]
@@ -1251,15 +1260,14 @@ class FraGNNetModel(nn.Module, CEModel, PrecModel, InstModel, FragModeModel):
             frag_real_formula_node_logprobs, frag_real_joint_formula_idxs
         )
         # hydrogens
-        # frag_real_joint_h_idxs = (frag_real_joint_h_counts + self.num_hs) + frag_real_joint_batch_idxs * (2*self.num_hs+1)
         frag_real_joint_h_idxs = (
-            frag_real_joint_h_counts + self.num_hs
+            frag_real_joint_h_counts + self.num_hs + frag_real_joint_h_offsets
         ) + frag_real_joint_batch_idxs * self.mlp_output_dim
 
         frag_real_h_logprobs = scatter_logsumexp(
             frag_real_joint_logprobs,
             frag_real_joint_h_idxs,
-            dim_size=batch_size * self.mlp_output_dim,  # (2 * self.num_hs + 1)
+            dim_size=batch_size * self.mlp_output_dim,
         )
 
         frag_real_h_logprobs = th.clamp(frag_real_h_logprobs, max=0.0)
